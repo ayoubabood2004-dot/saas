@@ -17,11 +17,19 @@ import { useSubscription } from "@/lib/subscription";
 import { Spinner, useToast } from "@/components/ui";
 import { startOutbox } from "@/lib/outbox";
 import { retryImport } from "@/lib/appUpdate";
+import { loadColdAr, needsColdAr } from "@/i18n";
 import { useNavFolded } from "@/lib/navFold";
 
 /** كل صفحة كسولة تمر من هنا: لو فشل تحميلها لأن الجهاز ماسك قشرة قديمة بعد
- *  نشر جديد، يُمسح المخبأ وتُجلب النسخة الجديدة تلقائياً — مرة واحدة. */
-const page: typeof lazy = (load) => lazy(() => retryImport(load));
+ *  نشر جديد، يُمسح المخبأ وتُجلب النسخة الجديدة تلقائياً — مرة واحدة.
+ *
+ *  **وتنتظر القاموسَ البارد قبل أوّل رسم** (م٠·١): نطاقاتُ الشاشات خرجت من
+ *  الإقلاع، وreact-i18next لا يعيد رسمَ شاشةٍ حين يُضاف قاموسٌ بعدها — فشاشةٌ
+ *  تُرسم قبله تبقى بـ«Today» و«claim.notFound» حتى تُغلق. والانتظارُ **بالتوازي**
+ *  مع حزمة الشاشة (بدأ تنزيلُه مع الإقلاع)، والإنكليزيةُ تتخطّاه. وفشلُه يمرّ
+ *  من `retryImport` كفشل الشاشة نفسها — لا رسمَ بنصفِ نصوص. */
+const page: typeof lazy = (load) => lazy(() =>
+  Promise.all([retryImport(load), needsColdAr() ? retryImport(loadColdAr) : undefined]).then(([m]) => m));
 
 // Route-level code splitting — each page is its own chunk.
 const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login })));

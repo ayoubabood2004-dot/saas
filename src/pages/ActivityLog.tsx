@@ -4,7 +4,7 @@ import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
   Users, Trash2, NotebookPen, Building2, CalendarDays,
   BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon, RotateCcw, Loader2,
-  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins,
+  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight,
 } from "lucide-react";
 import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import { repo } from "@/lib/repo";
@@ -92,6 +92,7 @@ const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
   product_add: { icon: Package, tone: "brand" }, product_edit: { icon: Package, tone: "muted" }, stock: { icon: Package, tone: "warn" },
   product_delete: { icon: Trash2, tone: "danger" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },
   supplier_pay: { icon: Wallet, tone: "success" }, expense: { icon: Wallet, tone: "warn" }, delivery: { icon: Truck, tone: "muted" },
+  relink: { icon: ArrowLeftRight, tone: "muted" },
   pet: { icon: PawPrint, tone: "brand" }, case: { icon: Stethoscope, tone: "brand" }, dose: { icon: Pill, tone: "brand" }, vaccine: { icon: Syringe, tone: "success" },
   medical: { icon: NotebookPen, tone: "muted" }, booking: { icon: CalendarDays, tone: "muted" }, message: { icon: BellRing, tone: "success" }, store: { icon: Store, tone: "brand" },
   team: { icon: Users, tone: "muted" }, payroll: { icon: Wallet, tone: "muted" }, settings: { icon: Building2, tone: "muted" }, login: { icon: KeyRound, tone: "muted" },
@@ -292,6 +293,23 @@ export function ActivityLog() {
     const s = (k: string) => { const v = d[k]; return typeof v === "string" && v.trim() ? v.trim() : ""; };
     const del = r.action === "DELETE";
     const pn = () => s("pet_name") || t("act.aPet", "حيوان");
+    /* النقلُ بين شركتين (0209) يُسمّى بما حصل: الرابطُ تغيّر، لا مالٌ ولا مخزون.
+     * كان سطرُ الفاتورة المنقولة يُرسم «فاتورة شراء — {الشركة}» كأنّ شراءً وقع. */
+    if (r.kind === "relink") {
+      const links = changesOf(d).filter((c) => c.key === "company_id" || c.key === "section_id");
+      switch (r.entity) {
+        case "products":
+          return links.length > 0 && links.every((c) => c.to == null)
+            ? t("act.relinkProductOff", { name: s("name"), defaultValue: "فُكّ المنتج {{name}} من شركته — المخزون ما تغيّر" })
+            : t("act.relinkProduct", { name: s("name"), defaultValue: "نُقل المنتج {{name}} إلى شركة أو صنف آخر — المخزون ما تغيّر" });
+        case "purchases":
+          return t("act.relinkPurchase", { name: s("company_name") || s("name"), total: money(Number(d["total"]) || 0), defaultValue: "نُقلت فاتورة شراء قائمة إلى {{name}} ({{total}}) — ليست شراءً جديداً" });
+        case "purchase_payments":
+          return t("act.relinkPay", { amount: money(Number(d["amount"]) || 0), defaultValue: "نُقلت دفعة مورّد {{amount}} إلى شركة أخرى — ليست دفعةً جديدة" });
+        case "company_sections":
+          return t("act.relinkSection", { name: s("name"), defaultValue: "نُقل الصنف {{name}} إلى شركة أخرى" });
+      }
+    }
     switch (r.entity) {
       case "pets":
         return del ? t("act.petDel", { name: s("name"), defaultValue: "حذف الحيوان {{name}} نهائياً" })
