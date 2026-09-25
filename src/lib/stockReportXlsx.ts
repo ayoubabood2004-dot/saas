@@ -102,7 +102,7 @@ export async function exportStocktakeXlsx(
   const MONEY = `#,##0.${cur.frac ? "00" : "###"}" ${cur.code}"`;
   const QTY = "#,##0.###";
 
-  const take = buildStocktake(products, companies, sections, now, { criticalDays: getExpiryWindows().criticalDays });
+  const take = buildStocktake(products, companies, sections, now, getExpiryWindows());
   const lines = flatLines(take);
 
   const wb: any = XLSX.utils.book_new();

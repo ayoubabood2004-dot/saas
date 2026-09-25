@@ -77,7 +77,7 @@ export function Dashboard() {
   // Stale-while-revalidate: seed from the last snapshot so returning to the home
   // screen paints its data instantly instead of flashing skeletons. We still
   // revalidate in the background on every mount and swap in fresh data.
-  type Snap = { pets: Pet[]; appts: Appointment[]; admissions: Admission[]; reminders: Reminder[]; invoices: Invoice[]; products: Product[]; activity: CurvePoint[] };
+  type Snap = { pets: Pet[]; appts: Appointment[]; admissions: Admission[]; reminders: Reminder[]; invoices: Invoice[]; products: Product[]; activity: CurvePoint[]; stockOk?: boolean };
   const cacheKey = `dashboard:${user?.clinic_id ?? user?.id ?? "anon"}`;
   const seed = getCached<Snap>(cacheKey);
 
@@ -89,7 +89,9 @@ export function Dashboard() {
   const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
   const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
   /** فشلَ جلبُ المنتجات؟ — «تعذّر الفحص» لا «المخزون بخير». */
-  const [stockFailed, setStockFailed] = useState(false);
+  /* واللقطةُ تحفظ الفشلَ مع القائمة: كانت تحفظ `products: []` وحدَها، فالرجوعُ خلال ٢٠
+   * ثانية يرسم من اللقطة و`stockFailed` يبدأ false — «ماكو شي ينتهي» أخضرُ عن فحصٍ فشل. */
+  const [stockFailed, setStockFailed] = useState(seed?.stockOk === false);
   const [activity, setActivity] = useState<CurvePoint[]>(seed?.activity ?? []);
   const [error, setError] = useState(false);
 
@@ -136,7 +138,7 @@ export function Dashboard() {
       setStockFailed(!prodsRes.ok);
       setActivity(activityPts);
       // Snapshot for instant paint on the next visit to the home screen.
-      setCached<Snap>(cacheKey, { pets: allPets, admissions: adm, reminders: rem, appts: todayAppts, invoices: invs, products: prods, activity: activityPts });
+      setCached<Snap>(cacheKey, { pets: allPets, admissions: adm, reminders: rem, appts: todayAppts, invoices: invs, products: prods, activity: activityPts, stockOk: prodsRes.ok });
     } catch {
       if (mounted.current) setError(true); // surface a retry instead of endless skeletons
     } finally {
@@ -531,7 +533,9 @@ export function Dashboard() {
           />
 
           {/* قرب الانتهاء (م١) — جنب التذكيرات، ولمن يملك المخزن وحدَه كبطاقة النواقص. */}
-          {canStock && <ExpiryWatchCard products={products} loading={loading} failed={stockFailed} />}
+          {/* فشلُ التحميل كلِّه (مهلة ١٢ث أو طلبٌ آخر) لا يلمس `stockFailed` — والقائمةُ فارغةٌ
+              فيقول الكارتُ «ماكو شي» أخضرَ عن مخزنٍ لم يُقرأ. فالفشلُ بلا قائمةٍ فشل. */}
+          {canStock && <ExpiryWatchCard products={products} loading={loading} failed={stockFailed || (error && products.length === 0)} />}
 
           {/* Actionable reminders → WhatsApp Campaigns (birthdays, vaccines, deworming) */}
           <RemindersWidget pets={pets} />

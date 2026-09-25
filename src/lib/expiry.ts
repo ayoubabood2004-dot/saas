@@ -58,9 +58,13 @@ export const onShelf = (p: Pick<Product, "stock" | "pooled">): boolean => !p.poo
  * يرفعه بلا محفّزٍ ولا منطقٍ إضافيّ. والطرفان يُقصّان لعشرة أحرف: التجريبيُّ قد
  * يخزّن تاريخاً أطول، والمقارنةُ بطرفٍ مطبَّعٍ وحدَه تفشل بصمت.
  */
-export function isExpiryMuted(p: Pick<Product, "expiry_date" | "expiry_ack">): boolean {
+export function isExpiryMuted(p: Pick<Product, "expiry_date" | "expiry_ack"> & Partial<Pick<Product, "expiry_ack_qty" | "stock">>): boolean {
   const ack = YMD.exec(String(p.expiry_ack ?? ""))?.[0];
-  return !!ack && ack === YMD.exec(String(p.expiry_date ?? ""))?.[0];
+  if (!ack || ack !== YMD.exec(String(p.expiry_date ?? ""))?.[0]) return false;
+  /* والرصيدُ لا يزيد على ما كان لحظةَ الكتم: طيُّ توأمٍ فيه أو شراءٌ بنفس التاريخ وحداتٌ
+   * لم يُقرّ بها أحد — فيرتفع الكتم. والبيعُ ينقصه فيبقى. */
+  const q = p.expiry_ack_qty;
+  return q == null || (Number(p.stock) || 0) <= Number(q) + 1e-9;
 }
 
 /** قيمةُ ما على الرفّ بسعر الشراء — ما يضيع إن انتهى ولم يُرجَع. */

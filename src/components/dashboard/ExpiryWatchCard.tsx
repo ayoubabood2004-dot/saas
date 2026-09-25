@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, CalendarX } from "lucide-react";
 import type { Product } from "@/types";
 import { Card, CardTitle, Button, Badge, Skeleton } from "@/components/ui";
-import { money, formatNum } from "@/lib/utils";
+import { money, formatNum, localISO } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { useOverride } from "@/lib/managerOverride";
 import { getExpiryWindows } from "@/lib/settings";
@@ -30,7 +30,10 @@ export function ExpiryWatchCard({ products, loading, failed }: { products: Produ
   const navigate = useNavigate();
   const { restricted } = useOverride();
   const w = getExpiryWindows();
-  const watch = useMemo(() => expiryWatch(products, w), [products, w.returnDays, w.criticalDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* اليومُ مفتاحُ الحساب: شاشةٌ مفتوحةٌ طوال الليل كانت تبقي منتهيةَ الأمس «بالمدة» وشارتُها
+   * «باقي -1 يوم» — والقائمةُ والشارةُ الآن من يومٍ واحد. */
+  const today = localISO();
+  const watch = useMemo(() => expiryWatch(products, w, today), [products, w.returnDays, w.criticalDays, today]); // eslint-disable-line react-hooks/exhaustive-deps
   const open = (filter: "return" | "expired") => { playTap(); navigate(`/inventory?filter=${filter}`); };
   const shown = watch.window.slice(0, 5);
 
@@ -81,7 +84,7 @@ export function ExpiryWatchCard({ products, loading, failed }: { products: Produ
             </div>
           )}
           {shown.map((p) => {
-            const d = daysToExpiry(p.expiry_date) ?? 0;
+            const d = daysToExpiry(p.expiry_date, today) ?? 0;
             return (
               <button key={p.id} type="button" onClick={() => open("return")}
                 className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface-1 p-2.5 text-start transition hover:border-warn-200 hover:bg-surface-2 dark:hover:border-warn-500/40">

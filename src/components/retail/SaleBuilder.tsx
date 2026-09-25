@@ -52,6 +52,9 @@ import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryS
  *  the normal checkout/invoice/analytics pipeline alongside products. */
 interface Line {
   id: string; // "p:<productId>" | "s:<serviceId>" | "m:<draftId>"
+  /** آخرُ يومٍ صالح لحظةَ الإضافة — احتياطٌ لا مصدر: القائمةُ تغلبه ما دام الصفُّ فيها،
+   *  ويُقرأ هو حين يصل الصفُّ من الخادم ولم تصله القائمةُ بعد (م١). */
+  expiry?: string | null;
   kind: "product" | "service" | "med";
   name: string;
   barcode: string | null;
@@ -506,8 +509,9 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
   );
 }
 
-/** إقراراتُ بوّابات الإتمام — كلٌّ ببوّابته، ويُحمل ما سبقه إلى التالية. */
-type CheckoutAck = { big?: boolean; expired?: boolean };
+/** إقراراتُ بوّابات الإتمام — كلٌّ ببوّابته وبمعرّفات السطور التي سمّاها، ويُحمل ما سبقه
+ *  إلى التالية. */
+type CheckoutAck = { bigIds?: string[]; expiredIds?: string[] };
 
 export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
@@ -742,8 +746,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /* بيعُ المنتهي (م١): سؤالٌ بالاسم والتاريخ لا `window.confirm` يُقبل بلا قراءة. والإقرارُ
    * يحمل ما سبقه (`ack`): من أقرّ «بيع الرفّ كلّه» ثم سُئل عن المنتهي لا يُسأل الأوّلَ ثانيةً. */
   const [expiredAsk, setExpiredAsk] = useState<{ lines: Line[]; ack: CheckoutAck } | null>(null);
-  /** ما أقرّ ببيعه منتهياً — يُسجَّل بالتدقيق **بعد** نجاح البيعة لا عند الضغط. */
-  const expiredAckRef = useRef<Line[] | null>(null);
+  /** ما أقرّ ببيعه منتهياً، **مربوطاً بمرجع البيعة**: يُسجَّل بعد نجاحها لا عند الضغط،
+   *  ومحاولةٌ ثانيةٌ بنفس المرجع (مهلةٌ ثم إعادة) تضيف لنفس القائمة — الخادمُ يرجع فاتورةَ
+   *  المرجع الأولى، فما أُقرّ به أوّلاً بِيع فعلاً ولو حُذف سطرُه من السلّة بعدها. */
+  const expiredAckRef = useRef<{ ref: string; names: Map<string, string> } | null>(null);
+  /** قفلُ إعادة الدخول: نقرتان على «أكيد» تصل الثانيةُ نسخةَ النافذة الخارجة بـ`busy` قديم —
+   *  فتجري البيعةُ مرّتين بنفس المرجع وتتكرّر آثارُها الجانبية (سجلٌّ طبيّ، مختبر). */
+  const inFlightRef = useRef(false);
   const [flash, setFlash] = useState<string | null>(null);
   /* ---- المضاعِف: «اكتب ٢٠ ثم امسح» -------------------------------------
    * عشرون قطعة من صنف واحد كانت تكلّف عشرين مسحة أو عشرين ضغطة. المضاعِف
@@ -891,6 +900,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       qty, stock: ret || p.pooled ? null : p.stock,
       product_id: p.id, subcategory: p.subcategory ?? null,
       byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
+      expiry: p.expiry_date ?? null,
     };
     // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
     // لكن **سعر الكيلو المعدَّل بيد الكاشير يبقى**: تعديلُ الوزن لا يجوز أن
@@ -923,6 +933,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
       return {
         id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
+        expiry: p.expiry_date ?? null,
         unit_price: startSub ? listSubPrice(p) : listPrice(p),
         unit_cost: startSub ? subCost : p.purchase_price,
         // A pooled (legacy, unknown-count) product sells from its section pool —
@@ -1918,8 +1929,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * المحفوظة لا تحمله، والقائمةُ تتحدّث (شراءُ وجبةٍ جديدة يغيّر التاريخ). والقاعدةُ من
    * `expiry.ts` — آخرُ يومٍ صالح بتاريخ الجهاز — فالكاشيرُ والمخزونُ لا يختلفان. */
   const prodById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
-  const expiryOf = (l: Line): string | null =>
-    (l.kind === "product" && !l.ret && l.product_id ? prodById.get(l.product_id)?.expiry_date ?? null : null);
+  const expiryOf = (l: Line): string | null => {
+    if (l.kind !== "product" || l.ret || !l.product_id) return null;
+    const p = prodById.get(l.product_id);
+    return p ? p.expiry_date ?? null : l.expiry ?? null;
+  };
   const expiredLines = (): Line[] => cart.filter((l) => expiryState(expiryOf(l), getExpiryWindows()) === "expired");
 
   const checkout = async (ack: CheckoutAck = {}) => {
@@ -1933,19 +1947,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       return;
     }
     if (needsDebtName) { playWarning(); return; }
-    if (!ack.big) {
-      const big = bigLines();
-      if (big.length > 0) { playWarning(); setBigSale({ lines: big, ack }); return; }
-    }
-    if (!ack.expired) {
-      const exp = expiredLines();
-      if (exp.length > 0) { playWarning(); setExpiredAsk({ lines: exp, ack }); return; }
-    }
-    expiredAckRef.current = ack.expired ? expiredLines() : null;
+    /* الإقرارُ بالسطور التي سُمّيت لا بنعمٍ عامّة: سطرٌ صار كبيراً أو منتهياً والنافذةُ مفتوحة
+     * (جوابُ خادمٍ متأخّر أضافه خلفها) لم يُسمَّ — فيُسأل عنه، ولا يمرّ بإقرارِ غيره. */
+    const big = bigLines();
+    if (big.some((l) => !ack.bigIds?.includes(l.id))) { playWarning(); setBigSale({ lines: big, ack }); return; }
+    const exp = expiredLines();
+    if (exp.some((l) => !ack.expiredIds?.includes(l.id))) { playWarning(); setExpiredAsk({ lines: exp, ack }); return; }
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     /* هل وُلد المرجعُ لهذا النداء؟ مرجعٌ قائم = محاولةٌ سابقةٌ مجهولةُ المصير (مهلة، أو
      * مسودّةٌ رجعت بعد تحديث) — ورفضُ هذه لا يقول شيئاً عن تلك. */
     const freshRef = !saleRefRef.current;
     ensureRef();
+    if (exp.length > 0 && saleRefRef.current) {
+      if (expiredAckRef.current?.ref !== saleRefRef.current) expiredAckRef.current = { ref: saleRefRef.current, names: new Map() };
+      for (const l of exp) expiredAckRef.current.names.set(l.id, l.name);
+    }
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -2120,10 +2137,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
        * قد تفشل بعده. والأسماءُ مقصوصة: المختصرُ يُسقط أيَّ قيمةٍ فوق ٢٠٠ حرف بصمت. */
       const soldExpired = expiredAckRef.current;
       expiredAckRef.current = null;
-      if (soldExpired && soldExpired.length > 0) {
+      if (soldExpired && soldExpired.names.size > 0) {
         void repo.logClientEvent("sale.expired", {
-          ref: invoiceNo(invoice.id), n: soldExpired.length, wholesale,
-          names: soldExpired.map((l) => l.name).join(" · ").slice(0, 150),
+          ref: invoiceNo(invoice.id), n: soldExpired.names.size, wholesale,
+          names: [...soldExpired.names.values()].join(" · ").slice(0, 150),
         });
       }
       /* الآن فقط يُفكّ القفل: بين جواب الخادم وهنا طلبُ التوصيل (حتى ١٢ث) والمسودّةُ ما زالت
@@ -2263,6 +2280,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     } finally {
       setBusy(false);
       setPaying(false);   // شبكةُ أمان: خطأٌ غيرُ متوقَّع بين التثبيت والختم لا يُبقي القفل
+      inFlightRef.current = false;
     }
   };
 
@@ -3616,7 +3634,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       <Dialog open={!!bigSale} onClose={() => setBigSale(null)} title={t("retail.bigSaleTitle", "تبيع الرصيد كلّه؟")} size="sm"
         footer={<>
           <Button variant="ghost" onClick={() => { playTap(); setBigSale(null); }}>{t("retail.bigSaleBack", "ارجع للسلة")}</Button>
-          <Button variant="primary" data-bigsalego onClick={() => { playTap(); const a = bigSale?.ack ?? {}; setBigSale(null); void checkout({ ...a, big: true }); }}>{t("retail.bigSaleGo", "نعم، بيع")}</Button>
+          <Button variant="primary" data-bigsalego onClick={() => { playTap(); const a = bigSale?.ack ?? {}; const ids = (bigSale?.lines ?? []).map((l) => l.id); setBigSale(null); void checkout({ ...a, bigIds: ids }); }}>{t("retail.bigSaleGo", "نعم، بيع")}</Button>
         </>}>
         <div className="space-y-2">
           <p className="text-sm text-ink-muted">{t("retail.bigSaleHint", "هذي الأصناف كميتها كبيرة وتساوي كل الرصيد. لو قصدك تسجّل بضاعة واصلة، مكانها «المشتريات» مو البيع.")}</p>
@@ -3636,7 +3654,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       <Dialog open={!!expiredAsk} onClose={() => setExpiredAsk(null)} title={t("expiry.askTitle")} size="sm"
         footer={<>
           <Button variant="ghost" onClick={() => { playTap(); setExpiredAsk(null); }}>{t("expiry.askBack")}</Button>
-          <Button variant="danger" data-expiredgo onClick={() => { playTap(); const a = expiredAsk?.ack ?? {}; setExpiredAsk(null); void checkout({ ...a, expired: true }); }}>{t("expiry.askGo")}</Button>
+          <Button variant="danger" data-expiredgo onClick={() => { playTap(); const a = expiredAsk?.ack ?? {}; const ids = (expiredAsk?.lines ?? []).map((l) => l.id); setExpiredAsk(null); void checkout({ ...a, expiredIds: ids }); }}>{t("expiry.askGo")}</Button>
         </>}>
         <div className="space-y-2" data-expiredask>
           <p className="text-sm text-ink-muted">{t("expiry.askBody")}</p>

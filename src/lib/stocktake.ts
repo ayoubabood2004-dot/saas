@@ -26,7 +26,7 @@ export const lowThreshold = (p: Product): number =>
   (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
 
 /** حالاتٌ تُلفت نظر العادّ. الترتيب هنا هو ترتيب عرضها. */
-export type StockFlag = "pooled" | "out" | "low" | "expired" | "expiring";
+export type StockFlag = "pooled" | "out" | "low" | "expired" | "expiring" | "returnWindow";
 
 /** سطرٌ واحد بورقة الجرد — منتجٌ بباركوده، أو مخزونُ صنفٍ مجمّع بلا باركود. */
 export interface StocktakeLine {
@@ -78,6 +78,9 @@ export interface Stocktake {
   /** حدُّ «قرب الانتهاء» الذي حُسبت به الأعلام — إعدادُ العيادة (0210) لا ٣٠ ثابتة،
    *  والمخرجان يلوّنان به فلا تقول الورقةُ حدّاً والإكسلُ غيرَه. */
   criticalDays: number;
+  /** ومدةُ الإرجاع — «بمدة الإرجاع» علمٌ باسمه: كارتُ الرئيسية وبطاقةُ المخزون يعدّانها
+   *  «قرب الانتهاء»، والورقةُ كانت تسمّي بالكلمة نفسها الحرجَ وحدَه (٣٠ لا ٩٠). */
+  returnDays: number;
 }
 
 const zero = (): StockTotals => ({ products: 0, units: 0, cost: 0, retail: 0 });
@@ -86,7 +89,7 @@ const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompar
 /* الأيامُ حتى النفاذ من `expiry.ts` — قاعدةُ الشاشات نفسُها: `expiry_date` آخرُ يومٍ صالح،
  * والأيامُ تقويميّةٌ بتاريخ اللقطة **المحلّيّ**. كانت هنا نسخةٌ بفرق منتصف ليل غرينتش
  * و«اليوم» غرينتشيٌّ يتجاهل `now` نفسَه: فالمادةُ حمراءُ بالشاشة «قرب الانتهاء» بالورقة. */
-function flagsOf(p: Product, days: number | null, criticalDays: number): StockFlag[] {
+function flagsOf(p: Product, days: number | null, criticalDays: number, returnDays: number): StockFlag[] {
   const out: StockFlag[] = [];
   if (p.pooled) out.push("pooled");
   else if ((p.stock || 0) <= 0) out.push("out");
@@ -94,6 +97,7 @@ function flagsOf(p: Product, days: number | null, criticalDays: number): StockFl
   if (days != null) {
     if (days < 0) out.push("expired");
     else if (days <= criticalDays) out.push("expiring");
+    else if (days <= returnDays) out.push("returnWindow");
   }
   return out;
 }
@@ -111,10 +115,11 @@ export function buildStocktake(
   companies: Company[],
   sections: CompanySection[],
   now: Date = new Date(),
-  opts: { criticalDays?: number } = {},
+  opts: { criticalDays?: number; returnDays?: number } = {},
 ): Stocktake {
   const todayISO = localISO(now);
   const criticalDays = opts.criticalDays ?? 30;
+  const returnDays = Math.max(criticalDays, opts.returnDays ?? 90);
   const totals = zero();
   const pooled = { units: 0, cost: 0, retail: 0 };
   let seq = 0;
@@ -145,7 +150,7 @@ export function buildStocktake(
       subUnit: p.has_sub_unit && (p.units_per_box ?? 0) > 0
         ? { name: p.sub_unit_name || "", perBox: p.units_per_box || 0, price: p.sub_unit_price || 0 }
         : null,
-      flags: flagsOf(p, days, criticalDays),
+      flags: flagsOf(p, days, criticalDays, returnDays),
       approx: false,
     };
   };
@@ -214,7 +219,7 @@ export function buildStocktake(
   const noCo = i18n.t("stock.noCompany", "بدون شركة");
   if (unfiled.length) push(noCo, "", unfiled.map((p) => lineOf(p, noCo, "")));
 
-  return { takenAt: now, groups, totals, pooled, criticalDays };
+  return { takenAt: now, groups, totals, pooled, criticalDays, returnDays };
 }
 
 /** كل الأسطر بترتيب الورقة — لمخرجٍ مسطَّح (إكسل) يفرزه المستخدم بنفسه. */
@@ -227,7 +232,8 @@ export const flagLabel = (f: StockFlag): string => {
     case "out": return i18n.t("stock.fOut", "نافد");
     case "low": return i18n.t("stock.fLow", "منخفض");
     case "expired": return i18n.t("stock.fExpired", "منتهي الصلاحية");
-    default: return i18n.t("stock.fExpiring", "قرب الانتهاء");
+    case "returnWindow": return i18n.t("stock.fReturn");
+    default: return i18n.t("stock.fExpiring");
   }
 };
 export const flagsText = (flags: StockFlag[]): string => flags.map(flagLabel).join(" · ");

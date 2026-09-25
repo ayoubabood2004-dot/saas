@@ -3004,6 +3004,23 @@ $P -c "update products set expiry_ack = expiry_date where id='e2100000-0000-4000
        update products set expiry_date = '2027-03-01' where id='e2100000-0000-4000-8000-000000000001';" >/dev/null
 chk "ووجبةٌ جديدةٌ بتاريخٍ آخر ترفع الكتمَ وحدَها (لا محفّز)" \
     "select (expiry_ack = expiry_date)::text from products where id='e2100000-0000-4000-8000-000000000001'" "false"
+chk "expiry_ack_qty رقمٌ nullable بلا افتراض (الرصيدُ لحظةَ الكتم)" \
+    "select data_type||'/'||is_nullable||'/'||coalesce(column_default,'-') from information_schema.columns where table_name='products' and column_name='expiry_ack_qty'" "numeric/YES/-"
+$P -c "delete from audit_log where entity_id like 'kp0210-%';
+       insert into audit_log (clinic_id, action, entity, entity_id, details, created_at) values
+         ('$C1','CLIENT','client','kp0210-1','{\"event\":\"sale.expired\"}', now() - interval '200 days'),
+         ('$C1','CLIENT','client','kp0210-2','{\"event\":\"invoice.print\"}', now() - interval '200 days'),
+         ('$C1','CLIENT','client','kp0210-3','{\"event\":\"sale.expired\"}', now() - interval '400 days');
+       select public.purge_audit_log(90, 365);" >/dev/null
+chk "الكنس: «بيعُ منتهٍ» عمرُه ٢٠٠ يوم يبقى (طبقةُ المال)، والطباعةُ بعمره تُكنس، و٤٠٠ يوم يُكنس" \
+    "select string_agg(entity_id, ',' order by entity_id) from audit_log where entity_id like 'kp0210-%'" "kp0210-1"
+# (الحجبُ عن المسجَّل يفحصه أوّلُ الحزمة قبل المنح الشامل للـ_rls_try — هنا بعده فلا يُقاس.)
+chk "  والكنسُ والمعاينةُ ما زالتا بصلاحية المُعرِّف وبمسارٍ مثبّت" \
+    "select count(*)::text from pg_proc p where p.proname in ('purge_audit_log','audit_log_preview') and p.pronamespace='public'::regnamespace and p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%'" "2"
+$P -c "insert into audit_log (clinic_id, action, entity, entity_id, details, created_at) values ('$C1','X',null,'kp0210-null','{}', now() - interval '200 days');
+       select public.purge_audit_log(90, 365);" >/dev/null
+chk "  وكيانٌ فارغٌ بلا حدثٍ ما زال يُكنس (NULL لا يُسقطه من الشرط — فخُّ 0129)" \
+    "select count(*)::text from audit_log where entity_id = 'kp0210-null'" "0"
 chk "audit_kind: «بيعُ منتهٍ» نوعٌ باسمه لا «طباعة»" \
     "select audit_kind('client', 'CLIENT', '{\"event\":\"sale.expired\"}'::jsonb) || '/' || audit_kind('client', 'CLIENT', '{\"event\":\"sale.expiredx\"}'::jsonb)" "sale_expired/print"
 

@@ -29,7 +29,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName } from "@/lib/utils";
+import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName, localISO } from "@/lib/utils";
 import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
@@ -60,16 +60,26 @@ const isLow = (p: Product) => !p.pooled && p.stock <= lowThreshold(p);
 /* والانتهاءُ من `expiry.ts` (م١) — نفسُ سلّة كارت الرئيسية حرفاً: على الرفّ، غيرُ مكتوم،
  * بمُددِ العيادة (تُقرأ عند النداء لا مرّةً بالوحدة: الإعدادُ يصل بعد التحميل). كانت ٣٠
  * ثابتةً هنا ثلاثَ مرّات، وتُعدّ المادةُ منتهيةً يومَ انتهائها من ٣ فجراً (فرقُ غرينتش). */
-const expW = () => getExpiryWindows();
-const isInReturn = (p: Product) => expiryBucket(p, expW()) === "window";
-const isExpiringSoon = (p: Product) => isInReturn(p) && (daysToExpiry(p.expiry_date) ?? Infinity) <= expW().criticalDays;
-const isExpired = (p: Product) => expiryBucket(p, expW()) === "expired";
-const isMutedExpiry = (p: Product) => expiryBucket(p, expW()) === "muted";
+/* المدتان واليومُ يُقرآن مرّةً بالثانية لا مرّةً لكلّ مادة: الشرائحُ تعدّ أربعَ مرّاتٍ بكلّ ضغطة
+ * بحث على ٣٠٠٠ مادة، وقراءةُ الإعدادات وتنسيقُ التاريخ لكلٍّ منها كانا ثُمنَي الرسم (مقيس). */
+let expCache: { at: number; w: ReturnType<typeof getExpiryWindows>; today: string } | null = null;
+const expCtx = () => {
+  const now = Date.now();
+  if (!expCache || now - expCache.at > 1000) expCache = { at: now, w: getExpiryWindows(), today: localISO() };
+  return expCache;
+};
+const expW = () => expCtx().w;
+const bucketOf = (p: Product) => { const c = expCtx(); return expiryBucket(p, c.w, c.today); };
+const isInReturn = (p: Product) => bucketOf(p) === "window";
+const isExpiringSoon = (p: Product) => isInReturn(p) && (daysToExpiry(p.expiry_date, expCtx().today) ?? Infinity) <= expW().criticalDays;
+const isExpired = (p: Product) => bucketOf(p) === "expired";
+const isMutedExpiry = (p: Product) => bucketOf(p) === "muted";
 export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted";
 const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
   all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, return: isInReturn, expired: isExpired, muted: isMutedExpiry,
 };
-const isStockFilter = (v: string | null): v is StockFilter => !!v && v in STOCK_FILTERS;
+/* `in` يقبل الموروث: ?filter=__proto__ أو hasOwnProperty كان يمرّ فيسقط المخزونُ كلُّه. */
+const isStockFilter = (v: string | null): v is StockFilter => !!v && Object.prototype.hasOwnProperty.call(STOCK_FILTERS, v);
 
 /* اسمُ الشركة/الصنف: `normName` كما يُحفظ و`normKey` كما يُقارَن — **مستوردان**
  * من `@/lib/utils` بعد أن كانا معرَّفَين هنا وبشاشة الشراء والكتلوج المبدئيّ.
@@ -675,7 +685,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
   const { t, i18n } = useTranslation();
   const { stockLocked: locked } = useOverride();
   const toast = useToast();
-  const expSt = expiryState(p.expiry_date, expW());
+  const expSt = expiryState(p.expiry_date, expW(), expCtx().today);
   const expired = expSt === "expired";
   const expiringSoon = expSt === "critical";
   const muted = isExpiryMuted(p);
@@ -683,12 +693,12 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
    * بتاريخٍ آخر ترفعه وحدَها. الكتابةُ برمية (`updated<T>`): موظّفٌ لا تسمح له السياسةُ
    * يسمع «ما انحفظ» لا «انكتم» كاذبة. ولا كتابةَ بلا تغيير — كلُّ حفظٍ سطرُ تدقيق. */
   const [muting, setMuting] = useState(false);
-  const canMute = !!onMuteChanged && !locked && !!p.expiry_date && (muted || expiryBucket(p, expW()) != null);
+  const canMute = !!onMuteChanged && !locked && !!p.expiry_date && (muted || bucketOf(p) != null);
   const toggleMute = async () => {
     if (muting) return;
     setMuting(true);
     try {
-      await repo.updateProduct(p.id, { expiry_ack: muted ? null : String(p.expiry_date).slice(0, 10) });
+      await repo.updateProduct(p.id, muted ? { expiry_ack: null, expiry_ack_qty: null } : { expiry_ack: String(p.expiry_date).slice(0, 10), expiry_ack_qty: Number(p.stock) || 0 });
       playSuccess();
       toast.success(muted ? t("expiry.unmuteDone", { name: p.name }) : t("expiry.muteDone", { name: p.name }));
       onMuteChanged?.();
@@ -818,7 +828,8 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
       return [...list].sort((a, b) => Number(isOut(b)) - Number(isOut(a)) || a.stock - b.stock);
     }
     if (filter === "soon" || filter === "return" || filter === "expired" || filter === "muted") {
-      return [...list].sort((a, b) => (daysToExpiry(a.expiry_date) ?? 1e9) - (daysToExpiry(b.expiry_date) ?? 1e9));
+      const today = expCtx().today;
+      return [...list].sort((a, b) => (daysToExpiry(a.expiry_date, today) ?? 1e9) - (daysToExpiry(b.expiry_date, today) ?? 1e9));
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps

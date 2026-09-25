@@ -660,6 +660,8 @@ export interface Product {
   expiry_date?: string | null; // ISO date
   /** 0210: التاريخُ الذي كُتم عنده تنبيهُ الانتهاء — مكتومٌ ما دام يساوي expiry_date (`isExpiryMuted`). */
   expiry_ack?: string | null;
+  /** 0210: الرصيدُ لحظةَ الكتم — زيادةٌ عليه (طيُّ توأم، شراءٌ بنفس التاريخ) ترفع الكتم. */
+  expiry_ack_qty?: number | null;
   /** Fractional sales: the box can be broken into smaller units (e.g. a pill from a strip). */
   has_sub_unit?: boolean;
   /** Name of one sub-unit shown at the till, e.g. "حبة" / "شريط" / "مل". */

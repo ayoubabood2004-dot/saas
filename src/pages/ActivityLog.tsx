@@ -360,9 +360,10 @@ export function ActivityLog() {
         if (r.action === "INSERT") return t("act.prodAdd", { name, defaultValue: "أضاف منتجاً: {{name}}" });
         if (del) return t("act.prodDel", { name, defaultValue: "حذف المنتج: {{name}}" });
         /* الكتمُ وحدَه (0210) جملتُه باسمه — لا «عدّل المنتج» بحقلٍ خامٍ اسمُه expiry_ack. */
-        const ack = changesOf(d);
-        if (ack.length === 1 && ack[0].key === "expiry_ack") {
-          return ack[0].to ? t("act.expiryMuted", { name }) : t("act.expiryUnmuted", { name });
+        const ch = changesOf(d);
+        const ack = ch.find((c) => c.key === "expiry_ack");
+        if (ack && ch.every((c) => c.key === "expiry_ack" || c.key === "expiry_ack_qty")) {
+          return ack.to ? t("act.expiryMuted", { name }) : t("act.expiryUnmuted", { name });
         }
         return t("act.prodUpd", { name, stock: formatNum(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" });
       }

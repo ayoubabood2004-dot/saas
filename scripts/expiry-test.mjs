@@ -73,6 +73,10 @@ console.log("▸ ٤) الكتم");
 check("مكتومٌ حين يساوي التاريخَ", X.isExpiryMuted({ expiry_date: "2026-10-01", expiry_ack: "2026-10-01" }));
 check("  ويرتفع بتغيّر التاريخ (وجبةٌ جديدة)", !X.isExpiryMuted({ expiry_date: "2027-03-01", expiry_ack: "2026-10-01" }));
 check("  والطرفان مطبَّعان (تاريخٌ طويلٌ بالتجريبيّ)", X.isExpiryMuted({ expiry_date: "2026-10-01T00:00:00.000Z", expiry_ack: "2026-10-01" }));
+check("  والبيعُ ينقص الرصيدَ فيبقى مكتوماً", X.isExpiryMuted({ expiry_date: "2026-10-01", expiry_ack: "2026-10-01", expiry_ack_qty: 2, stock: 1 }));
+check("  وطيُّ توأمٍ فيه (رصيدٌ أكبرُ بنفس التاريخ) يرفعه — وحداتٌ لم يُقرّ بها أحد",
+  !X.isExpiryMuted({ expiry_date: "2026-10-01", expiry_ack: "2026-10-01", expiry_ack_qty: 2, stock: 12 }));
+check("  وكتمٌ قديمٌ بلا رصيدٍ محفوظ يبقى بالتاريخ وحدَه", X.isExpiryMuted({ expiry_date: "2026-10-01", expiry_ack: "2026-10-01", expiry_ack_qty: null, stock: 99 }));
 check("  وبلا كتمٍ أو بلا تاريخ = غيرُ مكتوم", !X.isExpiryMuted({ expiry_date: "2026-10-01", expiry_ack: null }) && !X.isExpiryMuted({ expiry_date: null, expiry_ack: null }));
 
 console.log("▸ ٥) المرورُ الواحد");
@@ -125,11 +129,13 @@ console.log("▸ ٧) بوّابةُ البيع (SaleBuilder — بنيةً، و�
 {
   const { readFileSync } = await import("node:fs");
   const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
-  const co = sb.slice(sb.indexOf("const checkout = async (ack: CheckoutAck = {})"), sb.indexOf("ensureRef();", sb.indexOf("const checkout = async")));
+  const co = sb.slice(sb.indexOf("const checkout = async (ack: CheckoutAck = {})"), sb.indexOf("setBusy(true);", sb.indexOf("const checkout = async")));
   check("البوّابةُ داخل checkout وقبل توليد المرجع (إلغاءٌ لا يستهلك مرجعاً)", co.includes("expiredLines()") && co.includes("setExpiredAsk("), co.slice(0, 80));
-  check("  وبعد بوّابة الرفّ كلّه، والإقرارُ مرحليٌّ لا boolean واحد (إقرارُ الأولى لا يُسقط الثانية)",
-    co.indexOf("if (!ack.big)") > -1 && co.indexOf("if (!ack.big)") < co.indexOf("if (!ack.expired)") && !/force/.test(co));
-  check("  والتأكيدان يحملان ما سبقهما", sb.includes("checkout({ ...a, big: true })") && sb.includes("checkout({ ...a, expired: true })"));
+  check("  وبعد بوّابة الرفّ كلّه، والإقرارُ بمعرّفات السطور المسمّاة لا بنعمٍ عامّة",
+    co.indexOf("!ack.bigIds?.includes(l.id)") > -1 && co.indexOf("!ack.bigIds?.includes(l.id)") < co.indexOf("!ack.expiredIds?.includes(l.id)") && !/force/.test(co));
+  check("  والتأكيدان يحملان ما سبقهما ويسمّيان سطورهما", sb.includes("checkout({ ...a, bigIds: ids })") && sb.includes("checkout({ ...a, expiredIds: ids })"));
+  check("  وقفلُ إعادة الدخول: نقرتان لا تبيعان مرّتين", co.includes("if (inFlightRef.current) return;") && /finally \{\s*setBusy\(false\);\s*setPaying\(false\);[^\n]*\n\s*inFlightRef\.current = false;/.test(sb));
+  check("  والإقرارُ مربوطٌ بمرجع البيعة (إعادةٌ بنفس المرجع تُسجَّل)", co.includes("expiredAckRef.current?.ref !== saleRefRef.current"));
   check("  نافذةٌ حقيقية لا window.confirm", sb.includes("data-expiredgo") && !/window\.confirm\s*\(/.test(sb));
   const done = sb.indexOf("setDone({ invoice, items: invItems });");
   const log = sb.indexOf('repo.logClientEvent("sale.expired"');
@@ -142,7 +148,8 @@ console.log("▸ ٧) بوّابةُ البيع (SaleBuilder — بنيةً، و�
   check("والافتراضان ٩٠/٣٠ واحدٌ بالإعدادات والهجرة وexpiry.ts",
     /expiry_return_days: 90, expiry_critical_days: 30/.test(set) && /expiry_return_days integer not null default 90/.test(mig)
     && /expiry_critical_days integer not null default 30/.test(mig) && X.EXPIRY_DEFAULTS.returnDays === 90 && X.EXPIRY_DEFAULTS.criticalDays === 30);
-  check("وexpiry_ack nullable بالهجرة (استرجاعُ اللقطات القديمة)", /add column if not exists expiry_ack date;/.test(mig));
+  check("وexpiry_ack وexpiry_ack_qty nullable بالهجرة (استرجاعُ اللقطات القديمة)",
+    /add column if not exists expiry_ack date;/.test(mig) && /add column if not exists expiry_ack_qty numeric;/.test(mig));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} expiry-test: ${passes} نجحت، ${fails} فشلت`);

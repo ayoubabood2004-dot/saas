@@ -29,7 +29,7 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   const stamp = now.toLocaleDateString("ar-IQ", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) +
     " · " + now.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
 
-  const take = buildStocktake(products, companies, sections, now, { criticalDays: getExpiryWindows().criticalDays });
+  const take = buildStocktake(products, companies, sections, now, getExpiryWindows());
 
   const rowFor = (l: StocktakeLine): string => {
     const isPool = l.kind === "pool";

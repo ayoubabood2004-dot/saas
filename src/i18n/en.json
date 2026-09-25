@@ -4586,7 +4586,7 @@
     "fOut": "Out of stock",
     "fLow": "Low",
     "fExpired": "Expired",
-    "fExpiring": "Expiring soon",
+    "fExpiring": "Critical expiry",
     "hBarcode": "Barcode",
     "hAltCodes": "Extra codes",
     "hName": "Product",
@@ -4645,7 +4645,8 @@
     "gkId": "The ID",
     "gvId": "The last column is the product's ID in the system. Do not edit it; it is what matches a row to its product when two names look alike.",
     "gkFreeze": "Freezing headers",
-    "gvFreeze": "To keep the header row visible while scrolling: View tab → Freeze Panes → Freeze Top Row."
+    "gvFreeze": "To keep the header row visible while scrolling: View tab → Freeze Panes → Freeze Top Row.",
+    "fReturn": "In return window"
   },
   "round": {
     "ready": "Today's round is ready",

@@ -20,6 +20,11 @@
 --    غائبٌ من لقطةٍ أقدم يصير NULL لا الافتراض — وعمودٌ NOT NULL كان سيجعل كلَّ صفٍّ
 --    بسلّة المحذوفات غيرَ قابلٍ للاسترجاع (مقيسٌ على نسخة 0197 الحقيقية). والكتابةُ
 --    بسياسة `products_write` القائمة (مدير/بيطريّ) — لا دالّةَ جديدة.
+--    ومعه `expiry_ack_qty`: الرصيدُ لحظةَ الكتم. الكتمُ يسري ما دام الرصيدُ لا يزيد عليه —
+--    البيعُ ينقصه فيبقى مكتوماً، أمّا طيُّ توأمٍ فيه (merge_products يجمع الرصيدَ ويأخذ
+--    greatest للتاريخ فيبقى التاريخُ نفسَه أحياناً) أو شراءٌ بنفس التاريخ فيزيده: وحداتٌ
+--    لم يُقرّ بها أحد، فيرتفع الكتم. بلا هذا كان كتمُ مادةٍ ثم طيُّ توأمها فيها يُسكت
+--    رصيدَ التوأم كلَّه (أمسكه تدقيقٌ عدائيّ). nullable كأخيه.
 -- ٣) `audit_kind`: حدثُ «بيع منتهٍ بعد تأكيدٍ بالاسم» (`sale.expired`) نوعٌ باسمه
 --    `sale_expired` — كان كلُّ حدثٍ عميلٍ مجهول يُصنَّف «طباعة». ما سواه كما بـ0209 حرفاً.
 -- ============================================================================
@@ -32,6 +37,8 @@ comment on column public.clinic_prefs.expiry_return_days is 'مدة إرجاع �
 comment on column public.clinic_prefs.expiry_critical_days is 'حدّ الانتهاء الحرج بالأيام (افتراضي 30)';
 
 alter table public.products add column if not exists expiry_ack date;
+alter table public.products add column if not exists expiry_ack_qty numeric;
+comment on column public.products.expiry_ack_qty is 'الرصيد لحظة كتم تنبيه الانتهاء — الكتم يرتفع إن زاد الرصيد عليه (طيّ/شراء). NULL = بلا قيد';
 comment on column public.products.expiry_ack is 'تاريخ الانتهاء الذي كُتم عنده التنبيه — مكتوم ما دام = expiry_date. NULL = غير مكتوم. nullable عمداً (استرجاع اللقطات القديمة)';
 
 create or replace function audit_kind(p_entity text, p_action text, p_details jsonb) returns text
@@ -81,3 +88,80 @@ language sql immutable set search_path = public as $$
     else 'other' end
   from c
 $$;
+
+-- ── ٤) «بيعُ منتهٍ» يعيش عمرَ الفاتورة لا عمرَ الطباعة ──────────────────────
+-- `log_client_event` يكتب بكيان `client`، والكنسُ الليليّ (0129) يعدّ `client`
+-- ضجيجاً يُحذف بعد ٩٠ يوماً — والفاتورةُ نفسُها وحركاتُ مخزونها تبقى ٣٦٥. فبعد
+-- ثلاثة أشهر يبقى البيعُ ويختفي أنه كان منتهياً بإقرارٍ بالاسم (أمسكه تدقيقٌ
+-- عدائيّ). الحدثُ وحدَه ينتقل لطبقة المال؛ بقيةُ `client` (طباعة، تصدير) كما كانت.
+-- الجسمُ نسخةُ 0129 حرفاً (والمنشورُ مطابقٌ لها منطقاً — مقيسٌ ٢٥/٩) إلا الشرطين.
+create or replace function public.purge_audit_log(
+  p_days       int default 90,
+  p_days_money int default 365
+)
+returns bigint
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  n_noise bigint;
+  n_money bigint;
+  money_entities constant text[] := array[
+    'invoices', 'invoice_items',
+    'purchases', 'purchase_items', 'purchase_payments',
+    'expenses', 'products',
+    'delivery_orders', 'store_orders'
+  ];
+begin
+  if p_days is null or p_days < 7 then
+    raise exception 'purge_audit_log: مدّة الاحتفاظ لازم ٧ أيام فأكثر (وصلت %)', p_days;
+  end if;
+  if p_days_money is null or p_days_money < p_days then
+    raise exception 'purge_audit_log: مدّة المال (%) لازم ما تقلّ عن مدّة الباقي (%)', p_days_money, p_days;
+  end if;
+
+  delete from public.audit_log
+  where (entity is null or entity <> all (money_entities))
+    -- coalesce لازم: كيانٌ فارغ يجعل الشرطَ NULL فيسقط الصفُّ من الكنس للأبد — فخُّ 0129 نفسُه.
+    and not coalesce(entity = 'client' and details->>'event' = 'sale.expired', false)
+    and created_at < now() - make_interval(days => p_days);
+  get diagnostics n_noise = row_count;
+
+  delete from public.audit_log
+  where (entity = any (money_entities) or (entity = 'client' and details->>'event' = 'sale.expired'))
+    and created_at < now() - make_interval(days => p_days_money);
+  get diagnostics n_money = row_count;
+
+  return n_noise + n_money;
+end $$;
+revoke all on function public.purge_audit_log(int, int) from public, anon, authenticated;
+
+create or replace function public.audit_log_preview(
+  p_days int default 90, p_days_money int default 365
+)
+returns table (
+  tier text, would_delete bigint, would_keep bigint, oldest timestamptz, newest timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with e as (
+    select created_at,
+           entity = any (array['invoices','invoice_items','purchases','purchase_items',
+                               'purchase_payments','expenses','products',
+                               'delivery_orders','store_orders'])
+           or coalesce(entity = 'client' and details->>'event' = 'sale.expired', false) as is_money
+    from public.audit_log
+  )
+  select
+    case when is_money then 'مال ومخزون' else 'حركة يومية' end,
+    count(*) filter (where created_at <  now() - make_interval(days => case when is_money then p_days_money else p_days end)),
+    count(*) filter (where created_at >= now() - make_interval(days => case when is_money then p_days_money else p_days end)),
+    min(created_at), max(created_at)
+  from e group by is_money order by 1;
+$$;
+revoke all on function public.audit_log_preview(int, int) from public, anon, authenticated;
