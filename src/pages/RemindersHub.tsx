@@ -503,7 +503,11 @@ export function RemindersHub() {
    */
   const openInCampaigns = (r: Row) => {
     playTap();
-    const variants = waVariants(POOL_OF[r.kind]);
+    /* `waVariants` ترمي إن لم يصل نصفُ القاموس البارد — ولا نصوغ رسالةً فارغةً
+     * لزبونٍ ولا ننقل الدكتورَ إلى حملةٍ بلا نصّ: نقولها ويُعيد الضغط. */
+    let variants: string[];
+    try { variants = waVariants(POOL_OF[r.kind]); }
+    catch { toast.error(t("errors.tryAgain", "حاول مرة أخرى.")); return; }
     const idx = pickVariantIndex(`${r.id}|${r.date}`, Math.max(1, variants.length));
     const message = renderWaTemplate(variants[idx] ?? "", {
       owner: r.ownerName || "",

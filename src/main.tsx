@@ -5,7 +5,7 @@ import App from "./App";
 import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./components/ui";
 import i18next from "i18next";
-import { i18nReady } from "./i18n";
+import { i18nReady, ensureDictionary } from "./i18n";
 import "./index.css";
 import { emitGlobalToast } from "./lib/globalToast";
 import { pruneStaleStorage } from "./lib/demoStore";
@@ -98,6 +98,13 @@ window.addEventListener("unhandledrejection", (e) => {
 // worker, then reload — main.tsx re-registers it immediately after boot, so
 // offline support returns on its own. Guarded to one attempt per 30s.
 window.addEventListener("vite:preloadError", () => { void recoverFromStaleShell(); });
+
+/* نصفُ القاموس العربيّ البارد يبدأ تنزيلُه **الآن**، موازياً لحزمة الصفحة الأولى
+ * لا بعدها — فحين تطلبه `page()` يكون بالطريق أو واصلاً. ولا يؤخّر رسمَ القشرة:
+ * نصوصُها حارّة. وفشلُه لا يُقال هنا (لا توستَ `errors.async` عند الإقلاع):
+ * بوّابةُ الصفحة تنتظر الوعدَ نفسَه وتعرض «أعد المحاولة» بنفسها. ومستخدمُ
+ * الإنكليزية لا ينزّل شيئاً (لغتُه لا تسقط للعربية). */
+void ensureDictionary().catch(() => { /* تقوله بوّابةُ الصفحة */ });
 
 /* الرسمُ ينتظر حزمةَ اللغة — للعربية (الافتراض) وعدٌ محلولٌ سلفاً فلا تأخير،
  * ولغيرها انتظارُ حزمتِها بدل وميضِ لغةٍ ثم انقلابها. و`i18nReady` لا ترفض

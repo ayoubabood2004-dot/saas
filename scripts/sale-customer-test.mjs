@@ -85,7 +85,32 @@ console.log("▸ الشاشةُ: الزبونُ يروح، والسلّةُ وا
 const clearAt = SB.indexOf("const clearCustomerNow = () => {");
 const clearFn = clearAt < 0 ? "" : SB.slice(clearAt, SB.indexOf("const askClearCustomer"));
 check("زرٌّ صغيرٌ للزبون وحده (data-custclear)", /data-custclear type="button"/.test(SB) && /retail\.custClear"/.test(SB));
-check("  يظهر حين يكون هناك زبونٌ يُمسح", /\{\(!!name\.trim\(\) \|\| !!phone\.trim\(\) \|\| salePets\.length > 0\) && \(/.test(SB));
+check("  يظهر حين يكون هناك زبونٌ يُمسح",
+  /const hasCustomer = !!name\.trim\(\) \|\| !!phone\.trim\(\) \|\| salePets\.length > 0;/.test(SB) && /\{hasCustomer && \(\s*<button\s*data-custclear type="button"/.test(SB));
+/* المالك: «وينه ما لكيت شيء». الأيقونةُ وحدَها بترويسة السلّة لا تُرى — فزرٌّ **بكلمة**
+ * بجنب حقول الزبون، بكلّ شكلٍ تأخذه الشاشة: البطاقة (الترويسة)، السطرُ النحيف المفتوح
+ * دائماً (0147)، والسطرُ المطويّ «البيع لـ…» بالشاشة الجديدة. ونفسُ الفعل لا نسخةٌ منه. */
+const nearAt = SB.indexOf("const custClearBtn = (");
+const nearBtn = nearAt < 0 ? "" : SB.slice(nearAt, SB.indexOf("</button>", nearAt));
+check("زرُّ «امسح الزبون» بكلمةٍ بجنب حقوله (لا أيقونةَ وحدَها بترويسة السلّة)",
+  nearBtn !== "" && /data-custclearnear=\{where\}/.test(nearBtn) && /\{t\("retail\.custClearShort", "امسح الزبون"\)\}/.test(nearBtn));
+check("  ونفسُ الفعل بكلّ موضع: نافذةُ السطور المربوطة وحارسُ الدفعة المعلَّقة",
+  /onClick=\{\(e\) => \{ e\.stopPropagation\(\); askClearCustomer\(\); \}\}/.test(nearBtn) && /disabled=\{paying\}/.test(nearBtn));
+check("  بالبطاقة: بترويستها", /\{hasCustomer && custClearBtn\("head"\)\}/.test(SB));
+/* المراجعة قاست العمودَ الخامس: عرضُه كاملاً قبل الحقلين، فيُعصر الاسمُ والهاتفُ حرفين أو
+ * ثلاثة على لابتوب ١٢٨٠ لحظةَ أوّل حرف (والصفرَ على ١٠٢٤ ويفيض الزرُّ عن البطاقة). */
+check("  وبالسطر النحيف المفتوح دائماً: سطرُه تحت الحقول — **لا عمودٌ خامس** يعصرهما",
+  /\{customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">\{custClearBtn\("slim"\)\}<\/div>\}/.test(SB)
+  && !/grid-cols-\[1fr,1fr,minmax\(10rem,0\.8fr\),auto,auto\]/.test(SB)
+  && /customerOpenPref \? "sm:grid-cols-\[1fr,1fr,minmax\(10rem,0\.8fr\),auto\]" : "sm:grid-cols-2"/.test(SB));
+check("  والأيقونةُ بترويسة السلّة مخفيّةٌ على الهاتف (كانت تُفيض الترويسةَ عن ٣٧٥px)",
+  /data-custclear type="button"[\s\S]{0,700}?className=\{cn\("hidden place-items-center[^"]*sm:grid"/.test(SB));
+check("  وبالسطر المطويّ «البيع لـ…»: بجنبه لا داخله (زرٌّ داخل زرٍّ لا يصحّ)",
+  /data-saledetails[\s\S]{0,900}?<\/button>\s*\{hasCustomer && custClearBtn\("line"\)\}/.test(SB));
+{
+  const ar = JSON.parse(read("src/i18n/ar.json") || "{}"), en = JSON.parse(read("src/i18n/en.json") || "{}");
+  check("  والكلمةُ مترجمةٌ بالملفّين", ar.retail?.custClearShort === "امسح الزبون" && typeof en.retail?.custClearShort === "string" && en.retail.custClearShort.length > 0);
+}
 check("المسحُ يشمل الاسمَ والهاتفَ والحيواناتِ والملاحظةَ وعنوانَ التوصيل",
   ["setName(\"\")", "setPhone(\"\")", "setSalePets([])", "setSaleNotes(\"\")", "setDAddress(\"\")", "setDZone(\"\")"]
     .every((s) => clearFn.includes(s)), clearFn.slice(0, 80));

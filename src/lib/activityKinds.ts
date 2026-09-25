@@ -53,7 +53,7 @@ export function auditKind(entity: string, action: string, details: Record<string
   if (e === "client") {
     const ev = String(d["event"] ?? "");
     if (ev.startsWith("override.")) return "override";
-    if (ev.startsWith("report.")) return "export";
+    if (ev.startsWith("report.")) return "export"; /* not-i18n-key: اسمُ حدثٍ بسجلّ التدقيق لا مفتاحُ ترجمة */
     return "print";
   }
   if (e === "invoices") {

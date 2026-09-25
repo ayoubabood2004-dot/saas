@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
     const t = (key: string, fallback: string) => {
       try {
-        return i18next.t(key, { defaultValue: fallback }) as string;
+        return i18next.t(key, { defaultValue: fallback }) as string; /* i18n-opaque: لا يُمرَّر لها إلا مفاتيحُ errors الحارّة، حرفياً أدناه */
       } catch {
         return fallback;
       }

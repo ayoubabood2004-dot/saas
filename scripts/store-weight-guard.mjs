@@ -7,19 +7,22 @@
  *
  * والإصلاحُ يتآكل بصمت: `import` واحدٌ من `@/lib/repo` بصفحةِ زائر يُرجع
  * القشرةَ كلَّها، ولا يظهر بمراجعةِ شِفرة. فالحارسُ يقرأ `dist` المبنيَّ فعلاً
- * — لا الشِفرةَ ولا النيّة — ويشترط ثلاثة:
+ * — لا الشِفرةَ ولا النيّة — ويشترط أربعة:
  *
  *   ١) مجموعُ ما تُعلنه `store.html` مضغوطاً دون السقف.
  *   ٢) لا حزمةَ `supabase` ولا `motion` بمسار الزائر إطلاقاً (الأولى بديلُها
  *      `storeApi`، والثانية بديلُها حركاتُ CSS بـtailwind.config).
  *   ٣) و`index.html` لا تتضخّم بالمقابل — إصلاحٌ ينقل الوزنَ ليس إصلاحاً.
+ *   ٤) ونصفُ القاموس العربيّ البارد (`arCold-*.js`) حزمةٌ واحدةٌ بسقفها، لا
+ *      يُعلنها مستندٌ، ويخبّئها العاملُ الخدميّ — نقلُ الوزن إلى حزمةٍ كسولةٍ لا
+ *      يُحسب مكسباً إلا وهي مقيسةٌ هي أيضاً.
  *
  * **السقفُ ينزل ولا يصعد** (كسقفِ النصّ الصلب بـi18n-guard): من احتاج رفعَه
  * يقيس أوّلاً ويكتب لماذا.
  *
  *   node scripts/store-weight-guard.mjs
  * ==========================================================================*/
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 
 /* المستندُ نفسُه يُحسب، لا ملفّاتُه وحدَها: أنماطُ صفحة الزائر محقونةٌ داخله
@@ -133,18 +136,34 @@ import { gzipSync } from "node:zlib";
  * (التجريبيّ والسحابيّ، والمرآةُ إلزامية) ورسائلُ ثلاث — أمّا مركزُ التذكيرات فكسول.
  * **وثالثُ رفعٍ لنفس السبب خلال ثلاثة أيام: فالمهمّةُ #16 (النطاقاتُ الباردة، ١٦٬٦١١
  * بايتاً مقيسة) هي التالية — والرفعُ الرابع لا يُعرض قبلها.** */
-/* ثم 421,000 ⇒ **375,000** — نزولٌ لا رفع: المهمّةُ #16 نُفّذت (م٠·١). ٢٢ نطاقاً حارّاً
- * تبقى بالإقلاع (ما تقرؤه القشرة)، و٧٦ نطاقاً بارداً خرجت لحزمة `arCold` تُنزَّل مع
- * الإقلاع بالتوازي وتنتظرها كلُّ شاشةٍ بـ`page()` قبل رسمها. المقيس على نفس الآلة:
- * main **420,578 ⇒ 373,161** (−47,417)، والحزمةُ الباردة ٤٨٬٥٧٢ مضغوطة. التقديرُ
- * أعلاه (١٦٬٦١١) كان ثلثَ الحقيقة: حسبَ سبعةَ نطاقاتٍ كبيرة، والمنقولُ ستّةٌ وسبعون.
+/* ثم 421,000 ⇒ **376,000** — نزولٌ لا رفع، وهو المهمّةُ #16 نفسُها. والجذرُ الذي
+ * رفع السقفَ ثلاثاً بثلاثة أيام: `src/i18n/index.ts` كانت تستورد `ar.json` كلَّه
+ * استيراداً ثابتاً، والسلسلةُ `repo → payrollDemo → payrollLabels → @/i18n` جرّته
+ * إلى حزمة `repo-*.js` الإقلاعية — ٧٨ كيلو مضغوطة، ٥٥٪ منها، أغلبُها نصوصُ شاشاتٍ
+ * كسولةٍ أصلاً. فكلُّ نصٍّ جديدٍ لشاشةٍ عميقةٍ كان يُدفع من مسار الإقلاع.
  *
- * **وأوّلُ بناءٍ للانقسام لم ينقسم** — وقالها هذا الحارسُ لا غيرُه: main بقي
- * 420,578 وحزمةُ arCold ١٫٥ كيلو. Rollup يقسم بالوحدة لا بالاسم، فملفُّ ar.json
- * الواحدُ الذي يستورده الإقلاعُ بقي فيه بكلّ أسمائه. العلاجُ بـ`vite.config.ts`
- * (`arColdSplit`)، والفحصُ بالبايت بـ`i18n-split-guard --post-build`. فلا يُصدَّق
- * انقسامٌ ولا تقسيمُ حزمةٍ بلا رقمِ هذا الحارس بعده. */
-const BUDGET = { store: 175_000, main: 375_000 };
+ * فقُسم القاموسُ عند البناء من مصدرٍ واحد (`scripts/i18n-split.mjs`): ٢٤ نطاقاً
+ * تقرؤها شِفرةُ الإقلاع (`src/i18n/hot-paths.json`) مع القشرة، و٧٤ بحزمةٍ واحدةٍ
+ * كسولة `arCold-*.js` تبدأ مع الإقلاع وتنتظرها كلُّ صفحة (`page()`). ويحرس
+ * `i18n-hot-guard` ألّا تقرأ شِفرةُ الإقلاع مفتاحاً بارداً.
+ *
+ * المقيسُ على نفس الآلة (`npm run build` بلا القسمة ثم بها):
+ *   • main.html   420,317 ⇒ **374,289** (−46,028)
+ *   • arCold      **47,429** — حزمةٌ واحدة، لا يُعلنها مستند، و`sw.js` يخبّئها
+ *   • store.html  150,148 ⇒ 150,145 (لم تمسّها القسمة)
+ * فالسقفُ 376,000 (فسحةُ ١٫٧ كيلو كما كانت تقريباً)، وسقفُ النصف البارد 50,000
+ * (فسحةُ ٢٫٦ كيلو) — **والرقمان قرارُ المالك، وله أن يعدّلهما**. وجُرّب الحذفُ فعلاً:
+ * بلا `i18nSplit()` صارت main 420,754 فسقطت هنا.
+ *
+ * **ولا يُقال «أسرع» بلا تحفّظ**: أوّلُ صفحةٍ كسولةٍ لعربيٍّ بمخبأٍ فارغ تنزّل
+ * main + arCold = 421,718 مقابل 420,317 قبلاً (+١٫٤ كيلو: مجريا ضغطٍ يتشاركان
+ * أقلّ، وطلبٌ إضافيّ) — ولهذا يطبع الحارسُ هذا المجموعَ بكلّ بناء. المكسبُ
+ * الحقيقيّ: القشرةُ والدوّارةُ تُرسمان قبلُ بـ٤٦ كيلو، ونحو ١٠٥ كيلو من كائن
+ * جافاسكربت خامّ خرجت من تحليل الإقلاع، والإنكليزيُّ لا ينزّل النصفَ البارد أبداً،
+ * **ونصوصُ الشاشات الكسولة الجديدة لم تعد تُدفع من الإقلاع**. وحذفُ `i18nSplit()`
+ * من `vite.config.ts` يعيد القاموسَ كلَّه إلى main فيتجاوز هذا السقف — حارسٌ ثانٍ
+ * للقسمة مستقلٌّ عن تأكيدات البناء. */
+const BUDGET = { store: 175_000, main: 376_000, arCold: 50_000 };
 const BANNED = [/\/assets\/supabase-/, /\/assets\/motion-/, /\/assets\/charts-/];
 
 if (!existsSync("dist/store.html") || !existsSync("dist/index.html")) {
@@ -156,10 +175,12 @@ let fails = 0;
 const assetsOf = (html) =>
   [...readFileSync(html, "utf8").matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
 
+const totals = {};
 for (const [name, html] of [["store", "dist/store.html"], ["main", "dist/index.html"]]) {
   const files = assetsOf(html);
   const doc = gzipSync(readFileSync(html)).length;
   const total = doc + files.reduce((n, f) => n + gzipSync(readFileSync(`dist${f}`)).length, 0);
+  totals[name] = total;
   const ok = total <= BUDGET[name];
   if (!ok) fails++;
   console.log(`   ${ok ? "✓" : "✗"} ${name}.html: ${total.toLocaleString("en")} بايت مضغوطة من ${BUDGET[name].toLocaleString("en")} (المستند ${doc.toLocaleString("en")} + ${files.length} ملفاً)`);
@@ -179,8 +200,32 @@ for (const [name, html] of [["store", "dist/store.html"], ["main", "dist/index.h
   }
 }
 
+/* ٤) النصفُ البارد من القاموس: حزمةٌ واحدة، خارج المستندين، داخل مخبأ العامل
+ *    الخدميّ (وإلا فتحُ عيادةٍ بلا إنترنت يرسم صفحاتٍ بلا نصوص)، وبسقفه. */
+{
+  const cold = readdirSync("dist/assets").filter((f) => /^arCold-[\w-]+\.js$/.test(f));
+  if (cold.length !== 1) {
+    fails++;
+    console.error(`   ✗ حزمُ النصف البارد arCold-*.js: ${cold.length} (المطلوب واحدة) — القسمةُ (i18nSplit بـvite.config.ts) لم تعمل أو انشطرت`);
+  } else {
+    const [f] = cold;
+    const gz = gzipSync(readFileSync(`dist/assets/${f}`)).length;
+    const inHtml = ["dist/index.html", "dist/store.html"].filter((h) => readFileSync(h, "utf8").includes(f));
+    const sw = existsSync("dist/sw.js") && readFileSync("dist/sw.js", "utf8").includes(`assets/${f}`);
+    const ok = gz <= BUDGET.arCold;
+    if (!ok) fails++;
+    console.log(`   ${ok ? "✓" : "✗"} arCold: ${gz.toLocaleString("en")} بايت مضغوطة من ${BUDGET.arCold.toLocaleString("en")} (${f})`);
+    if (inHtml.length) { fails++; console.error(`   ✗ النصفُ البارد مُعلَنٌ بـ${inHtml.join("، ")} — صار يُحمَّل قبل أوّل رسم`); }
+    else console.log("   ✓ لا يُعلنه index.html ولا store.html");
+    if (!sw) { fails++; console.error("   ✗ النصفُ البارد غائبٌ عن sw.js — عيادةٌ بلا إنترنت ستفتح صفحاتٍ بلا نصوصها"); }
+    else console.log("   ✓ مخبوءٌ بالعامل الخدميّ (sw.js)");
+    console.log(`   ℹ أوّلُ صفحةٍ كسولة = main + arCold = ${(totals.main + gz).toLocaleString("en")} بايت مضغوطة — الإقلاعُ خفّ، أمّا أوّلُ صفحةٍ بمخبأٍ فارغ فلا (420,317 قبل القسمة)`);
+  }
+}
+
 if (fails) {
   console.error("\n✗ store-weight-guard: صفحةُ الزائر تجاوزت ميزانيّتها. الأرجح `import` جديدٌ يجرّ قشرةَ التطبيق (repo، سياقُ الدخول، مكوّنُ ui) — استورد من `storeApi` أو افصل الوحدة.");
+  console.error("  وإن كان التجاوزُ بـmain أو arCold: هل ما زال `i18nSplit()` بـvite.config.ts؟ وهل أُضيف نطاقٌ لـsrc/i18n/hot-paths.json بلا قياس؟");
   process.exit(1);
 }
 console.log("✓ store-weight-guard: صفحةُ الزائر داخل ميزانيّتها.");

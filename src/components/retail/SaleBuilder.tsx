@@ -1678,6 +1678,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (boundLines.length > 0 && !payPending && !paying) { setCustClearAsk(true); return; }
     clearCustomerNow();
   };
+  const hasCustomer = !!name.trim() || !!phone.trim() || salePets.length > 0;
+  /* **بجنب حقول الزبون وبكلمة** — المالك: «وينه ما لكيت شيء». الأيقونةُ وحدَها بترويسة
+   * السلّة، ولا تظهر إلا بعد كتابة زبون، فلم تُرَ. نفسُ الفعل (`askClearCustomer`: نافذةُ
+   * السطور المربوطة وحارسُ الدفعة المعلَّقة) بكلّ موضع — لا نسخةَ ثانيةَ منه. */
+  const custClearBtn = (where: "head" | "slim" | "line") => (
+    <button
+      type="button" data-custclearnear={where}
+      onClick={(e) => { e.stopPropagation(); askClearCustomer(); }}
+      disabled={paying}
+      title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
+      className={cn("inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-1 px-3 text-xs font-bold text-ink-muted transition hover:border-warn-300 hover:bg-warn-50 hover:text-warn-700 disabled:opacity-50 dark:hover:bg-warn-500/15 dark:hover:text-warn-200",
+        where === "line" ? "rounded-2xl py-2" : "h-8")}
+    >
+      <UserX size={15} /> {t("retail.custClearShort", "امسح الزبون")}
+    </button>
+  );
 
   // ---- "+ حيوان آخر" — attach another of the clinic's patients to this sale ----
   const openPetPicker = async () => {
@@ -2470,18 +2486,21 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         {/* تفاصيل البيع الاختيارية — بالشاشة الجديدة سطر واحد يُفتح بضغطة بدل
             بطاقة دائمة كانت تدفع شبكة المنتجات ٣٧١px للأسفل. */}
         {posV2 && !detailsOpen && !customerOpenPref && (
-          <button
-            type="button" data-saledetails
-            onClick={() => { playTap(); setDetailsOpen(true); }}
-            className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface-1 px-3.5 py-2 text-start text-xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink"
-          >
-            <Plus size={14} className="shrink-0 text-brand-600" />
-            {name.trim()
-              ? t("retail.detailsFor", { name: name.trim(), defaultValue: "البيع لـ{{name}} — تعديل التفاصيل" })
-              : t("retail.addDetails", "عميل · بائع · ملاحظة")}
-            {saleNotes.trim() && <StickyNote size={12} className="text-brand-600" />}
-            {cashierId && <UserCheck size={12} className="text-success-600" />}
-          </button>
+          <div className="flex shrink-0 items-stretch gap-2">
+            <button
+              type="button" data-saledetails
+              onClick={() => { playTap(); setDetailsOpen(true); }}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface-1 px-3.5 py-2 text-start text-xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink"
+            >
+              <Plus size={14} className="shrink-0 text-brand-600" />
+              {name.trim()
+                ? t("retail.detailsFor", { name: name.trim(), defaultValue: "البيع لـ{{name}} — تعديل التفاصيل" })
+                : t("retail.addDetails", "عميل · بائع · ملاحظة")}
+              {saleNotes.trim() && <StickyNote size={12} className="text-brand-600" />}
+              {cashierId && <UserCheck size={12} className="text-success-600" />}
+            </button>
+            {hasCustomer && custClearBtn("line")}
+          </div>
         )}
         {/* Customer — بالصندوق المفتوح دائماً (0147) سطرٌ نحيف: اسم · هاتف · بائع،
             والملاحظة خلف زرٍّ صغير. لا ترويسة ولا طيّ: ما يحتاجه الكاشير كلَّ بيعة
@@ -2489,11 +2508,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         <div data-custbox className={cn("card", customerOpenPref ? "p-2.5" : "p-4", posV2 && "shrink-0", posV2 && !detailsOpen && !customerOpenPref && "hidden")}>
           <div className={cn("mb-3 flex items-center gap-2 text-sm font-bold text-ink", customerOpenPref && "hidden")}>
             <User size={16} /> {t("retail.customer", "Customer")} <span className="text-xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
-            {posV2 && (
-              <button type="button" onClick={() => { playTap(); setDetailsOpen(false); }} className="ms-auto grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-ink" aria-label={t("common.close", "إغلاق")}>
-                <X size={15} />
-              </button>
-            )}
+            <span className="ms-auto flex items-center gap-1.5">
+              {hasCustomer && custClearBtn("head")}
+              {posV2 && (
+                <button type="button" onClick={() => { playTap(); setDetailsOpen(false); }} className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-ink" aria-label={t("common.close", "إغلاق")}>
+                  <X size={15} />
+                </button>
+              )}
+            </span>
           </div>
           <div className={cn("relative grid gap-2", customerOpenPref ? "sm:grid-cols-[1fr,1fr,minmax(10rem,0.8fr),auto]" : "sm:grid-cols-2")}>
             <div className="relative">
@@ -2545,6 +2567,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               </div>
             )}
           </div>
+          {/* بالسطر النحيف: سطرُه الخاصّ تحت الحقول لا عمودٌ خامس — العمودُ كان يأخذ عرضَه كاملاً
+              قبل الحقلين فيُعصران حرفين أو ثلاثة على شاشة لابتوب (قاسته المراجعة) لحظةَ الكتابة. */}
+          {customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">{custClearBtn("slim")}</div>}
 
           {/* موظف المبيعات (البائع) — يتثبّت تلقائياً على المسجّل دخوله؛ يظهر
               بالفاتورة المطبوعة وسجل الفواتير وتقارير أداء الموظفين. */}
@@ -2799,14 +2824,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               <RotateCcw size={posV2 ? 18 : 15} />
             </button>
             {/* الزبونُ وحدَه (شكوى الطبيب): يظهر حين يكون هناك زبونٌ يُمسح، والسلّةُ تبقى. */}
-            {(!!name.trim() || !!phone.trim() || salePets.length > 0) && (
+            {hasCustomer && (
               <button
                 data-custclear type="button"
                 onClick={askClearCustomer}
                 disabled={paying}
                 title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 aria-label={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
-                className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200", posV2 ? "h-10 w-10" : "h-8 w-8")}
+                /* مخفيٌّ على الهاتف: ترويسةُ السلّة تفيض عن ٣٧٥px به (قاسته المراجعة)، والزرُّ
+                   بالكلمة بجنب حقول الزبون يغني عنه هناك. */
+                className={cn("hidden place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200 sm:grid", posV2 ? "h-10 w-10" : "h-8 w-8")}
               >
                 <UserX size={posV2 ? 18 : 15} />
               </button>

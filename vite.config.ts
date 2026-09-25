@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
+import { i18nSplit } from "./scripts/i18n-split.mjs";
 
 
 /**
@@ -46,45 +47,17 @@ function storeEntry() {
   };
 }
 
-/**
- * القاموسُ الباردُ وحدةٌ غيرُ وحدةِ الحارّ (م٠·١).
- *
- * `i18n/index.ts` يستورد الحارَّ بالاسم من `ar.json`، و`i18n/arCold.ts` الباردَ
- * بالاسم من الملفّ نفسِه. وRollup يقسم **بالوحدة لا بالاسم**: وحدةٌ يستوردها
- * الإقلاعُ تبقى بالإقلاع بكلّ ما يُستعمل منها — فخرجت حزمةُ arCold ١٫٥ كيلو
- * إشاراتٍ إلى الإقلاع، والنصوصُ فيه كما كانت (مقيسٌ: `main.html` ٤٢٠٬٥٧٨ قبل
- * هذا وبعد الانقسام سواء). فاستيرادُ `arCold.ts` وحدَه يُحلّ إلى `ar.json?cold`:
- * وحدةٌ ثانيةٌ من الملفّ نفسِه، يهزّها Rollup على أسمائها هي، فتذهب نصوصُها مع
- * حزمتها. tsc وesbuild يريان استيراداً عاديّاً فلا يتغيّر لهما شيء.
- *
- * يعتمد على `json.stringify` مطفأً (الافتراض): بتشغيله يصير الملفُّ كتلةً واحدة
- * بلا أسماءٍ تُهزّ. وكلا الأمرين يمسكه `i18n-split-guard --post-build` بالبايت.
- */
-function arColdSplit() {
-  const cold = path.resolve(__dirname, "src/i18n/arCold.ts");
-  const json = path.resolve(__dirname, "src/i18n/ar.json");
-  let hits = 0;
-  return {
-    name: "ar-cold-split",
-    enforce: "pre" as const,
-    resolveId(source: string, importer?: string) {
-      if (source !== "./ar.json" || !importer || path.resolve(importer.split("?")[0]) !== cold) return null;
-      hits++;
-      return `${json}?cold`;
-    },
-    generateBundle(this: { error: (m: string) => never }) {
-      if (!hits) this.error("ar-cold-split: arCold.ts لم يستورد ./ar.json — القاموسُ الباردُ رجع للإقلاع؟");
-    },
-  };
-}
-
 export default defineConfig({
   // Visible build stamp (الإصدار) — lets anyone verify WHICH deploy their
   // device is actually running when debugging stale caches.
   define: { __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   plugins: [
-    arColdSplit(),
     react(),
+    /* قسمةُ القاموس العربيّ (`scripts/i18n-split.mjs`): `arHot` مع الإقلاع،
+     * و`arCold` حزمةٌ واحدةٌ كسولة تنتظرها كلُّ صفحة. كان `ar.json` كلُّه
+     * بحزمة الإقلاع — ٧٨ كيلو مضغوطة، أغلبُها نصوصُ شاشاتٍ كسولة. ويُفشّل
+     * البناءَ إن عاد النصفُ البارد لمسار الإقلاع أو دخل حزمةً غيرَ حزمته. */
+    i18nSplit(),
     storeEntry(),
     VitePWA({
       registerType: "autoUpdate",
@@ -136,11 +109,6 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "./src") },
   },
   build: {
-    /* خريطةُ الحزم (`dist/.vite/manifest.json`) — الحقيقةُ الوحيدة عن «أيّ ملفٍّ
-     * يُحمَّل مع الإقلاع وأيٌّ كسول». يقرؤها `i18n-split-guard` ليثبت أن القشرةَ
-     * لا تقرأ نطاقاً بارداً. لا سرَّ فيها: أسماءُ حزمٍ عامّةٍ أصلاً، وworkbox لا
-     * يُدرج ملفاتِ json بالتثبيت المسبق. */
-    manifest: true,
     rollupOptions: {
       /* مدخلان (ت١١): تطبيقُ العيادة، وصفحةُ الزائر. الفصلُ هنا لا بتقسيمٍ
        * كسول — `index.html` تُحمّل `main.tsx` أياً كان المسار، وهي تستورد

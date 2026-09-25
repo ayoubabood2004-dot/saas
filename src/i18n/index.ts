@@ -1,21 +1,10 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-/* **الحارُّ وحدَه بالإقلاع** (م٠·١). كان `import ar from "./ar.json"` يجرّ
- * القاموسَ كلَّه (٧٧ ألف بايتٍ مضغوطة) لكلّ فتحِ تطبيق، والقشرةُ تقرأ منه ٢٢
- * نطاقاً. الاستيرادُ بالاسم يجعل Rollup يُسقط الباقي؛ والباردُ بـ`arCold.ts`
- * يُحمَّل كسولاً وتنتظره كلُّ شاشةٍ قبل رسمها. **لا تُعِد الاستيرادَ الافتراضيّ**:
- * سطرٌ واحدٌ يعيد الـ٧٧ ألفاً كلَّها للإقلاع — ويمسكه `i18n-split-guard`. */
-import {
-  app, auth, bookReq, bookings, branches, clinicSync, common, errors, features, nav, outbox,
-  override, payroll, plans, pos, reception, records, report, retail, role, storeBell, sub,
-} from "./ar.json";
+import arHot from "./arHot";
 import { LOCALES, localeInfo, fallbackMap } from "./registry";
-import { emitGlobalToast } from "../lib/globalToast";
-
-const arHot = {
-  app, auth, bookReq, bookings, branches, clinicSync, common, errors, features, nav, outbox,
-  override, payroll, plans, pos, reception, records, report, retail, role, storeBell, sub,
-};
+// نسبيٌّ لا `@/`: حُزمُ esbuild بالفحوص (`lang-default-test` وأخواتها) تحلّه
+// بلا اسمٍ مستعار. و`appUpdate` بلا أثرٍ على مستوى الوحدة.
+import { retryImport } from "../lib/appUpdate";
 
 export const LANGS = ["en", "ar"] as const;
 export type Lang = (typeof LANGS)[number];
@@ -43,90 +32,112 @@ function initialLang(): Lang {
 }
 
 void i18n.use(initReactI18next).init({
-  // العربيةُ وحدَها بالحزمة؛ البقيةُ تُحمَّل بمحمّلها (انظر `registry.ts`).
+  // نصفُ العربية **الحارّ** وحدَه بالحزمة (`arHot.ts`، والمساراتُ بـ`hot-paths.json`)؛
+  // نصفُها البارد يصل بـ`ensureDictionary()`، والبقيةُ تُحمَّل بمحمّلها (`registry.ts`).
   resources: { ar: { translation: arHot } },
   lng: initialLang(),
   // سلاسل السقوط من سجل اللغات: السورانية القادمة تسقط للعربية قبل
   // الإنجليزية — المفتاح الناقص يظهر بأقرب لغة مفهومة لا بأبعدها.
   fallbackLng: fallbackMap(),
   interpolation: { escapeValue: false },
+  /* شبكةُ أمانٍ أخيرة: وصولُ حزمةٍ (النصفُ البارد أو لغةٌ كسولة) يعيد رسمَ كلِّ
+   * مستهلكٍ لـ`useTranslation` — فمفتاحٌ باردٌ قُرئ قبل وصوله (ولا يُفترض أن
+   * يحدث: `i18n-hot-guard` يمنعه) يُصحَّح بإطارٍ واحد بدل أن يبقى خاماً حتى رسمٍ
+   * عابر. **وكلفتُها**: كلُّ أثرٍ (`useEffect`) يضع `t` باعتماده يُعاد مرّةً عند
+   * الإقلاع — اليومَ مستمعُ الحصّة بـ`Housekeeping` وحدَه، ويعيد الاشتراكَ فقط.
+   * أثرٌ قادمٌ يجلب بياناتٍ ويعتمد `t` سيجلب مرّتين؛ فلا تضع `t` باعتماد جلب. */
+  react: { bindI18nStore: "added" },
 });
 
 export { applyDir } from "./dir";
 import { applyDir } from "./dir";
 
-let langSeq = 0;
-/**
- * تبديلُ اللغة — **آخرُ اختيارٍ يفوز، ولا شيءَ يتغيّر قبل أن تكتمل نصوصُ اللغة.**
+/* ── النصفُ البارد ───────────────────────────────────────────────────────────
+ * كان `ar.json` كلُّه مستورداً هنا استيراداً ثابتاً، فجرّته السلسلةُ
+ * `repo → payrollDemo → payrollLabels → @/i18n` إلى حزمة الإقلاع: ٧٨ كيلو
+ * مضغوطة، ٥٥٪ منها، أغلبُها نصوصُ شاشاتٍ كسولة. فصار كلُّ نصٍّ جديدٍ لشاشةٍ
+ * عميقةٍ يُدفع من مسار الإقلاع، وارتفع السقفُ ثلاثاً بثلاثة أيام.
  *
- * كان الاتجاهُ والتفضيلُ المحفوظ يتغيّران فوراً والنصُّ بعد التنزيل، فأثبت التدقيقُ
- * العدائيُّ (أربعُ زوايا مستقلّة) سباقاً: إنكليزيٌّ يضغط «العربية» والقاموسُ البارد
- * يتنزّل، ثم يضغط «English» — فينتهي التنزيلُ المتأخّر ويقلب النصَّ عربياً بصفحةٍ
- * يسارية و`vp_lang` إنكليزية. وفشلُ التنزيل كان يبدّل على أيّة حال: شاشةٌ نصفُها
- * إنكليزيّ ونصفُها مفاتيحُ خامّة. فالآن: التنزيلُ أوّلاً، ثم — إن بقي هذا آخرَ
- * اختيار — اللغةُ والاتجاهُ والحفظُ معاً. وإن فشل يبقى كلُّ شيءٍ كما كان ويُقال.
+ * فالآن: النصفُ الحارّ مع القشرة، والباردُ حزمةٌ واحدةٌ تبدأ مع الإقلاع
+ * (`main.tsx`) موازيةً لحزمة الصفحة الأولى، وكلُّ صفحةٍ تنتظرها (`page()`).
+ * والتحميلُ يمرّ من `retryImport` كأيّ صفحة: قشرةٌ قديمةٌ بعد نشرٍ تُصلَح
+ * بإعادة تحميلٍ واحدة، والفشلُ يُرمى — لا يُبلع — فتقول الصفحةُ «أعد
+ * المحاولة» بدل أن ترسم نصفَ قاموسٍ بمفاتيحَ خام. */
+let coldLoaded = false;
+let coldLoading: Promise<void> | null = null;
+
+/** العربيةُ نفسُها وكلُّ لغةٍ تسقط إليها (السورانية) — من السجلّ لا بشرطٍ ثابت،
+ *  فلغةٌ قادمةٌ تسقط للعربية تُغطّى وحدَها. والإنكليزيةُ لا تسقط للعربية أبداً،
+ *  فمستخدمُها لا ينزّل النصفَ البارد إطلاقاً. */
+function needsArCold(lang: string): boolean {
+  const info = localeInfo(lang);
+  return info.code === "ar" || info.fallback.includes("ar");
+}
+
+/**
+ * يضمن أن القاموسَ العربيّ كاملٌ قبل أن يُرسم ما يحتاجه — مرّةً واحدةً مهما
+ * تكرّر النداء. الدمجُ عميقٌ بلا كتابةٍ فوق القائم: النصفان منفصلان بالبناء.
+ *
+ * والفشلُ: الوعدُ المرفوض يُمسح فالنداءُ التالي يمرّ من `retryImport` ثانيةً — لكن
+ * المتصفّحَ يحفظ فشلَ `import()` بخريطة الوحدات طولَ عمر الصفحة (قاسته المراجعة:
+ * لا طلبَ ثانٍ للخادم ولو صار الملفُّ متاحاً). فالتعافي **ليس** إعادةَ الاستيراد
+ * داخل الصفحة؛ هو إعادةُ تحميلها بـ`recoverFromStaleShell` عند أوّل نداءٍ والشبكةُ
+ * قائمة وخارجَ حارس الثلاثين ثانية. وقبلها تقول كلُّ صفحةٍ «حدث خطأ ما» بزرّ إعادة
+ * تحميل — لا مفاتيحَ خاماً. وهذا أوسعُ أثراً من فشل حزمة صفحةٍ واحدة (يصيب كلَّ
+ * الصفحات معاً)، ومدّتُه محدودةٌ بانقطاع الشبكة أو بالحارس.
  */
-export function setLang(lang: Lang): Promise<void> {
-  const my = ++langSeq;
-  return (async () => {
+export function ensureDictionary(lang: string = i18n.language): Promise<void> {
+  if (coldLoaded || !needsArCold(lang)) return Promise.resolve();
+  if (!coldLoading) {
+    coldLoading = retryImport(() => import("./arCold")).then(
+      (m) => {
+        i18n.addResourceBundle("ar", "translation", m.default, true, false);
+        coldLoaded = true;
+      },
+      (err: unknown) => {
+        coldLoading = null;
+        throw err;
+      },
+    );
+  }
+  return coldLoading;
+}
+
+/* ظهيرٌ وقتَ التشغيل: كلُّ تبديلٍ إلى لغةٍ تحتاج العربيةَ كاملةً يبدأ تحميلَ
+ * النصف البارد — ومنه `changeLanguage("ar")` المباشر بـ`portal.ts`، الذي لا يمرّ
+ * من `setLang`. والفشلُ هنا لا يُقال مرّتين: الصفحةُ التالية تنتظر نفسَ الوعد
+ * وتعرض «أعد المحاولة» بنفسها. */
+i18n.on("languageChanged", (lng: string) => {
+  if (needsArCold(lng)) ensureDictionary(lng).catch(() => { /* تقوله بوّابةُ الصفحة */ });
+});
+
+/* التبديلُ يحمّل **أوّلاً** ثم يثبّت: كانت `vp_lang` تُكتب والاتجاهُ يُقلب قبل
+ * وصول الحزمة، فإن فشل التحميلُ بقي الجهازُ على اتجاهٍ جديدٍ بلا نصوصه —
+ * ومحفوظاً كذلك للإقلاع التالي. الآن: حزمةُ اللغة (إن كانت كسولة) ثم نصفُ
+ * العربية البارد (إن احتاجته)، وبعدهما وحدَهما الحفظُ والاتجاهُ والتبديل.
+ * ولا `try` هنا عمداً: الفشلُ يبقى رفضاً غيرَ ملتقَط فيقوله توستُ `errors.async`
+ * القائمُ بـ`main.tsx`، ولا يُحفظ شيءٌ ولا ينقلب اتجاه. */
+export function setLang(lang: Lang): void {
+  void (async () => {
     const info = localeInfo(lang);
-    try {
-      // لغات المخزن غير المدمجة تُحمَّل كسولاً أول مرة تُختار — مستخدم
-      // الإسبانية لا يدفع كلفة تنزيل بقية اللغات أبداً.
-      if (info.loader && !i18n.hasResourceBundle(info.code, "translation")) {
-        const mod = await info.loader();
-        i18n.addResourceBundle(info.code, "translation", mod.default, true, true);
-      }
-      /* الشاشةُ الحاليّةُ مرسومةٌ أصلاً ولن تمرّ من `page()` ثانيةً — فالتبديلُ
-       * إلى العربية (أو لغةٍ تسقط إليها) ينتظر الباردَ قبل أيّ تغيير. */
-      if (needsColdAr(info.code)) await loadColdAr();
-    } catch {
-      if (my === langSeq) {
-        emitGlobalToast({ tone: "error", title: i18n.t("errors.langFailed", "ما تبدّلت اللغة — تعذّر تنزيل نصوصها. تأكّد من الإنترنت وحاول مرة ثانية.") });
-      }
-      return;
+    // لغات المخزن غير المدمجة تُحمَّل كسولاً أول مرة تُختار — مستخدم
+    // الإسبانية لا يدفع كلفة تنزيل بقية اللغات أبداً.
+    if (info.loader && !i18n.hasResourceBundle(info.code, "translation")) {
+      const mod = await retryImport(info.loader);
+      i18n.addResourceBundle(info.code, "translation", mod.default, true, true);
     }
-    if (my !== langSeq) return;
-    await i18n.changeLanguage(info.code);
+    await ensureDictionary(info.code);
     try {
       localStorage.setItem("vp_lang", lang);
     } catch {
       /* ignore */
     }
     applyDir(lang);
+    await i18n.changeLanguage(info.code);
   })();
 }
 
 applyDir(initialLang());
-
-/* ── القاموسُ البارد ──────────────────────────────────────────────────────
- * هل تحتاج هذه اللغةُ العربيةَ؟ العربيةُ نفسُها، وكلُّ لغةٍ سلسلةُ سقوطها تمرّ
- * بها (السورانية ⇐ العربية). والإنكليزيةُ مكتملةٌ بنفسها (حارسُ التكافؤ) —
- * فمستخدمُها لا يدفع ثمنَ قاموسٍ لا يقرؤه. */
-export function needsColdAr(code: string = i18n.language): boolean {
-  return code === "ar" || (fallbackMap()[code] ?? []).includes("ar");
-}
-
-let coldAr: Promise<void> | null = null;
-/**
- * يحمّل النطاقاتِ الباردة ويدمجها بنفس المساحة (`translation`) — فالمفاتيحُ
- * بالشاشات لا تتغيّر حرفاً. مرّةً واحدة: النداءاتُ المتزامنة تتشارك الوعد.
- *
- * **ويرفض إن فشل** (ويُصفَّر الوعدُ فالنداءُ التالي يعيد المحاولة): شاشةٌ تُرسم
- * بلا نصوصها تعرض «claim.notFound» لعيادةٍ لا تقرأ غيرَ العربية — نقصٌ يُصدَّق
- * أنه التطبيق. `page()` تمرّره من `retryImport` كحزمة الشاشة نفسها: قشرةٌ
- * قديمةٌ بعد نشرٍ تُصلَح بإعادة التحميل، وما سواها يصل لشاشة «أعد المحاولة»
- * (نصوصُها `errors.*` حارّة).
- */
-export function loadColdAr(): Promise<void> {
-  if (!coldAr) {
-    coldAr = import("./arCold").then(
-      (m) => { i18n.addResourceBundle("ar", "translation", m.default, true, false); },
-      (e: unknown) => { coldAr = null; throw e; },
-    );
-  }
-  return coldAr;
-}
 
 /**
  * جاهزيّةُ اللغة — **يُنتظر قبل أوّل رسم** (`main.tsx`).
@@ -138,22 +149,23 @@ export function loadColdAr(): Promise<void> {
  *
  * فصارت وعداً يُنتظر: من لغتُه عربيةٌ (الافتراض) يُحلّ فوراً ولا ينتظر شيئاً،
  * ومن لغتُه غيرُها يتأخّر أوّلُ رسمه بقدر حزمتها — ثم يراها صحيحةً من أوّل
- * إطار. وفشلُ التحميل **لا يعلّق الإقلاع**: يُحلّ الوعدُ على أيّة حال
- * والسقوطُ يغطّي الواجهة.
+ * إطار. وفشلُ التحميل **لا يعلّق الإقلاع**: يُحلّ الوعدُ على أيّة حال.
+ *
+ * وما يغطّي الواجهةَ حينها ليس «السقوط» كما كان يُقال هنا: سلسلةُ الإنكليزية
+ * `[en]` وحدَها (`fallbackMap`) — **لا تسقط للعربية أبداً** — فحزمتُها إن فشلت
+ * تُظهر النصوصَ الافتراضيةَ المضمَّنة بالنداءات، أو المفتاحَ خاماً حيث لا
+ * افتراض. السورانيةُ وحدَها تسقط للعربية (ckb ← ar ← en). وللسبب نفسه لا ينزّل
+ * مستخدمُ الإنكليزية نصفَ العربية البارد إطلاقاً (`ensureDictionary`).
  */
 export const i18nReady: Promise<void> = (async () => {
   const info = localeInfo(initialLang());
-  /* الباردُ يبدأ تنزيلُه مع الإقلاع **ولا يُنتظر هنا**: أوّلُ رسمٍ هو القشرة،
-   * وهي لا تقرأ إلا الحارّ (يثبته الحارس). والشاشاتُ تنتظره بنفسها. بدؤه الآن
-   * يجعله يصل بالتوازي مع حزمة الشاشة الأولى لا بعدها. */
-  if (needsColdAr(info.code)) loadColdAr().catch(() => undefined);
   if (!info.loader || i18n.hasResourceBundle(info.code, "translation")) return;
   try {
     const mod = await info.loader();
     i18n.addResourceBundle(info.code, "translation", mod.default, true, true);
     await i18n.changeLanguage(info.code);
   } catch {
-    /* تعذّر تحميل اللغة (شبكة/ملف) — السقوط يغطي الواجهة بلا انهيار */
+    /* تعذّر تحميل اللغة (شبكة/ملف) — لا انهيار؛ والنصوصُ الافتراضيةُ تغطّي الواجهة (انظر أعلاه) */
   }
 })();
 

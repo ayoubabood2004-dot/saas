@@ -139,8 +139,12 @@ export function WhatsAppCampaigns() {
   const [activeTpl, setActiveTpl] = useState<string | null>(null);
   const [variantIdx, setVariantIdx] = useState(0);
   const tplVariants = activeTpl ? waVariants(CAMP_POOL[activeTpl]) : [];
+  /* `waVariants` ترمي إن لم يصل نصفُ القاموس البارد (لا تُرجع قائمةً فارغة):
+   * الضغطةُ تقولها بتوست ولا تضع بمربّع الرسالة نصّاً فارغاً يُرسل لزبون. */
   const applyVariant = (tplId: string, i: number) => {
-    const pool = waVariants(CAMP_POOL[tplId]);
+    let pool: string[];
+    try { pool = waVariants(CAMP_POOL[tplId]); }
+    catch { toast.error(t("errors.tryAgain", "حاول مرة أخرى.")); return; }
     if (!pool.length) return;
     const k = ((i % pool.length) + pool.length) % pool.length;
     setActiveTpl(tplId); setVariantIdx(k);
@@ -148,7 +152,10 @@ export function WhatsAppCampaigns() {
   };
   const pickTemplate = (tplId: string) => {
     playTap();
-    applyVariant(tplId, pickVariantIndex(`${tplId}|${new Date().toISOString().slice(0, 10)}`, waVariants(CAMP_POOL[tplId]).length || 1));
+    let count: number;
+    try { count = waVariants(CAMP_POOL[tplId]).length; }
+    catch { toast.error(t("errors.tryAgain", "حاول مرة أخرى.")); return; }
+    applyVariant(tplId, pickVariantIndex(`${tplId}|${new Date().toISOString().slice(0, 10)}`, count || 1));
   };
   const templates = useMemo(() => [
     { id: "birthday", icon: Gift, label: t("campaigns.tplBirthday", "Birthday greeting") },
