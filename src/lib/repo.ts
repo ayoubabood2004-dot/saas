@@ -20,6 +20,10 @@ const invNormCode = (v: string | null | undefined): string => matchCode(v);
  * أن الشراء لا يلقى ما يلقاه الكاشير: قطعةٌ رمزُها الأساسيّ رقمُ رفّ وباركودُ
  * المصنع بإضافيّها تُنشَأ من جديد برصيدٍ مقسوم بكلّ فاتورة شراء.
  */
+/** منتهية؟ `expiry_date` آخرُ يومٍ صالح، والمقارنةُ بتاريخ الجهاز — نفسُ قاعدة
+ *  `expiry.ts` (لا تُستورد هنا: repo بمسار الإقلاع، وتلك تقرأ نطاقاً بارداً). */
+const isExpiredOn = (d: string | null | undefined, today = localISO()): boolean =>
+  /^\d{4}-\d{2}-\d{2}/.test(String(d ?? "")) && String(d).slice(0, 10) < today;
 const purchaseCoRank = (rowCompany: string | null | undefined, companyId: string | null): number => {
   if (companyId == null) return 0;
   if (rowCompany == null) return -1;
@@ -2075,6 +2079,17 @@ const demoRepo = {
     if (o.status === "accepted") return { ok: true, already: true, invoice_id: o.invoice_id as string };
     if (o.status !== "new") throw decisionLocked(o.status);
     const prods = db.products ?? [];
+    /* 0212: طلبٌ انتهت مادّتُه بعد وقوعه لا يُقبل — بالاسم، ولا يخرج شيءٌ من الرفّ. */
+    const expired = (o.items ?? []).find((it) => {
+      const p = prods.find((x) => x.id === it.product_id);
+      return !!p && isExpiredOn(p.expiry_date);
+    });
+    if (expired) {
+      throw Object.assign(new Error("store_item_expired"), {
+        code: "P0001", item: expired.name,
+        hint: i18next.t("pos.storeItemExpired", { name: expired.name, defaultValue: "بالطلب مادة منتهية الصلاحية: {{name}} — ما نطلعها من المتجر. ارفض الطلب أو اتصل بالزبون." }),
+      });
+    }
     const items: CheckoutItem[] = (o.items ?? []).map((it) => {
       const p = prods.find((x) => x.id === it.product_id);
       return {
@@ -2248,7 +2263,8 @@ const demoRepo = {
     const poolOf = (p: Product) => (db.companySections ?? []).find((s) => s.id === p.section_id)?.pooled_stock ?? 0;
     const cap = Math.min(Math.max(limit, 1), 100); // نفس سقف السيرفر
     return (db.products ?? [])
-      .filter((p) => p.store_visible)
+      // 0212: المنتهي لا يُعرض (آخرُ يومٍ صالح يُعرض) — نفسُ قاعدة expiry.ts.
+      .filter((p) => p.store_visible && !isExpiredOn(p.expiry_date))
       /* مرآةُ فرزِ 0182 حرفياً: المختارُ أوّلاً، ثم الفئةُ فالاسم، و`id` آخرَ
        * المفاتيح كي يصير الترتيبُ حاسماً — فصفحتا `offset` لا تتقاطعان ولا
        * تُسقطان صفّاً. والتوفّرُ خارجَ الفرز عمداً كما بالخادم. */
@@ -2307,7 +2323,8 @@ const demoRepo = {
       // الخادم يرفض الكسر كلَّه (`'5.5'::int` ترمي → bad_items) — التدويرُ
       // الصامت هنا كان يقلب حكمَ الفاحص على مدخلٍ حدّي (فحص التطابق ٠٩/٠٩).
       if (!Number.isInteger(qty) || qty < 1 || qty > 99) return { ok: false, error: "bad_items" };
-      const p = (db.products ?? []).find((x) => x.id === it.product_id && x.store_visible);
+      const p = (db.products ?? []).find((x) => x.id === it.product_id && x.store_visible
+        && !isExpiredOn(x.expiry_date));   // 0212: سلّةٌ قديمةٌ فيها منتهٍ
       if (!p) return { ok: false, error: "bad_items" };
       lines.push({ product_id: p.id, name: p.name, qty, price: p.sell_price, total: Math.round(p.sell_price * qty * 100) / 100 });
     }

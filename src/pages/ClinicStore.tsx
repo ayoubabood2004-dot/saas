@@ -33,6 +33,7 @@ import { withTimeout, describeUploadError, describeDbError } from "@/lib/errors"
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { cn, money, formatNum, formatDate, currencySymbol } from "@/lib/utils";
+import { daysToExpiry } from "@/lib/expiry";
 
 type Tab = "orders" | "catalog" | "settings";
 /** تصفياتُ التشكيلة — مشتركةٌ لأن لوحةَ الجاهزية بتبويبٍ آخرَ تفتحها. */
@@ -1003,6 +1004,8 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
   const noStockCount = shownAll.filter((p) => p.stock <= 0 && !p.pooled).length;
   const noPhotoShown = shownAll.filter((p) => !p.image_path).length;
   const noDescCount = shownAll.filter((p) => !p.store_desc).length;
+  /* 0212: المنتهي مخفيٌّ عن الزبون بالخادم — والإخفاءُ يُقال هنا لا يُترك بلا تفسير. */
+  const expiredShown = shownAll.filter((p) => (daysToExpiry(p.expiry_date) ?? 0) < 0).length;
   const [saving, setSaving] = useState(false);
   const [slugState, setSlugState] = useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
   const [copied, setCopied] = useState(false);
@@ -1208,6 +1211,9 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           {noPriceCount > 0 && (
             <ReadyRow ok={false} warn label={t("cat.readyNoPrice", "{{n}} معروض بلا سعر — ما راح يظهر للزبون", { n: formatNum(noPriceCount) })}
               onGo={() => goCatalog("noprice")} />
+          )}
+          {expiredShown > 0 && (
+            <ReadyRow ok={false} warn label={t("cat.readyExpired", "{{n}} معروض منتهي الصلاحية — مخفي عن الزبون ولا ينطلب", { n: formatNum(expiredShown) })} />
           )}
           {noStockCount > 0 && (
             <ReadyRow ok={false} warn label={t("cat.readyNoStock", "{{n}} معروض نافد", { n: formatNum(noStockCount) })}

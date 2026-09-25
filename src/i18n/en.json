@@ -1678,7 +1678,8 @@
     "acceptFee": "Delivery fee",
     "acceptFeeNone": "No fee",
     "acceptFeeHint": "Leave blank to keep what the order came with",
-    "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager."
+    "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager.",
+    "storeItemExpired": "The order has an expired item: {{name}} — it won't leave the shelf through the store. Reject the order or call the customer."
   },
   "twin": {
     "loadFailed": "Couldn't check for duplicates. We can't claim \"no duplicates\" when we never got an answer — try again.",
@@ -4928,7 +4929,8 @@
     "fNoPrice": "No price",
     "fNoStock": "Out of stock",
     "fNoDesc": "No description",
-    "feeZero": "0 = decided on confirmation"
+    "feeZero": "0 = decided on confirmation",
+    "readyExpired": "{{n}} shown items are expired — hidden from customers and can't be ordered"
   },
   "farm": {
     "title": "Poultry farms",

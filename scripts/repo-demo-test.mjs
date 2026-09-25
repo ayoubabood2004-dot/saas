@@ -1130,5 +1130,39 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
     (await repo.ensureCompany("رويال كانين", "c1")).id === (await repo.ensureCompany("\u200fرويال\u200bكانين", "c1")).id);
 }
 
+console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
+{
+  const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };
+  const seedStore = (products) => {
+    seed(products);
+    const db = JSON.parse(mem.get(DB_KEY));
+    db.storeProfile = SP; db.storeOrders = []; db.deliveryOrders = [];
+    mem.set(DB_KEY, JSON.stringify(db));
+  };
+  const SPROD = (id, price, stock) => P(id, `منتج ${id}`, null, { store_visible: true, sell_price: price, purchase_price: 0, stock });
+  const dbNow = () => JSON.parse(mem.get(DB_KEY));
+  /* 0212 مرآةً بمرآة: المتجرُ لا يبيع المنتهي — لا عرض، ولا طلب، ولا قبول. */
+  const iso = (d) => { const x = new Date(); x.setDate(x.getDate() + d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+  seedStore([
+    { ...SPROD("ex", 10, 5), expiry_date: iso(-1) },
+    { ...SPROD("last", 10, 5), expiry_date: iso(0) },
+    SPROD("nod", 10, 5),
+  ]);
+  const cat = (await repo.storeCatalogPublic("demo-vet")).map((c) => c.id).sort().join();
+  check("0212: الكتلوجُ يخفي المنتهي ويعرض آخرَ يومٍ وما بلا تاريخ", cat === "last,nod", cat);
+  const bad = await repo.placeStoreOrder("demo-vet", { name: "زبون الانتهاء", phone: "07791110000" }, [{ product_id: "ex", qty: 1 }]);
+  check("  وسلّةٌ فيها منتهٍ تُرفض bad_items", bad.ok === false && bad.error === "bad_items");
+  const okLast = await repo.placeStoreOrder("demo-vet", { name: "زبون الانتهاء", phone: "07791110001" }, [{ product_id: "last", qty: 1 }]);
+  check("  وآخرُ يومٍ صالح يُطلب", okLast.ok === true);
+  const d2 = dbNow();
+  d2.products.find((x) => x.id === "last").expiry_date = iso(-1);   // انتهت قبل القبول
+  mem.set(DB_KEY, JSON.stringify(d2));
+  const expOid = dbNow().storeOrders[0].id;
+  let err = null;
+  try { await repo.acceptStoreOrder(expOid); } catch (e) { err = e; }
+  check("  والقبولُ يرفض طلباً انتهت مادّتُه — بالاسم، ولا يخرج شيء", err?.message === "store_item_expired" && err?.item === "منتج last" && !!err?.hint
+    && dbNow().products.find((x) => x.id === "last").stock === 5 && dbNow().storeOrders[0].status === "new", String(err?.hint));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
