@@ -24,6 +24,7 @@ import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { PurchaseReceipt } from "@/components/inventory/PurchaseReceipt";
+import { ExpiryPicker } from "@/components/ExpiryPicker";
 import { ReorderDialog } from "@/components/inventory/ReorderDialog";
 import { daysToExpiry } from "@/lib/expiry";
 import { getExpiryWindows } from "@/lib/settings";
@@ -1148,6 +1149,20 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 <AlertTriangle size={10} /> {t("purchase.dupLine", "نفس المادة بسطر ثاني — المجموع {{n}}", { n: formatNum(dupTotal) })}
               </span>
             ) : null;
+            /* م٥: وجبةٌ انتهاؤها أقصرُ من مدة الإرجاع — تُقال قبل الحفظ، بالسطر السريع والمفتوح معاً:
+             * بعد الاستلام ما يقبلها المندوبُ راجعة إلا ضمن المدة، فكلُّ ما لا يُباع قبلها خسارة. */
+            const shortDated = (iso: string) => {
+              const d = daysToExpiry(iso);
+              const rd = getExpiryWindows().returnDays;
+              if (d == null || d > rd) return null;
+              return (
+                <p className="mt-1 basis-full text-2xs font-semibold text-warn-700 dark:text-warn-300" data-shortdated>
+                  {d < 0
+                    ? t("purchase.expiredBatch", "هذا التاريخ فات — المادة منتهية وهي بعدها بالكرتون")
+                    : t("purchase.shortDated", { d: formatNum(d), rd: formatNum(rd), defaultValue: "انتهاؤها بعد {{d}} يوم بس — أقصر من مدة إرجاعك ({{rd}} يوم)" })}
+                </p>
+              );
+            };
             // FAST restock row: the product is already known and already filed —
             // show where it lives + the stock jump, and ask ONLY for the count.
             if (matched && product && !expandedKeys.has(l.key)) {
@@ -1184,6 +1199,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5">
+                      {/* الانتهاءُ على السطر السريع نفسه (كان مخفيّاً خلف «تعديل الأسعار» — صفرُ سطرٍ
+                        * من ٩٤٦ حمل تاريخاً). ضغطتان، أو «نفس آخر مرة» بضغطة. */}
+                      <div data-fast-expiry>
+                        <label className="label text-2xs">{t("xp.expires", "ينتهي")}</label>
+                        <ExpiryPicker compact value={l.expiry} onChange={(iso) => patchLine(l.key, { expiry: iso })}
+                          suggest={product.expiry_date ?? null} />
+                      </div>
                       <div>
                         <label className="label text-2xs">{t("purchase.qty", "الكمية المستلمة")}</label>
                         <input
@@ -1207,6 +1229,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       <button onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")} className="mt-4 grid h-9 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
                     </div>
                   </div>
+                  {l.expiry && shortDated(l.expiry)}
                 </div>
               );
             }
@@ -1303,21 +1326,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   </div>
                   <div className="sm:col-span-3">
                     <label className="label text-2xs">{t("purchase.batchExpiry", "انتهاء الوجبة الجديدة")} <span className="font-normal text-ink-subtle">{t("purchase.batchExpiryHint", "(اختياري — فارغ يبقي القديم)")}</span></label>
-                    <input type="date" className="input text-sm" value={l.expiry} onChange={(e) => patchLine(l.key, { expiry: e.target.value })} />
-                    {l.expiry && (() => {
-                      /* م٥: وجبةٌ انتهاؤها أقصرُ من مدة الإرجاع — تُقال قبل الحفظ: بعد الاستلام
-                       * ما يقبلها المندوبُ راجعة إلا ضمن المدة، فكلُّ ما لا يُباع قبلها خسارة. */
-                      const d = daysToExpiry(l.expiry);
-                      const rd = getExpiryWindows().returnDays;
-                      if (d == null || d > rd) return null;
-                      return (
-                        <p className="mt-1 text-2xs font-semibold text-warn-700 dark:text-warn-300" data-shortdated>
-                          {d < 0
-                            ? t("purchase.expiredBatch", "هذا التاريخ فات — المادة منتهية وهي بعدها بالكرتون")
-                            : t("purchase.shortDated", { d: formatNum(d), rd: formatNum(rd), defaultValue: "انتهاؤها بعد {{d}} يوم بس — أقصر من مدة إرجاعك ({{rd}} يوم)" })}
-                        </p>
-                      );
-                    })()}
+                    <ExpiryPicker value={l.expiry} onChange={(iso) => patchLine(l.key, { expiry: iso })}
+                      suggest={product?.expiry_date ?? null} />
+                    {l.expiry && shortDated(l.expiry)}
                     {l.batchExpiry && !l.expiry && (
                       <p className="mt-1 text-2xs text-ink-subtle" data-batchsaved>
                         {t("purchase.batchSaved", { d: l.batchExpiry.replace(/-/g, "/"), defaultValue: "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ" })}

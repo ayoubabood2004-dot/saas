@@ -1,6 +1,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProductMovementsDialog } from "@/components/inventory/ProductMovements";
 import { ProductLotsDialog } from "@/components/inventory/ProductLots";
+import { ExpiryPicker } from "@/components/ExpiryPicker";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached, patchCached, cachedAt, invalidate } from "@/lib/swrCache";
@@ -29,7 +30,6 @@ import { BarcodeStudio } from "@/components/inventory/BarcodeStudio";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
-import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
@@ -1836,14 +1836,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           )}
 
           <div>
-            <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(DD/MM/YYYY)")}</span></label>
-            <ExpiryInput
-              id="product-expiry"
-              value={f.expiry_date}
-              onChange={(iso) => set({ expiry_date: iso })}
-              onComplete={() => saveRef.current?.focus()}
-              invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
-            />
+            <label className="label">{t("pos.expiry", "Expiry date")}</label>
+            {/* ضغطتان — سنةٌ ثمّ شهر كما على العلبة (EXP 03/2027)؛ واليومُ بالكتابة لمن علبتُه تطبعه. */}
+            <ExpiryPicker id="product-expiry" value={f.expiry_date} onChange={(iso) => set({ expiry_date: iso })} />
           </div>
 
           <div>
@@ -1952,13 +1947,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                   placeholder="0"
                 />
               )}
-              <ExpiryInput
-                id={`bulk-exp-${i}`}
-                value={r.expiry_date}
+              <ExpiryPicker compact id={`bulk-exp-${i}`} value={r.expiry_date}
                 onChange={(iso) => updateRow(i, { expiry_date: iso })}
-                onComplete={() => focusById(`bulk-bc-${i + 1}`)}
-                invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
-              />
+                suggest={i > 0 ? rows[i - 1].expiry_date : null} />
               <button
                 onClick={() => { playTap(); removeRow(i); }}
                 disabled={rows.length === 1}

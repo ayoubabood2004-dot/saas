@@ -5383,5 +5383,14 @@
       "lot_missing": "Batch not found — refresh the page"
     },
     "btn": "Batches"
+  },
+  "xp": {
+    "pick": "Expires…",
+    "same": "Same as last time",
+    "year": "Year",
+    "month": "Month (expires at its end)",
+    "clear": "No date",
+    "exact": "Box shows a day? Type it",
+    "expires": "Expires"
   }
 }

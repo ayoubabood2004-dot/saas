@@ -1176,6 +1176,12 @@ console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
   try { await repo.addLot("la", 1, null); } catch (e) { refused = e.message; }
   check("  والاستقبالُ لا يضيف دفعات", refused === "lot_forbidden");
   mem.delete("vp_session");
+  // شراءٌ قبل أيّ قراءةٍ للدفعات: القديمُ يبقى افتتاحيةً بتاريخه (أمسكته قيادةُ المتصفّح)
+  seed([P("lz", "قديم قبل الشراء", null, { stock: 4, purchase_price: 1, expiry_date: "2027-09-30" })]);
+  mem.delete("vp_demo_lots");
+  await repo.recordPurchase([{ product_id: "lz", name: "قديم قبل الشراء", qty: 6, purchase_price: 1, sell_price: 0, expiry_date: "2027-03-31" }], { company_name: "أوّلُ شراء" });
+  const lz = (await repo.listProductLots("lz")).map((l) => `${l.source}:${l.qty}:${l.expiry_date}`).sort().join();
+  check("شراءٌ قبل أيّ قراءة: القديمُ دفعتُه بتاريخه لا يذوب بالجديدة", lz === "opening:4:2027-09-30,purchase:6:2027-03-31", lz);
   // ما أمسكه التدقيقُ العدائيّ — مرآةً بمرآة
   seed([P("lx", "منتهٍ وجديد", null, { stock: 3, purchase_price: 1, expiry_date: "2020-01-01" })]);
   mem.delete("vp_demo_lots");

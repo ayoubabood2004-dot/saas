@@ -7,6 +7,7 @@ import { Button, Dialog, Skeleton, useToast } from "@/components/ui";
 import { cn, formatDate, formatNum, formatQty, localISO } from "@/lib/utils";
 import { daysToExpiry } from "@/lib/expiry";
 import { describeDbError } from "@/lib/errors";
+import { ExpiryPicker } from "@/components/ExpiryPicker";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /* ============================================================================
@@ -94,7 +95,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
           <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl bg-surface-2 p-2.5 text-xs">
             <label className="flex flex-col gap-1 font-semibold text-ink-muted">
               {t("lots.newDate", "التاريخ الصحيح")}
-              <input type="date" className="input h-9 text-sm" value={edit.date} onChange={(e) => setEdit({ ...edit, date: e.target.value })} data-lot-date />
+              <ExpiryPicker compact value={edit.date} onChange={(iso) => setEdit({ ...edit, date: iso })} />
             </label>
             <label className="flex flex-col gap-1 font-semibold text-ink-muted">
               {t("lots.splitQty", { n: formatQty(l.qty), defaultValue: "لكم علبة؟ (فارغ = الكل {{n}})" })}
@@ -159,7 +160,8 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
                 </label>
                 <label className="flex flex-col gap-1 font-semibold text-ink-muted">
                   {t("lots.expiry", "تنتهي")}
-                  <input type="date" className="input h-9 text-sm" value={add.date} onChange={(e) => setAdd({ ...add, date: e.target.value })} data-lot-add-date />
+                  <ExpiryPicker compact value={add.date} onChange={(iso) => setAdd({ ...add, date: iso })}
+                    suggest={live.length ? live[live.length - 1].expiry_date : null} />
                 </label>
                 <label className="flex min-w-40 flex-1 flex-col gap-1 font-semibold text-ink-muted">
                   {t("lots.note", "ملاحظة")}

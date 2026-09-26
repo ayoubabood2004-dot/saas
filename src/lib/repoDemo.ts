@@ -2851,6 +2851,9 @@ const demoRepo = {
    *  prices), create new products for unknown barcodes, and save a purchase
    *  record. Mirrors the record_purchase RPC used on Supabase. */
   async recordPurchase(lines: PurchaseDraftLine[], meta: PurchaseMeta): Promise<Purchase> {
+    // مرآةُ 0217: الرصيدُ القائم دفعتُه قبل الشراء (بالخادم وُلدت مع المادة) — وإلا ذاب
+    // القديمُ بدفعة الشراء الجديدة ولبس تاريخَها.
+    (await import("./demoLots")).reconcileAll();
     const db = loadDB();
     if (!db.products) db.products = [];
     if (!db.purchases) db.purchases = [];
@@ -2915,6 +2918,7 @@ const demoRepo = {
    *  السطور الجديدة بنفس المطابقة الذكية — السطر غير المتغيّر أثره الصافي صفر.
    *  المدفوع يبقى كما سُدِّد (مقصوصاً على الإجمالي الجديد). يطابق update_purchase RPC. */
   async updatePurchase(purchaseId: string, lines: PurchaseDraftLine[], meta: PurchaseMeta): Promise<Purchase> {
+    (await import("./demoLots")).reconcileAll();
     const db = loadDB();
     const purchase = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!purchase) throw new Error("purchase not found");
