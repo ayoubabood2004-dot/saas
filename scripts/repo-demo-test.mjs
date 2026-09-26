@@ -293,7 +293,7 @@ console.log("\n▸ productMovements — مرآةُ 0207 (قصّةُ الإنتا
     ["a9", "UPDATE", "products", "sand", { __changed: { stock: [15, 9] } }, "2026-09-18T11:00:00.000Z"],
   ].map(([id, action, entity, entity_id, details, created_at]) => ({ id, action, entity, entity_id, details, actor: null, created_at }));
   // مفتاحُ السجلّ من مصدره لا مكتوبٌ بيد — مفتاحٌ مخمَّنٌ يجعل الفحصَ يمرّ على بذرةٍ غيرِ بذرتنا.
-  const AK = /const DEMO_AUDIT_KEY = "([^"]+)"/.exec(readFileSync("src/lib/repo.ts", "utf8"))?.[1];
+  const AK = /const DEMO_AUDIT_KEY = "([^"]+)"/.exec((readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */)?.[1];
   check("مفتاحُ سجلّ الجهاز مقروءٌ من المصدر", !!AK);
   mem.set(AK, JSON.stringify(au.slice().reverse()));
   const mv = await repo.productMovements("sand");
@@ -736,7 +736,7 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
  * مئتَي حرف. */
 {
   console.log("▸ البند ١٥ (الباقي) — سجلُّ الجهاز بلا صور، وسقفُه بالبايت");
-  const AUDIT_KEY = /const DEMO_AUDIT_KEY = "([^"]+)"/.exec(readFileSync("src/lib/repo.ts", "utf8"))?.[1];
+  const AUDIT_KEY = /const DEMO_AUDIT_KEY = "([^"]+)"/.exec((readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */)?.[1];
   check("مفتاحُ السجلّ مقروءٌ من المصدر لا مكتوبٌ بيد", !!AUDIT_KEY, "ما انقرأ DEMO_AUDIT_KEY");
 
   const BIG = "data:image/jpeg;base64," + "A".repeat(300_000);

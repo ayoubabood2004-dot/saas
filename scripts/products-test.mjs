@@ -353,7 +353,7 @@ console.log("▸ keepOldCode — الرمزُ القديم ينزل رمزاً �
 console.log("▸ ح٣ — الشرطُ بالكتابة لا بقراءةٍ بائتة");
 {
   const studio = readFileSync("src/components/inventory/BarcodeStudio.tsx", "utf8");
-  const repo = readFileSync("src/lib/repo.ts", "utf8");
+  const repo = (readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */;
   check("المسارُ المفرد يمرّ من الكتابة الشرطية", studio.includes("repo.assignBarcodeIfEmpty(p.id, code)"));
   check("  وحلقةُ الكلّ كذلك", studio.includes("repo.assignBarcodeIfEmpty(noBarcode[i].id, codes[i])"));
   check("  ولا كتابةَ عمياء بقيت", !studio.includes("repo.updateProduct(noBarcode[i].id, { barcode: codes[i] })"));
@@ -366,7 +366,7 @@ console.log("▸ ح٣ — الشرطُ بالكتابة لا بقراءةٍ با
 /* ── ع١٠: لا مسارَ سقوطٍ نصفَ مطبَّع ──────────────────────────────────── */
 console.log("▸ ع١٠ — الفرعُ النائم نصفُ المطبَّع حُذف");
 {
-  const repo = readFileSync("src/lib/repo.ts", "utf8");
+  const repo = (readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */;
   check("لا استعلامَ بديلاً يطابق matchCode بمخزونٍ خام",
     !repo.includes("alt_codes.cs.{${code}}"));
   check("وغيابُ الدالّة يُقال باسمه لا بصمت", repo.includes("lookup_fn_missing"));
@@ -567,7 +567,7 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   const mig = readFileSync("supabase/migrations/0174_product_images.sql", "utf8");
   const invP = readFileSync("src/pages/Inventory.tsx", "utf8");
   const front = readFileSync("src/pages/Storefront.tsx", "utf8");
-  const repoS = readFileSync("src/lib/repo.ts", "utf8");
+  const repoS = (readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */;
   check("0174: العمود مسارٌ نصيّ والكتلوج يرجعه", mig.includes("add column if not exists image_path text") && mig.includes("p.image_path"));
   // ملفوفةٌ بـ(select …): 0181 لفّت نداءات السياسات كلَّها — والفحصُ كان يشترط
   // الشكلَ العاريَ حرفياً، فكان يحرس العطبَ لا الصواب.
@@ -641,7 +641,7 @@ console.log("▸ الستور العام — الرقم المعروض هو ال
 console.log("▸ جرس طلبات المتجر — يعدّ بلا صفوف، ويسكت بالخلف، ويستأذن بضغطة");
 {
   const bell = readFileSync("src/lib/storeOrdersLive.ts", "utf8");
-  const repoSrc = readFileSync("src/lib/repo.ts", "utf8");
+  const repoSrc = (readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */;
   const store = readFileSync("src/pages/ClinicStore.tsx", "utf8");
   const side = readFileSync("src/components/Sidebar.tsx", "utf8");
 
@@ -709,7 +709,7 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   const front = readFileSync("src/pages/Storefront.tsx", "utf8");
   const lib = readFileSync("src/lib/storeLib.ts", "utf8");
   const track = readFileSync("src/pages/StoreTrack.tsx", "utf8");
-  const repoW2 = readFileSync("src/lib/repo.ts", "utf8");
+  const repoW2 = (readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */;
   const mig = readFileSync("supabase/migrations/0182_store_catalog_stable_order.sql", "utf8");
   /* فحوصُ شِفرةٍ لا نصّ: أوّلُ صياغةٍ لثلاثةٍ منها كانت تبحث عن الكلمات
    * (`hasImg`، `object-cover`) فتفشل على **التعليق الذي يشرح إزالتها** —
@@ -798,7 +798,7 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("  والطرفان يمرّان من نفس الدالّة (المخزونُ يُطبَّع كما المُدخَل)",
     SL.matchSlug(" VET-0EN2 ", "vet-0en2") && SL.matchSlug("vet-0en2", " VET-0EN2 "));
   check("  ولا موضعَ مقارنةٍ باقٍ على normalizeSlug بالنصف التجريبيّ",
-    !/sp\.slug !== normalizeSlug\(/.test(readFileSync("src/lib/repo.ts", "utf8")));
+    !/sp\.slug !== normalizeSlug\(/.test((readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */));
   check("  وقاعدةُ الخادم ما زالت lower(trim(p_slug)) — لو تبدّلت لبطل القالب",
     readFileSync("supabase/migrations/0095_store.sql", "utf8").includes("lower(trim(p_slug))"));
 
@@ -809,7 +809,7 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
    * يسقط من الصندوق والشارةُ تعدّه: «١ بانتظارك» و«ما اكو طلبات» بنفس الشاشة —
    * والطلبُ لا يُقبل ولا يُرفض أصلاً. */
   const store = readFileSync("src/pages/ClinicStore.tsx", "utf8");
-  const repoS = readFileSync("src/lib/repo.ts", "utf8");
+  const repoS = (readFileSync("src/lib/repo.ts", "utf8") + "\n" + readFileSync("src/lib/repoDemo.ts", "utf8")) /* المرآةُ التجريبية بملفّها (خارج الإقلاع) */;
   check("صندوقُ «الجديد» له قراءتُه الخاصّة بلا سقف",
     /async listNewStoreOrders\(\)[\s\S]{0,400}allPages<StoreOrder>[\s\S]{0,200}eq\("status", "new"\)/.test(repoS));
   check("  ولا سقفَ عليها (لا limit ولا slice)",

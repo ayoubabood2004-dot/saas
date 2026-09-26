@@ -44,7 +44,7 @@ async function load(entry) {
 
 const SB = read("src/components/retail/SaleBuilder.tsx");
 const RS = read("src/pages/RetailSales.tsx");
-const REPO = read("src/lib/repo.ts");
+const REPO = read("src/lib/repo.ts") + "\n" + read("src/lib/repoDemo.ts");   // المرآةُ التجريبية بملفّها (خارج الإقلاع)
 const TOAST = read("src/components/ui/Toast.tsx");
 const HOOK = read("src/hooks/useRevalidateOnReturn.ts");
 const ar = JSON.parse(read("src/i18n/ar.json"));
