@@ -1,3 +1,4 @@
+import { noteScan } from "@/lib/scanStats";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1173,6 +1174,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
 
   const handleScan = async (code: string) => {
     if (done) { pendingScanRef.current = code; reset(); return; }
+    noteScan(code, "sale", clinicId);   // م٣: قياسٌ صامت لصيغة المسحة — لا يغيّر شيئاً
     const n = peekScanMult(code);
     /* القائمةُ المحمَّلة أوّلاً، والخادمُ بعدها.
      *

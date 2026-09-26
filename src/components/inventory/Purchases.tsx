@@ -18,6 +18,7 @@ import { sellPriceToSend, purchaseBlockers } from "@/lib/purchaseIntent";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
+import { noteScan } from "@/lib/scanStats";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
@@ -707,6 +708,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const scanAdd = () => {
     const raw = scan.trim();
     if (!raw) return;
+    noteScan(raw, "purchase", clinicId ?? user?.clinic_id);   // م٣: قياسٌ صامت — الاسمُ المكتوب لا يُعدّ
     // شكلُ إكسل يُردّ قبل أن يصير سطراً (G8). وهنا الضررُ أوضحُ منه بنموذج
     // المنتج: فحصُ «يشبه باركوداً» أدناه لا يقبل `.` و`+`، فالصيغةُ العلمية
     // تسقط إلى فرعِ **الاسم** — فيُنشأ منتجٌ اسمه «1.23E+12» بمخزن العيادة.

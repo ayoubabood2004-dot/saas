@@ -3822,6 +3822,8 @@ const demoRepo = {
   async logClientEvent(event: string, details?: Record<string, unknown>): Promise<void> {
     demoAuditPush({ action: "CLIENT", entity: "client", entity_id: null, details: { ...(details ?? {}), event } });
   },
+  /** قياسُ صيغ المسح (0213) — التجريبيُّ لا يرسل شيئاً: القياسُ عن ماسحات العيادات الحقيقية. */
+  async noteScanShapes(_day: string, _counts: Record<string, number>, _samples: string[], _clinicId: string): Promise<void> {},
   /* ---- مركزُ الحركات (0152) — مرآةُ activity_summary/page/actors ----
    * نفسُ التصنيف (auditKind) ونفسُ المختصر (activityBrief) ونفسُ المؤشّر. */
   async activitySummary(from: string, to: string, bucket: "day" | "hour"): Promise<ActivitySummaryRow[]> {
@@ -6288,6 +6290,10 @@ const supabaseRepo: typeof demoRepo = {
   async logClientEvent(event, details) {
     // Pre-0045 databases don't have the RPC yet — best-effort, always silent.
     try { await sbc().rpc("log_client_event", { p_event: event, p_details: details ?? {} }); } catch { /* ignore */ }
+  },
+  async noteScanShapes(day, counts, samples, clinicId) {
+    // يرمي على الخطأ: العدّادُ يُبقي ما لم يصل ويعيده لاحقاً، ولا يقوله للمستخدم.
+    need(await sbc().rpc("note_scan_shapes", { p_day: day, p_counts: counts, p_samples: samples, p_clinic: clinicId }));
   },
   async listAuditLog(_clinicId, limit = 200) {
     // RLS already scopes to the manager's clinic; just order + cap.
