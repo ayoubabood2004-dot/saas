@@ -33,14 +33,14 @@ const BookingWizard = page(() => import("@/pages/BookingWizard").then((m) => ({ 
 const Reception = page(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
 const Consultation = page(() => import("@/pages/Consultation").then((m) => ({ default: m.Consultation })));
 const Settings = page(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
-const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })));
+const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })), ["act"]);
 const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
 const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
 const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
-const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })));
+const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })), ["farm"]);
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));

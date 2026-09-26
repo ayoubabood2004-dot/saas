@@ -1,6 +1,6 @@
-import { lazy } from "react";
+import { lazy, type ComponentType } from "react";
 import { retryImport } from "@/lib/appUpdate";
-import { ensureDictionary } from "@/i18n";
+import { ensureDictionary, ensureOwned } from "@/i18n";
 
 /**
  * كلُّ صفحةٍ كسولة تمرّ من هنا — وهنا وحدَه يُسمح بـ`lazy()` بشِفرة الإقلاع
@@ -18,5 +18,7 @@ import { ensureDictionary } from "@/i18n";
  * وفشلُ أيٍّ منهما يُرمى لحارس المسار (`ErrorBoundary`): «حدث خطأ ما / إعادة
  * التحميل» بالعربية — نصوصُه حارّة — لا صفحةٌ نصفُ مترجمة.
  */
-export const page: typeof lazy = (load) =>
-  lazy(() => Promise.all([retryImport(load), ensureDictionary()]).then(([m]) => m));
+export function page<T extends ComponentType<any>>(load: () => Promise<{ default: T }>, owned: readonly string[] = []) {
+  /* و`owned`: نطاقاتٌ تملكها هذه الصفحةُ وحدَها (hot-paths.json) — تصل معها بالتوازي. */
+  return lazy(() => Promise.all([retryImport(load), ensureDictionary(), ...owned.map((ns) => ensureOwned(ns))]).then(([m]) => m));
+}

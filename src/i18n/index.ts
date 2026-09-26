@@ -1,6 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import arHot from "./arHot";
+import arOwned from "./arOwned";
 import { LOCALES, localeInfo, fallbackMap } from "./registry";
 // نسبيٌّ لا `@/`: حُزمُ esbuild بالفحوص (`lang-default-test` وأخواتها) تحلّه
 // بلا اسمٍ مستعار. و`appUpdate` بلا أثرٍ على مستوى الوحدة.
@@ -103,12 +104,44 @@ export function ensureDictionary(lang: string = i18n.language): Promise<void> {
   return coldLoading;
 }
 
+/* ── النطاقاتُ المملوكة لصفحةٍ واحدة (`owned` بـhot-paths.json) ──────────────
+ * نصوصُ سجلّ الحركات وحقول الدواجن كانت بالنصف البارد تنزل مع أوّل صفحةٍ لكلّ
+ * مستخدم، ولا تُقرأ إلا بصفحتيهما. فصار لكلٍّ حزمتُه تصل مع صفحته (`page(load, [ns])`)،
+ * بنفس عقد `ensureDictionary`: مرّةً واحدة، والفشلُ يُرمى ويُعاد، والإنكليزيُّ لا ينزّلها.
+ * و`ownedWanted` يتذكّر ما طلبته صفحةٌ: تبديلُ اللغة إلى العربية وهي مفتوحة يجلبه أيضاً —
+ * وإلا بقيت الصفحةُ المفتوحةُ بمفاتيحَ خام حتى إعادة التحميل. */
+const ownedLoaded = new Set<string>();
+const ownedLoading = new Map<string, Promise<void>>();
+const ownedWanted = new Set<string>();
+export function ensureOwned(ns: string, lang: string = i18n.language): Promise<void> {
+  ownedWanted.add(ns);
+  if (ownedLoaded.has(ns) || !needsArCold(lang)) return Promise.resolve();
+  const load = arOwned[ns];
+  if (!load) return Promise.resolve();   // خارج Vite: النطاقُ حاضرٌ بالقاموس الكامل
+  let p = ownedLoading.get(ns);
+  if (!p) {
+    p = retryImport(load).then(
+      (m) => {
+        i18n.addResourceBundle("ar", "translation", { [ns]: m.default }, true, false);
+        ownedLoaded.add(ns);
+      },
+      (err: unknown) => {
+        ownedLoading.delete(ns);
+        throw err;
+      },
+    );
+    ownedLoading.set(ns, p);
+  }
+  return p;
+}
+
 /* ظهيرٌ وقتَ التشغيل: كلُّ تبديلٍ إلى لغةٍ تحتاج العربيةَ كاملةً يبدأ تحميلَ
  * النصف البارد — ومنه `changeLanguage("ar")` المباشر بـ`portal.ts`، الذي لا يمرّ
  * من `setLang`. والفشلُ هنا لا يُقال مرّتين: الصفحةُ التالية تنتظر نفسَ الوعد
  * وتعرض «أعد المحاولة» بنفسها. */
 i18n.on("languageChanged", (lng: string) => {
   if (needsArCold(lng)) ensureDictionary(lng).catch(() => { /* تقوله بوّابةُ الصفحة */ });
+  if (needsArCold(lng)) for (const ns of ownedWanted) ensureOwned(ns, lng).catch(() => { /* كذلك */ });
 });
 
 /* التبديلُ يحمّل **أوّلاً** ثم يثبّت: كانت `vp_lang` تُكتب والاتجاهُ يُقلب قبل

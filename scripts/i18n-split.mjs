@@ -29,6 +29,8 @@ export const HOT_PATHS_JSON = "src/i18n/hot-paths.json";
 export const STORE_AR_JSON = "src/i18n/store.ar.json";
 export const AR_HOT_TS = "src/i18n/arHot.ts";
 export const AR_COLD_TS = "src/i18n/arCold.ts";
+export const AR_OWNED_TS = "src/i18n/arOwned.ts";
+const OWNED_PREFIX = "virtual:ar-owned/";
 
 const isObj = (v) => v !== null && typeof v === "object";
 const norm = (id) => id.split("?")[0].split(path.sep).join("/");
@@ -41,6 +43,16 @@ export function readHotPaths(root = process.cwd()) {
     throw new Error(`${HOT_PATHS_JSON}: لازم يحمل "hot" قائمةَ نصوصٍ غيرِ فارغة`);
   }
   return doc.hot;
+}
+
+/** النطاقاتُ التي تملكها صفحةٌ واحدة (`owned` بـhot-paths.json): {ns: ملفُّ مالكها}. */
+export function readOwned(root = process.cwd()) {
+  const doc = JSON.parse(readFileSync(path.join(root, HOT_PATHS_JSON), "utf8"));
+  const o = doc.owned ?? {};
+  if (!isObj(o) || Object.values(o).some((v) => typeof v !== "string" || !v.trim())) {
+    throw new Error(`${HOT_PATHS_JSON}: "owned" لازم خريطةَ نطاقٍ ← ملفِّ مالكه`);
+  }
+  return o;
 }
 
 /** نطاقاتُ صفحة الزائر (`store.ar.json`) — تبقى حارّةً كاملةً (انظر `splitAr`). */
@@ -65,7 +77,14 @@ export function readAr(root = process.cwd()) {
  *     تمرّ من `storeApi → repo → index.ts` فتعيد تهيئةَ i18next بالنصف الحارّ —
  *     ونطاقٌ باردٌ من نطاقاتها يُمحى من شاشتها.
  */
-export function splitAr(ar, hotPaths, storeKeys = []) {
+export function splitAr(ar, hotPaths, storeKeys = [], owned = {}) {
+  /* النطاقاتُ المملوكة: نطاقٌ أعلى كاملٌ لا حارّ ولا من الزائر — وإلا فنصفُه يصل مع
+   * الإقلاع ونصفُه مع صفحته، والحارسُ لا يعرف أيَّهما يُقرأ أين. */
+  for (const ns of Object.keys(owned)) {
+    if (!isObj(ar[ns]) || Array.isArray(ar[ns])) throw new Error(`نطاقٌ مملوكٌ لا وجودَ له بـar.json (أو ليس نطاقاً): ${ns}`);
+    if (hotPaths.some((h) => h === ns || h.startsWith(ns + "."))) throw new Error(`نطاقٌ مملوكٌ وحارٌّ معاً: ${ns}`);
+    if (storeKeys.includes(ns)) throw new Error(`نطاقُ صفحة الزائر لا يكون مملوكاً: ${ns}`);
+  }
   const seen = new Set();
   for (const p of hotPaths) {
     if (seen.has(p)) throw new Error(`مسارٌ حارٌّ مكرّر: ${p}`);
@@ -108,7 +127,9 @@ export function splitAr(ar, hotPaths, storeKeys = []) {
     return { hot, cold, h, c };
   };
   const r = walk(ar, "");
-  return { hot: r.hot, cold: r.cold };
+  const ownedOut = {};
+  for (const ns of Object.keys(owned)) { ownedOut[ns] = r.cold[ns]; delete r.cold[ns]; }
+  return { hot: r.hot, cold: r.cold, owned: ownedOut };
 }
 
 /** كلُّ ورقة (والمصفوفةُ تُفكّ إلى عناصرها) — للمقارنة والعدّ. */
@@ -122,7 +143,7 @@ export function leafPaths(o, prefix = "", out = []) {
 
 /** القسمةُ كما يراها البنّاء — من ملفّات الشجرة نفسِها. */
 export function splitFromTree(root = process.cwd()) {
-  return splitAr(readAr(root), readHotPaths(root), readStoreKeys(root));
+  return splitAr(readAr(root), readHotPaths(root), readStoreKeys(root), readOwned(root));
 }
 
 /**
@@ -144,6 +165,7 @@ export function i18nSplit() {
   const ids = () => ({
     hot: norm(path.join(root, AR_HOT_TS)),
     cold: norm(path.join(root, AR_COLD_TS)),
+    owned: norm(path.join(root, AR_OWNED_TS)),
     ar: norm(path.join(root, AR_JSON)),
   });
   const watched = () => [AR_JSON, HOT_PATHS_JSON, STORE_AR_JSON].map((f) => norm(path.join(root, f)));
@@ -156,18 +178,31 @@ export function i18nSplit() {
       resplit();
       for (const f of watched()) this.addWatchFile(f);
     },
+    resolveId(id) {
+      return id.startsWith(OWNED_PREFIX) ? `\0${id}` : null;
+    },
     load(id) {
-      const n = norm(id);
-      const { hot, cold } = ids();
-      if (n !== hot && n !== cold) return null;
       if (!split) resplit();
+      /* حزمةٌ صغيرةٌ لكلّ نطاقٍ مملوك — تصل مع صفحته وحدَها. */
+      if (id.startsWith(`\0${OWNED_PREFIX}`)) {
+        const ns = id.slice(OWNED_PREFIX.length + 1);
+        return `export default ${JSON.stringify(split.owned[ns] ?? {})};\n`;
+      }
+      const n = norm(id);
+      const { hot, cold, owned } = ids();
+      if (n === owned) {
+        // خريطةُ المحمّلات وحدَها (بلا نصوص) — تُستورد مع الإقلاع ولا تزن شيئاً.
+        const entries = Object.keys(split.owned).map((ns) => `${JSON.stringify(ns)}: () => import(${JSON.stringify(OWNED_PREFIX + ns)})`);
+        return `export default { ${entries.join(", ")} };\n`;
+      }
+      if (n !== hot && n !== cold) return null;
       return `export default ${JSON.stringify(n === hot ? split.hot : split.cold)};\n`;
     },
     handleHotUpdate(ctx) {
       if (!watched().includes(norm(ctx.file))) return undefined;
       resplit();
-      const { hot, cold } = ids();
-      for (const id of [hot, cold]) {
+      const { hot, cold, owned } = ids();
+      for (const id of [hot, cold, owned]) {
         const mod = ctx.server.moduleGraph.getModuleById(id);
         if (mod) ctx.server.moduleGraph.invalidateModule(mod);
       }
@@ -206,6 +241,13 @@ export function i18nSplit() {
       const store = entry("store.html");
       if (!main) errs.push("لم أجد مدخلَ index.html بالحزم — لا أستطيع التحقّق فلا أمرّر");
       if (!store) errs.push("لم أجد مدخلَ store.html بالحزم — لا أستطيع التحقّق فلا أمرّر");
+      /* والمملوكةُ: لكلٍّ حزمتُه، ولا شيءَ منها بإغلاق الإقلاع الثابت. */
+      for (const ns of Object.keys(split?.owned ?? {})) {
+        const vid = `\0${OWNED_PREFIX}${ns}`;
+        const cs = chunks.filter((c) => Object.keys(c.modules).includes(vid));
+        if (cs.length !== 1) errs.push(`النطاقُ المملوك ${ns} بـ${cs.length} حزمة (المطلوب واحدة)`);
+        if (main && closure(main).some((c) => Object.keys(c.modules).includes(vid))) errs.push(`النطاقُ المملوك ${ns} بالإغلاق الثابت لـindex.html`);
+      }
       if (main) {
         const cl = closure(main);
         if (cl.some((c) => has(c, cold))) errs.push("النصفُ البارد بالإغلاق الثابت لـindex.html — صار يُحمَّل قبل أوّل رسم");
@@ -239,6 +281,11 @@ export function esbuildI18nSplit({ root = process.cwd(), coldExternal = "./arCol
         norm(a.importer).endsWith("/src/i18n/index.ts") ? { path: coldExternal, external: true } : undefined);
       b.onLoad({ filter: /[\\/]src[\\/]i18n[\\/]arHot\.ts$/ }, () => ({
         contents: `export default ${JSON.stringify(split.hot)};`, loader: "js",
+      }));
+      // المملوكةُ للفحوص: محمّلٌ يعدّ مرّاتِ تقييمه ويرجع نصوصَ نطاقه.
+      b.onLoad({ filter: /[\\/]src[\\/]i18n[\\/]arOwned\.ts$/ }, () => ({
+        contents: `export default { ${Object.keys(split.owned ?? {}).map((ns) => `${JSON.stringify(ns)}: () => { globalThis.__arOwnedEvals = (globalThis.__arOwnedEvals || 0) + 1; return Promise.resolve({ default: ${JSON.stringify(split.owned[ns])} }); }`).join(", ")} };`,
+        loader: "js",
       }));
     },
   };

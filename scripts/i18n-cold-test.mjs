@@ -68,8 +68,9 @@ if (split) {
   };
   // المقارنةُ بترتيب ar.json المكتوب — القسمةُ تمشيه بترتيبه، فالدمجُ يُرتَّب عليه.
   const reorder = (shape, o) => (isObj(shape) && !Array.isArray(shape) ? Object.fromEntries(Object.keys(shape).filter((k) => k in o).map((k) => [k, reorder(shape[k], o[k])])) : o);
-  check("النصفان معاً = ar.json حرفاً بحرف", deepEqual(reorder(ar, merge(split.hot, split.cold)), ar));
-  const hl = new Set(leafPaths(split.hot)), cl = leafPaths(split.cold);
+  const ownedAll = split.owned ?? {};
+  check("الأقسامُ معاً (حارٌّ + باردٌ + مملوكة) = ar.json حرفاً بحرف", deepEqual(reorder(ar, merge(merge(split.hot, split.cold), ownedAll)), ar));
+  const hl = new Set(leafPaths(split.hot)), cl = [...leafPaths(split.cold), ...leafPaths(ownedAll)];
   const both = cl.filter((l) => hl.has(l));
   check("لا ورقةَ بالنصفين (دمجٌ عميقٌ لا يطمس شيئاً)", both.length === 0, both.slice(0, 5).join("، "));
   check("مجموعُ الأوراق = أوراقُ ar.json", hl.size + cl.length === leafPaths(ar).length, `${hl.size} + ${cl.length} ≠ ${leafPaths(ar).length}`);
@@ -175,6 +176,7 @@ if (codeB) {
     check(`B1 إقلاعٌ عربيّ: المفتاحُ الحارّ عربيّ (${hotKey})`, i18n.t(hotKey) === at(ar, hotKey), `طلع «${i18n.t(hotKey)}»`);
     check(`B1   والمفتاحُ البارد لم يصل بعد (${coldKey}) — الإقلاعُ لا يحمل النصفَ البارد`, i18n.t(coldKey) === coldKey, `طلع «${i18n.t(coldKey)}» — القاموسُ كلُّه بالإقلاع`);
     check("B1   ولم تُقيَّم وحدةُ النصف البارد عند الإقلاع", globalThis.__arColdEvals === 0, `قُيّمت ${globalThis.__arColdEvals}`);
+    check("B1   ولا نطاقٌ مملوك عند الإقلاع", !globalThis.__arOwnedEvals, `قُيّم ${globalThis.__arOwnedEvals}`);
     let threw = false, got;
     try { got = mod.WA.waVariants("rem.vaccine"); } catch { threw = true; }
     check("B2 waVariants ترمي قبل وصول النصف البارد (لا قائمةَ فارغة تصوغ رسالةً فارغة)", threw, `أرجعت ${JSON.stringify(got)?.slice(0, 40)}`);
@@ -184,6 +186,15 @@ if (codeB) {
       const ps = [ensure(), ensure(), ensure()];
       await Promise.all(ps);
       check("B4 ثلاثةُ نداءاتٍ متزامنة ⇐ تقييمٌ واحدٌ للنصف البارد", globalThis.__arColdEvals === 1, `قُيّم ${globalThis.__arColdEvals}`);
+      /* النطاقاتُ المملوكة لصفحةٍ واحدة: لا يجلبها النصفُ البارد، وتجلبها صفحتُها مرّةً واحدة. */
+      const ownedNs = Object.keys(split?.owned ?? {});
+      const ownedKey = ownedNs.length ? `${ownedNs[0]}.${leafPaths(split.owned[ownedNs[0]])[0]}` : null;
+      check(`B11 النطاقُ المملوك (${ownedKey}) غائبٌ بعد النصف البارد — لا يُدفع مع كلّ صفحة`, !!ownedKey && i18n.t(ownedKey) === ownedKey && !globalThis.__arOwnedEvals, `طلع «${ownedKey && i18n.t(ownedKey)}»`);
+      check("ensureOwned مُصدَّرة من @/i18n", typeof mod.I18N.ensureOwned === "function");
+      if (typeof mod.I18N.ensureOwned === "function") {
+        await Promise.all(ownedNs.flatMap((ns) => [mod.I18N.ensureOwned(ns), mod.I18N.ensureOwned(ns)]));
+        check(`B11   وصفحتُه تجلبه مرّةً واحدة لكلّ نطاق (${ownedNs.length})`, globalThis.__arOwnedEvals === ownedNs.length, `قُيّم ${globalThis.__arOwnedEvals}`);
+      }
       const bad = [];
       let n = 0;
       (function walk(o, p) {

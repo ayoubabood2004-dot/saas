@@ -233,6 +233,25 @@ for (const [name, html] of [["store", "dist/store.html"], ["main", "dist/index.h
   }
 }
 
+/* ٥) النطاقاتُ المملوكة لصفحةٍ واحدة (`owned` بـhot-paths.json): خرجت من النصف البارد
+ *    لتصل مع صفحتها — فتُقاس هي أيضاً: حزمةٌ واحدةٌ لكلّ نطاق، خارج المستندين، داخل
+ *    مخبأ العامل الخدميّ، وبسقفٍ صغير. نقلُ الوزن لا يُحسب مكسباً إلا وهو مقيسٌ حيث ذهب. */
+{
+  const owned = Object.keys(JSON.parse(readFileSync("src/i18n/hot-paths.json", "utf8")).owned ?? {});
+  const OWNED_MAX = 8_000;
+  for (const ns of owned) {
+    const hits = readdirSync("dist/assets").filter((f) => new RegExp(`^${ns}-[\\w-]+\\.js$`).test(f));
+    if (hits.length !== 1) { fails++; console.error(`   ✗ حزمةُ النطاق المملوك ${ns}: ${hits.length} (المطلوب واحدة)`); continue; }
+    const [f] = hits;
+    const gz = gzipSync(readFileSync(`dist/assets/${f}`)).length;
+    const inHtml = ["dist/index.html", "dist/store.html"].some((h) => readFileSync(h, "utf8").includes(f));
+    const sw = existsSync("dist/sw.js") && readFileSync("dist/sw.js", "utf8").includes(`assets/${f}`);
+    const ok = gz <= OWNED_MAX && !inHtml && sw;
+    if (!ok) fails++;
+    console.log(`   ${ok ? "✓" : "✗"} ${ns} (مملوك): ${gz.toLocaleString("en")} بايت مضغوطة من ${OWNED_MAX.toLocaleString("en")}${inHtml ? " — مُعلَنٌ بمستند!" : ""}${sw ? "" : " — غائبٌ عن sw.js!"} (${f})`);
+  }
+}
+
 if (fails) {
   console.error("\n✗ store-weight-guard: صفحةُ الزائر تجاوزت ميزانيّتها. الأرجح `import` جديدٌ يجرّ قشرةَ التطبيق (repo، سياقُ الدخول، مكوّنُ ui) — استورد من `storeApi` أو افصل الوحدة.");
   console.error("  وإن كان التجاوزُ بـmain أو arCold: هل ما زال `i18nSplit()` بـvite.config.ts؟ وهل أُضيف نطاقٌ لـsrc/i18n/hot-paths.json بلا قياس؟");
