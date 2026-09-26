@@ -25,6 +25,8 @@ export interface CampaignPrefill {
   reminderDate?: string;
   /** صنف التذكير كما يسجّله سجل الواتساب (vaccine/surgery/appointment…). */
   reminderKind?: string;
+  /** قيمُ التذكير خامّةً — تُصبّ في قالبٍ خاصّ تختاره العيادةُ بدل النصّ الجاهز (0218). */
+  vars?: { detail: string; date: string; time: string };
 }
 
 /** One actionable reminder row shown in the widget. */

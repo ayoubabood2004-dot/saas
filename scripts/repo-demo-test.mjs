@@ -1262,6 +1262,22 @@ console.log("▸ 0216 — الجردُ بموافقة وسحبُ المخزن (�
   mem.delete("vp_session");
 }
 
+console.log("▸ 0218 — قوالبُ الواتساب (مرآةُ الحزمة)");
+{
+  mem.delete("vp_demo_wa_templates");
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  const a = await repo.saveWaTemplate({ title: " عرض الصيف ", body: "هلا {{اسم_المالك}}" });
+  check("القالبُ يُحفظ مقصوصاً ويُقرأ", a.title === "عرض الصيف" && (await repo.listWaTemplates()).length === 1);
+  await repo.saveWaTemplate({ id: a.id, title: a.title, body: "نص جديد" });
+  check("  ويتحدّث بنفس المعرّف (لا قالبٌ ثانٍ)", (await repo.listWaTemplates()).map((x) => x.body).join() === "نص جديد");
+  check("  وعنوانٌ فارغ يُرفض", (await code(() => repo.saveWaTemplate({ title: "  ", body: "x" }))) === "wa_templates_invalid");
+  await repo.deleteWaTemplate(a.id);
+  check("  ويُحذف، وحذفُ غير الموجود يرمي (لا «انحذف» كاذبة)", (await repo.listWaTemplates()).length === 0 && (await code(() => repo.deleteWaTemplate(a.id))) === "not_found");
+  for (let i = 0; i < 100; i++) await repo.saveWaTemplate({ title: `ق${i}`, body: "x" });
+  check("  وسقفُ ١٠٠", (await code(() => repo.saveWaTemplate({ title: "١٠١", body: "x" }))) === "wa_templates_full");
+  mem.delete("vp_demo_wa_templates");
+}
+
 console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
 {
   const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };

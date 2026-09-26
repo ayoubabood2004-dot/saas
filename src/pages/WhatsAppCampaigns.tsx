@@ -10,6 +10,7 @@ import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import { computeReminderRows } from "@/lib/reminders";
 import { waVariants, pickVariantIndex, WA_TOKENS, type WaPool } from "@/lib/waTemplates";
 import { Dices } from "lucide-react";
+import { MyTemplates } from "@/components/campaigns/MyTemplates";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { useAuth } from "@/contexts/AuthContext";
@@ -129,6 +130,13 @@ export function WhatsAppCampaigns() {
   // into every template so messages read "عيادة <this clinic>" — not "doctorVet".
   const clinicName = getClinicName() || t("app.name", "doctorVet");
   const withClinic = (s: string) => s.split(VAR_CLINIC).join(clinicName);
+  /* قيمُ التذكير (0218): قالبٌ خاصٌّ يُختار لتذكيرٍ بعينه تُصبّ فيه تفاصيلُه وتاريخُه
+   * وساعتُه. وبلا تذكير تُفرَّغ عند الإرسال — لا يصل رمزٌ خامٌّ لزبون. */
+  const [reminderVars, setReminderVars] = useState<{ detail: string; date: string; time: string } | null>(null);
+  const withVars = (s: string, v = reminderVars) => v
+    ? s.split(WA_TOKENS.detail).join(v.detail).split(WA_TOKENS.date).join(v.date).split(WA_TOKENS.time).join(v.time)
+    : s;
+  const noRawTokens = (s: string) => s.split(WA_TOKENS.detail).join("").split(WA_TOKENS.date).join("").split(WA_TOKENS.time).join("");
 
   /* القوالب الأربعة صارت **مجموعات من عشر صياغات** لكل قالب (waMsgs.camp.*):
    * الضغط على القالب ينتقي صياغةً بذرتُها تاريخ اليوم — نفس اليوم نفس النسخة
@@ -178,6 +186,7 @@ export function WhatsAppCampaigns() {
     if (!prefill?.targetPetId || prefillApplied.current) return;
     prefillApplied.current = true;
     setSelected(new Set([prefill.targetPetId]));
+    if (prefill.vars) setReminderVars(prefill.vars);
     if (prefill.message) {
       setMessage(prefill.message);
       // القالب يُبرَز ليعمل زرّ «صياغة أخرى» على المجموعة الصحيحة.
@@ -263,7 +272,7 @@ export function WhatsAppCampaigns() {
     if (!group.phone) { toast.error(t("campaigns.noPhone", "No number")); return; }
     if (!message.trim()) { toast.error(t("campaigns.noTemplate", "Write the message first.")); return; }
     const petNames = group.pets.map((p) => p.name).join(" و "); // Arabic "and"
-    const text = renderMessage(message, group.ownerName, petNames);
+    const text = renderMessage(noRawTokens(withVars(withClinic(message))), group.ownerName, petNames);
     const num = waNumber(group.phone, dial);
     /* رسالةُ تذكيرٍ تُسجَّل **بنوع التذكير** لا بشريحة الصفحة. منذ c3680c1 كانت تُسجَّل
      * `manual` دائماً (الشريحةُ الافتراضية «الكل») — ومركزُ التذكيرات يطابق السجلَّ بـ
@@ -350,11 +359,18 @@ export function WhatsAppCampaigns() {
               )}
             </div>
 
+            {/* قوالبُ العيادة (0218): تُحفظ بالقاعدة وتُختار بضغطة — تُصاغ باسم العيادة وقيم التذكير. */}
+            <MyTemplates message={message} onApply={(body) => { setActiveTpl(null); setMessage(withVars(withClinic(body))); }} />
+
             {/* Variable badges */}
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-ink-muted">{t("campaigns.variables", "Variables")}:</span>
               <button onClick={() => insertVar(VAR_OWNER)} className="chip bg-brand-50 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300">{VAR_OWNER}</button>
               <button onClick={() => insertVar(VAR_PET)} className="chip bg-accent-50 text-xs font-semibold text-accent-700 transition hover:bg-accent-100 dark:bg-accent-500/15 dark:text-accent-300">{VAR_PET}</button>
+              {/* رموزُ التذكير تُعرض حين يُفتح التذكير — تُحفظ بالقالب وتُملأ من كلّ تذكيرٍ لاحق. */}
+              {reminderVars && [WA_TOKENS.detail, WA_TOKENS.date, WA_TOKENS.time].map((tok) => (
+                <button key={tok} onClick={() => insertVar(tok)} className="chip bg-surface-2 text-xs font-semibold text-ink-muted transition hover:bg-surface-3">{tok}</button>
+              ))}
             </div>
 
             <label className="label">{t("campaigns.messageLabel", "Message text")}</label>

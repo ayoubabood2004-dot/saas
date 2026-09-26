@@ -22,7 +22,7 @@ import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow } from "@/types";
+import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -112,6 +112,14 @@ function demoExpensesLoad(): Expense[] {
   try { const r = localStorage.getItem(DEMO_EXPENSES_KEY); if (r) return JSON.parse(r) as Expense[]; } catch { /* ignore */ }
   return [];
 }
+
+const DEMO_WA_KEY = "vp_demo_wa_templates";
+function demoWaLoad(): WaTemplate[] {
+  try { const r = localStorage.getItem(DEMO_WA_KEY); if (r) return JSON.parse(r) as WaTemplate[]; } catch { /* swallow-ok: جهازٌ بلا تخزين = بلا قوالب محفوظة */ }
+  return [];
+}
+/** يرمي: قالبٌ لم يُحفظ ويُقال «انحفظ» كذبٌ يُصدَّق. */
+function demoWaSave(list: WaTemplate[]) { localStorage.setItem(DEMO_WA_KEY, JSON.stringify(list)); }
 
 function demoExpensesSave(list: Expense[]) { try { localStorage.setItem(DEMO_EXPENSES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 
@@ -3904,6 +3912,34 @@ const demoRepo = {
     }
     for (const [k, v] of sum) sum.set(k, Math.max(0, v));
     return sum;
+  },
+  /* ---- قوالبُ الواتساب (0218) — مرآةٌ بمخزن الجهاز، بنفس الحرّاس (عنوانٌ ونصٌّ غيرُ فارغين، سقفُ ١٠٠) ---- */
+  async listWaTemplates(): Promise<WaTemplate[]> {
+    return demoWaLoad().sort((a, b) => a.sort - b.sort || a.created_at.localeCompare(b.created_at));
+  },
+  async saveWaTemplate(input: { id?: string; title: string; body: string }): Promise<WaTemplate> {
+    const title = input.title.trim(), body = input.body.trim();
+    if (!title || title.length > 60 || !body || body.length > 2000) {
+      const e = new Error("wa_templates_invalid") as Error & { code: string }; e.code = "23514"; throw e;
+    }
+    const list = demoWaLoad();
+    const now = new Date().toISOString();
+    if (input.id) {
+      const row = list.find((x) => x.id === input.id);
+      if (!row) { const e = new Error("not_found") as Error & { code: string }; e.code = "PGRST116"; throw e; }
+      Object.assign(row, { title, body, updated_at: now });
+      demoWaSave(list);
+      return row;
+    }
+    if (list.length >= 100) { const e = new Error("wa_templates_full") as Error & { code: string }; e.code = "P0001"; throw e; }
+    const row: WaTemplate = { id: uid("wat"), clinic_id: null, title, body, sort: 0, created_at: now, updated_at: now };
+    demoWaSave([...list, row]);
+    return row;
+  },
+  async deleteWaTemplate(id: string): Promise<void> {
+    const list = demoWaLoad();
+    if (!list.some((x) => x.id === id)) { const e = new Error("not_found") as Error & { code: string }; e.code = "PGRST116"; throw e; }
+    demoWaSave(list.filter((x) => x.id !== id));
   },
   /* ---- الدفعات (0217) — مرآةٌ بوحدةٍ تُحمَّل عند النداء (`demoLots.ts`) ---- */
   async listProductLots(productId: string): Promise<ProductLot[]> {

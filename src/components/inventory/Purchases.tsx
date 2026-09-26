@@ -1042,7 +1042,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           </div>
           <div>
             <label className="label">{t("purchase.reference", "رقم فاتورة المورّد")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
-            <input className="input font-mono" dir="ltr" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="—" />
+            <input className="input font-mono" dir="ltr" value={reference} onChange={(e) => setReference(e.target.value)} data-purchase-ref
+              placeholder={t("purchase.referencePh", "مثلاً 4587 — من ورقة فاتورة الشركة")} />
           </div>
           <div>
             <label className="label">{t("purchase.date", "تاريخ الاستلام")}</label>

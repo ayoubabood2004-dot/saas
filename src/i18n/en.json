@@ -1369,7 +1369,8 @@
     },
     "batchSaved": "Saved for this batch: {{d}} — kept, and the shelf date is not changed",
     "expiredBatch": "This date has passed — the item is expired while still in its box",
-    "shortDated": "Expires in only {{d}} days — shorter than your return period ({{rd}} days)"
+    "shortDated": "Expires in only {{d}} days — shorter than your return period ({{rd}} days)",
+    "referencePh": "e.g. 4587 — from the company's paper invoice"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
@@ -5392,5 +5393,22 @@
     "clear": "No date",
     "exact": "Box shows a day? Type it",
     "expires": "Expires"
+  },
+  "mytpl": {
+    "full": "You've reached 100 templates — delete one you don't use first",
+    "needTitle": "Give the template a name",
+    "title": "Your clinic's templates",
+    "hint": "— saved for every device in the clinic",
+    "loading": "Loading your templates…",
+    "failed": "Couldn't load your templates",
+    "none": "No templates yet — write a message below and save it as a template.",
+    "delete": "Delete template",
+    "sure": "Delete?",
+    "namePh": "Template name, e.g. Summer offer",
+    "saveNew": "Save this message as a template",
+    "saved": "Template “{{title}}” saved — you'll find it here every time",
+    "updated": "“{{title}}” updated",
+    "deleted": "“{{title}}” deleted",
+    "update": "Update “{{title}}” with this text"
   }
 }

@@ -521,6 +521,7 @@ export function RemindersHub() {
     const prefill: CampaignPrefill = {
       targetPetId: r.petId ?? "", targetPetName: r.petName, targetOwnerName: r.ownerName,
       reminderType, message, reminderRowId: r.id, reminderDate: r.date, reminderKind: r.kind,
+      vars: { detail: r.detail, date: formatDate(r.date, i18n.language), time: r.time ? ` ${t("rem.atHour", "الساعة")} ${r.time}` : "" },
     };
     navigate("/campaigns", { state: prefill });
   };

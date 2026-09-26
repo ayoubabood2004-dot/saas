@@ -2025,3 +2025,15 @@ export interface ProductLot {
   /** تاريخٌ صحّحته العيادةُ بيدها — تعديلُ الفاتورة لا يكتب فوقه. */
   expiry_fixed?: boolean;
 }
+
+/* ── قوالبُ الواتساب الخاصة بالعيادة (0218) ─────────────────────────────── */
+export interface WaTemplate {
+  id: string;
+  clinic_id?: string | null;
+  title: string;
+  /** النصّ بالرموز نفسها ({{اسم_المالك}} …) — تُصاغ لكلّ زبون عند الإرسال. */
+  body: string;
+  sort: number;
+  created_at: string;
+  updated_at: string;
+}

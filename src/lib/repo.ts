@@ -30,7 +30,7 @@ import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySec
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow } from "@/types";
+import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
@@ -2395,6 +2395,19 @@ const supabaseRepo: DemoRepo = {
     }
     return out;
   },
+  /* قوالبُ الواتساب (0218): القراءةُ ترمي — «ماكو قوالب» عن خطأٍ تُصدَّق فتُكتب من جديد. */
+  async listWaTemplates() {
+    return listOrThrow<WaTemplate>(await sbc().from("wa_templates").select("*")
+      .order("sort", { ascending: true }).order("created_at", { ascending: true }).limit(200));
+  },
+  async saveWaTemplate(input) {
+    const row = { title: input.title.trim(), body: input.body.trim() };
+    if (input.id) return updated<WaTemplate[]>(await sbc().from("wa_templates").update(row).eq("id", input.id).select())[0];
+    return need<WaTemplate>(await sbc().from("wa_templates").insert(row).select().single());
+  },
+  async deleteWaTemplate(id) {
+    updated<unknown[]>(await sbc().from("wa_templates").delete().eq("id", id).select("id"));
+  },
   /* الدفعات (0217): القراءةُ ترمي ولا ترجع ناقصة — «دفعةٌ واحدة» عن خطأٍ تُصدَّق فيُباع المنتهي. */
   async listProductLots(productId) {
     return listOrThrow<ProductLot>(await sbc().from("product_lots").select("*").eq("product_id", productId)
@@ -2514,7 +2527,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
-  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots",
+  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",
