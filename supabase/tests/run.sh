@@ -3366,8 +3366,8 @@ chk "  والاستقبالُ لا يضيف دفعات" \
 $P -c "update products set stock = stock - 2 where id = '${L}02';" >/dev/null
 chk "البيعُ لا يُفترض من علبةٍ منتهية: يُسحب من الصالحة" \
     "select string_agg(qty::int::text, ',' order by expiry_date) from product_lots where product_id='${L}02'" "3,3"
-chk "  وتاريخُ المادة يبقى المنتهي (فيه رصيد) — التنبيهُ لا يختفي" \
-    "select expiry_date::text from products where id='${L}02'" "$DX"
+chk "  وتاريخُ المادة = الأقربُ **الصالح** — المنتهيةُ تبقى ظاهرةً بدفعتها ولا تُلبس الجديدةَ ثوبَها" \
+    "select expiry_date::text||'|'||(select count(*) from product_lots where product_id='${L}02' and qty>0 and expiry_date < current_date) from products where id='${L}02'" "$D1|1"
 $P -c "select _pf('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${L}02\",\"counted\":4,\"reason\":\"expired\"}]''::jsonb)::text');" >/dev/null
 $P -c "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id=''${L}02'' and status=''pending''), true)::text');" >/dev/null
 chk "جردٌ بسبب «منتهي» يُسحب من المنتهي أوّلاً (المنتهي ٣⇒١، الصالح ٣ باقٍ)" \
@@ -3403,5 +3403,61 @@ chk "الدفعاتُ تُقرأ للعيادة بدور authenticated، ولا 
 chk "الدوالُّ الكاتبة definer وتفحص العيادةَ بنصّها" \
     "select string_agg(proname||':'||prosecdef||':'||(prosrc like '%clinic_id = v_clinic%'), ',' order by proname) from pg_proc where proname in ('lot_add','lot_edit')" "lot_add:true:true,lot_edit:true:true"
 # (منعُ الداخليّة lots_* عن التطبيق يُقاس على الإنتاج بعد التنزيل: المنحُ الشاملُ بالحزمة يعيده هنا.)
+
+# ── 0217 بعد التدقيق العدائيّ ────────────────────────────────────────────────
+echo "▸ 0217: ما أمسكه التدقيق"
+# الإنتاجُ يمنع الداخليّةَ عن authenticated؛ الحزمةُ منحتها كلَّها فأخفت العطل — نعيد المنع
+# ونحفظ مادةً **بدور التطبيق حتى نهاية المعاملة** (المحفّزُ المؤجَّل يجري عند الختم بدوره).
+$P -c "revoke execute on function public.lots_reconcile(uuid, boolean), public.lots_from_purchase(uuid, uuid),
+         public.lots_refresh_expiry(uuid), public.lots_move_purchase(uuid, uuid, uuid) from authenticated;" >/dev/null
+out=$($P -c "begin; select set_config('request.jwt.claim.sub','$C1',true); set local role authenticated;
+  insert into products (id, clinic_id, name, stock, expiry_date) values ('${L}10','$C1','دفعات بدور التطبيق',4,'$D1');
+  update products set stock = 6 where id = '${L}10';
+  update products set expiry_date = '$D2' where id = '${L}10';
+  commit;" 2>&1 >/dev/null && echo OK) || true
+chk "**حفظُ مادةٍ بدور التطبيق** (إضافة، رصيد، تاريخ) يمرّ والدوالُّ الداخلية ممنوعةٌ عليه" "select '$out'" "OK"
+chk "  ودفعتُها بالرصيد الجديد والتاريخ المعدَّل" \
+    "select string_agg(qty::int||':'||expiry_date, ',') from product_lots where product_id='${L}10'" "6:$D2"
+chk "  والداخليّةُ ممنوعةٌ فعلاً (كالإنتاج)" \
+    "select has_function_privilege('authenticated','public.lots_reconcile(uuid,boolean)','execute')::text" "false"
+# شراءٌ بلا تاريخ لمادةٍ تاريخُها فات: لا يرث المنتهي
+$P -c "insert into products (id, clinic_id, name, stock, expiry_date) values ('${L}11','$C1','دفعات بلا تاريخ',2,'$DX') on conflict (id) do nothing;" >/dev/null
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('product_id','${L}11','name','دفعات بلا تاريخ','qty',5,'purchase_price',1,'sell_price',0)),
+         jsonb_build_object('company_name','شركة بلا تاريخ'));" >/dev/null
+chk "شراءٌ بلا تاريخ لا يرث تاريخاً فات (بضاعةٌ جديدة لا تصل منتهية)" \
+    "select coalesce(expiry_date::text,'-') from product_lots where product_id='${L}11' and source='purchase'" "-"
+chk "  والمادةُ فيها منتهٍ وجديد: تاريخُها لا يصير المنتهي (الأقربُ الصالحُ أوّلاً)" \
+    "select coalesce(expiry_date::text,'-') from products where id='${L}11'" "$DX"
+# (الوحيدُ المؤرَّخ منتهٍ هنا فيبقى — لا صالحَ مؤرَّخاً يتقدّمه. والمادةُ «ب» تثبت القاعدة:)
+chk "  وبدفعةٍ صالحةٍ مؤرَّخة: المادةُ تأخذ الصالحة والمنتهيةُ تبقى ظاهرةً بدفعتها" \
+    "select (select expiry_date::text from products where id='${L}02')||'|'||(select count(*) from product_lots where product_id='${L}02' and qty>0 and expiry_date < current_date)" "$D9|0"
+# تاريخٌ صحّحته العيادةُ لا يمحوه تعديلُ الفاتورة
+$P -c "insert into products (id, clinic_id, name, stock) values ('${L}12','$C1','دفعات مصحّحة',0) on conflict (id) do nothing;
+       select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('product_id','${L}12','name','دفعات مصحّحة','qty',5,'purchase_price',1,'sell_price',0,'expiry_date','$D2')),
+         jsonb_build_object('company_name','شركة التصحيح'));" >/dev/null
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select lot_edit((select id from product_lots where product_id='${L}12'), '$D3');" >/dev/null
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       select update_purchase((select id from purchases where company_name='شركة التصحيح' and clinic_id='$C1'),
+         jsonb_build_array(jsonb_build_object('product_id','${L}12','name','دفعات مصحّحة','qty',6,'purchase_price',1,'sell_price',0,'expiry_date','$D2')),
+         jsonb_build_object('company_name','شركة التصحيح'));" >/dev/null
+chk "تاريخٌ صحّحته العيادةُ لا يكتب فوقه تعديلُ الفاتورة (والكميةُ تتعدّل)" \
+    "select qty::int||':'||expiry_date from product_lots where product_id='${L}12'" "6:$D3"
+# دمجُ التوأمين ينقل الدفعةَ بباقيها
+$P -c "insert into products (id, clinic_id, name, stock, expiry_date) values ('${L}13','$C1','توأم يبقى',3,'$D2'), ('${L}14','$C1','توأم يُطوى',0,null) on conflict (id) do nothing;
+       select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('product_id','${L}14','name','توأم يُطوى','qty',10,'purchase_price',1,'sell_price',0,'expiry_date','$D4')),
+         jsonb_build_object('company_name','شركة التوأم'));" >/dev/null
+$P -c "update products set stock = 4 where id = '${L}14';" >/dev/null
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select merge_products('${L}13','${L}14');" >/dev/null
+chk "دمجُ التوأمين ينقل دفعةَ الشراء **بباقيها** (٤ لا ١٠) ولا يمسّ دفعات الباقي" \
+    "select string_agg(source||':'||qty::int||':'||expiry_date, ',' order by expiry_date) from product_lots where product_id='${L}13' and qty>0" "purchase:4:$D4,opening:3:$D2"
+# صارت مجمَّعة: دفعاتُها تزول
+$P -c "update products set pooled = true, stock = 0 where id = '${L}12';" >/dev/null
+chk "مادةٌ صارت مجمَّعة تفقد دفعاتها (لا رصيدَ وهميّ بالمراقبة)" \
+    "select count(*)::text from product_lots where product_id='${L}12'" "0"
+chk "**والتطابقُ ما زال تامّاً** بالحزمة كلّها" \
+    "select count(*)::text from products p where not coalesce(p.pooled,false) and p.farm_id is null and coalesce(p.stock,0) <> (select coalesce(sum(qty),0) from product_lots l where l.product_id=p.id)" "0"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

@@ -27,15 +27,21 @@ const isExpired = (d: string | null, today: string) => !!d && d.slice(0, 10) < t
 const byExpiry = (a: ProductLot, b: ProductLot) =>
   (a.expiry_date ?? "9999").localeCompare(b.expiry_date ?? "9999") || a.received_at.localeCompare(b.received_at) || a.id.localeCompare(b.id);
 
+/** الأقربُ **الصالح** أوّلاً (مرآةُ lots_refresh_expiry): المنتهيةُ الباقية لا تُلبس الجديدةَ ثوبَها. */
+function earliest(live: ProductLot[], today: string): string | null {
+  const dated = live.map((l) => (l.expiry_date ? l.expiry_date.slice(0, 10) : null)).filter((d): d is string => !!d).sort();
+  return dated.find((d) => d >= today) ?? dated[0] ?? null;
+}
 function refreshExpiry(p: Product, lots: ProductLot[]) {
   const live = lots.filter((l) => l.product_id === p.id && l.qty > 0);
   if (!live.length) return;
-  const dated = live.map((l) => l.expiry_date).filter((d): d is string => !!d).sort();
-  p.expiry_date = dated[0] ?? null;
+  p.expiry_date = earliest(live, localISO());
 }
 
 function reconcile(db: DemoDB, lots: ProductLot[], p: Product, today: string, expiredFirst = false): ProductLot[] {
-  if (p.pooled || p.farm_id) return lots;
+  if (p.farm_id) return lots;
+  // صارت مجمَّعة: رصيدُها بحوض القسم، ودفعاتُها رصيدٌ وهميّ.
+  if (p.pooled) return lots.filter((l) => l.product_id !== p.id);
   const items = db.purchaseItems ?? [];
   lots = lots.filter((l) => !(l.product_id === p.id && l.source === "purchase"
     && !items.some((it) => it.purchase_id === l.purchase_id && it.product_id === p.id)));
@@ -105,12 +111,17 @@ export function syncPurchase(purchaseId: string): void {
   for (const [productId, v] of byProduct) {
     const p = (db.products ?? []).find((x) => x.id === productId);
     if (!p || p.pooled || p.farm_id) continue;
-    const exp = v.exp ?? (p.expiry_date ? String(p.expiry_date).slice(0, 10) : null);
+    // لا يرث تاريخاً فات: الأحدثُ من دفعاتها الصالحة، ثمّ تاريخُ المادة إن لم يفُت.
+    const today = localISO();
+    const ownDate = p.expiry_date ? String(p.expiry_date).slice(0, 10) : null;
+    const liveDates = lots.filter((l) => l.product_id === productId && l.qty > 0 && l.expiry_date && l.expiry_date.slice(0, 10) >= today)
+      .map((l) => l.expiry_date!.slice(0, 10)).sort();
+    const exp = v.exp ?? liveDates[liveDates.length - 1] ?? (ownDate && ownDate >= today ? ownDate : null);
     const lot = lots.find((l) => l.purchase_id === purchaseId && l.product_id === productId);
     if (lot) {
       lot.qty = Math.max(0, lot.qty + (v.qty - lot.received_qty));
       lot.received_qty = v.qty;
-      lot.expiry_date = exp ?? lot.expiry_date;
+      if (!lot.expiry_fixed) lot.expiry_date = exp ?? lot.expiry_date;
       lot.company_name = pur.company_name ?? null;
     } else if (v.qty > 0) {
       lots.push({
@@ -131,11 +142,10 @@ export function userExpiry(productId: string, oldD: string | null, newD: string 
   const old = oldD ? oldD.slice(0, 10) : null;
   let hit = live.filter((l) => (l.expiry_date ?? null) === old);
   if (!hit.length && live.length === 1) hit = live;
-  for (const l of hit) l.expiry_date = newD;
+  for (const l of hit) { l.expiry_date = newD; l.expiry_fixed = true; }
   saveLots(lots);
   if (!live.length) return newD;
-  const dated = live.map((l) => l.expiry_date).filter((d): d is string => !!d).sort();
-  return dated[0] ?? null;
+  return earliest(live, localISO());
 }
 
 function refuse(code: string): never {
@@ -174,12 +184,12 @@ export function editLot(lotId: string, expiry: string | null, splitQty?: number 
   const l = lots.find((x) => x.id === lotId);
   if (!l) refuse("lot_missing");
   let id = l.id;
-  if (splitQty == null || splitQty >= l.qty) l.expiry_date = expiry;
+  if (splitQty == null || splitQty >= l.qty) { l.expiry_date = expiry; l.expiry_fixed = true; }
   else {
     if (!(splitQty > 0)) refuse("lot_bad_qty");
     l.qty -= splitQty;
     id = uid("lot");
-    lots.push({ ...l, id, qty: splitQty, received_qty: splitQty, expiry_date: expiry,
+    lots.push({ ...l, id, qty: splitQty, received_qty: splitQty, expiry_date: expiry, expiry_fixed: true,
       source: l.source === "purchase" ? "adjust" : l.source, purchase_id: null });
   }
   const db = loadDB();

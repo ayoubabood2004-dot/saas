@@ -2022,4 +2022,6 @@ export interface ProductLot {
   purchase_id: string | null;
   company_name: string | null;
   note: string | null;
+  /** تاريخٌ صحّحته العيادةُ بيدها — تعديلُ الفاتورة لا يكتب فوقه. */
+  expiry_fixed?: boolean;
 }

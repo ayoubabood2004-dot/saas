@@ -1319,8 +1319,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         const keep = keepOldCode(product, payload.barcode, allProducts ?? []);
         const withOld = keep ? { ...payload, alt_codes: keep.alt_codes } : payload;
         // الحقولُ الأخرى أوّلاً وبلا لمسِ الرصيد/الطيّ — ففشلُ الطيّ بعدها لا يضيّع شيئاً.
-        const { stock: _s, pooled: _p, ...rest } = withOld;
-        await repo.updateProduct(product.id, foldingToPool ? rest : withOld);
+        /* التاريخُ لا يُرسل إلا إن غيّره المستخدم (0217): صار مشتقّاً من الدفعات، ونموذجٌ فُتح
+         * قبل بيعٍ أفرغ دفعةً كان سيرسل تاريخَها القديم فيُنقل إليه تاريخُ دفعةٍ أخرى. */
+        const { expiry_date: _e, ...noDate } = withOld;
+        const sent = (f.expiry_date || "") === (product.expiry_date ?? "").slice(0, 10) ? noDate : withOld;
+        const { stock: _s, pooled: _p, ...rest } = sent;
+        await repo.updateProduct(product.id, foldingToPool ? rest : sent);
         if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
         if (keep) {
           toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
@@ -1495,7 +1499,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             // ونفسُ الحفظ بتعديل المجموعة — المسارُ الثاني الذي يستبدل رمزاً.
             const before = allProducts?.find((p) => p.id === r.productId);
             const keep = before ? keepOldCode(before, rowPayload.barcode, allProducts ?? []) : null;
-            await repo.updateProduct(r.productId, keep ? { ...rowPayload, alt_codes: keep.alt_codes } : rowPayload);
+            // التاريخُ غيرُ المعدَّل لا يُرسل (0217 — مشتقٌّ من الدفعات، والبائتُ يحرّك دفعة).
+            const { expiry_date: _re, ...rowNoDate } = rowPayload;
+            const rowSent = before && (r.expiry_date || "") === (before.expiry_date ?? "").slice(0, 10) ? rowNoDate : rowPayload;
+            await repo.updateProduct(r.productId, keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent);
             if (keep) keptOld.push(keep.kept);
           }
           else await repo.createProduct(rowPayload);

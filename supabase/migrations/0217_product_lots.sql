@@ -47,9 +47,12 @@ create table if not exists public.product_lots (
   purchase_id   uuid references public.purchases(id) on delete set null,
   company_name  text,
   note          text check (char_length(note) <= 200),
+  -- تاريخٌ صحّحته العيادةُ بيدها (lot_edit أو نموذجُ المادة): تعديلُ الفاتورة بعدها لا يكتب فوقه.
+  expiry_fixed  boolean not null default false,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+alter table public.product_lots add column if not exists expiry_fixed boolean not null default false;
 create index if not exists product_lots_product_idx on public.product_lots (product_id);
 -- كاملان لا جزئيّان: فهرسُ المفتاح الأجنبيّ يخدم حذفَ العيادة وتصفيرَ الفاتورة (set null).
 create index if not exists product_lots_clinic_idx on public.product_lots (clinic_id, expiry_date);
@@ -77,7 +80,11 @@ declare
   v_min  date;
   v_any  boolean;
 begin
-  select min(expiry_date), bool_or(true) into v_min, v_any
+  -- الأقربُ **الصالح** أوّلاً: دفعةٌ منتهيةٌ باقيةٌ على الرف لا تُلبس البضاعةَ الجديدة ثوبَ
+  -- المنتهي (المتجرُ كان سيخفي المادةَ كلَّها والبيعُ يسأل عن كلّ علبة). المنتهيةُ تبقى
+  -- ظاهرةً بدفعتها — بالمراقبة والدفعات — ويُرفع تاريخُها للمادة إن لم يبقَ غيرُها.
+  select coalesce(min(expiry_date) filter (where expiry_date >= current_date), min(expiry_date)), bool_or(true)
+    into v_min, v_any
     from product_lots where product_id = p_product and qty > 0;
   -- بلا دفعةٍ فيها رصيد: يبقى آخرُ تاريخ (مادةٌ نافدة لا تُنبَّه أصلاً).
   if coalesce(v_any, false) then
@@ -105,7 +112,12 @@ declare
 begin
   select id, clinic_id, stock, pooled, farm_id, expiry_date, created_at into p
     from products where id = p_product;
-  if not found or coalesce(p.pooled, false) or p.farm_id is not null then
+  if not found or p.farm_id is not null then
+    return;
+  end if;
+  -- صارت مجمَّعة: رصيدُها بحوض القسم، ودفعاتُها القديمة رصيدٌ وهميّ بالمراقبة.
+  if coalesce(p.pooled, false) then
+    delete from product_lots where product_id = p_product;
     return;
   end if;
 
@@ -160,10 +172,12 @@ begin
 end $$;
 revoke all on function public.lots_reconcile(uuid, boolean) from public, anon, authenticated;
 
+-- definer: الدوالُّ الداخلية ممنوعةٌ على `authenticated`، والمحفّزُ يجري بدوره حين يحفظ
+-- التطبيقُ مادةً (أمسكه التدقيقُ العدائيّ: الحزمةُ تمنح الكلَّ فلم ترَه).
 create or replace function public.products_lots_sync()
 returns trigger
 language plpgsql
-security invoker
+security definer
 set search_path = public
 as $$
 begin
@@ -201,13 +215,18 @@ begin
     from purchase_items where purchase_id = p_purchase and product_id = p_product;
   -- سطرٌ بلا تاريخ يرث تاريخَ المادة كما كان الشراءُ يفعل قبل الدفعات (record_purchase
   -- تُبقيه) — لا دفعةٌ بلا تاريخٍ تُسقط التنبيهَ حين تخلص المؤرَّخةُ قبلها.
-  v_exp := coalesce(v_exp, p.expiry_date);
+  -- **ولا يرث تاريخاً فات**: بضاعةٌ جديدةٌ لا تصل منتهيةً على الورق. الأحدثُ من دفعاتها
+  -- الصالحة أقربُ للواقع (إعادةُ شراءِ الصنف نفسه)، ثمّ تاريخُ المادة إن لم يفُت.
+  v_exp := coalesce(v_exp,
+    (select max(expiry_date) from product_lots where product_id = p_product and qty > 0 and expiry_date >= current_date),
+    (case when p.expiry_date >= current_date then p.expiry_date end));
   select * into v_lot from product_lots where purchase_id = p_purchase and product_id = p_product for update;
   if found then
     -- تعديلُ الفاتورة: الفرقُ على المستلَم يُطبَّق على الباقي، وما بيع منها يبقى مبيعاً.
     update product_lots
        set qty = greatest(qty + (v_recv - received_qty), 0), received_qty = v_recv,
-           expiry_date = coalesce(v_exp, expiry_date), company_name = v_pur.company_name, updated_at = now()
+           expiry_date = case when expiry_fixed then expiry_date else coalesce(v_exp, expiry_date) end,
+           company_name = v_pur.company_name, updated_at = now()
      where id = v_lot.id;
   elsif v_recv > 0 then
     insert into product_lots (clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, purchase_id, company_name)
@@ -217,13 +236,40 @@ begin
 end $$;
 revoke all on function public.lots_from_purchase(uuid, uuid) from public, anon, authenticated;
 
+create or replace function public.lots_move_purchase(p_purchase uuid, p_from uuid, p_to uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_from record;
+begin
+  select * into v_from from product_lots where purchase_id = p_purchase and product_id = p_from for update;
+  if not found or p_to is null then return; end if;
+  -- دمجُ التوأمين (0144/0184) ينقل سطورَ الشراء: الدفعةُ تنتقل بباقيها، لا تُبنى من جديد
+  -- بكامل المستلَم (وإلا سحب الحارسُ الفرقَ من أقرب دفعات الباقية فأخفى ما ينتهي قريباً).
+  if exists (select 1 from product_lots where purchase_id = p_purchase and product_id = p_to) then
+    update product_lots t set qty = t.qty + v_from.qty, received_qty = t.received_qty + v_from.received_qty, updated_at = now()
+     where t.purchase_id = p_purchase and t.product_id = p_to;
+    delete from product_lots where id = v_from.id;
+  else
+    update product_lots set product_id = p_to, clinic_id = (select clinic_id from products where id = p_to), updated_at = now()
+     where id = v_from.id;
+  end if;
+end $$;
+revoke all on function public.lots_move_purchase(uuid, uuid, uuid) from public, anon, authenticated;
+
 create or replace function public.purchase_items_lots()
 returns trigger
 language plpgsql
-security invoker
+security definer
 set search_path = public
 as $$
 begin
+  if tg_op = 'UPDATE' and old.product_id is distinct from new.product_id and old.product_id is not null then
+    perform lots_move_purchase(new.purchase_id, old.product_id, new.product_id);
+  end if;
   perform lots_from_purchase(new.purchase_id, new.product_id);
   return null;
 end $$;
@@ -244,17 +290,23 @@ declare
   v_min date;
   v_any boolean;
 begin
-  update product_lots set expiry_date = p_new, updated_at = now()
+  -- يناديه محفّزٌ يجري بدور التطبيق: يفحص العيادةَ بنفسه (مادةُ عيادةٍ أخرى لا تُلمس دفعاتُها).
+  if not exists (select 1 from products where id = p_product and clinic_id = auth_clinic()) then
+    return p_new;
+  end if;
+  update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()
    where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old;
   get diagnostics v_n = row_count;
   -- التاريخُ القديم لا يطابق دفعةً بعينها ودفعةٌ وحيدةٌ فيها رصيد: هي المقصودة.
   if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0) = 1 then
-    update product_lots set expiry_date = p_new, updated_at = now() where product_id = p_product and qty > 0;
+    update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now() where product_id = p_product and qty > 0;
   end if;
-  select min(expiry_date), bool_or(true) into v_min, v_any from product_lots where product_id = p_product and qty > 0;
+  select coalesce(min(expiry_date) filter (where expiry_date >= current_date), min(expiry_date)), bool_or(true)
+    into v_min, v_any from product_lots where product_id = p_product and qty > 0;
   return case when coalesce(v_any, false) then v_min else p_new end;
 end $$;
-revoke all on function public.lots_user_expiry(uuid, date, date) from public, anon, authenticated;
+revoke all on function public.lots_user_expiry(uuid, date, date) from public, anon;
+grant execute on function public.lots_user_expiry(uuid, date, date) to authenticated;
 
 create or replace function public.products_lot_expiry()
 returns trigger
@@ -328,16 +380,16 @@ begin
     raise exception 'lot_missing' using hint = 'الدفعة ما موجودة — حدّث الصفحة';
   end if;
   if p_split_qty is null or p_split_qty >= l.qty then
-    update product_lots set expiry_date = p_expiry, updated_at = now() where id = l.id;
+    update product_lots set expiry_date = p_expiry, expiry_fixed = true, updated_at = now() where id = l.id;
     v_id := l.id;
   else
     if not (p_split_qty > 0) then
       raise exception 'lot_bad_qty' using hint = 'الكمية لازم تكون أكثر من صفر';
     end if;
     update product_lots set qty = qty - p_split_qty, updated_at = now() where id = l.id;
-    insert into product_lots (clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, purchase_id, company_name, note)
+    insert into product_lots (clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, purchase_id, company_name, note, expiry_fixed)
     values (v_clinic, l.product_id, p_split_qty, p_split_qty, p_expiry, l.received_at,
-            (case when l.source = 'purchase' then 'adjust' else l.source end), null, l.company_name, l.note)
+            (case when l.source = 'purchase' then 'adjust' else l.source end), null, l.company_name, l.note, true)
     returning id into v_id;
   end if;
   perform lots_refresh_expiry(l.product_id);

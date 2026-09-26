@@ -98,7 +98,7 @@ export function demoDecideCounts(
   // مرآةُ `auth_role() = 'manager'`: الطبيبُ والاستقبالُ لا يوافقان.
   if (me.role === "doctor" || me.role === "reception") refuse("needs_manager");
   if (!ids.length) refuse("nothing");
-  const db = loadDB();
+  let db = loadDB();
   const list = loadCounts();
   const now = new Date().toISOString();
   const want = new Set(ids);
@@ -118,8 +118,10 @@ export function demoDecideCounts(
     done.push(c);
     out.approved++;
     saveDB(db);
-    // مرآةُ lots_reconcile(product, reason = 'expired') فوراً بعد الرصيد.
+    // مرآةُ lots_reconcile(product, reason = 'expired') فوراً بعد الرصيد — ثمّ نقرأ القاعدةَ من
+    // جديد: الحارسُ كتب تواريخَ مشتقّة، وحفظُ نسختنا البائتة بعده كان يمحوها.
     reconcileAll({ productId: p.id, expiredFirst: c.reason === "expired" });
+    db = loadDB();
   }
   for (const reason of [...WITHDRAWAL_REASONS].sort()) {
     const rows = done.filter((c) => c.reason === reason && (c.applied_delta ?? 0) < 0 && c.unit_cost > 0);

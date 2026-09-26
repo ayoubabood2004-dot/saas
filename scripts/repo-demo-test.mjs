@@ -1176,6 +1176,26 @@ console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
   try { await repo.addLot("la", 1, null); } catch (e) { refused = e.message; }
   check("  والاستقبالُ لا يضيف دفعات", refused === "lot_forbidden");
   mem.delete("vp_session");
+  // ما أمسكه التدقيقُ العدائيّ — مرآةً بمرآة
+  seed([P("lx", "منتهٍ وجديد", null, { stock: 3, purchase_price: 1, expiry_date: "2020-01-01" })]);
+  mem.delete("vp_demo_lots");
+  await repo.listProductLots("lx");
+  await repo.recordPurchase([{ product_id: "lx", name: "منتهٍ وجديد", qty: 5, purchase_price: 1, sell_price: 0 }], { company_name: "بلا تاريخ" });
+  const lx = await repo.listProductLots("lx");
+  check("شراءٌ بلا تاريخ لا يرث تاريخاً فات", lx.find((l) => l.source === "purchase")?.expiry_date === null, JSON.stringify(lx));
+  await repo.recordPurchase([{ product_id: "lx", name: "منتهٍ وجديد", qty: 4, purchase_price: 1, sell_price: 0, expiry_date: "2027-03-01" }], { company_name: "مؤرّخة" });
+  await repo.listProductLots("lx");
+  check("  وتاريخُ المادة = الأقربُ الصالح لا المنتهي الباقي", (await repo.listProducts()).find((p) => p.id === "lx")?.expiry_date === "2027-03-01");
+  const dated = (await repo.listProductLots("lx")).find((l) => l.company_name === "مؤرّخة");
+  mem.set("vp_session", JSON.stringify({ raw: { id: "u", full_name: "مدير", role: "admin" } }));
+  await repo.editLot(dated.id, "2027-05-01");
+  const pur = JSON.parse(mem.get(DB_KEY)).purchases.find((x) => x.company_name === "مؤرّخة");
+  await repo.updatePurchase(pur.id, [{ product_id: "lx", name: "منتهٍ وجديد", qty: 6, purchase_price: 1, sell_price: 0, expiry_date: "2027-03-01" }], { company_name: "مؤرّخة" });
+  const after = (await repo.listProductLots("lx")).find((l) => l.company_name === "مؤرّخة");
+  check("  وتاريخٌ صحّحته العيادةُ لا يمحوه تعديلُ الفاتورة", after?.expiry_date === "2027-05-01" && after?.received_qty === 6, JSON.stringify(after));
+  { const d = JSON.parse(mem.get(DB_KEY)); const x = d.products.find((q) => q.id === "lx"); x.pooled = true; x.stock = 0; mem.set(DB_KEY, JSON.stringify(d)); }
+  check("  ومادةٌ صارت مجمَّعة تفقد دفعاتها", (await repo.listProductLots("lx")).length === 0);
+  mem.delete("vp_session");
 }
 
 console.log("▸ 0215 — معدّلُ البيع (مرآةُ الحزمة)");
