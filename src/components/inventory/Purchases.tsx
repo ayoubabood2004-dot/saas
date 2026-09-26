@@ -24,6 +24,9 @@ import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { PurchaseReceipt } from "@/components/inventory/PurchaseReceipt";
+import { ReorderDialog } from "@/components/inventory/ReorderDialog";
+import { daysToExpiry } from "@/lib/expiry";
+import { getExpiryWindows } from "@/lib/settings";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 
@@ -100,6 +103,8 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   /** فشلَ آخرُ جلب؟ — «تعذّر» لا «لا توجد فواتير». */
   const [failed, setFailed] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const [seed, setSeed] = useState<PurchaseSeed | null>(null);
   const [viewing, setViewing] = useState<Purchase | null>(null);
   const [editing, setEditing] = useState<{ purchase: Purchase; items: PurchaseItem[] } | null>(null);
   const [q, setQ] = useState("");
@@ -177,7 +182,8 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
             {t("purchase.viewLog", "سجل الحركات")}
           </button>
         </div>
-        <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setBuilding(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
+        <Button variant="secondary" leftIcon={<ListChecks size={16} />} data-reorder-open onClick={() => { playTap(); setReordering(true); }}>{t("reorder.open", "اقتراح طلبية")}</Button>
+        <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setSeed(null); setBuilding(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
       </div>
 
       {loading ? (
@@ -254,9 +260,14 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
         companies={companies}
         sections={sections}
         clinicId={clinicId}
-        onClose={() => setBuilding(false)}
-        onSaved={() => { setBuilding(false); void load(); onChanged(); }}
+        seed={seed}
+        onClose={() => { setBuilding(false); setSeed(null); }}
+        onSaved={() => { setBuilding(false); setSeed(null); void load(); onChanged(); }}
       />
+
+      {/* م٥: اقتراحُ الطلبية — فاتورةٌ معبّأةٌ تُفتح منه وتُحفظ حين تصل البضاعة. */}
+      <ReorderDialog open={reordering} onClose={() => setReordering(false)} products={products} companies={companies}
+        onDraft={(companyName, items) => { setReordering(false); setSeed({ companyName, items }); setBuilding(true); }} />
 
       <PurchaseBuilderModal
         open={!!editing}
@@ -512,9 +523,13 @@ function printOptions(user: { full_name?: string | null; phone?: string | null }
 /* ============================ Builder ============================ */
 /** وضعا عمل: فاتورة جديدة، أو **تعديل** فاتورة محفوظة (editing) — التعديل يستورد
  *  سطورها، يثبّت شركتها، ويحفظ عبر updatePurchase فيتحرك المخزون بالفرق فقط. */
-export function PurchaseBuilderModal({ open, products, companies, sections, clinicId, defaultCompanyName, editing, onClose, onSaved }: {
+/** بدايةُ فاتورةٍ من اقتراح الطلب (م٥): شركةٌ ومواد بكمياتها المقترحة — تُعدَّل قبل الحفظ. */
+export type PurchaseSeed = { companyName: string; items: { product: Product; qty: number }[] };
+
+export function PurchaseBuilderModal({ open, products, companies, sections, clinicId, defaultCompanyName, editing, seed, onClose, onSaved }: {
   open: boolean; products: Product[]; companies: Company[]; sections?: CompanySection[]; clinicId?: string; defaultCompanyName?: string;
   editing?: { purchase: Purchase; items: PurchaseItem[] } | null;
+  seed?: PurchaseSeed | null;
   onClose: () => void; onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -580,10 +595,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         batchExpiry: (it.expiry_date ?? "").slice(0, 10),
       })));
     } else {
-      setCompany(defaultCompanyName ?? "");
+      setCompany(seed?.companyName || defaultCompanyName || "");
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
       setPayMethod("cash"); setAmountPaid(""); setPaidMode(null);
-      setLines([blankLine()]);
+      setLines(seed?.items.length ? seed.items.map(({ product, qty }) => ({ ...lineFromProduct(product, ""), qty: String(qty) })) : [blankLine()]);
     }
     setScan("");
     setExpandedKeys(new Set());
@@ -1289,6 +1304,20 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <div className="sm:col-span-3">
                     <label className="label text-2xs">{t("purchase.batchExpiry", "انتهاء الوجبة الجديدة")} <span className="font-normal text-ink-subtle">{t("purchase.batchExpiryHint", "(اختياري — فارغ يبقي القديم)")}</span></label>
                     <input type="date" className="input text-sm" value={l.expiry} onChange={(e) => patchLine(l.key, { expiry: e.target.value })} />
+                    {l.expiry && (() => {
+                      /* م٥: وجبةٌ انتهاؤها أقصرُ من مدة الإرجاع — تُقال قبل الحفظ: بعد الاستلام
+                       * ما يقبلها المندوبُ راجعة إلا ضمن المدة، فكلُّ ما لا يُباع قبلها خسارة. */
+                      const d = daysToExpiry(l.expiry);
+                      const rd = getExpiryWindows().returnDays;
+                      if (d == null || d > rd) return null;
+                      return (
+                        <p className="mt-1 text-2xs font-semibold text-warn-700 dark:text-warn-300" data-shortdated>
+                          {d < 0
+                            ? t("purchase.expiredBatch", "هذا التاريخ فات — المادة منتهية وهي بعدها بالكرتون")
+                            : t("purchase.shortDated", { d: formatNum(d), rd: formatNum(rd), defaultValue: "انتهاؤها بعد {{d}} يوم بس — أقصر من مدة إرجاعك ({{rd}} يوم)" })}
+                        </p>
+                      );
+                    })()}
                     {l.batchExpiry && !l.expiry && (
                       <p className="mt-1 text-2xs text-ink-subtle" data-batchsaved>
                         {t("purchase.batchSaved", { d: l.batchExpiry.replace(/-/g, "/"), defaultValue: "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ" })}

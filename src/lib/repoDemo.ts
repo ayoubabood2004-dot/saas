@@ -3873,6 +3873,23 @@ const demoRepo = {
   /** مرآةُ `product_movements` (0207). **منطقُها بوحدةٍ تُحمَّل عند النداء**:
    *  `repo.ts` على مسار الإقلاع الحرج، وكلُّ سطرٍ يُضاف هنا يدفعه كلُّ فتحِ
    *  تطبيقٍ بكلّ عيادة — وهذا كشفه `store-weight-guard` بـ٢٩٥ بايتاً. */
+  /** مرآةُ `product_sales_rate` (0215): صافي المبيع بآخر `days` (٧..١٨٠)، لا ينزل تحت صفر. */
+  async productSalesRate(days = 30): Promise<Map<string, number>> {
+    const d = Math.min(180, Math.max(7, Math.round(days) || 30));
+    const since = Date.now() - d * 86400000;
+    const sum = new Map<string, number>();
+    const db = loadDB();
+    // تاريخُ السطر تاريخُ فاتورته (السطرُ بالتجريبيّ بلا ختمٍ خاصّ — 0133 تعبّئه بالخادم منها).
+    const invAt = new Map((db.invoices ?? []).map((i) => [i.id, new Date(i.created_at).getTime()]));
+    for (const it of db.invoiceItems ?? []) {
+      if (!it.product_id) continue;
+      const at = invAt.get(it.invoice_id) ?? 0;
+      if (!(at >= since)) continue;
+      sum.set(it.product_id, (sum.get(it.product_id) ?? 0) + (Number(it.qty) || 0));
+    }
+    for (const [k, v] of sum) sum.set(k, Math.max(0, v));
+    return sum;
+  },
   /** مرآةُ `product_batches` (0214): وجباتُ المادّة بتواريخها، الأحدثُ أوّلاً. */
   async productBatches(productId: string): Promise<ProductBatch[]> {
     const db = loadDB();

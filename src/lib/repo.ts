@@ -2339,6 +2339,20 @@ const supabaseRepo: DemoRepo = {
     if (error) throw error;
     return ((data ?? []) as { bucket: string; kind: string; n: number }[]).map((r) => ({ bucket: r.bucket, kind: r.kind, n: Number(r.n) }));
   },
+  async productSalesRate(days = 30) {
+    /* صافي المبيع لكلّ مادة (0215) — يُجمع بالقاعدة. وعيادةٌ باعت أكثرَ من ألف مادةٍ بالشهر
+     * تتجاوز سقفَ الصفوف (ألف): فالصفحاتُ تتقدّم بما وصل وتقف عند صفحةٍ **فارغة** (قاعدةُ
+     * allPages)، وترمي على الخطأ — اقتراحٌ من قائمةٍ ناقصة يقول «ما تحتاج تطلب» عن نافد. */
+    const out = new Map<string, number>();
+    for (let from = 0; ; ) {
+      const rows = listOrThrow<{ product_id: string; sold: number | string }>(
+        await sbc().rpc("product_sales_rate", { p_days: days }).order("product_id", { ascending: true }).range(from, from + 999));
+      if (rows.length === 0) break;
+      for (const r of rows) out.set(r.product_id, Number(r.sold) || 0);
+      from += rows.length;
+    }
+    return out;
+  },
   async productBatches(productId) {
     // يرمي ولا يرجّع فارغاً: «ماكو وجبات» عن خطأٍ يُصدَّق.
     return listOrThrow<ProductBatch>(await sbc().rpc("product_batches", { p_product: productId }));
@@ -2442,7 +2456,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listInvoicesTouching", "customerInvoices", "listReminderMarks", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
-  "productMovements", "productBatches",
+  "productMovements", "productBatches", "productSalesRate",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

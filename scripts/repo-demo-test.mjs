@@ -1143,6 +1143,18 @@ console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزم
   check("  **ولا يرجع تاريخَ الرفّ للقديم**", (await repo.listProducts()).find((p) => p.id === "lb")?.expiry_date === "2027-06-01");
 }
 
+console.log("▸ 0215 — معدّلُ البيع (مرآةُ الحزمة)");
+{
+  seed([P("sr", "مادةُ المعدّل", null, { stock: 3 })]);
+  const d = JSON.parse(mem.get(DB_KEY));
+  const ago = (n) => new Date(Date.now() - n * 86400000).toISOString();
+  d.invoices = [{ id: "i1", created_at: ago(3) }, { id: "i2", created_at: ago(2) }, { id: "i3", created_at: ago(60) }];
+  d.invoiceItems = [{ id: "a", invoice_id: "i1", product_id: "sr", qty: 10 }, { id: "b", invoice_id: "i2", product_id: "sr", qty: -2 }, { id: "c", invoice_id: "i3", product_id: "sr", qty: 50 }];
+  mem.set(DB_KEY, JSON.stringify(d));
+  check("صافي آخر ٣٠ يوماً ١٠ − ٢ = ٨ (والأقدمُ خارج)", (await repo.productSalesRate(30)).get("sr") === 8);
+  check("  وبـ٩٠ يوماً ٥٨، وبألف يوم مقصوصةً لـ١٨٠ (٥٨)", (await repo.productSalesRate(90)).get("sr") === 58 && (await repo.productSalesRate(1000)).get("sr") === 58);
+}
+
 console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
 {
   const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };

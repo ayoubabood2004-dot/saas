@@ -1367,7 +1367,9 @@
       "stockHead": "Stock changed ({{n}} items)",
       "stockLine": "{{name}} — stock was {{from}}, now {{to}}."
     },
-    "batchSaved": "Saved for this batch: {{d}} — kept, and the shelf date is not changed"
+    "batchSaved": "Saved for this batch: {{d}} — kept, and the shelf date is not changed",
+    "expiredBatch": "This date has passed — the item is expired while still in its box",
+    "shortDated": "Expires in only {{d}} days — shorter than your return period ({{rd}} days)"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
@@ -5177,5 +5179,25 @@
     "stmtPrinted": "Printed",
     "printStatement": "Print return statement",
     "groupLine": "{{n}} items · worth {{v}}"
+  },
+  "reorder": {
+    "noCompany": "No company",
+    "copied": "Copied the “{{company}}” order — paste it into the rep's WhatsApp",
+    "copyFail": "Not copied — the browser blocked the clipboard",
+    "title": "Suggested order",
+    "sub": "Based on the last {{days}} days of sales and a {{lead}}-day lead time — items that will run out before an order arrives",
+    "failed": "Couldn't load sales — the suggestion needs them.",
+    "none": "Nothing will run out before an order arrives — stock is sufficient.",
+    "count": "{{n}} items",
+    "line": "You have {{stock}} · sells {{week}} a week",
+    "qty": "Order",
+    "copy": "Copy order for the rep",
+    "draft": "Open a purchase invoice with these (when it arrives)",
+    "open": "Suggest order",
+    "leadLabel": "Order lead time",
+    "leadHint": "From ordering with the rep until the goods arrive — the suggested order uses it (1 to 90 days)",
+    "leadRange": "Lead time must be between 1 and 90 days",
+    "textHead": "Order for {{company}} — {{date}}",
+    "textLine": "• {{name}} × {{qty}}"
   }
 }

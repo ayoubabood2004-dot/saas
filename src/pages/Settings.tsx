@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows, getReorderLeadDays, setReorderLeadDays } from "@/lib/settings";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
@@ -826,15 +826,19 @@ function ExpiryAlertsCard() {
   const saved = getExpiryWindows();
   const [ret, setRet] = useState(String(saved.returnDays));
   const [crit, setCrit] = useState(String(saved.criticalDays));
+  // م٥: مهلةُ وصول الطلبية — نقطةُ إعادة الطلب تُحسب بها (0215). بنفس البطاقة: كلاهما «متى نتحرّك قبل».
+  const [lead, setLead] = useState(String(getReorderLeadDays()));
   const [flash, setFlash] = useState(false);
   if (!can("manageSettings")) return null;
 
   const r = Math.round(Number(ret)), c = Math.round(Number(crit));
   const valid = (n: number) => Number.isFinite(n) && n >= 1 && n <= 730;
-  const bad = !valid(r) || !valid(c) ? "range" : c > r ? "order" : null;
+  const ld = Math.round(Number(lead));
+  const bad = !valid(r) || !valid(c) ? "range" : c > r ? "order" : !(Number.isFinite(ld) && ld >= 1 && ld <= 90) ? "lead" : null;
   const save = () => {
     if (bad) return;
     setExpiryWindows({ returnDays: r, criticalDays: c });
+    if (ld !== getReorderLeadDays()) setReorderLeadDays(ld);
     playSuccess();
     setFlash(true);
     setTimeout(() => setFlash(false), 2500);
@@ -858,10 +862,11 @@ function ExpiryAlertsCard() {
       <div className="grid gap-4 sm:grid-cols-2">
         {field(ret, setRet, t("expiry.setReturn"), t("expiry.setReturnHint"), "expiry-return")}
         {field(crit, setCrit, t("expiry.setCritical"), t("expiry.setCriticalHint"), "expiry-critical")}
+        {field(lead, setLead, t("reorder.leadLabel", "مهلة وصول الطلبية"), t("reorder.leadHint", "من تطلب من المندوب لحد ما توصل البضاعة — اقتراح الطلبية يحسب بيها (١ لـ ٩٠ يوم)"), "reorder-lead")}
       </div>
       {bad && (
         <p className="mt-3 rounded-xl bg-warn-50 px-3 py-2 text-xs font-semibold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300" data-expiry-bad>
-          {bad === "order" ? t("expiry.setOrder") : t("expiry.setRange")}
+          {bad === "order" ? t("expiry.setOrder") : bad === "lead" ? t("reorder.leadRange", "مهلة الوصول لازم بين ١ و٩٠ يوم") : t("expiry.setRange")}
         </p>
       )}
       <div className="mt-4 flex items-center gap-3">
