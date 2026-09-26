@@ -30,6 +30,7 @@
   "owned": {
     "act": "src/pages/ActivityLog.tsx",
     "farm": "src/pages/PoultryFarms.tsx",
-    "cnt": "src/pages/StockCount.tsx"
+    "cnt": "src/pages/StockCount.tsx",
+    "watch": "src/pages/StockWatch.tsx"
   }
 }

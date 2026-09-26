@@ -14,6 +14,7 @@ import { History,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
   Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock, BellOff, BellRing, Undo2,
   ClipboardCheck,
+  Telescope,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -462,6 +463,10 @@ export function Inventory() {
               {t("pos.stockXlsx", "تصدير جرد إكسل")}
             </Button>
             {/* الجردُ اليوميّ (م٦): عدٌّ صغيرٌ كلَّ يوم، والفرقُ بموافقة المدير — صفحتُه تحمل نصوصَها. */}
+            {/* مراقبةُ المخزون: شكد باقي لكل مادة — للانتهاء وللنفاد، بمدىً تختاره العيادة. */}
+            <Link to="/inventory/watch" className="btn btn-primary" data-watchlink onClick={() => playTap()}>
+              <Telescope size={16} /> {t("pos.watch", "مراقبة المخزون")}
+            </Link>
             <Link to="/inventory/count" className="btn btn-secondary" data-countlink onClick={() => playTap()}>
               <ClipboardCheck size={16} /> {t("pos.countDaily", "الجرد اليومي")}
             </Link>
