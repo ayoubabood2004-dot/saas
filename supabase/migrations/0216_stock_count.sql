@@ -19,8 +19,9 @@
 --   والسبب، ومن عدّ ومن قرّر، والفرقُ المطبَّق، وسحبُه. تُقرأ للعيادة وتُكتب من
 --   الدالّتين وحدهما (definer بفحص العيادة والدور بنفسيهما — درسُ 0145).
 -- * `stock_count_submit(lines)`: أيُّ موظفٍ يعدّ. المطابقُ يُختم `matched` بلا
---   موافقة، والفرقُ `pending` **ولا يمسّ الرصيد**. عدٌّ جديدٌ لنفس المادة يُلغي
---   المعلَّقَ القديم (`void`) — الأحدثُ أصدق.
+--   موافقة، والفرقُ `pending` **ولا يمسّ الرصيد**. ومادةٌ لها عدٌّ معلَّقٌ لا تُعدّ
+--   ثانيةً حتى يقرّر المدير — وإلا ألغى موظفٌ نقصاً بعدٍّ «مطابق» قبل أن يراه أحد
+--   (أمسكه التدقيقُ العدائيّ قبل النشر).
 -- * `stock_count_decide(ids, approve)`: المديرُ وحده (`auth_role()` يعرف وضعَ المدير
 --   بالرمز). الموافقةُ تطبّق **الفرقَ** لا الرقمَ المعدود: ما بيع بين العدّ والموافقة
 --   لا يرجع للرفّ. وتكتب سحباً لكلّ سببِ خسارة بقيمة سعر الشراء.
@@ -75,7 +76,8 @@ create table if not exists public.stock_counts (
   product_id       uuid references public.products(id) on delete set null,
   product_name     text not null,
   system_qty       numeric not null,
-  counted_qty      numeric not null check (counted_qty >= 0),
+  -- `between` يرفض NaN وInfinity أيضاً (NaN أكبرُ من كلّ رقمٍ بترتيب numeric).
+  counted_qty      numeric not null check (counted_qty between 0 and 1000000000),
   unit_cost        numeric not null default 0 check (unit_cost >= 0),
   reason           text check (reason in ('damaged', 'expired', 'shortage', 'entry_error', 'found')),
   note             text check (char_length(note) <= 200),
@@ -147,9 +149,10 @@ begin
   if jsonb_array_length(p_lines) > 200 then
     raise exception 'count_too_many' using hint = 'أكثر من ٢٠٠ مادة بمرّة — قسّم العدّ';
   end if;
-  v_name := coalesce(
+  -- مشغّلُ المنصّة داخلٌ بهويّته (0151): لا اسمَ له بسجلّ العيادة.
+  v_name := case when is_platform_admin() then null else coalesce(
     (select nullif(btrim(s.name), '') from staff s where s.user_id = v_uid and s.clinic_id = v_clinic limit 1),
-    (select nullif(btrim(p.full_name), '') from profiles p where p.id = v_uid));
+    (select nullif(btrim(p.full_name), '') from profiles p where p.id = v_uid)) end;
 
   for l in select value from jsonb_array_elements(p_lines) loop
     begin
@@ -158,7 +161,7 @@ begin
     exception when others then
       raise exception 'count_bad_line' using hint = 'سطرٌ بالعدّ ناقص أو رقمه غلط';
     end;
-    if v_counted is null or v_counted < 0 then
+    if v_counted is null or not (v_counted between 0 and 1000000000) then
       raise exception 'count_bad_qty' using hint = 'العدد لازم يكون صفر أو أكثر';
     end if;
 
@@ -187,9 +190,12 @@ begin
         using hint = format('«%s» زايدة — اختر السبب: لقينا زيادة، أو خطأ إدخال', v_p.name);
     end if;
 
-    -- الأحدثُ أصدق: معلَّقٌ قديمٌ لنفس المادة يُلغى قبل تسجيل الجديد.
-    update stock_counts set status = 'void', decided_by = v_uid, decided_by_name = v_name, decided_at = now()
-     where clinic_id = v_clinic and product_id = v_pid and status = 'pending';
+    -- معلَّقٌ ينتظر المدير لا يُلغيه عدٌّ جديد: عدٌّ «مطابق» من موظفٍ آخر كان سيمحو
+    -- النقصَ قبل أن يراه أحد. المديرُ يوافق أو يرفض، ثمّ تُعدّ المادةُ من جديد.
+    if exists (select 1 from stock_counts where clinic_id = v_clinic and product_id = v_pid and status = 'pending') then
+      raise exception 'count_already_pending'
+        using hint = format('«%s» عدّها أحد وتنتظر موافقة المدير — يوافق أو يرفض أوّلاً', v_p.name);
+    end if;
 
     insert into stock_counts (clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost,
                               reason, note, status, counted_by, counted_by_name)
@@ -240,9 +246,17 @@ begin
   if p_ids is null or cardinality(p_ids) = 0 or p_approve is null then
     raise exception 'count_nothing' using hint = 'ما اخترت ولا سطر';
   end if;
-  v_name := coalesce(
+  -- مشغّلُ المنصّة داخلٌ بهويّته (0151): لا اسمَ له بسجلّ العيادة.
+  v_name := case when is_platform_admin() then null else coalesce(
     (select nullif(btrim(s.name), '') from staff s where s.user_id = v_uid and s.clinic_id = v_clinic limit 1),
-    (select nullif(btrim(p.full_name), '') from profiles p where p.id = v_uid));
+    (select nullif(btrim(p.full_name), '') from profiles p where p.id = v_uid)) end;
+
+  -- الأقفالُ بترتيب العدّ نفسه (المادةُ ثمّ سطرُها) — وإلا تعانق عدٌّ وموافقةٌ لنفس المادة.
+  perform 1 from products
+   where clinic_id = v_clinic
+     and id in (select c.product_id from stock_counts c where c.id = any(p_ids) and c.clinic_id = v_clinic and c.status = 'pending')
+   order by id
+   for update;
 
   for r in select * from stock_counts
             where id = any(p_ids) and clinic_id = v_clinic and status = 'pending'

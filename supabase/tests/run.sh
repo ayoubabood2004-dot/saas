@@ -3269,10 +3269,12 @@ chk "  وبدور authenticated فعلاً: رفضٌ مقصود (P0001 ⇒ ال�
     "select split_part(_rls_try('$RCP', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}01''), true)'), ':', 2)" "P0001"
 chk "  ومديرُ عيادةٍ أخرى لا يصل سطورَ غيرها" \
     "select _pf('$C2', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}01''), true)::text')::jsonb->>'approved'" "0"
-chk "عدٌّ جديدٌ لنفس المادة يُسجَّل" \
-    "select _pf('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}05\",\"counted\":3,\"reason\":\"shortage\"}]''::jsonb)::text')" '{"matched":0,"pending":1}'
-chk "  ويُلغي المعلَّقَ القديم (الأحدثُ أصدق)" \
-    "select string_agg(status||counted_qty::int, ',' order by counted_at, status) from stock_counts where product_id='${K}05'" "void2,pending3"
+chk "مادةٌ معلَّقة لا تُعدّ ثانيةً حتى يقرّر المدير (عدٌّ «مطابق» كان يمحو النقص)" \
+    "select _pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}05\",\"counted\":6}]''::jsonb)::text') like '%count_already_pending%'" "t"
+chk "  والمعلَّقُ باقٍ كما هو" \
+    "select string_agg(status||counted_qty::int, ',') from stock_counts where product_id='${K}05'" "pending2"
+chk "عددٌ NaN أو Infinity يُرفض (وإلا صار الرصيدُ NaN بالموافقة)" \
+    "select (_pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}04\",\"counted\":\"NaN\",\"reason\":\"found\"}]''::jsonb)::text') like '%count_bad_qty%')::text||(_pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}04\",\"counted\":\"Infinity\",\"reason\":\"found\"}]''::jsonb)::text') like '%count_bad_qty%')::text" "truetrue"
 chk "المديرُ يرفض: الرصيدُ باقٍ والسطرُ مرفوض" \
     "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}05'' and status=''pending''), false)::text')::jsonb->>'rejected'||'|'||(select stock::int from products where id='${K}05')" "1|6"
 # بيعٌ بين العدّ والموافقة: ١٠ ⇒ ٨. العدُّ لقى ٧ من ١٠ (−٣) ⇒ بعد الموافقة ٥ لا ٧.

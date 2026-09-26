@@ -5289,7 +5289,10 @@
       "pooled": "A pooled item is stocked in its section — count it from the section's “Edit / count”",
       "reason": "An item has a difference — choose a reason that matches it",
       "needs_manager": "Only a manager can approve count differences — unlock manager mode",
-      "nothing": "No lines selected"
-    }
+      "nothing": "No lines selected",
+      "already_pending": "This item was already counted and awaits manager approval — approve or reject it first"
+    },
+    "changedSince": "Stock of {{n}} items changed since the count (sale or edit) — the difference applies to current stock, never below zero:",
+    "changedLine": "“{{name}}”: {{then}} at count → {{now}} now"
   }
 }

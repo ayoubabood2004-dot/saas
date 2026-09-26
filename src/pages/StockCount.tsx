@@ -128,6 +128,8 @@ export function StockCount() {
       await load();
     } catch (e) {
       playWarning(); toast.error(countError(e, t, i18n.language));
+      // الرصيدُ تغيّر من تحت الصفحة (بيعٌ بعد فتحها) أو عدّها غيرُك: تُحدَّث القائمةُ ويبقى ما كتبتَه.
+      if (/^count_(reason|already_pending|product_missing)$/.test(e instanceof Error ? e.message : "")) void load();
     } finally { setBusy(false); }
   };
 
@@ -260,7 +262,7 @@ export function StockCount() {
           </div>
         </div>
       ) : tab === "pending" ? (
-        <PendingTab rows={ready!.pending} isManager={isManager} restricted={restricted} onChanged={load} />
+        <PendingTab rows={ready!.pending} stockOf={(id) => byId.get(id ?? "")?.stock} isManager={isManager} restricted={restricted} onChanged={load} />
       ) : (
         <ReportTab products={ready!.products} sold={ready!.sold} restricted={restricted} />
       )}
@@ -268,7 +270,9 @@ export function StockCount() {
   );
 }
 
-function PendingTab({ rows, isManager, restricted, onChanged }: { rows: CountRow[]; isManager: boolean; restricted: boolean; onChanged: () => Promise<void> }) {
+function PendingTab({ rows, stockOf, isManager, restricted, onChanged }: {
+  rows: CountRow[]; stockOf: (id: string | null) => number | undefined; isManager: boolean; restricted: boolean; onChanged: () => Promise<void>;
+}) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [picked, setPicked] = useState<Set<string>>(() => new Set(rows.map((r) => r.id)));
@@ -277,17 +281,25 @@ function PendingTab({ rows, isManager, restricted, onChanged }: { rows: CountRow
   useEffect(() => { setPicked(new Set(rows.map((r) => r.id))); }, [rows]);
 
   const chosen = rows.filter((r) => picked.has(r.id));
-  const byReason = useMemo(() => {
+  /** ما سيطبّقه الخادمُ فعلاً: الفرقُ على الرصيد **الحاليّ**، ولا ينزل تحت الصفر (مرآةُ
+   *  `stock_count_decide`) — فلا يوافق المديرُ على رقمٍ ويُسجَّل غيرُه. */
+  const applied = (r: CountRow) => {
+    const cur = Number(stockOf(r.product_id) ?? r.system_qty) || 0;
+    return Math.max(0, cur + (r.counted_qty - r.system_qty)) - cur;
+  };
+  const changed = chosen.filter((r) => { const cur = stockOf(r.product_id); return cur !== undefined && Number(cur) !== r.system_qty; });
+  const byReason = (() => {
     const m = new Map<CountReason, { value: number; items: string[] }>();
     for (const r of chosen) {
-      if (!r.reason || !WITHDRAWAL_REASONS.includes(r.reason) || r.counted_qty >= r.system_qty) continue;
+      const d = applied(r);
+      if (!r.reason || !WITHDRAWAL_REASONS.includes(r.reason) || d >= 0 || r.unit_cost <= 0) continue;
       const g = m.get(r.reason) ?? { value: 0, items: [] };
-      g.value += diffValue(r.system_qty, r.counted_qty, r.unit_cost);
-      g.items.push(`${r.product_name} ×${formatQty(r.system_qty - r.counted_qty)}`);
+      g.value += -d * r.unit_cost;
+      g.items.push(`${r.product_name} ×${formatQty(-d)}`);
       m.set(r.reason, g);
     }
     return m;
-  }, [chosen]);
+  })();
   const withdrawTotal = [...byReason.values()].reduce((s, g) => s + g.value, 0);
   const corrections = chosen.filter((r) => r.reason === "entry_error" || r.reason === "found").length;
 
@@ -370,6 +382,16 @@ function PendingTab({ rows, isManager, restricted, onChanged }: { rows: CountRow
                 </ul>
               </div>
             ) : <p className="text-xs text-ink-subtle">{t("cnt.noWithdraw", "ما راح ينسجل سحب — الفروق المختارة تصحيح رصيد بس.")}</p>}
+            {changed.length > 0 && (
+              <div className="rounded-xl border border-line p-3 text-xs" data-confirm-changed>
+                <p className="font-bold text-ink">{t("cnt.changedSince", { n: formatNum(changed.length), defaultValue: "تغيّر رصيد {{n}} مادة من وقت العدّ (بيع أو تعديل) — الفرق ينطبق على الرصيد الحالي، والرصيد ما ينزل تحت الصفر:" })}</p>
+                <ul className="mt-1 space-y-0.5 text-ink-muted">
+                  {changed.map((r) => (
+                    <li key={r.id}>{t("cnt.changedLine", { name: r.product_name, then: formatQty(r.system_qty), now: formatQty(Number(stockOf(r.product_id)) || 0), defaultValue: "«{{name}}»: وقت العدّ {{then}} ← هسه {{now}}" })}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {corrections > 0 && <p className="text-xs text-ink-subtle">{t("cnt.corrections", { n: formatNum(corrections), defaultValue: "و{{n}} تصحيح (خطأ إدخال / زيادة) بلا سحب." })}</p>}
           </div>
         ) : (

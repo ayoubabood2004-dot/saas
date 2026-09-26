@@ -1176,6 +1176,8 @@ console.log("▸ 0216 — الجردُ بموافقة وسحبُ المخزن (�
   await repo.submitStockCount([{ product_id: "e1", counted: 2, reason: "entry_error" }, { product_id: "f1", counted: 3, reason: "found" }]);
   const pend = await repo.listStockCounts({ pending: true });
   check("المعلَّقُ أربعة", pend.length === 4, String(pend.length));
+  check("مادةٌ معلَّقة لا تُعدّ ثانيةً (عدٌّ «مطابق» كان يمحو النقص)", (await code(() => repo.submitStockCount([{ product_id: "t1", counted: 10 }]))) === "count_already_pending");
+  check("  وعددٌ NaN يُرفض", (await code(() => repo.submitStockCount([{ product_id: "m1", counted: NaN, reason: "found" }]))) === "count_bad_qty");
   check("الاستقبالُ لا يوافق", (await code(() => repo.decideStockCounts(pend.map((c) => c.id), true))) === "count_needs_manager");
   // بيعٌ بين العدّ والموافقة: ١٠ ⇒ ٨
   { const d = JSON.parse(mem.get(DB_KEY)); d.products.find((p) => p.id === "t1").stock = 8; mem.set(DB_KEY, JSON.stringify(d)); }
@@ -1188,6 +1190,8 @@ console.log("▸ 0216 — الجردُ بموافقة وسحبُ المخزن (�
   check("  سحبٌ واحد «من المخزن» ٦٠٠٠ بموادّه", ex.length === 1 && ex[0].method === "stock" && ex[0].amount === 6000 && ex[0].description.endsWith("جرد تالف ×3"), JSON.stringify(ex));
   check("  وبلا سعرٍ بلا سحب، وخطأُ الإدخال والزيادةُ بلا سحب",
     (await repo.listProductCounts("np"))[0]?.expense_id === null && (await repo.listProductCounts("e1"))[0]?.expense_id === null);
+  check("  وسحبُ المخزن لا يُحذف باليد (مرآةُ المحفّز)", (await code(() => repo.deleteExpense(ex[0].id))) === "stock_expense_locked" && (await repo.listExpenses()).length === 1);
+  check("  ولا يُضاف باليد", (await code(() => repo.addExpense({ amount: 5, description: "x", method: "stock", spent_at: new Date().toISOString() }))) === "stock_expense_locked");
   check("  والموافقةُ لا تُطبَّق مرّتين", (await repo.decideStockCounts(pend.map((c) => c.id), true)).approved === 0 && stockOf("t1") === 5);
   const from = new Date(Date.now() - 86400000).toISOString(), to = new Date(Date.now() + 86400000).toISOString();
   const loss = (await repo.reportStockLosses(from, to)).sort((a, b) => a.reason.localeCompare(b.reason)).map((x) => `${x.reason}:${x.lines}:${x.value}`).join(",");

@@ -6,7 +6,7 @@ import { GAIN_REASONS, LOSS_REASONS, WITHDRAWAL_REASONS } from "./countPick";
 /* ============================================================================
  * مرآةُ الجرد الدوريّ (0216) للوضع التجريبي — تُحمَّل عند النداء لا مع الإقلاع.
  * نفسُ الحرّاس: السببُ يطابق اتجاهَ الفرق، والمطابقُ بلا موافقة، والمعلَّقُ لا
- * يمسّ الرصيد، والموافقةُ للمدير وتطبّق **الفرقَ** لا الرقم، والسحبُ «من المخزن»
+ * يمسّ الرصيد ولا يُلغيه عدٌّ جديد، والموافقةُ للمدير وتطبّق **الفرقَ** لا الرقم، والسحبُ «من المخزن»
  * لأسباب الخسارة وحدها بسعر الشراء — وخطأُ الإدخال والزيادةُ بلا سحب.
  * ========================================================================= */
 
@@ -46,7 +46,7 @@ export function demoSubmitCount(lines: CountLineInput[]): CountSubmitResult {
   const now = new Date().toISOString();
   for (const l of lines) {
     const counted = Number(l.counted);
-    if (!Number.isFinite(counted) || counted < 0) refuse("bad_qty");
+    if (!Number.isFinite(counted) || counted < 0 || counted > 1e9) refuse("bad_qty");
     const p = (db.products ?? []).find((x) => x.id === l.product_id && !x.farm_id);
     if (!p) refuse("product_missing");
     if (p.pooled) refuse("pooled");
@@ -55,9 +55,8 @@ export function demoSubmitCount(lines: CountLineInput[]): CountSubmitResult {
     let reason: CountReason | null = l.reason ?? null;
     if (diff === 0) reason = null;
     else if (!reason || !(diff < 0 ? LOSS_REASONS : GAIN_REASONS).includes(reason)) refuse("reason");
-    for (const c of list) {
-      if (c.product_id === p.id && c.status === "pending") Object.assign(c, { status: "void", decided_by: me.id, decided_by_name: me.name, decided_at: now });
-    }
+    // معلَّقٌ ينتظر المدير لا يُلغيه عدٌّ جديد (مرآةُ count_already_pending).
+    if (list.some((c) => c.product_id === p.id && c.status === "pending")) refuse("already_pending");
     list.unshift({
       id: uid("cnt"), product_id: p.id, product_name: p.name, system_qty: system, counted_qty: counted,
       unit_cost: Math.max(0, Number(p.purchase_price) || 0), reason, note: (l.note ?? "").trim().slice(0, 200) || null,

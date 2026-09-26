@@ -3781,11 +3781,14 @@ const demoRepo = {
     return within(demoExpensesLoad(), "spent_at", range).sort((a, b) => b.spent_at.localeCompare(a.spent_at));
   },
   async addExpense(input: Omit<Expense, "id" | "created_at">): Promise<Expense> {
+    if (input.method === "stock") { const e = new Error("stock_expense_locked") as Error & { code: string }; e.code = "P0001"; throw e; }
     return demoAddExpense(input);
   },
   async deleteExpense(id: string): Promise<void> {
     const before = demoExpensesLoad();
     const row = before.find((x) => x.id === id);
+    // مرآةُ expenses_stock_guard (0216): سحبُ المخزن ظلُّ موافقةِ جرد — لا يُحذف باليد.
+    if (row?.method === "stock") { const e = new Error("stock_expense_locked") as Error & { code: string }; e.code = "P0001"; throw e; }
     demoExpensesSave(before.filter((x) => x.id !== id));
     if (row) demoAuditPush({ action: "DELETE", entity: "expenses", entity_id: id, details: row as unknown as Record<string, unknown> });
   },
