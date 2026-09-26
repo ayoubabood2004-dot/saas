@@ -365,6 +365,11 @@ export function ActivityLog() {
         if (ack && ch.every((c) => c.key === "expiry_ack" || c.key === "expiry_ack_qty")) {
           return ack.to ? t("act.expiryMuted", { name }) : t("act.expiryUnmuted", { name });
         }
+        /* ووسمُ الإرجاع (0214) كذلك — جملةٌ باسمه لا «عدّل المنتج» بحقلٍ اسمُه return_mark. */
+        const rm = ch.find((c) => c.key === "return_mark");
+        if (rm && ch.every((c) => c.key === "return_mark")) {
+          return rm.to ? t("act.returnMarked", { name, defaultValue: "حطّ «{{name}}» للإرجاع" }) : t("act.returnUnmarked", { name, defaultValue: "رجّع «{{name}}» للرفّ (شال وسم الإرجاع)" });
+        }
         return t("act.prodUpd", { name, stock: formatNum(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" });
       }
       case "branches": return t("act.branchAdd", { name: s("name"), defaultValue: "فرع: {{name}} (إضافة / تعديل)" });

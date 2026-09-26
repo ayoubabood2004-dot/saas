@@ -14,7 +14,7 @@ import { ArrowDownRight, PackagePlus, Pencil, RotateCcw, ShoppingBag } from "luc
 import { Dialog, Button, Skeleton } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { formatQty, formatDate } from "@/lib/utils";
-import type { Product, ProductMovement } from "@/types";
+import type { Product, ProductMovement, ProductBatch } from "@/types";
 
 const KIND_ICON = {
   open: PackagePlus, purchase: ShoppingBag, purchase_edit: Pencil,
@@ -27,6 +27,8 @@ export function ProductMovementsDialog({ product, open, onClose }: {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<ProductMovement[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** تاريخُ الوجبة لكلّ فاتورة شراء (0214) — تفصيلٌ ثانويّ: فشلُه لا يحجب الحركات، يغيب التاريخُ وحدَه. */
+  const [batchOf, setBatchOf] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!open) return;
@@ -37,6 +39,10 @@ export function ProductMovementsDialog({ product, open, onClose }: {
       /* **الفشلُ يُقال ولا يصير «ماكو حركات».** قائمةٌ فارغةٌ عن خطأٍ تقلب
        * المعنى: «ما صار شي» بدل «ما وصلنا» — والصمتُ يُصدَّق. */
       .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : String(e)); });
+    setBatchOf(new Map());
+    repo.productBatches(product.id)
+      .then((bs: ProductBatch[]) => { if (alive) setBatchOf(new Map(bs.filter((b) => b.expiry_date).map((b) => [b.purchase_id, String(b.expiry_date).slice(0, 10)]))); })
+      .catch(() => { /* ثانويّ: الحركاتُ تُعرض بلا تاريخ الوجبة */ });
     return () => { alive = false; };
   }, [open, product.id]);
 
@@ -80,6 +86,9 @@ export function ProductMovementsDialog({ product, open, onClose }: {
                   <p className="text-2xs text-ink-subtle">
                     {formatDate(m.at, i18n.language, true)}
                     {m.actor_name ? ` · ${m.actor_name}` : ""}
+                    {(m.kind === "purchase" || m.kind === "purchase_edit") && m.ref_id && batchOf.get(m.ref_id)
+                      ? ` · ${t("mv.batchExpiry", { d: batchOf.get(m.ref_id)!.replace(/-/g, "/"), defaultValue: "انتهاء الوجبة {{d}}" })}`
+                      : ""}
                   </p>
                 </div>
                 <div className="text-end tabular-nums">

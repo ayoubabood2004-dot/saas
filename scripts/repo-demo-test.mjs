@@ -1130,6 +1130,19 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
     (await repo.ensureCompany("رويال كانين", "c1")).id === (await repo.ensureCompany("\u200fرويال\u200bكانين", "c1")).id);
 }
 
+console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزمة)");
+{
+  seed([P("lb", "سيفوتاكس الوجبات", "LB-1", { stock: 0, expiry_date: null })]);
+  const a = await repo.recordPurchase([{ product_id: "lb", name: "سيفوتاكس الوجبات", qty: 10, purchase_price: 1, sell_price: 0, expiry_date: "2026-12-01" }], { company_name: "وجبة أ" });
+  await repo.recordPurchase([{ product_id: "lb", name: "سيفوتاكس الوجبات", qty: 5, purchase_price: 1, sell_price: 0, expiry_date: "2027-06-01" }], { company_name: "وجبة ب" });
+  const bs = await repo.productBatches("lb");
+  check("كلُّ وجبةٍ تحفظ تاريخَها، الأحدثُ أوّلاً — والقديمةُ لا تُنسى", bs.map((b) => b.expiry_date).join() === "2027-06-01,2026-12-01", JSON.stringify(bs));
+  await repo.updatePurchase(a.id, [{ product_id: "lb", name: "سيفوتاكس الوجبات", qty: 10, purchase_price: 1, sell_price: 0, batch_expiry: "2026-12-01" }], { company_name: "وجبة أ" });
+  const items = await repo.listPurchaseItems(a.id);
+  check("  وتعديلُ الفاتورة القديمة يُبقي تاريخَ وجبتها (batch_expiry)", items[0]?.expiry_date === "2026-12-01");
+  check("  **ولا يرجع تاريخَ الرفّ للقديم**", (await repo.listProducts()).find((p) => p.id === "lb")?.expiry_date === "2027-06-01");
+}
+
 console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
 {
   const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };

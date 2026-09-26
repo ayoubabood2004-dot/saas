@@ -21,6 +21,7 @@ import { searchable, invNormName } from "./utils";
 import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
+import type { ProductBatch } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -2881,7 +2882,9 @@ const demoRepo = {
       db.purchaseItems.push({
         id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
         barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
-        category: l.category ?? null, qty, purchase_price: cost, sell_price: sell, created_at: now,
+        category: l.category ?? null, qty, purchase_price: cost, sell_price: sell,
+        // 0214: تاريخُ هذه الوجبة مع سطرها — المكتوب، وإلا المحفوظُ عند التعديل (لا يلمس المنتج).
+        expiry_date: l.expiry_date || l.batch_expiry || null, created_at: now,
       });
     }
     const totalR = Math.round(total * 100) / 100;
@@ -2956,7 +2959,9 @@ const demoRepo = {
       db.purchaseItems.push({
         id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
         barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
-        category: l.category ?? null, qty, purchase_price: cost, sell_price: sell, created_at: now,
+        category: l.category ?? null, qty, purchase_price: cost, sell_price: sell,
+        // 0214: تاريخُ هذه الوجبة مع سطرها — المكتوب، وإلا المحفوظُ عند التعديل (لا يلمس المنتج).
+        expiry_date: l.expiry_date || l.batch_expiry || null, created_at: now,
       });
     }
     // ٢·٥) الحصرةُ الوحيدة: بضاعةٌ سُحبت من الفاتورة ولم تعد تغطّي ما بيع
@@ -3868,6 +3873,18 @@ const demoRepo = {
   /** مرآةُ `product_movements` (0207). **منطقُها بوحدةٍ تُحمَّل عند النداء**:
    *  `repo.ts` على مسار الإقلاع الحرج، وكلُّ سطرٍ يُضاف هنا يدفعه كلُّ فتحِ
    *  تطبيقٍ بكلّ عيادة — وهذا كشفه `store-weight-guard` بـ٢٩٥ بايتاً. */
+  /** مرآةُ `product_batches` (0214): وجباتُ المادّة بتواريخها، الأحدثُ أوّلاً. */
+  async productBatches(productId: string): Promise<ProductBatch[]> {
+    const db = loadDB();
+    const pur = new Map((db.purchases ?? []).map((p) => [p.id, p]));
+    return (db.purchaseItems ?? []).filter((it) => it.product_id === productId)
+      .map((it) => {
+        const p = pur.get(it.purchase_id);
+        return { purchase_id: it.purchase_id, purchased_at: p?.purchased_at ?? it.created_at, qty: it.qty, expiry_date: it.expiry_date ?? null, company_name: p?.company_name ?? null };
+      })
+      .sort((a, b) => (b.purchased_at ?? "").localeCompare(a.purchased_at ?? ""))
+      .slice(0, 200);
+  },
   async productMovements(productId: string): Promise<ProductMovement[]> {
     const { demoProductMovements } = await import("./demoMovements");
     return demoProductMovements(loadDB(), demoAuditLoad(), productId);

@@ -12,7 +12,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { History,
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock, BellOff, BellRing,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock, BellOff, BellRing, Undo2,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -43,8 +43,9 @@ import { catalogLookup, type CatalogHit } from "@/lib/catalog";
  * المشتريات والديون يختفيان أصلاً). */
 import { useOverride } from "@/lib/managerOverride";
 import { useSearchParams } from "react-router-dom";
-import { expiryBucket, expiryState, daysToExpiry, expiryCost, isExpiryMuted, returnListText } from "@/lib/expiry";
-import { getExpiryWindows } from "@/lib/settings";
+import { expiryBucket, expiryState, daysToExpiry, expiryCost, isExpiryMuted, returnListText, isReturnMarked, groupByCompany } from "@/lib/expiry";
+import { buildReturnStatementHTML, openReturnStatement } from "@/lib/returnPrint";
+import { getExpiryWindows, getClinicName } from "@/lib/settings";
 import { usePermissions } from "@/hooks/usePermissions";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
@@ -74,9 +75,11 @@ const isInReturn = (p: Product) => bucketOf(p) === "window";
 const isExpiringSoon = (p: Product) => isInReturn(p) && (daysToExpiry(p.expiry_date, expCtx().today) ?? Infinity) <= expW().criticalDays;
 const isExpired = (p: Product) => bucketOf(p) === "expired";
 const isMutedExpiry = (p: Product) => bucketOf(p) === "muted";
-export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted";
+/** «معدّة للإرجاع» (م٤): موسومةٌ بتاريخها الحاليّ وعلى الرفّ — ما يُسلَّم للمندوب فعلاً. */
+const isMarkedForReturn = (p: Product) => isReturnMarked(p) && !p.pooled && (Number(p.stock) || 0) > 0;
+export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked";
 const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
-  all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, return: isInReturn, expired: isExpired, muted: isMutedExpiry,
+  all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, return: isInReturn, expired: isExpired, muted: isMutedExpiry, marked: isMarkedForReturn,
 };
 /* `in` يقبل الموروث: ?filter=__proto__ أو hasOwnProperty كان يمرّ فيسقط المخزونُ كلُّه. */
 const isStockFilter = (v: string | null): v is StockFilter => !!v && Object.prototype.hasOwnProperty.call(STOCK_FILTERS, v);
@@ -694,6 +697,24 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
    * يسمع «ما انحفظ» لا «انكتم» كاذبة. ولا كتابةَ بلا تغيير — كلُّ حفظٍ سطرُ تدقيق. */
   const [muting, setMuting] = useState(false);
   const canMute = !!onMuteChanged && !locked && !!p.expiry_date && (muted || bucketOf(p) != null);
+  /* «معدّة للإرجاع» (م٤): تاريخٌ لا «نعم» — كالكتم. يسري ما دامت الوجبةُ نفسَها. */
+  const marked = isReturnMarked(p);
+  const [marking, setMarking] = useState(false);
+  const toggleMark = async () => {
+    if (marking) return;
+    setMarking(true);
+    try {
+      await repo.updateProduct(p.id, { return_mark: marked ? null : String(p.expiry_date).slice(0, 10) });
+      playSuccess();
+      toast.success(marked ? t("expiry.unmarkDone", { name: p.name, defaultValue: "«{{name}}» رجعت للرفّ — مو معدّة للإرجاع" }) : t("expiry.markDone", { name: p.name, defaultValue: "«{{name}}» معدّة للإرجاع — تلكاها بشريحة «معدّة للإرجاع»" }));
+      onMuteChanged?.();
+    } catch {
+      playWarning();
+      toast.error(t("expiry.markFail", "ما انحفظ الوسم — تأكد من الإنترنت أو صلاحيتك"));
+    } finally {
+      setMarking(false);
+    }
+  };
   const toggleMute = async () => {
     if (muting) return;
     setMuting(true);
@@ -749,6 +770,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
             </span>
           )}
           {muted && expSt && <span className="chip shrink-0 bg-surface-2 text-2xs font-semibold text-ink-muted" data-expmuted>{t("expiry.muted")}</span>}
+          {marked && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" data-retmarked><Undo2 size={11} /> {t("expiry.filterMarked", "معدّة للإرجاع")}</span>}
         </div>
       </div>
       {p.pooled ? (
@@ -771,6 +793,13 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
           {muting ? <Loader2 size={16} className="animate-spin" /> : muted ? <BellRing size={16} /> : <BellOff size={16} />}
         </button>
       )}
+      {canMute && (
+        <button onClick={() => { playTap(); void toggleMark(); }} disabled={marking} data-retmark={marked ? "on" : "off"}
+          aria-label={marked ? t("expiry.unmark", "رجّعها للرفّ") : t("expiry.mark", "حطّها للإرجاع")} title={marked ? t("expiry.unmark", "رجّعها للرفّ") : t("expiry.mark", "حطّها للإرجاع")}
+          className={cn("grid h-9 w-9 place-items-center rounded-full transition hover:bg-surface-2", marked ? "text-accent-600" : "text-ink-subtle hover:text-accent-600")}>
+          {marking ? <Loader2 size={16} className="animate-spin" /> : <Undo2 size={16} />}
+        </button>
+      )}
       <button onClick={() => { playTap(); setHist(true); }} aria-label={t("mv.open2", "حركات المادة")} title={t("mv.open2", "حركات المادة")}
         className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><History size={16} /></button>
       {hist && <ProductMovementsDialog product={p} open={hist} onClose={() => setHist(false)} />}
@@ -782,7 +811,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
 
 /* ---------------- Products tab ---------------- */
 function InventoryTab({ products, companies, sections, clinicId, onChanged, filter, onFilter }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void; filter: StockFilter; onFilter: (f: StockFilter) => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
@@ -827,7 +856,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
     if (filter === "low" || filter === "out") {
       return [...list].sort((a, b) => Number(isOut(b)) - Number(isOut(a)) || a.stock - b.stock);
     }
-    if (filter === "soon" || filter === "return" || filter === "expired" || filter === "muted") {
+    if (filter === "soon" || filter === "return" || filter === "expired" || filter === "muted" || filter === "marked") {
       const today = expCtx().today;
       return [...list].sort((a, b) => (daysToExpiry(a.expiry_date, today) ?? 1e9) - (daysToExpiry(b.expiry_date, today) ?? 1e9));
     }
@@ -840,7 +869,24 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   const toast = useToast();
   /* ٢·٣: قائمةٌ تُلصق بواتساب المندوب — ما تعرضه الشريحةُ الآن بالضبط (بعد البحث)،
    * مجمَّعةً بالشركة وبلا أسعار. الواتسابُ يدويٌّ اليوم (wa.me) فالنسخُ أصدقُ من «أُرسلت». */
-  const expiryFilter = filter === "soon" || filter === "return" || filter === "expired" || filter === "muted";
+  const expiryFilter = filter === "soon" || filter === "return" || filter === "expired" || filter === "muted" || filter === "marked";
+  /* م٤ ٣·٢: بشرائح الانتهاء القائمةُ **مجمَّعةٌ بالشركة** بقيمة كلّ مجموعة — شكلُ الإرجاع
+   * الحقيقيّ (المندوبُ يجي لشركته)، والأثقلُ قيمةً أوّلاً. */
+  const groups = useMemo(() => (expiryFilter ? groupByCompany(shown, (p) => companyName(p.company_id) ?? "", t("expiry.noCompany"), expCtx().today) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expiryFilter, shown, companyName]);
+  /* والكشفُ المطبوع **بالمبالغ** — ورقةُ العيادة لتعرف ما يرجع لها؛ نصُّ الواتساب بلا أسعار (م١). */
+  const printStatement = () => {
+    if (!groups?.length) return;
+    const html = buildReturnStatementHTML(groups, {
+      title: t("expiry.stmtTitle", "كشف الإرجاع"), company: t("expiry.stmtCompany", "الشركة"), item: t("expiry.stmtItem", "المادة"),
+      qty: t("expiry.stmtQty", "العدد"), expiry: t("expiry.stmtExpiry", "الانتهاء"), cost: t("expiry.stmtCost", "الكلفة"),
+      total: t("expiry.stmtTotal", "المجموع"), groupTotal: t("expiry.stmtGroupTotal", "مجموع الشركة"),
+      grandTotal: t("expiry.stmtGrand", "المجموع الكلّي — بسعر الشراء"), printedAt: t("expiry.stmtPrinted", "طُبع"),
+    }, { lang: i18n.language, clinicName: getClinicName() || "", money: (n) => money(n), qty: (n) => formatNum(n), date: localISO().replace(/-/g, "/") });
+    if (!openReturnStatement(html)) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
+    else void repo.logClientEvent("report.return_statement", { n: shown.length });
+  };
   /* الكتمُ يُسقط لقطةَ الرئيسية أيضاً: كانت تعيد عرضَ نفسها ٢٠ ثانية بلا جلب (`isFresh`)،
    * فمن كتم مادةً ورجع للرئيسية رآها بالكارت كأن الكتمَ لم يُحفظ (قيادةُ المتصفّح). */
   const afterMute = useCallback(() => { invalidate(`dashboard:${clinicId ?? "anon"}`); onChanged(); }, [clinicId, onChanged]);
@@ -876,7 +922,8 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
           ["return", t("expiry.filterReturn", { n: expW().returnDays }), products.filter(isInReturn).length],
           ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
           ["muted", t("expiry.muted"), products.filter(isMutedExpiry).length],
-        ] as [StockFilter, string, number][]).filter(([k, , n]) => k !== "muted" || n > 0 || filter === "muted").map(([k, label, n]) => (
+          ["marked", t("expiry.filterMarked", "معدّة للإرجاع"), products.filter(isMarkedForReturn).length],
+        ] as [StockFilter, string, number][]).filter(([k, , n]) => (k !== "muted" && k !== "marked") || n > 0 || filter === k).map(([k, label, n]) => (
           <button
             key={k}
             type="button"
@@ -897,6 +944,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
             {t("expiry.copyList")}
           </Button>
         )}
+        {expiryFilter && shown.length > 0 && (
+          <Button size="sm" variant="secondary" data-printreturn leftIcon={<Printer size={14} />} onClick={() => { playTap(); printStatement(); }}>
+            {t("expiry.printStatement", "اطبع كشف الإرجاع")}
+          </Button>
+        )}
       </div>
 
       {shown.length === 0 ? (
@@ -912,11 +964,29 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
               : t("pos.noProducts", "No products yet. Add your first one.")}
         </div>
       ) : (
+        groups ? (
+          <div className="space-y-4">
+            {groups.map((g) => (
+              <section key={g.company} className="space-y-2" data-retgroup>
+                <h3 className="flex flex-wrap items-baseline gap-x-2 px-1 text-sm font-extrabold text-ink">
+                  <Building2 size={14} className="self-center text-ink-subtle" /> {g.company}
+                  <span className="text-2xs font-semibold text-ink-subtle">
+                    {t("expiry.groupLine", { n: formatNum(g.rows.length), v: money(g.value), defaultValue: "{{n}} مادة · قيمتها {{v}}" })}
+                  </span>
+                </h3>
+                {g.rows.map((p) => (
+                  <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} onMuteChanged={afterMute} />
+                ))}
+              </section>
+            ))}
+          </div>
+        ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
             <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} onMuteChanged={afterMute} />
           ))}
         </motion.div>
+        )
       )}
 
       <ProductModal

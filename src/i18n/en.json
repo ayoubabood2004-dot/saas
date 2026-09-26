@@ -1325,7 +1325,8 @@
       "pieces": "{{n}} units",
       "remaining": "{{v}} left",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "colExpiry": "Batch expiry"
     },
     "receipt": {
       "addedHead": "Stock added ({{n}} items)",
@@ -1365,7 +1366,8 @@
       "cleanEditNone": "All good — edit saved, and nothing changed in stock.",
       "stockHead": "Stock changed ({{n}} items)",
       "stockLine": "{{name}} — stock was {{from}}, now {{to}}."
-    }
+    },
+    "batchSaved": "Saved for this batch: {{d}} — kept, and the shelf date is not changed"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
@@ -3462,7 +3464,9 @@
     },
     "saleExpired": "Sold expired items after confirming: {{names}} ({{ref}})",
     "expiryMuted": "Muted expiry alert for {{name}}",
-    "expiryUnmuted": "Unmuted expiry alert for {{name}}"
+    "expiryUnmuted": "Unmuted expiry alert for {{name}}",
+    "returnMarked": "Set “{{name}}” aside for return",
+    "returnUnmarked": "Put “{{name}}” back on the shelf (return mark removed)"
   },
   "override": {
     "title": "Manager mode",
@@ -5105,7 +5109,8 @@
     "toOnly": "became {{to}}",
     "none": "No recorded movements for this item",
     "failed": "Could not load the movements",
-    "retention": "Stock movements are kept for a year — anything older is gone."
+    "retention": "Stock movements are kept for a year — anything older is gone.",
+    "batchExpiry": "batch expiry {{d}}"
   },
   "expiry": {
     "days": "days",
@@ -5153,6 +5158,24 @@
     "more": "and {{n}} more",
     "daysLeft": "{{n}} days left",
     "lastDay": "last day today",
-    "expiredShort": "expired"
+    "expiredShort": "expired",
+    "unmarkDone": "“{{name}}” is back on the shelf — no longer set aside for return",
+    "markDone": "“{{name}}” set aside for return — find it under “Set for return”",
+    "markFail": "The mark wasn't saved — check your connection or your permissions",
+    "filterMarked": "Set for return",
+    "unmark": "Back to shelf",
+    "mark": "Set aside for return",
+    "stmtTitle": "Return statement",
+    "stmtCompany": "Company",
+    "stmtItem": "Item",
+    "stmtQty": "Qty",
+    "stmtExpiry": "Expiry",
+    "stmtCost": "Cost",
+    "stmtTotal": "Total",
+    "stmtGroupTotal": "Company total",
+    "stmtGrand": "Grand total — at cost price",
+    "stmtPrinted": "Printed",
+    "printStatement": "Print return statement",
+    "groupLine": "{{n}} items · worth {{v}}"
   }
 }

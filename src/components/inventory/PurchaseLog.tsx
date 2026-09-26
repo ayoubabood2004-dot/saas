@@ -174,7 +174,7 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                           <p className="py-2 text-2xs text-ink-subtle">{t("purchase.log.noItems", "ماكو أصناف مسجلة على هاي الفاتورة.")}</p>
                         ) : (
                           <div className="overflow-x-auto">
-                            <table className="w-full min-w-[520px] text-xs">
+                            <table className="w-full min-w-[600px] text-xs">
                               <thead>
                                 <tr className="text-start text-2xs text-ink-subtle">
                                   <th className="py-1.5 pe-2 text-start font-bold">{t("purchase.log.colItem", "الصنف")}</th>
@@ -182,6 +182,7 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                                   <th className="py-1.5 pe-2 text-center font-bold">{t("purchase.log.colQty", "الكمية")}</th>
                                   <th className="py-1.5 pe-2 text-center font-bold">{t("purchase.log.colCost", "سعر الشراء")}</th>
                                   <th className="py-1.5 pe-2 text-center font-bold">{t("purchase.log.colSell", "سعر البيع المكتوب")}</th>
+                                  <th className="py-1.5 pe-2 text-center font-bold">{t("purchase.log.colExpiry", "انتهاء الوجبة")}</th>
                                   <th className="py-1.5 text-end font-bold">{t("purchase.log.colTotal", "الإجمالي")}</th>
                                 </tr>
                               </thead>
@@ -194,11 +195,13 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                                     <td className="py-1.5 pe-2 text-center tabular-nums text-ink-muted">{money(it.purchase_price || 0)}</td>
                                     {/* صفرٌ = «ما كُتب» (الخادمُ لا يلمس سعرَ الرفّ به) — شرطةٌ لا «٠ د.ع». */}
                                     <td className="py-1.5 pe-2 text-center tabular-nums text-ink-muted">{(it.sell_price || 0) > 0 ? money(it.sell_price) : "—"}</td>
+                                    {/* 0214: تاريخُ هذه الوجبة كما استُلمت — يبقى مهما تبدّل تاريخُ الرفّ بعدها. */}
+                                    <td className="py-1.5 pe-2 text-center tabular-nums text-ink-muted" dir="ltr">{it.expiry_date ? String(it.expiry_date).slice(0, 10).replace(/-/g, "/") : "—"}</td>
                                     <td className="py-1.5 text-end font-extrabold tabular-nums text-ink">{money((it.qty || 0) * (it.purchase_price || 0))}</td>
                                   </tr>
                                 ))}
                                 <tr className="border-t border-line">
-                                  <td colSpan={5} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("purchase.log.invoiceTotal", "إجمالي الفاتورة")}{pPaid < (p.total || 0) ? ` — ${t("purchase.log.paidPart", { v: money(pPaid), defaultValue: "المدفوع {{v}}" })}` : ""}</td>
+                                  <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("purchase.log.invoiceTotal", "إجمالي الفاتورة")}{pPaid < (p.total || 0) ? ` — ${t("purchase.log.paidPart", { v: money(pPaid), defaultValue: "المدفوع {{v}}" })}` : ""}</td>
                                   <td className="py-1.5 text-end font-black tabular-nums text-ink">{money(p.total || 0)}</td>
                                 </tr>
                               </tbody>

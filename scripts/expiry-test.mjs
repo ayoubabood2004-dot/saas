@@ -152,5 +152,20 @@ console.log("▸ ٧) بوّابةُ البيع (SaleBuilder — بنيةً، و�
     /add column if not exists expiry_ack date;/.test(mig) && /add column if not exists expiry_ack_qty numeric;/.test(mig));
 }
 
+console.log("▸ ٧) وسمُ الإرجاع والكشفُ بالشركة (م٤)");
+{
+  check("موسومةٌ حين يساوي تاريخَها", X.isReturnMarked({ expiry_date: "2026-10-01", return_mark: "2026-10-01" }));
+  check("  ووجبةٌ جديدةٌ بتاريخٍ آخر ترفعه وحدَها", !X.isReturnMarked({ expiry_date: "2027-03-01", return_mark: "2026-10-01" }));
+  check("  والطرفان مطبَّعان (تاريخٌ طويل)", X.isReturnMarked({ expiry_date: "2026-10-01T00:00:00Z", return_mark: "2026-10-01" }));
+  check("  وبلا وسمٍ أو بلا تاريخ = لا", !X.isReturnMarked({ expiry_date: "2026-10-01" }) && !X.isReturnMarked({ expiry_date: null, return_mark: "2026-10-01" }));
+  const P = (id, co, stock, cost, exp) => ({ id, name: id, company_id: co, stock, purchase_price: cost, expiry_date: exp });
+  const rows = [P("a", "A", 2, 1000, "2026-10-20"), P("b", "B", 10, 500, "2026-10-05"), P("c", "A", 1, 100, "2026-10-01"), P("d", null, 3, 10, "2026-11-01"), P("e", "B", 0, 9999, "2026-10-02")];
+  const g = X.groupByCompany(rows, (p) => p.company_id ?? "", "بدون شركة", T);
+  check("المجموعاتُ بالشركة، الأثقلُ قيمةً أوّلاً (B ٥٠٠٠ ثمّ A ٢١٠٠)", g.map((x) => x.company).join() === "B,A,بدون شركة", g.map((x) => `${x.company}:${x.value}`).join());
+  check("  والقيمةُ بسعر الشراء لما على الرفّ فقط (الرصيدُ صفر لا يُحسب)", g[0].value === 5000 && g[1].value === 2100);
+  check("  وداخلها الأقربُ انتهاءً أوّلاً", g[1].rows.map((p) => p.id).join() === "c,a");
+  check("  و«بلا شركة» مجموعةٌ باسمها لا تسقط", g[2].company === "بدون شركة" && g[2].rows.length === 1);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} expiry-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

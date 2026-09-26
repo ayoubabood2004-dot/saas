@@ -662,6 +662,8 @@ export interface Product {
   expiry_ack?: string | null;
   /** 0210: الرصيدُ لحظةَ الكتم — زيادةٌ عليه (طيُّ توأم، شراءٌ بنفس التاريخ) ترفع الكتم. */
   expiry_ack_qty?: number | null;
+  /** «معدّة للإرجاع» (0214): تاريخُ الانتهاء الذي وُسمت عنده — يسري ما دام = expiry_date. */
+  return_mark?: string | null;
   /** Fractional sales: the box can be broken into smaller units (e.g. a pill from a strip). */
   has_sub_unit?: boolean;
   /** Name of one sub-unit shown at the till, e.g. "حبة" / "شريط" / "مل". */
@@ -1042,7 +1044,18 @@ export interface PurchaseItem {
   qty: number;              // units received (added to stock)
   purchase_price: number;   // cost per unit at receipt
   sell_price: number;       // sell price set/kept at receipt
+  /** تاريخُ انتهاء هذه الوجبة كما استُلمت (0214). */
+  expiry_date?: string | null;
   created_at: string;
+}
+
+/** وجبةُ مادّةٍ كما استُلمت (0214 `product_batches`). */
+export interface ProductBatch {
+  purchase_id: string;
+  purchased_at: string | null;
+  qty: number;
+  expiry_date: string | null;
+  company_name: string | null;
 }
 
 /** صورةُ المنتج قبل/بعد سطرِ شراء — الحقولُ التي يلمسها الشراء (0211). */
@@ -1221,6 +1234,8 @@ export interface PurchaseDraftLine {
   sell_price: number;
   min_stock?: number | null;
   expiry_date?: string | null;
+  /** تاريخُ الوجبة المحفوظ عند **تعديل** فاتورة (0214): يُحفظ للسطر ولا يلمس تاريخَ المنتج. */
+  batch_expiry?: string | null;
 }
 
 /** Purchase-level metadata sent to the repo alongside the draft lines. */

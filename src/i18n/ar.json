@@ -1325,7 +1325,8 @@
       "pieces": "{{n}} قطعة",
       "remaining": "باقي {{v}}",
       "today": "اليوم",
-      "yesterday": "أمس"
+      "yesterday": "أمس",
+      "colExpiry": "انتهاء الوجبة"
     },
     "receipt": {
       "addedHead": "زادت بضاعة ({{n}} مواد)",
@@ -1365,7 +1366,8 @@
       "cleanEditNone": "تمام — انحفظ التعديل، وما تغيّر شي بالمخزن.",
       "stockHead": "تغيّر رصيد ({{n}} مواد)",
       "stockLine": "{{name}} — الرصيد كان {{from}}، صار {{to}}."
-    }
+    },
+    "batchSaved": "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ"
   },
   "pos": {
     "scanRescuedPurchase": "«{{name}}» — طابق بصيغة {{code}}",
@@ -3462,7 +3464,9 @@
     },
     "saleExpired": "باع مواد منتهية بعد التأكيد: {{names}} ({{ref}})",
     "expiryMuted": "كتم تنبيه انتهاء {{name}}",
-    "expiryUnmuted": "رفع كتم تنبيه انتهاء {{name}}"
+    "expiryUnmuted": "رفع كتم تنبيه انتهاء {{name}}",
+    "returnMarked": "حطّ «{{name}}» للإرجاع",
+    "returnUnmarked": "رجّع «{{name}}» للرفّ (شال وسم الإرجاع)"
   },
   "override": {
     "title": "وضع المدير",
@@ -5105,7 +5109,8 @@
     "toOnly": "صار {{to}}",
     "none": "ماكو حركات مسجّلة لهذي المادة",
     "failed": "ما كدرنا نجيب الحركات",
-    "retention": "السجل يحتفظ بحركات المخزون سنة — الأقدم ما عاد موجود."
+    "retention": "السجل يحتفظ بحركات المخزون سنة — الأقدم ما عاد موجود.",
+    "batchExpiry": "انتهاء الوجبة {{d}}"
   },
   "expiry": {
     "days": "يوم",
@@ -5153,6 +5158,24 @@
     "more": "و{{n}} غيرها",
     "daysLeft": "باقي {{n}} يوم",
     "lastDay": "آخر يوم اليوم",
-    "expiredShort": "منتهية"
+    "expiredShort": "منتهية",
+    "unmarkDone": "«{{name}}» رجعت للرفّ — مو معدّة للإرجاع",
+    "markDone": "«{{name}}» معدّة للإرجاع — تلكاها بشريحة «معدّة للإرجاع»",
+    "markFail": "ما انحفظ الوسم — تأكد من الإنترنت أو صلاحيتك",
+    "filterMarked": "معدّة للإرجاع",
+    "unmark": "رجّعها للرفّ",
+    "mark": "حطّها للإرجاع",
+    "stmtTitle": "كشف الإرجاع",
+    "stmtCompany": "الشركة",
+    "stmtItem": "المادة",
+    "stmtQty": "العدد",
+    "stmtExpiry": "الانتهاء",
+    "stmtCost": "الكلفة",
+    "stmtTotal": "المجموع",
+    "stmtGroupTotal": "مجموع الشركة",
+    "stmtGrand": "المجموع الكلّي — بسعر الشراء",
+    "stmtPrinted": "طُبع",
+    "printStatement": "اطبع كشف الإرجاع",
+    "groupLine": "{{n}} مادة · قيمتها {{v}}"
   }
 }

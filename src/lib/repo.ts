@@ -29,6 +29,7 @@ import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment,
 import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
+import type { ProductBatch } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
@@ -2338,6 +2339,10 @@ const supabaseRepo: DemoRepo = {
     if (error) throw error;
     return ((data ?? []) as { bucket: string; kind: string; n: number }[]).map((r) => ({ bucket: r.bucket, kind: r.kind, n: Number(r.n) }));
   },
+  async productBatches(productId) {
+    // يرمي ولا يرجّع فارغاً: «ماكو وجبات» عن خطأٍ يُصدَّق.
+    return listOrThrow<ProductBatch>(await sbc().rpc("product_batches", { p_product: productId }));
+  },
   async productMovements(productId) {
     /* **ترمي ولا ترجّع فارغة.** قائمةٌ ناقصةٌ عن خطأٍ تقلب المعنى: «ماكو حركات»
      * تعني «ما صار شي» والحقيقةُ «ما وصلنا». والشاشةُ تعرض «أعد المحاولة». */
@@ -2437,7 +2442,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listInvoicesTouching", "customerInvoices", "listReminderMarks", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
-  "productMovements",
+  "productMovements", "productBatches",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

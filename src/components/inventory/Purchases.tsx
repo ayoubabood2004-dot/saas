@@ -52,6 +52,9 @@ type Line = {
   min_stock: string;
   /** New batch expiry (ISO yyyy-mm-dd). Blank = keep the product's current one. */
   expiry: string;
+  /** تاريخُ الوجبة المحفوظ بسطر الفاتورة (0214) — بالتعديل وحده. يُرسل `batch_expiry`:
+   *  يبقى للسطر ولا يلمس تاريخَ المنتج (وجبةٌ أحدث قد غيّرته، وإرجاعُه يدهسه). */
+  batchExpiry?: string;
 };
 
 let LINE_SEQ = 0;
@@ -574,6 +577,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         /* وبالتعديل كذلك: لقطةُ `purchase_items` سعرُ يومِ الفاتورة، وإرجاعُها
          * يدهس سعرَ الرفّ اليوم بسعرٍ عمرُه شهر. تُعرض تلميحاً لا قيمةً. */
         sell_price: "",
+        batchExpiry: (it.expiry_date ?? "").slice(0, 10),
       })));
     } else {
       setCompany(defaultCompanyName ?? "");
@@ -951,6 +955,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         sell_price: sellPriceToSend(l.sell_price),
         min_stock: l.min_stock.trim() === "" ? null : Math.max(0, Math.round(Number(l.min_stock) || 0)),
         expiry_date: l.expiry.trim() || null,
+        // تاريخُ الوجبة المحفوظ يُرسل منفصلاً: يبقى للسطر ولا يرجع تاريخَ الرفّ للقديم (0214).
+        batch_expiry: l.expiry.trim() ? null : (l.batchExpiry || null),
       }));
       const meta: PurchaseMeta = {
         company_id: co.id,
@@ -1283,6 +1289,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <div className="sm:col-span-3">
                     <label className="label text-2xs">{t("purchase.batchExpiry", "انتهاء الوجبة الجديدة")} <span className="font-normal text-ink-subtle">{t("purchase.batchExpiryHint", "(اختياري — فارغ يبقي القديم)")}</span></label>
                     <input type="date" className="input text-sm" value={l.expiry} onChange={(e) => patchLine(l.key, { expiry: e.target.value })} />
+                    {l.batchExpiry && !l.expiry && (
+                      <p className="mt-1 text-2xs text-ink-subtle" data-batchsaved>
+                        {t("purchase.batchSaved", { d: l.batchExpiry.replace(/-/g, "/"), defaultValue: "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ" })}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-end sm:col-span-3">
                     <div className="w-full rounded-xl bg-surface-2 px-3 py-2 text-center">

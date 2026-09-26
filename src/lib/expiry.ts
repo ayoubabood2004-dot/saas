@@ -148,3 +148,36 @@ export function returnListText(rows: Product[], companyOf: (p: Product) => strin
   }
   return lines.join("\n");
 }
+
+/**
+ * «معدّة للإرجاع» (م٤، 0214) — **كالكتم حرفاً**: `return_mark` يحفظ التاريخَ الذي وُسمت
+ * عنده، فيسري ما دام = `expiry_date`، ووجبةٌ جديدة بتاريخٍ آخر ترفعه وحدَها. والطرفان
+ * يُقصّان لعشرة أحرف (التجريبيُّ قد يخزّن تاريخاً أطول — تطبيعُ طرفٍ واحد يفشل بصمت).
+ */
+export function isReturnMarked(p: Pick<Product, "expiry_date"> & { return_mark?: string | null }): boolean {
+  const m = YMD.exec(String(p.return_mark ?? ""))?.[0];
+  return !!m && m === YMD.exec(String(p.expiry_date ?? ""))?.[0];
+}
+
+export interface ReturnGroup { company: string; rows: Product[]; qty: number; value: number }
+
+/**
+ * كشفُ الإرجاع مجمَّعاً **بالشركة** — شكلُ الإرجاع الحقيقيّ: المندوبُ يجي لشركته.
+ * القيمةُ بسعر الشراء (`expiryCost`: ما على الرفّ فقط)، والمجموعاتُ الأثقلُ أوّلاً،
+ * وداخلها الأقربُ انتهاءً. «بلا شركة» مجموعةٌ باسمها لا تُسقط.
+ */
+export function groupByCompany(rows: Product[], companyOf: (p: Product) => string, noCompany: string, todayISO: string = localISO()): ReturnGroup[] {
+  const m = new Map<string, ReturnGroup>();
+  for (const p of rows) {
+    const c = companyOf(p).trim() || noCompany;
+    const g = m.get(c) ?? { company: c, rows: [], qty: 0, value: 0 };
+    g.rows.push(p);
+    g.qty += Number(p.stock) || 0;
+    g.value += expiryCost(p);
+    m.set(c, g);
+  }
+  const near = (a: Product, b: Product) =>
+    (daysToExpiry(a.expiry_date, todayISO) ?? 1e9) - (daysToExpiry(b.expiry_date, todayISO) ?? 1e9) || a.name.localeCompare(b.name);
+  for (const g of m.values()) g.rows.sort(near);
+  return [...m.values()].sort((a, b) => b.value - a.value || a.company.localeCompare(b.company));
+}
