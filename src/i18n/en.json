@@ -5291,10 +5291,16 @@
       "reason": "An item has a difference — choose a reason that matches it",
       "needs_manager": "Only a manager can approve count differences — unlock manager mode",
       "nothing": "No lines selected",
-      "already_pending": "This item was already counted and awaits manager approval — approve or reject it first"
+      "already_pending": "This item was already counted and awaits manager approval — approve or reject it first",
+      "lot_missing": "A batch in the count no longer exists — refresh the page"
     },
     "changedSince": "Stock of {{n}} items changed since the count (sale or edit) — the difference applies to current stock, never below zero:",
-    "changedLine": "“{{name}}”: {{then}} at count → {{now}} now"
+    "changedLine": "“{{name}}”: {{then}} at count → {{now}} now",
+    "byLot": "This item has more than one batch — count each date separately:",
+    "lotExp": "Expires {{d}}",
+    "lotNoDate": "No date",
+    "lotDiff": "(system {{sys}} — {{diff}})",
+    "pendingLot": "Batch {{d}}: system {{sys}} → found {{got}}"
   },
   "watch": {
     "noAccess": "Stock watch needs the manage-inventory permission. Ask the clinic manager.",
@@ -5336,6 +5342,46 @@
     "m2": "2 months",
     "m3": "3 months",
     "m4": "4 months",
-    "m6": "6 months"
+    "m6": "6 months",
+    "lotChip": "{{n}} expire {{d}}",
+    "lotNoDate": "{{n}} no date"
+  },
+  "lots": {
+    "noDate": "No expiry date",
+    "sellsFirst": "Sells first",
+    "edit": "Fix date",
+    "newDate": "Correct date",
+    "dateDone": "Batch date updated",
+    "failed": "Couldn't load the batches",
+    "shelfTip": "Keep what expires first at the front — sales take from it first, and the count corrects it if another was taken",
+    "none": "No stock for this item",
+    "qty": "Quantity",
+    "expiry": "Expires",
+    "note": "Note",
+    "notePh": "e.g. delivered by the rep",
+    "added": "Batch added and stock increased",
+    "addHint": "For goods that arrived without a purchase invoice. Goods on an invoice get their batch automatically.",
+    "add": "Add batch",
+    "expiredAgo": "expired {{n}} days ago",
+    "left": "{{n}} days left",
+    "ofReceived": "of {{n}}",
+    "splitQty": "For how many? (empty = all {{n}})",
+    "splitDone": "{{n}} split off with their date",
+    "title": "Batches: {{name}}",
+    "sub": "Stock {{n}} — every quantity with its date and where it came from",
+    "finished": "Finished batches ({{n}})",
+    "src": {
+      "opening": "Earlier stock",
+      "purchase": "Purchase invoice",
+      "added": "Added by hand",
+      "adjust": "Stock correction"
+    },
+    "err": {
+      "lot_forbidden": "Batches are for those who edit stock (manager or vet)",
+      "lot_bad_qty": "Quantity must be more than zero",
+      "lot_product_missing": "The item isn't in this clinic's stock (or it's stocked in its section)",
+      "lot_missing": "Batch not found — refresh the page"
+    },
+    "btn": "Batches"
   }
 }

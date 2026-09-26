@@ -22,7 +22,7 @@ import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountLineInput, CountSubmitResult, StockCount, StockLossRow } from "@/types";
+import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -1827,6 +1827,10 @@ const demoRepo = {
       throwIfCodeTaken(db, next, id);
       patch = { ...patch, barcode: next };
     }
+    // مرآةُ products_lot_expiry (0217): تاريخُ المادة باليد = تاريخُ الدفعة التي يمثّلها.
+    if ("expiry_date" in patch && (patch.expiry_date ?? null) !== (p.expiry_date ?? null)) {
+      patch = { ...patch, expiry_date: (await import("./demoLots")).userExpiry(id, p.expiry_date ?? null, patch.expiry_date ?? null) };
+    }
     Object.assign(p, patch);
     saveDB(db);
     return p;
@@ -2903,6 +2907,8 @@ const demoRepo = {
     db.purchases.push(purchase);
     db.purchaseEffects = [...(db.purchaseEffects ?? []), ...effects];
     saveDB(db);
+    // مرآةُ purchase_items_lots (0217): الفاتورةُ تصنع دفعاتها.
+    (await import("./demoLots")).syncPurchase(purchase.id);
     return purchase;
   },
   /** تعديل فاتورة شراء محفوظة: يُعكس أثر سطورها القديمة على المخزون ثم تُنزَّل
@@ -3001,6 +3007,7 @@ const demoRepo = {
     purchase.notes = meta.notes !== undefined ? (meta.notes?.trim() || null) : purchase.notes;
     if (meta.purchased_at) purchase.purchased_at = meta.purchased_at;
     saveDB(db);
+    (await import("./demoLots")).syncPurchase(purchase.id);
     return purchase;
   },
   /* ---- مطالبات الشركات اليدوية (0155) ----
@@ -3893,6 +3900,21 @@ const demoRepo = {
     }
     for (const [k, v] of sum) sum.set(k, Math.max(0, v));
     return sum;
+  },
+  /* ---- الدفعات (0217) — مرآةٌ بوحدةٍ تُحمَّل عند النداء (`demoLots.ts`) ---- */
+  async listProductLots(productId: string): Promise<ProductLot[]> {
+    return (await import("./demoLots")).reconcileAll().filter((l) => l.product_id === productId)
+      .sort((a, b) => b.received_at.localeCompare(a.received_at));
+  },
+  async listActiveLots(): Promise<ProductLot[]> {
+    return (await import("./demoLots")).reconcileAll().filter((l) => l.qty > 0)
+      .sort((a, b) => (a.expiry_date ?? "9999").localeCompare(b.expiry_date ?? "9999"));
+  },
+  async addLot(productId: string, qty: number, expiry: string | null, note?: string | null): Promise<string> {
+    return (await import("./demoLots")).addLot(productId, qty, expiry, note);
+  },
+  async editLot(lotId: string, expiry: string | null, splitQty?: number | null): Promise<string> {
+    return (await import("./demoLots")).editLot(lotId, expiry, splitQty);
   },
   /* ---- الجردُ الدوريّ (0216) — مرآةٌ بوحدةٍ تُحمَّل عند النداء (`demoCounts.ts`) ---- */
   async submitStockCount(lines: CountLineInput[]): Promise<CountSubmitResult> {

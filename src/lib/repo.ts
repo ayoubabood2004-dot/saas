@@ -30,7 +30,7 @@ import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySec
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountSubmitResult, StockCount, StockLossRow } from "@/types";
+import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
@@ -381,6 +381,8 @@ function need<T>(res: { data: unknown; error: { message: string; code?: string; 
   }
   return res.data as T;
 }
+/** دفعةٌ بأرقامٍ لا نصوص (numeric يصل نصّاً). */
+const numLot = (l: ProductLot): ProductLot => ({ ...l, qty: Number(l.qty), received_qty: Number(l.received_qty) });
 /** سطرُ جردٍ بأرقامٍ لا نصوص: PostgREST يرجع `numeric` نصّاً، و«٣» + «٢» = «٣٢». */
 const numCount = (c: StockCount): StockCount => ({
   ...c, system_qty: Number(c.system_qty), counted_qty: Number(c.counted_qty), unit_cost: Number(c.unit_cost),
@@ -2393,6 +2395,21 @@ const supabaseRepo: DemoRepo = {
     }
     return out;
   },
+  /* الدفعات (0217): القراءةُ ترمي ولا ترجع ناقصة — «دفعةٌ واحدة» عن خطأٍ تُصدَّق فيُباع المنتهي. */
+  async listProductLots(productId) {
+    return listOrThrow<ProductLot>(await sbc().from("product_lots").select("*").eq("product_id", productId)
+      .order("received_at", { ascending: false }).limit(500)).map(numLot);
+  },
+  async listActiveLots() {
+    return (await allPages<ProductLot>(() => sbc().from("product_lots").select("*").gt("qty", 0),
+      { col: "expiry_date", asc: true, kind: "date" })).map(numLot);
+  },
+  async addLot(productId, qty, expiry, note) {
+    return need<string>(await sbc().rpc("lot_add", { p_product: productId, p_qty: qty, p_expiry: expiry, p_note: note ?? null }));
+  },
+  async editLot(lotId, expiry, splitQty) {
+    return need<string>(await sbc().rpc("lot_edit", { p_lot: lotId, p_expiry: expiry, p_split_qty: splitQty ?? null }));
+  },
   async productBatches(productId) {
     // يرمي ولا يرجّع فارغاً: «ماكو وجبات» عن خطأٍ يُصدَّق.
     return listOrThrow<ProductBatch>(await sbc().rpc("product_batches", { p_product: productId }));
@@ -2497,7 +2514,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
-  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState",
+  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

@@ -1140,7 +1140,42 @@ console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزم
   await repo.updatePurchase(a.id, [{ product_id: "lb", name: "سيفوتاكس الوجبات", qty: 10, purchase_price: 1, sell_price: 0, batch_expiry: "2026-12-01" }], { company_name: "وجبة أ" });
   const items = await repo.listPurchaseItems(a.id);
   check("  وتعديلُ الفاتورة القديمة يُبقي تاريخَ وجبتها (batch_expiry)", items[0]?.expiry_date === "2026-12-01");
-  check("  **ولا يرجع تاريخَ الرفّ للقديم**", (await repo.listProducts()).find((p) => p.id === "lb")?.expiry_date === "2027-06-01");
+  // 0217 غيّرت القاعدة بقرار المالك: تاريخُ الرفّ = **أقربُ** دفعةٍ فيها رصيد (كانت «الأحدث»).
+  check("  وتاريخُ الرفّ = أقربُ وجبةٍ فيها رصيد (0217)", (await repo.listProducts()).find((p) => p.id === "lb")?.expiry_date === "2026-12-01");
+}
+
+console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
+{
+  seed([P("la", "دفعات أ", null, { stock: 10, purchase_price: 100, expiry_date: "2026-11-05" })]);
+  mem.delete("vp_demo_lots"); mem.delete("vp_demo_counts");
+  const lotsOf = async (id) => (await repo.listProductLots(id)).filter((l) => l.qty > 0).sort((x, y) => (x.expiry_date ?? "").localeCompare(y.expiry_date ?? ""));
+  const first = await lotsOf("la");
+  check("رصيدٌ قائم ⇒ دفعةٌ افتتاحية بكميته وتاريخه", first.length === 1 && first[0].source === "opening" && first[0].qty === 10 && first[0].expiry_date === "2026-11-05");
+  await repo.recordPurchase([{ product_id: "la", name: "دفعات أ", qty: 20, purchase_price: 100, sell_price: 0, expiry_date: "2027-04-14" }], { company_name: "شركة الدفعات" });
+  let ls = await lotsOf("la");
+  check("الشراءُ يصنع دفعتَه بتاريخه وشركته", ls.length === 2 && ls[1].source === "purchase" && ls[1].qty === 20 && ls[1].company_name === "شركة الدفعات");
+  const stockTo = (n) => { const d = JSON.parse(mem.get(DB_KEY)); d.products.find((x) => x.id === "la").stock = n; mem.set(DB_KEY, JSON.stringify(d)); };
+  stockTo(18);
+  ls = await lotsOf("la");
+  check("البيعُ من الأقرب انتهاءً (الافتتاحيةُ تخلص والشراءُ ١٨)", ls.length === 1 && ls[0].source === "purchase" && ls[0].qty === 18, JSON.stringify(ls.map((l) => l.qty)));
+  check("  وتاريخُ المادة صار تاريخَ الباقية", (await repo.listProducts()).find((p) => p.id === "la")?.expiry_date === "2027-04-14");
+  mem.set("vp_session", JSON.stringify({ raw: { id: "u", full_name: "مدير", role: "admin" } }));
+  await repo.addLot("la", 5, "2026-12-01", "وصلت من المندوب");
+  ls = await lotsOf("la");
+  check("إضافةُ دفعةٍ باليد تزيد الرصيد، والمادةُ تأخذ الأقرب", ls.length === 2 && (await repo.listProducts()).find((p) => p.id === "la")?.stock === 23 && (await repo.listProducts()).find((p) => p.id === "la")?.expiry_date === "2026-12-01");
+  const dec = await repo.submitStockCount([{ product_id: "la", counted: 0, reason: "damaged", lots: ls.map((l) => ({ lot_id: l.id, counted: l.expiry_date === "2026-12-01" ? 4 : 18 })) }]);
+  check("الجردُ بالدفعة: الأولى ٥ لقينا ٤ ⇒ المادة ٢٢ معلَّقة", dec.pending === 1 && (await repo.listStockCounts({ pending: true }))[0]?.counted_qty === 22);
+  await repo.decideStockCounts((await repo.listStockCounts({ pending: true })).map((c) => c.id), true);
+  ls = await lotsOf("la");
+  check("  والموافقةُ تنقص الدفعةَ المعدودة بعينها", ls.map((l) => l.qty).join() === "4,18", ls.map((l) => l.qty).join());
+  await repo.editLot(ls[1].id, "2026-10-20", 3);
+  ls = await lotsOf("la");
+  check("فصلُ ٣ بتاريخٍ أقرب لا يغيّر الرصيد، والمادةُ تأخذه", ls.map((l) => l.qty).join() === "3,4,15" && (await repo.listProducts()).find((p) => p.id === "la")?.expiry_date === "2026-10-20");
+  mem.set("vp_session", JSON.stringify({ raw: { id: "r", full_name: "استقبال", role: "reception" } }));
+  let refused = "";
+  try { await repo.addLot("la", 1, null); } catch (e) { refused = e.message; }
+  check("  والاستقبالُ لا يضيف دفعات", refused === "lot_forbidden");
+  mem.delete("vp_session");
 }
 
 console.log("▸ 0215 — معدّلُ البيع (مرآةُ الحزمة)");

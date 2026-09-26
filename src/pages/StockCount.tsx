@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import i18next, { type TFunction } from "i18next";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, ClipboardCheck, Hourglass, Lock, PackageSearch, RotateCw, Search, TrendingDown, X } from "lucide-react";
-import type { CountReason, Product, StockCount as CountRow, StockLossRow } from "@/types";
+import type { CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
 import { cn, formatNum, formatQty, money, normalizeCode, searchable } from "@/lib/utils";
@@ -29,7 +29,8 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 type Tab = "today" | "pending" | "report";
 type Range = "month" | "last" | "d90";
-interface Line { counted: string; reason: CountReason | null; note: string }
+/** `lots`: عدُّ كلّ دفعة (0217) لمادةٍ فيها أكثرُ من دفعة — والمادةُ = مجموعُها. */
+interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string> }
 
 const DAYS = 90;
 
@@ -56,7 +57,7 @@ export function StockCount() {
   const { restricted } = useOverride();
   const isManager = role === "manager";
   const [tab, setTab] = useState<Tab>("today");
-  const [data, setData] = useState<{ products: Product[]; sold: Map<string, number>; state: Map<string, CountState>; pending: CountRow[] } | "loading" | "error">("loading");
+  const [data, setData] = useState<{ products: Product[]; sold: Map<string, number>; state: Map<string, CountState>; pending: CountRow[]; lots: Map<string, ProductLot[]> } | "loading" | "error">("loading");
   const [lines, setLines] = useState<Record<string, Line>>({});
   const [extra, setExtra] = useState<string[]>([]);
   const [q, setQ] = useState("");
@@ -66,10 +67,13 @@ export function StockCount() {
   const load = useCallback(async () => {
     setData("loading");
     try {
-      const [products, sold, state, pending] = await Promise.all([
-        repo.listProducts(), repo.productSalesRate(DAYS), repo.stockCountState(), repo.listStockCounts({ pending: true }),
+      const [products, sold, state, pending, active] = await Promise.all([
+        repo.listProducts(), repo.productSalesRate(DAYS), repo.stockCountState(), repo.listStockCounts({ pending: true }), repo.listActiveLots(),
       ]);
-      setData({ products, sold, state, pending });
+      const lots = new Map<string, ProductLot[]>();
+      for (const l of active) { const a = lots.get(l.product_id); if (a) a.push(l); else lots.set(l.product_id, [l]); }
+      for (const a of lots.values()) a.sort((x, y) => (x.expiry_date ?? "9999").localeCompare(y.expiry_date ?? "9999"));
+      setData({ products, sold, state, pending, lots });
     } catch { setData("error"); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -102,21 +106,35 @@ export function StockCount() {
     );
   }
 
-  const lineOf = (id: string): Line => lines[id] ?? { counted: "", reason: null, note: "" };
+  const lineOf = (id: string): Line => lines[id] ?? { counted: "", reason: null, note: "", lots: {} };
   const setLine = (id: string, patch: Partial<Line>) => setLines((m) => ({ ...m, [id]: { ...lineOf(id), ...patch } }));
-  const entered = shown.filter(({ product }) => lineOf(product.id).counted.trim() !== "");
+  /** مادةٌ فيها دفعتان فأكثر تُعدّ دفعةً دفعة (0217) — الموظفُ يلقى العلبَ بتواريخها على الرف. */
+  const lotsOf = (id: string): ProductLot[] => { const a = ready?.lots.get(id) ?? []; return a.length > 1 ? a : []; };
+  /** المعدودُ، أو null ما لم يكتمل: الواحدةُ بحقلها، والمتعدّدةُ حين تُعدّ دفعاتُها كلُّها. */
+  const countedOf = (p: Product): number | null => {
+    const l = lineOf(p.id), ls = lotsOf(p.id);
+    if (ls.length) {
+      if (!ls.every((x) => (l.lots[x.id] ?? "").trim() !== "" && Number.isFinite(Number(l.lots[x.id])))) return null;
+      return ls.reduce((s, x) => s + Number(l.lots[x.id]), 0);
+    }
+    return l.counted.trim() !== "" && Number.isFinite(Number(l.counted)) ? Number(l.counted) : null;
+  };
+  const entered = shown.filter(({ product }) => countedOf(product) !== null);
 
   const submit = async () => {
     const payload = [];
     for (const { product } of entered) {
       const l = lineOf(product.id);
-      const counted = Number(l.counted);
+      const counted = countedOf(product) ?? NaN;
+      const ls = lotsOf(product.id);
       if (!Number.isFinite(counted) || counted < 0) { playWarning(); toast.error(t("cnt.badQty", { name: product.name, defaultValue: "«{{name}}»: العدد لازم يكون صفر أو أكثر" })); return; }
       const diff = counted - (Number(product.stock) || 0);
       if (diff !== 0 && (!l.reason || !reasonsFor(diff).includes(l.reason))) {
         playWarning(); toast.error(t("cnt.needReason", { name: product.name, defaultValue: "«{{name}}» بيها فرق — اختر السبب" })); return;
       }
-      payload.push({ product_id: product.id, counted, reason: diff === 0 ? null : l.reason, note: l.note.trim() || null });
+      if (ls.some((x) => Number(l.lots[x.id]) < 0)) { playWarning(); toast.error(t("cnt.badQty", { name: product.name, defaultValue: "«{{name}}»: العدد لازم يكون صفر أو أكثر" })); return; }
+      payload.push({ product_id: product.id, counted, reason: diff === 0 ? null : l.reason, note: l.note.trim() || null,
+        lots: ls.length ? ls.map((x) => ({ lot_id: x.id, counted: Number(l.lots[x.id]) })) : undefined });
     }
     if (!payload.length) return;
     setBusy(true);
@@ -181,9 +199,11 @@ export function StockCount() {
             <ul className="space-y-2">
               {shown.map(({ product: p, pick }) => {
                 const l = lineOf(p.id);
-                const has = l.counted.trim() !== "" && Number.isFinite(Number(l.counted));
+                const ls = lotsOf(p.id);
+                const got = countedOf(p);
+                const has = got !== null;
                 const sys = Number(p.stock) || 0;
-                const diff = has ? Number(l.counted) - sys : 0;
+                const diff = has ? got - sys : 0;
                 const opts = reasonsFor(diff);
                 return (
                   <li key={p.id} className={cn("card p-3", has && diff !== 0 && "border-warn-300 dark:border-warn-500/40")} data-count-line>
@@ -199,12 +219,34 @@ export function StockCount() {
                           {!pick && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold text-ink-muted">{t("cnt.why.added", "أضفتها بالبحث")}</span>}
                         </div>
                       </div>
-                      <label className="flex items-center gap-1 text-xs font-semibold text-ink-muted">
-                        {t("cnt.counted", "لقيت")}
-                        <input type="number" inputMode="decimal" min={0} step="any" className="input h-10 w-24 text-center tabular-nums" data-count-input
-                          value={l.counted} onChange={(e) => setLine(p.id, { counted: e.target.value })} />
-                      </label>
+                      {!ls.length && (
+                        <label className="flex items-center gap-1 text-xs font-semibold text-ink-muted">
+                          {t("cnt.counted", "لقيت")}
+                          <input type="number" inputMode="decimal" min={0} step="any" className="input h-10 w-24 text-center tabular-nums" data-count-input
+                            value={l.counted} onChange={(e) => setLine(p.id, { counted: e.target.value })} />
+                        </label>
+                      )}
                     </div>
+                    {ls.length > 0 && (
+                      <div className="mt-2 space-y-1.5 rounded-xl bg-surface-2 p-2.5" data-count-lots>
+                        <p className="text-2xs font-semibold text-ink-muted">{t("cnt.byLot", "هاي المادة بيها أكثر من دفعة — عدّ كل تاريخ وحده:")}</p>
+                        {ls.map((x) => {
+                          const v = l.lots[x.id] ?? "";
+                          const lotDiff = v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) - x.qty : null;
+                          return (
+                            <label key={x.id} className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="min-w-0 flex-1 font-bold text-ink">
+                                {x.expiry_date ? t("cnt.lotExp", { d: x.expiry_date.slice(0, 10).replace(/-/g, "/"), defaultValue: "تنتهي {{d}}" }) : t("cnt.lotNoDate", "بلا تاريخ")}
+                                {lotDiff !== null && lotDiff !== 0 && <span className="ms-2 text-warn-700 dark:text-warn-300">{t("cnt.lotDiff", { sys: formatQty(x.qty), diff: `${lotDiff > 0 ? "+" : "−"}${formatQty(Math.abs(lotDiff))}`, defaultValue: "(النظام {{sys}} — {{diff}})" })}</span>}
+                              </span>
+                              <span className="text-ink-muted">{t("cnt.counted", "لقيت")}</span>
+                              <input type="number" inputMode="decimal" min={0} step="any" className="input h-9 w-20 text-center tabular-nums" data-count-lot-input
+                                value={v} onChange={(e) => setLine(p.id, { lots: { ...l.lots, [x.id]: e.target.value } })} />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                     {has && (
                       diff === 0 ? (
                         <p className="mt-2 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={14} /> {t("cnt.match", "مطابق للنظام")}</p>
@@ -212,7 +254,7 @@ export function StockCount() {
                         <div className="mt-2 space-y-2 rounded-xl bg-warn-50/70 p-2.5 dark:bg-warn-500/10" data-count-diff>
                           <p className="text-xs font-bold text-warn-800 dark:text-warn-200">
                             {t("cnt.diffLine", { sys: formatQty(sys), diff: `${diff > 0 ? "+" : "−"}${formatQty(Math.abs(diff))}`, defaultValue: "النظام يگول {{sys}} — الفرق {{diff}}" })}
-                            {!restricted && p.purchase_price > 0 && <> · {money(Math.abs(diffValue(sys, Number(l.counted), p.purchase_price)))}</>}
+                            {!restricted && p.purchase_price > 0 && <> · {money(Math.abs(diffValue(sys, got ?? sys, p.purchase_price)))}</>}
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {opts.map((r) => (
@@ -340,6 +382,11 @@ function PendingTab({ rows, stockOf, isManager, restricted, onChanged }: {
                   {t("cnt.pendingLine", { sys: formatQty(r.system_qty), got: formatQty(r.counted_qty), diff: `${diff > 0 ? "+" : "−"}${formatQty(Math.abs(diff))}`, defaultValue: "النظام {{sys}} ← لقينا {{got}} ({{diff}})" })}
                   {!restricted && r.unit_cost > 0 && <> · {money(Math.abs(diffValue(r.system_qty, r.counted_qty, r.unit_cost)))}</>}
                 </p>
+                {(r.lot_counts ?? []).filter((c) => c.counted !== c.system).map((c) => (
+                  <p key={c.lot_id} className="text-2xs font-semibold text-warn-800 dark:text-warn-200 tabular-nums" data-pending-lot>
+                    {t("cnt.pendingLot", { d: c.expiry_date ? c.expiry_date.slice(0, 10).replace(/-/g, "/") : "—", sys: formatQty(c.system), got: formatQty(c.counted), defaultValue: "دفعة {{d}}: النظام {{sys}} ← لقينا {{got}}" })}
+                  </p>
+                ))}
                 <p className="text-2xs text-ink-subtle">
                   {r.reason ? t(`cnt.reason.${r.reason}`) : ""}
                   {r.note ? ` · ${r.note}` : ""}

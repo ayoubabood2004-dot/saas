@@ -1,5 +1,6 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProductMovementsDialog } from "@/components/inventory/ProductMovements";
+import { ProductLotsDialog } from "@/components/inventory/ProductLots";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached, patchCached, cachedAt, invalidate } from "@/lib/swrCache";
@@ -15,6 +16,7 @@ import { History,
   Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock, BellOff, BellRing, Undo2,
   ClipboardCheck,
   Telescope,
+  CalendarRange,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -743,6 +745,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
   /* النافذةُ تسكن الصفَّ نفسَه: ثلاثةُ مواضعَ تعرض `ProductRow`، وتمريرُ حالةٍ
    * لكلٍّ منها يكرّرها ثلاثاً. ولا تُركَّب إلا عند الفتح (`hist &&`). */
   const [hist, setHist] = useState(false);
+  const [lotsOpen, setLotsOpen] = useState(false);
   // يُباع بالوزن: السعر لكل كيلو والمخزون بالكيلو.
   const byWeight = !!p.sold_by_weight;
   const perKg = t("pos.perKg", "/كغ");
@@ -813,6 +816,12 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
       <button onClick={() => { playTap(); setHist(true); }} aria-label={t("mv.open2", "حركات المادة")} title={t("mv.open2", "حركات المادة")}
         className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><History size={16} /></button>
       {hist && <ProductMovementsDialog product={p} open={hist} onClose={() => setHist(false)} />}
+      {/* الدفعات (0217): كلُّ كميةٍ بتاريخها وشركتها — قراءةٌ للجميع، والتعديلُ خارج وضع المدير المقفول. */}
+      {!p.pooled && (
+        <button onClick={() => { playTap(); setLotsOpen(true); }} aria-label={t("lots.btn", "الدفعات")} title={t("lots.btn", "الدفعات")} data-lots-open
+          className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><CalendarRange size={16} /></button>
+      )}
+      {lotsOpen && <ProductLotsDialog product={p} open={lotsOpen} onClose={() => setLotsOpen(false)} canEdit={!locked} onChanged={onMuteChanged} />}
       {!locked && <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>}
       {!locked && <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>}
     </motion.div>

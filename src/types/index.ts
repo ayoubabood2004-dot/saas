@@ -1992,8 +1992,11 @@ export interface StockCount {
   /** ما طُبّق على الرصيد فعلاً (الفرقُ، مقصوصاً عند الصفر). */
   applied_delta: number | null;
   expense_id: string | null;
+  /** عدُّ كلّ دفعة (0217)، أو null لعدّ المادة كلّها. */
+  lot_counts?: { lot_id: string; expiry_date: string | null; system: number; counted: number }[] | null;
 }
-export interface CountLineInput { product_id: string; counted: number; reason?: CountReason | null; note?: string | null }
+/** `lots`: عدٌّ بالدفعة (0217) — والمادةُ = مجموعُها + ما لم يُعدّ من دفعاتها. */
+export interface CountLineInput { product_id: string; counted: number; reason?: CountReason | null; note?: string | null; lots?: { lot_id: string; counted: number }[] }
 export interface CountSubmitResult { matched: number; pending: number }
 export interface CountDecision {
   approved: number; rejected: number; void: number;
@@ -2001,3 +2004,22 @@ export interface CountDecision {
 }
 /** `report_stock_losses`: الموجبُ خسارة، والسالبُ زيادة — بسعر الشراء. */
 export interface StockLossRow { reason: CountReason; lines: number; qty: number; value: number }
+
+/* ── الدفعات (0217) ─────────────────────────────────────────────────────────── */
+/** opening = رصيدٌ سبق الدفعات · purchase = فاتورة شراء · added = أُضيفت باليد · adjust = رصيدٌ بعد النفاد بلا فاتورة. */
+export type LotSource = "opening" | "purchase" | "added" | "adjust";
+export interface ProductLot {
+  id: string;
+  clinic_id?: string | null;
+  product_id: string;
+  /** الباقي منها الآن. */
+  qty: number;
+  /** ما استُلم أوّلاً. */
+  received_qty: number;
+  expiry_date: string | null;
+  received_at: string;
+  source: LotSource;
+  purchase_id: string | null;
+  company_name: string | null;
+  note: string | null;
+}

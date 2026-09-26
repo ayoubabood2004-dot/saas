@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -3189,7 +3189,7 @@ $P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock, exp
          jsonb_build_object('company_name','وجبة ب'));" >/dev/null
 chk "كلُّ وجبةٍ تحفظ تاريخَها مع سطرها — والقديمةُ لا تُنسى حين يتبدّل تاريخُ المنتج" \
     "select string_agg(pi.expiry_date::text, ',' order by pi.expiry_date) || '/' || (select expiry_date::text from products where id='e2140000-0000-4000-8000-000000000001')
-     from purchase_items pi where pi.product_id='e2140000-0000-4000-8000-000000000001'" "2026-12-01,2027-06-01/2027-06-01"
+     from purchase_items pi where pi.product_id='e2140000-0000-4000-8000-000000000001'" "2026-12-01,2027-06-01/2026-12-01"
 # تعديلُ الفاتورة القديمة بلا تاريخٍ مكتوب، وتاريخُها المحفوظ بـbatch_expiry (كما يرسله المتصفّح).
 $P -c "select set_config('request.jwt.claim.sub','$C1',false);
        select update_purchase((select id from purchases where company_name='وجبة أ' and clinic_id='$C1'),
@@ -3197,8 +3197,10 @@ $P -c "select set_config('request.jwt.claim.sub','$C1',false);
          jsonb_build_object('company_name','وجبة أ'));" >/dev/null
 chk "  وتعديلُ الفاتورة القديمة يُبقي تاريخَ وجبتها للسطر (batch_expiry)" \
     "select pi.expiry_date::text from purchase_items pi join purchases p on p.id=pi.purchase_id where p.company_name='وجبة أ'" "2026-12-01"
-chk "  **ولا يرجع تاريخَ الرفّ للوجبة القديمة** (الأحدثُ يبقى)" \
-    "select expiry_date::text from products where id='e2140000-0000-4000-8000-000000000001'" "2027-06-01"
+# 0217 غيّرت القاعدةَ بقرار المالك: تاريخُ المادة = **أقربُ** دفعةٍ فيها رصيد لا أحدثُها —
+# الوجبتان على الرفّ، والأقربُ هو ما يُنبَّه عليه.
+chk "  وتاريخُ الرفّ = أقربُ وجبةٍ فيها رصيد (0217 — كان «الأحدث» قبلها)" \
+    "select expiry_date::text from products where id='e2140000-0000-4000-8000-000000000001'" "2026-12-01"
 chk "  والكشفُ (0211) ما زال يُكتب بالتعديل" \
     "select count(*)::text from purchase_effects e join purchases p on p.id=e.purchase_id where p.company_name='وجبة أ' and e.op='update'" "1"
 chk "وجباتُ المادّة بتواريخها (لخطّ زمنها)، الأحدثُ أوّلاً" \
@@ -3315,5 +3317,91 @@ chk "  والموافقةُ تفحص الدورَ بنصّها" \
     "select (prosrc like '%auth_role() is distinct from ''manager''%')::text from pg_proc where proname='stock_count_decide'" "true"
 chk "ولا شيءَ منها لـanon" \
     "select string_agg(has_function_privilege('anon', p.oid, 'execute')::text, ',') from pg_proc p where proname in ('stock_count_submit','stock_count_decide','report_stock_losses','stock_count_state')" "false,false,false,false"
+
+# ── 0217: الدفعات — مجموعُها = الرصيد دائماً، والبيعُ من الأقرب انتهاءً ─────────
+# الفعلُ بمعاملةٍ والقراءةُ بأخرى: الحارسُ مؤجَّلٌ لنهاية المعاملة، واللقطةُ لا ترى
+# ما فعلته دالّةٌ بنفس الاستعلام.
+echo "▸ 0217: الدفعات"
+L=e2170000-0000-4000-8000-0000000000
+D1=$(date -d '+40 days' +%F); D2=$(date -d '+200 days' +%F); D3=$(date -d '+250 days' +%F); D4=$(date -d '+20 days' +%F); DX=$(date -d '-3 days' +%F); D9=$(date -d '+300 days' +%F)
+$P -c "insert into products (id, clinic_id, name, stock, purchase_price, expiry_date) values ('${L}01','$C1','دفعات أ',10,100,'$D1') on conflict (id) do nothing;" >/dev/null
+chk "مادةٌ جديدةٌ برصيد ⇒ دفعةٌ افتتاحية بكميتها وتاريخها" \
+    "select string_agg(source||':'||qty::int||':'||coalesce(expiry_date::text,'-'), ',') from product_lots where product_id='${L}01'" "opening:10:$D1"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('product_id','${L}01','name','دفعات أ','qty',20,'purchase_price',100,'sell_price',0,'expiry_date','$D2')),
+         jsonb_build_object('company_name','شركة الدفعات'));" >/dev/null
+chk "الشراءُ يصنع دفعتَه بتاريخ السطر وشركته" \
+    "select string_agg(source||':'||qty::int||':'||expiry_date||':'||coalesce(company_name,'-'), ',' order by expiry_date) from product_lots where product_id='${L}01'" "opening:10:$D1:-,purchase:20:$D2:شركةالدفعات"
+chk "  وتاريخُ المادة = أقربُ دفعة (لا الأحدث)" \
+    "select expiry_date::text||'|'||stock::int from products where id='${L}01'" "$D1|30"
+$P -c "update products set stock = stock - 12 where id = '${L}01';" >/dev/null
+chk "البيعُ من الأقرب انتهاءً: الافتتاحيةُ تخلص (١٠) والباقي من الشراء (٢)" \
+    "select string_agg(source||':'||qty::int, ',' order by expiry_date) from product_lots where product_id='${L}01'" "opening:0,purchase:18"
+chk "  وتاريخُ المادة صار تاريخَ الدفعة الباقية" \
+    "select expiry_date::text from products where id='${L}01'" "$D2"
+$P -c "update products set stock = stock + 2 where id = '${L}01';" >/dev/null
+chk "المرتجعُ يرجع لأقرب دفعةٍ صالحةٍ فيها رصيد" \
+    "select string_agg(source||':'||qty::int, ',' order by expiry_date) from product_lots where product_id='${L}01'" "opening:0,purchase:20"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       select update_purchase((select id from purchases where company_name='شركة الدفعات' and clinic_id='$C1'),
+         jsonb_build_array(jsonb_build_object('product_id','${L}01','name','دفعات أ','qty',25,'purchase_price',100,'sell_price',0,'expiry_date','$D2')),
+         jsonb_build_object('company_name','شركة الدفعات'));" >/dev/null
+chk "تعديلُ الفاتورة (٢٠⇒٢٥) يزيد دفعتَها ٥ — لا دفعةٌ ثانية ولا ضياعُ ما بيع" \
+    "select count(*)||'|'||sum(qty)::int||'|'||(select stock::int from products where id='${L}01') from product_lots where product_id='${L}01' and source='purchase'" "1|25|25"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       select update_purchase((select id from purchases where company_name='شركة الدفعات' and clinic_id='$C1'),
+         jsonb_build_array(jsonb_build_object('name','بديل الدفعات','qty',1,'purchase_price',1,'sell_price',0)), jsonb_build_object('company_name','شركة الدفعات'));" >/dev/null
+chk "  ومسحُ المادة من الفاتورة يمسح دفعتَها" \
+    "select count(*)::text from product_lots where product_id='${L}01' and source='purchase'" "0"
+chk "  والرصيدُ والدفعاتُ متطابقان بعدها" \
+    "select ((select stock from products where id='${L}01') = (select coalesce(sum(qty),0) from product_lots where product_id='${L}01'))::text" "true"
+$P -c "insert into products (id, clinic_id, name, stock, purchase_price, expiry_date) values ('${L}02','$C1','دفعات ب',3,50,'$DX') on conflict (id) do nothing;" >/dev/null
+chk "مادةٌ دخلت بتاريخٍ فات: دفعتُها تحفظه (التنبيهُ لا يضيع)" \
+    "select coalesce(expiry_date::text,'-') from product_lots where product_id='${L}02'" "$DX"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select lot_add('${L}02', 5, '$D1', 'وصلت من المندوب');" >/dev/null
+chk "إضافةُ دفعةٍ باليد (المدير) تزيد الرصيد بها" \
+    "select stock::int::text||'|'||(select count(*) from product_lots where product_id='${L}02') from products where id='${L}02'" "8|2"
+chk "  والاستقبالُ لا يضيف دفعات" \
+    "select (_pf_try('$RCP', 'select lot_add(''${L}02'', 5, ''$D1'')::text') like '%lot_forbidden%')::text" "true"
+$P -c "update products set stock = stock - 2 where id = '${L}02';" >/dev/null
+chk "البيعُ لا يُفترض من علبةٍ منتهية: يُسحب من الصالحة" \
+    "select string_agg(qty::int::text, ',' order by expiry_date) from product_lots where product_id='${L}02'" "3,3"
+chk "  وتاريخُ المادة يبقى المنتهي (فيه رصيد) — التنبيهُ لا يختفي" \
+    "select expiry_date::text from products where id='${L}02'" "$DX"
+$P -c "select _pf('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${L}02\",\"counted\":4,\"reason\":\"expired\"}]''::jsonb)::text');" >/dev/null
+$P -c "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id=''${L}02'' and status=''pending''), true)::text');" >/dev/null
+chk "جردٌ بسبب «منتهي» يُسحب من المنتهي أوّلاً (المنتهي ٣⇒١، الصالح ٣ باقٍ)" \
+    "select string_agg(qty::int::text, ',' order by expiry_date) from product_lots where product_id='${L}02'" "1,3"
+$P -c "insert into products (id, clinic_id, name, stock, purchase_price, expiry_date) values ('${L}03','$C1','دفعات ج',6,10,'$D1') on conflict (id) do nothing;" >/dev/null
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select lot_add('${L}03', 4, '$D2');" >/dev/null
+$P -c "select _pf('$RCP', 'select stock_count_submit(jsonb_build_array(jsonb_build_object(''product_id'',''${L}03'',''counted'',0,''reason'',''damaged'',''lots'',(select jsonb_agg(jsonb_build_object(''lot_id'',id,''counted'',case when expiry_date=''$D1'' then 5 else 4 end)) from product_lots where product_id=''${L}03''))))::text');" >/dev/null
+chk "الجردُ بالدفعة: الأولى ٦ لقينا ٥، الثانية ٤ لقينا ٤ ⇒ المادةُ ٩ معلَّقة، ورصيدُها ما تغيّر" \
+    "select counted_qty::int||'|'||jsonb_array_length(lot_counts)||'|'||(select stock::int from products where id='${L}03') from stock_counts where product_id='${L}03' and status='pending'" "9|2|10"
+$P -c "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id=''${L}03'' and status=''pending''), true)::text');" >/dev/null
+chk "  والموافقةُ تنقص الدفعةَ المعدودة بعينها" \
+    "select string_agg(qty::int::text, ',' order by expiry_date) from product_lots where product_id='${L}03'" "5,4"
+chk "  ودفعةُ مادةٍ أخرى لا تُعدّ تحت هذه" \
+    "select (_pf_try('$RCP', 'select stock_count_submit(jsonb_build_array(jsonb_build_object(''product_id'',''${L}03'',''counted'',0,''reason'',''damaged'',''lots'',jsonb_build_array(jsonb_build_object(''lot_id'',(select id from product_lots where product_id=''${L}01'' limit 1),''counted'',1)))))::text') like '%count_lot_missing%')::text" "true"
+chk "تعديلُ تاريخ المادة باليد يمرّ (بدور authenticated)" \
+    "select _rls_try('$C1', 'update products set expiry_date = ''$D3'' where id = ''${L}03''')" "rows:1"
+chk "  ويعدّل الدفعةَ التي يمثّلها، والمادةُ تبقى على الأقرب" \
+    "select (select string_agg(expiry_date::text, ',' order by expiry_date) from product_lots where product_id='${L}03' and qty>0)||'|'||(select expiry_date::text from products where id='${L}03')" "$D2,$D3|$D2"
+$P -c "select _pf('$C1', 'select lot_edit((select id from product_lots where product_id=''${L}03'' and expiry_date=''$D3''), ''$D4'', 2)::text');" >/dev/null
+chk "فصلُ جزءٍ من دفعةٍ بتاريخٍ آخر لا يغيّر الرصيد، والمادةُ تأخذ الأقرب" \
+    "select stock::int::text||'|'||expiry_date||'|'||(select string_agg(qty::int::text, ',' order by expiry_date) from product_lots where product_id='${L}03' and qty>0) from products where id='${L}03'" "9|$D4|2,4,3"
+$P -c "update products set stock = 0 where id = '${L}02';" >/dev/null
+$P -c "update products set expiry_date = '$D9', stock = 7 where id = '${L}02';" >/dev/null
+chk "رصيدٌ جديدٌ بعد النفاد بلا فاتورة ⇒ دفعةُ «تعديل» بالتاريخ الجديد (لا تُلصق بدفعةٍ فارغة)" \
+    "select string_agg(source||':'||qty::int||':'||coalesce(expiry_date::text,'-'), ',') from product_lots where product_id='${L}02' and qty > 0" "adjust:7:$D9"
+$P -c "insert into products (id, clinic_id, name, stock, pooled) values ('${L}04','$C1','دفعات مجمّعة',5,true) on conflict (id) do nothing;" >/dev/null
+chk "المجمَّعةُ بلا دفعات (رصيدُها بحوض القسم)" \
+    "select count(*)::text from product_lots where product_id='${L}04'" "0"
+chk "**لا مادةَ رصيدُها ≠ مجموعُ دفعاتها** بالحزمة كلّها" \
+    "select count(*)::text from products p where not coalesce(p.pooled,false) and p.farm_id is null and coalesce(p.stock,0) <> (select coalesce(sum(qty),0) from product_lots l where l.product_id=p.id)" "0"
+chk "الدفعاتُ تُقرأ للعيادة بدور authenticated، ولا تُرى لغيرها، ولا تُكتب مباشرةً" \
+    "select _rls_try('$RCP', 'select 1 from product_lots where product_id = ''${L}03''')||'|'||_rls_try('$C2', 'select 1 from product_lots where product_id = ''${L}03''')||'|'||_rls_try('$C1', 'update product_lots set qty = 99 where product_id = ''${L}03''')" "rows:3|rows:0|rows:0"
+chk "الدوالُّ الكاتبة definer وتفحص العيادةَ بنصّها" \
+    "select string_agg(proname||':'||prosecdef||':'||(prosrc like '%clinic_id = v_clinic%'), ',' order by proname) from pg_proc where proname in ('lot_add','lot_edit')" "lot_add:true:true,lot_edit:true:true"
+# (منعُ الداخليّة lots_* عن التطبيق يُقاس على الإنتاج بعد التنزيل: المنحُ الشاملُ بالحزمة يعيده هنا.)
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

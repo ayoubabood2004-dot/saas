@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { ArrowRight, CalendarClock, CalendarX2, Copy, Hourglass, Lock, PackageX, RotateCw, Search, Telescope, Trash2 } from "lucide-react";
-import type { Company, Product } from "@/types";
+import { ArrowRight, CalendarClock, CalendarRange, CalendarX2, Copy, Hourglass, Lock, PackageX, RotateCw, Search, Telescope, Trash2 } from "lucide-react";
+import type { Company, Product, ProductLot } from "@/types";
+import { ProductLotsDialog } from "@/components/inventory/ProductLots";
 import { repo } from "@/lib/repo";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { cn, formatNum, formatQty, localISO, money, normalizeCode, searchable } from "@/lib/utils";
@@ -39,8 +40,9 @@ export function StockWatch() {
   const { t } = useTranslation();
   const toast = useToast();
   const { can } = usePermissions();
-  const { restricted } = useOverride();
-  const [data, setData] = useState<{ products: Product[]; sold: Map<string, number>; companies: Company[] } | "loading" | "error">("loading");
+  const { restricted, stockLocked } = useOverride();
+  const [lotsFor, setLotsFor] = useState<Product | null>(null);
+  const [data, setData] = useState<{ products: Product[]; sold: Map<string, number>; companies: Company[]; lots: Map<string, ProductLot[]> } | "loading" | "error">("loading");
   const [h, setH] = useState<Horizon>(readHorizon);
   const [filter, setFilter] = useState<WatchFilter>("all");
   const [q, setQ] = useState("");
@@ -50,8 +52,11 @@ export function StockWatch() {
   const load = useCallback(async () => {
     setData("loading");
     try {
-      const [products, sold, companies] = await Promise.all([repo.listProducts(), repo.productSalesRate(DAYS), repo.listCompanies()]);
-      setData({ products, sold, companies });
+      const [products, sold, companies, active] = await Promise.all([repo.listProducts(), repo.productSalesRate(DAYS), repo.listCompanies(), repo.listActiveLots()]);
+      // الدفعاتُ (0217) بالمادة — كلُّ كميةٍ بتاريخها، والمراقبةُ تحسب دفعةً دفعة.
+      const lots = new Map<string, ProductLot[]>();
+      for (const l of active) { const a = lots.get(l.product_id); if (a) a.push(l); else lots.set(l.product_id, [l]); }
+      setData({ products, sold, companies, lots });
     } catch { setData("error"); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -61,7 +66,7 @@ export function StockWatch() {
   };
 
   const ready = typeof data === "object" ? data : null;
-  const rows = useMemo(() => (ready ? watchRows(ready.products, ready.sold, DAYS, today, h) : []), [ready, today, h]);
+  const rows = useMemo(() => (ready ? watchRows(ready.products, ready.sold, DAYS, today, h, ready.lots) : []), [ready, today, h]);
   const sum = useMemo(() => watchSummary(rows), [rows]);
   const companyOf = useMemo(() => {
     const m = new Map((ready?.companies ?? []).map((c) => [c.id, c.name]));
@@ -206,6 +211,22 @@ export function StockWatch() {
                     </div>
                     <span className={cn("rounded-full px-2.5 py-1 text-2xs font-bold tabular-nums", exTone)} data-watch-expiry>{expiryText(r)}</span>
                     <span className={cn("rounded-full px-2.5 py-1 text-2xs font-bold tabular-nums", roTone)} data-watch-runout>{runoutText(r)}</span>
+                    <button type="button" onClick={() => { playTap(); setLotsFor(r.product); }} data-watch-lots
+                      aria-label={t("lots.btn", "الدفعات")} title={t("lots.btn", "الدفعات")}
+                      className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle hover:bg-surface-2 hover:text-brand-600"><CalendarRange size={15} /></button>
+                    {r.lots.length > 1 && (
+                      <div className="flex basis-full flex-wrap gap-1" data-watch-lotline>
+                        {r.lots.map((g, i) => (
+                          <span key={g.lot?.id ?? i} className={cn("rounded-md px-1.5 py-0.5 text-2xs font-semibold tabular-nums",
+                            g.expired ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200"
+                              : g.inRange ? "bg-warn-50 text-warn-800 dark:bg-warn-500/15 dark:text-warn-200" : "bg-surface-2 text-ink-muted")}>
+                            {g.expiry
+                              ? t("watch.lotChip", { n: formatQty(g.qty), d: slash(g.expiry), defaultValue: "{{n}} تنتهي {{d}}" })
+                              : t("watch.lotNoDate", { n: formatQty(g.qty), defaultValue: "{{n}} بلا تاريخ" })}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {/* داخل المدى وحده — كالبطاقة؛ وإلا صار كلُّ ما لا يُباع إنذاراً أحمرَ لانتهاءٍ بعد سنة. */}
                     {matchesFilter(r, "waste") && (
                       <p className="basis-full text-2xs font-semibold text-danger-700 dark:text-danger-300" data-watch-waste>
@@ -218,6 +239,7 @@ export function StockWatch() {
               })}
             </ul>
           )}
+          {lotsFor && <ProductLotsDialog product={lotsFor} open={!!lotsFor} onClose={() => setLotsFor(null)} canEdit={!stockLocked} onChanged={() => void load()} />}
           {shown.length > limit && (
             <div className="mt-3 flex justify-center">
               <Button variant="secondary" onClick={() => { playTap(); setLimit((n) => n + SHOW); }}>

@@ -2,6 +2,7 @@ import type { CountDecision, CountLineInput, CountReason, CountSubmitResult, Exp
 import { loadDB, saveDB } from "./demoStore";
 import { uid } from "./utils";
 import { GAIN_REASONS, LOSS_REASONS, WITHDRAWAL_REASONS } from "./countPick";
+import { applyLotCounts, reconcileAll } from "./demoLots";
 
 /* ============================================================================
  * مرآةُ الجرد الدوريّ (0216) للوضع التجريبي — تُحمَّل عند النداء لا مع الإقلاع.
@@ -39,18 +40,35 @@ function refuse(code: string): never {
 export function demoSubmitCount(lines: CountLineInput[]): CountSubmitResult {
   if (!lines.length) refuse("empty");
   if (lines.length > 200) refuse("too_many");
+  const lots = reconcileAll();
   const db = loadDB();
   const me = session();
   const list = loadCounts();
   let matched = 0, pending = 0;
   const now = new Date().toISOString();
   for (const l of lines) {
-    const counted = Number(l.counted);
+    let counted = Number(l.counted);
     if (!Number.isFinite(counted) || counted < 0 || counted > 1e9) refuse("bad_qty");
     const p = (db.products ?? []).find((x) => x.id === l.product_id && !x.farm_id);
     if (!p) refuse("product_missing");
     if (p.pooled) refuse("pooled");
     const system = Number(p.stock) || 0;
+    // مرآةُ العدّ بالدفعة (0217): المادةُ = مجموعُ المعدود + ما لم يُعدّ من دفعاتها.
+    let lotCounts: StockCount["lot_counts"] = null;
+    if (l.lots?.length) {
+      lotCounts = [];
+      let sum = 0, sys = 0;
+      for (const lc of l.lots) {
+        const c = Number(lc.counted);
+        if (!Number.isFinite(c) || c < 0 || c > 1e9) refuse("bad_qty");
+        if (lotCounts.some((x) => x.lot_id === lc.lot_id)) refuse("bad_line");
+        const lot = lots.find((x) => x.id === lc.lot_id && x.product_id === p.id);
+        if (!lot) refuse("lot_missing");
+        lotCounts.push({ lot_id: lot.id, expiry_date: lot.expiry_date, system: lot.qty, counted: c });
+        sum += c; sys += lot.qty;
+      }
+      counted = sum + Math.max(0, system - sys);
+    }
     const diff = counted - system;
     let reason: CountReason | null = l.reason ?? null;
     if (diff === 0) reason = null;
@@ -61,7 +79,7 @@ export function demoSubmitCount(lines: CountLineInput[]): CountSubmitResult {
       id: uid("cnt"), product_id: p.id, product_name: p.name, system_qty: system, counted_qty: counted,
       unit_cost: Math.max(0, Number(p.purchase_price) || 0), reason, note: (l.note ?? "").trim().slice(0, 200) || null,
       status: diff === 0 ? "matched" : "pending", counted_by: me.id, counted_by_name: me.name, counted_at: now,
-      decided_by: null, decided_by_name: null, decided_at: null, applied_delta: null, expense_id: null,
+      decided_by: null, decided_by_name: null, decided_at: null, applied_delta: null, expense_id: null, lot_counts: lotCounts,
     });
     if (diff === 0) matched++; else pending++;
   }
@@ -94,12 +112,15 @@ export function demoDecideCounts(
     if (!p) { Object.assign(c, { status: "void", ...stamp }); out.void++; continue; }
     const old = Number(p.stock) || 0;
     const next = Math.max(0, old + (c.counted_qty - c.system_qty));
+    if (c.lot_counts?.length) applyLotCounts(p.id, c.lot_counts);
     p.stock = next;
     Object.assign(c, { status: "approved", applied_delta: next - old, ...stamp });
     done.push(c);
     out.approved++;
+    saveDB(db);
+    // مرآةُ lots_reconcile(product, reason = 'expired') فوراً بعد الرصيد.
+    reconcileAll({ productId: p.id, expiredFirst: c.reason === "expired" });
   }
-  saveDB(db);
   for (const reason of [...WITHDRAWAL_REASONS].sort()) {
     const rows = done.filter((c) => c.reason === reason && (c.applied_delta ?? 0) < 0 && c.unit_cost > 0);
     const amount = Math.round(rows.reduce((s, c) => s + -(c.applied_delta ?? 0) * c.unit_cost, 0) * 100) / 100;
