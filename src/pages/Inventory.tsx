@@ -13,6 +13,7 @@ import { History,
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
   Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock, BellOff, BellRing, Undo2,
+  ClipboardCheck,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -42,7 +43,7 @@ import { catalogLookup, type CatalogHit } from "@/lib/catalog";
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
  * المشتريات والديون يختفيان أصلاً). */
 import { useOverride } from "@/lib/managerOverride";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { expiryBucket, expiryState, daysToExpiry, expiryCost, isExpiryMuted, returnListText, isReturnMarked, groupByCompany } from "@/lib/expiry";
 import { buildReturnStatementHTML, openReturnStatement } from "@/lib/returnPrint";
 import { getExpiryWindows, getClinicName } from "@/lib/settings";
@@ -460,6 +461,10 @@ export function Inventory() {
             <Button data-xlsxbtn variant="secondary" loading={xlsxBusy} leftIcon={<FileSpreadsheet size={16} />} onClick={() => void exportXlsx()}>
               {t("pos.stockXlsx", "تصدير جرد إكسل")}
             </Button>
+            {/* الجردُ اليوميّ (م٦): عدٌّ صغيرٌ كلَّ يوم، والفرقُ بموافقة المدير — صفحتُه تحمل نصوصَها. */}
+            <Link to="/inventory/count" className="btn btn-secondary" data-countlink onClick={() => playTap()}>
+              <ClipboardCheck size={16} /> {t("pos.countDaily", "الجرد اليومي")}
+            </Link>
           </>
         )}
       </div>

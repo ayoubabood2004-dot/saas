@@ -1155,6 +1155,48 @@ console.log("▸ 0215 — معدّلُ البيع (مرآةُ الحزمة)");
   check("  وبـ٩٠ يوماً ٥٨، وبألف يوم مقصوصةً لـ١٨٠ (٥٨)", (await repo.productSalesRate(90)).get("sr") === 58 && (await repo.productSalesRate(1000)).get("sr") === 58);
 }
 
+console.log("▸ 0216 — الجردُ بموافقة وسحبُ المخزن (مرآةُ الحزمة)");
+{
+  seed([
+    P("t1", "جرد تالف", null, { stock: 10, purchase_price: 2000 }), P("m1", "جرد مطابق", null, { stock: 5, purchase_price: 1000 }),
+    P("e1", "جرد خطأ", null, { stock: 4, purchase_price: 500 }), P("f1", "جرد زيادة", null, { stock: 1, purchase_price: 700 }),
+    P("np", "بلا سعر", null, { stock: 3, purchase_price: 0 }), P("pl", "مجمّع", null, { stock: 0, pooled: true }),
+  ]);
+  mem.delete("vp_demo_counts"); mem.delete("vp_demo_expenses");
+  const as = (role) => mem.set("vp_session", JSON.stringify({ raw: { id: "u-" + role, full_name: "موظف " + role, role } }));
+  const stockOf = (id) => JSON.parse(mem.get(DB_KEY)).products.find((p) => p.id === id).stock;
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  as("reception");
+  const r = await repo.submitStockCount([{ product_id: "t1", counted: 7, reason: "damaged" }, { product_id: "m1", counted: 5 }, { product_id: "np", counted: 1, reason: "damaged" }]);
+  check("الاستقبالُ يعدّ: مطابقٌ واحد، ومعلَّقان", r.matched === 1 && r.pending === 2, JSON.stringify(r));
+  check("  والرصيدُ ما تغيّر قبل الموافقة", stockOf("t1") === 10);
+  check("فرقٌ بلا سبب يُرفض برمز الخادم", (await code(() => repo.submitStockCount([{ product_id: "e1", counted: 2 }]))) === "count_reason");
+  check("  وزيادةٌ بسبب «تالف» تُرفض", (await code(() => repo.submitStockCount([{ product_id: "f1", counted: 3, reason: "damaged" }]))) === "count_reason");
+  check("  والمجمَّعةُ تُرفض", (await code(() => repo.submitStockCount([{ product_id: "pl", counted: 1, reason: "found" }]))) === "count_pooled");
+  await repo.submitStockCount([{ product_id: "e1", counted: 2, reason: "entry_error" }, { product_id: "f1", counted: 3, reason: "found" }]);
+  const pend = await repo.listStockCounts({ pending: true });
+  check("المعلَّقُ أربعة", pend.length === 4, String(pend.length));
+  check("الاستقبالُ لا يوافق", (await code(() => repo.decideStockCounts(pend.map((c) => c.id), true))) === "count_needs_manager");
+  // بيعٌ بين العدّ والموافقة: ١٠ ⇒ ٨
+  { const d = JSON.parse(mem.get(DB_KEY)); d.products.find((p) => p.id === "t1").stock = 8; mem.set(DB_KEY, JSON.stringify(d)); }
+  as("admin");
+  const dec = await repo.decideStockCounts(pend.map((c) => c.id), true);
+  check("المديرُ يوافق على الأربعة", dec.approved === 4, JSON.stringify(dec));
+  check("  الفرقُ لا الرقم (٨ − ٣ = ٥)", stockOf("t1") === 5, String(stockOf("t1")));
+  check("  وخطأُ الإدخال والزيادةُ يصحّحان", stockOf("e1") === 2 && stockOf("f1") === 3);
+  const ex = await repo.listExpenses();
+  check("  سحبٌ واحد «من المخزن» ٦٠٠٠ بموادّه", ex.length === 1 && ex[0].method === "stock" && ex[0].amount === 6000 && ex[0].description.endsWith("جرد تالف ×3"), JSON.stringify(ex));
+  check("  وبلا سعرٍ بلا سحب، وخطأُ الإدخال والزيادةُ بلا سحب",
+    (await repo.listProductCounts("np"))[0]?.expense_id === null && (await repo.listProductCounts("e1"))[0]?.expense_id === null);
+  check("  والموافقةُ لا تُطبَّق مرّتين", (await repo.decideStockCounts(pend.map((c) => c.id), true)).approved === 0 && stockOf("t1") === 5);
+  const from = new Date(Date.now() - 86400000).toISOString(), to = new Date(Date.now() + 86400000).toISOString();
+  const loss = (await repo.reportStockLosses(from, to)).sort((a, b) => a.reason.localeCompare(b.reason)).map((x) => `${x.reason}:${x.lines}:${x.value}`).join(",");
+  check("تقريرُ الخسائر يطابق الحزمة فلساً بفلس", loss === "damaged:2:6000,entry_error:1:1000,found:1:-1400", loss);
+  const st = await repo.stockCountState();
+  check("حالةُ العدّ: التالفُ بفرق، والمطابقُ بلا فرق", !!st.get("t1")?.lastDiffAt && st.get("m1")?.lastDiffAt === null);
+  mem.delete("vp_session");
+}
+
 console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
 {
   const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };

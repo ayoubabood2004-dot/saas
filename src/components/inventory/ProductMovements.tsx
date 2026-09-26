@@ -14,7 +14,7 @@ import { ArrowDownRight, PackagePlus, Pencil, RotateCcw, ShoppingBag } from "luc
 import { Dialog, Button, Skeleton } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { formatQty, formatDate } from "@/lib/utils";
-import type { Product, ProductMovement, ProductBatch } from "@/types";
+import type { Product, ProductMovement, ProductBatch, StockCount } from "@/types";
 
 const KIND_ICON = {
   open: PackagePlus, purchase: ShoppingBag, purchase_edit: Pencil,
@@ -29,6 +29,8 @@ export function ProductMovementsDialog({ product, open, onClose }: {
   const [err, setErr] = useState<string | null>(null);
   /** تاريخُ الوجبة لكلّ فاتورة شراء (0214) — تفصيلٌ ثانويّ: فشلُه لا يحجب الحركات، يغيب التاريخُ وحدَه. */
   const [batchOf, setBatchOf] = useState<Map<string, string>>(new Map());
+  /** سطورُ الجرد المعتمدة (0216) — «تعديلٌ» بنفس لحظة الموافقة يُسمّى بسببه. ثانويٌّ كالوجبة. */
+  const [counts, setCounts] = useState<StockCount[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -43,6 +45,10 @@ export function ProductMovementsDialog({ product, open, onClose }: {
     repo.productBatches(product.id)
       .then((bs: ProductBatch[]) => { if (alive) setBatchOf(new Map(bs.filter((b) => b.expiry_date).map((b) => [b.purchase_id, String(b.expiry_date).slice(0, 10)]))); })
       .catch(() => { /* ثانويّ: الحركاتُ تُعرض بلا تاريخ الوجبة */ });
+    setCounts([]);
+    repo.listProductCounts(product.id)
+      .then((cs) => { if (alive) setCounts(cs); })
+      .catch(() => { /* ثانويّ: التعديلُ يبقى «يدوي أو جرد» بلا سببه */ });
     return () => { alive = false; };
   }, [open, product.id]);
 
@@ -52,6 +58,10 @@ export function ProductMovementsDialog({ product, open, onClose }: {
     if (m.kind === "purchase_edit") return t("mv.purchaseEdit", "تعديل فاتورة شراء");
     if (m.kind === "sale") return t("mv.sale", "بيع");
     if (m.kind === "return") return t("mv.return", "إرجاع");
+    // الموافقةُ تكتب الرصيدَ وسطرَ الجرد بمعاملةٍ واحدة: نفسُ اللحظة ونفسُ الفرق.
+    const c = counts.find((x) => x.decided_at && Math.abs(new Date(x.decided_at).getTime() - new Date(m.at).getTime()) < 4000
+      && Math.abs((x.applied_delta ?? 0) - m.delta) < 1e-9);
+    if (c?.reason) return t("mv.count", { reason: t(`mv.cr.${c.reason}`), who: c.decided_by_name || "—", defaultValue: "جرد — {{reason}} (وافق {{who}})" });
     return t("mv.adjust", "تعديل يدوي أو جرد");
   };
 

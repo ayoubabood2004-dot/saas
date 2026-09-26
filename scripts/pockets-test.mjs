@@ -87,5 +87,10 @@ check("كلُّ جيبٍ = داخلُه − خارجُه", POCKETS.every((k) => 
 check("  ومجموعُ الصوافي = مجموعُ الداخل − مجموعُ الخارج",
   POCKETS.reduce((s, k) => s + many[k].net, 0) === (1 + 2 + 4) - (8 + 16 + 32));
 
+console.log("▸ سحبُ المخزن (0216) لا جيبَ له");
+const stk = netPerPocket([{ method: "cash", amount: 1000 }], [{ method: "stock", amount: 600 }, { method: "cash", amount: 100 }]);
+check("خسارةُ الجرد لا تُطرح من الدرج (فلوسُها طلعت يوم الشراء)", stk.cash.out === 100 && stk.cash.net === 900, JSON.stringify(stk.cash));
+check("  ولا من البطاقة ولا التحويل", stk.card.out === 0 && stk.transfer.out === 0);
+
 console.log(fails ? `\n✗ pockets-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ pockets-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

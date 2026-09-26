@@ -22,6 +22,7 @@ import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
+import type { CountDecision, CountLineInput, CountSubmitResult, StockCount, StockLossRow } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -3889,6 +3890,29 @@ const demoRepo = {
     }
     for (const [k, v] of sum) sum.set(k, Math.max(0, v));
     return sum;
+  },
+  /* ---- الجردُ الدوريّ (0216) — مرآةٌ بوحدةٍ تُحمَّل عند النداء (`demoCounts.ts`) ---- */
+  async submitStockCount(lines: CountLineInput[]): Promise<CountSubmitResult> {
+    return (await import("./demoCounts")).demoSubmitCount(lines);
+  },
+  async decideStockCounts(ids: string[], approve: boolean): Promise<CountDecision> {
+    return (await import("./demoCounts")).demoDecideCounts(ids, approve, demoAddExpense);
+  },
+  async listStockCounts(q: { pending: true } | { from: string; to: string }): Promise<StockCount[]> {
+    const all = (await import("./demoCounts")).loadCounts();
+    if ("pending" in q) return all.filter((c) => c.status === "pending").sort((a, b) => b.counted_at.localeCompare(a.counted_at));
+    const lo = new Date(q.from).getTime(), hi = new Date(q.to).getTime();
+    return all.filter((c) => c.status === "approved" && c.decided_at && new Date(c.decided_at).getTime() >= lo && new Date(c.decided_at).getTime() < hi)
+      .sort((a, b) => (b.decided_at ?? "").localeCompare(a.decided_at ?? ""));
+  },
+  async listProductCounts(productId: string): Promise<StockCount[]> {
+    return (await import("./demoCounts")).loadCounts().filter((c) => c.product_id === productId && c.status === "approved").slice(0, 200);
+  },
+  async reportStockLosses(from: string, to: string): Promise<StockLossRow[]> {
+    return (await import("./demoCounts")).demoStockLosses(from, to);
+  },
+  async stockCountState(): Promise<Map<string, { lastCountedAt: string | null; lastDiffAt: string | null }>> {
+    return (await import("./demoCounts")).demoCountState();
   },
   /** مرآةُ `product_batches` (0214): وجباتُ المادّة بتواريخها، الأحدثُ أوّلاً. */
   async productBatches(productId: string): Promise<ProductBatch[]> {

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Printer, Banknote, CreditCard, Landmark } from "lucide-react";
+import { Printer, Banknote, CreditCard, Landmark, Package } from "lucide-react";
 import type { Expense, ExpenseMethod } from "@/types";
 import { Button } from "@/components/ui";
 import { cn, money, formatNum, dateLocale, localISO } from "@/lib/utils";
@@ -20,7 +20,7 @@ import { getClinicName, getClinicLogo } from "@/lib/settings";
  * ==========================================================================*/
 
 export const METHOD_ICON: Record<ExpenseMethod, typeof Banknote> = {
-  cash: Banknote, card: CreditCard, bank: Landmark,
+  cash: Banknote, card: CreditCard, bank: Landmark, stock: Package,
 };
 const methodOf = (e: Expense): ExpenseMethod => e.method ?? "cash";
 

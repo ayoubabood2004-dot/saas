@@ -1683,7 +1683,8 @@
     "acceptFeeNone": "No fee",
     "acceptFeeHint": "Leave blank to keep what the order came with",
     "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager.",
-    "storeItemExpired": "The order has an expired item: {{name}} — it won't leave the shelf through the store. Reject the order or call the customer."
+    "storeItemExpired": "The order has an expired item: {{name}} — it won't leave the shelf through the store. Reject the order or call the customer.",
+    "countDaily": "Daily count"
   },
   "twin": {
     "loadFailed": "Couldn't check for duplicates. We can't claim \"no duplicates\" when we never got an answer — try again.",
@@ -3250,7 +3251,8 @@
       "method": {
         "cash": "Cash",
         "card": "Card",
-        "bank": "Bank transfer"
+        "bank": "Bank transfer",
+        "stock": "From stock"
       },
       "methodHintCash": "Taken from drawer cash — deducted from net cash.",
       "methodHintOther": "Outside the drawer — not deducted from net cash.",
@@ -5112,7 +5114,15 @@
     "none": "No recorded movements for this item",
     "failed": "Could not load the movements",
     "retention": "Stock movements are kept for a year — anything older is gone.",
-    "batchExpiry": "batch expiry {{d}}"
+    "batchExpiry": "batch expiry {{d}}",
+    "count": "Stock count — {{reason}} (approved by {{who}})",
+    "cr": {
+      "damaged": "damaged",
+      "expired": "expired",
+      "shortage": "shortage",
+      "entry_error": "entry error",
+      "found": "surplus"
+    }
   },
   "expiry": {
     "days": "days",
@@ -5199,5 +5209,87 @@
     "leadRange": "Lead time must be between 1 and 90 days",
     "textHead": "Order for {{company}} — {{date}}",
     "textLine": "• {{name}} × {{qty}}"
+  },
+  "cnt": {
+    "noAccess": "Stock counts need the manage-inventory permission. Ask the clinic manager.",
+    "back": "Back to inventory",
+    "title": "Daily stock count",
+    "sub": "Count a few items every day — differences change stock only after manager approval",
+    "tabToday": "Today's count",
+    "tabReport": "Where did the money go",
+    "loadFailed": "Couldn't load the count data — a connection problem, nothing was lost.",
+    "todayHint": "These items were picked for you today: high-value fast sellers, items not counted for a while, and items that had a difference before. Count them on the shelf and enter the number.",
+    "perDay": "Items per day",
+    "nothingToday": "Nothing suggested today — everything was counted on time. You can add an item by search.",
+    "why": {
+      "added": "Added by search",
+      "stale": "Not counted for {{d}} days",
+      "abc_a": "High value, sells a lot",
+      "never": "Never counted",
+      "suspect": "Had a difference before"
+    },
+    "counted": "Found",
+    "match": "Matches the system",
+    "notePh": "Note (optional): what happened?",
+    "searchPh": "Count another item? Search by name or scan the barcode",
+    "noPending": "No differences waiting for approval.",
+    "managerOnly": "Only a manager can approve — stock doesn't change until they do. (Unlock manager mode if you're the manager.)",
+    "someone": "a staff member",
+    "confirmApproveTitle": "Confirm approval",
+    "confirmRejectTitle": "Confirm rejection",
+    "approveGo": "Approve & record",
+    "rejectGo": "Reject",
+    "noWithdraw": "No withdrawal will be recorded — the selected differences only correct stock.",
+    "restricted": "Amounts are locked on this device — unlock manager mode.",
+    "rangeMonth": "This month",
+    "rangeLast": "Last month",
+    "range90": "Last 90 days",
+    "reportFailed": "Couldn't load the losses — we won't show a partial number.",
+    "lossTotal": "Stock losses (withdrawn from stock)",
+    "deadTitle": "Money sitting still: items not sold in 90 days",
+    "abcTitle": "Where your stock money is (by 90-day sales)",
+    "badQty": "“{{name}}”: the count must be zero or more",
+    "needReason": "“{{name}}” has a difference — choose the reason",
+    "saved": "Count recorded: {{m}} matched, {{p}} with differences awaiting manager approval",
+    "tabPending": "Awaiting approval ({{n}})",
+    "submit": "Record count ({{n}})",
+    "approved": "Approved {{n}} — a stock withdrawal of {{v}} was recorded",
+    "rejected": "Rejected {{n}} — stock unchanged",
+    "by": "counted by {{who}}",
+    "reject": "Reject selected ({{n}})",
+    "approve": "Approve selected ({{n}})",
+    "confirmApprove": "Stock of {{n}} items will be corrected by the counted difference (not the number — anything sold after the count stays sold).",
+    "willWithdraw": "A stock withdrawal of {{v}} will be recorded today (at purchase cost, not from the cash drawer):",
+    "corrections": "Plus {{n}} corrections (entry error / surplus) with no withdrawal.",
+    "confirmReject": "{{n}} counts will be rejected and stock stays as is. They can be counted again.",
+    "lines": "{{n}} lines",
+    "correctionsSum": "Corrections with no withdrawal: {{e}} entry errors, {{f}} surpluses found.",
+    "approvedBy": "approved by {{who}}",
+    "deadCount": "{{n}} items — at purchase cost",
+    "reason": {
+      "damaged": "Damaged",
+      "expired": "Expired",
+      "shortage": "Shortage (missing, unknown why)",
+      "entry_error": "Entry error",
+      "found": "Found surplus"
+    },
+    "abc": {
+      "A": "A — high-value movers (80% of value)",
+      "B": "B — middle (15%)",
+      "C": "C — the rest & slow"
+    },
+    "diffLine": "System says {{sys}} — difference {{diff}}",
+    "pendingLine": "System {{sys}} → found {{got}} ({{diff}})",
+    "err": {
+      "empty": "No lines in the count",
+      "too_many": "More than 200 items at once — split the count",
+      "bad_line": "A count line is incomplete or has a bad number",
+      "bad_qty": "The count must be zero or more",
+      "product_missing": "An item in the count isn't in this clinic's stock — refresh the page",
+      "pooled": "A pooled item is stocked in its section — count it from the section's “Edit / count”",
+      "reason": "An item has a difference — choose a reason that matches it",
+      "needs_manager": "Only a manager can approve count differences — unlock manager mode",
+      "nothing": "No lines selected"
+    }
   }
 }

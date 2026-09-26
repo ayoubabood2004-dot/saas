@@ -30,6 +30,7 @@ import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySec
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
+import type { CountDecision, CountSubmitResult, StockCount, StockLossRow } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
@@ -380,6 +381,11 @@ function need<T>(res: { data: unknown; error: { message: string; code?: string; 
   }
   return res.data as T;
 }
+/** سطرُ جردٍ بأرقامٍ لا نصوص: PostgREST يرجع `numeric` نصّاً، و«٣» + «٢» = «٣٢». */
+const numCount = (c: StockCount): StockCount => ({
+  ...c, system_qty: Number(c.system_qty), counted_qty: Number(c.counted_qty), unit_cost: Number(c.unit_cost),
+  applied_delta: c.applied_delta == null ? null : Number(c.applied_delta),
+});
 /** For write ops (update/delete/rpc) that return no row: throw on error so a
  *  failed mutation surfaces to the caller instead of failing silently. */
 function ok(res: { error: { message: string; code?: string; details?: string; hint?: string } | null }): void {
@@ -2353,6 +2359,40 @@ const supabaseRepo: DemoRepo = {
     }
     return out;
   },
+  /* الجردُ (0216): العدُّ والموافقةُ دالّتان تفحصان العيادةَ والدورَ بنفسيهما، والقراءاتُ
+   * ترمي ولا ترجع ناقصة — «ماكو معلَّق» عن خطأٍ يترك فرقاً بلا قرار. */
+  async submitStockCount(lines) {
+    return need(await sbc().rpc("stock_count_submit", { p_lines: lines })) as CountSubmitResult;
+  },
+  async decideStockCounts(ids, approve) {
+    return need(await sbc().rpc("stock_count_decide", { p_ids: ids, p_approve: approve })) as CountDecision;
+  },
+  async listStockCounts(q) {
+    const rows = await allPages<StockCount>(() => "pending" in q
+      ? sbc().from("stock_counts").select("*").eq("status", "pending")
+      : sbc().from("stock_counts").select("*").eq("status", "approved").gte("decided_at", q.from).lt("decided_at", q.to),
+    { col: "counted_at", asc: false, kind: "time" });
+    return rows.map(numCount);
+  },
+  async listProductCounts(productId) {
+    return listOrThrow<StockCount>(await sbc().from("stock_counts").select("*").eq("product_id", productId).eq("status", "approved")
+      .order("decided_at", { ascending: false }).limit(200)).map(numCount);
+  },
+  async reportStockLosses(from, to) {
+    return listOrThrow<StockLossRow>(await sbc().rpc("report_stock_losses", { p_from: from, p_to: to }))
+      .map((r) => ({ ...r, lines: Number(r.lines), qty: Number(r.qty), value: Number(r.value) }));
+  },
+  async stockCountState() {
+    const out = new Map<string, { lastCountedAt: string | null; lastDiffAt: string | null }>();
+    for (let from = 0; ; ) {
+      const rows = listOrThrow<{ product_id: string; last_counted_at: string | null; last_diff_at: string | null }>(
+        await sbc().rpc("stock_count_state").order("product_id", { ascending: true }).range(from, from + 999));
+      if (rows.length === 0) break;
+      for (const r of rows) out.set(r.product_id, { lastCountedAt: r.last_counted_at, lastDiffAt: r.last_diff_at });
+      from += rows.length;
+    }
+    return out;
+  },
   async productBatches(productId) {
     // يرمي ولا يرجّع فارغاً: «ماكو وجبات» عن خطأٍ يُصدَّق.
     return listOrThrow<ProductBatch>(await sbc().rpc("product_batches", { p_product: productId }));
@@ -2457,6 +2497,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
+  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

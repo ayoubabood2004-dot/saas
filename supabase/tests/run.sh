@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -3232,5 +3232,86 @@ chk "  والمدّةُ مقصوصة (١٠٠٠ يوم ⇒ ١٨٠ — لا مسح
 chk "  وعيادةٌ أخرى لا ترى مبيعَ غيرها" \
     "select count(*)::text from (select set_config('request.jwt.claim.sub','$C2',true)) s, product_sales_rate(30) where product_id='e2150000-0000-4000-8000-000000000001'" "0"
 
+
+# ── 0216: الجردُ الدوريّ — الفرقُ بموافقة، والخسارةُ سحبٌ «من المخزن» ─────────
+echo "▸ 0216: الجردُ بموافقة وسحبُ المخزن"
+K=e2160000-0000-4000-8000-0000000000
+$P -c "insert into products (id, clinic_id, name, stock, purchase_price) values
+         ('${K}01','$C1','جرد تالف',10,2000), ('${K}02','$C1','جرد مطابق',5,1000),
+         ('${K}03','$C1','جرد خطأ إدخال',4,500), ('${K}04','$C1','جرد زيادة',1,700),
+         ('${K}05','$C1','جرد مرفوض',6,300), ('${K}06','$C2','جرد عيادة ثانية',9,100),
+         ('${K}07','$C1','جرد بلا سعر',3,0)
+         , ('${K}08','$C1','جرد مجمّع',0,100)
+       on conflict (id) do nothing;
+       update products set pooled = true where id = '${K}08';" >/dev/null
+chk "عددُ اليوم عمودٌ صحيحٌ افتراضُه ٥" \
+    "select data_type||'/'||is_nullable||'/'||column_default from information_schema.columns where table_name='clinic_prefs' and column_name='count_daily_n'" "integer/NO/5"
+chk "الاستقبالُ يعدّ: ناقصٌ بسببه يعلَّق، والمطابقُ يُختم بلا موافقة" \
+    "select _pf('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}01\",\"counted\":7,\"reason\":\"damaged\",\"note\":\"انكسرت\"},{\"product_id\":\"${K}02\",\"counted\":5},{\"product_id\":\"${K}07\",\"counted\":1,\"reason\":\"damaged\"}]''::jsonb)::text')" '{"matched":1,"pending":2}'
+chk "  **والرصيدُ ما تغيّر** قبل الموافقة" \
+    "select stock::int::text from products where id='${K}01'" "10"
+chk "  واسمُ من عدّ محفوظ، والسببُ والملاحظة" \
+    "select coalesce(counted_by::text,'-')||'|'||reason||'|'||note||'|'||status from stock_counts where product_id='${K}01'" "$RCP|damaged|انكسرت|pending"
+chk "فرقٌ بلا سبب يُرفض ويسمّي المادة" \
+    "select _pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}03\",\"counted\":2}]''::jsonb)::text') like '%count_reason%'" "t"
+chk "  وزيادةٌ بسبب «تالف» تُرفض (السببُ يطابق الاتجاه)" \
+    "select _pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}04\",\"counted\":3,\"reason\":\"damaged\"}]''::jsonb)::text') like '%count_reason%'" "t"
+chk "  وعدٌّ سالب يُرفض" \
+    "select _pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}04\",\"counted\":-1,\"reason\":\"found\"}]''::jsonb)::text') like '%count_bad_qty%'" "t"
+chk "  والمادةُ المجمَّعة تُعدّ من قسمها لا من هنا" \
+    "select _pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}08\",\"counted\":1,\"reason\":\"found\"}]''::jsonb)::text') like '%count_pooled%'" "t"
+chk "  ومادةُ عيادةٍ أخرى لا تُعدّ" \
+    "select _pf_try('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}06\",\"counted\":1,\"reason\":\"shortage\"}]''::jsonb)::text') like '%count_product_missing%'" "t"
+$P -c "select _pf('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}03\",\"counted\":2,\"reason\":\"entry_error\"},{\"product_id\":\"${K}04\",\"counted\":3,\"reason\":\"found\"},{\"product_id\":\"${K}05\",\"counted\":2,\"reason\":\"shortage\"}]''::jsonb)::text');" >/dev/null
+chk "الاستقبالُ لا يوافق (المديرُ وحده)" \
+    "select _pf_try('$RCP', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}01''), true)::text') like '%count_needs_manager%'" "t"
+chk "  وبدور authenticated فعلاً: رفضٌ مقصود (P0001 ⇒ الواجهةُ تعرض سببه العربيّ)" \
+    "select split_part(_rls_try('$RCP', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}01''), true)'), ':', 2)" "P0001"
+chk "  ومديرُ عيادةٍ أخرى لا يصل سطورَ غيرها" \
+    "select _pf('$C2', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}01''), true)::text')::jsonb->>'approved'" "0"
+chk "عدٌّ جديدٌ لنفس المادة يُسجَّل" \
+    "select _pf('$RCP', 'select stock_count_submit(''[{\"product_id\":\"${K}05\",\"counted\":3,\"reason\":\"shortage\"}]''::jsonb)::text')" '{"matched":0,"pending":1}'
+chk "  ويُلغي المعلَّقَ القديم (الأحدثُ أصدق)" \
+    "select string_agg(status||counted_qty::int, ',' order by counted_at, status) from stock_counts where product_id='${K}05'" "void2,pending3"
+chk "المديرُ يرفض: الرصيدُ باقٍ والسطرُ مرفوض" \
+    "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}05'' and status=''pending''), false)::text')::jsonb->>'rejected'||'|'||(select stock::int from products where id='${K}05')" "1|6"
+# بيعٌ بين العدّ والموافقة: ١٠ ⇒ ٨. العدُّ لقى ٧ من ١٠ (−٣) ⇒ بعد الموافقة ٥ لا ٧.
+$P -c "update products set stock = 8 where id = '${K}01';" >/dev/null
+chk "المديرُ يوافق على الكلّ" \
+    "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id in (''${K}01'',''${K}03'',''${K}04'',''${K}07'') and status=''pending''), true)::text')::jsonb->>'approved'" "4"
+chk "  **الفرقُ لا الرقم**: ما بيع بعد العدّ يبقى مبيعاً (٨ − ٣ = ٥)" \
+    "select stock::int::text||'|'||(select applied_delta::int from stock_counts where product_id='${K}01' and status='approved') from products where id='${K}01'" "5|-3"
+chk "  وخطأُ الإدخال والزيادةُ يصحّحان الرصيد" \
+    "select string_agg(stock::int::text, ',' order by name) from products where id in ('${K}03','${K}04')" "2,3"
+chk "  والتالفُ صار **سحباً من المخزن** بيومه، بسعر الشراء، وبموادّه" \
+    "select count(*)||'|'||sum(amount)::int||'|'||min(method)||'|'||min(category)||'|'||min(description) from expenses where id in (select expense_id from stock_counts where product_id='${K}01')" "1|6000|stock|سحبمخزن|سحبمخزن—تالف:جردتالف×3"
+chk "  ومادةٌ بلا سعر شراء لا تصنع سحباً صفرياً (تبقى بالجرد بلا قيمة)" \
+    "select coalesce(expense_id::text,'-')||'|'||status from stock_counts where product_id='${K}07'" "-|approved"
+chk "  وخطأُ الإدخال والزيادةُ **لا سحبَ لهما**" \
+    "select count(*)::text from stock_counts where product_id in ('${K}03','${K}04') and expense_id is not null" "0"
+chk "  والموافقةُ لا تُطبَّق مرّتين (المعتمدُ لا يعود معلَّقاً)" \
+    "select _pf('$C1', 'select stock_count_decide(array(select id from stock_counts where product_id=''${K}01''), true)::text')::jsonb->>'approved'||'|'||(select stock::int from products where id='${K}01')" "0|5"
+chk "سحبُ المخزن لا يُضاف باليد (محفّزٌ بدور authenticated)" \
+    "select split_part(_rls_try('$C1', 'insert into expenses (clinic_id, amount, description, method, staff_id) values (''$C1'', 5, ''يدوي'', ''stock'', ''$C1'')'), ':', 3)" "stock_expense_locked"
+chk "  ولا يُحذف باليد (حذفُه يُخفي خسارةً والرصيدُ مصحَّح)" \
+    "select split_part(_rls_try('$C1', 'delete from expenses where method = ''stock'''), ':', 3)" "stock_expense_locked"
+chk "  وطريقةٌ مجهولةٌ ما زالت تُرفض (القيدُ وُسّع لا أُزيل)" \
+    "select left(_rls_try('$C1', 'insert into expenses (clinic_id, amount, description, method, staff_id) values (''$C1'', 5, ''x'', ''wallet'', ''$C1'')'), 13)" "guarded:23514"
+chk "سطورُ الجرد لا تُكتب مباشرةً من التطبيق" \
+    "select left(_rls_try('$C1', 'insert into stock_counts (clinic_id, product_name, system_qty, counted_qty) values (''$C1'', ''x'', 1, 1)'), 13)" "guarded:42501"
+chk "  وتُقرأ للعيادة بدور authenticated، ولا تُرى لغيرها" \
+    "select _rls_try('$RCP', 'select 1 from stock_counts where product_id = ''${K}01''')||'|'||_rls_try('$C2', 'select 1 from stock_counts where product_id = ''${K}01''')" "rows:1|rows:0"
+chk "تقريرُ الخسائر بأسبابها: تالف ٦٠٠٠+٠، خطأ ١٠٠٠، زيادة −١٤٠٠" \
+    "select string_agg(reason||':'||lines||':'||value::int, ',' order by reason) from (select set_config('request.jwt.claim.sub','$C1',true)) s, report_stock_losses(now() - interval '1 day', now() + interval '1 day')" "damaged:2:6000,entry_error:1:1000,found:1:-1400"
+chk "  وعيادةٌ أخرى لا ترى خسائرَ غيرها" \
+    "select count(*)::text from (select set_config('request.jwt.claim.sub','$C2',true)) s, report_stock_losses(now() - interval '1 day', now() + interval '1 day')" "0"
+chk "حالةُ العدّ: المطابقُ بلا فرق، والتالفُ بفرق" \
+    "select string_agg(case when last_diff_at is null then 'clean' else 'diff' end, ',' order by product_id) from (select set_config('request.jwt.claim.sub','$C1',true)) s, stock_count_state() where product_id in ('${K}01','${K}02')" "diff,clean"
+chk "الدالّتان definer وتفحصان العيادةَ بنصّهما (الحزمةُ superuser لا تمسك هذا)" \
+    "select string_agg(proname||':'||prosecdef||':'||(prosrc like '%clinic_id = v_clinic%'), ',' order by proname) from pg_proc where proname in ('stock_count_submit','stock_count_decide')" "stock_count_decide:true:true,stock_count_submit:true:true"
+chk "  والموافقةُ تفحص الدورَ بنصّها" \
+    "select (prosrc like '%auth_role() is distinct from ''manager''%')::text from pg_proc where proname='stock_count_decide'" "true"
+chk "ولا شيءَ منها لـanon" \
+    "select string_agg(has_function_privilege('anon', p.oid, 'execute')::text, ',') from pg_proc p where proname in ('stock_count_submit','stock_count_decide','report_stock_losses','stock_count_state')" "false,false,false,false"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

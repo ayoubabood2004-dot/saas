@@ -98,7 +98,10 @@ const EXPENSE_METHODS: { id: ExpenseMethod; icon: typeof Banknote }[] = [
   { id: "cash", icon: Banknote },
   { id: "card", icon: CreditCard },
   { id: "bank", icon: Landmark },
+  { id: "stock", icon: Package },
 ];
+/** ما يُختار بنموذج التسجيل — «من المخزن» يُكتب من موافقة الجرد وحدها (0216). */
+const EXPENSE_METHODS_MANUAL = EXPENSE_METHODS.filter((m) => m.id !== "stock");
 /* الأصنافُ العربية حُذفت من هنا: كلُّ نداءٍ يمرّ من `t(\`rpt.exp.method.${id}\`)`
  * والمفاتيحُ الثلاثةُ موجودةٌ بالقاموسين، فكانت بدائلَ ميّتة. حذفُها ينزّل سقفَ
  * النصّ الصلب لهذا الملفّ ٦ ⇒ ٣ (والسقفُ ينزل ولا يصعد). */
@@ -1689,7 +1692,7 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
 
   // How much left each pocket in this period — so the doctor knows WHERE his money went from.
   const methodTotals = useMemo(() => {
-    const acc: Record<ExpenseMethod, number> = { cash: 0, card: 0, bank: 0 };
+    const acc: Record<ExpenseMethod, number> = { cash: 0, card: 0, bank: 0, stock: 0 };
     for (const e of rows) acc[expenseMethodOf(e)] += e.amount;
     return acc;
   }, [rows]);
@@ -1821,7 +1824,7 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-ink-muted">{t("rpt.exp.methodLabel", "طريقة السحب")}</span>
             <div className="flex gap-1.5">
-              {EXPENSE_METHODS.map((m) => (
+              {EXPENSE_METHODS_MANUAL.map((m) => (
                 <button
                   key={m.id} type="button"
                   onClick={() => { playTap(); setMethod(m.id); }}
@@ -1884,7 +1887,8 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
                   </p>
                 </div>
                 <span className="shrink-0 font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(e.amount)}</span>
-                {canRecord && (
+                {/* سحبُ المخزن ظلُّ موافقةِ جرد: حذفُه وحدَه يُخفي خسارةً والرصيدُ مصحَّح (والخادمُ يرفضه). */}
+                {canRecord && m.id !== "stock" && (
                   confirmDel === e.id ? (
                     <button onClick={() => onDeleteClick(e.id)} onBlur={() => setConfirmDel(null)} className="shrink-0 rounded-full bg-danger-600 px-2.5 py-1 text-2xs font-bold text-white transition hover:bg-danger-700">
                       {t("rpt.exp.confirmDel", "تأكيد الحذف؟")}

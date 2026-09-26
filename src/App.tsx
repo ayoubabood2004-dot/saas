@@ -39,6 +39,7 @@ const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Cha
 const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
 const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
+const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })), ["farm"]);
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
@@ -234,6 +235,7 @@ function Shell() {
             <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
             <Route path="/new-case" element={<Protected><NewCase /></Protected>} />
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
+            <Route path="/inventory/count" element={<Protected><ClinicOnly><StockCount /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}

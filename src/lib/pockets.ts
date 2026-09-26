@@ -95,6 +95,8 @@ export function netPerPocket(
     p.in += n; p.inCount += 1;
   }
   for (const e of expenses) {
+    // سحبُ المخزن (0216) لا جيبَ له: فلوسُ البضاعة طلعت يوم شرائها، والدرجُ ما نقص.
+    if (e.method === "stock") continue;
     const n = Number(e.amount);
     if (!Number.isFinite(n) || n === 0) continue;
     const p = acc[pocketOfExpense(e.method)];

@@ -749,8 +749,10 @@ export interface Invoice {
 
 /** Where a withdrawal's money physically came from — the drawer, the card
  *  terminal balance, or the bank account. Rows recorded before this existed
- *  are treated as cash (the ledger's original semantics). */
-export type ExpenseMethod = "cash" | "card" | "bank";
+ *  are treated as cash (the ledger's original semantics).
+ *  `stock` (0216) = «من المخزن»: خسارةُ جردٍ معتمدة (تالف/منتهي/عجز). فلوسُها طلعت
+ *  يوم الشراء، فلا تُطرح من أيّ جيب — تُرى بالسحوبات وتُكتب من موافقة الجرد وحدها. */
+export type ExpenseMethod = "cash" | "card" | "bank" | "stock";
 
 /** An expense / withdrawal from the clinic (rent, supplies, salaries, petty
  *  cash…). Append-only ledger, clinic-isolated. `description` says WHERE &
@@ -1964,3 +1966,38 @@ export interface PoultryConsumeResult {
   /** دخل صندوق الصادر — سينزل حين يعود النت. */
   queued?: boolean;
 }
+
+/* ── الجردُ الدوريّ (0216) ─────────────────────────────────────────────────── */
+/** سببُ فرق الجرد: النقصُ تالف/منتهي/عجز/خطأ إدخال، والزيادةُ لقينا/خطأ إدخال. */
+export type CountReason = "damaged" | "expired" | "shortage" | "entry_error" | "found";
+/** مطابق (بلا موافقة) · معلَّق · معتمد · مرفوض · ملغى (عدٌّ أحدث أو مادةٌ حُذفت). */
+export type CountStatus = "matched" | "pending" | "approved" | "rejected" | "void";
+export interface StockCount {
+  id: string;
+  clinic_id?: string | null;
+  product_id: string | null;
+  product_name: string;
+  system_qty: number;
+  counted_qty: number;
+  unit_cost: number;
+  reason: CountReason | null;
+  note: string | null;
+  status: CountStatus;
+  counted_by: string | null;
+  counted_by_name: string | null;
+  counted_at: string;
+  decided_by: string | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  /** ما طُبّق على الرصيد فعلاً (الفرقُ، مقصوصاً عند الصفر). */
+  applied_delta: number | null;
+  expense_id: string | null;
+}
+export interface CountLineInput { product_id: string; counted: number; reason?: CountReason | null; note?: string | null }
+export interface CountSubmitResult { matched: number; pending: number }
+export interface CountDecision {
+  approved: number; rejected: number; void: number;
+  withdrawals: { reason: CountReason; amount: number; expense_id: string }[];
+}
+/** `report_stock_losses`: الموجبُ خسارة، والسالبُ زيادة — بسعر الشراء. */
+export interface StockLossRow { reason: CountReason; lines: number; qty: number; value: number }
