@@ -227,3 +227,10 @@ begin
 end $$;
 revoke all on function public.store_accept_order(uuid, uuid, numeric) from public, anon;
 grant execute on function public.store_accept_order(uuid, uuid, numeric) to authenticated;
+
+-- ── ومعه: كشفُ الشراء لا يُكتب إلا من دالّتيه (0211) ─────────────────────
+-- مقيسٌ بعد تنزيل 0211: `authenticated` يرث من صلاحيات Supabase الافتراضية
+-- INSERT/UPDATE/DELETE/TRUNCATE على الجدول. الثلاثُ الأولى تصدّها RLS (سياسةُ قراءةٍ
+-- وحدها)، أمّا TRUNCATE فلا تمرّ بـRLS أصلاً. لا مسارَ عميلٍ يصلها اليوم — والحارسُ
+-- لا يُترك على «لا مسارَ اليوم». الدالّتان definer فلا تتأثّران.
+revoke insert, update, delete, truncate on public.purchase_effects from anon, authenticated;
