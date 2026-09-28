@@ -35,7 +35,7 @@ as $$
   select case
     when v is null or jsonb_typeof(v) = 'null' then ''
     when jsonb_typeof(v) in ('string', 'number', 'boolean')
-      then regexp_replace(v #>> '{}', '^[[:space:] ﻿]+|[[:space:] ﻿]+$', '', 'g')
+      then regexp_replace(v #>> '{}', '^[[:space:]' || chr(160) || chr(65279) || ']+|[[:space:]' || chr(160) || chr(65279) || ']+$', '', 'g')
     else '' end
 $$;
 
