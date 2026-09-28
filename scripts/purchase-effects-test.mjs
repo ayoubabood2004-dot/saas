@@ -60,7 +60,7 @@ console.log("▸ التصنيف");
 }
 {
   const r = describeEffects([E({ changed: ["min_stock", "barcode", "expiry_date", "sell_price", "company_id"],
-    before: snap({ min_stock: 1, expiry_date: "2026-03-01" }), after: snap({ min_stock: 2, barcode: "697", expiry_date: "2027-01-01", sell_price: 5, company_id: "C" }) })]);
+    before: snap({ min_stock: 1, expiry_date: "2026-03-01", pooled: true }), after: snap({ min_stock: 2, barcode: "697", expiry_date: "2027-01-01", sell_price: 5, company_id: "C", pooled: true }) })]);
   check("الخطورةُ ترتّب «تبدّلت»: السعر ثمّ الانتهاء ثمّ الشركة … ثمّ الحدّ الأدنى",
     r.changed.map((c) => c.field).join() === "sell_price,expiry_date,company_id,barcode,min_stock", r.changed.map((c) => c.field).join());
   check("  وتعلُّمُ الباركود: من لا شيء إلى رمز", r.changed.find((c) => c.field === "barcode")?.from === null && r.changed.find((c) => c.field === "barcode")?.to === "697");
@@ -120,6 +120,19 @@ console.log("▸ التعديل — ما أمسكه التدقيقُ العدا�
   ]);
   check("وبالتسجيل كذلك: ٤ ⇒ ١٩ بكميةٍ ١٥، وسعرٌ تبدّل ورجع لا يُقال", r4.added.length === 1 && r4.added[0].qty === 15 && r4.added[0].to === 19 && r4.changed.length === 0,
     JSON.stringify([r4.added, r4.changed]));
+}
+
+{
+  // الواقعةُ (٢٨/٩): «اايبا» ٥ بلا تاريخ + ١ تنتهي 2028/02/29 + ١ جديدة 2029/07/31. ملخّصُ
+  // المادة تبدّل فقال الكشفُ «يشمل كل العلب» — والدفعاتُ القديمة على تواريخها.
+  const r = describeEffects([E({ changed: ["expiry_date"],
+    before: snap({ stock: 6, expiry_date: "2029-07-31" }), after: snap({ stock: 7, expiry_date: "2028-02-29" }) })]);
+  check("مادّةٌ بدفعات: تبدّلُ ملخّص تاريخها ليس «تبدّلت» — العلبُ القديمة على تواريخها",
+    !r.changed.some((c) => c.field === "expiry_date") && r.clean === true && r.added.length === 1, JSON.stringify(r.changed));
+  const pooled = describeEffects([E({ changed: ["expiry_date"],
+    before: snap({ expiry_date: "2029-07-31", pooled: true }), after: snap({ expiry_date: "2028-02-29", pooled: true }) })]);
+  check("  والمجمَّعةُ (بلا دفعات) يُقال تاريخُها — هو للرفّ كلّه فعلاً",
+    pooled.changed.some((c) => c.field === "expiry_date"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} purchase-effects-test: ${passes} نجحت، ${fails} فشلت`);

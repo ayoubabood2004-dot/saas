@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, CheckCircle2, PackageMinus, Printer, RotateCw, Search, Sparkles, TrendingUp } from "lucide-react";
-import type { Company, PurchaseEffect } from "@/types";
+import { AlertTriangle, CalendarRange, CheckCircle2, PackageMinus, Printer, RotateCw, Search, Sparkles, TrendingUp } from "lucide-react";
+import type { Company, ProductLot, PurchaseEffect } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Skeleton } from "@/components/ui";
-import { money, formatNum } from "@/lib/utils";
+import { money, formatNum, formatQty } from "@/lib/utils";
 import { describeEffects, type ReceiptChange } from "@/lib/purchaseEffects";
 
 /**
@@ -39,6 +39,35 @@ export function PurchaseReceipt({ purchaseId, companyId, companyName: purchaseCo
   useEffect(() => { void load(); }, [load]);
 
   const receipt = useMemo(() => (Array.isArray(effects) ? describeEffects(effects, companyId) : null), [effects, companyId]);
+
+  /* الرفُّ دفعاتٍ (0217): «شكد عندي بكل تاريخ، شوكت اشتريته ومنين» — جوابُ ما كان
+   * الكشفُ يقوله خطأً («التاريخ يشمل كل العلب»). المجمَّعةُ بلا دفعات فتغيب وحدها. */
+  const SHELF_MAX = 12;
+  const shelfIds = useMemo(() => {
+    if (!receipt) return [];
+    const ids = [...receipt.added, ...receipt.created].map((a) => a.productId).filter((x): x is string => !!x);
+    return [...new Set(ids)];
+  }, [receipt]);
+  const [shelf, setShelf] = useState<Record<string, ProductLot[]> | "loading" | "error">("loading");
+  const loadShelf = useCallback(async () => {
+    if (!shelfIds.length) { setShelf({}); return; }
+    setShelf("loading");
+    try {
+      const rows = await Promise.all(shelfIds.slice(0, SHELF_MAX).map((id) => repo.listProductLots(id)));
+      setShelf(Object.fromEntries(shelfIds.slice(0, SHELF_MAX).map((id, i) => [id, rows[i].filter((l) => l.qty > 0)])));
+    } catch { setShelf("error"); }
+  }, [shelfIds]);
+  useEffect(() => { void loadShelf(); }, [loadShelf]);
+  const nameOf = (id: string) => [...(receipt?.added ?? []), ...(receipt?.created ?? [])].find((a) => a.productId === id)?.name ?? "";
+  const lotLine = (l: ProductLot) => {
+    const bits = [
+      l.expiry_date ? t("purchase.receipt.lotExp", { d: dateOf(l.expiry_date), defaultValue: "تنتهي {{d}}" }) : t("lots.noDate", "بلا تاريخ انتهاء"),
+      l.source === "purchase"
+        ? t("purchase.receipt.lotBought", { d: dateOf(l.received_at), co: l.company_name || "—", defaultValue: "اشتريناها {{d}} من {{co}}" })
+        : t(`lots.src.${l.source}`),
+    ];
+    return `${formatQty(l.qty)} — ${bits.join(" · ")}${l.purchase_id === purchaseId ? ` ${t("purchase.receipt.lotThis", "(هاي الفاتورة)")}` : ""}`;
+  };
   const companyName = (id: unknown) =>
     (id && id === companyId && purchaseCompany) || companies?.find((c) => c.id === id)?.name || t("purchase.receipt.someCompany", "شركة الفاتورة");
   const n = (v: number) => formatNum(v);
@@ -187,6 +216,30 @@ export function PurchaseReceipt({ purchaseId, companyId, companyName: purchaseCo
             </Section>
           )}
         </>
+      )}
+
+      {shelfIds.length > 0 && shelf !== "loading" && (shelf === "error" || Object.values(shelf).some((ls) => ls.length > 0)) && (
+        <Section tone="plain" icon={<CalendarRange size={15} />} title={t("purchase.receipt.shelfHead", "الرفّ هسه — كل وجبة بتاريخها")}>
+          {shelf === "error" ? (
+            <li>
+              {t("purchase.receipt.shelfFailed", "ما وصلنا للدفعات — شوفها من المخزون، زر الدفعات جنب المادة.")}{" "}
+              <button className="font-bold text-brand-600 underline" onClick={() => void loadShelf()}>{t("purchase.receipt.retry", "جرّب مرّة ثانية")}</button>
+            </li>
+          ) : (
+            shelfIds.slice(0, SHELF_MAX).filter((id) => shelf[id]?.length).map((id) => (
+              <li key={id}>
+                <span className="font-bold">{nameOf(id)}</span>
+                <ul className="mt-0.5 list-[circle] space-y-0.5 ps-5 text-ink-muted">
+                  {[...shelf[id]].sort((a, b) => (a.expiry_date ?? "9999").localeCompare(b.expiry_date ?? "9999"))
+                    .map((l) => <li key={l.id} className={l.purchase_id === purchaseId ? "font-semibold text-ink" : undefined}>{lotLine(l)}</li>)}
+                </ul>
+              </li>
+            ))
+          )}
+          {shelf !== "error" && shelfIds.length > SHELF_MAX && (
+            <li>{t("purchase.receipt.shelfMore", { n: shelfIds.length - SHELF_MAX, defaultValue: "و{{n}} مواد ثانية — دفعاتها من المخزون." })}</li>
+          )}
+        </Section>
       )}
 
       {(closeBtn || printBtn) && <div className="flex flex-wrap gap-2 pt-1">{closeBtn}{printBtn}</div>}

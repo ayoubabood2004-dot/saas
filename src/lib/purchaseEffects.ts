@@ -5,8 +5,8 @@ import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
  *
  * نقيّةٌ عمداً: لا JSX ولا i18n — المكوّنُ يرسم و`t` يقول، وهنا يُقرَّر **ما يُقال**.
  * والقاعدةُ التي تحكم التصنيف: الرصيدُ هو المطلوب («زادت»)، وكلُّ ما سواه
- * مفاجأةٌ تُرفع لقسم «تبدّلت — انتبه»: سعرٌ كُتب فوق سعر الرفّ، تاريخُ انتهاءٍ
- * يشمل كلَّ العلب، مادّةٌ صارت لشركة، باركودٌ تُعلِّم. والمطابقةُ بالاسم تُقال
+ * مفاجأةٌ تُرفع لقسم «تبدّلت — انتبه»: سعرٌ كُتب فوق سعر الرفّ، تاريخُ انتهاءِ مادّةٍ
+ * مجمَّعة (بلا دفعات)، مادّةٌ صارت لشركة، باركودٌ تُعلِّم. والمطابقةُ بالاسم تُقال
  * لأنها الفرعُ الوحيد الذي يلصق بضاعةً بمادّةٍ قد لا تكون هي.
  *
  * والأرقامُ من صورتَي الخادم (قبل/بعد) لا من لقطة المتصفّح — «من ← إلى» الكاذب
@@ -108,7 +108,15 @@ export function describeEffects(effects: readonly PurchaseEffect[], purchaseComp
     }
     const fields = (e.changed ?? []).filter((f): f is EffectField => (FIELD_ORDER as string[]).includes(f))
       .sort((x, y) => FIELD_ORDER.indexOf(x) - FIELD_ORDER.indexOf(y));
-    for (const f of fields) if (String(b[f] ?? "") !== String(a[f] ?? "")) out.changed.push({ name, productId: pid, field: f, from: b[f] ?? null, to: a[f] ?? null });
+    for (const f of fields) {
+      if (String(b[f] ?? "") === String(a[f] ?? "")) continue;
+      /* منذ الدفعات (0217) تاريخُ المادة **ملخّص**: أقربُ تاريخٍ لدفعةٍ فيها رصيد. فتبدّلُه
+       * بشراءٍ لا يلمس علبةً قديمة — الوجبةُ الجديدة دفعةٌ بتاريخها، والكشفُ يعرض الرفَّ
+       * دفعاتٍ. كان يقول «يشمل كل العلب الي بالرفّ» فصدّقته عيادة. المجمَّعةُ وحدها
+       * بلا دفعات، فتاريخُها للرفّ كلّه فعلاً ويُقال. */
+      if (f === "expiry_date" && !a.pooled) continue;
+      out.changed.push({ name, productId: pid, field: f, from: b[f] ?? null, to: a[f] ?? null });
+    }
     if (e.matched_by === "name") out.notes.push({ name, productId: pid, kind: "by_name" });
     /* طابق مادّةَ شركةٍ ثانية: البضاعةُ من شركة الفاتورة، والرفُّ لغيرها. «بلا شركة»
      * ليست ثانية — الشراءُ يسندها (ويُقال تحت «تبدّلت»). */

@@ -1309,6 +1309,12 @@
       "colExpiry": "Batch expiry"
     },
     "receipt": {
+      "lotExp": "expires {{d}}",
+      "lotBought": "bought {{d}} from {{co}}",
+      "lotThis": "(this invoice)",
+      "shelfHead": "On the shelf now — each batch with its date",
+      "shelfFailed": "Couldn't load the batches — see them in Inventory, the batches button next to the product.",
+      "shelfMore": "and {{n}} more products — their batches are in Inventory.",
       "addedHead": "Stock added ({{n}} items)",
       "addedLine": "{{name}} — added {{qty}}. You had {{from}}, now {{to}}.",
       "byName": "{{name}}: matched by name, not barcode. If it isn't the same item, close and edit the invoice.",
