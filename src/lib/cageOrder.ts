@@ -1,5 +1,5 @@
-import { getCageLayout } from "@/lib/settings";
-import type { CageRoom } from "@/lib/cageLayout";
+import { flatRooms, type CageRoom } from "@/lib/cageLayout";
+import { cageStudio } from "@/components/cage3d/store";
 
 /* ============================================================================
  * cageOrder — «اللوحة تمشي مع قدميك».
@@ -9,9 +9,9 @@ import type { CageRoom } from "@/lib/cageLayout";
  * الورقة **يطابق ترتيب أقفاص الغرفة كما رسمها بيده** في غرفة الأقفاص: يمشي
  * بالممر فتتقدّم الورقة معه بلا قفزٍ ولا بحث.
  *
- * والمصدر هو نفسه لا نسخةٌ ثانية: `clinic_prefs.cage_layout` — الجدول الذي
- * تكتبه غرفة الأقفاص وتقرأه خريطة 2D. فأي إعادة ترتيبٍ هناك تصل الورقة
- * تلقائياً، ولا يوجد ترتيبان يفترقان مع الوقت.
+ * والمصدر هو نفسه لا نسخةٌ ثانية: صفوفُ الغرف والأقفاص (0219) التي ترسمها غرفةُ
+ * الأقفاص، والمنظرُ المسطّح مشتقٌّ من هندستها (`flatRooms`) بنفس قاعدة اللوحة —
+ * فلا ترتيبان يفترقان. (كانت تقرأ رسمةَ `clinic_prefs` المجمَّدة منذ 0220.)
  * ==========================================================================*/
 
 const norm = (c: string | null | undefined): string => (c ?? "").trim().toLowerCase();
@@ -19,7 +19,7 @@ const norm = (c: string | null | undefined): string => (c ?? "").trim().toLowerC
 /** فهرس: رمز القفص ← { الغرفة، موقعه ضمنها، موقع الغرفة }. يُبنى عند الطلب. */
 function index(): Map<string, { room: string; roomIdx: number; cageIdx: number }> {
   const m = new Map<string, { room: string; roomIdx: number; cageIdx: number }>();
-  const rooms: CageRoom[] = getCageLayout();
+  const rooms: CageRoom[] = flatRooms(cageStudio.get());
   rooms.forEach((r, roomIdx) => {
     r.cages.forEach((code, cageIdx) => {
       const k = norm(code);
@@ -53,5 +53,5 @@ export function cageSortKey(cage: string | null | undefined): string {
 
 /** كل الغرف بترتيبها المرسوم — لبناء أشرطة الأقسام بالورقة. */
 export function roomsInOrder(): string[] {
-  return getCageLayout().map((r) => r.name || "").filter(Boolean);
+  return flatRooms(cageStudio.get()).map((r) => r.name || "").filter(Boolean);
 }

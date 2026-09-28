@@ -569,3 +569,43 @@ create table if not exists subscriptions (
 -- مشغّلُ الفحص — حسابٌ ثالث لا عيادةَ له.
 insert into auth.users(id) values ('33333333-3333-3333-3333-333333333333') on conflict do nothing;
 alter table auth.users add column if not exists email text;
+
+-- 0219/0220: الإقاماتُ بشكل الإنتاج (0002 + عمودُ العيادة بقيمته الافتراضية ومفتاحه،
+-- وسياستُها «الملكيّة» كما هي هناك) وسجلُّ الحركات (0070). الأقفاصُ صارت تُربط بها،
+-- وفحصٌ لإشغالٍ بجدولٍ بلا RLS يقيس عالماً غير العالم.
+do $$ begin create type admission_status as enum ('active','discharged'); exception when duplicate_object then null; end $$;
+do $$ begin create type admission_kind as enum ('treatment','boarding'); exception when duplicate_object then null; end $$;
+create table if not exists admissions (
+  id uuid primary key default gen_random_uuid(),
+  pet_id uuid not null references pets(id) on delete cascade,
+  clinic_id uuid references auth.users(id) default auth_clinic(),
+  kind admission_kind not null default 'boarding',
+  status admission_status not null default 'active',
+  admitted_on date not null default current_date,
+  discharged_on date,
+  reason text,
+  cage text,
+  created_at timestamptz not null default now()
+);
+create index if not exists adm_pet_idx on admissions(pet_id);
+create index if not exists admissions_clinic_idx on admissions(clinic_id);
+alter table admissions enable row level security;
+drop policy if exists admissions_clinic_all on admissions;
+create policy admissions_clinic_all on admissions
+  for all using (clinic_id = (select auth_clinic())) with check (clinic_id = (select auth_clinic()));
+create table if not exists pet_movements (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references auth.users(id) default auth_clinic(),
+  pet_id uuid not null, admission_id uuid, at timestamptz not null default now(),
+  event text not null, from_kind text, to_kind text, from_cage text, to_cage text,
+  created_at timestamptz not null default now()
+);
+create index if not exists pet_movements_clinic_idx on pet_movements(clinic_id, at desc);
+alter table pet_movements enable row level security;
+drop policy if exists pet_movements_select on pet_movements;
+create policy pet_movements_select on pet_movements for select using (clinic_id = (select auth_clinic()));
+-- عيادتان ثالثةٌ ورابعة لفحوص الترحيل (خردةٌ وتخطيطٌ بلا صفوف).
+insert into auth.users(id) values
+  ('44444444-4444-4444-4444-444444444444'),
+  ('66666666-6666-6666-6666-666666666666')
+on conflict do nothing;

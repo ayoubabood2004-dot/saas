@@ -16,6 +16,14 @@ import {
 } from "./store";
 import { opsStore } from "@/lib/opsStore";
 import { statusOf } from "@/lib/opsStatus";
+import { LayoutSync } from "@/components/cages/LayoutSync";
+
+/** جملةُ الرفض: من الخادم جاهزة (`hint`)، ومن المرآة التجريبية مفتاحٌ يُترجم هنا. */
+const hintOf = (e: unknown): string | null => {
+  const x = e as { hint?: unknown; cageErr?: unknown; vars?: Record<string, string> } | null;
+  if (x && typeof x.cageErr === "string") return String(i18n.t(`cages.${x.cageErr}`, x.vars ?? {}));
+  return typeof x?.hint === "string" && x.hint.trim() ? x.hint.trim() : null;
+};
 import { repo } from "@/lib/repo";
 import type { Admission } from "@/types";
 import { speciesPhoto } from "@/lib/petPhotos";
@@ -919,7 +927,8 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     arrivedRef.current.set(toCode, performance.now());
     opsStore.patch(occ.admId, { cage: toCode })
       .then(() => { playSuccess(); say(`انتقل ${occ.name} إلى القفص ${toCode}`); })
-      .catch(() => { playWarning(); say("تعذّر حفظ النقلة — حاول مجدداً"); });
+      /* رفضُ الخادم يسمّي الساكن (0219) — يُقال كما جاء لا رسالةً عامّة. */
+      .catch((e: unknown) => { playWarning(); say(hintOf(e) ?? "تعذّر حفظ النقلة — حاول مجدداً"); });
     return true;
   };
 
@@ -1033,7 +1042,6 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
   const commitRename = (oldCode: string, newCode: string) => {
     const next = newCode.trim();
     if (!next || next === oldCode) return;
-    const occ = occRef.current.get(norm(oldCode));
     if (!cageStudio.updateCage(oldCode, { code: next })) {
       playWarning();
       say("الرقم مستعمل بقفص ثاني");
@@ -1041,18 +1049,13 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
       return;
     }
     playSuccess();
-    say("انحفظ رقم القفص");
-    if (occ) void opsStore.patch(occ.admId, { cage: next }).catch(() => {});
+    say("انحفظ رقم القفص"); // والساكنُ يتبع قفصَه بالخادم بنفس المعاملة (0219)
   };
 
   const renumber = (roomId: string) => {
     const base = Number(renumBase);
     if (!Number.isFinite(base) || base < 1) { playWarning(); say("اكتب رقم البداية — مثال ١٠١"); return; }
     const changes = cageStudio.renumberRoom(roomId, base, renumPrefix);
-    for (const ch of changes) {
-      const occ = occRef.current.get(norm(ch.from));
-      if (occ) void opsStore.patch(occ.admId, { cage: ch.to }).catch(() => {});
-    }
     playSuccess();
     say(`ترقّمت ${formatNum(changes.length)} أقفاص تلقائياً`);
   };
@@ -1199,6 +1202,13 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
               ? "وضع البناء: اضغط خلية خضراء = قفص جديد · اضغط القفص لرقمه ولونه · وعدّل أي غرفة من أزرار ✏️ تحت"
               : "اضغط بطاقة المريض ثم القفص الجديد — انتهى · اضغط جسم القفص لتفاصيله · كبّر بأصبعين واسحب الأرضية تتحرك"}
           </p>
+          {/* الرفضُ والحفظُ يُقالان هنا أيضاً: كان المجسّمُ بلا سطر مزامنة، فتعديلٌ
+              مرفوضٌ يبدو محفوظاً لمن يعمل عليه وحدَه. السلامةُ لا تُزاحم المشهد. */}
+          {s.sync !== "saved" && (
+            <div className="pointer-events-auto mt-2 max-w-md" data-sync3d>
+              <LayoutSync compact />
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {canBuild && (

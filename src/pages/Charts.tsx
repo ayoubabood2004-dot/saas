@@ -22,6 +22,7 @@ import { encodeProtocolMark } from "@/lib/protocolMark";
 import { buildRound } from "@/lib/round";
 import type { GroupBy } from "@/lib/flowsheet";
 import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
+import { useCageStudio } from "@/components/cage3d/store";
 /* لافتة الرقم نفسها التي تحملها بطاقة القفص — مكوّنٌ واحد لا نسختان
  * متشابهتان: الشاشتان تتكلّمان لغةَ شكلٍ واحدة، وأيُّ تحسينٍ يصلهما معاً. */
 import { Nameplate } from "@/components/cages/CageCard";
@@ -233,6 +234,8 @@ export function Charts() {
     try { localStorage.setItem(VIEW_KEY, v); } catch { /* خصوصية متشددة — الاختيار يبقى للجلسة */ }
   }, []);
   /** المجموعة التي تُقسَّم بها ورقة العلاج — بيد الطبيب لا بخوارزمية ثابتة. */
+  /* ترتيبُ الجولة من صفوف الأقفاص — الورقةُ تُعاد حين تصل أو تتبدّل. */
+  const cageRows = useCageStudio();
   const [grouping, setGrouping] = useState<GroupBy>(() => {
     try {
       const g = localStorage.getItem(GROUP_KEY);
@@ -648,7 +651,8 @@ export function Charts() {
       return list.sort((a, b) => rank(a) - rank(b) || byName(a, b));
     }
     return list.sort(byName);
-  }, [activeCharts, grouping, txLoaded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCharts, grouping, txLoaded, cageRows.rooms, cageRows.cages]);
 
   const flowGroupLabel = useMemo(() => {
     if (grouping === "cage") {

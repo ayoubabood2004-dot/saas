@@ -1,5 +1,6 @@
 import type { Admission, Pet } from "@/types";
 import { repo } from "./repo";
+import { registerReset } from "./clinicSync";
 
 /* ============================================================================
  * opsStore — the single, synchronous source-of-truth for the clinic's live
@@ -86,4 +87,23 @@ export const opsStore = {
     if (state.pets[pet.id] === pet) return;
     set({ pets: { ...state.pets, [pet.id]: pet } });
   },
+
+  /** مرآةٌ محلّية لما فعله الخادمُ بنفس معاملة إعادة الترقيم (0219): نصُّ كلّ ساكنٍ
+   *  يتبع رقمَ قفصه. **لا كتابة** — الخادمُ كتب. والساكنون يُحسمون قبل أيّ تبديل،
+   *  وإلا حرّك تبادلُ ١٠١↔١٠٢ الأوّلَ مرّتين. */
+  mirrorCageRenames(pairs: Array<{ from: string; to: string }>) {
+    if (!pairs.length) return;
+    const norm = (c: string | null | undefined) => (c ?? "").trim().toLowerCase();
+    const to = new Map<string, string>();
+    for (const p of pairs) {
+      const occ = state.admissions.find((a) => a.status !== "discharged" && norm(a.cage) === norm(p.from));
+      if (occ) to.set(occ.id, p.to);
+    }
+    if (!to.size) return;
+    set({ admissions: state.admissions.map((a) => (to.has(a.id) ? { ...a, cage: to.get(a.id) as string } : a)) });
+  },
 };
+
+/* تبديلُ العيادة يُفرغ النزلاء فوراً: عرضُ حيواناتِ عيادةٍ بأقفاص أخرى تسريبٌ يبدأ
+   عرضاً قبل أن يصير كتابة (درس 0153، وبند ب٥ بـ`docs/cages-plan.md`). */
+registerReset(() => { set({ admissions: [], pets: {}, hydrated: false }); });

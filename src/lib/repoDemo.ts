@@ -35,7 +35,8 @@ import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, nor
 import { scanVariants } from "./productCodes";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
-import { loadClinics } from "./clinics";
+import { loadClinics, getActiveClinicId } from "./clinics";
+import { demoAdmissionCageGuard } from "./demoCages";
 import { listStaff } from "./staff";
 import type { PreparedUpload } from "./image";
 import { LAB_STAGE_COL, assertUpdated, assertUploadableImage, blankOwnerField, dailyNoteLocalGet, dailyNoteLocalSet, dedupeCustomers, labLifecycleFields, pickByPurchaseName, purchaseCoRank, sayAmbiguousCode } from "./repo";
@@ -1375,6 +1376,7 @@ const demoRepo = {
     // Stamp the creation time so ordering is exact, then prepend so the local cache
     // mirrors the newest-first fetch — the new case shows at the top instantly.
     const adm: Admission = { created_at: new Date().toISOString(), ...input, id: uid("adm") };
+    demoAdmissionCageGuard(db, adm, null, getActiveClinicId() || "default");
     db.admissions.unshift(adm);
     // Mirror the production trigger: every admission writes an 'admitted' event
     // to the per-animal movement trail (سجل الحركات).
@@ -1389,6 +1391,7 @@ const demoRepo = {
     if (adm) {
       const before = { status: adm.status, kind: adm.kind, cage: adm.cage ?? null };
       Object.assign(adm, patch);
+      if ("cage" in patch || "status" in patch) demoAdmissionCageGuard(db, adm, before, getActiveClinicId() || "default");
       // Mirror the production trigger (migration 0070) exactly — see its rules.
       if (before.status === "active" && adm.status === "discharged") {
         pushMovementLocal(db, { pet_id: adm.pet_id, admission_id: adm.id, event: "discharged", from_kind: adm.kind });

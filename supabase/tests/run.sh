@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -2503,72 +2503,39 @@ chk "end_elevation بصلاحية المُعرِّف وبمسارٍ مثبَّت
     "select (p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='end_elevation'" "true"
 
 
-# ── 0195: تخطيطُ الأقفاص لا يُداس ───────────────────────────────────────────
-# الجذرُ المقيس: جهازٌ جديدٌ يبذر ستّةَ أقفاصٍ وهمية ثم يرفعها فوق ترتيبِ شهر.
-# فالحفظُ صار مشروطاً بالنسخة، وكتابةُ البذرة (rev 0) ممنوعةٌ على غيرِ فراغ.
-echo "▸ 0195: الحفظُ بشرط النسخة — ولا بذرةَ تدوس تخطيطاً قائماً"
+# ── 0195/0204 ← 0220: بابُ الرسمة الواحدة **مقطوع** ─────────────────────────
+# كان هنا فحصُ «الحفظ بشرط النسخة». النسخةُ نفسُها صارت الثغرة (أرقامُ الإنتاج
+# ١–٢ تتصادف بين العيادات)، فالتخطيطُ صار صفوفاً (0219) والبابُ القديم يرمي
+# بجملةٍ عربية. ما بقي من هنا حيٌّ: الكتابةُ المباشرة للعمود ممنوعة، والسجلّ يُقرأ.
+echo "▸ 0220: الحفظُ القديم مقطوع — والعمودُ مجمَّدٌ للقراءة"
 C1=11111111-1111-1111-1111-111111111111
-$P -c "update clinic_prefs set cage_layout = null, cage_layout_rev = 0 where clinic_id = '$C1';
-       insert into clinic_prefs (clinic_id) select '$C1' where not exists (select 1 from clinic_prefs where clinic_id='$C1');" >/dev/null
-chk "أوّلُ حفظٍ على فراغ يمرّ ويعطي النسخة ١" \
-    "select _pf('$C1', 'select (save_cage_layout(''{\"v\":2,\"rooms\":[],\"cages\":[]}'', 0)->>''rev'')')" "1"
-chk "  والعمودُ انكتب فعلاً" \
-    "select (cage_layout is not null)::text from clinic_prefs where clinic_id='$C1'" "true"
-# **هذا هو الفحصُ الذي يمنع عودةَ العطب**: جهازٌ ثانٍ لم يقرأ السحابة يحمل rev 0.
-chk "بذرةٌ بنسخة ٠ فوق تخطيطٍ قائم ⇒ تُرفض" \
-    "select _pf('$C1', 'select (save_cage_layout(''{\"v\":2,\"rooms\":[{\"id\":\"r1\",\"name\":\"غرفة الإقامة\",\"x\":0,\"z\":0,\"w\":3,\"d\":2}],\"cages\":[]}'', 0)->>''conflict'')')" "true"
-chk "  والنسخةُ ما زادت" "select cage_layout_rev::text from clinic_prefs where clinic_id='$C1'" "1"
-chk "  والتعارضُ يرجّع تخطيطَ السحابة ليُختار" \
-    "select _pf('$C1', 'select (save_cage_layout(''x'', 0) ? ''layout'')::text')" "true"
-chk "حفظٌ على النسخة الصحيحة يمرّ ويزيدها" \
-    "select _pf('$C1', 'select (save_cage_layout(''{\"v\":2,\"rooms\":[],\"cages\":[{\"code\":\"201\",\"x\":0,\"z\":0}]}'', 1)->>''rev'')')" "2"
-chk "حفظٌ على نسخةٍ قديمة ⇒ تعارضٌ بلا كتابة" \
-    "select _pf('$C1', 'select (save_cage_layout(''{}'', 1)->>''conflict'')')" "true"
-chk "  والعمودُ ما تغيّر" \
-    "select (cage_layout like '%201%')::text from clinic_prefs where clinic_id='$C1'" "true"
-chk "الهجرةُ رفعت نسخةَ صفٍّ بتخطيطٍ قائمٍ من ٠ إلى ١ (وإلا دُهس بأوّل جهاز)" \
-    "select count(*)::text from clinic_prefs where cage_layout is not null and cage_layout <> '' and cage_layout_rev = 0" "0"
-# ── 0204: بابٌ واحدٌ — الكتابةُ المباشرة تُرفض ولو من نسخةٍ مخبّأةٍ قديمة ──
-# النسخةُ القديمة من `settings.ts` كانت تكتب العمودَ بـ`upsert` مباشر، ومنه
-# طابورُ المعلّقات الذي يعيش بـ`localStorage` — فجهازُ عيادةٍ عدّل أقفاصَه قبل
-# التحديث يرفع تخطيطَه القديم فوق ترتيب العيادة بأوّل ترطيبٍ بعده. نُزع من
-# الواجهة، والمحفّزُ يصل ما لا تصله الواجهة: النسخةَ المخبّأة بجهاز.
+$P -c "insert into clinic_prefs (clinic_id) select '$C1' where not exists (select 1 from clinic_prefs where clinic_id='$C1');
+       update clinic_prefs set cage_layout = '[{\"id\":\"r1\",\"name\":\"القديمة\",\"cages\":[\"201\"]}]', cage_layout_rev = 2 where clinic_id = '$C1';" >/dev/null
+chk "حزمةٌ قديمة تحفظ رسمتها ⇒ تُرفض **باسم القطع** (لا تعارضاً يدور للأبد)" \
+    "select _rls_try('$C1', 'select save_cage_layout(''{\"v\":2,\"rooms\":[],\"cages\":[]}'', 2)')" "guarded:P0001:cage_layout_moved"
+chk "  والعمودُ ما انمسّ (أرشيفٌ ومرجعُ تراجع)" \
+    "select (cage_layout like '%201%' and cage_layout_rev = 2)::text from clinic_prefs where clinic_id='$C1'" "true"
 chk "تحديثٌ مباشرٌ للتخطيط من المتصفّح **يُرفض**" \
     "select _rls_try('$C1', 'update clinic_prefs set cage_layout = ''[]'' where clinic_id = auth_clinic()')" "guarded:P0001:cage_layout_direct_write"
 chk "  والنسخةُ كذلك" \
     "select _rls_try('$C1', 'update clinic_prefs set cage_layout_rev = 99 where clinic_id = auth_clinic()')" "guarded:P0001:cage_layout_direct_write"
-chk "  ولا صفَّ تحرّك برفضه" \
-    "select (cage_layout like '%201%' and cage_layout_rev = 2)::text from clinic_prefs where clinic_id='$C1'" "true"
+chk "  و«احذف الصفّ وأدخله من جديد» لم يعد باباً خلفياً (INSERT محروس)" \
+    "select _rls_try('33333333-3333-3333-3333-333333333333', 'insert into clinic_prefs (clinic_id, cage_layout) values (auth_clinic(), ''[]'')')" "guarded:P0001:cage_layout_direct_write"
+chk "  وصفُّ تفضيلاتٍ جديدٌ **بلا** تخطيط يُدرج عادياً" \
+    "select _rls_try('33333333-3333-3333-3333-333333333333', 'insert into clinic_prefs (clinic_id) values (auth_clinic())')" "rows:1"
 chk "وتفضيلٌ آخرُ بنفس الصفّ يُحدَّث عادياً (لا يشدّ أكثرَ من اللازم)" \
     "select _rls_try('$C1', 'update clinic_prefs set pos_compact = true where clinic_id = auth_clinic()')" "rows:1"
-# **بدورٍ حقيقيّ لا بـsuperuser**: `save_cage_layout` بصلاحية المُستدعي، فتجري
-# كـ`authenticated` ويراها المحفّز. وأوّلُ صياغةٍ للمحفّز كانت تقفل هذا الباب
-# نفسَه، ومرّ الفحصُ أخضرَ لأنه كان بـ`_pf` (superuser) فلا يدخل الفرعَ أصلاً —
-# فحصٌ يقيس لا شيء. و`_rls_try` يدخله.
-chk "و`save_cage_layout` تمرّ **بدور authenticated**" \
-    "select _rls_try('$C1', 'select save_cage_layout(''{\"v\":2,\"rooms\":[],\"cages\":[{\"code\":\"777\",\"x\":1,\"z\":0}]}'', 2)')" "rows:1"
-chk "  والنسخةُ صارت ٣" \
-    "select cage_layout_rev::text from clinic_prefs where clinic_id='$C1'" "3"
-chk "  والتخطيطُ فعلاً تغيّر" \
-    "select (cage_layout like '%777%')::text from clinic_prefs where clinic_id='$C1'" "true"
 chk "والمحفّزُ invoker لا definer (درس 0162)" \
     "select (not p.prosecdef)::text from pg_trigger tg join pg_proc p on p.oid=tg.tgfoid where tg.tgname='clinic_prefs_cage_layout_guard'" "true"
-
-chk "الدالّتان بمسارٍ مثبَّت، ممنوعتان عن anon، مسموحتان للمسجَّل" \
-    "select bool_and(coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('save_cage_layout','cage_layout_history')" "true"
-# سجلُّ الترتيب يرجّع النسخةَ **السابقة** لكلّ كتابة — هي ما يُسترجَع.
-# سجلُّ الترتيب: مُدقِّقُ الإنتاج ليس مربوطاً بـ`clinic_prefs` داخل الحزمة،
-# فيُزرع صفُّ تدقيقٍ **بشكل المُدقِّق الحقيقيّ** ويُقاس ما تقرؤه الدالّة منه.
-# والمقياسُ الحاسم: `__changed` = [كان, صار] — فالاسترجاعُ لازم يرجّع «كان».
-# (قرأتُها مقلوبةً أوّلَ مرّة، فكان «الاسترجاع» يعيد ما دَهس لا ما دِيس.)
+chk "save_cage_layout ممنوحةٌ عمداً (النزعُ يعطي 42501 بلا جملة) وممنوعةٌ عن anon" \
+    "select (has_function_privilege('authenticated','public.save_cage_layout(text,integer)','execute') and not has_function_privilege('anon','public.save_cage_layout(text,integer)','execute'))::text" "true"
+# سجلُّ الترتيب القديم: `__changed` = [كان, صار] — يرجّع «كان».
 $P -c "delete from audit_log where entity='clinic_prefs';
        insert into audit_log (clinic_id, actor, action, entity, entity_id, details)
        values ('$C1', null, 'UPDATE', 'clinic_prefs', '$C1',
                jsonb_build_object('__changed', jsonb_build_object('cage_layout',
                  jsonb_build_array('KAN','SAR'))));" >/dev/null
-chk "سجلُّ الترتيب يرى الكتابةَ بهويّة العيادة" \
-    "select _pf('$C1', 'select count(*)::text from cage_layout_history(50)')" "1"
-chk "  ويرجّع «كان» لا «صار» — وإلا الاسترجاعُ يعيد ما دَهس" \
+chk "سجلُّ الترتيب القديم يُقرأ بهويّة العيادة ويرجّع «كان»" \
     "select _pf('$C1', 'select layout from cage_layout_history(50) limit 1')" "KAN"
 chk "  ولا يرى سجلَّ عيادةٍ أخرى" \
     "select _pf('22222222-2222-2222-2222-222222222222', 'select count(*)::text from cage_layout_history(50)')" "0"
@@ -3479,5 +3446,168 @@ chk "سقفُ ١٠٠ قالبٍ للعيادة (بهينت عربيّ)" \
     "select split_part(_rls_try('$C2', 'insert into wa_templates (title, body) values (''١٠١'', ''x'')'), ':', 3)" "wa_templates_full"
 chk "ولا شيءَ منها لـanon" \
     "select has_table_privilege('anon','public.wa_templates','select')::text" "false"
+
+# ── 0219/0220: الأقفاصُ صفوفٌ مختومةٌ بعياداتها ─────────────────────────────
+# الجذرُ المقيس: رسمةُ عيادةٍ عبرت لأخرى من الباب الشرعيّ. فالفحوصُ هنا كلُّها
+# بدور `authenticated` (الحزمةُ superuser تتجاوز RLS فلا ترى هذا الصنف أصلاً).
+echo "▸ 0219: الأقفاص صفوف — عزلٌ وذرّيةٌ وإشغال"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+C3=44444444-4444-4444-4444-444444444444
+C4=66666666-6666-6666-6666-666666666666
+K=a0000000-0219-4000-8000-0000000000
+$P -c "create or replace function _cops(who uuid, ops text) returns text language sql as \$fn\$
+         select _rls_try(who, format('select cage_layout_apply(%L::uuid, %L::jsonb)', who, ops)) \$fn\$;
+       create or replace function _cops_as(who uuid, stamp uuid, ops text) returns text language sql as \$fn\$
+         select _rls_try(who, format('select cage_layout_apply(%L::uuid, %L::jsonb)', stamp, ops)) \$fn\$;
+       insert into pets(id, name, clinic_id) values
+         ('b0000000-0219-4000-8000-000000000001','لولو','$C1'),
+         ('b0000000-0219-4000-8000-000000000002','ميشو','$C1'),
+         ('b0000000-0219-4000-8000-000000000003','بسبس','$C1'),
+         ('b0000000-0219-4000-8000-000000000004','سكر','$C3') on conflict do nothing;" >/dev/null
+
+chk "العيادةُ ترسم غرفةً وثلاثة أقفاص بدفعةٍ واحدة" \
+    "select _cops('$C1', '[{\"op\":\"room_insert\",\"id\":\"${K}b1\",\"name\":\"الفندقة\",\"x\":0,\"z\":0,\"w\":4,\"d\":1},
+       {\"op\":\"cage_insert\",\"id\":\"${K}c1\",\"room_id\":\"${K}b1\",\"code\":\"101\",\"x\":0,\"z\":0},
+       {\"op\":\"cage_insert\",\"id\":\"${K}c2\",\"room_id\":\"${K}b1\",\"code\":\"102\",\"x\":1,\"z\":0},
+       {\"op\":\"cage_insert\",\"id\":\"${K}c3\",\"room_id\":\"${K}b1\",\"code\":\"103\",\"x\":2,\"z\":0,\"color\":\"#22d3ee\",\"facing\":2}]')" "rows:1"
+chk "  والصفوفُ مختومةٌ بعيادتها" \
+    "select count(*)::text from cages where clinic_id='$C1' and id::text like 'a0000000-0219%'" "3"
+chk "عيادةٌ أخرى لا ترى أقفاصها ولا تعدّلها ولا تحذفها" \
+    "select _rls_try('$C2', 'select 1 from cages')||'|'||_rls_try('$C2', 'update cages set code = ''x''')||'|'||_rls_try('$C2', 'delete from cages')" "rows:0|rows:0|rows:0"
+chk "  ولا تُدخل قفصاً باسمها" \
+    "select split_part(_rls_try('$C2', 'insert into cages (clinic_id, room_id, code) values (''$C1'', ''${K}b1'', ''دسّ'')'), ':', 1)" "guarded"
+chk "  ولا تعلّق قفصها بغرفة عيادةٍ غيرها" \
+    "select _cops('$C2', '[{\"op\":\"room_insert\",\"id\":\"${K}b2\",\"name\":\"غرفة C2\",\"x\":0,\"z\":0,\"w\":1,\"d\":1},{\"op\":\"cage_insert\",\"id\":\"${K}c9\",\"room_id\":\"${K}b1\",\"code\":\"901\",\"x\":0,\"z\":0}]')" \
+    "guarded:P0001:room_cross_clinic"
+chk "  ولا تحدّث صفَّ عيادةٍ أخرى عبر الدفعة (يُرفض لا يُعاد خلقُه)" \
+    "select _cops('$C2', '[{\"op\":\"cage_update\",\"id\":\"${K}c1\",\"room_id\":\"${K}b1\",\"code\":\"666\",\"x\":0,\"z\":0}]')" \
+    "guarded:P0001:cage_row_gone"
+chk "  والرفضُ ذرّيّ: غرفةُ الدفعة المرفوضة ما انكتبت" \
+    "select count(*)::text from cage_rooms where id='${K}b2'" "0"
+chk "العيادةُ لا تُنقل (clinic_id مجمَّد)" \
+    "select split_part(_rls_try('$C1', 'update cages set clinic_id = ''$C2'' where id = ''${K}c1'''), ':', 1)" "guarded"
+# **هذا هو الفحصُ الذي يقتل العبور**: هويّةُ الجلسة تبدّلت عمّا قُرئ منه.
+chk "دفعةٌ مختومةٌ بعيادةٍ غير عيادة الجلسة ⇒ تُرفض كلُّها بصوت" \
+    "select _cops_as('$C1', '$C2', '[{\"op\":\"cage_insert\",\"id\":\"${K}c8\",\"room_id\":\"${K}b1\",\"code\":\"888\",\"x\":3,\"z\":0}]')" \
+    "guarded:P0001:clinic_switched"
+chk "رقمٌ توأم (بتطبيع المسافة والحرف) يُرفض بالاسم" \
+    "select _cops('$C1', '[{\"op\":\"cage_insert\",\"id\":\"${K}c8\",\"room_id\":\"${K}b1\",\"code\":\"  101 \",\"x\":3,\"z\":0}]')" \
+    "guarded:P0001:code_twin"
+chk "خانةٌ مشغولة بقفص يُرفض إدراجُ ثانٍ فيها" \
+    "select _cops('$C1', '[{\"op\":\"cage_insert\",\"id\":\"${K}c8\",\"room_id\":\"${K}b1\",\"code\":\"888\",\"x\":0,\"z\":0}]')" \
+    "guarded:P0001:cage_cell_taken"
+chk "قفصٌ خارج حدود غرفته يُرفض بالاسم (لا قفصَ يطفو بلا غرفة)" \
+    "select _cops('$C1', '[{\"op\":\"cage_insert\",\"id\":\"${K}c8\",\"room_id\":\"${K}b1\",\"code\":\"888\",\"x\":9,\"z\":9}]')" \
+    "guarded:P0001:cage_outside_room"
+chk "تصغيرُ غرفةٍ يقصّ أقفاصها يُرفض — ولو جاء من جهازٍ ثانٍ بنفس اللحظة" \
+    "select _cops('$C1', '[{\"op\":\"room_update\",\"id\":\"${K}b1\",\"name\":\"الفندقة\",\"x\":0,\"z\":0,\"w\":1,\"d\":1}]')" \
+    "guarded:P0001:room_cuts_cages"
+chk "تبادلُ رقمين (١٠١↔١٠٢) **ينجح** بمعاملةٍ واحدة" \
+    "select _cops('$C1', '[{\"op\":\"cage_update\",\"id\":\"${K}c1\",\"room_id\":\"${K}b1\",\"code\":\"102\",\"x\":0,\"z\":0},{\"op\":\"cage_update\",\"id\":\"${K}c2\",\"room_id\":\"${K}b1\",\"code\":\"101\",\"x\":1,\"z\":0}]')" "rows:1"
+chk "  والرقمان تبادلا فعلاً" \
+    "select string_agg(code, ',' order by x) from cages where room_id='${K}b1'" "102,101,103"
+chk "تحديثُ قفصٍ انحذف من جهازٍ ثانٍ ⇒ يُرفض لا يُعاد خلقُه" \
+    "select _cops('$C1', '[{\"op\":\"cage_update\",\"id\":\"${K}ff\",\"room_id\":\"${K}b1\",\"code\":\"555\",\"x\":3,\"z\":0}]')" \
+    "guarded:P0001:cage_row_gone"
+
+echo "▸ 0219: الإقامةُ ↔ القفص — بابٌ واحد وساكنٌ واحد"
+A=c0000000-0219-4000-8000-00000000000
+chk "حالةٌ جديدة برقم قفص ترتبط به بمعرّفه" \
+    "select _rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}1'', ''b0000000-0219-4000-8000-000000000001'', ''101'')')" "rows:1"
+chk "  والمعرّفُ هو القفصُ الذي رقمُه ١٠١ **الآن** (بعد التبادل)" \
+    "select (cage_id = '${K}c2')::text from admissions where id='${A}1'" "true"
+chk "حيوانٌ ثانٍ بنفس القفص ⇒ رفضٌ **يسمّي الساكن**" \
+    "select split_part(_rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}2'', ''b0000000-0219-4000-8000-000000000002'', ''101'')'), ':', 3)" "cage_occupied"
+chk "  ولا صفَّ انكتب" "select count(*)::text from admissions where id='${A}2'" "0"
+chk "والقفصُ الفاضي يقبله" \
+    "select _rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}2'', ''b0000000-0219-4000-8000-000000000002'', ''102'')')" "rows:1"
+chk "المعرّفُ لا يُكتب مباشرة من المتصفّح (بابٌ واحد)" \
+    "select _rls_try('$C1', 'update admissions set cage_id = ''${K}c3'' where id = ''${A}1''')" "guarded:P0001:cage_id_direct_write"
+chk "نقلٌ لقفصٍ مسكون يُرفض بالاسم" \
+    "select split_part(_rls_try('$C1', 'update admissions set cage = ''102'' where id = ''${A}1'''), ':', 3)" "cage_occupied"
+chk "ونقلٌ لقفصٍ فاضي يمرّ" \
+    "select _rls_try('$C1', 'update admissions set cage = ''103'' where id = ''${A}1''')" "rows:1"
+chk "  ويُسجَّل **حركةً واحدة** بالضبط" \
+    "select count(*)::text from pet_movements where admission_id='${A}1' and event='cage_changed'" "1"
+chk "تسميةُ القفص تمرّ" \
+    "select _cops('$C1', '[{\"op\":\"cage_update\",\"id\":\"${K}c3\",\"room_id\":\"${K}b1\",\"code\":\"301\",\"x\":2,\"z\":0,\"color\":\"#22d3ee\",\"facing\":2}]')" "rows:1"
+chk "  وتجرّ نصَّ ساكنه معها (لا رقعَ من المتصفّح)" \
+    "select cage||':'||(cage_id='${K}c3')::text from admissions where id='${A}1'" "301:true"
+chk "  **والحيوانُ لم يتحرّك**: لا حركةَ جديدة بسجلّه" \
+    "select count(*)::text from pet_movements where admission_id='${A}1' and event='cage_changed'" "1"
+chk "  وتبادلُ رقمين تحت ساكنٍ يمرّ" \
+    "select _cops('$C1', '[{\"op\":\"cage_update\",\"id\":\"${K}c1\",\"room_id\":\"${K}b1\",\"code\":\"101\",\"x\":0,\"z\":0},{\"op\":\"cage_update\",\"id\":\"${K}c2\",\"room_id\":\"${K}b1\",\"code\":\"102\",\"x\":1,\"z\":0}]')" "rows:1"
+chk "  بلا حركاتٍ وهمية (~…) ولا حركةٍ للساكن" \
+    "select (select count(*) from pet_movements where to_cage like '~%' or from_cage like '~%')||':'||(select count(*) from pet_movements where admission_id='${A}2' and event='cage_changed')" "0:0"
+chk "  والساكنُ بقي بقفصه (بمعرّفه) ونصُّه صار رقمَ القفص الجديد" \
+    "select cage||':'||(cage_id='${K}c1')::text from admissions where id='${A}2'" "101:true"
+chk "حذفُ قفصٍ مسكون يُرفض — من أيّ عميلٍ كان" \
+    "select split_part(_cops('$C1', '[{\"op\":\"cage_delete\",\"id\":\"${K}c3\"}]'), ':', 3)" "cage_occupied_delete"
+chk "  وحذفٌ مباشر كذلك" \
+    "select split_part(_rls_try('$C1', 'delete from cages where id = ''${K}c3'''), ':', 3)" "cage_occupied_delete"
+chk "حذفُ غرفةٍ فيها أقفاص يُرفض" \
+    "select split_part(_rls_try('$C1', 'delete from cage_rooms where id = ''${K}b1'''), ':', 3)" "room_not_empty"
+chk "التخريجُ يفرّغ القفص، والترقيدُ بعده يمرّ" \
+    "select _rls_try('$C1', 'update admissions set status = ''discharged'' where id = ''${A}1''')||'|'||_rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}3'', ''b0000000-0219-4000-8000-000000000003'', ''301'')')" "rows:1|rows:1"
+chk "إعادةُ تفعيل المُخرَج وقفصُه مسكون تمرّ (لا تُفشل تغييرَ الحالة)" \
+    "select _rls_try('$C1', 'update admissions set status = ''active'' where id = ''${A}1''')" "rows:1"
+chk "  ويرجع «بلا قفص» ولا يستولي على قفص غيره" \
+    "select coalesce(cage_id::text, 'null')||':'||coalesce(cage, 'null') from admissions where id='${A}1'" "null:null"
+chk "رقمٌ غير مرسوم = يتيمٌ مرئيّ لا رفض" \
+    "select _rls_try('$C1', 'update admissions set cage = ''999'' where id = ''${A}1''')" "rows:1"
+chk "  بلا معرّف" "select coalesce(cage_id::text, 'null') from admissions where id='${A}1'" "null"
+chk "  ورسمُ قفصٍ بنفس الرقم يمرّ" \
+    "select _cops('$C1', '[{\"op\":\"cage_insert\",\"id\":\"${K}c4\",\"room_id\":\"${K}b1\",\"code\":\"999\",\"x\":3,\"z\":0}]')" "rows:1"
+chk "  ويربط اليتيمَ به تلقائياً" "select (cage_id='${K}c4')::text from admissions where id='${A}1'" "true"
+$P -c "insert into cage_rooms (clinic_id, name) select '$C2', 'غ'||g from generate_series(1, 40) g;" >/dev/null
+chk "سقفُ الغرف (٤٠) بجملةٍ عربية" \
+    "select _cops('$C2', '[{\"op\":\"room_insert\",\"id\":\"${K}b3\",\"name\":\"الـ٤١\",\"x\":0,\"z\":0,\"w\":1,\"d\":1}]')" "guarded:P0001:too_many_rooms"
+chk "cage_layout_apply بصلاحية المُستدعي وبمسارٍ مثبَّت، ممنوعةٌ عن anon" \
+    "select (not p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p where p.proname='cage_layout_apply'" "true"
+chk "حرّاسُ الصفوف كلُّهم invoker (لا يشدّون أكثر من السياسة)" \
+    "select bool_and(not p.prosecdef)::text from pg_proc p where p.proname in ('cage_rooms_guard','cages_guard','cages_delete_guard','cage_rooms_delete_guard','cages_sync_admissions','admissions_cage_link')" "true"
+chk "والفهرسُ الفريد للإشغال قائمٌ بشرطه" \
+    "select count(*)::text from pg_indexes where indexname='adm_one_active_per_cage' and indexdef like '%status = ''active''%'" "1"
+
+echo "▸ 0220: الترحيل من الرسمة للصفوف — مرآةُ parseLayout حرفاً"
+# v1 بعيادة C3: رمزٌ مكرّر بالغرفة وبين غرفتين، رمزٌ فارغ، غرفةٌ بلا معرّف، ٧ رموز
+# تلتفّ لصفٍّ ثانٍ. وإقامةٌ نشطة برقمٍ موجود قبل الترحيل.
+$P -c "insert into clinic_prefs (clinic_id) select '$C3' where not exists (select 1 from clinic_prefs where clinic_id='$C3');
+       update clinic_prefs set cage_layout = '[{\"id\":\"r1\",\"name\":\"الإقامة\",\"cages\":[\"101\",\"102\",\" 101 \",\"\",\"103\",\"104\",\"105\",\"106\",\"107\"]},{\"id\":\"r2\",\"name\":\"العزل\",\"cages\":[\"103\",\"201\"]},{\"id\":\"\",\"name\":\"ساقطة\",\"cages\":[\"301\"]}]' where clinic_id = '$C3';
+       insert into admissions (id, pet_id, clinic_id, cage) values ('${A}9', 'b0000000-0219-4000-8000-000000000004', '$C3', '105');
+       select backfill_cage_layout('$C3');" >/dev/null
+chk "v1: غرفتان (بلا المعرّف سقطت بقفصها)" "select count(*)::text from cage_rooms where clinic_id='$C3'" "2"
+chk "v1: ثمانية أقفاص (المكرَّرُ والفارغ سقطا)" "select count(*)::text from cages where clinic_id='$C3'" "8"
+chk "v1: الهندسةُ مرآةُ upgradeV1 — ١٠٧ يلتفّ للصفّ الثاني" \
+    "select x||'/'||z from cages where clinic_id='$C3' and code='107'" "0/1"
+chk "v1: غرفةُ العزل بعد فجوة خليّة (٦+١)" "select x::text from cage_rooms where clinic_id='$C3' and name='العزل'" "7"
+chk "v1: ٢٠١ بأرض العزل وبغرفتها" \
+    "select c.x||'/'||c.z||'/'||r.name from cages c join cage_rooms r on r.id=c.room_id where c.clinic_id='$C3' and c.code='201'" "7/0/العزل"
+chk "الإقامةُ النشطة ارتبطت بقفصها أثناء الترحيل" \
+    "select (a.cage_id = c.id)::text from admissions a join cages c on c.clinic_id=a.clinic_id and c.code='105' where a.id='${A}9'" "true"
+# v2 بعيادة C4: باب، لون، اتجاه وطابق، توأمٌ بحرفٍ مختلف، أرقامٌ نصّية وخردة، rev مضمَّن.
+$P -c "insert into clinic_prefs (clinic_id) select '$C4' where not exists (select 1 from clinic_prefs where clinic_id='$C4');
+       update clinic_prefs set cage_layout = '{\"v\":2,\"rev\":77,\"rooms\":[{\"id\":\"r1\",\"name\":\"فندقة\",\"x\":2,\"z\":0,\"w\":\"3\",\"d\":2,\"door\":{\"side\":\"left\",\"at\":1}}],\"cages\":[{\"code\":\"A1\",\"x\":2,\"z\":0,\"color\":\"#f00\",\"facing\":2,\"level\":1},{\"code\":\"a1\",\"x\":3,\"z\":0},{\"code\":\"\"},{\"code\":\"B2\",\"x\":\"junk\",\"z\":1,\"facing\":9},{\"code\":\"Z9\",\"x\":40,\"z\":7}]}' where clinic_id = '$C4';
+       select backfill_cage_layout('$C4');" >/dev/null
+chk "v2: عرضٌ نصّيٌّ رقمي وبابٌ يسار/١" "select w||'/'||d||'/'||door_side||'/'||door_at from cage_rooms where clinic_id='$C4' and name='فندقة'" "3/2/left/1"
+chk "v2: ثلاثة أقفاص (التوأمُ a1 والفارغ سقطا)" "select count(*)::text from cages where clinic_id='$C4'" "3"
+chk "v2: A1 بلونه واتجاهه وطابقه" "select color||'/'||facing||'/'||level from cages where clinic_id='$C4' and code='A1'" "#f00/2/1"
+chk "v2: x خردة ⇒ ٠، واتجاهٌ ٩ ⇒ ٠" "select x||'/'||facing from cages where clinic_id='$C4' and code='B2'" "0/0"
+chk "v2: قفصٌ خارج كلّ غرفة ⇒ غرفةٌ «غير مصنّفة» تحويه (لا يضيع)" \
+    "select r.name||':'||(c.x >= r.x and c.x < r.x+r.w and c.z >= r.z and c.z < r.z+r.d)::text from cages c join cage_rooms r on r.id=c.room_id where c.clinic_id='$C4' and c.code='Z9'" "غيرمصنّفة:true"
+$P -c "insert into auth.users(id) values ('77777777-0220-4000-8000-000000000001') on conflict do nothing;
+       insert into clinic_prefs (clinic_id, cage_layout) values ('77777777-0220-4000-8000-000000000001', 'x{') on conflict do nothing;" >/dev/null
+chk "خردة = صفرُ صفوف وسطرٌ بالتقرير (لا بذرة)" \
+    "select (backfill_cage_layout('77777777-0220-4000-8000-000000000001')->0->>'skipped')||':'||(select count(*) from cages where clinic_id='77777777-0220-4000-8000-000000000001')" "bad_json:0"
+$P -c "update cages set color = '#0f0' where clinic_id='$C3' and code='101'; select backfill_cage_layout(null);" >/dev/null
+chk "إعادةُ الترحيل لا تكرّر" "select count(*)::text from cages where clinic_id='$C3'" "8"
+chk "  ولا تدهس تعديلاً على الصفوف" "select color from cages where clinic_id='$C3' and code='101'" "#0f0"
+chk "وشبكةُ ربط الإقامات تنعاد بعد قيام الفهرس بلا خطأ" \
+    "select (backfill_admission_cages(null)->>'linked')" "0"
+# المنحُ الشامل بالحزمة أعاد ما نزعته 0220 — نُعيدها لتستردّ سلطتها ثم نقيس.
+$P -f "$MIG/0220_cage_backfill.sql" >/dev/null 2>&1
+chk "دوالُّ الترحيل ممنوعةٌ عن دور العيادة" \
+    "select bool_and(not has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p where p.proname in ('backfill_cage_layout','backfill_admission_cages','_cage_bf_int','_cage_bf_str')" "true"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

@@ -8,7 +8,7 @@ import {
 import { cageStudio, useCageStudio, type Room3D, type CagePlacement } from "@/components/cage3d/store";
 import { SPECIES_AR, SPECIES_EMOJI, type Occupant } from "@/components/cage3d/neon";
 import { CageCard } from "./CageCard";
-import { LayoutSync } from "./LayoutSync";
+import { LayoutSync, cageErrorText } from "./LayoutSync";
 import { opsStore } from "@/lib/opsStore";
 import { statusOf } from "@/lib/opsStatus";
 import { repo } from "@/lib/repo";
@@ -173,9 +173,10 @@ export default function CageBoard() {
       await opsStore.patch(occ.admId, { cage: toCode });
       playSuccess();
       toast.success(t("cages.moved", { name: occ.name, code: toCode, defaultValue: "{{name}} صار بالقفص {{code}}" }));
-    } catch {
+    } catch (e) {
+      /* الخادمُ يرفض قفصاً مسكوناً **ويسمّي ساكنه** (0219) — يُقال كما جاء. */
       playWarning();
-      toast.error(t("cages.moveFailed", "تعذّر النقل — حاول مجدداً"));
+      toast.error(t("cages.moveFailed", "تعذّر النقل — حاول مجدداً"), cageErrorText(e, t));
     }
     setCarrying(null);
   };
@@ -262,7 +263,7 @@ export default function CageBoard() {
         </Button>
       </div>
 
-      <LayoutSync canEdit={canEdit} />
+      <LayoutSync />
 
       {/* الملخص = التصفية: ضغطة على الرقم تصفّي عليه */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -335,9 +336,25 @@ export default function CageBoard() {
             {t("cages.emptyBody", "ارسم غرف عيادتك وأقفاصها مرّة وحدة — وراح تشوفها بنفس الشكل على أيّ حاسبة تفتح بيها النظام.")}
           </p>
           {canEdit && (
-            <Button className="mt-4" leftIcon={<Plus size={16} />} onClick={() => { playTap(); setEdit(true); setAddRoomOpen(true); }}>
-              {t("cages.addRoom", "أضف غرفة")}
-            </Button>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {/* عيادةٌ تُرقّد على أرقامٍ ولم ترسم غرفها: أرقامُها تصير أقفاصاً **بضغطتها**
+                  لا تلقائياً، والخادمُ يربط كلَّ راقدٍ بقفصه. (الشاشةُ فارغةٌ هنا بعد
+                  قراءةٍ نجحت — لا تُعرض على فشل جلب.) */}
+              {!!orphans.length && (
+                <Button data-cageadoptall leftIcon={<Check size={16} />} onClick={() => {
+                  playTap();
+                  const w = Math.min(5, orphans.length);
+                  const room = cageStudio.addRoom(t("cages.adoptRoomName", "الأقفاص"), w, Math.ceil(orphans.length / w));
+                  const n = cageStudio.adoptInto(room.id, orphans);
+                  if (n) { playSuccess(); toast.success(t("cages.orphansAdded", "انضافت {{n}} قفص للغرفة", { n: formatNum(n) })); }
+                }}>
+                  {t("cages.adoptAll", "اعتمد أرقامي ({{n}}) كأقفاص", { n: formatNum(orphans.length) })}
+                </Button>
+              )}
+              <Button variant={orphans.length ? "secondary" : "primary"} leftIcon={<Plus size={16} />} onClick={() => { playTap(); setEdit(true); setAddRoomOpen(true); }}>
+                {t("cages.addRoom", "أضف غرفة")}
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -481,8 +498,7 @@ export default function CageBoard() {
             toast.error(t("cages.codeTaken", "هذا الرقم مستعمل بقفص آخر"));
             return false;
           }
-          const o = occOf(from);
-          if (o) void opsStore.patch(o.admId, { cage: to }).catch(() => { /* التبنّي يصلحه */ });
+          /* ساكنُه يتبعه بالخادم بنفس المعاملة (0219) — لا رقعةَ من هنا تُطلق وتُنسى. */
           playSuccess();
           return true;
         }}
@@ -498,10 +514,6 @@ export default function CageBoard() {
         onClose={() => setRenumRoom(null)}
         onApply={(roomId, base, prefix) => {
           const changes = cageStudio.renumberRoom(roomId, base, prefix);
-          for (const ch of changes) {
-            const o = occOf(ch.from);
-            if (o) void opsStore.patch(o.admId, { cage: ch.to }).catch(() => { /* التبنّي يصلحه */ });
-          }
           playSuccess();
           toast.success(t("cages.renumbered", { n: changes.length, defaultValue: "ترقّمت {{n}} أقفاص تلقائياً" }));
           setRenumRoom(null);
