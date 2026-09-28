@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
-  Droplets, Camera, Loader2, ImageIcon, Search, Scale, FileText, ClipboardList, ScanLine, Pencil,
+  Droplets, Camera, Loader2, ImageIcon, Search, Scale, FileText, ClipboardList, ScanLine, Pencil, Star,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
@@ -31,6 +31,7 @@ import { prepareUpload } from "@/lib/image";
 import { Button, useToast } from "@/components/ui";
 import { formatNum, normalizeAr, cn, formatDec } from "@/lib/utils";
 import { playTap, playSuccess, playWarning, playStepDone } from "@/lib/sounds";
+import { useDrugFavorites } from "@/lib/drugFavorites";
 
 /** How often a treatment is given — drives the dose-count math.
  *  `label` is the canonical Arabic (kept for the persisted record text);
@@ -935,16 +936,23 @@ function TreatmentStep({
   const [weightPad, setWeightPad] = useState(false);
   const [daysPad, setDaysPad] = useState(false);
   const [recents] = useState<string[]>(recentDrugs);
+  const fav = useDrugFavorites();
 
   const named = rows.filter((r) => r.name.trim());
   const inPlan = (name: string): string | null =>
     named.find((r) => r.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? null;
 
-  /** بلاطات الوصول السريع: ما بالعيادة فعلاً ثم ما اعتاده الطبيب — ستّةٌ فقط،
-   *  فالحالة الشائعة تبقى ضغطةً واحدة كما كانت. */
+  /** بلاطات الوصول السريع: مفضّلةُ الطبيب أوّلاً (قرارُه)، ثم ما بالعيادة فعلاً ثم ما
+   *  اعتاده — ستّةٌ فقط، وثمانٍ إن كانت له مفضّلة، فالحالة الشائعة تبقى ضغطةً واحدة. */
   const quick = useMemo(() => {
     const seen = new Set<string>();
-    const out: { name: string; stock?: number }[] = [];
+    const out: { name: string; stock?: number; fav?: boolean }[] = [];
+    const stockBy = new Map(stockMeds.map((p) => [p.name.toLowerCase(), p.stock]));
+    for (const n of fav.names) {
+      const k = n.toLowerCase();
+      if (seen.has(k) || inPlan(n)) continue;
+      seen.add(k); out.push({ name: n, stock: stockBy.get(k), fav: true });
+    }
     for (const p of stockMeds) {
       const k = p.name.toLowerCase();
       if (seen.has(k) || inPlan(p.name)) continue;
@@ -955,9 +963,9 @@ function TreatmentStep({
       if (seen.has(k) || inPlan(n)) continue;
       seen.add(k); out.push({ name: n });
     }
-    return out.slice(0, 6);
+    return out.slice(0, fav.names.length ? Math.max(8, Math.min(12, fav.names.length)) : 6);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stockMeds, recents, rows]);
+  }, [stockMeds, recents, rows, fav.names.join("|")]);
 
   /** بعد إدخال وزنٍ متأخّر: تُعاد بذرة الدليل للأسطر التي لم يلمسها الطبيب
    *  وحدها — سطرٌ عدّله بيده لا يُكتب فوقه أبداً. */
@@ -1109,6 +1117,7 @@ function TreatmentStep({
             {quick.map((q) => (
               <button key={q.name} type="button" data-quickdrug={q.name} onClick={() => addDrug(q.name)}
                 className="relative h-14 truncate rounded-2xl border border-line bg-surface-1 px-2 text-center text-xs font-bold text-ink transition hover:border-brand-300">
+                {q.fav && <Star size={11} fill="currentColor" className="absolute start-1.5 top-1.5 text-warn-500" aria-hidden />}
                 {q.name}
                 {q.stock != null && <span className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-success-500" />}
               </button>

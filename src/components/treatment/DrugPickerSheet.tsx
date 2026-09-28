@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { X, Search, Check, Plus, ShieldAlert } from "lucide-react";
+import { X, Search, Check, Plus, ShieldAlert, Star } from "lucide-react";
 import type { Product, Species } from "@/types";
 import { MED_CATALOG, getClinicMeds, medicationExists, addClinicMed } from "@/lib/meds";
 import { matchMonograph, doseFor, isBannedFor } from "@/lib/vetFormulary";
 import { cn, formatNum, normalizeAr } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
+import { toggleDrugFavorite, useDrugFavorites } from "@/lib/drugFavorites";
+import { useToast } from "@/components/ui";
+import { describeDbError } from "@/lib/errors";
 
 /* ============================================================================
  * DrugPickerSheet — الدواء يُختار بالتصفّح لا بالكتابة.
@@ -70,7 +73,9 @@ export function DrugPickerSheet({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"stock" | "mine" | "class" | "all">("stock");
+  const toast = useToast();
+  const fav = useDrugFavorites();
+  const [tab, setTab] = useState<"fav" | "stock" | "mine" | "class" | "all">("stock");
   const [klass, setKlass] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [searchOn, setSearchOn] = useState(false);
@@ -101,8 +106,11 @@ export function DrugPickerSheet({
     for (const c of MED_CATALOG) if (c.type !== "Vaccines") for (const it of c.items) m.set(it, c.type);
     for (const cm of clinicMeds) m.set(cm.name, cm.type);
     for (const p of stockMeds) if (![...m.keys()].some((k) => k.toLowerCase() === p.name.toLowerCase())) m.set(p.name, "Other");
+    /* مفضّلةٌ كُتبت بيدٍ من جهازٍ آخر ولا تعرفها هذه القائمة — تبقى ظاهرةً ببابها. */
+    for (const n of fav.names) if (![...m.keys()].some((k) => k.toLowerCase() === n.toLowerCase())) m.set(n, "Other");
     return [...m].map(([name, type]) => ({ name, type }));
-  }, [clinicMeds, stockMeds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clinicMeds, stockMeds, fav.names.join("|")]);
 
   const stockOf = useMemo(() => {
     const m = new Map<string, number>();
@@ -131,17 +139,23 @@ export function DrugPickerSheet({
     const ql = normalizeAr(q.trim());
     let list = index;
     if (ql) list = list.filter((x) => x.hay.includes(ql));
+    else if (tab === "fav") list = list.filter((x) => fav.isFav(x.name));
     else if (tab === "stock") list = list.filter((x) => stockOf.has(x.name.toLowerCase()));
     else if (tab === "mine") { const set = new Set(recents.map((r) => r.toLowerCase())); list = list.filter((x) => set.has(x.name.toLowerCase())); }
     else if (tab === "class") list = klass ? list.filter((x) => x.type === klass) : [];
     const sorted = [...list].sort((a, b) => rank(a) - rank(b) || (a.mono?.ar ?? a.name).localeCompare(b.mono?.ar ?? b.name, "ar"));
+    if (!ql && tab === "fav") {
+      /* بترتيب إضافتها: الطبيبُ يرتّب مفضّلته بحفظها، لا بالأبجدية. */
+      const order = new Map(fav.names.map((r, i) => [r.toLowerCase(), i]));
+      sorted.sort((a, b) => (order.get(a.name.toLowerCase()) ?? 999) - (order.get(b.name.toLowerCase()) ?? 999));
+    }
     if (!ql && tab === "mine") {
       const order = new Map(recents.map((r, i) => [r.toLowerCase(), i]));
       sorted.sort((a, b) => rank(a) - rank(b) || ((order.get(a.name.toLowerCase()) ?? 99) - (order.get(b.name.toLowerCase()) ?? 99)));
     }
     return sorted.slice(0, 120);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, q, tab, klass, recents, stockOf, species]);
+  }, [index, q, tab, klass, recents, stockOf, species, fav.names.join("|")]);
 
   /** أصناف الرفّ الجانبي مع عدد كل صنف. */
   const classes = useMemo(() => {
@@ -155,12 +169,15 @@ export function DrugPickerSheet({
     if (!open) return;
     setQ(""); setSearchOn(false); setConfirmBanned(null); setNewOpen(false); setNewName(""); setAdded(0);
     let want: typeof tab | null = null;
-    try { const v = localStorage.getItem(TAB_KEY); if (v === "stock" || v === "mine" || v === "class" || v === "all") want = v; } catch { /* per-device convenience */ }
+    try { const v = localStorage.getItem(TAB_KEY); if (v === "fav" || v === "stock" || v === "mine" || v === "class" || v === "all") want = v; } catch { /* per-device convenience */ }
     const hasStock = stockMeds.length > 0;
     const hasMine = recents.length > 0;
+    const hasFav = fav.names.length > 0;
+    if (want === "fav" && !hasFav) want = null;
     if (want === "stock" && !hasStock) want = null;
     if (want === "mine" && !hasMine) want = null;
-    setTab(want ?? (hasStock ? "stock" : hasMine ? "mine" : "class"));
+    /* المفضّلةُ أوّلُ بابٍ إن وُجدت — هي ما اختاره الطبيبُ ليصل له بضغطة. */
+    setTab(want ?? (hasFav ? "fav" : hasStock ? "stock" : hasMine ? "mine" : "class"));
     if (!klass && classes.length) setKlass(classes[0][0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -171,8 +188,16 @@ export function DrugPickerSheet({
 
   const canSaveNew = newName.trim().length > 1 && !medicationExists(newName.trim());
 
+  const starToggle = async (name: string) => {
+    playTap();
+    try {
+      const on = await toggleDrugFavorite(name);
+      toast.success(on ? t("tplan.favAdded", { name, defaultValue: "{{name}} انضاف للمفضّلة" }) : t("tplan.favRemoved", { name, defaultValue: "{{name}} انشال من المفضّلة" }));
+    } catch (e) { playWarning(); toast.error(describeDbError(e, t)); }
+  };
+
   const tabBtn = (id: typeof tab, label: string, n: number) => (
-    <button key={id} type="button" onClick={() => pickTab(id)} disabled={n === 0 && id !== "all" && id !== "class"}
+    <button key={id} type="button" onClick={() => pickTab(id)} disabled={n === 0 && id !== "all" && id !== "class" && id !== "fav"}
       className={cn("h-12 shrink-0 rounded-2xl px-4 text-sm font-extrabold transition disabled:opacity-35",
         tab === id && !q ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2")}>
       {label}{n > 0 && <span className="ms-1.5 text-2xs font-black opacity-70 tabular-nums">{formatNum(n)}</span>}
@@ -196,6 +221,7 @@ export function DrugPickerSheet({
 
         {/* أبواب الاختيار — كلها بالضغط */}
         <div className="flex gap-1 overflow-x-auto border-b border-line px-3 pb-2">
+          {tabBtn("fav", `★ ${t("tplan.tabFav", "المفضّلة")}`, fav.names.length)}
           {tabBtn("stock", t("tplan.tabStock", "بالعيادة"), stockMeds.length)}
           {tabBtn("mine", t("tplan.tabMine", "أدويتي"), recents.length)}
           {tabBtn("class", t("tplan.tabClass", "حسب الصنف"), 0)}
@@ -232,7 +258,18 @@ export function DrugPickerSheet({
           )}
 
           <div className="grid min-h-0 content-start gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-            {shown.length === 0 && (
+            {shown.length === 0 && tab === "fav" && !q ? (
+              fav.status === "error" ? (
+                <p className="col-span-full py-8 text-center text-sm font-bold text-ink-subtle">
+                  {t("tplan.favFailed", "ما وصلنا لمفضّلتك — المشكلة بالاتصال، ما انمسحت.")}{" "}
+                  <button type="button" onClick={fav.retry} className="font-black text-brand-600 underline">{t("common.retry", "أعد المحاولة")}</button>
+                </p>
+              ) : fav.status === "loading" || fav.status === "idle" ? (
+                <p className="col-span-full py-8 text-center text-sm font-bold text-ink-subtle">…</p>
+              ) : (
+                <p className="col-span-full py-8 text-center text-sm font-bold text-ink-subtle">{t("tplan.favEmpty", "ماكو مفضّلة بعد — اضغط ★ على أي دواء يبقى هنا كل مرة")}</p>
+              )
+            ) : shown.length === 0 && (
               <p className="col-span-full py-8 text-center text-sm font-bold text-ink-subtle">{t("tplan.pickerEmpty", "ماكو شي هنا — جرّب باباً ثانياً أو دوّر بالاسم")}</p>
             )}
             {shown.map((it) => {
@@ -254,16 +291,18 @@ export function DrugPickerSheet({
                   </div>
                 );
               }
+              const starred = fav.isFav(it.name);
               return (
+                <div key={it.name} className="relative">
                 <button
-                  key={it.name} type="button" data-drugtile={it.name}
+                  type="button" data-drugtile={it.name}
                   onClick={() => {
                     if (rowId) { playTap(); onUnpick(rowId); return; }
                     if (banned) { playWarning(); setConfirmBanned(it.name); return; }
                     onPick(it.name);
                     setAdded((n) => n + 1);
                   }}
-                  className={cn("relative min-h-[76px] rounded-2xl border-2 p-2.5 text-start transition active:scale-[0.98]",
+                  className={cn("relative min-h-[76px] w-full rounded-2xl border-2 p-2.5 pe-12 text-start transition active:scale-[0.98]",
                     rowId ? "border-success-500 bg-success-600 text-white"
                       : banned ? "border-danger-300 bg-danger-50 text-danger-700 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-300"
                         : "border-line bg-surface-2 hover:border-brand-300")}
@@ -282,8 +321,18 @@ export function DrugPickerSheet({
                     )}
                     {stock != null && !rowId && <span className="rounded-full bg-success-50 px-1.5 py-0.5 text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("tplan.badgeStock", { n: formatNum(stock), defaultValue: "✓ بالمخزون · {{n}}" })}</span>}
                   </span>
-                  {rowId && <span className="absolute end-1.5 top-1.5 grid h-8 w-8 place-items-center rounded-full bg-white/20"><X size={15} /></span>}
+                  {rowId && <span className="absolute end-1.5 bottom-1.5 grid h-8 w-8 place-items-center rounded-full bg-white/20"><X size={15} /></span>}
                 </button>
+                {/* النجمة زرٌّ مستقلّ: تحفظ الدواءَ بمفضّلة الطبيب ولا تضيفه للخطة. */}
+                <button type="button" data-drugstar={it.name} aria-pressed={starred}
+                  onClick={() => void starToggle(it.name)}
+                  aria-label={starred ? t("tplan.favOff", "شيله من المفضّلة") : t("tplan.favOn", "ضيفه للمفضّلة")}
+                  title={starred ? t("tplan.favOff", "شيله من المفضّلة") : t("tplan.favOn", "ضيفه للمفضّلة")}
+                  className={cn("absolute end-1 top-1 grid h-10 w-10 place-items-center rounded-full transition",
+                    starred ? "text-warn-500" : rowId ? "text-white/70 hover:text-white" : "text-ink-subtle hover:text-warn-500")}>
+                  <Star size={19} fill={starred ? "currentColor" : "none"} />
+                </button>
+                </div>
               );
             })}
           </div>

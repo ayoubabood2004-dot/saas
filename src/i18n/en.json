@@ -3591,6 +3591,13 @@
     "renew": "Renew to continue"
   },
   "tplan": {
+    "tabFav": "Favorites",
+    "favAdded": "{{name}} added to favorites",
+    "favRemoved": "{{name}} removed from favorites",
+    "favFailed": "Couldn't load your favorites — a connection problem, nothing was deleted.",
+    "favEmpty": "No favorites yet — tap ★ on any drug to keep it here every time",
+    "favOn": "Add to favorites",
+    "favOff": "Remove from favorites",
     "freqDaily1": "Once daily",
     "freqDaily2": "Twice daily",
     "freqDaily3": "3 times daily",

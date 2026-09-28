@@ -30,7 +30,7 @@ import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySec
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate } from "@/types";
+import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
@@ -2408,6 +2408,24 @@ const supabaseRepo: DemoRepo = {
   async deleteWaTemplate(id) {
     updated<unknown[]>(await sbc().from("wa_templates").delete().eq("id", id).select("id"));
   },
+  /* أدويةُ الطبيب المفضّلة (0221): القراءةُ ترمي — «ماكو مفضّلة» عن خطأٍ تُصدَّق فيُعاد
+   * بناؤها. وإضافةُ ما هو موجودٌ أصلاً (جهازٌ ثانٍ سبق) ليست خطأ: يُرجع الصفُّ القائم. */
+  async listDrugFavorites() {
+    return listOrThrow<DrugFavorite>(await sbc().from("drug_favorites").select("id, name, created_at")
+      .order("created_at", { ascending: true }).limit(300));
+  },
+  async addDrugFavorite(name) {
+    const n = name.trim();
+    const res = await sbc().from("drug_favorites").insert({ name: n }).select("id, name, created_at").single();
+    if (res.error?.code === "23505") {
+      const had = (await this.listDrugFavorites()).find((x) => x.name.toLowerCase() === n.toLowerCase());
+      if (had) return had;
+    }
+    return need<DrugFavorite>(res);
+  },
+  async removeDrugFavorite(id) {
+    updated<unknown[]>(await sbc().from("drug_favorites").delete().eq("id", id).select("id"));
+  },
   /* الدفعات (0217): القراءةُ ترمي ولا ترجع ناقصة — «دفعةٌ واحدة» عن خطأٍ تُصدَّق فيُباع المنتهي. */
   async listProductLots(productId) {
     return listOrThrow<ProductLot>(await sbc().from("product_lots").select("*").eq("product_id", productId)
@@ -2527,7 +2545,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
-  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates",
+  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listDrugFavorites",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

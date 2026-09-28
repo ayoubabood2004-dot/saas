@@ -2037,3 +2037,11 @@ export interface WaTemplate {
   created_at: string;
   updated_at: string;
 }
+
+/* ── أدويةُ الطبيب المفضّلة (0221) ─────────────────────────────────────── */
+export interface DrugFavorite {
+  id: string;
+  /** الاسمُ كما يكتبه المنتقي — خطةُ العلاج تحفظ الدواءَ نصّاً. */
+  name: string;
+  created_at: string;
+}

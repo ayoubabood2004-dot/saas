@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, Plus, X, ChevronDown, RotateCcw } from "lucide-react";
+import { AlertTriangle, Check, Plus, X, ChevronDown, RotateCcw, Star } from "lucide-react";
 import type { Pet, Species, TreatmentEntry, TaskType, DoseRoute } from "@/types";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess } from "@/lib/sounds";
 import {
-  searchDrugs, doseFor, calcDose, isBannedFor, FREQ_LABEL,
+  searchDrugs, doseFor, calcDose, isBannedFor, FREQ_LABEL, matchMonograph,
   type Monograph, type Route,
 } from "@/lib/vetFormulary";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/lib/observations";
 /* فتحات النهار نفسها التي توزّع بها البروتوكولات — جدولان كانا سينحرفان. */
 import { spreadTimes } from "@/lib/protocols";
+import { useDrugFavorites } from "@/lib/drugFavorites";
 /* عرض الساعة بصيغة العيادة (١٢ ص/م أو ٢٤) — التخزين يبقى ٢٤ دائماً. */
 import { fmtClock, fmtHour } from "@/lib/clock";
 
@@ -913,6 +914,8 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     presetHour != null ? [`${pad2(presetHour)}:00`] : ["10:00"],
   );
   const [picked, setPicked] = useState<Monograph | null>(null);
+  /** مفضّلةُ الطبيب (0221): نفسُ القائمة التي يرتّبها بمنتقي خطة العلاج. */
+  const fav = useDrugFavorites();
   /** مرآةُ الاسم للأثر أدناه — قراءةٌ حاضرة بلا إدخاله بالاعتماديات. */
   const labelRef = useRef(label);
   labelRef.current = label;
@@ -1033,6 +1036,20 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
           onChange={(e) => { setLabel(e.target.value); setPicked(null); }}
           className="input w-full" style={{ minHeight: 48 }}
           placeholder={type === "drug" ? t("flow.drugPh", "اكتب أول حروفه — مثلاً: amox") : TASK_META[type].ar()} />
+
+        {/* المفضّلة: ضغطةٌ تملأ الدواءَ كأنه اختير من الدليل (جرعته وأوقاته)، وإلا اسمه وحده. */}
+        {type === "drug" && !picked && !label.trim() && fav.names.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5" data-favdrugs>
+            {fav.names.slice(0, 16).map((n) => (
+              <button key={n} type="button" data-favdrug={n}
+                onClick={() => { const m = matchMonograph(n); if (m) { pick(m); setLabel(n); } else { playTap(); setLabel(n); } }}
+                className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-3 text-2xs font-bold text-ink transition hover:border-brand-300"
+                style={{ minHeight: 40 }}>
+                <Star size={12} fill="currentColor" className="text-warn-500" aria-hidden /> {n}
+              </button>
+            ))}
+          </div>
+        )}
 
         {suggestions.length > 0 && (
           <div data-drughits className="mt-1.5 overflow-hidden rounded-2xl border border-line">
