@@ -17,9 +17,13 @@
 --
 -- المقيسُ بالإنتاج قبل الكتابة (٢٧/٩): ٧ تخطيطات (٦ v1 + ١ v2)، أطولُ رمزٍ ١٩ حرفاً
 -- وأطولُ اسم غرفة ١٤، صفرُ توائم وصفرُ خلايا مزدوجة، ٢٣ إقامةً نشطة بقفص وصفرُ
--- ازدواج. تراجع: `supabase/tests/rollback_0220.sql`.
+-- ازدواج. تراجع: `supabase/tests/rollback_0220.sql` (يُجرَّب بآخر الحزمة).
 -- تُطبَّق بعد 0219.
 -- ============================================================================
+
+-- ختمُ «رُحِّلت»: عيادةٌ رُحّلت ثم أفرغت أقفاصَها عمداً لا ترجع لها رسمتُها المجمَّدة إن
+-- أُعيدت الهجرة (القاعدةُ: تُعاد بلا أثرٍ ثانٍ).
+alter table public.clinic_prefs add column if not exists cage_layout_migrated_at timestamptz;
 
 -- مرآةُ `str()`: `String(v ?? "").trim()` — النصُّ والرقمُ كما يُكتبان، والباقي فارغ.
 create or replace function public._cage_bf_str(v jsonb)
@@ -94,6 +98,7 @@ begin
       from clinic_prefs cp
      where coalesce(cp.cage_layout, '') <> ''
        and cp.clinic_id is not null
+       and cp.cage_layout_migrated_at is null
        and (p_clinic is null or cp.clinic_id = p_clinic)
        and not exists (select 1 from cage_rooms r where r.clinic_id = cp.clinic_id)
        and not exists (select 1 from cages c where c.clinic_id = cp.clinic_id)
@@ -200,6 +205,7 @@ begin
         -- `rev` المضمَّن يُتجاهل: لا نسخةَ بالنظام الجديد أصلاً.
       end if;
 
+      update clinic_prefs set cage_layout_migrated_at = now() where clinic_id = pref.clinic_id;
       rep := rep || jsonb_build_object('clinic', pref.clinic_id,
         'rooms', (select count(*) from cage_rooms where clinic_id = pref.clinic_id),
         'cages', (select count(*) from cages where clinic_id = pref.clinic_id));
@@ -253,6 +259,32 @@ grant execute on function public.backfill_admission_cages(uuid) to service_role;
 -- ── الترحيل نفسُه (تقريرُه يظهر بمخرج التطبيق ويُقارن بالقياس أعلاه) ──
 select public.backfill_cage_layout(null);
 select public.backfill_admission_cages(null);
+
+-- **لا قطعَ فوق ترحيلٍ ناقص**: عيادةٌ رسمتُها فيها غرفٌ وفشل ترحيلُها بصمت (تقريرُ
+-- الدالّة لا يظهر بمخرج `apply_migration`) كانت ستفتح غداً على «ما مرسوم شي» وكلُّ
+-- راقديها يتامى. فالهجرةُ كلُّها ترتدّ هنا — ولا يُقطع الحفظُ القديم.
+do $$
+declare
+  n integer := 0;
+  r record;
+  j jsonb;
+begin
+  for r in select cp.clinic_id, cp.cage_layout from clinic_prefs cp
+            where coalesce(cp.cage_layout, '') <> '' and cp.cage_layout_migrated_at is null
+              and not exists (select 1 from cage_rooms x where x.clinic_id = cp.clinic_id)
+  loop
+    begin j := r.cage_layout::jsonb; exception when others then continue; end;   -- خردة: لا شيء يُفقد
+    if (jsonb_typeof(j) = 'array' and jsonb_array_length(j) > 0)
+       or (jsonb_typeof(j) = 'object' and (jsonb_array_length(coalesce(j->'rooms', '[]')) > 0
+                                          or jsonb_array_length(coalesce(j->'cages', '[]')) > 0)) then
+      n := n + 1;
+      raise warning 'cage backfill left clinic % without rows', r.clinic_id;
+    end if;
+  end loop;
+  if n > 0 then
+    raise exception 'cage_backfill_incomplete: % clinic(s) have a layout but no rows — cutover aborted', n;
+  end if;
+end $$;
 
 -- ── القطع ─────────────────────────────────────────────────────────────────
 -- ترمي لا ترجع `{ok:false}`: الحزمةُ القديمة كانت ستقرأ ذلك «تعارضاً» وتعرض زرَّ

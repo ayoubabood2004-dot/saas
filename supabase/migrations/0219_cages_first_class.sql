@@ -170,6 +170,15 @@ begin
                 and lower(btrim(c.code)) = lower(btrim(new.code))) then
       raise exception 'code_twin' using hint = 'الرقم ' || btrim(new.code) || ' مستعمل بقفص ثاني — القفص له رقم واحد.';
     end if;
+    -- قفصٌ مسكون يأخذ رقماً مكتوباً على راقدٍ غير مربوط = راقدان بنفس الرقم، واللوحةُ
+    -- تعرض واحداً ويختفي الثاني «كأنه ما كان». يُرفض بالاسم.
+    if tg_op = 'UPDATE'
+       and exists (select 1 from admissions a where a.cage_id = new.id and a.status = 'active')
+       and exists (select 1 from admissions a where a.clinic_id = new.clinic_id and a.status = 'active'
+                    and a.cage_id is null and lower(btrim(coalesce(a.cage, ''))) = lower(btrim(new.code))) then
+      raise exception 'code_held_by_orphan'
+        using hint = 'الرقم ' || btrim(new.code) || ' مكتوب على حيوان راقد ما مربوط بقفص — ضمّه لغرفة أوّلاً أو اختر رقماً ثانياً.';
+    end if;
   end if;
   if tg_op = 'INSERT' or (new.x, new.z, new.level) is distinct from (old.x, old.z, old.level) then
     if exists (select 1 from cages c where c.clinic_id = new.clinic_id and c.id <> new.id
@@ -271,12 +280,23 @@ declare
 begin
   if coalesce(current_setting('vp.cage_mirror', true), '') = '1' then return new; end if;
 
-  if tg_op = 'INSERT' or new.cage is distinct from old.cage then
+  -- الاشتقاقُ عند كلّ كتابةٍ للنصّ **وعند عودة الإقامة نشطة**: إقامةٌ خرجت قبل 0219
+  -- معرّفُها فارغ ونصُّها باقٍ، وسحبةُ الكانبان تعيدها بلا لمس النصّ — فبلا هذا
+  -- تعود بقفصٍ مسكونٍ ولا يراها فحصُ الإشغال ولا الفهرسُ الفريد (أمسكه التدقيق).
+  if tg_op = 'INSERT' or new.cage is distinct from old.cage
+     or (old.status is distinct from 'active' and new.status = 'active') then
     v_code := nullif(btrim(coalesce(new.cage, '')), '');
     v_id := null;
     if v_code is not null then
       select c.id into v_id from cages c
        where c.clinic_id = new.clinic_id and lower(btrim(c.code)) = lower(v_code);
+    end if;
+    -- نقلُ ساكنٍ مربوطٍ إلى رقمٍ غير مرسوم يُرفض: هذا ما تفعله حزمةٌ قديمة تعيد تسمية
+    -- قفصٍ فترقّع ساكنَه ثم يُرفض حفظُ رسمتها (0220) — فيبقى الحيوانُ على رقمٍ لا قفصَ له.
+    if v_id is null and v_code is not null and tg_op = 'UPDATE' and old.cage_id is not null
+       and new.status = 'active' and current_user = 'authenticated' then
+      raise exception 'cage_not_drawn'
+        using hint = 'القفص ' || v_code || ' ما مرسوم بغرفة الأقفاص — حدّث الصفحة واختر قفصاً مرسوماً.';
     end if;
     -- رمزٌ لا يطابق قفصاً مرسوماً = يتيمٌ **مرئيّ** (شريطُ «بلا قفص»)، لا رفض:
     -- عيادةٌ لم ترسم أقفاصَها بعدُ تكتب أرقامَها بيدها.
@@ -288,9 +308,11 @@ begin
       using hint = 'القفص يتحدّد برقمه — حدّث الصفحة وجرّب من غرفة الأقفاص.';
   end if;
 
-  -- إعادةُ تفعيل إقامةٍ مُخرَجة (سحبةُ الكانبان): إن سكن قفصَها غيرُها ترجع «بلا قفص»
-  -- لا تستولي عليه بصمت، ولا تُفشل تغييرَ الحالة نفسَه.
-  if tg_op = 'UPDATE' and old.status = 'discharged' and new.status = 'active' and new.cage_id is not null
+  -- إعادةُ تفعيل إقامةٍ مُخرَجة (سحبةُ الكانبان)، **أو حالةٌ جديدة** بقفصٍ مسكون: ترجع
+  -- «بلا قفص» لا تستولي عليه، ولا تُفشل الكتابةَ نفسَها. الحالةُ الجديدة كانت ترفض فيُعاد
+  -- الحفظُ بعد أن انكتب ملفُّ الحيوان فيتكرّر (أمسكه التدقيق)؛ والشاشةُ تفحص قبلها.
+  if new.status = 'active' and new.cage_id is not null
+     and (tg_op = 'INSERT' or old.status is distinct from 'active')
      and exists (select 1 from admissions a where a.cage_id = new.cage_id and a.status = 'active' and a.id <> new.id) then
     new.cage_id := null;
     new.cage := null;

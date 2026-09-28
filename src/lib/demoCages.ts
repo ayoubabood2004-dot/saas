@@ -151,9 +151,14 @@ export function demoCageApply(clinic: string, ops: CageOp[]): void {
   if (renames.length) {
     // الساكنون يُحسمون **قبل** أيّ تبديل: تبادلُ ١٠١↔١٠٢ كان سيحرّك الأوّلَ مرّتين.
     const moves: Array<[Admission, string]> = [];
+    const drawnBefore = new Set(cur.cages.map((c) => norm(c.code)));
     for (const r of renames) {
       const occ = occupantOf(db, r.from);
-      if (occ) moves.push([occ, r.to]);
+      if (!occ) continue;
+      // مرآةُ code_held_by_orphan: راقدٌ غيرُ مربوط يحمل الرقمَ الجديد = راقدان بنفس الرقم.
+      const orphan = (db.admissions ?? []).find((a) => a.status !== "discharged" && norm(a.cage) === norm(r.to) && !drawnBefore.has(norm(a.cage)));
+      if (orphan) refuse("code_held_by_orphan", "errCodeHeldByOrphan", { code: r.to.trim(), name: petName(db, orphan) });
+      moves.push([occ, r.to]);
     }
     for (const [a, to] of moves) a.cage = to;
     if (moves.length) saveDB(db);
@@ -161,16 +166,26 @@ export function demoCageApply(clinic: string, ops: CageOp[]): void {
   write(clinic, { rooms, cages });
 }
 
-/** مرآةُ `admissions_cage_link` لكتابة إقامة: ساكنٌ ثانٍ بقفصٍ مرسومٍ مسكون ⇒ رفضٌ
- *  يسمّي الساكن؛ وإعادةُ تفعيلِ مُخرَجٍ قفصُه مسكون ⇒ يرجع «بلا قفص». */
-export function demoAdmissionCageGuard(db: DemoDB, adm: Admission, before: { status: Admission["status"] } | null, clinic: string): void {
+/** مرآةُ `admissions_cage_link` لكتابة إقامة: دخولٌ أو إعادةُ تفعيلٍ بقفصٍ مسكون ⇒ «بلا قفص»؛
+ *  نقلٌ إلى قفصٍ مسكون ⇒ رفضٌ يسمّي الساكن؛ نقلُ مربوطٍ إلى رقمٍ غير مرسوم ⇒ رفض. */
+export function demoAdmissionCageGuard(db: DemoDB, adm: Admission, before: { status: Admission["status"]; cage?: string | null } | null, clinic: string): void {
   if (adm.status === "discharged") return;
   const code = norm(adm.cage);
-  if (!code) return;
   const rows = read(clinic);
-  if (!rows || !rows.cages.some((c) => norm(c.code) === code)) return;   // يتيمٌ مرئيّ لا رفض
+  const drawn = (c: string) => !!rows && rows.cages.some((r) => norm(r.code) === c);
+  // مرآةُ admissions_cage_link (0219): دخولٌ جديد أو إعادةُ تفعيل = يأخذ القفصَ إن كان فارغاً
+  // وإلا «بلا قفص»؛ أما النقلُ فيُرفض بقفصٍ مسكون أو غير مرسوم.
+  const entering = !before || before.status !== "active";
+  const moved = !!before && norm(before.cage) !== code;
+  if (!code) return;
+  if (!drawn(code)) {
+    if (before && !entering && moved && drawn(norm(before.cage)))
+      refuse("cage_not_drawn", "errCageNotDrawn", { code: (adm.cage ?? "").trim() });
+    return;   // يتيمٌ مرئيّ لا رفض
+  }
+  if (!entering && !moved) return;
   const occ = occupantOf(db, adm.cage ?? "", adm.id);
   if (!occ) return;
-  if (before && before.status === "discharged") { adm.cage = ""; return; }
+  if (entering) { adm.cage = ""; return; }
   refuse("cage_occupied", "errOccupied", { code: (adm.cage ?? "").trim(), name: petName(db, occ) });
 }

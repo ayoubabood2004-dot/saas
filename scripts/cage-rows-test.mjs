@@ -253,12 +253,32 @@ try {
 check("تبادلُ رقمين ينجح (الحكمُ على الحالة النهائية كالخادم)", err === null, err?.message);
 check("  والساكنُ تبع قفصَه", globalThis.__db.admissions[0].cage === "12", globalThis.__db.admissions[0].cage);
 err = null;
-try { demo.demoAdmissionCageGuard(globalThis.__db, { id: "a10", pet_id: "p10", status: "active", cage: "12" }, null, "demo1"); } catch (e) { err = e; }
-check("ساكنٌ ثانٍ بقفصٍ مسكون ⇒ رفضٌ يسمّي الساكن", err?.message === "cage_occupied" && err?.cageErr === "errOccupied" && err?.vars?.name === "ميشو",
+const fresh = { id: "a10", pet_id: "p10", status: "active", cage: "12" };
+try { demo.demoAdmissionCageGuard(globalThis.__db, fresh, null, "demo1"); } catch (e) { err = e; }
+check("دخولٌ جديد بقفصٍ مسكون ⇒ «بلا قفص» لا رفض (كالخادم)", err === null && fresh.cage === "", `${err?.message} ${fresh.cage}`);
+err = null;
+globalThis.__db.admissions.push({ id: "a12", pet_id: "p12", status: "active", cage: "11" });
+const mv = { id: "a12", pet_id: "p12", status: "active", cage: "12" };
+try { demo.demoAdmissionCageGuard(globalThis.__db, mv, { status: "active", cage: "11" }, "demo1"); } catch (e) { err = e; }
+check("نقلٌ إلى قفصٍ مسكون ⇒ رفضٌ يسمّي الساكن", err?.message === "cage_occupied" && err?.cageErr === "errOccupied" && err?.vars?.name === "ميشو",
   `${err?.message} ${err?.cageErr} ${JSON.stringify(err?.vars)}`);
+err = null;
+try { demo.demoAdmissionCageGuard(globalThis.__db, { ...mv, cage: "99" }, { status: "active", cage: "11" }, "demo1"); } catch (e) { err = e; }
+check("نقلُ مربوطٍ إلى رقمٍ غير مرسوم ⇒ cage_not_drawn", err?.message === "cage_not_drawn" && err?.cageErr === "errCageNotDrawn", err?.message);
+err = null;
+try { demo.demoAdmissionCageGuard(globalThis.__db, { ...mv, cage: "98" }, { status: "active", cage: "97" }, "demo1"); } catch (e) { err = e; }
+check("يتيمٌ يتنقّل بين أرقامٍ غير مرسومة ⇒ يمرّ", err === null, err?.message);
+globalThis.__db.admissions.pop();
 const re = { id: "a11", pet_id: "p11", status: "active", cage: "12" };
-demo.demoAdmissionCageGuard(globalThis.__db, re, { status: "discharged" }, "demo1");
+demo.demoAdmissionCageGuard(globalThis.__db, re, { status: "discharged", cage: "12" }, "demo1");
 check("إعادةُ تفعيلِ مُخرَجٍ قفصُه مسكون ⇒ «بلا قفص» لا استيلاء", re.cage === "");
+err = null;
+globalThis.__db.admissions.push({ id: "a13", pet_id: "p13", status: "active", cage: "77" });
+globalThis.__db.pets.push({ id: "p13", name: "بسبوس" });
+const occCage = demo.demoCageLoad("demo1").cages.find((c) => c.code === "12");
+try { demo.demoCageApply("demo1", [{ op: "cage_update", ...occCage, code: "77" }]); } catch (e) { err = e; }
+check("قفصٌ مسكون يأخذ رقمَ راقدٍ يتيم ⇒ code_held_by_orphan بالاسم", err?.message === "code_held_by_orphan" && err?.vars?.name === "بسبوس", `${err?.message} ${JSON.stringify(err?.vars)}`);
+check("  وما تغيّر شي (كلُّها أو لا شيء)", globalThis.__db.admissions[0].cage === "12" && demo.demoCageLoad("demo1").cages.some((c) => c.code === "12"));
 
 console.log(`\n${fails ? "✗" : "✓"} cage-rows-test: ${passes} نجحت، ${fails} فشلت`);
 if (fails) process.exit(1);

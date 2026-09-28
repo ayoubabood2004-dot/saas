@@ -168,6 +168,16 @@ export default function CageBoard() {
   };
 
   /* ── الأفعال ── */
+  /** نتيجةُ الضمّ تُقال كلُّها: ما انضاف، وما لم ينضف ولماذا (رقمٌ أطول من ٢٤ حرفاً). */
+  const reportAdopt = (r: { added: number; skipped: string[] }) => {
+    if (r.added) { playSuccess(); toast.success(t("cages.orphansAdded", "انضافت {{n}} قفص للغرفة", { n: formatNum(r.added) })); }
+    if (r.skipped.length) {
+      playWarning();
+      toast.error(t("cages.adoptSkipped", "ما انضافت: {{codes}} — رقم القفص ما يتجاوز ٢٤ حرفاً، صحّحه من ملف الحالة", {
+        codes: r.skipped.join(t("common.listSep", "، ")),
+      }));
+    }
+  };
   const doMove = async (occ: Occupant, toCode: string) => {
     try {
       await opsStore.patch(occ.admId, { cage: toCode });
@@ -315,8 +325,7 @@ export default function CageBoard() {
                 const id = e.target.value;
                 if (!id) return;
                 playTap();
-                const n = cageStudio.adoptInto(id, orphans);
-                if (n) toast.success(t("cages.orphansAdded", "انضافت {{n}} قفص للغرفة", { n: formatNum(n) }));
+                reportAdopt(cageStudio.adoptInto(id, orphans));
               }}
             >
               <option value="">{t("cages.orphanAddTo", "ضمّها لغرفة…")}</option>
@@ -345,8 +354,7 @@ export default function CageBoard() {
                   playTap();
                   const w = Math.min(5, orphans.length);
                   const room = cageStudio.addRoom(t("cages.adoptRoomName", "الأقفاص"), w, Math.ceil(orphans.length / w));
-                  const n = cageStudio.adoptInto(room.id, orphans);
-                  if (n) { playSuccess(); toast.success(t("cages.orphansAdded", "انضافت {{n}} قفص للغرفة", { n: formatNum(n) })); }
+                  reportAdopt(cageStudio.adoptInto(room.id, orphans));
                 }}>
                   {t("cages.adoptAll", "اعتمد أرقامي ({{n}}) كأقفاص", { n: formatNum(orphans.length) })}
                 </Button>

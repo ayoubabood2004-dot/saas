@@ -164,6 +164,9 @@ export function diffOps(
 /* الدفعةُ الجارية — معرّفةٌ قبل الترطيب: المُرطِّبُ المتأخّر يُنادى فورَ تسجيله. */
 let inflight: Promise<void> | null = null;
 let again = false;
+/** يتقدّم مع كلّ دفعةٍ تُرسل: قراءةٌ بدأت قبل دفعةٍ وانتهت بعدها تحمل صفوفاً أقدمَ
+ *  منها — لو اعتُمدت لصار `base` قديماً، والتعديلُ التالي يُرجع ما حُفظ بصمت. */
+let writeSeq = 0;
 
 function hasPending(): boolean {
   try { return diffOps(base, state).length > 0; } catch { return true; }
@@ -219,11 +222,14 @@ let reloadAfterSave = false;
 export async function hydrateCageStudio(): Promise<void> {
   if (inflight || (state.ready && hasPending())) { reloadAfterSave = true; return; }
   const my = gen;
+  const seq = writeSeq;
   if (!state.ready) { state = { ...state, sync: "loading" }; emit(); }
   try {
     const l = sb() ? await loadCloud() : await loadDemo();
     if (my !== gen) return;
     if (inflight || (state.ready && hasPending())) { reloadAfterSave = true; return; }
+    /* دفعةٌ انحسمت أثناء القراءة: الصفوفُ الواصلة أقدمُ منها — تُرمى وتُقرأ من جديد. */
+    if (writeSeq !== seq) { void hydrateCageStudio().catch(() => undefined); return; }
     /* الخادمُ صار يقول عيادةً غير التي فُتحت عليها الشاشة (انقضت جلسةُ المشغّل،
        تبويبٌ آخر دخل عيادةً ثانية) — لا تُبدَّل اللوحةُ بصمت لأقفاص عيادةٍ أخرى:
        تتوقّف وتقول. التبديلُ المقصود يمرّ من `registerReset` فيُصفّر الختم أوّلاً. */
@@ -280,6 +286,7 @@ function persist(): void {
   if (!clinic) { fail(Object.assign(new Error("no_clinic"), { code: "P0001", hint: i18next.t("cages.errNoClinic", "ما لكينا عيادة للجلسة — سجّل دخول من جديد.") })); return; }
   state = { ...state, sync: "saving" };
   emit();
+  writeSeq++;
   inflight = (async () => {
     try {
       await send(clinic, ops);
@@ -601,13 +608,18 @@ export const cageStudio = {
 
   /** ضمُّ رموزٍ غيرِ مرسومة إلى غرفةٍ **بقرار المستخدم** — والخادمُ يربط كلَّ
    *  راقدٍ برقمه بقفصه الجديد تلقائياً. */
-  adoptInto(roomId: string, codes: string[]): number {
-    if (!state.ready) return 0;
+  adoptInto(roomId: string, codes: string[]): { added: number; skipped: string[] } {
+    const none = { added: 0, skipped: [] as string[] };
+    if (!state.ready) return none;
     const room = state.rooms.find((r) => r.id === roomId);
-    if (!room) return 0;
+    if (!room) return none;
     const known = new Set(state.cages.map((c) => norm(c.code)));
-    const todo = [...new Set(codes.map((c) => c.trim()).filter(Boolean))].filter((c) => !known.has(norm(c)));
-    if (!todo.length) return 0;
+    const fresh = [...new Set(codes.map((c) => c.trim()).filter(Boolean))].filter((c) => !known.has(norm(c)));
+    /* رقمُ القفص ≤ ٢٤ حرفاً (قيدُ الخادم). نصٌّ حرٌّ أطول («قفص الكلاب جنب المغسلة»)
+       كان يُفشل الدفعةَ كلَّها وكلَّ إعادة — يُترك ويُسمّى، والباقي يُضمّ. */
+    const skipped = fresh.filter((c) => c.length > 24);
+    const todo = fresh.filter((c) => c.length <= 24);
+    if (!todo.length) return { added: 0, skipped };
     const cages = [...state.cages];
     let rooms = state.rooms;
     let grown = { ...room };
@@ -630,7 +642,7 @@ export const cageStudio = {
       if (cell) cages.push({ id: newId(), code, x: cell[0], z: cell[1] });
     });
     commit({ rooms, cages }, true);
-    return todo.length;
+    return { added: todo.length, skipped };
   },
 
   /** الرموزُ التي يعرفها النظامُ وليست مرسومة — **عرضٌ مشتقٌّ لا كتابة**. */

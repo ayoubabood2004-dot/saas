@@ -3517,9 +3517,10 @@ chk "حالةٌ جديدة برقم قفص ترتبط به بمعرّفه" \
     "select _rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}1'', ''b0000000-0219-4000-8000-000000000001'', ''101'')')" "rows:1"
 chk "  والمعرّفُ هو القفصُ الذي رقمُه ١٠١ **الآن** (بعد التبادل)" \
     "select (cage_id = '${K}c2')::text from admissions where id='${A}1'" "true"
-chk "حيوانٌ ثانٍ بنفس القفص ⇒ رفضٌ **يسمّي الساكن**" \
-    "select split_part(_rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}2'', ''b0000000-0219-4000-8000-000000000002'', ''101'')'), ':', 3)" "cage_occupied"
-chk "  ولا صفَّ انكتب" "select count(*)::text from admissions where id='${A}2'" "0"
+chk "حالةٌ جديدة بقفصٍ مسكون ⇒ تنكتب «بلا قفص» (رفضُها كان يُكرّر ملفَّ الحيوان عند إعادة الحفظ)" \
+    "select _rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}5'', ''b0000000-0219-4000-8000-000000000002'', ''101'')')" "rows:1"
+chk "  بلا رقمٍ ولا معرّف — ولا تستولي على قفص الساكن" \
+    "select coalesce(cage, 'null')||':'||coalesce(cage_id::text, 'null') from admissions where id='${A}5'" "null:null"
 chk "والقفصُ الفاضي يقبله" \
     "select _rls_try('$C1', 'insert into admissions (id, pet_id, cage) values (''${A}2'', ''b0000000-0219-4000-8000-000000000002'', ''102'')')" "rows:1"
 chk "المعرّفُ لا يُكتب مباشرة من المتصفّح (بابٌ واحد)" \
@@ -3560,6 +3561,21 @@ chk "  بلا معرّف" "select coalesce(cage_id::text, 'null') from admission
 chk "  ورسمُ قفصٍ بنفس الرقم يمرّ" \
     "select _cops('$C1', '[{\"op\":\"cage_insert\",\"id\":\"${K}c4\",\"room_id\":\"${K}b1\",\"code\":\"999\",\"x\":3,\"z\":0}]')" "rows:1"
 chk "  ويربط اليتيمَ به تلقائياً" "select (cage_id='${K}c4')::text from admissions where id='${A}1'" "true"
+chk "نقلُ ساكنٍ مربوطٍ إلى رقمٍ غير مرسوم يُرفض (حزمةٌ قديمة تعيد التسمية ويُرفض حفظُ رسمتها)" \
+    "select split_part(_rls_try('$C1', 'update admissions set cage = ''555'' where id = ''${A}2'''), ':', 3)" "cage_not_drawn"
+chk "  والساكنُ بقي بقفصه" "select cage||':'||(cage_id='${K}c1')::text from admissions where id='${A}2'" "101:true"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       insert into admissions (id, pet_id, clinic_id, cage) values ('${A}6', 'b0000000-0219-4000-8000-000000000003', '$C1', '888');" >/dev/null
+chk "قفصٌ مسكون لا يأخذ رقماً مكتوباً على راقدٍ غير مربوط (راقدان برقمٍ واحد يُخفي أحدَهما)" \
+    "select _cops('$C1', '[{\"op\":\"cage_update\",\"id\":\"${K}c1\",\"room_id\":\"${K}b1\",\"code\":\"888\",\"x\":0,\"z\":0}]')" \
+    "guarded:P0001:code_held_by_orphan"
+# إقامةٌ خرجت قبل 0219: نصُّها باقٍ ومعرّفُها فارغ. سحبةُ الكانبان تعيدها بلا لمس النصّ.
+$P -c "insert into admissions (id, pet_id, clinic_id, cage, status) values ('${A}7', 'b0000000-0219-4000-8000-000000000003', '$C1', '999', 'discharged');
+       update admissions set cage_id = null where id = '${A}7';" >/dev/null
+chk "إعادةُ تفعيل إقامةٍ من قبل 0219 وقفصُها مسكون تمرّ" \
+    "select _rls_try('$C1', 'update admissions set status = ''active'' where id = ''${A}7''')" "rows:1"
+chk "  **وترجع بلا قفص** — لا راقدان برقمٍ واحد يختفي أحدُهما" \
+    "select coalesce(cage, 'null')||':'||coalesce(cage_id::text, 'null') from admissions where id='${A}7'" "null:null"
 $P -c "insert into cage_rooms (clinic_id, name) select '$C2', 'غ'||g from generate_series(1, 40) g;" >/dev/null
 chk "سقفُ الغرف (٤٠) بجملةٍ عربية" \
     "select _cops('$C2', '[{\"op\":\"room_insert\",\"id\":\"${K}b3\",\"name\":\"الـ٤١\",\"x\":0,\"z\":0,\"w\":1,\"d\":1}]')" "guarded:P0001:too_many_rooms"
@@ -3610,4 +3626,12 @@ $P -f "$MIG/0220_cage_backfill.sql" >/dev/null 2>&1
 chk "دوالُّ الترحيل ممنوعةٌ عن دور العيادة" \
     "select bool_and(not has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p where p.proname in ('backfill_cage_layout','backfill_admission_cages','_cage_bf_int','_cage_bf_str')" "true"
 
+
+# ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
+echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
+$P -f "$HERE/rollback_0220.sql" >/dev/null
+chk "الرسمةُ المجمَّدة صارت ترتيبَ اليوم (من الصفوف) ونسختُها ارتفعت" \
+    "select (cage_layout like '%\"code\": \"107\"%' or cage_layout like '%\"code\":\"107\"%')::text from clinic_prefs where clinic_id='$C3'" "true"
+chk "  وsave_cage_layout تحفظ من جديد بدور authenticated" \
+    "select _rls_try('$C3', format('select save_cage_layout(%L, %s)', '{\"v\":2,\"rooms\":[],\"cages\":[]}', (select cage_layout_rev from clinic_prefs where clinic_id='$C3')))" "rows:1"
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
