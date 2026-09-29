@@ -28,6 +28,7 @@ import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
 import { WeightChart } from "@/components/WeightChart";
 import { HealthSnapshot } from "@/components/HealthSnapshot";
+import { VaccineDueDialog } from "@/components/vaccines/VaccineDueDialog";
 import { PetSalesWidget } from "@/components/PetSalesWidget";
 import { Button, useToast, ProgressRing } from "@/components/ui";
 import { HealthCurve, type CurvePoint } from "@/components/ui/HealthCurve";
@@ -259,6 +260,8 @@ export function PetPassport() {
   const [pet, setPet] = useState<Pet | null>(seed?.p ?? null);
   const [labs, setLabs] = useState<LabResult[]>(seed?.lab ?? []);
   const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) ? initialTab : "diet");
+  /** لقاحٌ يُعدَّل موعدُه — من العلامة الحمراء بالملخّص أو من «القادم». */
+  const [dueEdit, setDueEdit] = useState<Vaccination | null>(null);
   const [weights, setWeights] = useState<WeightLog[]>(seed?.w ?? []);
   const [vaccines, setVaccines] = useState<Vaccination[]>(seed?.v ?? []);
   const [notes, setNotes] = useState<PetNote[]>(seed?.nt ?? []);
@@ -566,11 +569,13 @@ export function PetPassport() {
         {/* At-a-glance metrics strip: wellness index + vaccination / weight / care status. */}
         <div className="grid items-stretch gap-4 md:grid-cols-4">
           <WellnessCard vaccines={vaccines} admissions={admissions} />
-          <HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} className="md:col-span-3" />
+          <HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} className="md:col-span-3"
+            onVaccineClick={canEditClinical ? setDueEdit : undefined} />
         </div>
 
         {/* Secondary widgets — responsive grid, natural heights (no awkward stretch). */}
         <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <VaccineDueDialog vaccine={dueEdit} petName={pet.name} onClose={() => setDueEdit(null)} onSaved={reload} />
           <UpcomingEvents
             events={petEvents}
             reminders={reminders}
@@ -579,7 +584,12 @@ export function PetPassport() {
             now={Date.now()}
             max={5}
             onChanged={reload}
-            onEventClick={(e) => { const tgt = EVENT_TAB[e.category]; if (tgt) { setTab(tgt); playTap(); } }}
+            onEventClick={(e) => {
+              /* اللقاحُ القادم/المتأخر: ضغطتُه تفتح تعديلَ موعده مباشرةً لمن يعدّل السجلّ. */
+              const vx = e.category === "vaccine" && canEditClinical ? vaccines.find((v) => `vax_${v.id}` === e.id) : undefined;
+              if (vx) { playTap(); setDueEdit(vx); return; }
+              const tgt = EVENT_TAB[e.category]; if (tgt) { setTab(tgt); playTap(); }
+            }}
           />
           <ImportantDatesCard pet={pet} />
           <WeightCard pet={pet} weights={weights} canEdit={canEditClinical} onChanged={reload} />
@@ -1427,6 +1437,7 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [administer, setAdminister] = useState<Vaccination | null>(null);
+  const [dueEdit, setDueEdit] = useState<Vaccination | null>(null);
 
   /* بطاقة لكل لقاح بدل خطّ زمني مبعثر: جرعه مجمّعة بالترتيب — المعطى ✓،
    * القادم ⏰ بتاريخه، والمتأخر ⚠ بالأحمر — فيعرف الدكتور بنظرة شنو انعطى
@@ -1520,7 +1531,11 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
                       <p className="truncate text-sm font-extrabold text-ink">{displayName}</p>
                       {!isOwner && sci && sci !== g.name && <p className="truncate text-2xs text-ink-subtle">{sci}</p>}
                     </div>
-                    <span className={cn("chip shrink-0 text-2xs font-extrabold",
+                    {/* العلامةُ نفسُها تفتح تعديلَ موعد الجرعة القادمة (أقربُ غيرِ معطاة = المتأخرةُ إن وُجدت). */}
+                    <button type="button" disabled={!(canEdit && g.next)} data-vxdue-chip={g.name}
+                      onClick={() => { if (g.next) { playTap(); setDueEdit(g.next); } }}
+                      title={canEdit && g.next ? t("vxdue.title", "تعديل موعد اللقاح") : undefined}
+                      className={cn("chip shrink-0 text-2xs font-extrabold transition enabled:cursor-pointer enabled:hover:ring-2 enabled:hover:ring-current/30 disabled:cursor-default",
                       g.overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
                         : g.next ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
                           : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
@@ -1529,7 +1544,8 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
                         : g.next?.due_date
                           ? t("passport.vxNextOn", { date: formatDate(g.next.due_date, i18n.language), defaultValue: "القادمة {{date}}" })
                           : t("passport.vxComplete", "مكتمل ✓")}
-                    </span>
+                      {canEdit && g.next && <CalendarClock size={12} className="ms-1 inline" aria-hidden />}
+                    </button>
                   </div>
 
                   {/* الجرعات بالترتيب — كل جرعة سطر واضح */}
@@ -1573,6 +1589,12 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
                             </p>
                           </div>
                           {!done && canEdit && (
+                            <button onClick={() => { playTap(); setDueEdit(v); }} data-vxdue-row={v.id}
+                              className={cn("btn-secondary shrink-0 px-3 py-1.5 text-xs", late && "border-danger-300 text-danger-700 dark:border-danger-500/40 dark:text-danger-300")}>
+                              <CalendarClock size={13} /> {t("vxdue.change", "غيّر الموعد")}
+                            </button>
+                          )}
+                          {!done && canEdit && (
                             <button onClick={() => setAdminister(v)} className="btn-primary shrink-0 px-3 py-1.5 text-xs">
                               <Syringe size={13} /> {t("passport.vxGiveNow", "تسجيل إعطائها")}
                             </button>
@@ -1592,6 +1614,7 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
         <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} defaultDoctor={user?.full_name} />
       </Modal>
 
+      <VaccineDueDialog vaccine={dueEdit} petName={pet.name} onClose={() => setDueEdit(null)} onSaved={onChanged} />
       <AdministerBoosterModal vaccine={administer} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
     </div>
   );

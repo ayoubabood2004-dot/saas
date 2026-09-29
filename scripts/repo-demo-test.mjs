@@ -1278,6 +1278,19 @@ console.log("▸ 0218 — قوالبُ الواتساب (مرآةُ الحزمة
   mem.delete("vp_demo_wa_templates");
 }
 
+console.log("▸ تعديلُ موعد اللقاح (مرآةُ rescheduleVaccination)");
+{
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  { const db = JSON.parse(mem.get(DB_KEY) || "{}"); db.vaccinations = db.vaccinations ?? []; mem.set(DB_KEY, JSON.stringify(db)); }
+  const v = await repo.addVaccination({ pet_id: "vx-pet", name: "Rabies", status: "overdue", due_date: "2026-09-01", dose_number: 1, doses_total: 1 });
+  await repo.rescheduleVaccination(v.id, "2026-12-01", "scheduled");
+  const after = (await repo.listVaccinations("vx-pet")).find((x) => x.id === v.id);
+  check("المتأخرُ المؤجَّل يرجع مجدولاً بموعده الجديد", after?.status === "scheduled" && after?.due_date === "2026-12-01", JSON.stringify(after));
+  await repo.updateVaccination(v.id, { status: "administered", administered_at: "2026-09-29T10:00:00Z" });
+  check("  واللقاحُ المعطى لا يُؤجَّل — يرمي لا «انحفظ» كاذبة", (await code(() => repo.rescheduleVaccination(v.id, "2027-01-01", "scheduled"))) === "not_found");
+  check("  والغائبُ يرمي", (await code(() => repo.rescheduleVaccination("nope", "2027-01-01", "scheduled"))) === "not_found");
+}
+
 console.log("▸ 0221 — أدويةُ الطبيب المفضّلة (مرآةُ الحزمة)");
 {
   for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_drug_favs_")) mem.delete(k);

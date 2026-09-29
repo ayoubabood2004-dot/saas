@@ -842,6 +842,15 @@ const demoRepo = {
     saveDB(db);
   },
 
+  /** مرآةُ `rescheduleVaccination`: اللقاحُ المعطى لا يُؤجَّل، والغائبُ يرمي لا يصمت. */
+  async rescheduleVaccination(id: string, dueISO: string, status: "scheduled" | "overdue"): Promise<void> {
+    const db = loadDB();
+    const v = db.vaccinations.find((x) => x.id === id);
+    if (!v || v.status === "administered") { const e = new Error("not_found") as Error & { code: string }; e.code = "PGRST116"; throw e; }
+    Object.assign(v, { due_date: dueISO, status });
+    saveDB(db);
+  },
+
   async listVisits(petId: string): Promise<MedicalVisit[]> {
     return loadDB()
       .visits.filter((v) => v.pet_id === petId)
@@ -4165,6 +4174,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   setInvoicePaymentDetails: { entity: "invoices", action: "UPDATE" },
   uploadMedia: { entity: "media_items", action: "INSERT" },
   updateVaccination: { entity: "vaccinations", action: "UPDATE" },
+  rescheduleVaccination: { entity: "vaccinations", action: "UPDATE" },
   createAppointment: { entity: "appointments", action: "INSERT" },
   updateAppointment: { entity: "appointments", action: "UPDATE" },
   setAppointmentStatus: { entity: "appointments", action: "UPDATE" },

@@ -15,6 +15,7 @@ export function HealthSnapshot({
   admissions,
   stack = false,
   className = "",
+  onVaccineClick,
 }: {
   pet: Pet;
   vaccines: Vaccination[];
@@ -23,6 +24,8 @@ export function HealthSnapshot({
   /** Vertical single-column layout (for a narrow side rail). */
   stack?: boolean;
   className?: string;
+  /** ضغطُ علامة اللقاح القادم/المتأخر — يفتح تعديلَ موعده (لمن يعدّل السجلّ الطبيّ). */
+  onVaccineClick?: (v: Vaccination) => void;
 }) {
   const { t } = useTranslation();
 
@@ -98,6 +101,17 @@ export function HealthSnapshot({
           <StatusTile icon={<HeartPulse size={20} />} tone="accent" title={t("snapshot.underTreatment", "Under treatment")} sub={`${t("snapshot.day", "Day")} ${dayNumber(activeTx.admitted_on)}`} />
         ) : boarding ? (
           <StatusTile icon={<CalendarClock size={20} />} tone="sky" title={t("snapshot.boarding", "Boarding")} sub={boarding.cage || t("snapshot.staying", "Staying")} />
+        ) : nextVaccine && onVaccineClick ? (
+          <button type="button" data-vxdue-open onClick={() => onVaccineClick(nextVaccine.v)}
+            title={t("vxdue.title", "تعديل موعد اللقاح")}
+            className="-m-2 flex min-w-0 flex-1 items-center gap-4 rounded-2xl p-2 text-start transition hover:bg-surface-2">
+            <StatusTile
+              icon={<CalendarClock size={20} />}
+              tone={nextVaccine.days < 0 ? "danger" : "warn"}
+              title={nextVaccine.days < 0 ? t("snapshot.overdue", "Vaccine overdue") : t("snapshot.nextVaccine", "Next vaccine")}
+              sub={`${nextVaccine.days < 0 ? nextVaccine.v.name : t("snapshot.inDays", { days: Math.max(nextVaccine.days, 0), defaultValue: "in {{days}} days" })} · ${t("vxdue.tapToEdit", "اضغط لتعديل الموعد")}`}
+            />
+          </button>
         ) : nextVaccine ? (
           <StatusTile
             icon={<CalendarClock size={20} />}

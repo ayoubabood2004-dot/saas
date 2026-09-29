@@ -571,6 +571,12 @@ const supabaseRepo: DemoRepo = {
   async updateVaccination(id, patch) {
     ok(await sbc().from("vaccinations").update(patch).eq("id", id));
   },
+  /** تعديلُ موعد لقاحٍ لم يُعطَ: الحالةُ تتبع التاريخ (vaccineDue.ts)، والكتابةُ تُسمع —
+   *  صفرُ صفوفٍ (سياسةٌ ردّت، أو اللقاحُ انعطى من جهازٍ ثانٍ) خطأٌ لا «انحفظ». */
+  async rescheduleVaccination(id, dueISO, status) {
+    updated<unknown[]>(await sbc().from("vaccinations").update({ due_date: dueISO, status })
+      .eq("id", id).neq("status", "administered").select("id"));
+  },
   async listVisits(petId) {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
   },

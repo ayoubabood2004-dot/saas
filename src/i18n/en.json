@@ -5403,5 +5403,20 @@
     "updated": "“{{title}}” updated",
     "deleted": "“{{title}}” deleted",
     "update": "Update “{{title}}” with this text"
+  },
+  "vxdue": {
+    "title": "Change vaccine date",
+    "saved": "{{name}} is now due {{date}}",
+    "week": "In a week",
+    "twoWeeks": "In two weeks",
+    "month": "In a month",
+    "save": "Save date",
+    "current": "Current date: {{date}}",
+    "noCurrent": "No date set",
+    "bad": "That date isn't valid — pick it from the calendar",
+    "past": "This date has passed — the vaccine stays overdue (red).",
+    "clears": "After saving the red mark goes away — the vaccine is scheduled on its new date.",
+    "tapToEdit": "tap to change the date",
+    "change": "Change date"
   }
 }
