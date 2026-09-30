@@ -25,8 +25,9 @@
 -- `staff_can(cap)`: المديرُ نعم؛ وإلا استثناءُ صفّ الكادر (`staff.permissions`، يكتبه
 -- المديرُ وحده) ثم قالبُ الدور (`has_permission`). مرآةُ `effectiveCan` بالواجهة.
 --
--- تراجع: `alter role authenticator reset pgrst.db_pre_request` + حذفُ سياسات
--- photographer_fence* + إعادةُ قيود الأدوار. تُطبَّق بعد 0221. وتُعاد بلا أثرٍ ثانٍ.
+-- تراجع: `supabase/tests/rollback_0222.sql` (يُجرَّب بآخر الحزمة) — الخطّافُ يُصفَّر
+-- و`notify pgrst, 'reload config'` **قبل** أيّ حذف، ثم السياسات، ثم المصوّرون يُعلَّقون
+-- قبل إعادة القيود. تُطبَّق بعد 0221. وتُعاد بلا أثرٍ ثانٍ.
 -- ============================================================================
 
 -- ── ١) الدور بالقيود ─────────────────────────────────────────────────────────
@@ -85,8 +86,10 @@ revoke all on function public.staff_can(text) from public, anon;
 grant execute on function public.staff_can(text) to authenticated;
 
 -- هل المنادي مصوّرٌ الآن؟ أرخصُ سؤالٍ أوّلاً (مفتاحُ memberships يبدأ بـuser_id)، فغيرُ
--- المصوّر — أيْ الكلّ تقريباً — يخرج بقراءة فهرسٍ واحدة. والمصوّرُ المرفوعُ بـPIN المدير
--- (auth_role = manager) ليس مصوّراً ما دام الرفع — كغيره من الكادر.
+-- المصوّر — أيْ الكلّ تقريباً — يخرج بقراءة فهرسٍ واحدة. و**بالدور الأساس لا الفعليّ**:
+-- رفعُ PIN المدير (staff_elevations) يجعل auth_role() «manager» — ولو قيس به لانطفأ
+-- السياجُ والبوّابةُ معاً عشرَ دقائق. أمسكه تدقيقٌ عدائيّ قبل النشر: مرآةُ الـPIN كانت
+-- بـclinic_prefs المقروءة، وأربعُ خاناتٍ بملحٍ ثابت تُكسر بلا اتصال.
 create or replace function public.is_photographer()
 returns boolean
 language plpgsql
@@ -100,20 +103,21 @@ begin
                   where m.user_id = auth.uid() and m.role = 'photographer' and m.status = 'active') then
     return false;
   end if;
-  return auth_role() = 'photographer';
+  return auth_role_base() = 'photographer';
 end $$;
 revoke all on function public.is_photographer() from public, anon;
 grant execute on function public.is_photographer() to authenticated;
 
 -- ── ٣) سياجُ RLS ─────────────────────────────────────────────────────────────
--- قراءةٌ مسموحة (إعدادُ العيادة الذي يقرؤه الإقلاع)، والكتابةُ مسيَّجة.
+-- قراءةٌ مسموحة (إعدادُ العيادة الذي يقرؤه الإقلاع)، والكتابةُ مسيَّجة. و`clinic_prefs`
+-- **ليست منها**: فيها `override_pin_mirror` (0093) — المصوّرُ يعيش بقيم الجهاز الافتراضية.
 create or replace function public._photographer_read_ok()
 returns text[]
 language sql
 immutable
 set search_path = public
 as $$
-  select array['clinic_prefs','clinic_areas','clinic_breeds','clinic_meds','clinic_promos',
+  select array['clinic_areas','clinic_breeds','clinic_meds','clinic_promos',
                'clinic_service_categories','clinic_services','clinic_vaccines','clinic_vital_ranges',
                'branches','subscriptions','image_library','app_config','plan_prices']
 $$;
@@ -152,7 +156,9 @@ begin
     select c2.relname
       from pg_class c2 join pg_namespace n on n.oid = c2.relnamespace
      where n.nspname = 'public' and c2.relkind = 'r'
-       and ((c2.relrowsecurity and exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c2.relname))
+       -- كلُّ جدولٍ بسياسات ولو كان RLS مطفأً لحظتَها: سياسةٌ مقيِّدة على جدولٍ مطفأ لا
+       -- تفعل شيئاً، وتكون جاهزةً يوم يُشعَل — لا ثغرةَ تنتظر الترتيب.
+       and (exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c2.relname)
             or c2.relname = any(public._photographer_read_ok()))
   loop
     execute format('drop policy if exists photographer_fence on public.%I', r.relname);
@@ -225,6 +231,12 @@ as $$
      and not exists (select 1 from pg_policies f
                       where f.schemaname = 'public' and f.tablename = p.tablename and f.permissive = 'RESTRICTIVE'
                         and f.policyname like 'photographer_fence%' and (f.cmd = x.cmd or f.cmd = 'ALL'))
+  union
+  -- والعروضُ (views) لا يحرسها RLS جدولها: عرضٌ ممنوحٌ للداخلين ثغرةٌ للسياج كلّه.
+  select 'view:' || c.relname
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('v','m')
+     and (has_table_privilege('authenticated', c.oid, 'select') or has_table_privilege('anon', c.oid, 'select'))
    order by 1
 $$;
 revoke all on function public.verify_photographer_fence() from public, anon, authenticated;
@@ -253,22 +265,24 @@ declare
   v_fn    text;
   v_block boolean := false;
 begin
+  -- الجداولُ يحرسها السياج؛ البوّابةُ للدوالّ وحدها. هذا الفحصُ لا يرمي، فهو خارج كتلة
+  -- الاستثناء — فلا معاملةَ فرعيةً لكلّ طلب GET عاديّ.
+  v_path := coalesce(current_setting('request.path', true), '');
+  if position('/rpc/' in v_path) = 0 then return; end if;
+  -- المقطعُ الأخير كاملاً (لا بادئة)؛ وما لا يُقرأ يمضي لسؤال «مصوّر؟» — فيُرفض له وحده.
+  v_fn := substring(v_path from '/rpc/([^/?]+)/?$');
+  if v_fn = any(array[
+    -- الإقلاع والجلسة (لا elevate_with_pin ولا has_override_pin: الرفعُ ليس للمصوّر)
+    'my_workspace','presence_beat','get_or_init_subscription','end_elevation','log_client_event',
+    'platform_context','leave_clinic','accept_invite','add_my_role','staff_can','is_photographer',
+    -- الصور
+    'photo_products','set_product_image','image_library_usage','image_path_in_use',
+    -- المتجر (كلُّ واحدةٍ تسأل manageStore بنفسها)
+    'store_set_visible','store_set_featured','store_set_desc','store_slug_available','store_front'
+  ]) then
+    return;
+  end if;
   begin
-    v_path := coalesce(current_setting('request.path', true), '');
-    if position('/rpc/' in v_path) = 0 then return; end if;
-    v_fn := substring(v_path from '/rpc/([A-Za-z0-9_]+)');
-    if v_fn is null or v_fn = any(array[
-      -- الإقلاع والجلسة
-      'my_workspace','presence_beat','get_or_init_subscription','has_override_pin','elevate_with_pin',
-      'end_elevation','log_client_event','platform_context','leave_clinic','accept_invite','add_my_role',
-      'clinic_quota_usage','staff_can','is_photographer',
-      -- الصور
-      'photo_products','set_product_image','image_library_usage','image_path_in_use',
-      -- المتجر (كلُّ واحدةٍ تسأل manageStore بنفسها)
-      'store_set_visible','store_set_featured','store_set_desc','store_slug_available','store_front'
-    ]) then
-      return;
-    end if;
     v_block := public.is_photographer();
   exception when others then
     return;   -- البوّابةُ لا تُسقط طلبَ أحدٍ بخطئها هي
@@ -279,7 +293,9 @@ begin
   end if;
 end $$;
 revoke all on function public.api_gate() from public;
-grant execute on function public.api_gate() to anon, authenticated;
+-- وservice_role صراحةً: الخطّافُ يجري بدور الطلب — ومنه وظائفُ الدفع (wayl-webhook) —
+-- فلا نعلّق الدفعَ على منحٍ افتراضيٍّ قد لا يوجد.
+grant execute on function public.api_gate() to anon, authenticated, service_role;
 
 do $$
 begin
@@ -299,12 +315,17 @@ stable
 security definer
 set search_path = public
 as $$
-declare v_clinic uuid := auth_clinic();
+declare
+  v_clinic uuid := auth_clinic();
+  v_store  boolean;
 begin
   if v_clinic is null then
     raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.';
   end if;
-  if not (auth_role() in ('manager','veterinarian') or staff_can('manageProductPhotos') or staff_can('manageStore')) then
+  -- الإذنُ من staff_can وحدها (المديرُ نعم، وقالبُ الطبيب يشمل الإذنين): إطفاءُ المدير
+  -- لإذنِ طبيبٍ يُحترم بالخادم لا بالواجهة وحدها.
+  v_store := staff_can('manageStore');
+  if not (v_store or staff_can('manageProductPhotos')) then
     raise exception 'not_authorized' using errcode = '42501', hint = 'ما عندك صلاحية على صور المنتجات.';
   end if;
   return coalesce((
@@ -313,7 +334,9 @@ begin
              'subcategory', p.subcategory, 'company_id', p.company_id, 'company_name', c.name,
              'image_path', p.image_path, 'store_visible', coalesce(p.store_visible, false),
              'store_featured', coalesce(p.store_featured, false), 'store_desc', p.store_desc,
-             'sell_price', p.sell_price, 'stock', p.stock)
+             -- السعرُ والرصيدُ لمن يدير المتجر؛ المصوّرُ وحده لا يحتاجهما.
+             'sell_price', case when v_store then p.sell_price end,
+             'stock', case when v_store then p.stock end)
            order by p.name)
       from products p left join companies c on c.id = p.company_id
      where p.clinic_id = v_clinic and p.farm_id is null), '[]'::jsonb);
@@ -337,7 +360,7 @@ begin
   if v_clinic is null then
     raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.';
   end if;
-  if not (auth_role() in ('manager','veterinarian') or staff_can('manageProductPhotos') or staff_can('manageStore')) then
+  if not (staff_can('manageProductPhotos') or staff_can('manageStore')) then
     raise exception 'not_authorized' using errcode = '42501', hint = 'ما عندك صلاحية تغيّر صور المنتجات.';
   end if;
   if v_path is not null and not (v_path like v_clinic::text || '/%' or v_path like 'library/%') then
@@ -375,7 +398,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce(auth_role(), '') in ('manager','veterinarian') or staff_can('manageStore')
+  select staff_can('manageStore')
 $$;
 revoke all on function public._store_manager_ok() from public, anon, authenticated;
 

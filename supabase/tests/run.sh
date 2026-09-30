@@ -1204,6 +1204,9 @@ chk "  والمجدوَلةُ ذاتُ التدرُّج منزوعةٌ هي ال
 echo "▸ 0159: تحديثُ التوصيل يمرّ من RLS بدورٍ عاديّ"
 $P -c "grant usage on schema public to authenticated;
        grant select, insert, update, delete on all tables in schema public to authenticated;
+       -- «all tables» تشمل العروض — والإنتاجُ ينزع هذا العرضَ (0161). بلا هذا السطر يبدو
+       -- عرضُ الكتالوج المشترك ممنوحاً للداخلين فيُحسب ثغرةً بسياج المصوّر (0222).
+       revoke all on shared_catalog_source from authenticated;
        grant usage, select on all sequences in schema public to authenticated;
        grant execute on all functions in schema public to authenticated;
        create or replace function _rls_try(who uuid, q text) returns text language plpgsql as \$fn\$
@@ -3682,7 +3685,7 @@ chk "لا يرى الفواتير ولا المنتجات مباشرةً (سعر
     "select _rls_try('$PHO', 'select 1 from invoices')||'|'||_rls_try('$PHO', 'select 1 from products')" "rows:0|rows:0"
 chk "  ولا يكتب فاتورة" \
     "select left(_rls_try('$PHO', 'insert into invoices (clinic_id) values (''$C1'')'), 13)" "guarded:42501"
-chk "  ويقرأ إعدادَ العيادة ولا يكتبه" \
+chk "  ويقرأ واجهةَ المتجر ولا يكتب إعدادَ العيادة" \
     "select (_rls_try('$PHO', 'select 1 from store_profiles') <> 'rows:0')::text||'|'||_rls_try('$PHO', 'update clinic_prefs set dial_code = dial_code')" "true|rows:0"
 chk "  ويرى صفَّه وحده من الكادر" \
     "select _rls_try('$PHO', 'select 1 from staff')" "rows:1"
@@ -3721,6 +3724,31 @@ chk "  وينادي ما بقائمته (الإقلاع والصور)" \
 chk "  وغيرُه لا تمسّه أبداً، والجداولُ تمرّ للسياج" \
     "select _gate('$RCP', '/rpc/pos_checkout')||'|'||_gate('$C1', '/rpc/report_receipts_total')||'|'||_gate('$PHO', '/products')" "rows:1|rows:1|rows:1"
 
+# ── ما أمسكه التدقيقُ العدائيّ قبل النشر ──
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$PHO','$C1', now() + interval '10 minutes')
+         on conflict (user_id) do update set until = excluded.until, clinic_id = excluded.clinic_id;" >/dev/null
+chk "رفعُ PIN المدير لا يُطفئ السياج: المصوّرُ المرفوعُ ما زال لا يرى الفواتير" \
+    "select _pf('$PHO', 'select auth_role()')||'|'||_rls_try('$PHO', 'select 1 from invoices')" "manager|rows:0"
+chk "  ولا البوّابة" \
+    "select split_part(_gate('$PHO', '/rpc/pos_checkout'), ':', 3)" "photographer_forbidden"
+$P -c "delete from staff_elevations where user_id = '$PHO';" >/dev/null
+chk "ولا يقرأ clinic_prefs (مرآةُ الـPIN بها)" \
+    "select _rls_try('$PHO', 'select 1 from clinic_prefs')" "rows:0"
+chk "البوّابةُ لا تفتح الرفعَ للمصوّر، وتطابق الاسمَ كاملاً لا بادئتَه" \
+    "select split_part(_gate('$PHO', '/rpc/elevate_with_pin'), ':', 3)||'|'||split_part(_gate('$PHO', '/rpc/photo_products_all'), ':', 3)||'|'||_gate('$PHO', '/rpc/my_workspace/')" "photographer_forbidden|photographer_forbidden|rows:1"
+chk "  ومنحُها لـservice_role صريح (خطّافُ وظائف الدفع)" \
+    "select has_function_privilege('service_role', 'public.api_gate()', 'execute')::text" "true"
+chk "المصوّرُ بلا إذن المتجر لا يرى السعرَ ولا الرصيد" \
+    "select _pf('$PHO', 'select (photo_products()->0->>''sell_price'' is null and photo_products()->0->>''stock'' is null)::text')" "true"
+$P -c "insert into staff(id, clinic_id, name, user_id, role, permissions) values ('${PP}f2','$C1','طبيب الفحص','$VET','veterinarian','{\"manageStore\": false}') on conflict (id) do update set permissions = excluded.permissions;" >/dev/null
+chk "إطفاءُ المدير لإذن المتجر عن طبيبٍ يُحترم بالخادم" \
+    "select split_part(_rls_try('$VET', 'select store_set_visible(array[''${PP}01''::uuid], true)'), ':', 3)" "not_authorized"
+$P -c "update staff set permissions = '{}' where id = '${PP}f2';" >/dev/null
+chk "  وبلا استثناء: قالبُ الطبيب يشمل المتجر" \
+    "select _rls_try('$VET', 'select store_set_visible(array[''${PP}01''::uuid], true)')" "rows:1"
+chk "لا عرضَ (view) ممنوحٌ للداخلين يتخطّى السياج" \
+    "select count(*)::text from verify_photographer_fence() v where v like 'view:%'" "0"
+
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null
@@ -3728,4 +3756,16 @@ chk "الرسمةُ المجمَّدة صارت ترتيبَ اليوم (من ا
     "select (cage_layout like '%\"code\": \"107\"%' or cage_layout like '%\"code\":\"107\"%')::text from clinic_prefs where clinic_id='$C3'" "true"
 chk "  وsave_cage_layout تحفظ من جديد بدور authenticated" \
     "select _rls_try('$C3', format('select save_cage_layout(%L, %s)', '{\"v\":2,\"rooms\":[],\"cages\":[]}', (select cage_layout_rev from clinic_prefs where clinic_id='$C3')))" "rows:1"
+echo "▸ rollback_0222: السياجُ يُرفع والمصوّرُ يُعلَّق لا يُحذف"
+$P -f "$HERE/rollback_0222.sql" >/dev/null
+chk "لا سياسةَ سياجٍ باقية (ولا على الملفّات)" \
+    "select count(*)::text from pg_policies where policyname like 'photographer_fence%'" "0"
+chk "  والمصوّرُ معلَّقٌ بدورٍ قديم — صفُّه باقٍ" \
+    "select role||':'||status from memberships where user_id='$PHO'" "groomer:suspended"
+chk "  والاستقبالُ ما تغيّر عليه شي" \
+    "select (_rls_try('$RCP', 'select 1 from invoices') <> 'rows:0')::text" "true"
+chk "  والنشرُ بالمتجر رجع للمدير والطبيب" \
+    "select _rls_try('$VET', 'select store_set_visible(array[''${PP}01''::uuid], false)')||'|'||split_part(_rls_try('$RCP', 'select store_set_visible(array[''${PP}01''::uuid], false)'), ':', 3)" "rows:1|not_authorized"
+chk "  والدوالُّ الجديدة زالت بعد تصفير الخطّاف" \
+    "select (to_regprocedure('public.api_gate()') is null and to_regprocedure('public.staff_can(text)') is null)::text" "true"
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

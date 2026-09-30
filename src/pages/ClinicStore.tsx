@@ -797,7 +797,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       {/* «انشر أكثرَ ما تبيع» — يُعرض حين لا تكون تشكيلتُه جاهزةً بعد.
           والحدُّ الصريح: **الدالّةُ تقترح ولا تكتب** — لا نشرَ بلا ضغطة.
           النشرُ يُعلن سعراً ووعداً بالعلن، وهو قرارُ العيادة لا المنصّة. */}
-      {suggestState !== "open" && (
+      {/* الاقتراحُ مبنيٌّ على المبيعات — ليس لموظّف التصوير (البوّابةُ ترفضه له أصلاً). */}
+      {canPrice && suggestState !== "open" && (
         <button type="button" onClick={() => void openSuggest()} disabled={suggestState === "loading"}
           className="card flex w-full items-center gap-3 border-brand-300 bg-brand-50/60 p-4 text-start transition hover:bg-brand-50 disabled:opacity-60 dark:border-brand-500/40 dark:bg-brand-500/10">
           {suggestState === "loading" ? <Loader2 size={20} className="shrink-0 animate-spin text-brand-600" /> : <Sparkles size={20} className="shrink-0 text-brand-600" />}
