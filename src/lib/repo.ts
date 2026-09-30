@@ -30,7 +30,7 @@ import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySec
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite } from "@/types";
+import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
@@ -1196,6 +1196,27 @@ const supabaseRepo: DemoRepo = {
     if (up.error) throw up.error;
     return path;
   },
+  /* ── موظّفُ التصوير (0222) — كلُّها من الخادم بإذنه: المنتجاتُ بأعمدةٍ آمنة، وصورةُ
+   *    المنتج وحدَها، والمتجرُ بلا سعرٍ ولا طلبات. صفرُ صفوفٍ خطأٌ مسموع بالخادم. ── */
+  async listPhotoProducts() {
+    const { data, error } = await sbc().rpc("photo_products");
+    if (error) throw error;
+    return ((data ?? []) as PhotoProduct[]).map((p) => ({
+      ...p, sell_price: p.sell_price == null ? null : Number(p.sell_price), stock: p.stock == null ? null : Number(p.stock),
+    }));
+  },
+  async setProductImage(productId, path) {
+    const { error } = await sbc().rpc("set_product_image", { p_product: productId, p_path: path });
+    if (error) throw error;
+  },
+  async setStoreFeatured(productId, on) {
+    const { error } = await sbc().rpc("store_set_featured", { p_product: productId, p_on: on });
+    if (error) throw error;
+  },
+  async setStoreDesc(productId, desc) {
+    const { error } = await sbc().rpc("store_set_desc", { p_product: productId, p_desc: desc });
+    if (error) throw error;
+  },
   async deleteProductImage(clinicId, productId, path) {
     void clinicId; void productId;
     // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ
@@ -1207,9 +1228,11 @@ const supabaseRepo: DemoRepo = {
     // يشيران لملفٍّ واحد. حذفُه من أحدهما كان سيكسر صورةَ الآخر بصمت — وهو
     // بالضبط صنفُ «اختفى كأنه ما كان». والنداءُ محدودٌ بعيادتنا بالسياسة،
     // ومسارُ المكتبة المشترَك خرج فوقُ أصلاً.
-    const refs = await sbc().from("products").select("id").eq("image_path", path).limit(1);
-    // فشلُ العدّ ⇒ لا نحذف. «ما أعرف» تعني «لا تلمس»، لا «امضِ».
-    if (refs.error || (refs.data ?? []).length > 0) return;
+    // السؤالُ للخادم (0222 `image_path_in_use`) لا قراءةً مباشرة: المصوّرُ مسيَّجٌ عن جدول
+    // المنتجات فكان سيرى «صفرَ مراجع» ويحذف ملفاً ما زال توأمٌ يشير إليه.
+    const refs = await sbc().rpc("image_path_in_use", { p_path: path });
+    // فشلُ السؤال ⇒ لا نحذف. «ما أعرف» تعني «لا تلمس»، لا «امضِ».
+    if (refs.error || refs.data !== false) return;
     try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
   /* ── حقولُ الدواجن (0191/0192) — السحابيّ ───────────────────────────────
@@ -2551,7 +2574,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
-  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listDrugFavorites",
+  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listDrugFavorites", "listPhotoProducts",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

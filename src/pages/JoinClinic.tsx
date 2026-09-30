@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { Briefcase, LogIn, PartyPopper, ShieldCheck, Loader2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button, Dialog } from "@/components/ui";
 import { Logo } from "@/components/Logo";
 import { acceptInvite, leaveClinic } from "@/lib/invites";
-import { ROLE_LABEL, type StaffRole } from "@/lib/staff";
+import { type StaffRole } from "@/lib/staff";
+import { roleText } from "@/lib/roleText";
 import { playSuccess, playWarning } from "@/lib/sounds";
 
 const JOIN_CODE_KEY = "vp_join_code";
 
 /** Staff onboarding: redeem an invite code → join the clinic → welcome screen. */
 export function JoinClinic() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
@@ -92,7 +95,7 @@ export function JoinClinic() {
         <p className="mt-1 text-sm text-ink-muted">انضممتَ إلى <span className="font-semibold text-ink">{done.clinicName || "العيادة"}</span></p>
         {done.role && (
           <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-sm font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-            <ShieldCheck size={15} /> دورك: {ROLE_LABEL[done.role]}
+            <ShieldCheck size={15} /> دورك: {roleText(done.role, t)}
           </span>
         )}
         <Button className="mt-6 w-full" size="lg" onClick={() => { window.location.href = "/"; }}>ابدأ العمل</Button>

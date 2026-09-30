@@ -27,7 +27,8 @@ import { useOverride } from "@/lib/managerOverride";
  */
 export function usePermissions(): { role: StaffRole; baseRole: StaffRole; can: (cap: Capability) => boolean } {
   const { user } = useAuth();
-  const baseRole = appRoleToStaffRole(user?.role);
+  // المصوّرُ دورٌ لا مقابلَ له بأدوار الواجهة الأربعة — يُعرف من دوره الحقيقيّ.
+  const baseRole: StaffRole = user?.staff_role === "photographer" ? "photographer" : appRoleToStaffRole(user?.role);
   const ov = useOverride();
   // A PIN elevation always grants the full manager view. A device merely LOCKED
   // (guarded) keeps the user's own role — daily operations and the sidebar icons

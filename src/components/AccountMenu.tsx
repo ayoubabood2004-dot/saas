@@ -80,7 +80,8 @@ export function AccountMenu({ compact = false }: { compact?: boolean } = {}) {
     .toUpperCase();
 
   const roleLabel =
-    user.role === "admin" ? t("role.admin", "العيادة")
+    user.staff_role === "photographer" ? t("role.photographer", "موظف تصوير")
+    : user.role === "admin" ? t("role.admin", "العيادة")
       : user.role === "reception" ? t("role.reception", "الاستقبال")
         : t("role.doctor", "طبيب بيطري");
 

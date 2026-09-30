@@ -66,7 +66,12 @@ const FAKE_SUPABASE = `
     return o;
   };
   export const supabase = {
-    from: () => q(), rpc: () => q(), schema: () => ({ from: () => q() }),
+    // image_path_in_use (0222) ترجع منطقياً لا صفوفاً — كما بالخادم: صفٌّ يشير ⇒ true.
+    from: () => q(),
+    rpc: (name) => name === "image_path_in_use"
+      ? { then: (res) => res({ data: globalThis.__refsError ? null : globalThis.__productRefs.length > 0, error: globalThis.__refsError }) }
+      : q(),
+    schema: () => ({ from: () => q() }),
     storage: { from: () => storageApi },
     auth: { getSession: async () => ({ data: { session: null }, error: null }), getUser: async () => ({ data: { user: null }, error: null }) },
   };

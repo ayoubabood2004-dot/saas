@@ -18,10 +18,11 @@ import {
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
   Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Camera, ImagePlus, Loader2,
 } from "lucide-react";
-import type { Product, StoreOrder, StoreProfile, SuggestedProduct } from "@/types";
+import type { PhotoProduct, Product, StoreOrder, StoreProfile, SuggestedProduct } from "@/types";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
 import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
 import { prepareUpload } from "@/lib/image";
@@ -59,11 +60,25 @@ const STORE_LOG_CAP = 30;
  *  والاسمُ واحدٌ كي لا ينفصل العنوانُ عن الجلب عند أوّلِ تعديل. */
 const ORDERS_WINDOW = 300;
 
+/** منتجُ المصوّر (أعمدةٌ آمنة، 0222) بشكل Product الذي تقرؤه الألواح — بلا سعر شراء. */
+function photoAsProduct(x: PhotoProduct, clinicId: string | null): Product {
+  return {
+    id: x.id, clinic_id: clinicId, name: x.name, barcode: x.barcode ?? "", category: x.category ?? undefined,
+    subcategory: x.subcategory ?? undefined, company_id: x.company_id ?? null, image_path: x.image_path ?? null,
+    store_visible: x.store_visible, store_featured: x.store_featured, store_desc: x.store_desc ?? null,
+    sell_price: x.sell_price ?? 0, stock: x.stock ?? 0, purchase_price: 0,
+  } as Product;
+}
+
 export function ClinicStore() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id;
-  const [tab, setTab] = useState<Tab>("orders");
+  /* موظّفُ التصوير بإذن المتجر (0222): المنتجاتُ والواجهة — بلا طلبات الزبائن (قرارُ
+   * المالك) وبلا السعر (سعرُ الكاشير نفسُه). والخادمُ يفرض هذا بنفسه؛ هنا لا تُعرض فقط. */
+  const { baseRole } = usePermissions();
+  const photoMode = baseRole === "photographer";
+  const [tab, setTab] = useState<Tab>(photoMode ? "catalog" : "orders");
   /* التصفيةُ بالأب: «١ بلا سعر» بلوحة الإعدادات تفتح التشكيلةَ مصفّاةً عليه.
    * سطرٌ يقول عدداً ولا يوصّل إليه يترك الدكتورَ يبحث يدوياً بتسعِمئة صنف. */
   const [catFilter, setCatFilter] = useState<CatFilter>("all");
@@ -73,7 +88,7 @@ export function ClinicStore() {
   const [newOrders, setNewOrders] = useState<StoreOrder[] | null>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
   const [profile, setProfile] = useState<StoreProfile | null | undefined>(undefined); // undefined = يتحمّل
-  const newCount = useStoreOrderCount();
+  const newCount = useStoreOrderCount(!photoMode);
   /* فشلُ الجلب كان يضع قوائمَ فارغة بلا حالةِ خطأ ولا توست ولا إعادة — فيقول
    * الصندوقُ «لا طلبات» عن زبونٍ طلب وينتظر التأكيد، ولا أحد يتصل به. وهذا
    * المكانُ الوحيد الذي يستقبل مبيعاتِ الإنترنت. */
@@ -81,6 +96,12 @@ export function ClinicStore() {
 
   const load = async () => {
     try {
+      if (photoMode) {
+        const [pp, pr] = await Promise.all([repo.listPhotoProducts(), repo.getStoreProfile()]);
+        setOrders([]); setNewOrders([]); setProducts(pp.map((x) => photoAsProduct(x, clinicId ?? null))); setProfile(pr);
+        setFailed(false);
+        return;
+      }
       const [o, nw, p, pr] = await Promise.all([
         repo.listStoreOrders(ORDERS_WINDOW),
         // صندوقُ «الجديد» بلا سقف: الشارةُ تعدّ بالخادم، فلو بقي الصندوقُ
@@ -108,13 +129,13 @@ export function ClinicStore() {
   // العداد الحي ارتفع (طلب وصل ونحن بالصفحة) → حدّث القائمة فوراً.
   useEffect(() => { if (orders !== null) void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [newCount]);
 
-  const TABS: { id: Tab; label: string; icon: typeof Inbox; badge?: number }[] = [
+  const TABS: { id: Tab; label: string; icon: typeof Inbox; badge?: number }[] = ([
     // عدُّ الخادم ما دام الصندوقُ يتحمّل؛ وبعدها **الصندوقُ هو الشارة** — فلا
     // يبقى رقمان لشيءٍ واحد يختلفان أمام عين الدكتور.
     { id: "orders", label: "الطلبات", icon: Inbox, badge: newOrders ? newOrders.length : newCount },
     { id: "catalog", label: "تشكيلة المتجر", icon: Boxes },
     { id: "settings", label: "الإعدادات والرابط", icon: Settings2 },
-  ];
+  ] as { id: Tab; label: string; icon: typeof Inbox; badge?: number }[]).filter((x) => !(photoMode && x.id === "orders"));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -163,7 +184,7 @@ export function ClinicStore() {
           {tab === "orders"
             ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} goCatalog={goCatalog} />
             : tab === "catalog"
-              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} />
+              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canPrice={!photoMode} />
               : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
         </motion.div>
       </AnimatePresence>
@@ -491,9 +512,11 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
 
 /* ============================== التشكيلة ============================== */
 
-function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
+function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true }: {
   products: Product[] | null; reload: () => Promise<void>; storeOn: boolean;
   filter: CatFilter; setFilter: (f: CatFilter) => void;
+  /** السعرُ سعرُ الكاشير — موظّفُ التصوير يراه ولا يعدّله. */
+  canPrice?: boolean;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -560,7 +583,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
     if (busyId) return;
     setBusyId(p.id);
     try {
-      await repo.updateProduct(p.id, { store_featured: !p.store_featured });
+      await repo.setStoreFeatured(p.id, !p.store_featured);
       p.store_featured ? playTap() : playSuccess();
       await reload();
     } catch (e) { playWarning(); toast.error(t("sf.featFailed", "تعذّر تحديث المختارات"), errMsg(e)); }
@@ -573,7 +596,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
       const prepared = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
       const old = p.image_path ?? null;
       const path = await repo.uploadProductImage(p.clinic_id ?? null, p.id, prepared);
-      await repo.updateProduct(p.id, { image_path: path });
+      await repo.setProductImage(p.id, path);
       // المسارُ صار فريداً لكلّ رفعة (البند ٩)، فالقديمُ لم يعد يُطمَس بالجديد —
       // يُحذف بعد أن ينجح تحويلُ المرجع، وبعده وحده. `repo` تتكفّل بالمشترَك.
       if (old && old !== path) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
@@ -586,7 +609,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
     setBusyId(p.id);
     try {
       const old = p.image_path ?? null;
-      await repo.updateProduct(p.id, { image_path: path });
+      await repo.setProductImage(p.id, path);
       // الانتقالُ لصورة مكتبةٍ يترك ملفَّ العيادة القديمَ يتيماً لو لم يُحذف.
       if (old && old !== path) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
       playSuccess(); await reload();
@@ -598,7 +621,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
     setBusyId(p.id);
     try {
       const old = p.image_path ?? null;
-      await repo.updateProduct(p.id, { image_path: null });
+      await repo.setProductImage(p.id, null);
       // ملفُّ المكتبة مشتركٌ بين العيادات — يُفكّ الربطُ ولا يُحذف (repo تتكفّل).
       if (old) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
       playTap(); await reload();
@@ -706,12 +729,13 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
     setDescId(null);
     const val = descDraft.trim() || null;
     if (val === (p.store_desc ?? null)) return;
-    try { await repo.updateProduct(p.id, { store_desc: val }); playSuccess(); await reload(); }
+    try { await repo.setStoreDesc(p.id, val); playSuccess(); await reload(); }
     catch (e) { playWarning(); toast.error("تعذّر حفظ الوصف", errMsg(e)); }
   };
 
   const savePrice = async (p: Product) => {
     setPriceId(null);
+    if (!canPrice) return;
     const v = Number(priceDraft);
     if (!Number.isFinite(v) || v < 0 || v === p.sell_price) return;
     try { await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }); playSuccess(); await reload(); }
@@ -925,6 +949,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
                   <input autoFocus type="number" inputMode="decimal" value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)}
                     onBlur={() => void savePrice(p)} onKeyDown={(e) => { if (e.key === "Enter") void savePrice(p); if (e.key === "Escape") setPriceId(null); }}
                     className="input h-9 w-28 text-end text-sm font-bold" />
+                ) : !canPrice ? (
+                  <span className="px-2 py-1 font-display text-sm font-extrabold tabular-nums text-ink">{money(p.sell_price)}</span>
                 ) : (
                   <button onClick={() => { playTap(); setPriceId(p.id); setPriceDraft(String(p.sell_price)); }}
                     title="اضغط لتعديل السعر" className="group flex items-center gap-1 rounded-lg px-2 py-1 transition hover:bg-surface-2">

@@ -22,7 +22,7 @@ import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite } from "@/types";
+import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -121,6 +121,15 @@ function demoWaLoad(): WaTemplate[] {
 }
 /** يرمي: قالبٌ لم يُحفظ ويُقال «انحفظ» كذبٌ يُصدَّق. */
 function demoWaSave(list: WaTemplate[]) { localStorage.setItem(DEMO_WA_KEY, JSON.stringify(list)); }
+
+/** رقعةٌ على منتجٍ تجريبيّ — الغائبُ يرمي كالخادم (`product_not_found`)، لا «تمّ» على لا شيء. */
+function demoProductPatch(id: string, patch: Partial<Product>): void {
+  const db = loadDB();
+  const p = (db.products ?? []).find((x) => x.id === id);
+  if (!p) { const e = new Error("product_not_found") as Error & { code: string }; e.code = "P0001"; throw e; }
+  Object.assign(p, patch);
+  saveDB(db);
+}
 
 const DEMO_FAV_KEY = () => `vp_demo_drug_favs_${getActiveClinicId() || "default"}`;
 function demoFavLoad(): DrugFavorite[] {
@@ -1671,6 +1680,32 @@ const demoRepo = {
     // نفسُ حارس النوع بالضبط: حارسٌ لا يوجد بالتجريبيّ حارسٌ لم يُفحص.
     assertUploadableImage(upload);
     return upload.dataUrl;
+  },
+  /* ── موظّفُ التصوير (0222) — مرآةُ دوالّ الخادم بنفس الحرّاس: مسارُ الصورة من ملفات
+   *    العيادة أو المكتبة أو data: التجريبيّ، والمنتجُ الغائبُ يرمي لا يصمت. ── */
+  async listPhotoProducts(): Promise<PhotoProduct[]> {
+    const db = loadDB();
+    const co = new Map((db.companies ?? []).map((c) => [c.id, c.name]));
+    return (db.products ?? []).filter((p) => !p.farm_id).map((p) => ({
+      id: p.id, name: p.name, barcode: p.barcode ?? null, category: p.category ?? null, subcategory: p.subcategory ?? null,
+      company_id: p.company_id ?? null, company_name: p.company_id ? co.get(p.company_id) ?? null : null,
+      image_path: p.image_path ?? null, store_visible: !!p.store_visible, store_featured: !!p.store_featured,
+      store_desc: p.store_desc ?? null, sell_price: p.sell_price ?? null, stock: p.stock ?? null,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async setProductImage(productId: string, path: string | null): Promise<void> {
+    const v = (path ?? "").trim() || null;
+    if (v && !(v.startsWith("data:") || v.startsWith("library/") || v.includes("/"))) {
+      const e = new Error("bad_image_path") as Error & { code: string }; e.code = "P0001"; throw e;
+    }
+    demoProductPatch(productId, { image_path: v });
+  },
+  async setStoreFeatured(productId: string, on: boolean): Promise<void> {
+    demoProductPatch(productId, { store_featured: !!on });
+  },
+  async setStoreDesc(productId: string, desc: string | null): Promise<void> {
+    if ((desc ?? "").length > 2000) { const e = new Error("desc_too_long") as Error & { code: string }; e.code = "P0001"; throw e; }
+    demoProductPatch(productId, { store_desc: (desc ?? "").trim() || null });
   },
   /** حذف ملف الصورة — تجريبياً لا ملفَ أصلاً؛ تصفيرُ المسار شأنُ updateProduct. */
   async deleteProductImage(_clinicId: string | null, _productId: string, _path: string): Promise<void> {
@@ -4175,6 +4210,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   uploadMedia: { entity: "media_items", action: "INSERT" },
   updateVaccination: { entity: "vaccinations", action: "UPDATE" },
   rescheduleVaccination: { entity: "vaccinations", action: "UPDATE" },
+  setProductImage: { entity: "products", action: "UPDATE" },
+  setStoreFeatured: { entity: "products", action: "UPDATE" },
+  setStoreDesc: { entity: "products", action: "UPDATE" },
   createAppointment: { entity: "appointments", action: "INSERT" },
   updateAppointment: { entity: "appointments", action: "UPDATE" },
   setAppointmentStatus: { entity: "appointments", action: "UPDATE" },

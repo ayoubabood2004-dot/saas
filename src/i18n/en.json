@@ -443,7 +443,8 @@
     "fold": "Fold the sidebar — more room for the screen",
     "unfold": "Expand the sidebar",
     "payroll": "Staff payroll",
-    "poultry": "Poultry farms"
+    "poultry": "Poultry farms",
+    "photos": "Product photos"
   },
   "campaigns": {
     "title": "WhatsApp Campaigns",
@@ -1729,7 +1730,8 @@
       "clinicSub": "Manage patients, boarding & treatments",
       "owner": "Continue as Pet Owner",
       "ownerSub": "Your pets, records & appointments"
-    }
+    },
+    "photographer": "Photographer"
   },
   "settings": {
     "title": "Doctor settings",
@@ -4062,7 +4064,14 @@
     "autoRefresh": "Refreshes automatically every 30 seconds",
     "nobodyOnline": "Nobody is using the system right now.",
     "lastSeen": "Last seen {{ago}}",
-    "emptyRoster": "No staff yet. Add your first team member."
+    "emptyRoster": "No staff yet. Add your first team member.",
+    "roleName": {
+      "manager": "Clinic manager",
+      "veterinarian": "Veterinarian",
+      "receptionist": "Receptionist",
+      "groomer": "Groomer",
+      "photographer": "Photographer"
+    }
   },
   "visit": {
     "editDrug": "Edit medication",
@@ -4326,7 +4335,9 @@
     "deleteInvoices": "Delete invoices permanently",
     "manageSettings": "Change clinic settings",
     "manageStaff": "Manage staff and permissions",
-    "viewPayroll": "Staff payroll and advances"
+    "viewPayroll": "Staff payroll and advances",
+    "manageProductPhotos": "Product photos (shoot and replace)",
+    "manageStore": "Online store — products & storefront (no orders, no prices)"
   },
   "features": {
     "pos": "Point of sale, billing and invoices",
@@ -5418,5 +5429,24 @@
     "clears": "After saving the red mark goes away — the vaccine is scheduled on its new date.",
     "tapToEdit": "tap to change the date",
     "change": "Change date"
+  },
+  "photos": {
+    "title": "Product photos",
+    "sub": "Photograph a product or pick one from the library — it shows in the store and inventory",
+    "summary": "{{missing}} without a photo of {{total}} products",
+    "search": "Search by name, barcode or company",
+    "fMissing": "No photo",
+    "fAll": "All",
+    "failed": "Couldn't load the products — a connection problem. Nothing was lost.",
+    "allDone": "Every product has a photo ✓",
+    "none": "No products match this search.",
+    "replace": "Replace",
+    "shoot": "Photograph",
+    "library": "From library",
+    "remove": "Remove photo",
+    "more": "Show the rest ({{n}})",
+    "saved": "Saved the photo for {{name}}",
+    "removed": "Removed the photo for {{name}}",
+    "noAccess": "This page is for staff with product-photo permission. Ask the clinic manager."
   }
 }

@@ -75,6 +75,21 @@ create unique index if not exists pets_serial_idx on pets(serial) where serial i
 create table if not exists clinics (id uuid primary key default gen_random_uuid());
 create table if not exists companies (id uuid primary key default gen_random_uuid());
 create table if not exists staff (id uuid primary key default gen_random_uuid(), clinic_id uuid, name text);
+-- أعمدةُ الإنتاج التي يقرؤها `staff_can` (0222): صفُّ الكادر بهويّته واستثناءاته.
+alter table staff add column if not exists user_id uuid;
+alter table staff add column if not exists role text;
+alter table staff add column if not exists email text;
+alter table staff add column if not exists permissions jsonb default '{}'::jsonb;
+alter table staff add column if not exists created_at timestamptz default now();
+-- وسياساتُ الإنتاج (مقيسة ٣٠/٩): القراءةُ للعيادة، والكتابةُ للمدير. بلاها كان «المصوّرُ
+-- يرى صفَّه وحده» يُفحص على جدولٍ بلا RLS أصلاً فيرى الكلّ.
+alter table staff enable row level security;
+drop policy if exists staff_select on staff;
+create policy staff_select on staff for select using (clinic_id = (select auth_clinic()));
+drop policy if exists staff_manager_update on staff;
+create policy staff_manager_update on staff for update
+  using (clinic_id = (select auth_clinic()) and (select auth_role()) = 'manager')
+  with check (clinic_id = (select auth_clinic()) and (select auth_role()) = 'manager');
 create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid, stock numeric(14,3) default 0, name text, barcode text);
 create table if not exists invoices (id uuid primary key default gen_random_uuid(), clinic_id uuid, created_at timestamptz not null default now());
 create table if not exists medical_visits (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), clinic_id uuid);
@@ -541,9 +556,12 @@ create policy visits_clinic_all on medical_visits for all
   using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
 create policy profiles_self_select on profiles for select using (id = auth.uid());
 create policy profiles_self_insert on profiles for insert with check (id = auth.uid());
+-- شرطُ عيادةٍ وحده: كانت تنادي has_permission('pos.sell') على بديلٍ يرجع true دائماً —
+-- وقدرةُ 'pos.sell' لا وجود لها بالإنتاج، ولا سياسةَ بالإنتاج تنادي has_permission أصلاً
+-- (مقيس ٣٠/٩). فلمّا عرّفتها 0222 كالإنتاج انطفأت هذه وبدا كأن الاستقبال فقد الفواتير.
 create policy invoices_perm on invoices for all
-  using (clinic_id = auth_clinic() and has_permission('pos.sell'))
-  with check (clinic_id = auth_clinic() and has_permission('pos.sell'));
+  using (clinic_id = auth_clinic())
+  with check (clinic_id = auth_clinic());
 
 -- عيادةُ الفحوص موجودةٌ بـauth.users: بالإنتاج `clinic_id` هو معرّفُ مالكِ
 -- العيادة نفسه، وجداولٌ عدّة تشير إليه بمفتاحٍ أجنبيّ. المخطّط كان يزرع

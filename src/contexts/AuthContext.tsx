@@ -39,7 +39,7 @@ interface RawProfile {
   phone?: string;
   clinic_id?: string | null;
   /** Set when the user is staff of another clinic (accepted an invite). */
-  staff?: { clinicId: string; role: Role } | null;
+  staff?: { clinicId: string; role: Role; staffRole?: string | null } | null;
 }
 
 interface AuthState {
@@ -105,6 +105,9 @@ function effectiveRole(active: AccountRole, raw: RawProfile): Role {
 /** Map a staff membership role → the app's clinic sub-role (least-privilege fallback). */
 const STAFF_TO_APP_ROLE: Record<string, Role> = {
   manager: "admin", veterinarian: "doctor", receptionist: "reception", groomer: "reception",
+  // موظّفُ التصوير: أقلُّ دورٍ بالواجهة، ودورُه الحقيقيّ يُحمل بـ`staff_role` — الخادمُ
+  // يسيّجه بنفسه (0222)، والواجهةُ تقصر قائمتَه على الصور والمتجر.
+  photographer: "reception",
 };
 
 /**
@@ -114,7 +117,7 @@ const STAFF_TO_APP_ROLE: Record<string, Role> = {
  * changes behaviour for existing clinics/owners. Returns null if not staff, or if
  * the memberships table doesn't exist yet (pre-0016) → safe no-op.
  */
-async function loadMembership(userId: string): Promise<{ clinicId: string; role: Role } | null> {
+async function loadMembership(userId: string): Promise<{ clinicId: string; role: Role; staffRole?: string | null } | null> {
   if (!supabase) return null;
   // SERVER truth first (migration 0072): my_workspace() returns the exact
   // clinic/role that auth_clinic()/auth_role() — i.e. every RLS policy — will
@@ -127,7 +130,7 @@ async function loadMembership(userId: string): Promise<{ clinicId: string; role:
       const w = data as { clinic_id?: string | null; role?: string | null; is_staff?: boolean };
       if (w.clinic_id) {
         if (!w.is_staff) return null; // the server routes me to my own clinic
-        return { clinicId: w.clinic_id, role: STAFF_TO_APP_ROLE[w.role ?? ""] ?? "reception" };
+        return { clinicId: w.clinic_id, role: STAFF_TO_APP_ROLE[w.role ?? ""] ?? "reception", staffRole: w.role ?? null };
       }
     }
   } catch { /* pre-0072 backend — fall through to the direct query */ }
@@ -140,7 +143,7 @@ async function loadMembership(userId: string): Promise<{ clinicId: string; role:
     if (error || !data) return null;
     const staff = (data as { clinic_id: string; role: string }[]).find((m) => m.clinic_id !== userId);
     if (!staff) return null;
-    return { clinicId: staff.clinic_id, role: STAFF_TO_APP_ROLE[staff.role] ?? "reception" };
+    return { clinicId: staff.clinic_id, role: STAFF_TO_APP_ROLE[staff.role] ?? "reception", staffRole: staff.role };
   } catch {
     return null;
   }
@@ -336,6 +339,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       id: raw.id, full_name: raw.full_name, email: raw.email,
       role, roles: effRoles,
       phone: raw.phone, clinic_id: clinicId,
+      staff_role: raw.staff && act === "clinic" ? (raw.staff.staffRole ?? null) : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw, resolvedActive]);

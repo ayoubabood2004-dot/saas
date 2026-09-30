@@ -16,6 +16,9 @@ export interface Profile {
   roles: AccountRole[];
   phone?: string;
   clinic_id?: string | null;
+  /** دورُ الكادر الحقيقيّ بعيادةٍ انضمّ لها (manager/veterinarian/…/photographer) —
+   *  `role` أعلاه مختصرُه للواجهة، وهذا ما يفرّق المصوّرَ عن الاستقبال. */
+  staff_role?: string | null;
 }
 
 export interface Clinic {
@@ -2044,4 +2047,21 @@ export interface DrugFavorite {
   /** الاسمُ كما يكتبه المنتقي — خطةُ العلاج تحفظ الدواءَ نصّاً. */
   name: string;
   created_at: string;
+}
+
+/* ── موظّفُ التصوير (0222) — المنتجُ بأعمدةٍ آمنة: لا سعرَ شراءٍ ولا تكلفة ── */
+export interface PhotoProduct {
+  id: string;
+  name: string;
+  barcode?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  company_id?: string | null;
+  company_name?: string | null;
+  image_path?: string | null;
+  store_visible: boolean;
+  store_featured: boolean;
+  store_desc?: string | null;
+  sell_price?: number | null;
+  stock?: number | null;
 }

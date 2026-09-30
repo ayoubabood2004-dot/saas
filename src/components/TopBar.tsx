@@ -27,7 +27,7 @@ import {
   Box, Wallet } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Camera } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
@@ -51,7 +51,9 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const navigate = useNavigate();
   const location = useLocation();
   const palette = useCommandPalette();
-  const { can } = usePermissions();
+  const { can, baseRole } = usePermissions();
+  // موظّفُ التصوير (0222): قائمتُه الصورُ والمتجرُ بإذنه — مرآةُ الشريط الجانبيّ.
+  const photographer = baseRole === "photographer";
   const { has } = useEntitlements();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,7 +61,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
 
   const staff = user?.role === "doctor" || user?.role === "reception" || user?.role === "admin";
   // عدّاد طلبات الحجز الحي (المجس المشترك) — يشتغل فقط لحسابات العيادة.
-  const bookingReqs = useBookingRequestCount(staff);
+  const bookingReqs = useBookingRequestCount(staff && !photographer);
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
@@ -89,7 +91,12 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   // `minimal` (a subscription-locked clinic) hides all navigation — only the
   // logo + theme/language/logout remain, so nothing but the subscribe screen
   // is reachable.
-  const navItems = minimal ? [] : staff
+  const navItems = minimal ? [] : photographer
+    ? [
+        { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), show: true },
+        { to: "/store", icon: Store, label: t("nav.store", "المتجر الإلكتروني"), show: can("manageStore") && has("store") },
+      ].filter((it) => it.show !== false)
+    : staff
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/bookings", icon: CalendarDays, label: t("bookings.title", "الحجوزات") },

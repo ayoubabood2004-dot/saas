@@ -25,7 +25,7 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen, Wallet } from "lucide-react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Camera, type LucideIcon } from "lucide-react";
 import { Bird } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
@@ -45,14 +45,21 @@ import { useCommandPalette } from "./CommandPaletteProvider";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { cn } from "@/lib/utils";
 
+type NavItem = {
+  to: string; icon: LucideIcon; label: string; exact?: boolean; show?: boolean;
+  children?: { to: string; icon: LucideIcon; label: string }[];
+};
+
 /** Desktop navigation rail with profile card (ref img 1). Hidden below lg. */
 export function Sidebar() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const location = useLocation();
   const palette = useCommandPalette();
-  const { can } = usePermissions();
+  const { can, baseRole } = usePermissions();
   const { has } = useEntitlements();
+  // موظّفُ التصوير (0222): الصورُ والمتجرُ بإذنه، ولا شيءَ غيرهما — الخادمُ مسيَّجٌ عنه.
+  const photographer = baseRole === "photographer";
   // وضع التركيز: الشريط يصير سكّة أيقونات ٧٦px فتتحرّر ١٨٠px للشاشة الواقفة
   // عليها (الكاشير أساساً). التنقّل لا يُفقد — كل أيقونة تبقى بمكانها نفسه.
   const folded = useNavFolded();
@@ -62,6 +69,7 @@ export function Sidebar() {
   // there" with no chunk download, no Suspense fallback, no data fetch.
   useEffect(() => {
     prefetchAllIdle();
+    if (photographer) return;   // لا بياناتَ عيادةٍ يُسخَّن لها — ستُرفض كلُّها
     warmDataIdle(user?.clinic_id ?? user?.id, {
       records: true,
       retail: can("processSales"),
@@ -71,7 +79,10 @@ export function Sidebar() {
   }, []);
 
   // RBAC-aware navigation — items requiring a capability the role lacks are hidden.
-  const items = [
+  const items = photographer ? [
+    { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات") },
+    { to: "/store", icon: ShoppingBag, label: t("nav.store", "المتجر الإلكتروني"), show: can("manageStore") && has("store") },
+  ].filter((it) => it.show !== false) as NavItem[] : ([
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
     { to: "/bookings", icon: CalendarCheck2, label: t("bookings.title", "الحجوزات") },
@@ -107,18 +118,20 @@ export function Sidebar() {
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
     // لوحةُ المنصّة (0151) — لمشغّل المنصّة وحده؛ الخادمُ يحرسها بنفسه أيضاً.
     { to: "/platform", icon: ShieldCheck, label: t("nav.platform", "لوحة المنصّة"), show: isPlatformAdmin(user?.email) },
-  ].filter((it) => it.show !== false);
+    // وللكادر الذي يملك إذنَ الصور (مديرٌ أو طبيبٌ أو من أُذن له) — المصوّرُ له قائمتُه فوق.
+    { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), show: can("manageProductPhotos") && can("manageInventory") },
+  ] as NavItem[]).filter((it) => it.show !== false);
 
   // فتح/غلق المجموعات المنسدلة — حالة مستقلة لكل مجموعة (الطبلات، الواتساب…).
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   // عدّاد حي لطلبات الحجز الجديدة (زبائن) — نفس المجس المشترك مال الجرس.
-  const bookingReqs = useBookingRequestCount();
+  const bookingReqs = useBookingRequestCount(!photographer);
   // عدّاد حي لطلبات المتجر الجديدة — يشتغل فقط لما ميزة المتجر متاحة.
   /* **الباقةُ ليست الشرط.** `has("store")` صادقةٌ لكلّ تجربةٍ وكلّ باقةِ super،
    * والمقيسُ بالإنتاج ٦٤ عيادةً منها واحدةٌ لها متجر — فثلاثٌ وستّون كنّ ينبضن
    * كلَّ ٤٥ ثانية ليعددن صفراً. الشرطُ صفٌّ مفعَّلٌ بـ`store_profiles`. */
   const hasStore = useHasEnabledStore();
-  const storeOrders = useStoreOrderCount(hasStore && can("processSales"));
+  const storeOrders = useStoreOrderCount(hasStore && can("processSales") && !photographer);
   const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");

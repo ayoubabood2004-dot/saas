@@ -677,7 +677,8 @@ console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، و
   check("وفرزٌ صريح", cs.includes("data-catsort") && cs.includes('sort === "priceDesc"'));
   check("  و«الترتيب الذكي» يقدّم المعروضَ ثم الناقصَ صورة", /rank = \(p: Product\) =>[^;]*store_visible[^;]*image_path/.test(cs));
   check("وبحثُ التشكيلة يطبّع الطرفين مثل الستور", cs.includes("searchable(q)") && cs.includes("searchable(p.name).includes(ql)"));
-  check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً", cs.includes("repo.deleteProductImage(") && cs.includes("image_path: null"));
+  // منذ 0222 يمرّ الفكُّ من `set_product_image` (الخادمُ يسأل الإذن ويحصر المسار) لا من رقعةٍ عامّة.
+  check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً", cs.includes("repo.deleteProductImage(") && cs.includes("repo.setProductImage(p.id, null)"));
 }
 
 /* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────
@@ -837,7 +838,7 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   const bell = readFileSync("src/lib/storeOrdersLive.ts", "utf8");
   const side = readFileSync("src/components/Sidebar.tsx", "utf8");
   check("الجرسُ مشروطٌ بصفِّ متجرٍ مفعَّل لا بالباقة",
-    /useStoreOrderCount\(hasStore && can\("processSales"\)\)/.test(side));
+    /useStoreOrderCount\(hasStore && can\("processSales"\)( && !photographer)?\)/.test(side));
   check("  ولا أثرَ للشرط القديم (has(\"store\") يقرّر النبض)",
     !/useStoreOrderCount\(has\("store"\)/.test(side));
   check("  والمجسُّ قراءةٌ واحدةٌ بالجلسة لا نداءٌ بكلّ نبضة",

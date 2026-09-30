@@ -14,7 +14,7 @@ import { DOCTORS } from "./clinic";
 import { supabase } from "./supabase";
 import type { Role } from "@/types";
 
-export type StaffRole = "manager" | "veterinarian" | "receptionist" | "groomer";
+export type StaffRole = "manager" | "veterinarian" | "receptionist" | "groomer" | "photographer";
 // "pending" = invited but hasn't joined via their link yet; "active" = joined.
 export type StaffStatus = "pending" | "active" | "suspended";
 
@@ -41,14 +41,17 @@ export interface StaffMember {
   userId?: string | null;
 }
 
-export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionist", "groomer"];
+export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionist", "groomer", "photographer"];
 
 /* ----------------------------- Permissions ----------------------------- */
 
 export type Capability =
   | "manageStaff" | "manageSettings" | "viewReports" | "viewProfits"
   | "deleteInvoices" | "processSales" | "manageInventory" | "editMedical"
-  | "addPets" | "viewCalendar" | "viewPayroll";
+  | "addPets" | "viewCalendar" | "viewPayroll"
+  // موظّفُ التصوير (0222): صورُ المنتجات، والمتجرُ بلا طلباته وسعره. مرآتُهما بالخادم
+  // `has_permission`/`staff_can` — والخادمُ يفرضهما بنفسه لا الواجهة.
+  | "manageProductPhotos" | "manageStore";
 
 export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "viewCalendar", label: "عرض التقويم والمواعيد" },
@@ -64,13 +67,16 @@ export const CAPABILITIES: { id: Capability; label: string }[] = [
   // رواتب الكادر: أخطر بيانات بالعيادة — تسريبها يفجّرها من داخلها بيوم.
   // مطفأة لكل دور غير المدير، ولا تُمنح إلا صراحةً.
   { id: "viewPayroll", label: "Staff payroll & advances" },
+  { id: "manageProductPhotos", label: "Product photos" },
+  { id: "manageStore", label: "Online store (products & storefront, no orders)" },
 ];
 
 export const PERMISSIONS: Record<StaffRole, Capability[]> = {
   manager: CAPABILITIES.map((c) => c.id),
-  veterinarian: ["viewCalendar", "addPets", "editMedical", "processSales", "manageInventory"],
+  veterinarian: ["viewCalendar", "addPets", "editMedical", "processSales", "manageInventory", "manageProductPhotos", "manageStore"],
   receptionist: ["viewCalendar", "addPets", "processSales"],
   groomer: ["viewCalendar", "addPets"],
+  photographer: ["manageProductPhotos"],
 };
 
 /** High-risk capabilities that trigger a confirmation when granted to non-managers. */
@@ -98,6 +104,7 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
   veterinarian: "طبيب بيطري",
   receptionist: "موظف استقبال",
   groomer: "أخصائي عناية",
+  photographer: "Photographer",
 };
 
 export function roleCan(role: StaffRole, cap: Capability): boolean {

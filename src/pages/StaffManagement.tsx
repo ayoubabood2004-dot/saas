@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { roleText } from "@/lib/roleText";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { createPortal } from "react-dom";
@@ -14,7 +15,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride, noteLockedTap } from "@/lib/managerOverride";
 import {
   listStaff, saveStaff, deleteStaff, setStaffStatus, blankStaff,
-  STAFF_ROLES, ROLE_LABEL, CAPABILITIES, SENSITIVE_CAPS, presetMap,
+  STAFF_ROLES, CAPABILITIES, SENSITIVE_CAPS, presetMap,
   type StaffMember, type StaffRole, type Capability,
 } from "@/lib/staff";
 import { prepareUpload } from "@/lib/image";
@@ -40,6 +41,7 @@ const ROLE_TONE: Record<StaffRole, string> = {
   veterinarian: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300",
   receptionist: "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300",
   groomer: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+  photographer: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300",
 };
 
 /** Membership role (as stamped by presence_beat) → localized label. */
@@ -49,6 +51,7 @@ const presenceRoleLabel = (role: string | null | undefined, t: TFunction): strin
     case "veterinarian": return t("staff.roleVet", "طبيب");
     case "receptionist": return t("staff.roleReception", "استقبال");
     case "groomer": return t("staff.roleStaffer", "موظف");
+    case "photographer": return t("staff.roleName.photographer", "موظف تصوير");
     default: return role ?? "";
   }
 };
@@ -288,7 +291,7 @@ export function StaffManagement() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-display font-bold text-ink">{m.name || "—"}</p>
-                  <p className="truncate text-xs text-ink-muted">{m.specialty || ROLE_LABEL[m.role]}</p>
+                  <p className="truncate text-xs text-ink-muted">{m.specialty || roleText(m.role, t)}</p>
                   {(() => { const p = presenceFor(m); return p && !isOnline(p)
                     ? <p className="truncate text-2xs text-ink-subtle">{t("staff.lastSeen", { ago: agoLabel(p.last_seen, t), defaultValue: "آخر ظهور {{ago}}" })}</p>
                     : null; })()}
@@ -296,7 +299,7 @@ export function StaffManagement() {
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className={cn("chip text-2xs font-bold", ROLE_TONE[m.role])}>{ROLE_LABEL[m.role]}</span>
+                <span className={cn("chip text-2xs font-bold", ROLE_TONE[m.role])}>{roleText(m.role, t)}</span>
                 <span className={cn("chip text-2xs font-semibold",
                   m.status === "active" ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300"
                     : m.status === "pending" ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
@@ -503,7 +506,7 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
                 <div>
                   <label className="label">الدور الأساسي</label>
                   <select className="input" value={draft.role} onChange={(e) => changeRole(e.target.value as StaffRole)}>
-                    {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                    {STAFF_ROLES.map((r) => <option key={r} value={r}>{roleText(r, t)}</option>)}
                   </select>
                   <p className="mt-1 text-2xs text-ink-subtle">اختيار الدور يضبط الصلاحيات تلقائياً، وتقدر تعدّل كل صلاحية بالأسفل.</p>
                 </div>
@@ -599,6 +602,7 @@ function Section({ title, step, children }: { title: string; step: string; child
 
 /* ---------------- Invite teammates (email or code) ---------------- */
 function InviteDialog({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged?: () => void }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [list, setList] = useState<Invite[]>([]);
   const [method, setMethod] = useState<"email" | "code">("email");
@@ -645,7 +649,7 @@ function InviteDialog({ open, onClose, onChanged }: { open: boolean; onClose: ()
         <div>
           <label className="label">الدور</label>
           <select className="input" value={role} onChange={(e) => setRole(e.target.value as StaffRole)}>
-            {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+            {STAFF_ROLES.map((r) => <option key={r} value={r}>{roleText(r, t)}</option>)}
           </select>
         </div>
         <Button className="w-full" loading={busy} leftIcon={<Send size={16} />} onClick={create}>إنشاء الدعوة</Button>
@@ -672,7 +676,7 @@ function InviteDialog({ open, onClose, onChanged }: { open: boolean; onClose: ()
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{inv.email ? <Mail size={15} /> : <Ticket size={15} />}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{inv.email || inv.code}</p>
-                  <p className="text-2xs text-ink-muted">{ROLE_LABEL[inv.role]} · <span className="font-mono" dir="ltr">{inv.code}</span></p>
+                  <p className="text-2xs text-ink-muted">{roleText(inv.role, t)} · <span className="font-mono" dir="ltr">{inv.code}</span></p>
                 </div>
                 <button onClick={() => copy(joinLink(inv.code), `l-${inv.id}`)} title="نسخ الرابط" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15">{copied === `l-${inv.id}` ? <Check size={15} className="text-success-600" /> : <Copy size={15} />}</button>
                 <button onClick={() => revoke(inv.id)} title="إلغاء" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15"><Trash2 size={15} /></button>

@@ -7,7 +7,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { repo } from "@/lib/repo";
-import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
+import { listStaff, type StaffMember } from "@/lib/staff";
+import { roleText } from "@/lib/roleText";
 import { cn, money, currencySymbol, formatNum } from "@/lib/utils";
 import { getClinicName, getClinicLogo, getCurrencyCode } from "@/lib/settings";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -305,7 +306,7 @@ function StaffPayTab() {
             return (
               <tr key={s.id} className={TR} data-payrow={s.id}>
                 <td className={cn(TD, STICKY, "font-semibold text-ink")}>{s.name}</td>
-                <td className={cn(TD, "text-ink-muted")}>{ROLE_LABEL[s.role]}</td>
+                <td className={cn(TD, "text-ink-muted")}>{roleText(s.role, t)}</td>
                 <td className={cn(TD, NUM, "font-bold")} data-paybase={s.id}>
                   {cur ? money(cur.base_amount)
                     : <span className="text-xs font-semibold text-warn-600 dark:text-warn-400">{t("payroll.noSalary", "بلا راتب مثبَّت")}</span>}

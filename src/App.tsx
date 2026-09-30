@@ -41,6 +41,7 @@ const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.N
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
+const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })), ["farm"]);
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
@@ -73,10 +74,18 @@ function FullScreenLoader() {
 
 
 
+/** موظّفُ التصوير (0222) يعيش بصفحتين: الصور، والمتجر إن أُذن له. غيرُهما يرجعه للصور —
+ *  والخادمُ مسيَّجٌ عنه أصلاً، فهذا لا يحمي شيئاً بل يمنع شاشاتٍ فارغةً أو أخطاءً بلا معنى. */
+const PHOTOGRAPHER_PATHS = ["/photos", "/store", "/join"];
+
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const { pathname } = useLocation();
   if (loading) return <FullScreenLoader />;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.staff_role === "photographer" && !PHOTOGRAPHER_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return <Navigate to="/photos" replace />;
+  }
   // No enter animation on route content — a native-app feel: the moment you
   // click, the page is simply THERE at full opacity, not fading in. Combined
   // with preloaded chunks + a warm data cache, navigation has no perceptible load.
@@ -172,6 +181,7 @@ function Home() {
 function HomeRoute() {
   const { user, loading } = useAuth();
   if (loading) return <FullScreenLoader />;
+  if (user?.staff_role === "photographer") return <Navigate to="/photos" replace />;
   if (user) return <Home />;
   if (isAppHost()) return <Navigate to="/login" replace />;
   return <Landing />;
@@ -238,6 +248,7 @@ function Shell() {
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
             <Route path="/inventory/count" element={<Protected><ClinicOnly><StockCount /></ClinicOnly></Protected>} />
             <Route path="/inventory/watch" element={<Protected><ClinicOnly><StockWatch /></ClinicOnly></Protected>} />
+            <Route path="/photos" element={<Protected><ClinicOnly><ProductPhotos /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}
