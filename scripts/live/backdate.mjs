@@ -71,6 +71,12 @@ console.log("▸ ١) زيارةٌ بتاريخٍ سابق: الجرعاتُ ال
   check("شريطُ «زيارة بتاريخ سابق» ظاهر", await page.locator("[data-visit-backdated]").count() === 1, (await flat(page)).slice(0, 300));
   check("  و«حدّد الي انطت بأيامها» ظاهر، و«تسجيل إعطائها الآن» مخفيّ لزيارةٍ سابقة",
     await page.locator("[data-pickpast]").count() === 1 && !/تسجيل إعطائها الآن/.test(await flat(page)));
+  const careText = async () => (await page.locator("section", { has: page.locator("text=جدول العلاج الزمني") }).last().innerText()).replace(/\s+/g, " ");
+  check("ورقةُ الرعاية تسأل عن يومها لزيارةٍ سابقة (اليوم / يوم الزيارة)", await page.locator("[data-care-day]").count() === 1);
+  check("  وعلى اليوم: ما بيها جرعات الأيام الفائتة", !/Ceftriaxone/.test(await careText()));
+  await page.locator(`[data-care-day-pick="${D10}"]`).click();
+  await page.waitForTimeout(800);
+  check("  وعلى يوم الزيارة: جرعاتُ ذاك اليوم بساعاتها", /Ceftriaxone/.test(await careText()), (await careText()).slice(0, 200));
   await page.locator("[data-pickpast]").click();
   await page.waitForTimeout(600);
   check("النافذةُ تعرض الخمس جرعات الفائتة", await page.locator("[data-past-row]").count() === 5, String(await page.locator("[data-past-row]").count()));

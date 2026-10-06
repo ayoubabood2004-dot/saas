@@ -166,6 +166,8 @@ export default function VisitPage() {
   const [planView, setPlanView] = useState<"day" | "drug">("day");
   /** الجرعاتُ الفائتة: «انطت بيومها / ما انطت» — تُفتح بعد خطةٍ تبدأ بالماضي، أو من لوحة اليوم. */
   const [pastOpen, setPastOpen] = useState(false);
+  /** يومُ ورقة الرعاية: اليوم افتراضياً، ولزيارةٍ بتاريخٍ سابق يُختار يومُها أو أيُّ يومٍ بينهما. */
+  const [careDay, setCareDay] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -850,7 +852,23 @@ export default function VisitPage() {
       )}
 
       <section className="mt-4">
-        <CareSheet pet={pet} visitId={visit.id} day={todayISO} doctor={user?.full_name} treatments={treatments} />
+        {backdated && openDay < todayISO && (
+          <div data-care-day className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-2/70 px-3 py-2">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><History size={13} className="text-brand-600" /> {t("vbk.careDay", "ورقة الرعاية ليوم:")}</span>
+            {([[todayISO, t("vbk.careToday", "اليوم")], [openDay, t("vbk.careVisitDay", "يوم الزيارة")]] as const).map(([d, label]) => (
+              <button key={d} type="button" data-care-day-pick={d} onClick={() => { playTap(); setCareDay(d); }}
+                className={cn("rounded-lg px-3 py-1.5 text-xs font-extrabold transition",
+                  (careDay ?? todayISO) === d ? "bg-brand-600 text-white shadow-soft" : "border border-line bg-surface-1 text-ink-muted hover:text-ink")}>
+                {label} <span className="font-semibold opacity-80">· {formatDate(d, lang)}</span>
+              </button>
+            ))}
+            <input type="date" data-care-day-input value={careDay ?? todayISO} min={openDay} max={todayISO}
+              aria-label={t("vbk.careOther", "يوم ثاني")}
+              onChange={(e) => { const v = e.target.value; if (v && v >= openDay && v <= todayISO) setCareDay(v); }}
+              className="input h-9 w-40 tabular-nums [color-scheme:light] dark:[color-scheme:dark]" dir="ltr" />
+          </div>
+        )}
+        <CareSheet pet={pet} visitId={visit.id} day={backdated && careDay && careDay >= openDay && careDay <= todayISO ? careDay : todayISO} doctor={user?.full_name} treatments={treatments} />
       </section>
 
       <section className="mt-4">

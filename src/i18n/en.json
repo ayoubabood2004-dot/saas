@@ -5505,6 +5505,10 @@
     "pickDoctor": "Choose the doctor…",
     "pastSave": "Save: {{given}} given · {{missed}} not given",
     "reloadFail": "Saved, but the page didn't refresh — reload it.",
-    "pastFail": "Not saved — try again."
+    "pastFail": "Not saved — try again.",
+    "careDay": "Care sheet for:",
+    "careToday": "Today",
+    "careVisitDay": "Visit day",
+    "careOther": "Another day"
   }
 }

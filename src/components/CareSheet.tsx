@@ -7,7 +7,7 @@ import type { CareEntry, CareKind, Pet, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
 import { fluidPlan, DEHYDRATION_BANDS, FLUID_TYPES, DROP_FACTORS, type DropFactor } from "@/lib/fluidTherapy";
 import { taskStatus, HHMM } from "@/lib/treatmentSchedule";
-import { formatNum, cn } from "@/lib/utils";
+import { formatNum, cn, localISO } from "@/lib/utils";
 import { useToast } from "@/components/ui";
 import { playTap, playSuccess } from "@/lib/sounds";
 
@@ -184,7 +184,8 @@ export function CareSheet({ pet, visitId, day, doctor, treatments }: {
         <div className="overflow-hidden rounded-xl border border-line">
           {activeHours.map((h) => {
             const v = byHour.get(h)!;
-            const isNow = h === hourOf(HHMM());
+            // «الساعة الآن» تُضاء لليوم الحاضر وحده — ورقةُ يومٍ سابق ما عندها «هسّة».
+            const isNow = day === localISO() && h === hourOf(HHMM());
             return (
               <div key={h || "untimed"} className={cn("flex gap-2 border-b border-line/70 p-2 last:border-b-0", isNow && "bg-brand-50/60 dark:bg-brand-500/10")}>
                 <div className={cn("w-14 shrink-0 pt-0.5 text-sm font-black tabular-nums", isNow ? "text-brand-700 dark:text-brand-300" : "text-ink-muted")}>
@@ -192,7 +193,8 @@ export function CareSheet({ pet, visitId, day, doctor, treatments }: {
                 </div>
                 <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
                   {v.doses.map((t) => {
-                    const st = taskStatus(t, day);
+                    // الحالةُ بيوم اليوم الحقيقي: ورقةُ يومٍ فات تُظهر جرعتَها معطاةً أو فائتة، لا «مستحقّة الآن».
+                    const st = taskStatus(t, localISO());
                     return (
                       <span key={t.id} className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-2xs font-bold",
                         st === "given" ? "border-success-200 bg-success-50 text-success-700 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-300"
