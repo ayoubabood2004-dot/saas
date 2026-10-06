@@ -110,6 +110,14 @@ await dlg.locator("button", { hasText: "التشخيص" }).last().click();
 await page.waitForTimeout(600);
 check("  والتشخيصُ الأوّلي بخطوة التشخيص", (await dlg.innerText()).includes("التهاب معدة وأمعاء"));
 
+console.log("\n▸ ٤) تبويب «الدخول والخروج»");
+await page.goto(`${BASE}/pet/${petId}?tab=stays`, { waitUntil: "domcontentloaded" });
+await page.locator("[data-staylog]").waitFor({ timeout: 30000 }).catch(() => {});
+await page.waitForTimeout(800);
+check("إقامةٌ واحدة مفتوحة «بعده داخل» بيوم دخولها", await page.locator("[data-stay]").count() === 1 && /بعده داخل/.test(await page.locator("[data-stay]").innerText()));
+check("  ومعلوماتُ الحالة عند الدخول معلّقةٌ عليها", await page.locator('[data-stay] [data-record-kind="intake"]').count() === 1);
+check("  واليومُ يقول: دخل العيادة، وانفتحت زيارة", await page.locator('[data-stay-event="in"]').count() >= 1 && await page.locator('[data-stay-event="visitOpen"]').count() >= 1);
+await page.locator("[data-staylog]").screenshot({ path: process.env.SHOT ?? "/dev/null" }).catch(() => {});
 check("ولا خطأَ تشغيلٍ بالصفحات", errors.length === 0, errors.join(" | "));
 await browser.close();
 console.log(`\n${fails ? "✗" : "✓"} live-intake: ${passes} نجحت، ${fails} فشلت`);

@@ -13,6 +13,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement, LabResult } from "@/types";
 import { VisitsPanel } from "@/components/VisitsPanel";
+import { StayLogTab } from "@/components/StayLog";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
@@ -56,10 +57,11 @@ import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockP
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "visits" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
+type Tab = "visits" | "stays" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
   { id: "visits", icon: Stethoscope, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
+  { id: "stays", icon: BedDouble, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
@@ -380,6 +382,8 @@ export function PetPassport() {
   const vaccineOverdue = vaccines.some((v) => v.status === "overdue");
   const tabBadge: Record<Tab, { dot?: boolean; count?: number }> = {
     visits: { count: clinicVisits.filter((v) => v.status === "open").length || undefined },
+    // نقطةٌ خضراء = الحيوانُ بالعيادة هسّة.
+    stays: { dot: admissions.some((a) => a.status === "active") },
     timeline: {},
     diet: {},
     history: {},
@@ -552,6 +556,7 @@ export function PetPassport() {
             transition={{ duration: 0.2 }}
           >
             {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
+            {tab === "stays" && <StayLogTab petId={pet.id} admissions={admissions} visits={clinicVisits} treatments={treatments} vaccinations={vaccines} notes={notes} labs={labs} weights={weights} />}
             {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
             {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
             {tab === "labs" && <LabsTab pet={pet} results={labs} canEdit={canEditClinical && !isOwner} doctor={user?.full_name} onChanged={reload} />}

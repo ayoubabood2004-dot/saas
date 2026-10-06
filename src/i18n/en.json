@@ -2153,7 +2153,8 @@
       "treatment": "Treatment",
       "notes": "Notes",
       "media": "Media",
-      "qr": "QR chart"
+      "qr": "QR chart",
+      "stays": "Admissions"
     },
     "weightChart": "Weight & growth",
     "addWeight": "Record weight",
@@ -5535,5 +5536,31 @@
     "cardTitle": "Case information at admission",
     "signsN": "{{n}} signs",
     "sinceLine": "{{n}} days so far — started around {{date}}"
+  },
+  "stays": {
+    "visitOpen": "Visit opened — {{kind}}",
+    "visitCloseAs": "Visit closed — {{outcome}}",
+    "visitClose": "Visit closed",
+    "doses": "{{n}} dose(s) given: {{list}}",
+    "missed": "{{n}} dose(s) not given: {{list}}",
+    "vaccine": "Vaccinated: {{name}}",
+    "lab": "Lab test: {{name}}",
+    "weight": "Weight {{kg}} kg",
+    "planDx": "Diagnosis and treatment plan: {{dx}}",
+    "plan": "Diagnosis and treatment plan",
+    "intakeNote": "Case information: {{text}}",
+    "movesFailed": "Admission and discharge times didn't load — days are shown without times.",
+    "timesIn": "Times admitted",
+    "daysIn": "days in the clinic",
+    "inNow": "In the clinic now",
+    "lastIn": "Last admission",
+    "empty": "Not admitted yet — once admitted, its days and everything done appear here.",
+    "outside": "Visits without a stay",
+    "deceased": "Deceased",
+    "recovered": "Left healthy",
+    "stillIn": "Still in",
+    "nDays": "{{n}} days",
+    "noEvents": "Nothing was recorded on this stay's days.",
+    "dayN": "Day {{n}}"
   }
 }
