@@ -601,6 +601,10 @@ export interface DeletedCompany {
   /** ملاحظةُ الشركة الباقية **قبل** اتّحاد الملاحظتين (0201) — بها يفكّ
    *  الاسترجاعُ الاتّحاد، وبشرط أنها ما زالت حيث تركها الطيّ. */
   keep_note?: string | null;
+  /** صفوفُ دفتر الشركة (0224): معرّفاتُها بالطيّ (تنتقل حيّة)، وكاملةً بالحذف
+   *  الصريح (cascade يمحوها) ومعها دفعاتُ فواتيرها لتُربط ثانيةً بالاسترجاع. */
+  entry_ids?: string[];
+  entries?: (CompanyEntry & { pp_ids?: string[] })[];
   reason?: string | null;
   deleted_by?: string | null;
   deleted_at: string;
@@ -1016,6 +1020,8 @@ export interface PurchasePayment {
   note?: string | null;
   paid_at: string; // ISO — when the money was handed over
   staff_id?: string | null;
+  /** جاءت من تسديدٍ على الحساب (0224) — صفُّه بدفتر الشركة. */
+  entry_id?: string | null;
   created_at: string;
 }
 
@@ -1038,6 +1044,40 @@ export interface CompanyCharge {
   settled_at?: string | null;
   created_by?: string | null;
   created_at: string;
+}
+
+/** حركةٌ بدفتر الشركة خارجَ الفواتير (هجرة 0224).
+ *
+ *  `opening` رصيدٌ قبل النظام (علينا)، `payment` تسديدٌ على الحساب (يُوزَّع
+ *  بالقاعدة: الرصيدُ السابق أوّلاً ثم الفواتير من الأقدم — وما ذهب لفاتورةٍ
+ *  دفعتُها بـ`purchase_payments` تحمل `entry_id`)، `adjust` تسويةٌ بالاتّجاهين.
+ *  الإلغاءُ ختمٌ لا حذف. */
+export interface CompanyEntry {
+  id: string;
+  clinic_id?: string | null;
+  company_id: string;
+  kind: "opening" | "payment" | "adjust";
+  /** credit = يزيد ما علينا، debit = ينقصه. */
+  direction: "credit" | "debit";
+  amount: number;
+  entry_date: string;             // YYYY-MM-DD
+  method?: PaymentMethod | null;
+  note?: string | null;
+  created_by?: string | null;
+  created_at: string;
+  voided_at?: string | null;
+  voided_by?: string | null;
+  void_reason?: string | null;
+  /** إلغاءُ تسديد: دفعاتُ الفواتير التي ردّها. */
+  void_detail?: { purchase_id: string; amount: number; paid_at: string }[] | null;
+}
+
+/** ما وزّعه تسديدٌ على الحساب. */
+export interface CompanyPayResult {
+  entry: CompanyEntry;
+  to_opening: number;
+  to_invoices: number;
+  invoices: number;
 }
 
 /** One received line of a purchase — a snapshot of what came in and at what cost. */
@@ -1409,6 +1449,8 @@ export interface DemoDB {
   purchaseEffects?: PurchaseEffect[];
   purchasePayments?: PurchasePayment[];
   companyCharges?: CompanyCharge[];
+  /** دفترُ الشركة خارجَ الفواتير (0224). */
+  companyEntries?: CompanyEntry[];
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
   courierSettlements?: CourierSettlement[];

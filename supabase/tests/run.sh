@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -3765,6 +3765,95 @@ chk "عيادةٌ أخرى لا تكتب سجلاً سابقاً بملفّ غي
 $P -f "$MIG/0223_vaccination_recorded_at.sql" >/dev/null 2>&1
 chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ ولا تمسّ القيمَ المختومة" \
     "select count(*)::text from vaccinations where pet_id='$VXP' and created_at is not null" "1"
+
+# ── 0224: دفترُ كلّ شركة ──────────────────────────────────────────────────
+# رصيدٌ قبل النظام، وتسديدٌ على الحساب يُوزَّع بالقاعدة، وإلغاءٌ يردّ ما وزّعه —
+# كلُّها بدور authenticated (الكتابةُ من الدوالّ وحدها، والجدولُ للقراءة).
+echo "▸ 0224: دفترُ الشركة"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+VET=55555555-5555-5555-5555-555555555555
+RCP=77777777-7777-7777-7777-777777777777
+LCO=a2240000-0000-4000-8000-000000000001
+LKP=a2240000-0000-4000-8000-000000000002
+LP1=a2240000-0000-4000-8000-0000000000a1
+LP2=a2240000-0000-4000-8000-0000000000a2
+$P -c "insert into companies (id, clinic_id, name) values ('$LCO','$C1','شركة الدفتر'), ('$LKP','$C1','شركة الدفتر الباقية') on conflict (id) do nothing;
+       insert into purchases (id, clinic_id, company_id, company_name, total, amount_paid, status, purchased_at) values
+         ('$LP1','$C1','$LCO','شركة الدفتر',100,40,'partial','2026-01-10 10:00+03'),
+         ('$LP2','$C1','$LCO','شركة الدفتر',50,0,'unpaid','2026-02-01 10:00+03') on conflict (id) do nothing;" >/dev/null
+# سببُ الرفض وحده (الحقلُ الثالث من «guarded:P0001:السبب»).
+_lerr() { echo "split_part(_rls_try('$1', '$2'), ':', 3)"; }
+OPEN_ID="(select id from company_entries where company_id=''$LCO'' and kind=''opening'' and voided_at is null)"
+PAY_ID="(select id from company_entries where company_id=''$LCO'' and kind=''payment'')"
+chk "الرصيدُ السابق للمدير وحده: الطبيبُ يُرفض" \
+    "select $(_lerr $VET "select company_opening_add(''$LCO'', 90, ''2025-12-31'')")" "forbidden"
+chk "  والمديرُ يقيّده بتاريخه" \
+    "select _rls_try('$C1', 'select company_opening_add(''$LCO'', 90, ''2025-12-31'', ''دفتر ورقي'')')" "rows:1"
+chk "  وثانٍ حيٌّ لنفس الشركة يُرفض" \
+    "select $(_lerr $C1 "select company_opening_add(''$LCO'', 5, ''2025-12-31'')")" "opening_exists"
+chk "  وتاريخٌ بالمستقبل يُرفض" \
+    "select $(_lerr $C1 "select company_adjust(''$LCO'', ''debit'', 5, current_date + 3, ''x'')")" "bad_date"
+chk "الجدولُ بلا سياسة كتابة: إدراجٌ مباشر يُرفض حتى للمدير" \
+    "select left(_rls_try('$C1', 'insert into company_entries (company_id, kind, direction, amount) values (''$LCO'', ''opening'', ''credit'', 1)'), 13)" "guarded:42501"
+chk "تسديدٌ أكثرُ من الدين (٩٠ + ٦٠ + ٥٠) يُرفض، والاستقبالُ لا يسدّد، وعيادةٌ أخرى لا ترى الشركة" \
+    "select $(_lerr $C1 "select company_pay(''$LCO'', 201, ''cash'', null)")||'|'||$(_lerr $RCP "select company_pay(''$LCO'', 10, ''cash'', null)")||'|'||$(_lerr $C2 "select company_pay(''$LCO'', 10, ''cash'', null)")" "over_pay|forbidden|no_company"
+chk "الطبيبُ يسدّد ١٢٠ بتاريخ سابق: ٩٠ للرصيد السابق و٣٠ لأقدم فاتورة" \
+    "select _pf('$VET', 'select (r->>''to_opening'')::numeric::int||''/''||(r->>''to_invoices'')::numeric::int||''/''||(r->>''invoices'') from (select company_pay(''$LCO'', 120, ''cash'', ''2026-03-01'', ''للمندوب'') r) x')" "90/30/1"
+chk "  الأقدمُ صارت ٧٠ مدفوعاً (جزئية)، والأحدثُ لم تُمسّ" \
+    "select (select amount_paid::int||'/'||status from purchases where id='$LP1')||'|'||(select amount_paid::int||'/'||status from purchases where id='$LP2')" "70/partial|0/unpaid"
+chk "  ودفعتُها تحمل صفَّ التسديد ويومَه ببغداد" \
+    "select count(*)::text||'/'||min((paid_at at time zone 'Asia/Baghdad')::date)::text from purchase_payments where purchase_id='$LP1' and entry_id is not null" "1/2026-03-01"
+chk "  والرصيدُ السابق القائم صفر" "select company_pool_due('$LCO','$C1')::int::text" "0"
+chk "رصيدٌ سُدِّد منه لا يُلغى قبل تسديده" \
+    "select $(_lerr $C1 "select company_entry_void($OPEN_ID, ''غلط'')")" "has_payments"
+chk "  والإلغاءُ للمدير، وبسببٍ مكتوب" \
+    "select $(_lerr $VET "select company_entry_void($PAY_ID, ''غلط'')")||'|'||$(_lerr $C1 "select company_entry_void($PAY_ID, '' '')")" "forbidden|reason_required"
+# الكتابةُ بطلبٍ والقراءةُ بآخر: الاستعلامُ الفرعيّ والدالّةُ الثابتة (stable)
+# يُقيَّمان قبل الكتابة إن جمعهما تعبيرٌ واحد، فيقرآن ما قبلها.
+chk "إلغاءُ التسديد يمرّ بسببه" "select _rls_try('$C1', 'select company_entry_void($PAY_ID, ''انكتب مرتين'')')" "rows:1"
+chk "  ويردّ ما وزّعه: الفاتورةُ ٤٠ والدفعةُ زالت وصورتُها بالصفّ" \
+    "select 'rows:1|'||(select amount_paid::int||'/'||status from purchases where id='$LP1')||'|'||(select count(*) from purchase_payments where purchase_id='$LP1')::text||'|'||(select jsonb_array_length(void_detail)::text from company_entries where company_id='$LCO' and kind='payment')" "rows:1|40/partial|0|1"
+chk "  والصفُّ باقٍ مختوماً لا محذوفاً، والرصيدُ السابق رجع ٩٠، وإلغاؤه ثانيةً يُرفض" \
+    "select (select count(*) from company_entries where company_id='$LCO' and voided_at is not null)::text||'/'||company_pool_due('$LCO','$C1')::int::text||'/'||$(_lerr $C1 "select company_entry_void($PAY_ID, ''x'')")" "1/90/already_void"
+chk "التسويةُ بلا سبب تُرفض، وبسببٍ تُقيَّد" \
+    "select $(_lerr $C1 "select company_adjust(''$LCO'', ''debit'', 10, null, null)")||'|'||_rls_try('$C1', 'select company_adjust(''$LCO'', ''debit'', 10, null, ''خصم كمية'')')" "note_required|rows:1"
+chk "  وخصمُ ١٠ ينزل الرصيدَ السابق إلى ٨٠" "select company_pool_due('$LCO','$C1')::int::text" "80"
+chk "  ورصيدٌ لو أُلغي صار السابقُ سالباً لا يُلغى (الخصمُ عليه)" \
+    "select $(_lerr $C1 "select company_entry_void($OPEN_ID, ''x'')")" "has_payments"
+chk "عيادةٌ أخرى لا ترى صفّاً من الدفتر، وصاحبتُه ترى الثلاثة" \
+    "select _rls_try('$C2', 'select 1 from company_entries')||'|'||_rls_try('$C1', 'select 1 from company_entries where company_id=''$LCO''')" "rows:0|rows:3"
+chk "كلُّ دالّةٍ كاتبة definer بـsearch_path وتقيّد بالعيادة نصّاً (أو بحارسها)" \
+    "select bool_and(p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and (p.prosrc like '%clinic_id = v_clinic%' or p.prosrc like '%company_entry_guard(%'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('company_pay','company_entry_void','company_opening_add','company_adjust')" "true"
+chk "السياجُ يشمل الجدولَ الجديد (المصوّرُ لا يرى دفترَ الديون)" \
+    "select count(*)::text from verify_photographer_fence() v where v like '%company_entries%'" "0"
+
+# ــ الطيّ والحذف والاسترجاع: الدفترُ يتبع شركتَه ــ
+$P -c "select _rls_try('$C1', 'select company_entry_void((select id from company_entries where company_id=''$LCO'' and kind=''adjust''), ''نعيده'')');" >/dev/null
+chk "(قبل الطيّ) إلغاءُ الخصم ثم الرصيد ٩٠، ورصيدٌ جديد ٣٠، وتسديدُ ٥٠: ٣٠ للرصيد و٢٠ للفاتورة" \
+    "select _rls_try('$C1', 'select company_entry_void($OPEN_ID, ''نعيده'')')||'|'||_rls_try('$C1', 'select company_opening_add(''$LCO'', 30, null)')||'|'||_pf('$C1', 'select (r->>''to_opening'')::numeric::int||''/''||(r->>''to_invoices'')::numeric::int from (select company_pay(''$LCO'', 50, ''card'', null) r) x')" "rows:1|rows:1|30/20"
+LCNT=$($P -t -A -c "select count(*) from company_entries where company_id='$LCO'")
+LPOOL=$($P -t -A -c "select company_pool_due('$LCO','$C1')")
+chk "(البذرة) خمسةُ صفوف (ثلاثةٌ ملغاة) والرصيدُ السابق مسدَّدٌ كلُّه" "select '$LCNT/'||round($LPOOL)::text" "5/0"
+chk "الطيُّ يمرّ" "select (_pf('$C1', 'select (merge_companies(''$LKP'', ''$LCO'')).id::text') = '$LKP')::text" "true"
+chk "  وينقل صفوفَ الدفتر حيّةً للباقية (cascade كان سيمحوها)" \
+    "select count(*)::text from company_entries where company_id='$LKP'" "$LCNT"
+chk "الفكُّ يمرّ" "select (_pf('$C1', 'select (restore_company(''$LCO'')).id::text') = '$LCO')::text" "true"
+chk "  ويردّها لشركتها" \
+    "select (select count(*) from company_entries where company_id='$LCO')::text||'/'||(select count(*) from company_entries where company_id='$LKP')::text" "$LCNT/0"
+$P -c "select _pf('$C1', 'select delete_company(''$LCO'', ''فحص'')::text');" >/dev/null
+chk "الحذفُ الصريح: الصفوفُ كاملةً بالسلّة والتتالي محاها من الجدول" \
+    "select jsonb_array_length(entries)::text||'/'||(select count(*) from company_entries where company_id='$LCO')::text from companies_trash where id='$LCO'" "$LCNT/0"
+chk "  والاسترجاعُ يمرّ" "select (_pf('$C1', 'select (restore_company(''$LCO'')).id::text') = '$LCO')::text" "true"
+chk "  ويعيدها، ويربط دفعةَ الفاتورة بتسديدها — فالرصيدُ السابق صفرٌ كما كان (بلا الربط يصير ‑٢٠)" \
+    "select (select count(*) from company_entries where company_id='$LCO')::text||'/'||(select count(*) from purchase_payments where entry_id is not null and purchase_id='$LP1')::text||'/'||round(company_pool_due('$LCO','$C1'))::text" "$LCNT/1/0"
+$P -f "$MIG/0224_company_ledger.sql" >/dev/null 2>&1
+chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: لا صفَّ يتبدّل ولا محفّزَ يتكرّر" \
+    "select (select count(*) from company_entries where company_id='$LCO')::text||'/'||(select count(*) from pg_trigger where tgrelid='companies'::regclass and tgname in ('companies_trash_guard_entries','companies_restore_entries'))::text" "$LCNT/2"
+# بعد إعادة التنزيل: المنحُ الشامل بأوّل الحزمة (0159) يعطي كلَّ دالّةٍ للداخلين،
+# والهجرةُ تنزعه عن أدواتها الداخلية وعن anon.
+chk "الأدواتُ الداخلية لا يناديها الداخلون، والكاتبةُ ممنوعةٌ عن anon" \
+    "select (not has_function_privilege('authenticated','public.company_pool_due(uuid,uuid)','execute') and not has_function_privilege('authenticated','public.company_entry_guard(uuid,date,boolean)','execute') and not has_function_privilege('anon','public.company_pay(uuid,numeric,text,date,text)','execute') and has_function_privilege('authenticated','public.company_pay(uuid,numeric,text,date,text)','execute'))::text" "true"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

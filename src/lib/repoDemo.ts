@@ -10,7 +10,7 @@
  * ========================================================================= */
 import { loadDB, saveDB } from "./demoStore";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
-import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
+import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
@@ -324,6 +324,36 @@ const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 
  * **`on delete cascade`**، فالصفُّ نفسُه يُمحى ولا يعيده معرّف. لذا تُحفظ
  * **صفوفُ المطالبات كاملةً** هنا كما بالقاعدة، وصفوفُ الأصناف بسلّتها.
  */
+/* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
+function demoHint(code: string, hint: string): Error {
+  return Object.assign(new Error(code), { code: "P0001", hint });
+}
+function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
+  if (!(db.companies ?? []).some((c) => c.id === companyId)) throw demoHint("no_company", "الشركةُ غيرُ موجودة بعيادتك.");
+  if (date && (date > localISO() || date < "2000-01-01")) throw demoHint("bad_date", "التاريخُ لازم يكون اليوم أو قبله.");
+  const amt = round2(Number(amount) || 0);
+  if (!(amt > 0)) throw demoHint("bad_amount", "المبلغُ لازم أكبر من صفر.");
+  return amt;
+}
+function demoPoolDue(db: DemoDB, companyId: string): number {
+  let s = 0;
+  for (const e of db.companyEntries ?? []) {
+    if (e.company_id !== companyId || e.voided_at) continue;
+    if (e.direction === "credit") s += e.amount;
+    else if (e.kind === "payment") s -= e.amount - (db.purchasePayments ?? []).filter((pp) => pp.entry_id === e.id).reduce((a, pp) => a + pp.amount, 0);
+    else s -= e.amount;
+  }
+  return round2(s);
+}
+function demoEntry(companyId: string, kind: CompanyEntry["kind"], direction: CompanyEntry["direction"], amount: number,
+  date: string | null, method: PaymentMethod | null, note?: string | null): CompanyEntry {
+  return {
+    id: uid("ce"), clinic_id: null, company_id: companyId, kind, direction, amount,
+    entry_date: date || localISO(), method: method ?? null, note: note?.trim() || null,
+    created_by: null, created_at: new Date().toISOString(), voided_at: null, voided_by: null, void_reason: null, void_detail: null,
+  };
+}
+
 function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null; merged_into?: string; keep_note?: string | null } = {}): DeletedCompany {
   if (!db.companiesTrash) db.companiesTrash = [];
   db.companiesTrash = db.companiesTrash.filter((t) => t.id !== row.id);
@@ -341,6 +371,12 @@ function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null;
     })),
     // الطيُّ ينقل الصفوفَ حيّةً فلا نسخةَ لها؛ والحذفُ الصريح يمحوها فتُنسخ.
     charges: extra.merged_into ? [] : (db.companyCharges ?? []).filter((c) => c.company_id === row.id).map((c) => ({ ...c })),
+    // دفترُ الشركة (0224): بالطيّ معرّفاتٌ (تنتقل حيّة)، وبالحذف صفوفٌ كاملة ومعها
+    // دفعاتُ فواتيرها — التتالي يُفرغ `entry_id` بها فتُربط ثانيةً بالاسترجاع.
+    entry_ids: extra.merged_into ? (db.companyEntries ?? []).filter((e) => e.company_id === row.id).map((e) => e.id) : [],
+    entries: extra.merged_into ? [] : (db.companyEntries ?? []).filter((e) => e.company_id === row.id).map((e) => ({
+      ...e, pp_ids: (db.purchasePayments ?? []).filter((pp) => pp.entry_id === e.id).map((pp) => pp.id),
+    })),
     // ملاحظةُ الباقية قبل الاتّحاد — بلا حفظها يستحيل فكُّ الاتّحاد (0201).
     keep_note: extra.merged_into ? extra.keep_note ?? null : null,
     reason: extra.reason?.trim() || null,
@@ -2624,6 +2660,9 @@ const demoRepo = {
     db.companySections = (db.companySections ?? []).filter((s) => s.company_id !== id);
     // cascade: مطالباتُها تُمحى (وصورتُها بالسلّة)، والباقي يُفرَّغ (set null).
     db.companyCharges = (db.companyCharges ?? []).filter((c) => c.company_id !== id);
+    const goneEntries = new Set((db.companyEntries ?? []).filter((e) => e.company_id === id).map((e) => e.id));
+    db.companyEntries = (db.companyEntries ?? []).filter((e) => e.company_id !== id);
+    for (const pp of db.purchasePayments ?? []) if (pp.entry_id && goneEntries.has(pp.entry_id)) pp.entry_id = null;
     for (const p of db.products ?? []) {
       if (p.company_id === id) p.company_id = null;
       if (p.section_id && gone.has(p.section_id)) p.section_id = null;
@@ -2694,6 +2733,7 @@ const demoRepo = {
     for (const pu of db.purchases ?? []) if (pu.company_id === dropId) { pu.company_id = keepId; pu.company_name = keep.name; }
     for (const py of db.purchasePayments ?? []) if (py.company_id === dropId) py.company_id = keepId;
     for (const ch of db.companyCharges ?? []) if (ch.company_id === dropId) ch.company_id = keepId;
+    for (const e of db.companyEntries ?? []) if (e.company_id === dropId) e.company_id = keepId;
     for (const t of db.productsTrash ?? []) if (t.row?.company_id === dropId) t.row = { ...t.row, company_id: keepId };
     // الأصناف: المتطابقُ اسمُه يُطوى بحوضه، وغيرُه ينتقل كما هو.
     const notes: DeletedCompanySectionNote[] = [];
@@ -2790,6 +2830,7 @@ const demoRepo = {
     for (const py of db.purchasePayments ?? []) if ((t.payment_ids ?? []).includes(py.id) && at(py.company_id)) py.company_id = id;
     if (into) {
       for (const ch of db.companyCharges ?? []) if ((t.charge_ids ?? []).includes(ch.id) && ch.company_id === into) ch.company_id = id;
+      for (const e of db.companyEntries ?? []) if ((t.entry_ids ?? []).includes(e.id) && e.company_id === into) e.company_id = id;
       for (const tp of db.productsTrash ?? []) if (tp.row?.company_id === into && ids.has(tp.id)) tp.row = { ...tp.row, company_id: id };
       /* فكُّ اتّحاد الملاحظتين — يُعاد حسابُ ما أنتجه الطيُّ بنفس تعبيره، ولا
        * يُكتب إلا إن كانت الملاحظةُ ما زالت هي بالحرف: ملاحظةٌ كتبتها العيادةُ
@@ -2803,6 +2844,10 @@ const demoRepo = {
     } else {
       // المطالباتُ صفوفٌ محاها التتالي — تُعاد من الصورة (0198).
       for (const ch of t.charges ?? []) if (!(db.companyCharges ?? []).some((x) => x.id === ch.id)) (db.companyCharges ??= []).push({ ...ch, company_id: id });
+      for (const { pp_ids, ...e } of t.entries ?? []) {
+        if (!(db.companyEntries ?? []).some((x) => x.id === e.id)) (db.companyEntries ??= []).push({ ...e, company_id: id });
+        for (const pp of db.purchasePayments ?? []) if (!pp.entry_id && (pp_ids ?? []).includes(pp.id)) pp.entry_id = e.id;
+      }
     }
     for (const note of t.sections ?? []) {
       const exists = (db.companySections ?? []).some((x) => x.id === note.id);
@@ -3167,6 +3212,91 @@ const demoRepo = {
     p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
     saveDB(db);
     return p;
+  },
+  /* ---- دفترُ الشركة (0224) — مرآةُ دوالّ القاعدة بحرّاسها ---- */
+  async listCompanyEntries(_clinicId?: string): Promise<CompanyEntry[]> {
+    return (loadDB().companyEntries ?? []).slice()
+      .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at));
+  },
+  /** دفعاتُ فواتيرٍ بعينها — لدفتر شركة. */
+  async listPaymentsForPurchases(purchaseIds: string[]): Promise<PurchasePayment[]> {
+    const ids = new Set(purchaseIds);
+    return (loadDB().purchasePayments ?? []).filter((x) => ids.has(x.purchase_id));
+  },
+  async addCompanyOpening(companyId: string, amount: number, date: string | null, note?: string | null): Promise<CompanyEntry> {
+    const db = loadDB();
+    const amt = demoLedgerGuard(db, companyId, amount, date);
+    if ((db.companyEntries ?? []).some((e) => e.company_id === companyId && e.kind === "opening" && !e.voided_at)) throw demoHint("opening_exists", "لهاي الشركة رصيدٌ سابق — ألغِه أوّلاً إن كان غلطاً.");
+    const row = demoEntry(companyId, "opening", "credit", amt, date, null, note);
+    (db.companyEntries ??= []).push(row);
+    saveDB(db);
+    return row;
+  },
+  async addCompanyAdjust(companyId: string, direction: "credit" | "debit", amount: number, date: string | null, note: string): Promise<CompanyEntry> {
+    const db = loadDB();
+    const amt = demoLedgerGuard(db, companyId, amount, date);
+    if (!note?.trim()) throw demoHint("note_required", "اكتب سببَ التسوية.");
+    const row = demoEntry(companyId, "adjust", direction, amt, date, null, note);
+    (db.companyEntries ??= []).push(row);
+    saveDB(db);
+    return row;
+  },
+  /** مرآةُ `company_pay`: الرصيدُ السابق أوّلاً ثم الفواتير من الأقدم، بمعاملةٍ واحدة. */
+  async companyPay(companyId: string, amount: number, method: PaymentMethod | null, date: string | null, note?: string | null): Promise<CompanyPayResult> {
+    const db = loadDB();
+    const amt = demoLedgerGuard(db, companyId, amount, date);
+    const pool = Math.max(0, demoPoolDue(db, companyId));
+    const open = (db.purchases ?? []).filter((p) => p.company_id === companyId && p.total - (p.amount_paid ?? p.total) > 0)
+      .sort((a, b) => a.purchased_at.localeCompare(b.purchased_at) || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
+    const inv = round2(open.reduce((s, p) => s + (p.total - (p.amount_paid ?? p.total)), 0));
+    if (amt > round2(pool + inv)) throw demoHint("over_pay", `المبلغُ أكبر من دين الشركة (${round2(pool + inv)}).`);
+    const entry = demoEntry(companyId, "payment", "debit", amt, date, method, note);
+    (db.companyEntries ??= []).push(entry);
+    const day = entry.entry_date;
+    const paidAt = day === localISO() ? new Date().toISOString() : new Date(`${day}T12:00:00`).toISOString();
+    const toOpening = round2(Math.min(pool, amt));
+    let left = round2(amt - toOpening);
+    let n = 0;
+    for (const p of open) {
+      if (left <= 0) break;
+      const paid = p.amount_paid ?? p.total;
+      const part = round2(Math.min(left, p.total - paid));
+      (db.purchasePayments ??= []).push({
+        id: uid("pp"), clinic_id: null, purchase_id: p.id, company_id: companyId, amount: part, method,
+        note: note?.trim() || null, paid_at: paidAt, staff_id: null, entry_id: entry.id, created_at: new Date().toISOString(),
+      });
+      p.amount_paid = round2(paid + part);
+      p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
+      left = round2(left - part);
+      n++;
+    }
+    saveDB(db);
+    return { entry, to_opening: toOpening, to_invoices: round2(amt - toOpening), invoices: n };
+  },
+  /** مرآةُ `company_entry_void`: ختمٌ لا حذف، وإلغاءُ التسديد يردّ ما وزّعه. */
+  async voidCompanyEntry(id: string, reason: string): Promise<CompanyEntry> {
+    const db = loadDB();
+    const e = (db.companyEntries ?? []).find((x) => x.id === id);
+    if (!e) throw demoHint("no_entry", "الحركةُ غيرُ موجودة بعيادتك.");
+    if (e.voided_at) throw demoHint("already_void", "الحركةُ ملغاةٌ أصلاً.");
+    if (!reason?.trim()) throw demoHint("reason_required", "اكتب سببَ الإلغاء.");
+    if (e.direction === "credit" && demoPoolDue(db, e.company_id) - e.amount < -0.005) throw demoHint("has_payments", "انسدّ من هذا الرصيد — ألغِ التسديد أوّلاً.");
+    let detail: CompanyEntry["void_detail"] = null;
+    if (e.kind === "payment") {
+      detail = [];
+      for (const pp of (db.purchasePayments ?? []).filter((x) => x.entry_id === e.id)) {
+        detail.push({ purchase_id: pp.purchase_id, amount: pp.amount, paid_at: pp.paid_at });
+        const p = (db.purchases ?? []).find((x) => x.id === pp.purchase_id);
+        if (p) {
+          p.amount_paid = Math.max(0, round2((p.amount_paid ?? p.total) - pp.amount));
+          p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
+        }
+      }
+      db.purchasePayments = (db.purchasePayments ?? []).filter((x) => x.entry_id !== e.id);
+    }
+    Object.assign(e, { voided_at: new Date().toISOString(), voided_by: null, void_reason: reason.trim(), void_detail: detail });
+    saveDB(db);
+    return e;
   },
   /** هل قاعدة البيانات تدعم دفتر ديون المورّدين (ترحيل 0076)؟ */
   /** ترتيب «بدون صنف»: كل توأمٍ لقطعةٍ مصنَّفة يُدمج بأصله — العدد يُجمع،
@@ -4241,6 +4371,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateBranch: { entity: "branches", action: "UPDATE" },
   logWhatsApp: { entity: "wa_messages", action: "INSERT" },
   settlePurchase: { entity: "purchases", action: "UPDATE" },
+  addCompanyOpening: { entity: "company_entries", action: "INSERT" },
+  addCompanyAdjust: { entity: "company_entries", action: "INSERT" },
+  companyPay: { entity: "company_entries", action: "INSERT" },
+  voidCompanyEntry: { entity: "company_entries", action: "UPDATE" },
 };
 {
   const target = demoRepo as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;

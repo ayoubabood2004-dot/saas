@@ -26,7 +26,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, Customer, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
-import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
+import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
@@ -1888,6 +1888,42 @@ const supabaseRepo: DemoRepo = {
   async settlePurchase(purchaseId, amount, method = "cash", note) {
     return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));
   },
+  /* ---- دفترُ الشركة (0224): القراءةُ من الجدول، والكتابةُ من الدوالّ وحدها ---- */
+  async listCompanyEntries(clinicId) {
+    // يرمي ولا يبلع: رصيدٌ سابقٌ غائبٌ عن خطأ يُنقص دينَ الشركة بصمت — قائمةٌ ناقصة
+    // يُبنى عليها قرارُ مال (درسُ listCouriers).
+    const rows = await allPages<CompanyEntry>(() => {
+      let q = sbc().from("company_entries").select("*");
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
+    return rows.map((x) => ({ ...x, amount: Number(x.amount) || 0 }));
+  },
+  async listPaymentsForPurchases(purchaseIds) {
+    const out: PurchasePayment[] = [];
+    for (let i = 0; i < purchaseIds.length; i += 100) {
+      const chunk = purchaseIds.slice(i, i + 100);
+      out.push(...await allPages<PurchasePayment>(() => sbc().from("purchase_payments").select("*").in("purchase_id", chunk)));
+    }
+    return out.map((x) => ({ ...x, amount: Number(x.amount) || 0 }));
+  },
+  async addCompanyOpening(companyId, amount, date, note) {
+    const row = need<CompanyEntry>(await sbc().rpc("company_opening_add", { p_company: companyId, p_amount: amount, p_date: date, p_note: note ?? null }));
+    return { ...row, amount: Number(row.amount) || 0 };
+  },
+  async addCompanyAdjust(companyId, direction, amount, date, note) {
+    const row = need<CompanyEntry>(await sbc().rpc("company_adjust", { p_company: companyId, p_direction: direction, p_amount: amount, p_date: date, p_note: note }));
+    return { ...row, amount: Number(row.amount) || 0 };
+  },
+  async companyPay(companyId, amount, method, date, note) {
+    const r = need<CompanyPayResult>(await sbc().rpc("company_pay", { p_company: companyId, p_amount: amount, p_method: method, p_date: date, p_note: note ?? null }));
+    return { ...r, to_opening: Number(r.to_opening) || 0, to_invoices: Number(r.to_invoices) || 0, invoices: Number(r.invoices) || 0,
+      entry: { ...r.entry, amount: Number(r.entry.amount) || 0 } };
+  },
+  async voidCompanyEntry(id, reason) {
+    const row = need<CompanyEntry>(await sbc().rpc("company_entry_void", { p_entry: id, p_reason: reason }));
+    return { ...row, amount: Number(row.amount) || 0 };
+  },
   async assignBarcodeIfEmpty(id, code) {
     const next = normalizeCode(code) || null;
     if (!next) throw new Error("empty code");
@@ -2579,7 +2615,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listInvoiceItems", "listInvoices", "listJourneyEvents", "listLabResults", "listLoginEvents",
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
   "listProblems", "listProducts", "listPurchaseItems", "listPurchaseEffects", "listPurchasePayments", "listPurchases",
-  "listCompanyCharges",
+  "listCompanyCharges", "listCompanyEntries", "listPaymentsForPurchases",
   "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---

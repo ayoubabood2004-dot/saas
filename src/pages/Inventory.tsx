@@ -196,8 +196,11 @@ export function Inventory() {
   const [params, setParams] = useSearchParams();
   useEffect(() => {
     const f = params.get("filter");
-    if (!f) return;
-    if (isStockFilter(f)) { setView("products"); setStockFilter(f); }
+    // والرجوعُ من دفتر شركة (`?view=ledger`) يرجع لتبويب الديون لا للمنتجات.
+    const v = params.get("view");
+    if (!f && v !== "ledger") return;
+    if (v === "ledger") setView("ledger");
+    else if (f && isStockFilter(f)) { setView("products"); setStockFilter(f); }
     setParams({}, { replace: true });
   }, [params, setParams]);
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);

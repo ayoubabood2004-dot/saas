@@ -471,6 +471,11 @@ alter table purchase_payments  add column if not exists clinic_id      uuid defa
 alter table purchase_payments  add column if not exists amount         numeric default 0;
 alter table purchase_payments  add column if not exists staff_id       uuid;
 alter table purchase_payments  add column if not exists created_at     timestamptz not null default now();
+-- 0224 تكتب دفعاتِ الفواتير بأعمدة 0076 كاملة (الأساسُ كان يكفيه المبلغ).
+alter table purchase_payments  add column if not exists purchase_id    uuid references purchases(id) on delete cascade;
+alter table purchase_payments  add column if not exists method         text;
+alter table purchase_payments  add column if not exists note           text;
+alter table purchase_payments  add column if not exists paid_at        timestamptz not null default now();
 alter table staff              add column if not exists status         text default 'active';
 alter table staff              add column if not exists created_at     timestamptz not null default now();
 alter table staff_loans        add column if not exists clinic_id      uuid default auth_clinic();

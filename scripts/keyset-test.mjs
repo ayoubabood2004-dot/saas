@@ -131,6 +131,9 @@ const CONTRACT = {
   listStockCounts: ["counted_at", false, "time"],
   // 0217: الدفعاتُ الحيّة — الأقربُ انتهاءً أوّلاً.
   listActiveLots: ["expiry_date", true, "date"],
+  // 0224: دفترُ الشركة — يُرتَّب بالمتصفّح (buildCompanyLedger بالتاريخ ثمّ النوع ثمّ الإنشاء).
+  listCompanyEntries: null,
+  listPaymentsForPurchases: null,
 };
 
 console.log("▸ ٢) عقدُ المستدعين الـ٣١ — لا ترتيبَ بالخادم، والعرضُ بنفس ترتيبه");
@@ -156,7 +159,7 @@ for (let i = 0; i < lines.length; i++) {
   const sort = split >= 0 ? args.slice(split + 1).trim() : "";
   calls.push({ name, make, sort });
 }
-check("عددُ المستدعين ٣٥ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 35, `طلع ${calls.length}`);
+check("عددُ المستدعين ٣٧ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 37, `طلع ${calls.length}`);
 const names = new Set(calls.map((c) => c.name));
 check("  وكلُّهم بالعقد بأسمائهم", Object.keys(CONTRACT).every((n) => names.has(n)) && [...names].every((n) => n in CONTRACT),
   `ناقص: ${Object.keys(CONTRACT).filter((n) => !names.has(n)).join("، ")} / زائد: ${[...names].filter((n) => !(n in CONTRACT)).join("، ")}`);

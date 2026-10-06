@@ -5,7 +5,9 @@ import {
   Building2, Search, ChevronDown, Wallet, HandCoins, ShoppingBag, CalendarClock,
   UserRound, Phone, AlertTriangle, Copy, Check, BookOpen, PackageCheck,
 } from "lucide-react";
-import type { Purchase, Company, PaymentMethod, Product, PurchaseItem, CompanyCharge } from "@/types";
+import type { Purchase, Company, PaymentMethod, Product, PurchaseItem, CompanyCharge, CompanyEntry, PurchasePayment } from "@/types";
+import { Link } from "react-router-dom";
+import { poolDueOf } from "@/lib/companyLedger";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
@@ -37,7 +39,10 @@ type CompanyGroup = {
   /** المطالباتُ اليدوية القائمة (0155) — دينٌ حقيقيّ بلا فاتورةٍ تُسدَّد. */
   charges: CompanyCharge[];
   chargesDue: number;
-  /** ما تطلبه الشركةُ كلَّه: دينُ الفواتير + المطالبات. هو الرقمُ المعروض. */
+  /** الرصيدُ السابق القائم بدفتر الشركة (0224) — رصيدٌ قبل النظام وتسوياته. */
+  poolDue: number;
+  /** ما تطلبه الشركةُ كلَّه: دينُ الفواتير + المطالبات + الرصيدُ السابق. هو الرقمُ
+   *  المعروض، ونفسُ الرصيد الأخير بدفترها (`companyLedger.ts` يفحص الثابت). */
   owed: number;
   lastAt: string;
   /** آخر مورّد/مندوب معروف لهذه الشركة (من أحدث فاتورة تحمل اسماً). */
@@ -59,6 +64,9 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
   const toast = useToast();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [charges, setCharges] = useState<CompanyCharge[]>([]);
+  /** دفترُ الشركات (0224) ودفعاتُ التسديد على الحساب — منهما الرصيدُ السابق. */
+  const [entries, setEntries] = useState<CompanyEntry[]>([]);
+  const [entryPays, setEntryPays] = useState<PurchasePayment[]>([]);
   const [loading, setLoading] = useState(true);
   /** فشلَ آخرُ جلب؟ — «تعذّر» لا «لا توجد فواتير». */
   const [failed, setFailed] = useState(false);
@@ -82,8 +90,13 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
    * يعرض «تعذّر — أعد المحاولة»، وفشلٌ فوق قائمةٍ قائمة يُبقيها ويقول ذلك. */
   const load = async () => {
     try {
-      const rows = await withTimeout(repo.listPurchases(clinicId), 15000);
-      if (mounted.current) { setPurchases(rows); setFailed(false); }
+      /* الرصيدُ السابق جزءٌ من الدين لا إضافةٌ عليه: يُحمَّل مع الفواتير ويفشل معها،
+       * فلا تُعرض قائمةٌ تقول دَيناً أقلَّ مما هو (قائمةٌ ناقصة أخطرُ من خطأ ظاهر). */
+      const [rows, ents] = await withTimeout(Promise.all([repo.listPurchases(clinicId), repo.listCompanyEntries(clinicId)]), 15000);
+      // دفعاتُ الفواتير التي جاءت من تسديدٍ على الحساب — لشركاتٍ لها تسديدٌ كهذا فقط.
+      const payers = new Set(ents.filter((e) => e.kind === "payment").map((e) => e.company_id));
+      const pays = payers.size ? await withTimeout(repo.listPaymentsForPurchases(rows.filter((p) => p.company_id && payers.has(p.company_id)).map((p) => p.id)), 15000) : [];
+      if (mounted.current) { setPurchases(rows); setEntries(ents); setEntryPays(pays.filter((x) => x.entry_id)); setFailed(false); }
     } catch (e) {
       if (!mounted.current) return;
       setFailed(true);
@@ -159,7 +172,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
           name: effName || t("purchase.noCompany", "بدون شركة"),
           note: noteOf(effId),
           invoices: [], total: 0, paid: 0, due: 0,
-          charges: [], chargesDue: 0, owed: 0,
+          charges: [], chargesDue: 0, poolDue: 0, owed: 0,
           lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(key, g);
@@ -185,7 +198,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
         g = {
           key: c.company_id, name: nm, note: noteOf(c.company_id),
           invoices: [], total: 0, paid: 0, due: 0,
-          charges: [], chargesDue: 0, owed: 0,
+          charges: [], chargesDue: 0, poolDue: 0, owed: 0,
           lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(c.company_id, g);
@@ -193,9 +206,30 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
       g.charges.push(c);
       g.chargesDue += chargeOutstanding(c);
     }
-    for (const g of m.values()) g.owed = g.due + g.chargesDue;
+    /* الرصيدُ السابق (0224) — وشركةٌ لا فاتورةَ لها ولا مطالبة وعليها رصيدٌ سابق
+     * تحتاج مجموعتَها كذلك: هو بالضبط الدينُ الذي جاء قبل النظام. */
+    const byCo = new Map<string, CompanyEntry[]>();
+    for (const e of entries) (byCo.get(e.company_id) ?? byCo.set(e.company_id, []).get(e.company_id)!).push(e);
+    for (const [cid, list] of byCo) {
+      let g = m.get(cid);
+      if (!g) {
+        const nm = nameOf.get(cid);
+        if (!nm) continue;
+        g = {
+          key: cid, name: nm, note: noteOf(cid),
+          invoices: [], total: 0, paid: 0, due: 0,
+          charges: [], chargesDue: 0, poolDue: 0, owed: 0,
+          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
+        };
+        m.set(cid, g);
+      }
+      g.poolDue = poolDueOf(list, entryPays);
+      const last = list.reduce((a, e) => (e.entry_date > a ? e.entry_date : a), "");
+      if (last > g.lastAt) g.lastAt = last;
+    }
+    for (const g of m.values()) g.owed = Math.round((g.due + g.chargesDue + g.poolDue) * 100) / 100;
     return [...m.values()].sort((a, b) => (b.owed - a.owed) || b.lastAt.localeCompare(a.lastAt));
-  }, [purchases, charges, companies, inferred, noteOf, t]);
+  }, [purchases, charges, entries, entryPays, companies, inferred, noteOf, t]);
 
   const totals = useMemo(() => ({
     total: groups.reduce((s, g) => s + g.total, 0),
@@ -321,6 +355,11 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
                       <p className={cn("text-base font-extrabold tabular-nums", g.owed > 0 ? "text-danger-600 dark:text-danger-400" : "text-success-600 dark:text-success-400")}>{g.owed > 0 ? money(g.owed) : "✓"}</p>
                       {/* المطالباتُ تُذكر تحت الرقم: الطبيبُ يرى أن جزءاً من
                           دينه ليس فواتيرَ، فلا يبحث عن فاتورةٍ لا وجودَ لها. */}
+                      {g.poolDue !== 0 && (
+                        <p className="text-2xs font-bold text-ink-muted">
+                          {t("purchase.book.ofOpening", { v: money(g.poolDue), defaultValue: "منها {{v}} رصيد سابق" })}
+                        </p>
+                      )}
                       {g.chargesDue > 0 && (
                         <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
                           {t("purchase.charge.ofWhich", { v: money(g.chargesDue), defaultValue: "منها {{v}} مطالبات" })}
@@ -337,9 +376,16 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
                       data-stmtbtn onClick={() => { playTap(); setStatementGroup(g); }}>
                       {t("purchase.companyStatement", "كشف الشركة — البضاعة والفواتير والطباعة")}
                     </Button>
-                    {g.due > 0 && ledgerOk && (
-                      <Button size="sm" className="mb-2.5 w-full sm:w-auto" leftIcon={<HandCoins size={15} />} onClick={() => { playTap(); setSettleGroup(g); }}>
-                        {t("purchase.settleCompany", { v: money(g.due), defaultValue: "تسديد دين الشركة ({{v}})" })}
+                    {/* جدولُ الشركة الخاصّ: كلُّ حركةٍ برقمها والرصيدُ بعدها (0224). */}
+                    {companyIds.has(g.key) && (
+                      <Link to={`/inventory/companies/${g.key}`} data-bookbtn={g.key} onClick={() => playTap()}
+                        className="mb-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 sm:me-2 sm:w-auto">
+                        <BookOpen size={15} /> {t("purchase.book.open", "دفتر الشركة — كل الحركات والرصيد")}
+                      </Link>
+                    )}
+                    {g.due + Math.max(0, g.poolDue) > 0 && ledgerOk && (
+                      <Button size="sm" variant="secondary" className="mb-2.5 w-full sm:w-auto" leftIcon={<HandCoins size={15} />} onClick={() => { playTap(); setSettleGroup(g); }}>
+                        {t("purchase.settleCompany", { v: money(g.due + Math.max(0, g.poolDue)), defaultValue: "تسديد دين الشركة ({{v}})" })}
                       </Button>
                     )}
                     {/* المطالباتُ اليدوية — لشركةٍ معروفةٍ بمعرّفها وحدها.
@@ -389,7 +435,8 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
       <PurchaseDetailModal purchase={viewing} onClose={() => setViewing(null)} onChanged={() => void load()} />
       <CompanyStatementModal group={statementGroup as StatementGroup | null} onClose={() => setStatementGroup(null)}
         onOpenInvoice={(p) => { setStatementGroup(null); setViewing(p); }} />
-      <CompanySettleModal group={settleGroup} onClose={() => setSettleGroup(null)} onSettled={() => { setSettleGroup(null); void load(); }} />
+      <CompanySettleModal group={settleGroup} companyId={settleGroup && companyIds.has(settleGroup.key) ? settleGroup.key : null}
+        onClose={() => setSettleGroup(null)} onSettled={() => { setSettleGroup(null); void load(); }} />
     </div>
   );
 }
@@ -416,7 +463,7 @@ function LedgerKpi({ icon: Icon, tone, label, value }: { icon: typeof Wallet; to
  * تسديد دين شركة كاملة بدفعة واحدة — المبلغ يُوزَّع على فواتيرها الآجلة من
  * الأقدم للأحدث (كل فاتورة تُسدَّد على حدة فيبقى سجلّها دقيقاً).
  * ========================================================================== */
-function CompanySettleModal({ group, onClose, onSettled }: { group: CompanyGroup | null; onClose: () => void; onSettled: () => void }) {
+function CompanySettleModal({ group, companyId, onClose, onSettled }: { group: CompanyGroup | null; companyId: string | null; onClose: () => void; onSettled: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [amount, setAmount] = useState("");
@@ -424,12 +471,16 @@ function CompanySettleModal({ group, onClose, onSettled }: { group: CompanyGroup
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
+  /* شركةٌ معروفةٌ بمعرّفها تسدّد بدالّة القاعدة (0224): الرصيدُ السابق أوّلاً ثم
+   * الفواتير من الأقدم، **بمعاملةٍ واحدة** — الحلقةُ أدناه (نداءٌ لكلّ فاتورة) كانت
+   * تترك نصفَ تسديدٍ لو انقطعت الشبكةُ بالنصف. وتبقى لمجموعة اسمٍ بلا شركة. */
+  const max = group ? Math.round((group.due + (companyId ? Math.max(0, group.poolDue) : 0)) * 100) / 100 : 0;
   useEffect(() => {
-    if (group) { setAmount(String(group.due)); setMethod("cash"); setNote(""); }
-  }, [group]);
+    if (group) { setAmount(String(max)); setMethod("cash"); setNote(""); }
+  }, [group, max]);
 
   if (!group) return null;
-  const amtNum = Math.min(Math.max(Number(amount) || 0, 0), group.due);
+  const amtNum = Math.min(Math.max(Number(amount) || 0, 0), max);
   // الفواتير الآجلة من الأقدم للأحدث — نسدّد بالترتيب.
   const unpaid = group.invoices.filter((p) => dueOf(p) > 0).sort((a, b) => (a.purchased_at || "").localeCompare(b.purchased_at || ""));
 
@@ -437,6 +488,18 @@ function CompanySettleModal({ group, onClose, onSettled }: { group: CompanyGroup
     if (busy) return;
     if (amtNum <= 0) { toast.error(t("purchase.settleAmount", "أدخل مبلغاً أكبر من صفر")); return; }
     setBusy(true);
+    if (companyId) {
+      try {
+        const r = await repo.companyPay(companyId, amtNum, method, null, note.trim() || null);
+        playSuccess();
+        toast.success(t("purchase.companySettled", { v: money(amtNum), n: r.invoices, defaultValue: "سُدِّد {{v}} على {{n}} فاتورة" }));
+        onSettled();
+      } catch (e) {
+        playWarning();
+        toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      } finally { setBusy(false); }
+      return;
+    }
     let remaining = amtNum;
     let settled = 0;
     let count = 0;
@@ -469,12 +532,14 @@ function CompanySettleModal({ group, onClose, onSettled }: { group: CompanyGroup
       <div className="space-y-4">
         <div className="flex items-center justify-between rounded-2xl bg-danger-50 p-3.5 text-sm dark:bg-danger-500/10">
           <span className="font-semibold text-ink">{t("purchase.dueNow", "الدين الحالي")}</span>
-          <span className="text-lg font-extrabold text-danger-600 tabular-nums dark:text-danger-400">{money(group.due)}</span>
+          <span className="text-lg font-extrabold text-danger-600 tabular-nums dark:text-danger-400">{money(max)}</span>
         </div>
         <div>
           <label className="label">{t("purchase.settleAmountLbl", "المبلغ")}</label>
           <input type="number" inputMode="numeric" min="0" step="1" className="input text-lg font-bold tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
-          <p className="mt-1 text-2xs text-ink-subtle">{t("purchase.settleSpread", "يُوزَّع تلقائياً على الفواتير الآجلة من الأقدم للأحدث")}</p>
+          <p className="mt-1 text-2xs text-ink-subtle">{companyId && group.poolDue > 0
+            ? t("purchase.book.settleSpread", "يروح أولاً للرصيد السابق، وبعدين للفواتير من الأقدم للأحدث")
+            : t("purchase.settleSpread", "يُوزَّع تلقائياً على الفواتير الآجلة من الأقدم للأحدث")}</p>
         </div>
         <div>
           <label className="label">{t("purchase.payMethod", "طريقة الدفع")}</label>
