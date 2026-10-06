@@ -161,12 +161,10 @@ declare
   cmds  text[];
   n     int := 0;
 begin
+  -- **بلا إسقاط**: تُنشئ ما ينقص ولا تلمس القائم. فالإعادةُ بلا أثرٍ ثانٍ، ولا جملةَ هدمٍ
+  -- بالنشر أصلاً (أدواتُ النشر تحبس جملَ الهدم بانتظار تأكيد — أوّلُ نشرٍ علق عليها).
+  -- تغييرُ شرطِ سياجٍ قائم يحتاج هجرةً تُسقطه صراحةً.
   if to_regclass('public.' || quote_ident(p_table)) is null then return 0; end if;
-  execute format('drop policy if exists photographer_fence on public.%I', p_table);
-  execute format('drop policy if exists photographer_fence_sel on public.%I', p_table);
-  execute format('drop policy if exists photographer_fence_ins on public.%I', p_table);
-  execute format('drop policy if exists photographer_fence_upd on public.%I', p_table);
-  execute format('drop policy if exists photographer_fence_del on public.%I', p_table);
   if public._photographer_fence_exempt(p_table) then return 0; end if;
 
   select array_agg(distinct p.cmd) into cmds
@@ -200,16 +198,19 @@ begin
       else 'not (select public.is_photographer())'
     end;
     continue when cond is null;
-    if c = 'INSERT' then
+    if c = 'INSERT' and not exists (select 1 from pg_policies f where f.schemaname = 'public' and f.tablename = p_table and f.policyname = 'photographer_fence_ins') then
       execute format('create policy photographer_fence_ins on public.%I as restrictive for insert to authenticated with check (%s)', p_table, cond);
-    elsif c = 'SELECT' then
+      n := n + 1;
+    elsif c = 'SELECT' and not exists (select 1 from pg_policies f where f.schemaname = 'public' and f.tablename = p_table and f.policyname = 'photographer_fence_sel') then
       execute format('create policy photographer_fence_sel on public.%I as restrictive for select to authenticated using (%s)', p_table, cond);
-    elsif c = 'UPDATE' then
+      n := n + 1;
+    elsif c = 'UPDATE' and not exists (select 1 from pg_policies f where f.schemaname = 'public' and f.tablename = p_table and f.policyname = 'photographer_fence_upd') then
       execute format('create policy photographer_fence_upd on public.%I as restrictive for update to authenticated using (%s) with check (%s)', p_table, cond, cond);
-    elsif c = 'DELETE' then
+      n := n + 1;
+    elsif c = 'DELETE' and not exists (select 1 from pg_policies f where f.schemaname = 'public' and f.tablename = p_table and f.policyname = 'photographer_fence_del') then
       execute format('create policy photographer_fence_del on public.%I as restrictive for delete to authenticated using (%s)', p_table, cond);
+      n := n + 1;
     end if;
-    n := n + 1;
   end loop;
   return n;
 end $$;
@@ -267,8 +268,8 @@ revoke all on function public.verify_photographer_fence() from public, anon, aut
 -- الملفّاتُ: المصوّرُ بدلو صور المنتجات وحده (الوسائطُ الطبية خاصّةٌ ومسيَّجة).
 do $$
 begin
-  if to_regclass('storage.objects') is not null then
-    drop policy if exists photographer_fence on storage.objects;
+  if to_regclass('storage.objects') is not null
+     and not exists (select 1 from pg_policies f where f.schemaname = 'storage' and f.tablename = 'objects' and f.policyname = 'photographer_fence') then
     create policy photographer_fence on storage.objects as restrictive for all to authenticated
       using (not (select public.is_photographer()) or bucket_id = 'product-images')
       with check (not (select public.is_photographer()) or bucket_id = 'product-images');

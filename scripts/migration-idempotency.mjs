@@ -40,7 +40,8 @@ for (const f of files) {
   // ١) سياسةٌ تُنشأ بلا إسقاطها أوّلاً (ولا `drop policy` على الجدول كلِّه).
   for (const m of lower.matchAll(/create policy ([a-z0-9_]+) on ([a-z0-9_.]+)/g)) {
     const [, name, table] = m;
-    if (!lower.includes(`drop policy if exists ${name} on ${table}`)) {
+    // أو محروسةٌ بفحص وجودٍ على pg_policies بالاسم (0222: النشرُ بلا جملِ هدم).
+    if (!lower.includes(`drop policy if exists ${name} on ${table}`) && !lower.includes(`policyname = '${name}'`)) {
       flag(f, `سياسة «${name}» على ${table} تُنشأ بلا إسقاطٍ أوّلاً`);
     }
   }
