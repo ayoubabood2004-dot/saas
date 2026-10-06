@@ -731,6 +731,14 @@ const supabaseRepo: DemoRepo = {
     if (error) return null;
     return (data as string | null) ?? null;
   },
+  /** يربط ملاحظاتٍ بلا زيارة بزيارة (معلوماتُ الدخول تنتقل لأوّل زيارة) — وما رُبط قبلُ من
+   *  جهازٍ ثانٍ لا يُسحب (`is null`). يرجع عددَ ما رُبط فعلاً، والخطأُ يُرمى لا يُبلع. */
+  async linkNotesToVisit(ids, visitId) {
+    if (!ids.length) return 0;
+    const res = await sbc().from("pet_notes").update({ visit_id: visitId }).in("id", ids).is("visit_id", null).select("id");
+    if (res.error) throw new Error(res.error.message);
+    return (res.data ?? []).length;
+  },
   async addPetNote(input) {
     // clinic_id + author_id are stamped by the column defaults (auth_clinic() / auth.uid()).
     return need<PetNote>(await sbc().from("pet_notes").insert({

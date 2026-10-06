@@ -983,6 +983,15 @@ const demoRepo = {
   async listPetNotes(petId: string): Promise<PetNote[]> {
     return demoNotesLoad().filter((n) => n.pet_id === petId).sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
+  /** مرآةُ `linkNotesToVisit`: المربوطُ قبلُ لا يُسحب، ويرجع عددَ ما رُبط. */
+  async linkNotesToVisit(ids: string[], visitId: string): Promise<number> {
+    if (!ids.length) return 0;
+    const want = new Set(ids);
+    let n = 0;
+    const next = demoNotesLoad().map((x) => (want.has(x.id) && !x.visit_id ? (n++, { ...x, visit_id: visitId }) : x));
+    if (n) demoNotesSave(next);
+    return n;
+  },
   async addPetNote(input: { pet_id: string; note_text: string; author_id?: string | null; author_name?: string | null; visit_id?: string | null }): Promise<PetNote> {
     const note: PetNote = {
       id: uid("note"), pet_id: input.pet_id, clinic_id: null,
@@ -4124,6 +4133,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addVaccinations: { entity: "vaccinations", action: "INSERT" },
   addVisit: { entity: "medical_visits", action: "INSERT" },
   addPetNote: { entity: "pet_notes", action: "INSERT" },
+  linkNotesToVisit: { entity: "pet_notes", action: "UPDATE" },
   addLabResult: { entity: "lab_results", action: "INSERT" },
   deleteLabResult: { entity: "lab_results", action: "DELETE" },
   advanceLabStatus: { entity: "lab_results", action: "UPDATE" },

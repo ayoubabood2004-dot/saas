@@ -27,6 +27,7 @@ import { DoctorSelect } from "@/components/MedicalEntry";
 import { SurgerySection } from "@/components/Surgeries";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
+import { isIntake, pendingIntakes, wizardSeed } from "@/lib/intake";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
 import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
@@ -180,7 +181,14 @@ export default function VisitPage() {
     ]);
     setPet(p ?? null);
     setVisit(v);
-    setNotes(ns.filter((n) => n.visit_id === visitId));
+    /* معلوماتُ الدخول تنتقل لأوّل زيارةٍ مفتوحة: هنا مكانٌ واحد يمسك كلَّ طرق فتح الزيارة
+     * (ملفّ الحيوان، الطبلات، …). تُعرض فوراً، ويُكتب الربطُ بالخلفية — وفشلُه لا يُخفيها:
+     * تبقى معروضةً من الملفّ حتى ينجح الربط بزيارةٍ تالية. */
+    const pending = v?.status === "open" ? pendingIntakes(ns) : [];
+    if (pending.length && v) {
+      repo.linkNotesToVisit(pending.map((n) => n.id), v.id).catch(() => { /* تبقى معروضةً من الملفّ */ });
+    }
+    setNotes([...ns.filter((n) => n.visit_id === visitId), ...pending.map((n) => ({ ...n, visit_id: visitId }))]);
     setTreatments(tx.filter((t) => t.visit_id === visitId));
     setLabs(lab);
     setLoading(false);
@@ -200,7 +208,12 @@ export default function VisitPage() {
   const KindIcon = kind?.icon ?? Stethoscope;
   const todayISO = localISO(new Date());
 
-  const clinicalNotes = useMemo(() => notes.map((n) => ({ n, ...parseClinical(n.note_text) })).filter((x) => x.record), [notes]);
+  const allClinical = useMemo(() => notes.map((n) => ({ n, ...parseClinical(n.note_text) })).filter((x) => x.record), [notes]);
+  /** «التشخيص وخطة العلاج» — بلا معلومات الدخول (هذه ليست خطة، ولا تجعل الزرَّ «تعديل»). */
+  const clinicalNotes = useMemo(() => allClinical.filter((x) => !isIntake(x.record)), [allClinical]);
+  /** معلوماتُ الحالة عند الدخول (أحدثُها أوّلاً) — بطاقةٌ بالصفحة، وتعبّي المعالجَ أوّلَ مرّة. */
+  const intakeNotes = useMemo(() => allClinical.filter((x) => isIntake(x.record)), [allClinical]);
+  const planSeed = useMemo(() => (clinicalNotes.length ? null : wizardSeed(intakeNotes.map((x) => x.record!))), [clinicalNotes.length, intakeNotes]);
   const generalNotes = useMemo(
     () => notes.filter((n) => !parseClinical(n.note_text).record && !n.note_text.startsWith(DAY_MARK) && !isProtocolMark(n.note_text)),
     [notes],
@@ -286,7 +299,7 @@ export default function VisitPage() {
       ? t(`visit.species.${species}`, SPECIES_SINGULAR_AR[species])
       : t(`pet.species.${species}`, species);
   const primary = clinicalNotes.length ? clinicalNotes[clinicalNotes.length - 1].record : null;
-  const dxName = primary?.diagnoses?.[0]?.disease;
+  const dxName = primary?.diagnoses?.[0]?.disease ?? intakeNotes[0]?.record?.diagnoses?.[0]?.disease;
   const dxWarn = (primary?.redFlags?.length ?? 0) > 0 || (primary?.zoonotic?.length ?? 0) > 0 || (primary?.reportable?.length ?? 0) > 0;
 
   /* ---- Save the clinical console: store the record note + generate the daily flowsheet ---- */
@@ -706,6 +719,13 @@ export default function VisitPage() {
         </div>
       )}
 
+      {/* ── معلومات الحالة عند الدخول — من فتح الحالة، انتقلت لأوّل زيارة ── */}
+      {intakeNotes.length > 0 && (
+        <div className="mt-3 space-y-2" data-visit-intake>
+          {intakeNotes.map(({ n, record }) => <ClinicalRecordCard key={n.id} record={record!} />)}
+        </div>
+      )}
+
       {/* ── لوحة اليوم — شنو لازم يصير الآن ── */}
       {hasFlowsheet && !ended && (
         <TodayPanel
@@ -889,7 +909,7 @@ export default function VisitPage() {
         }}
         size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}
       >
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} flags={prescribingFlags} onMediaAdded={reload} onDirtyChange={(d) => { planDirty.current = d; }} />
+        <TreatmentPlan initial={planSeed ?? undefined} onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} flags={prescribingFlags} onMediaAdded={reload} onDirtyChange={(d) => { planDirty.current = d; }} />
       </Modal>
 
       <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); setNoteDay(null); }} title={noteDay ? `ملاحظة على ${formatDate(noteDay, lang)}` : "إضافة ملاحظة"}>

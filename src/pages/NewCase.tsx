@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint } from "lucide-react";
@@ -15,6 +16,9 @@ import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
 import { PetAvatar } from "@/components/PetAvatar";
 import { ReadingsFields } from "@/components/ReadingsFields";
+import { IntakeFields } from "@/components/IntakeFields";
+import { emptyIntake, isEmptyIntake, encodeIntake, intakeText, cleanSince, type IntakeDraft } from "@/lib/intake";
+import { symptomLabel } from "@/lib/clinicalKnowledge";
 import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "@/components/PetFields";
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
@@ -48,6 +52,8 @@ interface AnimalDraft {
   addMeds: boolean;
   readings: Partial<Record<ReadingKey, string>>;
   readingsOpen: boolean;
+  /** معلوماتُ الحالة (intake.ts) — التشخيصُ فيها يُقرأ من health/diagnosis أعلاه لا مكرَّراً. */
+  intake: IntakeDraft;
 }
 
 function newAnimal(): AnimalDraft {
@@ -56,6 +62,7 @@ function newAnimal(): AnimalDraft {
     dob: "", weight: "", color: "", microchip: "", allergies: "", notes: "",
     health: "healthy", diagnosis: "",
     disp: "log", cage: "", addMeds: true, readings: {}, readingsOpen: false,
+    intake: emptyIntake(),
   };
 }
 
@@ -69,6 +76,36 @@ interface Outcome {
 
 /** بيانات مالك جاهزة (زر «إضافة حيوان» من سجلات العيادة) — تُمرَّر عبر حالة الراوتر. */
 export interface OwnerPrefill { name: string; phone: string; email: string; governorate: string; area: string }
+
+/**
+ * يحفظ معلوماتِ الحالة ملاحظةً منظّمة بملفّ الحيوان (بلا زيارة — تنتقل لأوّل زيارةٍ
+ * تُفتح). فشلُها لا يُسقط الحالةَ المسجَّلة: يرجع false فيُقال للمستخدم بصوت.
+ */
+async function saveIntake(petId: string, draft: IntakeDraft, admittedOn: string, author: { id?: string | null; name?: string | null }, t: TFunction): Promise<boolean> {
+  if (isEmptyIntake(draft)) return true;
+  const human = intakeText(draft, symptomLabel, {
+    history: t("intake.tabHistory", "التاريخ المرضي"),
+    since: (n) => (n === 0 ? t("intake.onsetToday", "بدأت اليوم") : t("intake.sinceN", { n, defaultValue: "صارلها {{n}} يوم" })),
+    diagnosis: t("intake.tabDx", "التشخيص الأولي"),
+    signs: t("intake.tabSigns", "العلامات"),
+    sep: t("common.listSep", "، "),
+  });
+  try {
+    await withTimeout(repo.addPetNote({ pet_id: petId, note_text: encodeIntake(draft, admittedOn, human), author_id: author.id ?? null, author_name: author.name ?? null }), 8000);
+    return true;
+  } catch { return false; }
+}
+
+/** مسودّةُ الدخول بتشخيصها من حقل الصحّة — مصدرٌ واحد للتشخيص. */
+const intakeWithDx = (intake: IntakeDraft, health: Health, diagnosis: string): IntakeDraft =>
+  ({ ...intake, diagnosis: health === "sick" ? diagnosis.trim() : "" });
+
+/** سطرُ «S» بسجلّ الزيارات: التاريخُ المرضي ومدّتُه — حين تُكتب زيارةُ الدخول أصلاً. */
+const subjectiveOf = (intake: IntakeDraft, t: TFunction): string | undefined => {
+  const since = cleanSince(intake.sinceDays);
+  const s = [intake.history.trim(), since !== null ? (since === 0 ? t("intake.onsetToday", "بدأت اليوم") : t("intake.sinceN", { n: since, defaultValue: "صارلها {{n}} يوم" })) : ""].filter(Boolean).join(" — ");
+  return s || undefined;
+};
 
 export function NewCase() {
   const { t, i18n } = useTranslation();
@@ -124,6 +161,7 @@ export function NewCase() {
     // attribute the record to the signed-in staff member. Demo mode accepts any id.
     const ownerId = user?.id ?? uid("owner");
     const results: Outcome[] = [];
+    const intakeFailed: string[] = [];
     try {
       for (const a of valid) {
         // Each network call is bounded by an 8s timeout so a dropped connection
@@ -176,10 +214,13 @@ export function NewCase() {
             clinic_name: "Happy Paws Veterinary Clinic",
             doctor_name: user?.full_name ?? "Doctor",
             visit_date: admittedOn,
+            subjective: subjectiveOf(a.intake, t),
             objective: objective || undefined,
             assessment: diagnosis || t("newCase.admissionReadings"),
           }), 8000);
         }
+        // معلوماتُ الحالة بملفّ الحيوان (لكلّ الحالات، حتى «فتح ملف فقط»): تنتقل لأوّل زيارة.
+        if (!(await saveIntake(pet.id, intakeWithDx(a.intake, a.health, a.diagnosis), admittedOn, { id: user?.id, name: user?.full_name }, t))) intakeFailed.push(pet.name);
 
         results.push({ petId: pet.id, name: pet.name, species: a.species, disp: a.disp, addMeds: a.addMeds });
       }
@@ -195,6 +236,7 @@ export function NewCase() {
       setIsSubmitting(false);
     }
     playSuccess();
+    if (intakeFailed.length) toast.error(t("intake.saveFail", { names: intakeFailed.join("، "), defaultValue: "انفتحت الحالة، بس معلومات الحالة ما انحفظت لـ{{names}} — ضيفها كملاحظة من ملفه." }));
     // Open Record Only with a single new patient: jump straight to the new file so
     // the doctor can verify it was opened (it's already in Clinic Records too).
     if (results.length === 1 && results[0].disp === "record") {
@@ -344,7 +386,7 @@ export function NewCase() {
               <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
                 <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.name")}</label>
-                  <input className="input" value={a.name} onChange={(e) => setAnimal(a.key, { name: e.target.value })} />
+                  <input className="input" data-pet-name value={a.name} onChange={(e) => setAnimal(a.key, { name: e.target.value })} />
                 </div>
                 <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.speciesLabel")}</label>
@@ -387,12 +429,20 @@ export function NewCase() {
                 </div>
               </div>
 
-              {/* Health status + smart diagnosis combobox */}
-              <HealthStatusField
-                health={a.health}
-                diagnosis={a.diagnosis}
-                onHealth={(h) => setAnimal(a.key, h === "healthy" ? { health: h, diagnosis: "" } : { health: h })}
-                onDiagnosis={(d) => setAnimal(a.key, { diagnosis: d })}
+              {/* معلومات الحالة: التاريخ المرضي، التشخيص الأوّلي (حقل الصحّة نفسه)، العلامات */}
+              <IntakeFields
+                value={a.intake}
+                onChange={(patch) => setAnimal(a.key, { intake: { ...a.intake, ...patch } })}
+                admittedOn={admittedOn}
+                dxFilled={a.health === "sick" && !!a.diagnosis.trim()}
+                diagnosisSlot={
+                  <HealthStatusField
+                    health={a.health}
+                    diagnosis={a.diagnosis}
+                    onHealth={(h) => setAnimal(a.key, h === "healthy" ? { health: h, diagnosis: "" } : { health: h })}
+                    onDiagnosis={(d) => setAnimal(a.key, { diagnosis: d })}
+                  />
+                }
               />
 
               {/* Optional medical readings (vitals + CBC), recorded into history */}
@@ -572,6 +622,7 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
   const [diagnosis, setDiagnosis] = useState("");
   const [readingsOpen, setReadingsOpen] = useState(false);
   const [readings, setReadings] = useState<Partial<Record<ReadingKey, string>>>({});
+  const [intake, setIntake] = useState<IntakeDraft>(emptyIntake);
   const [admitting, setAdmitting] = useState(false);
   const admittingRef = useRef(false);
 
@@ -600,7 +651,10 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: admittedOn, reason }, pet), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
       if (dx || objective) {
-        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: admittedOn, objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
+        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: admittedOn, subjective: subjectiveOf(intake, t), objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
+      }
+      if (!(await saveIntake(pet.id, intakeWithDx(intake, health, diagnosis), admittedOn, { id: user?.id, name: doctorName }, t))) {
+        toast.error(t("intake.saveFail", { names: pet.name, defaultValue: "انفتحت الحالة، بس معلومات الحالة ما انحفظت لـ{{names}} — ضيفها كملاحظة من ملفه." }));
       }
     } catch (e) {
       playWarning();
@@ -655,11 +709,19 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
             <input type="checkbox" className="w-5 h-5 accent-brand-600" checked={addMeds} onChange={(e) => setAddMeds(e.target.checked)} />
           </label>
 
-          <HealthStatusField
-            health={health}
-            diagnosis={diagnosis}
-            onHealth={(h) => { setHealth(h); if (h === "healthy") setDiagnosis(""); }}
-            onDiagnosis={setDiagnosis}
+          <IntakeFields
+            value={intake}
+            onChange={(patch) => setIntake((cur) => ({ ...cur, ...patch }))}
+            admittedOn={admittedOn}
+            dxFilled={health === "sick" && !!diagnosis.trim()}
+            diagnosisSlot={
+              <HealthStatusField
+                health={health}
+                diagnosis={diagnosis}
+                onHealth={(h) => { setHealth(h); if (h === "healthy") setDiagnosis(""); }}
+                onDiagnosis={setDiagnosis}
+              />
+            }
           />
 
           <div className="border-t border-line pt-3">

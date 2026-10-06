@@ -6,7 +6,7 @@
   "src/components/CareSheet.tsx": 45,
   "src/components/CaseSummary.tsx": 18,
   "src/components/CbcPanel.tsx": 4,
-  "src/components/ClinicalRecordCard.tsx": 23,
+  "src/components/ClinicalRecordCard.tsx": 20,
   "src/components/ConsentForms.tsx": 2,
   "src/components/DiagnosisPicker.tsx": 3,
   "src/components/DoseBlock.tsx": 17,

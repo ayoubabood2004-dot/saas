@@ -1309,6 +1309,17 @@ console.log("▸ 0223 — سجلُّ لقاحاتٍ سابق (مرآةُ addVacc
   check("  واللقاحُ المفرد مختومٌ كذلك", typeof one.created_at === "string");
 }
 
+console.log("▸ معلوماتُ الدخول تنتقل لأوّل زيارة (مرآةُ linkNotesToVisit)");
+{
+  const a = await repo.addPetNote({ pet_id: "in-pet", note_text: "intake-a" });
+  const b = await repo.addPetNote({ pet_id: "in-pet", note_text: "intake-b", visit_id: "v-old" });
+  const n = await repo.linkNotesToVisit([a.id, b.id], "v-new");
+  const after = await repo.listPetNotes("in-pet");
+  check("تُربط غيرُ المربوطة وحدها، ويرجع عددُ ما رُبط", n === 1 && after.find((x) => x.id === a.id)?.visit_id === "v-new" && after.find((x) => x.id === b.id)?.visit_id === "v-old", JSON.stringify(after));
+  check("  وإعادةُ الربط لا تسحبها لزيارةٍ أخرى", (await repo.linkNotesToVisit([a.id], "v-other")) === 0);
+  check("  وقائمةٌ فارغة لا تكتب شيئاً", (await repo.linkNotesToVisit([], "v-x")) === 0);
+}
+
 console.log("▸ 0221 — أدويةُ الطبيب المفضّلة (مرآةُ الحزمة)");
 {
   for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_drug_favs_")) mem.delete(k);

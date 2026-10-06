@@ -30,8 +30,9 @@ export function SymptomPicker({
   onChange: (ids: string[]) => void;
   qualifiers: QualifierMap;
   onQualifiersChange: (q: QualifierMap) => void;
-  differentialCount: number;
-  onShowDifferential: () => void;
+  differentialCount?: number;
+  /** بلاه يختفي زرّ «التشخيص التفريقي» — عند الدخول ما في محرّكُ تشخيصٍ يُنتقل إليه. */
+  onShowDifferential?: () => void;
   focusSystem?: string;
 }) {
   const preOpen = focusSystem ? categoryForSystem(focusSystem)?.id : undefined;
@@ -127,11 +128,11 @@ export function SymptomPicker({
           <span className="text-2xs font-extrabold uppercase tracking-wide text-brand-700 dark:text-brand-300">
             الأعراض المختارة {value.length > 0 && `(${formatNum(value.length)})`}
           </span>
-          {value.length > 0 && (
+          {value.length > 0 && onShowDifferential && (
             <button type="button" onClick={() => { playTap(); onShowDifferential(); }} className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3 py-1 text-2xs font-bold text-white shadow-soft transition hover:bg-brand-700">
               <Sparkles size={12} /> التشخيص التفريقي
               {/* keyed by value → re-mounts with a tiny pop whenever the engine's count changes */}
-              <span key={differentialCount} className="inline-block animate-scale-in tabular-nums">({formatNum(differentialCount)})</span>
+              <span key={differentialCount} className="inline-block animate-scale-in tabular-nums">({formatNum(differentialCount ?? 0)})</span>
             </button>
           )}
         </div>

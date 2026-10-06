@@ -156,8 +156,11 @@ const STEPS: { id: StepId; key: string; label: string; icon: typeof Activity }[]
  * The final OUTCOME is captured later, when the visit is closed — not here.
  */
 export function TreatmentPlan({
-  onSubmit, busy, species, petId, weightKg, allergies, flags, onMediaAdded, onDirtyChange,
+  onSubmit, busy, species, petId, weightKg, allergies, flags, onMediaAdded, onDirtyChange, initial,
 }: {
+  /** بذرةٌ من «معلومات الحالة» عند الدخول (intake.ts): العلاماتُ والتشخيصُ الأوّليّ مؤشَّران،
+   *  والتاريخُ المرضي بالملاحظات — الطبيبُ يراجع ويعدّل، لا يعيد الإدخال. */
+  initial?: { symptoms: string[]; qualifiers: Record<string, Record<string, string>>; diagnoses: Diagnosis[]; notes: string };
   onSubmit: (body: string) => void | Promise<void>;
   busy?: boolean;
   species?: Sp;
@@ -175,16 +178,16 @@ export function TreatmentPlan({
   const toast = useToast();
   const [step, setStep] = useState<StepId>("anatomy");
   const [focus, setFocus] = useState<AnatomyFocus | null>(null);
-  const [symptoms, setSymptoms] = useState<string[]>([]);
-  const [qualifiers, setQualifiers] = useState<QualifierMap>({});
+  const [symptoms, setSymptoms] = useState<string[]>(() => initial?.symptoms ?? []);
+  const [qualifiers, setQualifiers] = useState<QualifierMap>(() => (initial?.qualifiers ?? {}) as QualifierMap);
   const [cbc, setCbc] = useState<Record<string, number>>({});
   const [labPhoto, setLabPhoto] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrCount, setOcrCount] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
-  const [notes, setNotes] = useState("");
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>(() => initial?.diagnoses ?? []);
+  const [notes, setNotes] = useState(() => initial?.notes ?? "");
   // \u062a\u0628\u062f\u0623 \u0641\u0627\u0631\u063a\u0629: \u0635\u0641\u0651\u064c \u0628\u0644\u0627 \u0627\u0633\u0645\u064d \u0644\u064a\u0633 \u0648\u0635\u0641\u0629\u064b\u060c \u0648\u0625\u0646\u0645\u0627 \u0646\u0645\u0648\u0630\u062c\u064c \u064a\u0637\u0644\u0628 \u0627\u0644\u0643\u062a\u0627\u0628\u0629.
   const [rows, setRows] = useState<PlanRow[]>([]);
   /** Plan-wide course length — set once at the top, applied to every drug row.

@@ -5510,5 +5510,30 @@
     "careToday": "Today",
     "careVisitDay": "Visit day",
     "careOther": "Another day"
+  },
+  "intake": {
+    "today": "Today",
+    "week": "A week",
+    "twoWeeks": "Two weeks",
+    "month": "A month",
+    "nDays": "{{n}} days",
+    "tabHistory": "Medical history",
+    "tabDx": "Initial diagnosis",
+    "tabSigns": "Signs",
+    "title": "Case information",
+    "optional": "optional",
+    "sub": "Saved to the animal's file, and carried into the first visit or chart opened for it.",
+    "whatHappened": "What happened?",
+    "historyPh": "e.g. vomiting for two days, not eating, got medicine from a pharmacy…",
+    "since": "How many days has it been?",
+    "daysInput": "Number of days",
+    "daysWord": "days",
+    "onsetToday": "Started today",
+    "onset": "Started around {{date}}",
+    "sinceN": "{{n}} days so far",
+    "saveFail": "The case was opened, but its case information wasn't saved for {{names}} — add it as a note from the file.",
+    "cardTitle": "Case information at admission",
+    "signsN": "{{n}} signs",
+    "sinceLine": "{{n}} days so far — started around {{date}}"
   }
 }

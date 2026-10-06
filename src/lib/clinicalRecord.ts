@@ -14,6 +14,10 @@ import type { CbcFlag } from "@/lib/cbc";
 
 export interface ClinicalRecord {
   v: 1;
+  /** «intake» = معلوماتُ الحالة عند الدخول (intake.ts) — ليست خطةَ علاج. غيابُه = خطة. */
+  kind?: "plan" | "intake";
+  /** التاريخُ المرضي عند الدخول: شنو صار، وصارلها كم يوم، ويومُ البداية المحسوب. */
+  intake?: { history?: string; sinceDays?: number; onset?: string };
   focus?: { region: string; structure?: string; latin?: string };
   symptoms?: string[];                                   // symptom ids
   qualifiers?: Record<string, Record<string, string>>;   // symptomId → { qualifierId: chosen option }

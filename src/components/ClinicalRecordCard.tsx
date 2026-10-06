@@ -5,7 +5,8 @@ import { Glyph, GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons"
 import { SEVERITIES } from "@/lib/diagnoses";
 import { symptomById, symptomLabel, OUTCOMES } from "@/lib/clinicalKnowledge";
 import { cbcById, FLAG_ARROW } from "@/lib/cbc";
-import { formatNum, cn } from "@/lib/utils";
+import { formatNum, formatDate, cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 import { playTap } from "@/lib/sounds";
 
 const OUTCOME_BADGE: Record<string, string> = {
@@ -40,7 +41,11 @@ function Node({ icon, color, title, children, last }: { icon: string; color: str
  * old wall-of-text note in the timeline.
  */
 export function ClinicalRecordCard({ record, compact = false, className }: { record: ClinicalRecord; compact?: boolean; className?: string }) {
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(!compact);
+  /** معلوماتُ الحالة عند الدخول (intake.ts): نفسُ البطاقة بعنوانها هي، وبلا شدّةٍ مخترعة للتشخيص الأوّلي. */
+  const intake = record.kind === "intake";
+  const since = record.intake?.sinceDays;
   const outcome = record.outcome ? OUTCOMES.find((o) => o.id === record.outcome) : null;
   const dxN = record.diagnoses?.length ?? 0;
   const medN = record.treatment?.length ?? 0;
@@ -57,8 +62,12 @@ export function ClinicalRecordCard({ record, compact = false, className }: { rec
       >
         <Glyph name={firstDxSystem ?? "general"} size={30} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-sm font-extrabold text-ink">التشخيص وخطة العلاج</div>
+          <div className="flex items-center gap-1.5 text-sm font-extrabold text-ink" data-record-kind={intake ? "intake" : "plan"}>
+            {intake ? t("intake.cardTitle", "معلومات الحالة عند الدخول") : <>التشخيص وخطة العلاج</>}
+          </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-2xs font-semibold text-ink-muted">
+            {intake && since != null && <span>{since === 0 ? t("intake.onsetToday", "بدأت اليوم") : t("intake.sinceN", { n: formatNum(since), defaultValue: "صارلها {{n}} يوم" })}</span>}
+            {intake && (record.symptoms?.length ?? 0) > 0 && <span>{t("intake.signsN", { n: formatNum(record.symptoms!.length), defaultValue: "{{n}} علامة" })}</span>}
             {dxN > 0 && <span>{formatNum(dxN)} تشخيص</span>}
             {medN > 0 && <span>{formatNum(medN)} دواء</span>}
             {record.cbc?.length ? <span>CBC</span> : null}
@@ -84,8 +93,21 @@ export function ClinicalRecordCard({ record, compact = false, className }: { rec
             </Node>
           )}
 
+          {intake && record.intake && (record.intake.history || record.intake.sinceDays != null) && (
+            <Node icon="general" color="bg-amber-500" title={t("intake.tabHistory", "التاريخ المرضي")}>
+              {record.intake.history && <span className="whitespace-pre-wrap">{record.intake.history}</span>}
+              {record.intake.sinceDays != null && (
+                <span className="mt-1 block text-2xs font-bold text-ink-muted" data-intake-since-line>
+                  {record.intake.sinceDays === 0
+                    ? t("intake.onsetToday", "بدأت اليوم")
+                    : t("intake.sinceLine", { n: formatNum(record.intake.sinceDays), date: record.intake.onset ? formatDate(record.intake.onset, i18n.language) : "—", defaultValue: "صارلها {{n}} يوم — بدأت تقريباً {{date}}" })}
+                </span>
+              )}
+            </Node>
+          )}
+
           {record.symptoms?.length ? (
-            <Node icon="fever" color="bg-rose-500" title="الأعراض">
+            <Node icon="fever" color="bg-rose-500" title={intake ? t("intake.tabSigns", "العلامات") : "الأعراض"}>
               <span className="flex flex-wrap gap-1.5">
                 {record.symptoms.map((id) => {
                   const qm = record.qualifiers?.[id];
@@ -103,9 +125,14 @@ export function ClinicalRecordCard({ record, compact = false, className }: { rec
           ) : null}
 
           {dxN > 0 && (
-            <Node icon={firstDxSystem ?? "general"} color="bg-brand-600" title="التشخيص">
+            <Node icon={firstDxSystem ?? "general"} color="bg-brand-600" title={intake ? t("intake.tabDx", "التشخيص الأولي") : "التشخيص"}>
               <span className="flex flex-wrap gap-1.5">
-                {record.diagnoses!.map((d) => {
+                {intake && record.diagnoses!.map((d) => (
+                  <span key={`${d.system}:${d.disease}`} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 py-1 pe-2 ps-1.5 text-2xs font-bold">
+                    <Glyph name={d.system} size={17} /> {d.disease}
+                  </span>
+                ))}
+                {!intake && record.diagnoses!.map((d) => {
                   const sev = sevMeta(d.severity);
                   return (
                     <span key={`${d.system}:${d.disease}`} className={cn("inline-flex items-center gap-1.5 rounded-full py-1 pe-1 ps-1.5 text-2xs font-bold", sev?.chip)}>
