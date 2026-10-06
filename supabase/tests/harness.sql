@@ -90,6 +90,29 @@ drop policy if exists staff_manager_update on staff;
 create policy staff_manager_update on staff for update
   using (clinic_id = (select auth_clinic()) and (select auth_role()) = 'manager')
   with check (clinic_id = (select auth_clinic()) and (select auth_role()) = 'manager');
+
+-- اللقاحاتُ بشكل الإنتاج (0001 + clinic_id من 0006/0020 + سياسةُ العيادة كما قيست ٦/١٠):
+-- تحتاجها 0223. بلا `created_at` — هذا ما تضيفه الهجرة.
+do $$ begin create type vax_status as enum ('administered', 'scheduled', 'overdue'); exception when duplicate_object then null; end $$;
+create table if not exists vaccinations (
+  id uuid primary key default gen_random_uuid(),
+  pet_id uuid not null references pets(id) on delete cascade,
+  name text not null,
+  status vax_status not null default 'scheduled',
+  due_date date,
+  administered_at date,
+  dose_number int default 1,
+  doses_total int default 1,
+  lot_number text,
+  administered_by text,
+  notes text,
+  clinic_id uuid default auth_clinic()
+);
+create index if not exists vax_pet_idx on vaccinations(pet_id);
+alter table vaccinations enable row level security;
+drop policy if exists vaccinations_clinic_all on vaccinations;
+create policy vaccinations_clinic_all on vaccinations for all
+  using (clinic_id = (select auth_clinic())) with check (clinic_id = (select auth_clinic()));
 create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid, stock numeric(14,3) default 0, name text, barcode text);
 create table if not exists invoices (id uuid primary key default gen_random_uuid(), clinic_id uuid, created_at timestamptz not null default now());
 create table if not exists medical_visits (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), clinic_id uuid);

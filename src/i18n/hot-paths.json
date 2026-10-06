@@ -32,6 +32,7 @@
     "farm": "src/pages/PoultryFarms.tsx",
     "cnt": "src/pages/StockCount.tsx",
     "watch": "src/pages/StockWatch.tsx",
-    "photos": "src/pages/ProductPhotos.tsx"
+    "photos": "src/pages/ProductPhotos.tsx",
+    "vbk": "src/pages/VisitPage.tsx"
   }
 }

@@ -836,10 +836,19 @@ const demoRepo = {
 
   async addVaccination(input: Omit<Vaccination, "id">): Promise<Vaccination> {
     const db = loadDB();
-    const v: Vaccination = { ...input, id: uid("v") };
+    const v: Vaccination = { created_at: new Date().toISOString(), ...input, id: uid("v") };
     db.vaccinations.push(v);
     saveDB(db);
     return v;
+  },
+
+  /** مرآةُ `addVaccinations`: سجلٌّ سابق كلُّه أو لا شيء — دفعةٌ واحدة. */
+  async addVaccinations(inputs: Omit<Vaccination, "id">[]): Promise<void> {
+    if (inputs.length === 0) return;
+    const db = loadDB();
+    const at = new Date().toISOString();
+    for (const input of inputs) db.vaccinations.push({ created_at: at, ...input, id: uid("v") });
+    saveDB(db);
   },
 
   /** Patch a vaccination in place — e.g. administering a scheduled booster. */
@@ -4112,6 +4121,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   deletePet: { entity: "pets", action: "DELETE" },
   addWeight: { entity: "weight_logs", action: "INSERT" },
   addVaccination: { entity: "vaccinations", action: "INSERT" },
+  addVaccinations: { entity: "vaccinations", action: "INSERT" },
   addVisit: { entity: "medical_visits", action: "INSERT" },
   addPetNote: { entity: "pet_notes", action: "INSERT" },
   addLabResult: { entity: "lab_results", action: "INSERT" },

@@ -18,6 +18,7 @@ import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { SurgerySection } from "@/components/Surgeries";
 import { persistMedicalEntries } from "@/lib/medSync";
+import { recordedLater } from "@/lib/backdate";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { taskStatus } from "@/lib/treatmentSchedule";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -453,7 +454,7 @@ export function PetPassport() {
 
       {/* Unified Medication + Vaccination entry, scoped to this patient's species */}
       <Modal open={medOpen} onClose={() => setMedOpen(false)} title={t("passport.medicalEntryTitle", "Medical entry — {{name}}", { name: pet.name })}>
-        <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} />
+        <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} allowHistory />
       </Modal>
 
       {/* Legal consent forms (operation / anesthesia / treatment) — bilingual, printable */}
@@ -1573,6 +1574,12 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
                             <p className="text-xs font-bold text-ink">
                               {doseLabel}
                               {done && v.administered_at && <span className="font-semibold text-ink-muted"> · {t("passport.vxGiven", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "أُعطيت {{date}}" })}</span>}
+                              {done && recordedLater(v.administered_at, v.created_at) && (
+                                <span data-vx-later className="ms-1.5 inline-flex items-center gap-0.5 rounded bg-surface-2 px-1.5 py-0.5 align-middle text-[10px] font-bold text-ink-muted"
+                                  title={v.created_at ? t("passport.vxRecordedOn", { date: formatDate(v.created_at, i18n.language), defaultValue: "انكتب بالسستم {{date}}" }) : undefined}>
+                                  <History size={10} /> {t("passport.vxRecordedLater", "سجل سابق")}
+                                </span>
+                              )}
                               {!done && v.due_date && (
                                 <span className={cn("font-semibold", late ? "text-danger-600 dark:text-danger-400" : "text-ink-muted")}>
                                   {" · "}{formatDate(v.due_date, i18n.language)}
@@ -1611,7 +1618,7 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addVaccine")}>
-        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} defaultDoctor={user?.full_name} />
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} defaultDoctor={user?.full_name} allowHistory />
       </Modal>
 
       <VaccineDueDialog vaccine={dueEdit} petName={pet.name} onClose={() => setDueEdit(null)} onSaved={onChanged} />
@@ -1652,10 +1659,13 @@ function AdministerBoosterModal({ vaccine, defaultDoctor, onClose, onDone }: { v
     if (!vaccine || busy || vaccine.status === "administered") return;
     setBusy(true);
     try {
-      const administeredISO = when ? new Date(when).toISOString() : new Date().toISOString();
+      // العمودُ `date`: يومُ اللحظة المحلّيّ — `toISOString()` كان يحفظ يومَ غرينتش،
+      // فجرعةُ الساعة ١ بالليل ببغداد تنكتب أمس.
+      const picked = when ? new Date(when) : new Date();
+      const administeredDay = localISO(Number.isNaN(picked.getTime()) ? new Date() : picked);
       await repo.updateVaccination(vaccine.id, {
         status: "administered",
-        administered_at: administeredISO,
+        administered_at: administeredDay,
         administered_by: doctor || undefined,
         notes: notes.trim() || undefined,
         due_date: null,
@@ -2724,7 +2734,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
         <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commitTreatment} defaultDoctor={user?.full_name} />
       </Modal>
       <Modal open={vaxOpen} onClose={() => setVaxOpen(false)} title={t("passport.addVaccine", "إضافة تطعيم")}>
-        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commitVaccine} defaultDoctor={user?.full_name} />
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commitVaccine} defaultDoctor={user?.full_name} allowHistory />
       </Modal>
 
       {/* Add-note */}

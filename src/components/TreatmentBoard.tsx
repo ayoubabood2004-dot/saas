@@ -7,7 +7,8 @@ import {
   taskStatus, minutesLate, lateLabel, compareTasks, hourSlot, HHMM,
   type TaskStatus,
 } from "@/lib/treatmentSchedule";
-import { TASK_META, typeOf, routeShort } from "@/lib/flowsheet";
+import { TASK_META, typeOf, routeShort, missReasonText } from "@/lib/flowsheet";
+import { isSettledMiss } from "@/lib/backdate";
 import { toneOfResult } from "@/lib/observations";
 import { formatNum, cn } from "@/lib/utils";
 import { fmtClock } from "@/lib/clock";
@@ -133,7 +134,7 @@ function TaskCard({ task, onGive, onValue, wall }: {
         {/* «فاتت ولها سبب» حالةٌ ثالثة: لا مُنجَزة ولا مُهمَلة — والسبب يُقرأ */}
         {!done && tx.missed_reason?.trim() && (
           <div className={cn("mt-0.5 inline-flex items-center gap-1 font-bold text-warn-700 dark:text-warn-300", wall ? "text-base" : "text-2xs")} data-taskmissed>
-            <SkipForward size={wall ? 16 : 11} className="shrink-0" /> {tx.missed_reason}
+            <SkipForward size={wall ? 16 : 11} className="shrink-0" /> {missReasonText(tx.missed_reason)}
           </div>
         )}
         {done && tx.administered_by && !wall && (
@@ -220,7 +221,8 @@ export function TreatmentBoard({
   const tasks = useMemo<BoardTask[]>(() => {
     // Today's doses plus anything still unadministered from earlier days — a dose
     // missed yesterday stays on the board until someone deals with it.
-    const relevant = treatments.filter((t) => t.day === todayISO || (t.day < todayISO && !t.administered_at));
+    // وجرعةٌ فائتةٌ وُثّق أنها ما انطت حُسمت — ما عادت تنتظر أحداً (isSettledMiss).
+    const relevant = treatments.filter((t) => t.day === todayISO || (t.day < todayISO && !t.administered_at && !isSettledMiss(t, todayISO)));
     return relevant
       .slice()
       .sort((a, b) => compareTasks(a, b, todayISO, now))

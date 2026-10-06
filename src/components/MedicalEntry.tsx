@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Pill, Syringe, Droplet, Plus, Search, ChevronDown, Trash2, Check, X,
   ShieldCheck, Stethoscope, CalendarClock, Layers, ClipboardList,
-  HeartPulse, Activity, AlertTriangle, NotebookPen,
+  HeartPulse, Activity, AlertTriangle, NotebookPen, History,
 } from "lucide-react";
 import type { Species, PatientCondition, MedicalAssessment , Vaccination } from "@/types";
 import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
@@ -14,6 +14,7 @@ import { repo } from "@/lib/repo";
 import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid, dateLocale } from "@/lib/utils";
+import { addInterval, cleanHistory, historyProblem, EARLIEST_DAY } from "@/lib/backdate";
 import { playTap, playSuccess } from "@/lib/sounds";
 
 /* ============================================================================
@@ -102,6 +103,8 @@ function addToToday(b: Booster): string {
   if (b.years) d.setFullYear(d.getFullYear() + b.years);
   return localISO(d);
 }
+/** موعدٌ معزّز من يومٍ بعينه (آخرُ جرعةٍ سابقة) لا من اليوم. */
+const addFrom = (base: string, b: Booster): string => addInterval(base, { days: b.days, months: b.months, years: b.years });
 /** Format a YYYY-MM-DD safely — never throws / never renders "Invalid Date". */
 const prettyDate = (iso: string) => {
   const d = new Date(iso + "T00:00:00");
@@ -109,7 +112,12 @@ const prettyDate = (iso: string) => {
 };
 
 export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string; administered: boolean }
-export interface VaccinationDraft { id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string; administered: boolean }
+export interface VaccinationDraft {
+  id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string; administered: boolean;
+  /** سجلٌّ سابق: تواريخُ جرعاتٍ انعطت قبل (نظيفةٌ تصاعدياً) — تُحفظ كلٌّ بيومها، و`nextDue`
+   *  هو الموعدُ القادم بعد آخرها. غيابُه = لقاحُ اليوم أو المخطّط كما كان. */
+  history?: string[];
+}
 export type MedicalDraft = MedicationDraft | VaccinationDraft;
 
 /** Given-today vs planned/prescription toggle, shared by both entry forms. A planned
@@ -146,7 +154,10 @@ export function MedicalEntry({
   initialMode,
   lockMode,
   defaultDoctor,
+  allowHistory,
 }: {
+  /** ملفُّ الحيوان: يسمح بتسجيل لقاحٍ سابق بتواريخه (VaccinationForm). */
+  allowHistory?: boolean;
   /** Patient species — filters the vaccine list. If omitted, a species picker is shown. */
   species?: Species;
   /** Persist the built record + the per-visit assessment + the attending doctor. If omitted, local-only. */
@@ -191,6 +202,7 @@ export function MedicalEntry({
   // skipping the "Add" button — one Save captures everything.
   const [hasPending, setHasPending] = useState(false);
   const pendingFlush = useRef<(() => MedicalDraft | null) | null>(null);
+  const vaxBlock = useRef<string | null>(null);
   // Only one sub-form is mounted at a time; clear the pending state when the mode flips.
   useEffect(() => { setHasPending(false); pendingFlush.current = null; }, [mode]);
 
@@ -200,6 +212,8 @@ export function MedicalEntry({
   const canSave = pendingCount > 0 || !!condition || notes.trim().length > 0;
   const commit = async () => {
     if (busy) return;
+    // لقاحٌ سابقٌ مختارٌ وناقص: لا نحفظ الباقي ونُسقطه بصمت — نقول السببَ ونتوقّف.
+    if (vaxBlock.current) { toast.error(vaxBlock.current); return; }
     // Flush the configured-but-unadded medication/vaccine so a single Save saves it too.
     const pending = pendingFlush.current?.() ?? null;
     const entries = pending ? [pending, ...sheet] : sheet; // pending = the most-recent add
@@ -254,7 +268,7 @@ export function MedicalEntry({
       >
         {mode === "medication"
           ? <MedicationForm onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} />}
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} allowHistory={allowHistory} blockRef={vaxBlock} />}
       </motion.div>
 
       {/* Unified treatment record */}
@@ -516,10 +530,14 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName }: {
+export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName, allowHistory, blockRef }: {
   species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
   /** حيوان مربوط (بيع من ملفه): يُعرض سجل لقاحاته — السابق والمستحق — للاختيار بضغطة. */
   petId?: string | null; petName?: string | null;
+  /** ملفُّ الحيوان وحده: «انلقح قبل؟» يسجّل تواريخَ سابقة. البيعُ لا — البيعُ يحصل اليوم. */
+  allowHistory?: boolean;
+  /** سببٌ يمنع «احفظ» (سجلٌّ سابق ناقص) — وإلا حفظ الأبُ الباقي وأسقط هذا بصمت. */
+  blockRef?: { current: string | null };
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -527,6 +545,14 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   const [nextDue, setNextDue] = useState<string | null>(null);
   const [lot, setLot] = useState("");
   const [given, setGiven] = useState(true);
+  /** تواريخُ الجرعات السابقة (null = اللقاحُ ليس سجلاً سابقاً). سطرٌ فارغ = تاريخٌ لم يُكتب بعد. */
+  const [pastDates, setPastDates] = useState<string[] | null>(null);
+  const todayLocal = localISO(new Date());
+  const pastClean = useMemo(() => (pastDates ? cleanHistory(pastDates, todayLocal) : []), [pastDates, todayLocal]);
+  const pastLast = pastClean.length ? pastClean[pastClean.length - 1] : null;
+  /** المواعيدُ المقترحة تنحسب من آخر جرعةٍ سابقة — لا من اليوم. */
+  const boosterOf = (b: Booster) => (pastDates && pastLast ? addFrom(pastLast, b) : addToToday(b));
+  const pastIssue = pastDates ? historyProblem(pastDates, nextDue, todayLocal) : null;
 
   // سجل لقاحات الحيوان المربوط — يجاوب "شنو انطى سابقاً وشنو المستحق هسة؟"
   const [history, setHistory] = useState<Vaccination[] | null>(null);
@@ -561,14 +587,22 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   const buildDraft = (): MedicalDraft | null => {
     if (!vaccine) return null;
     const due = nextDue && !Number.isNaN(new Date(nextDue + "T00:00:00").getTime()) ? nextDue : null;
+    // سجلٌّ سابق ناقص لا يُبنى — والزرُّ مطفأٌ والسببُ مكتوبٌ تحت التواريخ، فلا «انحفظ» عن لا شيء.
+    if (pastDates) return pastIssue ? null : { id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, administered: true, history: pastClean };
     return { id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, lot: lot.trim() || undefined, administered: given };
   };
-  useEffect(() => { onReadyChange?.(!!vaccine); }, [vaccine, onReadyChange]);
+  const ready = !!vaccine && !(pastDates && pastIssue);
+  useEffect(() => {
+    if (!blockRef) return;
+    blockRef.current = vaccine && pastDates && pastIssue ? t(`medentry.pastErr.${pastIssue}`) : null;
+    return () => { blockRef.current = null; };
+  }, [blockRef, vaccine, pastDates, pastIssue, t]);
+  useEffect(() => { onReadyChange?.(ready); }, [ready, onReadyChange]);
   useEffect(() => {
     if (flushRef) flushRef.current = buildDraft;
     return () => { if (flushRef) flushRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flushRef, vaccine, nextDue, lot, given]);
+  }, [flushRef, vaccine, nextDue, lot, given, pastDates]);
 
   const group = SPECIES_GROUP[species];
   // Clinic-custom vaccines (added in Settings) aren't species-tagged → always offered.
@@ -588,7 +622,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
 
   const SPECIES_OPTS: Species[] = ["dog", "cat", "horse", "cow", "rabbit", "bird", "other"];
   // A date that isn't one of the preset boosters → the custom field is the active choice.
-  const isCustom = !!nextDue && !BOOSTERS.some((b) => addToToday(b) === nextDue);
+  const isCustom = !!nextDue && !BOOSTERS.some((b) => boosterOf(b) === nextDue);
 
   return (
     <div className="space-y-5">
@@ -667,14 +701,69 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
         />
       </Tier>
 
+      {/* «انلقح قبل؟» — ملفُّ الحيوان وحده: تواريخُ الجرعات السابقة أوّلاً، ثم الموعدُ القادم منها. */}
+      <AnimatePresence>
+        {vaccine && allowHistory && (
+          <Reveal key="past">
+            <div className="space-y-2.5" data-vxpast>
+              <button type="button" data-vxpast-toggle aria-pressed={!!pastDates}
+                onClick={() => { playTap(); setPastDates((d) => (d ? null : [""])); setNextDue(null); }}
+                className={cn("flex w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-start transition",
+                  pastDates ? "border-brand-400 bg-brand-50 dark:border-brand-500/50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", pastDates ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-subtle")}><History size={17} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-ink">{t("medentry.pastToggle", "انلقح قبل؟ سجّل تواريخه السابقة")}</span>
+                  <span className="block text-2xs text-ink-subtle">{t("medentry.pastToggleSub", "من ورق أو سستم سابق — بعدها تختار الموعد القادم")}</span>
+                </span>
+                <span className={cn("h-5 w-9 shrink-0 rounded-full p-0.5 transition", pastDates ? "bg-brand-600" : "bg-line-strong")}>
+                  <span className={cn("block h-4 w-4 rounded-full bg-white shadow transition", pastDates ? "translate-x-4 rtl:-translate-x-4" : "")} />
+                </span>
+              </button>
+              {pastDates && (
+                <Tier n={3} label={t("medentry.tierPast", "تواريخ التلقيح السابقة")} icon={<History size={14} />}>
+                  <div className="space-y-1.5">
+                    {pastDates.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="w-14 shrink-0 text-2xs font-bold text-ink-subtle">{t("medentry.pastDoseN", { n: i + 1, defaultValue: "جرعة {{n}}" })}</span>
+                        <input type="date" data-vxpast-date={i} value={d} min={EARLIEST_DAY} max={todayLocal}
+                          aria-label={t("medentry.pastDoseN", { n: i + 1, defaultValue: "جرعة {{n}}" })}
+                          onChange={(e) => { const v = e.target.value; setPastDates((arr) => (arr ? arr.map((x, j) => (j === i ? v : x)) : arr)); }}
+                          className="input h-10 flex-1 tabular-nums [color-scheme:light] dark:[color-scheme:dark]" dir="ltr" />
+                        {pastDates.length > 1 && (
+                          <button type="button" onClick={() => { playTap(); setPastDates((arr) => (arr ? arr.filter((_, j) => j !== i) : arr)); }}
+                            aria-label={t("medentry.pastRemove", "شيل هذا التاريخ")} title={t("medentry.pastRemove", "شيل هذا التاريخ")}
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
+                        )}
+                      </div>
+                    ))}
+                    <button type="button" data-vxpast-add onClick={() => { playTap(); setPastDates((arr) => [...(arr ?? []), ""]); }}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-brand-300 px-3 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-50 dark:border-brand-500/40 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                      <Plus size={13} /> {t("medentry.pastAdd", "أضف تاريخ ثاني")}
+                    </button>
+                    {pastIssue && pastIssue !== "nextNotAfterLast" && pastDates.some((x) => x) && (
+                      <p className="flex items-center gap-1.5 text-2xs font-bold text-danger-600 dark:text-danger-400" data-vxpast-issue={pastIssue}>
+                        <AlertTriangle size={12} className="shrink-0" /> {t(`medentry.pastErr.${pastIssue}`)}
+                      </p>
+                    )}
+                  </div>
+                </Tier>
+              )}
+            </div>
+          </Reveal>
+        )}
+      </AnimatePresence>
+
       {/* Booster scheduler */}
       <AnimatePresence>
-        {vaccine && (
+        {vaccine && (!pastDates || pastLast) && (
           <Reveal key="booster">
-            <Tier n={3} label={t("medentry.tierBooster", "موعد الجرعة القادمة")} icon={<CalendarClock size={14} />}>
+            <Tier n={pastDates ? 4 : 3} label={t("medentry.tierBooster", "موعد الجرعة القادمة")} icon={<CalendarClock size={14} />}>
+              {pastDates && pastLast && (
+                <p className="mb-2 text-2xs font-bold text-ink-subtle">{t("medentry.pastFromLast", { date: prettyDate(pastLast), defaultValue: "المواعيد تنحسب من آخر جرعة ({{date}})" })}</p>
+              )}
               <div className="flex flex-wrap items-center gap-1.5">
                 {BOOSTERS.map((b) => {
-                  const iso = addToToday(b);
+                  const iso = boosterOf(b);
                   const active = nextDue === iso;
                   return (
                     <button
@@ -727,14 +816,24 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
                   </motion.div>
                 )}
               </AnimatePresence>
+              {pastDates && nextDue && pastIssue === "nextNotAfterLast" && (
+                <p className="mt-2 flex items-center gap-1.5 text-2xs font-bold text-danger-600 dark:text-danger-400" data-vxpast-issue="nextNotAfterLast">
+                  <AlertTriangle size={12} className="shrink-0" /> {t("medentry.pastErr.nextNotAfterLast", "الموعد القادم لازم يكون بعد آخر جرعة")}
+                </p>
+              )}
+              {pastDates && nextDue && !pastIssue && nextDue < todayLocal && (
+                <p className="mt-2 flex items-center gap-1.5 text-2xs font-bold text-warn-700 dark:text-warn-300" data-vxpast-late>
+                  <AlertTriangle size={12} className="shrink-0" /> {t("medentry.pastDueLate", "هذا الموعد فات — راح ينسجّل متأخر ويطلع بالأحمر")}
+                </p>
+              )}
             </Tier>
           </Reveal>
         )}
       </AnimatePresence>
 
-      {/* Lot number (optional) */}
+      {/* Lot number (optional) — السجلُّ السابق بلا تشغيلة: الورقُ نادراً يذكرها. */}
       <AnimatePresence>
-        {vaccine && (
+        {vaccine && !pastDates && (
           <Reveal key="lot">
             <Tier n={4} label={t("medentry.tierLot", "رقم التشغيلة (Lot)")} icon={<ClipboardList size={14} />} optional>
               <input className="input font-mono" value={lot} onChange={(e) => setLot(e.target.value)} placeholder={t("medentry.lotPh", "مثال: RB-2291-A")} />
@@ -745,7 +844,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
 
       {/* Given today vs planned (only a scheduled dose is recorded when planned) */}
       <AnimatePresence>
-        {vaccine && (
+        {vaccine && !pastDates && (
           <Reveal key="vstatus">
             <Tier n={5} label={t("medentry.tierStatus", "الحالة")} icon={<Check size={14} />}>
               <GivenToggle given={given} onChange={setGiven} />
@@ -757,14 +856,14 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
       <Button
         className="w-full"
         variant="secondary"
-        disabled={!vaccine}
+        disabled={!ready}
         leftIcon={<Plus size={16} />}
         onClick={() => {
           const d = buildDraft();
           if (!d) return;
           try {
             onAdd(d);
-            setVaccine(""); setNextDue(null); setLot(""); setGiven(true);
+            setVaccine(""); setNextDue(null); setLot(""); setGiven(true); setPastDates(null);
           } catch (err) {
             console.error("Add vaccination failed:", err);
             toast.error(t("medentry.vaccineAddFail"), err instanceof Error ? err.message : t("medentry.checkDate"));
@@ -811,11 +910,15 @@ function TreatmentSheet({ entries, onRemove }: { entries: MedicalDraft[]; onRemo
                     <span className={cn("chip shrink-0 text-2xs font-medium", e.kind === "vaccination" ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : "bg-surface-2 text-ink-muted")}>
                       {e.kind === "vaccination" ? t("medentry.vaccineTag", "لقاح") : e.family}
                     </span>
-                    <StatusChip given={e.administered} />
+                    {e.kind === "vaccination" && e.history?.length
+                      ? <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><History size={10} className="me-0.5 inline" />{t("medentry.pastTag", "سجل سابق")}</span>
+                      : <StatusChip given={e.administered} />}
                   </p>
                   <p className="truncate text-xs text-ink-subtle">
                     {e.kind === "medication"
                       ? `${routeLabel(e.route)} · ${e.dosage}`
+                      : e.history?.length
+                        ? `${t("medentry.pastLine", { n: e.history.length, date: prettyDate(e.history[e.history.length - 1]), defaultValue: "{{n}} جرعة سابقة · آخرها {{date}}" })}${e.nextDue ? ` · ${t("medentry.pastLineNext", { date: prettyDate(e.nextDue), defaultValue: "القادمة {{date}}" })}` : ""}`
                       : e.nextDue ? `${e.administered ? t("medentry.givenNextDue", "أُعطي اليوم · القادمة") : t("medentry.plannedFor", "مُخطّط بتاريخ")} ${prettyDate(e.nextDue)}${e.lot ? ` · Lot ${e.lot}` : ""}` : `${e.administered ? t("medentry.givenTodayLine", "أُعطي اليوم") : t("medentry.plannedTag", "مُخطّط")}${e.lot ? ` · Lot ${e.lot}` : ""}`}
                   </p>
                   {e.kind === "medication" && e.note && (

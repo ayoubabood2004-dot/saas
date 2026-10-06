@@ -321,7 +321,8 @@ export function Reception() {
     playTap();
     const key = clinicId ?? "x";
     if (rem.refKind === "vaccination") {
-      const id = rem.refId, at = new Date().toISOString();
+      // العمودُ `date`: اليومُ المحلّيّ — `toISOString()` يحفظ يومَ غرينتش (أمس بعد منتصف الليل).
+      const id = rem.refId, at = localISO(new Date());
       setVaccinations((vs) => {
         const next = vs.map((v) => (v.id === id ? { ...v, status: "administered" as VaccinationStatus, administered_at: at } : v));
         setCached(`recVax:${key}`, next);

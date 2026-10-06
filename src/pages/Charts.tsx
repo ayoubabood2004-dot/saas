@@ -28,7 +28,7 @@ import { useCageStudio } from "@/components/cage3d/store";
 import { Nameplate } from "@/components/cages/CageCard";
 import { opsStore } from "@/lib/opsStore";
 import { TreatmentBoard } from "@/components/TreatmentBoard";
-import { taskStatus } from "@/lib/treatmentSchedule";
+import { taskStatus, isOverdueNow } from "@/lib/treatmentSchedule";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
 import { waNumber } from "@/lib/phone";
@@ -343,7 +343,7 @@ export function Charts() {
       todayTotal: todayTx.length,
       // Hour-aware: a dose scheduled for 08:00 and still not given at 11:00 counts
       // as overdue TODAY — it no longer has to wait for the date to roll over.
-      overdue: list.filter((t) => taskStatus(t, todayISO) === "overdue").length,
+      overdue: list.filter((t) => isOverdueNow(t, todayISO)).length,
       doneTotal: list.filter((t) => t.administered_at).length,
       total: list.length,
     };
@@ -434,7 +434,7 @@ export function Charts() {
       const tx = treatments.filter((t) => t.pet_id === c.petId);
       if (!tx.length) continue;
       const remaining = tx.filter((t) => !t.administered_at);
-      if (!remaining.length || !remaining.some((t) => taskStatus(t, todayISO) === "overdue")) continue;
+      if (!remaining.length || !remaining.some((t) => isOverdueNow(t, todayISO))) continue;
       const given = tx.filter((t) => t.administered_at).map((t) => t.administered_at!).sort();
       const lastGiven = given[given.length - 1] ?? null;
       const firstDay = tx.map((t) => t.day).sort()[0];
@@ -1619,7 +1619,7 @@ function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, s
   const todayTx = treatments.filter((t) => t.day === todayISO);
   const todayGiven = todayTx.filter((t) => t.administered_at).length;
   const todayPct = todayTx.length ? Math.round((todayGiven / todayTx.length) * 100) : null;
-  const overdueDoses = treatments.filter((t) => taskStatus(t, todayISO) === "overdue").length;
+  const overdueDoses = treatments.filter((t) => isOverdueNow(t, todayISO)).length;
 
   // المنتهية هذا الشهر (بنتيجة أو وفاة) + متوسط مدتها ومعدل إنجاز جرعاتها.
   const monthCases = cases.filter((v) => (v.ended_at ?? "").slice(0, 7) === monthKey);

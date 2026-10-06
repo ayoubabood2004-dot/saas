@@ -232,10 +232,14 @@ export interface Vaccination {
   due_date?: string | null;
   administered_at?: string | null;
   dose_number?: number;
-  doses_total?: number;
+  /** null = المجموعُ مجهول (سجلٌّ سابق): «جرعة ٣» لا «جرعة ٣ من ١». */
+  doses_total?: number | null;
   lot_number?: string;
   administered_by?: string; // doctor / clinic name
   notes?: string;
+  /** متى انكتب الصفّ (0223) — غائبٌ عن الصفوف الأقدم منها. بمقارنته بـ`administered_at`
+   *  يُعرف السجلُّ السابق المُدخَل لاحقاً. */
+  created_at?: string | null;
 }
 
 export interface MediaItem {

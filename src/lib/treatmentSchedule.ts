@@ -18,6 +18,7 @@
 // ============================================================================
 import type { TreatmentEntry } from "@/types";
 import { getWorkHours, getDoseWindow } from "./settings";
+import { isSettledMiss } from "./backdate";
 
 /** Clock slots by doses-per-day. Index 0 is unused (PRN has no schedule).
  *  These are the FALLBACK for clinics that haven't set their work hours yet —
@@ -149,6 +150,17 @@ export function taskStatus(t: TreatmentEntry, todayISO: string, now = HHMM()): T
   if (nowMin >= at + GRACE_MINUTES) return "overdue";
   if (nowMin >= at) return "due";
   return "upcoming";
+}
+
+/**
+ * متأخرةٌ تنتظر يداً: «متأخرة» بالساعة واليوم، **وفواتُها غيرُ موثّق**. جرعةٌ من يومٍ
+ * فات وُثّق أنها ما انطت (`missed_reason`) حُسمت — تبقى «غير معطاة» بالطبلة لكنها
+ * ما عادت مجهولة، فلا تُعدّ متأخرةً بعدّادٍ ولا تملأ لوحةً ولا تقول «منقطعة».
+ * وهذا ما يجعل الزيارةَ المسجّلة بتاريخٍ سابق ممكنة: جرعاتُها القديمة تُحسم
+ * (انطت بيومها / ما انطت) ولا تبقى حمراء للأبد.
+ */
+export function isOverdueNow(t: TreatmentEntry, todayISO: string, now = HHMM()): boolean {
+  return taskStatus(t, todayISO, now) === "overdue" && !isSettledMiss(t, todayISO);
 }
 
 /** How many minutes late a dose is — 0 when it isn't late. */

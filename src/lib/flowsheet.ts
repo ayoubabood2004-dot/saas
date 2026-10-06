@@ -1,6 +1,7 @@
 import type { TaskType, DoseRoute, TreatmentEntry } from "@/types";
 import i18n from "@/i18n";
 import { taskStatus, type TaskStatus } from "./treatmentSchedule";
+import { PAST_MISS_REASON } from "./backdate";
 
 /* ============================================================================
  * flowsheet.ts — منطق «ورقة العلاج»: مرضى في صفوف، ساعات في أعمدة.
@@ -114,6 +115,13 @@ export const MISS_REASONS: { id: string; label: () => string }[] = [
   { id: "stock", label: () => i18n.t("flow.mStock", "الدواء غير متوفّر") },
   { id: "busy", label: () => i18n.t("flow.mBusy", "ضغط العمل") },
 ];
+
+/** نصُّ سببِ الفوات للعرض: أسبابُ الجناح نصٌّ مخزَّنٌ كما كُتب، وعلامةُ «ما انطت» من
+ *  نافذة الجرعات الفائتة رمزٌ ثابت (backdate.ts) يُترجم هنا. */
+export function missReasonText(reason: string | null | undefined): string {
+  if (!reason) return "";
+  return reason.trim() === PAST_MISS_REASON ? i18n.t("flow.mPast", "ما انطت (سجل سابق)") : reason;
+}
 
 /* ── الوقت ──────────────────────────────────────────────────────────────── */
 /** "HH:MM" → دقائق منذ منتصف الليل. الصيغة الفاسدة تُعاد 0 لا NaN. */

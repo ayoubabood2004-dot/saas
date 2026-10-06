@@ -7,6 +7,7 @@
 import { repo } from "./repo";
 import { localISO } from "./utils";
 import { syncDoseCycleForPet } from "./doseCycle";
+import { historyRows } from "./backdate";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 
 const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
@@ -32,11 +33,19 @@ export async function persistMedicalEntries(
     // as "مُخطّط / Planned" until the doctor marks them given.
     const given = e.administered !== false;
     if (e.kind === "vaccination") {
+      if (e.history?.length) {
+        // سجلٌّ سابق: جرعةٌ معطاةٌ بيومها لكلّ تاريخ، ثم الموعدُ القادم (backdate.ts).
+        // لا طبيبَ معطٍ ولا تشغيلة — العيادةُ ما أعطتها بالضرورة، والورقُ نادراً يذكرها.
+        // بجملةٍ واحدة: فشلٌ بالنصّ لا يترك نصفَ سجلٍّ تكرّره إعادةُ المحاولة.
+        await repo.addVaccinations(historyRows(e.name, e.history, e.nextDue, today).map((row) => ({ pet_id: petId, ...row })));
+        continue;
+      }
       if (given) {
-        // The dose given today.
+        // The dose given today. العمودُ `date`: اليومُ المحلّيّ لا `toISOString()` —
+        // وإلا فلقاحٌ بعد منتصف الليل ببغداد ينكتب بيوم غرينتش (أمس).
         await repo.addVaccination({
           pet_id: petId, name: e.name, status: "administered",
-          administered_at: nowISO, due_date: null,
+          administered_at: today, due_date: null,
           lot_number: e.lot, administered_by: doctorName,
         });
         // A scheduled booster becomes its own pending item — actioned later via

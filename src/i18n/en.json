@@ -1120,7 +1120,24 @@
     "vaccineTag": "Vaccine",
     "givenNextDue": "Given today · next due",
     "plannedFor": "Planned for",
-    "givenTodayLine": "Administered today"
+    "givenTodayLine": "Administered today",
+    "pastToggle": "Vaccinated before? Record the past dates",
+    "pastToggleSub": "From paper or an old system — then pick the next due date",
+    "tierPast": "Past vaccination dates",
+    "pastDoseN": "Dose {{n}}",
+    "pastRemove": "Remove this date",
+    "pastAdd": "Add another date",
+    "pastErr": {
+      "empty": "Enter at least one dose date",
+      "future": "A date is in the future — past records are for what already happened",
+      "tooOld": "A date is invalid or too old — check the year",
+      "nextNotAfterLast": "The next due date must be after the last dose"
+    },
+    "pastFromLast": "Dates are counted from the last dose ({{date}})",
+    "pastDueLate": "This date has passed — it will be saved as overdue and show in red",
+    "pastTag": "Past record",
+    "pastLine": "{{n}} past dose(s) · last {{date}}",
+    "pastLineNext": "next {{date}}"
   },
   "services": {
     "title": "Services & non-barcode items",
@@ -2186,7 +2203,9 @@
     "sharedWithClinic": "Allowed at clinics",
     "sharedOn": "Shared",
     "sharedOff": "Private",
-    "ownerViewOnly": "You can view your pet's health record. Treatments and vaccinations are managed by the clinic."
+    "ownerViewOnly": "You can view your pet's health record. Treatments and vaccinations are managed by the clinic.",
+    "vxRecordedLater": "Past record",
+    "vxRecordedOn": "Entered in the system {{date}}"
   },
   "account": {
     "title": "My account",
@@ -4645,7 +4664,8 @@
     "byUnknown": "not recorded",
     "wasDue": "was due {{at}}",
     "undo": "Undo",
-    "butMissed": "Actually missed"
+    "butMissed": "Actually missed",
+    "mPast": "Not given (past record)"
   },
   "stock": {
     "fileName": "Stocktake",
@@ -5448,5 +5468,43 @@
     "saved": "Saved the photo for {{name}}",
     "removed": "Removed the photo for {{name}}",
     "noAccess": "This page is for staff with product-photo permission. Ask the clinic manager."
+  },
+  "visitOpen": {
+    "when": "When did they come?",
+    "now": "Now",
+    "past": "On a past date",
+    "day": "Day",
+    "time": "Time",
+    "beforeBirth": "Before the animal was born — check the year",
+    "badMoment": "The date must be valid and before now",
+    "pastHint": "The treatment plan starts from this date; then you mark which doses were given on their days.",
+    "later": "Entered later",
+    "recordedOn": "Entered in the system {{date}}"
+  },
+  "vbk": {
+    "pastPartial": "{{failed}} of {{total}} weren't saved — the rest were. Open it again and retry.",
+    "pastSaved": "Saved: {{given}} given · {{missed}} not given",
+    "notice": "Past-dated visit: came {{opened}} at {{time}} · entered in the system {{created}}",
+    "stMissed": "Not given",
+    "pickPast": "Mark which were given on their days",
+    "planDoneMissed": "Plan finished — {{given}} dose(s) given and {{missed}} not given.",
+    "courseMissed": "Done · {{n}} not given",
+    "givenThatDay": "Given on this day",
+    "givenAt": "Time",
+    "endWhen": "When did treatment end?",
+    "endDay": "Closing day",
+    "endTime": "Closing time",
+    "endBad": "Must be after the visit opened and before now",
+    "endHint": "Defaults to the last dose in the plan — change it if it ended on another day.",
+    "pastTitle": "Past doses",
+    "pastIntro": "Tick the doses that were given — they're saved on their own day at the scheduled time. Unticked ones are saved as “not given”.",
+    "pastAll": "All given",
+    "pastNone": "Clear ticks",
+    "pastCount": "{{n}} dose(s)",
+    "pastDoctor": "Doctor who gave them",
+    "pickDoctor": "Choose the doctor…",
+    "pastSave": "Save: {{given}} given · {{missed}} not given",
+    "reloadFail": "Saved, but the page didn't refresh — reload it.",
+    "pastFail": "Not saved — try again."
   }
 }

@@ -568,6 +568,12 @@ const supabaseRepo: DemoRepo = {
   async addVaccination(input) {
     return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());
   },
+  /** سجلٌّ سابق بجملةٍ واحدة: كلُّه ينكتب أو لا شيء — إعادةُ المحاولة بعد فشلٍ بنصّه
+   *  ما تكرّر جرعاتٍ انكتبت. */
+  async addVaccinations(inputs) {
+    if (inputs.length === 0) return;
+    ok(await sbc().from("vaccinations").insert(inputs));
+  },
   async updateVaccination(id, patch) {
     ok(await sbc().from("vaccinations").update(patch).eq("id", id));
   },

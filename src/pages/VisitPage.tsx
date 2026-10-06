@@ -7,8 +7,10 @@ import {
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Pill,
   Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil, Printer, FileText,
+  History, ListChecks, SkipForward,
 } from "lucide-react";
 import { toneOfResult } from "@/lib/observations";
+import { missReasonText } from "@/lib/flowsheet";
 import { CareIcon, careKindOf, type CareKind } from "@/components/CareIcon";
 import { ObsRecorder } from "@/components/Flowsheet";
 import { protocolMarksOf, isProtocolMark, type ProtocolMark } from "@/lib/protocolMark";
@@ -36,6 +38,7 @@ import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheet
 import { openCareReport } from "@/lib/careReportPrint";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
+import { pendingPast, isSettledMiss, pastWrites, suggestedEnd, endMoment, recordedLater, dayOf, clockOf24, isClock, PAST_MISS_REASON, VISIT_LATE_GAP_MS, type PastDecision } from "@/lib/backdate";
 import { ProblemList } from "@/components/ProblemList";
 import { CareSheet } from "@/components/CareSheet";
 import { VisitBanner } from "@/components/VisitBanner";
@@ -88,14 +91,16 @@ function diagnosisText(rec: ClinicalRecord | null, t: TFunction): string {
 const isGivable = (t: TreatmentEntry): boolean => (t.task_type ?? "drug") === "drug";
 
 /** Four-state dose status — the semantic system leading vet treatment sheets use. */
-type DoseStatus = "done" | "overdue" | "due" | "upcoming";
+type DoseStatus = "done" | "overdue" | "due" | "upcoming" | "missed";
+/** «فاتت» = يومٌ مضى ووُثّق أنها ما انطت (isSettledMiss) — محسومةٌ رماديّة، لا «متأخرة» حمراء. */
 const doseStatus = (t: TreatmentEntry, todayISO: string): DoseStatus =>
-  t.administered_at ? "done" : t.day < todayISO ? "overdue" : t.day === todayISO ? "due" : "upcoming";
+  t.administered_at ? "done" : isSettledMiss(t, todayISO) ? "missed" : t.day < todayISO ? "overdue" : t.day === todayISO ? "due" : "upcoming";
 const STATUS_META: Record<DoseStatus, { label: string; row: string; mark: string; bar: string }> = {
   done: { label: "تمّ", row: "bg-success-50 dark:bg-success-500/10", mark: "bg-success-600 text-white", bar: "bg-success-500" },
   due: { label: "مستحقّة", row: "bg-warn-50 dark:bg-warn-500/10", mark: "bg-warn-500 text-white", bar: "bg-warn-500" },
   overdue: { label: "متأخّرة", row: "bg-danger-50 dark:bg-danger-500/10", mark: "bg-danger-600 text-white", bar: "bg-danger-500" },
   upcoming: { label: "قادمة", row: "bg-surface-1", mark: "bg-surface-2 text-ink-subtle border border-line", bar: "bg-line" },
+  missed: { label: "", row: "bg-surface-2/60", mark: "bg-ink-subtle text-white", bar: "bg-ink-subtle" },
 };
 
 const OUTCOME_BADGE: Record<string, string> = {
@@ -159,6 +164,8 @@ export default function VisitPage() {
   /** صفُّ الدواء المفتوح للتعديل — قبل إعطائه، بمدى «اليوم» أو «الباقي كله». */
   const [editTarget, setEditTarget] = useState<TreatmentEntry | null>(null);
   const [planView, setPlanView] = useState<"day" | "drug">("day");
+  /** الجرعاتُ الفائتة: «انطت بيومها / ما انطت» — تُفتح بعد خطةٍ تبدأ بالماضي، أو من لوحة اليوم. */
+  const [pastOpen, setPastOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -225,22 +232,26 @@ export default function VisitPage() {
   /* الطبلةُ تُفتح مسطّرةً لا مطويّة: قبل أوّل دواءٍ يبقى الجدولُ بأعمدته
    * الخمسة وصفُّ اليوم جاهزٌ فارغ — الطبيبُ يرى الورقةَ التي سيملؤها، لا
    * دعوةً تصف ورقةً غائبة. ولو كانت هناك خطةٌ فأيّامُها هي بلا صفٍّ مصطنع. */
-  const planDays: [string, TreatmentEntry[]][] = dayGroups.length ? dayGroups : [[todayISO, []]];
+  /** زيارةٌ انكتبت بعد يومها (ورق، سستم سابق) — يومُ فتحها أقدمُ من يوم إدخالها. */
+  const backdated = !!visit && recordedLater(visit.opened_at, visit.created_at, VISIT_LATE_GAP_MS);
+  const openDay = visit ? dayOf(visit.opened_at) : todayISO;
+  // والطبلةُ الفارغة لزيارةٍ سابقة تُفتح على يومها هي — «دواء» من صفّها ينكتب بذلك اليوم.
+  const planDays: [string, TreatmentEntry[]][] = dayGroups.length ? dayGroups : [[backdated && openDay < todayISO ? openDay : todayISO, []]];
   /* كل حسابات «الجرعات» تمشي على الأدوية والسوائل وحدها: العدّاد والالتزام
    * و«إعطاء الكل» ما عاد يحسبون الحرارة والأكل جرعاتٍ تنتظر. */
   const medRows = useMemo(() => treatments.filter(isGivable), [treatments]);
   const totalDoses = medRows.length;
   const doneDoses = medRows.filter((t) => t.administered_at).length;
-  const remaining = totalDoses - doneDoses;
+  /** فائتةٌ حُسمت بـ«ما انطت» — لا تنتظر شيئاً، ولا هي معطاة. */
+  const missedDoses = medRows.filter((t) => isSettledMiss(t, todayISO)).length;
+  const remaining = totalDoses - doneDoses - missedDoses;
   const giveTarget = treatments.find((t) => t.id === giveId) ?? null;
 
   // ── Smart treatment intelligence — the numbers that drive the command panel ──
   const todayDoses = useMemo(() => medRows.filter((t) => t.day === todayISO), [medRows, todayISO]);
   const todayPending = useMemo(() => todayDoses.filter((t) => !t.administered_at), [todayDoses]);
-  const overdueDoses = useMemo(
-    () => medRows.filter((t) => !t.administered_at && t.day < todayISO).sort((a, b) => a.day.localeCompare(b.day)),
-    [medRows, todayISO],
-  );
+  // المتأخرةُ = الفائتةُ التي لم تُحسم بعد (لا انطت ولا وُثّق فواتُها) — backdate.ts.
+  const overdueDoses = useMemo(() => pendingPast(medRows, todayISO), [medRows, todayISO]);
   const nextDose = useMemo(
     () => medRows.filter((t) => !t.administered_at && t.day > todayISO).sort((a, b) => a.day.localeCompare(b.day))[0] ?? null,
     [medRows, todayISO],
@@ -258,9 +269,10 @@ export default function VisitPage() {
       .map(([name, rows]) => {
         const sorted = [...rows].sort((a, b) => a.day.localeCompare(b.day));
         const given = sorted.filter((r) => r.administered_at).length;
-        const overdueN = sorted.filter((r) => !r.administered_at && r.day < todayISO).length;
-        const next = sorted.find((r) => !r.administered_at) ?? null;
-        return { name, rows: sorted, total: sorted.length, given, overdueN, next, amount: sorted[0]?.amount ?? "", freq: sorted[0]?.observations ?? "" };
+        const missedN = sorted.filter((r) => isSettledMiss(r, todayISO)).length;
+        const overdueN = sorted.filter((r) => !r.administered_at && r.day < todayISO && !isSettledMiss(r, todayISO)).length;
+        const next = sorted.find((r) => !r.administered_at && !isSettledMiss(r, todayISO)) ?? null;
+        return { name, rows: sorted, total: sorted.length, given, missedN, overdueN, next, amount: sorted[0]?.amount ?? "", freq: sorted[0]?.observations ?? "" };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [medRows, todayISO]);
@@ -279,6 +291,7 @@ export default function VisitPage() {
   const savePlan = async (body: string) => {
     if (!visit || planBusy) return;
     setPlanBusy(true);
+    let openPastAfter = false;
     try {
       await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
       const { record } = parseClinical(body);
@@ -318,6 +331,9 @@ export default function VisitPage() {
           }
         }
         await repo.addTreatments(rows);
+        // خطةٌ تبدأ بالماضي (زيارةٌ بتاريخٍ سابق): جرعاتُ الأيام الفائتة تنتظر قراراً —
+        // نفتح الاختيارَ مباشرةً بدل أن تقف حمراءَ «متأخرة».
+        if (rows.some((r) => r.day < localISO(new Date()))) openPastAfter = true;
       } else if (record?.treatment?.length && hasFlowsheet) {
         await Promise.all(treatments.map((t) => repo.setTreatmentGiven(t.id, !!t.administered_at, t.administered_by, t.administered_at ?? undefined).catch(() => {})));
       }
@@ -334,6 +350,7 @@ export default function VisitPage() {
       if (nDrugs > 0) toast.success(t("visit.planSaved", "حُفظت الخطة 🎉"), t("visit.planSavedDetail", { drugs: formatNum(nDrugs), doses: formatNum(nDoses), defaultValue: "{{drugs}} دواء · {{doses}} جرعة مجدولة بالطبلة" }));
       else toast.success(t("visit.dxSaved", "حُفظ التشخيص"));
       await reload();
+      if (openPastAfter) setPastOpen(true);
     } catch (e) {
       playWarning();
       toast.error(t("visit.saveFailed", "تعذّر الحفظ"), e instanceof Error ? e.message : undefined);
@@ -422,10 +439,39 @@ export default function VisitPage() {
     setObsTarget(null);
     await reload();
   };
-  const endVisit = async (outcome: string, summary: string) => {
+  const endVisit = async (outcome: string, summary: string, endedAt?: string) => {
     if (!visit) return;
-    await repo.updateClinicVisit(visit.id, { status: "ended", ended_at: new Date().toISOString(), ended_by: user?.full_name ?? null, outcome, summary: summary.trim() || null });
+    await repo.updateClinicVisit(visit.id, { status: "ended", ended_at: endedAt ?? new Date().toISOString(), ended_by: user?.full_name ?? null, outcome, summary: summary.trim() || null });
     playSuccess(); setEndOpen(false); await reload();
+  };
+
+  /* ---- الجرعات الفائتة: «انطت» تُختم بيومها ووقتها المجدول، والباقي «ما انطت» ----
+   * دفعاتٌ صغيرة متوازية (لا ستّون طلباً دفعةً واحدة)، والفشلُ الجزئيّ يُقال بعدده —
+   * ما انحفظ يبقى بالقائمة نفسها بعد إعادة التحميل، فإعادةُ المحاولة تكمل الباقي فقط. */
+  const savePast = async (decisions: PastDecision[], doctor: string) => {
+    const writes = pastWrites(overdueDoses, decisions);
+    if (!writes.length || !visit) return;
+    const by = doctor || (user?.full_name ?? undefined);
+    let failed = 0;
+    for (let i = 0; i < writes.length; i += 6) {
+      const chunk = writes.slice(i, i + 6);
+      const res = await Promise.allSettled(chunk.map((w) => (w.given
+        ? repo.setTreatmentGiven(w.id, true, by, w.at)
+        : repo.setTreatmentMissed(w.id, PAST_MISS_REASON))));
+      failed += res.filter((r) => r.status === "rejected").length;
+    }
+    await syncDoseCycleForPet(visit.pet_id).catch(() => {});
+    // الكتاباتُ تمّت — فشلُ إعادة التحميل وحده لا يُقال «ما انحفظ».
+    try { await reload(); } catch { toast.error(t("vbk.reloadFail", "انحفظت، بس ما تحدّثت الصفحة — حدّثها.")); }
+    if (failed) {
+      playWarning();
+      toast.error(t("vbk.pastPartial", { failed: formatNum(failed), total: formatNum(writes.length), defaultValue: "ما انحفظت {{failed}} من {{total}} — الباقي انحفظ. افتحها مرة ثانية وأعد المحاولة." }));
+      return;
+    }
+    const given = writes.filter((w) => w.given).length;
+    playSuccess();
+    toast.success(t("vbk.pastSaved", { given: formatNum(given), missed: formatNum(writes.length - given), defaultValue: "انحفظت: {{given}} انطت · {{missed}} ما انطت" }));
+    setPastOpen(false);
   };
 
   /* ---- تعديل دواءٍ قبل إعطائه — لهذا اليوم وحده أو من يومه لنهاية الخطة ---- */
@@ -456,9 +502,12 @@ export default function VisitPage() {
 
   /* ---- Add a single ad-hoc medication (بشكل مفرد) — لليوم أو لكل الأيام الباقية ---- */
   const openAddDrug = (day?: string) => { playTap(); setAddDrugDay(day ?? localISO(new Date())); setAddDrugOpen(true); };
-  const addDrug = async (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean }) => {
+  const addDrug = async (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => {
     if (!visit || !d.medication.trim()) return;
-    const nowISO = new Date().toISOString();
+    // «انطيناه» على يومٍ فات يُختم بذلك اليوم بالساعة المكتوبة — لا بلحظة الإدخال.
+    const today = localISO(new Date());
+    const pastAt = d.day < today ? new Date(`${d.day}T${isClock(d.givenTime) ? d.givenTime : "12:00"}:00`) : null;
+    const nowISO = pastAt && !Number.isNaN(pastAt.getTime()) ? pastAt.toISOString() : new Date().toISOString();
     const by = d.doctor || (user?.full_name ?? undefined);
     const base = {
       pet_id: visit.pet_id, visit_id: visit.id,
@@ -472,8 +521,8 @@ export default function VisitPage() {
     for (let day = d.day; day <= endDay; day = addDaysISO(`${day}T00:00:00`, 1)) {
       rows.push({
         ...base, day,
-        administered_at: d.givenNow && day === d.day ? nowISO : undefined,
-        administered_by: d.givenNow && day === d.day ? by : undefined,
+        administered_at: d.givenNow && day === d.day && d.day <= today ? nowISO : undefined,
+        administered_by: d.givenNow && day === d.day && d.day <= today ? by : undefined,
       });
     }
     await repo.addTreatments(rows);
@@ -622,6 +671,13 @@ export default function VisitPage() {
         onOpenFile={() => navigate(`/pet/${petId}`)}
       />
 
+      {backdated && (
+        <div data-visit-backdated className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-2/70 px-3 py-2 text-xs font-semibold text-ink-muted">
+          <History size={14} className="shrink-0 text-brand-600" />
+          <span>{t("vbk.notice", { opened: formatDate(visit.opened_at, lang), time: clockOf(visit.opened_at, lang), created: formatDate(visit.created_at ?? visit.opened_at, lang), defaultValue: "زيارة بتاريخ سابق: جات {{opened}} الساعة {{time}} · انكتبت بالسستم {{created}}" })}</span>
+        </div>
+      )}
+
       {ended && visit.summary && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
           <CheckCircle2 size={17} className="mt-0.5 shrink-0" /><div><b className="font-extrabold">{t("visit.treatmentEnded", "تم إنهاء العلاج")}</b> — {visit.summary}</div>
@@ -655,6 +711,7 @@ export default function VisitPage() {
           todayPending={todayPending} todayDoneCount={todayDoses.length - todayPending.length}
           overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
           onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
+          onPickPast={() => { playTap(); setPastOpen(true); }} missedCount={missedDoses} backdated={backdated}
         />
       )}
 
@@ -678,6 +735,9 @@ export default function VisitPage() {
                   {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((st) => (
                     <span key={st} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[st].bar)} /> {STATUS_META[st].label}</span>
                   ))}
+                  {missedDoses > 0 && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META.missed.bar)} /> {t("vbk.stMissed", "فاتت")}</span>
+                  )}
                 </div>
               )}
             </div>
@@ -697,7 +757,8 @@ export default function VisitPage() {
               onRecordObs={(tx) => { playTap(); setObsTarget(tx); }}
             />
           ) : (
-            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
+            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang}
+              onGive={(tx) => { if (tx.day < todayISO) { playTap(); setGiveId(tx.id); } else void giveQuick(tx); }} />
           )}
         </div>
       )}
@@ -822,7 +883,10 @@ export default function VisitPage() {
         </div>
       </Modal>
 
-      {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
+      {giveTarget && <GiveModal t={giveTarget} lang={lang} todayISO={todayISO} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
+      {pastOpen && overdueDoses.length > 0 && (
+        <PastDosesModal rows={overdueDoses} lang={lang} defaultDoctor={user?.full_name ?? ""} onClose={() => setPastOpen(false)} onSave={savePast} />
+      )}
       {/* تسجيل خانة رعاية من المصفوفة — نفس ورقة الشبكة حرفياً */}
       {obsTarget && (
         <ObsRecorder
@@ -842,7 +906,8 @@ export default function VisitPage() {
         />
       )}
       <ExtendPlanModal open={extendOpen} lastDay={lastDay} lang={lang} medCount={lastDay ? treatments.filter((t) => t.day === lastDay).length : 0} onClose={() => setExtendOpen(false)} onExtend={extendCourse} />
-      <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
+      <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit}
+        dated={backdated} openedAt={visit.opened_at} suggested={suggestedEnd(visit.opened_at, treatments)} />
     </div>
   );
 }
@@ -860,11 +925,18 @@ function ViewToggleBtn({ active, icon, label, onClick }: { active: boolean; icon
 /* -------------------------- Today command panel --------------------------- */
 /** The single most-used surface: what the doctor must do RIGHT NOW — today's due
  *  doses with one-tap give (and give-all), overdue catch-up, or a calm all-done state. */
-function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses, nextDose, remaining, totalDoses, onGiveAll, onGiveOne, onGiveOverdue }: {
+function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses, nextDose, remaining, totalDoses, onGiveAll, onGiveOne, onGiveOverdue, onPickPast, missedCount, backdated }: {
   todayISO: string; lang: string; todayPending: TreatmentEntry[]; todayDoneCount: number;
   overdueDoses: TreatmentEntry[]; nextDose: TreatmentEntry | null; remaining: number; totalDoses: number;
   onGiveAll: () => void; onGiveOne: (t: TreatmentEntry) => void; onGiveOverdue: () => void;
+  /** يفتح «الجرعات الفائتة»: انطت بيومها / ما انطت. */
+  onPickPast: () => void;
+  /** فائتةٌ حُسمت بـ«ما انطت» — الخطةُ تخلص بها، لكن «كلها انطت» يصير كذباً. */
+  missedCount: number;
+  /** زيارةٌ بتاريخٍ سابق: «سجّلها الآن» بلحظة الإدخال غلطٌ أكيد، فلا يُعرض. */
+  backdated: boolean;
 }) {
+  const { t } = useTranslation();
   const hasToday = todayPending.length > 0;
   const allDoneEver = totalDoses > 0 && remaining === 0;
   return (
@@ -880,9 +952,16 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
             <AlertTriangle size={16} className="shrink-0 text-danger-600" />
             <span className="text-sm font-extrabold text-danger-700 dark:text-danger-300">{formatNum(overdueDoses.length)} جرعة متأخّرة</span>
             <span className="text-xs text-danger-600/80 dark:text-danger-300/80">لم تُعطَ في أيامها</span>
-            <button onClick={onGiveOverdue} className="ms-auto inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-danger-700">
-              <Check size={13} /> تسجيل إعطائها الآن
-            </button>
+            <div className="ms-auto flex flex-wrap gap-1.5">
+              <button onClick={onPickPast} data-pickpast className="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 bg-surface-1 px-3 py-1.5 text-xs font-black text-danger-700 transition hover:bg-danger-50 dark:border-danger-500/40 dark:text-danger-300 dark:hover:bg-danger-500/10">
+                <ListChecks size={13} /> {t("vbk.pickPast", "حدّد الي انطت بأيامها")}
+              </button>
+              {!backdated && (
+                <button onClick={onGiveOverdue} className="inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-danger-700">
+                  <Check size={13} /> تسجيل إعطائها الآن
+                </button>
+              )}
+            </div>
           </div>
         )}
         {hasToday ? (
@@ -907,6 +986,11 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
               <Check size={18} /> إعطاء كل جرعات اليوم ({formatNum(todayPending.length)})
             </button>
           </>
+        ) : allDoneEver && missedCount > 0 ? (
+          <div data-plan-closed-missed className="flex items-center gap-2.5 rounded-lg bg-surface-2 px-3 py-3 text-ink-muted">
+            <CheckCircle2 size={20} className="shrink-0 text-ink-subtle" />
+            <div>{t("vbk.planDoneMissed", { given: formatNum(totalDoses - missedCount), missed: formatNum(missedCount), defaultValue: "خلصت الخطة — {{given}} جرعة انطت و{{missed}} ما انطت." })}</div>
+          </div>
         ) : allDoneEver ? (
           <div className="flex items-center gap-2.5 rounded-lg bg-success-50 px-3 py-3 text-success-700 dark:bg-success-500/10 dark:text-success-300">
             <CheckCircle2 size={20} className="shrink-0" /><div><b className="font-black">اكتمل العلاج بالكامل</b> — كل الجرعات أُعطيت. أحسنت! 🎉</div>
@@ -926,13 +1010,15 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
 }
 
 /* ------------------------- Per-medication course view --------------------- */
-interface MedCourse { name: string; rows: TreatmentEntry[]; total: number; given: number; overdueN: number; next: TreatmentEntry | null; amount: string; freq: string }
+interface MedCourse { name: string; rows: TreatmentEntry[]; total: number; given: number; missedN: number; overdueN: number; next: TreatmentEntry | null; amount: string; freq: string }
 function MedCourseView({ courses, todayISO, ended, lang, onGive }: { courses: MedCourse[]; todayISO: string; ended: boolean; lang: string; onGive: (t: TreatmentEntry) => void }) {
+  const { t } = useTranslation();
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {courses.map((c) => {
         const pct = c.total ? Math.round((c.given / c.total) * 100) : 0;
-        const done = c.given === c.total;
+        // خلص الكورس: ما بقي شيءٌ ينتظر — والفائتُ المحسوم يُقال بعدده لا يُخفى تحت «مكتمل».
+        const done = c.given + c.missedN === c.total;
         const dueNow = !!c.next && c.next.day <= todayISO;
         return (
           <div key={c.name} className="flex flex-col gap-2.5 rounded-xl border border-line-strong bg-surface-1 p-3.5 shadow-card">
@@ -955,7 +1041,9 @@ function MedCourseView({ courses, todayISO, ended, lang, onGive }: { courses: Me
             </div>
             <div className="mt-auto flex items-center justify-between gap-2 pt-0.5">
               <span className="text-2xs font-bold text-ink-muted">
-                {done ? <span className="text-success-600">✓ مكتمل</span> : c.next ? <>التالية: {formatDate(c.next.day, lang)}</> : "—"}
+                {done && c.missedN > 0
+                  ? <span className="text-ink-muted">{t("vbk.courseMissed", { n: formatNum(c.missedN), defaultValue: "خلص · {{n}} ما انطت" })}</span>
+                  : done ? <span className="text-success-600">✓ مكتمل</span> : c.next ? <>التالية: {formatDate(c.next.day, lang)}</> : "—"}
               </span>
               {!ended && !done && c.next && dueNow && (
                 <button onClick={() => onGive(c.next!)} className="rounded-lg bg-brand-600 px-2.5 py-1 text-2xs font-black text-white transition hover:bg-brand-700">تم إعطاؤها</button>
@@ -1078,6 +1166,9 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                 <td className={cn("border-line px-3 py-2.5 align-top", "lg:border-e")}>
                   {tx.administered_at && (
                     <div className="mb-1 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={12} className="shrink-0" /> {t("visit.givenShort", "\u0623\u064f\u0639\u0637\u064a\u062a")}</div>
+                  )}
+                  {isSettledMiss(tx, todayISO) && (
+                    <div data-dose-missed className="mb-1 flex items-center gap-1 text-xs font-bold text-ink-muted"><SkipForward size={12} className="shrink-0" /> {missReasonText(tx.missed_reason)}</div>
                   )}
                   {pNote && (
                     <div data-protonote className="mb-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-semibold leading-snug text-brand-800 dark:border-brand-500/40 dark:bg-brand-500/10 dark:text-brand-200">
@@ -1362,13 +1453,15 @@ function ProtocolBand({ mark, todayISO, treatments }: { mark: ProtocolMark; toda
 }
 
 /* ------------------------------- Give modal ------------------------------- */
-function GiveModal({ t, lang, defaultDoctor, ended, onClose, onGive, onUndo }: {
-  t: TreatmentEntry; lang: string; defaultDoctor: string; ended: boolean;
+function GiveModal({ t, lang, todayISO, defaultDoctor, ended, onClose, onGive, onUndo }: {
+  t: TreatmentEntry; lang: string; todayISO: string; defaultDoctor: string; ended: boolean;
   onClose: () => void; onGive: (t: TreatmentEntry, doctor: string, atISO: string) => void; onUndo: (t: TreatmentEntry) => void;
 }) {
   const given = !!t.administered_at;
   const [doctor, setDoctor] = useState(defaultDoctor);
-  const [time, setTime] = useState(nowHHMM);
+  // جرعةُ يومٍ فات: الوقتُ الافتراضيُّ موعدُها المجدول لا ساعةُ الآن — ساعةُ الإدخال على يومٍ
+  // قديم رقمٌ بلا معنى.
+  const [time, setTime] = useState(() => (t.day < todayISO && isClock(t.time) ? t.time : nowHHMM()));
   const confirm = () => {
     const at = new Date(`${t.day}T${(time || nowHHMM())}:00`);
     onGive(t, doctor || defaultDoctor, isNaN(at.getTime()) ? new Date().toISOString() : at.toISOString());
@@ -1490,9 +1583,10 @@ function EditDrugModal({ entry, treatments, onClose, onSave }: {
 function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
   open: boolean; day: string; lang: string; lastDay: string | null; defaultDoctor: string;
   onClose: () => void;
-  onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean }) => void | Promise<void>;
+  onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
+  const [givenTime, setGivenTime] = useState(nowHHMM);
   const [med, setMed] = useState("");
   const [amount, setAmount] = useState("");
   const [freq, setFreq] = useState("");
@@ -1504,9 +1598,13 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
 
   // Reset the form each time the modal opens (for a fresh day/doctor).
   useEffect(() => {
-    if (open) { setMed(""); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); }
+    if (open) { setMed(""); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); setGivenTime(nowHHMM()); }
   }, [open, day, defaultDoctor]);
 
+  const todayLocal = localISO(new Date());
+  /** يومٌ قادم ما ينعطى بعد؛ ويومٌ فات يُختم بساعته المكتوبة بيومه. */
+  const futureDay = d > todayLocal;
+  const pastDay = d < todayLocal;
   /** كم يوماً يغطي التكرار حتى نهاية الخطة — للمعاينة على الخيار نفسه. */
   const restDays = useMemo(() => {
     if (!lastDay || lastDay <= d) return 0;
@@ -1524,7 +1622,7 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
   const submit = async () => {
     if (!med.trim() || busy) return;
     setBusy(true);
-    try { await onAdd({ day: d, medication: med, amount, freq, doctor, givenNow, repeatRest }); }
+    try { await onAdd({ day: d, medication: med, amount, freq, doctor, givenNow: givenNow && !futureDay, repeatRest, givenTime }); }
     finally { setBusy(false); }
   };
 
@@ -1558,10 +1656,27 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
             <DoctorSelect value={doctor} onChange={setDoctor} placeholder="اختر الطبيب…" />
           </div>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 rounded border border-line bg-surface-2 px-3 py-2.5 text-sm font-bold text-ink">
-          <input type="checkbox" checked={givenNow} onChange={(e) => setGivenNow(e.target.checked)} className="h-4 w-4 accent-success-600" />
-          <Check size={15} className="text-success-600" /> تم إعطاؤه الآن (تسجيل الجرعة كمُعطاة)
-        </label>
+        {!futureDay && (
+          pastDay ? (
+            <div className="space-y-2 rounded border border-line bg-surface-2 px-3 py-2.5">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-ink">
+                <input type="checkbox" data-given-past checked={givenNow} onChange={(e) => setGivenNow(e.target.checked)} className="h-4 w-4 accent-success-600" />
+                <Check size={15} className="text-success-600" /> {t("vbk.givenThatDay", "انطيناه بهذا اليوم")}
+              </label>
+              {givenNow && (
+                <label className="flex items-center gap-2 text-xs font-bold text-ink-muted">
+                  <Clock size={13} /> {t("vbk.givenAt", "الساعة")}
+                  <input type="time" value={givenTime} onChange={(e) => setGivenTime(e.target.value)} className="input h-9 w-32 tabular-nums" dir="ltr" />
+                </label>
+              )}
+            </div>
+          ) : (
+            <label className="flex cursor-pointer items-center gap-2 rounded border border-line bg-surface-2 px-3 py-2.5 text-sm font-bold text-ink">
+              <input type="checkbox" checked={givenNow} onChange={(e) => setGivenNow(e.target.checked)} className="h-4 w-4 accent-success-600" />
+              <Check size={15} className="text-success-600" /> تم إعطاؤه الآن (تسجيل الجرعة كمُعطاة)
+            </label>
+          )
+        )}
         {/* «ولكل الأيام الباقية»: صف لكل يوم حتى نهاية الخطة — لا يوم واحد فقط */}
         {restDays > 1 && (
           <label className="flex cursor-pointer items-center gap-2 rounded border border-line bg-surface-2 px-3 py-2.5 text-sm font-bold text-ink">
@@ -1578,10 +1693,24 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
 }
 
 /* ------------------------------- End modal -------------------------------- */
-function EndVisitModal({ open, onClose, onEnd }: { open: boolean; onClose: () => void; onEnd: (outcome: string, summary: string) => void | Promise<void> }) {
+function EndVisitModal({ open, onClose, onEnd, dated, openedAt, suggested }: {
+  open: boolean; onClose: () => void; onEnd: (outcome: string, summary: string, endedAt?: string) => void | Promise<void>;
+  /** زيارةٌ بتاريخٍ سابق: تنغلق بيومها هي (آخرُ جرعة) لا بلحظة الإدخال — وإلا صارت
+   *  حالةُ أيلول «انتهت بتشرين» بتقارير الشهر. */
+  dated: boolean; openedAt: string; suggested: string;
+}) {
+  const { t } = useTranslation();
   const [outcome, setOutcome] = useState<string>("recovered");
   const [summary, setSummary] = useState("");
   const [busy, setBusy] = useState(false);
+  const [endDay, setEndDay] = useState(() => dayOf(suggested));
+  const [endTime, setEndTime] = useState(() => clockOf24(suggested));
+  // يُعاد ضبطُه عند الفتح وحده: `suggested` يُحسب بكلّ رسمٍ للأب (ويتبع «الآن» إن امتدّت
+  // الخطةُ لبعده) — ربطُه بها كان يمسح ما عدّله الطبيبُ مع أيّ رسمٍ عابر.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setEndDay(dayOf(suggested)); setEndTime(clockOf24(suggested)); } }, [open]);
+  const endAt = dated ? endMoment(endDay, endTime, openedAt) : null;
+  const badEnd = dated && !endAt;
   return (
     <Modal open={open} onClose={onClose} title="إنهاء الزيارة">
       <div className="space-y-4">
@@ -1604,8 +1733,22 @@ function EndVisitModal({ open, onClose, onEnd }: { open: boolean; onClose: () =>
           <div className="mb-1.5 text-xs font-bold text-ink-muted">ملاحظة ختامية</div>
           <textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="خلاصة الحالة عند الإغلاق…" className="input min-h-[80px] resize-y leading-relaxed" />
         </div>
-        <Button size="lg" className="w-full" variant="danger" leftIcon={<Lock size={18} />} loading={busy}
-          onClick={async () => { setBusy(true); try { await onEnd(outcome, summary); } finally { setBusy(false); } }}>
+        {dated && (
+          <div data-end-dated className="space-y-1.5 rounded-xl border border-line bg-surface-2/70 p-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><History size={13} className="text-brand-600" /> {t("vbk.endWhen", "متى خلص العلاج؟")}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <input type="date" data-end-day value={endDay} min={dayOf(openedAt)} max={localISO(new Date())} onChange={(e) => setEndDay(e.target.value)}
+                className="input h-10 tabular-nums [color-scheme:light] dark:[color-scheme:dark]" dir="ltr" aria-label={t("vbk.endDay", "يوم الإغلاق")} />
+              <input type="time" data-end-time value={endTime} onChange={(e) => setEndTime(e.target.value)}
+                className="input h-10 tabular-nums [color-scheme:light] dark:[color-scheme:dark]" dir="ltr" aria-label={t("vbk.endTime", "ساعة الإغلاق")} />
+            </div>
+            <p className={cn("text-2xs font-semibold", badEnd ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle")}>
+              {badEnd ? t("vbk.endBad", "لازم يكون بعد فتح الزيارة وقبل هسّة") : t("vbk.endHint", "الافتراضي آخر جرعة بالخطة — غيّره إذا خلص بيوم ثاني.")}
+            </p>
+          </div>
+        )}
+        <Button size="lg" className="w-full" variant="danger" leftIcon={<Lock size={18} />} loading={busy} disabled={badEnd}
+          onClick={async () => { setBusy(true); try { await onEnd(outcome, summary, endAt ?? undefined); } finally { setBusy(false); } }}>
           تأكيد إنهاء العلاج وإغلاق الزيارة
         </Button>
       </div>
@@ -1613,6 +1756,90 @@ function EndVisitModal({ open, onClose, onEnd }: { open: boolean; onClose: () =>
   );
 }
 
+
+/* ----------------------------- Past doses modal ---------------------------
+ * «الجرعات الي فاتت» — لكلّ جرعةٍ من يومٍ مضى قرار: انطت (تُختم بيومها ووقتها
+ * المجدول) أو ما انطت (فواتٌ موثّق). الافتراضيُّ لا شيء معلَّم: «احفظ» تقول
+ * بالعدد ماذا ستكتب، فلا تنقلب خطةٌ كاملة «معطاة» بضغطةٍ لم تُقرأ. */
+function PastDosesModal({ rows, lang, defaultDoctor, onClose, onSave }: {
+  rows: TreatmentEntry[]; lang: string; defaultDoctor: string;
+  onClose: () => void; onSave: (decisions: PastDecision[], doctor: string) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [given, setGiven] = useState<Set<string>>(() => new Set());
+  const [doctor, setDoctor] = useState(defaultDoctor);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const days = useMemo(() => {
+    const m = new Map<string, TreatmentEntry[]>();
+    for (const r of rows) (m.get(r.day) ?? m.set(r.day, []).get(r.day)!).push(r);
+    return [...m.entries()];
+  }, [rows]);
+  const toggle = (ids: string[], on: boolean) => setGiven((cur) => {
+    const next = new Set(cur);
+    for (const id of ids) { if (on) next.add(id); else next.delete(id); }
+    return next;
+  });
+  const nGiven = rows.filter((r) => given.has(r.id)).length;
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onSave(rows.map((r) => ({ id: r.id, given: given.has(r.id) })), doctor); }
+    catch (e) { playWarning(); toast.error(t("vbk.pastFail", "ما انحفظ — أعد المحاولة."), e instanceof Error ? e.message : undefined); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} size="wide" title={t("vbk.pastTitle", "الجرعات الي فاتت")}>
+      <div className="space-y-3" data-pastdoses>
+        <p className="text-sm text-ink-muted">{t("vbk.pastIntro", "علّم الجرعات الي انطت — تنحفظ بيومها وساعتها المجدولة. الي ما تتعلّم تنحفظ «ما انطت».")}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" data-past-all onClick={() => { playTap(); toggle(rows.map((r) => r.id), true); }}
+            className="rounded-lg border border-success-300 bg-success-50 px-3 py-1.5 text-xs font-black text-success-700 transition hover:bg-success-100 dark:border-success-500/40 dark:bg-success-500/10 dark:text-success-300">
+            <Check size={12} className="me-1 inline" />{t("vbk.pastAll", "كلها انطت")}
+          </button>
+          <button type="button" onClick={() => { playTap(); setGiven(new Set()); }}
+            className="rounded-lg border border-line bg-surface-1 px-3 py-1.5 text-xs font-bold text-ink-muted transition hover:text-ink">
+            {t("vbk.pastNone", "شيل التعليم")}
+          </button>
+          <span className="ms-auto text-2xs font-bold text-ink-subtle">{t("vbk.pastCount", { n: formatNum(rows.length), defaultValue: "{{n}} جرعة" })}</span>
+        </div>
+        <div className="max-h-[52vh] space-y-2 overflow-y-auto pe-1">
+          {days.map(([day, list]) => {
+            const allOn = list.every((r) => given.has(r.id));
+            return (
+              <section key={day} className="rounded-xl border border-line bg-surface-1">
+                <label className="flex cursor-pointer items-center gap-2 border-b border-line px-3 py-2 text-sm font-black text-ink">
+                  <input type="checkbox" checked={allOn} onChange={(e) => toggle(list.map((r) => r.id), e.target.checked)} className="h-4 w-4 accent-success-600" />
+                  {formatDate(day, lang)}
+                  <span className="text-2xs font-bold text-ink-subtle">· {t("vbk.pastCount", { n: formatNum(list.length), defaultValue: "{{n}} جرعة" })}</span>
+                </label>
+                <div className="divide-y divide-line/60">
+                  {list.map((r) => (
+                    <label key={r.id} data-past-row={r.id} className="flex cursor-pointer items-center gap-2 px-3 py-2">
+                      <input type="checkbox" checked={given.has(r.id)} onChange={(e) => toggle([r.id], e.target.checked)} className="h-4 w-4 accent-success-600" />
+                      <span className="w-14 shrink-0 text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">{fmtClock(r.time) || "—"}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{r.medication}</span>
+                      <span className="shrink-0 truncate text-2xs font-semibold text-ink-subtle">{r.amount}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+        {nGiven > 0 && (
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><UserRound size={13} /> {t("vbk.pastDoctor", "الطبيب الي انطاها")}</div>
+            <DoctorSelect value={doctor} onChange={setDoctor} placeholder={t("vbk.pickDoctor", "اختر الطبيب…")} />
+          </div>
+        )}
+        <Button size="lg" className="w-full" leftIcon={<Check size={18} />} loading={busy} onClick={save} data-past-save>
+          {t("vbk.pastSave", { given: formatNum(nGiven), missed: formatNum(rows.length - nGiven), defaultValue: "احفظ: {{given}} انطت · {{missed}} ما انطت" })}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
 
 function SecondaryBtn({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (

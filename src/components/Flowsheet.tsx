@@ -13,7 +13,7 @@ import {
   type Monograph, type Route,
 } from "@/lib/vetFormulary";
 import {
-  TASK_META, TASK_TYPES, ROUTES, routeName, routeShort, MISS_REASONS,
+  TASK_META, TASK_TYPES, ROUTES, routeName, routeShort, MISS_REASONS, missReasonText,
   typeOf, buildRows, cellState, hourColumns, isGapBefore, nowOffset, petSummary, pad2, toMin,
   type OrderRow,
 } from "@/lib/flowsheet";
@@ -161,7 +161,7 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTa
         data-cell={first.id}
         data-state={state}
         style={{ height: CELL, minWidth: CELL }}
-        title={`${fmtClock(first.time)} · ${first.medication}${resHolder?.result ? ` — ${resHolder.result}` : ""}${missed ? ` — ${missed.missed_reason}` : ""}`}
+        title={`${fmtClock(first.time)} · ${first.medication}${resHolder?.result ? ` — ${resHolder.result}` : ""}${missed ? ` — ${missReasonText(missed.missed_reason)}` : ""}`}
         onClick={() => onTap(first)}
         className={cn(
           base,

@@ -1291,6 +1291,24 @@ console.log("▸ تعديلُ موعد اللقاح (مرآةُ rescheduleVaccin
   check("  والغائبُ يرمي", (await code(() => repo.rescheduleVaccination("nope", "2027-01-01", "scheduled"))) === "not_found");
 }
 
+console.log("▸ 0223 — سجلُّ لقاحاتٍ سابق (مرآةُ addVaccinations)");
+{
+  const before = (await repo.listVaccinations("vx-hist")).length;
+  await repo.addVaccinations([
+    { pet_id: "vx-hist", name: "DHPPi", status: "administered", administered_at: "2026-03-01", due_date: null, dose_number: 1, doses_total: null },
+    { pet_id: "vx-hist", name: "DHPPi", status: "administered", administered_at: "2026-03-22", due_date: null, dose_number: 2, doses_total: null },
+    { pet_id: "vx-hist", name: "DHPPi", status: "scheduled", administered_at: null, due_date: "2027-03-22", dose_number: 3, doses_total: null },
+  ]);
+  const rows = await repo.listVaccinations("vx-hist");
+  check("الدفعةُ كلُّها تنكتب بأيّامها", rows.length === before + 3 && rows.filter((r) => r.status === "administered").map((r) => r.administered_at).sort().join(",") === "2026-03-01,2026-03-22", JSON.stringify(rows));
+  check("  وكلُّ صفٍّ مختومٌ بيوم إدخاله (مرآةُ created_at بالخادم) — لا بيوم إعطائه", rows.every((r) => typeof r.created_at === "string" && r.created_at.slice(0, 10) > "2026-03-22"));
+  check("  والمجموعُ المجهول يبقى فارغاً لا ١", rows.every((r) => r.doses_total === null));
+  await repo.addVaccinations([]);
+  check("  ودفعةٌ فارغة لا تكتب شيئاً", (await repo.listVaccinations("vx-hist")).length === before + 3);
+  const one = await repo.addVaccination({ pet_id: "vx-hist", name: "Rabies", status: "administered", administered_at: "2026-10-01" });
+  check("  واللقاحُ المفرد مختومٌ كذلك", typeof one.created_at === "string");
+}
+
 console.log("▸ 0221 — أدويةُ الطبيب المفضّلة (مرآةُ الحزمة)");
 {
   for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_drug_favs_")) mem.delete(k);
