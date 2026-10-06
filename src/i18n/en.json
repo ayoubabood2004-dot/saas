@@ -2153,8 +2153,7 @@
       "treatment": "Treatment",
       "notes": "Notes",
       "media": "Media",
-      "qr": "QR chart",
-      "stays": "Admissions"
+      "qr": "QR chart"
     },
     "weightChart": "Weight & growth",
     "addWeight": "Record weight",
@@ -2206,7 +2205,8 @@
     "sharedOff": "Private",
     "ownerViewOnly": "You can view your pet's health record. Treatments and vaccinations are managed by the clinic.",
     "vxRecordedLater": "Past record",
-    "vxRecordedOn": "Entered in the system {{date}}"
+    "vxRecordedOn": "Entered in the system {{date}}",
+    "staysView": "Admissions"
   },
   "account": {
     "title": "My account",

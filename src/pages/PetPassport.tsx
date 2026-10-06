@@ -57,11 +57,10 @@ import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockP
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "visits" | "stays" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
+type Tab = "visits" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
   { id: "visits", icon: Stethoscope, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
-  { id: "stays", icon: BedDouble, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
@@ -253,7 +252,9 @@ export function PetPassport() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const [params] = useSearchParams();
-  const initialTab = (params.get("tab") as Tab) || "diet";
+  // «الدخول والخروج» صار داخل «الزيارات» — والرابطُ القديم ?tab=stays يفتحه هناك.
+  const staysLink = params.get("tab") === "stays";
+  const initialTab = (staysLink ? "visits" : params.get("tab") as Tab) || "diet";
   // Synchronous cache seed: if this file was opened before, the WHOLE record
   // paints on the very first frame. Seeding only in the effect (which runs
   // after paint) flashed a "loading…" frame on every re-open.
@@ -382,8 +383,6 @@ export function PetPassport() {
   const vaccineOverdue = vaccines.some((v) => v.status === "overdue");
   const tabBadge: Record<Tab, { dot?: boolean; count?: number }> = {
     visits: { count: clinicVisits.filter((v) => v.status === "open").length || undefined },
-    // نقطةٌ خضراء = الحيوانُ بالعيادة هسّة.
-    stays: { dot: admissions.some((a) => a.status === "active") },
     timeline: {},
     diet: {},
     history: {},
@@ -555,8 +554,11 @@ export function PetPassport() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
-            {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
-            {tab === "stays" && <StayLogTab petId={pet.id} admissions={admissions} visits={clinicVisits} treatments={treatments} vaccinations={vaccines} notes={notes} labs={labs} weights={weights} />}
+            {tab === "visits" && (
+              <VisitsSection initial={staysLink ? "stays" : "visits"}
+                visitsView={<VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
+                staysView={<StayLogTab petId={pet.id} admissions={admissions} visits={clinicVisits} treatments={treatments} vaccinations={vaccines} notes={notes} labs={labs} weights={weights} />} />
+            )}
             {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
             {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
             {tab === "labs" && <LabsTab pet={pet} results={labs} canEdit={canEditClinical && !isOwner} doctor={user?.full_name} onChanged={reload} />}
@@ -2005,6 +2007,27 @@ function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRe
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** تبويبُ «الزيارات» بوجهين: الزيارات نفسُها، و«الدخول والخروج» (سجلُّ الإقامات يوماً يوماً). */
+function VisitsSection({ initial, visitsView, staysView }: { initial: "visits" | "stays"; visitsView: React.ReactNode; staysView: React.ReactNode }) {
+  const { t } = useTranslation();
+  const [view, setView] = useState<"visits" | "stays">(initial);
+  return (
+    <div className="space-y-4">
+      <div role="tablist" className="inline-flex w-full max-w-md rounded-2xl border border-line bg-surface-2 p-1" data-visits-switch>
+        {([["visits", Stethoscope, t("passport.tabs.visits", "الزيارات")], ["stays", BedDouble, t("passport.staysView", "الدخول والخروج")]] as const).map(([id, Icon, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={view === id} data-visits-view={id}
+            onClick={() => { playTap(); setView(id); }}
+            className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold transition",
+              view === id ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}>
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+      {view === "visits" ? visitsView : staysView}
     </div>
   );
 }

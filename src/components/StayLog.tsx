@@ -61,7 +61,8 @@ export function StayLogTab({ petId, admissions, visits, treatments, vaccinations
     treatment_boarding: t("records.kindCareBoarding", "فندقة علاجية"),
   };
   const kindOf = (k?: unknown) => (typeof k === "string" ? KIND[k] ?? k : "—");
-  const list = (v: unknown) => (Array.isArray(v) ? (v as [string, number][]).map(([n, c]) => (c > 1 ? `${n} ×${formatNum(c)}` : n)).join(t("common.listSep", "، ")) : "");
+  // كلُّ دواءٍ معزولُ الاتّجاه (FSI…PDI): اسمٌ لاتينيّ وعددُه بسطرٍ عربيّ كانا ينقلبان («2× Ceftriaxone»).
+  const list = (v: unknown) => (Array.isArray(v) ? (v as [string, number][]).map(([n, c]) => `\u2068${c > 1 ? `${n} ×${formatNum(c)}` : n}\u2069`).join(t("common.listSep", "، ")) : "");
 
   const text = (e: LogEvent): string => {
     const d = e.data;
