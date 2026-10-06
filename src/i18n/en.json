@@ -2701,8 +2701,6 @@
     "allergies": "Allergies (comma separated)",
     "notes": "Notes",
     "notesPlaceholder": "Reason for visit, history, observations…",
-    "recordReadings": "Record readings (optional)",
-    "admissionReadings": "Readings on admission",
     "admissionDate": "Admission date",
     "admissionDateHint": "Set automatically to today — change it only if the case was admitted on an earlier day.",
     "healthStatus": "Health status",

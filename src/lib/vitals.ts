@@ -90,17 +90,3 @@ export function isOutOfRangePet(species: Species, key: ReadingKey, value: number
   const range = rangeForPet(species, key, petId);
   return value < range.min || value > range.max;
 }
-
-/** Build a human-readable objective string from entered readings (vitals + CBC). */
-export function formatReadings(
-  values: Partial<Record<ReadingKey, string>>,
-  species: Species,
-  petId: string | undefined,
-  label: (k: ReadingKey) => string,
-): string {
-  const fmt = (keys: ReadingKey[]) =>
-    keys.filter((k) => values[k]).map((k) => `${label(k)} ${values[k]}${rangeForPet(species, k, petId).unit}`).join(" · ");
-  const vitals = fmt(VITAL_KEYS);
-  const cbc = fmt(CBC_KEYS);
-  return [vitals, cbc && `CBC — ${cbc}`].filter(Boolean).join("\n");
-}

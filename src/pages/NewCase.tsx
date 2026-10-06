@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
@@ -15,14 +15,12 @@ import { COMMON_DISEASES } from "@/lib/diseases";
 import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
 import { PetAvatar } from "@/components/PetAvatar";
-import { ReadingsFields } from "@/components/ReadingsFields";
 import { IntakeFields } from "@/components/IntakeFields";
 import { emptyIntake, isEmptyIntake, encodeIntake, intakeText, cleanSince, type IntakeDraft } from "@/lib/intake";
 import { symptomLabel } from "@/lib/clinicalKnowledge";
 import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "@/components/PetFields";
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatReadings, type ReadingKey } from "@/lib/vitals";
 import { withTimeout, describeDbError, isTimeoutError, describeUploadError } from "@/lib/errors";
 import { prepareUpload } from "@/lib/image";
 import { uid, localISO } from "@/lib/utils";
@@ -50,8 +48,6 @@ interface AnimalDraft {
   disp: Disposition;
   cage: string;
   addMeds: boolean;
-  readings: Partial<Record<ReadingKey, string>>;
-  readingsOpen: boolean;
   /** معلوماتُ الحالة (intake.ts) — التشخيصُ فيها يُقرأ من health/diagnosis أعلاه لا مكرَّراً. */
   intake: IntakeDraft;
 }
@@ -61,7 +57,7 @@ function newAnimal(): AnimalDraft {
     key: uid("a"), photo: null, name: "", species: "dog", breed: "", sex: "unknown",
     dob: "", weight: "", color: "", microchip: "", allergies: "", notes: "",
     health: "healthy", diagnosis: "",
-    disp: "log", cage: "", addMeds: true, readings: {}, readingsOpen: false,
+    disp: "log", cage: "", addMeds: true,
     intake: emptyIntake(),
   };
 }
@@ -207,16 +203,14 @@ export function NewCase() {
         // A diagnosis and/or registration readings become a dated consultation record
         // in the patient's history — the diagnosis is the visit's assessment (title).
         // Skipped for "record only": no clinical visit is logged on registration.
-        const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
-        if (a.disp !== "record" && (diagnosis || objective)) {
+        if (a.disp !== "record" && diagnosis) {
           await withTimeout(repo.addVisit({
             pet_id: pet.id,
             clinic_name: "Happy Paws Veterinary Clinic",
             doctor_name: user?.full_name ?? "Doctor",
             visit_date: admittedOn,
             subjective: subjectiveOf(a.intake, t),
-            objective: objective || undefined,
-            assessment: diagnosis || t("newCase.admissionReadings"),
+            assessment: diagnosis,
           }), 8000);
         }
         // معلوماتُ الحالة بملفّ الحيوان (لكلّ الحالات، حتى «فتح ملف فقط»): تنتقل لأوّل زيارة.
@@ -445,26 +439,6 @@ export function NewCase() {
                 }
               />
 
-              {/* Optional medical readings (vitals + CBC), recorded into history */}
-              <div className="border-t border-line pt-3">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 text-sm font-semibold text-brand-700"
-                  onClick={() => setAnimal(a.key, { readingsOpen: !a.readingsOpen })}
-                >
-                  <Activity size={16} /> {t("newCase.recordReadings")}
-                  <ChevronDown size={16} className={`transition ${a.readingsOpen ? "rotate-180" : ""}`} />
-                </button>
-                {a.readingsOpen && (
-                  <div className="mt-3">
-                    <ReadingsFields
-                      species={a.species}
-                      values={a.readings}
-                      onChange={(k, v) => setAnimal(a.key, { readings: { ...a.readings, [k]: v } })}
-                    />
-                  </div>
-                )}
-              </div>
             </div>
           ))}
 
@@ -620,8 +594,6 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
   const [addMeds, setAddMeds] = useState(true);
   const [health, setHealth] = useState<Health>("healthy");
   const [diagnosis, setDiagnosis] = useState("");
-  const [readingsOpen, setReadingsOpen] = useState(false);
-  const [readings, setReadings] = useState<Partial<Record<ReadingKey, string>>>({});
   const [intake, setIntake] = useState<IntakeDraft>(emptyIntake);
   const [admitting, setAdmitting] = useState(false);
   const admittingRef = useRef(false);
@@ -649,9 +621,8 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: admittedOn, cage: cage.trim() || undefined, reason }, pet), 8000);
       else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: admittedOn, cage: cage.trim() || undefined, reason }, pet), 8000);
       else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: admittedOn, reason }, pet), 8000);
-      const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
-      if (dx || objective) {
-        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: admittedOn, subjective: subjectiveOf(intake, t), objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
+      if (dx) {
+        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: admittedOn, subjective: subjectiveOf(intake, t), assessment: dx }), 8000);
       }
       if (!(await saveIntake(pet.id, intakeWithDx(intake, health, diagnosis), admittedOn, { id: user?.id, name: doctorName }, t))) {
         toast.error(t("intake.saveFail", { names: pet.name, defaultValue: "انفتحت الحالة، بس معلومات الحالة ما انحفظت لـ{{names}} — ضيفها كملاحظة من ملفه." }));
@@ -724,16 +695,6 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
             }
           />
 
-          <div className="border-t border-line pt-3">
-            <button type="button" className="flex items-center gap-2 text-sm font-semibold text-brand-700" onClick={() => setReadingsOpen(!readingsOpen)}>
-              <Activity size={16} /> {t("newCase.recordReadings")} <ChevronDown size={16} className={`transition ${readingsOpen ? "rotate-180" : ""}`} />
-            </button>
-            {readingsOpen && (
-              <div className="mt-3">
-                <ReadingsFields species={pet.species} petId={pet.id} values={readings} onChange={(k, v) => setReadings((s) => ({ ...s, [k]: v }))} />
-              </div>
-            )}
-          </div>
           <button className="btn-primary w-full py-3 disabled:opacity-60 disabled:cursor-not-allowed" onClick={admit} disabled={admitting}>
             {admitting ? (
               <span className="inline-flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" /> {t("newCase.finishing", "Registering…")}</span>
