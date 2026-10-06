@@ -2361,8 +2361,11 @@ const supabaseRepo: DemoRepo = {
     try { await sbc().rpc("log_client_event", { p_event: event, p_details: details ?? {} }); } catch { /* ignore */ }
   },
   async noteScanShapes(day, counts, samples, clinicId) {
-    // يرمي على الخطأ: العدّادُ يُبقي ما لم يصل ويعيده لاحقاً، ولا يقوله للمستخدم.
-    need(await sbc().rpc("note_scan_shapes", { p_day: day, p_counts: counts, p_samples: samples, p_clinic: clinicId }));
+    // يرمي على **الخطأ وحده**: الدالّةُ ترجع void، و`need()` ترمي على «لا بيانات» — فكان
+    // كلُّ رفعٍ ناجحٍ يُحسب فاشلاً، يرجع العدُّ للجهاز ويُرفع بالساعة التالية ويُجمع ثانيةً
+    // (×٥٠–١٧٠ عن سطور البيع، مقيس ٣/١٠). need-void-guard يمنعه عن أيّ دالّةٍ void.
+    const { error } = await sbc().rpc("note_scan_shapes", { p_day: day, p_counts: counts, p_samples: samples, p_clinic: clinicId });
+    if (error) throw error;
   },
   async listAuditLog(_clinicId, limit = 200) {
     // RLS already scopes to the manager's clinic; just order + cap.
