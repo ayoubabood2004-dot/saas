@@ -144,73 +144,96 @@ revoke all on function public._photographer_fence_exempt(text) from public, anon
 
 -- السياجُ يطابق أوامرَ السياسات القائمة **أمراً أمراً**: جدولٌ بلا سياسة كتابة يأخذ سياجَ
 -- قراءةٍ وحده — فلا تظهر «سياسةُ كتابة» حيث الكتابةُ كلُّها من دالّة (ثوابتُ الحزمة).
-do $$
+-- دالّةٌ لجدولٍ واحد: النشرُ يُطبّقها **دفعاتٍ صغيرةً بمهلة قفلٍ قصيرة** — كلُّ سياسةٍ
+-- تأخذ قفلاً حصرياً على جدولها حتى نهاية المعاملة، ومئةُ جدولٍ بمعاملةٍ واحدة على قاعدةٍ
+-- حيّة قد تحبس طلباتِ العيادات خلفها (أوّلُ تطبيقٍ بالإنتاج تجاوز ٦٠ ثانيةً فارتدّ كلُّه).
+-- وجدولٌ جديد بعد اليوم: `select photographer_fence_table('اسمه')`.
+create or replace function public.photographer_fence_table(p_table text)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
 declare
-  r     record;
   c     text;
   own   text;
   cond  text;
   cmds  text[];
+  n     int := 0;
 begin
-  for r in
-    select c2.relname
-      from pg_class c2 join pg_namespace n on n.oid = c2.relnamespace
-     where n.nspname = 'public' and c2.relkind = 'r'
-       -- كلُّ جدولٍ بسياسات ولو كان RLS مطفأً لحظتَها: سياسةٌ مقيِّدة على جدولٍ مطفأ لا
-       -- تفعل شيئاً، وتكون جاهزةً يوم يُشعَل — لا ثغرةَ تنتظر الترتيب.
-       and (exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c2.relname)
-            or c2.relname = any(public._photographer_read_ok()))
-  loop
-    execute format('drop policy if exists photographer_fence on public.%I', r.relname);
-    execute format('drop policy if exists photographer_fence_sel on public.%I', r.relname);
-    execute format('drop policy if exists photographer_fence_ins on public.%I', r.relname);
-    execute format('drop policy if exists photographer_fence_upd on public.%I', r.relname);
-    execute format('drop policy if exists photographer_fence_del on public.%I', r.relname);
-    continue when public._photographer_fence_exempt(r.relname);
+  if to_regclass('public.' || quote_ident(p_table)) is null then return 0; end if;
+  execute format('drop policy if exists photographer_fence on public.%I', p_table);
+  execute format('drop policy if exists photographer_fence_sel on public.%I', p_table);
+  execute format('drop policy if exists photographer_fence_ins on public.%I', p_table);
+  execute format('drop policy if exists photographer_fence_upd on public.%I', p_table);
+  execute format('drop policy if exists photographer_fence_del on public.%I', p_table);
+  if public._photographer_fence_exempt(p_table) then return 0; end if;
 
-    select array_agg(distinct p.cmd) into cmds
-      from pg_policies p
-     where p.schemaname = 'public' and p.tablename = r.relname and p.permissive = 'PERMISSIVE';
-    cmds := coalesce(cmds, '{}');
-    continue when cardinality(cmds) = 0 and not (r.relname = any(public._photographer_read_ok()));
-    if 'ALL' = any(cmds) then cmds := array['SELECT','INSERT','UPDATE','DELETE']; end if;
-    -- إعدادُ العيادة يُسيَّج للكتابة **دائماً**: سياسةُ كتابةٍ تُضاف له لاحقاً لا تفتح بابه.
-    if r.relname = any(public._photographer_read_ok()) then
-      cmds := array(select distinct x from unnest(cmds || array['INSERT','UPDATE','DELETE']) x);
+  select array_agg(distinct p.cmd) into cmds
+    from pg_policies p
+   where p.schemaname = 'public' and p.tablename = p_table and p.permissive = 'PERMISSIVE';
+  cmds := coalesce(cmds, '{}');
+  if cardinality(cmds) = 0 and not (p_table = any(public._photographer_read_ok())) then return 0; end if;
+  if 'ALL' = any(cmds) then cmds := array['SELECT','INSERT','UPDATE','DELETE']; end if;
+  -- إعدادُ العيادة يُسيَّج للكتابة **دائماً**: سياسةُ كتابةٍ تُضاف له لاحقاً لا تفتح بابه.
+  if p_table = any(public._photographer_read_ok()) then
+    cmds := array(select distinct x from unnest(cmds || array['INSERT','UPDATE','DELETE']) x);
+  end if;
+
+  own := case p_table
+    when 'profiles'       then 'id = (select auth.uid())'
+    when 'memberships'    then 'user_id = (select auth.uid())'
+    when 'staff'          then 'user_id = (select auth.uid())'
+    when 'drug_favorites' then 'true'
+    else null end;
+
+  foreach c in array cmds loop
+    cond := case
+      -- إعدادُ العيادة: قراءةٌ مفتوحة، وكلُّ كتابةٍ مسيَّجة.
+      when p_table = any(public._photographer_read_ok()) and c = 'SELECT' then null
+      -- سطرُ دخوله هو بسجلّ الدخول — يراه المدير (القراءةُ للمدير وحده بسياستها).
+      when p_table = 'login_events' and c = 'INSERT' then null
+      -- واجهةُ المتجر: تُقرأ، وتُكتب بإذن «تحكّم كامل بالمتجر»، ولا تُحذف.
+      when p_table = 'store_profiles' and c = 'SELECT' then null
+      when p_table = 'store_profiles' and c in ('INSERT','UPDATE') then 'not (select public.is_photographer()) or (select public.staff_can(''manageStore''))'
+      when own is not null then format('not (select public.is_photographer()) or (%s)', own)
+      else 'not (select public.is_photographer())'
+    end;
+    continue when cond is null;
+    if c = 'INSERT' then
+      execute format('create policy photographer_fence_ins on public.%I as restrictive for insert to authenticated with check (%s)', p_table, cond);
+    elsif c = 'SELECT' then
+      execute format('create policy photographer_fence_sel on public.%I as restrictive for select to authenticated using (%s)', p_table, cond);
+    elsif c = 'UPDATE' then
+      execute format('create policy photographer_fence_upd on public.%I as restrictive for update to authenticated using (%s) with check (%s)', p_table, cond, cond);
+    elsif c = 'DELETE' then
+      execute format('create policy photographer_fence_del on public.%I as restrictive for delete to authenticated using (%s)', p_table, cond);
     end if;
-
-    own := case r.relname
-      when 'profiles'       then 'id = (select auth.uid())'
-      when 'memberships'    then 'user_id = (select auth.uid())'
-      when 'staff'          then 'user_id = (select auth.uid())'
-      when 'drug_favorites' then 'true'
-      else null end;
-
-    foreach c in array cmds loop
-      cond := case
-        -- إعدادُ العيادة: قراءةٌ مفتوحة، وكلُّ كتابةٍ مسيَّجة.
-        when r.relname = any(public._photographer_read_ok()) and c = 'SELECT' then null
-        -- سطرُ دخوله هو بسجلّ الدخول — يراه المدير (القراءةُ للمدير وحده بسياستها).
-        when r.relname = 'login_events' and c = 'INSERT' then null
-        -- واجهةُ المتجر: تُقرأ، وتُكتب بإذن «تحكّم كامل بالمتجر»، ولا تُحذف.
-        when r.relname = 'store_profiles' and c = 'SELECT' then null
-        when r.relname = 'store_profiles' and c in ('INSERT','UPDATE') then 'not (select public.is_photographer()) or (select public.staff_can(''manageStore''))'
-        when own is not null then format('not (select public.is_photographer()) or (%s)', own)
-        else 'not (select public.is_photographer())'
-      end;
-      continue when cond is null;
-      if c = 'INSERT' then
-        execute format('create policy photographer_fence_ins on public.%I as restrictive for insert to authenticated with check (%s)', r.relname, cond);
-      elsif c = 'SELECT' then
-        execute format('create policy photographer_fence_sel on public.%I as restrictive for select to authenticated using (%s)', r.relname, cond);
-      elsif c = 'UPDATE' then
-        execute format('create policy photographer_fence_upd on public.%I as restrictive for update to authenticated using (%s) with check (%s)', r.relname, cond, cond);
-      elsif c = 'DELETE' then
-        execute format('create policy photographer_fence_del on public.%I as restrictive for delete to authenticated using (%s)', r.relname, cond);
-      end if;
-    end loop;
+    n := n + 1;
   end loop;
+  return n;
 end $$;
+revoke all on function public.photographer_fence_table(text) from public, anon, authenticated;
+
+-- كلُّ جدولٍ بسياسات ولو كان RLS مطفأً لحظتَها: سياسةٌ مقيِّدة على جدولٍ مطفأ لا تفعل
+-- شيئاً، وتكون جاهزةً يوم يُشعَل — لا ثغرةَ تنتظر الترتيب.
+create or replace function public._photographer_fence_targets()
+returns setof text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select c2.relname::text
+    from pg_class c2 join pg_namespace n on n.oid = c2.relnamespace
+   where n.nspname = 'public' and c2.relkind = 'r'
+     and (exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c2.relname)
+          or c2.relname = any(public._photographer_read_ok()))
+   order by 1
+$$;
+revoke all on function public._photographer_fence_targets() from public, anon, authenticated;
+
+select public.photographer_fence_table(t) from public._photographer_fence_targets() t;
 
 -- ما لا سياجَ له — يجب أن يرجع فارغاً. أمرٌ مسموحٌ بسياسةٍ ولا سياجَ على أمره (أو على
 -- ALL) = ثغرة؛ إلا قراءةَ إعدادٍ مسموحة، وجداولَ المشغّل. جدولٌ جديد يُفشل الحزمة حتى يُقرَّر.

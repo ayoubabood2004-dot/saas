@@ -132,6 +132,8 @@ drop function if exists public.store_set_featured(uuid, boolean);
 drop function if exists public.store_set_desc(uuid, text);
 drop function if exists public._store_manager_ok();
 drop function if exists public.verify_photographer_fence();
+drop function if exists public.photographer_fence_table(text);
+drop function if exists public._photographer_fence_targets();
 drop function if exists public._photographer_fence_exempt(text);
 drop function if exists public._photographer_read_ok();
 drop function if exists public.is_photographer();
