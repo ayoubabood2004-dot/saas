@@ -41,7 +41,7 @@ import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
 import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
-import { PRICES_EVENT, checkPriceEpoch, type PricesChangedDetail } from "@/lib/priceSync";
+import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
 import type { PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
 import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
@@ -525,9 +525,12 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
  *  إلى التالية. */
 type CheckoutAck = { bigIds?: string[]; expiredIds?: string[]; priceIds?: string[] };
 
-export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
+export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
   products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
+  /** جيلُ الأسعار لحظةَ **بدء** جلب `products` (`priceGen`). أقدمُ من الجيل الآن ⇒ القائمةُ
+   *  قبل رفعٍ أو إرجاعٍ عرفه التاب: لا بيعَ منها حتى تصل الطازجة. */
+  listGen?: number;
   /** جوابٌ طازجٌ من الخادم (صفٌّ بحوضه، أو صفٌّ غاب) — الأبُ يرقّع به قائمتَه فلا
    *  يتكرّر السؤالُ بكلّ ضغطة، والصفُّ المطويُّ لا يبقى يُسأل عنه. */
   onFreshRow?: (patch: FreshPatch) => void;
@@ -771,6 +774,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /** قفلُ إعادة الدخول: نقرتان على «أكيد» تصل الثانيةُ نسخةَ النافذة الخارجة بـ`busy` قديم —
    *  فتجري البيعةُ مرّتين بنفس المرجع وتتكرّر آثارُها الجانبية (سجلٌّ طبيّ، مختبر). */
   const inFlightRef = useRef(false);
+  /** سؤالُ «الأسعار تغيّرت؟» قبل البيعة جارٍ — ضغطةٌ ثانيةٌ لا تبدأ سؤالاً ثانياً. */
+  const checkingRef = useRef(false);
+  const [checking, setChecking] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   /* ---- المضاعِف: «اكتب ٢٠ ثم امسح» -------------------------------------
    * عشرون قطعة من صنف واحد كانت تكلّف عشرين مسحة أو عشرين ضغطة. المضاعِف
@@ -799,37 +805,26 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /* ── رفعُ الأسعار والسلّةُ المفتوحة (0226) ──────────────────────────────────
    * البيعُ لا يقرأ الكتالوج — سعرُ السطر يُنسخ لحظةَ إضافته. فـ«من لحظة الرفع» تحتاج:
    *  ١) حدثَ «الأسعار تغيّرت» (المراقبُ بالقشرة، أو سؤالُ ما قبل البيعة) ⇒ تُجلب القائمةُ
-   *     والخدماتُ من جديد ولو والسلّةُ ممتلئة، والبيعُ موقوفٌ حتى تصل (`pricesPending`).
+   *     والخدماتُ من جديد ولو والسلّةُ ممتلئة، والبيعُ موقوفٌ حتى تصل (القائمةُ بجيلها، `listGen`).
    *  ٢) كلُّ قائمةٍ طازجة تُعيد تسعيرَ ما لم يُعدَّل بيدٍ (`repriceCart`)، ويُقال بالاسم،
    *     ويُسأل عنه قبل البيع (`repriced` بإقرار) — لا يتغيّر مجموعٌ صامتاً تحت يد الكاشير.
    *  ٣) ولا تسعيرَ تحت محاولةِ بيعٍ جاريةٍ أو مجهولةِ المصير (المرجعُ يحمل أسعارَها). */
   const [repriced, setRepriced] = useState<Map<string, Repriced>>(() => new Map());
-  const [pricesPending, setPricesPending] = useState(false);
-  const [servicesStale, setServicesStale] = useState(false);
-  const pendingListRef = useRef<Product[] | null>(null);
-  const productsRef = useRef(products);
-  productsRef.current = products;
-  const onRefreshRef = useRef(onRefresh);
-  onRefreshRef.current = onRefresh;
+  /* القائمةُ أقدمُ من آخر تغيّرٍ عرفه التاب؟ حكمٌ بالجيل لا بـ«وصلت قائمةٌ أخرى»: ترقيعُ صفٍّ
+   * واحد كان يفتح البيع، وشاشةٌ رُكّبت بعد الحدث (تبويبٌ آخر وقتها) ما كانت تعرف. ومالكُ
+   * القائمة يسمع الحدثَ ويجلب بنفسه — هنا الحارسُ وحده (ونقرةُ تحديثٍ إن لزم عند البيع). */
+  const listGenRef = useRef(listGen);
+  listGenRef.current = listGen;
+  /** يُحسب لحظةَ السؤال (لا من رسمٍ سابق): الحدثُ قد يسبق إعادةَ الرسم. */
+  const listStale = () => listGenRef.current !== undefined && listGenRef.current < priceGen();
   useEffect(() => {
-    const on = (e: Event) => {
-      const d = (e as CustomEvent<PricesChangedDetail>).detail;
+    const on = () => {
       setCatalog(getServiceCatalog());
-      setServicesStale(!d?.servicesOk);
-      if (onRefreshRef.current) {
-        pendingListRef.current = productsRef.current;
-        setPricesPending(true);
-        onRefreshRef.current();
-      }
       setPrior(null); setPriorFailed(false);
     };
     window.addEventListener(PRICES_EVENT, on);
     return () => window.removeEventListener(PRICES_EVENT, on);
   }, []);
-  // وصلت قائمةٌ غيرُ التي كانت لحظةَ الحدث ⇒ التحديثُ تمّ.
-  useEffect(() => {
-    if (pricesPending && products !== pendingListRef.current) setPricesPending(false);
-  }, [products, pricesPending]);
 
   /* السعرُ قبل الرفع لمرتجع الكاشير: يُسأل حين يُفتح وضعُ الراجع (وثيقةٌ واحدة). تعذّرُه
    * لا يُخفى: السطرُ يقول «تأكد من سعره بالفاتورة» بدل سعرِ اليوم صامتاً. */
@@ -2092,12 +2087,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     /* رفعُ الأسعار (0226): البيعةُ تُسعَّر بما بيد الجهاز، فيُسأل الخادمُ قبل كلّ بيعة «تغيّرت؟»
      * (عدّادٌ واحد بفهرس). تغيّرت ⇒ تُجلب القائمةُ وتُعاد التسعيرة ويُسأل الكاشير — لا بيعَ
      * بسعر الصبح بعد الرفع. وتعذّرُ السؤال (الشبكة) لا يوقف البيع: البيعةُ نفسُها تحتاج الشبكة. */
-    if (pricesPending) { playWarning(); toast.warn(t("retail.pricesUpdating", "جاري تحديث الأسعار بعد رفعٍ صار من جهاز ثاني — لحظة وجرّب مرة ثانية.")); return; }
-    if (servicesStale && cart.some((l) => l.kind === "service")) {
+    if (listStale()) { playWarning(); toast.warn(t("retail.pricesUpdating", "جاري تحديث الأسعار بعد رفعٍ صار من جهاز ثاني — لحظة وجرّب مرة ثانية.")); onRefresh?.(); return; }
+    if (servicesStaleNow() && cart.some((l) => l.kind === "service")) {
       playWarning(); toast.error(t("retail.servicesStale", "تعذّر تحديث أسعار الخدمات بعد الرفع — حدّث الصفحة قبل بيع خدمة (السلة تبقى).")); return;
     }
-    const ep = await checkPriceEpoch(clinicId);
-    if (ep?.changed) { playWarning(); toast.warn(t("retail.pricesChanged", "الأسعار تغيّرت هسه (رفع أو إرجاع من جهاز ثاني) — راح نحدّث السلة، راجعها واضغط بيع مرة ثانية.")); return; }
+    /* السؤالُ نفسُه تحت القفل وبمهلة: كان قبل `inFlightRef` وبلا مهلة، فشبكةٌ عالقة تُبقي
+     * الضغطةَ معلّقة، والكاشيرُ يضغط ثانيةً فتتمّ البيعة، ثمّ يبدأ زبوناً جديداً — فيصحو
+     * الجوابُ القديم ويبيع سلّةَ الزبون الأوّل مرّةً ثانية بمرجعٍ جديد (تدقيقٌ عدائيّ). */
+    if (inFlightRef.current || checkingRef.current) return;
+    checkingRef.current = true;
+    setChecking(true);
+    const genAtClick = priceGen();
+    let ep: Awaited<ReturnType<typeof checkPriceEpoch>> = null;
+    try { ep = await withTimeout(checkPriceEpoch(clinicId), 4000); } catch { ep = null; }
+    finally { checkingRef.current = false; setChecking(false); }
+    // السلّةُ تغيّرت أثناء السؤال (سطرٌ أُضيف، أو بيعةٌ تمّت وبدأت أخرى) — الضغطةُ لسلّةٍ لم تعد.
+    if (cartRef.current !== cart) return;
+    if (ep?.changed || priceGen() !== genAtClick || listStale()) {
+      playWarning(); toast.warn(t("retail.pricesChanged", "الأسعار تغيّرت هسه (رفع أو إرجاع من جهاز ثاني) — راح نحدّث السلة، راجعها واضغط بيع مرة ثانية.")); return;
+    }
     const rep = cart.filter((l) => repriced.has(l.id));
     if (rep.some((l) => !ack.priceIds?.includes(l.id))) { playWarning(); setPriceAsk({ lines: rep, ack }); return; }
     /* الإقرارُ بالسطور التي سُمّيت لا بنعمٍ عامّة: سطرٌ صار كبيراً أو منتهياً والنافذةُ مفتوحة
@@ -3730,7 +3738,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
             </p>
           )}
           {!pureReturn && (
-          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy} onClick={() => void checkout()} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy || checking} onClick={() => void checkout()} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit

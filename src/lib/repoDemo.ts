@@ -3522,10 +3522,9 @@ const demoRepo = {
     const out: PricePriorMap = {};
     for (const [k, arr] of chains) {
       arr.sort((a, b) => a.seq - b.seq);
-      // السلسلةُ المتّصلة الأخيرة وحدها (كالخادم): «قبل» غيرُ «بعد» سابقه = تعديلٌ بيدٍ بينهما.
-      let start = arr.length - 1;
-      while (start > 0 && arr[start - 1].w === arr[start].o) start--;
-      out[k] = { o: arr[start].o, at: arr[start].at, w: arr[arr.length - 1].w };
+      // قبل **آخر** رفعٍ قائم (كالخادم): من اشترى بين رفعين دفع «قبل» الأخير لا أقدمَ السلسلة.
+      const last = arr[arr.length - 1];
+      out[k] = { o: last.o, at: last.at, w: last.w };
     }
     return out;
   },

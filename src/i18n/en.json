@@ -1338,6 +1338,8 @@
     "pickClearShown": "Untick all shown",
     "dupLine": "same item on another line — total {{n}}",
     "sellKeep": "{{v}} — leave blank to keep it",
+    "sellMoved": "The sell price of “{{name}}” is now {{now}} (changed on another device, e.g. a price raise) — the screen showed {{was}}.",
+    "sellMovedHow": "The line now shows the current price — check the sell price and save again.",
     "sellWillChange": "Selling price will change: {{from}} → {{to}}",
     "sellUnchanged": "Selling price will not change",
     "sellNew": "(new)",
@@ -5843,6 +5845,8 @@
     "undoAll": "Restore everything left to its original price",
     "print": "Print",
     "printTitle": "New prices — raise {{title}} — {{d}}",
-    "printCount": "{{n}} lines"
+    "printCount": "{{n}} lines",
+    "printBlocked": "The browser blocked the print window — allow pop-ups for this site and try again.",
+    "undoReplay": "This undo had already been applied (the first reply was lost on the network) — here is its result:"
   }
 }

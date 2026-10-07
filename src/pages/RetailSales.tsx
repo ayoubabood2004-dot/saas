@@ -17,6 +17,7 @@ import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
 import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
 import { patchSellableList, type FreshPatch } from "@/lib/freshSale";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
+import { PRICES_EVENT, priceGen, noteListGen, listGenOf } from "@/lib/priceSync";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
 import { bridgeFromParams } from "@/lib/retailBridge";
@@ -50,6 +51,8 @@ export function RetailSales() {
   const cacheKey = retailKey(clinicId);
   const seed = getCached<RetailSnap>(cacheKey);
   const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
+  /** جيلُ الأسعار لحظةَ بدء جلب هذه القائمة (0226) — شاشةُ البيع لا تبيع من أقدم. */
+  const [listGen, setListGen] = useState<number>(() => listGenOf(cacheKey));
   const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
   const [loading, setLoading] = useState(!seed);
   /** فشلَ آخرُ تحميل؟ الصندوقُ يقول ذلك بدل أن يعرض رفّاً فارغاً. */
@@ -116,6 +119,7 @@ export function RetailSales() {
   /** `true` إن وصلت قائمةٌ طازجة — فزرُّ التحديث يقول ما حصل لا ما يُتمنّى. */
   const load = async (): Promise<boolean> => {
     const startedAt = Date.now();
+    const g = priceGen();
     inflightRef.current++;
     try {
       const snap = await withTimeout(loadRetailSnap(clinicId), 15000);
@@ -126,6 +130,8 @@ export function RetailSales() {
       setInvoices(snap.invoices);
       setSectionsFailed(!!snap.sectionsFailed);
       setCached<RetailSnap>(cacheKey, snap, startedAt);
+      noteListGen(cacheKey, g);
+      setListGen(g);
       setSnapAt(startedAt);
       setFailed(false);
       setStaleFail(false);
@@ -197,6 +203,21 @@ export function RetailSales() {
     // ط٥ (قرار المالك): والتابُ الظاهرُ يُسأل كلَّ ٥ دقائق — كاشيرٌ يحدّق بالشاشة لا «يرجع».
     pollMs: POLL_MS,
   });
+  /* رفعُ أسعارٍ أو إرجاعُه (priceSync): مالكُ القائمة يجلب بنفسه — ولو شاشةُ البيع غير
+   * مركّبة (تبويبُ الفواتير وقتها): كانت هي وحدها تسمع، فتعود على قائمةِ ما قبل الرفع.
+   * وسطَ بيعةٍ أو فوق جلبٍ قائم: بعده (الجلبُ القائم بدأ قبل الحدث فجيلُه أقدم). */
+  useEffect(() => {
+    let timer: number | null = null;
+    const go = () => {
+      timer = null;
+      if (!mounted.current) return;
+      if (busyRef.current || inflightRef.current > 0) { timer = window.setTimeout(go, 1500); return; }
+      void loadRef.current();
+    };
+    const on = () => { if (timer == null) go(); };
+    window.addEventListener(PRICES_EVENT, on);
+    return () => { window.removeEventListener(PRICES_EVENT, on); if (timer != null) window.clearTimeout(timer); };
+  }, []);
   /* والتبويبُ يُقفَل والدفعُ بالطريق: تبديلُه يُزيل شاشةَ البيع (AnimatePresence) قبل أن
    * يعود الجواب، فتقرأ الشاشةُ الجديدة المسودّةَ بمرجعها المعلَّق — ثم يكمل الطلبُ القديم
    * ويمسحها، وتعيد مزامنةُ الرصيد كتابتَها سلّةً «حيّة» بمرجعٍ مستعمَل. */
@@ -332,7 +353,7 @@ export function RetailSales() {
                       {t("pos.pooledStockFailed", "تعذّر جلب المخزون المجمّع — أرقام الرصيد ناقصة. أعد التحميل قبل ما تعتمد عليها.")}
                     </div>
                   )}
-                  <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
+                  <SaleBuilder products={products} listGen={listGen} clinicId={clinicId} onSold={load} prefill={prefill}
                     onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} onPayingChange={setPayInFlight}
                     prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
                     onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
@@ -350,7 +371,7 @@ export function RetailSales() {
               ) : (
                 /* الفرعُ الأخير كان `<ReportsPanel />` بلا شرط: أيُّ قيمةِ تبويبٍ
                    لا تطابق ما سبق ترسم التقارير. فصار صريحاً — ولا شيءَ يسقط عليها. */
-                <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
+                <SaleBuilder products={products} listGen={listGen} clinicId={clinicId} onSold={load} prefill={prefill}
                   onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} onPayingChange={setPayInFlight}
                     prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
                     onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />

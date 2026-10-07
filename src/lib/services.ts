@@ -6,7 +6,7 @@
 // through the normal invoice pipeline (a service is a line item, no product_id).
 import { getActiveClinicId } from "./clinics";
 import { uuid, normalizeCode, matchCode } from "./utils";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, isConfigReadOnly } from "./clinicSync";
 import type { ServiceCategory, Service, ServiceCatalog } from "@/types";
 
 const keyName = () => `vp_services_${getActiveClinicId()}`;
@@ -241,7 +241,28 @@ export class ServicePriceMoved extends Error {
  * صفرُ صفوفٍ ⇒ `ServicePriceMoved` بالسعر الحاليّ، والذاكرةُ تُحدَّث به.
  */
 export async function updateServicePrice(id: string, next: number, expected: number): Promise<void> {
+  // اشتراكٌ منتهٍ: لا كتابة — كبقيّة إعدادات العيادة (`cloudWrite`)، وكان هذا البابُ وحده يتجاوزه.
+  if (isConfigReadOnly()) throw Object.assign(new Error("READ_ONLY"), { name: "ReadOnlyError" });
   const price = Math.max(0, Math.round(next * 100) / 100) || 0;
+  /* حفظان متتاليان على نفس الخدمة (Enter ثمّ تعديلٌ قبل وصول الجواب): الثاني يحمل «ما رآه»
+   * من نفس الشاشة — أي ما قبل الأوّل — فيُرفض بـ«تغيّر من جهاز ثاني» وهو تعديلُ المستخدم
+   * نفسِه. فالحفظُ لكلّ خدمةٍ بالدور، وما كتبه السابقُ من نفس «ما رآه» هو ما يُتوقَّع بعده. */
+  const prev = pricePending.get(id);
+  const run = (async () => {
+    let exp = expected;
+    if (prev) {
+      const done = await prev.catch(() => null);
+      if (done && done.from === exp) exp = done.to;
+    }
+    await writeServicePrice(id, price, exp);
+    return { from: exp, to: price };
+  })();
+  pricePending.set(id, run);
+  try { await run; } finally { if (pricePending.get(id) === run) pricePending.delete(id); }
+}
+const pricePending = new Map<string, Promise<{ from: number; to: number }>>();
+
+async function writeServicePrice(id: string, price: number, expected: number): Promise<void> {
   const c = getServiceCatalog();
   const s = c.services.find((x) => x.id === id);
   if (!s) throw new ServicePriceMoved(null);

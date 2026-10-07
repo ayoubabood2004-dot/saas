@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Entry<T> = { data: T; at: number };
+type Entry<T> = { data: T; at: number; stale?: boolean };
 
 const store = new Map<string, Entry<unknown>>();
 
@@ -21,7 +21,7 @@ export function getCached<T>(key: string): T | undefined {
  *  (cache hit + refetch re-render), which is the bulk of per-navigation cost. */
 export function isFresh(key: string, ttlMs: number): boolean {
   const e = store.get(key);
-  return !!e && Date.now() - e.at < ttlMs;
+  return !!e && !e.stale && Date.now() - e.at < ttlMs;
 }
 
 /** Overwrite the cached value for a key. `at` = when the data was read — pass the
@@ -42,7 +42,15 @@ export function cachedAt(key: string): number | undefined {
 export function patchCached<T>(key: string, fn: (data: T) => T): void {
   const e = store.get(key) as Entry<T> | undefined;
   if (!e) return;
-  store.set(key, { data: fn(e.data), at: e.at });
+  store.set(key, { data: fn(e.data), at: e.at, stale: e.stale });
+}
+
+/** «لم تعد طازجة» بلا رميها (0226): الفتحُ التالي يجلب حتماً، والعرضُ يبقى بعمره الحقيقيّ —
+ *  و`cachedAt` يبقى معرَّفاً، فتحديثٌ يتعثّر بعدها يقول «القائمة قديمة» بشريطها لا بشاشة
+ *  فشلٍ تقتلع البيعَ وإيصالَه. مفتاحٌ غيرُ موجود لا يُخلق. */
+export function markStale(key: string): void {
+  const e = store.get(key);
+  if (e) store.set(key, { ...e, stale: true });
 }
 
 /** Drop a cached entry (e.g. after a mutation that invalidates it). */

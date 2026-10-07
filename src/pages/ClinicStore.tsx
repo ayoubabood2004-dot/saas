@@ -738,8 +738,9 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     if (!canPrice) return;
     const v = Number(priceDraft);
     if (!Number.isFinite(v) || v < 0 || v === p.sell_price) return;
-    try { await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }); playSuccess(); await reload(); }
-    catch (e) { playWarning(); toast.error("تعذّر تعديل السعر", errMsg(e)); }
+    // بشرط أن السعرَ ما زال ما يراه: قائمةٌ فُتحت قبل رفعِ أسعارٍ كانت تكتب رقمَها فوق الرفع بصمت.
+    try { await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }, { sell_price: p.sell_price }); playSuccess(); await reload(); }
+    catch (e) { playWarning(); toast.error("تعذّر تعديل السعر", describeDbError(e, t)); await reload(); }
   };
 
   if (products === null) {

@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { getCached, setCached, patchCached, cachedAt, invalidate } from "@/lib/swrCache";
 import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
 import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
+import { PRICES_EVENT, priceGen, noteListGen, listGenOf } from "@/lib/priceSync";
 import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
 import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
@@ -166,6 +167,8 @@ export function Inventory() {
   // frame first (effects run after paint) and read as a loading intro.
   const seed = getCached<{ p: Product[]; c: Company[]; s: CompanySection[] }>(`inv_${clinicId ?? "self"}`);
   const [products, setProducts] = useState<Product[]>(seed?.p ?? []);
+  /** جيلُ الأسعار لحظةَ بدء جلب القائمة (0226) — بيعُ الجملة لا يبيع من أقدم. */
+  const [listGen, setListGen] = useState<number>(() => listGenOf(`inv_${clinicId ?? "self"}`));
   const [companies, setCompanies] = useState<Company[]>(seed?.c ?? []);
   const [sections, setSections] = useState<CompanySection[]>(seed?.s ?? []);
   const [loading, setLoading] = useState(!seed);
@@ -229,6 +232,7 @@ export function Inventory() {
   const wsBusy = useRef(false);
   const load = async () => {
     const startedAt = Date.now();
+    const g = priceGen();
     inflight.current++;
     try {
       /* الثلاثةُ تُعرض معاً أو لا تُعرض. كان فشلُ الشركات أو الأصناف يُبلع إلى
@@ -246,7 +250,9 @@ export function Inventory() {
       if (startedAt < shownFrom.current) return; // ما بعده وصل — لا يكتب فوقه
       shownFrom.current = startedAt;
       setCached(invKey, { p, c, s }, startedAt);
+      noteListGen(invKey, g);
       if (!mounted.current) return;
+      setListGen(g);
       setProducts(p);
       setCompanies(c);
       setSections(s);
@@ -318,6 +324,21 @@ export function Inventory() {
     pollMs: POLL_MS,
     checkOnEnable: true,
   });
+  /* رفعُ أسعارٍ أو إرجاعُه (من هذا الجهاز أو غيره — priceSync): القائمةُ تُقرأ من جديد بكلّ
+   * تبويب. وإلا فنموذجٌ يُفتح منها يحمل سعرَ ما قبل الرفع: يُرفض حفظُه بالمقارنة، وإعادةُ
+   * فتحه تحمل نفسَ البائت — حلقةٌ لا تنتهي إلا بمغادرة الصفحة. وسطَ بيعة جملة: بعدها. */
+  useEffect(() => {
+    let timer: number | null = null;
+    const go = () => {
+      timer = null;
+      if (!mounted.current) return;
+      if (wsBusy.current || inflight.current > 0) { timer = window.setTimeout(go, 1500); return; }
+      void loadRef.current();
+    };
+    const on = () => { if (timer == null) go(); };
+    window.addEventListener(PRICES_EVENT, on);
+    return () => { window.removeEventListener(PRICES_EVENT, on); if (timer != null) window.clearTimeout(timer); };
+  }, []);
   const onWsBusy = useCallback((b: boolean) => { wsBusy.current = b; }, []);
 
   /** جوابٌ طازجٌ من الخادم (سؤالُ «رصيده صفر») يرقّع القائمةَ والكاشَ **بلا تجديد
@@ -573,7 +594,7 @@ export function Inventory() {
               </Button>
             </div>
           )}
-          <SaleBuilder products={sellable} clinicId={clinicId} onSold={load} wholesale
+          <SaleBuilder products={sellable} listGen={listGen} clinicId={clinicId} onSold={load} wholesale
             onFreshRow={patchRow} onRefresh={() => void wsRefresh()} onBusyChange={onWsBusy} />
         </>
       ) : view === "trash" ? (
@@ -1033,6 +1054,9 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   );
 }
 
+/** رفضُ المقارنة ثمّ التبديل على السعر (0226) — يحتاج قراءةً جديدة لا إعادةَ نفس الطلب. */
+const isPriceMoved = (e: unknown) => (e as { code?: string } | null)?.code === "price_moved";
+
 function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved, onChanged, onOpenExisting }: {
   open: boolean; product: Product | null; companies: Company[]; sections: CompanySection[]; clinicId?: string; subcategories: string[];
   /** Full product list — used to catch "this barcode already exists" mistakes (single and bulk). */
@@ -1343,7 +1367,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         const sent = subChanged ? priced : noSub;
         const expect: Partial<Record<"sell_price" | "sub_unit_price", number | null>> = {};
         if (sellChanged) expect.sell_price = product.sell_price;
-        if (subChanged) expect.sub_unit_price = product.sub_unit_price ?? null;
+        // إطفاءُ المفرد (null) لا يكتب سعراً فوق شيء — لا شرطَ عليه، وإلا رُفض حفظُ الاسم لأن
+        // المفردَ رُفع بعد فتح النموذج.
+        if (subChanged && payload.sub_unit_price != null) expect.sub_unit_price = product.sub_unit_price ?? null;
         const { stock: _s, pooled: _p, ...rest } = sent;
         await repo.updateProduct(product.id, foldingToPool ? rest : sent, expect);
         if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
@@ -1386,6 +1412,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       await rollbackGrouping(createdCompany, createdSection);
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      // السعرُ تحرّك: القائمةُ تُقرأ من جديد — وإلا فإعادةُ الفتح تحمل نفسَ السعر البائت ويُرفض للأبد.
+      if (isPriceMoved(e)) onChanged?.();
     } finally {
       setBusy(false);
     }
@@ -1501,6 +1529,17 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         const fresh = await repo.getProductById(product.id);
         if (fresh) shared.sell_price = fresh.sell_price;
       }
+      /* والسعرُ المعدَّل يُفحص **قبل أيّ كتابة**: عضوٌ تحرّك سعرُه (رفعٌ من جهازٍ آخر) يُرفض
+       * بالمقارنة، والسطرُ الجديد كان يُنشأ بالرقم المكتوب — فتصير المجموعةُ بسعرين. */
+      if (groupSellChanged) {
+        for (const r of validRows) {
+          if (!r.productId) continue;
+          const before = allProducts?.find((p) => p.id === r.productId);
+          const fresh = await repo.getProductById(r.productId);
+          if (before && fresh && fresh.sell_price !== before.sell_price) throw Object.assign(new Error("price_moved"), { code: "price_moved" });
+        }
+      }
+      let groupMoved = false;
       // Create sequentially; collect failures instead of stopping so one bad row
       // never blocks the rest of the batch.
       const failedIdx: number[] = [];
@@ -1534,10 +1573,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             // وسعرُ المجموعة كذلك (0226): غيرُ المعدَّل لا يُرسل، والمعدَّلُ بالمقارنة على ما رآه.
             const { sell_price: _gs, ...rowNoSell } = rowDated;
             const rowSent = groupSellChanged ? rowDated : rowNoSell;
-            await repo.updateProduct(r.productId, keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent,
-              groupSellChanged && before ? { sell_price: before.sell_price } : undefined);
+            try {
+              await repo.updateProduct(r.productId, keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent,
+                groupSellChanged && before ? { sell_price: before.sell_price } : undefined);
+            } catch (e) { if (isPriceMoved(e)) groupMoved = true; throw e; }
             if (keep) keptOld.push(keep.kept);
           }
+          else if (groupMoved) throw Object.assign(new Error("price_moved"), { code: "price_moved" });
           else await repo.createProduct(rowPayload);
           done++;
         } catch (e) {
@@ -1585,11 +1627,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             : describeDbError(lastErr, t),
           done > 0 ? describeDbError(lastErr, t) : (lastErr instanceof Error ? lastErr.message : undefined),
         );
+        if (isPriceMoved(lastErr)) onChanged?.();
       }
     } catch (e) {
       await rollbackGrouping(createdCompany, createdSection);
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      if (isPriceMoved(e)) onChanged?.();
     } finally {
       setBusy(false);
     }

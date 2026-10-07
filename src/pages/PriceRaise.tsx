@@ -17,7 +17,7 @@ import { describeDbError, withTimeout } from "@/lib/errors";
 import { cn, currencySymbol, formatDate, formatDec, formatNum, searchable, uuid } from "@/lib/utils";
 import { playSuccess, playWarning } from "@/lib/sounds";
 import { getActiveCurrency } from "@/lib/currency";
-import { getServiceCatalog } from "@/lib/services";
+import { getServiceCatalog, refreshServices } from "@/lib/services";
 import { getPromoRules } from "@/lib/promotions";
 import { getQtyPromos } from "@/lib/settings";
 import { afterPriceChange } from "@/lib/priceSync";
@@ -89,9 +89,12 @@ function PriceRaiseBody() {
           ))}
         </div>
       </div>
-      {tab === "new"
-        ? <NewRaise onDone={() => setHistoryTick((x) => x + 1)} onHistory={() => setTab("history")} />
-        : <HistoryTab key={historyTick} />}
+      {/* النموذجُ يبقى مركّباً ومخفيّاً: فكُّه بزيارة السجلّ كان يعيده لـ«كلّ المنتجات ٢٥٪» —
+          فضغطتان بعد العودة ترفعان كلَّ أسعار العيادة لا ما بُني (تدقيقٌ عدائيّ). */}
+      <div className={tab === "new" ? undefined : "hidden"}>
+        <NewRaise onDone={() => setHistoryTick((x) => x + 1)} onHistory={() => setTab("history")} />
+      </div>
+      {tab === "history" && <HistoryTab key={historyTick} />}
     </div>
   );
 }
@@ -109,12 +112,15 @@ function NewRaise({ onDone, onHistory }: { onDone: () => void; onHistory: () => 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [sections, setSections] = useState<CompanySection[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
+  const [catalog, setCatalog] = useState<ServiceCatalog>(() => getServiceCatalog());
+  /* والخدماتُ تُقرأ من الخادم مع المواد (لا لقطةَ لحظة التركيب): بعد رفعٍ يشمل الخدمات كان
+   * المنتقي يعرض أسعارَ ما قبله، وخدمةٌ أُضيفت من جهازٍ آخر لا تُختار. */
   const loadData = useCallback(async () => {
     setLoadFailed(false);
     try {
-      const [p, c, s] = await withTimeout(Promise.all([repo.listProducts(clinicId), repo.listCompanies(clinicId), repo.listCompanySections(clinicId)]), 20000);
-      setProducts(p.filter((x) => !x.farm_id)); setCompanies(c); setSections(s);
+      const [p, c, s, cat] = await withTimeout(Promise.all([repo.listProducts(clinicId), repo.listCompanies(clinicId),
+        repo.listCompanySections(clinicId), refreshServices()]), 20000);
+      setProducts(p.filter((x) => !x.farm_id)); setCompanies(c); setSections(s); setCatalog(cat);
     } catch { setLoadFailed(true); }
   }, [clinicId]);
   useEffect(() => { void loadData(); }, [loadData]);
@@ -172,14 +178,17 @@ function NewRaise({ onDone, onHistory }: { onDone: () => void; onHistory: () => 
     const my = ++reqRef.current;
     setPvState("loading");
     const id = window.setTimeout(() => {
-      repo.previewPriceChange(JSON.parse(specKey) as PriceSpec)
+      withTimeout(repo.previewPriceChange(JSON.parse(specKey) as PriceSpec), 20000)
         .then((d) => { if (my !== reqRef.current) return; setPv({ key: specKey, data: d }); setPvState("idle"); })
         .catch((e) => { if (my !== reqRef.current) return; setPvState("error"); setPvErr(describeDbError(e, t)); });
     }, 350);
     return () => window.clearTimeout(id);
   }, [specKey, retry, t]);
   const fresh = !!pv && pv.key === specKey && pvState === "idle";
+  /** ما يُطبَّق ويُؤكَّد: المعاينةُ الطازجة لهذا الاختيار وحدها. */
   const P = fresh ? pv!.data : null;
+  /** ما يُعرض: آخرُ معاينةٍ باهتةً أثناء الحساب — كانت تُفكّ بكلّ تعديل فيضيع البحثُ والتصفية. */
+  const shownPv = pv && pvState !== "error" ? pv.data : null;
 
   // معرّفاتٌ زالت (حُذفت أو طُويت) تسقط من القوائم وتُقال — لا خطأ يحبس الشاشة.
   useEffect(() => {
@@ -205,7 +214,8 @@ function NewRaise({ onDone, onHistory }: { onDone: () => void; onHistory: () => 
     if (!refRef.current || refRef.current.key !== pv.key + P.plan_hash) refRef.current = { key: pv.key + P.plan_hash, ref: `pr-${uuid()}` };
     setBusy(true);
     try {
-      const r = await repo.applyPriceChange(JSON.parse(pv.key) as PriceSpec, P.plan_hash, note.trim() || null, refRef.current.ref);
+      // بمهلة: طلبٌ عالق كان يحبس نافذةَ التأكيد بلا خروج. والمرجعُ يبقى — إعادةُ الضغط آمنة.
+      const r = await withTimeout(repo.applyPriceChange(JSON.parse(pv.key) as PriceSpec, P.plan_hash, note.trim() || null, refRef.current.ref), 30000);
       refRef.current = null;
       await afterPriceChange(clinicId, r.event_seq);
       playSuccess();
@@ -354,10 +364,10 @@ function NewRaise({ onDone, onHistory }: { onDone: () => void; onHistory: () => 
           <label className="block space-y-1">
             <span className="text-xs font-semibold text-ink">{t("praise.rounding", "التقريب (دائماً للأعلى)")}</span>
             <select className="input" value={roundSel} onChange={(e) => setRoundSel(e.target.value)} data-praise-round>
-              <option value="smart">{t("praise.rSmart", { v: formatNum(smartMax(cur)), defaultValue: "ذكي — أقرب سعر مرتّب (حتى {{v}}) — مقترح" })}</option>
+              <option value="smart">{t("praise.rSmart", { v: formatDec(smartMax(cur)), defaultValue: "ذكي — أقرب سعر مرتّب (حتى {{v}}) — مقترح" })}</option>
               {fixedChoices(cur).map((v) => (
                 <option key={v} value={`fixed:${v}`}>
-                  {v === unit ? t("praise.rNone", "بدون تقريب (لأقرب وحدة)") : t("praise.rFixed", { v: formatNum(v), defaultValue: "دائماً لأقرب {{v}}" })}
+                  {v === unit ? t("praise.rNone", "بدون تقريب (لأقرب وحدة)") : t("praise.rFixed", { v: formatDec(v), defaultValue: "دائماً لأقرب {{v}}" })}
                 </option>
               ))}
             </select>
@@ -393,12 +403,12 @@ function NewRaise({ onDone, onHistory }: { onDone: () => void; onHistory: () => 
             <p className="text-sm text-danger-600">{pvErr || t("praise.previewFailed", "تعذّرت المعاينة")}</p>
             <Button variant="secondary" size="sm" leftIcon={<RotateCcw size={14} />} onClick={() => setRetry((x) => x + 1)}>{t("praise.retry", "أعد المحاولة")}</Button>
           </div>
-        ) : !P ? (
+        ) : !shownPv ? (
           <div className="card space-y-2 p-4"><Skeleton className="h-6 w-2/3" /><Skeleton className="h-24" /><Skeleton className="h-64" /></div>
         ) : (
-          <Preview P={P} products={products ?? []} skipRecent={skipRecent} setSkipRecent={setSkipRecent}
+          <Preview P={shownPv} products={products ?? []} skipRecent={skipRecent} setSkipRecent={setSkipRecent}
             onExclude={(l) => (l.k === "service" ? setSEx((x) => [...new Set([...x, l.id])]) : setPEx((x) => [...new Set([...x, l.id])]))}
-            onApply={() => setConfirm(true)} loading={pvState === "loading"} />
+            onApply={() => { if (fresh) setConfirm(true); }} loading={!fresh} />
         )}
       </div>
 
@@ -452,7 +462,12 @@ function rowsOf(lines: PlanLine[]): Row[] {
   }
   for (const [g, rs] of groups) {
     const same = rs.every((r) => r.sell?.o === rs[0].sell?.o && r.sell?.w === rs[0].sell?.w && r.sub?.o === rs[0].sub?.o && r.sub?.w === rs[0].sub?.w);
-    if (rs.length > 1 && same) out.push({ ...rs[0], key: `g:${g}`, ids: rs.map((r) => r.ids[0]), names: rs.map((r) => r.names[0]) });
+    // والصفُّ المطويّ يحمل علاماتِ أعضائه كلِّها: عضوٌ تحت الكلفة لا يختفي خلف أوّلهم.
+    const merge = (pick: (r: Row) => PlanLine | null): PlanLine | null => {
+      const first = pick(rs[0]);
+      return first ? { ...first, fl: [...new Set(rs.flatMap((r) => pick(r)?.fl ?? []))] } : null;
+    };
+    if (rs.length > 1 && same) out.push({ ...rs[0], key: `g:${g}`, ids: rs.map((r) => r.ids[0]), names: rs.map((r) => r.names[0]), sell: merge((r) => r.sell), sub: merge((r) => r.sub) });
     else out.push(...rs);
   }
   return out.sort((a, b) => a.names[0].localeCompare(b.names[0], "ar"));
@@ -811,9 +826,12 @@ function DoneCard({ summary, onHistory, onNew }: { summary: PriceChangeSummary; 
   const toast = useToast();
   const [printing, setPrinting] = useState(false);
   const print = async () => {
+    // النافذةُ تُفتح بالضغطة نفسِها قبل أيّ انتظار — بعده يمنعها المتصفّحُ بصمت.
+    const w = openPrintWindow();
+    if (!w) { toast.error(t("praise.printBlocked", "المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة لهذا الموقع وجرّب مرة ثانية.")); return; }
     setPrinting(true);
-    try { printDetail(await repo.priceChangeDetail(summary.id), t, i18n.language); }
-    catch (e) { toast.error(describeDbError(e, t)); } finally { setPrinting(false); }
+    try { printDetail(await repo.priceChangeDetail(summary.id), t, i18n.language, w); }
+    catch (e) { w.close(); toast.error(describeDbError(e, t)); } finally { setPrinting(false); }
   };
   return (
     <div className="mx-auto max-w-lg space-y-4 py-8 text-center" data-praise-done={summary.id}>
@@ -868,7 +886,7 @@ function HistoryTab() {
                   {c.note && <span className="font-normal text-ink-muted"> — {c.note}</span>}
                 </p>
                 <p className="text-2xs text-ink-subtle tabular-nums">
-                  {formatDate(c.applied_at.slice(0, 10), lang, true)} {new Date(c.applied_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                  {formatDate(c.applied_at, lang, true)} {new Date(c.applied_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                   {c.created_name ? ` · ${c.created_name}` : ""}
                 </p>
               </div>
@@ -894,9 +912,11 @@ function StatusChip({ s }: { s: PriceChange["status"] }) {
 
 type LineState = "restorable" | "changed" | "missing" | "blocked" | "restored" | "kept_changed" | "kept_missing";
 function stateOf(l: PriceDetailLine): LineState {
-  if (l.outcome) return l.outcome;
+  // «زالت» ليست نهاية: مادةٌ استُرجعت من السلّة تعود بسعر الرفع والخادمُ يعيد محاولتَها —
+  // فتُحكم حالُها الحيّة (تُختار وتُرجَع)، ولا تُقال «محذوفة» وهي على الرفّ.
+  if (l.outcome && l.outcome !== "kept_missing") return l.outcome;
   if (l.later) return "blocked";
-  if (l.cur == null) return "missing";
+  if (l.cur == null) return l.outcome === "kept_missing" ? "kept_missing" : "missing";
   return l.cur === l.w ? "restorable" : "changed";
 }
 
@@ -912,7 +932,9 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(PAGE);
-  const refRef = useRef<string | null>(null);
+  /** مرجعُ الإرجاع مربوطٌ بطلبه: جوابٌ ضاع ثمّ طلبٌ **آخر** (كلُّ الباقي بعد المحدد) كان
+   *  يأخذ نفسَ المرجع فيرجع جوابَ الأوّل مُعاداً، ويُقال «رجع ٣» والباقي لم يُمسّ. */
+  const refRef = useRef<{ key: string; ref: string } | null>(null);
   const load = useCallback(async () => {
     setFailed(false);
     try { setD(await withTimeout(repo.priceChangeDetail(id), 20000)); } catch { setFailed(true); }
@@ -923,6 +945,7 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
   const states = useMemo(() => new Map(lines.map((l) => [l.id, stateOf(l)])), [lines]);
   const count = (s: LineState) => lines.filter((l) => states.get(l.id) === s).length;
   const pending = lines.filter((l) => !l.outcome || l.outcome === "kept_missing");
+  const forceable = lines.some((l) => states.get(l.id) === "kept_changed" && l.cur != null);
   const needle = searchable(q);
   const visible = lines.filter((l) => !needle || searchable(l.n).includes(needle));
   /** اختيارُ مادةٍ من مجموعة يختار مجموعتَها — الإرجاعُ يأخذها كلَّها (لا سعرين على رفّ). */
@@ -937,13 +960,15 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
   const undo = async (items: string[] | null) => {
     if (!reason.trim()) { toast.error(t("praise.reasonFirst", "اكتب سبب الإرجاع أول.")); return; }
     if (busy) return;
-    refRef.current ??= `pu-${uuid()}`;
+    const key = JSON.stringify(items ? [...items].sort() : "all");
+    if (!refRef.current || refRef.current.key !== key) refRef.current = { key, ref: `pu-${uuid()}` };
     setBusy(true);
     try {
-      const r = await repo.undoPriceChange(id, items, reason.trim(), refRef.current);
+      const r = await withTimeout(repo.undoPriceChange(id, items, reason.trim(), refRef.current.ref), 30000);
       refRef.current = null;
       await afterPriceChange(clinicId, r.event_seq);
       playSuccess();
+      if (r.replayed) toast.toast({ tone: "info", title: t("praise.undoReplay", "هذا الإرجاع انطبق من قبل (الجواب الأول ضاع بالشبكة) — هذي نتيجته:") });
       // ما صار يُقال، وما لم يصر لا يُعدّ صفراً بالرسالة.
       const parts = [t("praise.undoRestored", { n: formatNum(r.restored ?? 0), defaultValue: "رجع {{n}} سعر لأصله" })];
       if (r.kept_changed) parts.push(t("praise.undoKept", { n: formatNum(r.kept_changed), defaultValue: "{{n}} تغيّر بيد بعد الرفع فبقي" }));
@@ -997,7 +1022,7 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
         <div className="space-y-3" data-praise-detail={id}>
           <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
             <StatusChip s={d.change.status} />
-            <span className="tabular-nums">{formatDate(d.change.applied_at.slice(0, 10), i18n.language, true)} {new Date(d.change.applied_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+            <span className="tabular-nums">{formatDate(d.change.applied_at, i18n.language, true)} {new Date(d.change.applied_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
             {d.change.created_name && <span>· {d.change.created_name}</span>}
             {d.change.note && <span>· {d.change.note}</span>}
             {d.change.undo_reason && <span>· {t("praise.lastReason", { r: d.change.undo_reason, defaultValue: "آخر سبب إرجاع: {{r}}" })}</span>}
@@ -1067,50 +1092,57 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
               </button>
             )}
           </div>
-          {pending.length > 0 && (
+          {/* السببُ يظهر ما دام بالرفع ما يُرجَع — ومنه «رجّعه للأصل» لسطرٍ بقي: كان الحقلُ مع
+              المعلَّق وحده، فبعد «رجّع الكل» وإعادة الفتح يقول الزرُّ «اكتب السبب» ولا مكانَ له. */}
+          {(pending.length > 0 || forceable) && (
             <div className="space-y-2 rounded-xl bg-surface-2 p-3">
               <label className="block space-y-1">
                 <span className="text-xs font-semibold text-ink">{t("praise.reason", "سبب الإرجاع (لازم)")}</span>
                 <input className="input" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("praise.reasonPh", "مثلاً: الرفع كان غلط")} data-praise-reason />
               </label>
               <p className="text-2xs text-ink-subtle">{t("praise.undoHelp", "الإرجاع يرجّع السعر الأصلي بالضبط للمواد اللي بعدها بسعر الرفع. اللي تغيّر سعرها بيد بعد الرفع تبقى (ولها زر «رجّعه للأصل»)، والفواتير ما تتغيّر.")}</p>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} disabled={!sel.size || busy} loading={busy && sel.size > 0}
-                  onClick={() => void undo([...sel])} data-praise-undo-sel>
-                  {t("praise.undoSel", { n: formatNum(sel.size), defaultValue: "رجّع المحدد ({{n}})" })}
-                </Button>
-                <Button size="sm" variant="danger" leftIcon={<Undo2 size={14} />} disabled={busy} onClick={() => void undo(null)} data-praise-undo-all>
-                  {t("praise.undoAll", "رجّع كل الباقي لسعره الأصلي")}
-                </Button>
-                <Button size="sm" variant="ghost" leftIcon={<Printer size={14} />} onClick={() => printDetail(d, t, i18n.language)}>{t("praise.print", "طباعة")}</Button>
-              </div>
+              {pending.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} disabled={!sel.size || busy} loading={busy && sel.size > 0}
+                    onClick={() => void undo([...sel])} data-praise-undo-sel>
+                    {t("praise.undoSel", { n: formatNum(sel.size), defaultValue: "رجّع المحدد ({{n}})" })}
+                  </Button>
+                  <Button size="sm" variant="danger" leftIcon={<Undo2 size={14} />} disabled={busy} onClick={() => void undo(null)} data-praise-undo-all>
+                    {t("praise.undoAll", "رجّع كل الباقي لسعره الأصلي")}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
-          {pending.length === 0 && (
-            <div className="flex justify-end">
-              <Button size="sm" variant="ghost" leftIcon={<Printer size={14} />} onClick={() => printDetail(d, t, i18n.language)}>{t("praise.print", "طباعة")}</Button>
-            </div>
-          )}
+          <div className="flex justify-end">
+            <Button size="sm" variant="ghost" leftIcon={<Printer size={14} />} onClick={() => { if (!printDetail(d, t, i18n.language)) toast.error(t("praise.printBlocked", "المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة لهذا الموقع وجرّب مرة ثانية.")); }}>{t("praise.print", "طباعة")}</Button>
+          </div>
         </div>
       )}
     </Modal>
   );
 }
 
-/** قائمةُ الأسعار للطباعة (للرفوف): الاسم، قبل، بعد — من وثيقة التفصيل كاملةً لا قائمةٍ تُقصّ عند الألف. */
-function printDetail(d: PriceChangeDetail, t: TFunction, lang: string) {
+const openPrintWindow = () => window.open("", "_blank", "width=900,height=940");
+
+/** قائمةُ الأسعار للطباعة (للرفوف): الاسم، قبل، الآن — من وثيقة التفصيل كاملةً لا قائمةٍ تُقصّ عند
+ *  الألف. **ما زال مرفوعاً وحده، بسعره الحاليّ**: سطرٌ أُرجع أو عُدِّل بيدٍ كان يُطبع بسعر الرفع
+ *  فيصير الرفُّ غيرَ الكاشير. */
+function printDetail(d: PriceChangeDetail, t: TFunction, lang: string, win?: Window | null): boolean {
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-  const rows = d.lines.slice().sort((a, b) => a.n.localeCompare(b.n, "ar")).map((l) =>
-    `<tr><td>${esc(l.n)}${l.f === "sub_unit_price" ? ` <small>${esc(t("praise.subShort", "(مفرد)"))}</small>` : ""}</td><td>${esc(exactMoney(l.o))}</td><td><b>${esc(exactMoney(l.w))}</b></td></tr>`).join("");
-  const title = t("praise.printTitle", { title: d.change.title, d: formatDate(d.change.applied_at.slice(0, 10), lang, true), defaultValue: "الأسعار الجديدة — رفع {{title}} — {{d}}" });
+  const live = d.lines.filter((l) => !l.outcome && l.cur != null);
+  const rows = live.sort((a, b) => a.n.localeCompare(b.n, "ar")).map((l) =>
+    `<tr><td>${esc(l.n)}${l.f === "sub_unit_price" ? ` <small>${esc(t("praise.subShort", "(مفرد)"))}</small>` : ""}</td><td>${esc(exactMoney(l.o))}</td><td><b>${esc(exactMoney(l.cur as number))}</b></td></tr>`).join("");
+  const title = t("praise.printTitle", { title: d.change.title, d: formatDate(d.change.applied_at, lang, true), defaultValue: "الأسعار الجديدة — رفع {{title}} — {{d}}" });
   const html = `<!doctype html><html dir="${lang === "ar" ? "rtl" : "ltr"}" lang="${lang}"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>body{font-family:system-ui,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 10px}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:start}th{background:#f2f4f7}
 td:nth-child(n+2){font-variant-numeric:tabular-nums;white-space:nowrap}</style></head>
-<body><h1>${esc(title)}</h1><table><thead><tr><th>${esc(t("praise.colItem", "المادة"))}</th><th>${esc(t("praise.colOld", "قبل"))}</th><th>${esc(t("praise.colNew", "بعد"))}</th></tr></thead>
-<tbody>${rows}</tbody></table><p style="font-size:11px;color:#666">${esc(t("praise.printCount", { n: d.lines.length, defaultValue: "{{n}} سطر" }))}</p>
+<body><h1>${esc(title)}</h1><table><thead><tr><th>${esc(t("praise.colItem", "المادة"))}</th><th>${esc(t("praise.colOld", "قبل"))}</th><th>${esc(t("praise.colNow", "الآن"))}</th></tr></thead>
+<tbody>${rows}</tbody></table><p style="font-size:11px;color:#666">${esc(t("praise.printCount", { n: live.length, defaultValue: "{{n}} سطر" }))}</p>
 <script>window.onload=()=>window.print()</script></body></html>`;
-  const w = window.open("", "_blank", "width=900,height=940");
-  if (!w) return;
+  const w = win ?? openPrintWindow();
+  if (!w) return false;
   w.document.open(); w.document.write(html); w.document.close();
+  return true;
 }

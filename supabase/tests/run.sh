@@ -4017,8 +4017,8 @@ HD=$(W "select $(_prev $C1 "$SPECD")->>'plan_hash'")
 W "select _rls_try('$C1', 'select price_change_apply(''$SPECD''::jsonb, ''$HD'', null, null)')" >/dev/null
 HD2=$(W "select $(_prev $C1 "$SPECD")->>'plan_hash'")
 W "select _rls_try('$C1', 'select price_change_apply(''$SPECD''::jsonb, ''$HD2'', null, null)')" >/dev/null
-chk "السعرُ قبل الرفع (مرتجع الكاشير): رفعان قائمان 1666→2500→3750 ⇒ «قبل» 1666 و«بعد» 3750، ويقرؤه الاستقبال" \
-    "select (r->'$PC'->>'o')::numeric::int||'→'||(r->'$PC'->>'w')::numeric::int from (select _pf('$RCP', 'select price_raise_prior()::text')::jsonb r) x" "1666→3750"
+chk "السعرُ قبل الرفع (مرتجع الكاشير): رفعان قائمان 1666→2500→3750 ⇒ «قبل» آخر رفع 2500 (من اشترى بينهما) و«بعد» 3750، ويقرؤه الاستقبال" \
+    "select (r->'$PC'->>'o')::numeric::int||'→'||(r->'$PC'->>'w')::numeric::int from (select _pf('$RCP', 'select price_raise_prior()::text')::jsonb r) x" "2500→3750"
 # قفلٌ بيد بيعةٍ أخرى: الرفعُ يقول «مشغول» بعد محاولاتٍ قصيرة ولا ينتظر ممسكاً أقفالَه.
 SPECE='{"pct_bp":500,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PE'"],"p_exclude":[],"skip_recent":false}'
 HE=$(W "select $(_prev $C1 "$SPECE")->>'plan_hash'")

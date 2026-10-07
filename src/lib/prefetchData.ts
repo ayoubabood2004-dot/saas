@@ -9,6 +9,7 @@
 import { repo } from "@/lib/repo";
 import { listStaff, type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
+import { priceGen, noteListGen } from "@/lib/priceGen";
 import { localISO } from "@/lib/utils";
 import { getInvoicesPaged } from "@/lib/settings";
 import { sellableRows } from "@/lib/sellable";
@@ -141,7 +142,9 @@ export async function loadAnalyticsSnap(clinicId: string | null | undefined, r: 
  *  already populated it. Failures are swallowed — this is best-effort speed. */
 function warmOnce<T>(key: string, loader: () => Promise<T>): void {
   if (getCached<T>(key) !== undefined) return;
-  loader().then((snap) => setCached<T>(key, snap)).catch(() => {});
+  // مختومةٌ بجيل الأسعار لحظةَ البدء (0226): لقطةٌ بدأت قبل رفعٍ لا تُباع منها أسعارُه القديمة.
+  const g = priceGen();
+  loader().then((snap) => { setCached<T>(key, snap); noteListGen(key, g); }).catch(() => {});
 }
 
 type WarmWhat = { records?: boolean; retail?: boolean; analytics?: boolean };

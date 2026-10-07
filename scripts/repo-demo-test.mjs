@@ -1433,7 +1433,7 @@ console.log("▸ رفعُ الأسعار بالتجريبيّ (0226) — نفس�
   await repo.applyPriceChange(s2, (await repo.previewPriceChange(s2)).plan_hash, null, null);
   await repo.applyPriceChange(s2, (await repo.previewPriceChange(s2)).plan_hash, null, null);
   const prior = await repo.priceRaisePrior();
-  check("السعرُ قبل الرفع: 1666→2500→3750 ⇒ «قبل» 1666 و«بعد» 3750", prior.rc?.o === 1666 && prior.rc?.w === 3750, JSON.stringify(prior.rc));
+  check("السعرُ قبل الرفع: 1666→2500→3750 ⇒ «قبل» آخر رفع 2500 و«بعد» 3750", prior.rc?.o === 2500 && prior.rc?.w === 3750, JSON.stringify(prior.rc));
   // رفعٌ لاحق يحجز سطرَه ولا يُحسم «تغيّر».
   const fifty = (await repo.listPriceChanges()).filter((c) => c.title === "+50%").sort((a, b) => a.apply_seq - b.apply_seq);
   const first = fifty[0];

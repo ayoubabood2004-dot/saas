@@ -540,6 +540,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [reference, setReference] = useState("");
   const [supplierName, setSupplierName] = useState("");
   const [supplierPhone, setSupplierPhone] = useState("");
+  /** سعرُ البيع الحاليّ بالخادم لمادةٍ تحرّك سعرُها بعد تحميل القائمة (يغلب القائمةَ البائتة). */
+  const [freshSell, setFreshSell] = useState<Record<string, number>>({});
+  const sellSeen = (id: string): number | null => {
+    if (id in freshSell) return freshSell[id];
+    const p = products.find((x) => x.id === id);
+    return p ? Number(p.sell_price ?? 0) : null;
+  };
   const [notes, setNotes] = useState("");
   const [purchasedAt, setPurchasedAt] = useState(localISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
@@ -950,6 +957,36 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         description: t("pos.arabicCodeReads", "بالعكس يقرأ: {{fix}}", { fix: looksLayoutMangled(mang.barcode) }),
       });
     }
+    /* سعرُ بيعٍ مكتوبٌ على مادةٍ قائمة يُقارَن بالخادم قبل الحفظ (0226): قائمةٌ فُتحت قبل رفع
+     * أسعارٍ من جهازٍ آخر تقول «10,000 ← 10,500» والرفُّ صار 11,000 — فيُنزل الرفعَ وهو يحسبه
+     * زيادة، و`record_purchase` يكتب سعرَ البيع بلا شرط. الرقمُ الحاليّ يُعرض بالسطر بعدها،
+     * والحفظُ الثاني قرارٌ عن علم. وتعذُّرُ السؤال يوقف الحفظ ويُقال: سؤالٌ تعثّر لا يعني «ما تغيّر». */
+    const typed = validLines.filter((l) => l.product_id && sellPriceToSend(l.sell_price) > 0);
+    if (typed.length) {
+      let fresh: (Product | null | undefined)[];
+      try { fresh = await Promise.all(typed.map((l) => repo.getProductById(l.product_id as string))); }
+      catch (e) { playWarning(); toast.error(describeDbError(e, t)); return; }
+      const moved: Record<string, number> = {};
+      let first: { name: string; now: number; was: number } | null = null;
+      typed.forEach((l, i) => {
+        const f = fresh[i];
+        const shown = sellSeen(l.product_id as string);
+        if (f && shown != null && Number(f.sell_price) !== shown) {
+          moved[f.id] = Number(f.sell_price);
+          first ??= { name: f.name, now: Number(f.sell_price), was: shown };
+        }
+      });
+      if (first) {
+        const m = first as { name: string; now: number; was: number };
+        setFreshSell((x) => ({ ...x, ...moved }));
+        playWarning();
+        toast.error(
+          t("purchase.sellMoved", "سعر بيع «{{name}}» صار {{now}} من جهاز ثاني (مثلاً رفع أسعار) — الشاشة كانت تعرض {{was}}.", { name: m.name, now: formatNum(m.now), was: formatNum(m.was) }),
+          t("purchase.sellMovedHow", "حدّثنا الرقم بالسطر — راجع سعر البيع واحفظ مرة ثانية."),
+        );
+        return;
+      }
+    }
     setBusy(true);
     let createdCompany: Company | null = null;
     try {
@@ -1143,7 +1180,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             const sellRef = product ?? (!l.product_id && l.name.trim()
               ? products.find((p) => invNormName(p.name) === invNormName(l.name))
               : undefined);
-            const sellNow = sellRef ? Number(sellRef.sell_price ?? 0) || null : null;
+            const sellNow = sellRef ? Number(freshSell[sellRef.id] ?? sellRef.sell_price ?? 0) || null : null;
             const dupTotal = dupOf.get(l.key);
             const dupBadge = dupTotal != null ? (
               <span className="chip shrink-0 bg-warn-50 text-2xs font-bold text-warn-800 dark:bg-warn-500/15 dark:text-warn-200">

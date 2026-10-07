@@ -959,8 +959,12 @@ end $$;
 -- ── السعرُ قبل الرفع — لمرتجع الكاشير ──────────────────────────────────────
 -- مرتجعٌ بلا فاتورة كان يُسعَّر بسعر اليوم: بعد رفع ٥٠٪ يُردّ للزبون أكثرُ مما دفع
 -- (`retail_return` تثق بسعر الجهاز وتكتبه مصروفاً نقداً). هنا لكلّ منتجٍ رُفع برفعٍ
--- قائمٍ خلال ١٢٠ يوماً: أقدمُ «قبل» (أوّلُ السلسلة 1000→1300→1700) وتاريخُه، وأحدثُ
--- «بعد». وثيقةٌ واحدة (لا قائمةٌ تُقصّ عند الألف). لكلّ كادر العيادة (الكاشيرُ يحتاجه).
+-- قائمٍ خلال ١٢٠ يوماً: سعرُه قبل **آخر** رفعٍ قائم وتاريخُه، وسعرُ ذلك الرفع. لا أقدمُ
+-- السلسلة: 1000→1300 (أيلول) ثمّ 1300→1700 (تشرين) — من اشترى بينهما دفع 1300، و«قبل»
+-- الأقدم كان يردّ له 1000؛ وتعديلٌ بيدٍ بين رفعين (1000→1300، يدويّ 2000، 2000→2500)
+-- كان يقترح 1000 ما بيع به أحدٌ منذ التعديل (تدقيقٌ عدائيّ). والكاشيرُ لا يقترحه أصلاً إن
+-- كان سعرُ اليوم غيرَ «بعد» هذا الرفع (عُدِّل بيدٍ بعده). وثيقةٌ واحدة (لا قائمةٌ تُقصّ
+-- عند الألف). لكلّ كادر العيادة (الكاشيرُ يحتاجه).
 create or replace function public.price_raise_prior()
 returns jsonb
 language sql
@@ -968,30 +972,15 @@ stable
 security definer
 set search_path = public
 as $$
-  with l as (
-    select l.item_id, l.old_price, l.new_price, c.applied_at, c.apply_seq
+  with last as (
+    select distinct on (l.item_id) l.item_id, l.old_price, l.new_price, c.applied_at
       from price_change_lines l join price_changes c on c.id = l.change_id
      where l.clinic_id = auth_clinic() and c.clinic_id = auth_clinic()
        and l.kind = 'product' and l.field = 'sell_price' and (l.undo_outcome is null or l.undo_outcome = 'kept_missing')
        and c.applied_at > now() - interval '120 days'
-  ),
-  -- السلسلةُ المتّصلة الأخيرة وحدها: رفعٌ «قبله» غيرُ «بعد» سابقه = تعديلٌ بيدٍ بينهما
-  -- (1000→1300، يدويّ 2000، 2000→2500) — «قبل الرفع» هنا 2000 لا 1000. أخذُ أقدم سطرٍ
-  -- مطلقاً كان يقترح للمرتجع سعراً ما بيع به أحدٌ منذ التعديل (تدقيقٌ عدائيّ).
-  b as (
-    select l.*, case when lag(l.new_price) over (partition by l.item_id order by l.apply_seq) = l.old_price then 0 else 1 end as brk
-      from l
-  ),
-  sg as (select b.*, sum(b.brk) over (partition by b.item_id order by b.apply_seq) as seg from b),
-  tail as (select sg.* from sg where sg.seg = (select max(x.seg) from sg x where x.item_id = sg.item_id)),
-  agg as (
-    select distinct on (item_id) item_id,
-           first_value(old_price) over w as o, first_value(applied_at) over w as at,
-           last_value(new_price) over w as nw
-      from tail
-    window w as (partition by item_id order by apply_seq rows between unbounded preceding and unbounded following)
+     order by l.item_id, c.apply_seq desc
   )
-  select coalesce(jsonb_object_agg(item_id, jsonb_build_object('o', o, 'at', at, 'w', nw)), '{}'::jsonb) from agg
+  select coalesce(jsonb_object_agg(item_id, jsonb_build_object('o', old_price, 'at', applied_at, 'w', new_price)), '{}'::jsonb) from last
 $$;
 
 revoke all on function public._price_frac(text) from public, anon, authenticated;

@@ -534,7 +534,7 @@ console.log("▸ باركود الخدمات — نفسُ تطبيع المنت�
       const map = {
         "./clinics": "export const getActiveClinicId = () => 'svc-clinic';",
         "./clinicSync": "export const sb = () => null; export const cloudWrite = async () => {};"
-          + " export const registerHydrator = () => {}; export const registerReset = () => {};",
+          + " export const registerHydrator = () => {}; export const registerReset = () => {}; export const isConfigReadOnly = () => false;",
       };
       b.onResolve({ filter: /^\.\/(clinics|clinicSync)$/ }, (a) => ({ path: a.path, namespace: "svc" }));
       b.onLoad({ filter: /.*/, namespace: "svc" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
