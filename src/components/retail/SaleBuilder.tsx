@@ -6,12 +6,13 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX, Hash,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { phoneDigits } from "@/lib/phone";
+import { cleanRef, MAX_REF_LEN } from "@/lib/deliverySearch";
 import { getServiceCatalog, findServiceByBarcode } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -712,6 +713,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // المنطقة يملأ الأجرة تلقائياً (وتبقى قابلة للتعديل) وينحفظ على الطلب.
   const [dZone, setDZone] = useState("");
   const [dAddress, setDAddress] = useState("");
+  /** رقمُ الطلب (0225) — اختياريّ: بوليصةُ الشركة أو أيُّ رقمٍ تتابع بيه العيادة. */
+  const [dRef, setDRef] = useState("");
   const [dFee, setDFee] = useState("");
   const [dFeeToClinic, setDFeeToClinic] = useState(false);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
@@ -1173,6 +1176,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   };
 
   const handleScan = async (code: string) => {
+    /* ماسحٌ على حقل رقم الطلب = بوليصةُ شركة التوصيل لا منتج. الماسحُ يكتب
+     * محارفَه بالحقل المركَّز أصلاً (لا يمنع إلا Enter)، فكانت المسحةُ نفسُها
+     * تذهب للسلّة أيضاً: «الباركود مو موجود بمخزنك» أو — أسوأ — منتجٌ يطابق
+     * ذيلَه فيُضاف لبيعةٍ لم يطلبه أحد. فالحقلُ المركَّز يأخذها كاملةً وحدَه. */
+    if ((document.activeElement as HTMLElement | null)?.dataset?.scanInto === "dref") { setDRef(cleanRef(code) ?? ""); return; }
     if (done) { pendingScanRef.current = code; reset(); return; }
     noteScan(code, "sale", clinicId);   // م٣: قياسٌ صامت لصيغة المسحة — لا يغيّر شيئاً
     const n = peekScanMult(code);
@@ -1624,7 +1632,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setPromoOn([]);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
-    setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
+    setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDRef(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill && !prefillOff.current) {
@@ -2065,6 +2073,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
           zone: dZone || null,
           address: dAddress.trim() || null,
           note: null,
+          courier_ref: cleanRef(dRef),
           delivery_fee: deliveryFee,
           fee_to_clinic: feeToClinic,
           // Derive the COD from the invoice the server ACTUALLY recorded (it
@@ -2082,7 +2091,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
            * إلى الأبد — فلا يُبلَغ الـcatch أصلاً ولا يظهر الشريط، وتبقى
            * الدوّارةُ تدور على فاتورةٍ محفوظةٍ ومخزونٍ مخصوم. وكلُّ جارٍ بهذا
            * الملفّ ملفوفٌ بها أصلاً. */
-          await withTimeout(repo.createDeliveryOrder(dlvPayload), 12000);
+          const made = await withTimeout(repo.createDeliveryOrder(dlvPayload), 12000);
+          /* قاعدةٌ قبل 0225 تحفظ الطلبَ بلا رقمه (createDeliveryOrder تعيد بلاه) —
+           * فنقولها: رقمٌ كتبه الكاشير واختفى بصمت يُصدَّق أنه انحفظ. */
+          if (dlvPayload.courier_ref && !made?.courier_ref) {
+            toast.warn(t("retail.dRefNotSaved", "طلب التوصيل انحفظ بدون رقم الطلب — ضيفه من تبويب التوصيل."), dlvPayload.courier_ref);
+          }
         } catch {
           /* الرسالةُ القديمة كانت تحيله إلى «تبويب التوصيل» — والتبويبُ موجودٌ
            * لكنّه كلُّه تحديثٌ لصفٍّ قائم، ولا موضعَ واحد بالتطبيق يُنشئ طلباً
@@ -2309,7 +2323,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               setDlvRetrying(d.invNo);
               try {
                 // بمهلة كذلك — وإلا بقيت الدوّارةُ على الزرّ للأبد.
-                await withTimeout(repo.createDeliveryOrder(d.payload), 12000);
+                const made = await withTimeout(repo.createDeliveryOrder(d.payload), 12000);
+                // نفسُ قول البيعة: رقمٌ بالحمولة وصفٌّ بلاه (قاعدةٌ قبل 0225، أو طلبٌ قائمٌ
+                // للفاتورة سبق الإعادة) — يُقال ولا يُفترض أنه انحفظ.
+                if (d.payload.courier_ref && !made?.courier_ref) {
+                  toast.warn(t("retail.dRefNotSaved", "طلب التوصيل انحفظ بدون رقم الطلب — ضيفه من تبويب التوصيل."), d.payload.courier_ref);
+                }
                 setDlvFailed((prev) => {
                   const next = prev.filter((x) => x !== d);
                   savePendingDlv(draftScope, next);
@@ -3141,7 +3160,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                 ? t("retail.toolsWithDiscount", { n: money(manualDiscountAmt), defaultValue: "خصم {{n}} · أدوات الدفع" })
                 : t("retail.tools", "الخصم وطرق الدفع")}
               {isCredit && <span className="chip bg-warn-50 text-[10px] font-black text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">{t("retail.creditShort", "آجل")}</span>}
-              {deliveryOn && <span className="chip bg-sky-50 text-[10px] font-black text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">{t("retail.deliveryShort", "توصيل")}</span>}
+              {deliveryOn && <span className="chip bg-sky-50 text-[10px] font-black text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">{t("retail.deliveryShort", "توصيل")}{dRef.trim() && <bdi dir="ltr" className="ms-1 font-mono">#{dRef.trim()}</bdi>}</span>}
               {!cashierId && cart.length > 0 && (
                 <span data-nosellerchip className="chip bg-warn-50 text-[10px] font-black text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">
                   <AlertTriangle size={10} className="me-0.5 inline" />{t("retail.noSellerChip", "بلا بائع")}
@@ -3243,6 +3262,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                     {t("retail.deliveryCompanyHint", "شركة توصيل: الطلب يُسجَّل «مسلَّم» لما يوصل للزبون، والفلوس تبقى بذمّة الشركة وتُحصَّل منها لاحقاً من تبويب التوصيل.")}
                   </p>
                 )}
+                {/* رقمُ الطلب — اختياريّ. يُكتب أو يُمسح (بوليصةُ الشركة) أو يُترك ويُضاف
+                    بعدين من تبويب التوصيل: الشركةُ كثيراً ما تعطيه عند الاستلام. */}
+                <label className="flex items-center gap-2" data-dref>
+                  <span className="flex shrink-0 items-center gap-1 text-2xs font-bold text-sky-800 dark:text-sky-200"><Hash size={13} />{t("retail.dRefLabel", "رقم الطلب")}</span>
+                  <input className="input h-9 flex-1 font-mono text-sm" dir="ltr" data-scan-into="dref" maxLength={MAX_REF_LEN}
+                    value={dRef} onChange={(e) => setDRef(e.target.value)}
+                    placeholder={t("retail.dRefPh", "رقم الطلب (اختياري)")} aria-label={t("retail.dRefLabel", "رقم الطلب")} />
+                </label>
                 {/* لوين طالع الطلب؟ — مناطق العيادة، واختيار المنطقة يملأ أجرتها تلقائياً */}
                 {getDeliveryZones().length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5">

@@ -1266,6 +1266,10 @@ export interface DeliveryOrder {
   returned_at?: string | null;
   /** متى وصل نقدُ هذا الطلب فعلاً (0148). فارغٌ = مسلَّمٌ للزبون وبذمّة الشركة. */
   collected_at?: string | null;
+  /** رقمُ الطلب عند حامله (0225) — بوليصةُ شركة التوصيل أو أيُّ رقمٍ تتابع بيه
+   *  العيادة. اختياريّ، يُحفظ بـ`cleanRef` ويُبحث بـ`refKey` (deliverySearch.ts).
+   *  ليس «رقم الفاتورة» (INV-xxxxxx) — ذاك من `invoice_id`. */
+  courier_ref?: string | null;
 }
 
 /** One line from the purchase builder handed to the repo. `product_id` is set when

@@ -47,11 +47,19 @@ const FAKE_SUPABASE = `
     get(_t, k) {
       if (k === "then") {
         const s = globalThis.__DLV;
-        const res = acts.includes("insert") ? s.insert : s.lookup;
+        const sent = globalThis.__DLV_SENT ?? [];
+        const last = sent.length ? sent[sent.length - 1] : null;
+        const res = acts.includes("insert") ? (typeof s.insert === "function" ? s.insert(last) : s.insert)
+          : acts.includes("update") ? (typeof s.update === "function" ? s.update(last) : s.update)
+          : s.lookup;
         return (ok) => { ok(res); };
       }
       if (k === "catch" || k === "finally") return () => make(acts);
-      return (...a) => { void a; return make([...acts, String(k)]); };
+      // ما أُرسل للخادم يُحفظ — فنفحص الحمولةَ نفسَها لا ما رجع وحده.
+      return (...a) => {
+        if (k === "insert" || k === "update") (globalThis.__DLV_SENT ??= []).push(JSON.parse(JSON.stringify(a[0])));
+        return make([...acts, String(k)]);
+      };
     },
     apply() { return make(acts); },
   });
@@ -136,6 +144,40 @@ const d = await run({
 });
 check("  وكذلك إن رجع البحثُ فارغاً بلا خطأ", d.threw,
       d.threw ? "" : `رجع بلا رمي: ${JSON.stringify(d.row)}`);
+
+console.log("▸ 0225 (سحابيّ): رقمُ الطلب يُطبَّع، والفارغُ لا يُرسل، وغيابُ العمود لا يُسقط الطلب");
+const runP = async (payload, scenario) => {
+  globalThis.__DLV = scenario; globalThis.__DLV_SENT = [];
+  try { return { row: await repo.createDeliveryOrder(payload), threw: false, sent: globalThis.__DLV_SENT }; }
+  catch (e) { return { err: e, threw: true, sent: globalThis.__DLV_SENT }; }
+};
+const okRow = (row) => ({ data: { ...row, id: "dlv_new", created_at: "2026-10-07T10:00:00Z" }, error: null });
+
+const e = await runP({ ...PAYLOAD, courier_ref: " ‏bx-١٢٣ " }, { insert: okRow });
+check("الرقمُ يُرسل مطبَّعاً (شرقيّ ← لاتينيّ، بلا خفيٍّ ولا مسافات، والحالةُ كما هي)", !e.threw && e.sent[0]?.courier_ref === "bx-123", JSON.stringify(e.sent[0]?.courier_ref));
+const f = await runP({ ...PAYLOAD, courier_ref: "   " }, { insert: okRow });
+check("  والفارغُ لا يُرسل أصلاً (قيدُ 0225 يرفض '')", !f.threw && !("courier_ref" in (f.sent[0] ?? {})), JSON.stringify(f.sent[0]));
+const g = await runP({ ...PAYLOAD, courier_ref: "AW-55" }, {
+  insert: (row) => ("courier_ref" in row
+    ? { data: null, error: { code: "42703", message: 'column "courier_ref" of relation "delivery_orders" does not exist' } }
+    : okRow(row)),
+});
+check("قاعدةٌ قبل 0225: الطلبُ يُحفظ بلا رقمه بدل أن يسقط كلُّه", !g.threw && g.sent.length === 2 && !("courier_ref" in g.sent[1]), g.threw ? g.err?.message : JSON.stringify(g.sent));
+check("  والصفُّ الراجع بلا رقم — فشاشةُ البيع تقارن وتقولها (لا إسقاطَ صامت)", !g.threw && !g.row?.courier_ref, JSON.stringify(g.row));
+const h = await runP({ ...PAYLOAD, courier_ref: "AW-55" }, {
+  insert: () => ({ data: null, error: { code: "23514", message: 'new row violates check constraint "delivery_orders_courier_ref_len"' } }),
+});
+check("  وخطأٌ آخر لا يُعاد بلا رقم: يُرمى", h.threw && h.sent.length === 1, h.threw ? "" : JSON.stringify(h.sent));
+
+globalThis.__DLV = { update: (patch) => ({ data: { id: "dlv_1", ...patch }, error: null }) }; globalThis.__DLV_SENT = [];
+await repo.updateDeliveryOrder("dlv_1", { courier_ref: "  " });
+check("updateDeliveryOrder: مسحُ الرقم يُرسل NULL لا ''", globalThis.__DLV_SENT[0]?.courier_ref === null, JSON.stringify(globalThis.__DLV_SENT[0]));
+globalThis.__DLV_SENT = [];
+await repo.updateDeliveryOrder("dlv_1", { courier_ref: "bx ١٢٣" });
+check("  والكتابةُ بنفس تطبيع الإنشاء", globalThis.__DLV_SENT[0]?.courier_ref === "bx123", JSON.stringify(globalThis.__DLV_SENT[0]));
+globalThis.__DLV_SENT = [];
+await repo.updateDeliveryOrder("dlv_1", { status: "out" });
+check("  ونداءٌ بلا رقم لا يلمسه (لا مفتاحَ courier_ref بالحمولة)", !("courier_ref" in (globalThis.__DLV_SENT[0] ?? {})), JSON.stringify(globalThis.__DLV_SENT[0]));
 
 console.log(`\n${fails ? "✗" : "✓"} delivery-dup-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

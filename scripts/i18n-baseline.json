@@ -45,7 +45,7 @@
   "src/lib/cbc.ts": 9,
   "src/lib/consentForms.ts": 43,
   "src/lib/currency.ts": 45,
-  "src/lib/deliveryPrint.ts": 14,
+  "src/lib/deliveryPrint.ts": 13,
   "src/lib/demoStore.ts": 5,
   "src/lib/diagnoses.ts": 31,
   "src/lib/digits.ts": 1,

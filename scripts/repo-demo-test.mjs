@@ -684,6 +684,19 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
   const c = await repo.createDeliveryOrder({ ...base, invoice_id: "inv_dlv_2", cod_amount: 9000 });
   check("  وفاتورةٌ أخرى تُنشئ صفّاً جديداً (القيدُ على التكرار لا على الإنشاء)",
         c.id !== a.id && c.cod_amount === 9000);
+
+  // 0225: رقمُ الطلب بنفس تطبيع السحابة — المرآةُ لا تقريب.
+  console.log("▸ 0225: رقمُ الطلب بالتجريبيّ");
+  const r = await repo.createDeliveryOrder({ ...base, invoice_id: "inv_dlv_3", courier_ref: " bx-١٢٣ " });
+  check("يُحفظ مطبَّعاً عند الإنشاء", r.courier_ref === "bx-123", r.courier_ref);
+  const n = await repo.createDeliveryOrder({ ...base, invoice_id: "inv_dlv_4", courier_ref: "   " });
+  check("  والفارغُ NULL لا ''", n.courier_ref === null, JSON.stringify(n.courier_ref));
+  const u = await repo.updateDeliveryOrder(n.id, { courier_ref: "AW 55" });
+  check("  ويُضاف بعد البيع بنفس التطبيع", u?.courier_ref === "AW55" && dbNow().deliveryOrders.find((o) => o.id === n.id).courier_ref === "AW55");
+  const cl = await repo.updateDeliveryOrder(n.id, { courier_ref: "" });
+  check("  ويُمسح إلى NULL", cl?.courier_ref === null);
+  const twin = await repo.createDeliveryOrder({ ...base, courier_ref: "ZZ-9" });
+  check("  وإعادةُ محاولةِ فاتورةٍ لها طلب ترجع القائمَ — رقمُ الإعادة لا يكتب فوقه", twin.id === a.id && !twin.courier_ref);
 }
 
 /* ══ الموجة ٥ · البند ١٥ — الكتابةُ تُسمَع بالوضع التجريبي ═══════════════════

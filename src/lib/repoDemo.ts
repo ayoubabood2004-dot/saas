@@ -16,6 +16,7 @@ import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
+import { cleanRef } from "./deliverySearch";
 import { phoneDigits } from "./phone";
 import { searchable, invNormName } from "./utils";
 import i18next from "i18next";
@@ -3431,7 +3432,8 @@ const demoRepo = {
     // حارسٌ لم يُفحص — فحوصُ المنطق تجري على هذه النسخة.
     const twin = input.invoice_id ? db.deliveryOrders.find((x) => x.invoice_id === input.invoice_id) : undefined;
     if (twin) return twin;
-    const o: DeliveryOrder = { ...input, id: uid("dlv"), created_at: new Date().toISOString() };
+    // رقمُ الطلب بنفس تطبيع السحابة (0225) — مرآةٌ لا تقريب.
+    const o: DeliveryOrder = { ...input, courier_ref: cleanRef(input.courier_ref), id: uid("dlv"), created_at: new Date().toISOString() };
     db.deliveryOrders.push(o);
     saveDB(db);
     return o;
@@ -3440,6 +3442,7 @@ const demoRepo = {
     const db = loadDB();
     const o = (db.deliveryOrders ?? []).find((x) => x.id === id);
     if (!o) return undefined;
+    if ("courier_ref" in patch) patch = { ...patch, courier_ref: cleanRef(patch.courier_ref) };
     Object.assign(o, patch);
     saveDB(db);
     return o;

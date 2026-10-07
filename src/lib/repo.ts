@@ -44,6 +44,7 @@ import { expenseMethodOf } from "./pockets";
 import { journeyToken } from "./journey";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
 import { getActiveClinicId } from "./clinics";
+import { cleanRef } from "./deliverySearch";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
 export function resolveDiscount(subtotal: number, type: DiscountType | null | undefined, value: number): number {
@@ -2001,15 +2002,29 @@ const supabaseRepo: DemoRepo = {
   },
   async createDeliveryOrder(input) {
     // Omit a null branch_id so a pre-0071 database (no column yet) keeps working.
-    const { branch_id, zone, ...rest } = input;
+    const { branch_id, zone, courier_ref, ...rest } = input;
     const row: Record<string, unknown> = { ...rest };
     if (branch_id) row.branch_id = branch_id;
     if (zone) row.zone = zone;
+    // رقمُ الطلب (0225): يُطبَّع هنا لا بالشاشة وحدها — كلُّ كاتبٍ يمرّ من نفس الدالّة.
+    const ref = cleanRef(courier_ref);
+    if (ref) row.courier_ref = ref;
     let first = await sbc().from("delivery_orders").insert(row).select().single();
     // قاعدة قبل هجرة 0099 (بلا عمود zone): نعيد الإدخال بدون المنطقة بدل ما
     // يضيع طلب التوصيل كله — الفاتورة محفوظة أصلاً والطلب أهم من الحقل.
     if (first.error && zone && /zone/i.test(first.error.message ?? "")) {
       delete row.zone;
+      first = await sbc().from("delivery_orders").insert(row).select().single();
+    }
+    /* وقاعدةٌ قبل 0225 (بلا courier_ref): الطلبُ أهمّ من رقمه، فيُعاد بلاه — لكن
+     * **لا بصمت**: الصفُّ الراجع بلا رقمٍ والحمولةُ فيها رقم، فشاشةُ البيع تقارنهما
+     * وتقول «انحفظ بلا رقم الطلب». إسقاطٌ صامت كان سيُصدَّق (CLAUDE.md §٣). */
+    // **غيابُ العمود وحده** (42703 بوستغريس، PGRST204 ذاكرةُ PostgREST) — لا كلُّ خطأٍ
+    // يذكر الاسم: رفضُ قيد الطول `delivery_orders_courier_ref_len` يحمل الاسمَ نفسَه،
+    // وإعادتُه بلا رقمٍ كانت ستُخفي الرفضَ بحفظٍ ناقص (أمسكه delivery-dup-test).
+    const fe = first.error as { code?: string; message?: string } | null;
+    if (fe && ref && (fe.code === "42703" || fe.code === "PGRST204") && /courier_ref/i.test(fe.message ?? "")) {
+      delete row.courier_ref;
       first = await sbc().from("delivery_orders").insert(row).select().single();
     }
     /* فاتورةٌ لها طلبُ توصيلٍ سلفاً (0180): الفريدُ يرفض الثاني بـ23505،
@@ -2029,6 +2044,8 @@ const supabaseRepo: DemoRepo = {
     return need<DeliveryOrder>(first);
   },
   async updateDeliveryOrder(id, patch) {
+    // رقمُ الطلب بنفس تطبيع الإنشاء — والمسحُ NULL لا '' (قيدُ 0225 يرفض الفارغ).
+    if ("courier_ref" in patch) patch = { ...patch, courier_ref: cleanRef(patch.courier_ref) };
     const r = await sbc().from("delivery_orders").update(patch).eq("id", id).select().maybeSingle();
     // قاعدة قبل 0148 (بلا collected_at): الحالة تُحفظ بلا الختم بدل ما يفشل الاستلام.
     if (r.error && "collected_at" in patch && /collected_at/i.test(r.error.message ?? "")) {

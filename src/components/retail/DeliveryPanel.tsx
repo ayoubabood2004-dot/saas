@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   Bike, Search, Phone, MapPin, Printer, CheckCircle2, Undo2, Send, Users,
   PackageOpen, Wallet, Clock, Plus, Pencil, Archive, X, HandCoins, ReceiptText,
-  PencilLine, Repeat2, Building2, Banknote, CreditCard, ArrowLeftRight, History,
+  PencilLine, Repeat2, Building2, Banknote, CreditCard, ArrowLeftRight, History, Hash, RefreshCw, SearchX,
 } from "lucide-react";
 import type { Invoice, Courier, DeliveryOrder, CourierSettlement, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
@@ -14,13 +14,16 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
 import { DeliveryEditDialog } from "./DeliveryEditDialog";
 import { CourierSwapDialog } from "./CourierSwapDialog";
+import { OrderRefDialog } from "./OrderRefDialog";
 import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { dueOf, round2 } from "@/lib/debt";
 import { CourierLedger } from "./CourierLedger";
 import { companyOwed, companyOnRoad, carrierScope } from "@/lib/courierLedger";
-import { cn, formatNum, money, localISO, formatDate, searchable } from "@/lib/utils";
+import { cn, formatNum, money, localISO, formatDate } from "@/lib/utils";
+import { indexDelivery, searchDeliveries, cleanRef, MAX_REF_LEN, type DeliveryHit } from "@/lib/deliverySearch";
+import { getDialCode } from "@/lib/settings";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -53,6 +56,16 @@ const timeAgo = (iso: string): string => {
 
 const isCompany = (c?: Courier | null) => c?.kind === "company";
 
+/** نتائجُ البحث تُعرض صفحةً صفحة — والعددُ الكلّيُّ يُقال دائماً («٥٠ من ٢٣٠»). */
+const RESULTS_PAGE = 50;
+type ResultStatus = "all" | "preparing" | "out" | "owed" | "done" | "returned";
+/** «بالذمّة» = مسلَّمٌ للزبون ولم يُحصَّل بعد (شركة)، و«مستلم» = وصل نقدُه. */
+const statusIs = (o: DeliveryOrder, s: ResultStatus): boolean =>
+  s === "all" ? true
+    : s === "owed" ? o.status === "delivered" && !o.collected_at
+      : s === "done" ? o.status === "delivered" && !!o.collected_at
+        : o.status === s;
+
 export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -73,7 +86,20 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [settlements, setSettlements] = useState<CourierSettlement[]>([]);
   const [loading, setLoading] = useState(true);
+  /** فشلَ آخرُ تحميل؟ — «تعذّر» لا لوحةٌ فارغة تقول «ماكو طلبات»، وبحثٌ فوق قائمةٍ
+   *  فارغةٍ عن خطأ يقول «ماكو» بثقة (درسُ listCouriers بـCLAUDE.md). */
+  const [failed, setFailed] = useState(false);
   const [q, setQ] = useState("");
+  const qd = useDeferredValue(q);
+  const searchRef = useRef<HTMLInputElement>(null);
+  /** عدسةُ البحث: حاملٌ بعينه («ابحث داخل شركة التوصيل»)، وحالة. */
+  const [fCourier, setFCourier] = useState<string>("all");
+  const [fStatus, setFStatus] = useState<ResultStatus>("all");
+  const [limit, setLimit] = useState(RESULTS_PAGE);
+  /** رقمُ الطلب بعد البيع (0225). */
+  const [refFor, setRefFor] = useState<DeliveryOrder | null>(null);
+  /** رقمُ الطلب بنافذة الإرسال — يُكتب بعد الإسناد بنداءٍ مستقلّ. */
+  const [assignRef, setAssignRef] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [couriersOpen, setCouriersOpen] = useState(false);
   const [assigning, setAssigning] = useState<DeliveryOrder | null>(null);
@@ -103,9 +129,16 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
       const [o, c] = await Promise.all([repo.listDeliveryOrders(clinicId), repo.listCouriers(clinicId)]);
       setAllOrders(o);
       setCouriers(c);
+      setFailed(false);
       // سجلُّ التحصيلات: قاعدةٌ قبل 0148 ترجع خطأً — لا يُسقط اللوحة كلها.
       try { setSettlements(await repo.listCourierSettlements()); } catch { setSettlements([]); }
-    } catch { /* keep whatever we had */ }
+    } catch (e) {
+      /* كان `catch {}` صامتاً: أوّلُ تحميلٍ فاشل يرسم «لا توجد طلبات توصيل بعد»،
+       * والبحثُ فوقه يقول «ماكو» عن طلبٍ موجود. فالفشلُ يُقال: بلا قائمةٍ سابقة
+       * شاشةُ «أعد المحاولة»، وفوق قائمةٍ قائمة تبقى ويُقال إنها قد تكون قديمة. */
+      setFailed(true);
+      if (allOrders.length > 0) toast.error(t("retail.dRefreshFailed", "تعذّر تحديث طلبات التوصيل — المعروض قد يكون قديماً"), e instanceof Error ? e.message : undefined);
+    }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [clinicId]);
@@ -177,6 +210,14 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     setBusyId(o.id);
     try {
       await repo.updateDeliveryOrder(o.id, { courier_id: courierId, status: "out", dispatched_at: new Date().toISOString() });
+      /* رقمُ الطلب بنداءٍ **مستقلّ** بعد الإرسال: إرسالُ طلبٍ لشركة للمدير وحده
+       * (محفّز 0159)، والرقمُ لكلّ الكادر — لو حُمل معه لسقط بسقوطه. وفشلُه
+       * يُقال وحده: الطلبُ خرج، والرقمُ يُضاف من البطاقة. */
+      const ref = cleanRef(assignRef);
+      if (ref !== (o.courier_ref ?? null)) {
+        try { await repo.updateDeliveryOrder(o.id, { courier_ref: ref }); }
+        catch (e) { toast.warn(t("retail.dRefAfterDispatchFail", "الطلب خرج — بس رقم الطلب ما انحفظ. ضيفه من البطاقة."), describeDbError(e, t)); }
+      }
       playSuccess();
       setAssigning(null);
       // الإسنادُ لشركةٍ ينقل الطلبَ لقسمها — نتبعه، فالطلبُ الذي يختفي بعد
@@ -201,6 +242,31 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     setEditing(o);
   };
 
+  /** أزرارُ الطلب حسب حالته — نفسُها باللوحة وبنتائج البحث، فطلبٌ يُلقى بالبحث
+   *  يُعمل عليه من مكانه بلا رجوعٍ للبحث عنه باللوحة. */
+  const actionsFor = (o: DeliveryOrder) => {
+    const company = isCompany(courierOf(o.courier_id));
+    if (o.status === "preparing") return (
+      <>
+        <Button size="sm" leftIcon={<Send size={14} />} onClick={() => { playTap(); setAssignRef(o.courier_ref ?? ""); setAssigning(o); }}>{t("retail.deliveryDispatch", "إرسال مع سائق")}</Button>
+        {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
+        <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryCancel", "إلغاء الطلب")}</Button>
+      </>
+    );
+    if (o.status === "out") return (
+      <>
+        <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>
+          {company ? t("retail.deliveredToCustomer", "وصل للزبون") : t("retail.deliveryReceived", "استلمنا الفلوس")}
+        </Button>
+        <Button size="sm" variant="secondary" data-cswapbtn leftIcon={<Repeat2 size={14} />} onClick={() => { playTap(); setSwapping(o); }}>{t("retail.swapBtn", "تبديل السائق")}</Button>
+        {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
+        <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
+      </>
+    );
+    return null;
+  };
+  const openRef = (o: DeliveryOrder) => { playTap(); setRefFor(o); };
+
   /** Bulk hand-over: the courier came back — settle EVERY order he carries. */
   const settleCourier = async (courierId: string | null, list: DeliveryOrder[]) => {
     const sum = round2(list.reduce((s, o) => s + o.cod_amount, 0));
@@ -213,29 +279,44 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     for (const o of list) await deliver(o);
   };
 
-  /* ---- Derived views ---- */
-  const ql = searchable(q.trim());
-  const match = (o: DeliveryOrder) =>
-    !ql ||
-    searchable(o.customer_name ?? "").includes(ql) ||
-    (o.customer_phone ?? "").includes(q.trim()) ||
-    searchable(o.zone ?? "").includes(ql) ||
-    searchable(o.address ?? "").includes(ql) ||
-    searchable(courierOf(o.courier_id)?.name ?? "").includes(ql);
+  /* ---- Derived views ----
+   * اللوحةُ (الأرقامُ والأقسامُ و«استلام الكل») تُحسب من القائمة **كاملةً** دائماً.
+   * كان البحثُ يرشّحها هي نفسَها، فيتغيّر «فلوس بالطريق» بكتابة اسم، وتُسجِّل
+   * «استلام الكل» الطلباتِ الظاهرةَ وحدها. فصار للبحث وضعُه: نتائجُ مسطّحة فوق
+   * **كلّ** الطلبات — كلّ الفروع والقسمين وكلّ الحالات — بلا سقفٍ صامت. */
+  const index = useMemo(
+    () => allOrders.map((o) => indexDelivery(o, courierOf(o.courier_id)?.name)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allOrders, couriers]);
+  const searching = qd.trim() !== "" || fCourier !== "all" || fStatus !== "all";
+  const results = useMemo(() => {
+    if (!searching) return [];
+    return searchDeliveries(index, qd, getDialCode()).filter(({ o }) =>
+      (fCourier === "all" || (fCourier === "none" ? !o.courier_id : o.courier_id === fCourier))
+      && statusIs(o, fStatus));
+  }, [searching, index, qd, fCourier, fStatus]);
+  // سؤالٌ جديد يبدأ من الصفحة الأولى.
+  useEffect(() => { setLimit(RESULTS_PAGE); }, [qd, fCourier, fStatus]);
+  const clearSearch = () => { setQ(""); setFCourier("all"); setFStatus("all"); };
+  /** «ابحث داخل شركة»: العدسةُ على الحامل والمؤشّرُ بحقل البحث. */
+  const searchInside = (courierId: string) => {
+    playTap(); setFCourier(courierId);
+    requestAnimationFrame(() => { searchRef.current?.focus(); searchRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); });
+  };
 
   /** بأيِّ قسمٍ يقع هذا الطلب — **حاملُه** يقرّر لا حالتُه. طلبٌ بلا حاملٍ بعد
    *  (قيد التجهيز) يبقى مع السواق حيث يُسنَد، ويُشار إليه من قسم الشركات. */
   const scopeOf = (o: DeliveryOrder) => carrierScope(courierOf(o.courier_id));
   const inSec = (o: DeliveryOrder) => scopeOf(o) === sec;
 
-  const preparing = orders.filter((o) => o.status === "preparing" && match(o));
-  const outAll = orders.filter((o) => o.status === "out" && match(o));
+  const preparing = orders.filter((o) => o.status === "preparing");
+  const outAll = orders.filter((o) => o.status === "out");
   const outDrivers = outAll.filter((o) => scopeOf(o) === "drivers");
   const outCompanies = outAll.filter((o) => scopeOf(o) === "companies");
   /** بالطريق **بهذا القسم** — الشركةُ ترى بضاعتَها والسائقُ يرى نقدَه. */
   const out = sec === "companies" ? outCompanies : outDrivers;
   const doneList = orders
-    .filter((o) => (o.status === "delivered" || o.status === "returned") && match(o) && inSec(o))
+    .filter((o) => (o.status === "delivered" || o.status === "returned") && inSec(o))
     .sort((a, b) => (b.delivered_at ?? b.returned_at ?? b.created_at).localeCompare(a.delivered_at ?? a.returned_at ?? a.created_at))
     .slice(0, 20);
   /** طلباتُ القسم كلُّها — لتمييز «ماكو شغل هنا» عن «ماكو شغل أبداً». */
@@ -301,14 +382,49 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         <Kpi icon={Undo2} tone="bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" label={t("retail.deliveryReturnedToday", "راجع اليوم")} value={formatNum(returnedToday)} />
       </div>
 
-      {/* Search + couriers registry */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+      {/* البحث — كلُّ طلبات العيادة، بالاسم أو الهاتف أو رقم الطلب أو رقم الفاتورة،
+          ومع عدسةِ حامل («ابحث داخل شركة التوصيل»). */}
+      <div className="flex flex-wrap items-center gap-2" data-dsearch>
+        <div className="relative min-w-52 flex-1">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("retail.deliverySearchPh", "ابحث: زبون، هاتف، عنوان أو سائق…")} />
+          <input ref={searchRef} className="input ltr:pl-9 ltr:pr-9 rtl:pl-9 rtl:pr-9" value={q} data-dsearchinput
+            onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") clearSearch(); }}
+            placeholder={t("retail.deliverySearchPh", "ابحث: اسم الزبون، الهاتف، رقم الطلب أو الفاتورة…")} />
+          {(q || searching) && (
+            <button type="button" onClick={() => { playTap(); clearSearch(); }} aria-label={t("retail.dSearchClear", "مسح البحث")} data-dsearchclear
+              className="absolute top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-ink-subtle hover:bg-surface-2 hover:text-ink ltr:right-1.5 rtl:left-1.5">
+              <X size={15} />
+            </button>
+          )}
         </div>
+        <select className="input h-10 w-auto max-w-56 py-0 text-sm" value={fCourier} data-dsearchcourier
+          onChange={(e) => { playTap(); setFCourier(e.target.value); }} aria-label={t("retail.dSearchCourier", "الحامل")}>
+          <option value="all">{t("retail.dSearchAllCouriers", "كل الشركات والسواق")}</option>
+          {couriers.filter(isCompany).map((c) => <option key={c.id} value={c.id}>🏢 {c.name}{c.active ? "" : ` (${t("retail.courierArchived", "مؤرشف")})`}</option>)}
+          {couriers.filter((c) => !isCompany(c)).map((c) => <option key={c.id} value={c.id}>🛵 {c.name}{c.active ? "" : ` (${t("retail.courierArchived", "مؤرشف")})`}</option>)}
+          <option value="none">{t("retail.deliveryNoCourierShort", "بدون سائق")}</option>
+        </select>
         <Button variant="secondary" leftIcon={<Users size={16} />} onClick={() => { playTap(); setCouriersOpen(true); }}>{t("retail.couriersBtn", "سجل السواق")}</Button>
       </div>
+
+      {/* فشلُ التحميل يُقال — لا لوحةٌ فارغة تبدو «ماكو طلبات». */}
+      {failed && !loading && allOrders.length === 0 ? (
+        <div className="card flex flex-col items-center gap-3 p-10 text-center" data-dloadfailed>
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-danger-50 text-danger-500 dark:bg-danger-500/15"><Bike size={26} /></span>
+          <p className="max-w-md text-ink-subtle">{t("retail.dLoadFailed", "تعذّر تحميل طلبات التوصيل — ما نعرف إذا عندك طلبات أو لا. أعد المحاولة.")}</p>
+          <Button variant="secondary" leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
+      ) : searching ? (
+        <SearchResults
+          results={results} limit={limit} onMore={() => setLimit((n) => n + RESULTS_PAGE)}
+          total={allOrders.length} q={qd.trim()} status={fStatus} onStatus={(s) => { playTap(); setFStatus(s); }}
+          courierName={fCourier === "all" ? null : fCourier === "none" ? t("retail.deliveryNoCourierShort", "بدون سائق") : courierOf(fCourier)?.name ?? null}
+          onClear={clearSearch}
+          render={({ o, hit }) => (
+            <OrderCard key={o.id} o={o} no={orderNo(o)} courier={courierOf(o.courier_id)} busy={busyId === o.id} onRef={openRef} hit={hit} showStatus
+              actions={actionsFor(o)} />
+          )} />
+      ) : (<>
 
       {/* قسمان — لأن المال يتصرّف بشكلٍ مختلف: السائق يسلّم يومَه، والشركة تُحاسَب بعد فترة */}
       <div className="flex items-center gap-1.5 rounded-2xl bg-surface-2 p-1" data-dsec={sec}>
@@ -378,6 +494,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                 <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" data-collectbtn disabled={owed <= 0.009} leftIcon={<HandCoins size={14} />} onClick={() => { playTap(); setCollectFor(c); }}>{t("retail.collectBtn", "تحصيل")}</Button>
                   <Button size="sm" variant="secondary" data-ledgerbtn leftIcon={<History size={14} />} onClick={() => { playTap(); setLedgerFor(c); }}>{t("retail.ledgerBtn", "السجل")}</Button>
+                  <Button size="sm" variant="secondary" data-searchinside={c.id} leftIcon={<Search size={14} />} onClick={() => searchInside(c.id)}>{t("retail.dSearchInside", "بحث بطلباتها")}</Button>
                 </div>
               </div>
             ))}
@@ -418,14 +535,8 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
               <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><PackageOpen size={16} className="text-amber-600" /> {t("retail.deliveryPreparing", "قيد التجهيز")} <span className="chip bg-amber-100 text-2xs font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">{formatNum(preparing.length)}</span></h3>
               <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid gap-2.5 lg:grid-cols-2">
                 {preparing.map((o) => (
-                  <OrderCard key={o.id} o={o} no={orderNo(o)} courier={courierOf(o.courier_id)} busy={busyId === o.id}
-                    actions={
-                      <>
-                        <Button size="sm" leftIcon={<Send size={14} />} onClick={() => { playTap(); setAssigning(o); }}>{t("retail.deliveryDispatch", "إرسال مع سائق")}</Button>
-                        {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
-                        <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => returnOrder(o)}>{t("retail.deliveryCancel", "إلغاء الطلب")}</Button>
-                      </>
-                    } />
+                  <OrderCard key={o.id} o={o} no={orderNo(o)} courier={courierOf(o.courier_id)} busy={busyId === o.id} onRef={openRef}
+                    actions={actionsFor(o)} />
                 ))}
               </motion.div>
             </section>
@@ -459,17 +570,8 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                       </div>
                       <div className="grid gap-2 p-2.5 lg:grid-cols-2">
                         {list.map((o) => (
-                          <OrderCard key={o.id} o={o} no={orderNo(o)} courier={c} busy={busyId === o.id}
-                            actions={
-                              <>
-                                <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>
-                                  {company ? t("retail.deliveredToCustomer", "وصل للزبون") : t("retail.deliveryReceived", "استلمنا الفلوس")}
-                                </Button>
-                                <Button size="sm" variant="secondary" data-cswapbtn leftIcon={<Repeat2 size={14} />} onClick={() => { playTap(); setSwapping(o); }}>{t("retail.swapBtn", "تبديل السائق")}</Button>
-                                {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
-                                <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
-                              </>
-                            } />
+                          <OrderCard key={o.id} o={o} no={orderNo(o)} courier={c} busy={busyId === o.id} onRef={openRef}
+                            actions={actionsFor(o)} />
                         ))}
                       </div>
                     </div>
@@ -482,7 +584,12 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           {/* السجل — delivered / returned */}
           {doneList.length > 0 && (
             <section>
-              <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><ReceiptText size={16} className="text-ink-subtle" /> {t("retail.deliveryHistory", "آخر الطلبات المكتملة")}</h3>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><ReceiptText size={16} className="text-ink-subtle" /> {t("retail.deliveryHistory", "آخر الطلبات المكتملة")}
+                {/* آخرُ عشرين — ويُقال إنها آخرُ عشرين، والكلُّ بضغطة لا خلف سقفٍ صامت. */}
+                <button type="button" data-dallhistory onClick={() => { playTap(); setFStatus("done"); }} className="ms-auto text-2xs font-bold text-brand-600 hover:underline">
+                  {t("retail.dAllHistory", "كل المكتملة ←")}
+                </button>
+              </h3>
               <div className="space-y-1.5">
                 {doneList.map((o) => {
                   const c = courierOf(o.courier_id);
@@ -494,7 +601,12 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                           : <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.deliveryStatusDone", "مستلم")}</Badge>)
                         : <Badge tone="danger"><Undo2 size={12} /> {t("retail.deliveryStatusReturned", "راجع")}</Badge>}
                       <span className="font-bold text-ink">{o.customer_name ?? "—"}</span>
-                      <span className="text-2xs text-ink-subtle">#{orderNo(o)}</span>
+                      <span className="text-2xs text-ink-subtle">{t("retail.dInvShort", "فاتورة")} <bdi dir="ltr">{orderNo(o)}</bdi></span>
+                      {o.courier_ref && (
+                        <button type="button" onClick={() => openRef(o)} data-drefchip={o.courier_ref} className="inline-flex items-center gap-0.5 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono text-2xs font-bold text-sky-800 dark:bg-sky-500/10 dark:text-sky-200">
+                          <Hash size={10} /><bdi dir="ltr">{o.courier_ref}</bdi>
+                        </button>
+                      )}
                       {c && <span className="text-2xs text-ink-subtle">{isCompany(c) ? "🏢" : "🛵"} {c.name}</span>}
                       <span className="ms-auto font-bold tabular-nums text-ink-muted">{money(o.cod_amount)}</span>
                       <span className="text-2xs text-ink-subtle"><Clock size={11} className="inline" /> {timeAgo(o.delivered_at ?? o.returned_at ?? o.created_at)}</span>
@@ -506,11 +618,18 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           )}
         </div>
       ))}
+      </>)}
 
       {/* Assign courier to a preparing order */}
       {assigning && (
         <Modal open onClose={() => setAssigning(null)} title={t("retail.deliveryPickCourier", "اختر السائق")}>
           <div className="space-y-2">
+            {/* رقمُ الطلب لحظةَ التسليم — هنا تعطي الشركةُ رقمَها عادةً. */}
+            <label className="flex items-center gap-2 rounded-xl bg-surface-2 p-2" data-assignref>
+              <Hash size={15} className="shrink-0 text-sky-600" />
+              <input className="input h-9 flex-1 font-mono text-sm" dir="ltr" maxLength={MAX_REF_LEN} value={assignRef}
+                onChange={(e) => setAssignRef(e.target.value)} placeholder={t("retail.dRefPh", "رقم الطلب (اختياري)")} />
+            </label>
             {couriers.filter((c) => c.active).length === 0 && (
               <p className="rounded-xl bg-surface-2 p-3 text-sm text-ink-subtle">{t("retail.deliveryNoCouriersYet", "لا يوجد سواق بعد — أضفهم من «سجل السواق».")}</p>
             )}
@@ -580,7 +699,14 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           settlements={settlements.filter((s) => s.courier_id === ledgerFor.id)}
           onClose={() => setLedgerFor(null)}
           onCollect={() => { const c = ledgerFor; setLedgerFor(null); setCollectFor(c); }}
+          onRef={openRef}
         />
+      )}
+
+      {/* رقمُ الطلب بعد البيع (0225) */}
+      {refFor && (
+        <OrderRefDialog order={refFor} orders={allOrders} onClose={() => setRefFor(null)}
+          onSaved={() => { setRefFor(null); void load(); }} />
       )}
 
       {/* Couriers registry */}
@@ -602,15 +728,32 @@ function Kpi({ icon: Icon, tone, label, value, sub }: { icon: typeof Bike; tone:
 }
 
 /** One delivery order card — customer, place, amounts, slip print + actions. */
-function OrderCard({ o, no, courier, busy, actions }: { o: DeliveryOrder; no: string; courier: Courier | null; busy: boolean; actions: React.ReactNode }) {
-  const { t } = useTranslation();
+function OrderCard({ o, no, courier, busy, actions, onRef, hit, showStatus }: {
+  o: DeliveryOrder; no: string; courier: Courier | null; busy: boolean; actions: React.ReactNode;
+  /** رقمُ الطلب يُضاف أو يُعدَّل من البطاقة (0225). */
+  onRef: (o: DeliveryOrder) => void;
+  /** بنتائج البحث: بماذا طابق — يُقال إن لم يكن ظاهراً بالاسم. */
+  hit?: DeliveryHit;
+  /** بنتائج البحث: الحالةُ والحاملُ ظاهران (اللوحةُ تقولهما بعناوينها). */
+  showStatus?: boolean;
+}) {
+  const { t, i18n } = useTranslation();
   const collect = round2(o.cod_amount + (o.fee_to_clinic ? 0 : o.delivery_fee));
   const company = isCompany(courier);
+  const hitLabel: Partial<Record<DeliveryHit, string>> = {
+    ref: t("retail.dHitRef", "طابق رقم الطلب"),
+    invoice: t("retail.dHitInvoice", "طابق رقم الفاتورة"),
+    phone: t("retail.dHitPhone", "طابق الهاتف"),
+    place: t("retail.dHitPlace", "طابق العنوان"),
+    note: t("retail.dHitNote", "طابق الملاحظة"),
+  };
   return (
-    <motion.div variants={staggerItem} className={cn("card space-y-2 p-3", busy && "opacity-60")}>
+    <motion.div variants={staggerItem} initial="animate" className={cn("card space-y-2 p-3", busy && "opacity-60")} data-dorder={o.id}>
       <div className="flex items-center gap-2">
+        {showStatus && <StatusBadge o={o} />}
         <p className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{o.customer_name ?? "—"}</p>
-        <span className="text-2xs text-ink-subtle">#{no}</span>
+        {hit && hitLabel[hit] && <span className="chip bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" data-dhit={hit}>{hitLabel[hit]}</span>}
+        <span className="text-2xs text-ink-subtle">{t("retail.dInvShort", "فاتورة")} <bdi dir="ltr">{no}</bdi></span>
         <button onClick={() => { playTap(); openDeliverySlip(o, courier, no); }} aria-label={t("retail.deliverySlip", "وصل التوصيل")} title={t("retail.deliverySlip", "وصل التوصيل")}
           className="grid h-8 w-8 place-items-center rounded-lg text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600">
           <Printer size={15} />
@@ -621,7 +764,21 @@ function OrderCard({ o, no, courier, busy, actions }: { o: DeliveryOrder; no: st
         {o.zone && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">📍 {o.zone}</span>}
         {o.address && <span className="flex min-w-0 items-center gap-1"><MapPin size={12} className="shrink-0" /> <span className="truncate">{o.address}</span></span>}
         <span className="flex items-center gap-1 text-ink-subtle"><Clock size={11} /> {timeAgo(o.dispatched_at ?? o.created_at)}</span>
+        {showStatus && courier && <span className="text-2xs text-ink-subtle">{company ? "🏢" : "🛵"} {courier.name}</span>}
+        {showStatus && <span className="text-2xs text-ink-subtle">{formatDate(o.created_at, i18n.language, true)}</span>}
       </div>
+      {/* رقمُ الطلب — ظاهرٌ بخطّه إن وُجد، وزرٌّ صغير لإضافته إن لم يوجد. */}
+      {o.courier_ref ? (
+        <button type="button" onClick={() => onRef(o)} data-drefchip={o.courier_ref} title={t("retail.dRefEdit", "تعديل رقم الطلب")}
+          className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-bold text-sky-800 transition hover:border-sky-400 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+          <Hash size={12} /> <span className="text-2xs font-semibold opacity-80">{t("retail.dRefLabel", "رقم الطلب")}</span> <bdi dir="ltr" className="font-mono">{o.courier_ref}</bdi> <Pencil size={11} className="opacity-60" />
+        </button>
+      ) : (
+        <button type="button" onClick={() => onRef(o)} data-drefadd
+          className="inline-flex items-center gap-1 rounded-lg border border-dashed border-line px-2 py-1 text-2xs font-semibold text-ink-subtle transition hover:border-sky-400 hover:text-sky-700">
+          <Plus size={11} /> {t("retail.dRefAdd", "رقم الطلب")}
+        </button>
+      )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-surface-2 px-3 py-2 text-xs">
         <span className={cn("flex items-center gap-1 font-bold", company ? "text-violet-700 dark:text-violet-300" : "text-sky-700 dark:text-sky-300")}>
           <Wallet size={13} /> {company ? t("retail.deliveryCompanyOwes", "بذمّة الشركة للعيادة") : t("retail.deliveryCourierOwes", "يُسلِّم السائق للعيادة")} {money(o.cod_amount)}
@@ -631,6 +788,72 @@ function OrderCard({ o, no, courier, busy, actions }: { o: DeliveryOrder; no: st
       </div>
       <div className="flex flex-wrap items-center gap-2">{actions}</div>
     </motion.div>
+  );
+}
+
+function StatusBadge({ o }: { o: DeliveryOrder }) {
+  const { t } = useTranslation();
+  if (o.status === "preparing") return <Badge tone="warn"><PackageOpen size={12} /> {t("retail.deliveryPreparing", "قيد التجهيز")}</Badge>;
+  if (o.status === "out") return <Badge tone="sky"><Bike size={12} /> {t("retail.deliveryOut", "بالطريق")}</Badge>;
+  if (o.status === "returned") return <Badge tone="danger"><Undo2 size={12} /> {t("retail.deliveryStatusReturned", "راجع")}</Badge>;
+  return o.collected_at
+    ? <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.deliveryStatusDone", "مستلم")}</Badge>
+    : <Badge tone="warn"><Building2 size={12} /> {t("retail.owedChip", "بذمّة الشركة")}</Badge>;
+}
+
+/** نتائجُ البحث — كلُّ ما طابق، صفحةً صفحة، والعددُ الكلّيُّ مقولٌ دائماً. */
+function SearchResults({ results, limit, onMore, total, q, status, onStatus, courierName, onClear, render }: {
+  results: { o: DeliveryOrder; hit: DeliveryHit }[];
+  limit: number; onMore: () => void; total: number; q: string;
+  status: ResultStatus; onStatus: (s: ResultStatus) => void;
+  courierName: string | null; onClear: () => void;
+  render: (r: { o: DeliveryOrder; hit: DeliveryHit }) => React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const STATUSES: [ResultStatus, string][] = [
+    ["all", t("retail.dStAll", "الكل")],
+    ["preparing", t("retail.deliveryPreparing", "قيد التجهيز")],
+    ["out", t("retail.deliveryOut", "بالطريق")],
+    ["owed", t("retail.ledgerStOwed", "بالذمّة")],
+    ["done", t("retail.deliveryStatusDone", "مستلم")],
+    ["returned", t("retail.deliveryStatusReturned", "راجع")],
+  ];
+  const shown = results.slice(0, limit);
+  return (
+    <section className="space-y-3" data-dresults>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {STATUSES.map(([k, label]) => (
+          <button key={k} type="button" aria-pressed={status === k} data-dstatus={k} onClick={() => onStatus(k)}
+            className={cn("rounded-full px-3 py-1 text-xs font-bold transition",
+              status === k ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>{label}</button>
+        ))}
+      </div>
+      <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink" data-dcount={results.length}>
+        <Search size={15} className="text-brand-600" />
+        {t("retail.dResultsN", { n: formatNum(results.length), total: formatNum(total), defaultValue: "{{n}} طلب من {{total}}" })}
+        {courierName && <span className="chip bg-violet-100 text-2xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{t("retail.dInsideCourier", { name: courierName, defaultValue: "داخل {{name}}" })}</span>}
+        {q && <span className="chip bg-surface-2 text-2xs font-semibold text-ink-muted">«{q}»</span>}
+      </p>
+      {results.length === 0 ? (
+        <div className="card flex flex-col items-center gap-2 p-8 text-center" data-dnoresults>
+          <SearchX size={26} className="text-ink-subtle" />
+          <p className="text-sm text-ink-muted">{q
+            ? t("retail.dNoResultsQ", { q, defaultValue: "ماكو طلب يطابق «{{q}}»." })
+            : t("retail.dNoResults", "ماكو طلبات بهذا الاختيار.")}</p>
+          <p className="max-w-md text-2xs text-ink-subtle">{t("retail.dSearchHint", "البحث يشمل كل الطلبات من أول يوم: اسم الزبون، الهاتف (بأي صيغة)، رقم الطلب، ورقم الفاتورة.")}</p>
+          <Button size="sm" variant="secondary" onClick={() => { playTap(); onClear(); }}>{t("retail.dSearchClear", "مسح البحث")}</Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-2.5 lg:grid-cols-2">{shown.map((r) => render(r))}</div>
+          {results.length > shown.length && (
+            <Button variant="secondary" className="w-full" data-dmore onClick={() => { playTap(); onMore(); }}>
+              {t("retail.dShowMore", { n: formatNum(Math.min(RESULTS_PAGE, results.length - shown.length)), rest: formatNum(results.length - shown.length), defaultValue: "عرض {{n}} أكثر (باقي {{rest}})" })}
+            </Button>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

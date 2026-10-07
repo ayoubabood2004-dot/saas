@@ -15,9 +15,9 @@
 //     للذمّة، ويسِمُ صفَّ التحصيل مفكوكاً — ولا يمحوه. فتحصيلٌ سُجِّل بالغلط
 //     يُصحَّح بالفكّ لا بتزوير رقمٍ آخر يوازنه.
 // ============================================================================
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Boxes, HandCoins, ListOrdered, RefreshCw, Undo2 } from "lucide-react";
+import { Boxes, HandCoins, Hash, ListOrdered, Phone, RefreshCw, Search, Undo2, X } from "lucide-react";
 import type { Courier, CourierSettlement, DeliveryOrder, Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
@@ -27,16 +27,20 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { money, formatNum, formatDate, cn } from "@/lib/utils";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { courierTotals, itemsFromInvoices, orderRows, type LedgerItemRow } from "@/lib/courierLedger";
+import { indexDelivery, searchDeliveries } from "@/lib/deliverySearch";
+import { getDialCode } from "@/lib/settings";
 
 type View = "items" | "orders";
 
-export function CourierLedger({ courier, orders, settlements, onClose, onCollect }: {
+export function CourierLedger({ courier, orders, settlements, onClose, onCollect, onRef }: {
   courier: Courier;
   /** كلُّ طلبات هذه الشركة — تاريخُها كاملاً، لا المفلترةُ بعدسة الفرع. */
   orders: DeliveryOrder[];
   settlements: CourierSettlement[];
   onClose: () => void;
   onCollect: () => void;
+  /** إضافةُ/تعديلُ رقم الطلب (0225) — النافذةُ عند اللوحة، والكشفُ يتحدّث معها. */
+  onRef?: (o: DeliveryOrder) => void;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -46,6 +50,9 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
   const [unReason, setUnReason] = useState("");
   const [unBusy, setUnBusy] = useState<string | null>(null);
   const [view, setView] = useState<View>("items");
+  /** بحثٌ داخل طلبات الشركة — بنفس مطابِق لوحة التوصيل (deliverySearch.ts). */
+  const [q, setQ] = useState("");
+  const qd = useDeferredValue(q);
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [failed, setFailed] = useState(false);
@@ -89,6 +96,13 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
   const totals = useMemo(() => courierTotals(orders, invoiceById), [orders, invoiceById]);
   const itemRows = useMemo(() => itemsFromInvoices(invoiceIds, itemsByInvoice), [invoiceIds, itemsByInvoice]);
   const rows = useMemo(() => orderRows(orders, invoiceById), [orders, invoiceById]);
+  const index = useMemo(() => orders.map((o) => indexDelivery(o)), [orders]);
+  /** الصفوفُ المطابقة بترتيب المطابقة (رقمٌ مطابقٌ تماماً أوّلاً) — وبلا سؤالٍ كلُّها بترتيبها. */
+  const shownRows = useMemo(() => {
+    if (!qd.trim()) return rows;
+    const byId = new Map(rows.map((r) => [r.order.id, r]));
+    return searchDeliveries(index, qd, getDialCode()).map((h) => byId.get(h.o.id)).filter((r): r is typeof rows[number] => !!r);
+  }, [rows, index, qd]);
 
   const goods = itemRows.filter((r) => !r.isService);
   const services = itemRows.filter((r) => r.isService);
@@ -114,6 +128,20 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
           </Button>
         )}
 
+        {/* بحثٌ داخل طلبات هذه الشركة — يقلب العرضَ لـ«الطلبات» لحظةَ الكتابة. */}
+        <div className="relative" data-ledgersearch>
+          <Search size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input h-10 text-sm ltr:pl-9 ltr:pr-9 rtl:pl-9 rtl:pr-9" value={q} data-ledgersearchinput
+            onChange={(e) => { setQ(e.target.value); if (e.target.value.trim()) setView("orders"); }}
+            placeholder={t("retail.ledgerSearchPh", "ابحث بطلبات الشركة: اسم، هاتف، رقم الطلب أو الفاتورة…")} />
+          {q && (
+            <button type="button" onClick={() => setQ("")} aria-label={t("retail.dSearchClear", "مسح البحث")}
+              className="absolute top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-ink-subtle hover:bg-surface-2 ltr:right-1.5 rtl:left-1.5">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
         {/* مبدّلُ العرض: صنفاً صنفاً، أو طلباً طلباً */}
         <div className="flex items-center gap-1.5 rounded-xl bg-surface-2 p-1" data-ledgerview={view}>
           <ViewBtn active={view === "items"} icon={Boxes} onClick={() => setView("items")}
@@ -135,13 +163,32 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
           <ItemsTable goods={goods} services={services} />
         ) : (
           <div className="max-h-[46vh] space-y-1 overflow-y-auto pe-1">
+            {qd.trim() && (
+              <p className="px-1 text-2xs font-bold text-ink-muted" data-ledgercount={shownRows.length}>
+                {t("retail.dResultsN", { n: formatNum(shownRows.length), total: formatNum(rows.length), defaultValue: "{{n}} طلب من {{total}}" })}
+              </p>
+            )}
             {rows.length === 0 ? (
               <Empty text={t("retail.ledgerNoOrders", "ماكو طلبات لهذه الشركة.")} />
-            ) : rows.map((r) => (
+            ) : shownRows.length === 0 ? (
+              <Empty text={t("retail.dNoResultsQ", { q: qd.trim(), defaultValue: "ماكو طلب يطابق «{{q}}»." })} />
+            ) : shownRows.map((r) => (
               <div key={r.order.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line px-2.5 py-1.5 text-xs" data-ledgerorder={r.order.id}>
                 <span className="min-w-0 flex-1 truncate font-semibold text-ink">
-                  {r.order.customer_name || "—"} <span className="font-normal text-ink-subtle">#{invoiceNo(r.order.invoice_id)}</span>
+                  {r.order.customer_name || "—"} <span className="font-normal text-ink-subtle">{t("retail.dInvShort", "فاتورة")} <bdi dir="ltr">{invoiceNo(r.order.invoice_id)}</bdi></span>
+                  {r.order.customer_phone && <span className="ms-1.5 font-normal text-ink-subtle"><Phone size={10} className="inline" /> <bdo dir="ltr">{r.order.customer_phone}</bdo></span>}
                 </span>
+                {r.order.courier_ref ? (
+                  <button type="button" disabled={!onRef} onClick={() => onRef?.(r.order)} data-drefchip={r.order.courier_ref}
+                    className="inline-flex items-center gap-0.5 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono text-2xs font-bold text-sky-800 dark:bg-sky-500/10 dark:text-sky-200">
+                    <Hash size={10} /><bdi dir="ltr">{r.order.courier_ref}</bdi>
+                  </button>
+                ) : onRef && (
+                  <button type="button" onClick={() => onRef(r.order)} data-drefadd
+                    className="rounded-md border border-dashed border-line px-1.5 py-0.5 text-2xs text-ink-subtle hover:text-sky-700">
+                    + {t("retail.dRefAdd", "رقم الطلب")}
+                  </button>
+                )}
                 <StateChip state={r.state} />
                 <span className="text-2xs text-ink-subtle">
                   {formatDate(r.order.delivered_at ?? r.order.returned_at ?? r.order.created_at, i18n.language)}

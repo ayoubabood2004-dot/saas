@@ -7,6 +7,7 @@
 import type { DeliveryOrder, Courier } from "@/types";
 import { getClinicName, getClinicLogo } from "./settings";
 import { money } from "./utils";
+import i18next from "i18next";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -19,6 +20,8 @@ export function buildDeliverySlipHTML(order: DeliveryOrder, courier: Courier | n
   const handOver = order.cod_amount; // what the courier must hand back to the clinic
   const rows: string[] = [];
   const row = (k: string, v: string) => rows.push(`<div class="r"><span class="k">${k}</span><span class="v">${v}</span></div>`);
+  // رقمُ الطلب (0225) أوّلَ سطر: هو ما يُقرأ للشركة بالهاتف «وين وصل طلبي؟».
+  if (order.courier_ref) row(esc(i18next.t("retail.dRefLabel", "رقم الطلب")), `<bdo dir="ltr"><b>${esc(order.courier_ref)}</b></bdo>`);
   row("الزبون", esc(order.customer_name || "—"));
   if (order.customer_phone) row("الهاتف", `<bdo dir="ltr">${esc(order.customer_phone)}</bdo>`);
   if (order.zone) row("المنطقة", esc(order.zone));
@@ -51,7 +54,7 @@ export function buildDeliverySlipHTML(order: DeliveryOrder, courier: Courier | n
   <div class="head">
     ${logo ? `<img src="${logo}" alt="">` : ""}
     <div><div class="c">${esc(clinic)}</div><div class="t">وصل توصيل — الدفع عند الاستلام</div></div>
-    <div class="no">رقم الطلب<b>${esc(orderNo)}</b></div>
+    <div class="no">${esc(i18next.t("retail.slipInvNo", "رقم الفاتورة"))}<b>${esc(orderNo)}</b></div>
   </div>
   <div style="margin-top:8px">${rows.join("")}</div>
   <div class="money">
