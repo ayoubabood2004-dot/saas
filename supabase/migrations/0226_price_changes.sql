@@ -279,6 +279,9 @@ as $$
 $$;
 
 -- رفعٌ قائمٌ (لم يُرجَع) خلال ٣٠ يوماً على هذا الحقل — يُتخطّى إن طُلب.
+-- «قائم» بكلّ موضع = سطرٌ بلا حسم **أو «زالت»**: مادةٌ حُذفت ثمّ استُرجعت تعود بسعر الرفع،
+-- والإرجاعُ يعيد محاولتَها. عدُّ «زالت» محسوماً كان يُرجع الأقدمَ قبل اللاحق فيضيع الأصل،
+-- ويرفعها مرّةً ثانيةً فوق رفعها (أمسكه تدقيقٌ عدائيّ).
 create or replace function public._price_recent(p_clinic uuid)
 returns table (kind text, item_id uuid, field text)
 language sql
@@ -288,7 +291,7 @@ set search_path = public
 as $$
   select distinct l.kind, l.item_id, l.field
     from price_change_lines l join price_changes c on c.id = l.change_id
-   where l.clinic_id = p_clinic and c.clinic_id = p_clinic and l.undo_outcome is null
+   where l.clinic_id = p_clinic and c.clinic_id = p_clinic and (l.undo_outcome is null or l.undo_outcome = 'kept_missing')
      and c.applied_at > now() - interval '30 days'
 $$;
 
@@ -320,9 +323,18 @@ as $$
       cross join s
      where p.sell_price > 0
   ),
+  -- «المرفوعُ حديثاً» يُحكم بالوحدة لا بالسطر: المادةُ بعلبتها ومفردها، والمجموعةُ كلُّها.
+  -- بالسطر كان عضوٌ انضمّ للمجموعة بعد رفعها (أو كان صفراً يومها) يُرفع وحده فيشقّ الرفَّ
+  -- بسعرين، ومفردٌ رُفع وحده يُتخطّى وعلبتُه ترتفع فيصير ×العدد أرخصَ منها (تدقيقٌ عدائيّ).
+  pu as (
+    select pr.*,
+           bool_or(pr.rb or (coalesce(pr.has_sub_unit, false) and coalesce(pr.sub_unit_price, 0) > 0 and pr.rs))
+             over (partition by coalesce('g:' || pr.g, 'p:' || pr.id::text)) as ur
+      from pr
+  ),
   bx as (
-    select pr.*, _price_raise(pr.sell_price, s.bp, pr.st) as nb, (s.skip_recent and pr.rb) as bskip
-      from pr, s
+    select pu.*, _price_raise(pu.sell_price, s.bp, pu.st) as nb, (s.skip_recent and pu.ur) as bskip
+      from pu, s
   ),
   sb as (
     select bx.*, _price_step(bx.sub_unit_price, s.bp, s.rnd, s.mx, p_frac) as sst
@@ -351,7 +363,7 @@ as $$
   select 'product', sb3.id, 'sub_unit_price', sb3.name, sb3.sub_unit_price::numeric(24, 2), coalesce(sb3.al, sb3.ns0),
          sb3.sst, sb3.g, sb3.vg,
          case when sb3.units_per_box > 0 and sb3.purchase_price > 0 then round(sb3.purchase_price / sb3.units_per_box, 2) end,
-         sb3.al is not null, sb3.rs, (s.skip_recent and sb3.rs)
+         sb3.al is not null, sb3.rs, sb3.bskip
     from sb3, s
   union all
   select 'service', sv.id, 'price', sv.name, sv.price::numeric(24, 2), _price_raise(sv.price, s.bp, sv.st), sv.st,
@@ -663,6 +675,8 @@ begin
   get diagnostics v_n = row_count;
   select count(*) into v_exp from price_change_lines where change_id = v_id and kind = 'service';
   if v_n <> v_exp then raise exception 'stale_preview' using hint = 'سعرُ خدمةٍ تغيّر أثناء الحفظ — ما تغيّر شيء، أعد المعاينة.'; end if;
+  -- إذنُ التخطّي ينتهي مع كتابات الرفع: ما بعدها بنفس المعاملة يُدقَّق كالعادة.
+  perform set_config('dv.price_change', '', true);
 
   return _price_summary(v_id, v_clinic);
 end $$;
@@ -692,7 +706,8 @@ begin
                'later', (select jsonb_build_object('id', c2.id, 'title', c2.title, 'applied_at', c2.applied_at)
                            from price_change_lines l2 join price_changes c2 on c2.id = l2.change_id
                           where l2.clinic_id = v_clinic and c2.clinic_id = v_clinic and c2.apply_seq > v_c.apply_seq
-                            and l2.undo_outcome is null and l2.kind = l.kind and l2.item_id = l.item_id and l2.field = l.field
+                            and (l2.undo_outcome is null or l2.undo_outcome = 'kept_missing')
+                            and l2.kind = l.kind and l2.item_id = l.item_id and l2.field = l.field
                           order by c2.apply_seq limit 1))
              order by l.item_name, l.item_id, l.field)
         from price_change_lines l
@@ -766,7 +781,8 @@ begin
      where l.id = any (v_cand)
        and exists (select 1 from price_change_lines l2 join price_changes c2 on c2.id = l2.change_id
                     where l2.clinic_id = v_clinic and c2.clinic_id = v_clinic and c2.apply_seq > v_c.apply_seq
-                      and l2.undo_outcome is null and l2.kind = l.kind and l2.item_id = l.item_id and l2.field = l.field)
+                      and (l2.undo_outcome is null or l2.undo_outcome = 'kept_missing')
+                      and l2.kind = l.kind and l2.item_id = l.item_id and l2.field = l.field)
   )
   select array_agg(l.id) filter (where not (l.id in (select id from direct) or (l.grp is not null and l.grp in (select grp from direct where grp is not null)))),
          count(*) filter (where l.id in (select id from direct) or (l.grp is not null and l.grp in (select grp from direct where grp is not null)))
@@ -776,7 +792,8 @@ begin
   if v_lines is null then
     select c2.title, c2.applied_at into v_block
       from price_change_lines l2 join price_changes c2 on c2.id = l2.change_id
-     where l2.clinic_id = v_clinic and c2.clinic_id = v_clinic and c2.apply_seq > v_c.apply_seq and l2.undo_outcome is null
+     where l2.clinic_id = v_clinic and c2.clinic_id = v_clinic and c2.apply_seq > v_c.apply_seq
+       and (l2.undo_outcome is null or l2.undo_outcome = 'kept_missing')
        and exists (select 1 from price_change_lines l where l.id = any (v_cand)
                     and l.kind = l2.kind and l.item_id = l2.item_id and l.field = l2.field)
      order by c2.apply_seq
@@ -785,13 +802,26 @@ begin
       v_block.title, to_char(v_block.applied_at at time zone 'Asia/Baghdad', 'YYYY-MM-DD'));
   end if;
 
+  -- الصفوفُ تُقفل مسبقاً كما بالحفظ (بلا انتظار، بترتيب المعرّف): إرجاعٌ يقفل سطراً سطراً
+  -- وهو ينتظر كان طرفَ جمودٍ مع بيعةٍ تقفل بترتيب سلّتها — وقد تكون البيعةُ هي الضحيّة.
+  perform _price_lock_rows(v_clinic,
+    (select array_agg(distinct l.item_id) from price_change_lines l where l.id = any (v_lines) and l.kind = 'product'),
+    (select array_agg(distinct l.item_id) from price_change_lines l where l.id = any (v_lines) and l.kind = 'service'));
+
   if v_ref is not null then
     insert into rpc_refs (clinic_id, fn, client_ref) values (v_clinic, 'price_change_undo', v_ref);
   end if;
 
   v_now := clock_timestamp();
-  v_status := case when exists (select 1 from price_change_lines l where l.change_id = p_id and l.clinic_id = v_clinic
-                                   and l.undo_outcome is null and not (l.id = any (v_lines)))
+  -- الحالةُ بعد الإرجاع: يبقى «جزئياً» ما بقي سطرٌ معلّق — خارج هذا الإرجاع، أو داخله
+  -- ومادتُه زالت (ستُحسم «زالت» وتُعاد محاولتُها). الصفوفُ مقفولة فالوجودُ ثابت.
+  v_status := case when exists (
+                select 1 from price_change_lines l
+                 where l.change_id = p_id and l.clinic_id = v_clinic
+                   and (l.undo_outcome is null or l.undo_outcome = 'kept_missing')
+                   and (not (l.id = any (v_lines))
+                        or (l.kind = 'product' and not exists (select 1 from products p where p.id = l.item_id and p.clinic_id = v_clinic))
+                        or (l.kind = 'service' and not exists (select 1 from clinic_services c where c.id = l.item_id and c.clinic_id = v_clinic))))
                    then 'partially_undone' else 'undone' end;
   -- الرأسُ مرّةً واحدة بحالته النهائية (سطرٌ واحد بسجلّ الحركات)، ومعه معرّفُ المعاملة
   -- قبل أيّ سعر — به يعرف التدقيقُ أن ما يلي جزءٌ من هذا الإرجاع.
@@ -839,6 +869,9 @@ begin
       else 'kept_missing' end,
     undone_at = v_now
    where l.id = any (v_lines) and l.clinic_id = v_clinic and (l.undo_outcome is null or l.undo_outcome = 'kept_missing');
+  -- إذنُ التخطّي ينتهي هنا: كتابةٌ لاحقة بنفس المعاملة (مثلاً طفرتان بطلب graphql واحد)
+  -- تُدقَّق كالعادة.
+  perform set_config('dv.price_change', '', true);
 
   v_out := _price_summary(p_id, v_clinic) || jsonb_build_object(
     'restored', v_r, 'blocked', v_blocked,
@@ -865,6 +898,8 @@ declare
   v_reason text := nullif(btrim(p_reason), '');
   v_l      price_change_lines;
   v_seq    bigint;
+  v_ids    uuid[];
+  v_items  uuid[];
   v_n      int;
   v_status text;
 begin
@@ -874,34 +909,51 @@ begin
   select l.* into v_l from price_change_lines l where l.id = p_line and l.clinic_id = v_clinic for update;
   if not found then raise exception 'no_line' using hint = 'السطرُ غيرُ موجود بعيادتك.'; end if;
   -- للسطر الذي حسمه الإرجاعُ «عُدِّل بعد الرفع» وحده: السطرُ المعلّق يُرجَع بالإرجاع العاديّ
-  -- (مع مجموعته كاملة) — بابٌ لسطرٍ واحد هنا كان سيشقّ المجموعة بسعرين.
+  -- (مع مجموعته كاملة).
   if v_l.undo_outcome is distinct from 'kept_changed' then
     raise exception 'not_kept' using hint = 'هذا السطر يرجع بزرّ «رجّع» العادي.';
   end if;
+  -- والمجموعةُ تُفرض كلُّها: محرّرُ المجموعة يكتب أعضاءها بسعرٍ واحد، فيبقون كلُّهم «تعديل
+  -- بيد» بنفس السعر — وفرضُ عضوٍ واحد كان يشقّ الرفَّ بسعرين (أمسكه الفحصُ الحيّ). يدخل
+  -- العضوُ الذي سعرُه الآن هو ما رآه المستخدم؛ ومن انشقّ قبلُ بسعرٍ آخر يبقى بزرّه.
+  select array_agg(l.id order by l.id), array_agg(l.item_id order by l.id) into v_ids, v_items
+    from price_change_lines l
+   where l.change_id = v_l.change_id and l.clinic_id = v_clinic
+     and l.undo_outcome = 'kept_changed' and l.kind = v_l.kind and l.field = v_l.field
+     and (l.id = v_l.id
+          or (v_l.grp is not null and l.grp = v_l.grp and l.kind = 'product'
+              and exists (select 1 from products p where p.id = l.item_id and p.clinic_id = v_clinic
+                             and case l.field when 'sell_price' then p.sell_price else p.sub_unit_price end = p_expected)));
   select c.apply_seq into v_seq from price_changes c where c.id = v_l.change_id and c.clinic_id = v_clinic;
   if exists (select 1 from price_change_lines l2 join price_changes c2 on c2.id = l2.change_id
-              where l2.clinic_id = v_clinic and c2.clinic_id = v_clinic and c2.apply_seq > v_seq and l2.undo_outcome is null
-                and l2.kind = v_l.kind and l2.item_id = v_l.item_id and l2.field = v_l.field) then
+              where l2.clinic_id = v_clinic and c2.clinic_id = v_clinic and c2.apply_seq > v_seq
+                and (l2.undo_outcome is null or l2.undo_outcome = 'kept_missing')
+                and l2.kind = v_l.kind and l2.item_id = any (v_items) and l2.field = v_l.field) then
     raise exception 'later_batch' using hint = 'رفعٌ لاحق غيّر نفسَ المادة — أرجعه أوّلاً.';
   end if;
+  perform _price_lock_rows(v_clinic, case when v_l.kind = 'product' then v_items end, case when v_l.kind = 'service' then v_items end);
   if v_l.field = 'sell_price' then
-    update products set sell_price = v_l.old_price where id = v_l.item_id and clinic_id = v_clinic and sell_price = p_expected;
+    update products p set sell_price = l.old_price from price_change_lines l
+     where l.id = any (v_ids) and p.id = l.item_id and p.clinic_id = v_clinic and p.sell_price = p_expected;
   elsif v_l.field = 'sub_unit_price' then
-    update products set sub_unit_price = v_l.old_price where id = v_l.item_id and clinic_id = v_clinic and sub_unit_price = p_expected;
+    update products p set sub_unit_price = l.old_price from price_change_lines l
+     where l.id = any (v_ids) and p.id = l.item_id and p.clinic_id = v_clinic and p.sub_unit_price = p_expected;
   else
-    update clinic_services set price = v_l.old_price where id = v_l.item_id and clinic_id = v_clinic and price = p_expected;
+    update clinic_services s set price = v_l.old_price where s.id = v_l.item_id and s.clinic_id = v_clinic and s.price = p_expected;
   end if;
   get diagnostics v_n = row_count;
-  if v_n = 0 then
+  -- كلُّ عضوٍ أو لا أحد: سعرٌ تحرّك بين القراءة والكتابة يُرجع المعاملةَ كلَّها.
+  if v_n <> cardinality(v_ids) then
     raise exception 'price_moved' using hint = 'السعرُ الحاليّ تغيّر من آخر ما شفته (أو المادة زالت) — حدّث الصفحة.';
   end if;
-  update price_change_lines set undo_outcome = 'restored', undone_at = clock_timestamp() where id = v_l.id;
-  v_status := case when exists (select 1 from price_change_lines l where l.change_id = v_l.change_id and l.undo_outcome is null)
+  update price_change_lines set undo_outcome = 'restored', undone_at = clock_timestamp() where id = any (v_ids);
+  v_status := case when exists (select 1 from price_change_lines l where l.change_id = v_l.change_id
+                                     and (l.undo_outcome is null or l.undo_outcome = 'kept_missing'))
                    then 'partially_undone' else 'undone' end;
   update price_changes set status = v_status, undone_at = clock_timestamp(), undone_by = auth.uid(), undo_reason = v_reason,
          event_seq = nextval('price_change_seq'), last_event_at = clock_timestamp()
    where id = v_l.change_id and clinic_id = v_clinic;
-  return _price_summary(v_l.change_id, v_clinic) || jsonb_build_object('restored', 1);
+  return _price_summary(v_l.change_id, v_clinic) || jsonb_build_object('restored', cardinality(v_ids));
 end $$;
 
 -- ── السعرُ قبل الرفع — لمرتجع الكاشير ──────────────────────────────────────
@@ -920,14 +972,23 @@ as $$
     select l.item_id, l.old_price, l.new_price, c.applied_at, c.apply_seq
       from price_change_lines l join price_changes c on c.id = l.change_id
      where l.clinic_id = auth_clinic() and c.clinic_id = auth_clinic()
-       and l.kind = 'product' and l.field = 'sell_price' and l.undo_outcome is null
+       and l.kind = 'product' and l.field = 'sell_price' and (l.undo_outcome is null or l.undo_outcome = 'kept_missing')
        and c.applied_at > now() - interval '120 days'
   ),
+  -- السلسلةُ المتّصلة الأخيرة وحدها: رفعٌ «قبله» غيرُ «بعد» سابقه = تعديلٌ بيدٍ بينهما
+  -- (1000→1300، يدويّ 2000، 2000→2500) — «قبل الرفع» هنا 2000 لا 1000. أخذُ أقدم سطرٍ
+  -- مطلقاً كان يقترح للمرتجع سعراً ما بيع به أحدٌ منذ التعديل (تدقيقٌ عدائيّ).
+  b as (
+    select l.*, case when lag(l.new_price) over (partition by l.item_id order by l.apply_seq) = l.old_price then 0 else 1 end as brk
+      from l
+  ),
+  sg as (select b.*, sum(b.brk) over (partition by b.item_id order by b.apply_seq) as seg from b),
+  tail as (select sg.* from sg where sg.seg = (select max(x.seg) from sg x where x.item_id = sg.item_id)),
   agg as (
     select distinct on (item_id) item_id,
            first_value(old_price) over w as o, first_value(applied_at) over w as at,
            last_value(new_price) over w as nw
-      from l
+      from tail
     window w as (partition by item_id order by apply_seq rows between unbounded preceding and unbounded following)
   )
   select coalesce(jsonb_object_agg(item_id, jsonb_build_object('o', o, 'at', at, 'w', nw)), '{}'::jsonb) from agg
@@ -1165,6 +1226,113 @@ as $$
   from e group by is_money order by 1;
 $$;
 revoke all on function public.audit_log_preview(int, int) from public, anon, authenticated;
+
+-- ── نبضُ الكنس يقيس كلَّ صفٍّ بنافذته هو ──────────────────────────────────
+-- نسخةُ 0137 حرفاً (لا تعريفَ بعدها) إلا قائمةَ المال: `purge_audit_log` تبقي أثرَ الرفع
+-- (ومنذ 0210 «باع منتهياً») سنةً، و`audit_purge_lag` كان يقيسه بنافذة ٩٠ يوماً — فمن
+-- اليوم الثامن والتسعين بعد أوّل رفعٍ يصرخ «الكنسُ متوقّف» والكنسُ شغّال (تدقيقٌ عدائيّ).
+-- المقياسُ بُني ألّا يخدعه طبقُ المال؛ فالقائمتان تتبعان بعضهما.
+create or replace function system_health(p_db_cap_mb int default 500)
+returns table (
+  metric  text,      -- معرّفٌ ثابت، تترجمه الواجهة
+  value   numeric,   -- المستهلَك
+  ceiling numeric,   -- السقف
+  unit    text,      -- bytes | count | seconds | days
+  pct     numeric    -- النسبة، مقرّبة لخانةٍ واحدة
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public', 'pg_catalog'
+as $function$
+declare
+  v_cap_bytes numeric := p_db_cap_mb::numeric * 1024 * 1024;
+  v_maxconn   numeric := coalesce(nullif(current_setting('max_connections', true), '')::numeric, 60);
+  v_raw       text;
+  v_timeout_s numeric;
+begin
+  if not is_platform_admin() then
+    raise exception 'not allowed';
+  end if;
+
+  -- مهلةُ دور التطبيق لا مهلةُ جلستنا: سوبابيس يضبطها على الدور، والذي يهمّنا
+  -- هو ما يقتل استعلامَ العيادة لا استعلامَنا نحن. وتُخزَّن نصّاً بوحدةٍ
+  -- متغيّرة ('2min'، '120s'، '120000ms'، أو رقمٌ عارٍ يعني ملي ثانية) —
+  -- فنفكّها صراحةً بدل قسمةٍ ذكيّة تُخطئ بحالةٍ واحدة بصمت.
+  select split_part(s, '=', 2) into v_raw
+  from pg_db_role_setting r, unnest(r.setconfig) s
+  where r.setrole = 'authenticated'::regrole and s like 'statement_timeout=%'
+  limit 1;
+
+  v_timeout_s := case
+    when v_raw is null      then 120                                        -- ما ضُبطت: افتراضُ سوبابيس
+    when v_raw ~ 'ms$'      then (regexp_replace(v_raw, '\D', '', 'g'))::numeric / 1000
+    when v_raw ~ 'min$'     then (regexp_replace(v_raw, '\D', '', 'g'))::numeric * 60
+    when v_raw ~ 's$'       then (regexp_replace(v_raw, '\D', '', 'g'))::numeric
+    when v_raw ~ '^\d+$'    then v_raw::numeric / 1000                      -- بلا وحدة = ملي ثانية
+    else 120 end;
+
+  return query
+  with m(metric, value, ceiling, unit) as (
+    -- ١) حجم القاعدة بالباقة. بلوغُه يوقف الكتابة على كل العيادات معاً.
+    select 'db_size', pg_database_size(current_database())::numeric, v_cap_bytes, 'bytes'
+    -- ٢) الاتصالات. بلوغُها يرفض اتصالاً جديداً — أي «التطبيق ما يفتح».
+    union all
+    select 'connections', (select count(*)::numeric from pg_stat_activity), v_maxconn, 'count'
+    -- ٣) أطولُ استعلامٍ شغّال الآن مقابل المهلة. اقترابُه يعني تقريراً على
+    --    وشك أن يُقتل بمنتصفه.
+    union all
+    select 'longest_query',
+           coalesce((select max(extract(epoch from (now() - query_start)))::numeric
+                     from pg_stat_activity
+                     where state = 'active' and query_start is not null
+                       and pid <> pg_backend_pid()), 0),
+           v_timeout_s, 'seconds'
+    -- ٤) سجلّ التدقيق: أسرعُ الجداول نمواً، ونصفُ القاعدة يوم قِيس أوّلَ مرّة.
+    union all
+    select 'audit_log_size',
+           coalesce(pg_total_relation_size(to_regclass('public.audit_log'))::numeric, 0),
+           v_cap_bytes, 'bytes'
+    -- ٥) **تأخُّرُ الكنس** — نبضُ الجدولة، وأهمُّ رقمٍ هنا.
+    --
+    --    ولا نقيس «عمرَ أقدم صفّ»: الاحتفاظ مُتدرّج (٩٠ يوماً للحركة اليومية،
+    --    و٣٦٥ لأثر المال — هجرة 0129)، فأقدمُ صفٍّ يقترب من السنة **بالتصميم**
+    --    ويبقى هناك. مقياسٌ كهذا يصرخ كل يوم بعد السنة الأولى، فيُطفأ ويُهمَل،
+    --    فلا يُسمَع يوم يصير الصراخ حقيقياً.
+    --
+    --    فنقيس بدلَه: كم يوماً **تجاوز** أقدمُ صفٍّ نافذتَه هو. الكنس يوميّ،
+    --    فالصحيح صفرٌ أو قريبٌ منه مهما كبر عمرُ النظام؛ والرقم لا يتحرّك إلا
+    --    إذا توقّفت الجدولة فعلاً. سبعةُ أيامٍ سقفاً = أسبوعٌ بلا كنس.
+    union all
+    select 'audit_purge_lag',
+           coalesce((select max(greatest(0,
+                       extract(epoch from (now() - created_at)) / 86400
+                       - case when (entity is not null and entity = any (array[
+                           'invoices','invoice_items','purchases','purchase_items',
+                           'purchase_payments','expenses','products','delivery_orders','store_orders',
+                           'price_changes']))
+                           or coalesce(entity = 'client' and details->>'event' = 'sale.expired', false)
+                         then 365 else 90 end))::numeric
+                     from audit_log), 0),
+           7, 'days'
+    -- ٦) ونفسُه لمراجع النداءات (0136): نافذتها سبعة أيام.
+    union all
+    select 'rpc_refs_purge_lag',
+           coalesce((select max(greatest(0,
+                       extract(epoch from (now() - created_at)) / 86400 - 7))::numeric
+                     from rpc_refs), 0),
+           7, 'days'
+    -- ٧) بئرُ الأرقام التسلسلية للحيوانات (0126): ٩٠ ألفاً بخمس خانات
+    --    و٩٠٠ ألف بستّ. نضوبُها لا يُفشل شيئاً (الدالّة تنتقل لصيغة 'P…')
+    --    لكنه يغيّر شكلَ الأرقام، فيُرى قبل أن يُفاجئ.
+    union all
+    select 'pet_serials', (select count(*)::numeric from pets), 990000, 'count'
+  )
+  select m.metric, m.value, m.ceiling, m.unit,
+         round(case when m.ceiling > 0 then m.value * 100 / m.ceiling else 0 end, 1)
+  from m
+  order by 5 desc;   -- الأقربُ للسقف أوّلاً
+end $function$;
 
 comment on table price_changes is
   'رفعُ الأسعار بنسبة (0226): رأسٌ لكلّ رفع بنسبته ونطاقه وبصمته ومن رفعه، وحالةُ إرجاعه. الكتابةُ من الدوالّ وحدها.';

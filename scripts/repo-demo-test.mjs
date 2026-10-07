@@ -1439,6 +1439,43 @@ console.log("▸ رفعُ الأسعار بالتجريبيّ (0226) — نفس�
   const first = fifty[0];
   let e4 = null; try { await repo.undoPriceChange(first.id, null, "x", null); } catch (e) { e4 = e; }
   check("إرجاعُ الأقدم ورفعٌ لاحقٌ قائمٌ على نفس المادة ⇒ later_batch (لا يضيع الأصل)", e4?.message === "later_batch" && prices().rc === 3750);
+  // «رجّعه للأصل» على مجموعة: الأعضاءُ بنفس السعر يرجعون معاً، والمنشقُّ بسعرٍ آخر يبقى (كالخادم).
+  const d0 = dbNow();
+  d0.products.push(...["g1", "g2", "g3"].map((id) => P(id, `مجموعة ${id}`, null, { sell_price: 2000, purchase_price: 1000, category: "grp", bulk_group: "GY" })));
+  mem.set(DB_KEY, JSON.stringify(d0));
+  const sg = { ...spec, p_categories: null, p_ids: ["g1"], skip_recent: false };
+  const ag = await repo.applyPriceChange(sg, (await repo.previewPriceChange(sg)).plan_hash, null, null);
+  setPrice("g1", 2700); setPrice("g2", 2700); setPrice("g3", 2800);
+  const ug = await repo.undoPriceChange(ag.id, null, "x", null);
+  const gl = (await repo.priceChangeDetail(ag.id)).lines;
+  const fg = await repo.forcePriceLine(gl.find((l) => l.item === "g1").id, 2700, "الأصل");
+  check("فرضُ عضوٍ من مجموعة يرجّع الأعضاءَ بنفس السعر معاً ويترك المنشقّ", ug.kept_changed === 3 && fg.restored === 2
+    && prices().g1 === 2000 && prices().g2 === 2000 && prices().g3 === 2800, JSON.stringify({ r: fg.restored, g: [prices().g1, prices().g2, prices().g3] }));
+  // «زالت» سطرٌ قائم (كالخادم): 1000 → 1300 → 1750، تُحذف، يُرجَع اللاحق «جزئياً» والأقدمُ محجوز،
+  // ثمّ تُسترجع فيُرجَعان بالترتيب ⇒ 1000 بالضبط.
+  const push = (row) => { const d = dbNow(); d.products.push(row); mem.set(DB_KEY, JSON.stringify(d)); };
+  push(P("k", "زالت", null, { sell_price: 1000, purchase_price: 500, category: "kk" }));
+  const sk = { ...spec, p_categories: null, p_ids: ["k"], skip_recent: false, pct_bp: 3000 };
+  const ka = await repo.applyPriceChange(sk, (await repo.previewPriceChange(sk)).plan_hash, null, null);
+  const kb = await repo.applyPriceChange(sk, (await repo.previewPriceChange(sk)).plan_hash, null, null);
+  const kept = dbNow().products.find((x) => x.id === "k");
+  { const d = dbNow(); d.products = d.products.filter((x) => x.id !== "k"); mem.set(DB_KEY, JSON.stringify(d)); }
+  const ukb = await repo.undoPriceChange(kb.id, null, "x", null);
+  let ek = null; try { await repo.undoPriceChange(ka.id, null, "x", null); } catch (e) { ek = e; }
+  check("«زالت»: إرجاعُ اللاحق والمادةُ محذوفة «جزئي»، والأقدمُ محجوزٌ به", kept.sell_price === 1750 && ukb.kept_missing === 1 && ukb.status === "partially_undone" && ek?.message === "later_batch", JSON.stringify({ k: kept.sell_price, ukb, e: ek?.message }));
+  push(kept);
+  await repo.undoPriceChange(kb.id, null, "x", null);
+  const uka = await repo.undoPriceChange(ka.id, null, "x", null);
+  check("  وبعد الاسترجاع: اللاحقُ ثمّ الأقدم ⇒ 1000 بالضبط", prices().k === 1000 && uka.status === "undone", JSON.stringify({ k: prices().k, s: uka.status }));
+  // «قبل الرفع» من السلسلة المتّصلة الأخيرة: 1000 → 1300، يدويّ 2000، 2000 → 2500 ⇒ 2000.
+  push(P("h", "سلسلة مقطوعة", null, { sell_price: 1000, purchase_price: 500, category: "hh" }));
+  const sh = { ...spec, p_categories: null, p_ids: ["h"], skip_recent: false, pct_bp: 3000 };
+  await repo.applyPriceChange(sh, (await repo.previewPriceChange(sh)).plan_hash, null, null);
+  setPrice("h", 2000);
+  const sh2 = { ...sh, pct_bp: 2500 };
+  await repo.applyPriceChange(sh2, (await repo.previewPriceChange(sh2)).plan_hash, null, null);
+  const ph = (await repo.priceRaisePrior()).h;
+  check("السعرُ قبل الرفع بعد تعديلٍ يدويّ بين رفعين: 2000 لا 1000", ph?.o === 2000 && ph?.w === 2500, JSON.stringify(ph));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

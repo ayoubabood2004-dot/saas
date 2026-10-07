@@ -4041,6 +4041,122 @@ chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: الرفوعُ وال
 chk "الأدواتُ الداخلية لا يناديها الداخلون، والأبوابُ ممنوعةٌ عن anon" \
     "select (not has_function_privilege('authenticated','public._price_plan(uuid,jsonb,boolean)','execute') and not has_function_privilege('authenticated','public._price_lock_rows(uuid,uuid[],uuid[])','execute') and not has_function_privilege('authenticated','public._price_change_live()','execute') and not has_function_privilege('anon','public.price_change_apply(jsonb,text,text,text)','execute') and has_function_privilege('authenticated','public.price_change_apply(jsonb,text,text,text)','execute'))::text" "true"
 
+# «رجّعه للأصل» على مجموعة: محرّرُ المجموعة يكتب أعضاءها بسعرٍ واحد فيبقون كلُّهم «تعديل بيد»؛
+# فرضُ عضوٍ واحد كان يشقّ الرفَّ بسعرين (أمسكه الفحصُ الحيّ). ومن انشقّ قبلُ بسعرٍ آخر يبقى.
+PG1=${X}21; PG2=${X}22; PG3=${X}23
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, bulk_group, stock) values
+     ('$PG1','$C1','مجموعة ي ١',2000,1000,'cat226b','GY',1), ('$PG2','$C1','مجموعة ي ٢',2000,1000,'cat226b','GY',1),
+     ('$PG3','$C1','مجموعة ي ٣',2000,1000,'cat226b','GY',1) on conflict (id) do nothing" >/dev/null
+SPECG='{"pct_bp":2500,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PG1'"],"p_exclude":[],"skip_recent":false}'
+HG=$(W "select $(_prev $C1 "$SPECG")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECG''::jsonb, ''$HG'', null, null)')" >/dev/null
+CG=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+W "select _rls_try('$C1', 'update products set sell_price = 2700 where id in (''$PG1'', ''$PG2'')')" >/dev/null
+W "select _rls_try('$C1', 'update products set sell_price = 2800 where id = ''$PG3''')" >/dev/null
+R=$(W "select (r->>'restored')||'/'||(r->>'kept_changed') from (select _pf('$C1', 'select price_change_undo(''$CG'', null, ''x'', null)::text')::jsonb r) x")
+LG=$(W "select id from price_change_lines where change_id='$CG' and item_id='$PG1'")
+LG3=$(W "select id from price_change_lines where change_id='$CG' and item_id='$PG3'")
+FG=$(W "select _pf('$C1', 'select price_change_force(''$LG'', 2700, ''الأصل'')::text')::jsonb->>'restored'")
+chk "فرضُ عضوٍ من مجموعة يرجّع أعضاءها الذين بنفس السعر معاً (2000,2000) ويترك المنشقّ 2800" \
+    "select '$R|$FG|'||(select string_agg(sell_price::int::text, ',' order by id) from products where id in ('$PG1','$PG2','$PG3'))||'|'||(select string_agg(coalesce(undo_outcome,'-'), ',' order by item_id) from price_change_lines where change_id='$CG')" "0/3|2|2000,2000,2800|restored,restored,kept_changed"
+chk "  وفرضٌ بسعرٍ غير الحاليّ يُرفض ولا يمسّ أحداً" \
+    "select $(_perr $C1 "select price_change_force(''$LG3'', 2700, ''x'')")||'|'||(select sell_price::int from products where id='$PG3')::text" "price_moved|2800"
+F3=$(W "select _pf('$C1', 'select price_change_force(''$LG3'', 2800, ''x'')::text')::jsonb->>'restored'")
+chk "  وبسعره الحاليّ يرجع وحده 2000" \
+    "select '$F3|'||(select string_agg(sell_price::int::text, ',' order by id) from products where id in ('$PG1','$PG2','$PG3'))" "1|2000,2000,2000"
+
+# ── ما أمسكه التدقيقُ العدائيّ ──────────────────────────────────────────────
+# «زالت» سطرٌ قائم لا محسوم: 1000 → A 1300 → B 1750، تُحذف المادة، يُرجَع B ثمّ A. عدُّه
+# محسوماً كان يُمرّ A فيحسمه «تعديل بيد» ويُرجع B إلى 1300 بعد الاسترجاع — فيضيع الأصل.
+PK=${X}31
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, stock) values ('$PK','$C1','زالت ثم رجعت',1000,500,'cat226c',1) on conflict (id) do nothing" >/dev/null
+SPECK='{"pct_bp":3000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PK'"],"p_exclude":[],"skip_recent":false}'
+HK=$(W "select $(_prev $C1 "$SPECK")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECK''::jsonb, ''$HK'', null, null)')" >/dev/null
+CKA=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+HK2=$(W "select $(_prev $C1 "$SPECK")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECK''::jsonb, ''$HK2'', null, null)')" >/dev/null
+CKB=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+W "select _rls_try('$C1', 'delete from products where id = ''$PK''')" >/dev/null
+UB=$(W "select (r->>'kept_missing')||'/'||(r->>'status') from (select _pf('$C1', 'select price_change_undo(''$CKB'', null, ''x'', null)::text')::jsonb r) x")
+chk "«زالت»: إرجاعُ اللاحق والمادةُ محذوفة يبقيه «جزئياً» (سطرُه معلّقٌ يُعاد) لا «مرجوعاً»" "select '$UB'" "1/partially_undone"
+chk "  والأقدمُ يُحجز به (لا يُحسم «تعديل بيد» والأصلُ 1000 بيده)" \
+    "select $(_perr $C1 "select price_change_undo(''$CKA'', null, ''x'', null)")" "later_batch"
+W "select _rls_try('$C1', 'select restore_product(''$PK'')')" >/dev/null
+W "select _pf('$C1', 'select price_change_undo(''$CKB'', null, ''x'', null)::text')" >/dev/null
+W "select _pf('$C1', 'select price_change_undo(''$CKA'', null, ''x'', null)::text')" >/dev/null
+chk "  وبعد الاسترجاع: اللاحقُ ثمّ الأقدم ⇒ 1000 بالضبط، والرفعان «مرجوع»" \
+    "select (select sell_price::int from products where id='$PK')::text||'|'||(select string_agg(status, ',' order by apply_seq) from price_changes where id in ('$CKA','$CKB'))" "1000|undone,undone"
+
+# المرفوعُ حديثاً بالوحدة: عضوٌ انضمّ لمجموعةٍ بعد رفعها لا يُرفع وحده.
+PZ1=${X}41; PZ2=${X}42; PZ3=${X}43; PS=${X}44
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, bulk_group, stock) values
+     ('$PZ1','$C1','مجموعة ز ١',5000,1000,'cat226d','GZ',1), ('$PZ2','$C1','مجموعة ز ٢',5000,1000,'cat226d','GZ',1),
+     ('$PS','$C1','علبة بلا مفرد',10000,5000,'cat226d',null,1) on conflict (id) do nothing" >/dev/null
+SPECZ='{"pct_bp":2500,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PZ1'"],"p_exclude":[],"skip_recent":false}'
+HZ=$(W "select $(_prev $C1 "$SPECZ")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECZ''::jsonb, ''$HZ'', null, null)')" >/dev/null
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, bulk_group, stock) values ('$PZ3','$C1','مجموعة ز ٣',6250,1000,'cat226d','GZ',1) on conflict (id) do nothing" >/dev/null
+SPECZ2='{"pct_bp":2500,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PZ1'"],"p_exclude":[],"skip_recent":true}'
+chk "مجموعةٌ رُفعت وانضمّ لها عضوٌ بسعرها: الرفعُ الثاني يتخطّاها كلَّها (لا 6250/6250/8000)" \
+    "select (d->'counts'->>'lines')||'/'||(d->'counts'->>'recent_skipped') from (select $(_prev $C1 "$SPECZ2") d) x" "0/3"
+SPECS='{"pct_bp":2000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PS'"],"p_exclude":[],"skip_recent":false}'
+HS=$(W "select $(_prev $C1 "$SPECS")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECS''::jsonb, ''$HS'', null, null)')" >/dev/null
+W "update products set has_sub_unit = true, sub_unit_price = 1200, units_per_box = 10 where id = '$PS'" >/dev/null
+SPECS2='{"pct_bp":2000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PS'"],"p_exclude":[],"skip_recent":true}'
+chk "  وعلبةٌ رُفعت حديثاً يتبعها مفردُها بالتخطّي (لا مفردٌ يُرفع وحده)" \
+    "select (d->'counts'->>'lines')||'/'||(d->'counts'->>'recent_skipped') from (select $(_prev $C1 "$SPECS2") d) x" "0/2"
+
+# «قبل الرفع» من السلسلة المتّصلة الأخيرة: 1000 → 1300، يدويّ 2000، 2000 → 2500 ⇒ 2000.
+PH=${X}51
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, stock) values ('$PH','$C1','سلسلة مقطوعة',1000,500,'cat226e',1) on conflict (id) do nothing" >/dev/null
+SPECH='{"pct_bp":3000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PH'"],"p_exclude":[],"skip_recent":false}'
+HH=$(W "select $(_prev $C1 "$SPECH")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECH''::jsonb, ''$HH'', null, null)')" >/dev/null
+W "select _rls_try('$C1', 'update products set sell_price = 2000 where id = ''$PH''')" >/dev/null
+SPECH2='{"pct_bp":2500,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PH'"],"p_exclude":[],"skip_recent":false}'
+HH2=$(W "select $(_prev $C1 "$SPECH2")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECH2''::jsonb, ''$HH2'', null, null)')" >/dev/null
+chk "السعرُ قبل الرفع بعد تعديلٍ يدويّ بين رفعين: 2000 (ما بيع به) لا 1000" \
+    "select (r->'$PH'->>'o')::numeric::int||'→'||(r->'$PH'->>'w')::numeric::int from (select _pf('$RCP', 'select price_raise_prior()::text')::jsonb r) x" "2000→2500"
+
+# إذنُ تخطّي التدقيق ينتهي مع كتابات الرفع — ما بعدها بنفس المعاملة يُدقَّق.
+PF=${X}61
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, stock) values ('$PF','$C1','إذن التخطي',4000,1000,'cat226f',1) on conflict (id) do nothing" >/dev/null
+SPECF='{"pct_bp":1000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PF'"],"p_exclude":[],"skip_recent":false}'
+HF=$(W "select $(_prev $C1 "$SPECF")->>'plan_hash'")
+chk "بعد الرفع بنفس المعاملة: الإذنُ مفرَّغ (طفرةٌ ثانيةٌ بطلبٍ واحد تُدقَّق)" \
+    "select _pf('$C1', 'select coalesce(nullif(current_setting(''dv.price_change'', true), ''''), ''cleared'') from (select price_change_apply(''$SPECF''::jsonb, ''$HF'', null, null) as r) x')" "cleared"
+CF=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+chk "  وبعد الإرجاع كذلك" \
+    "select _pf('$C1', 'select coalesce(nullif(current_setting(''dv.price_change'', true), ''''), ''cleared'') from (select price_change_undo(''$CF'', null, ''x'', null) as r) x')" "cleared"
+
+# الإرجاعُ يقفل مسبقاً كالحفظ: صفٌّ بيد بيعةٍ ⇒ «مشغول» لا جمودٌ تكون البيعةُ ضحيّتَه.
+PU=${X}71
+W "insert into products(id, clinic_id, name, sell_price, purchase_price, category, stock) values ('$PU','$C1','قفل الإرجاع',3000,1000,'cat226g',1) on conflict (id) do nothing" >/dev/null
+SPECU='{"pct_bp":1000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PU'"],"p_exclude":[],"skip_recent":false}'
+HU=$(W "select $(_prev $C1 "$SPECU")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECU''::jsonb, ''$HU'', null, null)')" >/dev/null
+CU=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+( psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "begin; select 1 from products where id='$PU' for update; select pg_sleep(4); commit;" >/dev/null 2>&1 & )
+sleep 0.7
+chk "الإرجاعُ وصفٌّ مقفولٌ ببيعة: «busy» ولا يمسّ شيئاً" \
+    "select $(_perr $C1 "select price_change_undo(''$CU'', null, ''x'', null)")||'|'||(select sell_price::int from products where id='$PU')::text||'|'||(select status from price_changes where id='$CU')" "busy|3300|applied"
+sleep 3.5
+W "select _pf('$C1', 'select price_change_undo(''$CU'', null, ''x'', null)::text')" >/dev/null
+chk "  وبعد البيعة يرجع 3000" "select sell_price::int::text from products where id='$PU'" "3000"
+
+# نبضُ الكنس يقيس أثرَ الرفع بنافذة المال (سنة) لا ٩٠ يوماً.
+W "delete from audit_log where created_at < now() - interval '80 days';
+   insert into audit_log(clinic_id,action,entity,details,created_at) values
+     (gen_random_uuid(),'INSERT','price_changes','{}'::jsonb, now() - interval '100 days'),
+     (gen_random_uuid(),'X','client','{\"event\":\"sale.expired\"}'::jsonb, now() - interval '100 days');
+   update _dvtest_flags set admin = true;" >/dev/null
+chk "أثرُ رفعٍ عمرُه ١٠٠ يوم ليس «كنساً متوقّفاً» (نافذتُه سنة كما بـpurge_audit_log)" \
+    "select value::int::text from public.system_health() where metric='audit_purge_lag'" "0"
+W "update _dvtest_flags set admin = false; delete from audit_log where created_at < now() - interval '80 days';" >/dev/null
+
 # ── التطابق: الحسابُ والمعاينةُ كاملةً بين القاعدة وpriceRaise.ts (المصدرُ نفسُه) ──
 PRF=$(mktemp -d)
 node "$HERE/../../scripts/price-fixture.mjs" "$PRF" >/dev/null

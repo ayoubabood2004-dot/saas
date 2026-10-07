@@ -243,7 +243,11 @@ export interface PlanProduct {
 export interface PlanService { id: string; name: string; price: number; category_id: string; cost?: number | null }
 
 /** مفتاحُ المجموعة: فارغٌ أو مسافاتٌ = لا مجموعة (`nullif(btrim(..),'')` بالقاعدة). */
-export const groupKeyOf = (g: string | null | undefined): string | null => (g && g.trim() ? g : null);
+/** مفتاحُ المجموعة كما بالقاعدة حرفاً: `nullif(btrim(bulk_group), '')` — btrim تقصّ المسافةَ وحدها. */
+export const groupKeyOf = (g: string | null | undefined): string | null => {
+  const k = (g ?? "").replace(/^ +| +$/g, "");
+  return k ? k : null;
+};
 
 /** المنتجاتُ الداخلة بالرفع.
  *  • الأساس: منتجاتُ العيادة بلا مخزن حقل (`farm_id`) — **قبل** فرز السعر.
@@ -329,8 +333,19 @@ export function buildPlan(
   const P = productsInScope(products, spec);
   const S = servicesInScope(services, spec);
   const lines: PlanLine[] = [];
-  /** ما رُفع حديثاً يُتخطّى سطرُه (لا مادتُه كلُّها) إن طُلب — ويُعدّ. */
+  /** ما رُفع حديثاً يُتخطّى إن طُلب — ويُعدّ. المنتجُ بوحدته: علبتُه ومفردُه، والمجموعةُ
+   *  كلُّها (مرآةُ `pu` بالقاعدة). بالسطر كان عضوٌ انضمّ بعد الرفع يُرفع وحده فيشقّ الرفّ،
+   *  ومفردٌ رُفع وحده يُتخطّى وعلبتُه ترتفع فيصير ×العدد أرخصَ منها. */
   let recentSkipped = 0;
+  const unitOf = (p: PlanProduct) => { const g = groupKeyOf(p.bulk_group); return g ? `g:${g}` : `p:${p.id}`; };
+  const subOn = (p: PlanProduct) => !!p.has_sub_unit && Number(p.sub_unit_price ?? 0) > 0;
+  const hot = new Set<string>();
+  if (spec.skip_recent) {
+    for (const p of P.rows) {
+      if (recent.has(`product:${p.id}:sell_price`) || (subOn(p) && recent.has(`product:${p.id}:sub_unit_price`))) hot.add(unitOf(p));
+    }
+  }
+  const skipUnit = (p: PlanProduct): boolean => { if (hot.has(unitOf(p))) { recentSkipped++; return true; } return false; };
   const skip = (k: PlanLine["k"], id: string, f: PriceField): boolean => {
     if (spec.skip_recent && recent.has(`${k}:${id}:${f}`)) { recentSkipped++; return true; }
     return false;
@@ -348,14 +363,14 @@ export function buildPlan(
     const g = groupKeyOf(p.bulk_group);
     const vg = !P.direct.has(p.id);
     const box = raisePrice(p.sell_price, bp, round, max, frac);
-    const boxSkipped = skip("product", p.id, "sell_price");
+    const boxSkipped = skipUnit(p);
     if (!boxSkipped) {
       if (vg) viaGroup++;
       lines.push({ k: "product", id: p.id, f: "sell_price", n: p.name, o: p.sell_price, w: box.price, s: box.step, g,
         fl: flagsOf("product", p.id, "sell_price", p.sell_price, box.price, p.purchase_price, vg) });
     }
     const sub0 = Number(p.sub_unit_price ?? 0);
-    if (p.has_sub_unit && sub0 > 0 && !skip("product", p.id, "sub_unit_price")) {
+    if (subOn(p) && !skipUnit(p)) {
       const sub = raisePrice(sub0, bp, round, max, frac);
       // المقارنةُ بما ستصيره العلبةُ فعلاً: علبةٌ تُخطّيت (رُفعت حديثاً) باقيةٌ بسعرها.
       const aligned = alignSub(p.sell_price, boxSkipped ? p.sell_price : box.price, sub0, sub.price, sub.step, p.units_per_box);

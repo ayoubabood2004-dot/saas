@@ -14,7 +14,7 @@ import { useOverride } from "@/lib/managerOverride";
 import { Modal } from "@/components/Modal";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { describeDbError, withTimeout } from "@/lib/errors";
-import { cn, formatDate, formatNum, money, searchable, uuid } from "@/lib/utils";
+import { cn, currencySymbol, formatDate, formatDec, formatNum, searchable, uuid } from "@/lib/utils";
 import { playSuccess, playWarning } from "@/lib/sounds";
 import { getActiveCurrency } from "@/lib/currency";
 import { getServiceCatalog } from "@/lib/services";
@@ -39,6 +39,10 @@ import {
  *   (وله «رجّعه للأصل» صريح)، ورفعٌ لاحقٌ قائمٌ يحجز سطرَه حتى يُرجَع أوّلاً.
  * • للمدير وحده، ولا تُفتح على جهازٍ مقفول (لا استثناءَ «تعديل المخزن» هنا).
  * ========================================================================= */
+
+/** السعرُ كما هو بالقاعدة: كسرٌ قديم (1,562.5) يُعرض بكسره. `money` يقرّب الدينارَ للعرض
+ *  فيصير «4.5 → 6» «5 → 6 (+33٪)» — مقارنةٌ كاذبة بشاشةٍ وظيفتُها المقارنة. */
+const exactMoney = (n: number) => `${formatDec(n)} ${currencySymbol()}`;
 
 type PMode = "all" | "category" | "company" | "chosen";
 type SMode = "all" | "category" | "chosen";
@@ -367,7 +371,7 @@ function NewRaise({ onDone, onHistory }: { onDone: () => void; onHistory: () => 
             <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-ink" data-praise-examples>
               <span className="font-semibold">{t("praise.example", "مثال:")}</span>{" "}
               {examples.map((x, i) => (
-                <span key={x.o} className="tabular-nums">{i > 0 ? " · " : ""}{money(x.o)} ← {money(x.w)}</span>
+                <span key={x.o} className="tabular-nums">{i > 0 ? " · " : ""}{exactMoney(x.o)} ← {exactMoney(x.w)}</span>
               ))}
             </p>
           )}
@@ -501,7 +505,7 @@ function Preview({ P, products, skipRecent, setSkipRecent, onExclude, onApply, l
       <section className="space-y-2" data-praise-warnings>
         {P.counts.recent_skipped > 0 && (
           <Warn tone="warn">
-            <span>{t("praise.wRecent", { n: formatNum(P.counts.recent_skipped), defaultValue: "{{n}} سعر انرفع خلال آخر ٣٠ يوم — ما راح يرتفع مرة ثانية." })}</span>
+            <span>{t("praise.wRecent", { n: formatNum(P.counts.recent_skipped), defaultValue: "{{n}} سعر ما راح يرتفع: مادته (أو مجموعتها) انرفعت خلال آخر ٣٠ يوم." })}</span>
             <label className="mt-1 flex items-center gap-1.5 font-semibold">
               <input type="checkbox" checked={!skipRecent} onChange={(e) => setSkipRecent(!e.target.checked)} data-praise-onTop />
               {t("praise.wRecentOnTop", "ارفعها فوق الرفع السابق (يعني رفع على رفع)")}
@@ -522,7 +526,7 @@ function Preview({ P, products, skipRecent, setSkipRecent, onExclude, onApply, l
         {cnt("sub_aligned") > 0 && <Warn tone="info">{t("praise.wSubAligned", { n: formatNum(cnt("sub_aligned")), defaultValue: "{{n}} سعر مفرد انرفع شوية زيادة حتى ما يصير مجموع الحبّات أرخص من العلبة." })}</Warn>}
         {promos.map((p) => (
           <Warn key={p.key} tone="warn">
-            {t("praise.wPromo", { name: p.name, a: money(p.before), b: money(p.after), defaultValue: "عرض «{{name}}» بسعر ثابت: الخصم لكل مجموعة كان {{a}} وراح يصير {{b}} — عدّله من الإعدادات إذا تريد." })}
+            {t("praise.wPromo", { name: p.name, a: exactMoney(p.before), b: exactMoney(p.after), defaultValue: "عرض «{{name}}» بسعر ثابت: الخصم لكل مجموعة كان {{a}} وراح يصير {{b}} — عدّله من الإعدادات إذا تريد." })}
           </Warn>
         ))}
       </section>
@@ -602,8 +606,8 @@ function Preview({ P, products, skipRecent, setSkipRecent, onExclude, onApply, l
 function PriceCell({ o, w, small }: { o: number; w: number; small?: boolean }) {
   return (
     <div className={cn("shrink-0 text-end tabular-nums", small ? "text-xs" : "text-sm")}>
-      <span className="text-ink-subtle line-through decoration-1">{money(o)}</span>{" "}
-      <span className="font-bold text-ink">{money(w)}</span>{" "}
+      <span className="text-ink-subtle line-through decoration-1">{exactMoney(o)}</span>{" "}
+      <span className="font-bold text-ink">{exactMoney(w)}</span>{" "}
       <span className="text-2xs font-semibold text-success-600">+{effectivePct(o, w)}%</span>
     </div>
   );
@@ -714,7 +718,7 @@ function ItemPicker({ kind, products, services, taken, placeholder, onPick }: {
                 <Plus size={14} className="shrink-0 text-brand-600" />
                 <span className="min-w-0 flex-1 truncate">{x.name}</span>
                 {x.extra > 0 && <span className="chip bg-surface-2 text-2xs text-ink-muted">{t("praise.withGroup", { n: formatNum(x.extra), defaultValue: "+{{n}} بنفس السعر" })}</span>}
-                <span className="tabular-nums text-xs text-ink-muted">{money(x.price)}</span>
+                <span className="tabular-nums text-xs text-ink-muted">{exactMoney(x.price)}</span>
               </button>
             </li>
           ))}
@@ -940,8 +944,12 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
       refRef.current = null;
       await afterPriceChange(clinicId, r.event_seq);
       playSuccess();
-      const n = { r: formatNum(r.restored ?? 0), k: formatNum(r.kept_changed ?? 0), b: formatNum(r.blocked ?? 0), m: formatNum(r.kept_missing ?? 0) };
-      toast.success(t("praise.undoDone", { ...n, defaultValue: "رجع {{r}} سعر لأصله · {{k}} تغيّر بيد بعد الرفع فبقي · {{b}} محجوز برفع لاحق · {{m}} مادة محذوفة" }));
+      // ما صار يُقال، وما لم يصر لا يُعدّ صفراً بالرسالة.
+      const parts = [t("praise.undoRestored", { n: formatNum(r.restored ?? 0), defaultValue: "رجع {{n}} سعر لأصله" })];
+      if (r.kept_changed) parts.push(t("praise.undoKept", { n: formatNum(r.kept_changed), defaultValue: "{{n}} تغيّر بيد بعد الرفع فبقي" }));
+      if (r.blocked) parts.push(t("praise.undoBlocked", { n: formatNum(r.blocked), defaultValue: "{{n}} محجوز برفع لاحق" }));
+      if (r.kept_missing) parts.push(t("praise.undoMissing", { n: formatNum(r.kept_missing), defaultValue: "{{n}} مادة محذوفة" }));
+      toast.success(parts.join(" · "));
       setSel(new Set()); await load(); onChanged();
     } catch (e) {
       playWarning(); toast.error(describeDbError(e, t));
@@ -956,7 +964,10 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
     try {
       const r = await repo.forcePriceLine(l.id, l.cur, reason.trim());
       await afterPriceChange(clinicId, r.event_seq);
-      playSuccess(); toast.success(t("praise.forceDone", { name: l.n, v: money(l.o), defaultValue: "«{{name}}» رجع لسعره الأصلي {{v}}" }));
+      playSuccess();
+      toast.success((r.restored ?? 1) > 1
+        ? t("praise.forceDoneGroup", { name: l.n, n: formatNum(r.restored ?? 1), v: exactMoney(l.o), defaultValue: "«{{name}}» ومجموعتها ({{n}} مواد بسعر واحد) رجعت لسعرها الأصلي {{v}}" })
+        : t("praise.forceDone", { name: l.n, v: exactMoney(l.o), defaultValue: "«{{name}}» رجع لسعره الأصلي {{v}}" }));
       await load(); onChanged();
     } catch (e) { playWarning(); toast.error(describeDbError(e, t)); } finally { setBusy(false); }
   };
@@ -1032,16 +1043,16 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
                         {l.k === "service" && <span className="ms-1 text-2xs text-ink-subtle">{t("praise.svcShort", "(خدمة)")}</span>}
                         {l.g && <Layers size={11} className="ms-1 inline text-ink-subtle" />}
                       </td>
-                      <td className="p-2 text-end tabular-nums text-ink-muted">{money(l.o)}</td>
-                      <td className="p-2 text-end tabular-nums">{money(l.w)}</td>
-                      <td className="p-2 text-end tabular-nums font-semibold">{l.cur == null ? "—" : money(l.cur)}</td>
+                      <td className="p-2 text-end tabular-nums text-ink-muted">{exactMoney(l.o)}</td>
+                      <td className="p-2 text-end tabular-nums">{exactMoney(l.w)}</td>
+                      <td className="p-2 text-end tabular-nums font-semibold">{l.cur == null ? "—" : exactMoney(l.cur)}</td>
                       <td className="p-2">
                         <span className={cn("chip text-2xs font-semibold", stateCls[s])}>
                           {s === "blocked" && l.later ? t("praise.lsBlockedBy", { title: l.later.title, defaultValue: "محجوز برفع {{title}}" }) : stateLabel[s]}
                         </span>
                         {s === "kept_changed" && l.cur != null && (
                           <button type="button" disabled={busy} onClick={() => void force(l)} className="ms-1 text-2xs font-semibold text-brand-600 underline" data-praise-force={l.id}>
-                            {t("praise.forceBtn", { v: money(l.o), defaultValue: "رجّعه للأصل {{v}}" })}
+                            {t("praise.forceBtn", { v: exactMoney(l.o), defaultValue: "رجّعه للأصل {{v}}" })}
                           </button>
                         )}
                       </td>
@@ -1090,7 +1101,7 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
 function printDetail(d: PriceChangeDetail, t: TFunction, lang: string) {
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   const rows = d.lines.slice().sort((a, b) => a.n.localeCompare(b.n, "ar")).map((l) =>
-    `<tr><td>${esc(l.n)}${l.f === "sub_unit_price" ? ` <small>${esc(t("praise.subShort", "(مفرد)"))}</small>` : ""}</td><td>${esc(money(l.o))}</td><td><b>${esc(money(l.w))}</b></td></tr>`).join("");
+    `<tr><td>${esc(l.n)}${l.f === "sub_unit_price" ? ` <small>${esc(t("praise.subShort", "(مفرد)"))}</small>` : ""}</td><td>${esc(exactMoney(l.o))}</td><td><b>${esc(exactMoney(l.w))}</b></td></tr>`).join("");
   const title = t("praise.printTitle", { title: d.change.title, d: formatDate(d.change.applied_at.slice(0, 10), lang, true), defaultValue: "الأسعار الجديدة — رفع {{title}} — {{d}}" });
   const html = `<!doctype html><html dir="${lang === "ar" ? "rtl" : "ltr"}" lang="${lang}"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>body{font-family:system-ui,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 10px}

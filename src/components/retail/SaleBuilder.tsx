@@ -845,7 +845,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (wholesale) return null;
     if (!prior) return undefined;
     const pr = prior[p.id];
-    return pr ? { o: pr.o, at: pr.at, list: listPrice(p) } : null;
+    // السعرُ اليوم غيرُ آخر رفع ⇒ عُدِّل بيدٍ بعده: «قبل الرفع» لم يعد سعرَ أحد — لا اقتراح.
+    return pr && pr.w === listPrice(p) ? { o: pr.o, at: pr.at, list: listPrice(p) } : null;
   };
   /* إعادةُ التسعير على كلّ قائمةٍ أو كتالوجٍ طازج — ما لم يُعدَّل بيد. الحسابُ على اللقطة
    * الحيّة للإعلام، والكتابةُ بمحدِّثٍ يأخذ أحدثَ سلّة (أثرُ الرصيد قبله يحدّثها أيضاً). */
@@ -879,7 +880,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         if (!l.ret || l.retPrior !== undefined || !l.product_id) return l;
         ch = true;
         const pr = prior[l.product_id];
-        if (!pr || l.priceManual) return { ...l, retPrior: null };
+        if (!pr || l.priceManual || pr.w !== l.unit_price) return { ...l, retPrior: null };
         return { ...l, retPrior: { o: pr.o, at: pr.at, list: l.unit_price }, unit_price: pr.o, priceManual: true };
       });
       return ch ? next : c;

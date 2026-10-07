@@ -374,12 +374,15 @@ function demoPriceCheck(spec: PriceSpec, frac: boolean): void {
     throw demoHint("mixed_scope", "اختر طريقةً واحدة: الكلّ أو أصناف أو شركات أو موادّ معيّنة.");
   }
 }
+/** سطرٌ قائم = بلا حسم أو «زالت» (يُعاد) — كالخادم بكلّ موضع: عدُّ «زالت» محسوماً يُرجع
+ *  الأقدمَ قبل اللاحق فيضيع الأصل، ويرفعها فوق رفعها بعد الاسترجاع. */
+const priceLive = (l: PriceChangeLine) => l.undo_outcome === null || l.undo_outcome === "kept_missing";
 function demoPriceRecent(db: DemoDB): Set<string> {
   const changes = new Map((db.priceChanges ?? []).map((c) => [c.id, c]));
   const out = new Set<string>();
   for (const l of db.priceChangeLines ?? []) {
     const c = changes.get(l.change_id);
-    if (!c || l.undo_outcome !== null || Date.now() - Date.parse(c.applied_at) > PRICE_RECENT_MS) continue;
+    if (!c || !priceLive(l) || Date.now() - Date.parse(c.applied_at) > PRICE_RECENT_MS) continue;
     out.add(`${l.kind}:${l.item_id}:${l.field}`);
   }
   return out;
@@ -409,7 +412,7 @@ function demoPriceCur(db: DemoDB, l: Pick<PriceChangeLine, "kind" | "item_id" | 
 function demoPriceLater(db: DemoDB, c: PriceChange, l: PriceChangeLine): PriceChange | null {
   const byId = new Map((db.priceChanges ?? []).map((x) => [x.id, x]));
   const hits = (db.priceChangeLines ?? [])
-    .filter((x) => x.undo_outcome === null && x.kind === l.kind && x.item_id === l.item_id && x.field === l.field)
+    .filter((x) => priceLive(x) && x.kind === l.kind && x.item_id === l.item_id && x.field === l.field)
     .map((x) => byId.get(x.change_id)).filter((x): x is PriceChange => !!x && x.apply_seq > c.apply_seq)
     .sort((a, b) => a.apply_seq - b.apply_seq);
   return hits[0] ?? null;
@@ -3465,7 +3468,7 @@ const demoRepo = {
     setServicePricesLocal(svc);
     const seq = (db.priceSeq ?? 0) + 1;
     db.priceSeq = seq;
-    Object.assign(c, { status: all.some((l) => l.undo_outcome === null) ? "partially_undone" : "undone", undone_at: now, undone_by: null,
+    Object.assign(c, { status: all.some(priceLive) ? "partially_undone" : "undone", undone_at: now, undone_by: null,
       undo_reason: reason.trim(), event_seq: seq, last_event_at: now });
     const out: PriceChangeSummary = { ...demoPriceSummary(c), restored, blocked: blocked.size, kept_changed: keptChanged, kept_missing: keptMissing };
     if (clientRef) (db.priceUndoRefs ??= {})[clientRef] = out;
@@ -3479,21 +3482,27 @@ const demoRepo = {
     if (!l) throw demoHint("no_line", "السطرُ غيرُ موجود بعيادتك.");
     if (l.undo_outcome !== "kept_changed") throw demoHint("not_kept", "هذا السطر يرجع بزرّ «رجّع» العادي.");
     const c = (db.priceChanges ?? []).find((x) => x.id === l.change_id)!;
-    if (demoPriceLater(db, c, l)) throw demoHint("later_batch", "رفعٌ لاحق غيّر نفسَ المادة — أرجعه أوّلاً.");
+    // المجموعةُ تُفرض كلُّها (كالخادم): أعضاؤها «تعديل بيد» وسعرُهم الآن ما رآه المستخدم.
+    const targets = (db.priceChangeLines ?? []).filter((x) => x.change_id === l.change_id && x.undo_outcome === "kept_changed"
+      && x.kind === l.kind && x.field === l.field
+      && (x.id === l.id || (l.grp != null && x.grp === l.grp && x.kind === "product" && demoPriceCur(db, x) === expected)));
+    if (targets.some((x) => demoPriceLater(db, c, x))) throw demoHint("later_batch", "رفعٌ لاحق غيّر نفسَ المادة — أرجعه أوّلاً.");
     if (demoPriceCur(db, l) !== expected) throw demoHint("price_moved", "السعرُ الحاليّ تغيّر من آخر ما شفته (أو المادة زالت) — حدّث الصفحة.");
-    if (l.kind === "service") setServicePricesLocal({ [l.item_id]: l.old_price });
-    else {
-      const p = (db.products ?? []).find((x) => x.id === l.item_id)!;
-      if (l.field === "sell_price") p.sell_price = l.old_price; else p.sub_unit_price = l.old_price;
-    }
     const now = new Date().toISOString();
-    l.undo_outcome = "restored"; l.undone_at = now;
+    for (const x of targets) {
+      if (x.kind === "service") setServicePricesLocal({ [x.item_id]: x.old_price });
+      else {
+        const p = (db.products ?? []).find((q) => q.id === x.item_id)!;
+        if (x.field === "sell_price") p.sell_price = x.old_price; else p.sub_unit_price = x.old_price;
+      }
+      x.undo_outcome = "restored"; x.undone_at = now;
+    }
     const seq = (db.priceSeq ?? 0) + 1;
     db.priceSeq = seq;
-    Object.assign(c, { status: (db.priceChangeLines ?? []).some((x) => x.change_id === c.id && x.undo_outcome === null) ? "partially_undone" : "undone",
+    Object.assign(c, { status: (db.priceChangeLines ?? []).some((x) => x.change_id === c.id && priceLive(x)) ? "partially_undone" : "undone",
       undone_at: now, undo_reason: reason.trim(), event_seq: seq, last_event_at: now });
     saveDB(db);
-    return { ...demoPriceSummary(c), restored: 1 };
+    return { ...demoPriceSummary(c), restored: targets.length };
   },
   async priceEpoch(): Promise<number> {
     return loadDB().priceSeq ?? 0;
@@ -3504,7 +3513,7 @@ const demoRepo = {
     const chains = new Map<string, { seq: number; o: number; w: number; at: string }[]>();
     for (const l of db.priceChangeLines ?? []) {
       const c = byId.get(l.change_id);
-      if (!c || l.kind !== "product" || l.field !== "sell_price" || l.undo_outcome !== null) continue;
+      if (!c || l.kind !== "product" || l.field !== "sell_price" || !priceLive(l)) continue;
       if (Date.now() - Date.parse(c.applied_at) > 120 * 86400000) continue;
       const arr = chains.get(l.item_id) ?? [];
       arr.push({ seq: c.apply_seq, o: l.old_price, w: l.new_price, at: c.applied_at });
@@ -3513,7 +3522,10 @@ const demoRepo = {
     const out: PricePriorMap = {};
     for (const [k, arr] of chains) {
       arr.sort((a, b) => a.seq - b.seq);
-      out[k] = { o: arr[0].o, at: arr[0].at, w: arr[arr.length - 1].w };
+      // السلسلةُ المتّصلة الأخيرة وحدها (كالخادم): «قبل» غيرُ «بعد» سابقه = تعديلٌ بيدٍ بينهما.
+      let start = arr.length - 1;
+      while (start > 0 && arr[start - 1].w === arr[start].o) start--;
+      out[k] = { o: arr[start].o, at: arr[start].at, w: arr[arr.length - 1].w };
     }
     return out;
   },

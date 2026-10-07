@@ -90,6 +90,15 @@ const pr = m.buildPlan(prods, [], spec({}), false, recent);
 check("المرفوعُ حديثاً يُتخطّى ويُعدّ", !pr.lines.some((l) => l.id === "c") && pr.counts.recent_skipped === 1);
 const pr2 = m.buildPlan(prods, [], spec({ skip_recent: false }), false, recent);
 check("  وبطلبٍ صريح يُرفع ويُعلَّم «recent»", pr2.lines.find((l) => l.id === "c")?.fl.includes("recent"));
+const gp = [P("a", { bulk_group: "G" }), P("b", { bulk_group: "G" }), P("new", { bulk_group: "G" })];
+const pg = m.buildPlan(gp, [], spec({}), false, new Set(["product:a:sell_price", "product:b:sell_price"]));
+check("عضوٌ انضمّ لمجموعةٍ رُفعت حديثاً لا يُرفع وحده — الوحدةُ كلُّها تُتخطّى", pg.lines.length === 0 && pg.counts.recent_skipped === 3, pg.counts);
+const sp1 = [P("s", { has_sub_unit: true, sub_unit_price: 300, units_per_box: 4 })];
+const ps1 = m.buildPlan(sp1, [], spec({}), false, new Set(["product:s:sell_price"]));
+const ps2 = m.buildPlan(sp1, [], spec({}), false, new Set(["product:s:sub_unit_price"]));
+check("علبةٌ رُفعت حديثاً يتبعها مفردُها بالتخطّي، ومفردٌ رُفع وحده يحجز علبتَه", ps1.lines.length === 0 && ps1.counts.recent_skipped === 2 && ps2.lines.length === 0, [ps1.counts, ps2.counts]);
+check("  وبطلبٍ صريح تُرفع الوحدةُ كاملة", m.buildPlan(gp, [], spec({ skip_recent: false }), false, new Set(["product:a:sell_price"])).lines.length === 3);
+check("groupKeyOf كـbtrim بالقاعدة: مسافاتُ الطرفين تُقصّ وحدها", m.groupKeyOf(" G ") === "G" && m.groupKeyOf("   ") === null && m.groupKeyOf("\tG") === "\tG" && m.groupKeyOf(null) === null);
 check("نطاقٌ واحد: صنفٌ + موادّ = mixed", m.productScopeOf({ p_categories: ["x"], p_companies: null, p_sections: null, p_ids: ["a"] }) === "mixed"
   && m.productScopeOf({ p_categories: null, p_companies: ["c"], p_sections: ["s"], p_ids: null }) === "company");
 check("البصمةُ لا تتغيّر بترتيب الاختيار", m.buildPlan(prods, [], spec({ p_ids: ["c", "a"] }), false).hashText === m.buildPlan(prods, [], spec({ p_ids: ["a", "c"] }), false).hashText);
