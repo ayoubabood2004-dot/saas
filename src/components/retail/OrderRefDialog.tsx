@@ -61,7 +61,10 @@ export function OrderRefDialog({ order, orders, onClose, onSaved }: {
         </p>
         <label className="flex items-center gap-2">
           <Hash size={16} className="shrink-0 text-sky-600" />
+          {/* التركيزُ يحدّد الرقمَ القائم: مسحةٌ أو كتابةٌ **تستبدله** لا تُلصق به — كانت
+              البوليصةُ الجديدة تُضاف لذيل القديمة وEnter يحفظ الاثنين رقماً واحداً. */}
           <input className="input flex-1 font-mono" dir="ltr" autoFocus maxLength={MAX_REF_LEN} data-drefinput
+            onFocus={(e) => e.currentTarget.select()}
             value={v} onChange={(e) => setV(e.target.value)} placeholder={t("retail.dRefPh", "رقم الطلب (اختياري)")} />
         </label>
         {twin && (

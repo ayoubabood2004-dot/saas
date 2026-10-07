@@ -104,8 +104,13 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
     return searchDeliveries(index, qd, getDialCode()).map((h) => byId.get(h.o.id)).filter((r): r is typeof rows[number] => !!r);
   }, [rows, index, qd]);
 
-  const goods = itemRows.filter((r) => !r.isService);
-  const services = itemRows.filter((r) => r.isService);
+  /* البحثُ يرشّح «المنتجات الي راحت» كذلك: كانت الكلمةُ تبقى بالحقل والجدولُ لكلّ الشركة،
+   * فيُقرأ صنفُ الشركة كلِّها صنفَ ذاك الزبون (أمسكه تدقيقٌ عدائيّ). */
+  const itemRowsShown = useMemo(
+    () => (qd.trim() ? itemsFromInvoices([...new Set(shownRows.map((r) => r.order.invoice_id))], itemsByInvoice) : itemRows),
+    [qd, shownRows, itemRows, itemsByInvoice]);
+  const goods = itemRowsShown.filter((r) => !r.isService);
+  const services = itemRowsShown.filter((r) => r.isService);
 
   return (
     <Modal open onClose={onClose} size="full"
@@ -160,7 +165,14 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
             <Button leftIcon={<RefreshCw size={16} />} onClick={() => void load()}>{t("common.retry", "إعادة المحاولة")}</Button>
           </div>
         ) : view === "items" ? (
-          <ItemsTable goods={goods} services={services} />
+          <>
+            {qd.trim() && (
+              <p className="px-1 text-2xs font-bold text-ink-muted" data-ledgeritemsof={shownRows.length}>
+                {t("retail.ledgerItemsOf", { n: formatNum(shownRows.length), total: formatNum(rows.length), defaultValue: "أصناف {{n}} طلب من {{total}} (حسب البحث)" })}
+              </p>
+            )}
+            <ItemsTable goods={goods} services={services} />
+          </>
         ) : (
           <div className="max-h-[46vh] space-y-1 overflow-y-auto pe-1">
             {qd.trim() && (

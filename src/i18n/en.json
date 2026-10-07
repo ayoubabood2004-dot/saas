@@ -1057,7 +1057,13 @@
     "dRefClear": "Clear number",
     "dRefHelp": "The delivery company's order (waybill) number, or any number you track it by. Invoice: {{inv}}",
     "dRefTwin": "The same number is on {{name}}'s order ({{inv}}) — check before saving.",
-    "slipInvNo": "Invoice no."
+    "slipInvNo": "Invoice no.",
+    "dStFinished": "All completed",
+    "ledgerItemsOf": "Items of {{n}} of {{total}} orders (by search)",
+    "dRefScanned": "Order no.: {{ref}}",
+    "ledgerStOwed": "Owed",
+    "ledgerStCollected": "Collected",
+    "ledgerStReturned": "Returned"
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",

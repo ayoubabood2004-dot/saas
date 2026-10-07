@@ -13,6 +13,9 @@ export function phoneDigits(s: string): string {
 /** National significant number: stored digits with the dial code and leading zeros stripped. */
 export function nationalNumber(phone: string, dialCode: string): string {
   let d = phoneDigits(phone);
+  // «00» بادئةٌ دوليةٌ مثل «+» — بلاه كان «00964 770…» لا يطابق «0770…» بالبحث، ورابطُ
+  // واتساب يخرج 964 مرّتين (waNumber). نفسُ ما تفعله phoneKey أدناه.
+  if (d.startsWith("00")) d = d.slice(2);
   const cc = phoneDigits(dialCode);
   if (cc && d.startsWith(cc)) d = d.slice(cc.length);
   return d.replace(/^0+/, "");

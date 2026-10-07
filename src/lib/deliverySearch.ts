@@ -2,6 +2,7 @@ import type { DeliveryOrder } from "@/types";
 import { matchCode, normalizeCode, searchable } from "./utils";
 import { phoneDigits, phoneMatches } from "./phone";
 import { invoiceNo } from "./invoiceNo";
+import { hasArabicLetters, layoutFix } from "./arabicLayout";
 
 /* ============================================================================
  * البحثُ بطلبات التوصيل — «وين طلب أبو علي؟»، «شنو صار برقم BX-1234؟».
@@ -19,14 +20,24 @@ import { invoiceNo } from "./invoiceNo";
  *   • الاسم والمكان: `searchable` — الهمزة والتاء المربوطة والألف المقصورة.
  * ========================================================================= */
 
-/** أطولُ رقمٍ تقبله الشاشة (القاعدةُ تقبل ٦٤ — 0225). */
-export const MAX_REF_LEN = 40;
+/** أطولُ رقمٍ يُحفظ — نفسُ قيد القاعدة (0225). كان ٤٠ بالشاشة و٦٤ بالقاعدة، والسؤالُ
+ *  لا يُقصّ: رمزٌ طويلٌ يُحفظ مقصوصاً ويُبحث كاملاً فلا يُلقى أبداً. */
+export const MAX_REF_LEN = 64;
 
 /** ما يُحفظ: تطبيعُ الباركود نفسُه (شرقيّ ← لاتينيّ، بلا خفيّ ولا مسافات)، والحالةُ
  *  كما كُتبت — الرقمُ يُقرأ للشركة بالهاتف كما طبعته. والفراغُ NULL لا ''. */
 export function cleanRef(s: string | null | undefined): string | null {
   const v = normalizeCode(s).slice(0, MAX_REF_LEN);
   return v || null;
+}
+
+/** مسحةٌ بالكيبورد العربيّ (الماسحُ يرسل مواضعَ مفاتيح): «لاء-1234» هي «bx-1234». تُعكس
+ *  حين يخرج عكسُها رمزاً بلا عربية وفيه رقم — البوليصاتُ أرقامٌ وحروفٌ لاتينية، والأسماءُ
+ *  العربية لا تحمل أرقاماً، فلا تُقلب كلمةٌ عربيةٌ رمزاً. */
+export function unmangleRef(s: string | null | undefined): string {
+  const raw = String(s ?? "").trim();
+  const fixed = layoutFix(normalizeCode(raw));
+  return fixed && !hasArabicLetters(fixed) && /[0-9]/.test(fixed) ? fixed : raw;
 }
 
 /** مفتاحُ المطابقة — للمحفوظ وللسؤال معاً. */
@@ -68,6 +79,8 @@ export interface ParsedQuery {
   raw: string;
   text: string;
   ref: string;
+  /** قراءةُ السؤال بعكس تخطيط الكيبورد إن كان مسحةً ممسوخة — وإلا "". */
+  refAlt: string;
   inv: string;
   /** السؤالُ أرقامٌ (وفواصلُ هاتف) فقط — يُجرَّب على الهاتف. */
   phoneish: boolean;
@@ -83,7 +96,9 @@ export function parseQuery(q: string): ParsedQuery | null {
   return {
     raw,
     text: searchable(raw),
-    ref: refKey(raw),
+    // نفسُ قصّ المحفوظ (cleanRef) — الطرفان يمرّان من نفس الدالّة.
+    ref: refKey(cleanRef(raw)),
+    refAlt: (() => { const u = unmangleRef(raw); return u !== raw ? refKey(cleanRef(u)) : ""; })(),
     inv: refKey(raw.replace(/^#?\s*inv[-\s]?/i, "")),
     phoneish: d.length >= 3 && !/\p{L}/u.test(raw),
     invOnly,
@@ -96,6 +111,7 @@ export function matchDelivery(ix: DeliveryIndexed, pq: ParsedQuery, dialCode: st
   let best: DeliveryHit | null = null;
   const take = (h: DeliveryHit) => { if (best === null || RANK[h] < RANK[best]) best = h; };
   if (pq.ref.length >= 2 && ix.ref && ix.ref.includes(pq.ref)) take("ref");
+  if (pq.refAlt.length >= 2 && ix.ref && ix.ref.includes(pq.refAlt)) take("ref");
   if (pq.inv.length >= 3 && ix.inv.includes(pq.inv)) take("invoice");
   if (pq.phoneish && ix.o.customer_phone && phoneMatches(ix.o.customer_phone, pq.raw, dialCode)) take("phone");
   if (pq.text) {
@@ -122,12 +138,23 @@ export function searchDeliveries(index: DeliveryIndexed[], q: string, dialCode: 
   for (const ix of index) {
     const hit = matchDelivery(ix, pq, dialCode);
     if (!hit) continue;
-    const exact = (hit === "ref" && ix.ref === pq.ref) || (hit === "invoice" && ix.inv === pq.inv);
+    const exact = (hit === "ref" && (ix.ref === pq.ref || ix.ref === pq.refAlt)) || (hit === "invoice" && ix.inv === pq.inv);
     out.push({ o: ix.o, hit, exact });
   }
   return out.sort((a, b) =>
     (Number(b.exact) - Number(a.exact)) || (RANK[a.hit] - RANK[b.hit]) || b.o.created_at.localeCompare(a.o.created_at));
 }
+
+/** شرائحُ الحالة بنتائج البحث. «بالذمّة» = مسلَّمٌ للزبون ولم يُحصَّل (شركة)، و«مستلم» =
+ *  وصل نقدُه، و«المكتملة» = مسلَّمٌ أو راجع — **نفسُ تعريف «آخر الطلبات المكتملة» باللوحة**،
+ *  فرابطُ «كل المكتملة» يوسّع القائمةَ ولا يُضيّقها (أمسكه تدقيقٌ عدائيّ). */
+export type ResultStatus = "all" | "preparing" | "out" | "owed" | "done" | "returned" | "finished";
+export const statusIs = (o: DeliveryOrder, s: ResultStatus): boolean =>
+  s === "all" ? true
+    : s === "owed" ? o.status === "delivered" && !o.collected_at
+      : s === "done" ? o.status === "delivered" && !!o.collected_at
+        : s === "finished" ? o.status === "delivered" || o.status === "returned"
+          : o.status === s;
 
 /** طلبٌ آخر لنفس الحامل بنفس الرقم — ينبَّه عليه ولا يُمنع (0225: لا فريد). */
 export function refTwin(orders: DeliveryOrder[], self: { id?: string | null; courier_id?: string | null }, ref: string | null | undefined): DeliveryOrder | null {

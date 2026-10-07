@@ -22,7 +22,7 @@ import { dueOf, round2 } from "@/lib/debt";
 import { CourierLedger } from "./CourierLedger";
 import { companyOwed, companyOnRoad, carrierScope } from "@/lib/courierLedger";
 import { cn, formatNum, money, localISO, formatDate } from "@/lib/utils";
-import { indexDelivery, searchDeliveries, cleanRef, MAX_REF_LEN, type DeliveryHit } from "@/lib/deliverySearch";
+import { indexDelivery, searchDeliveries, cleanRef, statusIs, MAX_REF_LEN, type DeliveryHit, type ResultStatus } from "@/lib/deliverySearch";
 import { getDialCode } from "@/lib/settings";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -58,13 +58,6 @@ const isCompany = (c?: Courier | null) => c?.kind === "company";
 
 /** نتائجُ البحث تُعرض صفحةً صفحة — والعددُ الكلّيُّ يُقال دائماً («٥٠ من ٢٣٠»). */
 const RESULTS_PAGE = 50;
-type ResultStatus = "all" | "preparing" | "out" | "owed" | "done" | "returned";
-/** «بالذمّة» = مسلَّمٌ للزبون ولم يُحصَّل بعد (شركة)، و«مستلم» = وصل نقدُه. */
-const statusIs = (o: DeliveryOrder, s: ResultStatus): boolean =>
-  s === "all" ? true
-    : s === "owed" ? o.status === "delivered" && !o.collected_at
-      : s === "done" ? o.status === "delivered" && !!o.collected_at
-        : o.status === s;
 
 export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
@@ -289,6 +282,8 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allOrders, couriers]);
   const searching = qd.trim() !== "" || fCourier !== "all" || fStatus !== "all";
+  /** قائمةٌ لم تصل بعد (أو فشلت) — الأرقامُ «—» لا أصفارٌ واثقة فوق «تعذّر». */
+  const kpiUnknown = allOrders.length === 0 && (failed || loading);
   const results = useMemo(() => {
     if (!searching) return [];
     return searchDeliveries(index, qd, getDialCode()).filter(({ o }) =>
@@ -372,14 +367,14 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     <div className="space-y-4">
       {/* KPIs */}
       <div className={cn("grid grid-cols-2 gap-3", companies.length > 0 ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
-        <Kpi icon={PackageOpen} tone="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" label={t("retail.deliveryPreparing", "قيد التجهيز")} value={formatNum(preparing.length)} />
-        <Kpi icon={Bike} tone="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" label={t("retail.deliveryInTransit", "فلوس بالطريق")} value={money(inTransit)} sub={t("retail.deliveryOutCount", { n: outDrivers.length, defaultValue: "{{n}} طلب بالطريق" })} />
+        <Kpi unknown={kpiUnknown} icon={PackageOpen} tone="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" label={t("retail.deliveryPreparing", "قيد التجهيز")} value={formatNum(preparing.length)} />
+        <Kpi unknown={kpiUnknown} icon={Bike} tone="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" label={t("retail.deliveryInTransit", "فلوس بالطريق")} value={money(inTransit)} sub={t("retail.deliveryOutCount", { n: outDrivers.length, defaultValue: "{{n}} طلب بالطريق" })} />
         {companies.length > 0 && (
-          <Kpi icon={Building2} tone="bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" label={t("retail.companiesOwed", "بذمّة الشركات")} value={money(companiesOwed)}
+          <Kpi unknown={kpiUnknown} icon={Building2} tone="bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" label={t("retail.companiesOwed", "بذمّة الشركات")} value={money(companiesOwed)}
             sub={outCompanies.length > 0 ? t("retail.companiesOnRoadSub", { n: outCompanies.length, sum: money(companiesOnRoad), defaultValue: "و{{sum}} بالطريق ({{n}} طلب)" }) : undefined} />
         )}
-        <Kpi icon={HandCoins} tone="bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-300" label={t("retail.deliveryReceivedToday", "استُلم اليوم")} value={money(receivedToday)} />
-        <Kpi icon={Undo2} tone="bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" label={t("retail.deliveryReturnedToday", "راجع اليوم")} value={formatNum(returnedToday)} />
+        <Kpi unknown={kpiUnknown} icon={HandCoins} tone="bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-300" label={t("retail.deliveryReceivedToday", "استُلم اليوم")} value={money(receivedToday)} />
+        <Kpi unknown={kpiUnknown} icon={Undo2} tone="bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" label={t("retail.deliveryReturnedToday", "راجع اليوم")} value={formatNum(returnedToday)} />
       </div>
 
       {/* البحث — كلُّ طلبات العيادة، بالاسم أو الهاتف أو رقم الطلب أو رقم الفاتورة،
@@ -414,6 +409,10 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           <p className="max-w-md text-ink-subtle">{t("retail.dLoadFailed", "تعذّر تحميل طلبات التوصيل — ما نعرف إذا عندك طلبات أو لا. أعد المحاولة.")}</p>
           <Button variant="secondary" leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
         </div>
+      ) : loading && allOrders.length === 0 ? (
+        /* البحثُ قبل وصول القائمة كان يقول «ماكو طلب يطابق» بثقة عن طلبٍ موجود —
+           نفسُ صنف القائمة الفارغة عن خطأ. التحميلُ يُقال أوّلاً. */
+        <div className="card p-10 text-center text-ink-subtle" data-dloading>{t("common.loading", "جارٍ التحميل…")}</div>
       ) : searching ? (
         <SearchResults
           results={results} limit={limit} onMore={() => setLimit((n) => n + RESULTS_PAGE)}
@@ -586,7 +585,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
             <section>
               <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><ReceiptText size={16} className="text-ink-subtle" /> {t("retail.deliveryHistory", "آخر الطلبات المكتملة")}
                 {/* آخرُ عشرين — ويُقال إنها آخرُ عشرين، والكلُّ بضغطة لا خلف سقفٍ صامت. */}
-                <button type="button" data-dallhistory onClick={() => { playTap(); setFStatus("done"); }} className="ms-auto text-2xs font-bold text-brand-600 hover:underline">
+                <button type="button" data-dallhistory onClick={() => { playTap(); setFStatus("finished"); }} className="ms-auto text-2xs font-bold text-brand-600 hover:underline">
                   {t("retail.dAllHistory", "كل المكتملة ←")}
                 </button>
               </h3>
@@ -628,6 +627,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
             <label className="flex items-center gap-2 rounded-xl bg-surface-2 p-2" data-assignref>
               <Hash size={15} className="shrink-0 text-sky-600" />
               <input className="input h-9 flex-1 font-mono text-sm" dir="ltr" maxLength={MAX_REF_LEN} value={assignRef}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => setAssignRef(e.target.value)} placeholder={t("retail.dRefPh", "رقم الطلب (اختياري)")} />
             </label>
             {couriers.filter((c) => c.active).length === 0 && (
@@ -715,7 +715,8 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   );
 }
 
-function Kpi({ icon: Icon, tone, label, value, sub }: { icon: typeof Bike; tone: string; label: string; value: string; sub?: string }) {
+function Kpi({ icon: Icon, tone, label, value, sub, unknown }: { icon: typeof Bike; tone: string; label: string; value: string; sub?: string; unknown?: boolean }) {
+  if (unknown) { value = "—"; sub = undefined; }
   return (
     <div className="card flex items-center gap-3 p-3.5">
       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tone)}><Icon size={18} /></span>
@@ -740,6 +741,8 @@ function OrderCard({ o, no, courier, busy, actions, onRef, hit, showStatus }: {
   const { t, i18n } = useTranslation();
   const collect = round2(o.cod_amount + (o.fee_to_clinic ? 0 : o.delivery_fee));
   const company = isCompany(courier);
+  const open = o.status === "preparing" || o.status === "out";
+  const owed = o.status === "delivered" && !o.collected_at;
   const hitLabel: Partial<Record<DeliveryHit, string>> = {
     ref: t("retail.dHitRef", "طابق رقم الطلب"),
     invoice: t("retail.dHitInvoice", "طابق رقم الفاتورة"),
@@ -780,10 +783,17 @@ function OrderCard({ o, no, courier, busy, actions, onRef, hit, showStatus }: {
         </button>
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-surface-2 px-3 py-2 text-xs">
-        <span className={cn("flex items-center gap-1 font-bold", company ? "text-violet-700 dark:text-violet-300" : "text-sky-700 dark:text-sky-300")}>
-          <Wallet size={13} /> {company ? t("retail.deliveryCompanyOwes", "بذمّة الشركة للعيادة") : t("retail.deliveryCourierOwes", "يُسلِّم السائق للعيادة")} {money(o.cod_amount)}
-        </span>
-        {o.delivery_fee > 0 && !o.fee_to_clinic && <span className="text-ink-subtle">{t("retail.deliveryCollectPlusFee", { n: money(collect), defaultValue: "يُحصَّل من الزبون {{n}} (مع الأجرة)" })}</span>}
+        {/* السطرُ يقول ما هو صحيحٌ **الآن**: طلبٌ مفتوح يُسلَّم أو بالذمّة، ومسلَّمٌ بذمّة
+            الشركة يبقى بذمّتها، أمّا المحصَّلُ والراجع فمبلغُه وحده — كانت نتائجُ البحث
+            تقول «يُسلِّم السائق» عن طلبٍ استُلم نقدُه قبل شهر. */}
+        {open || owed ? (
+          <span className={cn("flex items-center gap-1 font-bold", company || owed ? "text-violet-700 dark:text-violet-300" : "text-sky-700 dark:text-sky-300")}>
+            <Wallet size={13} /> {company || owed ? t("retail.deliveryCompanyOwes", "بذمّة الشركة للعيادة") : t("retail.deliveryCourierOwes", "يُسلِّم السائق للعيادة")} {money(o.cod_amount)}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 font-bold text-ink-muted"><Wallet size={13} /> {money(o.cod_amount)}</span>
+        )}
+        {open && o.delivery_fee > 0 && !o.fee_to_clinic && <span className="text-ink-subtle">{t("retail.deliveryCollectPlusFee", { n: money(collect), defaultValue: "يُحصَّل من الزبون {{n}} (مع الأجرة)" })}</span>}
         {o.prepaid > 0 && <span className="text-success-600">{t("retail.deliveryPrepaidChip", { n: money(o.prepaid), defaultValue: "مقدّم {{n}}" })}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">{actions}</div>
@@ -817,6 +827,7 @@ function SearchResults({ results, limit, onMore, total, q, status, onStatus, cou
     ["owed", t("retail.ledgerStOwed", "بالذمّة")],
     ["done", t("retail.deliveryStatusDone", "مستلم")],
     ["returned", t("retail.deliveryStatusReturned", "راجع")],
+    ["finished", t("retail.dStFinished", "كل المكتملة")],
   ];
   const shown = results.slice(0, limit);
   return (

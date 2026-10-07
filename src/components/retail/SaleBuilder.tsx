@@ -12,7 +12,7 @@ import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMeth
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { phoneDigits } from "@/lib/phone";
-import { cleanRef, MAX_REF_LEN } from "@/lib/deliverySearch";
+import { cleanRef, unmangleRef, MAX_REF_LEN } from "@/lib/deliverySearch";
 import { getServiceCatalog, findServiceByBarcode } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -36,7 +36,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
-import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode } from "@/lib/productCodes";
+import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, stripAim } from "@/lib/productCodes";
 import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
@@ -1180,7 +1180,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
      * محارفَه بالحقل المركَّز أصلاً (لا يمنع إلا Enter)، فكانت المسحةُ نفسُها
      * تذهب للسلّة أيضاً: «الباركود مو موجود بمخزنك» أو — أسوأ — منتجٌ يطابق
      * ذيلَه فيُضاف لبيعةٍ لم يطلبه أحد. فالحقلُ المركَّز يأخذها كاملةً وحدَه. */
-    if ((document.activeElement as HTMLElement | null)?.dataset?.scanInto === "dref") { setDRef(cleanRef(code) ?? ""); return; }
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused?.dataset?.scanInto === "dref") {
+      // رأسُ AIM («]C1») ليس من الرقم، ومسحةٌ والكيبوردُ عربيّ تُعكس («لاء-1234» = bx-1234).
+      const ref = cleanRef(unmangleRef(stripAim(code))) ?? "";
+      setDRef(ref);
+      /* **مسحةٌ واحدة** يأخذها الحقل ثم يترك التركيز: كانت المسحةُ التالية — منتجٌ للسلّة —
+       * تكتب فوق رقم الطلب بصمت ولا يدخل المنتج (أمسكه تدقيقٌ عدائيّ). والصوتُ يقول إنها وصلت. */
+      focused.blur();
+      playTap();
+      toast.success(t("retail.dRefScanned", { ref, defaultValue: "رقم الطلب: {{ref}}" }));
+      return;
+    }
     if (done) { pendingScanRef.current = code; reset(); return; }
     noteScan(code, "sale", clinicId);   // م٣: قياسٌ صامت لصيغة المسحة — لا يغيّر شيئاً
     const n = peekScanMult(code);

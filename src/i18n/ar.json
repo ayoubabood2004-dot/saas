@@ -1057,7 +1057,13 @@
     "dRefClear": "مسح الرقم",
     "dRefHelp": "رقم طلب شركة التوصيل (البوليصة) أو أي رقم تتابع بيه الطلب. فاتورته: {{inv}}",
     "dRefTwin": "نفس الرقم مسجّل على طلب {{name}} ({{inv}}) — تأكّد قبل الحفظ.",
-    "slipInvNo": "رقم الفاتورة"
+    "slipInvNo": "رقم الفاتورة",
+    "dStFinished": "كل المكتملة",
+    "ledgerItemsOf": "أصناف {{n}} طلب من {{total}} (حسب البحث)",
+    "dRefScanned": "رقم الطلب: {{ref}}",
+    "ledgerStOwed": "بالذمّة",
+    "ledgerStCollected": "انحصّل",
+    "ledgerStReturned": "راجع"
   },
   "promos": {
     "pickFailed": "تعذّر تحميل المنتجات — أعد فتح النافذة.",

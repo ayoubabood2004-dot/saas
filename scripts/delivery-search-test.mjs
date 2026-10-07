@@ -36,7 +36,7 @@ const hitOf = (q, id) => m.searchDeliveries(index, q, DIAL).find((r) => r.o.id =
 console.log("▸ رقمُ الطلب — نفسُ التطبيع للمحفوظ وللسؤال");
 check("cleanRef: شرقيّ ← لاتينيّ، بلا مسافاتٍ ولا محارفَ خفيّة، والحالةُ كما كُتبت", m.cleanRef(" ‏BX-١٢٣٤ ") === "BX-1234", m.cleanRef(" ‏BX-١٢٣٤ "));
 check("cleanRef: الفراغُ NULL لا ''", m.cleanRef("   ") === null && m.cleanRef(null) === null);
-check("cleanRef: يقصّ عند ٤٠", m.cleanRef("9".repeat(70)).length === 40);
+check("cleanRef: يقصّ عند ٦٤ (نفسُ قيد القاعدة)", m.cleanRef("9".repeat(70)).length === 64);
 check("«BX-1234» يلقاه بالضبط وأوّلاً", ids("BX-1234")[0] === "a1b2c3" && m.searchDeliveries(index, "BX-1234", DIAL)[0].exact);
 check("  وبحروفٍ صغيرة وبلا فاصلة", ids("bx1234")[0] === "a1b2c3");
 check("  وبأرقامٍ شرقية", ids("bx-١٢٣٤")[0] === "a1b2c3");
@@ -81,6 +81,24 @@ check("نفسُ الرقم لنفس الحامل بطلبٍ آخر", m.refTwin(o
 check("  لا يحسب الطلبَ نفسَه", m.refTwin(orders, { id: "a1b2c3", courier_id: "c1" }, "BX-1234") === null);
 check("  ولا حاملاً آخر", m.refTwin(orders, { id: "zz", courier_id: "c2" }, "BX-1234") === null);
 check("  والفارغُ لا يُنبَّه عليه", m.refTwin(orders, { id: "zz", courier_id: "c1" }, "  ") === null);
+
+console.log("▸ ما أمسكه التدقيقُ العدائيّ");
+check("هاتفٌ بصيغة 00964 يطابق المحفوظَ بالصفر وبـ+964", ids("00964 770 123 4567").includes("a1b2c3") && ids("009647719998888").includes("d4e5f6"), [ids("00964 770 123 4567"), ids("009647719998888")]);
+check("  والحدُّ واحدٌ بالطرفين: رقمٌ أطولُ من ٦٤ يُحفظ مقصوصاً ويُلقى بسؤاله كاملاً", (() => {
+  const long = "Z".repeat(70);
+  const ix = [m.indexDelivery(mk("l00001", { courier_ref: m.cleanRef(long) }))];
+  return m.MAX_REF_LEN === 64 && m.cleanRef(long).length === 64 && m.searchDeliveries(ix, long, DIAL).length === 1;
+})());
+check("مسحةٌ والكيبوردُ عربيّ «لاء-1234» تلقى BX-1234", ids("لاء-1234")[0] === "a1b2c3", ids("لاء-1234"));
+check("  وunmangleRef تعكس الرمزَ ولا تقلب كلمةً عربية بلا أرقام", m.unmangleRef("لاء-1234") === "bx-1234" && m.unmangleRef("احمد") === "احمد" && m.unmangleRef("BX-9") === "BX-9");
+check("  والاسمُ العربيّ ما زال يُبحث اسماً (لا يُعكس رمزاً)", hitOf("احمد", "a1b2c3") === "name");
+check("«كل المكتملة» = مسلَّمٌ أو راجع — يوسّع «آخر المكتملة» لا يضيّقها", (() => {
+  const s = (o) => ["finished", "done", "owed"].map((k) => m.statusIs(o, k)).join("");
+  return s({ status: "delivered", collected_at: null }) === "truefalsetrue"
+    && s({ status: "delivered", collected_at: "x" }) === "truetruefalse"
+    && s({ status: "returned" }) === "truefalsefalse"
+    && !m.statusIs({ status: "out" }, "finished");
+})());
 
 console.log(fail === 0 ? `✓ بحث التوصيل: ${pass} فحصاً عبرت` : `✗ ${fail} فشلت من ${pass + fail}`);
 if (fail) process.exit(1);
