@@ -1383,5 +1383,63 @@ console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
     && dbNow().products.find((x) => x.id === "last").stock === 5 && dbNow().storeOrders[0].status === "new", String(err?.hint));
 }
 
+console.log("▸ رفعُ الأسعار بالتجريبيّ (0226) — نفسُ حساب القاعدة وحرّاسها");
+{
+  const dbNow = () => JSON.parse(mem.get(DB_KEY));
+  const setPrice = (id, v) => { const d = dbNow(); d.products.find((x) => x.id === id).sell_price = v; mem.set(DB_KEY, JSON.stringify(d)); };
+  seed([
+    P("ra", "رويال A", null, { sell_price: 5000, purchase_price: 3500, category: "food", bulk_group: "GX" }),
+    P("rb", "رويال B", null, { sell_price: 5000, purchase_price: 3500, category: "toys", bulk_group: "GX" }),
+    P("rc", "معلبات", null, { sell_price: 1666, purchase_price: 1200, category: "food" }),
+    P("rd", "حبوب", null, { sell_price: 4500, purchase_price: 3000, category: "food", has_sub_unit: true, sub_unit_price: 1500, units_per_box: 3 }),
+    P("re", "رمل", null, { sell_price: 1000, purchase_price: 600, category: "food" }),
+    P("rz", "صفر", null, { sell_price: 0, purchase_price: 0, category: "food" }),
+  ]);
+  const spec = { pct_bp: 2500, round: "smart", max_step: 250, products: true, services: false, p_categories: ["food"], p_companies: null,
+    p_sections: null, p_ids: null, p_exclude: [], s_categories: null, s_ids: null, s_exclude: [], skip_recent: true };
+  const pv = await repo.previewPriceChange(spec);
+  const w = (id, f = "sell_price") => pv.lines.find((l) => l.id === id && l.f === f)?.w;
+  check("المعاينة: ٥ منتجات (المجموعةُ GX كاملة رغم صنف rb) + مفرد، والصفرُ يُعدّ", pv.counts.products === 5 && pv.counts.sub_units === 1 && pv.skipped.zero_products === 1, JSON.stringify(pv.counts));
+  check("  وأرقامُ القاعدة: 5000→6250، 1666→2100، 1000→1250، والمفرد 1950", w("ra") === 6250 && w("rc") === 2100 && w("re") === 1250 && w("rd", "sub_unit_price") === 1950);
+  let e1 = null; try { await repo.previewPriceChange({ ...spec, p_ids: ["ra"] }); } catch (e) { e1 = e; }
+  check("نطاقان معاً يُرفضان mixed_scope", e1?.message === "mixed_scope");
+  let e2 = null; try { await repo.applyPriceChange(spec, "bad-hash", null, null); } catch (e) { e2 = e; }
+  check("بصمةٌ غير بصمة المعاينة ⇒ stale_preview ولا يُكتب شيء", e2?.message === "stale_preview" && dbNow().products.find((x) => x.id === "ra").sell_price === 5000);
+  const ap = await repo.applyPriceChange(spec, pv.plan_hash, "رفع", "ref-demo-1");
+  const prices = () => Object.fromEntries(dbNow().products.map((x) => [x.id, x.sell_price]));
+  check("الحفظ: الأسعارُ ما عرضته المعاينة، والصفرُ باقٍ", prices().ra === 6250 && prices().rb === 6250 && prices().rc === 2100 && prices().rz === 0
+    && dbNow().products.find((x) => x.id === "rd").sub_unit_price === 1950 && ap.n_lines === 6, JSON.stringify(prices()));
+  check("  وعدّادُ الأسعار صار ١", (await repo.priceEpoch()) === 1);
+  const again = await repo.applyPriceChange(spec, pv.plan_hash, null, "ref-demo-1");
+  check("إعادةُ النداء بمرجعه: نفسُ الرفع، لا رفعٌ ثانٍ", again.replayed === true && again.id === ap.id && (await repo.listPriceChanges()).length === 1);
+  setPrice("re", 1300);
+  const pv2 = await repo.previewPriceChange(spec);
+  check("معاينةٌ ثانية: المرفوعُ حديثاً يُتخطّى كلُّه", pv2.counts.lines === 0 && pv2.counts.recent_skipped === 6, JSON.stringify(pv2.counts));
+  const u1 = await repo.undoPriceChange(ap.id, ["rb"], "زبون", "ref-undo-1");
+  check("إرجاعُ عضوٍ يُرجع مجموعتَه كاملة", u1.restored === 2 && prices().ra === 5000 && prices().rb === 5000 && u1.status === "partially_undone");
+  const u1b = await repo.undoPriceChange(ap.id, ["rb"], "زبون", "ref-undo-1");
+  check("  وإعادةُ نداء الإرجاع بمرجعه ترجع نفسَ الجواب", u1b.replayed === true && u1b.restored === 2);
+  const u2 = await repo.undoPriceChange(ap.id, null, "كلّه", null);
+  check("إرجاعُ الباقي: المعدَّلُ بيدٍ يبقى، والباقي لأصله", u2.restored === 3 && u2.kept_changed === 1 && prices().rc === 1666 && prices().re === 1300
+    && dbNow().products.find((x) => x.id === "rd").sub_unit_price === 1500 && u2.status === "undone", JSON.stringify(u2));
+  const det = await repo.priceChangeDetail(ap.id);
+  const le = det.lines.find((l) => l.item === "re");
+  let e3 = null; try { await repo.forcePriceLine(le.id, 1250, "الأصل"); } catch (e) { e3 = e; }
+  check("«رجّعه للأصل» بسعرٍ غير الحاليّ يُرفض", e3?.message === "price_moved");
+  await repo.forcePriceLine(le.id, 1300, "الأصل");
+  check("  وبالحاليّ يرجع 1000", prices().re === 1000 && (await repo.priceEpoch()) === 4);
+  // سلسلةٌ لمرتجع الكاشير: رفعان قائمان ⇒ «قبل» الأقدم.
+  const s2 = { ...spec, p_categories: null, p_ids: ["rc"], skip_recent: false, pct_bp: 5000 };
+  await repo.applyPriceChange(s2, (await repo.previewPriceChange(s2)).plan_hash, null, null);
+  await repo.applyPriceChange(s2, (await repo.previewPriceChange(s2)).plan_hash, null, null);
+  const prior = await repo.priceRaisePrior();
+  check("السعرُ قبل الرفع: 1666→2500→3750 ⇒ «قبل» 1666 و«بعد» 3750", prior.rc?.o === 1666 && prior.rc?.w === 3750, JSON.stringify(prior.rc));
+  // رفعٌ لاحق يحجز سطرَه ولا يُحسم «تغيّر».
+  const fifty = (await repo.listPriceChanges()).filter((c) => c.title === "+50%").sort((a, b) => a.apply_seq - b.apply_seq);
+  const first = fifty[0];
+  let e4 = null; try { await repo.undoPriceChange(first.id, null, "x", null); } catch (e) { e4 = e; }
+  check("إرجاعُ الأقدم ورفعٌ لاحقٌ قائمٌ على نفس المادة ⇒ later_batch (لا يضيع الأصل)", e4?.message === "later_batch" && prices().rc === 3750);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

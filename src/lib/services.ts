@@ -209,17 +209,90 @@ export function updateService(id: string, patch: Partial<Pick<Service, "name" | 
       : (s.cost ?? null),
   };
   commit({ ...c, services: c.services.map((x) => (x.id === id ? next : x)) });
+  /* **ما تغيّر وحده** يُرسل (0226): كان التعديلُ يرسل الاسمَ والسعرَ والصنفَ معاً من
+   * ذاكرة الجهاز — فتعديلُ باركود خدمةٍ على جهازٍ حمّل الكتالوجَ صباحاً كان يُرجع
+   * سعرَها لِما قبل رفع الأسعار بصمت. والسعرُ نفسُه لا يمرّ من هنا: له
+   * `updateServicePrice` بالمقارنة ثمّ التبديل. */
+  const sent: Record<string, unknown> = {};
+  if (patch.name !== undefined && next.name !== s.name) sent.name = next.name;
+  if (patch.category_id !== undefined && next.category_id !== s.category_id) sent.category_id = next.category_id;
+  if (patch.price !== undefined && next.price !== s.price) sent.price = next.price;
+  const extra: Record<string, unknown> = {};
+  if (patch.barcode !== undefined && next.barcode !== (s.barcode ?? null)) extra.barcode = next.barcode;
+  if (patch.cost !== undefined && next.cost !== (s.cost ?? null)) extra.cost = next.cost;
+  if (!Object.keys(sent).length && !Object.keys(extra).length) return;
   cloudWrite(async () => {
-    const base = { name: next.name, price: next.price, category_id: next.category_id };
-    const r = await sb()!.from("clinic_services").update({ ...base, barcode: next.barcode, cost: next.cost }).eq("id", id);
+    const r = await sb()!.from("clinic_services").update({ ...sent, ...extra }).eq("id", id);
     // قبل 0102/0120 قد يغيب barcode أو cost — احفظ الباقي بدل ما يفشل التعديل كله.
-    if (r.error && /barcode|cost/i.test(r.error.message)) {
-      const r2 = await sb()!.from("clinic_services").update({ ...base, barcode: next.barcode }).eq("id", id);
-      if (r2.error && /barcode/i.test(r2.error.message)) return sb()!.from("clinic_services").update(base).eq("id", id);
-      return r2;
-    }
+    if (r.error && /barcode|cost/i.test(r.error.message) && Object.keys(sent).length) return sb()!.from("clinic_services").update(sent).eq("id", id);
     return r;
   }, "service-update");
+}
+
+/** خطأُ «السعرُ تغيّر من جهازٍ آخر» — يحمل السعرَ الحاليّ ليُقال للمستخدم. */
+export class ServicePriceMoved extends Error {
+  constructor(public current: number | null) { super("service_price_moved"); }
+}
+
+/**
+ * سعرُ خدمةٍ بالمقارنة ثمّ التبديل (0226): يُكتب **فقط** إن كان السعرُ بالقاعدة ما زال
+ * `expected` (ما رآه المستخدم حين فتح الحقل). حقلٌ فُتح قبل رفع الأسعار وأُغلق بعده
+ * كان يكتب سعرَ الصبح فوق الرفع بصمت (`onBlur` بلا فحص، و`cloudWrite` لا يعدّ صفوفاً).
+ * صفرُ صفوفٍ ⇒ `ServicePriceMoved` بالسعر الحاليّ، والذاكرةُ تُحدَّث به.
+ */
+export async function updateServicePrice(id: string, next: number, expected: number): Promise<void> {
+  const price = Math.max(0, Math.round(next * 100) / 100) || 0;
+  const c = getServiceCatalog();
+  const s = c.services.find((x) => x.id === id);
+  if (!s) throw new ServicePriceMoved(null);
+  const client = sb();
+  if (!client) {
+    if (s.price !== expected) throw new ServicePriceMoved(s.price);
+    commit({ ...c, services: c.services.map((x) => (x.id === id ? { ...x, price } : x)) });
+    return;
+  }
+  const r = await client.from("clinic_services").update({ price }).eq("id", id).eq("price", expected).select("id,price");
+  if (r.error) throw r.error;
+  if (!r.data || r.data.length === 0) {
+    const cur = await client.from("clinic_services").select("price").eq("id", id).maybeSingle();
+    const now = cur.data ? Number((cur.data as { price: number }).price) : null;
+    if (now != null) setServicePricesLocal({ [id]: now });
+    throw new ServicePriceMoved(now);
+  }
+  setServicePricesLocal({ [id]: price });
+}
+
+/** أسعارٌ نزلت من الخادم (رفعٌ أو إرجاع) ⇒ الذاكرةُ والمرآةُ المحلّية، بلا كتابةٍ سحابية. */
+export function setServicePricesLocal(prices: Record<string, number>) {
+  const c = getServiceCatalog();
+  if (!c.services.some((x) => x.id in prices)) return;
+  commit({ ...c, services: c.services.map((x) => (x.id in prices ? { ...x, price: prices[x.id] } : x)) });
+}
+
+/**
+ * قراءةٌ طازجة للكتالوج **ترمي على الفشل** ولا تكتب شيئاً (0226). `hydrateServices`
+ * تبلع الخطأ وترجع للنسخة المحلّية (القديمة) وقد تدفع بذرةً للقاعدة — فلو استُعملت بعد
+ * رفع الأسعار لقالت «تحدّث» والكاشيرُ ما زال يبيع بالقديم. هذه تقول «فشل» فتبقى البوّابة.
+ */
+export async function refreshServices(): Promise<ServiceCatalog> {
+  const client = sb();
+  if (!client) { cache = readLocal(); return cache; }
+  const [cats, svcs] = await Promise.all([
+    client.from("clinic_service_categories").select("id,name").order("created_at"),
+    client.from("clinic_services").select("id,category_id,name,price,surgery_ref,barcode,cost").order("created_at"),
+  ]);
+  if (cats.error) throw cats.error;
+  if (svcs.error) throw svcs.error;
+  const next: ServiceCatalog = {
+    categories: (cats.data ?? []).map((c) => ({ id: c.id as string, name: c.name as string })),
+    services: (svcs.data ?? []).map((s) => ({ id: s.id as string, category_id: s.category_id as string, name: s.name as string, price: Number(s.price),
+      surgery_ref: (s as { surgery_ref?: string | null }).surgery_ref ?? null, barcode: (s as { barcode?: string | null }).barcode ?? null,
+      cost: (s as { cost?: number | null }).cost != null ? Number((s as { cost?: number | null }).cost) : null })),
+  };
+  // كتالوجٌ فارغٌ بالقاعدة لا يُبذَر من هنا (درسُ 0153) — يبقى ما بالذاكرة.
+  if (next.categories.length === 0 && next.services.length === 0) return getServiceCatalog();
+  commit(next);
+  return next;
 }
 
 export function removeService(id: string) {

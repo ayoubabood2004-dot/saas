@@ -38,6 +38,10 @@ import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
 import { demoAdmissionCageGuard } from "./demoCages";
+import type { PriceChange, PriceChangeLine, PriceChangeSummary, PriceChangeDetail, PriceDetailLine, PricePriorMap } from "@/types";
+import { buildPlan, demoHash, isFracCurrency, ladderFor, missingIds, normalizeSpec, productScopeOf, bpText, type PriceSpec, type PricePreview } from "./priceRaise";
+import { getActiveCurrency } from "./currency";
+import { getServiceCatalog, setServicePricesLocal } from "./services";
 import { listStaff } from "./staff";
 import type { PreparedUpload } from "./image";
 import { LAB_STAGE_COL, assertUpdated, assertUploadableImage, blankOwnerField, dailyNoteLocalGet, dailyNoteLocalSet, dedupeCustomers, labLifecycleFields, pickByPurchaseName, purchaseCoRank, sayAmbiguousCode } from "./repo";
@@ -353,6 +357,62 @@ function demoEntry(companyId: string, kind: CompanyEntry["kind"], direction: Com
     entry_date: date || localISO(), method: method ?? null, note: note?.trim() || null,
     created_by: null, created_at: new Date().toISOString(), voided_at: null, voided_by: null, void_reason: null, void_detail: null,
   };
+}
+
+/* ---- رفعُ الأسعار بالتجريبيّ (مرآةُ 0226 بحسابها وحرّاسها) ---- */
+const PRICE_RECENT_MS = 30 * 86400000;
+function demoPriceCheck(spec: PriceSpec, frac: boolean): void {
+  const bp = Number(spec?.pct_bp);
+  if (!Number.isInteger(bp) || bp < 1 || bp > 10000) throw demoHint("bad_pct", "النسبةُ لازم بين ٠٫٠١٪ و١٠٠٪ وبمنزلتين على الأكثر.");
+  if (spec.round !== "smart" && spec.round !== "fixed") throw demoHint("bad_round", "bad_round");
+  const cents = Math.round(Number(spec.max_step) * 100);
+  if (!ladderFor(frac).some((l) => Math.round(l * 100) === cents) || Math.abs(Number(spec.max_step) * 100 - cents) > 1e-9) {
+    throw demoHint("bad_step", "خطوةُ التقريب غيرُ معروفة لعملة العيادة.");
+  }
+  if (!spec.products && !spec.services) throw demoHint("empty_scope", "اختر المنتجات أو الخدمات أو الاثنين.");
+  if (productScopeOf(spec) === "mixed" || (spec.s_categories?.length && spec.s_ids?.length)) {
+    throw demoHint("mixed_scope", "اختر طريقةً واحدة: الكلّ أو أصناف أو شركات أو موادّ معيّنة.");
+  }
+}
+function demoPriceRecent(db: DemoDB): Set<string> {
+  const changes = new Map((db.priceChanges ?? []).map((c) => [c.id, c]));
+  const out = new Set<string>();
+  for (const l of db.priceChangeLines ?? []) {
+    const c = changes.get(l.change_id);
+    if (!c || l.undo_outcome !== null || Date.now() - Date.parse(c.applied_at) > PRICE_RECENT_MS) continue;
+    out.add(`${l.kind}:${l.item_id}:${l.field}`);
+  }
+  return out;
+}
+function demoPricePreview(db: DemoDB, spec0: PriceSpec): PricePreview {
+  const currency = (getActiveCurrency() || "IQD").toUpperCase();
+  const frac = isFracCurrency(currency);
+  demoPriceCheck(spec0, frac);
+  const spec = normalizeSpec(spec0);
+  const services = getServiceCatalog().services;
+  const plan = buildPlan(db.products ?? [], services, spec, frac, demoPriceRecent(db));
+  const { hashText, ...rest } = plan;
+  return { ...rest, plan_hash: demoHash(hashText), currency, missing: missingIds(db.products ?? [], services, spec) };
+}
+function demoPriceSummary(c: PriceChange): PriceChangeSummary {
+  return { id: c.id, title: c.title, pct_bp: c.pct_bp, applied_at: c.applied_at, status: c.status, n_products: c.n_products,
+    n_sub: c.n_sub, n_services: c.n_services, n_lines: c.n_lines, event_seq: c.event_seq };
+}
+/** السعرُ الحاليّ لسطر (null = المادةُ زالت). */
+function demoPriceCur(db: DemoDB, l: Pick<PriceChangeLine, "kind" | "item_id" | "field">): number | null {
+  if (l.kind === "service") return getServiceCatalog().services.find((s) => s.id === l.item_id)?.price ?? null;
+  const p = (db.products ?? []).find((x) => x.id === l.item_id);
+  if (!p) return null;
+  return l.field === "sell_price" ? p.sell_price : (p.sub_unit_price ?? null);
+}
+/** رفعٌ لاحقٌ قائمٌ على نفس (المادة، الحقل)؟ */
+function demoPriceLater(db: DemoDB, c: PriceChange, l: PriceChangeLine): PriceChange | null {
+  const byId = new Map((db.priceChanges ?? []).map((x) => [x.id, x]));
+  const hits = (db.priceChangeLines ?? [])
+    .filter((x) => x.undo_outcome === null && x.kind === l.kind && x.item_id === l.item_id && x.field === l.field)
+    .map((x) => byId.get(x.change_id)).filter((x): x is PriceChange => !!x && x.apply_seq > c.apply_seq)
+    .sort((a, b) => a.apply_seq - b.apply_seq);
+  return hits[0] ?? null;
 }
 
 function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null; merged_into?: string; keep_note?: string | null } = {}): DeletedCompany {
@@ -3299,6 +3359,160 @@ const demoRepo = {
     saveDB(db);
     return e;
   },
+  /* ---- رفعُ الأسعار (0226) — مرآةُ دوالّ القاعدة ---- */
+  async previewPriceChange(spec: PriceSpec): Promise<PricePreview> {
+    return demoPricePreview(loadDB(), spec);
+  },
+  async applyPriceChange(spec: PriceSpec, planHash: string, note?: string | null, clientRef?: string | null): Promise<PriceChangeSummary> {
+    const db = loadDB();
+    if (clientRef) {
+      const hit = (db.priceChanges ?? []).find((c) => (c as PriceChange & { client_ref?: string | null }).client_ref === clientRef);
+      if (hit) return { ...demoPriceSummary(hit), replayed: true };
+    }
+    const pv = demoPricePreview(db, spec);
+    if (pv.plan_hash !== planHash) throw demoHint("stale_preview", "الأسعار تغيّرت من آخر معاينة — راجع المعاينة الجديدة واضغط مرّة ثانية.");
+    if (pv.lines.length === 0) throw demoHint("empty_plan", "ماكو سعرٌ يرتفع بهذا الاختيار.");
+    // مقارنةٌ ثمّ تبديل — بالتجريبيّ لا سباقَ، لكنّ الشرطَ نفسُه يُكتب ليبقى مرآة.
+    const svcPrices: Record<string, number> = {};
+    for (const l of pv.lines) {
+      if (l.k === "service") { svcPrices[l.id] = l.w; continue; }
+      const p = (db.products ?? []).find((x) => x.id === l.id);
+      const cur = l.f === "sell_price" ? p?.sell_price : p?.sub_unit_price;
+      if (!p || cur !== l.o) throw demoHint("stale_preview", "سعرُ مادةٍ تغيّر أثناء الحفظ — ما تغيّر شيء، أعد المعاينة.");
+    }
+    for (const l of pv.lines) {
+      if (l.k !== "product") continue;
+      const p = (db.products ?? []).find((x) => x.id === l.id)!;
+      if (l.f === "sell_price") p.sell_price = l.w; else p.sub_unit_price = l.w;
+    }
+    setServicePricesLocal(svcPrices);
+    const seq = (db.priceSeq ?? 0) + 1;
+    db.priceSeq = seq;
+    const now = new Date().toISOString();
+    const norm = normalizeSpec(spec);
+    const c: PriceChange & { client_ref?: string | null } = {
+      id: uuid(), clinic_id: null, pct_bp: norm.pct_bp, round_mode: norm.round, max_step: norm.max_step, currency: pv.currency,
+      spec: norm, plan_hash: pv.plan_hash, title: `+${bpText(norm.pct_bp)}%`, n_products: pv.counts.products, n_sub: pv.counts.sub_units,
+      n_services: pv.counts.services, n_lines: pv.counts.lines, note: note?.trim() || null, created_by: null, created_name: null,
+      applied_at: now, apply_seq: seq, status: "applied", undone_at: null, undone_by: null, undo_reason: null, event_seq: seq,
+      last_event_at: now, client_ref: clientRef ?? null,
+    };
+    (db.priceChanges ??= []).push(c);
+    for (const l of pv.lines) {
+      (db.priceChangeLines ??= []).push({ id: uuid(), change_id: c.id, kind: l.k, item_id: l.id, item_name: l.n, field: l.f,
+        old_price: l.o, new_price: l.w, step: l.s, grp: l.g, undo_outcome: null, undone_at: null });
+    }
+    saveDB(db);
+    return demoPriceSummary(c);
+  },
+  async listPriceChanges(): Promise<PriceChange[]> {
+    return (loadDB().priceChanges ?? []).slice().sort((a, b) => b.apply_seq - a.apply_seq);
+  },
+  async priceChangeDetail(id: string): Promise<PriceChangeDetail> {
+    const db = loadDB();
+    const c = (db.priceChanges ?? []).find((x) => x.id === id);
+    if (!c) throw demoHint("no_change", "الرفعُ غيرُ موجود بعيادتك.");
+    const lines: PriceDetailLine[] = (db.priceChangeLines ?? []).filter((l) => l.change_id === id).map((l) => {
+      const later = demoPriceLater(db, c, l);
+      return { id: l.id, k: l.kind, item: l.item_id, f: l.field, n: l.item_name, o: l.old_price, w: l.new_price, g: l.grp,
+        outcome: l.undo_outcome, undone_at: l.undone_at, cur: demoPriceCur(db, l),
+        later: later ? { id: later.id, title: later.title, applied_at: later.applied_at } : null };
+    }).sort((a, b) => a.n.localeCompare(b.n) || a.item.localeCompare(b.item) || a.f.localeCompare(b.f));
+    const { spec, ...change } = c;
+    return { change, spec, lines };
+  },
+  async undoPriceChange(id: string, items: string[] | null, reason: string, clientRef?: string | null): Promise<PriceChangeSummary> {
+    const db = loadDB();
+    if (!reason?.trim()) throw demoHint("reason_required", "اكتب سببَ الإرجاع.");
+    if (clientRef && db.priceUndoRefs?.[clientRef]) return { ...db.priceUndoRefs[clientRef], replayed: true };
+    const c = (db.priceChanges ?? []).find((x) => x.id === id);
+    if (!c) throw demoHint("no_change", "الرفعُ غيرُ موجود بعيادتك.");
+    const all = (db.priceChangeLines ?? []).filter((l) => l.change_id === id);
+    const want = items && items.length ? new Set(items) : null;
+    const groups = new Set(all.filter((l) => want?.has(l.item_id) && l.grp).map((l) => l.grp as string));
+    const cand = all.filter((l) => (l.undo_outcome === null || l.undo_outcome === "kept_missing")
+      && (!want || want.has(l.item_id) || (!!l.grp && groups.has(l.grp))));
+    if (!cand.length) throw demoHint("nothing_to_undo", "ما بقي شي من هذا الرفع يرجع.");
+    const blockedDirect = cand.filter((l) => demoPriceLater(db, c, l));
+    const blockedGroups = new Set(blockedDirect.map((l) => l.grp).filter((g): g is string => !!g));
+    const blocked = new Set(cand.filter((l) => blockedDirect.includes(l) || (!!l.grp && blockedGroups.has(l.grp))).map((l) => l.id));
+    const lines = cand.filter((l) => !blocked.has(l.id));
+    if (!lines.length) {
+      const first = demoPriceLater(db, c, blockedDirect[0]);
+      throw demoHint("later_batch", `رفعٌ لاحق (${first?.title ?? ""} بتاريخ ${(first?.applied_at ?? "").slice(0, 10)}) غيّر نفسَ المواد — أرجعه أوّلاً.`);
+    }
+    const now = new Date().toISOString();
+    const svc: Record<string, number> = {};
+    let restored = 0, keptChanged = 0, keptMissing = 0;
+    for (const l of lines) {
+      const cur = demoPriceCur(db, l);
+      if (cur === null) { l.undo_outcome = "kept_missing"; keptMissing++; }
+      else if (cur !== l.new_price) { l.undo_outcome = "kept_changed"; keptChanged++; }
+      else {
+        if (l.kind === "service") svc[l.item_id] = l.old_price;
+        else {
+          const p = (db.products ?? []).find((x) => x.id === l.item_id)!;
+          if (l.field === "sell_price") p.sell_price = l.old_price; else p.sub_unit_price = l.old_price;
+        }
+        l.undo_outcome = "restored"; restored++;
+      }
+      l.undone_at = now;
+    }
+    setServicePricesLocal(svc);
+    const seq = (db.priceSeq ?? 0) + 1;
+    db.priceSeq = seq;
+    Object.assign(c, { status: all.some((l) => l.undo_outcome === null) ? "partially_undone" : "undone", undone_at: now, undone_by: null,
+      undo_reason: reason.trim(), event_seq: seq, last_event_at: now });
+    const out: PriceChangeSummary = { ...demoPriceSummary(c), restored, blocked: blocked.size, kept_changed: keptChanged, kept_missing: keptMissing };
+    if (clientRef) (db.priceUndoRefs ??= {})[clientRef] = out;
+    saveDB(db);
+    return out;
+  },
+  async forcePriceLine(lineId: string, expected: number, reason: string): Promise<PriceChangeSummary> {
+    const db = loadDB();
+    if (!reason?.trim()) throw demoHint("reason_required", "اكتب سببَ الإرجاع.");
+    const l = (db.priceChangeLines ?? []).find((x) => x.id === lineId);
+    if (!l) throw demoHint("no_line", "السطرُ غيرُ موجود بعيادتك.");
+    if (l.undo_outcome !== "kept_changed") throw demoHint("not_kept", "هذا السطر يرجع بزرّ «رجّع» العادي.");
+    const c = (db.priceChanges ?? []).find((x) => x.id === l.change_id)!;
+    if (demoPriceLater(db, c, l)) throw demoHint("later_batch", "رفعٌ لاحق غيّر نفسَ المادة — أرجعه أوّلاً.");
+    if (demoPriceCur(db, l) !== expected) throw demoHint("price_moved", "السعرُ الحاليّ تغيّر من آخر ما شفته (أو المادة زالت) — حدّث الصفحة.");
+    if (l.kind === "service") setServicePricesLocal({ [l.item_id]: l.old_price });
+    else {
+      const p = (db.products ?? []).find((x) => x.id === l.item_id)!;
+      if (l.field === "sell_price") p.sell_price = l.old_price; else p.sub_unit_price = l.old_price;
+    }
+    const now = new Date().toISOString();
+    l.undo_outcome = "restored"; l.undone_at = now;
+    const seq = (db.priceSeq ?? 0) + 1;
+    db.priceSeq = seq;
+    Object.assign(c, { status: (db.priceChangeLines ?? []).some((x) => x.change_id === c.id && x.undo_outcome === null) ? "partially_undone" : "undone",
+      undone_at: now, undo_reason: reason.trim(), event_seq: seq, last_event_at: now });
+    saveDB(db);
+    return { ...demoPriceSummary(c), restored: 1 };
+  },
+  async priceEpoch(): Promise<number> {
+    return loadDB().priceSeq ?? 0;
+  },
+  async priceRaisePrior(): Promise<PricePriorMap> {
+    const db = loadDB();
+    const byId = new Map((db.priceChanges ?? []).map((c) => [c.id, c]));
+    const chains = new Map<string, { seq: number; o: number; w: number; at: string }[]>();
+    for (const l of db.priceChangeLines ?? []) {
+      const c = byId.get(l.change_id);
+      if (!c || l.kind !== "product" || l.field !== "sell_price" || l.undo_outcome !== null) continue;
+      if (Date.now() - Date.parse(c.applied_at) > 120 * 86400000) continue;
+      const arr = chains.get(l.item_id) ?? [];
+      arr.push({ seq: c.apply_seq, o: l.old_price, w: l.new_price, at: c.applied_at });
+      chains.set(l.item_id, arr);
+    }
+    const out: PricePriorMap = {};
+    for (const [k, arr] of chains) {
+      arr.sort((a, b) => a.seq - b.seq);
+      out[k] = { o: arr[0].o, at: arr[0].at, w: arr[arr.length - 1].w };
+    }
+    return out;
+  },
   /** هل قاعدة البيانات تدعم دفتر ديون المورّدين (ترحيل 0076)؟ */
   /** ترتيب «بدون صنف»: كل توأمٍ لقطعةٍ مصنَّفة يُدمج بأصله — العدد يُجمع،
    *  والأصل يكسب الباركود إن كان بلا باركود، والتاريخ يتبع الأصل. */
@@ -4378,6 +4592,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addCompanyAdjust: { entity: "company_entries", action: "INSERT" },
   companyPay: { entity: "company_entries", action: "INSERT" },
   voidCompanyEntry: { entity: "company_entries", action: "UPDATE" },
+  applyPriceChange: { entity: "price_changes", action: "INSERT" },
+  undoPriceChange: { entity: "price_changes", action: "UPDATE" },
+  forcePriceLine: { entity: "price_changes", action: "UPDATE" },
 };
 {
   const target = demoRepo as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;

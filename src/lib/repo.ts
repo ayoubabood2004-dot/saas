@@ -32,6 +32,8 @@ import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
 import type { PurchaseEffect } from "@/types";
+import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
+import type { PricePreview } from "./priceRaise";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { invNormName } from "./utils";
 import { emitGlobalToast } from "./globalToast";
@@ -369,6 +371,22 @@ function maybe<T>(res: { data: unknown; error: { message: string } | null }): T 
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
   return (res.data ?? undefined) as T | undefined;
 }
+/* ---- رفعُ الأسعار: أرقامُ numeric قد تصل نصّاً — تُطبَّع مرّةً هنا ---- */
+function normChange(c: PriceChange): PriceChange {
+  return { ...c, pct_bp: Number(c.pct_bp), max_step: Number(c.max_step), n_products: Number(c.n_products), n_sub: Number(c.n_sub),
+    n_services: Number(c.n_services), n_lines: Number(c.n_lines), apply_seq: Number(c.apply_seq), event_seq: Number(c.event_seq) };
+}
+function normSummary(s: PriceChangeSummary): PriceChangeSummary {
+  const n = (v: unknown) => (v == null ? undefined : Number(v));
+  return { ...s, pct_bp: Number(s.pct_bp), n_products: Number(s.n_products), n_sub: Number(s.n_sub), n_services: Number(s.n_services),
+    n_lines: Number(s.n_lines), event_seq: Number(s.event_seq), restored: n(s.restored), blocked: n(s.blocked),
+    kept_changed: n(s.kept_changed), kept_missing: n(s.kept_missing) };
+}
+function normPreview(p: PricePreview): PricePreview {
+  return { ...p, pct_bp: Number(p.pct_bp), max_step: Number(p.max_step),
+    lines: (p.lines ?? []).map((l) => ({ ...l, o: Number(l.o), w: Number(l.w), s: Number(l.s), fl: l.fl ?? [] })) };
+}
+
 function need<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T {
   if (res.error || res.data == null) {
     const src = res.error;
@@ -1925,6 +1943,43 @@ const supabaseRepo: DemoRepo = {
     const row = need<CompanyEntry>(await sbc().rpc("company_entry_void", { p_entry: id, p_reason: reason }));
     return { ...row, amount: Number(row.amount) || 0 };
   },
+  /* ---- رفعُ الأسعار (0226): الحسابُ والكتابةُ بالقاعدة، والشاشةُ تعرض ما قالته ---- */
+  async previewPriceChange(spec) {
+    return normPreview(need<PricePreview>(await sbc().rpc("price_change_preview", { p_spec: spec })));
+  },
+  async applyPriceChange(spec, planHash, note, clientRef) {
+    return normSummary(need<PriceChangeSummary>(await sbc().rpc("price_change_apply",
+      { p_spec: spec, p_plan_hash: planHash, p_note: note ?? null, p_client_ref: clientRef ?? null })));
+  },
+  async listPriceChanges() {
+    // يرمي ولا يبلع: سجلُّ رفوعٍ ناقصٌ يُخفي رفعاً يُرجَع منه (درسُ listCouriers).
+    const rows = await allPages<PriceChange>(() => sbc().from("price_changes").select("*"));
+    return rows.map(normChange).sort((a, b) => b.apply_seq - a.apply_seq);
+  },
+  async priceChangeDetail(id) {
+    const d = need<PriceChangeDetail>(await sbc().rpc("price_change_detail", { p_id: id }));
+    return { change: normChange(d.change as PriceChange), spec: d.spec,
+      lines: (d.lines ?? []).map((l) => ({ ...l, o: Number(l.o), w: Number(l.w), cur: l.cur == null ? null : Number(l.cur) })) };
+  },
+  async undoPriceChange(id, items, reason, clientRef) {
+    return normSummary(need<PriceChangeSummary>(await sbc().rpc("price_change_undo",
+      { p_id: id, p_items: items && items.length ? items : null, p_reason: reason, p_client_ref: clientRef ?? null })));
+  },
+  async forcePriceLine(lineId, expected, reason) {
+    return normSummary(need<PriceChangeSummary>(await sbc().rpc("price_change_force", { p_line: lineId, p_expected: expected, p_reason: reason })));
+  },
+  /** عدّادُ أحداث الأسعار بالعيادة (0 = لا رفعَ قطّ). صفٌّ واحد بفهرس (clinic_id, event_seq). */
+  async priceEpoch() {
+    const r = await sbc().from("price_changes").select("event_seq").order("event_seq", { ascending: false }).limit(1);
+    if (r.error) throw r.error;
+    return Number((r.data?.[0] as { event_seq?: number } | undefined)?.event_seq ?? 0);
+  },
+  async priceRaisePrior() {
+    const m = need<PricePriorMap>(await sbc().rpc("price_raise_prior"));
+    const out: PricePriorMap = {};
+    for (const [k, v] of Object.entries(m ?? {})) out[k] = { o: Number(v.o), at: v.at, w: Number(v.w) };
+    return out;
+  },
   async assignBarcodeIfEmpty(id, code) {
     const next = normalizeCode(code) || null;
     if (!next) throw new Error("empty code");
@@ -2633,6 +2688,8 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
   "listProblems", "listProducts", "listPurchaseItems", "listPurchaseEffects", "listPurchasePayments", "listPurchases",
   "listCompanyCharges", "listCompanyEntries", "listPaymentsForPurchases",
+  // رفعُ الأسعار (0226): المعاينةُ والسجلُّ والعدّادُ قراءة — الحفظُ والإرجاعُ لا.
+  "previewPriceChange", "listPriceChanges", "priceChangeDetail", "priceEpoch", "priceRaisePrior",
   "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---

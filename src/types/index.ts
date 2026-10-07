@@ -1427,6 +1427,71 @@ export interface Surgery {
   created_at?: string;
 }
 
+/* ── رفعُ الأسعار بنسبة (0226) ─────────────────────────────────────────────── */
+export type PriceChangeStatus = "applied" | "partially_undone" | "undone";
+/** رأسُ رفعٍ واحد — يُقرأ من الجدول (للعيادة) ويُكتب من الدوالّ وحدها. */
+export interface PriceChange {
+  id: string;
+  clinic_id?: string | null;
+  pct_bp: number;
+  round_mode: "smart" | "fixed";
+  max_step: number;
+  currency: string;
+  spec: import("@/lib/priceRaise").PriceSpec;
+  plan_hash: string;
+  /** «+25%» — يسمّي السطرَ بسجلّ الحركات. */
+  title: string;
+  n_products: number;
+  n_sub: number;
+  n_services: number;
+  n_lines: number;
+  note: string | null;
+  created_by: string | null;
+  /** اسمُ من رفع لحظتَها — فارغٌ لمشغّل المنصّة. */
+  created_name: string | null;
+  applied_at: string;
+  apply_seq: number;
+  status: PriceChangeStatus;
+  undone_at: string | null;
+  undone_by: string | null;
+  undo_reason: string | null;
+  event_seq: number;
+  last_event_at: string;
+}
+export type PriceUndoOutcome = "restored" | "kept_changed" | "kept_missing";
+/** سطرٌ مخزَّن (التجريبيّ يحفظه بشكل الجدول). */
+export interface PriceChangeLine {
+  id: string;
+  change_id: string;
+  kind: "product" | "service";
+  item_id: string;
+  item_name: string;
+  field: "sell_price" | "sub_unit_price" | "price";
+  old_price: number;
+  new_price: number;
+  step: number;
+  grp: string | null;
+  undo_outcome: PriceUndoOutcome | null;
+  undone_at: string | null;
+}
+/** ما ترجعه دوالُّ الحفظ والإرجاع. */
+export interface PriceChangeSummary {
+  id: string; title: string; pct_bp: number; applied_at: string; status: PriceChangeStatus;
+  n_products: number; n_sub: number; n_services: number; n_lines: number; event_seq: number;
+  replayed?: boolean; restored?: number; blocked?: number; kept_changed?: number; kept_missing?: number;
+}
+/** سطرُ التفصيل: الحاليُّ بجانب القديم والجديد، ومن يحجزه (رفعٌ لاحقٌ قائم). */
+export interface PriceDetailLine {
+  id: string; k: "product" | "service"; item: string; f: PriceChangeLine["field"]; n: string;
+  o: number; w: number; g: string | null; outcome: PriceUndoOutcome | null; undone_at: string | null;
+  /** السعرُ الآن — null إن زالت المادة. */
+  cur: number | null;
+  later: { id: string; title: string; applied_at: string } | null;
+}
+export interface PriceChangeDetail { change: Omit<PriceChange, "spec">; spec: import("@/lib/priceRaise").PriceSpec; lines: PriceDetailLine[] }
+/** السعرُ قبل الرفع لكلّ منتجٍ رُفع برفعٍ قائمٍ خلال ١٢٠ يوماً — لمرتجع الكاشير. */
+export type PricePriorMap = Record<string, { o: number; at: string; w: number }>;
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -1455,6 +1520,12 @@ export interface DemoDB {
   companyCharges?: CompanyCharge[];
   /** دفترُ الشركة خارجَ الفواتير (0224). */
   companyEntries?: CompanyEntry[];
+  /** رفوعُ الأسعار (0226) وسطورُها، وعدّادُ أحداثها (مرآةُ price_change_seq). */
+  priceChanges?: PriceChange[];
+  priceChangeLines?: PriceChangeLine[];
+  priceSeq?: number;
+  /** نتائجُ الإرجاع بمرجع النداء (مرآةُ rpc_refs) — إعادةُ نداءٍ تُرجع الجوابَ نفسَه. */
+  priceUndoRefs?: Record<string, PriceChangeSummary>;
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
   courierSettlements?: CourierSettlement[];
