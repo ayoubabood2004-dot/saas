@@ -20,6 +20,7 @@ import { markStale } from "./swrCache";
 import { retailKey } from "./prefetchData";
 import { refreshServices } from "./services";
 import { bumpPriceGen } from "./priceGen";
+import { withTimeout } from "./errors";
 
 export { priceGen, noteListGen, listGenOf } from "./priceGen";
 
@@ -49,8 +50,10 @@ export async function afterPriceChange(clinicId: string | null | undefined, epoc
   // البيعَ وإيصالَه (`cachedAt` فارغ = «لا لقطة بيدنا»).
   markStale(retailKey(clinicId));
   markStale(`inv_${clinicId ?? "self"}`);
+  // بمهلة: قراءةٌ عالقة كانت تحبس نافذةَ الرفع/الإرجاع بعد نجاحه. تعثّرُها = «الخدماتُ قديمة»
+  // (حارسُها بالبيع) وتُعاد بكلّ سؤال — لا انتظارٌ بلا نهاية.
   let servicesOk = true;
-  try { await refreshServices(); } catch { servicesOk = false; }
+  try { await withTimeout(refreshServices(), 8000); } catch { servicesOk = false; }
   svcStale = !servicesOk;
   if (typeof epoch === "number") lastSeen = Math.max(lastSeen ?? 0, epoch);
   emit(epoch ?? lastSeen ?? 0, servicesOk);
@@ -75,7 +78,7 @@ export async function checkPriceEpoch(clinicId: string | null | undefined): Prom
   if (e > prev) { await afterPriceChange(clinicId, e); return { epoch: e, changed: true }; }
   // خدماتٌ تعثّرت قراءتُها بعد تغيّرٍ سابق: تُعاد بكلّ سؤالٍ حتى تصل، ويُبثّ وصولُها.
   if (svcStale) {
-    try { await refreshServices(); svcStale = false; emit(e, true); } catch { /* تبقى قديمة ويبقى حارسُها */ }
+    try { await withTimeout(refreshServices(), 8000); svcStale = false; emit(e, true); } catch { /* تبقى قديمة ويبقى حارسُها */ }
   }
   return { epoch: e, changed: false };
 }
