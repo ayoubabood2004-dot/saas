@@ -387,6 +387,11 @@ function normPreview(p: PricePreview): PricePreview {
     lines: (p.lines ?? []).map((l) => ({ ...l, o: Number(l.o), w: Number(l.w), s: Number(l.s), fl: l.fl ?? [] })) };
 }
 
+/** «السعرُ تغيّر من جهازٍ آخر» — رمزٌ يترجمه describeDbError (لا نصَّ عربياً هنا). */
+function priceMoved(): Error {
+  return Object.assign(new Error("price_moved"), { code: "price_moved" });
+}
+
 function need<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T {
   if (res.error || res.data == null) {
     const src = res.error;
@@ -1408,14 +1413,27 @@ const supabaseRepo: DemoRepo = {
     if (!path || path.startsWith("data:") || path.startsWith("library/")) return;
     try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والشعارُ الجديد محفوظٌ أصلاً */ }
   },
-  async updateProduct(id, patch) {
+  async updateProduct(id, patch, expect) {
     // نفس تطبيع الإنشاء — تعديلٌ يكتب باركوداً غيرَ مطبَّع يعيد المشكلة.
     if ("barcode" in patch) patch = { ...patch, barcode: normalizeCode(patch.barcode) || null };
-    const r = await sbc().from("products").update(patch).eq("id", id).select().maybeSingle();
+    /* السعرُ بالمقارنة ثمّ التبديل (0226): نموذجٌ فُتح قبل رفع الأسعار وحُفظ بعده كان يكتب
+     * سعرَ الصبح فوق الرفع بصمت. `expect` = ما رآه المستخدم؛ تغيّر بالقاعدة ⇒ price_moved. */
+    const guard = <Q extends { eq: (c: string, v: unknown) => Q; is: (c: string, v: null) => Q }>(q: Q): Q => {
+      let g = q;
+      for (const [k, v] of Object.entries(expect ?? {})) g = v == null ? g.is(k, null) : g.eq(k, v);
+      return g;
+    };
+    const r = await guard(sbc().from("products").update(patch).eq("id", id)).select().maybeSingle();
     if (r.error && /bulk_group|sold_by_weight/i.test(r.error.message)) {
       const { bulk_group, sold_by_weight, ...rest } = patch as Record<string, unknown>;
       void bulk_group; void sold_by_weight;
-      return updated<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
+      return updated<Product>(await guard(sbc().from("products").update(rest as never).eq("id", id)).select().maybeSingle());
+    }
+    if (!r.error && r.data == null && expect && Object.keys(expect).length) {
+      // صفرُ صفوف: هل لأن السعرَ تغيّر (يُقال بالاسم) أم لأن السياسةَ ردّت (no_row_updated كالعادة)؟
+      const cur = await sbc().from("products").select(Object.keys(expect).join(",")).eq("id", id).maybeSingle();
+      const row = cur.data as Record<string, unknown> | null;
+      if (row && Object.entries(expect).some(([k, v]) => (row[k] == null ? null : Number(row[k])) !== (v ?? null))) throw priceMoved();
     }
     return updated<Product>(r);
   },

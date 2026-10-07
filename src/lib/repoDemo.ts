@@ -1994,10 +1994,14 @@ const demoRepo = {
   async deleteClinicLogo(_clinicId: string | null, _path: string): Promise<void> {
     void _clinicId; void _path;
   },
-  async updateProduct(id: string, patch: Partial<Product>): Promise<Product | undefined> {
+  async updateProduct(id: string, patch: Partial<Product>, expect?: Partial<Record<"sell_price" | "sub_unit_price", number | null>>): Promise<Product | undefined> {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) return undefined;
+    // مرآةُ المقارنة ثمّ التبديل بالسحابيّ (0226): سعرٌ تغيّر منذ فُتح النموذج ⇒ price_moved.
+    for (const [k, v] of Object.entries(expect ?? {})) {
+      if ((p[k as keyof Product] ?? null) !== (v ?? null)) throw Object.assign(new Error("price_moved"), { code: "price_moved" });
+    }
     // الخادمُ يطبّع الباركود عند الحفظ ويحرسه بالمحفّز (0167)؛ وهنا كان بلا
     // أيّهما — فكان الفحصُ يمرّ على سلوكٍ لا وجودَ له بالإنتاج.
     if ("barcode" in patch) {

@@ -10,6 +10,7 @@ import { applyFontScale } from "@/lib/fontScale";
 import { seedClinicLocale } from "@/lib/settings";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { startPresenceBeat } from "@/lib/presence";
+import { watchPriceEpoch, resetPriceEpoch } from "@/lib/priceSync";
 import { repo } from "@/lib/repo";
 import { endElevationOnLogout, clearElevationFlags } from "@/lib/managerOverride";
 import { endElevationThenSignOut } from "@/lib/logoutSequence";
@@ -396,6 +397,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return startPresenceBeat(raw.id, raw.full_name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedActive, raw?.id]);
+
+  /* «الأسعارُ تغيّرت» (0226): عدّادٌ واحد يُسأل كلَّ دقيقةٍ والتابُ ظاهر — رفعُ أسعارٍ من جهازٍ
+   * آخر يرمي لقطاتِ المخزن والكاشير ويقرأ الخدماتِ من جديد ويُبلّغ الشاشاتِ المفتوحة. والعيادةُ
+   * الجديدة تبدأ عدّادَها من الصفر (عدّادُ عيادةٍ لا يُقارَن بعدّاد أخرى). */
+  useEffect(() => {
+    if (resolvedActive !== "clinic" || !raw) return;
+    resetPriceEpoch();
+    const stop = watchPriceEpoch(raw.clinic_id ?? raw.id);
+    return () => { stop(); resetPriceEpoch(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedActive, raw?.id, raw?.clinic_id]);
 
   // ---- Demo persistence ---------------------------------------------------
   const persistRaw = (rp: RawProfile, active: AccountRole) => {

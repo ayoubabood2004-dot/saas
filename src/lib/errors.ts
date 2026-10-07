@@ -117,6 +117,10 @@ export function describeDbError(e: unknown, t: TFunction): string {
      اثنان: محفّزُ القاعدة، ومرآتُه بالنسخة التجريبية — ويحملان نفسَ الاسم.
      والرسالةُ تقول **ماذا يفعل** («افتحها») لا «فشل»: الجذرُ المقيس كان ١٠٢
      شركةٍ مكرّرة لأن أحداً لم يُقَل له إنّ الشركةَ موجودةٌ أصلاً. */
+  /* سعرٌ تغيّر بين فتح النموذج وحفظه (رفعُ أسعارٍ من جهازٍ آخر، 0226) — لا يُكتب فوقه. */
+  if (err.code === "price_moved" || err.message === "price_moved") {
+    return t("errors.priceMoved", "سعر هذي المادة تغيّر من جهاز ثاني (مثلاً رفع أسعار) من فتحت النموذج — ما انحفظ شي. سكّر وافتحها من جديد وتأكد من السعر.");
+  }
   if (typeof err.message === "string" && err.message.includes("company_section_twin_name")) {
     return t("errors.companySectionTwin", "أكو صنف بنفس الاسم داخل هذه الشركة.");
   }

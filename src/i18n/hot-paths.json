@@ -34,6 +34,7 @@
     "watch": "src/pages/StockWatch.tsx",
     "photos": "src/pages/ProductPhotos.tsx",
     "vbk": "src/pages/VisitPage.tsx",
-    "cbook": "src/pages/CompanyBook.tsx"
+    "cbook": "src/pages/CompanyBook.tsx",
+    "praise": "src/pages/PriceRaise.tsx"
   }
 }

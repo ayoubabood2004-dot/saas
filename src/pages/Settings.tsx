@@ -13,7 +13,7 @@ import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
 import { cn, currencySymbol , formatNum, uuid, money } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
-import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken } from "@/lib/services";
+import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken, updateServicePrice, ServicePriceMoved } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
@@ -34,6 +34,7 @@ import { SpeciesPicker } from "@/components/PetFields";
 import { PhoneInput } from "@/components/PhoneInput";
 import { ManagerOverrideCard } from "@/components/ManagerOverride";
 import { Button, Dialog, useToast } from "@/components/ui";
+import { describeDbError } from "@/lib/errors";
 
 /* ============================================================================
  * ترتيب صفحة الإعدادات
@@ -1923,6 +1924,26 @@ function ServiceSettings() {
  * كل عمليات الكتالوج العلمي بمفاتيح تشغيل/إيقاف: يفعّل الطبيب ما يجريه فقط،
  * يحدد سعره، ويغيّر الاسم لاحقاً بأي صيغة تعجبه — الخدمة تحمل مرجع العملية
  * (surgery_ref) فيبقى نوعها معروفاً بدقة وتُسجَّل في الطبلة بالاسم العلمي. */
+/** حفظُ سعر خدمةٍ من حقلٍ بالإعدادات (0226): لا كتابةَ إن لم يتغيّر الرقم، وإن تغيّر فبالمقارنة
+ *  على ما عُرض. كان كلُّ خروجٍ من الحقل يكتب سعرَ ذاكرة الجهاز — فمرورُ الاستقبال على حقلٍ
+ *  حُمّل قبل رفع الأسعار يُرجع سعرَ الخدمة لِما قبل الرفع بصمت. */
+function useServicePriceSaver(onChanged: () => void) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  return async (id: string, shown: number, next: number) => {
+    if (!Number.isFinite(next) || next === shown) return;
+    try { await updateServicePrice(id, next, shown); }
+    catch (e) {
+      if (e instanceof ServicePriceMoved) {
+        toast.error(e.current == null
+          ? t("services.priceGone", "الخدمة ما عادت موجودة — حدّث الصفحة.")
+          : t("services.priceMoved", { v: money(e.current), defaultValue: "سعر هذي الخدمة تغيّر من جهاز ثاني وصار {{v}} — ما انحفظ رقمك. راجعه واكتبه من جديد." }));
+      } else toast.error(describeDbError(e, t));
+    }
+    onChanged();
+  };
+}
+
 function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const byRef = new Map(catalog.services.filter((s) => s.surgery_ref).map((s) => [s.surgery_ref as string, s]));
@@ -1950,9 +1971,10 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
     onChanged();
   };
 
+  const savePrice = useServicePriceSaver(onChanged);
   const setPrice = (ref: string, price: number) => {
     const svc = byRef.get(ref);
-    if (svc) { updateService(svc.id, { price }); onChanged(); }
+    if (svc) void savePrice(svc.id, svc.price, price);
   };
 
   return (
@@ -1993,6 +2015,7 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
                         {on && (
                           <span className="flex items-center gap-1.5">
                             <input
+                              key={`${svc!.id}:${svc!.price}`}
                               type="number" min="0" step="250" inputMode="numeric"
                               className="input h-8 w-28 px-2 py-0 text-end text-xs font-bold tabular-nums"
                               defaultValue={svc!.price || ""}
@@ -2021,6 +2044,7 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
 
 function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; services: Service[]; onChanged: () => void }) {
   const { t } = useTranslation();
+  const savePrice = useServicePriceSaver(onChanged);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [cost, setCost] = useState("");
@@ -2062,9 +2086,10 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{s.name}</span>
               <div className="flex items-center gap-1 text-sm text-ink-muted">
                 <input
+                  key={`${s.id}:${s.price}`}
                   type="number" min="0" step="1" inputMode="numeric"
                   defaultValue={s.price}
-                  onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) { updateService(s.id, { price: v }); onChanged(); } }}
+                  onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) void savePrice(s.id, s.price, v); }}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                   className="w-24 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
                 />

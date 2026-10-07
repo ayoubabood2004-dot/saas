@@ -171,7 +171,7 @@ export function Inventory() {
   const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
   const { stockLocked: locked, restricted } = useOverride();
-  const { can } = usePermissions();
+  const { can, role } = usePermissions();
   // /inventory بلا FeatureGate بعكس /retail — فلو فُتحت شاشةُ بيعٍ هنا بلا فحص
   // صارت الكاشيرُ متاحةً لعيادةٍ باقتُها لا تشملها.
   const { has } = useEntitlements();
@@ -475,6 +475,12 @@ export function Inventory() {
             <Link to="/inventory/count" className="btn btn-secondary" data-countlink onClick={() => playTap()}>
               <ClipboardCheck size={16} /> {t("pos.countDaily", "الجرد اليومي")}
             </Link>
+            {/* رفعُ الأسعار بنسبة (0226): للمدير وحده ولا على جهازٍ مقفول — صفحتُه تحمل نصوصَها. */}
+            {role === "manager" && !restricted && (
+              <Link to="/inventory/prices" className="btn btn-secondary" data-pricelink onClick={() => playTap()}>
+                <TrendingUp size={16} /> {t("pos.priceRaise", "رفع الأسعار")}
+              </Link>
+            )}
           </>
         )}
       </div>
@@ -1325,9 +1331,21 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         /* التاريخُ لا يُرسل إلا إن غيّره المستخدم (0217): صار مشتقّاً من الدفعات، ونموذجٌ فُتح
          * قبل بيعٍ أفرغ دفعةً كان سيرسل تاريخَها القديم فيُنقل إليه تاريخُ دفعةٍ أخرى. */
         const { expiry_date: _e, ...noDate } = withOld;
-        const sent = (f.expiry_date || "") === (product.expiry_date ?? "").slice(0, 10) ? noDate : withOld;
+        const dated = (f.expiry_date || "") === (product.expiry_date ?? "").slice(0, 10) ? noDate : withOld;
+        /* السعرُ كالتاريخ (0226): لا يُرسل إلا إن غيّره المستخدم، وإن غيّره فبالمقارنة ثمّ التبديل
+         * على ما رآه حين فتح النموذج. نموذجٌ فُتح قبل رفع الأسعار وحُفظ بعده (لتعديل الاسم مثلاً)
+         * كان يكتب سعرَ الصبح فوق الرفع بصمت — وجهازٌ آخر لا يعرف أن رفعاً صار. */
+        const sellChanged = payload.sell_price !== product.sell_price;
+        const subChanged = (payload.sub_unit_price ?? null) !== (product.sub_unit_price ?? null);
+        const { sell_price: _sp, ...noSell } = dated;
+        const priced = sellChanged ? dated : noSell;
+        const { sub_unit_price: _su, ...noSub } = priced;
+        const sent = subChanged ? priced : noSub;
+        const expect: Partial<Record<"sell_price" | "sub_unit_price", number | null>> = {};
+        if (sellChanged) expect.sell_price = product.sell_price;
+        if (subChanged) expect.sub_unit_price = product.sub_unit_price ?? null;
         const { stock: _s, pooled: _p, ...rest } = sent;
-        await repo.updateProduct(product.id, foldingToPool ? rest : sent);
+        await repo.updateProduct(product.id, foldingToPool ? rest : sent, expect);
         if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
         if (keep) {
           toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
@@ -1475,6 +1493,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: null,
         clinic_id: clinicId ?? null,
       };
+      /* سعرُ المجموعة: لم يُغيَّر بالنموذج ⇒ لا يُرسل للأعضاء، والعضوُ الجديد يأخذ السعرَ
+       * **الحاليّ** من الخادم لا سعرَ لحظة الفتح — وإلا وُلد بسعر ما قبل رفع الأسعار فانشقّت
+       * المجموعةُ بسعرين (أمسكه تدقيقٌ عدائيّ). */
+      const groupSellChanged = !!editGroup && !!product && shared.sell_price !== product.sell_price;
+      if (editGroup && product && !groupSellChanged) {
+        const fresh = await repo.getProductById(product.id);
+        if (fresh) shared.sell_price = fresh.sell_price;
+      }
       // Create sequentially; collect failures instead of stopping so one bad row
       // never blocks the rest of the batch.
       const failedIdx: number[] = [];
@@ -1504,8 +1530,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             const keep = before ? keepOldCode(before, rowPayload.barcode, allProducts ?? []) : null;
             // التاريخُ غيرُ المعدَّل لا يُرسل (0217 — مشتقٌّ من الدفعات، والبائتُ يحرّك دفعة).
             const { expiry_date: _re, ...rowNoDate } = rowPayload;
-            const rowSent = before && (r.expiry_date || "") === (before.expiry_date ?? "").slice(0, 10) ? rowNoDate : rowPayload;
-            await repo.updateProduct(r.productId, keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent);
+            const rowDated = before && (r.expiry_date || "") === (before.expiry_date ?? "").slice(0, 10) ? rowNoDate : rowPayload;
+            // وسعرُ المجموعة كذلك (0226): غيرُ المعدَّل لا يُرسل، والمعدَّلُ بالمقارنة على ما رآه.
+            const { sell_price: _gs, ...rowNoSell } = rowDated;
+            const rowSent = groupSellChanged ? rowDated : rowNoSell;
+            await repo.updateProduct(r.productId, keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent,
+              groupSellChanged && before ? { sell_price: before.sell_price } : undefined);
             if (keep) keptOld.push(keep.kept);
           }
           else await repo.createProduct(rowPayload);

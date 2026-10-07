@@ -40,6 +40,9 @@ import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, s
 import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
+import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
+import { PRICES_EVENT, checkPriceEpoch, type PricesChangedDetail } from "@/lib/priceSync";
+import type { PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
 import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
 import { draftOnMount } from "@/lib/retailBridge";
@@ -97,6 +100,13 @@ interface Line {
   byWeight?: boolean;
   perKgPrice?: number;           // price of one whole kilo (the catalog sell_price)
   perKgCost?: number;            // purchase price of one kilo
+  /** سعرُ الخدمة بالكتالوج لحظةَ إضافتها (0226) — به يُعرف أن الكتالوجَ تغيّر بعدها. */
+  listAt?: number;
+  /** الكاشيرُ كتب السعرَ بيده — لا يغيّره رفعُ الأسعار (0226). */
+  priceManual?: boolean;
+  /** سطرُ راجع لمنتجٍ رُفع سعرُه: «قبل الرفع» افتراضُه (0226). undefined = لم يُحسم بعد،
+   *  null = لا رفعَ يخصّه. `list` سعرُ اليوم — زرٌّ واحد لمن اشترى بعد الرفع. */
+  retPrior?: { o: number; at: string; list: number } | null;
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -513,7 +523,7 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
 
 /** إقراراتُ بوّابات الإتمام — كلٌّ ببوّابته وبمعرّفات السطور التي سمّاها، ويُحمل ما سبقه
  *  إلى التالية. */
-type CheckoutAck = { bigIds?: string[]; expiredIds?: string[] };
+type CheckoutAck = { bigIds?: string[]; expiredIds?: string[]; priceIds?: string[] };
 
 export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
@@ -652,7 +662,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * الترويسة: أي تغيّر بالترويسة أو حجم الخط لا يعيد كسر التخطيط. */
   const posRootRef = useRef<HTMLDivElement | null>(null);
   const [posH, setPosH] = useState<string | undefined>(undefined);
-  const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
+  /* الكتالوجُ قابلٌ للتجديد (0226): رفعُ أسعار الخدمات من جهازٍ آخر يصل بحدث «الأسعار
+   * تغيّرت» — وكان مجمَّداً لحظةَ فتح الشاشة فيبيع بسعر الصبح طول النهار. */
+  const [catalog, setCatalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
   const [promoRules] = useState(() => getPromoRules());
   // عروض الكمية «كل N قطع خصم X» — التطبيق يدوي بالزر الأحمر بجانب السطر.
@@ -750,6 +762,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /* بيعُ المنتهي (م١): سؤالٌ بالاسم والتاريخ لا `window.confirm` يُقبل بلا قراءة. والإقرارُ
    * يحمل ما سبقه (`ack`): من أقرّ «بيع الرفّ كلّه» ثم سُئل عن المنتهي لا يُسأل الأوّلَ ثانيةً. */
   const [expiredAsk, setExpiredAsk] = useState<{ lines: Line[]; ack: CheckoutAck } | null>(null);
+  /** سطورٌ تغيّر سعرُها برفع أسعار بعد إضافتها — تُسمّى بسعرَيها قبل البيع (0226). */
+  const [priceAsk, setPriceAsk] = useState<{ lines: Line[]; ack: CheckoutAck } | null>(null);
   /** ما أقرّ ببيعه منتهياً، **مربوطاً بمرجع البيعة**: يُسجَّل بعد نجاحها لا عند الضغط،
    *  ومحاولةٌ ثانيةٌ بنفس المرجع (مهلةٌ ثم إعادة) تضيف لنفس القائمة — الخادمُ يرجع فاتورةَ
    *  المرجع الأولى، فما أُقرّ به أوّلاً بِيع فعلاً ولو حُذف سطرُه من السلّة بعدها. */
@@ -781,6 +795,96 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
+
+  /* ── رفعُ الأسعار والسلّةُ المفتوحة (0226) ──────────────────────────────────
+   * البيعُ لا يقرأ الكتالوج — سعرُ السطر يُنسخ لحظةَ إضافته. فـ«من لحظة الرفع» تحتاج:
+   *  ١) حدثَ «الأسعار تغيّرت» (المراقبُ بالقشرة، أو سؤالُ ما قبل البيعة) ⇒ تُجلب القائمةُ
+   *     والخدماتُ من جديد ولو والسلّةُ ممتلئة، والبيعُ موقوفٌ حتى تصل (`pricesPending`).
+   *  ٢) كلُّ قائمةٍ طازجة تُعيد تسعيرَ ما لم يُعدَّل بيدٍ (`repriceCart`)، ويُقال بالاسم،
+   *     ويُسأل عنه قبل البيع (`repriced` بإقرار) — لا يتغيّر مجموعٌ صامتاً تحت يد الكاشير.
+   *  ٣) ولا تسعيرَ تحت محاولةِ بيعٍ جاريةٍ أو مجهولةِ المصير (المرجعُ يحمل أسعارَها). */
+  const [repriced, setRepriced] = useState<Map<string, Repriced>>(() => new Map());
+  const [pricesPending, setPricesPending] = useState(false);
+  const [servicesStale, setServicesStale] = useState(false);
+  const pendingListRef = useRef<Product[] | null>(null);
+  const productsRef = useRef(products);
+  productsRef.current = products;
+  const onRefreshRef = useRef(onRefresh);
+  onRefreshRef.current = onRefresh;
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<PricesChangedDetail>).detail;
+      setCatalog(getServiceCatalog());
+      setServicesStale(!d?.servicesOk);
+      if (onRefreshRef.current) {
+        pendingListRef.current = productsRef.current;
+        setPricesPending(true);
+        onRefreshRef.current();
+      }
+      setPrior(null); setPriorFailed(false);
+    };
+    window.addEventListener(PRICES_EVENT, on);
+    return () => window.removeEventListener(PRICES_EVENT, on);
+  }, []);
+  // وصلت قائمةٌ غيرُ التي كانت لحظةَ الحدث ⇒ التحديثُ تمّ.
+  useEffect(() => {
+    if (pricesPending && products !== pendingListRef.current) setPricesPending(false);
+  }, [products, pricesPending]);
+
+  /* السعرُ قبل الرفع لمرتجع الكاشير: يُسأل حين يُفتح وضعُ الراجع (وثيقةٌ واحدة). تعذّرُه
+   * لا يُخفى: السطرُ يقول «تأكد من سعره بالفاتورة» بدل سعرِ اليوم صامتاً. */
+  const [prior, setPrior] = useState<PricePriorMap | null>(null);
+  const [priorFailed, setPriorFailed] = useState(false);
+  useEffect(() => {
+    if (!retMode || prior || priorFailed || wholesale) return;
+    let alive = true;
+    repo.priceRaisePrior().then((m) => { if (alive) setPrior(m); }).catch(() => { if (alive) setPriorFailed(true); });
+    return () => { alive = false; };
+  }, [retMode, prior, priorFailed, wholesale]);
+  const retPriorOf = (p: Product): Line["retPrior"] => {
+    if (wholesale) return null;
+    if (!prior) return undefined;
+    const pr = prior[p.id];
+    return pr ? { o: pr.o, at: pr.at, list: listPrice(p) } : null;
+  };
+  /* إعادةُ التسعير على كلّ قائمةٍ أو كتالوجٍ طازج — ما لم يُعدَّل بيد. الحسابُ على اللقطة
+   * الحيّة للإعلام، والكتابةُ بمحدِّثٍ يأخذ أحدثَ سلّة (أثرُ الرصيد قبله يحدّثها أيضاً). */
+  useEffect(() => {
+    if (paying || saleRefSaved) return;
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const fresh = {
+      product: (id: string) => { const p = byId.get(id); return p ? { box: listPrice(p), sub: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null) } : null; },
+      service: (id: string) => catalog.services.find((x) => x.id === id)?.price ?? null,
+    };
+    const r = repriceCart(cartRef.current, fresh);
+    if (r.cart === cartRef.current) return;
+    setCart((c) => repriceCart(c, fresh).cart);
+    if (r.changed.length) {
+      setRepriced((m) => {
+        const n = new Map(m);
+        for (const x of r.changed) n.set(x.id, n.has(x.id) ? { ...x, from: n.get(x.id)!.from } : x);
+        return n;
+      });
+      playWarning();
+      toast.warn(t("retail.repricedToast", { n: formatNum(r.changed.length), defaultValue: "تحدّث سعر {{n}} مادة بالسلة حسب الأسعار الجديدة — راجعها قبل البيع." }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, catalog, paying, saleRefSaved]);
+  // سطورُ راجعٍ أُضيفت قبل وصول الجواب تُحسم حين يصل (ما لم يُعدَّل سعرُها بيد).
+  useEffect(() => {
+    if (!prior) return;
+    setCart((c) => {
+      let ch = false;
+      const next = c.map((l) => {
+        if (!l.ret || l.retPrior !== undefined || !l.product_id) return l;
+        ch = true;
+        const pr = prior[l.product_id];
+        if (!pr || l.priceManual) return { ...l, retPrior: null };
+        return { ...l, retPrior: { o: pr.o, at: pr.at, list: l.unit_price }, unit_price: pr.o, priceManual: true };
+      });
+      return ch ? next : c;
+    });
+  }, [prior]);
   // Opt-in resizable cart (Settings → خيارات الكاشير) — drag the cart edge on lg+.
   // بالشاشة المتطورة الافتراضي يطابق عرضها التصميمي (~46% من الشاشة) لا 380
   // بكسل القديمة — تفعيل التحجيم ما ينبغي أن «يصغّر» سلة الكاشير المتطور.
@@ -885,12 +989,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
 
   /** وضع «الراجع»: الباركود المدگوگ ينزل سطراً سالباً بدل سطر بيع. */
   const addReturn = (p: Product, n = takeMult()) =>
-    bump(`r:${p.id}`, () => ({
-      id: `r:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
-      unit_price: listPrice(p), unit_cost: p.purchase_price,
-      qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
-      ret: true,
-    }), n);
+    bump(`r:${p.id}`, () => {
+      // مرتجعٌ بلا فاتورة (0226): افتراضُه سعرُ ما قبل الرفع إن رُفع خلال ١٢٠ يوماً —
+      // سعرُ اليوم كان يردّ للزبون أكثرَ مما دفع، و`retail_return` يكتبه نقداً خارجاً.
+      const pr = retPriorOf(p);
+      return {
+        id: `r:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
+        unit_price: pr ? pr.o : listPrice(p), unit_cost: p.purchase_price,
+        qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
+        ret: true, retPrior: pr, priceManual: !!pr,
+      };
+    }, n);
 
   // منتج يُباع بالوزن (كتلة): لا يُضاف بمسحةٍ واحدة — يفتح منتقي الوزن ليُختار
   // الكيلو فيُحسب السعر خطياً. المضاعِف لا معنى له هنا (الوزن يُختار بيده).
@@ -898,19 +1007,24 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (blockZeroCost(p)) return;
     const id = ret ? `r:${p.id}` : `p:${p.id}`;
     const qty = Math.round(kg * 1000) / 1000;
+    const pr = ret ? retPriorOf(p) : null;
     const line: Line = {
       id, kind: "product", name: p.name, barcode: p.barcode ?? null,
-      unit_price: listPrice(p), unit_cost: p.purchase_price,
+      unit_price: pr ? pr.o : listPrice(p), unit_cost: p.purchase_price,
       qty, stock: ret || p.pooled ? null : p.stock,
       product_id: p.id, subcategory: p.subcategory ?? null,
       byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
       expiry: p.expiry_date ?? null,
+      ...(ret ? { retPrior: pr, priceManual: !!pr } : {}),
     };
     // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
     // لكن **سعر الكيلو المعدَّل بيد الكاشير يبقى**: تعديلُ الوزن لا يجوز أن
     // يعيد السعر بهدوءٍ لسعر الكتلوج — تلك فلوسٌ تتغيّر بلا أن يطلبها أحد.
+    /* وما لم يُعدَّل بيدٍ يتبع القائمة (0226): كان يُبقي السعرَ القديم مع سعر كيلو جديد —
+     * فيبدو «يدوياً» ولا يلحقه رفعُ الأسعار أبداً. */
     setCart((c) => (c.some((l) => l.id === id)
-      ? c.map((l) => (l.id === id ? { ...l, ...line, unit_price: l.unit_price, unit_cost: l.unit_cost } : l))
+      ? c.map((l) => (l.id === id ? { ...l, ...line, unit_price: isManual(l) ? l.unit_price : line.unit_price, unit_cost: l.unit_cost,
+        priceManual: l.priceManual, retPrior: l.retPrior } : l))
       : [...c, line]));
     playSuccess();
     flashLine(id);
@@ -947,7 +1061,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         qty: 1, stock: p.pooled ? null : p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
         hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
         boxPrice: listPrice(p), subPrice: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null), boxCost: p.purchase_price,
-        saleUnit: startSub ? "sub" : "box",
+        saleUnit: startSub ? "sub" : "box", priceManual: false,
       };
     }, n, { stock: p.pooled ? null : p.stock });
   };
@@ -961,7 +1075,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       const toSub = unit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
       const unit_price = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
       const unit_cost = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
-      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost };
+      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false };
       const cap = unitCap(next);
       return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
     }));
@@ -969,7 +1083,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const addService = (s: Service, n = takeMult()): number => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    return bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
+    return bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, listAt: s.price, priceManual: false, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -986,8 +1100,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const setQty = (id: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: Math.min(qty, unitCap(l)) } : l))));
 
-  const setPrice = (id: string, price: number) =>
-    setCart((c) => c.map((l) => (l.id === id ? { ...l, unit_price: Math.max(0, Math.round(price * 100) / 100) } : l)));
+  /* سعرٌ كُتب بيد يُعلَّم (0226) — رفعُ الأسعار لا يمسّه. والعلَمُ على **تغييرٍ** فعليّ: فتحُ
+   * محرّر السعر وإغلاقُه بلا كتابة كان سيجعل كلَّ سطرٍ «يدوياً» فيفلت من الرفع. */
+  const setPrice = (id: string, price: number) => {
+    const v = Math.max(0, Math.round(price * 100) / 100);
+    setCart((c) => c.map((l) => (l.id === id && v !== l.unit_price ? { ...l, unit_price: v, priceManual: true } : l)));
+    setRepriced((m) => { if (!m.has(id)) return m; const n = new Map(m); n.delete(id); return n; });
+  };
 
   const removeLine = (id: string) => {
     setCart((c) => c.filter((l) => l.id !== id));
@@ -1353,7 +1472,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       }
       setCart((c) => c.some((l) => l.id === lineId) ? c : [...c, {
         id: lineId, kind: "service", name: best ? best.s.name : label, barcode: null,
-        unit_price: best ? best.s.price : 0, unit_cost: best?.s.cost ?? 0,
+        unit_price: best ? best.s.price : 0, unit_cost: best?.s.cost ?? 0, listAt: best ? best.s.price : undefined,
         qty: 1, stock: null, product_id: null, subcategory: null, serviceId: best ? best.s.id : null,
         petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
       }]);
@@ -1637,6 +1756,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
     expiredAckRef.current = null;
+    setRepriced(new Map());
     setSaleRefSaved(null);
     clearSaleDraft(draftScope);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
@@ -1968,6 +2088,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       return;
     }
     if (needsDebtName) { playWarning(); return; }
+    /* رفعُ الأسعار (0226): البيعةُ تُسعَّر بما بيد الجهاز، فيُسأل الخادمُ قبل كلّ بيعة «تغيّرت؟»
+     * (عدّادٌ واحد بفهرس). تغيّرت ⇒ تُجلب القائمةُ وتُعاد التسعيرة ويُسأل الكاشير — لا بيعَ
+     * بسعر الصبح بعد الرفع. وتعذّرُ السؤال (الشبكة) لا يوقف البيع: البيعةُ نفسُها تحتاج الشبكة. */
+    if (pricesPending) { playWarning(); toast.warn(t("retail.pricesUpdating", "جاري تحديث الأسعار بعد رفعٍ صار من جهاز ثاني — لحظة وجرّب مرة ثانية.")); return; }
+    if (servicesStale && cart.some((l) => l.kind === "service")) {
+      playWarning(); toast.error(t("retail.servicesStale", "تعذّر تحديث أسعار الخدمات بعد الرفع — حدّث الصفحة قبل بيع خدمة (السلة تبقى).")); return;
+    }
+    const ep = await checkPriceEpoch(clinicId);
+    if (ep?.changed) { playWarning(); toast.warn(t("retail.pricesChanged", "الأسعار تغيّرت هسه (رفع أو إرجاع من جهاز ثاني) — راح نحدّث السلة، راجعها واضغط بيع مرة ثانية.")); return; }
+    const rep = cart.filter((l) => repriced.has(l.id));
+    if (rep.some((l) => !ack.priceIds?.includes(l.id))) { playWarning(); setPriceAsk({ lines: rep, ack }); return; }
     /* الإقرارُ بالسطور التي سُمّيت لا بنعمٍ عامّة: سطرٌ صار كبيراً أو منتهياً والنافذةُ مفتوحة
      * (جوابُ خادمٍ متأخّر أضافه خلفها) لم يُسمَّ — فيُسأل عنه، ولا يمرّ بإقرارِ غيره. */
     const big = bigLines();
@@ -3002,6 +3133,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
                         {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
+                        {l.ret && l.retPrior && (
+                          /* مرتجعٌ لمادةٍ رُفع سعرُها (0226): افتراضُه سعرُ ما قبل الرفع، وضغطةٌ لمن اشترى بعده. */
+                          <button type="button" data-retprior onClick={() => { playTap(); const rp = l.retPrior!; setCart((c) => c.map((x) => (x.id === l.id ? { ...x, unit_price: x.unit_price === rp.o ? rp.list : rp.o } : x))); }}
+                            className="chip shrink-0 bg-amber-100 text-2xs font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+                            title={t("retail.retPriorTip", { v: money(l.retPrior.list), defaultValue: "اضغط إذا انشترت بعد الرفع (سعرها اليوم {{v}})" })}>
+                            {l.unit_price === l.retPrior.o
+                              ? t("retail.retPriorOld", { v: money(l.retPrior.o), defaultValue: "سعر قبل الرفع {{v}}" })
+                              : t("retail.retPriorNew", { v: money(l.retPrior.list), defaultValue: "سعر بعد الرفع {{v}}" })}
+                          </button>
+                        )}
+                        {l.ret && !l.retPrior && priorFailed && !wholesale && (
+                          <span data-retcheck className="chip shrink-0 bg-surface-2 text-2xs font-semibold text-ink-muted">{t("retail.retCheckInvoice", "تأكد من سعرها بالفاتورة")}</span>
+                        )}
+                        {repriced.has(l.id) && (
+                          <span data-repricedchip className="chip shrink-0 bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.repricedChip", "سعر جديد")}</span>
+                        )}
                         {(() => {
                           const e = expiryOf(l);
                           const st = expiryState(e, getExpiryWindows());
@@ -3669,6 +3816,34 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         onClose={() => setMultPad(false)}
         onSubmit={(n) => { armMult(n); setMultPad(false); }}
       />
+
+      {/* الأسعارُ تغيّرت تحت السلّة (0226) — كلُّ سطرٍ بسعرَيه، والبيعُ بإقرار */}
+      <Dialog open={!!priceAsk} onClose={() => setPriceAsk(null)} title={t("retail.repricedTitle", "أسعار تغيّرت بالسلة")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setPriceAsk(null); }}>{t("retail.repricedBack", "ارجع للسلة")}</Button>
+          <Button variant="primary" data-repricedgo onClick={() => {
+            playTap();
+            const a = priceAsk?.ack ?? {}; const ids = (priceAsk?.lines ?? []).map((l) => l.id);
+            setPriceAsk(null);
+            setRepriced((m) => { const n = new Map(m); for (const id of ids) n.delete(id); return n; });
+            void checkout({ ...a, priceIds: ids });
+          }}>{t("retail.repricedGo", "تمام، بيع بالأسعار الجديدة")}</Button>
+        </>}>
+        <div className="space-y-2" data-repricedask>
+          <p className="text-sm text-ink-muted">{t("retail.repricedHint", "هذي المواد انضافت قبل رفع الأسعار — السلة تحدّثت لسعرها الجديد. إذا اتفقت ويا الزبون على السعر القديم عدّله بيدك.")}</p>
+          <ul className="space-y-1">
+            {(priceAsk?.lines ?? []).map((l) => {
+              const r = repriced.get(l.id);
+              return (
+                <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
+                  <span className="shrink-0 tabular-nums"><span className="text-ink-subtle line-through">{money(r?.from ?? l.unit_price)}</span> <span className="font-bold text-ink">{money(l.unit_price)}</span></span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </Dialog>
 
       {/* تأكيدُ بيع الرفّ كاملاً — الكمية تُسمّى بالاسم والعدد قبل الحسم */}
       <Dialog open={!!bigSale} onClose={() => setBigSale(null)} title={t("retail.bigSaleTitle", "تبيع الرصيد كلّه؟")} size="sm"
