@@ -50,5 +50,7 @@
   { "entity": "company_sections", "action": "UPDATE", "details": { "name": "قطط", "__changed": { "company_id": ["a1", "b2"] } }, "kind": "relink" },
   { "entity": "company_sections", "action": "UPDATE", "details": { "name": "قطط", "__changed": { "pooled_stock": [0, 4] } }, "kind": "inventory" },
   { "entity": "invoices", "action": "UPDATE", "details": { "total": 1000, "__changed": { "section_id": ["s1", "s2"] } }, "kind": "sale_edit" },
-  { "entity": "something_new", "action": "INSERT", "details": {}, "kind": "other" }
+  { "entity": "something_new", "action": "INSERT", "details": {}, "kind": "other" },
+  { "entity": "price_changes", "action": "INSERT", "details": { "title": "+25%", "status": "applied" }, "kind": "price_change" },
+  { "entity": "price_changes", "action": "UPDATE", "details": { "title": "+25%", "__changed": { "status": ["applied", "undone"] } }, "kind": "price_change" }
 ]

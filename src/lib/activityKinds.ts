@@ -9,7 +9,7 @@
 
 export type ActivityKind =
   | "sale" | "refund" | "payment" | "sale_edit" | "sale_delete" | "sale_line" | "sale_expired" | "print" | "export"
-  | "product_add" | "product_edit" | "stock" | "product_delete" | "inventory" | "purchase" | "supplier_pay" | "expense" | "delivery" | "relink"
+  | "product_add" | "product_edit" | "stock" | "product_delete" | "price_change" | "inventory" | "purchase" | "supplier_pay" | "expense" | "delivery" | "relink"
   | "pet" | "case" | "dose" | "vaccine" | "medical" | "booking" | "message" | "store"
   | "team" | "payroll" | "settings" | "login" | "override" | "other";
 
@@ -18,7 +18,7 @@ export type ActivityGroup = "sales" | "stock" | "care" | "team";
 /** المجموعاتُ بالترتيب الذي تُعرض به، وأنواعُ كلٍّ منها. */
 export const ACTIVITY_GROUPS: { id: ActivityGroup; kinds: ActivityKind[] }[] = [
   { id: "sales", kinds: ["sale", "refund", "payment", "sale_edit", "sale_delete", "sale_line", "sale_expired", "print", "export"] },
-  { id: "stock", kinds: ["product_add", "product_edit", "stock", "product_delete", "inventory", "purchase", "supplier_pay", "expense", "delivery", "relink"] },
+  { id: "stock", kinds: ["product_add", "product_edit", "stock", "product_delete", "price_change", "inventory", "purchase", "supplier_pay", "expense", "delivery", "relink"] },
   { id: "care", kinds: ["pet", "case", "dose", "vaccine", "medical", "booking", "message", "store"] },
   { id: "team", kinds: ["team", "payroll", "settings", "login", "override", "other"] },
 ];
@@ -73,6 +73,8 @@ export function auditKind(entity: string, action: string, details: Record<string
     if (action === "DELETE") return "product_delete";
     return ch.has("stock") ? "stock" : "product_edit";
   }
+  // 0226: رفعُ الأسعار — سطرٌ للرفع وسطرٌ لكلّ إرجاع، لا ألفُ «تعديل منتج».
+  if (e === "price_changes") return "price_change";
   if (e === "purchases" || e === "purchase_items") return "purchase";
   if (e === "purchase_payments") return "supplier_pay";
   if (e === "companies" || e === "company_sections" || e === "generated_barcodes") return "inventory";

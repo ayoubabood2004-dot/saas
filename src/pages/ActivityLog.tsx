@@ -5,6 +5,7 @@ import {
   Users, Trash2, NotebookPen, Building2, CalendarDays,
   BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon, RotateCcw, Loader2,
   ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight, CalendarX,
+  TrendingUp,
 } from "lucide-react";
 import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import { repo } from "@/lib/repo";
@@ -91,7 +92,7 @@ const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
   sale_expired: { icon: CalendarX, tone: "danger" },
   print: { icon: Printer, tone: "muted" }, export: { icon: FileDown, tone: "muted" },
   product_add: { icon: Package, tone: "brand" }, product_edit: { icon: Package, tone: "muted" }, stock: { icon: Package, tone: "warn" },
-  product_delete: { icon: Trash2, tone: "danger" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },
+  product_delete: { icon: Trash2, tone: "danger" }, price_change: { icon: TrendingUp, tone: "warn" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },
   supplier_pay: { icon: Wallet, tone: "success" }, expense: { icon: Wallet, tone: "warn" }, delivery: { icon: Truck, tone: "muted" },
   relink: { icon: ArrowLeftRight, tone: "muted" },
   pet: { icon: PawPrint, tone: "brand" }, case: { icon: Stethoscope, tone: "brand" }, dose: { icon: Pill, tone: "brand" }, vaccine: { icon: Syringe, tone: "success" },

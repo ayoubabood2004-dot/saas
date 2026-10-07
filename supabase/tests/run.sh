@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -3889,6 +3889,166 @@ chk "السياجُ ما زال يغطّي delivery_orders (عمودٌ جديد 
 $P -f "$MIG/0225_delivery_courier_ref.sql" >/dev/null 2>&1
 chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: قيدٌ واحد والقيمُ باقية" \
     "select (select count(*) from pg_constraint where conname='delivery_orders_courier_ref_len')::text||'/'||(select count(*) from delivery_orders where courier_ref='DUP-7')::text" "1/2"
+
+# ── 0226: رفعُ الأسعار بنسبة ────────────────────────────────────────────────
+# الحسابُ مرآةُ priceRaise.ts فلساً بفلس، والمعاينةُ وثيقةٌ بلقطةٍ واحدة، والحفظُ يقارن
+# البصمةَ تحت القفل ويكتب بالمقارنة ثمّ التبديل، والإرجاعُ لا يدوس تعديلاً لاحقاً ولا
+# يشقّ مجموعة، ورفعٌ لاحقٌ قائمٌ يحجز سطرَه. كلُّ نداءٍ بدور authenticated.
+echo "▸ 0226: رفعُ الأسعار بنسبة"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+VET=55555555-5555-5555-5555-555555555555
+RCP=77777777-7777-7777-7777-777777777777
+PHO=88888888-8888-8888-8888-888888888888
+X=a2261111-0000-4000-8000-0000000000
+PA=${X}01; PB=${X}02; PC=${X}03; PD=${X}04; PE=${X}05; PZ=${X}09; PO=${X}0f
+SC=${X}c1; S1=${X}d1; S2=${X}d2; SCO=${X}c2
+# الإنتاجُ يدقّق المنتجاتِ والخدمات (audit_all من 0044/0045) — والحزمةُ بلا تلك الموجة،
+# فيُركَّب المحفّزُ هنا بشكله ليُقاس التخطّي على تدقيقٍ حقيقيّ لا على صمت.
+$P -c "drop trigger if exists audit_all on products;
+       create trigger audit_all after insert or update or delete on products for each row execute function audit_change();
+       drop trigger if exists audit_all on clinic_services;
+       create trigger audit_all after insert or update or delete on clinic_services for each row execute function audit_change();
+       insert into products(id, clinic_id, name, sell_price, purchase_price, category, bulk_group, stock) values
+         ('$PA','$C1','رويال A',5000,3500,'cat226','GX',4), ('$PB','$C1','رويال B',5000,3500,'cat226','GX',2),
+         ('$PC','$C1','معلبات',1666,1200,'cat226',null,9), ('$PE','$C1','رمل',1000,600,'cat226',null,3),
+         ('$PZ','$C1','صفر',0,0,'cat226',null,1), ('$PO','$C2','عيادة ثانية',5000,1,'cat226',null,1)
+       on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, sell_price, purchase_price, category, has_sub_unit, sub_unit_price, units_per_box, stock)
+       values ('$PD','$C1','حبوب',4500,3000,'cat226',true,1500,3,5) on conflict (id) do nothing;
+       insert into clinic_service_categories(id, clinic_id, name) values ('$SC','$C1','فحوص 226'), ('$SCO','$C2','غيرها') on conflict do nothing;
+       insert into clinic_services(id, clinic_id, category_id, name, price, cost) values
+         ('$S1','$C1','$SC','فحص عام',15000,null), ('$S2','$C2','$SCO','عيادة ثانية',9000,null) on conflict do nothing;" >/dev/null
+SPEC='{"pct_bp":2500,"round":"smart","max_step":250,"products":true,"services":true,"p_categories":["cat226"],"p_exclude":[],"s_categories":["'$SC'"],"s_exclude":[],"skip_recent":true}'
+_perr() { echo "split_part(_rls_try('$1', '$2'), ':', 3)"; }
+_prev() { echo "_pf('$1', 'select price_change_preview(''$2''::jsonb)::text')::jsonb"; }
+# الكتابةُ بطلبٍ والقراءةُ بآخر: قراءةٌ بنفس الجملة تقرأ لقطةَ ما قبل الكتابة (درس 0224).
+W() { psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "$1"; }
+
+chk "المعاينةُ للمدير وحده: الطبيبُ والاستقبالُ والمصوّرُ يُرفضون" \
+    "select $(_perr $VET "select price_change_preview(''$SPEC''::jsonb)")||'|'||$(_perr $RCP "select price_change_preview(''$SPEC''::jsonb)")||'|'||$(_perr $PHO "select price_change_preview(''$SPEC''::jsonb)")" "forbidden|forbidden|forbidden"
+chk "المعاينة: ٥ منتجات (المجموعةُ كاملة، والصفرُ يُعدّ ولا يُكتب، وعيادةٌ أخرى لا تدخل) + مفردٌ + خدمة" \
+    "select (d->'counts'->>'products')||'/'||(d->'counts'->>'sub_units')||'/'||(d->'counts'->>'services')||'/'||(d->'counts'->>'lines')||'/'||(d->'skipped'->>'zero_products') from (select $(_prev $C1 "$SPEC") d) x" "5/1/1/7/1"
+chk "  والأرقامُ الصريحة: 5000→6250، 1666→2100، 1000→1250، 15000→18750" \
+    "select string_agg((l->>'o')::numeric::int||'→'||(l->>'w')::numeric::int, ',' order by (l->>'o')::numeric, l->>'id') from (select $(_prev $C1 "$SPEC") d) x, jsonb_array_elements(d->'lines') l where l->>'f' <> 'sub_unit_price'" "1000→1250,1666→2100,4500→5750,5000→6250,5000→6250,15000→18750"
+chk "  والمفردُ (1500×3 = العلبة 4500) يُرفع ليبقى ×3 ≥ العلبة 5750: 1950 لا 1900، ويُعلَّم" \
+    "select (l->>'w')::numeric::int||'|'||(l->'fl')::text from (select $(_prev $C1 "$SPEC") d) x, jsonb_array_elements(d->'lines') l where l->>'f' = 'sub_unit_price'" '1950|["sub_aligned"]'
+chk "نطاقان معاً (صنف + موادّ معيّنة) يُرفض لا يتقاطع بصمت" \
+    "select $(_perr $C1 "select price_change_preview(''{\"pct_bp\":2500,\"round\":\"smart\",\"max_step\":250,\"products\":true,\"p_categories\":[\"cat226\"],\"p_ids\":[\"$PA\"]}''::jsonb)")" "mixed_scope"
+chk "  ونسبةٌ ١٠١٪ وخطوةٌ ١٠٠ (ليست بسلّم القواسم) تُرفضان" \
+    "select $(_perr $C1 "select price_change_preview(''{\"pct_bp\":10100,\"round\":\"smart\",\"max_step\":250,\"products\":true}''::jsonb)")||'|'||$(_perr $C1 "select price_change_preview(''{\"pct_bp\":2500,\"round\":\"fixed\",\"max_step\":100,\"products\":true}''::jsonb)")" "bad_pct|bad_step"
+H=$(W "select $(_prev $C1 "$SPEC")->>'plan_hash'")
+INV0=$(W "select count(*)||'/'||coalesce(sum(line_total),0) from invoice_items")
+AUD0=$(W "select count(*) from audit_log where entity in ('products','clinic_services') and clinic_id='$C1'")
+chk "بصمةٌ غيرُ بصمة المعاينة ⇒ «المعاينة قديمة» ولا يُكتب شيء" \
+    "select $(_perr $C1 "select price_change_apply(''$SPEC''::jsonb, ''xxxxxxxx'', null, null)")||'|'||(select sell_price::int from products where id='$PA')::text||'|'||(select count(*) from price_changes where clinic_id='$C1')::text" "stale_preview|5000|0"
+chk "الحفظُ بالبصمة الصحيحة يمرّ" \
+    "select _rls_try('$C1', 'select price_change_apply(''$SPEC''::jsonb, ''$H'', ''رفع الشهر'', ''ref-0226-apply-1'')')" "rows:1"
+chk "  والأسعارُ صارت ما عرضته المعاينة بالضبط (والمفردُ 1950)" \
+    "select string_agg(sell_price::int::text, ',' order by id) || '|' || (select sub_unit_price::int from products where id='$PD')::text || '|' || (select price::int from clinic_services where id='$S1')::text from products where id in ('$PA','$PB','$PC','$PD','$PE')" "6250,6250,2100,5750,1250|1950|18750"
+chk "  ولا يُمسّ: سعرُ الشراء، والصفر، وعيادةٌ أخرى، وخدمتُها" \
+    "select (select string_agg(purchase_price::int::text, ',' order by id) from products where id in ('$PA','$PC','$PD'))||'|'||(select sell_price::int from products where id='$PZ')||'|'||(select sell_price::int from products where id='$PO')||'|'||(select price::int from clinic_services where id='$S2')" "3500,1200,3000|0|5000|9000"
+chk "  والفواتيرُ القديمة كما هي سطراً ومبلغاً" \
+    "select count(*)||'/'||coalesce(sum(line_total),0) from invoice_items" "$INV0"
+chk "  والرأسُ بأرقامه: ٥ منتجات و١ مفرد و١ خدمة و٧ سطور، «+25%»" \
+    "select n_products||'/'||n_sub||'/'||n_services||'/'||n_lines||'/'||title||'/'||status from price_changes where clinic_id='$C1'" "5/1/1/7/+25%/applied"
+chk "التدقيق: لا سطرَ «تعديل منتج» واحد للرفع، وسطرٌ واحد بنوع price_change" \
+    "select ((select count(*) from audit_log where entity in ('products','clinic_services') and clinic_id='$C1') - $AUD0)::text||'|'||(select count(*) from audit_log a where a.entity='price_changes' and audit_kind(a.entity, a.action, a.details) = 'price_change')::text" "0|1"
+chk "إعادةُ النداء بنفس المرجع (جوابٌ ضاع): نفسُ الرفع يرجع، لا رفعٌ ثانٍ" \
+    "select _pf('$C1', 'select price_change_apply(''$SPEC''::jsonb, ''$H'', null, ''ref-0226-apply-1'')::text')::jsonb->>'replayed'" "true"
+chk "  (رفعٌ واحد بالجدول)" "select count(*)::text from price_changes where clinic_id='$C1'" "1"
+# تعديلٌ يدويّ بعد الرفع: يُدقَّق كالعادة (التخطّي محصورٌ بمعاملة الرفع)، ويبقى عند الإرجاع.
+W "select _rls_try('$C1', 'update products set sell_price = 1300 where id = ''$PE''')" >/dev/null
+chk "تعديلُ سعرٍ يدويّ بعد الرفع يُدقَّق كالعادة (التخطّي لا يتسرّب)" \
+    "select count(*)::text from audit_log where entity='products' and entity_id='$PE' and details->'__changed' ? 'sell_price'" "1"
+chk "معاينةٌ ثانية بنفس النطاق: ما رُفع خلال ٣٠ يوماً يُتخطّى (لا ٢٥٪ فوق ٢٥٪)" \
+    "select (d->'counts'->>'lines')||'/'||(d->'counts'->>'recent_skipped') from (select $(_prev $C1 "$SPEC") d) x" "0/7"
+CH=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq limit 1")
+R=$(W "select _pf('$C1', 'select price_change_undo(''$CH'', array[''$PB''::uuid], ''زبون اعترض'', ''ref-0226-undo-1'')::text')::jsonb->>'restored'")
+chk "إرجاعُ مادةٍ من مجموعة يُرجع المجموعةَ كلَّها (لا سعرين على رفٍّ واحد)" \
+    "select '$R'||'|'||(select string_agg(sell_price::int::text, ',' order by id) from products where id in ('$PA','$PB'))||'|'||(select status from price_changes where id='$CH')" "2|5000,5000|partially_undone"
+chk "  وإعادةُ نداء الإرجاع بمرجعه تُرجع نفسَ الجواب ولا تُرجع شيئاً ثانياً" \
+    "select _pf('$C1', 'select price_change_undo(''$CH'', array[''$PB''::uuid], ''زبون اعترض'', ''ref-0226-undo-1'')::text')::jsonb->>'replayed'" "true"
+chk "  والإرجاعُ بلا سبب يُرفض، وعيادةٌ أخرى لا تصل الرفع" \
+    "select $(_perr $C1 "select price_change_undo(''$CH'', null, '' '', null)")||'|'||$(_perr $C2 "select price_change_undo(''$CH'', null, ''x'', null)")||'|'||$(_perr $C2 "select price_change_detail(''$CH'')")" "reason_required|no_change|no_change"
+# رفعٌ لاحق B على المعلبات وحدها (بطلبٍ صريح فوق الرفع السابق).
+SPECB='{"pct_bp":1000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PC'"],"p_exclude":[],"skip_recent":false}'
+HB=$(W "select $(_prev $C1 "$SPECB")->>'plan_hash'")
+chk "رفعٌ ثانٍ صريحٌ فوق الأوّل (skip_recent=false) يُعلِّم السطرَ «حديث»" \
+    "select ($(_prev $C1 "$SPECB")->'lines'->0->'fl')::text" '["recent"]'
+chk "  ويمرّ" "select _rls_try('$C1', 'select price_change_apply(''$SPECB''::jsonb, ''$HB'', null, null)')" "rows:1"
+chk "  والمعلباتُ 2100→2350" "select sell_price::int::text from products where id='$PC'" "2350"
+CB=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+R=$(W "select (r->>'restored')||'/'||(r->>'blocked')||'/'||(r->>'kept_changed')||'/'||(r->>'status') from (select _pf('$C1', 'select price_change_undo(''$CH'', null, ''رجّعها'', null)::text')::jsonb r) x")
+chk "إرجاعُ الأوّل: المعلباتُ محجوزةٌ برفعٍ لاحق (تبقى معلّقة)، والمعدَّلُ بيدٍ يبقى، والباقي يرجع" \
+    "select '$R'||'|'||(select string_agg(coalesce(sell_price::int::text,'')||':'||coalesce(sub_unit_price::int::text,'-'), ',' order by id) from products where id in ('$PC','$PD','$PE'))||'|'||(select price::int from clinic_services where id='$S1')" "3/1/1/partially_undone|2350:-,4500:1500,1300:-|15000"
+chk "  والتفصيلُ يسمّي الرفعَ اللاحق الحاجز، ويعرض السعرَ الحاليّ" \
+    "select (l->'later'->>'title')||'|'||(l->>'cur')::numeric::int from (select _pf('$C1', 'select price_change_detail(''$CH'')::text')::jsonb d) x, jsonb_array_elements(d->'lines') l where l->>'item' = '$PC'" "+10%|2350"
+R1=$(W "select _pf('$C1', 'select price_change_undo(''$CB'', null, ''غلط'', null)::text')::jsonb->>'restored'")
+R2=$(W "select _pf('$C1', 'select price_change_undo(''$CH'', null, ''رجّعها'', null)::text')::jsonb->>'status'")
+chk "إرجاعُ اللاحق ثمّ الأوّل: المعلباتُ ترجع لأصلها 1666 لا 2100 (الأصلُ لا يضيع)" \
+    "select '$R1|$R2|'||(select sell_price::int from products where id='$PC')::text" "1|undone|1666"
+LE=$(W "select id from price_change_lines where change_id='$CH' and item_id='$PE'")
+chk "«رجّعه للأصل» لسطرٍ عُدِّل بيد: بسعرٍ غير الحاليّ يُرفض" \
+    "select $(_perr $C1 "select price_change_force(''$LE'', 1250, ''الأصل'')")" "price_moved"
+chk "  وبالحاليّ يمرّ" "select _rls_try('$C1', 'select price_change_force(''$LE'', 1300, ''الأصل'')')" "rows:1"
+chk "  فيرجع 1000، ويُدقَّق كتعديلٍ يدويّ (سطرٌ ثانٍ للمادة)" \
+    "select (select sell_price::int from products where id='$PE')::text||'|'||(select count(*) from audit_log where entity='products' and entity_id='$PE' and details->'__changed' ? 'sell_price')::text" "1000|2"
+chk "  والطبيبُ لا يفرض" "select $(_perr $VET "select price_change_force(''$LE'', 1000, ''x'')")" "forbidden"
+# مادةٌ تُحذف بعد الرفع: «زالت» لا خطأ.
+SPECC='{"pct_bp":2000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PA'"],"p_exclude":[],"skip_recent":false}'
+HC=$(W "select $(_prev $C1 "$SPECC")->>'plan_hash'")
+chk "رفعُ عضوٍ من مجموعة يرفع المجموعةَ كلَّها" \
+    "select _rls_try('$C1', 'select price_change_apply(''$SPECC''::jsonb, ''$HC'', null, null)')" "rows:1"
+CC=$(W "select id from price_changes where clinic_id='$C1' order by apply_seq desc limit 1")
+chk "  سطران، والمجموعةُ 6000" \
+    "select (select count(*) from price_change_lines where change_id='$CC')::text||'|'||(select string_agg(sell_price::int::text, ',' order by id) from products where id in ('$PA','$PB'))" "2|6000,6000"
+chk "  وحذفُ عضوٍ منها يمرّ (للسلّة)" "select _rls_try('$C1', 'delete from products where id=''$PB''')" "rows:1"
+R=$(W "select (r->>'restored')||'/'||(r->>'kept_missing') from (select _pf('$C1', 'select price_change_undo(''$CC'', null, ''x'', null)::text')::jsonb r) x")
+chk "  والإرجاعُ يقول «زالت» للمحذوف ويرجع الباقي" \
+    "select '$R|'||(select sell_price::int from products where id='$PA')::text" "1/1|5000"
+chk "الجدولُ بلا سياسة كتابة: إدراجٌ مباشر يُرفض حتى للمدير" \
+    "select left(_rls_try('$C1', 'insert into price_changes (pct_bp, round_mode, max_step, currency, spec, plan_hash, title, apply_seq, event_seq) values (1, ''smart'', 1, ''IQD'', ''{}'', ''x'', ''x'', 1, 1)'), 13)" "guarded:42501"
+chk "  وعيادةٌ أخرى لا ترى صفّاً منهما، وصاحبتُها ترى رفوعَها الثلاثة" \
+    "select _rls_try('$C2', 'select 1 from price_change_lines')||'|'||_rls_try('$C1', 'select 1 from price_changes')" "rows:0|rows:3"
+# السعرُ قبل الرفع لمرتجع الكاشير: سلسلةٌ قائمة ⇒ أقدمُ «قبل».
+SPECD='{"pct_bp":5000,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PC'"],"p_exclude":[],"skip_recent":false}'
+HD=$(W "select $(_prev $C1 "$SPECD")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECD''::jsonb, ''$HD'', null, null)')" >/dev/null
+HD2=$(W "select $(_prev $C1 "$SPECD")->>'plan_hash'")
+W "select _rls_try('$C1', 'select price_change_apply(''$SPECD''::jsonb, ''$HD2'', null, null)')" >/dev/null
+chk "السعرُ قبل الرفع (مرتجع الكاشير): رفعان قائمان 1666→2500→3750 ⇒ «قبل» 1666 و«بعد» 3750، ويقرؤه الاستقبال" \
+    "select (r->'$PC'->>'o')::numeric::int||'→'||(r->'$PC'->>'w')::numeric::int from (select _pf('$RCP', 'select price_raise_prior()::text')::jsonb r) x" "1666→3750"
+# قفلٌ بيد بيعةٍ أخرى: الرفعُ يقول «مشغول» بعد محاولاتٍ قصيرة ولا ينتظر ممسكاً أقفالَه.
+SPECE='{"pct_bp":500,"round":"smart","max_step":250,"products":true,"services":false,"p_ids":["'$PE'"],"p_exclude":[],"skip_recent":false}'
+HE=$(W "select $(_prev $C1 "$SPECE")->>'plan_hash'")
+( psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "begin; select 1 from products where id='$PE' for update; select pg_sleep(4); commit;" >/dev/null 2>&1 & )
+sleep 0.7
+chk "صفٌّ مقفولٌ ببيعة: الرفعُ يرجع «busy» ولا يمسّ شيئاً" \
+    "select $(_perr $C1 "select price_change_apply(''$SPECE''::jsonb, ''$HE'', null, null)")||'|'||(select sell_price::int from products where id='$PE')::text" "busy|1000"
+sleep 3.5
+chk "  وبعد ما تخلص البيعة يمرّ" "select _rls_try('$C1', 'select price_change_apply(''$SPECE''::jsonb, ''$HE'', null, null)')" "rows:1"
+chk "    والرمل 1000→1050 (٥٪ بخطوة ٥٠ لا ٢٥٠)" "select sell_price::int::text from products where id='$PE'" "1050"
+chk "كلُّ دالّةٍ كاتبة definer بـsearch_path وتقيّد بالعيادة نصّاً" \
+    "select bool_and(p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and p.prosrc like '%clinic_id = v_clinic%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('price_change_apply','price_change_undo','price_change_force','price_change_detail')" "true"
+chk "  والمعاينةُ stable (لقطةٌ واحدة) والحسابُ immutable" \
+    "select string_agg(proname||':'||provolatile::text, ',' order by proname) from pg_proc where proname in ('price_change_preview','_price_step','_price_raise','_price_plan')" "_price_plan:s,_price_raise:i,_price_step:i,price_change_preview:s"
+chk "السياجُ يشمل الجدولين (المصوّرُ لا يقرأ ولا يكتب)" \
+    "select count(*)::text from verify_photographer_fence() v where v like '%price_change%'" "0"
+$P -f "$MIG/0226_price_changes.sql" >/dev/null 2>&1
+chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: الرفوعُ والمحفّزُ كما هي" \
+    "select (select count(*) from price_changes where clinic_id='$C1')::text||'/'||(select count(*) from pg_trigger where tgrelid='price_changes'::regclass and tgname='audit_all')::text" "6/1"
+chk "الأدواتُ الداخلية لا يناديها الداخلون، والأبوابُ ممنوعةٌ عن anon" \
+    "select (not has_function_privilege('authenticated','public._price_plan(uuid,jsonb,boolean)','execute') and not has_function_privilege('authenticated','public._price_lock_rows(uuid,uuid[],uuid[])','execute') and not has_function_privilege('authenticated','public._price_change_live()','execute') and not has_function_privilege('anon','public.price_change_apply(jsonb,text,text,text)','execute') and has_function_privilege('authenticated','public.price_change_apply(jsonb,text,text,text)','execute'))::text" "true"
+
+# ── التطابق: الحسابُ والمعاينةُ كاملةً بين القاعدة وpriceRaise.ts (المصدرُ نفسُه) ──
+PRF=$(mktemp -d)
+node "$HERE/../../scripts/price-fixture.mjs" "$PRF" >/dev/null
+$P -f "$PRF/plan-seed.sql" >/dev/null
+$P -tA -f "$PRF/round.sql" > "$PRF/round-actual.json"
+$P -tA -f "$PRF/plan.sql" > "$PRF/plan-actual.jsonl"
+if node "$HERE/../../scripts/price-parity.mjs" "$PRF"; then :; else fail=1; fi
+rm -rf "$PRF"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

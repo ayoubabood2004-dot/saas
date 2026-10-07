@@ -655,3 +655,43 @@ insert into auth.users(id) values
   ('44444444-4444-4444-4444-444444444444'),
   ('66666666-6666-6666-6666-666666666666')
 on conflict do nothing;
+
+/* ── 0226: رفعُ الأسعار — ما يلمسه بشكل الإنتاج (مقيسٌ ٧/١٠ من information_schema) ──
+ * أعمدةُ المفرد والمجموعة على المنتج، وجدولا الخدمات بشكل 0021 + 0102 + 0120 (مع
+ * FORCE RLS وسياسة العيادة، كما هناك). بلا هذا كان فحصُ الرفع يمرّ على عالَمٍ لا
+ * مفردَ فيه ولا مجموعات ولا خدمات — «القالبُ يُقاس على ما تُنتجه القاعدة فعلاً». */
+alter table products add column if not exists has_sub_unit   boolean not null default false;
+alter table products add column if not exists sub_unit_name  text;
+alter table products add column if not exists units_per_box  numeric(24,3);
+alter table products add column if not exists sub_unit_price numeric(24,2);
+alter table products add column if not exists bulk_group     text;
+create table if not exists clinic_service_categories (
+  id         uuid primary key default gen_random_uuid(),
+  clinic_id  uuid not null references auth.users(id) on delete cascade default auth_clinic(),
+  name       text not null,
+  created_at timestamptz not null default now()
+);
+create table if not exists clinic_services (
+  id          uuid primary key default gen_random_uuid(),
+  clinic_id   uuid not null references auth.users(id) on delete cascade default auth_clinic(),
+  category_id uuid not null references clinic_service_categories(id) on delete cascade,
+  name        text not null,
+  price       numeric(24,2) not null default 0,
+  created_at  timestamptz not null default now(),
+  surgery_ref text,
+  barcode     text,
+  cost        numeric
+);
+create index if not exists clinic_service_categories_clinic_idx on clinic_service_categories(clinic_id);
+create index if not exists clinic_services_clinic_idx on clinic_services(clinic_id);
+create unique index if not exists clinic_services_barcode_uniq on clinic_services(clinic_id, barcode) where barcode is not null;
+alter table clinic_service_categories enable row level security;
+alter table clinic_service_categories force row level security;
+alter table clinic_services enable row level security;
+alter table clinic_services force row level security;
+drop policy if exists clinic_service_categories_clinic_all on clinic_service_categories;
+create policy clinic_service_categories_clinic_all on clinic_service_categories for all
+  using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
+drop policy if exists clinic_services_clinic_all on clinic_services;
+create policy clinic_services_clinic_all on clinic_services for all
+  using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
