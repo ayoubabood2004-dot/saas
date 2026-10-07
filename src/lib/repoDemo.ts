@@ -402,6 +402,11 @@ function demoPriceSummary(c: PriceChange): PriceChangeSummary {
     n_sub: c.n_sub, n_services: c.n_services, n_lines: c.n_lines, event_seq: c.event_seq };
 }
 /** السعرُ الحاليّ لسطر (null = المادةُ زالت). */
+/** المادةُ موجودة؟ غيرُ «سعرُها الآن» — مفردٌ أُطفئ (null) مادتُه قائمة: «تغيّر» لا «زالت». */
+function demoPriceExists(db: DemoDB, l: Pick<PriceChangeLine, "kind" | "item_id">): boolean {
+  if (l.kind === "service") return getServiceCatalog().services.some((s) => s.id === l.item_id);
+  return (db.products ?? []).some((x) => x.id === l.item_id);
+}
 function demoPriceCur(db: DemoDB, l: Pick<PriceChangeLine, "kind" | "item_id" | "field">): number | null {
   if (l.kind === "service") return getServiceCatalog().services.find((s) => s.id === l.item_id)?.price ?? null;
   const p = (db.products ?? []).find((x) => x.id === l.item_id);
@@ -3392,7 +3397,6 @@ const demoRepo = {
       const p = (db.products ?? []).find((x) => x.id === l.id)!;
       if (l.f === "sell_price") p.sell_price = l.w; else p.sub_unit_price = l.w;
     }
-    setServicePricesLocal(svcPrices);
     const seq = (db.priceSeq ?? 0) + 1;
     db.priceSeq = seq;
     const now = new Date().toISOString();
@@ -3409,7 +3413,10 @@ const demoRepo = {
       (db.priceChangeLines ??= []).push({ id: uuid(), change_id: c.id, kind: l.k, item_id: l.id, item_name: l.n, field: l.f,
         old_price: l.o, new_price: l.w, step: l.s, grp: l.g, undo_outcome: null, undone_at: null });
     }
+    // الحفظُ أوّلاً ثمّ أسعارُ الخدمات (كمعاملة الخادم الواحدة): حصّةٌ ممتلئة كانت تُبقي الخدماتِ
+    // مرفوعةً بلا سجلّ رفعٍ يُرجعها، والرفعُ التالي يضاعفها.
     saveDB(db);
+    setServicePricesLocal(svcPrices);
     return demoPriceSummary(c);
   },
   async listPriceChanges(): Promise<PriceChange[]> {
@@ -3453,7 +3460,7 @@ const demoRepo = {
     let restored = 0, keptChanged = 0, keptMissing = 0;
     for (const l of lines) {
       const cur = demoPriceCur(db, l);
-      if (cur === null) { l.undo_outcome = "kept_missing"; keptMissing++; }
+      if (!demoPriceExists(db, l)) { l.undo_outcome = "kept_missing"; keptMissing++; }
       else if (cur !== l.new_price) { l.undo_outcome = "kept_changed"; keptChanged++; }
       else {
         if (l.kind === "service") svc[l.item_id] = l.old_price;
@@ -3465,7 +3472,6 @@ const demoRepo = {
       }
       l.undone_at = now;
     }
-    setServicePricesLocal(svc);
     const seq = (db.priceSeq ?? 0) + 1;
     db.priceSeq = seq;
     Object.assign(c, { status: all.some(priceLive) ? "partially_undone" : "undone", undone_at: now, undone_by: null,
@@ -3473,6 +3479,7 @@ const demoRepo = {
     const out: PriceChangeSummary = { ...demoPriceSummary(c), restored, blocked: blocked.size, kept_changed: keptChanged, kept_missing: keptMissing };
     if (clientRef) (db.priceUndoRefs ??= {})[clientRef] = out;
     saveDB(db);
+    setServicePricesLocal(svc);
     return out;
   },
   async forcePriceLine(lineId: string, expected: number, reason: string): Promise<PriceChangeSummary> {
@@ -3489,8 +3496,9 @@ const demoRepo = {
     if (targets.some((x) => demoPriceLater(db, c, x))) throw demoHint("later_batch", "رفعٌ لاحق غيّر نفسَ المادة — أرجعه أوّلاً.");
     if (demoPriceCur(db, l) !== expected) throw demoHint("price_moved", "السعرُ الحاليّ تغيّر من آخر ما شفته (أو المادة زالت) — حدّث الصفحة.");
     const now = new Date().toISOString();
+    const svc: Record<string, number> = {};
     for (const x of targets) {
-      if (x.kind === "service") setServicePricesLocal({ [x.item_id]: x.old_price });
+      if (x.kind === "service") svc[x.item_id] = x.old_price;
       else {
         const p = (db.products ?? []).find((q) => q.id === x.item_id)!;
         if (x.field === "sell_price") p.sell_price = x.old_price; else p.sub_unit_price = x.old_price;
@@ -3502,6 +3510,7 @@ const demoRepo = {
     Object.assign(c, { status: (db.priceChangeLines ?? []).some((x) => x.change_id === c.id && priceLive(x)) ? "partially_undone" : "undone",
       undone_at: now, undo_reason: reason.trim(), event_seq: seq, last_event_at: now });
     saveDB(db);
+    setServicePricesLocal(svc);
     return { ...demoPriceSummary(c), restored: targets.length };
   },
   async priceEpoch(): Promise<number> {

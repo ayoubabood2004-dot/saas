@@ -1476,6 +1476,27 @@ console.log("▸ رفعُ الأسعار بالتجريبيّ (0226) — نفس�
   await repo.applyPriceChange(sh2, (await repo.previewPriceChange(sh2)).plan_hash, null, null);
   const ph = (await repo.priceRaisePrior()).h;
   check("السعرُ قبل الرفع بعد تعديلٍ يدويّ بين رفعين: 2000 لا 1000", ph?.o === 2000 && ph?.w === 2500, JSON.stringify(ph));
+  // مفردٌ أُطفئ بعد الرفع: مادتُه قائمة ⇒ «تغيّر» لا «زالت» (كالخادم) — وإلا بقي الرفعُ «جزئياً»
+  // للأبد، ويُعاد إرجاعُه، ويحجز ما قبله.
+  push(P("so", "مفرد أُطفئ", null, { sell_price: 4500, purchase_price: 3000, category: "so", has_sub_unit: true, sub_unit_price: 1500, units_per_box: 3 }));
+  const sso = { ...spec, p_categories: null, p_ids: ["so"], skip_recent: false };
+  const aso = await repo.applyPriceChange(sso, (await repo.previewPriceChange(sso)).plan_hash, null, null);
+  { const d = dbNow(); const x = d.products.find((q) => q.id === "so"); x.has_sub_unit = false; x.sub_unit_price = null; mem.set(DB_KEY, JSON.stringify(d)); }
+  const uso = await repo.undoPriceChange(aso.id, null, "x", null);
+  let eso = null; try { await repo.undoPriceChange(aso.id, null, "x", null); } catch (e) { eso = e; }
+  check("مفردٌ أُطفئ ثمّ إرجاع: «تغيّر» لا «زالت»، والرفعُ «مرجوع»، وإرجاعٌ ثانٍ لا شيء له", uso.kept_changed === 1 && uso.kept_missing === 0 && uso.status === "undone" && eso?.message === "nothing_to_undo",
+    JSON.stringify({ uso, e: eso?.message }));
+  // حصّةٌ ممتلئة: الرفعُ كلُّه أو لا شيء — أسعارُ الخدمات لا تُكتب قبل حفظ سجلّه.
+  const ssv = { ...spec, products: false, services: true, p_categories: null, s_categories: null, s_ids: null, skip_recent: false };
+  const pv0 = await repo.previewPriceChange(ssv);
+  const n0 = (await repo.listPriceChanges()).length;
+  quotaFull = true;
+  let eq = null; try { await repo.applyPriceChange(ssv, pv0.plan_hash, null, null); } catch (e) { eq = e; }
+  quotaFull = false;
+  const pv1 = await repo.previewPriceChange(ssv);
+  const same = pv0.lines.length > 0 && pv0.lines.every((l) => pv1.lines.find((x) => x.id === l.id)?.o === l.o);
+  check("حصّةٌ ممتلئة: الرفعُ يرمي، وأسعارُ الخدمات كما كانت، ولا سجلَّ نصفيّ", eq !== null && same && (await repo.listPriceChanges()).length === n0,
+    JSON.stringify({ e: eq?.name, same, n0 }));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
