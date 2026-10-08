@@ -67,6 +67,7 @@ function photoAsProduct(x: PhotoProduct, clinicId: string | null): Product {
     subcategory: x.subcategory ?? undefined, company_id: x.company_id ?? null, image_path: x.image_path ?? null,
     store_visible: x.store_visible, store_featured: x.store_featured, store_desc: x.store_desc ?? null,
     sell_price: x.sell_price ?? 0, stock: x.stock ?? 0, purchase_price: 0,
+    pooled: !!x.pooled, expiry_date: x.expiry_date ?? null,
   } as Product;
 }
 
@@ -74,8 +75,9 @@ export function ClinicStore() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id;
-  /* موظّفُ التصوير بإذن المتجر (0222): المنتجاتُ والواجهة — بلا طلبات الزبائن (قرارُ
-   * المالك) وبلا السعر (سعرُ الكاشير نفسُه). والخادمُ يفرض هذا بنفسه؛ هنا لا تُعرض فقط. */
+  /* موظّفُ التصوير (0222، ووسّعه 0228 بقرار المالك): المتجرُ كلُّه بقالبه — المنتجاتُ والواجهةُ
+   * والسعر (سعرُ الكاشير نفسُه، من `store_set_price` بشرطه) — **بلا طلبات الزبائن** ولا الاقتراح
+   * (مبنيٌّ على المبيعات). والخادمُ يفرض هذا بنفسه؛ هنا لا تُعرض فقط. */
   const { baseRole } = usePermissions();
   const photoMode = baseRole === "photographer";
   const [tab, setTab] = useState<Tab>(photoMode ? "catalog" : "orders");
@@ -184,7 +186,7 @@ export function ClinicStore() {
           {tab === "orders"
             ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} goCatalog={goCatalog} />
             : tab === "catalog"
-              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canPrice={!photoMode} />
+              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} priceViaStore={photoMode} />
               : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
         </motion.div>
       </AnimatePresence>
@@ -512,11 +514,15 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
 
 /* ============================== التشكيلة ============================== */
 
-function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true }: {
+function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true, canSuggest = true, priceViaStore = false }: {
   products: Product[] | null; reload: () => Promise<void>; storeOn: boolean;
   filter: CatFilter; setFilter: (f: CatFilter) => void;
-  /** السعرُ سعرُ الكاشير — موظّفُ التصوير يراه ولا يعدّله. */
+  /** السعرُ سعرُ الكاشير نفسُه. */
   canPrice?: boolean;
+  /** «انشر أكثر ما تبيع» مبنيٌّ على المبيعات والإيراد — ليس لموظّف التصوير. */
+  canSuggest?: boolean;
+  /** المصوّرُ يكتب السعرَ من `store_set_price` (المنتجاتُ مسيَّجةٌ له كتابةً)؛ والكادرُ كما كان. */
+  priceViaStore?: boolean;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -739,7 +745,11 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     const v = Number(priceDraft);
     if (!Number.isFinite(v) || v < 0 || v === p.sell_price) return;
     // بشرط أن السعرَ ما زال ما يراه: قائمةٌ فُتحت قبل رفعِ أسعارٍ كانت تكتب رقمَها فوق الرفع بصمت.
-    try { await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }, { sell_price: p.sell_price }); playSuccess(); await reload(); }
+    try {
+      if (priceViaStore) await repo.setStorePrice(p.id, Math.round(v * 100) / 100, p.sell_price);
+      else await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }, { sell_price: p.sell_price });
+      playSuccess(); await reload();
+    }
     catch (e) { playWarning(); toast.error("تعذّر تعديل السعر", describeDbError(e, t)); await reload(); }
   };
 
@@ -799,7 +809,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
           والحدُّ الصريح: **الدالّةُ تقترح ولا تكتب** — لا نشرَ بلا ضغطة.
           النشرُ يُعلن سعراً ووعداً بالعلن، وهو قرارُ العيادة لا المنصّة. */}
       {/* الاقتراحُ مبنيٌّ على المبيعات — ليس لموظّف التصوير (البوّابةُ ترفضه له أصلاً). */}
-      {canPrice && suggestState !== "open" && (
+      {canSuggest && suggestState !== "open" && (
         <button type="button" onClick={() => void openSuggest()} disabled={suggestState === "loading"}
           className="card flex w-full items-center gap-3 border-brand-300 bg-brand-50/60 p-4 text-start transition hover:bg-brand-50 disabled:opacity-60 dark:border-brand-500/40 dark:bg-brand-500/10">
           {suggestState === "loading" ? <Loader2 size={20} className="shrink-0 animate-spin text-brand-600" /> : <Sparkles size={20} className="shrink-0 text-brand-600" />}

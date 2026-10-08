@@ -1843,8 +1843,21 @@ const demoRepo = {
       company_id: p.company_id ?? null, company_name: p.company_id ? co.get(p.company_id) ?? null : null,
       image_path: p.image_path ?? null, store_visible: !!p.store_visible, store_featured: !!p.store_featured,
       store_desc: p.store_desc ?? null, sell_price: p.sell_price ?? null, stock: p.stock ?? null,
+      pooled: !!p.pooled, expiry_date: p.expiry_date ?? null,
     })).sort((a, b) => a.name.localeCompare(b.name));
+  },  /** مرآةُ store_set_price (0228): نطاقُ photo_products (بلا منتجات الحقول)، والسعرُ بشرط أنه
+   *  ما زال ما رآه — وإلا price_moved كالخادم. */
+  async setStorePrice(productId: string, price: number, expected: number | null): Promise<number> {
+    const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === productId && !x.farm_id);
+    if (!p) throw demoHint("product_not_found", "المنتج مو موجود بعيادتك — حدّث القائمة.");
+    if (!Number.isFinite(price) || price < 0 || price > 1e12) throw demoHint("bad_price", "السعر لازم رقم صفر أو أكثر.");
+    if ((p.sell_price ?? null) !== (expected ?? null)) throw demoHint("price_moved", "السعر تغيّر من جهاز ثاني أو برفع أسعار — حدّث القائمة وشوف السعر الجديد قبل لا تعدّله.");
+    const v = Math.round(price * 100) / 100;
+    if (p.sell_price !== v) { p.sell_price = v; saveDB(db); }
+    return v;
   },
+
   async setProductImage(productId: string, path: string | null): Promise<void> {
     const v = (path ?? "").trim() || null;
     if (v && !(v.startsWith("data:") || v.startsWith("library/") || v.includes("/"))) {
@@ -4684,6 +4697,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   setProductImage: { entity: "products", action: "UPDATE" },
   setStoreFeatured: { entity: "products", action: "UPDATE" },
   setStoreDesc: { entity: "products", action: "UPDATE" },
+  setStorePrice: { entity: "products", action: "UPDATE" },
   createAppointment: { entity: "appointments", action: "INSERT" },
   updateAppointment: { entity: "appointments", action: "UPDATE" },
   setAppointmentStatus: { entity: "appointments", action: "UPDATE" },

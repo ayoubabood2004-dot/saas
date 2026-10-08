@@ -129,6 +129,7 @@ drop function if exists public.photo_products();
 drop function if exists public.set_product_image(uuid, text);
 drop function if exists public.image_path_in_use(text);
 drop function if exists public.store_set_featured(uuid, boolean);
+drop function if exists public.store_set_price(uuid, numeric, numeric);  -- 0228: بابُ السعر يسأل _store_manager_ok
 drop function if exists public.store_set_desc(uuid, text);
 drop function if exists public._store_manager_ok();
 drop function if exists public.verify_photographer_fence();

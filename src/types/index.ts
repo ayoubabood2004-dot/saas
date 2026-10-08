@@ -2199,4 +2199,7 @@ export interface PhotoProduct {
   store_desc?: string | null;
   sell_price?: number | null;
   stock?: number | null;
+  /** 0228: لمن يدير المتجر — المجمَّعُ رصيدُه بحوض قسمه، والانتهاءُ يخفيه الخادمُ عن الزبون. */
+  pooled?: boolean | null;
+  expiry_date?: string | null;
 }

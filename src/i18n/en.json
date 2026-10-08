@@ -5524,7 +5524,7 @@
   },
   "photos": {
     "title": "Product photos",
-    "sub": "Photograph a product or pick one from the library — it shows in the store and inventory",
+    "sub": "Take a photo, or pick one from your gallery or the library — it shows in the store and inventory",
     "summary": "{{missing}} without a photo of {{total}} products",
     "search": "Search by name, barcode or company",
     "fMissing": "No photo",
@@ -5539,7 +5539,8 @@
     "more": "Show the rest ({{n}})",
     "saved": "Saved the photo for {{name}}",
     "removed": "Removed the photo for {{name}}",
-    "noAccess": "This page is for staff with product-photo permission. Ask the clinic manager."
+    "noAccess": "This page is for staff with product-photo permission. Ask the clinic manager.",
+    "gallery": "From gallery"
   },
   "visitOpen": {
     "when": "When did they come?",

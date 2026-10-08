@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -3701,7 +3701,9 @@ chk "  ولا يضع مساراً من مجلّد عيادةٍ أخرى" \
     "select split_part(_rls_try('$PHO', 'select set_product_image(''${PP}01'', ''$C2/x.jpg'')'), ':', 3)" "bad_image_path"
 chk "  ولا يلمس منتجَ عيادةٍ أخرى" \
     "select split_part(_rls_try('$PHO', 'select set_product_image(''${PP}02'', null)'), ':', 3)" "product_not_found"
-chk "بلا إذن المتجر: لا ينشر ولا يعدّل واجهةَ المتجر" \
+# 0228: المتجرُ بقالب المصوّر افتراضاً — فحالُ «بلا إذن» صارت إطفاءَ المدير الصريح.
+$P -c "update staff set permissions = '{\"manageStore\": false}' where id = '${PP}f1';" >/dev/null
+chk "بلا إذن المتجر (أطفأه المدير): لا ينشر ولا يعدّل واجهةَ المتجر" \
     "select split_part(_rls_try('$PHO', 'select store_set_visible(array[''${PP}01''::uuid], true)'), ':', 3)||'|'||_rls_try('$PHO', 'update store_profiles set enabled = true')" "not_authorized|rows:0"
 $P -c "update staff set permissions = '{\"manageStore\": true}' where id = '${PP}f1';" >/dev/null
 chk "بإذن «تحكّم كامل بالمتجر»: ينشر ويختار ويصف ويعدّل الواجهة" \
@@ -3738,8 +3740,10 @@ chk "البوّابةُ لا تفتح الرفعَ للمصوّر، وتطابق
     "select split_part(_gate('$PHO', '/rpc/elevate_with_pin'), ':', 3)||'|'||split_part(_gate('$PHO', '/rpc/photo_products_all'), ':', 3)||'|'||_gate('$PHO', '/rpc/my_workspace/')" "photographer_forbidden|photographer_forbidden|rows:1"
 chk "  ومنحُها لـservice_role صريح (خطّافُ وظائف الدفع)" \
     "select has_function_privilege('service_role', 'public.api_gate()', 'execute')::text" "true"
-chk "المصوّرُ بلا إذن المتجر لا يرى السعرَ ولا الرصيد" \
+$P -c "update staff set permissions = '{\"manageStore\": false}' where id = '${PP}f1';" >/dev/null
+chk "المصوّرُ بلا إذن المتجر (أطفأه المدير) لا يرى السعرَ ولا الرصيد" \
     "select _pf('$PHO', 'select (photo_products()->0->>''sell_price'' is null and photo_products()->0->>''stock'' is null)::text')" "true"
+$P -c "update staff set permissions = '{}' where id = '${PP}f1';" >/dev/null
 $P -c "insert into staff(id, clinic_id, name, user_id, role, permissions) values ('${PP}f2','$C1','طبيب الفحص','$VET','veterinarian','{\"manageStore\": false}') on conflict (id) do update set permissions = excluded.permissions;" >/dev/null
 chk "إطفاءُ المدير لإذن المتجر عن طبيبٍ يُحترم بالخادم" \
     "select split_part(_rls_try('$VET', 'select store_set_visible(array[''${PP}01''::uuid], true)'), ':', 3)" "not_authorized"
@@ -4323,6 +4327,48 @@ chk "التصنيفاتُ تُدقَّق، ولا محفّزَ جديداً عل
     "select (select count(*) from pg_trigger where tgrelid='public.expense_categories'::regclass and tgname='audit_all')::text||'|'||(select string_agg(tgname, ',' order by tgname) from pg_trigger where tgrelid='public.expenses'::regclass and not tgisinternal)" "1|audit_all,expenses_stock_guard"
 chk "ونوعُها بمركز الحركات «مصروف»" \
     "select audit_kind('expense_categories','INSERT','{}'::jsonb)||'|'||audit_kind('expense_categories','UPDATE','{\"__changed\":{\"archived_at\":[null,\"x\"]}}'::jsonb)" "expense|expense"
+
+# ── 0228: المتجرُ كلُّه للمصوّر افتراضاً (بلا الطلبات)، والسعرُ بشرطه ─────────────
+echo "▸ 0228: المصوّرُ والمتجر"
+PHO=88888888-8888-8888-8888-888888888888
+PP=a0000000-0222-4000-8000-0000000000
+$P -c "update staff set permissions = '{}' where id = '${PP}f1';
+       update products set sell_price = 12000, farm_id = null where id = '${PP}01';" >/dev/null
+chk "المصوّرُ بلا استثناء: المتجرُ بقالبه (ينشر ويعدّل الواجهة)" \
+    "select _rls_try('$PHO', 'select store_set_visible(array[''${PP}01''::uuid], true)')||'|'||_rls_try('$PHO', 'update store_profiles set enabled = true')" "rows:1|rows:1"
+chk "  ويرى السعرَ والرصيدَ والمجمَّعَ والانتهاء" \
+    "select _pf('$PHO', 'select (photo_products()->0 ?& array[''sell_price'',''stock'',''pooled'',''expiry_date''] and photo_products()->0->>''sell_price'' is not null)::text')" "true"
+chk "  ويغيّر السعرَ من المتجر بشرطه (12000 ⇒ 13500)" \
+    "select _rls_try('$PHO', 'select store_set_price(''${PP}01'', 13500, 12000)')" "rows:1"
+chk "    (انكتب فعلاً)" \
+    "select sell_price::int::text from products where id='${PP}01'" "13500"
+chk "    وسطرُ التدقيق «تعديل منتج» باسم المصوّر بالسعر القديم والجديد" \
+    "select (actor = '$PHO')::text||'|'||(details->'__changed'->'sell_price'->>0)::numeric::int::text||'>'||(details->'__changed'->'sell_price'->>1)::numeric::int::text from audit_log where entity='products' and entity_id='${PP}01' and action='UPDATE' order by created_at desc, id desc limit 1" "true|12000>13500"
+chk "  وسعرٌ تغيّر بعد فتح القائمة لا يُكتب فوقه (price_moved)" \
+    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 9000, 12000)'), ':', 3)||'|'||(select sell_price::int::text from products where id='${PP}01')" "price_moved|13500"
+chk "  ولا منتجَ عيادةٍ أخرى، ولا سعرٌ سالبٌ أو NaN" \
+    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}02'', 1, 2000)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', -1, 13500)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', ''NaN''::numeric, 13500)'), ':', 3)" "product_not_found|bad_price|bad_price"
+chk "  والكتابةُ المباشرة على products ما زالت مسيَّجة (الدالّةُ البابُ الوحيد)" \
+    "select _rls_try('$PHO', 'update products set sell_price = 1 where id = ''${PP}01''')||'|'||(select sell_price::int::text from products where id='${PP}01')" "rows:0|13500"
+chk "  والبوّابةُ تفتح store_set_price ولا تفتح الطلباتِ ولا الاقتراح" \
+    "select _gate('$PHO', '/rpc/store_set_price')||'|'||split_part(_gate('$PHO', '/rpc/store_accept_order'), ':', 3)||'|'||split_part(_gate('$PHO', '/rpc/store_suggest_products'), ':', 3)" "rows:1|photographer_forbidden|photographer_forbidden"
+chk "  ولا يرى طلبات الزبائن (السياج)" \
+    "select _rls_try('$PHO', 'select 1 from store_orders')" "rows:0"
+$P -c "update staff set permissions = '{\"manageStore\": false}' where id = '${PP}f1';" >/dev/null
+chk "إطفاءُ المدير للمتجر عن مصوّرٍ بعينه يُحترم (السعرُ أيضاً)" \
+    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 1, 13500)'), ':', 3)" "not_authorized"
+$P -c "update staff set permissions = '{}' where id = '${PP}f1';" >/dev/null
+chk "والاستقبالُ ما اتّسع له شي (لا متجرَ بقالبه)" \
+    "select split_part(_rls_try('$RCP', 'select store_set_price(''${PP}01'', 1, 13500)'), ':', 3)" "not_authorized"
+# الكتابةُ بجملةٍ والقراءةُ بأخرى: استعلامٌ فرعيّ بجملة النداء يقرأ لقطتَها قبل الكتابة.
+chk "والمديرُ يغيّر السعرَ من نفس الباب" \
+    "select _rls_try('$C1', 'select store_set_price(''${PP}01'', 12000, 13500)')" "rows:1"
+chk "  (رجع 12000)" \
+    "select sell_price::int::text from products where id='${PP}01'" "12000"
+chk "store_set_price: definer بمسارٍ مثبَّت، تحصر بعيادتها وبلا منتجات الحقول، ولا شيءَ لـanon" \
+    "select prosecdef::text||'|'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||'|'||(prosrc like '%p.clinic_id = v_clinic and p.farm_id is null%')::text||'|'||has_function_privilege('anon', oid, 'execute')::text from pg_proc where proname='store_set_price'" "true|true|true|false"
+chk "والسياجُ ما زال يغطّي كلَّ جدول" \
+    "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

@@ -76,7 +76,8 @@ export const PERMISSIONS: Record<StaffRole, Capability[]> = {
   veterinarian: ["viewCalendar", "addPets", "editMedical", "processSales", "manageInventory", "manageProductPhotos", "manageStore"],
   receptionist: ["viewCalendar", "addPets", "processSales"],
   groomer: ["viewCalendar", "addPets"],
-  photographer: ["manageProductPhotos"],
+  // 0228: المتجرُ بقالب المصوّر (بلا الطلبات) — مرآةُ has_permission بالخادم، ويحرس تطابقَهما products-test.
+  photographer: ["manageProductPhotos", "manageStore"],
 };
 
 /** High-risk capabilities that trigger a confirmation when granted to non-managers. */

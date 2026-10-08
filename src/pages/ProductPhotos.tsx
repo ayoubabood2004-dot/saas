@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Camera, ImageIcon, ImageOff, Library, RotateCw, Search, Trash2 } from "lucide-react";
+import { Camera, ImageIcon, ImageOff, Images, Library, RotateCw, Search, Trash2 } from "lucide-react";
 import type { PhotoProduct } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -40,7 +40,15 @@ export function ProductPhotos() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [libFor, setLibFor] = useState<PhotoProduct | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /* الألبوم (0228، طلبُ المالك): `capture` يفتح الكاميرا وحدها بالموبايل ويُخفي الألبوم والملفّات —
+   * فحقلٌ ثانٍ بلا capture لصورٍ محفوظة. الخادمُ لا يفرّق بينهما: نفسُ الرفع ونفسُ set_product_image. */
+  const galleryRef = useRef<HTMLInputElement>(null);
   const fileFor = useRef<PhotoProduct | null>(null);
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; const p = fileFor.current;
+    e.target.value = "";
+    if (f && p) void upload(p, f);
+  };
 
   const load = async () => {
     setRows((r) => (Array.isArray(r) ? r : "loading"));
@@ -105,7 +113,7 @@ export function ProductPhotos() {
           <p className="text-sm text-ink-subtle">
             {Array.isArray(rows)
               ? t("photos.summary", { missing: formatNum(missing), total: formatNum(list.length), defaultValue: "{{missing}} بلا صورة من {{total}} منتج" })
-              : t("photos.sub", "صوّر المنتج أو اختاره من المكتبة — الصورة تطلع بالمتجر والمخزون")}
+              : t("photos.sub", "صوّر المنتج، أو اختار صورته من الألبوم أو المكتبة — الصورة تطلع بالمتجر والمخزون")}
           </p>
         </div>
       </div>
@@ -163,6 +171,12 @@ export function ProductPhotos() {
                         className="inline-flex h-10 flex-1 items-center justify-center gap-1 rounded-xl bg-brand-600 px-2 text-xs font-bold text-white transition hover:bg-brand-700 disabled:opacity-50">
                         <Camera size={14} /> {url ? t("photos.replace", "بدّل") : t("photos.shoot", "صوّر")}
                       </button>
+                      <button type="button" disabled={busy} data-photo-gallery={p.id}
+                        onClick={() => { playTap(); fileFor.current = p; galleryRef.current?.click(); }}
+                        title={t("photos.gallery", "من الألبوم")} aria-label={t("photos.gallery", "من الألبوم")}
+                        className="grid h-10 w-10 place-items-center rounded-xl border border-line text-ink-muted transition hover:text-brand-600 disabled:opacity-50">
+                        <Images size={16} />
+                      </button>
                       <button type="button" disabled={busy} onClick={() => { playTap(); setLibFor(p); }}
                         title={t("photos.library", "من المكتبة")} aria-label={t("photos.library", "من المكتبة")}
                         className="grid h-10 w-10 place-items-center rounded-xl border border-line text-ink-muted transition hover:text-brand-600 disabled:opacity-50">
@@ -191,13 +205,9 @@ export function ProductPhotos() {
         </>
       )}
 
-      {/* ملفٌّ واحد مخفيّ لكلّ البطاقات؛ capture يفتح كاميرا الموبايل مباشرةً. */}
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0]; const p = fileFor.current;
-          e.target.value = "";
-          if (f && p) void upload(p, f);
-        }} />
+      {/* حقلان مخفيّان لكلّ البطاقات: الكاميرا مباشرةً (capture)، والألبوم/الملفّات بلاه. */}
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
+      <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={onFile} data-gallery-input />
       <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
         onPick={(row) => { if (libFor) void fromLibrary(libFor, row.path); }} />
     </div>

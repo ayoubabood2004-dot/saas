@@ -1549,5 +1549,22 @@ console.log("▸ 0227 — تصنيفاتُ السحوبات (مرآةُ expense_
   mem.delete("vp_demo_expense_categories"); mem.delete("vp_demo_expenses"); mem.delete("vp_demo_audit");
 }
 
+console.log("▸ 0228 — سعرُ المتجر بشرطه (مرآةُ store_set_price)");
+{
+  const db = JSON.parse(mem.get(DB_KEY) || "{}");
+  db.products = db.products ?? [];
+  db.products.push({ id: "sp-1", name: "سعر المتجر", barcode: "880228", stock: 3, purchase_price: 1000, sell_price: 12000, created_at: new Date().toISOString() },
+    { id: "sp-farm", name: "علف حقل", barcode: "880229", stock: 3, purchase_price: 1000, sell_price: 5000, farm_id: "farm-x", created_at: new Date().toISOString() });
+  mem.set(DB_KEY, JSON.stringify(db));
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  const priceOf = (id) => JSON.parse(mem.get(DB_KEY)).products.find((p) => p.id === id).sell_price;
+  check("بما رآه: 12000 ⇒ 13500", (await repo.setStorePrice("sp-1", 13500, 12000)) === 13500 && priceOf("sp-1") === 13500);
+  check("  وسعرٌ تغيّر بعد الفتح لا يُكتب فوقه (price_moved)", (await code(() => repo.setStorePrice("sp-1", 9000, 12000))) === "price_moved" && priceOf("sp-1") === 13500);
+  check("  ولا منتجَ حقل ولا مجهول، ولا سالب", (await code(() => repo.setStorePrice("sp-farm", 1, 5000))) === "product_not_found"
+    && (await code(() => repo.setStorePrice("nope", 1, 0))) === "product_not_found" && (await code(() => repo.setStorePrice("sp-1", -1, 13500))) === "bad_price");
+  const ph = (await repo.listPhotoProducts()).find((p) => p.id === "sp-1");
+  check("photo_products بالتجريبيّ تعطي المجمَّعَ والانتهاء", ph && "pooled" in ph && "expiry_date" in ph);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

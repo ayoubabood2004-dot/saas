@@ -1256,6 +1256,13 @@ const supabaseRepo: DemoRepo = {
     const { error } = await sbc().rpc("store_set_desc", { p_product: productId, p_desc: desc });
     if (error) throw error;
   },
+  /* سعرُ البيع من المتجر (0228) لمن يدير المتجر ومنه المصوّر — جدولُ المنتجات مسيَّجٌ له
+   * كتابةً، فالدالّةُ البابُ الوحيد، وتكتب بشرط أنّ السعرَ ما زال ما رآه (price_moved). */
+  async setStorePrice(productId, price, expected) {
+    const { data, error } = await sbc().rpc("store_set_price", { p_product: productId, p_price: price, p_expected: expected });
+    if (error) throw error;
+    return Number(data);
+  },
   async deleteProductImage(clinicId, productId, path) {
     void clinicId; void productId;
     // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ

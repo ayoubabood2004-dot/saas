@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Search, Images } from "lucide-react";
 import { Modal } from "@/components/Modal";
-import { Skeleton, useToast } from "@/components/ui";
+import { Button, Skeleton, useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
@@ -27,17 +27,21 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
   const { t } = useTranslation();
   const toast = useToast();
   const [rows, setRows] = useState<LibraryImage[] | null>(null);
+  /* فشلُ التحميل حالةٌ تُقال مع «أعد المحاولة» — كان يضع [] فيقول «المكتبة فارغة» عن خطأ
+   * (CLAUDE.md: قائمةٌ ناقصة أخطرُ من خطأ ظاهر). والمصوّرُ يتّكئ عليها الآن أكثر. */
+  const [failed, setFailed] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
   const [q, setQ] = useState("");
   const [company, setCompany] = useState<string>("all");
 
   useEffect(() => {
     if (!open) return;
-    setRows(null);
+    setRows(null); setFailed(null);
     repo.listImageLibrary()
       .then(setRows)
-      .catch((e) => { setRows([]); toast.error(describeDbError(e, t)); });
+      .catch((e) => { const m = describeDbError(e, t); setFailed(m); toast.error(m); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, tick]);
 
   const companies = useMemo(() => {
     const s = new Set<string>();
@@ -72,7 +76,12 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
           </div>
         )}
 
-        {rows === null ? (
+        {failed ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-6 text-center dark:border-danger-500/30 dark:bg-danger-500/10">
+            <p className="text-sm font-semibold text-danger-700 dark:text-danger-300">{failed}</p>
+            <Button size="sm" variant="secondary" onClick={() => { playTap(); setTick((n) => n + 1); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+          </div>
+        ) : rows === null ? (
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-xl" />)}
           </div>

@@ -1032,5 +1032,51 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     readFileSync("supabase/tests/run.sh", "utf8").includes("0189_accept_fee_at_decision.sql"));
 }
 
+console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كلُّه بقالبه (بلا الطلبات)، والسعرُ بشرطه");
+{
+  /* قالبُ الأدوار بالواجهة (staff.ts) مرآةُ has_permission بآخر هجرةٍ تعرّفها — كان المصوّرُ
+   * بلا متجرٍ بالخادم، فقالبٌ يُوسَّع بطرفٍ واحد يُظهر شاشةً يرفضها الخادم أو العكس. */
+  const migs = readdirSync("supabase/migrations").filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
+  let hpSrc = "";
+  for (const f of migs) {
+    const s = readFileSync(`supabase/migrations/${f}`, "utf8");
+    const m = s.match(/create or replace function public\.has_permission\(cap text\)[\s\S]*?\$\$;/);
+    if (m) hpSrc = m[0];
+  }
+  const sqlRoles = Object.fromEntries([...hpSrc.matchAll(/when '(\w+)'\s+then cap in \(([^)]*)\)/g)]
+    .map((m) => [m[1], m[2].split(",").map((x) => x.trim().replace(/'/g, "")).sort().join(",")]));
+  const staffSrc = readFileSync("src/lib/staff.ts", "utf8");
+  const tsRoles = Object.fromEntries([...staffSrc.matchAll(/^\s+(veterinarian|receptionist|groomer|photographer): \[([^\]]*)\]/gm)]
+    .map((m) => [m[1], m[2].split(",").map((x) => x.trim().replace(/"/g, "")).filter(Boolean).sort().join(",")]));
+  check("قوالبُ الأدوار بالواجهة = has_permission بآخر هجرة (الطبيب، الاستقبال، العناية، المصوّر)",
+    ["veterinarian", "receptionist", "groomer", "photographer"].every((r) => sqlRoles[r] && sqlRoles[r] === tsRoles[r]),
+    JSON.stringify({ sqlRoles, tsRoles }));
+  check("  والمصوّرُ بقالبه: الصور + المتجر", tsRoles.photographer === "manageProductPhotos,manageStore");
+
+  const pp = readFileSync("src/pages/ProductPhotos.tsx", "utf8");
+  const inputs = pp.match(/<input [^>]*type="file"[^>]*>/g) ?? [];
+  check("صفحةُ المصوّر: كاميرا مباشرة + ألبوم بلا capture (كان الألبومُ مقفولاً بالموبايل)",
+    inputs.length === 2 && inputs.filter((x) => /capture="environment"/.test(x)).length === 1
+    && inputs.some((x) => !/capture=/.test(x) && /data-gallery-input/.test(x)) && inputs.every((x) => /onChange=\{onFile\}/.test(x)),
+    inputs);
+  check("  وزرُّ الألبوم بكلّ بطاقة", /data-photo-gallery=\{p\.id\}[\s\S]{0,120}galleryRef\.current\?\.click\(\)/.test(pp));
+  const errs = readFileSync("src/lib/errors.ts", "utf8");
+  check("  وصورةٌ ما تنقرأ (HEIC) تُقال «اختر JPG أو PNG» لا بالإنكليزية الخامّ", /could not be read as an image/.test(errs));
+  const lib = readFileSync("src/components/inventory/ImageLibraryPicker.tsx", "utf8");
+  check("  والمكتبةُ الفاشلة تقول فشلَها وتُعيد (لا «المكتبة فارغة» عن خطأ)", /setFailed\(m\)/.test(lib) && !/setRows\(\[\]\)/.test(lib));
+
+  const st = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  check("المتجر: المصوّرُ يعدّل السعرَ من store_set_price، والكادرُ من updateProduct كما كان",
+    st.includes("canSuggest={!photoMode} priceViaStore={photoMode}")
+    && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, Math\.round\(v \* 100\) \/ 100, p\.sell_price\);/.test(st));
+  check("  والاقتراحُ (مبنيٌّ على المبيعات) ما زال ليس له، والطلباتُ مخفيّة",
+    /\{canSuggest && suggestState !== "open" && \(/.test(st) && /filter\(\(x\) => !\(photoMode && x\.id === "orders"\)\)/.test(st));
+  const repoSrc = readFileSync("src/lib/repo.ts", "utf8");
+  check("  وstore_set_price تُرسل ما رآه (p_expected)", /rpc\("store_set_price", \{ p_product: productId, p_price: price, p_expected: expected \}\)/.test(repoSrc));
+  const m28 = readFileSync("supabase/migrations/0228_photographer_store.sql", "utf8");
+  check("  والبوّابةُ تفتح store_set_price وحدها — لا الطلبات ولا الاقتراح",
+    /'store_set_price'/.test(m28) && !/'store_accept_order'|'store_suggest_products'|'clinic_quota_usage'/.test(m28.slice(m28.indexOf("create or replace function public.api_gate()"))));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

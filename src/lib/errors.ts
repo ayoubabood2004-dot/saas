@@ -196,8 +196,10 @@ export function describeUploadError(e: unknown, t: TFunction): string {
   // نوعٌ مرفوض — من الواجهة (`NotAnImageError`) أو من الدلو نفسِه (0184 يرجع
   // 415 «mime type … is not supported»). **قبل** فرع الشبكة: وإلا قيل للعيادة
   // «راجع اتصالك» عن ملفٍّ لن يُقبل مهما أُعيد، فتُعيد المحاولةَ إلى الأبد.
+  // وصورةٌ ما يقدر المتصفّحُ يقرأها (HEIC من الألبوم مثلاً — prepareUpload يرمي بالإنكليزية):
+  // نفسُ الجواب «اختر JPG أو PNG» لا النصُّ الخامّ.
   if (err.name === "NotAnImageError"
-      || (typeof err.message === "string" && /mime type|not supported|invalid_mime/i.test(err.message))) {
+      || (typeof err.message === "string" && /mime type|not supported|invalid_mime|could not be read as an image/i.test(err.message))) {
     return t("errors.notAnImage", "Pick an image file (JPG, PNG or WEBP) — that file isn't an image.");
   }
   // وحجمٌ فوق سقف الدلو (٢ ميغا) — 413 من storage. نفسُ المنطق: خطأٌ دائم.
