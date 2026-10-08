@@ -53,8 +53,8 @@ export const EXPENSE_CATEGORY_HINTS: Record<ExpenseCategoryProblem | "expense_ca
   expense_category_reserved: "\u0647\u0630\u0627 \u0627\u0633\u0645\u064c \u064a\u0643\u062a\u0628\u0647 \u0627\u0644\u0646\u0638\u0627\u0645 \u0628\u0646\u0641\u0633\u0647 (\u0645\u0631\u062a\u062c\u0639\u060c \u0631\u0648\u0627\u062a\u0628\u060c \u0633\u0644\u0641\u060c \u0633\u062d\u0628 \u0645\u062e\u0632\u0646\u060c \u0628\u062f\u0648\u0646 \u062a\u0635\u0646\u064a\u0641) \u2014 \u0627\u062e\u062a\u0631 \u0627\u0633\u0645\u0627\u064b \u062b\u0627\u0646\u064a\u0627\u064b",
   // أكو تصنيف بنفس الاسم (يمكن مؤرشف) — استعمله أو رجّعه من المؤرشفة
   expense_category_twin: "\u0623\u0643\u0648 \u062a\u0635\u0646\u064a\u0641 \u0628\u0646\u0641\u0633 \u0627\u0644\u0627\u0633\u0645 (\u064a\u0645\u0643\u0646 \u0645\u0624\u0631\u0634\u0641) \u2014 \u0627\u0633\u062a\u0639\u0645\u0644\u0647 \u0623\u0648 \u0631\u062c\u0651\u0639\u0647 \u0645\u0646 \u0627\u0644\u0645\u0624\u0631\u0634\u0641\u0629",
-  // وصلتوا ٦٠ تصنيفاً — أرشفوا ما لا تستعملونه
-  expense_categories_full: "\u0648\u0635\u0644\u062a\u0648\u0627 \u0666\u0660 \u062a\u0635\u0646\u064a\u0641\u0627\u064b \u2014 \u0623\u0631\u0634\u0641\u0648\u0627 \u0645\u0627 \u0644\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0648\u0646\u0647",
+  // وصلتوا ٦٠ تصنيفاً فعّالاً — أرشفوا ما لا تستعملونه
+  expense_categories_full: "\u0648\u0635\u0644\u062a\u0648\u0627 \u0666\u0660 \u062a\u0635\u0646\u064a\u0641\u0627\u064b \u0641\u0639\u0651\u0627\u0644\u0627\u064b \u2014 \u0623\u0631\u0634\u0641\u0648\u0627 \u0645\u0627 \u0644\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0648\u0646\u0647",
   // التصنيف يبقى بعيادته
   expense_category_clinic_frozen: "\u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u064a\u0628\u0642\u0649 \u0628\u0639\u064a\u0627\u062f\u062a\u0647",
 };
@@ -69,14 +69,18 @@ export function isReservedCategoryName(name: string | null | undefined): boolean
   return k !== "" && reservedKeys().includes(k);
 }
 
+const activeCount = (existing: readonly Pick<ExpenseCategory, "archived_at">[]) =>
+  existing.filter((c) => !c.archived_at).length;
+
 /**
  * مرآةُ الحارس بترتيبه: الاسمُ أوّلاً، ثم — إن كان تعديلاً لا يغيّر مفتاحَ الاسم — لا شيء،
- * ثم المحجوز، ثم التوأم (والمؤرشفُ محسوب)، ثم السقف عند الإضافة (والمؤرشفُ يُعدّ).
+ * ثم المحجوز، ثم التوأم (والمؤرشفُ محسوب: اسمُه محجوزٌ لعيادته)، ثم السقف عند الإضافة
+ * (على الفعّالة وحدها — الأرشفةُ تُفرغ مكاناً كما يقول التلميح).
  * `selfId` = تسميةٌ لتصنيفٍ قائم. يرجع رمزَ الرفض أو null.
  */
 export function categoryNameProblem(
   name: string,
-  existing: readonly Pick<ExpenseCategory, "id" | "name">[],
+  existing: readonly Pick<ExpenseCategory, "id" | "name" | "archived_at">[],
   selfId?: string,
 ): ExpenseCategoryProblem | null {
   const clean = cleanCategoryName(name);
@@ -88,8 +92,13 @@ export function categoryNameProblem(
   }
   if (reservedKeys().includes(key)) return "expense_category_reserved";
   if (existing.some((c) => c.id !== selfId && groupKey(c.name) === key)) return "expense_category_twin";
-  if (!selfId && existing.length >= EXPENSE_CATEGORIES_CAP) return "expense_categories_full";
+  if (!selfId && activeCount(existing) >= EXPENSE_CATEGORIES_CAP) return "expense_categories_full";
   return null;
+}
+
+/** الاسترجاعُ يُفحص كالإضافة: مؤرشفٌ يعود فوق الستّين الفعّالة يُرفض (مرآةُ الحارس). */
+export function restoreProblem(existing: readonly Pick<ExpenseCategory, "archived_at">[]): ExpenseCategoryProblem | null {
+  return activeCount(existing) >= EXPENSE_CATEGORIES_CAP ? "expense_categories_full" : null;
 }
 
 /** أين يقع السحب: تصنيفُه بمعرّفه، أو جدولُ النظام بنصّه الثابت، أو «بدون تصنيف». */

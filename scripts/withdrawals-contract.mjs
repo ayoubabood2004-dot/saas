@@ -29,6 +29,7 @@ const R = await import(pathToFileURL(out).href); rmSync(dir, { recursive: true, 
 
 const MIG = "supabase/migrations";
 const sql = readFileSync(`${MIG}/0227_expense_categories.sql`, "utf8");
+const C0 = (id, name, archived_at = null) => ({ id, name, created_at: "2026-01-01", archived_at });
 
 console.log("▸ المرآةُ والقاعدة");
 const resBody = sql.match(/function public\._expense_reserved_keys\(\)[\s\S]*?\$\$([\s\S]*?)\$\$/)?.[1] ?? "";
@@ -40,7 +41,14 @@ check("التلميحاتُ الخمسة حرفاً بحرف (المرآةُ ت�
   && Object.keys(R.EXPENSE_CATEGORY_HINTS).length === 5, { sqlHints });
 check("سقفُ الاسم ٤٠ بالحارس وبقيد الجدول = EXPENSE_CATEGORY_MAX_LEN",
   /char_length\(new\.name\) > 40/.test(sql) && /char_length\(btrim\(name\)\) between 1 and 40/.test(sql) && R.EXPENSE_CATEGORY_MAX_LEN === 40);
-check("سقفُ العيادة ٦٠ = EXPENSE_CATEGORIES_CAP", /\) >= 60 then/.test(sql) && R.EXPENSE_CATEGORIES_CAP === 60);
+check("سقفُ العيادة ٦٠ = EXPENSE_CATEGORIES_CAP، على الفعّالة بالإضافة والاسترجاع",
+  (sql.match(/c\.archived_at is null\) >= 60 then/g) ?? []).length === 2 && R.EXPENSE_CATEGORIES_CAP === 60);
+check("  ومرآتُه على الفعّالة كذلك (الأرشفةُ تُفرغ مكاناً)",
+  R.categoryNameProblem("جديد", [...Array.from({ length: 59 }, (_, i) => C0(`a${i}`, `ت${i}`)), C0("z", "مؤرشف", "2026-01-01")]) === null
+  && R.categoryNameProblem("جديد", Array.from({ length: 60 }, (_, i) => C0(`a${i}`, `ت${i}`))) === "expense_categories_full"
+  && R.restoreProblem(Array.from({ length: 60 }, (_, i) => C0(`a${i}`, `ت${i}`))) === "expense_categories_full" && R.restoreProblem([]) === null);
+check("الإعادةُ لا تُنشئ شبحاً: التحويلُ يقرأ غيرَ المربوط وحده والعمودُ قبله",
+  sql.indexOf("add column if not exists category_id") < sql.indexOf("with legacy as") && /where method <> 'stock' and category_id is null/.test(sql));
 
 /* آخرُ تعريفٍ لكلّ دالّةٍ كاتبة: الملفُّ الأحدث الذي يعرّفها، من موضع تعريفها إلى التالي. */
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
@@ -129,6 +137,26 @@ check("addExpense يرسل category_id (والطابورُ يحمل الصفَّ
 const roBlock = repoSrc.slice(repoSrc.indexOf("const READ_ONLY_ALLOWED"), repoSrc.indexOf("]);", repoSrc.indexOf("const READ_ONLY_ALLOWED")));
 check("قراءةُ التصنيفات مسموحةٌ بالاشتراك المنتهي، وكتاباتُها لا", roBlock.includes('"listExpenseCategories"') && !/"(createExpenseCategory|renameExpenseCategory|setExpenseCategoryArchived)"/.test(roBlock));
 check("قراءةُ التصنيفات ترمي (listOrThrow) — «ماكو تصنيفات» عن خطأٍ تُصدَّق", /async listExpenseCategories\(\) \{\s*return listOrThrow</.test(repoSrc));
+const delBody = repoSrc.slice(repoSrc.indexOf("async deleteExpense(id) {"), repoSrc.indexOf("async listExpenseCategories()"));
+check("حذفُ السحب: القاعدةُ ثم الطابور، وصفرُ صفوفٍ بلا شيءٍ بالطابور يُرمى (سحبٌ بالطابور كان يرجع بعد «انحذف»)",
+  delBody.indexOf('.delete().eq("id", id).select("id")') > 0 && delBody.indexOf("outboxDrop(id)") > delBody.indexOf(".delete()") && delBody.includes("no_row_updated"));
+const ob = readFileSync("src/lib/outbox.ts", "utf8");
+check("  وoutboxDrop يقول هل كان الصفُّ بالطابور", /export function outboxDrop\(id: string\): boolean/.test(ob));
+check("اللقطاتُ تُرقَّع كلٌّ بقائمتها (لا بقائمة الشاشة — مدّةٌ تبدّلت أثناء الحفظ)", hub.includes("patchCachedPrefix<AnalyticsSnap>(analyticsPrefix(") && !/setCached<AnalyticsSnap>\(cacheKey, \{ \.\.\.snap, expenses/.test(hub));
+check("وفشلُ السحوبات يصل «صافي النقد» والتصدير لا شاشة السحوبات وحدها", hub.includes("expensesFailed={expensesFailed} onRetry=") && /canProfit && !expensesFailed && \(/.test(hub) && /const exportCSV = \(\) => \{[\s\S]{0,200}if \(expensesFailed\)/.test(hub));
+check("  وفشلُ اللقطة كلِّها بلا لقطةٍ محفوظة يُعلَّم كذلك", /catch \{[\s\S]{0,260}if \(alive && !cached\) setExpensesFailed\(true\)/.test(hub));
+{
+  const d2 = mkdtempSync(join(tmpdir(), "swr-")); const o2 = join(d2, "m.mjs");
+  await build({ entryPoints: ["src/lib/swrCache.ts"], bundle: true, format: "esm", platform: "node", outfile: o2, logLevel: "silent", alias: { "@": join(process.cwd(), "src") } });
+  const S = await import(pathToFileURL(o2).href); rmSync(d2, { recursive: true, force: true });
+  S.setCached("analytics:c1:a:b", { expenses: [{ id: "x" }] }, 1000);
+  S.setCached("analytics:c1:c:d", { expenses: [{ id: "y" }] }, 2000);
+  S.setCached("analytics:c2:a:b", { expenses: [{ id: "z" }] }, 3000);
+  S.patchCachedPrefix("analytics:c1:", (s) => ({ ...s, expenses: [{ id: "new" }, ...s.expenses] }));
+  check("patchCachedPrefix: كلُّ لقطةٍ بقائمتها، وبعمرها، ولا تمسّ عيادةً أخرى",
+    S.getCached("analytics:c1:a:b").expenses.map((e) => e.id).join() === "new,x" && S.getCached("analytics:c1:c:d").expenses.map((e) => e.id).join() === "new,y"
+    && S.cachedAt("analytics:c1:a:b") === 1000 && S.getCached("analytics:c2:a:b").expenses.length === 1);
+}
 const en = JSON.parse(readFileSync("src/i18n/en.json", "utf8")), ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8"));
 check("لكلّ رمزِ رفضٍ ترجمتُه بالقاموسين", Object.keys(R.EXPENSE_CATEGORY_HINTS).every((k) => en.wdr?.err?.[k] && ar.wdr?.err?.[k]));
 check("ولكلّ جدولِ نظامٍ اسمُه بالقاموسين", R.SYSTEM_TABLE_ORDER.every((k) => en.wdr?.sys?.[k] && ar.wdr?.sys?.[k]));

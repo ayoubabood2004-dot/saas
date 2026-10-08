@@ -41,7 +41,9 @@
 --
 -- إضافيةٌ وتُعاد بلا أثرٍ ثانٍ. تُطبَّق بعد 0226 و**قبل** الواجهة: واجهةٌ تسبقها
 -- ترسل category_id لعمودٍ غير موجود (PGRST204) وطابورُها ينتهي بالمعطّلات.
--- تراجع: alter table expenses drop constraint expenses_category_fk; drop index
+-- وبعد أن تصل الواجهةُ الأجهزة: كتلةُ «ربطُ القديم» وحدَها تُعاد مرّةً — نسخةٌ قديمة
+-- مفتوحةٌ بين الهجرة والواجهة تكتب نصّاً بلا معرّف، فيبقى بـ«بدون تصنيف» وتصنيفُه قائم.
+-- تراجع (الواجهةُ أوّلاً — وإلا أرسلت عموداً محذوفاً): alter table expenses drop constraint expenses_category_fk; drop index
 --   expenses_category_id_idx; alter table expenses drop column category_id;
 --   drop table expense_categories; drop function _expense_reserved_keys();
 --   وأعد audit_kind من 0226. نصُّ كلّ سحبٍ سليمٌ كما كان.
@@ -102,13 +104,20 @@ begin
       new.created_at := now();
     end if;
   else
-    new.updated_at := now();
     new.created_by := old.created_by;
     new.created_at := old.created_at;
     if old.archived_at is null and new.archived_at is not null then
       new.archived_at := now();
     elsif old.archived_at is not null and new.archived_at is not null then
       new.archived_at := old.archived_at;
+    end if;
+    -- حفظٌ لا يغيّر شيئاً (جهازٌ قديم أرشف مؤرشفاً أو استرجع فعّالاً) لا يلمس updated_at:
+    -- وإلا كتب التدقيقُ «تغيّر» لم يقع، وقرأه سجلُّ الحركات تسميةً (تدقيقٌ عدائيّ).
+    if new.name is distinct from old.name or new.archived_at is distinct from old.archived_at
+       or new.clinic_id is distinct from old.clinic_id then
+      new.updated_at := now();
+    else
+      new.updated_at := old.updated_at;
     end if;
   end if;
 
@@ -124,8 +133,16 @@ begin
   if v_key = '' or char_length(new.name) > 40 then
     raise exception 'expense_category_bad_name' using hint = 'اسم التصنيف لازم بين حرف و٤٠ حرفاً';
   end if;
-  -- أرشفةٌ أو استرجاعٌ أو تعديلٌ لا يغيّر مفتاحَ الاسم: لا توأمَ جديداً ولا سقف.
   if tg_op = 'UPDATE' then
+    -- السقفُ على الفعّالة وحدها (الأرشفةُ تُفرغ مكاناً كما يقول التلميح)، فالاسترجاعُ
+    -- يُفحص كالإضافة: وإلا عاد فوق الستّين ما أُرشف ليُفسح.
+    if old.archived_at is not null and new.archived_at is null then
+      perform pg_advisory_xact_lock(hashtextextended('expcat:' || new.clinic_id::text, 0));
+      if (select count(*) from expense_categories c where c.clinic_id = new.clinic_id and c.archived_at is null) >= 60 then
+        raise exception 'expense_categories_full' using hint = 'وصلتوا ٦٠ تصنيفاً فعّالاً — أرشفوا ما لا تستعملونه';
+      end if;
+    end if;
+    -- أرشفةٌ أو استرجاعٌ أو تعديلٌ لا يغيّر مفتاحَ الاسم: لا توأمَ جديداً.
     if v_key = inv_norm_group(old.name) then
       return new;
     end if;
@@ -142,8 +159,8 @@ begin
       using hint = 'أكو تصنيف بنفس الاسم (يمكن مؤرشف) — استعمله أو رجّعه من المؤرشفة';
   end if;
   if tg_op = 'INSERT' then
-    if (select count(*) from expense_categories c where c.clinic_id = new.clinic_id) >= 60 then
-      raise exception 'expense_categories_full' using hint = 'وصلتوا ٦٠ تصنيفاً — أرشفوا ما لا تستعملونه';
+    if (select count(*) from expense_categories c where c.clinic_id = new.clinic_id and c.archived_at is null) >= 60 then
+      raise exception 'expense_categories_full' using hint = 'وصلتوا ٦٠ تصنيفاً فعّالاً — أرشفوا ما لا تستعملونه';
     end if;
   end if;
   return new;
@@ -226,15 +243,23 @@ language sql immutable set search_path = public as $$
   from c
 $$;
 
+-- ── العمود ───────────────────────────────────────────────────────────────
+alter table public.expenses add column if not exists category_id uuid;
+comment on column public.expenses.category_id is
+  'تصنيفُ السحب (0227) — مصدرُ العضوية الوحيد بلوحة السحوبات. يقبل الفراغ عمداً: دوالُّ النظام تكتب نصَّها الثابت بلا معرّف، و«إلزاميّ» للسحب اليدويّ بالواجهة. ربطُ القديم جرى بلا سطرِ تدقيق ونصُّه لم يُمسّ.';
+
 -- ── النصوصُ الحرّة تصير تصنيفات ──────────────────────────────────────────
 -- تقرأ السحوبات وتكتب التصنيفات وحدها — وبعد محفّز التدقيق أعلاه، فكلُّ تصنيفٍ ينشأ
 -- يكتب سطرَ إنشاءٍ صادقاً. الكتابةُ الأكثرُ استعمالاً تفوز (ثم الأقدم، ثم الأبجديّ)،
 -- ونفسُ التطبيع على الطرفين فلا توأمَ يُصنع، والإعادةُ لا تُدرج شيئاً.
+-- وغيرُ المربوط وحده (category_id فارغ — ولهذا العمودُ قبلها): مديرٌ سمّى «قاصة» «الصندوق»
+-- ثم أُعيدت الهجرةُ (لربط ما كتبته نسخةٌ قديمة بعد النشر) كان يُنشئ «قاصة» فارغةً من سطورٍ
+-- مربوطةٍ أصلاً — شبحاً بالمنتقي الإلزاميّ (تدقيقٌ عدائيّ).
 with legacy as (
   select clinic_id, btrim(regexp_replace(category, '\s+', ' ', 'g')) as raw, inv_norm_group(category) as k,
          count(*) as n, min(created_at) as first_at
     from public.expenses
-   where method <> 'stock' and nullif(btrim(category), '') is not null
+   where method <> 'stock' and category_id is null and nullif(btrim(category), '') is not null
    group by 1, 2, 3
 ), pick as (
   select distinct on (clinic_id, k) * from legacy
@@ -245,11 +270,6 @@ insert into public.expense_categories (clinic_id, name, created_at)
 select p.clinic_id, p.raw, p.first_at from pick p
  where not exists (select 1 from public.expense_categories c
                     where c.clinic_id = p.clinic_id and inv_norm_group(c.name) = p.k);
-
--- ── العمود ───────────────────────────────────────────────────────────────
-alter table public.expenses add column if not exists category_id uuid;
-comment on column public.expenses.category_id is
-  'تصنيفُ السحب (0227) — مصدرُ العضوية الوحيد بلوحة السحوبات. يقبل الفراغ عمداً: دوالُّ النظام تكتب نصَّها الثابت بلا معرّف، و«إلزاميّ» للسحب اليدويّ بالواجهة. ربطُ القديم جرى بلا سطرِ تدقيق ونصُّه لم يُمسّ.';
 
 -- ── ربطُ القديم: جملةٌ واحدة، النصُّ لا يُمسّ، ولا سطرَ تدقيق ────────────────
 do $link$

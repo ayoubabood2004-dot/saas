@@ -4221,6 +4221,13 @@ A7=$(W "select count(*) from audit_log where entity in ('expenses','expense_cate
 out=$($P -f "$MIG/0227_expense_categories.sql" 2>&1) || { echo "$out"; echo "   ✗ 0227 ما انعادت ثانيةً"; fail=1; }
 chk "والإعادةُ بلا أثرٍ ثانٍ: لا تصنيفَ ولا سطرَ تدقيقٍ جديد" \
     "select ((select count(*) from expense_categories) = $N7 and (select count(*) from audit_log where entity in ('expenses','expense_categories')) = $A7)::text" "true"
+# إعادةٌ بعد تسمية (لربط ما كتبته نسخةٌ قديمة بعد النشر): التحويلُ يقرأ غيرَ المربوط وحده،
+# وإلا أنشأ «ايجار» فارغاً من سطورٍ مربوطةٍ أصلاً — شبحاً بالمنتقي الإلزاميّ (تدقيقٌ عدائيّ).
+$P -c "select _rls_try('$C1', 'update expense_categories set name = ''الإيجار الشهري'' where name = ''ايجار''')" >/dev/null
+out=$($P -f "$MIG/0227_expense_categories.sql" 2>&1) || { echo "$out"; echo "   ✗ 0227 ما انعادت بعد التسمية"; fail=1; }
+chk "إعادةٌ بعد تسمية التصنيف المحوَّل لا تُنشئ شبحَه القديم" \
+    "select ((select count(*) from expense_categories) = $N7)::text||'|'||(select string_agg(name, ',' order by created_at, id) from expense_categories where clinic_id='$C1')" "true|الإيجارالشهري,كهرباء"
+$P -c "select _rls_try('$C1', 'update expense_categories set name = ''ايجار'' where name = ''الإيجار الشهري''')" >/dev/null
 
 # ــ الصلاحيات بدور authenticated ــ
 chk "المديرُ يضيف تصنيفاً بدور authenticated" \
@@ -4248,8 +4255,13 @@ chk "أسماءُ النظام محجوزة: مرتجع، payroll، «سحب  م
 chk "اسمٌ فارغ أو أطولُ من ٤٠ حرفاً يُرفض بهينت" \
     "select split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''   '')'), ':', 3)||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (repeat(''ب'', 41))'), ':', 3)" "expense_category_bad_name|expense_category_bad_name"
 $P -c "insert into expense_categories (clinic_id, name) select '$C2', 'تصنيف '||g from generate_series(1,59) g;" >/dev/null
-chk "سقفُ ٦٠ تصنيفاً للعيادة (المؤرشفُ يُعدّ)" \
+chk "سقفُ ٦٠ تصنيفاً فعّالاً للعيادة" \
     "select (select count(*) from expense_categories where clinic_id='$C2')::text||'|'||split_part(_rls_try('$C2', 'insert into expense_categories (name) values (''جديد'')'), ':', 3)" "60|expense_categories_full"
+# التلميحُ يقول «أرشفوا ما لا تستعملونه» — فالأرشفةُ تُفرغ مكاناً فعلاً، والاسترجاعُ يُفحص كالإضافة.
+chk "  والأرشفةُ تُفرغ مكاناً كما يقول التلميح" \
+    "select _rls_try('$C2', 'update expense_categories set archived_at = now() where name = ''تصنيف 59''')||'|'||_rls_try('$C2', 'insert into expense_categories (name) values (''جديد'')')" "rows:1|rows:1"
+chk "  والاسترجاعُ فوق الستّين يُرفض (لا يعود فوق السقف ما أُرشف ليُفسح)" \
+    "select split_part(_rls_try('$C2', 'update expense_categories set archived_at = null where name = ''تصنيف 59'''), ':', 3)" "expense_categories_full"
 chk "العيادةُ لا تُبدَّل بالتعديل" \
     "select split_part(_rls_try('$C1', 'update expense_categories set clinic_id = ''$C2'' where name = ''صيانة'''), ':', 3)" "expense_category_clinic_frozen"
 # الكتابةُ بجملةٍ والقراءةُ بأخرى: استعلامٌ فرعيّ بجملة النداء يقرأ لقطتَها قبل الكتابة.
@@ -4261,6 +4273,12 @@ chk "الأرشفةُ تُختم بلحظتها لا بما يرسله الجه�
     "select _rls_try('$C1', 'update expense_categories set archived_at = ''2000-01-01'' where name = ''صيانة''')" "rows:1"
 chk "  (بدقيقة الآن لا سنة ٢٠٠٠)" \
     "select (abs(extract(epoch from archived_at - now())) < 60)::text from expense_categories where clinic_id='$C1' and name='صيانة'" "true"
+# حفظٌ لا يغيّر شيئاً (جهازٌ قديم أرشف مؤرشفاً) لا يلمس updated_at ولا يكتب «تغيّر» لم يقع.
+U7=$(W "select updated_at from expense_categories where clinic_id='$C1' and name='صيانة'")
+chk "أرشفةُ المؤرشف ثانيةً تمرّ" \
+    "select _rls_try('$C1', 'update expense_categories set archived_at = now() where name = ''صيانة''')" "rows:1"
+chk "  بلا updated_at جديد، وسطرُ تدقيقها بلا __changed (لا «تسمية» لم تقع)" \
+    "select ((select updated_at from expense_categories where clinic_id='$C1' and name='صيانة') = '$U7'::timestamptz)::text||'|'||(select (details ? '__changed')::text from audit_log where entity='expense_categories' order by created_at desc, id desc limit 1)" "true|false"
 chk "  والاسترجاعُ يفرّغها" \
     "select _rls_try('$C1', 'update expense_categories set archived_at = null where name = ''صيانة''')" "rows:1"
 chk "  (فارغةٌ فعلاً)" \

@@ -393,9 +393,12 @@ export function ActivityLog() {
        * يُعرفان من `__changed.archived_at` (فارغٌ ← ختم = أرشفة، والعكس استرجاع). */
       case "expense_categories": {
         if (r.action === "INSERT") return t("act.expCatAdd", { name: s("name"), defaultValue: "تصنيف سحوبات جديد: {{name}}" });
-        const arch = changesOf(d).find((c) => c.key === "archived_at");
+        const ch = changesOf(d);
+        const arch = ch.find((c) => c.key === "archived_at");
         if (arch) return arch.to ? t("act.expCatArchive", { name: s("name"), defaultValue: "أرشفة تصنيف سحوبات: {{name}}" }) : t("act.expCatRestore", { name: s("name"), defaultValue: "استرجاع تصنيف سحوبات: {{name}}" });
-        return t("act.expCatRename", { name: s("name"), defaultValue: "تسمية تصنيف سحوبات: {{name}}" });
+        // «تسمية» حين تغيّر الاسمُ فعلاً — حفظٌ بلا تغيير (جهازٌ قديم أرشف مؤرشفاً) لا يُكتب تسميةً لم تقع.
+        if (ch.some((c) => c.key === "name")) return t("act.expCatRename", { name: s("name"), defaultValue: "تسمية تصنيف سحوبات: {{name}}" });
+        return t("act.expCatSame", { name: s("name"), defaultValue: "حفظ تصنيف سحوبات بلا تغيير: {{name}}" });
       }
       case "delivery_orders": return t("act.deliveryUpd", { status: s("status"), name: s("customer_name"), defaultValue: "توصيل — {{name}} ({{status}})" });
       case "couriers": return t("act.courierUpd", { name: s("name"), defaultValue: "سائق / شركة توصيل: {{name}}" });

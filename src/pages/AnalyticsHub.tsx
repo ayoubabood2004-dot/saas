@@ -20,8 +20,8 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseCategory, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
-import { getCached, setCached, isFresh } from "@/lib/swrCache";
-import { loadAnalyticsSnap, analyticsKey, analyticsRange, defaultAnalyticsRange, type AnalyticsSnap } from "@/lib/prefetchData";
+import { getCached, setCached, isFresh, patchCachedPrefix } from "@/lib/swrCache";
+import { loadAnalyticsSnap, analyticsKey, analyticsPrefix, analyticsRange, defaultAnalyticsRange, type AnalyticsSnap } from "@/lib/prefetchData";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -234,7 +234,11 @@ export function AnalyticsHub() {
         if (!alive) return;
         apply(s);
         setCached<AnalyticsSnap>(cacheKey, s);
-      } catch { /* empty states cover it */ }
+      } catch {
+        /* empty states cover it — إلا السحوبات: بلا لقطةٍ لهذه المدّة لا تُرسم «٠ د.ع»
+         * ولا «ما انسحب شي» عن خطأ؛ الشريطُ يقول الفشلَ ويُعيد. */
+        if (alive && !cached) setExpensesFailed(true);
+      }
       finally { if (alive) setLoading(false); }
     }, cached ? 0 : 250);
     return () => { alive = false; clearTimeout(timer); };
@@ -770,6 +774,8 @@ export function AnalyticsHub() {
 
   // ---- CSV export (money tab) — exports exactly the summary that tab shows ----
   const exportCSV = () => {
+    // ملفٌّ بـ«المصروفات ٠» و«صافي النقد» منتفخ عن قراءةٍ فشلت يُفتح بإكسل ويُصدَّق — لا يُصدَّر.
+    if (expensesFailed) { playWarning(); toast.error(t("wdr.loadFailCash", "تعذّر تحميل السحوبات — المسحوب وصافي النقد ما ينحسبون هسة.")); return; }
     const rows: string[][] = [
       [t("rpt.csv.title", "تقرير doctorVet"), new Date().toLocaleDateString("en-GB")],
       [],
@@ -1028,6 +1034,7 @@ export function AnalyticsHub() {
               canProfit={canProfit} yesterday={yesterday} isToday={preset === "today"} onExportCSV={exportCSV}
               cashExpensesTotal={cashExpensesTotal} netCash={netCash} pockets={pockets}
               returnsTotal={returnsTotal} returnsCount={returnsCount}
+              expensesFailed={expensesFailed} onRetry={() => setRefreshTick((n) => n + 1)}
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
@@ -1054,12 +1061,11 @@ export function AnalyticsHub() {
               loadFailed={expensesFailed}
               onRetry={() => setRefreshTick((n) => n + 1)}
               isShown={(e) => { const tm = new Date(e.spent_at).getTime(); return tm >= lo && tm <= hi; }}
-              onChanged={(update) => setExpenses((prev) => {
-                const next = update(prev);
-                const snap = getCached<AnalyticsSnap>(cacheKey);
-                if (snap) setCached<AnalyticsSnap>(cacheKey, { ...snap, expenses: next });
-                return next;
-              })}
+              onChanged={(update) => {
+                setExpenses(update);
+                // كلُّ لقطات المدد بقائمتها هي وبعمرها: مدّةٌ تبدّلت أثناء الحفظ لا تُكتب بلقطة غيرها.
+                patchCachedPrefix<AnalyticsSnap>(analyticsPrefix(user?.clinic_id ?? user?.id), (snap) => ({ ...snap, expenses: update(snap.expenses) }));
+              }}
             />
           )}
           {tab === "purchases" && <PurchasesReportTab purchases={purchasesInRange} loading={allPurchases === null} rangeLabel={rangeLabel} />}
@@ -1215,7 +1221,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount }: {
+function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount, expensesFailed, onRetry }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -1228,6 +1234,10 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
   pockets: PocketTotals;
   returnsTotal: number;
   returnsCount: number;
+  /** قراءةُ السحوبات فشلت: المسحوبُ والصافي يُخفيان — «صافي النقد» بلا سحوباتٍ يطابق
+   *  الدرجَ بأكثر مما فيه، والمديرُ يطابقه آخرَ اليوم. */
+  expensesFailed: boolean;
+  onRetry: () => void;
 }) {
   const { t } = useTranslation();
   const methods: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -1333,7 +1343,7 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
                       يُبطل البوّابة» — قاعدةٌ مكتوبةٌ بهذا الملفّ نفسِه.
                       والتسمية فوق القيمة لا بجانبها: بجانبها يبقى للرقم
                       «المسارُ ناقصَ التسمية» فينفصل «د.ع» عن رقمه بهاتفٍ ٣٦٠. */}
-                  {canProfit && p.out > 0 && (
+                  {canProfit && !expensesFailed && p.out > 0 && (
                     <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2 text-2xs">
                       <span className="flex flex-col text-warn-700 dark:text-warn-300">
                         <span className="font-semibold">{t("rpt.pocketOut")}</span>
@@ -1355,15 +1365,22 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
                 <span className="font-display font-bold tabular-nums text-danger-700 dark:text-danger-300">− {money(z.refundTotal)}</span>
               </div>
             )}
+            {expensesFailed && (
+              <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm dark:border-danger-500/30 dark:bg-danger-500/10">
+                <AlertTriangle size={16} className="shrink-0 text-danger-600 dark:text-danger-300" />
+                <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-200">{t("wdr.loadFailCash", "تعذّر تحميل السحوبات — المسحوب وصافي النقد ما ينحسبون هسة.")}</span>
+                <Button size="sm" variant="secondary" leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); onRetry(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+              </div>
+            )}
             {/* Cash withdrawals/expenses out of the drawer, and the resulting net cash.
                 Card/bank withdrawals are listed separately — they never touch the drawer. */}
-            {cashExpensesTotal > 0 && (
+            {!expensesFailed && cashExpensesTotal > 0 && (
               <div className="flex items-center justify-between rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
                 <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.zWithdrawals", "السحوبات النقدية من الصندوق")}</span>
                 <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(cashExpensesTotal)}</span>
               </div>
             )}
-            {returnsTotal > 0 && (
+            {!expensesFailed && returnsTotal > 0 && (
               <div className="flex items-center justify-between rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
                 <span className="flex items-center gap-1.5 font-semibold text-warn-700 dark:text-warn-300">
                   <Undo2 size={14} /> {t("rpt.zReturns", { n: formatNum(returnsCount), defaultValue: "مرتجعات للزبائن ({{n}} صنف)" })}
@@ -1374,7 +1391,7 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
             {/* سطرُ «سحوباتُ بطاقة/حوالة» المجمَّع أُلغي: كان يقول كم خرج بلا أن
                 يقول **من أيّ جيب**، ولا يُطرح من شيء. صار الصافي بكلّ صفِّ طريقةٍ
                 أعلاه، فالرقمُ صار مقابلَ صاحبه. */}
-            {canProfit && (
+            {canProfit && !expensesFailed && (
               <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
                 <span className="font-bold text-brand-800 dark:text-brand-200">{t("rpt.zNetCash", "صافي النقد في الصندوق")}</span>
                 <span className="font-display text-base font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(netCash)}</span>
@@ -1895,7 +1912,9 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
       {/* Add-entry form — managers only, matching the RLS (hidden otherwise). */}
       {canRecord && (
         <div className="card p-4">
-          <div className="grid gap-3 md:grid-cols-[120px,1fr,190px,150px,auto] md:items-end">
+          {/* خمسةُ أعمدةٍ من xl وحدها: بعرض اللوح كان «البيان» الإلزاميّ يضيق إلى ٤٠ بكسل
+              (يُرى ثلاثةُ أحرف). بينهما عمودان، وعلى الهاتف عمودٌ واحد. */}
+          <div className="grid gap-3 sm:grid-cols-2 sm:items-end xl:grid-cols-[120px,minmax(220px,1fr),190px,150px,auto]">
             <div>
               <label className="label" htmlFor="exp-amount">{t("rpt.exp.amount", "المبلغ")}</label>
               <input id="exp-amount" type="number" min="0" max="1000000000" step="1" inputMode="numeric" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} placeholder="0" />
@@ -2257,7 +2276,7 @@ function ExpenseCategoriesDialog({ open, onClose, cats, loadFailed, onRetry, onS
             />
             <Button onClick={() => void add()} loading={busy === "add"} leftIcon={<Plus size={15} />}>{t("common.add", "إضافة")}</Button>
           </div>
-          <p className="text-2xs text-ink-subtle">{t("wdr.capNote", { n: formatNum(list.length), max: formatNum(EXPENSE_CATEGORIES_CAP), defaultValue: "{{n}} من {{max}} تصنيف (المؤرشفة تنحسب)" })}</p>
+          <p className="text-2xs text-ink-subtle">{t("wdr.capNote", { n: formatNum(active.length), max: formatNum(EXPENSE_CATEGORIES_CAP), defaultValue: "{{n}} من {{max}} تصنيف فعّال" })}</p>
 
           {active.length === 0 ? (
             <p className="rounded-xl bg-surface-2 p-3 text-center text-sm text-ink-subtle">{t("wdr.noCatsShort", "ما أكو تصنيفات بعد.")}</p>

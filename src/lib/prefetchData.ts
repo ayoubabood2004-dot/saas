@@ -109,6 +109,8 @@ export type AnalyticsSnap = {
   expensesFailed?: boolean;
 };
 export const analyticsKey = (clinicId: string | null | undefined, r: AnalyticsRange) => `analytics:${cid(clinicId)}:${r.from}:${r.to}`;
+/** بادئةُ كلّ لقطات التقارير للعيادة (كلّ المدد) — لترقيعها معاً بعد كتابة. */
+export const analyticsPrefix = (clinicId: string | null | undefined) => `analytics:${cid(clinicId)}:`;
 export async function loadAnalyticsSnap(clinicId: string | null | undefined, r: AnalyticsRange): Promise<AnalyticsSnap> {
   const id = clinicId ?? undefined;
   const exact = { from: r.from, to: r.to };

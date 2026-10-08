@@ -45,6 +45,15 @@ export function patchCached<T>(key: string, fn: (data: T) => T): void {
   store.set(key, { data: fn(e.data), at: e.at, stale: e.stale });
 }
 
+/** ترقيعُ **كلِّ** لقطةٍ يبدأ مفتاحُها بـ`prefix`، كلٌّ بقائمتها هي وبلا تجديد عمرها.
+ *  سحبٌ حُفظ يخصّ كلَّ مدّةٍ محفوظة تشمله — والشاشةُ تفلتر بمدّتها. وترقيعُ لقطةٍ بقائمة
+ *  الشاشة (لا بقائمتها) كان يكتب مدّةً بلقطة مدّةٍ أخرى تبدّلت أثناء الحفظ (تدقيقٌ عدائيّ). */
+export function patchCachedPrefix<T>(prefix: string, fn: (data: T) => T): void {
+  for (const [k, e] of store) {
+    if (k.startsWith(prefix)) store.set(k, { data: fn((e as Entry<T>).data), at: e.at, stale: e.stale });
+  }
+}
+
 /** «لم تعد طازجة» بلا رميها (0226): الفتحُ التالي يجلب حتماً، والعرضُ يبقى بعمره الحقيقيّ —
  *  و`cachedAt` يبقى معرَّفاً، فتحديثٌ يتعثّر بعدها يقول «القائمة قديمة» بشريطها لا بشاشة
  *  فشلٍ تقتلع البيعَ وإيصالَه. مفتاحٌ غيرُ موجود لا يُخلق. */

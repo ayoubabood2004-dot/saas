@@ -168,10 +168,12 @@ export function outboxEnqueue(
 
 /** أسقط عمليةً من الطابور — يناديها من نجحت كتابتُه أونلاين على نفس المفتاح،
  *  فلا تعود نسخةٌ قديمةٌ بعد دقائقَ لتدهس ما حُفظ بعدها. */
-export function outboxDrop(id: string): void {
+/** يشيل عمليةً من الطابور. يرجع هل كانت فيه — فالحذفُ يعرف أنّ صفّاً لم يصل القاعدةَ بعد. */
+export function outboxDrop(id: string): boolean {
   const ops = load();
-  if (!ops.some((o) => o.id === id)) return;
+  if (!ops.some((o) => o.id === id)) return false;
   save(ops.filter((o) => o.id !== id));
+  return true;
 }
 
 /** خزّن نداءَ دالّةٍ فشل شبكياً. المرجع شرطٌ لا نصيحة: بدونه تكون الإعادة

@@ -39,7 +39,7 @@ import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
 import { demoAdmissionCageGuard } from "./demoCages";
-import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName } from "./expenseCategoryRules";
+import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName, restoreProblem } from "./expenseCategoryRules";
 import type { PriceChange, PriceChangeLine, PriceChangeSummary, PriceChangeDetail, PriceDetailLine, PricePriorMap } from "@/types";
 import { buildPlan, demoHash, isFracCurrency, ladderFor, missingIds, normalizeSpec, productScopeOf, bpText, type PriceSpec, type PricePreview } from "./priceRaise";
 import { getActiveCurrency } from "./currency";
@@ -656,6 +656,17 @@ function pSave<T>(k: string, list: T[]) { try { localStorage.setItem(DEMO_POULTR
 
 /** تسجيل مصروف بالوضع التجريبي. مشتركٌ بين addExpense وترحيل الرواتب حتى
  *  يمرّ خروج المال من مسلكٍ واحد مهما كان مصدره. */
+/** حذفُ سحبٍ من الداخل — مرآةُ `delete from expenses` بدالّة الخادم (إلغاءُ صرف القسيمة):
+ *  صفرُ صفوفٍ ليس خطأً هناك. وحارسُ سحب المخزن (0216) يبقى. */
+function demoDropExpense(id: string): void {
+  const before = demoExpensesLoad();
+  const row = before.find((x) => x.id === id);
+  // مرآةُ expenses_stock_guard (0216): سحبُ المخزن ظلُّ موافقةِ جرد — لا يُحذف باليد.
+  if (row?.method === "stock") { const e = new Error("stock_expense_locked") as Error & { code: string }; e.code = "P0001"; throw e; }
+  demoExpensesSave(before.filter((x) => x.id !== id));
+  if (row) demoAuditPush({ action: "DELETE", entity: "expenses", entity_id: id, details: row as unknown as Record<string, unknown> });
+}
+
 function demoAddExpense(input: Omit<Expense, "id" | "created_at">): Expense {
   const e: Expense = { ...input, id: uid("exp"), clinic_id: null, created_at: new Date().toISOString() };
   demoExpensesSave([e, ...demoExpensesLoad()]);
@@ -4270,12 +4281,9 @@ const demoRepo = {
     return demoAddExpense(input);
   },
   async deleteExpense(id: string): Promise<void> {
-    const before = demoExpensesLoad();
-    const row = before.find((x) => x.id === id);
-    // مرآةُ expenses_stock_guard (0216): سحبُ المخزن ظلُّ موافقةِ جرد — لا يُحذف باليد.
-    if (row?.method === "stock") { const e = new Error("stock_expense_locked") as Error & { code: string }; e.code = "P0001"; throw e; }
-    demoExpensesSave(before.filter((x) => x.id !== id));
-    if (row) demoAuditPush({ action: "DELETE", entity: "expenses", entity_id: id, details: row as unknown as Record<string, unknown> });
+    // مرآةُ الحذف المسموع: صفٌّ غيرُ موجود يُرمى (no_row_updated) لا «انحذف» على لا شيء.
+    if (!demoExpensesLoad().some((x) => x.id === id)) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" });
+    demoDropExpense(id);
   },
 
   /* ---- تصنيفاتُ السحوبات (0227) — مرآةُ expense_categories_guard بترتيبه وتلميحاته حرفاً،
@@ -4314,6 +4322,10 @@ const demoRepo = {
     const row = demoExpCatRow(list, id);
     // الخادمُ يختم الأرشفةَ بلحظته، ومؤرشفٌ يُؤرشف ثانيةً يبقى بختمه الأوّل.
     const next = archived ? (row.archived_at ?? new Date().toISOString()) : null;
+    if (!archived && row.archived_at) {
+      const full = restoreProblem(list);
+      if (full) throw demoHint(full, EXPENSE_CATEGORY_HINTS[full]);
+    }
     if (next !== row.archived_at) {
       const before = row.archived_at;
       row.archived_at = next;
@@ -4346,7 +4358,7 @@ const demoRepo = {
     return PD.reverseAdjustment(id, amount, qty, reason);
   },
   async unpayPayslip(slipId: string): Promise<Payslip> {
-    return PD.unpaySlip(slipId, async (id) => { await this.deleteExpense(id); });
+    return PD.unpaySlip(slipId, async (id) => { demoDropExpense(id); });
   },
   async listPayrollRuns(): Promise<PayrollRun[]> { return PD.listRuns(); },
   async openPayrollRun(period: string): Promise<PayrollRun> { return PD.openRun(period); },

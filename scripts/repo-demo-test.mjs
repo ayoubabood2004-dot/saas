@@ -1535,9 +1535,17 @@ console.log("▸ 0227 — تصنيفاتُ السحوبات (مرآةُ expense_
   check("  وسحبٌ يشير لتصنيفٍ غيرِ موجود يُرفض (مرآةُ المفتاح المركَّب)", (await code(() => repo.addExpense({ amount: 5, description: "x", category_id: "ghost", spent_at: new Date().toISOString() }))).includes("expenses_category_fk"));
   await repo.setExpenseCategoryArchived(el.id, true);
   check("  وبتصنيفٍ مؤرشف يمرّ (المفتاحُ لا يعرف الأرشفة — الواجهةُ لا تعرضه)", (await code(() => repo.addExpense({ amount: 5, description: "x", category_id: el.id, spent_at: new Date().toISOString() }))) === "ok");
-  for (let i = (await repo.listExpenseCategories()).length; i < 60; i++) await repo.createExpenseCategory(`تصنيف ${i}`);
-  check("سقفُ ٦٠ (والمؤرشفُ يُعدّ)", (await code(() => repo.createExpenseCategory("جديد"))) === "expense_categories_full");
+  const active = async () => (await repo.listExpenseCategories()).filter((c) => !c.archived_at).length;
+  for (let i = await active(); i < 60; i++) await repo.createExpenseCategory(`تصنيف ${i}`);
+  check("سقفُ ٦٠ تصنيفاً فعّالاً (المؤرشفُ لا يُعدّ — «كهرباء» مؤرشف)", (await code(() => repo.createExpenseCategory("جديد"))) === "expense_categories_full" && (await active()) === 60);
   check("  والتسميةُ لا يحدّها السقف", (await code(() => repo.renameExpenseCategory(qa.id, "قاصة المحل"))) === "ok");
+  check("  والاسترجاعُ فوق الستّين يُرفض بتلميح الخادم", (await hint(() => repo.setExpenseCategoryArchived(el.id, false))) === "P0001|وصلتوا ٦٠ تصنيفاً فعّالاً — أرشفوا ما لا تستعملونه");
+  const someId = (await repo.listExpenseCategories()).find((c) => c.name === "تصنيف 5").id;
+  await repo.setExpenseCategoryArchived(someId, true);
+  check("  والأرشفةُ تُفرغ مكاناً كما يقول التلميح", (await code(() => repo.createExpenseCategory("جديد"))) === "ok");
+  check("حذفُ سحبٍ غيرِ موجود يرمي (لا «انحذف» على لا شيء)", (await code(() => repo.deleteExpense("ghost-exp"))) === "no_row_updated");
+  await repo.deleteExpense(ex.id);
+  check("  والموجودُ ينحذف", !(await repo.listExpenses()).some((x) => x.id === ex.id));
   mem.delete("vp_demo_expense_categories"); mem.delete("vp_demo_expenses"); mem.delete("vp_demo_audit");
 }
 

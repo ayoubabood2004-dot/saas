@@ -3550,7 +3550,8 @@
     "expCatAdd": "New withdrawal category: {{name}}",
     "expCatRename": "Renamed withdrawal category: {{name}}",
     "expCatArchive": "Archived withdrawal category: {{name}}",
-    "expCatRestore": "Restored withdrawal category: {{name}}"
+    "expCatRestore": "Restored withdrawal category: {{name}}",
+    "expCatSame": "Withdrawal category saved with no change: {{name}}"
   },
   "override": {
     "title": "Manager mode",
@@ -5881,7 +5882,7 @@
     "manageTitle": "Withdrawal categories",
     "manageDesc": "Each category has its own table of withdrawals. Categories aren't deleted — they're archived and their withdrawals stay in their table.",
     "namePh": "Category name — e.g. Rent, Electricity, Petty cash",
-    "capNote": "{{n}} of {{max}} categories (archived ones count)",
+    "capNote": "{{n}} of {{max}} active categories",
     "added": "Category “{{name}}” added",
     "renamed": "Renamed to “{{name}}” — its past withdrawals follow",
     "archived": "“{{name}}” archived — hidden from the picker, its withdrawals stay in its table",
@@ -5891,8 +5892,9 @@
       "expense_category_bad_name": "A category name must be 1–40 characters",
       "expense_category_reserved": "The system writes this name itself (returns, salaries, loans, stock write-offs, uncategorized) — choose another",
       "expense_category_twin": "A category with this name already exists (maybe archived) — use it or restore it",
-      "expense_categories_full": "You've reached 60 categories — archive the ones you don't use",
+      "expense_categories_full": "You've reached 60 active categories — archive the ones you don't use",
       "expense_category_clinic_frozen": "A category stays with its clinic"
-    }
+    },
+    "loadFailCash": "Couldn't load withdrawals — the amount withdrawn and net cash can't be calculated right now."
   }
 }
