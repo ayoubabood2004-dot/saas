@@ -32,7 +32,7 @@ const ScanChart = page(() => import("@/pages/ScanChart").then((m) => ({ default:
 const BookingWizard = page(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
 const Reception = page(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
 const Consultation = page(() => import("@/pages/Consultation").then((m) => ({ default: m.Consultation })));
-const Settings = page(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const Settings = page(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })), ["promos", "services", "vax", "breeds"]);
 const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })), ["act"]);
 const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
@@ -46,7 +46,7 @@ const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ defaul
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })), ["farm"]);
-const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
+const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })), ["campaigns"]);
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
 const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
