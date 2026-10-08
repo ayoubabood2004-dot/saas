@@ -4428,7 +4428,7 @@
     "manageStaff": "Manage staff and permissions",
     "viewPayroll": "Staff payroll and advances",
     "manageProductPhotos": "Product photos (shoot and replace)",
-    "manageStore": "Online store — products & storefront (no orders, no prices)"
+    "manageStore": "Online store — products, storefront & sell price (no orders)"
   },
   "features": {
     "pos": "Point of sale, billing and invoices",

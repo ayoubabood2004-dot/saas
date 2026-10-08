@@ -4346,8 +4346,8 @@ chk "    وسطرُ التدقيق «تعديل منتج» باسم المصوّ
     "select (actor = '$PHO')::text||'|'||(details->'__changed'->'sell_price'->>0)::numeric::int::text||'>'||(details->'__changed'->'sell_price'->>1)::numeric::int::text from audit_log where entity='products' and entity_id='${PP}01' and action='UPDATE' order by created_at desc, id desc limit 1" "true|12000>13500"
 chk "  وسعرٌ تغيّر بعد فتح القائمة لا يُكتب فوقه (price_moved)" \
     "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 9000, 12000)'), ':', 3)||'|'||(select sell_price::int::text from products where id='${PP}01')" "price_moved|13500"
-chk "  ولا منتجَ عيادةٍ أخرى، ولا سعرٌ سالبٌ أو NaN" \
-    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}02'', 1, 2000)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', -1, 13500)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', ''NaN''::numeric, 13500)'), ':', 3)" "product_not_found|bad_price|bad_price"
+chk "  ولا منتجَ عيادةٍ أخرى، ولا سعرٌ صفرٌ أو سالبٌ أو NaN (حقلٌ مُسح كان يكتب صفراً)" \
+    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}02'', 1, 2000)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 0, 13500)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', -1, 13500)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', ''NaN''::numeric, 13500)'), ':', 3)" "product_not_found|bad_price|bad_price|bad_price"
 chk "  والكتابةُ المباشرة على products ما زالت مسيَّجة (الدالّةُ البابُ الوحيد)" \
     "select _rls_try('$PHO', 'update products set sell_price = 1 where id = ''${PP}01''')||'|'||(select sell_price::int::text from products where id='${PP}01')" "rows:0|13500"
 chk "  والبوّابةُ تفتح store_set_price ولا تفتح الطلباتِ ولا الاقتراح" \
@@ -4360,6 +4360,12 @@ chk "إطفاءُ المدير للمتجر عن مصوّرٍ بعينه يُح�
 $P -c "update staff set permissions = '{}' where id = '${PP}f1';" >/dev/null
 chk "والاستقبالُ ما اتّسع له شي (لا متجرَ بقالبه)" \
     "select split_part(_rls_try('$RCP', 'select store_set_price(''${PP}01'', 1, 13500)'), ':', 3)" "not_authorized"
+# سعرُ البيع للمدير والطبيب والمصوّر وحدهم: استقبالٌ منحه المديرُ المتجرَ ينشر ويصف — ولا يسعّر
+# (كان يمرّ له من الدالّة والجدولُ يرفضه — تدقيقٌ عدائيّ).
+$P -c "insert into staff(id, clinic_id, name, user_id, role, permissions) values ('${PP}f3','$C1','استقبال بإذن المتجر','$RCP','receptionist','{\"manageStore\": true}') on conflict (id) do update set permissions = excluded.permissions;" >/dev/null
+chk "  حتى بإذن المتجر: الاستقبالُ ينشر ولا يغيّر السعر" \
+    "select _rls_try('$RCP', 'select store_set_visible(array[''${PP}01''::uuid], true)')||'|'||split_part(_rls_try('$RCP', 'select store_set_price(''${PP}01'', 1, 13500)'), ':', 3)" "rows:1|not_authorized"
+$P -c "update staff set permissions = '{}' where id = '${PP}f3';" >/dev/null
 # الكتابةُ بجملةٍ والقراءةُ بأخرى: استعلامٌ فرعيّ بجملة النداء يقرأ لقطتَها قبل الكتابة.
 chk "والمديرُ يغيّر السعرَ من نفس الباب" \
     "select _rls_try('$C1', 'select store_set_price(''${PP}01'', 12000, 13500)')" "rows:1"

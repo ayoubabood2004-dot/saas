@@ -49,7 +49,7 @@ export type Capability =
   | "manageStaff" | "manageSettings" | "viewReports" | "viewProfits"
   | "deleteInvoices" | "processSales" | "manageInventory" | "editMedical"
   | "addPets" | "viewCalendar" | "viewPayroll"
-  // موظّفُ التصوير (0222): صورُ المنتجات، والمتجرُ بلا طلباته وسعره. مرآتُهما بالخادم
+  // موظّفُ التصوير (0222، ووسّعه 0228): صورُ المنتجات، والمتجرُ وسعرُ البيع بلا طلباته. مرآتُهما بالخادم
   // `has_permission`/`staff_can` — والخادمُ يفرضهما بنفسه لا الواجهة.
   | "manageProductPhotos" | "manageStore";
 
@@ -68,7 +68,7 @@ export const CAPABILITIES: { id: Capability; label: string }[] = [
   // مطفأة لكل دور غير المدير، ولا تُمنح إلا صراحةً.
   { id: "viewPayroll", label: "Staff payroll & advances" },
   { id: "manageProductPhotos", label: "Product photos" },
-  { id: "manageStore", label: "Online store (products & storefront, no orders)" },
+  { id: "manageStore", label: "Online store (products, storefront & sell price, no orders)" },
 ];
 
 export const PERMISSIONS: Record<StaffRole, Capability[]> = {

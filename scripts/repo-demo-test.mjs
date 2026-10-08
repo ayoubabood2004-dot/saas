@@ -1560,8 +1560,9 @@ console.log("▸ 0228 — سعرُ المتجر بشرطه (مرآةُ store_set
   const priceOf = (id) => JSON.parse(mem.get(DB_KEY)).products.find((p) => p.id === id).sell_price;
   check("بما رآه: 12000 ⇒ 13500", (await repo.setStorePrice("sp-1", 13500, 12000)) === 13500 && priceOf("sp-1") === 13500);
   check("  وسعرٌ تغيّر بعد الفتح لا يُكتب فوقه (price_moved)", (await code(() => repo.setStorePrice("sp-1", 9000, 12000))) === "price_moved" && priceOf("sp-1") === 13500);
-  check("  ولا منتجَ حقل ولا مجهول، ولا سالب", (await code(() => repo.setStorePrice("sp-farm", 1, 5000))) === "product_not_found"
-    && (await code(() => repo.setStorePrice("nope", 1, 0))) === "product_not_found" && (await code(() => repo.setStorePrice("sp-1", -1, 13500))) === "bad_price");
+  check("  ولا منتجَ حقل ولا مجهول، ولا سالبٌ ولا صفر", (await code(() => repo.setStorePrice("sp-farm", 1, 5000))) === "product_not_found"
+    && (await code(() => repo.setStorePrice("nope", 1, 0))) === "product_not_found" && (await code(() => repo.setStorePrice("sp-1", -1, 13500))) === "bad_price"
+    && (await code(() => repo.setStorePrice("sp-1", 0, 13500))) === "bad_price");
   const ph = (await repo.listPhotoProducts()).find((p) => p.id === "sp-1");
   check("photo_products بالتجريبيّ تعطي المجمَّعَ والانتهاء", ph && "pooled" in ph && "expiry_date" in ph);
 }

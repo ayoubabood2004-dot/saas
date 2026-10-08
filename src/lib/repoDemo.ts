@@ -1851,7 +1851,7 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === productId && !x.farm_id);
     if (!p) throw demoHint("product_not_found", "المنتج مو موجود بعيادتك — حدّث القائمة.");
-    if (!Number.isFinite(price) || price < 0 || price > 1e12) throw demoHint("bad_price", "السعر لازم رقم صفر أو أكثر.");
+    if (!Number.isFinite(price) || price <= 0 || price > 1e12) throw demoHint("bad_price", "السعر لازم أكبر من صفر.");
     if ((p.sell_price ?? null) !== (expected ?? null)) throw demoHint("price_moved", "السعر تغيّر من جهاز ثاني أو برفع أسعار — حدّث القائمة وشوف السعر الجديد قبل لا تعدّله.");
     const v = Math.round(price * 100) / 100;
     if (p.sell_price !== v) { p.sell_price = v; saveDB(db); }

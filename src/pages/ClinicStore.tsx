@@ -742,6 +742,9 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const savePrice = async (p: Product) => {
     setPriceId(null);
     if (!canPrice) return;
+    // حقلٌ مُسح ثم تُرك (أو نصٌّ لا يُقرأ رقماً) ليس «صفراً»: Number("") = 0 كان يكتب سعرَ الكاشير
+    // صفراً ويُخفي المادةَ من المتجر بلا سؤال (تدقيقٌ عدائيّ). لا شيءَ يُحفظ.
+    if (!priceDraft.trim()) return;
     const v = Number(priceDraft);
     if (!Number.isFinite(v) || v < 0 || v === p.sell_price) return;
     // بشرط أن السعرَ ما زال ما يراه: قائمةٌ فُتحت قبل رفعِ أسعارٍ كانت تكتب رقمَها فوق الرفع بصمت.

@@ -1069,6 +1069,13 @@ console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كل
   check("المتجر: المصوّرُ يعدّل السعرَ من store_set_price، والكادرُ من updateProduct كما كان",
     st.includes("canSuggest={!photoMode} priceViaStore={photoMode}")
     && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, Math\.round\(v \* 100\) \/ 100, p\.sell_price\);/.test(st));
+  check("  وحقلُ سعرٍ مُسح ثم تُرك لا يكتب صفراً (Number(\"\") = 0)",
+    /if \(!canPrice\) return;[\s\S]{0,260}if \(!priceDraft\.trim\(\)\) return;\s*\n\s*const v = Number\(priceDraft\);/.test(st));
+  const m28s = readFileSync("supabase/migrations/0228_photographer_store.sql", "utf8");
+  check("  والسعرُ بالخادم للمدير والطبيب والمصوّر وحدهم (لا استقبالٍ بإذن متجر)، ولا صفر",
+    /auth_role\(\) in \('manager', 'veterinarian'\) or is_photographer\(\)/.test(m28s) && /p_price <= 0/.test(m28s));
+  const ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8"));
+  check("  ووصفُ إذن المتجر بشاشة الكادر يقول السعرَ (كان «بلا السعر»)", /سعر البيع/.test(ar.caps.manageStore) && !/والسعر\)/.test(ar.caps.manageStore));
   check("  والاقتراحُ (مبنيٌّ على المبيعات) ما زال ليس له، والطلباتُ مخفيّة",
     /\{canSuggest && suggestState !== "open" && \(/.test(st) && /filter\(\(x\) => !\(photoMode && x\.id === "orders"\)\)/.test(st));
   const repoSrc = readFileSync("src/lib/repo.ts", "utf8");

@@ -105,9 +105,15 @@ begin
   if not _store_manager_ok() then
     raise exception 'not_authorized' using errcode = '42501', hint = 'ما عندك صلاحية على المتجر.';
   end if;
-  -- NaN بالـnumeric أكبرُ من كلّ رقم، فالسقفُ يمسكه.
-  if p_price is null or p_price < 0 or p_price > 1000000000000 then
-    raise exception 'bad_price' using hint = 'السعر لازم رقم صفر أو أكثر.';
+  -- سعرُ البيع لم يكتبه قبلها إلا المديرُ والطبيب (products_write، 0051)؛ والقرارُ وسّعه للمصوّر
+  -- وحده — لا لاستقبالٍ أو عنايةٍ منحهما المديرُ إذنَ المتجر (تدقيقٌ عدائيّ: كان يمرّ لهما).
+  if not (auth_role() in ('manager', 'veterinarian') or is_photographer()) then
+    raise exception 'not_authorized' using errcode = '42501', hint = 'تعديل السعر للمدير والطبيب وموظف التصوير.';
+  end if;
+  -- صفرٌ ليس سعرَ متجر (store_catalog يخفيه) — وهو ما يكتبه حقلٌ مُسح ثم تُرك. وNaN بالـnumeric
+  -- أكبرُ من كلّ رقم، فالسقفُ يمسكه.
+  if p_price is null or p_price <= 0 or p_price > 1000000000000 then
+    raise exception 'bad_price' using hint = 'السعر لازم أكبر من صفر.';
   end if;
   v_new := round(p_price, 2);
   -- نطاقُ photo_products نفسُه: منتجاتُ العيادة بلا منتجات الحقول. والقفلُ ثم المقارنة:
