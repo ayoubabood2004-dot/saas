@@ -14,6 +14,7 @@ import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, D
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
+import type { ExpenseCategory } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { cleanRef } from "./deliverySearch";
@@ -38,6 +39,7 @@ import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
 import { demoAdmissionCageGuard } from "./demoCages";
+import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName } from "./expenseCategoryRules";
 import type { PriceChange, PriceChangeLine, PriceChangeSummary, PriceChangeDetail, PriceDetailLine, PricePriorMap } from "@/types";
 import { buildPlan, demoHash, isFracCurrency, ladderFor, missingIds, normalizeSpec, productScopeOf, bpText, type PriceSpec, type PricePreview } from "./priceRaise";
 import { getActiveCurrency } from "./currency";
@@ -145,6 +147,22 @@ function demoFavLoad(): DrugFavorite[] {
 function demoFavSave(list: DrugFavorite[]) { localStorage.setItem(DEMO_FAV_KEY(), JSON.stringify(list)); }
 
 function demoExpensesSave(list: Expense[]) { try { localStorage.setItem(DEMO_EXPENSES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+
+/* تصنيفاتُ السحوبات (0227) — عامّةٌ بالجهاز كالسحوبات نفسها (مفتاحُها غيرُ مقسومٍ بالعيادة):
+ * تصنيفٌ بمفتاحِ عيادةٍ وسحوبُه بمفتاحٍ عامّ يجعل سحوباً تشير لتصنيفٍ لا يُرى بعد التبديل. */
+const DEMO_EXPCAT_KEY = "vp_demo_expense_categories";
+function demoExpCatLoad(): ExpenseCategory[] {
+  try { const r = localStorage.getItem(DEMO_EXPCAT_KEY); if (r) return JSON.parse(r) as ExpenseCategory[]; } catch { /* swallow-ok: جهازٌ بلا تخزين = بلا تصنيفات محفوظة */ }
+  return [];
+}
+/** يرمي: تصنيفٌ لم يُحفظ ويُقال «انضاف» كذبٌ يُصدَّق. */
+function demoExpCatSave(list: ExpenseCategory[]) { localStorage.setItem(DEMO_EXPCAT_KEY, JSON.stringify(list)); }
+/** صفرُ صفوفٍ كالخادم: سياسةٌ تخفي الصفَّ فيرمي `updated()` بـno_row_updated. */
+function demoExpCatRow(list: ExpenseCategory[], id: string): ExpenseCategory {
+  const row = list.find((x) => x.id === id);
+  if (!row) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" });
+  return row;
+}
 
 function demoAuditLoad(): AuditEntry[] {
   try { const r = localStorage.getItem(DEMO_AUDIT_KEY); if (r) return JSON.parse(r) as AuditEntry[]; } catch { /* ignore */ }
@@ -4245,6 +4263,10 @@ const demoRepo = {
   },
   async addExpense(input: Omit<Expense, "id" | "created_at">): Promise<Expense> {
     if (input.method === "stock") { const e = new Error("stock_expense_locked") as Error & { code: string }; e.code = "P0001"; throw e; }
+    // مرآةُ expenses_category_fk: سحبٌ يشير لتصنيفٍ غيرِ موجود يُرفض (والمؤرشفُ مقبول — المفتاحُ لا يعرف الأرشفة).
+    if (input.category_id && !demoExpCatLoad().some((c) => c.id === input.category_id)) {
+      throw Object.assign(new Error('insert or update on table "expenses" violates foreign key constraint "expenses_category_fk"'), { code: "23503" });
+    }
     return demoAddExpense(input);
   },
   async deleteExpense(id: string): Promise<void> {
@@ -4254,6 +4276,52 @@ const demoRepo = {
     if (row?.method === "stock") { const e = new Error("stock_expense_locked") as Error & { code: string }; e.code = "P0001"; throw e; }
     demoExpensesSave(before.filter((x) => x.id !== id));
     if (row) demoAuditPush({ action: "DELETE", entity: "expenses", entity_id: id, details: row as unknown as Record<string, unknown> });
+  },
+
+  /* ---- تصنيفاتُ السحوبات (0227) — مرآةُ expense_categories_guard بترتيبه وتلميحاته حرفاً،
+   *      وسطرُ تدقيقٍ كما يكتبه audit_all (الاسمُ وحده + ما تغيّر). لا حذفَ أصلاً. ---- */
+  async listExpenseCategories(): Promise<ExpenseCategory[]> {
+    return demoExpCatLoad().sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  },
+  async createExpenseCategory(name: string): Promise<ExpenseCategory> {
+    const list = demoExpCatLoad();
+    const clean = cleanCategoryName(name);
+    const bad = categoryNameProblem(clean, list);
+    if (bad) throw demoHint(bad, EXPENSE_CATEGORY_HINTS[bad]);
+    const now = new Date().toISOString();
+    const row: ExpenseCategory = { id: uuid(), clinic_id: null, name: clean, archived_at: null, created_by: null, created_at: now, updated_at: now };
+    demoExpCatSave([...list, row]);
+    demoAuditPush({ action: "INSERT", entity: "expense_categories", entity_id: row.id, details: { name: row.name } });
+    return row;
+  },
+  async renameExpenseCategory(id: string, name: string): Promise<ExpenseCategory> {
+    const list = demoExpCatLoad();
+    const row = demoExpCatRow(list, id);
+    const clean = cleanCategoryName(name);
+    const bad = categoryNameProblem(clean, list, id);
+    if (bad) throw demoHint(bad, EXPENSE_CATEGORY_HINTS[bad]);
+    if (row.name !== clean) {
+      const before = row.name;
+      row.name = clean;
+      row.updated_at = new Date().toISOString();
+      demoExpCatSave(list);
+      demoAuditPush({ action: "UPDATE", entity: "expense_categories", entity_id: id, details: { name: clean, __changed: { name: [before, clean] } } });
+    }
+    return row;
+  },
+  async setExpenseCategoryArchived(id: string, archived: boolean): Promise<ExpenseCategory> {
+    const list = demoExpCatLoad();
+    const row = demoExpCatRow(list, id);
+    // الخادمُ يختم الأرشفةَ بلحظته، ومؤرشفٌ يُؤرشف ثانيةً يبقى بختمه الأوّل.
+    const next = archived ? (row.archived_at ?? new Date().toISOString()) : null;
+    if (next !== row.archived_at) {
+      const before = row.archived_at;
+      row.archived_at = next;
+      row.updated_at = new Date().toISOString();
+      demoExpCatSave(list);
+      demoAuditPush({ action: "UPDATE", entity: "expense_categories", entity_id: id, details: { name: row.name, __changed: { archived_at: [before, next] } } });
+    }
+    return row;
   },
 
   /* ---- الرواتب (0112) — الوضع التجريبي يفرض حُرّاس الخادم نفسها ---- */

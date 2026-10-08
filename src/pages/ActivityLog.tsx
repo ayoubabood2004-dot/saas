@@ -389,6 +389,14 @@ export function ActivityLog() {
       case "purchase_items": return t("act.purchaseItem", { name: s("name"), qty: formatNum(Number(d["qty"]) || 0), defaultValue: "استلم: {{name}} ×{{qty}}" });
       case "purchase_payments": return t("act.supplierPay", { amount: money(Number(d["amount"]) || 0), defaultValue: "دفع لمورّد {{amount}}" });
       case "expenses": return t("act.expenseAdd", { amount: money(Number(d["amount"]) || 0), name: s("category") || s("note") || s("name"), defaultValue: "مصروف {{amount}} — {{name}}" });
+      /* تصنيفاتُ السحوبات (0227): الخادمُ يحفظ الاسمَ وحده + ما تغيّر، فالأرشفةُ والاسترجاعُ
+       * يُعرفان من `__changed.archived_at` (فارغٌ ← ختم = أرشفة، والعكس استرجاع). */
+      case "expense_categories": {
+        if (r.action === "INSERT") return t("act.expCatAdd", { name: s("name"), defaultValue: "تصنيف سحوبات جديد: {{name}}" });
+        const arch = changesOf(d).find((c) => c.key === "archived_at");
+        if (arch) return arch.to ? t("act.expCatArchive", { name: s("name"), defaultValue: "أرشفة تصنيف سحوبات: {{name}}" }) : t("act.expCatRestore", { name: s("name"), defaultValue: "استرجاع تصنيف سحوبات: {{name}}" });
+        return t("act.expCatRename", { name: s("name"), defaultValue: "تسمية تصنيف سحوبات: {{name}}" });
+      }
       case "delivery_orders": return t("act.deliveryUpd", { status: s("status"), name: s("customer_name"), defaultValue: "توصيل — {{name}} ({{status}})" });
       case "couriers": return t("act.courierUpd", { name: s("name"), defaultValue: "سائق / شركة توصيل: {{name}}" });
       case "courier_settlements": return t("act.courierSettle", { amount: money(Number(d["amount"]) || 0), defaultValue: "تحصيل من التوصيل {{amount}}" });

@@ -14,9 +14,10 @@ import {
   Landmark, ShoppingBag,
   Undo2,
   BookOpen,
+  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
+import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseCategory, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
@@ -25,9 +26,14 @@ import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride, noteLockedTap } from "@/lib/managerOverride";
-import { useToast, Skeleton, Button } from "@/components/ui";
+import { useToast, Skeleton, Button, Dialog } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
-import { money, formatNum, cn, dateLocale } from "@/lib/utils";
+import { money, formatNum, formatDec, cn, dateLocale } from "@/lib/utils";
+import { describeDbError } from "@/lib/errors";
+import {
+  bucketOf, groupWithdrawals, pickableCategories, categoryNameProblem, cleanCategoryName,
+  expenseCategoryErrorCode, EXPENSE_CATEGORIES_CAP, type WithdrawalTable,
+} from "@/lib/expenseCategoryRules";
 import { netPerPocket, POCKETS, type PocketTotals } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
@@ -179,6 +185,7 @@ export function AnalyticsHub() {
   const [audit, setAudit] = useState<AuditEntry[]>(seed?.audit ?? []);
   const [logins, setLogins] = useState<LoginEvent[]>(seed?.logins ?? []);
   const [expenses, setExpenses] = useState<Expense[]>(seed?.expenses ?? []);
+  const [expensesFailed, setExpensesFailed] = useState(!!seed?.expensesFailed);
   const [labs, setLabs] = useState<LabResult[]>(seed?.labs ?? []);
 
   // ---- Unified period: the two date inputs ARE the source of truth (always filled).
@@ -212,7 +219,7 @@ export function AnalyticsHub() {
     const clinicId = user?.clinic_id ?? user?.id;
     const apply = (s: AnalyticsSnap) => {
       setPets(s.pets); setInvoices(s.invoices); setItems(s.items); setProducts(s.products);
-      setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses); setLabs(s.labs ?? []);
+      setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses); setExpensesFailed(!!s.expensesFailed); setLabs(s.labs ?? []);
     };
     // لقطةٌ محفوظة لهذه المدّة؟ تُرسم فوراً، وإن كانت طازجة لا نعيد الجلب.
     const cached = getCached<AnalyticsSnap>(cacheKey);
@@ -1043,8 +1050,16 @@ export function AnalyticsHub() {
               rows={expensesInRange} total={expensesTotal} pockets={pockets}
               cashCollected={zReport.byMethod.cash.total} rangeLabel={rangeLabel}
               canRecord={role === "manager"} canProfit={canProfit}
-              clinicId={user?.clinic_id ?? user?.id} staffId={user?.id ?? null}
-              onChanged={(next) => { setExpenses(next); const prev = getCached<AnalyticsSnap>(cacheKey); if (prev) setCached<AnalyticsSnap>(cacheKey, { ...prev, expenses: next }); }}
+              staffId={user?.id ?? null}
+              loadFailed={expensesFailed}
+              onRetry={() => setRefreshTick((n) => n + 1)}
+              isShown={(e) => { const tm = new Date(e.spent_at).getTime(); return tm >= lo && tm <= hi; }}
+              onChanged={(update) => setExpenses((prev) => {
+                const next = update(prev);
+                const snap = getCached<AnalyticsSnap>(cacheKey);
+                if (snap) setCached<AnalyticsSnap>(cacheKey, { ...snap, expenses: next });
+                return next;
+              })}
             />
           )}
           {tab === "purchases" && <PurchasesReportTab purchases={purchasesInRange} loading={allPurchases === null} rangeLabel={rangeLabel} />}
@@ -1667,7 +1682,21 @@ function AuditTab({ deleted, logins }: {
  * Record cash taken out of the drawer (rent, supplies, salaries, petty cash…) with
  * WHERE & WHY, and see the period total + resulting net cash. Recording/deleting is
  * managers-only (mirrors the 0052 RLS); the append-only ledger corrects via delete + re-add. */
-function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecord, canProfit, clinicId, staffId, onChanged }: {
+/* ============================================================================
+ * المصروفاتُ والسحوبات — ولكلّ تصنيفٍ جدولُه (0227).
+ *
+ * التصنيفُ صفٌّ لا نصٌّ حرّ: كان خانةً اختيارية فانكتب «قاصة» و«قاصه» تصنيفين، ولا
+ * تعرف العيادةُ كم صرفت على شيءٍ واحد. الآن يُختار من قائمةٍ **إلزاماً** لكلّ سحبٍ
+ * يدويّ، والعضويةُ بمعرّفه وحده (`expenseCategoryRules`). القديمُ بلا تصنيف بجدول
+ * «بدون تصنيف»، وما يكتبه النظامُ (مرتجع، رواتب، سلف، سحب مخزن) بجداوله التلقائية.
+ *
+ * والتسجيلُ لا يعيد جلبَ القائمة: كان بعد كلّ حفظٍ يجلب **كلَّ** سحوبات العيادة بلا
+ * مدّة وبنفس `try` الحفظ — فحفظٌ نجح وانقطع النتُّ بعده يقول «تعذّر التسجيل»، والضغطةُ
+ * الثانية تكتب سحباً ثانياً بمعرّفٍ جديد. الصفُّ المحفوظ يُضاف للقائمة كما رجع.
+ * ==========================================================================*/
+type ExpView = "cats" | "list" | "ledger";
+
+function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecord, canProfit, staffId, loadFailed, onRetry, isShown, onChanged }: {
   rows: Expense[];
   total: number;
   pockets: PocketTotals;
@@ -1675,20 +1704,59 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
   rangeLabel: string;
   canRecord: boolean;
   canProfit: boolean;
-  clinicId?: string;
   staffId: string | null;
-  onChanged: (next: Expense[]) => void;
+  /** قراءةُ السحوبات فشلت: لا أرقامَ ولا جداول — صفرٌ عن خطأٍ يُصدَّق. */
+  loadFailed: boolean;
+  onRetry: () => void;
+  /** هل يقع سحبٌ بالمدّة المعروضة؟ (سحبٌ بتاريخٍ خارجها يُحفظ ولا يظهر — فيُقال.) */
+  isShown: (e: Expense) => boolean;
+  onChanged: (update: (prev: Expense[]) => Expense[]) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [method, setMethod] = useState<ExpenseMethod>("cash");
-  const [view, setView] = useState<"list" | "ledger">("list");
+  const [view, setView] = useState<ExpView>("cats");
   const [spentAt, setSpentAt] = useState(() => localISO(new Date()));
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
+
+  /* التصنيفات: قراءةٌ ترمي (`listOrThrow`) — «ماكو تصنيفات» عن خطأٍ تُصدَّق فيُعاد
+   * إنشاؤها. فالفشلُ يقول نفسَه ويُعاد، والقائمةُ المحمَّلة لا تُرمى بفشل إعادةٍ لاحقة. */
+  const [cats, setCats] = useState<ExpenseCategory[] | null>(null);
+  const [catsErr, setCatsErr] = useState(false);
+  const [catsTick, setCatsTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setCatsErr(false);
+    repo.listExpenseCategories()
+      .then((l) => { if (alive) setCats(l); })
+      .catch(() => { if (alive) setCatsErr(true); });
+    return () => { alive = false; };
+  }, [catsTick]);
+  const pickable = useMemo(() => pickableCategories(cats ?? []), [cats]);
+  const catById = useMemo(() => new Map((cats ?? []).map((c) => [c.id, c])), [cats]);
+  // تصنيفٌ اختير ثم أُرشف (من النافذة أو جهازٍ آخر بعد إعادة القراءة) لا يبقى مختاراً.
+  useEffect(() => {
+    if (categoryId && cats && !pickable.some((c) => c.id === categoryId)) setCategoryId("");
+  }, [categoryId, cats, pickable]);
+  const upsertCat = (row: ExpenseCategory) =>
+    setCats((prev) => {
+      const l = prev ?? [];
+      return l.some((x) => x.id === row.id) ? l.map((x) => (x.id === row.id ? row : x)) : [...l, row];
+    });
+
+  /** اسمُ تصنيف السحب كما يُعرض: اسمُه الحاليّ بمعرّفه (التسميةُ تصل القديم)، أو جدولُ
+   *  النظام بلغة الشاشة، أو النصُّ كما كُتب يومَها لما سبق التصنيفات. */
+  const labelOf = (e: Expense): string => {
+    const b = bucketOf(e);
+    if (b.kind === "cat") return catById.get(b.id)?.name ?? e.category ?? "";
+    if (b.kind === "system") return t(`wdr.sys.${b.id}`);
+    return e.category ?? "";
+  };
 
   // How much left each pocket in this period — so the doctor knows WHERE his money went from.
   const methodTotals = useMemo(() => {
@@ -1697,28 +1765,40 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
     return acc;
   }, [rows]);
 
+  const grouped = useMemo(() => groupWithdrawals(rows, cats ?? []), [rows, cats]);
+
   const submit = async () => {
+    if (busy) return;
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) { playWarning(); toast.error(t("rpt.exp.needAmount", "أدخل مبلغاً صحيحاً")); return; }
     if (!description.trim()) { playWarning(); toast.error(t("rpt.exp.needDesc", "اكتب بيان الصرف")); return; }
+    const cat = pickable.find((c) => c.id === categoryId);
+    if (!cat) { playWarning(); toast.error(t("wdr.needCat", "اختر تصنيف السحب")); return; }
     setBusy(true);
+    let saved: Expense;
     try {
-      await repo.addExpense({
+      saved = await repo.addExpense({
         amount: Math.round(amt * 100) / 100,
         description: description.trim(),
-        category: category.trim() || null,
+        // المعرّفُ عضويةٌ والنصُّ ذاكرة: سجلُّ الحركات لا يحفظ إلا النصّ.
+        category: cat.name,
+        category_id: cat.id,
         method,
         staff_id: staffId,
         spent_at: new Date(spentAt + "T12:00:00").toISOString(),
       });
-      onChanged(await repo.listExpenses(clinicId));
-      setAmount(""); setDescription(""); setCategory("");
-      playSuccess();
-      toast.success(t("rpt.exp.added", "تم تسجيل المصروف"));
     } catch (e) {
       playWarning();
-      toast.error(t("rpt.exp.saveFail", "تعذّر تسجيل المصروف"), e instanceof Error ? e.message : undefined);
-    } finally { setBusy(false); }
+      toast.error(t("rpt.exp.saveFail", "تعذّر تسجيل المصروف"), describeDbError(e, t));
+      setBusy(false);
+      return;
+    }
+    onChanged((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
+    setAmount(""); setDescription(""); setCategoryId("");
+    setBusy(false);
+    playSuccess();
+    if (isShown(saved)) toast.success(t("rpt.exp.added", "تم تسجيل المصروف"));
+    else toast.success(t("rpt.exp.added", "تم تسجيل المصروف"), t("wdr.outside", { date: spentAt, defaultValue: "انسجل بتاريخ {{date}} — خارج المدة المعروضة، فما يبين بهالجدول." }));
   };
 
   // Two-step delete: the first click arms the row (button turns red "تأكيد؟"),
@@ -1730,14 +1810,18 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
       playTap();
       try {
         await repo.deleteExpense(id);
-        onChanged(await repo.listExpenses(clinicId));
       } catch (e) {
-        toast.error(t("rpt.exp.delFail", "تعذّر الحذف"), e instanceof Error ? e.message : undefined);
+        playWarning();
+        toast.error(t("rpt.exp.delFail", "تعذّر الحذف"), describeDbError(e, t));
+        return;
       }
+      onChanged((prev) => prev.filter((x) => x.id !== id));
     })();
   };
 
   const activePockets = POCKETS.filter((k) => pockets[k].in !== 0 || pockets[k].out !== 0);
+
+  const rowProps = { canRecord, confirmDel, onDeleteClick, onDisarm: () => setConfirmDel(null) };
 
   return (
     <div className="space-y-5">
@@ -1746,7 +1830,16 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
         <span className="chip bg-surface-2 text-2xs font-semibold text-ink-muted">{rangeLabel}</span>
       </div>
 
-      {/* Totals strip */}
+      {loadFailed && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-4 dark:border-danger-500/30 dark:bg-danger-500/10">
+          <AlertTriangle size={18} className="shrink-0 text-danger-600 dark:text-danger-300" />
+          <p className="min-w-0 flex-1 text-sm font-semibold text-danger-700 dark:text-danger-200">{t("wdr.loadFail", "تعذّر تحميل السحوبات — الأرقام هنا ناقصة، لا تعتمد عليها.")}</p>
+          <Button size="sm" variant="secondary" leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); onRetry(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
+      )}
+
+      {/* Totals strip — يُخفى والقراءةُ فاشلة: «٠ د.ع» عن خطأٍ تُقرأ «ما صرفنا شي». */}
+      {!loadFailed && (
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-warn-200 bg-warn-50/60 p-4 dark:border-warn-500/30 dark:bg-warn-500/10">
           <p className="text-2xs font-semibold text-warn-700 dark:text-warn-300">{t("rpt.exp.total", "إجمالي المصروفات")}</p>
@@ -1797,29 +1890,57 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
           </div>
         )}
       </div>
+      )}
 
       {/* Add-entry form — managers only, matching the RLS (hidden otherwise). */}
       {canRecord && (
         <div className="card p-4">
-          <div className="grid gap-3 md:grid-cols-[120px,1fr,140px,150px,auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-[120px,1fr,190px,150px,auto] md:items-end">
             <div>
-              <label className="label">{t("rpt.exp.amount", "المبلغ")}</label>
-              <input type="number" min="0" max="1000000000" step="1" inputMode="numeric" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="0" />
+              <label className="label" htmlFor="exp-amount">{t("rpt.exp.amount", "المبلغ")}</label>
+              <input id="exp-amount" type="number" min="0" max="1000000000" step="1" inputMode="numeric" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} placeholder="0" />
             </div>
             <div>
-              <label className="label">{t("rpt.exp.desc", "البيان (أين ولماذا صُرف)")}</label>
-              <input className="input" maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder={t("rpt.exp.descPlaceholder", "مثال: إيجار المحل، رواتب، مستلزمات نظافة…")} />
+              <label className="label" htmlFor="exp-desc">{t("rpt.exp.desc", "البيان (أين ولماذا صُرف)")}</label>
+              <input id="exp-desc" className="input" maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void submit(); }} placeholder={t("rpt.exp.descPlaceholder", "مثال: إيجار المحل، رواتب، مستلزمات نظافة…")} />
             </div>
             <div>
-              <label className="label">{t("rpt.exp.category", "التصنيف")}</label>
-              <input className="input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t("rpt.exp.optional", "اختياري")} />
+              <div className="flex items-center justify-between gap-2">
+                <label className="label" htmlFor="exp-cat">{t("wdr.catLabel", "التصنيف (إلزامي)")}</label>
+                <button type="button" onClick={() => { playTap(); setManageOpen(true); }} className="mb-1 inline-flex items-center gap-1 text-2xs font-bold text-brand-600 hover:underline dark:text-brand-300">
+                  <Tags size={12} /> {t("wdr.manage", "التصنيفات")}
+                </button>
+              </div>
+              {catsErr && !cats ? (
+                <button type="button" onClick={() => { playTap(); setCatsTick((n) => n + 1); }} className="input flex items-center gap-1.5 text-start text-danger-600 dark:text-danger-300">
+                  <RefreshCw size={14} /> {t("wdr.catsFail", "تعذّر تحميل التصنيفات — اضغط للإعادة")}
+                </button>
+              ) : (
+                <select
+                  id="exp-cat"
+                  className={cn("input", !categoryId && "text-ink-subtle")}
+                  value={categoryId}
+                  disabled={!cats}
+                  onChange={(e) => {
+                    if (e.target.value === "__new") { playTap(); setManageOpen(true); return; }
+                    setCategoryId(e.target.value);
+                  }}
+                >
+                  <option value="" disabled>{cats ? t("wdr.pick", "اختر التصنيف…") : t("common.loading", "جارٍ التحميل…")}</option>
+                  {pickable.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="__new">{t("wdr.newOpt", "+ تصنيف جديد…")}</option>
+                </select>
+              )}
             </div>
             <div>
-              <label className="label">{t("rpt.exp.spentAt", "تاريخ الصرف")}</label>
-              <input type="date" className="input" value={spentAt} onChange={(e) => setSpentAt(e.target.value)} />
+              <label className="label" htmlFor="exp-date">{t("rpt.exp.spentAt", "تاريخ الصرف")}</label>
+              <input id="exp-date" type="date" className="input" value={spentAt} onChange={(e) => setSpentAt(e.target.value)} />
             </div>
-            <Button onClick={submit} loading={busy} leftIcon={<Plus size={16} />}>{t("rpt.exp.add", "تسجيل مصروف")}</Button>
+            <Button onClick={() => void submit()} loading={busy} leftIcon={<Plus size={16} />}>{t("rpt.exp.add", "تسجيل مصروف")}</Button>
           </div>
+          {cats && pickable.length === 0 && (
+            <p className="mt-2 text-2xs font-semibold text-warn-700 dark:text-warn-300">{t("wdr.noCats", "ما أكو تصنيفات بعد — أضف أول تصنيف (مثل: إيجار، كهرباء، قاصة) حتى تسجّل سحب.")}</p>
+          )}
           {/* طريقة السحب — منين تنسحب الفلوس: الصندوق، البطاقة، أم البنك */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-ink-muted">{t("rpt.exp.methodLabel", "طريقة السحب")}</span>
@@ -1847,66 +1968,363 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
         </div>
       )}
 
-      {/* عرضان لنفس الصفوف: قائمةٌ تجيب «شنو انسحب؟»، ودفترٌ يجيب «شكد اليوم؟
-          وشكد وصلنا؟» — بترقيم قيدٍ ورصيدٍ متراكم وطباعةِ A4. */}
+      {!loadFailed && (
+      <>
+      {/* ثلاثةُ عروضٍ لنفس الصفوف: جدولٌ لكلّ تصنيف يجيب «شكد صرفنا على كلّ شي؟»، وقائمةٌ
+          تجيب «شنو انسحب؟»، ودفترٌ يجيب «شكد اليوم؟ وشكد وصلنا؟». */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {(["list", "ledger"] as const).map((v) => (
+        {(["cats", "list", "ledger"] as const).map((v) => (
           <button key={v} type="button" onClick={() => { playTap(); setView(v); }}
             aria-pressed={view === v}
             className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
               view === v ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-            {v === "list" ? <TrendingDown size={15} /> : <BookOpen size={15} />}
-            {v === "list" ? t("rpt.exp.viewList", "قائمة") : t("rpt.exp.viewLedger", "دفتر")}
+            {v === "cats" ? <Tags size={15} /> : v === "list" ? <TrendingDown size={15} /> : <BookOpen size={15} />}
+            {v === "cats" ? t("wdr.viewCats", "حسب التصنيف") : v === "list" ? t("rpt.exp.viewList", "قائمة") : t("rpt.exp.viewLedger", "دفتر")}
           </button>
         ))}
       </div>
 
-      {view === "ledger" ? (
+      {view === "cats" ? (
+        <WithdrawalTables
+          tables={grouped.tables} idle={grouped.idle} total={total}
+          catsState={cats ? "ok" : catsErr ? "fail" : "loading"}
+          onRetryCats={() => setCatsTick((n) => n + 1)}
+          {...rowProps}
+        />
+      ) : view === "ledger" ? (
         <Panel title={t("rpt.exp.ledger.title", "دفتر السحوبات")} icon={BookOpen}>
           <WithdrawalsLedger
             rows={rows}
             rangeLabel={rangeLabel}
             methodLabel={(m) => t(`rpt.exp.method.${m}`)}
+            categoryOf={labelOf}
           />
         </Panel>
       ) : (
       <Panel title={t("rpt.exp.list", "سجلّ المصروفات")} icon={TrendingDown}>
         {rows.length === 0 ? <Empty text={t("rpt.exp.empty", "لا توجد مصروفات في هذه الفترة.")} /> : (
           <ul className="divide-y divide-line">
-            {rows.map((e) => {
-              const m = expenseMethodMeta(expenseMethodOf(e));
-              return (
-              <li key={e.id} className="flex items-center gap-3 py-2.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><m.icon size={16} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-ink">{e.description}</p>
-                  <p className="text-2xs text-ink-subtle">
-                    <span dir="ltr">{new Date(e.spent_at).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })}</span>
-                    {" · "}{t(`rpt.exp.method.${m.id}`)}
-                    {e.category ? ` · ${e.category}` : ""}
-                  </p>
-                </div>
-                <span className="shrink-0 font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(e.amount)}</span>
-                {/* سحبُ المخزن ظلُّ موافقةِ جرد: حذفُه وحدَه يُخفي خسارةً والرصيدُ مصحَّح (والخادمُ يرفضه). */}
-                {canRecord && m.id !== "stock" && (
-                  confirmDel === e.id ? (
-                    <button onClick={() => onDeleteClick(e.id)} onBlur={() => setConfirmDel(null)} className="shrink-0 rounded-full bg-danger-600 px-2.5 py-1 text-2xs font-bold text-white transition hover:bg-danger-700">
-                      {t("rpt.exp.confirmDel", "تأكيد الحذف؟")}
-                    </button>
-                  ) : (
-                    <button onClick={() => onDeleteClick(e.id)} aria-label={t("rpt.exp.delete", "حذف")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
-                      <Trash2 size={15} />
-                    </button>
-                  )
-                )}
-              </li>
-              );
-            })}
+            {rows.map((e) => <WithdrawalRow key={e.id} e={e} label={labelOf(e)} {...rowProps} />)}
           </ul>
         )}
       </Panel>
       )}
+      </>
+      )}
+
+      {canRecord && (
+        <ExpenseCategoriesDialog
+          open={manageOpen}
+          onClose={() => setManageOpen(false)}
+          cats={cats}
+          loadFailed={catsErr && !cats}
+          onRetry={() => setCatsTick((n) => n + 1)}
+          onSaved={(row, created) => {
+            upsertCat(row);
+            // تصنيفٌ انضاف والنموذجُ بلا تصنيف: هو المقصود غالباً (جاء من «+ تصنيف جديد»).
+            if (created && !categoryId) setCategoryId(row.id);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** سطرُ سحبٍ واحد — نفسُه بالقائمة وبجداول التصنيفات. */
+function WithdrawalRow({ e, label, canRecord, confirmDel, onDeleteClick, onDisarm }: {
+  e: Expense;
+  label: string;
+  canRecord: boolean;
+  confirmDel: string | null;
+  onDeleteClick: (id: string) => void;
+  onDisarm: () => void;
+}) {
+  const { t } = useTranslation();
+  const m = expenseMethodMeta(expenseMethodOf(e));
+  return (
+    <li className="flex items-center gap-3 py-2.5">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><m.icon size={16} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-ink">{e.description}</p>
+        <p className="text-2xs text-ink-subtle">
+          <span dir="ltr">{new Date(e.spent_at).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })}</span>
+          {" · "}{t(`rpt.exp.method.${m.id}`)}
+          {label ? ` · ${label}` : ""}
+        </p>
+      </div>
+      <span className="shrink-0 font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(e.amount)}</span>
+      {/* سحبُ المخزن ظلُّ موافقةِ جرد: حذفُه وحدَه يُخفي خسارةً والرصيدُ مصحَّح (والخادمُ يرفضه). */}
+      {canRecord && m.id !== "stock" && (
+        confirmDel === e.id ? (
+          <button onClick={() => onDeleteClick(e.id)} onBlur={onDisarm} className="shrink-0 rounded-full bg-danger-600 px-2.5 py-1 text-2xs font-bold text-white transition hover:bg-danger-700">
+            {t("rpt.exp.confirmDel", "تأكيد الحذف؟")}
+          </button>
+        ) : (
+          <button onClick={() => onDeleteClick(e.id)} aria-label={t("rpt.exp.delete", "حذف")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
+            <Trash2 size={15} />
+          </button>
+        )
+      )}
+    </li>
+  );
+}
+
+/* جداولُ التصنيفات: بطاقةٌ لكلّ جدول — اسمُه ومجموعُه وحصّتُه من سحوبات المدّة، وتحته
+ * سحوباتُه. مجموعُ البطاقات = إجماليُّ الشريط فوقها (كلُّ سحبٍ بجدولٍ واحد بالضبط). */
+function WithdrawalTables({ tables, idle, total, catsState, onRetryCats, canRecord, confirmDel, onDeleteClick, onDisarm }: {
+  tables: WithdrawalTable[];
+  idle: ExpenseCategory[];
+  total: number;
+  catsState: "ok" | "loading" | "fail";
+  onRetryCats: () => void;
+  canRecord: boolean;
+  confirmDel: string | null;
+  onDeleteClick: (id: string) => void;
+  onDisarm: () => void;
+}) {
+  const { t } = useTranslation();
+  const [closed, setClosed] = useState<Set<string>>(() => new Set());
+  const toggle = (k: string) => { playTap(); setClosed((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; }); };
+
+  // بلا التصنيفات لا تُرسم جداولُها: سحوباتُ تصنيفٍ تقع بجدولٍ مجهول الاسم فتُقرأ خطأً.
+  if (catsState === "fail") {
+    return (
+      <div className="card flex flex-wrap items-center gap-3 p-4">
+        <AlertTriangle size={18} className="shrink-0 text-danger-600 dark:text-danger-300" />
+        <p className="min-w-0 flex-1 text-sm font-semibold text-ink">{t("wdr.catsFailView", "تعذّر تحميل التصنيفات — الجداول ما تنرسم بدونها.")}</p>
+        <Button size="sm" variant="secondary" leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); onRetryCats(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+      </div>
+    );
+  }
+  if (catsState === "loading") return <Skeleton className="h-28 w-full rounded-2xl" />;
+  if (tables.length === 0) {
+    return (
+      <div className="card p-5">
+        <Empty text={t("rpt.exp.empty", "لا توجد مصروفات في هذه الفترة.")} />
+        {idle.length > 0 && <p className="text-center text-2xs text-ink-subtle">{t("wdr.idle", "تصنيفات بلا سحوبات بهالمدة:")} {idle.map((c) => c.name).join(" · ")}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {tables.map((tb) => {
+        const open = !closed.has(tb.key);
+        const share = total > 0 ? Math.round((tb.total / total) * 1000) / 10 : 0;
+        const b = tb.bucket;
+        const name = b.kind === "cat" ? (tb.category?.name ?? tb.rows[0]?.category ?? "—")
+          : b.kind === "system" ? t(`wdr.sys.${b.id}`) : t("wdr.none", "بدون تصنيف");
+        const Icon = b.kind === "cat" ? FolderOpen : b.kind === "system" ? Cog : Inbox;
+        const tone = b.kind === "cat" ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"
+          : b.kind === "system" ? "bg-surface-2 text-ink-muted" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300";
+        const note = b.kind === "system" ? t("wdr.sysHint", "يكتبها النظام بنفسه")
+          : b.kind === "none" ? t("wdr.noneHint", "سحوبات انسجلت قبل التصنيفات")
+            : tb.category?.archived_at ? t("wdr.archivedBadge", "مؤرشف") : "";
+        return (
+          <section key={tb.key} className="card overflow-hidden">
+            <button type="button" onClick={() => toggle(tb.key)} aria-expanded={open}
+              className="flex w-full items-center gap-3 p-4 text-start transition hover:bg-surface-2/50">
+              <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tone)}><Icon size={18} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-display font-bold text-ink">{name}</p>
+                <p className="text-2xs text-ink-subtle">
+                  {formatNum(tb.rows.length)} {t("rpt.exp.count", "عملية")}
+                  {note ? ` · ${note}` : ""}
+                </p>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-2" aria-hidden>
+                  <div className="h-full rounded-full bg-warn-400 dark:bg-warn-500" style={{ width: `${Math.min(100, share)}%` }} />
+                </div>
+              </div>
+              <div className="shrink-0 text-end">
+                <p className="font-display text-base font-extrabold tabular-nums text-warn-700 dark:text-warn-300">{money(tb.total)}</p>
+                <p className="text-2xs tabular-nums text-ink-subtle">{formatDec(share)}%</p>
+              </div>
+              <ChevronDown size={16} className={cn("shrink-0 text-ink-subtle transition", open && "rotate-180")} />
+            </button>
+            {open && (
+              <ul className="divide-y divide-line border-t border-line px-4">
+                {/* «بدون تصنيف» يذكر نصَّه القديم إن كان (كُتب بخانةٍ حرّة قبل التصنيفات) — باقي الجداول اسمُها فوقها. */}
+                {tb.rows.map((e) => <WithdrawalRow key={e.id} e={e} label={b.kind === "none" ? (e.category ?? "") : ""} canRecord={canRecord} confirmDel={confirmDel} onDeleteClick={onDeleteClick} onDisarm={onDisarm} />)}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+      {idle.length > 0 && (
+        <p className="text-2xs text-ink-subtle">{t("wdr.idle", "تصنيفات بلا سحوبات بهالمدة:")} {idle.map((c) => c.name).join(" · ")}</p>
+      )}
+    </div>
+  );
+}
+
+/* إدارةُ التصنيفات — إضافة، تسمية، أرشفة، استرجاع. لا حذفَ أصلاً: التصنيفُ يُؤرشف
+ * وتبقى سحوباتُه بجدوله (لا سياسةَ حذفٍ بالقاعدة). والأرشفةُ تُرجَع بضغطة فلا تُؤكَّد.
+ * الحارسُ بالقاعدة يرفض التوأمَ والمحجوز؛ والفحصُ هنا قبله للكلمة الأسرع لا بديلاً عنه. */
+function ExpenseCategoriesDialog({ open, onClose, cats, loadFailed, onRetry, onSaved }: {
+  open: boolean;
+  onClose: () => void;
+  cats: ExpenseCategory[] | null;
+  loadFailed: boolean;
+  onRetry: () => void;
+  onSaved: (row: ExpenseCategory, created: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const list = cats ?? [];
+  const active = pickableCategories(list);
+  const archived = list.filter((c) => c.archived_at);
+
+  const say = (e: unknown) => {
+    const code = expenseCategoryErrorCode(e);
+    playWarning();
+    toast.error(code ? t(`wdr.err.${code}`) : describeDbError(e, t));
+  };
+
+  const add = async () => {
+    if (busy || !cats) return;
+    const problem = categoryNameProblem(name, list);
+    if (problem) { say(problem); return; }
+    setBusy("add");
+    try {
+      const row = await repo.createExpenseCategory(name);
+      onSaved(row, true);
+      setName("");
+      playSuccess();
+      toast.success(t("wdr.added", { name: row.name, defaultValue: "انضاف التصنيف «{{name}}»" }));
+    } catch (e) { say(e); } finally { setBusy(null); }
+  };
+
+  const rename = async (c: ExpenseCategory) => {
+    if (busy) return;
+    if (cleanCategoryName(editName) === c.name) { setEditing(null); return; }
+    const problem = categoryNameProblem(editName, list, c.id);
+    if (problem) { say(problem); return; }
+    setBusy(c.id);
+    try {
+      const row = await repo.renameExpenseCategory(c.id, editName);
+      onSaved(row, false);
+      setEditing(null);
+      playSuccess();
+      toast.success(t("wdr.renamed", { name: row.name, defaultValue: "صار اسمه «{{name}}» — وسحوباته القديمة وياه" }));
+    } catch (e) { say(e); } finally { setBusy(null); }
+  };
+
+  const setArchived = async (c: ExpenseCategory, archive: boolean) => {
+    if (busy) return;
+    setBusy(c.id);
+    try {
+      const row = await repo.setExpenseCategoryArchived(c.id, archive);
+      onSaved(row, false);
+      playTap();
+      toast.success(archive
+        ? t("wdr.archived", { name: row.name, defaultValue: "انأرشف «{{name}}» — ما يطلع بالاختيار، وسحوباته باقية بجدوله" })
+        : t("wdr.restored", { name: row.name, defaultValue: "رجع «{{name}}» للاختيار" }));
+    } catch (e) { say(e); } finally { setBusy(null); }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      size="md"
+      title={t("wdr.manageTitle", "تصنيفات السحوبات")}
+      description={t("wdr.manageDesc", "كل تصنيف إله جدول بسحوباته. التصنيف ما ينحذف — ينأرشف وتبقى سحوباته بجدوله.")}
+    >
+      {loadFailed ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-danger-200 bg-danger-50 p-3 dark:border-danger-500/30 dark:bg-danger-500/10">
+          <p className="min-w-0 flex-1 text-sm font-semibold text-danger-700 dark:text-danger-200">{t("wdr.catsFail", "تعذّر تحميل التصنيفات — اضغط للإعادة")}</p>
+          <Button size="sm" variant="secondary" leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); onRetry(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
+      ) : !cats ? (
+        <Skeleton className="h-24 w-full rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <input
+              className="input min-w-0 flex-1"
+              value={name}
+              maxLength={60}
+              autoFocus
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+              placeholder={t("wdr.namePh", "اسم التصنيف — مثل: إيجار، كهرباء، قاصة")}
+              aria-label={t("wdr.namePh", "اسم التصنيف — مثل: إيجار، كهرباء، قاصة")}
+            />
+            <Button onClick={() => void add()} loading={busy === "add"} leftIcon={<Plus size={15} />}>{t("common.add", "إضافة")}</Button>
+          </div>
+          <p className="text-2xs text-ink-subtle">{t("wdr.capNote", { n: formatNum(list.length), max: formatNum(EXPENSE_CATEGORIES_CAP), defaultValue: "{{n}} من {{max}} تصنيف (المؤرشفة تنحسب)" })}</p>
+
+          {active.length === 0 ? (
+            <p className="rounded-xl bg-surface-2 p-3 text-center text-sm text-ink-subtle">{t("wdr.noCatsShort", "ما أكو تصنيفات بعد.")}</p>
+          ) : (
+            <ul className="max-h-[46vh] space-y-1.5 overflow-y-auto">
+              {active.map((c) => (
+                <li key={c.id} className="flex items-center gap-2 rounded-xl border border-line p-2.5">
+                  {editing === c.id ? (
+                    <>
+                      <input
+                        className="input min-w-0 flex-1 py-1.5"
+                        value={editName}
+                        maxLength={60}
+                        autoFocus
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") void rename(c); if (e.key === "Escape") { e.stopPropagation(); setEditing(null); } }}
+                        aria-label={t("common.edit", "تعديل")}
+                      />
+                      <Button size="sm" onClick={() => void rename(c)} loading={busy === c.id} leftIcon={<Check size={14} />}>{t("common.save", "حفظ")}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>{t("common.cancel", "إلغاء")}</Button>
+                    </>
+                  ) : (
+                    <>
+                      <FolderOpen size={16} className="shrink-0 text-brand-600 dark:text-brand-300" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{c.name}</span>
+                      <button type="button" disabled={!!busy} onClick={() => { playTap(); setEditing(c.id); setEditName(c.name); }}
+                        aria-label={t("common.edit", "تعديل")} title={t("common.edit", "تعديل")}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink disabled:opacity-50">
+                        <Pencil size={14} />
+                      </button>
+                      <button type="button" disabled={!!busy} onClick={() => void setArchived(c, true)}
+                        aria-label={t("retail.courierArchive", "أرشفة")} title={t("retail.courierArchive", "أرشفة")}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-warn-50 hover:text-warn-700 disabled:opacity-50">
+                        <Archive size={14} />
+                      </button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {archived.length > 0 && (
+            <div className="border-t border-line pt-3">
+              <button type="button" onClick={() => { playTap(); setShowArchived((v) => !v); }} aria-expanded={showArchived}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-muted hover:text-ink">
+                <ChevronDown size={14} className={cn("transition", showArchived && "rotate-180")} />
+                {t("wdr.showArchived", { n: formatNum(archived.length), defaultValue: "المؤرشفة ({{n}})" })}
+              </button>
+              {showArchived && (
+                <ul className="mt-2 space-y-1.5">
+                  {archived.map((c) => (
+                    <li key={c.id} className="flex items-center gap-2 rounded-xl border border-line p-2.5 opacity-70">
+                      <Archive size={15} className="shrink-0 text-ink-subtle" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{c.name}</span>
+                      <Button size="sm" variant="secondary" disabled={!!busy} loading={busy === c.id} leftIcon={<ArchiveRestore size={14} />} onClick={() => void setArchived(c, false)}>
+                        {t("retail.courierRestore", "استرجاع")}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Dialog>
   );
 }
 

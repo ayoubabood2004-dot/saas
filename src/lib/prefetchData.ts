@@ -105,6 +105,8 @@ export type AnalyticsSnap = {
   pets: Pet[]; invoices: Invoice[]; items: InvoiceItem[]; products: Product[]; visits: MedicalVisit[];
   staff: StaffMember[]; media: MediaItem[]; treatments: TreatmentEntry[]; audit: AuditEntry[]; logins: LoginEvent[];
   expenses: Expense[]; labs: LabResult[];
+  /** قراءةُ السحوبات فشلت — الشاشةُ تقولها وتُعيد، لا «ما صرفنا شي» عن خطأ. */
+  expensesFailed?: boolean;
 };
 export const analyticsKey = (clinicId: string | null | undefined, r: AnalyticsRange) => `analytics:${cid(clinicId)}:${r.from}:${r.to}`;
 export async function loadAnalyticsSnap(clinicId: string | null | undefined, r: AnalyticsRange): Promise<AnalyticsSnap> {
@@ -121,6 +123,7 @@ export async function loadAnalyticsSnap(clinicId: string | null | undefined, r: 
     repo.listProducts(id),
   ]);
   const petIds = pets.map((p) => p.id);
+  let expensesFailed = false;
   const [visits, media, treatments, staff, audit, logins, expenses, labs] = await Promise.all([
     // Clinic-scoped, not pet-id-scoped: the `in(petIds)` form puts every patient id
     // into the query URL, which eventually exceeds what the server will accept.
@@ -130,12 +133,13 @@ export async function loadAnalyticsSnap(clinicId: string | null | undefined, r: 
     listStaff().catch(() => [] as StaffMember[]),
     repo.listAuditLog(id).catch(() => [] as AuditEntry[]),
     repo.listLoginEvents(id).catch(() => [] as LoginEvent[]),
-    // Back-compat guard: the expenses table (migration 0052) may not exist yet.
-    repo.listExpenses(id, wide).catch(() => [] as Expense[]),
+    // فشلُ السحوبات يُعلَّم لا يُبلع: قائمةٌ فارغةٌ عن خطأ تقول «ما صرفنا شي» وتصدَّق
+    // (CLAUDE.md: قائمةٌ ناقصة أخطرُ من خطأ ظاهر). باقي اللقطة يُرسم كما هو.
+    repo.listExpenses(id, wide).catch(() => { expensesFailed = true; return [] as Expense[]; }),
     // Back-compat guard: lab_results (migration 0086) may not exist yet.
     repo.listClinicLabResults(id, exact).catch(() => [] as LabResult[]),
   ]);
-  return { pets, invoices, items, products, visits, media, treatments, staff, audit, logins, expenses, labs };
+  return { pets, invoices, items, products, visits, media, treatments, staff, audit, logins, expenses, labs, expensesFailed };
 }
 
 /** Warm a data snapshot into the cache once, but only if a page visit hasn't

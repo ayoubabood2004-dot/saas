@@ -1499,5 +1499,47 @@ console.log("▸ رفعُ الأسعار بالتجريبيّ (0226) — نفس�
     JSON.stringify({ e: eq?.name, same, n0 }));
 }
 
+console.log("▸ 0227 — تصنيفاتُ السحوبات (مرآةُ expense_categories_guard)");
+{
+  mem.delete("vp_demo_expense_categories"); mem.delete("vp_demo_expenses"); mem.delete("vp_demo_audit");
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  const hint = async (fn) => { try { await fn(); return "ok"; } catch (e) { return `${e.code}|${e.hint ?? ""}`; } };
+  const audit = () => JSON.parse(mem.get("vp_demo_audit") || "[]").filter((a) => a.entity === "expense_categories");
+  const qa = await repo.createExpenseCategory("  قاصة  ");
+  check("التصنيفُ يُحفظ مطويَّ المسافات", qa.name === "قاصة" && qa.archived_at === null && (await repo.listExpenseCategories()).length === 1);
+  check("  وتوأمُ التاء المربوطة يُرفض («قاصه»)", (await code(() => repo.createExpenseCategory("قاصه"))) === "expense_category_twin");
+  check("  وبعلامة اتجاهٍ خفية كذلك", (await code(() => repo.createExpenseCategory("قا\u200fصة"))) === "expense_category_twin");
+  check("  والرفضُ يحمل تلميحَ الخادم حرفاً (P0001 + hint)", (await hint(() => repo.createExpenseCategory("قاصه"))) === "P0001|أكو تصنيف بنفس الاسم (يمكن مؤرشف) — استعمله أو رجّعه من المؤرشفة");
+  check("أسماءُ النظام محجوزة: مرتجع، Payroll ، «سحب  مخزن»، بدون تصنيف",
+    (await code(() => repo.createExpenseCategory("مرتجع"))) === "expense_category_reserved"
+    && (await code(() => repo.createExpenseCategory("Payroll "))) === "expense_category_reserved"
+    && (await code(() => repo.createExpenseCategory("سحب  مخزن"))) === "expense_category_reserved"
+    && (await code(() => repo.createExpenseCategory("بدون تصنيف"))) === "expense_category_reserved");
+  check("  و«سحب» وحدَه ليس محجوزاً (تصنيفٌ بالإنتاج)", (await code(() => repo.createExpenseCategory("سحب"))) === "ok");
+  check("اسمٌ فارغ أو أطولُ من ٤٠ يُرفض", (await code(() => repo.createExpenseCategory("   "))) === "expense_category_bad_name" && (await code(() => repo.createExpenseCategory("ب".repeat(41)))) === "expense_category_bad_name");
+  const el = await repo.createExpenseCategory("كهرباء");
+  await repo.setExpenseCategoryArchived(el.id, true);
+  const elA = (await repo.listExpenseCategories()).find((c) => c.id === el.id);
+  check("الأرشفةُ تختم، ومؤرشفٌ يبقى اسمُه محجوزاً", !!elA.archived_at && (await code(() => repo.createExpenseCategory("كهرباء"))) === "expense_category_twin");
+  const again = await repo.setExpenseCategoryArchived(el.id, true);
+  check("  وأرشفةٌ ثانية تبقي الختمَ الأوّل", again.archived_at === elA.archived_at);
+  await repo.setExpenseCategoryArchived(el.id, false);
+  check("  والاسترجاعُ يفرّغه", (await repo.listExpenseCategories()).find((c) => c.id === el.id).archived_at === null);
+  check("التسميةُ إلى توأمٍ تُرفض، وإلى نفس المفتاح تمرّ", (await code(() => repo.renameExpenseCategory(el.id, "قاصه"))) === "expense_category_twin" && (await code(() => repo.renameExpenseCategory(qa.id, "قاصه"))) === "ok");
+  check("  وتصنيفٌ غيرُ موجود يرمي (لا «انحفظ» على لا شيء)", (await code(() => repo.renameExpenseCategory("nope", "x"))) === "no_row_updated" && (await code(() => repo.setExpenseCategoryArchived("nope", true))) === "no_row_updated");
+  const kinds = audit().map((a) => `${a.action}:${Object.keys(a.details.__changed ?? {}).join("+") || "-"}`).join(",");
+  check("سطرُ تدقيقٍ كما يكتبه audit_all (الإنشاء، الأرشفة، الاسترجاع، التسمية)", kinds.split(",").filter((k) => k.startsWith("INSERT")).length === 3 && kinds.includes("UPDATE:archived_at") && kinds.includes("UPDATE:name"), kinds);
+  check("  والأرشفةُ الثانية بلا سطر (لا شيءَ تغيّر)", audit().filter((a) => a.action === "UPDATE" && a.details.__changed?.archived_at).length === 2);
+  const ex = await repo.addExpense({ amount: 1000, description: "قاصة اليوم", category: "قاصه", category_id: qa.id, method: "cash", spent_at: new Date().toISOString() });
+  check("سحبٌ بتصنيفه يُحفظ بمعرّفه ونصّه", ex.category_id === qa.id && ex.category === "قاصه");
+  check("  وسحبٌ يشير لتصنيفٍ غيرِ موجود يُرفض (مرآةُ المفتاح المركَّب)", (await code(() => repo.addExpense({ amount: 5, description: "x", category_id: "ghost", spent_at: new Date().toISOString() }))).includes("expenses_category_fk"));
+  await repo.setExpenseCategoryArchived(el.id, true);
+  check("  وبتصنيفٍ مؤرشف يمرّ (المفتاحُ لا يعرف الأرشفة — الواجهةُ لا تعرضه)", (await code(() => repo.addExpense({ amount: 5, description: "x", category_id: el.id, spent_at: new Date().toISOString() }))) === "ok");
+  for (let i = (await repo.listExpenseCategories()).length; i < 60; i++) await repo.createExpenseCategory(`تصنيف ${i}`);
+  check("سقفُ ٦٠ (والمؤرشفُ يُعدّ)", (await code(() => repo.createExpenseCategory("جديد"))) === "expense_categories_full");
+  check("  والتسميةُ لا يحدّها السقف", (await code(() => repo.renameExpenseCategory(qa.id, "قاصة المحل"))) === "ok");
+  mem.delete("vp_demo_expense_categories"); mem.delete("vp_demo_expenses"); mem.delete("vp_demo_audit");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

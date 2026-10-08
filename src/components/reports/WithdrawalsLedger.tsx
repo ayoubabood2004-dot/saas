@@ -67,14 +67,18 @@ function buildDays(rows: Expense[]): { days: LedgerDay[]; total: number } {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export function WithdrawalsLedger({ rows, rangeLabel, methodLabel }: {
+export function WithdrawalsLedger({ rows, rangeLabel, methodLabel, categoryOf }: {
   rows: Expense[];
   rangeLabel: string;
   /** تسميةُ الطريقة تُمرَّر من الشاشة الأم — مصدرُ التسميات واحد لا اثنان. */
   methodLabel: (m: ExpenseMethod) => string;
+  /** اسمُ التصنيف كما تعرضه الشاشة (0227): اسمُه الحاليّ بمعرّفه، أو جدولُ النظام
+   *  بلغتها، أو النصُّ القديم — لا النصُّ الخامّ («payroll» بالإنكليزية بدفترٍ عربيّ). */
+  categoryOf?: (e: Expense) => string;
 }) {
   const { t, i18n } = useTranslation();
   const { days, total } = useMemo(() => buildDays(rows), [rows]);
+  const catOf = (e: Expense) => (categoryOf ? categoryOf(e) : e.category) || "";
 
   const fmtDay = (iso: string) =>
     new Date(iso + "T12:00:00").toLocaleDateString(dateLocale(i18n.language), {
@@ -100,7 +104,7 @@ export function WithdrawalsLedger({ rows, rangeLabel, methodLabel }: {
       const cells = d.rows.map((r) => `<tr>
         <td class="c">${formatNum(r.no)}</td>
         <td>${esc(r.e.description || "—")}</td>
-        <td>${esc(r.e.category || "—")}</td>
+        <td>${esc(catOf(r.e) || "—")}</td>
         <td>${esc(methodLabel(methodOf(r.e)))}</td>
         <td class="n">${esc(money(r.e.amount))}</td>
         <td class="n b">${esc(money(r.running))}</td>
@@ -196,7 +200,7 @@ export function WithdrawalsLedger({ rows, rangeLabel, methodLabel }: {
                       <td className="px-2 py-2 text-center text-2xs tabular-nums text-ink-subtle">{formatNum(r.no)}</td>
                       <td className="px-3 py-2">
                         <p className="font-semibold text-ink">{r.e.description}</p>
-                        {r.e.category && <p className="text-2xs text-ink-subtle">{r.e.category}</p>}
+                        {catOf(r.e) && <p className="text-2xs text-ink-subtle">{catOf(r.e)}</p>}
                       </td>
                       <td className="px-3 py-2">
                         <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-bold",

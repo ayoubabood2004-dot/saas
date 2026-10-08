@@ -51,7 +51,7 @@ const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ de
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
 const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
 const Payroll = page(() => import("@/pages/Payroll").then((m) => ({ default: m.Payroll })));
-const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
+const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })), ["wdr"]);
 const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
 const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));

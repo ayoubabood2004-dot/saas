@@ -21,6 +21,13 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
 end $$;
 
+-- الدورانِ يصلان auth.uid() كما بالإنتاج (مقيسٌ ٨/١٠: usage على المخطّط وexecute على
+-- uid/jwt، ولا select على auth.users). بدونه كلُّ محفّزٍ invoker يختم «مَن» بـauth.uid()
+-- يُرفض بـ«permission denied for schema auth» بالحزمة وحدَها — فـ0227 فشلت هنا
+-- وهي سليمةٌ بالإنتاج، و0208 لم تُفحص بدورٍ عاديٍّ قطّ. القالبُ يُقاس على الإنتاج.
+grant usage on schema auth to anon, authenticated;
+grant execute on function auth.uid(), auth.jwt() to anon, authenticated;
+
 -- ملفّات ودالّات الهوية كما هي بالنظام
 create table if not exists profiles (id uuid primary key, role text, roles text[]);
 -- اسمُ العيادة وهاتفُها: `store_front` تقرأهما، وغيابُهما كان يُسقط بدنَها —

@@ -32,6 +32,7 @@ import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
 import type { PurchaseEffect } from "@/types";
+import type { ExpenseCategory } from "@/types";
 import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
 import type { PricePreview } from "./priceRaise";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -2324,9 +2325,13 @@ const supabaseRepo: DemoRepo = {
     // والمعرّف يولَد بالجهاز لا بالقاعدة: بهذا وحده يصير الرفعُ المؤجَّل
     // متسامحاً مع التكرار، فسحبٌ سُجّل والنت واگع يدخل الطابور ولا يضيع —
     // ولا ينكتب مرّتين لو كان الطلب الأول قد وصل وضاع جوابه.
+    //
+    // والتصنيفُ (0227) معرّفاً ونصّاً معاً: المعرّفُ هو العضويةُ بجدول التصنيف، والنصُّ
+    // يبقى لسجلّ الحركات (لا يحفظ إلا `category`) وللنسخ القديمة التي تعرضه.
     const row = {
       id: uuid(), amount: input.amount, description: input.description,
-      category: input.category ?? null, method: input.method ?? "cash", spent_at: input.spent_at,
+      category: input.category ?? null, category_id: input.category_id ?? null,
+      method: input.method ?? "cash", spent_at: input.spent_at,
     };
     try {
       return need<Expense>(await sbc().from("expenses").insert(row).select().single());
@@ -2338,6 +2343,24 @@ const supabaseRepo: DemoRepo = {
   },
   async deleteExpense(id) {
     ok(await sbc().from("expenses").delete().eq("id", id));
+  },
+  /* تصنيفاتُ السحوبات (0227). القراءةُ ترمي: التصنيفُ إلزاميّ، فـ«ماكو تصنيفات» عن خطأٍ
+   * تُصدَّق فيُعاد إنشاؤها (ويرفضها حارسُ التوأم). والسقفُ ٦٠ بالقاعدة فالحدُّ ٢٠٠ لا يقصّ.
+   * الكتابةُ للمدير (RLS)، والحارسُ يرفض التوأمَ والمحجوزَ بتلميحٍ يُعرض كما هو. */
+  async listExpenseCategories() {
+    return listOrThrow<ExpenseCategory>(await sbc().from("expense_categories").select("*")
+      .order("created_at", { ascending: true }).order("id", { ascending: true }).limit(200));
+  },
+  async createExpenseCategory(name) {
+    return need<ExpenseCategory>(await sbc().from("expense_categories").insert({ name: normGroupName(name) }).select().single());
+  },
+  async renameExpenseCategory(id, name) {
+    return updated<ExpenseCategory[]>(await sbc().from("expense_categories").update({ name: normGroupName(name) }).eq("id", id).select())[0];
+  },
+  async setExpenseCategoryArchived(id, archived) {
+    // الخادمُ يختم الأرشفةَ بلحظته لا بما يرسله الجهاز — المرسَلُ علامةٌ فقط.
+    return updated<ExpenseCategory[]>(await sbc().from("expense_categories")
+      .update({ archived_at: archived ? new Date().toISOString() : null }).eq("id", id).select())[0];
   },
 
   /* ---- الرواتب (0112) ----
@@ -2701,7 +2724,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listClinicLabResults", "listClinicStaffPublic", "listClinicTreatments", "listClinicVisits",
   "listClinicVisitsForPet", "listCompanies", "listCompanySections", "listCouriers",
   "listDeliveryOrders", "listDeviceInbox", "listDeviceLinks", "listDoctorBusySlots", "listImageLibrary",
-  "listEndedClinicVisits", "listExpenses", "listFeatureRequests", "listGeneratedBarcodes",
+  "listEndedClinicVisits", "listExpenses", "listExpenseCategories", "listFeatureRequests", "listGeneratedBarcodes",
   "listInvoiceItems", "listInvoices", "listJourneyEvents", "listLabResults", "listLoginEvents",
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
   "listProblems", "listProducts", "listPurchaseItems", "listPurchaseEffects", "listPurchasePayments", "listPurchases",

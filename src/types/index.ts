@@ -773,11 +773,25 @@ export interface Expense {
   clinic_id?: string | null;
   amount: number;                 // > 0
   description: string;            // where & why the money was spent (required)
-  category?: string | null;       // optional bucket (rent/salaries/utilities/supplies…)
+  category?: string | null;       // النصّ كما كُتب يومَها — للعرض والسجلّ؛ العضويةُ من category_id
+  /** تصنيفُ السحب (0227) — مصدرُ العضوية الوحيد بجداول التصنيفات. فارغٌ لما يكتبه
+   *  النظام (مرتجع، رواتب، سلف، سحب مخزن) ولما سبق التصنيفات. */
+  category_id?: string | null;
   method?: ExpenseMethod | null;  // cash (default) / card / bank
   staff_id?: string | null;       // who recorded it (auto-stamped)
   spent_at: string;               // ISO — when the money actually left
   created_at: string;             // ISO — when it was recorded
+}
+
+/** تصنيفُ سحوبات (0227): لكلّ تصنيفٍ جدولُه. لا يُحذف — يُؤرشف وتبقى سحوباتُه بجدوله. */
+export interface ExpenseCategory {
+  id: string;
+  clinic_id?: string | null;
+  name: string;
+  archived_at: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at?: string;
 }
 
 /** Verdict scale for a lab value — three levels come from numeric flagging,
