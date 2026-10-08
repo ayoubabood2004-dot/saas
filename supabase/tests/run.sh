@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -4165,6 +4165,146 @@ $P -tA -f "$PRF/round.sql" > "$PRF/round-actual.json"
 $P -tA -f "$PRF/plan.sql" > "$PRF/plan-actual.jsonl"
 if node "$HERE/../../scripts/price-parity.mjs" "$PRF"; then :; else fail=1; fi
 rm -rf "$PRF"
+
+# ── 0227: تصنيفاتُ السحوبات ─────────────────────────────────────────────────
+# التحويلُ يُقاس على ما تُنتجه القاعدةُ فعلاً: محفّزُ التدقيق على expenses كما بالإنتاج
+# (الأساسُ بلا محفّز — بدونه يمرّ «صفرُ أسطرِ تدقيق» على تحديثٍ ساذجٍ كذلك)، وصفوفٌ قديمة
+# بكتاباتٍ تتطابق بالتطبيع، ثم الهجرةُ تُعاد. ثمّ كلُّ كتابةٍ بدور authenticated.
+# والمحفّزُ يبقى لما بعده — ولا فحصَ بعد هذا الموضع يعدّ أسطرَ تدقيق السحوبات.
+echo "▸ 0227: تصنيفاتُ السحوبات"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+VET=55555555-5555-5555-5555-555555555555
+RCP=77777777-7777-7777-7777-777777777777
+PHO=88888888-8888-8888-8888-888888888888
+ADM=33333333-3333-3333-3333-333333333333
+X7=a2270000-0000-4000-8000-0000000000
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;
+       drop trigger if exists audit_all on expenses;
+       create trigger audit_all after insert or update or delete on expenses for each row execute function audit_change();
+       insert into expenses (id, clinic_id, amount, description, category, method, created_at, spent_at) values
+         ('${X7}01','$C1',100,'إيجار كانون','ايجار','cash','2026-01-01 10:00+03','2026-01-01 12:00+03'),
+         ('${X7}02','$C1',100,'إيجار شباط','ايجار','cash','2026-01-02 10:00+03','2026-02-01 12:00+03'),
+         ('${X7}03','$C1',100,'إيجار آذار','إيجار ','cash','2026-01-03 10:00+03','2026-03-01 12:00+03'),
+         ('${X7}04','$C1',40,'فاتورة الكهرباء','كهرباء','cash','2026-01-04 10:00+03','2026-01-04 12:00+03'),
+         ('${X7}05','$C1',30,'راجع: قديم','مرتجع','cash','2026-01-05 10:00+03','2026-01-05 12:00+03'),
+         ('${X7}06','$C1',500,'راتب قديم','payroll','bank','2026-01-06 10:00+03','2026-01-06 12:00+03'),
+         ('${X7}07','$C1',20,'بلا تصنيف',null,'cash','2026-01-07 10:00+03','2026-01-07 12:00+03'),
+         ('${X7}08','$C1',25,'بالنص المحجوز','بدون تصنيف','cash','2026-01-08 10:00+03','2026-01-08 12:00+03'),
+         ('${X7}09','$C1',60,'سحب مخزن — تالف: قديم','سحب مخزن','stock','2026-01-09 10:00+03','2026-01-09 12:00+03'),
+         ('${X7}10','$C2',70,'إيجار عيادة ثانية','ايجار','cash','2026-01-10 10:00+03','2026-01-10 12:00+03')
+       on conflict (id) do nothing;" >/dev/null
+S1=$(W "select md5(string_agg(id::text||':'||coalesce(category,'∅'), ',' order by id)) from expenses where id::text like 'a2270000-%'")
+A1=$(W "select count(*) from audit_log where entity='expenses' and action='UPDATE'")
+K1=$(W "select count(*) from audit_log where entity='expense_categories'")
+out=$($P -f "$MIG/0227_expense_categories.sql" 2>&1) || { echo "$out"; echo "   ✗ 0227 ما انعادت على صفوفٍ قديمة"; fail=1; }
+chk "النصوصُ صارت تصنيفاتٍ بترتيب أوّل استعمال، وتوأمُ الهمزة واحد (DISTINCT الساذج يصنع ثلاثة)" \
+    "select string_agg(name, ',' order by created_at, id) from expense_categories where clinic_id='$C1'" "ايجار,كهرباء"
+chk "  والعيادةُ الثانية لها تصنيفُها وحدها" \
+    "select string_agg(name, ',' order by created_at, id) from expense_categories where clinic_id='$C2'" "ايجار"
+chk "  ولا تصنيفَ باسمٍ محجوز (مرتجع، payroll، بدون تصنيف، سحب مخزن)" \
+    "select count(*)::text from expense_categories where inv_norm_group(name) = any(_expense_reserved_keys())" "0"
+chk "سطورُ «ايجار» الثلاثةُ (بالهمزة والمسافة) بتصنيف عيادتها، والكهرباءُ بتصنيفها" \
+    "select (select count(*) from expenses e join expense_categories c on c.id = e.category_id and c.clinic_id = e.clinic_id where e.id in ('${X7}01','${X7}02','${X7}03') and c.name = 'ايجار')::text||'|'||(select count(*) from expenses e join expense_categories c on c.id = e.category_id where e.id = '${X7}04' and c.name = 'كهرباء')::text||'|'||(select count(*) from expenses e join expense_categories c on c.id = e.category_id where e.id = '${X7}10' and c.clinic_id = '$C2')::text" "3|1|1"
+chk "  والمرتجعُ والرواتبُ والفارغُ و«بدون تصنيف» وسحبُ المخزن بلا تصنيف" \
+    "select count(*)::text from expenses where id in ('${X7}05','${X7}06','${X7}07','${X7}08','${X7}09') and category_id is not null" "0"
+chk "  ولا نصَّ سحبٍ تغيّر (بصمةُ المعرّف:النصّ قبل وبعد)" \
+    "select (md5(string_agg(id::text||':'||coalesce(category,'∅'), ',' order by id)) = '$S1')::text from expenses where id::text like 'a2270000-%'" "true"
+chk "  ولا سطرَ «تعديل مصروف» بسجلّ الحركات (التحديثُ الساذج يكتب خمسة)" \
+    "select (count(*) - $A1)::text from audit_log where entity='expenses' and action='UPDATE'" "0"
+chk "  والتدقيقُ رجع يعمل على السحوبات (إطفاءٌ بلا إعادة يترك D)" \
+    "select tgenabled::text from pg_trigger where tgrelid='public.expenses'::regclass and tgname='audit_all'" "O"
+chk "  والتصنيفاتُ الثلاثةُ كتبت إنشاءها الصادق بلا فاعل («النظام»)" \
+    "select (count(*) - $K1)::text||'|'||count(*) filter (where actor is not null)::text from audit_log where entity='expense_categories'" "3|0"
+N7=$(W "select count(*) from expense_categories")
+A7=$(W "select count(*) from audit_log where entity in ('expenses','expense_categories')")
+out=$($P -f "$MIG/0227_expense_categories.sql" 2>&1) || { echo "$out"; echo "   ✗ 0227 ما انعادت ثانيةً"; fail=1; }
+chk "والإعادةُ بلا أثرٍ ثانٍ: لا تصنيفَ ولا سطرَ تدقيقٍ جديد" \
+    "select ((select count(*) from expense_categories) = $N7 and (select count(*) from audit_log where entity in ('expenses','expense_categories')) = $A7)::text" "true"
+
+# ــ الصلاحيات بدور authenticated ــ
+chk "المديرُ يضيف تصنيفاً بدور authenticated" \
+    "select _rls_try('$C1', 'insert into expense_categories (name) values (''صيانة'')')" "rows:1"
+chk "  والاستقبالُ والطبيبُ لا يضيفان (المديرُ وحده — auth_role مع الرفع)" \
+    "select left(_rls_try('$RCP', 'insert into expense_categories (name) values (''ضيافة'')'), 13)||'|'||left(_rls_try('$VET', 'insert into expense_categories (name) values (''ضيافة'')'), 13)" "guarded:42501|guarded:42501"
+chk "  لكنّ الاستقبالَ يقرأ تصنيفاتِ عيادته" \
+    "select _rls_try('$RCP', 'select 1 from expense_categories')" "rows:3"
+chk "عيادةٌ أخرى لا ترى تصنيفاتِ غيرها ولا تعدّلها" \
+    "select _rls_try('$C2', 'select 1 from expense_categories where clinic_id = ''$C1''')||'|'||_rls_try('$C2', 'update expense_categories set name = ''x'' where clinic_id = ''$C1''')" "rows:0|rows:0"
+chk "  ولا تكتب تصنيفاً باسم عيادةٍ غيرها" \
+    "select left(_rls_try('$C2', 'insert into expense_categories (clinic_id, name) values (''$C1'', ''دسّ'')'), 13)" "guarded:42501"
+chk "والمصوّرُ لا يراها (السياج)" \
+    "select _rls_try('$PHO', 'select 1 from expense_categories')" "rows:0"
+chk "ولا حذفَ أصلاً — الأرشفةُ هي الحذف (الإنتاجُ ينزع الصلاحية)، والعددُ باقٍ" \
+    "select left(_rls_try('$C1', 'delete from expense_categories'), 13)||'|'||(select count(*) from expense_categories where clinic_id='$C1')::text" "guarded:42501|3"
+
+# ــ الحارس (سببُ الرفض = الحقلُ الثالث) ــ
+chk "توأمُ الهمزة يُرفض، وبعلامة اتجاهٍ خفية كذلك" \
+    "select split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''إيجار'')'), ':', 3)||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''ا''||chr(8207)||''يجار'')'), ':', 3)" "expense_category_twin|expense_category_twin"
+chk "تصنيفٌ مؤرشف يبقى اسمُه محجوزاً لعيادته (يُرجَّع لا يُكرَّر)" \
+    "select _rls_try('$C1', 'update expense_categories set archived_at = now() where name = ''كهرباء''')||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''كهرباء'')'), ':', 3)" "rows:1|expense_category_twin"
+chk "أسماءُ النظام محجوزة: مرتجع، payroll، «سحب  مخزن» بمسافتين، بدون تصنيف" \
+    "select split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''مرتجع'')'), ':', 3)||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''payroll'')'), ':', 3)||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''سحب  مخزن'')'), ':', 3)||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''بدون تصنيف'')'), ':', 3)" "expense_category_reserved|expense_category_reserved|expense_category_reserved|expense_category_reserved"
+chk "اسمٌ فارغ أو أطولُ من ٤٠ حرفاً يُرفض بهينت" \
+    "select split_part(_rls_try('$C1', 'insert into expense_categories (name) values (''   '')'), ':', 3)||'|'||split_part(_rls_try('$C1', 'insert into expense_categories (name) values (repeat(''ب'', 41))'), ':', 3)" "expense_category_bad_name|expense_category_bad_name"
+$P -c "insert into expense_categories (clinic_id, name) select '$C2', 'تصنيف '||g from generate_series(1,59) g;" >/dev/null
+chk "سقفُ ٦٠ تصنيفاً للعيادة (المؤرشفُ يُعدّ)" \
+    "select (select count(*) from expense_categories where clinic_id='$C2')::text||'|'||split_part(_rls_try('$C2', 'insert into expense_categories (name) values (''جديد'')'), ':', 3)" "60|expense_categories_full"
+chk "العيادةُ لا تُبدَّل بالتعديل" \
+    "select split_part(_rls_try('$C1', 'update expense_categories set clinic_id = ''$C2'' where name = ''صيانة'''), ':', 3)" "expense_category_clinic_frozen"
+# الكتابةُ بجملةٍ والقراءةُ بأخرى: استعلامٌ فرعيّ بجملة النداء يقرأ لقطتَها قبل الكتابة.
+chk "ومن أنشأه لا يُكتب فوقه" \
+    "select _rls_try('$C1', 'update expense_categories set created_by = ''$C2'' where name = ''صيانة''')" "rows:1"
+chk "  (ما زال المديرُ نفسَه)" \
+    "select created_by::text from expense_categories where clinic_id='$C1' and name='صيانة'" "$C1"
+chk "الأرشفةُ تُختم بلحظتها لا بما يرسله الجهاز" \
+    "select _rls_try('$C1', 'update expense_categories set archived_at = ''2000-01-01'' where name = ''صيانة''')" "rows:1"
+chk "  (بدقيقة الآن لا سنة ٢٠٠٠)" \
+    "select (abs(extract(epoch from archived_at - now())) < 60)::text from expense_categories where clinic_id='$C1' and name='صيانة'" "true"
+chk "  والاسترجاعُ يفرّغها" \
+    "select _rls_try('$C1', 'update expense_categories set archived_at = null where name = ''صيانة''')" "rows:1"
+chk "  (فارغةٌ فعلاً)" \
+    "select (archived_at is null)::text from expense_categories where clinic_id='$C1' and name='صيانة'" "true"
+chk "التسميةُ إلى توأمٍ تُرفض" \
+    "select split_part(_rls_try('$C1', 'update expense_categories set name = ''ايجار'' where name = ''صيانة'''), ':', 3)" "expense_category_twin"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل ١١١١ (0227)" "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص 0227'')->>''ok'')')" "true"
+chk "  ويضيف تصنيفاً بدور مدير" \
+    "select _rls_try('$ADM', 'insert into expense_categories (name) values (''أضافه المشغل'')')" "rows:1"
+chk "  مختوماً بعيادتها وبلا «أنشأه» (لا أثرَ للمشغّل — 0208)" \
+    "select (clinic_id = '$C1' and created_by is null)::text from expense_categories where name = 'أضافه المشغل'" "true"
+$P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+
+# ــ المفتاحُ المركَّب على السحوبات ــ
+C1CAT=$(W "select id from expense_categories where clinic_id='$C1' and name='ايجار'")
+C2CAT=$(W "select id from expense_categories where clinic_id='$C2' and name='ايجار'")
+chk "سحبٌ يشير لتصنيف عيادةٍ أخرى يُرفض بدور authenticated (23503)" \
+    "select left(_rls_try('$C1', 'insert into expenses (amount, description, category, category_id) values (5, ''x'', ''ايجار'', ''$C2CAT'')'), 13)" "guarded:23503"
+$P -c "create or replace function _fk0227(c uuid, cat uuid) returns text language plpgsql as \$fn\$
+       begin insert into expenses (clinic_id, amount, description, category_id) values (c, 5, 'fk', cat); return 'NOT-GUARDED';
+       exception when others then return sqlstate; end \$fn\$;" >/dev/null
+chk "  وحتى من superuser (فحصُ المفتاح لا يمرّ من RLS)" "select _fk0227('$C1', '$C2CAT')" "23503"
+chk "  وبتصنيف عيادته يمرّ، وبلا تصنيفٍ يمرّ (الإلزامُ بالواجهة لا بالقاعدة)" \
+    "select _rls_try('$C1', 'insert into expenses (amount, description, category, category_id) values (5, ''x'', ''ايجار'', ''$C1CAT'')')||'|'||_rls_try('$C1', 'insert into expenses (amount, description) values (5, ''بلا تصنيف'')')" "rows:1|rows:1"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       select retail_return('[{\"product_id\":null,\"name\":\"خدمة 0227\",\"qty\":-1,\"unit_price\":700}]'::jsonb, '{}'::jsonb);" >/dev/null
+chk "والإرجاعُ بعد 0227 يكتب «مرتجع» بلا تصنيف كما كان (الدوالُّ الكاتبة لم تُمسّ)" \
+    "select count(*)::text||'|'||count(category_id)::text from expenses where description like 'راجع: خدمة 0227%' and category = 'مرتجع'" "1|0"
+
+# ــ الكتلوج ــ
+chk "الحارسُ invoker بمسارٍ مثبَّت، والأسماءُ المحجوزة كذلك" \
+    "select (select prosecdef::text||'|'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='expense_categories_guard')||'|'||(select (coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='_expense_reserved_keys')" "false|true|true"
+chk "لا شيءَ لـanon، ولا حذفَ للمسجَّل" \
+    "select has_table_privilege('anon','public.expense_categories','select')::text||'|'||has_table_privilege('authenticated','public.expense_categories','delete')::text||'|'||has_function_privilege('anon','public._expense_reserved_keys()','execute')::text" "false|false|false"
+chk "السياجُ يشمل الجدولَ الجديد" \
+    "select count(*)::text from verify_photographer_fence() v where v like '%expense_categories%'" "0"
+chk "المفتاحُ مركَّب (العيادة، التصنيف) ولا يتتالى" \
+    "select c.confdeltype::text||'|'||(select string_agg(a.attname, ',' order by k.ord) from unnest(c.conkey) with ordinality k(n, ord) join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.n) from pg_constraint c where c.conname='expenses_category_fk'" "a|clinic_id,category_id"
+chk "التصنيفاتُ تُدقَّق، ولا محفّزَ جديداً على السحوبات" \
+    "select (select count(*) from pg_trigger where tgrelid='public.expense_categories'::regclass and tgname='audit_all')::text||'|'||(select string_agg(tgname, ',' order by tgname) from pg_trigger where tgrelid='public.expenses'::regclass and not tgisinternal)" "1|audit_all,expenses_stock_guard"
+chk "ونوعُها بمركز الحركات «مصروف»" \
+    "select audit_kind('expense_categories','INSERT','{}'::jsonb)||'|'||audit_kind('expense_categories','UPDATE','{\"__changed\":{\"archived_at\":[null,\"x\"]}}'::jsonb)" "expense|expense"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

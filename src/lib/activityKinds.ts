@@ -78,7 +78,8 @@ export function auditKind(entity: string, action: string, details: Record<string
   if (e === "purchases" || e === "purchase_items") return "purchase";
   if (e === "purchase_payments") return "supplier_pay";
   if (e === "companies" || e === "company_sections" || e === "generated_barcodes") return "inventory";
-  if (e === "expenses") return "expense";
+  // 0227: تصنيفاتُ السحوبات من نوع السحوبات نفسها (إضافةٌ، تسمية، أرشفة).
+  if (e === "expenses" || e === "expense_categories") return "expense";
   if (e === "delivery_orders" || e === "couriers" || e === "courier_settlements") return "delivery";
   if (e === "pets") return "pet";
   if (["admissions", "clinic_visits", "medical_visits", "surgeries", "care_entries", "pet_problems", "pet_movements"].includes(e)) return "case";
