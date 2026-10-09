@@ -138,6 +138,8 @@ export function Storefront() {
   const [primed, setPrimed] = useState(false);
   /** فُحص اكتمالُ الكتلوج بعدد الخادم (`frontTotal`) بعد آخر صفحة؟ قبله لا عددَ ولا «ما لكينا». */
   const [verified, setVerified] = useState(false);
+  /** إعادةُ «اكتمال الكتلوج» فشلت: القائمةُ قصيرةٌ بقياس الخادم — تقول «أعد المحاولة» لا «ما لكينا». */
+  const [verifyFailed, setVerifyFailed] = useState(false);
   /** جيلُ آخر إعادةٍ للكتلوج من أوّله (مرّةً لكلّ جيل)، وجيلُ الإعادة التي بالطريق الآن. */
   const refetchedRef = useRef(-1);
   const refetchingRef = useRef(-1);
@@ -152,7 +154,7 @@ export function Storefront() {
   useEffect(() => {
     let alive = true;
     const gen = ++genRef.current;
-    setPrimed(false); setVerified(false); setExtra([]);
+    setPrimed(false); setVerified(false); setVerifyFailed(false); setExtra([]);
     (async () => {
       /* بذرةُ الحافة: رفٌّ مرسومٌ مع أوّل رسمةٍ بدل دوّامةٍ تنتظر ذهاباً وإياباً
        * (المقيس: ٢٥٠–٦٠٠ms توفَّر، وعلى شبكةٍ ضعيفة أكثر). ولا تُصدَّق نهائياً —
@@ -293,7 +295,7 @@ export function Storefront() {
    * الكتلوج حرفاً — `frontTotal`)؛ فإن قصر ما حُمّل عنه يُعاد الكتلوجُ من أوّله **مرّةً** ويُستبدل
    * كاملاً، وفشلُه يُبقي ما حُمّل. وقبل هذا الحكم لا عددَ ولا «ما لكينا». */
   useEffect(() => {
-    if (!complete || verified) return;
+    if (!complete || verified || verifyFailed) return;
     const gen = genRef.current;
     // إعادةٌ بالطريق لهذا الجيل: هي التي تقول «فُحص» حين تهبط — لا نداءٌ ثانٍ للمؤثّر (وضعُ التطوير الصارم).
     if (refetchingRef.current === gen) return;
@@ -302,14 +304,13 @@ export function Storefront() {
     refetchedRef.current = gen;
     refetchingRef.current = gen;
     void collectCatalog((limit, offset) => storeApi.storeCatalogPublic(slug, limit, offset))
-      .then((all) => { if (gen === genRef.current) putCatalog(all); })
-      .catch(() => { /* يبقى ما حُمّل — والسلّةُ حُكم عليها بالمعرّف لا بهذا */ })
-      .finally(() => {
-        if (refetchingRef.current === gen) refetchingRef.current = -1;
-        if (gen === genRef.current) setVerified(true);
-      });
+      // نجحت ⇒ «فُحص». فشلت ⇒ **لا** «فُحص»: القائمةُ قصيرةٌ بقياس الخادم نفسه، فعددُها و«ما لكينا»
+      // فوقها كذبٌ يُصدَّق — تقول «أعد المحاولة» (والسلّةُ حُكم عليها بالمعرّف لا بهذا).
+      .then((all) => { if (gen === genRef.current) { putCatalog(all); setVerified(true); } })
+      .catch(() => { if (gen === genRef.current) setVerifyFailed(true); })
+      .finally(() => { if (refetchingRef.current === gen) refetchingRef.current = -1; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complete, verified]);
+  }, [complete, verified, verifyFailed]);
   /** الكتلوجُ كاملٌ بحكمٍ لا بظنّ: آخرُ صفحةٍ وصلت وعددُ الخادم فُحص. */
   const settled = complete && verified;
 
@@ -597,7 +598,7 @@ export function Storefront() {
             <Search size={26} className="opacity-40" />
             {/* «ما لكينا» لا تُقال قبل أن تكتمل التشكيلة — ولا تُقال أبداً عن فشلِ جلب. */}
             <p className="text-sm font-semibold">
-              {moreFailed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : !settled ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
+              {moreFailed || verifyFailed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : !settled ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
             </p>
           </div>
         ) : (
@@ -679,10 +680,14 @@ export function Storefront() {
             })}
           </div>
         )}
-        {(hasMore || moreFailed) && (
-          <button onClick={() => { setMoreFailed(false); void loadMore(); }} disabled={loadingMore || !primed}
+        {(hasMore || moreFailed || verifyFailed) && (
+          <button onClick={() => {
+            // إعادةُ الاكتمال الفاشلة تُعاد بنفس الزرّ: يُفكّ قيدُ «مرّةً لكلّ جيل» ويجري المؤثّرُ من جديد.
+            if (verifyFailed) { refetchedRef.current = -1; setVerifyFailed(false); return; }
+            setMoreFailed(false); void loadMore();
+          }} disabled={loadingMore || !primed}
             className="mt-4 w-full rounded-2xl border border-line bg-surface-1 py-3 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-50">
-            {loadingMore || !primed ? "جاري التحميل…" : moreFailed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
+            {loadingMore || !primed ? "جاري التحميل…" : moreFailed || verifyFailed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
           </button>
         )}
         <p className="mt-8 flex items-center justify-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>

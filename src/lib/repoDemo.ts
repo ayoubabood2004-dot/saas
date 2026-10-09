@@ -2740,6 +2740,8 @@ const demoRepo = {
     const secSort = new Map((db.storeSections ?? []).filter((s) => !s.archived_at).map((s) => [s.id, s.sort]));
     const big = Number.MAX_SAFE_INTEGER;
     const secOf = (p: Product) => (p.store_section_id && secSort.has(p.store_section_id) ? p.store_section_id : null);
+    // «مركون» (قسمُه مؤرشف): بعد ما بلا قسمٍ أصلاً وبلا ترتيبه — مرآةُ store_catalog2.
+    const parked = (p: Product) => !!p.store_section_id && !secSort.has(p.store_section_id);
     return (db.products ?? [])
       // 0212: المنتهي لا يُعرض (آخرُ يومٍ صالح يُعرض) — نفسُ قاعدة expiry.ts. و0188: بلا سعرٍ لا يُعرض.
       .filter((p) => p.store_visible && (p.sell_price ?? 0) > 0 && !isExpiredOn(p.expiry_date))
@@ -2749,7 +2751,8 @@ const demoRepo = {
         Number(b.store_featured ?? false) - Number(a.store_featured ?? false)
         || (secOf(a) ? secSort.get(secOf(a)!)! : big) - (secOf(b) ? secSort.get(secOf(b)!)! : big)
         || (secOf(a) ?? "~").localeCompare(secOf(b) ?? "~")
-        || (a.store_sort ?? big) - (b.store_sort ?? big)
+        || Number(parked(a)) - Number(parked(b))
+        || (parked(a) ? big : a.store_sort ?? big) - (parked(b) ? big : b.store_sort ?? big)
         || a.name.localeCompare(b.name)
         || a.id.localeCompare(b.id))
       .slice(Math.max(offset, 0), Math.max(offset, 0) + cap)

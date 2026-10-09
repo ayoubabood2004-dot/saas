@@ -729,7 +729,13 @@ as $$
   where sp.slug = lower(trim(p_slug)) and sp.enabled
     and coalesce(p.sell_price, 0) > 0
     and (p.expiry_date is null or p.expiry_date >= (now() at time zone 'Asia/Baghdad')::date)
-  order by coalesce(p.store_featured, false) desc, ss.sort nulls last, ss.id nulls last, p.store_sort nulls last, p.name, p.id
+  -- و«منتجات أخرى» صنفان: بلا قسمٍ أصلاً (ترتيبُه ما رتّبه المديرُ هنا) ثمّ منتجاتُ قسمٍ مؤرشف
+  -- («مركونة»: ترتيبُها ترتيبُ قسمها، محفوظٌ لرجوعه، فلا يُخلط بترتيب «أخرى» — رقمُها ١ كان يسبق
+  -- ما وضعه المديرُ أوّلاً هنا، فاللوحةُ تقول ترتيباً والزبونُ يرى غيرَه).
+  order by coalesce(p.store_featured, false) desc, ss.sort nulls last, ss.id nulls last,
+           (ss.id is null and p.store_section_id is not null),
+           case when ss.id is null and p.store_section_id is not null then null else p.store_sort end nulls last,
+           p.name, p.id
   limit least(greatest(coalesce(p_limit, 60), 1), 100)
   offset greatest(coalesce(p_offset, 0), 0);
 $$;

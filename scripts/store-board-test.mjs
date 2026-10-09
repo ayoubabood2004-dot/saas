@@ -179,6 +179,15 @@ console.log("▸ الترتيب");
   ];
   check("كالمتجر: المميّز، ثمّ الأقسامُ بترتيبها، ثمّ الترتيبُ اليدويّ، و«بلا قسم» آخراً",
     eq(M.sortBoard(rows, "shelf", TODAY, sec).map((p) => p.id), ["w", "x", "y", "z", "v"]));
+  // «مركون» (قسمُه مؤرشف ⇒ ليس بخريطة الأقسام الفعّالة): بعد ما بلا قسمٍ أصلاً وبالاسم — رقمُه ١ بقسمه
+  // كان يسبق ما رتّبه المديرُ أوّلاً بـ«أخرى» (مرآةُ store_catalog2).
+  const others = [
+    P({ id: "pk", name: "أ", store_section_id: "gone", store_sort: 1 }),
+    P({ id: "u2", name: "ي", store_sort: 2 }),
+    P({ id: "u1", name: "ك", store_sort: 1 }),
+  ];
+  check("  و«منتجات أخرى»: ما بلا قسمٍ أصلاً بترتيبه، ثمّ المركونُ بلا ترتيب قسمه",
+    eq(M.sortBoard(others, "shelf", TODAY, sec).map((p) => p.id), ["u1", "u2", "pk"]));
   const work = [P({ id: "1", name: "ا", store_visible: true }), P({ id: "2", name: "ب" }), P({ id: "3", name: "ت", store_visible: true, image_path: null }), P({ id: "4", name: "ث", image_path: null })];
   check("الشغلُ الناقص: المنشورُ بلا صورة، ثمّ الجاهز، ثمّ بلا صورة، ثمّ المخفي، ثمّ المنشور",
     eq(M.sortBoard(work, "work", TODAY).map((p) => p.id), ["3", "2", "4", "1"]));

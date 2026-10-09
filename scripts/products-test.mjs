@@ -1296,7 +1296,7 @@ console.log("▸ لوحة المتجر — إخفاءٌ يُسأل، سعرٌ ي
 
   // ع٥/ع٣٥: منشورٌ ناقصٌ إذا انخفى ما يرجع إلا لمن يكمل (النشرُ بشروطه والإخفاءُ بلا شرط).
   check("ع٥: «اخفِ من المتجر» لمنشورٍ ناقص يُسأل بالسطر أوّلاً (لا نافذةَ متصفّح)",
-    /const risky = hideRisk\(row, today\);\s*\n\s*const togglePublish = \(sure = false\) => \{\s*\n\s*if \(risky && !sure\) \{ playWarning\(\); setConfirmHide\(true\); return; \}/.test(sh)
+    /const risky = hideRisk\(row, today\);[\s\S]{0,400}?\n\s*const togglePublish = \(sure = false\) => \{\s*\n\s*if \(risky && !sure\) \{ playWarning\(\); setConfirmHide\(true\); return; \}/.test(sh)
     && sh.includes("data-hide-confirm") && /onClick=\{\(\) => void togglePublish\(true\)\}/.test(sh) && !/window\.confirm/.test(sh));
   check("  ويقول ما ينقصه وأنّه ما يرجع إلا لمن يكمل", /t\("sb\.hideAsk", [^)]*\{ name: row\.name, what: missingText \}\)/.test(sh)
     && /ما يرجع/.test(arS.hideAsk) && /comes back/.test(enS.hideAsk));
@@ -1378,6 +1378,23 @@ console.log("▸ لوحة المتجر — إخفاءٌ يُسأل، سعرٌ ي
   // ع٣٣: الشاشاتُ المركَّبة تسمع تحديثَ الصلاحيات بعد رفضٍ من الخادم — بلا الاشتراك تبقى أزرارٌ فُقد إذنُها.
   const up = readFileSync("src/hooks/usePermissions.ts", "utf8");
   check("ع٣٣: usePermissions يشترك بتحديث ذاكرة الصلاحيات", /subscribeMyPermissions\(\s*\(\)\s*=>\s*setOverrides\(peekMyPermissions\(/.test(up));
+}
+{
+  // الجولةُ الثانية من التدقيق العدائيّ (على إصلاحات الأولى):
+  const sbd = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
+  const sht = readFileSync("src/components/store/ProductSheet.tsx", "utf8");
+  const sf = readFileSync("src/pages/Storefront.tsx", "utf8");
+  const pp = readFileSync("src/lib/productPhoto.ts", "utf8");
+  check("ج٢: بطاقةٌ لمنتجٍ غاب بعد التحميل يُصفَّر معرّفُها (الماسحُ لا يبقى مطفأً بصمت)",
+    /if \(sheetId && Array\.isArray\(rows\) && !byId\.has\(sheetId\)\) setSheetId\(null\)/.test(sbd));
+  check("  وفشلُ تجديد خريطة الأسعار لا يمحوها (لا «ما تغيّر» كاذب)", !/setPrices\(null\)/.test(sbd));
+  check("  وزرُّ الإخفاء يرجع حين يكتمل الناقصُ والسؤالُ مفتوح",
+    /useEffect\(\(\) => \{ if \(!risky\) setConfirmHide\(false\); \}, \[risky\]\)/.test(sht) && /\(confirmHide && risky\)/.test(sht) && !/\|\| confirmHide\}/.test(sht));
+  check("  وإعادةُ الاكتمال الفاشلة لا تقول «فُحص»: تقول «أعد المحاولة» ويعيدها الزرّ",
+    /\.catch\(\(\) => \{ if \(gen === genRef\.current\) setVerifyFailed\(true\); \}\)/.test(sf)
+    && /putCatalog\(all\); setVerified\(true\);/.test(sf) && /if \(verifyFailed\) \{ refetchedRef\.current = -1; setVerifyFailed\(false\); return; \}/.test(sf));
+  check("  والنسخةُ العاملة للصور الكبيرة بيضاءُ قبل الرسم (شفّافٌ لا يصير أسود)",
+    /g\.fillStyle = "#ffffff";\s*g\.fillRect\(0, 0, out\.w, out\.h\);\s*g\.drawImage\(bmp/.test(pp));
 }
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

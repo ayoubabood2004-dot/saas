@@ -130,6 +130,9 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   // العلامةُ لا تدخل بيانات اللوحة أصلاً حين تُحجب: لا شارة، ولا عدّاد، ولا تصفيةٌ تكشفها بعضويتها.
   const list = useMemo(() => (!Array.isArray(rows) ? [] : hideCost ? rows.map((p) => (p.below_cost == null ? p : { ...p, below_cost: null })) : rows), [rows, hideCost]);
   const byId = useMemo(() => new Map(list.map((p) => [p.id, p])), [list]);
+  // بطاقةٌ مفتوحةٌ لمنتجٍ غاب بعد إعادة التحميل (حُذف أو طُوي بتوأمه من جهازٍ ثانٍ): المعرّفُ يُصفَّر.
+  // بقاؤه كان يُبقي الماسحَ مطفأً بصمت (`disabled: !!sheetId`)، ويفتح البطاقةَ وحدَها إن استُرجع المنتج.
+  useEffect(() => { if (sheetId && Array.isArray(rows) && !byId.has(sheetId)) setSheetId(null); }, [sheetId, rows, byId]);
   const activeSections = useMemo(() => sections.filter((s) => !s.archived_at).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "ar")), [sections]);
   const activeIds = useMemo(() => new Set(activeSections.map((s) => s.id)), [activeSections]);
   const secOrder = useMemo(() => new Map(activeSections.map((s, i) => [s.id, i])), [activeSections]);
@@ -296,7 +299,9 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
     try {
       const rows2 = await repo.storePriceReview();
       setPrices(new Map(rows2.map((r) => [r.product_id, r])));
-    } catch { setPrices(null); throw new Error("price_review_failed"); }
+    // الفشلُ لا يمحو الخريطةَ القائمة: تجديدٌ بعد حفظ سعرٍ من البطاقة (فوق مراجعة الأسعار) فشل فصارت
+    // كلُّ الصفوف «ما تغيّر آخر ٩٠ يوم» بلا خطأٍ ظاهر — قائمةٌ كاذبةٌ أخطرُ من قديمة. والمتّصلُ يقول الفشل.
+    } catch { throw new Error("price_review_failed"); }
   }, []);
 
   /* ── التصويرُ المتتابع: صفُّ ما بلا صورة بترتيب الشاشة، ومنتجٌ بعد منتج ── */

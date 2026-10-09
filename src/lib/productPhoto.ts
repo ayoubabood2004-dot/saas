@@ -322,6 +322,10 @@ async function downscaleSource(file: Blob, width: number, mp: number): Promise<H
     if (!g) throw new ImageEncodeError("Canvas is not supported in this browser");
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = "high";
+    // أبيضُ قبل الرسم كـrenderPhoto: النسخةُ العاملة JPEG، وشفّافُ PNG كبير (صورُ المصنّع على
+    // خلفيّةٍ شفّافة) كان يصير أسود هنا قبل أن تصل renderPhoto وبياضُها.
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, 0, out.w, out.h);
     g.drawImage(bmp, 0, 0, out.w, out.h);
     return await imageFromBlob(await toBlob(c, 0.92));
   } finally {

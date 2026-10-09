@@ -1624,6 +1624,8 @@ console.log("▸ 0229 — أقسامُ المتجر والنشرُ بشروطه 
   const cat2 = await repo.storeCatalogPublic("demo-sec", 100, 0);
   check("أرشفةُ القسم: يختفي من الزبون، ومنتجاتُه تنزل لـ«بلا قسم» وتبقى مربوطة",
     (await repo.storeFrontPublic("demo-sec"))?.sections.length === 0 && cat2.every((c) => c.section_id === null) && prod("q1").store_section_id === s1.id);
+  check("  و«منتجات أخرى»: ما بلا قسمٍ أصلاً أوّلاً، ثمّ المركونُ بالاسم لا بترتيب قسمه (q2 رقمُه ١ لا يسبق)",
+    cat2.map((c) => c.id).join() === "q7,q1,q2", cat2.map((c) => c.id).join());
   check("  وقسمٌ جديدٌ باسم المؤرشف يُرفض بتلميح «رجّعه»", (await code(() => repo.saveStoreSection(null, "أكل قطط"))) === "section_twin_archived");
   check("  و«بلا قسم» = بلا قسمٍ أصلاً: منتجُ القسم المؤرشف لا يُرقَّم فيه (ترتيبُه ترتيبُ قسمه)",
     (await code(() => repo.reorderSectionProducts(null, ["q1", "q7"]))) === "order_stale"

@@ -222,6 +222,31 @@ const settle = (page, ms = 350) => page.waitForTimeout(ms);
   await studio.waitFor({ state: "detached", timeout: 20000 });
   const saved = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), DB_KEY)).products[0];
   check("  وتنحفظ فعلاً بأبعادها", saved.image_meta?.w === 1600 && saved.image_meta?.h === 1200, `${saved.image_meta?.w}×${saved.image_meta?.h}`);
+
+  /* PNG كبيرٌ بخلفيّةٍ شفّافة (صورُ المصنّع): مسارُ التصغير يمرّ بنسخةٍ عاملةٍ JPEG — شفّافُها كان
+   * يصير أسودَ قبل أن تصل renderPhoto وبياضُها (أمسكه التدقيقُ الثاني). الحكمُ على بكسلٍ بالزاوية. */
+  const clear = Buffer.from(await page.evaluate(async () => {
+    const c = document.createElement("canvas"); c.width = 8000; c.height = 6000;
+    const g = c.getContext("2d"); g.clearRect(0, 0, 8000, 6000); g.fillStyle = "#1e3a8a"; g.fillRect(2500, 1500, 3000, 3000);
+    const b = await new Promise((r) => c.toBlob(r, "image/png"));
+    const u8 = new Uint8Array(await b.arrayBuffer());
+    let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  }), "base64");
+  const [ch3] = await Promise.all([page.waitForEvent("filechooser"), page.locator('[data-photo-gallery="p1"]').click()]);
+  await ch3.setFiles({ name: "clear.png", mimeType: "image/png", buffer: clear });
+  await studio.waitFor({ timeout: 10000 });
+  await studio.locator("[data-photo-approve]:not([disabled])").waitFor({ timeout: 20000 }).catch(() => undefined);
+  await studio.locator("[data-photo-approve]").click();
+  await studio.waitFor({ state: "detached", timeout: 20000 });
+  const clearSaved = JSON.parse(await page.evaluate((k) => localStorage.getItem(k), DB_KEY)).products[0];
+  const corner = await page.evaluate(async (src) => {
+    const img = new Image(); img.src = src; await img.decode();
+    const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+    return [...g.getImageData(5, 5, 1, 1).data];
+  }, clearSaved.image_path);
+  check("PNG كبيرٌ شفّافُ الخلفيّة يُحفظ على أبيض لا أسود (مسارُ التصغير)", corner.slice(0, 3).every((v) => v > 235), JSON.stringify(corner));
   await ctx.close();
 }
 

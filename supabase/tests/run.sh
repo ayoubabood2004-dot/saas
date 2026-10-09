@@ -4493,6 +4493,8 @@ chk "  و«بلا قسم» = بلا قسمٍ أصلاً: منتجُ القسم �
     "select $(_perr $PHO "select store_reorder_products(null, array[''${PP}01'',''${PP}04'']::uuid[])")||'|'||_rls_try('$PHO', 'select store_reorder_products(null, array[''${PP}04'']::uuid[])')" "order_stale|rows:1"
 chk "    وترتيبُ القسم المؤرشف باقٍ كما كان (٠٣ ثمّ ٠١) — فيرجع معه" \
     "select string_agg(right(id::text,2)||':'||store_sort, ',' order by store_sort) from products where store_section_id='$S1'" "03:1,01:2"
+chk "    و«منتجات أخرى» عند الزبون: ما بلا قسمٍ أصلاً بترتيب المدير أوّلاً، ثمّ المركونُ (قسمُه مؤرشف) بالاسم" \
+    "select string_agg(right(id::text,2), ',' order by o) from (select id, row_number() over () o from store_catalog2('$SLUG', 100, 0)) x where id in ('${PP}01','${PP}03','${PP}04')" "04,01,03"
 chk "  وقسمٌ جديدٌ باسم المؤرشف يُرفض بتلميح «رجّعه»" \
     "select $(_perr $PHO "select store_section_save(null, ''أكل قطط'')")" "section_twin_archived"
 chk "  والاسترجاعُ يعيده آخرَ القائمة ومنتجاتُه معه" \

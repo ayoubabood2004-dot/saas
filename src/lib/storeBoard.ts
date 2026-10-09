@@ -217,8 +217,11 @@ export function sortBoard<T extends BoardRow>(rows: readonly T[], mode: BoardSor
   if (mode === "name") return arr.sort(byName);
   if (mode === "shelf") {
     const sec = (p: T) => (p.store_section_id && sectionOrder?.has(p.store_section_id) ? sectionOrder.get(p.store_section_id)! : Number.MAX_SAFE_INTEGER);
-    const ord = (p: T) => (p.store_sort ?? Number.MAX_SAFE_INTEGER);
-    return arr.sort((a, b) => Number(b.store_featured) - Number(a.store_featured) || sec(a) - sec(b) || ord(a) - ord(b) || byName(a, b));
+    // «مركون» = قسمُه مؤرشف: آخرَ «منتجات أخرى» وبلا ترتيبه (ترتيبُه لقسمه حين يرجع) — مرآةُ store_catalog2.
+    const parked = (p: T) => !!p.store_section_id && !sectionOrder?.has(p.store_section_id);
+    const ord = (p: T) => (parked(p) ? Number.MAX_SAFE_INTEGER : p.store_sort ?? Number.MAX_SAFE_INTEGER);
+    return arr.sort((a, b) => Number(b.store_featured) - Number(a.store_featured) || sec(a) - sec(b)
+      || Number(parked(a)) - Number(parked(b)) || ord(a) - ord(b) || byName(a, b));
   }
   const rank = (p: T) => {
     if (p.store_visible && !hasPhoto(p)) return 0;

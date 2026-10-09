@@ -123,6 +123,9 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
    * وبالسطر نفسه لا بنافذة متصفّحٍ تُقبل بلا قراءة. والتعريفُ واحدٌ للمسارات الثلاثة (البطاقةُ
    * والجماعيُّ وهنا): `hideRisk`. */
   const risky = hideRisk(row, today);
+  // اكتمل الناقصُ والسؤالُ مفتوح (صوّره من هذي البطاقة، أو سعّره): السؤالُ يزول وزرُّ الإخفاء يرجع —
+  // كان يبقى معطّلاً بلا سببٍ ظاهر وبلا «خلّيه منشور» يفكّه، فلا إخفاءَ إلا بإغلاق البطاقة.
+  useEffect(() => { if (!risky) setConfirmHide(false); }, [risky]);
   const togglePublish = (sure = false) => {
     if (risky && !sure) { playWarning(); setConfirmHide(true); return; }
     setConfirmHide(false);
@@ -242,7 +245,7 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
                   {row.store_visible ? t("sb.badge.shown", "منشور") : t("sb.badge.hidden", "مخفي")}
                 </span>
                 <Button size="sm" className="ms-auto" variant={row.store_visible ? "outline" : "primary"} loading={busy === "pub"}
-                  onClick={() => void togglePublish()} disabled={(!row.store_visible && !r.ok) || confirmHide}
+                  onClick={() => void togglePublish()} disabled={(!row.store_visible && !r.ok) || (confirmHide && risky)}
                   leftIcon={row.store_visible ? <EyeOff size={15} /> : <Eye size={15} />} data-sheet-publish>
                   {row.store_visible ? t("sb.hideOne", "اخفِ من المتجر") : t("sb.showOne", "انشر بالمتجر")}
                 </Button>
