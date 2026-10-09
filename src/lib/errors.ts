@@ -180,8 +180,14 @@ export function describeDbError(e: unknown, t: TFunction): string {
 /** Friendly message for a media-upload failure (file too large, network, storage, …). */
 export function describeUploadError(e: unknown, t: TFunction): string {
   const err = (e && typeof e === "object" ? e : {}) as { name?: string; maxMb?: number; message?: string };
-  if (err.name === "FileTooLargeError") {
+  if (err.name === "FileTooLargeError" || err.name === "TooManyPixelsError") {
     return t("errors.fileTooLarge", "File is too large (max {{mb}} MB). Try a smaller image.", { mb: err.maxMb ?? 25 });
+  }
+  /* المتصفّحُ ما قدر يرسم الصورةَ أو يضغطها (ذاكرةٌ نفدت، canvas مرفوض) — `ImageEncodeError`
+   * من image.ts/productPhoto.ts. **قبل** فرع «مو صورة»: نصُّه «Canvas is not supported» كان
+   * يطابق `not supported` فيُقال «اختر JPG» عن صورةٍ سليمة، أو يُعرض بالإنكليزية الخامّ. */
+  if (err.name === "ImageEncodeError") {
+    return t("errors.imageEncode", "The device couldn't process this photo — close other apps and try again.");
   }
   // حصص الاشتراك (0104): رفض مقصود من مشغّل القاعدة — نشرح الحد والحل.
   if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {

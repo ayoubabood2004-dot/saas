@@ -5,6 +5,9 @@ import type { PhotoProduct, PriceReviewRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
+import { refreshMyPermissions } from "@/lib/staff";
+import { priceDoubt, pricePatchFrom, refusedByRole, staleWrite, type PriceDoubt } from "@/lib/storePrice";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn, formatDate, formatNum, money } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { Button, useToast } from "@/components/ui";
@@ -16,27 +19,38 @@ import { thumbOf, type ImageMeta } from "@/lib/productPhoto";
  *
  * «آخرُ تغيير» من الخادم (`store_price_review`): تعديلُ اليد من سجلّ التدقيق والرفعُ
  * بنسبةٍ من سطوره — والقائمةُ تُجلب حين تُفتح الشاشة، وفشلُها يُقال لا يُخفى. و«تحت
- * الكلفة» علامةٌ بلا رقم، ولمن يرى الكلفةَ أصلاً (لا تصل المصوّر — 0229).
+ * الكلفة» علامةٌ بلا رقم، ولمن يرى الكلفةَ أصلاً (لا تصل المصوّر — 0229)، ولا تُرسم على جهازٍ
+ * مقفولٍ بوضع الاستقبال (`hideCost`): لا شارةَ ولا إطارَ ولا عدّادَ ولا ترتيبَ بها — الترتيبُ
+ * وحده يكشفها لمن يجرّب الأسعار.
  * ==========================================================================*/
 
 type F = "all" | "recent" | "belowCost" | "noprice";
 
-export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore, onPatch, onOpen }: {
+export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore, hideCost, onPatch, onOpen, onStale }: {
   rows: PhotoProduct[];
   prices: Map<string, PriceReviewRow> | null;
   loadPrices: () => Promise<void>;
   canPrice: boolean;
   priceViaStore: boolean;
+  /** لا «تحت الكلفة» بأيّ شكل (جهازٌ مقفول أو مصوّر). */
+  hideCost: boolean;
   onPatch: (id: string, p: Partial<PhotoProduct>) => void;
   onOpen: (id: string) => void;
+  /** الصفُّ المعروض قديم (price_moved، منتجٌ لم يعد) — اللوحةُ تعيد القراءة. */
+  onStale: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const { user } = useAuth();
   const [state, setState] = useState<"loading" | "ready" | "error">(prices ? "ready" : "loading");
   const [f, setF] = useState<F>("all");
   const [q, setQ] = useState("");
   const [edit, setEdit] = useState<{ id: string; v: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** سعرٌ مشبوهٌ ينتظر تأكيداً بزرّ (رمزٌ ممسوحٌ بالحقل المفتوح ثمّ Enter، أو قفزةٌ فوق عشرة أضعاف). */
+  const [ask, setAsk] = useState<{ id: string; v: number; doubt: PriceDoubt } | null>(null);
+  /** رُفض الحفظُ بـprice_moved — السعرُ الجديد يُقال بسطر المنتج حين تصل إعادةُ القراءة. */
+  const [moved, setMoved] = useState<{ id: string; was: number | null } | null>(null);
 
   const fetchPrices = async () => {
     setState("loading");
@@ -48,15 +62,18 @@ export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore,
   const week = Date.now() - 7 * 86400000;
   const shown = useMemo(() => rows.filter((p) => p.store_visible), [rows]);
   const recent = (p: PhotoProduct) => { const r = prices?.get(p.id); return !!r && new Date(r.changed_at).getTime() >= week; };
+  const low = (p: PhotoProduct) => !hideCost && !!p.below_cost;
+  // جهازٌ قُفل والتصفيةُ على «تحت الكلفة»: الزرُّ يختفي، والتصفيةُ لا تبقى تعرض ما يخفيه.
+  const fx: F = hideCost && f === "belowCost" ? "all" : f;
   const counts = {
     all: shown.length,
     recent: shown.filter(recent).length,
-    belowCost: shown.filter((p) => p.below_cost).length,
+    belowCost: shown.filter(low).length,
     noprice: shown.filter((p) => (Number(p.sell_price) || 0) <= 0).length,
   };
-  const list = shown.filter((p) => (f === "all" || (f === "recent" ? recent(p) : f === "belowCost" ? !!p.below_cost : (Number(p.sell_price) || 0) <= 0))
+  const list = shown.filter((p) => (fx === "all" || (fx === "recent" ? recent(p) : fx === "belowCost" ? low(p) : (Number(p.sell_price) || 0) <= 0))
     && matchesQuery(p, q))
-    .sort((a, b) => Number(!!b.below_cost) - Number(!!a.below_cost)
+    .sort((a, b) => Number(low(b)) - Number(low(a))
       || (prices?.get(b.id)?.changed_at ?? "").localeCompare(prices?.get(a.id)?.changed_at ?? "")
       || a.name.localeCompare(b.name, "ar"));
 
@@ -68,15 +85,44 @@ export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore,
     const v = Math.round(Number(raw) * 100) / 100;
     if (!Number.isFinite(v) || v <= 0) { playWarning(); toast.error(t("sb.badPrice", "السعر لازم رقم أكبر من صفر")); return; }
     if (v === (p.sell_price ?? 0)) return;
+    // الحقلُ مفتوحٌ بـautoFocus: مسحُ علبةٍ للبحث يكتب الرمزَ فيه ثمّ Enter — يُسأل بزرٍّ لا يُحفظ.
+    const doubt = priceDoubt(raw, v, p.sell_price);
+    if (doubt) { playWarning(); setAsk({ id: p.id, v, doubt }); return; }
+    await write(p, v);
+  };
+  const write = async (p: PhotoProduct, v: number) => {
+    if (busy) return;
+    setAsk(null);
     setBusy(p.id);
     try {
-      if (priceViaStore) await repo.setStorePrice(p.id, v, p.sell_price ?? null);
-      else await repo.updateProduct(p.id, { sell_price: v }, { sell_price: p.sell_price ?? 0 });
-      onPatch(p.id, { sell_price: v });
+      let saved = v;
+      // بشرط أنّ السعرَ ما زال ما فُتح عليه — رفعُ أسعارٍ أو جهازٌ آخر غيّره ⇒ price_moved لا دَوس.
+      if (priceViaStore) {
+        await repo.setStorePrice(p.id, v, p.sell_price ?? null);
+        onPatch(p.id, { sell_price: v });
+      } else {
+        // «تحت الكلفة» من الصفّ الراجع (مرآةُ الخادم): الإطارُ والعدّادُ يتبعان السعرَ الجديد.
+        const patch = pricePatchFrom(await repo.updateProduct(p.id, { sell_price: v }, { sell_price: p.sell_price ?? 0 }), v);
+        saved = patch.sell_price;
+        onPatch(p.id, patch);
+      }
+      setMoved((m) => (m?.id === p.id ? null : m));
       playSuccess();
-      toast.success(t("sb.priceSaved", "انحفظ السعر: {{p}}", { p: money(v) }));
+      toast.success(t("sb.priceSaved", "انحفظ السعر: {{p}}", { p: money(saved) }));
       void fetchPrices();
-    } catch (e) { playWarning(); toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t)); }
+    } catch (e) {
+      playWarning();
+      const stale = staleWrite(e);
+      if (stale === "price_moved") {
+        setMoved({ id: p.id, was: p.sell_price ?? null });
+        toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), t("sb.priceMoved", "السعر تغيّر من جهاز ثاني (مثلاً رفع أسعار) — ما انحفظ شي. حدّثنا القائمة: شوف السعر الجديد وعدّل عليه."));
+      } else {
+        toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t));
+      }
+      // كانت كلُّ إعادةٍ تُرفض بنفس الطريقة حتى تحديث المتصفّح: الصفُّ القديمُ يُعاد من الخادم.
+      if (stale) onStale();
+      if (refusedByRole(e)) void refreshMyPermissions(user?.email);
+    }
     finally { setBusy(null); }
   };
 
@@ -90,14 +136,14 @@ export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore,
         {([
           ["all", t("sb.pr.all", "كل المنشور")],
           ["recent", t("sb.pr.recent", "تغيّر آخر ٧ أيام")],
-          ...(counts.belowCost > 0 || f === "belowCost" ? [["belowCost", t("sb.f.belowCost", "تحت الكلفة")] as const] : []),
+          ...(!hideCost && (counts.belowCost > 0 || f === "belowCost") ? [["belowCost", t("sb.f.belowCost", "تحت الكلفة")] as const] : []),
           ...(counts.noprice > 0 || f === "noprice" ? [["noprice", t("sb.f.noprice", "منشور بلا سعر")] as const] : []),
         ] as Array<readonly [F, string]>).map(([id, label]) => (
           <button key={id} type="button" onClick={() => { playTap(); setF(id); }}
             className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
-              f === id ? "bg-brand-600 text-white" : "border border-line bg-surface-1 text-ink-muted hover:bg-surface-2",
-              f !== id && id === "belowCost" && "border-danger-300 text-danger-700 dark:border-danger-500/40 dark:text-danger-300")}>
-            {label} <span className={cn("tabular-nums", f === id ? "text-white/80" : "text-ink-subtle")}>{formatNum(counts[id])}</span>
+              fx === id ? "bg-brand-600 text-white" : "border border-line bg-surface-1 text-ink-muted hover:bg-surface-2",
+              fx !== id && id === "belowCost" && "border-danger-300 text-danger-700 dark:border-danger-500/40 dark:text-danger-300")}>
+            {label} <span className={cn("tabular-nums", fx === id ? "text-white/80" : "text-ink-subtle")}>{formatNum(counts[id])}</span>
           </button>
         ))}
         <div className="relative ms-auto min-w-[180px]">
@@ -121,7 +167,7 @@ export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore,
             const r = prices?.get(p.id);
             const src = productImageUrl(thumbOf(p.image_path, p.image_meta as ImageMeta | null)) ?? productImageUrl(p.image_path);
             return (
-              <div key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-2.5", p.below_cost && "border-danger-300 dark:border-danger-500/40")} data-price-row={p.id}>
+              <div key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-2.5", low(p) && "border-danger-300 dark:border-danger-500/40")} data-price-row={p.id}>
                 <button type="button" onClick={() => onOpen(p.id)} className="flex min-w-0 flex-1 items-center gap-2.5 text-start">
                   <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl bg-surface-2">
                     {src ? <img src={src} alt="" loading="lazy" className="h-full w-full object-contain" /> : <ImageOff size={16} className="text-ink-subtle" />}
@@ -136,16 +182,34 @@ export function PriceReview({ rows, prices, loadPrices, canPrice, priceViaStore,
                               when: formatDate(r.changed_at, "ar"),
                               from: r.old_price != null ? money(r.old_price) : "—",
                               to: r.new_price != null ? money(r.new_price) : "—",
+                              // الاسمُ لمن يحقّ له (0229: المصوّرُ يستلمه null) — غيابُه لا يُرسم «· null».
                               by: r.by_name ? ` · ${r.by_name}` : "",
                             })}
                             {r.via === "raise" && <> · {t("sb.viaRaise", "رفع أسعار")}</>}
                           </span>
                         ) : state === "ready" ? <span>{t("sb.pr.noChange", "ما تغيّر آخر ٩٠ يوم")}</span> : null}
-                      {p.below_cost && <span className="inline-flex items-center gap-1 font-bold text-danger-600 dark:text-danger-300"><AlertTriangle size={11} /> {t("sb.belowCost", "تحت الكلفة")}</span>}
+                      {low(p) && <span className="inline-flex items-center gap-1 font-bold text-danger-600 dark:text-danger-300"><AlertTriangle size={11} /> {t("sb.belowCost", "تحت الكلفة")}</span>}
                     </span>
+                    {moved?.id === p.id && (
+                      <span className="block text-2xs font-bold text-warn-700 dark:text-warn-200" data-price-moved>
+                        {(p.sell_price ?? null) !== moved.was
+                          ? t("sb.movedTo", "السعر تغيّر من جهاز ثاني — صار {{p}}. راجعه قبل ما تعدّل.", { p: (Number(p.sell_price) || 0) > 0 ? money(Number(p.sell_price)) : t("sb.noPrice", "بلا سعر") })
+                          : t("sb.movedWait", "السعر تغيّر من جهاز ثاني — نجيب السعر الجديد…")}
+                      </span>
+                    )}
                   </span>
                 </button>
-                {edit?.id === p.id ? (
+                {ask?.id === p.id ? (
+                  <div className="flex basis-full flex-wrap items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 p-2 dark:border-warn-500/40 dark:bg-warn-500/10" data-price-doubt>
+                    <p className="min-w-0 flex-1 text-2xs font-bold text-warn-700 dark:text-warn-200">
+                      {ask.doubt === "code"
+                        ? t("sb.doubt.code", "{{p}} يشبه باركود ممسوح مو سعر — متأكد هذا سعر البيع؟", { p: money(ask.v) })
+                        : t("sb.doubt.jump", "{{p}} أكثر من ١٠ أضعاف السعر الحالي ({{was}}) — متأكد؟", { p: money(ask.v), was: money(Number(p.sell_price) || 0) })}
+                    </p>
+                    <Button size="sm" variant="danger" onClick={() => void write(p, ask.v)}>{t("sb.doubt.yes", "إي، احفظ {{p}}", { p: money(ask.v) })}</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { playTap(); setAsk(null); }}>{t("sb.doubt.no", "لا، رجّع السعر")}</Button>
+                  </div>
+                ) : edit?.id === p.id ? (
                   <input autoFocus type="number" inputMode="decimal" min={0} value={edit.v} onChange={(e) => setEdit({ id: p.id, v: e.target.value })}
                     onBlur={() => void save(p)} onKeyDown={(e) => { if (e.key === "Enter") void save(p); if (e.key === "Escape") setEdit(null); }}
                     className="input h-9 w-28 text-end text-sm font-bold" />

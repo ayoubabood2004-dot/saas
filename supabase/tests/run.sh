@@ -4451,6 +4451,10 @@ chk "  وسعرُ صفرٍ يُتخطّى بسببه (والصورةُ موجو�
 $P -c "update products set sell_price = 2500 where id = '${PP}04';" >/dev/null
 chk "  والإخفاءُ بلا شرط، ومنتجٌ منشورٌ أصلاً لا يُعدّ" \
     "select _pf('$PHO', 'select (store_publish(array[''${PP}01'']::uuid[], true)->>''changed'')')||'|'||_pf('$PHO', 'select (store_publish(array[''${PP}01'']::uuid[], false)->>''changed'')')" "0|1"
+chk "  والنشرُ يرجع معرّفاتِ ما تغيّر وحده (المنتهي خارجها) — اللوحةُ ترقّعها لا تخمّنها" \
+    "select _pf('$PHO', 'select (store_publish(array[''${PP}01'',''${PP}05'']::uuid[], true)->''ids'')::text')" "[\"${PP}01\"]"
+chk "مسارُ الصورة بمحارفَ آمنة: «'» و«..» يُرفضان من الدالّة بتلميح، ومن الكتابة المباشرة بالقيد (مسارٌ ومصغّر)" \
+    "select $(_perr $PHO "select store_set_image(''${PP}06'', ''$C1/x''''y.jpg'', null)")||'|'||$(_perr $PHO "select store_set_image(''${PP}06'', ''$C1/../x.jpg'', null)")||'|'||split_part(_rls_try('$C1', 'update products set image_path = ''$C1/x''''y.jpg'' where id = ''${PP}06'''), ':', 2)||'|'||split_part(_rls_try('$C1', 'update products set image_meta = ''{\"thumb\":\"$C1/a''''b.thumb.jpg\"}''::jsonb where id = ''${PP}06'''), ':', 2)" "bad_image_path|bad_image_path|23514|23514"
 W "select _rls_try('$PHO', 'select store_publish(array[''${PP}01'',''${PP}03'',''${PP}04'']::uuid[], true)')" >/dev/null
 chk "photo_products: القسمُ والترتيبُ والوصفُ والرموزُ والتوفّر — وبلا سعر شراء" \
     "select _pf('$PHO', 'select (e ?& array[''store_section_id'',''store_sort'',''image_meta'',''alt_codes'',''available'',''below_cost''] and not (e ? ''purchase_price''))::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PP}01''')" "true"
@@ -4485,18 +4489,49 @@ chk "أرشفةُ القسم: يختفي من الزبون ومنتجاتُه ت
     "select _rls_try('$PHO', 'select store_section_archive(''$S1'', true)')" "rows:1"
 chk "  (لا قسمَ للزبون، والربطُ باقٍ)" \
     "select coalesce((select string_agg((e->>'name')||':'||(e->>'n'), ',' order by o) from jsonb_array_elements(store_front('$SLUG')->'sections') with ordinality x(e, o)), '')||'|'||coalesce((select section_id::text from store_catalog2('$SLUG', 100, 0) where id='${PP}01'), 'null')||'|'||(select (store_section_id = '$S1')::text from products where id='${PP}01')" "|null|true"
-chk "  و«بلا قسم» يقبل ترتيبَ منتجٍ قسمُه مؤرشف" \
-    "select _rls_try('$PHO', 'select store_reorder_products(null, array[''${PP}01'',''${PP}04'']::uuid[])')" "rows:1"
+chk "  و«بلا قسم» = بلا قسمٍ أصلاً: منتجُ القسم المؤرشف لا يُرقَّم فيه (ترتيبُه ترتيبُ قسمه)" \
+    "select $(_perr $PHO "select store_reorder_products(null, array[''${PP}01'',''${PP}04'']::uuid[])")||'|'||_rls_try('$PHO', 'select store_reorder_products(null, array[''${PP}04'']::uuid[])')" "order_stale|rows:1"
+chk "    وترتيبُ القسم المؤرشف باقٍ كما كان (٠٣ ثمّ ٠١) — فيرجع معه" \
+    "select string_agg(right(id::text,2)||':'||store_sort, ',' order by store_sort) from products where store_section_id='$S1'" "03:1,01:2"
 chk "  وقسمٌ جديدٌ باسم المؤرشف يُرفض بتلميح «رجّعه»" \
     "select $(_perr $PHO "select store_section_save(null, ''أكل قطط'')")" "section_twin_archived"
 chk "  والاسترجاعُ يعيده آخرَ القائمة ومنتجاتُه معه" \
     "select _rls_try('$PHO', 'select store_section_archive(''$S1'', false)')" "rows:1"
-chk "    (رجع للزبون بمنتجاته)" \
-    "select (select string_agg((e->>'name')||':'||(e->>'n'), ',' order by o) from jsonb_array_elements(store_front('$SLUG')->'sections') with ordinality x(e, o))" "أكلقطط:2"
+chk "    (رجع للزبون بمنتجاته وبترتيبها)" \
+    "select (select string_agg((e->>'name')||':'||(e->>'n'), ',' order by o) from jsonb_array_elements(store_front('$SLUG')->'sections') with ordinality x(e, o))||'|'||(select string_agg(right(id::text,2), ',' order by o) from (select id, row_number() over () o from store_catalog2('$SLUG', 100, 0)) x where id in ('${PP}01','${PP}03'))" "أكلقطط:2|03,01"
+chk "  و«منتجات أخرى» بعددها من الخادم = ما بلا قسمٍ فعّال بالكتلوج (الشريحةُ من أوّل لحظة)" \
+    "select ((store_front('$SLUG')->>'others')::int = (select count(*) from store_catalog2('$SLUG', 100, 0) where section_id is null) and (store_front('$SLUG')->>'others')::int >= 1)::text" "true"
+chk "منتجاتٌ بمعرّفاتها للسلّة: نفسُ صفوف الكتلوج وشروطه — المنتهي ومنتجُ عيادةٍ أخرى خارجها، وanon يناديها" \
+    "select (select string_agg(right(id::text,2), ',' order by id) from store_catalog_ids('$SLUG', array['${PP}01','${PP}05','${PP}02','${PP}04']::uuid[]))||'|'||((select jsonb_agg(to_jsonb(x) order by x.id) from store_catalog_ids('$SLUG', array['${PP}01','${PP}04']::uuid[]) x) = (select jsonb_agg(to_jsonb(x) order by x.id) from store_catalog2('$SLUG', 100, 0) x where x.id in ('${PP}01','${PP}04')))::text||'|'||has_function_privilege('anon','public.store_catalog_ids(text,uuid[])','execute')::text||'|'||split_part(_gate('$PHO', '/rpc/store_catalog_ids'), ':', 1)" "01,04|true|true|rows"
 W "select _rls_try('$PHO', 'select store_set_price(''${PP}01'', 12500, 12000)')" >/dev/null
 chk "مراجعةُ الأسعار: آخرُ تغييرٍ ومن غيّره (المصوّرُ يسعّر ⇒ اسمُه)" \
     "select _pf('$PHO', 'select (e->>''by_name'')||''|''||(e->>''old_price'')::numeric::int||''>''||(e->>''new_price'')::numeric::int||''|''||(e->>''via'') from jsonb_array_elements(store_price_review()) e where e->>''product_id'' = ''${PP}01''')" "المصوّر|12000>12500|edit"
+W "select _rls_try('$VET', 'update products set sell_price = 12100 where id = ''${PP}01''')" >/dev/null
+chk "  والمصوّرُ لا يرى أسماءَ زملائه (سياجُه يحجب الكادر): تغييرُ الطبيب بلا اسمٍ له، وباسمه للمدير" \
+    "select coalesce(_pf('$PHO', 'select e->>''by_name'' from jsonb_array_elements(store_price_review()) e where e->>''product_id'' = ''${PP}01'''), 'null')||'|'||_pf('$C1', 'select e->>''by_name'' from jsonb_array_elements(store_price_review()) e where e->>''product_id'' = ''${PP}01''')" "null|طبيبالفحص"
 $P -c "update products set sell_price = 12000 where id = '${PP}01';" >/dev/null
+chk "رفضُ الإذن بلغة الإذن: setters المتجر P0001 بتلميح لا 42501 («جلستك انتهت»)" \
+    "select split_part(_rls_try('$RCP', 'select store_set_featured(''${PP}01'', true)'), ':', 2)||'|'||split_part(_rls_try('$RCP', 'select store_set_desc(''${PP}01'', ''x'')'), ':', 2)||'|'||split_part(_rls_try('$RCP', 'select store_set_price(''${PP}01'', 1, 12000)'), ':', 2)" "P0001|P0001|P0001"
+$P -c "insert into products_trash (id, clinic_id, row) values ('${PP}e1', '$C1', jsonb_build_object('id', '${PP}e1', 'image_path', '$C1/trash-only.jpg')) on conflict (id) do nothing;" >/dev/null
+chk "ملفٌّ يشير إليه توأمٌ بسلّة المحذوفات ليس يتيماً (يُسترجع بنفس المسار)" \
+    "select _pf('$PHO', 'select image_path_in_use(''$C1/trash-only.jpg'')::text')||'|'||_pf('$PHO', 'select image_path_in_use(''$C1/nowhere.jpg'')::text')||'|'||_pf('$C2', 'select image_path_in_use(''$C1/trash-only.jpg'')::text')" "true|false|false"
+$P -c "delete from products_trash where id = '${PP}e1';" >/dev/null
+$P -c "create or replace function _sp_insert_try(who uuid) returns text language plpgsql as \$fn\$
+         declare saved store_profiles; r text; begin
+           select * into saved from store_profiles where clinic_id = '$C1';
+           delete from store_profiles where clinic_id = '$C1';
+           r := _rls_try(who, 'insert into store_profiles (clinic_id, slug) values (''$C1'', ''phonew'')');
+           delete from store_profiles where clinic_id = '$C1';
+           insert into store_profiles select (saved).*;
+           return r; end \$fn\$;" >/dev/null
+WA0=$(W "select coalesce(whatsapp, '') from store_profiles where clinic_id='$C1'")
+chk "الواتساب ورابطُ المتجر وتشغيلُه للمدير وحده (قرار ٥): المصوّرُ والاستقبالُ يُرفضون بتلميح" \
+    "select $(_perr $PHO "update store_profiles set whatsapp = ''07700000001'' where clinic_id = ''$C1''")||'|'||$(_perr $RCP "update store_profiles set slug = ''hacked-link'' where clinic_id = ''$C1''")||'|'||$(_perr $PHO "update store_profiles set enabled = false where clinic_id = ''$C1''")" "store_profile_manager_only|store_profile_manager_only|store_profile_manager_only"
+chk "  وباقي الإعدادات لهم (التوصيل)، وحفظُ النموذج كاملاً بنفس الواتساب يمرّ (upsert)" \
+    "select _rls_try('$PHO', 'update store_profiles set delivery_fee = 1500 where clinic_id = ''$C1''')||'|'||_rls_try('$PHO', 'insert into store_profiles (clinic_id, slug, enabled, whatsapp, delivery_fee) select clinic_id, slug, enabled, whatsapp, 2000 from store_profiles where clinic_id = ''$C1'' on conflict (clinic_id) do update set slug = excluded.slug, enabled = excluded.enabled, whatsapp = excluded.whatsapp, delivery_fee = excluded.delivery_fee')" "rows:1|rows:1"
+chk "  والمديرُ يغيّرها، وإنشاءُ المتجر من الصفر للمدير وحده" \
+    "select _rls_try('$C1', 'update store_profiles set whatsapp = ''07700000002'' where clinic_id = ''$C1''')||'|'||split_part(_sp_insert_try('$PHO'), ':', 3)||'|'||_sp_insert_try('$C1')" "rows:1|store_profile_manager_only|rows:1"
+$P -c "update store_profiles set whatsapp = nullif('$WA0', ''), delivery_fee = 0 where clinic_id = '$C1'; drop function _sp_insert_try(uuid);" >/dev/null
 chk "الاستقبالُ بلا إذن المتجر لا يدخل الأقسامَ ولا النشر" \
     "select $(_perr $RCP "select store_sections_list()")||'|'||$(_perr $RCP "select store_publish(array[''${PP}01'']::uuid[], true)")" "not_authorized|not_authorized"
 $P -c "update staff set permissions = '{\"manageStore\": false}' where id = '${PP}f1';" >/dev/null
@@ -4504,7 +4539,7 @@ chk "  والمصوّرُ الذي أطفأ المديرُ متجرَه: صور�
     "select _rls_try('$PHO', 'select store_set_image(''${PP}03'', ''$C1/p3-b.jpg'', null)')||'|'||$(_perr $PHO "select store_section_save(null, ''x'')")||'|'||$(_perr $PHO "select store_publish(array[''${PP}03'']::uuid[], false)")" "rows:1|not_authorized|not_authorized"
 $P -c "update staff set permissions = '{}' where id = '${PP}f1';" >/dev/null
 chk "البوّابةُ تفتح أبوابَ 0229 كلَّها للمصوّر" \
-    "select string_agg(split_part(_gate('$PHO', '/rpc/'||f), ':', 1), ',' order by f) from unnest(array['store_sections_list','store_section_archive','store_sections_reorder','store_assign_section','store_reorder_products','store_publish','store_price_review','store_catalog2']) f" "rows,rows,rows,rows,rows,rows,rows,rows"
+    "select string_agg(split_part(_gate('$PHO', '/rpc/'||f), ':', 1), ',' order by f) from unnest(array['store_sections_list','store_section_archive','store_sections_reorder','store_assign_section','store_reorder_products','store_publish','store_price_review','store_catalog2','store_catalog_ids']) f" "rows,rows,rows,rows,rows,rows,rows,rows,rows"
 chk "  والطلباتُ ما زالت مقفولة" \
     "select split_part(_gate('$PHO', '/rpc/store_accept_order'), ':', 3)" "photographer_forbidden"
 chk "الكتّابُ الجدد: definer بمسارٍ مثبَّت، يحصرون بعيادتهم وبلا منتجات الحقول، ولا شيءَ لـanon" \
@@ -4520,6 +4555,18 @@ chk "  وstore_catalog القديمة ما تغيّرت (النسخُ المخب
 chk "والسياجُ ما زال يغطّي كلَّ جدول (ومنها store_sections)" \
     "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
 $P -c "update products set store_section_id = null, store_sort = null, store_visible = false, image_meta = null where clinic_id = '$C1';" >/dev/null
+
+echo "▸ rollback_0229: تراجعٌ ثمّ تطبيق — واجهةُ الزبون تعمل بينهما"
+chk "الأجسامُ القديمةُ بملفّ التراجع منسوخةٌ حرفاً من هجراتها" \
+    "select '$(node "$HERE/../../scripts/rollback-copy-check.mjs" "$HERE/rollback_0229.sql" "$MIG" 2>&1 | tr "'" '"')'" "ok:8"
+$P -f "$HERE/rollback_0229.sql" >/dev/null
+chk "بعد التراجع: store_front تعمل بلا أقسام، والقديمةُ تبيع، والأعمدةُ والجدولُ والدوالُّ الجديدة زالت" \
+    "select (store_front('$SLUG')->>'ok')||'|'||(store_front('$SLUG') ? 'sections')::text||'|'||((select count(*) from store_catalog('$SLUG')) >= 0)::text||'|'||(select count(*) from information_schema.columns where table_name='products' and column_name in ('store_section_id','store_sort','image_meta'))::text||'|'||(to_regclass('public.store_sections') is null)::text||'|'||(to_regprocedure('public.store_publish(uuid[],boolean)') is null and to_regprocedure('public.store_catalog_ids(text,uuid[])') is null)::text" "true|false|true|0|true|true"
+chk "  والبوّابةُ والسياجُ كما كانا قبلها" \
+    "select split_part(_gate('$PHO', '/rpc/store_publish'), ':', 3)||'|'||coalesce((select string_agg(t, ',') from verify_photographer_fence() t), '')" "photographer_forbidden|"
+$P -f "$MIG/0229_store_sections.sql" >/dev/null
+chk "  وإعادةُ التطبيق ترجع كلَّ شيء (الجدول، الأقسام بالواجهة، البوّابة، السياج)" \
+    "select (to_regclass('public.store_sections') is not null)::text||'|'||(store_front('$SLUG') ? 'sections')::text||'|'||split_part(_gate('$PHO', '/rpc/store_publish'), ':', 1)||'|'||coalesce((select string_agg(t, ',') from verify_photographer_fence() t), '')" "true|true|rows|"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

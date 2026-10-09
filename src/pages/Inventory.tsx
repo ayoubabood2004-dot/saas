@@ -37,6 +37,7 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName, localISO } from "@/lib/utils";
 import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
+import { thumbOf } from "@/lib/productPhoto";
 import { productImageUrl } from "@/lib/storeLib";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -1391,16 +1392,18 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           // المسارُ فريدٌ لكلّ رفعة (البند ٩)، فالملفُّ القديم لم يعد يُطمَس —
           // يُحذف بعد نجاح تحويل المرجع لا قبله، وبعده وحده.
           const prevPath = product?.image_path ?? null;
+          // ومصغّرُ صورة الاستوديو (0229) يتبعها — من وصفها إن كان يصفها؛ بلاه يبقى `.thumb.jpg` يتيماً.
+          const prevThumb = thumbOf(prevPath, product?.image_meta);
           if (photo) {
             const path = await repo.uploadProductImage(savedClinic, savedId, photo);
             await repo.updateProduct(savedId, { image_path: path });
-            if (prevPath && prevPath !== path) void repo.deleteProductImage(savedClinic, savedId, prevPath);
+            if (prevPath && prevPath !== path) void repo.deleteProductImage(savedClinic, savedId, prevPath, prevThumb);
           } else if (libPick) {
             await repo.updateProduct(savedId, { image_path: libPick });
-            if (prevPath && prevPath !== libPick) void repo.deleteProductImage(savedClinic, savedId, prevPath);
+            if (prevPath && prevPath !== libPick) void repo.deleteProductImage(savedClinic, savedId, prevPath, prevThumb);
           } else {
             await repo.updateProduct(savedId, { image_path: null });
-            if (product?.image_path) void repo.deleteProductImage(savedClinic, savedId, product.image_path);
+            if (prevPath) void repo.deleteProductImage(savedClinic, savedId, prevPath, prevThumb);
           }
         } catch (e) {
           toast.error(t("pos.photoSaveFailed", "المنتج انحفظ بس الصورة ما انحفظت — افتح المنتج وجرّب الصورة من جديد."), e instanceof Error ? e.message : undefined);

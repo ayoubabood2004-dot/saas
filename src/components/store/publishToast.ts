@@ -14,7 +14,7 @@ type ToastApi = {
 };
 
 export function missText(t: TFunction, m: Missing): string {
-  return m === "photo" ? t("sb.miss.photo", "صورة") : m === "price" ? t("sb.miss.price", "سعر") : t("sb.miss.expired", "صلاحية منتهية");
+  return m === "photo" ? t("sb.miss.photo", "صورة") : m === "price" ? t("sb.miss.price", "سعر") : t("sb.miss.expired", "صلاحية سارية");
 }
 
 export function publishToast(toast: ToastApi, t: TFunction, r: StorePublishResult, on: boolean, single = false): void {

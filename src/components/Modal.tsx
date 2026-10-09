@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { overlayVariants, dialogVariants } from "@/lib/motion";
 import { pushModal, removeModal, isTopModal } from "@/lib/modalStack";
+import { lockBodyScroll } from "@/components/ui/Dialog";
 
 /** Dialog width: default (max-w-lg), wide (max-w-3xl), or full (near-fullscreen workspace). */
 type ModalSize = "default" | "wide" | "full";
@@ -33,8 +34,10 @@ export function Modal({ open, onClose, title, children, size = "default", confir
   useEffect(() => {
     if (!open) return;
     pushModal(id);
-    document.body.style.overflow = "hidden";
-    return () => { removeModal(id); document.body.style.overflow = ""; };
+    // نفسُ عدّاد Dialog (0229): منتقي المكتبة (Modal) يُفتح فوق بطاقة المنتج (Dialog) — إغلاقُه
+    // كان يكتب "" فتتحرّر الصفحةُ خلف بطاقةٍ ما زالت مفتوحة.
+    const unlock = lockBodyScroll();
+    return () => { removeModal(id); unlock(); };
   }, [open, id]);
 
   useEffect(() => {

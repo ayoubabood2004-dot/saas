@@ -21,6 +21,24 @@ export class FileTooLargeError extends Error {
   }
 }
 
+/** Thrown when an image has more pixels than can be decoded (and downscaled) safely —
+ *  a file size limit says nothing about a 12 MB photo that decodes to 200 MP. */
+export class TooManyPixelsError extends Error {
+  constructor(public readonly megapixels: number) {
+    super(`Image has ${megapixels} MP`);
+    this.name = "TooManyPixelsError";
+  }
+}
+
+/** Thrown when the browser could not draw or compress an image (no canvas, out of memory).
+ *  Typed so `describeUploadError` can say so in the user's language, not as raw English. */
+export class ImageEncodeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageEncodeError";
+  }
+}
+
 const MAX_INPUT_BYTES = 25 * 1024 * 1024; // reject originals over 25 MB before touching the canvas
 export const MAX_INPUT_MB = Math.round(MAX_INPUT_BYTES / 1024 / 1024);
 
@@ -35,7 +53,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Image compression failed"))), type, quality);
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new ImageEncodeError("Image compression failed"))), type, quality);
   });
 }
 
@@ -209,7 +227,7 @@ export async function prepareLogo(file: File, opts: { maxDim?: number } = {}): P
     let canvas = document.createElement("canvas");
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) throw new Error("Canvas is not supported in this browser");
+    if (!ctx) throw new ImageEncodeError("Canvas is not supported in this browser");
     ctx.drawImage(img, 0, 0, w, h);
 
     const imageData = ctx.getImageData(0, 0, w, h);
@@ -329,7 +347,7 @@ export async function prepareUpload(
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas is not supported in this browser");
+    if (!ctx) throw new ImageEncodeError("Canvas is not supported in this browser");
     ctx.drawImage(img, 0, 0, width, height);
 
     const blob = await canvasToBlob(canvas, "image/jpeg", quality);

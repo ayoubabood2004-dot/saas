@@ -1555,6 +1555,9 @@ const supabaseRepo: DemoRepo = {
       .upsert({ ...rest, slug: normalizeSlug(p.slug), updated_at: new Date().toISOString() }, { onConflict: "clinic_id" })
       .select().single();
     if (res.error) {
+      // رفضُ محفّزٍ بتلميحٍ عربيّ (0229: الواتساب والرابطُ والتشغيلُ للمدير) يُرمى كما هو —
+      // `describeDbError` يقرأ التلميحَ من P0001؛ ورسالتُه الخام كانت ستُعرض رمزاً إنكليزياً.
+      if (res.error.code === "P0001") throw res.error;
       // قيد slug الفريد → رسالة مفهومة بدل نص Postgres الخام.
       if (/store_profiles_slug_unique|duplicate key/i.test(res.error.message)) throw new Error("slug_taken");
       if (/store_slug_format|violates check/i.test(res.error.message)) throw new Error("slug_invalid");
@@ -1633,12 +1636,12 @@ const supabaseRepo: DemoRepo = {
     return { changed: Number((data as { changed?: number } | null)?.changed ?? 0) };
   },
   async storePublish(ids, on) {
-    if (!ids.length) return { changed: 0, skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
+    if (!ids.length) return { changed: 0, ids: [], skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
     const { data, error } = await sbc().rpc("store_publish", { p_ids: ids, p_on: on });
     if (error) throw error;
-    const r = (data ?? {}) as Partial<Record<keyof StorePublishResult, number>>;
+    const r = (data ?? {}) as Partial<Record<Exclude<keyof StorePublishResult, "ids">, number>> & { ids?: unknown };
     return {
-      changed: Number(r.changed ?? 0), skipped_no_photo: Number(r.skipped_no_photo ?? 0),
+      changed: Number(r.changed ?? 0), ids: Array.isArray(r.ids) ? r.ids.map(String) : [], skipped_no_photo: Number(r.skipped_no_photo ?? 0),
       skipped_no_price: Number(r.skipped_no_price ?? 0), skipped_expired: Number(r.skipped_expired ?? 0),
     };
   },
@@ -1744,14 +1747,28 @@ const supabaseRepo: DemoRepo = {
       facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
       delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
       sections: shapeSections(d.sections),
+      others: Number((d as { others?: unknown }).others) || 0,
     };
+  },
+  async storeCatalogByIds(slug, ids) {
+    if (!ids.length) return [];
+    const { data, error } = await sbc().rpc("store_catalog_ids", { p_slug: slug, p_ids: ids.slice(0, 200) });
+    if (error) { if (missingRpc(error)) return null; throw new Error(error.message); }
+    return ((data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
   },
   async storeCatalogPublic(slug, limit = 60, offset = 0) {
     // 0229: الكتلوجُ بأقسامه أوّلاً؛ وخادمٌ بلاها (الهجرةُ لم تُطبَّق بعد) يرجع للقديمة بنفس الصفحة.
+    // وكلُّ سقوطٍ بغياب الدالّة وحده لا بأيّ خطأ — مرآةُ storeApi حرفاً (والتعليلُ هناك): خطأٌ عابرٌ
+    // كان ينزل لتوقيع 0095 فيحلّ على 0212 بسقف ستّين بلا أقسام، كتلوجٌ مقطوعٌ يُقرأ كاملاً.
     let res = await sbc().rpc("store_catalog2", { p_slug: slug, p_limit: limit, p_offset: offset });
-    if (res.error && missingRpc(res.error)) res = await sbc().rpc("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
-    // ما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
-    if (res.error && offset === 0) res = await sbc().rpc("store_catalog", { p_slug: slug });
+    if (res.error && missingRpc(res.error)) {
+      res = await sbc().rpc("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
+      if (res.error && missingRpc(res.error)) {
+        // ما قبل 0096: الدالّةُ بوسيطٍ واحد ترجع الكتلوجَ كلَّه بنداءٍ واحد — فلا صفحةَ بعد الأولى.
+        if (offset !== 0) return [];
+        res = await sbc().rpc("store_catalog", { p_slug: slug });
+      }
+    }
     if (res.error) throw new Error(res.error.message);
     return ((res.data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
   },
@@ -2851,7 +2868,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
-  "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackStoreOrder", "trackJourneyPublic",
+  "storeFrontPublic", "storeCatalogPublic", "storeCatalogByIds", "placeStoreOrder", "trackStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",
   // بوّابة المالك (0158): اشتراكُ العيادة شأنٌ بينها وبين المنصّة — وقفُ
   // البوّابة يعاقب المراجعَ الذي لا ناقةَ له ولا جمل، ولا يضغط على العيادة.

@@ -18,7 +18,9 @@
  *
  * الدوالُّ النقيّة (بلا DOM) أوّلاً وتُفحص بـ`scripts/store-board-test.mjs`.
  * ==========================================================================*/
-import { borderBackground, colorDist, type PreparedUpload } from "./image";
+import {
+  FileTooLargeError, ImageEncodeError, MAX_INPUT_MB, TooManyPixelsError, borderBackground, colorDist, type PreparedUpload,
+} from "./image";
 
 export const FULL_DIM = 1600;
 export const FULL_QUALITY = 0.82;
@@ -75,17 +77,58 @@ export function thumbPathFor(path: string): string {
   return path.replace(/\.[a-z0-9]+$/i, "") + ".thumb.jpg";
 }
 
+/* ── الصورةُ المضمَّنة (التجريبيّ) تُحفظ مرّةً واحدة ──────────────────────
+ * التجريبيُّ لا دلوَ له: مسارُ الصورة هو الصورةُ نفسُها (`data:` بمئات الكيلوبايتات بعد
+ * ١٦٠٠ بكسل). والوصفُ كان يحمل `path` نسخةً ثانيةً منها كي يُطابَق — فكلُّ صورةٍ تُخزَّن
+ * مرّتين ويمتلئ تخزينُ المتصفّح بعد أربعِ صورٍ أو ستّ. فالوصفُ يحمل **بصمتَها** لا هي
+ * (`inlineKey`)، والمطابقةُ تقبل الاثنين. والقاعدةُ نفسُها: وصفٌ يصف صورةً أخرى لا يُصدَّق
+ * — بصمةٌ على النصّ كلّه وطوله، لا على ذيله، فصورتان مختلفتان لا تتطابقان. */
+const INLINE_PREFIX = "data:#";
+
+/** بصمةُ صورةٍ مضمَّنة: `data:#<الطول>-<تجزئة ٦٤ بت>` — قصيرةٌ وثابتةٌ لنفس النصّ. */
+export function inlineKey(path: string): string {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < path.length; i++) {
+    const c = path.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${INLINE_PREFIX}${path.length.toString(36)}-${(h2 >>> 0).toString(36)}${(h1 >>> 0).toString(36)}`;
+}
+
+/** المسارُ كما يُحفظ بالوصف: الملفُّ باسمه، والمضمَّنُ ببصمته. */
+export function metaPathFor(path: string): string {
+  return path.startsWith("data:") && !path.startsWith(INLINE_PREFIX) ? inlineKey(path) : path;
+}
+
+/* التجزئةُ تمرّ على النصّ كلّه (مئات الكيلوبايتات) وتُسأل مع كلّ رسمٍ لكلّ بطاقة —
+ * فتُحفظ نتيجتُها مع الوصف نفسِه (الكائنُ ثابتٌ بين الرسمات) ما دام المسارُ نفسَه. */
+const described = new WeakMap<object, { path: string; ok: boolean }>();
+
+/** هل يصف هذا الوصفُ **هذه** الصورة؟ بالمسار حرفاً، أو ببصمة المضمَّن. */
+function describes(meta: Partial<ImageMeta>, path: string): boolean {
+  if (meta.path === path) return true;
+  if (!path.startsWith("data:") || typeof meta.path !== "string" || !meta.path.startsWith(INLINE_PREFIX)) return false;
+  const hit = described.get(meta);
+  if (hit && hit.path === path) return hit.ok;
+  const ok = meta.path === inlineKey(path);
+  described.set(meta, { path, ok });
+  return ok;
+}
+
 /** المصغّرُ الموثوق: من الوصف إن كان يصف **هذه** الصورة، وإلا لا شيء.
  *  دمجُ توأمين قد يأخذ الصورةَ من صفٍّ والوصفَ من آخر (0184 يطوي الحقولَ
  *  واحداً واحداً) — فوصفٌ لا يطابق المسارَ يُتجاهل كأنه لم يكن. */
 export function thumbOf(path: string | null | undefined, meta: Partial<ImageMeta> | null | undefined): string | null {
-  if (!path || !meta || meta.path !== path || !meta.thumb) return null;
+  if (!path || !meta || !meta.thumb || !describes(meta, path)) return null;
   return meta.thumb;
 }
 
 /** وصفٌ يصف هذه الصورةَ بالذات — أو لا شيء. */
 export function metaOf(path: string | null | undefined, meta: Partial<ImageMeta> | null | undefined): ImageMeta | null {
-  if (!path || !meta || meta.path !== path) return null;
+  if (!path || !meta || !describes(meta, path)) return null;
   return meta as ImageMeta;
 }
 
@@ -197,26 +240,92 @@ export function editNames(e: PhotoEdit, applied: { enhance: boolean; whiteBg: bo
 
 const MAX_INPUT_BYTES = 25 * 1024 * 1024;
 
+/* ── الصورةُ الكبيرة تُصغَّر لا تُرفض (0229 بعد تدقيق) ──────────────────────
+ * سقفُ ٤٠ ميغابكسل حارسُ «قنبلة فكّ الضغط» (ملفٌّ صغيرٌ يُفكّ إلى جيجابكسل فيُسقط التبويب)،
+ * لكنّ هواتفَ اليوم تصوّر فوقه بوضع «الدقة القصوى»: ٤٨ (آيفون)، ٥٠ و١٠٨ و٢٠٠ (سامسونگ
+ * وشاومي). فكانت كلُّ صورةٍ من تلك الكاميرا تُرفض بـ«هذا الملف مو صورة» — والمصوّرُ يجرّب
+ * صورةً ثانية من نفس الكاميرا فتُرفض أيضاً. الآن: حتى ٤٠ تُرسم كما هي، وحتى ٢١٠ تُفكّ
+ * مصغَّرةً مباشرةً (`createImageBitmap` بأبعاد الهدف — لا تُرسم بكاملها على canvas أبداً)
+ * إلى نسخة عملٍ بضعف ضلع الحفظ، وما فوقها (لا كاميرا تصوّره) يُرفض بسببه الحقيقيّ. */
+/** حتى هذا العدد تُرسم الصورةُ كما هي. */
+export const DIRECT_PIXELS = 40_000_000;
+/** وفوقه قنبلةُ فكّ ضغط لا صورةُ كاميرا (٢٠٠ ميغابكسل = ١٦٣٢٠×١٢٢٤٠). */
+export const MAX_SOURCE_PIXELS = 210_000_000;
+/** نسخةُ العمل للصورة الكبيرة: ضعفُ ضلع الحفظ — فالقصُّ المربّعُ من وسطها يبقى ≥ ١٦٠٠. */
+export const SOURCE_DIM = FULL_DIM * 2;
+
+export type SourcePlan =
+  | { kind: "direct" }
+  | { kind: "downscale"; w: number; h: number }
+  | { kind: "reject"; mp: number };
+
+/** ماذا نفعل بصورةٍ بهذه الأبعاد قبل أن تُرسم. */
+export function sourcePlan(w: number, h: number): SourcePlan {
+  const px = w * h;
+  if (px <= DIRECT_PIXELS) return { kind: "direct" };
+  if (px > MAX_SOURCE_PIXELS) return { kind: "reject", mp: Math.round(px / 1_000_000) };
+  return { kind: "downscale", ...fitDims(w, h, SOURCE_DIM) };
+}
+
 /** يقرأ الملفَّ صورةً. الاتجاهُ من EXIF يطبّقه المتصفّحُ نفسُه عند الرسم
  *  (`image-orientation: from-image` افتراضيٌّ بكروم ٨١+ وسفاري ١٣٫١+).
  *  الرابطُ يبقى حيّاً ما دامت المعاينةُ مفتوحة — سفاري قد يرمي المفكوكَ ويعيد
- *  القراءةَ من الرابط عند الرسم؛ فيُحرَّر بـ`releasePhoto` عند الإغلاق. */
+ *  القراءةَ من الرابط عند الرسم؛ فيُحرَّر بـ`releasePhoto` عند الإغلاق.
+ *  الأخطاءُ مسمّاة: `FileTooLargeError` (فوق ٢٥ ميغا)، `TooManyPixelsError` (فوق ٢١٠
+ *  ميغابكسل أو متصفّحٌ لا يصغّر)، وغيرُهما «ملفٌّ لا يُقرأ صورةً». */
 export async function loadPhoto(file: File | Blob): Promise<HTMLImageElement> {
-  if (file.size > MAX_INPUT_BYTES) throw new Error("File exceeds 25 MB");
-  const url = URL.createObjectURL(file);
+  if (file.size > MAX_INPUT_BYTES) throw new FileTooLargeError(MAX_INPUT_MB);
+  const img = await imageFromBlob(file);
+  const plan = sourcePlan(img.naturalWidth, img.naturalHeight);
+  if (plan.kind === "direct") return img;
+  // الأصلُ لا يُرسم: يُحرَّر رابطُه، والعملُ على نسخةٍ مصغّرة (أو رفضٌ بسببه).
+  const mp = Math.round((img.naturalWidth * img.naturalHeight) / 1_000_000);
+  releasePhoto(img);
+  if (plan.kind === "reject") throw new TooManyPixelsError(mp);
+  return await downscaleSource(file, plan.w, mp);
+}
+
+async function imageFromBlob(blob: Blob): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(blob);
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
       el.onerror = () => reject(new Error("The file could not be read as an image"));
       el.src = url;
     });
-    // قنبلةُ فكّ ضغط: ملفٌّ صغيرٌ يُفكّ إلى جيجابكسل فيُسقط التبويب.
-    if (img.naturalWidth * img.naturalHeight > 40_000_000) throw new Error("File exceeds 25 MB");
-    return img;
   } catch (e) {
     URL.revokeObjectURL(url);
     throw e;
+  }
+}
+
+/** فكٌّ مصغَّر: العرضُ وحدَه يُعطى فتُحفظ النسبةُ مهما كان ترتيبُ التدوير والتصغير
+ *  بالمتصفّح (عرضٌ وطولٌ معاً قد يمطّان صورةً دوّرها EXIF). ومتصفّحٌ تجاهل التصغير
+ *  يُصغَّر هنا على canvas؛ ومتصفّحٌ بلا `createImageBitmap` أو رفضها يُقال له السببُ. */
+async function downscaleSource(file: Blob, width: number, mp: number): Promise<HTMLImageElement> {
+  if (typeof createImageBitmap !== "function") throw new TooManyPixelsError(mp);
+  let bmp: ImageBitmap | null = null;
+  // `from-image` = اتجاهُ EXIF كما تُعرض الصورة؛ متصفّحٌ أقدم لا يعرف القيمةَ يرمي عليها فيُعاد بدونها.
+  for (const opts of [
+    { resizeWidth: width, resizeQuality: "high", imageOrientation: "from-image" },
+    { resizeWidth: width, resizeQuality: "high" },
+  ]) {
+    try { bmp = await createImageBitmap(file, opts as ImageBitmapOptions); break; } catch { /* التالي */ }
+  }
+  if (!bmp) throw new TooManyPixelsError(mp);
+  try {
+    const out = fitDims(bmp.width, bmp.height, SOURCE_DIM);
+    const c = document.createElement("canvas");
+    c.width = out.w; c.height = out.h;
+    const g = c.getContext("2d");
+    if (!g) throw new ImageEncodeError("Canvas is not supported in this browser");
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(bmp, 0, 0, out.w, out.h);
+    return await imageFromBlob(await toBlob(c, 0.92));
+  } finally {
+    bmp.close();
   }
 }
 
@@ -247,7 +356,7 @@ export function renderPhoto(img: HTMLImageElement, e: PhotoEdit, max: number): {
   const canvas = document.createElement("canvas");
   canvas.width = out.w; canvas.height = out.h;
   const ctx = canvas.getContext("2d", { willReadFrequently: e.enhance || e.whiteBg });
-  if (!ctx) throw new Error("Canvas is not supported in this browser");
+  if (!ctx) throw new ImageEncodeError("Canvas is not supported in this browser");
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, out.w, out.h);
   ctx.imageSmoothingEnabled = true;
@@ -272,7 +381,7 @@ export function renderPhoto(img: HTMLImageElement, e: PhotoEdit, max: number): {
 
 function toBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Image compression failed"))), "image/jpeg", quality);
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new ImageEncodeError("Image compression failed"))), "image/jpeg", quality);
   });
 }
 
@@ -292,8 +401,19 @@ export interface EncodedPhoto {
   edits: string[];
 }
 
-/** الملفّان الجاهزان للرفع. الكاملُ يُعاد ترميزُه بجودةٍ أدنى إن تجاوز السقف. */
+/** الملفّان الجاهزان للرفع. الكاملُ يُعاد ترميزُه بجودةٍ أدنى إن تجاوز السقف.
+ *  كلُّ فشلٍ هنا `ImageEncodeError` — ذاكرةٌ نفدت أو canvas مرفوض يُقال بلغة المستخدم
+ *  (`describeUploadError`) لا بنصّ المتصفّح الإنكليزيّ الخامّ. */
 export async function encodeProductPhoto(img: HTMLImageElement, e: PhotoEdit, withDataUrl: boolean): Promise<EncodedPhoto> {
+  try {
+    return await encodeUnsafe(img, e, withDataUrl);
+  } catch (err) {
+    if (err instanceof ImageEncodeError) throw err;
+    throw new ImageEncodeError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function encodeUnsafe(img: HTMLImageElement, e: PhotoEdit, withDataUrl: boolean): Promise<EncodedPhoto> {
   const { canvas, applied } = renderPhoto(img, e, FULL_DIM);
   let blob = await toBlob(canvas, FULL_QUALITY);
   for (const q of [0.72, 0.62, 0.5]) {
@@ -304,7 +424,7 @@ export async function encodeProductPhoto(img: HTMLImageElement, e: PhotoEdit, wi
   const td = fitDims(canvas.width, canvas.height, THUMB_DIM);
   t.width = td.w; t.height = td.h;
   const tctx = t.getContext("2d");
-  if (!tctx) throw new Error("Canvas is not supported in this browser");
+  if (!tctx) throw new ImageEncodeError("Canvas is not supported in this browser");
   tctx.imageSmoothingEnabled = true;
   tctx.imageSmoothingQuality = "high";
   tctx.drawImage(canvas, 0, 0, td.w, td.h);

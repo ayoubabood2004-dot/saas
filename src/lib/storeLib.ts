@@ -34,6 +34,80 @@ export function shapeSections(v: unknown): StoreSectionPublic[] {
     .map((x) => ({ id: x.id as string, name: x.name as string, n: Number(x.n) || 0 }));
 }
 
+/* ══ كتلوجُ الزائر بصفحات: ما حُمّل ليس ما هو موجود (0229) ════════════════
+ *
+ * الصفحاتُ بإزاحةٍ (`offset = ما حُمّل`) فوق ترتيبٍ يغيّره الكادرُ طولَ اليوم (نقلُ قسم،
+ * ترتيبٌ يدويّ، تمييز): نقلُ ثلاثين منتجاً من القسم الأوّل يزحزح كلَّ ما بعده ثلاثين للخلف،
+ * فالصفحةُ التالية تقفز ثلاثين صفّاً لا تعود. فغيابُ منتجٍ عمّا حُمّل **ليس حكماً بغيابه**:
+ * كانت السلّةُ تُشذَّب على هذا الغياب فتقول «ما عادت متوفّرة» عن بضاعةٍ على الرفّ — وقائمةٌ
+ * ناقصةٌ أخطرُ من خطأٍ ظاهر. فالدوالُّ هنا تفصل «لم يصل» عن «الخادمُ قال لا».
+ */
+
+/** ضمُّ صفحةٍ لما حُمّل: الجديدُ بالمعرّف وحده يُلحق (صفحتان تتقاطعان حين يتزحزح الترتيب،
+ *  وصفحةٌ قد تكرّر صفّاً داخلها). `added` = ما أُضيف فعلاً — صفرٌ ⇒ لا تقدّم. */
+export function appendRows<T extends { id: string }>(cur: readonly T[], more: readonly T[]): { next: T[]; added: number } {
+  const seen = new Set(cur.map((x) => x.id));
+  const fresh: T[] = [];
+  for (const x of more) if (!seen.has(x.id)) { seen.add(x.id); fresh.push(x); }
+  return { next: fresh.length ? [...cur, ...fresh] : [...cur], added: fresh.length };
+}
+
+/** عددُ ما يعرضه المتجرُ كلُّه بعين الخادم: أعدادُ الأقسام + «منتجات أخرى» (store_front يحسبهما
+ *  بشروط store_catalog2 حرفاً، فمجموعُهما = الكتلوج). `null` = لا يُعرف (خادمٌ قبل 0229: [] و0). */
+export function frontTotal(front: { sections?: readonly { n: number }[] | null; others?: number | null } | null | undefined): number | null {
+  if (!front) return null;
+  const n = (front.sections ?? []).reduce((s, x) => s + (Number(x.n) || 0), 0) + (Number(front.others) || 0);
+  return n > 0 ? n : null;
+}
+
+/** الكتلوجُ كلُّه من أوّله، صفحةً بعد صفحة — **يتقدّم بما وصل لا بما طُلب، ويتوقّف عند صفحةٍ
+ *  فارغة لا ناقصة** (درسُ `allPages`: سقفُ الخادم قد يقلّ عن الطلب). وفشلُ أيّ صفحةٍ يرمي:
+ *  نصفُ كتلوجٍ لا يُسلَّم بدل الكامل. والسقفُ (`maxPages`) يرمي كذلك لا يُرجع ما جمع. */
+export async function collectCatalog<T extends { id: string }>(
+  page: (limit: number, offset: number) => Promise<T[]>, size = 100, maxPages = 100,
+): Promise<T[]> {
+  let all: T[] = [];
+  let offset = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const rows = await page(size, offset);
+    if (!rows.length) return all;
+    all = appendRows(all, rows).next;
+    offset += rows.length;
+  }
+  throw new Error("catalog_too_long");
+}
+
+/** يسأل الخادمَ عن معرّفاتٍ بعينها بدفعاتٍ (سقفُ store_catalog_ids ٢٠٠). `null` من أيّ دفعة
+ *  = الخادمُ لا يعرف السؤال ⇒ `null` كلُّه: جوابٌ عن نصف المعرّفات ليس جواباً عن الباقي. */
+export async function askCatalogIds<T>(ask: (ids: string[]) => Promise<T[] | null>, ids: readonly string[]): Promise<T[] | null> {
+  const uniq = [...new Set(ids)];
+  const out: T[] = [];
+  for (let i = 0; i < uniq.length; i += 200) {
+    const rows = await ask(uniq.slice(i, i + 200));
+    if (rows === null) return null;
+    out.push(...rows);
+  }
+  return out;
+}
+
+/** حكمُ سطور السلّة — **لا يُشال سطرٌ لأن الصفحاتِ لم تجلبه**.
+ *  `known`: كلُّ صفٍّ أجاب به الخادم (الصفحاتُ + جوابُه بالمعرّف). `answered`: المعرّفاتُ التي
+ *  سُئل عنها **وأجاب** (`null` = لم يُجب: خادمٌ قديم أو شبكة).
+ *   • معروفٌ وغيرُ متوفّر ⇒ يُشال (الخادمُ قالها).
+ *   • غيرُ معروفٍ وسُئل عنه فأجاب بلا صفّ ⇒ يُشال (خرج من المتجر: مخفيّ، بلا سعر، منتهٍ).
+ *   • غيرُ معروفٍ بلا جواب ⇒ **يبقى** — لا حكمَ على غياب. */
+export function cartVerdict<L extends { id: string }>(
+  cart: readonly L[], known: ReadonlyMap<string, { available: boolean }>, answered: ReadonlySet<string> | null,
+): { keep: L[]; gone: L[] } {
+  const keep: L[] = [], gone: L[] = [];
+  for (const l of cart) {
+    const p = known.get(l.id);
+    const out = p ? !p.available : !!answered?.has(l.id);
+    (out ? gone : keep).push(l);
+  }
+  return { keep, gone };
+}
+
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** نظّف إدخال المستخدم لصيغة slug صالحة قدر الإمكان (بلا فرض الطول). */

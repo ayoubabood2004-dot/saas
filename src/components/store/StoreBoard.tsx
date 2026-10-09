@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Camera, CheckSquare, Eye, EyeOff, FolderInput, ImageOff, Images, Layers, ListOrdered, Loader2, Maximize2,
+  AlertTriangle, Camera, CheckCircle2, CheckSquare, Eye, EyeOff, FolderInput, ImageOff, Images, Layers, ListOrdered, Loader2, Maximize2,
   MonitorSmartphone, RotateCw, ScanLine, Search, Sparkles, Square, Tag, Wand2, X,
 } from "lucide-react";
 import type { PhotoProduct, PriceReviewRow, StorePublishResult, StoreSection, SuggestedProduct } from "@/types";
@@ -10,6 +10,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useEntitlements } from "@/lib/entitlements";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { useOverride } from "@/lib/managerOverride";
+import { modalDepth } from "@/lib/modalStack";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
 import { localISO } from "@/lib/utils";
@@ -18,8 +20,8 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import {
-  BOARD_FILTERS, QUIET_WHEN_ZERO, boardCounts, findByScan, hasPhoto, inFilter, isExpired, isOut, matchesQuery,
-  progress, readiness, sortBoard, type BoardFilter, type BoardSort,
+  BOARD_FILTERS, QUIET_WHEN_ZERO, allPhotosDone, allPicked, boardCounts, findByScan, hasPhoto, hideRisk, hideRiskSummary,
+  inFilter, isExpired, isOut, matchesQuery, pickedIn, progress, readiness, scanBlocked, sortBoard, type BoardFilter, type BoardSort,
 } from "@/lib/storeBoard";
 import { thumbOf, type ImageMeta } from "@/lib/productPhoto";
 import { usePhotoFlow } from "./usePhotoFlow";
@@ -69,8 +71,15 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   const canStore = can("manageStore") && has("store");
   const canPhotos = canStore || can("manageProductPhotos");
   // السعرُ سعرُ الكاشير: للمدير والطبيب والمصوّر (0228) — المصوّرُ من store_set_price وحدها.
-  const canPrice = canStore && (role === "manager" || role === "veterinarian" || baseRole === "photographer");
+  /* وقفلُ الجهاز (0154) يغلب الدور: جهازُ الاستقبال المقفولُ على حساب المدير يبقى «مديراً»
+   * بـusePermissions، فكان يعدّل سعرَ الكاشير من هنا والمخزنُ نفسُه يمنعه. والقفلُ من
+   * `stockLocked` وحدها — نفسُ حكم المخزن، باستثناء العيادة «تعديل المخزن بوضع المدير». */
+  const { stockLocked, restricted } = useOverride();
+  const canPrice = canStore && (role === "manager" || role === "veterinarian" || baseRole === "photographer") && !stockLocked;
   const priceViaStore = baseRole === "photographer";
+  /* «تحت الكلفة» علامةٌ تكشف الكلفةَ لمن يكتب السعرَ تجريباً (عشرون محاولة) — حُجبت عن المصوّر
+   * بالخادم (0229)، وتُحجب هنا كذلك عن الجهاز المقفول (الكلفةُ مخفيّةٌ عنه بالمخزن). */
+  const hideCost = restricted || baseRole === "photographer";
 
   const [rows, setRows] = useState<PhotoProduct[] | "loading" | "error">("loading");
   const [sections, setSections] = useState<StoreSection[]>([]);
@@ -93,7 +102,16 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   const today = localISO();
 
   useEffect(() => { if (initialFilter) setFilter(initialFilter); }, [initialFilter]);
+  useEffect(() => { if (hideCost && filter === "belowCost") setFilter("all"); }, [hideCost, filter]);
 
+  /* كلُّ قراءةٍ بعد الأولى تبدّل الصفوفَ لأن شيئاً تغيّر بالخادم (منتقي القسم نشر، نقلٌ فشل
+   * بنصفه، إعادةٌ بعد فرقٍ بالنشر) — فالأبُ يُبلَّغ كما يُبلَّغ بالترقيع المحلّيّ. كانت `load`
+   * وحدها لا تقول، فبقيت جاهزيةُ الإعدادات «أضف منتجات» بعد نشر عشرين من المنتقي.
+   * والمرجعُ لا الاعتماد: الأبُ يمرّر دالّةً جديدةً بكلّ رسم، فتعليقُ `load` بها كان سيعيد
+   * الجلبَ مع كلّ رسمٍ له. */
+  const changedRef = useRef(onChanged);
+  changedRef.current = onChanged;
+  const loadedOnce = useRef(false);
   const load = useCallback(async () => {
     setRows((r) => (Array.isArray(r) ? r : "loading"));
     try {
@@ -103,11 +121,14 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
       ]);
       setRows(pp);
       if (ss) setSections(ss);
+      if (loadedOnce.current) changedRef.current?.();
+      loadedOnce.current = true;
     } catch { setRows((r) => (Array.isArray(r) ? r : "error")); }
   }, [canStore]);
   useEffect(() => { if (canPhotos) void load(); }, [canPhotos, load]);
 
-  const list = Array.isArray(rows) ? rows : [];
+  // العلامةُ لا تدخل بيانات اللوحة أصلاً حين تُحجب: لا شارة، ولا عدّاد، ولا تصفيةٌ تكشفها بعضويتها.
+  const list = useMemo(() => (!Array.isArray(rows) ? [] : hideCost ? rows.map((p) => (p.below_cost == null ? p : { ...p, below_cost: null })) : rows), [rows, hideCost]);
   const byId = useMemo(() => new Map(list.map((p) => [p.id, p])), [list]);
   const activeSections = useMemo(() => sections.filter((s) => !s.archived_at).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "ar")), [sections]);
   const activeIds = useMemo(() => new Set(activeSections.map((s) => s.id)), [activeSections]);
@@ -117,17 +138,30 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
 
   const patch = useCallback((id: string, p: Partial<PhotoProduct>) => {
     setRows((r) => (Array.isArray(r) ? r.map((x) => (x.id === id ? { ...x, ...p } : x)) : r));
-    onChanged?.();
-  }, [onChanged]);
+    changedRef.current?.();
+  }, []);
   const patchMany = useCallback((ids: Iterable<string>, p: (x: PhotoProduct) => Partial<PhotoProduct>) => {
     const set = new Set(ids);
     setRows((r) => (Array.isArray(r) ? r.map((x) => (set.has(x.id) ? { ...x, ...p(x) } : x)) : r));
-    onChanged?.();
-  }, [onChanged]);
+    changedRef.current?.();
+  }, []);
 
+  /* التصويرُ المتتابع على الموبايل لوحةٌ بأسفل الشاشة، وتوستُ النجاح (٤٫٢ ثانية، بأسفل الشاشة
+   * وفوق كلّ شيء) كان يغطّي أزرارَ «صوّر / من الألبوم / تخطّى» للمنتج التالي بعد كلّ لقطة —
+   * فتقع الضغطةُ على التوست. أثناءَ الجولة النجاحُ يُقال **داخل اللوحة** لا بتوست. */
+  const [seqSaved, setSeqSaved] = useState<{ name: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!seqSaved) return;
+    const h = setTimeout(() => setSeqSaved(null), 2600);
+    return () => clearTimeout(h);
+  }, [seqSaved]);
   const flow = usePhotoFlow({
     clinicId,
-    onApplied: (id, path, meta) => patch(id, { image_path: path, image_meta: meta }),
+    quiet: !!seq,
+    onApplied: (id, path, meta) => {
+      patch(id, { image_path: path, image_meta: meta });
+      if (seq && path) setSeqSaved({ name: byId.get(id)?.name ?? "", at: Date.now() });
+    },
   });
 
   const visible = useMemo(() => {
@@ -136,67 +170,125 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
       && matchesQuery(p, q));
     return sortBoard(base, sort, today, secOrder);
   }, [list, filter, secFilter, q, sort, today, activeIds, secOrder]);
+  // الفعلُ الجماعيّ على المختار **الظاهر** وحدَه، والعدّادُ يقول نفسَ الرقم الذي يُرسَل.
+  const pickedRows = useMemo(() => pickedIn(visible, picked), [visible, picked]);
+  const allOn = allPicked(visible, picked);
+  const pickNone = () => setPicked((p) => (p.size ? new Set() : p));
 
   /* ── المسح: الماسحُ اليدويّ (لوحة مفاتيح) دائماً، والكاميرا حيث يدعمها المتصفّح ── */
   const onScan = useCallback((code: string) => {
     setScanOpen(false);
     const hit = findByScan(list, code);
-    if (hit) { playSuccess(); setSheetId(hit.id); return; }
+    if (hit.kind === "one") { playSuccess(); setSheetId(hit.row.id); return; }
     playWarning();
+    if (hit.kind === "many") {
+      /* توأمان برمزٍ واحد: لا يُفتح أحدُهما اعتباطاً، ولا يُقال «مو بالمخزون» عن مادّةٍ بالرفّ.
+       * الرمزُ بالبحث والتصفياتُ مفتوحة — فيظهران معاً، والطيُّ من المخزون (merge_products). */
+      setView("products"); setFilter("all"); setSecFilter("all"); setQ(code); setShown(PAGE); setPicked(new Set());
+      toast.warn(t("sb.scan.many", "الرمز {{code}} على أكثر من منتج ({{n}}) — طلّعناهم بالبحث", { code, n: formatNum(hit.rows.length) }),
+        t("sb.scan.manyHint", "إذا هم نفس المادة، ادمجهم من المخزون («دمج بمنتج ثاني») أو غيّر رمز واحد منهم."));
+      return;
+    }
     // المجهولُ يُقال بالرمز كما وصل — لا نافذةَ ربطٍ (قرارُ المالك بعد «amino acide»).
     toast.error(t("sb.scan.unknown", "الرمز {{code}} مو لمنتج بالمخزون", { code }),
       t("sb.scan.unknownHint", "إذا المادة موجودة، المدير يضيف الرمز لها من المخزون."));
   }, [list, toast, t]);
-  useBarcodeScanner(onScan, { disabled: !!sheetId || scanOpen || !!seq || preview || !!zoom });
+  /* الماسحُ اليدويّ يسمع النافذةَ كلّها، فيُسأل أين يكتب قبل أن يفتح شيئاً (`scanBlocked`):
+   * نافذةٌ مفتوحة (منتقي القسم، الاستوديو، المكتبة) أو حقلُ كتابةٍ غيرُ بحث اللوحة ⇒ المسحةُ
+   * لذاك الحقل لا للّوحة. والكاميرا (`CameraScan`) تنادي `onScan` مباشرةً — هي طلبُ مسحٍ صريح. */
+  const onKeyScan = useCallback((code: string) => {
+    const el = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const focus = el && {
+      tag: el.tagName, type: el.getAttribute("type"), editable: el.isContentEditable, boardSearch: el.hasAttribute("data-board-search"),
+    };
+    if (scanBlocked(modalDepth(), focus)) return;
+    onScan(code);
+  }, [onScan]);
+  useBarcodeScanner(onKeyScan, { disabled: !!sheetId || scanOpen || !!seq || preview || !!zoom });
 
-  /* ── النشر والإخفاء — نداءٌ واحدٌ بالخادم، والمحلّيُّ يتبع حكمَه ── */
+  /* ── النشر والإخفاء — نداءٌ واحدٌ بالخادم، والمحلّيُّ يرقّع **ما قال الخادمُ إنه تغيّر** ──
+   * كان المحلّيُّ يطبّق شروطَ الجاهزية بنفسه على صفوفه — وصفوفُه قد تكون قديمة (صورةٌ
+   * شالها جهازٌ ثانٍ، منتجٌ طُوي، تاريخُ الجهاز غيرُ تاريخ بغداد عند منتصف الليل): فيُعلَّم
+   * «منشوراً» ما رفضه الخادم. الآن الخادمُ يرجع معرّفاتِ ما تغيّر، وأيُّ تخطٍّ أو فرقٍ بين
+   * المطلوب والمتغيّر يعيد التحميل — اللوحةُ لا تقول غيرَ ما بالقاعدة. */
   const publish = async (ids: string[], on: boolean): Promise<StorePublishResult | null> => {
     if (!ids.length) return null;
     // دفعاتٌ بألف (سقفُ الخادم ٢٠٠٠): «اختر الظاهر» بعيادةٍ كبيرة لا يُرفض كلُّه بـtoo_many.
-    const r: StorePublishResult = { changed: 0, skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
-    for (let i = 0; i < ids.length; i += 1000) {
-      const part = await repo.storePublish(ids.slice(i, i + 1000), on);
-      r.changed += part.changed; r.skipped_no_photo += part.skipped_no_photo;
-      r.skipped_no_price += part.skipped_no_price; r.skipped_expired += part.skipped_expired;
+    const r: StorePublishResult = { changed: 0, ids: [], skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
+    try {
+      for (let i = 0; i < ids.length; i += 1000) {
+        const part = await repo.storePublish(ids.slice(i, i + 1000), on);
+        r.changed += part.changed; r.ids.push(...part.ids); r.skipped_no_photo += part.skipped_no_photo;
+        r.skipped_no_price += part.skipped_no_price; r.skipped_expired += part.skipped_expired;
+      }
+    } finally {
+      // دفعةٌ نجحت ثمّ فشلت التالية: ما تغيّر يُرقَّع على كلّ حال، والمتّصلُ يعيد التحميل.
+      patchMany(new Set(r.ids), () => ({ store_visible: on }));
     }
-    const target = list.filter((p) => ids.includes(p.id));
-    // الخادمُ يقول كم تغيّر وكم تُخطّي بكلّ سبب؛ والمحلّيُّ يطبّق نفسَ الشروط على نفس الصفوف.
-    const ok = new Set(target.filter((p) => !on || readiness(p, today).ok).map((p) => p.id));
-    patchMany(ok, () => ({ store_visible: on }));
+    const expected = list.filter((p) => ids.includes(p.id) && p.store_visible !== on).length;
+    if (r.ids.length !== r.changed || r.changed !== expected) void load();
     return r;
   };
-  const bulkPublish = async (on: boolean, ids = [...picked]) => {
-    if (bulkBusy || !ids.length) return;
-    setBulkBusy(true);
+  /* يرجع **هل انتشر/انخفى فعلاً** (الخادمُ جاوب). كان يبلع فشلَه ويرجع بصمتٍ حين يشتغل غيرُه،
+   * فلوحةُ «انشر أكثر ما تبيع» تُغلق على كلّ حال — والمؤشَّرُ الذي شطب منه الدكتورُ الأدويةَ
+   * يضيع، وإعادةُ فتحها تؤشّر كلَّ ما عليه صورة من جديد. والقفلُ مرجعٌ لا حالة: ضغطتان
+   * بنفس الرسم كانتا تريان `bulkBusy` نفسَه فتمرّان معاً. */
+  const busyRef = useRef(false);
+  const bulkPublish = async (on: boolean, ids = pickedRows.map((p) => p.id)): Promise<boolean> => {
+    if (!ids.length) return false;
+    if (busyRef.current) {
+      toast.toast({ tone: "info", title: t("sb.busyWait", "لحظة — بعده الطلب السابق يشتغل. اضغط مرة ثانية لمن يخلص.") });
+      return false;
+    }
+    busyRef.current = true; setBulkBusy(true);
     try {
       const r = await publish(ids, on);
       if (r) publishToast(toast, t, r, on);
       setPicked(new Set());
-    } catch (e) { playWarning(); toast.error(t("sb.publishFailed", "ما انحفظ النشر — أعد المحاولة"), describeDbError(e, t)); await load(); }
-    finally { setBulkBusy(false); }
+      return !!r;
+    } catch (e) {
+      playWarning(); toast.error(t("sb.publishFailed", "ما انحفظ النشر — أعد المحاولة"), describeDbError(e, t)); await load();
+      return false;
+    } finally { busyRef.current = false; setBulkBusy(false); }
   };
   const publishReady = () => {
     const ids = list.filter((p) => inFilter(p, "ready", today)).map((p) => p.id);
     void bulkPublish(true, ids);
   };
+  /* «اخفِ» الجماعيّ: المكتملُ يُخفى بضغطة، وما لا يرجع (منشورٌ ناقص — `hideRisk`) يُسأل عنه
+   * **بالشاشة** بعدده وسببه: «٩٩ بلا صورة» ثمّ ضغطةٌ ثانيةٌ صريحة — أو «اخفِ المكتمل بس». */
+  const [hideAsk, setHideAsk] = useState(false);
+  useEffect(() => { setHideAsk(false); }, [picked]);
+  const hideSum = useMemo(() => hideRiskSummary(pickedRows, today), [pickedRows, today]);
+  const askBulkHide = () => {
+    if (hideSum.risky > 0) { playWarning(); setHideAsk(true); return; }
+    void bulkPublish(false);
+  };
   const bulkMove = async (sectionId: string | null) => {
-    const ids = [...picked];
+    const ids = pickedRows.map((p) => p.id);
     setMoveOpen(false);
-    if (bulkBusy || !ids.length) return;
-    setBulkBusy(true);
+    if (!ids.length) return;
+    if (busyRef.current) { toast.toast({ tone: "info", title: t("sb.busyWait", "لحظة — بعده الطلب السابق يشتغل. اضغط مرة ثانية لمن يخلص.") }); return; }
+    busyRef.current = true; setBulkBusy(true);
+    let changed = 0;
     try {
-      let changed = 0;
       // دفعاتٌ بألف بترتيب القائمة — كلُّ دفعةٍ تدخل بعد السابقة، فالترتيبُ محفوظ.
       for (let i = 0; i < ids.length; i += 1000) changed += (await repo.assignStoreSection(ids.slice(i, i + 1000), sectionId)).changed;
-      const r = { changed };
       patchMany(ids, () => ({ store_section_id: sectionId, store_sort: null }));
       playSuccess();
       const name = sectionId ? activeSections.find((s) => s.id === sectionId)?.name ?? "" : t("sb.sec.none", "بلا قسم");
-      toast.success(t("sb.moved", "انتقل {{n}} منتج إلى «{{name}}»", { n: formatNum(r.changed), name }));
+      toast.success(t("sb.moved", "انتقل {{n}} منتج إلى «{{name}}»", { n: formatNum(changed), name }));
       setPicked(new Set());
       await load();
-    } catch (e) { playWarning(); toast.error(t("sb.moveFailed", "ما انتقلت — أعد المحاولة"), describeDbError(e, t)); }
-    finally { setBulkBusy(false); }
+    } catch (e) {
+      /* دفعةٌ أولى ثُبّتت ثمّ فشلت التالية: الخادمُ نقل الألفَ الأولى واللوحةُ تقولها بقسمها القديم،
+       * والإعادةُ تقول «انتقل ٠» عنها. فيُقال كم انتقل قبل الوقوف، وتُعاد القراءةُ لتطابق القاعدة. */
+      playWarning();
+      toast.error(changed > 0
+        ? t("sb.moveFailedPart", "انتقل {{n}} وبعدين وقف — الباقي ما انتقل. أعد المحاولة", { n: formatNum(changed) })
+        : t("sb.moveFailed", "ما انتقلت — أعد المحاولة"), describeDbError(e, t));
+      await load();
+    } finally { busyRef.current = false; setBulkBusy(false); }
   };
 
   /* ── أسعارُ المراجعة: تُجلب مرّةً حين تُطلب (شاشةُ الأسعار أو البطاقة) ── */
@@ -217,7 +309,15 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   const seqNext = (shot: boolean) => setSeq((s) => (s ? { ...s, i: s.i + 1, done: s.done + (shot ? 1 : 0) } : s));
 
   if (!canPhotos) {
-    return <p className="mx-auto max-w-xl px-4 py-16 text-center text-sm font-bold text-ink-muted">{t("sb.p.noAccess", "هاي الصفحة لمن عنده صلاحية صور المنتجات. راجع مدير العيادة.")}</p>;
+    /* «تشكيلة المتجر» تُفتح لكلّ من يبيع (الاستقبالُ منهم) — فرسالتُها صلاحيةُ المتجر لا صلاحيةُ
+     * الصور: من يمنح ما تطلبه رسالةُ الصور يحصل لوحةَ صورٍ بلا نشر، والسؤالُ يبقى. */
+    return (
+      <p className="mx-auto max-w-xl px-4 py-16 text-center text-sm font-bold text-ink-muted" data-board-no-access>
+        {mode === "store"
+          ? t("sb.p.noStoreAccess", "تشكيلة المتجر لمن عنده صلاحية المتجر. راجع مدير العيادة.")
+          : t("sb.p.noAccess", "هاي الصفحة لمن عنده صلاحية صور المنتجات. راجع مدير العيادة.")}
+      </p>
+    );
   }
 
   const sheetRow = sheetId ? byId.get(sheetId) ?? null : null;
@@ -241,11 +341,19 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   };
   const storeOnly: ReadonlySet<BoardFilter> = new Set(["shownNoPhoto", "ready", "shown", "hidden", "noprice", "nodesc", "nosection", "out", "expired", "belowCost", "featHidden"]);
   const filters = BOARD_FILTERS.filter((f) => (canStore || !storeOnly.has(f))
+    && (f !== "belowCost" || !hideCost)
     && (f !== "nosection" || activeSections.length > 0)
     && (!QUIET_WHEN_ZERO.has(f) || counts[f] > 0 || filter === f));
 
   return (
     <div className="space-y-4" data-store-board>
+      {/* صورٌ بلا متجر تحت عنوان «تشكيلة المتجر»: بلا نشرٍ ولا سعرٍ ولا أقسام ولا كلمةٍ تقول لماذا. */}
+      {mode === "store" && !canStore && (
+        <p className="flex items-start gap-2 rounded-2xl border border-warn-300 bg-warn-50 p-3 text-sm font-semibold text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-photos-only>
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          {t("sb.p.photosOnly", "حسابك للصور بس — النشر والأسعار والأقسام لمن عنده صلاحية المتجر. راجع مدير العيادة.")}
+        </p>
+      )}
       {/* ── الرأس: التقدّمُ بالرقم والشريط ── */}
       {canStore && Array.isArray(rows) && (
         <div className="card space-y-2 p-4" data-board-progress>
@@ -296,6 +404,7 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
           onSections={setSections} onRows={(ids, p) => patchMany(ids, p)} onOpen={(id) => setSheetId(id)} />
       ) : view === "prices" && canStore ? (
         <PriceReview rows={list} prices={prices} loadPrices={loadPrices} canPrice={canPrice} priceViaStore={priceViaStore}
+          hideCost={hideCost} onStale={() => void load()}
           onPatch={patch} onOpen={(id) => setSheetId(id)} />
       ) : (
         <>
@@ -303,10 +412,10 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[200px] flex-1">
               <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
-              <input value={q} onChange={(e) => { setQ(e.target.value); setShown(PAGE); }} data-board-search
+              <input value={q} onChange={(e) => { setQ(e.target.value); setShown(PAGE); pickNone(); }} data-board-search
                 placeholder={t("sb.search", "ابحث بالاسم أو الباركود أو الشركة")} className="input h-11 w-full pe-9 ps-9" />
               {q && (
-                <button type="button" onClick={() => { setQ(""); setShown(PAGE); }} aria-label={t("common.clear", "مسح")}
+                <button type="button" onClick={() => { setQ(""); setShown(PAGE); pickNone(); }} aria-label={t("common.clear", "مسح")}
                   className="absolute end-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><X size={14} /></button>
               )}
             </div>
@@ -345,7 +454,7 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
           {canStore && activeSections.length > 0 && (
             <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" data-board-sections>
               {([["all", t("sb.sec.all", "كل الأقسام")], ...activeSections.map((s) => [s.id, s.name] as const), ["none", t("sb.sec.none", "بلا قسم")]] as Array<readonly [string, string]>).map(([id, name]) => (
-                <button key={id} type="button" onClick={() => { playTap(); setSecFilter(id); setShown(PAGE); }}
+                <button key={id} type="button" onClick={() => { playTap(); setSecFilter(id); setShown(PAGE); pickNone(); }}
                   className={cn("shrink-0 rounded-xl px-3 py-1.5 text-xs font-bold transition",
                     secFilter === id ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>
                   {name}
@@ -369,24 +478,26 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
             {canSuggest && canStore && <SuggestButton list={list} onPublish={(ids) => bulkPublish(true, ids)} />}
           </div>
 
-          {/* ── الاختيار الجماعيّ ── */}
+          {/* ── الاختيار الجماعيّ ──
+              ملتصقٌ تحت شريط الموبايل العلويّ (h-16، z-40) لا خلفه: كان `top-2 z-20` فيختفي تحته
+              عند التمرير وأزرارُه لا تُلمس. وبالشاشة الكبيرة لا شريط. */}
           {canStore && visible.length > 0 && (
-            <div className={cn("card flex flex-wrap items-center gap-2 p-2.5", picked.size > 0 && "sticky top-2 z-20 border-brand-300 shadow-raised dark:border-brand-500/40")}>
-              <button type="button" onClick={() => { playTap(); setPicked(picked.size === visible.length ? new Set() : new Set(visible.map((p) => p.id))); }}
+            <div className={cn("card flex flex-wrap items-center gap-2 p-2.5", pickedRows.length > 0 && "sticky top-[4.5rem] z-30 border-brand-300 shadow-raised dark:border-brand-500/40 lg:top-2")} data-bulk-bar>
+              <button type="button" onClick={() => { playTap(); setPicked(allOn ? new Set() : new Set(visible.map((p) => p.id))); }} data-pick-all
                 className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-2">
-                {picked.size === visible.length ? <CheckSquare size={14} /> : <Square size={14} />}
-                {picked.size === visible.length ? t("sb.pickNone", "ألغِ الاختيار") : t("sb.pickAll", "اختر الظاهر ({{n}})", { n: formatNum(visible.length) })}
+                {allOn ? <CheckSquare size={14} /> : <Square size={14} />}
+                {allOn ? t("sb.pickNone", "ألغِ الاختيار") : t("sb.pickAll", "اختر الظاهر ({{n}})", { n: formatNum(visible.length) })}
               </button>
-              <span className="text-xs text-ink-subtle tabular-nums">
-                {picked.size > 0 ? t("sb.picked", "مختار: {{n}}", { n: formatNum(picked.size) }) : t("sb.pickHint", "اختر منتجات لتنشرها أو تنقلها مرة وحدة")}
+              <span className="text-xs text-ink-subtle tabular-nums" data-picked-count>
+                {pickedRows.length > 0 ? t("sb.picked", "مختار: {{n}}", { n: formatNum(pickedRows.length) }) : t("sb.pickHint", "اختر منتجات لتنشرها أو تنقلها مرة وحدة")}
               </span>
-              {picked.size > 0 && (
+              {pickedRows.length > 0 && (
                 <div className="ms-auto flex flex-wrap gap-1.5">
                   <button type="button" disabled={bulkBusy} onClick={() => void bulkPublish(true)}
                     className="inline-flex items-center gap-1 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-40">
                     {bulkBusy ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} {t("sb.bulkShow", "انشر")}
                   </button>
-                  <button type="button" disabled={bulkBusy} onClick={() => void bulkPublish(false)}
+                  <button type="button" disabled={bulkBusy} onClick={askBulkHide} data-bulk-hide
                     className="inline-flex items-center gap-1 rounded-xl border border-line px-3 py-1.5 text-xs font-bold text-ink transition active:scale-95 disabled:opacity-40">
                     <EyeOff size={13} /> {t("sb.bulkHide", "اخفِ")}
                   </button>
@@ -410,18 +521,50 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
                   )}
                 </div>
               )}
+              {hideAsk && hideSum.risky > 0 && (
+                <div className="basis-full space-y-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 dark:border-warn-500/40 dark:bg-warn-500/10" data-hide-confirm="bulk">
+                  <p className="flex items-start gap-1.5 text-xs font-bold text-warn-700 dark:text-warn-200">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    {t("sb.hideAskMany", "{{n}} من المختار منشور وناقصه شي ({{why}}) — إذا انخفى ما يرجع للمتجر إلا لمن يكمل.", {
+                      n: formatNum(hideSum.risky),
+                      why: [
+                        hideSum.photo ? t("sb.skipPhoto", "{{n}} بلا صورة", { n: formatNum(hideSum.photo) }) : null,
+                        hideSum.price ? t("sb.skipPrice", "{{n}} بلا سعر", { n: formatNum(hideSum.price) }) : null,
+                        hideSum.expired ? t("sb.skipExpired", "{{n}} منتهي الصلاحية", { n: formatNum(hideSum.expired) }) : null,
+                      ].filter(Boolean).join(t("sb.sep", "، ")),
+                    })}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button" disabled={bulkBusy} onClick={() => { setHideAsk(false); void bulkPublish(false); }} data-hide-yes
+                      className="rounded-xl bg-danger-600 px-3 py-1.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-40">
+                      {t("sb.hideAll", "اخفِ الكل ({{n}})", { n: formatNum(pickedRows.length) })}
+                    </button>
+                    {pickedRows.length > hideSum.risky && (
+                      <button type="button" disabled={bulkBusy} data-hide-safe
+                        onClick={() => { setHideAsk(false); void bulkPublish(false, pickedRows.filter((p) => !hideRisk(p, today)).map((p) => p.id)); }}
+                        className="rounded-xl border border-line bg-surface-1 px-3 py-1.5 text-xs font-bold text-ink transition active:scale-95 disabled:opacity-40">
+                        {t("sb.hideSafe", "اخفِ المكتمل بس ({{n}})", { n: formatNum(pickedRows.length - hideSum.risky) })}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => { playTap(); setHideAsk(false); }} data-hide-no
+                      className="rounded-xl px-3 py-1.5 text-xs font-bold text-ink-muted transition hover:bg-surface-2">
+                      {t("common.cancel", "إلغاء")}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* ── الشبكة ── */}
           {visible.length === 0 ? (
             <p className="py-16 text-center text-sm font-bold text-ink-subtle">
-              {filter === "nophoto" && !q ? t("sb.p.allDone", "كل المنتجات عدها صور ✓") : t("sb.p.none", "ماكو منتجات بهذا البحث.")}
+              {allPhotosDone(filter, q, secFilter) ? t("sb.p.allDone", "كل المنتجات عدها صور ✓") : t("sb.p.none", "ماكو منتجات بهذا البحث.")}
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-board-grid>
               {visible.slice(0, shown).map((p) => (
-                <BoardCard key={p.id} p={p} today={today} canStore={canStore} sectionName={p.store_section_id && activeIds.has(p.store_section_id) ? activeSections[secOrder.get(p.store_section_id)!]?.name ?? null : null}
+                <BoardCard key={p.id} p={p} today={today} canStore={canStore} hideCost={hideCost} sectionName={p.store_section_id && activeIds.has(p.store_section_id) ? activeSections[secOrder.get(p.store_section_id)!]?.name ?? null : null}
                   picked={picked.has(p.id)} busy={flow.busyId === p.id}
                   onPick={canStore ? () => setPicked((prev) => { const n = new Set(prev); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; }) : undefined}
                   onOpen={() => { playTap(); setSheetId(p.id); }}
@@ -449,6 +592,9 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
 
       {sheetRow && (
         <ProductSheet row={sheetRow} sections={activeSections} canStore={canStore} canPrice={canPrice} priceViaStore={priceViaStore}
+          hideCost={hideCost} onStale={() => void load()}
+          // خريطةُ «آخر تغيير» تُجدَّد بعد حفظٍ هنا إن كانت محمّلة؛ وإلا فلا شيءَ قديمٌ يُجدَّد.
+          loadPrices={prices ? loadPrices : undefined}
           today={today} flow={flow} price={prices?.get(sheetRow.id) ?? null}
           onClose={() => setSheetId(null)} onPatch={patch} onPublish={publish} />
       )}
@@ -466,7 +612,7 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
 
       {/* ── التصويرُ المتتابع ── */}
       {seq && (
-        <SeqPanel seq={seq} row={seqRow} onStop={() => setSeq(null)}
+        <SeqPanel seq={seq} row={seqRow} saved={seqSaved?.name ?? null} onStop={() => { setSeq(null); setSeqSaved(null); }}
           onCamera={(p) => flow.openCamera(p, () => seqNext(true))}
           onAlbum={(p) => flow.openAlbum(p, () => seqNext(true))}
           onSkip={() => { playTap(); seqNext(false); }} busy={!!seqRow && flow.busyId === seqRow.id} />
@@ -477,8 +623,8 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
 
 /* ============================== البطاقة ============================== */
 
-function BoardCard({ p, today, canStore, sectionName, picked, busy, onPick, onOpen, onZoom, onCamera, onAlbum, onToggle }: {
-  p: PhotoProduct; today: string; canStore: boolean; sectionName: string | null; picked: boolean; busy: boolean;
+function BoardCard({ p, today, canStore, hideCost, sectionName, picked, busy, onPick, onOpen, onZoom, onCamera, onAlbum, onToggle }: {
+  p: PhotoProduct; today: string; canStore: boolean; hideCost: boolean; sectionName: string | null; picked: boolean; busy: boolean;
   onPick?: () => void; onOpen: () => void; onZoom: () => void; onCamera: () => void; onAlbum: () => void; onToggle?: () => void;
 }) {
   const { t } = useTranslation();
@@ -488,6 +634,16 @@ function BoardCard({ p, today, canStore, sectionName, picked, busy, onPick, onOp
   const r = readiness(p, today, canStore);
   const expired = isExpired(p, today);
   const out = isOut(p);
+  /* العينُ الخضراء صغيرةٌ بين زرّي الكاميرا والألبوم: ضغطةٌ خاطئةٌ عليها كانت تُخفي منشوراً بلا
+   * صورة (قبل 0229 نُشر بسعرٍ وحده)، والرجوعُ من store_publish لا يمرّ إلا بصورة — فاختفى من
+   * المتجر حتى يُصوَّر، ولا أحدَ قال. فالناقصُ يُسأل **بالبطاقة نفسِها** (لا نافذةَ متصفّح تُقبل
+   * بلا قراءة)، والمكتملُ يُخفى بضغطةٍ كما كان. */
+  const [askHide, setAskHide] = useState(false);
+  const toggle = () => {
+    if (!onToggle) return;
+    if (hideRisk(p, today)) { playWarning(); setAskHide(true); return; }
+    onToggle();
+  };
   return (
     <div data-photo-card={p.id} className={cn("card relative flex flex-col overflow-hidden transition", busy && "opacity-60",
       picked && "ring-2 ring-brand-400", p.store_visible && canStore && "border-brand-300 dark:border-brand-500/40")}>
@@ -526,7 +682,7 @@ function BoardCard({ p, today, canStore, sectionName, picked, busy, onPick, onOp
               {(Number(p.sell_price) || 0) > 0 ? money(Number(p.sell_price)) : t("sb.noPrice", "بلا سعر")}
             </span>
             {sectionName && <span className="truncate rounded-md bg-surface-2 px-1.5 py-0.5 text-2xs font-bold text-ink-muted">{sectionName}</span>}
-            {p.below_cost && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("sb.belowCost", "تحت الكلفة")}</span>}
+            {!hideCost && p.below_cost && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("sb.belowCost", "تحت الكلفة")}</span>}
             {expired && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("sb.expired", "منتهي")}</span>}
             {out && !expired && <span className="rounded-md bg-warn-50 px-1.5 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">{t("sb.out", "نافد")}</span>}
           </div>
@@ -540,6 +696,23 @@ function BoardCard({ p, today, canStore, sectionName, picked, busy, onPick, onOp
           <p className="text-2xs text-ink-subtle">{t("sb.noDescLine", "بلا وصف — اضغط وأضفه")}</p>
         )}
       </button>
+      {askHide && hideRisk(p, today) ? (
+        <div className="space-y-1.5 border-t border-warn-300 bg-warn-50 p-2 dark:border-warn-500/40 dark:bg-warn-500/10" data-hide-confirm={p.id}>
+          <p className="text-2xs font-bold leading-snug text-warn-700 dark:text-warn-200">
+            {t("sb.hideAskCard", "ناقصه {{what}} — إذا انخفى ما يرجع للمتجر إلا لمن يكمل.", { what: r.missing.map((m) => missText(t, m)).join(t("sb.sep", "، ")) })}
+          </p>
+          <div className="flex gap-1">
+            <button type="button" disabled={busy} onClick={() => { setAskHide(false); onToggle?.(); }} data-hide-yes
+              className="h-8 flex-1 rounded-lg bg-danger-600 px-2 text-2xs font-bold text-white transition active:scale-95 disabled:opacity-50">
+              {t("sb.hideYes", "اخفِه")}
+            </button>
+            <button type="button" onClick={() => { playTap(); setAskHide(false); }} data-hide-no
+              className="h-8 flex-1 rounded-lg border border-line bg-surface-1 px-2 text-2xs font-bold text-ink transition active:scale-95">
+              {t("sb.hideKeep", "خلّيه منشور")}
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="flex gap-1 border-t border-line p-1.5">
         <button type="button" disabled={busy} onClick={onCamera} data-photo-upload={p.id}
           className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-xl bg-brand-600 px-2 text-xs font-bold text-white transition hover:bg-brand-700 disabled:opacity-50">
@@ -551,7 +724,7 @@ function BoardCard({ p, today, canStore, sectionName, picked, busy, onPick, onOp
           <Images size={15} />
         </button>
         {onToggle && (
-          <button type="button" disabled={busy} onClick={onToggle} data-card-toggle={p.id}
+          <button type="button" disabled={busy} onClick={toggle} data-card-toggle={p.id}
             title={p.store_visible ? t("sb.hideOne", "اخفِ من المتجر") : t("sb.showOne", "انشر بالمتجر")}
             aria-label={p.store_visible ? t("sb.hideOne", "اخفِ من المتجر") : t("sb.showOne", "انشر بالمتجر")}
             className={cn("grid h-9 w-9 place-items-center rounded-xl border transition disabled:opacity-50",
@@ -560,20 +733,25 @@ function BoardCard({ p, today, canStore, sectionName, picked, busy, onPick, onOp
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }
 
 /* ============================== التصوير المتتابع ============================== */
 
-function SeqPanel({ seq, row, onStop, onCamera, onAlbum, onSkip, busy }: {
+/* فوق زرّ المساعد العائم (z-40، بنفس الركن) وتحت النوافذ (z-50: الاستوديو يُفتح فوقها) — كان
+ * الزرُّ يغطّي طرفَ اسم المنتج بالموبايل و«تخطّى» بالشاشة الكبيرة. */
+function SeqPanel({ seq, row, saved, onStop, onCamera, onAlbum, onSkip, busy }: {
   seq: { ids: string[]; i: number; done: number }; row: PhotoProduct | null; busy: boolean;
+  /** اسمُ آخر منتجٍ انحفظت صورتُه — يُقال هنا بدل التوست الذي كان يغطّي الأزرار. */
+  saved: string | null;
   onStop: () => void; onCamera: (p: PhotoProduct) => void; onAlbum: (p: PhotoProduct) => void; onSkip: () => void;
 }) {
   const { t } = useTranslation();
   const finished = seq.i >= seq.ids.length;
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 p-3 sm:inset-x-auto sm:end-4 sm:bottom-4 sm:w-96" data-seq-panel>
+    <div className="fixed inset-x-0 bottom-0 z-[45] p-3 sm:inset-x-auto sm:end-4 sm:bottom-4 sm:w-96" data-seq-panel>
       <div className="card space-y-3 border-brand-300 p-4 shadow-raised dark:border-brand-500/40">
         <div className="flex items-center gap-2">
           <Camera size={18} className="text-brand-600" />
@@ -584,6 +762,11 @@ function SeqPanel({ seq, row, onStop, onCamera, onAlbum, onSkip, busy }: {
         <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
           <div className="h-full bg-brand-grad transition-all" style={{ width: `${Math.round((Math.min(seq.i, seq.ids.length) / seq.ids.length) * 100)}%` }} />
         </div>
+        {saved && (
+          <p className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300" role="status" data-seq-saved>
+            <CheckCircle2 size={14} className="shrink-0" /> <span className="truncate">{t("sb.photo.saved", "انحفظت صورة {{name}}", { name: saved })}</span>
+          </p>
+        )}
         {finished || !row ? (
           <div className="space-y-2 text-center">
             <p className="text-sm font-bold text-ink">{t("sb.seq.done", "خلصت القائمة — صوّرت {{n}} منتج", { n: formatNum(seq.done) })}</p>
@@ -611,7 +794,7 @@ function SeqPanel({ seq, row, onStop, onCamera, onAlbum, onSkip, busy }: {
 
 /* «انشر أكثرَ ما تبيع» (0187) — مؤشَّرةٌ مسبقاً والدكتورُ يشطب. والنشرُ من `store_publish`
  * بشروطه: الأعلى مبيعاً بلا صورة يُتخطّى ويُقال — ويصير بقائمة المصوّر «بلا صورة». */
-function SuggestButton({ list, onPublish }: { list: PhotoProduct[]; onPublish: (ids: string[]) => Promise<void> }) {
+function SuggestButton({ list, onPublish }: { list: PhotoProduct[]; onPublish: (ids: string[]) => Promise<boolean> }) {
   const { t } = useTranslation();
   const [state, setState] = useState<"idle" | "loading" | "open" | "error">("idle");
   const [rows, setRows] = useState<SuggestedProduct[]>([]);
@@ -665,7 +848,11 @@ function SuggestButton({ list, onPublish }: { list: PhotoProduct[]; onPublish: (
             })}
           </div>
           <Button className="w-full" disabled={!pick.size} loading={busy} leftIcon={<Eye size={15} />}
-            onClick={async () => { setBusy(true); try { await onPublish([...pick]); setState("idle"); } finally { setBusy(false); } }}>
+            onClick={async () => {
+              // تُغلق حين جاوب الخادم وحدَه: فشلٌ أو طلبٌ سابقٌ ما خلص يُبقي المؤشَّرَ كما شطبه الدكتور.
+              setBusy(true);
+              try { if (await onPublish([...pick])) setState("idle"); } finally { setBusy(false); }
+            }}>
             {t("sb.sug.suggestPublish", "انشر المؤشَّر ({{n}})", { n: formatNum(pick.size) })}
           </Button>
         </>

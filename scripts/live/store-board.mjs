@@ -8,6 +8,9 @@
  * فيُقرأ المخزنُ (المسارُ والمصغّرُ والوصفُ معاً). ثمّ ينشر من البطاقة، ويحاول
  * نشرَ ما بلا صورة (يُرفض بالسبب لا بصمت)، ويسوّي قسماً ويضيف له، ثمّ يفتح
  * المتجرَ كزبون فيجد القسمَ بشريطه ويضغطه فلا يرى غيرَ منتجاته.
+ * ومن مراجعة 0229 العدائية: إخفاءُ منشورٍ بلا صورة يُسأل بالبطاقة وبالجماعيّ (لا يرجع إلا
+ * بصورة) والمكتملُ بضغطة؛ والبحثُ يصفّر الاختيار؛ والماسحُ اليدويّ يفتح البطاقة، ورمزُ توأمين
+ * يُكتب بالبحث فيظهران، ولا يفتح شيئاً فوق منتقي القسم.
  *
  * لماذا حيّ: الاستوديو يرسم على canvas، والمصغّرُ يُبنى من بايتات، والشريطُ
  * يُحسب من store_front — ثلاثُ حلقاتٍ لا يراها فحصُ نصّ. وأوّلُ تشغيلٍ لهذا
@@ -39,9 +42,12 @@ const prod = (id, name, extra = {}) => ({
 const seedDB = () => ({
   products: [
     prod("p1", "علف قطط ملكي"),
-    prod("p2", "شامبو كلاب"),
-    prod("p3", "رمل قطط", { sell_price: 0 }),
-    prod("p4", "طوق براغيث"),
+    prod("p2", "شامبو كلاب", { barcode: "6281000247" }),
+    // توأمان برمزٍ واحد (مقيسٌ بالإنتاج — لهذا وُجدت merge_products).
+    prod("p3", "رمل قطط", { sell_price: 0, barcode: "5550001" }),
+    prod("p4", "طوق براغيث", { barcode: "5550001" }),
+    // منشورٌ قبل 0229 بسعرٍ وحده (قرارُ المالك ١): بلا صورة — إخفاؤه لا يرجع إلا بصورة.
+    prod("p5", "مشط قطط", { store_visible: true }),
   ],
   storeSections: [],
   storeProfile: { clinic_id: "c1", slug: "boardtest", enabled: true, delivery_fee: 0, min_order: 0, bio: null, whatsapp: null, updated_at: now },
@@ -76,7 +82,7 @@ const png = Buffer.from(await page.evaluate(() => {
 console.log("▸ اللوحة");
 await page.locator("[data-store-board]").waitFor({ timeout: 15000 });
 await page.locator("[data-photo-card]").first().waitFor({ timeout: 15000 });
-check("اللوحةُ تبدأ بـ«بلا صورة» وفيها المنتجاتُ الأربعة", (await page.locator("[data-photo-card]").count()) === 4,
+check("اللوحةُ تبدأ بـ«بلا صورة» وفيها المنتجاتُ الخمسة", (await page.locator("[data-photo-card]").count()) === 5,
   `cards=${await page.locator("[data-photo-card]").count()}`);
 check("رأسُ التقدّم ظاهرٌ للمدير", await page.locator("[data-board-progress]").isVisible());
 check("لا تمريرَ جانبيّ على ٣٩٠ بكسل", (await sideways()) <= 1, `${await sideways()}px`);
@@ -99,7 +105,16 @@ await page.locator("[data-photo-approve]").click();
 await page.locator("[data-photo-studio]").waitFor({ state: "detached", timeout: 15000 });
 const p1 = await P("p1");
 check("بعد الاعتماد: المسارُ محفوظٌ صورةً لا نصّاً فارغاً", /^data:image\/(jpeg|webp|png);base64,.{200,}/.test(p1.image_path ?? ""), String(p1.image_path).slice(0, 40));
-check("والوصفُ يشير لنفس المسار (وإلا لا يُوثَق)", p1.image_meta?.path === p1.image_path);
+/* التجريبيُّ يخزّن المضمَّنةَ مرّةً واحدة: الوصفُ يحمل بصمتَها لا نسخةً ثانيةً منها (كانت
+ * تضاعف كلَّ صورة فيمتلئ التخزين بعد أربعٍ أو ست). والقاعدةُ نفسُها تُسأل بدوالّها الأصلية:
+ * الوصفُ يُصدَّق لهذه الصورة، ولا يُصدَّق لصورةٍ أخرى. */
+check("والوصفُ لا يحمل نسخةً ثانيةً من الصورة (بصمةٌ قصيرة)", typeof p1.image_meta?.path === "string" && p1.image_meta.path.length < 64
+  && p1.image_meta.path !== p1.image_path, String(p1.image_meta?.path).slice(0, 40));
+const trust = await page.evaluate(async ([path, meta]) => {
+  const m = await import("/src/lib/productPhoto.ts");
+  return { mine: m.metaOf(path, meta) !== null && m.thumbOf(path, meta) === meta.thumb, other: m.metaOf(path + "AA", meta) === null };
+}, [p1.image_path, p1.image_meta]);
+check("  ويشير لنفس الصورة (وإلا لا يُوثَق) — ولا يُصدَّق لصورةٍ غيرها", trust.mine && trust.other, JSON.stringify(trust));
 check("والمصغّرُ محفوظٌ ومختلفٌ عن الكاملة", !!p1.image_meta?.thumb && p1.image_meta.thumb !== p1.image_path);
 check("والأبعادُ مربّعة (قصٌّ مربّع)", p1.image_meta?.w === p1.image_meta?.h && p1.image_meta?.w > 0, `${p1.image_meta?.w}×${p1.image_meta?.h}`);
 check("والمصدرُ «album»", p1.image_meta?.src === "album", p1.image_meta?.src);
@@ -117,6 +132,84 @@ const why = await page.getByText(/ما انتشر/).first().innerText().catch(()
 check("ويقال السببُ بالعدد (١ بلا صورة) لا صمت", /بلا صورة/.test(why) && /1|١/.test(why), why);
 await shot("03-published");
 
+console.log("▸ الإخفاء: المنشورُ الناقص يُسأل بالشاشة، والمكتملُ بضغطة");
+const confirmOne = page.locator('[data-hide-confirm="p5"]');
+await page.locator('[data-card-toggle="p5"]').click();
+await confirmOne.waitFor({ timeout: 5000 }).catch(() => undefined);
+check("العينُ على منشورٍ بلا صورة تسأل بالبطاقة (لا نافذة متصفّح)", await confirmOne.isVisible());
+check("  والسؤالُ يقول ما ينقص وأنه ما يرجع إلا مكتملاً", /صورة/.test(await confirmOne.innerText()) && /ما يرجع/.test(await confirmOne.innerText()), await confirmOne.innerText());
+check("  ولا شيء انخفى قبل الجواب", (await P("p5")).store_visible === true);
+await confirmOne.locator("[data-hide-no]").click();
+check("  و«خلّيه منشور» يرجع البطاقةَ كما كانت", !(await confirmOne.isVisible()) && (await P("p5")).store_visible === true);
+await page.locator('[data-card-toggle="p1"]').click();
+await page.waitForTimeout(500);
+check("والمكتملُ (صورة + سعر) ينخفي بضغطةٍ واحدة بلا سؤال", (await P("p1")).store_visible === false && !(await page.locator('[data-hide-confirm="p1"]').isVisible()));
+await page.locator('[data-card-toggle="p1"]').click();
+await page.waitForTimeout(500);
+check("  ويرجع بضغطة (عليه صورة)", (await P("p1")).store_visible === true);
+
+console.log("▸ الإخفاءُ الجماعيّ يسأل عن الناقص بعدده");
+await page.locator('[data-photo-card="p5"] button[aria-pressed]').click();
+check("الاختيارُ يُعدّ", /1|١/.test(await page.locator("[data-picked-count]").innerText()));
+await page.locator("[data-bulk-hide]").click();
+const confirmMany = page.locator('[data-hide-confirm="bulk"]');
+await confirmMany.waitFor({ timeout: 5000 }).catch(() => undefined);
+check("«اخفِ» على منشورٍ بلا صورة يسأل بالعدد والسبب", await confirmMany.isVisible() && /بلا صورة/.test(await confirmMany.innerText().catch(() => "")));
+check("  ولا شيء انخفى قبل الضغطة الثانية", (await P("p5")).store_visible === true);
+await shot("03b-hide-confirm");
+await confirmMany.locator("[data-hide-yes]").click();
+await page.waitForTimeout(500);
+check("  والضغطةُ الصريحة تُخفيه", (await P("p5")).store_visible === false);
+
+console.log("▸ البحثُ والقسمُ يصفّران الاختيار (لا فعلَ على ما لا يُرى)");
+await page.locator('[data-photo-card="p1"] button[aria-pressed]').click();
+check("مختار: ١", /1|١/.test(await page.locator("[data-picked-count]").innerText()));
+await page.locator("[data-board-search]").fill("شامبو");
+await page.waitForTimeout(300);
+const countTxt = await page.locator("[data-picked-count]").innerText().catch(() => "");
+check("بعد البحث: لا اختيارَ خفيّ (العدّادُ رجع للتلميح)", !/مختار/.test(countTxt), countTxt);
+check("  و«اختر الظاهر» لا يدّعي أن الظاهرَ مختار", /اختر الظاهر/.test(await page.locator("[data-pick-all]").innerText()));
+await page.locator("[data-board-search]").fill("");
+
+console.log("▸ الماسحُ اليدويّ");
+const scan = async (code) => {
+  await page.keyboard.type(code, { delay: 0 });
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(400);
+};
+const blur = () => page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+await blur();
+await scan("6281000247");
+check("مسحُ رمزِ منتجٍ واحد يفتح بطاقته", (await page.getByRole("dialog").count()) === 1 && /شامبو كلاب/.test(await page.getByRole("dialog").innerText().catch(() => "")));
+await page.keyboard.press("Escape");
+await page.getByRole("dialog").waitFor({ state: "detached", timeout: 5000 }).catch(() => undefined);
+await blur();
+await scan("5550001");
+check("ورمزُ توأمين لا يفتح أحدَهما", (await page.getByRole("dialog").count()) === 0);
+check("  ويُكتب بالبحث فيظهران معاً", (await page.locator("[data-board-search]").inputValue()) === "5550001"
+  && (await page.locator('[data-photo-card="p3"]').isVisible()) && (await page.locator('[data-photo-card="p4"]').isVisible()));
+const many = await page.getByText(/أكثر من منتج/).first().innerText().catch(() => "");
+check("  ويُقال «أكثر من منتج» لا «مو بالمخزون»", /أكثر من منتج/.test(many) && !(await page.getByText(/مو لمنتج بالمخزون/).count()), many);
+await shot("03c-twins");
+await page.locator("[data-board-search]").fill("");
+
+console.log("▸ التصويرُ المتتابع: النجاحُ باللوحة لا بتوستٍ فوق أزرارها");
+await page.locator("[data-seq-start]").click();
+const panel = page.locator("[data-seq-panel]");
+await panel.waitFor({ timeout: 5000 });
+const [ch2] = await Promise.all([page.waitForEvent("filechooser"), panel.getByRole("button", { name: /من الألبوم/ }).click()]);
+await ch2.setFiles({ name: "run.png", mimeType: "image/png", buffer: png });
+await page.locator("[data-photo-studio]").waitFor({ timeout: 10000 });
+await page.waitForTimeout(500);
+await page.locator("[data-photo-approve]").click();
+await page.locator("[data-photo-studio]").waitFor({ state: "detached", timeout: 15000 });
+check("بعد اللقطة: «انحفظت» داخل لوحة الجولة", await panel.locator("[data-seq-saved]").isVisible().catch(() => false));
+check("  ولا توستَ نجاحٍ يغطّي أزرارَها (النصُّ مرّةً واحدة — باللوحة)", (await page.getByText(/انحفظت صورة/).count()) === 1,
+  String(await page.getByText(/انحفظت صورة/).count()));
+check("  واللوحةُ فوق زرّ المساعد العائم (z-40)", Number(await panel.evaluate((el) => getComputedStyle(el).zIndex)) > 40);
+await shot("03d-seq");
+await panel.getByRole("button", { name: /إغلاق/ }).first().click();
+
 console.log("▸ الأقسام");
 await page.getByRole("tab", { name: /الأقسام/ }).click();
 await page.locator("[data-sections-panel]").waitFor({ timeout: 10000 });
@@ -130,6 +223,11 @@ check("والتوأمُ بالتطبيع يُمنع قبل الإرسال", awai
 await page.locator("[data-section-name]").fill("");
 await page.locator("[data-section-pick]").first().click();
 const dlg = page.getByRole("dialog");
+await dlg.waitFor({ timeout: 5000 });
+await scan("6281000247");
+check("مسحةٌ بمنتقي القسم تكتب ببحثه ولا تفتح البطاقةَ فوقه",
+  (await page.getByRole("dialog").count()) === 1 && (await dlg.locator("input").first().inputValue()) === "6281000247");
+await dlg.locator("input").first().fill("");
 await dlg.getByText("علف قطط ملكي").click();
 await dlg.getByRole("button", { name: /أضف المختار/ }).click();
 await page.waitForTimeout(800);

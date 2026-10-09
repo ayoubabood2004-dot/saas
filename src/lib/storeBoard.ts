@@ -126,13 +126,80 @@ export function matchesQuery(p: BoardRow, q: string): boolean {
   return codes.some((c) => c.includes(code));
 }
 
-/** منتجُ المسحة: مطابقةٌ تامّةٌ للرمز (الأساسيّ أو الإضافيّ) — لا جزئية. */
-export function findByScan(rows: readonly BoardRow[], scanned: string): BoardRow | null {
+/**
+ * منتجُ المسحة: مطابقةٌ تامّةٌ للرمز (الأساسيّ أو الإضافيّ) — لا جزئية.
+ *
+ * ثلاثةُ أجوبةٍ لا اثنان: «لا منتج» و«منتجٌ واحد» و«أكثرُ من منتج». كان الثالثُ يرجع
+ * كالأوّل فيُقال «الرمز مو لمنتج بالمخزون» عن توأمين بالرفّ — وهو بالضبط «ماكو منتج»
+ * الذي أعاد عيادةً لإدخال مادّتها مرّةً ثانية. التوأمان لا يُفتح أحدُهما اعتباطاً،
+ * ويُقالان بعددهما.
+ */
+export type ScanResult<T> = { kind: "none" } | { kind: "one"; row: T } | { kind: "many"; rows: T[] };
+export function findByScan<T extends BoardRow>(rows: readonly T[], scanned: string): ScanResult<T> {
   const code = normalizeCode(scanned);
-  if (!code) return null;
+  if (!code) return { kind: "none" };
   const hits = rows.filter((p) => [p.barcode, ...(p.alt_codes ?? [])].some((c) => c && normalizeCode(String(c)) === code));
-  return hits.length === 1 ? hits[0] : null;
+  if (hits.length === 0) return { kind: "none" };
+  return hits.length === 1 ? { kind: "one", row: hits[0] } : { kind: "many", rows: hits };
 }
+
+/**
+ * مسحةُ الماسح اليدويّ (لوحة مفاتيح) تُهمَل حين:
+ *   • نافذةٌ مفتوحة (منتقي «أضف منتجات لهذا القسم»، استوديو الصورة، مكتبةُ الصور…):
+ *     الماسحُ يكتب ببحثها هي، وفتحُ بطاقة المنتج **فوقها** مع كلّ مسحةٍ يقطع شغلها؛
+ *   • أو التركيزُ بحقلِ كتابةٍ غيرِ بحث اللوحة (سعرٌ بمراجعة الأسعار، اسمُ قسم): الأرقامُ
+ *     دخلت الحقلَ فعلاً، وفتحُ البطاقة يغطّي ما صار فيه.
+ * بحثُ اللوحة نفسُه مقصودٌ للمسح، والزرُّ أو مربّعُ الاختيار ليسا حقلَ كتابة.
+ */
+export interface ScanFocus { tag: string; type?: string | null; editable?: boolean; boardSearch?: boolean }
+const NON_TEXT_INPUTS = new Set(["checkbox", "radio", "button", "submit", "reset", "file", "range", "color", "image"]);
+export function scanBlocked(openModals: number, focus: ScanFocus | null): boolean {
+  if (openModals > 0) return true;
+  if (!focus || focus.boardSearch) return false;
+  if (focus.editable) return true;
+  const tag = focus.tag.toUpperCase();
+  if (tag === "TEXTAREA") return true;
+  if (tag === "INPUT") return !NON_TEXT_INPUTS.has((focus.type || "text").toLowerCase());
+  return false;
+}
+
+/**
+ * إخفاءٌ لا يرجع بضغطة: منشورٌ ناقصُه إلزاميّ (صورة/سعر/صلاحية). قبل 0229 كان النشرُ
+ * بسعرٍ وحده، فبقي منشوراً بلا صورة (قرارُ المالك ١: ٩٩ من ١١٣ بأكبر متجر). الإخفاءُ
+ * يمرّ بلا شرط، أما الرجوعُ فمن `store_publish` بشروطها — فما بلا صورة لا يرجع إلا
+ * بصورة. فهذا وحدَه يُسأل قبل إخفائه، والمكتملُ يُخفى بضغطةٍ كما كان.
+ */
+export const hideRisk = (p: BoardRow, todayISO?: string) => p.store_visible && !readiness(p, todayISO).ok;
+
+/** ما يُقال قبل إخفاء مجموعة: كم منها لا يرجع، وبأوّل سببٍ ناقص — نفسُ عدّ `store_publish`
+ *  للمتخطّى (صورة ثمّ سعر ثمّ انتهاء)، فالسؤالُ يقول ما سيقوله النشرُ لو جُرّب بعده. */
+export function hideRiskSummary(rows: readonly BoardRow[], todayISO?: string): { risky: number; photo: number; price: number; expired: number } {
+  const out = { risky: 0, photo: 0, price: 0, expired: 0 };
+  for (const p of rows) {
+    if (!p.store_visible) continue;
+    const m = readiness(p, todayISO).missing[0];
+    if (!m) continue;
+    out.risky++; out[m]++;
+  }
+  return out;
+}
+
+/**
+ * الاختيارُ الفعّال = المختارُ **الظاهرُ** وحدَه. كان «اختر الظاهر» يقارن عددَ المختار بعدد
+ * الظاهر، فاختيارُ ثلاثةٍ بقسمٍ ثمّ الانتقالُ لقسمٍ فيه ثلاثةٌ أخرى يقول «ألغِ الاختيار» بعلامةٍ
+ * مؤشَّرة — و«اخفِ» تمسّ ثلاثةً لا تراها الشاشة. فالعضويةُ بالمعرّف، والفعلُ على ما يُرى.
+ */
+export function pickedIn<T extends { id: string }>(visible: readonly T[], picked: ReadonlySet<string>): T[] {
+  return picked.size ? visible.filter((p) => picked.has(p.id)) : [];
+}
+export function allPicked(visible: readonly { id: string }[], picked: ReadonlySet<string>): boolean {
+  return visible.length > 0 && visible.every((p) => picked.has(p.id));
+}
+
+/** «كل المنتجات عدها صور ✓» حكمٌ على المخزن كلّه — فلا يُقال عن بحثٍ أو قسمٍ واحد
+ *  صوره كاملة والعدّادُ ما زال يقول مئات بلا صورة. */
+export const allPhotosDone = (filter: BoardFilter, q: string, secFilter: string) =>
+  filter === "nophoto" && !q.trim() && secFilter === "all";
 
 export type BoardSort = "work" | "name" | "shelf";
 

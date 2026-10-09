@@ -1606,18 +1606,28 @@ console.log("▸ 0229 — أقسامُ المتجر والنشرُ بشروطه 
     JSON.stringify(pub));
   check("  ومنتجُ الحقل لا يُلمس ولا يُعدّ", !prod("q6").store_visible);
   check("  والمنشورُ أصلاً لا يُعدّ، والإخفاءُ بلا شرط", (await repo.storePublish(["q1"], true)).changed === 0 && (await repo.storePublish(["q1"], false)).changed === 1);
-  await repo.storePublish(["q1", "q7"], true);
+  const pubIds = await repo.storePublish(["q1", "q3", "q7"], true);
+  check("  والنشرُ يرجع معرّفاتِ ما تغيّر وحده (بلا صورة خارجها) — اللوحةُ ترقّعها لا تخمّنها",
+    pubIds.ids.join() === "q1,q7" && pubIds.changed === pubIds.ids.length, JSON.stringify(pubIds));
 
   const cat = await repo.storeCatalogPublic("demo-sec", 100, 0);
   check("كتلوجُ الزبون: قسمُه بترتيبه اليدويّ، و«بلا قسم» آخراً", cat.map((c) => c.id).join() === "q2,q1,q7" && cat[0].section_id === s1.id && cat[2].section_id === null,
     JSON.stringify(cat.map((c) => [c.id, c.section_id])));
   const front = await repo.storeFrontPublic("demo-sec");
   check("  والأقسامُ مع store_front: ما فيه معروضٌ وحده بعدده", JSON.stringify(front?.sections) === JSON.stringify([{ id: s1.id, name: "أكل قطط", n: 2 }]), JSON.stringify(front?.sections));
+  check("  و«منتجات أخرى» بعددها من الخادم (q7 وحده بلا قسم)", front?.others === 1, String(front?.others));
+  const byIds = await repo.storeCatalogByIds("demo-sec", ["q7", "q5", "q3", "q1", "nope"]);
+  check("  ومنتجاتٌ بمعرّفاتها للسلّة: نفسُ صفوف الكتلوج (المنتهي وبلا صورة وغيرُ الموجود خارجها)",
+    JSON.stringify([...byIds].sort((x, y) => x.id.localeCompare(y.id))) === JSON.stringify(cat.filter((c) => c.id === "q1" || c.id === "q7").sort((x, y) => x.id.localeCompare(y.id))),
+    JSON.stringify(byIds.map((c) => c.id)));
   await repo.archiveStoreSection(s1.id, true);
   const cat2 = await repo.storeCatalogPublic("demo-sec", 100, 0);
   check("أرشفةُ القسم: يختفي من الزبون، ومنتجاتُه تنزل لـ«بلا قسم» وتبقى مربوطة",
     (await repo.storeFrontPublic("demo-sec"))?.sections.length === 0 && cat2.every((c) => c.section_id === null) && prod("q1").store_section_id === s1.id);
   check("  وقسمٌ جديدٌ باسم المؤرشف يُرفض بتلميح «رجّعه»", (await code(() => repo.saveStoreSection(null, "أكل قطط"))) === "section_twin_archived");
+  check("  و«بلا قسم» = بلا قسمٍ أصلاً: منتجُ القسم المؤرشف لا يُرقَّم فيه (ترتيبُه ترتيبُ قسمه)",
+    (await code(() => repo.reorderSectionProducts(null, ["q1", "q7"]))) === "order_stale"
+    && (await code(() => repo.reorderSectionProducts(null, ["q7"]))) === "ok" && prod("q2").store_sort === 1 && prod("q1").store_sort === 2);
   await repo.archiveStoreSection(s1.id, false);
   check("  والاسترجاعُ يعيده آخرَ القائمة", (await repo.listStoreSections()).filter((x) => !x.archived_at).map((x) => x.id).join() === [s2.id, s1.id].join());
 
@@ -1633,6 +1643,26 @@ console.log("▸ 0229 — أقسامُ المتجر والنشرُ بشروطه 
   check("  وصورةٌ تجريبيةٌ مضمَّنة (٦٠ كيلو) تُحفظ بوصفها ومصغّرها", prod("q1").image_path === big && prod("q1").image_meta?.thumb === bigThumb);
   check("  وسقفُ الوصف ما زال يمسك الحشوَ خارج المسار",
     (await code(() => repo.setProductImage("q1", big, { ...meta, path: big, thumb: bigThumb, edits: ["x".repeat(1100)] }))) === "bad_image_meta");
+  /* والمضمَّنةُ تُخزَّن **مرّةً واحدة**: الوصفُ كان يحمل `path` نسخةً ثانيةً منها، فكلُّ صورة
+   * ١٦٠٠ بكسل تُخزَّن مرّتين ويمتلئ تخزينُ المتصفّح (DemoQuotaError) بعد أربعِ صورٍ أو ست. */
+  const stored = mem.get(DB_KEY);
+  check("  والمضمَّنةُ بالتخزين مرّةً واحدة — الوصفُ يحمل بصمتَها لا نسختَها",
+    stored.split("A".repeat(60000)).length - 1 === 1 && prod("q1").image_meta?.path?.length < 64, String(prod("q1").image_meta?.path).slice(0, 40));
+  const catQ1 = (await repo.storeCatalogPublic("demo-sec", 100, 0)).find((c) => c.id === "q1");
+  check("  والبصمةُ تُصدَّق لصورتها: كتلوجُ الزبون يعطي مصغّرَها", catQ1?.thumb_path === bigThumb, String(catQ1?.thumb_path).slice(0, 30));
+  check("  وإعادةُ حفظ الوصف المخزَّن نفسِه (ببصمته) تمرّ", (await code(() => repo.setProductImage("q1", big, prod("q1").image_meta))) === "ok");
+  {
+    // دمجٌ يطوي الحقولَ منفصلة: صورةٌ مضمَّنةٌ أخرى ووصفُ q1 ببصمته — لا يُصدَّق لها.
+    const d = JSON.parse(mem.get(DB_KEY));
+    const q2 = d.products.find((p) => p.id === "q2");
+    q2.image_path = "data:image/jpeg;base64," + "C".repeat(60000);
+    q2.image_meta = d.products.find((p) => p.id === "q1").image_meta;
+    q2.store_visible = true;
+    mem.set(DB_KEY, JSON.stringify(d));
+    const catQ2 = (await repo.storeCatalogPublic("demo-sec", 100, 0)).find((c) => c.id === "q2");
+    check("  ووصفٌ ببصمة صورةٍ أخرى لا يُصدَّق (لا مصغّرَ كاذب)", !!catQ2 && catQ2.thumb_path === null, JSON.stringify(catQ2 && catQ2.thumb_path));
+    check("  ووصفٌ ببصمةٍ لصورةٍ أخرى يُرفض عند الحفظ", (await code(() => repo.setProductImage("q2", q2.image_path, q2.image_meta))) === "bad_image_meta");
+  }
   await repo.setProductImage("q1", "library/x.jpg", null);
   check("  وصورةٌ بلا وصف (المكتبة) تمسح الوصفَ القديم — وصفٌ يتيمٌ يكذب", prod("q1").image_path === "library/x.jpg" && prod("q1").image_meta === null);
   const ph = (await repo.listPhotoProducts()).find((p) => p.id === "q7");

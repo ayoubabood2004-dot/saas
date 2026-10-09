@@ -4,7 +4,7 @@ import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
   Users, Trash2, NotebookPen, Building2, CalendarDays,
   BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon, RotateCcw, Loader2,
-  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight, CalendarX,
+  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight, CalendarX, ArrowUpDown,
   TrendingUp,
 } from "lucide-react";
 import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
@@ -98,6 +98,7 @@ const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
   relink: { icon: ArrowLeftRight, tone: "muted" },
   pet: { icon: PawPrint, tone: "brand" }, case: { icon: Stethoscope, tone: "brand" }, dose: { icon: Pill, tone: "brand" }, vaccine: { icon: Syringe, tone: "success" },
   medical: { icon: NotebookPen, tone: "muted" }, booking: { icon: CalendarDays, tone: "muted" }, message: { icon: BellRing, tone: "success" }, store: { icon: Store, tone: "brand" },
+  store_arrange: { icon: ArrowUpDown, tone: "muted" },
   team: { icon: Users, tone: "muted" }, payroll: { icon: Wallet, tone: "muted" }, settings: { icon: Building2, tone: "muted" }, login: { icon: KeyRound, tone: "muted" },
   override: { icon: KeyRound, tone: "warn" }, other: { icon: History, tone: "muted" },
 };
@@ -369,6 +370,16 @@ export function ActivityLog() {
         const ack = ch.find((c) => c.key === "expiry_ack");
         if (ack && ch.every((c) => c.key === "expiry_ack" || c.key === "expiry_ack_qty")) {
           return ack.to ? t("act.expiryMuted", { name }) : t("act.expiryUnmuted", { name });
+        }
+        /* شغلُ المتجر (0229) بجملته: نشرٌ وإخفاءٌ وصورةٌ ووصفٌ وتمييزٌ وترتيب — لا «عدّل المنتج
+         * (المخزون: ٣)» عن صورةٍ تبدّلت. */
+        if (r.kind === "store_arrange") return t("act.storeArrange", { name, defaultValue: "رتّب «{{name}}» بالمتجر (قسم / ترتيب)" });
+        if (r.kind === "store") {
+          const vis = ch.find((c) => c.key === "store_visible");
+          if (vis) return vis.to ? t("act.storeShown", { name, defaultValue: "نشر «{{name}}» بالمتجر" }) : t("act.storeHidden", { name, defaultValue: "أخفى «{{name}}» من المتجر" });
+          const img = ch.find((c) => c.key === "image_path");
+          if (img) return img.to ? t("act.storePhoto", { name, defaultValue: "حطّ صورة لـ«{{name}}»" }) : t("act.storePhotoOff", { name, defaultValue: "شال صورة «{{name}}»" });
+          return t("act.storeEdit", { name, defaultValue: "عدّل «{{name}}» بالمتجر (وصف / تمييز)" });
         }
         /* ووسمُ الإرجاع (0214) كذلك — جملةٌ باسمه لا «عدّل المنتج» بحقلٍ اسمُه return_mark. */
         const rm = ch.find((c) => c.key === "return_mark");

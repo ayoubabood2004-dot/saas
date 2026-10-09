@@ -1683,6 +1683,9 @@ export interface StoreFrontInfo {
   min_order: number;
   /** 0229: أقسامُ المتجر الفعّالة التي فيها معروضٌ، بأعدادها وبترتيب العيادة — خادمٌ قبلها: []. */
   sections: StoreSectionPublic[];
+  /** 0229: عددُ المعروض بلا قسمٍ فعّال («منتجات أخرى») — من الخادم لا من الصفحات المحمَّلة،
+   *  فشريحتُه تظهر من أوّل لحظة. خادمٌ قبلها: 0. */
+  others: number;
 }
 
 /** منتج بعين الزائر: أعمدة العرض فقط — «متوفر» boolean والكمية سر داخلي. */
@@ -2239,6 +2242,8 @@ export interface StoreSection {
 /** نتيجةُ النشر (0229): ما تغيّر وما تُخطّي ولماذا — لا نجاحَ نصفيّاً صامتاً. */
 export interface StorePublishResult {
   changed: number;
+  /** معرّفاتُ ما تغيّر فعلاً بالخادم — اللوحةُ ترقّع هذه وحدها لا تخمينَها (0229). */
+  ids: string[];
   skipped_no_price: number;
   skipped_no_photo: number;
   skipped_expired: number;

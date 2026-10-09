@@ -306,3 +306,22 @@ export async function hydrateMyPermissions(email?: string | null): Promise<Permi
   permsCache = { email: e, perms };
   return perms;
 }
+
+/* الخبيئةُ أعلاه لا تبطل قبل إعادة تحميل الصفحة — فإذنٌ سحبه المديرُ وشاشةُ الموظّف مفتوحة
+ * يبقى يعرض أزراراً يرفضها الخادم (`not_authorized`) ضغطةً بعد ضغطة. فرفضُ الخادم بالإذن
+ * يمسح الخبيئةَ ويجلبها من جديد ويُبلغ من يشترك (usePermissions) فتختفي الأزرار. */
+const permsListeners = new Set<() => void>();
+
+/** اشتراكٌ بتجدّد الخبيئة — يرجع دالّةَ الإلغاء. */
+export function subscribeMyPermissions(fn: () => void): () => void {
+  permsListeners.add(fn);
+  return () => { permsListeners.delete(fn); };
+}
+
+/** امسح الخبيئة واجلبها من جديد، ثمّ بلّغ المشتركين. */
+export async function refreshMyPermissions(email?: string | null): Promise<PermissionMap> {
+  permsCache = null;
+  const perms = await hydrateMyPermissions(email);
+  for (const fn of [...permsListeners]) fn();
+  return perms;
+}

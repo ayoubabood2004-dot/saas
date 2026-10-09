@@ -10,7 +10,7 @@
 export type ActivityKind =
   | "sale" | "refund" | "payment" | "sale_edit" | "sale_delete" | "sale_line" | "sale_expired" | "print" | "export"
   | "product_add" | "product_edit" | "stock" | "product_delete" | "price_change" | "inventory" | "purchase" | "supplier_pay" | "expense" | "delivery" | "relink"
-  | "pet" | "case" | "dose" | "vaccine" | "medical" | "booking" | "message" | "store"
+  | "pet" | "case" | "dose" | "vaccine" | "medical" | "booking" | "message" | "store" | "store_arrange"
   | "team" | "payroll" | "settings" | "login" | "override" | "other";
 
 export type ActivityGroup = "sales" | "stock" | "care" | "team";
@@ -19,7 +19,7 @@ export type ActivityGroup = "sales" | "stock" | "care" | "team";
 export const ACTIVITY_GROUPS: { id: ActivityGroup; kinds: ActivityKind[] }[] = [
   { id: "sales", kinds: ["sale", "refund", "payment", "sale_edit", "sale_delete", "sale_line", "sale_expired", "print", "export"] },
   { id: "stock", kinds: ["product_add", "product_edit", "stock", "product_delete", "price_change", "inventory", "purchase", "supplier_pay", "expense", "delivery", "relink"] },
-  { id: "care", kinds: ["pet", "case", "dose", "vaccine", "medical", "booking", "message", "store"] },
+  { id: "care", kinds: ["pet", "case", "dose", "vaccine", "medical", "booking", "message", "store", "store_arrange"] },
   { id: "team", kinds: ["team", "payroll", "settings", "login", "override", "other"] },
 ];
 
@@ -30,13 +30,17 @@ export const KIND_GROUP: Record<ActivityKind, ActivityGroup> = Object.fromEntrie
 /** أنواعٌ مخفيةٌ افتراضياً — سطورُ الفواتير ضجيجٌ يكرّر «بيع» بندَ بند، والنقلُ
  *  بين الشركات يأتي بالمئات مع كلّ طيّ (١٣٥ سطراً بطيّ ٢١/٩) ولا يمسّ مالاً ولا
  *  مخزوناً. كلاهما يبقى بعدّاده على رقاقته، ويظهر بضغطة. */
-export const NOISY_KINDS: ActivityKind[] = ["sale_line", "relink"];
+export const NOISY_KINDS: ActivityKind[] = ["sale_line", "relink", "store_arrange"];
 
 const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
 /** روابطُ الانتماء — تعديلٌ لا يمسّ غيرَها نقلٌ بين شركتين أو صنفين، لا شراءٌ ولا
  *  تعديلُ منتج (0209). */
 const LINK_KEYS = new Set(["company_id", "company_name", "section_id"]);
 const LINK_ENTITIES = new Set(["products", "purchases", "purchase_payments", "company_sections"]);
+/** 0229: ترتيبُ المتجر (القسمُ وترتيبُه) ضجيجٌ كالنقل — «خلّيه الأول» يرقّم القسمَ كلَّه بسطرٍ لكلّ
+ *  منتج؛ وباقي شغل المتجر (نشر، تمييز، وصف، صورة) «متجر» لا «تعديل منتج» يدفن تعديلَ المخزون. */
+const ARRANGE_KEYS = new Set(["store_section_id", "store_sort"]);
+const STORE_KEYS = new Set(["store_section_id", "store_sort", "store_visible", "store_featured", "store_desc", "image_path", "image_meta"]);
 
 function changedKeys(details: Record<string, unknown> | null | undefined): Set<string> {
   const c = details?.["__changed"];
@@ -68,6 +72,8 @@ export function auditKind(entity: string, action: string, details: Record<string
   }
   if (e === "invoice_items") return "sale_line";
   if (action === "UPDATE" && LINK_ENTITIES.has(e) && ch.size > 0 && [...ch].every((k) => LINK_KEYS.has(k))) return "relink";
+  if (action === "UPDATE" && e === "products" && ch.size > 0 && [...ch].every((k) => ARRANGE_KEYS.has(k))) return "store_arrange";
+  if (action === "UPDATE" && e === "products" && ch.size > 0 && [...ch].every((k) => STORE_KEYS.has(k))) return "store";
   if (e === "products") {
     if (action === "INSERT") return "product_add";
     if (action === "DELETE") return "product_delete";

@@ -7,6 +7,9 @@ import type { PhotoProduct, StoreSection } from "@/types";
 import { repo } from "@/lib/repo";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
+import { refreshMyPermissions } from "@/lib/staff";
+import { refusedByRole } from "@/lib/storePrice";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn, formatNum, money } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { Button, Dialog, useToast } from "@/components/ui";
@@ -21,6 +24,11 @@ import { publishToast } from "./publishToast";
  * فيها من جهازٍ آخر (`sections_stale` / `order_stale`) بدل أن يرتّب نصفاً ويترك
  * الباقي — فالشاشةُ تعيد القراءةَ وتقول «حدّث وأعد». والقسمُ يُؤرشف ولا يُحذف:
  * منتجاتُه تبقى مربوطةً به، والاسترجاعُ يعيده كما كان.
+ *
+ * و«منتجات أخرى» عند الزبون = المنشورُ بلا قسمٍ نشط، لكنّ **ترتيبَها** (قسمٌ فارغ بالخادم)
+ * لِما بلا قسمٍ أصلاً وحده: المربوطُ بقسمٍ مؤرشف ترتيبُه ترتيبُ قسمه — ترقيمُه هنا كان يمحو
+ * ترتيبَ القسم فيرجع مخلوطاً حين يُسترجع، والخادمُ صار يرفضه (`order_stale`). فيُعرض وحدَه
+ * بلا أسهم، ويُفتح ويُنقل لقسمٍ نشط كغيره.
  * ==========================================================================*/
 
 const byShelf = (a: PhotoProduct, b: PhotoProduct) =>
@@ -37,6 +45,7 @@ export function SectionsPanel({ rows, sections, failed, reload, onSections, onRo
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const { user } = useAuth();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -47,11 +56,17 @@ export function SectionsPanel({ rows, sections, failed, reload, onSections, onRo
   const active = useMemo(() => sections.filter((s) => !s.archived_at).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "ar")), [sections]);
   const archived = useMemo(() => sections.filter((s) => !!s.archived_at), [sections]);
   const activeIds = useMemo(() => new Set(active.map((s) => s.id)), [active]);
-  const inSection = (id: string | null) => rows.filter((p) => (id ? p.store_section_id === id : !(p.store_section_id && activeIds.has(p.store_section_id)) && p.store_visible)).sort(byShelf);
+  // قسمٌ فارغ ⇒ المنشورُ **بلا قسمٍ أصلاً** (store_section_id == null) — نفسُ ما يقبله ترتيبُ الخادم.
+  const inSection = (id: string | null) => rows.filter((p) => (id ? p.store_section_id === id : p.store_section_id == null && p.store_visible)).sort(byShelf);
+  // المنشورُ المربوطُ بقسمٍ مؤرشف: يطلع للزبون تحت «منتجات أخرى»، وترتيبُه يرجع ويّا قسمه.
+  const parked = rows.filter((p) => p.store_visible && p.store_section_id != null && !activeIds.has(p.store_section_id)).sort(byShelf);
+  const nameOf = (id: string | null | undefined) => sections.find((s) => s.id === id)?.name ?? "";
 
   const fail = async (e: unknown) => {
     playWarning();
     toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t));
+    // إذنٌ سُحب والشاشةُ مفتوحة: الخبيئةُ تُجدَّد فلا تبقى أزرارٌ يرفضها الخادم.
+    if (refusedByRole(e)) void refreshMyPermissions(user?.email);
     await reload();
   };
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -197,14 +212,19 @@ export function SectionsPanel({ rows, sections, failed, reload, onSections, onRo
       )}
 
       {/* المنشورُ بلا قسم — يطلع للزبون آخرَ المتجر تحت «منتجات أخرى». */}
-      {unsectioned.length > 0 && (
+      {unsectioned.length + parked.length > 0 && (
         <div className="card space-y-1.5 p-3" data-unsectioned>
-          <p className="text-sm font-extrabold text-ink">{t("sb.sec.others", "منشور بلا قسم ({{n}})", { n: formatNum(unsectioned.length) })}</p>
+          <p className="text-sm font-extrabold text-ink">{t("sb.sec.others", "منشور بلا قسم ({{n}})", { n: formatNum(unsectioned.length + parked.length) })}</p>
           <p className="text-2xs text-ink-subtle">{t("sb.sec.othersHint", "يطلع للزبون آخر المتجر تحت «منتجات أخرى». اختر قسم لكل واحد أو رتّبهم هنا.")}</p>
           {unsectioned.map((p, j) => (
             <ProductLine key={p.id} p={p} busy={busy === `p:${p.id}`} first={j === 0} last={j === unsectioned.length - 1}
               onOpen={() => onOpen(p.id)} onUp={() => void moveProduct(null, p.id, "up")} onDown={() => void moveProduct(null, p.id, "down")}
               onTop={() => void moveProduct(null, p.id, "top")}
+              assign={active.length > 0 ? (sec) => void assign(p, sec) : undefined} sections={active} />
+          ))}
+          {parked.map((p) => (
+            <ProductLine key={p.id} p={p} busy={busy === `p:${p.id}`} first last onOpen={() => onOpen(p.id)}
+              note={t("sb.sec.fromArchived", "من قسم مؤرشف «{{name}}» — ترتيبه يرجع ويّا قسمه", { name: nameOf(p.store_section_id) })}
               assign={active.length > 0 ? (sec) => void assign(p, sec) : undefined} sections={active} />
           ))}
         </div>
@@ -235,23 +255,26 @@ export function SectionsPanel({ rows, sections, failed, reload, onSections, onRo
   );
 }
 
-function ProductLine({ p, busy, first, last, onOpen, onUp, onDown, onTop, onRemove, assign, sections }: {
+/** سطرُ منتجٍ بقسم. بلا `onUp/onDown/onTop` ⇒ لا أسهم (ترتيبُه ليس هنا — من قسمٍ مؤرشف) و`note` تقول لماذا. */
+function ProductLine({ p, busy, first, last, onOpen, onUp, onDown, onTop, onRemove, assign, sections, note }: {
   p: PhotoProduct; busy: boolean; first: boolean; last: boolean;
-  onOpen: () => void; onUp: () => void; onDown: () => void; onTop: () => void; onRemove?: () => void;
-  assign?: (sec: string) => void; sections?: StoreSection[];
+  onOpen: () => void; onUp?: () => void; onDown?: () => void; onTop?: () => void; onRemove?: () => void;
+  assign?: (sec: string) => void; sections?: StoreSection[]; note?: string;
 }) {
   const { t } = useTranslation();
   const src = productImageUrl(thumbOf(p.image_path, p.image_meta as ImageMeta | null)) ?? productImageUrl(p.image_path);
   return (
-    <div className={cn("flex items-center gap-2 rounded-xl border border-line bg-surface-1 p-2", busy && "opacity-60")} data-section-product={p.id}>
-      <div className="flex shrink-0 items-center">
-        <button type="button" disabled={first || busy} onClick={onTop} aria-label={t("sb.top", "خلّيه الأول")} title={t("sb.top", "خلّيه الأول")}
-          className="grid h-8 w-7 place-items-center rounded-md text-ink-subtle hover:bg-surface-2 disabled:opacity-30"><ChevronsUp size={14} /></button>
-        <button type="button" disabled={first || busy} onClick={onUp} aria-label={t("sb.up", "لفوق")}
-          className="grid h-8 w-7 place-items-center rounded-md text-ink-subtle hover:bg-surface-2 disabled:opacity-30"><ArrowUp size={14} /></button>
-        <button type="button" disabled={last || busy} onClick={onDown} aria-label={t("sb.down", "لجوّه")}
-          className="grid h-8 w-7 place-items-center rounded-md text-ink-subtle hover:bg-surface-2 disabled:opacity-30"><ArrowDown size={14} /></button>
-      </div>
+    <div className={cn("flex items-center gap-2 rounded-xl border border-line bg-surface-1 p-2", busy && "opacity-60", note && "border-dashed")} data-section-product={p.id}>
+      {onUp && onDown && onTop && (
+        <div className="flex shrink-0 items-center">
+          <button type="button" disabled={first || busy} onClick={onTop} aria-label={t("sb.top", "خلّيه الأول")} title={t("sb.top", "خلّيه الأول")}
+            className="grid h-8 w-7 place-items-center rounded-md text-ink-subtle hover:bg-surface-2 disabled:opacity-30"><ChevronsUp size={14} /></button>
+          <button type="button" disabled={first || busy} onClick={onUp} aria-label={t("sb.up", "لفوق")}
+            className="grid h-8 w-7 place-items-center rounded-md text-ink-subtle hover:bg-surface-2 disabled:opacity-30"><ArrowUp size={14} /></button>
+          <button type="button" disabled={last || busy} onClick={onDown} aria-label={t("sb.down", "لجوّه")}
+            className="grid h-8 w-7 place-items-center rounded-md text-ink-subtle hover:bg-surface-2 disabled:opacity-30"><ArrowDown size={14} /></button>
+        </div>
+      )}
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-2 text-start">
         <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-2">
           {src ? <img src={src} alt="" loading="lazy" className="h-full w-full object-contain" /> : <ImageOff size={16} className="text-ink-subtle" />}
@@ -264,6 +287,7 @@ function ProductLine({ p, busy, first, last, onOpen, onUp, onDown, onTop, onRemo
             </span>
             {(Number(p.sell_price) || 0) > 0 && <span className="tabular-nums">{money(Number(p.sell_price))}</span>}
           </span>
+          {note && <span className="block truncate text-2xs text-ink-subtle" data-parked-note>{note}</span>}
         </span>
       </button>
       {assign && sections && (
@@ -281,6 +305,9 @@ function ProductLine({ p, busy, first, last, onOpen, onUp, onDown, onTop, onRemo
   );
 }
 
+/** صفحةُ المنتقي: ما يُرسم بالمرّة — والباقي يُقال بعدده ويُفتح بزرّ، لا يُقصّ بصمت. */
+const PICK_PAGE = 200;
+
 /** «أضف منتجات»: بحثٌ بالاسم والباركود والشركة، وكلُّ منتجٍ بحاله، واختيارٌ متعدّد —
  *  والمضافُ الجاهزُ يُنشر بنفس الضغطة إن أراد (قسمٌ بلا منشورٍ لا يطلع للزبون). */
 function PickDialog({ section, rows, sections, onClose, onDone }: {
@@ -289,37 +316,63 @@ function PickDialog({ section, rows, sections, onClose, onDone }: {
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const { user } = useAuth();
   const [q, setQ] = useState("");
   const [pick, setPick] = useState<Set<string>>(new Set());
   const [publish, setPublish] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [limit, setLimit] = useState(PICK_PAGE);
   const secName = new Map(sections.map((s) => [s.id, s.name]));
-  const list = useMemo(() => rows.filter((p) => p.store_section_id !== section.id && matchesQuery(p, q))
-    .sort((a, b) => Number(b.store_visible) - Number(a.store_visible) || Number(!!b.image_path) - Number(!!a.image_path) || a.name.localeCompare(b.name, "ar"))
-    .slice(0, 200), [rows, q, section.id]);
+  /* كان القصُّ عند ٢٠٠ بلا كلمة: بعيادةٍ بألف منتج، المخفيُّ بلا صورة (يُرتَّب آخراً) لا يُلقى بالتمرير
+   * ولا يقول أحدٌ إنّ القائمةَ مقصوصة — «ما موجود» عن منتجٍ بالرفّ. الآن العددُ يُقال والباقي يُفتح. */
+  const all = useMemo(() => rows.filter((p) => p.store_section_id !== section.id && matchesQuery(p, q))
+    .sort((a, b) => Number(b.store_visible) - Number(a.store_visible) || Number(!!b.image_path) - Number(!!a.image_path) || a.name.localeCompare(b.name, "ar")),
+  [rows, q, section.id]);
+  const list = all.slice(0, limit);
   const save = async () => {
     const ids = [...pick];
     if (!ids.length || busy) return;
     setBusy(true);
+    let moved = false;
     try {
       const r = await repo.assignStoreSection(ids, section.id);
+      moved = true;
       playSuccess();
       toast.success(t("sb.moved", "انتقل {{n}} منتج إلى «{{name}}»", { n: formatNum(r.changed), name: section.name }));
       if (publish) {
         const hidden = ids.filter((id) => !rows.find((p) => p.id === id)?.store_visible);
-        if (hidden.length) publishToast(toast, t, await repo.storePublish(hidden, true), true);
+        /* النقلُ ثبت بالخادم قبل النشر: فشلُ النشر يُقال وحدَه (لا «ما انحفظ» عن نقلٍ صار)،
+         * والشاشةُ تُعاد قراءتُها على كلّ حال — وإلا بقيت تعرض الأقسامَ القديمة. */
+        if (hidden.length) {
+          try { publishToast(toast, t, await repo.storePublish(hidden, true), true); }
+          catch (e) {
+            playWarning();
+            toast.error(t("sb.sec.pubAfterMove", "انتقلت للقسم — بس النشر ما صار. انشرها من اللوحة."), describeDbError(e, t));
+            if (refusedByRole(e)) void refreshMyPermissions(user?.email);
+          }
+        }
       }
       await onDone();
-    } catch (e) { playWarning(); toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t)); }
+    } catch (e) {
+      playWarning();
+      toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t));
+      if (refusedByRole(e)) void refreshMyPermissions(user?.email);
+      if (moved) await onDone();
+    }
     finally { setBusy(false); }
   };
   return (
     <Dialog open onClose={() => { if (!busy) onClose(); }} size="lg" title={t("sb.sec.pickTitle", "أضف منتجات إلى «{{name}}»", { name: section.name })}>
-      <div className="space-y-3 px-6 pb-6">
+      <div className="space-y-3">
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("sb.search", "ابحث بالاسم أو الباركود أو الشركة")} className="input h-11 w-full ps-9" />
+          <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setLimit(PICK_PAGE); }} placeholder={t("sb.search", "ابحث بالاسم أو الباركود أو الشركة")} className="input h-11 w-full ps-9" />
         </div>
+        {all.length > list.length && (
+          <p className="text-2xs font-semibold text-ink-subtle" data-pick-capped>
+            {t("sb.sec.shownOf", "معروض {{n}} من {{total}} — اكتب للبحث", { n: formatNum(list.length), total: formatNum(all.length) })}
+          </p>
+        )}
         <div className="max-h-[50vh] space-y-1 overflow-y-auto">
           {list.length === 0 ? (
             <p className="py-6 text-center text-sm text-ink-subtle">{t("sb.p.none", "ماكو منتجات بهذا البحث.")}</p>
@@ -346,6 +399,11 @@ function PickDialog({ section, rows, sections, onClose, onDone }: {
               </label>
             );
           })}
+          {all.length > list.length && (
+            <Button className="w-full" size="sm" variant="outline" onClick={() => { playTap(); setLimit((n) => n + PICK_PAGE); }} data-pick-more>
+              {t("sb.p.more", "اعرض الباقي ({{n}})", { n: formatNum(all.length - list.length) })}
+            </Button>
+          )}
         </div>
         <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
           <input type="checkbox" checked={publish} onChange={(e) => setPublish(e.target.checked)} className="h-4 w-4 accent-brand-600" />

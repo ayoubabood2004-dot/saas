@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  appRoleToStaffRole, effectiveCan, hydrateMyPermissions, peekMyPermissions,
+  appRoleToStaffRole, effectiveCan, hydrateMyPermissions, peekMyPermissions, subscribeMyPermissions,
   type Capability, type PermissionMap, type StaffRole,
 } from "@/lib/staff";
 import { useOverride } from "@/lib/managerOverride";
@@ -44,6 +44,10 @@ export function usePermissions(): { role: StaffRole; baseRole: StaffRole; can: (
     void hydrateMyPermissions(user.email).then((o) => { if (alive) setOverrides(o); });
     return () => { alive = false; };
   }, [user?.email, role]);
+
+  // رفضُ صلاحيةٍ من الخادم (0229: سحبَ المديرُ إذنَ المتجر والشاشةُ مفتوحة) يحدّث الذاكرة
+  // (`refreshMyPermissions`) — وبلا هذا الاشتراك تبقى الشاشاتُ المركَّبة تعرض أزراراً فُقد إذنُها.
+  useEffect(() => subscribeMyPermissions(() => setOverrides(peekMyPermissions(user?.email))), [user?.email]);
 
   const ignoreOverrides = role === "manager";
   return { role, baseRole, can: (cap: Capability) => effectiveCan(role, cap, ignoreOverrides ? null : overrides) };

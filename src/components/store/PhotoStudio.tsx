@@ -4,6 +4,7 @@ import { Camera, Crop, Eye, Loader2, RotateCcw, RotateCw, Sparkles, SunMedium } 
 import { Button, Dialog } from "@/components/ui";
 import { cn, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
+import { describeUploadError } from "@/lib/errors";
 import {
   FULL_DIM, NO_EDIT, encodeProductPhoto, fitDims, loadPhoto, releasePhoto, renderPhoto, rotatedSize, squareRect,
   type EncodedPhoto, type PhotoEdit, type PhotoSource, type Rotation,
@@ -16,6 +17,11 @@ import {
  * تصير صورةَ المتجر، والمصوّرُ يعرف بعدين أو لا يعرف. هنا يراها كبيرةً أوّلاً،
  * يدوّرها ويقصّها مربّعاً ويحسّن إضاءتها ويبيّض خلفيتها، ثمّ يعتمد — أو يعيد.
  * والتعديلُ يُرسم على نسخةٍ مصغّرة للمعاينة، ويُعاد بالأبعاد الكاملة عند الحفظ.
+ *
+ * والمقارنةُ بالأصل **دوسةٌ تقلب** لا ضغطةٌ مطوّلة: الضغطُ المطوّل على صورةٍ بالموبايل
+ * ملكُ النظام (قائمةُ «احفظ/انسخ/Lens» بأندرويد، ومعاينةُ آيفون) — تفتح فوق الاستوديو بعد
+ * نصف ثانية وتلغي الإصبعَ، فترجع الصورةُ للمعدّلة والمصوّرُ ما شاف الأصل. فالسطحُ يكتم
+ * قائمةَ الصورة، والتبديلُ زرٌّ بحالته (`aria-pressed`) ودوسةٌ على الصورة نفسِها.
  * ==========================================================================*/
 
 const PREVIEW_DIM = 1000;
@@ -30,7 +36,8 @@ export function PhotoStudio({ file, productName, source, onRetake, onCancel, onS
 }) {
   const { t } = useTranslation();
   const [img, setImg] = useState<HTMLImageElement | null>(null);
-  const [loadErr, setLoadErr] = useState(false);
+  /** سببُ تعذّر العرض بكلماته — لا «مو صورة» عن كلّ شيء: صورةُ ٢٠٠ ميغابكسل صورة. */
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [edit, setEdit] = useState<PhotoEdit>(NO_EDIT);
   const [preview, setPreview] = useState<string | null>(null);
   const [applied, setApplied] = useState({ enhance: false, whiteBg: false });
@@ -39,15 +46,27 @@ export function PhotoStudio({ file, productName, source, onRetake, onCancel, onS
   const [err, setErr] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
+  /* الأسبابُ بأسمائها (0229 بعد تدقيق): صورةُ «الدقة القصوى» كانت تُقال «مو صورة يقدر يقراها
+   * الجهاز» فيجرّب المصوّرُ صورةً ثانيةً من نفس الكاميرا وتُرفض أيضاً. الحجمُ والرسمُ يمرّان
+   * من `describeUploadError` كبقيّة الرفع، والملفُّ غيرُ المقروء وحدَه «مو صورة». */
+  const photoErrorText = (e: unknown): string => {
+    const x = (e && typeof e === "object" ? e : {}) as { name?: string; megapixels?: number };
+    if (x.name === "TooManyPixelsError") {
+      return t("sb.studio.tooBig", "دقة الصورة عالية كلش على هذا الجهاز ({{mp}} ميغابكسل) — صوّرها بدقة أقل (مو وضع الدقة القصوى).", { mp: formatNum(x.megapixels ?? 0) });
+    }
+    if (x.name === "FileTooLargeError" || x.name === "ImageEncodeError") return describeUploadError(e, t);
+    return t("sb.studio.unreadable", "هذا الملف مو صورة يقدر يقراها الجهاز — جرّب صورة ثانية.");
+  };
+
   useEffect(() => {
     let alive = true;
-    setImg(null); setLoadErr(false); setEdit(NO_EDIT); setPreview(null); setErr(null);
+    setImg(null); setLoadErr(null); setEdit(NO_EDIT); setPreview(null); setErr(null); setComparing(false);
     if (!file) return;
     void loadPhoto(file).then((el) => {
       if (!alive) { releasePhoto(el); return; }
       imgRef.current = el;
       setImg(el);
-    }).catch(() => { if (alive) setLoadErr(true); });
+    }).catch((e) => { if (alive) setLoadErr(photoErrorText(e)); });
     return () => { alive = false; releasePhoto(imgRef.current); imgRef.current = null; };
   }, [file]);
 
@@ -60,7 +79,7 @@ export function PhotoStudio({ file, productName, source, onRetake, onCancel, onS
         const r = renderPhoto(img, edit, PREVIEW_DIM);
         setApplied(r.applied);
         setPreview(r.canvas.toDataURL("image/jpeg", 0.86));
-      } catch { setLoadErr(true); }
+      } catch (e) { setLoadErr(photoErrorText(e)); }
     });
     return () => { if (raf) cancelAnimationFrame(raf); };
   }, [img, edit]);
@@ -71,14 +90,20 @@ export function PhotoStudio({ file, productName, source, onRetake, onCancel, onS
   const out = fitDims(r.w, r.h, FULL_DIM);
   const small = img && Math.max(sw, sh) < 700;
 
-  const rot = (d: 1 | -1) => { playTap(); setEdit((e) => ({ ...e, rot: (((e.rot + d * 90) % 360 + 360) % 360) as Rotation })); };
-  const flip = (k: "square" | "enhance" | "whiteBg") => { playTap(); setEdit((e) => ({ ...e, [k]: !e[k] })); };
+  // تعديلٌ جديد يُرى فوراً: من كان على «الأصل» يرجع للمعدّلة وإلا ظنّ الزرَّ ما اشتغل.
+  const rot = (d: 1 | -1) => { playTap(); setComparing(false); setEdit((e) => ({ ...e, rot: (((e.rot + d * 90) % 360 + 360) % 360) as Rotation })); };
+  const flip = (k: "square" | "enhance" | "whiteBg") => { playTap(); setComparing(false); setEdit((e) => ({ ...e, [k]: !e[k] })); };
+  const flipCompare = () => { if (!preview) return; playTap(); setComparing((c) => !c); };
 
   const save = async () => {
     if (!img || saving) return;
     setSaving(true); setErr(null);
     try {
-      const photo = await encodeProductPhoto(img, edit, false);
+      let photo: EncodedPhoto;
+      // الترميزُ خطوةٌ مستقلّة: فشلُه (ذاكرة، canvas) يُقال بلغة المستخدم لا بنصّ المتصفّح الخامّ.
+      try { photo = await encodeProductPhoto(img, edit, false); }
+      catch (e) { setErr(describeUploadError(e, t)); return; }
+      // والحفظُ (`usePhotoFlow`) يرمي رسالتَه موصوفةً أصلاً.
       await onSave(photo, source);
     } catch (e) {
       setErr(e instanceof Error && e.message ? e.message : t("sb.studio.saveFailed", "ما انحفظت — جرّب مرة ثانية"));
@@ -95,24 +120,28 @@ export function PhotoStudio({ file, productName, source, onRetake, onCancel, onS
     <Dialog open={!!file} onClose={() => { if (!saving) onCancel(); }} size="lg"
       title={t("sb.studio.title", "معاينة الصورة قبل الحفظ")}
       description={productName}>
-      <div className="space-y-3 px-6 pb-6" data-photo-studio>
-        <div className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-2xl border border-line bg-surface-2"
-          onPointerDown={() => setComparing(true)} onPointerUp={() => setComparing(false)} onPointerLeave={() => setComparing(false)}>
+      {/* بلا حشوةٍ ثانية: Dialog يحشو `px-6 pb-6` أصلاً — والصورةُ التي يُحكم عليها تأخذ العرضَ كلَّه. */}
+      <div className="space-y-3" data-photo-studio>
+        <div className="relative grid aspect-square w-full touch-manipulation select-none place-items-center overflow-hidden rounded-2xl border border-line bg-surface-2"
+          style={{ WebkitTouchCallout: "none" }} onContextMenu={(e) => e.preventDefault()} onClick={flipCompare} data-compare-surface>
           {loadErr ? (
-            <p className="p-6 text-center text-sm font-semibold text-danger-600">{t("sb.studio.unreadable", "هذا الملف مو صورة يقدر يقراها الجهاز — جرّب صورة ثانية.")}</p>
+            <p className="p-6 text-center text-sm font-semibold text-danger-600">{loadErr}</p>
           ) : !preview ? (
             <Loader2 size={28} className="animate-spin text-brand-600" />
           ) : (
             <img src={comparing && img ? img.src : preview} alt={productName} className="h-full w-full select-none object-contain" draggable={false} />
           )}
           {preview && (
-            <span className="pointer-events-none absolute start-2 top-2 rounded-full bg-black/55 px-2.5 py-1 text-2xs font-bold text-white">
-              {comparing ? t("sb.studio.original", "الأصل") : t("sb.studio.result", "بعد التعديل")}
-            </span>
+            <button type="button" data-compare-toggle aria-pressed={comparing} aria-label={t("sb.studio.original", "الأصل")}
+              onClick={(e) => { e.stopPropagation(); flipCompare(); }}
+              className="absolute start-2 top-2 inline-flex items-center rounded-full bg-black/60 p-0.5 text-2xs font-bold text-white backdrop-blur">
+              <span className={cn("rounded-full px-2.5 py-1 transition", comparing && "bg-white text-ink")}>{t("sb.studio.original", "الأصل")}</span>
+              <span className={cn("rounded-full px-2.5 py-1 transition", !comparing && "bg-white text-ink")}>{t("sb.studio.result", "بعد التعديل")}</span>
+            </button>
           )}
         </div>
 
-        <p className="text-center text-2xs text-ink-subtle">{t("sb.studio.holdHint", "اضغط على الصورة وثبّت إصبعك حتى تشوف الأصل")}</p>
+        <p className="text-center text-2xs text-ink-subtle">{t("sb.studio.compareHint", "دوس على الصورة (أو «الأصل») حتى تقارنها بالمعدّلة")}</p>
 
         <div className="flex flex-wrap items-center justify-center gap-1.5">
           <button type="button" className={tool(false)} onClick={() => rot(-1)} disabled={!img} aria-label={t("sb.studio.rotL", "دوّر لليسار")}><RotateCcw size={15} /></button>
@@ -156,7 +185,7 @@ export function PhotoStudio({ file, productName, source, onRetake, onCancel, onS
               {t("sb.studio.retake", "أعد التصوير")}
             </Button>
           )}
-          <Button className="ms-auto" onClick={() => void save()} loading={saving} disabled={!img || loadErr} leftIcon={<Eye size={16} />} data-photo-approve>
+          <Button className="ms-auto" onClick={() => void save()} loading={saving} disabled={!img || !!loadErr} leftIcon={<Eye size={16} />} data-photo-approve>
             {t("sb.studio.approve", "اعتمد واحفظ")}
           </Button>
         </div>

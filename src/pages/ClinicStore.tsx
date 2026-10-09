@@ -23,6 +23,9 @@ import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride } from "@/lib/managerOverride";
+import { refreshMyPermissions } from "@/lib/staff";
+import { refusedByRole } from "@/lib/storePrice";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
 import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook } from "@/lib/storeLib";
 import { waNumber } from "@/lib/phone";
@@ -532,6 +535,15 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
 }) {
   const toast = useToast();
   const { t } = useTranslation();
+  const { user } = useAuth();
+  /* قرارُ المالك (٥): رقمُ واتساب الطلبات — ومعه رابطُ المتجر وتشغيلُه — للمدير وحده. كان كلُّ من
+   * يصل التبويبَ (المصوّرُ، الاستقبالُ، طبيبٌ أُطفئ له إذنُ المتجر) يكتب رقمَه فيصير زرُّ واتساب كلِّ
+   * زبونٍ عنده، أو يبدّل الرابطَ فينكسر كلُّ رابطٍ منشور، أو يطفئ المتجر. الخادمُ يرفضها لغير
+   * المدير (محفّزٌ على store_profiles)؛ وهنا تُعرض قراءةً فقط بسطرٍ يقول لمن هي — بالدور الفعليّ
+   * (مديرٌ بـPIN مدير) وعلى جهازٍ غيرِ مقفولٍ بوضع الاستقبال. */
+  const { role } = usePermissions();
+  const { restricted } = useOverride();
+  const ownerFields = role === "manager" && !restricted;
   const [slug, setSlug] = useState(profile?.slug ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [fee, setFee] = useState(profile?.delivery_fee ? String(profile.delivery_fee) : "");
@@ -602,27 +614,36 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
   };
 
   const save = async (nextEnabled?: boolean) => {
+    if (!ownerFields && !profile) return;
     const s = normalizeSlug(slug);
-    if (!isValidSlug(s)) { playWarning(); toast.error("الرابط غير صالح", "3–30: حروف إنكليزية صغيرة وأرقام وشرطات، مثل happy-paws"); return; }
+    if (ownerFields && !isValidSlug(s)) { playWarning(); toast.error("الرابط غير صالح", "3–30: حروف إنكليزية صغيرة وأرقام وشرطات، مثل happy-paws"); return; }
     setSaving(true);
     try {
+      /* غيرُ المدير يحفظ النبذةَ والأجرةَ وحدهما: الحقولُ الثلاثة تُرسل **كما هي بالقاعدة الآن**
+       * (قراءةٌ طازجة) لا كما بشاشةٍ فُتحت قبل أن يغيّرها المدير — وإلا رجّعها أو رُفض الحفظُ كلُّه. */
+      const keep = ownerFields ? null : await repo.getStoreProfile();
+      // `getStoreProfile` يرجع null على الفشل أيضاً — فلا «انحفظ» ولا إرسالَ بقيمٍ مخمَّنة.
+      if (!ownerFields && !keep) { playWarning(); toast.error(t("sb.set.readFailed", "ما وصلنا لإعدادات المتجر — أعد المحاولة.")); return; }
       const saved = await repo.saveStoreProfile({
-        slug: s,
-        enabled: nextEnabled ?? enabled,
+        slug: keep ? keep.slug : s,
+        enabled: keep ? keep.enabled : nextEnabled ?? enabled,
         bio: bio.trim() || null,
         delivery_fee: Math.max(0, Number(fee) || 0),
         min_order: Math.max(0, Number(minOrder) || 0),
-        whatsapp: whatsapp.trim() || null,
+        whatsapp: keep ? keep.whatsapp ?? null : whatsapp.trim() || null,
       });
       setEnabled(saved.enabled);
+      if (!ownerFields) { setSlug(saved.slug); setWhatsapp(saved.whatsapp ?? ""); }
       onSaved(saved);
       playSuccess();
       toast.success(saved.enabled ? "متجرك شغّال 🎉" : "انحفظت الإعدادات", saved.enabled ? "انسخ الرابط وحطه ببايو صفحاتك." : undefined);
     } catch (e) {
       playWarning();
       const msg = e instanceof Error ? e.message : "";
-      toast.error("تعذّر الحفظ", msg === "slug_taken" ? "هذا الرابط محجوز لعيادة ثانية — جرب غيره." : msg === "slug_invalid" ? "صيغة الرابط غير صالحة." : errMsg(e));
+      toast.error("تعذّر الحفظ", msg === "slug_taken" ? "هذا الرابط محجوز لعيادة ثانية — جرب غيره." : msg === "slug_invalid" ? "صيغة الرابط غير صالحة." : describeDbError(e, t));
       if (msg === "slug_taken") setSlugState("taken");
+      // رفضٌ بالإذن والشاشةُ تعرضه مفتوحاً: الإذنُ المخبّأ قديم — يُجلب من جديد.
+      if (refusedByRole(e)) void refreshMyPermissions(user?.email);
     } finally {
       setSaving(false);
     }
@@ -653,7 +674,7 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           </div>
           <button
             onClick={() => { playTap(); const next = !enabled; setEnabled(next); void save(next); }}
-            disabled={saving || !isValidSlug(normalizeSlug(slug))}
+            disabled={saving || !ownerFields || !isValidSlug(normalizeSlug(slug))}
             className={cn("relative h-8 w-14 shrink-0 rounded-full transition disabled:opacity-40", enabled ? "bg-success-500" : "bg-line-strong")}
             aria-label="تفعيل المتجر">
             <span className={cn("absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all", enabled ? "start-7" : "start-1")} />
@@ -666,8 +687,10 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           <div className="flex items-center gap-2">
             <span dir="ltr" className="shrink-0 rounded-lg bg-surface-2 px-2 py-2 font-mono text-xs text-ink-subtle">/s/</span>
             <input dir="ltr" value={slug} onChange={(e) => onSlugInput(e.target.value)} placeholder="happy-paws"
-              className="input flex-1 font-mono lowercase" maxLength={30} />
-            <Button size="sm" variant="outline" disabled={suggesting} onClick={() => void suggest()} leftIcon={suggesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}>{t("cat.suggestSlug", "اقترح")}</Button>
+              readOnly={!ownerFields} className={cn("input flex-1 font-mono lowercase", !ownerFields && "opacity-70")} maxLength={30} />
+            {ownerFields && (
+              <Button size="sm" variant="outline" disabled={suggesting} onClick={() => void suggest()} leftIcon={suggesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}>{t("cat.suggestSlug", "اقترح")}</Button>
+            )}
           </div>
           {slugState === "invalid" && slug && <p className="text-2xs font-semibold text-warn-600">3–30: حروف إنكليزية صغيرة وأرقام وشرطات فقط (مثل: happy-paws).</p>}
           {slugState === "checking" && <p className="text-2xs text-ink-subtle">جاري فحص التوفر…</p>}
@@ -699,10 +722,16 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-ink-muted">واتساب استلام الطلبات (اختياري)</label>
-            <input dir="ltr" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="07xxxxxxxxx" className="input" />
+            <input dir="ltr" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="07xxxxxxxxx"
+              readOnly={!ownerFields} className={cn("input", !ownerFields && "opacity-70")} data-store-whatsapp />
             <p className="mt-1 text-2xs text-ink-subtle">يظهر للزبون كزر تواصل. إذا فارغ نستعمل هاتف حسابك.</p>
           </div>
-          <Button onClick={() => void save()} loading={saving} className="w-full">حفظ الإعدادات</Button>
+          {!ownerFields && (
+            <p className="rounded-xl bg-surface-2 p-2.5 text-2xs font-semibold text-ink-muted" data-owner-fields-locked>
+              {profile ? t("sb.set.managerOnly", "رقم الواتساب ورابط المتجر وتشغيله للمدير وحده.") : t("sb.set.noStoreYet", "المتجر ما انفتح بعد — المدير يختار الرابط ويشغّله أوّل.")}
+            </p>
+          )}
+          <Button onClick={() => void save()} loading={saving} disabled={!ownerFields && !profile} className="w-full">حفظ الإعدادات</Button>
         </div>
       </div>
 

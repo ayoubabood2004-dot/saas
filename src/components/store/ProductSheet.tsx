@@ -7,11 +7,14 @@ import type { PhotoProduct, PriceReviewRow, StorePublishResult, StoreSection } f
 import { repo } from "@/lib/repo";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
+import { refreshMyPermissions } from "@/lib/staff";
+import { priceDoubt, pricePatchFrom, refusedByRole, staleWrite, type PriceDoubt } from "@/lib/storePrice";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn, formatDate, formatNum, money } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { Button, Dialog, useToast } from "@/components/ui";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { DESC_MAX, isExpired, isOut, readiness } from "@/lib/storeBoard";
+import { DESC_MAX, hideRisk, isExpired, isOut, readiness } from "@/lib/storeBoard";
 import { metaOf, thumbOf, uploadedAt, type ImageMeta } from "@/lib/productPhoto";
 import type { usePhotoFlow } from "./usePhotoFlow";
 import { missText, publishToast } from "./publishToast";
@@ -43,30 +46,48 @@ export function PhotoDetails({ path, meta }: { path: string | null; meta: ImageM
   );
 }
 
-export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore, today, flow, price, onClose, onPatch, onPublish }: {
+export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore, hideCost, today, flow, price, loadPrices, onClose, onPatch, onPublish, onStale }: {
   row: PhotoProduct;
   sections: StoreSection[];
   canStore: boolean;
   canPrice: boolean;
   priceViaStore: boolean;
+  /** جهازٌ مقفولٌ بوضع الاستقبال أو المصوّر: لا «تحت الكلفة» أبداً — علامةٌ تنقلب مع كلّ سعرٍ
+   *  يُجرَّب تكشف الكلفةَ بالتجريب (0154، 0229). */
+  hideCost: boolean;
   today: string;
   flow: ReturnType<typeof usePhotoFlow>;
   price: PriceReviewRow | null;
+  /** يجدّد خريطةَ «آخر تغيير» بعد حفظ سعرٍ هنا — بلاه تبقى الخريطةُ على التغيير السابق. */
+  loadPrices?: () => Promise<void>;
   onClose: () => void;
   onPatch: (id: string, p: Partial<PhotoProduct>) => void;
   onPublish: (ids: string[], on: boolean) => Promise<StorePublishResult | null>;
+  /** الصفُّ المعروض قديم (price_moved، منتجٌ لم يعد) — اللوحةُ تعيد القراءة. */
+  onStale: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const { user } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [zoom, setZoom] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmHide, setConfirmHide] = useState(false);
   const [desc, setDesc] = useState(row.store_desc ?? "");
   const [priceDraft, setPriceDraft] = useState(row.sell_price ? String(row.sell_price) : "");
+  /** سعرٌ مشبوهٌ ينتظر تأكيداً صريحاً (رمزٌ ممسوح، أو قفزةٌ فوق عشرة أضعاف). */
+  const [priceAsk, setPriceAsk] = useState<{ v: number; doubt: PriceDoubt } | null>(null);
+  /** رُفض الحفظُ بـprice_moved على هذا السعر — حين يصل الجديدُ بإعادة القراءة يُقال بالرقم. */
+  const [movedFrom, setMovedFrom] = useState<{ was: number | null } | null>(null);
+  /** «آخر تغيير» لما حُفظ هنا للتوّ — يُعرض حتى تصل الخريطةُ المجدَّدة (`basis` ما كانت عليه). */
+  const [justSaved, setJustSaved] = useState<{ line: PriceReviewRow; basis: PriceReviewRow | null } | null>(null);
   /* بطاقةٌ مفتوحة ومنتجُها تغيّر من مكانٍ آخر (صورةٌ انرفعت، سعرٌ انحفظ): المسوّداتُ تتبع ما
    * لم يُلمس — حقلٌ بدأ المستخدمُ يكتبه لا يُداس. */
   useEffect(() => { setDesc((d) => (d === "" || d === (row.store_desc ?? "") ? row.store_desc ?? "" : d)); }, [row.store_desc]);
-  useEffect(() => { setPriceDraft(row.sell_price ? String(row.sell_price) : ""); }, [row.sell_price]);
+  useEffect(() => { setPriceDraft(row.sell_price ? String(row.sell_price) : ""); setPriceAsk(null); }, [row.sell_price]);
+  // خريطةٌ جديدةٌ وصلت ⇒ هي الحكم؛ وفشلُ تجديدها (null) لا يمحو ما حُفظ فعلاً.
+  useEffect(() => { setJustSaved((s) => (s && price && price !== s.basis ? null : s)); }, [price]);
+  const lastChange = justSaved?.line ?? price;
 
   const full = productImageUrl(row.image_path);
   const thumb = productImageUrl(thumbOf(row.image_path, row.image_meta as ImageMeta | null));
@@ -74,19 +95,42 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
   const expired = isExpired(row, today);
   const sectionName = sections.find((s) => s.id === row.store_section_id)?.name ?? null;
   const photoBusy = flow.busyId === row.id;
+  const missingText = r.missing.map((m) => missText(t, m)).join(t("sb.sep", "، "));
 
   const run = async (key: string, fn: () => Promise<void>) => {
     if (busy) return;
     setBusy(key);
     try { await fn(); }
-    catch (e) { playWarning(); toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t)); }
+    catch (e) {
+      playWarning();
+      const stale = staleWrite(e);
+      if (stale === "price_moved") {
+        // ما رآه المستخدمُ ليس ما بالقاعدة: اللوحةُ تعيد القراءة، والسعرُ الجديدُ يُقال حين يصل.
+        setMovedFrom({ was: row.sell_price ?? null });
+        toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), t("sb.priceMoved", "السعر تغيّر من جهاز ثاني (مثلاً رفع أسعار) — ما انحفظ شي. حدّثنا القائمة: شوف السعر الجديد وعدّل عليه."));
+      } else {
+        toast.error(t("sb.saveFailed", "ما انحفظ — أعد المحاولة"), describeDbError(e, t));
+      }
+      if (stale) onStale();
+      // الإذنُ سُحب والشاشةُ مفتوحة: الخبيئةُ تُجدَّد فتختفي الأزرارُ التي لم تعد له.
+      if (refusedByRole(e)) void refreshMyPermissions(user?.email);
+    }
     finally { setBusy(null); }
   };
 
-  const togglePublish = () => run("pub", async () => {
-    const res = await onPublish([row.id], !row.store_visible);
-    if (res) publishToast(toast, t, res, !row.store_visible, true);
-  });
+  /* الإخفاءُ بلا شرط والنشرُ بشروطه (0229): منشورٌ ناقصٌ (بلا صورة — ٩٩ من ١١٣ بأكبر متجر —
+   * أو بلا سعر أو منتهٍ) إذا انخفى ما يرجع إلا لمن يكمل. فيُقال قبل الضغطة الثانية لا بعدها،
+   * وبالسطر نفسه لا بنافذة متصفّحٍ تُقبل بلا قراءة. والتعريفُ واحدٌ للمسارات الثلاثة (البطاقةُ
+   * والجماعيُّ وهنا): `hideRisk`. */
+  const risky = hideRisk(row, today);
+  const togglePublish = (sure = false) => {
+    if (risky && !sure) { playWarning(); setConfirmHide(true); return; }
+    setConfirmHide(false);
+    return run("pub", async () => {
+      const res = await onPublish([row.id], !row.store_visible);
+      if (res) publishToast(toast, t, res, !row.store_visible, true);
+    });
+  };
   const toggleFeatured = () => run("feat", async () => {
     await repo.setStoreFeatured(row.id, !row.store_featured);
     onPatch(row.id, { store_featured: !row.store_featured });
@@ -100,18 +144,33 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
     playSuccess();
     toast.success(t("sb.descSaved", "انحفظ الوصف"));
   });
-  const savePrice = () => run("price", async () => {
+  const savePrice = (sure = false) => run("price", async () => {
     // حقلٌ ممسوحٌ ليس صفراً (0228): Number("") = 0 كان يكتب سعرَ الكاشير صفراً.
     if (!priceDraft.trim()) return;
     const v = Math.round(Number(priceDraft) * 100) / 100;
     if (!Number.isFinite(v) || v <= 0) { playWarning(); toast.error(t("sb.badPrice", "السعر لازم رقم أكبر من صفر")); return; }
     if (v === (row.sell_price ?? 0)) return;
+    // رمزٌ ممسوحٌ بالحقل ثمّ Enter، أو صفرٌ زائد: يُسأل بزرٍّ صريح — Enter وحدُه لا يؤكّد أبداً.
+    const doubt = priceDoubt(priceDraft, v, row.sell_price);
+    if (doubt && !(sure && priceAsk?.v === v)) { playWarning(); setPriceAsk({ v, doubt }); return; }
+    setPriceAsk(null);
+    const was = row.sell_price ?? null;
+    let saved = v;
     // بشرط أنّ السعرَ ما زال ما فُتح عليه — رفعُ أسعارٍ أو جهازٌ آخر غيّره ⇒ price_moved لا دَوس.
-    if (priceViaStore) await repo.setStorePrice(row.id, v, row.sell_price ?? null);
-    else await repo.updateProduct(row.id, { sell_price: v }, { sell_price: row.sell_price ?? 0 });
-    onPatch(row.id, { sell_price: v });
+    if (priceViaStore) {
+      await repo.setStorePrice(row.id, v, row.sell_price ?? null);
+      onPatch(row.id, { sell_price: v });
+    } else {
+      // «تحت الكلفة» من الصفّ الراجع (مرآةُ الخادم) — لا تبقى العلامةُ على السعر القديم.
+      const patch = pricePatchFrom(await repo.updateProduct(row.id, { sell_price: v }, { sell_price: row.sell_price ?? 0 }), v);
+      saved = patch.sell_price;
+      onPatch(row.id, patch);
+    }
+    setMovedFrom(null);
+    setJustSaved({ line: { product_id: row.id, changed_at: new Date().toISOString(), old_price: was, new_price: saved, by_name: null, via: "edit" }, basis: price });
+    if (loadPrices) void loadPrices().catch(() => { /* swallow-ok: السطرُ المحلّيّ صادقٌ بما حُفظ، و«مراجعة الأسعار» تقول فشلَ جلبها بنفسها */ });
     playSuccess();
-    toast.success(t("sb.priceSaved", "انحفظ السعر: {{p}}", { p: money(v) }));
+    toast.success(t("sb.priceSaved", "انحفظ السعر: {{p}}", { p: money(saved) }));
   });
   const setSection = (sectionId: string | null) => run("sec", async () => {
     if ((row.store_section_id ?? null) === sectionId) return;
@@ -123,7 +182,7 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
   return (
     <Dialog open onClose={() => { if (!busy) onClose(); }} size="lg" title={row.name}
       description={[row.company_name, row.barcode].filter(Boolean).join(" · ") || undefined}>
-      <div className="space-y-5 px-6 pb-6" data-product-sheet={row.id}>
+      <div className="space-y-5" data-product-sheet={row.id}>
         {/* ── الصورة ── */}
         <section className="grid gap-4 sm:grid-cols-[minmax(0,15rem)_1fr]">
           <button type="button" onClick={() => { if (full) { playTap(); setZoom(true); } }} disabled={!full}
@@ -183,7 +242,7 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
                   {row.store_visible ? t("sb.badge.shown", "منشور") : t("sb.badge.hidden", "مخفي")}
                 </span>
                 <Button size="sm" className="ms-auto" variant={row.store_visible ? "outline" : "primary"} loading={busy === "pub"}
-                  onClick={() => void togglePublish()} disabled={!row.store_visible && !r.ok}
+                  onClick={() => void togglePublish()} disabled={(!row.store_visible && !r.ok) || confirmHide}
                   leftIcon={row.store_visible ? <EyeOff size={15} /> : <Eye size={15} />} data-sheet-publish>
                   {row.store_visible ? t("sb.hideOne", "اخفِ من المتجر") : t("sb.showOne", "انشر بالمتجر")}
                 </Button>
@@ -194,6 +253,17 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
                   <Star size={14} className={row.store_featured ? "fill-current" : ""} /> {row.store_featured ? t("sb.featOn", "مميّز") : t("sb.featOff", "خلّيه مميّز")}
                 </button>
               </div>
+              {confirmHide && risky && (
+                <div className="space-y-2 rounded-2xl border border-warn-300 bg-warn-50 p-3 dark:border-warn-500/40 dark:bg-warn-500/10" data-hide-confirm>
+                  <p className="text-xs font-semibold text-warn-700 dark:text-warn-200">
+                    {t("sb.hideAsk", "«{{name}}» ناقصه {{what}} — إذا انخفى ما يرجع للمتجر إلا لمن يكمل.", { name: row.name, what: missingText })}
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="sm" variant="danger" onClick={() => void togglePublish(true)}>{t("sb.hideYes", "اخفِه")}</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { playTap(); setConfirmHide(false); }}>{t("sb.hideKeep", "خلّيه منشور")}</Button>
+                  </div>
+                </div>
+              )}
               {row.store_featured && !row.store_visible && (
                 <p className="text-2xs font-semibold text-warn-700 dark:text-warn-200">{t("sb.featHiddenWarn", "مميّز بس مخفي — ما يطلع للزبون أصلاً. انشره أو شيل التمييز.")}</p>
               )}
@@ -217,7 +287,7 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
                 ))}
               </ul>
               {!row.store_visible && !r.ok && (
-                <p className="text-2xs text-ink-subtle">{t("sb.cantPublish", "ما ينتشر قبل يكمل: {{what}}", { what: r.missing.map((m) => missText(t, m)).join(t("sb.sep", "، ")) })}</p>
+                <p className="text-2xs text-ink-subtle">{t("sb.cantPublish", "ما ينتشر قبل يكمل: {{what}}", { what: missingText })}</p>
               )}
             </section>
 
@@ -227,25 +297,46 @@ export function ProductSheet({ row, sections, canStore, canPrice, priceViaStore,
                 <label className="text-xs font-bold text-ink-muted" htmlFor={`price-${row.id}`}>{t("sb.price", "سعر البيع (نفس سعر الكاشير)")}</label>
                 <div className="flex gap-2">
                   <input id={`price-${row.id}`} type="number" inputMode="decimal" min={0} value={priceDraft} disabled={!canPrice}
-                    onChange={(e) => setPriceDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void savePrice(); }}
+                    onChange={(e) => { setPriceDraft(e.target.value); setPriceAsk(null); }} onKeyDown={(e) => { if (e.key === "Enter") void savePrice(); }}
                     className="input h-10 flex-1 text-end font-display font-extrabold tabular-nums" />
                   {canPrice && (
                     <Button size="sm" onClick={() => void savePrice()} loading={busy === "price"}
-                      disabled={!priceDraft.trim() || Number(priceDraft) === (row.sell_price ?? 0)}>{t("common.save", "حفظ")}</Button>
+                      disabled={!priceDraft.trim() || Number(priceDraft) === (row.sell_price ?? 0) || !!priceAsk}>{t("common.save", "حفظ")}</Button>
                   )}
                 </div>
-                {row.below_cost && (
+                {priceAsk && (
+                  <div className="space-y-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 dark:border-warn-500/40 dark:bg-warn-500/10" data-price-doubt>
+                    <p className="text-2xs font-bold text-warn-700 dark:text-warn-200">
+                      {priceAsk.doubt === "code"
+                        ? t("sb.doubt.code", "{{p}} يشبه باركود ممسوح مو سعر — متأكد هذا سعر البيع؟", { p: money(priceAsk.v) })
+                        : t("sb.doubt.jump", "{{p}} أكثر من ١٠ أضعاف السعر الحالي ({{was}}) — متأكد؟", { p: money(priceAsk.v), was: money(Number(row.sell_price) || 0) })}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      <Button size="sm" variant="danger" onClick={() => void savePrice(true)} loading={busy === "price"}>{t("sb.doubt.yes", "إي، احفظ {{p}}", { p: money(priceAsk.v) })}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { playTap(); setPriceAsk(null); setPriceDraft(row.sell_price ? String(row.sell_price) : ""); }}>{t("sb.doubt.no", "لا، رجّع السعر")}</Button>
+                    </div>
+                  </div>
+                )}
+                {movedFrom && (
+                  <p className="text-2xs font-bold text-warn-700 dark:text-warn-200" data-price-moved>
+                    {(row.sell_price ?? null) !== movedFrom.was
+                      ? t("sb.movedTo", "السعر تغيّر من جهاز ثاني — صار {{p}}. راجعه قبل ما تعدّل.", { p: (Number(row.sell_price) || 0) > 0 ? money(Number(row.sell_price)) : t("sb.noPrice", "بلا سعر") })
+                      : t("sb.movedWait", "السعر تغيّر من جهاز ثاني — نجيب السعر الجديد…")}
+                  </p>
+                )}
+                {!hideCost && row.below_cost && (
                   <p className="flex items-center gap-1 text-2xs font-bold text-danger-600 dark:text-danger-300"><AlertTriangle size={12} /> {t("sb.belowCostLine", "السعر أقل من كلفة الشراء")}</p>
                 )}
-                {price && (
+                {lastChange && (
                   <p className="text-2xs text-ink-subtle tabular-nums">
                     {t("sb.lastChange", "آخر تغيير: {{when}} — {{from}} ← {{to}}{{by}}", {
-                      when: formatDate(price.changed_at, "ar"),
-                      from: price.old_price != null ? money(price.old_price) : "—",
-                      to: price.new_price != null ? money(price.new_price) : "—",
-                      by: price.by_name ? ` · ${price.by_name}` : "",
+                      when: formatDate(lastChange.changed_at, "ar"),
+                      from: lastChange.old_price != null ? money(lastChange.old_price) : "—",
+                      to: lastChange.new_price != null ? money(lastChange.new_price) : "—",
+                      // الاسمُ لمن يحقّ له (0229: المصوّرُ يستلمه null) — غيابُه لا يُرسم «· null».
+                      by: lastChange.by_name ? ` · ${lastChange.by_name}` : "",
                     })}
-                    {price.via === "raise" && <> · {t("sb.viaRaise", "رفع أسعار")}</>}
+                    {lastChange.via === "raise" && <> · {t("sb.viaRaise", "رفع أسعار")}</>}
                   </p>
                 )}
                 {!canPrice && <p className="text-2xs text-ink-subtle">{t("sb.priceLocked", "تعديل السعر للمدير والطبيب وموظف التصوير.")}</p>}

@@ -9,7 +9,7 @@
 //
 // موبايل أولاً — زوار البايو كلهم من التلفون.
 // ============================================================================
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -18,7 +18,10 @@ import {
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { storeApi, readStoreBoot, pagePainted } from "@/lib/storeApi";
-import { categoryLook, isValidCustomerPhone, listImagePath, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
+import {
+  categoryLook, isValidCustomerPhone, listImagePath, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey,
+  appendRows, askCatalogIds, cartVerdict, collectCatalog, frontTotal,
+} from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
@@ -26,7 +29,8 @@ import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds
 import { cn, money, formatNum, searchable } from "@/lib/utils";
 import { track } from "@/lib/track";
 
-interface CartLine { id: string; qty: number }
+/** `name` يُحفظ مع السطر: منتجٌ خرج من المتجر لا يرجع الخادمُ اسمَه، وشيلُه يُقال بالاسم لا بمعرّفٍ خام. */
+interface CartLine { id: string; qty: number; name?: string }
 
 const cartKey = (slug: string) => `vp_store_cart_${slug}`;
 function loadCart(slug: string): CartLine[] {
@@ -47,6 +51,17 @@ const ERROR_MSG: Record<string, string> = {
   rate_limited: "وصلت الحد الأقصى للطلبات اليوم — تواصل مع العيادة مباشرة.",
   min_order: "طلبك أقل من الحد الأدنى للمتجر.",
 };
+
+/** صورةٌ فشل تحميلُها: المصغّرُ يرجع للكاملة مرّةً، ثمّ تُخفى فتظهر البلاطةُ تحتها — بطاقةٌ لا
+ *  تصير فارغة. و`hidden`/`data-full` يُكتبان على العنصر مباشرةً ولا تمسحهما React، فكلُّ `<img>`
+ *  هنا **مفتاحُه مسارُه** (#26): صورةٌ أُعيد تصويرُها بعد بذرةٍ قديمة (الملفُّ القديمُ حُذف) تُركَّب
+ *  عنصراً جديداً بدل أن يبقى العنصرُ المخفيّ نفسُه بمصدرٍ جديد — والصورةُ الجديدةُ موجودة. */
+function onImgError(full: string | null) {
+  return (e: SyntheticEvent<HTMLImageElement>) => {
+    if (full && e.currentTarget.dataset.full !== "1" && e.currentTarget.src !== full) { e.currentTarget.dataset.full = "1"; e.currentTarget.src = full; return; }
+    e.currentTarget.hidden = true;
+  };
+}
 
 /** عنوانُ التبويب بموضعٍ واحد — تكتبه البذرةُ والنداءُ كلاهما. */
 const pageTitle = (name: string) => `${name} — المتجر`;
@@ -81,7 +96,17 @@ export function Storefront() {
   /** إعادة محاولة التحميل الأول: يزيد فيعيد تشغيل مؤثّر الجلب. */
   const [tries, setTries] = useState(0);
   const [front, setFront] = useState<StoreFrontInfo | null>(null);
-  const [catalog, setCatalog] = useState<StoreCatalogItem[]>([]);
+  const [catalog, setCatalogState] = useState<StoreCatalogItem[]>([]);
+  /* الكتلوجُ ومرآتُه بمرجع، وكلُّ كتابةٍ تمرّ من `putCatalog`: إزاحةُ الصفحة التالية تُقرأ من هنا
+   * لا من إغلاقِ رسمٍ قديم — كانت `catalog.length` من الإغلاق فتطلب إزاحةً مضت (#24). */
+  const catalogRef = useRef<StoreCatalogItem[]>([]);
+  const putCatalog = (next: StoreCatalogItem[]) => { catalogRef.current = next; setCatalogState(next); };
+  /* جيلُ التحميل الأوّل: يزيد مع كلّ تحميلٍ من الصفر (متجرٌ آخر، «أعد المحاولة») — وجوابٌ
+   * من جيلٍ مضى يُرمى بدل أن يُلصق بكتلوجٍ ليس له. */
+  const genRef = useRef(0);
+  /** صفوفٌ أجاب بها الخادمُ **بالمعرّف** (سطورُ سلّةٍ لم تصلها الصفحات) — خارجَ `catalog`
+   *  عمداً: طولُ `catalog` هو الإزاحة، وصفٌّ من خارج الترتيب يُفسدها. */
+  const [extra, setExtra] = useState<StoreCatalogItem[]>([]);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("all");
   /** قسمُ المتجر المختار (0229): "all" أو معرّفُ قسم أو OTHERS («منتجات أخرى» = بلا قسمٍ فعّال). */
@@ -104,8 +129,18 @@ export function Storefront() {
   const PAGE_MORE = 60;
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingRef = useRef(false);
   /** فشلَ جلبُ صفحةٍ تالية؟ — كان يُخفي الزرَّ نهائياً فتبدو التشكيلةُ منتهية. */
   const [moreFailed, setMoreFailed] = useState(false);
+  /** استقرّ التحميلُ الأوّل (نجح أو فشل)؟ قبله لا صفحةَ تالية (#24): بذرةُ الحافة مرسومةٌ والنداءُ
+   *  الطازج بالطريق، فضغطةُ قسمٍ كانت تجلب الصفحةَ الثانية، ثمّ يهبط الطازجُ فيستبدل الكتلوجَ
+   *  بأربعٍ وعشرين — وتضيع كتلةٌ من المنتجات للأبد وتُشذَّب السلّةُ على غيابها. */
+  const [primed, setPrimed] = useState(false);
+  /** فُحص اكتمالُ الكتلوج بعدد الخادم (`frontTotal`) بعد آخر صفحة؟ قبله لا عددَ ولا «ما لكينا». */
+  const [verified, setVerified] = useState(false);
+  /** جيلُ آخر إعادةٍ للكتلوج من أوّله (مرّةً لكلّ جيل)، وجيلُ الإعادة التي بالطريق الآن. */
+  const refetchedRef = useRef(-1);
+  const refetchingRef = useRef(-1);
 
   /* لغةُ الزائر: هذه الصفحة عربيةٌ صلبةٌ عمداً (زبائنُ عيادةٍ عراقية)، فكلُّ
    * نصٍّ يمرّ من `t(` لازم يخرج عربياً — وقد خرج إنكليزياً فعلاً لزرّ «شوف
@@ -116,21 +151,25 @@ export function Storefront() {
 
   useEffect(() => {
     let alive = true;
+    const gen = ++genRef.current;
+    setPrimed(false); setVerified(false); setExtra([]);
     (async () => {
       /* بذرةُ الحافة: رفٌّ مرسومٌ مع أوّل رسمةٍ بدل دوّامةٍ تنتظر ذهاباً وإياباً
        * (المقيس: ٢٥٠–٦٠٠ms توفَّر، وعلى شبكةٍ ضعيفة أكثر). ولا تُصدَّق نهائياً —
        * المستندُ مخبوءٌ خمسَ دقائق بالحافة — فالنداءُ يمضي بعدها ويستبدلها. */
       const boot = readStoreBoot(slug);
+      /* «فيه المزيد» = رجعت الصفحةُ بما طُلب أو أكثر (`>=` لا `===`): نداءٌ قديمٌ يرجع ستّين عن
+       * طلب أربعٍ وعشرين كان يُقرأ «انتهت التشكيلة» فيقف الكتلوجُ عند الستّين بلا زرّ. */
       if (boot && alive) {
-        setFront(boot.front); setCatalog(boot.catalog);
-        setHasMore(boot.catalog.length === PAGE); setState("open");
+        setFront(boot.front); putCatalog(boot.catalog);
+        setHasMore(boot.catalog.length >= PAGE); setState("open");
         document.title = pageTitle(boot.front.name);
       }
       try {
         const [f, c] = await Promise.all([storeApi.storeFrontPublic(slug), storeApi.storeCatalogPublic(slug, PAGE, 0)]);
         if (!alive) return;
         if (!f) { setState("closed"); return; }
-        setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
+        setFront(f); putCatalog(c); setHasMore(c.length >= PAGE); setState("open");
         document.title = pageTitle(f.name);
         /* القياسُ بعد أن يُفتح المتجرُ فعلاً لا عند تركيب المكوّن: رابطٌ مغلقٌ
          * أو فشلُ شبكةٍ ليس زيارةً، وعدُّه يرفع بسطَ القمع بمن لم يرَ رفّاً.
@@ -145,24 +184,27 @@ export function Storefront() {
          * بشاشة خطأٍ يأخذ من الزبون متجراً يشوفه. وما يبيعه لا يعتمد عليها:
          * `store_place_order` تتحقّق من النشر والسعر لحظةَ الطلب. */
         if (alive && !boot) setState("error");
+      } finally {
+        // الجوابُ الأوّل هبط (أو فشل) — الآن فقط تُبنى عليه صفحاتٌ تالية.
+        if (alive && gen === genRef.current) setPrimed(true);
       }
     })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, tries]);
 
   const loadMore = async () => {
-    if (loadingMore) return;
+    // المرجعُ لا الحالة: ضغطتان بنفس الرسمة كانتا تريان `loadingMore` كاذبةً معاً فتطلبان نفسَ الإزاحة.
+    if (loadingRef.current || !primed) return;
+    loadingRef.current = true;
     setLoadingMore(true);
+    const gen = genRef.current;
     try {
-      const more = await storeApi.storeCatalogPublic(slug, PAGE_MORE, catalog.length);
+      const more = await storeApi.storeCatalogPublic(slug, PAGE_MORE, catalogRef.current.length);
+      if (gen !== genRef.current) return;
       // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
-      let added = 0;
-      setCatalog((cur) => {
-        const seen = new Set(cur.map((x) => x.id));
-        const fresh = more.filter((x) => !seen.has(x.id));
-        added = fresh.length;
-        return [...cur, ...fresh];
-      });
+      const { next, added } = appendRows(catalogRef.current, more);
+      putCatalog(next);
       /* التقدّمُ بما **وصل** لا بما طُلب — نفسُ درس `allPages`: صفحةٌ ناقصة عن
        * سقفٍ خادميٍّ أقلَّ من PAGE كانت تُقرأ «انتهت التشكيلة». */
       /* و`added > 0` صمّامٌ لا تجميل: لو رجعت صفحةٌ كلُّها مكرّرات — وهو ما
@@ -173,43 +215,103 @@ export function Storefront() {
       setMoreFailed(false);
     } catch {
       // إخفاءُ الزرّ يجعل الفشلَ يبدو نهايةَ التشكيلة — نُبقيه ونقول «تعذّر».
-      setMoreFailed(true);
+      if (gen === genRef.current) setMoreFailed(true);
     }
-    finally { setLoadingMore(false); }
+    finally { loadingRef.current = false; setLoadingMore(false); }
   };
 
   /* بحثٌ فوق كتالوجٍ جزئيّ يحكم «ما لكينا شيء» على ما حُمّل وحده. فقبل إعلان
    * الخيبة نُنزل بقيةَ الصفحات — لا حكمَ نهائياً فوق قائمةٍ ناقصة. */
   /* والقسمُ كالبحث (0229): التصفيةُ فوق الكتلوج كلِّه لا فوق ما حُمّل — فقسمٌ منتجاتُه بالصفحة
-   * الثالثة لا يُقال عنه «فارغ». والسلّةُ والمجموعُ والتشذيبُ يبقون على الكتلوج كلِّه (byId). */
-  const searching = q.trim().length > 0 || sec !== "all";
+   * الثالثة لا يُقال عنه «فارغ». والفئةُ كذلك: كانت خارجَ الشرط فتقف على «نكمّل التشكيلة…»
+   * بلا تحميل. والسلّةُ والمجموعُ والتشذيبُ يبقون على الكتلوج كلِّه (byId). */
+  const searching = q.trim().length > 0 || sec !== "all" || cat !== "all";
   useEffect(() => {
-    if (!searching || !hasMore || loadingMore || moreFailed) return;
+    if (!searching || !primed || !hasMore || loadingMore || moreFailed) return;
     void loadMore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searching, hasMore, loadingMore, moreFailed]);
+  }, [searching, primed, hasMore, loadingMore, moreFailed]);
 
   useEffect(() => { saveCart(slug, cart); }, [slug, cart]);
 
-  const byId = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
-  /* سلةٌ محفوظةٌ من زيارةٍ سابقة: تُنظَّف ممّا انسحب من الكتلوج — **بعد أن
-   * يكتمل الكتلوج لا قبله**.
+  /* المعروفُ كلُّه: الصفحاتُ وما أجاب به الخادمُ بالمعرّف — والصفحةُ أولى إن تكرّر (هي ما بالشبكة). */
+  const byId = useMemo(() => new Map([...extra, ...catalog].map((c) => [c.id, c])), [extra, catalog]);
+
+  /* ── سلّةٌ محفوظةٌ من زيارةٍ سابقة: تُنظَّف ممّا خرج من المتجر — **بحكم الخادم لا بغياب** ──
    *
-   * كانت تجري على `state === "open"`، أي بعد الصفحة الأولى وحدها (٢٤ منتجاً)،
-   * فكلُّ سطرِ سلّةٍ منتجُه بالصفحة الثانية يُحذف صامتاً: الزبونُ يعود لسلّةٍ
-   * حفظها أمس فيجدها ناقصةً ولا يعرف. والحذفُ الصامتُ يُصدَّق — «قائمةٌ ناقصة
-   * أخطرُ من خطأٍ ظاهر». مقيسٌ بمتصفّحٍ حقيقيّ: سلّةٌ من سطرين تصير سطراً. */
+   * كانت تجري بعد الصفحة الأولى وحدها فيُحذف كلُّ سطرٍ منتجُه بالصفحة الثانية (مقيسٌ بمتصفّح:
+   * سلّةٌ من سطرين تصير سطراً)؛ ثمّ صارت تنتظر اكتمالَ الصفحات — ولا يكفي: الإزاحةُ فوق ترتيبٍ
+   * يغيّره الكادر تقفز صفوفاً (#25)، وخطأٌ عابرٌ بالصفحة الأولى كان ينزل لكتلوجٍ قديمٍ مقطوعٍ
+   * بستّين (#23)، وجوابٌ أوّلُ متأخّرٌ كان يمحو صفحاتٍ لُحقت بعده (#24). وبكلّها «اكتملت» تُقرأ
+   * كاملةً وليست، فيُقال «ما عادت متوفّرة» عن بضاعةٍ على الرفّ — والحذفُ الصامت يُصدَّق.
+   *
+   * فالسطرُ الذي لم تجلبه الصفحاتُ **يُسأل عنه الخادمُ بالمعرّف** (`store_catalog_ids`: نفسُ صفوف
+   * الكتلوج وشروطه): ما رجع يُعرض بالسلّة ويُحسب بالمجموع من أوّل لحظة، وما لم يرجع خرج من المتجر
+   * فعلاً. وخادمٌ لا يعرف السؤال (`null`) أو شبكةٌ فشلت ⇒ لا حكم ولا شيل (`cartVerdict`).
+   * والسؤالُ بعد استقرار الجواب الأوّل (البذرةُ قد تكون أقدمَ بربع ساعة)، ويُعاد عند اكتمال
+   * الصفحات إن فشل. */
   const [cartTrimmed, setCartTrimmed] = useState<string[]>([]);
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  const cartDoneRef = useRef(-1);
+  const cartAskingRef = useRef(false);
+  const complete = state === "open" && primed && !hasMore && !loadingMore && !moreFailed;
   useEffect(() => {
-    if (state !== "open" || hasMore || loadingMore || moreFailed) return;
-    setCart((c) => {
-      const gone = c.filter((l) => !byId.get(l.id)?.available);
-      if (!gone.length) return c;
-      setCartTrimmed(gone.map((l) => byId.get(l.id)?.name ?? l.id));
-      return c.filter((l) => byId.get(l.id)?.available);
-    });
+    if (state !== "open" || !primed || cartDoneRef.current === genRef.current || cartAskingRef.current) return;
+    const gen = genRef.current;
+    cartAskingRef.current = true;
+    (async () => {
+      const known = new Map<string, StoreCatalogItem>(catalogRef.current.map((x) => [x.id, x]));
+      const missing = cartRef.current.filter((l) => !known.has(l.id)).map((l) => l.id);
+      let answered: Set<string> | null = new Set();
+      if (missing.length) {
+        const rows = await askCatalogIds((ids) => storeApi.storeCatalogByIds(slug, ids), missing);
+        if (rows === null) answered = null;
+        else {
+          answered = new Set(missing);
+          for (const r of rows) known.set(r.id, r);
+          if (gen === genRef.current) setExtra(rows);
+        }
+      }
+      if (gen !== genRef.current) return;
+      cartDoneRef.current = gen;
+      setCart((c) => {
+        const { keep, gone } = cartVerdict(c, known, answered);
+        if (!gone.length) return c;
+        setCartTrimmed(gone.map((l) => known.get(l.id)?.name ?? l.name ?? t("sf.goneItem", "منتج ما عاد معروض")));
+        return keep;
+      });
+    })()
+      .catch(() => { /* شبكة: لا حكمَ الآن — يُعاد عند اكتمال الصفحات */ })
+      .finally(() => { cartAskingRef.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, hasMore, loadingMore, moreFailed]);
+  }, [state, primed, complete]);
+
+  /* ── «اكتملت الصفحات» ليست «اكتمل الكتلوج» ─────────────────────────────
+   * الإزاحةُ تقفز ما زحزحه الكادرُ بين صفحتين (#25)، فبحثٌ عن منتجٍ مقفوزٍ يقول «ما لكينا»
+   * عن بضاعةٍ على الرفّ. و`store_front` يعدّ المعروضَ كلَّه (الأقسامُ + «منتجات أخرى»، بشروط
+   * الكتلوج حرفاً — `frontTotal`)؛ فإن قصر ما حُمّل عنه يُعاد الكتلوجُ من أوّله **مرّةً** ويُستبدل
+   * كاملاً، وفشلُه يُبقي ما حُمّل. وقبل هذا الحكم لا عددَ ولا «ما لكينا». */
+  useEffect(() => {
+    if (!complete || verified) return;
+    const gen = genRef.current;
+    // إعادةٌ بالطريق لهذا الجيل: هي التي تقول «فُحص» حين تهبط — لا نداءٌ ثانٍ للمؤثّر (وضعُ التطوير الصارم).
+    if (refetchingRef.current === gen) return;
+    const want = frontTotal(front);
+    if (want === null || catalogRef.current.length >= want || refetchedRef.current === gen) { setVerified(true); return; }
+    refetchedRef.current = gen;
+    refetchingRef.current = gen;
+    void collectCatalog((limit, offset) => storeApi.storeCatalogPublic(slug, limit, offset))
+      .then((all) => { if (gen === genRef.current) putCatalog(all); })
+      .catch(() => { /* يبقى ما حُمّل — والسلّةُ حُكم عليها بالمعرّف لا بهذا */ })
+      .finally(() => {
+        if (refetchingRef.current === gen) refetchingRef.current = -1;
+        if (gen === genRef.current) setVerified(true);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete, verified]);
+  /** الكتلوجُ كاملٌ بحكمٍ لا بظنّ: آخرُ صفحةٍ وصلت وعددُ الخادم فُحص. */
+  const settled = complete && verified;
 
   /* ── ت١٢ ثمّ 0229: الأقسامُ أقسامُ العيادة، لا `category` ────────────────
    *
@@ -220,9 +322,20 @@ export function Storefront() {
    * فالشريطُ لا يَعِد بترتيبٍ لا تملكه التشكيلة. والمنشورُ بلا قسمٍ يُقال «منتجات أخرى».
    * ومتجرٌ بلا أقسام يبقى كما حكمت ت١٢ حرفاً: شريطُ الفئات يُخفي نفسَه حين لا يفرّق.
    */
-  const sections = front?.sections ?? [];
+  const sections = useMemo(() => front?.sections ?? [], [front]);
   const OTHERS = "__others";
-  const hasOthers = sections.length > 0 && catalog.some((c) => !c.section_id);
+  /* شريحةُ «منتجات أخرى» من **عدّ الخادم** (`front.others`) لا ممّا حُمّل: الخادمُ يرتّب ما بلا قسمٍ
+   * آخراً، فمتجرٌ فيه أربعمئة مقسَّم ومئتان بلا قسم كان لا يُظهر الشريحةَ حتى تُحمَّل الصفحاتُ كلُّها
+   * (#27). وما حُمّل يبقى شاهداً ثانياً: قسمٌ أُرشف بعد جلب الواجهة يُنزل منتجاتِه هنا. */
+  const hasOthers = sections.length > 0 && ((front?.others ?? 0) > 0 || catalog.some((c) => !c.section_id));
+  /* اختيارٌ بلا شريحةٍ ظاهرة لا يبقى يصفّي (#28): البذرةُ قد تكون أقدمَ بربع ساعة، فقسمٌ ضغطه
+   * الزبونُ منها ثمّ أُرشف يختفي من الشريط الطازج ويبقى `sec` يصفّي على لا شيء — ولو كان القسمَ
+   * الوحيد صار الشريطُ شريطَ فئات ولا شيءَ على الشاشة يمسح الاختيار. والعكسُ: فئةٌ اختيرت قبل أن
+   * تصل الأقسام تبقى تصفّي تحت شريطٍ لا يعرضها. */
+  useEffect(() => {
+    if (sec !== "all" && !(sec === OTHERS ? hasOthers : sections.some((x) => x.id === sec))) setSec("all");
+    if (sections.length > 0 && cat !== "all") setCat("all");
+  }, [sections, hasOthers, sec, cat]);
   const cats = useMemo(() => {
     const seen = new Set<string>();
     for (const c of catalog) seen.add(c.category ?? "other");
@@ -255,8 +368,9 @@ export function Storefront() {
    *  بحثُ الزبون أولى من تسويقنا. */
   const qtyOf = (id: string) => cart.find((l) => l.id === id)?.qty ?? 0;
   const setQty = (id: string, qty: number) => {
+    const name = byId.get(id)?.name;
     setCart((c) => {
-      const next = qty <= 0 ? c.filter((l) => l.id !== id) : c.some((l) => l.id === id) ? c.map((l) => (l.id === id ? { ...l, qty: Math.min(qty, 99) } : l)) : [...c, { id, qty: Math.min(qty, 99) }];
+      const next = qty <= 0 ? c.filter((l) => l.id !== id) : c.some((l) => l.id === id) ? c.map((l) => (l.id === id ? { ...l, qty: Math.min(qty, 99), name: name ?? l.name } : l)) : [...c, { id, qty: Math.min(qty, 99), name }];
       return next;
     });
   };
@@ -446,7 +560,7 @@ export function Storefront() {
               {/* عددٌ فوق كتلوجٍ ناقص يكذب: «١٢ منتج» عن متجرٍ فيه مئة. يُخفى
                   حتى تكتمل التشكيلة بدل أن يُعرض رقمٌ أصغرُ من الحقيقة. */}
               <span className="font-semibold text-ink-muted">
-                {hasMore || loadingMore ? "" : `${formatNum(shown.length)} ${t("sf.results", "منتج")}`}
+                {settled ? `${formatNum(shown.length)} ${t("sf.results", "منتج")}` : ""}
               </span>
               <select value={sort} onChange={(e) => { playTap(); setSort(e.target.value as typeof sort); }} data-storesort
                 aria-label={t("sf.sortDefault", "الترتيب المعتاد")}
@@ -465,7 +579,7 @@ export function Storefront() {
         {/* ما شِيل من السلّة يُقال بالاسم لا يُحذف بصمت: الزبونُ الذي يعود
             لسلّةٍ حفظها أمس يستحقّ أن يعرف لماذا نقصت. */}
         {cartTrimmed.length > 0 && (
-          <div data-carttrimmed className="mb-3 flex items-start gap-2 rounded-2xl border border-warn-300 bg-warn-50 px-3 py-2 text-2xs font-semibold text-warn-800">
+          <div data-carttrimmed className="mb-3 flex items-start gap-2 rounded-2xl border border-warn-300 bg-warn-50 px-3 py-2 text-2xs font-semibold text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200">
             <span className="flex-1">{t("sf.cartTrimmed", "انشالت من سلّتك (ما عادت متوفّرة): {{names}}", { names: cartTrimmed.join("، ") })}</span>
             <button type="button" onClick={() => { playTap(); setCartTrimmed([]); }} aria-label={t("sf.close", "إغلاق")} className="shrink-0"><X size={14} /></button>
           </div>
@@ -483,7 +597,7 @@ export function Storefront() {
             <Search size={26} className="opacity-40" />
             {/* «ما لكينا» لا تُقال قبل أن تكتمل التشكيلة — ولا تُقال أبداً عن فشلِ جلب. */}
             <p className="text-sm font-semibold">
-              {moreFailed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : hasMore || loadingMore ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
+              {moreFailed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : !settled ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
             </p>
           </div>
         ) : (
@@ -517,14 +631,10 @@ export function Storefront() {
                       /* تكسيلُ ما هو فوق الطيّة يؤخّر أثقلَ عنصرٍ بالرسم (LCP)
                          بلا أن يوفّر شيئاً — الزائرُ يراه بلا تمرير. والشبكةُ بالمصغّر
                          (0229: ٤٨٠ بكسل بدل ١٦٠٠) — فشلُه يرجع للكاملة مرّةً، ثمّ البلاطة. */
-                      <img src={productImageUrl(listImagePath(p)) as string} alt="" width={400} height={400}
+                      <img key={listImagePath(p)} src={productImageUrl(listImagePath(p)) as string} alt="" width={400} height={400}
                         loading={i < 4 ? "eager" : "lazy"} fetchPriority={i < 4 ? "high" : undefined}
                         className="absolute inset-0 h-full w-full object-contain p-1.5"
-                        onError={(e) => {
-                          const full = productImageUrl(p.image_path);
-                          if (full && e.currentTarget.dataset.full !== "1") { e.currentTarget.dataset.full = "1"; e.currentTarget.src = full; return; }
-                          e.currentTarget.hidden = true;
-                        }} />
+                        onError={onImgError(productImageUrl(p.image_path))} />
                     )}
                   </div>
                   {!p.available ? (
@@ -570,9 +680,9 @@ export function Storefront() {
           </div>
         )}
         {(hasMore || moreFailed) && (
-          <button onClick={() => { setMoreFailed(false); void loadMore(); }} disabled={loadingMore}
+          <button onClick={() => { setMoreFailed(false); void loadMore(); }} disabled={loadingMore || !primed}
             className="mt-4 w-full rounded-2xl border border-line bg-surface-1 py-3 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-50">
-            {loadingMore ? "جاري التحميل…" : moreFailed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
+            {loadingMore || !primed ? "جاري التحميل…" : moreFailed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
           </button>
         )}
         <p className="mt-8 flex items-center justify-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>
@@ -581,7 +691,10 @@ export function Storefront() {
       {/* ورقة تفاصيل المنتج (المرحلة ٣): صورة أكبر + الوصف كاملاً + عدّاد */}
       {detail && (() => {
         const shelf = shelfLook(detail.name);
-        const img = productImageUrl(detail.image_path);
+        /* المصغّرُ لا الكاملة (#29): صندوقٌ ارتفاعُه ٢٠٨ بكسل بلا تكبير، والكاملةُ ١٦٠٠ بكسل حتى
+         * ١٫٩ ميغا — ضغطةُ منتجٍ واحدة على 3G كانت تنزّل أضعافَ حزمة الزائر كلِّها. والمصغّرُ (٤٨٠)
+         * يكفي الصندوقَ بكثافةِ شاشةٍ مضاعفة، وهو بالمخبأ أصلاً من البطاقة. فشلُه يرجع للكاملة. */
+        const img = productImageUrl(listImagePath(detail));
         const n = qtyOf(detail.id);
         return (
           <div className="fixed inset-0 z-40" data-detailsheet>
@@ -591,7 +704,7 @@ export function Storefront() {
                   وقاعَها — وباسمِ الشركة يعرف الزبونُ المنتج. والبلاطةُ أرضاً. */}
               <div className={cn("relative grid h-52 place-items-center overflow-hidden rounded-2xl", shelf.tile)}>
                 <span className={cn("px-4 text-center font-display text-2xl font-bold", shelf.ink)}>{shelfLabel(detail.name)}</span>
-                {img && <img src={img} alt="" className="absolute inset-0 h-full w-full object-contain p-3" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                {img && <img key={img} src={img} alt="" className="absolute inset-0 h-full w-full object-contain p-3" onError={onImgError(productImageUrl(detail.image_path))} />}
                 <button onClick={() => { playTap(); setDetail(null); }} aria-label={t("sf.close", "إغلاق")}
                   className="absolute end-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-ink/60 text-white"><X size={16} /></button>
               </div>
@@ -711,7 +824,7 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
                 <div key={l.id} className="flex items-center gap-3 rounded-2xl border border-line p-2.5">
                   <span className={cn("relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl text-2xs font-bold", shelf.tile, shelf.ink)}>
                     {shelfMonogram(p.name)}
-                    {cimg && <img src={cimg} alt="" className="absolute inset-0 h-full w-full object-contain p-0.5" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                    {cimg && <img key={cimg} src={cimg} alt="" className="absolute inset-0 h-full w-full object-contain p-0.5" onError={onImgError(productImageUrl(p.image_path))} />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-ink">{p.name}</p>

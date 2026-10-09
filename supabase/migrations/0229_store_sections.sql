@@ -43,9 +43,10 @@
 --   (`api/store-og.ts`) تقرؤها — الجديدةُ بجانبها والواجهةُ ترجع للقديمة إن غابت.
 --
 -- تُطبَّق بعد 0228 و**قبل** الواجهة (واجهةٌ تسبقها تنادي دوالَّ غير موجودة). إضافيةٌ
--- وتُعاد بلا أثرٍ ثانٍ. تراجع (الواجهةُ أوّلاً): أعد api_gate وphoto_products من 0228،
--- ثمّ drop الدوالّ الجديدة، ثمّ alter table products drop column store_section_id,
--- store_sort, image_meta؛ ثمّ drop table store_sections؛ وأعد audit_kind من 0227.
+-- وتُعاد بلا أثرٍ ثانٍ. التراجع: `supabase/tests/rollback_0229.sql` (الواجهةُ أوّلاً) — مفحوصٌ
+-- بالحزمة تطبيقاً ثمّ تراجعاً ثمّ تطبيقاً. ترتيبُه ليس اختيارياً: store_front تقرأ store_sections
+-- فتُعاد من 0183 **قبل** إسقاط الجدول (plpgsql لا يُسجَّل اعتمادُه — كانت كلُّ واجهات العيادات
+-- ستسقط بلا خطأٍ وقتَ التراجع)، والمحفّزُ يُسقط قبل عموده (اعتمادُه يمنع drop column).
 -- ============================================================================
 
 set lock_timeout = '5s';
@@ -93,6 +94,24 @@ begin
 end $fk$;
 -- فهرسٌ كاملٌ لا جزئيّ: fk-no-index لا يقبل الجزئيّ (0191)، وحذفُ قسمٍ (بالعيادة كلّها) يمسح بالمفتاح.
 create index if not exists products_store_section_idx on public.products (store_section_id);
+
+-- مسارُ الصورة ومصغّرُها بمحارفَ آمنة فقط. الحرّاسُ قبلها تسأل البادئةَ وحدها (`<العيادة>/` أو
+-- `library/`)، فمسارٌ فيه «'» أو «"» أو «<» كان يُقبل — ويُرسم بصفحة المتجر العامّة على نفس أصل
+-- التطبيق. الرسمُ صار آمناً بنفسه (api/store-og.ts)، وهذا الطرفُ الثاني: لا يُخزَّن ما لا يُرسم.
+-- قيدٌ لا فحصٌ بدالّة: كلُّ كاتبٍ يمرّ منه (set_product_image، store_set_image، الكتابةُ المباشرة).
+-- مقيسٌ قبله (٩/١٠، الإنتاج): ٤٤ مساراً كلُّها `<uuid>/[A-Za-z0-9._-]+` — صفرُ مخالف.
+do $chk$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'products_image_path_safe') then
+    alter table public.products add constraint products_image_path_safe check (
+      image_path is null or (image_path ~ '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$' and image_path !~ '(^|/)\.\.?(/|$)'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'products_image_thumb_safe') then
+    alter table public.products add constraint products_image_thumb_safe check (
+      image_meta is null or image_meta->>'thumb' is null
+      or ((image_meta->>'thumb') ~ '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$' and (image_meta->>'thumb') !~ '(^|/)\.\.?(/|$)'));
+  end if;
+end $chk$;
 
 -- القسمُ من عيادة المنتج نفسها: المفتاحُ لا يسأل العيادة، والمديرُ والطبيبُ يكتبان المنتجَ
 -- مباشرةً (products_write) — فرقمُ قسمِ عيادةٍ أخرى كان سيمرّ. invoker: للمستخدم تكفي سياسةُ
@@ -152,6 +171,12 @@ language sql immutable set search_path = public as $$
     when p_entity = 'invoice_items' then 'sale_line'
     when p_action = 'UPDATE' and p_entity in ('products','purchases','purchase_payments','company_sections')
          and cardinality(c.ch) > 0 and c.ch <@ array['company_id','company_name','section_id']::text[] then 'relink'
+    -- 0229: ترتيبُ المتجر (القسمُ وترتيبُه) ضجيجٌ مخفيٌّ كالنقل — سهمُ «خلّيه الأول» يرقّم القسمَ كلَّه؛
+    -- وما سواه من شغل المتجر (نشر، تمييز، وصف، صورة) «متجر» لا «تعديل منتج» يدفن تعديلَ المخزون.
+    when p_action = 'UPDATE' and p_entity = 'products'
+         and cardinality(c.ch) > 0 and c.ch <@ array['store_section_id','store_sort']::text[] then 'store_arrange'
+    when p_action = 'UPDATE' and p_entity = 'products' and cardinality(c.ch) > 0
+         and c.ch <@ array['store_section_id','store_sort','store_visible','store_featured','store_desc','image_path','image_meta']::text[] then 'store'
     when p_entity = 'products' then case
       when p_action = 'INSERT' then 'product_add'
       when p_action = 'DELETE' then 'product_delete'
@@ -447,7 +472,8 @@ grant execute on function public.store_assign_section(uuid[], uuid) to authentic
 
 -- ترتيبُ قسمٍ (أو «بلا قسم» حين p_section فارغ): القائمةُ ترتيبُ ما فيها، وما بالقسم خارجها
 -- ينزل بعدها بالاسم. قائمةٌ فيها منتجٌ خرج من القسم (جهازٌ ثانٍ نقله) تُرفض كلُّها.
--- ولا يُكتب إلا ما تغيّر رقمُه: سهمٌ واحدٌ = سطرا تدقيق، لا ثلاثون.
+-- ولا يُكتب إلا ما تغيّر رقمُه. و«بلا قسم» = بلا قسمٍ **أصلاً**: منتجاتُ قسمٍ مؤرشف تُعرض تحت
+-- «منتجات أخرى» لكنّ ترتيبَها ترتيبُ قسمها — ترقيمُها هنا كان يمحوه فيرجع القسمُ مخلوطاً.
 create or replace function public.store_reorder_products(p_section uuid, p_ids uuid[])
 returns jsonb
 language plpgsql
@@ -477,10 +503,7 @@ begin
   if v_n <> (select count(distinct x) from unnest(p_ids) x)
      or v_n <> (select count(*) from products p
                  where p.id = any(p_ids) and p.clinic_id = v_clinic and p.farm_id is null
-                   and (case when p_section is null
-                             then p.store_section_id is null or not exists (
-                                    select 1 from store_sections s where s.id = p.store_section_id and s.archived_at is null)
-                             else p.store_section_id = p_section end)) then
+                   and p.store_section_id is not distinct from p_section) then
     raise exception 'order_stale' using hint = 'محتوى القسم تغيّر من جهاز ثاني — حدّث الصفحة وأعد الترتيب.';
   end if;
   update products p set store_sort = o.ord::int
@@ -489,10 +512,7 @@ begin
   get diagnostics v_changed = row_count;
   update products p set store_sort = null
    where p.clinic_id = v_clinic and p.farm_id is null and p.store_sort is not null and not (p.id = any(p_ids))
-     and (case when p_section is null
-               then p.store_section_id is null or not exists (
-                      select 1 from store_sections s where s.id = p.store_section_id and s.archived_at is null)
-               else p.store_section_id = p_section end);
+     and p.store_section_id is not distinct from p_section;
   get diagnostics v_more = row_count;
   return jsonb_build_object('ok', true, 'changed', v_changed + v_more);
 end $$;
@@ -517,6 +537,7 @@ declare
   v_photo    int := 0;
   v_price    int := 0;
   v_expired  int := 0;
+  v_ids      uuid[];
 begin
   if v_clinic is null then
     raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.';
@@ -531,14 +552,19 @@ begin
     raise exception 'too_many' using hint = 'انشر ٢٠٠٠ منتجٍ بالمرّة كحدٍّ أقصى.';
   end if;
   if v_n = 0 then
-    return jsonb_build_object('ok', true, 'changed', 0, 'skipped_no_photo', 0, 'skipped_no_price', 0, 'skipped_expired', 0);
+    return jsonb_build_object('ok', true, 'changed', 0, 'ids', '[]'::jsonb,
+                              'skipped_no_photo', 0, 'skipped_no_price', 0, 'skipped_expired', 0);
   end if;
 
+  -- `ids` = ما تغيّر فعلاً: اللوحةُ ترقّعه وحده بدل أن تخمّن الجاهزيةَ من صفوفٍ قد تكون قديمة.
   if not p_on then
-    update products p set store_visible = false
-     where p.id = any(p_ids) and p.clinic_id = v_clinic and p.farm_id is null and coalesce(p.store_visible, false);
-    get diagnostics v_changed = row_count;
-    return jsonb_build_object('ok', true, 'changed', v_changed, 'skipped_no_photo', 0, 'skipped_no_price', 0, 'skipped_expired', 0);
+    with u as (
+      update products p set store_visible = false
+       where p.id = any(p_ids) and p.clinic_id = v_clinic and p.farm_id is null and coalesce(p.store_visible, false)
+      returning p.id)
+    select coalesce(array_agg(u.id), '{}') into v_ids from u;
+    return jsonb_build_object('ok', true, 'changed', cardinality(v_ids), 'ids', to_jsonb(v_ids),
+                              'skipped_no_photo', 0, 'skipped_no_price', 0, 'skipped_expired', 0);
   end if;
 
   select count(*) filter (where nullif(btrim(coalesce(p.image_path, '')), '') is null),
@@ -549,14 +575,16 @@ begin
     from products p
    where p.id = any(p_ids) and p.clinic_id = v_clinic and p.farm_id is null and not coalesce(p.store_visible, false);
 
-  update products p set store_visible = true
-   where p.id = any(p_ids) and p.clinic_id = v_clinic and p.farm_id is null and not coalesce(p.store_visible, false)
-     and nullif(btrim(coalesce(p.image_path, '')), '') is not null
-     and coalesce(p.sell_price, 0) > 0
-     and (p.expiry_date is null or p.expiry_date >= v_today);
-  get diagnostics v_changed = row_count;
-  return jsonb_build_object('ok', true, 'changed', v_changed, 'skipped_no_photo', v_photo,
-                            'skipped_no_price', v_price, 'skipped_expired', v_expired);
+  with u as (
+    update products p set store_visible = true
+     where p.id = any(p_ids) and p.clinic_id = v_clinic and p.farm_id is null and not coalesce(p.store_visible, false)
+       and nullif(btrim(coalesce(p.image_path, '')), '') is not null
+       and coalesce(p.sell_price, 0) > 0
+       and (p.expiry_date is null or p.expiry_date >= v_today)
+    returning p.id)
+  select coalesce(array_agg(u.id), '{}') into v_ids from u;
+  return jsonb_build_object('ok', true, 'changed', cardinality(v_ids), 'ids', to_jsonb(v_ids),
+                            'skipped_no_photo', v_photo, 'skipped_no_price', v_price, 'skipped_expired', v_expired);
 end $$;
 revoke all on function public.store_publish(uuid[], boolean) from public, anon;
 grant execute on function public.store_publish(uuid[], boolean) to authenticated;
@@ -584,7 +612,9 @@ begin
   if not (staff_can('manageProductPhotos') or staff_can('manageStore')) then
     raise exception 'not_authorized' using hint = 'ما عندك صلاحية تغيّر صور المنتجات.';
   end if;
-  if v_path is not null and not (v_path like v_clinic::text || '/%' or v_path like 'library/%') then
+  -- البادئةُ ثمّ المحارف (قيدُ products_image_path_safe يمسكها أيضاً، وهنا لتلميحٍ عربيّ لا 23514).
+  if v_path is not null and (not (v_path like v_clinic::text || '/%' or v_path like 'library/%')
+                             or v_path !~ '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$' or v_path ~ '(^|/)\.\.?(/|$)') then
     raise exception 'bad_image_path' using hint = 'مسار الصورة مو من ملفات العيادة.';
   end if;
   if v_path is null then
@@ -615,7 +645,9 @@ grant execute on function public.store_set_image(uuid, text, jsonb) to authentic
 -- ── ٩) مراجعةُ الأسعار: آخرُ تغييرٍ على كلّ سعرٍ منشور، ومن غيّره ──────────────────
 -- المصدران معاً: تعديلُ اليد من سجلّ التدقيق (`__changed.sell_price` = [القديم، الجديد])،
 -- والرفعُ بنسبة من سطوره (التدقيقُ يتخطّى سعرَ الرفع داخل معاملته — 0226). تسعون يوماً.
--- والاسمُ من الكادر؛ مشغّلُ المنصّة بلا اسم (بالاتفاق: لا أثرَ له عند العيادة).
+-- والاسمُ من الكادر؛ مشغّلُ المنصّة بلا اسم (بالاتفاق: لا أثرَ له عند العيادة). والمصوّرُ لا يرى
+-- أسماءَ زملائه: سياجُه يحجب عنه الكادرَ وسجلَّ التدقيق (0222)، فاسمُ «من غيّر» هنا كان ثغرةً
+-- فيه. يرى اسمَه هو وحده.
 create or replace function public.store_price_review()
 returns jsonb
 language plpgsql
@@ -625,6 +657,7 @@ set search_path = public
 as $$
 declare
   v_clinic uuid := auth_clinic();
+  v_photo  boolean := is_photographer();
 begin
   if v_clinic is null then
     raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.';
@@ -663,7 +696,8 @@ begin
     select jsonb_agg(jsonb_build_object(
              'product_id', last.product_id, 'changed_at', last.changed_at,
              'old_price', last.old_price, 'new_price', last.new_price, 'via', last.via,
-             'by_name', (select s.name from staff s where s.user_id = last.actor and s.clinic_id = v_clinic limit 1)))
+             'by_name', case when not v_photo or last.actor = auth.uid()
+                             then (select s.name from staff s where s.user_id = last.actor and s.clinic_id = v_clinic limit 1) end))
       from last), '[]'::jsonb);
 end $$;
 revoke all on function public.store_price_review() from public, anon;
@@ -717,6 +751,7 @@ declare
   sp store_profiles%rowtype;
   v_name text; v_logo text; v_phone text; v_fb text; v_ig text;
   v_sections jsonb;
+  v_others   int;
 begin
   select * into sp from store_profiles where slug = lower(trim(p_slug)) and enabled;
   if not found then return jsonb_build_object('ok', false, 'error', 'closed'); end if;
@@ -742,6 +777,14 @@ begin
              and coalesce(p.sell_price, 0) > 0
              and (p.expiry_date is null or p.expiry_date >= (now() at time zone 'Asia/Baghdad')::date)
            group by ss.id, ss.name, ss.sort) x;
+  -- «منتجات أخرى» بعددها من الخادم: الواجهةُ كانت تعرف وجودَها من الصفحات المحمَّلة، والكتلوجُ
+  -- يضعها آخراً — فشريحتُها لا تظهر إلا بعد تحميل كلّ شيء. نفسُ الشروط، والقسمُ المؤرشفُ كلا قسم.
+  select count(*)::int into v_others
+    from products p
+    left join store_sections ss on ss.id = p.store_section_id and ss.clinic_id = p.clinic_id and ss.archived_at is null
+   where p.clinic_id = sp.clinic_id and p.store_visible and ss.id is null
+     and coalesce(p.sell_price, 0) > 0
+     and (p.expiry_date is null or p.expiry_date >= (now() at time zone 'Asia/Baghdad')::date);
 
   return jsonb_build_object(
     'ok', true,
@@ -754,12 +797,192 @@ begin
     'bio', sp.bio,
     'delivery_fee', sp.delivery_fee,
     'min_order', sp.min_order,
-    'sections', v_sections
+    'sections', v_sections,
+    'others', v_others
   );
 end;
 $$;
 revoke all on function public.store_front(text) from public;
 grant execute on function public.store_front(text) to anon, authenticated;
+
+-- ── ١٠ب) منتجاتٌ بعينها للزبون: سطورُ السلّة لا تُشال بحكم غياب ─────────────────────────
+-- الواجهةُ تصفّح بـoffset فوق ترتيبٍ يغيّره الكادرُ طولَ اليوم (نقلٌ بين الأقسام، «خلّيه الأول»):
+-- صفٌّ ينزاح بين صفحتين لا يصل أبداً، فكانت السلّةُ تشيل منتجاً معروضاً بـ«ما عادت متوفّرة».
+-- قائمةٌ ناقصةٌ أخطرُ من خطأٍ ظاهر — فالغائبُ يُسأل عنه بمعرّفه قبل أيّ حكم. نفسُ أعمدة
+-- store_catalog2 وشروطها حرفاً، وسقفُ ٢٠٠ معرّف.
+create or replace function public.store_catalog_ids(p_slug text, p_ids uuid[])
+returns table (id uuid, name text, category text, subcategory text, price numeric, descr text, available boolean,
+               image_path text, featured boolean, section_id uuid, thumb_path text)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select p.id, p.name, p.category::text, p.subcategory, p.sell_price, p.store_desc,
+         (p.stock > 0 or coalesce(cs.pooled_stock, 0) > 0) as available,
+         p.image_path,
+         coalesce(p.store_featured, false),
+         ss.id,
+         case when p.image_meta->>'path' = p.image_path then nullif(p.image_meta->>'thumb', '') end
+  from store_profiles sp
+  join products p on p.clinic_id = sp.clinic_id and p.store_visible
+  left join company_sections cs on cs.id = p.section_id
+  left join store_sections ss on ss.id = p.store_section_id and ss.clinic_id = p.clinic_id and ss.archived_at is null
+  where sp.slug = lower(trim(p_slug)) and sp.enabled
+    and p.id = any((coalesce(p_ids, '{}'::uuid[]))[1:200])
+    and coalesce(p.sell_price, 0) > 0
+    and (p.expiry_date is null or p.expiry_date >= (now() at time zone 'Asia/Baghdad')::date)
+  order by p.id;
+$$;
+revoke all on function public.store_catalog_ids(text, uuid[]) from public, anon;
+grant execute on function public.store_catalog_ids(text, uuid[]) to anon, authenticated;
+comment on function public.store_catalog_ids(text, uuid[]) is
+  'منتجاتُ المتجر بمعرّفاتها (0229) — بشروط store_catalog2 حرفاً؛ تسألها السلّةُ قبل أن تشيل سطراً لم تصله الصفحات.';
+
+-- ── ١٠ج) رفضُ الإذن بلغة الإذن: setters المتجر بـP0001 لا 42501 ──────────────────────────
+-- `describeDbError` يعرض التلميحَ العربيّ لـP0001 وحده، و42501 عنده «جلستك انتهت — سجّل من
+-- جديد»: مصوّرٌ سحب المديرُ إذنَه وهو على اللوحة كان يُقال له إن جلسته انتهت. الأجسامُ نسخةُ
+-- 0222/0228 حرفاً إلا errcode — ونطاقُ photo_products (`farm_id is null`) للتمييز والوصف كالباقي.
+create or replace function public.store_set_featured(p_product uuid, p_on boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_clinic uuid := auth_clinic(); n int;
+begin
+  if v_clinic is null then raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.'; end if;
+  if not _store_manager_ok() then
+    raise exception 'not_authorized' using hint = 'ما عندك صلاحية على المتجر.';
+  end if;
+  update products set store_featured = coalesce(p_on, false) where id = p_product and clinic_id = v_clinic and farm_id is null;
+  get diagnostics n = row_count;
+  if n = 0 then raise exception 'product_not_found' using hint = 'المنتج ما موجود — حدّث الصفحة.'; end if;
+end $$;
+revoke all on function public.store_set_featured(uuid, boolean) from public, anon;
+grant execute on function public.store_set_featured(uuid, boolean) to authenticated;
+
+create or replace function public.store_set_desc(p_product uuid, p_desc text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_clinic uuid := auth_clinic(); n int;
+begin
+  if v_clinic is null then raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.'; end if;
+  if not _store_manager_ok() then
+    raise exception 'not_authorized' using hint = 'ما عندك صلاحية على المتجر.';
+  end if;
+  if char_length(coalesce(p_desc, '')) > 2000 then
+    raise exception 'desc_too_long' using hint = 'الوصف أطول من ٢٠٠٠ حرف.';
+  end if;
+  update products set store_desc = nullif(btrim(coalesce(p_desc, '')), '') where id = p_product and clinic_id = v_clinic and farm_id is null;
+  get diagnostics n = row_count;
+  if n = 0 then raise exception 'product_not_found' using hint = 'المنتج ما موجود — حدّث الصفحة.'; end if;
+end $$;
+revoke all on function public.store_set_desc(uuid, text) from public, anon;
+grant execute on function public.store_set_desc(uuid, text) to authenticated;
+
+create or replace function public.store_set_price(p_product uuid, p_price numeric, p_expected numeric)
+returns numeric
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_now    numeric;
+  v_new    numeric;
+begin
+  if v_clinic is null then
+    raise exception 'not_authenticated' using hint = 'سجّل دخولك من جديد.';
+  end if;
+  if not _store_manager_ok() then
+    raise exception 'not_authorized' using hint = 'ما عندك صلاحية على المتجر.';
+  end if;
+  -- سعرُ البيع لم يكتبه قبلها إلا المديرُ والطبيب (products_write، 0051)؛ والقرارُ وسّعه للمصوّر
+  -- وحده — لا لاستقبالٍ أو عنايةٍ منحهما المديرُ إذنَ المتجر (تدقيقٌ عدائيّ: كان يمرّ لهما).
+  if not (auth_role() in ('manager', 'veterinarian') or is_photographer()) then
+    raise exception 'not_authorized' using hint = 'تعديل السعر للمدير والطبيب وموظف التصوير.';
+  end if;
+  -- صفرٌ ليس سعرَ متجر (store_catalog يخفيه) — وهو ما يكتبه حقلٌ مُسح ثم تُرك. وNaN بالـnumeric
+  -- أكبرُ من كلّ رقم، فالسقفُ يمسكه.
+  if p_price is null or p_price <= 0 or p_price > 1000000000000 then
+    raise exception 'bad_price' using hint = 'السعر لازم أكبر من صفر.';
+  end if;
+  v_new := round(p_price, 2);
+  -- نطاقُ photo_products نفسُه: منتجاتُ العيادة بلا منتجات الحقول. والقفلُ ثم المقارنة:
+  -- رفعُ أسعارٍ أو جهازٌ آخر غيّر السعرَ بعد فتح القائمة ⇒ لا يُكتب فوقه بصمت.
+  select p.sell_price into v_now from products p
+   where p.id = p_product and p.clinic_id = v_clinic and p.farm_id is null
+   for update;
+  if not found then
+    raise exception 'product_not_found' using hint = 'المنتج مو موجود بعيادتك — حدّث القائمة.';
+  end if;
+  if v_now is distinct from p_expected then
+    raise exception 'price_moved'
+      using hint = 'السعر تغيّر من جهاز ثاني أو برفع أسعار — حدّث القائمة وشوف السعر الجديد قبل لا تعدّله.';
+  end if;
+  if v_now is not distinct from v_new then
+    return v_new;
+  end if;
+  update products set sell_price = v_new where id = p_product and clinic_id = v_clinic;
+  return v_new;
+end $$;
+revoke all on function public.store_set_price(uuid, numeric, numeric) from public, anon;
+grant execute on function public.store_set_price(uuid, numeric, numeric) to authenticated;
+
+-- ── ١٠د) ملفُّ صورةٍ يشير إليه توأمٌ بسلّة المحذوفات ليس يتيماً ────────────────────────────
+-- الدمجُ (0184) يورّث صورةَ المطويّ للأصل، والمطويُّ يُحفظ بلقطته في products_trash ويرجع منها
+-- **بنفس المسار** (فكُّ الدمج أو restore_product). واللوحةُ تدعو لإعادة تصوير الصور القديمة —
+-- فإعادةُ تصوير الأصل كانت تحذف ملفاً ما زال المطويُّ يشير إليه، ويرجع بصورةٍ مكسورة. السؤالُ
+-- صار يشمل السلّة: ما يُسترجع لا يُحذف ملفُّه.
+create or replace function public.image_path_in_use(p_path text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from products where image_path = p_path and clinic_id = auth_clinic())
+      or exists (select 1 from products_trash t where t.clinic_id = auth_clinic() and t.row->>'image_path' = p_path)
+$$;
+revoke all on function public.image_path_in_use(text) from public, anon;
+grant execute on function public.image_path_in_use(text) to authenticated;
+
+-- ── ١٠هـ) الواتساب ورابطُ المتجر وتشغيلُه للمدير وحده (قرارُ المالك ٥) ──────────────────────
+-- السياسةُ (0095) شرطُ عيادةٍ وحده، وسياجُ المصوّر (0222) يفتح الكتابةَ لمن بيده manageStore —
+-- والمصوّرُ بيده منذ 0228. فكان المصوّرُ (أو استقبالٌ منحه المديرُ المتجر) يكتب رقمَه بـ«واتساب
+-- استلام الطلبات» فيذهب كلُّ زبونٍ إليه، أو يغيّر الرابطَ فينكسر كلُّ رابطٍ مشترَك. التجميدُ بمحفّزٍ
+-- لا بسياسة (درسُ 0159/0162: سياسةٌ تقرأ جدولَها تُسقط كلَّ تحديث)، invoker ويحرس
+-- `authenticated` وحده فلا يشدّ على دوالّ المالك. والإدراجُ: upsert يطلق «قبل الإدراج» حتى
+-- والصفُّ موجود — فإن وُجد مضى لمحفّز التحديث بقيمه القديمة، وإلا فإنشاءُ المتجر للمدير.
+create or replace function public.store_profiles_manager_guard()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if current_user <> 'authenticated' then return new; end if;
+  if coalesce(auth_role(), '') = 'manager' then return new; end if;
+  if tg_op = 'INSERT' then
+    if exists (select 1 from store_profiles sp where sp.clinic_id = new.clinic_id) then return new; end if;
+    raise exception 'store_profile_manager_only'
+      using hint = 'رقم الواتساب ورابط المتجر وتشغيله للمدير وحده.';
+  end if;
+  if new.whatsapp is distinct from old.whatsapp
+     or new.slug is distinct from old.slug
+     or new.enabled is distinct from old.enabled then
+    raise exception 'store_profile_manager_only'
+      using hint = 'رقم الواتساب ورابط المتجر وتشغيله للمدير وحده.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists store_profiles_manager_guard on public.store_profiles;
+create trigger store_profiles_manager_guard before insert or update on public.store_profiles
+  for each row execute function public.store_profiles_manager_guard();
 
 -- ── ١١) البوّابة: الأبوابُ الجديدةُ بقائمة المصوّر (الجسمُ نسخةُ 0228 حرفاً + سطرها) ──────
 create or replace function public.api_gate()
@@ -792,7 +1015,7 @@ begin
     -- 0229: الأقسامُ والترتيبُ والنشرُ بشروطه والصورةُ بوصفها ومراجعةُ الأسعار — وواجهةُ الزبون
     'store_sections_list','store_section_save','store_section_archive','store_sections_reorder',
     'store_assign_section','store_reorder_products','store_publish','store_set_image','store_price_review',
-    'store_catalog2'
+    'store_catalog2','store_catalog_ids'
   ]) then
     return;
   end if;

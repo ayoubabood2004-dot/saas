@@ -58,5 +58,11 @@
   { "entity": "price_changes", "action": "UPDATE", "details": { "title": "+25%", "__changed": { "status": ["applied", "undone"] } }, "kind": "price_change" },
   { "entity": "store_sections", "action": "INSERT", "details": { "name": "أكل قطط" }, "kind": "store" },
   { "entity": "store_sections", "action": "UPDATE", "details": { "name": "أكل قطط", "__changed": { "archived_at": [null, "2026-10-09"] } }, "kind": "store" },
-  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_section_id": [null, "s1"], "store_sort": [null, 1] } }, "kind": "product_edit" }
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_section_id": [null, "s1"], "store_sort": [null, 1] } }, "kind": "store_arrange" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_sort": [3, 1], "updated_at": ["a", "b"] } }, "kind": "store_arrange" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_visible": [false, true] } }, "kind": "store" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "image_path": [null, "c1/a.jpg"], "image_meta": [null, { "v": 1 }] } }, "kind": "store" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_desc": [null, "علف"], "store_featured": [false, true], "store_sort": [1, 2] } }, "kind": "store" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_visible": [false, true], "sell_price": [1000, 1200] } }, "kind": "product_edit" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_sort": [1, 2], "stock": [5, 4] } }, "kind": "stock" }
 ]

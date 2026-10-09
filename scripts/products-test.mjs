@@ -688,6 +688,48 @@ console.log("▸ تشكيلة المتجر — لوحةٌ واحدة (0229): ص�
   check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً (والمصغّرُ معها)",
     flow.includes("repo.setProductImage(p.id, null, null)") && /repo\.deleteProductImage\(clinicId, p\.id, old, oldThumb\)/.test(flow));
   check("  وتُسأل بالاسم والصورة لا بنافذة متصفّح", sheet.includes("data-remove-confirm") && !/window\.confirm/.test(sheet + board + flow));
+  /* معاينةُ الزبون مرآةُ `Storefront` لا تصميمٌ ثانٍ (تدقيق 0229: #43/#45): لا صفَّ مختاراتٍ منفصل
+   * (المتجرُ أسقطه)، ونفسُ شارتي الزاوية بنفس المفاتيح، ومتجرٌ مطفأٌ يُقال، وبلا حشوةٍ فوق حشوة Dialog. */
+  const pvSrc = readFileSync("src/components/store/CustomerPreview.tsx", "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  check("المعاينة: لا صفَّ «مختارات» منفصل — المختارُ يُعلَّم داخل الشبكة كالمتجر",
+    !pvSrc.includes("sb.pv.featured") && !/featured\.map\(/.test(pvSrc) && pvSrc.includes('t("sf.pick"') && pvSrc.includes('t("sf.out"'));
+  check("  والنافدُ أولى بالشارة من المختار، والترتيبُ: النافدُ آخراً ثمّ المختارُ أوّلاً (مرآةُ Storefront)",
+    /\{out \? \([\s\S]{0,200}sf\.out[\s\S]{0,120}\) : p\.store_featured \?/.test(pvSrc)
+    && /Number\(isOut\(a\.p\)\) - Number\(isOut\(b\.p\)\) \|\| Number\(!!b\.p\.store_featured\) - Number\(!!a\.p\.store_featured\)/.test(pvSrc));
+  check("  والشرائحُ بقواعد المتجر: «الكل» بلا عدد، و«منتجات أخرى» بشرطه، وشريطُ الفئات حين لا أقسام",
+    pvSrc.includes('label={t("sf.all", "الكل")}') && /\{hasOthers && <Chip/.test(pvSrc) && /: cats\.length > 1 && \(/.test(pvSrc));
+  check("  ومتجرٌ مطفأٌ يُقال (الزبونُ لا يرى شيئاً) — لا «بالضبط» عن شيءٍ لا يُرى",
+    pvSrc.includes("data-preview-off") && /\{!storeOn && \(/.test(pvSrc) && !readFileSync("src/i18n/ar.json", "utf8").includes("هيچ يطلع المتجر للزبون بالضبط"));
+  check("  وبلا حشوةٍ ثانية فوق حشوة Dialog", /<div className="space-y-4" data-preview>/.test(pvSrc) && !/px-6 pb-6/.test(pvSrc));
+
+  /* ── مراجعةُ 0229 العدائية: ما بين اللوحة وما حولها ──────────────────────
+   * السلوكُ النقيّ (المسحُ ثلاثيُّ الجواب، حكمُ الماسح، الإخفاءُ الذي لا يرجع، الاختيارُ
+   * بالعضوية) مفحوصٌ بالتشغيل بـstore-board-test؛ وهنا أنّ اللوحةَ تمرّ منه فعلاً. */
+  check("الماسحُ اليدويّ يُسأل أين يكتب قبل فتح البطاقة (نافذةٌ مفتوحة أو حقلُ كتابة ⇒ لا)",
+    /if \(scanBlocked\(modalDepth\(\), focus\)\) return;/.test(board) && /useBarcodeScanner\(onKeyScan, \{/.test(board)
+    && /<CameraScan [\s\S]{0,120}onCode=\{onScan\}/.test(board) && rules.includes("export function scanBlocked("));
+  check("  ورمزُ توأمين يُقال «أكثر من منتج» بعددهما ويُكتب بالبحث — لا «مو بالمخزون»",
+    /if \(hit\.kind === "many"\) \{[\s\S]{0,400}setFilter\("all"\); setSecFilter\("all"\); setQ\(code\);[\s\S]{0,200}sb\.scan\.many/.test(board));
+  check("سعرُ الكاشير من اللوحة يتبع قفلَ الجهاز (stockLocked) كالمخزن",
+    /const \{ stockLocked, restricted \} = useOverride\(\);/.test(board) && /const canPrice = canStore && \([^;]*\) && !stockLocked;/.test(board));
+  check("  و«تحت الكلفة» لا تدخل بيانات اللوحة على جهازٍ مقفول ولا للمصوّر (شارةٌ ولا عدّادٌ ولا تصفية)",
+    /const hideCost = restricted \|\| baseRole === "photographer";/.test(board)
+    && /hideCost \? rows\.map\(\(p\) => \(p\.below_cost == null \? p : \{ \.\.\.p, below_cost: null \}\)\)/.test(board)
+    && /\(f !== "belowCost" \|\| !hideCost\)/.test(board) && /\{!hideCost && p\.below_cost && /.test(board)
+    && (board.match(/hideCost=\{hideCost\} onStale=\{\(\) => void load\(\)\}/g) ?? []).length === 2);
+  check("كلُّ قراءةٍ بعد الأولى تُبلغ الأبَ (نشرُ منتقي القسم يجعل الإعدادات قديمة)",
+    /if \(loadedOnce\.current\) changedRef\.current\?\.\(\);\s*\n\s*loadedOnce\.current = true;/.test(board));
+  check("  ونقلٌ فشل بنصفه يقول كم انتقل ويعيد القراءة",
+    /sb\.moveFailedPart[\s\S]{0,200}sb\.moveFailed"[\s\S]{0,80}\);\s*\n\s*await load\(\);/.test(board));
+  check("تشكيلةُ المتجر لمن لا يملك صلاحيتها تقول صلاحيةَ المتجر، والصورُ وحدَها تُقال بشريط",
+    /mode === "store"\s*\n\s*\? t\("sb\.p\.noStoreAccess"/.test(board) && /mode === "store" && !canStore && \([\s\S]{0,300}sb\.p\.photosOnly/.test(board));
+  check("التصويرُ المتتابع: النجاحُ بلوحته لا بتوستٍ فوق أزرارها، واللوحةُ فوق زرّ المساعد",
+    /quiet: !!seq,/.test(board) && /if \(!quiet\) \{\s*\n\s*toast\.success\(t\("sb\.photo\.saved"/.test(flow) && /if \(!quiet\) toast\.success/.test(flow)
+    && /fixed inset-x-0 bottom-0 z-\[45\]/.test(board) && /data-seq-saved/.test(board));
+  check("شريطُ الاختيار يلتصق تحت شريط الموبايل لا خلفه",
+    /"sticky top-\[4\.5rem\] z-30 [^"]*lg:top-2"/.test(board) && !/sticky top-2 z-20/.test(board));
+  check("ربطُ صورةٍ رُفض حاسماً يشيل زوجَه المرفوع، والمجهولُ المصير لا يُلمس",
+    /catch \(e\) \{[\s\S]{0,700}if \(rejectedBeforeCommit\(e\)\) void repo\.deleteProductImage\(clinicId, p\.id, up\.path, up\.thumb\);\s*\n\s*throw e;/.test(flow));
 }
 
 /* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────
@@ -728,14 +770,63 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
 
   check("صمّامُ «عرض المزيد»: hasMore يتبع ما أُضيف فعلاً",
     /setHasMore\(more\.length > 0 && added > 0\)/.test(frontCode));
-  check("  و`added` يُحسب من الصفوف الجديدة بعد إسقاط المكرّرات",
-    /const fresh = more\.filter\([\s\S]{0,80}added = fresh\.length/.test(frontCode));
-  check("تنظيفُ السلّة مشروطٌ باكتمال التشكيلة لا بأوّل صفحة",
-    /if \(state !== "open" \|\| hasMore \|\| loadingMore \|\| moreFailed\) return;/.test(frontCode));
-  check("  وما شِيل يُقال بالاسم لا يُحذف بصمت",
-    frontCode.includes("setCartTrimmed(") && frontCode.includes("data-carttrimmed") && frontCode.includes("sf.cartTrimmed"));
-  check("العددُ يُخفى ما دامت التشكيلةُ ناقصة",
-    /hasMore \|\| loadingMore \? "" : `\$\{formatNum\(shown\.length\)\}/.test(frontCode));
+  /* منذ تدقيق 0229: `added` من `appendRows` (مفحوصةٌ بسلوكها تحت)، والإزاحةُ من **مرجع** الكتلوج
+   * لا من إغلاق الرسم — كانت `catalog.length` من الإغلاق فتطلب إزاحةً مضت (#24). */
+  check("  و`added` يُحسب من الصفوف الجديدة بعد إسقاط المكرّرات، والإزاحةُ من المرجع",
+    /const \{ next, added \} = appendRows\(catalogRef\.current, more\)/.test(frontCode)
+    && /storeCatalogPublic\(slug, PAGE_MORE, catalogRef\.current\.length\)/.test(frontCode)
+    && !/PAGE_MORE, catalog\.length/.test(frontCode));
+  /* #24: لا صفحةَ تالية قبل أن يستقرّ الجوابُ الأوّل — وإلا محا الجوابُ المتأخّرُ ما لُحق بعده. */
+  check("الصفحةُ التالية تنتظر استقرارَ الجواب الأوّل (لا محوَ لما لُحق بعده)",
+    /if \(loadingRef\.current \|\| !primed\) return;/.test(frontCode)
+    && /if \(!searching \|\| !primed \|\| !hasMore/.test(frontCode)
+    && /finally \{[\s\S]{0,40}if \(alive && gen === genRef\.current\) setPrimed\(true\)/.test(frontCode)
+    && /disabled=\{loadingMore \|\| !primed\}/.test(frontCode));
+  check("  وجوابُ صفحةٍ من جيلٍ مضى يُرمى", /const more = await storeApi\.storeCatalogPublic[^\n]*\n\s*if \(gen !== genRef\.current\) return;/.test(frontCode));
+  /* #23: «فيه المزيد» = رجعت الصفحةُ بما طُلب أو أكثر — نداءٌ قديمٌ يرجع ستّين عن طلب ٢٤ كان «انتهت». */
+  check("«فيه المزيد» بـ>= PAGE لا === (البذرةُ والجوابُ الأوّل)",
+    /setHasMore\(boot\.catalog\.length >= PAGE\)/.test(frontCode) && /setHasMore\(c\.length >= PAGE\)/.test(frontCode)
+    && !/length === PAGE/.test(frontCode));
+  /* #25: السلّةُ لا تُشذَّب على غيابٍ عن الصفحات — الغائبُ يُسأل عنه الخادمُ بالمعرّف، والحكمُ من
+   * `cartVerdict` (مفحوصةٌ بسلوكها تحت). كان الشرطُ «اكتملت الصفحات» ثمّ `!byId.get(id)?.available`. */
+  check("تنظيفُ السلّة بحكم الخادم: الغائبُ عن الصفحات يُسأل بالمعرّف قبل أي شيل",
+    /askCatalogIds\(\(ids\) => storeApi\.storeCatalogByIds\(slug, ids\), missing\)/.test(frontCode)
+    && /cartVerdict\(c, known, answered\)/.test(frontCode)
+    && /if \(rows === null\) answered = null;/.test(frontCode)
+    && !/byId\.get\(l\.id\)\?\.available/.test(frontCode));
+  check("  وبعد استقرار الجواب الأوّل لا قبله (البذرةُ قد تكون أقدمَ بربع ساعة)",
+    /if \(state !== "open" \|\| !primed \|\| cartDoneRef\.current === genRef\.current/.test(frontCode));
+  check("  وما رجع بالمعرّف يُعرض بالسلّة ويُحسب بالمجموع (byId يضمّه)، خارجَ الكتلوج كي لا يُفسد الإزاحة",
+    /const byId = useMemo\(\(\) => new Map\(\[\.\.\.extra, \.\.\.catalog\]/.test(frontCode) && /setExtra\(rows\)/.test(frontCode));
+  check("  وما شِيل يُقال بالاسم لا يُحذف بصمت (والاسمُ محفوظٌ بالسطر لمنتجٍ خرج)",
+    frontCode.includes("setCartTrimmed(") && frontCode.includes("data-carttrimmed") && frontCode.includes("sf.cartTrimmed")
+    && /known\.get\(l\.id\)\?\.name \?\? l\.name \?\? t\("sf\.goneItem"/.test(frontCode)
+    && /\[\.\.\.c, \{ id, qty: Math\.min\(qty, 99\), name \}\]/.test(frontCode));
+  /* #25 للشبكة: «اكتملت الصفحات» ليست «اكتمل الكتلوج» — عددُ الخادم يحكم، وقصورٌ يُعيد الكتلوجَ مرّة. */
+  check("اكتمالُ الكتلوج يُفحص بعدد الخادم ويُعاد من أوّله مرّةً إن قصر",
+    /const want = frontTotal\(front\);/.test(frontCode)
+    && /collectCatalog\(\(limit, offset\) => storeApi\.storeCatalogPublic\(slug, limit, offset\)\)/.test(frontCode)
+    && /refetchedRef\.current === gen/.test(frontCode));
+  check("العددُ و«ما لكينا» لا يُقالان قبل الحكم (settled)",
+    /\{settled \? `\$\{formatNum\(shown\.length\)\}/.test(frontCode)
+    && /: !settled \? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"/.test(frontCode)
+    && /const settled = complete && verified;/.test(frontCode));
+  /* #27/#28: شريحةُ «منتجات أخرى» من عدّ الخادم، والاختيارُ بلا شريحةٍ ظاهرة يُمسح. */
+  check("«منتجات أخرى» من عدّ الخادم (front.others) لا ممّا حُمّل وحده",
+    /const hasOthers = sections\.length > 0 && \(\(front\?\.others \?\? 0\) > 0 \|\|/.test(frontCode));
+  check("  وقسمٌ اختير ثمّ غاب من الشريط يرجع «الكل»، والفئةُ تُمسح حين تصل الأقسام",
+    /if \(sec !== "all" && !\(sec === OTHERS \? hasOthers : sections\.some\(\(x\) => x\.id === sec\)\)\) setSec\("all"\);/.test(frontCode)
+    && /if \(sections\.length > 0 && cat !== "all"\) setCat\("all"\);/.test(frontCode));
+  check("  والفئةُ كالبحث والقسم: تُنزل بقيةَ الصفحات قبل الحكم",
+    /const searching = q\.trim\(\)\.length > 0 \|\| sec !== "all" \|\| cat !== "all";/.test(frontCode));
+  /* #26/#29: صورةٌ مفتاحُها مسارُها (العنصرُ المخفيُّ لا يُعاد استعمالُه بمصدرٍ جديد)، والورقةُ بالمصغّر. */
+  check("كلُّ صورةٍ بالمتجر مفتاحُها مسارُها (hidden لا يبقى على مصدرٍ جديد)",
+    /<img key=\{listImagePath\(p\)\} src=\{productImageUrl\(listImagePath\(p\)\)/.test(frontCode)
+    && /\{img && <img key=\{img\}/.test(frontCode) && /\{cimg && <img key=\{cimg\}/.test(frontCode));
+  check("  وورقةُ التفاصيل بالمصغّر وفشلُه يرجع للكاملة (لا ١٦٠٠ بكسل لصندوق ٢٠٨)",
+    /const img = productImageUrl\(listImagePath\(detail\)\);/.test(frontCode)
+    && /onError=\{onImgError\(productImageUrl\(detail\.image_path\)\)\}/.test(frontCode)
+    && !/const img = productImageUrl\(detail\.image_path\)/.test(frontCode));
   check("بلاطةُ الرفّ أرضٌ دائمة خلف كلّ صورة (لا شرط !hasImg)",
     !/\bhasImg\b/.test(frontCode) && /shelfLabel\(p\.name\)/.test(frontCode));
   check("سطرُ السلّة يعرض صورةَ المنتج (مصغّرَها — 0229) فوق بلاطته",
@@ -773,6 +864,57 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("  ونفسُ المتجر بحالةِ أحرفٍ مختلفة مفتاحٌ واحد", lastOrderKey("Vet-0EN2") === lastOrderKey("vet-0en2"));
   check("  وبفراغٍ زائد كذلك", lastOrderKey(" vet 0en2 ") === lastOrderKey("vet-0en2"));
   check("  والمفتاحُ يحمل السلاگ فعلاً لا اسماً ثابتاً", lastOrderKey("vet-0en2").includes("vet-0en2"));
+
+  /* ── كتلوجُ الزائر بصفحات: «لم يصل» ليس «الخادمُ قال لا» (تدقيق 0229: #23–#25) ──────────
+   * بالسلوك لا بالنصّ: الدوالُّ التي تحكم ما يُشال من السلّة وما يُعدّ كاملاً. */
+  const bCat = await eb.build({
+    stdin: { contents: 'export { appendRows, frontTotal, collectCatalog, askCatalogIds, cartVerdict } from "./src/lib/storeLib";', resolveDir: process.cwd(), loader: "js" },
+    bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent",
+  });
+  const SFC = await import("data:text/javascript;base64," + Buffer.from(bCat.outputFiles[0].text).toString("base64"));
+  const R = (id, available = true) => ({ id, available, name: `م ${id}` });
+  {
+    const a = SFC.appendRows([R("a"), R("b")], [R("b"), R("c"), R("c"), R("d")]);
+    check("appendRows: المكرّرُ يسقط (بين الصفحتين وداخل الصفحة)، و`added` = الجديدُ وحده",
+      a.added === 2 && a.next.map((x) => x.id).join() === "a,b,c,d", JSON.stringify(a));
+    check("  وصفحةٌ كلُّها مكرّرات ⇒ added = 0 (صمّامُ الحلقة)", SFC.appendRows([R("a")], [R("a")]).added === 0);
+  }
+  check("frontTotal: الأقسامُ + «منتجات أخرى» = الكتلوج", SFC.frontTotal({ sections: [{ n: 3 }, { n: 4 }], others: 5 }) === 12);
+  check("  وخادمٌ قبل 0229 (بلا أقسام ولا others) ⇒ null لا صفر (لا حكمَ بعددٍ مجهول)",
+    SFC.frontTotal({ sections: [], others: 0 }) === null && SFC.frontTotal(null) === null);
+  {
+    // خادمٌ سقفُه ٣٠ صفّاً وإن طُلب مئة — والكتلوجُ ٧٠: يتقدّم بما وصل ويقف عند الصفحة الفارغة.
+    const all = Array.from({ length: 70 }, (_, i) => R(`p${i}`));
+    const asked = [];
+    const got = await SFC.collectCatalog(async (limit, offset) => { asked.push(offset); return all.slice(offset, offset + Math.min(limit, 30)); });
+    check("collectCatalog: يتقدّم بما وصل لا بما طُلب (سقفُ خادمٍ أقلّ)، ويقف عند صفحةٍ فارغة لا ناقصة",
+      got.length === 70 && asked.join() === "0,30,60,70", `${got.length} | ${asked.join()}`);
+    let failed = false;
+    try { await SFC.collectCatalog(async (l, o) => { if (o > 0) throw new Error("503"); return all.slice(0, 30); }); } catch { failed = true; }
+    check("  وفشلُ صفحةٍ يرمي — نصفُ كتلوجٍ لا يُسلَّم بدل الكامل", failed);
+    let capped = false;
+    try { await SFC.collectCatalog(async () => [R(`x${Math.random()}`)], 100, 5); } catch { capped = true; }
+    check("  والسقفُ يرمي لا يُرجع ما جمع", capped);
+  }
+  {
+    const ids = Array.from({ length: 450 }, (_, i) => `id${i}`);
+    const batches = [];
+    const rows = await SFC.askCatalogIds(async (b) => { batches.push(b.length); return b.slice(0, 1).map((id) => R(id)); }, [...ids, "id0"]);
+    check("askCatalogIds: دفعاتُ ٢٠٠ (سقفُ الدالّة) والمكرّرُ يُسأل مرّة", batches.join() === "200,200,50" && rows.length === 3, batches.join());
+    const old = await SFC.askCatalogIds(async (b) => (b[0] === "id200" ? null : []), ids);
+    check("  ودفعةٌ لا يعرفها الخادم ⇒ null كلُّه (جوابُ نصفٍ ليس جواباً عن الباقي)", old === null);
+  }
+  {
+    const cart = [{ id: "on" }, { id: "off" }, { id: "skipped" }, { id: "gone" }, { id: "late" }];
+    const known = new Map([["on", R("on")], ["off", R("off", false)], ["skipped", R("skipped")]]);
+    const v = SFC.cartVerdict(cart, known, new Set(["skipped", "gone"]));
+    check("cartVerdict: المتوفّرُ يبقى، وغيرُ المتوفّر يُشال، وما أجاب الخادمُ بغيابه يُشال",
+      v.keep.map((l) => l.id).join() === "on,skipped,late" && v.gone.map((l) => l.id).join() === "off,gone", JSON.stringify(v));
+    const blind = SFC.cartVerdict(cart, new Map([["on", R("on")]]), null);
+    check("  وبلا جوابٍ من الخادم (null) لا يُشال غائبٌ أبداً — «لم يصل» ليس «لا يوجد»",
+      blind.gone.length === 0 && blind.keep.length === 5, JSON.stringify(blind));
+    check("  وغائبٌ لم يُسأل عنه (سطرٌ أُضيف بعد السؤال) يبقى", v.keep.some((l) => l.id === "late"));
+  }
 
   /* ── الموجة ٥ · matchSlug: المطابقةُ بقاعدة الخادم لا بمطهّرة الإدخال ────
    *
@@ -870,13 +1012,27 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   // 0229: النشرُ من اللوحة (`StoreBoard`) بـstore_publish — نفسُ الخصائص على الشِفرة الجديدة.
   const brd = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
   const pt = readFileSync("src/components/store/publishToast.ts", "utf8");
-  check("  والتحديثُ محلّيٌّ بمكانه (بشروط النشر نفسِها)", /patchMany\(ok, \(\) => \(\{ store_visible: on \}\)\)/.test(brd) && /readiness\(p, today\)\.ok/.test(brd));
+  // منذ 0229 الخادمُ يرجع معرّفاتِ ما تغيّر: المحلّيُّ يرقّعها هي (لا شروطَه على صفوفٍ قد تكون قديمة)،
+  // وأيُّ فرقٍ بين المطلوب والمتغيّر يعيد القراءة.
+  check("  والتحديثُ محلّيٌّ بمكانه (بما قال الخادمُ إنه تغيّر، وفرقٌ يعيد القراءة)",
+    /patchMany\(new Set\(r\.ids\), \(\) => \(\{ store_visible: on \}\)\)/.test(brd)
+    && /if \(r\.ids\.length !== r\.changed \|\| r\.changed !== expected\) void load\(\);/.test(brd));
   check("  وفشلُ الجماعيّ **يُعيد** القراءة (لا تبقى الشاشةُ على ظنٍّ لا يطابق الخادم)",
     /sb\.publishFailed[\s\S]{0,200}await load\(\)/.test(brd));
   check("فعلٌ جماعيٌّ موجودٌ بالشاشة أصلاً (لم يكن)",
     /const bulkPublish = async \(on: boolean/.test(brd) && /sb\.bulkShow/.test(brd) && /sb\.bulkHide/.test(brd));
   check("  و«اختر الكل» يقصد المعروضَ بالتصفية لا الجدولَ كلَّه",
-    /setPicked\(picked\.size === visible\.length \? new Set\(\) : new Set\(visible\.map/.test(brd));
+    /setPicked\(allOn \? new Set\(\) : new Set\(visible\.map/.test(brd) && /const allOn = allPicked\(visible, picked\);/.test(brd));
+  // «الكلُّ مختار» بالعضوية لا بمقارنة العددَين، والفعلُ الجماعيُّ على المختار الظاهر وحدَه،
+  // والبحثُ والقسمُ يصفّران الاختيار (كانت «اخفِ» تمسّ ما لا تراه الشاشة).
+  check("  والفعلُ الجماعيُّ على المختار **الظاهر**، والبحثُ والقسمُ يصفّرانه",
+    /const pickedRows = useMemo\(\(\) => pickedIn\(visible, picked\)/.test(brd) && /ids = pickedRows\.map\(\(p\) => p\.id\)/.test(brd)
+    && !/picked\.size === visible\.length/.test(brd)
+    && /setQ\(e\.target\.value\); setShown\(PAGE\); pickNone\(\);/.test(brd) && /setSecFilter\(id\); setShown\(PAGE\); pickNone\(\);/.test(brd));
+  check("  و«اخفِ» يسأل بالشاشة عن المنشور الناقص (لا يرجع إلا مكتملاً) — بالبطاقة والجماعيّ، بلا نافذة متصفّح",
+    /if \(hideRisk\(p, today\)\) \{ playWarning\(\); setAskHide\(true\); return; \}/.test(brd) && /onClick=\{toggle\} data-card-toggle/.test(brd)
+    && /if \(hideSum\.risky > 0\) \{ playWarning\(\); setHideAsk\(true\); return; \}/.test(brd) && /onClick=\{askBulkHide\} data-bulk-hide/.test(brd)
+    && !/window\.confirm/.test(brd));
   // نداءٌ لكلّ ألف (سقفُ الخادم ٢٠٠٠) لا لكلّ منتج — الحلقةُ الممنوعةُ حلقةُ المنتجات.
   check("  والدالّةُ الخادميةُ بنداءٍ لكلّ دفعة لا حلقةٍ على المنتجات",
     /repo\.storePublish\(ids\.slice\(i, i \+ 1000\), on\)/.test(brd) && !/for \([^)]*\) \{[\s\S]{0,120}await repo\.updateProduct\([^)]*store_visible/.test(brd));
@@ -915,6 +1071,9 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     /setPick\(new Set\(r\.filter\(\(x\) => photo\.get\(x\.id\) \?\? !!x\.image_path\)\.map\(\(x\) => x\.id\)\)\)/.test(sugBoard) && /sb\.sugNoPhoto/.test(sugBoard));
   check("  وفشلُ الجلب يُقال ولا يصير «ما عندك مبيعات»",
     /setState\("error"\)/.test(sugBoard) && /sb\.sug\.suggestFailed/.test(sugBoard));
+  check("  ولوحةُ الاقتراح تُغلق حين انتشر فعلاً وحدَه (فشلٌ أو طلبٌ سابقٌ يُبقي المؤشَّر)",
+    /if \(await onPublish\(\[\.\.\.pick\]\)\) setState\("idle"\)/.test(sugBoard) && /onPublish: \(ids: string\[\]\) => Promise<boolean>/.test(sugBoard)
+    && /if \(busyRef\.current\) \{\s*\n\s*toast\.toast\(\{ tone: "info", title: t\("sb\.busyWait"/.test(sugBoard));
   check("  والنشرُ منه يمرّ من نفس باب النشر لا من كتابةٍ ثانية",
     /<SuggestButton list=\{list\} onPublish=\{\(ids\) => bulkPublish\(true, ids\)\}/.test(sugBoard));
   check("والمرآةُ التجريبية عندها نفسُ الدالّة", /async suggestStoreProducts\(limit = 40, days = 90\)/.test(repoS));
@@ -1091,10 +1250,12 @@ console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كل
   const sh = readFileSync("src/components/store/ProductSheet.tsx", "utf8");
   const prv = readFileSync("src/components/store/PriceReview.tsx", "utf8");
   const bd = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
+  /* منذ إصلاح «تحت الكلفة» بعد الحفظ: مسارُ الكادر يرقّع من الصفّ الراجع (السعرُ والعلامة)، والمصوّرُ
+   * سعرَه وحده (العلامةُ لا تصله أصلاً). والشرطُ «ما رآه» باقٍ بالمسارين. */
   check("المتجر: المصوّرُ يعدّل السعرَ من store_set_price، والكادرُ من updateProduct كما كان (البطاقةُ والمراجعة)",
     st.includes("canSuggest={!photoMode}") && /const priceViaStore = baseRole === "photographer";/.test(bd)
-    && /if \(priceViaStore\) await repo\.setStorePrice\(row\.id, v, row\.sell_price \?\? null\);\s*\n\s*else await repo\.updateProduct\(row\.id, \{ sell_price: v \}, \{ sell_price: row\.sell_price \?\? 0 \}\);/.test(sh)
-    && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, v, p\.sell_price \?\? null\);\s*\n\s*else await repo\.updateProduct\(p\.id, \{ sell_price: v \}, \{ sell_price: p\.sell_price \?\? 0 \}\);/.test(prv));
+    && /if \(priceViaStore\) \{\s*\n\s*await repo\.setStorePrice\(row\.id, v, row\.sell_price \?\? null\);\s*\n\s*onPatch\(row\.id, \{ sell_price: v \}\);\s*\n\s*\} else \{[\s\S]{0,200}pricePatchFrom\(await repo\.updateProduct\(row\.id, \{ sell_price: v \}, \{ sell_price: row\.sell_price \?\? 0 \}\), v\);[\s\S]{0,80}onPatch\(row\.id, patch\);/.test(sh)
+    && /if \(priceViaStore\) \{\s*\n\s*await repo\.setStorePrice\(p\.id, v, p\.sell_price \?\? null\);\s*\n\s*onPatch\(p\.id, \{ sell_price: v \}\);\s*\n\s*\} else \{[\s\S]{0,200}pricePatchFrom\(await repo\.updateProduct\(p\.id, \{ sell_price: v \}, \{ sell_price: p\.sell_price \?\? 0 \}\), v\);[\s\S]{0,80}onPatch\(p\.id, patch\);/.test(prv));
   check("  وحقلُ سعرٍ مُسح ثم تُرك لا يكتب صفراً (Number(\"\") = 0)",
     /if \(!priceDraft\.trim\(\)\) return;\s*\n\s*const v = Math\.round\(Number\(priceDraft\) \* 100\) \/ 100;/.test(sh)
     && /if \(!raw\) return;\s*\n\s*const v = Math\.round\(Number\(raw\) \* 100\) \/ 100;/.test(prv));
@@ -1121,5 +1282,102 @@ console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كل
     /v_cost := v_store and not is_photographer\(\);/.test(m29) && /'below_cost', case when v_cost then/.test(m29));
 }
 
+/* ── لوحةُ المتجر بعد تدقيقٍ عدائيّ: البطاقةُ والمراجعةُ والأقسامُ والإعدادات ───────────────
+ * القواعدُ الصافية (تحت الكلفة، السعرُ المشبوه، معنى الرفض، تجديدُ خبيئة الإذن) تُفحص بالتشغيل
+ * بـscripts/store-price-test.mjs؛ وهنا أنّ الشاشات تمرّ منها فعلاً. */
+console.log("▸ لوحة المتجر — إخفاءٌ يُسأل، سعرٌ يُسأل، رفضٌ يُعيد، وقائمةٌ لا تُقصّ بصمت");
+{
+  const sh = readFileSync("src/components/store/ProductSheet.tsx", "utf8");
+  const prv = readFileSync("src/components/store/PriceReview.tsx", "utf8");
+  const sec = readFileSync("src/components/store/SectionsPanel.tsx", "utf8");
+  const st = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const arS = JSON.parse(readFileSync("src/i18n/ar.json", "utf8")).sb;
+  const enS = JSON.parse(readFileSync("src/i18n/en.json", "utf8")).sb;
+
+  // ع٥/ع٣٥: منشورٌ ناقصٌ إذا انخفى ما يرجع إلا لمن يكمل (النشرُ بشروطه والإخفاءُ بلا شرط).
+  check("ع٥: «اخفِ من المتجر» لمنشورٍ ناقص يُسأل بالسطر أوّلاً (لا نافذةَ متصفّح)",
+    /const risky = hideRisk\(row, today\);\s*\n\s*const togglePublish = \(sure = false\) => \{\s*\n\s*if \(risky && !sure\) \{ playWarning\(\); setConfirmHide\(true\); return; \}/.test(sh)
+    && sh.includes("data-hide-confirm") && /onClick=\{\(\) => void togglePublish\(true\)\}/.test(sh) && !/window\.confirm/.test(sh));
+  check("  ويقول ما ينقصه وأنّه ما يرجع إلا لمن يكمل", /t\("sb\.hideAsk", [^)]*\{ name: row\.name, what: missingText \}\)/.test(sh)
+    && /ما يرجع/.test(arS.hideAsk) && /comes back/.test(enS.hideAsk));
+
+  // ع٧/ع٣٧: العلامةُ و«آخر تغيير» يتبعان الحفظ.
+  check("ع٧: «تحت الكلفة» من الصفّ الراجع بالبطاقة والمراجعة (pricePatchFrom)",
+    /pricePatchFrom\(await repo\.updateProduct\(row\.id/.test(sh) && /pricePatchFrom\(await repo\.updateProduct\(p\.id/.test(prv));
+  check("  و«آخر تغيير» بالبطاقة يتبع ما حُفظ للتوّ، والخريطةُ تُجدَّد",
+    /setJustSaved\(\{ line: \{ product_id: row\.id, changed_at: new Date\(\)\.toISOString\(\), old_price: was, new_price: saved/.test(sh)
+    && /if \(loadPrices\) void loadPrices\(\)/.test(sh) && /const lastChange = justSaved\?\.line \?\? price;/.test(sh));
+
+  // ع٩: price_moved يعيد القراءة ويقول السعرَ الجديد.
+  check("ع٩: رفضٌ يقول «الصفُّ قديم» يعيد قراءةَ اللوحة (البطاقة والمراجعة)",
+    /if \(stale\) onStale\(\);/.test(sh) && /if \(stale\) onStale\(\);/.test(prv) && /onStale: \(\) => void;/.test(sh) && /onStale: \(\) => void;/.test(prv));
+  check("  والسعرُ الجديد يُقال حين يصل (sb.movedTo)", /setMovedFrom\(\{ was: row\.sell_price \?\? null \}\)/.test(sh) && /t\("sb\.movedTo"/.test(sh)
+    && /setMoved\(\{ id: p\.id, was: p\.sell_price \?\? null \}\)/.test(prv) && /t\("sb\.movedTo"/.test(prv));
+
+  // ع٨ (جانبُ المال): رمزٌ ممسوحٌ بحقل السعر ثمّ Enter لا يصير سعرَ الكاشير.
+  check("ع٨: السعرُ المشبوه يُسأل قبل الكتابة بالبطاقة، وEnter وحده لا يؤكّده",
+    /const doubt = priceDoubt\(priceDraft, v, row\.sell_price\);\s*\n\s*if \(doubt && !\(sure && priceAsk\?\.v === v\)\) \{ playWarning\(\); setPriceAsk\(\{ v, doubt \}\); return; \}/.test(sh)
+    && /onKeyDown=\{\(e\) => \{ if \(e\.key === "Enter"\) void savePrice\(\); \}\}/.test(sh) && /onClick=\{\(\) => void savePrice\(true\)\}/.test(sh));
+  check("  وبالمراجعة (الحقلُ autoFocus): السؤالُ قبل write، والتأكيدُ بزرّ",
+    /const doubt = priceDoubt\(raw, v, p\.sell_price\);\s*\n\s*if \(doubt\) \{ playWarning\(\); setAsk\(\{ id: p\.id, v, doubt \}\); return; \}\s*\n\s*await write\(p, v\);/.test(prv)
+    && /onClick=\{\(\) => void write\(p, ask\.v\)\}/.test(prv)
+    // والحقلُ يحفظ بـEnter **وبالخروج منه** — المساران يمرّان من save (فيها السؤال) لا من write مباشرةً.
+    && /onBlur=\{\(\) => void save\(p\)\} onKeyDown=\{\(e\) => \{ if \(e\.key === "Enter"\) void save\(p\);/.test(prv)
+    && (prv.match(/void write\(/g) ?? []).length === 1);
+
+  // ع١٣/ع٤١: المنتقي لا يقصّ بصمت، وفشلُ النشر بعد نقلٍ ثبت يُقال وحده.
+  check("ع١٣: «أضف منتجات» لا يقصّ بصمت — العددُ يُقال والباقي يُفتح",
+    !/\.slice\(0, 200\)/.test(sec) && sec.includes("data-pick-capped") && sec.includes("data-pick-more") && /t\("sb\.sec\.shownOf"/.test(sec)
+    && /setLimit\(\(n\) => n \+ PICK_PAGE\)/.test(sec));
+  check("  ونقلٌ ثبت ثمّ نشرٌ فشل: يُقال النشرُ وحده، والشاشةُ تُعاد قراءتُها",
+    /moved = true;[\s\S]{0,700}catch \(e\) \{\s*\n\s*playWarning\(\);\s*\n\s*toast\.error\(t\("sb\.sec\.pubAfterMove"[\s\S]{0,300}await onDone\(\);/.test(sec)
+    && /if \(moved\) await onDone\(\);/.test(sec));
+
+  // ترتيبُ «بلا قسم» (0229 بعد التدقيق): الخادمُ يقبل store_section_id IS NULL وحده.
+  check("ترتيبُ «بلا قسم» يرسل ما بلا قسمٍ أصلاً وحده (المربوطُ بمؤرشفٍ يُعرض بلا أسهم)",
+    /const inSection = \(id: string \| null\) => rows\.filter\(\(p\) => \(id \? p\.store_section_id === id : p\.store_section_id == null && p\.store_visible\)\)/.test(sec)
+    && /const ids = moveInOrder\(inSection\(sec\)\.map/.test(sec)
+    && /parked\.map\(\(p\) => \(\s*\n\s*<ProductLine key=\{p\.id\} p=\{p\} busy=\{busy === `p:\$\{p\.id\}`\} first last onOpen=\{\(\) => onOpen\(p\.id\)\}\s*\n\s*note=/.test(sec)
+    && /\{onUp && onDown && onTop && \(/.test(sec));
+
+  // ع٣٠: الواتساب والرابط والتشغيل للمدير وحده (قرار المالك ٥) — بالدور الفعليّ وعلى جهازٍ غير مقفول.
+  check("ع٣٠: إعداداتُ المالك (واتساب، رابط، تشغيل) للمدير الفعليّ على جهازٍ غير مقفول",
+    /const ownerFields = role === "manager" && !restricted;/.test(st)
+    && /disabled=\{saving \|\| !ownerFields \|\| /.test(st) && (st.match(/readOnly=\{!ownerFields\}/g) ?? []).length === 2
+    && /t\("sb\.set\.managerOnly"/.test(st));
+  check("  وغيرُ المدير يحفظ الأجرةَ والنبذة بقيم القاعدة الطازجة للحقول الثلاثة",
+    /const keep = ownerFields \? null : await repo\.getStoreProfile\(\);/.test(st)
+    && /slug: keep \? keep\.slug : s,/.test(st) && /enabled: keep \? keep\.enabled : nextEnabled \?\? enabled,/.test(st)
+    && /whatsapp: keep \? keep\.whatsapp \?\? null : whatsapp\.trim\(\) \|\| null,/.test(st));
+
+  // ع٣١: جهازٌ مقفولٌ أو مصوّر — لا «تحت الكلفة» بأيّ شكل.
+  check("ع٣١: hideCost يُطفئ «تحت الكلفة» بالبطاقة", /\{!hideCost && row\.below_cost && \(/.test(sh) && /hideCost: boolean;/.test(sh));
+  check("  وبالمراجعة: لا شارة ولا إطار ولا عدّاد ولا تصفية ولا ترتيب",
+    /const low = \(p: PhotoProduct\) => !hideCost && !!p\.below_cost;/.test(prv)
+    && (prv.match(/\.below_cost/g) ?? []).length === 1
+    && /const fx: F = hideCost && f === "belowCost" \? "all" : f;/.test(prv)
+    && /\.\.\.\(!hideCost && \(counts\.belowCost > 0/.test(prv));
+
+  // ع٣٢: by_name = null (المصوّر) يُرسم بلا اسم — لا «· null».
+  check("ع٣٢: «آخر تغيير» بلا اسمٍ يُرسم بلا اسم (البطاقة والمراجعة)",
+    /by: lastChange\.by_name \? ` · \$\{lastChange\.by_name\}` : "",/.test(sh) && /by: r\.by_name \? ` · \$\{r\.by_name\}` : "",/.test(prv));
+
+  // ع٣٣: رفضُ not_authorized يجدّد خبيئةَ الإذن (staff.ts) بكلّ شاشات المتجر.
+  check("ع٣٣: not_authorized ⇒ refreshMyPermissions (البطاقة، المراجعة، الأقسام، الإعدادات)",
+    [sh, prv, sec, st].every((f) => /if \(refusedByRole\(e\)\) void refreshMyPermissions\(user\?\.email\);/.test(f)));
+
+  // ع٤٠: نصُّ الناقص يُقرأ صحيحاً داخل «ناقصه: …» و«ما ينتشر قبل يكمل: …».
+  check("ع٤٠: «ناقصه: صلاحية سارية» لا «صلاحية منتهية»", arS.miss.expired === "صلاحية سارية" && enS.miss.expired === "an unexpired date");
+  check("  و«بالمخزون» = in inventory لا in stock (العدُّ يشمل النافد)", /in inventory/.test(enS.progressAll) && !/in stock/.test(enS.progressAll));
+
+  // ع٤٥: Dialog يحشو px-6 pb-6 بنفسه — لا حشوَ ثانٍ.
+  check("ع٤٥: البطاقةُ ومنتقي الأقسام بلا حشوٍ مكرّر داخل Dialog", !/px-6 pb-6/.test(sh) && !/px-6 pb-6/.test(sec));
+}
+
+{
+  // ع٣٣: الشاشاتُ المركَّبة تسمع تحديثَ الصلاحيات بعد رفضٍ من الخادم — بلا الاشتراك تبقى أزرارٌ فُقد إذنُها.
+  const up = readFileSync("src/hooks/usePermissions.ts", "utf8");
+  check("ع٣٣: usePermissions يشترك بتحديث ذاكرة الصلاحيات", /subscribeMyPermissions\(\s*\(\)\s*=>\s*setOverrides\(peekMyPermissions\(/.test(up));
+}
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

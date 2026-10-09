@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { X, ZoomIn, ZoomOut, RotateCw, Maximize2 } from "lucide-react";
 import { isTopModal, pushModal, removeModal } from "@/lib/modalStack";
+import { lockBodyScroll } from "@/components/ui/Dialog";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
@@ -27,7 +28,16 @@ export function ImageLightbox({ src, caption, onClose, details }: { src: string;
    * zoom keeps the midpoint between the fingers fixed, exactly like `zoomAt`. */
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ d: number; s: number } | null>(null);
+  /* مَن يقرّر «هذه نقرةُ إغلاق»؟ (0229 بعد تدقيق) كان `stopPropagation` على الصورة — وهو
+   * يفترض أن هدفَ النقرة هو ما نُقر عليه. لكنّ التقاطَ المؤشّر على المسرح (لازمٌ للقرص)
+   * يجعل هدفَ النقرة الملتقِطَ نفسَه، فصارت كلُّ نقرةٍ على الصورة «نقرةً على الخلفية»:
+   * تُغلق العارض، ونقرتُه المزدوجةُ لا تصل، وإفلاتُ السحب بعد التكبير يُغلقه — بالحاسوب
+   * وبعارض الملفّ الطبّيّ معاً. فالقرارُ الآن بالإيماءة لا بهدف النقرة: بدأت على الخلفية،
+   * بمؤشّرٍ واحد وزرٍّ أيسر، ولم تتحرّك ⇒ إغلاق. وغيرُ ذلك (صورة، سحب، قرص) لا يُغلق أبداً. */
+  const gesture = useRef<{ x: number; y: number; onImg: boolean; moved: boolean; multi: boolean } | null>(null);
+  const tapClose = useRef(false);
   const stage = useRef<HTMLDivElement>(null);
+  const imgEl = useRef<HTMLImageElement>(null);
   const closeBtn = useRef<HTMLButtonElement>(null);
 
   const set = (patch: Partial<typeof view.current>) => {
@@ -61,8 +71,8 @@ export function ImageLightbox({ src, caption, onClose, details }: { src: string;
   const modalId = useId();
   // Scroll-lock, keyboard shortcuts, non-passive wheel zoom, and focus the close button.
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // القفلُ بعدّادٍ مشترك مع Dialog: يُفكّ حين تُغلق آخرُ نافذة، لا حين تُغلق هذه.
+    const unlock = lockBodyScroll();
     pushModal(modalId);
     closeBtn.current?.focus();
 
@@ -84,7 +94,7 @@ export function ImageLightbox({ src, caption, onClose, details }: { src: string;
     el?.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
-      document.body.style.overflow = prevOverflow;
+      unlock();
       removeModal(modalId);
       window.removeEventListener("keydown", onKey);
       el?.removeEventListener("wheel", onWheel);
@@ -96,19 +106,32 @@ export function ImageLightbox({ src, caption, onClose, details }: { src: string;
     const [a, b] = [...pointers.current.values()];
     return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
   };
+  const capture = (e: React.PointerEvent) => {
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
   const onPointerDown = (e: React.PointerEvent) => {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (pointers.current.size === 1) {
+      gesture.current = { x: e.clientX, y: e.clientY, onImg: e.target === imgEl.current, moved: false, multi: false };
+      tapClose.current = false;
+    } else if (gesture.current) gesture.current.multi = true;
+    // الالتقاطُ حين يبدأ سحبٌ أو قرصٌ فعلاً — لا مع كلّ ضغطة (اللمسُ ملتقَطٌ ضمناً أصلاً).
     if (pointers.current.size === 2) {
       drag.current = null;
       pinch.current = { d: spread().d, s: view.current.scale };
+      capture(e);
       return;
     }
     if (view.current.scale === 1) return;
     drag.current = { x: e.clientX, y: e.clientY, ox: view.current.x, oy: view.current.y };
+    capture(e);
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesture.current;
+    // رجفةُ الإصبع ليست سحباً: عتبةٌ أوسعُ للّمس من الفأرة.
+    if (g && !g.moved && Math.hypot(e.clientX - g.x, e.clientY - g.y) > (e.pointerType === "mouse" ? 5 : 10)) g.moved = true;
     if (pinch.current && pointers.current.size === 2) {
       const { d, cx, cy } = spread();
       const target = clamp(pinch.current.s * (d / pinch.current.d));
@@ -119,12 +142,24 @@ export function ImageLightbox({ src, caption, onClose, details }: { src: string;
     set({ x: drag.current.ox + (e.clientX - drag.current.x), y: drag.current.oy + (e.clientY - drag.current.y) });
   };
   const onPointerUp = (e: React.PointerEvent) => {
-    pointers.current.delete(e.pointerId);
+    const was = pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
     drag.current = null;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (was && pointers.current.size === 0) {
+      const g = gesture.current;
+      tapClose.current = !!g && e.type === "pointerup" && e.button === 0 && !g.onImg && !g.moved && !g.multi;
+    }
+  };
+  /** النقرةُ التي تلي الإيماءة: تُغلق إن كانت الإيماءةُ دوسةً على الخلفية وحدَها. */
+  const onStageClick = () => {
+    const close = tapClose.current;
+    tapClose.current = false;
+    if (close) onClose();
   };
   const onDoubleClick = (e: React.MouseEvent) => {
+    const g = gesture.current;
+    if (!g || !g.onImg || g.moved || g.multi) return;
     if (view.current.scale > 1) reset();
     else zoomAt(2.5, e.clientX, e.clientY);
   };
@@ -142,17 +177,17 @@ export function ImageLightbox({ src, caption, onClose, details }: { src: string;
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
       className="fixed inset-0 z-[80] bg-black/90 backdrop-blur-sm no-print"
-      onClick={onClose}
+      onClick={(e) => e.stopPropagation()}
     >
-      {/* Image stage — fills the viewport; clicking the empty area closes. */}
+      {/* Image stage — fills the viewport; a plain tap on the empty area closes (see `gesture`). */}
       <div ref={stage} className="absolute inset-0 flex items-center justify-center overflow-hidden select-none touch-none"
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+        onClick={onStageClick} onDoubleClick={onDoubleClick}>
         <img
+          ref={imgEl}
           src={src}
           alt={caption || ""}
           draggable={false}
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={onDoubleClick}
           style={{
             transform: `translate(${x}px, ${y}px) scale(${scale}) rotate(${rot}deg)`,
             transition: drag.current || pinch.current ? "none" : "transform 0.16s ease-out",

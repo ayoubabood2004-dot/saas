@@ -42,12 +42,14 @@ const SHELL = `<!doctype html><html lang="ar" dir="rtl"><head>
 let frontBody = null;       // ما يرجعه store_front (null ⇒ فشلُ الطلب)
 let catalogBody = null;     // وما يرجعه store_catalog
 let catalog2Missing = false; // 0229: خادمٌ بلا store_catalog2 (404) ⇒ الحافةُ ترجع للقديمة
+let catalog2Proxy404 = false; // 404 بلا رمز PostgREST (وكيلٌ/بوّابة) ⇒ لا رجوعَ ولا بذرة
 let withRoot = false;        // قالبٌ فيه #root ⇒ الرفُّ يُرسم فعلاً (لفحص صور الرفّ المرسوم)
 const rpcCalls = [];
 globalThis.fetch = async (input) => {
   const u = String(input?.url ?? input);
   if (u.includes("/rpc/")) rpcCalls.push(u.split("/rpc/")[1]);
   if (u.includes("/rpc/store_catalog2") && catalog2Missing) return new Response(JSON.stringify({ code: "PGRST202" }), { status: 404 });
+  if (u.includes("/rpc/store_catalog2") && catalog2Proxy404) return new Response("<html>Not Found</html>", { status: 404 });
   if (u.endsWith("/store.html")) return new Response(withRoot ? SHELL.replace("<body></body>", '<body><div id="root"></div></body>') : SHELL, { status: 200 });
   if (u.includes("/rpc/store_front")) {
     if (!frontBody) return new Response("nope", { status: 500 });
@@ -142,12 +144,28 @@ console.log("▸ 0229 — البذرةُ من نفس أوّل نداءٍ للو�
   withRoot = false;
   check("الحافةُ تنادي store_catalog2 (نفسُ ترتيب الواجهة — لا رفٌّ يُعاد ترتيبُه أمام الزبون)", rpcCalls.includes("store_catalog2") && !rpcCalls.includes("store_catalog"), rpcCalls.join(","));
   const painted = h1.slice(h1.indexOf('<div id="root">'));
-  check("  والرفُّ المرسوم بالمصغّر حين وُجد، والكاملةُ احتياطُه", /src="[^"]*product-images\/c1\/a\.thumb\.jpg"/.test(painted) && /onerror="this\.onerror=null;this\.src='[^']*c1\/a\.jpg'"/.test(painted));
+  check("  والرفُّ المرسوم بالمصغّر حين وُجد، والكاملةُ احتياطُه", /src="[^"]*product-images\/c1\/a\.thumb\.jpg"/.test(painted) && /data-full="[^"]*product-images\/c1\/a\.jpg" onerror="this\.onerror=null;this\.src=this\.dataset\.full"/.test(painted));
   check("  وبلا مصغّر: الصورةُ كاملة بلا onerror", /src="[^"]*product-images\/c1\/b\.jpg" alt="" width="400" height="400" class="[^"]*" \/>/.test(painted));
+  /* مسارٌ عدائيّ: «'» كانت تُنهي سلسلةَ JS داخل onerror (والكيانُ يُفكّ قبل قراءة الشِفرة فلا
+   * يُنقذ)، و«"» تُنهي السمة. الحكمُ على كلّ معالجٍ مرسوم: نصُّه الثابتُ وحده، بلا حرفٍ من البيان. */
+  withRoot = true;
+  const evil = "c1/x');alert(1);('\"><svg onload=alert(2)>.jpg";
+  const h3 = await render(FRONT, "sections", [ROW("e", { image_path: evil, thumb_path: "c1/x.thumb.jpg" })]);
+  withRoot = false;
+  const shelf3 = h3.slice(h3.indexOf('<div id="root">'));
+  const handlers = [...shelf3.matchAll(/\son[a-z]+="([^"]*)"/g)].map((m) => m[1]);
+  check("  ومسارٌ فيه «'» و«\"» لا يصير شِفرة: كلُّ معالجٍ مرسوم نصُّه الثابتُ وحده",
+    handlers.length === 1 && handlers[0] === "this.onerror=null;this.src=this.dataset.full" && !/<svg/i.test(shelf3), JSON.stringify(handlers));
+  check("  والمسارُ نفسُه مهرَّبٌ بالسمة لا مقطوع", shelf3.includes("x&#39;);alert(1);(&#39;&quot;&gt;&lt;svg") || shelf3.includes("x');alert(1);('&quot;&gt;&lt;svg"));
   rpcCalls.length = 0; catalog2Missing = true;
   const h2 = await render(FRONT, "sections", [ROW("c")]);
   check("  وخادمٌ قبل 0229 (404) ⇒ القديمةُ بنفس الصفحة، والرفُّ مرسوم", rpcCalls.join(",") === "store_front,store_catalog2,store_catalog" && h2.includes("c1/c.jpg"), rpcCalls.join(","));
   catalog2Missing = false;
+  rpcCalls.length = 0; catalog2Proxy404 = true;
+  const h4 = await render(FRONT, "sections", [ROW("d")]);
+  check("  و404 بلا رمز PostgREST (وكيل) ليس خادماً قديماً: لا رجوعَ للقديمة ولا بذرةَ بلا أقسام",
+    rpcCalls.join(",") === "store_front,store_catalog2" && !h4.includes("store-boot"), rpcCalls.join(","));
+  catalog2Proxy404 = false;
 }
 
 console.log(fails ? `\n✗ og-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ og-test: ${passes} نجحت، 0 فشلت`);

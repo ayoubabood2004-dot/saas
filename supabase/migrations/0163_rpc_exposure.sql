@@ -68,8 +68,8 @@ begin
          -- كلّ إعادةِ تنزيلٍ لهذه الهجرة — والحزمةُ تعيدها بعد المنح الشامل،
          -- فالحالةُ النهائية للفحص هي المكسورة.
          'store_catalog', 'store_front', 'store_place_order', 'store_order_track',
-         -- 0229: كتلوجُ الزبون بأقسامه — عامّةٌ كأختها store_catalog.
-         'store_catalog2',
+         -- 0229: كتلوجُ الزبون بأقسامه، ومنتجاتُه بمعرّفاتها (سطورُ السلّة) — عامّتان كأختهما.
+         'store_catalog2', 'store_catalog_ids',
          'clinic_directory', 'clinic_staff_public', 'doctor_busy_slots',
          'track_journey', 'react_journey', 'ingest_device_message')
        and has_function_privilege('anon', p.oid, 'execute')

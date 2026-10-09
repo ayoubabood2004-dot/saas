@@ -16,7 +16,7 @@ import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PriceReviewRow, StorePublishResult, StoreSection, StoreSectionPublic } from "@/types";
-import type { ImageMeta } from "./productPhoto";
+import { metaPathFor, thumbOf, type ImageMeta } from "./productPhoto";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { cleanRef } from "./deliverySearch";
@@ -361,6 +361,13 @@ function demoPublicSections(db: DemoDB): StoreSectionPublic[] {
   return (db.storeSections ?? []).filter((s) => !s.archived_at && n.has(s.id))
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     .map((s) => ({ id: s.id, name: s.name, n: n.get(s.id)! }));
+}
+/** مرآةُ `others` بـstore_front (0229): المعروضُ بلا قسمٍ فعّال — بنفس شروط العرض. */
+function demoPublicOthers(db: DemoDB): number {
+  const live = new Set((db.storeSections ?? []).filter((s) => !s.archived_at).map((s) => s.id));
+  // نفسُ شروط كتلوج الزبون حرفاً (لا شرطَ حقول: الخادمُ والكتلوجُ لا يستثنيانها) — فالمجموعُ يطابق.
+  return (db.products ?? []).filter((p) => p.store_visible && (p.sell_price ?? 0) > 0 && !isExpiredOn(p.expiry_date)
+    && !(p.store_section_id && live.has(p.store_section_id))).length;
 }
 function demoHint(code: string, hint: string): Error {
   return Object.assign(new Error(code), { code: "P0001", hint });
@@ -1909,11 +1916,16 @@ const demoRepo = {
     // ما دام المسارُ ملفّاً.
     const inline = (s: string | null | undefined) => (s && s.startsWith("data:") ? "data:" : s ?? null);
     const thumbOk = !m?.thumb || (v?.startsWith("data:") ? m.thumb.startsWith("data:") : m.thumb === `${v!.replace(/\.[A-Za-z0-9]+$/, "")}.thumb.jpg`);
-    if (m && (m.path !== v || !thumbOk || !["camera", "album", "library"].includes(m.src) || ![m.w, m.h, m.bytes].every((x) => typeof x === "number")
+    // والوصفُ يصف هذه الصورة: بمسارها حرفاً، أو (مضمَّنةً) ببصمتها — كما يُخزَّن تحت.
+    const samePath = !!m && !!v && (m.path === v || m.path === metaPathFor(v));
+    if (m && (!samePath || !thumbOk || !["camera", "album", "library"].includes(m.src) || ![m.w, m.h, m.bytes].every((x) => typeof x === "number")
       || new TextEncoder().encode(JSON.stringify({ ...m, path: inline(m.path), thumb: inline(m.thumb) })).length > 1024)) {
       throw demoHint("bad_image_meta", "وصف الصورة مو مطابق لها — صوّرها من جديد.");
     }
-    demoProductPatch(productId, { image_path: v, image_meta: m });
+    /* المضمَّنةُ تُخزَّن مرّةً واحدة (بـimage_path) والوصفُ يحمل بصمتَها: نسختُها الثانية بـ
+     * `image_meta.path` كانت تضاعف كلَّ صورةٍ فيمتلئ تخزينُ المتصفّح بعد أربعِ صورٍ أو ستّ.
+     * والقراءةُ تمرّ من `metaOf`/`thumbOf` فتطابق البصمةَ بنفس قاعدة «يصف هذه الصورة». */
+    demoProductPatch(productId, { image_path: v, image_meta: m && v ? { ...m, path: metaPathFor(v) } : null });
   },
   async setStoreFeatured(productId: string, on: boolean): Promise<void> {
     demoProductPatch(productId, { store_featured: !!on });
@@ -2437,7 +2449,8 @@ const demoRepo = {
     const db = loadDB();
     const live = new Set((db.storeSections ?? []).filter((s) => !s.archived_at).map((s) => s.id));
     if (sectionId && !live.has(sectionId)) throw demoHint("section_not_found", "القسم ما موجود أو مؤرشف — حدّث الصفحة.");
-    const inSec = (p: Product) => (sectionId ? p.store_section_id === sectionId : !(p.store_section_id && live.has(p.store_section_id)));
+    // «بلا قسم» = بلا قسمٍ أصلاً (مرآةُ 0229): منتجُ القسم المؤرشف ترتيبُه ترتيبُ قسمه، لا يُرقَّم هنا.
+    const inSec = (p: Product) => (sectionId ? p.store_section_id === sectionId : !p.store_section_id);
     const prods = (db.products ?? []).filter((p) => !p.farm_id);
     if (new Set(ids).size !== ids.length || !ids.every((x) => prods.some((p) => p.id === x && inSec(p)))) {
       throw demoHint("order_stale", "محتوى القسم تغيّر من جهاز ثاني — حدّث الصفحة وأعد الترتيب.");
@@ -2454,19 +2467,19 @@ const demoRepo = {
   },
   /** مرآةُ `store_publish` (0229): صورة + سعرٌ موجب + غيرُ منتهٍ، والمتخطّى بأوّل سببٍ ناقص. */
   async storePublish(ids: string[], on: boolean): Promise<StorePublishResult> {
-    const r: StorePublishResult = { changed: 0, skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
+    const r: StorePublishResult = { changed: 0, ids: [], skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
     if (!ids.length) return r;
     if (ids.length > 2000) throw demoHint("too_many", "انشر ٢٠٠٠ منتجٍ بالمرّة كحدٍّ أقصى.");
     const db = loadDB();
     const want = new Set(ids);
     for (const p of db.products ?? []) {
       if (!want.has(p.id) || p.farm_id) continue;
-      if (!on) { if (p.store_visible) { p.store_visible = false; r.changed++; } continue; }
+      if (!on) { if (p.store_visible) { p.store_visible = false; r.changed++; r.ids.push(p.id); } continue; }
       if (p.store_visible) continue;
       if (!(p.image_path ?? "").trim()) { r.skipped_no_photo++; continue; }
       if ((p.sell_price ?? 0) <= 0) { r.skipped_no_price++; continue; }
       if (isExpiredOn(p.expiry_date)) { r.skipped_expired++; continue; }
-      p.store_visible = true; r.changed++;
+      p.store_visible = true; r.changed++; r.ids.push(p.id);
     }
     saveDB(db);
     return r;
@@ -2702,7 +2715,20 @@ const demoRepo = {
       delivery_fee: sp.delivery_fee,
       min_order: sp.min_order,
       sections: demoPublicSections(db),
+      others: demoPublicOthers(db),
     };
+  },
+  /** مرآةُ store_catalog_ids (0229): نفسُ صفوف الكتلوج وشروطه، لمعرّفاتٍ بعينها (سقفُ ٢٠٠). */
+  async storeCatalogByIds(slug: string, ids: string[]): Promise<StoreCatalogItem[] | null> {
+    if (!ids.length) return [];
+    const want = new Set(ids.slice(0, 200));
+    const out: StoreCatalogItem[] = [];
+    // صفحاتُ الكتلوج كلُّها (سقفُها ١٠٠ كالخادم) — نفسُ الصفوف بنفس الشروط، لا نسخةٌ ثانية منها.
+    for (let off = 0; ; off += 100) {
+      const page = await demoRepo.storeCatalogPublic(slug, 100, off);
+      out.push(...page.filter((r) => want.has(r.id)));
+      if (page.length < 100) return out;
+    }
   },
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
     const db = loadDB();
@@ -2734,7 +2760,7 @@ const demoRepo = {
         image_path: p.image_path ?? null,
         featured: !!p.store_featured,
         section_id: secOf(p),
-        thumb_path: p.image_meta && p.image_meta.path === p.image_path ? p.image_meta.thumb ?? null : null,
+        thumb_path: thumbOf(p.image_path, p.image_meta),
       }));
   },
   /** تتبّع الزبون (0176): الرقم والهاتف معاً — الرقم وحده قصيرٌ فيُعَدّ تخميناً. */

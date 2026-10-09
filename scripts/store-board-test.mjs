@@ -23,7 +23,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 const built = await esbuild.build({
   stdin: {
-    contents: 'export * from "./src/lib/storeBoard"; export * from "./src/lib/productPhoto";',
+    contents: 'export * from "./src/lib/storeBoard"; export * from "./src/lib/productPhoto"; export { rejectedBeforeCommit } from "./src/lib/errors";',
     resolveDir: process.cwd(), loader: "ts",
   },
   bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent",
@@ -90,10 +90,81 @@ console.log("▸ البحثُ والمسح — التطبيعُ على الطر�
   check("والأرقامُ الشرقية تلقى اللاتينية (٢٤٧)", M.matchesQuery(p, "٢٤٧"));
   check("والرمزُ الإضافيّ", M.matchesQuery(p, "rf-12") === false && M.matchesQuery(p, "RF-12"));
   check("وسؤالٌ فارغ يطابق الكلّ", M.matchesQuery(p, "   "));
-  const rows = [P({ id: "a", barcode: "6281000247" }), P({ id: "b", barcode: "111", alt_codes: ["‎8989"] }), P({ id: "c", barcode: "555" }), P({ id: "d", barcode: "555" })];
-  check("المسحُ يطابق تماماً لا جزئياً", M.findByScan(rows, "6281000247")?.id === "a" && M.findByScan(rows, "628100024") === null);
-  check("وعلامةُ الاتجاه الخفية بالرمز المحفوظ لا تُفشل المسح", M.findByScan(rows, "8989")?.id === "b");
-  check("ورمزٌ لمنتجين (توأمان) لا يفتح أحدَهما اعتباطاً", M.findByScan(rows, "555") === null);
+  const rows = [P({ id: "a", barcode: "6281000247" }), P({ id: "b", barcode: "111", alt_codes: ["‎8989"] }), P({ id: "c", barcode: "555" }), P({ id: "d", barcode: "555" }), P({ id: "e", barcode: "777" }), P({ id: "f", barcode: "900", alt_codes: ["777"] })];
+  const one = (r) => (r.kind === "one" ? r.row.id : r.kind);
+  check("المسحُ يطابق تماماً لا جزئياً", one(M.findByScan(rows, "6281000247")) === "a" && M.findByScan(rows, "628100024").kind === "none");
+  check("وعلامةُ الاتجاه الخفية بالرمز المحفوظ لا تُفشل المسح", one(M.findByScan(rows, "8989")) === "b");
+  // «ماكو منتج» عن مادّةٍ بالرفّ أعاد عيادةً لإدخالها مرّتين — التوأمان يُقالان بعددهما لا «مو بالمخزون».
+  const twins = M.findByScan(rows, "555");
+  check("ورمزٌ لمنتجين (توأمان) لا يفتح أحدَهما اعتباطاً — ولا يُقال «لا منتج»",
+    twins.kind === "many" && eq(twins.rows.map((p) => p.id), ["c", "d"]), JSON.stringify(twins));
+  const alt = M.findByScan(rows, "777");
+  check("  ورمزٌ إضافيّ يصادم رمزَ منتجٍ آخر = أكثرُ من منتج", alt.kind === "many" && alt.rows.length === 2);
+  check("  والتوأمان يظهران معاً حين يُكتب رمزُهما بالبحث (ما تفعله اللوحة)", rows.filter((p) => M.matchesQuery(p, "555")).length === 2);
+  check("ورمزٌ فارغٌ أو مجهولٌ = لا منتج", M.findByScan(rows, "  ").kind === "none" && M.findByScan(rows, "123456").kind === "none");
+}
+
+console.log("▸ الماسحُ اليدويّ لا يفتح البطاقةَ فوق نافذة ولا من حقلِ كتابة");
+{
+  check("بلا نافذةٍ ولا تركيز ⇒ يفتح", !M.scanBlocked(0, null));
+  check("وبحثُ اللوحة مقصودٌ للمسح ⇒ يفتح", !M.scanBlocked(0, { tag: "INPUT", type: null, boardSearch: true }));
+  check("نافذةٌ مفتوحة (منتقي القسم، الاستوديو، المكتبة) ⇒ لا — ولو التركيزُ ببحثها",
+    M.scanBlocked(1, null) && M.scanBlocked(1, { tag: "INPUT", boardSearch: false }) && M.scanBlocked(2, { tag: "BUTTON" }));
+  check("حقلُ سعرٍ بمراجعة الأسعار (number) ⇒ لا", M.scanBlocked(0, { tag: "INPUT", type: "number" }));
+  check("  ونصٌّ بلا type، وtextarea، وcontenteditable ⇒ لا",
+    M.scanBlocked(0, { tag: "INPUT", type: null }) && M.scanBlocked(0, { tag: "textarea" }) && M.scanBlocked(0, { tag: "DIV", editable: true }));
+  check("  أما زرٌّ أو مربّعُ اختيارٍ أو قائمةُ ترتيب بالتركيز ⇒ يفتح (ليست حقلَ كتابة)",
+    !M.scanBlocked(0, { tag: "BUTTON" }) && !M.scanBlocked(0, { tag: "INPUT", type: "checkbox" }) && !M.scanBlocked(0, { tag: "SELECT" }));
+}
+
+console.log("▸ الإخفاءُ الذي لا يرجع يُسأل عنه، والمكتملُ بضغطة");
+{
+  const shown = P({ id: "ok", store_visible: true });
+  const noPhoto = P({ id: "np", store_visible: true, image_path: null });
+  const noPrice = P({ id: "nr", store_visible: true, sell_price: 0 });
+  const both = P({ id: "nb", store_visible: true, image_path: null, sell_price: 0 });
+  const old = P({ id: "ex", store_visible: true, expiry_date: "2026-01-01" });
+  const hidden = P({ id: "hd", image_path: null });
+  check("منشورٌ مكتمل ⇒ يُخفى بضغطة", !M.hideRisk(shown, TODAY));
+  check("منشورٌ بلا صورة / بلا سعر / منتهٍ ⇒ يُسأل (store_publish لا يرجعه)",
+    M.hideRisk(noPhoto, TODAY) && M.hideRisk(noPrice, TODAY) && M.hideRisk(old, TODAY));
+  check("ومخفيٌّ أصلاً لا يُسأل عنه (لا شيء يضيع)", !M.hideRisk(hidden, TODAY));
+  const sum = M.hideRiskSummary([shown, noPhoto, noPrice, both, old, hidden], TODAY);
+  check("الملخّصُ بأوّل سببٍ ناقص — نفسُ عدّ store_publish للمتخطّى (بلا صورة وبلا سعر = «بلا صورة»)",
+    eq(sum, { risky: 4, photo: 2, price: 1, expired: 1 }), JSON.stringify(sum));
+}
+
+console.log("▸ الاختيار: العضويةُ بالمعرّف والفعلُ على الظاهر");
+{
+  const A = [{ id: "a1" }, { id: "a2" }, { id: "a3" }];
+  const B = [{ id: "b1" }, { id: "b2" }, { id: "b3" }];
+  const pickedA = new Set(["a1", "a2", "a3"]);
+  check("ثلاثةٌ مختارةٌ بقسمٍ وثلاثةٌ أخرى ظاهرة ⇒ ليس «الكلُّ مختار» (كان يقارن العددَين)", !M.allPicked(B, pickedA));
+  check("  والفعلُ الجماعيُّ لا يمسّ ما لا تراه الشاشة", M.pickedIn(B, pickedA).length === 0 && M.pickedIn(A, pickedA).length === 3);
+  check("  والكلُّ مختار حين كلُّ ظاهرٍ مختار فعلاً (ولو زاد المختارُ عنه)", M.allPicked(A, new Set([...pickedA, "b1"])));
+  check("  وقائمةٌ فارغة ليست «الكلُّ مختار»", !M.allPicked([], new Set()));
+  check("  والترتيبُ ترتيبُ الشاشة", eq(M.pickedIn(A, new Set(["a3", "a1"])).map((p) => p.id), ["a1", "a3"]));
+}
+
+console.log("▸ «كل المنتجات عدها صور ✓» حكمٌ على المخزن كلّه");
+{
+  check("بلا بحثٍ ولا قسم ⇒ يُقال", M.allPhotosDone("nophoto", "", "all"));
+  check("  وقسمٌ واحدٌ صوره كاملة ⇒ لا يُقال عن المخزن", !M.allPhotosDone("nophoto", "", "s1") && !M.allPhotosDone("nophoto", "", "none"));
+  check("  ولا عن بحث، ولا بتصفيةٍ أخرى", !M.allPhotosDone("nophoto", "x", "all") && !M.allPhotosDone("photo", "", "all"));
+}
+
+console.log("▸ ربطُ الصورة المرفوض يشيل زوجَه — والمجهولُ المصير لا يُلمس");
+{
+  // الأخطاءُ كما تصل: رفضُ store_set_image بـraise (P0001)، وصلاحية، ثمّ انقطاعٌ ومهلةٌ وبوّابةٌ بلا رمز.
+  const refused = [{ code: "P0001", message: "product_not_found" }, { code: "P0001", message: "bad_image_meta" }, { code: "42501", message: "not_authorized" }];
+  const unknown = [
+    { code: "", message: "TypeError: Failed to fetch" },          // supabase-js يغلّف الانقطاعَ برمزٍ فارغ
+    Object.assign(new Error("Request timed out after 8s"), { name: "TimeoutError" }),
+    { message: "<html>504 Gateway Time-out</html>" },              // ردُّ بوّابةٍ بلا رمز: قد يكون ثُبّت
+    { code: "PGRST001", message: "connection lost" },              // انقطاعٌ مع القاعدة قد يقع بعد COMMIT
+  ];
+  check("رفضٌ حاسم (الخادمُ جاوب ولا شيء ثُبّت) ⇒ يُحذف الزوجُ المرفوع", refused.every((e) => M.rejectedBeforeCommit(e)));
+  check("انقطاعٌ/مهلة/بوّابة/PGRST001 ⇒ لا حذف (الربطُ قد يكون ثُبّت والردُّ ضاع)", unknown.every((e) => !M.rejectedBeforeCommit(e)));
 }
 
 console.log("▸ الترتيب");

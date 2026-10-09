@@ -72,7 +72,8 @@ export function CameraScan({ open, onClose, onCode }: { open: boolean; onClose: 
 
   return (
     <Dialog open={open} onClose={onClose} title={t("sb.scan.title", "امسح باركود العلبة")} size="md">
-      <div className="space-y-3 px-6 pb-6">
+      {/* بلا حشوةٍ ثانية — Dialog يحشو `px-6 pb-6` أصلاً، والكاميرا تأخذ العرضَ كلَّه. */}
+      <div className="space-y-3">
         <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-black">
           <video ref={video} playsInline muted className="h-full w-full object-cover" />
           {state === "live" && (

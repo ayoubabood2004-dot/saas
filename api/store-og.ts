@@ -68,7 +68,11 @@ function paintShelf(front: { name?: string }, rows: Row[], supaUrl: string): str
     // المصغّرُ للرفّ (0229) — نفسُ اختيار الواجهة (`listImagePath`)، وفشلُه يرجع للكاملة مرّةً.
     const small = listImagePath(p);
     const url = (x: string) => `${supaUrl}/storage/v1/object/public/product-images/${x}`;
-    const fallback = p.thumb_path && p.image_path ? ` onerror="this.onerror=null;this.src='${esc2(url(p.image_path))}'"` : "";
+    // الاحتياطُ بسمةٍ لا بنصٍّ برمجيّ: المسارُ يُكتب بالسمة (`esc2` تكفي سياقَ السمة)، والمعالجُ
+    // ثابتٌ لا يحمل بياناً. كان المسارُ داخل سلسلة JS بـ'…' و`esc2` لا تهرّب «'» — ولو هرّبتها
+    // كياناً لفكّها المتصفّحُ قبل أن يقرأ الشِفرة. فمسارٌ فيه «'» كان يكسر السلسلةَ ويُجري شِفرةً
+    // على صفحةٍ عامّة من نفس أصل التطبيق.
+    const fallback = p.thumb_path && p.image_path ? ` data-full="${esc2(url(p.image_path))}" onerror="this.onerror=null;this.src=this.dataset.full"` : "";
     const img = small && p.image_path && !p.image_path.startsWith("data:")
       ? `<img src="${esc2(url(small))}" alt="" width="400" height="400" class="absolute inset-0 h-full w-full object-contain p-1.5"${fallback} />`
       : "";
@@ -144,8 +148,14 @@ export default async function handler(req: Request): Promise<Response> {
       rpc("store_front", { p_slug: slug }),
       // نفسُ أوّل نداءٍ للواجهة (0229: store_catalog2 بأقسامه ومصغّراته) — بذرةٌ بترتيبٍ آخر
       // كانت ستُعيد ترتيبَ الرفّ أمام الزبون لحظةَ يصل الجواب. وخادمٌ بلاها ⇒ القديمة.
+      // والرجوعُ على **غياب الدالّة وحده** (PGRST202/42883) كالواجهة: 404 من وكيلٍ أو بوّابة ليس
+      // «خادمٌ قديم» — رجوعُه للقديمة كان يبذر رفّاً بلا أقسامٍ ولا مصغّرات، فلا بذرةَ أصدق.
       rpc("store_catalog2", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 })
-        .then((x) => (x.status === 404 ? rpc("store_catalog", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 }) : x))
+        .then(async (x) => {
+          if (x.status !== 404) return x;
+          const b = (await x.clone().json().catch(() => null)) as { code?: string } | null;
+          return b?.code === "PGRST202" || b?.code === "42883" ? rpc("store_catalog", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 }) : null;
+        })
         .catch(() => null),
     ]);
     if (!r.ok) return asHtml(shell, 60);

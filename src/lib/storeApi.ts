@@ -68,6 +68,7 @@ function shapeFront(d: RawFront | null): StoreFrontInfo | null {
     facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
     delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
     sections: shapeSections((d as { sections?: unknown }).sections),
+    others: Number((d as { others?: unknown }).others) || 0,
   };
 }
 function shapeCatalog(rows: StoreCatalogItem[] | null | undefined): StoreCatalogItem[] {
@@ -107,20 +108,38 @@ export const storeApi = {
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
     if (!CLOUD) return (await demoRepo()).storeCatalogPublic(slug, limit, offset);
     // 0229: الكتلوجُ بأقسامه أوّلاً؛ وخادمٌ بلاها يرجع للقديمة بنفس الصفحة (مرآةُ repo حرفاً).
-    // وما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
+    /* وكلُّ سقوطٍ **بغياب الدالّة وحده** (`missingRpc`) لا بأيّ خطأ: كان أيُّ فشلٍ بالصفحة الأولى
+     * (503 عابر، مهلةُ استعلام، 404 من وكيل) ينزل لتوقيع 0095 بوسيطٍ واحد — فيحلّ على 0212 بسقف
+     * ستّين وترتيبٍ قديم وبلا أقسام: كتلوجٌ مقطوعٌ يُقرأ كاملاً، وسلّةٌ تُشذَّب عليه، وشرائحُ أقسامٍ
+     * لا تطابق شيئاً. الخطأُ العابر يصل الشاشةَ فتقول «أعد المحاولة» وتبقى البذرة. */
     let rows: StoreCatalogItem[];
     try {
-      try {
-        rows = await rpc<StoreCatalogItem[]>("store_catalog2", { p_slug: slug, p_limit: limit, p_offset: offset });
-      } catch (e) {
-        if (!missingRpc(e)) throw e;
-        rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
-      }
+      rows = await rpc<StoreCatalogItem[]>("store_catalog2", { p_slug: slug, p_limit: limit, p_offset: offset });
     } catch (e) {
-      if (offset !== 0) throw e;
-      rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug });
+      if (!missingRpc(e)) throw e;
+      try {
+        rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
+      } catch (e2) {
+        if (!missingRpc(e2)) throw e2;
+        // ما قبل 0096: الدالّةُ بوسيطٍ واحد ترجع الكتلوجَ كلَّه بنداءٍ واحد — فلا صفحةَ بعد الأولى.
+        if (offset !== 0) return [];
+        rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug });
+      }
     }
     return shapeCatalog(rows);
+  },
+
+  /** منتجاتٌ بعينها (0229) — سطورُ السلّة التي لم تصلها الصفحاتُ تُسأل عنها قبل أن تُشال.
+   *  `null` = الخادمُ لا يعرف السؤال (قبل 0229): لا حكمَ، فلا شيلَ بناءً على غياب. */
+  async storeCatalogByIds(slug: string, ids: string[]): Promise<StoreCatalogItem[] | null> {
+    if (!CLOUD) return (await demoRepo()).storeCatalogByIds(slug, ids);
+    if (!ids.length) return [];
+    try {
+      return shapeCatalog(await rpc<StoreCatalogItem[]>("store_catalog_ids", { p_slug: slug, p_ids: ids.slice(0, 200) }));
+    } catch (e) {
+      if (missingRpc(e)) return null;
+      throw e;
+    }
   },
 
   async trackStoreOrder(slug: string, orderNo: string, phone: string): Promise<StoreTrackInfo | null> {

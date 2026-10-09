@@ -259,5 +259,78 @@ check("ومسارٌ محفوظٌ يخرج **رابطاً** لا مساراً —
   String(setDemo.getClinicLogo()));
 check("  والمحفوظُ يبقى المسارَ نفسَه", setDemo.getClinicLogoRef() === `${CLINIC}/logo-y.png`);
 
+console.log("▸ 0229 بعد تدقيق — صورةُ «الدقة القصوى» تُصغَّر لا تُقال «مو صورة»، والرسمُ يُقال بلغة المستخدم");
+{
+  /* الدوالُّ الأصلية بحزمةٍ واحدة: productPhoto (القرار والتحميل والترميز) وerrors (الكلمات). */
+  const built = await esbuild.build({
+    stdin: { contents: 'export * from "./src/lib/productPhoto"; export { describeUploadError } from "./src/lib/errors"; export { FileTooLargeError, ImageEncodeError, TooManyPixelsError } from "./src/lib/image";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", alias: { "@": "./src" },
+  });
+  const dir = mkdtempSync(join(tmpdir(), "images-photo-"));
+  writeFileSync(join(dir, "m.mjs"), built.outputFiles[0].text);
+  const P = await import(pathToFileURL(join(dir, "m.mjs")).href);
+  rmSync(dir, { recursive: true, force: true });
+  const t = (k, d, o) => `${k}${o && o.mb != null ? `:${o.mb}` : ""}`;
+
+  check("حتى ٤٠ ميغابكسل تُرسم كما هي (١٢ ميغا: ٤٠٣٢×٣٠٢٤)", P.sourcePlan(4032, 3024).kind === "direct");
+  const p48 = P.sourcePlan(8064, 6048);
+  check("٤٨ ميغا (آيفون HEIF Max) ⇒ تُصغَّر إلى ضعف ضلع الحفظ بنفس النسبة", p48.kind === "downscale" && p48.w === 3200 && p48.h === 2400, JSON.stringify(p48));
+  check("  و٢٠٠ ميغا (١٦٣٢٠×١٢٢٤٠) ⇒ تُصغَّر كذلك", P.sourcePlan(16320, 12240).kind === "downscale");
+  const bomb = P.sourcePlan(20000, 15000);
+  check("  وفوق ٢١٠ (قنبلةُ فكّ ضغط، لا كاميرا) ⇒ تُرفض بعدد ميغابكسلاتها", bomb.kind === "reject" && bomb.mp === 300, JSON.stringify(bomb));
+  check("  ونسخةُ العمل تُبقي القصَّ المربّعَ ≥ ضلع الحفظ", Math.min(p48.w, p48.h) >= P.FULL_DIM);
+
+  const tooBig = await P.loadPhoto({ size: 26 * 1024 * 1024 }).then(() => null, (e) => e);
+  check("ملفٌّ فوق ٢٥ ميغا يُرمى `FileTooLargeError` (كان Error خامّاً فيُقال «مو صورة»)", tooBig?.name === "FileTooLargeError" && tooBig.maxMb === 25, tooBig?.name);
+  check("  ويُقال «الملف كبير» لا «مو صورة»", P.describeUploadError(tooBig, t) === "errors.fileTooLarge:25");
+  check("  وكثرةُ البكسلات تُقال حجماً كذلك من أيّ شاشةٍ أخرى", P.describeUploadError(new P.TooManyPixelsError(300), t).startsWith("errors.fileTooLarge"));
+  check("فشلُ الرسم «Canvas is not supported» يُقال بلغة المستخدم — لا «اختر JPG» ولا الإنكليزيّ الخامّ",
+    P.describeUploadError(new P.ImageEncodeError("Canvas is not supported in this browser"), t) === "errors.imageEncode");
+  check("  و«Image compression failed» كذلك", P.describeUploadError(new P.ImageEncodeError("Image compression failed"), t) === "errors.imageEncode");
+  check("  وملفٌّ لا يُقرأ صورةً يبقى «اختر صورة»", P.describeUploadError(new Error("The file could not be read as an image"), t) === "errors.notAnImage");
+
+  const fakeImg = { naturalWidth: 1200, naturalHeight: 800, width: 1200, height: 800 };
+  const realCreate = globalThis.document.createElement;
+  globalThis.document.createElement = () => ({ width: 0, height: 0, getContext: () => null });
+  const e1 = await P.encodeProductPhoto(fakeImg, P.NO_EDIT, false).then(() => null, (e) => e);
+  globalThis.document.createElement = () => ({ width: 0, height: 0, getContext: () => { throw new Error("Out of memory"); } });
+  const e2 = await P.encodeProductPhoto(fakeImg, P.NO_EDIT, false).then(() => null, (e) => e);
+  globalThis.document.createElement = realCreate;
+  check("الترميزُ بلا canvas يرمي `ImageEncodeError`", e1?.name === "ImageEncodeError", e1?.name);
+  check("  وأيُّ فشلٍ آخرَ بالترميز (ذاكرة) يُلفّ بها — فلا يصل نصُّ المتصفّح للشاشة", e2?.name === "ImageEncodeError" && P.describeUploadError(e2, t) === "errors.imageEncode", e2?.name);
+
+  /* التجريبيُّ يحفظ الصورةَ مرّةً واحدة: الوصفُ يحمل بصمتَها — والقاعدةُ «يصف هذه الصورة» قائمة. */
+  const inl = "data:image/jpeg;base64," + "Q".repeat(5000) + "x";
+  const other = "data:image/jpeg;base64," + "Q".repeat(5000) + "y";
+  const key = P.inlineKey(inl);
+  check("بصمةُ المضمَّنة قصيرةٌ وثابتة، ولصورةٍ أخرى بنفس الطول بصمةٌ أخرى", key.length < 40 && key === P.inlineKey(inl) && key !== P.inlineKey(other), key);
+  check("  و`metaPathFor`: المضمَّنةُ ببصمتها، والملفُّ باسمه، والبصمةُ لا تُبصَم ثانيةً",
+    P.metaPathFor(inl) === key && P.metaPathFor("c1/p-1.jpg") === "c1/p-1.jpg" && P.metaPathFor(key) === key);
+  const m = { v: 1, path: key, thumb: "data:image/jpeg;base64,T", w: 1, h: 1, bytes: 1, src: "album" };
+  check("  ووصفٌ ببصمتها يُصدَّق لها (مصغّرٌ ووصف)", P.thumbOf(inl, m) === m.thumb && P.metaOf(inl, m) === m);
+  check("  ولا يُصدَّق لصورةٍ أخرى (دمجٌ طوى الحقولَ منفصلة)", P.thumbOf(other, m) === null && P.metaOf(other, m) === null);
+  check("  والوصفُ القديم (المسارُ كاملاً) يبقى مصدَّقاً", P.metaOf(inl, { ...m, path: inl }) !== null);
+  check("  وبصمةٌ لا تصف ملفّاً سحابياً أبداً", P.metaOf("c1/p-1.jpg", { ...m, path: P.inlineKey("c1/p-1.jpg") }) === null);
+}
+
+console.log("▸ 0229 بعد تدقيق — المصغّرُ يتبع صورتَه من المخزون، وسطحُ المقارنة لا تسرقه قائمةُ الصورة");
+{
+  const { readFileSync } = await import("node:fs");
+  const inv = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const calls = inv.match(/repo\.deleteProductImage\([^)]*\)/g) ?? [];
+  check("المخزون: تبديلُ الصورة وإزالتُها تمرّر المصغّرَ القديم (`thumbOf`) — لا `.thumb.jpg` يتيم",
+    /const prevThumb = thumbOf\(prevPath, product\?\.image_meta\)/.test(inv) && calls.length === 3 && calls.every((c) => /, prevThumb\)$/.test(c)), calls.join(" | "));
+  const st = readFileSync("src/components/store/PhotoStudio.tsx", "utf8");
+  check("الاستوديو: المقارنةُ دوسةٌ تقلب بزرٍّ بحالته — لا ضغطةٌ مطوّلة (pointerdown/up)",
+    /data-compare-toggle aria-pressed=\{comparing\}/.test(st) && !/onPointerDown=\{\(\) => setComparing\(true\)\}/.test(st));
+  check("  وسطحُها يكتم قائمةَ الصورة بالموبايل (آيفون: touch-callout، أندرويد: contextmenu)",
+    /style=\{\{ WebkitTouchCallout: "none" \}\}/.test(st) && /onContextMenu=\{\(e\) => e\.preventDefault\(\)\}/.test(st));
+  check("  وخطأُ الترميز يمرّ من describeUploadError لا e.message", /catch \(e\) \{ setErr\(describeUploadError\(e, t\)\); return; \}/.test(st));
+  for (const f of ["src/components/store/PhotoStudio.tsx", "src/components/store/CameraScan.tsx"]) {
+    const src = readFileSync(f, "utf8");
+    check(`${f.split("/").pop()}: لا حشوةَ ثانيةً داخل Dialog (px-6 pb-6 فوق px-6 pb-6)`, !/className="[^"]*\bpx-6 pb-6\b/.test(src));
+  }
+}
+
 console.log(fails ? `\n✗ images-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ images-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

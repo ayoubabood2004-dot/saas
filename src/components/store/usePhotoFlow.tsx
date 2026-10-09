@@ -1,13 +1,13 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
-import { describeDbError, describeUploadError } from "@/lib/errors";
+import { describeDbError, describeUploadError, rejectedBeforeCommit } from "@/lib/errors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
 import { formatNum } from "@/lib/utils";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { PhotoStudio } from "./PhotoStudio";
-import type { EncodedPhoto, ImageMeta, PhotoSource } from "@/lib/productPhoto";
+import { thumbOf, type EncodedPhoto, type ImageMeta, type PhotoSource } from "@/lib/productPhoto";
 
 /* ============================================================================
  * مسارُ الصورة الواحد (0229): كاميرا أو ألبوم ⇒ معاينة ⇒ رفعُ ملفّين ⇒ ربطٌ
@@ -27,10 +27,12 @@ export interface PhotoTarget {
   image_meta?: ImageMeta | null;
 }
 
-export function usePhotoFlow({ clinicId, onApplied }: {
+export function usePhotoFlow({ clinicId, onApplied, quiet = false }: {
   clinicId: string | null;
   /** بعد نجاح الربط: المسارُ الجديد (أو null بعد الإزالة) والوصف. */
   onApplied: (productId: string, path: string | null, meta: ImageMeta | null) => void;
+  /** بلا توست نجاح — التصويرُ المتتابع يقولها بلوحته (التوستُ كان يغطّي أزرارَها بالموبايل). */
+  quiet?: boolean;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -57,7 +59,7 @@ export function usePhotoFlow({ clinicId, onApplied }: {
     const old = p.image_path ?? null;
     if (!old || old === next) return;
     // المصغّرُ القديم معه — من وصفه إن كان يصفه، وإلا لا شيء (صورةٌ قبل 0229 بلا مصغّر).
-    const oldThumb = p.image_meta && p.image_meta.path === old ? p.image_meta.thumb : null;
+    const oldThumb = thumbOf(old, p.image_meta ?? null);
     void repo.deleteProductImage(clinicId, p.id, old, oldThumb);
   };
 
@@ -69,12 +71,22 @@ export function usePhotoFlow({ clinicId, onApplied }: {
     try {
       const up = await repo.uploadProductPhoto(clinicId, p.id, photo.full, photo.thumb);
       const meta: ImageMeta = { v: 1, path: up.path, thumb: up.thumb, w: photo.w, h: photo.h, bytes: photo.bytes, src: source, edits: photo.edits };
-      await repo.setProductImage(p.id, up.path, meta);
+      try { await repo.setProductImage(p.id, up.path, meta); }
+      catch (e) {
+        /* الملفّان ارتفعا والربطُ رُفض: منتجٌ انحذف بجهازٍ ثانٍ، وصفٌ مرفوض، صلاحيةٌ سُحبت. كلُّ
+         * «أعد المحاولة» يرفع زوجاً جديداً باسمٍ جديد — فالرفضُ الحاسم يشيل زوجَه (أفضلُ جهد،
+         * و`deleteProductImage` تسأل الخادمَ قبلها هل يشير إليه أحد). أما انقطاعٌ أو مهلة فمصيرُ
+         * الربط مجهول — قد يكون ثُبّت والردُّ ضاع — فلا يُلمس الملفّ: يتيمٌ أهونُ من صورةٍ مكسورة. */
+        if (rejectedBeforeCommit(e)) void repo.deleteProductImage(clinicId, p.id, up.path, up.thumb);
+        throw e;
+      }
       dropOld(p, up.path);
       onApplied(p.id, up.path, meta);
       playSuccess();
-      toast.success(t("sb.photo.saved", "انحفظت صورة {{name}}", { name: p.name }),
-        t("sb.photo.savedSize", "{{w}}×{{h}} · {{kb}} ك.ب", { w: formatNum(photo.w), h: formatNum(photo.h), kb: formatNum(Math.round(photo.bytes / 1024)) }));
+      if (!quiet) {
+        toast.success(t("sb.photo.saved", "انحفظت صورة {{name}}", { name: p.name }),
+          t("sb.photo.savedSize", "{{w}}×{{h}} · {{kb}} ك.ب", { w: formatNum(photo.w), h: formatNum(photo.h), kb: formatNum(Math.round(photo.bytes / 1024)) }));
+      }
       setStudio(null);
       const after = afterRef.current; afterRef.current = null;
       after?.();
@@ -92,7 +104,7 @@ export function usePhotoFlow({ clinicId, onApplied }: {
       dropOld(p, path);
       onApplied(p.id, path, null);
       playSuccess();
-      toast.success(t("sb.photo.saved", "انحفظت صورة {{name}}", { name: p.name }));
+      if (!quiet) toast.success(t("sb.photo.saved", "انحفظت صورة {{name}}", { name: p.name }));
       const after = afterRef.current; afterRef.current = null;
       after?.();
     } catch (e) { playWarning(); toast.error(describeDbError(e, t)); }

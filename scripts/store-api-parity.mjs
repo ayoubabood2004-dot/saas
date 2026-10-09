@@ -40,8 +40,11 @@ globalThis.document = globalThis.document ?? {
   body: { appendChild() {}, classList: { add() {}, remove() {} } },
 };
 
-/* ردُّ الخادم لكلّ دالّة — **مصدرٌ واحد** يقرؤه الطرفان. `null` يعني «افشل». */
+/* ردُّ الخادم لكلّ دالّة — **مصدرٌ واحد** يقرؤه الطرفان. `null` يعني «افشل». والردُّ قد يكون
+ * دالّةً بالوسائط: خادمٌ قبل 0096 فيه `store_catalog` بوسيطٍ واحد ولا توقيعَ بصفحات — فنفسُ
+ * الاسم يُوجد بوسيطٍ ويغيب بثلاثة. (`undefined` = الدالّةُ بهذا التوقيع غيرُ موجودة.) */
 globalThis.__reply = {};
+globalThis.__replyOf = (fn, args) => { const r = globalThis.__reply[fn]; return typeof r === "function" ? r(args) : r; };
 globalThis.__calls = [];
 
 /* عميلٌ مزيّف يسجّل النداء ويردّ من `__reply` — نفسُ عقدِ postgrest-js:
@@ -50,7 +53,7 @@ const FAKE_SUPABASE = `
   export const supabase = {
     rpc: (fn, args) => {
       globalThis.__calls.push({ side: 'repo', fn, args });
-      const r = globalThis.__reply[fn];
+      const r = globalThis.__replyOf(fn, args);
       // بلا ردّ = الدالّةُ غيرُ موجودة بالخادم (هجرةٌ لم تنزل) — كما يقولها PostgREST.
       if (r === undefined) return Promise.resolve({ data: null, error: { message: 'Could not find the function public.' + fn, code: 'PGRST202' } });
       return Promise.resolve(r === null ? { data: null, error: { message: 'boom', code: 'X' } } : { data: r, error: null });
@@ -97,7 +100,7 @@ globalThis.fetch = async (url, init) => {
   const fn = String(url).split("/rpc/")[1];
   const args = JSON.parse(init.body);
   globalThis.__calls.push({ side: "api", fn, args });
-  const r = globalThis.__reply[fn];
+  const r = globalThis.__replyOf(fn, args);
   if (r === undefined) return new Response(JSON.stringify({ code: "PGRST202", message: `Could not find the function public.${fn}` }), { status: 404, headers: { "content-type": "application/json" } });
   if (r === null) return new Response(JSON.stringify({ message: "boom" }), { status: 400, headers: { "content-type": "application/json" } });
   return new Response(JSON.stringify(r), { status: 200, headers: { "content-type": "application/json" } });
@@ -164,10 +167,41 @@ const cat = await pair("store_catalog (خادمٌ قبل 0229)", (r) => r.storeC
 check("  والسقوطُ بنفس الصفحة والإزاحة (لا توقيعَ 0095)", JSON.stringify(globalThis.__calls.map((c) => c.args)) === JSON.stringify([{ p_slug: "alrahma", p_limit: 24, p_offset: 0 }, { p_slug: "alrahma", p_limit: 24, p_offset: 0 }]));
 check("  والسعرُ رقمٌ لا نصّ", cat.a.v[0].price === 3500);
 await pair("store_catalog (خادمٌ قبل 0229، صفحةٌ ثانية)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
-// نداءٌ ثانٍ بوسيطٍ واحد عند فشل الثلاثة — وبالصفحة الأولى وحدها.
-globalThis.__reply = { store_catalog2: null, store_catalog: null };
-await pair("store_catalog (سقوطٌ إلى توقيع 0095)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
-await pair("store_catalog (وبصفحةٍ ثانية لا سقوط)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
+/* خطأٌ عابرٌ (لا «الدالّةُ غيرُ موجودة») **يصل المستدعي** ولا ينزل لتوقيع 0095: كان ينزل فيحلّ
+ * على 0212 بسقف ستّين وترتيبٍ قديم وبلا أقسام — كتلوجٌ مقطوعٌ يُقرأ كاملاً وسلّةٌ تُشذَّب عليه. */
+const callsOf = () => globalThis.__calls.filter((c) => c.side === "api").map((c) => `${c.fn}(${Object.keys(c.args).join(",")})`).join(" → ");
+globalThis.__reply = { store_catalog2: null, store_catalog: ROWS };
+const flaky = await pair("store_catalog2 (خطأٌ عابر بالصفحة الأولى)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
+check("  والطرفان يرميان — لا قائمةً مقطوعةً من نداءٍ قديم", !flaky.a.ok && !flaky.b.ok, JSON.stringify(flaky));
+check("  ونداءٌ واحدٌ لا سقوط", callsOf() === "store_catalog2(p_slug,p_limit,p_offset)", callsOf());
+globalThis.__reply = { store_catalog: null };
+const flaky2 = await pair("store_catalog (قبل 0229، خطأٌ عابر)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
+check("  ويرميان كذلك بلا توقيع 0095", !flaky2.a.ok && !flaky2.b.ok && !/store_catalog\(p_slug\)/.test(callsOf()), callsOf());
+await pair("store_catalog2 (خطأٌ عابر، صفحةٌ ثانية)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
+// خادمٌ قبل 0096: لا store_catalog2 ولا توقيعَ بصفحات — الوسيطُ الواحد يرجع الكتلوجَ كلَّه.
+const ONE_ARG = (args) => (Object.keys(args).length === 1 ? ROWS : undefined);
+globalThis.__reply = { store_catalog: ONE_ARG };
+const legacy = await pair("store_catalog (قبل 0096: توقيعُ 0095)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
+check("  والسقوطُ بعد غياب التوقيعين وحده", callsOf() === "store_catalog2(p_slug,p_limit,p_offset) → store_catalog(p_slug,p_limit,p_offset) → store_catalog(p_slug)", callsOf());
+check("  والصفوفُ وصلت", legacy.a.ok && legacy.a.v.length === 1);
+const legacy2 = await pair("store_catalog (قبل 0096، صفحةٌ ثانية)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
+check("  والصفحةُ الثانية فارغةٌ لا رمية (الأولى رجعت الكلّ)", legacy2.a.ok && legacy2.b.ok && legacy2.a.v.length === 0, JSON.stringify(legacy2));
+
+console.log("▸ السؤالُ بالمعرّف (store_catalog_ids)");
+// سطورُ السلّة التي لم تجلبها الصفحات: الجوابُ نفسُ صفوف الكتلوج، و`null` = الخادمُ لا يعرف السؤال.
+globalThis.__reply = { store_catalog_ids: ROWS2 };
+const byIds = await pair("store_catalog_ids", (r) => r.storeCatalogByIds("alrahma", ["p1", "p2"]));
+check("  والصفوفُ مشكَّلة (السعرُ رقم)", byIds.a.ok && byIds.a.v[0].price === 3500 && byIds.a.v[1].id === "p2");
+check("  والوسائطُ اسمُ المتجر والمعرّفات", JSON.stringify(globalThis.__calls.at(-1)?.args) === JSON.stringify({ p_slug: "alrahma", p_ids: ["p1", "p2"] }));
+globalThis.__reply = {};
+const byIdsOld = await pair("store_catalog_ids (خادمٌ قبل 0229)", (r) => r.storeCatalogByIds("alrahma", ["p1"]));
+check("  ⇒ null لا [] (لا حكمَ على غياب)", byIdsOld.a.ok && byIdsOld.a.v === null && byIdsOld.b.v === null, JSON.stringify(byIdsOld));
+globalThis.__reply = { store_catalog_ids: null };
+const byIdsFlaky = await pair("store_catalog_ids (خطأٌ عابر)", (r) => r.storeCatalogByIds("alrahma", ["p1"]));
+check("  ⇒ يرمي لا null ولا []", !byIdsFlaky.a.ok && !byIdsFlaky.b.ok);
+globalThis.__reply = { store_catalog_ids: ROWS2 };
+const byIdsNone = await pair("store_catalog_ids (بلا معرّفات)", (r) => r.storeCatalogByIds("alrahma", []));
+check("  ⇒ [] بلا نداء", byIdsNone.a.ok && byIdsNone.a.v.length === 0 && globalThis.__calls.length === 0);
 
 console.log("▸ التتبّعُ والطلب");
 globalThis.__reply = { store_order_track: [{ order_no: "SO-1", status: "new", total: 12000, created_at: "2026-01-01", decided_at: null }] };

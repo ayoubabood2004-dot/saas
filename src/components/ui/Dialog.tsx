@@ -21,6 +21,34 @@ export interface DialogProps {
 // xl: شاشة اختيار فيها شبكة مربّعات — تحتاج عرضاً حقيقياً لا عمودين.
 const widths = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-5xl" };
 
+/* ============================================================================
+ * قفلُ تمرير الصفحة — بعدّادٍ لا بقيمة.
+ *
+ * كان كلُّ إغلاقٍ يكتب `overflow = ""` مهما بقي مفتوحاً تحته: الاستوديو (0229) يُفتح
+ * فوق بطاقة المنتج، فإغلاقُه يفكّ التمرير والبطاقةُ ما زالت مفتوحة، وعلى الموبايل تجرّ
+ * البطاقةُ السفليّةُ اللوحةَ خلفها. و«احفظ القديمَ وأرجعه» وحده لا يكفي: نافذتان تُغلقان
+ * بغير ترتيب فتحهما (الخارجيّةُ أوّلاً) تُرجعان «مقفول» وتتركان الصفحةَ عالقةً بلا تمرير.
+ * فالقفلُ عدّاد: أوّلُ قافلٍ يحفظ القيمةَ الأصليّة ويقفل، وآخرُ فاكٍّ يُرجعها — بأيّ ترتيب.
+ * ويُرجع دالّةَ فكٍّ لا تُحسب إلا مرّةً واحدة (تنظيفُ أثرٍ يُنادى مرّتين لا يفكّ قفلَ غيره).
+ * والإرجاعُ **إن كانت ما زالت مقفولة** وحده: قافلٌ قديمٌ يكتب "" عند إغلاقه (نافذةٌ أمٌّ
+ * تُفكَّك مع ابنتها بنفس الدفعة، وأثرُ الأمّ يُنظَّف قبل أثر ابنتها) فكّها قبلنا؛ وإرجاعُ «مقفول»
+ * المحفوظ حينها يترك الصفحةَ عالقةً بلا تمرير بعد أن أُغلق كلُّ شيء.
+ * ========================================================================= */
+let scrollLocks = 0;
+let scrollSaved = "";
+export function lockBodyScroll(): () => void {
+  if (scrollLocks++ === 0) {
+    scrollSaved = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    if (--scrollLocks === 0 && document.body.style.overflow === "hidden") document.body.style.overflow = scrollSaved;
+  };
+}
+
 export function Dialog({ open, onClose, title, description, children, footer, size = "md", hideClose }: DialogProps) {
   /* نفسُ مكدّس `Modal`: نافذةُ تأكيدٍ تُفتح فوق نافذةِ عملٍ لازم تبلع Esc
    * وحدَها، وإلا طوت الاثنتين — وهي بالضبط حالةُ «تطلع وتضيّع السطور؟». */
@@ -30,8 +58,8 @@ export function Dialog({ open, onClose, title, description, children, footer, si
   useEffect(() => {
     if (!open) return;
     pushModal(id);
-    document.body.style.overflow = "hidden";
-    return () => { removeModal(id); document.body.style.overflow = ""; };
+    const unlock = lockBodyScroll();
+    return () => { removeModal(id); unlock(); };
   }, [open, id]);
 
   useEffect(() => {

@@ -315,7 +315,8 @@
     "loadFailedTitle": "We couldn't open the store",
     "loadFailedBody": "A connection problem stopped the page from loading — the store itself is fine. Check your internet and try again.",
     "retry": "Try again",
-    "others": "Other products"
+    "others": "Other products",
+    "goneItem": "an item no longer listed"
   },
   "track": {
     "staleDay": "A full day with no decision",
@@ -378,6 +379,7 @@
     "demoQuota": "Your last change wasn't saved — delete old photos or data, or subscribe for unlimited cloud storage.",
     "notAnImage": "Pick an image file (JPG, PNG or WEBP) — that file isn't an image.",
     "fileTooLarge": "File is too large (max {{mb}} MB). Try a smaller image.",
+    "imageEncode": "The device couldn't process this photo — close other apps and try again.",
     "uploadFailed": "Upload failed — check your connection and try again.",
     "c": {
       "branches_one_main_per_clinic": "There's already a main branch — keep one main branch and make the rest regular branches.",
@@ -3408,6 +3410,7 @@
       "expense": "Expense",
       "delivery": "Delivery",
       "relink": "Moved between companies",
+      "store_arrange": "Store arrangement",
       "pet": "Pet",
       "case": "Case",
       "dose": "Dose",
@@ -3550,6 +3553,12 @@
     "expiryMuted": "Muted expiry alert for {{name}}",
     "expiryUnmuted": "Unmuted expiry alert for {{name}}",
     "returnMarked": "Set “{{name}}” aside for return",
+    "storeArrange": "Arranged “{{name}}” in the store (section / order)",
+    "storeShown": "Published “{{name}}” in the store",
+    "storeHidden": "Hid “{{name}}” from the store",
+    "storePhoto": "Set a photo for “{{name}}”",
+    "storePhotoOff": "Removed the photo of “{{name}}”",
+    "storeEdit": "Edited “{{name}}” in the store (description / featured)",
     "returnUnmarked": "Put “{{name}}” back on the shelf (return mark removed)",
     "expCatAdd": "New withdrawal category: {{name}}",
     "expCatRename": "Renamed withdrawal category: {{name}}",
@@ -5509,6 +5518,7 @@
     "bulkHide": "Hide",
     "bulkMove": "Move to section",
     "bulkShow": "Publish",
+    "busyWait": "One moment — the previous request is still running. Tap again when it finishes.",
     "cantPublish": "Can't be published until it has: {{what}}",
     "chk": {
       "expired": "Expired — the store won't show it",
@@ -5539,6 +5549,12 @@
       "thumb": "Store copy",
       "thumbYes": "Small and fast ✓"
     },
+    "doubt": {
+      "code": "{{p}} looks like a scanned barcode, not a price — is this really the sale price?",
+      "jump": "{{p}} is more than 10× the current price ({{was}}) — are you sure?",
+      "no": "No, restore the price",
+      "yes": "Yes, save {{p}}"
+    },
     "down": "Move down",
     "expired": "Expired",
     "f": {
@@ -5563,7 +5579,14 @@
     "featOn": "Featured",
     "hidMany": "{{n}} products hidden",
     "hidOne": "Hidden from the store",
+    "hideAll": "Hide all ({{n}})",
+    "hideAsk": "“{{name}}” is missing {{what}} — once hidden it only comes back to the store after that is completed.",
+    "hideAskCard": "Missing {{what}} — once hidden it only comes back to the store after that is completed.",
+    "hideAskMany": "{{n}} of the selected are published but incomplete ({{why}}) — once hidden they only come back to the store after they are completed.",
+    "hideKeep": "Keep it published",
     "hideOne": "Hide from store",
+    "hideSafe": "Hide only the complete ones ({{n}})",
+    "hideYes": "Hide it",
     "lastChange": "Last change: {{when}} — {{from}} → {{to}}{{by}}",
     "miss": {
       "expired": "an unexpired date",
@@ -5572,7 +5595,10 @@
     },
     "missingLine": "Missing: {{what}}",
     "moveFailed": "Not moved — try again",
+    "moveFailedPart": "Moved {{n}}, then it stopped — the rest weren't moved. Try again.",
     "moved": "Moved {{n}} products to “{{name}}”",
+    "movedTo": "The price was changed on another device — it's now {{p}}. Check it before editing.",
+    "movedWait": "The price was changed on another device — fetching the new price…",
     "noDescLine": "No description — tap to add one",
     "noPhoto": "No photo",
     "noPrice": "No price",
@@ -5585,7 +5611,9 @@
       "library": "From library",
       "more": "Show the rest ({{n}})",
       "noAccess": "This page is for staff with the product-photos permission. Ask the clinic manager.",
+      "noStoreAccess": "The store catalog is for staff with the store permission. Ask the clinic manager.",
       "none": "No products match this search.",
+      "photosOnly": "Your account is for photos only — publishing, prices and sections need the store permission. Ask the clinic manager.",
       "remove": "Remove photo",
       "replace": "Replace",
       "shoot": "Take photo"
@@ -5613,18 +5641,17 @@
     "preview": "View store as a customer",
     "price": "Sale price (same as the cashier price)",
     "priceLocked": "Prices can be changed by managers, vets and photographers.",
+    "priceMoved": "The price was changed on another device (e.g. a price raise) — nothing was saved. The list is being refreshed: check the new price and edit from it.",
     "priceSaved": "Price saved: {{p}}",
     "progress": "Published with a photo: {{done}} of {{total}}",
-    "progressAll": "{{n}} products without a photo in stock",
+    "progressAll": "{{n}} products without a photo in inventory",
     "publishFailed": "Publishing wasn't saved — try again",
     "publishReady": "Publish all ready ({{n}})",
     "pv": {
-      "all": "All",
       "empty": "Customers would see an empty shelf — publish products with a photo and a price first.",
-      "featured": "Featured",
+      "off": "The store is off — customers see nothing right now. This preview lets you arrange it before you turn it on.",
       "openReal": "Open the live store",
-      "others": "Other products",
-      "sub": "Exactly what customers see: {{n}} products shown"
+      "sub": "How customers will see the store: {{n}} products shown"
     },
     "readyLine": "Ready to publish ✓",
     "removeAsk": "Remove the photo of “{{name}}”?",
@@ -5637,6 +5664,8 @@
       "denied": "The camera is blocked in the browser settings — allow it or search by typing.",
       "failed": "The camera didn't start on this device — search by typing or with the scanner.",
       "hint": "Bring the barcode to the red line — the product opens by itself.",
+      "many": "Code {{code}} belongs to more than one product ({{n}}) — they're shown in the search",
+      "manyHint": "If they're the same item, merge them from Inventory (“Merge into another product”), or change one of their codes.",
       "title": "Scan the box barcode",
       "unknown": "Code {{code}} isn't a product in stock",
       "unknownHint": "If the item exists, the manager can add this code to it from Inventory."
@@ -5660,6 +5689,7 @@
       "empty": "Type the section name",
       "empty2": "The section is empty — customers won't see it until you add a published product.",
       "failed": "Couldn't reach the sections — it's a connection problem.",
+      "fromArchived": "From the archived section “{{name}}” — its order comes back with its section",
       "hint": "Create sections like “Cat food” and “Shampoo” and add your products to them. Customers see the sections bar at the top of the store in your order — empty sections stay hidden.",
       "inOther": "In “{{name}}” — will move",
       "long": "The name is longer than {{n}} characters",
@@ -5670,10 +5700,12 @@
       "others": "Published without a section ({{n}})",
       "othersHint": "Customers see these at the end of the store under “Other products”. Pick a section for each or order them here.",
       "pickTitle": "Add products to “{{name}}”",
+      "pubAfterMove": "Moved to the section — but publishing didn't go through. Publish them from the board.",
       "removeFrom": "Remove from section",
       "rename": "Rename",
       "restore": "Restore",
       "restored": "“{{name}}” is back with its products",
+      "shownOf": "Showing {{n}} of {{total}} — type to search",
       "title": "Your store sections"
     },
     "secNone": "No sections yet — create them in “Sections & order”.",
@@ -5686,6 +5718,11 @@
       "title": "Photo run"
     },
     "seqStart": "Photo run ({{n}})",
+    "set": {
+      "managerOnly": "The WhatsApp number, the store link and switching the store on or off are for the manager only.",
+      "noStoreYet": "The store isn't set up yet — the manager picks the link and switches it on first.",
+      "readFailed": "Couldn't reach the store settings — try again."
+    },
     "showOne": "Publish in store",
     "shownMany": "Published {{n}} products in the store",
     "shownNone": "Not published — {{why}}",
@@ -5701,9 +5738,9 @@
     "sortWork": "Unfinished work first",
     "studio": {
       "approve": "Approve & save",
+      "compareHint": "Tap the photo (or “Original”) to compare it with the edited one",
       "enhance": "Improve lighting",
       "enhanceSkipped": "The lighting is already good — no change needed.",
-      "holdHint": "Press and hold the photo to see the original",
       "original": "Original",
       "outDims": "Saved at {{w}}×{{h}} px + a small copy for the store",
       "result": "Edited",
@@ -5714,6 +5751,7 @@
       "small": "This photo is small ({{w}}×{{h}}) — it will look blurry when customers zoom in. Better to retake it.",
       "square": "Square crop",
       "title": "Review the photo before saving",
+      "tooBig": "This photo's resolution is too high for this device ({{mp}} megapixels) — take it at a lower resolution (not the max-resolution mode).",
       "unreadable": "This file isn't an image the device can read — try another photo.",
       "white": "White background",
       "whiteSkipped": "The background isn't one color (shelf, hand, table) — it wasn't whitened so the box edges stay intact. Shoot it on a white surface."
