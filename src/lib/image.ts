@@ -86,7 +86,7 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
  * ==========================================================================*/
 
 /** فرق لوني إقليدي بين بكسل بالمصفوفة ولون مرجعي. */
-const colorDist = (d: Uint8ClampedArray, i: number, r: number, g: number, b: number) =>
+export const colorDist = (d: Uint8ClampedArray, i: number, r: number, g: number, b: number) =>
   Math.sqrt((d[i] - r) ** 2 + (d[i + 1] - g) ** 2 + (d[i + 2] - b) ** 2);
 
 /** هل بالصورة شفافية فعلية؟ (أكثر من ٠.٥٪ من البكسلات نصف شفافة فأكثر) */
@@ -101,7 +101,7 @@ function hasRealAlpha(data: Uint8ClampedArray): boolean {
 }
 
 /** لون الخلفية المرشح من إطار الصورة + نسبة تجانس الإطار معه. */
-function borderBackground(data: Uint8ClampedArray, w: number, h: number): { r: number; g: number; b: number; uniformity: number } {
+export function borderBackground(data: Uint8ClampedArray, w: number, h: number): { r: number; g: number; b: number; uniformity: number } {
   const idxs: number[] = [];
   for (let x = 0; x < w; x++) { idxs.push((0 * w + x) * 4, ((h - 1) * w + x) * 4); }
   for (let y = 1; y < h - 1; y++) { idxs.push((y * w) * 4, (y * w + w - 1) * 4); }

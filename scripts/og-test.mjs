@@ -41,9 +41,14 @@ const SHELL = `<!doctype html><html lang="ar" dir="rtl"><head>
 
 let frontBody = null;       // ما يرجعه store_front (null ⇒ فشلُ الطلب)
 let catalogBody = null;     // وما يرجعه store_catalog
+let catalog2Missing = false; // 0229: خادمٌ بلا store_catalog2 (404) ⇒ الحافةُ ترجع للقديمة
+let withRoot = false;        // قالبٌ فيه #root ⇒ الرفُّ يُرسم فعلاً (لفحص صور الرفّ المرسوم)
+const rpcCalls = [];
 globalThis.fetch = async (input) => {
   const u = String(input?.url ?? input);
-  if (u.endsWith("/store.html")) return new Response(SHELL, { status: 200 });
+  if (u.includes("/rpc/")) rpcCalls.push(u.split("/rpc/")[1]);
+  if (u.includes("/rpc/store_catalog2") && catalog2Missing) return new Response(JSON.stringify({ code: "PGRST202" }), { status: 404 });
+  if (u.endsWith("/store.html")) return new Response(withRoot ? SHELL.replace("<body></body>", '<body><div id="root"></div></body>') : SHELL, { status: 200 });
   if (u.includes("/rpc/store_front")) {
     if (!frontBody) return new Response("nope", { status: 500 });
     return new Response(JSON.stringify(frontBody), { status: 200, headers: { "content-type": "application/json" } });
@@ -127,6 +132,23 @@ const HUGE = Array.from({ length: 400 }, (_, i) => ({ id: `p${i}`, name: "م".re
 const huge = await render({ ok: true, name: "عيادة ضخمة", logo_url: null }, "alrahma", HUGE);
 check("وبذرةٌ فوق ٦٤ كيلو تُترك — مستندٌ منتفخٌ يبطئ أكثرَ ممّا يسرّع", bootOf(huge) === null);
 check("  والصفحةُ تبقى بوسومها", metaOf(huge, "og:title") === "عيادة ضخمة — المتجر");
+
+console.log("▸ 0229 — البذرةُ من نفس أوّل نداءٍ للواجهة، والرفُّ بالمصغّر");
+{
+  const FRONT = { ok: true, name: "عيادة الأقسام", bio: null, logo_url: null };
+  const ROW = (id, extra) => ({ id, name: `منتج ${id}`, price: 1000, available: true, image_path: `c1/${id}.jpg`, ...extra });
+  rpcCalls.length = 0; catalog2Missing = false; withRoot = true;
+  const h1 = await render(FRONT, "sections", [ROW("a", { thumb_path: "c1/a.thumb.jpg" }), ROW("b")]);
+  withRoot = false;
+  check("الحافةُ تنادي store_catalog2 (نفسُ ترتيب الواجهة — لا رفٌّ يُعاد ترتيبُه أمام الزبون)", rpcCalls.includes("store_catalog2") && !rpcCalls.includes("store_catalog"), rpcCalls.join(","));
+  const painted = h1.slice(h1.indexOf('<div id="root">'));
+  check("  والرفُّ المرسوم بالمصغّر حين وُجد، والكاملةُ احتياطُه", /src="[^"]*product-images\/c1\/a\.thumb\.jpg"/.test(painted) && /onerror="this\.onerror=null;this\.src='[^']*c1\/a\.jpg'"/.test(painted));
+  check("  وبلا مصغّر: الصورةُ كاملة بلا onerror", /src="[^"]*product-images\/c1\/b\.jpg" alt="" width="400" height="400" class="[^"]*" \/>/.test(painted));
+  rpcCalls.length = 0; catalog2Missing = true;
+  const h2 = await render(FRONT, "sections", [ROW("c")]);
+  check("  وخادمٌ قبل 0229 (404) ⇒ القديمةُ بنفس الصفحة، والرفُّ مرسوم", rpcCalls.join(",") === "store_front,store_catalog2,store_catalog" && h2.includes("c1/c.jpg"), rpcCalls.join(","));
+  catalog2Missing = false;
+}
 
 console.log(fails ? `\n✗ og-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ og-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

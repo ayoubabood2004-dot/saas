@@ -53,7 +53,12 @@ globalThis.__refsError = null;
 const FAKE_SUPABASE = `
   const ok = (data) => Promise.resolve({ data, error: null });
   const storageApi = {
-    upload: (path, blob, opts) => { globalThis.__uploads.push({ path, opts }); return ok({ path }); },
+    upload: (path, blob, opts) => {
+      globalThis.__uploads.push({ path, opts });
+      // 0229: مصغّرٌ يفشل رفعُه (شبكةٌ تنقطع بين الملفّين) — الصورةُ تبقى.
+      if (globalThis.__failThumb && path.endsWith(".thumb.jpg")) return Promise.resolve({ data: null, error: { message: "boom" } });
+      return ok({ path });
+    },
     remove: (paths) => { globalThis.__removed.push(...paths); return ok(null); },
   };
   const q = () => {
@@ -181,6 +186,31 @@ globalThis.__refsError = null;
 globalThis.__removed = [];
 await cloud.deleteProductImage(CLINIC, PRODUCT, "library/shared.jpg");
 check("  وملفُّ المكتبة المشترَك لا يُلمس أبداً", globalThis.__removed.length === 0);
+
+console.log("▸ 0229 — الصورةُ ومصغّرُها: ملفّان بنفس القواعد، والمصغّرُ يتبع صورتَه");
+globalThis.__uploads = []; globalThis.__failThumb = false;
+const ph = await cloud.uploadProductPhoto(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"), mkUpload("image/jpeg", "jpg"));
+check("رفعتان: الكاملةُ أوّلاً ثمّ المصغّرُ باسمها", globalThis.__uploads.length === 2 && globalThis.__uploads[0].path === ph.path
+  && ph.thumb === ph.path.replace(/\.jpg$/, ".thumb.jpg") && globalThis.__uploads[1].path === ph.thumb, JSON.stringify(ph));
+check("  وكلاهما بمجلّد العيادة، بلا استبدال، ومخبوءٌ سنة",
+  ph.path.startsWith(`${CLINIC}/`) && globalThis.__uploads.every((u) => u.opts?.upsert === false && u.opts?.cacheControl === "31536000"));
+globalThis.__uploads = []; globalThis.__failThumb = true;
+const ph2 = await cloud.uploadProductPhoto(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"), mkUpload("image/jpeg", "jpg"));
+check("  وفشلُ المصغّر لا يُفشل الصورة — يرجع بلا مصغّر (لا مسارَ لملفٍّ لم يُرفع)", !!ph2.path && ph2.thumb === null);
+globalThis.__failThumb = false;
+check("  وPDF يُرفض قبل أيّ رفع",
+  (globalThis.__uploads = [], await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, mkUpload("application/pdf", "pdf"), mkUpload("image/jpeg", "jpg")))) && globalThis.__uploads.length === 0);
+const dph = await demo.uploadProductPhoto(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"), mkUpload("image/jpeg", "jpg"));
+check("  والتجريبيُّ يرجع الاثنين عناوينَ مضمَّنة", typeof dph.path === "string" && typeof dph.thumb === "string");
+globalThis.__removed = []; globalThis.__refsError = null; globalThis.__productRefs = [];
+await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/p-1.jpg`, `${CLINIC}/p-1.thumb.jpg`);
+check("حذفُ صورةٍ لا يشير إليها أحد يحذف مصغّرَها معها", globalThis.__removed.includes(`${CLINIC}/p-1.jpg`) && globalThis.__removed.includes(`${CLINIC}/p-1.thumb.jpg`));
+globalThis.__removed = []; globalThis.__productRefs = [{ id: "twin" }];
+await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/p-2.jpg`, `${CLINIC}/p-2.thumb.jpg`);
+check("  وصورةٌ يشير إليها توأم تبقى بمصغّرها", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
+globalThis.__removed = []; globalThis.__productRefs = [];
+await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/p-3.jpg`, `${CLINIC}/other.thumb.jpg`);
+check("  ومصغّرٌ ليس لهذه الصورة لا يُحذف معها (وصفٌ يتيم)", JSON.stringify(globalThis.__removed) === JSON.stringify([`${CLINIC}/p-3.jpg`]), JSON.stringify(globalThis.__removed));
 
 console.log("▸ 0190 — شعارُ العيادة ملفٌّ بالدلو، لا بايتاتٌ بالقاعدة");
 globalThis.__uploads = [];

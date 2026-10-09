@@ -88,7 +88,7 @@ export function auditKind(entity: string, action: string, details: Record<string
   if (["pet_notes", "media_items", "weight_logs", "lab_results"].includes(e)) return "medical";
   if (["appointments", "reminders", "journeys", "journey_events"].includes(e)) return "booking";
   if (e === "wa_messages") return "message";
-  if (e === "store_orders" || e === "store_profiles") return "store";
+  if (e === "store_orders" || e === "store_profiles" || e === "store_sections") return "store";
   if (["staff", "memberships", "invites", "branches"].includes(e)) return "team";
   if (e.startsWith("payroll") || ["payslips", "payslip_lines", "staff_comp", "staff_loans", "staff_loan_events", "staff_recurring"].includes(e)) return "payroll";
   if (e.startsWith("clinic") || ["wa_accounts", "lab_device_links"].includes(e)) return "settings";

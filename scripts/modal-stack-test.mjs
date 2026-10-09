@@ -76,5 +76,12 @@ check("  والفاتورةُ الجديدة ترسل رقماً دائماً ل
 check("  ووضعُ التعديل يبقى على عقده (فارغٌ = لا تغيّر المدفوع)",
   /editing \? \(amountPaid\.trim\(\) === "" \? undefined/.test(pur));
 
+console.log("\n▸ 0229 — عارضُ الصور فوق بطاقة المنتج");
+{
+  const lb = readFileSync("src/components/ImageLightbox.tsx", "utf8");
+  check("العارضُ يدخل المكدّس ويخرج منه بدورة حياته", /pushModal\(modalId\)/.test(lb) && /removeModal\(modalId\)/.test(lb));
+  check("  وEsc تطويه وحدَه — لا البطاقةَ تحته", /if \(!isTopModal\(modalId\)\) return;\s*\n\s*if \(e\.key === "Escape"\) onClose\(\);/.test(lb));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} modal-stack-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

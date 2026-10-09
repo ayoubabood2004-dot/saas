@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { storeApi, readStoreBoot, pagePainted } from "@/lib/storeApi";
-import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
+import { categoryLook, isValidCustomerPhone, listImagePath, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
@@ -84,6 +84,8 @@ export function Storefront() {
   const [catalog, setCatalog] = useState<StoreCatalogItem[]>([]);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("all");
+  /** قسمُ المتجر المختار (0229): "all" أو معرّفُ قسم أو OTHERS («منتجات أخرى» = بلا قسمٍ فعّال). */
+  const [sec, setSec] = useState<string>("all");
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
   const [sheet, setSheet] = useState<"none" | "cart" | "checkout">("none");
   /** ورقة تفاصيل منتج (المرحلة ٣): صورة كبيرة ووصف كامل وعدّاد كمية. */
@@ -178,7 +180,9 @@ export function Storefront() {
 
   /* بحثٌ فوق كتالوجٍ جزئيّ يحكم «ما لكينا شيء» على ما حُمّل وحده. فقبل إعلان
    * الخيبة نُنزل بقيةَ الصفحات — لا حكمَ نهائياً فوق قائمةٍ ناقصة. */
-  const searching = q.trim().length > 0;
+  /* والقسمُ كالبحث (0229): التصفيةُ فوق الكتلوج كلِّه لا فوق ما حُمّل — فقسمٌ منتجاتُه بالصفحة
+   * الثالثة لا يُقال عنه «فارغ». والسلّةُ والمجموعُ والتشذيبُ يبقون على الكتلوج كلِّه (byId). */
+  const searching = q.trim().length > 0 || sec !== "all";
   useEffect(() => {
     if (!searching || !hasMore || loadingMore || moreFailed) return;
     void loadMore();
@@ -207,21 +211,18 @@ export function Storefront() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, hasMore, loadingMore, moreFailed]);
 
-  /* ── ت١٢: حكمٌ بالامتناع — لا يُبنى تصفّحُ المتجر على `category` ────────
+  /* ── ت١٢ ثمّ 0229: الأقسامُ أقسامُ العيادة، لا `category` ────────────────
    *
-   * الشريطُ أدناه موجودٌ ويعمل، **ولا يُوسَّع**: لا شريطَ لاصقاً، ولا صفحةَ
-   * فئة، ولا حملةَ إغناءِ تصنيف. المقيسُ على الإنتاج (أعيد قياسُه مع 0190):
-   *   • عيادةُ الـ٩٦٢ منتجاً: **٨٦٣ بلا فئة** — زرٌّ واحدٌ «منوّعات» يحوي ٩٠٪.
-   *   • والثلاثُ كلُّهنّ **خمسُ فئاتٍ متمايزة** لا أكثر (القائمةُ مغلقة).
-   *   • والبديلُ `section_id` أسوأ تفاوتاً: ٥١٣/٩٦٢ عند واحدة و**١٤/٧٣٠**
-   *     عند أخرى.
-   * فالتصفّحُ بالفئات يَعِد بترتيبٍ لا تملكه هذه الكتلوجات. الترتيبُ الصادقُ
-   * لها: البحثُ المطبَّع (قائمٌ، ويمرّ من `searchable` على الطرفين) + شبكةٌ
-   * المختارُ فيها أوّلاً والنافدُ آخِراً.
-   *
-   * والشريطُ يُخفي نفسَه حين لا يفرّق (`cats.length > 1`) — وهذا كلُّ ما
-   * يستحقّه. من أراد نقضَ الحكم فليأتِ بقياسٍ جديدٍ لا برأي.
+   * حكمت ت١٢ بألّا يُبنى تصفّحٌ على `category`: عيادةُ الـ٩٦٢ منتجاً كان ٨٦٣ منها بلا فئة،
+   * والقائمةُ مغلقةٌ بخمس قيم، و`section_id` (صنفُ الشركة) أسوأ تفاوتاً — «من أراد نقضَ
+   * الحكم فليأتِ بقياسٍ جديد». والقياسُ الجديدُ (0229) ليس الحقلَ القديمَ مُعبّأً: **جدولُ أقسامٍ
+   * تملؤه العيادةُ باليد** (`store_sections`)، والقسمُ لا يصل الزبونَ إلا وفيه معروضٌ —
+   * فالشريطُ لا يَعِد بترتيبٍ لا تملكه التشكيلة. والمنشورُ بلا قسمٍ يُقال «منتجات أخرى».
+   * ومتجرٌ بلا أقسام يبقى كما حكمت ت١٢ حرفاً: شريطُ الفئات يُخفي نفسَه حين لا يفرّق.
    */
+  const sections = front?.sections ?? [];
+  const OTHERS = "__others";
+  const hasOthers = sections.length > 0 && catalog.some((c) => !c.section_id);
   const cats = useMemo(() => {
     const seen = new Set<string>();
     for (const c of catalog) seen.add(c.category ?? "other");
@@ -235,6 +236,7 @@ export function Storefront() {
     const ql = searchable(q);
     const list = catalog.filter((c) =>
       (cat === "all" || (c.category ?? "other") === cat) &&
+      (sec === "all" || (sec === OTHERS ? !c.section_id : c.section_id === sec)) &&
       (!ql || searchable(c.name).includes(ql) || searchable(c.subcategory).includes(ql) || searchable(c.descr).includes(ql)));
     /* ترتيبٌ واحدٌ يحكم الشبكة كلَّها:
      *   • النافدُ آخِراً **دائماً** — يبقى ظاهراً (إخفاؤه يجعل التشكيلة تبدو
@@ -247,7 +249,7 @@ export function Storefront() {
     else if (sort === "priceDesc") arr.sort((a, b) => rank(a) - rank(b) || b.price - a.price);
     else arr.sort((a, b) => rank(a) - rank(b) || Number(!!b.featured) - Number(!!a.featured));
     return arr;
-  }, [catalog, q, cat, sort]);
+  }, [catalog, q, cat, sec, sort]);
 
   /** مختارات العيادة (0177): تظهر أعلى الكتلوج بلا بحثٍ ولا فئةٍ منتقاة —
    *  بحثُ الزبون أولى من تسويقنا. */
@@ -418,7 +420,16 @@ export function Storefront() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على منتج…"
               className="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none transition focus:border-brand-400" />
           </div>
-          {cats.length > 1 && (
+          {sections.length > 0 ? (
+            /* شريطُ أقسام العيادة بترتيبها وأعدادها (من store_front — يصل مع البذرة بلا رحلة). */
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-storesections>
+              <CatChip active={sec === "all"} onClick={() => { playTap(); setSec("all"); }} label={t("sf.all", "الكل")} />
+              {sections.map((x) => (
+                <CatChip key={x.id} active={sec === x.id} onClick={() => { playTap(); setSec(x.id); }} label={`${x.name} · ${formatNum(x.n)}`} />
+              ))}
+              {hasOthers && <CatChip active={sec === OTHERS} onClick={() => { playTap(); setSec(OTHERS); }} label={t("sf.others", "منتجات أخرى")} />}
+            </div>
+          ) : cats.length > 1 && (
             /* الفرزُ خرج من حاوية التمرير: كان بـ`ms-auto` **داخلها** وشريطُ
                التمرير مخفيّ، فقِيس عند x=−210 — عنصرُ تحكّمٍ لا يعرف أحدٌ بوجوده
                غيرُ موجود. صار سطراً مستقلاً يظهر حين يستحقّ الكتلوجُ فرزاً. */
@@ -504,11 +515,16 @@ export function Storefront() {
                     </span>
                     {productImageUrl(p.image_path) && (
                       /* تكسيلُ ما هو فوق الطيّة يؤخّر أثقلَ عنصرٍ بالرسم (LCP)
-                         بلا أن يوفّر شيئاً — الزائرُ يراه بلا تمرير. */
-                      <img src={productImageUrl(p.image_path) as string} alt="" width={400} height={400}
+                         بلا أن يوفّر شيئاً — الزائرُ يراه بلا تمرير. والشبكةُ بالمصغّر
+                         (0229: ٤٨٠ بكسل بدل ١٦٠٠) — فشلُه يرجع للكاملة مرّةً، ثمّ البلاطة. */
+                      <img src={productImageUrl(listImagePath(p)) as string} alt="" width={400} height={400}
                         loading={i < 4 ? "eager" : "lazy"} fetchPriority={i < 4 ? "high" : undefined}
                         className="absolute inset-0 h-full w-full object-contain p-1.5"
-                        onError={(e) => { e.currentTarget.hidden = true; }} />
+                        onError={(e) => {
+                          const full = productImageUrl(p.image_path);
+                          if (full && e.currentTarget.dataset.full !== "1") { e.currentTarget.dataset.full = "1"; e.currentTarget.src = full; return; }
+                          e.currentTarget.hidden = true;
+                        }} />
                     )}
                   </div>
                   {!p.available ? (
@@ -690,7 +706,7 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
                  التي اختارها. والبلاطةُ أرضاً تحتها كما بالبطاقة، فلا يصير
                  السطرُ فارغاً إن فشل التحميل. (بقايا `categoryLook` — البند ١٧.) */
               const shelf = shelfLook(p.name);
-              const cimg = productImageUrl(p.image_path);
+              const cimg = productImageUrl(listImagePath(p));
               return (
                 <div key={l.id} className="flex items-center gap-3 rounded-2xl border border-line p-2.5">
                   <span className={cn("relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl text-2xs font-bold", shelf.tile, shelf.ink)}>

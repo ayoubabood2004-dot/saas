@@ -23,7 +23,7 @@
  * فيبقى بحزمةٍ لا تُطلب أبداً بالإنتاج — يعمل التجريبيُّ ولا يدفع الزبونُ ثمنه.
  * ==========================================================================*/
 import type { StoreCatalogItem, StoreFrontInfo, StoreTrackInfo, JourneyPublicView } from "@/types";
-import { productImageUrl } from "./storeLib";
+import { productImageUrl, shapeSections } from "./storeLib";
 
 const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 const SUPA_URL: string = (env.VITE_SUPABASE_URL ?? "").replace(/\/+$/, "");
@@ -45,11 +45,18 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   });
   if (!res.ok) {
     let msg = `${res.status}`;
-    try { msg = ((await res.json()) as { message?: string })?.message || msg; } catch { /* نصُّ الحالة يكفي */ }
-    throw new Error(msg);
+    let code: string | undefined;
+    try { const j = (await res.json()) as { message?: string; code?: string }; msg = j?.message || msg; code = j?.code; } catch { /* نصُّ الحالة يكفي */ }
+    throw Object.assign(new Error(msg), { code });
   }
   return (await res.json()) as T;
 }
+
+/** دالّةٌ غيرُ موجودةٍ بالخادم (هجرةٌ لم تنزل) — مرآةُ `missingRpc` بـrepo حرفاً. */
+const missingRpc = (e: unknown): boolean => {
+  const x = e as { code?: string; message?: string } | null;
+  return !!x && (x.code === "PGRST202" || x.code === "42883" || /could not find the function/i.test(x.message ?? ""));
+};
 
 type RawFront = { ok?: boolean } & StoreFrontInfo;
 
@@ -60,6 +67,7 @@ function shapeFront(d: RawFront | null): StoreFrontInfo | null {
     name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
     facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
     delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
+    sections: shapeSections((d as { sections?: unknown }).sections),
   };
 }
 function shapeCatalog(rows: StoreCatalogItem[] | null | undefined): StoreCatalogItem[] {
@@ -98,10 +106,16 @@ export const storeApi = {
 
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
     if (!CLOUD) return (await demoRepo()).storeCatalogPublic(slug, limit, offset);
-    // ما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
+    // 0229: الكتلوجُ بأقسامه أوّلاً؛ وخادمٌ بلاها يرجع للقديمة بنفس الصفحة (مرآةُ repo حرفاً).
+    // وما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
     let rows: StoreCatalogItem[];
     try {
-      rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
+      try {
+        rows = await rpc<StoreCatalogItem[]>("store_catalog2", { p_slug: slug, p_limit: limit, p_offset: offset });
+      } catch (e) {
+        if (!missingRpc(e)) throw e;
+        rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
+      }
     } catch (e) {
       if (offset !== 0) throw e;
       rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug });

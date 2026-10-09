@@ -5,7 +5,7 @@
 // حروف إنكليزية صغيرة/أرقام/شرطات، 3–30، ما يبدي أو ينتهي بشرطة —
 // حتى الفحص المحلي والرفض السحابي ما يختلفان أبداً.
 // ============================================================================
-import type { StoreOrderItem } from "@/types";
+import type { StoreOrderItem, StoreSectionPublic } from "@/types";
 
 /* الرابط من env مباشرةً لا من `@/lib/supabase`: حرّاسُ الحزم يوصّلون repo.ts
  * (وهو يستورد هذا الملف) ببديلٍ مزيّفٍ للعميل، واستيرادُ الوحدة الحقيقية من
@@ -19,6 +19,19 @@ export function productImageUrl(path: string | null | undefined): string | null 
   if (path.startsWith("data:")) return path;
   if (!SUPA_URL) return null;
   return `${SUPA_URL.replace(/\/+$/, "")}/storage/v1/object/public/product-images/${path}`;
+}
+
+/** مسارُ صورة الشبكة (0229): المصغّرُ إن وصل، وإلا الصورةُ كاملة — اختيارُ مسارٍ نقيّ تقرؤه
+ *  الواجهةُ والحافةُ معاً (الحافةُ تبني الرابطَ بنفسها: `productImageUrl` بلا مفاتيح هناك). */
+export function listImagePath(item: { image_path?: string | null; thumb_path?: string | null }): string | null {
+  return item.thumb_path || item.image_path || null;
+}
+
+/** أقسامُ الزائر من `store_front` (0229) — خادمٌ قبلها بلا المفتاح ⇒ قائمةٌ فارغة (بلا شريط). */
+export function shapeSections(v: unknown): StoreSectionPublic[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x) => x && typeof x.id === "string" && typeof x.name === "string")
+    .map((x) => ({ id: x.id as string, name: x.name as string, n: Number(x.n) || 0 }));
 }
 
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;

@@ -33,6 +33,7 @@ import type { ProductBatch } from "@/types";
 import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { ExpenseCategory } from "@/types";
+import type { PriceReviewRow, StorePublishResult, StoreSection } from "@/types";
 import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
 import type { PricePreview } from "./priceRaise";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -42,7 +43,7 @@ import i18next from "i18next";
 import type { PgSort } from "./pgOrder";
 import type { ActivityRow } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent } from "@/types";
-import { isValidSlug, normalizeSlug, productImageUrl } from "./storeLib";
+import { isValidSlug, normalizeSlug, productImageUrl, shapeSections } from "./storeLib";
 import { expenseMethodOf } from "./pockets";
 import { journeyToken } from "./journey";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
@@ -391,6 +392,11 @@ function normPreview(p: PricePreview): PricePreview {
 /** «السعرُ تغيّر من جهازٍ آخر» — رمزٌ يترجمه describeDbError (لا نصَّ عربياً هنا). */
 function priceMoved(): Error {
   return Object.assign(new Error("price_moved"), { code: "price_moved" });
+}
+
+/** دالّةٌ غيرُ موجودةٍ بالقاعدة (هجرةٌ لم تنزل) — وحدَه يُسقَط إلى المسار القديم؛ أيُّ خطأٍ غيره يُرمى. */
+function missingRpc(e: { code?: string; message?: string } | null | undefined): boolean {
+  return !!e && (e.code === "PGRST202" || e.code === "42883" || /could not find the function/i.test(e.message ?? ""));
 }
 
 function need<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T {
@@ -1235,6 +1241,31 @@ const supabaseRepo: DemoRepo = {
     if (up.error) throw up.error;
     return path;
   },
+  /** الصورةُ ومصغّرُها (0229) — نفسُ المسار الفريد، والمصغّرُ بجانبه باسمه (`….thumb.jpg`):
+   *  `store_set_image` تتحقّق أنّ المصغّرَ يصف هذه الصورة بالذات. فشلُ المصغّر لا يُفشل الصورة —
+   *  صورةٌ بلا مصغّرٍ تُعرض كاملةً كما كانت، أمّا صورةٌ ضاعت لأن نسختَها الصغيرة فشلت فخسارة. */
+  async uploadProductPhoto(clinicId, productId, full, thumb) {
+    if (!clinicId) throw new Error("no_clinic_for_image");
+    assertUploadableImage(full);
+    const base = `${clinicId}/${productId}-${Date.now().toString(36)}`;
+    const path = `${base}.${imageExt(full)}`;
+    const up = await sbc().storage.from("product-images").upload(path, full.blob, {
+      contentType: imageType(full), cacheControl: "31536000", upsert: false,
+    });
+    if (up.error) throw up.error;
+    let thumbPath: string | null = null;
+    if (thumb) {
+      try {
+        assertUploadableImage(thumb);
+        const tp = `${base}.thumb.jpg`;
+        const tu = await sbc().storage.from("product-images").upload(tp, thumb.blob, {
+          contentType: "image/jpeg", cacheControl: "31536000", upsert: false,
+        });
+        if (!tu.error) thumbPath = tp;
+      } catch { /* swallow-ok: المصغّرُ تحسين — بلاه تُعرض الصورةُ كاملة */ }
+    }
+    return { path, thumb: thumbPath };
+  },
   /* ── موظّفُ التصوير (0222) — كلُّها من الخادم بإذنه: المنتجاتُ بأعمدةٍ آمنة، وصورةُ
    *    المنتج وحدَها، والمتجرُ بلا سعرٍ ولا طلبات. صفرُ صفوفٍ خطأٌ مسموع بالخادم. ── */
   async listPhotoProducts() {
@@ -1242,10 +1273,15 @@ const supabaseRepo: DemoRepo = {
     if (error) throw error;
     return ((data ?? []) as PhotoProduct[]).map((p) => ({
       ...p, sell_price: p.sell_price == null ? null : Number(p.sell_price), stock: p.stock == null ? null : Number(p.stock),
+      store_sort: p.store_sort == null ? null : Number(p.store_sort), alt_codes: Array.isArray(p.alt_codes) ? p.alt_codes : [],
     }));
   },
-  async setProductImage(productId, path) {
-    const { error } = await sbc().rpc("set_product_image", { p_product: productId, p_path: path });
+  /* بلا وصف ⇒ set_product_image كما كانت (المخزون)؛ والوصفُ (أو null صريحٌ يمسحه) ⇒
+   * store_set_image (0229) بنداءٍ واحد — المسارُ ووصفُه يُكتبان معاً أو لا شيء. */
+  async setProductImage(productId, path, meta) {
+    const { error } = meta === undefined
+      ? await sbc().rpc("set_product_image", { p_product: productId, p_path: path })
+      : await sbc().rpc("store_set_image", { p_product: productId, p_path: path, p_meta: meta });
     if (error) throw error;
   },
   async setStoreFeatured(productId, on) {
@@ -1263,7 +1299,7 @@ const supabaseRepo: DemoRepo = {
     if (error) throw error;
     return Number(data);
   },
-  async deleteProductImage(clinicId, productId, path) {
+  async deleteProductImage(clinicId, productId, path, thumb) {
     void clinicId; void productId;
     // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ
     // لا ملف له. وملفُ المكتبة (library/) ملكُ المنصّة يخدم كلَّ العيادات:
@@ -1279,7 +1315,9 @@ const supabaseRepo: DemoRepo = {
     const refs = await sbc().rpc("image_path_in_use", { p_path: path });
     // فشلُ السؤال ⇒ لا نحذف. «ما أعرف» تعني «لا تلمس»، لا «امضِ».
     if (refs.error || refs.data !== false) return;
-    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
+    // المصغّرُ يتبع صورتَه (0229): لا يُشار إليه إلا من وصفها، فحين لا تُستعمل هي لا يُستعمل هو.
+    const files = [path, thumb && thumb.startsWith(path.replace(/\.[A-Za-z0-9]+$/, "")) ? thumb : null].filter((x): x is string => !!x);
+    try { await sbc().storage.from("product-images").remove(files); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
   /* ── حقولُ الدواجن (0191/0192) — السحابيّ ───────────────────────────────
    * القوائمُ من `listOrThrow` لا `listOf`: قائمةُ دفعاتٍ ناقصةٌ بصمتٍ تعني
@@ -1562,6 +1600,55 @@ const supabaseRepo: DemoRepo = {
     const r = (data ?? {}) as { changed?: number; skipped_no_price?: number };
     return { changed: Number(r.changed ?? 0), skipped_no_price: Number(r.skipped_no_price ?? 0) };
   },
+  /* ── أقسامُ المتجر والنشرُ بشروطه (0229) — كلُّها دوالُّ definer تسأل الإذنَ والعيادةَ بنفسها
+   *    (الجدولُ والمنتجاتُ مسيَّجةٌ للمصوّر)، وكلُّ خطأٍ يُرمى بتلميحه العربيّ. ── */
+  async listStoreSections() {
+    const { data, error } = await sbc().rpc("store_sections_list");
+    if (error) throw error;
+    return ((data ?? []) as StoreSection[]).map((x) => ({ ...x, sort: Number(x.sort) || 0 }));
+  },
+  async saveStoreSection(id, name) {
+    const { data, error } = await sbc().rpc("store_section_save", { p_id: id, p_name: name });
+    if (error) throw error;
+    const x = data as StoreSection;
+    return { ...x, sort: Number(x.sort) || 0 };
+  },
+  async archiveStoreSection(id, archived) {
+    const { error } = await sbc().rpc("store_section_archive", { p_id: id, p_archived: archived });
+    if (error) throw error;
+  },
+  async reorderStoreSections(ids) {
+    const { error } = await sbc().rpc("store_sections_reorder", { p_ids: ids });
+    if (error) throw error;
+  },
+  async assignStoreSection(productIds, sectionId) {
+    if (!productIds.length) return { changed: 0 };
+    const { data, error } = await sbc().rpc("store_assign_section", { p_products: productIds, p_section: sectionId });
+    if (error) throw error;
+    return { changed: Number((data as { changed?: number } | null)?.changed ?? 0) };
+  },
+  async reorderSectionProducts(sectionId, ids) {
+    const { data, error } = await sbc().rpc("store_reorder_products", { p_section: sectionId, p_ids: ids });
+    if (error) throw error;
+    return { changed: Number((data as { changed?: number } | null)?.changed ?? 0) };
+  },
+  async storePublish(ids, on) {
+    if (!ids.length) return { changed: 0, skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
+    const { data, error } = await sbc().rpc("store_publish", { p_ids: ids, p_on: on });
+    if (error) throw error;
+    const r = (data ?? {}) as Partial<Record<keyof StorePublishResult, number>>;
+    return {
+      changed: Number(r.changed ?? 0), skipped_no_photo: Number(r.skipped_no_photo ?? 0),
+      skipped_no_price: Number(r.skipped_no_price ?? 0), skipped_expired: Number(r.skipped_expired ?? 0),
+    };
+  },
+  async storePriceReview() {
+    const { data, error } = await sbc().rpc("store_price_review");
+    if (error) throw error;
+    return ((data ?? []) as PriceReviewRow[]).map((r) => ({
+      ...r, old_price: r.old_price == null ? null : Number(r.old_price), new_price: r.new_price == null ? null : Number(r.new_price),
+    }));
+  },
   async listNewStoreOrders() {
     return allPages<StoreOrder>(() =>
       sbc().from("store_orders").select("*").eq("status", "new"), { col: "created_at", asc: false, kind: "time" });
@@ -1656,11 +1743,14 @@ const supabaseRepo: DemoRepo = {
       name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
       facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
       delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
+      sections: shapeSections(d.sections),
     };
   },
   async storeCatalogPublic(slug, limit = 60, offset = 0) {
+    // 0229: الكتلوجُ بأقسامه أوّلاً؛ وخادمٌ بلاها (الهجرةُ لم تُطبَّق بعد) يرجع للقديمة بنفس الصفحة.
+    let res = await sbc().rpc("store_catalog2", { p_slug: slug, p_limit: limit, p_offset: offset });
+    if (res.error && missingRpc(res.error)) res = await sbc().rpc("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
     // ما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
-    let res = await sbc().rpc("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
     if (res.error && offset === 0) res = await sbc().rpc("store_catalog", { p_slug: slug });
     if (res.error) throw new Error(res.error.message);
     return ((res.data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
@@ -2756,7 +2846,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
-  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listDrugFavorites", "listPhotoProducts",
+  "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listDrugFavorites", "listPhotoProducts", "listStoreSections", "storePriceReview",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

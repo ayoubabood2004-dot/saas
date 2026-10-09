@@ -45,12 +45,16 @@ export function readHotPaths(root = process.cwd()) {
   return doc.hot;
 }
 
-/** النطاقاتُ التي تملكها صفحةٌ واحدة (`owned` بـhot-paths.json): {ns: ملفُّ مالكها}. */
+/** النطاقاتُ المملوكة (`owned` بـhot-paths.json): {ns: ملفُّ مالكها} — أو لنطاقٍ تقرؤه عدّةُ
+ *  صفحاتٍ عبر مكوّناتٍ مشتركة (0229، لوحةُ المتجر): {ns: {pages: [صفحات], dir: "مجلّد المكوّنات/"}}.
+ *  التقسيمُ والوزنُ يقرآن الأسماءَ وحدَها؛ والشكلُ يحكمه i18n-owned-guard. */
 export function readOwned(root = process.cwd()) {
   const doc = JSON.parse(readFileSync(path.join(root, HOT_PATHS_JSON), "utf8"));
   const o = doc.owned ?? {};
-  if (!isObj(o) || Object.values(o).some((v) => typeof v !== "string" || !v.trim())) {
-    throw new Error(`${HOT_PATHS_JSON}: "owned" لازم خريطةَ نطاقٍ ← ملفِّ مالكه`);
+  const okShared = (v) => isObj(v) && Array.isArray(v.pages) && v.pages.length > 0
+    && v.pages.every((x) => typeof x === "string" && x.trim()) && (v.dir === undefined || (typeof v.dir === "string" && v.dir.endsWith("/")));
+  if (!isObj(o) || Object.values(o).some((v) => !((typeof v === "string" && v.trim()) || okShared(v)))) {
+    throw new Error(`${HOT_PATHS_JSON}: "owned" لازم خريطةَ نطاقٍ ← ملفِّ مالكه (أو {pages, dir} لنطاقٍ مشترك)`);
   }
   return o;
 }

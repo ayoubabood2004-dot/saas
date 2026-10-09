@@ -36,6 +36,7 @@
     "vbk": "src/pages/VisitPage.tsx",
     "cbook": "src/pages/CompanyBook.tsx",
     "praise": "src/pages/PriceRaise.tsx",
-    "wdr": "src/pages/AnalyticsHub.tsx"
+    "wdr": "src/pages/AnalyticsHub.tsx",
+    "sb": { "pages": ["src/pages/ProductPhotos.tsx", "src/pages/ClinicStore.tsx"], "dir": "src/components/store/" }
   }
 }

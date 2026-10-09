@@ -43,7 +43,7 @@ const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ defaul
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
 const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ default: m.CompanyBook })), ["cbook"]);
 const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ default: m.PriceRaise })), ["praise"]);
-const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
+const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos", "sb"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })), ["farm"]);
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
@@ -57,7 +57,7 @@ const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.L
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
-const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
+const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })), ["sb"]);
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const StoreTrack = page(() => import("@/pages/StoreTrack").then((m) => ({ default: m.StoreTrack })));
 const TrackJourney = page(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));

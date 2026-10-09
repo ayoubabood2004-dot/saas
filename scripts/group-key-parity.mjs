@@ -63,10 +63,13 @@ for (const f of files) {
   /* مقارنةٌ بطرفٍ مطبَّعٍ وطرفٍ ليس كذلك. نلتقط `X(...) === <طرف>` حيث X أحدُ
      دوالّ التطبيع، ونرفض إن كان الطرفُ الآخر لا يمرّ من دالّةِ تطبيع. */
   const NORM = "(?:groupKey|normKey|nameKey|searchable|normalizeCode|normalizeAr)";
-  const re = new RegExp(`${NORM}\\s*\\([^()]*\\)\\s*===\\s*([A-Za-z0-9_.$\\[\\]"'\` ]+)`, "g");
+  const re = new RegExp(`${NORM}\\s*\\([^()]*\\)\\s*===\\s*([A-Za-z0-9_.$\\[\\]"'\` ]+)(\\()?`, "g");
   for (const m of src.matchAll(re)) {
     const rhs = m[1].trim();
     if (new RegExp(`^${NORM}\\s*\\(`).test(rhs)) continue;   // الطرفان مطبَّعان
+    // والقوسُ خارج صنف الالتقاط: `searchable(a) === searchable(b)` كان يُقرأ طرفُه «searchable»
+    // بلا قوسه فيُحسب خاماً — حارسٌ يُدين المقارنةَ الصحيحة نفسَها (0229).
+    if (m[2] === "(" && new RegExp(`^${NORM}$`).test(rhs)) continue;
     if (/^(key|k|norm\w*|\w*Key)$/.test(rhs)) continue;      // متغيّرٌ يُفترض أنه مفتاح — يُفحص بالقيم أدناه
     oneSided.push(`${f}: ${m[0].slice(0, 90)}`);
   }

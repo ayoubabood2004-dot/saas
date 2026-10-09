@@ -61,7 +61,8 @@ const fromDateInput = (s: string): Date | null => {
 };
 
 /* ── «كان ← صار» ─────────────────────────────────────────────────────────── */
-const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
+/* `image_meta` (0229) يرافق `image_path` دائماً: تغيّرُ الصورة يُقال من مسارها، ووصفُها ضجيج. */
+const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id", "image_meta"]);
 interface FieldChange { key: string; from: unknown; to: unknown }
 function changesOf(brief: Record<string, unknown> | null | undefined): FieldChange[] {
   const c = brief?.["__changed"];
@@ -286,6 +287,9 @@ export function ActivityLog() {
     if (typeof v === "number") return formatDec(v);
     const sv = String(v);
     if (/^\[large:\d+\]$/.test(sv)) return t("act.chBig", "محتوى كبير");
+    // كائنٌ (وصفُ صورةٍ مثلاً) كان يُرسم «[object Object]»، ومعرّفٌ (قسمُ المتجر) خيطاً بلا معنى.
+    if (typeof v === "object") return t("act.chObj", "تفاصيل");
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sv)) return t("act.chLinked", "مربوط");
     return sv.length > 28 ? sv.slice(0, 28) + "…" : sv;
   }, [t]);
 

@@ -1567,5 +1567,70 @@ console.log("▸ 0228 — سعرُ المتجر بشرطه (مرآةُ store_set
   check("photo_products بالتجريبيّ تعطي المجمَّعَ والانتهاء", ph && "pooled" in ph && "expiry_date" in ph);
 }
 
+console.log("▸ 0229 — أقسامُ المتجر والنشرُ بشروطه والصورةُ بوصفها (مرآةُ دوالّ الخادم)");
+{
+  const db0 = JSON.parse(mem.get(DB_KEY) || "{}");
+  const now = new Date().toISOString();
+  const mk = (id, extra) => ({ id, name: `منتج ${id}`, barcode: `9${id.replace(/\D/g, "")}`, stock: 3, purchase_price: 1000, sell_price: 5000, image_path: `c/${id}.jpg`, created_at: now, ...extra });
+  db0.products = [mk("q1"), mk("q2"), mk("q3", { image_path: null }), mk("q4", { sell_price: 0 }), mk("q5", { expiry_date: "2020-01-01" }), mk("q6", { farm_id: "farm-x" }), mk("q7", { sell_price: 800 })];
+  db0.storeSections = [];
+  db0.storeProfile = { slug: "demo-sec", enabled: true, delivery_fee: 0, min_order: 0, updated_at: now };
+  mem.set(DB_KEY, JSON.stringify(db0));
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  const dbNow = () => JSON.parse(mem.get(DB_KEY));
+  const prod = (id) => dbNow().products.find((p) => p.id === id);
+
+  const s1 = await repo.saveStoreSection(null, "أكل قطط");
+  const s2 = await repo.saveStoreSection(null, "  شامبو   ");
+  check("قسمان: الاسمُ مطويُّ المسافات، والثاني آخرَ القائمة", s2.name === "شامبو" && s2.sort === s1.sort + 1);
+  check("  والتوأمُ بعد التطبيع مرفوض، والفارغُ والطويلُ كذلك",
+    (await code(() => repo.saveStoreSection(null, "اكل  قطط"))) === "section_twin"
+    && (await code(() => repo.saveStoreSection(null, "  "))) === "section_bad_name"
+    && (await code(() => repo.saveStoreSection(null, "ق".repeat(41)))) === "section_bad_name");
+  await repo.reorderStoreSections([s2.id, s1.id]);
+  check("ترتيبُ الأقسام بالقائمة الكاملة", (await repo.listStoreSections()).map((x) => x.id).join() === [s2.id, s1.id].join());
+  check("  والقائمةُ الناقصة ترفض كلَّها (sections_stale)", (await code(() => repo.reorderStoreSections([s1.id]))) === "sections_stale");
+
+  const a = await repo.assignStoreSection(["q1", "q2", "q6"], s1.id);
+  check("الإدراج: منتجا العيادة يدخلان آخرَ القسم بترتيب القائمة، ومنتجُ الحقل لا", a.changed === 2
+    && prod("q1").store_section_id === s1.id && prod("q1").store_sort === 1 && prod("q2").store_sort === 2 && !prod("q6").store_section_id);
+  check("  وإعادةُ الإدراج بنفس القسم لا تلمس شيئاً", (await repo.assignStoreSection(["q1"], s1.id)).changed === 0);
+  check("  ولا منتجَ مجهول ولا قسمَ مجهول", (await code(() => repo.assignStoreSection(["nope"], s1.id))) === "product_not_found"
+    && (await code(() => repo.assignStoreSection(["q1"], "nope"))) === "section_not_found");
+  await repo.reorderSectionProducts(s1.id, ["q2", "q1"]);
+  check("ترتيبُ القسم يقلب الاثنين", prod("q2").store_sort === 1 && prod("q1").store_sort === 2);
+  check("  وقائمةٌ فيها منتجٌ مو بالقسم ترفض كلَّها (order_stale)", (await code(() => repo.reorderSectionProducts(s1.id, ["q3", "q1"]))) === "order_stale");
+
+  const pub = await repo.storePublish(["q1", "q2", "q3", "q4", "q5", "q6"], true);
+  check("النشرُ بشروطه: صورة + سعر + غيرُ منتهٍ، والمتخطّى بسببه", pub.changed === 2 && pub.skipped_no_photo === 1 && pub.skipped_no_price === 1 && pub.skipped_expired === 1,
+    JSON.stringify(pub));
+  check("  ومنتجُ الحقل لا يُلمس ولا يُعدّ", !prod("q6").store_visible);
+  check("  والمنشورُ أصلاً لا يُعدّ، والإخفاءُ بلا شرط", (await repo.storePublish(["q1"], true)).changed === 0 && (await repo.storePublish(["q1"], false)).changed === 1);
+  await repo.storePublish(["q1", "q7"], true);
+
+  const cat = await repo.storeCatalogPublic("demo-sec", 100, 0);
+  check("كتلوجُ الزبون: قسمُه بترتيبه اليدويّ، و«بلا قسم» آخراً", cat.map((c) => c.id).join() === "q2,q1,q7" && cat[0].section_id === s1.id && cat[2].section_id === null,
+    JSON.stringify(cat.map((c) => [c.id, c.section_id])));
+  const front = await repo.storeFrontPublic("demo-sec");
+  check("  والأقسامُ مع store_front: ما فيه معروضٌ وحده بعدده", JSON.stringify(front?.sections) === JSON.stringify([{ id: s1.id, name: "أكل قطط", n: 2 }]), JSON.stringify(front?.sections));
+  await repo.archiveStoreSection(s1.id, true);
+  const cat2 = await repo.storeCatalogPublic("demo-sec", 100, 0);
+  check("أرشفةُ القسم: يختفي من الزبون، ومنتجاتُه تنزل لـ«بلا قسم» وتبقى مربوطة",
+    (await repo.storeFrontPublic("demo-sec"))?.sections.length === 0 && cat2.every((c) => c.section_id === null) && prod("q1").store_section_id === s1.id);
+  check("  وقسمٌ جديدٌ باسم المؤرشف يُرفض بتلميح «رجّعه»", (await code(() => repo.saveStoreSection(null, "أكل قطط"))) === "section_twin_archived");
+  await repo.archiveStoreSection(s1.id, false);
+  check("  والاسترجاعُ يعيده آخرَ القائمة", (await repo.listStoreSections()).filter((x) => !x.archived_at).map((x) => x.id).join() === [s2.id, s1.id].join());
+
+  const meta = { v: 1, path: "c1/q1-abc123.jpg", thumb: "c1/q1-abc123.thumb.jpg", w: 1600, h: 1200, bytes: 300000, src: "camera" };
+  await repo.setProductImage("q1", meta.path, meta);
+  check("الصورةُ بوصفها بنداءٍ واحد", prod("q1").image_path === meta.path && prod("q1").image_meta?.thumb === meta.thumb);
+  check("  ووصفٌ يصف صورةً أخرى يُرفض", (await code(() => repo.setProductImage("q1", "c1/other.jpg", meta))) === "bad_image_meta");
+  await repo.setProductImage("q1", "library/x.jpg", null);
+  check("  وصورةٌ بلا وصف (المكتبة) تمسح الوصفَ القديم — وصفٌ يتيمٌ يكذب", prod("q1").image_path === "library/x.jpg" && prod("q1").image_meta === null);
+  const ph = (await repo.listPhotoProducts()).find((p) => p.id === "q7");
+  check("photo_products بالتجريبيّ: القسمُ والترتيبُ والتوفّرُ و«تحت الكلفة» (800 < 1000)",
+    ph && "store_section_id" in ph && "store_sort" in ph && ph.available === true && ph.below_cost === true);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

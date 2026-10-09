@@ -33,6 +33,11 @@ const DECISION_LISTS = [
   // منتقي المكتبة: فشلٌ صامتٌ يقول «ما بيها صور» فيصوّر المستخدمُ المادّةَ
   // من جديد — والصورةُ موجودة. قائمةٌ يُبنى عليها فعلٌ، فترمي (البند ٢٠).
   "listImageLibrary",
+  // 0229: لوحةُ المتجر — منتجاتُها وأقسامُها وتاريخُ أسعارها يُبنى عليها نشرٌ وترتيبٌ وسعر.
+  // «ماكو أقسام» عن فشلٍ يدفع لإنشاء قسمٍ ثانٍ بنفس الاسم؛ و«ما تغيّر» عن فشلٍ يُصدَّق.
+  "listPhotoProducts",
+  "listStoreSections",
+  "storePriceReview",
 ];
 
 /** شاشاتٌ فشلُها يقلب قراراً — لا تبتلع بها فشلاً بلا سببٍ مكتوب. */
@@ -46,6 +51,10 @@ const CRITICAL_SCREENS = [
   "src/components/retail/ReturnsPanel.tsx",
   "src/components/retail/InvoicesPanel.tsx",
   "src/components/retail/usePrintInvoice.ts",
+  "src/components/store/StoreBoard.tsx",
+  "src/components/store/SectionsPanel.tsx",
+  "src/components/store/PriceReview.tsx",
+  "src/components/store/ProductSheet.tsx",
 ];
 
 const files = [];

@@ -695,6 +695,11 @@ export interface Product {
   image_path?: string | null;
   /** مختارات المتجر (0177): يظهر بصفّ «مختارات» أعلى الستور. */
   store_featured?: boolean;
+  /** قسمُ المتجر (0229) وترتيبُه اليدويّ داخله — غيرُ `section_id` (صنفُ الشركة ذو الرصيد المجمَّع). */
+  store_section_id?: string | null;
+  store_sort?: number | null;
+  /** وصفُ الصورة (0229) — يُصدَّق ما دام `path` يطابق `image_path`. */
+  image_meta?: import("@/lib/productPhoto").ImageMeta | null;
   /** حقلُ الدواجن المالك لهذا الصنف (0191). فارغٌ = مخزنُ العيادة — الافتراض. */
   farm_id?: string | null;
   created_at: string;
@@ -1557,6 +1562,8 @@ export interface DemoDB {
   generatedBarcodes?: GeneratedBarcode[];
   storeProfile?: StoreProfile | null;
   storeOrders?: StoreOrder[];
+  /** أقسامُ المتجر (0229) — مرآةُ store_sections. */
+  storeSections?: StoreSection[];
   journeys?: Journey[];
   journeyEvents?: JourneyEvent[];
 }
@@ -1674,6 +1681,8 @@ export interface StoreFrontInfo {
   bio: string | null;
   delivery_fee: number;
   min_order: number;
+  /** 0229: أقسامُ المتجر الفعّالة التي فيها معروضٌ، بأعدادها وبترتيب العيادة — خادمٌ قبلها: []. */
+  sections: StoreSectionPublic[];
 }
 
 /** منتج بعين الزائر: أعمدة العرض فقط — «متوفر» boolean والكمية سر داخلي. */
@@ -1689,6 +1698,9 @@ export interface StoreCatalogItem {
   image_path?: string | null;
   /** مختارات (0177) — قد يغيب عن خادمٍ لم يرحَّل بعد، فالصفّ ببساطة لا يظهر. */
   featured?: boolean;
+  /** 0229: قسمُ المتجر (فارغٌ = «منتجات أخرى») ومصغّرُ الصورة للشبكة (فارغٌ = الصورةُ كاملة). */
+  section_id?: string | null;
+  thumb_path?: string | null;
 }
 
 /** اقتراحُ رفِّ البداية (0187) — الأعلى إيراداً بتسعين يوماً، ممّا هو مسعَّرٌ
@@ -2202,4 +2214,49 @@ export interface PhotoProduct {
   /** 0228: لمن يدير المتجر — المجمَّعُ رصيدُه بحوض قسمه، والانتهاءُ يخفيه الخادمُ عن الزبون. */
   pooled?: boolean | null;
   expiry_date?: string | null;
+  /** 0229: قسمُ المتجر وترتيبُه اليدويّ داخله (فارغٌ = بعد المرتَّب، بالاسم). */
+  store_section_id?: string | null;
+  store_sort?: number | null;
+  /** 0229: وصفُ الصورة (أبعاد، حجم، مصدر، مصغّر) — يُصدَّق ما دام `path` يطابق `image_path`. */
+  image_meta?: import("@/lib/productPhoto").ImageMeta | null;
+  /** 0229: سعرُ البيع تحت كلفة الشراء — علامةٌ يحسبها الخادم؛ الكلفةُ نفسُها لا تصل. */
+  below_cost?: boolean | null;
+  /** 0229: الرموزُ الإضافية (باركود المصنع بعد رقم الرفّ) — لمسح العلبة باللوحة. */
+  alt_codes?: string[] | null;
+  /** 0229: التوفّرُ بتعبير store_catalog (الصفُّ أو حوضُ صنفه) — لمن يدير المتجر. */
+  available?: boolean | null;
+}
+
+/** قسمُ المتجر (0229) — تنشئه العيادة وتدرج فيه منتجاتها؛ يُؤرشف ولا يُحذف. */
+export interface StoreSection {
+  id: string;
+  name: string;
+  sort: number;
+  archived_at: string | null;
+  created_at?: string;
+}
+
+/** نتيجةُ النشر (0229): ما تغيّر وما تُخطّي ولماذا — لا نجاحَ نصفيّاً صامتاً. */
+export interface StorePublishResult {
+  changed: number;
+  skipped_no_price: number;
+  skipped_no_photo: number;
+  skipped_expired: number;
+}
+
+/** آخرُ تغييرٍ على سعر منتجٍ منشور (0229) — من سجلّ التدقيق ومن رفع الأسعار. */
+export interface PriceReviewRow {
+  product_id: string;
+  changed_at: string;
+  old_price: number | null;
+  new_price: number | null;
+  by_name: string | null;
+  via: "edit" | "raise";
+}
+
+/** قسمٌ بواجهة الزبون (0229): ما فيه منتجٌ معروضٌ واحدٌ على الأقل. */
+export interface StoreSectionPublic {
+  id: string;
+  name: string;
+  n: number;
 }

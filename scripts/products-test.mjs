@@ -664,21 +664,30 @@ console.log("▸ جرس طلبات المتجر — يعدّ بلا صفوف، �
 /* ── تشكيلةُ المتجر: الصورةُ تُضاف من مكان الدكتور، ويلقى الناقصَ بضغطة ──────
  * كان لازم يترك المتجرَ ويفتح المخزونَ منتجاً منتجاً، وما عنده طريقةٌ يعرف
  * بيها أيُّ منتجٍ بعده بلا صورة — فيبقى نصفُ الرفّ بلا صور بلا أن يدري. */
-console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، وتصفيةٌ على «بلا صورة»");
+console.log("▸ تشكيلة المتجر — لوحةٌ واحدة (0229): صورةٌ من مكانها، وتصفيةٌ على «بلا صورة»");
 {
+  /* منذ 0229 التشكيلةُ وصفحةُ المصوّر لوحةٌ واحدة (`src/components/store/`): نفسُ الخصائص
+   * التي حرسها هذا القسمُ على CatalogTab تُحرس هنا على اللوحة — والسلوكُ نفسُه يُفحص
+   * بالتشغيل بـscripts/store-board-test.mjs. */
   const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
-  check("الرفعُ من داخل تبويب التشكيلة",
-    cs.includes("repo.uploadProductImage(") && cs.includes("prepareUpload(file, { maxDim: 800, quality: 0.72 })"));
-  check("  ومنتقي المكتبة مركَّبٌ هنا كذلك", cs.includes("<ImageLibraryPicker") && cs.includes("data-catlib"));
-  check("  والمصغّرةُ نفسُها هي الزرّ", cs.includes("data-catphoto") && cs.includes("productImageUrl(p.image_path)"));
-  check("  والمنتجُ بلا صورةٍ يعرض بلاطتَه لا رمزَ فئته", cs.includes("shelfLook(p.name)") && cs.includes("shelfMonogram(p.name)"));
-  check("تصفيةُ «بلا صورة» موجودةٌ بعدّادها", cs.includes("data-catfilter") && cs.includes('"nophoto"') && cs.includes("noPhotoCount"));
-  check("  وأربعُ حالاتِ تصفيةٍ لا واحدة", ["\"all\"", "\"shown\"", "\"hidden\"", "\"nophoto\""].every((k) => cs.includes(k)));
-  check("وفرزٌ صريح", cs.includes("data-catsort") && cs.includes('sort === "priceDesc"'));
-  check("  و«الترتيب الذكي» يقدّم المعروضَ ثم الناقصَ صورة", /rank = \(p: Product\) =>[^;]*store_visible[^;]*image_path/.test(cs));
-  check("وبحثُ التشكيلة يطبّع الطرفين مثل الستور", cs.includes("searchable(q)") && cs.includes("searchable(p.name).includes(ql)"));
-  // منذ 0222 يمرّ الفكُّ من `set_product_image` (الخادمُ يسأل الإذن ويحصر المسار) لا من رقعةٍ عامّة.
-  check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً", cs.includes("repo.deleteProductImage(") && cs.includes("repo.setProductImage(p.id, null)"));
+  const board = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
+  const flow = readFileSync("src/components/store/usePhotoFlow.tsx", "utf8");
+  const sheet = readFileSync("src/components/store/ProductSheet.tsx", "utf8");
+  const rules = readFileSync("src/lib/storeBoard.ts", "utf8");
+  check("التشكيلةُ هي اللوحة، والرفعُ من داخلها (ملفّان: كاملٌ ومصغّر)",
+    cs.includes('<StoreBoard mode="store"') && flow.includes("repo.uploadProductPhoto(") && board.includes("usePhotoFlow("));
+  check("  ومنتقي المكتبة مركَّبٌ هنا كذلك", flow.includes("<ImageLibraryPicker") && sheet.includes("flow.openLibrary(row)"));
+  check("  والصورةُ نفسُها هي الزرّ (تكبّر إن وُجدت، وتصوّر إن غابت)", /onClick=\{full \? onZoom : onCamera\}/.test(board));
+  check("  والمنتجُ بلا صورةٍ يقولها نصّاً لا فراغاً", board.includes('t("sb.noPhoto"'));
+  check("تصفيةُ «بلا صورة» موجودةٌ بعدّادها", board.includes("data-board-filters") && rules.includes('"nophoto"') && board.includes("counts[f]"));
+  check("  وأربعُ حالاتِ تصفيةٍ لا واحدة", ["\"all\"", "\"shown\"", "\"hidden\"", "\"nophoto\""].every((k) => rules.includes(k)));
+  check("وفرزٌ صريح", /<option value="work">[\s\S]{0,200}<option value="shelf">[\s\S]{0,200}<option value="name">/.test(board));
+  check("  و«الشغل الناقص أوّلاً» يقدّم المنشورَ بلا صورة ثمّ الجاهز", /p\.store_visible && !hasPhoto\(p\)\) return 0;[\s\S]{0,120}readiness\(p, todayISO\)\.ok\) return 1;/.test(rules));
+  check("وبحثُ اللوحة يطبّع الطرفين (الاسمُ بـsearchable والرمزُ بـnormalizeCode)",
+    /searchable\(raw\)[\s\S]{0,120}searchable\(`\$\{p\.name\}/.test(rules) && /normalizeCode\(raw\)[\s\S]{0,240}normalizeCode\(String\(c\)\)/.test(rules));
+  check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً (والمصغّرُ معها)",
+    flow.includes("repo.setProductImage(p.id, null, null)") && /repo\.deleteProductImage\(clinicId, p\.id, old, oldThumb\)/.test(flow));
+  check("  وتُسأل بالاسم والصورة لا بنافذة متصفّح", sheet.includes("data-remove-confirm") && !/window\.confirm/.test(sheet + board + flow));
 }
 
 /* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────
@@ -729,8 +738,8 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     /hasMore \|\| loadingMore \? "" : `\$\{formatNum\(shown\.length\)\}/.test(frontCode));
   check("بلاطةُ الرفّ أرضٌ دائمة خلف كلّ صورة (لا شرط !hasImg)",
     !/\bhasImg\b/.test(frontCode) && /shelfLabel\(p\.name\)/.test(frontCode));
-  check("سطرُ السلّة يعرض صورةَ المنتج فوق بلاطته",
-    /const cimg = productImageUrl\(p\.image_path\);/.test(frontCode)
+  check("سطرُ السلّة يعرض صورةَ المنتج (مصغّرَها — 0229) فوق بلاطته",
+    /const cimg = productImageUrl\(listImagePath\(p\)\);/.test(frontCode)
     && /shelfMonogram\(p\.name\)[\s\S]{0,200}\{cimg && <img/.test(frontCode));
   check("  وورقةُ التفاصيل بـobject-contain لا object-cover",
     !/object-cover/.test(frontCode) && /shelfLook\(detail\.name\)/.test(frontCode));
@@ -746,8 +755,9 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("  والمختارُ يتصدّر من الخادم", /order by coalesce\(p\.store_featured, false\) desc/.test(mig));
   check("  والتوفّرُ **خارجَ** الفرز عمداً — وإلا صارت قائمةً ناقصة",
     !/order by[^\n]*stock > 0/.test(mig));
+  // 0229 زاد مفاتيحَ الأقسام بين المميّز والمعرّف — النافذةُ اتّسعت لها، والمعرّفُ ما زال آخراً.
   check("  والمرآةُ التجريبية تفرز بنفس المفاتيح (حارسٌ ليس بالمرآة لم يُفحص)",
-    /store_featured[\s\S]{0,260}a\.id\.localeCompare\(b\.id\)/.test(repoW2));
+    /store_featured[\s\S]{0,700}store_sort[\s\S]{0,200}a\.id\.localeCompare\(b\.id\)\)/.test(repoW2));
   check("  ومُنزَّلةٌ بحزمة الهجرات",
     readFileSync("supabase/tests/run.sh", "utf8").includes("0182_store_catalog_stable_order.sql"));
 
@@ -857,17 +867,20 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
    * عندهنّ ٩٩٠ و٩٦٢ و٧٣٠ منتجاً وصفرُ منتجٍ معروض. */
   check("النشرُ لا يُتبَع بإعادةِ تحميلٍ كاملة (٦٩١ ك.ب بكلّ ضغطة)",
     !/const toggle = async \(p: Product\) => \{[\s\S]{0,420}await reload\(\);[\s\S]{0,40}\} catch/.test(store));
-  check("  والتحديثُ محلّيٌّ بمكانه", /for \(const p of all\) if \(done\.has\(p\.id\)/.test(store));
+  // 0229: النشرُ من اللوحة (`StoreBoard`) بـstore_publish — نفسُ الخصائص على الشِفرة الجديدة.
+  const brd = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
+  const pt = readFileSync("src/components/store/publishToast.ts", "utf8");
+  check("  والتحديثُ محلّيٌّ بمكانه (بشروط النشر نفسِها)", /patchMany\(ok, \(\) => \(\{ store_visible: on \}\)\)/.test(brd) && /readiness\(p, today\)\.ok/.test(brd));
   check("  وفشلُ الجماعيّ **يُعيد** القراءة (لا تبقى الشاشةُ على ظنٍّ لا يطابق الخادم)",
-    /cat\.bulkFailed[\s\S]{0,200}await reload\(\)/.test(store));
+    /sb\.publishFailed[\s\S]{0,200}await load\(\)/.test(brd));
   check("فعلٌ جماعيٌّ موجودٌ بالشاشة أصلاً (لم يكن)",
-    /const bulk = async \(on: boolean\)/.test(store) && /cat\.bulkShow/.test(store) && /cat\.bulkHide/.test(store));
+    /const bulkPublish = async \(on: boolean/.test(brd) && /sb\.bulkShow/.test(brd) && /sb\.bulkHide/.test(brd));
   check("  و«اختر الكل» يقصد المعروضَ بالتصفية لا الجدولَ كلَّه",
-    /setPicked\(picked\.size === list\.length \? new Set\(\) : new Set\(list\.map/.test(store));
+    /setPicked\(picked\.size === visible\.length \? new Set\(\) : new Set\(visible\.map/.test(brd));
   check("  والدالّةُ الخادميةُ بنداءٍ واحد لا حلقةٍ بالواجهة",
-    /repo\.setStoreVisible\(ids, on\)/.test(store) && !/for \([^)]*\) \{[\s\S]{0,120}await repo\.updateProduct\([^)]*store_visible/.test(store));
-  check("  والمتخطَّى بلا سعرٍ يُقال بعدده وسببه",
-    /skipped_no_price > 0/.test(store) && /cat\.bulkSkippedWhy/.test(store));
+    /repo\.storePublish\(ids, on\)/.test(brd) && !/for \([^)]*\) \{[\s\S]{0,120}await repo\.updateProduct\([^)]*store_visible/.test(brd));
+  check("  والمتخطَّى يُقال بعدده وسببه (صورة، سعر، انتهاء)",
+    /r\.skipped_no_photo/.test(pt) && /r\.skipped_no_price/.test(pt) && /r\.skipped_expired/.test(pt) && /sb\.skipHint/.test(pt));
   check("والمرآةُ التجريبية عندها نفسُ الدالّة",
     /async setStoreVisible\(ids: string\[\], on: boolean\)/.test(repoS));
   check("  وشرطُ السعر بالنصفين (حارسٌ ليس بالمرآة لم يُفحص)",
@@ -893,14 +906,16 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     /p\.stock > 0 or coalesce\(cs\.pooled_stock, 0\) > 0/.test(sug));
   check("  وشرطُ السعر نفسُ 0186، والمنشورُ يخرج", /coalesce\(p\.sell_price, 0\) > 0/.test(sug) && /not coalesce\(p\.store_visible, false\)/.test(sug));
   check("  والترتيبُ حاسمٌ بـp.id آخِراً (درسُ 0182)", /order by s\.rev desc, p\.name, p\.id/.test(sug));
+  // 0229: الاقتراحُ باللوحة (SuggestButton) — نفسُ الخصائص، والنشرُ بشروطه (صورةٌ شرطٌ للجديد).
+  const sugBoard = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
   check("والشاشةُ تعرض الفئةَ بكلّ سطر (الأدويةُ أوّلُ ما يُشطب)",
-    /r\.category \|\| t\("cat\.noCategory"/.test(store));
-  check("  والاقتراحُ مؤشَّرٌ مسبقاً والدكتورُ يشطب",
-    /setSuggestPick\(new Set\(rows\.map\(\(r\) => r\.id\)\)\)/.test(store));
+    /r\.category \? t\(`pos\.cat\.\$\{r\.category\}`, r\.category\) : t\("sb\.sug\.noCategory"/.test(sugBoard));
+  check("  والاقتراحُ مؤشَّرٌ مسبقاً والدكتورُ يشطب (ما عليه صورة — الباقي يُقال «بلا صورة» ولا يُنشر)",
+    /setPick\(new Set\(r\.filter\(\(x\) => photo\.get\(x\.id\) \?\? !!x\.image_path\)\.map\(\(x\) => x\.id\)\)\)/.test(sugBoard) && /sb\.sugNoPhoto/.test(sugBoard));
   check("  وفشلُ الجلب يُقال ولا يصير «ما عندك مبيعات»",
-    /setSuggestState\("error"\)/.test(store) && /cat\.suggestFailed/.test(store));
-  check("  والنشرُ منه يمرّ من نفس بابِ ت٢ لا من كتابةٍ ثانية",
-    /const publishSuggested[\s\S]{0,400}applyVisible\(ids, true\)/.test(store));
+    /setState\("error"\)/.test(sugBoard) && /sb\.sug\.suggestFailed/.test(sugBoard));
+  check("  والنشرُ منه يمرّ من نفس باب النشر لا من كتابةٍ ثانية",
+    /<SuggestButton list=\{list\} onPublish=\{\(ids\) => bulkPublish\(true, ids\)\}/.test(sugBoard));
   check("والمرآةُ التجريبية عندها نفسُ الدالّة", /async suggestStoreProducts\(limit = 40, days = 90\)/.test(repoS));
   check("  وقائمةُ الاقتراح ترمي على الفشل لا ترجع «ماكو»",
     /suggestStoreProducts\(limit = 40, days = 90\) \{[\s\S]{0,500}if \(error\) throw error;/.test(repoS));
@@ -976,10 +991,12 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("  وكلُّ سطرٍ **يوصّل** لتصفيته لا يكتفي بالعدد",
     /onGo=\{\(\) => goCatalog\("noprice"\)\}/.test(store) && /onGo=\{\(\) => goCatalog\("nostock"\)\}/.test(store)
     && /onGo=\{\(\) => goCatalog\("nodesc"\)\}/.test(store));
-  check("  والتصفياتُ الثلاثُ موجودةٌ فعلاً بالتشكيلة",
-    /filter === "noprice"/.test(store) && /filter === "nostock"/.test(store) && /filter === "nodesc"/.test(store));
+  const rls = readFileSync("src/lib/storeBoard.ts", "utf8");
+  check("  والتصفياتُ الثلاثُ موجودةٌ فعلاً باللوحة (0229)، وكلُّ سطرٍ يفتح ما يعدّه",
+    /nostock: "out"/.test(store) && /noprice: "noprice"/.test(store) && /nodesc: "nodesc"/.test(store)
+    && /case "noprice":/.test(rls) && /case "out":/.test(rls) && /case "nodesc":/.test(rls));
   check("  وهي على المعروض وحدَه (مخفيٌّ بلا سعرٍ ليس عيبَ متجر)",
-    /filter === "noprice"\) base = base\.filter\(\(p\) => p\.store_visible/.test(store));
+    /case "noprice": return p\.store_visible && !hasPrice\(p\);/.test(rls) && /case "out": return p\.store_visible && isOut\(p\);/.test(rls));
   check("مسارُ التفعيل ثلاثُ خطواتٍ مرقَّمة بدل لافتةٍ تقول «افتح الإعدادات»",
     /function SetupStep/.test(store) && /cat\.setupTitle/.test(store));
   check("  والترتيبُ: رابطٌ ← بضاعةٌ ← تفعيل",
@@ -1053,36 +1070,54 @@ console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كل
     JSON.stringify({ sqlRoles, tsRoles }));
   check("  والمصوّرُ بقالبه: الصور + المتجر", tsRoles.photographer === "manageProductPhotos,manageStore");
 
-  const pp = readFileSync("src/pages/ProductPhotos.tsx", "utf8");
+  // 0229: الحقلان صارا بمسار الصورة الواحد (usePhotoFlow) الذي تستعمله اللوحةُ والبطاقةُ والتصويرُ المتتابع.
+  const pp = readFileSync("src/components/store/usePhotoFlow.tsx", "utf8");
+  const ppBoard = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
   const inputs = pp.match(/<input [^>]*type="file"[^>]*>/g) ?? [];
   check("صفحةُ المصوّر: كاميرا مباشرة + ألبوم بلا capture (كان الألبومُ مقفولاً بالموبايل)",
     inputs.length === 2 && inputs.filter((x) => /capture="environment"/.test(x)).length === 1
-    && inputs.some((x) => !/capture=/.test(x) && /data-gallery-input/.test(x)) && inputs.every((x) => /onChange=\{onFile\}/.test(x)),
+    && inputs.some((x) => !/capture=/.test(x) && /data-gallery-input/.test(x)) && inputs.every((x) => /onChange=\{onFile\("(camera|album)"\)\}/.test(x)),
     inputs);
-  check("  وزرُّ الألبوم بكلّ بطاقة", /data-photo-gallery=\{p\.id\}[\s\S]{0,120}galleryRef\.current\?\.click\(\)/.test(pp));
+  check("  وزرُّ الألبوم بكلّ بطاقة", /data-photo-gallery=\{p\.id\}/.test(ppBoard) && /onAlbum=\{\(\) => flow\.openAlbum\(p\)\}/.test(ppBoard)
+    && /albumRef\.current\?\.click\(\)/.test(pp));
+  check("  ولا صورةَ تُرفع قبل أن تُرى (المعاينة بين الملفّ والرفع)", /setStudio\(\{ target: p, file: f, source \}\)/.test(pp) && /<PhotoStudio /.test(pp));
   const errs = readFileSync("src/lib/errors.ts", "utf8");
   check("  وصورةٌ ما تنقرأ (HEIC) تُقال «اختر JPG أو PNG» لا بالإنكليزية الخامّ", /could not be read as an image/.test(errs));
   const lib = readFileSync("src/components/inventory/ImageLibraryPicker.tsx", "utf8");
   check("  والمكتبةُ الفاشلة تقول فشلَها وتُعيد (لا «المكتبة فارغة» عن خطأ)", /setFailed\(m\)/.test(lib) && !/setRows\(\[\]\)/.test(lib));
 
   const st = readFileSync("src/pages/ClinicStore.tsx", "utf8");
-  check("المتجر: المصوّرُ يعدّل السعرَ من store_set_price، والكادرُ من updateProduct كما كان",
-    st.includes("canSuggest={!photoMode} priceViaStore={photoMode}")
-    && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, Math\.round\(v \* 100\) \/ 100, p\.sell_price\);/.test(st));
+  const sh = readFileSync("src/components/store/ProductSheet.tsx", "utf8");
+  const prv = readFileSync("src/components/store/PriceReview.tsx", "utf8");
+  const bd = readFileSync("src/components/store/StoreBoard.tsx", "utf8");
+  check("المتجر: المصوّرُ يعدّل السعرَ من store_set_price، والكادرُ من updateProduct كما كان (البطاقةُ والمراجعة)",
+    st.includes("canSuggest={!photoMode}") && /const priceViaStore = baseRole === "photographer";/.test(bd)
+    && /if \(priceViaStore\) await repo\.setStorePrice\(row\.id, v, row\.sell_price \?\? null\);\s*\n\s*else await repo\.updateProduct\(row\.id, \{ sell_price: v \}, \{ sell_price: row\.sell_price \?\? 0 \}\);/.test(sh)
+    && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, v, p\.sell_price \?\? null\);\s*\n\s*else await repo\.updateProduct\(p\.id, \{ sell_price: v \}, \{ sell_price: p\.sell_price \?\? 0 \}\);/.test(prv));
   check("  وحقلُ سعرٍ مُسح ثم تُرك لا يكتب صفراً (Number(\"\") = 0)",
-    /if \(!canPrice\) return;[\s\S]{0,260}if \(!priceDraft\.trim\(\)\) return;\s*\n\s*const v = Number\(priceDraft\);/.test(st));
+    /if \(!priceDraft\.trim\(\)\) return;\s*\n\s*const v = Math\.round\(Number\(priceDraft\) \* 100\) \/ 100;/.test(sh)
+    && /if \(!raw\) return;\s*\n\s*const v = Math\.round\(Number\(raw\) \* 100\) \/ 100;/.test(prv));
   const m28s = readFileSync("supabase/migrations/0228_photographer_store.sql", "utf8");
   check("  والسعرُ بالخادم للمدير والطبيب والمصوّر وحدهم (لا استقبالٍ بإذن متجر)، ولا صفر",
     /auth_role\(\) in \('manager', 'veterinarian'\) or is_photographer\(\)/.test(m28s) && /p_price <= 0/.test(m28s));
   const ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8"));
   check("  ووصفُ إذن المتجر بشاشة الكادر يقول السعرَ (كان «بلا السعر»)", /سعر البيع/.test(ar.caps.manageStore) && !/والسعر\)/.test(ar.caps.manageStore));
   check("  والاقتراحُ (مبنيٌّ على المبيعات) ما زال ليس له، والطلباتُ مخفيّة",
-    /\{canSuggest && suggestState !== "open" && \(/.test(st) && /filter\(\(x\) => !\(photoMode && x\.id === "orders"\)\)/.test(st));
+    /\{canSuggest && canStore && <SuggestButton/.test(bd) && /filter\(\(x\) => !\(photoMode && x\.id === "orders"\)\)/.test(st));
   const repoSrc = readFileSync("src/lib/repo.ts", "utf8");
   check("  وstore_set_price تُرسل ما رآه (p_expected)", /rpc\("store_set_price", \{ p_product: productId, p_price: price, p_expected: expected \}\)/.test(repoSrc));
   const m28 = readFileSync("supabase/migrations/0228_photographer_store.sql", "utf8");
   check("  والبوّابةُ تفتح store_set_price وحدها — لا الطلبات ولا الاقتراح",
     /'store_set_price'/.test(m28) && !/'store_accept_order'|'store_suggest_products'|'clinic_quota_usage'/.test(m28.slice(m28.indexOf("create or replace function public.api_gate()"))));
+  // 0229 أعاد تعريف البوّابة (آخرُ تعريفٍ يحكم): أبوابُ الأقسام والنشر والصورة والمراجعة — ولا طلبات.
+  const m29 = readFileSync("supabase/migrations/0229_store_sections.sql", "utf8");
+  const gate29 = m29.slice(m29.indexOf("create or replace function public.api_gate()"));
+  check("  و0229: البوّابةُ تفتح أبوابَ الأقسام والنشر والصورة والمراجعة — ولا الطلبات ولا الاقتراح",
+    ["store_sections_list", "store_section_save", "store_section_archive", "store_sections_reorder", "store_assign_section",
+      "store_reorder_products", "store_publish", "store_set_image", "store_price_review", "store_set_price"].every((f) => gate29.includes(`'${f}'`))
+    && !/'store_accept_order'|'store_suggest_products'|'clinic_quota_usage'/.test(gate29));
+  check("  و«تحت الكلفة» لا تصل المصوّر (يكتب السعرَ — العلامةُ كانت تكشف الكلفة بالتجريب)",
+    /v_cost := v_store and not is_photographer\(\);/.test(m29) && /'below_cost', case when v_cost then/.test(m29));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

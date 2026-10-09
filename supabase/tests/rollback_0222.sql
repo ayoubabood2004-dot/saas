@@ -130,6 +130,16 @@ drop function if exists public.set_product_image(uuid, text);
 drop function if exists public.image_path_in_use(text);
 drop function if exists public.store_set_featured(uuid, boolean);
 drop function if exists public.store_set_price(uuid, numeric, numeric);  -- 0228: بابُ السعر يسأل _store_manager_ok
+-- 0229: أبوابُ الأقسام والنشر والصورة والمراجعة — كلُّها تسأل _store_manager_ok أو staff_can.
+drop function if exists public.store_sections_list();
+drop function if exists public.store_section_save(uuid, text);
+drop function if exists public.store_section_archive(uuid, boolean);
+drop function if exists public.store_sections_reorder(uuid[]);
+drop function if exists public.store_assign_section(uuid[], uuid);
+drop function if exists public.store_reorder_products(uuid, uuid[]);
+drop function if exists public.store_publish(uuid[], boolean);
+drop function if exists public.store_set_image(uuid, text, jsonb);
+drop function if exists public.store_price_review();
 drop function if exists public.store_set_desc(uuid, text);
 drop function if exists public._store_manager_ok();
 drop function if exists public.verify_photographer_fence();

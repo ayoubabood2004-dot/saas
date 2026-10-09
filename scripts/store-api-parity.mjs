@@ -51,6 +51,8 @@ const FAKE_SUPABASE = `
     rpc: (fn, args) => {
       globalThis.__calls.push({ side: 'repo', fn, args });
       const r = globalThis.__reply[fn];
+      // بلا ردّ = الدالّةُ غيرُ موجودة بالخادم (هجرةٌ لم تنزل) — كما يقولها PostgREST.
+      if (r === undefined) return Promise.resolve({ data: null, error: { message: 'Could not find the function public.' + fn, code: 'PGRST202' } });
       return Promise.resolve(r === null ? { data: null, error: { message: 'boom', code: 'X' } } : { data: r, error: null });
     },
     from: () => ({ select: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }),
@@ -96,6 +98,7 @@ globalThis.fetch = async (url, init) => {
   const args = JSON.parse(init.body);
   globalThis.__calls.push({ side: "api", fn, args });
   const r = globalThis.__reply[fn];
+  if (r === undefined) return new Response(JSON.stringify({ code: "PGRST202", message: `Could not find the function public.${fn}` }), { status: 404, headers: { "content-type": "application/json" } });
   if (r === null) return new Response(JSON.stringify({ message: "boom" }), { status: 400, headers: { "content-type": "application/json" } });
   return new Response(JSON.stringify(r), { status: 200, headers: { "content-type": "application/json" } });
 };
@@ -126,12 +129,19 @@ const FRONT = {
   facebook: "fb", instagram: "ig", bio: "نبذة", delivery_fee: "2500", min_order: "5000",
 };
 const ROWS = [{ id: "p1", name: "شامبو", category: "care", subcategory: null, price: "3500", descr: null, available: true, image_path: "c1/p1.jpg", featured: true }];
+// 0229: الكتلوجُ بأقسامه — القسمُ ومصغّرُ الصورة يمرّان كما هما.
+const ROWS2 = [{ ...ROWS[0], section_id: "s1", thumb_path: "c1/p1.thumb.jpg" }, { ...ROWS[0], id: "p2", featured: false, section_id: null, thumb_path: null }];
 
 console.log("▸ واجهةُ المتجر");
 globalThis.__reply = { store_front: FRONT };
 const front = await pair("store_front", (r) => r.storeFrontPublic("alrahma"));
 check("  والرقمانِ صارا أرقاماً لا نصوصاً", front.a.v.delivery_fee === 2500 && front.a.v.min_order === 5000);
 check("  والشعارُ رابطٌ مبنيٌّ من المسار", front.a.v.logo_url === `${SUPA}/storage/v1/object/public/product-images/c1/logo-k9.png`);
+check("  وخادمٌ قبل 0229 (بلا أقسام) ⇒ قائمةُ أقسامٍ فارغة لا undefined", Array.isArray(front.a.v.sections) && front.a.v.sections.length === 0);
+// 0229: الأقسامُ تصل مع store_front (والحافةُ تجلبها مع أوّل رسم) — بأعدادٍ أرقاماً، والمعطوبُ يسقط.
+globalThis.__reply = { store_front: { ...FRONT, sections: [{ id: "s1", name: "أكل قطط", n: "3" }, { id: 7, name: "معطوب" }, null] } };
+const withSec = await pair("store_front (بأقسام)", (r) => r.storeFrontPublic("alrahma"));
+check("  والأقسامُ شُكّلت: عددٌ رقماً والمعطوبُ ساقط", JSON.stringify(withSec.a.v.sections) === JSON.stringify([{ id: "s1", name: "أكل قطط", n: 3 }]), JSON.stringify(withSec.a.v.sections));
 // أرقامٌ فارغة: `Number(null)` صفرٌ و`Number(undefined)` **NaN** — و`|| 0`
 // هي الفرقُ بين «توصيلٌ مجّانيّ» و«NaN د.ع» بترويسة المتجر.
 globalThis.__reply = { store_front: { ok: true, name: "بلا تفاصيل", logo_url: null, delivery_fee: null, min_order: undefined } };
@@ -144,12 +154,18 @@ globalThis.__reply = { store_front: null };
 await pair("store_front (فشلٌ)", (r) => r.storeFrontPublic("x"));
 
 console.log("▸ الكتلوج");
+globalThis.__reply = { store_catalog2: ROWS2 };
+const cat2 = await pair("store_catalog2", (r) => r.storeCatalogPublic("alrahma", 24, 0));
+check("  والسعرُ رقمٌ لا نصّ، والقسمُ والمصغّرُ وصلا", cat2.a.v[0].price === 3500 && cat2.a.v[0].section_id === "s1" && cat2.a.v[0].thumb_path === "c1/p1.thumb.jpg");
+await pair("store_catalog2 (صفحةٌ ثانية)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
+// خادمٌ قبل 0229 (لا store_catalog2): نفسُ الصفحة من القديمة — لا قائمةٌ مختصرةٌ بلا صفحات.
 globalThis.__reply = { store_catalog: ROWS };
-const cat = await pair("store_catalog", (r) => r.storeCatalogPublic("alrahma", 24, 0));
+const cat = await pair("store_catalog (خادمٌ قبل 0229)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
+check("  والسقوطُ بنفس الصفحة والإزاحة (لا توقيعَ 0095)", JSON.stringify(globalThis.__calls.map((c) => c.args)) === JSON.stringify([{ p_slug: "alrahma", p_limit: 24, p_offset: 0 }, { p_slug: "alrahma", p_limit: 24, p_offset: 0 }]));
 check("  والسعرُ رقمٌ لا نصّ", cat.a.v[0].price === 3500);
-await pair("store_catalog (صفحةٌ ثانية)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
+await pair("store_catalog (خادمٌ قبل 0229، صفحةٌ ثانية)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
 // نداءٌ ثانٍ بوسيطٍ واحد عند فشل الثلاثة — وبالصفحة الأولى وحدها.
-globalThis.__reply = { store_catalog: null };
+globalThis.__reply = { store_catalog2: null, store_catalog: null };
 await pair("store_catalog (سقوطٌ إلى توقيع 0095)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
 await pair("store_catalog (وبصفحةٍ ثانية لا سقوط)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
 

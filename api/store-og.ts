@@ -27,7 +27,7 @@
  *      طريقُهنّ إلى المسار الحقيقي.
  *   ٣) بلا شعار ⇒ `/og.jpg` كما بالقالب — استرجاعُ ما كان يُمحى لا أكثر.
  */
-import { shelfLook, shelfLabel } from "../src/lib/storeLib";
+import { listImagePath, shelfLook, shelfLabel } from "../src/lib/storeLib";
 
 export const config = { runtime: "edge" };
 
@@ -36,7 +36,7 @@ const BOOT_PAGE = 24;
 /** ما يُرسم بالمستند نفسِه: ما يملأ شاشةَ هاتفٍ ونصفاً — الباقي يرسمه React. */
 const PAINT_ROWS = 8;
 
-type Row = { id: string; name: string; price: number; available?: boolean; image_path?: string | null; featured?: boolean; subcategory?: string | null };
+type Row = { id: string; name: string; price: number; available?: boolean; image_path?: string | null; thumb_path?: string | null; featured?: boolean; subcategory?: string | null };
 
 /**
  * رفٌّ مرسومٌ بالـHTML — يظهر قبل أن تنزل جافاسكربت بحرف.
@@ -65,8 +65,12 @@ const iqd = (n: number) => `${new Intl.NumberFormat("en-US").format(Math.round(N
 function paintShelf(front: { name?: string }, rows: Row[], supaUrl: string): string {
   const cards = rows.slice(0, PAINT_ROWS).map((p) => {
     const shelf = shelfLook(p.name);
-    const img = p.image_path && !p.image_path.startsWith("data:")
-      ? `<img src="${esc2(`${supaUrl}/storage/v1/object/public/product-images/${p.image_path}`)}" alt="" width="400" height="400" class="absolute inset-0 h-full w-full object-contain p-1.5" />`
+    // المصغّرُ للرفّ (0229) — نفسُ اختيار الواجهة (`listImagePath`)، وفشلُه يرجع للكاملة مرّةً.
+    const small = listImagePath(p);
+    const url = (x: string) => `${supaUrl}/storage/v1/object/public/product-images/${x}`;
+    const fallback = p.thumb_path && p.image_path ? ` onerror="this.onerror=null;this.src='${esc2(url(p.image_path))}'"` : "";
+    const img = small && p.image_path && !p.image_path.startsWith("data:")
+      ? `<img src="${esc2(url(small))}" alt="" width="400" height="400" class="absolute inset-0 h-full w-full object-contain p-1.5"${fallback} />`
       : "";
     return `<div class="relative flex flex-col overflow-hidden rounded-2xl border border-line bg-surface-1${p.available === false ? " opacity-60" : ""}">
       <div class="relative grid aspect-square place-items-center overflow-hidden ${shelf.tile}">
@@ -138,7 +142,11 @@ export default async function handler(req: Request): Promise<Response> {
      * وإن كان المتجرُ مغلقاً نرمي الكتلوجَ ولا نستعمله. */
     const [r, rc] = await Promise.all([
       rpc("store_front", { p_slug: slug }),
-      rpc("store_catalog", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 }).catch(() => null),
+      // نفسُ أوّل نداءٍ للواجهة (0229: store_catalog2 بأقسامه ومصغّراته) — بذرةٌ بترتيبٍ آخر
+      // كانت ستُعيد ترتيبَ الرفّ أمام الزبون لحظةَ يصل الجواب. وخادمٌ بلاها ⇒ القديمة.
+      rpc("store_catalog2", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 })
+        .then((x) => (x.status === 404 ? rpc("store_catalog", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 }) : x))
+        .catch(() => null),
     ]);
     if (!r.ok) return asHtml(shell, 60);
     const front = (await r.json()) as { ok?: boolean; name?: string; bio?: string; logo_url?: string | null };

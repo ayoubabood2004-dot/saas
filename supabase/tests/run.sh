@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_store_sections.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -4375,6 +4375,151 @@ chk "store_set_price: definer بمسارٍ مثبَّت، تحصر بعيادت�
     "select prosecdef::text||'|'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||'|'||(prosrc like '%p.clinic_id = v_clinic and p.farm_id is null%')::text||'|'||has_function_privilege('anon', oid, 'execute')::text from pg_proc where proname='store_set_price'" "true|true|true|false"
 chk "والسياجُ ما زال يغطّي كلَّ جدول" \
     "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
+
+# ── 0229: أقسامُ المتجر، ولوحةُ المصوّر، والصورةُ بوصفها ─────────────────────────
+# الامتيازاتُ تُفحص بعد إعادة الهجرة هنا: المنحُ الشاملُ بالمقدّمة (السطر ~1205) يخفي سحبَها.
+echo "▸ 0229: أقسام المتجر ولوحة المصوّر"
+$P -f "$MIG/0229_store_sections.sql" >/dev/null
+$P -f "$MIG/0229_store_sections.sql" >/dev/null
+$P -c "update staff set permissions = '{}' where id in ('${PP}f1','${PP}f3');
+       update products set image_path = null, image_meta = null, store_visible = false, store_featured = false,
+              expiry_date = null, sell_price = 12000, store_section_id = null, store_sort = null where id = '${PP}01';
+       insert into products(id, clinic_id, name, barcode, stock, purchase_price, sell_price, image_path) values
+         ('${PP}03','$C1','شامبو قطط','690003',4, 3000, 5000, '$C1/p3-a.jpg'),
+         ('${PP}04','$C1','طوق كلاب','690004',2, 1000, 2500, '$C1/p4-a.jpg'),
+         ('${PP}05','$C1','علبة منتهية','690005',2, 1000, 2500, '$C1/p5-a.jpg') on conflict (id) do nothing;
+       update products set expiry_date = current_date - 3 where id = '${PP}05';
+       update store_profiles set enabled = true where clinic_id = '$C1';" >/dev/null
+# متجرُ العيادة الأولى برابطه أيّاً كان (أقسامٌ سابقةٌ بالحزمة سمّته).
+SLUG=$(W "select slug from store_profiles where clinic_id='$C1'")
+chk "الهجرةُ تُعاد بلا أثرٍ ثانٍ (جدولٌ واحد، عمودٌ واحد، محفّزٌ واحد)" \
+    "select (select count(*) from pg_class where relname='store_sections')::text||'|'||(select count(*) from information_schema.columns where table_name='products' and column_name='store_section_id')::text||'|'||(select count(*) from pg_trigger where tgname='products_store_section_guard')::text" "1|1|1"
+chk "المصوّرُ ينشئ قسماً من بابه (البوّابةُ تفتحه)" \
+    "select _rls_try('$PHO', 'select store_section_save(null, ''أكل قطط'')')||'|'||_gate('$PHO', '/rpc/store_section_save')" "rows:1|rows:1"
+chk "  والتوأمُ بعد التطبيع يُرفض («اكل  قطط» = «أكل قطط»)، والاسمُ الفارغُ كذلك" \
+    "select $(_perr $PHO "select store_section_save(null, ''اكل  قطط'')")||'|'||$(_perr $PHO "select store_section_save(null, ''   '')")" "section_twin|section_bad_name"
+W "select _rls_try('$PHO', 'select store_section_save(null, ''شامبو'')')" >/dev/null
+S1=$(W "select id from store_sections where clinic_id='$C1' and name='أكل قطط'")
+S2=$(W "select id from store_sections where clinic_id='$C1' and name='شامبو'")
+chk "  والثاني يدخل آخرَ القائمة" \
+    "select string_agg(name||':'||sort, ',' order by sort) from store_sections where clinic_id='$C1' and archived_at is null" "أكلقطط:1,شامبو:2"
+chk "لا يقرأ الجدولَ ولا يكتبه مباشرةً (السياج) — الدوالُّ البابُ الوحيد" \
+    "select _rls_try('$PHO', 'select 1 from store_sections')||'|'||left(_rls_try('$PHO', 'insert into store_sections (clinic_id, name) values (''$C1'', ''x'')'), 13)" "rows:0|guarded:42501"
+chk "  ويقرأها من store_sections_list" \
+    "select _pf('$PHO', 'select jsonb_array_length(store_sections_list())::text')" "2"
+chk "ترتيبُ الأقسام بالقائمة الكاملة (شامبو أوّلاً)" \
+    "select _rls_try('$PHO', 'select store_sections_reorder(array[''$S2'',''$S1'']::uuid[])')" "rows:1"
+chk "  (انقلب)" \
+    "select string_agg(name, ',' order by sort) from store_sections where clinic_id='$C1' and archived_at is null" "شامبو,أكلقطط"
+chk "  وقائمةٌ ناقصة (جهازٌ ثانٍ أضاف قسماً) تُرفض كلُّها" \
+    "select $(_perr $PHO "select store_sections_reorder(array[''$S1'']::uuid[])")" "sections_stale"
+chk "إدراجُ منتجين بقسم «أكل قطط»: يدخلان آخرَه بترتيب القائمة" \
+    "select _rls_try('$PHO', 'select store_assign_section(array[''${PP}01'',''${PP}03'']::uuid[], ''$S1'')')" "rows:1"
+chk "  (القسمُ والترتيب)" \
+    "select string_agg(right(id::text,2)||':'||store_sort, ',' order by store_sort) from products where store_section_id='$S1'" "01:1,03:2"
+chk "  وإعادةُ الإدراج بنفس القسم لا تلمس شيئاً (changed=0)" \
+    "select _pf('$PHO', 'select (store_assign_section(array[''${PP}01'']::uuid[], ''$S1'')->>''changed'')')" "0"
+chk "  ولا منتجَ عيادةٍ أخرى" \
+    "select $(_perr $PHO "select store_assign_section(array[''${PP}02'']::uuid[], ''$S1'')")" "product_not_found"
+chk "ترتيبُ القسم: ٠٣ قبل ٠١" \
+    "select _rls_try('$PHO', 'select store_reorder_products(''$S1'', array[''${PP}03'',''${PP}01'']::uuid[])')" "rows:1"
+chk "  (انقلب)" \
+    "select string_agg(right(id::text,2), ',' order by store_sort) from products where store_section_id='$S1'" "03,01"
+chk "  وقائمةٌ فيها منتجٌ مو بالقسم تُرفض كلُّها (order_stale)" \
+    "select $(_perr $PHO "select store_reorder_products(''$S1'', array[''${PP}04'',''${PP}01'']::uuid[])")" "order_stale"
+W "select _rls_try('$C2', 'select store_section_save(null, ''قسم عيادة ثانية'')')" >/dev/null
+SX=$(W "select id from store_sections where clinic_id='$C2' limit 1")
+chk "قسمُ عيادةٍ أخرى لا يُربط بمنتج — حتى بكتابة المدير المباشرة (المفتاحُ لا يسأل العيادة)" \
+    "select $(_perr $C1 "update products set store_section_id = ''$SX'' where id = ''${PP}04''")||'|'||$(_perr $PHO "select store_assign_section(array[''${PP}04'']::uuid[], ''$SX'')")" "store_section_clinic|section_not_found"
+chk "  والإدراجُ بلقطةٍ قديمة (استرجاعٌ من السلّة) بقسمٍ زال يرجع بلا قسم لا يُرفض" \
+    "with x as (insert into products (id, clinic_id, name, store_section_id, store_sort) values ('${PP}06','$C1','مسترجع','$SX', 3) returning store_section_id, store_sort) select coalesce(store_section_id::text,'null')||'|'||coalesce(store_sort::text,'null') from x" "null|null"
+chk "النشرُ بشروطه: بلا صورة يُتخطّى ويُقال" \
+    "select _pf('$PHO', 'select store_publish(array[''${PP}01'']::uuid[], true)::text')::jsonb->>'skipped_no_photo'" "1"
+chk "  الصورةُ بوصفها بنداءٍ واحد (المصوّر)" \
+    "select _rls_try('$PHO', 'select store_set_image(''${PP}01'', ''$C1/${PP}01-abc123.jpg'', ''{\"v\":1,\"path\":\"$C1/${PP}01-abc123.jpg\",\"thumb\":\"$C1/${PP}01-abc123.thumb.jpg\",\"w\":1600,\"h\":1200,\"bytes\":312000,\"src\":\"camera\",\"edits\":[\"square\"]}''::jsonb)')||'|'||_gate('$PHO', '/rpc/store_set_image')" "rows:1|rows:1"
+chk "    (المسارُ والمصغّرُ انحفظا)" \
+    "select (image_path = image_meta->>'path' and image_meta->>'thumb' like '%.thumb.jpg')::text from products where id='${PP}01'" "true"
+chk "  ووصفٌ لا يصف الصورة يُرفض: مسارٌ آخر، مصغّرٌ بعيادةٍ أخرى، مصدرٌ مجهول" \
+    "select $(_perr $PHO "select store_set_image(''${PP}01'', ''$C1/x.jpg'', ''{\"v\":1,\"path\":\"$C1/y.jpg\",\"thumb\":null,\"w\":1,\"h\":1,\"bytes\":1,\"src\":\"camera\"}''::jsonb)")||'|'||$(_perr $PHO "select store_set_image(''${PP}01'', ''$C1/x.jpg'', ''{\"v\":1,\"path\":\"$C1/x.jpg\",\"thumb\":\"$C2/x.thumb.jpg\",\"w\":1,\"h\":1,\"bytes\":1,\"src\":\"camera\"}''::jsonb)")||'|'||$(_perr $PHO "select store_set_image(''${PP}01'', ''$C1/x.jpg'', ''{\"v\":1,\"path\":\"$C1/x.jpg\",\"thumb\":null,\"w\":1,\"h\":1,\"bytes\":1,\"src\":\"web\"}''::jsonb)")" "bad_image_meta|bad_image_meta|bad_image_meta"
+chk "  ولا مسارٌ من مجلّد عيادةٍ أخرى، ولا منتجُ عيادةٍ أخرى" \
+    "select $(_perr $PHO "select store_set_image(''${PP}01'', ''$C2/z.jpg'', null)")||'|'||$(_perr $PHO "select store_set_image(''${PP}02'', ''$C1/z.jpg'', null)")" "bad_image_path|product_not_found"
+chk "الآن ينتشر (صورة + سعر)، والمنتهي يُتخطّى بسببه" \
+    "select (r->>'changed')||'|'||(r->>'skipped_expired') from (select _pf('$PHO', 'select store_publish(array[''${PP}01'',''${PP}05'']::uuid[], true)::text')::jsonb r) x" "1|1"
+$P -c "update products set sell_price = 0 where id = '${PP}04';" >/dev/null
+chk "  وسعرُ صفرٍ يُتخطّى بسببه (والصورةُ موجودة)" \
+    "select _pf('$PHO', 'select store_publish(array[''${PP}04'']::uuid[], true)::text')::jsonb->>'skipped_no_price'" "1"
+$P -c "update products set sell_price = 2500 where id = '${PP}04';" >/dev/null
+chk "  والإخفاءُ بلا شرط، ومنتجٌ منشورٌ أصلاً لا يُعدّ" \
+    "select _pf('$PHO', 'select (store_publish(array[''${PP}01'']::uuid[], true)->>''changed'')')||'|'||_pf('$PHO', 'select (store_publish(array[''${PP}01'']::uuid[], false)->>''changed'')')" "0|1"
+W "select _rls_try('$PHO', 'select store_publish(array[''${PP}01'',''${PP}03'',''${PP}04'']::uuid[], true)')" >/dev/null
+chk "photo_products: القسمُ والترتيبُ والوصفُ والرموزُ والتوفّر — وبلا سعر شراء" \
+    "select _pf('$PHO', 'select (e ?& array[''store_section_id'',''store_sort'',''image_meta'',''alt_codes'',''available'',''below_cost''] and not (e ? ''purchase_price''))::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PP}01''')" "true"
+chk "  و«تحت الكلفة» لا تصل المصوّر (يكتب السعر — العلامةُ كانت تكشف الكلفة بالتجريب)" \
+    "select _pf('$PHO', 'select coalesce(e->>''below_cost'', ''null'') from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PP}01''')" "null"
+$P -c "update products set sell_price = 8000 where id = '${PP}03';" >/dev/null
+chk "  وتصل المدير: ٠٣ بـ8000 وكلفته 3000 ⇒ لا؛ ٠١ بـ12000 وكلفته 9000 ⇒ لا" \
+    "select _pf('$C1', 'select string_agg(e->>''below_cost'', '','' order by e->>''id'') from jsonb_array_elements(photo_products()) e where e->>''id'' in (''${PP}01'',''${PP}03'')')" "false,false"
+$P -c "update products set sell_price = 2000 where id = '${PP}03';" >/dev/null
+chk "    (٠٣ بـ2000 وكلفته 3000 ⇒ نعم)" \
+    "select _pf('$C1', 'select e->>''below_cost'' from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PP}03''')" "true"
+$P -c "update products set sell_price = 5000 where id = '${PP}03';" >/dev/null
+chk "كتلوجُ الزبون: الأقسامُ بترتيب العيادة ثمّ الترتيبُ اليدويّ، و«بلا قسم» آخراً" \
+    "select string_agg(right(id::text,2), ',' order by o) from (select id, row_number() over () o from store_catalog2('$SLUG', 100, 0)) x where id in ('${PP}01','${PP}03','${PP}04')" "03,01,04"
+chk "  والقسمُ والمصغّرُ معه (المصغّرُ حين يصف الوصفُ هذه الصورة وحدها)" \
+    "select (section_id = '$S1')::text||'|'||coalesce(thumb_path, 'null') from store_catalog2('$SLUG', 100, 0) where id = '${PP}01'" "true|$C1/${PP}01-abc123.thumb.jpg"
+$P -c "update products set image_path = '$C1/other.jpg' where id = '${PP}01';" >/dev/null
+chk "    ووصفٌ لا يطابق المسار (دمجٌ طوى الصورةَ وحدها) لا يعطي مصغّراً" \
+    "select coalesce(thumb_path, 'null') from store_catalog2('$SLUG', 100, 0) where id = '${PP}01'" "null"
+$P -c "update products set image_path = '$C1/${PP}01-abc123.jpg' where id = '${PP}01';" >/dev/null
+W "select _rls_try('$PHO', 'select store_set_featured(''${PP}04'', true)')" >/dev/null
+chk "  والمميّزُ يتقدّم الأقسامَ كلَّها" \
+    "select string_agg(right(id::text,2), ',' order by o) from (select id, row_number() over () o from store_catalog2('$SLUG', 100, 0)) x where id in ('${PP}01','${PP}03','${PP}04')" "04,03,01"
+$P -c "update products set store_featured = false where id = '${PP}04';" >/dev/null
+chk "  والصفحاتُ ثابتة: صفحتان بحجم ١ = الصفحةُ الأولى بحجم ٢" \
+    "select ((select array_agg(id) from (select id from store_catalog2('$SLUG', 1, 0) union all select id from store_catalog2('$SLUG', 1, 1)) a) = (select array_agg(id) from store_catalog2('$SLUG', 2, 0)))::text" "true"
+chk "  والأقسامُ للزبون بأعدادها (ما فيه منشورٌ يُعرض وحده)" \
+    "select (select string_agg((e->>'name')||':'||(e->>'n'), ',' order by o) from jsonb_array_elements(store_front('$SLUG')->'sections') with ordinality x(e, o))" "أكلقطط:2"
+chk "  وanon ينادي الكتلوجَ الجديد، والأقسامُ تصل مع store_front (نفسُ توقيعه — بلا نسخةٍ ثانية)" \
+    "select has_function_privilege('anon','public.store_catalog2(text,int,int)','execute')::text||'|'||(select count(*) from pg_proc where proname='store_front')::text||'|'||jsonb_typeof(store_front('$SLUG')->'sections')" "true|1|array"
+chk "أرشفةُ القسم: يختفي من الزبون ومنتجاتُه تنزل لـ«بلا قسم» وتبقى مربوطة" \
+    "select _rls_try('$PHO', 'select store_section_archive(''$S1'', true)')" "rows:1"
+chk "  (لا قسمَ للزبون، والربطُ باقٍ)" \
+    "select coalesce((select string_agg((e->>'name')||':'||(e->>'n'), ',' order by o) from jsonb_array_elements(store_front('$SLUG')->'sections') with ordinality x(e, o)), '')||'|'||coalesce((select section_id::text from store_catalog2('$SLUG', 100, 0) where id='${PP}01'), 'null')||'|'||(select (store_section_id = '$S1')::text from products where id='${PP}01')" "|null|true"
+chk "  و«بلا قسم» يقبل ترتيبَ منتجٍ قسمُه مؤرشف" \
+    "select _rls_try('$PHO', 'select store_reorder_products(null, array[''${PP}01'',''${PP}04'']::uuid[])')" "rows:1"
+chk "  وقسمٌ جديدٌ باسم المؤرشف يُرفض بتلميح «رجّعه»" \
+    "select $(_perr $PHO "select store_section_save(null, ''أكل قطط'')")" "section_twin_archived"
+chk "  والاسترجاعُ يعيده آخرَ القائمة ومنتجاتُه معه" \
+    "select _rls_try('$PHO', 'select store_section_archive(''$S1'', false)')" "rows:1"
+chk "    (رجع للزبون بمنتجاته)" \
+    "select (select string_agg((e->>'name')||':'||(e->>'n'), ',' order by o) from jsonb_array_elements(store_front('$SLUG')->'sections') with ordinality x(e, o))" "أكلقطط:2"
+W "select _rls_try('$PHO', 'select store_set_price(''${PP}01'', 12500, 12000)')" >/dev/null
+chk "مراجعةُ الأسعار: آخرُ تغييرٍ ومن غيّره (المصوّرُ يسعّر ⇒ اسمُه)" \
+    "select _pf('$PHO', 'select (e->>''by_name'')||''|''||(e->>''old_price'')::numeric::int||''>''||(e->>''new_price'')::numeric::int||''|''||(e->>''via'') from jsonb_array_elements(store_price_review()) e where e->>''product_id'' = ''${PP}01''')" "المصوّر|12000>12500|edit"
+$P -c "update products set sell_price = 12000 where id = '${PP}01';" >/dev/null
+chk "الاستقبالُ بلا إذن المتجر لا يدخل الأقسامَ ولا النشر" \
+    "select $(_perr $RCP "select store_sections_list()")||'|'||$(_perr $RCP "select store_publish(array[''${PP}01'']::uuid[], true)")" "not_authorized|not_authorized"
+$P -c "update staff set permissions = '{\"manageStore\": false}' where id = '${PP}f1';" >/dev/null
+chk "  والمصوّرُ الذي أطفأ المديرُ متجرَه: صورٌ نعم، أقسامٌ ونشرٌ لا" \
+    "select _rls_try('$PHO', 'select store_set_image(''${PP}03'', ''$C1/p3-b.jpg'', null)')||'|'||$(_perr $PHO "select store_section_save(null, ''x'')")||'|'||$(_perr $PHO "select store_publish(array[''${PP}03'']::uuid[], false)")" "rows:1|not_authorized|not_authorized"
+$P -c "update staff set permissions = '{}' where id = '${PP}f1';" >/dev/null
+chk "البوّابةُ تفتح أبوابَ 0229 كلَّها للمصوّر" \
+    "select string_agg(split_part(_gate('$PHO', '/rpc/'||f), ':', 1), ',' order by f) from unnest(array['store_sections_list','store_section_archive','store_sections_reorder','store_assign_section','store_reorder_products','store_publish','store_price_review','store_catalog2']) f" "rows,rows,rows,rows,rows,rows,rows,rows"
+chk "  والطلباتُ ما زالت مقفولة" \
+    "select split_part(_gate('$PHO', '/rpc/store_accept_order'), ':', 3)" "photographer_forbidden"
+chk "الكتّابُ الجدد: definer بمسارٍ مثبَّت، يحصرون بعيادتهم وبلا منتجات الحقول، ولا شيءَ لـanon" \
+    "select string_agg(proname||':'||prosecdef::text||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||(prosrc like '%p.clinic_id = v_clinic and p.farm_id is null%')::text||has_function_privilege('anon', oid, 'execute')::text, ',' order by proname) from pg_proc where proname in ('store_assign_section','store_reorder_products','store_publish','store_set_image')" "store_assign_section:truetruetruefalse,store_publish:truetruetruefalse,store_reorder_products:truetruetruefalse,store_set_image:truetruetruefalse"
+chk "  وأبوابُ الأقسام والمراجعة: definer ولا شيءَ لـanon" \
+    "select string_agg(proname||':'||prosecdef::text||has_function_privilege('anon', oid, 'execute')::text, ',' order by proname) from pg_proc where proname in ('store_sections_list','store_section_save','store_section_archive','store_sections_reorder','store_price_review')" "store_price_review:truefalse,store_section_archive:truefalse,store_section_save:truefalse,store_sections_list:truefalse,store_sections_reorder:truefalse"
+chk "  والجدولُ لا يُكتب من authenticated ولا يُقرأ من anon" \
+    "select has_table_privilege('authenticated','public.store_sections','insert')::text||'|'||has_table_privilege('anon','public.store_sections','select')::text" "false|false"
+chk "  والأقسامُ بسجلّ الحركات «متجر»" \
+    "select audit_kind('store_sections','INSERT','{}'::jsonb)||'|'||(select count(*) from pg_trigger where tgrelid='public.store_sections'::regclass and tgname='audit_all')::text" "store|1"
+chk "  وstore_catalog القديمة ما تغيّرت (النسخُ المخبوءة والحافةُ تقرؤها)" \
+    "select count(*)::text||'|'||pg_get_function_result(min(oid)) from pg_proc where proname='store_catalog'" "1|TABLE(iduuid,nametext,categorytext,subcategorytext,pricenumeric,descrtext,availableboolean,image_pathtext,featuredboolean)"
+chk "والسياجُ ما زال يغطّي كلَّ جدول (ومنها store_sections)" \
+    "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
+$P -c "update products set store_section_id = null, store_sort = null, store_visible = false, image_meta = null where clinic_id = '$C1';" >/dev/null
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

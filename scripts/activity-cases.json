@@ -55,5 +55,8 @@
   { "entity": "invoices", "action": "UPDATE", "details": { "total": 1000, "__changed": { "section_id": ["s1", "s2"] } }, "kind": "sale_edit" },
   { "entity": "something_new", "action": "INSERT", "details": {}, "kind": "other" },
   { "entity": "price_changes", "action": "INSERT", "details": { "title": "+25%", "status": "applied" }, "kind": "price_change" },
-  { "entity": "price_changes", "action": "UPDATE", "details": { "title": "+25%", "__changed": { "status": ["applied", "undone"] } }, "kind": "price_change" }
+  { "entity": "price_changes", "action": "UPDATE", "details": { "title": "+25%", "__changed": { "status": ["applied", "undone"] } }, "kind": "price_change" },
+  { "entity": "store_sections", "action": "INSERT", "details": { "name": "أكل قطط" }, "kind": "store" },
+  { "entity": "store_sections", "action": "UPDATE", "details": { "name": "أكل قطط", "__changed": { "archived_at": [null, "2026-10-09"] } }, "kind": "store" },
+  { "entity": "products", "action": "UPDATE", "details": { "name": "رويال", "__changed": { "store_section_id": [null, "s1"], "store_sort": [null, 1] } }, "kind": "product_edit" }
 ]

@@ -15,6 +15,8 @@ import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, Top
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
+import type { PriceReviewRow, StorePublishResult, StoreSection, StoreSectionPublic } from "@/types";
+import type { ImageMeta } from "./productPhoto";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { cleanRef } from "./deliverySearch";
@@ -348,6 +350,18 @@ const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 
  * **صفوفُ المطالبات كاملةً** هنا كما بالقاعدة، وصفوفُ الأصناف بسلّتها.
  */
 /* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
+/** مرآةُ `sections` بـstore_front (0229): الأقسامُ الفعّالةُ التي فيها معروضٌ (منشور، سعرٌ موجب،
+ *  غيرُ منتهٍ — شروطُ الكتلوج حرفاً)، بأعدادها وبترتيب العيادة. */
+function demoPublicSections(db: DemoDB): StoreSectionPublic[] {
+  const n = new Map<string, number>();
+  for (const p of db.products ?? []) {
+    if (!p.store_visible || (p.sell_price ?? 0) <= 0 || isExpiredOn(p.expiry_date) || !p.store_section_id) continue;
+    n.set(p.store_section_id, (n.get(p.store_section_id) ?? 0) + 1);
+  }
+  return (db.storeSections ?? []).filter((s) => !s.archived_at && n.has(s.id))
+    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .map((s) => ({ id: s.id, name: s.name, n: n.get(s.id)! }));
+}
 function demoHint(code: string, hint: string): Error {
   return Object.assign(new Error(code), { code: "P0001", hint });
 }
@@ -1833,17 +1847,31 @@ const demoRepo = {
     assertUploadableImage(upload);
     return upload.dataUrl;
   },
+  /** الكاملُ والمصغّرُ (0229) — تجريبياً كلاهما data URL؛ والمصغّرُ يُحفظ ليُعرض بالشبكة كالسحابة. */
+  async uploadProductPhoto(_clinicId: string | null, _productId: string, full: { blob: Blob; dataUrl: string }, thumb: { blob: Blob; dataUrl: string } | null): Promise<{ path: string; thumb: string | null }> {
+    void _clinicId; void _productId;
+    assertUploadableImage(full);
+    if (thumb) assertUploadableImage(thumb);
+    return { path: full.dataUrl, thumb: thumb?.dataUrl || null };
+  },
   /* ── موظّفُ التصوير (0222) — مرآةُ دوالّ الخادم بنفس الحرّاس: مسارُ الصورة من ملفات
    *    العيادة أو المكتبة أو data: التجريبيّ، والمنتجُ الغائبُ يرمي لا يصمت. ── */
   async listPhotoProducts(): Promise<PhotoProduct[]> {
     const db = loadDB();
     const co = new Map((db.companies ?? []).map((c) => [c.id, c.name]));
+    const pool = new Map((db.companySections ?? []).map((s) => [s.id, s.pooled_stock ?? 0]));
     return (db.products ?? []).filter((p) => !p.farm_id).map((p) => ({
       id: p.id, name: p.name, barcode: p.barcode ?? null, category: p.category ?? null, subcategory: p.subcategory ?? null,
       company_id: p.company_id ?? null, company_name: p.company_id ? co.get(p.company_id) ?? null : null,
-      image_path: p.image_path ?? null, store_visible: !!p.store_visible, store_featured: !!p.store_featured,
-      store_desc: p.store_desc ?? null, sell_price: p.sell_price ?? null, stock: p.stock ?? null,
+      image_path: p.image_path ?? null, image_meta: p.image_meta ?? null,
+      store_visible: !!p.store_visible, store_featured: !!p.store_featured,
+      store_desc: p.store_desc ?? null, store_section_id: p.store_section_id ?? null, store_sort: p.store_sort ?? null,
+      alt_codes: p.alt_codes ?? [],
+      sell_price: p.sell_price ?? null, stock: p.stock ?? null,
       pooled: !!p.pooled, expiry_date: p.expiry_date ?? null,
+      // مرآةُ 0229: التوفّرُ بتعبير الكتلوج، و«تحت الكلفة» لغير المصوّر (التجريبيُّ مديرٌ دائماً).
+      available: (p.stock ?? 0) > 0 || (p.section_id ? (pool.get(p.section_id) ?? 0) > 0 : false),
+      below_cost: (p.purchase_price ?? 0) > 0 && (p.sell_price ?? 0) > 0 && p.sell_price < (p.purchase_price ?? 0),
     })).sort((a, b) => a.name.localeCompare(b.name));
   },  /** مرآةُ store_set_price (0228): نطاقُ photo_products (بلا منتجات الحقول)، والسعرُ بشرط أنه
    *  ما زال ما رآه — وإلا price_moved كالخادم. */
@@ -1858,12 +1886,19 @@ const demoRepo = {
     return v;
   },
 
-  async setProductImage(productId: string, path: string | null): Promise<void> {
+  /** مرآةُ set_product_image (بلا وصف) وstore_set_image (0229، بوصفٍ يصف هذه الصورة). */
+  async setProductImage(productId: string, path: string | null, meta?: ImageMeta | null): Promise<void> {
     const v = (path ?? "").trim() || null;
     if (v && !(v.startsWith("data:") || v.startsWith("library/") || v.includes("/"))) {
       const e = new Error("bad_image_path") as Error & { code: string }; e.code = "P0001"; throw e;
     }
-    demoProductPatch(productId, { image_path: v });
+    if (meta === undefined) { demoProductPatch(productId, { image_path: v }); return; }
+    const m = v ? meta : null;
+    if (m && (m.path !== v || !["camera", "album", "library"].includes(m.src) || ![m.w, m.h, m.bytes].every((x) => typeof x === "number")
+      || JSON.stringify(m).length > 1024)) {
+      throw demoHint("bad_image_meta", "وصف الصورة مو مطابق لها — صوّرها من جديد.");
+    }
+    demoProductPatch(productId, { image_path: v, image_meta: m });
   },
   async setStoreFeatured(productId: string, on: boolean): Promise<void> {
     demoProductPatch(productId, { store_featured: !!on });
@@ -1873,8 +1908,8 @@ const demoRepo = {
     demoProductPatch(productId, { store_desc: (desc ?? "").trim() || null });
   },
   /** حذف ملف الصورة — تجريبياً لا ملفَ أصلاً؛ تصفيرُ المسار شأنُ updateProduct. */
-  async deleteProductImage(_clinicId: string | null, _productId: string, _path: string): Promise<void> {
-    void _clinicId; void _productId; void _path;
+  async deleteProductImage(_clinicId: string | null, _productId: string, _path: string, _thumb?: string | null): Promise<void> {
+    void _clinicId; void _productId; void _path; void _thumb;
   },
   /* ── حقولُ الدواجن (0191/0192) — تجريبياً ───────────────────────────────
    * يعكس الخادمَ بالقيود التي تهمّ: قاعةٌ واحدةٌ = دفعةٌ نشطةٌ واحدة، ويومٌ لا
@@ -2310,6 +2345,137 @@ const demoRepo = {
     saveDB(db);
     return { changed, skipped_no_price: skipped };
   },
+  /* ── أقسامُ المتجر والنشرُ بشروطه (0229) — مرآةُ دوالّ الخادم بنفس الحرّاس: التوأمُ بالتطبيع
+   *    على كلّ الأقسام ومنها المؤرشف، والسقفُ على الفعّالة، والقائمةُ القديمةُ تُرفض كلُّها. ── */
+  async listStoreSections(): Promise<StoreSection[]> {
+    return [...(loadDB().storeSections ?? [])].sort((a, b) =>
+      Number(!!a.archived_at) - Number(!!b.archived_at) || a.sort - b.sort || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  },
+  async saveStoreSection(id: string | null, name: string): Promise<StoreSection> {
+    const db = loadDB();
+    const all = db.storeSections ?? (db.storeSections = []);
+    const n = name.replace(/\s+/g, " ").trim();
+    const key = searchable(n);
+    if (!key || n.length > 40) throw demoHint("section_bad_name", "اسم القسم لازم بين حرف و٤٠ حرفاً.");
+    const twin = all.filter((s) => s.id !== id && searchable(s.name) === key).sort((a, b) => Number(!!a.archived_at) - Number(!!b.archived_at))[0];
+    if (twin) {
+      if (twin.archived_at) throw demoHint("section_twin_archived", "أكو قسم مؤرشف بنفس الاسم — رجّعه من «المؤرشفة» بدل ما تسوي ثاني.");
+      throw demoHint("section_twin", "أكو قسم بنفس الاسم — استعمله.");
+    }
+    const live = all.filter((s) => !s.archived_at);
+    if (!id) {
+      if (live.length >= 60) throw demoHint("sections_full", "وصلتوا ٦٠ قسماً — أرشفوا قسماً ما تستعملونه.");
+      const row: StoreSection = { id: uuid(), name: n, sort: Math.max(0, ...live.map((s) => s.sort)) + 1, archived_at: null, created_at: new Date().toISOString() };
+      all.push(row); saveDB(db);
+      return { ...row };
+    }
+    const row = all.find((s) => s.id === id);
+    if (!row) throw demoHint("section_not_found", "القسم ما موجود — حدّث الصفحة.");
+    if (row.name !== n) { row.name = n; saveDB(db); }
+    return { ...row };
+  },
+  async archiveStoreSection(id: string, archived: boolean): Promise<void> {
+    const db = loadDB();
+    const all = db.storeSections ?? [];
+    const row = all.find((s) => s.id === id);
+    if (!row) throw demoHint("section_not_found", "القسم ما موجود — حدّث الصفحة.");
+    if (archived) { if (!row.archived_at) { row.archived_at = new Date().toISOString(); saveDB(db); } return; }
+    if (!row.archived_at) return;
+    const live = all.filter((s) => !s.archived_at);
+    if (live.some((s) => searchable(s.name) === searchable(row.name))) throw demoHint("section_twin", "أكو قسم فعّال بنفس الاسم — سمّ واحداً منهم باسم ثاني أوّلاً.");
+    if (live.length >= 60) throw demoHint("sections_full", "وصلتوا ٦٠ قسماً — أرشفوا قسماً ما تستعملونه.");
+    row.archived_at = null;
+    row.sort = Math.max(0, ...live.map((s) => s.sort)) + 1;
+    saveDB(db);
+  },
+  async reorderStoreSections(ids: string[]): Promise<void> {
+    const db = loadDB();
+    const live = (db.storeSections ?? []).filter((s) => !s.archived_at);
+    if (!ids.length || new Set(ids).size !== ids.length || ids.length !== live.length || !ids.every((x) => live.some((s) => s.id === x))) {
+      throw demoHint("sections_stale", "قائمة الأقسام تغيّرت من جهاز ثاني — حدّث الصفحة وأعد الترتيب.");
+    }
+    ids.forEach((x, i) => { const s = live.find((r) => r.id === x)!; s.sort = i + 1; });
+    saveDB(db);
+  },
+  async assignStoreSection(productIds: string[], sectionId: string | null): Promise<{ changed: number }> {
+    if (!productIds.length) return { changed: 0 };
+    if (productIds.length > 2000) throw demoHint("too_many", "انقل ٢٠٠٠ منتجٍ بالمرّة كحدٍّ أقصى.");
+    const db = loadDB();
+    if (sectionId && !(db.storeSections ?? []).some((s) => s.id === sectionId && !s.archived_at)) {
+      throw demoHint("section_not_found", "القسم ما موجود أو مؤرشف — حدّث الصفحة.");
+    }
+    const prods = (db.products ?? []).filter((p) => !p.farm_id);
+    if (!productIds.some((x) => prods.some((p) => p.id === x))) throw demoHint("product_not_found", "المنتج ما موجود بعيادتك — حدّث القائمة.");
+    const max = Math.max(0, ...prods.filter((p) => p.store_section_id === sectionId && sectionId).map((p) => p.store_sort ?? 0));
+    let changed = 0;
+    productIds.forEach((x, i) => {
+      const p = prods.find((r) => r.id === x);
+      if (!p || (p.store_section_id ?? null) === sectionId) return;
+      p.store_section_id = sectionId;
+      p.store_sort = sectionId ? max + i + 1 : null;
+      changed++;
+    });
+    saveDB(db);
+    return { changed };
+  },
+  async reorderSectionProducts(sectionId: string | null, ids: string[]): Promise<{ changed: number }> {
+    const db = loadDB();
+    const live = new Set((db.storeSections ?? []).filter((s) => !s.archived_at).map((s) => s.id));
+    if (sectionId && !live.has(sectionId)) throw demoHint("section_not_found", "القسم ما موجود أو مؤرشف — حدّث الصفحة.");
+    const inSec = (p: Product) => (sectionId ? p.store_section_id === sectionId : !(p.store_section_id && live.has(p.store_section_id)));
+    const prods = (db.products ?? []).filter((p) => !p.farm_id);
+    if (new Set(ids).size !== ids.length || !ids.every((x) => prods.some((p) => p.id === x && inSec(p)))) {
+      throw demoHint("order_stale", "محتوى القسم تغيّر من جهاز ثاني — حدّث الصفحة وأعد الترتيب.");
+    }
+    let changed = 0;
+    for (const p of prods) {
+      if (!inSec(p)) continue;
+      const i = ids.indexOf(p.id);
+      const next = i >= 0 ? i + 1 : null;
+      if ((p.store_sort ?? null) !== next) { p.store_sort = next; changed++; }
+    }
+    saveDB(db);
+    return { changed };
+  },
+  /** مرآةُ `store_publish` (0229): صورة + سعرٌ موجب + غيرُ منتهٍ، والمتخطّى بأوّل سببٍ ناقص. */
+  async storePublish(ids: string[], on: boolean): Promise<StorePublishResult> {
+    const r: StorePublishResult = { changed: 0, skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
+    if (!ids.length) return r;
+    if (ids.length > 2000) throw demoHint("too_many", "انشر ٢٠٠٠ منتجٍ بالمرّة كحدٍّ أقصى.");
+    const db = loadDB();
+    const want = new Set(ids);
+    for (const p of db.products ?? []) {
+      if (!want.has(p.id) || p.farm_id) continue;
+      if (!on) { if (p.store_visible) { p.store_visible = false; r.changed++; } continue; }
+      if (p.store_visible) continue;
+      if (!(p.image_path ?? "").trim()) { r.skipped_no_photo++; continue; }
+      if ((p.sell_price ?? 0) <= 0) { r.skipped_no_price++; continue; }
+      if (isExpiredOn(p.expiry_date)) { r.skipped_expired++; continue; }
+      p.store_visible = true; r.changed++;
+    }
+    saveDB(db);
+    return r;
+  },
+  /** مراجعةُ الأسعار — تجريبياً من سجلّ الحركات المحلّيّ (تعديلُ sell_price) وحده. */
+  async storePriceReview(): Promise<PriceReviewRow[]> {
+    const db = loadDB();
+    const vis = new Set((db.products ?? []).filter((p) => p.store_visible && !p.farm_id).map((p) => p.id));
+    const since = Date.now() - 90 * 86400000;
+    const out = new Map<string, PriceReviewRow>();
+    for (const a of demoAuditLoad()) {
+      if (a.entity !== "products" || a.action !== "UPDATE" || !vis.has(String(a.entity_id))) continue;
+      const ch = (a.details as { __changed?: Record<string, [unknown, unknown]> } | null)?.__changed?.sell_price;
+      if (!ch || new Date(a.created_at).getTime() < since) continue;
+      const prev = out.get(String(a.entity_id));
+      if (prev && prev.changed_at >= a.created_at) continue;
+      out.set(String(a.entity_id), {
+        product_id: String(a.entity_id), changed_at: a.created_at,
+        old_price: typeof ch[0] === "number" ? ch[0] : null, new_price: typeof ch[1] === "number" ? ch[1] : null,
+        by_name: null, via: "edit",
+      });
+    }
+    return [...out.values()];
+  },
   /** مرآةُ `listNewStoreOrders` — بلا سقفٍ كذلك. */
   async listNewStoreOrders(): Promise<StoreOrder[]> {
     return (loadDB().storeOrders ?? [])
@@ -2520,6 +2686,7 @@ const demoRepo = {
       bio: sp.bio ?? null,
       delivery_fee: sp.delivery_fee,
       min_order: sp.min_order,
+      sections: demoPublicSections(db),
     };
   },
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
@@ -2528,15 +2695,20 @@ const demoRepo = {
     if (!sp?.enabled || !matchSlug(sp.slug, slug)) return [];
     const poolOf = (p: Product) => (db.companySections ?? []).find((s) => s.id === p.section_id)?.pooled_stock ?? 0;
     const cap = Math.min(Math.max(limit, 1), 100); // نفس سقف السيرفر
+    // 0229: مرآةُ store_catalog2 — القسمُ الفعّالُ بترتيب العيادة، ثمّ الترتيبُ اليدويّ، ثمّ الاسم.
+    const secSort = new Map((db.storeSections ?? []).filter((s) => !s.archived_at).map((s) => [s.id, s.sort]));
+    const big = Number.MAX_SAFE_INTEGER;
+    const secOf = (p: Product) => (p.store_section_id && secSort.has(p.store_section_id) ? p.store_section_id : null);
     return (db.products ?? [])
-      // 0212: المنتهي لا يُعرض (آخرُ يومٍ صالح يُعرض) — نفسُ قاعدة expiry.ts.
-      .filter((p) => p.store_visible && !isExpiredOn(p.expiry_date))
-      /* مرآةُ فرزِ 0182 حرفياً: المختارُ أوّلاً، ثم الفئةُ فالاسم، و`id` آخرَ
-       * المفاتيح كي يصير الترتيبُ حاسماً — فصفحتا `offset` لا تتقاطعان ولا
-       * تُسقطان صفّاً. والتوفّرُ خارجَ الفرز عمداً كما بالخادم. */
+      // 0212: المنتهي لا يُعرض (آخرُ يومٍ صالح يُعرض) — نفسُ قاعدة expiry.ts. و0188: بلا سعرٍ لا يُعرض.
+      .filter((p) => p.store_visible && (p.sell_price ?? 0) > 0 && !isExpiredOn(p.expiry_date))
+      /* مرآةُ فرز 0229 حرفياً: المختارُ أوّلاً، ثمّ الأقسامُ، ثمّ ترتيبُها اليدويّ، فالاسم، و`id`
+       * آخرَ المفاتيح كي يصير الترتيبُ حاسماً — فصفحتا `offset` لا تتقاطعان ولا تُسقطان صفّاً. */
       .sort((a, b) =>
         Number(b.store_featured ?? false) - Number(a.store_featured ?? false)
-        || (a.category ?? "z").localeCompare(b.category ?? "z")
+        || (secOf(a) ? secSort.get(secOf(a)!)! : big) - (secOf(b) ? secSort.get(secOf(b)!)! : big)
+        || (secOf(a) ?? "~").localeCompare(secOf(b) ?? "~")
+        || (a.store_sort ?? big) - (b.store_sort ?? big)
         || a.name.localeCompare(b.name)
         || a.id.localeCompare(b.id))
       .slice(Math.max(offset, 0), Math.max(offset, 0) + cap)
@@ -2546,6 +2718,8 @@ const demoRepo = {
         available: p.stock > 0 || poolOf(p) > 0,
         image_path: p.image_path ?? null,
         featured: !!p.store_featured,
+        section_id: secOf(p),
+        thumb_path: p.image_meta && p.image_meta.path === p.image_path ? p.image_meta.thumb ?? null : null,
       }));
   },
   /** تتبّع الزبون (0176): الرقم والهاتف معاً — الرقم وحده قصيرٌ فيُعَدّ تخميناً. */
@@ -4698,6 +4872,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   setStoreFeatured: { entity: "products", action: "UPDATE" },
   setStoreDesc: { entity: "products", action: "UPDATE" },
   setStorePrice: { entity: "products", action: "UPDATE" },
+  saveStoreSection: { entity: "store_sections", action: "INSERT" },
+  archiveStoreSection: { entity: "store_sections", action: "UPDATE" },
+  assignStoreSection: { entity: "products", action: "UPDATE" },
+  storePublish: { entity: "products", action: "UPDATE" },
   createAppointment: { entity: "appointments", action: "INSERT" },
   updateAppointment: { entity: "appointments", action: "UPDATE" },
   setAppointmentStatus: { entity: "appointments", action: "UPDATE" },
