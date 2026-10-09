@@ -4,6 +4,7 @@ import { Camera } from "lucide-react";
 import type { StoreProfile } from "@/types";
 import { repo } from "@/lib/repo";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useEntitlements } from "@/lib/entitlements";
 import { StoreBoard } from "@/components/store/StoreBoard";
 
 /* ============================================================================
@@ -18,7 +19,8 @@ import { StoreBoard } from "@/components/store/StoreBoard";
 export function ProductPhotos() {
   const { t } = useTranslation();
   const { can } = usePermissions();
-  const canStore = can("manageStore");
+  const { has } = useEntitlements();
+  const canStore = can("manageStore") && has("store");
   const [profile, setProfile] = useState<StoreProfile | null>(null);
 
   // رابطُ المتجر لزرّ «افتح المتجر الحقيقي» بالمعاينة — وفشلُه لا يمسّ اللوحة.

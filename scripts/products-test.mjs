@@ -877,8 +877,9 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     /const bulkPublish = async \(on: boolean/.test(brd) && /sb\.bulkShow/.test(brd) && /sb\.bulkHide/.test(brd));
   check("  و«اختر الكل» يقصد المعروضَ بالتصفية لا الجدولَ كلَّه",
     /setPicked\(picked\.size === visible\.length \? new Set\(\) : new Set\(visible\.map/.test(brd));
-  check("  والدالّةُ الخادميةُ بنداءٍ واحد لا حلقةٍ بالواجهة",
-    /repo\.storePublish\(ids, on\)/.test(brd) && !/for \([^)]*\) \{[\s\S]{0,120}await repo\.updateProduct\([^)]*store_visible/.test(brd));
+  // نداءٌ لكلّ ألف (سقفُ الخادم ٢٠٠٠) لا لكلّ منتج — الحلقةُ الممنوعةُ حلقةُ المنتجات.
+  check("  والدالّةُ الخادميةُ بنداءٍ لكلّ دفعة لا حلقةٍ على المنتجات",
+    /repo\.storePublish\(ids\.slice\(i, i \+ 1000\), on\)/.test(brd) && !/for \([^)]*\) \{[\s\S]{0,120}await repo\.updateProduct\([^)]*store_visible/.test(brd));
   check("  والمتخطَّى يُقال بعدده وسببه (صورة، سعر، انتهاء)",
     /r\.skipped_no_photo/.test(pt) && /r\.skipped_no_price/.test(pt) && /r\.skipped_expired/.test(pt) && /sb\.skipHint/.test(pt));
   check("والمرآةُ التجريبية عندها نفسُ الدالّة",

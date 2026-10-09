@@ -202,6 +202,9 @@ check("  وPDF يُرفض قبل أيّ رفع",
   (globalThis.__uploads = [], await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, mkUpload("application/pdf", "pdf"), mkUpload("image/jpeg", "jpg")))) && globalThis.__uploads.length === 0);
 const dph = await demo.uploadProductPhoto(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"), mkUpload("image/jpeg", "jpg"));
 check("  والتجريبيُّ يرجع الاثنين عناوينَ مضمَّنة", typeof dph.path === "string" && typeof dph.thumb === "string");
+const bare = { ...mkUpload("image/jpeg", "jpg"), blob: new Blob([new Uint8Array([255, 216, 255, 224, 1, 2, 3])], { type: "image/jpeg" }), dataUrl: "" };
+const dph2 = await demo.uploadProductPhoto(CLINIC, PRODUCT, bare, { ...bare });
+check("  وبلا عنوانٍ جاهز (الاستوديو لا يبنيه) يبنيه من البايتات — لا صورةَ فارغة", dph2.path.startsWith("data:image/jpeg;base64,") && dph2.path.length > 30 && dph2.thumb?.startsWith("data:"));
 globalThis.__removed = []; globalThis.__refsError = null; globalThis.__productRefs = [];
 await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/p-1.jpg`, `${CLINIC}/p-1.thumb.jpg`);
 check("حذفُ صورةٍ لا يشير إليها أحد يحذف مصغّرَها معها", globalThis.__removed.includes(`${CLINIC}/p-1.jpg`) && globalThis.__removed.includes(`${CLINIC}/p-1.thumb.jpg`));

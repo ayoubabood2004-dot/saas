@@ -1625,6 +1625,14 @@ console.log("▸ 0229 — أقسامُ المتجر والنشرُ بشروطه 
   await repo.setProductImage("q1", meta.path, meta);
   check("الصورةُ بوصفها بنداءٍ واحد", prod("q1").image_path === meta.path && prod("q1").image_meta?.thumb === meta.thumb);
   check("  ووصفٌ يصف صورةً أخرى يُرفض", (await code(() => repo.setProductImage("q1", "c1/other.jpg", meta))) === "bad_image_meta");
+  check("  ومصغّرٌ ليس بقاعدة الخادم يُرفض", (await code(() => repo.setProductImage("q1", meta.path, { ...meta, thumb: "c1/other.thumb.jpg" }))) === "bad_image_meta");
+  /* التجريبيُّ مسارُه الصورةُ مضمَّنة: قياسُ الوصف بها كان يرفض كلَّ صورةٍ تجريبياً بصمت
+   * (السقفُ ١٠٢٤ بايت والصورةُ عشراتُ الكيلوبايتات) — أمسكه الفحصُ الحيّ لا هذا الملفّ. */
+  const big = "data:image/jpeg;base64," + "A".repeat(60000), bigThumb = "data:image/jpeg;base64," + "B".repeat(9000);
+  await repo.setProductImage("q1", big, { ...meta, path: big, thumb: bigThumb, src: "album" });
+  check("  وصورةٌ تجريبيةٌ مضمَّنة (٦٠ كيلو) تُحفظ بوصفها ومصغّرها", prod("q1").image_path === big && prod("q1").image_meta?.thumb === bigThumb);
+  check("  وسقفُ الوصف ما زال يمسك الحشوَ خارج المسار",
+    (await code(() => repo.setProductImage("q1", big, { ...meta, path: big, thumb: bigThumb, edits: ["x".repeat(1100)] }))) === "bad_image_meta");
   await repo.setProductImage("q1", "library/x.jpg", null);
   check("  وصورةٌ بلا وصف (المكتبة) تمسح الوصفَ القديم — وصفٌ يتيمٌ يكذب", prod("q1").image_path === "library/x.jpg" && prod("q1").image_meta === null);
   const ph = (await repo.listPhotoProducts()).find((p) => p.id === "q7");

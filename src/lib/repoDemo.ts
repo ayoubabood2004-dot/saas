@@ -1852,7 +1852,16 @@ const demoRepo = {
     void _clinicId; void _productId;
     assertUploadableImage(full);
     if (thumb) assertUploadableImage(thumb);
-    return { path: full.dataUrl, thumb: thumb?.dataUrl || null };
+    // الاستوديو لا يبني عنواناً مضمَّناً (السحابةُ لا تحتاجه، وهو ضعفُ حجم الصورة بالذاكرة) —
+    // فالتجريبيُّ يبنيه هنا من البايتات، وإلا حُفظت الصورةُ نصّاً فارغاً واختفت.
+    const asData = async (u: { blob: Blob; dataUrl: string }) => {
+      if (u.dataUrl) return u.dataUrl;
+      const bytes = new Uint8Array(await u.blob.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return `data:${u.blob.type || "image/jpeg"};base64,${btoa(bin)}`;
+    };
+    return { path: await asData(full), thumb: thumb ? await asData(thumb) : null };
   },
   /* ── موظّفُ التصوير (0222) — مرآةُ دوالّ الخادم بنفس الحرّاس: مسارُ الصورة من ملفات
    *    العيادة أو المكتبة أو data: التجريبيّ، والمنتجُ الغائبُ يرمي لا يصمت. ── */
@@ -1894,8 +1903,14 @@ const demoRepo = {
     }
     if (meta === undefined) { demoProductPatch(productId, { image_path: v }); return; }
     const m = v ? meta : null;
-    if (m && (m.path !== v || !["camera", "album", "library"].includes(m.src) || ![m.w, m.h, m.bytes].every((x) => typeof x === "number")
-      || JSON.stringify(m).length > 1024)) {
+    // السقفُ (١٠٢٤ بايت) والمصغّرُ بقاعدة الخادم على مسار ملفٍّ قصير. والتجريبيُّ مسارُه
+    // الصورةُ نفسُها مضمَّنةً (عشراتُ الكيلوبايتات) — فقياسُها كما هي كان يرفض كلَّ صورةٍ بصمتٍ
+    // لا يُرى إلا تجريبياً (أمسكه الفحصُ الحيّ). فيُقاس الوصفُ بلا المضمَّن، والمصغّرُ بقاعدته
+    // ما دام المسارُ ملفّاً.
+    const inline = (s: string | null | undefined) => (s && s.startsWith("data:") ? "data:" : s ?? null);
+    const thumbOk = !m?.thumb || (v?.startsWith("data:") ? m.thumb.startsWith("data:") : m.thumb === `${v!.replace(/\.[A-Za-z0-9]+$/, "")}.thumb.jpg`);
+    if (m && (m.path !== v || !thumbOk || !["camera", "album", "library"].includes(m.src) || ![m.w, m.h, m.bytes].every((x) => typeof x === "number")
+      || new TextEncoder().encode(JSON.stringify({ ...m, path: inline(m.path), thumb: inline(m.thumb) })).length > 1024)) {
       throw demoHint("bad_image_meta", "وصف الصورة مو مطابق لها — صوّرها من جديد.");
     }
     demoProductPatch(productId, { image_path: v, image_meta: m });

@@ -8,6 +8,7 @@ import type { PhotoProduct, PriceReviewRow, StorePublishResult, StoreSection, Su
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useEntitlements } from "@/lib/entitlements";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
@@ -63,7 +64,9 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   const { user } = useAuth();
   const { can, role, baseRole } = usePermissions();
   const clinicId = user?.clinic_id ?? user?.id ?? null;
-  const canStore = can("manageStore");
+  // باقةٌ بلا متجر: اللوحةُ صورٌ وحدها — أزرارُ نشرٍ وأقسامٍ لمتجرٍ لا وجودَ له تُربك ولا تفيد.
+  const { has } = useEntitlements();
+  const canStore = can("manageStore") && has("store");
   const canPhotos = canStore || can("manageProductPhotos");
   // السعرُ سعرُ الكاشير: للمدير والطبيب والمصوّر (0228) — المصوّرُ من store_set_price وحدها.
   const canPrice = canStore && (role === "manager" || role === "veterinarian" || baseRole === "photographer");
@@ -149,7 +152,13 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
   /* ── النشر والإخفاء — نداءٌ واحدٌ بالخادم، والمحلّيُّ يتبع حكمَه ── */
   const publish = async (ids: string[], on: boolean): Promise<StorePublishResult | null> => {
     if (!ids.length) return null;
-    const r = await repo.storePublish(ids, on);
+    // دفعاتٌ بألف (سقفُ الخادم ٢٠٠٠): «اختر الظاهر» بعيادةٍ كبيرة لا يُرفض كلُّه بـtoo_many.
+    const r: StorePublishResult = { changed: 0, skipped_no_photo: 0, skipped_no_price: 0, skipped_expired: 0 };
+    for (let i = 0; i < ids.length; i += 1000) {
+      const part = await repo.storePublish(ids.slice(i, i + 1000), on);
+      r.changed += part.changed; r.skipped_no_photo += part.skipped_no_photo;
+      r.skipped_no_price += part.skipped_no_price; r.skipped_expired += part.skipped_expired;
+    }
     const target = list.filter((p) => ids.includes(p.id));
     // الخادمُ يقول كم تغيّر وكم تُخطّي بكلّ سبب؛ والمحلّيُّ يطبّق نفسَ الشروط على نفس الصفوف.
     const ok = new Set(target.filter((p) => !on || readiness(p, today).ok).map((p) => p.id));
@@ -176,7 +185,10 @@ export function StoreBoard({ mode, initialFilter, canSuggest = false, storeSlug 
     if (bulkBusy || !ids.length) return;
     setBulkBusy(true);
     try {
-      const r = await repo.assignStoreSection(ids, sectionId);
+      let changed = 0;
+      // دفعاتٌ بألف بترتيب القائمة — كلُّ دفعةٍ تدخل بعد السابقة، فالترتيبُ محفوظ.
+      for (let i = 0; i < ids.length; i += 1000) changed += (await repo.assignStoreSection(ids.slice(i, i + 1000), sectionId)).changed;
+      const r = { changed };
       patchMany(ids, () => ({ store_section_id: sectionId, store_sort: null }));
       playSuccess();
       const name = sectionId ? activeSections.find((s) => s.id === sectionId)?.name ?? "" : t("sb.sec.none", "بلا قسم");

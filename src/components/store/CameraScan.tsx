@@ -25,6 +25,10 @@ export function CameraScan({ open, onClose, onCode }: { open: boolean; onClose: 
   const video = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"starting" | "live" | "denied" | "failed">("starting");
   const done = useRef(false);
+  /* المعالجُ بمرجع لا بتبعيّات المؤثّر: قائمةٌ تتحدّث والكاميرا مفتوحة كانت تعيد تشغيلَ الكاميرا
+   * (إذنٌ وتركيزٌ من جديد) بكلّ تحديث. */
+  const onCodeRef = useRef(onCode);
+  onCodeRef.current = onCode;
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +53,7 @@ export function CameraScan({ open, onClose, onCode }: { open: boolean; onClose: 
           try {
             const hits = await det.detect(video.current);
             const code = hits.find((h) => h.rawValue)?.rawValue;
-            if (code && !done.current) { done.current = true; onCode(code); return; }
+            if (code && !done.current) { done.current = true; onCodeRef.current(code); return; }
           } catch { /* إطارٌ لم يُقرأ — نجرّب التالي */ }
           timer = window.setTimeout(() => void tick(), 220);
         };
@@ -64,7 +68,7 @@ export function CameraScan({ open, onClose, onCode }: { open: boolean; onClose: 
       window.clearTimeout(timer);
       stream?.getTracks().forEach((tr) => tr.stop());
     };
-  }, [open, onCode]);
+  }, [open]);
 
   return (
     <Dialog open={open} onClose={onClose} title={t("sb.scan.title", "امسح باركود العلبة")} size="md">
