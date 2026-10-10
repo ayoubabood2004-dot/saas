@@ -24,7 +24,7 @@ import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
-import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
+import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, PhotoProduct } from "@/types";
 import type { ClinicDrugOp, ClinicDrugsSnapshot, MedicineStock } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
@@ -139,13 +139,6 @@ function demoProductPatch(id: string, patch: Partial<Product>): void {
   saveDB(db);
 }
 
-const DEMO_FAV_KEY = () => `vp_demo_drug_favs_${getActiveClinicId() || "default"}`;
-function demoFavLoad(): DrugFavorite[] {
-  try { const r = localStorage.getItem(DEMO_FAV_KEY()); if (r) return JSON.parse(r) as DrugFavorite[]; } catch { /* swallow-ok: جهازٌ بلا تخزين = بلا مفضّلة محفوظة */ }
-  return [];
-}
-/** يرمي: مفضّلةٌ لم تُحفظ ويُقال «انضافت» كذبٌ يُصدَّق. */
-function demoFavSave(list: DrugFavorite[]) { localStorage.setItem(DEMO_FAV_KEY(), JSON.stringify(list)); }
 
 function demoExpensesSave(list: Expense[]) { try { localStorage.setItem(DEMO_EXPENSES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 
@@ -4478,27 +4471,6 @@ const demoRepo = {
     const list = demoWaLoad();
     if (!list.some((x) => x.id === id)) { const e = new Error("not_found") as Error & { code: string }; e.code = "PGRST116"; throw e; }
     demoWaSave(list.filter((x) => x.id !== id));
-  },
-  /* ---- أدويةُ الطبيب المفضّلة (0221) — مرآةٌ بمخزن الجهاز لكلّ عيادة، بنفس الحرّاس
-   *      (اسمٌ غيرُ فارغ ≤ ١٢٠، واحدٌ لكلّ اسمٍ بلا اعتبار الحالة، سقفُ ١٥٠) ---- */
-  async listDrugFavorites(): Promise<DrugFavorite[]> {
-    return demoFavLoad().sort((a, b) => a.created_at.localeCompare(b.created_at));
-  },
-  async addDrugFavorite(name: string): Promise<DrugFavorite> {
-    const n = name.trim();
-    if (!n || n.length > 120) { const e = new Error("drug_favorites_invalid") as Error & { code: string }; e.code = "23514"; throw e; }
-    const list = demoFavLoad();
-    const had = list.find((x) => x.name.toLowerCase() === n.toLowerCase());
-    if (had) return had;
-    if (list.length >= 150) { const e = new Error("drug_favorites_full") as Error & { code: string }; e.code = "P0001"; throw e; }
-    const row: DrugFavorite = { id: uid("fav"), name: n, created_at: new Date().toISOString() };
-    demoFavSave([...list, row]);
-    return row;
-  },
-  async removeDrugFavorite(id: string): Promise<void> {
-    const list = demoFavLoad();
-    if (!list.some((x) => x.id === id)) { const e = new Error("not_found") as Error & { code: string }; e.code = "PGRST116"; throw e; }
-    demoFavSave(list.filter((x) => x.id !== id));
   },
   /* ---- «أدويتي» (0229) — مرآةٌ بوحدةٍ كسولة (`demoClinicDrugs.ts`) بنفس applyOps ورموزه؛ ولا حذف ---- */
   async listClinicDrugs(): Promise<ClinicDrugsSnapshot> {

@@ -2927,19 +2927,6 @@
     "addPet": "Add pet",
     "addPetHint": "Add a new pet for this owner"
   },
-  "meds": {
-    "title": "Clinic medications",
-    "subtitle": "Add medications to the clinic list. Anything a doctor prescribes that isn't listed is added automatically.",
-    "addTitle": "Add medication",
-    "name": "Medication name",
-    "type": "Type",
-    "add": "Add to clinic",
-    "added": "Added to clinic list",
-    "exists": "Already in the list",
-    "clinicAdded": "Added by clinic",
-    "count": "{{n}} medications",
-    "remove": "Remove"
-  },
   "vax": {
     "title": "Clinic vaccinations",
     "subtitle": "Add clinic/brand vaccines. Clients only ever see the scientific name.",
@@ -3684,13 +3671,6 @@
     "renew": "Renew to continue"
   },
   "tplan": {
-    "tabFav": "Favorites",
-    "favAdded": "{{name}} added to favorites",
-    "favRemoved": "{{name}} removed from favorites",
-    "favFailed": "Couldn't load your favorites — a connection problem, nothing was deleted.",
-    "favEmpty": "No favorites yet — tap ★ on any drug to keep it here every time",
-    "favOn": "Add to favorites",
-    "favOff": "Remove from favorites",
     "freqDaily1": "Once daily",
     "freqDaily2": "Twice daily",
     "freqDaily3": "3 times daily",

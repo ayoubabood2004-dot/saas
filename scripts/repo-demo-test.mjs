@@ -1333,22 +1333,6 @@ console.log("▸ معلوماتُ الدخول تنتقل لأوّل زيارة 
   check("  وقائمةٌ فارغة لا تكتب شيئاً", (await repo.linkNotesToVisit([], "v-x")) === 0);
 }
 
-console.log("▸ 0221 — أدويةُ الطبيب المفضّلة (مرآةُ الحزمة)");
-{
-  for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_drug_favs_")) mem.delete(k);
-  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
-  const a = await repo.addDrugFavorite("  Ceftriaxone  ");
-  check("المفضّلةُ تُحفظ مقصوصةً وتُقرأ", a.name === "Ceftriaxone" && (await repo.listDrugFavorites()).length === 1);
-  const b = await repo.addDrugFavorite("ceftriaxone");
-  check("  ونفسُ الدواء بحالةٍ أخرى لا يتكرّر (يرجع القائم)", b.id === a.id && (await repo.listDrugFavorites()).length === 1);
-  check("  واسمٌ فارغ يُرفض", (await code(() => repo.addDrugFavorite("  "))) === "drug_favorites_invalid");
-  await repo.removeDrugFavorite(a.id);
-  check("  وتُشال، وشيلُ غير الموجود يرمي (لا «انشال» كاذبة)", (await repo.listDrugFavorites()).length === 0 && (await code(() => repo.removeDrugFavorite(a.id))) === "not_found");
-  for (let i = 0; i < 150; i++) await repo.addDrugFavorite(`دواء ${i}`);
-  check("  وسقفُ ١٥٠", (await code(() => repo.addDrugFavorite("الـ١٥١"))) === "drug_favorites_full");
-  for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_drug_favs_")) mem.delete(k);
-}
-
 console.log("▸ 0229 — «أدويتي» (مرآةُ clinic_drugs_apply بنفس الرموز والتلميحات، ولا حذف)");
 {
   const wipe = () => { for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_clinic_drugs_")) mem.delete(k); };

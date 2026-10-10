@@ -67,13 +67,28 @@ for (const file of FILES) {
 
 // نطاقٌ لا يُفترض: ملفّاتُ المُرطِّبات المعروفة لازم تكون كلُّها بالمسح —
 // وإلا فالحارسُ نفسُه انكمش بصمتٍ وعاد اطمئنانُه كاذباً.
-const MUST = ["src/lib/breeds.ts", "src/lib/meds.ts", "src/lib/settings.ts",
+const MUST = ["src/lib/breeds.ts", "src/lib/settings.ts",
               "src/lib/clinicSync.ts", "src/lib/promotions.ts",
               "src/lib/locations.ts", "src/lib/vaccines.ts"];
 const missed = MUST.filter((f) => !FILES.includes(f));
 if (missed.length) {
   console.error("   ✗ الحارسُ لا يمسح: " + missed.join("، "));
   bad += missed.length;
+}
+
+/* مُرطِّبٌ أُحيل: «أدويةُ العيادة» (clinic_meds) كانت بذرتُها من الثلاثة عشرَ صفّاً (0153)،
+ * وصارت «أدويتي» بجدولها وبابها (0229) فخرج ملفُّها من MUST. فلا يرجع بصمت: لا مُرطِّبَ
+ * بـmeds.ts، ولا كتابةَ من الواجهة على clinic_meds بأي ملفّ — الطيُّ (0230) بالقاعدة وحدها. */
+const RETIRED = "src/lib/meds.ts";
+if (/registerHydrator|function hydrate/.test(fs.readFileSync(RETIRED, "utf8"))) {
+  console.error(`   ✗ ${RETIRED}: مُرطِّبُ أدوية العيادة رجع — «أدويتي» (0229) بابُها clinicDrugs.ts`);
+  bad++;
+}
+const CLINIC_MEDS_WRITE = /\.from\(\s*["'`]clinic_meds["'`]\s*\)\s*\.\s*(?:insert|upsert|update|delete)\s*\(/;
+const medWriters = walk("src").filter((f) => CLINIC_MEDS_WRITE.test(fs.readFileSync(f, "utf8")));
+if (medWriters.length) {
+  console.error("   ✗ كتابةٌ على clinic_meds من الواجهة: " + medWriters.join("، "));
+  bad += medWriters.length;
 }
 
 if (bad) {
