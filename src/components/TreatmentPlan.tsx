@@ -19,6 +19,7 @@ import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph } from "@/lib/clinicalIcons";
 import { getActiveClinicId } from "@/lib/clinics";
 import { MedPicker } from "@/components/meds/MedPicker";
+import { replaceDecision } from "@/lib/medIndex";
 import { NumberPadSheet } from "@/components/treatment/NumberPadSheet";
 import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
@@ -918,6 +919,7 @@ function TreatmentStep({
   setAllDays: (d: number) => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [picker, setPicker] = useState<{ open: boolean; replaceId?: string }>({ open: false });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [weightSkipped, setWeightSkipped] = useState(false);
@@ -1140,7 +1142,15 @@ function TreatmentStep({
         onPick={(m) => {
           if (picker.replaceId) {
             const old = rows.find((r) => r.id === picker.replaceId);
-            setRow(picker.replaceId, { name: m.name, ...formularySeed(m.name, species), ...(old?.days ? { days: old.days } : {}) });
+            /* المختارُ بالخطة أصلاً بصفٍّ آخر ⇒ يبقى ذاك بجرعته ويُشال المستبدَل — كانت التسميةُ
+               فوق المستبدَل تصنع صفّين لدواءٍ واحد: جدولان وجرعتان على الطبلة. ونفسُه ⇒ لا شيء. */
+            const d = replaceDecision(rows, picker.replaceId, m.name);
+            if (d.kind === "dup") {
+              removeRow(picker.replaceId);
+              toast.toast({ tone: "info", title: t("mymeds.replaceDup", { name: m.label, old: old?.name ?? "", defaultValue: "«{{name}}» موجود بالخطة — انشال «{{old}}» وبقى الموجود بجرعته" }) });
+            } else if (d.kind === "replace") {
+              setRow(picker.replaceId, { name: m.name, ...formularySeed(m.name, species), ...(old?.days ? { days: old.days } : {}) });
+            }
             setPicker({ open: false });
           } else addDrug(m.name);
         }}

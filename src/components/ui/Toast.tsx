@@ -65,8 +65,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
+      {/* فوق كلّ طبقة (z-100): الرسالةُ تُقال من داخل الأوراق أيضاً — منتقي الأدوية (z-80) ولوحةُ
+          الأرقام والوزن كانت تغطّيها، فـ«تراجع» لا تُضغط والفشلُ صامتٌ حيث الكتابةُ تحدث. */}
       {createPortal(
-        <div className="fixed bottom-4 right-4 z-[60] flex w-[min(92vw,380px)] flex-col gap-2.5 no-print">
+        <div className="fixed bottom-4 right-4 z-[100] flex w-[min(92vw,380px)] flex-col gap-2.5 no-print" data-toaster>
           <AnimatePresence>
             {toasts.map((t) => {
               const c = config[t.tone];

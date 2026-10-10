@@ -97,12 +97,29 @@ for (const f of files) {
 }
 check("لا autoFocus على حقل اسمِ دواء", focused.length === 0, focused.join(" · "));
 
+/* ٢-ب) ورقةٌ تحمل المنتقي لا تفتح الكيبورد بأيّ حقلٍ فيها. اسمُ الحقل وحده كان المقياس، فمرّ
+ * حقلُ الطبلة `data-taskname` وهو يُرسم من جديد بكلّ تبديلِ نوع (شريحةُ «الحرارة») بـautoFocus:
+ * ضغطةُ شريحةٍ تفتح كيبوردَ الآيباد فوق الورقة. فالحكمُ على المكوّن كلِّه: دالّةُ مكوّنٍ ترسم
+ * MedField أو MedPicker ⇒ لا autoFocus بجسمها. */
+const hostFocus = [];
+for (const f of files) {
+  if (!f.endsWith(".tsx") || f.startsWith("src/components/meds/")) continue;
+  const src = code(f);
+  if (!/<Med(?:Field|Picker)\b/.test(src)) continue;
+  const starts = [...src.matchAll(/^(?:export\s+)?(?:default\s+)?function\s+([A-Z]\w*)\s*\(/gm)].map((m) => ({ at: m.index, name: m[1] }));
+  starts.forEach((s, i) => {
+    const body = src.slice(s.at, i + 1 < starts.length ? starts[i + 1].at : src.length);
+    if (/<Med(?:Field|Picker)\b/.test(body) && /\bautoFocus\b/.test(body)) hostFocus.push(`${f}: ${s.name}`);
+  });
+}
+check("ولا autoFocus بأيّ حقلٍ داخل مكوّنٍ يرسم MedField/MedPicker (لا كيبوردَ بضغطةِ شريحة)", hostFocus.length === 0, hostFocus.join(" · "));
+
 console.log("▸ ٣) أدويةُ العيادة صارت «أدويتي»");
 const addClinic = files.filter((f) => /\baddClinicMed\b/.test(code(f)));
 check("لا أحدَ يعرّف addClinicMed أو يستورده", addClinic.length === 0, addClinic.join(" · "));
 
 console.log("▸ ٤) وحداتُ المنتقي لا تقصّ قوائمها");
-const PICKER = ["src/components/meds/MedPicker.tsx", "src/components/meds/MedPickerSheet.tsx", "src/components/meds/MyMedsBoard.tsx", "src/lib/medIndex.ts"];
+const PICKER = ["src/components/meds/MedPicker.tsx", "src/components/meds/MedPickerSheet.tsx", "src/components/meds/MyMedsBoard.tsx", "src/components/meds/medDnd.ts", "src/lib/medIndex.ts"];
 const cuts = PICKER.filter((f) => existsSync(f)).flatMap((f) => [...code(f).matchAll(/\.slice\(\s*[^)\s]/g)].map(() => f));
 check("لا `.slice(…)` بوحدات المنتقي (نسخةُ `.slice()` بلا وسيط مسموحة)", cuts.length === 0, cuts.join(" · "));
 

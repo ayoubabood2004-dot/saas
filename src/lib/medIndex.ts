@@ -1,5 +1,5 @@
 import type { ClinicDrug, ClinicDrugOp, DrugFamilyKey, MedicineStock, Species } from "@/types";
-import { FORMULARY, matchMonograph, doseFor, isBannedFor, type DrugClass, type Monograph } from "./vetFormulary";
+import { FORMULARY, DRUG_BY_ID, matchMonograph, doseFor, isBannedFor, type DrugClass, type Monograph } from "./vetFormulary";
 import { searchable } from "./utils";
 
 /* ============================================================================
@@ -267,6 +267,59 @@ export function pickerKeyAction(e: { key: string; dragging: boolean; searchOn: b
   return e.searchOn ? "closeSearch" : "close";
 }
 
+/**
+ * Enter بحقل البحث **يضيف ولا يشيل أبداً**. الضغطةُ على بلاطةٍ مختارة بوضع multi تعني
+ * «شيلها» لأن العينَ ترى «أُضيف ✓» عليها؛ أمّا Enter فيُضغط على نتيجةٍ لم تُرَ — أوّلُها
+ * «أدويتي» (تُرتَّب أوّلاً)، فكان «amox» + Enter يمحو Amoxicillin-Clavulanate من الخطة
+ * بجرعته المعدَّلة بدل أن يضيف Amoxicillin 250mg. المختارُ أصلاً ⇒ «موجود» ولا شيء يتغيّر.
+ */
+export function searchEnter<T>(results: readonly T[], isSelected: (it: T) => boolean, mode: "multi" | "single" | "manage"):
+  { act: "pick"; it: T } | { act: "already"; it: T } | null {
+  const it = results[0];
+  if (it === undefined) return null;
+  return mode === "multi" && isSelected(it) ? { act: "already", it } : { act: "pick", it };
+}
+
+/** حالُ «أدويتي» كما تُقال — قائمةٌ فارغةٌ عن خطأٍ أو تحميلٍ أو عيادةٍ تبدّلت ليست «فاضية». */
+export type MineState = "list" | "empty" | "loading" | "error" | "switched";
+export function mineState(status: "idle" | "loading" | "ready" | "error" | "switched", n: number): MineState {
+  if (status === "switched") return "switched";
+  if (n > 0) return "list";
+  if (status === "ready") return "empty";
+  return status === "error" ? "error" : "loading";
+}
+
+/**
+ * ما يُقال فوق المنتقي حين لا يعمل كلُّه — بالترتيب. لا نجمةَ رماديةً بلا سبب، ولا عدسةٌ تقول
+ * «ماكو» عن دواءٍ لم يصل:
+ *  • switched / readOnly — كما كانا؛
+ *  • stale — قراءةُ «أدويتي» فشلت والصفوفُ آخرُ ما وصل: النجمةُ والسحبُ موقوفان، والسببُ يُقال
+ *    مع «أعد المحاولة» (الفارغةُ تقولها لوحتُها بنفسها)؛
+ *  • stockFail — المخزنُ لم يصل: ما بالمخزن بلا اسمٍ بالكتالوج غائبٌ الآن لا معدوم.
+ */
+export type PickerNotice = "switched" | "readOnly" | "stale" | "stockFail";
+export function pickerNotices(s: { status: string; readOnly: boolean; rows: number; stock: "hidden" | "loading" | "ok" | "failed" }): PickerNotice[] {
+  const out: PickerNotice[] = [];
+  if (s.status === "switched") out.push("switched");
+  else if (s.readOnly) out.push("readOnly");
+  if (s.status === "error" && s.rows > 0) out.push("stale");
+  if (s.stock === "failed") out.push("stockFail");
+  return out;
+}
+
+/**
+ * «استبدال» بالمعالج: الدواءُ المختار بالخطة أصلاً بصفٍّ آخر ⇒ يبقى ذاك بجرعته ويُشال
+ * المستبدَل (`dup`) — لا صفّان لدواءٍ واحد بجدولين وجرعتين على الطبلة. ونفسُ الصفّ ⇒ لا شيء
+ * (البذرةُ لا تمحو جرعةً عدّلها الطبيب).
+ */
+export function replaceDecision(rows: readonly { id: string; name: string }[], replaceId: string, name: string):
+  { kind: "replace" } | { kind: "same" } | { kind: "dup"; keep: string } {
+  const k = searchable(name);
+  const hit = k ? rows.find((r) => r.name.trim() && searchable(r.name) === k) : undefined;
+  if (!hit) return { kind: "replace" };
+  return hit.id === replaceId ? { kind: "same" } : { kind: "dup", keep: hit.id };
+}
+
 /* ============================================================================
  * buildMedIndex — كلُّ دواءٍ مرّةً واحدة، بلا سقف
  * ==========================================================================*/
@@ -321,6 +374,9 @@ export interface BuildInput {
   species?: Species | null;
   /** «الموثَّق جرعتُه» وحده (محرّرُ البروتوكول): كلُّ دواءٍ بالدليل، ولا شيءَ بلاه. */
   only?: "dosable";
+  /** الدليلُ كلُّه **فوق** الكتالوج (الطبلة): ما لا اسمَ له بالكتالوج (Ibuprofen، Aspirin،
+   *  Permethrin) بلاطةٌ بشارة «ممنوع» لنوعه — غيابُه كان يدفع الممرّضة لكتابته حرّاً بلا تحذير. */
+  formulary?: "all";
   stockMode?: "show" | "hide";
 }
 
@@ -356,7 +412,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
       items.set(k, make(name, familyOfCatalogType(g.type), g.type, "catalog", matchMonograph(name)));
     }
   }
-  if (input.only === "dosable") {
+  if (input.only === "dosable" || input.formulary === "all") {
     // كلُّ دواءٍ بالدليل يُوصَل إليه: ما لا اسمَ له بالكتالوج (Ibuprofen، Aspirin، Permethrin) يُضاف بنفسه.
     const reached = new Set([...items.values()].map((it) => it.monographId).filter(Boolean));
     for (const m of FORMULARY) {
@@ -417,8 +473,13 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     if (!k || seen.has(k)) continue;
     seen.add(k);
     const hit = byKey.get(k);
-    if (hit) recent.push(hit);
-    else if (input.only !== "dosable") recent.push(make(name, "other", FAMILY_TYPE.other, "recent"));
+    if (hit) { recent.push(hit); }
+    else {
+      // اسمٌ كتبته العيادةُ («ميلوكسيكام») يحمل دليلَه — بلاه كانت ضغطتُه بالطبلة «بلا جرعة
+      // موثّقة» كاذبة، بلا جرعةٍ ولا تحذيرِ نوع، والدليلُ يعرفه.
+      const mono = matchMonograph(name);
+      if (input.only !== "dosable" || mono) recent.push(make(name, "other", FAMILY_TYPE.other, "recent", mono));
+    }
     if (recent.length >= 12) break;
   }
 
@@ -464,8 +525,17 @@ export function pickedFrom(it: MedItem, via?: "mine" | "recent"): PickedMed {
   };
 }
 
-/** «هالمرة بس»: اسمٌ مكتوب لا يُحفظ بمكان. */
+/** «هالمرة بس»: اسمٌ مكتوب لا يُحفظ بمكان — ودليلُه إن عرفه (فالجرعةُ والمنعُ بالنوع يصلان). */
 export function freePicked(name: string, family: FamilyKey): PickedMed {
   const n = trimDrugName(name);
-  return { key: searchable(n), name: n, label: n, family, familyType: FAMILY_TYPE[family], source: "free" };
+  return { key: searchable(n), name: n, label: n, family, familyType: FAMILY_TYPE[family], source: "free", monographId: matchMonograph(n)?.id };
+}
+
+/**
+ * دليلُ الدواء المختار: معرّفُه إن حمله، وإلا اسمُه — نفسُ ما تفعله خطةُ العلاج (formularySeed
+ * من الاسم). المضيفُ الذي يحسب جرعةً لا يثق بغياب المعرّف: «الأخيرة» والمكتوبُ بيدٍ والمحفوظُ
+ * قبل هذه الدفعة يصلون بلاه.
+ */
+export function monographOf(m: { monographId?: string | null; name: string }): Monograph | undefined {
+  return (m.monographId ? DRUG_BY_ID.get(m.monographId) : undefined) ?? matchMonograph(m.name);
 }

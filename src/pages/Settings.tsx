@@ -28,7 +28,7 @@ import { prepareLogo } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useClinicDrugs, isDrugError } from "@/lib/clinicDrugs";
-import { FAMILIES, type MedItem } from "@/lib/medIndex";
+import { FAMILIES, mineState, type MedItem } from "@/lib/medIndex";
 import { useSubscription } from "@/lib/subscription";
 import { MedPicker } from "@/components/meds/MedPicker";
 import { MyMedsStandalone } from "@/components/meds/MyMedsBoard";
@@ -1679,6 +1679,9 @@ function MyMedsSettings() {
   /* ما أضافته العيادةُ بنفسها (لا الكتالوج): حيٌّ وخارج «أدويتي» — وما فيها يظهر بالقائمة أعلاه. */
   const custom = drugs.rows.filter((r) => r.archived_at == null && !r.in_mine && !catalogKey(r.name));
   const archived = drugs.rows.filter((r) => r.archived_at != null);
+  /** «فاضية» و«ماكو» تُقالان حين قرأ الخادمُ القائمةَ فعلاً — لا تحت فشلٍ ولا تحميلٍ ولا عيادةٍ تبدّلت. */
+  const mine = mineState(drugs.status, ix.mine.length);
+  const knownEmpty = drugs.status === "ready";
 
   const unstarWithUndo = async (it: MedItem) => {
     const ids = ix.mine.map((x) => x.drugId as string);
@@ -1729,7 +1732,10 @@ function MyMedsSettings() {
       <div className="mb-1 flex items-center gap-2">
         <Pill size={18} className="text-brand-600" />
         <h2 className="font-bold text-ink">{t("mymeds.mine", "أدويتي")}</h2>
-        <span className="chip ms-auto bg-surface-2 text-xs text-ink-muted">{t("mmset.count", { n: formatNum(ix.mine.length), defaultValue: "{{n}} دواء" })}</span>
+        {/* العددُ يُقال حين يُعرف: «٠ دواء» تحت فشلٍ أو تحميلٍ كذبةٌ تُصدَّق */}
+        {(mine === "list" || mine === "empty") && (
+          <span className="chip ms-auto bg-surface-2 text-xs text-ink-muted">{t("mmset.count", { n: formatNum(ix.mine.length), defaultValue: "{{n}} دواء" })}</span>
+        )}
       </div>
       <p className="mb-3 text-xs text-ink-subtle">{t("mmset.hint", "هذي قائمة ترتيب — ما تقول شنو موجود بالمخزن. نفس الترتيب يطلع بكل شاشة تختار بيها دواء.")}</p>
 
@@ -1785,7 +1791,10 @@ function MyMedsSettings() {
         onMove={(it, after) => { void drugs.move(it.drugId as string, after).catch(fail); }}
         onOp={(op) => { void drugs.apply([op]).then(() => playSuccess(), fail); }}
         announce={setLive}
-        empty={<p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-xs font-bold text-ink-subtle">{t("mymeds.mineEmpty", "أدويتي فاضية — اضغط ★ على أي دواء أو اسحبه هنا")}</p>} />
+        empty={mine === "empty"
+          ? <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-xs font-bold text-ink-subtle" data-mymeds-state="empty">{t("mymeds.mineEmpty", "أدويتي فاضية — اضغط ★ على أي دواء أو اسحبه هنا")}</p>
+          // الفشلُ تقوله اللافتةُ أعلاه بـ«إعادة المحاولة»، والتبدّلُ كذلك — هنا لا ادّعاءَ بشيء.
+          : <p className="py-4 text-center text-sm font-bold text-ink-subtle" aria-busy={mine === "loading"} data-mymeds-state={mine}>…</p>} />
       <p className="sr-only" aria-live="polite">{live}</p>
 
       <button type="button" disabled={!canWrite} onClick={() => { playTap(); setPickerOpen(true); }} data-mymeds-addall
@@ -1805,7 +1814,9 @@ function MyMedsSettings() {
       <div className="mt-5">
         <p className="mb-2 text-xs font-black text-ink-muted">{t("mmset.customTitle", "أدوية أضافتها العيادة")}</p>
         {custom.length === 0 ? (
-          <p className="text-2xs text-ink-subtle">{t("mmset.customEmpty", "ماكو — «ما لكيته؟ اكتبه» بالمنتقي يضيف دواء مو بالكتالوج.")}</p>
+          knownEmpty
+            ? <p className="text-2xs text-ink-subtle" data-mymeds-custom-empty>{t("mmset.customEmpty", "ماكو — «ما لكيته؟ اكتبه» بالمنتقي يضيف دواء مو بالكتالوج.")}</p>
+            : <p className="text-2xs text-ink-subtle" aria-busy={drugs.status === "loading" || drugs.status === "idle"}>…</p>
         ) : (
           <div className="space-y-1.5">
             {custom.map((r) => archiveId === r.id ? null : (
