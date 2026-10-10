@@ -15,16 +15,37 @@
 -- ما شالته العيادة (درسُ 0153: الكتابةُ الآلية لا تقرّر عن العيادة). والجدولان
 -- القديمان لا يُكتب فيهما، و`treatment_entries.medication` لا يُعاد كتابتُه.
 --
+-- ── ما طُوي مرّةً لا يُطوى ثانية (`clinic_drugs_folded`) ──────────────────────
+-- «له صفٌّ» كان يُسأل بالأسماء الحاليّة وحدها. فدواءٌ طُوي ثم سمّته العيادةُ من «أدويتي»
+-- (Amoxil ⇒ Amoxil LA، أو تصحيحُ إملاءٍ لاسمٍ حرٍّ من تكرار العلاج) لا يبقى مفتاحُه
+-- القديم بأيّ صفّ، فكانت الإعادةُ تُدرجه ثانيةً بآخر «أدويتي» بلا أن يطلبه أحد. الاسمُ
+-- يتبدّل والقرارُ لا: كلُّ مفتاحٍ قديمٍ دخل (أو وُجد له صفٌّ لحظةَ الطيّ) يُسجَّل بجدولٍ
+-- لا يراه إلا المالك، والإعادةُ تتخطّاه. وما منعه السقفُ لا يُسجَّل — يُطوى حين يتّسع.
+--
 -- invoker ومنزوعةٌ عن كلّ دور: تجري بهويّة صاحب الهجرة (يتجاوز RLS بالإنتاج —
 -- مقيسٌ ١٠/١٠: postgres rolbypassrls). والنسخُ المفتوحةُ بالأجهزة تبقى تكتب بالجدولين
--- القديمين حتى تُحدَّث — فتُعاد الدالّةُ بعد إصدار (B9) لتلتقط ما كُتب بينهما.
+-- القديمين حتى تُحدَّث — فتُعاد الدالّةُ بعد إصدار (B9) لتلتقط ما كُتب بينهما: الجديدُ
+-- يدخل، وما طُوي قبله لا يعود مهما صار اسمُه.
 --
 -- تُطبَّق بعد 0229. وتُعاد بلا أثرٍ ثانٍ (الثانيةُ تضيف صفراً).
 -- تراجع: الصفوفُ المطويّة بلا فاعل بسجلّ التدقيق (entity clinic_drugs، actor null) —
---   delete from clinic_drugs where id in (…) بيد المالك؛ والجدولان القديمان سليمان.
+--   delete from clinic_drugs where id in (…) بيد المالك؛ والجدولان القديمان سليمان؛
+--   drop table clinic_drugs_folded.
 -- ============================================================================
 
 set lock_timeout = '5s';
+
+-- سجلُّ المفاتيح المطويّة: لا يلمسه التطبيقُ أبداً — الدالّةُ أدناه وحدها، بهويّة المالك.
+create table if not exists public.clinic_drugs_folded (
+  clinic_id uuid not null references auth.users(id) on delete cascade,
+  k         text not null,
+  folded_at timestamptz not null default now(),
+  primary key (clinic_id, k)
+);
+alter table public.clinic_drugs_folded enable row level security;
+revoke all on table public.clinic_drugs_folded from public, anon, authenticated;
+comment on table public.clinic_drugs_folded is
+  'RLS-DENY-ALL-BY-DESIGN — مفاتيحُ (search_norm) ما طواه _clinic_drugs_fold من drug_favorites وclinic_meds في «أدويتي» (0230)، فلا تُعيده إعادةُ الطيّ بعد أن تسمّيه العيادةُ أو تؤرشفه. سياسةُ كتابةٍ هنا تعني أن أيَّ موظّفٍ يمحو القرارَ فيرجع ما شالته العيادة. الطيُّ وحده يلمسه.';
 
 -- الصنفُ الإنكليزيّ القديم ⇒ عائلةُ «أدويتي». مرآتُه familyOfCatalogType (+ TYPE_ALIASES).
 create or replace function public._clinic_drugs_family(p_type text)
@@ -101,15 +122,23 @@ begin
       select f.k, f.nm, coalesce(fm.family, 'other') as family
         from firsts f
         left join fam fm on fm.k = f.k
-       where not exists (select 1 from clinic_drugs d where d.clinic_id = c and search_norm(d.name) = f.k)
+       -- ما طُوي مرّةً لا يُطوى ثانية — ولو تبدّل اسمُ صفّه أو أُرشف بعده.
+       where not exists (select 1 from clinic_drugs_folded x where x.clinic_id = c and x.k = f.k)
        order by f.src, f.at, f.k
     loop
-      -- السقفُ لا يُكسر ولا يُسقط الهجرة: ما بعده يبقى بجدوله القديم ويُقال بالتقرير.
-      exit when v_live >= 400;
+      -- له صفٌّ الآن (حتى المؤرشفُ والخارجُ من «أدويتي»): لا يُمسّ، ويُسجَّل — فإن تبدّل
+      -- اسمُ ذلك الصفّ غداً لم يرجع هذا المفتاح.
+      if exists (select 1 from clinic_drugs d where d.clinic_id = c and search_norm(d.name) = r.k) then
+        insert into clinic_drugs_folded (clinic_id, k) values (c, r.k) on conflict do nothing;
+        continue;
+      end if;
+      -- السقفُ لا يُكسر ولا يُسقط الهجرة: ما بعده يبقى بجدوله القديم ولا يُسجَّل — يُطوى حين يتّسع.
+      continue when v_live >= 400;
       v_k := v_k + 1;
       v_live := v_live + 1;
       insert into clinic_drugs (clinic_id, name, family, in_mine, pos)
       values (c, r.nm, r.family, true, v_max + 1024 * v_k);
+      insert into clinic_drugs_folded (clinic_id, k) values (c, r.k) on conflict do nothing;
     end loop;
     if v_k > 0 then
       v_out := v_out || jsonb_build_object(c::text, v_k);
@@ -119,6 +148,6 @@ begin
 end $$;
 revoke all on function public._clinic_drugs_fold(uuid) from public, anon, authenticated;
 comment on function public._clinic_drugs_fold(uuid) is
-  'طيّ drug_favorites وclinic_meds في «أدويتي» (0230): لكل عيادة، ما له صفٌّ (حتى المؤرشف) لا يُمسّ — الإعادة تضيف صفراً. للمالك وحده.';
+  'طيّ drug_favorites وclinic_meds في «أدويتي» (0230): لكل عيادة، ما له صفٌّ (حتى المؤرشف) لا يُمسّ، وما طُوي مرّةً (clinic_drugs_folded) لا يعود ولو تبدّل اسمه — الإعادة تضيف صفراً. للمالك وحده.';
 
 select public._clinic_drugs_fold(null);
