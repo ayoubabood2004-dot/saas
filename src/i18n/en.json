@@ -5897,5 +5897,23 @@
       "expense_category_clinic_frozen": "A category stays with its clinic"
     },
     "loadFailCash": "Couldn't load withdrawals — the amount withdrawn and net cash can't be calculated right now."
+  },
+  "mymeds": {
+    "fam": {
+      "antibiotics": "Antibiotics",
+      "analgesics": "Analgesics & anti-inflammatories",
+      "anesthetics": "Anaesthesia & sedation",
+      "antiparasitics": "Antiparasitics",
+      "antifungals": "Antifungals",
+      "steroids": "Corticosteroids",
+      "gi": "Digestive",
+      "cardiac": "Heart & diuretics",
+      "endocrine": "Hormones & endocrine",
+      "derm": "Allergy & skin",
+      "fluids": "Fluids & electrolytes",
+      "emergency": "Emergency & antidotes",
+      "vitamins": "Vitamins & supplements",
+      "other": "Other"
+    }
   }
 }

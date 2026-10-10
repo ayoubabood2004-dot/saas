@@ -1349,6 +1349,34 @@ console.log("▸ 0221 — أدويةُ الطبيب المفضّلة (مرآةُ
   for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_drug_favs_")) mem.delete(k);
 }
 
+console.log("▸ 0229 — «أدويتي» (مرآةُ clinic_drugs_apply بنفس الرموز والتلميحات، ولا حذف)");
+{
+  const wipe = () => { for (const k of [...mem.keys()]) if (k.startsWith("vp_demo_clinic_drugs_")) mem.delete(k); };
+  wipe();
+  mem.set("vp_active_clinic", "demo-c1");
+  const err = async (fn) => { try { await fn(); return "ok"; } catch (e) { return `${e.message}|${e.code}|${e.hint ? "hint" : "-"}`; } };
+  const snap = await repo.listClinicDrugs();
+  check("القراءةُ تختم بالعيادة النشطة، ولا صفوفَ لعيادةٍ جديدة", snap.clinic === "demo-c1" && snap.rows.length === 0);
+  const put = (id, name, mine, extra = {}) => ({ op: "put", id, name, family: "other", mine, ...extra });
+  const s1 = await repo.applyClinicDrugs("demo-c1", [put("d1", "Ceftriaxone", true), put("d2", "Meloxicam", true), put("d3", " ceftriaxone ", true)]);
+  check("الكتابةُ بالختم الصحيح تمرّ، والتوأمُ لا يتكرّر", s1.rows.length === 2 && s1.rows.filter((r) => r.in_mine).map((r) => `${r.name}:${r.pos}`).join() === "Ceftriaxone:1024,Meloxicam:2048");
+  check("ختمُ عيادةٍ أخرى ⇒ clinic_switched (P0001 بتلميح)", (await err(() => repo.applyClinicDrugs("demo-c2", [put("x", "X", true)]))) === "clinic_switched|P0001|hint");
+  check("نقلٌ بعد صفٍّ خارج «أدويتي» ⇒ drug_row_gone", (await err(() => repo.applyClinicDrugs("demo-c1", [put("d4", "Tramadol", false), { op: "move", id: "d1", after: "d4" }]))) === "drug_row_gone|P0001|hint");
+  check("  والدفعةُ المرفوضة لم تكتب نصفَها (Tramadol غائب)", !(await repo.listClinicDrugs()).rows.some((r) => r.name === "Tramadol"));
+  await repo.applyClinicDrugs("demo-c1", [{ op: "archive", id: "d2" }, put("d5", "meloxicam", false)]);
+  check("استرجاعُ مؤرشفٍ له توأمٌ حيّ ⇒ drug_exists", (await err(() => repo.applyClinicDrugs("demo-c1", [{ op: "restore", id: "d2" }]))) === "drug_exists|P0001|hint");
+  mem.set("vp_demo_clinic_drugs_demo-c1", JSON.stringify(Array.from({ length: 400 }, (_, i) => ({ id: `f${i}`, name: `F${i}`, family: "other", in_mine: false, pos: null, archived_at: null, created_at: "2026-10-10T00:00:00Z", updated_at: "2026-10-10T00:00:00Z" }))));
+  check("الدواءُ ٤٠١ ⇒ clinic_drugs_full", (await err(() => repo.applyClinicDrugs("demo-c1", [put("z", "Z", false)]))) === "clinic_drugs_full|P0001|hint");
+  // الوكيلُ الكسول يجيب أيَّ اسمٍ بدالّة — فالفحصُ على نصّ المستودعين لا على الوكيل.
+  const srcs = ["src/lib/repo.ts", "src/lib/repoDemo.ts", "src/lib/demoClinicDrugs.ts"].map((p) => readFileSync(p, "utf8")).join("\n");
+  check("لا دالّةَ حذفٍ لـ«أدويتي» بالمستودعين (كالخادم: لا صلاحيةَ ولا سياسة)",
+    !/(delete|remove|purge)\w*ClinicDrug/i.test(srcs) && !/from\("clinic_drugs"\)\s*\.delete/.test(srcs));
+  mem.set("vp_active_clinic", "demo-c2");
+  check("العيادةُ الثانيةُ لا ترى «أدويتي» الأولى", (await repo.listClinicDrugs()).rows.length === 0 && (await repo.listClinicDrugs()).clinic === "demo-c2");
+  mem.delete("vp_active_clinic");
+  wipe();
+}
+
 console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
 {
   const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };

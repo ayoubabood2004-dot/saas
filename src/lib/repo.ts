@@ -31,6 +31,7 @@ import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
+import type { ClinicDrug, ClinicDrugsSnapshot, MedicineStock } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
@@ -45,7 +46,7 @@ import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, Pa
 import { isValidSlug, normalizeSlug, productImageUrl } from "./storeLib";
 import { expenseMethodOf } from "./pockets";
 import { journeyToken } from "./journey";
-import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
+import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
 import { getActiveClinicId } from "./clinics";
 import { cleanRef } from "./deliverySearch";
 
@@ -405,6 +406,26 @@ function need<T>(res: { data: unknown; error: { message: string; code?: string; 
     throw err;
   }
   return res.data as T;
+}
+/** لقطةُ «أدويتي» كما ترجعها دالّتا 0229: الموضعُ رقمٌ (bigint قد يصل نصّاً)، ولا صفوفَ بلا مصفوفة. */
+function drugsSnap(raw: unknown): ClinicDrugsSnapshot {
+  const d = (raw ?? {}) as { clinic?: unknown; rows?: unknown };
+  const rows = (Array.isArray(d.rows) ? d.rows : []) as ClinicDrug[];
+  return { clinic: String(d.clinic ?? ""), rows: rows.map((r) => ({ ...r, pos: r.pos == null ? null : Number(r.pos) })) };
+}
+/** أوّلُ n أسماءٍ مختلفة بمفتاح searchable — بترتيب ورودها. */
+export function distinctMedNames(names: readonly (string | null | undefined)[], n: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of names) {
+    const name = String(raw ?? "").trim();
+    const k = searchable(name);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+    if (out.length >= n) break;
+  }
+  return out;
 }
 /** دفعةٌ بأرقامٍ لا نصوص (numeric يصل نصّاً). */
 const numLot = (l: ProductLot): ProductLot => ({ ...l, qty: Number(l.qty), received_qty: Number(l.received_qty) });
@@ -2635,6 +2656,31 @@ const supabaseRepo: DemoRepo = {
   async removeDrugFavorite(id) {
     updated<unknown[]>(await sbc().from("drug_favorites").delete().eq("id", id).select("id"));
   },
+  /* «أدويتي» (0229): القراءةُ ترمي — «أدويتي فاضية» عن خطأٍ تُصدَّق فتُبنى من جديد. والكتابةُ
+   * بابٌ واحد يرجع لقطةَ الخادم كاملة بختم عيادتها (الموضعُ يحسبه هو لا المتصفّح). */
+  async listClinicDrugs() {
+    return drugsSnap(need<unknown>(await sbc().rpc("clinic_drugs_list")));
+  },
+  async applyClinicDrugs(clinic, ops) {
+    return drugsSnap(need<unknown>(await sbc().rpc("clinic_drugs_apply", { p_clinic: clinic, p_ops: ops })));
+  },
+  async recentMedNames(days = 30) {
+    // «الأخيرة»: عيّنةٌ بالأحدث لا قائمةُ قرار — ٤٠٠ صفّ تكفي لاثني عشر اسماً مختلفاً.
+    const since = localISO(new Date(Date.now() - days * 86400000));
+    const rows = listOrThrow<{ medication: string | null }>(await sbc().from("treatment_entries").select("medication")
+      .eq("task_type", "drug").gte("day", since)
+      .order("day", { ascending: false }).order("created_at", { ascending: false }).limit(400));
+    return distinctMedNames(rows.map((r) => r.medication), 12);
+  },
+  async listMedicineStock() {
+    return (await allPages<MedicineStock>(() => sbc().from("products").select("id,name,stock").is("farm_id", null)
+      .eq("category", "medicine").gt("stock", 0), { col: "name", asc: true, kind: "text" }))
+      .map((p) => ({ id: p.id, name: p.name, stock: Number(p.stock) || 0 }));
+  },
+  async suggestClinicDrugs(days = 90) {
+    const list = need<unknown>(await sbc().rpc("clinic_drugs_suggest", { p_days: days }));
+    return (Array.isArray(list) ? list : []).map((x) => ({ name: String((x as { name?: unknown }).name ?? ""), n: Number((x as { n?: unknown }).n) || 0 }));
+  },
   /* الدفعات (0217): القراءةُ ترمي ولا ترجع ناقصة — «دفعةٌ واحدة» عن خطأٍ تُصدَّق فيُباع المنتهي. */
   async listProductLots(productId) {
     return listOrThrow<ProductLot>(await sbc().from("product_lots").select("*").eq("product_id", productId)
@@ -2757,6 +2803,8 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
   "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listDrugFavorites", "listPhotoProducts",
+  // «أدويتي» (0229): القراءةُ والأخيرةُ والمخزنُ والاقتراحُ قراءة — الكتابةُ (applyClinicDrugs) لا.
+  "listClinicDrugs", "recentMedNames", "listMedicineStock", "suggestClinicDrugs",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

@@ -25,6 +25,7 @@ import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, DrugFavorite, PhotoProduct } from "@/types";
+import type { ClinicDrugOp, ClinicDrugsSnapshot, MedicineStock } from "@/types";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -4498,6 +4499,22 @@ const demoRepo = {
     const list = demoFavLoad();
     if (!list.some((x) => x.id === id)) { const e = new Error("not_found") as Error & { code: string }; e.code = "PGRST116"; throw e; }
     demoFavSave(list.filter((x) => x.id !== id));
+  },
+  /* ---- «أدويتي» (0229) — مرآةٌ بوحدةٍ كسولة (`demoClinicDrugs.ts`) بنفس applyOps ورموزه؛ ولا حذف ---- */
+  async listClinicDrugs(): Promise<ClinicDrugsSnapshot> {
+    return (await import("./demoClinicDrugs")).demoDrugsList();
+  },
+  async applyClinicDrugs(clinic: string, ops: ClinicDrugOp[]): Promise<ClinicDrugsSnapshot> {
+    return (await import("./demoClinicDrugs")).demoDrugsApply(clinic, ops);
+  },
+  async recentMedNames(days = 30): Promise<string[]> {
+    return (await import("./demoClinicDrugs")).demoRecentMedNames(days);
+  },
+  async listMedicineStock(): Promise<MedicineStock[]> {
+    return (await import("./demoClinicDrugs")).demoMedicineStock();
+  },
+  async suggestClinicDrugs(days = 90): Promise<{ name: string; n: number }[]> {
+    return (await import("./demoClinicDrugs")).demoSuggest(days);
   },
   /* ---- الدفعات (0217) — مرآةٌ بوحدةٍ تُحمَّل عند النداء (`demoLots.ts`) ---- */
   async listProductLots(productId: string): Promise<ProductLot[]> {

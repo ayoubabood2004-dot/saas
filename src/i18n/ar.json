@@ -5897,5 +5897,23 @@
       "expense_category_clinic_frozen": "التصنيف يبقى بعيادته"
     },
     "loadFailCash": "تعذّر تحميل السحوبات — المسحوب وصافي النقد ما ينحسبون هسة."
+  },
+  "mymeds": {
+    "fam": {
+      "antibiotics": "مضادات حيوية",
+      "analgesics": "مسكّنات ومضادات التهاب",
+      "anesthetics": "تخدير وتهدئة",
+      "antiparasitics": "مضادات طفيليات",
+      "antifungals": "مضادات فطريات",
+      "steroids": "كورتيزونات",
+      "gi": "جهاز هضمي",
+      "cardiac": "قلب ومدرّات",
+      "endocrine": "غدد وهرمونات",
+      "derm": "حساسية وجلدية",
+      "fluids": "سوائل وأملاح",
+      "emergency": "طوارئ وترياقات",
+      "vitamins": "فيتامينات ومكمّلات",
+      "other": "أخرى"
+    }
   }
 }

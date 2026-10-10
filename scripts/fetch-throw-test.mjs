@@ -193,6 +193,15 @@ check("createPet — فشلُ الإنشاء يُرمى (والحلقةُ الد
     "السجلُّ انكتب والبطاقةُ لا — والشاشةُ راح تعرض وزناً قديماً يُحسب عليه دواء");
 }
 
+/* «أدويتي» (0229): «أدويتي فاضية» عن خطأٍ تُصدَّق فتُبنى من جديد، و«ماكو بالمخزون» عن خطأٍ
+ * تُخفي الشارةَ وتبيع بلا منتج. فالقراءاتُ الأربعُ والكتابةُ ترمي. */
+console.log("▸ «أدويتي» — القراءةُ والكتابةُ ترميان على فشل الخادم");
+check("listClinicDrugs — القائمةُ وختمُ عيادتها", await throws(() => repo.listClinicDrugs()));
+check("applyClinicDrugs — لا «انحفظ» كاذبة", await throws(() => repo.applyClinicDrugs("c1", [{ op: "unmine", id: "x" }])));
+check("recentMedNames — «الأخيرة»", await throws(() => repo.recentMedNames(30)));
+check("listMedicineStock — منتجاتُ الدواء بالمخزن", await throws(() => repo.listMedicineStock()));
+check("suggestClinicDrugs — الاقتراح", await throws(() => repo.suggestClinicDrugs(90)));
+
 console.log("▸ وقوائمُ المخزن الأساسية ترمي أصلاً (allPages) — لا تراجُع");
 check("listProducts", await throws(() => repo.listProducts()));
 check("listCompanies", await throws(() => repo.listCompanies()));
