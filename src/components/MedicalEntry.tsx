@@ -158,9 +158,12 @@ export function MedicalEntry({
   lockMode,
   defaultDoctor,
   allowHistory,
+  petId,
 }: {
   /** ملفُّ الحيوان: يسمح بتسجيل لقاحٍ سابق بتواريخه (VaccinationForm). */
   allowHistory?: boolean;
+  /** ملفُّ الحيوان: سجلُّ لقاحاته يُقرأ ليقول النموذجُ «الجرعة المستحقة راح تنحسب» قبل الحفظ. */
+  petId?: string;
   /** Patient species — filters the vaccine list. If omitted, a species picker is shown. */
   species?: Species;
   /** Persist the built record + the per-visit assessment + the attending doctor. If omitted, local-only. */
@@ -271,7 +274,7 @@ export function MedicalEntry({
       >
         {mode === "medication"
           ? <MedicationForm onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} allowHistory={allowHistory} blockRef={vaxBlock} />}
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} allowHistory={allowHistory} blockRef={vaxBlock} historyPetId={petId} />}
       </motion.div>
 
       {/* Unified treatment record */}
@@ -533,10 +536,12 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName, allowHistory, blockRef }: {
+export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName, allowHistory, blockRef, historyPetId }: {
   species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
   /** حيوان مربوط (بيع من ملفه): يُعرض سجل لقاحاته — السابق والمستحق — للاختيار بضغطة. */
   petId?: string | null; petName?: string | null;
+  /** سجلٌّ يُقرأ بلا لوحة «سجل لقاحات الحيوان» (لوحةُ البيع) — لتنبيه الاستهلاك بملفّ الحيوان. */
+  historyPetId?: string | null;
   /** ملفُّ الحيوان وحده: «انلقح قبل؟» يسجّل تواريخَ سابقة. البيعُ لا — البيعُ يحصل اليوم. */
   allowHistory?: boolean;
   /** سببٌ يمنع «احفظ» (سجلٌّ سابق ناقص) — وإلا حفظ الأبُ الباقي وأسقط هذا بصمت. */
@@ -559,12 +564,13 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
 
   // سجل لقاحات الحيوان المربوط — يجاوب "شنو انطى سابقاً وشنو المستحق هسة؟"
   const [history, setHistory] = useState<Vaccination[] | null>(null);
+  const histId = petId ?? historyPetId ?? null;
   useEffect(() => {
-    if (!petId) { setHistory(null); return; }
+    if (!histId) { setHistory(null); return; }
     let alive = true;
-    repo.listVaccinations(petId).then((r) => { if (alive) setHistory(r); }).catch(() => { if (alive) setHistory([]); });
+    repo.listVaccinations(histId).then((r) => { if (alive) setHistory(r); }).catch(() => { if (alive) setHistory([]); });
     return () => { alive = false; };
-  }, [petId]);
+  }, [histId]);
   const vaxSummary = useMemo(() => {
     if (!history || history.length === 0) return [];
     const todayISO = new Date().toISOString().slice(0, 10);

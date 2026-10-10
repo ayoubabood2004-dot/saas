@@ -5,9 +5,10 @@
  *     LIVE_URL=http://localhost:5199 node scripts/live/vax-next.mjs
  *
  * يقود ما اشتكت منه العيادة (١٠/١٠): جرعةٌ معزّزة متأخرة بسلسلة ٣ أسابيع ⇒ «تسجيل إعطائها» من
- * ملفّ الحيوان. كانت النافذةُ تحفظ وتسكت: لا سؤالَ عن الجاية ولا حجز. الآن تسأل وتقترح نفسَ
- * المدّة، والحفظُ يكتب الجاية — ويُقرأ المخزنُ بعدها. ثمّ «أضف لقاح ← انعطى اليوم» لجرعةٍ مستحقّة:
- * تُستهلك المستحقّة ولا تبقى معلّقة.
+ * ملفّ الحيوان. كانت النافذةُ تحفظ وتسكت: لا سؤالَ عن الجاية ولا حجز. الآن تسأل وتعلّم نفسَ المدّة
+ * بـ★، والحفظُ يكتب الجاية — ويُقرأ المخزنُ بعدها. ثمّ: «إضافة تطعيم ← انعطى اليوم» لجرعةٍ مستحقّة
+ * (التنبيهُ قبل الحفظ والاستهلاكُ بعده)، وعلامةُ «تم» بتقويم الاستقبال تفتح النافذةَ نفسها، وفشلُ
+ * الحجز بعد الإعطاء ثمّ الإغلاقُ يحدّث السجلّ.
  * ==========================================================================*/
 process.env.TZ = "Asia/Baghdad";
 let chromium;
@@ -64,9 +65,13 @@ console.log("▸ ١) «تسجيل إعطائها» من ملفّ الحيوان 
   await modal.waitFor({ timeout: 10000 });
   const txt = (await modal.innerText()).replace(/\s+/g, " ");
   check("النافذةُ تسأل «شوكت الجرعة الجاية؟»", /شوكت الجرعة الجاية/.test(txt), txt.slice(0, 160));
-  check("  وتقترح نفسَ المدّة السابقة (٣ أسابيع) مختارةً سلفاً", /مقترح: نفس المدّة السابقة/.test(txt)
-    && (await modal.locator('[data-next-preset="medentry.b3w"]').getAttribute("aria-pressed")) === "true");
+  check("  وتعلّم نفسَ المدّة السابقة (٣ أسابيع) بـ★ — علامةٌ لا اختيار (الحفظُ مطفأ حتى يجاوب الطبيب)",
+    /نفس المدّة السابقة/.test(txt) && /3 أسابيع ★/.test(txt)
+      && (await modal.locator('[data-next-preset="medentry.b3w"]').getAttribute("aria-pressed")) === "false"
+      && await modal.locator("[data-administer-confirm]").isDisabled());
+  await modal.locator('[data-next-preset="medentry.b3w"]').click();
   const due = await modal.locator("[data-next-due]").getAttribute("data-next-due");
+  check("  والموعدُ يُعرض بسنته", new RegExp(String(new Date(day(21)).getFullYear())).test(await modal.locator("[data-next-due]").innerText()));
   check("  والموعدُ ٣ أسابيع من يوم الإعطاء (اليوم) لا من الموعد القديم", due === day(21), String(due));
   await modal.locator('[data-next-none]').click();
   check("  و«ماكو جرعة جاية» خيارٌ صريح يمحو الموعد", (await modal.locator("[data-next-due]").count()) === 0);
@@ -116,6 +121,85 @@ console.log("▸ ٣) جايةٌ محجوزةٌ أصلاً لا تتكرّر");
   await modal.waitFor({ state: "detached", timeout: 10000 });
   const rows = await vx(page);
   check("  ولا صفٌّ جديد", rows.filter((v) => v.name === "Lepto" && v.status !== "administered").length === 1);
+  await ctx.close();
+}
+
+console.log("▸ ٤) «إضافة تطعيم ← انعطى اليوم» بالملفّ: يقولها قبل الحفظ ويستهلك المستحقّة");
+{
+  const { ctx, page } = await open("/pet/pt1?tab=vaccines", seedDB([
+    { id: "v6", pet_id: "pt1", name: "Rabies", status: "overdue", administered_at: null, due_date: day(-3) },
+  ]));
+  const addBtn = page.locator('button:has-text("إضافة تطعيم"), button:has-text("إضافة لقاح")').first();
+  await addBtn.waitFor({ timeout: 30000 });
+  await addBtn.click();
+  const dlg = page.locator('[role="dialog"]').last();
+  await dlg.locator("button", { hasText: /اختر لقاح|Select a vaccine|Choose/ }).first().click();
+  await dlg.locator(".max-h-60 button", { hasText: /^Rabies$/ }).first().click();
+  await page.locator("[data-vx-consume]").waitFor({ timeout: 8000 }).catch(() => undefined);
+  check("التنبيهُ ظاهرٌ بالملفّ: «الجرعة المستحقة … راح تنحسب»", (await page.locator("[data-vx-consume]").count()) === 1);
+  await dlg.locator('button:has-text("سنة")').first().click();
+  await dlg.locator('button:has-text("إضافة اللقاح")').first().click();
+  await page.waitForTimeout(300);
+  await page.locator('[role="dialog"] button:has-text("Save"), [role="dialog"] button:has-text("حفظ")').last().click();
+  await page.waitForTimeout(1500);
+  const rows = (await vx(page)).filter((v) => v.name === "Rabies");
+  check("  والمستحقّةُ انقلبت معطاةً بنفس معرّفها، والجاية بعد سنة، بلا صفٍّ معطى ثانٍ",
+    rows.find((v) => v.id === "v6")?.status === "administered" && rows.filter((v) => v.status === "administered").length === 1
+      && rows.some((v) => v.status === "scheduled" && v.due_date > day(360)), JSON.stringify(rows));
+  await ctx.close();
+}
+
+console.log("▸ ٥) علامةُ «تم» بتقويم الاستقبال تفتح النافذةَ نفسها");
+{
+  const { ctx, page } = await open("/reception", seedDB([
+    { id: "v1", pet_id: "pt1", name: "DHPP", status: "administered", administered_at: day(-24), due_date: null },
+    { id: "v7", pet_id: "pt1", name: "DHPP", status: "scheduled", administered_at: null, due_date: TODAY },
+  ]));
+  const month = page.getByRole("button", { name: /شهري/ }).first();
+  await month.waitFor({ timeout: 30000 });
+  await month.click();
+  await page.locator(`[data-day="${TODAY}"]`).first().click();
+  const done = page.getByRole("button", { name: /^تم$/ }).first();
+  await done.waitFor({ timeout: 10000 });
+  await done.click();
+  const modal = page.locator("[data-administer-dose]");
+  await modal.waitFor({ timeout: 15000 }).catch(() => undefined);
+  check("«تم» على تذكير اللقاح تفتح «شوكت الجرعة الجاية؟» لا علامةً صامتة", (await modal.count()) === 1 && (await vx(page)).find((v) => v.id === "v7")?.status === "scheduled");
+  if (await modal.count()) {
+    await modal.locator('[data-next-preset="medentry.b3w"]').click();
+    await modal.locator("[data-administer-confirm]").click();
+    await modal.waitFor({ state: "detached", timeout: 10000 });
+    const rows = await vx(page);
+    check("  والحفظُ يعطيها ويحجز الجاية", rows.find((v) => v.id === "v7")?.status === "administered" && rows.some((v) => v.name === "DHPP" && v.status === "scheduled" && v.due_date === day(21)),
+      JSON.stringify(rows));
+  }
+  await ctx.close();
+}
+
+console.log("▸ ٦) أُعطيت وفشل حجزُ الجاية ثمّ أُغلقت النافذة: السجلُّ يتحدّث");
+{
+  const { ctx, page } = await open("/pet/pt1?tab=vaccines", seedDB([
+    { id: "v8", pet_id: "pt1", name: "Lepto", status: "overdue", administered_at: null, due_date: day(-1) },
+  ]));
+  const give = page.getByRole("button", { name: /تسجيل إعطائها/ }).first();
+  await give.waitFor({ timeout: 30000 });
+  await give.click();
+  const modal = page.locator("[data-administer-dose]");
+  await modal.waitFor({ timeout: 10000 });
+  await modal.locator('[data-next-preset="medentry.b1y"]').click();
+  // الكتابةُ الأولى (الإعطاء) تمرّ والثانية (الحجز) ترمي — حصّةُ التخزين ممتلئة.
+  await page.evaluate((k) => {
+    const real = Storage.prototype.setItem; let n = 0;
+    Storage.prototype.setItem = function (key, v) { if (key === k && ++n === 2) throw new DOMException("full", "QuotaExceededError"); return real.call(this, key, v); };
+  }, DB_KEY);
+  await modal.locator("[data-administer-confirm]").click();
+  await page.waitForTimeout(800);
+  check("الحجزُ فشل: النافذةُ باقيةٌ بزرّ «احجز الموعد»", (await modal.count()) === 1 && /احجز الموعد/.test(await modal.locator("[data-administer-confirm]").innerText()));
+  await page.keyboard.press("Escape");
+  await modal.waitFor({ state: "detached", timeout: 5000 }).catch(() => undefined);
+  await page.waitForTimeout(800);
+  check("  والإغلاقُ يحدّث السجلّ: الجرعةُ ما عادت «تسجيل إعطائها» (لا تُعطى مرّةً ثانية)",
+    (await page.getByRole("button", { name: /تسجيل إعطائها/ }).count()) === 0);
   await ctx.close();
 }
 

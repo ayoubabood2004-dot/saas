@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarClock, Check, NotebookPen, Stethoscope, Syringe, CalendarX } from "lucide-react";
 import type { Vaccination } from "@/types";
@@ -8,7 +8,7 @@ import { Modal } from "@/components/Modal";
 import { BOOSTERS, DoctorSelect } from "@/components/MedicalEntry";
 import { cn, formatDate, localISO } from "@/lib/utils";
 import { addInterval } from "@/lib/backdate";
-import { statusForDue } from "@/lib/vaccineDue";
+import { statusForDue, validDue } from "@/lib/vaccineDue";
 import { describeDbError } from "@/lib/errors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { laterPending, suggestNext, type VaxInterval } from "@/lib/vaxNext";
@@ -18,12 +18,13 @@ import { laterPending, suggestNext, type VaxInterval } from "@/lib/vaxNext";
  *
  * كانت النافذةُ تقلب الجرعةَ «معطاة» وتسكت: التكرارُ الذي اختاره الطبيبُ عند الإضافة يقف
  * عند أوّل معزّز، والكادرُ يضيف اللقاحَ من جديد ليحصل على موعد فتتكرّر الجرعةُ بالسجلّ.
- * الآن الحفظُ يحتاج جواباً: مدّةٌ جاهزة (مقترحةٌ بنفس المدّة السابقة، ومعلَنٌ أنها اقتراح)، أو
+ * الآن الحفظُ يحتاج جواباً **من الطبيب**: مدّةٌ جاهزة (★ على الأقرب لما سبق — علامةٌ لا اختيار)، أو
  * تاريخٌ آخر، أو «ماكو جرعة جاية» صريحة. وجرعةٌ لاحقةٌ محجوزةٌ أصلاً تُقال ولا تُكرَّر.
- * مشتركةٌ بين ملفّ الحيوان وتقويم الاستقبال — نسختان من «اسأل عن الجاية» تنحرفان.
+ * مشتركةٌ بين ملفّ الحيوان وتقويم الاستقبال — نسختان من «اسأل عن الجاية» تنحرفان. والأبُ يركّبها
+ * بمفتاح الجرعة (`key`): حفظٌ عالقٌ لجرعةٍ أُغلقت لا يكتب بحالة الجرعة التي فُتحت بعدها.
  * ========================================================================= */
 
-type Choice = { kind: "preset"; iv: VaxInterval } | { kind: "date"; due: string } | { kind: "days"; days: number } | { kind: "none" };
+type Choice = { kind: "preset"; iv: VaxInterval } | { kind: "date"; due: string } | { kind: "none" };
 
 /** datetime-local بقيمة الآن (ساعةُ الجهاز، بالدقيقة). */
 function nowLocalDT(): string {
@@ -32,15 +33,17 @@ function nowLocalDT(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, onDone }: {
+export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, onSaved }: {
   /** الجرعةُ المجدولة المفتوحة (null = مغلقة). */
   vaccine: Vaccination | null;
   /** كلُّ لقاحات هذا الحيوان — منها تُقترح المدّة وتُعرف الجاية المحجوزة. */
   series: readonly Vaccination[];
   defaultDoctor?: string;
+  /** إغلاقُ النافذة وحده. */
   onClose: () => void;
-  /** بعد الحفظ (أو بعد اكتشاف أنها انعطت من جهازٍ ثانٍ): الأبُ يعيد التحميل. */
-  onDone: () => void;
+  /** أيُّ كتابةٍ حصلت (أو تبيّن أنها انعطت من جهازٍ ثانٍ): الأبُ يعيد التحميل — **حتى لو أُغلقت
+   *  النافذةُ قبل وصول الجواب**، وإلا بقيت الجرعةُ «معلّقة» بالشاشة وهي معطاةٌ بالقاعدة. */
+  onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -52,6 +55,11 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
   const [customDue, setCustomDue] = useState("");
   /** الخطوةُ الأولى نجحت والثانية (حجزُ الجاية) فشلت: إعادةُ المحاولة تحجز وحدها، لا تعطي مرّتين. */
   const [givenDone, setGivenDone] = useState(false);
+  /** النافذةُ ما زالت مركَّبة — حفظٌ يرجع بعد إغلاقها يحدّث الأبَ ولا يلمس حالتها ولا يغلق غيرها. */
+  const alive = useRef(true);
+  // يُرفع عند كلّ تركيب لا عند الإنشاء وحده: الوضعُ الصارم يركّب ويفكّ ويركّب، وعلَمٌ لا يُرفع
+  // ثانيةً كان يُبقي النافذةَ مفتوحةً بعد حفظٍ ناجح (أمسكه الفحصُ الحيّ).
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const picked = when ? new Date(when) : new Date();
   const givenDay = localISO(Number.isNaN(picked.getTime()) ? new Date() : picked);
@@ -59,7 +67,7 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
   const suggestion = useMemo(() => (vaccine ? suggestNext(series, vaccine, givenDay) : null), [series, vaccine, givenDay]);
   const already = useMemo(() => (vaccine ? laterPending(series, vaccine, givenDay) : null), [series, vaccine, givenDay]);
 
-  // نموذجٌ جديد لكلّ جرعة: الطبيبُ الداخل، والآن، والاقتراحُ مختارٌ سلفاً (ضغطةٌ واحدة تكمل السلسلة).
+  // نموذجٌ جديد لكلّ جرعة: الطبيبُ الداخل، والآن، **وبلا اختيارٍ مسبق** — الاقتراحُ ★ والجوابُ للطبيب.
   useEffect(() => {
     if (!vaccine) return;
     setDoctor(defaultDoctor ?? "");
@@ -67,17 +75,16 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
     setWhen(nowLocalDT());
     setCustomDue("");
     setGivenDone(false);
-    const s = suggestNext(series, vaccine, localISO(new Date()));
-    setChoice(s ? (s.kind === "preset" ? { kind: "preset", iv: s.interval } : { kind: "days", days: s.days }) : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setChoice(null);
   }, [vaccine?.id, defaultDoctor]);
 
   /** موعدُ الجاية من الاختيار ويوم الإعطاء (تغييرُ اليوم يحرّك المدّة معه). */
   const nextDue: string | null = !choice || choice.kind === "none" ? null
     : choice.kind === "preset" ? addInterval(givenDay, choice.iv)
-    : choice.kind === "days" ? addInterval(givenDay, { days: choice.days })
     : choice.due;
-  const dueBad = !!nextDue && nextDue <= givenDay;
+  // بعد يوم الإعطاء، وبسقف «غيّر الموعد» نفسه (٥ سنوات): سنةٌ مكتوبةٌ غلط (٢٢٠٧) موعدٌ لا يُذكَّر به أبداً.
+  const dueBad = !!nextDue && (nextDue <= givenDay || !validDue(nextDue, todayISO));
+  const longDate = (d: string) => formatDate(d, i18n.language, true);
   const answered = !!already || (!!choice && (choice.kind !== "date" || (!!choice.due && !dueBad)));
 
   const confirm = async () => {
@@ -98,11 +105,12 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
       if (code === "no_row_updated") {
         // انعطت من جهازٍ ثانٍ (أو حُذفت): لا نعطيها مرّتين — نقول ونحدّث.
         toast.error(t("passport.next.goneTitle", "هالجرعة انسجلت قبل — حدّثنا السجلّ"));
-        onDone();
+        onSaved();
+        if (alive.current) onClose();
       } else {
         toast.error(t("passport.boosterError", "تعذّر الحفظ — حاول مرة أخرى."), describeDbError(e, t));
       }
-      setBusy(false);
+      if (alive.current) setBusy(false);
       return;
     }
     try {
@@ -113,31 +121,34 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
         });
       }
       playSuccess();
-      const date = (d: string) => formatDate(d, i18n.language);
       toast.success(t("passport.boosterGiven", "تم تسجيل الجرعة"),
-        already ? t("passport.next.keptExisting", { date: date(already.due_date!), defaultValue: "الجاية محجوزة أصلاً: {{date}}" })
-          : nextDue ? t("passport.next.scheduled", { date: date(nextDue), defaultValue: "الجرعة الجاية: {{date}}" })
+        already ? t("passport.next.keptExisting", { date: longDate(already.due_date!), defaultValue: "الجاية محجوزة أصلاً: {{date}}" })
+          : nextDue ? t("passport.next.scheduled", { date: longDate(nextDue), defaultValue: "الجرعة الجاية: {{date}}" })
             : t("passport.next.noneDone", "بلا جرعة جاية"));
-      onDone();
+      onSaved();
+      if (alive.current) onClose();
     } catch (e) {
-      // الجرعةُ انحفظت والموعدُ لا: النافذةُ تبقى والزرُّ يحجز وحده.
+      // الجرعةُ انحفظت والموعدُ لا: النافذةُ تبقى والزرُّ يحجز وحده، والأبُ يحدّث (الجرعةُ معطاةٌ فعلاً).
       playWarning();
       toast.error(t("passport.next.scheduleFailed", "انعطت الجرعة، بس ما انحجز الموعد الجاي — اضغط «احجز الموعد»"), describeDbError(e, t));
+      onSaved();
     } finally {
-      setBusy(false);
+      if (alive.current) setBusy(false);
     }
   };
+  /** الإغلاقُ أثناء الحفظ ممنوع؛ وبعد إعطاءٍ بلا حجز يحدّث الأبَ (لا تبقى الجرعةُ «معلّقة» بالشاشة). */
+  const close = () => { if (busy) return; if (givenDone) onSaved(); onClose(); };
 
   const chip = (active: boolean) => cn(
     "rounded-xl border px-3 py-1.5 text-xs font-bold transition active:scale-95",
     active ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:text-ink",
   );
-  const sameAsSuggested = (iv: VaxInterval) => suggestion?.kind === "preset" && suggestion.interval.key === iv.key;
+  const sameAsSuggested = (iv: VaxInterval) => suggestion?.interval.key === iv.key;
   /** اسمُ المدّة المعروض — من قائمة نموذج الإضافة نفسها. */
   const label = (key: string) => { const b = BOOSTERS.find((x) => x.key === key); return b ? t(b.key, b.def) : key; };
 
   return (
-    <Modal open={!!vaccine} onClose={onClose} title={t("passport.confirmAdminTitle", "تأكيد الإعطاء")}>
+    <Modal open={!!vaccine} onClose={close} dismissible={!busy} title={t("passport.confirmAdminTitle", "تأكيد الإعطاء")}>
       {vaccine && (
         <div className="space-y-4" data-administer-dose={vaccine.id}>
           <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3">
@@ -145,7 +156,7 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink">{vaccine.name}</p>
               {vaccine.due_date && (
-                <p className="truncate text-xs text-ink-muted">{t("passport.scheduledFor", { date: formatDate(vaccine.due_date, i18n.language), defaultValue: "مجدولة في {{date}}" })}</p>
+                <p className="truncate text-xs text-ink-muted">{t("passport.scheduledFor", { date: longDate(vaccine.due_date), defaultValue: "مجدولة في {{date}}" })}</p>
               )}
             </div>
           </div>
@@ -172,15 +183,13 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
             <p className="flex items-center gap-1.5 text-sm font-bold text-ink"><CalendarClock size={15} className="text-brand-600" /> {t("passport.next.title", "شوكت الجرعة الجاية؟")}</p>
             {already ? (
               <p className="text-xs font-semibold text-ink-muted" data-next-existing>
-                {t("passport.next.existing", { date: formatDate(already.due_date!, i18n.language), defaultValue: "الجاية محجوزة أصلاً بتاريخ {{date}} — ما نكرّرها." })}
+                {t("passport.next.existing", { date: longDate(already.due_date!), defaultValue: "الجاية محجوزة أصلاً بتاريخ {{date}} — ما نكرّرها." })}
               </p>
             ) : (
               <>
                 {suggestion && (
                   <p className="text-2xs text-ink-subtle" data-next-suggested>
-                    {suggestion.kind === "preset"
-                      ? t("passport.next.suggestedPreset", { label: label(suggestion.interval.key), defaultValue: "مقترح: نفس المدّة السابقة ({{label}})" })
-                      : t("passport.next.suggestedDays", { n: suggestion.days, defaultValue: "مقترح: نفس المدّة السابقة ({{n}} يوم)" })}
+                    {t("passport.next.suggestedPreset", { label: label(suggestion.interval.key), defaultValue: "★ نفس المدّة السابقة ({{label}}) — اختار إذا تنطبق" })}
                   </p>
                 )}
                 <div className="flex flex-wrap gap-1.5">
@@ -193,12 +202,6 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
                       </button>
                     );
                   })}
-                  {suggestion?.kind === "days" && (
-                    <button type="button" className={chip(choice?.kind === "days")} data-next-days aria-pressed={choice?.kind === "days"}
-                      onClick={() => { playTap(); setChoice({ kind: "days", days: suggestion.days }); }}>
-                      {t("passport.next.daysChip", { n: suggestion.days, defaultValue: "{{n}} يوم" })} ★
-                    </button>
-                  )}
                   <button type="button" className={chip(choice?.kind === "none")} data-next-none aria-pressed={choice?.kind === "none"}
                     onClick={() => { playTap(); setChoice({ kind: "none" }); }}>
                     <CalendarX size={12} className="me-1 inline" /> {t("passport.next.none", "ماكو جرعة جاية")}
@@ -206,16 +209,16 @@ export function AdministerDoseModal({ vaccine, series, defaultDoctor, onClose, o
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 text-xs text-ink-muted">{t("passport.next.orDate", "أو تاريخ ثاني:")}</span>
-                  <input type="date" className={cn("input h-9 flex-1 text-sm", choice?.kind === "date" && "border-brand-500")} min={addInterval(givenDay, { days: 1 })}
+                  <input type="date" className={cn("input h-9 flex-1 text-sm", choice?.kind === "date" && "border-brand-500")} min={addInterval(givenDay, { days: 1 })} max={addInterval(todayISO, { years: 5 })}
                     value={customDue} data-next-date
                     onChange={(e) => { setCustomDue(e.target.value); setChoice(e.target.value ? { kind: "date", due: e.target.value } : null); }} />
                 </div>
                 {nextDue && !dueBad && (
                   <p className="text-xs font-bold text-success-700 dark:text-success-300" data-next-due={nextDue}>
-                    {t("passport.next.willBe", { date: formatDate(nextDue, i18n.language), defaultValue: "الجاية: {{date}}" })}
+                    {t("passport.next.willBe", { date: longDate(nextDue), defaultValue: "الجاية: {{date}}" })}
                   </p>
                 )}
-                {dueBad && <p className="text-xs font-semibold text-danger-600">{t("passport.next.mustBeAfter", "موعد الجاية لازم بعد يوم الإعطاء.")}</p>}
+                {dueBad && <p className="text-xs font-semibold text-danger-600">{t("passport.next.mustBeAfter", "موعد الجاية لازم بعد يوم الإعطاء، وخلال ٥ سنوات.")}</p>}
                 {!choice && <p className="text-xs font-semibold text-warn-700 dark:text-warn-200" data-next-ask>{t("passport.next.ask", "اختار موعد الجاية، أو «ماكو جرعة جاية» إذا هاي آخر جرعة.")}</p>}
               </>
             )}

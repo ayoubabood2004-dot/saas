@@ -999,7 +999,10 @@ const demoRepo = {
     const db = loadDB();
     const v = db.vaccinations.find((x) => x.id === id);
     if (!v || v.status === "administered") { const e = new Error("no_row_updated") as Error & { code: string }; e.code = "no_row_updated"; throw e; }
-    Object.assign(v, { ...patch, status: "administered", due_date: null });
+    // المفاتيحُ المعرَّفة وحدها — supabase-js يُسقط undefined فيبقى بالخادم ما كان (تشغيلةٌ، ملاحظة)؛
+    // Object.assign كان يمحوه هنا فتنحرف المرآةُ التي تجري عليها فحوصُ المنطق.
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, x]) => x !== undefined));
+    Object.assign(v, { ...defined, status: "administered", due_date: null });
     saveDB(db);
   },
 

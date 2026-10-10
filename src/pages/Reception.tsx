@@ -479,10 +479,9 @@ export function Reception() {
       <OutcomeDialog target={outcomeFor} onClose={() => setOutcomeFor(null)} />
       {doseFor && (
         <Suspense fallback={null}>
-          <AdministerDoseModal vaccine={doseFor} series={vaccinations.filter((v) => v.pet_id === doseFor.pet_id)} defaultDoctor={user?.full_name}
+          <AdministerDoseModal key={doseFor.id} vaccine={doseFor} series={vaccinations.filter((v) => v.pet_id === doseFor.pet_id)} defaultDoctor={user?.full_name}
             onClose={() => setDoseFor(null)}
-            onDone={() => {
-              setDoseFor(null);
+            onSaved={() => {
               const key = clinicId ?? "x";
               repo.listAllVaccinations(Object.keys(pets)).then((v) => { setVaccinations(v); setCached(`recVax:${key}`, v); }).catch(() => {});
             }} />
