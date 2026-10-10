@@ -470,11 +470,11 @@ function Tile({ it, selected, confirming, dragDisabled, starDisabled, onPick, on
     <div ref={setNodeRef} className={cn("relative", isDragging && "opacity-30")}>
       <button type="button" data-medtile={it.key} onClick={onPick} {...press}
         className={cn("relative min-h-[72px] w-full touch-manipulation select-none rounded-2xl border-2 p-2.5 pe-12 text-start transition [-webkit-touch-callout:none] active:scale-[0.98]",
-          selected ? "border-success-500 bg-success-600 text-white"
+          selected ? "border-success-500 bg-success-700 text-white"
             : it.banned ? "border-danger-300 bg-danger-50 text-danger-700 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-300"
               : "border-line bg-surface-2 hover:border-brand-300")}>
         <span className={cn("block truncate text-base font-black", selected ? "text-white" : "text-ink")}>{it.label}</span>
-        {it.sub && <span className={cn("block truncate text-2xs font-semibold", selected ? "text-white/80" : "text-ink-subtle")} dir="auto">{it.sub}</span>}
+        {it.sub && <span className={cn("block truncate text-2xs font-semibold", selected ? "text-white" : "text-ink-muted")} dir="auto">{it.sub}</span>}
         <span className="mt-1 flex flex-wrap gap-1 text-[10px] font-black">
           {selected ? <span className="rounded-full bg-white/20 px-1.5 py-0.5">{t("mymeds.added", "أُضيف ✓")}</span>
             : it.banned ? <span className="rounded-full bg-danger-100 px-1.5 py-0.5 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{t("mymeds.badgeBanned", "ممنوع")}</span>
@@ -500,7 +500,7 @@ function RecentChip({ it, selected, dragDisabled, onPick }: { it: MedItem; selec
     <button ref={setNodeRef} type="button" data-medrecent-chip={it.key} onClick={onPick}
       {...pressOnly(listeners)}
       className={cn("h-10 shrink-0 touch-manipulation select-none rounded-full border px-3 text-xs font-bold transition [-webkit-touch-callout:none]",
-        selected ? "border-success-500 bg-success-600 text-white" : "border-line bg-surface-2 text-ink hover:border-brand-300")}>
+        selected ? "border-success-500 bg-success-700 text-white" : "border-line bg-surface-2 text-ink hover:border-brand-300")}>
       {it.label}
     </button>
   );
