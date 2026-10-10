@@ -46,8 +46,13 @@ jobs:
         run: npm ci
 
       # `npm run build` يشغّل كلَّ الحرّاس ثم البناء الفعليّ — فهو `lint` وزيادة.
+      # ويُحفظ خرجُه: حارسٌ يفشل هنا كان لا يُرى إلا بسجلٍّ يحتاج حساباً، فلا تعليقَ
+      # يقول أيَّ حارسٍ ولماذا (مقيسٌ: فشلٌ بعد ١١ ثانية بلا سببٍ مقروء).
       - name: الحرّاس والبناء
-        run: npm run build
+        id: build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee /tmp/build.log
 
       # الحزمةُ تنصب عنقوداً مؤقّتاً وتُنزل عليه الهجرات بترتيبها، ثم تفحص
       # سلوكَها بدور `authenticated` لا كـsuperuser وحده. وهي المرّةُ الأولى
@@ -64,7 +69,22 @@ jobs:
       # الإجراءات لا يُقرأ إلا بحسابٍ له صلاحية. فالسببُ يصل من يصلحه.
       - name: أسبابُ الفشل تُرفع تعليقاتٍ
         if: failure()
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
         run: |
+          # الحرّاسُ والبناء أوّلاً: فشلُهما يمنع الحزمةَ أصلاً، فسببُه هو المقروءُ الوحيد.
+          if [ "$BUILD_OUTCOME" = "failure" ] && [ -f /tmp/build.log ]; then
+            grep -E '✗|error TS|ERROR|Error:' /tmp/build.log | head -8 \
+              | while IFS= read -r l; do echo "::error::$l"; done
+            tail -8 /tmp/build.log | while IFS= read -r l; do echo "::notice::$l"; done
+            {
+              echo '## آخرُ ٦٠ سطراً من الحرّاس والبناء'
+              echo '```'
+              tail -60 /tmp/build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           echo "::group::بيئةُ بوستغريس"
           ls -d /usr/lib/postgresql/*/bin 2>/dev/null || echo "لا مجلّد postgresql"
           echo "::endgroup::"
