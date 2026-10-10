@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock, Archive, Pencil, Star } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -11,7 +11,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn, currencySymbol , formatNum, uuid, money } from "@/lib/utils";
+import { cn, currencySymbol , formatNum, uuid, money, searchable } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken, updateServicePrice, ServicePriceMoved } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -27,7 +27,13 @@ import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareLogo } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
-import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
+import { useClinicDrugs, isDrugError } from "@/lib/clinicDrugs";
+import { FAMILIES, type MedItem } from "@/lib/medIndex";
+import { useSubscription } from "@/lib/subscription";
+import { MedPicker } from "@/components/meds/MedPicker";
+import { MyMedsStandalone } from "@/components/meds/MyMedsBoard";
+import { useMedIndex } from "@/components/meds/MedPickerData";
+import type { ClinicDrug, ClinicDrugOp, DrugFamilyKey } from "@/types";
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
 import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds";
 import { SpeciesPicker } from "@/components/PetFields";
@@ -324,7 +330,7 @@ export function Settings() {
           )}
         </div>
 
-        <ClinicMedications />
+        <MyMedsSettings />
         <ClinicVaccinations />
         <ClinicBreeds />
         {canSettings && <LabDevicesCard />}
@@ -1645,73 +1651,239 @@ function FontScaleOptions() {
   );
 }
 
-function ClinicMedications() {
+/* ============================================================================
+ * «أدويتي» بالإعدادات (0229) — بدل «أدوية العيادة».
+ *
+ * كانت: حقلُ كتابةٍ بقائمة اقتراح، وصنفٌ إنكليزيّ من قائمة منسدلة، وسلّةٌ بضغطةٍ واحدة بلا
+ * سؤال تحذف بـilike — ودواءٌ من الكتالوج لا يُضاف أصلاً. الآن: «أدويتي» مرتّبةً (سحبٌ، ↑/↓،
+ * «لفوق»، Alt+↑/↓)، والأدويةُ التي أضافتها العيادة تُعدَّل وتُنجَّم وتُؤرشف ببطاقةٍ تسمّيها،
+ * والمؤرشفةُ تُرجَع. لا window.confirm ولا حذف. والاقتراحُ (جوابُ المالك ٣) لا يضيف شيئاً
+ * بنفسه: قائمةٌ بمربّعات، و«أضف» يضيف المعلَّمَ وحدَه.
+ * ==========================================================================*/
+function MyMedsSettings() {
   const { t } = useTranslation();
-  const types = allMedTypes();
-  const [name, setName] = useState("");
-  const [type, setType] = useState(types[0] ?? "Other");
-  const [clinic, setClinic] = useState<ClinicMed[]>(getClinicMeds());
-  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
-  const total = BUILTIN_MEDICATIONS.length + clinic.length;
+  const toast = useToast();
+  const drugs = useClinicDrugs();
+  const { access } = useSubscription();
+  const readOnly = access === "readonly";
+  const canWrite = !readOnly && drugs.status === "ready";
+  const ix = useMedIndex({ rows: drugs.rows, stockMode: "hide" });
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [live, setLive] = useState("");
+  const [sugg, setSugg] = useState<{ state: "idle" | "loading" | "ready" | "error"; list: { name: string; n: number; on: boolean }[] }>({ state: "idle", list: [] });
 
-  const add = () => {
-    if (!name.trim()) return;
-    const ok = addClinicMed(name, type);
-    setClinic(getClinicMeds());
-    if (ok) { playSuccess(); setFlash({ ok: true, msg: t("meds.added") }); setName(""); }
-    else { playTap(); setFlash({ ok: false, msg: t("meds.exists") }); }
+  const fail = (e: unknown) => { playWarning(); toast.error(describeDbError(e, t)); };
+  const catalogKey = (name: string) => ix.byKey.get(searchable(name))?.base === "catalog";
+  /* ما أضافته العيادةُ بنفسها (لا الكتالوج): حيٌّ وخارج «أدويتي» — وما فيها يظهر بالقائمة أعلاه. */
+  const custom = drugs.rows.filter((r) => r.archived_at == null && !r.in_mine && !catalogKey(r.name));
+  const archived = drugs.rows.filter((r) => r.archived_at != null);
+
+  const unstarWithUndo = async (it: MedItem) => {
+    const ids = ix.mine.map((x) => x.drugId as string);
+    const i = ids.indexOf(it.drugId as string);
+    const prev = i > 0 ? ids[i - 1] : null;
+    try {
+      await drugs.unstar(it.drugId as string);
+      toast.toast({
+        tone: "info", title: t("mymeds.unstarred", { name: it.label, defaultValue: "{{name}} انشال من أدويتي" }),
+        action: { label: t("mymeds.undo", "تراجع"), onClick: () => {
+          void drugs.star({ drugId: it.drugId, name: it.name, family: it.family }, prev).catch((e) => {
+            if (isDrugError(e, "drug_row_gone")) void drugs.star({ drugId: it.drugId, name: it.name, family: it.family }).catch(fail);
+            else fail(e);
+          });
+        } },
+      });
+    } catch (e) { fail(e); }
   };
 
-  const remove = (n: string) => { removeClinicMed(n); setClinic(getClinicMeds()); playTap(); };
+  const loadSuggest = async () => {
+    playTap();
+    setSugg({ state: "loading", list: [] });
+    try {
+      const list = await repo.suggestClinicDrugs(90);
+      setSugg({ state: "ready", list: list.map((x) => ({ ...x, on: true })) });
+    } catch { setSugg({ state: "error", list: [] }); }
+  };
+  const addSuggested = async () => {
+    const picked = sugg.list.filter((x) => x.on);
+    if (!picked.length) return;
+    const ops: ClinicDrugOp[] = picked.map((x) => {
+      const it = ix.byKey.get(searchable(x.name));
+      return { op: "put", id: it?.drugId ?? uuid(), name: it?.name ?? x.name, family: it?.family ?? "other", mine: true };
+    });
+    try {
+      await drugs.apply(ops);
+      playSuccess();
+      toast.success(t("mmset.suggestDone", { n: formatNum(picked.length), defaultValue: "انضافت {{n}} لأدويتي" }));
+      setSugg({ state: "idle", list: [] });
+    } catch (e) { fail(e); }
+  };
+
+  const editRow = drugs.rows.find((r) => r.id === editId) ?? null;
+  const archiveRow = drugs.rows.find((r) => r.id === archiveId) ?? null;
 
   return (
-    <div className="card p-5 mb-4">
-      <div className="flex items-center gap-2 mb-1">
+    <div className="card mb-4 p-5" data-mymeds-settings>
+      <div className="mb-1 flex items-center gap-2">
         <Pill size={18} className="text-brand-600" />
-        <h2 className="font-bold text-ink">{t("meds.title")}</h2>
-        <span className="chip bg-surface-2 text-ink-muted text-xs ms-auto">{t("meds.count", { n: total })}</span>
+        <h2 className="font-bold text-ink">{t("mymeds.mine", "أدويتي")}</h2>
+        <span className="chip ms-auto bg-surface-2 text-xs text-ink-muted">{t("mmset.count", { n: formatNum(ix.mine.length), defaultValue: "{{n}} دواء" })}</span>
       </div>
-      <p className="text-xs text-ink-subtle mb-4">{t("meds.subtitle")}</p>
+      <p className="mb-3 text-xs text-ink-subtle">{t("mmset.hint", "هذي قائمة ترتيب — ما تقول شنو موجود بالمخزن. نفس الترتيب يطلع بكل شاشة تختار بيها دواء.")}</p>
 
-      <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
-        <div>
-          <label className="label">{t("meds.name")}</label>
-          <input list="all-med-options" className="input py-2" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-        </div>
-        <div>
-          <label className="label">{t("meds.type")}</label>
-          <select className="input py-2" value={type} onChange={(e) => setType(e.target.value)}>
-            {types.map((ty) => <option key={ty} value={ty}>{ty}</option>)}
-          </select>
-        </div>
-        <button className="btn-primary py-2.5" onClick={add}><Plus size={16} /> {t("meds.add")}</button>
-      </div>
-      <datalist id="all-med-options">
-        {allMedicationNames().map((m) => <option key={m} value={m} />)}
-      </datalist>
-
-      {flash && (
-        <p className={`text-sm mt-2 flex items-center gap-1.5 ${flash.ok ? "text-brand-700" : "text-warn-600"}`}>
-          <Check size={15} /> {flash.msg}
+      {drugs.status === "error" && (
+        <p className="mb-3 rounded-xl bg-warn-50 px-3 py-2 text-xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+          {t("mymeds.loadFail", "ما وصلنا لأدويتك — المشكلة بالاتصال، ما انمسحت")} · <button type="button" onClick={drugs.retry} className="font-black underline">{t("common.retry", "إعادة المحاولة")}</button>
+        </p>
+      )}
+      {(readOnly || drugs.status === "switched") && (
+        <p className="mb-3 rounded-xl bg-warn-50 px-3 py-2 text-xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+          {drugs.status === "switched" ? t("mymeds.switched", "تبدّلت العيادة على هذا الجهاز — حدّث الصفحة.") : t("mymeds.readOnly", "الاشتراك منتهي — «أدويتي» للقراءة بس: لا نجمة ولا ترتيب.")}
         </p>
       )}
 
-      {clinic.length > 0 && (
-        <div className="mt-4">
-          <p className="text-xs font-semibold text-ink-muted mb-2">{t("meds.clinicAdded")}</p>
-          <div className="flex flex-wrap gap-2">
-            {clinic.map((m) => (
-              <span key={m.name} className="chip bg-sky-50 text-sm text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-                {m.name}
-                <span className="text-[10px] text-sky-400">· {m.type}</span>
-                <button className="ms-1 text-sky-300 hover:text-danger-500" onClick={() => remove(m.name)} aria-label={t("meds.remove")}>
-                  <Trash2 size={13} />
+      {/* الاقتراح: حين «أدويتي» فاضيةٌ أو قليلة — لا يضيف إلا ما يُعلَّم ويُضغط «أضف» */}
+      {drugs.status === "ready" && ix.mine.length < 5 && (
+        <div className="mb-3 rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 p-3 dark:bg-brand-500/5" data-mymeds-suggest>
+          {sugg.state === "idle" || sugg.state === "loading" ? (
+            <button type="button" disabled={!canWrite || sugg.state === "loading"} onClick={() => void loadSuggest()} data-suggest-open
+              className="w-full rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-black text-white disabled:opacity-50">
+              {t("mmset.suggestBtn", "ضيف الأدوية اللي استعملتوها أكثر شي آخر ٩٠ يوم")}
+            </button>
+          ) : sugg.state === "error" ? (
+            <p className="text-xs font-bold text-ink-subtle">{t("mmset.suggestFail", "ما وصلنا للاقتراح")} · <button type="button" onClick={() => void loadSuggest()} className="font-black text-brand-600 underline">{t("common.retry", "إعادة المحاولة")}</button></p>
+          ) : sugg.list.length === 0 ? (
+            <p className="text-xs font-bold text-ink-subtle">{t("mmset.suggestNone", "ما لكينا أدوية مستعملة آخر ٩٠ يوم تنضاف")}</p>
+          ) : (
+            <div className="space-y-2">
+              <div className="max-h-72 space-y-1 overflow-y-auto" role="group">
+                {sugg.list.map((x, i) => (
+                  <label key={x.name} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-surface-1 px-3 py-1.5 text-sm font-bold text-ink" data-suggest-item={x.name}>
+                    <input type="checkbox" checked={x.on} onChange={() => setSugg((s) => ({ ...s, list: s.list.map((y, j) => (j === i ? { ...y, on: !y.on } : y)) }))} className="h-5 w-5 accent-brand-600" />
+                    <span className="min-w-0 flex-1 truncate" dir="auto">{ix.byKey.get(searchable(x.name))?.label ?? x.name}</span>
+                    <span className="shrink-0 text-2xs text-ink-muted">{t("mmset.suggestTimes", { n: formatNum(x.n), defaultValue: "{{n}} مرة" })}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSugg({ state: "idle", list: [] })} className="h-11 flex-1 rounded-xl border border-line text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+                <button type="button" disabled={!canWrite || !sugg.list.some((x) => x.on)} onClick={() => void addSuggested()} data-suggest-add
+                  className="h-11 flex-[2] rounded-xl bg-brand-600 text-sm font-black text-white disabled:opacity-50">
+                  {t("mmset.suggestAdd", { n: formatNum(sugg.list.filter((x) => x.on).length), defaultValue: "أضف ({{n}})" })}
                 </button>
-              </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <MyMedsStandalone items={ix.mine} readOnly={!canWrite}
+        onTap={(it) => { if (it.base === "custom") { playTap(); setEditId(it.drugId ?? null); } else toast.toast({ tone: "info", title: t("mmset.catalogFixed", "اسم الكتالوج ثابت — تكدر تشيله من أدويتي أو ترتّبه بس") }); }}
+        onUnstar={(it) => void unstarWithUndo(it)}
+        onMove={(it, after) => { void drugs.move(it.drugId as string, after).catch(fail); }}
+        onOp={(op) => { void drugs.apply([op]).then(() => playSuccess(), fail); }}
+        announce={setLive}
+        empty={<p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-xs font-bold text-ink-subtle">{t("mymeds.mineEmpty", "أدويتي فاضية — اضغط ★ على أي دواء أو اسحبه هنا")}</p>} />
+      <p className="sr-only" aria-live="polite">{live}</p>
+
+      <button type="button" disabled={!canWrite} onClick={() => { playTap(); setPickerOpen(true); }} data-mymeds-addall
+        className="mt-3 inline-flex h-11 items-center gap-1.5 rounded-xl bg-surface-2 px-4 text-sm font-black text-brand-700 transition hover:bg-surface-3 disabled:opacity-50 dark:text-brand-300">
+        <Plus size={16} /> {t("mmset.addFromAll", "أضف من القائمة الكاملة")}
+      </button>
+
+      {/* بطاقةُ التعديل — للمضاف وحده (اسمُ الكتالوج ثابت) */}
+      {editRow && (
+        <EditDrugCard key={editRow.id} row={editRow} disabled={!canWrite} onCancel={() => setEditId(null)}
+          onSave={async (name, family) => {
+            try { await drugs.edit(editRow.id, { name, family }); playSuccess(); toast.success(t("mmset.saved", "انحفظ")); setEditId(null); }
+            catch (e) { fail(e); }
+          }} />
+      )}
+
+      <div className="mt-5">
+        <p className="mb-2 text-xs font-black text-ink-muted">{t("mmset.customTitle", "أدوية أضافتها العيادة")}</p>
+        {custom.length === 0 ? (
+          <p className="text-2xs text-ink-subtle">{t("mmset.customEmpty", "ماكو — «ما لكيته؟ اكتبه» بالمنتقي يضيف دواء مو بالكتالوج.")}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {custom.map((r) => archiveId === r.id ? null : (
+              <div key={r.id} className="flex min-h-12 items-center gap-1 rounded-2xl border border-line bg-surface-1 ps-3" data-mymeds-custom={r.name}>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink" dir="auto">{r.name}</span>
+                <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">{t(`mymeds.fam.${r.family}`)}</span>
+                <button type="button" disabled={!canWrite} onClick={() => { playTap(); setEditId(r.id); }} aria-label={t("common.edit", "تعديل")} className="grid h-11 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 disabled:opacity-40"><Pencil size={15} /></button>
+                <button type="button" disabled={!canWrite} onClick={() => { playTap(); void drugs.star({ drugId: r.id, name: r.name, family: r.family }).then(() => playSuccess(), fail); }} aria-label={t("mymeds.starOn", "ضيفه لأدويتي")} className="grid h-11 w-10 place-items-center rounded-xl text-ink-subtle hover:text-warn-500 disabled:opacity-40"><Star size={16} /></button>
+                <button type="button" disabled={!canWrite} onClick={() => { playTap(); setArchiveId(r.id); }} aria-label={t("mmset.archive", "أرشفة")} data-mymeds-archive={r.name} className="grid h-11 w-10 place-items-center rounded-xl text-ink-subtle hover:text-danger-600 disabled:opacity-40"><Archive size={16} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* بطاقةُ الأرشفة تسمّي الدواءَ وما يحصل — لا window.confirm يُقبل بلا قراءة */}
+        {archiveRow && (
+          <div className="mt-2 rounded-2xl border-2 border-warn-300 bg-warn-50 p-3 dark:border-warn-500/40 dark:bg-warn-500/10" data-mymeds-archive-card>
+            <p className="text-sm font-bold text-ink">{t("mmset.archiveAsk", { name: archiveRow.name, defaultValue: "أرشفة «{{name}}»؟ تختفي من كل القوائم، والسجلات تبقى بيها، وترجعها من «المؤرشفة»." })}</p>
+            <div className="mt-2 flex gap-2">
+              <button type="button" onClick={() => setArchiveId(null)} className="h-11 flex-1 rounded-xl bg-surface-1 text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+              <button type="button" disabled={!canWrite} data-mymeds-archive-yes onClick={async () => {
+                try { await drugs.archive(archiveRow.id); playSuccess(); toast.success(t("mmset.archived", { name: archiveRow.name, defaultValue: "انأرشف «{{name}}»" })); setArchiveId(null); }
+                catch (e) { fail(e); }
+              }} className="h-11 flex-1 rounded-xl bg-warn-600 text-sm font-black text-white disabled:opacity-50">{t("mmset.archive", "أرشفة")}</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {archived.length > 0 && (
+        <div className="mt-5">
+          <p className="mb-2 text-xs font-black text-ink-muted">{t("mmset.archivedTitle", "المؤرشفة")}</p>
+          <div className="space-y-1.5">
+            {archived.map((r) => (
+              <div key={r.id} className="flex min-h-12 items-center gap-2 rounded-2xl border border-dashed border-line px-3 text-ink-muted" data-mymeds-archived={r.name}>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold" dir="auto">{r.name}</span>
+                <button type="button" disabled={!canWrite} data-mymeds-restore={r.name} onClick={async () => {
+                  playTap();
+                  try { await drugs.restore(r.id); playSuccess(); toast.success(t("mmset.restored", { name: r.name, defaultValue: "رجع «{{name}}»" })); }
+                  catch (e) { fail(e); }
+                }} className="h-10 shrink-0 rounded-xl bg-surface-2 px-3 text-xs font-black text-brand-700 disabled:opacity-50 dark:text-brand-300">{t("mmset.restore", "رجّعه")}</button>
+              </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* «أضف من القائمة الكاملة»: كلُّ ضغطةٍ نجمة، والضغطةُ الثانية تشيلها */}
+      <MedPicker open={pickerOpen} onClose={() => setPickerOpen(false)} mode="multi" freeText="offer" title={t("mmset.addFromAll", "أضف من القائمة الكاملة")}
+        isSelected={(m) => drugs.isMine(m.key)}
+        onPick={(m) => { void drugs.star({ drugId: m.drugId, name: m.name, family: m.family }).catch(fail); }}
+        onUnpick={(m) => { const key = m.key; const row = drugs.mine.find((r) => searchable(r.name) === key); if (row) void drugs.unstar(row.id).catch(fail); }} />
+    </div>
+  );
+}
+
+function EditDrugCard({ row, disabled, onSave, onCancel }: {
+  row: ClinicDrug; disabled: boolean; onSave(name: string, family: DrugFamilyKey): Promise<void>; onCancel(): void;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(row.name);
+  const [family, setFamily] = useState<DrugFamilyKey>(row.family);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="mt-3 space-y-2 rounded-2xl border-2 border-brand-300 bg-brand-50/50 p-3 dark:bg-brand-500/5" data-mymeds-edit>
+      <input value={name} onChange={(e) => setName(e.target.value)} className="input h-11 w-full text-sm font-bold" aria-label={t("mymeds.newNamePh", "اسم الدواء كما تكتبه")} />
+      <div className="flex gap-1 overflow-x-auto pb-1" role="radiogroup" aria-label={t("mymeds.family", "العائلة")}>
+        {FAMILIES.map((k) => (
+          <button key={k} type="button" role="radio" aria-checked={family === k} onClick={() => setFamily(k)}
+            className={cn("h-9 shrink-0 rounded-full border px-3 text-2xs font-black", family === k ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink-muted")}>
+            {t(`mymeds.fam.${k}`)}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancel} className="h-11 flex-1 rounded-xl border border-line text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+        <button type="button" disabled={disabled || busy || !name.trim()} onClick={async () => { setBusy(true); try { await onSave(name.trim(), family); } finally { setBusy(false); } }}
+          className="h-11 flex-[2] rounded-xl bg-brand-600 text-sm font-black text-white disabled:opacity-50">{t("common.save", "حفظ")}</button>
+      </div>
     </div>
   );
 }

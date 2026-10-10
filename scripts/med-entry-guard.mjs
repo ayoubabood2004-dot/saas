@@ -47,6 +47,7 @@ const ALLOWED = new Set([
   "src/components/meds/MedPicker.tsx",
   "src/components/meds/MedPickerSheet.tsx",
   "src/components/meds/MyMedsBoard.tsx",
+  "src/components/meds/MedPickerData.ts", // البابُ الوحيد للكتالوج: الورقةُ والإعدادات
   "src/lib/medIndex.ts",
   "src/lib/medCatalog.ts",
   "src/lib/vetFormulary.ts",          // يعرّف searchDrugs
@@ -57,8 +58,6 @@ const ALLOWED = new Set([
 /* لم يتحوّل بعد — تُشطب سطراً سطراً مع كلّ دفعة. */
 const PENDING = new Set([
   "src/lib/meds.ts",                  // B8: الكتالوج ينتقل لـmedCatalog.ts الكسول
-  "src/pages/Settings.tsx",           // B4
-  "src/pages/PetPassport.tsx",        // B4
   "src/pages/VisitPage.tsx",          // B5
   "src/components/Flowsheet.tsx",     // B6
   "src/components/ProtocolEditor.tsx",// B6
