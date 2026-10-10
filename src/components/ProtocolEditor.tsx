@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, Check, Search } from "lucide-react";
 import type { Species, TaskType } from "@/types";
@@ -6,7 +6,8 @@ import {
   saveStored, newProtocolId, TASK_LABEL_FALLBACK,
   type StoredProtocol, type StoredStep,
 } from "@/lib/protocols";
-import { searchDrugs, DRUG_BY_ID, type Monograph } from "@/lib/vetFormulary";
+import { DRUG_BY_ID, type Monograph } from "@/lib/vetFormulary";
+import { MedPicker } from "@/components/meds/MedPicker";
 import { TASK_META } from "@/lib/flowsheet";
 import { formatNum, cn } from "@/lib/utils";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -58,8 +59,9 @@ export function ProtocolEditor({ initial, petSpecies, onClose, onSaved }: {
   const [days, setDays] = useState(initial?.days ?? 3);
   const [steps, setSteps] = useState<StoredStep[]>(initial?.steps ?? []);
   const [q, setQ] = useState("");
-
-  const hits = useMemo(() => (q.trim().length < 2 ? [] : searchDrugs(q.trim(), 6)), [q]);
+  /* المنتقي الموحَّد بوضع «الموثَّق جرعتُه»: الأدويةُ الثمانيةُ والخمسون كلُّها — والبندُ
+   * يحفظ معرّفَ الدليل كما كان، فالجرعةُ تُشتقّ لحظةَ التطبيق. */
+  const [pickerOpen, setPickerOpen] = useState(false);
   const valid = name.trim().length > 0 && steps.length > 0;
 
   const addDrug = (d: Monograph) => {
@@ -148,26 +150,23 @@ export function ProtocolEditor({ initial, petSpecies, onClose, onSaved }: {
               style={{ minHeight: 44 }} />
           </div>
 
-          {/* بحث الأدوية — الجرعة لا تُسأل، تُشتقّ */}
+          {/* الأدوية — الجرعة لا تُسأل، تُشتقّ. الدليلُ كلُّه بالمنتقي الموحَّد («أدويتي» أوّلاً). */}
           <div className="rounded-2xl border border-line bg-surface-2/50 p-2">
-            <div className="flex items-center gap-2 rounded-xl bg-surface-1 px-2.5" style={{ minHeight: 46 }}>
+            <button type="button" data-protodrugpick onClick={() => { playTap(); setPickerOpen(true); }}
+              className="flex w-full items-center gap-2 rounded-xl bg-surface-1 px-2.5 text-start text-sm font-bold text-ink-muted transition hover:text-ink" style={{ minHeight: 46 }}>
               <Search size={15} className="shrink-0 text-ink-subtle" />
+              <span className="min-w-0 flex-1 truncate">{t("proto.drugPh", "أضِف دواءً من الدليل…")}</span>
+              <Plus size={14} className="shrink-0 text-brand-600" />
+            </button>
+            <MedPicker open={pickerOpen} onClose={() => setPickerOpen(false)} mode="single" only="dosable" freeText="off" stock="hide"
+              species={petSpecies ?? null}
+              onPick={(m) => { const d = m.monographId ? DRUG_BY_ID.get(m.monographId) : undefined; if (d) addDrug(d); setPickerOpen(false); }} />
+            {/* دواءٌ خارج الدليل يبقى ممكناً — باسمه وكميتُه تُكتب باليد. */}
+            <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-surface-1 px-2.5" style={{ minHeight: 44 }}>
               <input data-protodrugq value={q} onChange={(e) => setQ(e.target.value)}
-                placeholder={t("proto.drugPh", "أضِف دواءً من الدليل…")}
-                className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none" />
+                placeholder={t("mymeds.newNamePh", "اسم الدواء كما تكتبه")}
+                className="min-w-0 flex-1 bg-transparent text-2xs text-ink outline-none" />
             </div>
-            {hits.length > 0 && (
-              <div className="mt-1.5 grid gap-1">
-                {hits.map((d) => (
-                  <button key={d.id} type="button" data-protodrughit={d.id} onClick={() => addDrug(d)}
-                    className="flex items-center gap-2 rounded-xl bg-surface-1 px-2.5 py-2 text-start transition hover:bg-brand-50 dark:hover:bg-brand-500/10">
-                    <span className="text-xs font-extrabold text-ink">{d.ar}</span>
-                    <span className="truncate text-[10px] text-ink-subtle">{d.en}</span>
-                    <Plus size={14} className="ms-auto shrink-0 text-brand-600" />
-                  </button>
-                ))}
-              </div>
-            )}
 
             {/* الدليل ثمانيةٌ وخمسون دواءً ورفُّ العيادة أوسع — فاسمٌ لا يعرفه
                 يُقبَل بدل أن يوقف البروتوكول، بشرط أن تُكتب كميته باليد. */}

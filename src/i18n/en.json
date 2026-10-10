@@ -5965,7 +5965,9 @@
     "gripRole": "Reorder handle — arrow keys move it",
     "toTop": "To top",
     "up": "Up",
-    "down": "Down"
+    "down": "Down",
+    "allMeds": "All medicines",
+    "noDoseWrite": "No documented dose — type the amount"
   },
   "mmset": {
     "suggestDone": "{{n}} added to My medicines",
