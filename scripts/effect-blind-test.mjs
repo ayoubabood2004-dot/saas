@@ -35,5 +35,20 @@ end $$;`);
 ok(blind(cut).startsWith("record_purchase"), "تعريفٌ لاحقٌ يذكر الكشفَ بتعليقٍ فقط: يفشل");
 rmSync(cut, { recursive: true, force: true });
 
+/* norm-reindex (0229): فهرسُ «أدويتي» الفريد مبنيٌّ على search_norm(name). هجرةٌ لاحقة تعيد
+ * تعريفَ الدالّة بلا reindex تترك الفهرسَ بمفاتيحَ قديمة — يفشل الحارسُ ويسمّي الفهرسَ والملفّ،
+ * وبالـreindex يمرّ. والشجرةُ الحقيقية لا تعيد تعريفها بعد 0229. */
+const reNorm = (dir) => analyze(buildModel(dir)).filter((f) => f.rule === "norm-reindex").map((f) => f.where).join(",");
+ok(reNorm(MIG) === "", "الشجرةُ الحقيقية: لا تعريفَ لـsearch_norm بعد فهرس 0229");
+const nr = copy(() => true);
+const redefine = `
+create or replace function search_norm(t text) returns text
+language sql immutable set search_path = public as $$ select lower(coalesce(t, '')) $$;`;
+writeFileSync(join(nr, "0999_norm.sql"), redefine);
+ok(reNorm(nr) === "clinic_drugs_name_uq ← 0999_norm.sql", "تعريفٌ لاحقٌ بلا reindex: يفشل ويسمّي الفهرسَ والملفّ");
+writeFileSync(join(nr, "0999_norm.sql"), `${redefine}\nreindex index public.clinic_drugs_name_uq;`);
+ok(reNorm(nr) === "", "  وبـreindex index للفهرس: يمرّ");
+rmSync(nr, { recursive: true, force: true });
+
 if (fail) { console.error(`effect-blind-test: ${fail} فشل`); process.exit(1); }
-console.log("effect-blind-test: ٣ فحوص عبرت");
+console.log("effect-blind-test: ٦ فحوص عبرت (effect-blind ×٣، norm-reindex ×٣)");

@@ -702,3 +702,52 @@ create policy clinic_service_categories_clinic_all on clinic_service_categories 
 drop policy if exists clinic_services_clinic_all on clinic_services;
 create policy clinic_services_clinic_all on clinic_services for all
   using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
+
+/* ── 0229/0230: «أدويتي» — ما يطويه الطيُّ وما يقرؤه الاقتراح، بشكل الإنتاج ──────────
+ * `clinic_meds` بشكل 0021 حرفاً (FORCE RLS وسياسةُ العيادة) فيسيّجها 0222 كما سيّجها هناك
+ * (قراءةٌ مسموحة، كتابةٌ مسيَّجة)؛ و`treatment_entries` بأعمدة الإنتاج وسياستيه (مقيسٌ
+ * ١٠/١٠ من information_schema وpg_policies). بلاهما كان الطيُّ يُفحص على جدولٍ غائب
+ * والاقتراحُ على لا شيء — «القالبُ يُقاس على ما تُنتجه القاعدة فعلاً». */
+create table if not exists clinic_meds (
+  id         uuid primary key default gen_random_uuid(),
+  clinic_id  uuid not null references auth.users(id) on delete cascade default auth_clinic(),
+  name       text not null,
+  type       text not null default 'Other',
+  created_at timestamptz not null default now()
+);
+create index if not exists clinic_meds_clinic_idx on clinic_meds(clinic_id);
+alter table clinic_meds enable row level security;
+alter table clinic_meds force row level security;
+drop policy if exists clinic_meds_clinic_all on clinic_meds;
+create policy clinic_meds_clinic_all on clinic_meds for all
+  using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
+create table if not exists treatment_entries (
+  id              uuid primary key default gen_random_uuid(),
+  pet_id          uuid not null references pets(id) on delete cascade,
+  day             date not null default current_date,
+  doctor          text,
+  medication      text not null,
+  time            text not null,
+  amount          text not null,
+  observations    text,
+  created_at      timestamptz not null default now(),
+  administered_at timestamptz,
+  administered_by text,
+  clinic_id       uuid default auth_clinic(),
+  visit_id        uuid,
+  edited          boolean not null default false,
+  task_type       text not null default 'drug',
+  route           text,
+  result          text,
+  missed_reason   text
+);
+create index if not exists treatment_pet_idx on treatment_entries(pet_id);
+create index if not exists treatment_entries_clinic_day_idx on treatment_entries(clinic_id, day desc);
+alter table treatment_entries enable row level security;
+drop policy if exists treatment_entries_clinic_all on treatment_entries;
+create policy treatment_entries_clinic_all on treatment_entries for all
+  using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
+drop policy if exists treatment_entries_owner on treatment_entries;
+create policy treatment_entries_owner on treatment_entries for all
+  using (exists (select 1 from pets p where p.id = treatment_entries.pet_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from pets p where p.id = treatment_entries.pet_id and p.owner_id = auth.uid()));

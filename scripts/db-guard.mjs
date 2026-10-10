@@ -19,6 +19,9 @@
  *   effect-blind     آخرُ تعريفٍ لـ`record_purchase`/`update_purchase` يلمس
  *                    المنتجات بلا `insert into purchase_effects` — الشراءُ يرجع
  *                    للصمت: يبدّل سعرَ الرفّ ويطابق بالاسم ولا يقول (0211).
+ *   norm-reindex     هجرةٌ تعيد تعريفَ `search_norm` ولا تكتب `reindex index` لكلّ
+ *                    فهرسٍ قائمٍ عليها (clinic_drugs_name_uq، 0229) — يبقى الفهرسُ
+ *                    بمفاتيح الدالّة القديمة فيدخل التوأمُ أو يُرفض السليم بصمت.
  *
  * الأساس (db-baseline.json) يُشدّ ولا يُرخى: العدد المسموح ينزل تلقائياً كل
  * مرّة تنزل، وما يرتفع إلا بتحريرٍ يدويّ مقصود.
@@ -99,6 +102,9 @@ export function buildModel(dir = MIG_DIR) {
   const funcs = [];
   /** آخرُ تعريفٍ لكلّ دالّةِ شراء — الأحدثُ يغلب، فالقديمُ الأعمى لا يُعدّ. */
   const purchaseFns = new Map();
+  /** فهارسُ على تعبيرٍ بـsearch_norm، وكلُّ هجرةٍ تعيد تعريفَ search_norm (norm-reindex). */
+  const normIndexes = [];
+  const normDefs = [];
   const tbl = (name) => {
     const k = norm(name);
     if (!tables.has(k)) tables.set(k, { fks: [], indexes: [], policies: [] });
@@ -168,10 +174,19 @@ export function buildModel(dir = MIG_DIR) {
       const tail = sql.slice(end, sql.indexOf(";", end) + 1 || undefined);
       const where = (tail.match(/\bwhere\b([\s\S]*?);/i)?.[1] ?? "").replace(/\s+/g, " ").trim().toLowerCase();
       t.indexes.push({ name: norm(m[2]), cols: cols(body), where, unique: !!m[1], file });
+      if (/\bsearch_norm\s*\(/i.test(body)) normIndexes.push({ name: norm(m[2]), file });
     }
     for (const m of sql.matchAll(/drop\s+index\s+(?:concurrently\s+)?(?:if\s+exists\s+)?([\w."]+)/gi)) {
       const n = norm(m[1]);
       for (const t of tables.values()) t.indexes = t.indexes.filter((i) => i.name !== n);
+      for (let k = normIndexes.length - 1; k >= 0; k--) if (normIndexes[k].name === n) normIndexes.splice(k, 1);
+    }
+
+    /* norm-reindex: فهرسٌ فريدٌ على search_norm(name) (0229) يحفظ مفاتيحَ الدالّة **لحظةَ
+     * البناء**. إعادةُ تعريفها بهجرةٍ لاحقة لا تعيد بناءه — فيبقى بمفاتيحَ قديمة: يدخل
+     * التوأمُ أو يُرفض اسمٌ سليم، بصمت. فكلُّ هجرةٍ تعيد تعريفَها لازم تكتب reindex له. */
+    if (/create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?search_norm"?\s*\(/i.test(sql)) {
+      normDefs.push({ file, reindexed: [...sql.matchAll(/reindex\s+index\s+(?:concurrently\s+)?([\w."]+)/gi)].map((x) => norm(x[1])) });
     }
 
     /* create/drop policy — **بترتيب الموضع لا بمرورين**.
@@ -220,7 +235,7 @@ export function buildModel(dir = MIG_DIR) {
       }
     }
   }
-  return { tables, funcs, purchaseFns };
+  return { tables, funcs, purchaseFns, normIndexes, normDefs };
 }
 
 /* -- الفحوص --------------------------------------------------------------- */
@@ -280,6 +295,12 @@ export function analyze(model) {
   }
   for (const f of model.funcs) {
     if (!f.searchPath) findings.push({ rule: "definer-path", where: f.name, file: f.file });
+  }
+  for (const d of model.normDefs ?? []) {
+    for (const ix of model.normIndexes ?? []) {
+      if (!(ix.file < d.file)) continue;   // فهرسٌ يُبنى بعد التعريف (أو بملفّه) يُبنى بالدالّة الجديدة
+      if (!d.reindexed.includes(ix.name)) findings.push({ rule: "norm-reindex", where: `${ix.name} ← ${d.file}`, file: d.file });
+    }
   }
   for (const [name, f] of model.purchaseFns ?? []) {
     if (f.touches && !f.says) findings.push({ rule: "effect-blind", where: name, file: f.file });

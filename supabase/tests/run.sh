@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -4375,6 +4375,170 @@ chk "store_set_price: definer بمسارٍ مثبَّت، تحصر بعيادت�
     "select prosecdef::text||'|'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||'|'||(prosrc like '%p.clinic_id = v_clinic and p.farm_id is null%')::text||'|'||has_function_privilege('anon', oid, 'execute')::text from pg_proc where proname='store_set_price'" "true|true|true|false"
 chk "والسياجُ ما زال يغطّي كلَّ جدول" \
     "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
+
+# ── 0229: «أدويتي» — قائمةُ العيادة الواحدة بترتيبها ──────────────────────────
+# كلُّ كتابةٍ بدور authenticated (الحزمةُ superuser تتجاوز RLS): `_cd` ينادي
+# clinic_drugs_apply كما تناديه الواجهة ويرجع «ok:عددُ الصفوف» أو «guarded:الحالة:الرمز:التلميح»،
+# و`_cdv` يقرأ قيمةً بالدور نفسه. والقراءةُ بجملةٍ غير جملة الكتابة (لقطةُ الجملة قبلها).
+echo "▸ 0229: أدويتي"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+PHO=88888888-8888-8888-8888-888888888888
+ADM=33333333-3333-3333-3333-333333333333
+DV=c2290000-0000-4000-8000-0000000000d1
+CD=c2290000-0000-4000-8000-0000000000
+# المنحُ الشامل بالحزمة (0159) أعاد حذفَ الجدول للمسجَّل — الهجرةُ تُعاد فتستردّ نزعَه،
+# وهي بنفسها إعادةٌ ثالثةٌ بلا أثر.
+out=$($P -f "$MIG/0229_clinic_drugs.sql" 2>&1) || { echo "$out"; echo "   ✗ 0229 ما انعادت"; fail=1; }
+$P -c "insert into auth.users(id) values ('$DV') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$DV','$C1','veterinarian','active');
+       update _dvtest_flags set admin = false; delete from platform_sessions; delete from clinic_drugs;
+       create or replace function _cd(who uuid, clinic uuid, ops jsonb) returns text language plpgsql as \$fn\$
+       declare r jsonb; h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         r := clinic_drugs_apply(clinic, ops);
+         reset role;
+         return 'ok:' || jsonb_array_length(r->'rows');
+       exception when others then
+         get stacked diagnostics h = pg_exception_hint;
+         return 'guarded:' || sqlstate || ':' || sqlerrm || ':' || coalesce(h, '');
+       end \$fn\$;
+       create or replace function _cdv(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q into r;
+         reset role;
+         return r;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;" >/dev/null
+chk "الطبيبُ يضيف Ceftriaxone لأدويتي بدور authenticated" \
+    "select _cd('$DV', '$C1', '[{\"op\":\"put\",\"id\":\"${CD}01\",\"name\":\"Ceftriaxone\",\"family\":\"antibiotics\",\"mine\":true}]')" "ok:1"
+chk "  مختوماً بعيادته، بأوّل موضع (١٠٢٤)" \
+    "select clinic_id::text||'|'||in_mine::text||'|'||pos::text from clinic_drugs where id='${CD}01'" "$C1|true|1024"
+chk "الاستقبالُ بنفس العيادة يرى القائمةَ نفسها (للعيادة لا للطبيب — عكسُ 0221)" \
+    "select _rls_try('$RCP', 'select 1 from jsonb_array_elements((select clinic_drugs_list())->''rows'')')" "rows:1"
+chk "  وعيادةٌ أخرى لا ترى شيئاً" \
+    "select _rls_try('$C2', 'select 1 from jsonb_array_elements((select clinic_drugs_list())->''rows'')')" "rows:0"
+chk "جلسةٌ بعيادةٍ ترسل ختمَ عيادةٍ أخرى ⇒ clinic_switched، ولا شيء يُكتب" \
+    "select split_part(_cd('$C2', '$C1', '[]'), ':', 3)" "clinic_switched"
+chk "لا حذفَ أصلاً (لا صلاحية) — والصفُّ باقٍ" \
+    "select left(_rls_try('$C1', 'delete from clinic_drugs'), 13)||'|'||(select count(*) from clinic_drugs where clinic_id='$C1')::text" "guarded:42501|1"
+chk "ولا يُنقل لعيادةٍ أخرى بتعديلٍ مباشر" \
+    "select split_part(_rls_try('$C1', 'update clinic_drugs set clinic_id = ''$C2'''), ':', 1)" "guarded"
+chk "  (ما زال بعيادته)" \
+    "select clinic_id::text from clinic_drugs where id='${CD}01'" "$C1"
+chk "توائمُ الهمزة والمسافة والحالة: صفٌّ حيٌّ واحد لكلّ مفتاح" \
+    "select _cd('$C1', '$C1', '[{\"op\":\"put\",\"id\":\"${CD}02\",\"name\":\"أموكسيسيلين\",\"family\":\"antibiotics\",\"mine\":true},{\"op\":\"put\",\"id\":\"${CD}03\",\"name\":\"اموكسيسيلين \",\"family\":\"other\",\"mine\":true},{\"op\":\"put\",\"id\":\"${CD}04\",\"name\":\"amoxicillin 250 mg\",\"family\":\"antibiotics\",\"mine\":false},{\"op\":\"put\",\"id\":\"${CD}05\",\"name\":\"Amoxicillin 250mg\",\"family\":\"antibiotics\",\"mine\":true}]')" "ok:3"
+chk "  الاسمُ الأوّل يبقى، والتوأمُ الخارجُ صار نجمةً بآخر القائمة" \
+    "select string_agg(name||':'||in_mine::text||':'||pos::text, ',' order by pos) from clinic_drugs where clinic_id='$C1' and archived_at is null" "Ceftriaxone:true:1024,أموكسيسيلين:true:2048,amoxicillin250mg:true:3072"
+chk "أرشفةٌ ثم إضافةُ الاسم نفسه (صفٌّ جديدٌ مسموح)" \
+    "select _cd('$C1', '$C1', '[{\"op\":\"archive\",\"id\":\"${CD}02\"},{\"op\":\"put\",\"id\":\"${CD}06\",\"name\":\"أموكسيسيلين\",\"family\":\"antibiotics\",\"mine\":false}]')" "ok:4"
+chk "  ثم استرجاعُ المؤرشف ⇒ drug_exists ويسمّي الحيّ" \
+    "select split_part(r, ':', 3)||'|'||(position('«أموكسيسيلين»' in r) > 0)::text from (select _cd('$C1', '$C1', '[{\"op\":\"restore\",\"id\":\"${CD}02\"}]') as r) x" "drug_exists|true"
+chk "  والأرشفةُ كتبت سطرَ تدقيقٍ نوعُه «إعدادات»" \
+    "select count(*)::text||'|'||max(audit_kind(entity, action, details)) from audit_log where entity='clinic_drugs' and entity_id='${CD}02' and action='UPDATE' and ((details->'__changed') ? 'archived_at')" "1|settings"
+chk "نقلٌ بعد دواءٍ ليس بـ«أدويتي» ⇒ drug_row_gone" \
+    "select split_part(_cd('$C1', '$C1', '[{\"op\":\"move\",\"id\":\"${CD}01\",\"after\":\"${CD}06\"}]'), ':', 3)" "drug_row_gone"
+chk "إخراجٌ مرّتين بدفعةٍ واحدة: الثاني لا يغيّر شيئاً" \
+    "select _cd('$C1', '$C1', '[{\"op\":\"unmine\",\"id\":\"${CD}04\"},{\"op\":\"unmine\",\"id\":\"${CD}04\"}]')" "ok:4"
+chk "  (خارجٌ بلا موضع)" \
+    "select in_mine::text||'|'||coalesce(pos::text, '-') from clinic_drugs where id='${CD}04'" "false|-"
+chk "تعديلُ صفٍّ غير موجود ⇒ drug_row_gone" \
+    "select split_part(_cd('$C1', '$C1', '[{\"op\":\"edit\",\"id\":\"${CD}99\",\"name\":\"x\"}]'), ':', 3)" "drug_row_gone"
+$P -c "insert into clinic_drugs (clinic_id, name) select '$C2', 'دواء العيادة الثانية '||g from generate_series(1,400) g;" >/dev/null
+chk "الدواءُ ٤٠١ الحيّ ⇒ clinic_drugs_full بتلميحٍ عربيّ" \
+    "select split_part(r, ':', 3)||'|'||(position('٤٠٠' in r) > 0)::text from (select _cd('$C2', '$C2', '[{\"op\":\"put\",\"id\":\"${CD}a1\",\"name\":\"زيادة\",\"family\":\"other\",\"mine\":true}]') as r) x" "clinic_drugs_full|true"
+chk "المصوّرُ لا يرى «أدويتي» ولا يكتب فيها" \
+    "select _rls_try('$PHO', 'select 1 from jsonb_array_elements((select clinic_drugs_list())->''rows'')')||'|'||left(_cd('$PHO', '$C1', '[{\"op\":\"put\",\"id\":\"${CD}b1\",\"name\":\"x\",\"family\":\"other\",\"mine\":true}]'), 13)" "rows:0|guarded:42501"
+chk "  والسياجُ يغطّي الجدولَ الجديد" \
+    "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
+chk "لا سياسةَ تقرأ جدولَها، ولا شيءَ لـanon، ولا حذفَ للمسجَّل" \
+    "select (select count(*) from verify_no_self_ref_policies())::text||'|'||has_table_privilege('anon','public.clinic_drugs','select')::text||'|'||has_function_privilege('anon','public.clinic_drugs_list()','execute')::text||'|'||has_function_privilege('anon','public.clinic_drugs_apply(uuid,jsonb)','execute')::text||'|'||has_function_privilege('anon','public.clinic_drugs_suggest(int)','execute')::text||'|'||has_table_privilege('authenticated','public.clinic_drugs','delete')::text" "0|false|false|false|false|false"
+chk "الحارسُ والدوالُّ الثلاث invoker بمسارٍ مثبَّت" \
+    "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text, ',' order by proname) from pg_proc where proname in ('clinic_drugs_guard','clinic_drugs_list','clinic_drugs_apply','clinic_drugs_suggest')" "clinic_drugs_apply:false:true,clinic_drugs_guard:false:true,clinic_drugs_list:false:true,clinic_drugs_suggest:false:true"
+A0=$(W "select count(*) from audit_log where entity='clinic_drugs'")
+chk "تنجيمُ «أموكسيسيلين» الحيّ بأوّل القائمة" \
+    "select _cd('$C1', '$C1', '[{\"op\":\"put\",\"id\":\"${CD}07\",\"name\":\"أموكسيسيلين\",\"family\":\"other\",\"mine\":true,\"after\":null}]')" "ok:4"
+chk "  كتب سطرَ تدقيقٍ واحداً نوعُه «إعدادات»" \
+    "select (count(*) - $A0)::text||'|'||max(audit_kind(entity, action, details)) from audit_log where entity='clinic_drugs'" "1|settings"
+A1=$(W "select count(*) from audit_log where entity='clinic_drugs'")
+chk "نقلٌ خالص: Ceftriaxone لأوّل القائمة" \
+    "select _cd('$C1', '$C1', '[{\"op\":\"move\",\"id\":\"${CD}01\",\"after\":null}]')" "ok:4"
+chk "  لا يكتب سطرَ تدقيق، والترتيبُ كما طُلب" \
+    "select ((select count(*) from audit_log where entity='clinic_drugs') - $A1)::text||'|'||(select string_agg(name, ',' order by pos, id) from clinic_drugs where clinic_id='$C1' and in_mine)" "0|Ceftriaxone,أموكسيسيلين"
+# مرآةُ الكتابة: المتوقَّعُ تحسبه applyOps بالواجهة نفسها (من المصدر)، والقاعدةُ تُسأل دفعةً دفعة.
+CDF=$(mktemp -d)
+node "$HERE/../../scripts/clinic-drugs-parity.mjs" "$CDF" >/dev/null
+$P -f "$CDF/clinic-drugs.sql" >/dev/null
+chk "مرآةُ applyOps: كلُّ دفعةٍ تعطي نفسَ الصفوف والمواضع والرفض بالطرفين" "select _cdp_run()" "ok"
+rm -rf "$CDF"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل ١١١١ (0229)" "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص 0229'')->>''ok'')')" "true"
+chk "  وclinic_drugs_list تقول العيادةَ التي دخلها (لا هويّتَه)" "select _pf('$ADM', 'select clinic_drugs_list()->>''clinic''')" "$C1"
+$P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+# الاقتراح: صفوفُ العلاج وسطورُ بيع «دواء» آخرَ ٩٠ يوماً بعيادته — لا ما بـ«أدويتي» ولا القديمُ
+# ولا غيرُ الدواء ولا عيادةٌ أخرى. والكتابةُ الأكثرُ استعمالاً هي الاسم.
+PT=c2290000-0000-4000-8000-0000000000e1
+PR=c2290000-0000-4000-8000-0000000000e2
+IV=c2290000-0000-4000-8000-0000000000e3
+$P -c "insert into pets(id, name, clinic_id) values ('$PT','قطة الاقتراح','$C1') on conflict do nothing;
+       insert into treatment_entries (pet_id, clinic_id, day, medication, time, amount, task_type) values
+         ('$PT','$C1', current_date - 1, 'Meloxicam', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 2, 'Meloxicam', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 3, 'Meloxicam', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 4, 'meloxicam ', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 5, 'Tramadol', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 6, 'Tramadol', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 2, 'Ceftriaxone', '08:00', '1 ml', 'drug'),
+         ('$PT','$C1', current_date - 2, 'حرارة', '08:00', '', 'vital'),
+         ('$PT','$C1', current_date - 120, 'Ketamine', '08:00', '1 ml', 'drug'),
+         ('$PT','$C2', current_date - 1, 'Furosemide', '08:00', '1 ml', 'drug');
+       insert into products(id, clinic_id, name, barcode, stock, purchase_price, sell_price, category) values
+         ('$PR','$C1','Bravecto 20','690229',3, 500, 1000, 'medicine') on conflict do nothing;
+       insert into invoices(id, clinic_id) values ('$IV','$C1') on conflict do nothing;
+       insert into invoice_items(invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty)
+         values ('$IV','$C1','$PR','Bravecto 20',1,1000,500,1000,1);" >/dev/null
+chk "الاقتراح: أكثرُ ما استُعمل بعيادته آخرَ ٩٠ يوماً، بالكتابة الأكثر، بلا ما بـ«أدويتي»" \
+    "select string_agg((e->>'name')||':'||(e->>'n'), ',' order by ord) from jsonb_array_elements((select _cdv('$C1', 'select clinic_drugs_suggest(90)::text'))::jsonb) with ordinality as x(e, ord)" "Meloxicam:4,Tramadol:2,Bravecto20:1"
+chk "  ولا يكتب شيئاً — والمُضافُ لـ«أدويتي» يخرج منه" \
+    "select _cd('$C1', '$C1', '[{\"op\":\"put\",\"id\":\"${CD}08\",\"name\":\"Meloxicam\",\"family\":\"analgesics\",\"mine\":true}]')" "ok:5"
+chk "  (Meloxicam خرج من الاقتراح)" \
+    "select string_agg(e->>'name', ',' order by ord) from jsonb_array_elements((select _cdv('$C1', 'select clinic_drugs_suggest(90)::text'))::jsonb) with ordinality as x(e, ord)" "Tramadol,Bravecto20"
+
+# ── 0230: الطيُّ — المفضّلةُ وأدويةُ العيادة تدخل «أدويتي» ولا يضيع شيء ─────────
+# عيادةٌ بمفضّلة طبيبين (Ceftriaxone بكتابتين) وأدويةٍ مكتوبة بصنفيهما. الطيُّ يُقاس
+# على ما تُنتجه الجداولُ القديمة فعلاً (محفّزُ المفضّلة يقصّ الاسم).
+echo "▸ 0230: طيُّ المفضّلة وأدوية العيادة"
+CF=c2300000-0000-4000-8000-0000000000f1
+UA=c2300000-0000-4000-8000-0000000000a1
+UB=c2300000-0000-4000-8000-0000000000b1
+$P -c "insert into auth.users(id) values ('$CF'),('$UA'),('$UB') on conflict do nothing;
+       insert into drug_favorites (clinic_id, user_id, name, created_at) values
+         ('$CF','$UA','Ceftriaxone','2026-01-01 10:00+03'),
+         ('$CF','$UB',' ceftriaxone ','2026-01-02 10:00+03'),
+         ('$CF','$UA','Meloxicam','2026-01-03 10:00+03');
+       insert into clinic_meds (clinic_id, name, type, created_at) values
+         ('$CF','سيرينيا','Other','2026-01-04 10:00+03'),
+         ('$CF','Amoxil','Antibiotics','2026-01-05 10:00+03');" >/dev/null
+chk "الطيُّ يضيف أربعة (Ceftriaxone بكتابتيه واحد)" \
+    "select _clinic_drugs_fold('$CF')->>'$CF'" "4"
+chk "  المفضّلةُ أوّلاً بترتيب الحفظ ثم أدويةُ العيادة، والعائلةُ من صنفها القديم" \
+    "select string_agg(name||':'||family, ',' order by pos) from clinic_drugs where clinic_id='$CF' and in_mine" "Ceftriaxone:other,Meloxicam:other,سيرينيا:other,Amoxil:antibiotics"
+chk "  والإعادةُ تضيف صفراً" \
+    "select _clinic_drugs_fold('$CF')::text" "{}"
+chk "العيادةُ تُخرج Meloxicam وتؤرشف سيرينيا" \
+    "select _cd('$CF', '$CF', jsonb_build_array(jsonb_build_object('op','unmine','id',(select id from clinic_drugs where clinic_id='$CF' and name='Meloxicam')), jsonb_build_object('op','archive','id',(select id from clinic_drugs where clinic_id='$CF' and name='سيرينيا'))))" "ok:4"
+chk "  وإعادةُ الطيّ لا تُرجع ما شالته العيادة" \
+    "select _clinic_drugs_fold('$CF')::text" "{}"
+chk "  (Meloxicam خارجٌ وسيرينيا مؤرشفٌ كما تركتهما، والجدولان القديمان كما كانا)" \
+    "select string_agg(name||':'||in_mine::text||':'||(archived_at is not null)::text, ',' order by name)||'|'||(select count(*) from drug_favorites where clinic_id='$CF')::text||'|'||(select count(*) from clinic_meds where clinic_id='$CF')::text from clinic_drugs where clinic_id='$CF'" "Amoxil:true:false,Ceftriaxone:true:false,Meloxicam:false:false,سيرينيا:false:true|3|2"
+# المنحُ الشامل بالحزمة أعاد تنفيذ الطيّ للمسجَّل — تُعاد الهجرةُ (والطيُّ معها يضيف صفراً) ثم نقيس.
+out=$($P -f "$MIG/0230_clinic_drugs_fold.sql" 2>&1) || { echo "$out"; echo "   ✗ 0230 ما انعادت"; fail=1; }
+chk "دالّتا الطيّ ممنوعتان عن كلّ دور" \
+    "select (has_function_privilege('authenticated','public._clinic_drugs_fold(uuid)','execute') or has_function_privilege('anon','public._clinic_drugs_fold(uuid)','execute') or has_function_privilege('authenticated','public._clinic_drugs_family(text)','execute'))::text" "false"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

@@ -2184,6 +2184,36 @@ export interface DrugFavorite {
   created_at: string;
 }
 
+/* ── «أدويتي» (0229) — صفٌّ لكلّ دواءٍ قالت العيادةُ عنه شيئاً ─────────────────
+ * «أدويتي» علَمٌ (`in_mine`) وموضعٌ (`pos`) لا قائمةٌ ثانية، ولا يقول شيئاً عن المخزن.
+ * لا حذف: الأرشفةُ والاسترجاع. والكتابةُ عملياتٌ نسبيّة يحسب الخادمُ مواضعَها. */
+export type DrugFamilyKey =
+  | "antibiotics" | "analgesics" | "anesthetics" | "antiparasitics" | "antifungals" | "steroids"
+  | "gi" | "cardiac" | "endocrine" | "derm" | "fluids" | "emergency" | "vitamins" | "other";
+export interface ClinicDrug {
+  id: string;
+  /** النصُّ الوحيد الذي يُكتب بالسجلّات — اسمُ الكتالوج كما هو («Amoxicillin 250mg»). */
+  name: string;
+  family: DrugFamilyKey;
+  in_mine: boolean;
+  pos: number | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+/** `after` غائب = آخرُ «أدويتي»، و`null` = أوّلُها، ومعرّفٌ = بعده مباشرة. */
+export type ClinicDrugOp =
+  | { op: "put"; id: string; name: string; family: DrugFamilyKey; mine: boolean; after?: string | null }
+  | { op: "unmine"; id: string }
+  | { op: "move"; id: string; after: string | null }
+  | { op: "edit"; id: string; name?: string; family?: DrugFamilyKey }
+  | { op: "archive"; id: string }
+  | { op: "restore"; id: string };
+/** ما يقوله الخادم: العيادةُ التي قرأ منها (ختمُ كلِّ كتابةٍ بعدها) وكلُّ صفوفها. */
+export interface ClinicDrugsSnapshot { clinic: string; rows: ClinicDrug[] }
+/** منتجُ دواءٍ بالمخزن — للعرض («بالمخزون · n») ولربط سطر البيع بمنتجه. */
+export interface MedicineStock { id: string; name: string; stock: number }
+
 /* ── موظّفُ التصوير (0222) — المنتجُ بأعمدةٍ آمنة: لا سعرَ شراءٍ ولا تكلفة ── */
 export interface PhotoProduct {
   id: string;
