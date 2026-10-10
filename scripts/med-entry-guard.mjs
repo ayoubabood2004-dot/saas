@@ -67,12 +67,32 @@ check("وقائمةُ «لم يتحوّل بعد» لا تحمل ملفّاً ت
 
 console.log("▸ ٢) حقلُ اسم الدواء لا يفتح الكيبورد وحده");
 const MED_INPUT = /data-\w*(?:med|drug)\w*|list="[^"]*drug[^"]*"|value=\{med\}/i;
+/* مدى الوسم حتى `>` خارج الأقواس والنصوص — `[^>]*>` كان يقف عند سهمِ `onChange={(e) => …}`
+ * فلا يرى autoFocus بعده، فمرّ حقلا الزيارة (data-editmed وlist="vp-drug-list") وهما يفتحان
+ * الكيبورد فعلاً. */
+function tagExtent(src, at) {
+  let depth = 0, quote = null;
+  for (let j = at + 1; j < src.length; j++) {
+    const c = src[j];
+    if (quote) { if (c === quote && src[j - 1] !== "\\") quote = null; continue; }
+    if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (c === ">" && depth === 0) return src.slice(at, j + 1);
+  }
+  return src.slice(at);
+}
 const focused = [];
 for (const f of files) {
   if (PENDING.has(f) || !f.endsWith(".tsx")) continue;
-  const src = code(f);
-  for (const m of src.matchAll(/<(?:input|textarea)\b[^>]*>/g)) {
-    if (/\bautoFocus\b/.test(m[0]) && MED_INPUT.test(m[0])) focused.push(`${f}: ${m[0].slice(0, 80)}`);
+  /* المدى يُقرأ من النصّ الخام: مُزيلُ التعليقات يرى `accept="image/*"` بدايةَ تعليق فيمسح
+   * علامةَ التنصيص. وما يقع داخل تعليقٍ حقيقيّ (المُزيلُ مسحه) لا يُحسب. */
+  const raw = readFileSync(f, "utf8");
+  const stripped = code(f);
+  for (const m of raw.matchAll(/<(?:input|textarea)\b/g)) {
+    if (stripped.slice(m.index, m.index + m[0].length) !== m[0]) continue;
+    const tag = tagExtent(raw, m.index);
+    if (/\bautoFocus\b/.test(tag) && MED_INPUT.test(tag)) focused.push(`${f}: ${tag.replace(/\s+/g, " ").slice(0, 80)}`);
   }
 }
 check("لا autoFocus على حقل اسمِ دواء", focused.length === 0, focused.join(" · "));
