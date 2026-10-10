@@ -4530,13 +4530,16 @@ const demoRepo = {
   async productBatches(productId: string): Promise<ProductBatch[]> {
     const db = loadDB();
     const pur = new Map((db.purchases ?? []).map((p) => [p.id, p]));
-    return (db.purchaseItems ?? []).filter((it) => it.product_id === productId)
-      .map((it) => {
+    /* التعادلُ بالأحدث إدخالاً: الخادمُ يختم بالمايكروثانية فلا يتساوى شراءان، والمرآةُ
+     * بالملّي ثانية فيتساويان على آلةٍ سريعة — والفرزُ المستقرّ كان يُبقي الأقدمَ أوّلاً. */
+    return (db.purchaseItems ?? []).map((it, at) => ({ it, at })).filter(({ it }) => it.product_id === productId)
+      .map(({ it, at }) => {
         const p = pur.get(it.purchase_id);
-        return { purchase_id: it.purchase_id, purchased_at: p?.purchased_at ?? it.created_at, qty: it.qty, expiry_date: it.expiry_date ?? null, company_name: p?.company_name ?? null };
+        return { at, row: { purchase_id: it.purchase_id, purchased_at: p?.purchased_at ?? it.created_at, qty: it.qty, expiry_date: it.expiry_date ?? null, company_name: p?.company_name ?? null } };
       })
-      .sort((a, b) => (b.purchased_at ?? "").localeCompare(a.purchased_at ?? ""))
-      .slice(0, 200);
+      .sort((a, b) => (b.row.purchased_at ?? "").localeCompare(a.row.purchased_at ?? "") || b.at - a.at)
+      .slice(0, 200)
+      .map((x) => x.row);
   },
   async productMovements(productId: string): Promise<ProductMovement[]> {
     const { demoProductMovements } = await import("./demoMovements");

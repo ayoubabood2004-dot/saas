@@ -1155,6 +1155,25 @@ console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزم
   check("  وتعديلُ الفاتورة القديمة يُبقي تاريخَ وجبتها (batch_expiry)", items[0]?.expiry_date === "2026-12-01");
   // 0217 غيّرت القاعدة بقرار المالك: تاريخُ الرفّ = **أقربُ** دفعةٍ فيها رصيد (كانت «الأحدث»).
   check("  وتاريخُ الرفّ = أقربُ وجبةٍ فيها رصيد (0217)", (await repo.listProducts()).find((p) => p.id === "lb")?.expiry_date === "2026-12-01");
+
+  /* شراءان بنفس الجزء من الألف من الثانية — آلةُ CI السريعة تصنعهما (مقيسٌ: purchased_at
+   * 11:48:43.048Z للاثنين فاحمرّ الفحصُ أعلاه بلا تغييرٍ بالمشتريات). الخادمُ يختمهما بدقّة
+   * المايكروثانية فلا يتساويان؛ والمرآةُ بالملّي ثانية فتساويا، والفرزُ المستقرّ أبقى الأقدمَ
+   * أوّلاً. فالساعةُ تُجمَّد هنا ليُفحص التعادلُ دائماً لا حين تسرع الآلة. */
+  seed([P("lt", "وجبات التعادل", "LT-1", { stock: 0, expiry_date: null })]);
+  const RealDate = Date;
+  const FROZEN = RealDate.parse("2026-10-10T11:48:43.048Z");
+  globalThis.Date = class extends RealDate {
+    constructor(...a) { super(...(a.length ? a : [FROZEN])); }
+    static now() { return FROZEN; }
+  };
+  try {
+    await repo.recordPurchase([{ product_id: "lt", name: "وجبات التعادل", qty: 10, purchase_price: 1, sell_price: 0, expiry_date: "2026-12-01" }], { company_name: "أقدم" });
+    await repo.recordPurchase([{ product_id: "lt", name: "وجبات التعادل", qty: 5, purchase_price: 1, sell_price: 0, expiry_date: "2027-06-01" }], { company_name: "أحدث" });
+  } finally { globalThis.Date = RealDate; }
+  const tied = await repo.productBatches("lt");
+  check("  وشراءان بنفس اللحظة: الأحدثُ إدخالاً أوّلاً (لا الأقدم بالفرز المستقرّ)",
+    tied.length === 2 && tied[0].purchased_at === tied[1].purchased_at && tied.map((b) => b.company_name).join() === "أحدث,أقدم", JSON.stringify(tied));
 }
 
 console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
