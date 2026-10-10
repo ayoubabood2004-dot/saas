@@ -58,7 +58,6 @@ const ALLOWED = new Set([
 /* لم يتحوّل بعد — تُشطب سطراً سطراً مع كلّ دفعة. */
 const PENDING = new Set([
   "src/lib/meds.ts",                  // B8: الكتالوج ينتقل لـmedCatalog.ts الكسول
-  "src/components/MedicalEntry.tsx",  // B7
 ]);
 const SOURCES = /\b(MED_CATALOG|allMedicationNames|getClinicMeds|searchDrugs)\b/;
 
@@ -100,6 +99,17 @@ for (const f of files.filter((x) => x.startsWith("src/components/meds/"))) {
   }
 }
 check("كلُّ DragOverlay بوحدات المنتقي داخل createPortal(…, document.body)", overlays.length === 0, overlays.join(" · "));
+
+console.log("▸ ٦) شاشةُ البيع لا تتحرّك خلف المنتقي");
+{
+  /* المنتقي ورقةٌ فوق شاشة البيع، والماسحُ يسمع النافذةَ كلَّها وF2 يُتمّ البيع بلا سؤال عن
+   * التركيز — مسحةٌ أو F2 خلف الورقة كانت تبيع ما لا يراه الكاشير. */
+  const sb = code("src/components/retail/SaleBuilder.tsx");
+  const scan = /useBarcodeScanner\(handleScan,\s*\{\s*disabled:([^}]*)\}/.exec(sb)?.[1] ?? "";
+  check("الماسحُ يسكت ما دام المنتقي مفتوحاً (disabled يذكر medPickerOpen)", /\bmedPickerOpen\b/.test(scan), scan.trim().slice(0, 90));
+  const keyFn = /if \(!posV2\) return;\s*const onKey = \(e: KeyboardEvent\) => \{([\s\S]*?)\n {4}\};/.exec(sb)?.[1] ?? "";
+  check("وF2 و«/» كذلك: أوّلُ سطرٍ بمعالج posV2 يسأل medPickerOpen", /^\s*if \(medPickerOpen\) return;/.test(keyFn) && /F2/.test(keyFn) && /"\/"/.test(keyFn), keyFn.trim().slice(0, 60));
+}
 
 console.log(fails ? `\n✗ med-entry-guard: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-entry-guard: ${passes} نجحت، 0 فشلت (${PENDING.size} لم يتحوّل بعد)`);
 process.exit(fails ? 1 : 0);
