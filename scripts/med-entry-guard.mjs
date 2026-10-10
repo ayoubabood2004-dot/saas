@@ -56,9 +56,7 @@ const ALLOWED = new Set([
   "src/pages/Consultation.tsx",       // صفحةٌ يتيمة بلا رابط
 ]);
 /* لم يتحوّل بعد — تُشطب سطراً سطراً مع كلّ دفعة. */
-const PENDING = new Set([
-  "src/lib/meds.ts",                  // B8: الكتالوج ينتقل لـmedCatalog.ts الكسول
-]);
+const PENDING = new Set([]);
 const SOURCES = /\b(MED_CATALOG|allMedicationNames|getClinicMeds|searchDrugs)\b/;
 
 console.log("▸ ١) لا منتقيَ دواءٍ محلّيّ خارج المنتقي الموحَّد");
@@ -80,8 +78,8 @@ for (const f of files) {
 check("لا autoFocus على حقل اسمِ دواء", focused.length === 0, focused.join(" · "));
 
 console.log("▸ ٣) أدويةُ العيادة صارت «أدويتي»");
-const addClinic = files.filter((f) => f !== "src/lib/meds.ts" && !PENDING.has(f) && /\baddClinicMed\b/.test(code(f)));
-check("لا أحدَ يستورد addClinicMed", addClinic.length === 0, addClinic.join(" · "));
+const addClinic = files.filter((f) => /\baddClinicMed\b/.test(code(f)));
+check("لا أحدَ يعرّف addClinicMed أو يستورده", addClinic.length === 0, addClinic.join(" · "));
 
 console.log("▸ ٤) وحداتُ المنتقي لا تقصّ قوائمها");
 const PICKER = ["src/components/meds/MedPicker.tsx", "src/components/meds/MedPickerSheet.tsx", "src/components/meds/MyMedsBoard.tsx", "src/lib/medIndex.ts"];

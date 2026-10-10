@@ -6,7 +6,6 @@
 import "./services";
 import "./promotions";
 import "./breeds";
-import "./meds";
 import "./vaccines";
 import "./locations";
 import "./settings";

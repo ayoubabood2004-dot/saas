@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { MED_CATALOG } from "@/lib/meds";
+import { MED_CATALOG } from "@/lib/medCatalog";
 import { buildMedIndex, type BuildInput, type MedIndex } from "@/lib/medIndex";
 
 /* ============================================================================

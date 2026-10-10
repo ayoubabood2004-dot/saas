@@ -73,7 +73,7 @@ const load = async (contents, extraStubs = {}) => {
   return import(pathToFileURL(f).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
 };
 
-const M = await load(`export * from "./src/lib/medIndex.ts"; export { MED_CATALOG } from "./src/lib/meds.ts"; export { FORMULARY } from "./src/lib/vetFormulary.ts"; export { searchable } from "./src/lib/utils.ts";`);
+const M = await load(`export * from "./src/lib/medIndex.ts"; export { MED_CATALOG } from "./src/lib/medCatalog.ts"; export { FORMULARY } from "./src/lib/vetFormulary.ts"; export { searchable } from "./src/lib/utils.ts";`);
 const { MED_CATALOG, FORMULARY } = M;
 
 const ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8"));
