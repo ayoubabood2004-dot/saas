@@ -80,7 +80,13 @@ const stubs = {
 // حزمةٌ بحجم ميغابايت: تُكتب ملفاً مؤقتاً وتُستورد منه. عنوانُ `data:` بهذا
 // الطول يفشل استيرادُه، ورسالةُ الفشل تطبع الحزمةَ كلَّها فتخفي سببَها.
 const built = await esbuild.build({
-  entryPoints: ["src/lib/repo.ts"], bundle: true, format: "esm", write: false,
+  // المستودعُ ومعه `persistMedicalEntries` بنفس الحزمة (نفسُ نسخة repo): سلسلةُ اللقاح تُفحص
+  // بالحفظ الحقيقيّ على المخزن التجريبيّ، لا بنسخةٍ من منطقه.
+  stdin: {
+    contents: 'export * from "./src/lib/repo.ts"; export { persistMedicalEntries } from "./src/lib/medSync.ts";',
+    resolveDir: process.cwd(), sourcefile: "repo-demo-entry.ts", loader: "ts",
+  },
+  bundle: true, format: "esm", write: false,
   platform: "neutral", plugins: [stubs], logLevel: "silent",
   // `import.meta.env` من فيت — لا وجودَ له بنود، فيُستبدل بكائنٍ فارغ.
   define: { "import.meta.env": "__VITE_ENV__" },
@@ -1670,6 +1676,39 @@ console.log("▸ 0229 — أقسامُ المتجر والنشرُ بشروطه 
   const ph = (await repo.listPhotoProducts()).find((p) => p.id === "q7");
   check("photo_products بالتجريبيّ: القسمُ والترتيبُ والتوفّرُ و«تحت الكلفة» (800 < 1000)",
     ph && "store_section_id" in ph && "store_sort" in ph && ph.available === true && ph.below_cost === true);
+}
+
+console.log("▸ سلسلةُ اللقاح: «انعطى اليوم» يستهلك المستحقّة، والإعطاءُ المحروس لا يتكرّر");
+{
+  const persist = mod.persistMedicalEntries;
+  const db0 = JSON.parse(mem.get(DB_KEY) || "{}");
+  const pad = (n) => String(n).padStart(2, "0");
+  const d = (off) => { const x = new Date(); x.setDate(x.getDate() + off); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
+  const T = d(0);
+  db0.vaccinations = [
+    { id: "vx-due", pet_id: "pv1", name: "Rabies", status: "overdue", due_date: d(-3), administered_at: null },
+    { id: "vx-far", pet_id: "pv1", name: "DHPP", status: "scheduled", due_date: d(60), administered_at: null },
+    { id: "vx-old", pet_id: "pv1", name: "Rabies", status: "administered", due_date: null, administered_at: d(-368) },
+  ];
+  db0.treatments = db0.treatments ?? [];
+  mem.set(DB_KEY, JSON.stringify(db0));
+  const vx = () => JSON.parse(mem.get(DB_KEY)).vaccinations.filter((v) => v.pet_id === "pv1");
+  await persist("pv1", "د. الفحص", [{ id: "e1", kind: "vaccination", name: " rabies ", nextDue: d(365), administered: true }]);
+  const rab = vx().filter((v) => v.name.trim().toLowerCase() === "rabies");
+  check("المستحقّةُ (متأخرة ٣ أيام) انقلبت معطاةً بنفس معرّفها — لا صفٌّ ثانٍ ولا تذكيرٌ كاذب",
+    rab.find((v) => v.id === "vx-due")?.status === "administered" && rab.find((v) => v.id === "vx-due")?.administered_at === T
+      && rab.filter((v) => v.status === "administered" && v.administered_at === T).length === 1, JSON.stringify(rab));
+  check("  والجاية (سنة) انحجزت مرّةً", rab.filter((v) => v.status !== "administered" && v.due_date === d(365)).length === 1);
+  await persist("pv1", "د. الفحص", [{ id: "e2", kind: "vaccination", name: "Rabies", nextDue: d(365), administered: true }]);
+  check("  وحفظٌ ثانٍ بنفس الموعد لا يكرّر الجاية، ولا يستهلك موعدَ السنة القادمة (أبعد من ٣٠ يوماً)",
+    vx().filter((v) => v.name.trim().toLowerCase() === "rabies" && v.status !== "administered" && v.due_date === d(365)).length === 1,
+    JSON.stringify(vx().filter((v) => v.status !== "administered")));
+  await persist("pv1", "د. الفحص", [{ id: "e3", kind: "vaccination", name: "DHPP", nextDue: null, administered: true }]);
+  check("مستحقّةٌ بعد ٦٠ يوماً ليست هذه الجرعة: تبقى، والمعطاةُ صفٌّ جديد",
+    vx().find((v) => v.id === "vx-far")?.status === "scheduled" && vx().filter((v) => v.name === "DHPP" && v.status === "administered").length === 1);
+  let code = "ok";
+  try { await repo.administerVaccination("vx-due", { administered_at: T }); } catch (e) { code = e.code; }
+  check("الإعطاءُ المحروس: جرعةٌ معطاةٌ قبلاً ترمي no_row_updated لا تُعطى مرّتين", code === "no_row_updated", code);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

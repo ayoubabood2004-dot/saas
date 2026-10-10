@@ -352,6 +352,14 @@ function updated<T>(res: { data: unknown; error: { message: string; code?: strin
   return assertUpdated((res.data ?? undefined) as T | undefined);
 }
 
+/** تحديثٌ مُرجِعٌ صفوفاً (`.select("id")`) يرمي على **صفر** صفوف: `updated` تفحص `undefined`
+ *  وحده، والمصفوفةُ الفارغة ليست undefined — فكان «صفرُ صفوفٍ خطأٌ» كذبةً بصمت هنا. */
+function updatedRows(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): unknown[] {
+  const rows = updated<unknown[]>(res);
+  if (!Array.isArray(rows) || rows.length === 0) assertUpdated(undefined);
+  return rows;
+}
+
 /** قراءةٌ تُسمَع: خطأُ الخادم **يُرمى**، و«ما لكيت» ترجع undefined.
  *
  *  الفرقُ عن `maybe()`: تلك تخلط الجوابين — تطبع الخطأ بالكونسول وترجع «لا
@@ -608,10 +616,16 @@ const supabaseRepo: DemoRepo = {
   async updateVaccination(id, patch) {
     ok(await sbc().from("vaccinations").update(patch).eq("id", id));
   },
+  /** إعطاءُ جرعةٍ مجدولة — محروسٌ ومسموع: جرعةٌ انعطت من جهازٍ ثانٍ لا تُعطى مرّتين، وصفرُ
+   *  صفوفٍ (سياسةٌ ردّت أو انعطت قبلنا) خطأٌ لا «انحفظ». */
+  async administerVaccination(id, patch) {
+    updatedRows(await sbc().from("vaccinations").update({ ...patch, status: "administered", due_date: null })
+      .eq("id", id).neq("status", "administered").select("id"));
+  },
   /** تعديلُ موعد لقاحٍ لم يُعطَ: الحالةُ تتبع التاريخ (vaccineDue.ts)، والكتابةُ تُسمع —
    *  صفرُ صفوفٍ (سياسةٌ ردّت، أو اللقاحُ انعطى من جهازٍ ثانٍ) خطأٌ لا «انحفظ». */
   async rescheduleVaccination(id, dueISO, status) {
-    updated<unknown[]>(await sbc().from("vaccinations").update({ due_date: dueISO, status })
+    updatedRows(await sbc().from("vaccinations").update({ due_date: dueISO, status })
       .eq("id", id).neq("status", "administered").select("id"));
   },
   async listVisits(petId) {

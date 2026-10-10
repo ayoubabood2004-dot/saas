@@ -8,6 +8,8 @@ import { repo } from "./repo";
 import { localISO } from "./utils";
 import { syncDoseCycleForPet } from "./doseCycle";
 import { historyRows } from "./backdate";
+import { pendingToConsume, sameVaccine } from "./vaxNext";
+import type { Vaccination } from "@/types";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 
 const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
@@ -41,16 +43,37 @@ export async function persistMedicalEntries(
         continue;
       }
       if (given) {
-        // The dose given today. العمودُ `date`: اليومُ المحلّيّ لا `toISOString()` —
-        // وإلا فلقاحٌ بعد منتصف الليل ببغداد ينكتب بيوم غرينتش (أمس).
-        await repo.addVaccination({
-          pet_id: petId, name: e.name, status: "administered",
-          administered_at: today, due_date: null,
-          lot_number: e.lot, administered_by: doctorName,
-        });
-        // A scheduled booster becomes its own pending item — actioned later via
-        // "Administer booster" and surfaced in the dashboard reminders feed.
-        if (e.nextDue) {
+        // الجرعةُ المستحقّة لنفس اللقاح **هي** هذه (vaxNext.ts): تُقلب معطاةً بدل صفٍّ ثانٍ —
+        // كان «انعطى اليوم» يكتب جرعةً جديدة ويترك المستحقّةَ معلّقةً للأبد (نحو ١١٢ بالإنتاج):
+        // تذكيرٌ كاذبٌ للزبون وعلامةٌ حمراء على لقاحٍ انعطى. القراءةُ إن فشلت ⇒ الكتابةُ القديمة
+        // (لا يُمنع البيعُ عند الكاشير بسبب قراءة)، وإن سبقنا جهازٌ ثانٍ للمستحقّة ⇒ صفٌّ جديد.
+        let series: Vaccination[] | null = null;
+        try { series = await repo.listVaccinations(petId); } catch { series = null; }
+        const due = series ? pendingToConsume(series, e.name, today) : null;
+        let consumed = false;
+        if (due) {
+          try {
+            await repo.administerVaccination(due.id, { administered_at: today, administered_by: doctorName, lot_number: e.lot });
+            consumed = true;
+          } catch (err) {
+            if ((err as { code?: string } | null)?.code !== "no_row_updated") throw err;
+          }
+        }
+        // العمودُ `date`: اليومُ المحلّيّ لا `toISOString()` — وإلا فلقاحٌ بعد منتصف الليل ببغداد
+        // ينكتب بيوم غرينتش (أمس).
+        if (!consumed) {
+          await repo.addVaccination({
+            pet_id: petId, name: e.name, status: "administered",
+            administered_at: today, due_date: null,
+            lot_number: e.lot, administered_by: doctorName,
+          });
+        }
+        // A scheduled booster becomes its own pending item — actioned later via the record's
+        // administer dialog (which asks for the next one) and surfaced in the reminders feed.
+        // وموعدٌ بنفس اليوم محجوزٌ أصلاً لنفس اللقاح لا يُكرَّر.
+        const dup = !!e.nextDue && !!series?.some((v) => v.id !== due?.id && v.status !== "administered"
+          && sameVaccine(v.name, e.name) && (v.due_date ?? "").slice(0, 10) === e.nextDue);
+        if (e.nextDue && !dup) {
           await repo.addVaccination({
             pet_id: petId, name: e.name, status: "scheduled",
             administered_at: null, due_date: e.nextDue,

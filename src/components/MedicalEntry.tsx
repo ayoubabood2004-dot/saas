@@ -15,6 +15,7 @@ import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid, dateLocale } from "@/lib/utils";
 import { addInterval, cleanHistory, historyProblem, EARLIEST_DAY } from "@/lib/backdate";
+import { pendingToConsume } from "@/lib/vaxNext";
 import { playTap, playSuccess } from "@/lib/sounds";
 
 /* ============================================================================
@@ -35,8 +36,10 @@ const ROUTES: RouteDef[] = [
   { id: "liquid", label: "Syrup", sub: "Liquid", icon: Droplet, doses: ["1 ml", "2 ml", "5 ml", "10 ml"] },
 ];
 
-interface Booster { key: string; def: string; days?: number; months?: number; years?: number }
-const BOOSTERS: Booster[] = [
+export interface Booster { key: string; def: string; days?: number; months?: number; years?: number }
+/** مددُ الجرعة القادمة — نموذجُ الإضافة ونافذةُ «إعطاء الجرعة» يعرضانها، و`VAX_INTERVALS` (vaxNext.ts)
+ *  مرآتُها بلا أسماء (يطابقها vax-next-test مفتاحاً ومدّة). */
+export const BOOSTERS: Booster[] = [
   { key: "medentry.b2w", def: "أسبوعان", days: 14 },
   { key: "medentry.b3w", def: "3 أسابيع", days: 21 },
   { key: "medentry.b1m", def: "شهر", months: 1 },
@@ -582,6 +585,9 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   }, [history]);
 
 
+  /** الجرعةُ المستحقّة التي سيستهلكها «انعطى اليوم» لهذا اللقاح (نفسُ قاعدة medSync). */
+  const dueToConsume = useMemo(() => (vaccine && history ? pendingToConsume(history, vaccine, todayLocal) : null), [vaccine, history, todayLocal]);
+
   // Current selection as a draft (or null). Shared by "Add" and the parent's Save flush,
   // so a chosen-but-unadded vaccine is saved by a single Save.
   const buildDraft = (): MedicalDraft | null => {
@@ -848,6 +854,12 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
           <Reveal key="vstatus">
             <Tier n={5} label={t("medentry.tierStatus", "الحالة")} icon={<Check size={14} />}>
               <GivenToggle given={given} onChange={setGiven} />
+              {/* «انعطى اليوم» يستهلك المستحقّةَ لنفس اللقاح (medSync) — يُقال قبل الحفظ لا بعده. */}
+              {given && dueToConsume?.due_date && (
+                <p className="mt-2 text-xs font-semibold text-brand-700 dark:text-brand-300" data-vx-consume>
+                  {t("medentry.consumesDue", { date: prettyDate(dueToConsume.due_date.slice(0, 10)), defaultValue: "الجرعة المستحقة بتاريخ {{date}} راح تنحسب هي اللي انعطت — ما تبقى معلّقة." })}
+                </p>
+              )}
             </Tier>
           </Reveal>
         )}

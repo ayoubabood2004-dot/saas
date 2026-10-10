@@ -1015,6 +1015,15 @@ const demoRepo = {
     saveDB(db);
   },
 
+  /** مرآةُ `administerVaccination`: المعطاةُ قبلاً والغائبةُ ترميان لا تصمتان. */
+  async administerVaccination(id: string, patch: Pick<Vaccination, "administered_at"> & Partial<Pick<Vaccination, "administered_by" | "notes" | "lot_number">>): Promise<void> {
+    const db = loadDB();
+    const v = db.vaccinations.find((x) => x.id === id);
+    if (!v || v.status === "administered") { const e = new Error("no_row_updated") as Error & { code: string }; e.code = "no_row_updated"; throw e; }
+    Object.assign(v, { ...patch, status: "administered", due_date: null });
+    saveDB(db);
+  },
+
   /** مرآةُ `rescheduleVaccination`: اللقاحُ المعطى لا يُؤجَّل، والغائبُ يرمي لا يصمت. */
   async rescheduleVaccination(id: string, dueISO: string, status: "scheduled" | "overdue"): Promise<void> {
     const db = loadDB();
@@ -4912,6 +4921,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   uploadMedia: { entity: "media_items", action: "INSERT" },
   updateVaccination: { entity: "vaccinations", action: "UPDATE" },
   rescheduleVaccination: { entity: "vaccinations", action: "UPDATE" },
+  administerVaccination: { entity: "vaccinations", action: "UPDATE" },
   setProductImage: { entity: "products", action: "UPDATE" },
   setStoreFeatured: { entity: "products", action: "UPDATE" },
   setStoreDesc: { entity: "products", action: "UPDATE" },

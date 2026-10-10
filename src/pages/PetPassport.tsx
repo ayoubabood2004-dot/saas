@@ -42,13 +42,14 @@ import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
 import { celebrate } from "@/lib/celebrate";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
+import { MedicalEntry, type MedicalDraft } from "@/components/MedicalEntry";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical } from "@/lib/clinicalRecord";
 import { isProtocolMark } from "@/lib/protocolMark";
 import { ConsentForms } from "@/components/ConsentForms";
 import { PetReminderModal } from "@/components/PetReminder";
+import { AdministerDoseModal } from "@/components/vaccines/AdministerDoseModal";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
@@ -1629,102 +1630,9 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
       </Modal>
 
       <VaccineDueDialog vaccine={dueEdit} petName={pet.name} onClose={() => setDueEdit(null)} onSaved={onChanged} />
-      <AdministerBoosterModal vaccine={administer} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
+      {/* إعطاءُ الجرعة يسأل عن الجاية (vaxNext.ts) — نافذةٌ واحدة مع تقويم الاستقبال. */}
+      <AdministerDoseModal vaccine={administer} series={vaccines} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
     </div>
-  );
-}
-
-/** datetime-local default value (local wall-clock, minute precision). */
-function nowLocalDT(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** Confirm Administration — converts a pending booster into a completed dose,
- *  capturing the attending doctor, a visit-specific clinical note and the date/time.
- *  Nothing is auto-completed: status only changes to "administered" on Confirm. */
-function AdministerBoosterModal({ vaccine, defaultDoctor, onClose, onDone }: { vaccine: Vaccination | null; defaultDoctor?: string; onClose: () => void; onDone: () => void }) {
-  const { t, i18n } = useTranslation();
-  const toast = useToast();
-  const [doctor, setDoctor] = useState("");
-  const [notes, setNotes] = useState("");
-  const [when, setWhen] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  // Fresh form each time a booster opens: default doctor = signed-in vet, time = now.
-  useEffect(() => {
-    if (!vaccine) return;
-    setDoctor(defaultDoctor ?? "");
-    setNotes("");
-    setWhen(nowLocalDT());
-  }, [vaccine, defaultDoctor]);
-
-  const confirm = async () => {
-    // Guard against re-administering a dose that's already been recorded (e.g. a
-    // stale modal in a concurrent session).
-    if (!vaccine || busy || vaccine.status === "administered") return;
-    setBusy(true);
-    try {
-      // العمودُ `date`: يومُ اللحظة المحلّيّ — `toISOString()` كان يحفظ يومَ غرينتش،
-      // فجرعةُ الساعة ١ بالليل ببغداد تنكتب أمس.
-      const picked = when ? new Date(when) : new Date();
-      const administeredDay = localISO(Number.isNaN(picked.getTime()) ? new Date() : picked);
-      await repo.updateVaccination(vaccine.id, {
-        status: "administered",
-        administered_at: administeredDay,
-        administered_by: doctor || undefined,
-        notes: notes.trim() || undefined,
-        due_date: null,
-      });
-      playSuccess();
-      toast.success(t("passport.boosterGiven", "Booster recorded"));
-      onDone();
-    } catch (e) {
-      toast.error(t("passport.boosterError", "Couldn't save — please try again."), e instanceof Error ? e.message : undefined);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal open={!!vaccine} onClose={onClose} title={t("passport.confirmAdminTitle", "Confirm administration")}>
-      {vaccine && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"><Syringe size={19} /></span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-ink">{vaccine.name}</p>
-              {vaccine.due_date && (
-                <p className="truncate text-xs text-ink-muted">{t("passport.scheduledFor", { date: formatDate(vaccine.due_date, i18n.language), defaultValue: "Scheduled for {{date}}" })}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Attending doctor */}
-          <div>
-            <label className="label flex items-center gap-1.5"><Stethoscope size={14} className="text-brand-600" /> {t("medentry.attendingDoctor", "Attending doctor")}</label>
-            <DoctorSelect value={doctor} onChange={setDoctor} />
-          </div>
-
-          {/* Date & time */}
-          <div>
-            <label className="label flex items-center gap-1.5"><CalendarClock size={14} className="text-brand-600" /> {t("passport.dateTime", "Date & time")}</label>
-            <input type="datetime-local" className="input" value={when} onChange={(e) => setWhen(e.target.value)} />
-          </div>
-
-          {/* Clinical notes for this booster visit */}
-          <div>
-            <label className="label flex items-center gap-1.5"><NotebookPen size={14} className="text-brand-600" /> {t("medentry.clinicalNotes", "Clinical notes")}</label>
-            <textarea rows={3} className="input min-h-[80px] resize-y leading-relaxed" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("passport.boosterNotesPlaceholder", "Observations during this booster visit…")} />
-          </div>
-
-          <Button size="lg" className="w-full" loading={busy} leftIcon={<Check size={18} />} onClick={confirm}>
-            {t("passport.confirmSave", "Confirm & save")}
-          </Button>
-        </div>
-      )}
-    </Modal>
   );
 }
 
@@ -2785,8 +2693,8 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
         <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} onMediaAdded={onChanged} />
       </Modal>
 
-      {/* Confirm-administration (booster) — shared with the vaccines tab */}
-      <AdministerBoosterModal vaccine={administer} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
+      {/* إعطاءُ الجرعة يسأل عن الجاية — نفسُ نافذة تبويب اللقاحات */}
+      <AdministerDoseModal vaccine={administer} series={vaccinations} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
     </div>
   );
 }
