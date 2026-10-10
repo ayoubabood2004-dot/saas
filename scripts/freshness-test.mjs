@@ -492,8 +492,9 @@ if (cc) {
     cc.zeroStockVerdict({ stock: 0, sold_by_weight: true }, true) === "refuse-confirmed");
   check("  وموزونٌ طازجٌ فيه كيلوات ⇒ يُباع", cc.zeroStockVerdict({ stock: 2.5, sold_by_weight: true }, true) === "sell-fresh");
 }
+// (`ret` = «راجع» إلا لبيعٍ يفرضه تبويبُ «الأدوية» — مشتقٌّ من retMode نفسِه داخل الدالّة.)
 check("sellOrExplain تبوّب بـneedsServerCheck (الصفرُ والسقفُ معاً، والموزونُ البائت)",
-  /if \(!needsServerCheck\(product, lineBefore, n, retMode\)\)/.test(soeNow));
+  /if \(!needsServerCheck\(product, lineBefore, n, ret\)\)/.test(soeNow) && /const ret = retMode && !opt\?\.sale;/.test(soeNow));
 
 /* ── شاشةُ البيع بالجملة (المخزن) — نفسُ الطزاجة، ولا اقتلاعَ للإيصال ──────
  * هي نفسُ `SaleBuilder` فنالت الكرتَ الناطق تلقائياً، لكن بلا ترقيع صفٍّ (فتسأل

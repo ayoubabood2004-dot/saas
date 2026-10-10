@@ -23,6 +23,8 @@ export type SaleLineLike = {
   petName?: string | null;
   name: string;
   med?: unknown;
+  /** مسودّاتٌ لُصقت بعد الأولى بسطر منتج (حيوانٌ ثانٍ) — كلٌّ بحيوانه. */
+  medMore?: readonly { petId: string | null }[];
 };
 
 /** سطرٌ يتبع المريضَ: يُكتب بسجلّه عند الإتمام (لقاحٌ/علاجٌ، خدمةٌ بمريض، بندُ تحليل).
@@ -31,7 +33,8 @@ export type SaleLineLike = {
  *  بسجلّ أحد — الإتمامُ يتخطّاه (`!l.petId`) — فهو كأيّ منتجٍ بالسلّة ويبقى. كان
  *  النوعُ وحدَه يرفعه، والنافذةُ تقول عنه «ينكتب بسجلّ حيوانه» وهو لا يُكتب بمكان. */
 export function isCustomerBound(l: SaleLineLike): boolean {
-  return l.petId != null || l.id.startsWith("s:lab:");
+  // ومسودّةٌ لُصقت بعد الأولى لحيوانٍ معروف تربطه كذلك — وإلا بقي السطرُ بعد المسح ونزل بسجلّه.
+  return l.petId != null || l.id.startsWith("s:lab:") || !!l.medMore?.some((m) => m.petId != null);
 }
 
 /** السطورُ التي يجب أن تُقال قبل مسح الزبون. */

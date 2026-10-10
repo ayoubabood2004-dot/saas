@@ -35,7 +35,7 @@ import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { useMedPickerOpen } from "@/components/meds/MedPicker";
-import { medDraftsByPet, medOnlyLine } from "@/lib/medSale";
+import { attachMedDraft, linePetNames, medDraftsByPet, medOnlyLine, type MedRef } from "@/lib/medSale";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, stripAim } from "@/lib/productCodes";
@@ -73,6 +73,9 @@ interface Line {
   subcategory: string | null; // product subcategory, for Mix & Match promotions
   /** Medical draft for a "med" line — synced into the patient's record on checkout. */
   med?: MedicalDraft;
+  /** مسودّاتٌ بعد الأولى على نفس سطر المنتج (تبويب «الأدوية»): حيوانٌ ثانٍ أو جرعةٌ ثانية —
+   *  قيدٌ لكلّ إضافة، والرصيدُ سطرٌ واحد. */
+  medMore?: MedRef[];
   /** Which patient this line belongs to — a multi-pet sale bills several animals on
    *  ONE invoice, and each med line syncs into ITS OWN pet's medical record. */
   petId?: string | null;
@@ -1030,7 +1033,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
 
   /** ترجع ما أُضيف فعلاً (0 = السطرُ عند سقفه) — ومنها يقرّر المسحُ أيَّ نغمةٍ يُصدر.
    *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
-  const addProduct = (p: Product, n = takeMult()): number | null => {
+  /** `sale`: سطرُ بيعٍ ولو كان «راجع» مشغّلاً — تبويبُ «الأدوية» يبيع دواءً لحيوانٍ دائماً
+   *  (سطرُ «دواء» القديم كان موجباً مهما كان الوضع)، و«راجع» يخصّ المسحَ والكرت. */
+  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean }): number | null => {
     /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
      * يكذب كلفةَ دفعةٍ جارية. الخادمُ يستثنيه بكلّ طريقٍ اليوم — وهذا خطُّ الدفاع
      * الأخير لو وصل صفُّ حقلٍ بطريقٍ يُضاف غداً: يُرفض باسمه، لا يُباع بصمت. */
@@ -1040,8 +1045,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return null;
     }
     if (blockZeroCost(p)) return null;
-    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return null; }
-    return retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
+    const ret = retMode && !opt?.sale;
+    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret }); return null; }
+    return ret ? addReturn(p, n) : bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
       // No whole box left but singles remain → start the line on the sub-unit.
@@ -1103,17 +1109,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       toast.error(t("mymeds.posByWeight", { name: p.name, defaultValue: "«{{name}}» يُباع بالوزن — أضفه من تبويب المنتجات" }));
       return;
     }
-    const id = `p:${p.id}`;
-    const had = cartRef.current.find((l) => l.id === id);
     // sellOrExplain لا addProduct: يُسأل الخادمُ حين ترفض القائمةُ أو تقصّ — كالمسح والكرت حرفاً.
-    const r = await sellOrExplain(p, Math.max(1, qty));
-    if (r.refused || r.added == null || r.added <= 0) return;   // رفضه مسارُ المنتج بسببه وقاله
-    if (had?.med) {
-      toast.warn(t("mymeds.posOneEntry", { name: p.name, defaultValue: "«{{name}}» بالسلّة أصلاً — زادت الكمية، والسجلّ ينكتب مرّة وحدة" }));
-      return;
-    }
+    /* `sale`: بيعٌ ولو كان «راجع» مشغّلاً — كان addProduct يقرأ الوضعَ فيصير الدواءُ سطرَ إرجاع
+     * (رصيدٌ يزيد ونقدٌ يخرج) وتسقط مسودّتُه لأنها تُلصق بسطر p: لا وجودَ له. */
+    const r = await sellOrExplain(p, Math.max(1, qty), null, { sale: true });
+    if (r.refused || r.added == null || r.added <= 0 || !r.lineId) return;   // رفضه مسارُ المنتج بسببه وقاله
+    /* كلُّ إضافةٍ قيدُها: الحيوانُ الثاني على نفس المنتج (أو جرعةٌ ثانية لنفسه) تُلصق بالسطر نفسه
+     * (الرصيدُ واحد) ولا تُبتلع — كانت «بالسلّة أصلاً» تزيد الكمية وتُسقط مسودّتَه، فيُباع ولا يُكتب. */
     const pet = activePet;
-    const attach = (c: Line[]): Line[] => c.map((l) => (l.id === id && !l.med ? { ...l, med: draft, petId: pet?.id ?? null, petName: pet?.name ?? null } : l));
+    const attach = (c: Line[]): Line[] => attachMedDraft(c, r.lineId as string, { med: draft, petId: pet?.id ?? null, petName: pet?.name ?? null });
     cartRef.current = attach(cartRef.current);
     setCart(attach);
   };
@@ -1221,15 +1225,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     tone: "error", title,
     action: onRefresh ? { label: t("retail.refreshList", "حدّث القائمة"), onClick: onRefresh } : undefined,
   });
-  const sellOrExplain = async (product: Product, n: number, code?: string | null): Promise<{ added: number | null; refused: boolean }> => {
+  /** `lineId`: السطرُ الذي أُضيف إليه فعلاً — الصفُّ الطازج قد يكون غيرَ ما ضُغط (جوابُ الخادم برمزه). */
+  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
     /* مخزنُ الحقل يُرفض باسمه **قبل** السؤال: السؤالُ يستثني الحقل، فصفُّ حقلٍ
      * رصيدُه صفر كان يعود «لا شيء» ويُقال عنه «موجود بس رصيده صفر — زيد رصيده». */
-    if (product.farm_id) { addProduct(product, n); return { added: null, refused: true }; }
+    if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
+    const ret = retMode && !opt?.sale;
+    const lineOf = (x: Product) => `${ret ? "r" : "p"}:${x.id}`;
     /* يُسأل الخادمُ حين ترفض القائمةُ الإضافةَ أو تقصّها — صفرٌ بالصفّ، **أو سطرٌ بلغ
      * سقفه**، أو مضاعِفٌ أكبرُ من الباقي. «المتوفّر ١ فقط وكلُّه بالسلّة» حكمُ صفرٍ
      * أيضاً، وكان يصدر من لقطةٍ بلا سؤال والكرتُ بجانبه يقول ٢٥. */
     const lineBefore = cartRef.current.find((l) => l.id === `p:${product.id}`);
-    if (!needsServerCheck(product, lineBefore, n, retMode)) return { added: addProduct(product, n), refused: false };
+    if (!needsServerCheck(product, lineBefore, n, ret)) return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
     const { promise, first } = askServer(product, code);
     const ans = await promise;
     // الجوابُ يرقّع القائمةَ **أيّاً كان الحكم** (مرّةً — من سأل فعلاً): رصيدٌ ظهر يُصلح
@@ -1241,18 +1248,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const { verdict, sellable } = freshVerdict(ans, {
       inCart: lineNow?.qty ?? 0,
       localRoom: addRoom(product, cartRef.current.find((l) => l.id === `p:${product.id}`)),
-      retMode,
+      retMode: ret,
     });
     if (verdict === "sell-fresh" && sellable) {
       // رصيدٌ طازج (الصفُّ + حوضُ قسمه): يُباع به لا بالبائت، و`bump` تقول السقفَ إن بقي أقلّ.
-      const added = addProduct(sellable, n);
+      const added = addProduct(sellable, n, opt);
       if (first && added !== null && added > 0) {
         toast.success(t("retail.scanStockRefreshed", "«{{name}}» رصيده تحدّث — {{n}} متوفّر", { name: sellable.name, n: formatNum(sellable.stock ?? 0) }));
       }
-      return { added, refused: false };
+      return { added, refused: false, lineId: lineOf(sellable) };
     }
     // ما وصلنا الخادم والقائمةُ تسمح بشيء ⇒ يُضاف ما تسمح به، كما قبل السؤال.
-    if (verdict === "sell-local") return { added: addProduct(product, n), refused: false };
+    if (verdict === "sell-local") return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
     // النغمةُ لكلّ مسحة — الكاشير يعدّ بأذنه — والرسالةُ مرّةً لا تتكدّس.
     playWarning();
     if (!first) return { added: null, refused: true };
@@ -1992,7 +1999,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const draftItems: InvoiceItem[] = cart.map((l) => ({
       id: `draft-${l.id}`, invoice_id: "draft", clinic_id: clinicId ?? null,
       product_id: l.product_id,
-      name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name}`,
+      name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
       barcode: l.barcode,
       qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
       unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
@@ -2308,7 +2315,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const invItems: InvoiceItem[] = cart.map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
         product_id: l.product_id,
-        name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name}`,
+        name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
         barcode: l.barcode,
         qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
         unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
@@ -3201,8 +3208,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                             ? <span className="chip shrink-0 bg-success-50 text-2xs font-medium text-success-700 dark:bg-success-500/15 dark:text-success-200"><Syringe size={10} className="me-0.5 inline" />{t("retail.vaccine", "لقاح")}</span>
                             : <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Pill size={10} className="me-0.5 inline" />{t("retail.medication", "دواء")}</span>
                         )}
-                        {(l.kind === "med" || !!l.med) && l.petName && (
-                          <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted"><PawPrint size={10} className="me-0.5 inline" />{l.petName}</span>
+                        {(l.kind === "med" || !!l.med) && linePetNames(l).length > 0 && (
+                          <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted" data-linepets><PawPrint size={10} className="me-0.5 inline" />{linePetNames(l).join(" + ")}</span>
                         )}
                       </p>
                       {l.med && (
@@ -3214,6 +3221,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                             : <>{l.med.family} · {l.med.dosage}</>}
                         </p>
                       )}
+                      {/* كلُّ إضافةٍ بعد الأولى قيدُها يُرى — حيوانُه وجرعتُه — لا كميةٌ زادت بصمت */}
+                      {l.medMore?.map((m, i) => (
+                        <p key={`${m.med.id}-${i}`} className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle" data-linemedmore>
+                          {m.petName ? <><PawPrint size={10} className="shrink-0" />{m.petName} · </> : null}
+                          {m.med.kind === "vaccination" ? t("retail.vaccine", "لقاح") : <>{m.med.family} · {m.med.dosage}</>}
+                        </p>
+                      ))}
                       {/* سعرُ الوحدة (الرقمُ الأزرق القابلُ للتعديل) يبقى ظاهراً
                           دائماً — حتى وقتَ امتلاء السلة. كان denseCart يُخفيه بعد
                           ٧ أصناف (أو ١٢ بالوضع المضغوط) فيختفي «الرقمُ الأزرق»،
@@ -3958,7 +3972,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             {boundLines.map((l) => (
               <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
-                {l.petName && <span className="shrink-0 text-xs font-semibold text-ink-subtle">{l.petName}</span>}
+                {linePetNames(l).length > 0 && <span className="shrink-0 text-xs font-semibold text-ink-subtle">{linePetNames(l).join(" + ")}</span>}
               </li>
             ))}
           </ul>

@@ -54,15 +54,52 @@ export function medOnlyLine(draft: MedicalDraft, price: number, qty: number, pet
   };
 }
 
-/** مسودّاتُ السجلّ لكلّ حيوان: سطرٌ يحمل دواءً لحيوانٍ معروف ⇒ مسودّةٌ واحدة — منتجاً كان أو
- *  سطرَ دواء. والراجعُ لا يكتب علاجاً. */
-export function medDraftsByPet(lines: readonly { med?: MedicalDraft | null; petId?: string | null; ret?: boolean }[]): Map<string, MedicalDraft[]> {
+/** مسودّةُ سجلٍّ بحيوانها — ما تُلصقه إضافةٌ واحدةٌ من التبويب بسطر منتج. */
+export interface MedRef { med: MedicalDraft; petId: string | null; petName: string | null }
+type MedLine = { id?: string; med?: MedicalDraft | null; petId?: string | null; petName?: string | null; medMore?: MedRef[]; ret?: boolean };
+
+/**
+ * يُلصق مسودّةَ إضافةٍ من التبويب بسطر المنتج الذي بيعت فيه: أوّلُها بالسطر نفسه (`med` و`petId`)،
+ * وكلُّ إضافةٍ بعدها — حيوانٌ ثانٍ بنفس الفاتورة، أو جرعةٌ ثانية لنفسه — بقائمته (`medMore`).
+ *
+ * ── الجذر ────────────────────────────────────────────────────────────────
+ * سطرُ المنتج واحدٌ للرصيد (`p:<id>`: السقفُ والكلفةُ والعلبة)، والمسودّةُ كانت واحدةً له:
+ * الإضافةُ الثانية تزيد الكميةَ وتُسقط مسودّتَها بـ«بالسلّة أصلاً». فمالكٌ بحيوانين يأخذان
+ * نفسَ الدواء: يُباع الاثنان ويُخصمان، ويُكتب علاجُ الأوّل وحده. قبل البيع منتجاً كان لكلّ
+ * إضافةٍ سطرُها وقيدُها — «قيدٌ لكلّ دواءٍ مباع» يعني لكلّ إضافة، لا لكلّ رصيد.
+ */
+export function attachMedDraft<L extends MedLine>(lines: readonly L[], lineId: string, ref: MedRef): L[] {
+  return lines.map((l) => {
+    if (l.id !== lineId) return l;
+    if (!l.med) return { ...l, med: ref.med, petId: ref.petId, petName: ref.petName } as L;
+    return { ...l, medMore: [...(l.medMore ?? []), ref] } as L;
+  });
+}
+
+/** كلُّ مسودّات السطر بحيواناتها — الأولى ثم ما لُصق بعدها. */
+export function lineMedRefs(l: MedLine): MedRef[] {
+  const first: MedRef[] = l.med ? [{ med: l.med, petId: l.petId ?? null, petName: l.petName ?? null }] : [];
+  return [...first, ...(l.medMore ?? [])];
+}
+
+/** أسماءُ حيوانات السطر بلا تكرار — للوصل والسلّة حين تكون الفاتورةُ لأكثر من حيوان. */
+export function linePetNames(l: MedLine): string[] {
+  const names = [l.petName, ...(l.medMore ?? []).map((m) => m.petName)].map((n) => (n ?? "").trim()).filter(Boolean);
+  return [...new Set(names)];
+}
+
+/** مسودّاتُ السجلّ لكلّ حيوان: كلُّ مسودّةٍ لحيوانٍ معروف بسطرها — منتجاً كان أو سطرَ دواء،
+ *  أولى أو ملصقةً بعدها. والراجعُ لا يكتب علاجاً. */
+export function medDraftsByPet(lines: readonly MedLine[]): Map<string, MedicalDraft[]> {
   const out = new Map<string, MedicalDraft[]>();
   for (const l of lines) {
-    if (!l.med || !l.petId || l.ret) continue;
-    const arr = out.get(l.petId) ?? [];
-    arr.push(l.med);
-    out.set(l.petId, arr);
+    if (l.ret) continue;
+    for (const r of lineMedRefs(l)) {
+      if (!r.petId) continue;
+      const arr = out.get(r.petId) ?? [];
+      arr.push(r.med);
+      out.set(r.petId, arr);
+    }
   }
   return out;
 }

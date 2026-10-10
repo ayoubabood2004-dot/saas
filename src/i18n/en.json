@@ -5957,8 +5957,7 @@
     "stockFail": "Couldn't load stock medicines — in-stock items are just not shown right now; it doesn't mean there are none",
     "noResultsStockFail": "Not found in the list — and stock medicines didn't load, so it may be in stock. Retry before typing it",
     "replaceDup": "“{{name}}” is already in the plan — removed “{{old}}” and kept the existing one with its dose",
-    "protoHit": "Add “{{d}}” from the formulary — the dose is calculated from weight",
-    "posOneEntry": "“{{name}}” is already in the cart — quantity increased; the record entry is written once"
+    "protoHit": "Add “{{d}}” from the formulary — the dose is calculated from weight"
   },
   "mmset": {
     "suggestDone": "{{n}} added to My medicines",
