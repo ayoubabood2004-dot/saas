@@ -4535,10 +4535,30 @@ chk "  وإعادةُ الطيّ لا تُرجع ما شالته العيادة"
     "select _clinic_drugs_fold('$CF')::text" "{}"
 chk "  (Meloxicam خارجٌ وسيرينيا مؤرشفٌ كما تركتهما، والجدولان القديمان كما كانا)" \
     "select string_agg(name||':'||in_mine::text||':'||(archived_at is not null)::text, ',' order by name)||'|'||(select count(*) from drug_favorites where clinic_id='$CF')::text||'|'||(select count(*) from clinic_meds where clinic_id='$CF')::text from clinic_drugs where clinic_id='$CF'" "Amoxil:true:false,Ceftriaxone:true:false,Meloxicam:false:false,سيرينيا:false:true|3|2"
+# الاسمُ يتبدّل بيد العيادة (تصحيحُ إملاءٍ من «أدويتي» بالإعدادات): المفتاحُ القديم لا يبقى بأيّ
+# صفّ — والإعادةُ كانت تسأل الأسماءَ الحاليّة وحدها، فترجع «Amoxil» بآخر القائمة بلا أن يطلبه أحد.
+chk "العيادةُ تسمّي Amoxil «Amoxil LA» (تعديلٌ من «أدويتي»)" \
+    "select _cd('$CF', '$CF', jsonb_build_array(jsonb_build_object('op','edit','id',(select id from clinic_drugs where clinic_id='$CF' and name='Amoxil'),'name','Amoxil LA')))" "ok:4"
+chk "  وإعادةُ الطيّ لا تُرجع الاسمَ القديم — ما طُوي مرّةً لا يُطوى ثانية" \
+    "select _clinic_drugs_fold('$CF')::text" "{}"
+chk "  (صفٌّ واحدٌ بالاسم الجديد، ولا Amoxil ثانٍ بآخر «أدويتي»)" \
+    "select string_agg(name||':'||in_mine::text, ',' order by name) from clinic_drugs where clinic_id='$CF' and search_norm(name) like 'amoxil%'" "Amoxil LA:true"
+chk "  والعيادةُ تؤرشفه بعدها" \
+    "select _cd('$CF', '$CF', jsonb_build_array(jsonb_build_object('op','archive','id',(select id from clinic_drugs where clinic_id='$CF' and name='Amoxil LA'))))" "ok:4"
+chk "  ولا يرجع بعد أرشفته كذلك" \
+    "select _clinic_drugs_fold('$CF')::text" "{}"
+# والطيُّ يُعاد بعد إصدار (B9) ليلتقط ما كتبته نسخةٌ قديمة بالجدولين بعده — السجلُّ يمنع العائدَ لا الجديد.
+$P -c "insert into clinic_meds (clinic_id, name, type, created_at) values ('$CF','Cerenia','Gastrointestinal','2026-02-01 10:00+03');" >/dev/null
+chk "وما كتبته نسخةٌ قديمة بعد الطيّ يُلتقط بالإعادة (B9)" \
+    "select (_clinic_drugs_fold('$CF')->>'$CF')||'|'||(select family||':'||in_mine::text from clinic_drugs where clinic_id='$CF' and name='Cerenia')" "1|gi:true"
+chk "  ثم الإعادةُ تضيف صفراً" \
+    "select _clinic_drugs_fold('$CF')::text" "{}"
 # المنحُ الشامل بالحزمة أعاد تنفيذ الطيّ للمسجَّل — تُعاد الهجرةُ (والطيُّ معها يضيف صفراً) ثم نقيس.
 out=$($P -f "$MIG/0230_clinic_drugs_fold.sql" 2>&1) || { echo "$out"; echo "   ✗ 0230 ما انعادت"; fail=1; }
 chk "دالّتا الطيّ ممنوعتان عن كلّ دور" \
     "select (has_function_privilege('authenticated','public._clinic_drugs_fold(uuid)','execute') or has_function_privilege('anon','public._clinic_drugs_fold(uuid)','execute') or has_function_privilege('authenticated','public._clinic_drugs_family(text)','execute'))::text" "false"
+chk "وسجلُّ ما طُوي لا يُقرأ ولا يُكتب من الواجهة، وحجبُه معلَن (لا يُصلَّح بسياسة)" \
+    "select (has_table_privilege('authenticated','public.clinic_drugs_folded','select') or has_table_privilege('authenticated','public.clinic_drugs_folded','insert') or has_table_privilege('anon','public.clinic_drugs_folded','select'))::text||'|'||(select count(*) from verify_rls_coverage() v where v.\"الجدول\" = 'clinic_drugs_folded')::text" "false|0"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
