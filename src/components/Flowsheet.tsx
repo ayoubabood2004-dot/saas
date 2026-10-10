@@ -1,6 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Check, Plus, X, ChevronDown, RotateCcw, Star } from "lucide-react";
+import { MedField } from "@/components/meds/MedPicker";
+import { useMedIndex } from "@/components/meds/MedPickerData";
+import { pickedFrom, type PickedMed } from "@/lib/medIndex";
+import { useClinicDrugs } from "@/lib/clinicDrugs";
 import type { Pet, Species, TreatmentEntry, TaskType, DoseRoute } from "@/types";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 
@@ -9,7 +13,7 @@ import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess } from "@/lib/sounds";
 import {
-  searchDrugs, doseFor, calcDose, isBannedFor, FREQ_LABEL, matchMonograph,
+  doseFor, calcDose, isBannedFor, DRUG_BY_ID,
   type Monograph, type Route,
 } from "@/lib/vetFormulary";
 import {
@@ -23,7 +27,6 @@ import {
 } from "@/lib/observations";
 /* فتحات النهار نفسها التي توزّع بها البروتوكولات — جدولان كانا سينحرفان. */
 import { spreadTimes } from "@/lib/protocols";
-import { useDrugFavorites } from "@/lib/drugFavorites";
 /* عرض الساعة بصيغة العيادة (١٢ ص/م أو ٢٤) — التخزين يبقى ٢٤ دائماً. */
 import { fmtClock, fmtHour } from "@/lib/clock";
 
@@ -914,19 +917,15 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     presetHour != null ? [`${pad2(presetHour)}:00`] : ["10:00"],
   );
   const [picked, setPicked] = useState<Monograph | null>(null);
-  /** مفضّلةُ الطبيب (0221): نفسُ القائمة التي يرتّبها بمنتقي خطة العلاج. */
-  const fav = useDrugFavorites();
+  /** الدواءُ المختار من المنتقي الموحَّد — نصُّه هو ما يُكتب (اسمُ الكتالوج كما هو). */
+  const [med, setMed] = useState<PickedMed | null>(null);
+  /** «أدويتي» (0229): نفسُ الترتيب الذي تراه العيادةُ بكلّ منتقٍ — أوّلُ اثني عشر بضغطة. */
+  const drugs = useClinicDrugs();
+  const medIx = useMedIndex({ rows: drugs.rows, species: species ?? null, stockMode: "hide" });
   /** مرآةُ الاسم للأثر أدناه — قراءةٌ حاضرة بلا إدخاله بالاعتماديات. */
   const labelRef = useRef(label);
   labelRef.current = label;
   const [more, setMore] = useState(false);
-
-  /* الاقتراحات تظهر ما دام الطبيب يكتب ولم يختر بعد. اختياره يُغلقها — قائمةٌ
-   * تبقى مفتوحة فوق ما كتبه تحجب عنه ما فعل. */
-  const suggestions = useMemo(() => {
-    if (type !== "drug" || picked || label.trim().length < 2) return [];
-    return searchDrugs(label.trim(), 5);
-  }, [type, label, picked]);
 
   /** الجرعة المحسوبة للدواء المختار — أو سببُ تعذّرها. */
   const computed = useMemo(() => {
@@ -943,6 +942,19 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     });
     return { win, calc, strength };
   }, [picked, species, weightKg]);
+
+  /** دواءٌ من المنتقي: له دليلٌ ⇒ مسارُ اليوم نفسُه (جرعةٌ من strengths[0] وطريقٌ وأوقات)
+   *  والاسمُ نصُّ المنتقي؛ وبلا دليل ⇒ الاسمُ وحده و«بلا جرعة موثّقة — اكتب الكمية». */
+  const pickMed = (m: PickedMed) => {
+    setMed(m);
+    // كميةُ الدواء السابق لا تبقى على دواءٍ غيره — جرعةٌ محسوبة لغيره أخطرُ من خانةٍ فارغة.
+    setAmount(""); setRoute("");
+    const mono = m.monographId ? DRUG_BY_ID.get(m.monographId) : undefined;
+    if (mono) { pick(mono); setLabel(m.name); return; }
+    playTap();
+    setPicked(null);
+    setLabel(m.name);
+  };
 
   /** اختيار دواءٍ من الدليل: يملأ الاسم والجرعة والطريق والأوقات دفعةً واحدة. */
   const pick = (d: Monograph) => {
@@ -977,6 +989,7 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
      * برايةٍ تُرفع وتُنسى: رايةُ ref بقيت مرفوعةً حين لم يتغيّر النوعُ أصلاً
      * (شريحتا بولٍ وبراز كلتاهما elim) فأكلت أولَ تبديل نوعٍ حقيقيٍّ بعدها. */
     setPicked(null);
+    setMed(null);
     const keep = OBS_PRESETS.some((p) => p.label() === labelRef.current && p.task_type === type);
     if (keep) return;
     if (type === "drug") setLabel("");
@@ -1032,43 +1045,35 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
         <label className="mb-1 block text-2xs font-bold text-ink-muted">
           {type === "drug" ? t("flow.drugName", "اسم الدواء") : t("flow.taskName", "الاسم")}
         </label>
-        <input value={label} data-taskname autoFocus
-          onChange={(e) => { setLabel(e.target.value); setPicked(null); }}
-          className="input w-full" style={{ minHeight: 48 }}
-          placeholder={type === "drug" ? t("flow.drugPh", "اكتب أول حروفه — مثلاً: amox") : TASK_META[type].ar()} />
-
-        {/* المفضّلة: ضغطةٌ تملأ الدواءَ كأنه اختير من الدليل (جرعته وأوقاته)، وإلا اسمه وحده. */}
-        {type === "drug" && !picked && !label.trim() && fav.names.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5" data-favdrugs>
-            {fav.names.slice(0, 16).map((n) => (
-              <button key={n} type="button" data-favdrug={n}
-                onClick={() => { const m = matchMonograph(n); if (m) { pick(m); setLabel(n); } else { playTap(); setLabel(n); } }}
-                className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-3 text-2xs font-bold text-ink transition hover:border-brand-300"
-                style={{ minHeight: 40 }}>
-                <Star size={12} fill="currentColor" className="text-warn-500" aria-hidden /> {n}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {suggestions.length > 0 && (
-          <div data-drughits className="mt-1.5 overflow-hidden rounded-2xl border border-line">
-            {suggestions.map((d) => {
-              const win = doseFor(d, species ?? "other");
-              return (
-                <button key={d.id} type="button" data-drughit={d.id} onClick={() => pick(d)}
-                  className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-start transition last:border-0 hover:bg-brand-50 dark:hover:bg-brand-500/10">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-ink">{d.en}</span>
-                    <span className="block truncate text-2xs text-ink-subtle">
-                      {d.ar}{win ? ` · ${win.typical} ${t("flow.mgkg", "ملغم/كغ")} · ${FREQ_LABEL[win.freq]}` : ""}
-                    </span>
-                  </span>
-                  <Plus size={15} className="shrink-0 text-brand-600" />
-                </button>
-              );
-            })}
-          </div>
+        {type === "drug" ? (
+          <>
+            {/* «أدويتي» أوّلاً بترتيب العيادة — ثم «كل الأدوية» يفتح المنتقي الموحَّد. لا حقلَ
+                يفتح الكيبورد بفتح الورقة. */}
+            {medIx.mine.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1.5" data-taskmine>
+                {medIx.mine.slice(0, 12).map((it) => (
+                  <button key={it.key} type="button" data-taskmine-chip={it.key} onClick={() => pickMed(pickedFrom(it, "mine"))}
+                    className={cn("inline-flex items-center gap-1 rounded-full border px-3 text-2xs font-bold transition",
+                      med?.key === it.key ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-2 text-ink hover:border-brand-300")}
+                    style={{ minHeight: 40 }}>
+                    <Star size={12} fill="currentColor" className="text-warn-500" aria-hidden /> {it.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <MedField value={med} onChange={pickMed} species={species ?? null} freeText="offer"
+              placeholder={t("mymeds.allMeds", "كل الأدوية")} />
+            {med && !picked && (
+              <p data-nodose className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-2xs font-bold text-ink-muted">
+                {t("mymeds.noDoseWrite", "بلا جرعة موثّقة — اكتب الكمية")}
+              </p>
+            )}
+          </>
+        ) : (
+          <input value={label} data-taskname autoFocus
+            onChange={(e) => { setLabel(e.target.value); setPicked(null); }}
+            className="input w-full" style={{ minHeight: 48 }}
+            placeholder={TASK_META[type].ar()} />
         )}
 
         {/* ما حسبه الدليل — يُرى قبل الحفظ لا بعده */}
