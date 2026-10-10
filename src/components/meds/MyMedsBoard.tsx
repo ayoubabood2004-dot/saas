@@ -189,6 +189,7 @@ export function MedDragOverlay({ item }: { item: MedItem | null }) {
 
 /** السحبُ بالإعدادات: لوحةُ «أدويتي» وحدها بسياقها — ترتيبٌ بالمقبض والأسهم والأزرار. */
 export function MyMedsStandalone(props: Omit<BoardProps, "draggingId" | "hint" | "mode"> & { onOp(op: ClinicDrugOp): void; onLift?(): void }) {
+  const { t } = useTranslation();
   const sensors = useMedSensors();
   const [active, setActive] = useState<MedItem | null>(null);
   const [hint, setHint] = useState<{ id: string; after: boolean } | null>(null);
@@ -206,7 +207,15 @@ export function MyMedsStandalone(props: Omit<BoardProps, "draggingId" | "hint" |
   };
   return (
     <DndContext sensors={sensors} collisionDetection={medCollision} onDragStart={onStart} onDragOver={onOver} onDragEnd={onEnd}
-      onDragCancel={() => { setActive(null); setHint(null); }}>
+      onDragCancel={() => { setActive(null); setHint(null); props.announce(t("mymeds.annCancel", "أُلغي السحب")); }}
+      accessibility={{
+        announcements: {
+          onDragStart: ({ active }) => t("mymeds.annLift", { name: (active.data.current as DragData | undefined)?.item.label ?? "", defaultValue: "رفعت {{name}}" }),
+          onDragOver: () => undefined, onDragEnd: () => undefined,
+          onDragCancel: () => t("mymeds.annCancel", "أُلغي السحب"),
+        },
+        screenReaderInstructions: { draggable: t("mymeds.gripRole", "مقبض ترتيب — الأسهم للنقل") },
+      }}>
       <MyMedsBoard {...props} mode="manage" draggingId={active?.drugId ?? null} hint={hint} />
       <MedDragOverlay item={active} />
     </DndContext>

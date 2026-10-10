@@ -49,7 +49,7 @@ import { parseClinical } from "@/lib/clinicalRecord";
 import { isProtocolMark } from "@/lib/protocolMark";
 import { ConsentForms } from "@/components/ConsentForms";
 import { PetReminderModal } from "@/components/PetReminder";
-import { addClinicMed, medicationDisplay } from "@/lib/meds";
+import { medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
@@ -2171,7 +2171,6 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
   };
   // Repeat the same medication as a fresh dose (today, auto-timed to now) without re-selecting it.
   const repeatTreatment = async (tx: TreatmentEntry) => {
-    addClinicMed(tx.medication);
     await repo.addTreatment({
       pet_id: pet.id,
       day: today,
@@ -2655,7 +2654,6 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playDoseGiven(); await syncDoseCycleForPet(pet.id); onChanged(); };
   const removeTx = async (id: string) => { await repo.deleteTreatment(id); await syncDoseCycleForPet(pet.id); onChanged(); };
   const repeatTx = async (tx: TreatmentEntry) => {
-    addClinicMed(tx.medication);
     await repo.addTreatment({ pet_id: pet.id, day: today, doctor: tx.doctor || (user?.role === "doctor" ? user.full_name : undefined), medication: tx.medication, time: nowHM(), amount: tx.amount, observations: undefined });
     await syncDoseCycleForPet(pet.id);
     playSuccess(); onChanged();

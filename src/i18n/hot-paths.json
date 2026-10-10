@@ -41,6 +41,7 @@
     "promos": "src/pages/Settings.tsx",
     "services": "src/pages/Settings.tsx",
     "vax": "src/pages/Settings.tsx",
-    "breeds": "src/pages/Settings.tsx"
+    "breeds": "src/pages/Settings.tsx",
+    "mmset": "src/pages/Settings.tsx"
   }
 }

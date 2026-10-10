@@ -1,14 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, type DragOverEvent, type DragStartEvent } from "@dnd-kit/core";
 import { Check, Plus, Search, ShieldAlert, Star, X } from "lucide-react";
 import type { MedicineStock } from "@/types";
-import { MED_CATALOG } from "@/lib/meds";
 import {
-  buildMedIndex, FAMILIES, freePicked, pickedFrom, pickerKeyAction, drugKey,
-  type FamilyKey, type MedItem, type PickedMed,
+  FAMILIES, freePicked, pickedFrom, pickerKeyAction, drugKey,
+  type FamilyKey, type MedIndex, type MedItem, type PickedMed,
 } from "@/lib/medIndex";
 import { useClinicDrugs, loadMedicineStock, loadRecentMeds, refreshIfStale, isDrugError, getDrugsState } from "@/lib/clinicDrugs";
 import { getActiveClinicId } from "@/lib/clinics";
@@ -20,6 +19,7 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
 import { MyMedsBoard, MedDragOverlay, dropIndex, dropOp, medCollision, pressOnly, useMedSensors, type DragData, type DropData } from "./MyMedsBoard";
 import type { MedPickerProps } from "./MedPicker";
+import { useMedIndex } from "./MedPickerData";
 
 /* ============================================================================
  * MedPickerSheet — ورقةُ المنتقي (كسولة). بوابةٌ بطبقة z-80 فوق أيّ نافذة.
@@ -108,10 +108,10 @@ export default function MedPickerSheet(p: MedPickerProps) {
     return () => document.removeEventListener("keydown", h);
   }, [dragging, searchOn, p]);
 
-  const ix = useMemo(() => buildMedIndex({
-    catalog: MED_CATALOG, rows: drugs.rows, stock: showStock ? stock : [], recent: recent ?? [],
+  const ix = useMedIndex({
+    rows: drugs.rows, stock: showStock ? stock : undefined, recent: recent ?? undefined,
     species: p.species ?? null, only: p.only, stockMode: showStock ? "show" : "hide",
-  }), [drugs.rows, stock, recent, p.species, p.only, showStock]);
+  });
   const mineIds = ix.mine.map((x) => x.drugId as string);
   const mineReady = drugs.status === "ready";
 
@@ -508,7 +508,7 @@ function RecentChip({ it, selected, dragDisabled, onPick }: { it: MedItem; selec
 
 /* «ما لكيته؟ اكتبه» — الاسمُ وحده يفتح الكيبورد، والعائلةُ إلزامية، والتوأمُ يُقال قبل الحفظ. */
 function FreeCard({ mode, index, defaultFamily, canSave, onUse, onOneOff, onSave, onCancel }: {
-  mode: "offer" | "oneOff" | "off"; index: ReturnType<typeof buildMedIndex>; defaultFamily: FamilyKey; canSave: boolean;
+  mode: "offer" | "oneOff" | "off"; index: MedIndex; defaultFamily: FamilyKey; canSave: boolean;
   onUse(it: MedItem): void; onOneOff(m: PickedMed): void; onSave(name: string, family: FamilyKey): Promise<void>; onCancel(): void;
 }) {
   const { t } = useTranslation();

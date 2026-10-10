@@ -5958,5 +5958,26 @@
     "toTop": "To top",
     "up": "Up",
     "down": "Down"
+  },
+  "mmset": {
+    "suggestDone": "{{n}} added to My medicines",
+    "count": "{{n}} medicines",
+    "hint": "An ordering list — it says nothing about what's in stock. The same order shows on every screen where you choose a medicine.",
+    "suggestBtn": "Add the medicines you used most in the last 90 days",
+    "suggestFail": "Couldn't load suggestions",
+    "suggestNone": "No used medicines from the last 90 days to add",
+    "suggestTimes": "{{n}} times",
+    "suggestAdd": "Add ({{n}})",
+    "catalogFixed": "Catalog names are fixed — you can only reorder it or remove it from My medicines",
+    "addFromAll": "Add from the full list",
+    "saved": "Saved",
+    "customTitle": "Medicines your clinic added",
+    "customEmpty": "None — “Not found? Type it” in the picker adds a medicine that isn't in the catalog.",
+    "archive": "Archive",
+    "archiveAsk": "Archive “{{name}}”? It disappears from every list, records keep it, and you can bring it back from “Archived”.",
+    "archived": "“{{name}}” archived",
+    "archivedTitle": "Archived",
+    "restored": "“{{name}}” restored",
+    "restore": "Restore"
   }
 }
