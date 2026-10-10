@@ -34,6 +34,8 @@ export interface MedPickerProps {
   freeText?: "offer" | "oneOff" | "off";
   /** محرّرُ البروتوكول: ما له جرعةٌ موثّقة وحده — وكلُّه. */
   only?: "dosable";
+  /** الطبلة: الدليلُ كلُّه فوق الكتالوج — ما لا اسمَ له بالكتالوج يُوصَل إليه بشارة منعه. */
+  formulary?: "all";
   stock?: "show" | "hide";
   title?: string;
 }

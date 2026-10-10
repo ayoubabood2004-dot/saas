@@ -6,7 +6,7 @@ import { DndContext, useDraggable, useDroppable, type DragEndEvent, type DragOve
 import { Check, Plus, Search, ShieldAlert, Star, X } from "lucide-react";
 import type { MedicineStock } from "@/types";
 import {
-  FAMILIES, freePicked, pickedFrom, pickerKeyAction, drugKey,
+  FAMILIES, freePicked, pickedFrom, pickerKeyAction, pickerNotices, mineState, searchEnter, drugKey,
   type FamilyKey, type MedIndex, type MedItem, type PickedMed,
 } from "@/lib/medIndex";
 import { useClinicDrugs, loadMedicineStock, loadRecentMeds, refreshIfStale, isDrugError, getDrugsState } from "@/lib/clinicDrugs";
@@ -17,7 +17,8 @@ import { describeDbError } from "@/lib/errors";
 import { cn, formatNum, searchable, uuid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
-import { MyMedsBoard, MedDragOverlay, dropIndex, dropOp, medCollision, pressOnly, useMedSensors, type DragData, type DropData } from "./MyMedsBoard";
+import { MyMedsBoard, MedDragOverlay, pressOnly, useMedSensors } from "./MyMedsBoard";
+import { dropIndex, dropOp, isStillPress, medCollision, type DragData, type DropData } from "./medDnd";
 import type { MedPickerProps } from "./MedPicker";
 import { useMedIndex } from "./MedPickerData";
 
@@ -62,13 +63,23 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const freeText = p.freeText ?? "oneOff";
 
   const [stock, setStock] = useState<MedicineStock[]>([]);
+  /* فشلُ المخزن حالٌ تُقال لا `[]`: ما بالمخزن بلا اسمٍ بالكتالوج كان يختفي من العائلات والرفّ
+   * والبحث، والعدسةُ تقول «ماكو دواء بهالاسم» عن علبةٍ على الرفّ — فيُكتب حرّاً ولا ينقص رصيده. */
+  const [stockState, setStockState] = useState<"loading" | "ok" | "failed">("loading");
   const [recent, setRecent] = useState<string[] | null>([]);
   const [recentFailed, setRecentFailed] = useState(false);
   const [searchOn, setSearchOn] = useState(false);
   const [q, setQ] = useState("");
   const [section, setSection] = useState<Section | null>(null);
   const [confirmBanned, setConfirmBanned] = useState<string | null>(null);
-  const [added, setAdded] = useState(0);
+  /** ما أُضيف بهذه الفتحة (multi) بمفاتيحه — ما يُشال يخرج منه، فـ«تم · n» تقول ما بالخطة فعلاً. */
+  const [added, setAdded] = useState<ReadonlySet<string>>(() => new Set());
+  const markAdded = (key: string, on: boolean) => setAdded((s) => {
+    if (s.has(key) === on) return s;
+    const n = new Set(s);
+    if (on) n.add(key); else n.delete(key);
+    return n;
+  });
   const [freeOpen, setFreeOpen] = useState(false);
   const [dragging, setDragging] = useState<MedItem | null>(null);
   const [hint, setHint] = useState<{ id: string; after: boolean } | null>(null);
@@ -79,13 +90,19 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const opened = useRef(false);
 
   /* البيانات: القائمةُ (تُقرأ من جديد إن كانت أقدمَ من ٣٠ث)، والمخزن، والأخيرة. لا كتابة. */
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const getStock = (force = false) => {
+    setStockState("loading");
+    loadMedicineStock(force)
+      .then((s) => { if (alive.current) { setStock(s); setStockState("ok"); } })
+      .catch(() => { if (alive.current) setStockState("failed"); });
+  };
   useEffect(() => {
     void refreshIfStale();
-    let alive = true;
-    if (showStock) loadMedicineStock().then((s) => { if (alive) setStock(s); }).catch(() => { if (alive) setStock([]); /* swallow-ok: الشاراتُ تغيب ولا تنفي — المنتقي يعمل بلاها */ });
-    const getRecent = () => loadRecentMeds().then((r) => { if (alive) { setRecent(r); setRecentFailed(false); } }).catch(() => { if (alive) setRecentFailed(true); });
-    void getRecent();
-    return () => { alive = false; };
+    if (showStock) getStock();
+    loadRecentMeds().then((r) => { if (alive.current) { setRecent(r); setRecentFailed(false); } }).catch(() => { if (alive.current) setRecentFailed(true); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showStock]);
 
   /* العدسةُ ضُغطت = طلبُ الكيبورد؛ وقبلها لا حقلَ مركَّزاً أبداً. */
@@ -110,7 +127,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
 
   const ix = useMedIndex({
     rows: drugs.rows, stock: showStock ? stock : undefined, recent: recent ?? undefined,
-    species: p.species ?? null, only: p.only, stockMode: showStock ? "show" : "hide",
+    species: p.species ?? null, only: p.only, formulary: p.formulary, stockMode: showStock ? "show" : "hide",
   });
   const mineIds = ix.mine.map((x) => x.drugId as string);
   const mineReady = drugs.status === "ready";
@@ -144,15 +161,23 @@ export default function MedPickerSheet(p: MedPickerProps) {
 
   /* ── الاختيار ───────────────────────────────────────────────────────── */
   const selected = (m: PickedMed) => !!p.isSelected?.(m);
-  const pick = (it: MedItem, via?: "mine" | "recent") => {
-    if (Date.now() - justDragged.current < 250) return;   // نقرةٌ بعد إفلات ليست اختياراً
+  const pick = (it: MedItem, via?: "mine" | "recent", afterDrag = false) => {
+    if (!afterDrag && Date.now() - justDragged.current < 250) return;   // نقرةٌ بعد إفلات ليست اختياراً
     const m = pickedFrom(it, via);
-    if (p.mode === "multi" && selected(m)) { playTap(); p.onUnpick?.(m); return; }
+    if (p.mode === "multi" && selected(m)) { playTap(); p.onUnpick?.(m); markAdded(m.key, false); return; }
     if (it.banned && confirmBanned !== it.key) { playWarning(); setConfirmBanned(it.key); return; }
     setConfirmBanned(null);
     playTap();
     p.onPick?.(m);
-    setAdded((n) => n + 1);
+    markAdded(m.key, true);
+  };
+  /** Enter بالبحث: يضيف أوّلَ نتيجة — ولا يشيل مختاراً أبداً (`searchEnter`). */
+  const enterPick = () => {
+    const r = searchEnter(results, (it) => selected(pickedFrom(it)), p.mode);
+    if (!r) return;
+    if (r.act === "pick") { pick(r.it); return; }
+    playWarning();
+    toast.toast({ tone: "info", title: t("mymeds.alreadyAdded", { name: r.it.label, defaultValue: "«{{name}}» مضاف أصلاً — ما تغيّر شي" }) });
   };
 
   /* ── النجمة ─────────────────────────────────────────────────────────── */
@@ -204,9 +229,14 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const onDragEnd = async (e: DragEndEvent) => {
     const d = e.active.data.current as DragData | undefined;
     endDrag();
-    if (!d || !canWrite) return;
-    const op = dropOp(mineIds, e, uuid);
-    if (!op) return;
+    if (!d) return;
+    const op = canWrite ? dropOp(mineIds, e, uuid) : null;
+    if (!op) {
+      /* إفلاتٌ خارج الأهداف لا يكتب شيئاً — وإصبعٌ استراح على بلاطةٍ ثم رُفع بلا حركة أراد
+         «اختر»: dnd-kit يبتلع النقرةَ بعد السحب، فالاختيارُ من هنا وإلا ضاع بصمت. */
+      if (d.kind === "tile" && isStillPress(e.activatorEvent, e.delta)) pick(d.item, d.via, true);
+      return;
+    }
     try {
       await drugs.apply([op]);
       playSuccess();
@@ -221,10 +251,13 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const searching = searchOn && searchable(q).length > 0;
   const results = searching ? ix.search(q) : [];
   const dragOutside = !!dragging && !dragging.inMine;
+  const notices = pickerNotices({ status: drugs.status, readOnly, rows: drugs.rows.length, stock: showStock ? stockState : "hidden" });
+  const stockFailed = notices.includes("stockFail");
 
   const mineBoard = (
     <MyMedsBoard items={ix.mine} mode="pick" readOnly={!canWrite} draggingId={dragging?.drugId ?? null} hint={hint}
       onTap={(it) => pick(it, "mine")} onUnstar={(it) => void star(it)}
+      isSelected={p.isSelected ? (it) => selected(pickedFrom(it, "mine")) : undefined}
       onMove={(it, after) => { void drugs.move(it.drugId as string, after).catch(fail); }} announce={announce}
       empty={<MineEmpty status={drugs.status} onRetry={drugs.retry} />} />
   );
@@ -266,7 +299,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
             <div className="shrink-0 px-3 pb-2">
               {/* الحقلُ يظهر بضغطة العدسة — والضغطةُ نفسُها طلبُ الكيبورد. */}
               <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} data-medsearch-input
-                onKeyDown={(e) => { if (e.key === "Enter" && results[0]) { e.preventDefault(); pick(results[0]); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && results[0]) { e.preventDefault(); enterPick(); } }}
                 placeholder={t("mymeds.searchPh", "دوّر بالاسم — عربي أو إنكليزي أو اسم تجاري")} className="input h-12 w-full text-sm font-bold" />
             </div>
           )}
@@ -283,11 +316,17 @@ export default function MedPickerSheet(p: MedPickerProps) {
             </div>
           ))}
 
-          {(readOnly || drugs.status === "switched") && (
-            <p className="mx-3 mb-2 shrink-0 rounded-xl bg-warn-50 px-3 py-2 text-2xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
-              {drugs.status === "switched" ? t("mymeds.switched", "تبدّلت العيادة على هذا الجهاز — حدّث الصفحة.") : t("mymeds.readOnly", "الاشتراك منتهي — «أدويتي» للقراءة بس: لا نجمة ولا ترتيب.")}
+          {/* ما لا يعمل يُقال بسببه — نجمةٌ رماديةٌ بلا كلمة تُقرأ عطلاً، وغيابُ المخزن «ماكو». */}
+          {notices.map((n) => (
+            <p key={n} data-mednotice={n} className="mx-3 mb-2 shrink-0 rounded-xl bg-warn-50 px-3 py-2 text-2xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+              {n === "switched" ? t("mymeds.switched", "تبدّلت العيادة على هذا الجهاز — حدّث الصفحة.")
+                : n === "readOnly" ? t("mymeds.readOnly", "الاشتراك منتهي — «أدويتي» للقراءة بس: لا نجمة ولا ترتيب.")
+                  : n === "stale" ? t("mymeds.stale", "ما وصلنا لآخر نسخة من «أدويتي» — هذي آخر نسخة وصلت، والنجمة والترتيب موقوفة لحد ما توصل")
+                    : t("mymeds.stockFail", "ما وصلنا لأدوية المخزن — اللي بالمخزن بس مو ظاهر هسة، مو معناها ماكو")}
+              {(n === "stale" || n === "stockFail") && <> · <button type="button" className="font-black underline" data-mednotice-retry={n}
+                onClick={() => { playTap(); if (n === "stale") drugs.retry(); else getStock(true); }}>{t("common.retry", "إعادة المحاولة")}</button></>}
             </p>
-          )}
+          ))}
 
           <div className="flex min-h-0 flex-1 gap-2 px-3">
             {/* الرفّ */}
@@ -309,7 +348,11 @@ export default function MedPickerSheet(p: MedPickerProps) {
                 results.length ? (
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{results.map(tile)}</div>
                 ) : (
-                  <p className="py-10 text-center text-sm font-bold text-ink-subtle">{t("mymeds.noResults", "ماكو دواء بهالاسم — اكتبه من «ما لكيته؟»")}</p>
+                  <p className="py-10 text-center text-sm font-bold text-ink-subtle" data-mednoresults={stockFailed ? "stockFail" : "none"}>
+                    {stockFailed
+                      ? t("mymeds.noResultsStockFail", "ما لكيناه بالقائمة — وأدوية المخزن ما وصلت، فممكن يكون بالمخزن. أعد المحاولة قبل ما تكتبه")
+                      : t("mymeds.noResults", "ماكو دواء بهالاسم — اكتبه من «ما لكيته؟»")}
+                  </p>
                 )
               ) : (
                 <>
@@ -360,7 +403,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
               <FreeCard mode={freeText} index={ix} defaultFamily={section && section !== "mine" && section !== "stock" ? section : "other"}
                 canSave={canWrite && mineReady}
                 onUse={(it) => { setFreeOpen(false); pick(it); }}
-                onOneOff={(m) => { setFreeOpen(false); playTap(); p.onPick?.(m); setAdded((n) => n + 1); }}
+                onOneOff={(m) => { setFreeOpen(false); playTap(); p.onPick?.(m); markAdded(m.key, true); }}
                 onSave={async (name, family) => {
                   try {
                     await drugs.addCustom({ name, family, mine: true });
@@ -369,7 +412,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
                     const key = drugKey(name);
                     const row = getDrugsState().view.find((r) => r.archived_at == null && drugKey(r.name) === key);
                     p.onPick?.({ ...freePicked(name, family), source: "mine", drugId: row?.id });
-                    setAdded((n) => n + 1);
+                    markAdded(key, true);
                   } catch (e) { fail(e); }
                 }}
                 onCancel={() => setFreeOpen(false)} />
@@ -383,7 +426,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
                 {p.mode === "multi" && (
                   <button type="button" data-meddone onClick={p.onClose}
                     className="ms-auto flex h-12 min-w-[140px] items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 text-base font-black text-white shadow-soft transition hover:bg-brand-700">
-                    <Check size={19} /> {added > 0 ? t("mymeds.doneN", { n: formatNum(added), defaultValue: "تم · {{n}}" }) : t("common.done", "تم")}
+                    <Check size={19} /> {added.size > 0 ? t("mymeds.doneN", { n: formatNum(added.size), defaultValue: "تم · {{n}}" }) : t("common.done", "تم")}
                   </button>
                 )}
               </div>
@@ -434,17 +477,20 @@ function DropBar({ label }: { label: string }) {
   );
 }
 
-function MineEmpty({ status, onRetry }: { status: string; onRetry(): void }) {
+function MineEmpty({ status, onRetry }: { status: Parameters<typeof mineState>[0]; onRetry(): void }) {
   const { t } = useTranslation();
-  if (status === "error") {
+  const st = mineState(status, 0);
+  // عيادةٌ تبدّلت: اللافتةُ فوقُ تقولها — و«فاضية» هنا كذبة (لا صفوفَ تُرسم لهذه الجلسة أصلاً).
+  if (st === "switched") return <p className="py-4 text-center text-sm font-bold text-ink-subtle" data-mymeds-state="switched">…</p>;
+  if (st === "error") {
     return (
       <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-2xs font-bold text-ink-subtle">
         {t("mymeds.loadFail", "ما وصلنا لأدويتك — المشكلة بالاتصال، ما انمسحت")} · <button type="button" onClick={onRetry} className="font-black text-brand-600 underline">{t("common.retry", "إعادة المحاولة")}</button>
       </p>
     );
   }
-  if (status === "loading" || status === "idle") return <p className="py-4 text-center text-sm font-bold text-ink-subtle" aria-busy>…</p>;
-  return <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-2xs font-bold text-ink-subtle">{t("mymeds.mineEmpty", "أدويتي فاضية — اضغط ★ على أي دواء أو اسحبه هنا")}</p>;
+  if (st === "loading") return <p className="py-4 text-center text-sm font-bold text-ink-subtle" aria-busy data-mymeds-state="loading">…</p>;
+  return <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-2xs font-bold text-ink-subtle" data-mymeds-state="empty">{t("mymeds.mineEmpty", "أدويتي فاضية — اضغط ★ على أي دواء أو اسحبه هنا")}</p>;
 }
 
 function Tile({ it, selected, confirming, dragDisabled, starDisabled, onPick, onStar, onBack }: {
@@ -495,7 +541,7 @@ function Tile({ it, selected, confirming, dragDisabled, starDisabled, onPick, on
 }
 
 function RecentChip({ it, selected, dragDisabled, onPick }: { it: MedItem; selected: boolean; dragDisabled: boolean; onPick(): void }) {
-  const { setNodeRef, listeners } = useDraggable({ id: `recent:${it.key}`, data: { kind: "tile", item: it } satisfies DragData, disabled: dragDisabled || it.base === "recent" });
+  const { setNodeRef, listeners } = useDraggable({ id: `recent:${it.key}`, data: { kind: "tile", item: it, via: "recent" } satisfies DragData, disabled: dragDisabled || it.base === "recent" });
   return (
     <button ref={setNodeRef} type="button" data-medrecent-chip={it.key} onClick={onPick}
       {...pressOnly(listeners)}

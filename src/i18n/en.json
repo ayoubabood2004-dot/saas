@@ -5952,6 +5952,12 @@
     "posChoose": "More than one stock product has this name — choose one",
     "posAsProduct": "Sold as a product — stock decreases, and the treatment is written to the pet's record",
     "posByWeight": "“{{name}}” is sold by weight — add it from the Products tab",
+    "alreadyAdded": "“{{name}}” is already added — nothing changed",
+    "stale": "Couldn't reach the latest “My medicines” — this is the last copy that arrived; starring and reordering are paused until it does",
+    "stockFail": "Couldn't load stock medicines — in-stock items are just not shown right now; it doesn't mean there are none",
+    "noResultsStockFail": "Not found in the list — and stock medicines didn't load, so it may be in stock. Retry before typing it",
+    "replaceDup": "“{{name}}” is already in the plan — removed “{{old}}” and kept the existing one with its dose",
+    "protoHit": "Add “{{d}}” from the formulary — the dose is calculated from weight",
     "posOneEntry": "“{{name}}” is already in the cart — quantity increased; the record entry is written once"
   },
   "mmset": {

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, Check, Plus, X, ChevronDown, RotateCcw, Star } from "lucide-react";
 import { MedField } from "@/components/meds/MedPicker";
 import { useMedIndex } from "@/components/meds/MedPickerData";
-import { pickedFrom, type PickedMed } from "@/lib/medIndex";
+import { monographOf, pickedFrom, type PickedMed } from "@/lib/medIndex";
 import { useClinicDrugs } from "@/lib/clinicDrugs";
 import type { Pet, Species, TreatmentEntry, TaskType, DoseRoute } from "@/types";
 import { cn, formatNum, formatDec } from "@/lib/utils";
@@ -13,7 +13,7 @@ import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess } from "@/lib/sounds";
 import {
-  doseFor, calcDose, isBannedFor, DRUG_BY_ID,
+  doseFor, calcDose, isBannedFor,
   type Monograph, type Route,
 } from "@/lib/vetFormulary";
 import {
@@ -949,7 +949,9 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     setMed(m);
     // كميةُ الدواء السابق لا تبقى على دواءٍ غيره — جرعةٌ محسوبة لغيره أخطرُ من خانةٍ فارغة.
     setAmount(""); setRoute("");
-    const mono = m.monographId ? DRUG_BY_ID.get(m.monographId) : undefined;
+    /* الدليلُ من المعرّف **أو الاسم** (monographOf): «الأخيرة» والمكتوبُ بـ«هالمرة بس» يصلان بلا
+       معرّف — و«ميلوكسيكام» كانت تُكتب «بلا جرعة موثّقة» بلا جرعةٍ ولا تحذيرِ نوع والدليلُ يعرفه. */
+    const mono = monographOf(m);
     if (mono) { pick(mono); setLabel(m.name); return; }
     playTap();
     setPicked(null);
@@ -1061,7 +1063,9 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
                 ))}
               </div>
             )}
-            <MedField value={med} onChange={pickMed} species={species ?? null} freeText="offer"
+            {/* الدليلُ كلُّه فوق الكتالوج (formulary="all"): Permethrin وAspirin وIbuprofen تُرى بشارة
+                منعها للقطّ — غيابُها كان يدفع لكتابتها حرّاً بلا تحذير، كما كانت تُرى ببحث الدليل هنا. */}
+            <MedField value={med} onChange={pickMed} species={species ?? null} freeText="offer" formulary="all"
               placeholder={t("mymeds.allMeds", "كل الأدوية")} />
             {med && !picked && (
               <p data-nodose className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-2xs font-bold text-ink-muted">
@@ -1070,7 +1074,9 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
             )}
           </>
         ) : (
-          <input value={label} data-taskname autoFocus
+          /* بلا autoFocus: الحقلُ يُرسم من جديد كلّما تبدّل النوعُ (شريحةُ «الحرارة» أو «نوع المهمة»)،
+             فكان التركيزُ داخل الضغطة يفتح كيبوردَ الآيباد فوق الورقة — والشريحةُ ملأت الاسمَ أصلاً. */
+          <input value={label} data-taskname
             onChange={(e) => { setLabel(e.target.value); setPicked(null); }}
             className="input w-full" style={{ minHeight: 48 }}
             placeholder={TASK_META[type].ar()} />

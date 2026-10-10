@@ -8,9 +8,9 @@ import { buildMedIndex, type BuildInput, type MedIndex } from "@/lib/medIndex";
  * «من الكتالوج أم أضافته العيادة») هو ما يُرى بالإعدادات. (med-entry-guard يمنع غيرَه.)
  * ==========================================================================*/
 export function useMedIndex(input: Omit<BuildInput, "catalog">): MedIndex {
-  const { rows, stock, recent, species, only, stockMode } = input;
+  const { rows, stock, recent, species, only, formulary, stockMode } = input;
   return useMemo(
-    () => buildMedIndex({ catalog: MED_CATALOG, rows, stock, recent, species, only, stockMode }),
-    [rows, stock, recent, species, only, stockMode],
+    () => buildMedIndex({ catalog: MED_CATALOG, rows, stock, recent, species, only, formulary, stockMode }),
+    [rows, stock, recent, species, only, formulary, stockMode],
   );
 }

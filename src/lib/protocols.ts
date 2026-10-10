@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import type { DoseRoute, Pet, Species, TaskType } from "@/types";
 import {
-  DRUG_BY_ID, doseFor, calcDose, isBannedFor, allergyHit,
+  DRUG_BY_ID, doseFor, calcDose, isBannedFor, allergyHit, matchMonograph,
   type Monograph, type Route, type DoseAlert,
 } from "./vetFormulary";
 import { pad2, TASK_META } from "./flowsheet";
@@ -444,6 +444,11 @@ export function buildDraft(p: Protocol, pet: Pet | undefined, todayISO: string):
       if (!drug) {
         const label = step.label?.().trim();
         if (!label) continue;
+        /* «خارج الدليل» بالاسم لا بالحقيقة: «Permethrin» كُتبت حرّاً تبقى Permethrin — ممنوعُها
+         * لهذا النوع لا يُدرَج كما لا يُدرَج من الدليل، وحساسيتُها تُفحص (drugId). الكميةُ
+         * تبقى ما كتبه الطبيب. */
+        const known = matchMonograph(label);
+        if (known && isBannedFor(known, species)) continue;
         const stepKey = `${p.id}-free-${label}`;
         const times = spreadTimes(step.perDay ?? 1);
         for (let d = 0; d < days; d++) {
@@ -454,7 +459,7 @@ export function buildDraft(p: Protocol, pet: Pet | undefined, todayISO: string):
               amount: step.amount?.() ?? "",
               route: step.prefer ? (ROUTE_DOWN[step.prefer] ?? null) : null,
               time, day: addDays(todayISO, d),
-              observations: step.note?.() ?? null,
+              observations: step.note?.() ?? null, drugId: known?.id,
             });
           }
         }

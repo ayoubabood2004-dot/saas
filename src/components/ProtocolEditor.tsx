@@ -6,7 +6,7 @@ import {
   saveStored, newProtocolId, TASK_LABEL_FALLBACK,
   type StoredProtocol, type StoredStep,
 } from "@/lib/protocols";
-import { DRUG_BY_ID, type Monograph } from "@/lib/vetFormulary";
+import { DRUG_BY_ID, matchMonograph, type Monograph } from "@/lib/vetFormulary";
 import { MedPicker } from "@/components/meds/MedPicker";
 import { TASK_META } from "@/lib/flowsheet";
 import { formatNum, cn } from "@/lib/utils";
@@ -63,6 +63,8 @@ export function ProtocolEditor({ initial, petSpecies, onClose, onSaved }: {
    * يحفظ معرّفَ الدليل كما كان، فالجرعةُ تُشتقّ لحظةَ التطبيق. */
   const [pickerOpen, setPickerOpen] = useState(false);
   const valid = name.trim().length > 0 && steps.length > 0;
+  /** ما كُتب بالحقل ويعرفه الدليل — يُعرض فوق «خارج الدليل» كما كانت نتائجُ بحثه تُعرض. */
+  const typedMono = q.trim().length >= 2 ? matchMonograph(q.trim()) : undefined;
 
   const addDrug = (d: Monograph) => {
     playTap();
@@ -167,6 +169,21 @@ export function ProtocolEditor({ initial, petSpecies, onClose, onSaved }: {
                 placeholder={t("mymeds.newNamePh", "اسم الدواء كما تكتبه")}
                 className="min-w-0 flex-1 bg-transparent text-2xs text-ink outline-none" />
             </div>
+
+            {/* اسمٌ مكتوبٌ يعرفه الدليل يُضاف **من الدليل** (معرّفُه، والجرعةُ تُشتقّ والمنعُ بالنوع
+                يُفحص) — كان الحقلُ الظاهر يعرض «خارج الدليل» وحده، فـ«Permethrin» تُحفظ بكميةٍ يدوية
+                وتُكتب لقطٍّ بلا منعٍ ولا جرعة. */}
+            {typedMono && (
+              <button type="button" data-protodrughit={typedMono.id} onClick={() => addDrug(typedMono)}
+                className="mt-1.5 flex w-full items-center gap-2 rounded-xl bg-surface-1 px-2.5 py-2 text-start transition hover:bg-brand-50 dark:hover:bg-brand-500/10"
+                style={{ minHeight: 44 }}>
+                <Plus size={14} className="shrink-0 text-brand-600" />
+                <span className="min-w-0 flex-1 truncate text-2xs font-extrabold text-ink">
+                  {t("mymeds.protoHit", { d: typedMono.ar, defaultValue: "أضِف «{{d}}» من الدليل — الجرعة تُحسب من الوزن" })}
+                </span>
+                <span className="shrink-0 truncate text-[10px] text-ink-subtle" dir="ltr">{typedMono.en}</span>
+              </button>
+            )}
 
             {/* الدليل ثمانيةٌ وخمسون دواءً ورفُّ العيادة أوسع — فاسمٌ لا يعرفه
                 يُقبَل بدل أن يوقف البروتوكول، بشرط أن تُكتب كميته باليد. */}
