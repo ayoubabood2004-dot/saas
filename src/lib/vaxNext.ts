@@ -9,12 +9,16 @@
  * ١١٢ جرعةً «مستحقّة» انعطت فعلاً، تذكيرٌ كاذبٌ للزبون ولوحةٌ حمراء بلا سبب.
  *
  * ── القرار ─────────────────────────────────────────────────────────────────
- * • كلُّ إعطاءٍ لجرعةٍ مجدولة يسأل «شوكت الجاية؟» بمدد نموذج الإضافة نفسها، ويقترح **نفسَ
- *   المدّة السابقة** (من الجرعة المعطاة قبلها إلى موعد هذه) — والاقتراحُ معلَنٌ لا خفيّ،
- *   و«ماكو جرعة جاية» خيارٌ صريح. وجرعةٌ لاحقةٌ محجوزةٌ أصلاً لا تُكرَّر.
+ * • كلُّ إعطاءٍ لجرعةٍ مجدولة يسأل «شوكت الجاية؟» بمدد نموذج الإضافة نفسها، **ولا يختار عن
+ *   الطبيب**: يعلّم بـ★ المدّةَ الجاهزةَ الأقربَ لما بين الجرعة السابقة وموعد هذه — علامةٌ لا
+ *   اختيار، لأن الموعدَ قد يكون مؤجَّلاً («غيّر الموعد») أو هذه آخرُ السلسلة، واقتراحٌ مختارٌ سلفاً
+ *   كان يحجز بضغطةٍ موعداً منحرفاً أو جرعةً لا وجود لها (أمسكه تدقيقٌ عدائيّ). و«ماكو جرعة
+ *   جاية» خيارٌ صريح، وجرعةٌ لاحقةٌ محجوزةٌ أصلاً لا تُكرَّر.
  * • «انعطى اليوم» من النموذج (أو البيع) يقلب **المستحقّةَ** لنفس اللقاح معطاةً بدل صفٍّ ثانٍ —
- *   المستحقّة = أقربُ جرعةٍ غيرِ معطاة موعدُها لا يتعدّى اليومَ بأكثر من ٣٠ يوماً. ما بعدها
- *   موعدٌ قادمٌ حقيقيّ (معزّزُ السنة القادمة) لا يُستهلك.
+ *   المستحقّة = الأقربُ لليوم من غير المعطاة: المتأخرةُ الأحدث، وإلا التي موعدُها خلال ٧ أيام.
+ *   النافذةُ أقصرُ من أصغر معزّز (أسبوعان): بثلاثين يوماً كانت حفظةٌ ثانيةٌ بنفس اليوم (السجلُّ ثمّ
+ *   البيع) تستهلك المعزّزَ الذي حُجز للتوّ فتقف السلسلة — نفسُ الشكوى. ولقاحٌ انعطى اليومَ أصلاً
+ *   لا يُستهلك له شيء ولا يُكتب مرّتين: الحفظةُ الثانية تسجيلٌ مكرَّر لنفس الجرعة.
  * نقيّةٌ بلا React ولا repo: يفحصها `vax-next-test.mjs`.
  * ==========================================================================*/
 import type { Vaccination } from "@/types";
@@ -34,8 +38,9 @@ export const VAX_INTERVALS: VaxInterval[] = [
   { key: "medentry.b1y", years: 1 },
 ];
 
-/** المستحقّةُ تُستهلك إن كان موعدُها حتى ٣٠ يوماً بعد اليوم (مبكّرةٌ قليلاً = نفسُ الجرعة). */
-export const CONSUME_AHEAD_DAYS = 30;
+/** المستحقّةُ تُستهلك إن كان موعدُها حتى ٧ أيام بعد اليوم (مبكّرةٌ قليلاً = نفسُ الجرعة) —
+ *  أقصرُ من أصغر معزّز (١٤ يوماً) فلا يُستهلك المعزّزُ الذي حُجز للتوّ. */
+export const CONSUME_AHEAD_DAYS = 7;
 
 const isDay = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.slice(0, 10));
 const day = (s: string) => s.slice(0, 10);
@@ -47,14 +52,13 @@ export const daysBetween = (a: string, b: string) => dayNum(day(b)) - dayNum(day
 export const sameVaccine = (a: string, b: string) =>
   a.replace(/\s+/g, " ").trim().toLowerCase() === b.replace(/\s+/g, " ").trim().toLowerCase();
 
-export type NextSuggestion =
-  | { kind: "preset"; interval: VaxInterval; due: string; gapDays: number }
-  | { kind: "days"; days: number; due: string; gapDays: number };
+export interface NextSuggestion { interval: VaxInterval; due: string; gapDays: number }
 
 /**
- * «نفسُ المدّة السابقة»: من آخر جرعةٍ معطاةٍ قبل هذه إلى موعد هذه، مطبَّقةً على يوم الإعطاء.
- * تُطابَق على أقرب مدّةٍ جاهزة إن كانت ضمن هامشٍ (١٥٪ أو ٣ أيام)، وإلا فبالأيام. لا اقتراحَ
- * بلا جرعةٍ سابقة أو بلا موعدٍ لهذه، ولا لفجوةٍ أقلّ من أسبوع (ليست سلسلةً بل خطأ إدخال).
+ * «نفسُ المدّة السابقة»: من آخر جرعةٍ معطاةٍ قبل هذه إلى موعد هذه، مطابَقةً على أقرب مدّةٍ جاهزة
+ * ضمن هامشٍ (١٥٪ أو ٣ أيام) ومطبَّقةً على يوم الإعطاء. **مدّةٌ جاهزةٌ أو لا شيء**: فجوةٌ لا تطابق
+ * مدّةً (موعدٌ أُجّل شهرين ⇒ ٤٢٦ يوماً) كانت تُقترح بالأيام فينزاح الموعدُ كلَّ سنة. ولا اقتراحَ بلا
+ * جرعةٍ سابقة أو بلا موعدٍ لهذه، ولا لفجوةٍ أقلّ من أسبوع (ليست سلسلةً بل خطأ إدخال).
  */
 export function suggestNext(series: readonly Vaccination[], dose: Pick<Vaccination, "id" | "name" | "due_date">, givenDay: string): NextSuggestion | null {
   if (!isDay(dose.due_date) || !isDay(givenDay)) return null;
@@ -73,8 +77,7 @@ export function suggestNext(series: readonly Vaccination[], dose: Pick<Vaccinati
     const len = daysBetween(from, addInterval(from, iv));
     if (off <= Math.max(3, Math.round(len * 0.15)) && (!best || off < best.off)) best = { iv, off };
   }
-  if (best) return { kind: "preset", interval: best.iv, due: addInterval(givenDay, best.iv), gapDays: gap };
-  return { kind: "days", days: gap, due: addInterval(givenDay, { days: gap }), gapDays: gap };
+  return best ? { interval: best.iv, due: addInterval(givenDay, best.iv), gapDays: gap } : null;
 }
 
 /** جرعةٌ لاحقةٌ محجوزةٌ أصلاً لنفس اللقاح (غيرُ معطاة وغيرُ هذه، موعدُها بعد يوم الإعطاء). */
@@ -85,14 +88,27 @@ export function laterPending(series: readonly Vaccination[], dose: Pick<Vaccinat
     .sort((a, b) => day(a.due_date!).localeCompare(day(b.due_date!)))[0] ?? null;
 }
 
-/**
- * الجرعةُ المستحقّة التي يستهلكها «انعطى اليوم»: أقربُ جرعةٍ غيرِ معطاة لنفس اللقاح موعدُها
- * حتى ٣٠ يوماً بعد اليوم (متأخرةً كانت أو مبكّرة). بلا موعدٍ = خطّةٌ بلا تاريخ: تُستهلك أيضاً.
- */
-export function pendingToConsume(series: readonly Vaccination[], name: string, todayISO: string): Vaccination | null {
-  const limit = addInterval(todayISO, { days: CONSUME_AHEAD_DAYS });
-  return series
-    .filter((v) => v.status !== "administered" && sameVaccine(v.name, name) && (!isDay(v.due_date) || day(v.due_date!) <= limit))
-    .sort((a, b) => (isDay(a.due_date) ? day(a.due_date!) : "0000").localeCompare(isDay(b.due_date) ? day(b.due_date!) : "0000"))[0] ?? null;
+/** لقاحٌ انعطى اليومَ أصلاً (أو بعده) لهذا الحيوان — الحفظةُ الثانية بنفس اليوم تكرارٌ لنفس الجرعة. */
+export function givenToday(series: readonly Vaccination[], name: string, todayISO: string): boolean {
+  return series.some((v) => v.status === "administered" && isDay(v.administered_at) && sameVaccine(v.name, name)
+    && day(v.administered_at!) >= day(todayISO));
 }
 
+/**
+ * الجرعةُ المستحقّة التي يستهلكها «انعطى اليوم» — **الأقربُ لليوم** لا الأقدم: المتأخرةُ الأحدث
+ * (معلّقةٌ أقدم منها بقيت من قبل ولا تُختم «انعطت اليوم»)، ثمّ خطّةٌ بلا تاريخ، ثمّ التي موعدُها خلال
+ * ٧ أيام. ولا شيءَ إن انعطى اللقاحُ اليومَ أصلاً (المعزّزُ المحجوزُ للتوّ ليس هذه الجرعة).
+ */
+export function pendingToConsume(series: readonly Vaccination[], name: string, todayISO: string): Vaccination | null {
+  if (givenToday(series, name, todayISO)) return null;
+  const today = day(todayISO);
+  const limit = addInterval(today, { days: CONSUME_AHEAD_DAYS });
+  const pend = series.filter((v) => v.status !== "administered" && sameVaccine(v.name, name));
+  const late = pend.filter((v) => isDay(v.due_date) && day(v.due_date!) <= today)
+    .sort((a, b) => day(b.due_date!).localeCompare(day(a.due_date!)));
+  if (late.length) return late[0];
+  const undated = pend.find((v) => !isDay(v.due_date));
+  if (undated) return undated;
+  return pend.filter((v) => isDay(v.due_date) && day(v.due_date!) > today && day(v.due_date!) <= limit)
+    .sort((a, b) => day(a.due_date!).localeCompare(day(b.due_date!)))[0] ?? null;
+}

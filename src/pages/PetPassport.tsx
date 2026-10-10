@@ -458,7 +458,7 @@ export function PetPassport() {
 
       {/* Unified Medication + Vaccination entry, scoped to this patient's species */}
       <Modal open={medOpen} onClose={() => setMedOpen(false)} title={t("passport.medicalEntryTitle", "Medical entry — {{name}}", { name: pet.name })}>
-        <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} allowHistory />
+        <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} allowHistory petId={pet.id} />
       </Modal>
 
       {/* Legal consent forms (operation / anesthesia / treatment) — bilingual, printable */}
@@ -1626,12 +1626,12 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addVaccine")}>
-        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} defaultDoctor={user?.full_name} allowHistory />
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} defaultDoctor={user?.full_name} allowHistory petId={pet.id} />
       </Modal>
 
       <VaccineDueDialog vaccine={dueEdit} petName={pet.name} onClose={() => setDueEdit(null)} onSaved={onChanged} />
       {/* إعطاءُ الجرعة يسأل عن الجاية (vaxNext.ts) — نافذةٌ واحدة مع تقويم الاستقبال. */}
-      <AdministerDoseModal vaccine={administer} series={vaccines} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
+      <AdministerDoseModal key={administer?.id ?? "none"} vaccine={administer} series={vaccines} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onSaved={onChanged} />
     </div>
   );
 }
@@ -2670,7 +2670,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
         <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commitTreatment} defaultDoctor={user?.full_name} />
       </Modal>
       <Modal open={vaxOpen} onClose={() => setVaxOpen(false)} title={t("passport.addVaccine", "إضافة تطعيم")}>
-        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commitVaccine} defaultDoctor={user?.full_name} allowHistory />
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commitVaccine} defaultDoctor={user?.full_name} allowHistory petId={pet.id} />
       </Modal>
 
       {/* Add-note */}
@@ -2694,7 +2694,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
       </Modal>
 
       {/* إعطاءُ الجرعة يسأل عن الجاية — نفسُ نافذة تبويب اللقاحات */}
-      <AdministerDoseModal vaccine={administer} series={vaccinations} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
+      <AdministerDoseModal key={administer?.id ?? "none"} vaccine={administer} series={vaccinations} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onSaved={onChanged} />
     </div>
   );
 }

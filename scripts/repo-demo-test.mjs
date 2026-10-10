@@ -1709,6 +1709,48 @@ console.log("▸ سلسلةُ اللقاح: «انعطى اليوم» يستهل
   let code = "ok";
   try { await repo.administerVaccination("vx-due", { administered_at: T }); } catch (e) { code = e.code; }
   check("الإعطاءُ المحروس: جرعةٌ معطاةٌ قبلاً ترمي no_row_updated لا تُعطى مرّتين", code === "no_row_updated", code);
+
+  /* التدقيقُ العدائيّ (أعلى خطورة): الطبيبُ يسجّل DHPP «انعطى اليوم» ويحجز بعد ٣ أسابيع، ثمّ الكاشير
+   * يبيع نفسَ اللقاح من «الأدوية» بنفس اليوم بلا موعد. نافذةُ ٣٠ يوماً كانت تستهلك المعزّزَ المحجوزَ
+   * للتوّ فتقف السلسلة — نفسُ الشكوى. */
+  const db1 = JSON.parse(mem.get(DB_KEY));
+  db1.vaccinations = db1.vaccinations.filter((v) => v.pet_id !== "pv2");
+  mem.set(DB_KEY, JSON.stringify(db1));
+  const vx2 = () => JSON.parse(mem.get(DB_KEY)).vaccinations.filter((v) => v.pet_id === "pv2");
+  await persist("pv2", "د. الفحص", [{ id: "s1", kind: "vaccination", name: "DHPP", nextDue: d(21), administered: true }]);
+  const booked = vx2().find((v) => v.status === "scheduled" && v.due_date === d(21));
+  await persist("pv2", undefined, [{ id: "s2", kind: "vaccination", name: "DHPP", nextDue: null, administered: true }]);
+  const after = vx2();
+  check("السجلُّ ثمّ البيعُ بنفس اليوم: المعزّزُ المحجوزُ (+٢١) باقٍ بمعرّفه — السلسلة ما وقفت",
+    !!booked && after.find((v) => v.id === booked.id)?.status === "scheduled" && after.find((v) => v.id === booked.id)?.due_date === d(21), JSON.stringify(after));
+  check("  ولا جرعةٌ معطاةٌ ثانية بنفس اليوم (تسجيلٌ مكرَّر لنفس الجرعة)", after.filter((v) => v.status === "administered" && v.administered_at === T).length === 1,
+    JSON.stringify(after.filter((v) => v.status === "administered")));
+
+  // التشغيلةُ المكتوبة على الخطّة تبقى حين تُستهلك بلا تشغيلةٍ جديدة (الخادمُ يُسقط undefined، والمرآةُ كذلك).
+  const db2 = JSON.parse(mem.get(DB_KEY));
+  db2.vaccinations.push({ id: "vx-lot", pet_id: "pv3", name: "Lepto", status: "scheduled", due_date: T, administered_at: null, lot_number: "LOT9", notes: "N1" });
+  mem.set(DB_KEY, JSON.stringify(db2));
+  await persist("pv3", "د. الفحص", [{ id: "s3", kind: "vaccination", name: "Lepto", nextDue: null, administered: true }]);
+  const lot = JSON.parse(mem.get(DB_KEY)).vaccinations.find((v) => v.id === "vx-lot");
+  check("الاستهلاكُ لا يمحو تشغيلةَ الخطّة وملاحظتَها (المفاتيحُ المعرَّفة وحدها)", lot?.status === "administered" && lot.lot_number === "LOT9" && lot.notes === "N1", JSON.stringify(lot));
+
+  // سباق: القائمةُ قُرئت والمستحقّةُ معلّقة، ثمّ أعطاها جهازٌ ثانٍ قبل كتابتنا ⇒ no_row_updated ⇒ صفٌّ جديد لا رمية.
+  const db3 = JSON.parse(mem.get(DB_KEY));
+  db3.vaccinations.push({ id: "vx-race", pet_id: "pv4", name: "FVRCP", status: "overdue", due_date: d(-1), administered_at: null });
+  mem.set(DB_KEY, JSON.stringify(db3));
+  const realList = repo.listVaccinations;
+  repo.listVaccinations = async (pid) => {
+    const snap = await realList.call(repo, pid);
+    const live = JSON.parse(mem.get(DB_KEY));
+    live.vaccinations.find((v) => v.id === "vx-race").status = "administered";
+    mem.set(DB_KEY, JSON.stringify(live));
+    return snap;
+  };
+  let raced = "ok";
+  try { await persist("pv4", "د. الفحص", [{ id: "s4", kind: "vaccination", name: "FVRCP", nextDue: null, administered: true }]); } catch (e) { raced = e.message; }
+  repo.listVaccinations = realList;
+  check("سباقٌ مع جهازٍ ثانٍ: لا رمية، وتُكتب جرعةُ اليوم صفّاً جديداً",
+    raced === "ok" && JSON.parse(mem.get(DB_KEY)).vaccinations.filter((v) => v.pet_id === "pv4" && v.status === "administered" && v.administered_at === T).length === 1, raced);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

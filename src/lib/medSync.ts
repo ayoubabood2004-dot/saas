@@ -8,7 +8,7 @@ import { repo } from "./repo";
 import { localISO } from "./utils";
 import { syncDoseCycleForPet } from "./doseCycle";
 import { historyRows } from "./backdate";
-import { pendingToConsume, sameVaccine } from "./vaxNext";
+import { givenToday, pendingToConsume, sameVaccine } from "./vaxNext";
 import type { Vaccination } from "@/types";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 
@@ -49,8 +49,11 @@ export async function persistMedicalEntries(
         // (لا يُمنع البيعُ عند الكاشير بسبب قراءة)، وإن سبقنا جهازٌ ثانٍ للمستحقّة ⇒ صفٌّ جديد.
         let series: Vaccination[] | null = null;
         try { series = await repo.listVaccinations(petId); } catch { series = null; }
-        const due = series ? pendingToConsume(series, e.name, today) : null;
-        let consumed = false;
+        // انعطى اليومَ أصلاً (السجلُّ ثمّ البيعُ لنفس الجرعة): لا جرعةً ثانية ولا استهلاك — الاستهلاكُ
+        // كان يأخذ المعزّزَ المحجوزَ للتوّ فتقف السلسلة (أمسكه تدقيقٌ عدائيّ). الجاية تُحجز إن طُلبت.
+        const dupToday = !!series && givenToday(series, e.name, today);
+        const due = series && !dupToday ? pendingToConsume(series, e.name, today) : null;
+        let consumed = dupToday;
         if (due) {
           try {
             await repo.administerVaccination(due.id, { administered_at: today, administered_by: doctorName, lot_number: e.lot });
