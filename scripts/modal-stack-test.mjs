@@ -76,5 +76,20 @@ check("  والفاتورةُ الجديدة ترسل رقماً دائماً ل
 check("  ووضعُ التعديل يبقى على عقده (فارغٌ = لا تغيّر المدفوع)",
   /editing \? \(amountPaid\.trim\(\) === "" \? undefined/.test(pur));
 
+/* منتقي الأدوية الموحَّد (0229) يُفتح فوق نافذة المعالج والزيارة والسجلّ: Esc تخصّه
+ * وحدَه، وأثناء السحب تمرّ فيلغيه dnd-kit (مستمعُه على المستند بالفقاعة) — ومستمعُ
+ * التقاطٍ يوقف الانتشار كان سيغلق المنتقي والسحبُ معلَّق (ورقةُ الأدوية القديمة فعلتها). */
+console.log("\n▸ منتقي الأدوية فوق نافذةٍ مضيفة");
+resetModalStack();
+pushModal("host"); pushModal("picker");
+check("والمنتقي مفتوح: النافذةُ المضيفة ليست الأعلى — Esc لا تُغلقها", isTopModal("host") === false && isTopModal("picker") === true);
+removeModal("picker");
+check("  وبإغلاقه ترجع هي الأعلى", isTopModal("host") === true);
+resetModalStack();
+const sheet = readFileSync("src/components/meds/MedPickerSheet.tsx", "utf8");
+check("MedPickerSheet يسجّل نفسَه بالمكدّس", /pushModal\(/.test(sheet) && /removeModal\(/.test(sheet));
+check("  وEscape بقرار pickerKeyAction بالفقاعة — لا مستمعَ التقاطٍ يبتلعه أثناء السحب",
+  /pickerKeyAction\(/.test(sheet) && !/addEventListener\("keydown",[^)]*,\s*true\)/.test(sheet));
+
 console.log(`\n${fails ? "✗" : "✓"} modal-stack-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

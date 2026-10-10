@@ -18,20 +18,20 @@ import { readLabImage } from "@/lib/labOcr";
 import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph } from "@/lib/clinicalIcons";
 import { getActiveClinicId } from "@/lib/clinics";
-import { DrugPickerSheet } from "@/components/treatment/DrugPickerSheet";
+import { MedPicker } from "@/components/meds/MedPicker";
 import { NumberPadSheet } from "@/components/treatment/NumberPadSheet";
 import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
 import { DoseAlertRow, APP_ROUTE_BACK } from "@/components/DoseBlock";
 import { matchMonograph, checkSafety, calcDose, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
-import type { Product } from "@/types";
+import type { MedicineStock } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
 import { Button, useToast } from "@/components/ui";
-import { formatNum, normalizeAr, cn, formatDec } from "@/lib/utils";
+import { formatNum, normalizeAr, cn, formatDec, searchable } from "@/lib/utils";
 import { playTap, playSuccess, playWarning, playStepDone } from "@/lib/sounds";
-import { useDrugFavorites } from "@/lib/drugFavorites";
+import { useClinicDrugs, loadMedicineStock, loadRecentMeds } from "@/lib/clinicDrugs";
 
 /** How often a treatment is given — drives the dose-count math.
  *  `label` is the canonical Arabic (kept for the persisted record text);
@@ -117,22 +117,6 @@ const formularySeed = (name: string, species?: Sp): Partial<PlanRow> => {
   };
 };
 
-/* ---- The doctor's own habit: last-used drugs, newest first (per device) ---- */
-const RECENT_DRUGS_KEY = "vp_recent_drugs";
-const recentDrugs = (): string[] => {
-  try { const v = JSON.parse(localStorage.getItem(RECENT_DRUGS_KEY) || "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; }
-  catch { return []; }
-};
-const pushRecentDrug = (name: string) => {
-  const t = name.trim();
-  if (!t) return;
-  try {
-    const list = [t, ...recentDrugs().filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, 10);
-    localStorage.setItem(RECENT_DRUGS_KEY, JSON.stringify(list));
-  } catch { /* private mode — the habit list is a bonus, never a blocker */ }
-};
-
-
 type StepId = "anatomy" | "symptoms" | "labs" | "diagnosis" | "treatment";
 const STEPS: { id: StepId; key: string; label: string; icon: typeof Activity }[] = [
   { id: "anatomy", key: "tplan.stepAnatomy", label: "التشريح", icon: Crosshair },
@@ -200,19 +184,20 @@ export function TreatmentPlan({
   const [weight, setWeight] = useState<number | undefined>(weightKg && weightKg > 0 ? weightKg : undefined);
 
   /* ---- In-stock clinic medicines (category=medicine, stock>0) — availability only, no deduction ---- */
-  const [stockMeds, setStockMeds] = useState<Product[]>([]);
+  const [stockMeds, setStockMeds] = useState<MedicineStock[]>([]);
   /* غيابُ المعلومة خيرٌ من نفيها: فشلُ الجلب كان يُبقي القائمة فارغة، فتغيب
    * شارةُ «متوفّر · n» عن كلّ دواء — وغيابُها هو بالضبط كيف تُقرأ «غير متوفّر»
    * بهذه الشاشة. فالفشلُ يُعلَن، والشاراتُ تُخفى كلُّها بدل نفيٍ كاذب. */
   const [stockFailed, setStockFailed] = useState(false);
   useEffect(() => {
     let alive = true;
-    repo.listProducts().then((ps) => {
-      if (alive) { setStockMeds(ps.filter((p) => p.category === "medicine" && p.stock > 0)); setStockFailed(false); }
+    // خبيئةُ المنتقي نفسُها (٦٠ث) — لا جلبَ ثانٍ لكلّ منتجات العيادة لأجل شارة.
+    loadMedicineStock().then((ps) => {
+      if (alive) { setStockMeds(ps); setStockFailed(false); }
     }).catch(() => { if (alive) setStockFailed(true); });
     return () => { alive = false; };
   }, []);
-  const stockFor = (name: string) => (stockFailed ? undefined : stockMeds.find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase()));
+  const stockFor = (name: string) => { const key = searchable(name); return stockFailed ? undefined : stockMeds.find((p) => searchable(p.name) === key); };
 
   /* ---- Lab photo: take a picture and file it into the pet's media vault ---- */
   const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,9 +280,9 @@ export function TreatmentPlan({
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.id !== id));
   const addDrug = (name: string, seed?: Partial<PlanRow>) => {
     playTap();
-    if (name.trim()) pushRecentDrug(name);
+    const key = searchable(name);
     setRows((rs) => {
-      if (name && rs.some((r) => r.name.trim().toLowerCase() === name.trim().toLowerCase())) return rs;
+      if (name && rs.some((r) => searchable(r.name) === key)) return rs;
       const kept = rs.filter((r) => r.name.trim());
       // The formulary fills the row before the doctor ever opens it: typical
       // mg/kg, frequency, route and strength — editing beats typing.
@@ -923,8 +908,8 @@ function TreatmentStep({
   lang: string;
   allergies?: string[];
   flags?: ChartFlags;
-  stockMeds: Product[];
-  stockFor: (name: string) => Product | undefined;
+  stockMeds: MedicineStock[];
+  stockFor: (name: string) => MedicineStock | undefined;
   interactions: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
   safety: { name: string; alerts: DoseAlert[] }[];
   protocolDiseases: Disease[];
@@ -938,37 +923,38 @@ function TreatmentStep({
   const [weightSkipped, setWeightSkipped] = useState(false);
   const [weightPad, setWeightPad] = useState(false);
   const [daysPad, setDaysPad] = useState(false);
-  const [recents] = useState<string[]>(recentDrugs);
-  const fav = useDrugFavorites();
+  const drugs = useClinicDrugs();
+  const [recents, setRecents] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    loadRecentMeds().then((r) => { if (alive) setRecents(r); }).catch(() => { /* swallow-ok: «الأخيرة» راحةٌ بالبلاطات — المنتقي يقول فشلَها بنفسه */ });
+    return () => { alive = false; };
+  }, []);
 
   const named = rows.filter((r) => r.name.trim());
-  const inPlan = (name: string): string | null =>
-    named.find((r) => r.name.trim().toLowerCase() === name.trim().toLowerCase())?.id ?? null;
+  /** بالمفتاح لا بالحالة وحدها — «أموكسيسيلين» و«اموكسيسيلين» دواءٌ واحد بالخطة. */
+  const inPlan = (name: string): string | null => {
+    const key = searchable(name);
+    return named.find((r) => searchable(r.name) === key)?.id ?? null;
+  };
 
-  /** بلاطات الوصول السريع: مفضّلةُ الطبيب أوّلاً (قرارُه)، ثم ما بالعيادة فعلاً ثم ما
-   *  اعتاده — ستّةٌ فقط، وثمانٍ إن كانت له مفضّلة، فالحالة الشائعة تبقى ضغطةً واحدة. */
+  /** بلاطات الوصول السريع: «أدويتي» أوّلاً بترتيب العيادة (٨–١٢)، ثم «الأخيرة» من علاجات
+   *  العيادة، ثم ما بالمخزن — وما بالخطة لا يتكرّر. ستٌّ إن كانت «أدويتي» فاضية. */
   const quick = useMemo(() => {
     const seen = new Set<string>();
     const out: { name: string; stock?: number; fav?: boolean }[] = [];
-    const stockBy = new Map(stockMeds.map((p) => [p.name.toLowerCase(), p.stock]));
-    for (const n of fav.names) {
-      const k = n.toLowerCase();
-      if (seen.has(k) || inPlan(n)) continue;
-      seen.add(k); out.push({ name: n, stock: stockBy.get(k), fav: true });
-    }
-    for (const p of stockMeds) {
-      const k = p.name.toLowerCase();
-      if (seen.has(k) || inPlan(p.name)) continue;
-      seen.add(k); out.push({ name: p.name, stock: p.stock });
-    }
-    for (const n of recents) {
-      const k = n.toLowerCase();
-      if (seen.has(k) || inPlan(n)) continue;
-      seen.add(k); out.push({ name: n });
-    }
-    return out.slice(0, fav.names.length ? Math.max(8, Math.min(12, fav.names.length)) : 6);
+    const stockBy = new Map(stockMeds.map((p) => [searchable(p.name), p.stock]));
+    const push = (name: string, fav?: boolean) => {
+      const k = searchable(name);
+      if (!k || seen.has(k) || inPlan(name)) return;
+      seen.add(k); out.push({ name, stock: stockBy.get(k), fav });
+    };
+    for (const r of drugs.mine) push(r.name, true);
+    for (const n of recents) push(n);
+    for (const p of stockMeds) push(p.name);
+    return out.slice(0, drugs.mine.length ? Math.max(8, Math.min(12, drugs.mine.length)) : 6);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stockMeds, recents, rows, fav.names.join("|")]);
+  }, [stockMeds, recents, rows, drugs.mine.map((r) => r.id).join("|")]);
 
   /** بعد إدخال وزنٍ متأخّر: تُعاد بذرة الدليل للأسطر التي لم يلمسها الطبيب
    *  وحدها — سطرٌ عدّله بيده لا يُكتب فوقه أبداً. */
@@ -1145,18 +1131,20 @@ function TreatmentStep({
         </div>
       </div>
 
-      <DrugPickerSheet
-        open={picker.open} species={species} stockMeds={stockMeds} recents={recents}
-        inPlan={inPlan} replaceMode={!!picker.replaceId}
-        onPick={(name) => {
+      {/* المنتقي الموحَّد: النصُّ المكتوب بالخطة هو اسمُ الكتالوج كما هو، فـmatchMonograph
+          والعيارُ المحفوظ يعطيان ما كانا يعطيانه. «ما لكيته؟» يعرض الحفظَ بـ«أدويتي». */}
+      <MedPicker
+        open={picker.open} species={species ?? null} freeText="offer"
+        mode={picker.replaceId ? "single" : "multi"}
+        isSelected={(m) => !!inPlan(m.name)}
+        onPick={(m) => {
           if (picker.replaceId) {
             const old = rows.find((r) => r.id === picker.replaceId);
-            setRow(picker.replaceId, { name, ...formularySeed(name, species), ...(old?.days ? { days: old.days } : {}) });
-            pushRecentDrug(name);
+            setRow(picker.replaceId, { name: m.name, ...formularySeed(m.name, species), ...(old?.days ? { days: old.days } : {}) });
             setPicker({ open: false });
-          } else addDrug(name);
+          } else addDrug(m.name);
         }}
-        onUnpick={(rowId) => removeRow(rowId)}
+        onUnpick={(m) => { const id = inPlan(m.name); if (id) removeRow(id); }}
         onClose={() => setPicker({ open: false })}
       />
 
