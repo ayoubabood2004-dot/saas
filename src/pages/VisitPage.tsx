@@ -29,7 +29,9 @@ import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { isIntake, pendingIntakes, wizardSeed } from "@/lib/intake";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
-import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
+import { MedField } from "@/components/meds/MedPicker";
+import type { PickedMed } from "@/lib/medIndex";
+import type { Species } from "@/types";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
@@ -933,12 +935,13 @@ export default function VisitPage() {
           onClose={() => setObsTarget(null)}
         />
       )}
-      <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} lastDay={lastDay} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
+      <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} lastDay={lastDay} defaultDoctor={user?.full_name ?? ""} species={pet.species} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
       {editTarget && (
         <EditDrugModal
           entry={editTarget}
           treatments={treatments}
           lang={lang}
+          species={pet.species}
           onClose={() => setEditTarget(null)}
           onSave={editDrug}
         />
@@ -1541,13 +1544,15 @@ function GiveModal({ t, lang, todayISO, defaultDoctor, ended, onClose, onGive, o
 /* ------------------------------ Edit-drug modal --------------------------- */
 /** تعديل دواءٍ قبل إعطائه: الاسم/الكمية/الوقت/التكرار، وبمدى يقرّره الدكتور —
  *  هذا اليوم وحده، أو من هذا اليوم لنهاية الخطة. المعطى تاريخٌ لا يُمسّ. */
-function EditDrugModal({ entry, treatments, onClose, onSave }: {
-  entry: TreatmentEntry; treatments: TreatmentEntry[]; lang: string;
+function EditDrugModal({ entry, treatments, species, onClose, onSave }: {
+  entry: TreatmentEntry; treatments: TreatmentEntry[]; lang: string; species?: Species;
   onClose: () => void;
   onSave: (orig: TreatmentEntry, patch: { medication: string; amount: string; time: string; observations: string }, scope: "day" | "rest") => void | Promise<void>;
 }) {
   const { t } = useTranslation();
-  const [med, setMed] = useState(entry.medication);
+  /* الاسمُ يُختار من المنتقي الموحَّد لا يُكتب — والجرعاتُ تُطابَق بالاسم القديم حرفاً كما كانت. */
+  const [picked, setPicked] = useState<PickedMed | null>(null);
+  const med = picked?.name ?? entry.medication;
   const [amount, setAmount] = useState(entry.amount ?? "");
   const [time, setTime] = useState(entry.time ?? "");
   const [freq, setFreq] = useState(entry.observations ?? "");
@@ -1574,7 +1579,8 @@ function EditDrugModal({ entry, treatments, onClose, onSave }: {
       <div className="space-y-3">
         <div>
           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> {t("visit.drugName", "اسم الدواء")}</div>
-          <input value={med} onChange={(e) => setMed(e.target.value)} autoFocus className="input h-11 w-full text-base" data-editmed />
+          <MedField value={picked ?? { key: entry.medication, name: entry.medication, label: entry.medication, family: "other", familyType: "Other", source: "free" }}
+            showFamily={!!picked} onChange={setPicked} species={species ?? null} freeText="offer" />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
@@ -1618,14 +1624,15 @@ function EditDrugModal({ entry, treatments, onClose, onSave }: {
 /* ------------------------------ Add-drug modal ---------------------------- */
 /** Add a SINGLE ad-hoc medication for one day — for when the doctor decides to give
  *  an extra drug on the spot, without reopening the full diagnosis & plan. */
-function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
-  open: boolean; day: string; lang: string; lastDay: string | null; defaultDoctor: string;
+function AddDrugModal({ open, day, lastDay, defaultDoctor, species, onClose, onAdd }: {
+  open: boolean; day: string; lang: string; lastDay: string | null; defaultDoctor: string; species?: Species;
   onClose: () => void;
   onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const [givenTime, setGivenTime] = useState(nowHHMM);
-  const [med, setMed] = useState("");
+  const [picked, setPicked] = useState<PickedMed | null>(null);
+  const med = picked?.name ?? "";
   const [amount, setAmount] = useState("");
   const [freq, setFreq] = useState("");
   const [doctor, setDoctor] = useState(defaultDoctor);
@@ -1636,7 +1643,7 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
 
   // Reset the form each time the modal opens (for a fresh day/doctor).
   useEffect(() => {
-    if (open) { setMed(""); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); setGivenTime(nowHHMM()); }
+    if (open) { setPicked(null); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); setGivenTime(nowHHMM()); }
   }, [open, day, defaultDoctor]);
 
   const todayLocal = localISO(new Date());
@@ -1649,14 +1656,6 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
     return Math.round((new Date(`${lastDay}T00:00:00`).getTime() - new Date(`${d}T00:00:00`).getTime()) / 86400000) + 1;
   }, [lastDay, d]);
 
-  // Drug-name suggestions: the built-in catalogue + the clinic's own medications.
-  const drugNames = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of MED_CATALOG) if (c.type !== "Vaccines") for (const it of c.items) set.add(it);
-    for (const m of getClinicMeds()) set.add(m.name);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [open]);
-
   const submit = async () => {
     if (!med.trim() || busy) return;
     setBusy(true);
@@ -1665,33 +1664,33 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="إضافة دواء لهذا اليوم">
+    <Modal open={open} onClose={onClose} title={t("vbk.addDrugTitle", "إضافة دواء لهذا اليوم")}>
       <div className="space-y-3">
         <div>
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> اسم الدواء</div>
-          <input list="vp-drug-list" value={med} onChange={(e) => setMed(e.target.value)} autoFocus
-            onKeyDown={(e) => { if (e.key === "Enter" && med.trim()) submit(); }}
-            placeholder="اكتب أو اختر من القائمة…" className="input h-11 w-full text-base" />
-          <datalist id="vp-drug-list">{drugNames.map((n) => <option key={n} value={n} />)}</datalist>
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> {t("visit.drugName", "اسم الدواء")}</div>
+          {/* المنتقي الموحَّد: «أدويتي» أوّلاً ولا كيبورد يطلع وحده — «ما لكيته؟» يكتب ما ليس فيه. */}
+          <MedField value={picked} onChange={setPicked} species={species ?? null} freeText="offer" />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <div className="mb-1.5 text-xs font-bold text-ink-muted">الجرعة / الكمية</div>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="مثال: ١٦٠ ملغ" className="input h-11 w-full" />
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && med.trim()) void submit(); }}
+              placeholder={t("vbk.dosePh", "مثال: ١٦٠ ملغ")} className="input h-11 w-full" data-adddrug-amount />
           </div>
           <div>
-            <div className="mb-1.5 text-xs font-bold text-ink-muted">التكرار / ملاحظة</div>
-            <input value={freq} onChange={(e) => setFreq(e.target.value)} placeholder="مثال: مرتين يومياً" className="input h-11 w-full" />
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseFreq", "التكرار / ملاحظة")}</div>
+            <input value={freq} onChange={(e) => setFreq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && med.trim()) void submit(); }}
+              placeholder={t("vbk.freqPh", "مثال: مرتين يومياً")} className="input h-11 w-full" data-adddrug-freq />
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Clock size={13} /> اليوم</div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Clock size={13} /> {t("vbk.day", "اليوم")}</div>
             <input type="date" value={d} onChange={(e) => setD(e.target.value)} dir="ltr" className="input h-11 w-full tabular-nums" />
           </div>
           <div>
-            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><UserRound size={13} /> الطبيب</div>
-            <DoctorSelect value={doctor} onChange={setDoctor} placeholder="اختر الطبيب…" />
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><UserRound size={13} /> {t("vbk.doctor", "الطبيب")}</div>
+            <DoctorSelect value={doctor} onChange={setDoctor} placeholder={t("vbk.doctorPh", "اختر الطبيب…")} />
           </div>
         </div>
         {!futureDay && (
@@ -1711,7 +1710,7 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
           ) : (
             <label className="flex cursor-pointer items-center gap-2 rounded border border-line bg-surface-2 px-3 py-2.5 text-sm font-bold text-ink">
               <input type="checkbox" checked={givenNow} onChange={(e) => setGivenNow(e.target.checked)} className="h-4 w-4 accent-success-600" />
-              <Check size={15} className="text-success-600" /> تم إعطاؤه الآن (تسجيل الجرعة كمُعطاة)
+              <Check size={15} className="text-success-600" /> {t("vbk.givenNow", "تم إعطاؤه الآن (تسجيل الجرعة كمُعطاة)")}
             </label>
           )
         )}
@@ -1722,8 +1721,8 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
             <CalendarPlus size={15} className="text-brand-600" /> {t("visit.repeatRest", { n: formatNum(restDays), defaultValue: "كرّره لكل الأيام الباقية بالخطة ({{n}} أيام)" })}
           </label>
         )}
-        <Button size="lg" className="w-full" leftIcon={<Plus size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
-          إضافة الدواء
+        <Button size="lg" className="w-full" data-adddrug-save leftIcon={<Plus size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
+          {t("vbk.addDrugBtn", "إضافة الدواء")}
         </Button>
       </div>
     </Modal>

@@ -89,11 +89,13 @@ function SheetLoading() {
 }
 
 /** زرٌّ كبير: اسمُ الدواء المختار وعائلتُه — يفتح المنتقي باختيارٍ واحد. لا حقلَ كتابة ولا كيبورد. */
-export function MedField({ value, onChange, placeholder, className, ...rest }: {
+export function MedField({ value, onChange, placeholder, className, showFamily = true, ...rest }: {
   value: PickedMed | null;
   onChange(m: PickedMed): void;
   placeholder?: string;
   className?: string;
+  /** القيمةُ نصٌّ قديمٌ بلا عائلةٍ معروفة (تعديلُ جرعةٍ قائمة) — لا شارةَ «أخرى» كاذبة. */
+  showFamily?: boolean;
 } & Omit<MedPickerProps, "open" | "onClose" | "mode" | "onPick">) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -109,7 +111,7 @@ export function MedField({ value, onChange, placeholder, className, ...rest }: {
               <span className="block truncate text-base font-black text-ink">{value.label}</span>
               <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-2xs font-bold text-ink-muted">
                 {value.label !== value.name && <span className="truncate" dir="auto">{value.name}</span>}
-                <span className="rounded-full bg-surface-1 px-2 py-0.5">{t(`mymeds.fam.${value.family}`)}</span>
+                {showFamily && <span className="rounded-full bg-surface-1 px-2 py-0.5">{t(`mymeds.fam.${value.family}`)}</span>}
               </span>
             </>
           ) : (

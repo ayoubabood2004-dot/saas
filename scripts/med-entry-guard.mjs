@@ -58,7 +58,6 @@ const ALLOWED = new Set([
 /* لم يتحوّل بعد — تُشطب سطراً سطراً مع كلّ دفعة. */
 const PENDING = new Set([
   "src/lib/meds.ts",                  // B8: الكتالوج ينتقل لـmedCatalog.ts الكسول
-  "src/pages/VisitPage.tsx",          // B5
   "src/components/Flowsheet.tsx",     // B6
   "src/components/ProtocolEditor.tsx",// B6
   "src/components/MedicalEntry.tsx",  // B7
