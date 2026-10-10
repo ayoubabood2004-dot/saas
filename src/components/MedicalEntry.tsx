@@ -4,11 +4,12 @@ import i18next from "i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Pill, Syringe, Droplet, Plus, Search, ChevronDown, Trash2, Check, X,
-  ShieldCheck, Stethoscope, CalendarClock, Layers, ClipboardList,
+  ShieldCheck, Stethoscope, CalendarClock, ClipboardList,
   HeartPulse, Activity, AlertTriangle, NotebookPen, History,
 } from "lucide-react";
 import type { Species, PatientCondition, MedicalAssessment , Vaccination } from "@/types";
-import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
+import { MedField } from "@/components/meds/MedPicker";
+import type { PickedMed } from "@/lib/medIndex";
 import { VACCINE_CATALOG, BUILTIN_VACCINES, getClinicVaccines, hydrateVaccines } from "@/lib/vaccines";
 import { repo } from "@/lib/repo";
 import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
@@ -111,7 +112,14 @@ const prettyDate = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(dateLocale(), { day: "numeric", month: "short", year: "numeric" });
 };
 
-export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string; administered: boolean }
+export interface MedicationDraft {
+  id: string; kind: "medication";
+  /** الصنفُ الإنكليزيّ القديم — «Injection · Antibiotics» بالملاحظات كما كانت حرفاً. */
+  family: string;
+  name: string; route: RouteId; dosage: string; note?: string; administered: boolean;
+  /** منتجٌ واحدٌ بالمخزن بنفس الاسم (المنتقي) — البيعُ يصير سطرَ منتج (جوابُ المالك ٢). */
+  productId?: string;
+}
 export interface VaccinationDraft {
   id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string; administered: boolean;
   /** سجلٌّ سابق: تواريخُ جرعاتٍ انعطت قبل (نظيفةٌ تصاعدياً) — تُحفظ كلٌّ بيومها، و`nextDue`
@@ -179,7 +187,7 @@ export function MedicalEntry({
   const [catalogVersion, setCatalogVersion] = useState(0);
   useEffect(() => {
     let alive = true;
-    void Promise.allSettled([hydrateMeds(), hydrateVaccines()]).then(() => { if (alive) setCatalogVersion((v) => v + 1); });
+    void Promise.allSettled([hydrateVaccines()]).then(() => { if (alive) setCatalogVersion((v) => v + 1); });
     return () => { alive = false; };
   }, []);
   const [draftSpecies, setDraftSpecies] = useState<Species>(species ?? "dog");
@@ -267,7 +275,7 @@ export function MedicalEntry({
         transition={{ duration: 0.2, ease: "easeOut" }}
       >
         {mode === "medication"
-          ? <MedicationForm onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} />
+          ? <MedicationForm onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} species={activeSpecies} />
           : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} allowHistory={allowHistory} blockRef={vaxBlock} />}
       </motion.div>
 
@@ -343,83 +351,59 @@ export function MedicalEntry({
   );
 }
 
-/* ---------------- Medication (cascading) ---------------- */
-export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushRef }: { onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null } }) {
+/* ---------------- Medication ---------------- */
+/* الدواءُ يُختار من المنتقي الموحَّد (زرٌّ كبير، «أدويتي» أوّلاً) بدل قائمتين: عائلةٌ إنكليزيةٌ ثم
+ * دواءٌ يفتح الكيبورد بعد ٦٠ms. والنصُّ المكتوب اسمُ الكتالوج كما هو، والعائلةُ بالملاحظات
+ * صنفُها الإنكليزيّ القديم — «Injection · Antibiotics» لا تتغيّر حرفاً. */
+export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushRef, species, freeText = "offer", stock = "show", onPickMed }: {
+  /** `false` = المضيفُ رفض (سعرٌ ناقص، منتجٌ لم يُختر) — النموذجُ يبقى كما هو ولا يُمسح اختيارُه. */
+  onAdd: (e: MedicalDraft) => void | boolean; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
+  species?: Species | null;
+  /** البيع: «هالمرة بس» وحده — والسجلُّ يعرض الحفظ بـ«أدويتي». */
+  freeText?: "offer" | "oneOff" | "off";
+  stock?: "show" | "hide";
+  /** الدواءُ اختير (أو مُسح) — البيعُ يقرّر منه: منتجٌ بالمخزن أم سطرُ دواء. */
+  onPickMed?: (m: PickedMed | null) => void;
+}) {
   const { t } = useTranslation();
-  // Built-in catalogue MERGED with the clinic's custom medications (added in
-  // Settings) — grouped under their therapeutic type. `version` forces a refresh
-  // after the catalog re-hydrates so newly-added meds appear instantly.
-  const families = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const c of MED_CATALOG) if (c.type !== "Vaccines") map.set(c.type, [...c.items]);
-    for (const m of getClinicMeds()) {
-      const arr = map.get(m.type) ?? [];
-      if (!arr.some((x) => x.toLowerCase() === m.name.toLowerCase())) arr.push(m.name);
-      map.set(m.type, arr);
-    }
-    return Array.from(map, ([type, items]) => ({ type, items }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version]);
-  const [family, setFamily] = useState<string>("");
-  const [drug, setDrug] = useState<string>("");
+  void version;
+  const [med, setMed] = useState<PickedMed | null>(null);
   const [route, setRoute] = useState<RouteId | null>(null);
   const [dosage, setDosage] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [given, setGiven] = useState(true);
 
-
-  const drugs = useMemo(() => families.find((f) => f.type === family)?.items ?? [], [families, family]);
+  const drug = med?.name ?? "";
   const routeDef = ROUTES.find((r) => r.id === route);
-  const ready = !!drug && !!route && !!dosage.trim();
+  const ready = !!med && !!route && !!dosage.trim();
 
-  const reset = () => { setFamily(""); setDrug(""); setRoute(null); setDosage(""); setNote(""); setGiven(true); };
+  const reset = () => { setMed(null); onPickMed?.(null); setRoute(null); setDosage(""); setNote(""); setGiven(true); };
 
   // Build the current selection as a draft (or null if incomplete). Shared by the "Add"
   // button and the parent's Save (which flushes this via flushRef so a configured-but-
   // unadded medication is never lost).
   const buildDraft = (): MedicalDraft | null =>
-    ready && route ? { id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim(), note: note.trim() || undefined, administered: given } : null;
+    ready && route && med ? { id: uid("med"), kind: "medication", family: med.familyType, name: med.name, route, dosage: dosage.trim(), note: note.trim() || undefined, administered: given, productId: med.productId } : null;
   useEffect(() => { onReadyChange?.(ready); }, [ready, onReadyChange]);
   useEffect(() => {
     if (flushRef) flushRef.current = buildDraft;
     return () => { if (flushRef) flushRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flushRef, ready, route, family, drug, dosage, note, given]);
+  }, [flushRef, ready, route, med, dosage, note, given]);
 
   return (
     <div className="space-y-5">
-      {/* Tier 1 — family */}
-      <Tier n={1} label={t("medentry.tierFamily", "العائلة الدوائية")} icon={<Layers size={14} />}>
-        <FancySelect
-          value={family}
-          placeholder={t("medentry.familyPh", "اختر العائلة الدوائية…")}
-          options={families.map((f) => ({ value: f.type, label: f.type, hint: `${f.items.length}` }))}
-          onChange={(v) => { setFamily(v); setDrug(""); setRoute(null); setDosage(""); }}
-        />
+      {/* Tier 1 — the medicine (unified picker) */}
+      <Tier n={1} label={t("medentry.tierDrug", "الدواء")} icon={<Stethoscope size={14} />}>
+        <MedField value={med} species={species ?? null} freeText={freeText} stock={stock}
+          onChange={(m) => { setMed(m); onPickMed?.(m); setRoute(null); setDosage(""); }} />
       </Tier>
-
-      {/* Tier 2 — drug */}
-      <AnimatePresence>
-        {family && (
-          <Reveal key="t2">
-            <Tier n={2} label={t("medentry.tierDrug", "الدواء")} icon={<Stethoscope size={14} />}>
-              <FancySelect
-                value={drug}
-                placeholder={t("medentry.drugPh", "اختر الدواء…")}
-                searchable
-                options={drugs.map((d) => ({ value: d, label: d }))}
-                onChange={(v) => { setDrug(v); setRoute(null); setDosage(""); }}
-              />
-            </Tier>
-          </Reveal>
-        )}
-      </AnimatePresence>
 
       {/* Tier 3 — route (icon toggles) */}
       <AnimatePresence>
         {drug && (
           <Reveal key="t3">
-            <Tier n={3} label={t("medentry.tierRoute", "طريقة الإعطاء")} icon={<Syringe size={14} />}>
+            <Tier n={2} label={t("medentry.tierRoute", "طريقة الإعطاء")} icon={<Syringe size={14} />}>
               <div className="grid grid-cols-3 gap-2">
                 {ROUTES.map((r) => {
                   const Icon = r.icon;
@@ -454,7 +438,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {route && routeDef && (
           <Reveal key="t4">
-            <Tier n={4} label={t("medentry.tierDosage", "الجرعة")} icon={<ClipboardList size={14} />}>
+            <Tier n={3} label={t("medentry.tierDosage", "الجرعة")} icon={<ClipboardList size={14} />}>
               <div className="flex flex-wrap gap-1.5">
                 {routeDef.doses.map((d) => {
                   const active = dosage === d;
@@ -493,7 +477,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {route && (
           <Reveal key="t5">
-            <Tier n={5} label={t("medentry.tierNote", "ملاحظة")} icon={<NotebookPen size={14} />} optional>
+            <Tier n={4} label={t("medentry.tierNote", "ملاحظة")} icon={<NotebookPen size={14} />} optional>
               <input
                 className="input"
                 value={note}
@@ -509,7 +493,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {route && (
           <Reveal key="t6">
-            <Tier n={6} label={t("medentry.tierStatus", "الحالة")} icon={<Check size={14} />}>
+            <Tier n={5} label={t("medentry.tierStatus", "الحالة")} icon={<Check size={14} />}>
               <GivenToggle given={given} onChange={setGiven} />
             </Tier>
           </Reveal>
@@ -521,7 +505,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
         variant="secondary"
         disabled={!ready}
         leftIcon={<Plus size={16} />}
-        onClick={() => { const d = buildDraft(); if (d) { onAdd(d); reset(); } }}
+        onClick={() => { const d = buildDraft(); if (d && onAdd(d) !== false) reset(); }}
       >
         {addLabel ?? t("medentry.addMedication", "إضافة الدواء")}
       </Button>

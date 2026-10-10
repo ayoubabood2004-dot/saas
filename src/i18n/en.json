@@ -5967,7 +5967,12 @@
     "up": "Up",
     "down": "Down",
     "allMeds": "All medicines",
-    "noDoseWrite": "No documented dose — type the amount"
+    "noDoseWrite": "No documented dose — type the amount",
+    "posProduct": "From stock: {{name}} · {{price}} · {{n}} left",
+    "posChoose": "More than one stock product has this name — choose one",
+    "posAsProduct": "Sold as a product — stock decreases, and the treatment is written to the pet's record",
+    "posByWeight": "“{{name}}” is sold by weight — add it from the Products tab",
+    "posOneEntry": "“{{name}}” is already in the cart — quantity increased; the record entry is written once"
   },
   "mmset": {
     "suggestDone": "{{n}} added to My medicines",

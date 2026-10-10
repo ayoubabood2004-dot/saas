@@ -34,6 +34,8 @@ import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
+import { useMedPickerOpen } from "@/components/meds/MedPicker";
+import { medDraftsByPet, medOnlyLine } from "@/lib/medSale";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, stripAim } from "@/lib/productCodes";
@@ -1085,12 +1087,35 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
   // medical draft (dose/route/booster/lot) so it can be written into the pet's record.
   const addMedLine = (draft: MedicalDraft, price: number, qty: number) => {
-    const id = `m:${draft.id}`; // each draft has a unique uid → always a fresh line
-    const unit_price = Math.max(0, Math.round(price * 100) / 100); // same rounding as setPrice
-    // The line belongs to the ACTIVE patient — its record receives the sync on checkout.
-    setCart((c) => [...c, { id, kind: "med", name: draft.name, barcode: null, unit_price, unit_cost: 0, qty: Math.max(1, qty), stock: null, product_id: null, subcategory: null, med: draft, petId: activePet?.id ?? null, petName: activePet?.name ?? null }]);
+    // each draft has a unique uid → always a fresh line, owned by the ACTIVE patient
+    // (its record receives the sync on checkout). سطرُ «دواء» لما ليس بالمخزن، كما كان.
+    const line: Line = medOnlyLine(draft, price, qty, activePet ? { id: activePet.id ?? null, name: activePet.name ?? null } : null);
+    setCart((c) => [...c, line]);
     playSuccess();
-    flashLine(id);
+    flashLine(line.id);
+  };
+  /* دواءٌ بالمخزن من تبويب «الأدوية» (جوابُ المالك ٢): يُباع **منتجاً** بالمسار نفسه الذي يسلكه
+   * المسح — الرصيدُ ينقص والكلفةُ تُسجَّل والعلبةُ/المفردُ وسقفُ الرصيد وتأكيداتُ البيع كما هي —
+   * والسطرُ يحمل مسودّةَ السجلّ فيُكتب علاجُ الحيوان مرّةً واحدة عند الإتمام. */
+  const addMedProduct = async (p: Product, draft: MedicalDraft, qty: number) => {
+    if (p.sold_by_weight) {
+      playWarning();
+      toast.error(t("mymeds.posByWeight", { name: p.name, defaultValue: "«{{name}}» يُباع بالوزن — أضفه من تبويب المنتجات" }));
+      return;
+    }
+    const id = `p:${p.id}`;
+    const had = cartRef.current.find((l) => l.id === id);
+    // sellOrExplain لا addProduct: يُسأل الخادمُ حين ترفض القائمةُ أو تقصّ — كالمسح والكرت حرفاً.
+    const r = await sellOrExplain(p, Math.max(1, qty));
+    if (r.refused || r.added == null || r.added <= 0) return;   // رفضه مسارُ المنتج بسببه وقاله
+    if (had?.med) {
+      toast.warn(t("mymeds.posOneEntry", { name: p.name, defaultValue: "«{{name}}» بالسلّة أصلاً — زادت الكمية، والسجلّ ينكتب مرّة وحدة" }));
+      return;
+    }
+    const pet = activePet;
+    const attach = (c: Line[]): Line[] => c.map((l) => (l.id === id && !l.med ? { ...l, med: draft, petId: pet?.id ?? null, petName: pet?.name ?? null } : l));
+    cartRef.current = attach(cartRef.current);
+    setCart(attach);
   };
 
   const setQty = (id: string, qty: number) =>
@@ -1412,7 +1437,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   };
   /* والماسحُ صامتٌ ونافذةُ تأكيدٍ مفتوحة: مسحةٌ خلفها كانت تُضيف سطراً لم يُسمَّ، ثم «أكيد»
    * تبيعه — منتهياً أو رفّاً كاملاً — بلا أن يُذكر بالسؤال. */
-  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk });
+  /* ومنتقي الأدوية مفتوحٌ فوق الشاشة: مسحةٌ خلفه كانت تُضيف منتجاً لا يراه الكاشير. */
+  const medPickerOpen = useMedPickerOpen();
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || medPickerOpen });
   // وبعد أن يهبط التصفير: تُمرَّر المسحةُ المحفوظة على سلّةٍ نظيفة.
   useEffect(() => {
     if (done || pendingScanRef.current === null) return;
@@ -1943,6 +1970,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   useEffect(() => {
     if (!posV2) return;
     const onKey = (e: KeyboardEvent) => {
+      // F2 و«/» خلف منتقي الأدوية لا يمسّان السلّة — المنتقي فوقها والكاشيرُ يختار دواءً.
+      if (medPickerOpen) return;
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
@@ -2271,11 +2300,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         }
       }
       // Med lines grouped per patient — each pet's record gets ITS OWN entries.
-      const medByPet = new Map<string, MedicalDraft[]>();
-      for (const l of cart) {
-        if (l.kind !== "med" || !l.med || !l.petId) continue;
-        const arr = medByPet.get(l.petId) ?? []; arr.push(l.med); medByPet.set(l.petId, arr);
-      }
+      // وسطرُ منتجٍ جاء من تبويب «الأدوية» يحمل مسودّتَه كذلك — مسودّةٌ واحدة لكلّ سطر.
+      const medByPet = medDraftsByPet(cart);
       // Snapshot the lines for instant printing (services + products, with overrides).
       // With several pets on one bill, each med line is labelled with its animal.
       const multiPet = petNames.length > 1;
@@ -3017,7 +3043,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         ) : browseTab === "services" ? (
           <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} compact={compact} />
         ) : (
-          <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} petId={activePet?.id ?? null} petName={activePet?.name ?? null} />
+          <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} onAddProduct={addMedProduct} products={products}
+            listPrice={listPrice} petId={activePet?.id ?? null} petName={activePet?.name ?? null} />
         )}
       </div>
 
@@ -3169,16 +3196,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         })()}
                         {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
-                        {l.kind === "med" && (
+                        {(l.kind === "med" || !!l.med) && (
                           l.med?.kind === "vaccination"
                             ? <span className="chip shrink-0 bg-success-50 text-2xs font-medium text-success-700 dark:bg-success-500/15 dark:text-success-200"><Syringe size={10} className="me-0.5 inline" />{t("retail.vaccine", "لقاح")}</span>
                             : <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Pill size={10} className="me-0.5 inline" />{t("retail.medication", "دواء")}</span>
                         )}
-                        {l.kind === "med" && l.petName && (
+                        {(l.kind === "med" || !!l.med) && l.petName && (
                           <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted"><PawPrint size={10} className="me-0.5 inline" />{l.petName}</span>
                         )}
                       </p>
-                      {l.kind === "med" && l.med && (
+                      {l.med && (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle">
                           {l.med.kind === "vaccination"
                             ? (l.med.nextDue
