@@ -4542,7 +4542,7 @@ chk "العيادةُ تسمّي Amoxil «Amoxil LA» (تعديلٌ من «أد�
 chk "  وإعادةُ الطيّ لا تُرجع الاسمَ القديم — ما طُوي مرّةً لا يُطوى ثانية" \
     "select _clinic_drugs_fold('$CF')::text" "{}"
 chk "  (صفٌّ واحدٌ بالاسم الجديد، ولا Amoxil ثانٍ بآخر «أدويتي»)" \
-    "select string_agg(name||':'||in_mine::text, ',' order by name) from clinic_drugs where clinic_id='$CF' and search_norm(name) like 'amoxil%'" "Amoxil LA:true"
+    "select string_agg(name||':'||in_mine::text, ',' order by name) from clinic_drugs where clinic_id='$CF' and search_norm(name) like 'amoxil%'" "AmoxilLA:true"
 chk "  والعيادةُ تؤرشفه بعدها" \
     "select _cd('$CF', '$CF', jsonb_build_array(jsonb_build_object('op','archive','id',(select id from clinic_drugs where clinic_id='$CF' and name='Amoxil LA'))))" "ok:4"
 chk "  ولا يرجع بعد أرشفته كذلك" \
@@ -4550,7 +4550,9 @@ chk "  ولا يرجع بعد أرشفته كذلك" \
 # والطيُّ يُعاد بعد إصدار (B9) ليلتقط ما كتبته نسخةٌ قديمة بالجدولين بعده — السجلُّ يمنع العائدَ لا الجديد.
 $P -c "insert into clinic_meds (clinic_id, name, type, created_at) values ('$CF','Cerenia','Gastrointestinal','2026-02-01 10:00+03');" >/dev/null
 chk "وما كتبته نسخةٌ قديمة بعد الطيّ يُلتقط بالإعادة (B9)" \
-    "select (_clinic_drugs_fold('$CF')->>'$CF')||'|'||(select family||':'||in_mine::text from clinic_drugs where clinic_id='$CF' and name='Cerenia')" "1|gi:true"
+    "select _clinic_drugs_fold('$CF')->>'$CF'" "1"
+chk "  بعائلة صنفه القديم وبآخر «أدويتي»" \
+    "select family||':'||in_mine::text||':'||(pos = (select max(pos) from clinic_drugs where clinic_id='$CF' and in_mine))::text from clinic_drugs where clinic_id='$CF' and name='Cerenia'" "gi:true:true"
 chk "  ثم الإعادةُ تضيف صفراً" \
     "select _clinic_drugs_fold('$CF')::text" "{}"
 # المنحُ الشامل بالحزمة أعاد تنفيذ الطيّ للمسجَّل — تُعاد الهجرةُ (والطيُّ معها يضيف صفراً) ثم نقيس.
