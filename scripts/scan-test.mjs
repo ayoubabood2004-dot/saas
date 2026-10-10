@@ -443,10 +443,12 @@ console.log("▸ رصيدُ الصفر — يُسأل الخادمُ قبل ال
   //  الصفّ، وبحوض القسم — خطة الطزاجة بعد التدقيق. وسلوكُها يُفحص بـfreshness-test.)
   check("وشاشةُ البيع تسأل الخادمَ بمهلةٍ قبل الرفض",
     /return await withTimeout\(askFresh\(product, code, \{/.test(sb) && /\}\), 6000\);/.test(sb));
-  check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(sellable, n)"));
+  // (`opt` يحمل `sale` لتبويب «الأدوية»: بيعٌ ولو كان «راجع» مشغّلاً — فالوضعُ يصل البوّابةَ
+  //  محسوباً `ret` من `retMode` نفسِه، لا ثابتاً ولا نسخة.)
+  check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(sellable, n, opt)"));
   // البوّابةُ والحكمُ من الوحدة المفحوصة (`freshSale.ts`) لا نسخةٍ محلّية.
   check("  والحكمُ من الوحدة المفحوصة لا نسخةٍ محلّية",
-    sb.includes("needsServerCheck(product, lineBefore, n, retMode)")
+    sb.includes("needsServerCheck(product, lineBefore, n, ret)") && sb.includes("const ret = retMode && !opt?.sale;")
     && /import \{[^}]*\bneedsServerCheck\b[^}]*\} from "@\/lib\/freshSale"/.test(sb)
     && /import \{[^}]*\bfreshVerdict\b[^}]*\} from "@\/lib\/freshSale"/.test(sb)
     && !sb.includes("const isNoStock"));

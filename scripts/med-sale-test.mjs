@@ -13,8 +13,10 @@
  *  ٣) سطرُ منتجٍ من التبويب بالإتمام: product_id وunit_cost بالفاتورة، والرصيدُ ينقص، وقيدُ
  *     العلاج بسجلّ الحيوان يُكتب **مرّةً واحدة** بملاحظته «Injection · Antibiotics».
  *  ٤) دواءٌ ليس بالمخزن: سطرُ «دواء» القديم (بلا منتجٍ ولا كلفة) والرصيدُ لا يتحرّك.
- *  ٥) شاشةُ البيع بنصّها: المسارُ يمرّ من addProduct، والمسودّةُ تُلصق مرّةً بالسطر، والإتمامُ
+ *  ٥) شاشةُ البيع بنصّها: المسارُ يمرّ من addProduct، والمسودّةُ تُلصق بالسطر، والإتمامُ
  *     يجمع المسودّات من كلّ سطرٍ يحملها.
+ *  ٧) حيوانٌ ثانٍ على نفس المنتج قيدُه يُكتب (لا «بالسلّة أصلاً» تبتلعه)، و«راجع» لا يقلب دواءَ
+ *     التبويب سطرَ إرجاع — بالوحدة الحقيقية وبنصّ شاشة البيع.
  *
  *   node scripts/med-sale-test.mjs
  * ==========================================================================*/
@@ -61,7 +63,7 @@ const stubs = {
 };
 const built = await esbuild.build({
   stdin: {
-    contents: `export { repo } from "./src/lib/repo.ts"; export { persistMedicalEntries } from "./src/lib/medSync.ts"; export * as S from "./src/lib/medSale.ts";`,
+    contents: `export { repo } from "./src/lib/repo.ts"; export { persistMedicalEntries } from "./src/lib/medSync.ts"; export * as S from "./src/lib/medSale.ts"; export { isCustomerBound } from "./src/lib/saleCustomer.ts";`,
     resolveDir: process.cwd(), loader: "ts",
   },
   bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs], logLevel: "silent", mainFields: ["module", "main"],
@@ -71,7 +73,7 @@ const dir = mkdtempSync(join(tmpdir(), "med-sale-"));
 const file = join(dir, "m.mjs");
 writeFileSync(file, built.outputFiles[0].text);
 const M = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
-const { repo, persistMedicalEntries, S } = M;
+const { repo, persistMedicalEntries, S, isCustomerBound } = M;
 
 const P = (id, name, extra = {}) => ({ id, name, barcode: null, stock: 10, purchase_price: 2000, sell_price: 3000, category: "medicine", clinic_id: "c1", farm_id: null, ...extra });
 
@@ -151,11 +153,36 @@ console.log("▸ ٦) شاشةُ البيع بنصّها");
   const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8").replace(/\r\n/g, "\n");
   const fn = /const addMedProduct = async \(p: Product, draft: MedicalDraft, qty: number\) => \{([\s\S]*?)\n  \};/.exec(sb)?.[1] ?? "";
   check("دواءٌ بالمخزن يمرّ من sellOrExplain — مسارُ المسح والكرت نفسُه (لا رصيدَ موازٍ)", /await sellOrExplain\(p,/.test(fn) && !/setCart\(\(c\) => \[\.\.\.c,/.test(fn) && !/\baddProduct\(/.test(fn));
-  check("  والمسودّةُ تُلصق بالسطر مرّةً (سطرٌ يحملها أصلاً لا تُستبدل مسودّتُه)", /!l\.med \?/.test(fn) && /had\?\.med/.test(fn));
+  /* كان العقدُ «مرّةً لكلّ سطر» (`had?.med` ⇒ زادت الكمية والمسودّةُ تسقط) — فحيوانٌ ثانٍ على نفس
+   * المنتج يُباع ولا يُكتب. العقدُ الآن: الأولى لا تُستبدل، وكلُّ إضافةٍ بعدها قيدُها (med-hosts-test). */
+  const kept = S.attachMedDraft([{ id: "p:x", med: draft("أوّل"), petId: "p1" }], "p:x", { med: draft("ثانٍ"), petId: "p2", petName: null })[0];
+  check("  والمسودّةُ تُلصق بالسطر (attachMedDraft): الأولى لا تُستبدل والتاليةُ لا تسقط", /attachMedDraft\(/.test(fn) && !/had\?\.med/.test(fn)
+    && kept.med.name === "أوّل" && kept.petId === "p1" && kept.medMore?.length === 1 && kept.medMore[0].petId === "p2");
   check("والإتمامُ يجمع المسودّات من كلّ سطرٍ يحملها (medDraftsByPet)", /const medByPet = medDraftsByPet\(cart\);/.test(sb) && !/l\.kind !== "med" \|\| !l\.med \|\| !l\.petId/.test(sb));
   check("وسطرُ الدواء القديم من medOnlyLine (بلا منتجٍ ولا كلفة)", /medOnlyLine\(draft, price, qty/.test(sb));
   const form = readFileSync("src/components/retail/MedSaleForm.tsx", "utf8");
   check("ونموذجُ التبويب يقرّر بـmedLineDecision ولا يطلب سعراً لما بالمخزن", /medLineDecision\(/.test(form) && /onAddProduct\(d\.product, draft/.test(form));
+}
+
+/* ── ٧) قيدٌ لكلّ إضافة، و«راجع» لا يقلب دواءَ التبويب ───────────────────────── */
+console.log("▸ ٧) قيدٌ لكلّ إضافة (حيوانٌ ثانٍ على نفس المنتج)، و«راجع» لا يقلب دواءَ التبويب");
+{
+  const draft = (id, dose) => ({ id, kind: "medication", family: "NSAIDs & Analgesics", name: "Meloxicam", route: "injection", dosage: dose, administered: true });
+  let cart = [{ id: "p:melox", kind: "product", name: "Meloxicam", qty: 1, product_id: "melox" }, { id: "s:x", kind: "service", name: "فحص", qty: 1 }];
+  cart = S.attachMedDraft(cart, "p:melox", { med: draft("d1", "1 ml"), petId: "luna", petName: "Luna" });
+  cart = S.attachMedDraft(cart, "p:melox", { med: draft("d2", "2 ml"), petId: "bobby", petName: "Bobby" });
+  cart = S.attachMedDraft(cart, "p:melox", { med: draft("d3", "0.5 ml"), petId: "bobby", petName: "Bobby" });
+  const byPet = S.medDraftsByPet(cart);
+  check("حيوانان على نفس المنتج ⇒ قيدٌ لكلٍّ منهما (لا يُبتلع الثاني)", byPet.get("luna")?.map((d) => d.id).join() === "d1" && byPet.get("bobby")?.map((d) => d.id).join() === "d2,d3", JSON.stringify([...byPet].map(([k, v]) => [k, v.map((d) => d.id)])));
+  check("  والسطرُ واحدٌ للرصيد، وأسماؤه بالوصل كلُّها", cart.filter((l) => l.id === "p:melox").length === 1 && S.linePetNames(cart[0]).join(" + ") === "Luna + Bobby");
+  check("  والراجعُ لا يكتب علاجاً (ولا ما لُصق به)", S.medDraftsByPet([{ ...cart[0], ret: true }]).size === 0);
+  check("  ومسحُ الزبون يرفع سطراً ربطته مسودّةٌ لاحقة بحيوان", isCustomerBound({ id: "p:z", kind: "product", name: "z", petId: null, medMore: [{ petId: "bobby" }] }) && !isCustomerBound({ id: "p:z", kind: "product", name: "z", petId: null, medMore: [{ petId: null }] }));
+  const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8").replace(/\r\n/g, "\n").replace(/\/\*[\s\S]*?\*\//g, "");
+  const fn = /const addMedProduct = async \(p: Product, draft: MedicalDraft, qty: number\) => \{([\s\S]*?)\n  \};/.exec(sb)?.[1] ?? "";
+  check("التبويبُ يبيع ولو كان «راجع» مشغّلاً (sale: true)", /await sellOrExplain\(p, Math\.max\(1, qty\), null, \{ sale: true \}\)/.test(fn));
+  check("  وaddProduct وsellOrExplain يحترمانه (لا addReturn بسطر بيع)", /const ret = retMode && !opt\?\.sale;\s*if \(p\.sold_by_weight\)[^\n]*\n\s*return ret \? addReturn\(p, n\)/.test(sb) && /needsServerCheck\(product, lineBefore, n, ret\)/.test(sb) && /retMode: ret,/.test(sb));
+  check("  والمسودّةُ تُلصق بالسطر الذي أُضيف إليه فعلاً، ولا «بالسلّة أصلاً» تبتلعها", /attachMedDraft\(c, r\.lineId as string,/.test(fn) && !/had\?\.med/.test(fn) && !/posOneEntry/.test(sb));
+  check("  والوصلُ يسمّي حيوانات السطر كلَّها", (sb.match(/linePetNames\(l\)\.join\(" \+ "\)/g) ?? []).length >= 3);
 }
 
 console.log(fails ? `\n✗ med-sale-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-sale-test: ${passes} نجحت، 0 فشلت`);
