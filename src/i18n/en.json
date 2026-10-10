@@ -5582,7 +5582,15 @@
     "careDay": "Care sheet for:",
     "careToday": "Today",
     "careVisitDay": "Visit day",
-    "careOther": "Another day"
+    "careOther": "Another day",
+    "addDrugTitle": "Add a medicine for this day",
+    "dosePh": "e.g. 160 mg",
+    "freqPh": "e.g. twice daily",
+    "day": "Day",
+    "doctor": "Doctor",
+    "doctorPh": "Choose the doctor…",
+    "givenNow": "Given now (record the dose as given)",
+    "addDrugBtn": "Add medicine"
   },
   "intake": {
     "today": "Today",
