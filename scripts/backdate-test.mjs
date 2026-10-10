@@ -91,10 +91,13 @@ const med = readFileSync("src/lib/medSync.ts", "utf8");
 check("medSync: السجلُّ السابق بجملةٍ واحدة (addVaccinations) — لا نصفَ سجلٍّ تكرّره إعادةُ المحاولة",
   /e\.history\?\.length[\s\S]{0,400}repo\.addVaccinations\(historyRows\(/.test(med));
 check("medSync: لقاحُ اليوم يُكتب بيومه المحلّيّ لا toISOString()", /status: "administered",\s*administered_at: today,/.test(med) && !/administered_at: nowISO, due_date: null/.test(med));
-const pp = readFileSync("src/pages/PetPassport.tsx", "utf8");
-check("جرعةُ المعزّز تُكتب بيومها المحلّيّ (العمودُ date)", /administered_at: administeredDay,/.test(pp) && !/administered_at: administeredISO/.test(pp));
+// إعطاءُ الجرعة صار نافذةً مشتركة (vaxNext — تسأل عن الجاية): ملفُّ الحيوان والتقويمُ يفتحانها.
+const adm = readFileSync("src/components/vaccines/AdministerDoseModal.tsx", "utf8");
+check("جرعةُ المعزّز تُكتب بيومها المحلّيّ (العمودُ date)",
+  /const givenDay = localISO\(/.test(adm) && /administered_at: givenDay,/.test(adm) && !/toISOString\(\)/.test(adm));
 const rc = readFileSync("src/pages/Reception.tsx", "utf8");
-check("وعلامةُ «انعطى» من التقويم كذلك", /at = localISO\(new Date\(\)\)/.test(rc));
+check("وعلامةُ «انعطى» من التقويم تفتح نفسَ النافذة (يومُها المحلّيّ منها، لا علامةٌ صامتة)",
+  /if \(v\) setDoseFor\(v\);/.test(rc) && /<AdministerDoseModal /.test(rc) && !/status: "administered", administered_at: at/.test(rc));
 const vp = readFileSync("src/pages/VisitPage.tsx", "utf8");
 check("الطبلةُ: المتأخرةُ = pendingPast (الفائتُ المحسوم ليس متأخراً)", /const overdueDoses = useMemo\(\(\) => pendingPast\(medRows, todayISO\)/.test(vp));
 check("  وجرعةُ يومٍ فات من «بالدواء» تفتح نافذةَ الوقت لا ختمَ الآن", /onGive=\{\(tx\) => \{ if \(tx\.day < todayISO\) \{ playTap\(\); setGiveId\(tx\.id\); \} else void giveQuick\(tx\); \}\}/.test(vp));

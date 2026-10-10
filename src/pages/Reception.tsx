@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -10,7 +10,7 @@ import {
   CalendarDays, Stethoscope, Plus, HeartPulse, Search,
   ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell, X, Check, MessageCircle,
 } from "lucide-react";
-import type { Admission, Pet, Vaccination, Reminder, VaccinationStatus } from "@/types";
+import type { Admission, Pet, Vaccination, Reminder } from "@/types";
 import { opsStore } from "@/lib/opsStore";
 import { COLUMN_ORDER, STATUS_META, statusOf, patchForStatus, type OpStatus } from "@/lib/opsStatus";
 import { matchesBranch, useBranchState } from "@/lib/branchStore";
@@ -28,6 +28,8 @@ import { normalizeDigits } from "@/lib/digits";
 import { cn, localISO, dateLocale } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { useAuth } from "@/contexts/AuthContext";
+// نافذةُ إعطاء اللقاح (تسأل عن الجرعة الجاية) — كسولةٌ: الاستقبالُ بحزمة الإقلاع والنافذةُ لا تُفتح إلا بضغطة.
+const AdministerDoseModal = lazy(() => import("@/components/vaccines/AdministerDoseModal").then((m) => ({ default: m.AdministerDoseModal })));
 
 /* ============================================================================
  * التقويم الرئيسي — Operational Operations Calendar.
@@ -133,6 +135,8 @@ export function Reception() {
   const [activeId, setActiveId] = useState<string | null>(null);
   // Ask "عايش أم متوفى؟" right after a case is dropped on مكتملة.
   const [outcomeFor, setOutcomeFor] = useState<OutcomeTarget | null>(null);
+  /** جرعةُ لقاحٍ تُعطى من التقويم — بنافذةٍ تسأل عن الجاية لا بعلامةٍ صامتة. */
+  const [doseFor, setDoseFor] = useState<Vaccination | null>(null);
   const pets = ops.pets;
   const loading = !ops.hydrated;
 
@@ -321,18 +325,12 @@ export function Reception() {
     playTap();
     const key = clinicId ?? "x";
     if (rem.refKind === "vaccination") {
-      // العمودُ `date`: اليومُ المحلّيّ — `toISOString()` يحفظ يومَ غرينتش (أمس بعد منتصف الليل).
-      const id = rem.refId, at = localISO(new Date());
-      setVaccinations((vs) => {
-        const next = vs.map((v) => (v.id === id ? { ...v, status: "administered" as VaccinationStatus, administered_at: at } : v));
-        setCached(`recVax:${key}`, next);
-        return next;
-      });
-      repo.updateVaccination(id, { status: "administered", administered_at: at }).then(playSuccess).catch(() => {
-        playWarning();
-        toast.error(t("reception.doneError", "تعذّر حفظ الإجراء، حاول مجدداً."));
-        repo.listAllVaccinations(Object.keys(pets)).then((v) => { setVaccinations(v); setCached(`recVax:${key}`, v); }).catch(() => {});
-      });
+      // جرعةُ لقاحٍ لا تُعلَّم «تمّت» بصمت: كانت العلامةُ تقلبها معطاةً وتقف السلسلة (لا جاية
+      // ولا سؤال) — فيعيد الكادرُ إضافةَ اللقاح ليحصل على موعد وتتكرّر الجرعة. تفتح نافذةَ
+      // الإعطاء نفسها التي بملفّ الحيوان: الطبيب، اليوم، و«شوكت الجاية؟».
+      const v = vaccinations.find((x) => x.id === rem.refId);
+      if (v) setDoseFor(v);
+      return;
     } else if (rem.refKind === "reminder") {
       const id = rem.refId;
       setReminders((rs) => {
@@ -479,6 +477,17 @@ export function Reception() {
       </DndContext>
 
       <OutcomeDialog target={outcomeFor} onClose={() => setOutcomeFor(null)} />
+      {doseFor && (
+        <Suspense fallback={null}>
+          <AdministerDoseModal vaccine={doseFor} series={vaccinations.filter((v) => v.pet_id === doseFor.pet_id)} defaultDoctor={user?.full_name}
+            onClose={() => setDoseFor(null)}
+            onDone={() => {
+              setDoseFor(null);
+              const key = clinicId ?? "x";
+              repo.listAllVaccinations(Object.keys(pets)).then((v) => { setVaccinations(v); setCached(`recVax:${key}`, v); }).catch(() => {});
+            }} />
+        </Suspense>
+      )}
     </div>
   );
 }
