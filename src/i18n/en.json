@@ -6008,7 +6008,8 @@
     "petsFailed": "Couldn't load the clinic's pets",
     "switchTitle": "Switch customer?",
     "switchHint": "“{{name}}” doesn't own the pet attached to this sale — these are removed, the rest of the cart stays:",
-    "switchGo": "Switch and remove them"
+    "switchGo": "Switch and remove them",
+    "viaPet": "via {{name}}"
   },
   "scust": {
     "tab": "Sales customers",

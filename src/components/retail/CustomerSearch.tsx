@@ -21,14 +21,25 @@ import { PawPrint, Plus, RotateCcw } from "lucide-react";
 import type { CustomerHit, CustomerPet } from "@/types";
 import { repo } from "@/lib/repo";
 import { getDialCode } from "@/lib/settings";
-import { readCustomerQuery } from "@/lib/customerKey";
+import { readCustomerQuery, viaPetOf } from "@/lib/customerKey";
 import { latestOnly } from "@/lib/saleCustomer";
 import { cn, formatNum } from "@/lib/utils";
 
 export type CustField = "name" | "phone";
 type Status = "idle" | "short" | "loading" | "ok" | "error";
-interface State { field: CustField | null; open: boolean; status: Status; rows: CustomerHit[]; total: number | null; hi: number }
-const CLOSED: State = { field: null, open: false, status: "idle", rows: [], total: null, hi: -1 };
+interface State {
+  field: CustField | null; open: boolean; status: Status; rows: CustomerHit[]; total: number | null; hi: number;
+  /** اسمُ الحيوان الذي طلع به الزبون (`matched = 'pet'`) — «عن طريق لونا». */
+  via: Readonly<Record<string, string>>;
+}
+const CLOSED: State = { field: null, open: false, status: "idle", rows: [], total: null, hi: -1, via: {} };
+/** لكلّ زبونٍ طلع باسم حيوانه: أيُّ حيوان — بنصّ البحث الذي جاء به الجواب نفسِه. */
+function viaOf(rows: readonly CustomerHit[], q: string): Record<string, string> {
+  const dial = getDialCode();
+  const via: Record<string, string> = {};
+  for (const h of rows) { const p = viaPetOf(h, q, dial); if (p) via[h.key] = p; }
+  return via;
+}
 
 export interface CustomerSearch extends State {
   /** نصٌّ جديد بخانة: يُقرأ بقاعدة الخادم نفسِها، ويُرسل بعد ٢٥٠ms إن كان يستحقّ. */
@@ -71,11 +82,11 @@ export function useCustomerSearch(): CustomerSearch {
     try {
       const page = await repo.findCustomers(q, { limit: 8 });
       if (!seq.isLatest(n)) return;
-      setSt((s) => ({ ...s, status: "ok", rows: page.rows, total: page.total ?? page.rows.length, hi: -1 }));
+      setSt((s) => ({ ...s, status: "ok", rows: page.rows, total: page.total ?? page.rows.length, hi: -1, via: viaOf(page.rows, q) }));
     } catch (e) {
       if (!seq.isLatest(n)) return;
       console.error("[pos] customer search failed", e);
-      setSt((s) => ({ ...s, status: "error", rows: [], total: null, hi: -1 }));
+      setSt((s) => ({ ...s, status: "error", rows: [], total: null, hi: -1, via: {} }));
     }
   }, [seq]);
 
@@ -85,7 +96,7 @@ export function useCustomerSearch(): CustomerSearch {
     const rq = readCustomerQuery(value, getDialCode());
     if (rq.mode === "list") { setSt({ ...CLOSED, field }); return; }
     if (rq.mode === "short") { setSt({ ...CLOSED, field, open: true, status: "short" }); return; }
-    setSt((s) => ({ field, open: true, status: "loading", rows: s.field === field ? s.rows : [], total: s.field === field ? s.total : null, hi: -1 }));
+    setSt((s) => ({ field, open: true, status: "loading", rows: s.field === field ? s.rows : [], total: s.field === field ? s.total : null, hi: -1, via: s.field === field ? s.via : {} }));
     timer.current = window.setTimeout(() => { timer.current = null; void run(field, value); }, 250);
   }, [run, stop]);
 
@@ -186,6 +197,11 @@ export function CustomerDropdown({ cs, onPick }: { cs: CustomerSearch; onPick: (
                 {h.petsAlive > 0 && (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
                     <PawPrint size={11} /> {t("cust.pets", { n: formatNum(h.petsAlive), defaultValue: "عنده {{n}} حيوان" })}
+                  </span>
+                )}
+                {cs.via[h.key] && (
+                  <span data-custvia className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">
+                    <PawPrint size={11} className="shrink-0" /> <span className="truncate">{t("cust.viaPet", { name: cs.via[h.key], defaultValue: "عن طريق {{name}}" })}</span>
                   </span>
                 )}
                 {h.purchases >= 2 && (

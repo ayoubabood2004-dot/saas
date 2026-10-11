@@ -91,6 +91,30 @@ check("«07» أقصر من ٣ أرقام", rq("07") === '{"mode":"short"}' && r
 check("«ع» حرفٌ واحد = اكتب أكثر، و«عل» بالاسم", rq("ع") === '{"mode":"short"}' && rq("عل") === '{"mode":"name","key":"عل"}');
 check("وبعيادةٍ سعودية «05» قصير و«050» بالرقم 50", rq("05", SA) === '{"mode":"short"}' && rq("0501", SA) === '{"mode":"phone","key":"501"}');
 
+console.log("▸ ٤ب) ما يُكتب بالفاتورة، و«عن طريق» أيِّ حيوان");
+{
+  const has = typeof K.checkoutPhone === "function";
+  check("الوحدةُ تصدّر checkoutPhone (رقمُ الزبون كما يُكتب بالبيعة)", has);
+  if (has) {
+    check("مفتاحُ الدولة وحده («+964»، «964»، «00964»، «+964 0») لا يُكتب رقماً",
+      ["+964", "964", "00964", "+964 0", " +964 "].every((p) => K.checkoutPhone(p, null, IQ) === null), ["+964", "964"].map((p) => String(K.checkoutPhone(p, null, IQ))).join("|"));
+    check("  ويُؤخذ بدلَه رقمٌ فُصل من خانة الاسم إن وُجد", K.checkoutPhone("+964", "07701234567", IQ) === "07701234567");
+    check("  ورقمٌ حقيقيّ يُكتب كما كُتب (لا تُعاد صياغتُه) — حتى القصيرُ الأرضيّ",
+      K.checkoutPhone(" 0770 123 4567 ", null, IQ) === "0770 123 4567" && K.checkoutPhone("+964 7701234567", "0780", IQ) === "+964 7701234567" && K.checkoutPhone("12345", null, IQ) === "12345");
+    check("  وبمفتاح دولة العيادة: «+966» وحده بعيادةٍ سعودية ليس رقماً، وبعيادةٍ عراقية رقمٌ يُترك كما هو",
+      K.checkoutPhone("+966", null, SA) === null && K.checkoutPhone("+966", null, IQ) === "+966");
+    check("  وفارغٌ = فارغ", K.checkoutPhone("", null, IQ) === null && K.checkoutPhone(null, undefined, IQ) === null);
+  }
+  const hasVia = typeof K.viaPetOf === "function";
+  check("الوحدةُ تصدّر viaPetOf («عن طريق لونا»)", hasVia);
+  if (hasVia) {
+    const hit = { matched: "pet", pets: [{ name: "Max" }, { name: "لونا" }, { name: null }] };
+    check("زبونٌ طلع باسم حيوانه: يُسمّى الحيوانُ الذي طابق (بالطيّ نفسِه)", K.viaPetOf(hit, "لون", IQ) === "لونا" && K.viaPetOf(hit, "max", IQ) === "Max");
+    check("  وطلع بالاسم أو الرقم ⇒ لا «عن طريق»", K.viaPetOf({ ...hit, matched: "name" }, "لون", IQ) === null && K.viaPetOf({ ...hit, matched: "phone" }, "0770", IQ) === null);
+    check("  ونصٌّ قصيرٌ أو رقميّ ⇒ لا شيء (لا تخمين)", K.viaPetOf(hit, "ل", IQ) === null && K.viaPetOf(hit, "0770", IQ) === null);
+  }
+}
+
 /* ---- ٥) مرآةُ القاعدة --------------------------------------------------- */
 const PHONES = [
   ...sameIQ.map((p) => [p, IQ]),

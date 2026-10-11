@@ -3384,6 +3384,8 @@ function SalesCustomersTab() {
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const [more, setMore] = useState<"idle" | "loading" | "error" | "end">("idle");
   const seq = useRef(0);
+  /** الإزاحةُ التالية = ما وصل من الخادم فعلاً (لا ما طُلب، ولا ما بقي بعد طيّ المكرّر). */
+  const received = useRef(0);
   useEffect(() => { const id = window.setTimeout(() => setQd(q), 250); return () => window.clearTimeout(id); }, [q]);
   // نصٌّ أقصرُ من حرفين أو ٣ أرقام لا يرجع شيئاً بالخادم — فهو كالفارغ: القائمةُ كلُّها.
   const query = readCustomerQuery(qd, getDialCode()).mode === "short" ? "" : qd.trim();
@@ -3394,14 +3396,17 @@ function SalesCustomersTab() {
     try {
       const page = await repo.findCustomers(query || null, { filter: "nopets", sort, limit: PAGE, offset, top: 3 });
       if (n !== seq.current) return;
+      /* صفحةٌ ناقصة ليست نهاية (CLAUDE.md: allPages) — النهايةُ صفحةٌ فارغة، والزرُّ يبقى ما
+       * دام المعروضُ أقلَّ من total. وبيعٌ بين صفحتين يزحزح الترتيب فيعيد زبوناً رآه الطبيب:
+       * يُطوى بمفتاحه (لا صفَّين لزبونٍ واحد)، والإزاحةُ تبقى بما وصل. */
+      received.current = offset + page.rows.length;
       if (offset === 0) {
         setRows(page.rows); setTotal(page.total ?? 0); setStatus("ok");
-        setMore(page.rows.length < PAGE ? "end" : "idle");
+        setMore(page.rows.length === 0 ? "end" : "idle");
       } else {
-        // الإزاحةُ التالية = ما وصل فعلاً، وصفحةٌ فارغة تُنهي (لا سقفَ صامت).
-        setRows((prev) => [...prev, ...page.rows]);
+        setRows((prev) => { const seen = new Set(prev.map((r) => r.key)); return [...prev, ...page.rows.filter((r) => !seen.has(r.key))]; });
         if (page.total != null) setTotal(page.total);
-        setMore(page.rows.length === 0 || page.rows.length < PAGE ? "end" : "idle");
+        setMore(page.rows.length === 0 ? "end" : "idle");
       }
     } catch (e) {
       if (n !== seq.current) return;
@@ -3494,7 +3499,7 @@ function SalesCustomersTab() {
       {status === "ok" && total != null && rows.length < total && more !== "end" && (
         <div className="flex flex-col items-center gap-1">
           {more === "error" && <p className="text-xs font-semibold text-danger-700 dark:text-danger-200">{t("scust.moreError", "ما كدرنا نحمّل الباقي")}</p>}
-          <Button variant="ghost" data-scustmore disabled={more === "loading"} onClick={() => { playTap(); void load(rows.length); }}>
+          <Button variant="ghost" data-scustmore disabled={more === "loading"} onClick={() => { playTap(); void load(received.current); }}>
             {more === "error" ? t("common.retry", "إعادة المحاولة") : t("scust.more", "حمّل المزيد")}
           </Button>
         </div>

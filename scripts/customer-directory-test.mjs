@@ -169,7 +169,14 @@ console.log("▸ «زبائن المبيعات» بالتقارير، والدل
   check("  يقرأ زبائنَ البيع بلا سجل حيوان، بأكثر ما يشترون، بصفحة ٥٠",
     /repo\.findCustomers\(query \|\| null, \{ filter: "nopets", sort, limit: PAGE, offset, top: 3 \}\)/.test(tab) && /const PAGE = 50;/.test(tab));
   check("  وترتيبان: الأكثرُ تكراراً وآخرُ زيارة", /\["purchases", t\("scust\.sortRepeat"/.test(tab) && /\["recent", t\("scust\.sortRecent"/.test(tab));
-  check("  و«حمّل المزيد» يكمل من حيث وصل، وصفحةٌ فارغة تُنهي", /void load\(rows\.length\)/.test(tab) && /page\.rows\.length === 0 \|\| page\.rows\.length < PAGE \? "end"/.test(tab));
+  /* صفحةٌ ناقصة ليست نهاية (CLAUDE.md: allPages تتقدّم بما وصل وتتوقّف عند صفحةٍ فارغة) —
+   * والسابقُ كان يُنهي بصفحةٍ ناقصة ويكمل من «المعروض» لا من «الواصل». */
+  check("  و«حمّل المزيد» يكمل بما وصل من الخادم (لا بما عُرض)، وصفحةٌ فارغة وحدها تُنهي",
+    /received\.current = offset \+ page\.rows\.length;/.test(tab) && /void load\(received\.current\)/.test(tab)
+    && (tab.match(/setMore\(page\.rows\.length === 0 \? "end" : "idle"\)/g) ?? []).length === 2
+    && !/page\.rows\.length < PAGE/.test(tab));
+  check("  وزبونٌ أعادته صفحةٌ تالية (بيعٌ زحزح الترتيب) لا يُعرض صفَّين",
+    /const seen = new Set\(prev\.map\(\(r\) => r\.key\)\); return \[\.\.\.prev, \.\.\.page\.rows\.filter\(\(r\) => !seen\.has\(r\.key\)\)\]/.test(tab));
   check("  والفشلُ «أعد المحاولة» — لا قائمةً فارغةً تُصدَّق", /setStatus\("error"\)/.test(tab) && /data-scusterr/.test(tab) && /onClick=\{\(\) => \{ playTap\(\); void load\(0\); \}\}/.test(tab));
   check("  وبلا مال (لا مبلغ ولا دَين)", tab !== "" && !/money\(|dueOf|paidOf|\.amount_paid|revenue/.test(tab));
 }

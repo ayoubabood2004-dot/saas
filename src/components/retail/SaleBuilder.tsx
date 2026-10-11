@@ -11,7 +11,7 @@ import {
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
-import { custNameKey, custPhoneKey } from "@/lib/customerKey";
+import { checkoutPhone, custNameKey, custPhoneKey } from "@/lib/customerKey";
 import { cleanRef, unmangleRef, MAX_REF_LEN } from "@/lib/deliverySearch";
 import { getServiceCatalog, findServiceByBarcode } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
@@ -2272,9 +2272,11 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // والرقم لخانة الهاتف إن كانت فارغة — فلا يتلوث دفتر الديون بأسماء
       // بذيولٍ رقمية.
       const cust = splitCustomerField(name);
+      // ومفتاحُ الدولة وحده («+964») ليس رقماً — لا يُكتب فيجمع أناساً شتّى زبوناً واحداً.
+      const custPhone = checkoutPhone(phone, cust.phone, getDialCode());
       const meta: SaleMeta = {
         customer_name: cust.name || null,
-        customer_phone: phone.trim() || cust.phone || null,
+        customer_phone: custPhone,
         pet_name: petNames.length ? petNames.join(" + ") : null,
         // The client computes the authoritative final price (promotions + manual discount
         // + any manual final-price override, which may be a markup); the server records it.
@@ -2317,7 +2319,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           branch_id: branchStore.branchForWrite(),
           courier_id: dCourierId || null,
           customer_name: cust.name || null,
-          customer_phone: phone.trim() || cust.phone || null,
+          customer_phone: custPhone,
           zone: dZone || null,
           address: dAddress.trim() || null,
           note: null,

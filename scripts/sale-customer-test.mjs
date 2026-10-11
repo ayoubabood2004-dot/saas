@@ -395,7 +395,15 @@ check("  وF2 لا يدفع تحت نافذة التبديل", /if \(e\.key === 
 check("و«نفس المالك» بمنتقي الحيوانات بنفس المفتاح (الرقمُ بمفتاح الدولة يغلب، ثم الاسمُ المطويّ) لا بأرقامٍ خام",
   /pk \? custPhoneKey\(p\.owner_phone, dial\) === pk : !!nk && custNameKey\(p\.owner_name\) === nk/.test(SB) && !/phoneDigits\(p\.owner_phone/.test(SB));
 check("والبحثُ القديم (آخرُ ٣٠٠ فاتورة بالنصّ الخام) زال من الريبو", !/searchCustomers|dedupeCustomers/.test(read("src/lib/repo.ts") + read("src/lib/repoDemo.ts")));
-for (const k of ["short", "error", "new", "more", "pets", "regular", "noPhone", "addPet", "petsFailed", "switchTitle", "switchHint", "switchGo"]) {
+/* «+964» وحده كان يُكتب رقماً للزبون (حيوانٌ قديمٌ رقمُ صاحبه مفتاحٌ بلا رقم يُسحب للبيعة):
+ * ٢٣ فاتورةً بالإنتاج رقمُها «964» تجمع أناساً شتّى. الحكمُ نفسُه بالفاتورة وبطلب التوصيل. */
+check("رقمُ الزبون بالفاتورة وبطلب التوصيل يمرّ من checkoutPhone (مفتاحُ الدولة وحده لا يُكتب)",
+  /const custPhone = checkoutPhone\(phone, cust\.phone, getDialCode\(\)\);/.test(SB)
+  && (SB.match(/customer_phone: custPhone,/g) ?? []).length === 2
+  && !/customer_phone: phone\.trim\(\) \|\| cust\.phone/.test(SB));
+check("زبونٌ طلع باسم حيوانه يقول «عن طريق X» (وإلا يُظنّ خطأ)",
+  /via: viaOf\(page\.rows, q\)/.test(CS) && /cs\.via\[h\.key\] && \(/.test(CS) && /t\("cust\.viaPet"/.test(CS));
+for (const k of ["short", "error", "new", "more", "pets", "regular", "noPhone", "addPet", "petsFailed", "switchTitle", "switchHint", "switchGo", "viaPet"]) {
   check(`  مفتاحُ cust.${k} بالملفّين`, !!en?.cust?.[k] && !!ar?.cust?.[k]);
 }
 

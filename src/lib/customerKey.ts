@@ -93,6 +93,35 @@ export function btrimSpaces(s: string | null | undefined): string {
   return String(s ?? "").replace(/^ +| +$/g, "");
 }
 
+/**
+ * رقمُ الزبون كما يُكتب بالفاتورة وطلب التوصيل. **مفتاحُ الدولة وحده ليس رقماً**: «+964»
+ * (حيوانٌ قديمٌ رقمُ صاحبه مفتاحٌ بلا رقم، يُسحب للبيعة مع حيوانه) كان يُكتب كما هو —
+ * ٢٣ فاتورةً بالإنتاج رقمُها «964» وحده، يجمعها كلُّ ما يقرأ الرقمَ زبوناً واحداً لأناسٍ
+ * شتّى. فما لا يبقى منه رقمٌ وطنيّ بمفتاح دولة العيادة يُترك، ويُؤخذ بدلَه رقمٌ فُصل من
+ * خانة الاسم (`splitCustomerField`) إن وُجد. لا يمسّ ما خُزّن قبله.
+ */
+export function checkoutPhone(phone: string | null | undefined, fromName: string | null | undefined, dial?: string | null): string | null {
+  const p = String(phone ?? "").trim();
+  if (p && custPhoneNat(p, dial) !== "") return p;
+  return fromName || null;
+}
+
+/**
+ * «عن طريق لونا»: الخادمُ يقول إن الزبونَ طلع **باسم حيوانه** (`matched = 'pet'`، رتبة ٥)
+ * ولا يقول أيَّ حيوان — فيُعاد الحكمُ نفسُه هنا (`custNorm(اسم الحيوان)` يحوي نصَّ البحث
+ * المطويّ). بلاه يطلع «أبو حسن» تحت «لونا» بلا سبب يُرى فيُظنّ خطأ.
+ */
+export function viaPetOf(
+  hit: { matched: string | null; pets: readonly { name: string | null }[] },
+  q: string | null | undefined,
+  dial?: string | null,
+): string | null {
+  if (hit.matched !== "pet") return null;
+  const rq = readCustomerQuery(q, dial);
+  if (rq.mode !== "name") return null;
+  return hit.pets.find((p) => custNorm(p.name).includes(rq.key))?.name ?? null;
+}
+
 export type CustomerQuery =
   | { mode: "list" }
   | { mode: "short" }
