@@ -1797,7 +1797,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * حيواناته، يُسأل أوّلاً ويمرّ التأكيدُ من «امسح الزبون» نفسِه (حارسُ الدفعة المعلَّقة). */
   const applyPick = (hit: CustomerHit) => { setName(hit.name ?? ""); setPhone(hit.phone ?? ""); setPickedHit(hit); };
   const pickCustomer = (hit: CustomerHit) => {
-    cs.close();
+    cs.cancel();   // لا تعود قائمةُ النصّ القديم بالتركيز التالي
     playTap();
     const plan = planCustomerSwitch(salePets, cart, hit.pets.map((p) => p.id));
     if (plan.ask) {

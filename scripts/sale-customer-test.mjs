@@ -383,6 +383,10 @@ check("  وكلُّ تغييرٍ بالنصّ يمحو الإشارة (فـEnter
 check("فشلُ البحث يُقال ويُعاد — لا «زبون جديد» عن خطأ ولا قائمةٌ فارغة",
   /setSt\(\(s\) => \(\{ \.\.\.s, status: "error"/.test(CS) && /cs\.status === "error" && \(/.test(CS) && /onClick=\{cs\.retry\}/.test(CS)
   && /cs\.status === "ok" && cs\.rows\.length === 0 &&/.test(CS));
+check("  ومغادرةُ الخانة أو الانتقالُ للأخرى يُسقط البحثَ المنتظر ويغلق القائمة (لا تبقى قائمةُ الاسم تحت الهاتف)",
+  /blurTimer\.current = window\.setTimeout\(\(\) => \{\s*blurTimer\.current = null;\s*stop\(\);/.test(CS)
+  && /if \(s\.field !== field\) \{\s*stop\(\);/.test(CS));
+check("  والاختيارُ يصفّر البحث (لا تعود قائمةُ النصّ القديم بالتركيز التالي)", /const pickCustomer = \(hit: CustomerHit\) => \{\s*cs\.cancel\(\);/.test(SB));
 check("  والأحدثُ وحده يكتب (latestOnly)، ولا يُعرض جوابٌ أُلغي", /if \(!seq\.isLatest\(n\)\) return;[\s\S]{0,200}?status: "ok"/.test(CS) && /if \(!seq\.isLatest\(n\)\) return;[\s\S]{0,200}?status: "error"/.test(CS));
 check("لا `catch` يكتب قائمةً فارغة بشاشة البيع (الزبائن ولا منتقي الحيوانات)",
   !/catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\[\]\)/.test(SB) && !/catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\[\]\)/.test(CS));

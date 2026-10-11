@@ -89,14 +89,28 @@ export function useCustomerSearch(): CustomerSearch {
     timer.current = window.setTimeout(() => { timer.current = null; void run(field, value); }, 250);
   }, [run, stop]);
 
+  /* الانتقالُ للخانة الأخرى يُغلق قائمةَ الأولى ويُسقط بحثَها المنتظر — كان مؤقّتُ الإغلاق يُلغى
+   * بالتركيز الجديد فتبقى قائمةُ الاسم مفتوحةً تحت خانة الهاتف. */
   const focus = useCallback((field: CustField) => {
     if (blurTimer.current) { window.clearTimeout(blurTimer.current); blurTimer.current = null; }
-    setSt((s) => (s.field === field && s.status !== "idle" ? { ...s, open: true } : s));
-  }, []);
+    const s = stRef.current;
+    if (s.field !== field) {
+      stop();
+      setSt((p) => ({ ...p, open: false, hi: -1, status: p.status === "loading" ? "idle" : p.status }));
+      return;
+    }
+    if (s.status === "ok" || s.status === "error" || s.status === "short") setSt((p) => ({ ...p, open: true }));
+  }, [stop]);
+  /* مغادرةُ الخانة: بعد ١٥٠ms (الضغطُ على صفٍّ لا يُفقد التركيزَ أصلاً) تُغلق القائمة ويسقط ما
+   * ينتظر — فلا يفتحها جوابٌ متأخّرٌ والكاشيرُ بخانةٍ أخرى. */
   const blur = useCallback(() => {
     if (blurTimer.current) window.clearTimeout(blurTimer.current);
-    blurTimer.current = window.setTimeout(() => { blurTimer.current = null; setSt((s) => ({ ...s, open: false, hi: -1 })); }, 150);
-  }, []);
+    blurTimer.current = window.setTimeout(() => {
+      blurTimer.current = null;
+      stop();
+      setSt((s) => ({ ...s, open: false, hi: -1, status: s.status === "loading" ? "idle" : s.status }));
+    }, 150);
+  }, [stop]);
   const cancel = useCallback(() => { stop(); setSt(CLOSED); }, [stop]);
   const retry = useCallback(() => {
     const { field, q } = last.current;
