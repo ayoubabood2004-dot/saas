@@ -78,6 +78,14 @@ create table if not exists pets (
   created_at timestamptz default now()
 );
 create unique index if not exists pets_serial_idx on pets(serial) where serial is not null;
+-- 0231/0232: بحثُ الزبون يقرأ صاحبَ الحيوان ورقمَه ونوعَه ووفاتَه. أعمدةٌ بالإنتاج من هجراتٍ
+-- قبل الموجة (مقيسةٌ ١١/١٠ من information_schema: نصّان، ونوعٌ معدَّد، ووفاةٌ not null
+-- default false). النوعُ هنا نصّ — والدالّةُ تقرؤه `::text` فيصحّ على الاثنين.
+-- و`shared_with_clinic` يبقى بلا افتراضٍ كما كان: القوالبُ تكتبه صراحةً.
+alter table pets add column if not exists owner_name  text;
+alter table pets add column if not exists owner_phone text;
+alter table pets add column if not exists species     text;
+alter table pets add column if not exists deceased    boolean not null default false;
 
 create table if not exists clinics (id uuid primary key default gen_random_uuid());
 create table if not exists companies (id uuid primary key default gen_random_uuid());
