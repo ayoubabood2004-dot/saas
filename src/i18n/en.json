@@ -577,7 +577,6 @@
     "custName": "Name",
     "custPhone": "Phone",
     "walkIn": "Walk-in",
-    "visitsN": "{{n}} visits",
     "searchProducts": "Search or scan a product…",
     "searchServices": "Search for a service…",
     "noServiceMatch": "No service matches.",
@@ -5996,5 +5995,19 @@
     "archivedTitle": "Archived",
     "restored": "“{{name}}” restored",
     "restore": "Restore"
+  },
+  "cust": {
+    "short": "Type 2 letters or 3 digits",
+    "error": "Couldn't search customers — network?",
+    "new": "New customer — saved with the sale",
+    "more": "Showing {{n}} of {{total}} — keep typing",
+    "pets": "Has {{n}} pet(s)",
+    "regular": "Regular",
+    "noPhone": "No number",
+    "addPet": "Add their pet:",
+    "petsFailed": "Couldn't load the clinic's pets",
+    "switchTitle": "Switch customer?",
+    "switchHint": "“{{name}}” doesn't own the pet attached to this sale — these are removed, the rest of the cart stays:",
+    "switchGo": "Switch and remove them"
   }
 }

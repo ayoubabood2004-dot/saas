@@ -315,5 +315,83 @@ for (const k of ["custClear", "custClearTitle", "custClearHint", "custClearGo", 
   check(`  مفتاحُ retail.${k} بالملفّين`, !!en?.retail?.[k] && !!ar?.retail?.[k]);
 }
 
+/* ── بحثُ الزبون بخانتَي الاسم والهاتف (0232) ─────────────────────────────────
+ * كلمةُ المالك: «اكو مكان مخصّص لكتابة اسم الزبون ورقمه — خلّيه بنفس المكان»، والبيعُ
+ * بلا حيوانٍ مدعومٌ كاملاً. وثلاثةُ أضرارٍ يمنعها البحثُ هنا: لقاحٌ بسجلّ حيوانِ زبونٍ
+ * آخر عند التبديل، ومسحةُ باركود تصير اسمَ زبون، وجوابٌ قديمٌ يمحو الجديد. */
+console.log("▸ بحثُ الزبون: التبديلُ يسأل، والمسحةُ تُشال، والأحدثُ وحده يكتب");
+const CS = read("src/components/retail/CustomerSearch.tsx");
+if (M) {
+  check("الوحدةُ تصدّر قواعدَ البحث الثلاث", typeof M.planCustomerSwitch === "function" && typeof M.stripScanTail === "function" && typeof M.latestOnly === "function");
+}
+if (M?.planCustomerSwitch) {
+  const vax = { id: "m:1", kind: "med", name: "لقاح سعار", petId: "pet-a", petName: "لولو", med: {} };
+  const sand = { id: "p:1", kind: "product", name: "رمل قطط", petId: null };
+  const ask = M.planCustomerSwitch([{ id: "pet-a", name: "لولو" }], [sand, vax], ["pet-z"]);
+  check("زبونٌ آخر والسلّةُ فيها لقاحٌ لحيوانٍ ليس له ⇒ يُسأل ويُسمّى الحيوانُ والسطر",
+    ask.ask === true && ask.pets.join() === "لولو" && ask.lines.map((l) => l.id).join() === "m:1");
+  const same = M.planCustomerSwitch([{ id: "pet-a", name: "لولو" }], [sand, vax], ["pet-a", "pet-b"]);
+  check("  ونفسُ صاحب الحيوان ⇒ لا سؤال", same.ask === false);
+  check("  وبيعةٌ بلا حيوانٍ ولا سطرٍ مربوط ⇒ لا سؤال (البيعُ بلا حيوانٍ مدعوم)", M.planCustomerSwitch([], [sand], ["pet-z"]).ask === false && M.planCustomerSwitch([], [], []).ask === false);
+  check("  وحيوانٌ مربوط والزبونُ الجديد بلا حيوانات ⇒ يُسأل", M.planCustomerSwitch([{ id: "pet-a", name: "لولو" }], [sand], []).ask === true);
+  check("  وحيوانٌ بلا معرّف (جسرٌ قديم) لا يُفترض أنه للجديد ⇒ يُسأل", M.planCustomerSwitch([{ id: null, name: "مجهول" }], [], ["pet-a"]).ask === true);
+  check("  وبندُ مختبرٍ بلا حيوان ⇒ يُسأل", M.planCustomerSwitch([], [{ id: "s:lab:9", kind: "service", name: "تحليل", petId: null }], ["pet-a"]).ask === true);
+}
+if (M?.stripScanTail) {
+  check("مسحةٌ هبطت بآخر الخانة تُشال، وما كتبه الطبيبُ قبلها يبقى", M.stripScanTail("أحمد6221033000123", "6221033000123", "") === "أحمد");
+  check("  وبأرقامٍ شرقيةٍ بالرمز والخانةُ مطبَّعة", M.stripScanTail("علي6221", "٦٢٢١", "") === "علي");
+  check("  وإن لم تكن بالآخر يرجع الحقلُ لما كان لحظةَ التركيز", M.stripScanTail("خليط", "6221033000123", "علي") === "علي");
+}
+if (M?.latestOnly) {
+  const g = M.latestOnly();
+  const slow = g.next(), fast = g.next();
+  check("جوابٌ بطيءٌ لنصٍّ قديم يُرمى، والأحدثُ يكتب", g.isLatest(slow) === false && g.isLatest(fast) === true);
+  g.cancel();
+  check("  ومسحُ الخانة (cancel) يُسقط ما بالطريق كلَّه", g.isLatest(fast) === false);
+}
+check("لا سطرَ بحثٍ جديد: الخانتان نفسُهما تبحثان، وكلٌّ بنصّها (لا «الهاتفُ يغلب»)",
+  /onChange=\{\(e\) => \{ setName\(e\.target\.value\); cs\.type\("name", e\.target\.value\); \}\}/.test(SB)
+  && /onChange=\{\(e\) => \{ setPhone\(e\.target\.value\); cs\.type\("phone", e\.target\.value\); \}\}/.test(SB)
+  && !/data-custsearch/.test(SB) && !/runCustSearch|qPhone \|\| qName/.test(SB));
+check("  والقائمةُ تحت الخانتين داخل صندوق الزبون — موضعٌ واحد بكلّ شكلٍ للشاشة",
+  (SB.match(/<CustomerDropdown cs=\{cs\} onPick=\{pickCustomer\} \/>/g) ?? []).length === 1
+  && SB.indexOf("<CustomerDropdown") > SB.indexOf("<div data-custbox") && SB.indexOf("<CustomerDropdown") < SB.indexOf('data-custclearnear') + 1e9);
+check("  والخانتان مسمّاتان للماسح (data-scan-into=\"cust\")",
+  (SB.match(/data-scan-into="cust" data-custfield="(name|phone)"/g) ?? []).length === 2);
+{
+  const at = SB.indexOf('if (focused?.dataset?.scanInto === "cust") {');
+  const branch = at < 0 ? "" : SB.slice(at, SB.indexOf('if (focused?.dataset?.scanInto === "dref")', at));
+  check("مسحةٌ على خانة الزبون: تُشال من الخانة، ويُلغى البحث، ويُترك التركيز",
+    /stripScanTail\(v, code, before\)/.test(branch) && /cs\.cancel\(\);/.test(branch) && /focused\.blur\(\);/.test(branch));
+  check("  ثم تكمل منتجاً للسلّة (لا return يبلعها)", branch !== "" && !/\breturn\b/.test(branch));
+}
+check("Enter يختار المُشارَ إليه وحده (سهمٌ أو مرور) — وبلا إشارةٍ لا شيء",
+  /if \(e\.key === "Enter"\) \{\s*const h = cs\.highlighted\(\);\s*if \(h\) \{ e\.preventDefault\(\); pickCustomer\(h\); \}/.test(SB)
+  && /return s\.open && s\.status === "ok" && s\.hi >= 0 \? s\.rows\[s\.hi\] \?\? null : null;/.test(CS));
+check("  وكلُّ تغييرٍ بالنصّ يمحو الإشارة (فـEnter آخر المسحة لا يختار زبوناً)",
+  /const type = useCallback\(\(field: CustField, value: string\) => \{[\s\S]{0,700}?hi: -1/.test(CS));
+{
+  const at = SB.indexOf("const pickCustomer = (hit: CustomerHit) => {");
+  const pickFn = at < 0 ? "" : SB.slice(at, SB.indexOf("const confirmSwitch", at));
+  check("اختيارُ زبونٍ لا يُلصق حيواناً أبداً (لا setSalePets بالاختيار)", pickFn !== "" && !/setSalePets/.test(pickFn) && !/setSalePets/.test(SB.slice(SB.indexOf("const applyPick"), SB.indexOf("const pickCustomer"))));
+  check("  ويسأل قبل التبديل حين يلزم، والتأكيدُ يمرّ من «امسح الزبون» نفسِه",
+    /const plan = planCustomerSwitch\(salePets, cart, hit\.pets\.map\(\(p\) => p\.id\)\);/.test(pickFn)
+    && /if \(paying \|\| payPending\) \{ clearCustomerNow\(\); return; \}/.test(pickFn)
+    && /clearCustomerNow\(\);\s*applyPick\(ask\.hit\);/.test(SB) && /data-custswitchgo/.test(SB));
+  check("  و«أضف حيوانه» اختياريّ: حيواناتُ الزبون الأحياء تُعرض للضغط", /<CustomerPetsStrip hit=\{picked\}/.test(SB) && /!p\.deceased && !attached\.has\(p\.id\)/.test(CS));
+}
+check("فشلُ البحث يُقال ويُعاد — لا «زبون جديد» عن خطأ ولا قائمةٌ فارغة",
+  /setSt\(\(s\) => \(\{ \.\.\.s, status: "error"/.test(CS) && /cs\.status === "error" && \(/.test(CS) && /onClick=\{cs\.retry\}/.test(CS)
+  && /cs\.status === "ok" && cs\.rows\.length === 0 &&/.test(CS));
+check("  والأحدثُ وحده يكتب (latestOnly)، ولا يُعرض جوابٌ أُلغي", /if \(!seq\.isLatest\(n\)\) return;[\s\S]{0,200}?status: "ok"/.test(CS) && /if \(!seq\.isLatest\(n\)\) return;[\s\S]{0,200}?status: "error"/.test(CS));
+check("لا `catch` يكتب قائمةً فارغة بشاشة البيع (الزبائن ولا منتقي الحيوانات)",
+  !/catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\[\]\)/.test(SB) && !/catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\[\]\)/.test(CS));
+check("  ومنتقي الحيوانات يقول فشلَه ويُعاد", /setPetPickErr\(true\)/.test(SB) && /data-petpickerr/.test(SB) && /onClick=\{\(\) => void loadPetPick\(\)\}/.test(SB));
+check("  وF2 لا يدفع تحت نافذة التبديل", /if \(e\.key === "F2"\) \{ e\.preventDefault\(\); if \([^)]*!switchAsk[^)]*\) void checkout\(\); \}/.test(SB));
+check("والبحثُ القديم (آخرُ ٣٠٠ فاتورة بالنصّ الخام) زال من الريبو", !/searchCustomers|dedupeCustomers/.test(read("src/lib/repo.ts") + read("src/lib/repoDemo.ts")));
+for (const k of ["short", "error", "new", "more", "pets", "regular", "noPhone", "addPet", "petsFailed", "switchTitle", "switchHint", "switchGo"]) {
+  check(`  مفتاحُ cust.${k} بالملفّين`, !!en?.cust?.[k] && !!ar?.cust?.[k]);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} sale-customer-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

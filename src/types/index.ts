@@ -909,14 +909,6 @@ export interface SaleMeta {
   client_ref?: string | null;
 }
 
-/** A distinct retail customer, derived from past invoices for quick re-selection. */
-export interface Customer {
-  name: string;
-  phone: string;
-  last_seen: string; // ISO of most recent purchase
-  visits: number;
-}
-
 /* ---- دليلُ الزبائن المشتقّ (0232: customer_search) — قراءةٌ بلا مال ---- */
 export type CustomerSort = "match" | "recent" | "purchases";
 /** `all` للبيع؛ `nopets` لقسم «زبائن المبيعات»: اشترى مرّةً على الأقل ولا حيوانَ له. */

@@ -9,7 +9,7 @@
  * العقدُ لم يتغيّر: نفسُ الدوالّ ونفسُ الحرّاس، و`repo` يوجّه إليها.
  * ========================================================================= */
 import { loadDB, saveDB } from "./demoStore";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
@@ -49,7 +49,7 @@ import { getActiveCurrency } from "./currency";
 import { getServiceCatalog, setServicePricesLocal } from "./services";
 import { listStaff } from "./staff";
 import type { PreparedUpload } from "./image";
-import { LAB_STAGE_COL, assertUpdated, assertUploadableImage, blankOwnerField, dailyNoteLocalGet, dailyNoteLocalSet, dedupeCustomers, labLifecycleFields, pickByPurchaseName, purchaseCoRank, sayAmbiguousCode } from "./repo";
+import { LAB_STAGE_COL, assertUpdated, assertUploadableImage, blankOwnerField, dailyNoteLocalGet, dailyNoteLocalSet, labLifecycleFields, pickByPurchaseName, purchaseCoRank, sayAmbiguousCode } from "./repo";
 import type { DateRange } from "./repo";
 
 interface DemoPortalSession { slug: string; key: string; expires: string }
@@ -4283,10 +4283,6 @@ const demoRepo = {
     if (pos.length) inv.payment_method = pos.reduce((b, p) => (p.amount > b.amount ? p : b), pos[0]).method;
     saveDB(db);
     return inv;
-  },
-  /** Distinct walk-in customers seen on past invoices, most-recent first. */
-  async searchCustomers(query: string, _clinicId?: string): Promise<Customer[]> {
-    return dedupeCustomers(loadDB().invoices ?? [], query);
   },
   /** مرآةُ customer_search (0232): نفسُ الخطوات بـbuildCustomerDirectory، بمفتاح دولة العيادة. */
   async findCustomers(q: string | null, opts?: CustomerSearchOpts): Promise<CustomerPage> {

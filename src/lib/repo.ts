@@ -25,7 +25,7 @@ export const pickByPurchaseName = <T extends { id: string; name: string; company
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, Customer, CustomerHit, CustomerPet, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, CustomerHit, CustomerPet, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
@@ -57,24 +57,6 @@ export function resolveDiscount(subtotal: number, type: DiscountType | null | un
   return Math.min(value, subtotal);
 }
 
-
-/** Collapse invoice rows into distinct customers (keyed by phone, else name), most-recent first. */
-export function dedupeCustomers(rows: { customer_name?: string | null; customer_phone?: string | null; created_at: string }[], query: string): Customer[] {
-  const q = query.trim().toLowerCase();
-  const map = new Map<string, Customer>();
-  for (const inv of rows) {
-    const name = (inv.customer_name ?? "").trim();
-    const phone = (inv.customer_phone ?? "").trim();
-    if (!name && !phone) continue;
-    const key = (phone || name).toLowerCase();
-    const prev = map.get(key);
-    if (prev) { prev.visits += 1; if (inv.created_at > prev.last_seen) prev.last_seen = inv.created_at; }
-    else map.set(key, { name, phone, last_seen: inv.created_at, visits: 1 });
-  }
-  let list = Array.from(map.values());
-  if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q));
-  return list.sort((a, b) => b.last_seen.localeCompare(a.last_seen)).slice(0, 8);
-}
 
 /** صفُّ customer_search كما يصل من PostgREST (الأعدادُ قد تصل نصّاً). */
 type CustomerRow = {
@@ -2363,12 +2345,6 @@ const supabaseRepo: DemoRepo = {
     if (error) throw error;
     return data as Invoice;
   },
-  async searchCustomers(query, clinicId) {
-    let q = sbc().from("invoices").select("customer_name,customer_phone,created_at").order("created_at", { ascending: false }).limit(300);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    const rows = listOf<{ customer_name: string | null; customer_phone: string | null; created_at: string }>(await q);
-    return dedupeCustomers(rows, query);
-  },
   /* دليلُ الزبائن بالخادم (0232): كلُّ التاريخ والحيوانات، والرقمُ بمفتاح دولة العيادة.
    * **يرمي** على الفشل — «ماكو زبون» عن زبونٍ موجود تجعل الكاشير يكتبه من جديد. */
   async findCustomers(q, opts) {
@@ -2814,7 +2790,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // رفعُ الأسعار (0226): المعاينةُ والسجلُّ والعدّادُ قراءة — الحفظُ والإرجاعُ لا.
   "previewPriceChange", "listPriceChanges", "priceChangeDetail", "priceEpoch", "priceRaisePrior",
   "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
-  "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
+  "listVisits", "listWaiting", "listWeights", "listWhatsAppLog",
   // دليلُ الزبائن (0232): قراءةٌ — الطبيبُ يلقى زبونَه ولو انتهى الاشتراك.
   "findCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---

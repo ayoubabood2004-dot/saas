@@ -49,6 +49,10 @@ const CRITICAL_SCREENS = [
   "src/components/retail/ReturnsPanel.tsx",
   "src/components/retail/InvoicesPanel.tsx",
   "src/components/retail/usePrintInvoice.ts",
+  // شاشةُ البيع وبحثُ زبونها (0232): «ماكو زبون» عن خطأٍ يجعل الكاشير يكتب زبوناً موجوداً
+  // من جديد، و«لا توجد حيوانات» عن خطأٍ تُخبَّأ طولَ الجلسة.
+  "src/components/retail/SaleBuilder.tsx",
+  "src/components/retail/CustomerSearch.tsx",
 ];
 
 const files = [];
@@ -84,12 +88,18 @@ for (const name of DECISION_LISTS) {
 
 /* ── ٢) لا ابتلاعَ صامتاً بالشاشات الحرجة ──────────────────────────────── */
 const SWALLOW = /\.catch\s*\(\s*\(\s*\)\s*=>\s*(\[\s*\]|\{\s*\}|null|undefined)\s*\)/;
+/* ونفسُ الابتلاع بصيغة `try/catch`: `catch { setX([]) }` يكتب «ماكو» مكانَ «ما وصلنا»
+ * (بحثُ الزبون ومنتقي الحيوانات بشاشة البيع كانا هكذا — 0232). */
+const CATCH_EMPTY = /catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\s*\[\s*\]\s*\)/;
 for (const f of CRITICAL_SCREENS) {
   if (!fs.existsSync(f)) { console.error(`   ✗ ${f} — مفقود من قائمة الحارس (حدِّث القائمة أو أعد الملف)`); bad++; continue; }
   const lines = fs.readFileSync(f, "utf8").split(/\r?\n/);
   lines.forEach((line, i) => {
     if (SWALLOW.test(line) && !WAIVER.test(line)) {
       say(f, i + 1, "ابتلاعٌ صامت `.catch(() => …)` — اعرض «تعذّر — أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");
+    }
+    if (CATCH_EMPTY.test(line) && !WAIVER.test(line)) {
+      say(f, i + 1, "`catch { setX([]) }` يكتب قائمةً فارغةً عن خطأ — اعرض «تعذّر — أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");
     }
   });
 }

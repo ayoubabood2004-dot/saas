@@ -46,3 +46,50 @@ export function customerBoundLines<T extends SaleLineLike>(cart: readonly T[]): 
 export function cartAfterClearCustomer<T extends SaleLineLike>(cart: readonly T[]): T[] {
   return cart.filter((l) => !isCustomerBound(l));
 }
+
+/* ============================================================================
+ * بحثُ الزبون بخانتَي الاسم والهاتف (0232) — ثلاثُ قواعد صِرفة، مفحوصةٌ بـsale-customer-test.
+ * ==========================================================================*/
+
+/**
+ * **تبديلُ الزبون من القائمة لا يُنزل لقاحاً بسجلّ حيوانٍ لغيره.** سطورُ السلّة تحمل
+ * الحيوانَ لحظةَ إضافتها؛ فاختيارُ زبونٍ آخر والحيوانُ المربوط ليس من حيواناته يجعل
+ * البيعةَ تُكتب بسجلّ حيوانٍ لم يشترِ صاحبُه. فيُسأل قبل التبديل، ويُسمّى ما يُرفع —
+ * والتأكيدُ يمرّ من «امسح الزبون» نفسِه (حارسُ الدفعة المعلَّقة وما يُرفع معه).
+ * زبونٌ بلا حيوانٍ مربوط، أو حيواناتُه هي المربوطة = لا سؤال. ولا حيوانَ يُلصق تلقائياً.
+ */
+export function planCustomerSwitch<T extends SaleLineLike>(
+  pets: readonly { id: string | null; name: string }[],
+  cart: readonly T[],
+  hitPetIds: readonly string[],
+): { ask: boolean; pets: string[]; lines: T[] } {
+  const own = new Set(hitPetIds);
+  const ownLine = (l: T) => l.petId != null && own.has(l.petId) && (l.medMore ?? []).every((m) => m.petId == null || own.has(m.petId));
+  const bound = customerBoundLines(cart);
+  const foreign = pets.some((p) => !p.id || !own.has(p.id)) || bound.some((l) => !ownLine(l));
+  return foreign ? { ask: true, pets: pets.map((p) => p.name), lines: bound } : { ask: false, pets: [], lines: [] };
+}
+
+/**
+ * **مسحةٌ هبطت بخانة الزبون.** الماسحُ يكتب بالحقل المركَّز (لا يمنع إلا Enter)، فرقمُ
+ * الباركود كان يصير اسمَ الزبون أو رقمَه ويبدأ بحثاً. يُشال الرمزُ من آخر الحقل إن كان
+ * هناك (ما كتبه الطبيبُ قبله يبقى)، وإلا يرجع الحقلُ لما كان لحظةَ التركيز.
+ */
+export function stripScanTail(value: string, code: string, atFocus: string): string {
+  const v = toAsciiDigits(value), c = toAsciiDigits(code);
+  return c && v.endsWith(c) ? value.slice(0, value.length - code.length) : atFocus;
+}
+/* الأرقامُ الشرقية لاتينية بطولٍ ثابت (محرفٌ بمحرف) — الحقلُ مطبَّعٌ عند الكتابة والرمزُ قد لا يكون. */
+function toAsciiDigits(s: string): string {
+  return s.replace(/[\u{660}-\u{669}\u{6f0}-\u{6f9}]/gu, (d) => String((d.codePointAt(0) as number) % 16));
+}
+
+/** طلباتٌ متتابعة: جوابُ الأقدم يُرمى إن سبقه أحدث أو أُلغي — «الأحدثُ وحده يكتب». */
+export function latestOnly() {
+  let seq = 0;
+  return {
+    next: (): number => ++seq,
+    isLatest: (n: number): boolean => n === seq,
+    cancel: (): void => { seq++; },
+  };
+}

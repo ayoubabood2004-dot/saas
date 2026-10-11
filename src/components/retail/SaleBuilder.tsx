@@ -8,7 +8,7 @@ import {
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
   ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX, Hash,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { phoneDigits } from "@/lib/phone";
@@ -46,7 +46,8 @@ import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
 import type { PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
-import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
+import { customerBoundLines, cartAfterClearCustomer, planCustomerSwitch, stripScanTail } from "@/lib/saleCustomer";
+import { useCustomerSearch, CustomerDropdown, CustomerPetsStrip, type CustField } from "./CustomerSearch";
 import { draftOnMount } from "@/lib/retailBridge";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
@@ -692,8 +693,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [petPickAll, setPetPickAll] = useState<Pet[] | null>(null); // null = loading
   const [petPickQ, setPetPickQ] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const [custMatches, setCustMatches] = useState<Customer[]>([]);
-  const [custOpen, setCustOpen] = useState(false);
+  /* بحثُ الزبون بخانتَي الاسم والهاتف نفسَيهما (0232) — الخادمُ يجيب، والأحدثُ وحده يكتب. */
+  const cs = useCustomerSearch();
+  /** الزبونُ المختار من القائمة — يبقى «مختاراً» ما دام الاسمُ والرقمُ كما اختيرا. */
+  const [pickedHit, setPickedHit] = useState<CustomerHit | null>(null);
+  /** تبديلُ زبونٍ والحيوانُ المربوط ليس من حيواناته — يُسأل قبله (planCustomerSwitch). */
+  const [switchAsk, setSwitchAsk] = useState<{ hit: CustomerHit; plan: { ask: boolean; pets: string[]; lines: Line[] } } | null>(null);
+  /** نصُّ خانة الزبون لحظةَ التركيز — مرجعُ إرجاعها إن هبطت فيها مسحة. */
+  const custSnapRef = useRef<{ field: CustField; value: string } | null>(null);
+  /** تعذّر جلبُ حيوانات العيادة لمنتقي «حيوان آخر» — يُقال ويُعاد، لا قائمةً فارغة. */
+  const [petPickErr, setPetPickErr] = useState(false);
   const [discountType, setDiscountType] = useState<DiscountType>(draft0?.discountType ?? "percent");
   const [discountValue, setDiscountValue] = useState(draft0?.discountValue ?? "");
   // Doctor-set FINAL price: the total to charge outright. The gap from the subtotal
@@ -1328,6 +1337,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * تذهب للسلّة أيضاً: «الباركود مو موجود بمخزنك» أو — أسوأ — منتجٌ يطابق
      * ذيلَه فيُضاف لبيعةٍ لم يطلبه أحد. فالحقلُ المركَّز يأخذها كاملةً وحدَه. */
     const focused = document.activeElement as HTMLElement | null;
+    /* ومسحةٌ على خانة الزبون **منتجٌ لا زبون**: أرقامُها هبطت بالخانة (الماسحُ يكتب بالمركَّز)
+     * فصارت اسماً أو رقماً وبدأت بحثاً. تُشال من الخانة، ويُلغى البحثُ وما بالطريق، ويُترك
+     * التركيز — ثم تكمل منتجاً للسلّة كأيّ مسحة. (وEnter آخرها لا يختار زبوناً: النصُّ تغيّر.) */
+    if (focused?.dataset?.scanInto === "cust") {
+      const which: CustField = focused.dataset.custfield === "phone" ? "phone" : "name";
+      const snap = custSnapRef.current;
+      const before = snap && snap.field === which ? snap.value : "";
+      const fix = (v: string) => stripScanTail(v, code, before);
+      if (which === "phone") setPhone(fix); else setName(fix);
+      cs.cancel();
+      focused.blur();
+    }
     if (focused?.dataset?.scanInto === "dref") {
       // رأسُ AIM («]C1») ليس من الرقم، ومسحةٌ والكيبوردُ عربيّ تُعكس («لاء-1234» = bx-1234).
       const ref = cleanRef(unmangleRef(stripAim(code))) ?? "";
@@ -1770,18 +1791,49 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return { shown: base.slice(0, POS_MAX), hiddenCount: Math.max(0, base.length - POS_MAX) };
   }, [products, ql, nq]);
 
-  // Existing-customer search (name or phone).
-  const custTimer = useRef<number | null>(null);
-  const runCustSearch = (qName: string, qPhone: string) => {
-    const q = (qPhone || qName).trim();
-    if (custTimer.current) window.clearTimeout(custTimer.current);
-    if (q.length < 1) { setCustMatches([]); return; }
-    custTimer.current = window.setTimeout(async () => {
-      try { setCustMatches(await repo.searchCustomers(q, clinicId)); } catch { setCustMatches([]); }
-    }, 180);
+  /* ---- زبونٌ من القائمة (0232) -------------------------------------------
+   * يملأ الاسمَ والرقمَ وحدهما — **لا حيوانَ يُلصق تلقائياً** (البيعُ بلا حيوانٍ مدعومٌ كاملاً،
+   * وحيواناتُه تُعرض «أضف حيوانه» اختياراً). وإن كان بالبيعة حيوانٌ أو سطرٌ مربوطٌ ليس من
+   * حيواناته، يُسأل أوّلاً ويمرّ التأكيدُ من «امسح الزبون» نفسِه (حارسُ الدفعة المعلَّقة). */
+  const applyPick = (hit: CustomerHit) => { setName(hit.name ?? ""); setPhone(hit.phone ?? ""); setPickedHit(hit); };
+  const pickCustomer = (hit: CustomerHit) => {
+    cs.close();
+    playTap();
+    const plan = planCustomerSwitch(salePets, cart, hit.pets.map((p) => p.id));
+    if (plan.ask) {
+      // والدفعُ بالطريق أو دفعةٌ معلَّقة: «امسح الزبون» يرفض ويقول السبب — لا نافذةَ تُفتح عليها.
+      if (paying || payPending) { clearCustomerNow(); return; }
+      setSwitchAsk({ hit, plan });
+      return;
+    }
+    applyPick(hit);
   };
-
-  const pickCustomer = (c: Customer) => { setName(c.name); setPhone(c.phone); setCustOpen(false); setCustMatches([]); playTap(); };
+  const confirmSwitch = () => {
+    const ask = switchAsk;
+    setSwitchAsk(null);
+    if (!ask) return;
+    if (paying || payPending) { clearCustomerNow(); return; }
+    clearCustomerNow();
+    applyPick(ask.hit);
+  };
+  const picked = pickedHit && name === (pickedHit.name ?? "") && phone === (pickedHit.phone ?? "") ? pickedHit : null;
+  const attachHitPet = (p: CustomerPet) => {
+    playSuccess();
+    setSalePets((s) => (s.some((x) => x.id === p.id) ? s : [...s, { id: p.id, name: p.name ?? "", species: p.species ?? null }]));
+    setActivePetIdx(salePets.length);
+  };
+  /** الأسهمُ تمشي بالقائمة، وEnter يختار **المُشار إليه وحده**، وEsc يغلقها. */
+  const custKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (cs.open && cs.rows.length > 0) { e.preventDefault(); cs.move(e.key === "ArrowDown" ? 1 : -1); }
+      return;
+    }
+    if (e.key === "Escape") { if (cs.open) { e.preventDefault(); cs.close(); } return; }
+    if (e.key === "Enter") {
+      const h = cs.highlighted();
+      if (h) { e.preventDefault(); pickCustomer(h); }
+    }
+  };
 
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
@@ -1817,7 +1869,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     onCustomerCleared?.();
     setRetMode(false); setMult(null); setQtyPadFor(null); setWeightFor(null); setMultPad(false);
     reset();
-    setName(""); setPhone(""); setSalePets([]); setCustMatches([]); setCustOpen(false);
+    setName(""); setPhone(""); setSalePets([]); cs.cancel();
     setDetailsOpen(customerOpenPref); setNotesOpen(false); setPayTools(false); setCartSheet(false);
     setResetAsk(false);
     playSuccess();
@@ -1852,7 +1904,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return;
     }
     setName(""); setPhone(""); setSalePets([]); setActivePetIdx(0);
-    setCustMatches([]); setCustOpen(false); setPetPickOpen(false); setPetPickQ("");
+    cs.cancel(); setPetPickOpen(false); setPetPickQ("");
     setSaleNotes("");                 // الملاحظةُ تُكتب بسجلّ حيوانه — تروح معه
     setDAddress(""); setDZone("");    // عنوانُ التوصيل وزونُه بياناتُ زبونٍ أيضاً
     labIdRef.current = null;
@@ -1894,8 +1946,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     playTap();
     setPetPickOpen((o) => !o);
     if (petPickAll) return; // already loaded this session
+    await loadPetPick();
+  };
+  /* فشلُ الجلب يُقال ويُعاد — كان يُخبَّأ قائمةً فارغة طولَ الجلسة: «لا توجد حيوانات أخرى»
+   * عن عيادةٍ فيها مئات، ولا يعيد الجلبَ شيءٌ بعده. */
+  const loadPetPick = async () => {
+    setPetPickErr(false);
     try { setPetPickAll((await repo.listAllPets(clinicId)).filter((p) => p.shared_with_clinic !== false)); }
-    catch { setPetPickAll([]); }
+    catch (e) { console.error("[pos] pets load failed", e); setPetPickErr(true); }
   };
   const attachPet = (p: Pet) => {
     playSuccess();
@@ -1983,7 +2041,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
       // بعد إتمام البيع (شاشة الإيصال) لا يُعاد الإصدار بـF2 — كان يصنع طلبَ توصيلٍ ثانياً.
-      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !needsDebtName && !busy && !done && !custClearAsk && !resetAsk) void checkout(); }
+      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !switchAsk && !needsDebtName && !busy && !done && !custClearAsk && !resetAsk) void checkout(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1993,7 +2051,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (cart.length === 0) return;
     playTap();
     // الطبعة الأولية تطلع باسم البائع المحدد حالياً (إن وُجد).
-    const sellerName = await resolveStaffName(cashierId).catch(() => null);
+    const sellerName = await resolveStaffName(cashierId).catch(() => null); /* swallow-ok: اسمُ البائع على الطبعة الأولية (لا فاتورة ولا مال) — فشلُه يطبعها بلا اسمٍ لا ناقصة */
     const petNames = Array.from(new Set(salePets.map((p) => p.name.trim()).filter(Boolean)));
     const multiPet = petNames.length > 1;
     const draftItems: InvoiceItem[] = cart.map((l) => ({
@@ -2347,7 +2405,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
        * تحمل المرجع — تبديلُ تبويبٍ فيه كان يضيّع الوصلَ ويعيد السلّةَ المبيعة «معلَّقة». */
       setPaying(false);
       // بيع قادم من المختبر؟ علّم النتيجة «مفوترة» تلقائياً — الحلقة انغلقت.
-      if (labIdRef.current) void repo.setLabBilled(labIdRef.current, true).catch(() => {});
+      /* وفشلُه يُقال (كان يُبلع): تحليلٌ مدفوعٌ يبقى «غير مفوتَر» بالمختبر بلا أن يعرف أحد. */
+      if (labIdRef.current) void repo.setLabBilled(labIdRef.current, true).catch((e) => toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined));
       // الاتجاه المعاكس: خدمة من تصنيف «المختبر» بيعت لحيوان معروف → سجل
       // «بانتظار النتائج» يصعد للمختبر والطبلة فوراً، معلَّم مفوتر من البداية.
       try {
@@ -2365,7 +2424,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             notes: "بيع من المبيعات — النتائج لم تُسجَّل بعد. سجّلها من زر «تسجيل تحاليل».",
             photo_url: null, doctor: user?.full_name ?? null, billed: true,
             taken_at: new Date().toISOString(),
-          }).catch(() => {});
+          }).catch((e) => toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined));
         }
       } catch { /* مزامنة إضافية — لا تعطل البيع أبداً */ }
       onSold();
@@ -2711,7 +2770,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                     placeholder={t("retail.petSearchPh", "ابحث باسم الحيوان أو المالك…")}
                   />
                 </div>
-                {petPickAll === null ? (
+                {petPickAll === null && petPickErr ? (
+                  <div data-petpickerr className="flex items-center justify-center gap-2 px-2 py-3 text-xs font-semibold text-danger-700 dark:text-danger-200">
+                    <span>{t("cust.petsFailed", "ما كدرنا نجيب حيوانات العيادة")}</span>
+                    <button type="button" onClick={() => void loadPetPick()} className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface-1 px-2 py-1 font-bold text-ink transition hover:bg-surface-2">
+                      <RotateCcw size={12} /> {t("common.retry", "إعادة المحاولة")}
+                    </button>
+                  </div>
+                ) : petPickAll === null ? (
                   <p className="px-2 py-3 text-center text-xs text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</p>
                 ) : petPickList.length === 0 ? (
                   <p className="px-2 py-3 text-center text-xs text-ink-subtle">{t("retail.noMorePets", "لا توجد حيوانات أخرى مطابقة.")}</p>
@@ -2780,18 +2846,22 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               <User size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input
                 className="input ltr:pl-9 rtl:pr-9" value={name} placeholder={t("retail.custName", "Name")}
-                onChange={(e) => { setName(e.target.value); runCustSearch(e.target.value, phone); setCustOpen(true); }}
-                onFocus={() => setCustOpen(true)}
-                onBlur={() => setTimeout(() => setCustOpen(false), 150)}
+                data-scan-into="cust" data-custfield="name"
+                autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search"
+                onChange={(e) => { setName(e.target.value); cs.type("name", e.target.value); }}
+                onFocus={() => { custSnapRef.current = { field: "name", value: name }; cs.focus("name"); }}
+                onBlur={cs.blur} onKeyDown={custKeyDown}
               />
             </div>
             <div className="relative">
               <Phone size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input
                 className="input ltr:pl-9 rtl:pr-9" value={phone} placeholder={t("retail.custPhone", "Phone")} inputMode="tel"
-                onChange={(e) => { setPhone(e.target.value); runCustSearch(name, e.target.value); setCustOpen(true); }}
-                onFocus={() => setCustOpen(true)}
-                onBlur={() => setTimeout(() => setCustOpen(false), 150)}
+                data-scan-into="cust" data-custfield="phone"
+                autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search"
+                onChange={(e) => { setPhone(e.target.value); cs.type("phone", e.target.value); }}
+                onFocus={() => { custSnapRef.current = { field: "phone", value: phone }; cs.focus("phone"); }}
+                onBlur={cs.blur} onKeyDown={custKeyDown}
               />
             </div>
             {customerOpenPref && (
@@ -2810,21 +2880,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 </button>
               </>
             )}
-            {custOpen && custMatches.length > 0 && (
-              <div className="absolute top-full z-20 mt-1 w-full overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-raised">
-                {custMatches.map((c, i) => (
-                  <button key={i} onMouseDown={(e) => e.preventDefault()} onClick={() => pickCustomer(c)} className="flex w-full items-center gap-3 px-3 py-2.5 text-start transition hover:bg-surface-2">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><User size={15} /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-ink">{c.name || t("retail.walkIn", "Walk-in")}</span>
-                      {c.phone && <span className="block truncate text-xs text-ink-subtle">{c.phone}</span>}
-                    </span>
-                    <span className="shrink-0 text-2xs text-ink-subtle">{t("retail.visitsN", { n: c.visits, defaultValue: "{{n}} visits" })}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <CustomerDropdown cs={cs} onPick={pickCustomer} />
           </div>
+          {picked && <CustomerPetsStrip hit={picked} attached={new Set(salePets.map((p) => p.id).filter((id): id is string => !!id))} onAttach={attachHitPet} />}
           {/* بالسطر النحيف: سطرُه الخاصّ تحت الحقول لا عمودٌ خامس — العمودُ كان يأخذ عرضَه كاملاً
               قبل الحقلين فيُعصران حرفين أو ثلاثة على شاشة لابتوب (قاسته المراجعة) لحظةَ الكتابة. */}
           {customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">{custClearBtn("slim")}</div>}
@@ -3970,6 +4028,31 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           </p>
           <ul className="space-y-1">
             {boundLines.map((l) => (
+              <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
+                {linePetNames(l).length > 0 && <span className="shrink-0 text-xs font-semibold text-ink-subtle">{linePetNames(l).join(" + ")}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Dialog>
+
+      {/* تبديلُ الزبون من القائمة والحيوانُ المربوط ليس من حيواناته — يُسمّى ما يُرفع قبل التبديل:
+          لقاحٌ يبقى بالسلّة يُكتب بسجلّ حيوانٍ لم يشترِ صاحبُه. والتأكيدُ = «امسح الزبون» ثم الاختيار. */}
+      <Dialog open={!!switchAsk} onClose={() => setSwitchAsk(null)} title={t("cust.switchTitle", "تبديل الزبون؟")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setSwitchAsk(null); }}>{t("common.cancel", "إلغاء")}</Button>
+          <Button variant="danger" data-custswitchgo leftIcon={<UserX size={16} />} onClick={confirmSwitch}>{t("cust.switchGo", "بدّل الزبون وشيلها")}</Button>
+        </>}>
+        <div className="space-y-2">
+          <p className="text-sm text-ink-muted">
+            {t("cust.switchHint", { name: switchAsk?.hit.name ?? switchAsk?.hit.phone ?? "", defaultValue: "«{{name}}» مو صاحب الحيوان المربوط بهذي البيعة — هذي تنشال منها، وبقية السلّة تبقى:" })}
+          </p>
+          <ul className="space-y-1">
+            {(switchAsk?.plan.pets ?? []).map((n, i) => (
+              <li key={`p${i}`} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm font-medium text-ink"><PawPrint size={13} className="shrink-0 text-brand-600" /> <span className="truncate">{n}</span></li>
+            ))}
+            {(switchAsk?.plan.lines ?? []).map((l) => (
               <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
                 {linePetNames(l).length > 0 && <span className="shrink-0 text-xs font-semibold text-ink-subtle">{linePetNames(l).join(" + ")}</span>}
