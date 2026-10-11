@@ -1679,5 +1679,41 @@ console.log("▸ سلسلةُ اللقاح: «انعطى اليوم» يستهل
     raced === "ok" && JSON.parse(mem.get(DB_KEY)).vaccinations.filter((v) => v.pet_id === "pv4" && v.status === "administered" && v.administered_at === T).length === 1, raced);
 }
 
+console.log("▸ 0232 — دليلُ الزبائن (مرآةُ customer_search) على المخزن التجريبيّ");
+{
+  const iso = (d) => new Date(Date.parse("2026-10-01T09:00:00Z") - d * 86400000).toISOString();
+  mem.set(DB_KEY, JSON.stringify({
+    products: [], companies: [], companySections: [], purchases: [], purchaseItems: [], generatedBarcodes: [], productsTrash: [],
+    invoices: [
+      { id: "ci1", customer_name: "أبو حسن", customer_phone: "+964 7701234567", status: "paid", created_at: iso(40), total: 1000 },
+      { id: "ci2", customer_name: "ابو حسن", customer_phone: "07701234567", status: "paid", created_at: iso(2), total: 1000 },
+      { id: "ci3", customer_name: "زبون أول", customer_phone: "+964", status: "paid", created_at: iso(3), total: 1000 },
+      { id: "ci4", customer_name: "زبون ثاني", customer_phone: "+964", status: "paid", created_at: iso(4), total: 1000 },
+      { id: "ci5", customer_name: "علي الكاظمي", customer_phone: "07901111111", status: "paid", created_at: iso(5), total: 1000 },
+    ],
+    invoiceItems: [{ id: "cl1", invoice_id: "ci5", product_id: "prod-b", name: "طوق", qty: 3 }],
+    pets: [
+      { id: "cp1", name: "زيتونة", owner_name: "أم محمد", owner_phone: "+964 0770 555 1234", species: "cat", deceased: false, shared_with_clinic: true, created_at: iso(70) },
+      { id: "cp2", name: "لونا", owner_name: "ابو حسن", owner_phone: "07701234567", species: "cat", deceased: false, shared_with_clinic: true, created_at: iso(30) },
+    ],
+  }));
+  const hit = await repo.findCustomers("0770 123", {});
+  check("«0770 123» يلقى «أبو حسن» المخزونَ بـ«+964 770…» وبـ«0770…» زبوناً واحداً بشراءين",
+    hit.rows.length === 1 && hit.rows[0].key === "p:7701234567" && hit.rows[0].purchases === 2 && hit.total === 1, JSON.stringify(hit).slice(0, 160));
+  check("  وحيوانُه معروضٌ لا ملصوق (لونا)", hit.rows[0]?.pets?.map((p) => p.name).join(",") === "لونا");
+  const owner = await repo.findCustomers("زيتون", {});
+  check("صاحبةُ حيوانٍ لم تشترِ تطلع باسم حيوانها", owner.rows[0]?.key === "p:7705551234" && owner.rows[0]?.matched === "pet" && owner.rows[0]?.purchases === 0);
+  const dial = await repo.findCustomers("زبون", {});
+  check("«+964» وحده باسمين = زبونان بالاسم لا p:964", dial.rows.map((r) => r.key).sort().join(",") === "n:زبوناول,n:زبونثاني");
+  const rpt = await repo.findCustomers(null, { filter: "nopets", sort: "purchases", top: 3, limit: 50 });
+  check("«زبائن المبيعات»: بلا أصحاب الحيوانات، ومع أكثر ما يشترون",
+    !rpt.rows.some((r) => r.key === "p:7701234567" || r.key === "p:7705551234") && JSON.stringify(rpt.rows.find((r) => r.key === "p:7901111111")?.top) === JSON.stringify([{ name: "طوق", times: 1, qty: 3 }]),
+    JSON.stringify(rpt.rows.map((r) => r.key)));
+  let threw = "";
+  try { await repo.findCustomers(null, { sort: "price" }); } catch (e) { threw = e.message; }
+  check("ومعاملٌ غيرُ معروف يُرفض كالخادم (لا قائمةَ فارغةً كاذبة)", threw === "bad_argument");
+  check("findCustomers قراءةٌ تبقى بالاشتراك المنتهي", mod.isReadAllowed("findCustomers") === true);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

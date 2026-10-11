@@ -917,6 +917,34 @@ export interface Customer {
   visits: number;
 }
 
+/* ---- دليلُ الزبائن المشتقّ (0232: customer_search) — قراءةٌ بلا مال ---- */
+export type CustomerSort = "match" | "recent" | "purchases";
+/** `all` للبيع؛ `nopets` لقسم «زبائن المبيعات»: اشترى مرّةً على الأقل ولا حيوانَ له. */
+export type CustomerFilter = "all" | "nopets";
+export interface CustomerPet { id: string; name: string | null; species: Species | null; deceased: boolean }
+/** أكثرُ ما يشتريه الزبون — مرّاتٌ (فواتير) وكمية، بلا مبلغ. */
+export interface CustomerTopItem { name: string | null; times: number; qty: number }
+export interface CustomerHit {
+  /** 'p:'+الرقم الوطنيّ أو 'n:'+الاسم المطويّ (cust_key). */
+  key: string;
+  name: string | null;
+  phone: string | null;
+  purchases: number;
+  refunds: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  /** كلُّ حيوانات المجموعة بالعيادة (الأحياءُ أوّلاً). */
+  pets: CustomerPet[];
+  petsAlive: number;
+  petsDeceased: number;
+  matched: "phone" | "name" | "pet" | null;
+  /** يُملأ حين يُطلب (`top`)، وإلا null. */
+  top: CustomerTopItem[] | null;
+}
+/** صفحةٌ من الدليل: `total` قبل الصفحة — null حين جاءت فارغة (يُحتفظ بالسابق). */
+export interface CustomerPage { rows: CustomerHit[]; total: number | null }
+export interface CustomerSearchOpts { sort?: CustomerSort; filter?: CustomerFilter; limit?: number; offset?: number; top?: number }
+
 export interface InvoiceItem {
   id: string;
   invoice_id: string;

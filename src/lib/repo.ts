@@ -25,7 +25,7 @@ export const pickByPurchaseName = <T extends { id: string; name: string; company
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, Customer, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, Customer, CustomerHit, CustomerPet, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
@@ -74,6 +74,22 @@ export function dedupeCustomers(rows: { customer_name?: string | null; customer_
   let list = Array.from(map.values());
   if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q));
   return list.sort((a, b) => b.last_seen.localeCompare(a.last_seen)).slice(0, 8);
+}
+
+/** صفُّ customer_search كما يصل من PostgREST (الأعدادُ قد تصل نصّاً). */
+type CustomerRow = {
+  key: string; name: string | null; phone: string | null; purchases: number | string; refunds: number | string;
+  first_at: string | null; last_at: string | null; pets: CustomerPet[] | null;
+  pets_alive: number | string; pets_deceased: number | string; matched: CustomerHit["matched"];
+  top: { name: string | null; times: number | string; qty: number | string }[] | null; total: number | string;
+};
+function customerHitOf(r: CustomerRow): CustomerHit {
+  return {
+    key: r.key, name: r.name, phone: r.phone, purchases: Number(r.purchases), refunds: Number(r.refunds),
+    firstAt: r.first_at, lastAt: r.last_at, pets: (r.pets ?? []).map((p) => ({ ...p, deceased: !!p.deceased })),
+    petsAlive: Number(r.pets_alive), petsDeceased: Number(r.pets_deceased), matched: r.matched ?? null,
+    top: r.top ? r.top.map((t) => ({ name: t.name, times: Number(t.times), qty: Number(t.qty) })) : null,
+  };
 }
 
 /** A clinic owner-contact field counts as "blank" when empty or the "—" placeholder
@@ -2353,6 +2369,16 @@ const supabaseRepo: DemoRepo = {
     const rows = listOf<{ customer_name: string | null; customer_phone: string | null; created_at: string }>(await q);
     return dedupeCustomers(rows, query);
   },
+  /* دليلُ الزبائن بالخادم (0232): كلُّ التاريخ والحيوانات، والرقمُ بمفتاح دولة العيادة.
+   * **يرمي** على الفشل — «ماكو زبون» عن زبونٍ موجود تجعل الكاشير يكتبه من جديد. */
+  async findCustomers(q, opts) {
+    const o = opts ?? {};
+    const rows = listOrThrow<CustomerRow>(await sbc().rpc("customer_search", {
+      p_q: q ?? null, p_sort: o.sort ?? "match", p_filter: o.filter ?? "all",
+      p_limit: o.limit ?? 8, p_offset: o.offset ?? 0, p_top: o.top ?? 0,
+    }));
+    return { rows: rows.map(customerHitOf), total: rows.length ? Number(rows[0].total) : null };
+  },
   async listExpenses(clinicId, range) {
     return allPages<Expense>(() => {
       let q = sbc().from("expenses").select("*");
@@ -2789,6 +2815,8 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "previewPriceChange", "listPriceChanges", "priceChangeDetail", "priceEpoch", "priceRaisePrior",
   "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
+  // دليلُ الزبائن (0232): قراءةٌ — الطبيبُ يلقى زبونَه ولو انتهى الاشتراك.
+  "findCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",

@@ -33,7 +33,9 @@ import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo } from "./storeLib";
 import { expenseMethodOf } from "./pockets";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
-import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
+import { getClinicName, getClinicLogo, getClinicSocials, getDialCode } from "./settings";
+import { buildCustomerDirectory } from "./customerDirectory";
+import type { CustomerPage, CustomerSearchOpts } from "@/types";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
 import { scanVariants } from "./productCodes";
 import { phoneKey } from "./phone";
@@ -4285,6 +4287,11 @@ const demoRepo = {
   /** Distinct walk-in customers seen on past invoices, most-recent first. */
   async searchCustomers(query: string, _clinicId?: string): Promise<Customer[]> {
     return dedupeCustomers(loadDB().invoices ?? [], query);
+  },
+  /** مرآةُ customer_search (0232): نفسُ الخطوات بـbuildCustomerDirectory، بمفتاح دولة العيادة. */
+  async findCustomers(q: string | null, opts?: CustomerSearchOpts): Promise<CustomerPage> {
+    const db = loadDB();
+    return buildCustomerDirectory({ invoices: db.invoices ?? [], items: db.invoiceItems ?? [], pets: db.pets ?? [] }, getDialCode(), { q, ...(opts ?? {}) });
   },
 
   /* ---- Cash expenses / withdrawals ledger ---- */
