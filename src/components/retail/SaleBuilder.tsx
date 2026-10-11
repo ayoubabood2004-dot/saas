@@ -11,7 +11,7 @@ import {
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
-import { phoneDigits } from "@/lib/phone";
+import { custNameKey, custPhoneKey } from "@/lib/customerKey";
 import { cleanRef, unmangleRef, MAX_REF_LEN } from "@/lib/deliverySearch";
 import { getServiceCatalog, findServiceByBarcode } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
@@ -28,7 +28,7 @@ import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
 import { storeSlugCached } from "@/lib/storeOrdersLive";
 import { storeUrl } from "@/lib/storeLib";
-import { getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, type QtyPromo } from "@/lib/settings";
+import { getDialCode, getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, type QtyPromo } from "@/lib/settings";
 import { expiryState, daysToExpiry } from "@/lib/expiry";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
@@ -1973,12 +1973,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const petPickList = useMemo(() => {
     if (!petPickAll) return [];
     const attached = new Set(salePets.map((p) => p.id).filter(Boolean));
-    const nd = phoneDigits(phone);
-    const nm = name.trim().toLowerCase();
+    /* «نفس المالك» بنفس مفتاح بحث الزبون (0231): الرقمُ بمفتاح دولة العيادة يغلب، والاسمُ
+     * المطويّ حين لا رقم — كان «07701234567» و«+964 770…» مالكَين مختلفين بنفس الشاشة. */
+    const dial = getDialCode();
+    const pk = custPhoneKey(phone, dial);
+    const nk = pk ? null : custNameKey(name);
     const q = petPickQ.trim().toLowerCase();
     const pool = petPickAll.filter((p) => !attached.has(p.id));
     const isOwners = (p: Pet) =>
-      (!!nd && phoneDigits(p.owner_phone ?? "") === nd) || (!!nm && (p.owner_name ?? "").trim().toLowerCase() === nm);
+      pk ? custPhoneKey(p.owner_phone, dial) === pk : !!nk && custNameKey(p.owner_name) === nk;
     const filtered = q
       ? pool.filter((p) => p.name.toLowerCase().includes(q) || (p.owner_name ?? "").toLowerCase().includes(q))
       : pool;

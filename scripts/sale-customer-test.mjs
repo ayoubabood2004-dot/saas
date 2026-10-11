@@ -392,6 +392,8 @@ check("لا `catch` يكتب قائمةً فارغة بشاشة البيع (ال
   !/catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\[\]\)/.test(SB) && !/catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\[\]\)/.test(CS));
 check("  ومنتقي الحيوانات يقول فشلَه ويُعاد", /setPetPickErr\(true\)/.test(SB) && /data-petpickerr/.test(SB) && /onClick=\{\(\) => void loadPetPick\(\)\}/.test(SB));
 check("  وF2 لا يدفع تحت نافذة التبديل", /if \(e\.key === "F2"\) \{ e\.preventDefault\(\); if \([^)]*!switchAsk[^)]*\) void checkout\(\); \}/.test(SB));
+check("و«نفس المالك» بمنتقي الحيوانات بنفس المفتاح (الرقمُ بمفتاح الدولة يغلب، ثم الاسمُ المطويّ) لا بأرقامٍ خام",
+  /pk \? custPhoneKey\(p\.owner_phone, dial\) === pk : !!nk && custNameKey\(p\.owner_name\) === nk/.test(SB) && !/phoneDigits\(p\.owner_phone/.test(SB));
 check("والبحثُ القديم (آخرُ ٣٠٠ فاتورة بالنصّ الخام) زال من الريبو", !/searchCustomers|dedupeCustomers/.test(read("src/lib/repo.ts") + read("src/lib/repoDemo.ts")));
 for (const k of ["short", "error", "new", "more", "pets", "regular", "noPhone", "addPet", "petsFailed", "switchTitle", "switchHint", "switchGo"]) {
   check(`  مفتاحُ cust.${k} بالملفّين`, !!en?.cust?.[k] && !!ar?.cust?.[k]);
