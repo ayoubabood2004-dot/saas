@@ -229,7 +229,9 @@ export function CustomerPetsStrip({ hit, attached, onAttach }: { hit: CustomerHi
   const alive = hit.pets.filter((p) => !p.deceased && !attached.has(p.id));
   if (alive.length === 0) return null;
   return (
-    <div data-custpets className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+    /* `w-0 min-w-full`: الشريطُ يملأ عرضَ الصندوق ولا يفرض عرضَه هو — صاحبُ ثلاثة حيوانات كان
+     * يوسّع عمودَ الشاشة (مساره ضمنيّ يتبع أعرضَ محتوى) فيخرج الصندوقُ عن الشاشة على ٣٧٥. */
+    <div data-custpets className="mt-2 flex w-0 min-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
       <span className="shrink-0 text-2xs font-bold text-ink-muted">{t("cust.addPet", "أضف حيوانه:")}</span>
       {alive.map((p) => (
         <button

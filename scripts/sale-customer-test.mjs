@@ -401,6 +401,10 @@ check("رقمُ الزبون بالفاتورة وبطلب التوصيل يمر
   /const custPhone = checkoutPhone\(phone, cust\.phone, getDialCode\(\)\);/.test(SB)
   && (SB.match(/customer_phone: custPhone,/g) ?? []).length === 2
   && !/customer_phone: phone\.trim\(\) \|\| cust\.phone/.test(SB));
+/* قيس بالمتصفّح على ٣٧٥: صاحبةُ ثلاثة حيوانات وسّعت عمودَ الشاشة من 343 إلى 363 — مسارُ العمود
+ * ضمنيّ (auto) يتبع أعرضَ محتوى، والشريطُ صفُّ رقاقاتٍ لا تلتفّ — فخرج صندوقُ الزبون عن الشاشة. */
+check("شريطُ «أضف حيوانه» يملأ عرضَ الصندوق ولا يفرض عرضَه (w-0 min-w-full) ويُمرَّر أفقياً",
+  /data-custpets className="[^"]*\bw-0 min-w-full\b[^"]*\boverflow-x-auto\b/.test(CS));
 check("زبونٌ طلع باسم حيوانه يقول «عن طريق X» (وإلا يُظنّ خطأ)",
   /via: viaOf\(page\.rows, q\)/.test(CS) && /cs\.via\[h\.key\] && \(/.test(CS) && /t\("cust\.viaPet"/.test(CS));
 for (const k of ["short", "error", "new", "more", "pets", "regular", "noPhone", "addPet", "petsFailed", "switchTitle", "switchHint", "switchGo", "viaPet"]) {
