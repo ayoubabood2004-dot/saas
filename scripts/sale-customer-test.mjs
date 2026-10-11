@@ -465,5 +465,80 @@ if (typeof FP === "function") {
     /name === pickedHit\.text\.name && phone === pickedHit\.text\.phone \? pickedHit\.hit : null/.test(SB));
 }
 
+/* ── تدقيقٌ عدائيّ: «بيع جديد» ثم ضغطٌ على الخانة الفارغة يفتح زبائنَ البيعة السابقة ───
+ * `reset()` كان يُفرغ الخانتين ولا يمسّ البحث، و`focus()` يعيد آخرَ نتائج الخانة مهما صار
+ * نصُّها — فسهمٌ ثم Enter يضع الزبونَ السابق على البيعة الجديدة. الخطّافُ يُشغَّل هنا فعلاً:
+ * React ظلٌّ يحفظ الحالة بين الرسمات، ومؤقّتاتٌ بيدنا، وخادمٌ مزيّف. */
+console.log("▸ النتائجُ جوابُ نصّها: الخانةُ الفارغة بعد «بيع جديد» لا تفتح زبائنَ البيعة السابقة");
+check("«بيع جديد» (reset) يُنسي بحثَ الزبون والمختار — ومسحةٌ على الإيصال تمرّ منه",
+  /cs\.cancel\(\);/.test(resetFn) && /setPickedHit\(null\)/.test(resetFn) && /if \(done\) \{ pendingScanRef\.current = code; reset\(\); return; \}/.test(SB));
+check("  والخانتان تعطيان التركيزَ نصَّهما الآن", /cs\.focus\("name", name\)/.test(SB) && /cs\.focus\("phone", phone\)/.test(SB));
+{
+  const RT = (globalThis.__RT = { slots: [], i: 0 });
+  const SRC = {
+    "react": "const R=globalThis.__RT;export const useState=(v)=>{const k=R.i++;if(!(k in R.slots))R.slots[k]=typeof v==='function'?v():v;return [R.slots[k],(n)=>{R.slots[k]=typeof n==='function'?n(R.slots[k]):n;}];};export const useRef=(v)=>{const k=R.i++;if(!(k in R.slots))R.slots[k]={current:v};return R.slots[k];};export const useCallback=(f)=>f;export const useEffect=()=>{};",
+    "react/jsx-runtime": "export const jsx=()=>null;export const jsxs=()=>null;export const Fragment=null;",
+    "react-i18next": "export const useTranslation=()=>({t:(k)=>k});",
+    "lucide-react": "export const PawPrint=null,Plus=null,RotateCcw=null;",
+    "@/lib/repo": "export const repo={findCustomers:(...a)=>globalThis.__findCustomers(...a)};",
+    "@/lib/settings": "export const getDialCode=()=>'964';",
+    "i18next": "export default { t: (k) => k, language: 'ar' };",
+  };
+  const hb = await esbuild.build({
+    stdin: { contents: 'export { useCustomerSearch } from "./src/components/retail/CustomerSearch.tsx";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, format: "esm", write: false, platform: "neutral", mainFields: ["module", "main"], jsx: "automatic", logLevel: "silent",
+    plugins: [{
+      name: "hook-rt",
+      setup(b) {
+        b.onResolve({ filter: /^(react|react\/jsx-runtime|react-i18next|lucide-react|@\/lib\/repo|@\/lib\/settings|i18next)$/ }, (a) => ({ path: a.path, namespace: "hrt" }));
+        b.onLoad({ filter: /.*/, namespace: "hrt" }, (a) => ({ contents: SRC[a.path], loader: "js" }));
+      },
+    }],
+  }).catch((e) => { console.error(e?.message ?? e); return null; });
+  const H = hb ? await import("data:text/javascript;base64," + Buffer.from(hb.outputFiles[0].text).toString("base64")) : null;
+  check("الخطّافُ (useCustomerSearch) يُبنى ويُشغَّل", typeof H?.useCustomerSearch === "function");
+  if (H) {
+    const T = new Map(); let tn = 1;
+    const prevWin = globalThis.window;
+    globalThis.window = { setTimeout: (f) => { const id = tn++; T.set(id, f); return id; }, clearTimeout: (id) => { T.delete(id); } };
+    const flush = () => { for (const [id, f] of [...T]) { T.delete(id); f(); } };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const render = () => { RT.i = 0; return H.useCustomerSearch(); };
+    const hitA = { key: "p:7701234567", name: "احمد علي", phone: "07701234567", purchases: 3, refunds: 0, firstAt: null, lastAt: null, pets: [], petsAlive: 0, petsDeceased: 0, matched: "name", top: null };
+    globalThis.__findCustomers = async () => ({ rows: [hitA], total: 1 });
+    const search = async (cs, field, text) => { cs.type(field, text); render(); flush(); await tick(); return render(); };
+    try {
+      let cs = render();
+      cs = await search(cs, "name", "احمد ع");
+      check("  (تمهيد) «احمد ع» يُجيب بصفّ «احمد علي» والقائمةُ مفتوحة", cs.open && cs.status === "ok" && cs.rows.length === 1, `${cs.open}/${cs.status}/${cs.rows.length}`);
+      cs.blur(); flush(); cs = render();
+      check("  (تمهيد) ومغادرةُ الخانة تُغلقها", !cs.open);
+      /* «بيع جديد» بلا إصلاح الشاشة: الخانةُ فرغت بـsetName("") — لا `type` — ثم ضغطةٌ عليها. */
+      cs.focus("name", ""); cs = render();
+      check("التركيزُ على الخانة الفارغة لا يفتح زبائنَ النصّ السابق", !cs.open && cs.rows.length === 0, `open=${cs.open} rows=${cs.rows.length}`);
+      cs.move(1); cs = render();
+      check("  ولا سهمٌ ثم Enter يختار الزبونَ السابق", cs.highlighted() === null);
+      /* وكتابةٌ بعده: النتائجُ القديمةُ كانت تُعرض باهتةً قابلةً للضغط ريثما يصل الجواب. */
+      cs.type("name", "مح"); cs = render();
+      check("  والكتابةُ بعده لا تعرض صفوفَ البيعة السابقة ريثما يصل الجواب", cs.rows.length === 0, `${cs.rows.length}`);
+      cs.cancel(); cs = render();
+      cs = await search(cs, "name", "احمد ع");
+      cs.blur(); flush(); cs = render();
+      cs.focus("name", "احمد ع"); cs = render();
+      check("  والتركيزُ على **نفس** النصّ ما زال يعيد نتائجَه (الميزةُ باقية)", cs.open && cs.rows.length === 1);
+      cs.blur(); flush(); cs = render();
+      cs.focus("name", "علي حسن"); cs = render();
+      check("  ونصٌّ كتبته الشاشة (جسرٌ، صاحبُ حيوان) غيرُ ما أُجيب عنه لا يفتحها", !cs.open && cs.rows.length === 0);
+      cs = await search(cs, "phone", "0770123");
+      cs.cancel(); cs = render();
+      cs.focus("phone", "0770123"); cs = render();
+      check("  وcancel (اختيارٌ، مسحة، تصفير) يُنسي — لا يعيدها تركيزٌ ولو بنفس النصّ", !cs.open && cs.rows.length === 0);
+    } finally {
+      globalThis.window = prevWin;
+      delete globalThis.__findCustomers;
+    }
+  }
+}
+
 console.log(`\n${fails ? "✗" : "✓"} sale-customer-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

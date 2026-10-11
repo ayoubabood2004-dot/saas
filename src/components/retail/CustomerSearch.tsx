@@ -44,8 +44,9 @@ function viaOf(rows: readonly CustomerHit[], q: string): Record<string, string> 
 export interface CustomerSearch extends State {
   /** نصٌّ جديد بخانة: يُقرأ بقاعدة الخادم نفسِها، ويُرسل بعد ٢٥٠ms إن كان يستحقّ. */
   type: (field: CustField, value: string) => void;
-  /** تركيزٌ على خانةٍ بحثت قبل قليل يُعيد نتائجَها — والتركيزُ الفارغ لا يفتح شيئاً. */
-  focus: (field: CustField) => void;
+  /** تركيزٌ على خانةٍ بحثت قبل قليل يُعيد نتائجَها — **ما دام نصُّها هو ما أُجيب عنه**
+   *  (`text` = نصُّ الخانة الآن). والتركيزُ الفارغ، أو على نصٍّ تبدّل، لا يفتح شيئاً. */
+  focus: (field: CustField, text: string) => void;
   blur: () => void;
   /** مسحةٌ هبطت بالخانة: لا بحثَ ينتظر ولا جوابَ يُكتب، والقائمةُ تُغلق. */
   cancel: () => void;
@@ -101,8 +102,13 @@ export function useCustomerSearch(): CustomerSearch {
   }, [run, stop]);
 
   /* الانتقالُ للخانة الأخرى يُغلق قائمةَ الأولى ويُسقط بحثَها المنتظر — كان مؤقّتُ الإغلاق يُلغى
-   * بالتركيز الجديد فتبقى قائمةُ الاسم مفتوحةً تحت خانة الهاتف. */
-  const focus = useCallback((field: CustField) => {
+   * بالتركيز الجديد فتبقى قائمةُ الاسم مفتوحةً تحت خانة الهاتف.
+   *
+   * **والنتائجُ جوابُ نصٍّ لا جوابُ خانة.** كان التركيزُ يعيد آخرَ نتائج الخانة مهما صار نصُّها:
+   * «بيع جديد» يُفرغ الخانةَ بلا `type` (setName من الشاشة)، فالضغطُ على الخانة الفارغة يفتح
+   * زبائنَ البيعة السابقة، وسهمٌ ثم Enter يضع الزبونَ السابق على البيعة الجديدة. ومثلُها كلُّ
+   * كتابةٍ من الشاشة (جسرُ سجلّ، صاحبُ حيوان). فلا تُعاد إلا لنصّها نفسِه، وإلا تُرمى. */
+  const focus = useCallback((field: CustField, text: string) => {
     if (blurTimer.current) { window.clearTimeout(blurTimer.current); blurTimer.current = null; }
     const s = stRef.current;
     if (s.field !== field) {
@@ -110,6 +116,7 @@ export function useCustomerSearch(): CustomerSearch {
       setSt((p) => ({ ...p, open: false, hi: -1, status: p.status === "loading" ? "idle" : p.status }));
       return;
     }
+    if (last.current.field !== field || last.current.q !== text) { stop(); last.current = { field: null, q: "" }; setSt(CLOSED); return; }
     if (s.status === "ok" || s.status === "error" || s.status === "short") setSt((p) => ({ ...p, open: true }));
   }, [stop]);
   /* مغادرةُ الخانة: بعد ١٥٠ms (الضغطُ على صفٍّ لا يُفقد التركيزَ أصلاً) تُغلق القائمة ويسقط ما
@@ -122,7 +129,7 @@ export function useCustomerSearch(): CustomerSearch {
       setSt((s) => ({ ...s, open: false, hi: -1, status: s.status === "loading" ? "idle" : s.status }));
     }, 150);
   }, [stop]);
-  const cancel = useCallback(() => { stop(); setSt(CLOSED); }, [stop]);
+  const cancel = useCallback(() => { stop(); last.current = { field: null, q: "" }; setSt(CLOSED); }, [stop]);
   const retry = useCallback(() => {
     const { field, q } = last.current;
     if (field) { stop(); void run(field, q); }

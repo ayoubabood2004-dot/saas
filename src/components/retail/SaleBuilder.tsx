@@ -1876,6 +1876,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       setCustAuto({ name: "", phone: "" });
     }
     setActivePetIdx(0); setPetPickOpen(false); setPetPickQ("");
+    /* وبحثُ الزبون يُنسى مع البيعة: كان يبقى بنتائجه فيفتحها أوّلُ تركيزٍ على الخانة الفارغة،
+     * وسهمٌ ثم Enter يضع زبونَ البيعة السابقة على الجديدة (ومسحةٌ على الإيصال تمرّ من هنا أيضاً). */
+    cs.cancel(); setPickedHit(null);
   };
 
   /* زرُّ التصفير (0147): «اسمُ زبونٍ باقٍ والدكتور ما يريد يبيع له». يمسح كلَّ
@@ -2877,7 +2880,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 data-scan-into="cust" data-custfield="name"
                 autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search"
                 onChange={(e) => { setName(e.target.value); cs.type("name", e.target.value); }}
-                onFocus={() => { custSnapRef.current = { field: "name", value: name }; cs.focus("name"); }}
+                onFocus={() => { custSnapRef.current = { field: "name", value: name }; cs.focus("name", name); }}
                 onBlur={cs.blur} onKeyDown={custKeyDown}
               />
             </div>
@@ -2888,7 +2891,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 data-scan-into="cust" data-custfield="phone"
                 autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search"
                 onChange={(e) => { setPhone(e.target.value); cs.type("phone", e.target.value); }}
-                onFocus={() => { custSnapRef.current = { field: "phone", value: phone }; cs.focus("phone"); }}
+                onFocus={() => { custSnapRef.current = { field: "phone", value: phone }; cs.focus("phone", phone); }}
                 onBlur={cs.blur} onKeyDown={custKeyDown}
               />
             </div>
