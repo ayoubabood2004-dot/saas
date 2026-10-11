@@ -46,7 +46,7 @@ import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
 import type { PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
-import { customerBoundLines, cartAfterClearCustomer, planCustomerSwitch, stripScanTail } from "@/lib/saleCustomer";
+import { customerBoundLines, cartAfterClearCustomer, planCustomerSwitch, stripScanTail, fieldsAfterPick, type CustText } from "@/lib/saleCustomer";
 import { useCustomerSearch, CustomerDropdown, CustomerPetsStrip, type CustField } from "./CustomerSearch";
 import { draftOnMount } from "@/lib/retailBridge";
 import { splitCustomerField } from "@/lib/customerName";
@@ -164,6 +164,10 @@ interface SaleDraft {
   /** مرجعُ محاولة الإصدار (0135): يُحفظ مع المسودّة حتى لا يولَد مرجعٌ جديد بعد
    *  مهلةٍ ثم تبديلِ تبويبٍ أو إعادةِ تحميل — فتُباع السلّةُ مرّتين. */
   clientRef?: string | null;
+  /** ما كتبته الشاشةُ بخانتَي الزبون (اختيارٌ، جسرٌ، صاحبُ حيوان) — ما يختلف عنه كتبه الكاشيرُ
+   *  بيده فلا يمحوه فراغُ صفٍّ يُختار (`fieldsAfterPick`). يُحفظ لأن تبديلَ التبويب يُعيد تركيبَ
+   *  الشاشة من المسودّة؛ ومسودّةٌ قديمةٌ بلا هذا تُعدّ نصَّها من الشاشة (المسحُ أسلمُ من الخلط). */
+  custAuto?: CustText;
 }
 /** أقصى ما تعرضه شبكةُ المنتجات دفعةً واحدة — للرسم لا للفلترة. ويُقال للطبيب
  *  كم أُخفي، فلا تبدو مادةٌ خارج السقف وكأنها غير موجودة. */
@@ -682,6 +686,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [query, setQuery] = useState("");
   const [name, setName] = useState(draft0?.name ?? "");
   const [phone, setPhone] = useState(draft0?.phone ?? "");
+  /** ما كتبته الشاشةُ نفسُها بخانتَي الزبون — وما يختلف عنه كتبه الكاشيرُ بيده (`fieldsAfterPick`).
+   *  كلُّ كتابةٍ من الشاشة (اختيار، جسر، صاحبُ حيوان، تصفير، مسحُ الزبون) تسجّله معها. */
+  const [custAuto, setCustAuto] = useState<CustText>(() => draft0?.custAuto ?? { name: draft0?.name ?? "", phone: draft0?.phone ?? "" });
   // Patients attached to this sale. The ACTIVE one receives new medication/vaccine
   // lines; more of the owner's animals can be attached to vaccinate them in one visit.
   const [salePets, setSalePets] = useState<SalePet[]>(draft0?.salePets ?? []);
@@ -695,8 +702,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const searchRef = useRef<HTMLInputElement>(null);
   /* بحثُ الزبون بخانتَي الاسم والهاتف نفسَيهما (0232) — الخادمُ يجيب، والأحدثُ وحده يكتب. */
   const cs = useCustomerSearch();
-  /** الزبونُ المختار من القائمة — يبقى «مختاراً» ما دام الاسمُ والرقمُ كما اختيرا. */
-  const [pickedHit, setPickedHit] = useState<CustomerHit | null>(null);
+  /** الزبونُ المختار من القائمة — يبقى «مختاراً» ما دام الاسمُ والرقمُ كما تركهما الاختيار
+   *  (`text`: وقد يكون أحدُهما ما كتبه الكاشيرُ وأبقاه الاختيار). */
+  const [pickedHit, setPickedHit] = useState<{ hit: CustomerHit; text: CustText } | null>(null);
   /** تبديلُ زبونٍ والحيوانُ المربوط ليس من حيواناته — يُسأل قبله (planCustomerSwitch). */
   const [switchAsk, setSwitchAsk] = useState<{ hit: CustomerHit; plan: { ask: boolean; pets: string[]; lines: Line[] } } | null>(null);
   /** نصُّ خانة الزبون لحظةَ التركيز — مرجعُ إرجاعها إن هبطت فيها مسحة. */
@@ -1499,6 +1507,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     labIdRef.current = prefill.labId ?? null;
     if (prefill.name) setName(prefill.name);
     if (prefill.phone) setPhone(prefill.phone);
+    setCustAuto((a) => ({ name: prefill.name || a.name, phone: prefill.phone || a.phone }));   // من السجلّ لا من يد الكاشير
     setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
     setActivePetIdx(0);
     setDone(null);
@@ -1652,8 +1661,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * يُسجَّل. */
   useEffect(() => {
     if (done) return;
-    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, clientRef: saleRefSaved });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleRefSaved, done]);
+    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, clientRef: saleRefSaved, custAuto });
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleRefSaved, custAuto, done]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -1794,8 +1803,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* ---- زبونٌ من القائمة (0232) -------------------------------------------
    * يملأ الاسمَ والرقمَ وحدهما — **لا حيوانَ يُلصق تلقائياً** (البيعُ بلا حيوانٍ مدعومٌ كاملاً،
    * وحيواناتُه تُعرض «أضف حيوانه» اختياراً). وإن كان بالبيعة حيوانٌ أو سطرٌ مربوطٌ ليس من
-   * حيواناته، يُسأل أوّلاً ويمرّ التأكيدُ من «امسح الزبون» نفسِه (حارسُ الدفعة المعلَّقة). */
-  const applyPick = (hit: CustomerHit) => { setName(hit.name ?? ""); setPhone(hit.phone ?? ""); setPickedHit(hit); };
+   * حيواناته، يُسأل أوّلاً ويمرّ التأكيدُ من «امسح الزبون» نفسِه (حارسُ الدفعة المعلَّقة).
+   *
+   * **وفراغُ الصفّ لا يمحو ما كتبه الكاشير** (`fieldsAfterPick`): كلُّ خانةٍ تبحث بنصّها، فصفٌّ
+   * «بلا رقم» يطلع لخانة الاسم وبخانة الهاتف رقمٌ كُتب تواً — وكان الاختيارُ يكتب الفراغَ فوقه
+   * بلا كلمة، فتُحفظ الفاتورةُ بلا رقم ويُقيَّد الدَّينُ بمفتاح الاسم منفصلاً عن ديونه.
+   * والقاعدةُ تُقرأ بما **قبل** «امسح الزبون» حين تأتي بعد نافذة التبديل (`confirmSwitch`):
+   * المسحُ يُفرغ ما كتبته الشاشة، والاختيارُ يُبقي ما كتبه الكاشير — بنفس الحكم بلا نافذة. */
+  const applyPick = (hit: CustomerHit) => {
+    const f = fieldsAfterPick(hit, { name, phone }, custAuto);
+    setName(f.text.name); setPhone(f.text.phone); setCustAuto(f.auto);
+    setPickedHit({ hit, text: f.text });
+  };
   const pickCustomer = (hit: CustomerHit) => {
     cs.cancel();   // لا تعود قائمةُ النصّ القديم بالتركيز التالي
     playTap();
@@ -1816,7 +1835,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     clearCustomerNow();
     applyPick(ask.hit);
   };
-  const picked = pickedHit && name === (pickedHit.name ?? "") && phone === (pickedHit.phone ?? "") ? pickedHit : null;
+  const picked = pickedHit && name === pickedHit.text.name && phone === pickedHit.text.phone ? pickedHit.hit : null;
   const attachHitPet = (p: CustomerPet) => {
     playSuccess();
     setSalePets((s) => (s.some((x) => x.id === p.id) ? s : [...s, { id: p.id, name: p.name ?? "", species: p.species ?? null }]));
@@ -1850,9 +1869,11 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill && !prefillOff.current) {
       setName(prefill.name || ""); setPhone(prefill.phone || "");
+      setCustAuto({ name: prefill.name || "", phone: prefill.phone || "" });
       setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
     } else {
       setName(""); setPhone(""); setSalePets([]);
+      setCustAuto({ name: "", phone: "" });
     }
     setActivePetIdx(0); setPetPickOpen(false); setPetPickQ("");
   };
@@ -1904,6 +1925,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return;
     }
     setName(""); setPhone(""); setSalePets([]); setActivePetIdx(0);
+    setCustAuto({ name: "", phone: "" }); setPickedHit(null);
     cs.cancel(); setPetPickOpen(false); setPetPickQ("");
     setSaleNotes("");                 // الملاحظةُ تُكتب بسجلّ حيوانه — تروح معه
     setDAddress(""); setDZone("");    // عنوانُ التوصيل وزونُه بياناتُ زبونٍ أيضاً
@@ -1961,8 +1983,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setActivePetIdx(salePets.length); // the newly appended pet becomes active
     setPetPickOpen(false); setPetPickQ("");
     // First attachment for a walk-in: adopt the owner as the invoice customer too.
-    if (!name.trim() && p.owner_name) setName(p.owner_name);
-    if (!phone.trim() && p.owner_phone) setPhone(p.owner_phone);
+    // وما يُملأ من صاحب الحيوان كتبته الشاشة (custAuto) — اختيارُ زبونٍ آخر بعده لا يُبقيه.
+    if (!name.trim() && p.owner_name) { const v = p.owner_name; setName(v); setCustAuto((a) => ({ ...a, name: v })); }
+    if (!phone.trim() && p.owner_phone) { const v = p.owner_phone; setPhone(v); setCustAuto((a) => ({ ...a, phone: v })); }
   };
   const removePet = (idx: number) => {
     playTap();

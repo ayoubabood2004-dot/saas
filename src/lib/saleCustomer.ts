@@ -48,7 +48,7 @@ export function cartAfterClearCustomer<T extends SaleLineLike>(cart: readonly T[
 }
 
 /* ============================================================================
- * بحثُ الزبون بخانتَي الاسم والهاتف (0232) — ثلاثُ قواعد صِرفة، مفحوصةٌ بـsale-customer-test.
+ * بحثُ الزبون بخانتَي الاسم والهاتف (0232) — قواعدُ صِرفة، مفحوصةٌ بـsale-customer-test.
  * ==========================================================================*/
 
 /**
@@ -68,6 +68,40 @@ export function planCustomerSwitch<T extends SaleLineLike>(
   const bound = customerBoundLines(cart);
   const foreign = pets.some((p) => !p.id || !own.has(p.id)) || bound.some((l) => !ownLine(l));
   return foreign ? { ask: true, pets: pets.map((p) => p.name), lines: bound } : { ask: false, pets: [], lines: [] };
+}
+
+/** نصُّ خانتَي الزبون. */
+export type CustText = { name: string; phone: string };
+
+/**
+ * **اختيارُ صفٍّ من القائمة: فراغُ الدليل «ما يُعرف» لا «امسحه».**
+ *
+ * كلُّ خانةٍ تبحث بنصّها، فصفٌّ يطلع لخانة الاسم قد يكون «بلا رقم» وبخانة الهاتف رقمٌ
+ * كتبه الكاشيرُ تواً — وكان الاختيارُ يكتب فراغَ الدليل فوقه، فتُحفظ الفاتورةُ بلا رقم
+ * ويُقيَّد الدَّينُ بمفتاح الاسم فينفصل عن ديونه الأخرى (والعكسُ: صفٌّ بلا اسمٍ يمحو اسماً
+ * مكتوباً). «بلا رقم» تعني أن سجلّه لم يعرف رقماً، لا أن الزبونَ بلا رقم.
+ *
+ * فلكلّ خانة:
+ *  • للصفّ قيمة ⇒ تُكتب (وهي ظاهرةٌ بالصفّ نفسِه قبل الضغط).
+ *  • لا قيمة، وبالخانة نصٌّ **كتبه الكاشيرُ بيده** ⇒ يبقى — هو ما ينقص السجلّ.
+ *  • لا قيمة، والنصُّ **كتبته الشاشة** (`auto`: اختيارٌ سابق، جسرُ سجلّ، صاحبُ حيوان) ⇒
+ *    يُمسح: إبقاؤه يلصق رقمَ زبونٍ بغيره فيُقيَّد دَينُ الثاني على الأوّل.
+ *
+ * «كتبه بيده» = يختلف عمّا كتبته الشاشةُ آخرَ مرّة. فلا علامةَ تُنسى عند الكتابة، ومسحةٌ
+ * أُرجع الحقلُ بعدها لما كان (`stripScanTail`) ترجع لأصله تلقائياً.
+ */
+export function fieldsAfterPick(
+  hit: { name: string | null; phone: string | null },
+  cur: CustText,
+  auto: CustText,
+): { text: CustText; auto: CustText } {
+  const one = (v: string | null, c: string, a: string): [string, string] =>
+    v != null && v.trim() !== "" ? [v, v]                // من الدليل — والشاشةُ كاتبتُه
+      : c.trim() !== "" && c !== a ? [c, a]              // ما كتبه الكاشيرُ يبقى، ويبقى «بيده»
+      : ["", ""];                                        // فراغٌ أو نصُّ زبونٍ آخر
+  const [name, autoName] = one(hit.name, cur.name, auto.name);
+  const [phone, autoPhone] = one(hit.phone, cur.phone, auto.phone);
+  return { text: { name, phone }, auto: { name: autoName, phone: autoPhone } };
 }
 
 /**

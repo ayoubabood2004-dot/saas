@@ -411,5 +411,59 @@ for (const k of ["short", "error", "new", "more", "pets", "regular", "noPhone", 
   check(`  مفتاحُ cust.${k} بالملفّين`, !!en?.cust?.[k] && !!ar?.cust?.[k]);
 }
 
+/* ── تدقيقٌ عدائيّ: «بلا رقم» يمحو رقماً كتبه الكاشير ─────────────────────────────
+ * كلُّ خانةٍ تبحث بنصّها، فصفُّ «احمد كاظم · بلا رقم» يطلع لخانة الاسم وبخانة الهاتف رقمٌ
+ * جديد كتبه الكاشيرُ تواً — والضغطُ عليه كان يُفرغ الهاتف بلا كلمة (`hit.phone ?? ""`):
+ * الفاتورةُ بلا رقم، والدَّينُ بمفتاح الاسم منفصلاً عن ديونه. وبالإنتاج ٧٠٢ فاتورةٍ باسمٍ بلا رقم،
+ * و٥٢ اسماً يظهر بالحالين — فالقائمةُ تعرض الصفَّين لنفس الاسم كثيراً. */
+console.log("▸ اختيارُ صفٍّ «بلا رقم» لا يمحو رقماً كتبه الكاشير — ولا صفٌّ بلا اسمٍ اسماً");
+const resetFn = SB.slice(SB.lastIndexOf("const reset = () => {", SB.indexOf("const hardReset")), SB.indexOf("const hardReset"));
+const FP = M?.fieldsAfterPick;
+check("fieldsAfterPick موجودةٌ صِرفة (src/lib/saleCustomer.ts)", typeof FP === "function");
+if (typeof FP === "function") {
+  const E = { name: "", phone: "" };
+  const a = FP({ name: "احمد كاظم", phone: null }, { name: "احمد ك", phone: "07701239999" }, E);
+  check("المشهدُ المقيس: رقمٌ مكتوب + «احمد ك» + صفُّ «احمد كاظم · بلا رقم» ⇒ الاسمُ من الصفّ والرقمُ يبقى",
+    a.text.name === "احمد كاظم" && a.text.phone === "07701239999", JSON.stringify(a.text));
+  check("  ويبقى «بيد الكاشير» بعده (اختيارٌ ثانٍ بلا رقم يُبقيه أيضاً)",
+    FP({ name: "احمد كاظم", phone: null }, a.text, a.auto).text.phone === "07701239999");
+  const b = FP({ name: null, phone: "07501112222" }, { name: "سعد", phone: "0750111" }, E);
+  check("والعكس: صفٌّ بلا اسم («عميل نقدي») لا يمحو اسماً مكتوباً، ورقمُه يُكتب",
+    b.text.name === "سعد" && b.text.phone === "07501112222", JSON.stringify(b.text));
+  /* ما كتبته الشاشةُ من زبونٍ آخر يُمسح: إبقاؤه يقيّد دَينَ الثاني على رقم الأوّل. */
+  const prev = { name: "علي حسن", phone: "07700000001" };
+  const c = FP({ name: "سعد علي", phone: null }, { name: "سعد ع", phone: prev.phone }, prev);
+  check("رقمُ اختيارٍ سابق (زبونٌ آخر) لا يلتصق بالجديد", c.text.phone === "" && c.auto.phone === "", JSON.stringify(c));
+  check("  ولا رقمُ جسرِ سجلٍّ أو صاحبِ حيوان (كتبته الشاشة)",
+    FP({ name: "سعد علي", phone: null }, { name: "سعد", phone: "07709990000" }, { name: "", phone: "07709990000" }).text.phone === "");
+  check("  وخانةٌ عدّلها الكاشيرُ بعد اختيارٍ سابق صارت له فتبقى",
+    FP({ name: "سعد علي", phone: null }, { name: "سعد", phone: "07709990000" }, prev).text.phone === "07709990000");
+  check("  ومسحةٌ أُرجعت الخانةُ بعدها لنصّ الشاشة تُعدّ نصَّ الشاشة (لا علامةَ تُنسى)",
+    FP({ name: "x", phone: null }, { name: "x", phone: prev.phone }, prev).text.phone === "");
+  const full = FP({ name: "نور", phone: "0780" }, { name: "ن", phone: "0770123" }, E);
+  check("  وصفٌّ بقيمتيه يكتبهما كما هما (ظاهرتان بالصفّ قبل الضغط)", full.text.name === "نور" && full.text.phone === "0780" && full.auto.phone === "0780");
+  check("  وخانةٌ فارغةٌ أو مسافاتٌ تبقى فارغة", FP({ name: "نور", phone: null }, { name: "ن", phone: "  " }, E).text.phone === "");
+  check("  وقيمةُ صفٍّ فارغةٌ نصّاً تُعامَل كالفراغ", FP({ name: "نور", phone: "" }, { name: "ن", phone: "0770" }, E).text.phone === "0770");
+}
+{
+  const at = SB.indexOf("const applyPick = (hit: CustomerHit) => {");
+  const fn = at < 0 ? "" : SB.slice(at, SB.indexOf("const pickCustomer", at));
+  check("applyPick يمرّ من fieldsAfterPick ولا يكتب فراغَ الصفّ فوق الخانة",
+    /fieldsAfterPick\(hit, \{ name, phone \}, custAuto\)/.test(fn) && /setCustAuto\(f\.auto\)/.test(fn) && !/hit\.(name|phone) \?\? ""/.test(fn));
+  /* «كتبه الكاشير» = يختلف عمّا كتبته الشاشة. فكلُّ كتابةٍ من الشاشة بخانتَي الزبون تسجّل نفسَها،
+   * وإلا عُدّت كتابةَ الكاشير فبقيت مع زبونٍ آخر. يُمسح كلُّ setName/setPhone بالملفّ: المسموحُ
+   * بلا تسجيلٍ الفراغُ، ويدُ الكاشير (e.target.value)، وإرجاعُ المسحة (fix). */
+  const writers = [...SB.matchAll(/\bset(Name|Phone)\(([^;]*?)\);/g)];
+  const unrecorded = writers.filter((w) => !['""', "e.target.value", "fix"].includes(w[2].trim()) && !/setCustAuto\(/.test(SB.slice(w.index, w.index + 200)));
+  check("  وكلُّ كتابةٍ من الشاشة بخانتَي الزبون تسجّل نفسَها (custAuto) — الجسر، «بيع جديد»، صاحبُ الحيوان، الاختيار",
+    writers.length >= 10 && unrecorded.length === 0, unrecorded.map((w) => w[0]).join(" | ") || `${writers.length} كاتب`);
+  check("  والتصفيرُ ومسحُ الزبون يُفرغانه", /setCustAuto\(\{ name: "", phone: "" \}\)/.test(resetFn) && /setCustAuto\(\{ name: "", phone: "" \}\)/.test(clearFn));
+  check("  ويعيش بالمسودّة (تبديلُ التبويب يعيد تركيبَ الشاشة منها)، والقديمةُ بلاه تُعدّ نصَّ الشاشة",
+    /clientRef: saleRefSaved, custAuto \}\);/.test(SB) && /saleRefSaved, custAuto, done\]\);/.test(SB)
+    && /draft0\?\.custAuto \?\? \{ name: draft0\?\.name \?\? "", phone: draft0\?\.phone \?\? "" \}/.test(SB));
+  check("  و«أضف حيوانه» يبقى للمختار وإن أبقى الاختيارُ رقمَ الكاشير",
+    /name === pickedHit\.text\.name && phone === pickedHit\.text\.phone \? pickedHit\.hit : null/.test(SB));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} sale-customer-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
