@@ -6009,5 +6009,23 @@
     "switchTitle": "Switch customer?",
     "switchHint": "“{{name}}” doesn't own the pet attached to this sale — these are removed, the rest of the cart stays:",
     "switchGo": "Switch and remove them"
+  },
+  "scust": {
+    "tab": "Sales customers",
+    "title": "Sales customers without an animal record",
+    "hint": "Customers recorded through sales who have no animal record at the clinic — all history, no money figures.",
+    "search": "Search by name or number",
+    "sortRepeat": "Most repeat",
+    "sortRecent": "Last visit",
+    "shown": "Showing {{n}} of {{total}}",
+    "count": "{{n}} customers",
+    "error": "Couldn't load the list",
+    "noMatch": "No match for this search",
+    "empty": "No sales customers without an animal record yet",
+    "purchases": "Bought {{n}} times",
+    "last": "Last purchase {{date}}",
+    "top": "Buys:",
+    "moreError": "Couldn't load more",
+    "more": "Load more"
   }
 }

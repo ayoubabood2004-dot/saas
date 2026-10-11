@@ -150,6 +150,30 @@ let threw = "";
 try { find(SRC, IQ, { sort: "price" }); } catch (e) { threw = e.message; }
 check("ترتيبٌ غيرُ معروف يُرفض (bad_argument) كالخادم — لا قائمةَ فارغةً كاذبة", threw === "bad_argument");
 
+/* ── من يقرأ الدليل: البيعُ وقسمُ التقارير وحدهما (قرارُ المالك) ─────────────── */
+console.log("▸ «زبائن المبيعات» بالتقارير، والدليلُ للبيع وحده");
+{
+  const { readFileSync, readdirSync, statSync } = await import("node:fs");
+  const read = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+  const files = [];
+  (function walk(d) { for (const e of readdirSync(d)) { const p = join(d, e); if (statSync(p).isDirectory()) walk(p); else if (/\.tsx?$/.test(p)) files.push(p.split("\\").join("/")); } })("src");
+  const users = files.filter((f) => /\bfindCustomers\(/.test(read(f))).sort();
+  check("الدليلُ يقرؤه البيعُ والتقاريرُ وحدهما (لا واتساب ولا استقبال ولا لوحة أوامر)",
+    users.join(",") === ["src/components/retail/CustomerSearch.tsx", "src/lib/repo.ts", "src/lib/repoDemo.ts", "src/pages/AnalyticsHub.tsx"].join(","), users.join(","));
+  const AH = read("src/pages/AnalyticsHub.tsx");
+  const at = AH.indexOf("function SalesCustomersTab()");
+  const tab = at < 0 ? "" : AH.slice(at);
+  check("تبويبٌ بالتقارير «زبائن المبيعات» (لا صفحةَ جديدة ولا رابطَ بالشريط)",
+    /\{ id: "salesCust", label: t\("scust\.tab", "زبائن المبيعات"\), icon: UserSearch \}/.test(AH) && /tab === "salesCust" \? <SalesCustomersTab \/>/.test(AH)
+    && !/path="\/customers"/.test(read("src/App.tsx")));
+  check("  يقرأ زبائنَ البيع بلا سجل حيوان، بأكثر ما يشترون، بصفحة ٥٠",
+    /repo\.findCustomers\(query \|\| null, \{ filter: "nopets", sort, limit: PAGE, offset, top: 3 \}\)/.test(tab) && /const PAGE = 50;/.test(tab));
+  check("  وترتيبان: الأكثرُ تكراراً وآخرُ زيارة", /\["purchases", t\("scust\.sortRepeat"/.test(tab) && /\["recent", t\("scust\.sortRecent"/.test(tab));
+  check("  و«حمّل المزيد» يكمل من حيث وصل، وصفحةٌ فارغة تُنهي", /void load\(rows\.length\)/.test(tab) && /page\.rows\.length === 0 \|\| page\.rows\.length < PAGE \? "end"/.test(tab));
+  check("  والفشلُ «أعد المحاولة» — لا قائمةً فارغةً تُصدَّق", /setStatus\("error"\)/.test(tab) && /data-scusterr/.test(tab) && /onClick=\{\(\) => \{ playTap\(\); void load\(0\); \}\}/.test(tab));
+  check("  وبلا مال (لا مبلغ ولا دَين)", tab !== "" && !/money\(|dueOf|paidOf|\.amount_paid|revenue/.test(tab));
+}
+
 console.log(fails
   ? `\n✗ customer-directory-test: ${passes} نجحت، ${fails} فشلت`
   : `\n✓ customer-directory-test: ${passes} نجحت، 0 فشلت`);

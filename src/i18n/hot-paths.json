@@ -37,6 +37,7 @@
     "cbook": "src/pages/CompanyBook.tsx",
     "praise": "src/pages/PriceRaise.tsx",
     "wdr": "src/pages/AnalyticsHub.tsx",
+    "scust": "src/pages/AnalyticsHub.tsx",
     "campaigns": "src/pages/WhatsAppCampaigns.tsx",
     "promos": "src/pages/Settings.tsx",
     "services": "src/pages/Settings.tsx",

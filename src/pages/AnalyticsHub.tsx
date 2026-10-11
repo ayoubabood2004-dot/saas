@@ -14,10 +14,10 @@ import {
   Landmark, ShoppingBag,
   Undo2,
   BookOpen,
-  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle,
+  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseCategory, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
+import type { CustomerHit, Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseCategory, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh, patchCachedPrefix } from "@/lib/swrCache";
@@ -38,7 +38,8 @@ import { netPerPocket, POCKETS, type PocketTotals } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoiceNo";
-import { getClinicName } from "@/lib/settings";
+import { getClinicName, getDialCode } from "@/lib/settings";
+import { readCustomerQuery } from "@/lib/customerKey";
 import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/components/reports/UniversalReportTable";
 import { CustomersTab } from "@/components/reports/CustomerLedger";
 
@@ -64,7 +65,7 @@ import { CustomersTab } from "@/components/reports/CustomerLedger";
  * ==========================================================================*/
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "lastMonth" | "custom";
-type TabKey = "overview" | "money" | "ledger" | "customers" | "staff" | "best" | "categories" | "clinical" | "audit" | "expenses" | "purchases";
+type TabKey = "overview" | "money" | "ledger" | "customers" | "salesCust" | "staff" | "best" | "categories" | "clinical" | "audit" | "expenses" | "purchases";
 
 /** One staff member's sales performance in the selected range. */
 interface StaffTopItem { name: string; qty: number; revenue: number }
@@ -833,6 +834,7 @@ export function AnalyticsHub() {
     { id: "money", label: t("rpt.tab.money", "المال والصندوق"), icon: Wallet },
     { id: "ledger", label: t("rpt.tab.ledger", "سجل الحركات"), icon: ScrollText },
     { id: "customers", label: t("rpt.tab.customers", "سجل العملاء"), icon: BookUser },
+    { id: "salesCust", label: t("scust.tab", "زبائن المبيعات"), icon: UserSearch },
     { id: "staff", label: t("rpt.tab.staff", "الموظفون"), icon: Users },
     { id: "best", label: t("rpt.tab.best", "الأفضل والمبيعات"), icon: Crown },
     { id: "categories", label: t("rpt.tab.categories", "التصنيفات"), icon: Package },
@@ -1015,7 +1017,8 @@ export function AnalyticsHub() {
         })}
       </div>
 
-      {loading ? (
+      {/* «زبائن المبيعات» لا تنتظر لقطةَ المدّة: كلُّ التاريخ من الخادم، بلا مال. */}
+      {tab === "salesCust" ? <SalesCustomersTab /> : loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
       ) : (
         <>
@@ -3359,6 +3362,143 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
       {loading
         ? <div className="py-10 text-center text-ink-subtle"><Clock size={18} className="mx-auto mb-2 animate-spin" /> {t("common.loading", "جارٍ التحميل…")}</div>
         : <PurchaseLog purchases={purchases} />}
+    </div>
+  );
+}
+
+/* ----------------------------- زبائن المبيعات (0232) -----------------------------
+ * كلمةُ المالك: «خلّي اكو مكان — ممكن بالتقارير — يكدر الدكتور يشوف القائمة الي هو سجّل
+ * مبيعاته منها وما يمتلكون سجل حيوان». فهذا القسم يقرأ دليلَ الزبائن نفسَه الذي يبحث به
+ * البيع (`findCustomers`، فلتر `nopets`): من اشترى مرّةً على الأقل ولا حيوانَ له بالعيادة
+ * (حيّاً أو متوفّى) — الاسم والرقم وعددُ الشراء وآخرُه وأكثرُ ما يشتريه. **قراءةٌ بلا مال**
+ * (قرارُ المالك: شاشاتُ المال تبقى كما هي)، ومن كلّ التاريخ لا من المدّة المختارة.
+ * الصفحةُ ٥٠ و«حمّل المزيد» يكمل من حيث وصل؛ والفشلُ «أعد المحاولة» لا قائمةً فارغة. */
+function SalesCustomersTab() {
+  const { t } = useTranslation();
+  const PAGE = 50;
+  const [q, setQ] = useState("");
+  const [qd, setQd] = useState("");
+  const [sort, setSort] = useState<"purchases" | "recent">("purchases");
+  const [rows, setRows] = useState<CustomerHit[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [more, setMore] = useState<"idle" | "loading" | "error" | "end">("idle");
+  const seq = useRef(0);
+  useEffect(() => { const id = window.setTimeout(() => setQd(q), 250); return () => window.clearTimeout(id); }, [q]);
+  // نصٌّ أقصرُ من حرفين أو ٣ أرقام لا يرجع شيئاً بالخادم — فهو كالفارغ: القائمةُ كلُّها.
+  const query = readCustomerQuery(qd, getDialCode()).mode === "short" ? "" : qd.trim();
+
+  const load = async (offset: number) => {
+    const n = ++seq.current;
+    if (offset === 0) setStatus("loading"); else setMore("loading");
+    try {
+      const page = await repo.findCustomers(query || null, { filter: "nopets", sort, limit: PAGE, offset, top: 3 });
+      if (n !== seq.current) return;
+      if (offset === 0) {
+        setRows(page.rows); setTotal(page.total ?? 0); setStatus("ok");
+        setMore(page.rows.length < PAGE ? "end" : "idle");
+      } else {
+        // الإزاحةُ التالية = ما وصل فعلاً، وصفحةٌ فارغة تُنهي (لا سقفَ صامت).
+        setRows((prev) => [...prev, ...page.rows]);
+        if (page.total != null) setTotal(page.total);
+        setMore(page.rows.length === 0 || page.rows.length < PAGE ? "end" : "idle");
+      }
+    } catch (e) {
+      if (n !== seq.current) return;
+      console.error("[reports] sales customers failed", e);
+      if (offset === 0) { setRows([]); setTotal(null); setStatus("error"); } else setMore("error");
+    }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(0); }, [query, sort]);
+
+  const lastOf = (iso: string | null) => {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  };
+  return (
+    <div data-salescust className="space-y-3">
+      <div className="card p-4">
+        <h2 className="flex items-center gap-2 text-base font-extrabold text-ink"><UserSearch size={18} className="text-brand-600" /> {t("scust.title", "زبائن المبيعات بلا سجل حيوان")}</h2>
+        <p className="mt-1 text-xs text-ink-subtle">{t("scust.hint", "زبائن انسجلوا بالبيع وما عندهم سجل حيوان بالعيادة — من كل التاريخ، وبلا أرقام فلوس.")}</p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+            <input
+              className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder={t("scust.search", "ابحث بالاسم أو الرقم")} autoComplete="off" spellCheck={false} enterKeyHint="search"
+            />
+          </div>
+          <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+            {([["purchases", t("scust.sortRepeat", "الأكثر تكراراً")], ["recent", t("scust.sortRecent", "آخر زيارة")]] as const).map(([v, label]) => (
+              <button
+                key={v} type="button" data-scustsort={v} aria-pressed={sort === v}
+                onClick={() => { playTap(); setSort(v); }}
+                className={cn("rounded-full px-3 py-1.5 text-xs font-bold transition", sort === v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {status === "ok" && total != null && total > 0 && (
+          <p data-scustcount className="mt-2 text-2xs font-semibold text-ink-subtle">
+            {rows.length < total
+              ? t("scust.shown", { n: formatNum(rows.length), total: formatNum(total), defaultValue: "معروض {{n}} من {{total}}" })
+              : t("scust.count", { n: formatNum(total), defaultValue: "{{n}} زبون" })}
+          </p>
+        )}
+      </div>
+
+      {status === "loading" && (
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>
+      )}
+      {status === "error" && (
+        <div data-scusterr className="card flex items-center gap-3 p-4 text-sm font-semibold text-danger-700 dark:text-danger-200">
+          <AlertTriangle size={18} className="shrink-0" />
+          <span className="min-w-0 flex-1">{t("scust.error", "ما كدرنا نجيب القائمة")}</span>
+          <Button variant="ghost" leftIcon={<RefreshCw size={15} />} onClick={() => { playTap(); void load(0); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
+      )}
+      {status === "ok" && rows.length === 0 && (
+        <div data-scustempty className="card p-6 text-center text-sm text-ink-subtle">
+          {query ? t("scust.noMatch", "ماكو نتيجة لهذا البحث") : t("scust.empty", "ماكو زبائن بيع بلا سجل حيوان بعد")}
+        </div>
+      )}
+      {status === "ok" && rows.length > 0 && (
+        <ul className="space-y-2">
+          {rows.map((r) => (
+            <li key={r.key} data-scustrow={r.key} className="card flex flex-wrap items-start gap-x-4 gap-y-2 p-3.5">
+              <div className="min-w-0 flex-1 basis-48">
+                <p className="truncate text-sm font-bold text-ink">{r.name ?? t("retail.walkIn", "عميل نقدي")}</p>
+                {r.phone
+                  ? <bdi dir="ltr" className="block truncate text-xs tabular-nums text-ink-subtle">{r.phone}</bdi>
+                  : <span className="block text-xs text-ink-subtle">{t("cust.noPhone", "بلا رقم")}</span>}
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-0.5 text-2xs">
+                <span className="rounded-full bg-brand-50 px-2 py-0.5 font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                  {t("scust.purchases", { n: formatNum(r.purchases), defaultValue: "اشترى {{n}} مرة" })}
+                </span>
+                <span className="text-ink-subtle">{t("scust.last", { date: lastOf(r.lastAt), defaultValue: "آخر شراء {{date}}" })}</span>
+              </div>
+              {(r.top ?? []).length > 0 && (
+                <p className="basis-full truncate text-xs text-ink-muted">
+                  <span className="font-bold">{t("scust.top", "يشتري:")}</span>{" "}
+                  {(r.top ?? []).map((it) => `${it.name ?? "—"} ×${formatNum(it.times)}`).join(" · ")}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {status === "ok" && total != null && rows.length < total && more !== "end" && (
+        <div className="flex flex-col items-center gap-1">
+          {more === "error" && <p className="text-xs font-semibold text-danger-700 dark:text-danger-200">{t("scust.moreError", "ما كدرنا نحمّل الباقي")}</p>}
+          <Button variant="ghost" data-scustmore disabled={more === "loading"} onClick={() => { playTap(); void load(rows.length); }}>
+            {more === "error" ? t("common.retry", "إعادة المحاولة") : t("scust.more", "حمّل المزيد")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
