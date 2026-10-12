@@ -1388,19 +1388,15 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       // الأولوية: تصويرٌ ذاتيّ ← اختيارُ مكتبة ← إزالة — آخرُ نيّةٍ صريحة تغلب.
       if (savedId && (photo || libPick || (removePhoto && product?.image_path))) {
         try {
-          // المسارُ فريدٌ لكلّ رفعة (البند ٩)، فالملفُّ القديم لم يعد يُطمَس —
-          // يُحذف بعد نجاح تحويل المرجع لا قبله، وبعده وحده.
-          const prevPath = product?.image_path ?? null;
+          // المسارُ فريدٌ لكلّ رفعة (البند ٩)، والملفُّ القديمُ **يبقى** بالدلو (O4: «لا تشيل ولا
+          // تحذف صورة») — الاستبدالُ والفكُّ يُعادان من «صور سابقة».
           if (photo) {
             const path = await repo.uploadProductImage(savedClinic, savedId, photo);
             await repo.updateProduct(savedId, { image_path: path });
-            if (prevPath && prevPath !== path) void repo.deleteProductImage(savedClinic, savedId, prevPath);
           } else if (libPick) {
             await repo.updateProduct(savedId, { image_path: libPick });
-            if (prevPath && prevPath !== libPick) void repo.deleteProductImage(savedClinic, savedId, prevPath);
           } else {
             await repo.updateProduct(savedId, { image_path: null });
-            if (product?.image_path) void repo.deleteProductImage(savedClinic, savedId, product.image_path);
           }
         } catch (e) {
           toast.error(t("pos.photoSaveFailed", "المنتج انحفظ بس الصورة ما انحفظت — افتح المنتج وجرّب الصورة من جديد."), e instanceof Error ? e.message : undefined);

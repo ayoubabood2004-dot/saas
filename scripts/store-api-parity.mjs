@@ -138,6 +138,19 @@ globalThis.__reply = { store_front: { ok: true, name: "بلا تفاصيل", log
 const bare = await pair("store_front (حقولٌ فارغة)", (r) => r.storeFrontPublic("bare"));
 check("  والأجرةُ صفرٌ لا NaN", bare.a.v.delivery_fee === 0 && bare.a.v.min_order === 0, JSON.stringify(bare.a.v));
 check("  والشعارُ null لا رابطاً مكسوراً", bare.a.v.logo_url === null);
+/* تصنيفاتُ الواجهة (0234): نفسُ التشكيل بالطرفين — المعطوبُ يُسقَط، والعددُ رقم، والترتيبُ كما وصل. */
+globalThis.__reply = { store_front: { ...FRONT, cats: [
+  { id: "c2", name: "عروض", icon: "star", n: "4" },
+  { id: "", name: "بلا معرّف", icon: "tag", n: 1 },
+  { id: "c9", name: "", icon: "tag", n: 1 },
+  null,
+  { id: "c1", name: "أغذية", n: 2 },
+] } };
+const withCats = await pair("store_front (تصنيفات)", (r) => r.storeFrontPublic("alrahma"));
+check("  والمعطوبُ سقط، والعددُ رقمٌ، والأيقونةُ الغائبةُ «tag»، والترتيبُ ترتيبُ العيادة",
+  JSON.stringify(withCats.a.v?.cats) === JSON.stringify([{ id: "c2", name: "عروض", icon: "star", n: 4 }, { id: "c1", name: "أغذية", icon: "tag", n: 2 }]),
+  JSON.stringify(withCats.a.v?.cats));
+check("  وخادمٌ قبل 0234 (بلا المفتاح) ⇒ قائمةٌ فارغة لا undefined", Array.isArray(front.a.v.cats) && front.a.v.cats.length === 0, JSON.stringify(front.a.v.cats));
 globalThis.__reply = { store_front: { ok: false, error: "not_found" } };
 await pair("store_front (مغلق)", (r) => r.storeFrontPublic("nope"));
 globalThis.__reply = { store_front: null };
@@ -152,6 +165,23 @@ await pair("store_catalog (صفحةٌ ثانية)", (r) => r.storeCatalogPublic(
 globalThis.__reply = { store_catalog: null };
 await pair("store_catalog (سقوطٌ إلى توقيع 0095)", (r) => r.storeCatalogPublic("alrahma", 24, 0));
 await pair("store_catalog (وبصفحةٍ ثانية لا سقوط)", (r) => r.storeCatalogPublic("alrahma", 24, 24));
+
+console.log("▸ أعضاءُ تصنيف (0234)");
+globalThis.__reply = { store_catalog_in: ROWS };
+const inCat = await pair("store_catalog_in", (r) => r.storeCatalogInPublic("alrahma", "c2", 24, 0));
+check("  والسعرُ رقمٌ لا نصّ", inCat.a.v[0]?.price === 3500 && inCat.b.v[0]?.price === 3500);
+await pair("store_catalog_in (صفحةٌ ثانية)", (r) => r.storeCatalogInPublic("alrahma", "c2", 60, 24));
+/* بلا سقوط: `cat_gone` (أو أيُّ فشل) يُرمى بالطرفين **بنداءٍ واحد** — قائمةُ «الكل» تحت رقاقة
+ * تصنيفٍ مشال هي «القائمةُ الناقصة تُصدَّق» عينُها. */
+globalThis.__reply = { store_catalog_in: null };
+globalThis.__calls = [];
+const goneRepo = await run("repo", () => repo.storeCatalogInPublic("alrahma", "c2", 24, 0));
+const repoN = globalThis.__calls.length;
+globalThis.__calls = [];
+const goneApi = await run("api", () => api.storeCatalogInPublic("alrahma", "c2", 24, 0));
+const apiN = globalThis.__calls.length;
+check("store_catalog_in (فشلٌ): الطرفان يرميان", !goneRepo.ok && !goneApi.ok, `${JSON.stringify(goneRepo)} / ${JSON.stringify(goneApi)}`);
+check("  بنداءٍ واحدٍ لكلٍّ — لا سقوطَ إلى store_catalog ولا إعادة", repoN === 1 && apiN === 1, `repo ${repoN} · api ${apiN}`);
 
 console.log("▸ التتبّعُ والطلب");
 globalThis.__reply = { store_order_track: [{ order_no: "SO-1", status: "new", total: 12000, created_at: "2026-01-01", decided_at: null }] };

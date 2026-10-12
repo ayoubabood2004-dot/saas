@@ -1420,6 +1420,50 @@ console.log("▸ 0212 — المتجرُ لا يبيع المنتهي");
     && dbNow().products.find((x) => x.id === "last").stock === 5 && dbNow().storeOrders[0].status === "new", String(err?.hint));
 }
 
+/* متجر v1 (0233/0234): شرطُ العرض واحدٌ بالخادم (`_store_listed`) — والتجريبيُّ كان يعرض المادّةَ
+ * الظاهرةَ بسعرٍ صفر (0188 تخفيها)، فطلبُها يُقبل مجّاناً بالإنتاج وحده ولا يراه أحدٌ هنا. */
+console.log("▸ متجر v1 — شرطُ العرض الواحد، وأعضاءُ التصنيف بترتيب العيادة، وعددُ الواجهة");
+{
+  const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };
+  const VIS = (id, price, extra = {}) => P(id, `مادة ${id}`, null, { store_visible: true, sell_price: price, purchase_price: 0, stock: 3, ...extra });
+  seed([VIS("zero", 0), VIS("a", 1000), VIS("b", 2000), VIS("c", 3000), P("hid", "مخفية", null, { store_visible: false, sell_price: 500 })]);
+  const db0 = JSON.parse(mem.get(DB_KEY));
+  db0.storeProfile = SP;
+  /* حالةُ التصنيفات كما تخزّنها المرآةُ: «عروض» أعضاؤها c ثم zero ثم a ثم hid (ترتيبُ العيادة لا الاسم)،
+   * و«مخفي» مخفيٌّ وفيه b، و«قديم» مؤرشفٌ وفيه a. */
+  db0.storeCats = {
+    seeded: true,
+    cats: [
+      { id: "k-offers", name: "عروض", icon: "star", hidden: false, pos: 1024, archived_at: null, seed_key: null },
+      { id: "k-hidden", name: "مخفي", icon: "tag", hidden: true, pos: 2048, archived_at: null, seed_key: null },
+      { id: "k-old", name: "قديم", icon: "tag", hidden: false, pos: null, archived_at: "2026-10-01T00:00:00Z", seed_key: null },
+      { id: "k-empty", name: "فارغ", icon: "tag", hidden: false, pos: 3072, archived_at: null, seed_key: null },
+    ],
+    items: [
+      { category_id: "k-offers", product_id: "c", pos: 1024 },
+      { category_id: "k-offers", product_id: "zero", pos: 2048 },
+      { category_id: "k-offers", product_id: "a", pos: 3072 },
+      { category_id: "k-offers", product_id: "hid", pos: 4096 },
+      { category_id: "k-hidden", product_id: "b", pos: 1024 },
+      { category_id: "k-old", product_id: "a", pos: 1024 },
+      { category_id: "k-empty", product_id: "zero", pos: 1024 },
+    ],
+  };
+  mem.set(DB_KEY, JSON.stringify(db0));
+  const all = (await repo.storeCatalogPublic("demo-vet")).map((c) => c.id).sort().join();
+  check("0188 بالتجريبيّ: المادّةُ الظاهرةُ بسعرٍ صفر لا تُعرض (كان يعرضها)", all === "a,b,c", all);
+  const inCat = (await repo.storeCatalogInPublic("demo-vet", "k-offers", 60, 0)).map((c) => c.id).join();
+  check("storeCatalogInPublic: المعروضُ وحده بترتيب العيادة (c قبل a)", inCat === "c,a", inCat);
+  check("  وصفحتان لا تتقاطعان", (await repo.storeCatalogInPublic("demo-vet", "k-offers", 1, 0)).map((c) => c.id).join() === "c"
+    && (await repo.storeCatalogInPublic("demo-vet", "k-offers", 1, 1)).map((c) => c.id).join() === "a");
+  const gone = async (cat) => { try { await repo.storeCatalogInPublic("demo-vet", cat, 60, 0); return "ok"; } catch (e) { return e?.message; } };
+  check("  والمخفيُّ والمؤرشفُ والغائبُ ⇒ cat_gone لا قائمة", [await gone("k-hidden"), await gone("k-old"), await gone("nope")].join() === "cat_gone,cat_gone,cat_gone");
+  const front = await repo.storeFrontPublic("demo-vet");
+  check("store_front.cats بالتجريبيّ: الحيُّ غيرُ المخفيّ وفيه معروض، بعدده", JSON.stringify(front?.cats) === JSON.stringify([{ id: "k-offers", name: "عروض", icon: "star", n: 2 }]), JSON.stringify(front?.cats));
+  check("  وكلا البابين قراءةٌ تبقى بالاشتراك المنتهي", mod.isReadAllowed("storeCatalogInPublic") && mod.isReadAllowed("storeCategoriesList") && !mod.isReadAllowed("storeCategoriesApply"));
+  mem.delete(DB_KEY);
+}
+
 console.log("▸ رفعُ الأسعار بالتجريبيّ (0226) — نفسُ حساب القاعدة وحرّاسها");
 {
   const dbNow = () => JSON.parse(mem.get(DB_KEY));

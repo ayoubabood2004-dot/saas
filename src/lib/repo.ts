@@ -32,6 +32,7 @@ import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, PhotoProduct } from "@/types";
 import type { ClinicDrug, ClinicDrugsSnapshot, MedicineStock } from "@/types";
+import type { StoreCategory, StoreCatsSnapshot, ProductImageFile } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
@@ -43,7 +44,7 @@ import i18next from "i18next";
 import type { PgSort } from "./pgOrder";
 import type { ActivityRow } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent } from "@/types";
-import { isValidSlug, normalizeSlug, productImageUrl } from "./storeLib";
+import { isValidSlug, normalizeSlug, productImageUrl, shapeFrontCats } from "./storeLib";
 import { expenseMethodOf } from "./pockets";
 import { journeyToken } from "./journey";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
@@ -412,6 +413,23 @@ function need<T>(res: { data: unknown; error: { message: string; code?: string; 
     throw err;
   }
   return res.data as T;
+}
+/** لقطةُ تصنيفات المتجر كما ترجعها دالّتا 0233: المواضعُ والأعدادُ أرقام (bigint/count قد تصل نصّاً)،
+ *  والأعضاءُ معرّفاتٌ نصّية بترتيب العيادة — ولا مصفوفةَ ⇒ لا شيء، لا «undefined». */
+function catsSnap(raw: unknown): StoreCatsSnapshot {
+  const d = (raw ?? {}) as { clinic?: unknown; seeded?: unknown; can_edit?: unknown; cats?: unknown; members?: unknown };
+  const cats = (Array.isArray(d.cats) ? d.cats : []) as StoreCategory[];
+  const members: Record<string, string[]> = {};
+  if (d.members && typeof d.members === "object") {
+    for (const [k, v] of Object.entries(d.members as Record<string, unknown>)) if (Array.isArray(v)) members[k] = v.map(String);
+  }
+  return {
+    clinic: String(d.clinic ?? ""), seeded: !!d.seeded, can_edit: !!d.can_edit, members,
+    cats: cats.map((c) => ({
+      ...c, hidden: !!c.hidden, pos: c.pos == null ? null : Number(c.pos), archived_at: c.archived_at ?? null,
+      seed_key: c.seed_key ?? null, n: Number(c.n) || 0, n_listed: Number(c.n_listed) || 0,
+    })),
+  };
 }
 /** لقطةُ «أدويتي» كما ترجعها دالّتا 0229: الموضعُ رقمٌ (bigint قد يصل نصّاً)، ولا صفوفَ بلا مصفوفة. */
 function drugsSnap(raw: unknown): ClinicDrugsSnapshot {
@@ -1230,10 +1248,12 @@ const supabaseRepo: DemoRepo = {
     }).select().single());
   },
   async deleteLibraryImage(id, path) {
+    void path;
+    // الصفُّ وحده يُحذف — **والملفُّ يبقى** (O4، قرارُ المالك: «لا تشيل ولا تحذف صورة»). منتجاتٌ
+    // ربطت هذا المسار من المكتبة تبقى بصورتها؛ وحذفُ الملف كان يكسرها كلَّها بلا كلمة. وسياسةُ
+    // 0236 تمنع الحذفَ بالخادم كذلك.
     const r = await sbc().from("image_library").delete().eq("id", id);
     if (r.error) throw r.error;
-    // الملف بعد الصفّ وبأفضل جهد: يتيمٌ لا يُرى أهون من صفٍّ بلا ملف.
-    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: الملف اليتيم لا يظهر بالمنتقي (الصفُّ راح) ولا يُحاسَب حجماً يُذكر */ }
   },
   async imageLibraryUsage(path) {
     const { data, error } = await sbc().rpc("image_library_usage", { p_path: path });
@@ -1296,23 +1316,47 @@ const supabaseRepo: DemoRepo = {
     if (error) throw error;
     return Number(data);
   },
-  async deleteProductImage(clinicId, productId, path) {
-    void clinicId; void productId;
-    // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ
-    // لا ملف له. وملفُ المكتبة (library/) ملكُ المنصّة يخدم كلَّ العيادات:
-    // «شيل الصورة» بعيادةٍ يفكّ مرجعَها هي، ولا يحذف ملفاً مشترَكاً أبداً.
-    if (!path || path.startsWith("data:") || path.startsWith("library/")) return;
-    // ولا يُحذف ملفٌّ ما زال صفٌّ آخرُ يشير إليه. صار هذا ممكناً بـ0184: الدمجُ
-    // يورّث `image_path` للأصل، فالأصلُ والمطويُّ (إن رجع من سلّة المحذوفات)
-    // يشيران لملفٍّ واحد. حذفُه من أحدهما كان سيكسر صورةَ الآخر بصمت — وهو
-    // بالضبط صنفُ «اختفى كأنه ما كان». والنداءُ محدودٌ بعيادتنا بالسياسة،
-    // ومسارُ المكتبة المشترَك خرج فوقُ أصلاً.
-    // السؤالُ للخادم (0222 `image_path_in_use`) لا قراءةً مباشرة: المصوّرُ مسيَّجٌ عن جدول
-    // المنتجات فكان سيرى «صفرَ مراجع» ويحذف ملفاً ما زال توأمٌ يشير إليه.
-    const refs = await sbc().rpc("image_path_in_use", { p_path: path });
-    // فشلُ السؤال ⇒ لا نحذف. «ما أعرف» تعني «لا تلمس»، لا «امضِ».
-    if (refs.error || refs.data !== false) return;
-    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
+  /* ── صورةُ المنتج بنسختين (متجر v1): الكاملةُ ١٦٠٠ والمصغّرةُ ٤٨٠ بجانبها ──────────────
+   * الزائرُ كان ينزّل الملفَّ كاملاً لكلّ بطاقةٍ بالشبكة (١١٢ ك.ب وسطياً) — والتحويلُ بالخادم
+   * (render/image) مرهونٌ بمفتاحٍ بلوحة المشروع وحصّةٍ وسقفِ إنفاق لا يُقرأ من هنا، فلا نعتمد
+   * عليه. المصغّرةُ تُرفع **أوّلاً** باسمٍ أخٍ (`.sm.jpg` بجانب `.hd.jpg`): فشلُها يوقف كلَّ شيء
+   * فلا صورةَ كاملةً بلا مصغّرة ولا مسارَ يتغيّر. وفشلٌ بعدها يترك ملفّاً يتيماً **يبقى** (O4)
+   * ويظهر بـ«صور سابقة». `cardImagePath()` الموضعُ الوحيدُ الذي يعرف القاعدة. */
+  async uploadProductPhoto(clinicId, productId, photo) {
+    if (!clinicId) throw new Error("no_clinic_for_image");
+    assertUploadableImage(photo.full);
+    if (photo.thumb) assertUploadableImage(photo.thumb);
+    const base = `${clinicId}/${productId}-${Date.now().toString(36)}`;
+    const put = (path: string, u: UploadLike) => sbc().storage.from("product-images").upload(path, u.blob, {
+      contentType: "image/jpeg", cacheControl: "31536000", upsert: false,
+    });
+    if (photo.thumb) {
+      const t = await put(`${base}.sm.jpg`, photo.thumb);
+      if (t.error) throw t.error;
+    }
+    const f = await put(`${base}.hd.jpg`, photo.full);
+    if (f.error) throw f.error;
+    return `${base}.hd.jpg`;
+  },
+  /** صورُ هذا المنتج السابقة بمجلّد العيادة (O4: لا صورةَ تُحذف، فالاستبدالُ والفكُّ يُعادان من هنا).
+   *  القائمةُ كاملةٌ أو خطأ — صفحاتٌ حتى تنتهي، والمصغّراتُ (`.sm.jpg`) خارجها. */
+  async productImageHistory(clinicId, productId) {
+    if (!clinicId) return [];
+    const out: ProductImageFile[] = [];
+    const PAGE = 100;
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await sbc().storage.from("product-images").list(clinicId, {
+        search: `${productId}-`, limit: PAGE, offset, sortBy: { column: "created_at", order: "desc" },
+      });
+      if (error) throw error;
+      const rows = (data ?? []) as { name: string; created_at?: string | null }[];
+      for (const r of rows) {
+        if (!r.name.startsWith(`${productId}-`) || r.name.endsWith(".sm.jpg")) continue;
+        out.push({ path: `${clinicId}/${r.name}`, created_at: r.created_at ?? null });
+      }
+      if (rows.length < PAGE) break;
+    }
+    return out;
   },
   /* ── حقولُ الدواجن (0191/0192) — السحابيّ ───────────────────────────────
    * القوائمُ من `listOrThrow` لا `listOf`: قائمةُ دفعاتٍ ناقصةٌ بصمتٍ تعني
@@ -1445,14 +1489,6 @@ const supabaseRepo: DemoRepo = {
     });
     if (up.error) throw up.error;
     return path;
-  },
-  /** الشعارُ القديم بعد نجاح الجديد. `data:` لا ملفَ له، ومسارُ المكتبة ليس
-   *  ملكَ العيادة — وكلاهما يخرج قبل أي حذف. وأفضلُ جهد: يتيمٌ أهون من إفشال
-   *  حفظِ شعارٍ نجح فعلاً. */
-  async deleteClinicLogo(clinicId, path) {
-    void clinicId;
-    if (!path || path.startsWith("data:") || path.startsWith("library/")) return;
-    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والشعارُ الجديد محفوظٌ أصلاً */ }
   },
   async updateProduct(id, patch, expect) {
     // نفس تطبيع الإنشاء — تعديلٌ يكتب باركوداً غيرَ مطبَّع يعيد المشكلة.
@@ -1689,7 +1725,21 @@ const supabaseRepo: DemoRepo = {
       name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
       facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
       delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
+      cats: shapeFrontCats((d as { cats?: unknown }).cats),
     };
+  },
+  /** أعضاءُ تصنيفٍ واحد (0234) — بلا سقوطٍ إلى «الكل»: الخطأُ يُرمى بنصّ الخادم (cat_gone). مرآتُه بـstoreApi. */
+  async storeCatalogInPublic(slug, cat, limit = 60, offset = 0) {
+    const { data, error } = await sbc().rpc("store_catalog_in", { p_slug: slug, p_cat: cat, p_limit: limit, p_offset: offset });
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
+  },
+  /* ── تصنيفاتُ المتجر (0233): بابُ قراءةٍ لا يكتب، وبابُ كتابةٍ بختم العيادة — كلاهما يرمي ── */
+  async storeCategoriesList() {
+    return catsSnap(need<unknown>(await sbc().rpc("store_categories_list")));
+  },
+  async storeCategoriesApply(clinic, ops) {
+    return catsSnap(need<unknown>(await sbc().rpc("store_categories_apply", { p_clinic: clinic, p_ops: ops })));
   },
   async storeCatalogPublic(slug, limit = 60, offset = 0) {
     // ما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
@@ -2803,13 +2853,15 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
   "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listPhotoProducts",
+  // تصنيفاتُ المتجر (0233) والصورُ السابقة: قراءةٌ — الكتابةُ (storeCategoriesApply، uploadProductPhoto) لا.
+  "storeCategoriesList", "productImageHistory",
   // «أدويتي» (0229): القراءةُ والأخيرةُ والمخزنُ والاقتراحُ قراءة — الكتابةُ (applyClinicDrugs) لا.
   "listClinicDrugs", "recentMedNames", "listMedicineStock", "suggestClinicDrugs",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
-  "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackStoreOrder", "trackJourneyPublic",
+  "storeFrontPublic", "storeCatalogPublic", "storeCatalogInPublic", "placeStoreOrder", "trackStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",
   // بوّابة المالك (0158): اشتراكُ العيادة شأنٌ بينها وبين المنصّة — وقفُ
   // البوّابة يعاقب المراجعَ الذي لا ناقةَ له ولا جمل، ولا يضغط على العيادة.

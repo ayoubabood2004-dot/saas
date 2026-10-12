@@ -5,7 +5,7 @@
 // حروف إنكليزية صغيرة/أرقام/شرطات، 3–30، ما يبدي أو ينتهي بشرطة —
 // حتى الفحص المحلي والرفض السحابي ما يختلفان أبداً.
 // ============================================================================
-import type { StoreOrderItem } from "@/types";
+import type { StoreFrontCat, StoreOrderItem } from "@/types";
 
 /* الرابط من env مباشرةً لا من `@/lib/supabase`: حرّاسُ الحزم يوصّلون repo.ts
  * (وهو يستورد هذا الملف) ببديلٍ مزيّفٍ للعميل، واستيرادُ الوحدة الحقيقية من
@@ -22,6 +22,21 @@ export function productImageUrl(path: string | null | undefined): string | null 
 }
 
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
+
+/** تصنيفاتُ store_front (0234) بشكلٍ واحدٍ للطرفين (storeApi ونصفُ repo السحابيّ) — نسختان تنحرفان:
+ *  المعطوبُ (بلا معرّفٍ أو اسم) يُسقَط، والعددُ رقمٌ لا نصّ، والترتيبُ ترتيبُ العيادة كما وصل.
+ *  وخادمٌ قبل 0234 (بلا المفتاح) ⇒ قائمةٌ فارغة: «الكل» وحده، كما كان. */
+export function shapeFrontCats(raw: unknown): StoreFrontCat[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StoreFrontCat[] = [];
+  for (const c of raw) {
+    if (!c || typeof c !== "object") continue;
+    const r = c as { id?: unknown; name?: unknown; icon?: unknown; n?: unknown };
+    if (typeof r.id !== "string" || !r.id || typeof r.name !== "string" || !r.name.trim()) continue;
+    out.push({ id: r.id, name: r.name, icon: typeof r.icon === "string" ? r.icon : "tag", n: Number(r.n) || 0 });
+  }
+  return out;
+}
 
 /** نظّف إدخال المستخدم لصيغة slug صالحة قدر الإمكان (بلا فرض الطول). */
 /** مفتاحُ «آخر طلب» — **لكلّ متجرٍ مفتاحُه**.

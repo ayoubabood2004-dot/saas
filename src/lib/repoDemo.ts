@@ -26,6 +26,8 @@ import { auditKind, activityBrief } from "./activityKinds";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountLineInput, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, PhotoProduct } from "@/types";
 import type { ClinicDrugOp, ClinicDrugsSnapshot, MedicineStock } from "@/types";
+import type { StoreCatOp, StoreCatsSnapshot, ProductImageFile } from "@/types";
+import { isListed } from "./storeCatIndex";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -1841,6 +1843,25 @@ const demoRepo = {
     assertUploadableImage(upload);
     return upload.dataUrl;
   },
+  /** الصورةُ بنسختين (متجر v1) — تجريبياً: لا دلوَ، فالكاملةُ عنوانٌ مضمَّن بحجم اليوم (٨٠٠ — حصّةُ
+   *  الجهاز ٥ ميغا) ولا مصغّرة (`cardImagePath` تمرّر `data:` كما هو). ونفسُ حارس النوع للاثنتين،
+   *  وتُسجَّل بالصور السابقة (O4) فـ«صور سابقة» تعمل هنا كالسحابيّ. */
+  async uploadProductPhoto(_clinicId: string | null, productId: string, photo: { full: { blob: Blob; dataUrl: string }; thumb: { blob: Blob; dataUrl: string } | null }): Promise<string> {
+    void _clinicId;
+    assertUploadableImage(photo.full);
+    if (photo.thumb) assertUploadableImage(photo.thumb);
+    const db = loadDB();
+    const hist = { ...(db.photoHistory ?? {}) };
+    hist[productId] = [{ path: photo.full.dataUrl, created_at: new Date().toISOString() }, ...(hist[productId] ?? [])].slice(0, 12);
+    db.photoHistory = hist;
+    saveDB(db);
+    return photo.full.dataUrl;
+  },
+  /** مرآةُ القائمة السحابية: الأحدثُ أوّلاً، كاملةً أو خطأ (هنا لا خطأ — المخزنُ محلّيّ). */
+  async productImageHistory(_clinicId: string | null, productId: string): Promise<ProductImageFile[]> {
+    void _clinicId;
+    return (loadDB().photoHistory ?? {})[productId] ?? [];
+  },
   /* ── موظّفُ التصوير (0222) — مرآةُ دوالّ الخادم بنفس الحرّاس: مسارُ الصورة من ملفات
    *    العيادة أو المكتبة أو data: التجريبيّ، والمنتجُ الغائبُ يرمي لا يصمت. ── */
   async listPhotoProducts(): Promise<PhotoProduct[]> {
@@ -1879,10 +1900,6 @@ const demoRepo = {
   async setStoreDesc(productId: string, desc: string | null): Promise<void> {
     if ((desc ?? "").length > 2000) { const e = new Error("desc_too_long") as Error & { code: string }; e.code = "P0001"; throw e; }
     demoProductPatch(productId, { store_desc: (desc ?? "").trim() || null });
-  },
-  /** حذف ملف الصورة — تجريبياً لا ملفَ أصلاً؛ تصفيرُ المسار شأنُ updateProduct. */
-  async deleteProductImage(_clinicId: string | null, _productId: string, _path: string): Promise<void> {
-    void _clinicId; void _productId; void _path;
   },
   /* ── حقولُ الدواجن (0191/0192) — تجريبياً ───────────────────────────────
    * يعكس الخادمَ بالقيود التي تهمّ: قاعةٌ واحدةٌ = دفعةٌ نشطةٌ واحدة، ويومٌ لا
@@ -2048,9 +2065,6 @@ const demoRepo = {
     void _clinicId;
     assertUploadableImage(upload);
     return upload.dataUrl;
-  },
-  async deleteClinicLogo(_clinicId: string | null, _path: string): Promise<void> {
-    void _clinicId; void _path;
   },
   async updateProduct(id: string, patch: Partial<Product>, expect?: Partial<Record<"sell_price" | "sub_unit_price", number | null>>): Promise<Product | undefined> {
     const db = loadDB();
@@ -2252,9 +2266,16 @@ const demoRepo = {
   async saveStoreProfile(p: Omit<StoreProfile, "updated_at">): Promise<StoreProfile> {
     if (!isValidSlug(p.slug)) throw new Error("slug_invalid");
     const db = loadDB();
-    const prof: StoreProfile = { ...(db.storeProfile ?? {}), ...p, updated_at: new Date().toISOString() };
+    const before = db.storeProfile ?? null;
+    /* مرآةُ 0235: فتحُ المتجر وتغييرُ رابطه وتشغيلُه للمدير؛ والباقي بإذن المتجر. حارسٌ لا يوجد
+     * هنا حارسٌ لم يُفحص — والحفظُ هنا كالسحابيّ upsert، فصفٌّ قائمٌ يُحكم بفرع التحديث. */
+    const cats = await import("./demoStoreCats");
+    cats.demoStoreProfileGuard(before, p);
+    const prof: StoreProfile = { ...(before ?? {}), ...p, updated_at: new Date().toISOString() };
     db.storeProfile = prof;
     saveDB(db);
+    // متجرٌ يُفتح أوّلَ مرّة يبذر تصنيفاتِه — مرآةُ محفّز store_cats_on_store_insert (لا قراءةَ تبذر).
+    if (!before) cats.seedOnStoreCreate();
     return prof;
   },
   /** هل الرابط متاح؟ (بالتجريبي عيادة واحدة — يكفي أن تكون الصيغة سليمة.) */
@@ -2528,7 +2549,21 @@ const demoRepo = {
       bio: sp.bio ?? null,
       delivery_fee: sp.delivery_fee,
       min_order: sp.min_order,
+      // 0234: تصنيفاتُ العيادة بترتيبها — حيّةٌ، غيرُ مخفيّة، وفيها مادّةٌ معروضة.
+      cats: (await import("./demoStoreCats")).demoFrontCats(),
     };
+  },
+  /** مرآةُ store_catalog_in (0234): cat_gone يُرمى، ولا «الكل» بدلاً منه. */
+  async storeCatalogInPublic(slug: string, cat: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
+    return (await import("./demoStoreCats")).demoCatalogIn(slug, cat, limit, offset);
+  },
+  /* ---- تصنيفاتُ المتجر (0233) — مرآةٌ بوحدةٍ كسولة (`demoStoreCats.ts`) بنفس applyOps ورموزه؛ ولا حذف.
+   *      والقراءةُ لا تبذر أبداً: البذرةُ بفتح المتجر (saveStoreProfile) وبـinit. ---- */
+  async storeCategoriesList(): Promise<StoreCatsSnapshot> {
+    return (await import("./demoStoreCats")).demoCatsList();
+  },
+  async storeCategoriesApply(clinic: string, ops: StoreCatOp[]): Promise<StoreCatsSnapshot> {
+    return (await import("./demoStoreCats")).demoCatsApply(clinic, ops);
   },
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
     const db = loadDB();
@@ -2536,9 +2571,11 @@ const demoRepo = {
     if (!sp?.enabled || !matchSlug(sp.slug, slug)) return [];
     const poolOf = (p: Product) => (db.companySections ?? []).find((s) => s.id === p.section_id)?.pooled_stock ?? 0;
     const cap = Math.min(Math.max(limit, 1), 100); // نفس سقف السيرفر
+    const today = localISO();
     return (db.products ?? [])
-      // 0212: المنتهي لا يُعرض (آخرُ يومٍ صالح يُعرض) — نفسُ قاعدة expiry.ts.
-      .filter((p) => p.store_visible && !isExpiredOn(p.expiry_date))
+      // شرطُ الخادم الواحد (`_store_listed`): ظاهرٌ، وسعرُه فوق الصفر (0188 — كان التجريبيُّ يعرض
+      // الصفريّ فيُقبل طلبُه مجّاناً بالإنتاج وحده)، وغيرُ منتهٍ (0212 — آخرُ يومٍ صالح يُعرض).
+      .filter((p) => isListed(p, today))
       /* مرآةُ فرزِ 0182 حرفياً: المختارُ أوّلاً، ثم الفئةُ فالاسم، و`id` آخرَ
        * المفاتيح كي يصير الترتيبُ حاسماً — فصفحتا `offset` لا تتقاطعان ولا
        * تُسقطان صفّاً. والتوفّرُ خارجَ الفرز عمداً كما بالخادم. */

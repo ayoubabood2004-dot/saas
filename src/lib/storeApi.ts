@@ -23,7 +23,7 @@
  * فيبقى بحزمةٍ لا تُطلب أبداً بالإنتاج — يعمل التجريبيُّ ولا يدفع الزبونُ ثمنه.
  * ==========================================================================*/
 import type { StoreCatalogItem, StoreFrontInfo, StoreTrackInfo, JourneyPublicView } from "@/types";
-import { productImageUrl } from "./storeLib";
+import { productImageUrl, shapeFrontCats } from "./storeLib";
 
 const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 const SUPA_URL: string = (env.VITE_SUPABASE_URL ?? "").replace(/\/+$/, "");
@@ -51,7 +51,7 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   return (await res.json()) as T;
 }
 
-type RawFront = { ok?: boolean } & StoreFrontInfo;
+type RawFront = { ok?: boolean } & Omit<StoreFrontInfo, "cats"> & { cats?: unknown };
 
 /* تشكيلُ الناتج بموضعٍ واحد: يستعمله النداءُ والبذرةُ معاً — نسختان تنحرفان. */
 function shapeFront(d: RawFront | null): StoreFrontInfo | null {
@@ -60,6 +60,7 @@ function shapeFront(d: RawFront | null): StoreFrontInfo | null {
     name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
     facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
     delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
+    cats: shapeFrontCats(d.cats),
   };
 }
 function shapeCatalog(rows: StoreCatalogItem[] | null | undefined): StoreCatalogItem[] {
@@ -107,6 +108,13 @@ export const storeApi = {
       rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug });
     }
     return shapeCatalog(rows);
+  },
+
+  /** أعضاءُ تصنيفٍ واحد بترتيب العيادة (0234). **بلا سقوطٍ إلى «الكل»**: `cat_gone` وأيُّ فشلٍ
+   *  يُرمى كما هو — قائمةٌ بديلةٌ تحت رقاقة التصنيف هي «القائمةُ الناقصة تُصدَّق» عينُها. */
+  async storeCatalogInPublic(slug: string, cat: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
+    if (!CLOUD) return (await demoRepo()).storeCatalogInPublic(slug, cat, limit, offset);
+    return shapeCatalog(await rpc<StoreCatalogItem[]>("store_catalog_in", { p_slug: slug, p_cat: cat, p_limit: limit, p_offset: offset }));
   },
 
   async trackStoreOrder(slug: string, orderNo: string, phone: string): Promise<StoreTrackInfo | null> {

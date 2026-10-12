@@ -65,12 +65,10 @@ export function ProductPhotos() {
       && (!needle || searchable(`${p.name} ${p.barcode ?? ""} ${p.company_name ?? ""}`).includes(needle)));
   }, [list, q, filter]);
 
-  /** يستبدل الصورةَ ثم يحذف القديمةَ بعد نجاح التحويل وحده — و`repo` تسأل الخادمَ هل
-   *  ما زال منتجٌ آخر يشير إليها، فلا يُكسر توأمٌ مطويّ. */
+  /** يستبدل الصورةَ — والقديمةُ **تبقى** بالدلو (O4: «لا تشيل ولا تحذف صورة») وتُرى بـ«صور سابقة»،
+   *  فالاستبدالُ يُعاد بضغطة ولا يُكسر توأمٌ مطويٌّ يشير إليها. */
   const apply = async (p: PhotoProduct, next: string | null) => {
-    const old = p.image_path ?? null;
     await repo.setProductImage(p.id, next);
-    if (old && old !== next) void repo.deleteProductImage(clinicId, p.id, old);
     setRows((r) => (Array.isArray(r) ? r.map((x) => (x.id === p.id ? { ...x, image_path: next } : x)) : r));
   };
 

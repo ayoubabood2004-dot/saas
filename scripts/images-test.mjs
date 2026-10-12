@@ -49,12 +49,26 @@ globalThis.__uploads = [];
 globalThis.__removed = [];
 globalThis.__productRefs = [];      // ما ترجعه قراءةُ products عند فحص المشاركة
 globalThis.__refsError = null;
+globalThis.__uploadFail = null;     // (path) => true ⇒ تفشل هذه الرفعة
+globalThis.__files = [];            // ملفّاتُ مجلّد العيادة لـlist
+globalThis.__lists = [];
+globalThis.__listError = false;
 
 const FAKE_SUPABASE = `
   const ok = (data) => Promise.resolve({ data, error: null });
   const storageApi = {
-    upload: (path, blob, opts) => { globalThis.__uploads.push({ path, opts }); return ok({ path }); },
+    upload: (path, blob, opts) => {
+      globalThis.__uploads.push({ path, opts });
+      if (globalThis.__uploadFail && globalThis.__uploadFail(path)) return Promise.resolve({ data: null, error: { message: "upload_failed" } });
+      return ok({ path });
+    },
     remove: (paths) => { globalThis.__removed.push(...paths); return ok(null); },
+    list: (folder, opts) => {
+      globalThis.__lists.push({ folder, opts });
+      if (globalThis.__listError) return Promise.resolve({ data: null, error: { message: "list_failed" } });
+      const all = globalThis.__files.filter((f) => f.name.includes(opts.search ?? ""));
+      return ok(all.slice(opts.offset ?? 0, (opts.offset ?? 0) + (opts.limit ?? 100)));
+    },
   };
   const q = () => {
     const o = {
@@ -166,21 +180,74 @@ check("  ويقبل الصورةَ كما كان",
 check("  وملفُّ المكتبة التجريبيُّ يُحرَس كذلك",
   await threw(() => demo.createLibraryImage({ name: "س" }, mkUpload("application/pdf", "pdf"))));
 
-console.log("▸ ملفٌّ يشاركه صفٌّ آخر لا يُحذف (0184 صار الدمجُ يورّث المسار)");
-globalThis.__removed = []; globalThis.__refsError = null;
-globalThis.__productRefs = [{ id: "other-product" }];
-await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/shared.jpg`);
-check("صفٌّ آخرُ يشير للمسار ⇒ لا حذف", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
-globalThis.__productRefs = [];
-await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/lonely.jpg`);
-check("  ولا أحدَ يشير ⇒ يُحذف", globalThis.__removed.includes(`${CLINIC}/lonely.jpg`));
-globalThis.__removed = []; globalThis.__refsError = { message: "boom" };
-await cloud.deleteProductImage(CLINIC, PRODUCT, `${CLINIC}/unknown.jpg`);
-check("  وفشلُ العدّ ⇒ لا حذف («ما أعرف» تعني «لا تلمس»)", globalThis.__removed.length === 0);
-globalThis.__refsError = null;
+/* ── O4 (قرارُ المالك ١٢/١٠): «خلّي الصور مثل ما هي — لا تشيل ولا تحذف صورة» ──────────
+ * كان هذا القسمُ يثبّت العكس عمداً: «لا أحدَ يشير ⇒ يُحذف» (deleteProductImage)، و«السابقُ يُحذف
+ * بعد نجاح الجديد» (deleteClinicLogo). والحكمُ «لا يشير إليها صفّ» يُسأل لحظةً واحدة — صورةُ
+ * منتجٍ بسلّة المحذوفات أو بنسخةٍ قديمة تُكسر بلا كلمة. فانقلب القرارُ بكلمة المالك، والفحصُ
+ * ينقلب معه صراحةً: لا بابَ حذفٍ بالمستودعين، ولا `.remove(` على الدلو بأيّ ملفّ، والاستبدالُ
+ * والفكُّ يُعادان من «صور سابقة»، وسياستا 0236 السدُّ بالخادم. */
+console.log("▸ O4 — لا صورةَ تُحذف ولا يُكتب فوقها");
+check("لا deleteProductImage ولا deleteClinicLogo بالسحابيّ ولا بالتجريبيّ",
+  !("deleteProductImage" in cloud) && !("deleteClinicLogo" in cloud) && !("deleteProductImage" in demo) && !("deleteClinicLogo" in demo));
+{
+  const { readdirSync, statSync, readFileSync } = await import("node:fs");
+  const walk = (d) => readdirSync(d).flatMap((f) => { const p = `${d}/${f}`; return statSync(p).isDirectory() ? walk(p) : /\.(tsx?|mjs)$/.test(f) ? [p] : []; });
+  /* كلُّ `storage.from(X).remove(` بـsrc: X نصٌّ حرفيّ أو ثابتٌ معرَّفٌ بالملفّ نفسِه — ودلوُ صور المنتجات
+   * ممنوع (الوسائطُ الطبيةُ دلوٌ آخرُ بقرارٍ آخر). وما لا يُعرف دلوُه يُحسب مخالفاً: «ما أعرف» ≠ «سليم». */
+  const offenders = [];
+  for (const f of walk("src")) {
+    const src = readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    for (const m of src.matchAll(/storage\s*\.\s*from\(\s*([^)]*?)\s*\)\s*\.\s*remove\s*\(/g)) {
+      const arg = m[1];
+      const lit = /^["'`]([^"'`]+)["'`]$/.exec(arg)?.[1]
+        ?? new RegExp(`const\\s+${arg.replace(/[^\w$]/g, "")}\\s*=\\s*["'\`]([^"'\`]+)["'\`]`).exec(src)?.[1];
+      if (!lit || lit === "product-images") offenders.push(`${f} (${arg})`);
+    }
+  }
+  check("  ولا نداءَ حذفٍ على دلو صور المنتجات بأيّ ملفٍّ بـsrc", offenders.length === 0, offenders.join("، "));
+  const m236 = readFileSync("supabase/migrations/0236_product_images_keep.sql", "utf8");
+  const body = m236.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+  check("  و0236: سياستا الحذف والكتابة فوق ملفٍّ مقيِّدتان على الدلو كلّه، تحت to_regclass، بلا هدم",
+    /to_regclass\('storage\.objects'\)/.test(body)
+    && /create policy product_images_keep_forever on storage\.objects as restrictive for delete to authenticated\s+using \(bucket_id <> 'product-images'\)/.test(body)
+    && /create policy product_images_no_overwrite on storage\.objects as restrictive for update to authenticated\s+using \(bucket_id <> 'product-images'\)\s+with check \(bucket_id <> 'product-images'\)/.test(body)
+    && !/\bdrop\b/i.test(body));
+}
 globalThis.__removed = [];
-await cloud.deleteProductImage(CLINIC, PRODUCT, "library/shared.jpg");
-check("  وملفُّ المكتبة المشترَك لا يُلمس أبداً", globalThis.__removed.length === 0);
+await cloud.deleteLibraryImage("lib-1", "library/shared.jpg");
+check("  وحذفُ صفّ المكتبة لا يحذف ملفَّه (منتجاتٌ ربطته تبقى بصورتها)", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
+
+console.log("▸ الصورةُ بنسختين — المصغّرةُ أوّلاً، والكاملةُ بعدها، والمسارُ أخوان");
+const HD = mkUpload("image/jpeg", "jpg"), SM = mkUpload("image/jpeg", "jpg");
+globalThis.__uploads = []; globalThis.__uploadFail = null;
+const hd = await cloud.uploadProductPhoto(CLINIC, PRODUCT, { full: HD, thumb: SM });
+const [u1, u2] = globalThis.__uploads;
+check("المصغّرةُ تُرفع أوّلاً ثم الكاملة، والراجعُ مسارُ الكاملة",
+  u1?.path.endsWith(".sm.jpg") && u2?.path.endsWith(".hd.jpg") && hd === u2?.path && globalThis.__uploads.length === 2, JSON.stringify(globalThis.__uploads.map((u) => u.path)));
+check("  أخوان بنفس الاسم (.hd ⇄ .sm) بمجلّد العيادة", u1?.path.replace(/\.sm\.jpg$/, "") === u2?.path.replace(/\.hd\.jpg$/, "") && hd.startsWith(`${CLINIC}/${PRODUCT}-`), hd);
+check("  وJPEG، وupsert مطفأة، وcacheControl سنة", globalThis.__uploads.every((u) => u.opts?.contentType === "image/jpeg" && u.opts?.upsert === false && u.opts?.cacheControl === "31536000"));
+globalThis.__uploads = []; globalThis.__uploadFail = (p) => p.endsWith(".sm.jpg");
+check("وفشلُ المصغّرة يرمي ولا تُرفع الكاملة (فلا صورةَ بلا مصغّرة ولا مسارَ يتغيّر)",
+  (await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, { full: HD, thumb: SM }))) && globalThis.__uploads.length === 1);
+globalThis.__uploadFail = null;
+check("  وPDF يُرفض قبل أيّ رفعة", (globalThis.__uploads = [], await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, { full: mkUpload("application/pdf", "pdf"), thumb: SM }))) && globalThis.__uploads.length === 0);
+
+console.log("▸ «صور سابقة» — القائمةُ كاملةٌ أو خطأ");
+globalThis.__files = [
+  ...Array.from({ length: 130 }, (_, i) => ({ name: `${PRODUCT}-k${String(i).padStart(3, "0")}.hd.jpg`, created_at: `2026-10-${String(1 + (i % 9)).padStart(2, "0")}` })),
+  { name: `${PRODUCT}-k999.sm.jpg`, created_at: "2026-10-09" },
+  { name: `${PRODUCT}-old.jpg`, created_at: "2026-09-01" },
+];
+globalThis.__lists = [];
+const hist = await cloud.productImageHistory(CLINIC, PRODUCT);
+check("كلُّ الصفحات (١٣١ ملفّاً بثلاث صفحاتٍ من مئة) بلا المصغّرات", hist.length === 131 && !hist.some((h) => h.path.endsWith(".sm.jpg")) && globalThis.__lists.length === 2, `${hist.length} / ${globalThis.__lists.length} صفحات`);
+check("  بمسارٍ كاملٍ بمجلّد العيادة، والقديمةُ (بلا .hd) معها", hist.every((h) => h.path.startsWith(`${CLINIC}/`)) && hist.some((h) => h.path.endsWith("-old.jpg")));
+globalThis.__listError = true;
+check("  وفشلُ القراءة يرمي — لا نصفَ قائمة", await threw(() => cloud.productImageHistory(CLINIC, PRODUCT)));
+globalThis.__listError = false;
+const dPath = await demo.uploadProductPhoto(CLINIC, "demo-p", { full: HD, thumb: null });
+check("التجريبيُّ: العنوانُ المضمَّن، ويُسجَّل بالسابقة فـ«صور سابقة» تعمل هناك",
+  dPath.startsWith("data:") && (await demo.productImageHistory(CLINIC, "demo-p"))[0]?.path === dPath);
 
 console.log("▸ 0190 — شعارُ العيادة ملفٌّ بالدلو، لا بايتاتٌ بالقاعدة");
 globalThis.__uploads = [];
@@ -202,12 +269,12 @@ check("والتجريبيُّ يرجع العنوانَ المضمَّن — ل�
 check("  ويرمي على PDF كذلك",
   await threw(() => demo.uploadClinicLogo(CLINIC, mkUpload("application/pdf", "pdf"))));
 
-globalThis.__removed = [];
-await cloud.deleteClinicLogo(CLINIC, "data:image/png;base64,AAAA");
-await cloud.deleteClinicLogo(CLINIC, "library/shared.png");
-check("حذفُ الشعار: `data:` ومسارُ المكتبة لا ملفَّ لهما فلا يُلمسان", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
-await cloud.deleteClinicLogo(CLINIC, `${CLINIC}/logo-old.png`);
-check("  والسابقُ الحقيقيُّ يُحذف بعد نجاح الجديد", globalThis.__removed.includes(`${CLINIC}/logo-old.png`));
+{
+  // O4: الشعارُ السابقُ يبقى — شاشةُ الإعدادات تبدّل المرجعَ وحده (لا بابَ حذفٍ أصلاً، فُحص أعلاه).
+  const { readFileSync } = await import("node:fs");
+  const settings = readFileSync("src/pages/Settings.tsx", "utf8");
+  check("استبدالُ الشعار وإزالتُه بالإعدادات لا يحذفان ملفّاً", !/deleteClinicLogo|storage[\s\S]{0,80}\.remove\(/.test(settings));
+}
 
 console.log("▸ 0190ب — القاعدةُ ترفض البايتات بنفسها، لا بترويسةِ هجرة");
 const setCloud = await buildModule("src/lib/settings.ts", FAKE_SUPABASE, "set-cloud");

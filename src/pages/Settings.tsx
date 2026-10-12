@@ -567,15 +567,12 @@ function ClinicIdentity() {
   const [instagram, setInstagram] = useState(initial.instagram);
   const [name, setName] = useState(getClinicName());
 
-  /** يحفظ الملفَّ بالدلو ثم المسارَ بالقاعدة ثم يحذف سابقَه (0190) —
-   *  بهذا الترتيب: فشلُ الرفع يترك الشعارَ القديم سليماً، وحذفُ السابق بعد
-   *  أن صار المرجعُ على الجديد فلا تبقى بطاقةٌ تشير إلى ملفٍّ محذوف. */
+  /** يحفظ الملفَّ بالدلو ثم المسارَ بالقاعدة (0190) — فشلُ الرفع يترك الشعارَ القديم سليماً.
+   *  والسابقُ **يبقى** بالدلو (O4: «لا تشيل ولا تحذف صورة»؛ وسياسةُ 0236 تمنع حذفَه بالخادم). */
   const saveLogoFrom = async (prepared: { blob: Blob; dataUrl: string; contentType?: string }) => {
-    const prev = logoRef;
     const path = await repo.uploadClinicLogo(clinicId, prepared);
     setClinicLogo(path);
     setLogoRef(path);
-    if (prev && prev !== path) void repo.deleteClinicLogo(clinicId, prev);
   };
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -611,10 +608,9 @@ function ClinicIdentity() {
     } finally { setBusy(false); }
   };
 
+  // الفكُّ وحده — الملفُّ يبقى بالدلو (O4).
   const removeLogo = () => {
-    const prev = logoRef;
     setClinicLogo(null); setLogoRef(null);
-    if (prev) void repo.deleteClinicLogo(clinicId, prev);
     playTap();
   };
   const saveSocials = () => { setClinicSocials({ facebook, instagram }); playTap(); };

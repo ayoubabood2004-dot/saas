@@ -1577,6 +1577,10 @@ export interface DemoDB {
   generatedBarcodes?: GeneratedBarcode[];
   storeProfile?: StoreProfile | null;
   storeOrders?: StoreOrder[];
+  /** تصنيفاتُ المتجر (0233) بالنسخة التجريبية — حالةُ storeCatIndex نفسُها (مرآةُ الجداول الثلاثة). */
+  storeCats?: StoreCatsState;
+  /** الصورُ السابقة لكلّ منتج (O4: لا صورةَ تُحذف) — «صور سابقة» تعيد ربطَ أيٍّ منها. */
+  photoHistory?: Record<string, ProductImageFile[]>;
   journeys?: Journey[];
   journeyEvents?: JourneyEvent[];
 }
@@ -1697,6 +1701,8 @@ export interface StoreFrontInfo {
   bio: string | null;
   delivery_fee: number;
   min_order: number;
+  /** تصنيفاتُ العيادة بترتيبها (0234) — فارغةٌ من خادمٍ قبلها، والمعطوبُ يُسقَط بالتشكيل. */
+  cats: StoreFrontCat[];
 }
 
 /* ── تصنيفاتُ المتجر (0233) — تصنيفاتُ العيادة بترتيبها، والعضويةُ كثيرٌ لكثير ─────────
@@ -1727,6 +1733,20 @@ export interface StoreCatsSnapshot {
   cats: StoreCategory[];
   members: Record<string, string[]>;
 }
+/** صفوفُ الجداول كما تحملها المرآة (storeCatIndex) — والنسخةُ التجريبيةُ تخزّنها كما هي. */
+export interface StoreCatRow {
+  id: string;
+  name: string;
+  icon: StoreCatIcon;
+  hidden: boolean;
+  pos: number | null;
+  archived_at: string | null;
+  seed_key: StoreCatSeedKey | null;
+}
+export interface StoreCatItemRow { category_id: string; product_id: string; pos: number }
+export interface StoreCatsState { seeded: boolean; cats: StoreCatRow[]; items: StoreCatItemRow[] }
+/** ملفُّ صورةٍ سابقٌ لمنتج (مجلّدُ العيادة بالدلو، أو عنوانٌ مضمَّن بالتجريبيّ). */
+export interface ProductImageFile { path: string; created_at: string | null }
 /** `after` غائب = آخرُ القائمة، و`null` = أوّلُها، ومعرّفٌ = بعده مباشرة. */
 export type StoreCatOp =
   | { op: "init" }

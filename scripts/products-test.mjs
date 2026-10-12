@@ -598,7 +598,8 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   check("0175: كتابةُ المكتبة وملفاتها بشرط المشغّل", mig175.includes("(select is_platform_admin())") && mig175.includes("= 'library'"));
   check("  والمنتقي بلا زرِّ رفع (قراءةٌ فقط بقرار المالك)", !/type="file"/.test(picker) && picker.includes("listImageLibrary"));
   check("  والاختيارُ مرجعٌ يُكتب كما هو لا نسخة", invP.includes("image_path: libPick"));
-  check("  و«شيل الصورة» بعيادةٍ لا يحذف ملفَ المكتبة", repoS.includes('path.startsWith("library/")'));
+  // كان يكفي أن يتخطّى الحذفُ مسارَ المكتبة؛ ومنذ O4 لا حذفَ أصلاً — ملفُّ المكتبة وملفُّ العيادة سواء.
+  check("  و«شيل الصورة» لا يحذف ملفّاً أصلاً — ملفُّ المكتبة منه (O4)", !repoS.includes("deleteProductImage") && !/from\("product-images"\)\s*\.\s*remove\(/.test(repoS));
   check("  والنسختان تعرفان المكتبة", (repoS.split("async createLibraryImage(").length - 1) === 2);
 }
 
@@ -678,7 +679,9 @@ console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، و
   check("  و«الترتيب الذكي» يقدّم المعروضَ ثم الناقصَ صورة", /rank = \(p: Product\) =>[^;]*store_visible[^;]*image_path/.test(cs));
   check("وبحثُ التشكيلة يطبّع الطرفين مثل الستور", cs.includes("searchable(q)") && cs.includes("searchable(p.name).includes(ql)"));
   // منذ 0222 يمرّ الفكُّ من `set_product_image` (الخادمُ يسأل الإذن ويحصر المسار) لا من رقعةٍ عامّة.
-  check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً", cs.includes("repo.deleteProductImage(") && cs.includes("repo.setProductImage(p.id, null)"));
+  // ومنذ O4 (قرارُ المالك ١٢/١٠: «لا تشيل ولا تحذف صورة») الفكُّ **وحده**: الملفُّ يبقى بالدلو
+  // ويرجع من «صور سابقة» — كان هذا السطرُ يشترط deleteProductImage عمداً، وانقلب بكلمة المالك.
+  check("وفصلُ الصورة يفكّ الربطَ وحده — بلا حذف ملفّ (O4)", !cs.includes("repo.deleteProductImage(") && cs.includes("repo.setProductImage(p.id, null)"));
 }
 
 /* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────

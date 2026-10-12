@@ -1,4 +1,4 @@
-import type { StoreCatIcon, StoreCatOp, StoreCatSeedKey, StoreCatsSnapshot } from "@/types";
+import type { StoreCatIcon, StoreCatItemRow, StoreCatOp, StoreCatRow, StoreCatSeedKey, StoreCatsSnapshot, StoreCatsState } from "@/types";
 import { searchable } from "./utils";
 import { categoryLook } from "./storeLib";
 
@@ -35,6 +35,13 @@ export const SEED_DEFS: readonly { key: StoreCatSeedKey; icon: StoreCatIcon }[] 
   { key: "other", icon: "bag" },
 ];
 export const seedName = (key: StoreCatSeedKey): string => categoryLook(key).label;
+
+/** مرآةُ `_store_listed` (0233) — شرطٌ واحدٌ لـ«الكل» والتصنيف والعدّ بالنسخة التجريبية: ظاهرٌ،
+ *  وسعرُه فوق الصفر (0188)، وغيرُ منتهٍ (0212 — آخرُ يومٍ صالح يُعرض). */
+export const isListed = (
+  p: { store_visible?: boolean | null; sell_price?: number | null; expiry_date?: string | null },
+  today: string,
+): boolean => !!p.store_visible && (Number(p.sell_price) || 0) > 0 && !(p.expiry_date && p.expiry_date < today);
 
 export const POS_STEP = 1024;
 export const MAX_LIVE = 40;
@@ -90,18 +97,10 @@ const charLen = (s: string) => [...s].length;
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const isUuid = (x: unknown): x is string => typeof x === "string" && UUID_RE.test(x);
 
-/* ── الحالة ──────────────────────────────────────────────────────────────── */
-export interface CatRow {
-  id: string;
-  name: string;
-  icon: StoreCatIcon;
-  hidden: boolean;
-  pos: number | null;
-  archived_at: string | null;
-  seed_key: StoreCatSeedKey | null;
-}
-export interface ItemRow { category_id: string; product_id: string; pos: number }
-export interface CatsState { seeded: boolean; cats: CatRow[]; items: ItemRow[] }
+/* ── الحالة (أنواعُها بـ@/types — النسخةُ التجريبيةُ تخزّنها كما هي) ─────────── */
+export type CatRow = StoreCatRow;
+export type ItemRow = StoreCatItemRow;
+export type CatsState = StoreCatsState;
 
 export interface ApplyCtx {
   /** مرآةُ `can_edit` بالخادم: البنيةُ والترتيبُ — وإلا not_authorized. */
@@ -110,6 +109,8 @@ export interface ApplyCtx {
   isProduct?: (id: string) => boolean;
   /** البذرة (النسخةُ التجريبية) — الشاشةُ لا تبذر بنفسها، تنتظر لقطةَ الخادم. */
   seed?: (s: CatsState) => CatsState;
+  /** شكلُ المعرّف — uuid كالخادم افتراضاً؛ والتجريبيُّ بمعرّفاته (prod_…) يمرّر قاعدتَه. */
+  isId?: (x: string) => boolean;
   now?: string;
 }
 
@@ -189,13 +190,19 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
  * رفضٌ بمنتصف الدفعة يرمي ولا يترك نصفَها (معاملةٌ واحدة). فحصُ «إذن المتجر» نفسُه شأنُ
  * الخادم (والشاشةُ لا تُفتح بدونه)؛ هنا `canEdit` وحده.
  */
-export function applyOps(state: CatsState, ops: readonly StoreCatOp[] | unknown, ctx: ApplyCtx): CatsState {
+/** شكلُ الدفعة قبل أيّ شيء (مرآةُ أوّل فحوص الدالّة): مصفوفةٌ، ٢٠٠ عمليةً على الأكثر، و٢٠٠٠ معرّفاً. */
+export function checkBatch(ops: unknown): void {
   if (!Array.isArray(ops) || ops.length > MAX_OPS) fail("bad_ops");
-  const list = ops as unknown[];
-  const total = list.reduce<number>((n, o) => n + (isObj(o) && Array.isArray(o.ids) ? o.ids.length : 0), 0);
+  const total = (ops as unknown[]).reduce<number>((n, o) => n + (isObj(o) && Array.isArray(o.ids) ? o.ids.length : 0), 0);
   if (total > MAX_IDS) fail("bad_ops");
+}
+
+export function applyOps(state: CatsState, ops: readonly StoreCatOp[] | unknown, ctx: ApplyCtx): CatsState {
+  checkBatch(ops);
+  const list = ops as unknown[];
   const now = ctx.now ?? new Date().toISOString();
   const isProduct = ctx.isProduct ?? (() => true);
+  const isId = (x: unknown): x is string => (ctx.isId ? typeof x === "string" && ctx.isId(x) : isUuid(x));
   let out: CatsState = { seeded: state.seeded, cats: state.cats.map((c) => ({ ...c })), items: state.items.map((m) => ({ ...m })) };
 
   const live = () => out.cats.filter((c) => c.archived_at == null);
@@ -258,22 +265,22 @@ export function applyOps(state: CatsState, ops: readonly StoreCatOp[] | unknown,
     // (أ) قراءةُ الحقول — شكلٌ خاطئ ⇒ bad_ops قبل أيّ فحصٍ آخر (نفسُ ترتيب الدالّة)
     let id = "", cat = "", after: string | null = null, has = false, ids: string[] = [];
     if (["create", "edit", "hide", "archive", "restore", "move", "move_item"].includes(op as string)) {
-      if (!isUuid(o.id)) fail("bad_ops");
+      if (!isId(o.id)) fail("bad_ops");
       id = (o.id as string).toLowerCase();
     }
     if (["move_item", "add", "remove"].includes(op as string)) {
-      if (!isUuid(o.cat)) fail("bad_ops");
+      if (!isId(o.cat)) fail("bad_ops");
       cat = (o.cat as string).toLowerCase();
     }
     if (op === "add" || op === "remove") {
       if (!Array.isArray(o.ids)) fail("bad_ops");
-      if ((o.ids as unknown[]).some((x) => !isUuid(x))) fail("bad_ops");
+      if ((o.ids as unknown[]).some((x) => !isId(x))) fail("bad_ops");
       ids = (o.ids as string[]).map((x) => x.toLowerCase());
     }
     if (["create", "move", "move_item", "add"].includes(op as string) && hasKey(o, "after")) {
       has = true;
       if (o.after === null) after = null;
-      else if (isUuid(o.after)) after = (o.after as string).toLowerCase();
+      else if (isId(o.after)) after = (o.after as string).toLowerCase();
       else fail("bad_ops");
     }
     if ((op === "move" || op === "move_item") && !has) fail("bad_ops");

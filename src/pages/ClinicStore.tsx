@@ -600,12 +600,9 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     setBusyId(p.id);
     try {
       const prepared = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
-      const old = p.image_path ?? null;
       const path = await repo.uploadProductImage(p.clinic_id ?? null, p.id, prepared);
       await repo.setProductImage(p.id, path);
-      // المسارُ صار فريداً لكلّ رفعة (البند ٩)، فالقديمُ لم يعد يُطمَس بالجديد —
-      // يُحذف بعد أن ينجح تحويلُ المرجع، وبعده وحده. `repo` تتكفّل بالمشترَك.
-      if (old && old !== path) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
+      // القديمُ **يبقى** بالدلو (O4: «لا تشيل ولا تحذف صورة») ويُرى بـ«صور سابقة» — فالاستبدالُ يُعاد.
       playSuccess();
       await reload();
     } catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
@@ -614,10 +611,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const pickFromLib = async (p: Product, path: string) => {
     setBusyId(p.id);
     try {
-      const old = p.image_path ?? null;
       await repo.setProductImage(p.id, path);
-      // الانتقالُ لصورة مكتبةٍ يترك ملفَّ العيادة القديمَ يتيماً لو لم يُحذف.
-      if (old && old !== path) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
+      // ملفُّ العيادة القديم يبقى (O4) — الرجوعُ إليه من «صور سابقة».
       playSuccess(); await reload();
     }
     catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
@@ -626,10 +621,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const clearPhoto = async (p: Product) => {
     setBusyId(p.id);
     try {
-      const old = p.image_path ?? null;
+      // «افصل الصورة»: يُفكّ الربطُ وحده والملفُّ يبقى (O4) — يرجع بضغطةٍ من «صور سابقة».
       await repo.setProductImage(p.id, null);
-      // ملفُّ المكتبة مشتركٌ بين العيادات — يُفكّ الربطُ ولا يُحذف (repo تتكفّل).
-      if (old) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
       playTap(); await reload();
     } catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
     finally { setBusyId(null); setPhotoFor(null); }
