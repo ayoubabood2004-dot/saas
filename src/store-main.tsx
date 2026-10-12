@@ -26,6 +26,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import "./i18n/store";
 import "./index.css";
 import { installDigitNormalizer } from "./lib/digits";
+import { hardNavTarget } from "./lib/visitorNav";
 import { Storefront } from "./pages/Storefront";
 import { StoreTrack } from "./pages/StoreTrack";
 import { TrackJourney } from "./pages/TrackJourney";
@@ -33,19 +34,19 @@ import { TrackJourney } from "./pages/TrackJourney";
 // الأرقامُ الشرقية تُحوَّل إلى ٠-٩ بأيّ حقل — الزبونُ يكتب رقمَه بأيّ لوحة.
 installDigitNormalizer();
 
-/** ما يخدمه هذا المستندُ بنفسه (vercel.json: store.html) — مرآةُ إعادات الكتابة. */
-const STORE_DOC_PATH = /^\/(s\/[^/]+(\/track)?|t\/[^/]+)\/?$/;
+/** العنوانُ الذي حُمّل عليه هذا المستندُ فعلاً — يُقرأ مرّةً قبل أيّ انتقالٍ داخليّ. */
+const BOOT_PATH = window.location.pathname;
 
 /**
  * «كلُّ مسارٍ آخر» = انتقالٌ **كامل** لا داخليّ. كان `<Navigate to="/">` داخل هذا المستند — و«/» هنا
  * لا يعرفه أحد، فرابطٌ داخليٌّ لصفحةٍ من تطبيق العيادة (البوّابة /p/) ينتهي بصفحةٍ فارغة (قيس محلياً).
  * الآن الخادمُ يقرّر: مسارٌ لتطبيق العيادة يأتي بمستنده (index.html). ومسارٌ يخدمه هذا المستندُ لا
- * يُعاد تحميلُه (حلقة) — يذهب للرئيسية كاملاً.
+ * يُعاد تحميلُه (حلقة) — يذهب للرئيسية كاملاً (`hardNavTarget`).
  */
 function HardNav() {
   const loc = useLocation();
   useEffect(() => {
-    window.location.replace(STORE_DOC_PATH.test(loc.pathname) ? "/" : loc.pathname + loc.search + loc.hash);
+    window.location.replace(hardNavTarget(loc.pathname, loc.search + loc.hash, BOOT_PATH));
   }, [loc]);
   return null;
 }

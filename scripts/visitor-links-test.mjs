@@ -50,20 +50,46 @@ console.log("▸ البوّابة (/p/) انتقالٌ كامل");
   check("  ولا <Link> إلى /p/ (انتقالٌ داخليّ لمسارٍ لا يعرفه المستند)", !/<Link\b[^>]*to=\{?["'`]\/p\//.test(sf));
 }
 
-console.log("▸ «كلُّ مسارٍ آخر» ليس <Navigate> داخلياً");
-{
+console.log("▸ «كلُّ مسارٍ آخر» ليس <Navigate> داخلياً — ولا يُعيد تحميلَ المستند على نفسه");
+try {
   check("لا <Navigate to=\"/\"> بمستند الزائر", !/<Navigate\b/.test(main));
-  check("  والبديلُ انتقالٌ كامل (window.location.replace)", /<Route path="\*" element=\{<HardNav \/>\}/.test(main) && /window\.location\.replace\(/.test(main));
-  const re = /const STORE_DOC_PATH = (\/.+\/);/.exec(main)?.[1];
-  let rx = null;
-  try { rx = re ? new Function(`return ${re}`)() : null; } catch { rx = null; }
+  check("  والبديلُ انتقالٌ كامل (window.location.replace) من hardNavTarget بعنوان الإقلاع",
+    /<Route path="\*" element=\{<HardNav \/>\}/.test(main) && /window\.location\.replace\(hardNavTarget\(loc\.pathname, [^,]+, BOOT_PATH\)\)/.test(main)
+    && /const BOOT_PATH = window\.location\.pathname;/.test(main));
+  const built = await esbuild.build({ entryPoints: ["src/lib/visitorNav.ts"], bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent" });
+  const N = await import("data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64"));
+  const go = N.hardNavTarget;
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
   const storeSources = vercel.rewrites.filter((r) => r.destination === "/store.html" || r.destination.startsWith("/api/store-og")).map((r) => r.source);
   const sample = (src) => src.replace(/:[a-z]+/g, "abc");
-  check(`  ومرآتُه تطابق إعادات vercel.json لـstore.html (${storeSources.join(" ، ")}) — فلا يُحمَّل المستندُ على نفسه`,
-    !!rx && storeSources.length >= 3 && storeSources.every((s) => rx.test(sample(s))) && !rx.test("/p/abc") && !rx.test("/") && !rx.test("/s/abc/xyz"),
-    String(re));
-}
+  check(`  ومرآتُه تطابق إعادات vercel.json لـstore.html (${storeSources.join(" ، ")})`,
+    storeSources.length >= 3 && storeSources.every((s) => N.STORE_DOC_PATH.test(sample(s))) && !N.STORE_DOC_PATH.test("/p/abc") && !N.STORE_DOC_PATH.test("/") && !N.STORE_DOC_PATH.test("/s/abc/xyz"));
+  /* الحلقة (قيست على `vite preview`): Vercel يخدم **الملفَّ الثابت قبل الإعادات** — فـ/store.html يأتي
+   * بهذا المستند، والموجّهُ لا يطابقه، و«انتقلْ إليه كاملاً» يحمّل المستندَ نفسَه إلى الأبد. فالقاعدةُ
+   * ليست قائمةَ مسارات: **العنوانُ الذي حُمّل عليه المستندُ لا يُعاد تحميلُه** أياً كان. */
+  const docFiles = [...readFileSync("vite.config.ts", "utf8").matchAll(/path\.resolve\(__dirname, "([^"]+\.html)"\)/g)].map((m) => "/" + m[1])
+    .filter((f) => readFileSync(f.slice(1), "utf8").includes("/src/store-main.tsx"));
+  check(`  ملفُّ المستند نفسُه (${docFiles.join("، ")}) مفتوحاً مباشرةً ⇒ «/» لا نفسُه`,
+    docFiles.length === 1 && docFiles.every((f) => go(f, "", f) === "/"), docFiles.map((f) => `${f} ⇒ ${go(f, "", f)}`).join("، "));
+  check("  وأيُّ عنوانٍ حُمّل عليه ولم يطابق مساراً (إعادةٌ تُضاف غداً) ⇒ «/»",
+    ["/store", "/s/abc/xyz", "/promo", "/store.html/"].every((p) => go(p, "?q=1", p) === "/"));
+  check("  ورابطٌ داخليٌّ لمسارٍ آخر (البوّابة) ⇒ انتقالٌ كاملٌ إليه بسؤاله وعلامته",
+    go("/p/abc", "?x=1#y", "/s/abc") === "/p/abc?x=1#y" && go("/inventory", "", "/t/tok") === "/inventory");
+  check("  ومسارٌ يخدمه المستندُ بالإعادات ⇒ «/» (لا يُحمَّل على نفسه)", storeSources.every((s) => go(sample(s), "", "/s/other") === "/"));
+  /* المشيُ كلُّه: كلُّ تحميلٍ يقرأ عنوانَه، وما لا يطابق مساراً يُعاد كاملاً — ولا يتجاوز تحميلين. */
+  const served = (p) => p === "/store.html" || storeSources.some((s) => sample(s) === p) || N.STORE_DOC_PATH.test(p);
+  const routes3 = (p) => /^\/(s\/[^/]+(\/track)?|t\/[^/]+)\/?$/.test(p);
+  const walk = (start) => {
+    let url = start, loads = 0;
+    while (loads < 10) {
+      loads++;
+      if (!served(url) || routes3(url)) return loads;   // مستندُ العيادة أو صفحةٌ للزائر = انتهى
+      url = go(url, "", url);
+    }
+    return loads;
+  };
+  check("  /store.html مفتوحاً مباشرةً ينتهي بتحميلين على الأكثر (لا حلقة)", walk("/store.html") <= 2, `${walk("/store.html")} تحميلات`);
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
 console.log("▸ safeSocialUrl (N12)");
 try {
