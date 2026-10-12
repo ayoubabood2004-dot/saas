@@ -10,7 +10,7 @@
 //   • الإعدادات — تفعيل المتجر، الرابط المميز (slug)، النبذة، أجرة التوصيل،
 //                 الحد الأدنى، ولوحة مشاركة الرابط (نسخ/فتح/واتساب/بايو).
 // ============================================================================
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -24,17 +24,20 @@ import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
-import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
-import { prepareUpload } from "@/lib/image";
+import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook, productImageUrl, cardImagePath, shelfLook, shelfMonogram } from "@/lib/storeLib";
+import { commitPhoto, nextWithoutPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { searchable } from "@/lib/utils";
 import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName } from "@/lib/settings";
-import { withTimeout, describeUploadError, describeDbError } from "@/lib/errors";
+import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { cn, money, formatNum, formatDate, currencySymbol } from "@/lib/utils";
 import { daysToExpiry } from "@/lib/expiry";
+
+/* محرّرُ الصورة حزمةٌ كسولة (متجر v1): لا يدفع المتجرُ وزنَه إلا حين تُفتح صورة. */
+const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
 
 type Tab = "orders" | "catalog" | "settings";
 /** تصفياتُ التشكيلة — مشتركةٌ لأن لوحةَ الجاهزية بتبويبٍ آخرَ تفتحها. */
@@ -532,9 +535,10 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const [descDraft, setDescDraft] = useState("");
   const [priceId, setPriceId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
-  /* الصورةُ تُضاف من هنا لا من المخزون: هذا مكانُ الدكتور حين يفكّر بمتجره،
-   * والتنقّلُ لشاشةٍ أخرى لكلّ منتجٍ هو ما كان يمنعه من إكمال الصور أصلاً. */
-  const [photoFor, setPhotoFor] = useState<Product | null>(null);
+  /* الصورةُ تُضاف من هنا لا من المخزون: هذا مكانُ الدكتور حين يفكّر بمتجره، والتنقّلُ لشاشةٍ
+   * أخرى لكلّ منتجٍ هو ما كان يمنعه من إكمال الصور أصلاً. والآن تمرّ من المحرّر (متجر v1): تُرى
+   * كاملةً قبل الحفظ، و«احفظ وروح للجاية بلا صورة» يمشي القائمةَ كما كانت لحظةَ الفتح. */
+  const [edit, setEdit] = useState<{ id: string; file: File | null; queue: string[] } | null>(null);
   const [libFor, setLibFor] = useState<Product | null>(null);
   /* «انشر أكثرَ ما تبيع» (ت٣): بعد أن فُتح بابُ النشر الجماعيّ يبقى سؤالُ
    * الدكتور — **أيَّ أربعين من تسعِمئة؟** والاجتهادُ أمام تسعِمئة صنفٍ هو
@@ -548,7 +552,6 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const [sort, setSort] = useState<"smart" | "name" | "priceDesc" | "priceAsc">("smart");
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const all = products ?? [];
   const noPhotoCount = all.filter((p) => !p.image_path).length;
@@ -595,18 +598,22 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     } catch (e) { playWarning(); toast.error(t("sf.featFailed", "تعذّر تحديث المختارات"), errMsg(e)); }
     finally { setBusyId(null); }
   };
-  /** رفعُ صورةٍ من هنا مباشرة — نفسُ مسار المخزون حرفياً: ضغطٌ ثم حفظٌ للمسار. */
-  const uploadFor = async (p: Product, file: File) => {
-    setBusyId(p.id);
-    try {
-      const prepared = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
-      const path = await repo.uploadProductImage(p.clinic_id ?? null, p.id, prepared);
-      await repo.setProductImage(p.id, path);
-      // القديمُ **يبقى** بالدلو (O4: «لا تشيل ولا تحذف صورة») ويُرى بـ«صور سابقة» — فالاستبدالُ يُعاد.
-      playSuccess();
-      await reload();
-    } catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
-    finally { setBusyId(null); setPhotoFor(null); }
+  /* صورةُ المحرّر: الرفعُ (المصغّرةُ أوّلاً) ثم `set_product_image` — والفشلُ يُرمى للمحرّر فيقوله.
+   * والقديمُ **يبقى** بالدلو (O4: «لا تشيل ولا تحذف صورة») ويُرى بـ«صور سابقة» — فالاستبدالُ يُعاد.
+   * و«افصل الصورة» فكٌّ وحده: `setProductImage(p.id, null)`. */
+  const openEditor = (p: Product, file: File | null) => setEdit({ id: p.id, file, queue: list.map((x) => x.id) });
+  const byId = new Map(all.map((x) => [x.id, x]));
+  const editing = edit ? byId.get(edit.id) ?? null : null;
+  const nextId = edit ? nextWithoutPhoto(edit.queue, edit.id, (id) => !!byId.get(id)?.image_path) : null;
+  const nextP = nextId ? byId.get(nextId) ?? null : null;
+  const asTarget = (x: Product) => ({ id: x.id, name: x.name, image_path: x.image_path ?? null, clinic_id: x.clinic_id ?? null });
+  const savePhoto = async (p: Product, photo: Parameters<typeof commitPhoto>[3]) => {
+    await commitPhoto(repo, p.clinic_id ?? null, p.id, photo);
+    await reload();
+  };
+  const linkPhoto = async (p: Product, path: string | null) => {
+    await repo.setProductImage(p.id, path);
+    await reload();
   };
   const pickFromLib = async (p: Product, path: string) => {
     setBusyId(p.id);
@@ -616,16 +623,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       playSuccess(); await reload();
     }
     catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
-    finally { setBusyId(null); setLibFor(null); setPhotoFor(null); }
-  };
-  const clearPhoto = async (p: Product) => {
-    setBusyId(p.id);
-    try {
-      // «افصل الصورة»: يُفكّ الربطُ وحده والملفُّ يبقى (O4) — يرجع بضغطةٍ من «صور سابقة».
-      await repo.setProductImage(p.id, null);
-      playTap(); await reload();
-    } catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
-    finally { setBusyId(null); setPhotoFor(null); }
+    finally { setBusyId(null); setLibFor(null); }
   };
 
   /** نشرٌ/إخفاءٌ — نداءٌ واحدٌ للخادم ثمّ **تحديثٌ محلّيّ بلا `reload()`**.
@@ -917,16 +915,17 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
                     setPicked((prev) => { const n = new Set(prev); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; });
                   }}
                   className="h-4 w-4 shrink-0 accent-brand-600" />
-                {/* المصغّرةُ نفسُها هي الزرّ: يرى ما عنده ويضغط ليكمّله — بدل رمزِ
-                    فئةٍ لا يقول شيئاً عن المنتج ولا يفتح شيئاً. */}
-                <button type="button" onClick={() => { playTap(); setPhotoFor(photoFor?.id === p.id ? null : p); }}
+                {/* المصغّرةُ نفسُها هي الزرّ: تفتح المحرّر (صوّر، ملف، صور سابقة، تعديل، فصل) —
+                    والسحبُ والإفلاتُ عليها يفتحه على الصورة مباشرة. */}
+                <button type="button" onClick={() => { playTap(); openEditor(p, null); }}
                   disabled={busyId === p.id} data-catphoto
+                  onDragOver={(e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); }}
+                  onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) { e.preventDefault(); openEditor(p, f); } }}
                   title={p.image_path ? t("cat.photoEdit", "بدّل صورة المنتج") : t("cat.photoAdd", "أضف صورة للمنتج")}
                   className={cn("group relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl border transition active:scale-95",
-                    p.image_path ? "border-line" : "border-dashed border-line-strong",
-                    photoFor?.id === p.id && "ring-2 ring-brand-400")}>
+                    p.image_path ? "border-line" : "border-dashed border-line-strong")}>
                   {p.image_path
-                    ? <img src={productImageUrl(p.image_path) ?? ""} alt="" className="h-full w-full object-contain p-0.5" onError={(e) => { e.currentTarget.hidden = true; }} />
+                    ? <img src={productImageUrl(cardImagePath(p.image_path)) ?? ""} alt="" className="h-full w-full object-contain p-0.5" onError={(e) => { const u = productImageUrl(p.image_path); if (u && e.currentTarget.src !== u) e.currentTarget.src = u; else e.currentTarget.hidden = true; }} />
                     : <span className={cn("flex h-full w-full items-center justify-center text-sm font-bold", shelfLook(p.name).tile, shelfLook(p.name).ink)}>
                         {shelfMonogram(p.name)}
                       </span>}
@@ -984,35 +983,31 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
                   {p.store_visible ? <><Eye size={14} /> معروض</> : <><EyeOff size={14} /> مخفي</>}
                 </button>
 
-                {/* أفعالُ الصورة — شريطٌ يفتح داخل الصفّ نفسه، فلا يضيع مكانُ
-                    الدكتور بالقائمة وهو يكمّل صورةً بعد صورة. */}
-                {photoFor?.id === p.id && (
-                  <div className="flex w-full flex-wrap items-center gap-2 border-t border-line pt-3">
-                    <Button type="button" size="sm" variant="secondary" leftIcon={<Camera size={14} />} loading={busyId === p.id}
-                      onClick={() => { playTap(); fileRef.current?.click(); }}>
-                      {t("pos.photoPick", "صوّر بنفسك أو اختر ملفاً")}
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" leftIcon={<Boxes size={14} />}
-                      onClick={() => { playTap(); setLibFor(p); }} data-catlib>
-                      {t("pos.photoFromLib", "اختر من المكتبة")}
-                    </Button>
-                    {p.image_path && (
-                      <button type="button" className="text-2xs font-bold text-warn-700 hover:underline dark:text-warn-200"
-                        onClick={() => void clearPhoto(p)}>{t("pos.photoRemove", "شيل الصورة")}</button>
-                    )}
-                    <span className="text-2xs text-ink-muted">{t("pos.photoHint", "تنضغط تلقائياً وتظهر ببطاقة متجرك الإلكتروني.")}</span>
-                  </div>
-                )}
+                {/* المكتبةُ بضغطةٍ من الصفّ — والمحرّرُ يفتحها كذلك. */}
+                <button type="button" onClick={() => { playTap(); setLibFor(p); }} data-catlib
+                  title={t("pos.photoFromLib", "اختر من المكتبة")} aria-label={t("pos.photoFromLib", "اختر من المكتبة")}
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-ink-subtle transition hover:bg-surface-2">
+                  <Boxes size={15} />
+                </button>
               </div>
             );
           })}
         </div>
       )}
 
-      <input ref={fileRef} type="file" accept="image/*" className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f && photoFor) void uploadFor(photoFor, f); e.target.value = ""; }} />
       <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
         onPick={(row) => { if (libFor) void pickFromLib(libFor, row.path); }} />
+      {editing && (
+        <Suspense fallback={null}>
+          <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history
+            onClose={() => setEdit(null)}
+            onPhoto={(photo) => savePhoto(editing, photo)}
+            onPath={(path) => linkPhoto(editing, path)}
+            onLibrary={() => { setLibFor(editing); setEdit(null); }}
+            next={nextP ? asTarget(nextP) : null}
+            onNext={() => { if (nextId) setEdit((e) => (e ? { ...e, id: nextId, file: null } : e)); }} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -573,7 +573,7 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   // الشكلَ العاريَ حرفياً، فكان يحرس العطبَ لا الصواب.
   check("  وسياسةُ الرفع تشترط مجلّدَ العيادة، بنداءٍ ملفوف", mig.includes("(storage.foldername(name))[1] = (select auth_clinic())::text"));
   check("  والرفعُ السحابيّ إلى bucket لا إلى جدول", repoS.includes('storage.from("product-images").upload'));
-  check("  والنسختان التجريبية والسحابية كلتاهما تعرفان الرفع", (repoS.split("async uploadProductImage(").length - 1) === 2);
+  check("  والنسختان التجريبية والسحابية كلتاهما تعرفان الرفع", (repoS.split("async uploadProductPhoto(").length - 1) === 2);
   /* كان يفحص `loading="lazy"` نصّاً — وصار التكسيلُ مشروطاً: ما فوق الطيّة
    * يُحمَّل فوراً (تكسيلُ صورة الـLCP يؤخّر الرسمَ بلا أن يوفّر شيئاً) والباقي
    * كسول. فالفحصُ على السلوك لا على السلسلة. */
@@ -668,10 +668,13 @@ console.log("▸ جرس طلبات المتجر — يعدّ بلا صفوف، �
 console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، وتصفيةٌ على «بلا صورة»");
 {
   const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
-  check("الرفعُ من داخل تبويب التشكيلة",
-    cs.includes("repo.uploadProductImage(") && cs.includes("prepareUpload(file, { maxDim: 800, quality: 0.72 })"));
+  /* كان يثبّت الرفعَ المباشرَ بلا معاينة (prepareUpload 800/0.72 ثم uploadProductImage). صار
+   * المحرّرُ بابَه (متجر v1، طلبُ المالك: صورةٌ أكبر وأوضح، وإضافةٌ أسهل): معاينةٌ وتدويرٌ وقصّ،
+   * ونسختان ١٦٠٠/٠٫٨٢ و٤٨٠ عبر commitPhoto — والسياسةُ نفسُها يفحصها photo-pipeline-test. */
+  check("الرفعُ من داخل تبويب التشكيلة — عبر المحرّر لا مباشرة",
+    cs.includes("<PhotoEditor") && cs.includes("commitPhoto(repo,") && !cs.includes("prepareUpload(") && !cs.includes("uploadProductImage("));
   check("  ومنتقي المكتبة مركَّبٌ هنا كذلك", cs.includes("<ImageLibraryPicker") && cs.includes("data-catlib"));
-  check("  والمصغّرةُ نفسُها هي الزرّ", cs.includes("data-catphoto") && cs.includes("productImageUrl(p.image_path)"));
+  check("  والمصغّرةُ نفسُها هي الزرّ — بمصغّرة البطاقة (cardImagePath) لا الكاملة", cs.includes("data-catphoto") && cs.includes("productImageUrl(cardImagePath(p.image_path))"));
   check("  والمنتجُ بلا صورةٍ يعرض بلاطتَه لا رمزَ فئته", cs.includes("shelfLook(p.name)") && cs.includes("shelfMonogram(p.name)"));
   check("تصفيةُ «بلا صورة» موجودةٌ بعدّادها", cs.includes("data-catfilter") && cs.includes('"nophoto"') && cs.includes("noPhotoCount"));
   check("  وأربعُ حالاتِ تصفيةٍ لا واحدة", ["\"all\"", "\"shown\"", "\"hidden\"", "\"nophoto\""].every((k) => cs.includes(k)));
@@ -681,7 +684,13 @@ console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، و
   // منذ 0222 يمرّ الفكُّ من `set_product_image` (الخادمُ يسأل الإذن ويحصر المسار) لا من رقعةٍ عامّة.
   // ومنذ O4 (قرارُ المالك ١٢/١٠: «لا تشيل ولا تحذف صورة») الفكُّ **وحده**: الملفُّ يبقى بالدلو
   // ويرجع من «صور سابقة» — كان هذا السطرُ يشترط deleteProductImage عمداً، وانقلب بكلمة المالك.
-  check("وفصلُ الصورة يفكّ الربطَ وحده — بلا حذف ملفّ (O4)", !cs.includes("repo.deleteProductImage(") && cs.includes("repo.setProductImage(p.id, null)"));
+  {
+    // «افصل الصورة (تبقى محفوظة)» بالمحرّر ⇒ onPath(null) ⇒ setProductImage(p.id, null) — فكٌّ وحده.
+    const ed = readFileSync("src/components/photo/PhotoEditor.tsx", "utf8");
+    check("وفصلُ الصورة يفكّ الربطَ وحده — بلا حذف ملفّ (O4)",
+      !cs.includes("repo.deleteProductImage(") && /const linkPhoto = async \(p: Product, path: string \| null\) => \{\s*await repo\.setProductImage\(p\.id, path\);/.test(cs)
+      && /onPath=\{\(path\) => linkPhoto\(editing, path\)\}/.test(cs) && ed.includes("void link(null)") && ed.includes("imged.unlink"));
+  }
 }
 
 /* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────

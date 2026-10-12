@@ -146,11 +146,15 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
 const CLINIC = "11111111-1111-1111-1111-111111111111";
 const PRODUCT = "22222222-2222-2222-2222-222222222222";
 
+/* بابُ الرفع الواحد لصورة المنتج صار uploadProductPhoto (من المحرّر) — وما ثبّته البندان ٩ و١٠
+ * على الباب القديم يثبَت عليه: مسارٌ فريدٌ لكلّ رفعة بمجلّد العيادة، وupsert مطفأة، وسنةُ ذاكرة،
+ * وPDF والـgif مرفوضان قبل أيّ رفعة بالطرفين. والامتدادُ jpg لأن المحرّرَ يرمّز JPEG دائماً. */
 console.log("▸ البند ٩ — الرابطُ يتبدّل حين تتبدّل الصورة");
 globalThis.__uploads = [];
-const p1 = await cloud.uploadProductImage(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"));
+const ph = (type = "image/jpeg") => ({ full: mkUpload(type, "jpg"), thumb: mkUpload("image/jpeg", "jpg") });
+const p1 = await cloud.uploadProductPhoto(CLINIC, PRODUCT, ph());
 await new Promise((r) => setTimeout(r, 2));
-const p2 = await cloud.uploadProductImage(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"));
+const p2 = await cloud.uploadProductPhoto(CLINIC, PRODUCT, ph());
 check("رفعتان لنفس المنتج ⇒ مساران مختلفان", p1 !== p2, `${p1} == ${p2}`);
 check("  والمسارُ بمجلّد العيادة (سياسةُ المخزن تشترطه)", p1.startsWith(`${CLINIC}/`), p1);
 check("  و`upsert` مطفأةٌ — التصادمُ يُكشف لا يُطمَس",
@@ -158,25 +162,18 @@ check("  و`upsert` مطفأةٌ — التصادمُ يُكشف لا يُطمَ
 check("  و`cacheControl` سنةٌ كاملة — صار صحيحاً بعد أن صار المسارُ لا يُعاد",
   globalThis.__uploads.every((u) => u.opts?.cacheControl === "31536000"));
 
-console.log("▸ البند ١٠ — الاسمُ يصف المحتوى");
-for (const [type, ext] of [["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]) {
-  globalThis.__uploads = [];
-  const p = await cloud.uploadProductImage(CLINIC, PRODUCT, mkUpload(type, ext));
-  const sent = globalThis.__uploads[0]?.opts?.contentType;
-  check(`${type} ⇒ امتداد .${ext} ونوعٌ مطابق`, p.endsWith(`.${ext}`) && sent === type, `${p} / ${sent}`);
-}
-
 console.log("▸ البند ١٠ب — PDF ليس صورةَ منتج (مرآةُ قائمة الدلو 0184)");
 check("السحابيّ يرمي على application/pdf",
-  await threw(() => cloud.uploadProductImage(CLINIC, PRODUCT, mkUpload("application/pdf", "pdf"))));
+  await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, ph("application/pdf"))));
 check("  ولا رفعةَ وصلت الخادم أصلاً",
-  (globalThis.__uploads = [], await threw(() => cloud.uploadProductImage(CLINIC, PRODUCT, mkUpload("application/pdf", "pdf"))), globalThis.__uploads.length === 0));
+  (globalThis.__uploads = [], await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, ph("application/pdf"))), globalThis.__uploads.length === 0));
 check("  و image/gif مرفوضٌ كذلك — القائمةُ ثلاثةٌ لا «أيُّ صورة»",
-  await threw(() => cloud.uploadProductImage(CLINIC, PRODUCT, mkUpload("image/gif", "gif"))));
+  await threw(() => cloud.uploadProductPhoto(CLINIC, PRODUCT, ph("image/gif"))));
 check("والتجريبيُّ يرمي نفسَ الرمية — حارسٌ لا يوجد هنا حارسٌ لم يُفحص",
-  await threw(() => demo.uploadProductImage(CLINIC, PRODUCT, mkUpload("application/pdf", "pdf"))));
+  await threw(() => demo.uploadProductPhoto(CLINIC, PRODUCT, ph("application/pdf"))));
 check("  ويقبل الصورةَ كما كان",
-  typeof (await demo.uploadProductImage(CLINIC, PRODUCT, mkUpload("image/jpeg", "jpg"))) === "string");
+  typeof (await demo.uploadProductPhoto(CLINIC, PRODUCT, { full: mkUpload("image/jpeg", "jpg"), thumb: null })) === "string");
+check("  ولا بابَ رفعٍ قديم (uploadProductImage) بالطرفين", !("uploadProductImage" in cloud) && !("uploadProductImage" in demo));
 check("  وملفُّ المكتبة التجريبيُّ يُحرَس كذلك",
   await threw(() => demo.createLibraryImage({ name: "س" }, mkUpload("application/pdf", "pdf"))));
 

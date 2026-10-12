@@ -100,7 +100,7 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
               <button key={r.id} onClick={() => { playTap(); onPick(r); onClose(); }}
                 className="group flex flex-col overflow-hidden rounded-xl border border-line bg-surface-1 text-start transition hover:border-brand-400 hover:shadow-raised">
                 <img src={productImageUrl(r.path) ?? undefined} alt="" loading="lazy"
-                  className="aspect-square w-full bg-surface-2 object-cover"
+                  className="aspect-square w-full bg-surface-2 object-contain p-1"
                   onError={(e) => { e.currentTarget.hidden = true; }} />
                 <span className="line-clamp-2 p-1.5 text-2xs font-bold leading-snug text-ink">{r.name}</span>
                 {r.section && <span className="px-1.5 pb-1.5 text-2xs text-ink-subtle">{r.section}</span>}

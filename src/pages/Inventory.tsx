@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProductMovementsDialog } from "@/components/inventory/ProductMovements";
 import { ProductLotsDialog } from "@/components/inventory/ProductLots";
 import { ExpiryPicker } from "@/components/ExpiryPicker";
@@ -35,9 +35,9 @@ import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName, localISO } from "@/lib/utils";
-import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
-import { prepareUpload, type PreparedUpload } from "@/lib/image";
-import { productImageUrl } from "@/lib/storeLib";
+import { withTimeout, describeDbError } from "@/lib/errors";
+import { cardImagePath, productImageUrl } from "@/lib/storeLib";
+import type { EncodedPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
@@ -53,6 +53,8 @@ import { buildReturnStatementHTML, openReturnStatement } from "@/lib/returnPrint
 import { getExpiryWindows, getClinicName } from "@/lib/settings";
 import { usePermissions } from "@/hooks/usePermissions";
 import { staggerContainer, staggerItem } from "@/lib/motion";
+/* محرّرُ الصورة حزمةٌ كسولة — لا يدفع المخزونُ وزنَه إلا حين تُفتح الصورة. */
+const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
 
 const LOW_STOCK = 5;
 /** A product's reorder level — its own min_stock if set, else the default. */
@@ -1076,25 +1078,19 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   /** الرموزُ الإضافية المربوطة (0141): تُربط من نافذة الكاشير، ولم يكن لها وجهٌ
    *  بأي شاشة ولا فكّ — فربطٌ غلط كان يبيع مادّةً بمسحة مادّةٍ أخرى إلى الأبد. */
   const [altCodes, setAltCodes] = useState<string[]>([]);
-  /** صورة المتجر (0174): تُضغط بالمتصفح لحظةَ الاختيار وتُرفع بعد نجاح الحفظ —
-   *  ففشلُ صورةٍ لا يضيّع منتجاً، والعكسُ يُقال بجملته لا يُبلع. */
-  const [photo, setPhoto] = useState<PreparedUpload | null>(null);
+  /** صورة المتجر (0174): تمرّ من المحرّر (تُرى كاملةً وتُدار وتُقصّ — متجر v1) وتُرفع بعد نجاح
+   *  الحفظ — ففشلُ صورةٍ لا يضيّع منتجاً، والعكسُ يُقال بجملته لا يُبلع. */
+  const [photo, setPhoto] = useState<EncodedPhoto | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorFile, setEditorFile] = useState<File | null>(null);
   /** اختيارٌ من مكتبة المنصّة (0175): مسارُ ملف المكتبة يُكتب كما هو — مرجعٌ لا نسخة. */
   const [libPick, setLibPick] = useState<string | null>(null);
   const [libOpen, setLibOpen] = useState(false);
   const [removePhoto, setRemovePhoto] = useState(false);
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const photoPreview = photo ? photo.dataUrl
-    : libPick ? productImageUrl(libPick)
-    : (removePhoto ? null : productImageUrl(product?.image_path));
-  useEffect(() => { setPhoto(null); setLibPick(null); setRemovePhoto(false); }, [open, product?.id]);
-  const pickPhoto = async (file: File) => {
-    setPhotoBusy(true);
-    try { setPhoto(await prepareUpload(file, { maxDim: 800, quality: 0.72 })); setRemovePhoto(false); }
-    catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
-    finally { setPhotoBusy(false); }
-  };
+  const photoPreview = photo ? photo.previewUrl
+    : libPick ? productImageUrl(cardImagePath(libPick))
+    : (removePhoto ? null : productImageUrl(cardImagePath(product?.image_path)));
+  useEffect(() => { setPhoto(null); setLibPick(null); setRemovePhoto(false); setEditorOpen(false); }, [open, product?.id]);
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
   // each row differing only in barcode, name, count and expiry. Surfaced on wide
   // screens (iPad/desktop); phone keeps the classic one-product layout.
@@ -1391,7 +1387,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           // المسارُ فريدٌ لكلّ رفعة (البند ٩)، والملفُّ القديمُ **يبقى** بالدلو (O4: «لا تشيل ولا
           // تحذف صورة») — الاستبدالُ والفكُّ يُعادان من «صور سابقة».
           if (photo) {
-            const path = await repo.uploadProductImage(savedClinic, savedId, photo);
+            // النسختان (الكاملةُ والمصغّرة) — والمصغّرةُ أوّلاً بداخلها، ففشلُها لا يغيّر المسار.
+            const path = await repo.uploadProductPhoto(savedClinic, savedId, { full: photo.full, thumb: photo.thumb });
             await repo.updateProduct(savedId, { image_path: path });
           } else if (libPick) {
             await repo.updateProduct(savedId, { image_path: libPick });
@@ -1917,17 +1914,23 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           <div>
             <label className="label">{t("pos.photoLabel", "صورة المنتج بالمتجر")}</label>
             <div className="flex items-center gap-3">
-              {photoPreview ? (
-                <img src={photoPreview} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-line object-cover" />
-              ) : (
-                <span className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-dashed border-line-strong text-ink-subtle"><Camera size={20} /></span>
-              )}
+              {/* المعاينةُ ١٦٠ بلا قصّ (object-contain) — والبلاطةُ نفسُها تفتح المحرّر: كانت ٦٤ مقصوصةً
+                  (object-cover) فتخفي نصفَ العلبة ولا تفتح شيئاً. */}
+              <button type="button" onClick={() => { playTap(); setEditorFile(null); setEditorOpen(true); }} data-photo-tile
+                onDragOver={(e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); }}
+                onDrop={(e) => { const fl = e.dataTransfer.files?.[0]; if (fl) { e.preventDefault(); setEditorFile(fl); setEditorOpen(true); } }}
+                className="grid h-40 w-40 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface-2 transition hover:border-brand-400">
+                {photoPreview
+                  ? <img src={photoPreview} alt="" className="h-full w-full object-contain p-1"
+                      onError={(e) => { const full = libPick ? productImageUrl(libPick) : productImageUrl(product?.image_path); if (full && e.currentTarget.src !== full) e.currentTarget.src = full; }} />
+                  : <Camera size={26} className="text-ink-subtle" />}
+              </button>
               <div className="flex min-w-0 flex-col items-start gap-1.5">
                 <div className="flex flex-wrap gap-1.5">
                   <Button type="button" variant="secondary" size="sm" leftIcon={<Boxes size={14} />} onClick={() => { playTap(); setLibOpen(true); }} data-libpick>
                     {t("pos.photoFromLib", "اختر من المكتبة")}
                   </Button>
-                  <Button type="button" variant="secondary" size="sm" loading={photoBusy} leftIcon={<Camera size={14} />} onClick={() => { playTap(); fileRef.current?.click(); }}>
+                  <Button type="button" variant="secondary" size="sm" leftIcon={<Camera size={14} />} onClick={() => { playTap(); setEditorOpen(true); }} data-photo-edit>
                     {t("pos.photoPick", "صوّر بنفسك أو اختر ملفاً")}
                   </Button>
                 </div>
@@ -1938,8 +1941,18 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 )}
                 <p className="text-2xs text-ink-subtle">{t("pos.photoHint", "تنضغط تلقائياً وتظهر ببطاقة متجرك الإلكتروني.")}</p>
               </div>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const fl = e.target.files?.[0]; if (fl) void pickPhoto(fl); e.target.value = ""; }} />
             </div>
+            {editorOpen && (
+              <Suspense fallback={null}>
+                <PhotoEditor
+                  product={{ id: product?.id ?? "new", name: f.name || t("pos.photoLabel", "صورة المنتج بالمتجر"), image_path: product?.image_path ?? null, clinic_id: product?.clinic_id ?? null }}
+                  history={!!product?.id} initialFile={editorFile}
+                  onClose={() => { setEditorOpen(false); setEditorFile(null); }}
+                  onPhoto={async (ph) => { setPhoto(ph); setLibPick(null); setRemovePhoto(false); }}
+                  onPath={async (path) => { setPhoto(null); if (path) { setLibPick(path); setRemovePhoto(false); } else { setLibPick(null); setRemovePhoto(true); } }}
+                  onLibrary={() => { setEditorOpen(false); setLibOpen(true); }} />
+              </Suspense>
+            )}
             <ImageLibraryPicker open={libOpen} onClose={() => setLibOpen(false)}
               onPick={(row) => { setLibPick(row.path); setPhoto(null); setRemovePhoto(false); }} />
           </div>

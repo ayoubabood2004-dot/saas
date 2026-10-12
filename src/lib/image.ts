@@ -39,7 +39,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number):
   });
 }
 
-async function blobToDataUrl(blob: Blob): Promise<string> {
+export async function blobToDataUrl(blob: Blob): Promise<string> {
   // Preferred path: FileReader. Some restricted mobile webviews don't expose it
   // ("Can't find variable: FileReader"), so fall back to ArrayBuffer + base64,
   // which avoids the FileReader global entirely.

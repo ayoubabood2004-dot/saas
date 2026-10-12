@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Camera, ImageIcon, ImageOff, Images, Library, RotateCw, Search, Trash2 } from "lucide-react";
+import { Camera, ImageIcon, ImageMinus, ImageOff, Images, Library, RotateCw, Search } from "lucide-react";
 import type { PhotoProduct } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { prepareUpload } from "@/lib/image";
-import { productImageUrl } from "@/lib/storeLib";
+import { cardImagePath, productImageUrl } from "@/lib/storeLib";
+import { commitPhoto, nextWithoutPhoto, type EncodedPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
-import { describeDbError, describeUploadError } from "@/lib/errors";
+import { describeDbError } from "@/lib/errors";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { cn, formatNum, searchable } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -23,6 +23,8 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
  * ========================================================================= */
 
 const PAGE = 120;
+/* المحرّرُ حزمةٌ كسولة: لا يدفع وزنَه إلا من يفتحه. */
+const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
 type Filter = "missing" | "all";
 
 export function ProductPhotos() {
@@ -44,10 +46,15 @@ export function ProductPhotos() {
    * فحقلٌ ثانٍ بلا capture لصورٍ محفوظة. الخادمُ لا يفرّق بينهما: نفسُ الرفع ونفسُ set_product_image. */
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileFor = useRef<PhotoProduct | null>(null);
+  /* الصورةُ تمرّ من المحرّر قبل أن تُحفظ (متجر v1): تُرى كاملةً وتُدار وتُقصّ — والكاميرا ما زالت
+   * ضغطةً واحدة: الملفُّ يصل المحرّرَ مفتوحاً على التعديل. والقائمةُ لحظةَ الفتح هي ترتيبُ
+   * «احفظ وروح للجاية بلا صورة». */
+  const [edit, setEdit] = useState<{ id: string; file: File | null; queue: string[] } | null>(null);
+  const openEditor = (p: PhotoProduct, file: File | null) => setEdit({ id: p.id, file, queue: visible.map((x) => x.id) });
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; const p = fileFor.current;
     e.target.value = "";
-    if (f && p) void upload(p, f);
+    if (f && p) openEditor(p, f);
   };
 
   const load = async () => {
@@ -72,16 +79,10 @@ export function ProductPhotos() {
     setRows((r) => (Array.isArray(r) ? r.map((x) => (x.id === p.id ? { ...x, image_path: next } : x)) : r));
   };
 
-  const upload = async (p: PhotoProduct, file: File) => {
-    setBusyId(p.id);
-    try {
-      const prepared = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
-      const path = await repo.uploadProductImage(clinicId, p.id, prepared);
-      await apply(p, path);
-      playSuccess();
-      toast.success(t("photos.saved", { name: p.name, defaultValue: "انحفظت صورة {{name}}" }));
-    } catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
-    finally { setBusyId(null); }
+  /** صورةُ المحرّر: الرفعُ (المصغّرةُ أوّلاً) ثم الربط — والفشلُ يُرمى للمحرّر فيقوله ويبقى مفتوحاً. */
+  const savePhoto = async (p: PhotoProduct, photo: EncodedPhoto) => {
+    const path = await commitPhoto(repo, clinicId, p.id, photo);
+    setRows((r) => (Array.isArray(r) ? r.map((x) => (x.id === p.id ? { ...x, image_path: path } : x)) : r));
   };
 
   const fromLibrary = async (p: PhotoProduct, path: string) => {
@@ -91,12 +92,18 @@ export function ProductPhotos() {
     finally { setBusyId(null); setLibFor(null); }
   };
 
+  /** «افصل الصورة»: الربطُ وحده — الملفُّ يبقى ويرجع من «صور سابقة» (O4). */
   const remove = async (p: PhotoProduct) => {
     setBusyId(p.id);
-    try { await apply(p, null); playTap(); toast.success(t("photos.removed", { name: p.name, defaultValue: "انشالت صورة {{name}}" })); }
+    try { await apply(p, null); playTap(); toast.success(t("photos.removed", { name: p.name, defaultValue: "انفصلت صورة {{name}} — محفوظة بـ«صور سابقة»" })); }
     catch (e) { playWarning(); toast.error(describeDbError(e, t)); }
     finally { setBusyId(null); }
   };
+  const byId = new Map(list.map((x) => [x.id, x]));
+  const editing = edit ? byId.get(edit.id) ?? null : null;
+  const nextId = edit ? nextWithoutPhoto(edit.queue, edit.id, (id) => !!byId.get(id)?.image_path) : null;
+  const nextP = nextId ? byId.get(nextId) ?? null : null;
+  const asTarget = (x: PhotoProduct) => ({ id: x.id, name: x.name, image_path: x.image_path ?? null, clinic_id: clinicId });
 
   if (!allowed) {
     return <p className="mx-auto max-w-xl px-4 py-16 text-center text-sm font-bold text-ink-muted">{t("photos.noAccess", "هاي الصفحة لمن عنده صلاحية صور المنتجات. راجع مدير العيادة.")}</p>;
@@ -153,11 +160,16 @@ export function ProductPhotos() {
               const busy = busyId === p.id;
               return (
                 <div key={p.id} data-photo-card={p.id} className={cn("card overflow-hidden", busy && "opacity-60")}>
-                  <div className="grid aspect-square place-items-center bg-surface-2">
+                  <button type="button" disabled={busy} onClick={() => { playTap(); openEditor(p, null); }} data-photo-open={p.id}
+                    title={t("photos.open", "افتح المحرّر: صور سابقة، تعديل، فصل")}
+                    onDragOver={(e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); }}
+                    onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) { e.preventDefault(); openEditor(p, f); } }}
+                    className="grid aspect-square w-full place-items-center bg-surface-2">
                     {url
-                      ? <img src={url} alt={p.name} loading="lazy" className="h-full w-full object-contain" />
+                      ? <img src={productImageUrl(cardImagePath(p.image_path)) ?? url} alt={p.name} loading="lazy" className="h-full w-full object-contain"
+                          onError={(e) => { if (e.currentTarget.src !== url) e.currentTarget.src = url; }} />
                       : <ImageOff size={34} className="text-ink-subtle" aria-hidden />}
-                  </div>
+                  </button>
                   <div className="space-y-2 p-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-extrabold text-ink" title={p.name}>{p.name}</p>
@@ -182,9 +194,9 @@ export function ProductPhotos() {
                       </button>
                       {url && (
                         <button type="button" disabled={busy} onClick={() => void remove(p)}
-                          title={t("photos.remove", "شيل الصورة")} aria-label={t("photos.remove", "شيل الصورة")}
-                          className="grid h-10 w-10 place-items-center rounded-xl border border-line text-ink-muted transition hover:text-danger-600 disabled:opacity-50">
-                          <Trash2 size={16} />
+                          title={t("photos.remove", "افصل الصورة (تبقى محفوظة)")} aria-label={t("photos.remove", "افصل الصورة (تبقى محفوظة)")}
+                          className="grid h-10 w-10 place-items-center rounded-xl border border-line text-ink-muted transition hover:text-warn-700 disabled:opacity-50">
+                          <ImageMinus size={16} />
                         </button>
                       )}
                     </div>
@@ -208,6 +220,17 @@ export function ProductPhotos() {
       <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={onFile} data-gallery-input />
       <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
         onPick={(row) => { if (libFor) void fromLibrary(libFor, row.path); }} />
+      {editing && (
+        <Suspense fallback={null}>
+          <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history
+            onClose={() => setEdit(null)}
+            onPhoto={(photo) => savePhoto(editing, photo)}
+            onPath={(path) => apply(editing, path)}
+            onLibrary={() => { setLibFor(editing); setEdit(null); }}
+            next={nextP ? asTarget(nextP) : null}
+            onNext={() => { if (nextId) setEdit((e) => (e ? { ...e, id: nextId, file: null } : e)); }} />
+        </Suspense>
+      )}
     </div>
   );
 }

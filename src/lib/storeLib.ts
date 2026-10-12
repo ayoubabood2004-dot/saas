@@ -21,6 +21,14 @@ export function productImageUrl(path: string | null | undefined): string | null 
   return `${SUPA_URL.replace(/\/+$/, "")}/storage/v1/object/public/product-images/${path}`;
 }
 
+/** مسارُ صورة **البطاقة** — الموضعُ الوحيدُ الذي يعرف قاعدةَ النسختين (متجر v1): المرفوعُ من
+ *  المحرّر `…hd.jpg` ومصغّرتُه أختُه `…sm.jpg`؛ والقديمُ (بلا .hd) والمكتبةُ و`data:` كما هي —
+ *  لا ملفَّ يُعاد ترميزُه ولا يُنقل (O4). ويومَ يُعتمد تحويلُ الخادم (render/image) يتغيّر هنا وحده. */
+export function cardImagePath(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return path.endsWith(".hd.jpg") ? `${path.slice(0, -".hd.jpg".length)}.sm.jpg` : path;
+}
+
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** تصنيفاتُ store_front (0234) بشكلٍ واحدٍ للطرفين (storeApi ونصفُ repo السحابيّ) — نسختان تنحرفان:

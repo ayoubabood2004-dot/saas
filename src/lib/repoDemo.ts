@@ -178,7 +178,7 @@ function demoActorName(): string | null {
 
 /** لا `data:` بسجلّ الجهاز.
  *
- *  الصورةُ تُخزَّن تجريبياً **عنواناً مضمَّناً** (`uploadProductImage` ترجع
+ *  الصورةُ تُخزَّن تجريبياً **عنواناً مضمَّناً** (`uploadProductPhoto` ترجع
  *  `upload.dataUrl`)، فنسخُها بالسجلّ يأكل حصّةَ الجهاز بلا أن يراها أحد:
  *  `activityBrief` تُسقط ما فوق مئتَي حرفٍ أصلاً، والسجلُّ لا يعرض الحقلَ
  *  الخام. أي أننا كنّا ندفع بالحصّة ثمنَ بايتاتٍ لا تُقرأ.
@@ -1836,14 +1836,8 @@ const demoRepo = {
     return (loadDB().products ?? []).filter((p) => p.image_path === path).length;
   },
   /** صورة المنتج (0174) — تجريبياً: لا مخزنَ ملفات، فيرجع data URL المضغوط
-   *  ليُحفظ بـ`image_path` كما هو. الشاشات لا تفرّق بينه وبين مسار سحابيّ. */
-  async uploadProductImage(_clinicId: string | null, _productId: string, upload: { blob: Blob; dataUrl: string }): Promise<string> {
-    void _clinicId; void _productId;
-    // نفسُ حارس النوع بالضبط: حارسٌ لا يوجد بالتجريبيّ حارسٌ لم يُفحص.
-    assertUploadableImage(upload);
-    return upload.dataUrl;
-  },
-  /** الصورةُ بنسختين (متجر v1) — تجريبياً: لا دلوَ، فالكاملةُ عنوانٌ مضمَّن بحجم اليوم (٨٠٠ — حصّةُ
+   *  ليُحفظ بـ`image_path` كما هو. الشاشات لا تفرّق بينه وبين مسار سحابيّ.
+   *  الصورةُ بنسختين (متجر v1) — تجريبياً: لا دلوَ، فالكاملةُ عنوانٌ مضمَّن بحجم اليوم (٨٠٠ — حصّةُ
    *  الجهاز ٥ ميغا) ولا مصغّرة (`cardImagePath` تمرّر `data:` كما هو). ونفسُ حارس النوع للاثنتين،
    *  وتُسجَّل بالصور السابقة (O4) فـ«صور سابقة» تعمل هنا كالسحابيّ. */
   async uploadProductPhoto(_clinicId: string | null, productId: string, photo: { full: { blob: Blob; dataUrl: string }; thumb: { blob: Blob; dataUrl: string } | null }): Promise<string> {
