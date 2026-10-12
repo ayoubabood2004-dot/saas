@@ -730,6 +730,10 @@ console.log("▸ متجر v1 — الإدارة: الوصفُ ٢٠٠٠، الت�
   check("O5: الرابطُ والتشغيلُ للمدير — يُقالان ولا يُخفيان",
     /const ownerOnly = role !== "manager";/.test(cs) && /readOnly=\{ownerOnly\}/.test(cs) && /disabled=\{saving \|\| ownerOnly/.test(cs)
     && cs.includes("data-ownernote") && cs.includes("data-ownergate"));
+  // صفحةُ الزائر: حكمُ ت١٢ («لا تصفّحَ بالفئة») استُبدل بقرار المالك (O1/O2) — لا يبقى نصُّه يناقض الرفوف.
+  const sfPage = readFileSync("src/pages/Storefront.tsx", "utf8");
+  check("Storefront: حكمُ ت١٢ بالامتناع رُفع ونُقض بقرارٍ مكتوب", !/ت١٢: حكمٌ بالامتناع/.test(sfPage) && /متجر v1 \(O1\/O2\)/.test(sfPage));
+  check("  والعارضُ (ZoomViewer) بلا framer-motion", !/from "framer-motion"/.test(readFileSync("src/components/store/ZoomViewer.tsx", "utf8")));
   check("الألواحُ رفاقٌ معلَنون بنطاق cat", (() => {
     const hp = JSON.parse(readFileSync("src/i18n/hot-paths.json", "utf8")).owned.cat;
     return hp?.owner === "src/pages/ClinicStore.tsx" && files.every((f) => hp.with.includes(`${dir}/${f}`));
@@ -772,20 +776,21 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
    * حارسٌ يعاقب التوثيق. فالمسحُ يجري على الشِفرة بعد نزع التعليقات. */
   const frontCode = front.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 
+  /* متجر v1: الصفحاتُ صارت لكلّ رفّ (loadShelf) — والصمّامُ نفسُه لكلٍّ منها. */
   check("صمّامُ «عرض المزيد»: hasMore يتبع ما أُضيف فعلاً",
-    /setHasMore\(more\.length > 0 && added > 0\)/.test(frontCode));
-  check("  و`added` يُحسب من الصفوف الجديدة بعد إسقاط المكرّرات",
-    /const fresh = more\.filter\([\s\S]{0,80}added = fresh\.length/.test(frontCode));
-  check("تنظيفُ السلّة مشروطٌ باكتمال التشكيلة لا بأوّل صفحة",
-    /if \(state !== "open" \|\| hasMore \|\| loadingMore \|\| moreFailed\) return;/.test(frontCode));
+    /const hasMore = first \? more\.length === limit : more\.length > 0 && fresh\.length > 0;/.test(frontCode));
+  check("  و`fresh` يُحسب من الصفوف الجديدة بعد إسقاط المكرّرات",
+    /const seen = new Set\(c\.rows\.map\(\(x\) => x\.id\)\);\s*const fresh = more\.filter\(\(x\) => !seen\.has\(x\.id\)\);/.test(frontCode));
+  check("تنظيفُ السلّة مشروطٌ باكتمال «الكل» لا بأوّل صفحة",
+    /if \(state !== "open" \|\| !allShelf\.loaded \|\| allShelf\.hasMore \|\| allShelf\.loading \|\| allShelf\.failed\) return;/.test(frontCode));
   check("  وما شِيل يُقال بالاسم لا يُحذف بصمت",
     frontCode.includes("setCartTrimmed(") && frontCode.includes("data-carttrimmed") && frontCode.includes("sf.cartTrimmed"));
-  check("العددُ يُخفى ما دامت التشكيلةُ ناقصة",
-    /hasMore \|\| loadingMore \? "" : `\$\{formatNum\(shown\.length\)\}/.test(frontCode));
+  check("العددُ يُخفى ما دام الرفُّ ناقصاً",
+    /\{complete \? `\$\{formatNum\(shown\.length\)\}/.test(frontCode) && /const complete = cur\.loaded && !cur\.hasMore && !cur\.loading;/.test(frontCode));
   check("بلاطةُ الرفّ أرضٌ دائمة خلف كلّ صورة (لا شرط !hasImg)",
     !/\bhasImg\b/.test(frontCode) && /shelfLabel\(p\.name\)/.test(frontCode));
   check("سطرُ السلّة يعرض صورةَ المنتج فوق بلاطته",
-    /const cimg = productImageUrl\(p\.image_path\);/.test(frontCode)
+    /const cimg = productImageUrl\(cardImagePath\(p\.image_path\)\);/.test(frontCode)
     && /shelfMonogram\(p\.name\)[\s\S]{0,200}\{cimg && <img/.test(frontCode));
   check("  وورقةُ التفاصيل بـobject-contain لا object-cover",
     !/object-cover/.test(frontCode) && /shelfLook\(detail\.name\)/.test(frontCode));

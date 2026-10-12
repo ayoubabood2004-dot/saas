@@ -37,7 +37,7 @@ const SHELL = `<!doctype html><html lang="ar" dir="rtl"><head>
     <meta property="og:title" content="متجر العيادة" />
     <meta property="og:image" content="https://shell.invalid/og.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
-  </head><body></body></html>`;
+  </head><body><div id="root"></div></body></html>`;
 
 let frontBody = null;       // ما يرجعه store_front (null ⇒ فشلُ الطلب)
 let catalogBody = null;     // وما يرجعه store_catalog
@@ -127,6 +127,24 @@ const HUGE = Array.from({ length: 400 }, (_, i) => ({ id: `p${i}`, name: "م".re
 const huge = await render({ ok: true, name: "عيادة ضخمة", logo_url: null }, "alrahma", HUGE);
 check("وبذرةٌ فوق ٦٤ كيلو تُترك — مستندٌ منتفخٌ يبطئ أكثرَ ممّا يسرّع", bootOf(huge) === null);
 check("  والصفحةُ تبقى بوسومها", metaOf(huge, "og:title") === "عيادة ضخمة — المتجر");
+
+/* متجر v1 (N9): البذرةُ تحمل رفوفَ العيادة، والمرسومُ يحمل النبذةَ والرقائقَ وصورةَ البطاقة —
+ * فما يرسمه React بعدها يشبه ما استبدله (لا ومضة)، ولا يطلب المرسومُ ملفّاً والمركَّبُ آخر. */
+console.log("▸ متجر v1: الرفوف والنبذة وصورةُ البطاقة بالمرسوم");
+const CATS = [{ id: "c1", name: "أغذية", icon: "food", n: 3 }, { id: "c2", name: "<b>عروض</b>", icon: "gift", n: 1 }];
+const V1 = [{ id: "p9", name: "علبة", price: 5000, available: true, image_path: `${CLINIC}/p9-k1.hd.jpg`, category: null, subcategory: null, descr: null, featured: false }];
+const v1 = await render({ ok: true, name: "عيادة الرفوف", logo_url: null, bio: "أغذية <و> مستلزمات\nتوصيل", cats: CATS }, "alrahma", V1);
+const shelfHtml = v1.split('<div id="root">')[1] ?? "";
+check("البذرةُ تحمل front.cats كما وصلت", JSON.stringify(bootOf(v1)?.front?.cats) === JSON.stringify(CATS));
+check("  وشريطُ الرقائق مرسوم: «الكل» فعّالة ثم الرفوفُ بترتيبها",
+  /bg-brand-600 text-white">الكل<\/span>/.test(shelfHtml) && shelfHtml.indexOf("🍖 أغذية") > 0 && shelfHtml.indexOf("🍖 أغذية") < shelfHtml.indexOf("🎁 &lt;b&gt;عروض&lt;/b&gt;"));
+check("  واسمُ الرفّ مهرَّب (لا وسمَ يُحقن)", !shelfHtml.includes("<b>عروض</b>"));
+const noCats = await render({ ok: true, name: "عيادة بلا رفوف", logo_url: null, cats: [] }, "alrahma", V1);
+check("  وبلا تصنيفات ⇒ لا شريطَ رقائق", !(noCats.split('<div id="root">')[1] ?? "").includes(">الكل</span>"));
+check("صورةُ .hd.jpg تُرسم بمصغّرتها .sm.jpg (نفسُ رابط React)",
+  shelfHtml.includes(`${SUPA}/storage/v1/object/public/product-images/${CLINIC}/p9-k1.sm.jpg`) && !shelfHtml.includes("p9-k1.hd.jpg"));
+check("النبذةُ مرسومةٌ تحت الاسم ومهرَّبة", /<p class="mt-0\.5 line-clamp-2 whitespace-pre-line[^"]*">أغذية &lt;و&gt; مستلزمات\nتوصيل<\/p>/.test(shelfHtml));
+check("  وخانةُ بحثٍ خاملة (لا تُكتب ولا تُركَّز قبل React)", /<input readonly tabindex="-1" aria-hidden="true" placeholder="دوّر على منتج…"/.test(shelfHtml));
 
 console.log(fails ? `\n✗ og-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ og-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

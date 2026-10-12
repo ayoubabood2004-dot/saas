@@ -27,7 +27,7 @@
  *      طريقُهنّ إلى المسار الحقيقي.
  *   ٣) بلا شعار ⇒ `/og.jpg` كما بالقالب — استرجاعُ ما كان يُمحى لا أكثر.
  */
-import { shelfLook, shelfLabel } from "../src/lib/storeLib";
+import { cardImagePath, catGlyph, shapeFrontCats, shelfLook, shelfLabel } from "../src/lib/storeLib";
 
 export const config = { runtime: "edge" };
 
@@ -62,11 +62,14 @@ type Row = { id: string; name: string; price: number; available?: boolean; image
 const esc2 = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const iqd = (n: number) => `${new Intl.NumberFormat("en-US").format(Math.round(Number(n) || 0))} د.ع`;
 
-function paintShelf(front: { name?: string }, rows: Row[], supaUrl: string): string {
+function paintShelf(front: { name?: string; bio?: string | null; cats?: unknown }, rows: Row[], supaUrl: string): string {
   const cards = rows.slice(0, PAINT_ROWS).map((p) => {
     const shelf = shelfLook(p.name);
-    const img = p.image_path && !p.image_path.startsWith("data:")
-      ? `<img src="${esc2(`${supaUrl}/storage/v1/object/public/product-images/${p.image_path}`)}" alt="" width="400" height="400" class="absolute inset-0 h-full w-full object-contain p-1.5" />`
+    // صورةُ البطاقة نفسُها التي يطلبها React (cardImagePath): المصغّرةُ لصورةٍ من المحرّر — فالمرسومُ
+    // والمركَّبُ يطلبان رابطاً واحداً، لا تنزيلين ولا ومضة.
+    const card = cardImagePath(p.image_path);
+    const img = card && !card.startsWith("data:")
+      ? `<img src="${esc2(`${supaUrl}/storage/v1/object/public/product-images/${card}`)}" alt="" width="400" height="400" class="absolute inset-0 h-full w-full object-contain p-1.5" />`
       : "";
     return `<div class="relative flex flex-col overflow-hidden rounded-2xl border border-line bg-surface-1${p.available === false ? " opacity-60" : ""}">
       <div class="relative grid aspect-square place-items-center overflow-hidden ${shelf.tile}">
@@ -83,13 +86,29 @@ function paintShelf(front: { name?: string }, rows: Row[], supaUrl: string): str
     </div>`;
   }).join("");
 
+  /* متجر v1: النبذةُ تحت الاسم، وشريطُ رقائق الرفوف («الكل» فعّالة) حين للعيادة تصنيفات، وخانةُ
+   * بحثٍ خاملة — بأصناف Storefront حرفياً: ما يستبدله React يشبه ما استبدله. */
+  const bio = (front.bio ?? "").trim();
+  const cats = shapeFrontCats(front.cats);
+  // صنفان حرفيّان لا قالبٌ واحد: الحارسُ (store-paint-guard) يقارن ما بين علامتَي class كلمةً كلمة، والقالبُ يُفلت منه.
+  const chipOn = (label: string) => `<span class="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition bg-brand-600 text-white">${esc2(label)}</span>`;
+  const chipOff = (label: string) => `<span class="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition border border-line bg-surface-1 text-ink-muted">${esc2(label)}</span>`;
+  const chips = cats.length
+    ? `<div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">${chipOn("الكل")}${cats.map((c) => chipOff(`${catGlyph(c.icon)} ${c.name}`)).join("")}</div>`
+    : "";
+
   return `<div dir="rtl" class="min-h-screen bg-surface pb-28">
     <header class="bg-brand-700 px-4 pb-3 pt-4 text-white">
       <div class="mx-auto flex max-w-3xl items-center gap-3">
         <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/15"></span>
-        <div class="min-w-0 flex-1"><h1 class="line-clamp-2 font-display text-lg font-bold leading-tight">${esc2(front.name)}</h1></div>
+        <div class="min-w-0 flex-1"><h1 class="line-clamp-2 font-display text-lg font-bold leading-tight">${esc2(front.name ?? "")}</h1>${bio ? `<p class="mt-0.5 line-clamp-2 whitespace-pre-line text-xs leading-snug text-white/85">${esc2(bio)}</p>` : ""}</div>
       </div>
     </header>
+    <div class="sticky top-0 z-20 border-b border-line bg-surface/95 px-4 py-3 backdrop-blur">
+      <div class="mx-auto max-w-3xl space-y-2.5">
+        <div class="relative"><input readonly tabindex="-1" aria-hidden="true" placeholder="دوّر على منتج…" class="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none" /></div>${chips}
+      </div>
+    </div>
     <div class="mx-auto max-w-3xl px-4 pt-3">
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">${cards}</div>
     </div>
@@ -141,7 +160,7 @@ export default async function handler(req: Request): Promise<Response> {
       rpc("store_catalog", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 }).catch(() => null),
     ]);
     if (!r.ok) return asHtml(shell, 60);
-    const front = (await r.json()) as { ok?: boolean; name?: string; bio?: string; logo_url?: string | null };
+    const front = (await r.json()) as { ok?: boolean; name?: string; bio?: string; logo_url?: string | null; cats?: unknown };
     if (!front?.ok || !front.name) return asHtml(shell, 60);
     const catalog = rc && rc.ok ? await rc.json().catch(() => null) : null;
 

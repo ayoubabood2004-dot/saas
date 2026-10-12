@@ -317,7 +317,11 @@
     "addrPh": "Delivery address * (area, nearest landmark…)",
     "loadFailedTitle": "We couldn't open the store",
     "loadFailedBody": "A connection problem stopped the page from loading — the store itself is fine. Check your internet and try again.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "catGone": "That category is no longer available — back to All.",
+    "shelfFailed": "Couldn't load this shelf",
+    "catEmpty": "Nothing in this category right now",
+    "zoom": "Enlarge photo"
   },
   "track": {
     "staleDay": "A full day with no decision",

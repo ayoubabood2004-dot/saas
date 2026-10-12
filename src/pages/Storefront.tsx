@@ -18,7 +18,9 @@ import {
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { storeApi, readStoreBoot, pagePainted } from "@/lib/storeApi";
-import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
+import { cardImagePath, catGlyph, isValidCustomerPhone, mergeKnown, orderShelf, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
+import { useLayers } from "@/lib/storeLayers";
+import { ZoomViewer } from "@/components/store/ZoomViewer";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
@@ -51,6 +53,18 @@ const ERROR_MSG: Record<string, string> = {
 /** عنوانُ التبويب بموضعٍ واحد — تكتبه البذرةُ والنداءُ كلاهما. */
 const pageTitle = (name: string) => `${name} — المتجر`;
 
+/* ── الرفوف (متجر v1) ────────────────────────────────────────────────────
+ * رفٌّ لكلّ رقاقة: «الكل» (store_catalog) وكلُّ تصنيفٍ (store_catalog_in — التصفيةُ بالخادم).
+ * كلٌّ بصفحاته: الأولى ٢٤، ثم ٦٠ بـ«عرض المزيد»، والتقدّمُ بما **وصل**. والعددُ لا يُقال إلا
+ * لرفٍّ كامل، و«ما لكينا» لا تُقال قبل أن يكتمل — قائمةٌ ناقصةٌ تُصدَّق (CLAUDE.md). */
+interface Shelf { rows: StoreCatalogItem[]; loaded: boolean; hasMore: boolean; loading: boolean; failed: boolean }
+const BLANK: Shelf = { rows: [], loaded: false, hasMore: false, loading: false, failed: false };
+/** صورةُ البطاقة مصغّرتُها؛ وإن فشلت **فمرّةً واحدة** للكاملة، ثم تختفي فتظهر البلاطةُ تحتها. */
+const swapOnce = (full: string | null) => (e: React.SyntheticEvent<HTMLImageElement>) => {
+  const el = e.currentTarget;
+  if (full && el.dataset.fb !== "1" && el.src !== full) { el.dataset.fb = "1"; el.src = full; } else el.hidden = true;
+};
+
 /**
  * يُبقي عنصراً مركَّباً حتى تنتهي حركةُ خروجه — بديلُ `AnimatePresence` بلا مكتبة.
  *
@@ -81,17 +95,22 @@ export function Storefront() {
   /** إعادة محاولة التحميل الأول: يزيد فيعيد تشغيل مؤثّر الجلب. */
   const [tries, setTries] = useState(0);
   const [front, setFront] = useState<StoreFrontInfo | null>(null);
-  const [catalog, setCatalog] = useState<StoreCatalogItem[]>([]);
+  /** الرفوف: «all» وكلُّ تصنيفٍ فُتح — بصفحاتها. */
+  const [shelves, setShelves] = useState<Record<string, Shelf>>({});
+  const shelvesRef = useRef(shelves);
+  shelvesRef.current = shelves;
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("all");
+  /** تصنيفٌ شيل بين فتح الصفحة والضغط عليه (cat_gone): يُقال ويُرجع لـ«الكل». */
+  const [catGone, setCatGone] = useState(false);
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
-  const [sheet, setSheet] = useState<"none" | "cart" | "checkout">("none");
+  /* الطبقاتُ (الورقة، العارض، السلّة، الإتمام) مداخلُ بسجلّ التصفّح — زرُّ الرجوع يُغلقها
+   * بالترتيب ولا يُخرج من المتجر (storeLayers). والمنتجُ المفتوح بذاكرة React. */
+  const L = useLayers();
   /** ورقة تفاصيل منتج (المرحلة ٣): صورة كبيرة ووصف كامل وعدّاد كمية. */
   const [detail, setDetail] = useState<StoreCatalogItem | null>(null);
   const [sort, setSort] = useState<"default" | "priceAsc" | "priceDesc">("default");
   const [placed, setPlaced] = useState<{ order_no: string; total: number } | null>(null);
-  // الكاتلوج يتحمّل بصفحات (٦٠ بالطلب): أول رسم خفيف على موبايل بطيء،
-  // و«عرض المزيد» يجيب الباقي. hasMore = آخر صفحة رجعت ممتلئة.
   /* أوّلُ صفحةٍ أخفُّ (٢٤) لأن الزائرَ يدفع بايتاتِها قبل أن يرى منتجاً، ثمّ
    * صفحاتٌ أكبر لمن يكمّل — فالكلفةُ على من طلبها لا على كلّ من فتح الرابط. */
   const PAGE = 24;
@@ -100,10 +119,6 @@ export function Storefront() {
    * يراها الزبون. (رُئيت بلقطةٍ عند ٦٠٠ms بشبكةٍ مبطّأة قبل أن يُطفأ.) */
   const noIntro = useRef(pagePainted());
   const PAGE_MORE = 60;
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  /** فشلَ جلبُ صفحةٍ تالية؟ — كان يُخفي الزرَّ نهائياً فتبدو التشكيلةُ منتهية. */
-  const [moreFailed, setMoreFailed] = useState(false);
 
   /* لغةُ الزائر: هذه الصفحة عربيةٌ صلبةٌ عمداً (زبائنُ عيادةٍ عراقية)، فكلُّ
    * نصٍّ يمرّ من `t(` لازم يخرج عربياً — وقد خرج إنكليزياً فعلاً لزرّ «شوف
@@ -111,6 +126,19 @@ export function Storefront() {
    * الشائعة مغطّاة، وهذا النداءُ يبقى للحالات التي لا يغطّيها (انظر التعليل
    * بـportal.ts). */
   useEffect(() => { preferArabicForVisitor(); }, []);
+  /* إعادةُ تحميلٍ والورقةُ مفتوحة: الطبقاتُ باقيةٌ بالسجلّ والمنتجُ لا — نرجع للأساس، لا ضغطاتِ رجوعٍ ميتة.
+   * **مرّةً واحدة** (مرجعٌ يحرسها): StrictMode يشغّل أثرَ التركيب مرّتين بنفس الطبقات القديمة، فكان
+   * go(-2) يتكرّر ويُخرج الزبونَ من المتجر كلِّه — قيس بالمتصفّح. */
+  const unwound = useRef(false);
+  useEffect(() => {
+    if (unwound.current || !L.layers.length) return;
+    unwound.current = true;
+    L.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setShelf = (key: string, next: Partial<Shelf>) =>
+    setShelves((s) => ({ ...s, [key]: { ...(s[key] ?? BLANK), ...next } }));
 
   useEffect(() => {
     let alive = true;
@@ -120,15 +148,18 @@ export function Storefront() {
        * المستندُ مخبوءٌ خمسَ دقائق بالحافة — فالنداءُ يمضي بعدها ويستبدلها. */
       const boot = readStoreBoot(slug);
       if (boot && alive) {
-        setFront(boot.front); setCatalog(boot.catalog);
-        setHasMore(boot.catalog.length === PAGE); setState("open");
+        setFront(boot.front);
+        setShelf("all", { rows: boot.catalog, loaded: true, hasMore: boot.catalog.length === PAGE });
+        setState("open");
         document.title = pageTitle(boot.front.name);
       }
       try {
         const [f, c] = await Promise.all([storeApi.storeFrontPublic(slug), storeApi.storeCatalogPublic(slug, PAGE, 0)]);
         if (!alive) return;
         if (!f) { setState("closed"); return; }
-        setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
+        setFront(f);
+        setShelf("all", { rows: c, loaded: true, hasMore: c.length === PAGE, failed: false });
+        setState("open");
         document.title = pageTitle(f.name);
         /* القياسُ بعد أن يُفتح المتجرُ فعلاً لا عند تركيب المكوّن: رابطٌ مغلقٌ
          * أو فشلُ شبكةٍ ليس زيارةً، وعدُّه يرفع بسطَ القمع بمن لم يرَ رفّاً.
@@ -146,50 +177,84 @@ export function Storefront() {
       }
     })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, tries]);
 
-  const loadMore = async () => {
-    if (loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const more = await storeApi.storeCatalogPublic(slug, PAGE_MORE, catalog.length);
-      // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
-      let added = 0;
-      setCatalog((cur) => {
-        const seen = new Set(cur.map((x) => x.id));
-        const fresh = more.filter((x) => !seen.has(x.id));
-        added = fresh.length;
-        return [...cur, ...fresh];
-      });
-      /* التقدّمُ بما **وصل** لا بما طُلب — نفسُ درس `allPages`: صفحةٌ ناقصة عن
-       * سقفٍ خادميٍّ أقلَّ من PAGE كانت تُقرأ «انتهت التشكيلة». */
-      /* و`added > 0` صمّامٌ لا تجميل: لو رجعت صفحةٌ كلُّها مكرّرات — وهو ما
-       * يصنعه ترتيبٌ غيرُ حاسم (0182) — لبقيت الرايةُ مرفوعةً وطولُ الكتلوج
-       * كما هو، فالإزاحةُ نفسُها والنداءُ يعيد نفسَه بلا نهاية على دالّةٍ
-       * عامّة نزعت 0178 حاجزَها. سطرٌ واحد يقفل الحلقة. */
-      setHasMore(more.length > 0 && added > 0);
-      setMoreFailed(false);
-    } catch {
-      // إخفاءُ الزرّ يجعل الفشلَ يبدو نهايةَ التشكيلة — نُبقيه ونقول «تعذّر».
-      setMoreFailed(true);
-    }
-    finally { setLoadingMore(false); }
+  /** التصنيفُ شيل (أرشفةٌ، إخفاءٌ، أو أُفرغ بين فتح الصفحة والضغطة): يُقال، و«الكل» مكانَه، والرقائقُ تُقرأ من جديد. */
+  const onCatGone = (key: string) => {
+    setCatGone(true);
+    setCat("all");
+    setShelves((s) => { const n = { ...s }; delete n[key]; return n; });
+    storeApi.storeFrontPublic(slug).then((f) => { if (f) setFront(f); }).catch(() => { /* الرقائقُ القديمة تبقى — والضغطةُ تقول cat_gone */ });
   };
 
-  /* بحثٌ فوق كتالوجٍ جزئيّ يحكم «ما لكينا شيء» على ما حُمّل وحده. فقبل إعلان
-   * الخيبة نُنزل بقيةَ الصفحات — لا حكمَ نهائياً فوق قائمةٍ ناقصة. */
+  /** الصفحةُ التالية لرفٍّ (أو الأولى لتصنيفٍ يُفتح). */
+  const loadShelf = async (key: string) => {
+    const cur = shelvesRef.current[key] ?? BLANK;
+    if (cur.loading) return;
+    const first = !cur.loaded;
+    setShelf(key, { loading: true, failed: false });
+    try {
+      const limit = first ? PAGE : PAGE_MORE;
+      const offset = first ? 0 : cur.rows.length;
+      const more = key === "all"
+        ? await storeApi.storeCatalogPublic(slug, limit, offset)
+        : await storeApi.storeCatalogInPublic(slug, key, limit, offset);
+      setShelves((s) => {
+        const c = s[key] ?? BLANK;
+        // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
+        const seen = new Set(c.rows.map((x) => x.id));
+        const fresh = more.filter((x) => !seen.has(x.id));
+        /* التقدّمُ بما **وصل** لا بما طُلب — نفسُ درس `allPages`: صفحةٌ ناقصة عن
+         * سقفٍ خادميٍّ أقلَّ من PAGE كانت تُقرأ «انتهت التشكيلة». و`fresh.length > 0`
+         * صمّامٌ لا تجميل: صفحةٌ كلُّها مكرّرات (ترتيبٌ غيرُ حاسم، 0182) كانت تعيد
+         * النداءَ نفسَه بلا نهاية على دالّةٍ عامّة. */
+        const hasMore = first ? more.length === limit : more.length > 0 && fresh.length > 0;
+        return { ...s, [key]: { rows: [...c.rows, ...fresh], loaded: true, hasMore, loading: false, failed: false } };
+      });
+    } catch (e) {
+      if (key !== "all" && (e as Error)?.message === "cat_gone") { onCatGone(key); return; }
+      // إخفاءُ الزرّ يجعل الفشلَ يبدو نهايةَ التشكيلة — نُبقيه ونقول «تعذّر».
+      setShelf(key, { loading: false, failed: true });
+    }
+  };
+
+  const pickCat = (key: string) => {
+    playTap();
+    setCatGone(false);
+    setCat(key);
+    if (key !== "all") track("store_cat", { slug, c: key }, true);
+    if (!(shelvesRef.current[key]?.loaded)) void loadShelf(key);
+  };
+
+  const openDetail = (p: StoreCatalogItem) => { playTap(); setDetail(p); L.open("sheet"); };
+
+  const cur = shelves[cat] ?? BLANK;
+  const allShelf = shelves.all ?? BLANK;
+  /* بحثٌ فوق رفٍّ جزئيّ يحكم «ما لكينا شيء» على ما حُمّل وحده. فقبل إعلان
+   * الخيبة نُنزل بقيةَ صفحاتِ **هذا الرفّ** — لا حكمَ نهائياً فوق قائمةٍ ناقصة. */
   const searching = q.trim().length > 0;
   useEffect(() => {
-    if (!searching || !hasMore || loadingMore || moreFailed) return;
-    void loadMore();
+    if (!searching || !cur.loaded || !cur.hasMore || cur.loading || cur.failed) return;
+    void loadShelf(cat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searching, hasMore, loadingMore, moreFailed]);
+  }, [searching, cat, cur.loaded, cur.hasMore, cur.loading, cur.failed]);
+  /* البحثُ يُقاس بعد توقّفٍ (١٫٣ث) بحرفين فأكثر — **مرّةً**، و**بلا نصّ البحث**: القياسُ يسأل
+   * «هل يبحثون» لا «عمّا». */
+  useEffect(() => {
+    if (q.trim().length < 2) return;
+    const tm = window.setTimeout(() => track("store_search", { slug }, true), 1300);
+    return () => window.clearTimeout(tm);
+  }, [q, slug]);
 
   useEffect(() => { saveCart(slug, cart); }, [slug, cart]);
 
-  const byId = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
+  /* السلّةُ والمجموعُ والإتمامُ يسعّرون من **كلّ ما وصل** (mergeKnown): مادّةٌ من صفحةٍ
+   * ثانيةٍ لتصنيفٍ لم تصلها «الكل» بعد كانت تُسعَّر صفراً وتختفي من السلّة. */
+  const byId = useMemo(() => mergeKnown(Object.values(shelves).map((s) => s.rows)), [shelves]);
+  const allById = useMemo(() => new Map(allShelf.rows.map((c) => [c.id, c])), [allShelf.rows]);
   /* سلةٌ محفوظةٌ من زيارةٍ سابقة: تُنظَّف ممّا انسحب من الكتلوج — **بعد أن
-   * يكتمل الكتلوج لا قبله**.
+   * يكتمل رفُّ «الكل» لا قبله**.
    *
    * كانت تجري على `state === "open"`، أي بعد الصفحة الأولى وحدها (٢٤ منتجاً)،
    * فكلُّ سطرِ سلّةٍ منتجُه بالصفحة الثانية يُحذف صامتاً: الزبونُ يعود لسلّةٍ
@@ -197,57 +262,37 @@ export function Storefront() {
    * أخطرُ من خطأٍ ظاهر». مقيسٌ بمتصفّحٍ حقيقيّ: سلّةٌ من سطرين تصير سطراً. */
   const [cartTrimmed, setCartTrimmed] = useState<string[]>([]);
   useEffect(() => {
-    if (state !== "open" || hasMore || loadingMore || moreFailed) return;
+    if (state !== "open" || !allShelf.loaded || allShelf.hasMore || allShelf.loading || allShelf.failed) return;
     setCart((c) => {
-      const gone = c.filter((l) => !byId.get(l.id)?.available);
+      const gone = c.filter((l) => !allById.get(l.id)?.available);
       if (!gone.length) return c;
       setCartTrimmed(gone.map((l) => byId.get(l.id)?.name ?? l.id));
-      return c.filter((l) => byId.get(l.id)?.available);
+      return c.filter((l) => allById.get(l.id)?.available);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, hasMore, loadingMore, moreFailed]);
+  }, [state, allShelf.loaded, allShelf.hasMore, allShelf.loading, allShelf.failed]);
 
-  /* ── ت١٢: حكمٌ بالامتناع — لا يُبنى تصفّحُ المتجر على `category` ────────
-   *
-   * الشريطُ أدناه موجودٌ ويعمل، **ولا يُوسَّع**: لا شريطَ لاصقاً، ولا صفحةَ
-   * فئة، ولا حملةَ إغناءِ تصنيف. المقيسُ على الإنتاج (أعيد قياسُه مع 0190):
-   *   • عيادةُ الـ٩٦٢ منتجاً: **٨٦٣ بلا فئة** — زرٌّ واحدٌ «منوّعات» يحوي ٩٠٪.
-   *   • والثلاثُ كلُّهنّ **خمسُ فئاتٍ متمايزة** لا أكثر (القائمةُ مغلقة).
-   *   • والبديلُ `section_id` أسوأ تفاوتاً: ٥١٣/٩٦٢ عند واحدة و**١٤/٧٣٠**
-   *     عند أخرى.
-   * فالتصفّحُ بالفئات يَعِد بترتيبٍ لا تملكه هذه الكتلوجات. الترتيبُ الصادقُ
-   * لها: البحثُ المطبَّع (قائمٌ، ويمرّ من `searchable` على الطرفين) + شبكةٌ
-   * المختارُ فيها أوّلاً والنافدُ آخِراً.
-   *
-   * والشريطُ يُخفي نفسَه حين لا يفرّق (`cats.length > 1`) — وهذا كلُّ ما
-   * يستحقّه. من أراد نقضَ الحكم فليأتِ بقياسٍ جديدٍ لا برأي.
+  /* ── متجر v1 (O1/O2): التصفّحُ برفوف العيادة ─────────────────────────────
+   * كان هنا حكمٌ بالامتناع (ت١٢): «لا يُبنى تصفّحُ المتجر على `category`» — والمقيسُ معه:
+   * عيادةُ الـ٩٦٢ منتجاً ٨٦٣ منها بلا فئة، فزرٌّ واحدٌ «منوّعات» يحوي ٩٠٪، والفئاتُ خمسٌ
+   * مغلقة. كان صحيحاً لعمود المنتج. والجديدُ بقرار المالك (١٢/١٠): التصنيفاتُ **للعيادة**
+   * (0233) — تسمّيها وترتّبها وتؤشّر موادَّها (المادّةُ بأكثر من تصنيف)، والرقائقُ من
+   * `front.cats` بترتيبها: الحيُّ غيرُ المخفيّ الذي فيه مادّةٌ معروضة. و«الكل» يبقى أوّلاً
+   * وفيه ما لا تصنيفَ له. والتصفيةُ بالخادم (store_catalog_in) — لا قائمةٌ جزئيةٌ تُصفّى هنا.
+   * والقياسُ بعد ثلاثين يوماً: store_cat وstore_search بـlanding_events (الاستعلامُ بـ
+   * docs/store-repair-plan.md) — من أراد نقضَ القرار فليأتِ بقياسٍ لا برأي.
    */
-  const cats = useMemo(() => {
-    const seen = new Set<string>();
-    for (const c of catalog) seen.add(c.category ?? "other");
-    return Array.from(seen);
-  }, [catalog]);
-
   const shown = useMemo(() => {
     /* الطرفان يمرّان من `searchable`: من يكتب «ادويه» يلقى «أدوية»، ومن يكتب
      * «٢٤٧» يلقى «247». تطبيعُ طرفٍ واحد أسوأ من لا تطبيع — يفشل بصمتٍ ويبدو
      * أنه يعمل، فيرى الزبونُ «ما لكينا» عن بضاعةٍ على الرفّ ويصدّقها. */
     const ql = searchable(q);
-    const list = catalog.filter((c) =>
-      (cat === "all" || (c.category ?? "other") === cat) &&
-      (!ql || searchable(c.name).includes(ql) || searchable(c.subcategory).includes(ql) || searchable(c.descr).includes(ql)));
-    /* ترتيبٌ واحدٌ يحكم الشبكة كلَّها:
-     *   • النافدُ آخِراً **دائماً** — يبقى ظاهراً (إخفاؤه يجعل التشكيلة تبدو
-     *     أصغر ويدفع الزبونَ يدوّر على شيءٍ رآه أمس) لكنه لا يتصدّر الرفّ.
-     *   • والمختارُ أوّلاً حين لا بحثَ ولا فئةَ ولا فرزَ سعر — فبحثُ الزبون
-     *     أولى من تسويقنا. */
-    const rank = (x: StoreCatalogItem) => (x.available ? 0 : 1);
-    const arr = [...list];
-    if (sort === "priceAsc") arr.sort((a, b) => rank(a) - rank(b) || a.price - b.price);
-    else if (sort === "priceDesc") arr.sort((a, b) => rank(a) - rank(b) || b.price - a.price);
-    else arr.sort((a, b) => rank(a) - rank(b) || Number(!!b.featured) - Number(!!a.featured));
-    return arr;
-  }, [catalog, q, cat, sort]);
+    const list = cur.rows.filter((c) =>
+      !ql || searchable(c.name).includes(ql) || searchable(c.subcategory).includes(ql) || searchable(c.descr).includes(ql));
+    /* النافدُ آخِراً دائماً، والمختارُ يتصدّر «الكل» وحدها — داخل التصنيف ترتيبُ العيادة (orderShelf). */
+    return orderShelf(list, { sort, inCategory: cat !== "all" });
+  }, [cur.rows, q, cat, sort]);
+  const complete = cur.loaded && !cur.hasMore && !cur.loading;
 
   /** مختارات العيادة (0177): تظهر أعلى الكتلوج بلا بحثٍ ولا فئةٍ منتقاة —
    *  بحثُ الزبون أولى من تسويقنا. */
@@ -268,6 +313,10 @@ export function Storefront() {
   };
 
   const units = cart.reduce((s, l) => s + l.qty, 0);
+  /* اللوحةُ من الطبقات لا من حالةٍ داخل React — فزرُّ الرجوع يُغلقها كما تُغلقها X. */
+  const sheet: "none" | "cart" | "checkout" = L.has("checkout") ? "checkout" : L.has("cart") ? "cart" : "none";
+  const sheetOpen = !!detail && L.has("sheet");
+  const zoomOpen = sheetOpen && L.has("zoom") && !!detail?.image_path;
   /* حركاتُ الدخول والخروج بـCSS (ت١١) — `useExit` يؤخّر الفكَّ بقدر الحركة.
    * والشرطان مطابقان لما كان بـ`AnimatePresence` حرفياً: الشريطُ يظهر بسلّةٍ
    * غيرِ فارغةٍ ولوحةٍ مغلقة. و`shownSheet` يحفظ آخرَ لوحةٍ فتحت كي لا تقفزَ
@@ -378,6 +427,8 @@ export function Storefront() {
             {/* اسمٌ بسطرين لا `truncate`: «عيادة الرحمة البيطرية» على ٣٦٠ بكسل
                 بعد اللوغو وزرَّي الاتصال لا تسع سطراً واحداً. */}
             <h1 className="line-clamp-2 font-display text-lg font-bold leading-tight">{front.name}</h1>
+            {/* النبذةُ كانت تُحفظ بالإعدادات ولا يراها أحد — سطرانِ تحت الاسم (والحافةُ ترسمها مثلها). */}
+            {front.bio && <p className="mt-0.5 line-clamp-2 whitespace-pre-line text-xs leading-snug text-white/85" data-storebio>{front.bio}</p>}
           </div>
           <span className="flex shrink-0 items-center gap-1.5">
             {front.whatsapp && (
@@ -418,24 +469,23 @@ export function Storefront() {
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على منتج…"
               className="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none transition focus:border-brand-400" />
           </div>
-          {cats.length > 1 && (
-            /* الفرزُ خرج من حاوية التمرير: كان بـ`ms-auto` **داخلها** وشريطُ
-               التمرير مخفيّ، فقِيس عند x=−210 — عنصرُ تحكّمٍ لا يعرف أحدٌ بوجوده
-               غيرُ موجود. صار سطراً مستقلاً يظهر حين يستحقّ الكتلوجُ فرزاً. */
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <CatChip active={cat === "all"} onClick={() => { playTap(); setCat("all"); }} label={t("sf.all", "الكل")} />
-              {cats.map((c) => {
-                const look = categoryLook(c);
-                return <CatChip key={c} active={cat === c} onClick={() => { playTap(); setCat(c); }} label={look.label} />;
-              })}
+          {front.cats.length > 0 && (
+            /* رقائقُ رفوف العيادة بترتيبها (0234): «الكل» أوّلاً وفيه ما لا تصنيفَ له. والحافةُ
+               ترسم الشريطَ نفسَه بأصنافه (store-paint-guard). والفرزُ سطرٌ مستقلّ تحته: كان
+               بـ`ms-auto` داخل حاوية التمرير فقِيس عند x=−210 — عنصرٌ لا يعرف أحدٌ بوجوده. */
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-catchips>
+              <CatChip active={cat === "all"} onClick={() => pickCat("all")} label={t("sf.all", "الكل")} />
+              {front.cats.map((c) => (
+                <CatChip key={c.id} active={cat === c.id} onClick={() => pickCat(c.id)} label={`${catGlyph(c.icon)} ${c.name}`} />
+              ))}
             </div>
           )}
-          {catalog.length > 8 && (
+          {allShelf.rows.length > 8 && (
             <div className="flex items-center justify-between gap-2 text-2xs">
-              {/* عددٌ فوق كتلوجٍ ناقص يكذب: «١٢ منتج» عن متجرٍ فيه مئة. يُخفى
-                  حتى تكتمل التشكيلة بدل أن يُعرض رقمٌ أصغرُ من الحقيقة. */}
+              {/* عددٌ فوق رفٍّ ناقص يكذب: «١٢ منتج» عن متجرٍ فيه مئة. يُخفى
+                  حتى يكتمل الرفُّ بدل أن يُعرض رقمٌ أصغرُ من الحقيقة. */}
               <span className="font-semibold text-ink-muted">
-                {hasMore || loadingMore ? "" : `${formatNum(shown.length)} ${t("sf.results", "منتج")}`}
+                {complete ? `${formatNum(shown.length)} ${t("sf.results", "منتج")}` : ""}
               </span>
               <select value={sort} onChange={(e) => { playTap(); setSort(e.target.value as typeof sort); }} data-storesort
                 aria-label={t("sf.sortDefault", "الترتيب المعتاد")}
@@ -462,17 +512,38 @@ export function Storefront() {
         {/* صفُّ «مختاراتنا» المنفصل أُلغي: مقيسٌ أن كلَّ مختارٍ يظهر مرّتين
             (٣ من ٣ بتجربةٍ حيّة) بثمنِ ١٩٤ بكسل تدفع أوّلَ منتجٍ خارجَ الشاشة.
             الميزةُ نفسُها بقيت — المختارُ يتصدّر الشبكةَ بشارةٍ داخلها. */}
-        {catalog.length === 0 ? (
+        {catGone && (
+          <div data-catgone className="mb-3 flex items-start gap-2 rounded-2xl border border-warn-300 bg-warn-50 px-3 py-2 text-2xs font-semibold text-warn-800">
+            <span className="flex-1">{t("sf.catGone", "التصنيف ما عاد موجود — رجّعناك للكل.")}</span>
+            <button type="button" onClick={() => { playTap(); setCatGone(false); }} aria-label={t("sf.close", "إغلاق")} className="shrink-0"><X size={14} /></button>
+          </div>
+        )}
+        {cat === "all" && allShelf.loaded && allShelf.rows.length === 0 ? (
           <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle">
             <PackageX size={30} className="opacity-40" />
             <p className="text-sm font-semibold">المتجر يرتّب رفوفه — ارجع قريباً 🐾</p>
           </div>
+        ) : !cur.loaded ? (
+          /* رفُّ تصنيفٍ أوّلَ مرّة: يتحمّل، أو فشل فيُقال ويُعاد — لا قائمةٌ فارغةٌ عن خطأ. */
+          <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle" data-shelfstate>
+            {cur.failed ? (
+              <>
+                <p className="text-sm font-semibold">{t("sf.shelfFailed", "تعذّر تحميل هذا الرف")}</p>
+                <button type="button" onClick={() => void loadShelf(cat)} className="rounded-2xl border border-line bg-surface-1 px-5 py-2 text-sm font-bold text-ink-muted">{t("sf.retry")}</button>
+              </>
+            ) : <Loader2 size={26} className="animate-spin text-brand-600" />}
+          </div>
+        ) : cat !== "all" && complete && cur.rows.length === 0 ? (
+          <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle" data-catempty>
+            <PackageX size={30} className="opacity-40" />
+            <p className="text-sm font-semibold">{t("sf.catEmpty", "ما بهذا التصنيف شي حالياً")}</p>
+          </div>
         ) : shown.length === 0 ? (
           <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle">
             <Search size={26} className="opacity-40" />
-            {/* «ما لكينا» لا تُقال قبل أن تكتمل التشكيلة — ولا تُقال أبداً عن فشلِ جلب. */}
+            {/* «ما لكينا» لا تُقال قبل أن يكتمل الرفّ — ولا تُقال أبداً عن فشلِ جلب. */}
             <p className="text-sm font-semibold">
-              {moreFailed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : hasMore || loadingMore ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
+              {cur.failed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : !complete ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
             </p>
           </div>
         ) : (
@@ -492,8 +563,8 @@ export function Storefront() {
                   {/* نسبةٌ واحدة صارمة بدل ارتفاعٍ ثابت ٩٦ بكسل: بطاقةٌ عرضُها ١٧٣
                       وصورةٌ ٩٦ = ١٫٨:١ مع قصٍّ يقطع رأسَ العلبة وقاعَها — وباسمِ
                       الشركة يعرف الزبونُ المنتج. و`object-contain` فلا يُقصّ شيء. */}
-                  <div role="button" tabIndex={0} onClick={() => { playTap(); setDetail(p); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") { playTap(); setDetail(p); } }}
+                  <div role="button" tabIndex={0} onClick={() => openDetail(p)}
+                    onKeyDown={(e) => { if (e.key === "Enter") openDetail(p); }}
                     className={cn("relative grid aspect-square cursor-pointer place-items-center overflow-hidden", shelf.tile)}>
                     {/* البلاطةُ **أرضٌ دائمة** لا بديلٌ عند غياب الصورة: كانت
                         تُرسم بشرطٍ يستبعدها متى وُجدت صورة، فصورةٌ تفشل (ملفٌّ
@@ -502,13 +573,13 @@ export function Storefront() {
                     <span className={cn("px-2 text-center font-display text-base font-bold leading-tight", shelf.ink)}>
                       {shelfLabel(p.name)}
                     </span>
-                    {productImageUrl(p.image_path) && (
-                      /* تكسيلُ ما هو فوق الطيّة يؤخّر أثقلَ عنصرٍ بالرسم (LCP)
-                         بلا أن يوفّر شيئاً — الزائرُ يراه بلا تمرير. */
-                      <img src={productImageUrl(p.image_path) as string} alt="" width={400} height={400}
+                    {productImageUrl(cardImagePath(p.image_path)) && (
+                      /* المصغّرةُ (cardImagePath — ٤٨٠ بكسل لصورةٍ من المحرّر) لا الكاملة: الشبكةُ
+                         كانت تنزّل ١١٢ ك.ب للبطاقة. وتكسيلُ ما فوق الطيّة يؤخّر LCP بلا توفير. */
+                      <img src={productImageUrl(cardImagePath(p.image_path)) as string} alt="" width={400} height={400}
                         loading={i < 4 ? "eager" : "lazy"} fetchPriority={i < 4 ? "high" : undefined}
                         className="absolute inset-0 h-full w-full object-contain p-1.5"
-                        onError={(e) => { e.currentTarget.hidden = true; }} />
+                        onError={swapOnce(productImageUrl(p.image_path))} />
                     )}
                   </div>
                   {!p.available ? (
@@ -553,35 +624,42 @@ export function Storefront() {
             })}
           </div>
         )}
-        {(hasMore || moreFailed) && (
-          <button onClick={() => { setMoreFailed(false); void loadMore(); }} disabled={loadingMore}
+        {cur.loaded && (cur.hasMore || cur.failed) && (
+          <button onClick={() => void loadShelf(cat)} disabled={cur.loading} data-shelfmore
             className="mt-4 w-full rounded-2xl border border-line bg-surface-1 py-3 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-50">
-            {loadingMore ? "جاري التحميل…" : moreFailed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
+            {cur.loading ? "جاري التحميل…" : cur.failed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
           </button>
         )}
         <p className="mt-8 flex items-center justify-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>
       </main>
 
-      {/* ورقة تفاصيل المنتج (المرحلة ٣): صورة أكبر + الوصف كاملاً + عدّاد */}
-      {detail && (() => {
+      {/* ورقة تفاصيل المنتج: الصورةُ **الكاملة** مربّعةً حتى ٥٥٪ من الشاشة (كانت ٢٠٨ بكسل)، والمصغّرةُ
+          تحتها ريثما تنزل، وضغطةٌ عليها تفتح العارضَ بملء الشاشة. والوصفُ بأسطره كما كُتب (حتى ٢٠٠٠). */}
+      {sheetOpen && detail && (() => {
         const shelf = shelfLook(detail.name);
         const img = productImageUrl(detail.image_path);
+        const thumb = productImageUrl(cardImagePath(detail.image_path));
         const n = qtyOf(detail.id);
         return (
           <div className="fixed inset-0 z-40" data-detailsheet>
-            <div className="absolute inset-0 bg-ink/40" onClick={() => setDetail(null)} />
-            <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl animate-slide-up rounded-t-3xl bg-surface-1 p-4 pb-6 shadow-raised">
+            <div className="absolute inset-0 bg-ink/40" onClick={() => L.close()} />
+            <div className="absolute inset-x-0 bottom-0 mx-auto max-h-[96vh] max-w-3xl animate-slide-up overflow-y-auto rounded-t-3xl bg-surface-1 p-4 pb-6 shadow-raised">
               {/* `object-contain` لا `object-cover`: القصُّ كان يقطع رأسَ العلبة
                   وقاعَها — وباسمِ الشركة يعرف الزبونُ المنتج. والبلاطةُ أرضاً. */}
-              <div className={cn("relative grid h-52 place-items-center overflow-hidden rounded-2xl", shelf.tile)}>
+              <div className={cn("relative mx-auto grid aspect-square max-h-[55vh] w-full max-w-[55vh] place-items-center overflow-hidden rounded-2xl", img ? "bg-white" : shelf.tile)} data-sheetimg>
                 <span className={cn("px-4 text-center font-display text-2xl font-bold", shelf.ink)}>{shelfLabel(detail.name)}</span>
-                {img && <img src={img} alt="" className="absolute inset-0 h-full w-full object-contain p-3" onError={(e) => { e.currentTarget.hidden = true; }} />}
-                <button onClick={() => { playTap(); setDetail(null); }} aria-label={t("sf.close", "إغلاق")}
+                {thumb && thumb !== img && <img src={thumb} alt="" className="absolute inset-0 h-full w-full object-contain p-3" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                {img && (
+                  <button type="button" onClick={() => { playTap(); L.open("zoom"); }} aria-label={t("sf.zoom", "كبّر الصورة")} className="absolute inset-0 cursor-zoom-in" data-zoomopen>
+                    <img src={img} alt={detail.name} className="h-full w-full object-contain p-3" onError={(e) => { e.currentTarget.hidden = true; }} />
+                  </button>
+                )}
+                <button onClick={() => { playTap(); L.close(); }} aria-label={t("sf.close", "إغلاق")}
                   className="absolute end-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-ink/60 text-white"><X size={16} /></button>
               </div>
               <h2 className="mt-3 text-base font-bold leading-snug text-ink">{detail.name}</h2>
               {detail.subcategory && <span className="mt-1 inline-block rounded-full bg-surface-2 px-2 py-0.5 text-2xs text-ink-subtle">{detail.subcategory}</span>}
-              {detail.descr && <p className="mt-2 max-h-32 overflow-y-auto text-sm leading-relaxed text-ink-muted">{detail.descr}</p>}
+              {detail.descr && <p className="mt-2 max-h-60 overflow-y-auto whitespace-pre-line text-sm leading-relaxed text-ink-muted" data-sheetdesc>{detail.descr}</p>}
               <div className="mt-4 flex items-center justify-between gap-3">
                 <p className="font-display text-lg font-bold tabular-nums text-brand-600">{money(detail.price)}</p>
                 {!detail.available ? (
@@ -603,9 +681,14 @@ export function Storefront() {
         );
       })()}
 
+      {/* العارضُ بملء الشاشة — طبقةٌ فوق الورقة: الرجوعُ يُغلقه وحدَه. */}
+      {zoomOpen && detail?.image_path && (
+        <ZoomViewer src={productImageUrl(detail.image_path) as string} alt={detail.name} onClose={() => L.close()} />
+      )}
+
       {/* شريط السلة العائم */}
       {bar.mounted && (
-        <button onClick={() => { playTap(); setSheet("cart"); }}
+        <button onClick={() => { playTap(); L.open("cart"); }} data-cartbar
           className={cn("fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-3xl items-center gap-3 rounded-2xl bg-brand-600 px-4 py-3.5 text-white shadow-raised transition active:scale-[0.99]",
             bar.leaving ? "animate-bar-out" : "animate-bar-in")}>
             <span className="relative">
@@ -625,7 +708,7 @@ export function Storefront() {
       {/* لوحة السلة / الإتمام */}
       {panel.mounted && (
         <div className={cn("fixed inset-0 z-40 bg-black/40", panel.leaving ? "animate-fade-out" : "animate-fade-plain")}
-          onClick={() => setSheet("none")}>
+          onClick={() => L.close()}>
           <div onClick={(e) => e.stopPropagation()}
             className={cn("absolute inset-x-0 bottom-0 mx-auto max-h-[88vh] max-w-3xl overflow-y-auto rounded-t-3xl bg-surface-1 p-4 shadow-raised",
               panel.leaving ? "animate-sheet-out" : "animate-sheet-in")}>
@@ -636,13 +719,14 @@ export function Storefront() {
                 <CartSheet
                   cart={cart} byId={byId} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
                   underMin={underMin} minOrder={minOrder}
-                  setQty={setQty} onClose={() => setSheet("none")} onCheckout={() => { playTap(); track("store_checkout_open", { slug }, true); setSheet("checkout"); }} />
+                  setQty={setQty} onClose={() => L.close()} onCheckout={() => { playTap(); track("store_checkout_open", { slug }, true); L.swap("checkout"); }} />
               ) : (
                 <CheckoutSheet
                   slug={slug} cart={cart} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
-                  onBack={() => setSheet("cart")}
+                  onBack={() => L.swap("cart")}
                   onPlaced={(r) => {
-                    setCart([]); setSheet("none"); setPlaced(r); playAchievement(); celebrate();
+                    /* الطلبُ وصل: الطبقاتُ تُطوى من السجلّ (go(-عمق)) قبل شاشة النجاح — لا مدخلَ يتسرّب يعيد الزبونَ لسلّةٍ أُفرغت. */
+                    setCart([]); L.placed(); setPlaced(r); playAchievement(); celebrate();
                     // رقم آخر طلب يُحفظ محلياً: صفحة التتبّع تعبّيه تلقائياً لو رجع الزبون بعدين.
                     try { localStorage.setItem(lastOrderKey(slug), r.order_no); } catch { /* ignore */ }
                 }} />
@@ -690,12 +774,12 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
                  التي اختارها. والبلاطةُ أرضاً تحتها كما بالبطاقة، فلا يصير
                  السطرُ فارغاً إن فشل التحميل. (بقايا `categoryLook` — البند ١٧.) */
               const shelf = shelfLook(p.name);
-              const cimg = productImageUrl(p.image_path);
+              const cimg = productImageUrl(cardImagePath(p.image_path));
               return (
                 <div key={l.id} className="flex items-center gap-3 rounded-2xl border border-line p-2.5">
                   <span className={cn("relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl text-2xs font-bold", shelf.tile, shelf.ink)}>
                     {shelfMonogram(p.name)}
-                    {cimg && <img src={cimg} alt="" className="absolute inset-0 h-full w-full object-contain p-0.5" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                    {cimg && <img src={cimg} alt="" className="absolute inset-0 h-full w-full object-contain p-0.5" onError={swapOnce(productImageUrl(p.image_path))} />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-ink">{p.name}</p>

@@ -40,6 +40,35 @@ export function cardImagePath(path: string | null | undefined): string | null {
   return path.endsWith(".hd.jpg") ? `${path.slice(0, -".hd.jpg".length)}.sm.jpg` : path;
 }
 
+/* ── رفوفُ الزائر (متجر v1) ────────────────────────────────────────────────── */
+type ShelfItem = { id: string; price: number; available?: boolean; featured?: boolean };
+
+/**
+ * ترتيبُ رفٍّ واحد — خالص (storefront-shelf-test):
+ *  • النافدُ آخِراً دائماً (يبقى ظاهراً ولا يتصدّر).
+ *  • «الكل»: المختارُ يتصدّر المتوفّرَ كما كان (0177).
+ *  • داخل تصنيف: ترتيبُ العيادة كما وصل من الخادم — **المختارُ لا يقفز فوقه**: من رتّب رفَّه
+ *    بيده لا يرى ترتيبَه يُعاد بعلامةٍ وضعها لغرضٍ آخر.
+ *  • فرزُ السعر كما كان. والترتيبُ ثابتٌ (ما تساوى يبقى بمكانه).
+ */
+export function orderShelf<T extends ShelfItem>(items: readonly T[], o: { sort: "default" | "priceAsc" | "priceDesc"; inCategory: boolean }): T[] {
+  const rank = (x: T) => (x.available === false ? 1 : 0);
+  const arr = items.map((x, i) => ({ x, i }));
+  arr.sort((a, b) => rank(a.x) - rank(b.x)
+    || (o.sort === "priceAsc" ? a.x.price - b.x.price : o.sort === "priceDesc" ? b.x.price - a.x.price
+      : o.inCategory ? 0 : Number(!!b.x.featured) - Number(!!a.x.featured))
+    || a.i - b.i);
+  return arr.map((a) => a.x);
+}
+
+/** كلُّ ما وصل من كلّ الرفوف بخريطةٍ واحدة — السلّةُ والمجموعُ والإتمامُ يسعّرون منها: مادّةٌ
+ *  أُضيفت من صفحةٍ ثانيةٍ لتصنيفٍ لم تصلها «الكل» بعد كانت تُسعَّر صفراً وتختفي من السلّة. */
+export function mergeKnown<T extends { id: string }>(shelves: readonly (readonly T[])[]): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const rows of shelves) for (const r of rows) m.set(r.id, r);
+  return m;
+}
+
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** تصنيفاتُ store_front (0234) بشكلٍ واحدٍ للطرفين (storeApi ونصفُ repo السحابيّ) — نسختان تنحرفان:
