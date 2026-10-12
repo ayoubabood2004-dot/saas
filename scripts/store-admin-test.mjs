@@ -222,5 +222,23 @@ try {
   check("  ولا بابَ في SortList يُخفيها بغير الحقّ", !/\bdisabled\s*\?\s*null/.test(readFileSync("src/components/store/admin/SortList.tsx", "utf8")));
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
+/* ── الإنكليزية: أصنافُ المخزون بأسمائها المترجمة لا بعربية واجهة الزبون ─────────────── */
+console.log("▸ قائمةُ التأشير بالإنكليزية: «Tick all items of kind: Medicine» لا «… أدوية»");
+try {
+  await ready();
+  const food = { ...M.S.getStoreCatsState().view.cats.find((c) => c.id === U(2)), seed_key: "food" };
+  const props = { products: PRODUCTS, productsFailed: false, onRetryProducts() {}, canEdit: true, guard: guard(), onBack() {} };
+  const en = html(h(M.CategoryChecklist, { ...props, cat: food }), "en");
+  const opts = [...en.matchAll(/<option value="(medicine|food|accessories)">([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]);
+  const fill = (s, v) => s.replace(/\{\{(\w+)\}\}/g, (_, k) => String(v[k]));
+  check("اختيارُ الصنف السريع: كلُّ خيارٍ باسم الصنف المترجم (pos.cat.*)",
+    opts.length === 3 && opts.every(([k, label]) => label === fill(EN.cat.quickPick, { name: EN.pos.cat[k], n: PRODUCTS.filter((p) => p.category === k).length })), opts.map((o) => o[1]).join(" | "));
+  const banner = /data-seedbanner[\s\S]*?<\/span>/.exec(en)?.[0] ?? "";
+  check("  ولافتةُ البذرة كذلك («Items of kind Food …»)", text(banner).includes(fill(EN.cat.seedBanner, { name: EN.pos.cat.food, n: 1 })), text(banner).slice(0, 120));
+  check("  ولا عربيةَ في الخيارات واللافتة (بيانُ العيادة وحده عربيّ: الأسماء)", !/[؀-ۿ]/.test(opts.map((o) => o[1]).join("") + text(banner)));
+  const ar = html(h(M.CategoryChecklist, { ...props, cat: food }));
+  check("  وبالعربية اسمُ الصنف كما بالمخزون (pos.cat)", ar.includes(fill(AR.cat.quickPick, { name: AR.pos.cat.medicine, n: 2 })));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

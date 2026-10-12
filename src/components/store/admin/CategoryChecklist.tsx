@@ -81,6 +81,10 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byId]);
 
+  /* صنفُ المخزون باسمه بالمخزون نفسِه (pos.cat.*، باللغتين) — لا `categoryLook().label`: ذاك نصُّ واجهة
+   * الزبون العربيةِ وحدها، فكان يُحشر عربياً داخل جملةٍ إنكليزية («Tick all items of kind: أدوية»). */
+  const kindName = (k: string | null) => t(`pos.cat.${k}`, categoryLook(k).label);
+
   const today = localISO();
   const ql = searchable(q);
   const rows = order.filter((id) => {
@@ -206,7 +210,7 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-brand-300 bg-brand-50/60 p-3 dark:border-brand-500/40 dark:bg-brand-500/10" data-seedbanner>
               <Sparkles size={16} className="shrink-0 text-brand-600" />
               <span className="min-w-0 flex-1 text-xs font-semibold text-ink">
-                {t("cat.seedBanner", "مواد صنفها {{name}} وما بهذا التصنيف ({{n}}) — أضفها", { name: categoryLook(cat.seed_key).label, n: formatNum(missing.length) })}
+                {t("cat.seedBanner", "مواد صنفها {{name}} وما بهذا التصنيف ({{n}}) — أضفها", { name: kindName(cat.seed_key), n: formatNum(missing.length) })}
               </span>
               <Button size="sm" disabled={!missing.length} onClick={() => { playTap(); setMany(missing); }}>{t("cat.seedAdd", "أشّرها")}</Button>
               <button type="button" onClick={() => setBannerOff(true)} aria-label={t("cat.dismiss", "إخفاء")} className="text-ink-subtle"><X size={15} /></button>
@@ -226,7 +230,7 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
                 aria-label={t("cat.quickPickLabel", "حدّد كل مواد صنف")} data-quickpick
                 className="ms-auto max-w-[60%] rounded-full border border-line bg-surface-1 px-3 py-1.5 text-xs font-semibold text-ink-muted outline-none">
                 <option value="">{t("cat.quickPickLabel", "حدّد كل مواد صنف")}…</option>
-                {kinds.map(([k, n]) => <option key={k} value={k}>{t("cat.quickPick", "حدّد كل مواد صنف: {{name}} ({{n}})", { name: categoryLook(k).label, n: formatNum(n) })}</option>)}
+                {kinds.map(([k, n]) => <option key={k} value={k}>{t("cat.quickPick", "حدّد كل مواد صنف: {{name}} ({{n}})", { name: kindName(k), n: formatNum(n) })}</option>)}
               </select>
             )}
           </div>
