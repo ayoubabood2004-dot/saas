@@ -179,7 +179,7 @@ export function CategoriesTab({ products, productsFailed, onRetryProducts, guard
       {cats.live.length === 0 ? (
         <div className="card grid place-items-center p-8 text-sm text-ink-subtle">{t("cat.noCats", "ما اكو تصنيفات — أضف تصنيفاً، أو رجّع واحداً من المحذوفة.")}</div>
       ) : (
-        <SortList ids={ids} disabled={!cats.canEdit || busy}
+        <SortList ids={ids} readOnly={!cats.canEdit} busy={busy}
           onMove={(id, after) => void run([{ op: "move", id, after }])}
           row={(id, { handle, arrows }) => {
             const c = cats.live.find((x) => x.id === id) as CatRow;

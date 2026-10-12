@@ -13,10 +13,18 @@ import { dropAfter, SORT_MOUSE_DISTANCE, SORT_TOUCH_DELAY, SORT_TOUCH_TOLERANCE,
  * الذي يعمل بلا سحب. وكلُّ نقلٍ عمليةٌ نسبيّة واحدة (`after`) يحسب الخادمُ موضعَها.
  * ==========================================================================*/
 
-export function SortList({ ids, disabled, onMove, row }: {
+export function SortList({ ids, readOnly, busy, onMove, row }: {
   ids: string[];
-  /** بلا ترتيب (المصوّر، أو أثناء حفظ): لا مقبضَ ولا أسهم. */
-  disabled?: boolean;
+  /**
+   * بلا **حقّ** الترتيب (المصوّر): لا مقبضَ ولا أسهم. والحقُّ وحده يُخفيها — لا الحفظُ الجاري: كانت
+   * تختفي ما دام الحفظُ بالطريق (`disabled={!canEdit || busy}`)، فيقفز سطرُ الأدوات بالهاتف إلى مكانها
+   * ويقع «…» (تعديل ← «شيل التصنيف…») تحت ↓ بالضبط — والضغطةُ الثانية تفتح النافذةَ بدل أن تنقل (قيس
+   * بـ٣٧٥: ما تحت الإصبع «جوّه» ← «تعديل» ← «جوّه»).
+   */
+  readOnly?: boolean;
+  /** حفظٌ بالطريق: الأسهمُ والمقبضُ **بمكانها معطَّلة** — ضغطةٌ ثانيةٌ سريعة لا تقع على زرٍّ آخر، ولا على
+   *  سهم الصفّ الذي صعد مكانَ المنقول (فيرجعه). */
+  busy?: boolean;
   onMove: (id: string, after: string | null) => void;
   /** المقبضُ (الحاسوب) والأسهمُ (الهاتف) منفصلان: الصفُّ يضعهما حيث يتّسع — سطرٌ ثانٍ بالهاتف. */
   row: (id: string, c: { handle: ReactNode; arrows: ReactNode }) => ReactNode;
@@ -36,23 +44,23 @@ export function SortList({ ids, disabled, onMove, row }: {
       onDragStart={(e) => setDragging(String(e.active.id))} onDragCancel={() => setDragging(null)} onDragEnd={onEnd}>
       <div className="space-y-2" data-sortlist>
         {ids.map((id, i) => (
-          <SortRow key={id} id={id} index={i} ids={ids} disabled={disabled} dragging={dragging === id} onMove={onMove} row={row} />
+          <SortRow key={id} id={id} index={i} ids={ids} readOnly={readOnly} busy={busy} dragging={dragging === id} onMove={onMove} row={row} />
         ))}
       </div>
     </DndContext>
   );
 }
 
-function SortRow({ id, index, ids, disabled, dragging, onMove, row }: {
-  id: string; index: number; ids: string[]; disabled?: boolean; dragging: boolean;
+function SortRow({ id, index, ids, readOnly, busy, dragging, onMove, row }: {
+  id: string; index: number; ids: string[]; readOnly?: boolean; busy?: boolean; dragging: boolean;
   onMove: (id: string, after: string | null) => void;
   /** المقبضُ (الحاسوب) والأسهمُ (الهاتف) منفصلان: الصفُّ يضعهما حيث يتّسع — سطرٌ ثانٍ بالهاتف. */
   row: (id: string, c: { handle: ReactNode; arrows: ReactNode }) => ReactNode;
 }) {
   const { t } = useTranslation();
-  const drag = useDraggable({ id, disabled });
+  const drag = useDraggable({ id, disabled: readOnly || busy });
   const drop = useDroppable({ id });
-  const go = (after: string | null | undefined) => { if (after !== undefined) onMove(id, after); };
+  const go = (after: string | null | undefined) => { if (after !== undefined && !busy) onMove(id, after); };
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowUp") { e.preventDefault(); go(stepAfter(ids, id, -1)); }
     else if (e.key === "ArrowDown") { e.preventDefault(); go(stepAfter(ids, id, 1)); }
@@ -60,7 +68,7 @@ function SortRow({ id, index, ids, disabled, dragging, onMove, row }: {
   };
   const tr = drag.transform;
   const btn = "grid h-9 w-9 place-items-center rounded-full border border-line text-ink-muted transition hover:bg-surface-2 active:scale-95 disabled:opacity-30";
-  const handle = disabled ? null : (
+  const handle = readOnly ? null : (
     <>
       {/* الحاسوب: مقبضٌ يُسحب ويُرتَّب بالأسهم */}
       <button type="button" ref={drag.setActivatorNodeRef} {...drag.attributes}
@@ -73,13 +81,13 @@ function SortRow({ id, index, ids, disabled, dragging, onMove, row }: {
       </button>
     </>
   );
-  const arrows = disabled ? null : (
+  const arrows = readOnly ? null : (
     <>
       {/* الهاتف: أسهمٌ ظاهرةٌ دائماً */}
-      <span className="flex shrink-0 items-center gap-1 sm:hidden" data-sortarrows>
-        <button type="button" className={btn} disabled={index === 0} onClick={() => go(stepAfter(ids, id, -1))} aria-label={t("cat.moveUp", "فوق")}><ArrowUp size={15} /></button>
-        <button type="button" className={btn} disabled={index === ids.length - 1} onClick={() => go(stepAfter(ids, id, 1))} aria-label={t("cat.moveDown", "جوّه")}><ArrowDown size={15} /></button>
-        <button type="button" className={btn} disabled={index === 0} onClick={() => go(topAfter(ids, id))} aria-label={t("cat.moveTop", "لفوق")}><ChevronsUp size={15} /></button>
+      <span className="flex shrink-0 items-center gap-1 sm:hidden" data-sortarrows aria-busy={busy || undefined}>
+        <button type="button" className={btn} disabled={busy || index === 0} onClick={() => go(stepAfter(ids, id, -1))} aria-label={t("cat.moveUp", "فوق")}><ArrowUp size={15} /></button>
+        <button type="button" className={btn} disabled={busy || index === ids.length - 1} onClick={() => go(stepAfter(ids, id, 1))} aria-label={t("cat.moveDown", "جوّه")}><ArrowDown size={15} /></button>
+        <button type="button" className={btn} disabled={busy || index === 0} onClick={() => go(topAfter(ids, id))} aria-label={t("cat.moveTop", "لفوق")}><ChevronsUp size={15} /></button>
       </span>
     </>
   );

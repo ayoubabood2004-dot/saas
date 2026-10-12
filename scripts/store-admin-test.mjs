@@ -204,5 +204,23 @@ try {
   check("  والتجميدُ لحظةَ وصول المنتجات لا لحظةَ الفتح (مصفوفةٌ فارغةٌ عن «لم تصل» لا تُجمَّد)", /if \(!opened\.current && products\) opened\.current = checklistOpen\(/.test(src));
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
+/* ── الأسهمُ لا تختفي أثناء الحفظ: ما تحت الإصبع لا يتبدّل ──────────────────── */
+console.log("▸ الترتيبُ بالأسهم (الهاتف): الحفظُ الجاري لا يُخفي الأسهم فيقع الإصبعُ على «تعديل»");
+try {
+  const row = (id, { handle, arrows }) => h("div", { "data-row": id }, handle, arrows, h("button", { "data-catmenu": "" }, "…"));
+  const ed = html(h(M.SortList, { ids: ["a", "b", "c"], readOnly: false, onMove() {}, row }));
+  const ro = html(h(M.SortList, { ids: ["a", "b", "c"], readOnly: true, onMove() {}, row }));
+  check("للمحرّر: أسهمٌ ومقبضٌ لكلّ صفّ", (ed.match(/data-sortarrows/g) ?? []).length === 3 && (ed.match(/data-sorthandle/g) ?? []).length === 3);
+  check("  وبلا حقّ الترتيب (المصوّر): لا أسهم ولا مقبض", !/data-sortarrows|data-sorthandle/.test(ro));
+  const bz = html(h(M.SortList, { ids: ["a", "b", "c"], readOnly: false, busy: true, onMove() {}, row }));
+  const arrowsOf = (s) => [...s.matchAll(/data-sortarrows[\s\S]*?<\/span>/g)].map((m) => m[0]);
+  check("  والحفظُ بالطريق: الأسهمُ **بمكانها** (٣ صفوف) ومعطَّلةٌ كلُّها — لا تختفي فيقفز «…» تحت الإصبع",
+    arrowsOf(bz).length === 3 && arrowsOf(bz).every((a) => (a.match(/<button/g) ?? []).length === 3 && (a.match(/disabled=""/g) ?? []).length === 3), arrowsOf(bz)[1]?.slice(0, 160));
+  const tab = readFileSync("src/components/store/admin/CategoriesTab.tsx", "utf8");
+  check("  و«التصنيفات» يُخفيها بالحقّ وحده، والحفظُ يعطّلها بمكانها (كان `disabled={!canEdit || busy}` ⇒ تختفي بين ضغطتين)",
+    /<SortList ids=\{ids\} readOnly=\{!cats\.canEdit\} busy=\{busy\}/.test(tab));
+  check("  ولا بابَ في SortList يُخفيها بغير الحقّ", !/\bdisabled\s*\?\s*null/.test(readFileSync("src/components/store/admin/SortList.tsx", "utf8")));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);
