@@ -66,6 +66,22 @@ export function dragCorner(c: Crop, corner: Corner, dxN: number, dyN: number, rw
   }
   return { x: x0 / rw, y: y0 / rh, w: (x1 - x0) / rw, h: (y1 - y0) / rh };
 }
+/**
+ * قناعُ ما حول القصّ: أربعةُ أحزمةٍ (فوق، تحت، يسار، يمين) تغطّي الصورةَ خارج القصّ بالضبط —
+ * داخل [0،1]² وحدَها. كان القناعُ ظلّاً بـ9999px على إطار القصّ لا يقصّه إلا أوّلُ سلفٍ يقصّ (منطقةُ
+ * التمرير كلُّها): التلميحُ وأزرارُ التدوير والقصّ وبطاقةُ «هكذا تظهر بالمتجر» تحت حجابٍ أسود ٤٥٪ —
+ * الأزرارُ تبدو معطَّلة، والبطاقةُ التي وُضعت لتُري الصورةَ كما هي تُريها أغمق.
+ */
+export function maskBands(c: Crop): Crop[] {
+  const right = c.x + c.w, bottom = c.y + c.h;
+  return [
+    { x: 0, y: 0, w: 1, h: c.y },
+    { x: 0, y: bottom, w: 1, h: 1 - bottom },
+    { x: 0, y: c.y, w: c.x, h: c.h },
+    { x: right, y: c.y, w: 1 - right, h: c.h },
+  ];
+}
+
 /** سحبُ المستطيل كلِّه داخل الصورة. */
 export function dragMove(c: Crop, dxN: number, dyN: number): Crop {
   return { ...c, x: clamp(c.x + dxN, 0, 1 - c.w), y: clamp(c.y + dyN, 0, 1 - c.h) };

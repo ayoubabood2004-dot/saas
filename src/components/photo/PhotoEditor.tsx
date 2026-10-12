@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { blobToDataUrl, FileTooLargeError, MAX_INPUT_MB } from "@/lib/image";
 import { cardImagePath, productImageUrl, shelfLabel, shelfLook } from "@/lib/storeLib";
 import {
-  editPlan, renderPlan, encodeWithSteps, targets, rotatedSize, rotateBy, squareIn, dragCorner, dragMove, FULL_CROP,
+  editPlan, renderPlan, encodeWithSteps, targets, rotatedSize, rotateBy, squareIn, dragCorner, dragMove, maskBands, FULL_CROP,
   type Crop, type EncodedPhoto, type Rot, type UploadBlob,
 } from "@/lib/photoPipeline";
 import { describeUploadError } from "@/lib/errors";
@@ -361,7 +361,12 @@ export default function PhotoEditor(p: PhotoEditorProps) {
                 <div ref={wrapRef} className="relative inline-block max-w-full touch-none select-none"
                   onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
                   <canvas ref={canvasRef} className="block h-auto max-h-[70vh] w-auto max-w-full" />
-                  <div className="absolute border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" data-ed-crop
+                  {/* القناعُ أحزمةٌ داخل الصورة وحدها (maskBands) — لا ظلٌّ بلا حدّ يُعتّم الأزرارَ والمعاينة. */}
+                  {maskBands(crop).map((b, i) => (
+                    <div key={i} aria-hidden className="pointer-events-none absolute bg-black/45" data-ed-mask
+                      style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }} />
+                  ))}
+                  <div className="absolute border-2 border-white" data-ed-crop
                     style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.w * 100}%`, height: `${crop.h * 100}%` }}
                     onPointerDown={down("move")}>
                     {(["nw", "ne", "sw", "se"] as const).map((k) => (

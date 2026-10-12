@@ -147,5 +147,27 @@ console.log("▸ كلُّ رفعةٍ لصورة منتجٍ تمرّ من الم�
   check("  ولا framer-motion بالمحرّر (حزمتُه صغيرة)", !/framer-motion/.test(ed));
 }
 
+console.log("▸ قناعُ القصّ داخل الصورة وحدها — لا يُعتّم الأزرارَ وبطاقةَ «هكذا تظهر بالمتجر»");
+try {
+  const ed = readFileSync("src/components/photo/PhotoEditor.tsx", "utf8");
+  /* الجذر (لقطةٌ بالوضع الفاتح): ظلُّ 9999px على إطار القصّ لا يقصّه إلا أوّلُ سلفٍ يقصّ — منطقةُ التمرير
+   * كلُّها — فالتلميحُ وأزرارُ التدوير والقصّ وبطاقةُ المعاينة تحت حجابٍ أسود ٤٥٪: تبدو معطَّلة، والبطاقةُ
+   * التي وُضعت لتُري الصورةَ كما هي تُريها أغمق. */
+  check("لا ظلَّ قناعٍ بلا حدّ (9999px) بالمحرّر", !/9999px/.test(ed));
+  check("  والقناعُ أحزمةُ maskBands داخل غلاف الصورة نفسِه", /maskBands\(crop\)\.map\(/.test(ed) && /data-ed-mask/.test(ed));
+  const B = P.maskBands;
+  if (typeof B !== "function") throw new Error("maskBands غير موجودة");
+  const area = (r) => Math.max(0, r.w) * Math.max(0, r.h);
+  const inside = (r) => r.x >= -1e-9 && r.y >= -1e-9 && r.x + r.w <= 1 + 1e-9 && r.y + r.h <= 1 + 1e-9 && r.w >= -1e-9 && r.h >= -1e-9;
+  const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  for (const c of [{ x: 0.1, y: 0.2, w: 0.5, h: 0.4 }, P.FULL_CROP, P.squareIn(4000, 3000), { x: 0, y: 0.5, w: 1, h: 0.5 }, { x: 0.7, y: 0, w: 0.3, h: 0.25 }]) {
+    const bands = B(c);
+    const sum = bands.reduce((s, r) => s + area(r), 0);
+    const pairs = bands.flatMap((a, i) => bands.slice(i + 1).map((b) => overlap(a, b)));
+    check(`قصّ ${JSON.stringify(c)}: الأحزمةُ تغطّي ما حوله بالضبط (${(1 - area(c)).toFixed(3)}) داخل الصورة، ولا تمسّ القصّ ولا بعضَها`,
+      Math.abs(sum - (1 - area(c))) < 1e-9 && bands.every(inside) && bands.every((r) => overlap(r, c) < 1e-12) && pairs.every((o) => o < 1e-12), `${sum}`);
+  }
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ photo-pipeline-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ photo-pipeline-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);
