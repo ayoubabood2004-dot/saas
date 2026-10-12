@@ -4844,8 +4844,11 @@ chk "  والمصوّرُ لا يمسّ البنية: إنشاء، تسمية، 
        (7, _sc('$KP','$K1','[{\"op\":\"move_item\",\"cat\":\"${CK}e1\",\"id\":\"${PK}01\",\"after\":null}]')),
        (8, _sc('$KP','$K1','[{\"op\":\"init\"}]'))) v(i, r)" \
     "42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized"
+# التحقّقُ بنداءٍ مستقلّ: استعلامٌ فرعيٌّ بنفس الجملة يقرأ بلقطة بدايتها فلا يرى ما كتبته الدالّةُ داخلها.
 chk "  ويؤشّر ويشيل العضويةَ بأيّ تصنيف (O3)" \
-    "select _sc('$KP','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}01\",\"${PK}05\"]},{\"op\":\"remove\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}05\"]}]')||'|'||(select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}e1')" "ok:6|${PK}01"
+    "select _sc('$KP','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}01\",\"${PK}05\"]},{\"op\":\"remove\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}05\"]}]')" "ok:6"
+chk "    والمؤشَّرُ وحده باقٍ" \
+    "select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}e1'" "${PK}01"
 chk "  والاستقبالُ بلا إذن المتجر لا يقرأ" \
     "select split_part(r, ':', 2)||':'||split_part(r, ':', 3) from (select _scv('$KR', 'select store_categories_list()::text') r) x" "42501:not_authorized"
 $P -c "insert into staff(id, clinic_id, name, user_id, role, permissions) values ('$KS','$K1','استقبال التصنيفات','$KR','receptionist','{\"manageStore\": true}')
@@ -4878,7 +4881,9 @@ chk "  ومنتجُ حقلٍ ⇒ $AT_CODE، وأعضاءُ التصنيف كما
 # ── T11/T12: الإعادةُ آمنة، والتزاحمُ يتسلسل ────────────────────────────────
 RP="[{\"op\":\"create\",\"id\":\"${CK}0c\",\"name\":\"تكرار\"},{\"op\":\"add\",\"cat\":\"${CK}0c\",\"ids\":[\"${PK}01\",\"${PK}02\",\"${PK}05\"]},{\"op\":\"remove\",\"cat\":\"${CK}0c\",\"ids\":[\"${PK}02\"]}]"
 chk "T11 الدفعةُ نفسُها مرّتين ⇒ اللقطةُ نفسُها (جوابٌ ضاع وأُعيد)" \
-    "select (_scs('$K1','$K1','$RP') = _scs('$K1','$K1','$RP'))::text||'|'||(select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}0c')" "true|${PK}01,${PK}05"
+    "select (_scs('$K1','$K1','$RP') = _scs('$K1','$K1','$RP'))::text" "true"
+chk "    والأعضاءُ كما بعد المرّة الأولى" \
+    "select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}0c'" "${PK}01,${PK}05"
 chk "T12 تصنيفٌ للتزاحم" "select _sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}0d\",\"name\":\"تزاحم\"}]')" "ok:9"
 for i in 1 2 3 4 5 6 7 8 9 a; do
   psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select _sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}0d\",\"ids\":[\"${PK}2$i\"]}]')" >/dev/null &
@@ -4901,28 +4906,44 @@ chk "  والفجوةُ انطوت فرُقّمت القائمةُ ×١٠٢٤" "
 # ── T25: التدقيق ───────────────────────────────────────────────────────────
 A0=$(W "select count(*) from audit_log where entity='store_categories' and clinic_id='$K1'")
 B0=$(W "select count(*) from audit_log where entity='store_category_items' and action='DELETE' and clinic_id='$K1'")
-chk "T25 شيلُ مادّتين من تصنيف ⇒ سطرا حذفٍ نوعُهما «متجر»" \
-    "select _sc('$K1','$K1','[{\"op\":\"remove\",\"cat\":\"${CK}0d\",\"ids\":[\"${PK}21\",\"${PK}22\"]}]')||'|'||((select count(*) from audit_log where entity='store_category_items' and action='DELETE' and clinic_id='$K1') - $B0)::text||'|'||(select string_agg(distinct audit_kind(entity, action, details), ',') from audit_log where entity='store_category_items' and clinic_id='$K1')" "ok:9|2|store"
-chk "  والنقلُ لا يكتب سطراً" \
-    "select _sc('$K1','$K1','[{\"op\":\"move\",\"id\":\"${CK}0d\",\"after\":null},{\"op\":\"move_item\",\"cat\":\"${CK}0d\",\"id\":\"${PK}23\",\"after\":null}]')||'|'||((select count(*) from audit_log where entity='store_categories' and clinic_id='$K1') - $A0)::text" "ok:9|0"
-chk "  والشيلُ (الأرشفة) سطرٌ واحدٌ نوعُه «متجر»" \
-    "select _sc('$K1','$K1','[{\"op\":\"archive\",\"id\":\"${CK}0c\"}]')||'|'||((select count(*) from audit_log where entity='store_categories' and clinic_id='$K1') - $A0)::text||'|'||(select audit_kind(entity, action, details) from audit_log where entity='store_categories' and entity_id='${CK}0c' and action='UPDATE' order by created_at desc, id desc limit 1)" "ok:9|1|store"
+chk "T25 شيلُ مادّتين من تصنيف" \
+    "select _sc('$K1','$K1','[{\"op\":\"remove\",\"cat\":\"${CK}0d\",\"ids\":[\"${PK}21\",\"${PK}22\"]}]')" "ok:9"
+chk "  ⇒ سطرا حذفٍ نوعُهما «متجر»" \
+    "select ((select count(*) from audit_log where entity='store_category_items' and action='DELETE' and clinic_id='$K1') - $B0)::text||'|'||(select string_agg(distinct audit_kind(entity, action, details), ',') from audit_log where entity='store_category_items' and clinic_id='$K1')" "2|store"
+chk "  والنقلُ" \
+    "select _sc('$K1','$K1','[{\"op\":\"move\",\"id\":\"${CK}0d\",\"after\":null},{\"op\":\"move_item\",\"cat\":\"${CK}0d\",\"id\":\"${PK}23\",\"after\":null}]')" "ok:9"
+chk "    لا يكتب سطراً" \
+    "select ((select count(*) from audit_log where entity='store_categories' and clinic_id='$K1') - $A0)::text" "0"
+chk "  والشيلُ (الأرشفة)" \
+    "select _sc('$K1','$K1','[{\"op\":\"archive\",\"id\":\"${CK}0c\"}]')" "ok:9"
+chk "    سطرٌ واحدٌ نوعُه «متجر»" \
+    "select ((select count(*) from audit_log where entity='store_categories' and clinic_id='$K1') - $A0)::text||'|'||(select audit_kind(entity, action, details) from audit_log where entity='store_categories' and entity_id='${CK}0c' and action='UPDATE' order by created_at desc, id desc limit 1)" "1|store"
 chk "  والبذرةُ بالهجرة بلا فاعل (متجرُ K5 فُتح بلا جلسة)" \
     "select count(*) filter (where actor is null)::text||'/'||count(*)::text from audit_log where entity='store_categories' and action='INSERT' and clinic_id='$K5'" "5/5"
 
 # ── T14/T15: الدمجُ يحمل العضوية، والاسترجاعُ يعيد التوأمَ بمكانه ───────────────
 chk "T14 تصنيفٌ: صفرٌ ثم التوأمُ (٢٠٤٨) ثم أصلٌ ثانٍ وتوأمُه" \
     "select _sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}0e\",\"name\":\"دمج\"},{\"op\":\"add\",\"cat\":\"${CK}0e\",\"ids\":[\"${PK}13\",\"${PK}12\",\"${PK}14\",\"${PK}15\"]}]')" "ok:10"
-chk "  الدمجُ: الأصلُ (ليس عضواً) يرث مكانَ التوأم ٢٠٤٨، وصفُّ التوأم يبقى نائماً" \
-    "select _pf('$K1', 'select (merge_products(''${PK}11''::uuid, ''${PK}12''::uuid)).id::text')||'|'||(select pos::text from store_category_items where category_id='${CK}0e' and product_id='${PK}11')||'|'||(select count(*) from store_category_items where category_id='${CK}0e' and product_id='${PK}12')::text" "${PK}11|2048|1"
-chk "  وأصلٌ عضوٌ أصلاً لا يتكرّر ولا يتحرّك" \
-    "select _pf('$K1', 'select (merge_products(''${PK}14''::uuid, ''${PK}15''::uuid)).id::text')||'|'||(select count(*)::text||':'||max(pos)::text from store_category_items where category_id='${CK}0e' and product_id='${PK}14')" "${PK}14|1:3072"
-chk "  والاسترجاعُ يعيد التوأمَ بنفس المعرّف لمكانه ٢٠٤٨، والأصلُ يبقى" \
-    "select _pf('$K1', 'select (restore_product(''${PK}12''::uuid)).id::text')||'|'||(select string_agg(product_id::text||':'||pos, ',' order by product_id) from store_category_items where category_id='${CK}0e' and product_id in ('${PK}11','${PK}12'))" "${PK}12|${PK}11:2048,${PK}12:2048"
+chk "  الدمجُ (الأصلُ ليس عضواً)" \
+    "select _pf('$K1', 'select (merge_products(''${PK}11''::uuid, ''${PK}12''::uuid)).id::text')" "${PK}11"
+chk "    يرث مكانَ التوأم ٢٠٤٨، وصفُّ التوأم يبقى نائماً" \
+    "select (select pos::text from store_category_items where category_id='${CK}0e' and product_id='${PK}11')||'|'||(select count(*) from store_category_items where category_id='${CK}0e' and product_id='${PK}12')::text" "2048|1"
+chk "  وأصلٌ عضوٌ أصلاً يُدمج" \
+    "select _pf('$K1', 'select (merge_products(''${PK}14''::uuid, ''${PK}15''::uuid)).id::text')" "${PK}14"
+chk "    فلا يتكرّر ولا يتحرّك" \
+    "select count(*)::text||':'||max(pos)::text from store_category_items where category_id='${CK}0e' and product_id='${PK}14'" "1:3072"
+chk "  والاسترجاعُ يعيد التوأمَ بنفس المعرّف" \
+    "select _pf('$K1', 'select (restore_product(''${PK}12''::uuid)).id::text')" "${PK}12"
+chk "    لمكانه ٢٠٤٨، والأصلُ يبقى" \
+    "select string_agg(product_id::text||':'||pos, ',' order by product_id) from store_category_items where category_id='${CK}0e' and product_id in ('${PK}11','${PK}12')" "${PK}11:2048,${PK}12:2048"
 chk "  والقراءةُ تراهما معاً بترتيب العيادة (الموضعُ ثم المعرّف)" \
     "select _scv('$K1', 'select (store_categories_list()->''members''->''${CK}0e'')::text')" "[\"${PK}13\",\"${PK}11\",\"${PK}12\",\"${PK}14\"]"
-chk "T15 «رتّب المخزن» يطوي غيرَ المصنَّف بالمصنَّف، والعضويةُ تنتقل معه" \
-    "select _sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}0e\",\"ids\":[\"${PK}16\"]}]')||'|'||_pf('$K1', 'select ((inventory_tidy_uncat()->>''merged'')::int >= 1)::text')||'|'||(select pos::text from store_category_items where category_id='${CK}0e' and product_id='${PK}17')" "ok:10|true|5120"
+chk "T15 غيرُ المصنَّف عضو" \
+    "select _sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}0e\",\"ids\":[\"${PK}16\"]}]')" "ok:10"
+chk "  و«رتّب المخزن» يطويه بالمصنَّف" \
+    "select _pf('$K1', 'select ((inventory_tidy_uncat()->>''merged'')::int >= 1)::text')" "true"
+chk "    والعضويةُ تنتقل معه بموضعها" \
+    "select pos::text from store_category_items where category_id='${CK}0e' and product_id='${PK}17'" "5120"
 
 # ── T16–T19: الواجهةُ العامّة بدور anon ──────────────────────────────────────
 chk "تصنيفاتُ K5: عروضٌ بستّ مواد (أربعٌ معروضة)، ومخفيٌّ، ومشال" \
