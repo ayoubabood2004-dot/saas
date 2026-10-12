@@ -19,14 +19,21 @@ import { cn, money } from "@/lib/utils";
 
 export const DESC_MAX = 2000;
 
-export function ProductDetailsSheet({ p, onClose, live, catsOf, canEditCats, canPrice, onPhoto, onLib, onToggle, onFeatured, onPrice, onSave, busy }: {
+/**
+ * حالُ قسم التصنيفات بالورقة — كلٌّ يُقال بما هو: `ready` لقطةٌ بيدنا (ولو فشلت قراءةٌ بعدها)،
+ * `loading` لم تصل، `error` فشلت ولا لقطة (إعادة)، `unseeded` العيادةُ لم تبدأها، `switched`
+ * تبدّلت العيادة. كان «لم تُبذر» و«فشلت القراءة» قولاً واحداً: «ما اكو تصنيفات بعد» عن متجرٍ بخمسة.
+ */
+export type SheetCats = "ready" | "loading" | "error" | "unseeded" | "switched";
+
+export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRetryCats, canPrice, onPhoto, onLib, onToggle, onFeatured, onPrice, onSave, busy }: {
   p: Product | null;
   onClose: () => void;
   /** التصنيفاتُ الحيّة بترتيب العيادة. */
   live: CatRow[];
   catsOf: (pid: string) => string[];
-  /** لا تصنيفات بعد (لم تُبذر/فشلت القراءة): القسمُ يقول ذلك ولا يكتب. */
-  canEditCats: boolean;
+  catsState: SheetCats;
+  onRetryCats: () => void;
   canPrice: boolean;
   onPhoto: () => void;
   onLib: () => void;
@@ -120,7 +127,16 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, canEditCats, can
 
           <div>
             <p className="mb-1.5 text-xs font-bold text-ink-muted">{t("cat.sheetCats", "تصنيفاته بالمتجر")}</p>
-            {!canEditCats || live.length === 0 ? (
+            {catsState === "loading" ? (
+              <div className="flex gap-1.5" data-sheetcatsloading>{[0, 1, 2].map((i) => <span key={i} className="h-7 w-20 animate-pulse rounded-full bg-surface-2" />)}</div>
+            ) : catsState === "error" ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl bg-danger-50 p-2.5 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-sheetcatsfailed>
+                {t("cat.catsFailed", "ما وصلنا للتصنيفات — أعد المحاولة.")}
+                <button type="button" onClick={() => { playTap(); onRetryCats(); }} className="rounded-lg border border-danger-300 px-2 py-1">{t("common.retry", "إعادة المحاولة")}</button>
+              </div>
+            ) : catsState === "switched" ? (
+              <p className="text-xs font-semibold text-warn-700 dark:text-warn-200">{t("cat.switched", "تبدّلت العيادة — حدّث الصفحة. ما انحفظ شي.")}</p>
+            ) : catsState === "unseeded" || live.length === 0 ? (
               <p className="text-xs text-ink-subtle">{t("cat.sheetNoCats", "ما اكو تصنيفات بعد — ابدأها من تبويب «التصنيفات».")}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5" data-sheetcats>

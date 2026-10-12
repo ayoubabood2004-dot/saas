@@ -230,10 +230,10 @@ try {
   const S = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
 
   const U = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-  const srv = { clinic: "C1", canEdit: true, state: { seeded: true, cats: [], items: [] }, list: 0, applies: [], failApply: null, hold: null };
+  const srv = { clinic: "C1", canEdit: true, state: { seeded: true, cats: [], items: [] }, list: 0, applies: [], failApply: null, failList: null, hold: null };
   const snap = () => S.X.snapshotOf(srv.state, srv.clinic, srv.canEdit, () => ({ listed: true }));
   globalThis.__srv = {
-    storeCategoriesList: async () => { srv.list++; return snap(); },
+    storeCategoriesList: async () => { srv.list++; if (srv.failList) { const e = srv.failList; srv.failList = null; throw e; } return snap(); },
     storeCategoriesApply: async (clinic, ops) => {
       srv.applies.push(ops);
       if (srv.hold) await srv.hold.p;
@@ -300,6 +300,32 @@ try {
   check("الرجوعُ للتبويب يقرأ مرّةً كلَّ ١٥ث على الأكثر", srv.list === l0 + 1, String(srv.list - l0));
   S.onStoreCatsVisible(1_000_000 + 16_000); await settle();
   check("  وبعدها يقرأ من جديد", srv.list === l0 + 2 && S.getStoreCatsState().status === "ready");
+
+  /* قراءةٌ ثانيةٌ فشلت (رجوعٌ للتطبيق بشبكةٍ متعثّرة) **وأبقت** ما وصل: الختمُ ختمُ آخر قراءةٍ نجحت،
+   * والخادمُ يحكم بالكتابة. كان كلُّ حفظٍ بعدها يُرفض قبل الشبكة بـ«not_ready» خاماً بلا قراءةٍ تصلحه. */
+  const netErr = Object.assign(new TypeError("Failed to fetch"), {});
+  srv.failList = netErr;
+  S.onStoreCatsVisible(1_000_000 + 40_000); await settle();
+  st = S.getStoreCatsState();
+  check("قراءةٌ ثانيةٌ فاشلة: الحالُ error ويبقى ما وصل (لا قائمةٌ فارغة)", st.status === "error" && st.view.cats.length === 3 && !!st.clinic, `${st.status} ${st.view.cats.length}`);
+  const nW = srv.applies.length;
+  let eW = null;
+  try { await S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(95)] }]); } catch (e) { eW = e; }
+  await settle();
+  check("  والكتابةُ بعدها تمرّ للخادم بختم آخر قراءةٍ نجحت", eW === null && srv.applies.length === nW + 1, String(eW?.message));
+  check("  ولقطتُها تُنهي «آخر تحديث فشل» (ready)", S.getStoreCatsState().status === "ready");
+  globalThis.__reset();
+  const lR = srv.list, aR = srv.applies.length;
+  let eR = null;
+  try { await S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(96)] }]); } catch (e) { eR = e; }
+  await settle();
+  check("بلا لقطةٍ بعد (idle): الكتابةُ تقرأ مرّةً ثم تُرسل — لا رفضٌ يتكرّر", eR === null && srv.list === lR + 1 && srv.applies.length === aR + 1, `${eR?.message} list+${srv.list - lR} apply+${srv.applies.length - aR}`);
+  globalThis.__reset();
+  srv.failList = netErr;
+  let eF = null;
+  try { await S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(97)] }]); } catch (e) { eF = e; }
+  check("  وإن فشلت تلك القراءةُ فخطؤها هو ما يُرمى (يقوله describeDbError) لا «not_ready» خام", eF === netErr, String(eF?.message));
+  await S.loadStoreCats(true);
 
   srv.hold = defer();
   const pend = S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(93)] }]).catch((e) => e);

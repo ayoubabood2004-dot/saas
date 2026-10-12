@@ -8,7 +8,7 @@ import { Button, useToast } from "@/components/ui";
 import { diffOps, useStoreCats } from "@/lib/storeCats";
 import { isListed, type CatRow } from "@/lib/storeCatIndex";
 import { cardImagePath, catGlyph, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
-import { describeDbError } from "@/lib/errors";
+import { catError } from "./catErrors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatNum, localISO, searchable } from "@/lib/utils";
 import { SortList } from "./SortList";
@@ -117,7 +117,7 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
       return true;
     } catch (e) {
       playWarning();
-      toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t));
+      toast.error(t("cat.saveFailed", "ما انحفظ"), catError(e, t));
       return false;
     } finally { setSaving(false); }
   };
@@ -176,6 +176,15 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
           </Button>
         )}
       </div>
+
+      {cats.status === "error" && (
+        /* قراءةٌ ثانيةٌ فشلت (رجوعٌ للتطبيق بشبكةٍ متعثّرة): المؤشَّرُ آخرُ ما وصل — يُقال ويُعاد،
+           والحفظُ ما زال يمرّ بختم آخر قراءةٍ نجحت (storeCats.isStamped). */
+        <div className="flex items-center gap-2 rounded-2xl border border-warn-300 bg-warn-50/60 p-3 text-xs font-semibold text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-catstale>
+          <span className="min-w-0 flex-1">{t("cat.staleWarn", "آخر تحديث فشل — المعروض قد يكون قديماً.")}</span>
+          <button type="button" className="underline" onClick={() => { playTap(); cats.retry(); }}>{t("common.retry", "إعادة المحاولة")}</button>
+        </div>
+      )}
 
       {ordering ? (
         <ItemOrder catId={cat.id} ids={members.filter((id) => byId.has(id))} byId={byId} />
@@ -284,7 +293,7 @@ function ItemOrder({ catId, ids, byId }: { catId: string; ids: string[]; byId: M
       <p className="text-xs text-ink-subtle">{t("cat.orderHint", "بهذا الترتيب تطلع المواد للزبون داخل التصنيف.")}</p>
       <SortList ids={ids}
         onMove={(id, after) => {
-          cats.apply([{ op: "move_item", cat: catId, id, after }]).catch((e) => { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t)); });
+          cats.apply([{ op: "move_item", cat: catId, id, after }]).catch((e) => { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), catError(e, t)); });
         }}
         row={(id, { handle, arrows }) => {
           const p = byId.get(id) as Product;

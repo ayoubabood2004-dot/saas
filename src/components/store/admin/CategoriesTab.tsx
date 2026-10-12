@@ -8,6 +8,7 @@ import { useStoreCats } from "@/lib/storeCats";
 import { isListed, NAME_MAX, type CatRow } from "@/lib/storeCatIndex";
 import { catGlyph } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
+import { catError } from "./catErrors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatNum, localISO, uuid } from "@/lib/utils";
 import { IconGrid } from "./IconGrid";
@@ -63,7 +64,7 @@ export function CategoriesTab({ products, guard }: {
       return true;
     } catch (e) {
       playWarning();
-      toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t));
+      toast.error(t("cat.saveFailed", "ما انحفظ"), catError(e, t));
       return false;
     } finally { setBusy(false); }
   };

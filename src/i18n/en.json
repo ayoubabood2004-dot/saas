@@ -5120,6 +5120,8 @@
     "bulkRemoveTitle": "Remove {{n}} items from…",
     "bulkAddTitle": "Add {{n}} items to…",
     "sheetNoCats": "No categories yet — start them from the «Categories» tab.",
+    "catsFailed": "Couldn't load the categories — try again.",
+    "notReady": "The categories haven't loaded yet — try again in a moment.",
     "bulkRemoveOk": "Remove from {{n}} categories",
     "bulkAddOk": "Add to {{n}} categories",
     "iconPick": "Pick an icon",

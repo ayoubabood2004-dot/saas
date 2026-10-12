@@ -34,6 +34,7 @@ import { ProductCard } from "@/components/store/admin/ProductCard";
 import { ProductDetailsSheet } from "@/components/store/admin/ProductDetailsSheet";
 import { CatPickerSheet } from "@/components/store/admin/CatPickerSheet";
 import { CategoriesTab, type LeaveGuard } from "@/components/store/admin/CategoriesTab";
+import { catError } from "@/components/store/admin/catErrors";
 import { searchable } from "@/lib/utils";
 import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName } from "@/lib/settings";
@@ -765,7 +766,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       playSuccess();
       toast.success(t("cat.detailsSaved", "انحفظت التفاصيل"));
       setDetailsId(null);
-    } catch (e) { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t)); }
+    } catch (e) { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), catError(e, t)); }
   };
 
   /** «أضف للتصنيف… / شيل من التصنيف…»: دفعةٌ واحدةٌ ذرّية — وتُقسم فقط فوق سقف الدفعة (٢٠٠٠ معرّف). */
@@ -797,7 +798,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
           ? t("cat.bulkCatRemovedHad", "انشالت {{n}} ({{m}} ما كانت بيها)", { n: formatNum(had), m: formatNum(total - had) })
           : t("cat.bulkCatRemoved", "انشالت {{n}}", { n: formatNum(had) }));
       }
-    } catch (e) { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t)); }
+    } catch (e) { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), catError(e, t)); }
     finally { setBulkBusy(false); }
   };
 
@@ -887,6 +888,13 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
             <span className={cn("tabular-nums", filter === id ? "text-white/80" : "text-ink-subtle")}>{formatNum(n)}</span>
           </button>
         ))}
+        {cats.status === "error" && (
+          /* قراءةٌ ثانيةٌ فشلت: ما على البطاقات آخرُ ما وصل — يُقال، ويُعاد بضغطة (والحفظُ ما زال يمرّ). */
+          <span className="flex w-full items-center gap-2 rounded-xl border border-warn-300 bg-warn-50/60 px-3 py-1.5 text-2xs font-semibold text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-catstale>
+            <span className="min-w-0 flex-1">{t("cat.staleWarn", "آخر تحديث فشل — المعروض قد يكون قديماً.")}</span>
+            <button type="button" className="underline" onClick={() => { playTap(); cats.retry(); }}>{t("common.retry", "إعادة المحاولة")}</button>
+          </span>
+        )}
         {cats.live.length > 0 && (
           <select value={inCat} onChange={(e) => { playTap(); setInCat(e.target.value); setLimit(GRID_PAGE); }} data-catin
             aria-label={t("cat.fInCat", "بالتصنيف")}
@@ -1036,7 +1044,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
         onPick={(row) => { if (libFor) void pickFromLib(libFor, row.path); }} />
       <ProductDetailsSheet p={detailsP} onClose={() => setDetailsId(null)} live={cats.live} catsOf={cats.catsOf}
-        canEditCats={cats.status === "ready" && cats.seeded} canPrice={canPrice} busy={!!detailsP && busyId === detailsP.id}
+        catsState={cats.status === "switched" ? "switched" : cats.writable ? (cats.seeded ? "ready" : "unseeded") : cats.status === "error" ? "error" : "loading"}
+        onRetryCats={cats.retry} canPrice={canPrice} busy={!!detailsP && busyId === detailsP.id}
         onPhoto={() => { if (detailsP) { setDetailsId(null); openEditor(detailsP, null); } }}
         onLib={() => { if (detailsP) { setDetailsId(null); setLibFor(detailsP); } }}
         onToggle={() => { if (detailsP) void toggle(detailsP); }} onFeatured={() => { if (detailsP) void toggleFeatured(detailsP); }}

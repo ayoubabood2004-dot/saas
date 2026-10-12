@@ -64,6 +64,14 @@ const looseId = (x: string) => x.length > 0 && x.length <= 80;
 const ctx = () => ({ canEdit: state.canEdit, isId: looseId });
 /** تبدّلت العيادةُ والطلبُ بالطريق: يُرفض منتظِرُه (لا يبقى وعداً معلَّقاً لا يُحسم أبداً). */
 const switchedErr = () => Object.assign(new Error("clinic_switched"), { code: "not_ready" });
+const notReadyErr = () => Object.assign(new Error("not_ready"), { code: "not_ready" });
+/**
+ * بيدنا لقطةٌ من الخادم بختمها: `ready`، أو `error` — قراءةٌ ثانيةٌ فشلت **وأبقت** ما وصل قبلها.
+ * فالختمُ ختمُ آخر قراءةٍ نجحت، والكتابةُ ترسله والخادمُ يحكم (`p_clinic = auth_clinic()`)؛ وتبديلُ
+ * العيادة يمحو الحالَ كلَّه (registerReset) فلا يبقى ختمٌ قديمٌ يُرسل. كان الشرطُ `ready` وحدَه:
+ * رجوعٌ للتطبيق بشبكةٍ متعثّرة يجعل كلَّ حفظٍ بعده «ما انحفظ — not_ready» حتى تُبدَّل الشاشة.
+ */
+export const isStamped = (s: StoreCatsClientState): boolean => !!s.clinic && (s.status === "ready" || s.status === "error");
 
 /** يقرأ اللقطةَ من الخادم. لا يدهس تعديلاً لم يُحسم: يؤجَّل حتى يُحسم. **لا يكتب أبداً.** */
 export function loadStoreCats(force = false): Promise<void> {
@@ -119,7 +127,8 @@ function flush(): void {
         dropped.forEach((w) => w.reject(e));
         view = base;
       }
-      state = { ...state, canEdit: !!snap.can_edit, base, view, saving: queue.length > 0, error: null, loadedAt: Date.now() };
+      // لقطةُ الكتابة قراءةٌ كاملةٌ ناجحة: تُنهي «آخر تحديث فشل» كما تُنهيه القراءة.
+      state = { ...state, status: "ready", canEdit: !!snap.can_edit, base, view, saving: queue.length > 0, error: null, loadedAt: Date.now() };
       emit();
       mine.forEach((w) => w.resolve());
     } catch (e) {
@@ -151,8 +160,15 @@ function fail(e: unknown, batchWaiters: Waiter[]): void {
 /** يطبّق عملياتٍ على الشاشة فوراً ويرسلها دفعةً واحدة. يرمي إن رفضها الخادم (أو المرآةُ قبله). */
 export function applyStoreCatOps(ops: StoreCatOp[]): Promise<void> {
   if (!ops.length) return Promise.resolve();
-  if (state.status !== "ready" || !state.clinic) {
-    return Promise.reject(Object.assign(new Error(state.status === "switched" ? "clinic_switched" : "not_ready"), { code: "not_ready" }));
+  if (state.status === "switched") return Promise.reject(switchedErr());
+  if (!isStamped(state)) {
+    /* لا لقطةَ بعد (أوّلُ قراءةٍ لم تصل أو فشلت): نقرأ مرّةً ثم نكتب — لا رفضٌ يتكرّر بلا قراءةٍ
+     * تُصلحه. وفشلُ القراءة يُرمى هو (شبكةٌ، صلاحيةٌ — يقوله describeDbError) لا رمزٌ خام. */
+    return loadStoreCats(true).then(() => {
+      if (state.status === "switched") throw switchedErr();
+      if (!isStamped(state)) throw state.error ?? notReadyErr();
+      return applyStoreCatOps(ops);
+    });
   }
   let view: CatsState;
   try { view = applyOps(state.view, ops, ctx()); }
@@ -230,11 +246,13 @@ export function diffOps(cat: string, before: ReadonlySet<string>, after: Readonl
 
 /* ── الخطّاف ─────────────────────────────────────────────────────────────── */
 export function useStoreCats() {
-  const s = useSyncExternalStore(subscribe, () => state);
+  const s = useSyncExternalStore(subscribe, getStoreCatsState, getStoreCatsState);
   useEffect(() => { void loadStoreCats(); }, []);
   const v = viewOf(s.view);
   return {
     status: s.status,
+    /** لقطةُ خادمٍ بختمها بيدنا — الكتابةُ تمرّ (حتى بعد قراءةٍ ثانيةٍ فاشلة). */
+    writable: isStamped(s),
     error: s.error,
     saving: s.saving,
     canEdit: s.canEdit,

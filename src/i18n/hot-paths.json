@@ -53,7 +53,8 @@
         "src/components/store/admin/IconGrid.tsx",
         "src/components/store/admin/ProductCard.tsx",
         "src/components/store/admin/ProductDetailsSheet.tsx",
-        "src/components/store/admin/SortList.tsx"
+        "src/components/store/admin/SortList.tsx",
+        "src/components/store/admin/catErrors.ts"
       ]
     }
   }
