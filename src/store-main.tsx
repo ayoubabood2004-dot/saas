@@ -20,9 +20,9 @@
  * وكلُّ إضافةٍ هنا تُقاس: `scripts/store-weight-guard.mjs` يفشّل البناءَ إن
  * تجاوزت حزمةُ الزائر ميزانيّتَها.
  * ==========================================================================*/
-import React from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import "./i18n/store";
 import "./index.css";
 import { installDigitNormalizer } from "./lib/digits";
@@ -33,6 +33,23 @@ import { TrackJourney } from "./pages/TrackJourney";
 // الأرقامُ الشرقية تُحوَّل إلى ٠-٩ بأيّ حقل — الزبونُ يكتب رقمَه بأيّ لوحة.
 installDigitNormalizer();
 
+/** ما يخدمه هذا المستندُ بنفسه (vercel.json: store.html) — مرآةُ إعادات الكتابة. */
+const STORE_DOC_PATH = /^\/(s\/[^/]+(\/track)?|t\/[^/]+)\/?$/;
+
+/**
+ * «كلُّ مسارٍ آخر» = انتقالٌ **كامل** لا داخليّ. كان `<Navigate to="/">` داخل هذا المستند — و«/» هنا
+ * لا يعرفه أحد، فرابطٌ داخليٌّ لصفحةٍ من تطبيق العيادة (البوّابة /p/) ينتهي بصفحةٍ فارغة (قيس محلياً).
+ * الآن الخادمُ يقرّر: مسارٌ لتطبيق العيادة يأتي بمستنده (index.html). ومسارٌ يخدمه هذا المستندُ لا
+ * يُعاد تحميلُه (حلقة) — يذهب للرئيسية كاملاً.
+ */
+function HardNav() {
+  const loc = useLocation();
+  useEffect(() => {
+    window.location.replace(STORE_DOC_PATH.test(loc.pathname) ? "/" : loc.pathname + loc.search + loc.hash);
+  }, [loc]);
+  return null;
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
@@ -40,8 +57,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/s/:slug" element={<Storefront />} />
         <Route path="/s/:slug/track" element={<StoreTrack />} />
         <Route path="/t/:token" element={<TrackJourney />} />
-        {/* أيُّ مسارٍ آخر ليس للزائر: يرجع لتطبيق العيادة بمستنده. */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* أيُّ مسارٍ آخر ليس للزائر: يرجع لتطبيق العيادة **بمستنده** — انتقالٌ كامل لا داخليّ. */}
+        <Route path="*" element={<HardNav />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

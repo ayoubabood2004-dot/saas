@@ -145,6 +145,14 @@ check("صورةُ .hd.jpg تُرسم بمصغّرتها .sm.jpg (نفسُ راب
   shelfHtml.includes(`${SUPA}/storage/v1/object/public/product-images/${CLINIC}/p9-k1.sm.jpg`) && !shelfHtml.includes("p9-k1.hd.jpg"));
 check("النبذةُ مرسومةٌ تحت الاسم ومهرَّبة", /<p class="mt-0\.5 line-clamp-2 whitespace-pre-line[^"]*">أغذية &lt;و&gt; مستلزمات\nتوصيل<\/p>/.test(shelfHtml));
 check("  وخانةُ بحثٍ خاملة (لا تُكتب ولا تُركَّز قبل React)", /<input readonly tabindex="-1" aria-hidden="true" placeholder="دوّر على منتج…"/.test(shelfHtml));
+// قيس محلياً (الرسمُ بلا جافاسكربت مقابل المركَّب): بلا سطر الطمأنينة وسطر البوّابة كان الرأسُ يطول عند التركيب.
+const SOC = await render({ ok: true, name: "عيادة الروابط", logo_url: null, delivery_fee: 3000, min_order: 0, facebook: "@alrahma.vet", instagram: "javascript:alert(1)", cats: [] }, "alrahma", V1);
+const socHtml = SOC.split('<div id="root">')[1] ?? "";
+check("سطرُ الطمأنينة مرسوم (نصُّه من قاموس الزائر، والأجرةُ معروفة)", socHtml.includes("الدفع عند الاستلام") && socHtml.includes("3,000 د.ع"));
+check("  وسطرُ البوّابة رابطٌ كامل إلى /p/", /<a href="\/p\/alrahma" class="flex items-center gap-2 text-xs/.test(socHtml) && socHtml.includes("شوف حيواناتي"));
+check("  ومكانُ زرّ التواصل لكلّ رابطٍ آمنٍ وحده (javascript: لا مكانَ له)", (socHtml.match(/grid h-8 w-8 place-items-center rounded-lg bg-white\/15/g) || []).length === 1);
+const many = await render({ ok: true, name: "عيادة كثيرة", logo_url: null, cats: [] }, "alrahma", Array.from({ length: 9 }, (_, i) => ({ ...V1[0], id: `m${i}`, image_path: null })));
+check("  وسطرُ الفرز حين تزيد الموادُّ على ثمانٍ (كما يرسمه React)", (many.split('<div id="root">')[1] ?? "").includes("الترتيب المعتاد") && !socHtml.includes("الترتيب المعتاد"));
 
 console.log(fails ? `\n✗ og-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ og-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

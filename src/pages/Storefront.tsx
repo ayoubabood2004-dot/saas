@@ -10,15 +10,15 @@
 // موبايل أولاً — زوار البايو كلهم من التلفون.
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  ShoppingCart, Plus, Minus, Search, MapPin, Phone, MessageCircle, X,
+  ShoppingCart, Plus, Minus, Search, MapPin, Phone, MessageCircle, X, Facebook, Instagram,
   CheckCircle2, PawPrint, Truck, ShieldCheck, Store, ArrowRight, ArrowLeft, Loader2, PackageX,
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { storeApi, readStoreBoot, pagePainted } from "@/lib/storeApi";
-import { cardImagePath, catGlyph, isValidCustomerPhone, mergeKnown, orderShelf, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
+import { cardImagePath, catGlyph, isValidCustomerPhone, mergeKnown, orderShelf, productImageUrl, safeSocialUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
 import { useLayers } from "@/lib/storeLayers";
 import { ZoomViewer } from "@/components/store/ZoomViewer";
 import { preferArabicForVisitor } from "@/lib/portal";
@@ -332,6 +332,8 @@ export function Storefront() {
   const feeKnown = fee > 0;
   const total = Math.round((subtotal + fee) * 100) / 100;
   const minOrder = front?.min_order ?? 0;
+  const fbUrl = safeSocialUrl("facebook", front?.facebook);
+  const igUrl = safeSocialUrl("instagram", front?.instagram);
   const underMin = minOrder > 0 && subtotal < minOrder;
 
   /* ------------------------------ الحالات ------------------------------ */
@@ -453,12 +455,24 @@ export function Storefront() {
         {/* بابُ المالك يبقى — لكن بسطرٍ واحدٍ لا بطاقةً بارتفاع ٦٠: هذه صفحةُ
             شراءٍ قبل كلّ شيء. والسهمُ يشير **يساراً** لأنه تقدّمٌ لا رجوع (وبالعربية
             القراءةُ من اليمين، فسهمُ الرجوع يمينٌ وسهمُ التقدّم يسار). */}
-        <Link to={`/p/${slug}`} onClick={() => playTap()}
-          className="mx-auto mt-2 flex max-w-3xl items-center gap-2 text-xs font-semibold text-white/90 transition hover:text-white">
-          <PawPrint size={14} className="shrink-0" />
-          <span>{t("portal.cta", "شوف حيواناتي")}</span>
-          <ArrowLeft size={14} className="shrink-0" />
-        </Link>
+        {/* `<a href>` لا `<Link>`: البوّابةُ (/p/) صفحةُ **تطبيق العيادة** بمستنده (index.html)، ومستندُ
+            الزائر (store.html) لا يعرفها — فكان الانتقالُ داخلياً يقع على «كلُّ مسارٍ آخر» ⇒ «/» بصفحةٍ
+            فارغة. قيس محلياً (بناءٌ سحابيّ أمام نسخةٍ محلّية من دوالّ المتجر): ‎#root فارغ عند «/». */}
+        <div className="mx-auto mt-2 flex max-w-3xl items-center gap-2">
+          <a href={`/p/${slug}`} onClick={() => playTap()} data-portallink
+            className="flex items-center gap-2 text-xs font-semibold text-white/90 transition hover:text-white">
+            <PawPrint size={14} className="shrink-0" />
+            <span>{t("portal.cta", "شوف حيواناتي")}</span>
+            <ArrowLeft size={14} className="shrink-0" />
+          </a>
+          {/* فيسبوك وانستغرام: كانا يُحفظان بالإعدادات ولا يُعرضان. والرابطُ يُبنى لا يُصدَّق (safeSocialUrl). */}
+          {(fbUrl || igUrl) && (
+            <span className="ms-auto flex items-center gap-1.5" data-socials>
+              {fbUrl && <a href={fbUrl} target="_blank" rel="noopener noreferrer" aria-label={t("sf.facebook", "فيسبوك")} className="grid h-8 w-8 place-items-center rounded-lg bg-white/15 transition hover:bg-white/25"><Facebook size={15} /></a>}
+              {igUrl && <a href={igUrl} target="_blank" rel="noopener noreferrer" aria-label={t("sf.instagram", "انستغرام")} className="grid h-8 w-8 place-items-center rounded-lg bg-white/15 transition hover:bg-white/25"><Instagram size={15} /></a>}
+            </span>
+          )}
+        </div>
       </header>
 
       {/* البحث والتصنيفات — لاصقة */}

@@ -27,7 +27,8 @@
  *      طريقُهنّ إلى المسار الحقيقي.
  *   ٣) بلا شعار ⇒ `/og.jpg` كما بالقالب — استرجاعُ ما كان يُمحى لا أكثر.
  */
-import { cardImagePath, catGlyph, shapeFrontCats, shelfLook, shelfLabel } from "../src/lib/storeLib";
+import { cardImagePath, catGlyph, safeSocialUrl, shapeFrontCats, shelfLook, shelfLabel } from "../src/lib/storeLib";
+import AR from "../src/i18n/store.ar.json";
 
 export const config = { runtime: "edge" };
 
@@ -62,7 +63,8 @@ type Row = { id: string; name: string; price: number; available?: boolean; image
 const esc2 = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const iqd = (n: number) => `${new Intl.NumberFormat("en-US").format(Math.round(Number(n) || 0))} د.ع`;
 
-function paintShelf(front: { name?: string; bio?: string | null; cats?: unknown }, rows: Row[], supaUrl: string): string {
+type PaintFront = { name?: string; bio?: string | null; cats?: unknown; delivery_fee?: number | null; min_order?: number | null; facebook?: string | null; instagram?: string | null };
+function paintShelf(front: PaintFront, rows: Row[], supaUrl: string, slug: string): string {
   const cards = rows.slice(0, PAINT_ROWS).map((p) => {
     const shelf = shelfLook(p.name);
     // صورةُ البطاقة نفسُها التي يطلبها React (cardImagePath): المصغّرةُ لصورةٍ من المحرّر — فالمرسومُ
@@ -97,19 +99,34 @@ function paintShelf(front: { name?: string; bio?: string | null; cats?: unknown 
     ? `<div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">${chipOn("الكل")}${cats.map((c) => chipOff(`${catGlyph(c.icon)} ${c.name}`)).join("")}</div>`
     : "";
 
+  /* وسطرُ الطمأنينة وسطرُ البوّابة (+ مكانا زرَّي التواصل) وسطرُ الفرز — كانت غائبةً عن الرسم، فحين
+   * يركّب React يطول الرأسُ سطرين وينزل الرفُّ تحت عين الزبون (قيس محلياً بالرسم بلا جافاسكربت).
+   * النصوصُ من قاموس الزائر نفسِه (store.ar.json) — لا نسخةَ عربيةً ثانيةً تنحرف. */
+  const fee = Number(front.delivery_fee) || 0;
+  const min = Number(front.min_order) || 0;
+  const social = [safeSocialUrl("facebook", front.facebook), safeSocialUrl("instagram", front.instagram)].filter(Boolean).length;
+  const trust = `<div class="mx-auto mt-2.5 flex max-w-3xl items-center gap-3 border-t border-white/15 pt-2 text-xs"><span class="flex items-center gap-1">${esc2(AR.sf.cod)}</span><span class="flex items-center gap-1">${esc2(fee > 0 ? iqd(fee) : AR.sf.tbd)}</span>${min > 0 ? `<span class="text-white/80">${esc2(AR.sf.minOrder)} ${esc2(iqd(min))}</span>` : ""}</div>`;
+  const socialSlot = `<span class="grid h-8 w-8 place-items-center rounded-lg bg-white/15"></span>`;
+  const portal = `<div class="mx-auto mt-2 flex max-w-3xl items-center gap-2"><a href="/p/${esc2(slug)}" class="flex items-center gap-2 text-xs font-semibold text-white/90 transition hover:text-white"><span>${esc2(AR.portal.cta)}</span></a>${social ? `<span class="ms-auto flex items-center gap-1.5">${socialSlot.repeat(social)}</span>` : ""}</div>`;
+  const sortRow = rows.length > 8
+    ? `<div class="flex items-center justify-between gap-2 text-2xs"><span class="font-semibold text-ink-muted"></span><span class="shrink-0 rounded-lg border border-line bg-surface-1 px-2 py-1 text-2xs font-semibold text-ink-muted">${esc2(AR.sf.sortDefault)}</span></div>`
+    : "";
+
   return `<div dir="rtl" class="min-h-screen bg-surface pb-28">
     <header class="bg-brand-700 px-4 pb-3 pt-4 text-white">
       <div class="mx-auto flex max-w-3xl items-center gap-3">
         <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/15"></span>
         <div class="min-w-0 flex-1"><h1 class="line-clamp-2 font-display text-lg font-bold leading-tight">${esc2(front.name ?? "")}</h1>${bio ? `<p class="mt-0.5 line-clamp-2 whitespace-pre-line text-xs leading-snug text-white/85">${esc2(bio)}</p>` : ""}</div>
       </div>
+      ${trust}
+      ${portal}
     </header>
     <div class="sticky top-0 z-20 border-b border-line bg-surface/95 px-4 py-3 backdrop-blur">
       <div class="mx-auto max-w-3xl space-y-2.5">
-        <div class="relative"><input readonly tabindex="-1" aria-hidden="true" placeholder="دوّر على منتج…" class="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none" /></div>${chips}
+        <div class="relative"><input readonly tabindex="-1" aria-hidden="true" placeholder="دوّر على منتج…" class="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none" /></div>${chips}${sortRow}
       </div>
     </div>
-    <div class="mx-auto max-w-3xl px-4 pt-3">
+    <div class="mx-auto max-w-3xl px-4 py-4">
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">${cards}</div>
     </div>
   </div>`;
@@ -160,7 +177,7 @@ export default async function handler(req: Request): Promise<Response> {
       rpc("store_catalog", { p_slug: slug, p_limit: BOOT_PAGE, p_offset: 0 }).catch(() => null),
     ]);
     if (!r.ok) return asHtml(shell, 60);
-    const front = (await r.json()) as { ok?: boolean; name?: string; bio?: string; logo_url?: string | null; cats?: unknown };
+    const front = (await r.json()) as PaintFront & { ok?: boolean; name?: string; bio?: string; logo_url?: string | null };
     if (!front?.ok || !front.name) return asHtml(shell, 60);
     const catalog = rc && rc.ok ? await rc.json().catch(() => null) : null;
 
@@ -231,7 +248,7 @@ export default async function handler(req: Request): Promise<Response> {
     // الرفُّ المرسوم داخل `#root` — `createRoot().render()` يمسحه عند التركيب،
     // فلا تراكمَ ولا وميضَ: ما بعده يشبه ما قبله.
     const painted = Array.isArray(catalog) && catalog.length
-      ? paintShelf(front, catalog as Row[], supaUrl)
+      ? paintShelf(front, catalog as Row[], supaUrl, slug)
       : "";
 
     // نستبدل من <title> إلى آخر تاغ twitter — البلوك المتعاقب بالـhead.

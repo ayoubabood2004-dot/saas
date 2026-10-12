@@ -69,6 +69,42 @@ export function mergeKnown<T extends { id: string }>(shelves: readonly (readonly
   return m;
 }
 
+/* ── روابطُ التواصل بصفحة الزائر (متجر v1) ─────────────────────────────────
+ * حقلا فيسبوك وانستغرام بالإعدادات نصٌّ حرٌّ يكتبه الدكتور: معرّفٌ («clinic.vet» أو «@clinic»)،
+ * أو رابطٌ، أو **اسمُ الصفحة بالعربي**. وكانا يُحفظان ولا يُعرضان. فالرابطُ يُبنى هنا لا يُصدَّق:
+ * المعرّفُ ⇒ صفحتُه، والاسمُ الحرّ ⇒ بحثٌ على المضيف نفسِه، والرابطُ يمرّ إن كان https على مضيفه —
+ * و`javascript:` و`data:` ومضيفٌ غريب ⇒ لا زرّ (رابطٌ يكتبه أيُّ أحدٍ لا يصير بابَ تصيّدٍ للزبون). */
+type Social = "facebook" | "instagram";
+const SOCIAL: Record<Social, { hosts: string[]; profile: (h: string) => string; search: (q: string) => string }> = {
+  facebook: {
+    hosts: ["facebook.com", "www.facebook.com", "m.facebook.com", "fb.com", "www.fb.com"],
+    profile: (h) => `https://www.facebook.com/${h}`,
+    search: (q) => `https://www.facebook.com/search/top?q=${encodeURIComponent(q)}`,
+  },
+  instagram: {
+    hosts: ["instagram.com", "www.instagram.com"],
+    profile: (h) => `https://www.instagram.com/${h}`,
+    search: (q) => `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(q)}`,
+  },
+};
+export function safeSocialUrl(kind: Social, raw: string | null | undefined): string | null {
+  const v = String(raw ?? "").trim();
+  if (!v || v.length > 300) return null;
+  const s = SOCIAL[kind];
+  const handle = v.replace(/^@/, "");
+  if (/^[A-Za-z0-9._-]{1,50}$/.test(handle)) return s.profile(handle);
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(v);
+  const looksLikeUrl = hasScheme || /^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(v);
+  if (looksLikeUrl) {
+    let u: URL;
+    try { u = new URL(hasScheme ? v : `https://${v}`); } catch { return null; }
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    if (!s.hosts.includes(u.hostname.toLowerCase())) return null;
+    return `https://${u.hostname.toLowerCase()}${u.pathname}${u.search}`;
+  }
+  return s.search(v);
+}
+
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** تصنيفاتُ store_front (0234) بشكلٍ واحدٍ للطرفين (storeApi ونصفُ repo السحابيّ) — نسختان تنحرفان:

@@ -321,7 +321,9 @@
     "catGone": "That category is no longer available — back to All.",
     "shelfFailed": "Couldn't load this shelf",
     "catEmpty": "Nothing in this category right now",
-    "zoom": "Enlarge photo"
+    "zoom": "Enlarge photo",
+    "facebook": "Facebook",
+    "instagram": "Instagram"
   },
   "track": {
     "staleDay": "A full day with no decision",
