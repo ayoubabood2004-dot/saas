@@ -57,7 +57,7 @@ const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.L
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
-const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
+const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })), ["cat"]);
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const StoreTrack = page(() => import("@/pages/StoreTrack").then((m) => ({ default: m.StoreTrack })));
 const TrackJourney = page(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));

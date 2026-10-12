@@ -16,7 +16,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingBag, Inbox, Boxes, Settings2, Check, X, Phone, MessageCircle, MapPin,
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
-  Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Camera, ImagePlus, Loader2,
+  Search, Eye, EyeOff, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Loader2, Tags,
 } from "lucide-react";
 import type { PhotoProduct, Product, StoreOrder, StoreProfile, SuggestedProduct } from "@/types";
 import { useTranslation } from "react-i18next";
@@ -24,9 +24,16 @@ import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
-import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook, productImageUrl, cardImagePath, shelfLook, shelfMonogram } from "@/lib/storeLib";
+import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook } from "@/lib/storeLib";
 import { commitPhoto, nextWithoutPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
+import { useStoreCats } from "@/lib/storeCats";
+import { MAX_IDS } from "@/lib/storeCatIndex";
+/* ألواحُ المتجر v1 — رفاقُ هذه الصفحة بنطاق cat (hot-paths.json): لا يستوردها غيرُها. */
+import { ProductCard } from "@/components/store/admin/ProductCard";
+import { ProductDetailsSheet } from "@/components/store/admin/ProductDetailsSheet";
+import { CatPickerSheet } from "@/components/store/admin/CatPickerSheet";
+import { CategoriesTab, type LeaveGuard } from "@/components/store/admin/CategoriesTab";
 import { searchable } from "@/lib/utils";
 import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName } from "@/lib/settings";
@@ -39,9 +46,11 @@ import { daysToExpiry } from "@/lib/expiry";
 /* محرّرُ الصورة حزمةٌ كسولة (متجر v1): لا يدفع المتجرُ وزنَه إلا حين تُفتح صورة. */
 const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
 
-type Tab = "orders" | "catalog" | "settings";
+type Tab = "orders" | "catalog" | "cats" | "settings";
+/** بطاقاتُ التشكيلة المرسومة دفعةً — والعدُّ والتصفيةُ على القائمة كلِّها. */
+const GRID_PAGE = 60;
 /** تصفياتُ التشكيلة — مشتركةٌ لأن لوحةَ الجاهزية بتبويبٍ آخرَ تفتحها. */
-type CatFilter = "all" | "shown" | "hidden" | "nophoto" | "noprice" | "nostock" | "nodesc";
+type CatFilter = "all" | "shown" | "hidden" | "nophoto" | "noprice" | "nostock" | "nodesc" | "nocat";
 
 
 /** رسالة خطأ إنسانية مختصرة من أي استثناء. */
@@ -87,7 +96,10 @@ export function ClinicStore() {
   /* التصفيةُ بالأب: «١ بلا سعر» بلوحة الإعدادات تفتح التشكيلةَ مصفّاةً عليه.
    * سطرٌ يقول عدداً ولا يوصّل إليه يترك الدكتورَ يبحث يدوياً بتسعِمئة صنف. */
   const [catFilter, setCatFilter] = useState<CatFilter>("all");
-  const goCatalog = (f: CatFilter) => { setCatFilter(f); setTab("catalog"); };
+  /* قائمةُ تأشيرٍ بتغييرٍ لم يُحفظ تسأل قبل أن يُغادَر تبويبُها (ورقةٌ لا نافذةُ متصفّح). */
+  const leave: LeaveGuard = useRef(null);
+  const go = (next: Tab) => { if (next === tab) return; const ok = leave.current?.(() => setTab(next)) ?? true; if (ok) setTab(next); };
+  const goCatalog = (f: CatFilter) => { setCatFilter(f); go("catalog"); };
 
   const [orders, setOrders] = useState<StoreOrder[] | null>(null);
   const [newOrders, setNewOrders] = useState<StoreOrder[] | null>(null);
@@ -139,6 +151,7 @@ export function ClinicStore() {
     // يبقى رقمان لشيءٍ واحد يختلفان أمام عين الدكتور.
     { id: "orders", label: "الطلبات", icon: Inbox, badge: newOrders ? newOrders.length : newCount },
     { id: "catalog", label: "تشكيلة المتجر", icon: Boxes },
+    { id: "cats", label: t("cat.tabCats", "التصنيفات"), icon: Tags },
     { id: "settings", label: "الإعدادات والرابط", icon: Settings2 },
   ] as { id: Tab; label: string; icon: typeof Inbox; badge?: number }[]).filter((x) => !(photoMode && x.id === "orders"));
 
@@ -159,10 +172,11 @@ export function ClinicStore() {
         )}
       </div>
 
-      <div className="mb-4 flex gap-1 rounded-2xl border border-line bg-surface-1 p-1">
+      {/* أربعةُ تبويباتٍ لا تتّسع لسطرٍ بالهاتف (٣٧٥): شبكةٌ ٢×٢ هناك، وسطرٌ من sm. */}
+      <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl border border-line bg-surface-1 p-1 sm:flex">
         {TABS.map(({ id, label, icon: Icon, badge }) => (
-          <button key={id} onClick={() => { playTap(); setTab(id); }}
-            className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+          <button key={id} onClick={() => { playTap(); go(id); }} data-storetab={id}
+            className={cn("flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-semibold transition",
               tab === id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2 hover:text-ink")}>
             <Icon size={16} /> {label}
             {!!badge && badge > 0 && (
@@ -187,10 +201,12 @@ export function ClinicStore() {
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {tab === "orders"
-            ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} goCatalog={goCatalog} />
+            ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => go("settings")} goCatalog={goCatalog} />
             : tab === "catalog"
               ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} priceViaStore={photoMode} />
-              : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
+              : tab === "cats"
+                ? <CategoriesTab products={products} guard={leave} />
+                : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -531,10 +547,17 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const toast = useToast();
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [descId, setDescId] = useState<string | null>(null);
-  const [descDraft, setDescDraft] = useState("");
-  const [priceId, setPriceId] = useState<string | null>(null);
-  const [priceDraft, setPriceDraft] = useState("");
+  /* ورقةُ التفاصيل (الوصفُ بأسطرٍ حتى ٢٠٠٠، والتصنيفات)، والرسمُ ٦٠ بطاقةً فأكثر، وتصنيفاتُ
+   * المتجر للبطاقات والتصفية والاختيار الجماعيّ — ونيّةُ اللصق: آخرُ بطاقةٍ مرّ عليها المؤشّر. */
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  const [limit, setLimit] = useState(GRID_PAGE);
+  const [inCat, setInCat] = useState<string>("");
+  const [pickMode, setPickMode] = useState<"add" | "remove" | null>(null);
+  const armed = useRef<string | null>(null);
+  const cats = useStoreCats();
+  const catOf = cats.byProduct;
+  const liveById = new Map(cats.live.map((c) => [c.id, c]));
+  const chipsOf = (pid: string) => cats.catsOf(pid).map((id) => liveById.get(id)).filter((c): c is NonNullable<typeof c> => !!c);
   /* الصورةُ تُضاف من هنا لا من المخزون: هذا مكانُ الدكتور حين يفكّر بمتجره، والتنقّلُ لشاشةٍ
    * أخرى لكلّ منتجٍ هو ما كان يمنعه من إكمال الصور أصلاً. والآن تمرّ من المحرّر (متجر v1): تُرى
    * كاملةً قبل الحفظ، و«احفظ وروح للجاية بلا صورة» يمشي القائمةَ كما كانت لحظةَ الفتح. */
@@ -574,6 +597,9 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     else if (filter === "noprice") base = base.filter((p) => p.store_visible && (p.sell_price ?? 0) <= 0);
     else if (filter === "nostock") base = base.filter((p) => p.store_visible && p.stock <= 0 && !p.pooled);
     else if (filter === "nodesc") base = base.filter((p) => p.store_visible && !p.store_desc);
+    // متجر v1: «بلا تصنيف» (ما يراه الزبون تحت «الكل» وحدها) و«بالتصنيف X» — فوق أيّ تصفيةٍ أخرى.
+    else if (filter === "nocat") base = base.filter((p) => !catOf.has(p.id));
+    if (inCat) base = base.filter((p) => (catOf.get(p.id) ?? []).includes(inCat));
     const arr = [...base];
     if (sort === "name") arr.sort((a, b) => a.name.localeCompare(b.name, "ar"));
     else if (sort === "priceDesc") arr.sort((a, b) => b.sell_price - a.sell_price);
@@ -585,7 +611,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       arr.sort((a, b) => rank(a) - rank(b));
     }
     return arr;
-  }, [all, q, filter, sort]);
+  }, [all, q, filter, sort, inCat, catOf]);
 
   /** نجمة المختارات (0177) — علمٌ على المنتج، بلا أثرٍ على البيع الداخلي. */
   const toggleFeatured = async (p: Product) => {
@@ -604,6 +630,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const openEditor = (p: Product, file: File | null) => setEdit({ id: p.id, file, queue: list.map((x) => x.id) });
   const byId = new Map(all.map((x) => [x.id, x]));
   const editing = edit ? byId.get(edit.id) ?? null : null;
+  const detailsP = detailsId ? byId.get(detailsId) ?? null : null;
+  const noCatCount = all.filter((p) => !catOf.has(p.id)).length;
   const nextId = edit ? nextWithoutPhoto(edit.queue, edit.id, (id) => !!byId.get(id)?.image_path) : null;
   const nextP = nextId ? byId.get(nextId) ?? null : null;
   const asTarget = (x: Product) => ({ id: x.id, name: x.name, image_path: x.image_path ?? null, clinic_id: x.clinic_id ?? null });
@@ -722,21 +750,82 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     } finally { setBulkBusy(false); }
   };
 
-  const saveDesc = async (p: Product) => {
-    setDescId(null);
-    const val = descDraft.trim() || null;
-    if (val === (p.store_desc ?? null)) return;
-    try { await repo.setStoreDesc(p.id, val); playSuccess(); await reload(); }
-    catch (e) { playWarning(); toast.error("تعذّر حفظ الوصف", errMsg(e)); }
+  /** ورقةُ التفاصيل: التصنيفاتُ نداءٌ واحد (ذرّيّ)، ثم الوصف — وما لم يتغيّر لا يُرسل. */
+  const saveDetails = async (p: Product, change: { desc?: string | null; cats?: string[] }) => {
+    try {
+      if (change.cats) {
+        const before = new Set(cats.catsOf(p.id));
+        const next = new Set(change.cats);
+        await cats.apply([
+          ...[...next].filter((c) => !before.has(c)).map((c) => ({ op: "add" as const, cat: c, ids: [p.id] })),
+          ...[...before].filter((c) => !next.has(c)).map((c) => ({ op: "remove" as const, cat: c, ids: [p.id] })),
+        ]);
+      }
+      if (change.desc !== undefined) { await repo.setStoreDesc(p.id, change.desc); await reload(); }
+      playSuccess();
+      toast.success(t("cat.detailsSaved", "انحفظت التفاصيل"));
+      setDetailsId(null);
+    } catch (e) { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t)); }
   };
 
-  const savePrice = async (p: Product) => {
-    setPriceId(null);
+  /** «أضف للتصنيف… / شيل من التصنيف…»: دفعةٌ واحدةٌ ذرّية — وتُقسم فقط فوق سقف الدفعة (٢٠٠٠ معرّف). */
+  const bulkCats = async (catIds: string[]) => {
+    const mode = pickMode;
+    const ids = [...picked];
+    if (!mode || !ids.length || !catIds.length || bulkBusy) return;
+    let had = 0;
+    for (const c of catIds) { const m = new Set(cats.membersOf(c)); had += ids.filter((id) => m.has(id)).length; }
+    const total = ids.length * catIds.length;
+    const ops = catIds.map((c) => (mode === "add" ? { op: "add" as const, cat: c, ids } : { op: "remove" as const, cat: c, ids }));
+    const batches: (typeof ops)[] = [];
+    for (const o of ops) {
+      const last = batches[batches.length - 1];
+      if (last && last.reduce((n, x) => n + x.ids.length, 0) + o.ids.length <= MAX_IDS) last.push(o); else batches.push([o]);
+    }
+    setBulkBusy(true);
+    try {
+      for (const b of batches) await cats.apply(b);
+      playSuccess();
+      setPickMode(null);
+      setPicked(new Set());
+      if (mode === "add") {
+        toast.success(had > 0
+          ? t("cat.bulkCatAddedHad", "انضافت {{n}} ({{m}} كانت بيها)", { n: formatNum(total - had), m: formatNum(had) })
+          : t("cat.bulkCatAdded", "انضافت {{n}}", { n: formatNum(total) }));
+      } else {
+        toast.success(had < total
+          ? t("cat.bulkCatRemovedHad", "انشالت {{n}} ({{m}} ما كانت بيها)", { n: formatNum(had), m: formatNum(total - had) })
+          : t("cat.bulkCatRemoved", "انشالت {{n}}", { n: formatNum(had) }));
+      }
+    } catch (e) { playWarning(); toast.error(t("cat.saveFailed", "ما انحفظ"), describeDbError(e, t)); }
+    finally { setBulkBusy(false); }
+  };
+
+  /* Ctrl+V بصورةٍ والمؤشّرُ على بطاقة ⇒ المحرّرُ على تلك البطاقة. والمحرّرُ المفتوح يلتقط لصقَه بنفسه،
+   * والكتابةُ بحقلٍ لصقٌ للنصّ لا للصورة. */
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (edit || detailsId || libFor) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+      const item = [...(e.clipboardData?.items ?? [])].find((x) => x.kind === "file" && x.type.startsWith("image/"));
+      const f = item?.getAsFile();
+      const p = armed.current ? byId.get(armed.current) : undefined;
+      if (!f || !p) return;
+      e.preventDefault();
+      openEditor(p, f);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
+  useEffect(() => { setLimit(GRID_PAGE); }, [q, filter, inCat, sort]);
+
+  const savePrice = async (p: Product, draft: string) => {
     if (!canPrice) return;
     // حقلٌ مُسح ثم تُرك (أو نصٌّ لا يُقرأ رقماً) ليس «صفراً»: Number("") = 0 كان يكتب سعرَ الكاشير
     // صفراً ويُخفي المادةَ من المتجر بلا سؤال (تدقيقٌ عدائيّ). لا شيءَ يُحفظ.
-    if (!priceDraft.trim()) return;
-    const v = Number(priceDraft);
+    if (!draft.trim()) return;
+    const v = Number(draft);
     if (!Number.isFinite(v) || v < 0 || v === p.sell_price) return;
     // بشرط أن السعرَ ما زال ما يراه: قائمةٌ فُتحت قبل رفعِ أسعارٍ كانت تكتب رقمَها فوق الرفع بصمت.
     try {
@@ -744,7 +833,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       else await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }, { sell_price: p.sell_price });
       playSuccess(); await reload();
     }
-    catch (e) { playWarning(); toast.error("تعذّر تعديل السعر", describeDbError(e, t)); await reload(); }
+    catch (e) { playWarning(); toast.error(t("cat.priceFailed", "تعذّر تعديل السعر"), describeDbError(e, t)); await reload(); }
   };
 
   if (products === null) {
@@ -787,6 +876,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
           ...(noPriceShown > 0 || filter === "noprice" ? [["noprice", t("cat.fNoPrice", "بلا سعر"), noPriceShown] as const] : []),
           ...(noStockShown > 0 || filter === "nostock" ? [["nostock", t("cat.fNoStock", "نافد"), noStockShown] as const] : []),
           ...(noDescShown > 0 || filter === "nodesc" ? [["nodesc", t("cat.fNoDesc", "بلا وصف"), noDescShown] as const] : []),
+          ...(cats.seeded && (noCatCount > 0 || filter === "nocat") ? [["nocat", t("cat.fNoCat", "بلا تصنيف"), noCatCount] as const] : []),
         ] as const).map(([id, label, n]) => (
           <button key={id} onClick={() => { playTap(); setFilter(id); }}
             className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
@@ -797,6 +887,14 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
             <span className={cn("tabular-nums", filter === id ? "text-white/80" : "text-ink-subtle")}>{formatNum(n)}</span>
           </button>
         ))}
+        {cats.live.length > 0 && (
+          <select value={inCat} onChange={(e) => { playTap(); setInCat(e.target.value); setLimit(GRID_PAGE); }} data-catin
+            aria-label={t("cat.fInCat", "بالتصنيف")}
+            className={cn("rounded-full border px-3 py-1.5 text-xs font-semibold outline-none", inCat ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink-muted")}>
+            <option value="">{t("cat.fInCatAny", "بالتصنيف…")}</option>
+            {cats.live.map((c) => <option key={c.id} value={c.id}>{t("cat.fInCatOne", "بالتصنيف: {{name}}", { name: c.name })}</option>)}
+          </select>
+        )}
       </div>
 
       {/* «انشر أكثرَ ما تبيع» — يُعرض حين لا تكون تشكيلتُه جاهزةً بعد.
@@ -876,7 +974,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
           <span className="text-xs text-ink-subtle tabular-nums">
             {picked.size > 0 ? t("cat.picked", "مختار: {{n}}", { n: formatNum(picked.size) }) : t("cat.pickHint", "اختر منتجات لتنشرها دفعةً واحدة")}
           </span>
-          <div className="ms-auto flex gap-2">
+          <div className="ms-auto flex flex-wrap gap-2">
             <button type="button" disabled={!picked.size || bulkBusy} onClick={() => void bulk(true)}
               className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-40">
               {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
@@ -886,6 +984,18 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
               className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-xs font-bold text-ink transition active:scale-95 disabled:opacity-40">
               <EyeOff size={14} /> {t("cat.bulkHide", "اخفِ المختار")}
             </button>
+            {cats.live.length > 0 && (
+              <>
+                <button type="button" disabled={!picked.size || bulkBusy} onClick={() => { playTap(); setPickMode("add"); }} data-bulkcat="add"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-brand-300 px-3 py-1.5 text-xs font-bold text-brand-700 transition active:scale-95 disabled:opacity-40 dark:border-brand-500/40 dark:text-brand-200">
+                  <Tags size={14} /> {t("cat.bulkCatAdd", "أضف للتصنيف…")}
+                </button>
+                <button type="button" disabled={!picked.size || bulkBusy} onClick={() => { playTap(); setPickMode("remove"); }} data-bulkcat="remove"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-xs font-bold text-ink transition active:scale-95 disabled:opacity-40">
+                  {t("cat.bulkCatRemove", "شيل من التصنيف…")}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -900,103 +1010,40 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       {list.length === 0 ? (
         <div className="card grid place-items-center p-10 text-sm text-ink-subtle">ما اكو منتجات مطابقة.</div>
       ) : (
-        <div className="space-y-2">
-          {list.map((p) => {
-            const look = categoryLook(p.category);
-            const out = p.stock <= 0 && !p.pooled;
-            return (
-              <div key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-3 transition",
-                p.store_visible && "border-brand-300 dark:border-brand-500/40",
-                picked.has(p.id) && "ring-2 ring-brand-400")}>
-                <input type="checkbox" checked={picked.has(p.id)} disabled={bulkBusy}
-                  aria-label={t("cat.pickOne", "اختر {{name}}", { name: p.name })}
-                  onChange={(e) => {
-                    playTap();
-                    setPicked((prev) => { const n = new Set(prev); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; });
-                  }}
-                  className="h-4 w-4 shrink-0 accent-brand-600" />
-                {/* المصغّرةُ نفسُها هي الزرّ: تفتح المحرّر (صوّر، ملف، صور سابقة، تعديل، فصل) —
-                    والسحبُ والإفلاتُ عليها يفتحه على الصورة مباشرة. */}
-                <button type="button" onClick={() => { playTap(); openEditor(p, null); }}
-                  disabled={busyId === p.id} data-catphoto
-                  onDragOver={(e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); }}
-                  onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) { e.preventDefault(); openEditor(p, f); } }}
-                  title={p.image_path ? t("cat.photoEdit", "بدّل صورة المنتج") : t("cat.photoAdd", "أضف صورة للمنتج")}
-                  className={cn("group relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl border transition active:scale-95",
-                    p.image_path ? "border-line" : "border-dashed border-line-strong")}>
-                  {p.image_path
-                    ? <img src={productImageUrl(cardImagePath(p.image_path)) ?? ""} alt="" className="h-full w-full object-contain p-0.5" onError={(e) => { const u = productImageUrl(p.image_path); if (u && e.currentTarget.src !== u) e.currentTarget.src = u; else e.currentTarget.hidden = true; }} />
-                    : <span className={cn("flex h-full w-full items-center justify-center text-sm font-bold", shelfLook(p.name).tile, shelfLook(p.name).ink)}>
-                        {shelfMonogram(p.name)}
-                      </span>}
-                  <span className="absolute inset-0 grid place-items-center bg-ink/55 text-white opacity-0 transition group-hover:opacity-100">
-                    {p.image_path ? <Camera size={15} /> : <ImagePlus size={15} />}
-                  </span>
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-ink">{p.name}</p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-ink-subtle">
-                    <span>{look.label}{p.subcategory ? ` · ${p.subcategory}` : ""}</span>
-                    <span className={cn(out && "font-bold text-danger-500")}>{out ? "نافد" : `المخزون: ${formatNum(p.stock)}`}</span>
-                  </div>
-                  {/* الوصف التسويقي */}
-                  {descId === p.id ? (
-                    <input autoFocus value={descDraft} maxLength={120} onChange={(e) => setDescDraft(e.target.value)}
-                      onBlur={() => void saveDesc(p)} onKeyDown={(e) => { if (e.key === "Enter") void saveDesc(p); if (e.key === "Escape") setDescId(null); }}
-                      placeholder="وصف قصير يشوفه الزبون (اختياري)…" className="input mt-1.5 h-8 text-xs" />
-                  ) : (
-                    <button onClick={() => { playTap(); setDescId(p.id); setDescDraft(p.store_desc ?? ""); }}
-                      className="mt-1 flex items-center gap-1 text-2xs text-ink-subtle transition hover:text-brand-600">
-                      <Pencil size={10} /> {p.store_desc || "أضف وصفاً يشوفه الزبون…"}
-                    </button>
-                  )}
-                </div>
-                {/* السعر — نفس سعر الكاشير، تعديل مباشر */}
-                {priceId === p.id ? (
-                  <input autoFocus type="number" inputMode="decimal" value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)}
-                    onBlur={() => void savePrice(p)} onKeyDown={(e) => { if (e.key === "Enter") void savePrice(p); if (e.key === "Escape") setPriceId(null); }}
-                    className="input h-9 w-28 text-end text-sm font-bold" />
-                ) : !canPrice ? (
-                  <span className="px-2 py-1 font-display text-sm font-extrabold tabular-nums text-ink">{money(p.sell_price)}</span>
-                ) : (
-                  <button onClick={() => { playTap(); setPriceId(p.id); setPriceDraft(String(p.sell_price)); }}
-                    title="اضغط لتعديل السعر" className="group flex items-center gap-1 rounded-lg px-2 py-1 transition hover:bg-surface-2">
-                    <span className="font-display text-sm font-extrabold tabular-nums text-ink">{money(p.sell_price)}</span>
-                    <Pencil size={11} className="text-ink-subtle opacity-0 transition group-hover:opacity-100" />
-                  </button>
-                )}
-                {/* نجمة المختارات (0177) — تظهر فقط للمعروض: مخفيٌّ مميّزٌ تناقض. */}
-                {p.store_visible && (
-                  <button onClick={() => void toggleFeatured(p)} disabled={busyId === p.id} data-featstar
-                    title={p.store_featured ? t("sf.featOff", "شيله من المختارات") : t("sf.featOn", "خلّيه بصفّ المختارات أعلى المتجر")}
-                    className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full transition active:scale-95",
-                      p.store_featured ? "bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-200" : "border border-line text-ink-subtle hover:bg-surface-2")}>
-                    <Sparkles size={15} />
-                  </button>
-                )}
-                {/* مفتاح العرض */}
-                <button onClick={() => void toggle(p)} disabled={busyId === p.id}
-                  className={cn("flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-extrabold transition active:scale-95",
-                    p.store_visible
-                      ? "bg-brand-600 text-white shadow-soft"
-                      : "border border-line text-ink-muted hover:bg-surface-2")}>
-                  {p.store_visible ? <><Eye size={14} /> معروض</> : <><EyeOff size={14} /> مخفي</>}
-                </button>
-
-                {/* المكتبةُ بضغطةٍ من الصفّ — والمحرّرُ يفتحها كذلك. */}
-                <button type="button" onClick={() => { playTap(); setLibFor(p); }} data-catlib
-                  title={t("pos.photoFromLib", "اختر من المكتبة")} aria-label={t("pos.photoFromLib", "اختر من المكتبة")}
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-ink-subtle transition hover:bg-surface-2">
-                  <Boxes size={15} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          {/* شبكةُ بطاقاتٍ كبيرة (متجر v1): الصورةُ كما يراها الزبون. القائمةُ كاملةٌ بالذاكرة
+              والعدُّ والتصفيةُ عليها كلِّها؛ الرسمُ وحده ٦٠ ثم «عرض المزيد» — ويُقال «٦٠ من ٩٠٠». */}
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4" data-catgrid>
+            {list.slice(0, limit).map((p) => (
+              <ProductCard key={p.id} p={p} picked={picked.has(p.id)} busy={busyId === p.id} bulkBusy={bulkBusy}
+                onPick={(v) => setPicked((prev) => { const n = new Set(prev); v ? n.add(p.id) : n.delete(p.id); return n; })}
+                cats={chipsOf(p.id)} canPrice={canPrice}
+                onPhoto={(f) => openEditor(p, f)} onLib={() => setLibFor(p)}
+                onToggle={() => void toggle(p)} onFeatured={() => void toggleFeatured(p)}
+                onDetails={() => setDetailsId(p.id)} onPrice={(d) => void savePrice(p, d)}
+                onArm={() => { armed.current = p.id; }} />
+            ))}
+          </div>
+          {list.length > limit && (
+            <div className="flex flex-col items-center gap-1.5">
+              <p className="text-2xs text-ink-subtle tabular-nums">{t("cat.partial", "{{n}} من {{m}}", { n: formatNum(limit), m: formatNum(list.length) })}</p>
+              <Button size="sm" variant="outline" onClick={() => setLimit((n) => n + GRID_PAGE)} data-catmore>{t("cat.more", "عرض المزيد")}</Button>
+            </div>
+          )}
+        </>
       )}
 
       <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
         onPick={(row) => { if (libFor) void pickFromLib(libFor, row.path); }} />
+      <ProductDetailsSheet p={detailsP} onClose={() => setDetailsId(null)} live={cats.live} catsOf={cats.catsOf}
+        canEditCats={cats.status === "ready" && cats.seeded} canPrice={canPrice} busy={!!detailsP && busyId === detailsP.id}
+        onPhoto={() => { if (detailsP) { setDetailsId(null); openEditor(detailsP, null); } }}
+        onLib={() => { if (detailsP) { setDetailsId(null); setLibFor(detailsP); } }}
+        onToggle={() => { if (detailsP) void toggle(detailsP); }} onFeatured={() => { if (detailsP) void toggleFeatured(detailsP); }}
+        onPrice={(d) => { if (detailsP) void savePrice(detailsP, d); }}
+        onSave={(c) => (detailsP ? saveDetails(detailsP, c) : Promise.resolve())} />
+      <CatPickerSheet mode={pickMode} live={cats.live} count={picked.size} busy={bulkBusy}
+        onClose={() => setPickMode(null)} onApply={(ids) => void bulkCats(ids)} />
       {editing && (
         <Suspense fallback={null}>
           <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history
@@ -1021,6 +1068,10 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
 }) {
   const toast = useToast();
   const { t } = useTranslation();
+  /* O5 (0235): فتحُ المتجر ورابطُه وتشغيلُه للمدير — والخادمُ يفرضها بمحفّز؛ هنا تُقال ولا تُخفى.
+   * المدير = الدورُ الفعليّ (يشمل فتحَ الرمز السرّيّ ومشغّلَ المنصّة)، كالخادم. */
+  const { role } = usePermissions();
+  const ownerOnly = role !== "manager";
   const [slug, setSlug] = useState(profile?.slug ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [fee, setFee] = useState(profile?.delivery_fee ? String(profile.delivery_fee) : "");
@@ -1110,7 +1161,7 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
     } catch (e) {
       playWarning();
       const msg = e instanceof Error ? e.message : "";
-      toast.error("تعذّر الحفظ", msg === "slug_taken" ? "هذا الرابط محجوز لعيادة ثانية — جرب غيره." : msg === "slug_invalid" ? "صيغة الرابط غير صالحة." : errMsg(e));
+      toast.error("تعذّر الحفظ", msg === "slug_taken" ? "هذا الرابط محجوز لعيادة ثانية — جرب غيره." : msg === "slug_invalid" ? "صيغة الرابط غير صالحة." : describeDbError(e, t));
       if (msg === "slug_taken") setSlugState("taken");
     } finally {
       setSaving(false);
@@ -1127,6 +1178,14 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
   };
 
   if (profile === undefined) return <Skeleton className="h-96 rounded-2xl" />;
+  if (profile === null && ownerOnly) {
+    return (
+      <div className="card flex items-center gap-3 p-5" data-ownergate>
+        <ShoppingBag size={22} className="shrink-0 text-ink-subtle" />
+        <p className="text-sm font-semibold text-ink">{t("cat.ownerOpens", "المدير يفتح المتجر — بعدها تكدر تعدّل النبذة والتوصيل والصور من هنا.")}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr,360px]">
@@ -1142,7 +1201,7 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           </div>
           <button
             onClick={() => { playTap(); const next = !enabled; setEnabled(next); void save(next); }}
-            disabled={saving || !isValidSlug(normalizeSlug(slug))}
+            disabled={saving || ownerOnly || !isValidSlug(normalizeSlug(slug))} data-storeenable
             className={cn("relative h-8 w-14 shrink-0 rounded-full transition disabled:opacity-40", enabled ? "bg-success-500" : "bg-line-strong")}
             aria-label="تفعيل المتجر">
             <span className={cn("absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all", enabled ? "start-7" : "start-1")} />
@@ -1154,14 +1213,15 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           <label className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Link2 size={14} className="text-brand-600" /> رابط متجرك المميز</label>
           <div className="flex items-center gap-2">
             <span dir="ltr" className="shrink-0 rounded-lg bg-surface-2 px-2 py-2 font-mono text-xs text-ink-subtle">/s/</span>
-            <input dir="ltr" value={slug} onChange={(e) => onSlugInput(e.target.value)} placeholder="happy-paws"
-              className="input flex-1 font-mono lowercase" maxLength={30} />
-            <Button size="sm" variant="outline" disabled={suggesting} onClick={() => void suggest()} leftIcon={suggesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}>{t("cat.suggestSlug", "اقترح")}</Button>
+            <input dir="ltr" value={slug} onChange={(e) => onSlugInput(e.target.value)} placeholder="happy-paws" readOnly={ownerOnly} data-storeslug
+              className={cn("input flex-1 font-mono lowercase", ownerOnly && "bg-surface-2 text-ink-muted")} maxLength={30} />
+            <Button size="sm" variant="outline" disabled={suggesting || ownerOnly} onClick={() => void suggest()} leftIcon={suggesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}>{t("cat.suggestSlug", "اقترح")}</Button>
           </div>
           {slugState === "invalid" && slug && <p className="text-2xs font-semibold text-warn-600">3–30: حروف إنكليزية صغيرة وأرقام وشرطات فقط (مثل: happy-paws).</p>}
           {slugState === "checking" && <p className="text-2xs text-ink-subtle">جاري فحص التوفر…</p>}
           {slugState === "ok" && <p className="flex items-center gap-1 text-2xs font-semibold text-success-600"><CheckCircle2 size={12} /> الرابط متاح إلك.</p>}
           {slugState === "taken" && <p className="flex items-center gap-1 text-2xs font-semibold text-danger-500"><X size={12} /> محجوز لعيادة ثانية — جرب غيره.</p>}
+          {ownerOnly && <p className="text-2xs font-semibold text-ink-subtle" data-ownernote>{t("cat.ownerNote", "تغيير الرابط وتشغيل المتجر للمدير")}</p>}
         </div>
 
         {/* الإعدادات */}

@@ -26,7 +26,7 @@
     "track",
     "portal"
   ],
-  "$ownedDoc": "نطاقاتٌ تملكها صفحةٌ واحدة: لا تدخل النصفَ البارد، وتصل بحزمةٍ صغيرةٍ مع صفحتها وحدَها (page(load, [ns])). والحارسُ i18n-owned-guard يفشّل البناءَ إن قرأها ملفٌّ غيرُ مالكها — مفتاحٌ خامٌ على شاشةٍ أخرى. أُضيفت لأن النصفَ البارد بلغ سقفَه (٤٩٬٨٣٣ من ٥٠٬٠٠٠) ونصوصُ سجلّ الحركات وحقول الدواجن تنزل لكلّ صفحةٍ ولا تُقرأ إلا بصفحتيهما.",
+  "$ownedDoc": "نطاقاتٌ تملكها صفحةٌ واحدة: لا تدخل النصفَ البارد، وتصل بحزمةٍ صغيرةٍ مع صفحتها وحدَها (page(load, [ns])). والحارسُ i18n-owned-guard يفشّل البناءَ إن قرأها ملفٌّ غيرُ مالكها — مفتاحٌ خامٌ على شاشةٍ أخرى. أُضيفت لأن النصفَ البارد بلغ سقفَه (٤٩٬٨٣٣ من ٥٠٬٠٠٠) ونصوصُ سجلّ الحركات وحقول الدواجن تنزل لكلّ صفحةٍ ولا تُقرأ إلا بصفحتيهما. والقيمةُ نصٌّ (المالك) أو {owner, with}: الرفاقُ مكوّناتٌ قُسمت من صفحة المالك وتقرأ نطاقَه، ولا يستوردها إلا المالكُ أو رفيقٌ آخر (متجر v1: ألواحُ «المتجر الإلكتروني» بـsrc/components/store/admin).",
   "owned": {
     "act": "src/pages/ActivityLog.tsx",
     "farm": "src/pages/PoultryFarms.tsx",
@@ -43,6 +43,18 @@
     "services": "src/pages/Settings.tsx",
     "vax": "src/pages/Settings.tsx",
     "breeds": "src/pages/Settings.tsx",
-    "mmset": "src/pages/Settings.tsx"
+    "mmset": "src/pages/Settings.tsx",
+    "cat": {
+      "owner": "src/pages/ClinicStore.tsx",
+      "with": [
+        "src/components/store/admin/CategoriesTab.tsx",
+        "src/components/store/admin/CategoryChecklist.tsx",
+        "src/components/store/admin/CatPickerSheet.tsx",
+        "src/components/store/admin/IconGrid.tsx",
+        "src/components/store/admin/ProductCard.tsx",
+        "src/components/store/admin/ProductDetailsSheet.tsx",
+        "src/components/store/admin/SortList.tsx"
+      ]
+    }
   }
 }

@@ -5,7 +5,18 @@
 // حروف إنكليزية صغيرة/أرقام/شرطات، 3–30، ما يبدي أو ينتهي بشرطة —
 // حتى الفحص المحلي والرفض السحابي ما يختلفان أبداً.
 // ============================================================================
-import type { StoreFrontCat, StoreOrderItem } from "@/types";
+import type { StoreCatIcon, StoreFrontCat, StoreOrderItem } from "@/types";
+
+/** أيقوناتُ تصنيفات المتجر (0233): مفتاحٌ ثابت ⇒ إيموجي — صفرُ بايتٍ من حِزم الأيقونات بصفحة
+ *  الزائر. **المفاتيحُ نفسُ قيد 0233** (تفحصها store-cats-test). */
+export const STORE_CAT_ICONS: Record<StoreCatIcon, string> = {
+  paw: "🐾", dog: "🐶", cat: "🐱", bird: "🐦", fish: "🐟", rabbit: "🐰", pill: "💊", syringe: "💉",
+  food: "🍖", bone: "🦴", toy: "🧸", bottle: "🧴", bath: "🛁", comb: "✂️", bag: "🛍️", tag: "🏷️",
+  star: "⭐", gift: "🎁", new: "🆕", heart: "❤️",
+};
+/** مفتاحٌ مجهول (نسخةٌ أحدث من القاعدة) ⇒ الكفّ — لا مربّعٌ فارغ. */
+export const catGlyph = (icon: string | null | undefined): string =>
+  (icon && (STORE_CAT_ICONS as Record<string, string>)[icon]) || "🐾";
 
 /* الرابط من env مباشرةً لا من `@/lib/supabase`: حرّاسُ الحزم يوصّلون repo.ts
  * (وهو يستورد هذا الملف) ببديلٍ مزيّفٍ للعميل، واستيرادُ الوحدة الحقيقية من

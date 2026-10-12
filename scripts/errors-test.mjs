@@ -72,6 +72,11 @@ chk("ولا يُعرض الرمزُ اللاتينيّ", /invoice_has_open_deliv
 const pgHint = { code: "23503", message: "insert or update violates foreign key", hint: "Key is not present in table." };
 chk("وhint لخطأٍ عامٍّ لا يُعرض خاماً", /Key is not present/.test(E.describeDbError(pgHint, t)), false);
 chk("ورفضٌ بـP0001 بلا hint يسقط للسلوك القديم", typeof E.describeDbError({ code: "P0001", message: "boom" }, t), "string");
+// متجر v1: رفضُ الصلاحية المقصود (42501) بتلميحٍ عربيّ يُقال كما هو — لا «جلستك انتهت».
+const catRight = { code: "42501", message: "not_authorized", hint: "تسمية وترتيب التصنيفات للمدير والطبيب" };
+chk("42501 بتلميحٍ عربيّ يوصل الشاشة", E.describeDbError(catRight, t), catRight.hint);
+chk("وP0002 (cat_gone) كذلك", E.describeDbError({ code: "P0002", message: "cat_gone", hint: "التصنيف ما عاد موجود" }, t), "التصنيف ما عاد موجود");
+chk("و42501 العامّ بلا تلميحٍ عربيّ يبقى «الجلسة»", E.describeDbError({ code: "42501", message: "permission denied", hint: "Grant usage." }, t), E.describeDbError({ code: "42501", message: "x" }, t));
 
 // وسطرُ الفاتورة — أهمّها، وهو الذي أوقف بيعةً حيّة يوم كُتب هذا
 const line = { code: "23514", message: 'new row for relation "invoice_items" violates check constraint "invoice_items_nonneg"' };

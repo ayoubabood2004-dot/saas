@@ -47,12 +47,29 @@ export function readHotPaths(root = process.cwd()) {
 
 /** النطاقاتُ التي تملكها صفحةٌ واحدة (`owned` بـhot-paths.json): {ns: ملفُّ مالكها}. */
 export function readOwned(root = process.cwd()) {
+  return Object.fromEntries(Object.entries(readOwnedFull(root)).map(([ns, o]) => [ns, o.owner]));
+}
+
+/**
+ * الشكلُ الكامل: {ns: {owner, with}}. القيمةُ بـhot-paths.json نصٌّ (المالكُ وحده) أو
+ * `{"owner": "…", "with": ["…", …]}` — و`with` ملفّاتٌ **رفيقة**: مكوّناتٌ قُسمت من صفحة
+ * المالك (متجر v1: «المتجر الإلكتروني» صار ألواحاً بملفّاتها) تقرأ النطاقَ معه، بشرط ألّا
+ * يستوردها إلا المالكُ أو رفيقٌ آخر — فلا تُرسم إلا والنطاقُ محمَّل. الحارسُ i18n-owned-guard.
+ */
+export function readOwnedFull(root = process.cwd()) {
   const doc = JSON.parse(readFileSync(path.join(root, HOT_PATHS_JSON), "utf8"));
   const o = doc.owned ?? {};
-  if (!isObj(o) || Object.values(o).some((v) => typeof v !== "string" || !v.trim())) {
-    throw new Error(`${HOT_PATHS_JSON}: "owned" لازم خريطةَ نطاقٍ ← ملفِّ مالكه`);
+  const bad = () => { throw new Error(`${HOT_PATHS_JSON}: "owned" لازم خريطةَ نطاقٍ ← ملفِّ مالكه (أو {"owner": ملف، "with": [ملفّاتٌ رفيقة]})`); };
+  if (!isObj(o)) bad();
+  const out = {};
+  for (const [ns, v] of Object.entries(o)) {
+    if (typeof v === "string" && v.trim()) { out[ns] = { owner: v, with: [] }; continue; }
+    if (!isObj(v) || typeof v.owner !== "string" || !v.owner.trim()) bad();
+    const w = v.with ?? [];
+    if (!Array.isArray(w) || w.some((f) => typeof f !== "string" || !f.trim() || f === v.owner)) bad();
+    out[ns] = { owner: v.owner, with: [...w] };
   }
-  return o;
+  return out;
 }
 
 /** نطاقاتُ صفحة الزائر (`store.ar.json`) — تبقى حارّةً كاملةً (انظر `splitAr`). */

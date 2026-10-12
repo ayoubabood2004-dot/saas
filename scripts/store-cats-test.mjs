@@ -63,7 +63,7 @@ async function load(contents, tag) {
   writeFileSync(file, built.outputFiles[0].text);
   return import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
 }
-const mod = await load('export * from "./src/lib/repo.ts"; export * as SCI from "./src/lib/storeCatIndex.ts";', "store-cats");
+const mod = await load('export * from "./src/lib/repo.ts"; export * as SCI from "./src/lib/storeCatIndex.ts"; export { STORE_CAT_ICONS } from "./src/lib/storeLib.ts";', "store-cats");
 const repo = mod.repo;
 const SCI = mod.SCI;
 if (!repo || !SCI) { console.error("✗ store-cats-test: ما انحمّلت الوحدة"); process.exit(1); }
@@ -190,7 +190,178 @@ console.log("▸ المرآةُ عقدٌ مع الهجرة حرفاً");
   const seedSql = [...SQL.matchAll(/\('(medicine|food|accessories|consumables|other)', '([^']+)', '([a-z]+)', (\d)\)/g)].map((m) => `${m[1]}:${m[2]}:${m[3]}:${m[4]}`);
   const seedTs = SCI.SEED_DEFS.map((d, i) => `${d.key}:${SCI.seedName(d.key)}:${d.icon}:${i + 1}`);
   check("وبذرةُ الهجرة = بذرةُ المرآة (المفتاح، والاسمُ نصُّ storeLib، والأيقونة، والترتيب)", JSON.stringify(seedSql) === JSON.stringify(seedTs), `${seedSql} ≠ ${seedTs}`);
+  // الإيموجي (storeLib) يُرسم بصفحة الزائر والإدارة: مفتاحٌ بلا رسمٍ مربّعٌ فارغ، ورسمٌ بلا مفتاحٍ لا يُختار.
+  const glyphKeys = Object.keys(mod.STORE_CAT_ICONS ?? {});
+  check("ورسومُ الأيقونات (STORE_CAT_ICONS) = قائمةُ القيد نفسُها، كلٌّ برسمٍ غيرِ فارغ",
+    JSON.stringify(glyphKeys) === JSON.stringify(sqlIcons) && Object.values(mod.STORE_CAT_ICONS ?? {}).every((g) => typeof g === "string" && g.length > 0), glyphKeys.join());
 }
+
+/* ── متجرُ الشاشة (src/lib/storeCats.ts) — بخادمٍ مزيّفٍ يطبّق المرآةَ نفسَها ────────────
+ * الشاشةُ ترسم قبل الخادم وتُرسل دفعةً واحدة؛ فالعقدُ: قراءةٌ لا تكتب، طلبٌ واحدٌ بالطريق (ما يأتي
+ * أثناءه يُطوى بالتالي)، والرفضُ يُرجع ما على الشاشة ويقرأ مرّةً ويُرمى ليُقال، والختمُ المختلف
+ * (`switched`) يرفض قبل الشبكة. */
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+console.log("▸ متجرُ الشاشة (storeCats): متفائل، طلبٌ واحدٌ بالطريق، والفشلُ يرجع ويُقال");
+try {
+  globalThis.__clinic = "C1";
+  const clientStubs = {
+    name: "client-stubs",
+    setup(b) {
+      const map = {
+        react: "export const useSyncExternalStore = () => undefined; export const useEffect = () => {};",
+        "./repo": "export const repo = new Proxy({}, { get: (_t, k) => (...a) => globalThis.__srv[k](...a) });",
+        "./clinics": "export const getActiveClinicId = () => globalThis.__clinic;",
+        "./clinicSync": "export const registerReset = (fn) => { globalThis.__reset = fn; };",
+      };
+      const names = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
+      b.onResolve({ filter: new RegExp(`^(${names})$`) }, (a) => ({ path: a.path, namespace: "cstub" }));
+      b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "cstub" }));
+      b.onLoad({ filter: /.*/, namespace: "cstub" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
+    },
+  };
+  const built = await esbuild.build({
+    stdin: { contents: 'export * from "./src/lib/storeCats.ts"; export * as X from "./src/lib/storeCatIndex.ts";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", mainFields: ["module", "main"], plugins: [clientStubs],
+  });
+  const dir = mkdtempSync(join(tmpdir(), "store-cats-client-"));
+  const file = join(dir, "m.mjs");
+  writeFileSync(file, built.outputFiles[0].text);
+  const S = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
+
+  const U = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const srv = { clinic: "C1", canEdit: true, state: { seeded: true, cats: [], items: [] }, list: 0, applies: [], failApply: null, hold: null };
+  const snap = () => S.X.snapshotOf(srv.state, srv.clinic, srv.canEdit, () => ({ listed: true }));
+  globalThis.__srv = {
+    storeCategoriesList: async () => { srv.list++; return snap(); },
+    storeCategoriesApply: async (clinic, ops) => {
+      srv.applies.push(ops);
+      if (srv.hold) await srv.hold.p;
+      if (srv.failApply) { const e = srv.failApply; srv.failApply = null; throw e; }
+      if (clinic !== srv.clinic) throw new S.X.StoreCatError("clinic_switched");
+      srv.state = S.X.applyOps(srv.state, ops, { canEdit: srv.canEdit, now: "2026-10-13T00:00:00.000Z" });
+      return snap();
+    },
+  };
+  const defer = () => { let r; const p = new Promise((res) => { r = res; }); return { p, release: r }; };
+
+  await S.loadStoreCats(true);
+  let st = S.getStoreCatsState();
+  check("القراءة: حالُ ready بختم الخادم، ولا كتابةَ واحدة", st.status === "ready" && st.clinic === "C1" && srv.applies.length === 0 && srv.list === 1, `${st.status} ${st.clinic} ${srv.applies.length}`);
+
+  const p1 = S.applyStoreCatOps([{ op: "create", id: U(1), name: "أول" }]);
+  st = S.getStoreCatsState();
+  check("متفائل: التصنيفُ على الشاشة قبل الخادم، والحفظُ جارٍ", st.view.cats.some((c) => c.id === U(1)) && st.saving && !st.base.cats.some((c) => c.id === U(1)));
+  await p1; await settle();
+  st = S.getStoreCatsState();
+  check("  وبعد الخادم: المؤكَّدُ = الشاشة، والحفظُ انتهى", st.base.cats.some((c) => c.id === U(1)) && !st.saving && srv.applies.length === 1);
+
+  srv.hold = defer();
+  const a = S.applyStoreCatOps([{ op: "create", id: U(2), name: "ثاني" }]);
+  await tick();
+  const b2 = S.applyStoreCatOps([{ op: "create", id: U(3), name: "ثالث" }]);
+  const c3 = S.applyStoreCatOps([{ op: "hide", id: U(1), hidden: true }]);
+  check("طلبٌ واحدٌ بالطريق: الثاني والثالث ينتظران", srv.applies.length === 2);
+  const h = srv.hold; srv.hold = null; h.release();
+  await Promise.all([a, b2, c3]); await settle();
+  check("  وما انتظر يُطوى بطلبٍ واحدٍ تالٍ (لا طلبٌ لكلّ ضغطة)", srv.applies.length === 3 && srv.applies[2].length === 2, srv.applies.map((x) => x.length).join(","));
+  check("  والنتيجةُ كما بالخادم", S.getStoreCatsState().view.cats.find((c) => c.id === U(1))?.hidden === true && S.getStoreCatsState().view.cats.length === 3);
+
+  const listBefore = srv.list;
+  srv.failApply = Object.assign(new Error("store_item_gone"), { code: "P0001", hint: "x" });
+  let err = null;
+  const pf = S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(90)] }]);
+  check("  (والإضافةُ على الشاشة قبل الرفض)", S.getStoreCatsState().view.items.some((m) => m.product_id === U(90)));
+  try { await pf; } catch (e) { err = e; }
+  await settle();
+  st = S.getStoreCatsState();
+  check("الرفضُ يُرمى ليُقال، والشاشةُ ترجع للمؤكَّد، وتُقرأ القائمةُ مرّةً", err?.message === "store_item_gone" && !st.view.items.some((m) => m.product_id === U(90)) && srv.list === listBefore + 1, `${err?.message} ${srv.list - listBefore}`);
+
+  const nApply = srv.applies.length;
+  srv.canEdit = false;
+  await S.loadStoreCats(true);
+  let e2 = null;
+  try { await S.applyStoreCatOps([{ op: "edit", id: U(1), name: "زز" }]); } catch (e) { e2 = e; }
+  check("بلا حقّ البنية (المصوّر): المرآةُ ترفض قبل الشبكة", e2?.message === "not_authorized" && srv.applies.length === nApply);
+  await S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(91)] }]); await settle();
+  check("  والعضويةُ تمرّ له", srv.applies.length === nApply + 1);
+
+  srv.clinic = "C2";
+  await S.loadStoreCats(true);
+  let e3 = null;
+  const nA = srv.applies.length;
+  try { await S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(92)] }]); } catch (e) { e3 = e; }
+  check("ختمُ الخادم ≠ عيادة المتصفّح ⇒ switched: لا شيءَ يُرسم ولا يُرسل", S.getStoreCatsState().status === "switched" && S.getStoreCatsState().view.cats.length === 0 && e3?.message === "clinic_switched" && srv.applies.length === nA);
+  srv.clinic = "C1";
+
+  const l0 = srv.list;
+  S.onStoreCatsVisible(1_000_000); await settle();
+  S.onStoreCatsVisible(1_000_000 + 5_000); await settle();
+  check("الرجوعُ للتبويب يقرأ مرّةً كلَّ ١٥ث على الأكثر", srv.list === l0 + 1, String(srv.list - l0));
+  S.onStoreCatsVisible(1_000_000 + 16_000); await settle();
+  check("  وبعدها يقرأ من جديد", srv.list === l0 + 2 && S.getStoreCatsState().status === "ready");
+
+  srv.hold = defer();
+  const pend = S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(93)] }]).catch((e) => e);
+  await tick();
+  const queued = S.applyStoreCatOps([{ op: "add", cat: U(1), ids: [U(94)] }]).catch((e) => e);
+  globalThis.__reset();
+  srv.hold.release(); srv.hold = null;
+  const [r1, r2] = await Promise.all([pend, queued]);
+  check("تبديلُ العيادة يمحو الحالَ ويرفض المنتظَر (لا كتابةَ بعيادةٍ أخرى)", S.getStoreCatsState().status === "idle" && r2?.message === "clinic_switched", `${S.getStoreCatsState().status} ${r1?.message} ${r2?.message}`);
+
+  const V = S.viewOf({ seeded: true, cats: [
+    { id: "a", name: "A", icon: "tag", hidden: false, pos: 2048, archived_at: null, seed_key: null },
+    { id: "b", name: "B", icon: "tag", hidden: false, pos: 1024, archived_at: null, seed_key: null },
+    { id: "z", name: "Z", icon: "tag", hidden: false, pos: null, archived_at: "2026-10-01T00:00:00Z", seed_key: null },
+  ], items: [{ category_id: "a", product_id: "p1", pos: 2 }, { category_id: "b", product_id: "p1", pos: 1 }, { category_id: "z", product_id: "p1", pos: 1 }] });
+  check("تصنيفاتُ المنتج بترتيب العيادة، والمؤرشفُ ليس منها", JSON.stringify(V.byProduct.get("p1")) === '["b","a"]');
+  const d = S.diffOps("c", new Set(["p1", "p2"]), new Set(["p2", "p3"]));
+  check("diffOps: إضافةٌ وإزالةٌ بدفعةٍ واحدة، ولا عمليةَ فارغة", JSON.stringify(d) === '[{"op":"add","cat":"c","ids":["p3"]},{"op":"remove","cat":"c","ids":["p1"]}]' && S.diffOps("c", new Set(["x"]), new Set(["x"])).length === 0);
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
+/* ── الترتيبُ بالسحب (src/lib/sortDnd.ts) بـ@dnd-kit/core الحقيقيّ ───────────────────── */
+console.log("▸ الترتيبُ بالسحب: الإفلاتُ بالفراغ لا يكتب، وعمليةٌ نسبيّةٌ واحدة");
+try {
+  const built = await esbuild.build({
+    stdin: { contents: 'export * from "./src/lib/sortDnd.ts";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", mainFields: ["module", "main"],
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const dir = mkdtempSync(join(tmpdir(), "sort-dnd-"));
+  const file = join(dir, "m.mjs");
+  writeFileSync(file, built.outputFiles[0].text);
+  const D = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
+  const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+  const ids = ["r1", "r2", "r3"];
+  const rows = ids.map((id, i) => ({ id, rect: rect(0, i * 70, 400, 60) }));   // فجوةُ ١٠ بين الصفوف
+  const containers = rows.map((r) => ({ id: r.id, key: r.id, data: { current: {} }, disabled: false, node: { current: null }, rect: { current: r.rect } }));
+  const args = (pointer) => ({
+    active: { id: "r1", data: { current: {} }, rect: { current: { initial: null, translated: null } } },
+    collisionRect: rect(0, pointer ? pointer.y - 30 : 0, 400, 60),
+    droppableRects: new Map(rows.map((r) => [r.id, r.rect])), droppableContainers: containers, pointerCoordinates: pointer,
+  });
+  const onR3 = D.sortCollision(args({ x: 200, y: 175 }));
+  check("المؤشّرُ فوق صفّ ⇒ ذاك الصفّ وحده", onR3.length === 1 && onR3[0].id === "r3", onR3.map((c) => c.id).join());
+  const inGap = D.sortCollision(args({ x: 200, y: 65 }));
+  const outside = D.sortCollision(args({ x: 600, y: 30 }));
+  check("  وبالفجوة أو خارج القائمة ⇒ لا هدف (كان «الأقرب» يكتب ترتيباً)", inGap.length === 0 && outside.length === 0);
+  check("  والكيبورد (بلا مؤشّر) ⇒ الأقرب", D.sortCollision(args(null)).length > 0);
+  const act = (top) => ({ id: "r1", rect: { current: { initial: null, translated: top == null ? null : rect(0, top, 400, 60) } } });
+  check("dropAfter بلا هدف ⇒ لا شيء يُكتب", D.dropAfter(ids, act(150), null) === undefined);
+  check("  r1 على النصف الأسفل من r3 ⇒ بعد r3", D.dropAfter(ids, act(160), { id: "r3", rect: rows[2].rect }) === "r3");
+  check("  وعلى النصف الأعلى من r3 ⇒ بعد r2", D.dropAfter(ids, act(120), { id: "r3", rect: rows[2].rect }) === "r2");
+  check("  r3 فوق نصف r1 الأعلى ⇒ أوّلُ القائمة (null)", D.dropAfter(ids, { id: "r3", rect: { current: { translated: rect(0, -20, 400, 60) } } }, { id: "r1", rect: rows[0].rect }) === null);
+  check("  وعلى نفسه أو بمكانه ⇒ لا شيء", D.dropAfter(ids, act(0), { id: "r1", rect: rows[0].rect }) === undefined
+    && D.dropAfter(ids, act(20), { id: "r2", rect: rows[1].rect }) === undefined);
+  check("الأسهم: ↑ من الأوّل ولا ↓ من الأخير ⇒ لا شيء، و«لفوق» ⇒ null",
+    D.stepAfter(ids, "r1", -1) === undefined && D.stepAfter(ids, "r3", 1) === undefined && D.stepAfter(ids, "r3", -1) === "r1" && D.stepAfter(ids, "r1", 1) === "r2" && D.topAfter(ids, "r3") === null && D.topAfter(ids, "r1") === undefined);
+  check("moved: القائمةُ بعد النقل", JSON.stringify(D.moved(ids, "r3", null)) === '["r3","r1","r2"]' && JSON.stringify(D.moved(ids, "r1", "r2")) === '["r2","r1","r3"]');
+  check("والعتبات: فأرةٌ ٦ بكسل، وإصبعٌ ٢٠٠ms بتسامح ٨", D.SORT_MOUSE_DISTANCE === 6 && D.SORT_TOUCH_DELAY === 200 && D.SORT_TOUCH_TOLERANCE === 8);
+  const sl = readFileSync("src/components/store/admin/SortList.tsx", "utf8");
+  check("SortList على اصطدام sortDnd (لا closestCenter بغيره)، والأسهمُ للهاتف ظاهرة", /collisionDetection=\{sortCollision\}/.test(sl) && !/closestCenter/.test(sl) && sl.includes("data-sortarrows") && /sm:hidden/.test(sl));
+  check("  وmedDnd لم يُمسّ (لا يستورد sortDnd ولا يُستورد منه)", !/sortDnd/.test(readFileSync("src/components/meds/medDnd.ts", "utf8")) && !/medDnd/.test(readFileSync("src/lib/sortDnd.ts", "utf8").replace(/\/\*[\s\S]*?\*\//g, "")));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
 console.log(fails ? `\n✗ store-cats-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-cats-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

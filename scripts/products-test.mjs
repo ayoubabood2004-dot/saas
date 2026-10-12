@@ -668,14 +668,18 @@ console.log("▸ جرس طلبات المتجر — يعدّ بلا صفوف، �
 console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، وتصفيةٌ على «بلا صورة»");
 {
   const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  /* متجر v1: البطاقةُ صارت ملفَّها (رفيقُ الصفحة بنطاق cat) — فالفحصُ يقرأ الصفحةَ ورفيقَها. */
+  const card = readFileSync("src/components/store/admin/ProductCard.tsx", "utf8");
+  const adm = cs + "\n" + card;
   /* كان يثبّت الرفعَ المباشرَ بلا معاينة (prepareUpload 800/0.72 ثم uploadProductImage). صار
    * المحرّرُ بابَه (متجر v1، طلبُ المالك: صورةٌ أكبر وأوضح، وإضافةٌ أسهل): معاينةٌ وتدويرٌ وقصّ،
    * ونسختان ١٦٠٠/٠٫٨٢ و٤٨٠ عبر commitPhoto — والسياسةُ نفسُها يفحصها photo-pipeline-test. */
   check("الرفعُ من داخل تبويب التشكيلة — عبر المحرّر لا مباشرة",
     cs.includes("<PhotoEditor") && cs.includes("commitPhoto(repo,") && !cs.includes("prepareUpload(") && !cs.includes("uploadProductImage("));
-  check("  ومنتقي المكتبة مركَّبٌ هنا كذلك", cs.includes("<ImageLibraryPicker") && cs.includes("data-catlib"));
-  check("  والمصغّرةُ نفسُها هي الزرّ — بمصغّرة البطاقة (cardImagePath) لا الكاملة", cs.includes("data-catphoto") && cs.includes("productImageUrl(cardImagePath(p.image_path))"));
-  check("  والمنتجُ بلا صورةٍ يعرض بلاطتَه لا رمزَ فئته", cs.includes("shelfLook(p.name)") && cs.includes("shelfMonogram(p.name)"));
+  check("  ومنتقي المكتبة مركَّبٌ هنا كذلك", cs.includes("<ImageLibraryPicker") && adm.includes("data-catlib"));
+  check("  والصورةُ نفسُها هي الزرّ — بمصغّرة البطاقة (cardImagePath) لا الكاملة",
+    card.includes("data-catphoto") && card.includes("productImageUrl(cardImagePath(p.image_path))") && cs.includes("<ProductCard "));
+  check("  والمنتجُ بلا صورةٍ يعرض بلاطتَه باسمه لا رمزَ فئته", card.includes("shelfLook(p.name)") && card.includes("shelfLabel(p.name)") && !card.includes("categoryLook("));
   check("تصفيةُ «بلا صورة» موجودةٌ بعدّادها", cs.includes("data-catfilter") && cs.includes('"nophoto"') && cs.includes("noPhotoCount"));
   check("  وأربعُ حالاتِ تصفيةٍ لا واحدة", ["\"all\"", "\"shown\"", "\"hidden\"", "\"nophoto\""].every((k) => cs.includes(k)));
   check("وفرزٌ صريح", cs.includes("data-catsort") && cs.includes('sort === "priceDesc"'));
@@ -691,6 +695,45 @@ console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، و
       !cs.includes("repo.deleteProductImage(") && /const linkPhoto = async \(p: Product, path: string \| null\) => \{\s*await repo\.setProductImage\(p\.id, path\);/.test(cs)
       && /onPath=\{\(path\) => linkPhoto\(editing, path\)\}/.test(cs) && ed.includes("void link(null)") && ed.includes("imged.unlink"));
   }
+}
+
+/* ── متجر v1 — إدارةُ المتجر (N8) ─────────────────────────────────────────
+ * الوصفُ كان سطراً بسقف ١٢٠ والقاعدةُ تقبل ٢٠٠٠ (0228) — الشاشةُ وحدها كانت السقف. والتصنيفاتُ
+ * (O2/O3) تبويبٌ يراه المصوّر، وقائمةُ تأشيرٍ لكلّ تصنيف، واختيارٌ جماعيّ — ورابطُ المتجر
+ * وتشغيلُه للمدير (O5) يُقالان بالشاشة لا يُخفيان، والخادمُ يفرضهما (0235). */
+console.log("▸ متجر v1 — الإدارة: الوصفُ ٢٠٠٠، التصنيفاتُ للمصوّر، والرابطُ للمدير");
+{
+  const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const dir = "src/components/store/admin";
+  const files = readdirSync(dir).filter((f) => f.endsWith(".tsx"));
+  const adm = cs + "\n" + files.map((f) => readFileSync(`${dir}/${f}`, "utf8")).join("\n");
+  const sheet = readFileSync(`${dir}/ProductDetailsSheet.tsx`, "utf8");
+  check("الوصفُ نصٌّ بأسطرٍ سقفُه ٢٠٠٠ بعدّاده — لا سطرٌ بسقف ١٢٠",
+    /<textarea[^>]*maxLength=\{DESC_MAX\}/.test(sheet) && /export const DESC_MAX = 2000;/.test(sheet) && sheet.includes("data-desccount")
+    && !/maxLength=\{120\}/.test(adm));
+  for (const hook of ["data-storecats", "data-catcheck", "data-bulkcat", "data-catphoto", "data-catlib"]) {
+    check(`  والخطّافُ ${hook} موجود`, adm.includes(hook));
+  }
+  check("تبويبُ «التصنيفات» للجميع — والمصوّرُ يُخفى عنه الطلباتُ وحدها",
+    /\{ id: "cats", label: t\("cat\.tabCats"/.test(cs) && /filter\(\(x\) => !\(photoMode && x\.id === "orders"\)\)/.test(cs));
+  check("  وقائمةُ التأشير حفظُها نداءٌ واحد (diffOps) لا نداءٌ لكلّ صفّ",
+    /await cats\.apply\(diffOps\(cat\.id, base,/.test(readFileSync(`${dir}/CategoryChecklist.tsx`, "utf8")));
+  check("  والمغادرةُ بتغييرٍ لم يُحفظ ورقةٌ داخل التطبيق — لا confirm ولا beforeunload",
+    adm.includes("data-leavesheet")
+    && !/window\.confirm|\bconfirm\(|beforeunload/.test(adm.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")));
+  check("  والإزالةُ (أرشفة) ورقةٌ تقول ماذا يصير", adm.includes("data-catarchivesheet") && adm.includes("cat.archiveBody"));
+  // قيس بالمتصفّح: لافتةُ البذرة كانت تتبع التأشير فتظهر فوق القائمة عند شطب مادّةٍ من صنفها —
+  // كلُّ صفٍّ ينزل تحت الإصبع والضغطةُ التالية تقع على غيره. فهي تُجمَّد لحظةَ الفتح.
+  const chk = readFileSync(`${dir}/CategoryChecklist.tsx`, "utf8");
+  check("  ولافتةُ البذرة مجمَّدةٌ لحظةَ الفتح — لا تظهر وتختفي مع التأشير فتُزيح الصفوف",
+    /const \[seedPool\] = useState<string\[\]>\(\(\) =>/.test(chk) && /\{!bannerOff && seedPool\.length > 0 && \(/.test(chk) && !/!bannerOff && missing\.length > 0/.test(chk));
+  check("O5: الرابطُ والتشغيلُ للمدير — يُقالان ولا يُخفيان",
+    /const ownerOnly = role !== "manager";/.test(cs) && /readOnly=\{ownerOnly\}/.test(cs) && /disabled=\{saving \|\| ownerOnly/.test(cs)
+    && cs.includes("data-ownernote") && cs.includes("data-ownergate"));
+  check("الألواحُ رفاقٌ معلَنون بنطاق cat", (() => {
+    const hp = JSON.parse(readFileSync("src/i18n/hot-paths.json", "utf8")).owned.cat;
+    return hp?.owner === "src/pages/ClinicStore.tsx" && files.every((f) => hp.with.includes(`${dir}/${f}`));
+  })());
 }
 
 /* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────
@@ -1082,7 +1125,7 @@ console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كل
     st.includes("canSuggest={!photoMode} priceViaStore={photoMode}")
     && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, Math\.round\(v \* 100\) \/ 100, p\.sell_price\);/.test(st));
   check("  وحقلُ سعرٍ مُسح ثم تُرك لا يكتب صفراً (Number(\"\") = 0)",
-    /if \(!canPrice\) return;[\s\S]{0,260}if \(!priceDraft\.trim\(\)\) return;\s*\n\s*const v = Number\(priceDraft\);/.test(st));
+    /if \(!canPrice\) return;[\s\S]{0,260}if \(!draft\.trim\(\)\) return;\s*\n\s*const v = Number\(draft\);/.test(st));
   const m28s = readFileSync("supabase/migrations/0228_photographer_store.sql", "utf8");
   check("  والسعرُ بالخادم للمدير والطبيب والمصوّر وحدهم (لا استقبالٍ بإذن متجر)، ولا صفر",
     /auth_role\(\) in \('manager', 'veterinarian'\) or is_photographer\(\)/.test(m28s) && /p_price <= 0/.test(m28s));
