@@ -726,7 +726,8 @@ console.log("▸ متجر v1 — الإدارة: الوصفُ ٢٠٠٠، الت�
   // كلُّ صفٍّ ينزل تحت الإصبع والضغطةُ التالية تقع على غيره. فهي تُجمَّد لحظةَ الفتح.
   const chk = readFileSync(`${dir}/CategoryChecklist.tsx`, "utf8");
   check("  ولافتةُ البذرة مجمَّدةٌ لحظةَ الفتح — لا تظهر وتختفي مع التأشير فتُزيح الصفوف",
-    /const \[seedPool\] = useState<string\[\]>\(\(\) =>/.test(chk) && /\{!bannerOff && seedPool\.length > 0 && \(/.test(chk) && !/!bannerOff && missing\.length > 0/.test(chk));
+    /if \(!opened\.current && products\) opened\.current = checklistOpen\(/.test(chk) && /const seedPool = opened\.current\?\.seedPool \?\? \[\];/.test(chk)
+    && /\{!bannerOff && seedPool\.length > 0 && \(/.test(chk) && !/!bannerOff && missing\.length > 0/.test(chk));
   check("O5: الرابطُ والتشغيلُ للمدير — يُقالان ولا يُخفيان",
     /const ownerOnly = role !== "manager";/.test(cs) && /readOnly=\{ownerOnly\}/.test(cs) && /disabled=\{saving \|\| ownerOnly/.test(cs)
     && cs.includes("data-ownernote") && cs.includes("data-ownergate"));
