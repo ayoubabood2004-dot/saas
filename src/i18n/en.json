@@ -5122,6 +5122,7 @@
     "sheetNoCats": "No categories yet — start them from the «Categories» tab.",
     "catsFailed": "Couldn't load the categories — try again.",
     "notReady": "The categories haven't loaded yet — try again in a moment.",
+    "itemsFailed": "Couldn't load the items list — the counts are unknown. Try again.",
     "bulkRemoveOk": "Remove from {{n}} categories",
     "bulkAddOk": "Add to {{n}} categories",
     "iconPick": "Pick an icon",

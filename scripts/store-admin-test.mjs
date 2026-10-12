@@ -175,5 +175,34 @@ try {
   check("  والحفظُ يبني عملياته من toggleOps على الحيّ لحظةَ الحفظ", /toggleOps\(p\.id, new Set\(cats\.catsOf\(p\.id\)\), change\.cats\)/.test(cs));
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
+/* ── منتجاتٌ لم تصل (أو فشلت) ليست «صفرَ منتجات» ───────────────────────────── */
+console.log("▸ «التصنيفات» قبل وصول المنتجات: لا «٠ مادة»، ولا قائمةُ تأشيرٍ فارغة، ولا ترتيبٌ مجمَّدٌ على لا شيء");
+try {
+  await ready();
+  const zero = (s) => text(s).includes(AR.cat.counts.replace("{{n}}", "0").replace("{{m}}", "0"));
+  const tab = html(h(M.CategoriesTab, { products: null, productsFailed: false, onRetryProducts() {}, guard: guard() }));
+  check("الأعدادُ لا تقول «٠ مادة · ٠ يشوفها الزبون» والمنتجاتُ تتحمّل", !zero(tab) && /data-catrow/.test(tab), text(tab).slice(0, 200));
+  check("  ومكانُها مؤشّرُ تحميل", /data-countsloading/.test(tab));
+  const tabFail = html(h(M.CategoriesTab, { products: null, productsFailed: true, onRetryProducts() {}, guard: guard() }));
+  check("  وفشلُ تحميلها يُقال بشريطٍ وإعادة (لا أصفارٌ تحت شريطٍ عن الطلبات)", !zero(tabFail) && text(tabFail).includes(AR.cat.itemsFailed) && text(tabFail).includes(AR.common.retry));
+  check("  وبالمنتجات: الأعدادُ الحقيقية (٢ مادة)", text(html(h(M.CategoriesTab, { products: PRODUCTS, productsFailed: false, onRetryProducts() {}, guard: guard() })))
+    .includes(AR.cat.counts.replace("{{n}}", "2").replace("{{m}}", "2")));
+  const chk = html(h(M.CategoryChecklist, { cat: cat1(), products: null, productsFailed: false, onRetryProducts() {}, canEdit: true, guard: guard(), onBack() {} }));
+  check("قائمةُ التأشير والمنتجاتُ تتحمّل: لا «ما اكو مواد مطابقة» ولا «٠ مؤشّرة من ٠» — هيكلُ تحميل",
+    !text(chk).includes(AR.cat.checkEmpty) && !text(chk).includes(AR.cat.checkCount.replace("{{n}}", "0").replace("{{m}}", "0")) && /data-skeleton/.test(chk), text(chk).slice(0, 200));
+  const chkFail = html(h(M.CategoryChecklist, { cat: cat1(), products: null, productsFailed: true, onRetryProducts() {}, canEdit: true, guard: guard(), onBack() {} }));
+  check("  وفشلُها يُقال بإعادة", text(chkFail).includes(AR.cat.itemsFailed) && text(chkFail).includes(AR.common.retry));
+  const full = html(h(M.CategoryChecklist, { cat: cat1(), products: PRODUCTS, productsFailed: false, onRetryProducts() {}, canEdit: true, guard: guard(), onBack() {} }));
+  const rowsOrder = [...full.matchAll(/data-checkrow[\s\S]*?dir="auto">([^<]+)</g)].map((m) => m[1]);
+  check("  وبالمنتجات: الأعضاءُ أوّلاً بترتيب العيادة مؤشَّرين، ثم الباقي بالاسم (O3)",
+    JSON.stringify(rowsOrder.slice(0, 2)) === JSON.stringify(["فرونتلاين", "درونتال"]) && rowsOrder.length === 4, rowsOrder.join("، "));
+  const O = M.S.checklistOpen;
+  check("checklistOpen: الأعضاءُ بترتيبهم ثم الباقي بالاسم، ولافتةُ البذرة صنفُها وليست فيه",
+    typeof O === "function" && JSON.stringify(O(["m2", "m1"], PRODUCTS, "medicine")) === JSON.stringify({ order: ["m2", "m1", "رويال كانين", "طوق"].map((x) => PRODUCTS.find((p) => p.name === x)?.id ?? x), seedPool: [] })
+    && JSON.stringify(O(["m2"], PRODUCTS, "medicine").seedPool) === '["m1"]');
+  const src = readFileSync("src/components/store/admin/CategoryChecklist.tsx", "utf8");
+  check("  والتجميدُ لحظةَ وصول المنتجات لا لحظةَ الفتح (مصفوفةٌ فارغةٌ عن «لم تصل» لا تُجمَّد)", /if \(!opened\.current && products\) opened\.current = checklistOpen\(/.test(src));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

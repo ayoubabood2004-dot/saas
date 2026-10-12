@@ -26,9 +26,13 @@ import { CategoryChecklist } from "./CategoryChecklist";
 
 export type LeaveGuard = MutableRefObject<((proceed: () => void) => boolean) | null>;
 
-export function CategoriesTab({ products, guard }: {
-  /** منتجاتُ العيادة (الحقولُ تُستثنى هنا). null = تتحمّل. */
+export function CategoriesTab({ products, productsFailed, onRetryProducts, guard }: {
+  /** منتجاتُ العيادة (الحقولُ تُستثنى هنا). null = لم تصل بعد — **ليست صفرَ منتجات**: الأعدادُ
+   *  مؤشّرُ تحميل، وقائمةُ التأشير لا تُجمَّد عليها (درسُ «قائمةٌ ناقصة أخطرُ من خطأ ظاهر»). */
   products: Product[] | null;
+  /** فشل تحميلُها (products يبقى null): يُقال بشريطٍ وإعادة. */
+  productsFailed: boolean;
+  onRetryProducts: () => void;
   /** يسأله الأبُ قبل أن يغادر (تبويبٌ آخر): false = الورقةُ فُتحت والانتقالُ معلَّق. */
   guard: LeaveGuard;
 }) {
@@ -46,8 +50,8 @@ export function CategoriesTab({ products, guard }: {
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const mine = useMemo(() => (products ?? []).filter((p) => !p.farm_id), [products]);
-  const byId = useMemo(() => new Map(mine.map((p) => [p.id, p])), [mine]);
+  const mine = useMemo(() => (products ? products.filter((p) => !p.farm_id) : null), [products]);
+  const byId = useMemo(() => new Map((mine ?? []).map((p) => [p.id, p])), [mine]);
   const today = localISO();
   const counts = (id: string) => {
     const ids = cats.membersOf(id).filter((pid) => byId.has(pid));
@@ -72,7 +76,7 @@ export function CategoriesTab({ products, guard }: {
   const open = cats.live.find((c) => c.id === openId) ?? null;
   if (openId && open) {
     return (
-      <CategoryChecklist cat={open} products={mine} canEdit={cats.canEdit} guard={guard}
+      <CategoryChecklist cat={open} products={mine} productsFailed={productsFailed} onRetryProducts={onRetryProducts} canEdit={cats.canEdit} guard={guard}
         onBack={() => setOpenId(null)} />
     );
   }
@@ -152,6 +156,13 @@ export function CategoriesTab({ products, guard }: {
         </div>
       )}
 
+      {!mine && productsFailed && (
+        <div className="flex items-center gap-2 rounded-2xl border border-danger-200 bg-danger-50 p-3 text-xs font-semibold text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-300" data-itemsfailed>
+          <span className="min-w-0 flex-1">{t("cat.itemsFailed", "ما وصلت قائمة المواد — الأعداد ما تنعرف. أعد المحاولة.")}</span>
+          <button type="button" className="underline" onClick={() => { playTap(); onRetryProducts(); }}>{t("common.retry", "إعادة المحاولة")}</button>
+        </div>
+      )}
+
       {creating && (
         <div className="card space-y-3 p-4" data-catcreate>
           <input className="input" autoFocus value={newName} maxLength={NAME_MAX} onChange={(e) => setNewName(e.target.value)}
@@ -172,7 +183,7 @@ export function CategoriesTab({ products, guard }: {
           onMove={(id, after) => void run([{ op: "move", id, after }])}
           row={(id, { handle, arrows }) => {
             const c = cats.live.find((x) => x.id === id) as CatRow;
-            const k = counts(id);
+            const k = mine ? counts(id) : null;
             /* الإخفاءُ والتعديلُ — بسطر الصفّ بالحاسوب، وبسطرٍ ثانٍ مع الأسهم بالهاتف (٣٧٥ لا يتّسع
                لاسمٍ وعدٍّ وستّةِ أزرار بسطرٍ واحد: كان الاسمُ يُقصّ لحرفٍ واحد). */
             const tools = (
@@ -200,7 +211,9 @@ export function CategoriesTab({ products, guard }: {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-bold text-ink">{c.name}</span>
                       <span className="block text-2xs text-ink-subtle tabular-nums">
-                        {t("cat.counts", "{{n}} مادة · {{m}} يشوفها الزبون", { n: formatNum(k.n), m: formatNum(k.listed) })}
+                        {k
+                          ? t("cat.counts", "{{n}} مادة · {{m}} يشوفها الزبون", { n: formatNum(k.n), m: formatNum(k.listed) })
+                          : <span className="inline-block h-3 w-24 animate-pulse rounded bg-surface-2 align-middle" data-countsloading />}
                         {c.hidden && <b className="ms-1.5 text-warn-700 dark:text-warn-200">{t("cat.hiddenBadge", "مخفي عن الزبون")}</b>}
                       </span>
                     </span>

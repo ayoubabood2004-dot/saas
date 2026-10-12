@@ -4,8 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, ListOrdered, Search, Sparkles, X } from "lucide-react";
 import type { Product } from "@/types";
 import { Modal } from "@/components/Modal";
-import { Button, useToast } from "@/components/ui";
-import { diffOps, useStoreCats } from "@/lib/storeCats";
+import { Button, Skeleton, useToast } from "@/components/ui";
+import { checklistOpen, diffOps, useStoreCats } from "@/lib/storeCats";
 import { isListed, type CatRow } from "@/lib/storeCatIndex";
 import { cardImagePath, catGlyph, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
 import { catError } from "./catErrors";
@@ -29,10 +29,12 @@ import type { LeaveGuard } from "./CategoriesTab";
 const PAGE = 100;
 type Show = "all" | "on" | "off";
 
-export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
+export function CategoryChecklist({ cat, products, productsFailed, onRetryProducts, canEdit, guard, onBack }: {
   cat: CatRow;
-  /** موادُّ العيادة خارج الحقول. */
-  products: Product[];
+  /** موادُّ العيادة خارج الحقول — null = لم تصل بعد (أو فشلت: `productsFailed`). ليست «صفرَ مواد». */
+  products: Product[] | null;
+  productsFailed: boolean;
+  onRetryProducts: () => void;
   canEdit: boolean;
   guard: LeaveGuard;
   onBack: () => void;
@@ -64,20 +66,18 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
   };
   const setMany = (ids: string[]) => ids.forEach((id) => set(id, true));
 
-  /* الترتيبُ المجمَّد: الأعضاءُ لحظةَ الفتح بترتيبهم، ثم الباقي بالاسم. ومادّةٌ تصل بعدها تُلحق بالآخر. */
-  const frozen = useRef<string[] | null>(null);
-  const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  /* الترتيبُ المجمَّد ولافتةُ البذرة: يُحسبان **مرّةً حين تصل المنتجات** (checklistOpen) — الأعضاءُ
+   * بترتيبهم ثم الباقي بالاسم. ومادّةٌ تصل بعدها (إعادةُ تحميل) تُلحق بالآخر. */
+  const opened = useRef<{ order: string[]; seedPool: string[] } | null>(null);
+  if (!opened.current && products) opened.current = checklistOpen(members, products, cat.seed_key);
+  const list = useMemo(() => products ?? [], [products]);
+  const byId = useMemo(() => new Map(list.map((p) => [p.id, p])), [list]);
   const order = useMemo(() => {
-    if (!frozen.current) {
-      const first = members.filter((id) => byId.has(id));
-      const firstSet = new Set(first);
-      const rest = products.filter((p) => !firstSet.has(p.id)).sort((a, b) => a.name.localeCompare(b.name, "ar")).map((p) => p.id);
-      frozen.current = [...first, ...rest];
-    } else {
-      const known = new Set(frozen.current);
-      frozen.current = [...frozen.current.filter((id) => byId.has(id)), ...products.filter((p) => !known.has(p.id)).map((p) => p.id)];
-    }
-    return frozen.current;
+    const o = opened.current;
+    if (!o) return [];
+    const known = new Set(o.order);
+    o.order = [...o.order.filter((id) => byId.has(id)), ...list.filter((p) => !known.has(p.id)).map((p) => p.id)];
+    return o.order;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byId]);
 
@@ -93,14 +93,13 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
   /* اختيارٌ سريع بصنف المخزون، ولافتةُ البذرة: موادُّ صنفُها صنفُ هذا التصنيف وليست فيه. */
   const kinds = useMemo(() => {
     const m = new Map<string, number>();
-    for (const p of products) if (p.category) m.set(p.category, (m.get(p.category) ?? 0) + 1);
+    for (const p of list) if (p.category) m.set(p.category, (m.get(p.category) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [products]);
+  }, [list]);
   /* اللافتةُ تُحسب **لحظةَ الفتح** على المؤكَّد وتبقى بمكانها: كانت تتبع التأشير، فشطبُ مادّةٍ من
    * الصنف يُظهرها فوق القائمة فينزل كلُّ صفٍّ تحت الإصبع، والضغطةُ التالية تقع على الصفّ الخطأ
    * (قيس بالمتصفّح: «شلت ١ وأضفت ٢» صارت «أضفت ١»). العددُ وحده يتبع التأشير. */
-  const [seedPool] = useState<string[]>(() =>
-    (cat.seed_key ? products.filter((p) => p.category === cat.seed_key && !members.includes(p.id)).map((p) => p.id) : []));
+  const seedPool = opened.current?.seedPool ?? [];
   const missing = seedPool.filter((id) => !on(id));
 
   const save = async (): Promise<boolean> => {
@@ -166,9 +165,11 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-xl">{catGlyph(cat.icon)}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate font-display text-base font-extrabold text-ink">{cat.name}</p>
-          <p className="text-2xs text-ink-subtle tabular-nums">{t("cat.checkCount", "{{n}} مادة مؤشّرة من {{m}}", { n: formatNum(nOn), m: formatNum(order.length) })}</p>
+          {products
+            ? <p className="text-2xs text-ink-subtle tabular-nums">{t("cat.checkCount", "{{n}} مادة مؤشّرة من {{m}}", { n: formatNum(nOn), m: formatNum(order.length) })}</p>
+            : <span className="mt-1 block h-3 w-28 animate-pulse rounded bg-surface-2" data-countsloading />}
         </div>
-        {canEdit && base.size > 1 && (
+        {canEdit && products && base.size > 1 && (
           <Button size="sm" variant={ordering ? "primary" : "outline"} leftIcon={<ListOrdered size={14} />} disabled={dirty}
             title={dirty ? t("cat.orderAfterSave", "احفظ التأشير أوّلاً") : undefined}
             onClick={() => { playTap(); setOrdering((v) => !v); }} data-catorder>
@@ -186,7 +187,18 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
         </div>
       )}
 
-      {ordering ? (
+      {!products ? (
+        /* المنتجاتُ لم تصل (أو فشلت): لا قائمةَ تُرسم ولا ترتيبَ يُجمَّد — «ما اكو مواد» عن قائمةٍ لم تصل
+           كذبةٌ تُصدَّق، وتأشيرٌ عليها يُبنى على لا شيء. */
+        productsFailed ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-danger-200 bg-danger-50 p-6 text-center dark:border-danger-500/30 dark:bg-danger-500/10" data-itemsfailed>
+            <p className="text-sm font-semibold text-danger-700 dark:text-danger-300">{t("cat.itemsFailed", "ما وصلت قائمة المواد — الأعداد ما تنعرف. أعد المحاولة.")}</p>
+            <Button size="sm" variant="secondary" onClick={() => { playTap(); onRetryProducts(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+          </div>
+        ) : (
+          <div className="space-y-1.5">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[4.5rem] rounded-2xl" />)}</div>
+        )
+      ) : ordering ? (
         <ItemOrder catId={cat.id} ids={members.filter((id) => byId.has(id))} byId={byId} />
       ) : (
         <>
@@ -210,7 +222,7 @@ export function CategoryChecklist({ cat, products, canEdit, guard, onBack }: {
             {chip("on", t("cat.showOn", "المختار ({{n}})", { n: formatNum(nOn) }))}
             {chip("off", t("cat.showOff", "غير المختار"))}
             {kinds.length > 0 && (
-              <select value="" onChange={(e) => { const k = e.target.value; if (k) { playTap(); setMany(products.filter((p) => p.category === k).map((p) => p.id)); } }}
+              <select value="" onChange={(e) => { const k = e.target.value; if (k) { playTap(); setMany(list.filter((p) => p.category === k).map((p) => p.id)); } }}
                 aria-label={t("cat.quickPickLabel", "حدّد كل مواد صنف")} data-quickpick
                 className="ms-auto max-w-[60%] rounded-full border border-line bg-surface-1 px-3 py-1.5 text-xs font-semibold text-ink-muted outline-none">
                 <option value="">{t("cat.quickPickLabel", "حدّد كل مواد صنف")}…</option>

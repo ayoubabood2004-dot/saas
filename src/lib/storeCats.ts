@@ -259,6 +259,25 @@ export function toggleOps(pid: string, before: ReadonlySet<string>, toggles: Rea
   return ops;
 }
 
+/**
+ * قائمةُ تأشيرٍ لحظةَ فتحها (O3): الأعضاءُ أوّلاً بترتيب العيادة ثم الباقي بالاسم — والترتيبُ يُجمَّد
+ * فلا ينطّ صفٌّ تحت الإصبع — ولافتةُ البذرة (موادُّ صنفِ البذرة وليست فيه). **تُحسب على منتجاتٍ
+ * وصلت**: كانت تُحسب على `[]` حين لم تصل بعد (~٦٩٠ ك.ب لأكبر عيادة، واللقطةُ أصغرُ فتسبق)، فيُجمَّد
+ * ترتيبٌ بلا أعضاء وتُلحق الموادُّ بعدها بالاسم — «الموجودة مؤشَّرة أوّلاً» لا تصدُق — وتغيب اللافتة.
+ */
+export function checklistOpen(
+  members: readonly string[],
+  products: readonly { id: string; name: string; category?: string | null }[],
+  seedKey: string | null,
+): { order: string[]; seedPool: string[] } {
+  const known = new Set(products.map((p) => p.id));
+  const first = members.filter((id) => known.has(id));
+  const firstSet = new Set(first);
+  const rest = products.filter((p) => !firstSet.has(p.id)).sort((a, b) => a.name.localeCompare(b.name, "ar")).map((p) => p.id);
+  const seedPool = seedKey ? products.filter((p) => p.category === seedKey && !firstSet.has(p.id)).map((p) => p.id) : [];
+  return { order: [...first, ...rest], seedPool };
+}
+
 /* ── الخطّاف ─────────────────────────────────────────────────────────────── */
 export function useStoreCats() {
   const s = useSyncExternalStore(subscribe, getStoreCatsState, getStoreCatsState);

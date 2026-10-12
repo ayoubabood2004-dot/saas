@@ -206,7 +206,7 @@ export function ClinicStore() {
             : tab === "catalog"
               ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} priceViaStore={photoMode} />
               : tab === "cats"
-                ? <CategoriesTab products={products} guard={leave} />
+                ? <CategoriesTab products={products} productsFailed={failed && products === null} onRetryProducts={() => void load()} guard={leave} />
                 : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
         </motion.div>
       </AnimatePresence>
