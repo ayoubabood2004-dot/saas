@@ -344,6 +344,12 @@ try {
   check("تصنيفاتُ المنتج بترتيب العيادة، والمؤرشفُ ليس منها", JSON.stringify(V.byProduct.get("p1")) === '["b","a"]');
   const d = S.diffOps("c", new Set(["p1", "p2"]), new Set(["p2", "p3"]));
   check("diffOps: إضافةٌ وإزالةٌ بدفعةٍ واحدة، ولا عمليةَ فارغة", JSON.stringify(d) === '[{"op":"add","cat":"c","ids":["p3"]},{"op":"remove","cat":"c","ids":["p1"]}]' && S.diffOps("c", new Set(["x"]), new Set(["x"])).length === 0);
+  /* ورقةُ التفاصيل: التأشيرُ نيّاتٌ (ما لمسه المستخدم) على العضوية الحيّة لحظةَ الحفظ — لا «المجموعةُ
+   * كما رُئيت». كانت تُزرع من catsOf لحظةَ الفتح؛ ولقطةٌ تصل بعدها جعلت «لا تأشير» = «شيله من كلّ رفّ». */
+  const T = S.toggleOps;
+  check("toggleOps: لا شيءَ لُمس ⇒ لا عملية — ولو وصلت العضويةُ بعد الفتح", typeof T === "function" && T("p", new Set(), new Map()).length === 0 && T("p", new Set(["A", "B"]), new Map()).length === 0);
+  check("  وما لُمس وحده يُرسل: B مؤشَّرة وA مشطوبة", typeof T === "function" && JSON.stringify(T("p", new Set(["A"]), new Map([["B", true], ["A", false]]))) === '[{"op":"add","cat":"B","ids":["p"]},{"op":"remove","cat":"A","ids":["p"]}]');
+  check("  وشطبُ ما ليس فيه أو تأشيرُ ما فيه ⇒ لا عملية", typeof T === "function" && T("p", new Set(), new Map([["A", false]])).length === 0 && T("p", new Set(["A"]), new Map([["A", true]])).length === 0);
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
 /* ── الترتيبُ بالسحب (src/lib/sortDnd.ts) بـ@dnd-kit/core الحقيقيّ ───────────────────── */

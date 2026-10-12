@@ -5,6 +5,7 @@ import type { Product } from "@/types";
 import { Modal } from "@/components/Modal";
 import { Button } from "@/components/ui";
 import type { CatRow } from "@/lib/storeCatIndex";
+import { toggleOps } from "@/lib/storeCats";
 import { catGlyph, productImageUrl, shelfLabel, shelfLook } from "@/lib/storeLib";
 import { playTap } from "@/lib/sounds";
 import { cn, money } from "@/lib/utils";
@@ -40,13 +41,17 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRet
   onToggle: () => void;
   onFeatured: () => void;
   onPrice: (draft: string) => void;
-  /** يحفظ ما تغيّر وحده (غائبٌ = لم يتغيّر؛ desc: null = مُسح) — والفشلُ يقوله المستدعي. */
-  onSave: (change: { desc?: string | null; cats?: string[] }) => Promise<void>;
+  /** يحفظ ما تغيّر وحده (غائبٌ = لم يتغيّر؛ desc: null = مُسح؛ cats = ما لمسه المستخدم من رقائق
+   *  تُطبَّق على العضوية الحيّة لحظةَ الحفظ بـtoggleOps) — والفشلُ يقوله المستدعي. */
+  onSave: (change: { desc?: string | null; cats?: ReadonlyMap<string, boolean> }) => Promise<void>;
   busy: boolean;
 }) {
   const { t } = useTranslation();
   const [desc, setDesc] = useState("");
-  const [sel, setSel] = useState<Set<string>>(new Set());
+  /* الرقائقُ **فرقٌ على الحيّ** لا نسخةٌ منه: العضويةُ تُقرأ من catsOf كلَّ رسم، و`toggles` ما لمسه
+   * المستخدم وحده. كانت نسخةً تُزرع مرّةً لحظةَ الفتح — ولقطةٌ تصل بعدها تتركها فارغةً و«احفظ»
+   * مفعّلاً، فحفظُ الوصف يشيل المادةَ من كلّ رفوفها (قيس بالتجريبيّ: «Drontal Plus» خرج من «أدوية»). */
+  const [toggles, setToggles] = useState<ReadonlyMap<string, boolean>>(new Map());
   const [price, setPrice] = useState("");
   const [saving, setSaving] = useState(false);
   const pid = p?.id ?? null;
@@ -54,20 +59,21 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRet
   useEffect(() => {
     if (!p) return;
     setDesc(p.store_desc ?? "");
-    setSel(new Set(catsOf(p.id)));
+    setToggles(new Map());
     setPrice(String(p.sell_price ?? ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
 
   if (!p) return <Modal open={false} onClose={onClose} title=""><span /></Modal>;
   const before = new Set(catsOf(p.id));
-  const catsChanged = before.size !== sel.size || [...sel].some((id) => !before.has(id));
+  const isOn = (cat: string) => toggles.get(cat) ?? before.has(cat);
+  const catsChanged = toggleOps(p.id, before, toggles).length > 0;
   const descNext = desc.trim() ? desc.replace(/\s+$/, "") : null;
   const descChanged = (descNext ?? null) !== (p.store_desc ?? null);
   const look = shelfLook(p.name);
   const save = async () => {
     setSaving(true);
-    try { await onSave({ ...(descChanged ? { desc: descNext } : {}), ...(catsChanged ? { cats: [...sel] } : {}) }); }
+    try { await onSave({ ...(descChanged ? { desc: descNext } : {}), ...(catsChanged ? { cats: toggles } : {}) }); }
     finally { setSaving(false); }
   };
 
@@ -141,12 +147,12 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRet
             ) : (
               <div className="flex flex-wrap gap-1.5" data-sheetcats>
                 {live.map((c) => {
-                  const on = sel.has(c.id);
+                  const on = isOn(c.id);
                   return (
                     <label key={c.id} className={cn("flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                       on ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "border-line text-ink-muted hover:bg-surface-2")}>
                       <input type="checkbox" checked={on} className="h-3.5 w-3.5 accent-brand-600"
-                        onChange={(e) => setSel((s) => { const n = new Set(s); e.target.checked ? n.add(c.id) : n.delete(c.id); return n; })} />
+                        onChange={(e) => { const v = e.target.checked; setToggles((m) => new Map(m).set(c.id, v)); }} />
                       <span aria-hidden>{catGlyph(c.icon)}</span> {c.name}
                     </label>
                   );

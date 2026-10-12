@@ -27,7 +27,7 @@ import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlert
 import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook } from "@/lib/storeLib";
 import { commitPhoto, nextWithoutPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
-import { useStoreCats } from "@/lib/storeCats";
+import { toggleOps, useStoreCats } from "@/lib/storeCats";
 import { MAX_IDS } from "@/lib/storeCatIndex";
 /* ألواحُ المتجر v1 — رفاقُ هذه الصفحة بنطاق cat (hot-paths.json): لا يستوردها غيرُها. */
 import { ProductCard } from "@/components/store/admin/ProductCard";
@@ -751,17 +751,11 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     } finally { setBulkBusy(false); }
   };
 
-  /** ورقةُ التفاصيل: التصنيفاتُ نداءٌ واحد (ذرّيّ)، ثم الوصف — وما لم يتغيّر لا يُرسل. */
-  const saveDetails = async (p: Product, change: { desc?: string | null; cats?: string[] }) => {
+  /** ورقةُ التفاصيل: التصنيفاتُ نداءٌ واحد (ذرّيّ) من **ما لمسه المستخدم** على العضوية الحيّة الآن
+   *  (toggleOps — ما لم يُلمس لا يُرسل)، ثم الوصف — وما لم يتغيّر لا يُرسل. */
+  const saveDetails = async (p: Product, change: { desc?: string | null; cats?: ReadonlyMap<string, boolean> }) => {
     try {
-      if (change.cats) {
-        const before = new Set(cats.catsOf(p.id));
-        const next = new Set(change.cats);
-        await cats.apply([
-          ...[...next].filter((c) => !before.has(c)).map((c) => ({ op: "add" as const, cat: c, ids: [p.id] })),
-          ...[...before].filter((c) => !next.has(c)).map((c) => ({ op: "remove" as const, cat: c, ids: [p.id] })),
-        ]);
-      }
+      if (change.cats) await cats.apply(toggleOps(p.id, new Set(cats.catsOf(p.id)), change.cats));
       if (change.desc !== undefined) { await repo.setStoreDesc(p.id, change.desc); await reload(); }
       playSuccess();
       toast.success(t("cat.detailsSaved", "انحفظت التفاصيل"));

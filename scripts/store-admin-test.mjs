@@ -154,5 +154,26 @@ try {
   check("  وكلُّ شاشةٍ تكتب بمتجر التصنيفات تقول رفضَه بـcatError", users.length === 0, users.join("، "));
 } catch (e) { fails++; console.error(`   ✗ catError — ${String(e?.message ?? e).split("\n")[0]}`); }
 
+/* ── ورقةُ التفاصيل: التأشيرُ نيّةٌ على الحيّ، لا صورةٌ لما رُئي لحظةَ الفتح ─────────────── */
+console.log("▸ ورقةُ التفاصيل: تصنيفاتٌ وصلت بعد فتحها لا تُشال بحفظ الوصف");
+try {
+  await ready();
+  const live = M.S.viewOf(M.S.getStoreCatsState().view).live;
+  const sheetHtml = (member) => html(h(M.ProductDetailsSheet, {
+    p: PRODUCTS[0], onClose() {}, live, catsOf: () => member, catsState: "ready", onRetryCats() {},
+    canPrice: true, onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onPrice() {}, onSave: async () => {}, busy: false,
+  }));
+  /* الرسمُ الأوّل قبل أيّ أثر = ما تراه الورقةُ حين تصل اللقطةُ بعد فتحها: كانت تُزرع مرّةً بأثرٍ على
+   * [pid] من catsOf الفارغة، فتبقى الرقائقُ فارغةً و«احفظ» مفعّلاً — وحفظُ الوصف يشيل المادةَ من رفوفها. */
+  const s = sheetHtml([U(1)]);
+  const chip = (id) => new RegExp(`<label[^>]*>(?:(?!</label>).)*<input[^>]*type="checkbox"[^>]*>(?:(?!</label>).)*${live.find((c) => c.id === id).name}`).exec(s)?.[0] ?? "";
+  check("عضويةُ المادة الحيّة مؤشَّرةٌ بالرسم نفسِه (لا تنتظر زرعاً)", /checked=""/.test(chip(U(1))) && !/checked=""/.test(chip(U(2))), chip(U(1)).slice(0, 120));
+  check("  و«احفظ» معطَّلٌ ما دام لا شيءَ تغيّر", /<button[^>]*disabled=""[^>]*data-sheetsave/.test(s) || /data-sheetsave[^>]*disabled=""/.test(s));
+  const src = readFileSync("src/components/store/admin/ProductDetailsSheet.tsx", "utf8");
+  check("  ولا تُزرع التصنيفاتُ من catsOf بأثر (الحيُّ يُقرأ كلَّ رسم، والتأشيرُ فرقٌ عليه)", !/set\w*\(new Set\(catsOf\(/.test(src));
+  const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  check("  والحفظُ يبني عملياته من toggleOps على الحيّ لحظةَ الحفظ", /toggleOps\(p\.id, new Set\(cats\.catsOf\(p\.id\)\), change\.cats\)/.test(cs));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

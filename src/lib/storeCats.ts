@@ -244,6 +244,21 @@ export function diffOps(cat: string, before: ReadonlySet<string>, after: Readonl
   return ops;
 }
 
+/**
+ * تأشيرُ ورقة المنتج ⇒ عملياتٌ لمنتجٍ واحد: `toggles` نيّاتُ المستخدم (ما لمسه وحده: تصنيف ⇒
+ * مؤشَّر/مشطوب) تُطبَّق على العضوية **الحيّة لحظةَ الحفظ** (`before`). ما لم يُلمس لا يُرسل أبداً.
+ * كانت الورقةُ تُزرع مرّةً من العضوية لحظةَ الفتح وتُرسل «المجموعةَ كما رُئيت»: فتحٌ قبل وصول اللقطة
+ * (أوّلُ تحميل، أو بعد قراءةٍ فاشلة) ثم حفظُ الوصف وحده = إزالةُ المادة من كلّ رفوفها بصمت.
+ */
+export function toggleOps(pid: string, before: ReadonlySet<string>, toggles: ReadonlyMap<string, boolean>): StoreCatOp[] {
+  const ops: StoreCatOp[] = [];
+  for (const [cat, on] of toggles) {
+    if (on && !before.has(cat)) ops.push({ op: "add", cat, ids: [pid] });
+    else if (!on && before.has(cat)) ops.push({ op: "remove", cat, ids: [pid] });
+  }
+  return ops;
+}
+
 /* ── الخطّاف ─────────────────────────────────────────────────────────────── */
 export function useStoreCats() {
   const s = useSyncExternalStore(subscribe, getStoreCatsState, getStoreCatsState);
