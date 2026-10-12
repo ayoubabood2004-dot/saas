@@ -7,8 +7,8 @@ import { supabase } from "@/lib/supabase";
 import { blobToDataUrl, FileTooLargeError, MAX_INPUT_MB } from "@/lib/image";
 import { cardImagePath, productImageUrl, shelfLabel, shelfLook } from "@/lib/storeLib";
 import {
-  editPlan, renderPlan, encodeWithSteps, targets, rotatedSize, rotateBy, squareIn, dragCorner, dragMove, maskBands, FULL_CROP,
-  type Crop, type EncodedPhoto, type Rot, type UploadBlob,
+  editPlan, renderPlan, encodeWithSteps, targets, rotatedSize, rotateBy, squareIn, dragCorner, dragMove, maskBands, editorNotice, FULL_CROP,
+  type Crop, type EditorAct, type EncodedPhoto, type Rot, type SaveMode, type UploadBlob,
 } from "@/lib/photoPipeline";
 import { describeUploadError } from "@/lib/errors";
 import { pushModal, removeModal, isTopModal } from "@/lib/modalStack";
@@ -26,7 +26,8 @@ import type { ProductImageFile } from "@/types";
  * مربّع) وبطاقةِ متجرٍ مصغّرة، ثم الحفظ — والإلغاءُ لا يرفع شيئاً.
  *
  * والحفظُ نفسُه شأنُ المضيف (`onPhoto`/`onPath`): المتجرُ وصفحةُ المصوّر يرفعان ويربطان فوراً،
- * ونموذجُ المخزون يحتفظ بها حتى يُحفظ المنتج. **ولا بابَ حذفٍ هنا** (O4): «افصل الصورة» فكٌّ
+ * ونموذجُ المخزون يحتفظ بها حتى يُحفظ المنتج — والمضيفُ **يُعلن** أيّهما (`saves`) فيقول المحرّرُ
+ * ما صار فعلاً (editorNotice): «انحفظت» لما حُفظ، و«جاهزة — تنحفظ وية المنتج» لما ينتظر. **ولا بابَ حذفٍ هنا** (O4): «افصل الصورة» فكٌّ
  * وحده، والسابقةُ تُعاد من «صور سابقة». حسابُ الإطار والترميز بـphotoPipeline (مفحوصٌ بنود).
  * ==========================================================================*/
 
@@ -38,6 +39,9 @@ export interface PhotoEditorProps {
   /** ملفٌّ وصل بالسحب أو اللصق على بطاقةٍ قبل الفتح ⇒ يفتح على التعديل مباشرة. */
   initialFile?: File | null;
   onClose: () => void;
+  /** متى يُحفظ ما يعطيه المحرّر (إلزاميّ): `now` يرفع ويربط فوراً، `with-product` ينتظر حفظَ المنتج —
+   *  وعليه تُبنى رسالتُه وزرُّه: «انحفظت الصورة» عن صورةٍ لم تُحفظ كانت تُضيّعها حين يُغلق النموذج. */
+  saves: SaveMode;
   /** صورةٌ مرمَّزة ⇒ المضيفُ يرفعها ويربطها (أو يحفظها لما بعد حفظ المنتج). */
   onPhoto: (photo: EncodedPhoto) => Promise<void>;
   /** ربطُ مسارٍ قائم (صورةٌ سابقة أو من المكتبة) أو `null` = فصلُ الصورة. */
@@ -235,14 +239,24 @@ export default function PhotoEditor(p: PhotoEditorProps) {
     const thumb = tg.thumb ? await blobOf(tg.thumb.edge, tg.thumb.q) : null;
     return { full: { blob: full.blob, dataUrl: full.dataUrl, ext: full.ext, contentType: full.contentType }, thumb, previewUrl: cardUrl ?? "" };
   };
+  /** ما يقوله المحرّرُ بعد الفعل — بما فعله المضيفُ (`saves`)، لا «انحفظت» ثابتة. */
+  const say = (act: EditorAct) => {
+    const n = editorNotice(p.saves, act);
+    const msg = n.key === "imged.saved" ? t("imged.saved", "انحفظت الصورة")
+      : n.key === "imged.unlinked" ? t("imged.unlinked", "انفصلت الصورة — محفوظة بـ«صور سابقة»")
+      : n.key === "imged.relinked" ? t("imged.relinked", "رجعت الصورة")
+      : n.key === "imged.unlinkStaged" ? t("imged.unlinkStaged", "الصورة تنفصل لمّا تحفظ المنتج")
+      : t("imged.staged", "الصورة جاهزة — تنحفظ وية المنتج لمّا تضغط «حفظ»");
+    if (n.tone === "success") { playSuccess(); toast.success(msg); }
+    else { playTap(); toast.toast({ tone: "info", title: msg }); }
+  };
   const save = async (goNext: boolean) => {
     if (busy) return;
     setBusy("save");
     try {
       const photo = await encode();
       await p.onPhoto(photo);
-      playSuccess();
-      toast.success(t("imged.saved", "انحفظت الصورة"));
+      say("photo");
       if (goNext && p.next && p.onNext) p.onNext(); else p.onClose();
     } catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
     finally { setBusy(""); }
@@ -252,8 +266,7 @@ export default function PhotoEditor(p: PhotoEditorProps) {
     setBusy("link");
     try {
       await p.onPath(path);
-      playSuccess();
-      toast.success(path ? t("imged.relinked", "رجعت الصورة") : t("imged.unlinked", "انفصلت الصورة — محفوظة بـ«صور سابقة»"));
+      say(path ? "relink" : "unlink");
       p.onClose();
     } catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
     finally { setBusy(""); }
@@ -413,7 +426,7 @@ export default function PhotoEditor(p: PhotoEditorProps) {
           <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
             <button type="button" disabled={!!busy} onClick={() => void save(false)} data-ed-save
               className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand-600 px-4 text-sm font-bold text-white transition hover:bg-brand-700 disabled:opacity-50">
-              {busy === "save" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {t("imged.save", "احفظ")}
+              {busy === "save" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {p.saves === "now" ? t("imged.save", "احفظ") : t("imged.use", "استعملها")}
             </button>
             {p.next && p.onNext && (
               <button type="button" disabled={!!busy} onClick={() => void save(true)} data-ed-savenext title={t("imged.nextName", { name: p.next.name, defaultValue: "الجاية: {{name}}" })}

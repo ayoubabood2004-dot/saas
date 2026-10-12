@@ -163,6 +163,21 @@ export async function commitPhoto(
   return path;
 }
 
+/**
+ * متى يُحفظ ما يعطيه المحرّرُ لمضيفه: `now` — المضيفُ يرفع ويربط فوراً (المتجر، صفحةُ المصوّر)؛
+ * `with-product` — المضيفُ يحتفظ به حتى يُحفظ المنتجُ نفسُه (نموذجُ المخزون: منتجٌ جديدٌ بلا معرّفٍ بعد).
+ */
+export type SaveMode = "now" | "with-product";
+export type EditorAct = "photo" | "unlink" | "relink";
+/**
+ * ما يقوله المحرّرُ بعد «احفظ» والفكّ والإرجاع — بما فعله المضيفُ **فعلاً**. كان «انحفظت الصورة» بصوت
+ * النجاح ثابتاً، ونموذجُ المخزون لا يحفظ شيئاً قبل «حفظ» المنتج: الطبيبُ يصدّق ويُغلق النموذجَ فتضيع.
+ */
+export function editorNotice(mode: SaveMode, act: EditorAct): { key: string; tone: "success" | "info" } {
+  if (mode === "now") return { key: act === "photo" ? "imged.saved" : act === "unlink" ? "imged.unlinked" : "imged.relinked", tone: "success" };
+  return { key: act === "unlink" ? "imged.unlinkStaged" : "imged.staged", tone: "info" };
+}
+
 /** «احفظ وروح للجاية بلا صورة»: القائمةُ كما كانت لحظةَ الفتح، والتالي بعد الحاليّ مما بلا صورةٍ **الآن**. */
 export function nextWithoutPhoto(queue: readonly string[], current: string, hasPhoto: (id: string) => boolean): string | null {
   const at = queue.indexOf(current);

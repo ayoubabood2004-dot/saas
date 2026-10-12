@@ -169,5 +169,30 @@ try {
   }
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
+console.log("▸ المحرّرُ يقول ما فعله مضيفُه: «انحفظت» حين حُفظت، و«جاهزة — تنحفظ وية المنتج» حين تنتظر");
+try {
+  const ed = readFileSync("src/components/photo/PhotoEditor.tsx", "utf8");
+  const inv = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const hosts = { "src/pages/ClinicStore.tsx": "now", "src/pages/ProductPhotos.tsx": "now", "src/pages/Inventory.tsx": "with-product" };
+  /* الجذر (قيس بالتجريبيّ): نموذجُ المخزون يحتفظ بالصورة حتى يُحفظ المنتج، والمحرّرُ يقول «انحفظت الصورة»
+   * بصوت النجاح على أيّ حال — فالطبيبُ يصدّق ويُغلق النموذج (X/Esc) وimage_path ما زال null بلا سؤال. */
+  check("المحرّرُ يطلب من كلّ مضيفٍ أن يُعلن متى يُحفظ (saves إلزاميّ)", /\bsaves: SaveMode;/.test(ed));
+  check("  والمضيفون الثلاثة يُعلنون: المتجرُ وصفحةُ المصوّر الآن، والمخزونُ مع المنتج",
+    Object.entries(hosts).every(([f, m]) => new RegExp(`<PhotoEditor[\\s\\S]{0,400}?saves="${m}"`).test(readFileSync(f, "utf8"))));
+  check("  ورسالتُه بعد الحفظ والفكّ والإرجاع من editorNotice وحدها (لا «انحفظت» ثابتة)",
+    /const n = editorNotice\(p\.saves, act\);/.test(ed) && /await p\.onPhoto\(photo\);\s*say\("photo"\);/.test(ed) && /await p\.onPath\(path\);\s*say\(path \? "relink" : "unlink"\);/.test(ed)
+    && !/toast\.success\(t\("imged\.(saved|unlinked|relinked)"/.test(ed));
+  check("نموذجُ المخزون: البلاطةُ تقول «ما انحفظت بعد» ما دامت صورةٌ تنتظر حفظَ المنتج", /photoPending &&[\s\S]{0,300}data-photopending/.test(inv));
+  check("  وإغلاقُه وصورةٌ تنتظر يسأل بورقة (confirmClose) — لا تضيع بلا كلمة ولا window.confirm",
+    /confirmClose=\{confirmPhotoClose\}/.test(inv) && /data-photoleave/.test(inv) && /const confirmPhotoClose = \(\) => \{ if \(!photoPending\) return true; setAskPhoto\(true\); return false; \};/.test(inv));
+  const N = P.editorNotice;
+  if (typeof N !== "function") throw new Error("editorNotice غير موجودة");
+  const kinds = ["photo", "unlink", "relink"];
+  check("editorNotice «now»: انحفظت/انفصلت/رجعت بنبرة النجاح",
+    JSON.stringify(kinds.map((k) => N("now", k))) === JSON.stringify([{ key: "imged.saved", tone: "success" }, { key: "imged.unlinked", tone: "success" }, { key: "imged.relinked", tone: "success" }]));
+  check("  و«with-product»: لا «انحفظت» ولا نبرةُ نجاح — تنتظر حفظَ المنتج",
+    kinds.every((k) => { const n = N("with-product", k); return n.tone === "info" && !["imged.saved", "imged.unlinked", "imged.relinked"].includes(n.key); }));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ photo-pipeline-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ photo-pipeline-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

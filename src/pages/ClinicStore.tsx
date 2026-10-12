@@ -1054,7 +1054,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
         onClose={() => setPickMode(null)} onApply={(ids) => void bulkCats(ids)} />
       {editing && (
         <Suspense fallback={null}>
-          <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history
+          <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history saves="now"
             onClose={() => setEdit(null)}
             onPhoto={(photo) => savePhoto(editing, photo)}
             onPath={(path) => linkPhoto(editing, path)}

@@ -6166,6 +6166,14 @@
     "saved": "Photo saved",
     "relinked": "Photo restored",
     "unlinked": "Photo unlinked — kept under “Earlier photos”",
+    "use": "Use this photo",
+    "staged": "Photo ready — it's saved with the product when you press «Save»",
+    "unlinkStaged": "The photo is unlinked when you save the product",
+    "pending": "Not saved yet — saved with the product",
+    "leaveTitle": "The photo isn't saved",
+    "leaveBody": "The photo is saved with the product. If you close now, it's lost.",
+    "leaveSave": "Save the product",
+    "leaveDrop": "Close without it",
     "fetchFailed": "Couldn't open the current photo for editing — take a new one or choose a file"
   }
 }

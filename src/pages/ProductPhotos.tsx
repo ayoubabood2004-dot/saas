@@ -222,7 +222,7 @@ export function ProductPhotos() {
         onPick={(row) => { if (libFor) void fromLibrary(libFor, row.path); }} />
       {editing && (
         <Suspense fallback={null}>
-          <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history
+          <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history saves="now"
             onClose={() => setEdit(null)}
             onPhoto={(photo) => savePhoto(editing, photo)}
             onPath={(path) => apply(editing, path)}

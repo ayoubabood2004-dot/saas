@@ -1090,7 +1090,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const photoPreview = photo ? photo.previewUrl
     : libPick ? productImageUrl(cardImagePath(libPick))
     : (removePhoto ? null : productImageUrl(cardImagePath(product?.image_path)));
-  useEffect(() => { setPhoto(null); setLibPick(null); setRemovePhoto(false); setEditorOpen(false); }, [open, product?.id]);
+  useEffect(() => { setPhoto(null); setLibPick(null); setRemovePhoto(false); setEditorOpen(false); setAskPhoto(false); }, [open, product?.id]);
+  /* صورةٌ تنتظر حفظَ المنتج (تصويرٌ، أو اختيارُ مكتبة، أو فكّ): البلاطةُ تقولها، وإغلاقُ النموذج يسأل بورقة —
+   * كانت تضيع بـX/Esc بلا كلمة بعد أن قال المحرّرُ «انحفظت» (قيس بالتجريبيّ: image_path بقي null). */
+  const photoPending = !!photo || !!libPick || (removePhoto && !!product?.image_path);
+  const [askPhoto, setAskPhoto] = useState(false);
+  const confirmPhotoClose = () => { if (!photoPending) return true; setAskPhoto(true); return false; };
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
   // each row differing only in barcode, name, count and expiry. Surfaced on wide
   // screens (iPad/desktop); phone keeps the classic one-product layout.
@@ -1939,6 +1944,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                     {t("pos.photoRemove", "شيل الصورة")}
                   </button>
                 )}
+                {photoPending && (
+                  <span className="rounded-full bg-warn-50 px-2.5 py-1 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200" data-photopending>
+                    {t("imged.pending", "ما انحفظت بعد — تنحفظ وية المنتج")}
+                  </span>
+                )}
                 <p className="text-2xs text-ink-subtle">{t("pos.photoHint", "تنضغط تلقائياً وتظهر ببطاقة متجرك الإلكتروني.")}</p>
               </div>
             </div>
@@ -1946,7 +1956,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               <Suspense fallback={null}>
                 <PhotoEditor
                   product={{ id: product?.id ?? "new", name: f.name || t("pos.photoLabel", "صورة المنتج بالمتجر"), image_path: product?.image_path ?? null, clinic_id: product?.clinic_id ?? null }}
-                  history={!!product?.id} initialFile={editorFile}
+                  history={!!product?.id} initialFile={editorFile} saves="with-product"
                   onClose={() => { setEditorOpen(false); setEditorFile(null); }}
                   onPhoto={async (ph) => { setPhoto(ph); setLibPick(null); setRemovePhoto(false); }}
                   onPath={async (path) => { setPhoto(null); if (path) { setLibPick(path); setRemovePhoto(false); } else { setLibPick(null); setRemovePhoto(true); } }}
@@ -2056,7 +2066,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
   const isBulk = (bulk && !product) || !!editGroup;
   return (
-    <Modal open={open} onClose={onClose} size="full" title={editGroup ? t("pos.bulkEditTitle", "تعديل مجموعة منتجات") : isBulk ? t("pos.bulkTitle", "إضافة عدة منتجات") : product ? t("pos.editProduct", "Edit product") : t("pos.addProduct", "Add product")}>
+    <Modal open={open} onClose={onClose} confirmClose={confirmPhotoClose} size="full" title={editGroup ? t("pos.bulkEditTitle", "تعديل مجموعة منتجات") : isBulk ? t("pos.bulkTitle", "إضافة عدة منتجات") : product ? t("pos.editProduct", "Edit product") : t("pos.addProduct", "Add product")}>
       <div className="flex flex-col gap-4 sm:h-[75vh]">
         {/* Bulk switch — create-only; hidden on phones (they keep the simple form) */}
         {!product && (
@@ -2140,6 +2150,15 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           </>)}
         </div>
       </div>
+      {/* إغلاقٌ وصورةٌ تنتظر حفظَ المنتج: ورقةٌ تقول ماذا يضيع — لا window.confirm. */}
+      <Modal open={askPhoto} onClose={() => setAskPhoto(false)} title={t("imged.leaveTitle", "الصورة ما انحفظت")}>
+        <div className="space-y-3" data-photoleave>
+          <p className="text-sm text-ink">{t("imged.leaveBody", "الصورة تنحفظ وية المنتج. إذا سكّرت هسه تروح.")}</p>
+          <Button className="w-full" loading={busy} disabled={!f.name.trim()} onClick={() => { setAskPhoto(false); void save(); }}>{t("imged.leaveSave", "احفظ المنتج")}</Button>
+          <Button className="w-full" variant="danger" onClick={() => { setAskPhoto(false); onClose(); }}>{t("imged.leaveDrop", "سكّر بدونها")}</Button>
+          <Button className="w-full" variant="outline" onClick={() => setAskPhoto(false)}>{t("common.back", "رجوع")}</Button>
+        </div>
+      </Modal>
     </Modal>
   );
 }
