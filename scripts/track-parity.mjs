@@ -67,5 +67,12 @@ check("  وأحداثُ قمع المتجر الأربعةُ بالأطراف ا
   STORE.every((e) => webEvents.includes(e) && edgeEvents.includes(e) && dbEvents.includes(e)),
   `ناقصٌ: ${STORE.filter((e) => !(webEvents.includes(e) && edgeEvents.includes(e) && dbEvents.includes(e)))}`);
 
+/* والتصفّحُ بالمتجر (0237): القرارُ الذي ألغى ت١٢ يُقاس بعد ثلاثين يوماً بهذين — غيابُ أحدهما
+ * بطرفٍ يجعل القياسَ صفراً فيبدو أنّ أحداً لا يتصفّح، ويُبنى على الصفر قرارٌ معاكس. */
+const BROWSE = ["store_cat", "store_search"];
+check("  وحدثا التصفّح (رقاقةُ التصنيف والبحث) بالأطراف الثلاثة",
+  BROWSE.every((e) => webEvents.includes(e) && edgeEvents.includes(e) && dbEvents.includes(e)),
+  `ناقصٌ: ${BROWSE.filter((e) => !(webEvents.includes(e) && edgeEvents.includes(e) && dbEvents.includes(e)))}`);
+
 console.log(fails ? `\n✗ track-parity: ${passes} نجحت، ${fails} فشلت` : `\n✓ track-parity: الأطرافُ الثلاثةُ متطابقة (${dbEvents.length} حدثاً)`);
 process.exit(fails ? 1 : 0);

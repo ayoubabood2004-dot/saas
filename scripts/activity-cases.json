@@ -26,6 +26,8 @@
   { "entity": "appointments", "action": "INSERT", "details": {}, "kind": "booking" },
   { "entity": "wa_messages", "action": "INSERT", "details": {}, "kind": "message" },
   { "entity": "store_orders", "action": "INSERT", "details": {}, "kind": "store" },
+  { "entity": "store_categories", "action": "UPDATE", "details": { "name": "أغذية", "__changed": { "archived_at": [null, "2026-10-12"] } }, "kind": "store" },
+  { "entity": "store_category_items", "action": "DELETE", "details": {}, "kind": "store" },
   { "entity": "memberships", "action": "DELETE", "details": {}, "kind": "team" },
   { "entity": "payroll_adjustments", "action": "INSERT", "details": {}, "kind": "payroll" },
   { "entity": "staff_loans", "action": "UPDATE", "details": {}, "kind": "payroll" },

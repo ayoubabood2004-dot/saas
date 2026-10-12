@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -4649,6 +4649,363 @@ $P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_
        update _dvtest_flags set admin = false; delete from platform_sessions;
        drop table if exists _cust_out; drop function if exists _cust_call(uuid, text, text, text, int, int, int);" >/dev/null
 rm -rf "$CUF"
+
+# ── 0233–0237: المتجر v1 — تصنيفاتُ العيادة، والواجهةُ بالتصنيف، وقفلُ المالك، والصور، والقياس ──
+# الجذر: «تصنيفاتُ» المتجر كانت الأصنافَ الخمسةَ الثابتة، والشريطُ يُبنى من الصفحات المحمَّلة
+# وحدَها. المالكُ قرّر (O1–O5): العيادةُ تصنع تصنيفاتها، والمادّةُ بأكثر من تصنيف، والمصوّرُ
+# يؤشّر العضويةَ لا البنية، والرابطُ والتشغيلُ للمدير. كلُّ فحصٍ هنا يمرّ من الباب الحقيقيّ
+# بدور authenticated (أو anon للواجهة العامّة) — الحزمةُ superuser لا ترى RLS ولا الصلاحيات.
+echo "▸ 0233–0237: المتجر v1"
+# الهجراتُ الخمسُ تُعاد أوّلاً: تُثبت أنها بلا أثرٍ ثانٍ، وتعيد نزعَ الصلاحيات بعد المنح الشامل
+# (0159) — فما يُقاس بعدها حالةُ الإنتاج لا حالةُ الحزمة.
+for f in 0233_store_categories 0234_store_front_categories 0235_store_owner_lock 0236_product_images_keep 0237_store_browse_events; do
+  out=$($P -f "$MIG/$f.sql" 2>&1) || { echo "$out"; echo "   ✗ $f ما انعادت"; fail=1; }
+done
+PHO=88888888-8888-8888-8888-888888888888
+ADM=33333333-3333-3333-3333-333333333333
+K1=a2330000-0000-4000-8000-0000000000c1   # عيادةُ المتجر (مديرُها صاحبُها)
+K2=a2330000-0000-4000-8000-0000000000c2   # عيادةٌ ثانية بمتجر
+K3=a2330000-0000-4000-8000-0000000000c3   # بلا متجرٍ ولا بذرة
+K4=a2330000-0000-4000-8000-0000000000c4   # مبذورةٌ فارغة (الترتيب)
+K5=a2330000-0000-4000-8000-0000000000c5   # الواجهةُ العامّة
+KV=a2330000-0000-4000-8000-0000000000a1   # طبيبٌ بـK1
+KP=a2330000-0000-4000-8000-0000000000a2   # مصوّرٌ بـK1
+KR=a2330000-0000-4000-8000-0000000000a3   # استقبالٌ بـK1
+KS=a2330000-0000-4000-8000-0000000000b3   # صفُّ الاستقبال بالكادر
+KF=a2330000-0000-4000-8000-0000000000f1   # حقلٌ بـK1
+KSEC=a2330000-0000-4000-8000-0000000000d1 # قسمٌ بـK1 («رتّب المخزن»)
+PK=a2331000-0000-4000-8000-0000000000     # منتجات
+CK=a2332000-0000-4000-8000-0000000000     # تصنيفاتٌ تُنشأ بالفحص
+$P -c "insert into auth.users(id) values ('$K1'),('$K2'),('$K3'),('$K4'),('$K5'),('$KV'),('$KP'),('$KR') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$KV','$K1','veterinarian','active'),('$KP','$K1','photographer','active'),('$KR','$K1','receptionist','active');
+       insert into subscriptions(clinic_id, plan, current_period_end) values ('$K1','pro', now() + interval '1 year'),('$K2','pro', now() + interval '1 year'),('$K5','pro', now() + interval '1 year')
+         on conflict (clinic_id) do update set current_period_end = excluded.current_period_end;
+       insert into poultry_farms(id, clinic_id, name) values ('$KF','$K1','حقل التصنيفات') on conflict (id) do nothing;
+       insert into company_sections(id, clinic_id, name, pooled_stock) values ('$KSEC','$K1','قسم التصنيفات',0) on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, category, sell_price, purchase_price, stock, store_visible, expiry_date, farm_id, section_id) values
+         ('${PK}01','$K1','k1-food-a','food',1000,500,3,true,null,null,null),
+         ('${PK}02','$K1','k1-food-b','food',1000,500,3,true,null,null,null),
+         ('${PK}03','$K1','k1-food-c','food',1000,500,3,false,null,null,null),
+         ('${PK}04','$K1','k1-food-farm','food',1000,500,3,true,null,'$KF',null),
+         ('${PK}05','$K1','k1-cons-a','consumables',1000,500,3,true,null,null,null),
+         ('${PK}06','$K1','k1-cons-b','consumables',1000,500,3,true,null,null,null),
+         ('${PK}07','$K1','k1-none-a',null,1000,500,3,true,null,null,null),
+         ('${PK}08','$K1','k1-none-b',null,0,500,3,true,null,null,null),
+         ('${PK}09','$K1','k1-none-c',null,1000,500,3,true,current_date - 1,null,null),
+         ('${PK}0a','$K1','k1-none-d',null,1000,500,3,false,null,null,null),
+         ('${PK}11','$K1','k1-merge-keep',null,1000,500,3,false,null,null,null),
+         ('${PK}12','$K1','k1-merge-drop',null,1000,500,2,false,null,null,null),
+         ('${PK}13','$K1','k1-merge-zero',null,1000,500,3,false,null,null,null),
+         ('${PK}14','$K1','k1-merge-keep2',null,1000,500,3,false,null,null,null),
+         ('${PK}15','$K1','k1-merge-drop2',null,1000,500,3,false,null,null,null),
+         ('${PK}16','$K1','k1-tidy',null,1000,500,1,false,null,null,null),
+         ('${PK}17','$K1','k1-tidy',null,1000,500,4,false,null,null,'$KSEC'),
+         ('${PK}18','$K1','k1-trash',null,1000,500,1,false,null,null,null),
+         ('${PK}31','$K2','k2-food','food',1000,500,3,true,null,null,null),
+         ('${PK}41','$K5','k5s1','food',1000,500,3,true,null,null,null),
+         ('${PK}42','$K5','k5s2','food',0,500,3,true,null,null,null),
+         ('${PK}43','$K5','k5s3','food',1000,500,3,true,current_date - 1,null,null),
+         ('${PK}44','$K5','k5s4','accessories',1000,500,3,true,null,null,null),
+         ('${PK}45','$K5','k5s5',null,2000,500,3,true,null,null,null),
+         ('${PK}46','$K5','k5s6',null,500,500,3,false,null,null,null),
+         ('${PK}47','$K5','k5s7','accessories',1500,500,0,true,null,null,null)
+       on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, sell_price, purchase_price, stock)
+         select ('${PK}2' || g)::uuid, '$K1', 'k1-conc-' || g, 1000, 500, 1 from unnest(array['1','2','3','4','5','6','7','8','9','a']) g
+       on conflict (id) do nothing;
+       insert into store_categories_seeded (clinic_id) values ('$K4') on conflict do nothing;
+       update _dvtest_flags set admin = false; delete from platform_sessions;
+       create or replace function _sc(who uuid, clinic uuid, ops jsonb) returns text language plpgsql as \$fn\$
+       declare r jsonb; h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         r := store_categories_apply(clinic, ops);
+         reset role;
+         return 'ok:' || jsonb_array_length(r->'cats');
+       exception when others then
+         get stacked diagnostics h = pg_exception_hint;
+         return 'guarded:' || sqlstate || ':' || sqlerrm || ':' || coalesce(h, '');
+       end \$fn\$;
+       create or replace function _scs(who uuid, clinic uuid, ops jsonb) returns text language plpgsql as \$fn\$
+       declare r jsonb; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         r := store_categories_apply(clinic, ops);
+         reset role;
+         return r::text;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       create or replace function _scv(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q into r;
+         reset role;
+         return r;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       create or replace function _anon_try(q text) returns text language plpgsql as \$fn\$
+       declare n int; begin
+         perform set_config('request.jwt.claim.sub', '', true);
+         set local role anon;
+         execute q; get diagnostics n = row_count;
+         reset role; return 'rows:' || n;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       create or replace function _anon_val(q text) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', '', true);
+         set local role anon;
+         execute q into r;
+         reset role; return r;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;" >/dev/null
+# متجرا K5 وK2 يُفتحان بلا جلسة (كالهجرة على الإنتاج) ⇒ البذرةُ بمحفّز الإدراج، وسطورُها بلا فاعل.
+$P -c "insert into store_profiles (clinic_id, slug, enabled) values ('$K5','k5store',true),('$K2','k2store',true) on conflict (clinic_id) do nothing;" >/dev/null
+
+# ── T21/T20/T22/T23: الشكلُ والصلاحيات ─────────────────────────────────────
+chk "T21 البابان والمحفّزان والواجهةُ definer بمسارٍ مثبَّت" \
+    "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text, ',' order by proname) from pg_proc where proname in ('store_categories_list','store_categories_apply','store_cats_follow_merge','store_cats_on_store_insert','store_catalog_in')" \
+    "store_catalog_in:true:true,store_categories_apply:true:true,store_categories_list:true:true,store_cats_follow_merge:true:true,store_cats_on_store_insert:true:true"
+chk "  وكلٌّ يختم العيادةَ بنصّه (clinic_id = v_clinic / old.clinic_id / new.clinic_id)" \
+    "select string_agg(proname||':'||(case proname when 'store_cats_follow_merge' then prosrc like '%clinic_id = old.clinic_id%' when 'store_cats_on_store_insert' then prosrc like '%new.clinic_id%' else prosrc like '%clinic_id = v_clinic%' end)::text, ',' order by proname) from pg_proc where proname in ('store_categories_list','store_categories_apply','store_cats_follow_merge','store_cats_on_store_insert','store_catalog_in')" \
+    "store_catalog_in:true,store_categories_apply:true,store_categories_list:true,store_cats_follow_merge:true,store_cats_on_store_insert:true"
+chk "  والبذرةُ والموضعُ والمحفّزاتُ لا يناديها anon ولا authenticated" \
+    "select count(*)::text from pg_proc p where proname in ('_store_cats_seed','_store_cat_slot','_store_item_slot','store_cats_follow_merge','store_cats_on_store_insert','store_profiles_owner_lock') and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))" "0"
+chk "  والبابان ممنوعان على anon، والواجهةُ العامّة له" \
+    "select has_function_privilege('anon','public.store_categories_list()','execute')::text||'|'||has_function_privilege('anon','public.store_categories_apply(uuid,jsonb)','execute')::text||'|'||has_function_privilege('anon','public.store_catalog_in(text,uuid,int,int)','execute')::text||'|'||has_function_privilege('anon','public.store_front(text)','execute')::text" "false|false|true|true"
+chk "  ولا صلاحيةَ جدولٍ لـanon ولا authenticated على الجداول الثلاثة" \
+    "select count(*)::text from unnest(array['store_categories','store_category_items','store_categories_seeded']) t, unnest(array['anon','authenticated']) r where has_table_privilege(r, 'public.'||t, 'select,insert,update,delete')" "0"
+chk "  وRLS مفعّلٌ بلا سياسة، والحجبُ معلَنٌ فلا تذكرها verify_rls_coverage" \
+    "select (select count(*) from pg_class where relname in ('store_categories','store_category_items','store_categories_seeded') and relrowsecurity)::text||'|'||(select count(*) from pg_policies where tablename in ('store_categories','store_category_items','store_categories_seeded'))::text||'|'||(select count(*) from verify_rls_coverage() as v(t, why) where t in ('store_categories','store_category_items','store_categories_seeded'))::text" "3|0|0"
+chk "  وسياجُ المصوّر بلا ثغرة" "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
+chk "  ولا سياسةَ تقرأ جدولَها" "select count(*)::text from verify_no_self_ref_policies()" "0"
+chk "T22 لا قراءةَ ولا كتابةَ مباشرة — البابان وحدهما" \
+    "select split_part(_rls_try('$K1', 'select 1 from store_categories'), ':', 2)||'|'||split_part(_rls_try('$K1', 'insert into store_category_items(clinic_id, category_id, product_id, pos) values (''$K1'', ''${CK}ff'', ''${PK}01'', 1)'), ':', 2)" "42501|42501"
+chk "T20 store_catalog لم تُلمس: توقيعٌ واحدٌ بوسائطه الثلاث" \
+    "select count(*)::text||'|'||max(pg_get_function_identity_arguments(oid)) from pg_proc where proname='store_catalog'" "1|p_slugtext,p_limitinteger,p_offsetinteger"
+chk "T23 البوّابة: المصوّرُ ينادي بابَي التصنيفات" \
+    "select _gate('$PHO', '/rpc/store_categories_apply')||'|'||_gate('$PHO', '/rpc/store_categories_list')" "rows:1|rows:1"
+chk "  وما زال لا ينادي ما خارج قائمته" \
+    "select split_part(_gate('$PHO', '/rpc/store_reject_stale'), ':', 3)" "photographer_forbidden"
+
+# ── T26 (أ) + T4/T1/T2: فتحُ المتجر للمدير، وفتحُه يبذر ─────────────────────
+chk "T26 الاستقبالُ لا يفتح متجراً (لا صفّ) — store_owner_only" \
+    "select split_part(r, ':', 2)||':'||split_part(r, ':', 3) from (select _rls_try('$KR', 'insert into store_profiles (clinic_id, slug, enabled) values (''$K1'', ''k1store'', true)') r) x" "42501:store_owner_only"
+chk "  ولا الطبيب" \
+    "select split_part(_rls_try('$KV', 'insert into store_profiles (clinic_id, slug, enabled) values (''$K1'', ''k1store'', true)'), ':', 3)" "store_owner_only"
+chk "T4 المديرُ يفتحه بدور authenticated" \
+    "select _rls_try('$K1', 'insert into store_profiles (clinic_id, slug, enabled) values (''$K1'', ''k1store'', true)')" "rows:1"
+chk "T1 البذرة: خمسةُ تصنيفاتٍ بأسمائها ومفاتيحها وأيقوناتها — بترتيب المعروض ثم الأكثر (T2)" \
+    "select string_agg(seed_key||':'||name||':'||icon, ',' order by pos) from store_categories where clinic_id='$K1'" \
+    "food:أغذية:food,consumables:مستهلكات:bottle,medicine:أدوية:pill,accessories:مستلزمات:toy,other:منوعات:bag"
+chk "  الغذاءُ ٣ (منتجُ الحقل خارجها) والمستهلكاتُ ٢، ولا عضويةَ لبلا صنف، والدفترُ ١" \
+    "select (select count(*) from store_category_items m join store_categories c on c.id = m.category_id where c.clinic_id='$K1' and c.seed_key='food')::text||'|'||(select count(*) from store_category_items m join store_categories c on c.id = m.category_id where c.clinic_id='$K1' and c.seed_key='consumables')::text||'|'||(select count(*) from store_category_items m where m.clinic_id='$K1' and m.product_id in ('${PK}04','${PK}07','${PK}08','${PK}09','${PK}0a'))::text||'|'||(select count(*) from store_categories_seeded where clinic_id='$K1')::text" "3|2|0|1"
+chk "T2 والمعروضُ أوّلاً قبل الأكثر: مستلزماتُ K5 (٢ معروضان) قبل أغذيتها (١ من ٣)" \
+    "select string_agg(name, ',' order by pos) from store_categories where clinic_id='$K5'" "مستلزمات,أغذية,أدوية,مستهلكات,منوعات"
+chk "T4 حفظٌ ثانٍ (upsert) لا يبذر من جديد" \
+    "select _rls_try('$K1', 'insert into store_profiles (clinic_id, slug, enabled, bio) values (''$K1'', ''k1store'', true, ''نبذة'') on conflict (clinic_id) do update set bio = excluded.bio')||'|'||(select count(*) from store_categories where clinic_id='$K1')::text||'|'||(select count(*) from store_categories_seeded where clinic_id='$K1')::text" "rows:1|5|1"
+
+# ── T3: الإعادةُ لا تضيف، والمشالُ لا يرجع إلا بالاسترجاع ───────────────────
+N0=$(W "select (select count(*) from store_categories)||'/'||(select count(*) from store_category_items)||'/'||(select count(*) from store_categories_seeded)")
+out=$($P -f "$MIG/0233_store_categories.sql" 2>&1) || { echo "$out"; echo "   ✗ 0233 ما انعادت"; fail=1; }
+chk "T3 إعادةُ 0233 لا تضيف صفّاً (الدفتر)" \
+    "select (select count(*) from store_categories)||'/'||(select count(*) from store_category_items)||'/'||(select count(*) from store_categories_seeded)" "$N0"
+KFOOD=$(W "select id from store_categories where clinic_id='$K1' and seed_key='food'")
+chk "  تُشال «أغذية»" "select _sc('$K1','$K1','[{\"op\":\"archive\",\"id\":\"$KFOOD\"}]')" "ok:5"
+chk "  والبذرةُ ثم init بعدها: لا ترجع ولا «أغذية» ثانية، والدفترُ كما هو" \
+    "select _store_cats_seed('$K1')::text||'|'||_sc('$K1','$K1','[{\"op\":\"init\"}]')||'|'||(select count(*) from store_categories where clinic_id='$K1' and search_norm(name) = search_norm('أغذية'))::text||'|'||(select (archived_at is not null)::text from store_categories where id='$KFOOD')||'|'||(select count(*) from store_categories_seeded where clinic_id='$K1')::text" "0|ok:5|1|true|1"
+chk "  والاسترجاعُ وحده يرجعها — بأعضائها" \
+    "select _sc('$K1','$K1','[{\"op\":\"restore\",\"id\":\"$KFOOD\"}]')||'|'||(select count(*) from store_category_items where category_id='$KFOOD')::text" "ok:5|3"
+
+# ── T5/T24: القراءةُ لا تكتب، والمشغّلُ لا يترك أثراً ─────────────────────────
+N1=$(W "select (select count(*) from store_categories)||'/'||(select count(*) from store_category_items)||'/'||(select count(*) from store_categories_seeded)||'/'||(select count(*) from audit_log)")
+chk "T5 عيادةٌ لم تُبذر تقرأ: seeded=false بلا تصنيفات" \
+    "select _scv('$K3', 'select (store_categories_list()->>''seeded'')||''|''||jsonb_array_length(store_categories_list()->''cats'')')" "false|0"
+chk "  ولا صفَّ انكتب بأيّ جدول (ولا بالتدقيق)" \
+    "select (select count(*) from store_categories)||'/'||(select count(*) from store_category_items)||'/'||(select count(*) from store_categories_seeded)||'/'||(select count(*) from audit_log)" "$N1"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "T24 المشغّلُ يدخل K1" "select _pf('$ADM', 'select (platform_enter(''$K1'', ''فحص 0233'')->>''ok'')')" "true"
+N2=$(W "select (select count(*) from store_categories)||'/'||(select count(*) from store_category_items)||'/'||(select count(*) from store_categories_seeded)||'/'||(select count(*) from audit_log)")
+chk "  والقراءةُ تقول العيادةَ التي دخلها ويعدّل بنيتَها كمدير" \
+    "select _pf('$ADM', 'select (store_categories_list()->>''clinic'')||''|''||(store_categories_list()->>''can_edit'')')" "$K1|true"
+chk "  ولا تكتب شيئاً" \
+    "select (select count(*) from store_categories)||'/'||(select count(*) from store_category_items)||'/'||(select count(*) from store_categories_seeded)||'/'||(select count(*) from audit_log)" "$N2"
+$P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+
+# ── T6: الحقوق ────────────────────────────────────────────────────────────
+chk "T6 الطبيبُ ينشئ تصنيفاً بدور authenticated" \
+    "select _sc('$KV','$K1','[{\"op\":\"create\",\"id\":\"${CK}e1\",\"name\":\"عروض\",\"icon\":\"star\"}]')" "ok:6"
+chk "  والمصوّرُ لا يمسّ البنية: إنشاء، تسمية، إخفاء، أرشفة، استرجاع، ترتيب، ترتيبُ مواد، بذرة" \
+    "select string_agg(split_part(r, ':', 2)||':'||split_part(r, ':', 3), ',' order by i) from (values
+       (1, _sc('$KP','$K1','[{\"op\":\"create\",\"id\":\"${CK}e9\",\"name\":\"مصوّر\"}]')),
+       (2, _sc('$KP','$K1','[{\"op\":\"edit\",\"id\":\"${CK}e1\",\"name\":\"تغيير\"}]')),
+       (3, _sc('$KP','$K1','[{\"op\":\"hide\",\"id\":\"${CK}e1\",\"hidden\":true}]')),
+       (4, _sc('$KP','$K1','[{\"op\":\"archive\",\"id\":\"${CK}e1\"}]')),
+       (5, _sc('$KP','$K1','[{\"op\":\"restore\",\"id\":\"${CK}e1\"}]')),
+       (6, _sc('$KP','$K1','[{\"op\":\"move\",\"id\":\"${CK}e1\",\"after\":null}]')),
+       (7, _sc('$KP','$K1','[{\"op\":\"move_item\",\"cat\":\"${CK}e1\",\"id\":\"${PK}01\",\"after\":null}]')),
+       (8, _sc('$KP','$K1','[{\"op\":\"init\"}]'))) v(i, r)" \
+    "42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized,42501:not_authorized"
+chk "  ويؤشّر ويشيل العضويةَ بأيّ تصنيف (O3)" \
+    "select _sc('$KP','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}01\",\"${PK}05\"]},{\"op\":\"remove\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}05\"]}]')||'|'||(select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}e1')" "ok:6|${PK}01"
+chk "  والاستقبالُ بلا إذن المتجر لا يقرأ" \
+    "select split_part(r, ':', 2)||':'||split_part(r, ':', 3) from (select _scv('$KR', 'select store_categories_list()::text') r) x" "42501:not_authorized"
+$P -c "insert into staff(id, clinic_id, name, user_id, role, permissions) values ('$KS','$K1','استقبال التصنيفات','$KR','receptionist','{\"manageStore\": true}')
+         on conflict (id) do update set permissions = excluded.permissions;" >/dev/null
+chk "  وبإذنٍ من المدير: العضويةُ نعم والبنيةُ لا" \
+    "select _sc('$KR','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}02\"]}]')||'|'||split_part(_sc('$KR','$K1','[{\"op\":\"create\",\"id\":\"${CK}e9\",\"name\":\"استقبال\"}]'), ':', 2)" "ok:6|42501"
+$P -c "update staff set permissions = '{}' where id = '$KS';" >/dev/null
+
+# ── T7/T8/T9: الختم، والتوائم، والدفعةُ الذرّية ───────────────────────────────
+chk "T7 جلسةُ K2 بختم K1 ⇒ clinic_switched ولا شيء يُكتب" \
+    "select split_part(_sc('$K2','$K1','[{\"op\":\"create\",\"id\":\"${CK}e7\",\"name\":\"ختم\"}]'), ':', 3)||'|'||(select count(*) from store_categories where id='${CK}e7')::text" "clinic_switched|0"
+SCC="$HERE/../../scripts/store-cats-cases.json"
+TW_TRY=$(node -e "process.stdout.write(require('$SCC').twins.try)")
+TW_LIVE=$(node -e "process.stdout.write(require('$SCC').twins.live)")
+TW_CODE=$(node -e "process.stdout.write(require('$SCC').twins.code)")
+chk "T8 «$TW_TRY» بجانب «$TW_LIVE» حيّة ⇒ $TW_CODE، والتلميحُ يسمّي الحيّة" \
+    "select split_part(r, ':', 3)||'|'||(position('«$TW_LIVE»' in r) > 0)::text from (select _sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}e8\",\"name\":\"$TW_TRY\"}]') r) x" "$TW_CODE|true"
+chk "  تُشال الحيّةُ فيُنشأ الاسمُ نفسُه" \
+    "select _sc('$K1','$K1','[{\"op\":\"archive\",\"id\":\"$KFOOD\"},{\"op\":\"create\",\"id\":\"${CK}e8\",\"name\":\"$TW_TRY\"}]')" "ok:7"
+chk "  واسترجاعُ المشالة ⇒ $TW_CODE (لا توأمَ حيّ)" \
+    "select split_part(_sc('$K1','$K1','[{\"op\":\"restore\",\"id\":\"$KFOOD\"}]'), ':', 3)" "$TW_CODE"
+AT_CODE=$(node -e "process.stdout.write(require('$SCC').atomic.code)")
+chk "T9 دفعةٌ فيها مادّةُ عيادةٍ أخرى ⇒ $AT_CODE، ولا صفَّ منها (التصنيفُ الذي أُنشئ قبلها كذلك)" \
+    "select split_part(_sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}e9\",\"name\":\"دفعة\"},{\"op\":\"add\",\"cat\":\"${CK}e9\",\"ids\":[\"${PK}01\",\"${PK}31\"]}]'), ':', 3)||'|'||(select count(*) from store_categories where id='${CK}e9')::text||'|'||(select count(*) from store_category_items where category_id='${CK}e9')::text" "$AT_CODE|0|0"
+chk "  ومادّةٌ بسلّة المحذوفات ⇒ $AT_CODE" \
+    "select _pf('$K1', 'select (delete_product(''${PK}18'')->>''id'')')||'|'||split_part(_sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}18\"]}]'), ':', 3)" "${PK}18|$AT_CODE"
+chk "  ومنتجُ حقلٍ ⇒ $AT_CODE، وأعضاءُ التصنيف كما هم" \
+    "select split_part(_sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}02\",\"${PK}04\"]}]'), ':', 3)||'|'||(select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}e1')" "$AT_CODE|${PK}01,${PK}02"
+
+# ── T11/T12: الإعادةُ آمنة، والتزاحمُ يتسلسل ────────────────────────────────
+RP="[{\"op\":\"create\",\"id\":\"${CK}0c\",\"name\":\"تكرار\"},{\"op\":\"add\",\"cat\":\"${CK}0c\",\"ids\":[\"${PK}01\",\"${PK}02\",\"${PK}05\"]},{\"op\":\"remove\",\"cat\":\"${CK}0c\",\"ids\":[\"${PK}02\"]}]"
+chk "T11 الدفعةُ نفسُها مرّتين ⇒ اللقطةُ نفسُها (جوابٌ ضاع وأُعيد)" \
+    "select (_scs('$K1','$K1','$RP') = _scs('$K1','$K1','$RP'))::text||'|'||(select string_agg(product_id::text, ',' order by pos) from store_category_items where category_id='${CK}0c')" "true|${PK}01,${PK}05"
+chk "T12 تصنيفٌ للتزاحم" "select _sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}0d\",\"name\":\"تزاحم\"}]')" "ok:9"
+for i in 1 2 3 4 5 6 7 8 9 a; do
+  psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select _sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}0d\",\"ids\":[\"${PK}2$i\"]}]')" >/dev/null &
+done
+wait
+chk "  عشرُ جلساتٍ متزامنة تضيف عشرَ مواد ⇒ عشرةُ صفوفٍ بعشرة مواضع مختلفة (القفل)" \
+    "select count(*)::text||'/'||count(distinct pos)::text from store_category_items where category_id='${CK}0d'" "10/10"
+
+# ── T13: الترتيب — نفسُ الحالة التي يفحصها store-cats-test على النسخة التجريبية ───
+ORD_C=$(node -e "process.stdout.write(JSON.stringify(require('$SCC').order.create))")
+ORD_M=$(node -e "process.stdout.write(JSON.stringify(require('$SCC').order.moves))")
+ORD_E=$(node -e "process.stdout.write(require('$SCC').order.expect)")
+ORD_R=$(node -e "process.stdout.write(require('$SCC').order.renumbered)")
+chk "T13 خمسةَ عشرَ تصنيفاً ثم: للأوّل، وللآخر، وبعد صفّ، واثنا عشرَ نقلاً لمنتصف فجوةٍ واحدة" \
+    "select _sc('$K4','$K4','$ORD_C')||'|'||_sc('$K4','$K4','$ORD_M')" "ok:15|ok:15"
+chk "  الترتيبُ كما بالحالة المشتركة" \
+    "select string_agg(name, ',' order by pos, id) from store_categories where clinic_id='$K4' and archived_at is null" "$ORD_E"
+chk "  والفجوةُ انطوت فرُقّمت القائمةُ ×١٠٢٤" "select (pos % 1024 = 0)::text from store_categories where id='$ORD_R'" "true"
+
+# ── T25: التدقيق ───────────────────────────────────────────────────────────
+A0=$(W "select count(*) from audit_log where entity='store_categories' and clinic_id='$K1'")
+B0=$(W "select count(*) from audit_log where entity='store_category_items' and action='DELETE' and clinic_id='$K1'")
+chk "T25 شيلُ مادّتين من تصنيف ⇒ سطرا حذفٍ نوعُهما «متجر»" \
+    "select _sc('$K1','$K1','[{\"op\":\"remove\",\"cat\":\"${CK}0d\",\"ids\":[\"${PK}21\",\"${PK}22\"]}]')||'|'||((select count(*) from audit_log where entity='store_category_items' and action='DELETE' and clinic_id='$K1') - $B0)::text||'|'||(select string_agg(distinct audit_kind(entity, action, details), ',') from audit_log where entity='store_category_items' and clinic_id='$K1')" "ok:9|2|store"
+chk "  والنقلُ لا يكتب سطراً" \
+    "select _sc('$K1','$K1','[{\"op\":\"move\",\"id\":\"${CK}0d\",\"after\":null},{\"op\":\"move_item\",\"cat\":\"${CK}0d\",\"id\":\"${PK}23\",\"after\":null}]')||'|'||((select count(*) from audit_log where entity='store_categories' and clinic_id='$K1') - $A0)::text" "ok:9|0"
+chk "  والشيلُ (الأرشفة) سطرٌ واحدٌ نوعُه «متجر»" \
+    "select _sc('$K1','$K1','[{\"op\":\"archive\",\"id\":\"${CK}0c\"}]')||'|'||((select count(*) from audit_log where entity='store_categories' and clinic_id='$K1') - $A0)::text||'|'||(select audit_kind(entity, action, details) from audit_log where entity='store_categories' and entity_id='${CK}0c' and action='UPDATE' order by created_at desc, id desc limit 1)" "ok:9|1|store"
+chk "  والبذرةُ بالهجرة بلا فاعل (متجرُ K5 فُتح بلا جلسة)" \
+    "select count(*) filter (where actor is null)::text||'/'||count(*)::text from audit_log where entity='store_categories' and action='INSERT' and clinic_id='$K5'" "5/5"
+
+# ── T14/T15: الدمجُ يحمل العضوية، والاسترجاعُ يعيد التوأمَ بمكانه ───────────────
+chk "T14 تصنيفٌ: صفرٌ ثم التوأمُ (٢٠٤٨) ثم أصلٌ ثانٍ وتوأمُه" \
+    "select _sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}0e\",\"name\":\"دمج\"},{\"op\":\"add\",\"cat\":\"${CK}0e\",\"ids\":[\"${PK}13\",\"${PK}12\",\"${PK}14\",\"${PK}15\"]}]')" "ok:10"
+chk "  الدمجُ: الأصلُ (ليس عضواً) يرث مكانَ التوأم ٢٠٤٨، وصفُّ التوأم يبقى نائماً" \
+    "select _pf('$K1', 'select (merge_products(''${PK}11''::uuid, ''${PK}12''::uuid)).id::text')||'|'||(select pos::text from store_category_items where category_id='${CK}0e' and product_id='${PK}11')||'|'||(select count(*) from store_category_items where category_id='${CK}0e' and product_id='${PK}12')::text" "${PK}11|2048|1"
+chk "  وأصلٌ عضوٌ أصلاً لا يتكرّر ولا يتحرّك" \
+    "select _pf('$K1', 'select (merge_products(''${PK}14''::uuid, ''${PK}15''::uuid)).id::text')||'|'||(select count(*)::text||':'||max(pos)::text from store_category_items where category_id='${CK}0e' and product_id='${PK}14')" "${PK}14|1:3072"
+chk "  والاسترجاعُ يعيد التوأمَ بنفس المعرّف لمكانه ٢٠٤٨، والأصلُ يبقى" \
+    "select _pf('$K1', 'select (restore_product(''${PK}12''::uuid)).id::text')||'|'||(select string_agg(product_id::text||':'||pos, ',' order by product_id) from store_category_items where category_id='${CK}0e' and product_id in ('${PK}11','${PK}12'))" "${PK}12|${PK}11:2048,${PK}12:2048"
+chk "  والقراءةُ تراهما معاً بترتيب العيادة (الموضعُ ثم المعرّف)" \
+    "select _scv('$K1', 'select (store_categories_list()->''members''->''${CK}0e'')::text')" "[\"${PK}13\",\"${PK}11\",\"${PK}12\",\"${PK}14\"]"
+chk "T15 «رتّب المخزن» يطوي غيرَ المصنَّف بالمصنَّف، والعضويةُ تنتقل معه" \
+    "select _sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}0e\",\"ids\":[\"${PK}16\"]}]')||'|'||_pf('$K1', 'select ((inventory_tidy_uncat()->>''merged'')::int >= 1)::text')||'|'||(select pos::text from store_category_items where category_id='${CK}0e' and product_id='${PK}17')" "ok:10|true|5120"
+
+# ── T16–T19: الواجهةُ العامّة بدور anon ──────────────────────────────────────
+chk "تصنيفاتُ K5: عروضٌ بستّ مواد (أربعٌ معروضة)، ومخفيٌّ، ومشال" \
+    "select _sc('$K5','$K5','[{\"op\":\"create\",\"id\":\"${CK}51\",\"name\":\"عروض\",\"icon\":\"star\"},{\"op\":\"add\",\"cat\":\"${CK}51\",\"ids\":[\"${PK}45\",\"${PK}42\",\"${PK}41\",\"${PK}46\",\"${PK}44\",\"${PK}47\"]},{\"op\":\"create\",\"id\":\"${CK}52\",\"name\":\"مخفي\"},{\"op\":\"add\",\"cat\":\"${CK}52\",\"ids\":[\"${PK}44\"]},{\"op\":\"hide\",\"id\":\"${CK}52\",\"hidden\":true},{\"op\":\"create\",\"id\":\"${CK}53\",\"name\":\"قديم\"},{\"op\":\"add\",\"cat\":\"${CK}53\",\"ids\":[\"${PK}47\"]},{\"op\":\"archive\",\"id\":\"${CK}53\"}]')" "ok:8"
+chk "T19 store_front.cats بترتيب العيادة: بلا مخفيٍّ ولا مشالٍ ولا فارغ" \
+    "select _anon_val('select string_agg((c->>''name'')||'':''||(c->>''n''), '','' order by o) from jsonb_array_elements(store_front(''k5store'')->''cats'') with ordinality as x(c, o)')" "مستلزمات:2,أغذية:1,عروض:4"
+chk "  وكلُّ n = عددُ ما ترجعه store_catalog_in له" \
+    "select _anon_val('select bool_and((c->>''n'')::int = (select count(*) from store_catalog_in(''k5store'', (c->>''id'')::uuid, 100, 0)))::text from jsonb_array_elements(store_front(''k5store'')->''cats'') c')" "true"
+chk "  وكلُّ ما ترجعه موجودٌ بـ«الكل» (store_catalog) — الشرطُ واحد" \
+    "select _anon_val('select bool_and(exists (select 1 from store_catalog(''k5store'', 100, 0) s where s.id = i.id))::text from jsonb_array_elements(store_front(''k5store'')->''cats'') c cross join lateral store_catalog_in(''k5store'', (c->>''id'')::uuid, 100, 0) i')" "true"
+chk "T18 store_catalog_in: المعروضُ وحده بترتيب العيادة (بلا مخفيٍّ ولا سعرٍ صفريّ ولا منتهٍ)" \
+    "select _anon_val('select string_agg(name, '','') from store_catalog_in(''k5store'', ''${CK}51'', 100, 0)')" "k5s5,k5s1,k5s4,k5s7"
+chk "  والصفحتان (٢،٠) و(٢،٢) لا تتقاطعان ولا تُسقطان" \
+    "select _anon_val('select string_agg(name, '','') from store_catalog_in(''k5store'', ''${CK}51'', 2, 0)')||'|'||_anon_val('select string_agg(name, '','') from store_catalog_in(''k5store'', ''${CK}51'', 2, 2)')" "k5s5,k5s1|k5s4,k5s7"
+chk "  وتصنيفُ عيادةٍ أخرى، والمخفيُّ، والمشالُ ⇒ cat_gone (خطأٌ لا قائمة)" \
+    "select _anon_try('select * from store_catalog_in(''k5store'', ''${CK}e1'', 10, 0)')||'|'||_anon_try('select * from store_catalog_in(''k5store'', ''${CK}52'', 10, 0)')||'|'||_anon_try('select * from store_catalog_in(''k5store'', ''${CK}53'', 10, 0)')" "guarded:P0002:cat_gone|guarded:P0002:cat_gone|guarded:P0002:cat_gone"
+$P -c "update store_profiles set enabled = false where clinic_id = '$K5';" >/dev/null
+chk "  والمتجرُ المطفأ ⇒ cat_gone" \
+    "select _anon_try('select * from store_catalog_in(''k5store'', ''${CK}51'', 10, 0)')" "guarded:P0002:cat_gone"
+$P -c "update store_profiles set enabled = true where clinic_id = '$K5';" >/dev/null
+P44=$(W "select pos from store_category_items where category_id='${CK}51' and product_id='${PK}44'")
+chk "T16 حذفُ مادّة (سلّة) يُخرجها من التصنيف ويُنقص عددَه" \
+    "select _pf('$K5', 'select (delete_product(''${PK}44'')->>''id'')')||'|'||_anon_val('select string_agg(name, '','') from store_catalog_in(''k5store'', ''${CK}51'', 100, 0)')||'|'||_anon_val('select string_agg((c->>''name'')||'':''||(c->>''n''), '','' order by o) from jsonb_array_elements(store_front(''k5store'')->''cats'') with ordinality as x(c, o)')" "${PK}44|k5s5,k5s1,k5s7|مستلزمات:1,أغذية:1,عروض:3"
+chk "  واسترجاعُها يعيدها لمكانها (نفسُ المعرّف ونفسُ الموضع)" \
+    "select _pf('$K5', 'select (restore_product(''${PK}44''::uuid)).id::text')||'|'||_anon_val('select string_agg(name, '','') from store_catalog_in(''k5store'', ''${CK}51'', 100, 0)')||'|'||(select pos::text from store_category_items where category_id='${CK}51' and product_id='${PK}44')" "${PK}44|k5s5,k5s1,k5s4,k5s7|$P44"
+MEM0=$(W "select string_agg(product_id::text||':'||pos, ',' order by pos, product_id) from store_category_items where category_id='${CK}51'")
+chk "T17 شيلُ التصنيف يُخفيه من الواجهة، وطلبُ أعضائه ⇒ cat_gone" \
+    "select _sc('$K5','$K5','[{\"op\":\"archive\",\"id\":\"${CK}51\"}]')||'|'||_anon_val('select coalesce(string_agg(c->>''name'', '',''), '''') from jsonb_array_elements(store_front(''k5store'')->''cats'') c')||'|'||_anon_try('select * from store_catalog_in(''k5store'', ''${CK}51'', 10, 0)')" "ok:8|مستلزمات,أغذية|guarded:P0002:cat_gone"
+chk "  والاسترجاعُ يعيده بنفس الأعضاء ونفس المواضع" \
+    "select _sc('$K5','$K5','[{\"op\":\"restore\",\"id\":\"${CK}51\"}]')||'|'||(select string_agg(product_id::text||':'||pos, ',' order by pos, product_id) from store_category_items where category_id='${CK}51')" "ok:8|$MEM0"
+chk "  والإخفاءُ مثله: يغيب ثم يرجع كما كان" \
+    "select _sc('$K5','$K5','[{\"op\":\"hide\",\"id\":\"${CK}51\",\"hidden\":true}]')||'|'||_anon_val('select coalesce(string_agg(c->>''name'', '',''), '''') from jsonb_array_elements(store_front(''k5store'')->''cats'') c')||'|'||_sc('$K5','$K5','[{\"op\":\"hide\",\"id\":\"${CK}51\",\"hidden\":false}]')||'|'||_anon_val('select string_agg(c->>''name'', '','') from jsonb_array_elements(store_front(''k5store'')->''cats'') c')||'|'||(select string_agg(product_id::text||':'||pos, ',' order by pos, product_id) from store_category_items where category_id='${CK}51')" "ok:8|مستلزمات,أغذية|ok:8|مستلزمات,أغذية,عروض|$MEM0"
+
+# ── T10: السقوف (آخراً — تملأ K1 ثم تُنظَّف) ─────────────────────────────────
+CAP_CODE=$(node -e "process.stdout.write(require('$SCC').caps.code)")
+$P -c "insert into store_categories (clinic_id, name, icon, pos)
+         select '$K1', 'سقف' || g, 'tag', 900000 + g * 1024
+           from generate_series(1, 40 - (select count(*)::int from store_categories where clinic_id='$K1' and archived_at is null)) g;" >/dev/null
+chk "T10 التصنيفُ الحيُّ ٤١ ⇒ $CAP_CODE بتلميحٍ عربيّ" \
+    "select split_part(r, ':', 3)||'|'||(position('٤٠' in r) > 0)::text from (select _sc('$K1','$K1','[{\"op\":\"create\",\"id\":\"${CK}0f\",\"name\":\"زيادة\"}]') r) x" "$CAP_CODE|true"
+chk "  واسترجاعٌ فوق السقف ⇒ $CAP_CODE" \
+    "select split_part(_sc('$K1','$K1','[{\"op\":\"restore\",\"id\":\"${CK}0c\"}]'), ':', 3)" "$CAP_CODE"
+chk "  وأكثرُ من ٢٠٠٠ معرّفٍ بطلبٍ واحد ⇒ bad_ops" \
+    "select split_part(_sc('$K1','$K1', (select jsonb_build_array(jsonb_build_object('op','add','cat','${CK}e1','ids', jsonb_agg(gen_random_uuid()))) from generate_series(1, 2001))), ':', 3)" "bad_ops"
+$P -c "delete from store_categories where clinic_id='$K1' and name like 'سقف%';
+       insert into store_category_items (clinic_id, category_id, product_id, pos)
+         select '$K1', '${CK}e1', gen_random_uuid(), 10000 + g from generate_series(1, 1998) g;" >/dev/null
+chk "  وعضوُ التصنيف ٢٠٠١ ⇒ store_cat_members_full" \
+    "select split_part(_sc('$K1','$K1','[{\"op\":\"add\",\"cat\":\"${CK}e1\",\"ids\":[\"${PK}05\"]}]'), ':', 3)" "store_cat_members_full"
+$P -c "delete from store_category_items where category_id='${CK}e1' and pos > 10000;" >/dev/null
+
+# ── T26 (ب): الرابطُ والتشغيلُ والحذفُ للمدير — والباقي بإذن المتجر ───────────
+chk "T26 الطبيبُ يحفظ النبذة (upsert على صفٍّ قائم)" \
+    "select _rls_try('$KV', 'insert into store_profiles (clinic_id, slug, enabled, bio) values (''$K1'', ''k1store'', true, ''نبذة الطبيب'') on conflict (clinic_id) do update set slug = excluded.slug, enabled = excluded.enabled, bio = excluded.bio, updated_at = now()')" "rows:1"
+chk "  ولا يغيّر الرابط" \
+    "select split_part(_rls_try('$KV', 'update store_profiles set slug = ''k1store-vet'''), ':', 3)" "store_owner_only"
+chk "  والمصوّرُ لا يطفئ المتجر" \
+    "select split_part(_rls_try('$KP', 'update store_profiles set enabled = false'), ':', 3)" "store_owner_only"
+chk "  والاستقبالُ بلا إذن المتجر لا يغيّر الأجرة" \
+    "select split_part(_rls_try('$KR', 'update store_profiles set delivery_fee = 1000'), ':', 3)" "not_authorized"
+chk "  ولا الطبيبُ يحذف صفَّ المتجر" \
+    "select split_part(_rls_try('$KV', 'delete from store_profiles'), ':', 3)" "store_owner_only"
+chk "  والمديرُ: الرابطُ والتشغيلُ والحذفُ وإعادةُ الفتح (بلا بذرةٍ ثانية)" \
+    "select _rls_try('$K1', 'update store_profiles set slug = ''k1store-b''')||'|'||_rls_try('$K1', 'update store_profiles set enabled = false')||'|'||_rls_try('$K1', 'delete from store_profiles')||'|'||_rls_try('$K1', 'insert into store_profiles (clinic_id, slug, enabled) values (''$K1'', ''k1store'', true)')||'|'||(select count(*) from store_categories_seeded where clinic_id='$K1')::text||'|'||(select count(*) from store_categories where clinic_id='$K1' and seed_key is not null)::text" "rows:1|rows:1|rows:1|rows:1|1|5"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$KV','$K1', now() + interval '10 minutes')
+         on conflict (user_id) do update set until = excluded.until, clinic_id = excluded.clinic_id;" >/dev/null
+chk "  والطبيبُ المرفوعُ بالـPIN مديرٌ عمداً: يغيّر الرابط" \
+    "select _rls_try('$KV', 'update store_profiles set slug = ''k1store-pin''')" "rows:1"
+$P -c "delete from staff_elevations where user_id = '$KV'; update store_profiles set slug = 'k1store' where clinic_id = '$K1';" >/dev/null
+
+# ── T27: حدثا التصفّح ────────────────────────────────────────────────────────
+$P -c "insert into landing_events (event, path, device, visitor_day) values ('store_cat','/s/x','mobile','d7'), ('store_search','/s/x','desktop','d7');" >/dev/null
+chk "T27 القيدُ يقبل store_cat وstore_search (الحَكَمُ الإدراج)" \
+    "select count(*)::text from landing_events where event in ('store_cat','store_search')" "2"
+chk "  ويرفض اسماً خارج القائمة" \
+    "select left(_pf_try('$C1', 'insert into landing_events (event, device, visitor_day) values (''store_xyz'',''mobile'',''d7'')'), 7)" "guarded"
+
+# ── T28: مرآةُ الكتابة — المتوقَّعُ تحسبه applyOps بالواجهة نفسها (من المصدر) ───
+SCF=$(mktemp -d)
+node "$HERE/../../scripts/store-cats-parity.mjs" "$SCF" >/dev/null
+$P -f "$SCF/store-cats.sql" >/dev/null
+chk "T28 مرآةُ applyOps: كلُّ دفعةٍ تعطي نفسَ الصفوف والمواضع والرفض بالطرفين" "select _scp_run()" "ok"
+rm -rf "$SCF"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

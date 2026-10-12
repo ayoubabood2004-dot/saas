@@ -1683,6 +1683,9 @@ export interface StoreOrder {
   created_at: string;
 }
 
+/** تصنيفٌ كما تعطيه store_front للزائر (0234): حيٌّ، غيرُ مخفيّ، وفيه مادّةٌ معروضة. */
+export interface StoreFrontCat { id: string; name: string; icon: string; n: number }
+
 /** بطاقة المتجر كما يراها الزائر المجهول (مخرجات store_front الآمنة فقط). */
 export interface StoreFrontInfo {
   name: string;
@@ -1695,6 +1698,47 @@ export interface StoreFrontInfo {
   delivery_fee: number;
   min_order: number;
 }
+
+/* ── تصنيفاتُ المتجر (0233) — تصنيفاتُ العيادة بترتيبها، والعضويةُ كثيرٌ لكثير ─────────
+ * لا حذف: الأرشفةُ والاسترجاع. والكتابةُ عملياتٌ نسبيّة يحسب الخادمُ مواضعَها، والبنيةُ
+ * (تسمية، أيقونة، إخفاء، أرشفة، ترتيب) للمدير والطبيب، والعضويةُ لكلّ من له إذن المتجر. */
+export type StoreCatIcon =
+  | "paw" | "dog" | "cat" | "bird" | "fish" | "rabbit" | "pill" | "syringe" | "food" | "bone"
+  | "toy" | "bottle" | "bath" | "comb" | "bag" | "tag" | "star" | "gift" | "new" | "heart";
+export type StoreCatSeedKey = "medicine" | "food" | "accessories" | "consumables" | "other";
+export interface StoreCategory {
+  id: string;
+  name: string;
+  icon: StoreCatIcon;
+  hidden: boolean;
+  pos: number | null;
+  archived_at: string | null;
+  seed_key: StoreCatSeedKey | null;
+  /** الأعضاءُ الموجودون (منتجاتٌ حيّةٌ بالعيادة خارج الحقول). */
+  n: number;
+  /** منهم ما يراه الزبون (_store_listed). */
+  n_listed: number;
+}
+/** ما يقوله store_categories_list: الختمُ، وهل بُذرت، وهل يعدّل البنية، والتصنيفاتُ وأعضاؤها بالترتيب. */
+export interface StoreCatsSnapshot {
+  clinic: string;
+  seeded: boolean;
+  can_edit: boolean;
+  cats: StoreCategory[];
+  members: Record<string, string[]>;
+}
+/** `after` غائب = آخرُ القائمة، و`null` = أوّلُها، ومعرّفٌ = بعده مباشرة. */
+export type StoreCatOp =
+  | { op: "init" }
+  | { op: "create"; id: string; name: string; icon?: StoreCatIcon; after?: string | null }
+  | { op: "edit"; id: string; name?: string; icon?: StoreCatIcon }
+  | { op: "hide"; id: string; hidden: boolean }
+  | { op: "archive"; id: string }
+  | { op: "restore"; id: string }
+  | { op: "move"; id: string; after: string | null }
+  | { op: "move_item"; cat: string; id: string; after: string | null }
+  | { op: "add"; cat: string; ids: string[]; after?: string | null }
+  | { op: "remove"; cat: string; ids: string[] };
 
 /** منتج بعين الزائر: أعمدة العرض فقط — «متوفر» boolean والكمية سر داخلي. */
 export interface StoreCatalogItem {
