@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, ListOrdered, Search, Sparkles, X } from "lucide-react";
 import type { Product } from "@/types";
 import { Modal } from "@/components/Modal";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { checklistOpen, diffOps, useStoreCats } from "@/lib/storeCats";
+import { onCatcheckChange, readCatcheck, withCatcheck } from "@/lib/checkHistory";
 import { isListed, type CatRow } from "@/lib/storeCatIndex";
 import { cardImagePath, catGlyph, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
 import { catError } from "./catErrors";
@@ -126,14 +127,39 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
   };
   const discard = () => { setAdd(new Set()); setDrop(new Set()); };
 
-  /* المغادرة: الأبُ يسأل (تبويبٌ آخر)، والرجوعُ يسأل، وروابطُ التطبيق تسأل — بورقة. */
+  /* المغادرة: الأبُ يسأل (تبويبٌ آخر)، والرجوعُ يسأل، وروابطُ التطبيق تسأل، **وزرُّ رجوع الهاتف** يسأل — بورقة.
+   * القائمةُ مدخلٌ بالسجلّ بعلامة `catcheck` (دفعه «التصنيفات» عند الفتح): الإغلاقُ من الشاشة navigate(-1)
+   * ما دامت العلامةُ علامتَها، فالرجوعُ والسهمُ طريقٌ واحد ولا يبقى مدخلٌ ميت. */
   const ask = (proceed: () => void): boolean => {
     if (!dirty) return true;
     setPending(() => proceed);
     return false;
   };
+  const loc = useLocation();
+  const marker = readCatcheck(loc.state);
+  const seen = useRef(false);
+  const ours = useRef(false);
+  ours.current = marker === cat.id;
+  /* يُقرأ لحظةَ النداء (مرجع) لا لحظةَ إنشاء الدالّة: ورقةُ السؤال تحمل `close` من رسمٍ سبق دفعَ العلامة ثانيةً. */
+  const close = () => { if (ours.current) navigate(-1); else onBack(); };
+  const dropEntry = () => { if (ours.current) navigate(-1); };
   useEffect(() => {
-    guard.current = ask;
+    if (marker === cat.id) { seen.current = true; return; }
+    const d = onCatcheckChange(marker, cat.id, seen.current, dirty);
+    if (d === "close") { seen.current = false; onBack(); }
+    else if (d === "hold") {
+      // رجوعٌ أسقط العلامةَ والتأشيرُ لم يُحفظ: تُدفع ثانيةً (نبقى) وتسأل الورقة.
+      navigate(loc.pathname + loc.search, { state: withCatcheck(loc.state, cat.id) });
+      setPending(() => close);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marker]);
+  useEffect(() => {
+    guard.current = (proceed) => {
+      if (!dirty) { dropEntry(); return true; }
+      setPending(() => () => { dropEntry(); proceed(); });
+      return false;
+    };
     return () => { guard.current = null; };
   });
   useEffect(() => {
@@ -151,7 +177,7 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
     return () => document.removeEventListener("click", onClick, true);
   }, [dirty, navigate]);
 
-  const back = () => { if (ask(onBack)) onBack(); };
+  const back = () => { if (ask(close)) close(); };
   const chip = (id: Show, label: string) => (
     <button type="button" onClick={() => { playTap(); setShow(id); setLimit(PAGE); }}
       className={cn("rounded-full px-3 py-1.5 text-xs font-semibold transition",

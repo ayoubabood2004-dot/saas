@@ -28,6 +28,8 @@ import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook } fr
 import { commitPhoto, nextWithoutPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { toggleOps, useStoreCats } from "@/lib/storeCats";
+import { readCatcheck } from "@/lib/checkHistory";
+import { useLocation } from "react-router-dom";
 import { MAX_IDS } from "@/lib/storeCatIndex";
 /* ألواحُ المتجر v1 — رفاقُ هذه الصفحة بنطاق cat (hot-paths.json): لا يستوردها غيرُها. */
 import { ProductCard } from "@/components/store/admin/ProductCard";
@@ -93,7 +95,10 @@ export function ClinicStore() {
    * (مبنيٌّ على المبيعات). والخادمُ يفرض هذا بنفسه؛ هنا لا تُعرض فقط. */
   const { baseRole } = usePermissions();
   const photoMode = baseRole === "photographer";
-  const [tab, setTab] = useState<Tab>(photoMode ? "catalog" : "orders");
+  /* مدخلٌ بعلامة قائمة تأشير (رجوعٌ من شاشةٍ أخرى، إعادةُ تحميل) يُفتح على «التصنيفات» — والقائمةُ نفسُها
+   * تُفتح من العلامة (checkHistory). */
+  const loc = useLocation();
+  const [tab, setTab] = useState<Tab>(() => (readCatcheck(loc.state) ? "cats" : photoMode ? "catalog" : "orders"));
   /* التصفيةُ بالأب: «١ بلا سعر» بلوحة الإعدادات تفتح التشكيلةَ مصفّاةً عليه.
    * سطرٌ يقول عدداً ولا يوصّل إليه يترك الدكتورَ يبحث يدوياً بتسعِمئة صنف. */
   const [catFilter, setCatFilter] = useState<CatFilter>("all");

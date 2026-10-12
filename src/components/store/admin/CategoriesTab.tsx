@@ -1,10 +1,12 @@
-import { useMemo, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronLeft, Eye, EyeOff, Loader2, MoreHorizontal, Plus, RotateCcw, Tags, Trash2 } from "lucide-react";
 import type { Product, StoreCatIcon } from "@/types";
 import { Modal } from "@/components/Modal";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { useStoreCats } from "@/lib/storeCats";
+import { readCatcheck, withCatcheck } from "@/lib/checkHistory";
 import { isListed, NAME_MAX, type CatRow } from "@/lib/storeCatIndex";
 import { catGlyph } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
@@ -39,7 +41,14 @@ export function CategoriesTab({ products, productsFailed, onRetryProducts, guard
   const { t } = useTranslation();
   const toast = useToast();
   const cats = useStoreCats();
-  const [openId, setOpenId] = useState<string | null>(null);
+  /* القائمةُ المفتوحة مدخلٌ بالسجلّ (checkHistory): الفتحُ يدفع علامةً بنفس العنوان، فزرُّ رجوع الهاتف
+   * يُغلقها ولا يُخرج من المتجر. والعلامةُ بالمدخل تفتحها (رجوعٌ للأمام، إعادةُ تحميل). */
+  const loc = useLocation();
+  const navigate = useNavigate();
+  const marker = readCatcheck(loc.state);
+  const [openId, setOpenId] = useState<string | null>(() => readCatcheck(loc.state));
+  useEffect(() => { if (marker && marker !== openId) setOpenId(marker); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [marker]);
+  const openCat = (id: string) => { playTap(); setOpenId(id); navigate(loc.pathname + loc.search, { state: withCatcheck(loc.state, id) }); };
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState<StoreCatIcon>("tag");
@@ -74,6 +83,9 @@ export function CategoriesTab({ products, productsFailed, onRetryProducts, guard
   };
 
   const open = cats.live.find((c) => c.id === openId) ?? null;
+  /* تصنيفٌ فُتح ثم شيل (جهازٌ ثانٍ) والقائمةُ بيدها: تُغلق ويُسحب مدخلُها — لا ضغطةُ رجوعٍ ميتة. */
+  const gone = !!openId && cats.writable && !open;
+  useEffect(() => { if (gone) { setOpenId(null); if (marker === openId) navigate(-1); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gone]);
   if (openId && open) {
     return (
       <CategoryChecklist cat={open} products={mine} productsFailed={productsFailed} onRetryProducts={onRetryProducts} canEdit={cats.canEdit} guard={guard}
@@ -205,7 +217,7 @@ export function CategoriesTab({ products, productsFailed, onRetryProducts, guard
               <div className={cn("card p-2.5", c.hidden && "opacity-70")} data-catrow>
                 <div className="flex items-center gap-2">
                   {handle}
-                  <button type="button" onClick={() => { playTap(); setOpenId(id); }} data-catopen
+                  <button type="button" onClick={() => openCat(id)} data-catopen
                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-1 text-start transition hover:bg-surface-2">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-xl">{catGlyph(c.icon)}</span>
                     <span className="min-w-0 flex-1">

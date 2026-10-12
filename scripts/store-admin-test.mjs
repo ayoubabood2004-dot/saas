@@ -240,5 +240,62 @@ try {
   check("  وبالعربية اسمُ الصنف كما بالمخزون (pos.cat)", ar.includes(fill(AR.cat.quickPick, { name: AR.pos.cat.medicine, n: 2 })));
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
+/* ── زرُّ رجوع الهاتف بقائمة التأشير: يُغلقها، ولا يُسقط تأشيراً بلا سؤال ─────────────── */
+console.log("▸ رجوعُ الهاتف بقائمة التأشير: مدخلٌ بالسجلّ، والتأشيرُ المعلّق يسأل");
+try {
+  const H = await load('export * from "./src/lib/checkHistory.ts";', "check-history");
+  /* سجلٌّ مزيّف بنفس العنوان (/store) ونموذجُ الربط كما بالألواح: الفتحُ يدفع العلامة، وتبدّلُها يُقرَّر
+   * بـonCatcheckChange، والإغلاقُ من الشاشة navigate(-1) ما دامت العلامةُ علامتَها. ‎idx = -1 خارج المتجر. */
+  const sim = () => {
+    const s = { entries: [{ usr: "قبل" }], idx: 0, openId: null, seen: false, dirty: false, asked: 0 };
+    const cur = () => (s.idx < 0 ? null : s.entries[s.idx]);
+    const marker = () => H.readCatcheck(cur());
+    const onLocation = () => {
+      if (!s.openId) return;
+      if (marker() === s.openId) { s.seen = true; return; }
+      const d = H.onCatcheckChange(marker(), s.openId, s.seen, s.dirty);
+      if (d === "close") { s.openId = null; s.seen = false; }
+      else if (d === "hold") { s.entries = [...s.entries.slice(0, s.idx + 1), H.withCatcheck(cur(), s.openId)]; s.idx++; s.asked++; onLocation(); }
+    };
+    s.open = (id) => { s.openId = id; s.entries = [...s.entries.slice(0, s.idx + 1), H.withCatcheck(cur(), id)]; s.idx++; onLocation(); };
+    s.back = () => { s.idx--; onLocation(); };                       // زرُّ الهاتف/المتصفّح
+    s.close = () => { if (marker() === s.openId) s.back(); else s.openId = null; };   // السهمُ بالشاشة
+    s.marker = marker;
+    return s;
+  };
+  {
+    const s = sim();
+    s.open("X");
+    check("فتحُ تصنيفٍ يدفع مدخلاً بعلامته (والحالةُ الأخرى تبقى)", s.idx === 1 && s.marker() === "X" && s.entries[1].usr === "قبل");
+    s.dirty = true; s.back();
+    check("رجوعٌ والتأشيرُ لم يُحفظ ⇒ القائمةُ باقيةٌ بعلامتها والورقةُ تسأل (لا خروج)", s.openId === "X" && s.asked === 1 && s.marker() === "X" && s.idx === 1);
+    s.dirty = false; s.close();   // «اترك التغييرات»: تراجعٌ ثم الإغلاقُ نفسُه
+    check("  «اترك التغييرات» ⇒ تُغلق ويُسحب مدخلُها", s.openId === null && s.idx === 0 && s.marker() === null);
+    s.back();
+    check("  ورجوعٌ بعدها يُخرج من المتجر — لا ضغطةٌ ميتة", s.idx === -1);
+  }
+  {
+    const s = sim();
+    s.open("X"); s.back();
+    check("بلا تأشيرٍ معلّق: رجوعٌ واحدٌ يُغلقها ويبقى بالمتجر", s.openId === null && s.idx === 0 && s.asked === 0);
+    s.open("Y"); s.close();
+    check("  والسهمُ بالشاشة = رجوعٌ واحد (لا مدخلٌ يبقى)", s.openId === null && s.idx === 0);
+  }
+  check("فُتحت بلا علامة (لم ترَها): غيابُها ليس رجوعاً", H.onCatcheckChange(null, "X", false, true) === "none");
+  check("withCatcheck/readCatcheck: علامةٌ تُضاف وتُشال، وغريبٌ = لا علامة",
+    H.readCatcheck(H.withCatcheck({ a: 1 }, "X")) === "X" && H.withCatcheck({ a: 1, catcheck: "X" }, null).catcheck === undefined && H.withCatcheck({ a: 1 }, "X").a === 1
+    && H.readCatcheck(null) === null && H.readCatcheck({ catcheck: 3 }) === null);
+  const tab = readFileSync("src/components/store/admin/CategoriesTab.tsx", "utf8");
+  const chk = readFileSync("src/components/store/admin/CategoryChecklist.tsx", "utf8");
+  const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  check("الربط: «التصنيفات» يفتح بدفع العلامة، ويفتح ما تقوله العلامةُ (رجوعٌ للأمام/إعادةُ تحميل)",
+    /navigate\(loc\.pathname \+ loc\.search, \{ state: withCatcheck\(loc\.state, id\) \}\)/.test(tab) && /useState<string \| null>\(\(\) => readCatcheck\(loc\.state\)\)/.test(tab));
+  check("  وقائمةُ التأشير تقرّر بـonCatcheckChange وتدفع العلامةَ ثانيةً وتسأل، وتُغلق بـnavigate(-1)",
+    /onCatcheckChange\(marker, cat\.id, seen\.current, dirty\)/.test(chk) && /state: withCatcheck\(loc\.state, cat\.id\)/.test(chk) && /navigate\(-1\)/.test(chk));
+  check("  وتبويبٌ آخر يسحب مدخلَها (لا ضغطةٌ ميتة بعدها)", /guard\.current = \(proceed\)/.test(chk) && /dropEntry\(\)/.test(chk));
+  check("  والمتجرُ يُفتح على «التصنيفات» إن كانت العلامةُ بالمدخل", /readCatcheck\(loc\.state\) \? "cats"/.test(cs));
+  check("  وبلا pushState خامّ (الموجّهُ وحده يملك السجلّ)", !/history\.(pushState|replaceState)/.test(tab + chk + cs));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);
