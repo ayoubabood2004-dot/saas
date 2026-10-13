@@ -376,8 +376,14 @@ import i18n from "@/i18n";
 import { page } from "@/lib/lazyPage";
 function render(el) {
   return new Promise((resolve, reject) => {
+    /* البايتاتُ تُجمع وتُفكّ مرّةً بالنهاية (لا قطعةً قطعة)، ثم تُشال منها \u0000: مُرمِّزُ بثّ React
+     * بالخادم يحشو بايتاتٍ صفريّة حين يقع حرفٌ متعدّدُ البايتات (—) على حدّ مخزنه الداخليّ — مقيسٌ
+     * ١٣/١٠: «الكل \u0000\u0000— يومك» والحرفُ نفسُه سليمٌ بعدها. أثرُ أداة الفحص (التطبيقُ يُرسم
+     * بالمتصفّح لا ببثّ الخادم)، وكان يُفشل الفحصَ أو يُنجحه بحسب أين يقع الحدّ لا بحسب الشِفرة. */
+    const parts = [];
     let html = "";
-    const sink = new Writable({ write(c, _e, cb) { html += c.toString(); cb(); } });
+    const sink = new Writable({ write(c, _e, cb) { parts.push(Buffer.from(c)); cb(); } });
+    sink.on("finish", () => { html += Buffer.concat(parts).toString("utf8").replace(/\u0000/g, ""); });
     const s = renderToPipeableStream(
       React.createElement(I18nextProvider, { i18n }, React.createElement(Suspense, { fallback: React.createElement("i", null, "LOADING") }, el)),
       { onAllReady() { s.pipe(sink); sink.on("finish", () => resolve(html)); }, onShellError: reject, onError(e) { html += "[[ERROR " + (e && e.message) + "]]"; } });

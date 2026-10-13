@@ -41,6 +41,8 @@ const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.N
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
+/* مراجعةُ ما لم يصل الخادمَ بلا ختمِ هويّة (outbox.ts، قرارُ المالك ١٣/١٠) — الشارةُ الحمراء تنقل إليها. */
+const OutboxReview = page(() => import("@/pages/OutboxReview").then((m) => ({ default: m.OutboxReview })));
 const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ default: m.CompanyBook })), ["cbook"]);
 const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ default: m.PriceRaise })), ["praise"]);
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
@@ -250,6 +252,7 @@ function Shell() {
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
             <Route path="/inventory/count" element={<Protected><ClinicOnly><StockCount /></ClinicOnly></Protected>} />
             <Route path="/inventory/watch" element={<Protected><ClinicOnly><StockWatch /></ClinicOnly></Protected>} />
+            <Route path="/outbox" element={<Protected><ClinicOnly><OutboxReview /></ClinicOnly></Protected>} />
             <Route path="/inventory/companies/:id" element={<Protected><ClinicOnly><CompanyBook /></ClinicOnly></Protected>} />
             <Route path="/inventory/prices" element={<Protected><ClinicOnly><PriceRaise /></ClinicOnly></Protected>} />
             <Route path="/photos" element={<Protected><ClinicOnly><ProductPhotos /></ClinicOnly></Protected>} />

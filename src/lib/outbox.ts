@@ -47,6 +47,19 @@ type OutboxBase = {
   tries: number;
   /** آخر سببِ رفضٍ من القاعدة — يُعرض بالمعطّلات كي يُفهم لا كي يُخمَّن. */
   last_error?: string;
+  /** وقتُ قرار «احذفها» بالمراجعة — بالأرشيف وحده (`outboxDiscarded`). */
+  discarded_at?: string;
+  /** أُعيدت من صفحة المراجعة (بلا ختمٍ أصلاً): إدراجٌ بمفتاحٍ طبيعيّ **لا يدمج** فوق ما بالخادم —
+   *  اليومُ قد يكون أُدخل يدوياً بأرقامٍ أحدث بعد أن علقت هذه. */
+  reviewed?: boolean;
+  /** مرتجعٌ أقدمُ من حارس الإعادة بالخادم (rpc_refs يُمسح بعد ٧ أيام): إعادتُه العمياء قد تكرّره إن
+   *  كان وصل وضاع جوابُه — فيُوقف للمراجعة (`needsReview`) ويُسأل الخادمُ عن أثره أوّلاً. */
+  stale?: boolean;
+  /** وقتُ قرار «ارفعها» على مرتجعٍ متقادم: يُعفيه من التوقيف ٦ أيامٍ وحدها — بعدها مرجعُ تلك
+   *  المحاولة نفسِها يُمسح بالخادم، فيُوقف ثانيةً (كان الإعفاءُ أبدياً). */
+  reviewed_at?: string;
+  /** أوقاتُ محاولات رفع المرتجع: أيٌّ منها قد يكون وصل وضاع جوابُه — والبحثُ عن أثره يغطّيها كلَّها. */
+  attempts?: string[];
   /** **هويّةُ من أنشأها.** الطابورُ يعيش بالجهاز لا بالحساب، والجهازُ يتبدّل
    *  عليه أهلُه: كاشيرٌ يخرج وآخرُ يدخل بعيادةٍ ثانية، أو مشغّلُ المنصّة يترك
    *  عيادةً ويدخل غيرها. وبلا ختمٍ كان النداءُ المؤجَّل يُنفَّذ بهويّة الداخل
@@ -71,6 +84,9 @@ export type OutboxOp =
 const KEY = "vp_outbox_v1";
 /** رفُّ المعطّلات: ما رفضته القاعدة مراراً. يبقى حتى يقرّر بشرٌ مصيره. */
 const KEY_DEAD = "vp_outbox_dead_v1";
+/** أرشيفُ ما خرج من الرفّ بلا رفع: قرارُ بشرٍ بالمراجعة، أو إخلاءُ السقف — بالجهاز، لا محو. */
+export const KEY_DISCARDED = "vp_outbox_discarded_v1";
+export const DISCARDED_CAP = 200;
 /** بعد هذا العدد من الأخطاء **غير الشبكية** تُنقل العملية للمعطّلات كي لا يسدّ
  *  صفٌّ مرفوض من القاعدة طابورَ ما بعده للأبد. */
 const MAX_TRIES = 10;
@@ -87,11 +103,14 @@ const readList = (key: string): OutboxOp[] => {
   try {
     const raw = localStorage.getItem(key);
     const arr = raw ? (JSON.parse(raw) as unknown[]) : [];
-    return Array.isArray(arr) ? arr.map(migrate) : [];
+    /* مدخلٌ تالفٌ (null، بلا معرّف) لا يُقرأ عمليةً: كان يُعرض بالمراجعة فيكسر رسمَها كلَّها
+     * (لا الباقي يُرفع ولا يُحذف). لا يُمحى من التخزين هنا — يُتجاهل وحدَه. */
+    return Array.isArray(arr) ? arr.map(migrate).filter((o) => typeof o.id === "string" && o.id !== "") : [];
   } catch { return []; }
 };
 const load = () => readList(KEY);
 export const outboxDead = (): OutboxOp[] => readList(KEY_DEAD);
+export const outboxDiscarded = (): OutboxOp[] => readList(KEY_DISCARDED);
 
 const announce = (ops: OutboxOp[], dead: OutboxOp[], stored: boolean) => {
   try {
@@ -106,10 +125,10 @@ const announce = (ops: OutboxOp[], dead: OutboxOp[], stored: boolean) => {
 const save = (ops: OutboxOp[], dead?: OutboxOp[]): boolean => {
   let stored = true;
   try { localStorage.setItem(KEY, JSON.stringify(ops)); }
-  catch (e) { stored = false; console.error("[outbox] device storage refused the write — queue is in memory only:", e); }
+  catch (e) { stored = false; console.error("[outbox] device storage refused:", e); }
   if (dead) {
     try { localStorage.setItem(KEY_DEAD, JSON.stringify(dead)); }
-    catch (e) { stored = false; console.error("[outbox] dead-letter shelf did not persist:", e); }
+    catch (e) { stored = false; console.error("[outbox] shelf write failed:", e); }
   }
   announce(ops, dead ?? outboxDead(), stored);
   return stored;
@@ -127,14 +146,46 @@ export const isNetworkError = (e: unknown): boolean => {
 
 const schedule = () => { setTimeout(() => { void flushOutbox(); }, 4000); };
 
-/** هويّةُ هذه اللحظة: مَن الداخل، وبأيّ عيادةٍ يعمل. تُقرأ من التخزين مباشرةً
- *  (بلا استيراد) كي لا يصير الطابورُ عقدةً بحلقةِ استيراد. غيابُها يعني «لا
- *  أحد» — ولا نرفع شيئاً باسم لا أحد. */
-const whoNow = (): { user: string; clinic: string } | null => {
+/** مَن الداخل — **من جلسة Supabase المحفوظة**، وهي الهويّةُ التي يُرسل بها كلُّ طلبٍ فعلاً
+ *  (`auth.uid()` بالخادم). بالنسخة التجريبية: `vp_session`.
+ *
+ *  كان يُقرأ من `vp_session` وحدها، والنسخةُ السحابيّة لا تكتبها أبداً (يكتبها الدخولُ
+ *  التجريبيّ وحده — مقيس ١٣/١٠). فمن ٢٦/٩ كلُّ عمليةٍ بالإنتاج خُتمت «بلا أحد»، وأوّلُ جولةٍ
+ *  نقلتها للمعطّلات («queued by an older version»)، و«استأنف» ختمها بلا أحدٍ ثانيةً: منتجٌ
+ *  ومصروفٌ ومرتجعٌ قيل عنها «تنحفظ لاحقاً» ولم تصل الخادمَ قطّ. والفحصُ لم يرَه لأن قالبَه
+ *  يكتب `vp_session` بيده — فصار يفحص الحالَ السحابيّ بلا `vp_session`. */
+const sessionUser = (): string | null => {
   try {
-    const s = JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { id?: string } } | null;
-    const user = s?.raw?.id;
-    if (!user) return null;
+    if (supabase) {
+      /* مفتاحُ الجلسة من العميل نفسه (`sb-<المشروع>-auth-token` افتراضاً)، وإن غاب
+       * الحقلُ بنسخةٍ لاحقة فبالبحث عن نفس الشكل — لا رجوعَ صامتٌ إلى «لا أحد».
+       * (و`userStorage` المنفصل غيرُ مستعمل: الحسابُ داخل الجلسة نفسها.) */
+      const named = (supabase.auth as unknown as { storageKey?: unknown }).storageKey;
+      const keys: string[] = typeof named === "string" ? [named] : [];
+      if (!keys.length) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && /^sb-.+-auth-token$/.test(k)) keys.push(k);
+        }
+      }
+      for (const k of keys) {
+        const s = JSON.parse(localStorage.getItem(k) || "null") as { user?: { id?: unknown } } | null;
+        if (typeof s?.user?.id === "string" && s.user.id) return s.user.id;
+      }
+      return null;
+    }
+    const d = JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { id?: string } } | null;
+    return d?.raw?.id || null;
+  } catch { return null; }
+};
+
+/** هويّةُ هذه اللحظة: مَن الداخل، وبأيّ عيادةٍ يعمل (مفتاحُ العيادة المحلّيّ — "default"
+ *  لصاحب العيادة، workspaceClinic.ts). تُقرأ من التخزين مباشرةً كي لا يصير الطابورُ عقدةً
+ *  بحلقةِ استيراد. غيابُها يعني «لا أحد» — ولا نرفع شيئاً باسم لا أحد. */
+const whoNow = (): { user: string; clinic: string } | null => {
+  const user = sessionUser();
+  if (!user) return null;
+  try {
     return { user, clinic: localStorage.getItem("vp_active_clinic") || "default" };
   } catch { return null; }
 };
@@ -171,8 +222,13 @@ export function outboxEnqueue(
 /** يشيل عمليةً من الطابور. يرجع هل كانت فيه — فالحذفُ يعرف أنّ صفّاً لم يصل القاعدةَ بعد. */
 export function outboxDrop(id: string): boolean {
   const ops = load();
-  if (!ops.some((o) => o.id === id)) return false;
-  save(ops.filter((o) => o.id !== id));
+  const dead = outboxDead();
+  const inQueue = ops.some((o) => o.id === id);
+  /* ونسخةٌ بالرفّ بنفس المفتاح تُشال كذلك: ما حُفظ أونلاين بعدها أحدثُ منها، و«ارفعها» عليها
+   * بالمراجعة كان سيدهسه (إدخالُ يومٍ صُحّح يدوياً — تدقيق ١٣/١٠). */
+  const onShelf = dead.some((d) => d.id === id);
+  if (!inQueue && !onShelf) return false;
+  save(ops.filter((o) => o.id !== id), onShelf ? dead.filter((d) => d.id !== id) : undefined);
   return true;
 }
 
@@ -183,7 +239,7 @@ export function outboxEnqueueRpc(fn: OutboxRpcFn, args: Record<string, unknown>)
     ? (args.p_meta as Record<string, unknown>).client_ref
     : null;
   if (typeof ref !== "string" || !ref.trim()) {
-    console.error(`[outbox] refused to queue ${fn}: without a client_ref a retry would duplicate it.`);
+    console.error(`[outbox] ${fn} not queued: no client_ref`);
     return false;
   }
   const ops = load();
@@ -196,88 +252,188 @@ export function outboxEnqueueRpc(fn: OutboxRpcFn, args: Record<string, unknown>)
 }
 
 let flushing = false;
+
+/** نسخةُ العملية نفسُها؟ — إدخالُ يومٍ يُستبدل بنفس المفتاح (آخرُ ما كُتب)، فالمعرّفُ وحده لا يكفي. */
+const sameVersion = (a: OutboxOp, b: OutboxOp): boolean =>
+  a.id === b.id && a.queued_at === b.queued_at
+  && JSON.stringify(a.kind === "rpc" ? a.args : a.row) === JSON.stringify(b.kind === "rpc" ? b.args : b.row);
+
+/** انقل عمليةً للرفّ — على ما بالتخزين **الآن** لا على لقطةٍ قديمة. **الرفُّ أوّلاً**: إن لم يثبت
+ *  (جهازٌ ممتلئ) تبقى بالطابور (`false`) — كانت تُشال من الطابور ثم يفشل الرفُّ فتضيع من الاثنين.
+ *  وفي القائمتين لحظةً لا يضرّ: المعرّفُ واحد. والسقفُ يُخلي أقدمَ **المرفوضة** وحدها — ما يحتاج
+ *  مراجعةَ بشرٍ لا يُرمى بلا بشر. */
+const shelve = (op: OutboxOp): boolean => {
+  let dead = [...outboxDead().filter((d) => d.id !== op.id), op];
+  if (dead.length > DEAD_CAP) {
+    // أقدمُ المرفوضة تخرج **للأرشيف** لا للعدم؛ وإن لم يثبت الأرشيفُ يبقى الرفُّ فوق سقفه.
+    const evicted = dead.filter((d) => d.id !== op.id && !needsReview(d)).slice(0, dead.length - DEAD_CAP);
+    if (evicted.length) {
+      try {
+        const at = new Date().toISOString();
+        localStorage.setItem(KEY_DISCARDED, JSON.stringify([...outboxDiscarded(), ...evicted.map((d) => ({ ...d, discarded_at: at }))].slice(-DISCARDED_CAP)));
+        dead = dead.filter((d) => !evicted.includes(d));
+        console.error("[outbox] shelf full, archived:", evicted.map((d) => d.id));
+      } catch { /* الأرشيفُ لم يثبت: لا إخلاء */ }
+    }
+  }
+  try { localStorage.setItem(KEY_DEAD, JSON.stringify(dead)); }
+  catch (e) { console.error("[outbox] shelf write failed:", e); return false; }
+  // لم يصغر الطابور؟ في القائمتين لحظةً — لا ضرر، المعرّفُ واحد.
+  try { localStorage.setItem(KEY, JSON.stringify(load().filter((o) => o.id !== op.id))); } catch { /* */ }
+  announce(load(), outboxDead(), true);
+  return true;
+};
+
+/** المرتجعُ يُعاد بأمانٍ بمرجعه ما دام مرجعُه بالخادم — ويُمسح بعد ٧ أيام (purge_rpc_refs). */
+const STALE_RETURN_MS = 6 * 24 * 3600_000;
+const age = (iso?: string): number => (iso && Number.isFinite(Date.parse(iso)) ? Date.now() - Date.parse(iso) : Infinity);
+const staleReturn = (op: OutboxOp): boolean =>
+  op.kind === "rpc" && op.fn === "retail_return" && age(op.queued_at) > STALE_RETURN_MS && !(age(op.reviewed_at) < STALE_RETURN_MS);
+
+/** رفضٌ عابرٌ لا دائم: انتهاءُ الجلسة (تتجدّد)، وبوّابةٌ أو قاعدةٌ معطّلة (5xx، ومنها 520 وPGRST001/2)،
+ *  وتقييدُ معدّل — لا يُحتسب على العملية. **بالحالة**: نصُّ البوّابة يتبدّل بين الطبقات (كان قائمةَ
+ *  نصوصٍ تفوتها «upstream said no»)؛ والنصُّ لما يصل بلا حالة (الجلسة، PGRST00x). */
+const transientReject = (e: unknown): boolean => {
+  const st = Number((e as { status?: unknown })?.status);
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  return st === 401 || st === 408 || st === 429 || st >= 500
+    || /jwt expired|invalid jwt|PGRST00[12]/i.test(msg);
+};
+const fail = (r: { status?: number; error: { message: string; code?: string } }) =>
+  Object.assign(new Error(r.error.message), { status: r.status, code: r.error.code });
+
+async function send(sb: NonNullable<typeof supabase>, op: OutboxOp): Promise<void> {
+  if (op.kind === "rpc") {
+    // آمنةُ الإعادة بمرجعها: نداءٌ ثانٍ بنفس المرجع يُرجع نتيجة الأول.
+    const r = await sb.rpc(op.fn, op.args as never);
+    if (r.error) throw fail(r);
+    return;
+  }
+  // upsert بتجاهل التكرار: لو الطلب الأصلي كان وصل فعلاً، لا ازدواج.
+  /* بمفتاحٍ طبيعيٍّ ندمج (`ignoreDuplicates: false`): الصفُّ موجودٌ
+   * بالضرورة أحياناً — يومٌ أُدخل جزئياً ثم أُكمل بلا نت — وتجاهلُه
+   * يعني أنّ ما كتبه بالجملون لا يصل أبداً. وبـ`id` نتجاهل كما كان:
+   * هناك وجودُ الصفّ يعني أنّ الطلبَ الأوّل وصل فعلاً. وما أُعيد من المراجعة
+   * لا يدمج أبداً: قد يكون أحدثَ منه ما بالخادم. */
+  const conflict = op.conflict ?? "id";
+  const r = await sb.from(op.table).upsert(op.row as never, { onConflict: conflict, ignoreDuplicates: conflict === "id" || !!op.reviewed });
+  if (r.error) throw fail(r);
+}
+
 /** ارفع الطابور بالترتيب: نجاحٌ يُسقط العملية، فشلُ شبكةٍ يوقف الجولة (سنعود)،
- *  وخطأٌ دائم يُحتسب على العملية حتى تنتقل للمعطّلات بعد MAX_TRIES. */
+ *  وخطأٌ دائم يُحتسب على العملية حتى تنتقل للمعطّلات بعد MAX_TRIES.
+ *
+ *  **كلُّ خطوةٍ تقرأ التخزينَ من جديد وتكتب تغييرَ عمليتها وحدها.** الجولةُ تنتظر الشبكة،
+ *  وفي أثنائها يُضاف للطابور (حفظٌ بلا نت) ويُسحب منه (حذفُ ما لم يصل) ويُعاد إليه (المراجعة).
+ *  كانت تكتب لقطةَ أوّل الجولة فوق ذلك كلّه — فيضيع المضاف ويرجع المسحوب ويُرفع (تدقيق ١٣/١٠).
+ *  ولم يظهر بالإنتاج لأن الختمَ الفارغ نقل كلَّ عمليةٍ للرفّ بلا انتظار شبكة.
+ *
+ *  و**الخادمُ يُسأل مرّةً لكلّ جولة** (`my_workspace`): العمليةُ تُرفع حيث يوجّهها `auth_clinic()`،
+ *  والمفتاحُ المحلّيّ قد يبقى على عيادةٍ انتهت جلستُها (مشغّلٌ انتهت ساعاتُه الاثنتا عشرة والصفحةُ
+ *  مفتوحة) — فما خُتم بعيادةٍ غيرِ التي يقولها الخادمُ الآن ينتظر. وتبويبان لا يرفعان معاً
+ *  (`navigator.locks`) — كان العدّادُ يُحسب مرّتين والإدراجُ يتسابق. */
 export async function flushOutbox(): Promise<{ sent: number; left: number; dead: number }> {
+  const idle = () => ({ sent: 0, left: outboxCount(), dead: outboxDeadCount() });
+  const locks = (globalThis as { navigator?: { locks?: { request?: (n: string, o: { ifAvailable: boolean }, f: (l: unknown) => Promise<unknown>) => Promise<unknown> } } }).navigator?.locks;
+  if (typeof locks?.request === "function") {
+    return (await locks.request("vp-outbox-flush", { ifAvailable: true }, async (lock) => (lock ? runFlush() : idle()))) as { sent: number; left: number; dead: number };
+  }
+  return runFlush();
+}
+
+async function runFlush(): Promise<{ sent: number; left: number; dead: number }> {
   const sb = supabase;
   if (!sb || flushing) return { sent: 0, left: outboxCount(), dead: outboxDeadCount() };
-  let ops = load();
-  let dead = outboxDead();
-  if (ops.length === 0) return { sent: 0, left: 0, dead: dead.length };
+  if (load().length === 0) return { sent: 0, left: 0, dead: outboxDeadCount() };
   flushing = true;
   let sent = 0;
   /* هويّةُ الجولة تُقرأ مرّةً: ما لم يُختم بها يبقى بالطابور بلا محاولة — لا
    * يُرفع باسم غيره ولا يُحرق عدّادُه فينتهي بالمعطّلات. ينتظر أهلَه. */
   const now = whoNow();
-  let skipped = 0;
+  /* عيادةُ الخادم **قبل كلّ عملية** (لا مرّةً للجولة): الجولةُ على شبكةٍ بطيئة تطول دقائق، وجلسةُ
+   * المشغّل تنتهي أو يدخل عيادةً أخرى بتبويبٍ ثانٍ في أثنائها. تعذّرُ السؤال = لا رفعَ على ظنّ. */
+  const askServer = async (): Promise<string | null> => {
+    const w = await sb.rpc("my_workspace");
+    if (w.error) throw fail(w);
+    const c = (w.data as { clinic_id?: unknown } | null)?.clinic_id;
+    return typeof c === "string" && c ? c : null;
+  };
   try {
-    for (const op of [...ops]) {
+    for (const id of load().map((o) => o.id)) {
+      const op = load().find((o) => o.id === id);
+      if (!op) continue;   // سُحب قبل دوره (حُذف، أو نجح أونلاين بنفس المفتاح)
       if (!op.who) {
-        /* عمليةٌ من قبل الختم (نسخةٌ أقدم): لا نعرف صاحبَها فلا نرفعها باسم
-         * أحد. تُنقل للرفّ بحمولتها وسببها، ويقرّر بشرٌ استئنافَها — وهو ما
-         * يمنحها هويّتَه صراحةً. لا ضياعَ ولا رفعٌ أعمى. */
-        ops = ops.filter((o) => o.id !== op.id);
-        dead = [...dead.filter((d) => d.id !== op.id), { ...op, last_error: "queued by an older version — resume it to send it under your account" }];
-        save(ops, dead);
+        /* عمليةٌ بلا ختم (نسخةٌ أقدم، أو أُنشئت بلا جلسة): لا نعرف صاحبَها فلا نرفعها باسم
+         * أحد. تُنقل للرفّ بحمولتها، وتُراجَع بصفحة /outbox وحدةً وحدة — وسببُها حالُها (`needsReview`)
+         * تقوله الصفحةُ بلغة العيادة، لا نصٌّ إنكليزيّ بالحمولة. */
+        shelve(op);
         continue;
       }
-      if (!sameWho(op.who, now)) { skipped++; continue; }
+      if (!sameWho(op.who, now)) continue;   // تنتظر أهلَها (الشارةُ تعدّها: «حساب ثاني»)
+      if (staleReturn(op)) {
+        shelve({ ...op, stale: true });
+        continue;
+      }
+      let serverClinic: string | null;
+      try { serverClinic = await askServer(); }
+      catch (e) { if (isNetworkError(e) || transientReject(e)) break; serverClinic = null; }
+      const target = op.who.clinic === "default" ? op.who.user : op.who.clinic;
+      if (!serverClinic || target !== serverClinic) continue;
+      if (op.kind === "rpc" && op.fn === "retail_return") {
+        // كلُّ محاولةٍ قد تصل ويضيع جوابُها — وقتُها يُحفظ قبلها ليُبحث عن أثرها عنده (OutboxReview).
+        const at = new Date().toISOString();
+        save(load().map((o) => (o.id === id && sameVersion(o, op) ? { ...o, attempts: [...(o.attempts ?? []), at].slice(-20) } : o)));
+      }
       try {
-        if (op.kind === "rpc") {
-          // آمنةُ الإعادة بمرجعها: نداءٌ ثانٍ بنفس المرجع يُرجع نتيجة الأول.
-          const r = await sb.rpc(op.fn, op.args as never);
-          if (r.error) throw new Error(r.error.message);
-        } else {
-          // upsert بتجاهل التكرار: لو الطلب الأصلي كان وصل فعلاً، لا ازدواج.
-          /* بمفتاحٍ طبيعيٍّ ندمج (`ignoreDuplicates: false`): الصفُّ موجودٌ
-           * بالضرورة أحياناً — يومٌ أُدخل جزئياً ثم أُكمل بلا نت — وتجاهلُه
-           * يعني أنّ ما كتبه بالجملون لا يصل أبداً. وبـ`id` نتجاهل كما كان:
-           * هناك وجودُ الصفّ يعني أنّ الطلبَ الأوّل وصل فعلاً. */
-          const conflict = op.conflict ?? "id";
-          const r = await sb.from(op.table).upsert(op.row as never, { onConflict: conflict, ignoreDuplicates: conflict === "id" });
-          if (r.error) throw new Error(r.error.message);
-        }
-        ops = ops.filter((o) => o.id !== op.id);
-        save(ops);
-        sent++;
+        await send(sb, op);
       } catch (e) {
         if (isNetworkError(e)) break; // النت بعده واگع — نعود بالجولة الجاية
-        op.tries += 1;
-        op.last_error = e instanceof Error ? e.message : String(e ?? "");
-        if (op.tries >= MAX_TRIES) {
-          // لا تُحذف: تُنقل بحمولتها وسببها إلى رفٍّ يراه صاحب العيادة.
-          ops = ops.filter((o) => o.id !== op.id);
-          dead = [...dead.filter((d) => d.id !== op.id), op];
-          if (dead.length > DEAD_CAP) {
-            console.error("[outbox] dead-letter shelf is full — the oldest entry was discarded:", dead[0]);
-            dead = dead.slice(dead.length - DEAD_CAP);
-          }
-          console.error("[outbox] moved to dead letters after repeated rejection:", op.id, op.last_error);
+        const msg = e instanceof Error ? e.message : String(e ?? "");
+        if (transientReject(e)) break;   // الجلسةُ تتجدّد أو البوّابةُ تعود — لا يُحتسب
+        const cur = load().find((o) => o.id === id);
+        // تبدّلت أثناء الطلب (صُحّحت أو سُحبت): النسخةُ الجديدة تُجرَّب بدورها، والمسحوبةُ انتهت.
+        if (!cur || !sameVersion(cur, op)) continue;
+        const next = { ...cur, tries: cur.tries + 1, last_error: msg };
+        const keep = () => save(load().map((o) => (o.id === id && sameVersion(o, cur) ? next : o)));
+        if (next.tries >= MAX_TRIES) {
+          // لا تُحذف: تُنقل بحمولتها وسببها إلى رفٍّ يراه صاحب العيادة (وإن لم يثبت الرفُّ تبقى).
+          if (shelve(next)) console.error("[outbox] moved to dead letters:", op.id, msg);
+          else keep();
+        } else {
+          keep();
         }
-        save(ops, dead);
+        continue;
       }
+      /* نجحت: تُشال **هذه النسخة** وحدها — نسخةٌ أحدث بنفس المفتاح (يومٌ صُحّح أثناء الطلب)
+       * تبقى وتُرفع بدورها. */
+      save(load().filter((o) => !sameVersion(o, op)));
+      sent++;
     }
   } finally {
     flushing = false;
   }
-  if (skipped > 0) console.warn(`[outbox] ${skipped} op(s) belong to another account/clinic — left queued for them.`);
-  return { sent, left: ops.length, dead: dead.length };
+  return { sent, left: outboxCount(), dead: outboxDeadCount() };
 }
 
-/** أعِد المعطّلات للطابور بعدّادٍ صفر — بعد أن يُصلَّح سببُ الرفض. */
-export function outboxRevive(): number {
-  const dead = outboxDead();
-  if (dead.length === 0) return 0;
-  const ops = load();
-  const known = new Set(ops.map((o) => o.id));
-  // الاستئنافُ قرارُ بشرٍ حاضر، فيُختم باسمه: عمليةٌ بلا هويّة (من نسخةٍ أقدم)
-  // تأخذ هويّةَ من ضغط «استأنف»، ولا تُرفع باسم مجهول.
-  const now = whoNow() ?? undefined;
-  for (const d of dead) if (!known.has(d.id)) ops.push({ ...d, tries: 0, who: d.who ?? now });
-  save(ops, []);
-  schedule();
-  return dead.length;
-}
+/* ── الرفُّ والمراجعة (قرارُ المالك ١٣/١٠) ───────────────────────────────────────────
+ * من ٢٦/٩ إلى ١٣/١٠ كان الختمُ يقرأ ما لا تكتبه النسخةُ السحابيّة، فكلُّ عمليةٍ فشلت شبكياً
+ * خُتمت «بلا أحد» ونُقلت للرفّ، و«استأنف» لم يُحيِها. والعيادةُ رأتها «متعثّرة» — فربما أدخلتها
+ * بيدها بعدها. فرفعُها الأعمى بضغطةٍ يكرّر (مرتجعٌ مرّتين، سحبٌ مرّتين)، وتركُها يُضيّعها.
+ * فلا شيءَ من الرفّ يُرفع بلا أن يرى بشرٌ تفاصيلَه ويختار — بصفحة /outbox (OutboxReview):
+ *   • بلا ختم (`needsReview`): «ارفعها» تختمها بمن قرّر، أو «احذفها».
+ *   • مختومةٌ رفضتها القاعدةُ مراراً: سببُها ظاهر، و«أعد المحاولة» أو «احذفها» — كانت الشارةُ
+ *     تعيدها بضغطةٍ عمياء، ومرفوضةٌ أبداً (توأمُ اسم) كانت تدور بلا مخرج. */
+export const needsReview = (op: OutboxOp): boolean => !op.who || !!op.stale;
+/** ما بالرفّ وينتظر قرارَ بشر (الشارةُ تعدّه — وما سواه بـ`outboxShelf.ts` مع الصفحة). */
+export const outboxReviewList = (): OutboxOp[] => outboxDead().filter(needsReview);
+/** بالطابور ومختومةٌ بحسابٍ أو عيادةٍ غيرِ الحاليّة: تنتظر أهلَها (لا تُرفع باسم غيرهم). */
+export const outboxWaitingOthers = (): OutboxOp[] => {
+  const now = whoNow();
+  return load().filter((o) => !!o.who && !sameWho(o.who, now));
+};
+
+/** ما تحتاجه عملياتُ المراجعة (`outboxShelf.ts`، تُحمَّل مع صفحة /outbox وحدها — لا بحزمة الإقلاع). */
+export const outboxInternals = { load, whoNow, sameWho, sameVersion, announce, schedule, KEY, KEY_DEAD };
 
 let started = false;
 /** يُستدعى مرة عند إقلاع التطبيق: رفعٌ فوري + عند عودة النت + كل ٣٠ ثانية. */

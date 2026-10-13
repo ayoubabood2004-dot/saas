@@ -169,7 +169,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
           {/* Actions */}
           <div className="flex items-center gap-0.5">
             {/* كتابات محفوظة بالجهاز تنتظر النت — تظهر فقط عند وجودها */}
-            {staff && <OutboxChip />}
+            {staff && !photographer && <OutboxChip />}
             {staff && (
               <Tooltip label="Search · ⌘K">
                 <button

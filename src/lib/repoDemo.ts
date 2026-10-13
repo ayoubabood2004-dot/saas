@@ -44,7 +44,7 @@ import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
 import { demoAdmissionCageGuard } from "./demoCages";
-import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName, restoreProblem } from "./expenseCategoryRules";
+import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName, restoreProblem, matchReturnRows, type ReturnLine, type TraceSpan } from "./expenseCategoryRules";
 import type { PriceChange, PriceChangeLine, PriceChangeSummary, PriceChangeDetail, PriceDetailLine, PricePriorMap } from "@/types";
 import { buildPlan, demoHash, isFracCurrency, ladderFor, missingIds, normalizeSpec, productScopeOf, bpText, type PriceSpec, type PricePreview } from "./priceRaise";
 import { getActiveCurrency } from "./currency";
@@ -4332,6 +4332,11 @@ const demoRepo = {
       throw Object.assign(new Error('insert or update on table "expenses" violates foreign key constraint "expenses_category_fk"'), { code: "23503" });
     }
     return demoAddExpense(input);
+  },
+  /** مرآةُ findReturnTrace: نفسُ الحكم (matchReturnRows) على سحوبات النسخة التجريبية. */
+  async findReturnTrace(span: TraceSpan, lines: ReturnLine[]): Promise<Expense[]> {
+    if (!Number.isFinite(Date.parse(span.from)) || !Number.isFinite(Date.parse(span.to))) throw new Error("trace_span_invalid");
+    return matchReturnRows(demoExpensesLoad(), span, lines);
   },
   async deleteExpense(id: string): Promise<void> {
     // مرآةُ الحذف المسموع: صفٌّ غيرُ موجود يُرمى (no_row_updated) لا «انحذف» على لا شيء.
