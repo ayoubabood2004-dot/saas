@@ -5,12 +5,12 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui";
 import { outboxReviewList, outboxWaitingOthers, flushOutbox, type OutboxOp } from "@/lib/outbox";
 import {
-  outboxRejectedList, outboxReviveOne, outboxDiscard, isMine, traceable, traceSpan, type ShelfResult,
+  outboxRejectedList, outboxReviveOne, outboxDiscard, ownerState, traceable, traceSpan, type ShelfResult,
 } from "@/lib/outboxShelf";
+import { expectedReturnRows, matchReturnRows, traceBounds, type ReturnLine } from "@/lib/returnTrace";
 import { repo } from "@/lib/repo";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
-import type { ReturnLine } from "@/lib/expenseCategoryRules";
 import { formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
@@ -26,8 +26,10 @@ import { playTap } from "@/lib/sounds";
  *   • رفضتها القاعدة مراراً: سببُها ظاهر، و«أعد المحاولة» أو «احذفها» (كانت تدور بلا مخرج).
  *   • تنتظر حساباً آخر: للعلم وحده — لا تُرفع باسم غير صاحبها.
  * والمرتجعُ يُسأل عنه الخادمُ أوّلاً: مرجعُ إعادته يُمسح بعد ٧ أيام، فإعادتُه تكرّره إن كان وصل
- * وضاع جوابُه — وأثرُه سطورُ «مرتجع» بين حفظه وآخر محاولة (findReturnTrace). و«ارفعها» عليه
- * لا تُفتح قبل الجواب (أو تعذّره) — ولا بأوّل رسم: كانت مفتوحةً لحظةً قبل أن يبدأ السؤال.
+ * وضاع جوابُه — وأثرُه سطورُ «مرتجع» بنصّها كاملاً بين حفظه وآخر محاولة (returnTrace.ts). وإدخالُ
+ * اليوم يُسأل عن يومه بالخادم: «ارفعها» تدمج، فيُرى قبلها أهو أقدمُ منها أم أُعيد إدخالُه بعدها
+ * (كانت لا تدمج فتصير «لا شيء» صامتاً ويُقال «ارتفعت»). و«ارفعها» على الاثنين لا تُفتح قبل الجواب
+ * (أو تعذّره) — ولا بأوّل رسم: كانت مفتوحةً لحظةً قبل أن يبدأ السؤال.
  * ==========================================================================*/
 
 const num = (v: unknown): number | null => {
@@ -48,28 +50,24 @@ export interface OpSummary {
   /** يومُ العملية كما بحمولتها (سحب، صرف، إدخالٌ يومي). */
   day: string | null;
   category: string | null;
-  /** موادُّ المرتجع باسمها ومبلغها — لسؤال الخادم عن أثره (matchReturnRows). */
+  /** سطورُ «مرتجع» كما كان الخادمُ سيكتبها — لسؤاله عن أثرها (matchReturnRows). */
   returnLines: ReturnLine[];
+  /** النافقُ والمستبعدُ بإدخال اليوم. */
+  dead: number | null;
+  culled: number | null;
 }
 
 /** خلاصةُ العملية مما بحمولتها وحده — لا تخمين. ومدخلٌ ناقصٌ لا يكسر الرسم. */
 export function opSummary(op: OutboxOp): OpSummary {
-  const base: OpSummary = { kind: op.kind === "rpc" ? op.fn : op.table, name: null, amount: null, lines: null, qty: null, day: null, category: null, returnLines: [] };
+  const base: OpSummary = { kind: op.kind === "rpc" ? op.fn : op.table, name: null, amount: null, lines: null, qty: null, day: null, category: null, returnLines: [], dead: null, culled: null };
   if (op.kind === "rpc") {
     const args = (op.args ?? {}) as Record<string, unknown>;
     const items = Array.isArray(args.p_items) ? (args.p_items as unknown[]).filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : [];
     const meta = (args.p_meta && typeof args.p_meta === "object" ? args.p_meta : {}) as Record<string, unknown>;
     if (op.fn === "retail_return") {
-      let total = 0;
-      const returnLines: ReturnLine[] = [];
-      for (const it of items) {
-        // نفسُ حساب retail_return: round(|كمية|×|سعر|، ٢) — وما بلا اسمٍ يُكتب بالخادم باسمٍ افتراضيّ فلا يُطابَق.
-        const amount = Math.round(Math.abs((num(it.qty) ?? 0) * (num(it.unit_price) ?? 0)) * 100) / 100;
-        total += amount;
-        const n = str(it.name);
-        if (n) returnLines.push({ name: n, amount });
-      }
-      const names = returnLines.map((l) => l.name);
+      const returnLines = expectedReturnRows(args);
+      const total = returnLines.reduce((t, l) => t + l.amount, 0);
+      const names = items.map((it) => str(it.name)).filter((n): n is string => !!n);
       return { ...base, name: str(meta.customer_name) ?? (names.length ? names.join(" · ") : null), amount: Math.round(total * 100) / 100, lines: items.length, returnLines };
     }
     return { ...base, name: str(args.p_name) ?? str(meta.name), qty: num(args.p_qty), day: str(args.p_on_date) };
@@ -81,11 +79,25 @@ export function opSummary(op: OutboxOp): OpSummary {
     amount: num(r.amount),
     day: str(r.spent_at) ?? str(r.on_date),
     category: str(r.category),
+    dead: op.table === "poultry_daily" ? num(r.dead) : null,
+    culled: op.table === "poultry_daily" ? num(r.culled) : null,
   };
 }
 
-type Trace = { state: "checking" } | { state: "none" } | { state: "failed" } | { state: "found"; at: string; desc: string };
+type Trace = { state: "checking" } | { state: "none" } | { state: "failed" } | { state: "found"; at: string; desc: string; ids: string[] };
+/** سطرُ خادمٍ واحد يطابق عمليتين هنا؟ واحدةٌ منهما وحدها هي — حذفُ الاثنتين يُسقط مرتجعاً حقيقيّاً. */
+export function sharesServerRow(traces: Record<string, Trace>, id: string): boolean {
+  const tr = traces[id];
+  if (tr?.state !== "found") return false;
+  return Object.entries(traces).some(([k, o]) => k !== id && o.state === "found" && o.ids.some((x) => tr.ids.includes(x)));
+}
+/** يومُ الخادم لإدخالٍ يوميّ: غائب، أو أقدمُ من هذا الإدخال، أو أحدث (أُعيد إدخالُه بعده). */
+type DayCheck = { state: "checking" } | { state: "failed" } | { state: "none" }
+  | { state: "older" | "newer"; at: string; dead: number | null; culled: number | null };
 const isReturn = (op: OutboxOp) => op.kind === "rpc" && op.fn === "retail_return";
+const isDay = (op: OutboxOp) => op.kind === "insert" && op.table === "poultry_daily";
+/** لا يُرفع قبل جواب الخادم عنه: أثرُ المرتجع، أو يومُ الإدخال اليوميّ. */
+const needsCheck = (op: OutboxOp) => isReturn(op) || isDay(op);
 
 export function OutboxReview() {
   const { t, i18n } = useTranslation();
@@ -99,6 +111,7 @@ export function OutboxReview() {
   const [asking, setAsking] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [traces, setTraces] = useState<Record<string, Trace>>({});
+  const [days, setDays] = useState<Record<string, DayCheck>>({});
   const refresh = () => { setLists(read()); setAsking(null); };
   /* القوائمُ تتبع التخزين: رفعٌ نجح بالخلفية، أو تبويبٌ آخر عالج عملية. */
   useEffect(() => {
@@ -128,13 +141,33 @@ export function OutboxReview() {
   useEffect(() => {
     mounted.current = true;
     for (const op of [...lists.review, ...lists.rejected, ...lists.others]) {
-      if (!isReturn(op) || !traceable(op) || asked.current.has(op.id)) continue;
+      if (!needsCheck(op) || !traceable(op) || asked.current.has(op.id)) continue;
       asked.current.add(op.id);
-      setTraces((m) => ({ ...m, [op.id]: { state: "checking" } }));
-      void repo.findReturnTrace(traceSpan(op, new Date().toISOString()), opSummary(op).returnLines).then(
-        (rows) => { if (mounted.current) setTraces((m) => ({ ...m, [op.id]: rows.length ? { state: "found", at: rows[0].spent_at, desc: rows[0].description ?? "" } : { state: "none" } })); },
-        () => { if (mounted.current) setTraces((m) => ({ ...m, [op.id]: { state: "failed" } })); },
-      );
+      if (isReturn(op)) {
+        setTraces((m) => ({ ...m, [op.id]: { state: "checking" } }));
+        const span = traceSpan(op, new Date().toISOString());
+        const b = traceBounds(span);
+        const done = (tr: Trace) => { if (mounted.current) setTraces((m) => ({ ...m, [op.id]: tr })); };
+        if (!b) { done({ state: "failed" }); continue; }
+        void repo.listReturnRows(b.from, b.to).then((all) => {
+          const rows = matchReturnRows(all, span, opSummary(op).returnLines);
+          done(rows.length ? { state: "found", at: rows[0].spent_at, desc: rows[0].description ?? "", ids: rows.map((r) => r.id) } : { state: "none" });
+        }, () => done({ state: "failed" }));
+        continue;
+      }
+      // إدخالُ اليوم: يومُه بالخادم — مقارنةً بوقت كتابته (updated_at بالحمولة).
+      const row = (op.kind === "insert" ? op.row : {}) as Record<string, unknown>;
+      const cycle = str(row.cycle_id), on = str(row.on_date), mine = Date.parse(String(row.updated_at ?? op.queued_at));
+      const done = (d: DayCheck) => { if (mounted.current) setDays((m) => ({ ...m, [op.id]: d })); };
+      if (!cycle || !on) { done({ state: "failed" }); continue; }
+      setDays((m) => ({ ...m, [op.id]: { state: "checking" } }));
+      void repo.listPoultryDaily(cycle).then((list) => {
+        const srv = list.find((d) => d.on_date === on);
+        if (!srv) { done({ state: "none" }); return; }
+        const at = srv.updated_at ?? srv.created_at;
+        // وقتٌ لا يُقرأ يُعامَل «أحدث»: الأسلمُ ألّا يُدهس ما بالخادم بلا مقارنة.
+        done({ state: Date.parse(at) < mine ? "older" : "newer", at, dead: srv.dead ?? null, culled: srv.culled ?? null });
+      }, () => done({ state: "failed" }));
     }
   }, [lists]);
 
@@ -142,6 +175,7 @@ export function OutboxReview() {
     : r.reason === "no_session" ? t("obx.noSession")
     : r.reason === "missing" ? t("obx.missing")
     : r.reason === "other_owner" ? t("obx.otherOwner")
+    : r.reason === "unconfirmed" ? t("obx.unconfirmed")
     : t("obx.storage"));
   const send = async (op: OutboxOp) => {
     playTap();
@@ -169,6 +203,7 @@ export function OutboxReview() {
         {s.qty != null && <div className="tabular-nums">{t("obx.qty", { n: String(s.qty) })}</div>}
         {s.day && <div className="tabular-nums">{t("obx.day", { d: dayOf(s.day) })}</div>}
         {s.category && <div>{t("obx.category", { c: s.category })}</div>}
+        {s.dead != null && <div className="tabular-nums">{t("obx.deadCulled", { d: formatNum(s.dead), c: formatNum(s.culled ?? 0) })}</div>}
       </div>
     );
   };
@@ -183,9 +218,9 @@ export function OutboxReview() {
   };
   const actions = (op: OutboxOp, sendLabel: string | null) => {
     if (!manager) return null;
-    // مرتجعٌ لم يُجب الخادمُ عن أثره بعد (أو لم يُسأل بعد — أوّلُ رسم): لا رفعَ قبل الجواب (قد يكون وصل).
-    const st = traces[op.id]?.state;
-    const waiting = isReturn(op) && st !== "none" && st !== "found" && st !== "failed";
+    // لم يُجب الخادمُ بعد (أو لم يُسأل بعد — أوّلُ رسم): لا رفعَ قبل الجواب (قد يكون وصل، أو أُعيد إدخالُه).
+    const st = (isReturn(op) ? traces[op.id] : days[op.id])?.state;
+    const waiting = needsCheck(op) && (!st || st === "checking");
     const label = opSummary(op).name ?? t(`obx.kind.${opSummary(op).kind}`, { defaultValue: opSummary(op).kind });
     return asking === op.id ? (
       <div className="mt-2 space-y-2 rounded-lg bg-danger-50 p-2 dark:bg-danger-500/10" data-obx-ask>
@@ -202,14 +237,31 @@ export function OutboxReview() {
       </div>
     );
   };
+  const warn = "mt-2 rounded-lg bg-warn-50 px-2 py-1.5 text-xs font-semibold text-warn-700 dark:bg-warn-500/10 dark:text-warn-200";
   const traceLine = (op: OutboxOp) => {
     const tr = traces[op.id];
-    if (!tr) return null;
+    if (!tr) return dayLine(op);
     if (tr.state === "found") {
-      return <p className="mt-2 rounded-lg bg-warn-50 px-2 py-1.5 text-xs font-semibold text-warn-700 dark:bg-warn-500/10 dark:text-warn-200" data-obx-trace="found">{t("obx.traceFound", { when: when(tr.at), desc: tr.desc })}</p>;
+      const shared = sharesServerRow(traces, op.id);
+      return (
+        <div data-obx-trace="found">
+          <p className={warn}>{t("obx.traceFound", { when: when(tr.at), desc: tr.desc })}</p>
+          {shared && <p className="mt-1 text-2xs font-semibold text-danger-700 dark:text-danger-300" data-obx-trace-shared>{t("obx.traceShared")}</p>}
+        </div>
+      );
     }
     const key = tr.state === "checking" ? "obx.traceChecking" : tr.state === "none" ? "obx.traceNone" : "obx.traceFailed";
     return <p className="mt-2 text-2xs text-ink-subtle" data-obx-trace={tr.state}>{t(key)}</p>;
+  };
+  const dayLine = (op: OutboxOp) => {
+    const d = days[op.id];
+    if (!d) return null;
+    if (d.state === "older" || d.state === "newer") {
+      const vals = t("obx.deadCulled", { d: formatNum(d.dead ?? 0), c: formatNum(d.culled ?? 0) });
+      return <p className={d.state === "newer" ? warn : "mt-2 text-xs text-ink-muted"} data-obx-day={d.state}>{t(d.state === "newer" ? "obx.dayNewer" : "obx.dayOlder", { when: when(d.at), vals })}</p>;
+    }
+    const key = d.state === "checking" ? "obx.dayChecking" : d.state === "none" ? "obx.dayNone" : "obx.dayFailed";
+    return <p className="mt-2 text-2xs text-ink-subtle" data-obx-day={d.state}>{t(key)}</p>;
   };
 
   const empty = !lists.review.length && !lists.rejected.length && !lists.others.length;
@@ -232,14 +284,16 @@ export function OutboxReview() {
             <p className="text-xs text-ink-muted">{t("obx.intro")}</p>
             <ul className="space-y-2">
               {lists.review.map((op) => {
-                /* ثلاثُ حالات: بلا ختم (مصدرُها مجهول — تُرفع على العيادة الحاليّة)، ومتقادمةٌ للداخل
-                 * (يُقال لماذا وُقفت)، ومتقادمةٌ لحسابٍ آخر — «ارفعها» كانت تُعرض عليها فتُركن باسمه. */
-                const other = !!op.who && !isMine(op);
+                /* أربعُ حالات: بلا ختم (نسخةٌ أقدم)، أو بلا عيادةٍ مؤكَّدة — تُرفع على العيادة الحاليّة؛
+                 * ومتقادمةٌ للداخل (يُقال لماذا وُقفت)؛ ولحسابٍ آخر — «ارفعها» كانت تُعرض عليها فتُركن باسمه. */
+                const owner = ownerState(op);
+                const other = owner === "other";
+                const why = owner === "unknown" ? (op.who ? "obx.clinicUnknown" : "obx.originUnknown") : other ? "obx.otherOwner" : "obx.staleNote";
                 return (
                   <li key={op.id} className="rounded-xl border border-line bg-surface-1 p-3" data-obx-item={op.id}>
                     {head(op)}
                     {details(op)}
-                    <p className="mt-1 text-2xs text-ink-subtle" data-obx-why>{t(!op.who ? "obx.originUnknown" : other ? "obx.otherOwner" : "obx.staleNote")}</p>
+                    <p className="mt-1 text-2xs text-ink-subtle" data-obx-why>{t(why)}</p>
                     {traceLine(op)}
                     {actions(op, other ? null : t("obx.send"))}
                   </li>
@@ -261,8 +315,8 @@ export function OutboxReview() {
                   {op.last_error && <p className="mt-1 break-words text-2xs text-danger-700 dark:text-danger-300" data-obx-error>{t("obx.lastError", { e: op.last_error })}</p>}
                   {traceLine(op)}
                   {/* مختومةٌ بحسابٍ آخر: «أعد المحاولة» كانت تركنها باسمه وتقول «ترتفع هسه» — لها الحذفُ وحده. */}
-                  {!isMine(op) && <p className="mt-1 text-2xs text-ink-subtle" data-obx-other-owner>{t("obx.otherOwner")}</p>}
-                  {actions(op, isMine(op) ? t("obx.retry") : null)}
+                  {ownerState(op) !== "mine" && <p className="mt-1 text-2xs text-ink-subtle" data-obx-other-owner>{t("obx.otherOwner")}</p>}
+                  {actions(op, ownerState(op) === "mine" ? t("obx.retry") : null)}
                 </li>
               ))}
             </ul>

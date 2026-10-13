@@ -6,6 +6,7 @@
 import { sb } from "./clinicSync";
 import { activateSubscription, statusOf, _debugSetState, type SubStatus } from "./subscription";
 import { DEFAULT_USD_RATE, periodMonths, setLivePrices, type BillingPeriod, type PlanId } from "./plans";
+import { forgetServerClinic } from "./serverClinic";
 
 /** Operator accounts. EDIT to add/rotate — must match is_platform_admin() in SQL. */
 export const PLATFORM_ADMIN_EMAILS = ["ayoubabood2004@gmail.com"];
@@ -273,6 +274,8 @@ export async function platformEnter(clinicId: string, reason?: string): Promise<
   if (!client) throw new Error("no_backend");
   const { data, error } = await client.rpc("platform_enter", { p_clinic: clinicId, p_reason: reason?.trim() || null });
   if (error) throw new Error(error.message);
+  // auth_clinic صارت عيادةَ الزبون: لا يُختم شيءٌ بعيادتي حتى يؤكّدها my_workspace (serverClinic.ts).
+  forgetServerClinic();
   const d = (data ?? {}) as Record<string, unknown>;
   return { clinicName: (d.clinic_name as string) ?? null };
 }
@@ -282,6 +285,7 @@ export async function platformLeave(): Promise<void> {
   if (!client) return;
   const { error } = await client.rpc("platform_leave");
   if (error) throw new Error(error.message);
+  forgetServerClinic();
 }
 
 export interface ClinicPulse {

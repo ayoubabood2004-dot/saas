@@ -50,7 +50,7 @@ import { journeyToken } from "./journey";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
 import { getActiveClinicId } from "./clinics";
 import { expectedServerClinic } from "./workspaceClinic";
-import { SYSTEM_EXPENSE_TEXT, RETURN_TRACE_WINDOW_MS, matchReturnRows } from "./expenseCategoryRules";
+import { SYSTEM_EXPENSE_TEXT } from "./expenseCategoryRules";
 import { cleanRef } from "./deliverySearch";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
@@ -2420,17 +2420,12 @@ const supabaseRepo: DemoRepo = {
   },
   /** مرتجعٌ قديمٌ بالرفّ (صفحة /outbox): هل وصل الخادمَ وضاع جوابُه؟ مرجعُ الإعادة يُمسح بعد ٧
    *  أيام (purge_rpc_refs)، فإعادتُه تكرّره. أثرُه الباقي سطورُ «مرتجع» بلحظته (isReturnTrace). يرمي. */
-  async findReturnTrace(span, lines) {
-    const a = Date.parse(span.from), b = Date.parse(span.to);
-    // مدّةٌ لا تُقرأ لا تُجاب بـ«ما لكينا»: «ماكو أثر» عن سؤالٍ لم يُسأل دعوةٌ لرفعٍ مكرّر.
-    if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error("trace_span_invalid");
-    /* كلُّ الصفحات (allPages): المدّةُ قد تطول أيّاماً، وسقفُ الألف كان يقصّها بصمت فيقول «ما لكينا»
-     * عن مرتجعٍ وصل — والنقصُ يُصدَّق. */
-    const rows = await allPages<Expense>(() => sbc().from("expenses").select("id, amount, description, category, spent_at")
-      .eq("category", SYSTEM_EXPENSE_TEXT.returns)
-      .gte("spent_at", new Date(a - RETURN_TRACE_WINDOW_MS).toISOString())
-      .lte("spent_at", new Date(Math.max(a, b) + RETURN_TRACE_WINDOW_MS).toISOString()));
-    return matchReturnRows(rows, span, lines);
+  /** سطورُ «مرتجع» بمدّة — صفحةُ /outbox تبحث فيها عن أثر مرتجعٍ عالق (returnTrace.ts، كسولةٌ معها).
+   *  كلُّ الصفحات (allPages): المدّةُ قد تطول أيّاماً، وسقفُ الألف كان يقصّها بصمت فيقول «ما لكينا»
+   *  عن مرتجعٍ وصل — والنقصُ يُصدَّق. */
+  async listReturnRows(from, to) {
+    return allPages<Expense>(() => sbc().from("expenses").select("id, amount, description, category, spent_at")
+      .eq("category", SYSTEM_EXPENSE_TEXT.returns).gte("spent_at", from).lte("spent_at", to));
   },
   async deleteExpense(id) {
     // حذفٌ يُسمَع (تدقيقٌ عدائيّ على 0227): سحبٌ حُفظ والنتُّ واگع ينتظر بالطابور — حذفُه من
@@ -2817,7 +2812,7 @@ export class ReadOnlyError extends Error {
  */
 const READ_ONLY_ALLOWED = new Set<string>([
   // مراجعةُ صندوق الصادر (/outbox): أثرُ مرتجعٍ قديم — قراءةٌ، والعيادةُ المنتهي اشتراكُها تراجع أيضاً.
-  "findReturnTrace",
+  "listReturnRows",
   // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
   "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
   "listPoultryUse", "poultryCycleStats",

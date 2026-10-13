@@ -7,6 +7,7 @@ import { getActiveClinicId } from "./clinics";
 import { uuid } from "./utils";
 import type { StaffRole } from "./staff";
 import { addPendingStaffLocal, removePendingStaffLocal, activateStaffByInviteLocal } from "./staff";
+import { forgetServerClinic } from "./serverClinic";
 
 export interface Invite {
   id: string;
@@ -77,6 +78,7 @@ export async function acceptInvite(code: string, confirm = false): Promise<{ ok:
   const { data, error } = await supabase.rpc("accept_invite", { p_code: code, p_confirm: confirm });
   if (error) return { ok: false, error: error.message };
   const r = (data ?? {}) as { ok: boolean; error?: string; clinic_name?: string; role?: StaffRole };
+  if (r.ok) forgetServerClinic();   // التوجيهُ تبدّل: ختمُ الطابور ينتظر تأكيدَ الخادم الجديد (serverClinic.ts)
   return { ok: r.ok, error: r.error, clinicName: r.clinic_name, role: r.role };
 }
 
@@ -87,5 +89,6 @@ export async function leaveClinic(clinicId?: string): Promise<{ ok: boolean; err
   const { data, error } = await supabase.rpc("leave_clinic", { p_clinic: clinicId ?? null });
   if (error) return { ok: false, error: error.message };
   const r = (data ?? {}) as { ok: boolean; error?: string };
+  if (r.ok) forgetServerClinic();
   return { ok: r.ok, error: r.error };
 }

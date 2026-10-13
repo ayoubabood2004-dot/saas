@@ -34,6 +34,7 @@
  * بيدِ الكاشير — وقد صارت مأمونة، فالمرجع يمنع الفاتورة الثانية.
  * ==========================================================================*/
 import { supabase } from "./supabase";
+import { confirmedClinic } from "./serverClinic";
 
 /** الجداول التي معرّفُ صفّها يولَد بالجهاز — شرطُ الرفع المتسامح مع التكرار. */
 export type OutboxTable = "products" | "companies" | "company_sections" | "expenses" | "poultry_daily";
@@ -49,9 +50,6 @@ type OutboxBase = {
   last_error?: string;
   /** وقتُ قرار «احذفها» بالمراجعة — بالأرشيف وحده (`outboxDiscarded`). */
   discarded_at?: string;
-  /** أُعيدت من صفحة المراجعة (بلا ختمٍ أصلاً): إدراجٌ بمفتاحٍ طبيعيّ **لا يدمج** فوق ما بالخادم —
-   *  اليومُ قد يكون أُدخل يدوياً بأرقامٍ أحدث بعد أن علقت هذه. */
-  reviewed?: boolean;
   /** مرتجعٌ أقدمُ من حارس الإعادة بالخادم (rpc_refs يُمسح بعد ٧ أيام): إعادتُه العمياء قد تكرّره إن
    *  كان وصل وضاع جوابُه — فيُوقف للمراجعة (`needsReview`) ويُسأل الخادمُ عن أثره أوّلاً. */
   stale?: boolean;
@@ -64,7 +62,8 @@ type OutboxBase = {
    *  عليه أهلُه: كاشيرٌ يخرج وآخرُ يدخل بعيادةٍ ثانية، أو مشغّلُ المنصّة يترك
    *  عيادةً ويدخل غيرها. وبلا ختمٍ كان النداءُ المؤجَّل يُنفَّذ بهويّة الداخل
    *  الجديد: `auth_clinic()` عيادتُه هو، فيهبط مرتجعُ عيادةٍ ومصروفُها بدفتر
-   *  عيادةٍ أخرى — والأصليّةُ لا بضاعتَها رجعت ولا قيدَها سُجّل. */
+   *  عيادةٍ أخرى — والأصليّةُ لا بضاعتَها رجعت ولا قيدَها سُجّل.
+   *  والعيادةُ **ما أكّده الخادم** (serverClinic.ts)، أو `UNCONFIRMED` — فتُراجَع ولا تُرفع على ظنّ. */
   who?: { user: string; clinic: string };
 };
 export type OutboxOp =
@@ -179,15 +178,14 @@ const sessionUser = (): string | null => {
   } catch { return null; }
 };
 
-/** هويّةُ هذه اللحظة: مَن الداخل، وبأيّ عيادةٍ يعمل (مفتاحُ العيادة المحلّيّ — "default"
- *  لصاحب العيادة، workspaceClinic.ts). تُقرأ من التخزين مباشرةً كي لا يصير الطابورُ عقدةً
- *  بحلقةِ استيراد. غيابُها يعني «لا أحد» — ولا نرفع شيئاً باسم لا أحد. */
+/** عيادةٌ لم يؤكّدها الخادمُ لهذا الحساب بعد. */
+export const UNCONFIRMED = "?";
+/** هويّةُ هذه اللحظة: مَن الداخل، وبأيّ عيادةٍ **قال الخادم** إنه يعمل (serverClinic.ts). كانت
+ *  مفتاحَ العيادة المحلّيّ، و"default" فيه «عيادتي» و«لم يُحسم» معاً — فرُفع ما كُتب بعيادة زبونٍ
+ *  بعيادة المشغّل. غيابُ الجلسة يعني «لا أحد» — ولا نرفع شيئاً باسم لا أحد. */
 const whoNow = (): { user: string; clinic: string } | null => {
   const user = sessionUser();
-  if (!user) return null;
-  try {
-    return { user, clinic: localStorage.getItem("vp_active_clinic") || "default" };
-  } catch { return null; }
+  return user ? { user, clinic: confirmedClinic(user) ?? UNCONFIRMED } : null;
 };
 const sameWho = (a: OutboxOp["who"], b: { user: string; clinic: string } | null): boolean =>
   !!a && !!b && a.user === b.user && a.clinic === b.clinic;
@@ -313,10 +311,11 @@ async function send(sb: NonNullable<typeof supabase>, op: OutboxOp): Promise<voi
   /* بمفتاحٍ طبيعيٍّ ندمج (`ignoreDuplicates: false`): الصفُّ موجودٌ
    * بالضرورة أحياناً — يومٌ أُدخل جزئياً ثم أُكمل بلا نت — وتجاهلُه
    * يعني أنّ ما كتبه بالجملون لا يصل أبداً. وبـ`id` نتجاهل كما كان:
-   * هناك وجودُ الصفّ يعني أنّ الطلبَ الأوّل وصل فعلاً. وما أُعيد من المراجعة
-   * لا يدمج أبداً: قد يكون أحدثَ منه ما بالخادم. */
+   * هناك وجودُ الصفّ يعني أنّ الطلبَ الأوّل وصل فعلاً.
+   * وما أُعيد من المراجعة يدمج كذلك — بعد أن رأى المديرُ يومَ الخادم بجانبه (OutboxReview).
+   * كان «لا يدمج» فيصير `DO NOTHING` صامتاً: تصحيحُ اليوم يضيع ويُقال «ارتفعت». */
   const conflict = op.conflict ?? "id";
-  const r = await sb.from(op.table).upsert(op.row as never, { onConflict: conflict, ignoreDuplicates: conflict === "id" || !!op.reviewed });
+  const r = await sb.from(op.table).upsert(op.row as never, { onConflict: conflict, ignoreDuplicates: conflict === "id" });
   if (r.error) throw fail(r);
 }
 
@@ -328,9 +327,9 @@ async function send(sb: NonNullable<typeof supabase>, op: OutboxOp): Promise<voi
  *  كانت تكتب لقطةَ أوّل الجولة فوق ذلك كلّه — فيضيع المضاف ويرجع المسحوب ويُرفع (تدقيق ١٣/١٠).
  *  ولم يظهر بالإنتاج لأن الختمَ الفارغ نقل كلَّ عمليةٍ للرفّ بلا انتظار شبكة.
  *
- *  و**الخادمُ يُسأل مرّةً لكلّ جولة** (`my_workspace`): العمليةُ تُرفع حيث يوجّهها `auth_clinic()`،
- *  والمفتاحُ المحلّيّ قد يبقى على عيادةٍ انتهت جلستُها (مشغّلٌ انتهت ساعاتُه الاثنتا عشرة والصفحةُ
- *  مفتوحة) — فما خُتم بعيادةٍ غيرِ التي يقولها الخادمُ الآن ينتظر. وتبويبان لا يرفعان معاً
+ *  و**الخادمُ يُسأل قبل كلّ عملية** (`my_workspace`): العمليةُ تُرفع حيث يوجّهها `auth_clinic()`،
+ *  وهو يتبدّل من بعيد (جلسةُ مشغّلٍ انتهت ساعاتُها الاثنتا عشرة والصفحةُ مفتوحة، مديرٌ أزال موظّفاً)
+ *  — فما خُتم بعيادةٍ غيرِ التي يقولها الخادمُ الآن ينتظر: يتأخّر ولا ينحرف. وتبويبان لا يرفعان معاً
  *  (`navigator.locks`) — كان العدّادُ يُحسب مرّتين والإدراجُ يتسابق. */
 export async function flushOutbox(): Promise<{ sent: number; left: number; dead: number }> {
   const idle = () => ({ sent: 0, left: outboxCount(), dead: outboxDeadCount() });
@@ -362,9 +361,9 @@ async function runFlush(): Promise<{ sent: number; left: number; dead: number }>
     for (const id of load().map((o) => o.id)) {
       const op = load().find((o) => o.id === id);
       if (!op) continue;   // سُحب قبل دوره (حُذف، أو نجح أونلاين بنفس المفتاح)
-      if (!op.who) {
-        /* عمليةٌ بلا ختم (نسخةٌ أقدم، أو أُنشئت بلا جلسة): لا نعرف صاحبَها فلا نرفعها باسم
-         * أحد. تُنقل للرفّ بحمولتها، وتُراجَع بصفحة /outbox وحدةً وحدة — وسببُها حالُها (`needsReview`)
+      if (!op.who || (op.who.clinic === UNCONFIRMED && op.who.user === now?.user)) {
+        /* بلا ختم (نسخةٌ أقدم، أو بلا جلسة) أو بلا عيادةٍ مؤكَّدة: لا نعرف لمن هي فلا نرفعها على
+         * ظنّ. تُنقل للرفّ بحمولتها، وتُراجَع بصفحة /outbox وحدةً وحدة — وسببُها حالُها (`needsReview`)
          * تقوله الصفحةُ بلغة العيادة، لا نصٌّ إنكليزيّ بالحمولة. */
         shelve(op);
         continue;
@@ -377,8 +376,10 @@ async function runFlush(): Promise<{ sent: number; left: number; dead: number }>
       let serverClinic: string | null;
       try { serverClinic = await askServer(); }
       catch (e) { if (isNetworkError(e) || transientReject(e)) break; serverClinic = null; }
-      const target = op.who.clinic === "default" ? op.who.user : op.who.clinic;
-      if (!serverClinic || target !== serverClinic) continue;
+      // الختمُ عيادةُ الخادم المؤكَّدة نفسُها — تُقارَن كما هي، بلا ترجمة.
+      if (!serverClinic || op.who.clinic !== serverClinic) continue;
+      // سُحبت أو تبدّلت أثناء السؤال (حذفُ سحبٍ لم يصل، يومٌ صُحّح): لا تُرفع نسخةٌ لم تعد موجودة.
+      if (!load().some((o) => sameVersion(o, op))) continue;
       if (op.kind === "rpc" && op.fn === "retail_return") {
         // كلُّ محاولةٍ قد تصل ويضيع جوابُها — وقتُها يُحفظ قبلها ليُبحث عن أثرها عنده (OutboxReview).
         const at = new Date().toISOString();
@@ -423,7 +424,7 @@ async function runFlush(): Promise<{ sent: number; left: number; dead: number }>
  *   • بلا ختم (`needsReview`): «ارفعها» تختمها بمن قرّر، أو «احذفها».
  *   • مختومةٌ رفضتها القاعدةُ مراراً: سببُها ظاهر، و«أعد المحاولة» أو «احذفها» — كانت الشارةُ
  *     تعيدها بضغطةٍ عمياء، ومرفوضةٌ أبداً (توأمُ اسم) كانت تدور بلا مخرج. */
-export const needsReview = (op: OutboxOp): boolean => !op.who || !!op.stale;
+export const needsReview = (op: OutboxOp): boolean => !op.who || op.who.clinic === UNCONFIRMED || !!op.stale;
 /** ما بالرفّ وينتظر قرارَ بشر (الشارةُ تعدّه — وما سواه بـ`outboxShelf.ts` مع الصفحة). */
 export const outboxReviewList = (): OutboxOp[] => outboxDead().filter(needsReview);
 /** بالطابور ومختومةٌ بحسابٍ أو عيادةٍ غيرِ الحاليّة: تنتظر أهلَها (لا تُرفع باسم غيرهم). */

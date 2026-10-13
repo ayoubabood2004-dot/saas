@@ -5028,6 +5028,25 @@ $P -f "$SCF/store-cats.sql" >/dev/null
 chk "T28 مرآةُ applyOps: كلُّ دفعةٍ تعطي نفسَ الصفوف والمواضع والرفض بالطرفين" "select _scp_run()" "ok"
 rm -rf "$SCF"
 
+# ── أثرُ المرتجع (صفحةُ /outbox): نصُّ retail_return ومرآتُه returnTrace.ts حرفاً بحرف ──────
+# الصفحةُ تحكم «وصل هذا المرتجعُ الخادمَ؟» بمطابقة سطور «مرتجع» نصّاً كاملاً (كانت بادئةَ الاسم،
+# فمرتجعُ زبونٍ آخر قيل عنه «وصلت — احذفها»). مرآةٌ تفترق بحرف تقول «ما لكينا» عن مرتجعٍ وصل،
+# فيُرفع مرّتين. الحالاتُ والمتوقَّعُ من return-trace-parity.mjs بالدالّة نفسها (من المصدر).
+echo "▸ أثرُ المرتجع: الخادمُ والمرآة"
+RTP=$(mktemp -d)
+node "$HERE/../../scripts/return-trace-parity.mjs" "$RTP" >/dev/null
+$P -f "$RTP/return-trace.sql" >/dev/null
+$P -c "select _rtp_run('$C1');" >/dev/null
+chk "كلُّ سطرٍ كتبه retail_return تتوقّعه المرآةُ بنصّه ومبلغه" \
+    "select count(*)::text from (select case_no, description, amount from _rtp_out except all select case_no, description, amount from _rtp_expected) x" "0"
+chk "  وكلُّ سطرٍ تتوقّعه كتبه الخادم (لا سطرَ وهميّ)" \
+    "select count(*)::text from (select case_no, description, amount from _rtp_expected except all select case_no, description, amount from _rtp_out) x" "0"
+chk "  والقالبُ ليس فارغاً، وفيه زبونٌ وملاحظةٌ وكسورٌ و«صنف» (فحصٌ على صفرِ قيمٍ ليس نجاحاً)" \
+    "select (count(*) >= 14 and bool_or(description like '% — %') and bool_or(description like '%(%)') and bool_or(description like '%× 1.5%') and bool_or(description like 'راجع: صنف%') and bool_or(amount <> trunc(amount)))::text from _rtp_out" "true"
+$P -c "delete from expenses where id in (select id from _rtp_out); delete from rpc_refs where fn = 'retail_return' and client_ref like 'RTP-%';
+       drop table _rtp_out; drop table _rtp_expected; drop function _rtp_run(uuid);" >/dev/null
+rm -rf "$RTP"
+
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null

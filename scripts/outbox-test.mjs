@@ -86,12 +86,16 @@ const chk = (label, got, want) => {
 /* هويّةُ الجهاز الآن — **كما بالإنتاج**: جلسةُ Supabase بمفتاحها، ومفتاحُ العيادة. لا `vp_session`:
  * النسخةُ السحابيّة لا تكتبها أبداً، وكان القالبُ يكتبها بيده فلم يرَ أن كلَّ عمليةٍ بالإنتاج
  * خُتمت «بلا أحد» وذهبت للمعطّلات (١٣/١٠). */
-const signIn = (user, clinic) => {
+const signIn = (user, clinic, { confirmed = true } = {}) => {
   if (user) mem.set(SB_KEY, JSON.stringify({ access_token: "t", user: { id: user } }));
   else mem.delete(SB_KEY);
   if (clinic) mem.set("vp_active_clinic", clinic); else mem.delete("vp_active_clinic");
-  // والخادمُ يوجّه حيث يقصد المتصفّح (المالكُ: "default" = حسابُه) — ما لم يقل الفحصُ غيرَ ذلك.
+  // والخادمُ يوجّه حيث يقصد المتصفّح (المالكُ: مفتاحُه "default" وعيادتُه حسابُه) — ما لم يقل الفحصُ غيرَ ذلك.
   globalThis.__serverClinic = clinic || user || null;
+  /* وAuthContext يحفظ ما قاله my_workspace (serverClinic.ts) — منه وحده يُختم الطابور. `confirmed: false`
+   * = my_workspace فشل بالإقلاع (شبكةٌ متعثّرة): لا عيادةَ مؤكَّدة. */
+  if (user && confirmed) mem.set("vp_server_clinic", JSON.stringify({ u: user, c: clinic || user }));
+  else mem.delete("vp_server_clinic");
 };
 const reset = () => {
   mem.clear(); calls.length = 0; events.length = 0; shouts.length = 0; quotaFull = false; failKey = null; globalThis.__mode = "ok";
@@ -226,7 +230,7 @@ chk("وتُرفع فعلاً — لا تذهب للمعطّلات", [r.sent, ob.
 // المالكُ: مفتاحُه «default» (لا يُكتب له مفتاح) — يُختم ويُرفع بنفس المعنى
 reset(); signIn("owner-O", null);
 ob.outboxEnqueueRpc("retail_return", { p_items: [], p_meta: { client_ref: "r-own" } });
-chk("مالكٌ بمفتاح default يُختم بـdefault", JSON.parse(mem.get("vp_outbox_v1"))[0].who, { user: "owner-O", clinic: "default" });
+chk("مالكٌ بمفتاح default يُختم بعيادته المؤكَّدة (حسابُه) لا بـdefault", JSON.parse(mem.get("vp_outbox_v1"))[0].who, { user: "owner-O", clinic: "owner-O" });
 r = await ob.flushOutbox();
 chk("  ويُرفع", [r.sent, ob.outboxCount()], [1, 0]);
 
@@ -309,7 +313,9 @@ reset();
 reset();
 mem.set("vp_outbox_dead_v1", JSON.stringify([{ kind: "insert", id: "pd:old", table: "poultry_daily", row: { cycle_id: "c", on_date: "2026-10-04", dead: 3 }, conflict: "cycle_id,on_date", queued_at: "2026-10-04T00:00:00Z", tries: 0 }]));
 ob.outboxReviveOne("pd:old"); await ob.flushOutbox();
-chk("إدخالُ يومٍ من المراجعة: تجاهلُ الموجود لا الدمج", calls[0]?.opts, { onConflict: "cycle_id,on_date", ignoreDuplicates: true });
+/* كان «لا يدمج» فيصير DO NOTHING صامتاً بيومٍ موجود: تصحيحُ اليوم يضيع ويُقال «ارتفعت» (تدقيق ١٣/١٠).
+ * صار يدمج — والصفحةُ تعرض يومَ الخادم بجانبه قبل أن تُفتح «ارفعها». */
+chk("إدخالُ يومٍ من المراجعة: يدمج (لا DO NOTHING صامت)", calls[0]?.opts, { onConflict: "cycle_id,on_date", ignoreDuplicates: false });
 
 // outboxDrop يشيل نسخةَ الرفّ بنفس المفتاح (حُفظ أونلاين بعدها)
 reset();
@@ -416,13 +422,13 @@ chk("  وما بلا ختمٍ يُسأل عنه (يُرفع — إن رُفع �
 reset();
 {
   const day = 86400000;
-  const ret = (id, reviewedAgo) => ({ kind: "rpc", id, fn: "retail_return", args: { p_items: [], p_meta: { client_ref: id } }, queued_at: new Date(Date.now() - 20 * day).toISOString(), tries: 0, who: { user: "user-A", clinic: "clinic-A" }, reviewed: true, reviewed_at: new Date(Date.now() - reviewedAgo * day).toISOString() });
+  const ret = (id, reviewedAgo) => ({ kind: "rpc", id, fn: "retail_return", args: { p_items: [], p_meta: { client_ref: id } }, queued_at: new Date(Date.now() - 20 * day).toISOString(), tries: 0, who: { user: "user-A", clinic: "clinic-A" }, reviewed_at: new Date(Date.now() - reviewedAgo * day).toISOString() });
   mem.set("vp_outbox_v1", JSON.stringify([ret("old-review", 7), ret("fresh-review", 1)]));
   r = await ob.flushOutbox();
   chk("مراجعةٌ قبل ٧ أيام ⇒ يُوقف ثانيةً؛ وقبل يوم ⇒ يُرفع", [calls.map((c) => c.args.p_meta.client_ref), ob.outboxReviewList().map((o) => o.id)], [["fresh-review"], ["old-review"]]);
   ob.outboxReviveOne("old-review");
   const q = JSON.parse(mem.get("vp_outbox_v1"))[0];
-  chk("  و«ارفعها» تختم وقتَ القرار من جديد وتمسح «متقادمة»", [q.stale, q.reviewed, Date.now() - Date.parse(q.reviewed_at) < 5000], [undefined, true, true]);
+  chk("  و«ارفعها» تختم وقتَ القرار من جديد وتمسح «متقادمة»", [q.stale, Date.now() - Date.parse(q.reviewed_at) < 5000], [undefined, true]);
 }
 
 // كلُّ محاولة رفعٍ للمرتجع يُحفظ وقتُها، ومدّةُ البحث عن أثره تغطّيها (كانت لحظةَ الحفظ وحدها)
@@ -477,6 +483,75 @@ reset();
   for (let i = 0; i < 10; i++) await ob.flushOutbox();
   globalThis.__mode = "ok";
   chk("رفٌّ ممتلئٌ بالمرفوضة ⇒ الأقدمُ للأرشيف والجديدُ بالرفّ", [ob.outboxDeadCount(), ob.outboxDead().some((o) => o.id === "rj-new"), ob.outboxDiscarded().map((o) => o.id)], [200, true, ["rj-0"]]);
+}
+
+/* ١٤) الختمُ عيادةُ الخادم المؤكَّدة (serverClinic.ts) — تدقيقٌ عدائيّ ١٣/١٠ على fff3027.
+ *     "default" بالمفتاح كان «عيادتي» و«لم يُحسم» معاً. */
+// المشغّلُ داخلَ عيادة زبونٍ والمفتاحُ لم يُحسم (my_workspace فشل بعد الدخول): لا يُرفع بعيادته هو بعد خروجه
+reset();
+{
+  signIn("op-P", null, { confirmed: false });   // داخلَ C، والمفتاحُ default، ولا تأكيد
+  globalThis.__serverClinic = "clinic-C";
+  ob.outboxEnqueue("expenses", { id: "exp-c", amount: 9000 });
+  chk("بلا عيادةٍ مؤكَّدة ⇒ يُختم «?» لا default", JSON.parse(mem.get("vp_outbox_v1"))[0].who, { user: "op-P", clinic: ob.UNCONFIRMED });
+  r = await ob.flushOutbox();
+  chk("  ولا يُرفع على ظنّ: للمراجعة", [calls.length, ob.outboxReviewList().map((o) => o.id)], [0, ["exp-c"]]);
+  signIn("op-P", null);                           // خرج: الخادمُ يقول عيادتَه، ومؤكَّدة
+  r = await ob.flushOutbox();
+  chk("  وبعد خروجه لا يهبط سحبُ الزبون بعيادته (كان يُرفع إليها)", [calls.length, ob.outboxDeadCount()], [0, 1]);
+}
+// موظّفٌ بلا تأكيدٍ ثم تأكّد: عمليتُه «مجهولةُ العيادة» له — لا «حساب ثاني» بلا مخرج
+reset();
+{
+  signIn("staff-S", "clinic-C", { confirmed: false });
+  ob.outboxEnqueue("products", { id: "prd-s", name: "x" });
+  await ob.flushOutbox();
+  chk("بلا تأكيد ⇒ للمراجعة، ولا تُعدّ «حساب ثاني»", [ob.outboxReviewList().length, ob.outboxWaitingOthers().length, ob.ownerState(ob.outboxDead()[0])], [1, 0, "unknown"]);
+  chk("  «ارفعها» وعيادتُه بعدها غير مؤكَّدة ⇒ «unconfirmed» (لا ختمَ على ظنّ)", [ob.outboxReviveOne("prd-s"), ob.outboxDeadCount()], [{ ok: false, reason: "unconfirmed" }, 1]);
+  signIn("staff-S", "clinic-C");
+  chk("  وبعد التأكيد: «ارفعها» تختمها بعيادته المؤكَّدة", [ob.outboxReviveOne("prd-s"), JSON.parse(mem.get("vp_outbox_v1"))[0].who], [{ ok: true }, { user: "staff-S", clinic: "clinic-C" }]);
+  r = await ob.flushOutbox();
+  chk("  وتُرفع", [r.sent, calls[0]?.row?.id], [1, "prd-s"]);
+  // و«?» لحسابٍ آخر: لا تُراجَع باسمه
+  signIn("other-U", "clinic-C", { confirmed: false });
+  ob.outboxEnqueue("products", { id: "prd-u" });
+  signIn("staff-S", "clinic-C");
+  await ob.flushOutbox();
+  chk("  و«?» لحسابٍ آخر: تبقى له بالطابور (حساب ثاني) — لا تُنقل لمراجعة الداخل", [ob.outboxWaitingOthers().map((o) => o.id), ob.outboxDeadCount()], [["prd-u"], 0]);
+}
+// AuthContext يحفظ التأكيدَ من my_workspace وحده، ويُنسى حيث يتبدّل التوجيه
+{
+  const fs = await import("node:fs");
+  const auth = fs.readFileSync("src/contexts/AuthContext.tsx", "utf8");
+  const lm = auth.slice(auth.indexOf("async function loadMembership"), auth.indexOf("const DEMO_OWNER"));
+  chk("AuthContext: التأكيدُ من my_workspace وحده (لا من جدول العضوية)", [(lm.match(/rememberServerClinic\(/g) || []).length, lm.indexOf("rememberServerClinic(") < lm.indexOf('from("memberships")')], [1, true]);
+  const so = auth.slice(auth.indexOf("const signOut = () =>"), auth.indexOf("const signOut = () =>") + 1500);
+  chk("  والخروجُ ينساه", /forgetServerClinic\(\)/.test(so), true);
+  const pa = fs.readFileSync("src/lib/platformAdmin.ts", "utf8");
+  const enter = pa.slice(pa.indexOf("export async function platformEnter"), pa.indexOf("export async function platformLeave"));
+  const leave = pa.slice(pa.indexOf("export async function platformLeave"), pa.indexOf("export async function platformLeave") + 400);
+  chk("  ودخولُ المشغّل عيادةً وخروجُه", [/forgetServerClinic\(\)/.test(enter), /forgetServerClinic\(\)/.test(leave)], [true, true]);
+  const inv = fs.readFileSync("src/lib/invites.ts", "utf8");
+  chk("  وقبولُ دعوةٍ وتركُ عيادة", (inv.match(/if \(r\.ok\) forgetServerClinic\(\)/g) || []).length, 2);
+  const obs = fs.readFileSync("src/lib/outbox.ts", "utf8");
+  chk("  والطابورُ لا يقرأ مفتاحَ العيادة المحلّيّ", /vp_active_clinic/.test(obs.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")), false);
+}
+// سُحبت أثناء سؤال الخادم (my_workspace): لا تُرفع نسخةٌ لم تعد موجودة
+reset();
+{
+  ob.outboxEnqueue("expenses", { id: "gone" });
+  let release; const gate = new Promise((res) => { release = res; });
+  const realRpc = globalThis.__sb.rpc;
+  globalThis.__sb.rpc = async (fn, args) => {
+    if (fn === "my_workspace") { await gate; return { data: { clinic_id: globalThis.__serverClinic }, error: null }; }
+    return realRpc(fn, args);
+  };
+  const fl = ob.flushOutbox();
+  await new Promise((res) => setTimeout(res, 0));
+  ob.outboxDrop("gone");
+  release(); await fl;
+  globalThis.__sb.rpc = realRpc;
+  chk("حُذفت أثناء سؤال الخادم ⇒ لا upsert", calls.filter((c) => c.row?.id === "gone").length, 0);
 }
 
 // ── المفتاحُ الطبيعيّ: إدخالُ اليوم (0193) ───────────────────────────────

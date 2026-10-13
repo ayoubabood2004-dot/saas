@@ -26,54 +26,6 @@ export const SYSTEM_EXPENSE_TEXT = {
   stock: "\u0633\u062d\u0628 \u0645\u062e\u0632\u0646",     // سحب مخزن — stock_count_decide (method = stock)
 } as const;
 export type SystemTableId = keyof typeof SYSTEM_EXPENSE_TEXT;
-/** بادئةُ وصف سطر المرتجع كما يكتبها retail_return («راجع: <المادة> × <الكمية> — <الزبون>»). */
-export const RETURN_DESC_PREFIX = "\u0631\u0627\u062c\u0639: ";   // «راجع: »
-
-/* ── أثرُ مرتجعٍ بالخادم (صفحةُ /outbox) ─────────────────────────────────────────────
- * مرجعُ إعادة المرتجع (rpc_refs) يُمسح بعد ٧ أيام، فأثرُه الباقي سطورُ «مرتجع» التي كتبها:
- * سطرٌ لكلّ مادّةٍ مبلغُها فوق الصفر، وصفُه «راجع: <الاسم>[ × <الكمية>][ — <الزبون>][ (<ملاحظة>)]»
- * ومبلغُه round(|كمية|×|سعر|، ٢)، ووقتُه وقتُ الخادم. فالمطابقةُ: **كلُّ** مادّةٍ لها سطرٌ باسمها
- * بالضبط (لا بادئةُ اسمٍ آخر) وبمبلغها — ونصفُ تطابقٍ ليس أثراً. خالصةٌ يتشاركها السحابيّ والتجريبيّ.
- *
- * والوقتُ **مدّةٌ لا لحظة** (`TraceSpan`): من الحفظ الأوّل إلى آخر محاولة رفع — أيُّ محاولةٍ قد تصل
- * ويضيع جوابُها، وكانت النافذةُ حول وقت الحفظ وحده فلا ترى محاولةً بعده بيوم (تدقيق ١٣/١٠). وحولَ
- * المدّة هامشٌ واسع: ساعةُ الجهاز قد تنحرف عن ساعة الخادم. */
-export const RETURN_TRACE_WINDOW_MS = 12 * 3600_000;
-export interface ReturnLine { name: string; amount: number }
-export interface TraceSpan { from: string; to: string }
-type TraceRow = { id?: string; category?: string | null; spent_at: string; description?: string | null; amount?: number | string | null };
-/** بُعدُ لحظةٍ عن المدّة (صفرٌ داخلها)، أو NaN إن تعذّر حسابُه. */
-const spanGap = (ms: number, span: TraceSpan): number => {
-  const a = Date.parse(span.from), b = Math.max(a, Date.parse(span.to));
-  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(ms)) return NaN;
-  return ms < a ? a - ms : ms > b ? ms - b : 0;
-};
-export function returnLineMatches(row: TraceRow, span: TraceSpan, line: ReturnLine): boolean {
-  const gap = spanGap(Date.parse(row.spent_at), span);
-  if (!(gap <= RETURN_TRACE_WINDOW_MS)) return false;
-  if (row.category !== SYSTEM_EXPENSE_TEXT.returns) return false;
-  const head = RETURN_DESC_PREFIX + line.name.trim();
-  const d = row.description ?? "";
-  if (!d.startsWith(head)) return false;
-  const rest = d.slice(head.length);
-  if (!(rest === "" || rest.startsWith(" \u00d7 ") || rest.startsWith(" \u2014 ") || rest.startsWith(" ("))) return false;
-  return Math.abs(Number(row.amount ?? NaN) - line.amount) < 0.005;
-}
-/** سطورُ الخادم المطابقةُ لكلّ موادّ المرتجع (لكلّ مادّةٍ أقربُ سطرٍ لم يُستعمل)، أو [] إن نقصت
- *  واحدة. وموادُّ بلا مبلغٍ لا تترك أثراً فلا تُطلب. */
-export function matchReturnRows<T extends TraceRow>(rows: T[], span: TraceSpan, lines: ReturnLine[]): T[] {
-  const want = lines.filter((l) => l.name.trim() && l.amount > 0);
-  if (!want.length) return [];
-  const used = new Set<T>();
-  const out: T[] = [];
-  for (const l of want) {
-    const hit = rows.filter((r) => !used.has(r) && returnLineMatches(r, span, l))
-      .sort((a, b) => spanGap(Date.parse(a.spent_at), span) - spanGap(Date.parse(b.spent_at), span))[0];
-    if (!hit) return [];
-    used.add(hit); out.push(hit);
-  }
-  return out;
-}
 export const SYSTEM_TABLE_ORDER: SystemTableId[] = ["returns", "payroll", "payroll_loan", "stock"];
 
 /** «بدون تصنيف» — اسمٌ محجوز كي لا يصنع أحدٌ تصنيفاً يلبس ثوبَ الجدول التلقائيّ. */

@@ -51,12 +51,13 @@ const stubs = {
         export const outboxRejectedList = () => globalThis.__rejected || [];
         export const outboxReviveOne = () => ({ ok: true });
         export const outboxDiscard = () => ({ ok: true });
-        export const isMine = (op) => !!op.who && op.who.user === (globalThis.__me || "u");
+        const me = () => globalThis.__me || "u";
+        export const ownerState = (op) => !op.who || (op.who.clinic === "?" && op.who.user === me()) ? "unknown" : op.who.user === me() ? "mine" : "other";
         export const traceable = () => true;
         export const traceSpan = (op, now) => ({ from: op.queued_at, to: now });
       `,
       "@/lib/managerOverride": "export const useOverride = () => ({ active: false, until: null, deviceLocked: !!globalThis.__restricted, restricted: !!globalThis.__restricted, stockLocked: false });",
-      "@/lib/repo": "export const repo = { findReturnTrace: async () => [] };",
+      "@/lib/repo": "export const repo = { listReturnRows: async () => [], listPoultryDaily: async () => [] };",
       "@/hooks/usePermissions": "export const usePermissions = () => ({ role: globalThis.__role || 'manager', baseRole: globalThis.__role || 'manager', can: () => true });",
     };
     const keys = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
@@ -71,8 +72,9 @@ try {
       export { renderToStaticMarkup } from "react-dom/server.browser";
       export { createElement } from "react";
       export { MemoryRouter } from "react-router-dom";
-      export { OutboxReview, opSummary } from "./src/pages/OutboxReview.tsx";
-      export { matchReturnRows, returnLineMatches, SYSTEM_EXPENSE_TEXT, RETURN_DESC_PREFIX } from "./src/lib/expenseCategoryRules.ts";
+      export { OutboxReview, opSummary, sharesServerRow } from "./src/pages/OutboxReview.tsx";
+      export { matchReturnRows, returnLineMatches, expectedReturnRows, traceBounds } from "./src/lib/returnTrace.ts";
+      export { SYSTEM_EXPENSE_TEXT } from "./src/lib/expenseCategoryRules.ts";
     `, resolveDir: root, loader: "tsx", sourcefile: "obx.tsx" },
     bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
     plugins: [stubs], define: { "process.env.NODE_ENV": '"production"', "import.meta.env": "{}" }, tsconfig: "tsconfig.json",
@@ -105,34 +107,46 @@ console.log("▸ opSummary — ما بالحمولة وحده");
   const r = M.opSummary(RET);
   check("مرتجع: المجموعُ |كمية×سعر| والعدد", r.kind === "retail_return" && r.amount === 12500 && r.lines === 2, JSON.stringify(r));
   check("  والاسمُ من المواد إن لم يكن زبون", r.name === "درونتال", String(r.name));
-  check("  وموادُّه للمطابقة باسمها ومبلغها (ما بلا اسمٍ لا يُطابَق)", JSON.stringify(r.returnLines) === JSON.stringify([{ name: "درونتال", amount: 10000 }]), JSON.stringify(r.returnLines));
+  check("  وسطورُه كما يكتبها الخادم (وما بلا اسمٍ «صنف» — اسمُ الخادم له)", JSON.stringify(r.returnLines) === JSON.stringify([{ desc: "راجع: درونتال × 2", amount: 10000 }, { desc: "راجع: صنف", amount: 2500 }]), JSON.stringify(r.returnLines));
   const e = M.opSummary(EXP);
   check("سحب: المبلغُ والوصف", e.kind === "expenses" && e.amount === 25000 && e.name === "مولدة", JSON.stringify(e));
   check("منتج: الاسم بلا مبلغ", M.opSummary(PRD).name === "رويال كانين ٢ كغ" && M.opSummary(PRD).amount === null);
-  check("إدخالٌ يومي: التاريخ يوماً لا اسماً", M.opSummary(DAY).day === "2026-10-04" && M.opSummary(DAY).name === null);
+  check("إدخالٌ يومي: التاريخ يوماً لا اسماً، والنافقُ ظاهر", M.opSummary(DAY).day === "2026-10-04" && M.opSummary(DAY).name === null && M.opSummary(DAY).dead === 3);
   const u = M.opSummary(USE);
   check("صرفُ دواجن: الاسمُ واليومُ والكميةُ بكسرها — لا «عدد مواد»", u.name === "علف بادئ" && u.qty === 2.5 && u.day === "2026-10-03" && u.lines === null, JSON.stringify(u));
   check("مدخلٌ ناقص (بلا args/row) لا يرمي", (() => { try { M.opSummary({ kind: "rpc", id: "x", fn: "retail_return", queued_at: "q", tries: 0 }); M.opSummary({ kind: "insert", id: "y", table: "products", queued_at: "q", tries: 0 }); return true; } catch { return false; } })());
 }
 
-console.log("▸ أثرُ المرتجع بالخادم (matchReturnRows) — مرجعُ الإعادة يُمسح بعد ٧ أيام");
+console.log("▸ أثرُ المرتجع بالخادم (returnTrace) — النصُّ كاملاً كما يكتبه retail_return (0136)");
 {
   const at = "2026-10-01T09:30:00Z";
-  const R = M.SYSTEM_EXPENSE_TEXT.returns, P = M.RETURN_DESC_PREFIX;
-  const row = (min, desc, amount, cat = R) => ({ category: cat, spent_at: new Date(Date.parse(at) + min * 60000).toISOString(), description: desc, amount });
-  const L = [{ name: "درونتال", amount: 10000 }, { name: "طوق", amount: 2500 }];
-  const rows = [row(3, P + "درونتال × 2", 10000), row(3, P + "طوق — أبو علي", 2500)];
+  const R = M.SYSTEM_EXPENSE_TEXT.returns;
+  const row = (min, desc, amount, cat = R, id = desc + min) => ({ id, category: cat, spent_at: new Date(Date.parse(at) + min * 60000).toISOString(), description: desc, amount });
   const pt = { from: at, to: at };
-  check("كلُّ مادّةٍ بسطرها ومبلغها ⇒ أثر", M.matchReturnRows(rows, pt, L).length === 2);
-  check("  ونصفُ تطابقٍ (مادّةٌ بلا سطر) ⇒ لا أثر", M.matchReturnRows([rows[0]], pt, L).length === 0);
-  check("  ومبلغٌ مختلف ⇒ لا أثر", M.matchReturnRows([row(3, P + "درونتال × 2", 9000), rows[1]], pt, L).length === 0);
-  check("  واسمٌ يبدأ به (درونتال بلس) ⇒ ليس هو", !M.returnLineMatches(row(3, P + "درونتال بلس × 2", 10000), pt, L[0]));
-  check("  وساعةُ الجهاز منحرفةٌ ٣ ساعات ⇒ ما زال أثراً", M.matchReturnRows([row(180, P + "درونتال × 2", 10000), row(180, P + "طوق", 2500)], pt, L).length === 2);
-  check("  وبعد يومين ⇒ ليس أثراً", M.matchReturnRows([row(2880, P + "درونتال × 2", 10000), row(2880, P + "طوق", 2500)], pt, L).length === 0);
+  // نصُّ الخادم: 'راجع: ' || الاسم || ' × ' كميةٌ (≠١، بلا أصفار) || ' — ' زبون || ' (' ملاحظة ')'
+  const E = M.expectedReturnRows({ p_items: [{ qty: -2, unit_price: 5000, name: " درونتال " }, { qty: 1.5, unit_price: 1000.005, name: "طوق" }, { qty: 0.0004, unit_price: 9, name: "ذرّة" }, { qty: -1, unit_price: 0, name: "مجاني" }], p_meta: { customer_name: " حسن ", note: "كسر", client_ref: "x" } });
+  check("السطور: الاسمُ بلا مسافات، والكميةُ بلا أصفار، والزبونُ والملاحظة", JSON.stringify(E.map((l) => l.desc)) === JSON.stringify(["راجع: درونتال × 2 — حسن (كسر)", "راجع: طوق × 1.5 — حسن (كسر)"]), JSON.stringify(E));
+  check("  والمبلغُ round(round3(كمية)×round2(سعر)، ٢) — والكميةُ دون ٠٫٠٠٠٥ والمبلغُ الصفرُ لا سطرَ لهما", JSON.stringify(E.map((l) => l.amount)) === JSON.stringify([10000, 1500.02]), JSON.stringify(E));
+  const L = M.expectedReturnRows({ p_items: [{ qty: -2, unit_price: 5000, name: "درونتال" }, { qty: 1, unit_price: 2500, name: "طوق" }], p_meta: { customer_name: "أبو علي" } });
+  const rows = [row(3, "راجع: درونتال × 2 — أبو علي", 10000), row(3, "راجع: طوق — أبو علي", 2500)];
+  check("كلُّ سطرٍ بنصّه ومبلغه ⇒ أثر", M.matchReturnRows(rows, pt, L).length === 2);
+  check("  ونصفُ تطابقٍ (سطرٌ ناقص) ⇒ لا أثر", M.matchReturnRows([rows[0]], pt, L).length === 0);
+  check("  ومبلغٌ مختلف ⇒ لا أثر", M.matchReturnRows([row(3, "راجع: درونتال × 2 — أبو علي", 9000), rows[1]], pt, L).length === 0);
+  /* التدقيقُ العدائيّ ١٣/١٠: كانت بادئةُ الاسم تكفي، فمرتجعُ زبونٍ آخر لنفس المادّة والمبلغ قيل عنه
+   * «وصلت — الأسلم تحذفها»، والحذفُ يُسقط ردَّ مالٍ ومخزونٍ حقيقيّ. */
+  check("  وزبونٌ آخر لنفس المادّة والمبلغ ⇒ ليس هو", M.matchReturnRows([row(3, "راجع: درونتال × 2 — حسن", 10000), rows[1]], pt, L).length === 0);
+  check("  وكميةٌ أخرى بنفس المبلغ ⇒ ليس هو", !M.returnLineMatches(row(3, "راجع: درونتال × 4 — أبو علي", 10000), pt, L[0]));
+  check("  واسمٌ يبدأ به (درونتال بلس) ⇒ ليس هو", !M.returnLineMatches(row(3, "راجع: درونتال بلس × 2 — أبو علي", 10000), pt, L[0]));
+  check("  وساعةُ الجهاز منحرفةٌ ٣ ساعات ⇒ ما زال أثراً", M.matchReturnRows([row(180, rows[0].description, 10000), row(180, rows[1].description, 2500)], pt, L).length === 2);
+  check("  وبعد يومين ⇒ ليس أثراً", M.matchReturnRows([row(2880, rows[0].description, 10000), row(2880, rows[1].description, 2500)], pt, L).length === 0);
   const late = { from: at, to: new Date(Date.parse(at) + 2 * 86400000).toISOString() };
-  check("  لكن محاولةُ رفعٍ بعد يومين ⇒ المدّةُ تمتدّ لها فيُرى أثرُها", M.matchReturnRows([row(2880, P + "درونتال × 2", 10000), row(2880, P + "طوق", 2500)], late, L).length === 2);
-  check("  ومدّةٌ تالفة ⇒ لا أثرَ مزعوم", M.matchReturnRows(rows, { from: "x", to: at }, L).length === 0);
-  check("  وتصنيفٌ غير «مرتجع» ⇒ ليس أثراً", !M.returnLineMatches(row(2, P + "درونتال × 2", 10000, "إيجار"), pt, L[0]));
+  check("  لكن محاولةُ رفعٍ بعد يومين ⇒ المدّةُ تمتدّ لها فيُرى أثرُها", M.matchReturnRows([row(2880, rows[0].description, 10000), row(2880, rows[1].description, 2500)], late, L).length === 2);
+  check("  ومدّةٌ تالفة ⇒ لا حدودَ سؤال (يُقال «تعذّر» لا «ما لكينا»)", M.traceBounds({ from: "x", to: at }) === null && M.matchReturnRows(rows, { from: "x", to: at }, L).length === 0);
+  check("  وتصنيفٌ غير «مرتجع» ⇒ ليس أثراً", !M.returnLineMatches(row(2, rows[0].description, 10000, "إيجار"), pt, L[0]));
+  check("  ومرتجعٌ بلا سطورٍ (كلُّه مجّاني) ⇒ لا أثرَ مزعوم", M.matchReturnRows(rows, pt, []).length === 0);
+  // سطرُ خادمٍ واحد لعمليتين بالقائمة: يُقال (لا تُحذف الاثنتان)
+  const tr = { a: { state: "found", at, desc: "d", ids: ["r1"] }, b: { state: "found", at, desc: "d", ids: ["r1"] }, c: { state: "found", at, desc: "d", ids: ["r2"] }, d: { state: "none" } };
+  check("سطرٌ واحد يطابق عمليتين ⇒ يُنبَّه عليهما، لا على غيرهما", M.sharesServerRow(tr, "a") && M.sharesServerRow(tr, "b") && !M.sharesServerRow(tr, "c") && !M.sharesServerRow(tr, "d"));
 }
 
 console.log("▸ الصفحةُ بالعربية");
@@ -150,7 +164,7 @@ console.log("▸ الصفحةُ بالعربية");
   check("لا مفتاحَ خام (obx.)", !/obx\./.test(s), s.match(/obx\.[\w.]+/)?.[0]);
   /* أوّلُ رسم: سؤالُ الخادم عن المرتجع لم يبدأ بعد — «ارفعها» عليه مقفولة (كانت مفتوحةً لحظة)، والسحبُ مفتوح. */
   const sendOf = (id) => raw.match(new RegExp(`data-obx-item="${id.replace(/[:.]/g, "\\$&")}"[\\s\\S]*?<button([^>]*data-obx-send[^>]*)>`))?.[1] ?? "";
-  check("أوّلُ رسم: «ارفعها» على المرتجع مقفولةٌ قبل جواب الخادم، وعلى السحب لا", /disabled/.test(sendOf(RET.id)) && !/disabled/.test(sendOf(EXP.id)), JSON.stringify([sendOf(RET.id), sendOf(EXP.id)]));
+  check("أوّلُ رسم: «ارفعها» على المرتجع وإدخالِ اليوم مقفولةٌ قبل جواب الخادم، وعلى السحب لا", /disabled/.test(sendOf(RET.id)) && /disabled/.test(sendOf(DAY.id)) && !/disabled/.test(sendOf(EXP.id)), JSON.stringify([sendOf(RET.id), sendOf(DAY.id), sendOf(EXP.id)]));
   globalThis.__list = [];
   check("قائمةٌ فارغة ⇒ «ماكو شي باقي»", text(html("ar")).includes(AR.obx.empty));
 
@@ -178,6 +192,10 @@ console.log("▸ الصفحةُ بالعربية");
   const r6 = html("ar"); const t6 = text(r6);
   check("متقادمةٌ للداخل: سببُها و«ارفعها»؛ ولحسابٍ آخر: «احذفها» وحدها", t6.includes(AR.obx.staleNote) && t6.includes(AR.obx.otherOwner) && !t6.includes(AR.obx.originUnknown)
     && (r6.match(/data-obx-send/g) || []).length === 1 && (r6.match(/data-obx-discard[^-]/g) || []).length === 2, t6.slice(0, 300));
+  // ختمُه هو بلا عيادةٍ مؤكَّدة: «ارفعها» (تُختم بعيادته الآن) وسببُها — لا «حساب ثاني»
+  globalThis.__list = [{ ...EXP, who: { user: "u", clinic: "?" } }];
+  const r7 = html("ar"); const t7 = text(r7);
+  check("بلا عيادةٍ مؤكَّدة (ختمُ الداخل): سببُها و«ارفعها»، لا «حساب ثاني»", t7.includes(AR.obx.clinicUnknown) && !t7.includes(AR.obx.otherOwner) && (r7.match(/data-obx-send/g) || []).length === 1, t7.slice(0, 300));
   globalThis.__role = "manager"; globalThis.__rejected = []; globalThis.__others = [];
 }
 

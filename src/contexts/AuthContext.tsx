@@ -5,6 +5,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
 import { clinicKeyAction } from "@/lib/workspaceClinic";
+import { rememberServerClinic, forgetServerClinic } from "@/lib/serverClinic";
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import { setSubscriptionScope, syncSubscriptionFromServer } from "@/lib/subscription";
 import { applyFontScale } from "@/lib/fontScale";
@@ -136,6 +137,8 @@ async function loadMembership(userId: string): Promise<{ staff: StaffMembership 
     if (!error && data && typeof data === "object") {
       const w = data as { clinic_id?: string | null; role?: string | null; is_staff?: boolean };
       if (w.clinic_id) {
+        // ختمُ الطابور من هنا وحده: ما قاله الخادمُ لهذا الحساب (serverClinic.ts).
+        rememberServerClinic(userId, w.clinic_id);
         if (!w.is_staff) return { staff: null, own: true }; // the server routes me to my own clinic
         return { staff: { clinicId: w.clinic_id, role: STAFF_TO_APP_ROLE[w.role ?? ""] ?? "reception", staffRole: w.role ?? null }, own: false };
       }
@@ -627,6 +630,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRecovery(false);
     storeActive(null);
     clearActiveClinic();
+    forgetServerClinic();
     try { localStorage.removeItem(KEY); } catch { /* ignore */ }
     // Hard navigation on the way out: it tears down every in-memory cache
     // (permissions, clinic-config, ops/branch stores, SWR snapshots) so the

@@ -44,7 +44,7 @@ import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
 import { demoAdmissionCageGuard } from "./demoCages";
-import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName, restoreProblem, matchReturnRows, type ReturnLine, type TraceSpan } from "./expenseCategoryRules";
+import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName, restoreProblem, SYSTEM_EXPENSE_TEXT } from "./expenseCategoryRules";
 import type { PriceChange, PriceChangeLine, PriceChangeSummary, PriceChangeDetail, PriceDetailLine, PricePriorMap } from "@/types";
 import { buildPlan, demoHash, isFracCurrency, ladderFor, missingIds, normalizeSpec, productScopeOf, bpText, type PriceSpec, type PricePreview } from "./priceRaise";
 import { getActiveCurrency } from "./currency";
@@ -4333,10 +4333,10 @@ const demoRepo = {
     }
     return demoAddExpense(input);
   },
-  /** مرآةُ findReturnTrace: نفسُ الحكم (matchReturnRows) على سحوبات النسخة التجريبية. */
-  async findReturnTrace(span: TraceSpan, lines: ReturnLine[]): Promise<Expense[]> {
-    if (!Number.isFinite(Date.parse(span.from)) || !Number.isFinite(Date.parse(span.to))) throw new Error("trace_span_invalid");
-    return matchReturnRows(demoExpensesLoad(), span, lines);
+  /** مرآةُ listReturnRows: سطورُ «مرتجع» بمدّة من سحوبات النسخة التجريبية. */
+  async listReturnRows(from: string, to: string): Promise<Expense[]> {
+    const a = Date.parse(from), b = Date.parse(to);
+    return demoExpensesLoad().filter((x) => x.category === SYSTEM_EXPENSE_TEXT.returns && Date.parse(x.spent_at) >= a && Date.parse(x.spent_at) <= b);
   },
   async deleteExpense(id: string): Promise<void> {
     // مرآةُ الحذف المسموع: صفٌّ غيرُ موجود يُرمى (no_row_updated) لا «انحذف» على لا شيء.

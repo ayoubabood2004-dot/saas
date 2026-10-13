@@ -1,5 +1,5 @@
 import {
-  outboxInternals, outboxDead, outboxDiscarded, needsReview, KEY_DISCARDED, DISCARDED_CAP, type OutboxOp,
+  outboxInternals, outboxDead, outboxDiscarded, needsReview, KEY_DISCARDED, DISCARDED_CAP, UNCONFIRMED, type OutboxOp,
 } from "./outbox";
 
 /* ============================================================================
@@ -15,16 +15,25 @@ import {
  * ==========================================================================*/
 const { load, whoNow, sameWho, sameVersion, announce, schedule, KEY, KEY_DEAD } = outboxInternals;
 
-/** للداخل الآن (حسابُه وعيادتُه) — وغيرُ ذلك لا يُعاد باسمه. */
-export const isMine = (op: OutboxOp): boolean => !!op.who && sameWho(op.who, whoNow());
+/** لمن هذه العملية بنظر الداخل الآن:
+ *   • `mine`    — حسابُه وعيادتُه المؤكَّدة: تُعاد كما خُتمت.
+ *   • `unknown` — بلا ختم (نسخةٌ أقدم)، أو ختمُه هو بلا عيادةٍ مؤكَّدة: إن رُفعت فعلى عيادته الآن.
+ *   • `other`   — حسابٌ آخر أو عيادةٌ أخرى: لا تُعاد باسمه (لها الحذفُ وحده). */
+export type OwnerState = "mine" | "unknown" | "other";
+export function ownerState(op: OutboxOp): OwnerState {
+  const now = whoNow();
+  if (!op.who || (op.who.clinic === UNCONFIRMED && op.who.user === now?.user)) return "unknown";
+  return sameWho(op.who, now) && op.who.clinic !== UNCONFIRMED ? "mine" : "other";
+}
+export const isMine = (op: OutboxOp): boolean => ownerState(op) === "mine";
 
-/** عيادةُ الختم بلغة الخادم ("default" = حسابُ صاحبه — workspaceClinic.ts). */
-const target = (w: { user: string; clinic: string }) => (w.clinic === "default" ? w.user : w.clinic);
 /** يُسأل الخادمُ عن أثرها من هذه الجلسة؟ سحوباتُ العيادة الحاليّة وحدها تُقرأ (RLS)، فمختومةٌ بعيادةٍ
- *  أخرى «ما لكينا» عنها كذبٌ مطمئن — لا تُسأل. وبلا ختمٍ تُرفع (إن رُفعت) على العيادة الحاليّة. */
+ *  أخرى «ما لكينا» عنها كذبٌ مطمئن — لا تُسأل. وما لا تُعرف عيادتُه يُرفع (إن رُفع) هنا فيُسأل هنا —
+ *  ما دامت عيادةُ الداخل مؤكَّدة. */
 export const traceable = (op: OutboxOp): boolean => {
   const now = whoNow();
-  return !!now && (!op.who || target(op.who) === target(now));
+  if (!now || now.clinic === UNCONFIRMED) return false;
+  return ownerState(op) === "unknown" || op.who?.clinic === now.clinic;
 };
 /** مدّةُ البحث عن أثر المرتجع: من حفظه إلى آخر محاولة. بلا ختمٍ (نسخةٌ أقدم) تاريخُ محاولاته لم
  *  يُسجَّل — حاولت الرفعَ حتى نُقلت للرفّ — فالمدّةُ إلى الآن. */
@@ -37,26 +46,28 @@ export const traceSpan = (op: OutboxOp, nowIso: string): { from: string; to: str
 /** المختومةُ التي رفضتها القاعدةُ مراراً (`needsReview` قائمتُه بـoutbox.ts للشارة). */
 export const outboxRejectedList = (): OutboxOp[] => outboxDead().filter((d) => !needsReview(d));
 
-export type ShelfResult = { ok: true } | { ok: false; reason: "missing" | "no_session" | "other_owner" | "storage" };
+export type ShelfResult = { ok: true } | { ok: false; reason: "missing" | "no_session" | "unconfirmed" | "other_owner" | "storage" };
 
 /** «ارفعها» / «أعد المحاولة» على عمليةٍ بعينها بعد أن رآها مديرٌ بتفاصيلها.
- *  بلا ختمٍ تُختم بمن قرّر؛ ومختومةٌ بغيره لا تُعاد باسمه (لها الحذفُ وحده — والصفحةُ لا تعرض
- *  غيرَه، وهذا الحارسُ لتبويبٍ قديمٍ أو حسابٍ تبدّل بين الرسم والضغطة). */
+ *  ما لا تُعرف عيادتُه يُختم بمن قرّر وعيادته المؤكَّدة (لا ختمَ بعيادةٍ لم تُؤكَّد — `unconfirmed`)؛
+ *  ومختومةٌ بغيره لا تُعاد باسمه (لها الحذفُ وحده — والصفحةُ لا تعرض غيرَه، وهذا الحارسُ لتبويبٍ
+ *  قديمٍ أو حسابٍ تبدّل بين الرسم والضغطة). */
 export function outboxReviveOne(id: string, seen?: OutboxOp): ShelfResult {
   // `seen` النسخةُ التي عُرضت: رفٌّ استبدلها بعدها بنفس المفتاح ⇒ لا يُرفع ما لم يره أحد.
   const d = outboxDead().find((x) => x.id === id && (!seen || sameVersion(x, seen)));
   if (!d) return { ok: false, reason: "missing" };
   const now = whoNow();
   if (!now) return { ok: false, reason: "no_session" };
-  if (d.who && !sameWho(d.who, now)) return { ok: false, reason: "other_owner" };
+  const owner = ownerState(d);
+  if (owner === "other") return { ok: false, reason: "other_owner" };
+  if (owner === "unknown" && now.clinic === UNCONFIRMED) return { ok: false, reason: "unconfirmed" };
   const ops = load();
   /* نسخةٌ بنفس المفتاح بالطابور أحدثُ منها (يومٌ أُعيد إدخالُه): تبقى هي، وتُشال نسخةُ الرفّ. */
   if (!ops.some((o) => o.id === id)) {
     ops.push({
-      ...d, tries: 0, last_error: undefined, stale: undefined, who: d.who ?? now,
-      /* راجعها بشر: إدخالٌ بمفتاحٍ طبيعيّ لا يدمج فوق ما بالخادم (ربما صُحّح يدوياً بعدها)، والمرتجعُ
-       * يُعفى من التوقيف ٦ أيامٍ من هذا القرار وحدها (ثم يُمسح مرجعُ محاولته بالخادم). */
-      reviewed: true, reviewed_at: new Date().toISOString(),
+      ...d, tries: 0, last_error: undefined, stale: undefined, who: owner === "unknown" ? now : d.who,
+      // المرتجعُ يُعفى من التوقيف ٦ أيامٍ من هذا القرار وحدها (ثم يُمسح مرجعُ محاولته بالخادم).
+      reviewed_at: new Date().toISOString(),
     });
   }
   try { localStorage.setItem(KEY, JSON.stringify(ops)); }
