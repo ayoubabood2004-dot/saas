@@ -554,6 +554,26 @@ reset();
   chk("حُذفت أثناء سؤال الخادم ⇒ لا upsert", calls.filter((c) => c.row?.id === "gone").length, 0);
 }
 
+/* ١٥) تدقيقٌ عدائيّ ثانٍ ١٣/١٠: الهويّةُ قبل كلّ عملية. طلبٌ عالقٌ والكاشيرُ يخرج بتبويبٍ ثانٍ ويدخل
+ *     غيرُه بنفس العيادة — وكلُّ طلبٍ يحمل جلسةَ التخزين الآن، فكان الثاني يُرفع باسم الداخل الجديد. */
+reset();
+{
+  ob.outboxEnqueue("expenses", { id: "e1" });
+  ob.outboxEnqueue("expenses", { id: "e2" });
+  let release; const gate = new Promise((res) => { release = res; });
+  const realFrom = globalThis.__sb.from;
+  globalThis.__sb.from = (table) => ({ upsert: async (row, opts) => { calls.push({ kind: "insert", table, row, opts }); if (row.id === "e1") await gate; return result(); } });
+  const fl = ob.flushOutbox();
+  await new Promise((res) => setTimeout(res, 0));
+  signIn("user-B", "clinic-A");                // التبويبُ الثاني: خرج A ودخل B بنفس العيادة
+  release(); await fl;
+  chk("دخل غيرُه أثناء الجولة ⇒ الثانيةُ لا تُرفع باسمه، وتبقى لأهلها", [calls.map((c) => c.row.id), ob.outboxWaitingOthers().map((o) => o.id)], [["e1"], ["e2"]]);
+  signIn("user-A", "clinic-A");
+  await ob.flushOutbox();
+  globalThis.__sb.from = realFrom;
+  chk("  ورجع صاحبُها ⇒ تُرفع", [calls.map((c) => c.row.id), ob.outboxCount()], [["e1", "e2"], 0]);
+}
+
 // ── المفتاحُ الطبيعيّ: إدخالُ اليوم (0193) ───────────────────────────────
 // صفُّ اليوم مفتاحُه (الدفعة + التاريخ) لا معرّفٌ مولودٌ بالجهاز. وثلاثةُ
 // فروقٍ عن الإدراج العاديّ، كلٌّ منها كان عطباً محتملاً:

@@ -1,7 +1,7 @@
 /* ============================================================================
  * صفحةُ مراجعة ما لم يصل الخادم (قرارُ المالك ١٣/١٠) — مرسومةً بـReact الحقيقيّ والقاموسين.
  *
- * من ٢٦/٩ إلى ١٣/١٠ كان ختمُ الطابور «بلا أحد» بالنسخة السحابيّة، فكلُّ ما فشل شبكياً ذهب
+ * من ٦/٩ إلى ١٣/١٠ كان ختمُ الطابور «بلا أحد» بالنسخة السحابيّة، فكلُّ ما فشل شبكياً ذهب
  * للرفّ ولم يُحيِه «استأنف». ورفعُه الأعمى قد يكرّر ما أدخلته العيادةُ يدوياً — فيُعرض وحدةً
  * وحدة: نوعُه، ووقتُه، وما بحمولته (اسم، مبلغ، عدد)، و«ارفعها» / «احذفها» يسأل بالاسم.
  *
@@ -57,7 +57,7 @@ const stubs = {
         export const traceSpan = (op, now) => ({ from: op.queued_at, to: now });
       `,
       "@/lib/managerOverride": "export const useOverride = () => ({ active: false, until: null, deviceLocked: !!globalThis.__restricted, restricted: !!globalThis.__restricted, stockLocked: false });",
-      "@/lib/repo": "export const repo = { listReturnRows: async () => [], listPoultryDaily: async () => [] };",
+      "@/lib/repo": "export const repo = { listReturnRows: async () => [], listPoultryDaily: async () => [], countVisible: async () => 0 };",
       "@/hooks/usePermissions": "export const usePermissions = () => ({ role: globalThis.__role || 'manager', baseRole: globalThis.__role || 'manager', can: () => true });",
     };
     const keys = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
@@ -72,8 +72,8 @@ try {
       export { renderToStaticMarkup } from "react-dom/server.browser";
       export { createElement } from "react";
       export { MemoryRouter } from "react-router-dom";
-      export { OutboxReview, opSummary, sharesServerRow } from "./src/pages/OutboxReview.tsx";
-      export { matchReturnRows, returnLineMatches, expectedReturnRows, traceBounds } from "./src/lib/returnTrace.ts";
+      export { OutboxReview, opSummary, sharesServerRow, refsOf } from "./src/pages/OutboxReview.tsx";
+      export { matchReturnRows, returnLineMatches, expectedReturnRows, traceBounds, traceVerdict, returnIsDistinctive } from "./src/lib/returnTrace.ts";
       export { SYSTEM_EXPENSE_TEXT } from "./src/lib/expenseCategoryRules.ts";
     `, resolveDir: root, loader: "tsx", sourcefile: "obx.tsx" },
     bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
@@ -144,9 +144,31 @@ console.log("▸ أثرُ المرتجع بالخادم (returnTrace) — الن
   check("  ومدّةٌ تالفة ⇒ لا حدودَ سؤال (يُقال «تعذّر» لا «ما لكينا»)", M.traceBounds({ from: "x", to: at }) === null && M.matchReturnRows(rows, { from: "x", to: at }, L).length === 0);
   check("  وتصنيفٌ غير «مرتجع» ⇒ ليس أثراً", !M.returnLineMatches(row(2, rows[0].description, 10000, "إيجار"), pt, L[0]));
   check("  ومرتجعٌ بلا سطورٍ (كلُّه مجّاني) ⇒ لا أثرَ مزعوم", M.matchReturnRows(rows, pt, []).length === 0);
+  /* «وصلت — احذفها» لأثرٍ مميِّزٍ قريبٍ من إرسالٍ فعليّ وحده (تدقيقٌ عدائيّ ثانٍ ١٣/١٠): مرتجعُ زبونٍ
+   * عابرٍ نصُّه نصُّ كلِّ مرتجعٍ مثله، والمدّةُ لما بلا ختمٍ تمتدّ أسابيع. */
+  const anon = { p_items: [{ name: "درونتال", qty: 1, unit_price: 5000 }], p_meta: {} };
+  const AL = M.expectedReturnRows(anon);
+  const later = row(4 * 1440, "راجع: درونتال", 5000);   // بيعةٌ أخرى بعد ٤ أيام
+  const wide = { from: at, to: new Date(Date.parse(at) + 12 * 86400000).toISOString() };
+  check("مرتجعٌ بلا زبونٍ ولا ملاحظة يطابق بيعةً أخرى ⇒ «شبيه» لا «وصلت»", M.matchReturnRows([later], wide, AL).length === 1 && !M.returnIsDistinctive(anon) && M.traceVerdict([later], false, [at]) === "similar");
+  check("  ومميِّزٌ (زبون) قريبٌ من الحفظ ⇒ «وصلت»", M.returnIsDistinctive({ p_meta: { customer_name: " حسن " } }) && M.traceVerdict([rows[0]], true, [at]) === "found");
+  check("  ومميِّزٌ لكن بعيدٌ عن كلّ إرسالٍ معروف (أيّاماً بعده) ⇒ «شبيه»", M.traceVerdict([row(4 * 1440, rows[0].description, 10000)], true, [at]) === "similar");
+  check("  وقريبٌ من محاولةٍ لاحقة مسجَّلة ⇒ «وصلت»", M.traceVerdict([row(4 * 1440, rows[0].description, 10000)], true, [at, new Date(Date.parse(at) + 4 * 86400000).toISOString()]) === "found");
+  check("  وملاحظةٌ فراغاتٌ وحدها ليست تمييزاً", !M.returnIsDistinctive({ p_meta: { note: "   " } }));
   // سطرُ خادمٍ واحد لعمليتين بالقائمة: يُقال (لا تُحذف الاثنتان)
   const tr = { a: { state: "found", at, desc: "d", ids: ["r1"] }, b: { state: "found", at, desc: "d", ids: ["r1"] }, c: { state: "found", at, desc: "d", ids: ["r2"] }, d: { state: "none" } };
   check("سطرٌ واحد يطابق عمليتين ⇒ يُنبَّه عليهما، لا على غيرهما", M.sharesServerRow(tr, "a") && M.sharesServerRow(tr, "b") && !M.sharesServerRow(tr, "c") && !M.sharesServerRow(tr, "d"));
+  check("  و«شبيه» مع «وصلت» على نفس السطر كذلك", M.sharesServerRow({ ...tr, b: { ...tr.b, state: "similar" } }, "a"));
+}
+
+console.log("▸ ما تشير إليه العمليةُ (refsOf) — يُسأل عنه قبل رفع ما لا تُعرف عيادتُه");
+{
+  const J = (x) => JSON.stringify(x);
+  check("إدخالُ يوم ⇒ دفعتُه", J(M.refsOf(DAY)) === J([{ table: "poultry_cycles", ids: ["c"] }]), J(M.refsOf(DAY)));
+  check("منتج ⇒ شركتُه وقسمُه ومزرعتُه (ما وُجد منها)", J(M.refsOf({ ...PRD, row: { id: "p", company_id: "co", section_id: "se" } })) === J([{ table: "companies", ids: ["co"] }, { table: "company_sections", ids: ["se"] }]));
+  check("مرتجع ⇒ منتجاتُه بلا تكرار (والخدمةُ بلا منتجٍ لا شيء)", J(M.refsOf({ ...RET, args: { p_items: [{ product_id: "x" }, { product_id: "x" }, { name: "خدمة" }], p_meta: {} } })) === J([{ table: "products", ids: ["x"] }]));
+  check("صرفُ دواجن ⇒ دفعتُه ومنتجُه", J(M.refsOf(USE)) === J([]) && J(M.refsOf({ ...USE, args: { ...USE.args, p_cycle: "cy", p_product: "pr" } })) === J([{ table: "poultry_cycles", ids: ["cy"] }, { table: "products", ids: ["pr"] }]));
+  check("سحبٌ بلا تصنيف، وشركة ⇒ لا شيء", J(M.refsOf(EXP)) === "[]" && J(M.refsOf({ kind: "insert", id: "c", table: "companies", queued_at: "q", tries: 0, row: { id: "c" } })) === "[]");
 }
 
 console.log("▸ الصفحةُ بالعربية");
@@ -165,6 +187,11 @@ console.log("▸ الصفحةُ بالعربية");
   /* أوّلُ رسم: سؤالُ الخادم عن المرتجع لم يبدأ بعد — «ارفعها» عليه مقفولة (كانت مفتوحةً لحظة)، والسحبُ مفتوح. */
   const sendOf = (id) => raw.match(new RegExp(`data-obx-item="${id.replace(/[:.]/g, "\\$&")}"[\\s\\S]*?<button([^>]*data-obx-send[^>]*)>`))?.[1] ?? "";
   check("أوّلُ رسم: «ارفعها» على المرتجع وإدخالِ اليوم مقفولةٌ قبل جواب الخادم، وعلى السحب لا", /disabled/.test(sendOf(RET.id)) && /disabled/.test(sendOf(DAY.id)) && !/disabled/.test(sendOf(EXP.id)), JSON.stringify([sendOf(RET.id), sendOf(DAY.id), sendOf(EXP.id)]));
+  // وما لا تُعرف عيادتُه ويشير لشركة: مقفولةٌ حتى يثبت أنها بهذه العيادة
+  globalThis.__list = [{ ...PRD, row: { ...PRD.row, company_id: "co-1" } }];
+  const rr = html("ar");
+  check("  ومنتجٌ لا تُعرف عيادتُه يشير لشركة ⇒ مقفولةٌ حتى يثبت أن الشركةَ هنا", /disabled/.test(rr.match(/<button([^>]*data-obx-send[^>]*)>/)?.[1] ?? ""));
+  globalThis.__list = [RET, EXP, PRD, DAY];
   globalThis.__list = [];
   check("قائمةٌ فارغة ⇒ «ماكو شي باقي»", text(html("ar")).includes(AR.obx.empty));
 

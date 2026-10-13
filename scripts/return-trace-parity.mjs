@@ -41,6 +41,12 @@ const CASES = [
   { items: [{ name: "واحد", qty: "1.000", unit_price: 10 }, { name: "تقريباً واحد", qty: -0.9995, unit_price: 10 }], meta: {} },
   { items: [{ name: 123, qty: -12.34, unit_price: 0.5 }], meta: { customer_name: "  سارة  ", note: "" } },
   { items: [{ name: "درونتال", qty: -2, unit_price: 5000 }, { name: "درونتال", qty: -2, unit_price: 5000 }], meta: { customer_name: "حسن" } },
+  /* أنصافُ فلسٍ بمبالغ كبيرة: الفاصلةُ العائمة كانت تقرّبها للأسفل والخادمُ للأعلى (تدقيقٌ عدائيّ ١٣/١٠). */
+  { items: [{ name: "علف بالكيلو", qty: -16.141, unit_price: 4375 }], meta: {} },
+  { items: [{ name: "علف ٢", qty: -17.141, unit_price: 3835 }], meta: {} },
+  { items: [{ name: "لقاح", qty: -4.5, unit_price: 16729.67 }], meta: { customer_name: "مزرعة" } },
+  { items: [{ name: "أُس", qty: "-2e0", unit_price: "1.5e3" }, { name: "صغيرٌ جدّاً", qty: -1e-7, unit_price: 5 }], meta: {} },
+  { items: [{ name: "كبير", qty: -99999.999, unit_price: 99999.99 }, { name: "بمسافات", qty: " -2.5 ", unit_price: " 333.333 " }], meta: {} },
 ];
 
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;

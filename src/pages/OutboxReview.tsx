@@ -7,7 +7,8 @@ import { outboxReviewList, outboxWaitingOthers, flushOutbox, type OutboxOp } fro
 import {
   outboxRejectedList, outboxReviveOne, outboxDiscard, ownerState, traceable, traceSpan, type ShelfResult,
 } from "@/lib/outboxShelf";
-import { expectedReturnRows, matchReturnRows, traceBounds, type ReturnLine } from "@/lib/returnTrace";
+import { expectedReturnRows, matchReturnRows, traceBounds, traceVerdict, returnIsDistinctive, type ReturnLine } from "@/lib/returnTrace";
+import type { VisibleTable } from "@/lib/repoDemo";
 import { repo } from "@/lib/repo";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
@@ -18,7 +19,7 @@ import { playTap } from "@/lib/sounds";
  * مراجعةُ ما لم يصل الخادم (outbox.ts، قرارُ المالك ١٣/١٠) — صفحةٌ لا نافذة: نصوصُها (obx)
  * بالنصف البارد، والشارةُ (OutboxChip بالشريط والقائمة الجانبية) تنقل إليها.
  *
- * من ٢٦/٩ إلى ١٣/١٠ كان كلُّ ما فشل شبكياً يُختم «بلا أحد» ويُنقل للرفّ، و«استأنف» لم يُحيِه —
+ * من ٦/٩ إلى ١٣/١٠ كان كلُّ ما فشل شبكياً يُختم «بلا أحد» ويُنقل للرفّ، و«استأنف» لم يُحيِه —
  * والعيادةُ رأته «متعثّرة» فربما أدخلته بيدها بعدها. فلا رفعَ أعمى: كلُّ عمليةٍ بنوعها ووقتها وما
  * بحمولتها، و«ارفعها» أو «احذفها» — للمدير وحده (مالٌ ومخزون). والحذفُ يسأل بالاسم بمكانه (لا
  * نافذةَ متصفّح) ويذهب لأرشيفٍ بالجهاز. وثلاثةُ أقسام:
@@ -30,6 +31,9 @@ import { playTap } from "@/lib/sounds";
  * اليوم يُسأل عن يومه بالخادم: «ارفعها» تدمج، فيُرى قبلها أهو أقدمُ منها أم أُعيد إدخالُه بعدها
  * (كانت لا تدمج فتصير «لا شيء» صامتاً ويُقال «ارتفعت»). و«ارفعها» على الاثنين لا تُفتح قبل الجواب
  * (أو تعذّره) — ولا بأوّل رسم: كانت مفتوحةً لحظةً قبل أن يبدأ السؤال.
+ * وما لا تُعرف عيادتُه يُسأل عمّا يشير إليه (دفعة، شركة، منتج، تصنيف): «تُرفع على العيادة الحاليّة»
+ * لا يصدق على إدخالِ يومٍ دفعتُه بعيادةٍ أخرى — كان يُكتب صفّاً يتيماً لا تراه العيادتان. فإشارةٌ لا تراها
+ * هذه العيادة تقفل «ارفعها» (`refs`).
  * ==========================================================================*/
 
 const num = (v: unknown): number | null => {
@@ -84,13 +88,34 @@ export function opSummary(op: OutboxOp): OpSummary {
   };
 }
 
-type Trace = { state: "checking" } | { state: "none" } | { state: "failed" } | { state: "found"; at: string; desc: string; ids: string[] };
+/** `found`: أثرٌ مميِّزٌ قريبٌ من إرسالٍ فعليّ (وصل — الأسلمُ الحذف)؛ `similar`: مثلُه موجود — يُقارَن بالعين
+ *  (مرتجعُ زبونٍ عابرٍ نصُّه نصُّ كلِّ مرتجعٍ مثله — traceVerdict). */
+type Trace = { state: "checking" } | { state: "none" } | { state: "failed" } | { state: "found" | "similar"; at: string; desc: string; ids: string[] };
 /** سطرُ خادمٍ واحد يطابق عمليتين هنا؟ واحدةٌ منهما وحدها هي — حذفُ الاثنتين يُسقط مرتجعاً حقيقيّاً. */
 export function sharesServerRow(traces: Record<string, Trace>, id: string): boolean {
   const tr = traces[id];
-  if (tr?.state !== "found") return false;
-  return Object.entries(traces).some(([k, o]) => k !== id && o.state === "found" && o.ids.some((x) => tr.ids.includes(x)));
+  if (tr?.state !== "found" && tr?.state !== "similar") return false;
+  return Object.entries(traces).some(([k, o]) => k !== id && (o.state === "found" || o.state === "similar") && o.ids.some((x) => tr.ids.includes(x)));
 }
+/** ما تشير إليه العمليةُ من صفوف عيادتها — يُسأل عنه قبل رفع ما لا تُعرف عيادتُه. */
+export function refsOf(op: OutboxOp): { table: VisibleTable; ids: string[] }[] {
+  const id = (v: unknown) => (typeof v === "string" && v ? [v] : []);
+  const out: { table: VisibleTable; ids: string[] }[] = [];
+  const add = (table: VisibleTable, ids: string[]) => { if (ids.length) out.push({ table, ids: [...new Set(ids)] }); };
+  if (op.kind === "rpc") {
+    const a = (op.args ?? {}) as Record<string, unknown>;
+    if (op.fn === "poultry_consume") { add("poultry_cycles", id(a.p_cycle)); add("products", id(a.p_product)); }
+    else add("products", (Array.isArray(a.p_items) ? a.p_items : []).flatMap((it) => id((it as Record<string, unknown> | null)?.product_id)));
+    return out;
+  }
+  const r = (op.row ?? {}) as Record<string, unknown>;
+  if (op.table === "poultry_daily") add("poultry_cycles", id(r.cycle_id));
+  if (op.table === "company_sections") add("companies", id(r.company_id));
+  if (op.table === "products") { add("companies", id(r.company_id)); add("company_sections", id(r.section_id)); add("poultry_farms", id(r.farm_id)); }
+  if (op.table === "expenses") add("expense_categories", id(r.category_id));
+  return out;
+}
+type Refs = { state: "checking" | "ok" | "foreign" | "failed" };
 /** يومُ الخادم لإدخالٍ يوميّ: غائب، أو أقدمُ من هذا الإدخال، أو أحدث (أُعيد إدخالُه بعده). */
 type DayCheck = { state: "checking" } | { state: "failed" } | { state: "none" }
   | { state: "older" | "newer"; at: string; dead: number | null; culled: number | null };
@@ -112,6 +137,7 @@ export function OutboxReview() {
   const [note, setNote] = useState<string | null>(null);
   const [traces, setTraces] = useState<Record<string, Trace>>({});
   const [days, setDays] = useState<Record<string, DayCheck>>({});
+  const [refs, setRefs] = useState<Record<string, Refs>>({});
   const refresh = () => { setLists(read()); setAsking(null); };
   /* القوائمُ تتبع التخزين: رفعٌ نجح بالخلفية، أو تبويبٌ آخر عالج عملية. */
   useEffect(() => {
@@ -141,8 +167,18 @@ export function OutboxReview() {
   useEffect(() => {
     mounted.current = true;
     for (const op of [...lists.review, ...lists.rejected, ...lists.others]) {
-      if (!needsCheck(op) || !traceable(op) || asked.current.has(op.id)) continue;
+      if (!traceable(op) || asked.current.has(op.id)) continue;
       asked.current.add(op.id);
+      // لا تُعرف عيادتُها: كلُّ ما تشير إليه لازم تراه هذه العيادة، وإلا فليست لها.
+      const want = ownerState(op) === "unknown" ? refsOf(op) : [];
+      if (want.length) {
+        setRefs((m) => ({ ...m, [op.id]: { state: "checking" } }));
+        void Promise.all(want.map((w) => repo.countVisible(w.table, w.ids).then((n) => n === w.ids.length))).then(
+          (ok) => { if (mounted.current) setRefs((m) => ({ ...m, [op.id]: { state: ok.every(Boolean) ? "ok" : "foreign" } })); },
+          () => { if (mounted.current) setRefs((m) => ({ ...m, [op.id]: { state: "failed" } })); },
+        );
+      }
+      if (!needsCheck(op)) continue;
       if (isReturn(op)) {
         setTraces((m) => ({ ...m, [op.id]: { state: "checking" } }));
         const span = traceSpan(op, new Date().toISOString());
@@ -151,7 +187,10 @@ export function OutboxReview() {
         if (!b) { done({ state: "failed" }); continue; }
         void repo.listReturnRows(b.from, b.to).then((all) => {
           const rows = matchReturnRows(all, span, opSummary(op).returnLines);
-          done(rows.length ? { state: "found", at: rows[0].spent_at, desc: rows[0].description ?? "", ids: rows.map((r) => r.id) } : { state: "none" });
+          const moments = [op.queued_at, ...(op.attempts ?? []), ...(op.reviewed_at ? [op.reviewed_at] : [])];
+          done(rows.length
+            ? { state: traceVerdict(rows, returnIsDistinctive(op.kind === "rpc" ? op.args : {}), moments), at: rows[0].spent_at, desc: rows[0].description ?? "", ids: rows.map((r) => r.id) }
+            : { state: "none" });
         }, () => done({ state: "failed" }));
         continue;
       }
@@ -220,7 +259,9 @@ export function OutboxReview() {
     if (!manager) return null;
     // لم يُجب الخادمُ بعد (أو لم يُسأل بعد — أوّلُ رسم): لا رفعَ قبل الجواب (قد يكون وصل، أو أُعيد إدخالُه).
     const st = (isReturn(op) ? traces[op.id] : days[op.id])?.state;
-    const waiting = needsCheck(op) && (!st || st === "checking");
+    // وما لا تُعرف عيادتُه: لا رفعَ حتى يثبت أن ما يشير إليه بهذه العيادة (لا بأوّل رسم ولا بتعذّر السؤال).
+    const foreignRisk = ownerState(op) === "unknown" && refsOf(op).length > 0 && refs[op.id]?.state !== "ok";
+    const waiting = (needsCheck(op) && (!st || st === "checking")) || foreignRisk;
     const label = opSummary(op).name ?? t(`obx.kind.${opSummary(op).kind}`, { defaultValue: opSummary(op).kind });
     return asking === op.id ? (
       <div className="mt-2 space-y-2 rounded-lg bg-danger-50 p-2 dark:bg-danger-500/10" data-obx-ask>
@@ -241,17 +282,23 @@ export function OutboxReview() {
   const traceLine = (op: OutboxOp) => {
     const tr = traces[op.id];
     if (!tr) return dayLine(op);
-    if (tr.state === "found") {
+    if (tr.state === "found" || tr.state === "similar") {
       const shared = sharesServerRow(traces, op.id);
       return (
-        <div data-obx-trace="found">
-          <p className={warn}>{t("obx.traceFound", { when: when(tr.at), desc: tr.desc })}</p>
+        <div data-obx-trace={tr.state}>
+          <p className={warn}>{t(tr.state === "found" ? "obx.traceFound" : "obx.traceSimilar", { when: when(tr.at), desc: tr.desc })}</p>
           {shared && <p className="mt-1 text-2xs font-semibold text-danger-700 dark:text-danger-300" data-obx-trace-shared>{t("obx.traceShared")}</p>}
         </div>
       );
     }
     const key = tr.state === "checking" ? "obx.traceChecking" : tr.state === "none" ? "obx.traceNone" : "obx.traceFailed";
     return <p className="mt-2 text-2xs text-ink-subtle" data-obx-trace={tr.state}>{t(key)}</p>;
+  };
+  const refsLine = (op: OutboxOp) => {
+    const r = refs[op.id];
+    if (!r || r.state === "ok") return null;
+    if (r.state === "foreign") return <p className="mt-2 rounded-lg bg-danger-50 px-2 py-1.5 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-obx-refs="foreign">{t("obx.refsForeign")}</p>;
+    return <p className="mt-2 text-2xs text-ink-subtle" data-obx-refs={r.state}>{t(r.state === "checking" ? "obx.refsChecking" : "obx.refsFailed")}</p>;
   };
   const dayLine = (op: OutboxOp) => {
     const d = days[op.id];
@@ -294,7 +341,8 @@ export function OutboxReview() {
                     {head(op)}
                     {details(op)}
                     <p className="mt-1 text-2xs text-ink-subtle" data-obx-why>{t(why)}</p>
-                    {traceLine(op)}
+                    {refsLine(op)}
+                  {traceLine(op)}
                     {actions(op, other ? null : t("obx.send"))}
                   </li>
                 );
@@ -313,6 +361,7 @@ export function OutboxReview() {
                   {head(op)}
                   {details(op)}
                   {op.last_error && <p className="mt-1 break-words text-2xs text-danger-700 dark:text-danger-300" data-obx-error>{t("obx.lastError", { e: op.last_error })}</p>}
+                  {refsLine(op)}
                   {traceLine(op)}
                   {/* مختومةٌ بحسابٍ آخر: «أعد المحاولة» كانت تركنها باسمه وتقول «ترتفع هسه» — لها الحذفُ وحده. */}
                   {ownerState(op) !== "mine" && <p className="mt-1 text-2xs text-ink-subtle" data-obx-other-owner>{t("obx.otherOwner")}</p>}
@@ -332,6 +381,7 @@ export function OutboxReview() {
                 <li key={op.id} className="rounded-xl border border-line bg-surface-2/40 p-3" data-obx-item={op.id}>
                   {head(op)}
                   {details(op)}
+                  {refsLine(op)}
                   {traceLine(op)}
                   {actions(op, null)}
                 </li>

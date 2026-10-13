@@ -2427,6 +2427,12 @@ const supabaseRepo: DemoRepo = {
     return allPages<Expense>(() => sbc().from("expenses").select("id, amount, description, category, spent_at")
       .eq("category", SYSTEM_EXPENSE_TEXT.returns).gte("spent_at", from).lte("spent_at", to));
   },
+  /** كم من هذه المعرّفات تراه هذه العيادة (RLS)؟ — صفحةُ /outbox تسأل قبل رفع عمليةٍ لا تُعرف عيادتُها:
+   *  دفعةٌ أو شركةٌ أو منتجٌ من عيادةٍ أخرى يعني أنها ليست لهذه العيادة. يرمي على الخطأ (لا «صفر» كاذب). */
+  async countVisible(table, ids) {
+    if (!ids.length) return 0;
+    return listOrThrow<{ id: string }>(await sbc().from(table).select("id").in("id", ids)).length;
+  },
   async deleteExpense(id) {
     // حذفٌ يُسمَع (تدقيقٌ عدائيّ على 0227): سحبٌ حُفظ والنتُّ واگع ينتظر بالطابور — حذفُه من
     // القاعدة صفرُ صفوفٍ بلا خطأ، فيُقال «انحذف» ثم يرفعه الطابورُ بعد ثوانٍ فيرجع ويُحسب
@@ -2812,7 +2818,7 @@ export class ReadOnlyError extends Error {
  */
 const READ_ONLY_ALLOWED = new Set<string>([
   // مراجعةُ صندوق الصادر (/outbox): أثرُ مرتجعٍ قديم — قراءةٌ، والعيادةُ المنتهي اشتراكُها تراجع أيضاً.
-  "listReturnRows",
+  "listReturnRows", "countVisible",
   // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
   "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
   "listPoultryUse", "poultryCycleStats",

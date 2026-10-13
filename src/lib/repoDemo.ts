@@ -808,6 +808,9 @@ function within<T>(rows: T[], col: string, r?: DateRange): T[] {
 }
 
 
+/** جداولُ تسأل عنها صفحةُ /outbox «أهو بهذه العيادة؟» (countVisible). */
+export type VisibleTable = "poultry_cycles" | "poultry_farms" | "companies" | "company_sections" | "expense_categories" | "products";
+
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
     return loadDB().pets.filter((p) => p.owner_id === ownerId);
@@ -4332,6 +4335,16 @@ const demoRepo = {
       throw Object.assign(new Error('insert or update on table "expenses" violates foreign key constraint "expenses_category_fk"'), { code: "23503" });
     }
     return demoAddExpense(input);
+  },
+  /** مرآةُ countVisible: ما تراه العيادةُ التجريبية من هذه المعرّفات. */
+  async countVisible(table: VisibleTable, ids: string[]): Promise<number> {
+    const rows: { id: string }[] = table === "poultry_cycles" ? pLoad<PoultryCycle>("cycles")
+      : table === "poultry_farms" ? pLoad<PoultryFarm>("farms")
+      : table === "companies" ? await demoRepo.listCompanies()
+      : table === "company_sections" ? await demoRepo.listCompanySections()
+      : table === "expense_categories" ? demoExpCatLoad()
+      : await demoRepo.listProducts();
+    return new Set(rows.map((r) => r.id).filter((id) => ids.includes(id))).size;
   },
   /** مرآةُ listReturnRows: سطورُ «مرتجع» بمدّة من سحوبات النسخة التجريبية. */
   async listReturnRows(from: string, to: string): Promise<Expense[]> {

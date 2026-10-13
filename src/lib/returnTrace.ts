@@ -8,9 +8,14 @@ import { SYSTEM_EXPENSE_TEXT } from "./expenseCategoryRules";
  *   'راجع: ' || coalesce(nullif(btrim(name),''),'صنف')
  *     || (كميةٌ ≠ ١ ? ' × ' || الكميةُ بلا أصفارٍ زائدة : '')
  *     || (زبون ? ' — ' || الزبون : '') || (ملاحظة ? ' (' || الملاحظة || ')' : '')
- * والكميةُ numeric(14,3) والسعرُ numeric(14,2) — يُقرَّبان **قبل** الضرب. فالمطابقةُ النصُّ كلُّه
- * والمبلغ: كانت بادئةَ الاسم وحدها، فمرتجعُ زبونٍ آخر لنفس المادّة والمبلغ بعده بأيّام قيل عنه
- * «وصلت للخادم — الأسلم تحذفها» (تدقيقٌ عدائيّ ١٣/١٠)، والحذفُ يُسقط ردَّ مالٍ ومخزونٍ حقيقيّ.
+ * والكميةُ numeric(14,3) والسعرُ numeric(14,2) — يُقرَّبان **قبل** الضرب، **بحسابٍ عشريٍّ صحيح** (BigInt
+ * من نصّ JSON كما يقرؤه numeric): الفاصلةُ العائمة كانت تقرّب ٧٠٦١٦٫٨٧٥ إلى ‎.87‎ والخادمُ ‎.88‎، فيُقال
+ * «ما لكينا» عن مرتجعٍ وصل. فالمطابقةُ النصُّ كلُّه والمبلغ: كانت بادئةَ الاسم وحدها، فمرتجعُ زبونٍ آخر
+ * لنفس المادّة والمبلغ بعده بأيّام قيل عنه «وصلت للخادم — الأسلم تحذفها» (تدقيقٌ عدائيّ ١٣/١٠).
+ *
+ * و**النصُّ الكامل لا يكفي وحده للحكم**: مرتجعُ زبونٍ عابرٍ بلا اسمٍ ولا ملاحظة نصُّه «راجع: <المادّة>»
+ * لكلّ مرتجعٍ مثله. فـ«وصلت — احذفها» (`found`) لا يُقال إلا لأثرٍ **مميِّز** (زبونٌ أو ملاحظة) **وقريبٍ**
+ * من لحظةٍ أُرسل فيها فعلاً؛ وغيرُه «شبيه» (`similar`): يُعرض ليُقارَن بالعين، بلا توصيةٍ بالحذف.
  *
  * والوقتُ **مدّةٌ لا لحظة** (`TraceSpan`): من الحفظ إلى آخر محاولة — أيُّ محاولةٍ قد تصل ويضيع
  * جوابُها. وحولَها هامشٌ واسع: ساعةُ الجهاز قد تنحرف عن ساعة الخادم.
@@ -26,13 +31,19 @@ type TraceRow = { id?: string; category?: string | null; spent_at: string; descr
 
 /** btrim بوستغريس: المسافاتُ وحدها، لا كلُّ فراغ. */
 const btrim = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "").replace(/^ +| +$/g, "");
-const num = (v: unknown): number => {
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
-  return 0;
-};
-/** تقريبُ numeric(p,s): النصفُ بعيداً عن الصفر (والقيمُ هنا موجبة). */
-const round = (x: number, d: number): number => { const f = 10 ** d; return Math.round(x * f + 1e-9) / f; };
+/** |القيمة| كما يقرؤها numeric من نصّ JSON، مقرَّبةً لـ`scale` منازل (النصفُ بعيداً عن الصفر) —
+ *  عدداً صحيحاً من الأجزاء. ما لا يُقرأ رقماً صفر (الخادمُ كان سيرفض النداءَ كلَّه أصلاً). */
+function scaled(v: unknown, scale: number): bigint {
+  const s = typeof v === "number" ? (Number.isFinite(v) ? String(v) : "") : typeof v === "string" ? v.trim() : "";
+  const m = /^[+-]?(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(s);
+  if (!m || (!m[1] && !m[2])) return 0n;
+  const n = BigInt((m[1] || "") + (m[2] || "") || "0");
+  const k = Number(m[3] || 0) - (m[2] || "").length + scale;
+  if (Math.abs(k) > 40) return 0n;   // خارج numeric(14,·) — النداءُ كان سيفشل
+  if (k >= 0) return n * 10n ** BigInt(k);
+  const d = 10n ** BigInt(-k);
+  return n / d + (2n * (n % d) >= d ? 1n : 0n);
+}
 
 /** السطورُ التي كان retail_return سيكتبها لهذه الحمولة — نصّاً ومبلغاً. */
 export function expectedReturnRows(args: unknown): ReturnLine[] {
@@ -43,12 +54,13 @@ export function expectedReturnRows(args: unknown): ReturnLine[] {
   for (const it of Array.isArray(a.p_items) ? a.p_items : []) {
     if (!it || typeof it !== "object") continue;
     const r = it as Record<string, unknown>;
-    const qty = round(Math.abs(num(r.qty)), 3);
-    if (qty === 0) continue;
-    const amount = round(qty * round(Math.abs(num(r.unit_price)), 2), 2);
-    if (!(amount > 0)) continue;
-    const q = qty === 1 ? "" : ` × ${qty.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}`;
-    out.push({ desc: PREFIX + (btrim(r.name) || NO_NAME) + q + (who ? ` — ${who}` : "") + (note ? ` (${note})` : ""), amount });
+    const qm = scaled(r.qty, 3);                       // v_qty بالألف
+    if (qm === 0n) continue;
+    const cents = (qm * scaled(r.unit_price, 2) + 500n) / 1000n;   // round(v_qty × v_price، ٢) بالفلس
+    if (cents <= 0n) continue;
+    const frac = (qm % 1000n).toString().padStart(3, "0").replace(/0+$/, "");
+    const q = qm === 1000n ? "" : ` \u00d7 ${qm / 1000n}${frac ? `.${frac}` : ""}`;
+    out.push({ desc: PREFIX + (btrim(r.name) || NO_NAME) + q + (who ? ` \u2014 ${who}` : "") + (note ? ` (${note})` : ""), amount: Number(cents) / 100 });
   }
   return out;
 }
@@ -68,7 +80,7 @@ export function traceBounds(span: TraceSpan): { from: string; to: string } | nul
 export function returnLineMatches(row: TraceRow, span: TraceSpan, line: ReturnLine): boolean {
   if (!(spanGap(Date.parse(row.spent_at), span) <= RETURN_TRACE_WINDOW_MS)) return false;
   if (row.category !== SYSTEM_EXPENSE_TEXT.returns) return false;
-  return (row.description ?? "") === line.desc && Math.abs(Number(row.amount ?? NaN) - line.amount) < 0.005;
+  return (row.description ?? "") === line.desc && Math.round(Number(row.amount ?? NaN) * 100) === Math.round(line.amount * 100);
 }
 /** سطورُ الخادم المطابقةُ لكلّ سطور المرتجع (لكلٍّ أقربُ سطرٍ لم يُستعمل)، أو [] إن نقص واحد —
  *  نصفُ تطابقٍ ليس أثراً. */
@@ -83,4 +95,17 @@ export function matchReturnRows<T extends TraceRow>(rows: T[], span: TraceSpan, 
     used.add(hit); out.push(hit);
   }
   return out;
+}
+
+/** مرتجعٌ يميّزه نصُّه عن غيره؟ (زبونٌ أو ملاحظة) — بلاهما نصُّه نصُّ كلِّ مرتجعٍ مثله. */
+export function returnIsDistinctive(args: unknown): boolean {
+  const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  const meta = (a.p_meta && typeof a.p_meta === "object" ? a.p_meta : {}) as Record<string, unknown>;
+  return !!(btrim(meta.customer_name) || btrim(meta.note));
+}
+/** حكمُ أثرٍ وُجد: `found` (وصل — الأسلمُ الحذف) لأثرٍ مميِّزٍ كلُّ سطوره قريبةٌ من لحظةٍ أُرسل فيها فعلاً
+ *  (`moments`: الحفظ، والمحاولات، وقرارُ المراجعة)؛ وإلا `similar` — يُقارَن بالعين. */
+export function traceVerdict(rows: TraceRow[], distinctive: boolean, moments: string[]): "found" | "similar" {
+  const near = (r: TraceRow) => moments.some((m) => spanGap(Date.parse(r.spent_at), { from: m, to: m }) <= RETURN_TRACE_WINDOW_MS);
+  return distinctive && rows.length > 0 && rows.every(near) ? "found" : "similar";
 }
