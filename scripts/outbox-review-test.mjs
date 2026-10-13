@@ -55,6 +55,8 @@ const stubs = {
         export const ownerState = (op) => !op.who || (op.who.clinic === "?" && op.who.user === me()) ? "unknown" : op.who.user === me() ? "mine" : "other";
         export const traceable = () => true;
         export const traceSpan = (op, now) => ({ from: op.queued_at, to: now });
+        export const currentClinic = () => "c";
+        export const pendingIds = () => new Set(globalThis.__pending || []);
       `,
       "@/lib/managerOverride": "export const useOverride = () => ({ active: false, until: null, deviceLocked: !!globalThis.__restricted, restricted: !!globalThis.__restricted, stockLocked: false });",
       "@/lib/repo": "export const repo = { listReturnRows: async () => [], listPoultryDaily: async () => [], countVisible: async () => 0 };",
@@ -72,7 +74,7 @@ try {
       export { renderToStaticMarkup } from "react-dom/server.browser";
       export { createElement } from "react";
       export { MemoryRouter } from "react-router-dom";
-      export { OutboxReview, opSummary, sharesServerRow, refsOf } from "./src/pages/OutboxReview.tsx";
+      export { OutboxReview, opSummary, sharesServerRow, refsOf, refsGate } from "./src/pages/OutboxReview.tsx";
       export { matchReturnRows, returnLineMatches, expectedReturnRows, traceBounds, traceVerdict, returnIsDistinctive } from "./src/lib/returnTrace.ts";
       export { SYSTEM_EXPENSE_TEXT } from "./src/lib/expenseCategoryRules.ts";
     `, resolveDir: root, loader: "tsx", sourcefile: "obx.tsx" },
@@ -169,6 +171,11 @@ console.log("▸ ما تشير إليه العمليةُ (refsOf) — يُسأل
   check("مرتجع ⇒ منتجاتُه بلا تكرار (والخدمةُ بلا منتجٍ لا شيء)", J(M.refsOf({ ...RET, args: { p_items: [{ product_id: "x" }, { product_id: "x" }, { name: "خدمة" }], p_meta: {} } })) === J([{ table: "products", ids: ["x"] }]));
   check("صرفُ دواجن ⇒ دفعتُه ومنتجُه", J(M.refsOf(USE)) === J([]) && J(M.refsOf({ ...USE, args: { ...USE.args, p_cycle: "cy", p_product: "pr" } })) === J([{ table: "poultry_cycles", ids: ["cy"] }, { table: "products", ids: ["pr"] }]));
   check("سحبٌ بلا تصنيف، وشركة ⇒ لا شيء", J(M.refsOf(EXP)) === "[]" && J(M.refsOf({ kind: "insert", id: "c", table: "companies", queued_at: "q", tries: 0, row: { id: "c" } })) === "[]");
+  /* تدقيقٌ عدائيّ ثالث ١٣/١٠: منتجٌ وقسمٌ وشركةٌ حُفظت معاً بلا نت (قبل ensure_company) — الشركةُ بالرفّ
+   * نفسه لم تُرفع، فكان المنتجُ «من عيادةٍ أخرى — احذفه». أبٌ بالقائمة ⇒ «ارفعه أوّلاً». */
+  const prodRefs = M.refsOf({ ...PRD, row: { id: "p", company_id: "co", section_id: "se" } });
+  check("أبوها بالطابور أو الرفّ ⇒ «ارفعه أوّلاً» لا «من عيادةٍ أخرى»", M.refsGate(prodRefs, new Set(["co"])) === "pending");
+  check("  وبلا أبٍ معلَّق ⇒ يُسأل الخادم، وبلا إشارة ⇒ لا شيء", M.refsGate(prodRefs, new Set(["zz"])) === "ask" && M.refsGate([], new Set(["co"])) === "none");
 }
 
 console.log("▸ الصفحةُ بالعربية");

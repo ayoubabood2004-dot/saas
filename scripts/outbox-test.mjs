@@ -30,6 +30,30 @@ const realError = console.error;
 console.error = (...a) => { shouts.push(String(a[0])); };
 process.on("exit", () => { console.error = realError; });
 
+/* Web Locks كما بالمتصفّح (node بلا navigator.locks): قفلٌ لكلّ اسم، بطابور انتظارٍ يُلغى بـsignal،
+ * و`ifAvailable` يرجع null إن كان ممسوكاً. القفلُ يعمل بين تبويبات المتصفّح — وهنا بين النداءات. */
+const lockState = new Map();
+const locksImpl = {
+  async request(name, opts, cb) {
+    const s = lockState.get(name) ?? { held: false, waiters: [] };
+    lockState.set(name, s);
+    if (opts?.ifAvailable && s.held) return cb(null);
+    if (s.held) {
+      await new Promise((res, rej) => {
+        const w = { res };
+        s.waiters.push(w);
+        opts?.signal?.addEventListener("abort", () => {
+          const i = s.waiters.indexOf(w);
+          if (i >= 0) { s.waiters.splice(i, 1); rej(Object.assign(new Error("aborted"), { name: "AbortError" })); }
+        });
+      });
+    } else s.held = true;
+    try { return await cb({ name }); }
+    finally { const n = s.waiters.shift(); if (n) n.res(); else s.held = false; }
+  },
+};
+Object.defineProperty(globalThis, "navigator", { value: { locks: locksImpl }, configurable: true, writable: true });
+
 const events = [];
 globalThis.window = { dispatchEvent: (e) => { events.push(e.detail); return true; }, addEventListener() {} };
 globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init?.detail; } };
@@ -572,6 +596,56 @@ reset();
   await ob.flushOutbox();
   globalThis.__sb.from = realFrom;
   chk("  ورجع صاحبُها ⇒ تُرفع", [calls.map((c) => c.row.id), ob.outboxCount()], [["e1", "e2"], 0]);
+}
+
+/* ١٦) تدقيقٌ عدائيّ ثالث ١٣/١٠: حذفُ سحبٍ والإدراجُ طائرٌ من الطابور. كان الحذفُ يسبقه (صفرُ صفوف،
+ *     و«كانت بالطابور») فيُقال «انحذف» ثم يصل الإدراجُ ويرجع السحب. صار الاثنان تحت قفل العملية. */
+reset();
+{
+  const server = new Set();
+  ob.outboxEnqueue("expenses", { id: "e-del" });
+  let release; const gate = new Promise((res) => { release = res; });
+  const realFrom = globalThis.__sb.from;
+  globalThis.__sb.from = (table) => ({ upsert: async (row, opts) => { calls.push({ kind: "insert", table, row, opts }); await gate; server.add(row.id); return result(); } });
+  const fl = ob.flushOutbox();
+  await new Promise((res) => setTimeout(res, 0));
+  // deleteExpense كما بـrepo.ts: القاعدةُ ثم الطابور، تحت قفل العملية
+  let said = null;
+  const del = ob.outboxExclusive("e-del", async () => { const gone = server.delete("e-del"); const queued = ob.outboxDrop("e-del"); said = gone || queued ? "deleted" : "no_row"; });
+  await new Promise((res) => setTimeout(res, 0));
+  chk("الحذفُ ينتظر الإدراجَ الطائر (لا يجري قبله)", said, null);
+  release(); await fl; await del;
+  globalThis.__sb.from = realFrom;
+  chk("  ثم يحذفه من القاعدة: لا يرجع السحبُ بعد «انحذف»", [said, server.has("e-del"), ob.outboxCount()], ["deleted", false, 0]);
+  // وبلا قفل (كما كان): الحذفُ يسبق فيرجع — الفحصُ يقدر يفشل
+  const s2 = new Set(); let rel2; const g2 = new Promise((res) => { rel2 = res; });
+  ob.outboxEnqueue("expenses", { id: "e-race" });
+  globalThis.__sb.from = (table) => ({ upsert: async (row) => { await g2; s2.add(row.id); return result(); } });
+  const f2 = ob.flushOutbox();
+  await new Promise((res) => setTimeout(res, 0));
+  s2.delete("e-race"); ob.outboxDrop("e-race");      // بلا outboxExclusive
+  rel2(); await f2;
+  globalThis.__sb.from = realFrom;
+  chk("  (وبلا القفل يرجع — هذا ما كان)", s2.has("e-race"), true);
+}
+{
+  const fs = await import("node:fs");
+  const repo = fs.readFileSync("src/lib/repo.ts", "utf8");
+  const de = repo.slice(repo.indexOf("async deleteExpense(id)"), repo.indexOf("async deleteExpense(id)") + 1400);
+  chk("repo: حذفُ السحب تحت outboxExclusive(id)", /await outboxExclusive\(id, async \(\) => \{[\s\S]*delete\(\)[\s\S]*outboxDrop\(id\)/.test(de), true);
+  const pd = repo.slice(repo.indexOf("async savePoultryDaily(input)"), repo.indexOf("async savePoultryDaily(input)") + 1600);
+  chk("  وحفظُ اليوم أونلاين تحت outboxExclusive(opId)", /outboxExclusive\(opId, async \(\) => \{[\s\S]*upsert\(row[\s\S]*outboxDrop\(opId\)/.test(pd), true);
+}
+
+/* ١٧) فحوصُ الصفحة لعيادتها: «ارفعها» على ما لا تُعرف عيادتُه تمرّر العيادةَ التي فُحص فيها، وعيادةٌ
+ *     تبدّلت والصفحةُ مفتوحة ⇒ لا ختمَ بالجديدة (كانت تُختم بها ونتائجُ الفحص من القديمة). */
+reset();
+{
+  mem.set("vp_outbox_dead_v1", JSON.stringify([{ kind: "insert", id: "lg", table: "products", row: { id: "lg" }, queued_at: "q", tries: 0 }]));
+  chk("عيادةُ الفحص غيرُ عيادة الآن ⇒ «unconfirmed» وتبقى", [ob.outboxReviveOne("lg", undefined, "clinic-OLD"), ob.outboxDeadCount()], [{ ok: false, reason: "unconfirmed" }, 1]);
+  chk("  وهي نفسُها ⇒ تُختم بها", [ob.outboxReviveOne("lg", undefined, ob.currentClinic()), JSON.parse(mem.get("vp_outbox_v1"))[0].who.clinic], [{ ok: true }, "clinic-A"]);
+  ob.outboxEnqueue("companies", { id: "co-pend" });
+  chk("pendingIds: ما بالطابور والرفّ من إدراجات", [...ob.pendingIds()].sort(), ["co-pend", "lg"]);
 }
 
 // ── المفتاحُ الطبيعيّ: إدخالُ اليوم (0193) ───────────────────────────────

@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui";
 import { outboxReviewList, outboxWaitingOthers, flushOutbox, type OutboxOp } from "@/lib/outbox";
 import {
-  outboxRejectedList, outboxReviveOne, outboxDiscard, ownerState, traceable, traceSpan, type ShelfResult,
+  outboxRejectedList, outboxReviveOne, outboxDiscard, ownerState, traceable, traceSpan, currentClinic, pendingIds, type ShelfResult,
 } from "@/lib/outboxShelf";
 import { expectedReturnRows, matchReturnRows, traceBounds, traceVerdict, returnIsDistinctive, type ReturnLine } from "@/lib/returnTrace";
 import type { VisibleTable } from "@/lib/repoDemo";
@@ -115,7 +115,13 @@ export function refsOf(op: OutboxOp): { table: VisibleTable; ids: string[] }[] {
   if (op.table === "expenses") add("expense_categories", id(r.category_id));
   return out;
 }
-type Refs = { state: "checking" | "ok" | "foreign" | "failed" };
+/** `pending`: يشير لما بالطابور أو الرفّ نفسِه (شركةٌ أو قسمٌ لم يُرفع بعد) — يُرفع ذاك أوّلاً، لا «من عيادةٍ أخرى». */
+type Refs = { state: "checking" | "ok" | "foreign" | "pending" | "failed" };
+/** ما يلزم قبل رفع ما لا تُعرف عيادتُه: لا شيء، أو رفعُ أبيه الذي بالقائمة أوّلاً، أو سؤالُ الخادم. */
+export function refsGate(want: { ids: string[] }[], pend: Set<string>): "none" | "pending" | "ask" {
+  if (!want.length) return "none";
+  return want.some((w) => w.ids.some((id) => pend.has(id))) ? "pending" : "ask";
+}
 /** يومُ الخادم لإدخالٍ يوميّ: غائب، أو أقدمُ من هذا الإدخال، أو أحدث (أُعيد إدخالُه بعده). */
 type DayCheck = { state: "checking" } | { state: "failed" } | { state: "none" }
   | { state: "older" | "newer"; at: string; dead: number | null; culled: number | null };
@@ -160,30 +166,42 @@ export function OutboxReview() {
 
   /* المرتجعُ: هل وصل الخادمَ قبل أن يضيع جوابُه؟ يُسأل مرّةً لكلٍّ ظهر بأيّ قسم. والجوابُ يُكتب
    * ما دامت الصفحةُ مفتوحة — كان مربوطاً بجولة الأثر فيُرمى عند أوّل ضغطة، ويبقى «نسأل…» أبداً
-   * فيُخفي تحذيرَ التكرار. والسؤالُ لا يتكرّر لما سُئل عنه (`asked`). */
+   * فيُخفي تحذيرَ التكرار. والسؤالُ لا يتكرّر لما سُئل عنه (`asked`).
+   * وكلُّ جوابٍ **مفتاحُه العمليةُ والعيادةُ التي فُحص فيها** (`key`): عيادةٌ تبدّلت والصفحةُ مفتوحة
+   * تجعل الأجوبةَ القديمة غائبة فيُعاد السؤال و«ارفعها» مقفولة — كانت تُحفظ بالعملية وحدها، فيُرفع
+   * بعيادةٍ جديدة ما فُحص بغيرها. و«ارفعها» تمرّر العيادةَ التي رُسمت بها (outboxReviveOne). */
+  const here = currentClinic();
+  const key = (op: OutboxOp) => `${op.id}|${here}`;
   const mounted = useRef(true);
   const asked = useRef(new Set<string>());
   useEffect(() => () => { mounted.current = false; }, []);
   useEffect(() => {
     mounted.current = true;
+    const pend = pendingIds();
     for (const op of [...lists.review, ...lists.rejected, ...lists.others]) {
-      if (!traceable(op) || asked.current.has(op.id)) continue;
-      asked.current.add(op.id);
+      const k = key(op);
+      if (!traceable(op)) continue;
       // لا تُعرف عيادتُها: كلُّ ما تشير إليه لازم تراه هذه العيادة، وإلا فليست لها.
       const want = ownerState(op) === "unknown" ? refsOf(op) : [];
-      if (want.length) {
-        setRefs((m) => ({ ...m, [op.id]: { state: "checking" } }));
+      const gate = refsGate(want, pend);
+      if (gate === "pending") {
+        // أبوها بالقائمة نفسِها لم يُرفع بعد: يُرفع ذاك أوّلاً — ويُعاد السؤالُ مع كلّ تغيّرٍ بالقوائم.
+        setRefs((m) => (m[k]?.state === "pending" ? m : { ...m, [k]: { state: "pending" } }));
+      } else if (gate === "ask" && !asked.current.has(`r:${k}`)) {
+        asked.current.add(`r:${k}`);
+        setRefs((m) => ({ ...m, [k]: { state: "checking" } }));
         void Promise.all(want.map((w) => repo.countVisible(w.table, w.ids).then((n) => n === w.ids.length))).then(
-          (ok) => { if (mounted.current) setRefs((m) => ({ ...m, [op.id]: { state: ok.every(Boolean) ? "ok" : "foreign" } })); },
-          () => { if (mounted.current) setRefs((m) => ({ ...m, [op.id]: { state: "failed" } })); },
+          (ok) => { if (mounted.current) setRefs((m) => ({ ...m, [k]: { state: ok.every(Boolean) ? "ok" : "foreign" } })); },
+          () => { if (mounted.current) setRefs((m) => ({ ...m, [k]: { state: "failed" } })); },
         );
       }
-      if (!needsCheck(op)) continue;
+      if (!needsCheck(op) || asked.current.has(`c:${k}`)) continue;
+      asked.current.add(`c:${k}`);
       if (isReturn(op)) {
-        setTraces((m) => ({ ...m, [op.id]: { state: "checking" } }));
+        setTraces((m) => ({ ...m, [k]: { state: "checking" } }));
         const span = traceSpan(op, new Date().toISOString());
         const b = traceBounds(span);
-        const done = (tr: Trace) => { if (mounted.current) setTraces((m) => ({ ...m, [op.id]: tr })); };
+        const done = (tr: Trace) => { if (mounted.current) setTraces((m) => ({ ...m, [k]: tr })); };
         if (!b) { done({ state: "failed" }); continue; }
         void repo.listReturnRows(b.from, b.to).then((all) => {
           const rows = matchReturnRows(all, span, opSummary(op).returnLines);
@@ -197,9 +215,9 @@ export function OutboxReview() {
       // إدخالُ اليوم: يومُه بالخادم — مقارنةً بوقت كتابته (updated_at بالحمولة).
       const row = (op.kind === "insert" ? op.row : {}) as Record<string, unknown>;
       const cycle = str(row.cycle_id), on = str(row.on_date), mine = Date.parse(String(row.updated_at ?? op.queued_at));
-      const done = (d: DayCheck) => { if (mounted.current) setDays((m) => ({ ...m, [op.id]: d })); };
+      const done = (d: DayCheck) => { if (mounted.current) setDays((m) => ({ ...m, [k]: d })); };
       if (!cycle || !on) { done({ state: "failed" }); continue; }
-      setDays((m) => ({ ...m, [op.id]: { state: "checking" } }));
+      setDays((m) => ({ ...m, [k]: { state: "checking" } }));
       void repo.listPoultryDaily(cycle).then((list) => {
         const srv = list.find((d) => d.on_date === on);
         if (!srv) { done({ state: "none" }); return; }
@@ -208,7 +226,8 @@ export function OutboxReview() {
         done({ state: Date.parse(at) < mine ? "older" : "newer", at, dead: srv.dead ?? null, culled: srv.culled ?? null });
       }, () => done({ state: "failed" }));
     }
-  }, [lists]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lists, here]);
 
   const why = (r: ShelfResult) => (r.ok ? null
     : r.reason === "no_session" ? t("obx.noSession")
@@ -218,7 +237,7 @@ export function OutboxReview() {
     : t("obx.storage"));
   const send = async (op: OutboxOp) => {
     playTap();
-    const r = outboxReviveOne(op.id, op);
+    const r = outboxReviveOne(op.id, op, here);
     refresh();
     if (!r.ok) { setNote(why(r)); return; }
     setNote(t("obx.sent"));
@@ -258,9 +277,9 @@ export function OutboxReview() {
   const actions = (op: OutboxOp, sendLabel: string | null) => {
     if (!manager) return null;
     // لم يُجب الخادمُ بعد (أو لم يُسأل بعد — أوّلُ رسم): لا رفعَ قبل الجواب (قد يكون وصل، أو أُعيد إدخالُه).
-    const st = (isReturn(op) ? traces[op.id] : days[op.id])?.state;
+    const st = (isReturn(op) ? traces[key(op)] : days[key(op)])?.state;
     // وما لا تُعرف عيادتُه: لا رفعَ حتى يثبت أن ما يشير إليه بهذه العيادة (لا بأوّل رسم ولا بتعذّر السؤال).
-    const foreignRisk = ownerState(op) === "unknown" && refsOf(op).length > 0 && refs[op.id]?.state !== "ok";
+    const foreignRisk = ownerState(op) === "unknown" && refsOf(op).length > 0 && refs[key(op)]?.state !== "ok";
     const waiting = (needsCheck(op) && (!st || st === "checking")) || foreignRisk;
     const label = opSummary(op).name ?? t(`obx.kind.${opSummary(op).kind}`, { defaultValue: opSummary(op).kind });
     return asking === op.id ? (
@@ -280,10 +299,10 @@ export function OutboxReview() {
   };
   const warn = "mt-2 rounded-lg bg-warn-50 px-2 py-1.5 text-xs font-semibold text-warn-700 dark:bg-warn-500/10 dark:text-warn-200";
   const traceLine = (op: OutboxOp) => {
-    const tr = traces[op.id];
+    const tr = traces[key(op)];
     if (!tr) return dayLine(op);
     if (tr.state === "found" || tr.state === "similar") {
-      const shared = sharesServerRow(traces, op.id);
+      const shared = sharesServerRow(traces, key(op));
       return (
         <div data-obx-trace={tr.state}>
           <p className={warn}>{t(tr.state === "found" ? "obx.traceFound" : "obx.traceSimilar", { when: when(tr.at), desc: tr.desc })}</p>
@@ -291,24 +310,25 @@ export function OutboxReview() {
         </div>
       );
     }
-    const key = tr.state === "checking" ? "obx.traceChecking" : tr.state === "none" ? "obx.traceNone" : "obx.traceFailed";
-    return <p className="mt-2 text-2xs text-ink-subtle" data-obx-trace={tr.state}>{t(key)}</p>;
+    const msg = tr.state === "checking" ? "obx.traceChecking" : tr.state === "none" ? "obx.traceNone" : "obx.traceFailed";
+    return <p className="mt-2 text-2xs text-ink-subtle" data-obx-trace={tr.state}>{t(msg)}</p>;
   };
   const refsLine = (op: OutboxOp) => {
-    const r = refs[op.id];
+    const r = refs[key(op)];
     if (!r || r.state === "ok") return null;
+    if (r.state === "pending") return <p className={warn} data-obx-refs="pending">{t("obx.refsPending")}</p>;
     if (r.state === "foreign") return <p className="mt-2 rounded-lg bg-danger-50 px-2 py-1.5 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-obx-refs="foreign">{t("obx.refsForeign")}</p>;
     return <p className="mt-2 text-2xs text-ink-subtle" data-obx-refs={r.state}>{t(r.state === "checking" ? "obx.refsChecking" : "obx.refsFailed")}</p>;
   };
   const dayLine = (op: OutboxOp) => {
-    const d = days[op.id];
+    const d = days[key(op)];
     if (!d) return null;
     if (d.state === "older" || d.state === "newer") {
       const vals = t("obx.deadCulled", { d: formatNum(d.dead ?? 0), c: formatNum(d.culled ?? 0) });
       return <p className={d.state === "newer" ? warn : "mt-2 text-xs text-ink-muted"} data-obx-day={d.state}>{t(d.state === "newer" ? "obx.dayNewer" : "obx.dayOlder", { when: when(d.at), vals })}</p>;
     }
-    const key = d.state === "checking" ? "obx.dayChecking" : d.state === "none" ? "obx.dayNone" : "obx.dayFailed";
-    return <p className="mt-2 text-2xs text-ink-subtle" data-obx-day={d.state}>{t(key)}</p>;
+    const msg = d.state === "checking" ? "obx.dayChecking" : d.state === "none" ? "obx.dayNone" : "obx.dayFailed";
+    return <p className="mt-2 text-2xs text-ink-subtle" data-obx-day={d.state}>{t(msg)}</p>;
   };
 
   const empty = !lists.review.length && !lists.rejected.length && !lists.others.length;

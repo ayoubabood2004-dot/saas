@@ -251,6 +251,30 @@ export function outboxEnqueueRpc(fn: OutboxRpcFn, args: Record<string, unknown>)
 
 let flushing = false;
 
+type Locks = { request: (n: string, o: { ifAvailable?: boolean; signal?: AbortSignal }, f: (l: unknown) => Promise<unknown>) => Promise<unknown> };
+const navLocks = (): Locks | undefined => {
+  const l = (globalThis as { navigator?: { locks?: Locks } }).navigator?.locks;
+  return typeof l?.request === "function" ? l : undefined;
+};
+/** كتابةٌ على مفتاح عمليةٍ بالطابور **لا تتقاطع مع رفعها** — بأيّ تبويب (`navigator.locks`).
+ *  الرفعُ يمسكه طولَ الإرسال، والكتابةُ أونلاين على نفس المفتاح (حذفُ سحبٍ لم يصل، حفظُ يومٍ مصحَّح)
+ *  تنتظره: كان الحذفُ يجري والإدراجُ طائرٌ بشبكةٍ متعثّرة — صفرُ صفوف، و`outboxDrop` يقول «كانت
+ *  بالطابور»، فيُقال «انحذف» ثم يصل الإدراجُ ويرجع السحبُ ويُحسب مرّتين (تدقيقٌ عدائيّ ثالث ١٣/١٠).
+ *  وانتظارٌ يطول (طلبٌ عالقٌ بلا مهلة) يُرمى فشلَ شبكة بعد ١٠ ثوانٍ: «أعد المحاولة» لا «تمّ». */
+export async function outboxExclusive<T>(id: string, f: () => Promise<T>): Promise<T> {
+  const l = navLocks();
+  if (!l) return f();
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 10_000);
+  let held = false;
+  try {
+    return (await l.request(`vp-outbox-op:${id}`, { signal: ac.signal }, () => { held = true; clearTimeout(timer); return f(); })) as T;
+  } catch (e) {
+    if (!held) throw new TypeError("outbox busy: timed out");
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
 /** نسخةُ العملية نفسُها؟ — إدخالُ يومٍ يُستبدل بنفس المفتاح (آخرُ ما كُتب)، فالمعرّفُ وحده لا يكفي. */
 const sameVersion = (a: OutboxOp, b: OutboxOp): boolean =>
   a.id === b.id && a.queued_at === b.queued_at
@@ -379,15 +403,22 @@ async function runFlush(): Promise<{ sent: number; left: number; dead: number }>
       catch (e) { if (isNetworkError(e) || transientReject(e)) break; serverClinic = null; }
       // الختمُ عيادةُ الخادم المؤكَّدة نفسُها — تُقارَن كما هي، بلا ترجمة.
       if (!serverClinic || op.who.clinic !== serverClinic) continue;
-      // سُحبت أو تبدّلت أثناء السؤال (حذفُ سحبٍ لم يصل، يومٌ صُحّح)، أو تبدّل الداخل: لا تُرفع.
-      if (!load().some((o) => sameVersion(o, op)) || !sameWho(op.who, whoNow())) continue;
-      if (op.kind === "rpc" && op.fn === "retail_return") {
-        // كلُّ محاولةٍ قد تصل ويضيع جوابُها — وقتُها يُحفظ قبلها ليُبحث عن أثرها عنده (OutboxReview).
-        const at = new Date().toISOString();
-        save(load().map((o) => (o.id === id && sameVersion(o, op) ? { ...o, attempts: [...(o.attempts ?? []), at].slice(-20) } : o)));
-      }
+      let gone = false;
       try {
-        await send(sb, op);
+        // الفحصُ الأخير والإرسالُ تحت قفل العملية: لا حذفَ ولا حفظَ أونلاين على مفتاحها بينهما.
+        await outboxExclusive(id, async () => {
+          // سُحبت أو تبدّلت أثناء السؤال (حذفُ سحبٍ لم يصل، يومٌ صُحّح)، أو تبدّل الداخل: لا تُرفع.
+          if (!load().some((o) => sameVersion(o, op)) || !sameWho(op.who, whoNow())) { gone = true; return; }
+          if (op.kind === "rpc" && op.fn === "retail_return") {
+            // كلُّ محاولةٍ قد تصل ويضيع جوابُها — وقتُها يُحفظ قبلها ليُبحث عن أثرها عنده (OutboxReview).
+            const at = new Date().toISOString();
+            save(load().map((o) => (o.id === id && sameVersion(o, op) ? { ...o, attempts: [...(o.attempts ?? []), at].slice(-20) } : o)));
+          }
+          await send(sb, op);
+          /* نجحت: تُشال **هذه النسخة** وحدها — نسخةٌ أحدث بنفس المفتاح (يومٌ صُحّح أثناء الطلب)
+           * تبقى وتُرفع بدورها. وتحت القفل: حذفٌ ينتظره يجد الصفَّ بالقاعدة لا بالطابور. */
+          save(load().filter((o) => !sameVersion(o, op)));
+        });
       } catch (e) {
         if (isNetworkError(e)) break; // النت بعده واگع — نعود بالجولة الجاية
         const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -406,9 +437,7 @@ async function runFlush(): Promise<{ sent: number; left: number; dead: number }>
         }
         continue;
       }
-      /* نجحت: تُشال **هذه النسخة** وحدها — نسخةٌ أحدث بنفس المفتاح (يومٌ صُحّح أثناء الطلب)
-       * تبقى وتُرفع بدورها. */
-      save(load().filter((o) => !sameVersion(o, op)));
+      if (gone) continue;
       sent++;
     }
   } finally {

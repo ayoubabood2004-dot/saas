@@ -23,7 +23,7 @@ export const pickByPurchaseName = <T extends { id: string; name: string; company
 /* `invNormName` انتقلت إلى `utils.ts` (0206+): الشاشةُ تحتاجها كي تعرف
  * أيَّ سطرٍ سيطابقه الخادمُ بالاسم، ومصدرُ التطبيع واحدٌ لا نسختان. */
 import { supabase } from "./supabase";
-import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
+import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, outboxExclusive, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, CustomerHit, CustomerPet, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
@@ -1384,11 +1384,14 @@ const supabaseRepo: DemoRepo = {
     const opId = `poultry_daily:${input.cycle_id}:${input.on_date}`;
     const row = { ...input, updated_at: new Date().toISOString() };
     try {
-      const saved = need<PoultryDaily>(await sbc().from("poultry_daily")
-        .upsert(row, { onConflict: "cycle_id,on_date" }).select().single());
-      // نجحت أونلاين ⇒ نسخةٌ قديمةٌ بالطابور لنفس اليوم لا يجوز أن تدهسها بعدُ.
-      outboxDrop(opId);
-      return saved;
+      // تحت قفل اليوم (outboxExclusive): نسخةٌ قديمةٌ طائرةٌ من الطابور تصل قبلها لا بعدها فتدهسها.
+      return await outboxExclusive(opId, async () => {
+        const saved = need<PoultryDaily>(await sbc().from("poultry_daily")
+          .upsert(row, { onConflict: "cycle_id,on_date" }).select().single());
+        // نجحت أونلاين ⇒ نسخةٌ قديمةٌ بالطابور لنفس اليوم لا يجوز أن تدهسها بعدُ.
+        outboxDrop(opId);
+        return saved;
+      });
     } catch (e) {
       if (!isNetworkError(e)) throw e;
       if (!outboxEnqueue("poultry_daily", row, { id: opId, conflict: "cycle_id,on_date" })) throw e;
@@ -2439,9 +2442,12 @@ const supabaseRepo: DemoRepo = {
     // مرّتين (والمديرُ أعاد إدخالَه مصحَّحاً). فالقاعدةُ أوّلاً ثم الطابور (رميُ الشبكة يُبقي
     // الاثنين كما هما)، وصفرُ صفوفٍ بلا شيءٍ بالطابور يُرمى: سياسةٌ أخفت الصفّ (جهازٌ يظنّ
     // نفسَه مديراً) أو حُذف من جهازٍ آخر — لا «انحذف» على لا شيء.
-    const gone = listOrThrow<{ id: string }>(await sbc().from("expenses").delete().eq("id", id).select("id"));
-    const wasQueued = outboxDrop(id);
-    if (gone.length === 0 && !wasQueued) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" });
+    // وتحت قفل العملية (outboxExclusive): إدراجٌ طائرٌ من الطابور يُنتظر — كان الحذفُ يسبقه فيرجع السحب.
+    await outboxExclusive(id, async () => {
+      const gone = listOrThrow<{ id: string }>(await sbc().from("expenses").delete().eq("id", id).select("id"));
+      const wasQueued = outboxDrop(id);
+      if (gone.length === 0 && !wasQueued) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" });
+    });
   },
   /* تصنيفاتُ السحوبات (0227). القراءةُ ترمي: التصنيفُ إلزاميّ، فـ«ماكو تصنيفات» عن خطأٍ
    * تُصدَّق فيُعاد إنشاؤها (ويرفضها حارسُ التوأم). والسقفُ ٦٠ بالقاعدة فالحدُّ ٢٠٠ لا يقصّ.

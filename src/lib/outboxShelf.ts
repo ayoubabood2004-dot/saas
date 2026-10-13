@@ -26,6 +26,10 @@ export function ownerState(op: OutboxOp): OwnerState {
   return sameWho(op.who, now) && op.who.clinic !== UNCONFIRMED ? "mine" : "other";
 }
 export const isMine = (op: OutboxOp): boolean => ownerState(op) === "mine";
+/** العيادةُ المؤكَّدة للداخل الآن — تُختم بها نتائجُ فحوص الصفحة (لا تصلح لعيادةٍ غيرها). */
+export const currentClinic = (): string => whoNow()?.clinic ?? "";
+/** معرّفاتُ ما بالطابور أو الرفّ من إدراجات — أبٌ لم يصل بعد ليس «من عيادةٍ أخرى». */
+export const pendingIds = (): Set<string> => new Set([...load(), ...outboxDead()].filter((o) => o.kind === "insert").map((o) => o.id));
 
 /** يُسأل الخادمُ عن أثرها من هذه الجلسة؟ سحوباتُ العيادة الحاليّة وحدها تُقرأ (RLS)، فمختومةٌ بعيادةٍ
  *  أخرى «ما لكينا» عنها كذبٌ مطمئن — لا تُسأل. وما لا تُعرف عيادتُه يُرفع (إن رُفع) هنا فيُسأل هنا —
@@ -52,7 +56,7 @@ export type ShelfResult = { ok: true } | { ok: false; reason: "missing" | "no_se
  *  ما لا تُعرف عيادتُه يُختم بمن قرّر وعيادته المؤكَّدة (لا ختمَ بعيادةٍ لم تُؤكَّد — `unconfirmed`)؛
  *  ومختومةٌ بغيره لا تُعاد باسمه (لها الحذفُ وحده — والصفحةُ لا تعرض غيرَه، وهذا الحارسُ لتبويبٍ
  *  قديمٍ أو حسابٍ تبدّل بين الرسم والضغطة). */
-export function outboxReviveOne(id: string, seen?: OutboxOp): ShelfResult {
+export function outboxReviveOne(id: string, seen?: OutboxOp, checkedIn?: string): ShelfResult {
   // `seen` النسخةُ التي عُرضت: رفٌّ استبدلها بعدها بنفس المفتاح ⇒ لا يُرفع ما لم يره أحد.
   const d = outboxDead().find((x) => x.id === id && (!seen || sameVersion(x, seen)));
   if (!d) return { ok: false, reason: "missing" };
@@ -60,7 +64,10 @@ export function outboxReviveOne(id: string, seen?: OutboxOp): ShelfResult {
   if (!now) return { ok: false, reason: "no_session" };
   const owner = ownerState(d);
   if (owner === "other") return { ok: false, reason: "other_owner" };
-  if (owner === "unknown" && now.clinic === UNCONFIRMED) return { ok: false, reason: "unconfirmed" };
+  /* ما لا تُعرف عيادتُه يُختم بعيادة الداخل الآن — فلا يُرفع إلا وهي نفسُ العيادة التي فُحص فيها
+   * (`checkedIn`): عيادةٌ تبدّلت والصفحةُ مفتوحة (تبويبٌ ثانٍ، جلسةُ مشغّلٍ انتهت) كانت تختمه بغير
+   * ما فُحص فيه — تدقيقٌ عدائيّ ثالث ١٣/١٠. */
+  if (owner === "unknown" && (now.clinic === UNCONFIRMED || (checkedIn !== undefined && checkedIn !== now.clinic))) return { ok: false, reason: "unconfirmed" };
   const ops = load();
   /* نسخةٌ بنفس المفتاح بالطابور أحدثُ منها (يومٌ أُعيد إدخالُه): تبقى هي، وتُشال نسخةُ الرفّ. */
   if (!ops.some((o) => o.id === id)) {
