@@ -57,6 +57,8 @@ const stubs = {
       "./repo": "export const repo = new Proxy({}, { get: (_t, k) => (...a) => globalThis.__srv[k](...a) });",
       "./clinics": "export const getActiveClinicId = () => globalThis.__clinic;",
       "./clinicSync": "export const registerReset = (fn) => { globalThis.__reset = fn; };",
+      // جلسةُ Supabase: معرّفُ الحساب الداخل (globalThis.__uid) — منها يُترجم «default» للمالك.
+      "./supabase": "export const supabase = { auth: { getSession: async () => ({ data: { session: globalThis.__uid ? { user: { id: globalThis.__uid } } : null } }) } };",
     };
     const keys = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
     b.onResolve({ filter: new RegExp(`^(${keys})$`) }, (a) => ({ path: a.path, namespace: "ssr" }));
@@ -296,6 +298,27 @@ try {
   check("  والمتجرُ يُفتح على «التصنيفات» إن كانت العلامةُ بالمدخل", /readCatcheck\(loc\.state\) \? "cats"/.test(cs));
   check("  وبلا pushState خامّ (الموجّهُ وحده يملك السجلّ)", !/history\.(pushState|replaceState)/.test(tab + chk + cs));
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
+console.log("▸ صاحبُ العيادة يفتح «التصنيفات»: لا «تبدّلت العيادة» (١٣/١٠)");
+try {
+  /* مقيسٌ بالإنتاج: المالكون التسعة كلُّهم بلا مفتاحٍ محلّيّ (profiles.clinic_id فارغ) فمفتاحُهم
+   * «default»؛ والمقارنةُ بالمفتاح الخامّ رسمت «تبدّلت العيادة — حدّث الصفحة» لكلّ صاحب عيادة. */
+  const open = async (clinic, uid) => {
+    globalThis.__clinic = clinic; globalThis.__uid = uid;
+    globalThis.__reset?.(); await M.S.loadStoreCats(true);
+    return M.S.getStoreCatsState();
+  };
+  const owner = await open("default", "C1");
+  check("مالكٌ بعيادته (default + جلستُه C1 = ختمُ الخادم) ⇒ ready بتصنيفاته", owner.status === "ready" && owner.clinic === "C1" && !!cat1(), owner.status);
+  const tab = text(html(h(M.CategoriesTab, { products: PRODUCTS })));
+  check("  واللوحةُ لا تقول «تبدّلت العيادة»", !tab.includes(AR.cat.switched), tab.slice(0, 120));
+  check("مشغّلٌ داخلٌ عيادةً (default + جلستُه حسابُه) ⇒ switched", (await open("default", "OP")).status === "switched");
+  check("  واللوحةُ تقولها له (الرسالةُ نفسُها التي رآها المالكون)", text(html(h(M.CategoriesTab, { products: PRODUCTS }))).includes(AR.cat.switched));
+  check("بلا جلسة ⇒ switched لا ready", (await open("default", null)).status === "switched");
+  check("موظّفٌ بمفتاح عيادته ⇒ ready ولو اختلف معرّفُ حسابه", (await open("C1", "S7")).status === "ready");
+  check("مفتاحُ عيادةٍ أخرى ⇒ switched (الحارسُ باقٍ)", (await open("C2", "C2")).status === "switched");
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+globalThis.__clinic = "C1"; globalThis.__uid = undefined;
 
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

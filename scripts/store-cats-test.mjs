@@ -213,6 +213,8 @@ try {
         "./repo": "export const repo = new Proxy({}, { get: (_t, k) => (...a) => globalThis.__srv[k](...a) });",
         "./clinics": "export const getActiveClinicId = () => globalThis.__clinic;",
         "./clinicSync": "export const registerReset = (fn) => { globalThis.__reset = fn; };",
+        // جلسةٌ بلا Supabase: المفتاحُ "C1" ليس "default" فالمقارنةُ به (workspaceClinic.ts).
+        "./supabase": "export const supabase = null;",
       };
       const names = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
       b.onResolve({ filter: new RegExp(`^(${names})$`) }, (a) => ({ path: a.path, namespace: "cstub" }));

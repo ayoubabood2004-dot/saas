@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { StoreCatOp } from "@/types";
 import { repo } from "./repo";
-import { getActiveClinicId } from "./clinics";
+import { expectedServerClinic } from "./workspaceClinic";
 import { registerReset } from "./clinicSync";
 import { applyOps, archivedCats, cmpItem, liveCats, stateFromSnapshot, type CatRow, type CatsState } from "./storeCatIndex";
 
@@ -82,10 +82,10 @@ export function loadStoreCats(force = false): Promise<void> {
   if (state.status === "idle" || state.status === "switched") set({ status: "loading" });
   loading = (async () => {
     try {
-      const snap = await repo.storeCategoriesList();
+      const [snap, want] = await Promise.all([repo.storeCategoriesList(), expectedServerClinic()]);
       if (my !== gen) return;
       if (inflight || queue.length) { reloadAfter = true; return; }
-      if (snap.clinic !== (getActiveClinicId() || "default")) {
+      if (snap.clinic !== want) {
         state = { ...blank(), status: "switched" };
         emit();
         return;

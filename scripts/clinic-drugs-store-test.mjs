@@ -39,6 +39,8 @@ const stubs = {
       "./repo": "export const repo = new Proxy({}, { get: (_t, k) => (...a) => globalThis.__srv[k](...a) });",
       "./clinics": "export const getActiveClinicId = () => globalThis.__clinic;",
       "./clinicSync": "export const registerReset = (fn) => { globalThis.__reset = fn; }; export const sb = () => null;",
+      // جلسةُ Supabase: معرّفُ الحساب الداخل (globalThis.__uid) — منها يُترجم «default» للمالك.
+      "./supabase": "export const supabase = { auth: { getSession: async () => ({ data: { session: globalThis.__uid ? { user: { id: globalThis.__uid } } : null } }) } };",
     };
     const names = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
     b.onResolve({ filter: new RegExp(`^(${names})$`) }, (a) => ({ path: a.path, namespace: "stub" }));
@@ -130,6 +132,34 @@ console.log("▸ (d) ختمٌ غيرُ العيادة النشطة");
   check("switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.length === 0);
   const got = await swallow(S.applyDrugOps([{ op: "unmine", id: "a" }]));
   check("  ولا كتابة", got !== "ok" && calls("apply").length === 0);
+}
+
+console.log("▸ (d2) صاحبُ العيادة: مفتاحُه «default» ومعناه عيادتُه هو (١٣/١٠)");
+{
+  /* المالكُ لا يُكتب له مفتاحٌ محلّيّ (profiles.clinic_id فارغٌ عند التسعة كلّهم) — كانت
+   * المقارنةُ بالمفتاح الخامّ تقفل «أدويتي» على كلّ صاحب عيادة. */
+  const asOwner = async (uid, srvClinic = "C1") => {
+    globalThis.__reset();
+    srv.rows = clone([R("a", "A", 1024)]); srv.clinic = srvClinic; srv.calls = []; srv.failList = null; srv.failApply = null; srv.hold = null;
+    globalThis.__clinic = "default"; globalThis.__uid = uid;
+    await S.loadClinicDrugs(true);
+    await settle();
+  };
+  await asOwner("C1");
+  check("مالكٌ بعيادته (default + جلستُه = ختمُ الخادم) ⇒ ready بصفوفه", S.getDrugsState().status === "ready" && view() === "A", S.getDrugsState().status);
+  await S.applyDrugOps([{ op: "unmine", id: "a" }]);
+  check("  ويكتب بختم الخادم", calls("apply")[0]?.clinic === "C1");
+  await asOwner("OP");
+  check("مشغّلٌ داخلٌ عيادةً (default + جلستُه حسابُه) ⇒ switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.length === 0);
+  const got = await swallow(S.applyDrugOps([{ op: "unmine", id: "a" }]));
+  check("  ولا كتابة", got !== "ok" && calls("apply").length === 0);
+  await asOwner(null);
+  check("بلا جلسة (default وحده) ⇒ switched لا ready", S.getDrugsState().status === "switched");
+  globalThis.__reset();
+  srv.clinic = "C1"; globalThis.__clinic = "C1"; globalThis.__uid = "S7";
+  await S.loadClinicDrugs(true); await settle();
+  check("موظّفٌ (مفتاحُه عيادةُ دعوته) ⇒ ready ولو اختلف معرّفُ حسابه", S.getDrugsState().status === "ready");
+  globalThis.__uid = undefined; globalThis.__clinic = "C1";
 }
 
 console.log("▸ (e) تغييرُ جهازٍ آخر");

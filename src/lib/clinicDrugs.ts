@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { ClinicDrug, ClinicDrugOp, DrugFamilyKey, MedicineStock } from "@/types";
 import { repo } from "./repo";
 import { getActiveClinicId } from "./clinics";
+import { expectedServerClinic } from "./workspaceClinic";
 import { registerReset } from "./clinicSync";
 import { applyOps, drugErrorCode, drugKey, mineOrder } from "./medIndex";
 import { uuid } from "./utils";
@@ -68,10 +69,10 @@ export function loadClinicDrugs(force = false): Promise<void> {
   if (state.status === "idle" || state.status === "switched") set({ status: "loading" });
   loading = (async () => {
     try {
-      const snap = await repo.listClinicDrugs();
+      const [snap, want] = await Promise.all([repo.listClinicDrugs(), expectedServerClinic()]);
       if (my !== gen) return;
       if (inflight || queue.length) { reloadAfter = true; return; }
-      if (snap.clinic !== (getActiveClinicId() || "default")) {
+      if (snap.clinic !== want) {
         state = { ...blank(), status: "switched" };
         emit();
         return;
