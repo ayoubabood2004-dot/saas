@@ -312,8 +312,8 @@ try {
   check("مالكٌ بعيادته (default + جلستُه C1 = ختمُ الخادم) ⇒ ready بتصنيفاته", owner.status === "ready" && owner.clinic === "C1" && !!cat1(), owner.status);
   const tab = text(html(h(M.CategoriesTab, { products: PRODUCTS })));
   check("  واللوحةُ لا تقول «تبدّلت العيادة»", !tab.includes(AR.cat.switched), tab.slice(0, 120));
-  check("مشغّلٌ داخلٌ عيادةً (default + جلستُه حسابُه) ⇒ switched", (await open("default", "OP")).status === "switched");
-  check("  واللوحةُ تقولها له (الرسالةُ نفسُها التي رآها المالكون)", text(html(h(M.CategoriesTab, { products: PRODUCTS }))).includes(AR.cat.switched));
+  check("قبل أن يستقرّ المفتاح (default + جلستُه حسابُه، والخادمُ عيادةٌ أخرى — مشغّلٌ قبل إعادة التحميل) ⇒ switched", (await open("default", "OP")).status === "switched");
+  check("  واللوحةُ تقولها (الرسالةُ نفسُها التي رآها المالكون)", text(html(h(M.CategoriesTab, { products: PRODUCTS }))).includes(AR.cat.switched));
   check("بلا جلسة ⇒ switched لا ready", (await open("default", null)).status === "switched");
   check("موظّفٌ بمفتاح عيادته ⇒ ready ولو اختلف معرّفُ حسابه", (await open("C1", "S7")).status === "ready");
   check("مفتاحُ عيادةٍ أخرى ⇒ switched (الحارسُ باقٍ)", (await open("C2", "C2")).status === "switched");

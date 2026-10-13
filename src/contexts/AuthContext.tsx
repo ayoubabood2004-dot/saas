@@ -4,6 +4,7 @@ import type { Profile, Role, AccountRole } from "@/types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
+import { clinicKeyAction } from "@/lib/workspaceClinic";
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import { setSubscriptionScope, syncSubscriptionFromServer } from "@/lib/subscription";
 import { applyFontScale } from "@/lib/fontScale";
@@ -41,6 +42,9 @@ interface RawProfile {
   clinic_id?: string | null;
   /** Set when the user is staff of another clinic (accepted an invite). */
   staff?: { clinicId: string; role: Role; staffRole?: string | null } | null;
+  /** الخادمُ **أكّد** أن الحسابَ يعمل بعيادته هو (my_workspace: is_staff=false، أو جدولُ
+   *  العضوية أجاب بلا عيادةٍ أخرى). بحثٌ فشل ليس تأكيداً — فلا يُمسح به مفتاحٌ (clinicKeyAction). */
+  own_clinic?: boolean;
 }
 
 interface AuthState {
@@ -118,8 +122,10 @@ const STAFF_TO_APP_ROLE: Record<string, Role> = {
  * changes behaviour for existing clinics/owners. Returns null if not staff, or if
  * the memberships table doesn't exist yet (pre-0016) → safe no-op.
  */
-async function loadMembership(userId: string): Promise<{ clinicId: string; role: Role; staffRole?: string | null } | null> {
-  if (!supabase) return null;
+type StaffMembership = { clinicId: string; role: Role; staffRole?: string | null };
+async function loadMembership(userId: string): Promise<{ staff: StaffMembership | null; own: boolean }> {
+  const unknown = { staff: null, own: false };
+  if (!supabase) return unknown;
   // SERVER truth first (migration 0072): my_workspace() returns the exact
   // clinic/role that auth_clinic()/auth_role() — i.e. every RLS policy — will
   // use. Mirroring it means the app can never disagree with the backend about
@@ -130,8 +136,8 @@ async function loadMembership(userId: string): Promise<{ clinicId: string; role:
     if (!error && data && typeof data === "object") {
       const w = data as { clinic_id?: string | null; role?: string | null; is_staff?: boolean };
       if (w.clinic_id) {
-        if (!w.is_staff) return null; // the server routes me to my own clinic
-        return { clinicId: w.clinic_id, role: STAFF_TO_APP_ROLE[w.role ?? ""] ?? "reception", staffRole: w.role ?? null };
+        if (!w.is_staff) return { staff: null, own: true }; // the server routes me to my own clinic
+        return { staff: { clinicId: w.clinic_id, role: STAFF_TO_APP_ROLE[w.role ?? ""] ?? "reception", staffRole: w.role ?? null }, own: false };
       }
     }
   } catch { /* pre-0072 backend — fall through to the direct query */ }
@@ -141,12 +147,14 @@ async function loadMembership(userId: string): Promise<{ clinicId: string; role:
       .select("clinic_id, role, status")
       .eq("user_id", userId)
       .eq("status", "active");
-    if (error || !data) return null;
+    if (error || !data) return unknown;
     const staff = (data as { clinic_id: string; role: string }[]).find((m) => m.clinic_id !== userId);
-    if (!staff) return null;
-    return { clinicId: staff.clinic_id, role: STAFF_TO_APP_ROLE[staff.role] ?? "reception", staffRole: staff.role };
+    // الجدولُ لا يرى جلسةَ المشغّل (platform_sessions) — فغيابُ العضوية هنا ليس تأكيداً؛
+    // my_workspace وحده (حكمُ auth_clinic نفسه) يؤكّد «عيادتي».
+    if (!staff) return unknown;
+    return { staff: { clinicId: staff.clinic_id, role: STAFF_TO_APP_ROLE[staff.role] ?? "reception", staffRole: staff.role }, own: false };
   } catch {
-    return null;
+    return unknown;
   }
 }
 
@@ -163,8 +171,8 @@ async function loadRawProfile(userId: string): Promise<RawProfile | null> {
     // `roles` column may not exist yet (before migration 0005) — derive from `role`.
     const fromArr = Array.isArray(data.roles) ? (data.roles as unknown[]).filter(isAccountRole) : [];
     const roles = fromArr.length ? fromArr : [accountOf(rawRole)];
-    const staff = await loadMembership(userId);
-    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null, staff };
+    const m = await loadMembership(userId);
+    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null, staff: m.staff, own_clinic: m.own };
   } catch {
     // Network/backend error (e.g. project paused) — treat as "no profile" so boot never hangs.
     return null;
@@ -196,7 +204,9 @@ async function hydrateSession(u: SbUserLike): Promise<RawProfile> {
   if (rp) return rp;
   // Profile unreachable (transient) — still detect a staff membership so an
   // invited employee isn't mis-routed to the owner view.
-  fallback.staff = await loadMembership(u.id).catch(() => null);
+  const m = await loadMembership(u.id).catch(() => ({ staff: null, own: false }));
+  fallback.staff = m.staff;
+  fallback.own_clinic = m.own;
   return fallback;
 }
 
@@ -349,8 +359,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // shared config (services, breeds, meds, …) from Supabase into the local caches.
   useEffect(() => {
     const clinicId = raw?.staff ? raw.staff.clinicId : raw?.clinic_id;
-    if (resolvedActive === "clinic" && clinicId) setActiveClinicId(clinicId);
-    else if (resolvedActive === "owner") clearActiveClinic();
+    /* مفتاحُ صاحب العيادة «default» (عيادتُه)، ومفتاحٌ بقي من عيادةٍ زارها (مشغّلٌ خرج، أو كادرٌ
+     * ترك) يُمسح حين يؤكّد الخادمُ أنه بعيادته — كان يبقى فيقفل «أدويتي» والتصنيفات، ويختم
+     * الطابورُ عملياتِ عيادته باسم غيرها (workspaceClinic.ts). */
+    const key = clinicKeyAction({ active: resolvedActive, staffClinic: raw?.staff?.clinicId ?? null, profileClinic: raw?.clinic_id ?? null, ownConfirmed: !!raw?.own_clinic });
+    if (key === "clear") clearActiveClinic();
+    else if (key !== "keep") setActiveClinicId(key.set);
     if (resolvedActive === "clinic") {
       const key = getActiveClinicId();
       if (key !== hydratedFor()) void hydrateClinicConfig(key).then(applyFontScale);

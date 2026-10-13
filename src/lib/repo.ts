@@ -49,6 +49,7 @@ import { expenseMethodOf } from "./pockets";
 import { journeyToken } from "./journey";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
 import { getActiveClinicId } from "./clinics";
+import { expectedServerClinic } from "./workspaceClinic";
 import { cleanRef } from "./deliverySearch";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
@@ -1644,7 +1645,9 @@ const supabaseRepo: DemoRepo = {
     return listOf<JourneyEvent>(await sbc().from("journey_events").select("*").eq("journey_id", journeyId).order("created_at", { ascending: true }));
   },
   async createJourney(petId, kind, createdByName) {
-    const clinicId = getActiveClinicId();
+    /* معرّفُ الخادم لا المفتاحُ الخامّ: مفتاحُ المالك "default" (workspaceClinic.ts) فكان كلُّ
+     * إدراجٍ يُرفض بـuuid — «تعذّر بدء الرحلة» لكلّ صاحب عيادة، وصفرُ رحلةٍ بالإنتاج. */
+    const clinicId = await expectedServerClinic();
     // فهرس «رحلة نشطة واحدة» بالقاعدة يمنع التكرار — نعيد الموجودة بدل الفشل.
     const existing = maybe<Journey>(await sbc().from("journeys").select("*").eq("pet_id", petId).eq("status", "active").maybeSingle());
     if (existing) return existing;
@@ -1657,7 +1660,7 @@ const supabaseRepo: DemoRepo = {
     return j;
   },
   async advanceJourney(journeyId, stage, createdByName) {
-    const clinicId = getActiveClinicId();
+    const clinicId = await expectedServerClinic();
     ok(await sbc().from("journeys").update({ stage }).eq("id", journeyId).eq("status", "active"));
     ok(await sbc().from("journey_events").insert({
       journey_id: journeyId, clinic_id: clinicId, kind: "stage", stage, created_by_name: createdByName ?? null,
@@ -1665,7 +1668,7 @@ const supabaseRepo: DemoRepo = {
   },
   async addJourneyNote(journeyId, input, createdByName) {
     ok(await sbc().from("journey_events").insert({
-      journey_id: journeyId, clinic_id: getActiveClinicId(),
+      journey_id: journeyId, clinic_id: await expectedServerClinic(),
       kind: input.photo ? "photo" : "message",
       body: input.body?.slice(0, 500) || null, photo: input.photo ?? null,
       created_by_name: createdByName ?? null,

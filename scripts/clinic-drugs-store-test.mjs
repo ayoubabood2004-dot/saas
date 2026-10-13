@@ -150,7 +150,7 @@ console.log("▸ (d2) صاحبُ العيادة: مفتاحُه «default» وم
   await S.applyDrugOps([{ op: "unmine", id: "a" }]);
   check("  ويكتب بختم الخادم", calls("apply")[0]?.clinic === "C1");
   await asOwner("OP");
-  check("مشغّلٌ داخلٌ عيادةً (default + جلستُه حسابُه) ⇒ switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.length === 0);
+  check("قبل أن يستقرّ المفتاح (default + جلستُه حسابُه، والخادمُ عيادةٌ أخرى) ⇒ switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.length === 0);
   const got = await swallow(S.applyDrugOps([{ op: "unmine", id: "a" }]));
   check("  ولا كتابة", got !== "ok" && calls("apply").length === 0);
   await asOwner(null);
