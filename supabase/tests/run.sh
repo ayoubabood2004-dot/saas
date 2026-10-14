@@ -5272,10 +5272,11 @@ chk "السياجُ يغطّي الجدولين، ولا سياسةَ تقرأ �
 chk "التدقيق: الإنشاءُ وثلاثُ إضافات أربعةُ سطور، نوعُها «إعدادات»" \
     "select (count(*) - $A0)::text||'|'||max(audit_kind(entity, action, details)) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')" "4|settings"
 # وسطرُ العضوية يُقرأ: كان «تعديل في إعدادات العيادة: drug_group_items» للإضافة والشيل معاً (audit_change لا
-# يحفظ من صفّها غيرَ معرّفات) — فالدواءُ والتصنيفُ بالاسم بالسطر نفسه.
+# يحفظ من صفّها غيرَ معرّفات) — فالدواءُ والتصنيفُ بالاسم بالسطر نفسه. (chk يشيل الفراغات من الناتج —
+# فالمتوقَّعُ مكتوبٌ بلاها: «Meloxicam0239←مسكناتالقطط».)
 chk "  وسطرُ الإضافة يسمّي الدواءَ والتصنيف (والمكتوبُ بإيدي باسم صفّه القائم)" \
     "select string_agg((details->>'name')||'←'||(details->>'group'), ',' order by details->>'name') from audit_log where clinic_id='$C1' and entity='clinic_drug_group_items' and action='INSERT' and id > $AM0" \
-    "Buprenorphine 0239←مسكنات القطط,Gabapentin 0239←مسكنات القطط,Meloxicam 0239←مسكنات القطط"
+    "Buprenorphine0239←مسكناتالقطط,Gabapentin0239←مسكناتالقطط,Meloxicam0239←مسكناتالقطط"
 chk "  ومحفّزُ العضوية definer بمسارٍ مثبَّت، يقرأ الاسمين من عيادة الصفّ، ولا تنفيذَ للمسجَّل" \
     "select prosecdef::text||'|'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||'|'||(prosrc like '%d.clinic_id = r.clinic_id%' and prosrc like '%g.clinic_id = r.clinic_id%')::text||'|'||has_function_privilege('authenticated', oid, 'execute')::text from pg_proc where proname='clinic_drug_group_items_audit'" \
     "true|true|true|false"
@@ -5291,7 +5292,7 @@ chk "  كلٌّ بسطرٍ نوعُه «إعدادات»، والدواءُ ال
     "select ((select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')) - $A2)::text||'|'||(select string_agg(distinct audit_kind(entity, action, details), ',') from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items'))||'|'||(select (archived_at is null)::text from clinic_drugs where id='${CG}d2')" "2|settings|true"
 chk "  وسطرُ الشيل يسمّيهما كذلك" \
     "select (details->>'name')||'←'||(details->>'group') from audit_log where clinic_id='$C1' and entity='clinic_drug_group_items' and action='DELETE' and id > $AM0" \
-    "Buprenorphine 0239←مسكنات القطط"
+    "Buprenorphine0239←مسكناتالقطط"
 chk "أرشفةُ دواءٍ تُبقي عضويتَه نائمة" \
     "select _cdg('$C1', '$C1', '[{\"op\":\"archive\",\"id\":\"${CG}d1\"}]')" "ok:2:2"
 chk "  والقائمةُ ترجع التصنيفاتِ (والمؤرشفَ آخراً) والعضوياتِ كلَّها والنائمةَ منها" \
