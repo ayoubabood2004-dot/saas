@@ -7,7 +7,7 @@ import {
 import type { Species } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import {
-  matchMonograph, doseFor, calcDose, doseCeiling, doseNum, judgedMgPerKg, outsideWindow, checkSafety, hasBlocking, appFreqHours,
+  matchMonograph, ingredientMonographs, doseFor, calcDose, doseCeiling, doseNum, judgedMgPerKg, outsideWindow, checkSafety, checkIngredientSafety, hasBlocking, appFreqHours,
   APP_ROUTE, CLASS_LABEL, ROUTE_LABEL, FREQ_LABEL, isBannedFor, type DoseAlert,
 } from "@/lib/vetFormulary";
 import { DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
@@ -108,16 +108,24 @@ export function DrugCard({
     return calcDose({ mgPerKg: row.mgPerKg, weightKg: weight, strength: row.strength, solid: isSolid, freq: appFreqHours(row.freq), ceiling });
   }, [row.mgPerKg, weight, row.strength, isSolid, row.freq, ceiling]);
 
+  /* checkSafety يقرأ **معرّفاتِ** الدليل للأدوية الأخرى، والبطاقةُ تستلم أسماءَها — فكان التكرارُ
+   * والتعارضُ لا يُقالان داخل البطاقة أبداً (اسمٌ «Meloxicam» ليس المعرّف «meloxicam»). والمركّبُ
+   * بالخطة يُحسب بكلّ مادةٍ يعرفها الدليل فيه. */
+  const concurrentIds = useMemo(() => concurrent.flatMap((n) => ingredientMonographs(n).map((d) => d.id)), [concurrent]);
+  /** مركّبٌ بلا دليلٍ واحد: موادُّه المعروفة — لمنعها وحساسيتها وتعارضها، لا لجرعة. */
+  const mixture = useMemo(() => (mono ? [] : ingredientMonographs(row.name)), [mono, row.name]);
+
   const alerts = useMemo<DoseAlert[]>(() => {
-    if (!mono || !species) return [];
-    if (!row.mgPerKg) return checkSafety({ drug: mono, species, mgPerKg: 0, allergies, flags, concurrent, dose: undefined });
+    if (!species) return [];
+    if (!mono) return mixture.length ? checkIngredientSafety({ ingredients: mixture, species, allergies, flags, concurrent: concurrentIds }) : [];
+    if (!row.mgPerKg) return checkSafety({ drug: mono, species, mgPerKg: 0, allergies, flags, concurrent: concurrentIds, dose: undefined });
     return checkSafety({
       drug: mono, species, weightKg: weight, mgPerKg: row.mgPerKg,
       route: row.route ? APP_ROUTE[row.route] : undefined,
-      freq: appFreqHours(row.freq), allergies, flags, concurrent,
+      freq: appFreqHours(row.freq), allergies, flags, concurrent: concurrentIds,
       dose: calc,
     });
-  }, [mono, species, weight, row.mgPerKg, row.route, row.freq, allergies, flags, concurrent, calc]);
+  }, [mono, mixture, species, weight, row.mgPerKg, row.route, row.freq, allergies, flags, concurrentIds, calc]);
 
   const manual = row.doseMode === "manual" || (!win && !!row.dose.trim()) || (!weight && !!row.dose.trim());
   const noWindowAnswered = !win && !!row.dose.trim();

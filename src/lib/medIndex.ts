@@ -1,5 +1,5 @@
 import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugOp, DrugFamilyKey, MedicineStock, Species } from "@/types";
-import { FORMULARY, DRUG_BY_ID, matchMonograph, doseFor, isBannedFor, type DrugClass, type Monograph } from "./vetFormulary";
+import { FORMULARY, DRUG_BY_ID, matchMonograph, ingredientMonographs, bannedIngredient, doseFor, isBannedFor, type DrugClass, type Monograph } from "./vetFormulary";
 import { searchable } from "./utils";
 
 /* ============================================================================
@@ -548,8 +548,8 @@ export interface BuildInput {
   items?: readonly ClinicDrugGroupItem[] | null;
 }
 
-const haystack = (name: string, mono?: Monograph) =>
-  [name, mono?.ar, mono?.en, ...(mono?.brands ?? [])].filter(Boolean).map((s) => searchable(s as string)).join("|");
+const haystack = (name: string, ...monos: Monograph[]) =>
+  [name, ...monos.flatMap((m) => [m.ar, m.en, ...(m.brands ?? [])])].filter(Boolean).map((s) => searchable(s as string)).join("|");
 
 /** ترتيبُ اليوم داخل الصنف: الممنوعُ آخراً، ثم المتوفّر، ثم ما له جرعة. */
 const rankOf = (it: MedItem) => (it.banned ? 100 : 0) + ((it.stock ?? 0) > 0 ? 0 : 10) + (it.dosed ? 0 : 1);
@@ -564,12 +564,15 @@ export function buildMedIndex(input: BuildInput): MedIndex {
   const showStock = input.stockMode !== "hide";
   const items = new Map<string, MedItem>();
 
+  /* العنوانُ والجرعةُ من دليلِ الاسم الواحد (matchMonograph) — والمركّبُ («Florfenicol +
+   * Doxycycline») بلا دليلٍ واحد فعنوانُه اسمُه. أمّا شارةُ «ممنوع» فمن كلّ مادةٍ يعرفها الدليل
+   * فيه (bannedIngredient): «Paracetamol + Vitamin C» ممنوعةٌ للقطّ كالباراسيتامول وحده. */
   const make = (name: string, family: FamilyKey, familyType: string, base: MedItem["base"], mono?: Monograph): MedItem => ({
     key: searchable(name), name, label: mono?.ar ?? name, sub: mono?.ar && mono.ar !== name ? name : null,
     family, familyType, base, inMine: false, pos: null, monographId: mono?.id,
-    banned: mono && species ? isBannedFor(mono, species) : undefined,
+    banned: !species ? undefined : mono ? isBannedFor(mono, species) : bannedIngredient(name, species),
     dosed: !!(mono && species && doseFor(mono, species)),
-    products: [], hay: haystack(name, mono), groupIds: [],
+    products: [], hay: mono ? haystack(name, mono) : haystack(name, ...ingredientMonographs(name)), groupIds: [],
   });
 
   for (const g of input.catalog) {

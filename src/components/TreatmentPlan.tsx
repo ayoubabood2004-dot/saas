@@ -24,7 +24,7 @@ import { NumberPadSheet } from "@/components/treatment/NumberPadSheet";
 import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
 import { DoseAlertRow, APP_ROUTE_BACK } from "@/components/DoseBlock";
-import { matchMonograph, checkSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
+import { matchMonograph, ingredientMonographs, checkSafety, checkIngredientSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
 import { planRouteToDose, WATER_ROUTE_WORD } from "@/lib/doseUnits";
 import type { MedicineStock } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
@@ -102,8 +102,12 @@ const parseMgKg = (dose: string): number | undefined => {
  * strength. Applied the moment a drug is ADDED — the human-test run showed a
  * catalog drug otherwise ships doseless to the nurse board unless the doctor
  * notices the tiny «استعمل الجرعة المعتادة» pill.
+ *
+ * Only for ONE drug (matchMonograph): a listed mixture («… + Prednisolone + …
+ * (Bio-Sone)») seeds nothing — it got prednisolone's mg/kg and tablet strength.
+ * Exported for scripts/med-match-test.mjs.
  */
-const formularySeed = (name: string, species?: Sp): Partial<PlanRow> => {
+export const formularySeed = (name: string, species?: Sp): Partial<PlanRow> => {
   const drug = matchMonograph(name);
   if (!drug) return {};
   const win = species ? doseFor(drug, species) : undefined;
@@ -355,20 +359,23 @@ export function TreatmentPlan({
     const out: { name: string; alerts: DoseAlert[] }[] = [];
     for (const r of filledRows) {
       const drug = matchMonograph(r.name);
-      if (!drug) continue;
+      // كلُّ مادةٍ يعرفها الدليل بالصفوف الأخرى — «Vimespiro» فيها بريدنيزولون فتتعارض مع ميلوكسيكام.
       const others = filledRows
         .filter((x) => x.id !== r.id)
-        .map((x) => matchMonograph(x.name)?.id)
-        .filter((x): x is string => !!x);
-      const alerts = checkSafety({
-        drug, species, weightKg: weight, mgPerKg: r.mgPerKg ?? 0,
-        route: r.route ? APP_ROUTE[r.route] : undefined,
-        freq: appFreqHours(r.freq),
-        allergies,
-        flags,
-        concurrent: others,
-        dose: rowCalc(r),
-      }).filter((a) => a.tone === "critical" || a.tone === "warn");
+        .flatMap((x) => ingredientMonographs(x.name).map((d) => d.id));
+      // المركّبُ بلا دليلٍ واحد: لا نافذةَ جرعةٍ له، لكنّ منعَ موادّه وحساسيتَها وتعارضَها يُفحص.
+      const alerts = (drug
+        ? checkSafety({
+          drug, species, weightKg: weight, mgPerKg: r.mgPerKg ?? 0,
+          route: r.route ? APP_ROUTE[r.route] : undefined,
+          freq: appFreqHours(r.freq),
+          allergies,
+          flags,
+          concurrent: others,
+          dose: rowCalc(r),
+        })
+        : checkIngredientSafety({ ingredients: ingredientMonographs(r.name), species, allergies, flags, concurrent: others })
+      ).filter((a) => a.tone === "critical" || a.tone === "warn");
       if (alerts.length) out.push({ name: r.name.trim(), alerts });
     }
     return out;

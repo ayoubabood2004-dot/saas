@@ -15,7 +15,7 @@ import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess } from "@/lib/sounds";
 import {
-  doseFor, calcDose, doseCeiling, doseNum, taskAmountText, isBannedFor,
+  doseFor, calcDose, doseCeiling, doseNum, taskAmountText, isBannedFor, bannedIngredient,
   type Monograph, type Route,
 } from "@/lib/vetFormulary";
 import {
@@ -956,6 +956,10 @@ export function AddTaskSheet({ petName, petId, todayISO, presetHour, weightKg, s
     });
     return { win, calc, strength };
   }, [picked, species, weightKg]);
+  /** مركّبٌ بلا دليلٍ واحد («Paracetamol + Vitamin C»): لا جرعةَ تُحسب له، لكنّ منعَ مادةٍ
+   *  فيه لهذا النوع يُقال كما لو اختيرت وحدها. */
+  const mixBanned = useMemo(() => (med && !picked ? bannedIngredient(med.name, species ?? "other") : undefined), [med, picked, species]);
+  const bannedWhy = computed?.banned ?? mixBanned;
 
   /** دواءٌ من المنتقي: له دليلٌ ⇒ مسارُ اليوم نفسُه (جرعةٌ من strengths[0] وطريقٌ وأوقات)
    *  والاسمُ نصُّ المنتقي؛ وبلا دليل ⇒ الاسمُ وحده و«بلا جرعة موثّقة — اكتب الكمية». */
@@ -1127,9 +1131,9 @@ export function AddTaskSheet({ petName, petId, todayISO, presetHour, weightKg, s
         )}
 
         {/* ما حسبه الدليل — يُرى قبل الحفظ لا بعده */}
-        {computed?.banned && (
+        {bannedWhy && (
           <p data-drugbanned className="mt-2 rounded-xl bg-danger-50 px-3 py-2 text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
-            ⚠ {computed.banned}
+            ⚠ {bannedWhy}
           </p>
         )}
         {computed?.noWeight && (

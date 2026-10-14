@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import type { DoseRoute, Pet, Species, TaskType } from "@/types";
 import {
-  DRUG_BY_ID, doseFor, calcDose, doseCeiling, doseNum, isBannedFor, allergyHit, matchMonograph,
+  DRUG_BY_ID, doseFor, calcDose, doseCeiling, doseNum, isBannedFor, allergyHit, matchMonograph, bannedIngredient, ingredientMonographs,
   type Monograph, type Route, type DoseAlert,
 } from "./vetFormulary";
 import { pad2, TASK_META } from "./flowsheet";
@@ -449,7 +449,8 @@ export function buildDraft(p: Protocol, pet: Pet | undefined, todayISO: string):
          * لهذا النوع لا يُدرَج كما لا يُدرَج من الدليل، وحساسيتُها تُفحص (drugId). الكميةُ
          * تبقى ما كتبه الطبيب. */
         const known = matchMonograph(label);
-        if (known && isBannedFor(known, species)) continue;
+        // والمركّبُ («Paracetamol + Vitamin C») ممنوعٌ إن مُنعت مادةٌ فيه يعرفها الدليل.
+        if (bannedIngredient(label, species)) continue;
         const stepKey = `${p.id}-free-${label}`;
         const times = spreadTimes(step.perDay ?? 1);
         for (let d = 0; d < days; d++) {
@@ -515,19 +516,23 @@ export function draftAlerts(draft: DraftOrder[], pet: Pet | undefined): DoseAler
   const seen = new Set<string>();
   const out: DoseAlert[] = [];
   for (const row of draft) {
-    if (!row.drugId || seen.has(row.drugId)) continue;
-    seen.add(row.drugId);
-    const drug = DRUG_BY_ID.get(row.drugId);
-    if (!drug) continue;
-    for (const a of pet.allergies ?? []) {
-      const hit = allergyHit(drug, a);
-      if (hit) {
-        out.push({
-          id: `allergy-${drug.id}`, tone: "critical", blocking: true,
-          title: i18n.t("proto.aAllergy", { d: drug.ar, defaultValue: "حساسية مسجّلة — {{d}} بهذا البروتوكول" }),
-          detail: hit,
-        });
-        break;
+    /* بندٌ حرٌّ مركّب («Amoxicillin + Gentamicin») بلا دليلٍ واحد: كلُّ مادةٍ يعرفها الدليل
+     * تُفحص حساسيتُها — حساسيةُ البنسلين تمسك الأموكسيسيلين داخل الخليط. */
+    const drugs = row.drugId ? [DRUG_BY_ID.get(row.drugId)]
+      : row.task_type === "drug" ? ingredientMonographs(row.medication) : [];
+    for (const drug of drugs) {
+      if (!drug || seen.has(drug.id)) continue;
+      seen.add(drug.id);
+      for (const a of pet.allergies ?? []) {
+        const hit = allergyHit(drug, a);
+        if (hit) {
+          out.push({
+            id: `allergy-${drug.id}`, tone: "critical", blocking: true,
+            title: i18n.t("proto.aAllergy", { d: drug.ar, defaultValue: "حساسية مسجّلة — {{d}} بهذا البروتوكول" }),
+            detail: hit,
+          });
+          break;
+        }
       }
     }
   }

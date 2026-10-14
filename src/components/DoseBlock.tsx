@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Calculator, Syringe, ShieldAlert, AlertTriangle, Check, Info, BookOpen, Beaker } from "lucide-react";
 import {
-  matchMonograph, doseFor, calcDose, doseCeiling, doseNum, checkSafety, worstTone,
+  matchMonograph, ingredientMonographs, doseFor, calcDose, doseCeiling, doseNum, checkSafety, worstTone,
   APP_ROUTE, appFreqHours, freqIdFor, CLASS_LABEL, ROUTE_LABEL, FREQ_LABEL,
   type DoseAlert, type DoseTone,
 } from "@/lib/vetFormulary";
@@ -92,7 +92,7 @@ export function DoseBlock({
   const alerts = useMemo(() => {
     if (!drug || !species || !mgPerKg) {
       // A banned drug must warn even before a dose is typed.
-      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, flags, concurrent: concurrent.map(matchId).filter(Boolean) as string[], dose: undefined });
+      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, flags, concurrent: concurrent.flatMap(ingredientIds), dose: undefined });
       return [] as DoseAlert[];
     }
     return checkSafety({
@@ -101,7 +101,7 @@ export function DoseBlock({
       freq: appFreqHours(freq),
       allergies,
       flags,
-      concurrent: concurrent.map(matchId).filter(Boolean) as string[],
+      concurrent: concurrent.flatMap(ingredientIds),
       dose: calc,
     });
   }, [drug, species, weightKg, mgPerKg, route, freq, concurrent, allergies, flags, calc]);
@@ -244,7 +244,8 @@ export function DoseBlock({
 /* --- helpers --- */
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
-const matchId = (n: string) => matchMonograph(n)?.id;
+/** Every formulary id a plan name stands for — a mixture is each ingredient it lists. */
+const ingredientIds = (n: string) => ingredientMonographs(n).map((d) => d.id);
 
 /** Formulary route → the id the treatment plan's route chips use. */
 export const APP_ROUTE_BACK: Record<string, string> = {

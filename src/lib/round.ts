@@ -4,7 +4,7 @@ import { taskStatus, minutesLate } from "./treatmentSchedule";
 import { toMin } from "./flowsheet";
 import { cageSortKey } from "./cageOrder";
 import {
-  matchMonograph, doseFor, isBannedFor, allergyHit, FREQ_LABEL,
+  matchMonograph, ingredientMonographs, doseFor, isBannedFor, allergyHit, FREQ_LABEL,
   type DoseAlert,
 } from "./vetFormulary";
 
@@ -98,32 +98,41 @@ export function lateText(mins: number): string {
  * بما بيده، بلا أن ندّعي أننا حسبناه له.
  */
 export function alertsFor(entry: TreatmentEntry, pet: Pet | undefined): DoseAlert[] {
+  if (!pet) return [];
   const drug = matchMonograph(entry.medication || "");
-  if (!drug || !pet) return [];
+  /* المركّبُ («Paracetamol + Vitamin C») ليس دواءً واحداً بالدليل — فلا سقفَ ولا مدى له هنا؛
+   * لكنّ منعَ كلِّ مادةٍ يعرفها الدليلُ فيه وحساسيتَها تُقال كأنها كُتبت وحدها (ingredientMonographs). */
+  const judged = drug ? [drug] : ingredientMonographs(entry.medication || "");
+  if (!judged.length) return [];
   const out: DoseAlert[] = [];
 
-  const banned = isBannedFor(drug, pet.species);
-  if (banned) {
-    out.push({
-      id: "banned", tone: "critical", blocking: true,
-      title: i18n.t("round.aBanned", { d: drug.ar, defaultValue: "ممنوع منعاً باتاً لهذا النوع — {{d}}" }),
-      detail: banned,
-    });
-    return out;                       // لا شيء بعد المنع يستحقّ القراءة
-  }
-
-  for (const a of pet.allergies ?? []) {
-    const hit = allergyHit(drug, a);
-    if (hit) {
+  for (const d of judged) {
+    const banned = isBannedFor(d, pet.species);
+    if (banned) {
       out.push({
-        id: `allergy-${a}`, tone: "critical", blocking: true,
-        title: i18n.t("round.aAllergy", { d: drug.ar, defaultValue: "حساسية مسجّلة — لا تعطِه {{d}}" }),
-        detail: hit,
+        id: "banned", tone: "critical", blocking: true,
+        title: i18n.t("round.aBanned", { d: d.ar, defaultValue: "ممنوع منعاً باتاً لهذا النوع — {{d}}" }),
+        detail: banned,
       });
-      return out;
+      return out;                     // لا شيء بعد المنع يستحقّ القراءة
     }
   }
 
+  for (const d of judged) {
+    for (const a of pet.allergies ?? []) {
+      const hit = allergyHit(d, a);
+      if (hit) {
+        out.push({
+          id: `allergy-${a}`, tone: "critical", blocking: true,
+          title: i18n.t("round.aAllergy", { d: d.ar, defaultValue: "حساسية مسجّلة — لا تعطِه {{d}}" }),
+          detail: hit,
+        });
+        return out;
+      }
+    }
+  }
+
+  if (!drug) return out;              // مدى الجرعة لمادةٍ واحدة لا لخليط
   const win = doseFor(drug, pet.species);
   if (win?.hardMax) {
     out.push({

@@ -748,33 +748,122 @@ const normalizeName = (s: string) =>
     .replace(/[^a-z؀-ۿ]+/g, " ")
     .trim();
 
-/** Generic stems, longest-first, so compound names win over their prefixes. */
+/** Generic stems, longest-first, so compound names win over their prefixes. A
+ *  generic name that lists synonyms ("Paracetamol / Acetaminophen") answers to
+ *  each of them alone too — "Paracetamol (dogs only)" is the drug, not a guess. */
 const MATCH_INDEX: { key: string; drug: Monograph }[] = FORMULARY
-  .flatMap((d) => [
-    { key: normalizeName(d.en), drug: d },
-    { key: normalizeName(d.ar), drug: d },
-    ...(d.brands ?? []).map((b) => ({ key: normalizeName(b), drug: d })),
-  ])
+  .flatMap((d) => [...new Set([d.en, ...d.en.split("/"), d.ar, ...(d.brands ?? [])].map(normalizeName))]
+    .map((key) => ({ key, drug: d })))
   .filter((x) => x.key.length > 2)
   .sort((a, b) => b.key.length - a.key.length);
 
+/* ── الاسمُ الذي يعدّد موادَّه ليس واحدةً منها (١٤/١٠) ─────────────────────────
+ * عيادتان كتبتا بتصنيفاتهما «Oxytetracycline + Thiamphenicol + Prednisolone +
+ * Lidocaine + Bromhexine (Bio-Sone)» و«Florfenicol + … + Prednisolone … (Vimespiro)»،
+ * فاحتوت المطابقةُ «prednisolone» وصار المركّبُ بريدنيزولون: عنوانُه «بريدنيزولون»،
+ * وجرعتُه وعيارُ حبّته ونافذتُه منه. ومثلُها «Florfenicol + Doxycycline» ⇒ دوكسيسيكلين
+ * و«Ciprofloxacin + Flagyle» ⇒ ميترونيدازول. فالاسمُ الذي يعدّد مادّتين فأكثر لا يُطابَق
+ * إلا بمونوغرافٍ هو نفسُه مركّبٌ بعدد موادّه («أموكسيسيلين + كلافولانيك» حرفياً،
+ * «Trimethoprim + Sulfadiazine»)، ومنعُ موادّه وحساسيتُها وتعارضُها يُقرأ من كلّ مادةٍ
+ * تُعرف (ingredientMonographs) — لا جرعة.
+ *
+ * الفواصلُ مقيسةٌ بأسماء الإنتاج: «+» (بفراغٍ وبلاه، وبالعربي «دوكسي +فلورفنيكول»)،
+ * و«&»، وكلمة «and» («doxycycline and flor»). لا «-»: «Amoxicillin-Clavulanate»
+ * و«Trimethoprim-Sulfadiazine» منتجٌ واحد كلٌّ منهما؛ ولا «/»: الدليلُ يكتب بها
+ * المترادفات. وما بين القوسين يُشال أوّلاً — «(Bio-Sone)» اسمٌ تجاريّ لا مادّة. */
+const INGREDIENT_SEP = /\+|&|\band\b/i;
+
+/** The active ingredients a free-text name lists, as written — one entry for a
+ *  plain name. Parenthesised brands and notes are dropped first. */
+export function ingredientParts(name: string): string[] {
+  return name.replace(/\([^)]*\)/g, " ").split(INGREDIENT_SEP)
+    .map((s) => s.trim()).filter((s) => normalizeName(s) !== "");
+}
+
+/** Shortest unfinished word the completion pass will finish. Measured on every
+ *  distinct production name (2026-10-14): the shortest it rightly finished was
+ *  «parac» (5); below it sat «CA» ⇒ calcium gluconate. Four keeps the clinic
+ *  shorthands that name one drug — «doxy», «enro», «dexa» — and drops the
+ *  two- and three-letter fragments («ca», «ace», «fur») that name nothing. */
+const MIN_COMPLETION = 4;
+
+/** One drug name (no ingredient list) → its monograph, normalised input `n`. */
+function matchSingle(n: string): Monograph | undefined {
+  const exact = MATCH_INDEX.find((x) => x.key === n)?.drug;
+  if (exact) return exact;
+  const contained = MATCH_INDEX.find((x) => n.includes(x.key))?.drug;
+  if (contained) return contained;
+  /* الإكمال: كلمةٌ لم تكتمل بعد («Itraconazol»، «parac») تُكمَل إلى اسمٍ من كلمةٍ واحدة
+   * **يبدأ** بها — لا اسمٌ **يحتويها** («Ronidazole» ليست ذيلَ «metronidazole»). ولا
+   * يُكمَل اسمٌ من كلمتين: «Calcium» ليست «Calcium gluconate 10%» الوريدية (مكمّلُ
+   * الدواجن الفمويّ غيرُها)، و«Vitamin» ليست «Vitamin K1». وإن بدأ بها دواءان
+   * («pred» ⇒ بريدنيزولون/بريدنيزون) فلا تخمين. */
+  if (n.length < MIN_COMPLETION || n.includes(" ")) return undefined;
+  const hits = new Set(MATCH_INDEX.filter((x) => !x.key.includes(" ") && x.key.startsWith(n)).map((x) => x.drug));
+  return hits.size === 1 ? [...hits][0] : undefined;
+}
+
 /**
- * Resolve a free-text drug name (catalog, clinic-custom, or typed) to a monograph.
+ * Resolve a free-text drug name (catalog, clinic-custom, or typed) to ONE
+ * monograph — the one whose label, dose, strength and window the plan uses.
  *
  * Order matters, and getting it wrong is a safety bug: matching loosely first
  * makes "Amoxicillin 250mg" resolve to Amoxicillin-Clavulanate, whose wider
- * window then swallows a genuine overdose warning. So: exact stem wins, then
- * the longest contained stem, and only if nothing matched do we fall back to
- * treating the input as a prefix of a longer generic name.
+ * window then swallows a genuine overdose warning. So: exact stem wins; a name
+ * that lists two or more ingredients matches nothing else but a combination
+ * monograph of as many ingredients (it is a mixture, not its first recognisable
+ * ingredient); then the longest contained stem; and only then is an unfinished
+ * word completed — a real prefix of a one-word name, at least MIN_COMPLETION
+ * letters, naming one drug only.
  */
 export function matchMonograph(name: string): Monograph | undefined {
   const n = normalizeName(name);
   if (!n) return undefined;
-  return (
-    MATCH_INDEX.find((x) => x.key === n)?.drug ??
-    MATCH_INDEX.find((x) => n.includes(x.key))?.drug ??
-    MATCH_INDEX.find((x) => x.key.includes(n))?.drug
-  );
+  const exact = MATCH_INDEX.find((x) => x.key === n)?.drug;
+  if (exact) return exact;
+  const parts = ingredientParts(name).length;
+  // A mixture is one monograph only when that monograph IS the mixture: its
+  // generic (several words, not a one-word brand) is in the name and its own name
+  // lists as many ingredients («Trimethoprim + Sulfadiazine» ⇒ TMPS; «Amoxicillin
+  // + Gentamicin» ⇏ amoxicillin; «Synulox + Gentamicin» ⇏ amoxi-clav).
+  if (parts > 1) {
+    return MATCH_INDEX.find((x) => x.key.includes(" ") && n.includes(x.key) && ingredientParts(x.drug.ar).length === parts)?.drug;
+  }
+  return matchSingle(n);
+}
+
+/**
+ * Every monograph a name's recognised ingredients resolve to — for what needs no
+ * dose: species bans, charted allergies, duplicate therapy and dangerous class
+ * pairs. A single drug (or an exact combination monograph) is itself; a listed
+ * mixture is each ingredient the formulary knows («Paracetamol + Vitamin C» ⇒
+ * paracetamol, so a cat still gets the ban). Never feed these to a dose path:
+ * the mixture's mg/kg is not any one ingredient's.
+ */
+export function ingredientMonographs(name: string): Monograph[] {
+  const whole = matchMonograph(name);
+  if (whole) return [whole];
+  const parts = ingredientParts(name);
+  if (parts.length < 2) return [];
+  const out = new Map<string, Monograph>();
+  for (const p of parts) {
+    const n = normalizeName(p);
+    const d = n ? matchSingle(n) : undefined;
+    if (d) out.set(d.id, d);
+  }
+  return [...out.values()];
+}
+
+/** The first species ban among a name's ingredients, naming the ingredient when
+ *  the name is a mixture (its own label is the mixture's, not the banned drug's). */
+export function bannedIngredient(name: string, species: Species): string | undefined {
+  const whole = matchMonograph(name);
+  if (whole) return isBannedFor(whole, species);
+  for (const d of ingredientMonographs(name)) {
+    const why = isBannedFor(d, species);
+    if (why) return `${d.ar} — ${why}`;
+  }
+  return undefined;
 }
 
 /* ---- Bridges to the ids the treatment plan already uses ---- */
@@ -1249,6 +1338,34 @@ export function checkSafety(opts: {
     out.push({ id: `warn-${i}`, tone: "info", title: w });
   }
 
+  return out;
+}
+
+/**
+ * Safety for a name that lists several ingredients and so is no ONE monograph
+ * («… + Prednisolone + … (Bio-Sone)», «Paracetamol + Vitamin C»). Its mg/kg is
+ * no ingredient's, so there is no window, route or over/under verdict here — but
+ * everything that needs no dose fires for EVERY recognised ingredient: species
+ * ban, charted allergy (drug or class), duplicate therapy, dangerous class pairs
+ * and chart flags. A mixture must not be safer on paper than its parts.
+ * Alert ids carry the ingredient («paracetamol:banned») so two never collide.
+ */
+export function checkIngredientSafety(opts: {
+  ingredients: Monograph[];
+  species: Species;
+  concurrent?: string[];
+  allergies?: string[];
+  flags?: { pregnant?: boolean; renal?: boolean; hepatic?: boolean; dehydrated?: boolean; puppy?: boolean };
+}): DoseAlert[] {
+  const out: DoseAlert[] = [];
+  for (const drug of opts.ingredients) {
+    const alerts = checkSafety({
+      drug, species: opts.species, mgPerKg: 0, dose: undefined,
+      concurrent: opts.concurrent, allergies: opts.allergies, flags: opts.flags,
+    });
+    // «no-window» judges a dose this mixture does not have.
+    for (const a of alerts) if (a.id !== "no-window") out.push({ ...a, id: `${drug.id}:${a.id}` });
+  }
   return out;
 }
 
