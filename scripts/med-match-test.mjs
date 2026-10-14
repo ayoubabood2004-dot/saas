@@ -522,6 +522,11 @@ await section("▸ ١٦) «مع» و«،» و«؛» و« و » توائمُ «wi
     one("Metacam Meloxicam") === "meloxicam" && one("ميثيل بريدنيزولون") === "methylprednisolone" && ings("ميثيل بريدنيزولون") === "methylprednisolone"
     && one("Amoxicillin Clavulanate 250mg") === "amoxi-clav" && ings("Amoxicillin Clavulanate 250mg") === "amoxi-clav",
     `${one("Metacam Meloxicam")} ${one("ميثيل بريدنيزولون")} ${ings("ميثيل بريدنيزولون")} ${one("Amoxicillin Clavulanate 250mg")}`);
+  check("«Adolescent vitamins» ليست «Adol» (باراسيتامول): رأسُ كلمةٍ أطول ليس الدواء، ولا منعَ للقطّ (كان «قاتل للقطط»)",
+    one("Adolescent vitamins") === null && ings("Adolescent vitamins") === "" && !ban("Adolescent vitamins", "cat"), `${one("Adolescent vitamins")} | ${ings("Adolescent vitamins")}`);
+  check("حارس: «Meloxicam for adolescent dogs» ميلوكسيكام وحده — «adol» داخل «adolescent» ليست دواءً ثانياً، و«Flagyle» و«Amoxicillins» دواؤهما",
+    one("Meloxicam for adolescent dogs") === "meloxicam" && ings("Meloxicam for adolescent dogs") === "meloxicam" && ings("Ciprofloxacin + Flagyle") === "metronidazole" && one("Amoxicillins") === "amoxicillin",
+    `${one("Meloxicam for adolescent dogs")} | ${ings("Meloxicam for adolescent dogs")} | ${ings("Ciprofloxacin + Flagyle")} | ${one("Amoxicillins")}`);
   check("حارس: الفاصلةُ بين رقمين كسرٌ بالخطّين («ميلوكسيكام ١،٥ ملغ»، «Meloxicam 1,5 mg»)، و«مع» قبل وصفٍ لا تصنع مادّة («ميلوكسيكام مع الأكل»)",
     one("ميلوكسيكام ١،٥ ملغ") === "meloxicam" && one("Meloxicam 1,5 mg") === "meloxicam" && one("ميلوكسيكام مع الأكل") === "meloxicam",
     `${one("ميلوكسيكام ١،٥ ملغ")} ${one("Meloxicam 1,5 mg")} ${one("ميلوكسيكام مع الأكل")}`);

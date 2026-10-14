@@ -930,16 +930,26 @@ const PROCLITIC = /^[وف]?(?:[بكل]?ال|لل|[بكل])?$/;
 /**
  * Where `n` holds the stem `key` as words, or -1. It starts where a word starts, or
  * after an Arabic proclitic (PROCLITIC); it ends where a word ends — or inside one only
- * if its own last word is a stem of MIN_COMPLETION letters («flagyle» ⊃ «flagyl»,
- * «… sulfadiazine» ⊃ «… sulfa»). «علبة فيتامين كلاب» does not hold «فيتامين ك»: one
+ * if its own last word is a stem of MIN_COMPLETION letters and what follows in that word
+ * is shorter than it («flagyle» ⊃ «flagyl», «adolescent» ⊅ «adol»; «Sulfadiazine» is
+ * TMPS's ingredient by `components`, not by «sulfa»). «علبة فيتامين كلاب» does not hold «فيتامين ك»: one
  * letter of «كلاب» names nothing — and «فيتامين كومبلكس» does not either (`allergyHit`).
- * An occurrence inside a span already `taken` by a longer name does not count.
+ * An occurrence inside a span already `taken` by a longer name does not count. When
+ * the KEY is what a person typed (`completes`: a charted «Amox»), its unfinished last
+ * word is a beginning to complete, as the completion pass does for names.
  */
-function heldAt(n: string, key: string, taken: readonly { at: number; end: number }[] = []): number {
+function heldAt(n: string, key: string, taken: readonly { at: number; end: number }[] = [], completes = false): number {
   const last = key.length - 1 - key.lastIndexOf(" ");
   for (let i = n.indexOf(key); i >= 0; i = n.indexOf(key, i + 1)) {
     const end = i + key.length;
-    if (!(end === n.length || n[end] === " " || last >= MIN_COMPLETION)) continue;
+    if (end < n.length && n[end] !== " ") {
+      // Inside a word only as that word's own ending («flagyl|e», «amoxicillin|s») — never as
+      // the head of a longer word: «adol» (Panadol's Adol) is not «adol|escent». Read as one
+      // drug among several, that head named paracetamol in «Meloxicam for adolescent dogs».
+      const wordEnd = n.indexOf(" ", end);
+      const rest = (wordEnd < 0 ? n.length : wordEnd) - end;
+      if (last < MIN_COMPLETION || (rest >= last && !completes)) continue;
+    }
     if (!PROCLITIC.test(n.slice(n.lastIndexOf(" ", i - 1) + 1, i))) continue;
     if (taken.some((t) => i < t.end && end > t.at)) continue;
     return i;
@@ -1435,7 +1445,7 @@ export function allergyHit(drug: Monograph, allergy: string): string | undefined
 
   // Direct: the allergy names this exact drug (or one of its brands).
   const names = [drug.en, drug.ar, ...(drug.aka ?? []), ...(drug.brands ?? [])].map(toWords);
-  if (names.some((n) => heldAt(a, n) >= 0 || heldAt(n, a) >= 0)) {
+  if (names.some((n) => heldAt(a, n) >= 0 || heldAt(n, a, [], true) >= 0)) {
     return `مسجّل بالملف: حساسية من «${allergy.trim()}» — وهذا هو نفس الدواء.`;
   }
 
