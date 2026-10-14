@@ -193,9 +193,13 @@ export default function MedPickerSheet(p: MedPickerProps) {
     p.onPick?.(m);
     markAdded(m.key, true);
   };
-  /** Enter بالبحث: يضيف أوّلَ نتيجة — ولا يشيل مختاراً أبداً (`searchEnter`). */
+  /** Enter بالبحث: يضيف أوّلَ نتيجة — ولا يشيل مختاراً أبداً (`searchEnter`). وبـ«أدرج من القائمة»
+   *  المختارُ هو ما بالتصنيف: كان يُسأل اختيارُ المضيف فيقع على «أضف» والضغطةُ تقلب — فيُشال دواءٌ
+   *  مُدرَجٌ بصمت (سطرٌ للقارئ الآليّ وحده)، وEnter ثانيةٌ تعيده. */
   const enterPick = () => {
-    const r = searchEnter(results, (it) => selected(pickedFrom(it)), p.mode);
+    const r = insertInto
+      ? searchEnter(results, (it) => it.groupIds.includes(insertInto), "multi")
+      : searchEnter(results, (it) => selected(pickedFrom(it)), p.mode);
     if (!r) return;
     if (r.act === "pick") { pick(r.it); return; }
     playWarning();
@@ -255,7 +259,8 @@ export default function MedPickerSheet(p: MedPickerProps) {
       const key = drugKey(name);
       const row = getDrugsState().view.rows.find((r) => r.archived_at == null && drugKey(r.name) === key);
       toast.success(t("mymeds.catAdded", { name, cat: groupName.get(group) ?? "", defaultValue: "{{name}} انضاف لـ«{{cat}}»" }));
-      if (p.mode !== "manage") { p.onPick?.({ ...freePicked(name, family), source: "custom", drugId: row?.id }); markAdded(key, true); }
+      // بـ«أدرج من القائمة» الكتابةُ تُدرج ولا تختار — المنتقي يرتّب تصنيفاً لا يملأ وصفة.
+      if (p.mode !== "manage" && !insertInto) { p.onPick?.({ ...freePicked(name, family), source: "custom", drugId: row?.id }); markAdded(key, true); }
     } catch (e) { fail(e); }
   };
   const useTwinInto = async (group: string, it: MedItem) => {
@@ -263,7 +268,8 @@ export default function MedPickerSheet(p: MedPickerProps) {
       await drugs.fileInto(group, { drugId: it.drugId, name: it.name, family: famOf(it) });
       playSuccess();
       setFreeOpen(false); setTypeInto(null);
-      if (p.mode !== "manage") pick(it);
+      // بـ«أدرج من القائمة» `pick` يقلب العضوية — فكان التوأمُ يُدرَج ثم يُشال بنفس الضغطة.
+      if (p.mode !== "manage" && !insertInto) pick(it);
     } catch (e) { fail(e); }
   };
 
@@ -584,8 +590,15 @@ export default function MedPickerSheet(p: MedPickerProps) {
         {/* الذيل: «ما لكيته؟» و«تم» */}
         {(freeText !== "off" || p.mode === "multi" || !!typeInto || !!insertInto) && (
           <div className="shrink-0 border-t border-line px-3 pt-2">
-            {insertInto ? (
+            {insertInto && !freeOpen ? (
+              /* «ما لكيته؟» هنا أيضاً: «ماكو دواء بهالاسم — اكتبه من «ما لكيته؟»» كان يدلّ على زرٍّ غائب بهذا
+                 الوضع، و«تصنيفاتي» بالإعدادات بلا «اكتب بإيدي» أصلاً — فالمكتوبُ يُحفظ ويُدرج بهذا التصنيف. */
               <div className="flex items-center gap-2">
+                {canWrite && (
+                  <button type="button" data-medfree onClick={() => { playTap(); setTypeInto(insertInto); setFreeOpen(true); }} className="inline-flex shrink-0 items-center gap-1 text-2xs font-bold text-ink-muted underline transition hover:text-ink">
+                    <Plus size={13} /> {t("mymeds.notFound", "ما لكيته؟ اكتبه")}
+                  </button>
+                )}
                 <span className="min-w-0 flex-1 truncate text-2xs font-bold text-ink-muted">{insertGroup?.name ?? ""}</span>
                 <button type="button" data-medcat-done onClick={doneInsert}
                   className="ms-auto flex h-12 min-w-[140px] items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 text-base font-black text-white shadow-soft transition hover:bg-brand-700">

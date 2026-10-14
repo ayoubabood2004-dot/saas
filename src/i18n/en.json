@@ -3622,7 +3622,9 @@
     "expCatRename": "Renamed withdrawal category: {{name}}",
     "expCatArchive": "Archived withdrawal category: {{name}}",
     "expCatRestore": "Restored withdrawal category: {{name}}",
-    "expCatSame": "Withdrawal category saved with no change: {{name}}"
+    "expCatSame": "Withdrawal category saved with no change: {{name}}",
+    "catDrugIn": "Added {{name}} to the category «{{cat}}»",
+    "catDrugOut": "Removed {{name}} from the category «{{cat}}»"
   },
   "override": {
     "title": "Manager mode",
@@ -5790,7 +5792,7 @@
     "dropGoes": "Will be deleted:",
     "dropStays": "Stays:",
     "dropKeptGiven": "Given: {{n}} — stay recorded",
-    "dropKeptPast": "From past days: {{n}} — stay until you record them in «Missed doses»",
+    "dropKeptPast": "From past days: {{n}} — they stay until you record them in «Past doses»",
     "dropLastDay": "This is the plan's last day — a later extension will not repeat this drug.",
     "dropGo1": "Delete 1 dose",
     "dropGo2": "Delete 2 doses",

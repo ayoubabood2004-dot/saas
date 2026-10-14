@@ -35,7 +35,7 @@
 -- تُطبَّق بعد 0238.
 -- تراجع: أعد clinic_drugs_list() وclinic_drugs_apply(uuid, jsonb) من 0229؛ ثم
 --   drop table clinic_drug_group_items; drop table clinic_drug_groups;
---   drop function clinic_drug_groups_guard(), clinic_drug_group_items_guard();
+--   drop function clinic_drug_groups_guard(), clinic_drug_group_items_guard(), clinic_drug_group_items_audit();
 --   alter table clinic_drugs drop constraint clinic_drugs_clinic_id_uq;
 -- ============================================================================
 
@@ -213,9 +213,38 @@ select public.photographer_fence_table('clinic_drug_groups'), public.photographe
 drop trigger if exists audit_all on public.clinic_drug_groups;
 create trigger audit_all after insert or update of name, archived_at on public.clinic_drug_groups
   for each row execute function audit_change();
+-- والعضويةُ بمحفّزها: `audit_change` يحفظ من الصفّ ما بقائمة `keep` (name، label…) والعضويةُ أعمدتُها
+-- معرّفاتٌ وحدها — فكان سطرُها بالإضافة والشيل معاً «تعديل في إعدادات العيادة: drug_group_items» بلا دواءٍ
+-- ولا تصنيف. فالاسمان يُقرآن هنا (من عيادة الصفّ نفسِها) ويُحفظان بالسطر، والمعرّفان معهما.
+-- definer كـaudit_change (سجلُّ التدقيق لا يكتبه المسجَّل)، وبلا نداءٍ مباشر (محفّزٌ ومنزوعُ التنفيذ).
+create or replace function public.clinic_drug_group_items_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r       record;
+  v_drug  text;
+  v_group text;
+begin
+  begin
+    if TG_OP = 'DELETE' then r := OLD; else r := NEW; end if;
+    select d.name into v_drug  from clinic_drugs d       where d.clinic_id = r.clinic_id and d.id = r.drug_id;
+    select g.name into v_group from clinic_drug_groups g where g.clinic_id = r.clinic_id and g.id = r.group_id;
+    insert into audit_log (clinic_id, actor, action, entity, entity_id, details)
+    values (r.clinic_id, auth.uid(), TG_OP, TG_TABLE_NAME, r.id::text,
+            jsonb_strip_nulls(jsonb_build_object('name', v_drug, 'group', v_group, 'drug_id', r.drug_id, 'group_id', r.group_id)));
+  exception when others then
+    null; -- التدقيقُ لا يمنع العمليةَ الأصلية أبداً (كـaudit_change)
+  end;
+  if TG_OP = 'DELETE' then return OLD; end if;
+  return NEW;
+end $$;
+revoke all on function public.clinic_drug_group_items_audit() from public, anon, authenticated;
 drop trigger if exists audit_all on public.clinic_drug_group_items;
 create trigger audit_all after insert or delete on public.clinic_drug_group_items
-  for each row execute function audit_change();
+  for each row execute function clinic_drug_group_items_audit();
 
 -- ── ٧) القراءة: الصفوف كما كانت + التصنيفات + كلُّ العضويات (والنائمةُ منها) ──────
 create or replace function public.clinic_drugs_list()

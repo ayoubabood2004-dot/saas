@@ -256,5 +256,44 @@ await section("▸ ٨) تصنيفاتُ العيادة: الطبلة بتبوي�
     && /drugs\.moveGroup/.test(st) && /fileInto=\{insertId \?\? undefined\}/.test(st) && /mmset\.catArchiveAsk/.test(st) && /drugs\.restoreGroup/.test(st) && !/window\.confirm/.test(st));
 });
 
+/* ── ٩) «أدرج من القائمة» وسجلُّ الحركات: ما وجده التدقيقُ بعد التصنيفات ────────────────────── */
+await section("▸ ٩) «أدرج من القائمة» لا يشيل بـEnter ولا يُسدّ أمام المكتوب، وسطرُ العضوية يُقرأ", async () => {
+  const sh = src("src/components/meds/MedPickerSheet.tsx");
+  const at = (head, n = 900) => { const i = sh.indexOf(head); return i < 0 ? "" : sh.slice(i, i + n); };
+  const enter = at("const enterPick = () =>");
+  check("Enter بوضع الإدراج: «مختارٌ» = بالتصنيف (لا اختيارُ المضيف) ⇒ «مضاف أصلاً» لا شيل", /insertInto\s*\?\s*searchEnter\(results, \(it\) => it\.groupIds\.includes\(insertInto\), "multi"\)/.test(enter), enter.slice(0, 200));
+  const I = await load(`export * from "./src/lib/medIndex.ts";`);
+  const filed = [{ key: "a", groupIds: ["g1"] }];
+  check("  searchEnter على دواءٍ بالتصنيف ⇒ already (كان pick فيُقلَب شيلاً)", I.searchEnter(filed, (it) => it.groupIds.includes("g1"), "multi")?.act === "already"
+    && I.searchEnter([{ key: "b", groupIds: [] }], (it) => it.groupIds.includes("g1"), "multi")?.act === "pick");
+  const foot = sh.slice(sh.indexOf('(freeText !== "off" || p.mode === "multi"'), sh.indexOf("data-medlive"));
+  check("ذيلُ الإدراج فيه «ما لكيته؟» يفتح بطاقةَ الكتابة على هذا التصنيف (كانت «تم» وحدها والنصُّ يدلّ على الغائب)",
+    /insertInto && !freeOpen \?/.test(foot) && /data-medfree onClick=\{\(\) => \{ playTap\(\); setTypeInto\(insertInto\); setFreeOpen\(true\); \}\}/.test(foot), foot.slice(0, 160));
+  check("  والمكتوبُ والتوأمُ يُدرجان ولا يُختاران بوضع الإدراج (pick كان يقلب التوأمَ شيلاً)",
+    /p\.mode !== "manage" && !insertInto\) \{ p\.onPick/.test(at("const saveInto = async (")) && /p\.mode !== "manage" && !insertInto\) pick\(it\)/.test(at("const useTwinInto = async (")));
+
+  const { loadUI } = await import("./react-mini.mjs");
+  const A = await loadUI(`export { drugGroupLine } from "./src/pages/ActivityLog.tsx";`, {
+    "@/lib/repo": "export const repo = {};", "@/lib/staff": "export const listStaff = async () => [];",
+    "@/contexts/AuthContext": "export const useAuth = () => ({ user: null });", "@/hooks/usePermissions": "export const usePermissions = () => ({});",
+    "@/lib/managerOverride": "export const useOverride = () => ({});", "@/components/ui": "export const Button = () => null; export const Skeleton = () => null;",
+  }).catch((e) => ({ err: e }));
+  const tt = (k, o) => String(o?.defaultValue ?? k).replace(/\{\{(\w+)\}\}/g, (_, v) => o?.[v] ?? "");
+  const brief = { name: "Meloxicam", group: "مسكنات القطط", drug_id: "d", group_id: "g" };
+  check("سجلُّ الحركات: الإضافةُ بالاسمين", typeof A.drugGroupLine === "function" && A.drugGroupLine("INSERT", brief, tt) === "أضاف Meloxicam لتصنيف «مسكنات القطط»", A.err ? String(A.err.message).split("\n")[0] : A.drugGroupLine?.("INSERT", brief, tt));
+  check("  والشيلُ غيرُ الإضافة", A.drugGroupLine?.("DELETE", brief, tt) === "شال Meloxicam من تصنيف «مسكنات القطط»");
+  const log = src("src/pages/ActivityLog.tsx");
+  check("  والسطرُ يمرّ منها قبل «تعديل في إعدادات العيادة»", /case "clinic_drug_group_items": return drugGroupLine\(r\.action, d, t\);/.test(log));
+  const sql = readFileSync("supabase/migrations/0239_clinic_drug_groups.sql", "utf8").replace(/\r\n/g, "\n");
+  check("0239: محفّزُ العضوية يحفظ الاسمين (لا audit_change الذي لا يحفظ من صفّها غيرَ معرّفات)",
+    /create trigger audit_all after insert or delete on public\.clinic_drug_group_items\s+for each row execute function clinic_drug_group_items_audit\(\);/.test(sql)
+    && /jsonb_build_object\('name', v_drug, 'group', v_group/.test(sql) && /security definer\s+set search_path = public/.test(sql.slice(sql.indexOf("clinic_drug_group_items_audit()"))));
+  for (const lang of ["ar", "en"]) {
+    const j = JSON.parse(readFileSync(`src/i18n/${lang}.json`, "utf8"));
+    check(`${lang}: «${j.vbk.dropKeptPast}» يسمّي النافذةَ باسمها («${j.vbk.pastTitle}»)`, j.vbk.dropKeptPast.includes(`«${j.vbk.pastTitle}»`));
+    check(`  و${lang}: سطرا العضوية بالاسمين`, /\{\{name\}\}/.test(j.act.catDrugIn ?? "") && /\{\{cat\}\}/.test(j.act.catDrugOut ?? ""));
+  }
+});
+
 console.log(fails ? `\n✗ med-hosts-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-hosts-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

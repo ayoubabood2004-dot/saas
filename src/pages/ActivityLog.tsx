@@ -7,6 +7,7 @@ import {
   ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight, CalendarX,
   TrendingUp,
 } from "lucide-react";
+import type { TFunction } from "i18next";
 import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import { repo } from "@/lib/repo";
 import { listStaff } from "@/lib/staff";
@@ -108,6 +109,17 @@ const toneCls = (tone: string) =>
       : tone === "warn" ? "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"
         : tone === "brand" ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"
           : "bg-surface-2 text-ink-muted";
+
+/** سطرُ العضوية بالتصنيف (0239): الدواءُ والتصنيفُ بالاسم، والإضافةُ غيرُ الشيل. كان يقع على «تعديل في
+ *  إعدادات العيادة: drug_group_items» للحدثين معاً — المحفّزُ (clinic_drug_group_items_audit) صار يحفظ
+ *  الاسمين بالسطر (`name`، `group`). */
+export function drugGroupLine(action: string, d: Record<string, unknown>, t: TFunction): string {
+  const s = (k: string) => { const v = d[k]; return typeof v === "string" && v.trim() ? v.trim() : ""; };
+  const name = s("name") || "—", cat = s("group") || "—";
+  return action === "DELETE"
+    ? t("act.catDrugOut", { name, cat, defaultValue: "شال {{name}} من تصنيف «{{cat}}»" })
+    : t("act.catDrugIn", { name, cat, defaultValue: "أضاف {{name}} لتصنيف «{{cat}}»" });
+}
 
 export function ActivityLog() {
   const { t } = useTranslation();
@@ -313,6 +325,7 @@ export function ActivityLog() {
       }
     }
     switch (r.entity) {
+      case "clinic_drug_group_items": return drugGroupLine(r.action, d, t);
       case "pets":
         return del ? t("act.petDel", { name: s("name"), defaultValue: "حذف الحيوان {{name}} نهائياً" })
           : r.action === "INSERT" ? t("act.petAdd", { name: s("name"), defaultValue: "أضاف حيواناً جديداً: {{name}}" })

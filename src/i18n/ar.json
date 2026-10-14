@@ -3622,7 +3622,9 @@
     "expCatRename": "تسمية تصنيف سحوبات: {{name}}",
     "expCatArchive": "أرشفة تصنيف سحوبات: {{name}}",
     "expCatRestore": "استرجاع تصنيف سحوبات: {{name}}",
-    "expCatSame": "حفظ تصنيف سحوبات بلا تغيير: {{name}}"
+    "expCatSame": "حفظ تصنيف سحوبات بلا تغيير: {{name}}",
+    "catDrugIn": "أضاف {{name}} لتصنيف «{{cat}}»",
+    "catDrugOut": "شال {{name}} من تصنيف «{{cat}}»"
   },
   "override": {
     "title": "وضع المدير",

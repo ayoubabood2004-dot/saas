@@ -5235,6 +5235,7 @@ $P -c "insert into clinic_drugs (clinic_id, name) select '$C2', 'عضو 0239 '||
 D9=$(W "select id from clinic_drugs where clinic_id='$C2' and archived_at is null order by id limit 1")
 D41=$(W "select id from clinic_drugs where clinic_id='$C2' and archived_at is null order by id offset 40 limit 1")
 A0=$(W "select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')")
+AM0=$(W "select coalesce(max(id), 0) from audit_log")
 chk "الطبيبُ ينشئ «مسكنات القطط» بدور authenticated" \
     "select _cdg('$DV', '$C1', '[{\"op\":\"group_create\",\"id\":\"${CG}01\",\"name\":\"  مسكنات   القطط \"}]')" "ok:1:0"
 chk "  مختوماً بعيادته، بأوّل موضع، والاسمُ بفراغٍ واحد" \
@@ -5270,6 +5271,14 @@ chk "السياجُ يغطّي الجدولين، ولا سياسةَ تقرأ �
     "select coalesce(string_agg(t, ','), '')||'|'||(select count(*) from verify_no_self_ref_policies())::text from verify_photographer_fence() t" "|0"
 chk "التدقيق: الإنشاءُ وثلاثُ إضافات أربعةُ سطور، نوعُها «إعدادات»" \
     "select (count(*) - $A0)::text||'|'||max(audit_kind(entity, action, details)) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')" "4|settings"
+# وسطرُ العضوية يُقرأ: كان «تعديل في إعدادات العيادة: drug_group_items» للإضافة والشيل معاً (audit_change لا
+# يحفظ من صفّها غيرَ معرّفات) — فالدواءُ والتصنيفُ بالاسم بالسطر نفسه.
+chk "  وسطرُ الإضافة يسمّي الدواءَ والتصنيف (والمكتوبُ بإيدي باسم صفّه القائم)" \
+    "select string_agg((details->>'name')||'←'||(details->>'group'), ',' order by details->>'name') from audit_log where clinic_id='$C1' and entity='clinic_drug_group_items' and action='INSERT' and id > $AM0" \
+    "Buprenorphine 0239←مسكنات القطط,Gabapentin 0239←مسكنات القطط,Meloxicam 0239←مسكنات القطط"
+chk "  ومحفّزُ العضوية definer بمسارٍ مثبَّت، يقرأ الاسمين من عيادة الصفّ، ولا تنفيذَ للمسجَّل" \
+    "select prosecdef::text||'|'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||'|'||(prosrc like '%d.clinic_id = r.clinic_id%' and prosrc like '%g.clinic_id = r.clinic_id%')::text||'|'||has_function_privilege('authenticated', oid, 'execute')::text from pg_proc where proname='clinic_drug_group_items_audit'" \
+    "true|true|true|false"
 A1=$(W "select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')")
 chk "نقلُ دواءٍ داخل التصنيف، وتصنيفٌ ثانٍ يُنقل لأوّل القائمة" \
     "select _cdg('$C1', '$C1', '[{\"op\":\"member_move\",\"group\":\"${CG}01\",\"id\":\"${CG}d3\",\"after\":null},{\"op\":\"group_create\",\"id\":\"${CG}03\",\"name\":\"حساسية\"},{\"op\":\"group_move\",\"id\":\"${CG}03\",\"after\":null}]')" "ok:2:3"
@@ -5280,6 +5289,9 @@ chk "الشيلُ من التصنيف وأرشفةُ تصنيف" \
     "select _cdg('$C1', '$C1', '[{\"op\":\"member_remove\",\"group\":\"${CG}01\",\"id\":\"${CG}d2\"},{\"op\":\"group_archive\",\"id\":\"${CG}03\"}]')" "ok:2:2"
 chk "  كلٌّ بسطرٍ نوعُه «إعدادات»، والدواءُ المشال باقٍ حيّاً" \
     "select ((select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')) - $A2)::text||'|'||(select string_agg(distinct audit_kind(entity, action, details), ',') from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items'))||'|'||(select (archived_at is null)::text from clinic_drugs where id='${CG}d2')" "2|settings|true"
+chk "  وسطرُ الشيل يسمّيهما كذلك" \
+    "select (details->>'name')||'←'||(details->>'group') from audit_log where clinic_id='$C1' and entity='clinic_drug_group_items' and action='DELETE' and id > $AM0" \
+    "Buprenorphine 0239←مسكنات القطط"
 chk "أرشفةُ دواءٍ تُبقي عضويتَه نائمة" \
     "select _cdg('$C1', '$C1', '[{\"op\":\"archive\",\"id\":\"${CG}d1\"}]')" "ok:2:2"
 chk "  والقائمةُ ترجع التصنيفاتِ (والمؤرشفَ آخراً) والعضوياتِ كلَّها والنائمةَ منها" \
