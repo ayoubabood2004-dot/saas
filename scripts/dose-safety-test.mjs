@@ -271,6 +271,111 @@ await section("▸ ٦) كلُّ calcDose يمرّر السقف، وكلُّ chec
   }
   check(`كلُّ calcDose (${nCalc}) يمرّر ceiling — بلاه يعبر التقريبُ السقف`, nCalc > 0 && noCeiling.length === 0, noCeiling.join(" · "));
   check(`كلُّ checkSafety بجرعة (${nSafety}) يمرّر dose — بلاه يُحكم على المقصود`, nSafety > 0 && noDose.length === 0, noDose.join(" · "));
+  // judgedMgPerKg يأخذ الحسابَ كلَّه: givenMgPerKg وحده يُسقط `held` فتعود البلاطةُ تصرخ «تحت الجرعة».
+  const bare = [];
+  let nJudged = 0;
+  for (const f of files) {
+    const s = src(f);
+    for (const m of s.matchAll(/\bjudgedMgPerKg\(/g)) {
+      nJudged++;
+      if (/givenMgPerKg/.test(callArgs(s, m.index + m[0].length - 1))) bare.push(`${f}:${s.slice(0, m.index).split("\n").length}`);
+    }
+  }
+  check(`كلُّ judgedMgPerKg (${nJudged}) يأخذ الحسابَ كلَّه لا givenMgPerKg وحده`, nJudged > 0 && bare.length === 0, bare.join(" · "));
+});
+
+/* ── ٧) ما يمسكه الحدُّ يُقال باسمه ───────────────────────────────────────────
+ * السقفُ يُنزل التقريبَ علامةً — وهذا مقصود — لكنّ ما بعده قرأه كأنه تقريبٌ حرّ:
+ *  أ) الحبةُ التي يمنع الحدُّ ربعَها تصير «صفراً» فيقول التنبيه «أقل من ⅛ الحبة» وهي
+ *     0.126، و«ربعُها أضعافُ الجرعة» وهو 1.98 ضعفاً. السببُ الحقيقيّ — السقفُ اليوميّ —
+ *     مخفيّ، ومعه البديلُ الذي يعرفه الطبيب: وسّع الفاصل.
+ *  ب) النزولُ تحت الحدّ يحرّك الجرعةَ **علامةً كاملة** لا نصفَها (0.10 عن 0.1075 = 7٪)،
+ *     وتسامحُ التقريب ٥٪ مبنيٌّ على نصف علامة — فإنروفلوكساسين القطّة بجرعتها المعتادة
+ *     صار «تحت الجرعة» بثلاثٍ وسبعين وزناً، وزرُّ + الوحيد يعبر الحدّ. */
+await section("▸ ٧) ما يمسكه الحدُّ يُقال باسمه — لا «أقل من ⅛» ولا «تحت الجرعة»", () => {
+  const metro = drug("metronidazole");
+  // ميترونيدازول ٢٥٠ لقطّةٍ 2.1 كغ بـ15 ملغ/كغ ×٢ (بروتوكول التهاب المعدة): 0.126 حبة — فوق الثُّمن.
+  const m1 = dose({ mgPerKg: 15, weightKg: 2.1, strength: 250, solid: true, freq: 12, ceiling: ceil("metronidazole", "cat", 12) });
+  check("ميترونيدازول ٢٥٠ لقطّةٍ 2.1 كغ ×٢: لا حبة — ربعُها يعبر السقف اليومي", m1.tooSmall === "tablet" && m1.tablets === undefined, JSON.stringify({ t: m1.tablets, s: m1.tooSmall }));
+  const a1 = F.checkSafety({ drug: metro, species: "cat", weightKg: 2.1, mgPerKg: 15, freq: 12, dose: m1 });
+  const t1 = a1.find((a) => a.id === "too-small");
+  check("  والتنبيهُ لا يقول «أقل من ⅛ الحبة» (هي 0.126)", !!t1 && !/⅛/.test(t1.title), t1?.title);
+  check("  بل يسمّي السقفَ اليوميّ (50)", !!t1 && /اليومي/.test(t1.title) && /\b50\b/.test(t1.title), t1?.title);
+  check("  وبأرقامه: الربعُ 29.8 ملغ/كغ للجرعة و59.5 باليوم", /29\.8/.test(t1?.detail ?? "") && /59\.5/.test(t1?.detail ?? ""), t1?.detail);
+  check("  ولا «أضعافُ الجرعة» (الربعُ 1.98 ضعفاً)", !/أضعاف/.test(t1?.detail ?? ""), t1?.detail);
+  check("  ويذكر البديلَ: وسّع الفاصل بين الجرعات", /وسّع الفاصل/.test(t1?.detail ?? ""), t1?.detail);
+  // ٥٠٠ لقطّةٍ 4.5 كغ بـ15 ×٢: 0.135 حبة؛ ربعُها 27.8 ×٢ = 55.6 فوق 50.
+  const m2 = dose({ mgPerKg: 15, weightKg: 4.5, strength: 500, solid: true, freq: 12, ceiling: ceil("metronidazole", "cat", 12) });
+  const t2 = F.checkSafety({ drug: metro, species: "cat", weightKg: 4.5, mgPerKg: 15, freq: 12, dose: m2 }).find((a) => a.id === "too-small");
+  check("ميترونيدازول ٥٠٠ لقطّةٍ 4.5 كغ ×٢ (0.135 حبة): السقفُ اليوميّ لا «⅛»، والربعُ 27.8 و55.6", !!t2 && !/⅛/.test(t2.title) && /اليومي/.test(t2.title) && /27\.8/.test(t2.detail ?? "") && /55\.6/.test(t2.detail ?? ""), `${t2?.title} | ${t2?.detail}`);
+  // كلب 3.5 كغ بـ10 ×٣: السقفُ للجرعة 16.7؛ ربعُ ٢٥٠ = 17.9 ×٣ = 53.6.
+  const m3 = dose({ mgPerKg: 10, weightKg: 3.5, strength: 250, solid: true, freq: 8, ceiling: ceil("metronidazole", "dog", 8) });
+  const t3 = F.checkSafety({ drug: metro, species: "dog", weightKg: 3.5, mgPerKg: 10, freq: 8, dose: m3 }).find((a) => a.id === "too-small");
+  check("ميترونيدازول ٢٥٠ لكلبٍ 3.5 كغ ×٣ (0.14 حبة): السقفُ اليوميّ، والربعُ 17.9 و53.6", !!t3 && !/⅛/.test(t3.title) && /اليومي/.test(t3.title) && /17\.9/.test(t3.detail ?? "") && /53\.6/.test(t3.detail ?? ""), `${t3?.title} | ${t3?.detail}`);
+  // الثُّمنُ يبقى ثُمناً: بريدنيزولون ٢٠ لقطّةٍ ٢ كغ بـ0.5 = 0.05 حبة، ولا حدَّ هنا.
+  const p = dose({ mgPerKg: 0.5, weightKg: 2, strength: 20, solid: true, ceiling: ceil("prednisolone", "cat") });
+  const tp = F.checkSafety({ drug: drug("prednisolone"), species: "cat", weightKg: 2, mgPerKg: 0.5, freq: 24, dose: p }).find((a) => a.id === "too-small");
+  check("ودون الثُّمن حقاً (بريدنيزولون 0.05 حبة) يبقى «أقل من ⅛ الحبة»", !!tp && /⅛/.test(tp.title) && !p.held, `${tp?.title} · held=${p.held}`);
+  // وسقفُ النوع للجرعة الواحدة (لا دواءَ صلباً بالدليل يحمله اليوم — فدواءٌ مفترض): ربعُ ٢٠ لقطّةٍ ٢ كغ = 2.5 فوق 2.
+  const capped = { ...drug("prednisolone"), doses: [{ species: ["cat"], min: 0.5, max: 2, typical: 1, freq: 24, routes: ["PO"], hardMax: 2, hardMaxReason: "سببُ الحدّ." }] };
+  const ch = F.doseCeiling(capped, capped.doses[0], 24);
+  const h = dose({ mgPerKg: 1.5, weightKg: 2, strength: 20, solid: true, ceiling: ch });
+  const th = F.checkSafety({ drug: capped, species: "cat", weightKg: 2, mgPerKg: 1.5, freq: 24, dose: h }).find((a) => a.id === "too-small");
+  check("وسقفُ النوع يُسمّى سقفاً (0.15 حبة، ربعُها 2.5 والحدّ 2) ومعه سببُه", h.tooSmall === "tablet" && !!th && !/⅛/.test(th.title) && /\b2\b/.test(th.title) && /2\.5/.test(th.detail ?? "") && /سببُ الحدّ/.test(th.detail ?? ""), `${th?.title} | ${th?.detail}`);
+
+  // مسحٌ لا أمثلة: كلُّ دواءٍ صلبٍ له حدّ × نوع × عيار × (أدنى/معتاد/أعلى) × تكرار × وزن 0.5–80 كغ.
+  // «⅛» بالعنوان إن وفقط إن كانت الجرعةُ دون ثُمن الحبة.
+  let held = 0;
+  const lies = [];
+  for (const d of F.FORMULARY.filter((x) => x.solid)) {
+    for (const sp of ["dog", "cat"]) {
+      const win = F.doseFor(d, sp);
+      if (!win) continue;
+      for (const freq of [8, 12, 24]) {
+        const c0 = F.doseCeiling(d, win, freq);
+        if (c0 === undefined) continue;
+        for (const strength of d.strengths) {
+          for (const rate of new Set([win.min, win.typical ?? win.min, win.max])) {
+            for (let g = 500; g <= 80000; g += 10) {
+              const kg = g / 1000;
+              const c = dose({ mgPerKg: rate, weightKg: kg, strength, solid: true, freq, ceiling: c0 });
+              if (c.tooSmall !== "tablet") continue;
+              const count = (rate * kg) / strength;
+              const ts = F.checkSafety({ drug: d, species: sp, weightKg: kg, mgPerKg: rate, freq, dose: c }).find((a) => a.id === "too-small");
+              if (count >= 0.125) held++;
+              if (!ts || /⅛/.test(ts.title) !== count < 0.125) lies.push(`${d.id} ${sp} ${strength} ${rate}×q${freq} ${kg}kg ⇒ ${count.toFixed(3)} حبة: ${ts?.title ?? "∅"}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  check(`مسحُ الأدوية الصلبة ذات الحدّ: ${held} حالةً يمنع الحدُّ ربعَها — ولا «⅛» إلا دون الثُّمن`, held > 0 && lies.length === 0, `${lies.length}: ${lies.slice(0, 3).join(" · ")}`);
+
+  // ب) إنروفلوكساسين ١٠٠ لقطّةٍ 2.15 كغ بجرعتها المعتادة 5: 0.1075 مل؛ أقربُ علامةٍ 0.11 = 5.12 فوق الحدّ.
+  const enro = drug("enrofloxacin");
+  const e = dose({ mgPerKg: 5, weightKg: 2.15, strength: 100, ceiling: ceil("enrofloxacin", "cat") });
+  check("إنروفلوكساسين قطّة 2.15 كغ: 0.10 مل (0.11 تعبر الحدّ)", e.mlRounded === 0.1, String(e.mlRounded));
+  check("  والحسابُ يقول إن الحدَّ أنزلها (held)", e.held === true, String(e.held));
+  const ea = F.checkSafety({ drug: enro, species: "cat", weightKg: 2.15, mgPerKg: 5, freq: 24, dose: e });
+  check("  ونزولُ علامةٍ تحت الحدّ (7٪) لا يُسمّى «تحت الجرعة»", !ea.some((a) => a.id === "underdose") && ea.some((a) => a.id === "in-range"), ea.map((a) => a.id).join(","));
+  check("  والبلاطةُ تُحكم بما يحكم به الفحص (judgedMgPerKg = 5)", F.judgedMgPerKg(5, e) === 5, String(F.judgedMgPerKg(5, e)));
+  const sweep = { 25: [], 50: [], 100: [] };
+  for (const strength of enro.strengths) {
+    for (let g = 300; g <= 8000; g += 10) {
+      const kg = g / 1000;
+      const c = dose({ mgPerKg: 5, weightKg: kg, strength, ceiling: ceil("enrofloxacin", "cat") });
+      const a = F.checkSafety({ drug: enro, species: "cat", weightKg: kg, mgPerKg: 5, freq: 24, dose: c });
+      const bad = a.some((x) => x.id === "underdose" || x.id === "hard-max") || c.givenMgPerKg > 5 * (1 + 1e-9) || F.outsideWindow(F.judgedMgPerKg(5, c), F.doseFor(enro, "cat"));
+      if (bad) sweep[strength].push(`${kg}kg ⇒ ${c.mlRounded} مل = ${c.givenMgPerKg.toFixed(2)}`);
+    }
+  }
+  const nBad = Object.values(sweep).reduce((n, l) => n + l.length, 0);
+  check("مسحُ القطط 0.3–8 كغ × ٢٥/٥٠/١٠٠ بالجرعة المعتادة: لا «تحت الجرعة»، ولا عبورَ للحدّ، والبلاطةُ داخل الدليل", nBad === 0,
+    Object.entries(sweep).filter(([, l]) => l.length).map(([s, l]) => `${s}: ${l.length} (${l.slice(0, 2).join("، ")})`).join(" · "));
+  // والتسامحُ علامةٌ واحدة لا أكثر: ما حرّكه التقريبُ الحرّ ٨٪ جرعةٌ أخرى، وما أنزله الحدُّ ١٢٪ كذلك.
+  check("تقريبٌ حرّ حرّك 8٪: يُحكم على المُعطى", F.judgedMgPerKg(5, { givenMgPerKg: 4.6 }) === 4.6, String(F.judgedMgPerKg(5, { givenMgPerKg: 4.6 })));
+  check("نزولٌ تحت الحدّ حرّك 12٪ (أكثرُ من علامة): يُحكم على المُعطى", F.judgedMgPerKg(5, { givenMgPerKg: 4.4, held: true }) === 4.4, String(F.judgedMgPerKg(5, { givenMgPerKg: 4.4, held: true })));
 });
 
 console.log(`\n${fails ? "✗" : "✓"} dose-safety: ${passes} نجح، ${fails} فشل`);

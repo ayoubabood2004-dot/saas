@@ -832,8 +832,15 @@ export interface DoseCalc {
    *  `mg` itself when nothing was rounded (no strength, or too small to measure). */
   givenMg: number;
   givenMgPerKg: number;
-  /** The product can't carry this dose: under ⅛ of the tablet, or under 0.0005 ml. */
+  /** The product can't carry this dose: under ⅛ of the tablet, or under 0.0005 ml —
+   *  or the smallest piece (¼ tablet) would cross `ceiling` (then `held` too). */
   tooSmall?: "tablet" | "volume";
+  /** `ceiling` held the rounding down: the nearest mark (or quarter) would cross it,
+   *  so the one below is given — a move of up to a whole step, not half (`HELD_SLACK`). */
+  held?: boolean;
+  /** mg/kg one quarter tablet carries — set when `tooSmall` is "tablet", so the
+   *  alert can say what the smallest piece would have given. */
+  quarterMgPerKg?: number;
   /** Doses per day implied by the frequency. */
   perDay: number;
   mgPerDay: number;
@@ -861,17 +868,22 @@ export const TABLET_TOO_SMALL = "اختر عياراً أصغر أو سائلا�
 /** Nearest practical tablet fraction — whole, half, or quarter. Under ⅛ the
  *  nearest quarter is nothing: it says so, rather than raising the dose to ¼
  *  (the old floor turned 0.05 tablet into five times the dose). And when the
- *  exact count is at or under `ceiling`, rounding never carries it over. */
-export function roundTablets(count: number, ceiling?: number): { value: number; label: string; tooSmall?: boolean } {
+ *  exact count is at or under `ceiling`, rounding never carries it over — it
+ *  drops a quarter instead (`held`), which can reach nothing even above ⅛:
+ *  0.126 tablet whose quarter crosses the line. `held` keeps the two apart. */
+export function roundTablets(count: number, ceiling?: number): { value: number; label: string; tooSmall?: boolean; held?: boolean } {
   if (!isFinite(count) || count <= 0) return { value: 0, label: "—" };
-  let q = Math.round(count * 4) / 4;
-  if (ceiling !== undefined && count <= ceiling * ON_LINE && q > ceiling * ON_LINE) q = Math.floor(ceiling * 4 + 1e-9) / 4;
-  if (q <= 0) return { value: 0, label: TABLET_TOO_SMALL, tooSmall: true };
+  const nearest = Math.round(count * 4) / 4;
+  const q = ceiling !== undefined && count <= ceiling * ON_LINE && nearest > ceiling * ON_LINE
+    ? Math.floor(ceiling * 4 + 1e-9) / 4
+    : nearest;
+  const held = q < nearest ? { held: true } : {};
+  if (q <= 0) return { value: 0, label: TABLET_TOO_SMALL, tooSmall: true, ...held };
   const whole = Math.floor(q);
   const frac = q - whole;
   const fracLabel = frac === 0.25 ? "¼" : frac === 0.5 ? "½" : frac === 0.75 ? "¾" : "";
   const label = whole > 0 ? `${whole}${fracLabel ? ` و${fracLabel}` : ""} حبة` : `${fracLabel} حبة`;
-  return { value: q, label };
+  return { value: q, label, ...held };
 }
 
 /**
@@ -907,8 +919,11 @@ export function calcDose(opts: {
     const cap = ceiling !== undefined ? (ceiling * weightKg) / strength : undefined;
     if (solid) {
       const t = roundTablets(mg / strength, cap);
-      if (t.tooSmall) out.tooSmall = "tablet";
-      else {
+      if (t.held) out.held = true;
+      if (t.tooSmall) {
+        out.tooSmall = "tablet";
+        if (weightKg > 0) out.quarterMgPerKg = (0.25 * strength) / weightKg;
+      } else {
         out.tablets = t.value;
         out.tabletsLabel = t.label;
         out.givenMg = t.value * strength;
@@ -916,6 +931,7 @@ export function calcDose(opts: {
     } else {
       out.ml = mg / strength;
       const v = roundVolume(out.ml, cap);
+      if (v < roundVolume(out.ml)) out.held = true;
       if (v > 0) {
         out.mlRounded = v;
         out.givenMg = v * strength;
@@ -950,17 +966,30 @@ export function taskAmountText(c: DoseCalc): string {
   return `${doseNum(c.givenMg)} ملغم`;
 }
 
-/** How far rounding may move a dose and still be the dose the vet chose: the
- *  syringe ladder's own coarsest resolution (0.005 ml on 0.1 ml). Beyond it —
- *  a quarter tablet for a twentieth — what is given is a different dose. */
+/** How far rounding to the NEAREST mark may move a dose and still be the dose the
+ *  vet chose: half a step on the syringe ladder's coarsest rung (0.005 ml on
+ *  0.1 ml). Beyond it — a quarter tablet for a twentieth — what is given is a
+ *  different dose. */
 export const ROUNDING_SLACK = 0.05;
 
+/** The same, when `ceiling` held the rounding down (`DoseCalc.held`): the dose
+ *  drops to the mark BELOW the nearest one, which is up to a whole step away —
+ *  0.10 ml for 0.1075 (enrofloxacin, cat 2.15 kg) is 7% under, and it is the
+ *  closest that strength can come without crossing the line. Judged on half a
+ *  step, the usual feline dose read «underdose» at 73 weights, and the only way
+ *  up was over the line. A whole step on the coarsest rung is 10%; more than
+ *  that (a quarter tablet for 0.4) is still a different dose. */
+export const HELD_SLACK = 2 * ROUNDING_SLACK;
+
 /** The mg/kg a dose window is judged on: what is actually given, unless rounding
- *  moved it by no more than the syringe's resolution (then the vet's own choice,
- *  so the «typical» tile of a point window doesn't cry «underdose» at 0.22 ml). */
-export function judgedMgPerKg(intended: number, given: number | undefined): number {
+ *  moved it by no more than the measure's resolution (then the vet's own choice,
+ *  so the «typical» tile of a point window doesn't cry «underdose» at 0.22 ml).
+ *  Takes the whole calculation — `givenMgPerKg` alone loses `held`. */
+export function judgedMgPerKg(intended: number, dose: Pick<DoseCalc, "givenMgPerKg" | "held"> | undefined): number {
+  const given = dose?.givenMgPerKg;
   if (given === undefined || !(intended > 0)) return intended;
-  return Math.abs(given - intended) <= intended * ROUNDING_SLACK * ON_LINE ? intended : given;
+  const slack = dose?.held ? HELD_SLACK : ROUNDING_SLACK;
+  return Math.abs(given - intended) <= intended * slack * ON_LINE ? intended : given;
 }
 
 /** Is this mg/kg outside the documented window? The one test the card's tiles and
@@ -1076,27 +1105,56 @@ export function checkSafety(opts: {
     }
   }
 
+  const win = doseFor(drug, species);
+  const perDay = freq === 0 || freq === undefined ? 1 : 24 / freq;
+
   // --- The product can't carry this dose at all. Said whatever the window: the
-  //     old engine raised it to ¼ tablet in silence.
+  //     old engine raised it to ¼ tablet in silence. Two different reasons, said
+  //     apart: under ⅛ the nearest quarter is nothing; `held` means ¼ — the
+  //     smallest piece — would cross a hard line, though the dose is above ⅛
+  //     (metronidazole 250 for a 2.1 kg cat at 15 q12 is 0.126 tablet; its quarter
+  //     is 59.5 mg/kg a day against 50). Calling that «under ⅛» hid the line and
+  //     the vet's other way out: widen the interval.
   if (mgPerKg > 0 && dose?.tooSmall === "tablet") {
-    out.push({
-      id: "too-small", tone: "warn",
-      title: `الجرعة أقل من ⅛ الحبة — ${TABLET_TOO_SMALL}`,
-      detail: "أصغرُ ما تُقسم إليه الحبة ربعُها، وربعُ هذه الحبة أضعافُ الجرعة.",
-    });
+    const q = dose.quarterMgPerKg;
+    if (dose.held && q !== undefined) {
+      const quarter = `أصغرُ ما تُقسم إليه الحبة ربعُها: ${sig(q)} ملغ/كغ للجرعة`;
+      if (win?.hardMax !== undefined && q > win.hardMax * ON_LINE) {
+        out.push({
+          id: "too-small", tone: "warn",
+          title: `ربعُ الحبة فوق السقف المسموح (${win.hardMax} ملغ/كغ) — ${TABLET_TOO_SMALL}`,
+          detail: `${quarter}. ${win.hardMaxReason ?? ""}`.trim(),
+        });
+      } else if (drug.maxDailyMgPerKg && q * perDay > drug.maxDailyMgPerKg * ON_LINE) {
+        out.push({
+          id: "too-small", tone: "warn",
+          title: `ربعُ الحبة يعبر السقف اليومي (${drug.maxDailyMgPerKg} ملغ/كغ) — ${TABLET_TOO_SMALL}`,
+          detail: `${quarter}، فيصير مجموعُ اليوم بهذا التكرار ${sig(q * perDay)} ملغ/كغ. أو وسّع الفاصل بين الجرعات.`,
+        });
+      } else {
+        // The caller's ceiling is not one this drug documents — say a line held it, not «⅛».
+        out.push({ id: "too-small", tone: "warn", title: `ربعُ الحبة يعبر الحدّ المسموح للجرعة — ${TABLET_TOO_SMALL}`, detail: `${quarter}.` });
+      }
+    } else {
+      out.push({
+        id: "too-small", tone: "warn",
+        title: `الجرعة أقل من ⅛ الحبة — ${TABLET_TOO_SMALL}`,
+        detail: "أصغرُ ما تُقسم إليه الحبة ربعُها، وربعُ هذه الحبة أضعافُ الجرعة.",
+      });
+    }
   } else if (mgPerKg > 0 && dose?.tooSmall === "volume") {
     out.push({ id: "too-small", tone: "warn", title: "الحجم أصغر من أن تقيسه سرنجة — خفّف المحلول أو اختر تركيزاً أقل" });
   }
 
-  const win = doseFor(drug, species);
   if (!win) {
     out.push({ id: "no-window", tone: "warn", title: "ما عندنا جرعة موثّقة لهذا النوع", detail: "راجع مرجع دوائي قبل الإعطاء." });
   } else if (mgPerKg > 0) {
     /* المُعطى لا المقصود: ما يصل بعد تقريب الحجم أو الحبة. الخطوطُ الصلبة (السقف،
      * والسقفُ اليوميّ) تُقرأ على الأعلى من الاثنين بلا تسامح؛ والنافذةُ اللينة على
-     * المُعطى إلا إن حرّكه التقريبُ بأقلّ من دقّة السرنجة (ROUNDING_SLACK). */
+     * المُعطى إلا إن حرّكه التقريبُ بأقلّ من دقّة السرنجة (ROUNDING_SLACK: نصفُ علامة)
+     * — أو بعلامةٍ كاملة إن كان الحدُّ هو الذي أنزله (HELD_SLACK). */
     const given = dose?.givenMgPerKg;
-    const judged = judgedMgPerKg(mgPerKg, given);
+    const judged = judgedMgPerKg(mgPerKg, dose);
     const peak = Math.max(mgPerKg, given ?? mgPerKg);
     const rounded = (v: number) => (v !== mgPerKg ? `بعد التقريب لما يُعطى فعلاً يصل ${sig(v)} ملغ/كغ، والمقصود ${sig(mgPerKg)}. ` : "");
     // --- Hard ceiling (enrofloxacin in cats, meloxicam in cats).
@@ -1129,7 +1187,6 @@ export function checkSafety(opts: {
     }
 
     // --- Cumulative daily ceiling — a hard line, read on the higher of the two.
-    const perDay = freq === 0 || freq === undefined ? 1 : 24 / freq;
     if (drug.maxDailyMgPerKg && peak * perDay > drug.maxDailyMgPerKg * ON_LINE) {
       out.push({
         id: "daily-max", tone: "critical", blocking: true,

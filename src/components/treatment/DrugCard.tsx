@@ -144,7 +144,7 @@ export function DrugCard({
   const step = stepFor(win?.min, win?.max);
   const topRate = win ? Math.min(win.max, win.hardMax ?? Infinity) : undefined;
   /** ما يُحكم عليه: المُعطى بعد تقريب الحجم أو الحبة، لا المقصود (judgedMgPerKg). */
-  const judged = row.mgPerKg !== undefined ? judgedMgPerKg(row.mgPerKg, calc?.givenMgPerKg) : undefined;
+  const judged = row.mgPerKg !== undefined ? judgedMgPerKg(row.mgPerKg, calc) : undefined;
   const inWindow = !!win && judged !== undefined && !outsideWindow(judged, win);
   const overHard = !!win?.hardMax && row.mgPerKg !== undefined && row.mgPerKg > win.hardMax;
 
@@ -167,7 +167,7 @@ export function DrugCard({
       : c?.tabletsLabel ? c.tabletsLabel
         : tooSmall ? t("tplan.tabTooSmall", "اختر عياراً أصغر أو سائلاً")
           : c ? `${doseNum(c.givenMg)} ${t("tplan.mgUnit", "ملغ")}` : "—";
-    const tileRate = c ? judgedMgPerKg(rate, c.givenMgPerKg) : rate;
+    const tileRate = judgedMgPerKg(rate, c);
     const off = tooSmall || (!!win && outsideWindow(tileRate, win));
     const on = row.mgPerKg !== undefined && Math.abs(row.mgPerKg - rate) < 1e-9;
     return (
