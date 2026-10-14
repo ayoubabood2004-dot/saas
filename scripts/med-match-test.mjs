@@ -24,6 +24,12 @@
  * والهمزةُ تُطوى على الطرفين («ايبوبروفين» لقطّة بالإنتاج بلا منع)؛ و«Pyrantel» دواؤه؛ و«/» و«,»
  * و«with» و«و» تعدّد كـ«+»؛ وقطرةُ الجنتاميسين ليست حقنتَه؛ والمادّةُ من صفّين تنبيهٌ واحد.
  *
+ * ── الجولةُ الثالثة (١٥/١٠، §١٦–§٢١) ──
+ * الفاصلُ العربيّ توأمُ اللاتينيّ («مع»، «،»، «؛»، « و »)، ودواءان بجزءٍ واحد خليطٌ مهما كان
+ * الفاصل؛ والشكلُ والعبوةُ بعد الفاصل ليسا مادّة («Enrofloxacin, injectable» تبقى بسقفها)؛ والعينُ
+ * والأذنُ وحدهما مكانُ مرضٍ لا شكلٌ موضعيّ، و«pour-on» تُمتصّ للدم؛ والحساسيةُ تُقرأ كلماتٍ
+ * («فيتامين كومبلكس» ليست «فيتامين ك»)؛ وموادُّ الخليط الواحد تتعارض فيما بينها؛ والاسمُ يُقرأ مرّة.
+ *
  *   node scripts/med-match-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
@@ -446,6 +452,176 @@ await section("▸ ١٥) Bio-Sone وVimespiro معاً: بريدنيزولونٌ
   } finally { console.error = err; }
   check("  ولا «Encountered two children with the same key»", !said.some((s) => /same key/.test(s)), said.filter((s) => /same key/.test(s)).length + " تحذير");
   check("  ولافتةُ الخطة مفتاحُها معرّفُ الصفّ لا اسمُه (صفّان باسمٍ واحد)", /key=\{`\$\{s\.id\}-\$\{a\.id\}`\}/.test(src("src/components/TreatmentPlan.tsx")));
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * الجولةُ الثالثة (١٥/١٠، §١٦–§٢١) — ستُّ فجواتٍ بعد الثانية. كلُّ فحصٍ هنا فشل على 2406d33
+ * قبل إصلاحه، إلا ما وُسم «حارس»: ما كان صحيحاً ويجب أن يبقى بعد الإصلاح.
+ * ══════════════════════════════════════════════════════════════════════════ */
+let cardUI = null, tpUI = null;
+/** معرّفاتُ تنبيهات بطاقة الدواء بالخطة، كما تُرسم. */
+const cardAlerts = async (name, species, concurrent = [], extra = {}, row = {}) => {
+  if (!cardUI) {
+    const { loadUI } = await import("./react-mini.mjs");
+    cardUI = await loadUI(`
+      import { useState, createElement as h } from "react";
+      import { DrugCard } from "./src/components/treatment/DrugCard.tsx";
+      export function CardH(p) { const [r, setR] = useState(p.initial); return h(DrugCard, { ...p, row: r, open: true, onToggle() {}, onRemove() {}, onReplace() {}, onNeedWeight() {}, onPatch: (x) => setR((o) => ({ ...o, ...x })) }); }
+    `, {
+      "@/lib/repo": "export const repo = { lastDoseOf: () => Promise.resolve([]) };",
+      "./NumberPadSheet": "export const NumberPadSheet = () => null;",
+      "@/lib/flowsheet": "export const routeName = (r) => r;",
+      "@/components/DoseBlock": "import { createElement as h } from 'react'; export const DoseAlertRow = ({ alert }) => h('div', { 'data-alert': alert.id, 'data-tone': alert.tone, 'data-blocking': alert.blocking ? '1' : '' }, alert.title);",
+    });
+  }
+  const h = cardUI.React.createElement;
+  const u = cardUI.mount(h(cardUI.CardH, {
+    initial: { id: "r1", name, dose: "", freq: "1", days: 3, ...row }, species, concurrent, planDays: 3,
+    routes: [{ id: "oral", key: "r.oral", label: "فموي" }], freqs: [{ id: "1", key: "f1", label: "مرة يومياً", perDay: 1 }], ...extra,
+  }));
+  await u.settle();
+  return u.findAll("data-alert").map((n) => n.props["data-alert"]);
+};
+const seedOf = async (name, species) => {
+  if (!tpUI) {
+    const { loadUI } = await import("./react-mini.mjs");
+    tpUI = await loadUI(`export * as TP from "./src/components/TreatmentPlan.tsx";`, {
+      "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n, playStepDone = n;",
+      "@/i18n": "export default { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar' };",
+    }).then((x) => x.TP);
+  }
+  return tpUI.formularySeed(name, species);
+};
+const byId = (id) => F.DRUG_BY_ID.get(id);
+
+/* ── ١٦) الفاصلُ بالعربي كالفاصل بالإنجليزي — والدواءان بلا فاصلٍ ليسا أوّلَهما ─────────── */
+await section("▸ ١٦) «مع» و«،» و«؛» و« و » توائمُ «with» و«,» و«;» و«and» — ودواءان بجزءٍ واحد خليطٌ لا أوّلُهما", async () => {
+  for (const name of ["أموكسيسيلين مع جنتاميسين", "أموكسيسيلين، جنتاميسين", "أموكسيسيلين؛ جنتاميسين", "Amoxicillin; Gentamicin"]) {
+    const a = mixSafety(name, { species: "cat", flags: { dehydrated: true } });
+    check(`«${name}» ⇒ لا أموكسيسيلينَ واحد، وموادُّه الاثنان، وقطّةٌ مجفّفة تُوقَف بـ«أمينوغلايكوزيد مع جفاف»`,
+      one(name) === null && ings(name) === "amoxicillin,gentamicin" && a.some((x) => x.id === "gentamicin:amino-renal" && x.blocking),
+      `${one(name)} | ${ings(name)} | ${a.map((x) => x.id).join(",")}`);
+  }
+  const MG = "ميلوكسيكام مع جنتاميسين";
+  const mg = mixSafety(MG, { species: "dog", flags: { renal: true } });
+  check(`«${MG}» لكلبٍ كلاه متعبة ⇒ لا ميلوكسيكامَ واحد، وجنتاميسينُه يوقف`, one(MG) === null && mg.some((x) => x.id === "gentamicin:amino-renal" && x.blocking),
+    `${one(MG)} | ${mg.map((x) => x.id).join(",")}`);
+  // التكافؤ: كلُّ فاصلٍ لاتينيّ وتوأمُه العربي يقسمان الاسمَ نفسَه — ومنها مادّةٌ لا يعرفها الدليل بعد «و» المنفصلة.
+  for (const [lat, ar, a2, b2] of [[", ", "، ", "Gentamicin", "جنتاميسين"], ["; ", "؛ ", "Gentamicin", "جنتاميسين"], [" with ", " مع ", "Gentamicin", "جنتاميسين"],
+    [" and ", " و ", "Florfenicol", "فلورفنيكول"]]) {
+    const L = `Doxycycline${lat}${a2}`, A = `دوكسيسيكلين${ar}${b2}`;
+    check(`التكافؤ: «${lat.trim()}» و«${ar.trim()}» يقسمان مثل بعض، ولا يصير الاسمُ دوكسيسيكلين`,
+      F.ingredientParts(L).length === 2 && F.ingredientParts(A).length === 2 && one(L) === null && one(A) === null,
+      `${JSON.stringify(F.ingredientParts(L))} ${one(L)} | ${JSON.stringify(F.ingredientParts(A))} ${one(A)}`);
+  }
+  for (const [name, want] of [["Amoxicillin Gentamicin", "amoxicillin,gentamicin"], ["Amoxicillin - Gentamicin", "amoxicillin,gentamicin"],
+    ["أموكسيسيلين جنتاميسين", "amoxicillin,gentamicin"], ["Meloxicam. Gentamicin", "gentamicin,meloxicam"], ["Amoxicillin Clavulanate Gentamicin", "amoxi-clav,gentamicin"]]) {
+    check(`«${name}» (دواءان بلا فاصلٍ يُعرف) ⇒ لا أطولُهما، وموادُّه ${want}`, one(name) === null && ings(name) === want, `${one(name)} | ${ings(name)}`);
+  }
+  check("حارس: اسمان لدواءٍ واحد ليسا خليطاً («Metacam Meloxicam»)، والاسمُ الأطول يغطّي ما بداخله («ميثيل بريدنيزولون» ليس بريدنيزولون معه، «Amoxicillin Clavulanate» المركّبُ وحده)",
+    one("Metacam Meloxicam") === "meloxicam" && one("ميثيل بريدنيزولون") === "methylprednisolone" && ings("ميثيل بريدنيزولون") === "methylprednisolone"
+    && one("Amoxicillin Clavulanate 250mg") === "amoxi-clav" && ings("Amoxicillin Clavulanate 250mg") === "amoxi-clav",
+    `${one("Metacam Meloxicam")} ${one("ميثيل بريدنيزولون")} ${ings("ميثيل بريدنيزولون")} ${one("Amoxicillin Clavulanate 250mg")}`);
+  check("حارس: الفاصلةُ بين رقمين كسرٌ بالخطّين («ميلوكسيكام ١،٥ ملغ»، «Meloxicam 1,5 mg»)، و«مع» قبل وصفٍ لا تصنع مادّة («ميلوكسيكام مع الأكل»)",
+    one("ميلوكسيكام ١،٥ ملغ") === "meloxicam" && one("Meloxicam 1,5 mg") === "meloxicam" && one("ميلوكسيكام مع الأكل") === "meloxicam",
+    `${one("ميلوكسيكام ١،٥ ملغ")} ${one("Meloxicam 1,5 mg")} ${one("ميلوكسيكام مع الأكل")}`);
+  const s = await seedOf("أموكسيسيلين مع جنتاميسين", "cat");
+  check("إضافةُ «أموكسيسيلين مع جنتاميسين» لا تبذر جرعةَ الأموكسيسيلين ولا عيارَه", Object.keys(s).length === 0, JSON.stringify(s));
+});
+
+/* ── ١٧) الشكلُ والعبوةُ بعد الفاصل ليسا مادّة ─────────────────────────────────── */
+await section("▸ ١٧) «, injectable» و«/vial» و«w/v» و«with dosing syringe» ليست موادّ — والدواءُ يبقى بنافذته وسقفه", () => {
+  for (const [name, want] of [["Ceftriaxone 1g/vial", "ceftriaxone"], ["Amoxicillin 500mg/cap", "amoxicillin"], ["Furosemide 50mg/amp", "furosemide"],
+    ["Dexamethasone 4mg/ampoule", "dexamethasone"], ["Ivermectin 1% w/v", "ivermectin"], ["Enrofloxacin 10% w/v", "enrofloxacin"], ["Omeprazole 20mg/cap", "omeprazole"],
+    ["Doxycycline 100mg/cap", "doxycycline"], ["Meloxicam, oral suspension", "meloxicam"], ["Meloxicam 1.5 mg/mL, oral suspension", "meloxicam"],
+    ["Enrofloxacin, injectable", "enrofloxacin"], ["Tramadol, 50mg tabs", "tramadol"], ["Furosemide, 10 mg/mL injection", "furosemide"],
+    ["Enrofloxacin 50 mg/tab, 10 tabs", "enrofloxacin"], ["Aspirin, low dose", "aspirin"], ["Carprofen / chewable", "carprofen"],
+    ["Meloxicam with dosing syringe", "meloxicam"], ["Ibuprofen 5% w/w gel", "ibuprofen"], ["ميلوكسيكام ١٫٥ ملغ/مل", "meloxicam"]]) {
+    check(`«${name}» ⇒ ${want} (كما على main)`, one(name) === want, `${one(name)} parts=${JSON.stringify(F.ingredientParts(name))}`);
+  }
+  check("حارس: «إنروفلوكساسين، حقن» ⇒ إنروفلوكساسين — الفاصلةُ العربيةُ (§١٦) لا تجعل الشكلَ مادّة", one("إنروفلوكساسين، حقن") === "enrofloxacin",
+    `${one("إنروفلوكساسين، حقن")} parts=${JSON.stringify(F.ingredientParts("إنروفلوكساسين، حقن"))}`);
+  const enro = F.matchMonograph("Enrofloxacin, injectable");
+  const a = enro ? F.checkSafety({ drug: enro, species: "cat", weightKg: 4, mgPerKg: 10, dose: undefined }) : [];
+  check("قطّةٌ ٤ كغ بـ١٠ ملغ/كغ من «Enrofloxacin, injectable» ⇒ «تجاوزت السقف» الحاجب (عمى الشبكية)", a.some((x) => x.id === "hard-max" && x.blocking), a.map((x) => x.id).join(","));
+  const mx = F.matchMonograph("Meloxicam, oral suspension");
+  const b = mx ? F.checkSafety({ drug: mx, species: "cat", weightKg: 4, mgPerKg: 0.2, dose: undefined }) : [];
+  check("  و«Meloxicam, oral suspension» لقطّة بـ٠٫٢ ⇒ سقفُ الميلوكسيكام للقطّ", b.some((x) => x.id === "hard-max"), b.map((x) => x.id).join(","));
+  check("حارس: الخليطُ يبقى خليطاً — «Florfenicol, injectable» لا شيء، و«Amoxicillin, Gentamicin injection» مادّتان، و«Paracetamol, Vitamin C tablets» ممنوعٌ للقطّ",
+    one("Florfenicol, injectable") === null && one("Amoxicillin, Gentamicin injection") === null && ings("Amoxicillin, Gentamicin injection") === "amoxicillin,gentamicin"
+    && one("Paracetamol, Vitamin C tablets") === null && /باراسيتامول/.test(ban("Paracetamol, Vitamin C tablets", "cat") ?? ""),
+    `${one("Florfenicol, injectable")} ${one("Amoxicillin, Gentamicin injection")} ${ings("Amoxicillin, Gentamicin injection")} ${one("Paracetamol, Vitamin C tablets")}`);
+});
+
+/* ── ١٨) الشكلُ الموضعيّ يعلنه الشكل، لا مكانُ المرض ─────────────────────────────── */
+await section("▸ ١٨) «injection (ear infection)» حقنة، و«pour-on»/«spot-on» تُمتصّ للدم — والقطرةُ تبقى قطرة", async () => {
+  for (const [name, want] of [["Gentamicin injection (ear infection)", "gentamicin"], ["Enrofloxacin (ear infection)", "enrofloxacin"],
+    ["Doxycycline (eye infection)", "doxycycline"], ["Clindamycin (ear/skin)", "clindamycin"], ["Cephalexin for skin and ear infections", "cephalexin"],
+    ["Ivermectin pour-on", "ivermectin"], ["Ivermectin spot-on", "ivermectin"], ["جنتاميسين حقن لالتهاب الاذن", "gentamicin"]]) {
+    check(`«${name}» ⇒ ${want}، لا شكلَ موضعيّ`, one(name) === want && !isLocal(name), `${one(name)} local=${isLocal(name)}`);
+  }
+  const G = "Gentamicin injection (ear infection)";
+  const melox = F.checkSafety({ drug: byId("meloxicam"), species: "cat", mgPerKg: 0, dose: undefined, concurrent: cids([G]) });
+  check(`صفُّ ميلوكسيكام مع «${G}» ⇒ تعارض NSAID + أمينوغلايكوزيد (كان الصفُّ يُترك كأنه قطرة)`, melox.some((a) => a.id === "pair-gentamicin"), melox.map((a) => a.id).join(","));
+  const c = await cardAlerts(G, "cat", ["Meloxicam"], { flags: { dehydrated: true }, weight: 4 });
+  check("  وبطاقتُه لقطّةٍ مجفّفة: «أمينوغلايكوزيد مع جفاف» وتعارضُ الميلوكسيكام", c.includes("amino-renal") && c.includes("pair-meloxicam"), c.join(","));
+  const iv = await cardAlerts("Ivermectin pour-on", "dog", ["Ivermectin"]);
+  check("«Ivermectin pour-on» مع حقنة «Ivermectin» ⇒ «موصوف أصلاً» الحاجب", iv.includes("dup-same"), iv.join(","));
+  for (const name of ["Gentamicin eye drop", "Gentamicin ear drop", "Gentamicin (eye drops)", "قطرة جنتاميسين للعين", "جنتاميسين قطرة عين", "مرهم عين جنتاميسين", "Gentamicin ophthalmic ointment"]) {
+    check(`حارس: «${name}» موضعيّ — لا جنتاميسينَ الحقن، ومادّتُه جنتاميسين`, isLocal(name) && one(name) === null && ings(name) === "gentamicin", `${isLocal(name)} ${one(name)} ${ings(name)}`);
+  }
+});
+
+/* ── ١٩) الحساسيةُ تُقرأ كلماتٍ لا حروفاً ──────────────────────────────────────── */
+await section("▸ ١٩) «فيتامين كومبلكس» ليست «فيتامين ك» — الحساسيةُ لا توقف ترياقَ سمّ الفئران", () => {
+  const K1 = byId("vitamin-k1");
+  for (const a of ["فيتامين كومبلكس", "فيتامين كالسيوم", "Vitamin K3", "vitamin kit"]) {
+    check(`حساسيةُ «${a}» لا توقف فيتامين ك١`, !F.allergyHit(K1, a), String(F.allergyHit(K1, a)));
+  }
+  const r = R.alertsFor({ medication: "Vitamin K1" }, { species: "dog", allergies: ["فيتامين كومبلكس"] });
+  check("  والجولة: «Vitamin K1» مع «فيتامين كومبلكس» بالملفّ بلا «حساسية مسجّلة»", !r.some((a) => a.id.startsWith("allergy-")), r.map((a) => a.id).join(","));
+  check("«لا» و«-» بخانة الحساسية لا توقفان أموكسيسيلين + كلافولانيك ولا الميدازولام (حرفان داخل «كلافولانيك» و«Amoxicillin-clavulanate»)",
+    !F.allergyHit(byId("amoxi-clav"), "لا") && !F.allergyHit(byId("midazolam"), "لا") && !F.allergyHit(byId("amoxi-clav"), "-"),
+    `${F.allergyHit(byId("amoxi-clav"), "لا")} | ${F.allergyHit(byId("midazolam"), "لا")} | ${F.allergyHit(byId("amoxi-clav"), "-")}`);
+  for (const [id, a] of [["vitamin-k1", "Vitamin K"], ["vitamin-k1", "فيتامين ك"], ["vitamin-k1", "Vitamin K1"], ["vitamin-k1", "فيتامين ك١"], ["vitamin-k1", "حساسية من فيتامين ك"],
+    ["amoxicillin", "اموكسيسيلين"], ["amoxicillin", "Amox"], ["dexamethasone", "حساسية للديكساميثازون"], ["dexamethasone", "بنسلين وديكساميثازون"],
+    ["epinephrine", "أدرينالين"], ["paracetamol", "Acetaminophen"], ["amoxi-clav", "Synulox"], ["prednisolone", "Prednisolone acetate"], ["gentamicin", "Gentamicin"]]) {
+    check(`حارس: حساسيةُ «${a}» تمسك ${id}`, !!F.allergyHit(byId(id), a));
+  }
+});
+
+/* ── ٢٠) موادُّ الخليط الواحد تتعارض فيما بينها ───────────────────────────────── */
+await section("▸ ٢٠) «ميلوكسيكام وديكساميثازون» بصفٍّ واحد كصفّين: «NSAID مع كورتيزون» يوقف", async () => {
+  for (const [name, species, pair] of [["ميلوكسيكام وديكساميثازون", "dog", "meloxicam:pair-dexamethasone"], ["Meloxicam + Dexamethasone", "dog", "meloxicam:pair-dexamethasone"],
+    ["Meloxicam + Ketoprofen", "cat", "meloxicam:pair-ketoprofen"], ["Gentamicin + Furosemide", "dog", "gentamicin:pair-furosemide"]]) {
+    const a = mixSafety(name, { species });
+    check(`«${name}» ⇒ ${pair}، مرّةً واحدةً بالصفّ`, a.some((x) => x.id === pair) && a.filter((x) => /:pair-/.test(x.id)).length === 1, a.map((x) => x.id).join(","));
+  }
+  const crit = mixSafety("ميلوكسيكام وديكساميثازون", { species: "dog" }).find((x) => /:pair-/.test(x.id));
+  check("  والتعارضُ حرجٌ يوقف (كصفّين)", crit?.tone === "critical" && crit?.blocking === true, JSON.stringify(crit));
+  const c = await cardAlerts("ميلوكسيكام وديكساميثازون", "dog");
+  check("  وبطاقتُه بالخطة ترسمه", c.includes("meloxicam:pair-dexamethasone"), c.join(","));
+  const loc = mixSafety("Dexamethasone + Gentamicin eye drops", { species: "dog" });
+  check("حارس: قطرةُ عينٍ بمادّتين لا تعارضَ بينهما بالدم", !loc.some((x) => /pair-/.test(x.id)), loc.map((x) => x.id).join(","));
+  const ag = mixSafety("Amoxicillin + Gentamicin", { species: "dog" });
+  check("حارس: «Amoxicillin + Gentamicin» لا تعارضَ مخترَع", !ag.some((x) => /pair-|dup-/.test(x.id)), ag.map((x) => x.id).join(","));
+});
+
+/* ── ٢١) المنتقي يقرأ الاسمَ مرّة ───────────────────────────────────────────── */
+await section("▸ ٢١) buildMedIndex يقرأ كلَّ اسمٍ مرّةً واحدة (كان ثلاثاً: الدليل، ثم المنع، ثم البحث)", () => {
+  if (typeof F.nameReadCount !== "function") { check("nameReadCount: عدّادُ قراءات الأسماء مُصدَّر", false, "∅ لا nameReadCount"); return; }
+  const rows = Array.from({ length: 150 }, (_, i) => ({ id: `q${i}`, name: `Clinic mix ${i} + Vitamin C`, family: "other", in_mine: true, pos: i, archived_at: null, created_at: NOW2, updated_at: NOW2 }));
+  const stock = Array.from({ length: 150 }, (_, i) => ({ id: `s${i}`, name: `Stock ${i} صنف`, stock: 2 }));
+  const r0 = F.nameReadCount();
+  const t0 = performance.now();
+  I.buildMedIndex({ catalog: [], rows, stock, species: "cat" });
+  const t1 = performance.now();
+  const first = F.nameReadCount() - r0;
+  check(`أوّلُ بناء: ${first} قراءة لـ٣٠٠ اسمٍ جديد (اسمٌ = قراءة)`, first === 300, String(first));
+  const r1 = F.nameReadCount();
+  I.buildMedIndex({ catalog: [], rows, stock, species: "dog" });
+  check("  وإعادةُ البناء لنوعٍ آخر لا تقرأ اسماً من جديد", F.nameReadCount() - r1 === 0, String(F.nameReadCount() - r1));
+  console.log(`     (أوّلُ بناء ${(t1 - t0).toFixed(1)} ms)`);
 });
 
 console.log(fails ? `\n✗ med-match-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-match-test: ${passes} نجحت، 0 فشلت`);
