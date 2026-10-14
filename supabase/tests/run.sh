@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -5046,6 +5046,132 @@ chk "  والقالبُ ليس فارغاً، وفيه زبونٌ وملاحظة
 $P -c "delete from expenses where id in (select id from _rtp_out); delete from rpc_refs where fn = 'retail_return' and client_ref like 'RTP-%';
        drop table _rtp_out; drop table _rtp_expected; drop function _rtp_run(uuid);" >/dev/null
 rm -rf "$RTP"
+
+# ── 0238: حذفُ دواءٍ من الخطة — والجرعةُ المعطاة لا تُحذف (D1/D2) ─────────────────
+# كلُّ نداءٍ بدور authenticated: الحارسُ يحرس `current_user = 'authenticated'` وحده، فالحزمةُ
+# (superuser) تتجاوزه — `_dtd` ينادي drop_treatment_drug كما تناديه الواجهة ويرجع
+# «ok:المحذوف:المعطاة:الفائتة» أو «guarded:الحالة:الرمز:التلميح».
+# و`clinic_visits` بشكل الإنتاج (مقيسٌ ١٤/١٠ من information_schema وpg_policies: أعمدةُ 0060،
+# سياسةُ العيادة ملفوفة، وسياجُ المصوّر)، ومحفّزُ التدقيق على treatment_entries كما بـ0044 —
+# بلاهما كانت الدالّةُ تُفحص على جدولٍ غائب والتدقيقُ على لا شيء.
+echo "▸ 0238: حذفُ الدواء من الخطة — المعطى باقٍ"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+PHO=88888888-8888-8888-8888-888888888888
+ADM=33333333-3333-3333-3333-333333333333
+TD=c2380000-0000-4000-8000-0000000000
+TODAY="((now() at time zone 'Asia/Baghdad')::date)"
+out=$($P -f "$MIG/0238_treatment_drop.sql" 2>&1) || { echo "$out"; echo "   ✗ 0238 ما انعادت"; fail=1; }
+$P -c "create table if not exists clinic_visits (
+         id uuid primary key default gen_random_uuid(),
+         pet_id uuid not null references pets(id) on delete cascade,
+         clinic_id uuid not null references auth.users(id) default auth_clinic(),
+         kind text not null default 'illness' check (kind in ('illness','checkup','grooming','vaccination','followup','other')),
+         reason text, status text not null default 'open' check (status in ('open','ended')), condition text,
+         opened_at timestamptz not null default now(), ended_at timestamptz, opened_by text, ended_by text,
+         outcome text, summary text, created_at timestamptz not null default now());
+       create index if not exists clinic_visits_pet_idx on clinic_visits(pet_id, opened_at desc);
+       create index if not exists clinic_visits_clinic_idx on clinic_visits(clinic_id);
+       alter table clinic_visits enable row level security;
+       drop policy if exists clinic_visits_clinic_all on clinic_visits;
+       create policy clinic_visits_clinic_all on clinic_visits for all
+         using (clinic_id = (select auth_clinic())) with check (clinic_id = (select auth_clinic()));
+       grant select, insert, update, delete on clinic_visits to authenticated;
+       select public.photographer_fence_table('clinic_visits');
+       drop trigger if exists audit_all on treatment_entries;
+       create trigger audit_all after insert or update or delete on treatment_entries
+         for each row execute function audit_change();
+       update _dvtest_flags set admin = false; delete from platform_sessions;
+       create or replace function _dtd(who uuid, visit uuid, med text, d date, scope text, ids uuid[]) returns text language plpgsql as \$fn\$
+       declare r jsonb; h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         r := drop_treatment_drug(visit, med, d, scope, ids);
+         reset role;
+         return 'ok:' || (r->>'deleted') || ':' || (r->>'kept_given') || ':' || (r->>'kept_past');
+       exception when others then
+         get stacked diagnostics h = pg_exception_hint;
+         return 'guarded:' || sqlstate || ':' || sqlerrm || ':' || coalesce(h, '');
+       end \$fn\$;
+       insert into pets(id, name, clinic_id) values ('${TD}a1','قطة 0238','$C1'), ('${TD}a2','قطة الحذف','$C1') on conflict (id) do nothing;
+       insert into clinic_visits(id, pet_id, clinic_id, status) values
+         ('${TD}b1','${TD}a1','$C1','open'), ('${TD}b2','${TD}a1','$C1','open'),
+         ('${TD}b3','${TD}a1','$C1','ended'), ('${TD}b4','${TD}a2','$C1','open') on conflict (id) do nothing;
+       insert into treatment_entries(id, pet_id, clinic_id, visit_id, day, time, medication, amount, task_type, administered_at, missed_reason) values
+         ('${TD}01','${TD}a1','$C1','${TD}b1', $TODAY - 2, '08:00', 'Ceftriaxone', '1 مل', 'drug', now(), null),
+         ('${TD}02','${TD}a1','$C1','${TD}b1', $TODAY - 1, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}03','${TD}a1','$C1','${TD}b1', $TODAY - 1, '20:00', 'Ceftriaxone', '1 مل', 'drug', null, 'past:not_given'),
+         ('${TD}04','${TD}a1','$C1','${TD}b1', $TODAY,     '08:00', 'Ceftriaxone', '1 مل', 'drug', now(), null),
+         ('${TD}05','${TD}a1','$C1','${TD}b1', $TODAY,     '20:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}06','${TD}a1','$C1','${TD}b1', $TODAY + 1, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}07','${TD}a1','$C1','${TD}b1', $TODAY + 2, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}08','${TD}a1','$C1','${TD}b1', $TODAY + 3, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}09','${TD}a1','$C1','${TD}b1', $TODAY + 4, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}10','${TD}a1','$C1','${TD}b1', $TODAY + 1, '08:00', 'Meloxicam',   '0.1 مل', 'drug', null, null),
+         ('${TD}11','${TD}a1','$C1','${TD}b1', $TODAY + 1, '10:00', 'Ceftriaxone', '100 مل', 'fluid', null, null),
+         ('${TD}12','${TD}a1','$C1','${TD}b1', $TODAY + 5, '08:00', 'Ketamine',    '1 مل', 'drug', null, null),
+         ('${TD}21','${TD}a1','$C1','${TD}b2', $TODAY + 1, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}31','${TD}a1','$C1','${TD}b3', $TODAY + 1, '08:00', 'Ceftriaxone', '1 مل', 'drug', null, null),
+         ('${TD}41','${TD}a2','$C1','${TD}b4', $TODAY - 1, '08:00', 'Ceftriaxone', '1 مل', 'drug', now(), null)
+         on conflict (id) do nothing;" >/dev/null
+chk "حذفٌ مباشر لجرعةٍ معطاة بدور authenticated ⇒ dose_given_keep بتلميحٍ عربيّ" \
+    "select _rls_try('$C1', 'delete from treatment_entries where id=''${TD}01''')" "guarded:P0001:dose_given_keep"
+chk "  والجرعةُ باقية" "select count(*)::text from treatment_entries where id='${TD}01'" "1"
+chk "جملةُ حذفٍ بالزيارة تشمل معطاةً تُرفض كلُّها — لا نصفُ حذف" \
+    "select left(_rls_try('$C1', 'delete from treatment_entries where visit_id=''${TD}b1'''), 13)||'|'||(select count(*) from treatment_entries where visit_id='${TD}b1')::text" "guarded:P0001|12"
+chk "حذفٌ مباشر لجرعةٍ منتظرة يمرّ (السلّةُ للمنتظر)" \
+    "select _rls_try('$C1', 'delete from treatment_entries where id=''${TD}12''')" "rows:1"
+chk "«من هذا اليوم بس» على يومٍ فات ⇒ drop_past_day" \
+    "select split_part(_dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY - 2, 'day', array['${TD}01']::uuid[]), ':', 3)" "drop_past_day"
+A0=$(W "select count(*) from audit_log where entity='treatment_entries' and action='DELETE'")
+chk "«وطالع» من يومٍ فات بكلّ معرّفات النطاق (والمعطاة منها) ⇒ ٥ تنحذف، ٢ معطاة و٢ فائتة تبقى" \
+    "select _dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY - 2, 'rest', array['${TD}01','${TD}02','${TD}03','${TD}04','${TD}05','${TD}06','${TD}07','${TD}08','${TD}09']::uuid[])" "ok:5:2:2"
+chk "  الباقي بالزيارة: المعطاتان والفائتتان والدواءُ الآخر والسائلُ بنفس الاسم" \
+    "select string_agg(right(id::text, 2), ',' order by id) from treatment_entries where visit_id='${TD}b1'" "01,02,03,04,10,11"
+chk "  ولكلّ جرعةٍ محذوفةٍ سطرُ تدقيقٍ نوعُه «جرعة»" \
+    "select (count(*) - $A0)::text||'|'||max(audit_kind(entity, action, details)) from audit_log where entity='treatment_entries' and action='DELETE'" "5|dose"
+chk "  والسطورُ بمعرّفات الجرعات نفسها" \
+    "select count(distinct entity_id)::text from audit_log where entity='treatment_entries' and action='DELETE' and entity_id in ('${TD}05','${TD}06','${TD}07','${TD}08','${TD}09')" "5"
+chk "إعادةُ النداء ⇒ drop_nothing بتلميحٍ يقول السبب" \
+    "select split_part(r, ':', 3)||'|'||(position('جهاز ثاني' in r) > 0)::text from (select _dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY, 'rest', array['${TD}05','${TD}06']::uuid[]) r) x" "drop_nothing|true"
+$P -c "insert into treatment_entries(id, pet_id, clinic_id, visit_id, day, time, medication, amount, task_type) values
+         ('${TD}13','${TD}a1','$C1','${TD}b1', $TODAY + 5, '08:00', 'Ceftriaxone', '1 مل', 'drug'),
+         ('${TD}14','${TD}a1','$C1','${TD}b1', $TODAY + 6, '08:00', 'Ceftriaxone', '1 مل', 'drug') on conflict (id) do nothing;
+       update treatment_entries set administered_at = now(), administered_by = 'جهاز ثاني' where id = '${TD}14';" >/dev/null
+chk "جرعةٌ انعطت قبل النداء لا تُحذف ولو أُرسل معرّفُها" \
+    "select _dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY + 5, 'rest', array['${TD}13','${TD}14']::uuid[])||'|'||(select count(*) from treatment_entries where id='${TD}14')::text" "ok:1:1:0|1"
+chk "معرّفاتُ دواءٍ آخر وسائلٍ وزيارةٍ أخرى تُتجاهل ⇒ drop_nothing، والثلاثةُ باقية" \
+    "select split_part(_dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}10','${TD}11','${TD}21']::uuid[]), ':', 3)||'|'||(select count(*) from treatment_entries where id in ('${TD}10','${TD}11','${TD}21'))::text" "drop_nothing|3"
+chk "عيادةٌ أخرى ⇒ visit_gone (P0002) بتلميحٍ عربيّ" \
+    "select split_part(r, ':', 2)||'|'||split_part(r, ':', 3)||'|'||(position('عيادتك' in r) > 0)::text from (select _dtd('$C2', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}21']::uuid[]) r) x" "P0002|visit_gone|true"
+chk "المصوّرُ ممنوع، والجرعةُ باقية" \
+    "select split_part(_dtd('$PHO', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}21']::uuid[]), ':', 1)||'|'||(select count(*) from treatment_entries where id='${TD}21')::text" "guarded|1"
+chk "زيارةٌ مسكّرة ⇒ visit_ended، والجرعةُ باقية" \
+    "select split_part(_dtd('$C1', '${TD}b3', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}31']::uuid[]), ':', 3)||'|'||(select count(*) from treatment_entries where id='${TD}31')::text" "visit_ended|1"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل ١١١١ (0238)" "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص 0238'')->>''ok'')')" "true"
+chk "  ويحذف المنتظرَ بالدالّة كأيّ كادر" \
+    "select _dtd('$ADM', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'day', array['${TD}21']::uuid[])" "ok:1:0:0"
+chk "  والمعطاةُ عليه ممنوعةٌ كما على غيره" \
+    "select left(_rls_try('$ADM', 'delete from treatment_entries where id=''${TD}04'''), 13)||'|'||(select count(*) from treatment_entries where id='${TD}04')::text" "guarded:P0001|1"
+$P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "حذفُ الحيوان يمرّ ولو عنده جرعةٌ معطاة (تتابعُ المفتاح بهويّة المالك)" \
+    "select _rls_try('$C1', 'delete from pets where id=''${TD}a2''')||'|'||(select count(*) from treatment_entries where pet_id='${TD}a2')::text" "rows:1|0"
+chk "الحارسُ والدالّة invoker بمسارٍ مثبَّت" \
+    "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text, ',' order by proname) from pg_proc where proname in ('treatment_entries_keep_given','drop_treatment_drug')" "drop_treatment_drug:false:true,treatment_entries_keep_given:false:true"
+chk "  وجملةُ الحذف تعيد شرطَ المعطى وتختم العيادة بنصّها" \
+    "select (prosrc like '%t.administered_at is null%' and prosrc like '%clinic_id = v_clinic%')::text from pg_proc where proname='drop_treatment_drug'" "true"
+chk "  والمحفّزُ قبل الحذف" \
+    "select string_agg(action_timing||':'||event_manipulation, ',') from information_schema.triggers where trigger_name='treatment_entries_keep_given'" "BEFORE:DELETE"
+chk "  ولا سياسةَ تقرأ جدولَها، ولا تنفيذَ لـanon" \
+    "select (select count(*) from verify_no_self_ref_policies())::text||'|'||has_function_privilege('anon','public.drop_treatment_drug(uuid,text,date,text,uuid[])','execute')::text" "0|false"
+# مرآةُ الشرط: المتوقَّعُ تحسبه dropTargets بالواجهة نفسها (من المصدر)، والقاعدةُ تُسأل سيناريو سيناريو.
+TDF=$(mktemp -d)
+node "$HERE/../../scripts/treatment-drop-parity.mjs" "$TDF" >/dev/null
+$P -f "$TDF/treatment-drop.sql" >/dev/null
+chk "مرآةُ dropTargets: كلُّ سيناريو يعطي نفسَ الرفض والعددين وما يبقى بالطرفين" "select _tdp_run('$C1')" "ok"
+rm -rf "$TDF"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

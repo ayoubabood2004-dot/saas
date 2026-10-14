@@ -20,6 +20,8 @@ import { receiptsOf, dueOf } from "./debt";
 import { cleanRef } from "./deliverySearch";
 import { phoneDigits } from "./phone";
 import { searchable, invNormName } from "./utils";
+import { dropTargets, TreatmentDropError, type DropScope } from "./treatmentDrop";
+import type { TreatmentDropResult } from "@/types";
 import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
@@ -1474,10 +1476,48 @@ const demoRepo = {
     saveDB(db);
   },
 
+  /** مرآةُ 0238: المعطاةُ لا تُحذف (المحفّزُ بتلميحه)، وصفٌّ غائبٌ يُرمى كصفرِ صفوفٍ بالخادم. */
   async deleteTreatment(id: string): Promise<void> {
     const db = loadDB();
+    const row = db.treatments.find((t) => t.id === id);
+    if (!row) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" });
+    if (row.administered_at) throw new TreatmentDropError("dose_given_keep");
     db.treatments = db.treatments.filter((t) => t.id !== id);
     saveDB(db);
+  },
+
+  /** مرآةُ drop_treatment_drug (0238): نفسُ ترتيب الرفض ونفسُ الشرط (`dropTargets`)، ويُحذف
+   *  ما يقع بالشرط **ومعرّفُه مُرسَل** — كجملة الحذف الواحدة بالخادم. */
+  async dropTreatmentDrug(p: { visitId: string; medication: string; day: string; scope: DropScope; ids: string[] }): Promise<TreatmentDropResult> {
+    const db = loadDB();
+    const today = localISO(new Date());
+    if ((p.scope !== "day" && p.scope !== "rest") || !p.day || (p.ids?.length ?? 0) > 500) throw new TreatmentDropError("bad_ops");
+    const visit = (db.clinicVisits ?? []).find((v) => v.id === p.visitId);
+    if (!visit) throw new TreatmentDropError("visit_gone");
+    if (visit.status === "ended") throw new TreatmentDropError("visit_ended");
+    if (p.scope === "day" && p.day < today) throw new TreatmentDropError("drop_past_day");
+    const plan = dropTargets(db.treatments ?? [], { visitId: p.visitId, medication: p.medication, day: p.day, scope: p.scope, today });
+    const sent = new Set(p.ids ?? []);
+    const gone = new Set(plan.targets.filter((t) => sent.has(t.id)).map((t) => t.id));
+    if (!gone.size) throw new TreatmentDropError("drop_nothing");
+    const days = plan.targets.filter((t) => gone.has(t.id)).map((t) => t.day).sort();
+    db.treatments = db.treatments.filter((t) => !gone.has(t.id));
+    saveDB(db);
+    return { deleted: gone.size, kept_given: plan.keptGiven, kept_past: plan.keptPast, from: days[0] ?? null, to: days[days.length - 1] ?? null };
+  },
+
+  /** مرآةُ updatePendingTreatments: المنتظرُ من نوع «دواء» وحده، ويرجع كم تعدّل. */
+  async updatePendingTreatments(ids: string[], patch: Partial<Pick<TreatmentEntry, "medication" | "amount" | "time" | "observations" | "route">>): Promise<number> {
+    const db = loadDB();
+    const want = new Set(ids);
+    let n = 0;
+    for (const t of db.treatments) {
+      if (!want.has(t.id) || t.administered_at || (t.task_type ?? "drug") !== "drug") continue;
+      Object.assign(t, patch);
+      n++;
+    }
+    if (n) saveDB(db);
+    return n;
   },
 
   /* ---- العمليات الجراحية (سجل الحالة) ---- */
@@ -4712,6 +4752,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateTreatment: { entity: "treatment_entries", action: "UPDATE" },
   setTreatmentMissed: { entity: "treatment_entries", action: "UPDATE" },
   deleteTreatment: { entity: "treatment_entries", action: "DELETE" },
+  dropTreatmentDrug: { entity: "treatment_entries", action: "DELETE" },
+  updatePendingTreatments: { entity: "treatment_entries", action: "UPDATE" },
   addAdmission: { entity: "admissions", action: "INSERT" },
   addSurgery: { entity: "surgeries", action: "INSERT" },
   updateSurgery: { entity: "surgeries", action: "UPDATE" },

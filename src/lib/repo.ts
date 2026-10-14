@@ -1010,8 +1010,33 @@ const supabaseRepo: DemoRepo = {
     const rows = inputs.map((r) => ({ ...r, amount: r.amount ?? "", medication: r.medication ?? "" }));
     ok(await sbc().from("treatment_entries").insert(rows)); // دفعة وحدة — رحلة سيرفر واحدة
   },
+  /* الحذفُ يُسمَع (0238): المعطاةُ يرفضها المحفّزُ بتلميحه، وصفرُ صفوفٍ (السياسةُ ردّته أو انحذف
+   * من جهازٍ ثانٍ) يُرمى — كان `ok()` يقول «تمّ» على صفرِ صفوفٍ بلا خطأ. */
   async deleteTreatment(id) {
-    ok(await sbc().from("treatment_entries").delete().eq("id", id));
+    updatedRows(await sbc().from("treatment_entries").delete().eq("id", id).select("id"));
+  },
+  /* حذفُ دواءٍ من يومٍ أو من يومٍ وطالع (0238): جملةٌ واحدة بالخادم تُعيد فحصَ المعطى، فما انعطى
+   * من جهازٍ ثانٍ بالأثناء يبقى ولو أُرسل معرّفُه. والرفضُ برمزه وتلميحه العربيّ. */
+  async dropTreatmentDrug(p) {
+    const d = need<Record<string, unknown>>(await sbc().rpc("drop_treatment_drug", {
+      p_visit: p.visitId, p_medication: p.medication, p_day: p.day, p_scope: p.scope, p_ids: p.ids,
+    }));
+    return {
+      deleted: Number(d.deleted) || 0, kept_given: Number(d.kept_given) || 0, kept_past: Number(d.kept_past) || 0,
+      from: typeof d.from === "string" ? d.from : null, to: typeof d.to === "string" ? d.to : null,
+    };
+  },
+  /* تعديلُ المنتظر وحده: الشرطُ على الصفّ بالطلب نفسه (`administered_at is null`)، فجرعةٌ انعطت من
+   * جهازٍ ثانٍ بعد فتح النافذة لا تُكتب فوقها — كان كلُّ صفٍّ بطلبٍ بلا شرط. ويرجع كم تعدّل فعلاً
+   * (الشاشةُ تقول «تعدّلت ٣ من ٤» بدل «تمّ»). دفعاتٌ بمئة معرّف (طولُ الرابط). */
+  async updatePendingTreatments(ids, patch) {
+    let n = 0;
+    for (let i = 0; i < ids.length; i += IN_CHUNK) {
+      const rows = listOrThrow<{ id: string }>(await sbc().from("treatment_entries").update(patch)
+        .in("id", ids.slice(i, i + IN_CHUNK)).is("administered_at", null).eq("task_type", "drug").select("id"));
+      n += rows.length;
+    }
+    return n;
   },
   async listSurgeries(petId) {
     // Pre-0073 backend (table missing) must never break the case page — empty list.

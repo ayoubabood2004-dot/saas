@@ -7,7 +7,7 @@ import {
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Pill,
   Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil, Printer, FileText,
-  History, ListChecks, SkipForward,
+  History, ListChecks, SkipForward, Trash2,
 } from "lucide-react";
 import { toneOfResult } from "@/lib/observations";
 import { missReasonText } from "@/lib/flowsheet";
@@ -52,6 +52,7 @@ import { playTap, playSuccess, playWarning, playAchievement, playDoseGiven } fro
 import { celebrate } from "@/lib/celebrate";
 import { dayForm } from "@/lib/dayWords";
 import { describeDbError } from "@/lib/errors";
+import { dropTargets, type DropScope } from "@/lib/treatmentDrop";
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -534,16 +535,48 @@ export default function VisitPage() {
       // اليوم كان سيطوي مواعيدها على بعضها بصمت.
       ...(patch.time !== (orig.time ?? "") ? { time: patch.time } : {}),
     };
-    /* الجرعات المعطاة تاريخٌ لا يُمسّ — التعديل يطال ما لم يُعطَ فقط. */
+    /* الجرعات المعطاة تاريخٌ لا يُمسّ — التعديل يطال ما لم يُعطَ فقط. والشرطُ يُعاد **بالخادم**
+     * بالطلب نفسه (`updatePendingTreatments`): جرعةٌ انعطت من جهازٍ ثانٍ بعد فتح النافذة كانت
+     * تُكتب فوقها، وكلُّ صفٍّ بطلبه بلا try فيُقال «تعدّلت» والطلبُ فشل. فالعددُ يُقال كما وقع. */
     const targets = treatments.filter((x) =>
-      x.medication === orig.medication && !x.administered_at
+      x.medication === orig.medication && !x.administered_at && isGivable(x)
       && (scope === "day" ? x.day === orig.day : x.day >= orig.day));
-    await Promise.all(targets.map((x) => repo.updateTreatment(x.id, clean)));
-    if (visit) await syncDoseCycleForPet(visit.pet_id);
-    playSuccess();
-    toast.success(t("visit.drugEdited", { n: formatNum(targets.length), defaultValue: "تعدّلت {{n}} جرعة" }));
-    setEditTarget(null);
-    await reload();
+    try {
+      const n = await repo.updatePendingTreatments(targets.map((x) => x.id), clean);
+      if (n === targets.length) {
+        playSuccess();
+        toast.success(t("visit.drugEdited", { n: formatNum(n), defaultValue: "تعدّلت {{n}} جرعة" }));
+      } else {
+        playWarning();
+        const msg = t("vbk.editPartial", { n: formatNum(n), total: formatNum(targets.length), defaultValue: "تعدّلت {{n}} من {{total}} — الباقي انعطى بجهاز ثاني فما تغيّر." });
+        if (n > 0) toast.warn(msg); else toast.error(msg);
+      }
+      setEditTarget(null);
+      if (visit) await syncDoseCycleForPet(visit.pet_id).catch(() => { /* swallow-ok: دورةُ الجرعات تُعاد بأوّل تحميل — التعديلُ نفسُه انحفظ */ });
+      await reload();
+    } catch (e) {
+      playWarning();
+      toast.error(t("visit.saveFailed", "تعذّر الحفظ"), describeDbError(e, t));
+    }
+  };
+
+  /* ---- حذفُ دواءٍ من الخطة: «من هذا اليوم بس» أو «من هذا اليوم وطالع» (0238) ----
+   * جملةٌ واحدة بالخادم تُبقي المعطى والفائتَ المحسوم وتعيد فحصَه — والعددُ يُقال كما وقع. */
+  const dropDrug = async (orig: TreatmentEntry, scope: DropScope, ids: string[]) => {
+    if (!visit) return;
+    try {
+      const res = await repo.dropTreatmentDrug({ visitId: visit.id, medication: orig.medication, day: orig.day, scope, ids });
+      playSuccess();
+      toast.success(t("vbk.dropDone", { n: formatNum(res.deleted), total: formatNum(ids.length), defaultValue: "انحذفت {{n}} من {{total}} · المعطاة باقية" }));
+      setEditTarget(null);
+      await syncDoseCycleForPet(visit.pet_id).catch(() => { /* swallow-ok: دورةُ الجرعات تُعاد بأوّل تحميل — الحذفُ نفسُه تمّ */ });
+      await reload();
+    } catch (e) {
+      playWarning();
+      toast.error(t("visit.saveFailed", "تعذّر الحفظ"), describeDbError(e, t));
+      // النافذةُ تبقى، والأعدادُ تتحدّث بعد التحميل (ما انعطى بالأثناء يخرج من «ينحذف»).
+      await reload().catch(() => { /* swallow-ok: الرسالةُ قيلت — التحديثُ تحسين */ });
+    }
   };
 
   /* ---- Add a single ad-hoc medication (بشكل مفرد) — لليوم أو لكل الأيام الباقية ---- */
@@ -571,9 +604,17 @@ export default function VisitPage() {
         administered_by: d.givenNow && day === d.day && d.day <= today ? by : undefined,
       });
     }
-    await repo.addTreatments(rows);
-    await syncDoseCycleForPet(visit.pet_id);
-    playSuccess(); setAddDrugOpen(false); await reload();
+    // الفشلُ يُقال والنافذةُ تبقى بما كُتب فيها — كان بلا try فتدور النافذةُ ثم تسكت.
+    try {
+      await repo.addTreatments(rows);
+    } catch (e) {
+      playWarning();
+      toast.error(t("visit.saveFailed", "تعذّر الحفظ"), describeDbError(e, t));
+      return;
+    }
+    playSuccess(); setAddDrugOpen(false);
+    await syncDoseCycleForPet(visit.pet_id).catch(() => { /* swallow-ok: دورةُ الجرعات تُعاد بأوّل تحميل — الدواءُ انضاف */ });
+    await reload();
   };
 
   /* ---- Print the paper treatment sheet (ورقة خطة العلاج) — one row per dose ---- */
@@ -971,8 +1012,10 @@ export default function VisitPage() {
           treatments={treatments}
           lang={lang}
           species={pet.species}
+          lastDay={lastDay}
           onClose={() => setEditTarget(null)}
           onSave={editDrug}
+          onDrop={dropDrug}
         />
       )}
       <ExtendPlanModal open={extendOpen} lastDay={lastDay} lang={lang} medCount={lastDay ? treatments.filter((t) => t.day === lastDay).length : 0} onClose={() => setExtendOpen(false)} onExtend={extendCourse} />
@@ -1591,11 +1634,18 @@ function GiveModal({ t, lang, todayISO, defaultDoctor, ended, onClose, onGive, o
 
 /* ------------------------------ Edit-drug modal --------------------------- */
 /** تعديل دواءٍ قبل إعطائه: الاسم/الكمية/الوقت/التكرار، وبمدى يقرّره الدكتور —
- *  هذا اليوم وحده، أو من هذا اليوم لنهاية الخطة. المعطى تاريخٌ لا يُمسّ. */
-function EditDrugModal({ entry, treatments, species, onClose, onSave }: {
+ *  هذا اليوم وحده، أو من هذا اليوم لنهاية الخطة. المعطى تاريخٌ لا يُمسّ.
+ *
+ *  و«احذف هذا الدواء» (D2) وجهٌ ثانٍ بنفس النافذة لا نافذةُ متصفّح: المدى بضغطة («بس» أو
+ *  «وطالع») بلا اختيارٍ مسبق، وما ينحذف **بأسمائه** (اليوم · الساعة · الكمية) وما يبقى بعدده —
+ *  المعطاة والفائتة — قبل أن يُضغط شيء. والعددُ من `dropTargets` بنفس شرط الخادم (0238). */
+function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onSave, onDrop }: {
   entry: TreatmentEntry; treatments: TreatmentEntry[]; lang: string; species?: Species;
+  /** آخرُ يومٍ بالخطة — «بس» عليه يعني أن التمديدَ بعدها لن يكرّر هذا الدواء. */
+  lastDay: string | null;
   onClose: () => void;
   onSave: (orig: TreatmentEntry, patch: { medication: string; amount: string; time: string; observations: string }, scope: "day" | "rest") => void | Promise<void>;
+  onDrop: (orig: TreatmentEntry, scope: DropScope, ids: string[]) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   /* الاسمُ يُختار من المنتقي الموحَّد لا يُكتب — والجرعاتُ تُطابَق بالاسم القديم حرفاً كما كانت. */
@@ -1606,6 +1656,9 @@ function EditDrugModal({ entry, treatments, species, onClose, onSave }: {
   const [freq, setFreq] = useState(entry.observations ?? "");
   const [scope, setScope] = useState<"day" | "rest">("day");
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"edit" | "drop">("edit");
+  const [dropScope, setDropScope] = useState<DropScope | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const counts = useMemo(() => {
     const mine = treatments.filter((x) => x.medication === entry.medication && !x.administered_at);
@@ -1615,56 +1668,151 @@ function EditDrugModal({ entry, treatments, species, onClose, onSave }: {
     };
   }, [treatments, entry]);
 
+  const today = localISO(new Date());
+  const plans = useMemo(() => {
+    const base = { visitId: entry.visit_id ?? "", medication: entry.medication, day: entry.day, today };
+    return { day: dropTargets(treatments, { ...base, scope: "day" }), rest: dropTargets(treatments, { ...base, scope: "rest" }) };
+  }, [treatments, entry, today]);
+  const plan = dropScope ? plans[dropScope] : null;
+  const nGo = plan?.targets.length ?? 0;
+
   const submit = async () => {
     if (busy || !med.trim()) return;
     setBusy(true);
     try { await onSave(entry, { medication: med, amount, time, observations: freq }, scope); }
     finally { setBusy(false); }
   };
+  const drop = async () => {
+    if (busy || !plan || !dropScope || !nGo) return;
+    setBusy(true);
+    try { await onDrop(entry, dropScope, plan.targets.map((x) => x.id)); }
+    finally { setBusy(false); }
+  };
+
+  const title = mode === "drop"
+    ? t("vbk.dropTitle", { name: entry.medication, defaultValue: "حذف {{name}}" })
+    : t("visit.editDrugTitle", { name: entry.medication, defaultValue: "تعديل — {{name}}" });
 
   return (
-    <Modal open onClose={onClose} title={t("visit.editDrugTitle", { name: entry.medication, defaultValue: "تعديل — {{name}}" })}>
-      <div className="space-y-3">
-        <div>
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> {t("visit.drugName", "اسم الدواء")}</div>
-          <MedField value={picked ?? { key: entry.medication, name: entry.medication, label: entry.medication, family: "other", familyType: "Other", source: "free" }}
-            showFamily={!!picked} onChange={setPicked} species={species ?? null} freeText="offer" />
+    <Modal open onClose={onClose} title={title}>
+      {mode === "drop" ? (
+        <div className="space-y-3" data-dropview>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {(["day", "rest"] as const).map((sc) => {
+              const p = plans[sc];
+              const off = sc === "day" && p.pastDayBlocked;
+              const n = p.targets.length;
+              return (
+                <button key={sc} type="button" data-drop-scope={sc} disabled={off} aria-pressed={dropScope === sc}
+                  onClick={() => { playTap(); setDropScope(sc); setShowAll(false); }}
+                  className={cn("min-h-[56px] rounded-xl border-2 px-3 py-2.5 text-start transition disabled:cursor-not-allowed disabled:opacity-55",
+                    dropScope === sc ? "border-danger-500 bg-danger-50 dark:bg-danger-500/10" : "border-line bg-surface-1 hover:border-danger-300")}>
+                  <span className="block text-sm font-extrabold text-ink">{sc === "day" ? t("vbk.dropDay", "من هذا اليوم بس") : t("vbk.dropRest", "من هذا اليوم وطالع")}</span>
+                  <span className="block text-2xs font-bold text-ink-subtle">
+                    {off ? t("vbk.dropPastDay", "سجّل جرعات هذا اليوم أولاً")
+                      : sc === "rest" && n > 0 && p.from && p.to
+                        ? t("vbk.dropRestN", { n: formatNum(n), from: formatDate(p.from, lang), to: formatDate(p.to, lang), defaultValue: "الجرعات: {{n}} · {{from}} ← {{to}}" })
+                        : t("vbk.dropDayN", { n: formatNum(n), defaultValue: "الجرعات: {{n}}" })}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {plan && (
+            <>
+              {nGo > 0 ? (
+                <div data-drop-list>
+                  <div className="mb-1 text-xs font-extrabold text-danger-700 dark:text-danger-300">{t("vbk.dropGoes", "ينحذف:")}</div>
+                  <ul className="divide-y divide-line/60 rounded-xl border border-line bg-surface-1">
+                    {plan.targets.filter((_, i) => showAll || i < 6).map((x) => (
+                      <li key={x.id} data-drop-item={x.id} className="flex flex-wrap items-center gap-x-1.5 px-3 py-1.5 text-xs font-bold text-ink">
+                        <span>{formatDate(x.day, lang)}</span>
+                        <span className="text-ink-subtle">·</span>
+                        <bdi dir="ltr" className="tabular-nums">{fmtClock(x.time) || "—"}</bdi>
+                        <span className="text-ink-subtle">·</span>
+                        <span className="text-ink-muted">{x.amount || "—"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {!showAll && nGo > 6 && (
+                    <button type="button" data-drop-more onClick={() => { playTap(); setShowAll(true); }}
+                      className="mt-1 text-2xs font-bold text-brand-600 underline transition hover:text-brand-700 dark:text-brand-300">
+                      {t("vbk.dropMore", { n: formatNum(nGo - 6), defaultValue: "+ {{n}} غيرها" })}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p data-drop-none className="rounded-xl bg-surface-2 px-3 py-2 text-xs font-bold text-ink-muted">{t("vbk.dropNone", "ماكو جرعة تنحذف بهذا المدى")}</p>
+              )}
+              {(plan.keptGiven > 0 || plan.keptPast > 0) && (
+                <div data-drop-stays className="rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-xs font-bold text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
+                  <div className="mb-0.5 font-extrabold">{t("vbk.dropStays", "يبقى:")}</div>
+                  {plan.keptGiven > 0 && <p>{t("vbk.dropKeptGiven", { n: formatNum(plan.keptGiven), defaultValue: "المعطاة: {{n}} — تبقى مسجّلة" })}</p>}
+                  {plan.keptPast > 0 && <p>{t("vbk.dropKeptPast", { n: formatNum(plan.keptPast), defaultValue: "من أيام فاتت: {{n}} — تبقى لحد ما تسجّلها من «الجرعات الي فاتت»" })}</p>}
+                </div>
+              )}
+              {dropScope === "day" && lastDay === entry.day && nGo > 0 && (
+                <p data-drop-lastday className="flex items-start gap-1.5 rounded-xl border border-warn-300 bg-warn-50 px-3 py-2 text-xs font-bold text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" /> {t("vbk.dropLastDay", "هذا آخر يوم بالخطة — التمديد بعدين ما راح يكرّر هذا الدواء.")}
+                </p>
+              )}
+            </>
+          )}
+          <Button size="lg" variant="danger" className="w-full" data-drop-go disabled={!plan || nGo === 0} loading={busy} onClick={drop}>
+            {plan && nGo > 0 ? t(`vbk.dropGo${dayForm(nGo)}`, { n: formatNum(nGo) }) : plan ? t("vbk.dropNone", "ماكو جرعة تنحذف بهذا المدى") : t("vbk.dropBtn", "احذف هذا الدواء")}
+          </Button>
+          <button type="button" data-drop-back onClick={() => { playTap(); setMode("edit"); }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
+            <ArrowRight size={15} /> {t("common.back", "رجوع")}
+          </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      ) : (
+        <div className="space-y-3">
           <div>
-            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} className="input h-11 w-full" data-editamount />
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> {t("visit.drugName", "اسم الدواء")}</div>
+            <MedField value={picked ?? { key: entry.medication, name: entry.medication, label: entry.medication, family: "other", familyType: "Other", source: "free" }}
+              showFamily={!!picked} onChange={setPicked} species={species ?? null} freeText="offer" />
           </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
+              <input value={amount} onChange={(e) => setAmount(e.target.value)} className="input h-11 w-full" data-editamount />
+            </div>
+            <div>
+              <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseTime", "الوقت")}</div>
+              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} dir="ltr" className="input h-11 w-full tabular-nums" data-edittime />
+            </div>
+            <div>
+              <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseFreq", "التكرار / ملاحظة")}</div>
+              <input value={freq} onChange={(e) => setFreq(e.target.value)} className="input h-11 w-full" data-editfreq />
+            </div>
+          </div>
+          {/* المدى — جوهر الميزة: ضغطة تقرّر «اليوم» أو «الباقي كله» */}
           <div>
-            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseTime", "الوقت")}</div>
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} dir="ltr" className="input h-11 w-full tabular-nums" data-edittime />
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.editScope", "يشمل التعديل")}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" data-scope="day" onClick={() => { playTap(); setScope("day"); }}
+                className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "day" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+                <span className="block text-sm font-extrabold text-ink">{t("visit.scopeDay", "هذا اليوم فقط")}</span>
+                <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeDayN", { n: formatNum(counts.day), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
+              </button>
+              <button type="button" data-scope="rest" onClick={() => { playTap(); setScope("rest"); }}
+                className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "rest" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+                <span className="block text-sm font-extrabold text-ink">{t("visit.scopeRest", "من اليوم لنهاية الخطة")}</span>
+                <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeRestN", { n: formatNum(counts.rest), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
+              </button>
+            </div>
+            <p className="mt-1.5 text-2xs font-bold text-ink-subtle">{t("visit.editGivenSafe", "الجرعات المعطاة سابقاً تبقى كما سُجّلت — التعديل لا يمسّها.")}</p>
           </div>
-          <div>
-            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseFreq", "التكرار / ملاحظة")}</div>
-            <input value={freq} onChange={(e) => setFreq(e.target.value)} className="input h-11 w-full" data-editfreq />
-          </div>
+          <Button size="lg" className="w-full" data-editsave leftIcon={<Check size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
+            {t("visit.editApply", "حفظ التعديل")}
+          </Button>
+          <button type="button" data-dropdrug onClick={() => { playTap(); setMode("drop"); setDropScope(null); setShowAll(false); }}
+            className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border-2 border-danger-300 px-4 py-2 text-sm font-extrabold text-danger-600 transition hover:bg-danger-50 dark:border-danger-500/40 dark:text-danger-300 dark:hover:bg-danger-500/10">
+            <Trash2 size={15} /> {t("vbk.dropBtn", "احذف هذا الدواء")}
+          </button>
         </div>
-        {/* المدى — جوهر الميزة: ضغطة تقرّر «اليوم» أو «الباقي كله» */}
-        <div>
-          <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.editScope", "يشمل التعديل")}</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" data-scope="day" onClick={() => { playTap(); setScope("day"); }}
-              className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "day" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
-              <span className="block text-sm font-extrabold text-ink">{t("visit.scopeDay", "هذا اليوم فقط")}</span>
-              <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeDayN", { n: formatNum(counts.day), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
-            </button>
-            <button type="button" data-scope="rest" onClick={() => { playTap(); setScope("rest"); }}
-              className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "rest" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
-              <span className="block text-sm font-extrabold text-ink">{t("visit.scopeRest", "من اليوم لنهاية الخطة")}</span>
-              <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeRestN", { n: formatNum(counts.rest), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
-            </button>
-          </div>
-          <p className="mt-1.5 text-2xs font-bold text-ink-subtle">{t("visit.editGivenSafe", "الجرعات المعطاة سابقاً تبقى كما سُجّلت — التعديل لا يمسّها.")}</p>
-        </div>
-        <Button size="lg" className="w-full" data-editsave leftIcon={<Check size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
-          {t("visit.editApply", "حفظ التعديل")}
-        </Button>
-      </div>
+      )}
     </Modal>
   );
 }

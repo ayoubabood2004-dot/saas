@@ -373,6 +373,15 @@ export interface TreatmentEntry {
   created_at: string;
 }
 
+/** ما ترجعه `drop_treatment_drug` (0238): كم انحذف، وكم بقي معطىً وفائتاً، ومدى الأيام المحذوفة. */
+export interface TreatmentDropResult {
+  deleted: number;
+  kept_given: number;
+  kept_past: number;
+  from: string | null;
+  to: string | null;
+}
+
 // "treatment_boarding" = therapeutic boarding: the pet is staying in the clinic
 // AND under active medical care at the same time (counts as both boarding + care).
 export type AdmissionKind = "treatment" | "boarding" | "treatment_boarding";

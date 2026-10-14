@@ -38,7 +38,7 @@ import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
 import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
-import { withTimeout, describeUploadError } from "@/lib/errors";
+import { withTimeout, describeUploadError, describeDbError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
 import { celebrate } from "@/lib/celebrate";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -1909,9 +1909,12 @@ function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRe
             >
               <Repeat size={12} /> {t("treatment.repeat", "Repeat")}
             </button>
-            <button className="rounded-full p-1 text-ink-subtle transition hover:text-danger-500" onClick={() => onRemove(tx.id)} aria-label={t("treatment.delete")}>
-              <Trash2 size={15} />
-            </button>
+            {/* المعطاةُ تاريخٌ لا يُحذف (0238، D1) — خطأُ التسجيل يُصلَح بـ«تراجع» لا بالسلّة. */}
+            {!given && (
+              <button className="rounded-full p-1 text-ink-subtle transition hover:text-danger-500" data-txremove={tx.id} onClick={() => onRemove(tx.id)} aria-label={t("treatment.delete")}>
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2033,6 +2036,7 @@ function MovementsCard({ petId, admissions }: { petId: string; admissions: Admis
 function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner }: { pet: Pet; treatments: TreatmentEntry[]; admissions: Admission[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   // LOCAL date — must match how persistMedicalEntries writes tx.day (localISO), or
   // statusOf would compare two different calendars and mislabel doses near midnight.
@@ -2058,9 +2062,17 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
     setOpen(false);
   };
 
+  /* الحذفُ يُسمَع: المعطاةُ يرفضها الخادم (0238) بتلميحه، وصفٌّ انحذف من جهازٍ ثانٍ يُقال — كان
+   * بلا try فيبتلع الرفضَ ويبقى الصفُّ بالشاشة بلا كلمة. */
   const remove = async (id: string) => {
-    await repo.deleteTreatment(id);
-    await syncDoseCycleForPet(pet.id);
+    try {
+      await repo.deleteTreatment(id);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t));
+      return;
+    }
+    await syncDoseCycleForPet(pet.id).catch(() => { /* swallow-ok: دورةُ الجرعات تُعاد بأوّل تحميل — الحذفُ تمّ */ });
     onChanged();
   };
 
@@ -2560,7 +2572,17 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
 
   // ---- Treatment flowsheet actions (mark given / repeat / delete) ----
   const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playDoseGiven(); await syncDoseCycleForPet(pet.id); onChanged(); };
-  const removeTx = async (id: string) => { await repo.deleteTreatment(id); await syncDoseCycleForPet(pet.id); onChanged(); };
+  const removeTx = async (id: string) => {
+    try {
+      await repo.deleteTreatment(id);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t));
+      return;
+    }
+    await syncDoseCycleForPet(pet.id).catch(() => { /* swallow-ok: دورةُ الجرعات تُعاد بأوّل تحميل — الحذفُ تمّ */ });
+    onChanged();
+  };
   const repeatTx = async (tx: TreatmentEntry) => {
     await repo.addTreatment({ pet_id: pet.id, day: today, doctor: tx.doctor || (user?.role === "doctor" ? user.full_name : undefined), medication: tx.medication, time: nowHM(), amount: tx.amount, observations: undefined });
     await syncDoseCycleForPet(pet.id);
