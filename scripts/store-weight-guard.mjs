@@ -173,7 +173,18 @@ import { gzipSync } from "node:zlib";
  * ٦٥ كيلو مضغوطة، أكبرُ من react-dom. المقيس: main 375,754 ⇒ **341,951** (−33,803)،
  * والفسحةُ كانت ٢٤٦ بايتاً. فالسقفُ 352,000: ~١٠ كيلو للموجات القادمة — ومن يتجاوزه
  * يحلّل الوحدات أوّلاً، فالجذرُ عادةً استيرادٌ يجرّ ما لا يُحتاج. */
-const BUDGET = { store: 175_000, main: 352_000, arCold: 50_000 };
+/* ثم 352,000 ⇒ **355,000** (١٤/١٠، قرارُ المالك) — والجذرُ هذه المرّة ليس استيراداً بل **الحارسُ نفسُه**:
+ * كان يقيس بناءً غيرَ الذي يُنشر. Vercel يبني بمفاتيح السحابة (`VITE_SUPABASE_URL` والمفتاحُ العامّ —
+ * JWT من ٢٠٨ محارف) فتُحزم بالإقلاع وصفحةِ الزائر، والبناءُ المحلّيّ بلاها. المقيسُ على نفس الدفعة
+ * (bf0909b7): main 351,883 بلا مفاتيح ⇒ **352,158** بها (+٢٧٥)، وstore 155,662 ⇒ 155,910 (+٢٤٨).
+ * فمرّ الحارسُ هنا بفسحة ١١٧ بايتاً وسقط على Vercel — دفعتان على main (b700fb4 ثم bf0909b7) لم
+ * تُنشرا، والموقعُ بقي على 390a486 (349,654) وقيل «نزل». تصليحُ الصادر نفسُه أضاف ~٢٫٥ كيلو للإقلاع
+ * (الطابورُ يجري من أوّل لحظة ولا يُفصل — انظر outbox.ts). فالسقفُ يُرفع ~١٪، و**البناءُ بلا مفاتيح
+ * يُحسب له احتياطُها** (`ENV_RESERVE`) فيحكم الحارسُ هنا كما يحكم هناك. وإعادةُ النزول تحليلٌ لاحق. */
+const BUDGET = { store: 175_000, main: 355_000, arCold: 50_000 };
+/** ما تضيفه مفاتيحُ السحابة للحزمة المضغوطة (مقيس +٢٧٥/+٢٤٨) — يُحسب حين يُبنى بلاها. */
+const ENV_RESERVE = 400;
+const envBuilt = !!(process.env.VITE_SUPABASE_URL ?? "").trim();
 const BANNED = [/\/assets\/supabase-/, /\/assets\/motion-/, /\/assets\/charts-/];
 
 if (!existsSync("dist/store.html") || !existsSync("dist/index.html")) {
@@ -191,9 +202,11 @@ for (const [name, html] of [["store", "dist/store.html"], ["main", "dist/index.h
   const doc = gzipSync(readFileSync(html)).length;
   const total = doc + files.reduce((n, f) => n + gzipSync(readFileSync(`dist${f}`)).length, 0);
   totals[name] = total;
-  const ok = total <= BUDGET[name];
+  // بلا مفاتيح السحابة ⇒ يُحكم على ما سيبنيه Vercel: المقيسُ + الاحتياط.
+  const judged = total + (envBuilt ? 0 : ENV_RESERVE);
+  const ok = judged <= BUDGET[name];
   if (!ok) fails++;
-  console.log(`   ${ok ? "✓" : "✗"} ${name}.html: ${total.toLocaleString("en")} بايت مضغوطة من ${BUDGET[name].toLocaleString("en")} (المستند ${doc.toLocaleString("en")} + ${files.length} ملفاً)`);
+  console.log(`   ${ok ? "✓" : "✗"} ${name}.html: ${total.toLocaleString("en")} بايت مضغوطة${envBuilt ? "" : ` (+${ENV_RESERVE} لمفاتيح السحابة = ${judged.toLocaleString("en")})`} من ${BUDGET[name].toLocaleString("en")} (المستند ${doc.toLocaleString("en")} + ${files.length} ملفاً)`);
   if (name !== "store") continue;
   /* لا ورقةَ أنماطٍ حاجبةٍ بمسار الزائر: هي التي كانت تؤخّر الرسمَ ١٫٧ ثانيةٍ
    * على 3G (الرفُّ بالمستند من ٣٠٠ms والمتصفّحُ لا يرسم حتى تصل). ورقةُ
