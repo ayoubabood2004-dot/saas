@@ -13,7 +13,7 @@ import {
 import { DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
 import { NumberPadSheet } from "./NumberPadSheet";
 import { DosePicker } from "./DosePicker";
-import { EYE_EAR_UNITS, formatAmount, parseAmount, planRouteToDose, switchRoute, type DoseUnit } from "@/lib/doseUnits";
+import { EYE_EAR_UNITS, parseAmount, planRouteToDose, cardRouteChange, manualDosePatch, type DoseUnit } from "@/lib/doseUnits";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
@@ -61,11 +61,13 @@ const ROUTE_ICON = (route?: string) =>
         : Pill;
 
 export function DrugCard({
-  row, species, weight, flags, allergies, concurrent, planDays, stockN,
+  row, species, weight, flags, allergies, concurrent, planDays, stockN, petId,
   routes, freqs, open, locked: lockedProp, onToggle, onPatch, onRemove, onReplace, onNeedWeight,
 }: {
   row: DrugRow;
   species?: Species;
+  /** المريض — «آخر مرة» بمنتقي الجرعة اليدوية جرعتُه هو. */
+  petId?: string;
   weight?: number;
   flags?: ChartFlags;
   allergies?: string[];
@@ -142,15 +144,13 @@ export function DrugCard({
     onPatch({ doseMode: "weight", mgPerKg: next, dose: "" });
   };
 
-  /** طريقٌ جديد للبطاقة: الجرعةُ اليدوية تمرّ من switchRoute — تغييرُ الشكل يمسح الرقم (لا «حبة» وريدية)،
-   *  وبين الحقن الثلاثة يبقى. «عين / أذن» بوحداتها (قطرة، سم، مل). */
+  /** طريقٌ جديد للبطاقة (cardRouteChange): الجرعةُ اليدوية تمرّ من switchRoute — تغييرُ الشكل يمسح الرقم
+   *  (لا «حبة» وريدية)، وبين الحقن الثلاثة يبقى، و«عين / أذن» بوحداتها. **وإطفاءُ الطريق يمسحه أيضاً**: كان
+   *  يمرّ بلا switchRoute فتُبقي الضغطةُ التالية «2 مل» الفموية وريديةً. */
   const changeRoute = (next: string | undefined) => {
-    if (!manual || !manualParsed || !next) { onPatch({ route: next }); return; }
-    const toDose = planRouteToDose(next);
-    const fromDose = planRouteToDose(row.route) ?? (eyeEar ? "ocular" : null);
-    const sw = switchRoute({ route: fromDose, unit: manualParsed.unit, qty: manualParsed.qty }, toDose ?? "ocular", row.name, next === "eye_ear" ? EYE_EAR_UNITS : undefined);
-    setManualUnit(sw.value.unit);
-    onPatch({ route: next, ...(sw.value.qty == null ? { dose: "" } : {}) });
+    const ch = cardRouteChange({ route: row.route, dose: row.dose, name: row.name }, next, manual);
+    if (ch.unit !== undefined) setManualUnit(ch.unit);
+    onPatch({ route: ch.route, ...(ch.dose !== undefined ? { dose: ch.dose } : {}) });
   };
 
   const ring = (g: string) => focusGroup === g && "ring-2 ring-brand-400 ring-offset-2 ring-offset-surface-1";
@@ -340,15 +340,11 @@ export function DrugCard({
                     </div>
                   </>
                 ) : (
-                  <DosePicker drugName={row.name} species={species} routeLocked
+                  <DosePicker drugName={row.name} species={species} routeLocked petId={petId}
                     value={{ route: planDose, unit: manualParsed?.unit ?? manualUnit, qty: manualParsed?.qty ?? null }}
                     unitsOverride={eyeEar ? EYE_EAR_UNITS : undefined}
                     onNeedRoute={() => jumpTo("route")}
-                    onChange={(v) => {
-                      setManualUnit(v.unit);
-                      onPatch({ doseMode: "manual", mgPerKg: undefined, dose: v.qty != null && v.unit ? formatAmount(v) : "",
-                        ...(v.unit === "tab" ? { solid: true } : v.unit === "ml" ? { solid: false } : {}) });
-                    }} />
+                    onChange={(v) => { setManualUnit(v.unit); onPatch(manualDosePatch(v)); }} />
                 )}
               </div>
 

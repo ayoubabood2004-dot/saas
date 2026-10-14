@@ -4588,10 +4588,10 @@ const demoRepo = {
     demoWaSave(list.filter((x) => x.id !== id));
   },
   /* ---- «أدويتي» (0229) — مرآةٌ بوحدةٍ كسولة (`demoClinicDrugs.ts`) بنفس applyOps ورموزه؛ ولا حذف ---- */
-  /** مرآةُ lastDoseOf: آخرُ عشرين جرعة للدواء باسمه حرفياً، دواءٌ وحده، الأحدثُ أوّلاً. */
-  async lastDoseOf(name: string): Promise<{ amount: string | null; route: string | null }[]> {
+  /** مرآةُ lastDoseOf: آخرُ عشرين جرعة للدواء باسمه حرفياً **لهذا المريض**، دواءٌ وحده، الأحدثُ أوّلاً. */
+  async lastDoseOf(name: string, petId: string): Promise<{ amount: string | null; route: string | null }[]> {
     return (loadDB().treatments ?? [])
-      .filter((t) => t.medication === name && (t.task_type ?? "drug") === "drug")
+      .filter((t) => t.medication === name && t.pet_id === petId && (t.task_type ?? "drug") === "drug")
       .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))
       .slice(0, 20)
       .map((t) => ({ amount: t.amount ?? null, route: t.route ?? null }));

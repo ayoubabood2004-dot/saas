@@ -179,16 +179,19 @@ await section("▸ ٨) المضيفون الأربعة يكتبون بالمنت
   check("نافذةُ «إضافة دواء» ترسم <DosePicker", /<DosePicker/.test(bodyOf(visit, "function AddDrugModal(")));
   check("نافذةُ التعديل ترسم <DosePicker، والنصُّ القديم يُقال ويبقى (vbk.doseKeep)", /<DosePicker/.test(bodyOf(visit, "function EditDrugModal(")) && /vbk\.doseKeep/.test(bodyOf(visit, "function EditDrugModal(")));
   check("ورقةُ الطبلة ترسم <DosePicker للدواء", /<DosePicker/.test(bodyOf(flow, "export function AddTaskSheet(")) && /type === "drug" \? \(/.test(bodyOf(flow, "export function AddTaskSheet(")));
-  check("  وتُبقي setAmount(taskAmountText(c)) وتثبّت «المحسوبة»", /setAmount\(taskAmountText\(c\)\)/.test(flow) && /kind: "calc"/.test(flow));
+  check("  والمحسوبةُ تدخل المنتقي (parseAmount(taskAmountText(c))) وتُثبَّت بطريقها، ولا تُكتب خفيّةً (لا setAmount(taskAmountText))",
+    /parseAmount\(taskAmountText\(c\)\)/.test(flow) && /kind: "calc" as const, route: r/.test(flow) && !/setAmount\(taskAmountText\(/.test(flow));
+  check("  والورقةُ تحفظ للدواء ما يقوله المنتقي (formatAmount(dose)) وطريقَه", /amount: type === "drug" \? formatAmount\(dose\)/.test(flow) && /route: type === "drug" \? \(dose\.route \?\? null\)/.test(flow));
   check("بطاقةُ الدواء: المنتقي بطريقها المقفول، ولا QTYS ولا UNIT_KEYS", /<DosePicker[^>]*routeLocked/.test(card) && !/\bQTYS\b/.test(card) && !/\bUNIT_KEYS\b/.test(card));
-  check("  وتغييرُ طريقها يمرّ من switchRoute", /switchRoute\(/.test(card));
+  check("  وتغييرُ طريقها يمرّ من switchRoute (cardRouteChange)", /cardRouteChange\(/.test(card) && /export function cardRouteChange[\s\S]{0,1200}switchRoute\(/.test(src("src/lib/doseUnits.ts")));
   check("addDrug يكتب الطريق", /route: d\.route \?\? null/.test(bodyOf(visit, "const addDrug = async (")));
   check("editDrug يكتب الطريقَ والكميةَ حين تغيّرا", /patch\.route !== undefined \? \{ route: patch\.route \}/.test(bodyOf(visit, "const editDrug = async (")) && /patch\.amount !== undefined/.test(bodyOf(visit, "const editDrug = async (")));
   check("savePlan يكتب الطريق (route: m.route ?? null)", /route: m\.route \?\? null/.test(bodyOf(visit, "const savePlan = async (")));
   check("  والمعالجُ يحمله بالسجلّ (planRouteToDose)", /route: planRouteToDose\(r\.route\)/.test(src("src/components/TreatmentPlan.tsx")));
-  check("الورقةُ تكتب الطريق (route: route || null)", /route: route \|\| null/.test(flow));
+  check("الورقةُ تكتب الطريق (route: route || null)", /: \(route \|\| null\)/.test(flow));
   check("repo.ts لا يستورد doseUnits (وزنُ الإقلاع)", !/doseUnits/.test(readFileSync("src/lib/repo.ts", "utf8")));
-  check("آخرُ جرعةٍ قراءةٌ ترمي، بمرآة، ومسموحةٌ بالقراءة فقط", /async lastDoseOf\(name\)[\s\S]{0,300}listOrThrow</.test(readFileSync("src/lib/repo.ts", "utf8")) && /"lastDoseOf"/.test(readFileSync("src/lib/repo.ts", "utf8")) && /async lastDoseOf\(name: string\)/.test(readFileSync("src/lib/repoDemo.ts", "utf8")));
+  check("آخرُ جرعةٍ قراءةٌ ترمي، بمرآة، ومسموحةٌ بالقراءة فقط — ولهذا المريض وحده (pet_id)", /async lastDoseOf\(name, petId\)[\s\S]{0,600}listOrThrow<[\s\S]{0,200}\.eq\("pet_id", petId\)/.test(readFileSync("src/lib/repo.ts", "utf8")) && /"lastDoseOf"/.test(readFileSync("src/lib/repo.ts", "utf8"))
+    && /async lastDoseOf\(name: string, petId: string\)[\s\S]{0,300}t\.pet_id === petId/.test(readFileSync("src/lib/repoDemo.ts", "utf8")));
 });
 
 await section("▸ ٩) المنتقي نفسُه", async () => {
@@ -199,6 +202,124 @@ await section("▸ ٩) المنتقي نفسُه", async () => {
   check("لا autoFocus ولا حقلَ كتابة", !/autoFocus/.test(dp) && !/<input/.test(dp));
   check("«آخر مرة» تُبلَع بسببٍ مكتوب (قيمةٌ افتراضية)", /swallow-ok:/.test(readFileSync("src/components/treatment/DosePicker.tsx", "utf8")));
   check("لا يستورده نموذجُ البيع (MedSaleForm)", !/DosePicker/.test(readFileSync("src/components/retail/MedSaleForm.tsx", "utf8")));
+});
+
+await section("▸ ١٠) نافذةُ القلم والبطاقةُ والمثبّت: الرقمُ الممسوح لا يُكتب له طريقٌ جديد", async () => {
+  const E = (amount, route, dose) => D.editDosePatch({ amount, route }, dose);
+  const v = (route, unit, qty) => ({ route, unit, qty });
+  // كلُّ تبديلٍ يمرّ من switchRoute كما بالمنتقي — ثم ما يُكتب.
+  const tap = (amount, route, next) => { const p = D.parseAmount(amount); return E(amount, route, D.switchRoute(v(route, p?.unit ?? null, p?.qty ?? null), next, "x").value); };
+  check("«حبة واحدة» فموي ⇒ وريدي ⇒ حفظ: ممنوع حتى تُختار الكمية (كان {route:iv} فوق «حبة واحدة»)", tap("حبة واحدة", "po", "iv").ok === false, JSON.stringify(tap("حبة واحدة", "po", "iv")));
+  check("«2 مل» فموي ⇒ وريدي: ممنوع (لا تحويلَ بين شكلين)", tap("2 مل", "po", "iv").ok === false);
+  check("«0.5 مل» تحت الجلد ⇒ فموي: ممنوع", tap("0.5 مل", "sc", "po").ok === false);
+  check("«0.1 مل» تحت الجلد ⇒ فموي (tx_t12): ممنوع", tap("0.1 مل", "sc", "po").ok === false);
+  check("«حبة واحدة» بلا طريق ⇒ وريدي، و«0.5 مل» بلا طريق ⇒ عين: ممنوعان", tap("حبة واحدة", null, "iv").ok === false && tap("0.5 مل", null, "ocular").ok === false);
+  check("نصٌّ قديم «ملعقة شاي» فموي ⇒ وريدي: ممنوع (يبقى النصُّ ويتبدّل الطريق)", E("ملعقة شاي", "po", v("iv", "ml", null)).ok === false);
+  check("وحدةٌ بيدٍ بلا كمية (حبة ⇒ كبسولة): ممنوع — كان «تعدّلت ١ جرعة» ولا شيء", E("حبة واحدة", "po", D.pickUnit(v("po", "tab", 1), "cap")).ok === false);
+  const inj = tap("0.25 مل", "im", "sc");
+  check("عضلي ⇒ تحت الجلد: الرقمُ باقٍ والطريقُ وحده يُكتب", inj.ok && inj.route === "sc" && inj.amount === undefined, JSON.stringify(inj));
+  const picked = E("حبة واحدة", "po", v("iv", "ml", 2));
+  check("اختيارُ كميةٍ بعد التبديل ⇒ الكميةُ والطريقُ معاً", picked.ok && picked.amount === "2 مل" && picked.route === "iv", JSON.stringify(picked));
+  check("تعديلُ الوقت وحده على «0.23 مل (11.5 mg)» ⇒ لا يُكتب فوقه «0.23 مل»", JSON.stringify(E("0.23 مل (11.5 mg)", "sc", v("sc", "ml", 0.23))) === '{"ok":true}');
+  check("  ولا على «¼ حبة (5 mg)» بلا طريق، ولا «1 و½ حبة (30 mg)»", JSON.stringify(E("¼ حبة (5 mg)", null, v(null, "tab", 0.25))) === '{"ok":true}' && JSON.stringify(E("1 و½ حبة (30 mg)", "po", v("po", "tab", 1.5))) === '{"ok":true}');
+  check("  وكميةٌ جديدة تُكتب (والملغ القديم يذهب معها)", E("0.23 مل (11.5 mg)", "sc", v("sc", "ml", 0.3)).amount === "0.3 مل");
+  check("نصٌّ قديمٌ بلا مسّ ⇒ لا شيء يُكتب", JSON.stringify(E("ملعقة شاي", "po", v("po", null, null))) === '{"ok":true}');
+  check("سطرُ «الجرعة الحالية» حين لا يرسمها المنتقي كما هي: بلا طريق، بملاحظة ملغ، قديمٌ لا يُفهم",
+    !D.pickerShowsAmount("0.23 مل (11.5 mg)", "sc") && !D.pickerShowsAmount("0.25 مل", null) && !D.pickerShowsAmount("ملعقة شاي", "po") && D.pickerShowsAmount("0.25 مل", "sc") && D.pickerShowsAmount("", "po"));
+
+  const C = (route, dose, next) => D.cardRouteChange({ route, dose, name: "x" }, next, true);
+  check("البطاقة: إطفاءُ «فموي» على «2 مل» يمسح الرقم (كان يبقى فيصير وريدياً بالضغطة التالية)", C("oral", "2 مل", undefined).dose === "" && C("oral", "2 مل", undefined).route === undefined);
+  check("  فموي ⇒ وريدي مباشرةً يمسحه، وعضلي ⇒ تحت الجلد يُبقيه", C("oral", "2 مل", "iv").dose === "" && C("im", "0.5 مل", "sc").dose === undefined);
+  check("  وجرعةٌ محسوبة (لا يدوية) لا يمسّها الطريق", JSON.stringify(D.cardRouteChange({ route: "oral", dose: "", name: "x" }, "iv", false)) === '{"route":"iv"}');
+  check("الجرعةُ اليدوية لا تقلب عيارَ الحبّة سائلاً (لا solid بالرقعة)", !("solid" in D.manualDosePatch(v("po", "ml", 0.5))) && D.manualDosePatch(v("po", "ml", 0.5)).dose === "0.5 مل");
+  check("بماء الشرب بالمعالج ⇒ طريقُ الطبلة water (مل/لتر، غم/لتر)", D.planRouteToDose("water") === "water" && D.unitsFor("water").join(",") === "mlL,gL");
+
+  const pin = (route, kind = "calc") => ({ qty: 0.26, unit: "ml", kind, route });
+  check("المحسوبةُ بطريقها: فموي تحت «فموي» نعم، وتحت «تحت الجلد» لا", D.pinFits(pin("po"), ["po"], D.unitsFor("po")) && !D.pinFits(pin("po"), ["sc"], D.unitsFor("sc")));
+  check("  والمحسوبةُ بلا طريقٍ معروف لا تُعرض، و«آخر مرة» القديمةُ بلا طريق تُعرض بوحدةٍ مسموحة", !D.pinFits(pin(null), ["sc"], D.unitsFor("sc")) && D.pinFits(pin(null, "last"), ["sc"], D.unitsFor("sc")));
+  const rows = [{ amount: "2 مل", route: "po" }, { amount: "0.5 مل", route: "iv" }, { amount: "حبة واحدة", route: null }];
+  check("«آخر مرة» لهذا الطريق: وريدي ⇒ 0.5 مل (لا 2 مل الفموية)، فموي ⇒ 2 مل", D.lastFor(rows, ["iv"], D.unitsFor("iv"))?.qty === 0.5 && D.lastFor(rows, ["po"], D.unitsFor("po"))?.qty === 2);
+});
+
+/* ── المكوّناتُ نفسُها بلا متصفّح (react-mini-host): الطفراتُ داخل المكوّن تُمسك هنا لا بالنصّ ── */
+await section("▸ ١١) المنتقي والبطاقة يُرسمان ويُضغطان", async () => {
+  const { loadUI } = await import("./react-mini.mjs");
+  const UI = await loadUI(`
+    import { useState, createElement as h } from "react";
+    import { DosePicker } from "./src/components/treatment/DosePicker.tsx";
+    import { DrugCard } from "./src/components/treatment/DrugCard.tsx";
+    export function PickerH(p) { const [v, setV] = useState(p.initial); globalThis.__v = v; return h(DosePicker, { ...p, value: v, onChange: setV }); }
+    export function CardH(p) { const [r, setR] = useState(p.initial); globalThis.__row = r; return h(DrugCard, { ...p, row: r, open: true, onToggle() {}, onRemove() {}, onReplace() {}, onNeedWeight() {}, onPatch: (x) => setR((o) => ({ ...o, ...x })) }); }
+  `, {
+    "@/lib/repo": "export const repo = { lastDoseOf: (n, p) => { (globalThis.__lastCalls ||= []).push([n, p]); return Promise.resolve(globalThis.__lastRows || []); } };",
+    "./NumberPadSheet": "export const NumberPadSheet = () => null;",
+    "@/lib/flowsheet": "export const routeName = (r) => r;",
+    "@/components/DoseBlock": "export const DoseAlertRow = () => null;",
+  });
+  const h = UI.React.createElement;
+  const picker = async (props) => { const ui = UI.mount(h(UI.PickerH, { drugName: "Meloxicam", ...props })); await ui.settle(); return ui; };
+
+  let ui = await picker({ initial: { route: "po", unit: "ml", qty: 2 } });
+  ui.click(ui.find("data-dose-route", "iv"));
+  check("المنتقي: فموي «2 مل» ⇒ وريدي يمسح الرقم", globalThis.__v.route === "iv" && globalThis.__v.qty === null, JSON.stringify(globalThis.__v));
+  ui = await picker({ initial: { route: "po", unit: "tab", qty: 1 } });
+  ui.click(ui.find("data-dose-unit", "cap"));
+  check("  ورقاقةُ وحدةٍ ثانية (حبة ⇒ كبسولة) تمسحه", globalThis.__v.unit === "cap" && globalThis.__v.qty === null, JSON.stringify(globalThis.__v));
+  ui = await picker({ initial: { route: "im", unit: "ml", qty: 0.25 } });
+  ui.click(ui.find("data-dose-route", "sc"));
+  check("  وعضلي ⇒ تحت الجلد يُبقيه", globalThis.__v.route === "sc" && globalThis.__v.qty === 0.25);
+
+  ui = await picker({ initial: { route: "po", unit: "ml", qty: 0.26 }, pinned: { qty: 0.26, unit: "ml", kind: "calc", route: "po" } });
+  check("«المحسوبة» ظاهرةٌ بطريقها (فموي)", !!ui.find("data-dose-pin", "calc"));
+  ui.click(ui.find("data-dose-route", "sc"));
+  check("  وتختفي تحت «تحت الجلد» (كانت أوّلَ زرٍّ: 0.26 مل بعيار الفموي)", !ui.find("data-dose-pin"), ui.find("data-dose-pin") ? "ظاهرة" : "");
+
+  globalThis.__lastCalls = []; globalThis.__lastRows = [{ amount: "2 مل", route: "po" }];
+  ui = await picker({ initial: { route: "iv", unit: "ml", qty: null } });
+  check("«آخر مرة» بلا مريض: لا سؤال ولا زرّ (كانت آخرَ جرعةٍ بالعيادة لأيّ حيوان)", globalThis.__lastCalls.length === 0 && !ui.find("data-dose-pin"));
+  ui = await picker({ initial: { route: "iv", unit: "ml", qty: null }, petId: "pet-1" });
+  check("  بالمريض: تُسأل بالحيوان", JSON.stringify(globalThis.__lastCalls.at(-1)) === '["Meloxicam","pet-1"]', JSON.stringify(globalThis.__lastCalls));
+  check("  و«2 مل» الفموية لا تُعرض تحت «وريدي»", !ui.find("data-dose-pin"));
+  ui.click(ui.find("data-dose-route", "po"));
+  await ui.settle();
+  check("  وتُعرض تحت «فموي»", ui.find("data-dose-pin", "last") && ui.text(ui.find("data-dose-pin", "last")).includes("2 مل"));
+  globalThis.__lastRows = [];
+
+  const ROUTES = [["oral", "فموي"], ["sc", "تحت الجلد"], ["im", "عضلي"], ["iv", "وريدي"], ["topical", "موضعي"], ["eye_ear", "عين / أذن"], ["water", "بماء الشرب"]].map(([id, label]) => ({ id, key: `r.${id}`, label }));
+  const FREQS = [{ id: "1", key: "f1", label: "مرة يومياً", perDay: 1 }];
+  const card = async (row, extra = {}) => { const u = UI.mount(h(UI.CardH, { initial: { id: "r1", freq: "1", days: 3, ...row }, species: "cat", concurrent: [], planDays: 3, routes: ROUTES, freqs: FREQS, ...extra })); await u.settle(); return u; };
+  const btn = (u, label) => u.all().find((n) => n.type === "button" && u.text(n).trim() === label);
+  /** رقاقةُ الطريق داخل مجموعتها (data-routegroup) — لا كلمةُ الجملة فوقها بنفس الاسم. */
+  const route = (u, label) => { const g = u.find("data-routegroup"); const walk = (n) => (n.type === "button" && u.text(n).trim() === label ? n : n.children.map(walk).find(Boolean)); return g ? walk(g) : null; };
+  let c = await card({ name: "Amoxicillin", route: "oral", doseMode: "manual", dose: "2 مل" });
+  c.click(route(c, "فموي"));
+  c.click(route(c, "وريدي"));
+  check("البطاقة: «2 مل» فموي ⇒ إطفاء ⇒ وريدي: الرقمُ ممسوح (كان «2 مل» وريدياً)", globalThis.__row.route === "iv" && globalThis.__row.dose === "", JSON.stringify({ r: globalThis.__row.route, d: globalThis.__row.dose }));
+  c = await card({ name: "Amoxicillin", route: "oral", doseMode: "manual", dose: "2 مل" });
+  c.click(route(c, "وريدي"));
+  check("  وفموي ⇒ وريدي مباشرةً كذلك", globalThis.__row.dose === "");
+  c = await card({ name: "Prednisolone", route: "oral", doseMode: "weight", dose: "", mgPerKg: 0.5, strength: 5, strengthConfirmed: true, solid: true }, { weight: 4 });
+  check("  بريدنيزولون ٤ كغ بالوزن ⇒ «½ حبة»", c.text().includes("½ حبة"), c.text().slice(0, 80));
+  c.click(btn(c, "جرعة يدوية"));
+  c.click(c.find("data-dose-unit", "ml"));
+  await c.settle();   // تبويبُ السلّم يُفتح بأثرٍ بعد الرسم (0.1–1)
+  c.click(c.find("data-dose-val", "0.5"));
+  c.click(btn(c, "احسبها بالوزن"));
+  check("  يدويّاً «مل» ثم «احسبها بالوزن» ⇒ الحبّةُ حبّة (كان «0.4 مل (2 mg)» من عيار الحبّة)", globalThis.__row.solid !== false && c.text().includes("½ حبة") && !/0\.4\s*مل/.test(c.text()), JSON.stringify({ solid: globalThis.__row.solid, dose: globalThis.__row.dose }));
+  c = await card({ name: "Enrofloxacin", route: "water", doseMode: "manual", dose: "" }, { species: "bird" });
+  check("  «بماء الشرب» بالبطاقة ⇒ مل/لتر وغم/لتر", !!c.find("data-dose-unit", "mlL") && !!c.find("data-dose-unit", "gL") && !!route(c, "بماء الشرب"));
+});
+
+await section("▸ ١٢) المضيفون يمرّون من القواعد", async () => {
+  const visit = src("src/pages/VisitPage.tsx");
+  const edit = bodyOf(visit, "function EditDrugModal(");
+  check("نافذةُ القلم: ما يُكتب من editDosePatch، والحفظُ مقفولٌ ورقمُه ممسوح", /const dosePatch = editDosePatch\(/.test(edit) && /!dosePatch\.ok/.test(edit) && /const \{ amount, route \} = dosePatch;/.test(edit) && !/text !== \(entry\.amount/.test(edit));
+  check("  وسطرُ «الجرعة الحالية» بـpickerShowsAmount، و«آخر مرة» للمريض", /pickerShowsAmount\(entry\.amount, entry\.route/.test(edit) && /<DosePicker[^>]*petId=\{entry\.pet_id\}/.test(edit));
+  check("«إضافة دواء» ترسل المريض للمنتقي", /<DosePicker[^>]*petId=\{petId\}/.test(bodyOf(visit, "function AddDrugModal(")) && /<AddDrugModal[^>]*petId=\{pet\.id\}/.test(visit));
+  const card = src("src/components/treatment/DrugCard.tsx");
+  check("البطاقة: الطريقُ من cardRouteChange والجرعةُ من manualDosePatch (لا solid)", /cardRouteChange\(/.test(card) && /onPatch\(manualDosePatch\(v\)\)/.test(card) && !/solid: false/.test(card));
+  check("  والمعالجُ يمرّر المريض، وطرقُه فيها «بماء الشرب»", /<DrugCard[\s\S]{0,200}petId=\{petId\}/.test(src("src/components/TreatmentPlan.tsx")) && /\{ id: "water", key: "flow\.route\.water"/.test(src("src/components/TreatmentPlan.tsx")));
+  check("ورقةُ الطبلة: المريضُ للمنتقي، والطبلاتُ تمرّره", /<DosePicker[^>]*petId=\{petId\}/.test(src("src/components/Flowsheet.tsx")) && /<AddTaskSheet[\s\S]{0,200}petId=\{addFor\}/.test(src("src/pages/Charts.tsx")));
 });
 
 console.log(`\n${fails ? "✗" : "✓"} dose-units-test: ${passes} نجحت، ${fails} فشلت`);

@@ -1093,6 +1093,7 @@ export function Charts() {
           {addFor && (
             <AddTaskSheet
               petName={pets[addFor]?.name ?? t("charts.theAnimal", "الحيوان")}
+              petId={addFor}
               todayISO={todayISO}
               presetHour={addHour}
               weightKg={pets[addFor]?.current_weight_kg ?? null}

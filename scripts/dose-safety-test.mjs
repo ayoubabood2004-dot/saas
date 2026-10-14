@@ -224,7 +224,8 @@ await section("▸ ٥) الكُتّاب: نصُّ الخطة وورقةُ الع
 
   const fl = src("src/components/Flowsheet.tsx");
   check("Flowsheet: لا «قرص» بعد tabletsLabel", !/tabletsLabel\}?\s*قرص/.test(fl) && !/tabletsLabel[^\n]{0,40}قرص/.test(fl));
-  check("  والكمية عبر taskAmountText", /setAmount\(\s*taskAmountText\(/.test(fl));
+  // الكميةُ من الكاتب الموحَّد: تدخل منتقي الجرعة (parseAmount) — وما لا يُقرأ («19 ملغم») لا يُحفظ خفيّاً.
+  check("  والكمية عبر taskAmountText", /parseAmount\(\s*taskAmountText\(/.test(fl) && /formatAmount\(dose\)/.test(fl));
   check("  والمعاينةُ لا تلبس «{{n}} قرص» (flow.doseTabs)", !/flow\.doseTabs/.test(fl));
   for (const lang of ["ar", "en"]) {
     const j = JSON.parse(readFileSync(`src/i18n/${lang}.json`, "utf8"));

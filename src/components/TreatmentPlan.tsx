@@ -25,7 +25,7 @@ import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
 import { DoseAlertRow, APP_ROUTE_BACK } from "@/components/DoseBlock";
 import { matchMonograph, checkSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
-import { planRouteToDose } from "@/lib/doseUnits";
+import { planRouteToDose, WATER_ROUTE_WORD } from "@/lib/doseUnits";
 import type { MedicineStock } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import { repo } from "@/lib/repo";
@@ -54,6 +54,9 @@ const ROUTES: { id: string; key: string; label: string }[] = [
   { id: "iv", key: "tplan.routeIv", label: "وريدي" },
   { id: "topical", key: "tplan.routeTopical", label: "موضعي" },
   { id: "eye_ear", key: "tplan.routeEyeEar", label: "عين / أذن" },
+  /* بماء الشرب (D5): خطةُ الطيور تُكتب بمل/لتر أو غم/لتر — بلاه ما كان للمعالج طريقٌ لها بعد شيل
+     خانة الكتابة الحرّة، و١٦٠ صفّ طيورٍ بـ١٨٠ يوماً كُتبت «بماء الشرب» (٨٧ منها من المعالج). */
+  { id: "water", key: "flow.route.water", label: WATER_ROUTE_WORD },
 ];
 const routeLabel = (id?: string) => ROUTES.find((x) => x.id === id)?.label;
 
@@ -1089,7 +1092,7 @@ function TreatmentStep({
         <div className="space-y-2.5">
           {named.map((r) => (
             <DrugCard
-              key={r.id} row={r} species={species} weight={weight} flags={flags} allergies={allergies}
+              key={r.id} row={r} species={species} weight={weight} flags={flags} allergies={allergies} petId={petId}
               concurrent={named.filter((x) => x.id !== r.id).map((x) => x.name)}
               planDays={planDays} stockN={stockFor(r.name)?.stock}
               routes={ROUTES} freqs={FREQS}

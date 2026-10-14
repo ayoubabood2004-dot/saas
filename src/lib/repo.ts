@@ -2771,12 +2771,13 @@ const supabaseRepo: DemoRepo = {
   async applyClinicDrugs(clinic, ops) {
     return drugsSnap(need<unknown>(await sbc().rpc("clinic_drugs_apply", { p_clinic: clinic, p_ops: ops })));
   },
-  /* آخرُ جرعاتِ دواءٍ بعينه — منتقي الجرعة يثبّت أوّلَ ما يُفهم نصُّه («آخر مرة»): الاسمُ حرفياً
-   * بالطرفين، دواءٌ وحده، الأحدثُ أوّلاً، عشرون تكفي. ترمي ولا ترجع فارغةً عن خطأ — والمنتقي يقرّر
-   * أن يتجاوزها (قيمةٌ افتراضية لا قرار). */
-  async lastDoseOf(name) {
+  /* آخرُ جرعاتِ دواءٍ بعينه **لهذا المريض** — منتقي الجرعة يثبّت أوّلَ ما يُفهم نصُّه بطريقه («آخر مرة»):
+   * الاسمُ حرفياً بالطرفين، دواءٌ وحده، الأحدثُ أوّلاً، عشرون تكفي. كانت بلا حيوان: ببغاءٌ يُعرض عليه «آخر
+   * مرة 0.5 مل» من قطّةٍ قبله (٢٥ ضعفاً بضغطة) — وبالإنتاج ١١ دواءً بأكثر من نوعٍ بالمل، ٨ منها بفرقٍ ≥٥×.
+   * ترمي ولا ترجع فارغةً عن خطأ — والمنتقي يقرّر أن يتجاوزها (قيمةٌ افتراضية لا قرار). */
+  async lastDoseOf(name, petId) {
     return listOrThrow<{ amount: string | null; route: string | null }>(await sbc().from("treatment_entries").select("amount,route")
-      .eq("medication", name).eq("task_type", "drug").order("created_at", { ascending: false }).limit(20));
+      .eq("medication", name).eq("pet_id", petId).eq("task_type", "drug").order("created_at", { ascending: false }).limit(20));
   },
   async recentMedNames(days = 30) {
     // «الأخيرة»: عيّنةٌ بالأحدث لا قائمةُ قرار — ٤٠٠ صفّ تكفي لاثني عشر اسماً مختلفاً.

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DoseRoute, Species } from "@/types";
 import {
-  DOSE_ROUTES, unitsFor, laddersFor, initialTab, formatAmount, validQty, qtyBounds, switchRoute, pickUnit, firstParseable, num,
-  type DoseUnit, type DoseValue, type QtyError,
+  DOSE_ROUTES, unitsFor, laddersFor, initialTab, formatAmount, validQty, qtyBounds, switchRoute, pickUnit, pinFits, lastFor, num,
+  type DoseUnit, type DoseValue, type QtyError, type PinLike,
 } from "@/lib/doseUnits";
 import { routeName } from "@/lib/flowsheet";
 import { repo } from "@/lib/repo";
@@ -24,7 +24,8 @@ import { playTap } from "@/lib/sounds";
  * باردة (dose، flow) لا بنطاقِ صفحة. لا autoFocus ولا حقلَ كتابة (اللوحةُ بلا حقل).
  * ==========================================================================*/
 
-export interface DosePinned { qty: number; unit: DoseUnit; kind: "last" | "calc" }
+/** قيمةٌ مثبّتة بطريقها: «المحسوبة» لا تُعرض إلا بطريقها، و«آخر مرة» (لهذا المريض) بطريقها أو بلا طريقٍ قديم. */
+export type DosePinned = PinLike;
 
 /** تسميةُ الدرجة: الحبّةُ والكيسُ والسنتيمترُ بالكسور (1¼، ½)، والباقي رقماً. */
 function rung(unit: DoseUnit, v: number): string {
@@ -37,9 +38,11 @@ function rung(unit: DoseUnit, v: number): string {
 }
 
 export function DosePicker({
-  drugName, value, onChange, species, pinned, routeLocked, unitsOverride, onNeedRoute,
+  drugName, value, onChange, species, pinned, routeLocked, unitsOverride, onNeedRoute, petId,
 }: {
   drugName: string;
+  /** المريض: «آخر مرة» جرعتُه هو من هذا الدواء — لا آخرُ جرعةٍ بالعيادة لأيّ حيوان (ببغاءٌ بجرعة قطّة). */
+  petId?: string | null;
   value: DoseValue;
   onChange: (v: DoseValue) => void;
   species?: Species | string | null;
@@ -53,29 +56,37 @@ export function DosePicker({
   onNeedRoute?: () => void;
 }) {
   const { t } = useTranslation();
-  const [last, setLast] = useState<DosePinned | null>(null);
+  const [lastRows, setLastRows] = useState<{ amount: string | null; route: string | null }[]>([]);
   const [notice, setNotice] = useState("");
   const [pad, setPad] = useState(false);
 
-  /* «آخر مرة»: أوّلُ نصٍّ يُفهم من جرعاتِ هذا الدواء — قيمةٌ تُعرض لا تُختار وحدها. */
+  /* «آخر مرة»: جرعاتُ **هذا المريض** من هذا الدواء (الأحدثُ أوّلاً) — قيمةٌ تُعرض لا تُختار وحدها، وبلا مريضٍ لا شيء. */
   useEffect(() => {
     const name = drugName.trim();
-    if (pinned || !name) { setLast(null); return; }
+    if (pinned || !name || !petId) { setLastRows([]); return; }
     let alive = true;
-    repo.lastDoseOf(name)
-      .then((rows) => { if (!alive) return; const p = firstParseable(rows); setLast(p ? { qty: p.qty, unit: p.unit, kind: "last" } : null); })
+    repo.lastDoseOf(name, petId)
+      .then((rows) => { if (alive) setLastRows(rows); })
       .catch(() => { /* swallow-ok: a default, never a decision — the ladder works without it */ });
     return () => { alive = false; };
-  }, [drugName, pinned]);
+  }, [drugName, pinned, petId]);
 
   const units = unitsOverride ? [...unitsOverride] : unitsFor(value.route, drugName);
   const unit: DoseUnit | null = value.unit && units.includes(value.unit) ? value.unit : null;
+  /** الطرقُ التي يصلح لها المثبّت: طريقُ المنتقي، و«عين / أذن» بالمعالج كلاهما. */
+  const pinRoutes: DoseRoute[] = value.route ? [value.route] : unitsOverride ? ["ocular", "otic"] : [];
+  const unitsKey = units.join(",");
+  const last = useMemo<DosePinned | null>(() => {
+    const p = lastFor(lastRows, pinRoutes, units);
+    return p ? { qty: p.qty, unit: p.unit, kind: "last", route: p.route } : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastRows, value.route, unitsKey]);
   const pin = pinned ?? last;
-  const pinOk = !!pin && units.includes(pin.unit);
+  const pinOk = pinFits(pin, pinRoutes, units);
   const tabs = useMemo(() => laddersFor(unit, species), [unit, species]);
   const [tab, setTab] = useState<string | null>(null);
   useEffect(() => {
-    setTab(initialTab(tabs, unit, value.qty ?? (pin && pin.unit === unit ? pin.qty : null)));
+    setTab(initialTab(tabs, unit, value.qty ?? (pin && pinOk && pin.unit === unit ? pin.qty : null)));
     // التبويبُ يُعاد حين تتبدّل الوحدة وحدها — لا مع كلّ ضغطة درجة.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unit, tabs]);

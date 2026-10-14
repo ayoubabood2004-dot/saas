@@ -64,7 +64,10 @@ export function unitsFor(route: DoseRoute | null | undefined, name?: string | nu
 }
 export const defaultUnit = (route: DoseRoute | null | undefined, name?: string | null): DoseUnit | null => unitsFor(route, name)[0] ?? null;
 
-/** طريقُ المعالج (oral/sc/im/iv/topical/eye_ear) ⇒ طريقُ الطبلة؛ «عين / أذن» ⇒ null (وحداتُه EYE_EAR_UNITS). */
+/** كلمةُ «بماء الشرب» بملاحظة الخطة المحفوظة (routeLabel بالمعالج) — العرضُ بـt("flow.route.water"). */
+export const WATER_ROUTE_WORD = "بماء الشرب"; /* i18n-data: نصُّ السجلّ المحفوظ — ملاحظةُ الخطة */
+
+/** طريقُ المعالج (oral/sc/im/iv/topical/eye_ear/water) ⇒ طريقُ الطبلة؛ «عين / أذن» ⇒ null (وحداتُه EYE_EAR_UNITS). */
 export function planRouteToDose(r: string | null | undefined): DoseRoute | null {
   switch (r) {
     case "oral": return "po";
@@ -72,6 +75,8 @@ export function planRouteToDose(r: string | null | undefined): DoseRoute | null 
     case "im": return "im";
     case "iv": return "iv";
     case "topical": return "topical";
+    // بماء الشرب (D5): طريقُ الطيور بالمعالج — مل/لتر وغم/لتر.
+    case "water": return "water";
     default: return null;
   }
 }
@@ -335,11 +340,71 @@ export function switchRoute(cur: DoseValue, next: DoseRoute, name?: string | nul
 /** وحدةٌ اختيرت بيد ⇒ الرقمُ يُمسح (لا تحويلَ بين وحدتين). */
 export const pickUnit = (cur: DoseValue, unit: DoseUnit): DoseValue => (cur.unit === unit ? cur : { ...cur, unit, qty: null });
 
-/** آخرُ جرعةٍ تُقرأ لهذا الدواء: أوّلُ صفٍّ يُفهم نصُّه (الأحدثُ أوّلاً). */
-export function firstParseable(rows: readonly { amount: string | null; route?: string | null }[]): (Amount & { route: DoseRoute | null }) | null {
+/* ── القيمةُ المثبّتة أمام السلّم («المحسوبة» و«آخر مرة») ─────────────────────
+ * رقمٌ حُسب أو أُعطي لشكلٍ لا يُعرض تحت شكلٍ آخر: «المحسوبة 0.26 مل» لميلوكسيكام فموي (1.5 ملغ/مل) كانت
+ * تبقى أوّلَ زرٍّ بعد «تحت الجلد» (5 ملغ/مل ⇒ ثلاثةُ أضعاف السقف للقطّ)، و«آخر مرة 2 مل» فموية تحت «وريدي».
+ * فالمثبّتُ يحمل طريقَه ولا يُعرض إلا بطريقه ووحدةٍ مسموحة. و«آخر مرة» القديمةُ بلا طريق (قبل حفظ الطريق)
+ * تُعرض بوحدةٍ مسموحة — هي لهذا المريض نفسِه (`lastDoseOf` بالحيوان) لا لحيوانٍ آخر بالعيادة. */
+export interface PinLike { qty: number; unit: DoseUnit; kind: "last" | "calc"; route?: DoseRoute | null }
+export function pinFits(pin: PinLike | null | undefined, routes: readonly DoseRoute[], units: readonly DoseUnit[]): boolean {
+  if (!pin || !units.includes(pin.unit)) return false;
+  if (pin.route) return routes.includes(pin.route);
+  return pin.kind === "last";   // «المحسوبة» بلا طريقٍ معروف لا تُعرض تحت أيّ طريق
+}
+
+/** «آخر مرة»: أحدثُ جرعةٍ لهذا المريض يُفهم نصُّها **وتصلح لهذا الطريق** (الأحدثُ أوّلاً). */
+export function lastFor(rows: readonly { amount: string | null; route?: string | null }[], routes: readonly DoseRoute[], units: readonly DoseUnit[]): (Amount & { route: DoseRoute | null }) | null {
   for (const r of rows) {
     const a = parseAmount(r.amount);
-    if (a) return { ...a, route: isDoseRoute(r.route) ? r.route : null };
+    if (!a) continue;
+    const pin: PinLike = { ...a, kind: "last", route: isDoseRoute(r.route) ? r.route : null };
+    if (pinFits(pin, routes, units)) return { ...a, route: pin.route ?? null };
   }
   return null;
+}
+
+/* ── نافذةُ القلم: ما يُكتب من الجرعة ──────────────────────────────────────
+ * المنتقي فارغُ الرقم بعد تغيير الشكل أو الوحدة («اختر الكمية من جديد») — والنصُّ القديم كان يبقى ويُكتب
+ * الطريقُ الجديدُ فوقه: «حبة واحدة · وريدي»، و«10 مل» فموية صارت وريدية. فالرقمُ الممسوح **يمنع الحفظ**
+ * حتى تُختار الكمية (`ok: false`). والكميةُ تُقارن **بقيمتها** لا بنصّها: «0.23 مل (11.5 mg)» = 0.23 مل
+ * فلا يُكتب فوقها «0.23 مل» وتضيع ملاحظةُ الملغ بتعديل الوقت وحده. */
+export type EditDose = { ok: true; amount?: string; route?: DoseRoute | null } | { ok: false };
+export function editDosePatch(entry: { amount?: string | null; route?: DoseRoute | null }, dose: DoseValue): EditDose {
+  const was = parseAmount(entry.amount);
+  const routeChanged = (dose.route ?? null) !== (entry.route ?? null);
+  if (dose.qty == null || !dose.unit) {
+    const unitMoved = (dose.unit ?? null) !== (was?.unit ?? null);
+    return routeChanged || unitMoved ? { ok: false } : { ok: true };
+  }
+  const same = !!was && was.unit === dose.unit && Math.abs(was.qty - dose.qty) < 1e-9;
+  return { ok: true, ...(same ? {} : { amount: formatAmount(dose) }), ...(routeChanged ? { route: dose.route } : {}) };
+}
+
+/** هل يرى الطبيبُ الجرعةَ الحاليةَ بالمنتقي كما هي محفوظة؟ لا ⇒ تُقال بسطرٍ («الجرعة الحالية: …»):
+ *  نصٌّ قديمٌ لا يُفهم، أو صفٌّ بلا طريق (المنتقي يقول «اختر طريق الإعطاء أولاً» بلا رقم)، أو نصٌّ بملاحظة
+ *  ملغ «(11.5 mg)» لا يرسمها السلّم. */
+export function pickerShowsAmount(amount: string | null | undefined, route: DoseRoute | null | undefined, name?: string | null): boolean {
+  const text = String(amount ?? "").trim();
+  if (!text) return true;
+  const a = parseAmount(text);
+  return !!a && unitsFor(route, name).includes(a.unit) && formatAmount(a) === text;
+}
+
+/* ── بطاقةُ المعالج: الطريقُ والجرعةُ اليدوية ───────────────────────────────
+ * إطفاءُ الطريق (الضغطُ على المختار) كان يرسل «بلا طريق» دون switchRoute، فالضغطةُ التالية «أوّلُ طريق»
+ * تُبقي الرقمَ إن سُمحت وحدتُه: «2 مل» فموي ⇒ بلا ⇒ وريدي = «2 مل» وريدي. فالإطفاءُ تغييرُ شكلٍ يمسح الرقم،
+ * وكلُّ طريقٍ جديدٍ يمرّ من switchRoute («عين / أذن» بوحداتها). */
+export function cardRouteChange(cur: { route?: string; dose: string; name: string }, next: string | undefined, manual: boolean): { route: string | undefined; dose?: string; unit?: DoseUnit | null } {
+  const parsed = parseAmount(cur.dose);
+  if (!manual || !parsed) return { route: next };
+  if (!next) return { route: undefined, dose: "", unit: null };
+  const fromDose = planRouteToDose(cur.route) ?? (cur.route === "eye_ear" ? "ocular" : null);
+  const sw = switchRoute({ route: fromDose, unit: parsed.unit, qty: parsed.qty }, planRouteToDose(next) ?? "ocular", cur.name, next === "eye_ear" ? EYE_EAR_UNITS : undefined);
+  return { route: next, ...(sw.value.qty == null ? { dose: "" } : {}), unit: sw.value.unit };
+}
+
+/** الجرعةُ اليدوية من المنتقي ⇒ رقعةُ البطاقة. **لا تمسّ `solid`**: «مل» بيدٍ كان يقلب الحبّةَ سائلاً فيقرأ
+ *  «احسبها بالوزن» عيارَ الحبّة (5 ملغ/حبة) ملغ/مل: «0.4 مل» بدل «½ حبة» — الشكلُ من الدليل لا من الضغطة. */
+export function manualDosePatch(v: DoseValue): { doseMode: "manual"; mgPerKg: undefined; dose: string } {
+  return { doseMode: "manual", mgPerKg: undefined, dose: v.qty != null && v.unit ? formatAmount(v) : "" };
 }

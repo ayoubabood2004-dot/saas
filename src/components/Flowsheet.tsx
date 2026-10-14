@@ -900,8 +900,10 @@ function MissedSheet({ entry, onClose, onPick }: {
  * وما لا يُحسب لا يُدَّعى: بلا وزنٍ مسجَّل للحيوان لا تُعرض جرعةٌ محسوبة، بل
  * يُقال إن الوزن ناقص. رقمٌ مخترَعٌ أخطر من خانةٍ فارغة.
  */
-export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species, onClose, onAdd }: {
+export function AddTaskSheet({ petName, petId, todayISO, presetHour, weightKg, species, onClose, onAdd }: {
   petName: string;
+  /** المريض — «آخر مرة» بمنتقي الجرعة جرعتُه هو لا آخرُ جرعةٍ بالعيادة. */
+  petId?: string | null;
   todayISO: string;
   /** ساعةٌ جاءت من خانةٍ فارغة ضُغطت — تُملأ جاهزةً بدل البحث عنها. */
   presetHour?: number | null;
@@ -985,8 +987,8 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
       const strength = d.strengths?.[0];
       const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: d.solid, freq: win.freq, ceiling: doseCeiling(d, win, win.freq) });
       /* نصُّ الكمية من المحرّك نفسه: التسميةُ تنتهي بـ«حبة» فكان يُكتب «½ حبة قرص»،
-       * وحجمٌ قُرّب لصفرٍ كان يُكتب «0 مل». */
-      setAmount(taskAmountText(c));
+       * وحجمٌ قُرّب لصفرٍ كان يُكتب «0 مل». والمحسوبةُ تدخل المنتقي وحده — ما لا يقرؤه (ملغ بلا عيار:
+       * «19 ملغم»، «0 ملغم») لا يُكتب خفيّاً: كان يُحفظ والمنتقي فارغٌ بلا «ينكتب». سطرُ الحساب فوقه يقوله. */
       calcAmount = parseAmount(taskAmountText(c));
     }
     // المنتقي يُفتح على المحسوبة مختارةً — بطريقها ووحدتها — والطبيبُ يغيّرها بضغطة.
@@ -1019,11 +1021,13 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
   const toggleTime = (v: string) =>
     setTimes((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v].sort()));
 
-  /** «المحسوبة» تُثبَّت أمام السلّم — نصُّ taskAmountText نفسُه مقروءاً. */
+  /** «المحسوبة» تُثبَّت أمام السلّم — نصُّ taskAmountText نفسُه مقروءاً، **بطريقها**: حُسبت بعيار الطريق الأوّل
+   *  بالدليل (strengths[0])، فتحت طريقٍ آخر رقمٌ لشكلٍ آخر (ميلوكسيكام فموي 0.26 مل تحت الجلد = ٣ أضعاف السقف). */
   const calcPin = useMemo(() => {
     const c = computed?.calc;
     const a = c ? parseAmount(taskAmountText(c)) : null;
-    return a ? { qty: a.qty, unit: a.unit, kind: "calc" as const } : null;
+    const r = computed?.win ? APP_ROUTE_BACK[computed.win.routes[0]] : undefined;
+    return a && r ? { qty: a.qty, unit: a.unit, kind: "calc" as const, route: r } : null;
   }, [computed]);
 
   const SLOTS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"];
@@ -1151,8 +1155,8 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
         {type === "drug" ? (
           <div className="mt-3" data-taskdose>
             <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskAmount", "الكمية / المعدّل")}</label>
-            <DosePicker drugName={label} value={dose} species={species ?? null} pinned={calcPin}
-              onChange={(v) => { setDose(v); setRoute(v.route ?? ""); setAmount(v.qty != null && v.unit ? formatAmount(v) : ""); }} />
+            <DosePicker drugName={label} value={dose} species={species ?? null} pinned={calcPin} petId={petId}
+              onChange={(v) => { setDose(v); setRoute(v.route ?? ""); }} />
           </div>
         ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr,170px]">
@@ -1218,8 +1222,9 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
               // كمية — حرارةٌ تُقاس، وإخراجٌ يُلاحَظ، وتمريضٌ يُنفَّذ. فكان
               // إرسال `null` يُرفض بقيد القاعدة فتفشل الإضافة كلّها.
               // والفراغ يفي بالقيد ويُقرأ فارغاً بالعرض (نصٌّ فارغ = لا شيء).
-              medication: label.trim(), amount: amount.trim(),
-              task_type: type, route: route || null,
+              // الدواءُ: الكميةُ والطريقُ من المنتقي وحده — ما يُحفظ هو ما تقوله «ينكتب».
+              medication: label.trim(), amount: type === "drug" ? formatAmount(dose) : amount.trim(),
+              task_type: type, route: type === "drug" ? (dose.route ?? null) : (route || null),
               observations: null, administered_at: null, administered_by: null,
             } as unknown as Omit<TreatmentEntry, "id" | "created_at">)));
           }}
