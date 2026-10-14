@@ -7,7 +7,7 @@ import {
 import type { Species } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import {
-  matchMonograph, doseFor, calcDose, checkSafety, hasBlocking, appFreqHours,
+  matchMonograph, doseFor, calcDose, doseCeiling, doseNum, judgedMgPerKg, outsideWindow, checkSafety, hasBlocking, appFreqHours,
   APP_ROUTE, CLASS_LABEL, ROUTE_LABEL, FREQ_LABEL, isBannedFor, type DoseAlert,
 } from "@/lib/vetFormulary";
 import { DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
@@ -110,20 +110,24 @@ export function DrugCard({
   const isSolid = row.solid ?? mono?.solid ?? false;
   const banned = mono && species ? isBannedFor(mono, species) : undefined;
 
+  /** الخطُّ الصلب للجرعة الواحدة (سقفُ النوع أو السقفُ اليوميّ مقسوماً) — التقريبُ لا يعبره. */
+  const ceiling = doseCeiling(mono, win, appFreqHours(row.freq));
+
   const calc = useMemo(() => {
     if (!row.mgPerKg || !weight) return undefined;
-    return calcDose({ mgPerKg: row.mgPerKg, weightKg: weight, strength: row.strength, solid: isSolid, freq: appFreqHours(row.freq) });
-  }, [row.mgPerKg, weight, row.strength, isSolid, row.freq]);
+    return calcDose({ mgPerKg: row.mgPerKg, weightKg: weight, strength: row.strength, solid: isSolid, freq: appFreqHours(row.freq), ceiling });
+  }, [row.mgPerKg, weight, row.strength, isSolid, row.freq, ceiling]);
 
   const alerts = useMemo<DoseAlert[]>(() => {
     if (!mono || !species) return [];
-    if (!row.mgPerKg) return checkSafety({ drug: mono, species, mgPerKg: 0, allergies, flags, concurrent });
+    if (!row.mgPerKg) return checkSafety({ drug: mono, species, mgPerKg: 0, allergies, flags, concurrent, dose: undefined });
     return checkSafety({
       drug: mono, species, weightKg: weight, mgPerKg: row.mgPerKg,
       route: row.route ? APP_ROUTE[row.route] : undefined,
       freq: appFreqHours(row.freq), allergies, flags, concurrent,
+      dose: calc,
     });
-  }, [mono, species, weight, row.mgPerKg, row.route, row.freq, allergies, flags, concurrent]);
+  }, [mono, species, weight, row.mgPerKg, row.route, row.freq, allergies, flags, concurrent, calc]);
 
   const manual = row.doseMode === "manual" || (!win && !!row.dose.trim()) || (!weight && !!row.dose.trim());
   const noWindowAnswered = !win && !!row.dose.trim();
@@ -139,7 +143,9 @@ export function DrugCard({
 
   const step = stepFor(win?.min, win?.max);
   const topRate = win ? Math.min(win.max, win.hardMax ?? Infinity) : undefined;
-  const inWindow = !!win && row.mgPerKg !== undefined && row.mgPerKg >= win.min && row.mgPerKg <= win.max;
+  /** ما يُحكم عليه: المُعطى بعد تقريب الحجم أو الحبة، لا المقصود (judgedMgPerKg). */
+  const judged = row.mgPerKg !== undefined ? judgedMgPerKg(row.mgPerKg, calc?.givenMgPerKg) : undefined;
+  const inWindow = !!win && judged !== undefined && !outsideWindow(judged, win);
   const overHard = !!win?.hardMax && row.mgPerKg !== undefined && row.mgPerKg > win.hardMax;
 
   const bump = (d: number) => {
@@ -151,25 +157,31 @@ export function DrugCard({
   const ring = (g: string) => focusGroup === g && "ring-2 ring-brand-400 ring-offset-2 ring-offset-surface-1";
   const jumpTo = (g: string) => { playTap(); if (!open) onToggle(); setFocusGroup(g); window.setTimeout(() => setFocusGroup(null), 700); };
 
-  /** بلاطة جرعة: تحمل ما يُسحب فعلاً، وتحته ملغ/كغ دائماً. */
-  const doseTile = (rate: number, kicker: string, ceiling: boolean) => {
-    const c = weight ? calcDose({ mgPerKg: rate, weightKg: weight, strength: row.strength, solid: isSolid, freq: appFreqHours(row.freq) }) : undefined;
-    const big = c?.mlRounded !== undefined ? `${formatDec(c.mlRounded)} ${t("tplan.mlUnit", "مل")}`
+  /** بلاطة جرعة: تحمل ما يُسحب فعلاً، وتحته ملغ/كغ دائماً — **المُعطى** بعد التقريب لا
+   *  المقصود: ربعُ حبة ٢٠ ملغ لقطّةٍ ٢ كغ كان يُطبع «1 ملغ · 0.5 ملغ/كغ» وهو 5 ملغ. وما خرج
+   *  به التقريبُ عن الدليل (أو لا تحمله الحبة) يلبس لونَ التحذير. */
+  const doseTile = (rate: number, kicker: string, atCeiling: boolean) => {
+    const c = weight ? calcDose({ mgPerKg: rate, weightKg: weight, strength: row.strength, solid: isSolid, freq: appFreqHours(row.freq), ceiling }) : undefined;
+    const tooSmall = c?.tooSmall === "tablet";
+    const big = c?.mlRounded !== undefined ? `${doseNum(c.mlRounded)} ${t("tplan.mlUnit", "مل")}`
       : c?.tabletsLabel ? c.tabletsLabel
-        : c ? `${formatDec(Math.round(c.mg * 100) / 100)} ${t("tplan.mgUnit", "ملغ")}` : "—";
+        : tooSmall ? t("tplan.tabTooSmall", "اختر عياراً أصغر أو سائلاً")
+          : c ? `${doseNum(c.givenMg)} ${t("tplan.mgUnit", "ملغ")}` : "—";
+    const tileRate = c ? judgedMgPerKg(rate, c.givenMgPerKg) : rate;
+    const off = tooSmall || (!!win && outsideWindow(tileRate, win));
     const on = row.mgPerKg !== undefined && Math.abs(row.mgPerKg - rate) < 1e-9;
     return (
-      <button type="button" data-dosetile={rate} onClick={() => { playTap(); onPatch({ doseMode: "weight", mgPerKg: rate, dose: "" }); }}
+      <button type="button" data-dosetile={rate} data-tileoff={off || undefined} onClick={() => { playTap(); onPatch({ doseMode: "weight", mgPerKg: rate, dose: "" }); }}
         className={cn("min-h-[86px] rounded-2xl border-2 p-2 text-center transition active:scale-[0.98]",
-          on ? "border-brand-600 bg-brand-600 text-white shadow-soft"
-            : ceiling ? "border-warn-300 bg-warn-50 text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300"
+          on ? cn("border-brand-600 bg-brand-600 text-white shadow-soft", off && "ring-2 ring-warn-400")
+            : atCeiling || off ? "border-warn-300 bg-warn-50 text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300"
               : "border-line bg-surface-2 text-ink hover:border-brand-300")}>
         <span className="block text-[10px] font-black uppercase opacity-80">{kicker}</span>
-        <span className="mt-0.5 block text-xl font-black tabular-nums">{big}</span>
+        <span className={cn("mt-0.5 block font-black tabular-nums", tooSmall ? "text-xs leading-tight" : "text-xl")}>{big}</span>
         <span className="mt-0.5 block text-[10px] font-bold tabular-nums opacity-80">
-          {t("tplan.tileMath", { mg: c ? formatDec(Math.round(c.mg * 100) / 100) : "—", rate: formatDec(rate), defaultValue: "{{mg}} ملغ · {{rate}} ملغ/كغ" })}
+          {t("tplan.tileMath", { mg: c ? doseNum(c.givenMg) : "—", rate: formatDec(c ? c.givenMgPerKg : rate), defaultValue: "{{mg}} ملغ · {{rate}} ملغ/كغ" })}
         </span>
-        {ceiling && win?.hardMaxReason && <span className="mt-0.5 block line-clamp-2 text-[10px] font-bold">{win.hardMaxReason}</span>}
+        {atCeiling && win?.hardMaxReason && <span className="mt-0.5 block line-clamp-2 text-[10px] font-bold">{win.hardMaxReason}</span>}
       </button>
     );
   };
@@ -214,14 +226,19 @@ export function DrugCard({
           <span className="text-[22px] font-black leading-none text-ink">{row.dose.trim()}</span>
         ) : calc?.mlRounded !== undefined ? (
           <motion.span key={`ml-${calc.mlRounded}`} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12 }} className="flex items-end gap-1">
-            <span className="text-[32px] font-black leading-none tabular-nums text-ink">{formatDec(calc.mlRounded)}</span>
+            <span className="text-[32px] font-black leading-none tabular-nums text-ink">{doseNum(calc.mlRounded)}</span>
             <span className="text-base font-extrabold text-ink-muted">{t("tplan.mlUnit", "مل")}</span>
           </motion.span>
         ) : calc?.tabletsLabel ? (
           <motion.span key={`tab-${calc.tabletsLabel}`} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12 }} className="text-[26px] font-black leading-none text-ink">{calc.tabletsLabel}</motion.span>
+        ) : calc?.tooSmall === "tablet" ? (
+          /* دون ⅛ الحبة: لا رقمَ يُسحب — كان يُرفع لربعٍ بصمت (خمسةُ أضعافٍ لبريدنيزولون ٢٠ بقطّةٍ ٢ كغ). */
+          <button type="button" data-tabtoosmall onClick={() => jumpTo("strength")} className="inline-flex min-h-[3.5rem] items-center rounded-2xl bg-warn-50 px-4 text-base font-black text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+            {t("tplan.tabTooSmall", "اختر عياراً أصغر أو سائلاً")}
+          </button>
         ) : calc ? (
           <motion.span key={`mg-${calc.mg}`} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12 }} className="flex items-end gap-1">
-            <span className="text-[32px] font-black leading-none tabular-nums text-ink">{formatDec(Math.round(calc.mg * 100) / 100)}</span>
+            <span className="text-[32px] font-black leading-none tabular-nums text-ink">{doseNum(calc.givenMg)}</span>
             <span className="text-base font-extrabold text-ink-muted">{t("tplan.mgUnit", "ملغ")}</span>
           </motion.span>
         ) : (
@@ -251,11 +268,11 @@ export function DrugCard({
           <span className="inline-block rounded-lg bg-surface-2 px-2 py-1 text-xs font-black text-ink-muted">{t("tplan.provManual", "جرعة يدوية — بلا حساب بالوزن")}</span>
         ) : !win ? (
           <span className="inline-block rounded-lg bg-warn-50 px-2 py-1 text-xs font-black text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">{t("tplan.provNoWindow", "ما في جرعة موثّقة لهذا النوع — الجرعة يدوية")}</span>
-        ) : row.mgPerKg === undefined ? null : (
+        ) : judged === undefined ? null : (
           <span className={cn("inline-block rounded-lg px-2 py-1 text-xs font-black tabular-nums", inWindow ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-warn-50 text-warn-700 dark:bg-warn-500/10 dark:text-warn-300")}>
             {inWindow
-              ? t("tplan.provIn", { d: formatDec(row.mgPerKg), min: formatDec(win.min), max: formatDec(win.max), defaultValue: "{{d}} ملغ/كغ · الدليل {{min}}–{{max}} ملغ/كغ" })
-              : t("tplan.provOut", { d: formatDec(row.mgPerKg), min: formatDec(win.min), max: formatDec(win.max), defaultValue: "{{d}} ملغ/كغ · خارج الدليل {{min}}–{{max}}" })}
+              ? t("tplan.provIn", { d: formatDec(judged), min: formatDec(win.min), max: formatDec(win.max), defaultValue: "{{d}} ملغ/كغ · الدليل {{min}}–{{max}} ملغ/كغ" })
+              : t("tplan.provOut", { d: formatDec(judged), min: formatDec(win.min), max: formatDec(win.max), defaultValue: "{{d}} ملغ/كغ · خارج الدليل {{min}}–{{max}}" })}
           </span>
         )}
         {!manual && row.mgPerKg !== undefined && (

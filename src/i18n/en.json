@@ -3755,6 +3755,7 @@
     "renew": "Renew to continue"
   },
   "tplan": {
+    "tabTooSmall": "Pick a smaller strength or a liquid",
     "freqDaily1": "Once daily",
     "freqDaily2": "Twice daily",
     "freqDaily3": "3 times daily",
@@ -4793,7 +4794,6 @@
     "mgkg": "mg/kg",
     "doseCalc": "{{mgkg}} mg/kg × {{w}} kg = {{mg}} mg",
     "doseMl": "{{n}} mL",
-    "doseTabs": "{{n}} tab",
     "perTab": "{{n}} mg/tab",
     "perMl": "{{n}} mg/mL",
     "givenAt": "Given {{at}} · {{by}}",

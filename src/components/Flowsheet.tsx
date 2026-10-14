@@ -13,7 +13,7 @@ import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess } from "@/lib/sounds";
 import {
-  doseFor, calcDose, isBannedFor,
+  doseFor, calcDose, doseCeiling, doseNum, taskAmountText, isBannedFor,
   type Monograph, type Route,
 } from "@/lib/vetFormulary";
 import {
@@ -939,6 +939,7 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     const strength = picked.strengths?.[0];
     const calc = calcDose({
       mgPerKg: win.typical, weightKg, strength, solid: picked.solid, freq: win.freq,
+      ceiling: doseCeiling(picked, win, win.freq),
     });
     return { win, calc, strength };
   }, [picked, species, weightKg]);
@@ -970,8 +971,10 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     if (r) setRoute(r);
     if (weightKg && weightKg > 0) {
       const strength = d.strengths?.[0];
-      const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: d.solid, freq: win.freq });
-      setAmount(c.tabletsLabel ? `${c.tabletsLabel} قرص` : c.mlRounded != null ? `${c.mlRounded} مل` : `${Math.round(c.mg * 100) / 100} ملغم`);
+      const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: d.solid, freq: win.freq, ceiling: doseCeiling(d, win, win.freq) });
+      /* نصُّ الكمية من المحرّك نفسه: التسميةُ تنتهي بـ«حبة» فكان يُكتب «½ حبة قرص»،
+       * وحجمٌ قُرّب لصفرٍ كان يُكتب «0 مل». */
+      setAmount(taskAmountText(c));
     }
     /* الأوقات تُشتقّ من تكرار الدليل ابتداءً من الساعة القادمة — لا يؤشّرها
      * الطبيب بيده، وخانةٌ منسيّةٌ من ثمانٍ تعني جرعةً ضائعة. */
@@ -1094,14 +1097,15 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
           </p>
         )}
         {computed?.calc && computed.win && (
-          <p data-dosecalc className="mt-2 rounded-xl bg-success-50 px-3 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">
-            {t("flow.doseCalc", { mgkg: computed.win.typical, w: formatDec(weightKg ?? 0), mg: Math.round(computed.calc.mg * 100) / 100, defaultValue: "{{mgkg}} ملغم/كغ × {{w}} كغ = {{mg}} ملغم" })}
+          <p data-dosecalc className={cn("mt-2 rounded-xl px-3 py-2 text-2xs font-bold",
+            computed.calc.tooSmall ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
+            {t("flow.doseCalc", { mgkg: computed.win.typical, w: formatDec(weightKg ?? 0), mg: doseNum(computed.calc.mg), defaultValue: "{{mgkg}} ملغم/كغ × {{w}} كغ = {{mg}} ملغم" })}
             {computed.calc.mlRounded != null
-              ? ` ← ${t("flow.doseMl", { n: computed.calc.mlRounded, defaultValue: "{{n}} مل" })}` : ""}
-            {computed.calc.tabletsLabel
-              ? ` ← ${t("flow.doseTabs", { n: computed.calc.tabletsLabel, defaultValue: "{{n}} قرص" })}` : ""}
+              ? ` ← ${t("flow.doseMl", { n: doseNum(computed.calc.mlRounded), defaultValue: "{{n}} مل" })}` : ""}
+            {computed.calc.tabletsLabel ? ` ← ${computed.calc.tabletsLabel}` : ""}
+            {computed.calc.tooSmall === "tablet" ? ` ← ${t("tplan.tabTooSmall", "اختر عياراً أصغر أو سائلاً")}` : ""}
             {computed.strength
-              ? ` (${computed.calc.tabletsLabel
+              ? ` (${picked?.solid
                   ? t("flow.perTab", { n: computed.strength, defaultValue: "{{n}} ملغم/قرص" })
                   : t("flow.perMl", { n: computed.strength, defaultValue: "{{n}} ملغم/مل" })})` : ""}
           </p>

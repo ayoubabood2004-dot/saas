@@ -24,7 +24,7 @@ import { NumberPadSheet } from "@/components/treatment/NumberPadSheet";
 import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
 import { DoseAlertRow, APP_ROUTE_BACK } from "@/components/DoseBlock";
-import { matchMonograph, checkSafety, calcDose, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
+import { matchMonograph, checkSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
 import type { MedicineStock } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import { repo } from "@/lib/repo";
@@ -313,22 +313,28 @@ export function TreatmentPlan({
     setStep("treatment");
   };
 
+  /** The row's calculated dose — the one the card shows, the text writes and the
+   *  safety pass judges. Rounding stops at the species' hard line (doseCeiling). */
+  const rowCalc = (r: PlanRow) => {
+    if (!r.mgPerKg || !weight) return undefined;
+    const drug = matchMonograph(r.name);
+    const freq = appFreqHours(r.freq);
+    return calcDose({
+      mgPerKg: r.mgPerKg, weightKg: weight, strength: r.strength,
+      solid: r.solid ?? drug?.solid, freq,
+      ceiling: doseCeiling(drug, drug && species ? doseFor(drug, species) : undefined, freq),
+    });
+  };
+
   /**
    * The effective dose text for a row. When the vial concentration is known this
    * is what the vet actually draws — "1.4 مل (35 mg)" — not just the milligrams.
+   * Written by the engine's one formatter: `formatNum` here wrote 0.06 ml «0 مل»
+   * and 0.6 ml «1 مل» onto the nurse board (45 rows in production, 9 given).
    */
   const doseText = (r: PlanRow): string => {
-    if (r.mgPerKg && weight) {
-      const c = calcDose({
-        mgPerKg: r.mgPerKg, weightKg: weight, strength: r.strength,
-        solid: r.solid ?? matchMonograph(r.name)?.solid, freq: appFreqHours(r.freq),
-      });
-      const mg = `${formatNum(Math.round(c.mg * 100) / 100)} mg`;
-      if (c.mlRounded) return `${formatNum(c.mlRounded)} مل (${mg})`;
-      if (c.tabletsLabel && c.tablets) return `${c.tabletsLabel} (${mg})`;
-      return mg;
-    }
-    return r.dose.trim();
+    const c = rowCalc(r);
+    return c ? planAmountText(c) : r.dose.trim();
   };
 
   const filledRows = rows.filter((r) => r.name.trim());
@@ -357,6 +363,7 @@ export function TreatmentPlan({
         allergies,
         flags,
         concurrent: others,
+        dose: rowCalc(r),
       }).filter((a) => a.tone === "critical" || a.tone === "warn");
       if (alerts.length) out.push({ name: r.name.trim(), alerts });
     }

@@ -21,6 +21,7 @@
 // sensitivity in herding breeds (WSU VCPL).
 // ============================================================================
 import type { Species } from "@/types";
+import { formatDec } from "./utils";
 
 export type DoseTone = "critical" | "warn" | "info" | "good";
 
@@ -806,7 +807,14 @@ export function isBannedFor(drug: Monograph, species: Species): string | undefin
  * mg/kg × kg = mg. mg ÷ (mg/ml) = ml. The only subtlety worth encoding is
  * ROUNDING: a syringe can't measure 0.4237 ml, so we round to what the vet can
  * actually draw — and we round DOWN near the ceiling so rounding never pushes a
- * dose over the toxic line. */
+ * dose over the toxic line.
+ *
+ * ذلك الوعدُ كان تعليقاً بلا شِفرة: `Math.round` عارٍ، وحبةٌ بحدٍّ أدنى ربع.
+ * فإنروفلوكساسين ١٠٠ ملغ/مل لقطّةٍ 4.5 كغ صار 0.23 مل = 5.11 ملغ/كغ فوق خطّ العمى،
+ * وبريدنيزولون ٢٠ ملغ لقطّةٍ ٢ كغ صار ¼ حبة = خمسةُ أضعاف المقصود — والفحصُ
+ * يقرأ المقصودَ فيقول «ضمن النطاق». الآن: التقريبُ لا يعبر السقفَ الصلب
+ * (`ceiling`)، والحبةُ دون ⅛ لا تُرفع بل تُرفض، وما يُعطى فعلاً (`givenMg`) هو
+ * ما يحكم عليه `checkSafety`. */
 
 export interface DoseCalc {
   mgPerKg: number;
@@ -815,34 +823,69 @@ export interface DoseCalc {
   mg: number;
   /** Volume in ml at the chosen concentration — undefined for tablets/topicals. */
   ml?: number;
-  /** The syringe-friendly volume actually drawn. */
+  /** The syringe-friendly volume actually drawn. Never 0: an unmeasurable volume is `tooSmall`. */
   mlRounded?: number;
   /** Tablet count when the product is solid. */
   tablets?: number;
   tabletsLabel?: string;
+  /** What actually reaches the patient once the volume or the tablet is rounded —
+   *  `mg` itself when nothing was rounded (no strength, or too small to measure). */
+  givenMg: number;
+  givenMgPerKg: number;
+  /** The product can't carry this dose: under ⅛ of the tablet, or under 0.0005 ml. */
+  tooSmall?: "tablet" | "volume";
   /** Doses per day implied by the frequency. */
   perDay: number;
   mgPerDay: number;
 }
 
-/** Round a volume to something a real syringe can measure. */
-export function roundVolume(ml: number): number {
+/** Floating-point slack when comparing against a line: 5 × 4.5 ÷ 100 must equal 0.225. */
+const ON_LINE = 1 + 1e-9;
+
+/** Round a volume to something a real syringe can measure — and when the exact
+ *  volume is at or under `ceilingMl`, never round it over (round down instead). */
+export function roundVolume(ml: number, ceilingMl?: number): number {
   if (!isFinite(ml) || ml <= 0) return 0;
-  if (ml < 0.1) return Math.round(ml * 1000) / 1000;  // insulin syringe territory
-  if (ml < 1) return Math.round(ml * 100) / 100;      // 0.01 ml
-  if (ml < 10) return Math.round(ml * 20) / 20;       // 0.05 ml
-  return Math.round(ml * 10) / 10;                    // 0.1 ml
+  // insulin-syringe territory 0.001 · 0.01 ml · 0.05 ml · 0.1 ml
+  const f = ml < 0.1 ? 1000 : ml < 1 ? 100 : ml < 10 ? 20 : 10;
+  const v = Math.round(ml * f) / f;
+  if (ceilingMl !== undefined && ml <= ceilingMl * ON_LINE && v > ceilingMl * ON_LINE) {
+    return Math.floor(ceilingMl * f + 1e-9) / f;
+  }
+  return v;
 }
 
-/** Nearest practical tablet fraction — whole, half, or quarter. */
-export function roundTablets(count: number): { value: number; label: string } {
+/** What a dose under ⅛ tablet says instead of a number. */
+export const TABLET_TOO_SMALL = "اختر عياراً أصغر أو سائلاً";
+
+/** Nearest practical tablet fraction — whole, half, or quarter. Under ⅛ the
+ *  nearest quarter is nothing: it says so, rather than raising the dose to ¼
+ *  (the old floor turned 0.05 tablet into five times the dose). And when the
+ *  exact count is at or under `ceiling`, rounding never carries it over. */
+export function roundTablets(count: number, ceiling?: number): { value: number; label: string; tooSmall?: boolean } {
   if (!isFinite(count) || count <= 0) return { value: 0, label: "—" };
-  const q = Math.max(0.25, Math.round(count * 4) / 4);
+  let q = Math.round(count * 4) / 4;
+  if (ceiling !== undefined && count <= ceiling * ON_LINE && q > ceiling * ON_LINE) q = Math.floor(ceiling * 4 + 1e-9) / 4;
+  if (q <= 0) return { value: 0, label: TABLET_TOO_SMALL, tooSmall: true };
   const whole = Math.floor(q);
   const frac = q - whole;
   const fracLabel = frac === 0.25 ? "¼" : frac === 0.5 ? "½" : frac === 0.75 ? "¾" : "";
   const label = whole > 0 ? `${whole}${fracLabel ? ` و${fracLabel}` : ""} حبة` : `${fracLabel} حبة`;
   return { value: q, label };
+}
+
+/**
+ * The hard line one dose must not cross for this species: its `hardMax`, or the
+ * drug's daily ceiling spread over the day's doses — whichever is lower. Every
+ * `calcDose` caller passes it as `ceiling`, so rounding never carries a dose
+ * across it (scripts/dose-safety-test.mjs §٦ fails a caller that forgets).
+ */
+export function doseCeiling(drug: Monograph | undefined, win: SpeciesDose | undefined, freq: Frequency): number | undefined {
+  const perDay = freq === 0 ? 1 : 24 / freq;
+  const lines: number[] = [];
+  if (win?.hardMax !== undefined) lines.push(win.hardMax);
+  if (drug?.maxDailyMgPerKg !== undefined) lines.push(drug.maxDailyMgPerKg / perDay);
+  return lines.length ? Math.min(...lines) : undefined;
 }
 
 export function calcDose(opts: {
@@ -852,23 +895,82 @@ export function calcDose(opts: {
   strength?: number;
   solid?: boolean;
   freq: Frequency;
+  /** mg/kg per dose that rounding must not cross (`doseCeiling`). Explicit
+   *  `undefined` when the drug has none — the call site says it looked. */
+  ceiling: number | undefined;
 }): DoseCalc {
-  const { mgPerKg, weightKg, strength, solid, freq } = opts;
+  const { mgPerKg, weightKg, strength, solid, freq, ceiling } = opts;
   const mg = mgPerKg * weightKg;
   const perDay = freq === 0 ? 1 : 24 / freq;
-  const out: DoseCalc = { mgPerKg, weightKg, mg, perDay, mgPerDay: mg * perDay };
-  if (strength && strength > 0) {
+  const out: DoseCalc = { mgPerKg, weightKg, mg, perDay, mgPerDay: mg * perDay, givenMg: mg, givenMgPerKg: mgPerKg };
+  if (strength && strength > 0 && mg > 0) {
+    const cap = ceiling !== undefined ? (ceiling * weightKg) / strength : undefined;
     if (solid) {
-      const t = roundTablets(mg / strength);
-      out.tablets = t.value;
-      out.tabletsLabel = t.label;
+      const t = roundTablets(mg / strength, cap);
+      if (t.tooSmall) out.tooSmall = "tablet";
+      else {
+        out.tablets = t.value;
+        out.tabletsLabel = t.label;
+        out.givenMg = t.value * strength;
+      }
     } else {
       out.ml = mg / strength;
-      out.mlRounded = roundVolume(out.ml);
+      const v = roundVolume(out.ml, cap);
+      if (v > 0) {
+        out.mlRounded = v;
+        out.givenMg = v * strength;
+      } else out.tooSmall = "volume";
     }
+    if (weightKg > 0) out.givenMgPerKg = out.givenMg / weightKg;
   }
   return out;
 }
+
+/** A dose number as it is written: decimals kept (0.06 stays 0.06 — `formatNum`
+ *  wrote it «0»), and a real dose never collapses to «0». */
+export function doseNum(n: number): string {
+  if (n > 0 && n < 0.0005) return String(Number(n.toPrecision(2)));
+  return formatDec(n);
+}
+
+/** The plan's amount line (TreatmentPlan → treatment_entries.amount): what is
+ *  drawn or given, then the milligrams it actually carries. */
+export function planAmountText(c: DoseCalc): string {
+  const mg = `${doseNum(c.givenMg)} mg`;
+  if (c.mlRounded) return `${doseNum(c.mlRounded)} مل (${mg})`;
+  if (c.tabletsLabel && c.tablets) return `${c.tabletsLabel} (${mg})`;
+  return mg;
+}
+
+/** The treatment sheet's amount (Flowsheet AddTaskSheet). The tablet label
+ *  already ends in «حبة» — appending «قرص» wrote «½ حبة قرص». */
+export function taskAmountText(c: DoseCalc): string {
+  if (c.tabletsLabel && c.tablets) return c.tabletsLabel;
+  if (c.mlRounded) return `${doseNum(c.mlRounded)} مل`;
+  return `${doseNum(c.givenMg)} ملغم`;
+}
+
+/** How far rounding may move a dose and still be the dose the vet chose: the
+ *  syringe ladder's own coarsest resolution (0.005 ml on 0.1 ml). Beyond it —
+ *  a quarter tablet for a twentieth — what is given is a different dose. */
+export const ROUNDING_SLACK = 0.05;
+
+/** The mg/kg a dose window is judged on: what is actually given, unless rounding
+ *  moved it by no more than the syringe's resolution (then the vet's own choice,
+ *  so the «typical» tile of a point window doesn't cry «underdose» at 0.22 ml). */
+export function judgedMgPerKg(intended: number, given: number | undefined): number {
+  if (given === undefined || !(intended > 0)) return intended;
+  return Math.abs(given - intended) <= intended * ROUNDING_SLACK * ON_LINE ? intended : given;
+}
+
+/** Is this mg/kg outside the documented window? The one test the card's tiles and
+ *  `checkSafety` both make — float-safe, so 0.45 ml × 50 ÷ 4.5 is 5, not «over 5». */
+export function outsideWindow(v: number, win: Pick<SpeciesDose, "min" | "max">): boolean {
+  return v > win.max * ON_LINE || v < win.min / ON_LINE;
+}
+
+/** Three significant digits for a computed mg/kg in an alert: 5.111… → 5.11. */
+const sig = (n: number) => Number(n.toPrecision(3));
 
 /* ----------------------------- 3. Safety rules ----------------------------
  * Fired BEFORE the drug is given, against the dose the vet just typed plus
@@ -949,8 +1051,12 @@ export function checkSafety(opts: {
   allergies?: string[];
   /** Known flags on the chart. */
   flags?: { pregnant?: boolean; renal?: boolean; hepatic?: boolean; dehydrated?: boolean; puppy?: boolean };
+  /** The calculated dose (`calcDose`) — so the window is judged on what the
+   *  rounded volume or tablet actually delivers, not on what was intended.
+   *  Every caller that has a dose passes it (scripts/dose-safety-test.mjs §٦). */
+  dose: DoseCalc | undefined;
 }): DoseAlert[] {
-  const { drug, species, mgPerKg, route, freq, concurrent = [], allergies = [], flags = {} } = opts;
+  const { drug, species, mgPerKg, route, freq, dose, concurrent = [], allergies = [], flags = {} } = opts;
   const out: DoseAlert[] = [];
 
   // --- Hard species ban: the highest-value rule in the whole engine.
@@ -970,46 +1076,65 @@ export function checkSafety(opts: {
     }
   }
 
+  // --- The product can't carry this dose at all. Said whatever the window: the
+  //     old engine raised it to ¼ tablet in silence.
+  if (mgPerKg > 0 && dose?.tooSmall === "tablet") {
+    out.push({
+      id: "too-small", tone: "warn",
+      title: `الجرعة أقل من ⅛ الحبة — ${TABLET_TOO_SMALL}`,
+      detail: "أصغرُ ما تُقسم إليه الحبة ربعُها، وربعُ هذه الحبة أضعافُ الجرعة.",
+    });
+  } else if (mgPerKg > 0 && dose?.tooSmall === "volume") {
+    out.push({ id: "too-small", tone: "warn", title: "الحجم أصغر من أن تقيسه سرنجة — خفّف المحلول أو اختر تركيزاً أقل" });
+  }
+
   const win = doseFor(drug, species);
   if (!win) {
     out.push({ id: "no-window", tone: "warn", title: "ما عندنا جرعة موثّقة لهذا النوع", detail: "راجع مرجع دوائي قبل الإعطاء." });
   } else if (mgPerKg > 0) {
+    /* المُعطى لا المقصود: ما يصل بعد تقريب الحجم أو الحبة. الخطوطُ الصلبة (السقف،
+     * والسقفُ اليوميّ) تُقرأ على الأعلى من الاثنين بلا تسامح؛ والنافذةُ اللينة على
+     * المُعطى إلا إن حرّكه التقريبُ بأقلّ من دقّة السرنجة (ROUNDING_SLACK). */
+    const given = dose?.givenMgPerKg;
+    const judged = judgedMgPerKg(mgPerKg, given);
+    const peak = Math.max(mgPerKg, given ?? mgPerKg);
+    const rounded = (v: number) => (v !== mgPerKg ? `بعد التقريب لما يُعطى فعلاً يصل ${sig(v)} ملغ/كغ، والمقصود ${sig(mgPerKg)}. ` : "");
     // --- Hard ceiling (enrofloxacin in cats, meloxicam in cats).
-    if (win.hardMax !== undefined && mgPerKg > win.hardMax) {
+    if (win.hardMax !== undefined && peak > win.hardMax * ON_LINE) {
       out.push({
         id: "hard-max", tone: "critical", blocking: true,
-        title: `تجاوزت السقف المسموح: ${mgPerKg} ملغ/كغ (الحد ${win.hardMax})`,
-        detail: win.hardMaxReason,
+        title: `تجاوزت السقف المسموح: ${sig(peak)} ملغ/كغ (الحد ${win.hardMax})`,
+        detail: `${rounded(peak)}${win.hardMaxReason ?? ""}`.trim() || undefined,
       });
-    } else if (mgPerKg > win.max * 2) {
+    } else if (judged > win.max * 2 * ON_LINE) {
       out.push({
         id: "overdose-severe", tone: "critical", blocking: true,
         title: `جرعة زائدة خطيرة — ضعف الحد الأعلى (${win.max} ملغ/كغ)`,
-        detail: "تأكّد من الوزن ومن تركيز الأمبولة قبل الحقن.",
+        detail: `${rounded(judged)}تأكّد من الوزن ومن تركيز الأمبولة قبل الحقن.`,
       });
-    } else if (mgPerKg > win.max) {
+    } else if (judged > win.max * ON_LINE) {
       out.push({
         id: "overdose", tone: "warn",
         title: `فوق النطاق المعتاد (${win.min}–${win.max} ملغ/كغ)`,
-        detail: "مقبول أحياناً بحالات معيّنة — بس تأكّد إنك قاصدها.",
+        detail: `${rounded(judged)}مقبول أحياناً بحالات معيّنة — بس تأكّد إنك قاصدها.`,
       });
-    } else if (mgPerKg < win.min) {
+    } else if (judged < win.min / ON_LINE) {
       out.push({
         id: "underdose", tone: "warn",
         title: `تحت الجرعة العلاجية (${win.min}–${win.max} ملغ/كغ)`,
-        detail: "الجرعة الناقصة ما بتعالج وبتربّي مقاومة للمضاد الحيوي.",
+        detail: `${rounded(judged)}الجرعة الناقصة ما بتعالج وبتربّي مقاومة للمضاد الحيوي.`,
       });
     } else {
       out.push({ id: "in-range", tone: "good", title: `ضمن النطاق العلاجي (${win.min}–${win.max} ملغ/كغ)` });
     }
 
-    // --- Cumulative daily ceiling.
+    // --- Cumulative daily ceiling — a hard line, read on the higher of the two.
     const perDay = freq === 0 || freq === undefined ? 1 : 24 / freq;
-    if (drug.maxDailyMgPerKg && mgPerKg * perDay > drug.maxDailyMgPerKg) {
+    if (drug.maxDailyMgPerKg && peak * perDay > drug.maxDailyMgPerKg * ON_LINE) {
       out.push({
         id: "daily-max", tone: "critical", blocking: true,
-        title: `مجموع اليوم ${(mgPerKg * perDay).toFixed(1)} ملغ/كغ — فوق السقف اليومي (${drug.maxDailyMgPerKg})`,
-        detail: "وسّع الفاصل بين الجرعات أو نزّل الجرعة الواحدة.",
+        title: `مجموع اليوم ${(peak * perDay).toFixed(1)} ملغ/كغ — فوق السقف اليومي (${drug.maxDailyMgPerKg})`,
+        detail: `${rounded(peak)}وسّع الفاصل بين الجرعات أو نزّل الجرعة الواحدة.`,
       });
     }
 

@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import type { DoseRoute, Pet, Species, TaskType } from "@/types";
 import {
-  DRUG_BY_ID, doseFor, calcDose, isBannedFor, allergyHit, matchMonograph,
+  DRUG_BY_ID, doseFor, calcDose, doseCeiling, doseNum, isBannedFor, allergyHit, matchMonograph,
   type Monograph, type Route, type DoseAlert,
 } from "./vetFormulary";
 import { pad2, TASK_META } from "./flowsheet";
@@ -385,10 +385,11 @@ export function amountFor(drug: Monograph, species: Species, weightKg: number | 
     return i18n.t("proto.perKg", { n: win.typical, defaultValue: "{{n}} ملغم/كغ" });
   }
   const strength = drug.strengths?.[0];
-  const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: drug.solid, freq: win.freq });
+  const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: drug.solid, freq: win.freq, ceiling: doseCeiling(drug, win, win.freq) });
   if (drug.solid && c.tabletsLabel) return c.tabletsLabel;
-  if (c.mlRounded) return i18n.t("proto.ml", { n: c.mlRounded, defaultValue: "{{n}} مل" });
-  return i18n.t("proto.mg", { n: Math.round(c.mg), defaultValue: "{{n}} ملغم" });
+  if (c.mlRounded) return i18n.t("proto.ml", { n: doseNum(c.mlRounded), defaultValue: "{{n}} مل" });
+  /* حبةٌ دون ⅛ أو حجمٌ لا يُقاس يُكتب بالملغ — بكسره: `Math.round` كتب 0.25 ملغ «0» و1.5 «2». */
+  return i18n.t("proto.mg", { n: doseNum(c.givenMg), defaultValue: "{{n}} ملغم" });
 }
 
 /** صفٌّ مقترَح — يُعرَض للمراجعة قبل أن يصير أمراً. */

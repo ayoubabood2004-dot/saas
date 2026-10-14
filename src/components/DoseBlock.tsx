@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Calculator, Syringe, ShieldAlert, AlertTriangle, Check, Info, BookOpen, Beaker } from "lucide-react";
 import {
-  matchMonograph, doseFor, calcDose, checkSafety, worstTone,
+  matchMonograph, doseFor, calcDose, doseCeiling, doseNum, checkSafety, worstTone,
   APP_ROUTE, appFreqHours, freqIdFor, CLASS_LABEL, ROUTE_LABEL, FREQ_LABEL,
   type DoseAlert, type DoseTone,
 } from "@/lib/vetFormulary";
@@ -86,13 +86,13 @@ export function DoseBlock({
 
   const calc = useMemo(() => {
     if (!mgPerKg || !weightKg) return undefined;
-    return calcDose({ mgPerKg, weightKg, strength, solid: isSolid, freq: appFreqHours(freq) });
-  }, [mgPerKg, weightKg, strength, isSolid, freq]);
+    return calcDose({ mgPerKg, weightKg, strength, solid: isSolid, freq: appFreqHours(freq), ceiling: doseCeiling(drug, win, appFreqHours(freq)) });
+  }, [mgPerKg, weightKg, strength, isSolid, freq, drug, win]);
 
   const alerts = useMemo(() => {
     if (!drug || !species || !mgPerKg) {
       // A banned drug must warn even before a dose is typed.
-      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, flags, concurrent: concurrent.map(matchId).filter(Boolean) as string[] });
+      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, flags, concurrent: concurrent.map(matchId).filter(Boolean) as string[], dose: undefined });
       return [] as DoseAlert[];
     }
     return checkSafety({
@@ -102,8 +102,9 @@ export function DoseBlock({
       allergies,
       flags,
       concurrent: concurrent.map(matchId).filter(Boolean) as string[],
+      dose: calc,
     });
-  }, [drug, species, weightKg, mgPerKg, route, freq, concurrent, allergies, flags]);
+  }, [drug, species, weightKg, mgPerKg, route, freq, concurrent, allergies, flags, calc]);
 
   const tone = worstTone(alerts);
 
@@ -203,7 +204,7 @@ export function DoseBlock({
 
                 {calc?.mlRounded !== undefined && (
                   <span className="ms-auto inline-flex items-center gap-1.5 rounded-lg bg-success-600 px-3 py-1.5 text-base font-extrabold text-white">
-                    <Syringe size={15} /> {formatNum(calc.mlRounded)} مل
+                    <Syringe size={15} /> {doseNum(calc.mlRounded)} مل
                   </span>
                 )}
                 {calc?.tabletsLabel && (
@@ -212,7 +213,7 @@ export function DoseBlock({
               </div>
               {calc?.ml !== undefined && calc.mlRounded !== undefined && Math.abs(calc.ml - calc.mlRounded) > 0.0005 && (
                 <div className="mt-1 text-[10px] font-semibold text-ink-subtle">
-                  الحساب الدقيق {formatNum(round3(calc.ml))} مل — مقرّبة لأقرب تدريجة على السرنجة.
+                  الحساب الدقيق {doseNum(round3(calc.ml))} مل — مقرّبة لأقرب تدريجة على السرنجة.
                 </div>
               )}
               {calc && calc.perDay > 1 && (
