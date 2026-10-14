@@ -5175,6 +5175,15 @@ chk "حذفُ الحيوان يمرّ ولو عنده جرعةٌ معطاة (ت�
     "select _rls_try('$C1', 'delete from pets where id=''${TD}a2''')" "rows:1"
 chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
     "select count(*)::text from treatment_entries where pet_id='${TD}a2'" "0"
+# الواجهةُ تبني على هذين: «تم العلاج» على صفٍّ انحذف من جهازٍ ثانٍ يرجع صفرَ صفوفٍ **بلا خطأ** (فـrepo
+# يطلب الصفَّ ويرمي على صفره)، و«إضافة دواء» تُعاد بنفس المعرّفات فلا يُكتب صفٌّ ثانٍ (on conflict do nothing
+# بدور authenticated تحت سياسة العيادة — لا يحتاج سياسةَ تعديل).
+chk "«تم العلاج» على جرعةٍ انحذفت ⇒ صفرُ صفوفٍ بلا خطأ (فالواجهةُ تطلب الصفَّ وترمي)" \
+    "select _rls_try('$C1', 'update treatment_entries set administered_at = now() where id=''${TD}09''')" "rows:0"
+chk "«إضافة دواء» بمعرّفٍ من المُرسِل ⇒ صفٌّ واحد" \
+    "select _rls_try('$C1', 'insert into treatment_entries(id, pet_id, clinic_id, visit_id, day, time, medication, amount, task_type) values (''${TD}51'', ''${TD}a1'', ''$C1'', ''${TD}b1'', current_date, '''', ''Meloxicam'', ''0.1 مل'', ''drug'') on conflict (id) do nothing')" "rows:1"
+chk "  وإعادتُها بعد جوابٍ ضاع ⇒ لا شيء، والصفُّ واحد" \
+    "select _rls_try('$C1', 'insert into treatment_entries(id, pet_id, clinic_id, visit_id, day, time, medication, amount, task_type) values (''${TD}51'', ''${TD}a1'', ''$C1'', ''${TD}b1'', current_date, '''', ''Meloxicam'', ''0.1 مل'', ''drug'') on conflict (id) do nothing')||'|'||(select count(*) from treatment_entries where id='${TD}51')::text" "rows:0|1"
 chk "الحارسُ والدالّة invoker بمسارٍ مثبَّت" \
     "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text, ',' order by proname) from pg_proc where proname in ('treatment_entries_keep_given','drop_treatment_drug')" "drop_treatment_drug:false:true,treatment_entries_keep_given:false:true"
 chk "  وجملةُ الحذف تعيد شرطَ المعطى وتختم العيادة بنصّها" \

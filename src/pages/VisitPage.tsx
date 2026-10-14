@@ -34,7 +34,7 @@ import type { PickedMed } from "@/lib/medIndex";
 import type { Species } from "@/types";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
-import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
+import { localISO, formatDate, formatNum, ageFromDOB, cn, uuid } from "@/lib/utils";
 import { getClinicName, getClinicLogo, getClinicSocials, getClockFormat } from "@/lib/settings";
 import { fmtClock } from "@/lib/clock";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
@@ -52,7 +52,7 @@ import { playTap, playSuccess, playWarning, playAchievement, playDoseGiven } fro
 import { celebrate } from "@/lib/celebrate";
 import { dayForm } from "@/lib/dayWords";
 import { describeDbError } from "@/lib/errors";
-import { dropTargets, type DropScope } from "@/lib/treatmentDrop";
+import { dropTargets, addAttemptIds, type AddAttempt, type DropScope } from "@/lib/treatmentDrop";
 import { formatAmount, parseAmount, type DoseValue } from "@/lib/doseUnits";
 import { DosePicker } from "@/components/treatment/DosePicker";
 
@@ -358,9 +358,12 @@ export default function VisitPage() {
         // خطةٌ تبدأ بالماضي (زيارةٌ بتاريخٍ سابق): جرعاتُ الأيام الفائتة تنتظر قراراً —
         // نفتح الاختيارَ مباشرةً بدل أن تقف حمراءَ «متأخرة».
         if (rows.some((r) => r.day < localISO(new Date()))) openPastAfter = true;
-      } else if (record?.treatment?.length && hasFlowsheet) {
-        await Promise.all(treatments.map((t) => repo.setTreatmentGiven(t.id, !!t.administered_at, t.administered_by, t.administered_at ?? undefined).catch(() => {})));
       }
+      /* زيارةٌ لها طبلةٌ أصلاً: الخطةُ تُحفظ تشخيصاً والطبلةُ لا تُمسّ. كان هنا إعادةُ كتابةِ «أُعطيت»
+       * لكلّ جرعةٍ من قائمة الصفحة (آخرُ تحميلٍ قبل فتح المعالج) — فجرعةٌ انعطت من الجناح أثناء
+       * المعالج تُمحى «ما انعطت» فتُعطى ثانيةً، والمتراجَعُ عنها تُختم «أُعطيت». والحالُ بالقاعدة أصلاً،
+       * ونسخةٌ قديمةٌ منه لا تُضيف إليه إلا خطأً. */
+      const chartKept = !!record?.treatment?.length && hasFlowsheet;
       if (visit) await syncDoseCycleForPet(visit.pet_id);
       // The earned moment: fanfare + a brief spark burst + a receipt of what
       // was actually created — the wizard's two minutes end with an achievement,
@@ -371,7 +374,9 @@ export default function VisitPage() {
       celebrate();
       const nDrugs = record?.treatment?.length ?? 0;
       const nDoses = record?.treatment?.reduce((s, t) => s + (t.doses || 0), 0) ?? 0;
-      if (nDrugs > 0) toast.success(t("visit.planSaved", "حُفظت الخطة 🎉"), t("visit.planSavedDetail", { drugs: formatNum(nDrugs), doses: formatNum(nDoses), defaultValue: "{{drugs}} دواء · {{doses}} جرعة مجدولة بالطبلة" }));
+      // والطبلةُ القائمة لا تُقال «جُدولت» عن أدويةٍ لم تُكتب فيها.
+      if (chartKept) toast.success(t("visit.dxSaved", "حُفظ التشخيص"), t("vbk.planChartKept", "الطبلة ما تغيّرت — الأدوية الجديدة أضفها من «إضافة الدواء»."));
+      else if (nDrugs > 0) toast.success(t("visit.planSaved", "حُفظت الخطة 🎉"), t("visit.planSavedDetail", { drugs: formatNum(nDrugs), doses: formatNum(nDoses), defaultValue: "{{drugs}} دواء · {{doses}} جرعة مجدولة بالطبلة" }));
       else toast.success(t("visit.dxSaved", "حُفظ التشخيص"));
       await reload();
       if (openPastAfter) setPastOpen(true);
@@ -387,17 +392,28 @@ export default function VisitPage() {
   const chartFlags = useMemo(() => flagsFromProblems(problems), [problems]);
   const prescribingFlags: ChartFlags = { ...chartFlags, puppy: isJuvenile(pet?.dob) || chartFlags.puppy };
 
-  const giveDose = async (t: TreatmentEntry, doctor: string, atISO: string) => {
+  /* حالُ الجرعة يُسمَع: صفٌّ انحذف أو تغيّر من جهازٍ ثانٍ يرجع صفرَ صفوف فيرمي (repo) — والشاشةُ تقوله
+   * وتعيد القائمة، بدل «أُعطيت» على جرعةٍ لا مكانَ لها بالقاعدة. */
+  const doseWriteFailed = async (e: unknown) => {
+    playWarning();
+    toast.error(t("visit.saveFailed", "تعذّر الحفظ"), describeDbError(e, t));
+    await reload().catch(() => { /* swallow-ok: الرسالةُ قيلت — التحديثُ تحسين */ });
+  };
+  const giveDose = async (tx: TreatmentEntry, doctor: string, atISO: string) => {
     playDoseGiven();
-    await repo.setTreatmentGiven(t.id, true, doctor || (user?.full_name ?? undefined), atISO);
-    await syncDoseCycleForPet(t.pet_id);
+    try {
+      await repo.setTreatmentGiven(tx.id, true, doctor || (user?.full_name ?? undefined), atISO);
+    } catch (e) { setGiveId(null); await doseWriteFailed(e); return; }
+    await syncDoseCycleForPet(tx.pet_id);
     setGiveId(null); await reload();
   };
   /** One-tap give for a single dose (records the current doctor + now). */
-  const giveQuick = async (t: TreatmentEntry) => {
+  const giveQuick = async (tx: TreatmentEntry) => {
     playDoseGiven();
-    await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, new Date().toISOString());
-    await syncDoseCycleForPet(t.pet_id);
+    try {
+      await repo.setTreatmentGiven(tx.id, true, user?.full_name ?? undefined, new Date().toISOString());
+    } catch (e) { await doseWriteFailed(e); return; }
+    await syncDoseCycleForPet(tx.pet_id);
     await reload();
   };
   /** Batch give — mark every dose in the list administered now by the current doctor. */
@@ -405,7 +421,9 @@ export default function VisitPage() {
     if (!list.length) return;
     playDoseGiven();
     const at = new Date().toISOString();
-    await Promise.all(list.map((t) => repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, at))); // بالتوازي — مو طابور
+    const res = await Promise.allSettled(list.map((tx) => repo.setTreatmentGiven(tx.id, true, user?.full_name ?? undefined, at))); // بالتوازي — مو طابور
+    const bad = res.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (bad) { await syncDoseCycleForPet(list[0].pet_id).catch(() => { /* swallow-ok: تُعاد بأوّل تحميل */ }); await doseWriteFailed(bad.reason); return; }
     await syncDoseCycleForPet(list[0].pet_id);
     await reload();
   };
@@ -464,10 +482,12 @@ export default function VisitPage() {
       }
     }
   };
-  const undoDose = async (t: TreatmentEntry) => {
+  const undoDose = async (tx: TreatmentEntry) => {
     playTap();
-    await repo.setTreatmentGiven(t.id, false);
-    await syncDoseCycleForPet(t.pet_id);
+    try {
+      await repo.setTreatmentGiven(tx.id, false);
+    } catch (e) { setGiveId(null); await doseWriteFailed(e); return; }
+    await syncDoseCycleForPet(tx.pet_id);
     setGiveId(null); await reload();
   };
   const addNote = async (text: string, day?: string) => {
@@ -543,12 +563,14 @@ export default function VisitPage() {
     };
     /* الجرعات المعطاة تاريخٌ لا يُمسّ — التعديل يطال ما لم يُعطَ فقط. والشرطُ يُعاد **بالخادم**
      * بالطلب نفسه (`updatePendingTreatments`): جرعةٌ انعطت من جهازٍ ثانٍ بعد فتح النافذة كانت
-     * تُكتب فوقها، وكلُّ صفٍّ بطلبه بلا try فيُقال «تعدّلت» والطلبُ فشل. فالعددُ يُقال كما وقع. */
-    const targets = treatments.filter((x) =>
-      x.medication === orig.medication && !x.administered_at && isGivable(x)
-      && (scope === "day" ? x.day === orig.day : x.day >= orig.day));
+     * تُكتب فوقها، وكلُّ صفٍّ بطلبه بلا try فيُقال «تعدّلت» والطلبُ فشل. فالعددُ يُقال كما وقع.
+     * والنطاقُ نطاقُ الحذف نفسُه (`dropTargets`): الفائتُ المحسوم («ما انطت») والأيامُ قبل اليوم تاريخٌ
+     * أيضاً — كان القلمُ على أوّل صفٍّ (يومٍ فات) يكتب «2 مل» فوق «ما انطت» يومَ كان الأمرُ «1 مل»، وجرعةٌ
+     * لم تُسجَّل بعد تُسجَّل لاحقاً «انطت 2 مل» وما انعطت. */
+    const today = localISO(new Date());
+    const targets = dropTargets(treatments, { visitId: orig.visit_id ?? "", medication: orig.medication, day: orig.day, scope, today }).targets;
     try {
-      const n = await repo.updatePendingTreatments(targets.map((x) => x.id), clean);
+      const n = await repo.updatePendingTreatments(targets.map((x) => x.id), clean, { today });
       if (n === targets.length) {
         playSuccess();
         toast.success(t("visit.drugEdited", { n: formatNum(n), defaultValue: "تعدّلت {{n}} جرعة" }));
@@ -586,7 +608,9 @@ export default function VisitPage() {
   };
 
   /* ---- Add a single ad-hoc medication (بشكل مفرد) — لليوم أو لكل الأيام الباقية ---- */
-  const openAddDrug = (day?: string) => { playTap(); setAddDrugDay(day ?? localISO(new Date())); setAddDrugOpen(true); };
+  /** محاولةُ «إضافة دواء» الجارية: معرّفاتُها تُعاد مع إعادة الإرسال (`addAttemptIds`) — فتحٌ جديد ⇒ محاولةٌ جديدة. */
+  const addTry = useRef<AddAttempt | null>(null);
+  const openAddDrug = (day?: string) => { playTap(); addTry.current = null; setAddDrugDay(day ?? localISO(new Date())); setAddDrugOpen(true); };
   const addDrug = async (d: { day: string; medication: string; amount: string; route?: DoseRoute | null; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => {
     if (!visit || !d.medication.trim()) return;
     // «انطيناه» على يومٍ فات يُختم بذلك اليوم بالساعة المكتوبة — لا بلحظة الإدخال.
@@ -610,14 +634,31 @@ export default function VisitPage() {
         administered_by: d.givenNow && day === d.day && d.day <= today ? by : undefined,
       });
     }
-    // الفشلُ يُقال والنافذةُ تبقى بما كُتب فيها — كان بلا try فتدور النافذةُ ثم تسكت.
+    /* الفشلُ يُقال والنافذةُ تبقى بما كُتب فيها — كان بلا try فتدور النافذةُ ثم تسكت. والضغطةُ الثانية
+     * بعد جوابٍ ضاع لا تُدخل الدفعةَ مرّتين: نفسُ ما كُتب ⇒ نفسُ المعرّفات (on conflict do nothing)،
+     * وما تغيّر بعد الفشل ⇒ تُسأل القاعدةُ أوّلاً عن المحاولة السابقة. */
+    const sig = JSON.stringify([d.day, base.medication, base.amount, base.route, base.observations, by ?? "", d.givenNow, d.repeatRest, d.givenTime ?? ""]);
+    const { ids, check } = addAttemptIds(addTry.current, sig, rows.length, uuid);
     try {
-      await repo.addTreatments(rows);
+      if (check.length) {
+        const fresh = await repo.listVisitTreatments(visit.id);
+        if (fresh.some((x) => check.includes(x.id))) {
+          addTry.current = null;
+          playWarning();
+          toast.warn(t("vbk.addLanded", "المحاولة السابقة انحفظت — راجع الطبلة قبل ما تضيف غيرها."));
+          setAddDrugOpen(false);
+          await reload();
+          return;
+        }
+      }
+      addTry.current = { sig, ids };
+      await repo.addTreatments(rows.map((r, i) => ({ ...r, id: ids[i] })));
     } catch (e) {
       playWarning();
       toast.error(t("visit.saveFailed", "تعذّر الحفظ"), describeDbError(e, t));
       return;
     }
+    addTry.current = null;
     playSuccess(); setAddDrugOpen(false);
     await syncDoseCycleForPet(visit.pet_id).catch(() => { /* swallow-ok: دورةُ الجرعات تُعاد بأوّل تحميل — الدواءُ انضاف */ });
     await reload();
@@ -1664,30 +1705,24 @@ function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onS
   const legacy = !parsed && !!(entry.amount ?? "").trim();
   const [time, setTime] = useState(entry.time ?? "");
   const [freq, setFreq] = useState(entry.observations ?? "");
-  const [scope, setScope] = useState<"day" | "rest">("day");
-  const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"edit" | "drop">("edit");
-  const [dropScope, setDropScope] = useState<DropScope | null>(null);
-  const [showAll, setShowAll] = useState(false);
-
-  const counts = useMemo(() => {
-    const mine = treatments.filter((x) => x.medication === entry.medication && !x.administered_at);
-    return {
-      day: mine.filter((x) => x.day === entry.day).length,
-      rest: mine.filter((x) => x.day >= entry.day).length,
-    };
-  }, [treatments, entry]);
-
   const today = localISO(new Date());
+  /* التعديلُ يطال ما يطاله الحذف (`dropTargets`) — لا المعطى ولا الفائتَ المحسوم ولا يوماً فات: «هذا
+   * اليوم» على يومٍ فات مقفول، و«من هذا اليوم وطالع» منه يبدأ من اليوم. والعددُ والمدى يُقالان كما هما. */
   const plans = useMemo(() => {
     const base = { visitId: entry.visit_id ?? "", medication: entry.medication, day: entry.day, today };
     return { day: dropTargets(treatments, { ...base, scope: "day" }), rest: dropTargets(treatments, { ...base, scope: "rest" }) };
   }, [treatments, entry, today]);
+  const [scope, setScope] = useState<"day" | "rest">(() => (plans.day.pastDayBlocked ? "rest" : "day"));
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"edit" | "drop">("edit");
+  const [dropScope, setDropScope] = useState<DropScope | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const nEdit = plans[scope].targets.length;
   const plan = dropScope ? plans[dropScope] : null;
   const nGo = plan?.targets.length ?? 0;
 
   const submit = async () => {
-    if (busy || !med.trim()) return;
+    if (busy || !med.trim() || nEdit === 0) return;
     setBusy(true);
     const text = dose.qty != null && dose.unit ? formatAmount(dose) : "";
     const amount = text && text !== (entry.amount ?? "") ? text : undefined;
@@ -1809,20 +1844,24 @@ function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onS
           <div>
             <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.editScope", "يشمل التعديل")}</div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" data-scope="day" onClick={() => { playTap(); setScope("day"); }}
-                className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "day" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+              <button type="button" data-scope="day" disabled={plans.day.pastDayBlocked} onClick={() => { playTap(); setScope("day"); }}
+                className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition disabled:cursor-not-allowed disabled:opacity-55", scope === "day" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
                 <span className="block text-sm font-extrabold text-ink">{t("visit.scopeDay", "هذا اليوم فقط")}</span>
-                <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeDayN", { n: formatNum(counts.day), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
+                <span className="block text-2xs font-bold text-ink-subtle">{plans.day.pastDayBlocked
+                  ? t("vbk.dropPastDay", "سجّل جرعات هذا اليوم أولاً")
+                  : t("visit.scopeDayN", { n: formatNum(plans.day.targets.length), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
               </button>
               <button type="button" data-scope="rest" onClick={() => { playTap(); setScope("rest"); }}
                 className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "rest" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
                 <span className="block text-sm font-extrabold text-ink">{t("visit.scopeRest", "من اليوم لنهاية الخطة")}</span>
-                <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeRestN", { n: formatNum(counts.rest), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
+                <span className="block text-2xs font-bold text-ink-subtle">{plans.rest.targets.length > 0 && plans.rest.from && plans.rest.to
+                  ? t("vbk.dropRestN", { n: formatNum(plans.rest.targets.length), from: formatDate(plans.rest.from, lang), to: formatDate(plans.rest.to, lang), defaultValue: "الجرعات: {{n}} · {{from}} ← {{to}}" })
+                  : t("visit.scopeRestN", { n: formatNum(plans.rest.targets.length), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
               </button>
             </div>
             <p className="mt-1.5 text-2xs font-bold text-ink-subtle">{t("visit.editGivenSafe", "الجرعات المعطاة سابقاً تبقى كما سُجّلت — التعديل لا يمسّها.")}</p>
           </div>
-          <Button size="lg" className="w-full" data-editsave leftIcon={<Check size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
+          <Button size="lg" className="w-full" data-editsave leftIcon={<Check size={18} />} disabled={!med.trim() || nEdit === 0} loading={busy} onClick={submit}>
             {t("visit.editApply", "حفظ التعديل")}
           </Button>
           <button type="button" data-dropdrug onClick={() => { playTap(); setMode("drop"); setDropScope(null); setShowAll(false); }}

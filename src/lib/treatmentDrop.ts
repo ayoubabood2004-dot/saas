@@ -20,7 +20,19 @@ export type { TreatmentDropResult } from "@/types";
 export type DropScope = "day" | "rest";
 
 /** علامةُ «ما انطت» من نافذة الجرعات الفائتة — `PAST_MISS_REASON` بـbackdate.ts حرفاً (والخادمُ بنصّه). */
-const SETTLED_MISS = "past:not_given";
+export const SETTLED_MISS = "past:not_given";
+
+/* ── «إضافة دواء» تُعاد بلا تكرار ──────────────────────────────────────────
+ * الكتابةُ تصل والجوابُ يضيع (شبكةٌ ضعيفة) ⇒ «تعذّر الحفظ» والنافذةُ بما فيها ⇒ الضغطةُ الثانية كانت
+ * تُدخل الدفعةَ ثانيةً: جرعتان «أُعطيت» بنفس الدقيقة، وكلُّ يومٍ باقٍ بصفّين (مسكّنٌ بجرعةٍ مضاعفة).
+ * فالمعرّفاتُ من المُرسِل: نفسُ المحاولة (نفسُ ما كُتب) ⇒ نفسُ المعرّفات، والخادمُ `on conflict (id) do
+ * nothing`. وما تغيّر بعد فشل ⇒ معرّفاتٌ جديدة، والسابقةُ تُسأل القاعدةُ عنها أوّلاً (`check`) — فإن
+ * وصلت لا يُكتب الجديدُ فوقها بصمت. */
+export interface AddAttempt { sig: string; ids: string[] }
+export function addAttemptIds(prev: AddAttempt | null, sig: string, n: number, mk: () => string): { ids: string[]; check: string[] } {
+  if (prev && prev.sig === sig && prev.ids.length === n) return { ids: prev.ids, check: [] };
+  return { ids: Array.from({ length: n }, () => mk()), check: prev ? prev.ids.slice() : [] };
+}
 
 export interface DropPlan {
   /** الصفوفُ التي ستنحذف، بترتيب اليوم ثم الساعة. */

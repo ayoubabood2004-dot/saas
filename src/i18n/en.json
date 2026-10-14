@@ -5800,7 +5800,9 @@
     "dropNone": "Nothing to delete in this range",
     "dropMore": "+ {{n}} more",
     "editPartial": "Edited {{n}} of {{total}} — the rest were given on another device and stayed as they were.",
-    "doseKeep": "Current dose: «{{text}}» — kept unless you change it"
+    "doseKeep": "Current dose: «{{text}}» — kept unless you change it",
+    "planChartKept": "The chart didn't change — add new medicines with «Add medicine».",
+    "addLanded": "The earlier attempt was saved — check the chart before adding anything else."
   },
   "intake": {
     "today": "Today",

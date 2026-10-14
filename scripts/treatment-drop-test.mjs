@@ -175,7 +175,7 @@ await section("▸ ٣) النسخةُ التجريبية مرآةُ الخادم
   check("زيارةٌ غائبة ⇒ visit_gone (P0002)", eV?.message === "visit_gone" && eV?.code === "P0002");
 
   seedDb();
-  const n = await demoRepo.updatePendingTreatments(["t0", "g0", "flu", "f1"], { amount: "2 مل" });
+  const n = await demoRepo.updatePendingTreatments(["t0", "g0", "flu", "f1"], { amount: "2 مل" }, { today: localToday });
   const after = await demoRepo.listVisitTreatments("v1");
   check("updatePendingTreatments: المنتظرُ من الأدوية وحده، ويرجع كم تعدّل", n === 2 && after.find((x) => x.id === "g0").amount === "1 مل" && after.find((x) => x.id === "flu").amount === "1 مل" && after.find((x) => x.id === "f1").amount === "2 مل", String(n));
 });
@@ -198,7 +198,7 @@ await section("▸ ٥) الشاشات", async () => {
   check("editDrug يعدّل بـupdatePendingTreatments (لا updateTreatment لكلّ صفّ)", /repo\.updatePendingTreatments\(/.test(edit) && !/repo\.updateTreatment\(/.test(edit));
   check("  ويقول «تعدّلت n من m» حين لا يتعدّل الكلّ، والفشلُ بسببه", /vbk\.editPartial/.test(edit) && /try \{/.test(edit) && /describeDbError\(e, t\)/.test(edit));
   const add = bodyOf(visit, "const addDrug = async (");
-  check("addDrug: الكتابةُ داخل try والفشلُ يُقال", /try \{\s*await repo\.addTreatments\(rows\)/.test(add) && /describeDbError\(e, t\)/.test(add));
+  check("addDrug: الكتابةُ داخل try والفشلُ يُقال", /try \{[\s\S]*?await repo\.addTreatments\(rows\.map\(/.test(add) && /describeDbError\(e, t\)/.test(add));
   const modal = bodyOf(visit, "function EditDrugModal(");
   check("نافذةُ التعديل تحمل «احذف هذا الدواء» بوجهٍ ثانٍ", /data-dropdrug/.test(modal) && /mode === "drop"/.test(modal));
   check("  بمديين بلا اختيارٍ مسبق، وقائمةٍ بأسمائها، وما يبقى", /data-drop-scope=\{sc\}/.test(modal) && /useState<DropScope \| null>\(null\)/.test(modal) && /data-drop-list/.test(modal) && /vbk\.dropKeptGiven/.test(modal) && /vbk\.dropKeptPast/.test(modal));

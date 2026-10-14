@@ -1468,11 +1468,16 @@ const demoRepo = {
 
   /** Batch insert for whole treatment plans — ONE write instead of a round-trip
    *  per dose (a 3-drug × 10-day plan used to cost 30 sequential requests). */
-  async addTreatments(inputs: Omit<TreatmentEntry, "id" | "created_at">[]): Promise<void> {
+  async addTreatments(inputs: (Omit<TreatmentEntry, "id" | "created_at"> & { id?: string })[]): Promise<void> {
     if (inputs.length === 0) return;
     const db = loadDB();
     const at = new Date().toISOString();
-    for (const input of inputs) db.treatments.push({ ...input, id: uid("tx"), created_at: at });
+    /* مرآةُ `on conflict (id) do nothing`: معرّفٌ من المُرسِل موجودٌ أصلاً ⇒ إعادةُ إرسالٍ لا صفٌّ ثانٍ. */
+    const seen = new Set(db.treatments.map((t) => t.id));
+    for (const input of inputs) {
+      if (input.id && seen.has(input.id)) continue;
+      db.treatments.push({ ...input, id: input.id || uid("tx"), created_at: at });
+    }
     saveDB(db);
   },
 
@@ -1506,13 +1511,15 @@ const demoRepo = {
     return { deleted: gone.size, kept_given: plan.keptGiven, kept_past: plan.keptPast, from: days[0] ?? null, to: days[days.length - 1] ?? null };
   },
 
-  /** مرآةُ updatePendingTreatments: المنتظرُ من نوع «دواء» وحده، ويرجع كم تعدّل. */
-  async updatePendingTreatments(ids: string[], patch: Partial<Pick<TreatmentEntry, "medication" | "amount" | "time" | "observations" | "route">>): Promise<number> {
+  /** مرآةُ updatePendingTreatments: المنتظرُ من نوع «دواء» وحده، من اليوم فصاعداً، ولا الفائتُ المحسوم
+   *  («ما انطت») — ويرجع كم تعدّل. */
+  async updatePendingTreatments(ids: string[], patch: Partial<Pick<TreatmentEntry, "medication" | "amount" | "time" | "observations" | "route">>, opts: { today: string }): Promise<number> {
     const db = loadDB();
     const want = new Set(ids);
     let n = 0;
     for (const t of db.treatments) {
       if (!want.has(t.id) || t.administered_at || (t.task_type ?? "drug") !== "drug") continue;
+      if (t.day < opts.today || t.missed_reason === "past:not_given") continue;
       Object.assign(t, patch);
       n++;
     }
@@ -1556,8 +1563,8 @@ const demoRepo = {
    *  `at` overrides the administration time (defaults to now). */
   async setTreatmentGiven(id: string, given: boolean, by?: string, at?: string): Promise<void> {
     const db = loadDB();
-    const tx = db.treatments.find((t) => t.id === id);
-    if (!tx) return;
+    // صفٌّ غائب (انحذف من جهازٍ ثانٍ) يُقال كصفرِ صفوفٍ بالخادم — لا «تمّ» على لا شيء.
+    const tx = assertUpdated(db.treatments.find((t) => t.id === id));
     tx.administered_at = given ? (at || new Date().toISOString()) : null;
     tx.administered_by = given ? by : undefined;
     if (given) tx.missed_reason = null;   // أُنجزت ⇒ ما عاد لها سببُ فوات
@@ -1569,8 +1576,7 @@ const demoRepo = {
    *  من الإنجاز لا ملحقٌ به. */
   async setTreatmentResult(id: string, result: string, by?: string, at?: string): Promise<void> {
     const db = loadDB();
-    const tx = db.treatments.find((t) => t.id === id);
-    if (!tx) return;
+    const tx = assertUpdated(db.treatments.find((t) => t.id === id));
     tx.result = result;
     tx.administered_at = at || new Date().toISOString();
     tx.administered_by = by;
@@ -1590,8 +1596,7 @@ const demoRepo = {
   /** توثيق فوات مهمة بسببها — تبقى غير مُنجَزة، لكنها ما عادت مجهولة. */
   async setTreatmentMissed(id: string, reason: string | null): Promise<void> {
     const db = loadDB();
-    const tx = db.treatments.find((t) => t.id === id);
-    if (!tx) return;
+    const tx = assertUpdated(db.treatments.find((t) => t.id === id));
     tx.missed_reason = reason;
     saveDB(db);
   },

@@ -468,6 +468,9 @@ const numCount = (c: StockCount): StockCount => ({
   ...c, system_qty: Number(c.system_qty), counted_qty: Number(c.counted_qty), unit_cost: Number(c.unit_cost),
   applied_delta: c.applied_delta == null ? null : Number(c.applied_delta),
 });
+/** علامةُ «ما انطت» من نافذة الجرعات الفائتة — `PAST_MISS_REASON` بـbackdate.ts و`SETTLED_MISS` بـtreatmentDrop.ts
+ *  حرفاً (repo.ts لا يستوردهما: وزنُ الإقلاع)، ويقارنها `treatment-writes-test`. */
+const SETTLED_MISS = "past:not_given";
 /** For write ops (update/delete/rpc) that return no row: throw on error so a
  *  failed mutation surfaces to the caller instead of failing silently. */
 function ok(res: { error: { message: string; code?: string; details?: string; hint?: string } | null }): void {
@@ -1016,6 +1019,13 @@ const supabaseRepo: DemoRepo = {
     // من القاعدة، والقيد لا يُقرأ من موضع النداء. فالتطبيع مرّةً واحدة عند
     // البوّابة أضمن من تذكّره بكل موضع.
     const rows = inputs.map((r) => ({ ...r, amount: r.amount ?? "", medication: r.medication ?? "" }));
+    /* معرّفاتٌ من المُرسِل («إضافة دواء»): إعادةُ الإرسال بعد جوابٍ ضاع وكتابةٍ وصلت ترسل نفسَ
+     * المعرّفات، فـ`on conflict (id) do nothing` لا يكتب صفّاً ثانياً — كان يُدخل الدفعةَ مرّتين
+     * (جرعتان «أُعطيت» بنفس الدقيقة، وطبلةٌ مكرّرة لكلّ الأيام). */
+    if (rows.every((r) => typeof (r as { id?: unknown }).id === "string")) {
+      ok(await sbc().from("treatment_entries").upsert(rows, { onConflict: "id", ignoreDuplicates: true }));
+      return;
+    }
     ok(await sbc().from("treatment_entries").insert(rows)); // دفعة وحدة — رحلة سيرفر واحدة
   },
   /* الحذفُ يُسمَع (0238): المعطاةُ يرفضها المحفّزُ بتلميحه، وصفرُ صفوفٍ (السياسةُ ردّته أو انحذف
@@ -1036,12 +1046,15 @@ const supabaseRepo: DemoRepo = {
   },
   /* تعديلُ المنتظر وحده: الشرطُ على الصفّ بالطلب نفسه (`administered_at is null`)، فجرعةٌ انعطت من
    * جهازٍ ثانٍ بعد فتح النافذة لا تُكتب فوقها — كان كلُّ صفٍّ بطلبٍ بلا شرط. ويرجع كم تعدّل فعلاً
-   * (الشاشةُ تقول «تعدّلت ٣ من ٤» بدل «تمّ»). دفعاتٌ بمئة معرّف (طولُ الرابط). */
-  async updatePendingTreatments(ids, patch) {
+   * (الشاشةُ تقول «تعدّلت ٣ من ٤» بدل «تمّ»). دفعاتٌ بمئة معرّف (طولُ الرابط).
+   * ونفسُ ما يُبقيه الحذف (`dropTargets`) يُبقيه التعديل: الفائتُ المحسوم («ما انطت») والأيامُ قبل
+   * اليوم تاريخٌ — كان القلمُ على صفّ يومٍ فات يكتب «2 مل» فوق «ما انطت» يومَ كان الأمرُ «1 مل». */
+  async updatePendingTreatments(ids, patch, opts) {
     let n = 0;
     for (let i = 0; i < ids.length; i += IN_CHUNK) {
       const rows = listOrThrow<{ id: string }>(await sbc().from("treatment_entries").update(patch)
-        .in("id", ids.slice(i, i + IN_CHUNK)).is("administered_at", null).eq("task_type", "drug").select("id"));
+        .in("id", ids.slice(i, i + IN_CHUNK)).is("administered_at", null).eq("task_type", "drug")
+        .gte("day", opts.today).or(`missed_reason.is.null,missed_reason.neq."${SETTLED_MISS}"`).select("id"));
       n += rows.length;
     }
     return n;
@@ -1066,14 +1079,17 @@ const supabaseRepo: DemoRepo = {
   async deleteSurgery(id) {
     ok(await sbc().from("surgeries").delete().eq("id", id));
   },
+  /* حالُ الجرعة يُسمَع (CLAUDE.md «الكتابةُ تُسمَع»): صفٌّ انحذف من جهازٍ ثانٍ («احذف هذا الدواء» —
+   * 0238 يحذف الكورسَ الباقي بجملة) يردّ صفرَ صفوفٍ **بلا خطأ**، فكانت الخانةُ تخضرّ «أُعطيت» والجرعةُ
+   * المعطاةُ فعلاً لا مكانَ لها بالقاعدة ولا بسجلّ التدقيق. فالثلاثُ تطلب الصفَّ وترمي على صفره. */
   async setTreatmentGiven(id, given, by, at) {
-    ok(await sbc().from("treatment_entries").update({ administered_at: given ? (at || new Date().toISOString()) : null, administered_by: given ? by : null, ...(given ? { missed_reason: null } : {}) }).eq("id", id));
+    updatedRows(await sbc().from("treatment_entries").update({ administered_at: given ? (at || new Date().toISOString()) : null, administered_by: given ? by : null, ...(given ? { missed_reason: null } : {}) }).eq("id", id).select("id"));
   },
   async setTreatmentResult(id, result, by, at) {
-    ok(await sbc().from("treatment_entries").update({ result, administered_at: at || new Date().toISOString(), administered_by: by ?? null, missed_reason: null }).eq("id", id));
+    updatedRows(await sbc().from("treatment_entries").update({ result, administered_at: at || new Date().toISOString(), administered_by: by ?? null, missed_reason: null }).eq("id", id).select("id"));
   },
   async setTreatmentMissed(id, reason) {
-    ok(await sbc().from("treatment_entries").update({ missed_reason: reason }).eq("id", id));
+    updatedRows(await sbc().from("treatment_entries").update({ missed_reason: reason }).eq("id", id).select("id"));
   },
   async updateTreatment(id, patch) {
     ok(await sbc().from("treatment_entries").update(patch).eq("id", id));

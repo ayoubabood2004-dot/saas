@@ -2082,8 +2082,16 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
   // Flowsheet task state: given / overdue / due-later / missed / scheduled.
   const currentHM = nowHM();
   const statusOf = (tx: TreatmentEntry) => treatmentStatus(tx, today, currentHM);
+  /* حالُ الجرعة يُسمَع: صفٌّ انحذف من جهازٍ ثانٍ يرمي (صفرُ صفوف) — يُقال والقائمةُ تُعاد. */
   const markGiven = async (id: string, given: boolean) => {
-    await repo.setTreatmentGiven(id, given, user?.full_name);
+    try {
+      await repo.setTreatmentGiven(id, given, user?.full_name);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t));
+      onChanged();
+      return;
+    }
     if (given) playDoseGiven();
     // Completing (or breaking) today's set updates the case-board tint too.
     await syncDoseCycleForPet(pet.id);
@@ -2571,7 +2579,19 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   };
 
   // ---- Treatment flowsheet actions (mark given / repeat / delete) ----
-  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playDoseGiven(); await syncDoseCycleForPet(pet.id); onChanged(); };
+  const markGiven = async (id: string, given: boolean) => {
+    try {
+      await repo.setTreatmentGiven(id, given, user?.full_name);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t));
+      onChanged();
+      return;
+    }
+    if (given) playDoseGiven();
+    await syncDoseCycleForPet(pet.id);
+    onChanged();
+  };
   const removeTx = async (id: string) => {
     try {
       await repo.deleteTreatment(id);
