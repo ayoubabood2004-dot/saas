@@ -343,8 +343,10 @@ export interface Appointment {
  *  وجود حقل result. */
 export type TaskType = "drug" | "fluid" | "vitals" | "feed" | "elim" | "nurse" | "lab";
 
-/** طريق الإعطاء — أحد «حقوق الدواء الخمسة». غيابه يعني أن المنفّذ يخمّن. */
-export type DoseRoute = "iv" | "im" | "sc" | "po" | "topical" | "inhaled";
+/** طريق الإعطاء — أحد «حقوق الدواء الخمسة». غيابه يعني أن المنفّذ يخمّن.
+ *  و(منتقي الجرعة) العينُ والأذنُ والأنفُ والشرجيُّ وماءُ الشرب (للطيور) — نصٌّ بالقاعدة بلا قيد،
+ *  وجهازٌ قديم لا يعرفها يعرضها بمعرّفها (routeName) ولا تسقط طبلتُه. */
+export type DoseRoute = "iv" | "im" | "sc" | "po" | "topical" | "inhaled" | "ocular" | "otic" | "nasal" | "rectal" | "water";
 
 export interface TreatmentEntry {
   id: string;

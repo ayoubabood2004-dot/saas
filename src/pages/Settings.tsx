@@ -1919,9 +1919,14 @@ function MyMedCategories() {
                     className="h-11 shrink-0 rounded-xl bg-brand-600 px-3 text-sm font-black text-white disabled:opacity-50">{t("common.save", "حفظ")}</button>
                 </div>
               ) : (
+                /* الاسمُ له عرضٌ أدنى (10rem) والأزرارُ كتلةٌ واحدة: بشاشة الموبايل تنزل الأزرارُ لسطرٍ ثانٍ
+                 * بدل أن تعصر الاسمَ لبضع بكسلات (قِيس على 375: الاسمُ صار 4px والأزرارُ ظاهرة). */
                 <div className="flex min-h-12 flex-wrap items-center gap-1 ps-3">
-                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink" dir="auto">{g.name}</span>
-                  <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">{t("mmset.count", { n: formatNum(g.count), defaultValue: "{{n}} دواء" })}</span>
+                  <div className="flex min-w-[10rem] flex-1 items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink" dir="auto" data-mymeds-cat-name>{g.name}</span>
+                    <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">{t("mmset.count", { n: formatNum(g.count), defaultValue: "{{n}} دواء" })}</span>
+                  </div>
+                  <div className="ms-auto flex shrink-0 items-center gap-1">
                   <button type="button" disabled={!canWrite} onClick={() => { playTap(); setRenaming({ id: g.id, text: g.name }); }} aria-label={t("mymeds.catRename", "تسمية")} data-mymeds-cat-rename={g.name}
                     className="grid h-11 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 disabled:opacity-40"><Pencil size={15} /></button>
                   <button type="button" disabled={!canWrite || i === 0} onClick={() => void run(() => drugs.moveGroup(g.id, i >= 2 ? ix.groups[i - 2].id : null))} aria-label={t("mymeds.catUp", "لفوق")}
@@ -1932,6 +1937,7 @@ function MyMedCategories() {
                     className="h-11 shrink-0 rounded-xl bg-brand-50 px-3 text-xs font-black text-brand-700 disabled:opacity-50 dark:bg-brand-500/10 dark:text-brand-300">{t("mymeds.catInsert", "أدرج من القائمة")}</button>
                   <button type="button" disabled={!canWrite} onClick={() => { playTap(); setArchiveId(g.id); }} aria-label={t("mmset.archive", "أرشفة")} data-mymeds-cat-archive={g.name}
                     className="grid h-11 w-10 place-items-center rounded-xl text-ink-subtle hover:text-danger-600 disabled:opacity-40"><Archive size={16} /></button>
+                  </div>
                 </div>
               )}
               {archiveRow?.id === g.id && (

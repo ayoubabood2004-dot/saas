@@ -5,6 +5,8 @@ import { MedField } from "@/components/meds/MedPicker";
 import { useMedIndex } from "@/components/meds/MedPickerData";
 import { monographOf, pickedFrom, type PickedMed } from "@/lib/medIndex";
 import { useClinicDrugs } from "@/lib/clinicDrugs";
+import { defaultUnit, formatAmount, parseAmount, type Amount, type DoseValue } from "@/lib/doseUnits";
+import { DosePicker } from "@/components/treatment/DosePicker";
 import type { Pet, Species, TreatmentEntry, TaskType, DoseRoute } from "@/types";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 
@@ -913,6 +915,8 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [route, setRoute] = useState<DoseRoute | "">("");
+  /** الدواء: الطريقُ والوحدةُ والكميةُ بضغطة (DosePicker) — ونصُّ `amount` وطريقُ `route` منه. */
+  const [dose, setDose] = useState<DoseValue>({ route: null, unit: null, qty: null });
   const [times, setTimes] = useState<string[]>(
     presetHour != null ? [`${pad2(presetHour)}:00`] : ["10:00"],
   );
@@ -956,7 +960,7 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
   const pickMed = (m: PickedMed) => {
     setMed(m);
     // كميةُ الدواء السابق لا تبقى على دواءٍ غيره — جرعةٌ محسوبة لغيره أخطرُ من خانةٍ فارغة.
-    setAmount(""); setRoute("");
+    setAmount(""); setRoute(""); setDose({ route: null, unit: null, qty: null });
     /* الدليلُ من المعرّف **أو الاسم** (monographOf): «الأخيرة» والمكتوبُ بـ«هالمرة بس» يصلان بلا
        معرّف — و«ميلوكسيكام» كانت تُكتب «بلا جرعة موثّقة» بلا جرعةٍ ولا تحذيرِ نوع والدليلُ يعرفه. */
     const mono = monographOf(m);
@@ -976,13 +980,17 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     if (!win) return;
     const r = APP_ROUTE_BACK[win.routes[0]];
     if (r) setRoute(r);
+    let calcAmount: Amount | null = null;
     if (weightKg && weightKg > 0) {
       const strength = d.strengths?.[0];
       const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: d.solid, freq: win.freq, ceiling: doseCeiling(d, win, win.freq) });
       /* نصُّ الكمية من المحرّك نفسه: التسميةُ تنتهي بـ«حبة» فكان يُكتب «½ حبة قرص»،
        * وحجمٌ قُرّب لصفرٍ كان يُكتب «0 مل». */
       setAmount(taskAmountText(c));
+      calcAmount = parseAmount(taskAmountText(c));
     }
+    // المنتقي يُفتح على المحسوبة مختارةً — بطريقها ووحدتها — والطبيبُ يغيّرها بضغطة.
+    setDose({ route: r ?? null, unit: calcAmount?.unit ?? (r ? defaultUnit(r, d.en) : null), qty: calcAmount?.qty ?? null });
     /* الأوقات تُشتقّ من تكرار الدليل ابتداءً من الساعة القادمة — لا يؤشّرها
      * الطبيب بيده، وخانةٌ منسيّةٌ من ثمانٍ تعني جرعةً ضائعة. */
     if (presetHour == null && win.freq > 0) {
@@ -1010,6 +1018,13 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
 
   const toggleTime = (v: string) =>
     setTimes((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v].sort()));
+
+  /** «المحسوبة» تُثبَّت أمام السلّم — نصُّ taskAmountText نفسُه مقروءاً. */
+  const calcPin = useMemo(() => {
+    const c = computed?.calc;
+    const a = c ? parseAmount(taskAmountText(c)) : null;
+    return a ? { qty: a.qty, unit: a.unit, kind: "calc" as const } : null;
+  }, [computed]);
 
   const SLOTS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"];
   const allSlots = presetHour != null && !SLOTS.includes(`${pad2(presetHour)}:00`)
@@ -1133,6 +1148,13 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
           </p>
         )}
 
+        {type === "drug" ? (
+          <div className="mt-3" data-taskdose>
+            <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskAmount", "الكمية / المعدّل")}</label>
+            <DosePicker drugName={label} value={dose} species={species ?? null} pinned={calcPin}
+              onChange={(v) => { setDose(v); setRoute(v.route ?? ""); setAmount(v.qty != null && v.unit ? formatAmount(v) : ""); }} />
+          </div>
+        ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr,170px]">
           <div>
             <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskAmount", "الكمية / المعدّل")}</label>
@@ -1151,6 +1173,7 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
             </select>
           </div>
         </div>
+        )}
 
         <label className="mb-1 mt-3 block text-2xs font-bold text-ink-muted">{t("flow.taskTimes", "الأوقات اليوم")}</label>
         <div className="mb-3 flex flex-wrap gap-1.5">

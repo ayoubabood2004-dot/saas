@@ -12,6 +12,8 @@ import {
 } from "@/lib/vetFormulary";
 import { DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
 import { NumberPadSheet } from "./NumberPadSheet";
+import { DosePicker } from "./DosePicker";
+import { EYE_EAR_UNITS, formatAmount, parseAmount, planRouteToDose, switchRoute, type DoseUnit } from "@/lib/doseUnits";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
@@ -39,16 +41,6 @@ export interface DrugRow {
   strength?: number; solid?: boolean; strengthConfirmed?: boolean;
 }
 
-const QTYS = ["¼", "½", "¾", "1", "1.5", "2", "3", "5", "10"];
-const UNIT_KEYS: { key: string; def: string; solid?: boolean }[] = [
-  { key: "tplan.unitTablet", def: "\u062d\u0628\u0629", solid: true },
-  { key: "tplan.unitMl", def: "\u0645\u0644", solid: false },
-  { key: "tplan.unitDrop", def: "\u0642\u0637\u0631\u0629" },
-  { key: "tplan.unitSpray", def: "\u0628\u062e\u0651\u0629" },
-  { key: "tplan.unitSachet", def: "\u0643\u064a\u0633" },
-  { key: "tplan.unitAmp", def: "\u0623\u0645\u0628\u0648\u0644\u0629", solid: false },
-  { key: "tplan.unitUnit", def: "\u0648\u062d\u062f\u0629" },
-];
 
 /** خطوة المؤشّر تُشتقّ من عرض النافذة، لا ثابتة: نافذة الميلوكسيكام للقطة
  *  ٠٫٠٥–٠٫١، وخطوةٌ ثابتة بـ٠٫٥ تساوي خمسة أضعاف النافذة كلها. */
@@ -61,15 +53,6 @@ const stepFor = (min?: number, max?: number): number => {
   return s;
 };
 
-/** نصّ الجرعة اليدوية = «كمية وحدة». يُفصَل بأول فراغٍ فقط، فتبقى الوحدة
- *  المركّبة سليمة. والمطابقة بالرمز الكامل لا بالبادئة: «1» بادئةُ «1.5»،
- *  فبلاطتان كانتا تُضيئان معاً على اختيارٍ واحد. */
-const doseParts = (dose: string): { qty: string; unit: string } => {
-  const s = dose.trim();
-  if (!s) return { qty: "", unit: "" };
-  const i = s.indexOf(" ");
-  return i < 0 ? { qty: s, unit: "" } : { qty: s.slice(0, i), unit: s.slice(i + 1).trim() };
-};
 
 const ROUTE_ICON = (route?: string) =>
   route === "sc" || route === "im" || route === "iv" ? Syringe
@@ -101,7 +84,12 @@ export function DrugCard({
 }) {
   const { t } = useTranslation();
   const [pad, setPad] = useState<null | "rate" | "strength" | "days">(null);
-  const [freeText, setFreeText] = useState(false);
+  /* الجرعةُ اليدوية بمنتقي الجرعة (DosePicker): الطريقُ طريقُ البطاقة (مقفولٌ هنا)، والوحدةُ تبقى
+   * ولو بلا كمّية بعد (النصُّ المحفوظ يُكتب حين تُختار الكمّية). */
+  const manualParsed = parseAmount(row.dose);
+  const [manualUnit, setManualUnit] = useState<DoseUnit | null>(manualParsed?.unit ?? null);
+  const planDose = planRouteToDose(row.route);
+  const eyeEar = row.route === "eye_ear";
   const [noteOn, setNoteOn] = useState(false);
   const [focusGroup, setFocusGroup] = useState<string | null>(null);
 
@@ -152,6 +140,17 @@ export function DrugCard({
     const next = Math.round(Math.max(0.001, (row.mgPerKg ?? win?.typical ?? step) + d) * 1000) / 1000;
     playTap();
     onPatch({ doseMode: "weight", mgPerKg: next, dose: "" });
+  };
+
+  /** طريقٌ جديد للبطاقة: الجرعةُ اليدوية تمرّ من switchRoute — تغييرُ الشكل يمسح الرقم (لا «حبة» وريدية)،
+   *  وبين الحقن الثلاثة يبقى. «عين / أذن» بوحداتها (قطرة، سم، مل). */
+  const changeRoute = (next: string | undefined) => {
+    if (!manual || !manualParsed || !next) { onPatch({ route: next }); return; }
+    const toDose = planRouteToDose(next);
+    const fromDose = planRouteToDose(row.route) ?? (eyeEar ? "ocular" : null);
+    const sw = switchRoute({ route: fromDose, unit: manualParsed.unit, qty: manualParsed.qty }, toDose ?? "ocular", row.name, next === "eye_ear" ? EYE_EAR_UNITS : undefined);
+    setManualUnit(sw.value.unit);
+    onPatch({ route: next, ...(sw.value.qty == null ? { dose: "" } : {}) });
   };
 
   const ring = (g: string) => focusGroup === g && "ring-2 ring-brand-400 ring-offset-2 ring-offset-surface-1";
@@ -341,34 +340,15 @@ export function DrugCard({
                     </div>
                   </>
                 ) : (
-                  <>
-                    <div className="grid grid-cols-5 gap-2 sm:grid-cols-9">
-                      {QTYS.map((qv) => (
-                        <button key={qv} type="button" onClick={() => { playTap(); const u = doseParts(row.dose).unit; onPatch({ doseMode: "manual", mgPerKg: undefined, dose: `${qv}${u ? ` ${u}` : ""}` }); }}
-                          className={cn("h-12 rounded-2xl border text-base font-black tabular-nums transition", doseParts(row.dose).qty === qv ? "border-brand-600 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink hover:border-brand-300")}>
-                          {qv}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {UNIT_KEYS.map((u) => {
-                        const label = t(u.key, u.def);
-                        const on = doseParts(row.dose).unit === label;
-                        return (
-                          <button key={u.key} type="button" onClick={() => { playTap(); const qv = doseParts(row.dose).qty || "1"; onPatch({ doseMode: "manual", mgPerKg: undefined, dose: `${qv} ${label}`, ...(u.solid !== undefined ? { solid: u.solid } : {}) }); }}
-                            className={cn("h-12 min-w-[68px] rounded-2xl border px-3 text-sm font-bold transition", on ? "border-brand-600 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink hover:border-brand-300")}>
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {freeText ? (
-                      <input value={row.dose} onChange={(e) => onPatch({ doseMode: "manual", mgPerKg: undefined, dose: e.target.value })}
-                        placeholder={t("tplan.dosePh", "اكتب الجرعة (مثال: قرص واحد، ٥ قطرات، 1 مل)")} className="input mt-2 h-12 w-full text-sm font-bold" />
-                    ) : (
-                      <button type="button" onClick={() => { playTap(); setFreeText(true); }} className="mt-2 text-2xs font-bold text-ink-muted underline transition hover:text-ink">{t("tplan.typeDose", "اكتب الجرعة بنفسك")}</button>
-                    )}
-                  </>
+                  <DosePicker drugName={row.name} species={species} routeLocked
+                    value={{ route: planDose, unit: manualParsed?.unit ?? manualUnit, qty: manualParsed?.qty ?? null }}
+                    unitsOverride={eyeEar ? EYE_EAR_UNITS : undefined}
+                    onNeedRoute={() => jumpTo("route")}
+                    onChange={(v) => {
+                      setManualUnit(v.unit);
+                      onPatch({ doseMode: "manual", mgPerKg: undefined, dose: v.qty != null && v.unit ? formatAmount(v) : "",
+                        ...(v.unit === "tab" ? { solid: true } : v.unit === "ml" ? { solid: false } : {}) });
+                    }} />
                 )}
               </div>
 
@@ -400,7 +380,7 @@ export function DrugCard({
                 {routes.map((rt) => {
                   const documented = !!win?.routes.includes(APP_ROUTE[rt.id]);
                   return (
-                    <button key={rt.id} type="button" onClick={() => { playTap(); onPatch({ route: row.route === rt.id ? undefined : rt.id }); }}
+                    <button key={rt.id} type="button" onClick={() => { playTap(); changeRoute(row.route === rt.id ? undefined : rt.id); }}
                       className={cn("h-11 rounded-2xl border px-4 text-sm font-bold transition",
                         row.route === rt.id ? "border-brand-600 bg-brand-600 text-white shadow-soft"
                           : cn("border-line bg-surface-2 text-ink-muted hover:border-brand-300", documented && "ring-1 ring-success-400 dark:ring-success-500/40"))}>

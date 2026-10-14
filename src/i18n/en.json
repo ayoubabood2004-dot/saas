@@ -4770,7 +4770,12 @@
       "sc": "Subcutaneous",
       "po": "Oral",
       "topical": "Topical",
-      "inhaled": "Inhaled"
+      "inhaled": "Inhaled",
+      "ocular": "Eye",
+      "otic": "Ear",
+      "nasal": "Nasal",
+      "rectal": "Rectal",
+      "water": "In drinking water"
     },
     "routeShort": {
       "iv": "IV",
@@ -4778,7 +4783,12 @@
       "sc": "SC",
       "po": "PO",
       "topical": "TOP",
-      "inhaled": "INH"
+      "inhaled": "INH",
+      "ocular": "eye",
+      "otic": "ear",
+      "nasal": "nasal",
+      "rectal": "rect",
+      "water": "water"
     },
     "mAway": "Animal was out of the cage (exam/imaging)",
     "mRefused": "Animal refused or vomited",
@@ -5749,7 +5759,6 @@
     "careVisitDay": "Visit day",
     "careOther": "Another day",
     "addDrugTitle": "Add a medicine for this day",
-    "dosePh": "e.g. 160 mg",
     "freqPh": "e.g. twice daily",
     "day": "Day",
     "doctor": "Doctor",
@@ -5790,7 +5799,8 @@
     "dropDone": "Deleted {{n}} of {{total}} · given doses stay",
     "dropNone": "Nothing to delete in this range",
     "dropMore": "+ {{n}} more",
-    "editPartial": "Edited {{n}} of {{total}} — the rest were given on another device and stayed as they were."
+    "editPartial": "Edited {{n}} of {{total}} — the rest were given on another device and stayed as they were.",
+    "doseKeep": "Current dose: «{{text}}» — kept unless you change it"
   },
   "intake": {
     "today": "Today",
@@ -6293,5 +6303,36 @@
     "leaveSave": "Save the product",
     "leaveDrop": "Close without it",
     "fetchFailed": "Couldn't open the current photo for editing — take a new one or choose a file"
+  },
+  "dose": {
+    "qty": "Quantity",
+    "preview": "Will be saved as: {{text}}",
+    "small": "Small volume — use a 1 ml syringe or dilute",
+    "unitChanged": "Unit changed from {{from}} to {{to}} — choose the quantity again",
+    "formChanged": "Route changed from {{from}} to {{to}} — choose the quantity again",
+    "pickRoute": "Choose the route first",
+    "pinLast": "Last time",
+    "pinCalc": "Calculated",
+    "other": "Other number",
+    "padTitle": "Quantity in {{unit}}",
+    "badWhole": "Whole numbers only for this unit",
+    "badQuarter": "Quarters only (¼ ½ ¾)",
+    "badHalf": "Steps of 0.5 only",
+    "badRange": "Outside the allowed range ({{min}}–{{max}})",
+    "u": {
+      "ml": "ml",
+      "tab": "tablet",
+      "cap": "capsule",
+      "drop": "drop",
+      "puff": "puff",
+      "supp": "suppository",
+      "iu": "IU",
+      "app": "application",
+      "tube": "tube",
+      "sachet": "sachet",
+      "cm": "cm",
+      "mlL": "ml/L",
+      "gL": "g/L"
+    }
   }
 }

@@ -14,7 +14,7 @@ import { missReasonText } from "@/lib/flowsheet";
 import { CareIcon, careKindOf, type CareKind } from "@/components/CareIcon";
 import { ObsRecorder } from "@/components/Flowsheet";
 import { protocolMarksOf, isProtocolMark, type ProtocolMark } from "@/lib/protocolMark";
-import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
+import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem, DoseRoute } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
 import { JourneyCard } from "@/components/JourneyCard";
 import { labParamById, labRange } from "@/lib/labCatalog";
@@ -53,6 +53,8 @@ import { celebrate } from "@/lib/celebrate";
 import { dayForm } from "@/lib/dayWords";
 import { describeDbError } from "@/lib/errors";
 import { dropTargets, type DropScope } from "@/lib/treatmentDrop";
+import { formatAmount, parseAmount, type DoseValue } from "@/lib/doseUnits";
+import { DosePicker } from "@/components/treatment/DosePicker";
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -346,6 +348,8 @@ export default function VisitPage() {
               rows.push({
                 pet_id: visit.pet_id, visit_id: visit.id, day: addDaysISO(start, i),
                 medication: m.name, amount: m.dose || "", time, observations: m.freq, doctor: user?.full_name,
+                // طريقُ الإعطاء يُكتب بالصفّ لا بالملاحظة وحدها — الطبلةُ تجمع به وتختصره (ع.ض، و.ر).
+                route: m.route ?? null,
               });
             }
           }
@@ -524,12 +528,14 @@ export default function VisitPage() {
   /* ---- تعديل دواءٍ قبل إعطائه — لهذا اليوم وحده أو من يومه لنهاية الخطة ---- */
   const editDrug = async (
     orig: TreatmentEntry,
-    patch: { medication: string; amount: string; time: string; observations: string },
+    patch: { medication: string; amount?: string; route?: DoseRoute | null; time: string; observations: string },
     scope: "day" | "rest",
   ) => {
     const clean = {
       medication: patch.medication.trim() || orig.medication,
-      amount: patch.amount.trim(),
+      // الكميةُ والطريقُ يُكتبان حين تغيّرا وحدهما: نصٌّ قديمٌ لا يقرؤه المنتقي يبقى كما هو.
+      ...(patch.amount !== undefined ? { amount: patch.amount.trim() } : {}),
+      ...(patch.route !== undefined ? { route: patch.route } : {}),
       observations: patch.observations.trim(),
       // الوقت يدخل التعديل فقط إذا تغيّر فعلاً: تعميم وقتٍ واحد على كل جرعات
       // اليوم كان سيطوي مواعيدها على بعضها بصمت.
@@ -581,7 +587,7 @@ export default function VisitPage() {
 
   /* ---- Add a single ad-hoc medication (بشكل مفرد) — لليوم أو لكل الأيام الباقية ---- */
   const openAddDrug = (day?: string) => { playTap(); setAddDrugDay(day ?? localISO(new Date())); setAddDrugOpen(true); };
-  const addDrug = async (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => {
+  const addDrug = async (d: { day: string; medication: string; amount: string; route?: DoseRoute | null; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => {
     if (!visit || !d.medication.trim()) return;
     // «انطيناه» على يومٍ فات يُختم بذلك اليوم بالساعة المكتوبة — لا بلحظة الإدخال.
     const today = localISO(new Date());
@@ -591,7 +597,7 @@ export default function VisitPage() {
     const base = {
       pet_id: visit.pet_id, visit_id: visit.id,
       medication: d.medication.trim(), amount: d.amount.trim(), time: "",
-      observations: d.freq.trim(), doctor: by,
+      observations: d.freq.trim(), doctor: by, route: d.route ?? null,
     };
     /* «ولكل الأيام الباقية»: صفٌّ لكل يومٍ من يومه حتى آخر يوم بالخطة —
      * و«أُعطي الآن» يختم جرعة يومه وحدها، فالبقية تبقى تنتظر أيامها. */
@@ -1644,14 +1650,18 @@ function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onS
   /** آخرُ يومٍ بالخطة — «بس» عليه يعني أن التمديدَ بعدها لن يكرّر هذا الدواء. */
   lastDay: string | null;
   onClose: () => void;
-  onSave: (orig: TreatmentEntry, patch: { medication: string; amount: string; time: string; observations: string }, scope: "day" | "rest") => void | Promise<void>;
+  onSave: (orig: TreatmentEntry, patch: { medication: string; amount?: string; route?: DoseRoute | null; time: string; observations: string }, scope: "day" | "rest") => void | Promise<void>;
   onDrop: (orig: TreatmentEntry, scope: DropScope, ids: string[]) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   /* الاسمُ يُختار من المنتقي الموحَّد لا يُكتب — والجرعاتُ تُطابَق بالاسم القديم حرفاً كما كانت. */
   const [picked, setPicked] = useState<PickedMed | null>(null);
   const med = picked?.name ?? entry.medication;
-  const [amount, setAmount] = useState(entry.amount ?? "");
+  /* الجرعةُ تُفتح على ما كُتب (parseAmount) بطريقها؛ ونصٌّ قديمٌ لا يُفهم يُقال ويبقى كما هو ما لم
+   * يختر الطبيبُ غيرَه — لا يُمحى ولا يُكتب فوقه بتخمين. */
+  const parsed = useMemo(() => parseAmount(entry.amount), [entry.amount]);
+  const [dose, setDose] = useState<DoseValue>(() => ({ route: entry.route ?? null, unit: parsed?.unit ?? null, qty: parsed?.qty ?? null }));
+  const legacy = !parsed && !!(entry.amount ?? "").trim();
   const [time, setTime] = useState(entry.time ?? "");
   const [freq, setFreq] = useState(entry.observations ?? "");
   const [scope, setScope] = useState<"day" | "rest">("day");
@@ -1679,7 +1689,10 @@ function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onS
   const submit = async () => {
     if (busy || !med.trim()) return;
     setBusy(true);
-    try { await onSave(entry, { medication: med, amount, time, observations: freq }, scope); }
+    const text = dose.qty != null && dose.unit ? formatAmount(dose) : "";
+    const amount = text && text !== (entry.amount ?? "") ? text : undefined;
+    const route = (dose.route ?? null) !== (entry.route ?? null) ? dose.route : undefined;
+    try { await onSave(entry, { medication: med, amount, route, time, observations: freq }, scope); }
     finally { setBusy(false); }
   };
   const drop = async () => {
@@ -1773,11 +1786,16 @@ function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onS
             <MedField value={picked ?? { key: entry.medication, name: entry.medication, label: entry.medication, family: "other", familyType: "Other", source: "free" }}
               showFamily={!!picked} onChange={setPicked} species={species ?? null} freeText="offer" />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
-              <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
-              <input value={amount} onChange={(e) => setAmount(e.target.value)} className="input h-11 w-full" data-editamount />
-            </div>
+          <div>
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
+            {legacy && (
+              <p className="mb-2 rounded-xl bg-surface-2 px-3 py-2 text-2xs font-bold text-ink-muted" data-dose-keep>
+                {t("vbk.doseKeep", { text: entry.amount, defaultValue: "الجرعة الحالية: «{{text}}» — تبقى إذا ما غيّرتها" })}
+              </p>
+            )}
+            <DosePicker drugName={med} value={dose} onChange={setDose} species={species} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseTime", "الوقت")}</div>
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} dir="ltr" className="input h-11 w-full tabular-nums" data-edittime />
@@ -1823,13 +1841,14 @@ function EditDrugModal({ entry, treatments, lang, species, lastDay, onClose, onS
 function AddDrugModal({ open, day, lastDay, defaultDoctor, species, onClose, onAdd }: {
   open: boolean; day: string; lang: string; lastDay: string | null; defaultDoctor: string; species?: Species;
   onClose: () => void;
-  onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => void | Promise<void>;
+  onAdd: (d: { day: string; medication: string; amount: string; route?: DoseRoute | null; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean; givenTime?: string }) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const [givenTime, setGivenTime] = useState(nowHHMM);
   const [picked, setPicked] = useState<PickedMed | null>(null);
   const med = picked?.name ?? "";
-  const [amount, setAmount] = useState("");
+  /* الجرعةُ بضغطة (DosePicker): الطريقُ ثم الوحدةُ ثم الكميةُ من السلّم — ونصُّها المحفوظ واحد. */
+  const [dose, setDose] = useState<DoseValue>({ route: null, unit: null, qty: null });
   const [freq, setFreq] = useState("");
   const [doctor, setDoctor] = useState(defaultDoctor);
   const [d, setD] = useState(day);
@@ -1839,7 +1858,7 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, species, onClose, onA
 
   // Reset the form each time the modal opens (for a fresh day/doctor).
   useEffect(() => {
-    if (open) { setPicked(null); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); setGivenTime(nowHHMM()); }
+    if (open) { setPicked(null); setDose({ route: null, unit: null, qty: null }); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); setGivenTime(nowHHMM()); }
   }, [open, day, defaultDoctor]);
 
   const todayLocal = localISO(new Date());
@@ -1855,7 +1874,8 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, species, onClose, onA
   const submit = async () => {
     if (!med.trim() || busy) return;
     setBusy(true);
-    try { await onAdd({ day: d, medication: med, amount, freq, doctor, givenNow: givenNow && !futureDay, repeatRest, givenTime }); }
+    const amount = dose.qty != null && dose.unit ? formatAmount(dose) : "";
+    try { await onAdd({ day: d, medication: med, amount, route: dose.route, freq, doctor, givenNow: givenNow && !futureDay, repeatRest, givenTime }); }
     finally { setBusy(false); }
   };
 
@@ -1867,12 +1887,11 @@ function AddDrugModal({ open, day, lastDay, defaultDoctor, species, onClose, onA
           {/* المنتقي الموحَّد: «أدويتي» أوّلاً ولا كيبورد يطلع وحده — «ما لكيته؟» يكتب ما ليس فيه. */}
           <MedField value={picked} onChange={setPicked} species={species ?? null} freeText="offer" />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && med.trim()) void submit(); }}
-              placeholder={t("vbk.dosePh", "مثال: ١٦٠ ملغ")} className="input h-11 w-full" data-adddrug-amount />
-          </div>
+        <div data-adddrug-dose>
+          <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
+          <DosePicker drugName={med} value={dose} onChange={setDose} species={species} />
+        </div>
+        <div className="grid grid-cols-1 gap-3">
           <div>
             <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseFreq", "التكرار / ملاحظة")}</div>
             <input value={freq} onChange={(e) => setFreq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && med.trim()) void submit(); }}

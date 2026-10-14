@@ -1,4 +1,5 @@
 import type { TaskType, DoseRoute, TreatmentEntry } from "@/types";
+import { amountKey } from "./doseUnits";
 import i18n from "@/i18n";
 import { taskStatus, type TaskStatus } from "./treatmentSchedule";
 import { PAST_MISS_REASON } from "./backdate";
@@ -85,7 +86,7 @@ export const typeOf = (t: TreatmentEntry): TaskType =>
 
 /* ── طريق الإعطاء ───────────────────────────────────────────────────────── */
 /** الترتيب مقصود: الأشيع سريرياً أولاً، فأول خيارٍ بالقائمة هو المرجَّح. */
-export const ROUTES: DoseRoute[] = ["iv", "im", "sc", "po", "topical", "inhaled"];
+export const ROUTES: DoseRoute[] = ["iv", "im", "sc", "po", "topical", "inhaled", "ocular", "otic", "nasal", "rectal", "water"];
 
 /** لكل طريقٍ اسمان: كاملٌ للقائمة المنسدلة، ومختصرٌ لصدر الصف حيث كل حرفٍ
  *  يزاحم اسم الدواء. وكلاهما دالة — تُقرأ عند الرسم فتتبع اللغة الجارية. */
@@ -96,6 +97,11 @@ const ROUTE_T: Record<DoseRoute, { full: () => string; short: () => string }> = 
   po:      { full: () => i18n.t("flow.route.po", "فموي"),         short: () => i18n.t("flow.routeShort.po", "فم") },
   topical: { full: () => i18n.t("flow.route.topical", "موضعي"),   short: () => i18n.t("flow.routeShort.topical", "مو") },
   inhaled: { full: () => i18n.t("flow.route.inhaled", "استنشاق"), short: () => i18n.t("flow.routeShort.inhaled", "است") },
+  ocular:  { full: () => i18n.t("flow.route.ocular", "عين"),      short: () => i18n.t("flow.routeShort.ocular", "عين") },
+  otic:    { full: () => i18n.t("flow.route.otic", "أذن"),        short: () => i18n.t("flow.routeShort.otic", "أذن") },
+  nasal:   { full: () => i18n.t("flow.route.nasal", "أنف"),       short: () => i18n.t("flow.routeShort.nasal", "أنف") },
+  rectal:  { full: () => i18n.t("flow.route.rectal", "شرجي"),     short: () => i18n.t("flow.routeShort.rectal", "شرج") },
+  water:   { full: () => i18n.t("flow.route.water", "بماء الشرب"), short: () => i18n.t("flow.routeShort.water", "ماء") },
 };
 
 /** الاسم الكامل — للقائمة المنسدلة حيث المساحة تسمح.
@@ -205,6 +211,9 @@ export interface OrderRow {
  * مرات باليوم تصير **صفاً واحداً بأربع خانات** لا أربعة صفوف — وهذا هو الفرق
  * بين ورقةٍ تُقرأ وقائمةٍ تُتصفّح. واختلاف الجرعة يفصل الصف عمداً: «١ مل»
  * و«٠٫٥ مل» أمران مختلفان سريرياً ولو اتّحد اسم الدواء.
+ *
+ * والكميةُ بمفتاحها لا بنصّها (`amountKey`): «1 ml» القديمة و«1 مل» من منتقي الجرعة و«1مل»
+ * كمّيةٌ واحدة — كانت ثلاثةَ صفوفٍ لأمرٍ واحد. والمعروضُ نصُّ أوّل صفّ.
  */
 export function buildRows(entries: TreatmentEntry[]): OrderRow[] {
   const rows = new Map<string, OrderRow>();
@@ -212,7 +221,7 @@ export function buildRows(entries: TreatmentEntry[]): OrderRow[] {
     const type = typeOf(t);
     const label = (t.medication || "").trim() || TASK_META[type].ar();
     const amount = (t.amount || "").trim();
-    const key = `${t.pet_id}|${type}|${label}|${amount}|${t.route ?? ""}`;
+    const key = `${t.pet_id}|${type}|${label}|${amountKey(amount)}|${t.route ?? ""}`;
     let row = rows.get(key);
     if (!row) {
       row = { key, petId: t.pet_id, type, label, amount, route: t.route ?? null, byHour: new Map(), all: [] };

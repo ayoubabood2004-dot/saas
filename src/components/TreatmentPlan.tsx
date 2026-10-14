@@ -25,6 +25,7 @@ import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
 import { DoseAlertRow, APP_ROUTE_BACK } from "@/components/DoseBlock";
 import { matchMonograph, checkSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
+import { planRouteToDose } from "@/lib/doseUnits";
 import type { MedicineStock } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import { repo } from "@/lib/repo";
@@ -461,7 +462,7 @@ export function TreatmentPlan({
     reportable: reportable.length ? reportable.map((d) => d.name) : undefined,
     pathogens: pickedDiseases.filter((d) => d.latin).map((d) => ({ name: d.name, latin: d.latin! })),
     treatment: filledRows.length
-      ? filledRows.map((r) => ({ name: r.name.trim(), dose: doseText(r) || undefined, freq: FREQS.find((f) => f.id === r.freq)?.label ?? "", days: r.days, doses: dosesOf(r), note: [routeLabel(r.route), r.note?.trim()].filter(Boolean).join(" · ") || undefined }))
+      ? filledRows.map((r) => ({ name: r.name.trim(), dose: doseText(r) || undefined, freq: FREQS.find((f) => f.id === r.freq)?.label ?? "", days: r.days, doses: dosesOf(r), note: [routeLabel(r.route), r.note?.trim()].filter(Boolean).join(" · ") || undefined, route: planRouteToDose(r.route) ?? undefined }))
       : undefined,
     interactions: interactions.length ? interactions : undefined,
     notes: notes.trim() || undefined,

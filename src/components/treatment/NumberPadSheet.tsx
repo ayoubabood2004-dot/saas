@@ -23,8 +23,8 @@ import { playTap, playWarning } from "@/lib/sounds";
  * ==========================================================================*/
 
 export function NumberPadSheet({
-  open, title, unit, initial, decimals = true, min = 0, max = 100000,
-  contextLine, band, bandWarn, history, confirmLabel, onClose, onSubmit, extra,
+  open, title, unit, initial, decimals = true, maxDecimals = 2, min = 0, max = 100000,
+  contextLine, band, bandWarn, history, confirmLabel, onClose, onSubmit, extra, validate,
 }: {
   open: boolean;
   title: string;
@@ -33,6 +33,10 @@ export function NumberPadSheet({
   initial?: number;
   /** يقبل الكسور؟ الأيام لا تقبل. */
   decimals?: boolean;
+  /** كم خانةً بعد الفاصلة (٢ افتراضاً؛ منتقي الجرعة: ٣ للمل، ١ للوحدة الدولية). */
+  maxDecimals?: number;
+  /** فحصٌ بوحدة الرقم (منتقي الجرعة: ربعُ حبة، عددٌ صحيح، نصفُ وحدة…) — نصٌّ يُقال ويمنع التأكيد، أو null. */
+  validate?: (n: number) => string | null;
   min?: number;
   max?: number;
   /** سطرٌ يشرح السياق فوق الرقم (نافذة الدليل مثلاً). */
@@ -78,7 +82,8 @@ export function NumberPadSheet({
   if (!open) return null;
 
   const val = Math.round((Number(raw) || 0) * 1000) / 1000;
-  const ok = val >= Math.max(min, 0.0001) && val <= max;
+  const invalid = touched && raw !== "" && validate ? validate(val) : null;
+  const ok = val >= Math.max(min, 0.0001) && val <= max && !invalid;
   const outOfBand = !!band && val > 0 && (val < band.min || val > band.max);
 
   const press = (k: string) => {
@@ -93,7 +98,7 @@ export function NumberPadSheet({
         return r === "" ? "0." : `${r}.`;
       }
       const dot = r.indexOf(".");
-      if (dot >= 0 && r.length - dot - 1 >= 2) { playWarning(); return r; }
+      if (dot >= 0 && r.length - dot - 1 >= maxDecimals) { playWarning(); return r; }
       if (r.length >= 6) { playWarning(); return r; }
       const next = (r + k).replace(/^0+(?=\d)/, "");
       if ((Number(next) || 0) > max) { playWarning(); return r; }
@@ -133,6 +138,9 @@ export function NumberPadSheet({
           </span>
           <span className="ms-1.5 text-base font-bold text-ink-subtle">{unit}</span>
         </div>
+        {invalid && (
+          <p data-padinvalid className="mt-1.5 rounded-xl bg-danger-50 px-3 py-1.5 text-2xs font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" aria-live="polite">{invalid}</p>
+        )}
         {outOfBand && bandWarn && (
           <p className="mt-1.5 rounded-xl bg-warn-50 px-3 py-1.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">{bandWarn}</p>
         )}

@@ -38,6 +38,8 @@ const files = [];
 })("src");
 
 /** التعليقاتُ لا تُقرأ بناءً: شرحٌ يذكر MED_CATALOG أو autoFocus ليس استعمالاً. */
+/** نصٌّ مصنوعٌ بلا تعليقات — كما يُقرأ الملفّ (code). */
+function code_text(t) { return t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1"); }
 const code = (f) => readFileSync(f, "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
   .replace(/(^|[^:"'`])\/\/[^\n]*/g, (m, a) => a + " ".repeat(m.length - a.length));
@@ -144,6 +146,23 @@ console.log("▸ ٦) شاشةُ البيع لا تتحرّك خلف المنتق
   check("الماسحُ يسكت ما دام المنتقي مفتوحاً (disabled يذكر medPickerOpen)", /\bmedPickerOpen\b/.test(scan), scan.trim().slice(0, 90));
   const keyFn = /if \(!posV2\) return;\s*const onKey = \(e: KeyboardEvent\) => \{([\s\S]*?)\n {4}\};/.exec(sb)?.[1] ?? "";
   check("وF2 و«/» كذلك: أوّلُ سطرٍ بمعالج posV2 يسأل medPickerOpen", /^\s*if \(medPickerOpen\) return;/.test(keyFn) && /F2/.test(keyFn) && /"\/"/.test(keyFn), keyFn.trim().slice(0, 60));
+}
+
+console.log("▸ ٧) منتقي الجرعة لا يدخل نموذجَ البيع");
+{
+  /* المرحلةُ «أ» (قرارُ المالك D5): منتقي الجرعة لنافذة الزيارة والتعديل وورقة الطبلة وبطاقة الدواء —
+   * ونموذجُ «الأدوية» بالبيع (MedSaleForm) لاحقاً بقرارٍ منفصل: سلّمُ مل بشاشةٍ تبيع منتجاً بعلبته
+   * يكتب «كمّيةً» ليست كمّيةَ البيع. فالحارسُ يمنع الاستيرادَ بأيّ صيغة — ثابتاً أو كسولاً أو بمسارٍ نسبيّ. */
+  const importsPicker = (txt) => /(?:from\s*|import\s*\(\s*)["'](?:@\/components\/treatment\/DosePicker|\.{1,2}\/(?:[\w./]*\/)?DosePicker)["']/.test(txt);
+  const crafted = [
+    ["استيرادٌ ثابت", 'import { DosePicker } from "@/components/treatment/DosePicker";', true],
+    ["استيرادٌ كسول", 'const P = lazy(() => import("../treatment/DosePicker"));', true],
+    ["ذكرٌ بتعليقٍ أو باسمٍ آخر", 'const x = "DosePickerless"; // DosePicker', false],
+  ];
+  const wrong = crafted.filter(([, txt, want]) => importsPicker(code_text(txt)) !== want).map(([n]) => n);
+  check("الحارسُ يمسك ما وُضع ليمسكه (ثلاثُ حالاتٍ مصنوعة)", wrong.length === 0, wrong.join(" · "));
+  const sale = "src/components/retail/MedSaleForm.tsx";
+  check("MedSaleForm لا يستورد DosePicker", existsSync(sale) && !importsPicker(code(sale)));
 }
 
 console.log(fails ? `\n✗ med-entry-guard: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-entry-guard: ${passes} نجحت، 0 فشلت (${PENDING.size} لم يتحوّل بعد)`);

@@ -2755,6 +2755,13 @@ const supabaseRepo: DemoRepo = {
   async applyClinicDrugs(clinic, ops) {
     return drugsSnap(need<unknown>(await sbc().rpc("clinic_drugs_apply", { p_clinic: clinic, p_ops: ops })));
   },
+  /* آخرُ جرعاتِ دواءٍ بعينه — منتقي الجرعة يثبّت أوّلَ ما يُفهم نصُّه («آخر مرة»): الاسمُ حرفياً
+   * بالطرفين، دواءٌ وحده، الأحدثُ أوّلاً، عشرون تكفي. ترمي ولا ترجع فارغةً عن خطأ — والمنتقي يقرّر
+   * أن يتجاوزها (قيمةٌ افتراضية لا قرار). */
+  async lastDoseOf(name) {
+    return listOrThrow<{ amount: string | null; route: string | null }>(await sbc().from("treatment_entries").select("amount,route")
+      .eq("medication", name).eq("task_type", "drug").order("created_at", { ascending: false }).limit(20));
+  },
   async recentMedNames(days = 30) {
     // «الأخيرة»: عيّنةٌ بالأحدث لا قائمةُ قرار — ٤٠٠ صفّ تكفي لاثني عشر اسماً مختلفاً.
     const since = localISO(new Date(Date.now() - days * 86400000));
@@ -2902,6 +2909,8 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "storeCategoriesList", "productImageHistory",
   // «أدويتي» (0229): القراءةُ والأخيرةُ والمخزنُ والاقتراحُ قراءة — الكتابةُ (applyClinicDrugs) لا.
   "listClinicDrugs", "recentMedNames", "listMedicineStock", "suggestClinicDrugs",
+  // منتقي الجرعة: آخرُ جرعاتِ الدواء — قراءة.
+  "lastDoseOf",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

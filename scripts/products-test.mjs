@@ -1022,7 +1022,10 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     } };
     walk("src");
     check("  ولا يُستعمل بملفّ شاشة (.tsx)", users.every((f) => !f.endsWith(".tsx")), users.join(", "));
-    check("  ومحصورٌ بملفٍّ واحدٍ اليوم", users.length === 1, users.join(", "));
+    /* والمستعملون بأسمائهم لا بعددهم: نقلُ حروف الرابط (storeLib)، وكلماتُ الجرعة المحفوظة التي تُقرأ
+     * وتُطابَق (doseUnits، منتقي الجرعة D5) — وملفٌّ ثالثٌ يستعمله يفشل هنا حتى يُضاف بسببه. */
+    const ALLOWED = ["src/lib/doseUnits.ts", "src/lib/storeLib.ts"];
+    check("  ومحصورٌ بملفّاته المسمّاة (storeLib، doseUnits)", users.slice().sort().join(",") === ALLOWED.join(","), users.join(", "));
   }
 
   /* ── ت٦ + مسارُ التفعيل ─────────────────────────────────────────────────

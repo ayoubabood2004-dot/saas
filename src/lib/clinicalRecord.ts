@@ -10,6 +10,7 @@
 // ============================================================================
 import type { Severity } from "@/lib/diagnoses";
 import type { CaseOutcome } from "@/lib/clinicalKnowledge";
+import type { DoseRoute } from "@/types";
 import type { CbcFlag } from "@/lib/cbc";
 
 export interface ClinicalRecord {
@@ -27,7 +28,8 @@ export interface ClinicalRecord {
   zoonotic?: string[];
   reportable?: string[];
   pathogens?: { name: string; latin: string }[];
-  treatment?: { name: string; dose?: string; freq: string; days: number; doses: number; note?: string }[];
+  /** `route`: طريقُ الإعطاء بلغة الطبلة (بالملاحظة نصّاً أيضاً كما كان) — تكتبه savePlan بالصفوف. */
+  treatment?: { name: string; dose?: string; freq: string; days: number; doses: number; note?: string; route?: DoseRoute }[];
   interactions?: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
   notes?: string;                                        // free-text doctor clinical notes
   weightKg?: number;                                     // weight used for dose calculations
