@@ -24,7 +24,7 @@ import { NumberPadSheet } from "@/components/treatment/NumberPadSheet";
 import { WeightGate } from "@/components/treatment/WeightGate";
 import { DrugCard } from "@/components/treatment/DrugCard";
 import { DoseAlertRow, APP_ROUTE_BACK } from "@/components/DoseBlock";
-import { matchMonograph, ingredientMonographs, checkSafety, checkIngredientSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
+import { matchMonograph, ingredientMonographs, concurrentIds, isLocalForm, checkSafety, checkIngredientSafety, calcDose, doseCeiling, planAmountText, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
 import { planRouteToDose, WATER_ROUTE_WORD } from "@/lib/doseUnits";
 import type { MedicineStock } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
@@ -355,15 +355,15 @@ export function TreatmentPlan({
    * stay inside each drug's own card.
    */
   const safety = useMemo(() => {
-    if (!species) return [] as { name: string; alerts: DoseAlert[] }[];
-    const out: { name: string; alerts: DoseAlert[] }[] = [];
+    if (!species) return [] as { id: string; name: string; alerts: DoseAlert[] }[];
+    const out: { id: string; name: string; alerts: DoseAlert[] }[] = [];
     for (const r of filledRows) {
       const drug = matchMonograph(r.name);
-      // كلُّ مادةٍ يعرفها الدليل بالصفوف الأخرى — «Vimespiro» فيها بريدنيزولون فتتعارض مع ميلوكسيكام.
-      const others = filledRows
-        .filter((x) => x.id !== r.id)
-        .flatMap((x) => ingredientMonographs(x.name).map((d) => d.id));
-      // المركّبُ بلا دليلٍ واحد: لا نافذةَ جرعةٍ له، لكنّ منعَ موادّه وحساسيتَها وتعارضَها يُفحص.
+      // كلُّ مادةٍ يعرفها الدليل بالصفوف الأخرى، مرّةً واحدة — «Vimespiro» فيها بريدنيزولون فتتعارض
+      // مع ميلوكسيكام؛ وقطرةُ العين ليست بالدم فلا تُحسب.
+      const others = concurrentIds(filledRows.filter((x) => x.id !== r.id).map((x) => x.name));
+      // المركّبُ بلا دليلٍ واحد: لا نافذةَ جرعةٍ له، لكنّ منعَ موادّه وحساسيتَها وتعارضَها يُفحص
+      // (والشكلُ الموضعيّ منعَه وحساسيتَه وحدهما).
       const alerts = (drug
         ? checkSafety({
           drug, species, weightKg: weight, mgPerKg: r.mgPerKg ?? 0,
@@ -374,9 +374,9 @@ export function TreatmentPlan({
           concurrent: others,
           dose: rowCalc(r),
         })
-        : checkIngredientSafety({ ingredients: ingredientMonographs(r.name), species, allergies, flags, concurrent: others })
+        : checkIngredientSafety({ ingredients: ingredientMonographs(r.name), species, allergies, flags, concurrent: others, local: isLocalForm(r.name) })
       ).filter((a) => a.tone === "critical" || a.tone === "warn");
-      if (alerts.length) out.push({ name: r.name.trim(), alerts });
+      if (alerts.length) out.push({ id: r.id, name: r.name.trim(), alerts });
     }
     return out;
   }, [filledRows, species, weight, allergies, flags]);
@@ -930,7 +930,7 @@ function TreatmentStep({
   stockMeds: MedicineStock[];
   stockFor: (name: string) => MedicineStock | undefined;
   interactions: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
-  safety: { name: string; alerts: DoseAlert[] }[];
+  safety: { id: string; name: string; alerts: DoseAlert[] }[];
   protocolDiseases: Disease[];
   applyProtocol: (d: Disease) => void;
   planDays: number;
@@ -1003,7 +1003,7 @@ function TreatmentStep({
           </div>
           <div className="space-y-1.5">
             {safety.flatMap((s) => s.alerts.filter((a) => a.blocking).map((a) => (
-              <DoseAlertRow key={`${s.name}-${a.id}`} alert={{ ...a, title: `${s.name} — ${a.title}` }} />
+              <DoseAlertRow key={`${s.id}-${a.id}`} alert={{ ...a, title: `${s.name} — ${a.title}` }} />
             )))}
           </div>
         </div>

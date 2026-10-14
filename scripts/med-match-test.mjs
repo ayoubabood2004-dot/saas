@@ -17,6 +17,13 @@
  * الدليل فيه (ingredientMonographs) — «Paracetamol + Vitamin C» لقطّةٍ ممنوعة (وكانت تمرّ
  * بلا منع: لا جذعَ «paracetamol» وحده بالفهرس). والجرعةُ وحدها بلا دليلٍ للمركّب.
  *
+ * ── الجولةُ الثانية (١٥/١٠، §٩–§١٥) ──
+ * عدُّ الأجزاء لا يكفي: «Amoxicillin-Clavulanate + Paracetamol» جزآن كاسم المركّب العربي فصار
+ * المركّبَ وضاع منعُ الباراسيتامول؛ فالآن كلُّ جزءٍ يُطابَق وحده، والاسمُ مونوغرافٌ واحد فقط إن
+ * سمّته كلُّ أجزائه. ونصفا المركّب («Trimethoprim» و«Sulfadiazine») يُعرفان فتمسك حساسيةُ السلفا؛
+ * والهمزةُ تُطوى على الطرفين («ايبوبروفين» لقطّة بالإنتاج بلا منع)؛ و«Pyrantel» دواؤه؛ و«/» و«,»
+ * و«with» و«و» تعدّد كـ«+»؛ وقطرةُ الجنتاميسين ليست حقنتَه؛ والمادّةُ من صفّين تنبيهٌ واحد.
+ *
  *   node scripts/med-match-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
@@ -26,9 +33,11 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 let fails = 0, passes = 0;
+/* المرجعُ الأصليّ: §١٥ يلتقط console.error أثناء الرسم (تحذيرُ المفتاح المكرّر)، والفشلُ لا يُلتقط معه. */
+const sayFail = console.error.bind(console);
 const check = (name, cond, detail = "") => {
   if (cond) { passes++; console.log(`   ✓ ${name}`); }
-  else { fails++; console.error(`   ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
+  else { fails++; sayFail(`   ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 /** قسمٌ يُفحص كلُّه: دالّةٌ غائبة فشلٌ يُقال بسببه، لا انهيارٌ يُخفي الأقسامَ بعده. */
 const section = async (title, fn) => {
@@ -125,11 +134,13 @@ await section("▸ ١) الإكمالُ بدايةٌ حقيقية لاسمٍ م�
 /* ── ٢) المركّبُ ليس أوّلَ مادةٍ فيه ──────────────────────────────────────── */
 await section("▸ ٢) اسمٌ يعدّد مادّتين فأكثر لا يصير مادةً واحدة", () => {
   for (const name of Object.keys(MIXES)) check(`«${name}» ⇒ لا مونوغرافَ واحد`, one(name) === null, String(one(name)));
-  check("الفواصل: «+» بفراغٍ وبلاه، و«&»، وكلمة «and» — لا «-» ولا «/»",
+  check("الفواصل: «+» بفراغٍ وبلاه، و«&»، وكلمة «and» — لا «-»",
     F.ingredientParts?.("a + b").length === 2 && F.ingredientParts?.("Derma paste+zinc").length === 2 && F.ingredientParts?.("Vitamins Mineral & Probiotic").length === 2
     && F.ingredientParts?.("vitamin c and b2").length === 2 && F.ingredientParts?.("Amoxicillin-Clavulanate").length === 1
-    && F.ingredientParts?.("Paracetamol / Acetaminophen").length === 1 && F.ingredientParts?.(BIO_SONE).length === 5,
+    && F.ingredientParts?.(BIO_SONE).length === 5,
     F.ingredientParts ? JSON.stringify(F.ingredientParts(BIO_SONE)) : "∅ لا ingredientParts");
+  // «/» فاصلٌ (§١١)، والمترادفان بها مونوغرافٌ واحد لأنّ جزأيه يسمّيانه كليهما.
+  check("حارس: «Paracetamol / Acetaminophen» ⇒ باراسيتامول (مترادفان: كلُّ جزءٍ يسمّيه)", one("Paracetamol / Acetaminophen") === "paracetamol");
   // ما يبقى: الاسمُ الحرفيّ لمونوغرافٍ مركّب، والوثيقُ «Amoxicillin 250mg».
   check("«Amoxicillin 250mg» ⇒ أموكسيسيلين (لا المركّب — نافذتُه الأعرض تبلع الجرعةَ الزائدة)", one("Amoxicillin 250mg") === "amoxicillin");
   check("«Amoxicillin-Clavulanate» ⇒ أموكسيسيلين + كلافولانيك", one("Amoxicillin-Clavulanate") === "amoxi-clav");
@@ -255,12 +266,186 @@ await section("▸ ٧) DrugCard: الخليطُ بلا عنوانِ مادة، �
 /* ── ٨) المضيفون يمرّون من موادّ الخليط ───────────────────────────────────── */
 await section("▸ ٨) المضيفون: فحصُ الخطة وورقةُ الطبلة يقرآن موادّ الخليط", () => {
   const tp = src("src/components/TreatmentPlan.tsx");
-  check("فحصُ الخطة: الصفوفُ الأخرى بموادّها (flatMap ingredientMonographs)، والخليطُ بـcheckIngredientSafety",
-    /\.flatMap\(\(x\) => ingredientMonographs\(x\.name\)\.map\(\(d\) => d\.id\)\)/.test(tp) && /checkIngredientSafety\(\{ ingredients: ingredientMonographs\(r\.name\)/.test(tp) && !/if \(!drug\) continue;/.test(tp));
+  check("فحصُ الخطة: الصفوفُ الأخرى بموادّها (concurrentIds)، والخليطُ بـcheckIngredientSafety",
+    /concurrentIds\(filledRows\.filter\(\(x\) => x\.id !== r\.id\)\.map\(\(x\) => x\.name\)\)/.test(tp) && /checkIngredientSafety\(\{ ingredients: ingredientMonographs\(r\.name\)/.test(tp) && !/if \(!drug\) continue;/.test(tp));
   const flow = src("src/components/Flowsheet.tsx");
   check("ورقةُ الطبلة: منعُ مادةٍ في الخليط يُقال (bannedIngredient) بسطر data-drugbanned", /bannedIngredient\(med\.name/.test(flow) && /\{bannedWhy && \(\s*<p data-drugbanned/.test(flow));
   const card = src("src/components/treatment/DrugCard.tsx");
-  check("البطاقة: checkSafety يأخذ concurrentIds لا الأسماء", !/concurrent, dose/.test(card) && !/flags, concurrent,\n/.test(card) && /concurrent: concurrentIds/.test(card));
+  check("البطاقة: checkSafety يأخذ معرّفاتِ الصفوف الأخرى (concurrentIds) لا الأسماء", !/concurrent, dose/.test(card) && !/flags, concurrent,\n/.test(card) && /concurrentIds\(concurrent\)/.test(card) && /concurrent: otherIds/.test(card));
+});
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * الجولةُ الثانية (١٥/١٠) — ما بقي بعد الأولى، مقيساً على ٤١٨ اسماً بالإنتاج و٧٨ بالكتالوج.
+ * الدوالُّ الجديدة (concurrentIds، isLocalForm) لها بديلٌ هنا يحاكي ما كان المضيفون يفعلونه قبلها
+ * (flatMap ingredientMonographs، ولا شكلَ موضعيّ) — فيفشل الفحصُ على الشِفرة القديمة بسببه هو.
+ * ══════════════════════════════════════════════════════════════════════════ */
+const cids = (names) => (F.concurrentIds ? F.concurrentIds(names) : names.flatMap((n) => F.ingredientMonographs(n).map((d) => d.id)));
+const isLocal = (n) => (F.isLocalForm ? F.isLocalForm(n) : false);
+const mixSafety = (name, o) => F.checkIngredientSafety({ ingredients: F.ingredientMonographs(name), local: isLocal(name), ...o });
+const NOW2 = "2026-10-15T00:00:00.000Z";
+const tile = (name, species) => I.buildMedIndex({ catalog: [], rows: [{ id: "t1", name, family: "other", in_mine: true, pos: 1, archived_at: null, created_at: NOW2, updated_at: NOW2 }], species, stockMode: "hide" }).all.find((x) => x.name === name);
+
+/* ── ٩) مركّبٌ بشَرطةٍ ومعه مادّة: «A-B + C» مادّتان لا المركّبُ وحده ─────────────────── */
+await section("▸ ٩) «Amoxicillin-Clavulanate + X»: المركّبُ مادةٌ والـX مادةٌ — عددُ الأجزاء لا يكفي", () => {
+  const AC_PC = "Amoxicillin-Clavulanate + Paracetamol";
+  check(`«${AC_PC}» ⇒ لا مونوغرافَ واحد (كان أموكسيسيلين + كلافولانيك: جزآن كاسمه العربي)`, one(AC_PC) === null, String(one(AC_PC)));
+  check("  وموادُّه المركّبُ والباراسيتامول", ings(AC_PC) === "amoxi-clav,paracetamol", ings(AC_PC));
+  check("  ولقطّةٍ ممنوعٌ باسم الباراسيتامول (كان صامتاً بكلّ مسار)", /باراسيتامول/.test(ban(AC_PC, "cat") ?? ""), String(ban(AC_PC, "cat")));
+  const TS_PC = "Trimethoprim-Sulfadiazine + Paracetamol";
+  check(`«${TS_PC}» لقطّة ⇒ ممنوع (كان TMPS وحده)`, one(TS_PC) === null && /باراسيتامول/.test(ban(TS_PC, "cat") ?? ""), `${one(TS_PC)} | ${ban(TS_PC, "cat")}`);
+  for (const G of ["أموكسيسيلين-كلافولانيك + جنتاميسين", "Amoxicillin-Clavulanate + Gentamicin", "Amoxicillin/Clavulanate + Gentamicin", "Trimethoprim-Sulfadiazine + Gentamicin"]) {
+    const a = mixSafety(G, { species: "dog", flags: { dehydrated: true } });
+    check(`«${G}» لكلبٍ مجفّف ⇒ «أمينوغلايكوزيد مع جفاف» حرجٌ يوقف`, one(G) === null && a.some((x) => x.id === "gentamicin:amino-renal" && x.blocking), `${one(G)} | ${a.map((x) => x.id).join(",")}`);
+  }
+  const AC_MX = "Amoxicillin-Clavulanate + Meloxicam";
+  const fromPred = F.checkSafety({ drug: F.DRUG_BY_ID.get("prednisolone"), species: "dog", mgPerKg: 0, dose: undefined, concurrent: cids([AC_MX]) });
+  check(`صفُّ بريدنيزولون مع «${AC_MX}» ⇒ تعارضُ كورتيزون + NSAID حرج`, fromPred.some((a) => a.id === "pair-meloxicam" && a.tone === "critical"), fromPred.map((a) => a.id).join(","));
+  const fromMix = mixSafety(AC_MX, { species: "dog", concurrent: ["prednisolone"] });
+  check("  ومن جهة الخليط نفسِه", fromMix.some((a) => a.id === "meloxicam:pair-prednisolone"), fromMix.map((a) => a.id).join(","));
+  const r = R.alertsFor({ medication: AC_PC }, { species: "cat", allergies: [] });
+  check("  والجولة: «ممنوع منعاً باتاً — باراسيتامول»", r.some((a) => a.id === "banned" && /باراسيتامول/.test(a.title)), r.map((a) => a.title).join(" | "));
+  const t = tile(AC_PC, "cat");
+  check("  وبلاطةُ المنتقي: عنوانُها اسمُها وعليها «ممنوع»", t?.label === AC_PC && /باراسيتامول/.test(t?.banned ?? ""), JSON.stringify({ label: t?.label, banned: t?.banned }));
+  const proto = F.inflate({ id: "custom-x", name: "x", indication: "", species: ["cat"], days: 1, steps: [{ kind: "drug", ref: "", label: AC_PC, amount: "1 ml", perDay: 1 }] });
+  check("  والبروتوكول لا يُدرجه لقطّة", !F.buildDraft(proto, { species: "cat", current_weight_kg: 4 }, "2026-10-15").some((x) => x.medication === AC_PC));
+});
+
+/* ── ١٠) نصفا المركّب مادّتان يعرفهما الدليل ─────────────────────────────────── */
+await section("▸ ١٠) «Trimethoprim + Sulfadiazine + X» فيه TMPS، و«Trimethoprim» وحدها TMPS", () => {
+  const sulfa = { species: "dog", allergies: ["Sulfa"] };
+  for (const [name, want] of [["Trimethoprim + Sulfadiazine + Dexamethasone", "dexamethasone,tmps"], ["Trimethoprim + Sulfadiazine + Colistin", "tmps"], ["Sulfadimidine + Trimethoprim", "tmps"]]) {
+    check(`«${name}» ⇒ موادُّه ${want}، لا مونوغرافَ واحد`, one(name) === null && ings(name) === want, `${one(name)} | ${ings(name)}`);
+    const a = mixSafety(name, sulfa);
+    check(`  وحساسيةُ السلفا تمسكه (كانت صامتة)`, a.some((x) => x.id.startsWith("tmps:allergy-") && x.blocking), a.map((x) => x.id).join(","));
+    const r = R.alertsFor({ medication: name }, sulfa);
+    check("  وبالجولة", r.some((x) => x.id.startsWith("allergy-") && x.blocking), r.map((x) => x.id).join(","));
+  }
+  check("«Trimethoprim» ⇒ ترايميثوبريم + سلفا (كانت قبل الجولة الأولى؛ ضاعت بها)", one("Trimethoprim") === "tmps", String(one("Trimethoprim")));
+  check("  و«Amoxicillin + Clavulanic acid» ⇒ المركّب (موادُّه بأسمائها)", one("Amoxicillin + Clavulanic acid") === "amoxi-clav", String(one("Amoxicillin + Clavulanic acid")));
+  const proto = F.inflate({ id: "custom-s", name: "x", indication: "", species: ["dog"], days: 1, steps: [{ kind: "drug", ref: "", label: "Trimethoprim + Sulfadiazine + Colistin", amount: "1 ml", perDay: 1 }] });
+  const al = F.draftAlerts(F.buildDraft(proto, { species: "dog", current_weight_kg: 20 }, "2026-10-15"), sulfa);
+  check("  والبروتوكول يقول حساسيةَ السلفا قبل الكتابة", al.some((a) => a.id === "allergy-tmps"), al.map((a) => a.id).join(","));
+});
+
+/* ── ١١) الهمزةُ تُطوى على الطرفين ──────────────────────────────────────────── */
+await section("▸ ١١) «ايبوبروفين» بلا همزة هو «آيبوبروفين» — والمنعُ معه", () => {
+  check("«ايبوبروفين» (٧ أسطر لقطّة بالإنتاج) ⇒ آيبوبروفين", one("ايبوبروفين") === "ibuprofen", String(one("ايبوبروفين")));
+  check("  ولقطّة ممنوع", !!ban("ايبوبروفين", "cat"));
+  check("«اسبرين» لقطّة ⇒ ممنوع، و«اموكسيسيلين» ⇒ أموكسيسيلين، و«انروفلوكساسين» ⇒ إنروفلوكساسين",
+    !!ban("اسبرين", "cat") && one("اموكسيسيلين") === "amoxicillin" && one("انروفلوكساسين") === "enrofloxacin", `${ban("اسبرين", "cat")} ${one("اموكسيسيلين")} ${one("انروفلوكساسين")}`);
+  const r = R.alertsFor({ medication: "ايبوبروفين" }, { species: "cat", allergies: [] });
+  check("  والجولة: «ممنوع منعاً باتاً»", r.some((a) => a.id === "banned"), r.map((a) => a.id).join(","));
+  const t = tile("ايبوبروفين", "cat");
+  check("  وبلاطةُ المنتقي عليها «ممنوع»", typeof t?.banned === "string", JSON.stringify({ banned: t?.banned }));
+  check("الحساسيةُ المكتوبة بلا همزة تمسك الدواء (اموكسيسيلين ⇐ أموكسيسيلين، اسبرين ⇐ أسبرين)",
+    !!F.allergyHit(F.DRUG_BY_ID.get("amoxicillin"), "اموكسيسيلين") && !!F.allergyHit(F.DRUG_BY_ID.get("aspirin"), "اسبرين"));
+  check("«غلوكونات الكالسيوم» ⇒ الغلوكونات (الرقمُ والنسبةُ العربيّان عيارٌ لا اسم)", one("غلوكونات الكالسيوم") === "calcium-gluconate", String(one("غلوكونات الكالسيوم")));
+  check("والرقمُ الملتصق بالحرف من الاسم: «Vitamin K3» ليست K1، و«Vitamin K» و«فيتامين ك١» هي",
+    one("Vitamin K3") === null && one("Vitamin K") === "vitamin-k1" && one("فيتامين ك١") === "vitamin-k1", `${one("Vitamin K3")} ${one("Vitamin K")} ${one("فيتامين ك١")}`);
+});
+
+/* ── ١٢) أوّلُ كلمةٍ من اسمٍ بكلمتين، والوصفُ ليس مادّة ──────────────────────── */
+await section("▸ ١٢) «Pyrantel» و«Tolfenamic» دواؤهما، و«Meloxicam for dogs and cats» ميلوكسيكام", async () => {
+  for (const [name, want] of [["Pyrantel", "pyrantel"], ["Pyrantel 50mg", "pyrantel"], ["Tolfenamic", "tolfenamic"], ["التولفيناميك", "tolfenamic"],
+    ["Meloxicam for dogs and cats", "meloxicam"], ["Meloxicam - dogs & cats", "meloxicam"], ["Calcium glucon", "calcium-gluconate"]]) {
+    check(`«${name}» ⇒ ${want}`, one(name) === want, String(one(name)));
+  }
+  const m = F.checkSafety({ drug: F.matchMonograph("Meloxicam for dogs and cats") ?? F.DRUG_BY_ID.get("paracetamol"), species: "cat", weightKg: 4, mgPerKg: 0.3, dose: undefined });
+  check("  فسقفُ الميلوكسيكام للقطّ يُقال عليه", m.some((a) => a.id === "hard-max"), m.map((a) => a.id).join(","));
+  const { loadUI } = await import("./react-mini.mjs");
+  const TP = await loadUI(`export * as TP from "./src/components/TreatmentPlan.tsx";`, {
+    "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n, playStepDone = n;",
+    "@/i18n": "export default { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar' };",
+  }).then((x) => x.TP);
+  const py = TP.formularySeed("Pyrantel 50mg", "dog");
+  check("  وإضافةُ «Pyrantel 50mg» تبذر ٥ ملغ/كغ فموي", py.mgPerKg === 5 && py.route === "oral", JSON.stringify(py));
+});
+
+/* ── ١٣) «/» و«,» و«with» و«و» تعدّد الموادّ كـ«+» ─────────────────────────── */
+await section("▸ ١٣) الفواصلُ كما تُكتب: «/» و«,» و«with» و«و» قبل اسم مادة", async () => {
+  for (const name of ["Florfenicol/Doxycycline", "Amoxicillin/Gentamicin", "Amoxicillin, Gentamicin", "Amoxicillin with Gentamicin", "أموكسيسيلين وجنتاميسين"]) {
+    const a = name === "Florfenicol/Doxycycline" ? [] : mixSafety(name, { species: "cat", flags: { renal: true } });
+    check(`«${name}» ⇒ لا مونوغرافَ واحد${a.length || name !== "Florfenicol/Doxycycline" ? "، وجنتاميسينُه يوقف مع الكلى" : ""}`,
+      one(name) === null && (name === "Florfenicol/Doxycycline" || a.some((x) => x.id === "gentamicin:amino-renal")), `${one(name)} | ${a.map((x) => x.id).join(",")}`);
+  }
+  for (const name of ["Paracetamol/Vitamin C", "Paracetamol with Vitamin C", "Paracetamol, Vitamin C", "Acetaminophen/Codeine"]) {
+    check(`«${name}» ⇒ لا باراسيتامولَ واحد (المترادفُ الجديد لم يصِر دبّوساً)، ومنعُه للقطّ باقٍ`, one(name) === null && /باراسيتامول/.test(ban(name, "cat") ?? ""), `${one(name)} | ${ban(name, "cat")}`);
+  }
+  check("لا تُقسَم: «Amoxicillin 250mg/5ml» و«Meloxicam 1.5mg/ml» (نسبةُ عيار) و«انروفلوكساسين حبوب قطط وكلاب» («و» قبل وصف)",
+    one("Amoxicillin 250mg/5ml") === "amoxicillin" && one("Meloxicam 1.5mg/ml") === "meloxicam" && one("انروفلوكساسين حبوب قطط وكلاب") === "enrofloxacin",
+    `${one("Amoxicillin 250mg/5ml")} ${one("Meloxicam 1.5mg/ml")} ${one("انروفلوكساسين حبوب قطط وكلاب")}`);
+  const { loadUI } = await import("./react-mini.mjs");
+  const TP = await loadUI(`export * as TP from "./src/components/TreatmentPlan.tsx";`, {
+    "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n, playStepDone = n;",
+    "@/i18n": "export default { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar' };",
+  }).then((x) => x.TP);
+  for (const name of ["Paracetamol/Vitamin C", "Amoxicillin-Clavulanate + Gentamicin"]) {
+    const s = TP.formularySeed(name, "dog");
+    check(`إضافةُ «${name}» لا تبذر جرعةً ولا عياراً (كانت ${name.startsWith("P") ? "حبةَ ٥٠٠ و١٠ ملغ/كغ" : "١٢٫٥ ملغ/كغ وعيار ٥٠"})`, Object.keys(s).length === 0, JSON.stringify(s));
+  }
+});
+
+/* ── ١٤) قطرةُ العين ليست الحقنة ────────────────────────────────────────────── */
+await section("▸ ١٤) «Gentamicin eye/ear drop» (منتجان بالمخزون): لا جرعةَ حقنٍ ولا منعَ جفاف — والحساسيةُ باقية", async () => {
+  for (const name of ["Gentamicin eye drop", "Gentamicin ear drop", "Gentamicin (eye drops)"]) {
+    check(`«${name}» ⇒ لا مونوغرافَ جنتاميسين الحقن، ومادّتُه جنتاميسين`, one(name) === null && ings(name) === "gentamicin", `${one(name)} | ${ings(name)}`);
+  }
+  const dry = mixSafety("Gentamicin eye drop", { species: "cat", flags: { dehydrated: true }, concurrent: ["meloxicam"] });
+  check("  قطّةٌ مجفّفة: لا «أمينوغلايكوزيد مع جفاف» ولا تعارض", !dry.some((a) => /amino-renal|pair-/.test(a.id)), dry.map((a) => a.id).join(","));
+  const alg = mixSafety("Gentamicin eye drop", { species: "cat", allergies: ["Gentamicin"] });
+  check("  حارس: وحساسيةُ الجنتاميسين المسجّلة تُقال (الشكلُ الموضعيّ لا يُسكتها)", alg.some((a) => a.id.startsWith("gentamicin:allergy-") && a.blocking), alg.map((a) => a.id).join(","));
+  check("  ولا تُحسب بالدم لصفٍّ آخر (أميكاسين لا «تكرار»)", !cids(["Gentamicin eye drop"]).includes("gentamicin"), JSON.stringify(cids(["Gentamicin eye drop"])));
+  const t = tile("Gentamicin eye drop", "cat");
+  check("  وبلاطتُها باسمها، بلا جرعة", t?.label === "Gentamicin eye drop" && !t.monographId && !t.dosed, JSON.stringify({ label: t?.label, mono: t?.monographId }));
+  check("حارس: «Permethrin spray» موضعيٌّ ودواؤه موضعيّ ⇒ بيرميثرين، ومنعُه للقطّ", one("Permethrin spray") === "permethrin" && !!ban("Permethrin spray", "cat"));
+  const { loadUI } = await import("./react-mini.mjs");
+  const TP = await loadUI(`export * as TP from "./src/components/TreatmentPlan.tsx";`, {
+    "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n, playStepDone = n;",
+    "@/i18n": "export default { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar' };",
+  }).then((x) => x.TP);
+  const s = TP.formularySeed("Gentamicin eye drop", "cat");
+  check("  وإضافتُها لا تبذر ٦ ملغ/كغ وريدي بعيار ٤٠", Object.keys(s).length === 0, JSON.stringify(s));
+  const tp = src("src/components/TreatmentPlan.tsx"), card = src("src/components/treatment/DrugCard.tsx");
+  check("  وفحصُ الخطة والبطاقة يمرّران الشكلَ الموضعيّ (local)", /local: isLocalForm\(r\.name\)/.test(tp) && /isLocalForm\(row\.name\)/.test(card) && /concurrent: otherIds, local \}/.test(card));
+});
+
+/* ── ١٥) المادّةُ الواحدة من صفّين أخريين تنبيهٌ واحد ──────────────────────────── */
+await section("▸ ١٥) Bio-Sone وVimespiro معاً: بريدنيزولونٌ واحد، لا تنبيهان بمفتاحٍ واحد", async () => {
+  check("concurrentIds: كلُّ معرّفٍ مرّة", JSON.stringify(cids([BIO_SONE, VIMESPIRO])) === '["prednisolone"]', JSON.stringify(cids([BIO_SONE, VIMESPIRO])));
+  const dupIn = F.checkSafety({ drug: F.DRUG_BY_ID.get("meloxicam"), species: "dog", mgPerKg: 0, dose: undefined, concurrent: ["prednisolone", "prednisolone"] });
+  check("checkSafety نفسُه: معرّفٌ مكرّرٌ بالمدخل ⇒ تنبيهٌ واحد", dupIn.filter((a) => a.id === "pair-prednisolone").length === 1, dupIn.map((a) => a.id).join(","));
+  const { loadUI } = await import("./react-mini.mjs");
+  const UI = await loadUI(`
+    import { useState, createElement as h } from "react";
+    import { DrugCard } from "./src/components/treatment/DrugCard.tsx";
+    export function CardH(p) { const [r, setR] = useState(p.initial); return h(DrugCard, { ...p, row: r, open: true, onToggle() {}, onRemove() {}, onReplace() {}, onNeedWeight() {}, onPatch: (x) => setR((o) => ({ ...o, ...x })) }); }
+  `, {
+    "@/lib/repo": "export const repo = { lastDoseOf: () => Promise.resolve([]) };",
+    "./NumberPadSheet": "export const NumberPadSheet = () => null;",
+    "@/lib/flowsheet": "export const routeName = (r) => r;",
+    "@/components/DoseBlock": "import { createElement as h } from 'react'; export const DoseAlertRow = ({ alert }) => h('div', { 'data-alert': alert.id, 'data-tone': alert.tone }, alert.title);",
+  });
+  const h = UI.React.createElement;
+  const ROUTES = [{ id: "oral", key: "r.oral", label: "فموي" }];
+  const FREQS = [{ id: "1", key: "f1", label: "مرة يومياً", perDay: 1 }];
+  const dupKeys = (u) => {
+    const byParent = new Map();
+    for (const n of u.findAll("data-alert")) { const l = byParent.get(n.parent) ?? []; l.push(n.props["data-alert"]); byParent.set(n.parent, l); }
+    return [...byParent.values()].flatMap((l) => l.filter((x, i) => l.indexOf(x) !== i));
+  };
+  const said = [];
+  const err = console.error;
+  console.error = (...a) => { said.push(String(a[0])); };
+  try {
+    for (const [name, concurrent, id] of [["Meloxicam", [BIO_SONE, VIMESPIRO], "pair-prednisolone"], ["Doxycycline", ["Florfenicol + Doxycycline", "Tylosin + Doxycycline"], "dup-same"]]) {
+      const u = UI.mount(h(UI.CardH, { initial: { id: "r1", name, dose: "", freq: "1", days: 3 }, species: "dog", concurrent, planDays: 3, routes: ROUTES, freqs: FREQS }));
+      await u.settle();
+      const d = dupKeys(u);
+      check(`بطاقةُ ${name} مع خليطين فيهما المادّة: «${id}» مرّةً بكلّ قائمة`, d.length === 0 && u.findAll("data-alert").some((n) => n.props["data-alert"] === id), `مكرّر: ${d.join(",")}`);
+    }
+  } finally { console.error = err; }
+  check("  ولا «Encountered two children with the same key»", !said.some((s) => /same key/.test(s)), said.filter((s) => /same key/.test(s)).length + " تحذير");
+  check("  ولافتةُ الخطة مفتاحُها معرّفُ الصفّ لا اسمُه (صفّان باسمٍ واحد)", /key=\{`\$\{s\.id\}-\$\{a\.id\}`\}/.test(src("src/components/TreatmentPlan.tsx")));
 });
 
 console.log(fails ? `\n✗ med-match-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-match-test: ${passes} نجحت، 0 فشلت`);

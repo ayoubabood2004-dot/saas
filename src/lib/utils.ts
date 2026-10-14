@@ -91,14 +91,23 @@ export function uuid(): string {
  * search that silently fails.
  */
 export function normalizeAr(s: string): string {
+  return foldAr(s).replace(/\s+/g, "");
+}
+
+/**
+ * The same spelling folds as `normalizeAr`, with the spaces KEPT — for a matcher
+ * that reads words (the formulary's `normalizeName`). One fold, two shapes: a
+ * second copy of these rules is a copy that drifts, and a fold on one side only
+ * fails in silence («ايبوبروفين» never met «آيبوبروفين» and its species ban).
+ */
+export function foldAr(s: string): string {
   return s
     .toLowerCase()
     .replace(/[ً-ٰٟـ]/g, "") // diacritics + tatweel
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ة/g, "ه")
     .replace(/[ىئ]/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/\s+/g, "");
+    .replace(/ؤ/g, "و");
 }
 
 /**

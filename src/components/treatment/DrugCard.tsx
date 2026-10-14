@@ -7,7 +7,7 @@ import {
 import type { Species } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import {
-  matchMonograph, ingredientMonographs, doseFor, calcDose, doseCeiling, doseNum, judgedMgPerKg, outsideWindow, checkSafety, checkIngredientSafety, hasBlocking, appFreqHours,
+  matchMonograph, ingredientMonographs, concurrentIds, isLocalForm, doseFor, calcDose, doseCeiling, doseNum, judgedMgPerKg, outsideWindow, checkSafety, checkIngredientSafety, hasBlocking, appFreqHours,
   APP_ROUTE, CLASS_LABEL, ROUTE_LABEL, FREQ_LABEL, isBannedFor, type DoseAlert,
 } from "@/lib/vetFormulary";
 import { DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
@@ -110,22 +110,24 @@ export function DrugCard({
 
   /* checkSafety يقرأ **معرّفاتِ** الدليل للأدوية الأخرى، والبطاقةُ تستلم أسماءَها — فكان التكرارُ
    * والتعارضُ لا يُقالان داخل البطاقة أبداً (اسمٌ «Meloxicam» ليس المعرّف «meloxicam»). والمركّبُ
-   * بالخطة يُحسب بكلّ مادةٍ يعرفها الدليل فيه. */
-  const concurrentIds = useMemo(() => concurrent.flatMap((n) => ingredientMonographs(n).map((d) => d.id)), [concurrent]);
+   * بالخطة يُحسب بكلّ مادةٍ يعرفها الدليل فيه — مرّةً واحدة: Bio-Sone وVimespiro معاً بريدنيزولونٌ
+   * واحد، لا سطرا «تعارض» بمفتاحٍ واحد. وقطرةُ العين ليست بالدم فلا تُحسب. */
+  const otherIds = useMemo(() => concurrentIds(concurrent), [concurrent]);
   /** مركّبٌ بلا دليلٍ واحد: موادُّه المعروفة — لمنعها وحساسيتها وتعارضها، لا لجرعة. */
   const mixture = useMemo(() => (mono ? [] : ingredientMonographs(row.name)), [mono, row.name]);
+  const local = useMemo(() => isLocalForm(row.name), [row.name]);
 
   const alerts = useMemo<DoseAlert[]>(() => {
     if (!species) return [];
-    if (!mono) return mixture.length ? checkIngredientSafety({ ingredients: mixture, species, allergies, flags, concurrent: concurrentIds }) : [];
-    if (!row.mgPerKg) return checkSafety({ drug: mono, species, mgPerKg: 0, allergies, flags, concurrent: concurrentIds, dose: undefined });
+    if (!mono) return mixture.length ? checkIngredientSafety({ ingredients: mixture, species, allergies, flags, concurrent: otherIds, local }) : [];
+    if (!row.mgPerKg) return checkSafety({ drug: mono, species, mgPerKg: 0, allergies, flags, concurrent: otherIds, dose: undefined });
     return checkSafety({
       drug: mono, species, weightKg: weight, mgPerKg: row.mgPerKg,
       route: row.route ? APP_ROUTE[row.route] : undefined,
-      freq: appFreqHours(row.freq), allergies, flags, concurrent: concurrentIds,
+      freq: appFreqHours(row.freq), allergies, flags, concurrent: otherIds,
       dose: calc,
     });
-  }, [mono, mixture, species, weight, row.mgPerKg, row.route, row.freq, allergies, flags, concurrentIds, calc]);
+  }, [mono, mixture, local, species, weight, row.mgPerKg, row.route, row.freq, allergies, flags, otherIds, calc]);
 
   const manual = row.doseMode === "manual" || (!win && !!row.dose.trim()) || (!weight && !!row.dose.trim());
   const noWindowAnswered = !win && !!row.dose.trim();

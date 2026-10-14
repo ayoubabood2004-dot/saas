@@ -21,7 +21,8 @@
 // sensitivity in herding breeds (WSU VCPL).
 // ============================================================================
 import type { Species } from "@/types";
-import { formatDec } from "./utils";
+import { formatDec, foldAr } from "./utils";
+import { normalizeDigits } from "./digits";
 
 export type DoseTone = "critical" | "warn" | "info" | "good";
 
@@ -71,6 +72,16 @@ export interface Monograph {
   ar: string;               // الاسم العلمي بالعربي
   en: string;               // generic name
   brands?: string[];        // ما بيتعرّف عليه الفني بالرف
+  /** What the drug ALONE is written as when that is not its generic or a brand:
+   *  the generic's first word where the rest is a salt or «acid» («Pyrantel»,
+   *  «Tolfenamic»), or the name the clinic uses for a combination («Trimethoprim»
+   *  for trimethoprim-sulfa). Matched like the generic — never as a fragment. */
+  aka?: string[];
+  /** A combination monograph's active ingredients, each as the whole words that
+   *  name it (single words, read through `normalizeName`). A name that lists exactly these is this
+   *  monograph («Trimethoprim + Sulfadiazine»); one that lists them among other
+   *  ingredients CONTAINS it — for bans, allergies and pairs, never for a dose. */
+  components?: string[][];
   /** Therapeutic class — drives duplicate-therapy detection. */
   klass: DrugClass;
   doses: SpeciesDose[];
@@ -143,6 +154,7 @@ export const FORMULARY: Monograph[] = [
     ar: "أموكسيسيلين + كلافولانيك",
     en: "Amoxicillin-clavulanate",
     brands: ["Augmentin", "Clavamox", "Synulox"],
+    components: [["amoxicillin", "amoxycillin", "أموكسيسيلين"], ["clavulanate", "clavulanic", "كلافولانيك", "كلافولانات"]],
     klass: "beta-lactam",
     strengths: [50, 140, 250],
     doses: [{ species: DOG_CAT, min: 12.5, max: 25, typical: 12.5, freq: 12, routes: ["PO", "SC", "IM"] }],
@@ -235,6 +247,8 @@ export const FORMULARY: Monograph[] = [
     id: "tmps",
     ar: "ترايميثوبريم + سلفا",
     en: "Trimethoprim-sulfa",
+    aka: ["Trimethoprim", "ترايميثوبريم"],
+    components: [["trimethoprim", "ترايميثوبريم"], ["sulfa", "sulfadiazine", "sulfamethoxazole", "سلفا", "سلفاديازين", "سلفاميثوكسازول"]],
     klass: "sulfonamide",
     solid: true,
     strengths: [480],
@@ -501,6 +515,7 @@ export const FORMULARY: Monograph[] = [
     id: "vitamin-k1",
     ar: "فيتامين ك١",
     en: "Vitamin K1",
+    aka: ["Vitamin K", "فيتامين ك"],
     klass: "vitamin",
     strengths: [10],
     doses: [{ species: DOG_CAT, min: 2.5, max: 5, typical: 2.5, freq: 12, routes: ["SC", "PO"], note: "تسمّم مبيدات فئران — كمّل ٣–٤ أسابيع." }],
@@ -555,6 +570,7 @@ export const FORMULARY: Monograph[] = [
     id: "tolfenamic",
     ar: "حمض التولفيناميك",
     en: "Tolfenamic acid",
+    aka: ["Tolfenamic", "تولفيناميك"],
     klass: "nsaid",
     strengths: [40],
     doses: [{ species: DOG_CAT, min: 4, max: 4, typical: 4, freq: 24, routes: ["SC", "IM", "PO"], note: "٣ أيام، ثم توقّف ٤ أيام." }],
@@ -717,6 +733,7 @@ export const FORMULARY: Monograph[] = [
     id: "pyrantel",
     ar: "بيرانتيل",
     en: "Pyrantel pamoate",
+    aka: ["Pyrantel"],
     klass: "antiparasitic",
     doses: [{ species: DOG_CAT, min: 5, max: 10, typical: 5, freq: 0, routes: ["PO"], note: "كرّرها بعد أسبوعين." }],
   },
@@ -740,44 +757,100 @@ export function searchDrugs(q: string, limit = 12): Monograph[] {
  * strengths and brands — "Amoxicillin 250mg", "Enrofloxacin (Baytril)",
  * "Paracetamol (dogs only)". So we strip the decoration and match on the stem,
  * longest generic first so "Amoxicillin-Clavulanate" never resolves to plain
- * "Amoxicillin". */
+ * "Amoxicillin".
+ *
+ * Both sides pass through the SAME fold (`foldAr`, the one search uses): the
+ * formulary writes «آيبوبروفين» and «أسبرين», a clinic types «ايبوبروفين» — 7
+ * rows for a cat in production (2026-10-06) matched nothing, so no species ban.
+ * Eastern digits become ASCII first (as `searchable` does), so «ك١» and «K1» end
+ * alike. A digit glued to a letter is part of the name — «K1» is not «K3» — and a
+ * bare number is a strength or a count. */
 const normalizeName = (s: string) =>
-  s.toLowerCase()
+  foldAr(normalizeDigits(s))
     .replace(/\([^)]*\)/g, " ")        // drop "(Baytril)", "(dogs only)"
-    .replace(/[\d.]+\s*(mg|ml|mcg|g|%)/g, " ") // drop "250mg", "2%"
-    .replace(/[^a-z؀-ۿ]+/g, " ")
+    .replace(/[\d.]+\s*(mg|ml|mcg|g|%|٪)/g, " ") // drop "250mg", "2%", «١٠٪»
+    .replace(/[^a-z0-9؀-ۿ]+/g, " ")
+    .replace(/(^| )\d+(?= |$)/g, "$1")  // drop "200", "52" — keep "k1", "ad3e"
+    .replace(/ +/g, " ")
     .trim();
 
 /** Generic stems, longest-first, so compound names win over their prefixes. A
  *  generic name that lists synonyms ("Paracetamol / Acetaminophen") answers to
- *  each of them alone too — "Paracetamol (dogs only)" is the drug, not a guess. */
+ *  each of them alone too — "Paracetamol (dogs only)" is the drug, not a guess —
+ *  and so does what the drug alone is written as (`aka`: «Pyrantel»). */
 const MATCH_INDEX: { key: string; drug: Monograph }[] = FORMULARY
-  .flatMap((d) => [...new Set([d.en, ...d.en.split("/"), d.ar, ...(d.brands ?? [])].map(normalizeName))]
+  .flatMap((d) => [...new Set([d.en, ...d.en.split("/"), d.ar, ...(d.aka ?? []), ...(d.brands ?? [])].map(normalizeName))]
     .map((key) => ({ key, drug: d })))
   .filter((x) => x.key.length > 2)
   .sort((a, b) => b.key.length - a.key.length);
+
+/** Combination monographs and the whole words that name each of their ingredients. */
+const COMBOS = FORMULARY.filter((d) => d.components?.length).map((d) => ({
+  drug: d,
+  components: d.components!.map((names) => new Set(names.map(normalizeName))),
+}));
+const isComponentWord = (w: string) => COMBOS.some((c) => c.components.some((s) => s.has(w)));
 
 /* ── الاسمُ الذي يعدّد موادَّه ليس واحدةً منها (١٤/١٠) ─────────────────────────
  * عيادتان كتبتا بتصنيفاتهما «Oxytetracycline + Thiamphenicol + Prednisolone +
  * Lidocaine + Bromhexine (Bio-Sone)» و«Florfenicol + … + Prednisolone … (Vimespiro)»،
  * فاحتوت المطابقةُ «prednisolone» وصار المركّبُ بريدنيزولون: عنوانُه «بريدنيزولون»،
  * وجرعتُه وعيارُ حبّته ونافذتُه منه. ومثلُها «Florfenicol + Doxycycline» ⇒ دوكسيسيكلين
- * و«Ciprofloxacin + Flagyle» ⇒ ميترونيدازول. فالاسمُ الذي يعدّد مادّتين فأكثر لا يُطابَق
- * إلا بمونوغرافٍ هو نفسُه مركّبٌ بعدد موادّه («أموكسيسيلين + كلافولانيك» حرفياً،
- * «Trimethoprim + Sulfadiazine»)، ومنعُ موادّه وحساسيتُها وتعارضُها يُقرأ من كلّ مادةٍ
+ * و«Ciprofloxacin + Flagyle» ⇒ ميترونيدازول.
+ *
+ * فالاسمُ يُقرأ قائمةَ موادّ، وكلُّ مادةٍ تُطابَق وحدها: الاسمُ مونوغرافٌ واحد **فقط إن
+ * سمّت كلُّ موادّه ذلك المونوغراف** — مترادفان («Paracetamol / Acetaminophen»)، أو موادُّ
+ * مركّبٍ بأسمائها («Trimethoprim + Sulfadiazine» ⇒ TMPS). أمّا «Amoxicillin-Clavulanate +
+ * Paracetamol» فمادّتان: المركّبُ والباراسيتامول — وكان عدُّ الموادّ وحده يجعله المركّبَ
+ * فيضيع منعُ الباراسيتامول للقطّ. ومنعُ الموادّ وحساسيتُها وتعارضُها يُقرأ من كلّ مادةٍ
  * تُعرف (ingredientMonographs) — لا جرعة.
  *
- * الفواصلُ مقيسةٌ بأسماء الإنتاج: «+» (بفراغٍ وبلاه، وبالعربي «دوكسي +فلورفنيكول»)،
- * و«&»، وكلمة «and» («doxycycline and flor»). لا «-»: «Amoxicillin-Clavulanate»
- * و«Trimethoprim-Sulfadiazine» منتجٌ واحد كلٌّ منهما؛ ولا «/»: الدليلُ يكتب بها
- * المترادفات. وما بين القوسين يُشال أوّلاً — «(Bio-Sone)» اسمٌ تجاريّ لا مادّة. */
-const INGREDIENT_SEP = /\+|&|\band\b/i;
+ * الفواصلُ: «+» (بفراغٍ وبلاه، وبالعربي «دوكسي +فلورفنيكول»)، و«&»، وكلمة «and»
+ * («doxycycline and flor») — مقيسةٌ بالإنتاج؛ و«/» و«,» و«with» كما تُكتب بالإنجليزية،
+ * و«و» العربية حين يليها اسمُ مادةٍ يعرفها الدليل («أموكسيسيلين وجنتاميسين») — لا
+ * «كلاب وقطط» ولا «للعين والاذن» (هكذا تُكتب «و» بالإنتاج: وصفٌ لا مادّة). ولا «-»:
+ * «Amoxicillin-Clavulanate» و«Trimethoprim-Sulfadiazine» منتجٌ واحد كلٌّ منهما. ونسبةُ
+ * الوحدات عيارٌ لا قائمة («250mg/5ml»، «mg/kg»)، والفاصلةُ بين رقمين كسرٌ («1,5%»).
+ * وما بين القوسين يُشال أوّلاً — «(Bio-Sone)» اسمٌ تجاريّ لا مادّة. وجزءٌ كلُّه وصفٌ
+ * («Meloxicam for dogs and cats») ليس مادّة. */
+const UNIT_RATIO = /(?:\d[\d.,]*\s*(?:mg|mcg|µg|g|iu|ml|%)?|\b(?:mg|mcg|µg|g|iu|ml))\s*\/\s*(?:\d[\d.,]*\s*)?(?:ml|kg|l|g|mg|tabs?|tablets?|dose)\b/gi;
+const LIST_SEP = /\+|&|\/|,|\band\b|\bwith\b/i;
+const DESCRIPTOR_WORDS = new Set([
+  "dog", "dogs", "cat", "cats", "puppy", "puppies", "kitten", "kittens", "bird", "birds", "poultry",
+  "horse", "horses", "pet", "pets", "for", "only", "use", "all", "small", "large", "breed", "breeds", "adult", "adults",
+  "كلب", "كلاب", "قط", "قطط", "قطة", "جراء", "كتن", "طير", "طيور", "دواجن", "للكلاب", "للقطط", "للطيور", "لل",
+].map(normalizeName));
+const isDescriptor = (n: string) => n.split(" ").every((w) => DESCRIPTOR_WORDS.has(w));
+
+/** Arabic «و» joins two ingredients only when what follows it names one
+ *  («أموكسيسيلين وجنتاميسين»); «كلاب وقطط» is a description. */
+function splitWaw(part: string): string[] {
+  const words = part.trim().split(/\s+/);
+  const groups: string[][] = [[]];
+  const names = (w: string | undefined) => {
+    const n = w ? normalizeName(w) : "";
+    return !!n && (MATCH_INDEX.some((x) => x.key === n) || isComponentWord(n));
+  };
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const rest = w === "و" ? words[i + 1] : w.length > 2 && w.startsWith("و") ? w.slice(1) : undefined;
+    if (groups[groups.length - 1].length && names(rest)) {
+      groups.push(w === "و" ? [] : [rest!]);
+      continue;
+    }
+    groups[groups.length - 1].push(w);
+  }
+  return groups.map((g) => g.join(" "));
+}
 
 /** The active ingredients a free-text name lists, as written — one entry for a
- *  plain name. Parenthesised brands and notes are dropped first. */
+ *  plain name. Parenthesised brands and notes are dropped first, and a part that
+ *  only describes («cats», «للقطط») is no ingredient. */
 export function ingredientParts(name: string): string[] {
-  return name.replace(/\([^)]*\)/g, " ").split(INGREDIENT_SEP)
-    .map((s) => s.trim()).filter((s) => normalizeName(s) !== "");
+  return name.replace(/\([^)]*\)/g, " ").replace(UNIT_RATIO, " ").replace(/(\d),(\d)/g, "$1.$2")
+    .split(LIST_SEP).flatMap(splitWaw)
+    .map((s) => s.trim())
+    .filter((s) => { const n = normalizeName(s); return n !== "" && !isDescriptor(n); });
 }
 
 /** Shortest unfinished word the completion pass will finish. Measured on every
@@ -787,20 +860,90 @@ export function ingredientParts(name: string): string[] {
  *  two- and three-letter fragments («ca», «ace», «fur») that name nothing. */
 const MIN_COMPLETION = 4;
 
+/** Does `n` hold the stem `key` as words? It starts where a word starts (the
+ *  Arabic article may lead: «التولفيناميك» holds «تولفيناميك»), and it ends where
+ *  a word ends — or inside one only if its own last word is a stem of
+ *  MIN_COMPLETION letters («flagyle» ⊃ «flagyl», «… sulfadiazine» ⊃ «… sulfa»).
+ *  «علبة فيتامين كلاب» does not hold «فيتامين ك»: one letter of «كلاب» names nothing. */
+function holds(n: string, key: string): boolean {
+  const last = key.length - 1 - key.lastIndexOf(" ");
+  const wordStart = (i: number) => i === 0 || n[i - 1] === " " || (n.slice(i - 2, i) === "ال" && (i === 2 || n[i - 3] === " "));
+  for (let i = n.indexOf(key); i >= 0; i = n.indexOf(key, i + 1)) {
+    const end = i + key.length;
+    if (wordStart(i) && (end === n.length || n[end] === " " || last >= MIN_COMPLETION)) return true;
+  }
+  return false;
+}
+
 /** One drug name (no ingredient list) → its monograph, normalised input `n`. */
 function matchSingle(n: string): Monograph | undefined {
   const exact = MATCH_INDEX.find((x) => x.key === n)?.drug;
   if (exact) return exact;
-  const contained = MATCH_INDEX.find((x) => n.includes(x.key))?.drug;
+  const contained = MATCH_INDEX.find((x) => holds(n, x.key))?.drug;
   if (contained) return contained;
-  /* الإكمال: كلمةٌ لم تكتمل بعد («Itraconazol»، «parac») تُكمَل إلى اسمٍ من كلمةٍ واحدة
-   * **يبدأ** بها — لا اسمٌ **يحتويها** («Ronidazole» ليست ذيلَ «metronidazole»). ولا
-   * يُكمَل اسمٌ من كلمتين: «Calcium» ليست «Calcium gluconate 10%» الوريدية (مكمّلُ
-   * الدواجن الفمويّ غيرُها)، و«Vitamin» ليست «Vitamin K1». وإن بدأ بها دواءان
-   * («pred» ⇒ بريدنيزولون/بريدنيزون) فلا تخمين. */
-  if (n.length < MIN_COMPLETION || n.includes(" ")) return undefined;
-  const hits = new Set(MATCH_INDEX.filter((x) => !x.key.includes(" ") && x.key.startsWith(n)).map((x) => x.drug));
+  /* الإكمال: كلمةٌ أخيرةٌ لم تكتمل بعد («Itraconazol»، «parac»، «Calcium glucon») تُكمَل إلى
+   * اسمٍ بعدد كلماتها نفسِه، كلماتُه قبلها هي هي، وأخيرتُه **تبدأ** بها — لا اسمٌ **يحتويها**
+   * («Ronidazole» ليست ذيلَ «metronidazole»). ولا تُخترع كلمةٌ لم تُكتب: «Calcium» ليست
+   * «Calcium gluconate 10%» الوريدية (مكمّلُ الدواجن الفمويّ غيرُها)، و«Vitamin» ليست
+   * «Vitamin K1». وما يُكتب به الدواءُ وحده من اسمٍ بكلمتين («Pyrantel»، «Tolfenamic»)
+   * مسمّى بالدليل (aka) لا مُستنتَج. وإن بدأ بها دواءان («pred» ⇒ بريدنيزولون/بريدنيزون)
+   * فلا تخمين. */
+  const words = n.split(" ");
+  const tail = words[words.length - 1];
+  if (tail.length < MIN_COMPLETION) return undefined;
+  const head = words.slice(0, -1).join(" ");
+  const hits = new Set(MATCH_INDEX.filter((x) => {
+    const kw = x.key.split(" ");
+    return kw.length === words.length && kw.slice(0, -1).join(" ") === head && kw[kw.length - 1].startsWith(tail);
+  }).map((x) => x.drug));
   return hits.size === 1 ? [...hits][0] : undefined;
+}
+
+/** A listed ingredient, resolved: the drug it names (`named`), or — for safety
+ *  only — the combination it is one ingredient of («Sulfadiazine» ⇒ TMPS). */
+interface Resolved { drug: Monograph | undefined; named: boolean }
+
+function resolveParts(parts: string[]): Resolved[] {
+  const ps = parts.map((p) => { const n = normalizeName(p); return { n, words: new Set(n.split(" ")), used: false }; });
+  const out: Resolved[] = [];
+  // A combination whose every ingredient is named among the parts takes them as one
+  // («Amoxicillin + Clavulanic acid» ⇒ amoxi-clav, «… + Trimethoprim + Sulfadiazine» ⇒ TMPS).
+  for (const c of COMBOS) {
+    const at = c.components.map((stems) => ps.findIndex((p) => !p.used && [...stems].some((s) => p.words.has(s))));
+    if (at.every((i) => i >= 0)) {
+      for (const i of at) ps[i].used = true;
+      out.push({ drug: c.drug, named: true });
+    }
+  }
+  for (const p of ps) {
+    if (p.used) continue;
+    const named = matchSingle(p.n);
+    out.push(named
+      ? { drug: named, named: true }
+      : { drug: COMBOS.find((c) => c.components.some((stems) => [...stems].some((s) => p.words.has(s))))?.drug, named: false });
+  }
+  return out;
+}
+
+/* ── الشكلُ الموضعيّ ليس الحقنة ──────────────────────────────────────────────
+ * «Gentamicin eye drop» و«Gentamicin ear drop» بمخزون عيادة كانتا جنتاميسين الحقن:
+ * ٦ ملغ/كغ وريدي/عضلي بعيار ٤٠/٨٠ تُبذر عند الإضافة، وقطّةٌ مجفّفة تُمنع من قطرة عينٍ
+ * بتنبيه «أمينوغلايكوزيد مع جفاف» الحاجب. فالاسمُ الذي يعلن شكلاً موضعياً لا يصير
+ * مونوغرافاً لا طريقَ موضعياً له (البيرميثرين الموضعيّ يبقى بيرميثرين، ومنعُه للقطّ معه)؛
+ * ومادّتُه تبقى لمنع النوع والحساسية وحدهما — لا لأعلام الملفّ ولا للتعارض ولا للتكرار:
+ * ما يوضع بالعين لا يدخل الدم كالحقنة. */
+const LOCAL_WORDS = new Set([
+  "eye", "eyes", "ear", "ears", "ophthalmic", "otic", "auricular", "ointment", "ointmint", "cream", "creme", "lotion",
+  "shampoo", "shamppo", "spray", "topical", "spot", "pour",
+  "عين", "العين", "للعين", "اذن", "الاذن", "للاذن", "مرهم", "كريم", "شامبو", "بخاخ", "سبري", "لوشن", "غسول", "موضعي", "سبوت",
+].map(normalizeName));
+const LOCAL_ROUTES: Route[] = ["topical", "otic", "ocular"];
+const actsLocally = (d: Monograph) => d.doses.some((w) => w.routes.some((r) => LOCAL_ROUTES.includes(r)));
+
+/** Does the name declare a local form — eye/ear drops, cream, ointment, spray,
+ *  shampoo? Read on every word, the parenthesised ones too («Gentamicin (eye)»). */
+export function isLocalForm(name: string): boolean {
+  return foldAr(normalizeDigits(name)).replace(/[^a-z؀-ۿ]+/g, " ").trim().split(" ").some((w) => LOCAL_WORDS.has(w));
 }
 
 /**
@@ -809,27 +952,24 @@ function matchSingle(n: string): Monograph | undefined {
  *
  * Order matters, and getting it wrong is a safety bug: matching loosely first
  * makes "Amoxicillin 250mg" resolve to Amoxicillin-Clavulanate, whose wider
- * window then swallows a genuine overdose warning. So: exact stem wins; a name
- * that lists two or more ingredients matches nothing else but a combination
- * monograph of as many ingredients (it is a mixture, not its first recognisable
- * ingredient); then the longest contained stem; and only then is an unfinished
- * word completed — a real prefix of a one-word name, at least MIN_COMPLETION
- * letters, naming one drug only.
+ * window then swallows a genuine overdose warning. So: the exact stem wins;
+ * otherwise the name is read as the ingredients it lists, each matched alone
+ * (exact, then the longest contained stem, then an unfinished word completed —
+ * a real prefix of a one-word name, at least MIN_COMPLETION letters, naming one
+ * drug only), and it is one monograph only when every ingredient names that
+ * monograph. A mixture is not its first recognisable ingredient. And a name that
+ * declares a local form is no monograph without a local route.
  */
 export function matchMonograph(name: string): Monograph | undefined {
   const n = normalizeName(name);
   if (!n) return undefined;
-  const exact = MATCH_INDEX.find((x) => x.key === n)?.drug;
-  if (exact) return exact;
-  const parts = ingredientParts(name).length;
-  // A mixture is one monograph only when that monograph IS the mixture: its
-  // generic (several words, not a one-word brand) is in the name and its own name
-  // lists as many ingredients («Trimethoprim + Sulfadiazine» ⇒ TMPS; «Amoxicillin
-  // + Gentamicin» ⇏ amoxicillin; «Synulox + Gentamicin» ⇏ amoxi-clav).
-  if (parts > 1) {
-    return MATCH_INDEX.find((x) => x.key.includes(" ") && n.includes(x.key) && ingredientParts(x.drug.ar).length === parts)?.drug;
+  let drug = MATCH_INDEX.find((x) => x.key === n)?.drug;
+  if (!drug) {
+    const parts = resolveParts(ingredientParts(name));
+    const first = parts[0]?.drug;
+    drug = first && parts.every((p) => p.named && p.drug === first) ? first : undefined;
   }
-  return matchSingle(n);
+  return drug && (actsLocally(drug) || !isLocalForm(name)) ? drug : undefined;
 }
 
 /**
@@ -837,21 +977,33 @@ export function matchMonograph(name: string): Monograph | undefined {
  * dose: species bans, charted allergies, duplicate therapy and dangerous class
  * pairs. A single drug (or an exact combination monograph) is itself; a listed
  * mixture is each ingredient the formulary knows («Paracetamol + Vitamin C» ⇒
- * paracetamol, so a cat still gets the ban). Never feed these to a dose path:
- * the mixture's mg/kg is not any one ingredient's.
+ * paracetamol, so a cat still gets the ban; «Amoxicillin-Clavulanate +
+ * Gentamicin» ⇒ both). Each monograph once. Never feed these to a dose path: the
+ * mixture's mg/kg is not any one ingredient's.
  */
 export function ingredientMonographs(name: string): Monograph[] {
-  const whole = matchMonograph(name);
-  if (whole) return [whole];
-  const parts = ingredientParts(name);
-  if (parts.length < 2) return [];
+  const n = normalizeName(name);
+  if (!n) return [];
+  const exact = MATCH_INDEX.find((x) => x.key === n)?.drug;
+  if (exact) return [exact];
   const out = new Map<string, Monograph>();
-  for (const p of parts) {
-    const n = normalizeName(p);
-    const d = n ? matchSingle(n) : undefined;
-    if (d) out.set(d.id, d);
-  }
+  for (const p of resolveParts(ingredientParts(name))) if (p.drug) out.set(p.drug.id, p.drug);
   return [...out.values()];
+}
+
+/**
+ * The formulary ids the OTHER rows of a plan put into the body — what duplicate
+ * therapy and class pairs are judged against. Each id once: Bio-Sone and
+ * Vimespiro side by side are one prednisolone, not two «تعارض» rows with the same
+ * React key. A local form (eye drops, cream) is left out — it is not in the blood.
+ */
+export function concurrentIds(names: readonly string[]): string[] {
+  const ids = new Set<string>();
+  for (const name of names) {
+    if (isLocalForm(name) && !matchMonograph(name)) continue;
+    for (const d of ingredientMonographs(name)) ids.add(d.id);
+  }
+  return [...ids];
 }
 
 /** The first species ban among a name's ingredients, naming the ingredient when
@@ -1120,17 +1272,19 @@ const ALLERGY_CLASS_ALIASES: { match: string[]; klass: DrugClass; as: string }[]
 ];
 
 const norm = (s: string) => s.toLowerCase().trim();
+/** The chart's free text and the drug's names, folded alike («اموكسيسيلين» is «أموكسيسيلين»). */
+const foldAllergy = (s: string) => foldAr(normalizeDigits(s)).trim();
 
 /**
  * Does a charted allergy cover this drug? Returns the reason to show, or
  * undefined. Checks the drug's own names first, then its therapeutic class.
  */
 export function allergyHit(drug: Monograph, allergy: string): string | undefined {
-  const a = norm(allergy);
+  const a = foldAllergy(allergy);
   if (!a) return undefined;
 
   // Direct: the allergy names this exact drug (or one of its brands).
-  const names = [drug.en, drug.ar, ...(drug.brands ?? [])].map(norm);
+  const names = [drug.en, drug.ar, ...(drug.aka ?? []), ...(drug.brands ?? [])].map(foldAllergy);
   if (names.some((n) => n.includes(a) || a.includes(n))) {
     return `مسجّل بالملف: حساسية من «${allergy.trim()}» — وهذا هو نفس الدواء.`;
   }
@@ -1138,7 +1292,7 @@ export function allergyHit(drug: Monograph, allergy: string): string | undefined
   // Class-level: a penicillin allergy has to stop every beta-lactam.
   for (const alias of ALLERGY_CLASS_ALIASES) {
     if (alias.klass !== drug.klass) continue;
-    if (alias.match.some((m) => a.includes(m))) {
+    if (alias.match.some((m) => a.includes(foldAllergy(m)))) {
       return `مسجّل بالملف: حساسية من «${allergy.trim()}» — و${drug.ar} من نفس الصنف (${alias.as}).`;
     }
   }
@@ -1174,7 +1328,10 @@ export function checkSafety(opts: {
    *  Every caller that has a dose passes it (scripts/dose-safety-test.mjs §٦). */
   dose: DoseCalc | undefined;
 }): DoseAlert[] {
-  const { drug, species, mgPerKg, route, freq, dose, concurrent = [], allergies = [], flags = {} } = opts;
+  const { drug, species, mgPerKg, route, freq, dose, allergies = [], flags = {} } = opts;
+  // Each drug the patient is on, once: two other rows that both carry prednisolone
+  // are one «تعارض مع بريدنيزولون», not two alerts sharing one id (and React key).
+  const concurrent = [...new Set(opts.concurrent ?? [])];
   const out: DoseAlert[] = [];
 
   // --- Hard species ban: the highest-value rule in the whole engine.
@@ -1349,6 +1506,11 @@ export function checkSafety(opts: {
  * ban, charted allergy (drug or class), duplicate therapy, dangerous class pairs
  * and chart flags. A mixture must not be safer on paper than its parts.
  * Alert ids carry the ingredient («paracetamol:banned») so two never collide.
+ *
+ * A local form (`local`: «Gentamicin eye drop», `isLocalForm`) keeps only what
+ * holds wherever the drug is put — the species ban and the charted allergy. Its
+ * chart flags, pairs and duplicates are the injection's, not the drop's: a
+ * dehydrated cat is not blocked from an eye drop by «أمينوغلايكوزيد مع جفاف».
  */
 export function checkIngredientSafety(opts: {
   ingredients: Monograph[];
@@ -1356,15 +1518,19 @@ export function checkIngredientSafety(opts: {
   concurrent?: string[];
   allergies?: string[];
   flags?: { pregnant?: boolean; renal?: boolean; hepatic?: boolean; dehydrated?: boolean; puppy?: boolean };
+  local?: boolean;
 }): DoseAlert[] {
   const out: DoseAlert[] = [];
   for (const drug of opts.ingredients) {
     const alerts = checkSafety({
       drug, species: opts.species, mgPerKg: 0, dose: undefined,
-      concurrent: opts.concurrent, allergies: opts.allergies, flags: opts.flags,
+      concurrent: opts.local ? [] : opts.concurrent, allergies: opts.allergies, flags: opts.local ? {} : opts.flags,
     });
-    // «no-window» judges a dose this mixture does not have.
-    for (const a of alerts) if (a.id !== "no-window") out.push({ ...a, id: `${drug.id}:${a.id}` });
+    for (const a of alerts) {
+      if (a.id === "no-window") continue;                 // judges a dose this mixture does not have
+      if (opts.local && a.id !== "banned" && !a.id.startsWith("allergy-")) continue;
+      out.push({ ...a, id: `${drug.id}:${a.id}` });
+    }
   }
   return out;
 }
