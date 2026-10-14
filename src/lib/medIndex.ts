@@ -1,4 +1,4 @@
-import type { ClinicDrug, ClinicDrugOp, DrugFamilyKey, MedicineStock, Species } from "@/types";
+import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugOp, DrugFamilyKey, MedicineStock, Species } from "@/types";
 import { FORMULARY, DRUG_BY_ID, matchMonograph, doseFor, isBannedFor, type DrugClass, type Monograph } from "./vetFormulary";
 import { searchable } from "./utils";
 
@@ -83,6 +83,13 @@ export const DRUG_HINTS = {
   clinic_drugs_full: "\u0648\u0635\u0644\u062a \u0664\u0660\u0660 \u062f\u0648\u0627\u0621 \u2014 \u0623\u0631\u0634\u0641 \u062f\u0648\u0627\u0621 \u0645\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0647 \u0623\u0648\u0651\u0644\u0627\u064b",
   clinic_drugs_frozen: "\u0647\u0648\u064a\u0629 \u0627\u0644\u062f\u0648\u0627\u0621 \u0648\u0639\u064a\u0627\u062f\u062a\u0647 \u0645\u0627 \u062a\u062a\u063a\u064a\u0651\u0631",
   clinic_drugs_bad_name: "\u0627\u0633\u0645 \u0627\u0644\u062f\u0648\u0627\u0621 \u0644\u0627\u0632\u0645 \u064a\u0643\u0648\u0646 \u0628\u064a\u0646 \u062d\u0631\u0641 \u0648\u0661\u0662\u0660 \u062d\u0631\u0641\u0627\u064b.",
+  // 0239: تصنيفاتُ العيادة
+  drug_group_bad_name: "\u0627\u0633\u0645 \u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u0644\u0627\u0632\u0645 \u064a\u0643\u0648\u0646 \u0628\u064a\u0646 \u062d\u0631\u0641 \u0648\u0664\u0660 \u062d\u0631\u0641\u0627\u064b.",
+  drug_group_exists: "\u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u0645\u0648\u062c\u0648\u062f: \u00ab%s\u00bb \u2014 \u0627\u0633\u062a\u0639\u0645\u0644\u0647 \u0628\u062f\u0644 \u0645\u0627 \u062a\u0633\u0648\u0651\u064a \u0646\u0633\u062e\u0629 \u062b\u0627\u0646\u064a\u0629.",
+  drug_group_gone: "\u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u0645\u0627 \u0639\u0627\u062f \u0645\u0648\u062c\u0648\u062f \u0623\u0648 \u062a\u063a\u064a\u0651\u0631 \u0645\u0646 \u062c\u0647\u0627\u0632 \u062b\u0627\u0646\u064a \u2014 \u0631\u062c\u0651\u0639\u0646\u0627\u0647 \u0645\u062b\u0644 \u0645\u0627 \u0628\u0627\u0644\u062e\u0627\u062f\u0645\u060c \u0639\u064a\u062f \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629.",
+  drug_groups_full: "\u0648\u0635\u0644\u062a \u0666\u0660 \u062a\u0635\u0646\u064a\u0641\u0627\u064b \u2014 \u0623\u0631\u0634\u0641 \u062a\u0635\u0646\u064a\u0641 \u0645\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0647 \u0623\u0648\u0651\u0644\u0627\u064b.",
+  drug_members_full: "\u0648\u0635\u0644\u062a \u0662\u0660\u0660\u0660 \u0639\u0636\u0648\u064a\u0629 \u2014 \u0634\u064a\u0644 \u0623\u062f\u0648\u064a\u0629 \u0645\u0646 \u062a\u0635\u0646\u064a\u0641\u0627\u062a \u0645\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0647\u0627.",
+  drug_group_frozen: "\u0647\u0648\u064a\u0629 \u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u0648\u0639\u064a\u0627\u062f\u062a\u0647 \u0645\u0627 \u062a\u062a\u063a\u064a\u0651\u0631",
 } as const;
 export type DrugErrorCode = keyof typeof DRUG_HINTS;
 
@@ -122,14 +129,47 @@ const hasAfter = (o: object): boolean => Object.prototype.hasOwnProperty.call(o,
 /**
  * يطبّق دفعةً من العمليات كما يطبّقها الخادم — بالترتيب، وبالرفض نفسه وترتيبه.
  * لا يُغيّر المصفوفةَ الداخلة: رفضٌ بمنتصف الدفعة يرمي ولا يترك نصفَها (معاملةٌ واحدة).
+ * (الصفوفُ وحدها — التصنيفاتُ وعضوياتُها بـ`applyAll`.)
  */
 export function applyOps(rows: readonly ClinicDrug[], ops: readonly ClinicDrugOp[], now: string = new Date().toISOString()): ClinicDrug[] {
+  return applyAll({ rows, groups: [], items: [] }, ops, now).rows;
+}
+
+export const MAX_GROUPS = 60;
+export const MAX_MEMBERS = 2000;
+/** مرآةُ `btrim(regexp_replace(name, E'[ \t\r\n]+', ' ', 'g'))` — الفراغاتُ المتتالية فراغٌ واحد. */
+export const cleanGroupName = (s: string | null | undefined): string => String(s ?? "").replace(/[ \t\r\n]+/g, " ").replace(/^ +| +$/g, "");
+const cmpId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+export interface DrugsData {
+  rows: readonly ClinicDrug[];
+  groups: readonly ClinicDrugGroup[];
+  items: readonly ClinicDrugGroupItem[];
+}
+export interface DrugsDataOut { rows: ClinicDrug[]; groups: ClinicDrugGroup[]; items: ClinicDrugGroupItem[] }
+
+/**
+ * مرآةُ `clinic_drugs_apply` (0239) كاملةً — الأدويةُ والتصنيفاتُ والعضويات، سطراً بسطر:
+ * نفسُ الاسم المستعار (put طُوي على صفٍّ حيٍّ ⇒ ما بعده بالدفعة يقرأ معرّفَ الصفّ)، ونفسُ ترتيب
+ * الرفض، ونفسُ الموضع (منتصفُ الفجوة، وترقيمٌ ×١٠٢٤ على فجوةٍ أقلَّ من ٢). يفحص تطابقَهما
+ * `clinic-drugs-parity` على بوستغريس حقيقيّ.
+ */
+export function applyAll(data: DrugsData, ops: readonly ClinicDrugOp[], now: string = new Date().toISOString()): DrugsDataOut {
   if (!Array.isArray(ops)) fail("bad_ops");
   if (ops.length > MAX_OPS) fail("too_many_ops");
-  const out: ClinicDrug[] = rows.map((r) => ({ ...r }));
+  const out: ClinicDrug[] = data.rows.map((r) => ({ ...r }));
+  const groups: ClinicDrugGroup[] = data.groups.map((g) => ({ ...g }));
+  let items: ClinicDrugGroupItem[] = data.items.map((i) => ({ ...i }));
+  const alias = new Map<string, string>();
+  const resolve = (id: string | null | undefined): string | null | undefined => (typeof id === "string" ? alias.get(id) ?? id : id);
   const liveCount = () => out.filter((r) => r.archived_at == null).length;
   const liveByKey = (k: string, except?: string) =>
     k === "" ? undefined : out.find((r) => r.archived_at == null && r.id !== except && drugKey(r.name) === k);
+  const liveGroups = () => groups.filter((g) => g.archived_at == null);
+  /** التوأمُ الحيّ — الأقدمُ إنشاءً أوّلاً (`order by created_at, id`) كالتلميح بالخادم. */
+  const groupTwin = (name: string, except?: string) => liveGroups()
+    .filter((g) => g.id !== except && drugKey(g.name) === drugKey(name))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || cmpId(a.id, b.id))[0];
 
   /** الموضع — مرآةُ كتلة «slot» بالدالّة: آخرُ القائمة، أو أوّلُها، أو منتصفُ الفجوة بعد صفّ،
    *  وفجوةٌ أقلُّ من ٢ تُرقِّم «أدويتي» كلَّها ×١٠٢٤ ثم يُعاد الحساب مرّةً واحدة. */
@@ -150,18 +190,58 @@ export function applyOps(rows: readonly ClinicDrug[], ops: readonly ClinicDrugOp
     }
     return fail("drug_row_gone");
   };
+  /** موضعُ التصنيف بين التصنيفات الحيّة — مرآةُ (ب٢). */
+  const groupSlot = (self: string | null, has: boolean, after: string | null): number => {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const others = liveGroups().filter((g) => g.id !== self);
+      if (!has) return (others.length ? Math.max(...others.map((g) => g.pos as number)) : 0) + POS_STEP;
+      if (after === null) return (others.length ? Math.min(...others.map((g) => g.pos as number)) : POS_STEP) - POS_STEP;
+      const a = groups.find((g) => g.id === after && g.archived_at == null);
+      if (!a || after === self) return fail("drug_group_gone");
+      const apos = a.pos as number;
+      const later = others.filter((g) => (g.pos as number) > apos).map((g) => g.pos as number);
+      if (!later.length) return apos + POS_STEP;
+      const next = Math.min(...later);
+      if (next - apos >= 2) return Math.floor((apos + next) / 2);
+      if (attempt === 2) break;
+      liveGroups().sort((x, y) => ((x.pos as number) - (y.pos as number)) || cmpId(x.id, y.id)).forEach((g, i) => { g.pos = (i + 1) * POS_STEP; });
+    }
+    return fail("drug_group_gone");
+  };
+  /** موضعُ الدواء داخل التصنيف — بين كلّ عضوياته والنائمةُ منها؛ مرآةُ (ب٣). */
+  const itemSlot = (group: string, self: string | null, has: boolean, after: string | null): number => {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const others = items.filter((i) => i.group_id === group && i.drug_id !== self);
+      if (!has) return (others.length ? Math.max(...others.map((i) => i.pos)) : 0) + POS_STEP;
+      if (after === null) return (others.length ? Math.min(...others.map((i) => i.pos)) : POS_STEP) - POS_STEP;
+      const a = items.find((i) => i.group_id === group && i.drug_id === after);
+      if (!a || after === self) return fail("drug_row_gone");
+      const apos = a.pos;
+      const later = others.filter((i) => i.pos > apos).map((i) => i.pos);
+      if (!later.length) return apos + POS_STEP;
+      const next = Math.min(...later);
+      if (next - apos >= 2) return Math.floor((apos + next) / 2);
+      if (attempt === 2) break;
+      items.filter((i) => i.group_id === group).sort((x, y) => (x.pos - y.pos) || cmpId(x.drug_id, y.drug_id)).forEach((i, n) => { i.pos = (n + 1) * POS_STEP; });
+    }
+    return fail("drug_row_gone");
+  };
 
   for (const o of ops) {
     if (!o || typeof o !== "object" || typeof (o as { id?: unknown }).id !== "string" || !(o as { id: string }).id) fail("bad_ops");
+    const groupOp = o.op === "group_create" || o.op === "group_edit" || o.op === "group_move" || o.op === "group_archive" || o.op === "group_restore";
+    // دواءٌ طُوي بـput سابقٍ بنفس الدفعة ⇒ معرّفُ صفّه (لا لمعرّف put نفسه ولا للتصنيف).
+    const id = o.op === "put" || groupOp ? o.id : (resolve(o.id) as string);
     switch (o.op) {
       case "put": {
         const name = trimDrugName(o.name);
         const k = drugKey(name);
         const has = hasAfter(o);
-        const after = has ? (o.after ?? null) : null;
+        const after = has ? (resolve(o.after) ?? null) : null;
         const mine = !!o.mine;
         const hit = liveByKey(k);
         if (hit) {
+          if (hit.id !== o.id) alias.set(o.id, hit.id);
           // موجودٌ حيّ: لا تسميةَ ولا صنفَ ولا إخراجَ من «أدويتي» — نجمةٌ أو نقلٌ لا غير.
           if (mine && (!hit.in_mine || has)) {
             const pos = slot(hit.id, has, after);
@@ -181,18 +261,18 @@ export function applyOps(rows: readonly ClinicDrug[], ops: readonly ClinicDrugOp
         break;
       }
       case "unmine": {
-        const r = out.find((x) => x.id === o.id && x.in_mine);
+        const r = out.find((x) => x.id === id && x.in_mine);
         if (r) { r.in_mine = false; r.pos = null; r.updated_at = now; }
         break;
       }
       case "move": {
-        const r = out.find((x) => x.id === o.id && x.in_mine && x.archived_at == null);
+        const r = out.find((x) => x.id === id && x.in_mine && x.archived_at == null);
         if (!r) return fail("drug_row_gone");
-        r.pos = slot(r.id, true, o.after ?? null);
+        r.pos = slot(r.id, true, resolve(o.after) ?? null);
         break;
       }
       case "edit": {
-        const r = out.find((x) => x.id === o.id && x.archived_at == null);
+        const r = out.find((x) => x.id === id && x.archived_at == null);
         if (!r) return fail("drug_row_gone");
         const name = typeof o.name === "string" ? trimDrugName(o.name) : r.name;
         const family = (o.family || r.family) as FamilyKey;
@@ -205,12 +285,12 @@ export function applyOps(rows: readonly ClinicDrug[], ops: readonly ClinicDrugOp
         break;
       }
       case "archive": {
-        const r = out.find((x) => x.id === o.id && x.archived_at == null);
+        const r = out.find((x) => x.id === id && x.archived_at == null);
         if (r) { r.archived_at = now; r.in_mine = false; r.pos = null; r.updated_at = now; }
         break;
       }
       case "restore": {
-        const r = out.find((x) => x.id === o.id);
+        const r = out.find((x) => x.id === id);
         if (!r) return fail("drug_row_gone");
         if (r.archived_at != null) {
           if (liveCount() >= MAX_LIVE) fail("clinic_drugs_full");
@@ -220,12 +300,91 @@ export function applyOps(rows: readonly ClinicDrug[], ops: readonly ClinicDrugOp
         }
         break;
       }
+      case "group_create": {
+        if (groups.some((g) => g.id === id)) break;   // إعادةُ إرسالٍ لنفس المعرّف: لا شيء
+        const name = cleanGroupName(o.name);
+        if (drugKey(name) === "" || charLen(name) > 40) fail("drug_group_bad_name");
+        const twin = groupTwin(name);
+        if (twin) fail("drug_group_exists", twin.name);
+        if (liveGroups().length >= MAX_GROUPS) fail("drug_groups_full");
+        const has = hasAfter(o);
+        const pos = groupSlot(null, has, has ? (o.after ?? null) : null);
+        groups.push({ id, name, pos, archived_at: null, created_at: now, updated_at: now });
+        break;
+      }
+      case "group_edit": {
+        const g = groups.find((x) => x.id === id && x.archived_at == null);
+        if (!g) return fail("drug_group_gone");
+        const name = cleanGroupName(o.name);
+        if (name === g.name) break;   // نفسُ الاسم: لا شيء
+        if (drugKey(name) === "" || charLen(name) > 40) fail("drug_group_bad_name");
+        const twin = groupTwin(name, g.id);
+        if (twin) fail("drug_group_exists", twin.name);
+        g.name = name; g.updated_at = now;
+        break;
+      }
+      case "group_move": {
+        const g = groups.find((x) => x.id === id && x.archived_at == null);
+        if (!g) return fail("drug_group_gone");
+        g.pos = groupSlot(g.id, true, o.after ?? null);
+        break;
+      }
+      case "group_archive": {
+        const g = groups.find((x) => x.id === id && x.archived_at == null);
+        if (g) { g.archived_at = now; g.pos = null; g.updated_at = now; }
+        break;
+      }
+      case "group_restore": {
+        const g = groups.find((x) => x.id === id);
+        if (!g) return fail("drug_group_gone");
+        if (g.archived_at == null) break;   // حيٌّ أصلاً: لا شيء
+        const twin = groupTwin(g.name, g.id);
+        if (twin) fail("drug_group_exists", twin.name);
+        if (liveGroups().length >= MAX_GROUPS) fail("drug_groups_full");
+        g.pos = groupSlot(g.id, false, null);
+        g.archived_at = null; g.updated_at = now;
+        break;
+      }
+      case "member_add":
+      case "member_move": {
+        const group = typeof o.group === "string" ? o.group : "";
+        if (!groups.some((g) => g.id === group && g.archived_at == null)) return fail("drug_group_gone");
+        const after = resolve(o.after) ?? null;
+        const cur = items.find((i) => i.group_id === group && i.drug_id === id);
+        if (o.op === "member_add") {
+          if (!out.some((r) => r.id === id && r.archived_at == null)) return fail("drug_row_gone");
+          const has = hasAfter(o);
+          if (cur && !has) break;   // عضوٌ أصلاً: لا شيء
+          const pos = itemSlot(group, cur ? id : null, has, has ? after : null);
+          if (cur) { cur.pos = pos; break; }
+          if (items.length >= MAX_MEMBERS) fail("drug_members_full");
+          items.push({ group_id: group, drug_id: id, pos });
+        } else {
+          if (!cur) return fail("drug_row_gone");
+          cur.pos = itemSlot(group, id, true, after);
+        }
+        break;
+      }
+      case "member_remove": {
+        items = items.filter((i) => !(i.group_id === o.group && i.drug_id === id));
+        break;
+      }
       default:
         fail("bad_ops");
     }
   }
-  return out;
+  return { rows: out, groups, items };
 }
+
+/** ترتيبُ الخادم بـclinic_drugs_list: التصنيفاتُ الحيّةُ بموضعها ثم المؤرشفةُ الأحدثُ أوّلاً، والعضوياتُ
+ *  بالتصنيف ثم الموضع ثم الدواء. */
+export const groupsOrder = (groups: readonly ClinicDrugGroup[]): ClinicDrugGroup[] => groups.slice().sort((a, b) =>
+  (a.archived_at != null ? 1 : 0) - (b.archived_at != null ? 1 : 0)
+  || (a.archived_at == null ? ((a.pos ?? 0) - (b.pos ?? 0)) : 0)
+  || (a.archived_at != null ? (b.archived_at as string).localeCompare(a.archived_at as string) : 0)
+  || cmpId(a.id, b.id));
+export const itemsOrder = (items: readonly ClinicDrugGroupItem[]): ClinicDrugGroupItem[] => items.slice().sort((a, b) =>
+  cmpId(a.group_id, b.group_id) || (a.pos - b.pos) || cmpId(a.drug_id, b.drug_id));
 
 /* ============================================================================
  * planDrop — إفلاتٌ واحد = عمليةٌ واحدة
@@ -347,6 +506,8 @@ export interface MedItem {
   stock?: number;
   products: MedicineStock[];
   hay: string;
+  /** تصنيفاتُ العيادة الحيّة التي هو فيها (0239) — شاراتُ البلاطة. */
+  groupIds: string[];
 }
 
 export interface MedIndex {
@@ -361,6 +522,10 @@ export interface MedIndex {
   byKey: Map<string, MedItem>;
   /** «الأخيرة» — حتى ١٢ بلا تكرار. */
   recent: MedItem[];
+  /** تصنيفاتُ العيادة الحيّة بترتيبها، وعددُ ما يظهر فيها (0239). */
+  groups: { id: string; name: string; count: number }[];
+  /** أدويةُ كلّ تصنيفٍ بموضعها — الحيّةُ وحدها (دواءٌ مؤرشف تبقى عضويتُه نائمةً لا تُرى). */
+  byGroup: Map<string, MedItem[]>;
   search(q: string): MedItem[];
 }
 
@@ -378,6 +543,9 @@ export interface BuildInput {
    *  Permethrin) بلاطةٌ بشارة «ممنوع» لنوعه — غيابُه كان يدفع الممرّضة لكتابته حرّاً بلا تحذير. */
   formulary?: "all";
   stockMode?: "show" | "hide";
+  /** تصنيفاتُ العيادة وعضوياتُها كما يرجعها clinic_drugs_list (0239). */
+  groups?: readonly ClinicDrugGroup[] | null;
+  items?: readonly ClinicDrugGroupItem[] | null;
 }
 
 const haystack = (name: string, mono?: Monograph) =>
@@ -401,7 +569,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     family, familyType, base, inMine: false, pos: null, monographId: mono?.id,
     banned: mono && species ? isBannedFor(mono, species) : undefined,
     dosed: !!(mono && species && doseFor(mono, species)),
-    products: [], hay: haystack(name, mono),
+    products: [], hay: haystack(name, mono), groupIds: [],
   });
 
   for (const g of input.catalog) {
@@ -483,13 +651,31 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     if (recent.length >= 12) break;
   }
 
+  /* التصنيفات: الحيّةُ بموضعها، وأعضاؤها بموضعهم — عضويةُ دواءٍ مؤرشفٍ (أو خارج «الموثَّق» بمحرّر
+   * البروتوكول) لا تُرى، ولا تصنيفٌ مؤرشف. */
+  const byDrug = new Map<string, MedItem>();
+  for (const it of all) if (it.drugId) byDrug.set(it.drugId, it);
+  const liveGroups = (input.groups ?? []).filter((g) => g.archived_at == null)
+    .slice().sort((a, b) => ((a.pos ?? 0) - (b.pos ?? 0)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const byGroup = new Map<string, MedItem[]>();
+  for (const g of liveGroups) byGroup.set(g.id, []);
+  const members = (input.items ?? []).slice().sort((a, b) => (a.pos - b.pos) || (a.drug_id < b.drug_id ? -1 : a.drug_id > b.drug_id ? 1 : 0));
+  for (const m of members) {
+    const list = byGroup.get(m.group_id);
+    const it = byDrug.get(m.drug_id);
+    if (!list || !it) continue;
+    list.push(it);
+    it.groupIds.push(m.group_id);
+  }
+  const groups = liveGroups.map((g) => ({ id: g.id, name: g.name, count: byGroup.get(g.id)!.length }));
+
   const search = (q: string): MedItem[] => {
     const k = searchable(q.trim());
     const list = k ? all.filter((it) => it.hay.includes(k)) : all.slice();
     return list.sort(inFamilyOrder);
   };
 
-  return { all, families, byFamily, mine, stockLens, byKey, recent, search };
+  return { all, families, byFamily, mine, stockLens, byKey, recent, groups, byGroup, search };
 }
 
 /* ============================================================================

@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -4391,6 +4391,9 @@ CD=c2290000-0000-4000-8000-0000000000
 # المنحُ الشامل بالحزمة (0159) أعاد حذفَ الجدول للمسجَّل — الهجرةُ تُعاد فتستردّ نزعَه،
 # وهي بنفسها إعادةٌ ثالثةٌ بلا أثر.
 out=$($P -f "$MIG/0229_clinic_drugs.sql" 2>&1) || { echo "$out"; echo "   ✗ 0229 ما انعادت"; fail=1; }
+# و0239 تعيد تعريفَ الدالّتين (التصنيفات): إعادةُ 0229 وحدها تُرجع تعريفَهما القديم، والإنتاجُ آخرُهما —
+# فالفحوصُ أدناه (ومرآةُ applyAll بتصنيفاتها) تجري على ما يجري هناك، والعملياتُ القديمة تُفحص بها كما هي.
+out=$($P -f "$MIG/0239_clinic_drug_groups.sql" 2>&1) || { echo "$out"; echo "   ✗ 0239 ما انعادت"; fail=1; }
 $P -c "insert into auth.users(id) values ('$DV') on conflict do nothing;
        insert into memberships(user_id,clinic_id,role,status) values ('$DV','$C1','veterinarian','active');
        update _dvtest_flags set admin = false; delete from platform_sessions; delete from clinic_drugs;
@@ -5186,6 +5189,120 @@ node "$HERE/../../scripts/treatment-drop-parity.mjs" "$TDF" >/dev/null
 $P -f "$TDF/treatment-drop.sql" >/dev/null
 chk "مرآةُ dropTargets: كلُّ سيناريو يعطي نفسَ الرفض والعددين وما يبقى بالطرفين" "select _tdp_run('$C1')" "ok"
 rm -rf "$TDF"
+
+# ── 0239: تصنيفاتُ العيادة للأدوية — مجموعةٌ واحدةٌ للعيادة، والدواءُ بأكثر من تصنيف (D4) ──────
+# كلُّ كتابةٍ بدور authenticated عبر clinic_drugs_apply (`_cdg` يرجع «ok:التصنيفات:العضويات» أو
+# «guarded:الحالة:الرمز:التلميح»)، والقراءةُ بجملةٍ غير جملة الكتابة (لقطةُ الجملة قبلها).
+# والهجرةُ تُعاد أوّلاً: المنحُ الشامل بالحزمة (0159) أعاد حذفَ التصنيف للمسجَّل، والإعادةُ تستردّ نزعَه.
+# والعيادةُ الثانية بلغت سقفَ ٤٠٠ دواءٍ حيّ بكتلة 0229 — فأدويتُها تُقرأ ولا تُضاف.
+echo "▸ 0239: تصنيفاتُ العيادة للأدوية"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+PHO=88888888-8888-8888-8888-888888888888
+DV=c2290000-0000-4000-8000-0000000000d1
+CG=c2390000-0000-4000-8000-0000000000
+out=$($P -f "$MIG/0239_clinic_drug_groups.sql" 2>&1) || { echo "$out"; echo "   ✗ 0239 ما انعادت"; fail=1; }
+$P -c "create or replace function _cdg(who uuid, clinic uuid, ops jsonb) returns text language plpgsql as \$fn\$
+       declare r jsonb; h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         r := clinic_drugs_apply(clinic, ops);
+         reset role;
+         return 'ok:' || jsonb_array_length(r->'groups') || ':' || jsonb_array_length(r->'items');
+       exception when others then
+         get stacked diagnostics h = pg_exception_hint;
+         return 'guarded:' || sqlstate || ':' || sqlerrm || ':' || coalesce(h, '');
+       end \$fn\$;" >/dev/null
+$P -c "update _dvtest_flags set admin = false;" >/dev/null
+$P -c "delete from platform_sessions;" >/dev/null
+$P -c "delete from clinic_drug_group_items; delete from clinic_drug_groups;" >/dev/null
+$P -c "insert into clinic_drugs (id, clinic_id, name, family, in_mine, pos) values
+         ('${CG}d1', '$C1', 'Meloxicam 0239', 'analgesics', false, null),
+         ('${CG}d2', '$C1', 'Buprenorphine 0239', 'analgesics', false, null),
+         ('${CG}d3', '$C1', 'Gabapentin 0239', 'other', false, null) on conflict (id) do nothing;" >/dev/null
+$P -c "insert into clinic_drugs (clinic_id, name) select '$C2', 'عضو 0239 '||g
+         from generate_series(1, greatest(0, 41 - (select count(*) from clinic_drugs where clinic_id='$C2' and archived_at is null)::int)) g;" >/dev/null
+D9=$(W "select id from clinic_drugs where clinic_id='$C2' and archived_at is null order by id limit 1")
+D41=$(W "select id from clinic_drugs where clinic_id='$C2' and archived_at is null order by id offset 40 limit 1")
+A0=$(W "select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')")
+chk "الطبيبُ ينشئ «مسكنات القطط» بدور authenticated" \
+    "select _cdg('$DV', '$C1', '[{\"op\":\"group_create\",\"id\":\"${CG}01\",\"name\":\"  مسكنات   القطط \"}]')" "ok:1:0"
+chk "  مختوماً بعيادته، بأوّل موضع، والاسمُ بفراغٍ واحد" \
+    "select clinic_id::text||'|'||pos::text||'|'||(name = 'مسكنات القطط')::text from clinic_drug_groups where id='${CG}01'" "$C1|1024|true"
+chk "الاستقبالُ يضيف للتصنيف (للعيادة لا للطبيب)" \
+    "select _cdg('$RCP', '$C1', '[{\"op\":\"member_add\",\"group\":\"${CG}01\",\"id\":\"${CG}d1\"},{\"op\":\"member_add\",\"group\":\"${CG}01\",\"id\":\"${CG}d2\"}]')" "ok:1:2"
+chk "  و«اكتب بإيدي» دفعةٌ واحدة: put يُطوى على صفٍّ حيّ وmember_add بمعرّفه المؤقّت يصل الصفّ" \
+    "select _cdg('$DV', '$C1', '[{\"op\":\"put\",\"id\":\"${CG}e1\",\"name\":\" gabapentin  0239\",\"family\":\"other\",\"mine\":false},{\"op\":\"member_add\",\"group\":\"${CG}01\",\"id\":\"${CG}e1\"}]')" "ok:1:3"
+chk "    (العضويةُ للصفّ القائم، ولا صفَّ بالمعرّف المؤقّت)" \
+    "select (select count(*) from clinic_drug_group_items where group_id='${CG}01' and drug_id='${CG}d3')::text||'|'||(select count(*) from clinic_drugs where id='${CG}e1')::text" "1|0"
+chk "المصوّرُ لا يرى التصنيفات ولا يكتب فيها" \
+    "select _rls_try('$PHO', 'select 1 from clinic_drug_groups')||'|'||split_part(_cdg('$PHO', '$C1', '[{\"op\":\"group_create\",\"id\":\"${CG}02\",\"name\":\"مصوّر\"}]'), ':', 2)" "rows:0|42501"
+chk "  ولا يقرأ العضويات" "select _rls_try('$PHO', 'select 1 from clinic_drug_group_items')" "rows:0"
+chk "وعيادةٌ أخرى لا ترى شيئاً" \
+    "select _rls_try('$C2', 'select 1 from clinic_drug_groups')||'|'||_rls_try('$C2', 'select 1 from clinic_drug_group_items')||'|'||_rls_try('$C2', 'select 1 from jsonb_array_elements((select clinic_drugs_list())->''groups'')')" "rows:0|rows:0|rows:0"
+chk "دواءُ عيادةٍ أخرى بالدالّة ⇒ drug_row_gone" \
+    "select split_part(_cdg('$C1', '$C1', '[{\"op\":\"member_add\",\"group\":\"${CG}01\",\"id\":\"$D9\"}]'), ':', 3)" "drug_row_gone"
+chk "  وبإدراجٍ مباشر ⇒ المفتاحُ المركّب يرفضه (23503)" \
+    "select left(_rls_try('$C1', 'insert into clinic_drug_group_items(clinic_id, group_id, drug_id, pos) values (''$C1'', ''${CG}01'', ''$D9'', 9999)'), 14)" "guarded:23503:"
+chk "التصنيفُ لا يُحذف (لا صلاحية)" \
+    "select left(_rls_try('$C1', 'delete from clinic_drug_groups'), 13)" "guarded:42501"
+chk "  (بجملةٍ ثانية: الصفُّ باقٍ)" "select count(*)::text from clinic_drug_groups where id='${CG}01'" "1"
+$P -c "insert into clinic_drug_groups (id, clinic_id, name, pos) values ('${CG}c2', '$C2', 'تصنيف العيادة الثانية', 1024) on conflict (id) do nothing;" >/dev/null
+$P -c "insert into clinic_drug_group_items (clinic_id, group_id, drug_id, pos) values ('$C2', '${CG}c2', '$D9', 1024) on conflict do nothing;" >/dev/null
+chk "حذفُ العضويات بلا شرطٍ يطال عيادتَه وحدها" \
+    "select _rls_try('$C1', 'delete from clinic_drug_group_items where drug_id = ''$D9''')" "rows:0"
+chk "  (عضويةُ العيادة الثانية باقية)" "select count(*)::text from clinic_drug_group_items where group_id='${CG}c2'" "1"
+chk "ولا يُنقل تصنيفٌ لعيادةٍ أخرى بتعديلٍ مباشر" \
+    "select split_part(_rls_try('$C1', 'update clinic_drug_groups set clinic_id = ''$C2'' where id=''${CG}01'''), ':', 1)" "guarded"
+chk "  ولا تتبدّل هويّةُ العضوية (drug_group_frozen)" \
+    "select split_part(_rls_try('$C1', 'update clinic_drug_group_items set drug_id = ''${CG}d2'' where group_id=''${CG}01'' and drug_id=''${CG}d1'''), ':', 3)" "drug_group_frozen"
+chk "السياجُ يغطّي الجدولين، ولا سياسةَ تقرأ جدولَها" \
+    "select coalesce(string_agg(t, ','), '')||'|'||(select count(*) from verify_no_self_ref_policies())::text from verify_photographer_fence() t" "|0"
+chk "التدقيق: الإنشاءُ وثلاثُ إضافات أربعةُ سطور، نوعُها «إعدادات»" \
+    "select (count(*) - $A0)::text||'|'||max(audit_kind(entity, action, details)) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')" "4|settings"
+A1=$(W "select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')")
+chk "نقلُ دواءٍ داخل التصنيف، وتصنيفٌ ثانٍ يُنقل لأوّل القائمة" \
+    "select _cdg('$C1', '$C1', '[{\"op\":\"member_move\",\"group\":\"${CG}01\",\"id\":\"${CG}d3\",\"after\":null},{\"op\":\"group_create\",\"id\":\"${CG}03\",\"name\":\"حساسية\"},{\"op\":\"group_move\",\"id\":\"${CG}03\",\"after\":null}]')" "ok:2:3"
+chk "  النقلُ لا يكتب سطراً (الإنشاءُ وحده)، والترتيبُ كما طُلب" \
+    "select ((select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')) - $A1)::text||'|'||(select string_agg(right(id::text, 2), ',' order by pos) from clinic_drug_groups where clinic_id='$C1' and archived_at is null)||'|'||(select string_agg(right(drug_id::text, 2), ',' order by pos) from clinic_drug_group_items where group_id='${CG}01')" "1|03,01|d3,d1,d2"
+A2=$(W "select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')")
+chk "الشيلُ من التصنيف وأرشفةُ تصنيف" \
+    "select _cdg('$C1', '$C1', '[{\"op\":\"member_remove\",\"group\":\"${CG}01\",\"id\":\"${CG}d2\"},{\"op\":\"group_archive\",\"id\":\"${CG}03\"}]')" "ok:2:2"
+chk "  كلٌّ بسطرٍ نوعُه «إعدادات»، والدواءُ المشال باقٍ حيّاً" \
+    "select ((select count(*) from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items')) - $A2)::text||'|'||(select string_agg(distinct audit_kind(entity, action, details), ',') from audit_log where clinic_id='$C1' and entity in ('clinic_drug_groups','clinic_drug_group_items'))||'|'||(select (archived_at is null)::text from clinic_drugs where id='${CG}d2')" "2|settings|true"
+chk "أرشفةُ دواءٍ تُبقي عضويتَه نائمة" \
+    "select _cdg('$C1', '$C1', '[{\"op\":\"archive\",\"id\":\"${CG}d1\"}]')" "ok:2:2"
+chk "  والقائمةُ ترجع التصنيفاتِ (والمؤرشفَ آخراً) والعضوياتِ كلَّها والنائمةَ منها" \
+    "select (select string_agg(right(e->>'id', 2), ',' order by o) from jsonb_array_elements((select _cdv('$C1', 'select clinic_drugs_list()::text'))::jsonb->'groups') with ordinality x(e, o))||'|'||(select string_agg(right(e->>'drug_id', 2), ',' order by o) from jsonb_array_elements((select _cdv('$C1', 'select clinic_drugs_list()::text'))::jsonb->'items') with ordinality x(e, o))" "01,03|d3,d1"
+chk "  ولا يُضاف دواءٌ مؤرشف لتصنيف" \
+    "select split_part(_cdg('$C1', '$C1', '[{\"op\":\"member_add\",\"group\":\"${CG}01\",\"id\":\"${CG}d1\",\"after\":null}]'), ':', 3)" "drug_row_gone"
+chk "  واسترجاعُه يُصحي عضويتَه بمكانها، والتصنيفُ يرجع لآخر القائمة" \
+    "select _cdg('$C1', '$C1', '[{\"op\":\"restore\",\"id\":\"${CG}d1\"},{\"op\":\"group_restore\",\"id\":\"${CG}03\"}]')" "ok:2:2"
+chk "توأمُ اسمٍ حيّ ⇒ drug_group_exists بتلميحٍ يسمّيه" \
+    "select split_part(r, ':', 3)||'|'||(position('«مسكنات القطط»' in r) > 0)::text from (select _cdg('$C1', '$C1', '[{\"op\":\"group_create\",\"id\":\"${CG}04\",\"name\":\"مسكّنات القطط\"}]') as r) x" "drug_group_exists|true"
+chk "اسمٌ فوق ٤٠ ⇒ drug_group_bad_name بتلميحٍ عربيّ" \
+    "select split_part(r, ':', 3)||'|'||(position('٤٠' in r) > 0)::text from (select _cdg('$C1', '$C1', ('[{\"op\":\"group_create\",\"id\":\"${CG}05\",\"name\":\"'||repeat('x', 41)||'\"}]')::jsonb) as r) x" "drug_group_bad_name|true"
+$P -c "insert into clinic_drug_groups (clinic_id, name, pos) select '$C2', 'تصنيف '||g, (g + 1) * 1024 from generate_series(1,59) g;" >/dev/null
+chk "التصنيفُ ٦١ الحيّ ⇒ drug_groups_full بتلميحٍ عربيّ" \
+    "select split_part(r, ':', 3)||'|'||(position('٦٠' in r) > 0)::text from (select _cdg('$C2', '$C2', '[{\"op\":\"group_create\",\"id\":\"${CG}06\",\"name\":\"زيادة\"}]') as r) x" "drug_groups_full|true"
+$P -c "delete from clinic_drug_group_items where clinic_id='$C2';" >/dev/null
+$P -c "insert into clinic_drug_group_items (clinic_id, group_id, drug_id, pos)
+         select '$C2', g.id, d.id, d.rn * 1024
+           from (select id from clinic_drug_groups where clinic_id='$C2' order by pos, id limit 50) g
+           cross join (select id, row_number() over (order by id) as rn from clinic_drugs where clinic_id='$C2' and archived_at is null order by id limit 40) d;" >/dev/null
+chk "  (العيادةُ الثانية بلغت ٢٠٠٠ عضوية)" "select count(*)::text from clinic_drug_group_items where clinic_id='$C2'" "2000"
+chk "العضويةُ ٢٠٠١ ⇒ drug_members_full بتلميحٍ عربيّ" \
+    "select split_part(r, ':', 3)||'|'||(position('٢٠٠٠' in r) > 0)::text from (select _cdg('$C2', '$C2', '[{\"op\":\"member_add\",\"group\":\"${CG}c2\",\"id\":\"$D41\"}]') as r) x" "drug_members_full|true"
+chk "الحارسان والدالّتان invoker بمسارٍ مثبَّت" \
+    "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text, ',' order by proname) from pg_proc where proname in ('clinic_drug_groups_guard','clinic_drug_group_items_guard','clinic_drugs_list','clinic_drugs_apply')" "clinic_drug_group_items_guard:false:true,clinic_drug_groups_guard:false:true,clinic_drugs_apply:false:true,clinic_drugs_list:false:true"
+chk "  ولا شيءَ لـanon، ولا حذفَ للتصنيف، وحذفُ العضوية للمسجَّل" \
+    "select has_table_privilege('anon','public.clinic_drug_groups','select')::text||'|'||has_table_privilege('authenticated','public.clinic_drug_groups','delete')::text||'|'||has_table_privilege('authenticated','public.clinic_drug_group_items','delete')::text" "false|false|true"
+chk "والعملياتُ القديمة كما كانت (نجمةٌ ونقلٌ بلا تصنيف)" \
+    "select split_part(_cd('$C1', '$C1', '[{\"op\":\"put\",\"id\":\"${CG}f1\",\"name\":\"Tramadol 0239\",\"family\":\"analgesics\",\"mine\":true},{\"op\":\"move\",\"id\":\"${CG}f1\",\"after\":null}]'), ':', 1)" "ok"
+$P -c "delete from clinic_drug_group_items where clinic_id='$C2';" >/dev/null
+$P -c "delete from clinic_drug_groups where clinic_id='$C2';" >/dev/null
+$P -c "delete from clinic_drugs where clinic_id='$C2' and name like 'عضو 0239 %';" >/dev/null
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

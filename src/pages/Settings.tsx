@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock, Archive, Pencil, Star } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock, Archive, Pencil, Star, ArrowUp, ArrowDown, Tags } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -331,6 +331,7 @@ export function Settings() {
         </div>
 
         <MyMedsSettings />
+        <MyMedCategories />
         <ClinicVaccinations />
         <ClinicBreeds />
         {canSettings && <LabDevicesCard />}
@@ -1864,6 +1865,125 @@ function MyMedsSettings() {
         isSelected={(m) => drugs.isMine(m.key)}
         onPick={(m) => { void drugs.star({ drugId: m.drugId, name: m.name, family: m.family }).catch(fail); }}
         onUnpick={(m) => { const key = m.key; const row = drugs.mine.find((r) => searchable(r.name) === key); if (row) void drugs.unstar(row.id).catch(fail); }} />
+    </div>
+  );
+}
+
+/* ============================================================================
+ * «تصنيفاتي» (0239) — تصنيفاتُ العيادة للأدوية: مجموعةٌ واحدة لكلّ عيادة يعدّلها الكادرُ عدا المصوّر.
+ * التسميةُ بسطرها، والترتيبُ ↑/↓، و«أدرج من القائمة» يفتح المنتقي على التصنيف (كلُّ ضغطةٍ تضيف أو
+ * تشيل)، والأرشفةُ جملةٌ تسمّي ما يحصل — لا window.confirm ولا حذف — والمؤرشفةُ تُرجَع.
+ * ==========================================================================*/
+function MyMedCategories() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const drugs = useClinicDrugs();
+  const { access } = useSubscription();
+  const canWrite = access !== "readonly" && drugs.status === "ready";
+  const ix = useMedIndex({ rows: drugs.rows, stockMode: "hide", groups: drugs.groups, items: drugs.items });
+  const [newOpen, setNewOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [insertId, setInsertId] = useState<string | null>(null);
+  const newRef = useRef<HTMLInputElement>(null);
+  /* الضغطةُ على «+ تصنيف جديد» طلبُ الكيبورد — لا حقلَ يتركّز وحده. */
+  useEffect(() => { if (newOpen) newRef.current?.focus(); }, [newOpen]);
+  const fail = (e: unknown) => { playWarning(); toast.error(describeDbError(e, t)); };
+  const run = async (fn: () => Promise<unknown>, after?: () => void) => {
+    try { await fn(); playSuccess(); after?.(); } catch (e) { fail(e); }
+  };
+  const archiveRow = ix.groups.find((g) => g.id === archiveId) ?? null;
+
+  return (
+    <div className="card mb-4 p-5" data-mymeds-cats>
+      <div className="mb-1 flex items-center gap-2">
+        <Tags size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("mmset.catsTitle", "تصنيفاتي")}</h2>
+      </div>
+      <p className="mb-3 text-xs text-ink-subtle">{t("mmset.catsHint", "تصنيفات العيادة — تطلع بالمنتقي تحت «أدويتي». الدواء يكون بأكثر من تصنيف.")}</p>
+
+      {drugs.status !== "ready" ? (
+        <p className="py-3 text-center text-sm font-bold text-ink-subtle" aria-busy={drugs.status === "loading" || drugs.status === "idle"}>…</p>
+      ) : (
+        <div className="space-y-1.5">
+          {ix.groups.map((g, i) => (
+            <div key={g.id} className="rounded-2xl border border-line bg-surface-1" data-mymeds-cat={g.name}>
+              {renaming?.id === g.id ? (
+                <div className="flex items-center gap-2 p-2">
+                  <input value={renaming.text} onChange={(e) => setRenaming({ id: g.id, text: e.target.value })} maxLength={40} data-mymeds-cat-rename-input
+                    aria-label={t("mymeds.catRename", "تسمية")} className="input h-11 min-w-0 flex-1 text-sm font-bold" />
+                  <button type="button" onClick={() => setRenaming(null)} className="h-11 shrink-0 rounded-xl border border-line px-3 text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+                  <button type="button" disabled={!canWrite || !renaming.text.trim()} data-mymeds-cat-rename-save
+                    onClick={() => void run(() => drugs.renameGroup(g.id, renaming.text), () => { setRenaming(null); toast.success(t("mmset.saved", "انحفظ")); })}
+                    className="h-11 shrink-0 rounded-xl bg-brand-600 px-3 text-sm font-black text-white disabled:opacity-50">{t("common.save", "حفظ")}</button>
+                </div>
+              ) : (
+                <div className="flex min-h-12 flex-wrap items-center gap-1 ps-3">
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink" dir="auto">{g.name}</span>
+                  <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">{t("mmset.count", { n: formatNum(g.count), defaultValue: "{{n}} دواء" })}</span>
+                  <button type="button" disabled={!canWrite} onClick={() => { playTap(); setRenaming({ id: g.id, text: g.name }); }} aria-label={t("mymeds.catRename", "تسمية")} data-mymeds-cat-rename={g.name}
+                    className="grid h-11 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 disabled:opacity-40"><Pencil size={15} /></button>
+                  <button type="button" disabled={!canWrite || i === 0} onClick={() => void run(() => drugs.moveGroup(g.id, i >= 2 ? ix.groups[i - 2].id : null))} aria-label={t("mymeds.catUp", "لفوق")}
+                    className="grid h-11 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 disabled:opacity-30"><ArrowUp size={15} /></button>
+                  <button type="button" disabled={!canWrite || i === ix.groups.length - 1} onClick={() => void run(() => drugs.moveGroup(g.id, ix.groups[i + 1].id))} aria-label={t("mymeds.catDown", "لجوّه")}
+                    className="grid h-11 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 disabled:opacity-30"><ArrowDown size={15} /></button>
+                  <button type="button" disabled={!canWrite} onClick={() => { playTap(); setInsertId(g.id); }} data-mymeds-cat-insert={g.name}
+                    className="h-11 shrink-0 rounded-xl bg-brand-50 px-3 text-xs font-black text-brand-700 disabled:opacity-50 dark:bg-brand-500/10 dark:text-brand-300">{t("mymeds.catInsert", "أدرج من القائمة")}</button>
+                  <button type="button" disabled={!canWrite} onClick={() => { playTap(); setArchiveId(g.id); }} aria-label={t("mmset.archive", "أرشفة")} data-mymeds-cat-archive={g.name}
+                    className="grid h-11 w-10 place-items-center rounded-xl text-ink-subtle hover:text-danger-600 disabled:opacity-40"><Archive size={16} /></button>
+                </div>
+              )}
+              {archiveRow?.id === g.id && (
+                <div className="m-2 mt-0 rounded-2xl border-2 border-warn-300 bg-warn-50 p-3 dark:border-warn-500/40 dark:bg-warn-500/10" data-mymeds-cat-archive-card>
+                  <p className="text-sm font-bold text-ink">{t("mmset.catArchiveAsk", { name: g.name, defaultValue: "أرشفة «{{name}}»؟ يختفي من المنتقي، أدويته تبقى، وترجّعه من «المؤرشفة»." })}</p>
+                  <div className="mt-2 flex gap-2">
+                    <button type="button" onClick={() => setArchiveId(null)} className="h-11 flex-1 rounded-xl bg-surface-1 text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+                    <button type="button" disabled={!canWrite} data-mymeds-cat-archive-yes
+                      onClick={() => void run(() => drugs.archiveGroup(g.id), () => { setArchiveId(null); toast.success(t("mmset.archived", { name: g.name, defaultValue: "انأرشف «{{name}}»" })); })}
+                      className="h-11 flex-1 rounded-xl bg-warn-600 text-sm font-black text-white disabled:opacity-50">{t("mmset.archive", "أرشفة")}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {newOpen ? (
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-brand-300 bg-brand-50/50 p-2 dark:bg-brand-500/5" data-mymeds-cat-newcard>
+              <input ref={newRef} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={40} data-mymeds-cat-name
+                placeholder={t("mymeds.catNamePh", "اسم التصنيف — من حرف إلى ٤٠")} className="input h-11 min-w-0 flex-1 text-sm font-bold" />
+              <button type="button" onClick={() => { setNewOpen(false); setNewName(""); }} className="h-11 shrink-0 rounded-xl border border-line px-3 text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+              <button type="button" disabled={!canWrite || !newName.trim()} data-mymeds-cat-create
+                onClick={() => void run(() => drugs.createGroup(newName), () => { setNewOpen(false); setNewName(""); })}
+                className="h-11 shrink-0 rounded-xl bg-brand-600 px-3 text-sm font-black text-white disabled:opacity-50">{t("common.save", "حفظ")}</button>
+            </div>
+          ) : (
+            <button type="button" disabled={!canWrite} onClick={() => { playTap(); setNewOpen(true); }} data-mymeds-cat-new
+              className="mt-1 inline-flex h-11 items-center gap-1.5 rounded-xl bg-surface-2 px-4 text-sm font-black text-brand-700 transition hover:bg-surface-3 disabled:opacity-50 dark:text-brand-300">
+              <FolderPlus size={16} /> {t("mymeds.catNew", "+ تصنيف جديد")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {drugs.archivedGroups.length > 0 && (
+        <div className="mt-5">
+          <p className="mb-2 text-xs font-black text-ink-muted">{t("mmset.archivedTitle", "المؤرشفة")}</p>
+          <div className="space-y-1.5">
+            {drugs.archivedGroups.map((g) => (
+              <div key={g.id} className="flex min-h-12 items-center gap-2 rounded-2xl border border-dashed border-line px-3 text-ink-muted" data-mymeds-cat-archived={g.name}>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold" dir="auto">{g.name}</span>
+                <button type="button" disabled={!canWrite} data-mymeds-cat-restore={g.name}
+                  onClick={() => void run(() => drugs.restoreGroup(g.id), () => toast.success(t("mmset.restored", { name: g.name, defaultValue: "رجع «{{name}}»" })))}
+                  className="h-10 shrink-0 rounded-xl bg-surface-2 px-3 text-xs font-black text-brand-700 disabled:opacity-50 dark:text-brand-300">{t("mmset.restore", "رجّعه")}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* «أدرج من القائمة»: المنتقي مفتوحٌ على التصنيف — كلُّ ضغطةٍ تضيف أو تشيل، و«تم» تغلقه. */}
+      <MedPicker open={!!insertId} onClose={() => setInsertId(null)} mode="manage" freeText="offer" fileInto={insertId ?? undefined}
+        title={t("mymeds.catInsert", "أدرج من القائمة")} />
     </div>
   );
 }

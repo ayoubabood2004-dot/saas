@@ -2293,9 +2293,29 @@ export type ClinicDrugOp =
   | { op: "move"; id: string; after: string | null }
   | { op: "edit"; id: string; name?: string; family?: DrugFamilyKey }
   | { op: "archive"; id: string }
-  | { op: "restore"; id: string };
-/** ما يقوله الخادم: العيادةُ التي قرأ منها (ختمُ كلِّ كتابةٍ بعدها) وكلُّ صفوفها. */
-export interface ClinicDrugsSnapshot { clinic: string; rows: ClinicDrug[] }
+  | { op: "restore"; id: string }
+  /* تصنيفاتُ العيادة (0239): `id` معرّفُ التصنيف بعمليات group_*، ومعرّفُ الدواء بعمليات member_*. */
+  | { op: "group_create"; id: string; name: string; after?: string | null }
+  | { op: "group_edit"; id: string; name: string }
+  | { op: "group_move"; id: string; after: string | null }
+  | { op: "group_archive"; id: string }
+  | { op: "group_restore"; id: string }
+  | { op: "member_add"; group: string; id: string; after?: string | null }
+  | { op: "member_remove"; group: string; id: string }
+  | { op: "member_move"; group: string; id: string; after: string | null };
+/** تصنيفٌ تسمّيه العيادة (0239) — حيٌّ بموضعه، أو مؤرشفٌ بلا موضع. لا يُحذف. */
+export interface ClinicDrugGroup {
+  id: string;
+  name: string;
+  pos: number | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+/** عضويةُ دواءٍ بتصنيف بموضعه داخله. دواءٌ مؤرشف تبقى عضويتُه نائمة. */
+export interface ClinicDrugGroupItem { group_id: string; drug_id: string; pos: number }
+/** ما يقوله الخادم: العيادةُ التي قرأ منها (ختمُ كلِّ كتابةٍ بعدها) وكلُّ صفوفها وتصنيفاتها وعضوياتها. */
+export interface ClinicDrugsSnapshot { clinic: string; rows: ClinicDrug[]; groups: ClinicDrugGroup[]; items: ClinicDrugGroupItem[] }
 /** منتجُ دواءٍ بالمخزن — للعرض («بالمخزون · n») ولربط سطر البيع بمنتجه. */
 export interface MedicineStock { id: string; name: string; stock: number }
 

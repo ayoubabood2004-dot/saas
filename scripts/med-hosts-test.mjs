@@ -235,5 +235,26 @@ await section("▸ ٧) «استبدال» لا يصنع صفّين لدواءٍ 
   check("المعالج يمرّ منه قبل أن يسمّي الصفّ", /const d = replaceDecision\(rows, picker\.replaceId, m\.name\);/.test(tp) && /if \(d\.kind === "dup"\) \{\s*removeRow\(picker\.replaceId\);/.test(tp) && /else if \(d\.kind === "replace"\) \{\s*setRow\(picker\.replaceId/.test(tp));
 });
 
+/* ── ٨) تصنيفاتُ العيادة (0239) بمضيفيها ─────────────────────────────────────── */
+await section("▸ ٨) تصنيفاتُ العيادة: الطبلة بتبويباتها كاملةً، والمنتقي والإعدادات", async () => {
+  const flow = src("src/components/Flowsheet.tsx");
+  const sheet = fnBody(flow, "AddTaskSheet");
+  check("الطبلة: لا قصَّ على اثني عشر (.slice(0, 12)) — كلُّ أدوية التبويب تحته", !/\.slice\(0, 12\)/.test(sheet) && /tab\.list\.map\(/.test(sheet));
+  check("  وتبويبٌ لـ«أدويتي» ولكلّ تصنيفٍ فيه أدوية، بتمريرٍ أفقيّ", /role="tablist" data-tasktabs/.test(sheet) && /medIx\.groups\.filter\(\(g\) => g\.count > 0\)/.test(sheet) && /overflow-x-auto/.test(sheet));
+  check("  والفهرسُ يأخذ التصنيفاتِ والعضويات", /useMedIndex\(\{[^}]*groups: drugs\.groups, items: drugs\.items/.test(sheet));
+  const sh = src("src/components/meds/MedPickerSheet.tsx");
+  const rail = sh.slice(sh.indexOf("data-medrail-nav"), sh.indexOf("{/* البلاطات */}"));
+  check("المنتقي: الرفُّ «أدويتي» ثم التصنيفات ثم «+ تصنيف جديد» ثم العائلات", rail.indexOf('id="mine"') >= 0 && rail.indexOf('id="mine"') < rail.indexOf("ix.groups.map") && rail.indexOf("ix.groups.map") < rail.indexOf("data-medcat-new") && rail.indexOf("data-medcat-new") < rail.indexOf("ix.families.map"));
+  check("  وقسمُ التصنيف بزرّين متساويين («أدرج من القائمة»/«اكتب بإيدي») و«⋯»", /data-medcat-insert=/.test(sh) && /data-medcat-type=/.test(sh) && /data-medcat-more=/.test(sh) && /grid grid-cols-2 gap-2/.test(sh));
+  check("  و«أدرج من القائمة» يقلب الضغطةَ إضافةً/شيلاً بدفعةٍ واحدة (fileInto)، و«تم» ترجع للتصنيف", /if \(insertInto\) \{ void toggleFile\(it\); return; \}/.test(sh) && /drugs\.fileInto\(insertInto/.test(sh) && /data-medcat-done/.test(sh));
+  check("  والأرشفةُ جملةٌ تُقرأ — لا window.confirm", /data-medcat-archive-ask/.test(sh) && !/window\.confirm/.test(sh));
+  check("  وبطاقةُ الكتابة: الحفظُ بالتصنيف، و«أو احفظه بـ:» خارجه", /data-medfree-savecat/.test(sh) && /data-medfree-into/.test(sh) && /mymeds\.saveInto/.test(sh));
+  check("  والبلاطاتُ بشارات تصنيفاتها", /data-medtile-tag=/.test(sh));
+  check("  وprops المنتقي تحمل fileInto", /fileInto\?: string;/.test(src("src/components/meds/MedPicker.tsx")));
+  const st = fnBody(src("src/pages/Settings.tsx"), "MyMedCategories");
+  check("الإعدادات: «تصنيفاتي» بعدد كلّ تصنيف، تسميةٍ، ↑↓، «أدرج من القائمة»، أرشفةٍ بجملة، واسترجاع", /mmset\.catsTitle/.test(st) && /mmset\.count/.test(st) && /drugs\.renameGroup/.test(st)
+    && /drugs\.moveGroup/.test(st) && /fileInto=\{insertId \?\? undefined\}/.test(st) && /mmset\.catArchiveAsk/.test(st) && /drugs\.restoreGroup/.test(st) && !/window\.confirm/.test(st));
+});
+
 console.log(fails ? `\n✗ med-hosts-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ med-hosts-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

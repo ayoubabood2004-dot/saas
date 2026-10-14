@@ -12,6 +12,8 @@
  *  (g) القراءةُ عند الرجوع للتبويب كلَّ ١٥ث على الأكثر.
  *  (h) ما يأتي أثناء طلبٍ بالطريق يُطوى بطلبٍ واحدٍ بعده.
  *  (i) «أضف» طواه الخادمُ على صفٍّ قائم ⇒ ما ينتظر يُرسل بمعرّف الخادم.
+ *  (j) تصنيفاتُ العيادة (0239): عضويةٌ تنتظر بعد «أضف» طُوي تُرسل بمعرّف الخادم، والرفضُ يُرجع
+ *      التصنيفاتِ والعضويات كما يُرجع الصفوف.
  *
  *   node scripts/clinic-drugs-store-test.mjs
  * ==========================================================================*/
@@ -48,7 +50,7 @@ const stubs = {
   },
 };
 const built = await esbuild.build({
-  stdin: { contents: `export * from "./src/lib/clinicDrugs.ts"; export { applyOps, DrugOpError, mineOrder } from "./src/lib/medIndex.ts";`, resolveDir: process.cwd(), loader: "ts" },
+  stdin: { contents: `export * from "./src/lib/clinicDrugs.ts"; export { applyOps, applyAll, DrugOpError, mineOrder } from "./src/lib/medIndex.ts";`, resolveDir: process.cwd(), loader: "ts" },
   bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", mainFields: ["module", "main"], plugins: [stubs],
 });
 const dir = mkdtempSync(join(tmpdir(), "cd-store-"));
@@ -59,21 +61,22 @@ const S = await import(pathToFileURL(f).href).finally(() => { try { rmSync(dir, 
 /* ---- الخادمُ المزيّف: صفوفٌ بختم عيادة، وقواعدُ applyOps ------------------- */
 const NOW = "2026-10-10T00:00:00.000Z";
 const R = (id, name, pos = null, extra = {}) => ({ id, name, family: "other", in_mine: pos != null, pos, archived_at: null, created_at: NOW, updated_at: NOW, ...extra });
-const srv = { clinic: "C1", rows: [], calls: [], failList: null, failApply: null, hold: null };
+const srv = { clinic: "C1", rows: [], groups: [], items: [], calls: [], failList: null, failApply: null, hold: null };
 const clone = (x) => JSON.parse(JSON.stringify(x));
 globalThis.__srv = {
   async listClinicDrugs() {
     srv.calls.push({ m: "list" });
     if (srv.failList) throw srv.failList;
-    return { clinic: srv.clinic, rows: clone(srv.rows) };
+    return { clinic: srv.clinic, rows: clone(srv.rows), groups: clone(srv.groups), items: clone(srv.items) };
   },
   async applyClinicDrugs(clinic, ops) {
     srv.calls.push({ m: "apply", clinic, ops: clone(ops) });
     if (srv.hold) await srv.hold;
     if (srv.failApply) throw srv.failApply;
     if (clinic !== srv.clinic) throw new S.DrugOpError("clinic_switched");
-    srv.rows = S.applyOps(srv.rows, ops, NOW);
-    return { clinic: srv.clinic, rows: clone(srv.rows) };
+    const next = S.applyAll({ rows: srv.rows, groups: srv.groups, items: srv.items }, ops, NOW);
+    srv.rows = next.rows; srv.groups = next.groups; srv.items = next.items;
+    return { clinic: srv.clinic, rows: clone(srv.rows), groups: clone(srv.groups), items: clone(srv.items) };
   },
   async listMedicineStock() { return []; },
   async recentMedNames() { return []; },
@@ -81,12 +84,12 @@ globalThis.__srv = {
 const calls = (m) => srv.calls.filter((c) => c.m === m);
 const fresh = async (rows, clinic = "C1") => {
   globalThis.__reset();
-  srv.rows = clone(rows); srv.clinic = clinic; srv.calls = []; srv.failList = null; srv.failApply = null; srv.hold = null;
+  srv.rows = clone(rows); srv.groups = []; srv.items = []; srv.clinic = clinic; srv.calls = []; srv.failList = null; srv.failApply = null; srv.hold = null;
   globalThis.__clinic = "C1";
   await S.loadClinicDrugs(true);
   await settle();
 };
-const view = () => S.mineOrder(S.getDrugsState().view).map((r) => r.name).join(",");
+const view = () => S.mineOrder(S.getDrugsState().view.rows).map((r) => r.name).join(",");
 const swallow = (p) => p.then(() => "ok", (e) => e?.message ?? String(e));
 
 console.log("▸ (a) قراءةٌ فاشلة");
@@ -97,7 +100,7 @@ console.log("▸ (a) قراءةٌ فاشلة");
   check("الحالُ error والصفوفُ الأخيرة باقية (لا [])", S.getDrugsState().status === "error" && view() === "A");
   globalThis.__reset();
   await S.loadClinicDrugs(true);
-  check("  وأوّلُ قراءةٍ فاشلة ⇒ error لا ready فارغة", S.getDrugsState().status === "error" && S.getDrugsState().view.length === 0);
+  check("  وأوّلُ قراءةٍ فاشلة ⇒ error لا ready فارغة", S.getDrugsState().status === "error" && S.getDrugsState().view.rows.length === 0);
 }
 
 console.log("▸ (b) نقلٌ متفائلٌ رفضه الخادم");
@@ -129,7 +132,7 @@ console.log("▸ (c) الختمُ من الخادم، وclinic_switched لا ي�
 console.log("▸ (d) ختمٌ غيرُ العيادة النشطة");
 {
   await fresh([R("a", "A", 1024)], "C9");
-  check("switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.length === 0);
+  check("switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.rows.length === 0);
   const got = await swallow(S.applyDrugOps([{ op: "unmine", id: "a" }]));
   check("  ولا كتابة", got !== "ok" && calls("apply").length === 0);
 }
@@ -150,7 +153,7 @@ console.log("▸ (d2) صاحبُ العيادة: مفتاحُه «default» وم
   await S.applyDrugOps([{ op: "unmine", id: "a" }]);
   check("  ويكتب بختم الخادم", calls("apply")[0]?.clinic === "C1");
   await asOwner("OP");
-  check("قبل أن يستقرّ المفتاح (default + جلستُه حسابُه، والخادمُ عيادةٌ أخرى) ⇒ switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.length === 0);
+  check("قبل أن يستقرّ المفتاح (default + جلستُه حسابُه، والخادمُ عيادةٌ أخرى) ⇒ switched بصفرِ صفوف", S.getDrugsState().status === "switched" && S.getDrugsState().view.rows.length === 0);
   const got = await swallow(S.applyDrugOps([{ op: "unmine", id: "a" }]));
   check("  ولا كتابة", got !== "ok" && calls("apply").length === 0);
   await asOwner(null);
@@ -221,7 +224,35 @@ console.log("▸ (i) معرّفُ المتصفّح ⇒ معرّفُ الخادم
   await settle();
   const second = calls("apply")[1]?.ops?.[0];
   check("النقلُ المنتظَر أُرسل بمعرّف الخادم", second?.id === "srv-melox", JSON.stringify(second));
-  check("  وقُبل، والشاشةُ على الصفّ القائم بأوّل القائمة", got.join() === "ok,ok" && view() === "Meloxicam,A" && !S.getDrugsState().view.some((r) => r.id === "tmp-1"), `${got} ${view()}`);
+  check("  وقُبل، والشاشةُ على الصفّ القائم بأوّل القائمة", got.join() === "ok,ok" && view() === "Meloxicam,A" && !S.getDrugsState().view.rows.some((r) => r.id === "tmp-1"), `${got} ${view()}`);
+}
+
+console.log("▸ (j) التصنيفات: العضويةُ بعد «أضف» مطويّ، والرفضُ يُرجع الكلّ");
+{
+  await fresh([R("a", "A", 1024)]);
+  srv.groups = [{ id: "g1", name: "مسكنات", pos: 1024, archived_at: null, created_at: NOW, updated_at: NOW }];
+  await S.loadClinicDrugs(true); await settle();
+  check("اللقطةُ تحمل التصنيفاتِ والعضويات", S.getDrugsState().view.groups.length === 1 && Array.isArray(S.getDrugsState().view.items));
+  srv.rows.push(R("srv-melox", "Meloxicam"));   // جهازٌ آخر أضافه بعد لقطتنا
+  let release;
+  srv.hold = new Promise((r) => { release = r; });
+  const p1 = S.applyDrugOps([{ op: "put", id: "tmp-2", name: "meloxicam", family: "analgesics", mine: false }]);
+  await tick();
+  const p2 = S.applyDrugOps([{ op: "member_add", group: "g1", id: "tmp-2" }]);
+  srv.hold = null; release();
+  const got = await Promise.all([swallow(p1), swallow(p2)]);
+  await settle();
+  const second = calls("apply")[1]?.ops?.[0];
+  check("العضويةُ المنتظَرة أُرسلت بمعرّف الخادم", second?.op === "member_add" && second?.id === "srv-melox", JSON.stringify(second));
+  check("  وقُبلت: الصفُّ القائم بالتصنيف، ولا صفَّ مؤقّت", got.join() === "ok,ok" && S.getDrugsState().view.items.some((i) => i.group_id === "g1" && i.drug_id === "srv-melox")
+    && !S.getDrugsState().view.rows.some((r) => r.id === "tmp-2"), `${got}`);
+  // رفضٌ ⇒ التصنيفاتُ والعضوياتُ ترجع لما أكّده الخادم مع الصفوف.
+  srv.failApply = Object.assign(new Error("drug_group_gone"), { code: "P0001", hint: "x" });
+  const p3 = swallow(S.applyDrugOps([{ op: "group_create", id: "g2", name: "حساسية" }, { op: "member_add", group: "g1", id: "a" }]));
+  check("الشاشةُ أوّلاً: التصنيفُ الجديد والعضويةُ قبل الجواب", S.getDrugsState().view.groups.length === 2 && S.getDrugsState().view.items.some((i) => i.drug_id === "a"));
+  const g3 = await p3; await settle();
+  check("  والرفضُ يُرجعهما كما أكّدهما الخادم", g3 === "drug_group_gone" && S.getDrugsState().view.groups.length === 1 && !S.getDrugsState().view.items.some((i) => i.drug_id === "a"), g3);
+  srv.failApply = null;
 }
 
 console.log(fails ? `\n✗ clinic-drugs-store-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ clinic-drugs-store-test: ${passes} نجحت، 0 فشلت`);

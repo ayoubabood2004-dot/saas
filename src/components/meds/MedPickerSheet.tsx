@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, type DragOverEvent, type DragStartEvent } from "@dnd-kit/core";
-import { Check, Plus, Search, ShieldAlert, Star, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Check, FolderPlus, ListOrdered, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Star, X } from "lucide-react";
 import type { MedicineStock } from "@/types";
 import {
   FAMILIES, freePicked, pickedFrom, pickerKeyAction, pickerNotices, mineState, searchEnter, drugKey,
@@ -32,10 +32,13 @@ import { useMedIndex } from "./MedPickerData";
  *  • Escape أثناء السحب يمرّ (dnd-kit يلغيه)، ثم يغلق البحث، ثم الورقة — والنافذةُ
  *    المضيفة لا تُغلق معها: الورقةُ بمكدّس النوافذ (`pushModal`).
  *  • لا autoFocus: الكيبورد لا يطلع إلا بضغطة العدسة أو بحقل «ما لكيته؟».
+ *  • تصنيفاتُ العيادة (0239) تحت «أدويتي» بالرفّ وفوق العائلات: «أدرج من القائمة» يقلب الضغطةَ
+ *    إلى «ضيفه / شيله من التصنيف» على كلّ بلاطة، و«اكتب بإيدي» يحفظ المكتوبَ بالتصنيف بطلبٍ واحد.
+ *    والشيلُ من تصنيفٍ لا يمسّ الدواء، والأرشفةُ جملةٌ تُقرأ لا نافذةُ متصفّح.
  * ==========================================================================*/
 
 const VIEW_KEY = () => `vp_medpicker_view_${getActiveClinicId() || "default"}`;
-type Section = "mine" | FamilyKey | "stock";
+type Section = "mine" | FamilyKey | "stock" | `g:${string}`;
 
 function useWide(): boolean {
   const q = "(min-width: 1024px)";
@@ -81,6 +84,18 @@ export default function MedPickerSheet(p: MedPickerProps) {
     return n;
   });
   const [freeOpen, setFreeOpen] = useState(false);
+  /* ── التصنيفات (0239) ── */
+  /** «أدرج من القائمة»: كلُّ ضغطةٍ على بلاطة تضيفها للتصنيف أو تشيلها منه. */
+  const [insertInto, setInsertInto] = useState<string | null>(p.fileInto ?? null);
+  /** «اكتب بإيدي» من تصنيف: بطاقةُ الكتابة تحفظ فيه. */
+  const [typeInto, setTypeInto] = useState<string | null>(null);
+  const [catNewOpen, setCatNewOpen] = useState(false);
+  const [catName, setCatName] = useState("");
+  const [catMenu, setCatMenu] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
+  const [ordering, setOrdering] = useState<string | null>(null);
+  const [archiveAsk, setArchiveAsk] = useState<string | null>(null);
+  const catNameRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState<MedItem | null>(null);
   const [hint, setHint] = useState<{ id: string; after: boolean } | null>(null);
   const [live, setLive] = useState("");
@@ -107,6 +122,8 @@ export default function MedPickerSheet(p: MedPickerProps) {
 
   /* العدسةُ ضُغطت = طلبُ الكيبورد؛ وقبلها لا حقلَ مركَّزاً أبداً. */
   useEffect(() => { if (searchOn) searchRef.current?.focus(); }, [searchOn]);
+  /* وكذلك «+ تصنيف جديد»: الضغطةُ نفسُها طلبُ الكيبورد. */
+  useEffect(() => { if (catNewOpen) catNameRef.current?.focus(); }, [catNewOpen]);
 
   /* بمكدّس النوافذ: Esc النافذةِ المضيفة لا تُغلقها ما دام المنتقي فوقها. */
   useEffect(() => { pushModal(modalId); return () => removeModal(modalId); }, [modalId]);
@@ -128,7 +145,10 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const ix = useMedIndex({
     rows: drugs.rows, stock: showStock ? stock : undefined, recent: recent ?? undefined,
     species: p.species ?? null, only: p.only, formulary: p.formulary, stockMode: showStock ? "show" : "hide",
+    groups: drugs.groups, items: drugs.items,
   });
+  const groupName = new Map(ix.groups.map((g) => [g.id, g.name] as const));
+  const insertGroup = insertInto ? ix.groups.find((g) => g.id === insertInto) ?? null : null;
   const mineIds = ix.mine.map((x) => x.drugId as string);
   const mineReady = drugs.status === "ready";
 
@@ -138,7 +158,8 @@ export default function MedPickerSheet(p: MedPickerProps) {
     opened.current = true;
     let want: Section | null = null;
     try { const v = localStorage.getItem(VIEW_KEY()); if (v) want = v as Section; } catch { /* per-device convenience */ }
-    const nonEmpty = (s: Section | null) => !!s && (s === "mine" ? ix.mine.length > 0 : s === "stock" ? ix.stockLens.length > 0 : ix.families.some((f) => f.key === s));
+    const nonEmpty = (s: Section | null) => !!s && (s === "mine" ? ix.mine.length > 0 : s === "stock" ? ix.stockLens.length > 0
+      : s.startsWith("g:") ? ix.groups.some((g) => `g:${g.id}` === s) : ix.families.some((f) => f.key === s));
     const pick: Section | null = nonEmpty(want) ? want : ix.mine.length ? "mine" : (ix.families[0]?.key ?? null);
     if (pick) requestAnimationFrame(() => jump(pick, false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,6 +184,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const selected = (m: PickedMed) => !!p.isSelected?.(m);
   const pick = (it: MedItem, via?: "mine" | "recent", afterDrag = false) => {
     if (!afterDrag && Date.now() - justDragged.current < 250) return;   // نقرةٌ بعد إفلات ليست اختياراً
+    if (insertInto) { void toggleFile(it); return; }   // «أدرج من القائمة»: الضغطةُ تضيف للتصنيف أو تشيل منه
     const m = pickedFrom(it, via);
     if (p.mode === "multi" && selected(m)) { playTap(); p.onUnpick?.(m); markAdded(m.key, false); return; }
     if (it.banned && confirmBanned !== it.key) { playWarning(); setConfirmBanned(it.key); return; }
@@ -178,6 +200,71 @@ export default function MedPickerSheet(p: MedPickerProps) {
     if (r.act === "pick") { pick(r.it); return; }
     playWarning();
     toast.toast({ tone: "info", title: t("mymeds.alreadyAdded", { name: r.it.label, defaultValue: "«{{name}}» مضاف أصلاً — ما تغيّر شي" }) });
+  };
+
+  /* ── التصنيفات (0239) ───────────────────────────────────────────────── */
+  const famOf = (it: MedItem) => (it.base === "stock" ? "other" : it.family);
+  const toggleFile = async (it: MedItem) => {
+    if (!insertInto || !canWrite) return;
+    playTap();
+    const cat = insertGroup?.name ?? "";
+    try {
+      if (it.drugId && it.groupIds.includes(insertInto)) {
+        await drugs.unfile(insertInto, it.drugId);
+        announce(t("mymeds.catRemoved", { name: it.label, cat, defaultValue: "{{name}} انشال من «{{cat}}» — الدواء نفسه باقي" }));
+      } else {
+        await drugs.fileInto(insertInto, { drugId: it.drugId, name: it.name, family: famOf(it) });
+        announce(t("mymeds.catAdded", { name: it.label, cat, defaultValue: "{{name}} انضاف لـ«{{cat}}»" }));
+      }
+    } catch (e) { fail(e); }
+  };
+  const unfile = async (group: string, it: MedItem) => {
+    if (!it.drugId) return;
+    playTap();
+    try {
+      await drugs.unfile(group, it.drugId);
+      toast.toast({ tone: "info", title: t("mymeds.catRemoved", { name: it.label, cat: groupName.get(group) ?? "", defaultValue: "{{name}} انشال من «{{cat}}» — الدواء نفسه باقي" }) });
+    } catch (e) { fail(e); }
+  };
+  const createGroup = async () => {
+    const name = catName.trim();
+    if (!name || !canWrite) return;
+    try {
+      const id = await drugs.createGroup(name);
+      playSuccess();
+      setCatName(""); setCatNewOpen(false);
+      requestAnimationFrame(() => jump(`g:${id}`));
+    } catch (e) { fail(e); }
+  };
+  const runGroup = async (fn: () => Promise<unknown>, after?: () => void) => {
+    try { await fn(); playSuccess(); after?.(); } catch (e) { fail(e); }
+  };
+  const doneInsert = () => {
+    playTap();
+    const g = insertInto;
+    setInsertInto(null);
+    if (p.fileInto) { p.onClose(); return; }
+    if (g) requestAnimationFrame(() => jump(`g:${g}`));
+  };
+  /** «اكتب بإيدي» أو «أو احفظه بـ:» — صفٌّ للدواء ودخولُه التصنيف بطلبٍ واحد، ويُختار بأوضاع الاختيار. */
+  const saveInto = async (group: string, name: string, family: FamilyKey) => {
+    try {
+      await drugs.fileInto(group, { name, family });
+      playSuccess();
+      setFreeOpen(false); setTypeInto(null);
+      const key = drugKey(name);
+      const row = getDrugsState().view.rows.find((r) => r.archived_at == null && drugKey(r.name) === key);
+      toast.success(t("mymeds.catAdded", { name, cat: groupName.get(group) ?? "", defaultValue: "{{name}} انضاف لـ«{{cat}}»" }));
+      if (p.mode !== "manage") { p.onPick?.({ ...freePicked(name, family), source: "custom", drugId: row?.id }); markAdded(key, true); }
+    } catch (e) { fail(e); }
+  };
+  const useTwinInto = async (group: string, it: MedItem) => {
+    try {
+      await drugs.fileInto(group, { drugId: it.drugId, name: it.name, family: famOf(it) });
+      playSuccess();
+      setFreeOpen(false); setTypeInto(null);
+      if (p.mode !== "manage") pick(it);
+    } catch (e) { fail(e); }
   };
 
   /* ── النجمة ─────────────────────────────────────────────────────────── */
@@ -257,13 +344,15 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const mineBoard = (
     <MyMedsBoard items={ix.mine} mode="pick" readOnly={!canWrite} draggingId={dragging?.drugId ?? null} hint={hint}
       onTap={(it) => pick(it, "mine")} onUnstar={(it) => void star(it)}
-      isSelected={p.isSelected ? (it) => selected(pickedFrom(it, "mine")) : undefined}
+      isSelected={p.isSelected ? (it) => (insertInto ? it.groupIds.includes(insertInto) : selected(pickedFrom(it, "mine")))
+        : insertInto ? (it) => it.groupIds.includes(insertInto) : undefined}
       onMove={(it, after) => { void drugs.move(it.drugId as string, after).catch(fail); }} announce={announce}
       empty={<MineEmpty status={drugs.status} onRetry={drugs.retry} />} />
   );
 
   const tile = (it: MedItem) => (
-    <Tile key={it.key} it={it} selected={selected(pickedFrom(it))} confirming={confirmBanned === it.key}
+    <Tile key={it.key} it={it} selected={insertInto ? it.groupIds.includes(insertInto) : selected(pickedFrom(it))} confirming={confirmBanned === it.key}
+      tags={it.groupIds.map((id) => groupName.get(id) ?? "").filter(Boolean)}
       dragDisabled={!canWrite} starDisabled={!canWrite} onPick={() => pick(it)} onStar={() => void star(it)}
       onBack={() => setConfirmBanned(null)} />
   );
@@ -287,7 +376,9 @@ export default function MedPickerSheet(p: MedPickerProps) {
           }}>
           {/* الرأس: العنوان، العدسة، الإغلاق */}
           <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
-            <p className="min-w-0 flex-1 truncate text-base font-black text-ink">{p.title ?? t("mymeds.pickTitle", "اختر الدواء")}</p>
+            <p className="min-w-0 flex-1 truncate text-base font-black text-ink" data-medtitle>
+              {insertGroup ? t("mymeds.catInsertTitle", { cat: insertGroup.name, defaultValue: "أدرج في «{{cat}}»" }) : (p.title ?? t("mymeds.pickTitle", "اختر الدواء"))}
+            </p>
             <button type="button" data-medsearch onClick={() => { playTap(); setSearchOn((v) => !v); if (searchOn) setQ(""); }}
               aria-label={t("mymeds.searchPh", "دوّر بالاسم — عربي أو إنكليزي أو اسم تجاري")}
               className={cn("grid h-11 w-11 place-items-center rounded-2xl transition", searchOn ? "bg-brand-600 text-white" : "text-ink-muted hover:bg-surface-2")}>
@@ -333,6 +424,16 @@ export default function MedPickerSheet(p: MedPickerProps) {
             {!searching && (
               <nav className="w-[120px] shrink-0 space-y-1 overflow-y-auto pb-2 md:w-40" data-medrail-nav aria-label={t("mymeds.railAria", "العائلات")}>
                 <RailItem id="mine" label={`★ ${t("mymeds.mine", "أدويتي")}`} n={ix.mine.length} active={section === "mine"} glow={dragOutside} onClick={() => jump("mine")} drop />
+                {!insertInto && ix.groups.map((g) => (
+                  <RailItem key={g.id} id={`g:${g.id}`} label={g.name} n={g.count} active={section === `g:${g.id}`} onClick={() => jump(`g:${g.id}`)} />
+                ))}
+                {!insertInto && canWrite && (
+                  <button type="button" data-medcat-new onClick={() => { playTap(); setCatNewOpen((v) => !v); }}
+                    className={cn("flex min-h-12 w-full items-center gap-1 rounded-2xl border-2 border-dashed px-2.5 text-start text-xs font-black transition",
+                      catNewOpen ? "border-brand-500 text-brand-700 dark:text-brand-300" : "border-line text-ink-muted hover:border-brand-300")}>
+                    <FolderPlus size={14} className="shrink-0" /> <span className="min-w-0 flex-1 leading-tight">{t("mymeds.catNew", "+ تصنيف جديد")}</span>
+                  </button>
+                )}
                 {ix.families.map((f) => (
                   <RailItem key={f.key} id={f.key} label={t(`mymeds.fam.${f.key}`)} n={f.count} active={section === f.key} onClick={() => jump(f.key)} famCount />
                 ))}
@@ -356,12 +457,96 @@ export default function MedPickerSheet(p: MedPickerProps) {
                 )
               ) : (
                 <>
+                  {catNewOpen && !insertInto && (
+                    <div className="flex items-center gap-2 rounded-2xl border-2 border-brand-300 bg-brand-50/60 p-2 dark:bg-brand-500/10" data-medcat-newcard>
+                      <input ref={catNameRef} value={catName} onChange={(e) => setCatName(e.target.value)} maxLength={40} data-medcat-name
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void createGroup(); } }}
+                        placeholder={t("mymeds.catNamePh", "اسم التصنيف — من حرف إلى ٤٠")} className="input h-11 min-w-0 flex-1 text-sm font-bold" />
+                      <button type="button" data-medcat-create disabled={!catName.trim() || !canWrite} onClick={() => void createGroup()}
+                        className="h-11 shrink-0 rounded-xl bg-brand-600 px-3 text-sm font-black text-white disabled:opacity-40">{t("common.save", "حفظ")}</button>
+                      <button type="button" onClick={() => { setCatNewOpen(false); setCatName(""); }} aria-label={t("common.cancel", "إلغاء")}
+                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><X size={18} /></button>
+                    </div>
+                  )}
                   {!wide && (
                     <section data-medsection="mine">
                       <SectionHead label={`★ ${t("mymeds.mine", "أدويتي")}`} n={ix.mine.length} />
                       {mineBoard}
                     </section>
                   )}
+                  {!insertInto && ix.groups.map((g, gi) => {
+                    const list = ix.byGroup.get(g.id) ?? [];
+                    const menu = catMenu === g.id;
+                    return (
+                      <section key={g.id} data-medsection={`g:${g.id}`} data-medgroup={g.id}>
+                        <p className="sticky top-0 z-10 mb-1.5 flex items-center gap-2 bg-surface-1/95 py-1 text-xs font-black text-ink-muted backdrop-blur">
+                          <span className="truncate">{g.name}</span><span className="tabular-nums opacity-70">{formatNum(g.count)}</span>
+                          {canWrite && (
+                            <button type="button" data-medcat-more={g.id} aria-expanded={menu} aria-label={t("mymeds.catMore", "خيارات التصنيف")}
+                              onClick={() => { playTap(); setCatMenu(menu ? null : g.id); setArchiveAsk(null); setRenaming(null); }}
+                              className="ms-auto grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><MoreHorizontal size={18} /></button>
+                          )}
+                        </p>
+                        {menu && (
+                          <div className="mb-2 space-y-2 rounded-2xl border border-line bg-surface-2 p-2" data-medcat-menu={g.id}>
+                            {renaming?.id === g.id ? (
+                              <div className="flex items-center gap-2">
+                                <input value={renaming.text} onChange={(e) => setRenaming({ id: g.id, text: e.target.value })} maxLength={40} data-medcat-rename-input
+                                  aria-label={t("mymeds.catRename", "تسمية")} className="input h-11 min-w-0 flex-1 text-sm font-bold" />
+                                <button type="button" disabled={!renaming.text.trim()} data-medcat-rename-save
+                                  onClick={() => void runGroup(() => drugs.renameGroup(g.id, renaming.text), () => { setRenaming(null); setCatMenu(null); })}
+                                  className="h-11 shrink-0 rounded-xl bg-brand-600 px-3 text-sm font-black text-white disabled:opacity-40">{t("common.save", "حفظ")}</button>
+                              </div>
+                            ) : archiveAsk === g.id ? (
+                              <div data-medcat-archive-ask>
+                                <p className="text-sm font-bold text-ink">{t("mymeds.catArchiveAsk", "التصنيف يختفي من القائمة، الأدوية تبقى، وترجّعه من الإعدادات.")}</p>
+                                <div className="mt-2 flex gap-2">
+                                  <button type="button" onClick={() => setArchiveAsk(null)} className="h-11 flex-1 rounded-xl bg-surface-1 text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+                                  <button type="button" data-medcat-archive-yes onClick={() => void runGroup(() => drugs.archiveGroup(g.id), () => { setArchiveAsk(null); setCatMenu(null); })}
+                                    className="h-11 flex-1 rounded-xl bg-warn-600 text-sm font-black text-white">{t("mymeds.catArchive", "أرشفة")}</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                <button type="button" data-medcat-rename onClick={() => { playTap(); setRenaming({ id: g.id, text: g.name }); }} className="inline-flex h-11 items-center gap-1 rounded-xl bg-surface-1 px-3 text-xs font-black text-ink"><Pencil size={14} /> {t("mymeds.catRename", "تسمية")}</button>
+                                <button type="button" data-medcat-up disabled={gi === 0} onClick={() => void runGroup(() => drugs.moveGroup(g.id, gi >= 2 ? ix.groups[gi - 2].id : null))} className="inline-flex h-11 items-center gap-1 rounded-xl bg-surface-1 px-3 text-xs font-black text-ink disabled:opacity-40"><ArrowUp size={14} /> {t("mymeds.catUp", "لفوق")}</button>
+                                <button type="button" data-medcat-down disabled={gi === ix.groups.length - 1} onClick={() => void runGroup(() => drugs.moveGroup(g.id, ix.groups[gi + 1].id))} className="inline-flex h-11 items-center gap-1 rounded-xl bg-surface-1 px-3 text-xs font-black text-ink disabled:opacity-40"><ArrowDown size={14} /> {t("mymeds.catDown", "لجوّه")}</button>
+                                <button type="button" data-medcat-order aria-pressed={ordering === g.id} onClick={() => { playTap(); setOrdering(ordering === g.id ? null : g.id); }} className={cn("inline-flex h-11 items-center gap-1 rounded-xl px-3 text-xs font-black", ordering === g.id ? "bg-brand-600 text-white" : "bg-surface-1 text-ink")}><ListOrdered size={14} /> {t("mymeds.catOrder", "رتّب")}</button>
+                                <button type="button" data-medcat-archive onClick={() => { playTap(); setArchiveAsk(g.id); }} className="inline-flex h-11 items-center gap-1 rounded-xl bg-surface-1 px-3 text-xs font-black text-warn-700 dark:text-warn-300"><Archive size={14} /> {t("mymeds.catArchive", "أرشفة")}</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {canWrite && (
+                          <div className="mb-2 grid grid-cols-2 gap-2">
+                            <button type="button" data-medcat-insert={g.id} onClick={() => { playTap(); setInsertInto(g.id); setOrdering(null); setCatMenu(null); }}
+                              className="min-h-11 rounded-xl border-2 border-brand-300 bg-brand-50 px-2 text-xs font-black text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">{t("mymeds.catInsert", "أدرج من القائمة")}</button>
+                            <button type="button" data-medcat-type={g.id} onClick={() => { playTap(); setTypeInto(g.id); setFreeOpen(true); }}
+                              className="min-h-11 rounded-xl border-2 border-line bg-surface-2 px-2 text-xs font-black text-ink">{t("mymeds.catType", "اكتب بإيدي")}</button>
+                          </div>
+                        )}
+                        {list.length === 0 ? (
+                          <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-2xs font-bold text-ink-subtle" data-medcat-empty>{t("mymeds.catEmpty", "التصنيف فاضي — «أدرج من القائمة» أو «اكتب بإيدي»")}</p>
+                        ) : ordering === g.id ? (
+                          <ul className="space-y-1" data-medcat-orderlist={g.id}>
+                            {list.map((it, i) => (
+                              <li key={it.key} className="flex min-h-12 items-center gap-1 rounded-2xl border border-line bg-surface-2 ps-3" data-medcat-row={it.key}>
+                                <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{it.label}</span>
+                                <button type="button" disabled={i === 0 || !canWrite} aria-label={t("mymeds.catUp", "لفوق")} onClick={() => void runGroup(() => drugs.moveMember(g.id, it.drugId as string, i >= 2 ? list[i - 2].drugId as string : null))}
+                                  className="grid h-11 w-11 place-items-center rounded-xl text-ink-muted hover:bg-surface-3 disabled:opacity-30"><ArrowUp size={16} /></button>
+                                <button type="button" disabled={i === list.length - 1 || !canWrite} aria-label={t("mymeds.catDown", "لجوّه")} onClick={() => void runGroup(() => drugs.moveMember(g.id, it.drugId as string, list[i + 1].drugId as string))}
+                                  className="grid h-11 w-11 place-items-center rounded-xl text-ink-muted hover:bg-surface-3 disabled:opacity-30"><ArrowDown size={16} /></button>
+                                <button type="button" disabled={!canWrite} data-medcat-remove={it.key} onClick={() => void unfile(g.id, it)}
+                                  className="h-11 shrink-0 rounded-xl px-2 text-2xs font-black text-danger-600 hover:bg-danger-50 disabled:opacity-40 dark:text-danger-300 dark:hover:bg-danger-500/10">{t("mymeds.catRemove", "شيله من التصنيف")}</button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{list.map(tile)}</div>
+                        )}
+                      </section>
+                    );
+                  })}
                   {FAMILIES.filter((k) => ix.byFamily.get(k)?.length).map((k) => (
                     <section key={k} data-medsection={k}>
                       <SectionHead label={t(`mymeds.fam.${k}`)} n={ix.byFamily.get(k)!.length} />
@@ -397,11 +582,24 @@ export default function MedPickerSheet(p: MedPickerProps) {
         </DndContext>
 
         {/* الذيل: «ما لكيته؟» و«تم» */}
-        {(freeText !== "off" || p.mode === "multi") && (
+        {(freeText !== "off" || p.mode === "multi" || !!typeInto || !!insertInto) && (
           <div className="shrink-0 border-t border-line px-3 pt-2">
-            {freeOpen ? (
-              <FreeCard mode={freeText} index={ix} defaultFamily={section && section !== "mine" && section !== "stock" ? section : "other"}
+            {insertInto ? (
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-2xs font-bold text-ink-muted">{insertGroup?.name ?? ""}</span>
+                <button type="button" data-medcat-done onClick={doneInsert}
+                  className="ms-auto flex h-12 min-w-[140px] items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 text-base font-black text-white shadow-soft transition hover:bg-brand-700">
+                  <Check size={19} /> {t("mymeds.doneN", { n: formatNum(insertGroup?.count ?? 0), defaultValue: "تم · {{n}}" })}
+                </button>
+              </div>
+            ) : freeOpen ? (
+              <FreeCard mode={typeInto ? "offer" : freeText} index={ix}
+                defaultFamily={typeInto ? "other" : section && section !== "mine" && section !== "stock" && !section.startsWith("g:") ? section as FamilyKey : "other"}
                 canSave={canWrite && mineReady}
+                target={typeInto ? { id: typeInto, name: groupName.get(typeInto) ?? "" } : null}
+                groups={ix.groups}
+                onSaveInto={(group, name, family) => saveInto(group, name, family)}
+                onUseInto={(group, it) => { void useTwinInto(group, it); }}
                 onUse={(it) => { setFreeOpen(false); pick(it); }}
                 onOneOff={(m) => { setFreeOpen(false); playTap(); p.onPick?.(m); markAdded(m.key, true); }}
                 onSave={async (name, family) => {
@@ -410,16 +608,16 @@ export default function MedPickerSheet(p: MedPickerProps) {
                     playSuccess();
                     setFreeOpen(false);
                     const key = drugKey(name);
-                    const row = getDrugsState().view.find((r) => r.archived_at == null && drugKey(r.name) === key);
+                    const row = getDrugsState().view.rows.find((r) => r.archived_at == null && drugKey(r.name) === key);
                     p.onPick?.({ ...freePicked(name, family), source: "mine", drugId: row?.id });
                     markAdded(key, true);
                   } catch (e) { fail(e); }
                 }}
-                onCancel={() => setFreeOpen(false)} />
+                onCancel={() => { setFreeOpen(false); setTypeInto(null); }} />
             ) : (
               <div className="flex items-center gap-2">
                 {freeText !== "off" && (
-                  <button type="button" data-medfree onClick={() => { playTap(); setFreeOpen(true); }} className="inline-flex items-center gap-1 text-2xs font-bold text-ink-muted underline transition hover:text-ink">
+                  <button type="button" data-medfree onClick={() => { playTap(); setTypeInto(null); setFreeOpen(true); }} className="inline-flex items-center gap-1 text-2xs font-bold text-ink-muted underline transition hover:text-ink">
                     <Plus size={13} /> {t("mymeds.notFound", "ما لكيته؟ اكتبه")}
                   </button>
                 )}
@@ -493,8 +691,10 @@ function MineEmpty({ status, onRetry }: { status: Parameters<typeof mineState>[0
   return <p className="rounded-2xl border border-dashed border-line px-3 py-4 text-center text-2xs font-bold text-ink-subtle" data-mymeds-state="empty">{t("mymeds.mineEmpty", "أدويتي فاضية — اضغط ★ على أي دواء أو اسحبه هنا")}</p>;
 }
 
-function Tile({ it, selected, confirming, dragDisabled, starDisabled, onPick, onStar, onBack }: {
+function Tile({ it, selected, confirming, dragDisabled, starDisabled, tags, onPick, onStar, onBack }: {
   it: MedItem; selected: boolean; confirming: boolean; dragDisabled: boolean; starDisabled: boolean;
+  /** أسماءُ تصنيفات العيادة التي هو فيها (0239). */
+  tags: string[];
   onPick(): void; onStar(): void; onBack(): void;
 }) {
   const { t } = useTranslation();
@@ -527,6 +727,7 @@ function Tile({ it, selected, confirming, dragDisabled, starDisabled, onPick, on
               : it.dosed ? <span className="rounded-full bg-success-50 px-1.5 py-0.5 text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("mymeds.badgeDosed", "جرعة جاهزة")}</span>
                 : <span className="rounded-full bg-surface-1 px-1.5 py-0.5 text-ink-muted">{t("mymeds.badgeNoDose", "بلا جرعة موثّقة")}</span>}
           {it.stock != null && !selected && <span className="rounded-full bg-success-50 px-1.5 py-0.5 text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("mymeds.badgeStock", { n: formatNum(it.stock), defaultValue: "بالمخزون · {{n}}" })}</span>}
+          {tags.map((g) => <span key={g} data-medtile-tag={g} className={cn("max-w-[9rem] truncate rounded-full px-1.5 py-0.5", selected ? "bg-white/20" : "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>{g}</span>)}
         </span>
       </button>
       <button type="button" data-medstar={it.key} aria-pressed={it.inMine} disabled={starDisabled} onClick={onStar}
@@ -552,9 +753,15 @@ function RecentChip({ it, selected, dragDisabled, onPick }: { it: MedItem; selec
   );
 }
 
-/* «ما لكيته؟ اكتبه» — الاسمُ وحده يفتح الكيبورد، والعائلةُ إلزامية، والتوأمُ يُقال قبل الحفظ. */
-function FreeCard({ mode, index, defaultFamily, canSave, onUse, onOneOff, onSave, onCancel }: {
+/* «ما لكيته؟ اكتبه» — الاسمُ وحده يفتح الكيبورد، والعائلةُ إلزامية، والتوأمُ يُقال قبل الحفظ.
+ * ومن تصنيف («اكتب بإيدي»، `target`): العائلةُ اختيارية («أخرى»)، والحفظُ بالتصنيف، والتوأمُ يُستعمل
+ * بالتصنيف. وخارجه: «أو احفظه بـ:» تصنيفاتُ العيادة بضغطة (حفظٌ بالتصنيف + اختيار). */
+function FreeCard({ mode, index, defaultFamily, canSave, target, groups, onSaveInto, onUseInto, onUse, onOneOff, onSave, onCancel }: {
   mode: "offer" | "oneOff" | "off"; index: MedIndex; defaultFamily: FamilyKey; canSave: boolean;
+  target: { id: string; name: string } | null;
+  groups: readonly { id: string; name: string }[];
+  onSaveInto(group: string, name: string, family: FamilyKey): Promise<void>;
+  onUseInto(group: string, it: MedItem): void;
   onUse(it: MedItem): void; onOneOff(m: PickedMed): void; onSave(name: string, family: FamilyKey): Promise<void>; onCancel(): void;
 }) {
   const { t } = useTranslation();
@@ -565,7 +772,8 @@ function FreeCard({ mode, index, defaultFamily, canSave, onUse, onOneOff, onSave
   const twin = clean ? index.byKey.get(searchable(clean)) : undefined;
   const ok = clean.length > 1 && !twin;
   return (
-    <div className="space-y-2" data-medfreecard>
+    <div className="space-y-2" data-medfreecard data-medfree-target={target?.id}>
+      {target && <p className="text-2xs font-black text-brand-700 dark:text-brand-300" data-medfree-cat>{t("mymeds.catType", "اكتب بإيدي")} · {target.name}</p>}
       <div className="flex items-center gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("mymeds.newNamePh", "اسم الدواء كما تكتبه")} className="input h-12 min-w-0 flex-1 text-sm font-bold" data-medfree-name />
         <button type="button" onClick={onCancel} aria-label={t("common.cancel", "إلغاء")} className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><X size={18} /></button>
@@ -581,9 +789,14 @@ function FreeCard({ mode, index, defaultFamily, canSave, onUse, onOneOff, onSave
       {twin ? (
         <div className="flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
           <span className="min-w-0 flex-1 truncate">{t("mymeds.exists", { name: twin.label, defaultValue: "موجود: {{name}}" })}</span>
-          <button type="button" onClick={() => onUse(twin)} className="h-9 shrink-0 rounded-xl bg-brand-600 px-3 text-xs font-black text-white">{t("mymeds.useIt", "استعمله")}</button>
+          <button type="button" data-medfree-use onClick={() => (target ? onUseInto(target.id, twin) : onUse(twin))} className="h-9 shrink-0 rounded-xl bg-brand-600 px-3 text-xs font-black text-white">{t("mymeds.useIt", "استعمله")}</button>
         </div>
+      ) : target ? (
+        <button type="button" disabled={!ok || !canSave || busy} data-medfree-savecat
+          onClick={async () => { setBusy(true); try { await onSaveInto(target.id, clean, family); } finally { setBusy(false); } }}
+          className="h-12 w-full rounded-2xl bg-brand-600 text-sm font-black text-white disabled:opacity-40">{t("mymeds.saveToCat", "احفظه بالتصنيف")}</button>
       ) : (
+        <>
         <div className="flex gap-2">
           <button type="button" disabled={!ok} onClick={() => onOneOff(freePicked(clean, family))} data-medfree-oneoff
             className="h-12 flex-1 rounded-2xl border border-line bg-surface-2 text-sm font-black text-ink disabled:opacity-40">{t("mymeds.oneOff", "هالمرة بس")}</button>
@@ -593,6 +806,17 @@ function FreeCard({ mode, index, defaultFamily, canSave, onUse, onOneOff, onSave
               className="h-12 flex-1 rounded-2xl bg-brand-600 text-sm font-black text-white disabled:opacity-40">{t("mymeds.saveMine", "احفظه بأدويتي")}</button>
           )}
         </div>
+        {mode === "offer" && groups.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5" data-medfree-into>
+            <span className="text-2xs font-black text-ink-subtle">{t("mymeds.saveInto", "أو احفظه بـ:")}</span>
+            {groups.map((g) => (
+              <button key={g.id} type="button" disabled={!ok || !canSave || busy} data-medfree-into-cat={g.id}
+                onClick={async () => { setBusy(true); try { await onSaveInto(g.id, clean, family); } finally { setBusy(false); } }}
+                className="h-9 rounded-full border border-brand-300 bg-brand-50 px-3 text-2xs font-black text-brand-700 disabled:opacity-40 dark:bg-brand-500/10 dark:text-brand-300">{g.name}</button>
+            ))}
+          </div>
+        )}
+        </>
       )}
     </div>
   );

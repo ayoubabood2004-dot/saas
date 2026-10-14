@@ -31,7 +31,7 @@ import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
 import type { ProductBatch } from "@/types";
 import type { CountDecision, CountSubmitResult, ProductLot, StockCount, StockLossRow, WaTemplate, PhotoProduct } from "@/types";
-import type { ClinicDrug, ClinicDrugsSnapshot, MedicineStock } from "@/types";
+import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugsSnapshot, MedicineStock } from "@/types";
 import type { StoreCategory, StoreCatsSnapshot, ProductImageFile } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { ExpenseCategory } from "@/types";
@@ -433,11 +433,19 @@ function catsSnap(raw: unknown): StoreCatsSnapshot {
     })),
   };
 }
-/** لقطةُ «أدويتي» كما ترجعها دالّتا 0229: الموضعُ رقمٌ (bigint قد يصل نصّاً)، ولا صفوفَ بلا مصفوفة. */
+/** لقطةُ «أدويتي» كما ترجعها دالّتا 0229/0239: الموضعُ رقمٌ (bigint قد يصل نصّاً)، ولا صفوفَ ولا
+ *  تصنيفاتٍ ولا عضوياتٍ بلا مصفوفة — خادمٌ قبل 0239 لا يرسل التصنيفات فتصل [] لا undefined. */
 function drugsSnap(raw: unknown): ClinicDrugsSnapshot {
-  const d = (raw ?? {}) as { clinic?: unknown; rows?: unknown };
+  const d = (raw ?? {}) as { clinic?: unknown; rows?: unknown; groups?: unknown; items?: unknown };
   const rows = (Array.isArray(d.rows) ? d.rows : []) as ClinicDrug[];
-  return { clinic: String(d.clinic ?? ""), rows: rows.map((r) => ({ ...r, pos: r.pos == null ? null : Number(r.pos) })) };
+  const groups = (Array.isArray(d.groups) ? d.groups : []) as ClinicDrugGroup[];
+  const items = (Array.isArray(d.items) ? d.items : []) as ClinicDrugGroupItem[];
+  return {
+    clinic: String(d.clinic ?? ""),
+    rows: rows.map((r) => ({ ...r, pos: r.pos == null ? null : Number(r.pos) })),
+    groups: groups.map((g) => ({ ...g, pos: g.pos == null ? null : Number(g.pos), archived_at: g.archived_at ?? null })),
+    items: items.map((i) => ({ group_id: String(i.group_id), drug_id: String(i.drug_id), pos: Number(i.pos) })),
+  };
 }
 /** أوّلُ n أسماءٍ مختلفة بمفتاح searchable — بترتيب ورودها. */
 export function distinctMedNames(names: readonly (string | null | undefined)[], n: number): string[] {

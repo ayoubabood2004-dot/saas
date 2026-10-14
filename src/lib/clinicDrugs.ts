@@ -1,10 +1,10 @@
 import { useEffect, useSyncExternalStore } from "react";
-import type { ClinicDrug, ClinicDrugOp, DrugFamilyKey, MedicineStock } from "@/types";
+import type { ClinicDrugOp, DrugFamilyKey, MedicineStock } from "@/types";
 import { repo } from "./repo";
 import { getActiveClinicId } from "./clinics";
 import { expectedServerClinic } from "./workspaceClinic";
 import { registerReset } from "./clinicSync";
-import { applyOps, drugErrorCode, drugKey, mineOrder } from "./medIndex";
+import { applyAll, drugErrorCode, drugKey, groupsOrder, mineOrder, type DrugsDataOut } from "./medIndex";
 import { uuid } from "./utils";
 
 /* ============================================================================
@@ -14,7 +14,7 @@ import { uuid } from "./utils";
  *  • **الختمُ من الخادم.** العيادةُ التي تقولها `clinic_drugs_list()` هي ما ترسله كلُّ
  *    كتابةٍ بعدها؛ وإن لم تطابق العيادةَ النشطةَ بالمتصفّح (المشغّلُ لحظةَ دخوله، أو
  *    جلسةٌ لم تستقرّ — صنفُ 0153) فالحالُ `switched`: لا صفَّ يُرسم ولا كتابة.
- *  • **الشاشةُ أوّلاً، والخادمُ يحكم.** كلُّ فعلٍ يُطبَّق على `view` فوراً بـ`applyOps`
+ *  • **الشاشةُ أوّلاً، والخادمُ يحكم.** كلُّ فعلٍ يُطبَّق على `view` فوراً بـ`applyAll`
  *    (مرآةُ الدالّة)، وطلبٌ واحدٌ بالطريق — ما يأتي أثناءه يُطوى بالطلب التالي. ونجاحٌ
  *    ⇒ `base` = لقطةُ الخادم و`view` = اللقطة + المنتظَر. وفشلٌ ⇒ `view = base`، ويُسقط
  *    المنتظَر، وتُقرأ القائمةُ مرّةً، ويُرمى الخطأ — الشاشةُ تقوله بـ`describeDbError`.
@@ -28,16 +28,19 @@ export interface DrugsState {
   status: DrugsStatus;
   /** ختمُ العيادة كما قاله الخادم. */
   clinic: string | null;
-  /** آخرُ ما أكّده الخادم. */
-  base: ClinicDrug[];
+  /** آخرُ ما أكّده الخادم: الصفوفُ والتصنيفاتُ (0239) وعضوياتُها. */
+  base: DrugsDataOut;
   /** ما تراه الشاشة: base + ما لم يُحسم بعد. */
-  view: ClinicDrug[];
+  view: DrugsDataOut;
   loadedAt: number;
   saving: boolean;
   error: unknown;
 }
 
-const blank = (): DrugsState => ({ status: "idle", clinic: null, base: [], view: [], loadedAt: 0, saving: false, error: null });
+const empty = (): DrugsDataOut => ({ rows: [], groups: [], items: [] });
+const blank = (): DrugsState => ({ status: "idle", clinic: null, base: empty(), view: empty(), loadedAt: 0, saving: false, error: null });
+const dataOf = (snap: { rows: DrugsDataOut["rows"]; groups: DrugsDataOut["groups"]; items: DrugsDataOut["items"] }): DrugsDataOut =>
+  ({ rows: snap.rows, groups: snap.groups ?? [], items: snap.items ?? [] });
 
 let state: DrugsState = blank();
 let gen = 0;
@@ -77,7 +80,8 @@ export function loadClinicDrugs(force = false): Promise<void> {
         emit();
         return;
       }
-      state = { ...state, status: "ready", clinic: snap.clinic, base: snap.rows, view: snap.rows, loadedAt: Date.now(), error: null };
+      const data = dataOf(snap);
+      state = { ...state, status: "ready", clinic: snap.clinic, base: data, view: data, loadedAt: Date.now(), error: null };
       emit();
     } catch (e) {
       if (my !== gen) return;
@@ -93,9 +97,15 @@ export function loadClinicDrugs(force = false): Promise<void> {
 /** يُنادى عند فتح المنتقي: قراءةٌ جديدة إن كانت اللقطةُ أقدمَ من ٣٠ث. */
 export const refreshIfStale = () => loadClinicDrugs(false);
 
+/** معرّفُ دواءٍ مؤقّتٌ طواه الخادمُ على صفٍّ قائم ⇒ معرّفُ الصفّ، بكلّ عمليةٍ تنتظر: الأدويةُ
+ *  و«بعد» فيها، وعضوياتُ التصنيف (0239) — دواؤها و«بعد» فيها. معرّفُ التصنيف لا يُمسّ. */
 const remap = (o: ClinicDrugOp, ids: Map<string, string>): ClinicDrugOp => {
+  if (o.op === "group_create" || o.op === "group_edit" || o.op === "group_move" || o.op === "group_archive" || o.op === "group_restore") return o;
   const id = ids.get(o.id) ?? o.id;
-  if ((o.op === "move" || o.op === "put") && typeof o.after === "string" && ids.has(o.after)) return { ...o, id, after: ids.get(o.after) as string };
+  const hasAfter = o.op === "move" || o.op === "put" || o.op === "member_add" || o.op === "member_move";
+  const after = hasAfter && typeof (o as { after?: unknown }).after === "string" && ids.has((o as { after: string }).after)
+    ? ids.get((o as { after: string }).after) as string : undefined;
+  if (after !== undefined) return { ...o, id, after } as ClinicDrugOp;
   return id === o.id ? o : { ...o, id };
 };
 
@@ -113,26 +123,27 @@ function flush(): void {
     try {
       const snap = await repo.applyClinicDrugs(clinic, batch);
       if (my !== gen) return;
+      const got = dataOf(snap);
       /* الخادمُ طوى «أضف» على صفٍّ قائمٍ بنفس المفتاح: معرّفُنا المؤقّت لا وجودَ له عنده —
          ما ينتظر بعده يُرسل بمعرّف الخادم، وإلا رُفض «drug_row_gone» على شيءٍ موجود. */
       const ids = new Map<string, string>();
       for (const o of batch) {
-        if (o.op !== "put" || snap.rows.some((r) => r.id === o.id)) continue;
+        if (o.op !== "put" || got.rows.some((r) => r.id === o.id)) continue;
         const k = drugKey(o.name);
-        const hit = snap.rows.find((r) => r.archived_at == null && drugKey(r.name) === k);
+        const hit = got.rows.find((r) => r.archived_at == null && drugKey(r.name) === k);
         if (hit) ids.set(o.id, hit.id);
       }
       if (ids.size) queue = queue.map((o) => remap(o, ids));
-      let view = snap.rows;
-      try { view = applyOps(snap.rows, queue); }
+      let view = got;
+      try { view = applyAll(got, queue); }
       catch (e) {
         // ما ينتظر صار مستحيلاً على اللقطة الجديدة: يسقط ويُقال، والمؤكَّدُ يبقى.
         const dropped = waiting;
         queue = []; waiting = [];
         dropped.forEach((w) => w.reject(e));
-        view = snap.rows;
+        view = got;
       }
-      state = { ...state, base: snap.rows, view, saving: queue.length > 0, error: null, loadedAt: Date.now() };
+      state = { ...state, base: got, view, saving: queue.length > 0, error: null, loadedAt: Date.now() };
       emit();
       mine.forEach((w) => w.resolve());
     } catch (e) {
@@ -167,8 +178,8 @@ export function applyDrugOps(ops: ClinicDrugOp[]): Promise<void> {
   if (state.status !== "ready" || !state.clinic) {
     return Promise.reject(Object.assign(new Error(state.status === "switched" ? "clinic_switched" : "not_ready"), { code: "not_ready" }));
   }
-  let view: ClinicDrug[];
-  try { view = applyOps(state.view, ops); }
+  let view: DrugsDataOut;
+  try { view = applyAll(state.view, ops); }
   catch (e) { return Promise.reject(e); }   // نفسُ رفض الخادم قبل أن يُرسل
   queue.push(...ops);
   set({ view, saving: true });
@@ -234,15 +245,21 @@ export interface DrugRef { drugId?: string; name: string; family: DrugFamilyKey 
 export function useClinicDrugs() {
   const s = useSyncExternalStore(subscribe, () => state);
   useEffect(() => { void loadClinicDrugs(); }, []);
-  const mine = mineOrder(s.view);
+  const mine = mineOrder(s.view.rows);
   const mineKeys = new Set(mine.map((r) => drugKey(r.name)));
+  const ordered = groupsOrder(s.view.groups);
   return {
     status: s.status,
     error: s.error,
     saving: s.saving,
-    rows: s.view,
+    rows: s.view.rows,
+    /** التصنيفاتُ الحيّةُ بترتيب العيادة (0239). */
+    groups: ordered.filter((g) => g.archived_at == null),
+    /** كلُّ العضويات — والنائمةُ منها (دواءٌ مؤرشف): الإخفاءُ بنموذج القراءة (buildMedIndex). */
+    items: s.view.items,
+    archivedGroups: ordered.filter((g) => g.archived_at != null),
     mine,
-    archived: s.view.filter((r) => r.archived_at != null),
+    archived: s.view.rows.filter((r) => r.archived_at != null),
     isMine: (key: string) => mineKeys.has(key),
     /** نجمةٌ: بآخر «أدويتي» (أو بعد صفٍّ بعينه، أو أوّلَها بـnull). */
     star: (it: DrugRef, after?: string | null) => applyDrugOps([{
@@ -255,6 +272,21 @@ export function useClinicDrugs() {
     edit: (id: string, patch: { name?: string; family?: DrugFamilyKey }) => applyDrugOps([{ op: "edit", id, ...patch }]),
     archive: (id: string) => applyDrugOps([{ op: "archive", id }]),
     restore: (id: string) => applyDrugOps([{ op: "restore", id }]),
+    /* ── تصنيفاتُ العيادة (0239) ── */
+    /** تصنيفٌ جديد بآخر القائمة — يرجع معرّفَه ليُفتح مباشرة. */
+    createGroup: (name: string) => { const id = uuid(); return applyDrugOps([{ op: "group_create", id, name }]).then(() => id); },
+    renameGroup: (id: string, name: string) => applyDrugOps([{ op: "group_edit", id, name }]),
+    moveGroup: (id: string, after: string | null) => applyDrugOps([{ op: "group_move", id, after }]),
+    archiveGroup: (id: string) => applyDrugOps([{ op: "group_archive", id }]),
+    restoreGroup: (id: string) => applyDrugOps([{ op: "group_restore", id }]),
+    /** «احفظه بالتصنيف»: دواءٌ من الكتالوج أو مكتوبٌ يصير صفّاً (put خارج «أدويتي») ويدخل التصنيف
+     *  **بطلبٍ واحد** — والخادمُ يطوي الاسمَ على صفٍّ قائم ويقرأ member_add بمعرّفه (الاسمُ المستعار). */
+    fileInto: (group: string, it: DrugRef) => {
+      const id = it.drugId ?? uuid();
+      return applyDrugOps([{ op: "put", id, name: it.name, family: it.family, mine: false }, { op: "member_add", group, id }]);
+    },
+    unfile: (group: string, drugId: string) => applyDrugOps([{ op: "member_remove", group, id: drugId }]),
+    moveMember: (group: string, drugId: string, after: string | null) => applyDrugOps([{ op: "member_move", group, id: drugId, after }]),
     apply: applyDrugOps,
     retry: () => void loadClinicDrugs(true),
   };

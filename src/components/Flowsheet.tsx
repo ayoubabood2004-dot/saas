@@ -919,9 +919,16 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
   const [picked, setPicked] = useState<Monograph | null>(null);
   /** الدواءُ المختار من المنتقي الموحَّد — نصُّه هو ما يُكتب (اسمُ الكتالوج كما هو). */
   const [med, setMed] = useState<PickedMed | null>(null);
-  /** «أدويتي» (0229): نفسُ الترتيب الذي تراه العيادةُ بكلّ منتقٍ — أوّلُ اثني عشر بضغطة. */
+  /** «أدويتي» (0229) وتصنيفاتُ العيادة (0239): نفسُ الترتيب الذي تراه العيادةُ بكلّ منتقٍ — تبويبٌ
+   *  لكلٍّ منها وأدويتُه **كلُّها** تحته بضغطة (كان القصُّ على اثني عشر يُخفي الباقي بلا كلمة). */
   const drugs = useClinicDrugs();
-  const medIx = useMedIndex({ rows: drugs.rows, species: species ?? null, stockMode: "hide" });
+  const medIx = useMedIndex({ rows: drugs.rows, species: species ?? null, stockMode: "hide", groups: drugs.groups, items: drugs.items });
+  const [medTab, setMedTab] = useState<string>("mine");
+  const tabs = [
+    ...(medIx.mine.length ? [{ id: "mine", label: `★ ${t("mymeds.mine", "أدويتي")}`, list: medIx.mine }] : []),
+    ...medIx.groups.filter((g) => g.count > 0).map((g) => ({ id: g.id, label: g.name, list: medIx.byGroup.get(g.id) ?? [] })),
+  ];
+  const tab = tabs.find((x) => x.id === medTab) ?? tabs[0] ?? null;
   /** مرآةُ الاسم للأثر أدناه — قراءةٌ حاضرة بلا إدخاله بالاعتماديات. */
   const labelRef = useRef(label);
   labelRef.current = label;
@@ -1054,16 +1061,31 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
           <>
             {/* «أدويتي» أوّلاً بترتيب العيادة — ثم «كل الأدوية» يفتح المنتقي الموحَّد. لا حقلَ
                 يفتح الكيبورد بفتح الورقة. */}
-            {medIx.mine.length > 0 && (
-              <div className="mb-1.5 flex flex-wrap gap-1.5" data-taskmine>
-                {medIx.mine.slice(0, 12).map((it) => (
-                  <button key={it.key} type="button" data-taskmine-chip={it.key} onClick={() => pickMed(pickedFrom(it, "mine"))}
-                    className={cn("inline-flex items-center gap-1 rounded-full border px-3 text-2xs font-bold transition",
-                      med?.key === it.key ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-2 text-ink hover:border-brand-300")}
-                    style={{ minHeight: 40 }}>
-                    <Star size={12} fill="currentColor" className="text-warn-500" aria-hidden /> {it.label}
-                  </button>
-                ))}
+            {tab && (
+              <div className="mb-1.5" data-taskmine>
+                {tabs.length > 1 && (
+                  <div className="mb-1.5 flex min-w-0 gap-1 overflow-x-auto pb-1" role="tablist" data-tasktabs>
+                    {tabs.map((x) => (
+                      <button key={x.id} type="button" role="tab" aria-selected={x.id === tab.id} data-tasktab={x.id}
+                        onClick={() => { playTap(); setMedTab(x.id); }}
+                        className={cn("shrink-0 rounded-full px-3 text-2xs font-black transition",
+                          x.id === tab.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}
+                        style={{ minHeight: 40 }}>
+                        {x.label} <span className="tabular-nums opacity-70">{formatNum(x.list.length)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5" role="tabpanel">
+                  {tab.list.map((it) => (
+                    <button key={it.key} type="button" data-taskmine-chip={it.key} onClick={() => pickMed(pickedFrom(it, it.inMine ? "mine" : undefined))}
+                      className={cn("inline-flex items-center gap-1 rounded-full border px-3 text-2xs font-bold transition",
+                        med?.key === it.key ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-2 text-ink hover:border-brand-300")}
+                      style={{ minHeight: 40 }}>
+                      {it.inMine && <Star size={12} fill="currentColor" className="text-warn-500" aria-hidden />} {it.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {/* الدليلُ كلُّه فوق الكتالوج (formulary="all"): Permethrin وAspirin وIbuprofen تُرى بشارة

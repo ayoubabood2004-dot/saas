@@ -12,7 +12,10 @@
  * سيناريوهاتٌ بدفعات: الإدراجُ بآخر القائمة وأوّلها وبعد صفّ، النجمةُ على صفٍّ قائم،
  * الإخراجُ مرّتين، النقل، التسمية، الأرشفةُ والاسترجاع، التوائم، الرفضُ برمزه وبلا
  * أثرٍ لنصف الدفعة، وأربعون إدراجاً بفجوةٍ واحدة تفرض الترقيم، ومنتصفُ فجوةٍ فرديّةٍ
- * سالبة (floor لا trunc). وبلا مجلّد: يُشغَّل السيناريوهات بالواجهة وحدها ويتأكّد أن
+ * سالبة (floor لا trunc). وتصنيفاتُ العيادة (0239): الإنشاءُ والتسميةُ والنقلُ والأرشفةُ والاسترجاع،
+ * والتوائمُ والسقف، والعضويةُ إضافةً وشيلاً ونقلاً، والاسمُ المستعار (put طُوي + member_add بمعرّفه)،
+ * والعضويةُ النائمة لدواءٍ مؤرشف ثم استرجاعُه، والترقيمُ، والرفضُ بلا نصف دفعة — والمقارنةُ على
+ * الصفوف والتصنيفات والعضويات معاً. وبلا مجلّد: يُشغَّل السيناريوهات بالواجهة وحدها ويتأكّد أن
  * كلَّ دفعةٍ تعطي ما كُتبت لتفحصه (فسيناريو «الترقيم» يرقّم فعلاً، و«الرفض» يرفض).
  *
  *   node scripts/clinic-drugs-parity.mjs [outDir]   ⇒ outDir/clinic-drugs.sql
@@ -60,6 +63,13 @@ const put = (label, name, mine, after, family = "other") => {
 };
 const move = (label, after) => ({ op: "move", id: id(label), after: after === null ? null : id(after) });
 const op = (kind, label, extra = {}) => ({ op: kind, id: id(label), ...extra });
+/* تصنيفاتُ العيادة (0239) */
+const gc = (label, name, after) => ({ op: "group_create", id: id(label), name, ...(after !== undefined ? { after: after === null ? null : id(after) } : {}) });
+const gop = (kind, label, extra = {}) => ({ op: kind, id: id(label), ...extra });
+const gmove = (label, after) => ({ op: "group_move", id: id(label), after: after === null ? null : id(after) });
+const madd = (g, d, after) => ({ op: "member_add", group: id(g), id: id(d), ...(after !== undefined ? { after: after === null ? null : id(after) } : {}) });
+const mrem = (g, d) => ({ op: "member_remove", group: id(g), id: id(d) });
+const mmove = (g, d, after) => ({ op: "member_move", group: id(g), id: id(d), after: after === null ? null : id(after) });
 
 /* كلُّ سيناريو: دفعاتٌ تبدأ من عيادةٍ فارغة، ولكلّ دفعةٍ ما كُتبت لتفحصه (`expect`). */
 const SCENARIOS = [
@@ -116,26 +126,97 @@ const SCENARIOS = [
     // floor((−١٠٢٣ + −١٠٢٠) / ٢) = −١٠٢٢؛ والقسمةُ الصحيحة بالاقتطاع تعطي −١٠٢١.
     probe: (rows) => { const w = rows.find((r) => r.id === id("W")); return w?.pos === -1022 ? null : `W=${w?.pos}`; },
   },
+  {
+    name: "التصنيفات: إنشاءٌ وتسميةٌ ونقلٌ وأرشفةٌ واسترجاع",
+    batches: [
+      { expect: "ok", ops: [gc("CA", "  مسكنات   القطط "), gc("CB", "حساسية"), gc("CC", "مضادات", null), gc("CD", "طوارئ", "CA")] },
+      { expect: "ok", ops: [gop("group_edit", "CB", { name: "أدوية الحساسية" }), gop("group_edit", "CC", { name: "مضادات" }), gmove("CC", "CB")] },
+      { expect: "drug_group_exists", ops: [gc("CE", "مسكّنات القطط")] },
+      { expect: "drug_group_exists", ops: [gop("group_edit", "CD", { name: "أدويه الحساسيه" })] },
+      { expect: "drug_group_bad_name", ops: [gc("CF", "   ")] },
+      { expect: "drug_group_bad_name", ops: [gop("group_edit", "CD", { name: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" })] },
+      { expect: "ok", ops: [gc("CA", "اسمٌ آخر بنفس المعرّف"), gop("group_archive", "CB"), gop("group_archive", "CB"), gc("CB2", "أدوية الحساسية")] },
+      { expect: "drug_group_exists", ops: [gop("group_restore", "CB")] },
+      { expect: "ok", ops: [gop("group_archive", "CB2"), gop("group_restore", "CB"), gop("group_restore", "CA")] },
+      { expect: "drug_group_gone", ops: [gop("group_restore", "ZZ")] },
+      { expect: "drug_group_gone", ops: [gmove("CA", "CB2")] },
+      { expect: "drug_group_gone", ops: [gop("group_edit", "CB2", { name: "جديد" })] },
+      // رفضٌ بمنتصف الدفعة: الإنشاءُ الأوّل لا يبقى (معاملةٌ واحدة).
+      { expect: "drug_group_gone", ops: [gc("CG", "عيون"), gmove("CA", "ZZ")] },
+    ],
+  },
+  {
+    name: "التصنيفات: سقفُ الستّين",
+    batches: [
+      { expect: "ok", ops: Array.from({ length: 60 }, (_, i) => gc(`L${i}`, `تصنيف ${i}`)) },
+      { expect: "drug_groups_full", ops: [gc("L60", "زيادة")] },
+      { expect: "ok", ops: [gop("group_archive", "L0"), gc("L60", "زيادة")] },
+      { expect: "drug_groups_full", ops: [gop("group_restore", "L0")] },
+    ],
+  },
+  {
+    name: "العضوية: إضافةٌ وشيلٌ ونقل، والاسمُ المستعار، والنائمة",
+    batches: [
+      { expect: "ok", ops: [put("MA", "Ceftriaxone", true, undefined, "antibiotics"), put("MB", "Meloxicam", false, undefined, "analgesics"), put("MC", "Ketamine", false, undefined, "anesthetics"), gc("K1", "مسكنات"), gc("K2", "عمليات")] },
+      { expect: "ok", ops: [madd("K1", "MB"), madd("K1", "MC"), madd("K1", "MA", null), madd("K2", "MC"), madd("K2", "MA")] },
+      { expect: "ok", ops: [madd("K1", "MB"), madd("K1", "MB", "MC"), mmove("K1", "MA", "MB"), mrem("K2", "MA"), mrem("K2", "MA")] },
+      // «اكتب بإيدي واحفظه بالتصنيف»: put يُطوى على صفٍّ حيّ ⇒ member_add بمعرّفه المؤقّت يصل الصفّ.
+      { expect: "ok", ops: [put("TMP1", " meloxicam", false), madd("K2", "TMP1"), put("TMP2", "Tramadol", false, undefined, "analgesics"), madd("K2", "TMP2", null)] },
+      { expect: "drug_group_gone", ops: [madd("ZZ", "MA")] },
+      { expect: "drug_row_gone", ops: [madd("K1", "ZZ")] },
+      { expect: "drug_row_gone", ops: [mmove("K2", "MB", "MA")] },
+      { expect: "drug_row_gone", ops: [mmove("K1", "MA", "ZZ")] },
+      // دواءٌ مؤرشف: عضويّاتُه تبقى نائمة، ولا يُضاف لتصنيف، ويصحو مع استرجاعه.
+      { expect: "ok", ops: [op("archive", "MC")] },
+      { expect: "drug_row_gone", ops: [madd("K2", "MC")] },
+      { expect: "ok", ops: [op("restore", "MC"), gop("group_archive", "K2")] },
+      { expect: "drug_group_gone", ops: [madd("K2", "MA")] },
+      { expect: "ok", ops: [mrem("K2", "MB"), gop("group_restore", "K2")] },
+      // رفضٌ بمنتصف الدفعة لا يترك العضويةَ الأولى.
+      { expect: "drug_row_gone", ops: [madd("K2", "MA"), mmove("K1", "MA", "ZZ")] },
+    ],
+  },
+  {
+    name: "التصنيفات والعضوية: أربعون بفجوةٍ واحدة (ترقيم)",
+    batches: [
+      { expect: "ok", ops: [gc("R0", "أوّل"), gc("RZ", "آخر"), put("D0", "Drug zero", false), put("DZ", "Drug last", false)] },
+      { expect: "ok", ops: Array.from({ length: 40 }, (_, i) => gc(`RN${i}`, `وسط ${i}`, "R0")) },
+      { expect: "ok", ops: [madd("R0", "D0"), madd("R0", "DZ"), ...Array.from({ length: 40 }, (_, i) => put(`DN${i}`, `Drug mid ${i}`, false)), ...Array.from({ length: 40 }, (_, i) => madd("R0", `DN${i}`, "D0"))] },
+      { expect: "ok", ops: [gmove("RZ", null), mmove("R0", "DZ", null), madd("R0", "DN5", "DN39")] },
+    ],
+    probe: (_rows, data) => {
+      const g = data.groups.find((x) => x.id === id("RN0"));
+      const it = data.items.find((x) => x.drug_id === id("DN0"));
+      return g?.pos !== 1536 && it?.pos !== 1536 ? null : "لم يحدث ترقيم";
+    },
+  },
 ];
 
 /* ---- التشغيلُ بالواجهة: المتوقَّعُ دفعةً دفعة ---------------------------- */
-const stateOf = (rows) => rows.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  .map((r) => `${r.id}|${r.name}|${r.family}|${r.in_mine}|${r.pos ?? "-"}|${r.archived_at != null}`).join("\n");
+const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const stateOf = (d) => [
+  d.rows.slice().sort((a, b) => byId(a.id, b.id))
+    .map((r) => `${r.id}|${r.name}|${r.family}|${r.in_mine}|${r.pos ?? "-"}|${r.archived_at != null}`).join("\n"),
+  d.groups.slice().sort((a, b) => byId(a.id, b.id))
+    .map((g) => `${g.id}|${g.name}|${g.pos ?? "-"}|${g.archived_at != null}`).join("\n"),
+  d.items.slice().sort((a, b) => byId(a.group_id, b.group_id) || byId(a.drug_id, b.drug_id))
+    .map((i) => `${i.group_id}|${i.drug_id}|${i.pos}`).join("\n"),
+].join("\n#\n");
 
 console.log("▸ السيناريوهاتُ بالواجهة (applyOps من المصدر)");
 const plan = [];
 for (const sc of SCENARIOS) {
-  let rows = [];
+  let data = { rows: [], groups: [], items: [] };
   const steps = [];
   let ok = true;
   for (const [i, b] of sc.batches.entries()) {
     let got = "ok";
-    try { rows = M.applyOps(rows, b.ops, "2026-10-10T00:00:00.000Z"); }
+    try { data = M.applyAll(data, b.ops, "2026-10-10T00:00:00.000Z"); }
     catch (e) { got = M.drugErrorCode(e) ?? String(e); }
     if (got !== b.expect) { ok = false; check(`${sc.name} / دفعة ${i + 1}`, false, `طلع ${got} والمكتوب ${b.expect}`); }
-    steps.push({ ops: b.ops, got, state: stateOf(rows) });
+    steps.push({ ops: b.ops, got, state: stateOf(data) });
   }
-  const why = sc.probe ? sc.probe(rows) : null;
+  const why = sc.probe ? sc.probe(data.rows, data) : null;
   check(`${sc.name}: ${sc.batches.length} دفعات كلٌّ بما كُتبت له${why ? "" : sc.probe ? " (والمسبارُ أصاب)" : ""}`, ok && !why, why ?? "");
   plan.push({ name: sc.name, steps });
 }
@@ -146,7 +227,7 @@ if (outDir) {
   const lit = (s, tag) => `$${tag}$${s}$${tag}$`;
   let body = "";
   for (const sc of plan) {
-    body += `  delete from clinic_drugs where clinic_id = '${PC}';\n`;
+    body += `  delete from clinic_drug_group_items where clinic_id = '${PC}'; delete from clinic_drug_groups where clinic_id = '${PC}'; delete from clinic_drugs where clinic_id = '${PC}';\n`;
     for (const [i, s] of sc.steps.entries()) {
       const where = `${sc.name} / ${i + 1}`;
       body += `  got := _cdp_apply('${PC}', ${lit(JSON.stringify(s.ops), "j")}::jsonb);\n`;
@@ -165,14 +246,18 @@ begin
 exception when others then return sqlerrm;
 end $fn$;
 create or replace function _cdp_state(clinic uuid) returns text language sql as $fn$
-  select coalesce(string_agg(id::text || '|' || name || '|' || family || '|' || in_mine::text || '|' || coalesce(pos::text, '-') || '|' || (archived_at is not null)::text, E'\\n' order by id), '')
-    from clinic_drugs where clinic_id = clinic
+  select coalesce((select string_agg(id::text || '|' || name || '|' || family || '|' || in_mine::text || '|' || coalesce(pos::text, '-') || '|' || (archived_at is not null)::text, E'\\n' order by id)
+                     from clinic_drugs where clinic_id = clinic), '')
+      || E'\\n#\\n' || coalesce((select string_agg(id::text || '|' || name || '|' || coalesce(pos::text, '-') || '|' || (archived_at is not null)::text, E'\\n' order by id)
+                     from clinic_drug_groups where clinic_id = clinic), '')
+      || E'\\n#\\n' || coalesce((select string_agg(group_id::text || '|' || drug_id::text || '|' || pos::text, E'\\n' order by group_id, drug_id)
+                     from clinic_drug_group_items where clinic_id = clinic), '')
 $fn$;
 create or replace function _cdp_run() returns text language plpgsql as $fn$
 declare got text; st text;
 begin
   insert into auth.users(id) values ('${PC}') on conflict do nothing;
-${body}  delete from clinic_drugs where clinic_id = '${PC}';
+${body}  delete from clinic_drug_group_items where clinic_id = '${PC}'; delete from clinic_drug_groups where clinic_id = '${PC}'; delete from clinic_drugs where clinic_id = '${PC}';
   return 'ok';
 end $fn$;
 -- الحزمةُ تُنزل هذا الملفّ ثم تسأل: select _cdp_run() — جملةٌ واحدة يقارن chk ناتجَها.

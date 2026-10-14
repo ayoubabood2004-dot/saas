@@ -1,5 +1,5 @@
-import type { ClinicDrug, ClinicDrugOp, ClinicDrugsSnapshot, MedicineStock } from "@/types";
-import { applyOps, cmpMine, DrugOpError, drugKey } from "./medIndex";
+import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugOp, ClinicDrugsSnapshot, MedicineStock } from "@/types";
+import { applyAll, cmpMine, DrugOpError, drugKey, groupsOrder, itemsOrder } from "./medIndex";
 import { getActiveClinicId } from "./clinics";
 import { loadDB } from "./demoStore";
 import { localISO, searchable } from "./utils";
@@ -8,13 +8,15 @@ import { localISO, searchable } from "./utils";
  * «أدويتي» بالنسخة التجريبية — مرآةُ 0229 بمخزن الجهاز لكلّ عيادة.
  *
  * ليست عرضاً: فحوصُ المنطق تجري عليها، فانحرافُها عن الخادم يُخفي العطلَ بدل أن يكشفه.
- * فالكتابةُ نفسُها `applyOps` (مرآةُ clinic_drugs_apply سطراً بسطر)، والرفضُ برموزه
+ * فالكتابةُ نفسُها `applyAll` (مرآةُ clinic_drugs_apply سطراً بسطر)، والرفضُ برموزه
  * وتلميحاته العربية حرفاً: `clinic_switched` حين لا يطابق الختمُ العيادةَ النشطة،
  * `drug_row_gone`، `drug_exists`، `clinic_drugs_full`. **ولا دالّةَ حذف** — كالخادم.
  * تُحمَّل كسولةً من repoDemo عند أوّل نداء.
  * ==========================================================================*/
 
 const KEY = (clinic: string) => `vp_demo_clinic_drugs_${clinic || "default"}`;
+/** التصنيفاتُ وعضوياتُها (0239) بمفتاحٍ ثانٍ — المفتاحُ الأوّلُ يبقى بشكله فلا تنكسر نسخةٌ قديمة تقرؤه. */
+const GKEY = (clinic: string) => `vp_demo_clinic_drug_groups_${clinic || "default"}`;
 const activeClinic = () => getActiveClinicId() || "default";
 
 function load(clinic: string): ClinicDrug[] {
@@ -23,6 +25,17 @@ function load(clinic: string): ClinicDrug[] {
     const list = raw ? (JSON.parse(raw) as ClinicDrug[]) : [];
     return Array.isArray(list) ? list : [];
   } catch { /* swallow-ok: جهازٌ بلا تخزين = بلا «أدويتي» محفوظة بالتجريبي */ return []; }
+}
+
+function loadGroups(clinic: string): { groups: ClinicDrugGroup[]; items: ClinicDrugGroupItem[] } {
+  try {
+    const raw = localStorage.getItem(GKEY(clinic));
+    const d = raw ? (JSON.parse(raw) as { groups?: unknown; items?: unknown }) : {};
+    return {
+      groups: Array.isArray(d.groups) ? (d.groups as ClinicDrugGroup[]) : [],
+      items: Array.isArray(d.items) ? (d.items as ClinicDrugGroupItem[]) : [],
+    };
+  } catch { /* swallow-ok: جهازٌ بلا تخزين = بلا تصنيفاتٍ محفوظة بالتجريبي */ return { groups: [], items: [] }; }
 }
 
 /** ترتيبُ الخادم: `in_mine desc, pos, created_at, id`. */
@@ -35,15 +48,26 @@ function ordered(rows: ClinicDrug[]): ClinicDrug[] {
 
 export function demoDrugsList(): ClinicDrugsSnapshot {
   const clinic = activeClinic();
-  return { clinic, rows: ordered(load(clinic)) };
+  const g = loadGroups(clinic);
+  return { clinic, rows: ordered(load(clinic)), groups: groupsOrder(g.groups), items: itemsOrder(g.items) };
 }
 
 export function demoDrugsApply(clinic: string, ops: ClinicDrugOp[]): ClinicDrugsSnapshot {
   const active = activeClinic();
   if (clinic !== active) throw new DrugOpError("clinic_switched");
-  const next = applyOps(load(active), ops);   // يرمي كالخادم، ولا يكتب نصفَ دفعة
-  localStorage.setItem(KEY(active), JSON.stringify(next));   // حصّةٌ ممتلئة ترمي — لا «تمّ» كاذبة
-  return { clinic: active, rows: ordered(next) };
+  const g = loadGroups(active);
+  const next = applyAll({ rows: load(active), groups: g.groups, items: g.items }, ops);   // يرمي كالخادم، ولا يكتب نصفَ دفعة
+  /* المفتاحان معاً أو لا شيء (معاملةُ الخادم الواحدة): حصّةٌ ممتلئة بالثاني تُرجع الأوّل كما كان
+     وترمي — لا «تمّ» كاذبة ولا دواءٌ انحفظ بلا تصنيفه. */
+  const prevRows = localStorage.getItem(KEY(active));
+  localStorage.setItem(KEY(active), JSON.stringify(next.rows));
+  try {
+    localStorage.setItem(GKEY(active), JSON.stringify({ groups: next.groups, items: next.items }));
+  } catch (e) {
+    try { if (prevRows == null) localStorage.removeItem(KEY(active)); else localStorage.setItem(KEY(active), prevRows); } catch { /* swallow-ok: الرميُ أدناه يقول الفشل */ }
+    throw e;
+  }
+  return { clinic: active, rows: ordered(next.rows), groups: groupsOrder(next.groups), items: itemsOrder(next.items) };
 }
 
 /** «الأخيرة» من علاجات النسخة التجريبية — الأحدثُ أوّلاً، اثنا عشر اسماً مختلفاً. */

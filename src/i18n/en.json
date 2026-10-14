@@ -6177,7 +6177,25 @@
     "stockFail": "Couldn't load stock medicines — in-stock items are just not shown right now; it doesn't mean there are none",
     "noResultsStockFail": "Not found in the list — and stock medicines didn't load, so it may be in stock. Retry before typing it",
     "replaceDup": "“{{name}}” is already in the plan — removed “{{old}}” and kept the existing one with its dose",
-    "protoHit": "Add “{{d}}” from the formulary — the dose is calculated from weight"
+    "protoHit": "Add “{{d}}” from the formulary — the dose is calculated from weight",
+    "catNew": "+ New category",
+    "catNamePh": "Category name — 1 to 40 characters",
+    "catInsert": "Add from the list",
+    "catType": "Type it myself",
+    "catRemove": "Remove from category",
+    "catRemoved": "{{name}} removed from «{{cat}}» — the drug itself stays",
+    "catAdded": "{{name}} added to «{{cat}}»",
+    "catRename": "Rename",
+    "catUp": "Move up",
+    "catDown": "Move down",
+    "catOrder": "Reorder",
+    "catArchive": "Archive",
+    "catArchiveAsk": "The category leaves the list, its drugs stay, and you can restore it from Settings.",
+    "catInsertTitle": "Add to «{{cat}}»",
+    "catEmpty": "Empty — «Add from the list» or «Type it myself»",
+    "catMore": "Category options",
+    "saveToCat": "Save to the category",
+    "saveInto": "Or save it in:"
   },
   "mmset": {
     "suggestDone": "{{n}} added to My medicines",
@@ -6198,7 +6216,10 @@
     "archived": "“{{name}}” archived",
     "archivedTitle": "Archived",
     "restored": "“{{name}}” restored",
-    "restore": "Restore"
+    "restore": "Restore",
+    "catsTitle": "My categories",
+    "catsHint": "Clinic categories — shown in the picker under «My meds». A drug can be in more than one.",
+    "catArchiveAsk": "Archive «{{name}}»? It leaves the picker, its drugs stay, and you can restore it from «Archived»."
   },
   "cust": {
     "short": "Type 2 letters or 3 digits",
