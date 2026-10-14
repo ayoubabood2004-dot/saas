@@ -5118,7 +5118,9 @@ chk "حذفٌ مباشر لجرعةٍ معطاة بدور authenticated ⇒ dose
     "select _rls_try('$C1', 'delete from treatment_entries where id=''${TD}01''')" "guarded:P0001:dose_given_keep"
 chk "  والجرعةُ باقية" "select count(*)::text from treatment_entries where id='${TD}01'" "1"
 chk "جملةُ حذفٍ بالزيارة تشمل معطاةً تُرفض كلُّها — لا نصفُ حذف" \
-    "select left(_rls_try('$C1', 'delete from treatment_entries where visit_id=''${TD}b1'''), 13)||'|'||(select count(*) from treatment_entries where visit_id='${TD}b1')::text" "guarded:P0001|12"
+    "select left(_rls_try('$C1', 'delete from treatment_entries where visit_id=''${TD}b1'''), 13)" "guarded:P0001"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where visit_id='${TD}b1'" "12"
 chk "حذفٌ مباشر لجرعةٍ منتظرة يمرّ (السلّةُ للمنتظر)" \
     "select _rls_try('$C1', 'delete from treatment_entries where id=''${TD}12''')" "rows:1"
 chk "«من هذا اليوم بس» على يومٍ فات ⇒ drop_past_day" \
@@ -5139,25 +5141,37 @@ $P -c "insert into treatment_entries(id, pet_id, clinic_id, visit_id, day, time,
          ('${TD}14','${TD}a1','$C1','${TD}b1', $TODAY + 6, '08:00', 'Ceftriaxone', '1 مل', 'drug') on conflict (id) do nothing;
        update treatment_entries set administered_at = now(), administered_by = 'جهاز ثاني' where id = '${TD}14';" >/dev/null
 chk "جرعةٌ انعطت قبل النداء لا تُحذف ولو أُرسل معرّفُها" \
-    "select _dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY + 5, 'rest', array['${TD}13','${TD}14']::uuid[])||'|'||(select count(*) from treatment_entries where id='${TD}14')::text" "ok:1:1:0|1"
+    "select _dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY + 5, 'rest', array['${TD}13','${TD}14']::uuid[])" "ok:1:1:0"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where id='${TD}14'" "1"
 chk "معرّفاتُ دواءٍ آخر وسائلٍ وزيارةٍ أخرى تُتجاهل ⇒ drop_nothing، والثلاثةُ باقية" \
-    "select split_part(_dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}10','${TD}11','${TD}21']::uuid[]), ':', 3)||'|'||(select count(*) from treatment_entries where id in ('${TD}10','${TD}11','${TD}21'))::text" "drop_nothing|3"
+    "select split_part(_dtd('$C1', '${TD}b1', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}10','${TD}11','${TD}21']::uuid[]), ':', 3)" "drop_nothing"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where id in ('${TD}10','${TD}11','${TD}21')" "3"
 chk "عيادةٌ أخرى ⇒ visit_gone (P0002) بتلميحٍ عربيّ" \
     "select split_part(r, ':', 2)||'|'||split_part(r, ':', 3)||'|'||(position('عيادتك' in r) > 0)::text from (select _dtd('$C2', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}21']::uuid[]) r) x" "P0002|visit_gone|true"
 chk "المصوّرُ ممنوع، والجرعةُ باقية" \
-    "select split_part(_dtd('$PHO', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}21']::uuid[]), ':', 1)||'|'||(select count(*) from treatment_entries where id='${TD}21')::text" "guarded|1"
+    "select split_part(_dtd('$PHO', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}21']::uuid[]), ':', 1)" "guarded"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where id='${TD}21'" "1"
 chk "زيارةٌ مسكّرة ⇒ visit_ended، والجرعةُ باقية" \
-    "select split_part(_dtd('$C1', '${TD}b3', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}31']::uuid[]), ':', 3)||'|'||(select count(*) from treatment_entries where id='${TD}31')::text" "visit_ended|1"
+    "select split_part(_dtd('$C1', '${TD}b3', 'Ceftriaxone', $TODAY + 1, 'rest', array['${TD}31']::uuid[]), ':', 3)" "visit_ended"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where id='${TD}31'" "1"
 $P -c "update _dvtest_flags set admin = true;" >/dev/null
 chk "المشغّلُ يدخل ١١١١ (0238)" "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص 0238'')->>''ok'')')" "true"
 chk "  ويحذف المنتظرَ بالدالّة كأيّ كادر" \
     "select _dtd('$ADM', '${TD}b2', 'Ceftriaxone', $TODAY + 1, 'day', array['${TD}21']::uuid[])" "ok:1:0:0"
 chk "  والمعطاةُ عليه ممنوعةٌ كما على غيره" \
-    "select left(_rls_try('$ADM', 'delete from treatment_entries where id=''${TD}04'''), 13)||'|'||(select count(*) from treatment_entries where id='${TD}04')::text" "guarded:P0001|1"
+    "select left(_rls_try('$ADM', 'delete from treatment_entries where id=''${TD}04'''), 13)" "guarded:P0001"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where id='${TD}04'" "1"
 $P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
 chk "حذفُ الحيوان يمرّ ولو عنده جرعةٌ معطاة (تتابعُ المفتاح بهويّة المالك)" \
-    "select _rls_try('$C1', 'delete from pets where id=''${TD}a2''')||'|'||(select count(*) from treatment_entries where pet_id='${TD}a2')::text" "rows:1|0"
+    "select _rls_try('$C1', 'delete from pets where id=''${TD}a2''')" "rows:1"
+chk "  (بجملةٍ ثانية: لقطةُ الجملة الأولى تسبق كتابتَها)" \
+    "select count(*)::text from treatment_entries where pet_id='${TD}a2'" "0"
 chk "الحارسُ والدالّة invoker بمسارٍ مثبَّت" \
     "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text, ',' order by proname) from pg_proc where proname in ('treatment_entries_keep_given','drop_treatment_drug')" "drop_treatment_drug:false:true,treatment_entries_keep_given:false:true"
 chk "  وجملةُ الحذف تعيد شرطَ المعطى وتختم العيادة بنصّها" \
