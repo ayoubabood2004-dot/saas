@@ -5755,7 +5755,22 @@
     "doctor": "Doctor",
     "doctorPh": "Choose the doctor…",
     "givenNow": "Given now (record the dose as given)",
-    "addDrugBtn": "Add medicine"
+    "addDrugBtn": "Add medicine",
+    "extBtn": "Extend plan",
+    "extTitle": "Extend the treatment plan",
+    "extIntro": "The last day's orders repeat as they are — drugs and care tasks at their times ({{n}}) — after {{day}}.",
+    "extDaysLabel": "Number of days",
+    "extD1": "1 day",
+    "extD2": "2 days",
+    "extDFew": "{{n}} days",
+    "extDMany": "{{n}} days",
+    "extPick": "Choose how many days",
+    "extGo1": "Extend by 1 day",
+    "extGo2": "Extend by 2 days",
+    "extGoFew": "Extend by {{n}} days",
+    "extGoMany": "Extend by {{n}} days",
+    "extFail": "The extension was not saved — try again.",
+    "extChanged": "The plan changed on another device — review it before extending."
   },
   "intake": {
     "today": "Today",

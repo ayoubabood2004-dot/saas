@@ -980,6 +980,12 @@ const supabaseRepo: DemoRepo = {
   async listTreatments(petId) {
     return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
   },
+  /* صفوفُ زيارةٍ واحدة كلُّها — **قائمةُ قرار**: التمديدُ يقرأ منها آخرَ يومٍ قبل أن يكتب (لا من
+   * حالة الشاشة، فجوابٌ ضاع بعد كتابةٍ وصلت كان يمدّد مرّتين). قائمةٌ ناقصة تمدّد يوماً غيرَ
+   * الأخير، فترمي ولا ترجع ناقصة (allPages). */
+  async listVisitTreatments(visitId) {
+    return allPages<TreatmentEntry>(() => sbc().from("treatment_entries").select("*").eq("visit_id", visitId));
+  },
   async listAllTreatments(petIds) {
     return inChunks(petIds, (c) => allPages<TreatmentEntry>(() => sbc().from("treatment_entries").select("*").in("pet_id", c)));
   },
@@ -2845,7 +2851,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listCompanyCharges", "listCompanyEntries", "listPaymentsForPurchases",
   // رفعُ الأسعار (0226): المعاينةُ والسجلُّ والعدّادُ قراءة — الحفظُ والإرجاعُ لا.
   "previewPriceChange", "listPriceChanges", "priceChangeDetail", "priceEpoch", "priceRaisePrior",
-  "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
+  "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVisitTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog",
   // دليلُ الزبائن (0232): قراءةٌ — الطبيبُ يلقى زبونَه ولو انتهى الاشتراك.
   "findCustomers",

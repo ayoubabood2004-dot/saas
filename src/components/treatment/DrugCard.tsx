@@ -421,7 +421,7 @@ export function DrugCard({
                 {row.freq !== "prn" && (
                   <>
                     <span className="h-6 w-px bg-line" />
-                    {[3, 5, 7, 10, 14].map((d) => (
+                    {[1, 2, 3, 5, 7, 10, 14].map((d) => (
                       <button key={d} type="button" onClick={() => { playTap(); onPatch({ days: d }); }}
                         className={cn("h-11 min-w-[48px] rounded-2xl border px-3 text-sm font-black tabular-nums transition", row.days === d ? "border-brand-600 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-2 text-ink-muted hover:border-brand-300")}>
                         {formatNum(d)}
@@ -478,7 +478,7 @@ export function DrugCard({
       />
       <NumberPadSheet
         open={pad === "days"} title={t("tplan.padDays", "مدة العلاج")} unit={t("tplan.day", "يوم")}
-        initial={row.days} decimals={false} min={1} max={365}
+        initial={row.days} decimals={false} min={1} max={60}
         onClose={() => setPad(null)}
         onSubmit={(n) => { onPatch({ days: Math.round(n) }); setPad(null); }}
       />

@@ -50,6 +50,8 @@ import { Section } from "@/components/VisitTabs";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
 import { playTap, playSuccess, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
 import { celebrate } from "@/lib/celebrate";
+import { dayForm } from "@/lib/dayWords";
+import { describeDbError } from "@/lib/errors";
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -402,33 +404,60 @@ export default function VisitPage() {
     await syncDoseCycleForPet(list[0].pet_id);
     await reload();
   };
-  /** Extend the course — repeat the last day's medications for N more days. */
-  const extendCourse = async (extraDays: number) => {
-    if (!visit || !lastDay || extraDays < 1) return;
-    const lastMeds = treatments.filter((t) => t.day === lastDay);
-    if (!lastMeds.length) { setExtendOpen(false); return; }
-    const rows: Parameters<typeof repo.addTreatments>[0] = [];
-    for (let i = 1; i <= extraDays; i++) {
-      const base = new Date(`${lastDay}T00:00:00`); base.setDate(base.getDate() + i);
-      const day = localISO(base);
-      for (const m of lastMeds) {
-        // Keep each dose's clock slot — the extension repeats the day as scheduled,
-        // it doesn't flatten it back into untimed rows.
-        //
-        // ويُنقل معها **نوع المهمّة وطريق الإعطاء**: التمديد كان يكتب صفوفاً
-        // عاريةً من `task_type`، فينهار كل قياسٍ وكل سائلٍ إلى «دواء» (لأن
-        // غياب النوع يعني دواءً)، ويضيع «وريدي». يعني يومٌ فيه حرارةٌ وسوائل
-        // يُمدَّد فيصير ثلاثة أدوية — تزييفٌ صامت لخطّة العلاج.
-        rows.push({
-          pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication,
-          amount: m.amount, time: m.time, observations: m.observations,
-          task_type: m.task_type, route: m.route, doctor: user?.full_name,
-        });
+  /** Extend the course — repeat the last day's orders for N more days.
+   *
+   * يقرأ آخرَ يومٍ **من القاعدة لحظةَ الحفظ** لا من حالة الشاشة: جوابٌ ضاع بعد كتابةٍ وصلت
+   * (شبكةٌ ضعيفة) كان يترك النافذةَ مفتوحةً بلا كلمة، فيضغط الطبيبُ ثانيةً ويُمدَّد مرّتين —
+   * وكذلك تمديدٌ من جهازٍ ثانٍ بين فتح النافذة وحفظها. فإن لم يعد آخرُ يومٍ هو اليومَ الذي
+   * رآه الطبيب (`fromDay`) يُقال ذلك ويُعاد التحميل ولا يُكتب شيء. والفشلُ يُقال: كان بلا
+   * try فتبقى النافذةُ تدور وتُغلق كأنّ شيئاً لم يكن. */
+  const extendCourse = async (extraDays: number, fromDay: string) => {
+    if (!visit || extraDays < 1) return;
+    let wrote = false;
+    try {
+      const fresh = await repo.listVisitTreatments(visit.id);
+      const freshLast = fresh.reduce<string | null>((m, x) => (m === null || x.day > m ? x.day : m), null);
+      if (freshLast !== fromDay) {
+        playWarning();
+        toast.error(t("vbk.extChanged", "الخطة تغيّرت من جهاز ثاني — راجعها قبل التمديد."));
+        setExtendOpen(false);
+        await reload();
+        return;
+      }
+      const lastMeds = fresh.filter((x) => x.day === fromDay);
+      const rows: Parameters<typeof repo.addTreatments>[0] = [];
+      for (let i = 1; i <= extraDays; i++) {
+        const base = new Date(`${fromDay}T00:00:00`); base.setDate(base.getDate() + i);
+        const day = localISO(base);
+        for (const m of lastMeds) {
+          // Keep each dose's clock slot — the extension repeats the day as scheduled,
+          // it doesn't flatten it back into untimed rows.
+          //
+          // ويُنقل معها **نوع المهمّة وطريق الإعطاء**: التمديد كان يكتب صفوفاً
+          // عاريةً من `task_type`، فينهار كل قياسٍ وكل سائلٍ إلى «دواء» (لأن
+          // غياب النوع يعني دواءً)، ويضيع «وريدي». يعني يومٌ فيه حرارةٌ وسوائل
+          // يُمدَّد فيصير ثلاثة أدوية — تزييفٌ صامت لخطّة العلاج.
+          rows.push({
+            pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication,
+            amount: m.amount, time: m.time, observations: m.observations,
+            task_type: m.task_type, route: m.route, doctor: user?.full_name,
+          });
+        }
+      }
+      await repo.addTreatments(rows); // دفعة وحدة
+      wrote = true;
+      await syncDoseCycleForPet(visit.pet_id);
+      playSuccess(); setExtendOpen(false); await reload();
+    } catch (e) {
+      playWarning();
+      if (wrote) {
+        // التمديدُ انكتب — فشلُ ما بعده لا يُقال «ما انحفظ» (إعادةُ المحاولة كانت ستمدّد مرّتين).
+        setExtendOpen(false);
+        toast.error(t("vbk.reloadFail", "انحفظت، بس ما تحدّثت الصفحة — حدّثها."));
+      } else {
+        toast.error(t("vbk.extFail", "ما انحفظ التمديد — أعد المحاولة."), describeDbError(e, t));
       }
     }
-    await repo.addTreatments(rows); // دفعة وحدة
-    await syncDoseCycleForPet(visit.pet_id);
-    playSuccess(); setExtendOpen(false); await reload();
   };
   const undoDose = async (t: TreatmentEntry) => {
     playTap();
@@ -829,7 +858,7 @@ export default function VisitPage() {
           )}
           <SecondaryBtn icon={<Pill size={15} />} label="إضافة دواء" onClick={() => openAddDrug()} />
           <SecondaryBtn icon={<FlaskConical size={15} />} label="تسجيل تحاليل" onClick={() => { playTap(); setLabOpen(true); }} />
-          {hasFlowsheet && <SecondaryBtn icon={<CalendarPlus size={15} />} label="تمديد الخطة" onClick={() => { playTap(); setExtendOpen(true); }} />}
+          {hasFlowsheet && <SecondaryBtn icon={<CalendarPlus size={15} />} label={t("vbk.extBtn", "تمديد الخطة")} onClick={() => { playTap(); setExtendOpen(true); }} />}
           <SecondaryBtn icon={<NotebookPen size={15} />} label="إضافة ملاحظة" onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} />
           <button onClick={() => { playTap(); setEndOpen(true); }} className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-danger-300 px-4 py-2.5 text-sm font-bold text-danger-600 transition hover:bg-danger-50 dark:border-danger-500/40 dark:hover:bg-danger-500/10">
             <Check size={15} /> إنهاء العلاج وإغلاق الزيارة
@@ -1098,27 +1127,46 @@ function MedCourseView({ courses, todayISO, ended, lang, onGive }: { courses: Me
 }
 
 /* ----------------------------- Extend plan modal -------------------------- */
+/** تمديدُ الخطة: يومٌ واحد ويومان ممكنان (كان أقلُّها ثلاثة)، ولا مدّةَ مختارةٌ سلفاً — كانت
+ *  «٧» مختارةً فيُضغط الزرُّ بلا قراءة. والعددُ بصيغته العربية («يومين»، «١٤ يوماً») لا «٢ أيام»
+ *  (`dayForm`). والزرُّ يقول ما سيحدث بالضبط، أو يطلب الاختيار. */
+const EXTEND_PRESETS = [1, 2, 3, 5, 7, 14];
 function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
-  open: boolean; lastDay: string | null; lang: string; medCount: number; onClose: () => void; onExtend: (days: number) => void | Promise<void>;
+  open: boolean; lastDay: string | null; lang: string; medCount: number; onClose: () => void;
+  onExtend: (days: number, fromDay: string) => void | Promise<void>;
 }) {
-  const [days, setDays] = useState(7);
+  const { t } = useTranslation();
+  const [days, setDays] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setDays(7); setBusy(false); } }, [open]);
-  const submit = async () => { if (busy || days < 1) return; setBusy(true); try { await onExtend(days); } finally { setBusy(false); } };
+  useEffect(() => { if (open) { setDays(null); setBusy(false); } }, [open]);
+  const submit = async () => {
+    if (busy || !days || days < 1 || !lastDay) return;
+    setBusy(true);
+    try { await onExtend(days, lastDay); } finally { setBusy(false); }
+  };
   return (
-    <Modal open={open} onClose={onClose} title="تمديد خطة العلاج">
-      <div className="space-y-4">
-        <p className="text-sm text-ink-muted">تُكرَّر أوامر آخر يوم كما هي — أدويةً ومتابعاتٍ بأوقاتها{medCount ? ` (${formatNum(medCount)} أمراً)` : ""} — لعدد إضافي من الأيام{lastDay ? <> بعد <b className="text-ink">{formatDate(lastDay, lang)}</b></> : ""}.</p>
+    <Modal open={open} onClose={onClose} title={t("vbk.extTitle", "تمديد خطة العلاج")}>
+      <div className="space-y-4" data-extend>
+        <p className="text-sm text-ink-muted">
+          {t("vbk.extIntro", { n: formatNum(medCount), day: lastDay ? formatDate(lastDay, lang) : "—", defaultValue: "تتكرّر أوامر آخر يوم كما هي — أدويةً ومتابعاتٍ بأوقاتها ({{n}}) — بعد {{day}}." })}
+        </p>
         <div className="flex flex-wrap gap-2">
-          {[3, 5, 7, 14].map((d) => (
-            <button key={d} type="button" onClick={() => setDays(d)} className={cn("rounded-lg border px-4 py-2 text-sm font-black transition", days === d ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>{formatNum(d)} أيام</button>
+          {EXTEND_PRESETS.map((d) => (
+            <button key={d} type="button" data-ext-days={d} aria-pressed={days === d} onClick={() => { playTap(); setDays(d); }}
+              className={cn("min-h-[44px] rounded-lg border px-4 py-2 text-sm font-black transition", days === d ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>
+              {t(`vbk.extD${dayForm(d)}`, { n: formatNum(d) })}
+            </button>
           ))}
         </div>
         <div>
-          <div className="mb-1.5 text-xs font-bold text-ink-muted">عدد الأيام</div>
-          <input type="number" min={1} max={60} value={days} onChange={(e) => setDays(Math.max(1, Math.min(60, Number(e.target.value) || 1)))} className="input h-11 w-full tabular-nums" dir="ltr" />
+          <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("vbk.extDaysLabel", "عدد الأيام")}</div>
+          <input type="number" min={1} max={60} value={days ?? ""} data-ext-input
+            onChange={(e) => { const v = e.target.value; setDays(v === "" ? null : Math.max(1, Math.min(60, Math.round(Number(v)) || 1))); }}
+            className="input h-11 w-full tabular-nums" dir="ltr" />
         </div>
-        <Button size="lg" className="w-full" leftIcon={<CalendarPlus size={18} />} loading={busy} disabled={!medCount} onClick={submit}>تمديد {formatNum(days)} أيام</Button>
+        <Button size="lg" className="w-full" data-ext-go leftIcon={<CalendarPlus size={18} />} loading={busy} disabled={!medCount || !days} onClick={submit}>
+          {days ? t(`vbk.extGo${dayForm(days)}`, { n: formatNum(days) }) : t("vbk.extPick", "اختر عدد الأيام")}
+        </Button>
       </div>
     </Modal>
   );

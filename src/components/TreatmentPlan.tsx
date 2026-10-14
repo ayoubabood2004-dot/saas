@@ -1027,7 +1027,7 @@ function TreatmentStep({
         <span className="h-6 w-px bg-line" />
         <span className="text-2xs font-bold text-ink-subtle">{t("tplan.planDays", "مدة الخطة")}</span>
         <span className="inline-flex items-center gap-1 rounded-2xl bg-surface-1 p-1">
-          {[3, 5, 7, 10, 14].map((d) => (
+          {[1, 2, 3, 5, 7, 10, 14].map((d) => (
             <button key={d} type="button" onClick={() => { playTap(); setAllDays(d); }}
               className={cn("h-10 min-w-[44px] rounded-xl px-2.5 text-sm font-black tabular-nums transition", planDays === d ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
               {formatNum(d)}
@@ -1175,7 +1175,7 @@ function TreatmentStep({
       />
       <NumberPadSheet
         open={daysPad} title={t("tplan.padDays", "مدة العلاج")} unit={t("tplan.day", "يوم")}
-        initial={planDays} decimals={false} min={1} max={365}
+        initial={planDays} decimals={false} min={1} max={60}
         onClose={() => setDaysPad(false)}
         onSubmit={(n) => { setAllDays(Math.round(n)); setDaysPad(false); }}
       />

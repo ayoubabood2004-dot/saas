@@ -98,11 +98,13 @@ const ROUTE_T: Record<DoseRoute, { full: () => string; short: () => string }> = 
   inhaled: { full: () => i18n.t("flow.route.inhaled", "استنشاق"), short: () => i18n.t("flow.routeShort.inhaled", "است") },
 };
 
-/** الاسم الكامل — للقائمة المنسدلة حيث المساحة تسمح. */
-export const routeName = (r: DoseRoute): string => ROUTE_T[r].full();
+/** الاسم الكامل — للقائمة المنسدلة حيث المساحة تسمح.
+ *  وطريقٌ لا يعرفه هذا الجهاز (صفٌّ كتبته نسخةٌ أحدث بطريقٍ جديد) يُعرض بمعرّفه لا يُسقط
+ *  اللوحة: الفهرسةُ العارية كانت ترمي TypeError فتنطفئ الطبلةُ كلُّها على صفٍّ واحد. */
+export const routeName = (r: DoseRoute): string => ROUTE_T[r]?.full() ?? String(r);
 
 /** مختصرٌ يُطبع بصدر الصف بلا أن يزاحم اسم الدواء. */
-export const routeShort = (r: DoseRoute): string => ROUTE_T[r].short();
+export const routeShort = (r: DoseRoute): string => ROUTE_T[r]?.short() ?? String(r);
 
 /* ── أسباب الفوات ───────────────────────────────────────────────────────── */
 /** أسبابٌ جاهزة تُختار بضغطة. القائمة قصيرة عمداً: قائمةٌ طويلة تُتجاهَل،

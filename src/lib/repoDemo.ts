@@ -1432,6 +1432,12 @@ const demoRepo = {
       .sort((a, b) => (a.day === b.day ? a.time.localeCompare(b.time) : a.day.localeCompare(b.day)));
   },
 
+  /** صفوفُ زيارةٍ واحدة — مرآةُ listVisitTreatments (قائمةُ قرارٍ للتمديد: آخرُ يومٍ منها لا من الشاشة). */
+  async listVisitTreatments(visitId: string): Promise<TreatmentEntry[]> {
+    return (loadDB().treatments ?? []).filter((t) => t.visit_id === visitId)
+      .sort((a, b) => (a.day === b.day ? (a.time ?? "").localeCompare(b.time ?? "") : a.day.localeCompare(b.day)));
+  },
+
   /** Treatments across a set of pets (clinic-wide) — for the Dispensed Medications report. */
   async listAllTreatments(petIds: string[]): Promise<TreatmentEntry[]> {
     const ids = new Set(petIds);
