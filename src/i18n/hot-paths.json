@@ -44,6 +44,7 @@
     "vax": "src/pages/Settings.tsx",
     "breeds": "src/pages/Settings.tsx",
     "mmset": "src/pages/Settings.tsx",
+    "obx": "src/pages/OutboxReview.tsx",
     "cat": {
       "owner": "src/pages/ClinicStore.tsx",
       "with": [
