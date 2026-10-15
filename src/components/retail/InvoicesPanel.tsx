@@ -22,6 +22,7 @@ import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
+import { buildInvoiceFeed, settlementsOf } from "@/lib/settlementFeed";
 
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
 const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "retail.payCard", transfer: "retail.payTransfer" };
@@ -174,17 +175,31 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     return () => { alive = false; };
   }, []);
 
-  // "Last activity" = the newest of the sale itself and any later payment. Settlement
-  // legs carry an `at` timestamp, so recording a debt payment bumps that invoice back
-  // to the top of the list — a quiet signal that it was just settled — without adding
-  // or duplicating anything on the sale.
-  const lastActivity = (inv: Invoice): number => {
-    let ms = new Date(inv.created_at).getTime();
-    for (const leg of inv.payment_details ?? []) {
-      if (leg?.at) { const t = new Date(leg.at).getTime(); if (t > ms) ms = t; }
-    }
-    return ms;
-  };
+  // ---- سطورُ «تسديد دفعة» (0240) ----
+  // التسديدُ سطرٌ بوقته وسط القائمة، والفاتورةُ الأصلية بمكان إنشائها بدينها المتبقّي — عرضٌ
+  // لساقٍ مسجَّلةٍ أصلاً (settle_invoice تختمها بـ`at`) لا فاتورةٌ جديدة، فلا مالَ يُحسب مرّتين.
+  // الدينُ عادةً أقدمُ من النافذة، فأرجلُه تجيبها invoice_settlements منذ أرضيّة المدى المعروض.
+  const [settled, setSettled] = useState<Invoice[]>([]);
+  const [settleFailed, setSettleFailed] = useState(false);
+  const settleReqRef = useRef(0);
+  const settleSince = windowed ? since : null;
+  useEffect(() => {
+    if (!paged) return;
+    if (windowed && !settleSince) return; // النافذةُ لم تُعرف بعد
+    const my = ++settleReqRef.current;
+    const timer = setTimeout(async () => {
+      try {
+        const got = await repo.listSettlements({ q: q.trim() || undefined, status, since: settleSince });
+        if (my !== settleReqRef.current) return;
+        setSettled(got); setSettleFailed(false);
+      } catch {
+        if (my !== settleReqRef.current) return;
+        // تسديدٌ ناقص يُصدَّق — الفشلُ يُقال بصوت كفشل الصفوف.
+        setSettled([]); setSettleFailed(true);
+      }
+    }, q.trim() ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [paged, windowed, settleSince, q, status, tick]);
 
   const shown = useMemo(() => {
     // بالوضع المُصفَّح الخادمُ فلتر ورتّب (الأحدث إنشاءً أوّلاً — ترتيبُ المؤشّر نفسه).
@@ -199,8 +214,19 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
           || invoiceNo(inv.id).toLowerCase().includes(ql)
           || ((inv.staff_id && staffById.get(inv.staff_id)) ?? "").toLowerCase().includes(ql);
       })
-      .sort((a, b) => lastActivity(b) - lastActivity(a));
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   }, [paged, rows, invoices, q, status, staffById]);
+
+  /* القائمةُ المرسومة: الفواتيرُ وسطورُ التسديد بالوقت. الأرضيّةُ = أقدمُ لحظةٍ جُلبت فواتيرُها
+     كاملةً — تحتها مدىً لم يُجلب، فتسديدٌ فيه يجعله يبدو كاملاً وهو ناقص. */
+  const feed = useMemo(() => {
+    if (!paged) return buildInvoiceFeed(shown, shown, null);
+    const last = rows[rows.length - 1];
+    const partial = windowed ? !exhausted : hasMore;
+    const floor = partial && last ? last.created_at : windowed ? since : null;
+    return buildInvoiceFeed(rows, settled, floor);
+  }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since]);
+  const anyFailed = failed || settleFailed;
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: t("retail.fAll", "All") },
@@ -226,7 +252,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
       </div>
 
       {/* العدّاد: «معروض ٥٠ من ١٬٥٠٨» — القائمةُ المُصفَّحة تقول حجمها دائماً. */}
-      {paged && !failed && (
+      {paged && !anyFailed && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-subtle" data-invcount>
           <span className="flex items-center gap-1.5">
             {loading && <Loader2 size={12} className="animate-spin" />}
@@ -238,13 +264,13 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </div>
       )}
 
-      {paged && failed ? (
+      {paged && anyFailed ? (
         /* فشلُ الجلب يُقال بصوت — لا يُعرض فراغاً يُصدَّق. */
         <div className="card space-y-3 p-8 text-center" data-invfailed>
           <p className="mx-auto max-w-md text-sm text-ink-subtle">{t("retail.invoicesLoadFailed", "Could not load invoices. It is a connection problem and no invoice is lost — try again.")}</p>
           <Button variant="secondary" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setTick((n) => n + 1); }}>{t("common.retry", "Retry")}</Button>
         </div>
-      ) : shown.length === 0 ? (
+      ) : feed.length === 0 ? (
         <div className="card grid place-items-center p-12 text-center text-ink-subtle">
           <Receipt size={30} className="mb-2 opacity-40" />
           {paged && loading
@@ -255,11 +281,40 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
-          {shown.map((inv) => {
+          {feed.map((e) => {
+            if (e.kind === "settlement") {
+              const PayIcon = PAY_ICON[e.method] ?? Banknote;
+              return (
+                <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(e.inv); }} data-settlement={e.inv.id}
+                  className="card flex w-full items-center gap-3 border-dashed p-3.5 text-start transition hover:border-success-300 hover:shadow-raised">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300">
+                    <Wallet size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
+                      {displayCustomerName(e.inv.customer_name) || t("retail.walkIn", "Walk-in")}
+                      <Badge tone="success">{t("retail.settlementRow", "Debt payment")}</Badge>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
+                      <span>{formatDate(e.at, i18n.language)} · {new Date(e.at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                      <span className="flex items-center gap-0.5"><PayIcon size={11} /> {t(PAY_KEY[e.method] ?? PAY_KEY.cash)}</span>
+                      <span className="font-mono text-2xs">· {t("retail.settlementOf", { no: invoiceNo(e.inv.id), defaultValue: "on {{no}}" })}</span>
+                    </div>
+                  </div>
+                  <div className="text-end">
+                    <p className="font-display font-bold tabular-nums text-success-600 dark:text-success-300">+{money(e.amount)}</p>
+                    {e.remainingAfter > 0.009
+                      ? <p className="text-2xs text-warn-600">{t("retail.settlementLeft", { amount: money(e.remainingAfter), defaultValue: "Left after: {{amount}}" })}</p>
+                      : <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><CheckCircle2 size={10} /> {t("retail.settlementCleared", "Fully settled")}</p>}
+                  </div>
+                </motion.button>
+              );
+            }
+            const inv = e.inv;
             const refunded = (inv.status ?? "paid") === "refunded";
             const PayIcon = inv.payment_method ? PAY_ICON[inv.payment_method] : null;
             return (
-              <motion.button key={inv.id} variants={staggerItem} onClick={() => { playTap(); setOpen(inv); }}
+              <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(inv); }}
                 className="card flex w-full items-center gap-3 p-3.5 text-start transition hover:border-brand-300 hover:shadow-raised">
                 <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl", refunded ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300" : "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300")}>
                   <Receipt size={20} />
@@ -281,8 +336,8 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 </div>
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
                 {!refunded && isDebt(inv) && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
-                {/* Was a debt, now paid off — a quiet marker on the invoice that just floated up. */}
-                {!refunded && !isDebt(inv) && (inv.payment_details ?? []).some((l) => l?.at) && (
+                {/* كانت ديناً وسُدِّدت — علامةٌ على الأصلية بمكانها؛ التسديدُ نفسُه سطرُه بوقته. */}
+                {!refunded && !isDebt(inv) && settlementsOf(inv).length > 0 && (
                   <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.wasDebt", "سُدِّد دَينها")}</Badge>
                 )}
                 <div className="text-end">
@@ -298,7 +353,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
       )}
 
       {/* «المزيد»: الصفحةُ التالية بالمؤشّر — لا تكرارٌ ولا قفزٌ إن دخلت فاتورةٌ أثناء التصفّح. */}
-      {paged && !failed && hasMore && (
+      {paged && !anyFailed && hasMore && (
         <Button variant="secondary" className="w-full" loading={more} data-invmore onClick={() => { playTap(); void loadMore(); }}>
           {windowed && exhausted
             ? t("retail.loadMoreDays", { d: RECENT_DAYS, defaultValue: "Show {{d}} more days" })

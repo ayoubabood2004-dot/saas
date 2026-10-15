@@ -2383,6 +2383,10 @@ const supabaseRepo: DemoRepo = {
   async openDebts() {
     return allPages<Invoice>(() => sbc().rpc("open_debts"));
   },
+  async listSettlements(s) {
+    // فواتيرُ سُدِّد عليها منذ p_since (0240) بكلّ عمرها — بلا سقفٍ صامت: سطرُ تسديدٍ ناقص يُصدَّق.
+    return allPages<Invoice>(() => sbc().rpc("invoice_settlements", { p_q: s.q ?? null, p_status: s.status ?? "all", p_since: s.since ?? null }));
+  },
   async refundInvoice(invoiceId) {
     // Server marks refunded + returns units to stock (idempotent).
     return need<Invoice>(await sbc().rpc("refund_invoice", { p_invoice: invoiceId }));
@@ -2918,7 +2922,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   "companyTwins", "listDeletedCompanies", "listDeletedCompanySections",
   "listInvoicesTouching", "customerInvoices", "listReminderMarks", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
-  "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
+  "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts", "listSettlements",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
   "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listPhotoProducts",

@@ -122,6 +122,8 @@ const CONTRACT = {
   listInvoiceItemsFor: null,
   listInvoicesByIds: null,
   openDebts: null,
+  // 0240: فواتيرُ سُدِّد عليها منذ لحظة — buildInvoiceFeed ترتّب سطورَ التسديد بوقتها، فترتيبُ الجلب لا يعني شيئاً.
+  listSettlements: null,
   listExpenses: ["spent_at", false, "time"],
   // 0208: علاماتُ التذكير تُفهرَس بخريطةٍ بالمفتاح — ترتيبُها لا يعني شيئاً.
   listReminderMarks: null,
@@ -168,7 +170,7 @@ for (let i = 0; i < lines.length; i++) {
   const sort = split >= 0 ? args.slice(split + 1).trim() : "";
   calls.push({ name, make, sort });
 }
-check("عددُ المستدعين ٤١ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 41, `طلع ${calls.length}`);
+check("عددُ المستدعين ٤٢ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 42, `طلع ${calls.length}`);
 const names = new Set(calls.map((c) => c.name));
 check("  وكلُّهم بالعقد بأسمائهم", Object.keys(CONTRACT).every((n) => names.has(n)) && [...names].every((n) => n in CONTRACT),
   `ناقص: ${Object.keys(CONTRACT).filter((n) => !names.has(n)).join("، ")} / زائد: ${[...names].filter((n) => !(n in CONTRACT)).join("، ")}`);

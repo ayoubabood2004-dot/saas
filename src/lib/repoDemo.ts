@@ -17,6 +17,7 @@ import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
+import { settlementsOf } from "./settlementFeed";
 import { cleanRef } from "./deliverySearch";
 import { phoneDigits } from "./phone";
 import { searchable, invNormName } from "./utils";
@@ -4059,6 +4060,12 @@ const demoRepo = {
   },
   async countInvoicesMatching(s: InvoiceSearch): Promise<number> {
     return demoMatchingInvoices(s).length;
+  },
+  /** مرآةُ invoice_settlements (0240): المطابقةُ التي فيها تسديدٌ منذ since — الحكمُ نفسُه من settlementsOf. */
+  async listSettlements(s: Pick<InvoiceSearch, "q" | "status" | "since">): Promise<Invoice[]> {
+    return demoMatchingInvoices(s)
+      .filter((i) => settlementsOf(i).some((l) => !s.since || new Date(l.at).getTime() >= new Date(s.since).getTime()))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   },
   async openDebts(): Promise<Invoice[]> {
     return (loadDB().invoices ?? [])
