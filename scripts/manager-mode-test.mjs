@@ -45,7 +45,7 @@ const built = await esbuild.build({
   entryPoints: ["src/lib/managerOverride.ts"], bundle: true, format: "esm", write: false,
   platform: "neutral", plugins: [stubs],
 });
-const { stockLockedFrom, capLockedFrom } = await import(
+const { stockLockedFrom, capLockedFrom, ownerAccountFrom } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -151,6 +151,24 @@ check("وحذفُ الفاتورة يتبع نفسَ الحكم لا `can` وح�
   /const canDelete = !capLockedFrom\(ov\.deviceLocked, ov\.active, can\("deleteInvoices"\)\)/.test(invp));
 check("  وتصحيحُ الوصل يتبع الحذفَ لا يعيد الفحص",
   /const canFixReceipt = canDelete &&/.test(invp));
+
+check("  وتقسيمُ الدفعة (محرّرُ السِّيَق) يتبع الحذفَ — القاعدةُ ترفضه لغير المدير (0241)",
+  invp.includes("const canEditLegs = canDelete && !refunded;") && invp.includes("{canEditLegs && editLegs === null && (")
+  && !invp.includes("{!refunded && editLegs === null && ("));
+
+/* ── ٦ب) الخصمُ فوق الربح: «صاحبُ العيادة من حسابه» حكمُ جهازٍ لا حسابٍ وحده (0241) ─*/
+// الخادمُ يرى صفَّ المفتاح لا قفلَ الجهاز: كشكٌ بحساب المالك فُتح بالرمز محلّياً (unlockLocal)
+// يبدو له كالمالك على هاتفه. فواحدةٌ من الثمانية تفتح: مديرٌ أساساً، وجهازٌ غيرُ مقفول، وبلا رفع.
+console.log("▸ فوق الربح — مديرٌ أساساً × جهاز مقفول × رفعٌ بالرمز");
+const orows = [];
+for (const dev of [false, true]) for (const elev of [false, true]) for (const base of [false, true]) orows.push([dev, elev, base]);
+for (const [dev, elev, base] of orows) {
+  const want = base && !dev && !elev;
+  const got = ownerAccountFrom(dev, elev, base);
+  check(`مقفول=${dev} مرفوع=${elev} مديرٌ أساساً=${base} ⇒ ${want ? "يُسمح" : "يُرفض"}`, got === want, `جاء ${got}`);
+}
+check("واحدةٌ من الثمانية تسمح لا أكثر", orows.filter(([d, e, b]) => ownerAccountFrom(d, e, b)).length === 1);
+check("  والكشكُ المقفولُ بحساب المالك المفتوحُ بالرمز (unlockLocal) يُرفض", ownerAccountFrom(true, true, true) === false);
 
 /* ── ٧) شاشةُ المخزن لا تُفتح بالرابط لمن لا يملك صلاحيتها ───────────────*/
 // الشريطُ كان يخفيها، والصفحةُ ما تفحص شيئاً — وبطاقةُ النواقص بالرئيسية

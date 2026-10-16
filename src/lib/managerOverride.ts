@@ -391,6 +391,18 @@ export function capLockedFrom(deviceLocked: boolean, elevated: boolean, allowed:
   return !allowed || (deviceLocked && !elevated);
 }
 
+/**
+ * «صاحبُ العيادة من حسابه هو» — شرطُ الخصم فوق ربح الفاتورة (0241).
+ *
+ * القاعدةُ تفحصه بصفّ staff_elevations للمستخدم، أي **بالحساب**؛ أمّا وضعُ المدير فبالجهاز:
+ * جهازُ استقبالٍ مقفولٌ وهو داخلٌ بحساب المالك، يُفتح بالرمز محلّياً (`unlockLocal`، بلا صفٍّ
+ * بالخادم) فيبدو للخادم كالمالك على هاتفه. الخادمُ لا يرى قفلَ الجهاز — فالحكمُ هنا: جهازٌ مقفول
+ * (مرفوعاً أو لا) أو رفعٌ بالرمز ليس حسابَ المالك. والدورُ الأساسُ (مدير بلا رفع) شرطٌ فوقه.
+ */
+export function ownerAccountFrom(deviceLocked: boolean, elevated: boolean, baseManager: boolean): boolean {
+  return baseManager && !deviceLocked && !elevated;
+}
+
 // Hidden-lock feedback: locked controls look normal and silently ignore input;
 // only after several taps does a small toast reveal WHY nothing happened — so a
 // bystander can't tell at a glance which controls are guarded.

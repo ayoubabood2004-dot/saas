@@ -3499,7 +3499,9 @@
       "login": "Sign-in",
       "override": "Manager mode",
       "other": "Other",
-      "sale_expired": "Expired sale"
+      "sale_expired": "Expired sale",
+      "debt_forgive": "Debt discount",
+      "debt_forgive_void": "Debt discount voided"
     },
     "noAccess": "The activity log is available to the clinic manager only.",
     "searchPh": "Search by action, staff or pet name…",

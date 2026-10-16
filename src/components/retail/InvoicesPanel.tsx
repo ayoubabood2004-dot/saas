@@ -431,6 +431,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // الباقي بعده يصير ديناً، والدين بلا صاحبٍ مطلوبٌ لا مَدين له.
   const customerOf = ((invoice.customer_name ?? "").trim() || (invoice.customer_phone ?? "").trim()) || null;
   const canFixReceipt = canDelete && !refunded && paidOf(invoice) > 0;
+  // تقسيمُ الدفعة (المبالغ والأوقات) للمدير — والقاعدةُ ترفضه لغيره منذ 0241 (payment_legs_frozen)؛
+  // المحرّرُ يعيد بناءَ السِّيَق كلِّها، فلا يُعرض لمن سيُرفض حفظُه.
+  const canEditLegs = canDelete && !refunded;
 
   const refund = async () => {
     if (busy) return;
@@ -606,7 +609,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               {isSplit ? (
                 <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">
                   <Wallet size={13} /> {t("retail.split", "دفع مجزأ")}
-                  {!refunded && editLegs === null && (
+                  {canEditLegs && editLegs === null && (
                     <button type="button" onClick={() => { playTap(); setEditLegs(payLegs.map((l) => ({ method: l.method, amount: l.amount, at: l.at }))); }}
                       className="ms-1 inline-flex items-center gap-1 rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-2xs font-semibold text-ink-muted transition hover:border-brand-300 hover:text-ink">
                       <Pencil size={11} /> {t("retail.edit", "تعديل")}
