@@ -737,6 +737,9 @@ export interface Invoice {
   clinic_id?: string | null;
   /** تجزئة أو جملة (0156). غيابُه = تجزئة — كلُّ صفوف التاريخ كذلك. */
   sale_kind?: SaleKind | null;
+  /** «تاريخ المبيع» (0242): لحظةُ الإدخال الحقيقية لفاتورةٍ سُجّلت بيومٍ سابق — created_at يومُ البيع.
+   *  فارغٌ = أُدخلت بلحظتها. */
+  recorded_at?: string | null;
   /** Walk-in customer captured at sale time (retail module; optional). */
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -986,6 +989,11 @@ export interface SaleMeta {
    *  به تعرف القاعدة أن الطلب الثاني هو **نفس** البيعة لا بيعةً جديدة — فلا
    *  فاتورةَ مكرّرة ولا خصمَ مخزونٍ مرّتين حين ينقطع النت بعد وصول الطلب. */
   client_ref?: string | null;
+  /** «تاريخ المبيع» (0242): لحظةُ بيعٍ بيومٍ سابق (ISO) — للمدير، يومٌ قبل اليوم، ولا أقدم من ٧ أيام.
+   *  غائبةٌ = بيعُ الآن. */
+  sale_at?: string | null;
+  /** توقيتُ الجهاز لحساب «اليوم» بالخادم (كـp_tz بتقارير 0149). */
+  sale_tz?: string | null;
 }
 
 /* ---- دليلُ الزبائن المشتقّ (0232: customer_search) — قراءةٌ بلا مال ---- */

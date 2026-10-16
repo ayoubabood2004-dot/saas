@@ -8,7 +8,7 @@
  * ==========================================================================*/
 
 export type ActivityKind =
-  | "sale" | "refund" | "payment" | "sale_edit" | "sale_delete" | "sale_line" | "sale_expired" | "debt_forgive" | "debt_forgive_void" | "print" | "export"
+  | "sale" | "sale_backdated" | "refund" | "payment" | "sale_edit" | "sale_delete" | "sale_line" | "sale_expired" | "debt_forgive" | "debt_forgive_void" | "print" | "export"
   | "product_add" | "product_edit" | "stock" | "product_delete" | "price_change" | "inventory" | "purchase" | "supplier_pay" | "expense" | "delivery" | "relink"
   | "pet" | "case" | "dose" | "vaccine" | "medical" | "booking" | "message" | "store"
   | "team" | "payroll" | "settings" | "login" | "override" | "other";
@@ -17,7 +17,7 @@ export type ActivityGroup = "sales" | "stock" | "care" | "team";
 
 /** المجموعاتُ بالترتيب الذي تُعرض به، وأنواعُ كلٍّ منها. */
 export const ACTIVITY_GROUPS: { id: ActivityGroup; kinds: ActivityKind[] }[] = [
-  { id: "sales", kinds: ["sale", "refund", "payment", "sale_edit", "sale_delete", "sale_line", "sale_expired", "debt_forgive", "debt_forgive_void", "print", "export"] },
+  { id: "sales", kinds: ["sale", "sale_backdated", "refund", "payment", "sale_edit", "sale_delete", "sale_line", "sale_expired", "debt_forgive", "debt_forgive_void", "print", "export"] },
   { id: "stock", kinds: ["product_add", "product_edit", "stock", "product_delete", "price_change", "inventory", "purchase", "supplier_pay", "expense", "delivery", "relink"] },
   { id: "care", kinds: ["pet", "case", "dose", "vaccine", "medical", "booking", "message", "store"] },
   { id: "team", kinds: ["team", "payroll", "settings", "login", "override", "other"] },
@@ -58,7 +58,8 @@ export function auditKind(entity: string, action: string, details: Record<string
     return "print";
   }
   if (e === "invoices") {
-    if (action === "INSERT") return "sale";
+    // 0242: بيعةٌ بيومٍ سابق باسمها — ختمُ الإدخال بالسطر، ويومُ البيع `sold_at`.
+    if (action === "INSERT") return typeof d["recorded_at"] === "string" && d["recorded_at"] !== "" ? "sale_backdated" : "sale";
     if (action === "DELETE") return "sale_delete";
     const chg = d["__changed"] as Record<string, unknown[]> | undefined;
     if (chg?.["status"]?.[1] === "refunded") return "refund";

@@ -37,7 +37,8 @@ export function demoProductMovements(db: DemoDB, audit: AuditEntry[], productId:
   // تعديلُ فاتورةٍ قديمة: لا عمودَ `updated_at` بالجدول، فالأثرُ صفُّ تدقيقٍ لها.
   const editOf = (at: string) => audit.find((e) => e.entity === "purchases" && e.action === "UPDATE" && near(e.created_at, at)
     && (db.purchaseItems ?? []).some((pi) => pi.purchase_id === e.entity_id && pi.product_id === productId))?.entity_id ?? null;
-  const invOf = (at: string) => (db.invoices ?? []).find((i) => near(i.created_at, at)
+  // 0242: لحظةُ الإدخال لا يومُ البيع — فاتورةٌ مؤرَّخة يتغيّر رصيدُها حين تُدخل.
+  const invOf = (at: string) => (db.invoices ?? []).find((i) => near(i.recorded_at ?? i.created_at, at)
     && (db.invoiceItems ?? []).some((ii) => ii.invoice_id === i.id && ii.product_id === productId))?.id ?? null;
 
   const named = evs.map((e) => {

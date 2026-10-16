@@ -3501,7 +3501,8 @@
       "other": "Other",
       "sale_expired": "Expired sale",
       "debt_forgive": "Debt discount",
-      "debt_forgive_void": "Debt discount voided"
+      "debt_forgive_void": "Debt discount voided",
+      "sale_backdated": "Sale on an earlier day"
     },
     "noAccess": "The activity log is available to the clinic manager only.",
     "searchPh": "Search by action, staff or pet name…",
@@ -3542,6 +3543,7 @@
     "mediaFile": "a file / image",
     "weightAdd": "Recorded the weight of {{pet}}: {{kg}} kg",
     "invAdd": "Created an invoice of {{total}} — {{client}}",
+    "invAddBackdated": "Recorded an invoice on an earlier day ({{day}}) of {{total}} — {{client}}",
     "invUpd": "Updated invoice for {{client}} ({{total}}) — settlement / edit",
     "invRefund": "Refunded an invoice of {{total}} — {{client}}",
     "invDel": "Permanently deleted an invoice of {{total}} ({{client}})",
@@ -6508,5 +6510,25 @@
     "hint": "Within it a manager (or the PIN) can discount. Above it only you, from your own account, with a note.",
     "range": "Between 0 and 100",
     "ownerOnly": "Only the clinic owner from their own account can change it (not the manager PIN)."
+  },
+  "sdate": {
+    "invalid": "Pick the sale day and time again.",
+    "notPast": "The sale date must be a day before today — today's invoice is recorded without a date.",
+    "window": "The oldest accepted day is 7 days ago — an older invoice needs the clinic owner's decision.",
+    "needManager": "Recording an invoice on an earlier day is for the manager — open manager mode with the PIN, or set the date back to today.",
+    "operator": "The platform operator can't record invoices on an earlier day inside a clinic.",
+    "noDelivery": "Delivery can't be recorded on an earlier day — set the date back to today or turn delivery off.",
+    "noReturn": "A return is always recorded today — set the date back to today first.",
+    "today": "Sale date: today",
+    "pick": "Forgot an invoice? Record it on its day",
+    "pastTitle": "Invoice on an earlier day",
+    "backToday": "Back to today",
+    "lands": "Recorded on {{day}} — in that day's reports and cash drawer, not today's. The activity log marks it \"earlier day\".",
+    "limits": "Up to {{n}} days back. After saving, the date goes back to today automatically.",
+    "doneOn": "Recorded on {{day}} — you'll find it among that day's invoices and reports, not in today's drawer.",
+    "sameDayAgain": "Another invoice for the same day",
+    "recordedOn": "Entered into the system {{date}}",
+    "later": "Recorded later",
+    "detailLater": "Recorded later — entered into the system {{date}}"
   }
 }

@@ -6,7 +6,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX, Hash,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX, Hash, History,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -34,10 +34,15 @@ import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
+import { canBackdate, checkSaleMoment, saleTz } from "@/lib/saleDate";
+import { clockOf24 } from "@/lib/backdate";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride } from "@/lib/managerOverride";
+import { SaleDateBar, saleDateMessage } from "./SaleDateBar";
 import { useMedPickerOpen } from "@/components/meds/MedPicker";
 import { attachMedDraft, linePetNames, medDraftsByPet, medOnlyLine, type MedRef } from "@/lib/medSale";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
+import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode, localISO, dateLocale } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, stripAim } from "@/lib/productCodes";
 import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
@@ -164,6 +169,10 @@ interface SaleDraft {
   /** مرجعُ محاولة الإصدار (0135): يُحفظ مع المسودّة حتى لا يولَد مرجعٌ جديد بعد
    *  مهلةٍ ثم تبديلِ تبويبٍ أو إعادةِ تحميل — فتُباع السلّةُ مرّتين. */
   clientRef?: string | null;
+  /** «تاريخ المبيع» (0242) يُحفظ **مع المرجع**: إعادةٌ بعد تحديثٍ بلا يومها كانت ستسجّل بيعةَ أمس
+   *  اليوم إن لم تكن الأولى وصلت. فارغٌ = اليوم. */
+  saleDay?: string | null;
+  saleTime?: string | null;
   /** ما كتبته الشاشةُ بخانتَي الزبون (اختيارٌ، جسرٌ، صاحبُ حيوان) — ما يختلف عنه كتبه الكاشيرُ
    *  بيده فلا يمحوه فراغُ صفٍّ يُختار (`fieldsAfterPick`). يُحفظ لأن تبديلَ التبويب يُعيد تركيبَ
    *  الشاشة من المسودّة؛ ومسودّةٌ قديمةٌ بلا هذا تُعدّ نصَّها من الشاشة (المسحُ أسلمُ من الخلط). */
@@ -693,6 +702,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // lines; more of the owner's animals can be attached to vaccinate them in one visit.
   const [salePets, setSalePets] = useState<SalePet[]>(draft0?.salePets ?? []);
   const [saleNotes, setSaleNotes] = useState(draft0?.notes ?? "");
+  /* «تاريخ المبيع» (0242): فارغٌ = اليوم. المديرُ وحده (أو مفتاحُه الحيّ) يرى الاختيار —
+   * والخادمُ يفرضه بنفسه؛ ويومٌ رجع من مسودّةٍ بلا صلاحيةٍ الآن يُقال بالشريط ولا يُخفى. */
+  const [saleDay, setSaleDay] = useState<string | null>(draft0?.saleDay ?? null);
+  const [saleTime, setSaleTime] = useState<string>(draft0?.saleTime || clockOf24(new Date().toISOString()));
+  const { role: effRole } = usePermissions();
+  const { restricted: devRestricted } = useOverride();
+  const backdateOk = canBackdate({ role: effRole, restricted: devRestricted });
+  /** «فاتورة ثانية لنفس اليوم» من شاشة الإتمام: اليومُ يبقى للبيعة التالية بقرارٍ صريح لا افتراضاً. */
+  const keepDayRef = useRef<{ day: string; time: string } | null>(null);
   const [activePetIdx, setActivePetIdx] = useState(0);
   const activePet: SalePet | null = salePets[Math.min(activePetIdx, salePets.length - 1)] ?? null;
   // "+ حيوان آخر" picker: the clinic's pets, owner's animals surfaced first.
@@ -1661,8 +1679,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * يُسجَّل. */
   useEffect(() => {
     if (done) return;
-    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, clientRef: saleRefSaved, custAuto });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleRefSaved, custAuto, done]);
+    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, clientRef: saleRefSaved, custAuto });
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -1864,6 +1882,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setPromoOn([]);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
+    /* اليومُ يرجع لليوم بعد كلّ بيعة: الزبونُ التالي حاضرٌ اليوم — بيعتُه بأمسٍ بقي مختاراً كانت
+     * تنقص صندوقَ اليوم بلا أن يُرى. إلا «فاتورة ثانية لنفس اليوم» بضغطةٍ صريحة. */
+    const keep = keepDayRef.current; keepDayRef.current = null;
+    setSaleDay(keep?.day ?? null); setSaleTime(keep?.time ?? clockOf24(new Date().toISOString()));
     setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDRef(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
@@ -2139,6 +2161,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const doReturn = async () => {
     if (!pureReturn || busy) return;
     if (returnValue <= 0) { playWarning(); return; }
+    // الإرجاعُ الخالص سحبٌ يُختم اليوم (0132) — لا يُؤرَّخ، فيومٌ مختارٌ يُقال لا يُتجاهل بصمت.
+    if (saleDay) { playWarning(); toast.error(saleDateMessage("return", (k, d) => t(k, d))); return; }
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -2207,6 +2231,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return;
     }
     if (needsDebtName) { playWarning(); return; }
+    /* «تاريخ المبيع» (0242): يُحكم قبل أيّ سؤالٍ للخادم — يومٌ لا يُقبل يُقال هنا باسمه، ولا يُرسل
+     * ليُرفض بعد مهلة. والتوصيلُ لا يُؤرَّخ: طلبُه يُختم «هسّة» وذمّةُ السائق تبدأ اليوم. */
+    let saleAt: string | null = null;
+    if (saleDay) {
+      const why = deliveryOn ? "delivery" as const : !backdateOk ? "role" as const : null;
+      if (why) { playWarning(); toast.error(saleDateMessage(why, (k, d) => t(k, d))); return; }
+      const c = checkSaleMoment(saleDay, saleTime);
+      if (!c.ok) { playWarning(); toast.error(saleDateMessage(c.code, (k, d) => t(k, d))); return; }
+      saleAt = c.at;
+    }
     /* رفعُ الأسعار (0226): البيعةُ تُسعَّر بما بيد الجهاز، فيُسأل الخادمُ قبل كلّ بيعة «تغيّرت؟»
      * (عدّادٌ واحد بفهرس). تغيّرت ⇒ تُجلب القائمةُ وتُعاد التسعيرة ويُسأل الكاشير — لا بيعَ
      * بسعر الصبح بعد الرفع. وتعذّرُ السؤال (الشبكة) لا يوقف البيع: البيعةُ نفسُها تحتاج الشبكة. */
@@ -2316,6 +2350,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         client_ref: saleRefRef.current,
         // العلامةُ تنزل بنفس معاملة الفاتورة (0156) — لا نداءٌ ثانٍ بعدها.
         sale_kind: wholesale ? "wholesale" : "retail",
+        // «تاريخ المبيع» (0242): لحظةُ البيع وتوقيتُ الجهاز — الخادمُ يحكم بنفسه ويختم الإدخال.
+        ...(saleAt ? { sale_at: saleAt, sale_tz: saleTz() } : {}),
       };
       let invoice: Invoice;
       setPaying(true);
@@ -2398,6 +2434,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // Med lines grouped per patient — each pet's record gets ITS OWN entries.
       // وسطرُ منتجٍ جاء من تبويب «الأدوية» يحمل مسودّتَه كذلك — مسودّةٌ واحدة لكلّ سطر.
       const medByPet = medDraftsByPet(cart);
+      /* بيعةٌ بيومٍ سابق (0242): ما يُكتب بسجلّ الحيوان (جرعة، لقاح، تحليل، عملية) يُختم بيومها كما
+       * ختمه الخادم — لا بيوم الإدخال (درسُ 0223). اللحظةُ من الفاتورة الراجعة لا من الشاشة. */
+      const soldAt = invoice.recorded_at ? invoice.created_at : null;
       // Snapshot the lines for instant printing (services + products, with overrides).
       // With several pets on one bill, each med line is labelled with its animal.
       const multiPet = petNames.length > 1;
@@ -2454,7 +2493,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             kind: "descriptive", values: null, snap_test_id: null, snap_result: null,
             notes: "بيع من المبيعات — النتائج لم تُسجَّل بعد. سجّلها من زر «تسجيل تحاليل».",
             photo_url: null, doctor: user?.full_name ?? null, billed: true,
-            taken_at: new Date().toISOString(),
+            taken_at: soldAt ?? new Date().toISOString(),
           }).catch((e) => toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined));
         }
       } catch { /* مزامنة إضافية — لا تعطل البيع أبداً */ }
@@ -2465,7 +2504,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       if (medByPet.size) {
         try {
           await withTimeout(
-            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts))),
+            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts, soldAt))),
             12000,
           );
         } catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
@@ -2508,19 +2547,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                   const v = await repo.addClinicVisit({
                     pet_id: pid, kind: "illness", status: "open", condition: "under_treatment",
                     reason: matches[0].name.split("—")[0].trim() || matches[0].name,
-                    opened_at: new Date().toISOString(), opened_by: user?.full_name ?? null,
+                    opened_at: soldAt ?? new Date().toISOString(), opened_by: user?.full_name ?? null,
                   });
                   visitId = v.id;
                   openedNewChart = true;
                 } catch { /* الطبلة اختيارية — العملية تُسجَّل على ملف الحيوان بكل الأحوال */ }
               }
               for (const m of matches) {
+                // المراجعةُ من يوم العملية، واليومُ محلّيٌّ لا غرينتش (درسُ 0223).
                 const followup = m.followupDays
-                  ? (() => { const d = new Date(); d.setDate(d.getDate() + m.followupDays!); return d.toISOString().slice(0, 10); })()
+                  ? (() => { const d = soldAt ? new Date(soldAt) : new Date(); d.setDate(d.getDate() + m.followupDays!); return localISO(d); })()
                   : null;
                 await repo.addSurgery({
                   pet_id: pid, visit_id: visitId, name: m.name, category: m.category,
-                  performed_at: new Date().toISOString(), surgeon: user?.full_name ?? null,
+                  performed_at: soldAt ?? new Date().toISOString(), surgeon: user?.full_name ?? null,
                   anesthesia: null, duration_min: null, outcome: "success",
                   approach: null, suture_pattern: null, suture_material: null, suture_size: null,
                   notes: `سُجّلت تلقائياً من فاتورة البيع ${invoiceNo(invoice.id)}`,
@@ -2667,6 +2707,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 <p className="mt-0.5 text-2xs text-ink-subtle">{t("retail.paidOfTotal", { paid: money(paidOf(done.invoice)), total: money(done.invoice.total), defaultValue: "مدفوع {{paid}} من {{total}} · يظهر في سجل الديون" })}</p>
               </div>
             )}
+            {/* «تاريخ المبيع» (0242): يومُها كما ختمه الخادم — وتُرى بقائمة الفواتير بيومها لا فوقها. */}
+            {done.invoice.recorded_at && (
+              <div data-done-backdated className="flex items-start gap-2 rounded-xl border border-warn-300 bg-warn-50 px-3 py-2 text-start text-xs font-bold text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200">
+                <History size={15} className="mt-0.5 shrink-0" />
+                <span>{t("sdate.doneOn", { day: new Date(done.invoice.created_at).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" }) })}</span>
+              </div>
+            )}
             {lastPrints > 0 && <p className="text-xs text-ink-subtle">{t("retail.printedTimes", { n: lastPrints, defaultValue: "Printed {{n}}×" })}</p>}
             <div className="grid grid-cols-2 gap-2">
               <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(done.invoice, "a4", { items: done.items, onCounted: setLastPrints })}>
@@ -2679,6 +2726,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <Button className="w-full" size="lg" leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); reset(); }}>
               {t("retail.newSale", "New sale")}
             </Button>
+            {done.invoice.recorded_at && saleDay && (
+              <Button className="w-full" variant="secondary" leftIcon={<History size={16} />} data-done-sameday
+                onClick={() => { playTap(); keepDayRef.current = { day: saleDay, time: saleTime }; reset(); }}>
+                {t("sdate.sameDayAgain", "فاتورة ثانية لنفس اليوم")}
+              </Button>
+            )}
           </div>
         </div>
       </motion.div>
@@ -3867,8 +3920,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               {t("retail.retNegative")}
             </p>
           )}
+          {/* «تاريخ المبيع» (0242) فوق الزرّ مباشرةً: اليومُ المختار يُرى لحظةَ الضغط لا بلوحةٍ مطويّة.
+              والاختيارُ «اليوم» يُعرض للمدير وحده وبسلّةٍ فيها شيء (وبالشاشة الجديدة مع أدوات الدفع). */}
+          {(saleDay || (backdateOk && cart.length > 0 && !pureReturn && !(posV2 && !payTools))) && (
+            <SaleDateBar day={saleDay} time={saleTime} allowed={backdateOk}
+              blocked={pureReturn ? "return" : deliveryOn ? "delivery" : null}
+              onChange={(d, tm) => { setSaleDay(d); setSaleTime(tm); }} />
+          )}
           {!pureReturn && (
-          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy || checking} onClick={() => void checkout()} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy || checking} onClick={() => void checkout()} leftIcon={deliveryOn ? <Bike size={18} /> : saleDay ? <History size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit

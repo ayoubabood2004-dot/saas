@@ -1,5 +1,7 @@
 [
   { "entity": "invoices", "action": "INSERT", "details": { "total": 45000, "customer_name": "أبو علي" }, "kind": "sale" },
+  { "entity": "invoices", "action": "INSERT", "details": { "total": 2000, "customer_name": "زبون أمس", "recorded_at": "2026-10-17T09:00:00+00:00", "sold_at": "2026-10-16T12:00:00+00:00" }, "kind": "sale_backdated" },
+  { "entity": "invoices", "action": "INSERT", "details": { "total": 2000, "recorded_at": null }, "kind": "sale" },
   { "entity": "invoices", "action": "UPDATE", "details": { "total": 45000, "__changed": { "status": ["paid", "refunded"], "refunded_at": [null, "2026-09-03"] } }, "kind": "refund" },
   { "entity": "invoices", "action": "UPDATE", "details": { "status": "refunded", "total": 1000 }, "kind": "refund" },
   { "entity": "invoices", "action": "UPDATE", "details": { "total": 45000, "__changed": { "amount_paid": [10000, 45000], "updated_at": ["a", "b"] } }, "kind": "payment" },

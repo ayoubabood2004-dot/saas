@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -5751,6 +5751,96 @@ $P -c "delete from staff_elevations; delete from memberships where user_id = '$M
        delete from delivery_orders where invoice_id::text like 'dddddddd-0241-%';
        delete from invoice_items where invoice_id::text like 'dddddddd-0241-%';
        delete from invoices where id::text like 'dddddddd-0241-%';" >/dev/null
+
+# ── 0242: «تاريخ المبيع» — فاتورةٌ نُسيت تُسجَّل بيومها ─────────────────────────
+echo "▸ 0242: فاتورةٌ نُسيت تُسجَّل بيومها — بشرطها، وبلا بابٍ جانبيّ"
+BD=b2420000-0000-4000-8000-0000000000
+# محفّزُ التدقيق على الفواتير بشكل الإنتاج (audit_all) — القالبُ كان بلاه، والتسميةُ تُقرأ منه.
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       drop trigger if exists audit_all on invoices;
+       create trigger audit_all after insert or update or delete on invoices for each row execute function audit_change();
+       drop trigger if exists audit_all on products;
+       create trigger audit_all after insert or update or delete on products for each row execute function audit_change();
+       insert into products(id, clinic_id, name, barcode, stock, purchase_price, sell_price) values
+         ('${BD}01','$C1','بيعة أمس','242001', 10, 500, 1000) on conflict do nothing;" >/dev/null
+CART242="jsonb_build_array(jsonb_build_object('product_id','${BD}01','name','بيعة أمس','qty',2,'unit_price',1000,'unit_cost',500,'stock_qty',2))"
+# لحظةٌ بيومٍ محلّيّ (بغداد): «قبل N يوم الساعة ١٥:٠٠».
+dayAt() { echo "((((now() at time zone 'Asia/Baghdad')::date - $1) + time '15:00') at time zone 'Asia/Baghdad')"; }
+# نداءُ البيعة يرجع معرّفَ الفاتورة: co <مرجع> <تعبيرُ اللحظة أو null> [توقيت]. الساقُ تحمل `at` «هسّة» عمداً.
+co() { echo "select (retail_checkout($CART242, jsonb_build_object('client_ref','$1','sale_at',$2,'sale_tz','${3:-Asia/Baghdad}','final_total',2000,'amount_paid',1500,'customer_name','زبون أمس','payment_details',jsonb_build_array(jsonb_build_object('method','cash','amount',1500,'at',now()))))).id::text"; }
+Q() { psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "$1" | tr -d '[:space:]'; }
+TODAY_BG="(now() at time zone 'Asia/Baghdad')::date"
+
+# ١) من يقدر
+chk "الاستقبالُ بلا مفتاح المدير لا يؤرّخ (backdate_not_allowed)" \
+    "$(fgc "$RCP" "$(co r242-rcp "$(dayAt 1)")")" "backdate_not_allowed"
+chk "  ولا المصوّر" \
+    "$(fgc "$PHO" "$(co r242-pho "$(dayAt 1)")")" "backdate_not_allowed"
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "  ولا مشغّلُ المنصّة داخل العيادة (سطرُ مالٍ يسمّي كادرَها — كـ0241)" \
+    "$(fgc "$ADM" "$(co r242-adm "$(dayAt 1)")")" "backdate_operator_not_allowed"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "  والرفضُ لم يكتب فاتورةً ولم يمسّ الرصيد" \
+    "select count(*)::text||'|'||(select stock::int from products where id='${BD}01')::text from invoices where client_ref like 'r242-%'" "0|10"
+
+# ٢) صاحبُ العيادة: بيعةُ أمس الساعة ٣ العصر
+ID1=$(Q "select _fgv('$C1', \$q\$$(co r242-1 "$(dayAt 1)")\$q\$)")
+chk "صاحبُ العيادة يسجّل فاتورةَ أمس: يومُها أمس بساعتها، وختمُ الإدخال الآن" \
+    "select ((created_at at time zone 'Asia/Baghdad')::date = $TODAY_BG - 1)::text||'|'||to_char(created_at at time zone 'Asia/Baghdad','HH24:MI')||'|'||(recorded_at > created_at and recorded_at > now() - interval '5 minutes')::text from invoices where id='$ID1'" "true|15:00|true"
+chk "  والبندُ بتاريخ فاتورته (0133) لا بيوم الإدخال" \
+    "select count(*) filter (where ii.created_at = i.created_at)::text||'/'||count(*)::text from invoice_items ii join invoices i on i.id = ii.invoice_id where i.id='$ID1'" "1/1"
+chk "  والساقُ بلا \`at\` — فتُؤرَّخ بالفاتورة لا بـ«هسّة»" \
+    "select count(*)::text||'|'||bool_and(not (l ? 'at'))::text from invoices i, jsonb_array_elements(i.payment_details) l where i.id='$ID1'" "1|true"
+chk "  والمقبوضاتُ: ١٥٠٠ أمس، وصفرٌ بصندوق اليوم" \
+    "select coalesce(sum(r.amount) filter (where (r.at at time zone 'Asia/Baghdad')::date = $TODAY_BG - 1), 0)::int::text||'|'||count(*) filter (where (r.at at time zone 'Asia/Baghdad')::date = $TODAY_BG)::text from (select set_config('request.jwt.claim.sub','$C1',true)) s, receipt_legs() r where r.invoice_id='$ID1'" "1500|0"
+chk "  والدينُ ٥٠٠ والمخزونُ نزل ٢ (من الرصيد الحاليّ)" \
+    "select (total - amount_paid)::int::text||'|'||(select stock::int from products where id='${BD}01')::text from invoices where id='$ID1'" "500|8"
+chk "  والإعادةُ بنفس المرجع ترجع نفسَ الفاتورة بلا خصمٍ ثانٍ" \
+    "select (_fgv('$C1', \$q\$$(co r242-1 "$(dayAt 1)")\$q\$) = '$ID1')::text||'|'||(select stock::int from products where id='${BD}01')::text" "true|8"
+chk "  **وإعادتُها بلا تاريخ (مسودّةٌ فقدته) ترجعها كما ثبتت — لا بيعةَ ثانيةً باليوم**" \
+    "select (_fgv('$C1', \$q\$$(co r242-1 null)\$q\$) = '$ID1')::text||'|'||((select created_at from invoices where id='$ID1') < now() - interval '12 hours')::text" "true|true"
+chk "  وسطرُ التدقيق يسمّيها «بيعة بيومٍ سابق» ويحمل يومَها" \
+    "select audit_kind(entity, action, details)||'|'||((details->>'sold_at')::timestamptz = (select created_at from invoices where id='$ID1'))::text||'|'||(details ? 'recorded_at')::text from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID1'" "sale_backdated|true|true"
+chk "  وحركةُ المادة تُسمّى «بيع» برقم الفاتورة — لا «تعديل» مجهول" \
+    "select kind||':'||delta::int::text||':'||(ref_id = '$ID1')::text from (select set_config('request.jwt.claim.sub','$C1',true)) s, product_movements('${BD}01') order by at desc limit 1" "sale:-2:true"
+
+# ٣) أيُّ يوم
+chk "اليومُ نفسُه ليس تاريخاً سابقاً (sale_day_not_past)" \
+    "$(fgc "$C1" "$(co r242-today "now()")")" "sale_day_not_past"
+chk "  ولا الغد" \
+    "$(fgc "$C1" "$(co r242-fut "now() + interval '1 day'")")" "sale_day_not_past"
+chk "  وقبل ٧ أيام يُقبل" \
+    "$(fgc "$C1" "$(co r242-7 "$(dayAt 7)")")" "ok"
+chk "  وقبل ٨ أيام يُرفض (backdate_window)" \
+    "$(fgc "$C1" "$(co r242-8 "$(dayAt 8)")")" "backdate_window"
+chk "  ونصٌّ لا يُفهم تاريخاً يُرفض (sale_at_invalid)" \
+    "$(fgc "$C1" "$(co r242-bad "'أمس'")")" "sale_at_invalid"
+chk "  وتوقيتٌ مجهول يسقط لبغداد — لا رفضٌ لبيعةٍ صحيحة بسبب جهاز" \
+    "$(fgc "$C1" "$(co r242-tz "$(dayAt 1)" "Mars/Olympus")")" "ok"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$RCP','$C1', now() + interval '30 minutes')
+       on conflict (user_id) do update set until = excluded.until;" >/dev/null
+chk "  والاستقبالُ بمفتاح المدير الحيّ يؤرّخ" \
+    "$(fgc "$RCP" "$(co r242-pin "$(dayAt 2)")")" "ok"
+$P -c "delete from staff_elevations;" >/dev/null
+
+# ٤) بلا تاريخ: كما كان حرفاً
+ID0=$(Q "select _fgv('$C1', \$q\$$(co r242-now null)\$q\$)")
+chk "بيعةُ الآن بلا ختم إدخال وبتسميتها «بيع» — وساقُها كما أُرسلت" \
+    "select (recorded_at is null and created_at > now() - interval '5 minutes')::text||'|'||(select audit_kind(entity, action, details) from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID0')||'|'||(payment_details->0 ? 'at')::text from invoices where id='$ID0'" "true|sale|true"
+
+# ٥) البابُ الجانبيّ مقفول — بدور authenticated فعلاً (_rls_try)
+chk "الاستقبالُ لا ينقل بيعةَ اليوم لأمس بتحديثٍ مباشر (invoice_date_frozen)" \
+    "select split_part(_rls_try('$RCP', 'update invoices set created_at = created_at - interval ''1 day'' where id = ''$ID0'''), ':', 3)" "invoice_date_frozen"
+chk "  ولا المديرُ نفسُه (التأريخُ بشرطه من البيعة وحدها)" \
+    "select split_part(_rls_try('$C1', 'update invoices set created_at = created_at - interval ''1 day'' where id = ''$ID0'''), ':', 3)" "invoice_date_frozen"
+chk "  ولا ختمُ الإدخال يُمسح عن مؤرَّخة" \
+    "select split_part(_rls_try('$C1', 'update invoices set recorded_at = null where id = ''$ID1'''), ':', 3)" "invoice_date_frozen"
+chk "  ولا إدراجٌ مباشرٌ بتاريخٍ سابق" \
+    "select split_part(_rls_try('$C1', 'insert into invoices (clinic_id, created_at) values (''$C1'', now() - interval ''3 days'')'), ':', 3)" "invoice_date_frozen"
+chk "  والحارسُ لا يشدّ أكثر: الاسمُ يُعدَّل، والإدراجُ بلا تاريخ يمرّ" \
+    "select _rls_try('$RCP', 'update invoices set customer_name = ''اسم مصحّح'' where id = ''$ID0''')||'|'||_rls_try('$C1', 'insert into invoices (clinic_id, notes) values (''$C1'', ''r242-direct'')')" "rows:1|rows:1"
+chk "  والبيعةُ definer بمسار، والحارسُ invoker بمسار، ومحفّزُه على الإدراج والتحديث" \
+    "select (select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='retail_checkout')||'|'||(select (not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='invoices_guard_dates')||'|'||(select (tgtype & 4 = 4 and tgtype & 16 = 16)::text from pg_trigger where tgname='invoices_dates_guard')" "true|true|true"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

@@ -2024,5 +2024,55 @@ console.log("▸ 0241 — «خصم على الدين» (مرآةُ forgive_invoi
   mem.delete("vp_session"); pinOff(); mem.delete("vp_demo_audit");
 }
 
+console.log("▸ 0242 — «تاريخ المبيع» (مرآةُ retail_checkout بحالات run.sh)");
+{
+  const ACTIVE = /const ACTIVE_KEY = "([^"]+)"/.exec(readFileSync("src/lib/clinics.ts", "utf8"))?.[1];
+  const clinic = () => mem.get(ACTIVE) || "default";
+  const as = (id, rawRole) => mem.set("vp_session", JSON.stringify({
+    raw: { id, full_name: `موظف ${id}`, email: `${id}@demo.vet`, rawRole, roles: [rawRole === "owner" ? "owner" : "clinic"], clinic_id: "clinic-happy-paws" },
+    active: rawRole === "owner" ? "owner" : "clinic",
+  }));
+  const pinOn = () => mem.set(`vp_override_until_${clinic()}`, String(Date.now() + 30 * 60 * 1000));
+  const pinOff = () => mem.delete(`vp_override_until_${clinic()}`);
+  const dbNow = () => JSON.parse(mem.get(DB_KEY));
+  /** «قبل N يوم الساعة ١٥:٠٠» بتوقيت الجهاز — اليومُ المحلّيّ هو ما يحكم به الطرفان. */
+  const dayAt = (n, h = 15) => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(h, 0, 0, 0); return d.toISOString(); };
+  const localDay = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  seed([P("bd1", "بيعة أمس", "242001", { stock: 10, purchase_price: 500, sell_price: 1000 })]);
+  mem.delete("vp_demo_audit");
+  const item = { product_id: "bd1", name: "بيعة أمس", qty: 2, unit_price: 1000, unit_cost: 500, stock_qty: 2 };
+  const meta = (ref, sale_at) => ({ client_ref: ref, sale_at, sale_tz: "Asia/Baghdad", final_total: 2000, amount_paid: 1500, customer_name: "زبون أمس",
+    payment_details: [{ method: "cash", amount: 1500, at: new Date().toISOString() }] });
+
+  pinOff(); as("r1", "reception");
+  check("الاستقبالُ بلا مفتاح المدير لا يؤرّخ (backdate_not_allowed)", (await code(() => repo.retailCheckout([item], meta("bd-rcp", dayAt(1))))) === "backdate_not_allowed");
+  check("  والرفضُ لم يكتب فاتورةً ولم يمسّ الرصيد", !dbNow().invoices.some((i) => i.client_ref === "bd-rcp") && dbNow().products.find((p) => p.id === "bd1").stock === 10);
+  pinOff(); as("c1", "admin");
+  const y = dayAt(1);
+  const inv = await repo.retailCheckout([item], meta("bd-1", y));
+  check("صاحبُ العيادة يسجّل فاتورةَ أمس: يومُها أمس بساعتها، وختمُ الإدخال الآن",
+    inv.created_at === y && !!inv.recorded_at && new Date(inv.recorded_at).getTime() > new Date(y).getTime() && localDay(inv.created_at) === localDay(dayAt(1)), `${inv.created_at} | ${inv.recorded_at}`);
+  check("  والساقُ بلا `at` — فتُؤرَّخ بالفاتورة", (inv.payment_details ?? []).length === 1 && !("at" in inv.payment_details[0]));
+  check("  والدينُ ٥٠٠ والمخزونُ نزل ٢", inv.total - inv.amount_paid === 500 && dbNow().products.find((p) => p.id === "bd1").stock === 8);
+  const again = await repo.retailCheckout([item], meta("bd-1", y));
+  const noDate = await repo.retailCheckout([item], meta("bd-1", null));
+  check("  والإعادةُ بنفس المرجع (بتاريخها أو بلاه) ترجع نفسَ الفاتورة بلا خصمٍ ثانٍ", again.id === inv.id && noDate.id === inv.id && dbNow().products.find((p) => p.id === "bd1").stock === 8);
+  const aud = JSON.parse(mem.get("vp_demo_audit") || "[]").find((x) => x.entity === "invoices" && x.entity_id === inv.id);
+  // التسميةُ نفسُها (sale_backdated) يفحصها activity-kinds-test على activity-cases.json؛ هنا ما يقرؤه: الختمُ ويومُ البيع.
+  check("  وسطرُ الحركات يحمل ختمَ الإدخال ويومَ البيع sold_at", !!aud && aud.details.recorded_at === inv.recorded_at && aud.details.sold_at === y, JSON.stringify(aud?.details ?? null).slice(0, 120));
+  check("اليومُ نفسُه ليس تاريخاً سابقاً (sale_day_not_past)", (await code(() => repo.retailCheckout([item], meta("bd-today", new Date().toISOString())))) === "sale_day_not_past");
+  check("  ولا الغد", (await code(() => repo.retailCheckout([item], meta("bd-fut", dayAt(-1))))) === "sale_day_not_past");
+  check("  وقبل ٧ أيام يُقبل، وقبل ٨ يُرفض (backdate_window)",
+    (await code(() => repo.retailCheckout([item], meta("bd-7", dayAt(7))))) === "ok" && (await code(() => repo.retailCheckout([item], meta("bd-8", dayAt(8))))) === "backdate_window");
+  check("  ونصٌّ لا يُفهم تاريخاً يُرفض (sale_at_invalid)", (await code(() => repo.retailCheckout([item], meta("bd-bad", "أمس")))) === "sale_at_invalid");
+  as("r1", "reception"); pinOn();
+  check("  والاستقبالُ بمفتاح المدير الحيّ يؤرّخ", (await code(() => repo.retailCheckout([{ ...item, qty: 1, stock_qty: 1 }], meta("bd-pin", dayAt(2))))) === "ok");
+  pinOff(); as("c1", "admin");
+  const now0 = await repo.retailCheckout([{ ...item, qty: 1, stock_qty: 1 }], meta("bd-now", null));
+  check("بيعةُ الآن بلا ختم إدخال — وساقُها كما أُرسلت", !now0.recorded_at && "at" in (now0.payment_details?.[0] ?? {}));
+  mem.delete("vp_session"); pinOff(); mem.delete("vp_demo_audit");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

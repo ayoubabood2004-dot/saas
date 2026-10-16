@@ -22,6 +22,7 @@ import type { InvoiceForgiveness, ForgivenessReportRow, ForgiveInput, DeliveryMa
 import { forgiveActor, validateForgive, validateVoid, consumeForgiveness, hasOpenDelivery, legsChangeAllowedForStaff, pgRound2, pgMoneyText,
   type ForgiveActor, type ForgiveCheck, type VoidErrorCode } from "./debtForgive";
 import { custKey } from "./customerKey";
+import { checkSaleAt, stripLegTimes, type SaleDateCode } from "./saleDate";
 import { cleanRef } from "./deliverySearch";
 import { phoneDigits } from "./phone";
 import { searchable, invNormName } from "./utils";
@@ -383,6 +384,16 @@ function demoPinLive(): boolean {
 function demoUserId(): string | null {
   try { return (JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { id?: string } } | null)?.raw?.id ?? null; } catch { return null; }
 }
+/** رفضُ «تاريخ المبيع» بالتجريبيّ — تلميحاتُ retail_checkout (0242) حرفاً. */
+function saleDateRefusal(code: SaleDateCode): Error {
+  switch (code) {
+    case "backdate_not_allowed": return demoHint(code, "تسجيلُ فاتورةٍ بيومٍ سابق للمدير — افتح وضعَ المدير برمزه.");
+    case "backdate_operator_not_allowed": return demoHint(code, "مشغّلُ المنصّة لا يسجّل فواتير بيومٍ سابق داخل عيادة — سطرُ مالٍ يسمّي شخصاً من كادرها.");
+    case "sale_at_invalid": return demoHint(code, "تاريخُ المبيع مو مفهوم — اختاره من جديد.");
+    case "sale_day_not_past": return demoHint(code, "تاريخُ المبيع لازم يومٌ قبل اليوم — فاتورةُ اليوم تنسجّل بدون تاريخ.");
+    case "backdate_window": return demoHint(code, "أقدمُ يومٍ يُقبل قبل ٧ أيام — فاتورةٌ أقدم تحتاج قرارَ صاحب العيادة.");
+  }
+}
 function forgiveRefusal(f: Extract<ForgiveCheck, { ok: false }>): Error {
   const m = (n: number | undefined) => pgMoneyText(n ?? 0);
   switch (f.code) {
@@ -602,6 +613,15 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     const prior = db.invoices.find((v) => v.client_ref === ref);
     if (prior) return prior;
   }
+  /* «تاريخ المبيع» (0242) — نفسُ شرط الخادم وبعد فحص المرجع مثله: المديرُ (أو مفتاحُه الحيّ)، يومٌ قبل
+   * اليوم، ولا أقدم من ٧ أيام (saleDate.ts هو الحكمُ نفسُه). والسِّيَقُ بلا `at` فتُؤرَّخ بالفاتورة. */
+  let saleAt: string | null = null;
+  if (meta?.sale_at?.trim()) {
+    if (demoBaseRole() !== "manager" && !demoPinLive()) throw saleDateRefusal("backdate_not_allowed");
+    const c = checkSaleAt(meta.sale_at);
+    if (!c.ok) throw saleDateRefusal(c.code);
+    saleAt = c.at;
+  }
   /* ── حسابُ المال: مرآةٌ حرفية لـ`retail_checkout` (0156) ──────────────────
    *
    * الفرقُ لم يكن كسرَ فلسٍ من طفوٍ ثنائي: `final_total` كان يُدوَّر بـ
@@ -658,7 +678,9 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     pet_name: meta?.pet_name?.trim() || null,
     subtotal, discount, discount_type: dtypeOut,
     payment_method: meta?.payment_method ?? null,
-    payment_details: meta?.payment_details && meta.payment_details.length ? meta.payment_details : null,
+    payment_details: meta?.payment_details && meta.payment_details.length
+      ? (saleAt ? stripLegTimes(meta.payment_details) : meta.payment_details)
+      : null,
     total, amount_paid: amountPaid, cost_total: cost, profit: round2(total - cost), item_count: Math.round(count),
     print_count: 0, status: "paid", refunded_at: null,
     staff_id: meta?.staff_id?.trim() || null,
@@ -667,7 +689,8 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     // تجري عليه فحوصُ المنطق، فسلوكٌ ناقصٌ هنا سلوكٌ لم يُفحص.
     sale_kind: meta?.sale_kind === "wholesale" ? "wholesale" : "retail",
     client_ref: ref || null,
-    created_at: new Date().toISOString(),
+    created_at: saleAt ?? new Date().toISOString(),
+    recorded_at: saleAt ? new Date().toISOString() : null,
   };
   db.invoices.push(invoice);
   const r3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
@@ -5060,7 +5083,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
         const row = (res && typeof res === "object" ? res : (typeof args[0] === "object" && args[0] !== null ? args[0] : undefined)) as Record<string, unknown> | undefined;
         const entityId = (row && typeof row.id === "string" ? row.id : undefined) ?? (typeof args[0] === "string" ? args[0] : null);
         const changed = before && row ? Object.fromEntries(Object.keys(row).filter((k) => JSON.stringify(row[k] ?? null) !== JSON.stringify(before[k] ?? null)).map((k) => [k, [before[k] ?? null, row[k] ?? null]])) : null;
-        demoAuditPush({ action: meta.action, entity: meta.entity, entity_id: entityId, details: row ? (changed && Object.keys(changed).length ? { ...row, __changed: changed } : row) : null });
+        // 0242: بيعةٌ بيومٍ سابق تحمل يومَها `sold_at` كمحفّز الإنتاج — السطرُ مختومٌ بلحظة الإدخال.
+        const sold = meta.entity === "invoices" && meta.action === "INSERT" && row?.recorded_at ? { sold_at: row.created_at } : null;
+        demoAuditPush({ action: meta.action, entity: meta.entity, entity_id: entityId, details: row ? (changed && Object.keys(changed).length ? { ...row, __changed: changed } : { ...row, ...sold }) : null });
         // Checkout also logs each sold LINE — mirroring the invoice_items trigger.
         if ((method === "checkout" || method === "retailCheckout") && Array.isArray(args[0])) {
           for (const it of args[0] as Array<Record<string, unknown>>) {

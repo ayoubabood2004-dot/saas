@@ -88,7 +88,7 @@ const MEDIA_LABEL: Record<string, { key: string; def: string }> = {
 
 /** أيقونةُ كلّ نوع ولونُه — النوعُ يُحدَّد بالخادم، والشكلُ هنا. */
 const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
-  sale: { icon: Receipt, tone: "success" }, refund: { icon: Receipt, tone: "danger" }, payment: { icon: HandCoins, tone: "success" },
+  sale: { icon: Receipt, tone: "success" }, sale_backdated: { icon: History, tone: "warn" }, refund: { icon: Receipt, tone: "danger" }, payment: { icon: HandCoins, tone: "success" },
   sale_edit: { icon: Receipt, tone: "muted" }, sale_delete: { icon: Trash2, tone: "danger" }, sale_line: { icon: Receipt, tone: "muted" },
   sale_expired: { icon: CalendarX, tone: "danger" },
   debt_forgive: { icon: HandCoins, tone: "warn" }, debt_forgive_void: { icon: HandCoins, tone: "muted" },
@@ -365,6 +365,12 @@ export function ActivityLog() {
         const total = money(Number(d["total"]) || 0);
         const client = s("customer_name") || t("rpt.walkIn", "عميل نقدي");
         if (r.kind === "sale") return t("act.invAdd", { total, client, defaultValue: "أنشأ فاتورة بمبلغ {{total}} — {{client}}" });
+        /* 0242: وقتُ السطر لحظةُ الإدخال — فيومُ البيع يُقال بالجملة نفسها، وإلا ظهرت بيعةُ أمس كأنها اليوم. */
+        if (r.kind === "sale_backdated") {
+          const sold = s("sold_at");
+          const day = sold ? new Date(sold).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "short" }) : "—";
+          return t("act.invAddBackdated", { total, client, day, defaultValue: "سجّل فاتورة بيومٍ سابق ({{day}}) بمبلغ {{total}} — {{client}}" });
+        }
         if (r.kind === "sale_delete") return t("act.invDel", { total, client, defaultValue: "حذف فاتورة {{total}} ({{client}}) نهائياً" });
         if (r.kind === "refund") return t("act.invRefund", { total, client, defaultValue: "أرجع فاتورة {{total}} — {{client}}" });
         if (r.kind === "payment") return t("act.invPay", { total, client, defaultValue: "سدّد دين — {{client}} ({{total}})" });

@@ -25,8 +25,11 @@ export async function persistMedicalEntries(
   petId: string,
   doctorName: string | undefined,
   entries: MedicalDraft[],
+  /** لحظةُ الإعطاء — بيعةٌ بيومٍ سابق (0242) تختم جرعتَها ولقاحَها بيومها لا بيوم إدخالها (درسُ 0223). */
+  at?: string | null,
 ): Promise<void> {
-  const now = new Date();
+  const atDate = at ? new Date(at) : null;
+  const now = atDate && !Number.isNaN(atDate.getTime()) ? atDate : new Date();
   const nowISO = now.toISOString();
   const today = localISO(now); // LOCAL date (not UTC) so the treatment-sheet day is correct in UTC+3
   const hhmm = now.toTimeString().slice(0, 5);

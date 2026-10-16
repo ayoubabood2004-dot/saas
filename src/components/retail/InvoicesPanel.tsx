@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2, BadgePercent,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2, BadgePercent, History,
 } from "lucide-react";
 import type { DeliveryMark, Invoice, InvoiceForgiveness, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
@@ -466,6 +466,13 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   </p>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
                     <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                    {/* «تاريخ المبيع» (0242): بيومها بالقائمة، والشارةُ تقول إنها أُدخلت بعده. */}
+                    {inv.recorded_at && (
+                      <span data-inv-later className="inline-flex items-center gap-0.5 rounded bg-warn-50 px-1.5 py-0.5 text-[10px] font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"
+                        title={t("sdate.recordedOn", { date: `${formatDate(inv.recorded_at, i18n.language)} · ${new Date(inv.recorded_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}`, defaultValue: "انكتبت بالسستم {{date}}" })}>
+                        <History size={10} /> {t("sdate.later", "سُجّلت لاحقاً")}
+                      </span>
+                    )}
                     <span>· {t("retail.itemsN", { n: inv.item_count, defaultValue: "{{n}} items" })}</span>
                     {inv.staff_id && staffById.get(inv.staff_id) && (
                       <span className="flex items-center gap-0.5 font-semibold text-brand-600 dark:text-brand-300"><UserCheck size={11} /> {staffById.get(inv.staff_id)}</span>
@@ -684,6 +691,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             <p className="mt-0.5 text-xs text-ink-subtle">
               {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}
             </p>
+            {invoice.recorded_at && (
+              <p data-inv-later-detail className="mt-1 flex items-center gap-1 text-2xs font-bold text-warn-700 dark:text-warn-200">
+                <History size={12} className="shrink-0" />
+                {t("sdate.detailLater", { date: `${formatDate(invoice.recorded_at, i18n.language)} · ${new Date(invoice.recorded_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}` })}
+              </p>
+            )}
             {sellerName && (
               <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-brand-600 dark:text-brand-300">
                 <UserCheck size={13} /> {t("retail.soldBy", "البائع")}: {sellerName}
