@@ -5697,6 +5697,23 @@ chk "السياجُ يغطّي الدفتر، ولا سياسةَ تقرأ جد�
     "select coalesce(string_agg(t, ','), '')||'|'||(select count(*) from verify_no_self_ref_policies())::text from verify_photographer_fence() t where t like 'invoice_forgiveness%'" "|0"
 chk "والكنسُ ومعاينتُه ونبضُه يعدّون الدفترَ مالاً (سنة)" \
     "select count(*)::text from pg_proc where proname in ('purge_audit_log','audit_log_preview','system_health') and prosrc like '%invoice_forgiveness%'" "3"
+# حالةُ الإنتاج (مقيسةٌ ١٦/١٠ بالبصمة): غلافُ 0113 لم ينزل، وedit_invoice_lines هو جسمُ البنود نفسُه بلا
+# _unguarded. نعيد الحالةَ ذاتها هنا ثم 0241: لو أنشأت _unguarded وحدها لبقي الإنتاجُ ينادي الجسمَ القديم.
+$P -c "drop function edit_invoice_lines(uuid, jsonb, text);
+       alter function edit_invoice_lines_unguarded(uuid, jsonb, text) rename to edit_invoice_lines;
+       grant execute on function edit_invoice_lines(uuid, jsonb, text) to authenticated;" >/dev/null
+chk "  (الحالةُ المقيسة: لا _unguarded، والاسمُ العامّ هو الجسمُ بلا حارس دور)" \
+    "select (to_regprocedure('edit_invoice_lines_unguarded(uuid, jsonb, text)') is null)::text||'|'||(select (prosrc not like '%auth_role()%')::text from pg_proc where proname='edit_invoice_lines')" "true|true"
+out=$($P -f "$MIG/0241_debt_forgiveness.sql" 2>&1) || { echo "$out"; echo "   ✗ 0241 ما انعادت على حالة الإنتاج"; fail=1; }
+chk "حالةُ الإنتاج بلا غلاف 0113: 0241 تعيد التسمية وتنشئ الغلاف، والجسمُ الداخليّ يستهلك الخصم ولا منحَ له" \
+    "select (to_regprocedure('edit_invoice_lines_unguarded(uuid, jsonb, text)') is not null)::text
+            ||'|'||(select (prosrc like '%auth_role()%' and prosrc like '%edit_invoice_lines_unguarded%')::text from pg_proc where proname='edit_invoice_lines')
+            ||'|'||(select (prosrc like '%invoice_forgiveness_consume%')::text from pg_proc where proname='edit_invoice_lines_unguarded')
+            ||'|'||(select has_function_privilege('authenticated', 'edit_invoice_lines_unguarded(uuid, jsonb, text)', 'execute')::text)
+            ||'|'||(select has_function_privilege('authenticated', 'edit_invoice_lines(uuid, jsonb, text)', 'execute')::text)" "true|true|true|false|true"
+$P -c "delete from staff_elevations;" >/dev/null
+chk "  والاستقبالُ يُرفض بالغلاف نفسِه (المديرُ وحده — حارسُ 0113 الذي ظُنّ نازلاً)" \
+    "select regexp_replace(_rls_try('$RCP', format('select edit_invoice_lines(%L::uuid, %L::jsonb, null)', '${IV}10', '[]')), '^guarded:[^:]*:', '')" "notallowed"
 $P -c "delete from staff_elevations; delete from memberships where user_id = '$MGR';
        delete from delivery_orders where invoice_id::text like 'dddddddd-0241-%';
        delete from invoice_items where invoice_id::text like 'dddddddd-0241-%';

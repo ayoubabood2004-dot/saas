@@ -737,9 +737,39 @@ end $$;
 revoke all on function correct_invoice_receipt(uuid, numeric, text, text) from public, anon;
 grant execute on function correct_invoice_receipt(uuid, numeric, text, text) to authenticated;
 
+-- ── ١٢أ) غلافُ 0113 — الإنتاجُ لم يأخذه (مقيسٌ ١٦/١٠ ببصمة الجسم بلا تعليقات ولا مسافات) ──
+-- correct_invoice_receipt بالإنتاج = 0113 حرفاً، أمّا edit_invoice_lines فما زال جسمَ 0110 كاملاً ولا
+-- edit_invoice_lines_unguarded أصلاً: كتلةُ الإعادة والغلاف بـ0113 لم تجرِ هناك. فلو أنشأنا _unguarded وحدها
+-- بقي الإنتاجُ ينادي جسمَ 0110 القديم — كلُّ تعديل بنودٍ يُرجع الدينَ المخصوم (total = subtotal − discount).
+-- فكتلةُ 0113 هنا **حرفاً** قبل إعادة التعريف: حيث جرت (الحزمة) لا تفعل شيئاً، وحيث لم تجرِ تُعيد التسمية
+-- وتنشئ الغلاف (المديرُ وحده، والمفتاحُ يكفي) — وهو حارسُ 0113 الذي ظُنّ نازلاً.
+do $$
+begin
+  if to_regprocedure('edit_invoice_lines_unguarded(uuid, jsonb, text)') is null
+     and to_regprocedure('edit_invoice_lines(uuid, jsonb, text)') is not null then
+    execute 'alter function edit_invoice_lines(uuid, jsonb, text) rename to edit_invoice_lines_unguarded';
+    execute 'revoke all on function edit_invoice_lines_unguarded(uuid, jsonb, text) from public, anon, authenticated';
+  end if;
+
+  if to_regprocedure('edit_invoice_lines_unguarded(uuid, jsonb, text)') is not null then
+    execute $fn$
+      create or replace function edit_invoice_lines(p_invoice uuid, p_lines jsonb, p_note text default null)
+      returns invoices language plpgsql security definer set search_path = public as $body$
+      begin
+        if auth_clinic() is null then raise exception 'not authenticated'; end if;
+        -- الحارس الغائب سابقاً: تعديل بنود فاتورة يغيّر الإيراد والمخزون معاً.
+        if auth_role() <> 'manager' then raise exception 'not allowed'; end if;
+        return edit_invoice_lines_unguarded(p_invoice, p_lines, p_note);
+      end $body$;
+    $fn$;
+    execute 'revoke all on function edit_invoice_lines(uuid, jsonb, text) from public, anon';
+    execute 'grant execute on function edit_invoice_lines(uuid, jsonb, text) to authenticated';
+  end if;
+end $$;
+
 -- ── ١٢) تعديلُ البنود — جسمُ 0110 (اسمُه منذ 0113 edit_invoice_lines_unguarded) حرفاً ────
 -- إلا: `for update` على الفاتورة، وقاعدةُ استهلاك الخصم (forgiven) قبل الحساب.
--- الغلافُ edit_invoice_lines (0113: المديرُ وحده) لا يُمسّ؛ وهذه بلا منحٍ لأحد كما تركتها 0113.
+-- الغلافُ edit_invoice_lines (0113: المديرُ وحده) من الكتلة أعلاه؛ وهذه بلا منحٍ لأحد كما تركتها 0113.
 create or replace function edit_invoice_lines_unguarded(p_invoice uuid, p_lines jsonb, p_note text default null)
 returns invoices
 language plpgsql
