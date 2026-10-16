@@ -10,7 +10,7 @@
 //   • الإعدادات — تفعيل المتجر، الرابط المميز (slug)، النبذة، أجرة التوصيل،
 //                 الحد الأدنى، ولوحة مشاركة الرابط (نسخ/فتح/واتساب/بايو).
 // ============================================================================
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -38,6 +38,7 @@ import { CatPickerSheet } from "@/components/store/admin/CatPickerSheet";
 import { CategoriesTab, type LeaveGuard } from "@/components/store/admin/CategoriesTab";
 import { catError } from "@/components/store/admin/catErrors";
 import { searchable } from "@/lib/utils";
+import { codeMatcher, findByCode, matchedCode } from "@/lib/productCodes";
 import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { withTimeout, describeDbError } from "@/lib/errors";
@@ -78,7 +79,7 @@ const ORDERS_WINDOW = 300;
 /** منتجُ المصوّر (أعمدةٌ آمنة، 0222) بشكل Product الذي تقرؤه الألواح — بلا سعر شراء. */
 function photoAsProduct(x: PhotoProduct, clinicId: string | null): Product {
   return {
-    id: x.id, clinic_id: clinicId, name: x.name, barcode: x.barcode ?? "", category: x.category ?? undefined,
+    id: x.id, clinic_id: clinicId, name: x.name, barcode: x.barcode ?? "", alt_codes: x.alt_codes ?? [], category: x.category ?? undefined,
     subcategory: x.subcategory ?? undefined, company_id: x.company_id ?? null, image_path: x.image_path ?? null,
     store_visible: x.store_visible, store_featured: x.store_featured, store_desc: x.store_desc ?? null,
     sell_price: x.sell_price ?? 0, stock: x.stock ?? 0, purchase_price: 0,
@@ -592,9 +593,14 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const noStockShown = shownRows.filter((p) => p.stock <= 0 && !p.pooled).length;
   const noDescShown = shownRows.filter((p) => !p.store_desc).length;
 
+  /* البحثُ بالاسم **أو بالباركود** (0243): العلبةُ بيد المصوّر، ورمزُها أسرعُ من اسمها. والرمزُ من
+   * codeMatcher (الأساسيّ والإضافيّ مطبَّعَين على الطرفين) — لا مطابقةٌ مكتوبةٌ باليد. والتصفيةُ على
+   * قيمةٍ مؤجَّلة (درسُ scanBuffer): ماسحٌ يكتب ١٣ رقماً متتالية لا يُرسم بعد كلّ رقمٍ تسعُمئة بطاقة. */
+  const qd = useDeferredValue(q);
   const list = useMemo(() => {
-    const ql = searchable(q);
-    let base = all.filter((p) => !ql || searchable(p.name).includes(ql) || searchable(p.subcategory).includes(ql));
+    const ql = searchable(qd);
+    const byCode = codeMatcher(qd);
+    let base = all.filter((p) => !ql || searchable(p.name).includes(ql) || searchable(p.subcategory).includes(ql) || byCode(p));
     if (filter === "shown") base = base.filter((p) => p.store_visible);
     else if (filter === "hidden") base = base.filter((p) => !p.store_visible);
     else if (filter === "nophoto") base = base.filter((p) => !p.image_path);
@@ -617,7 +623,13 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       arr.sort((a, b) => rank(a) - rank(b));
     }
     return arr;
-  }, [all, q, filter, sort, inCat, catOf]);
+  }, [all, qd, filter, sort, inCat, catOf]);
+  /** الرمزُ الذي جاء بالمنتج للنتائج حين لم يأتِ به اسمُه — يُرسم على البطاقة. */
+  const codeHitOf = (p: Product): string | null => {
+    const ql = searchable(qd);
+    if (!ql || searchable(p.name).includes(ql) || searchable(p.subcategory).includes(ql)) return null;
+    return matchedCode(p, qd);
+  };
 
   /** نجمة المختارات (0177) — علمٌ على المنتج، بلا أثرٍ على البيع الداخلي. */
   const toggleFeatured = async (p: Product) => {
@@ -845,7 +857,15 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالمنتجات…" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} data-catsearch
+            placeholder={t("cat.searchPh", "ابحث بالاسم أو الباركود…")}
+            /* مسحُ الماسح ينتهي بـEnter: رمزٌ يطابق منتجاً واحداً بالتمام يفتح تفاصيلَه مباشرةً — الصورةُ
+             * والوصفُ للعلبة التي بيدك، بلا بحثٍ بالعين بين بطاقات. */
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              const hit = findByCode(all, q);
+              if (hit) { e.preventDefault(); playTap(); setDetailsId(hit.id); }
+            }} />
         </div>
         <span className={cn("rounded-full px-3 py-1.5 text-xs font-bold",
           shownCount > 0 ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200")}>
@@ -1028,7 +1048,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
                 onPhoto={(f) => openEditor(p, f)} onLib={() => setLibFor(p)}
                 onToggle={() => void toggle(p)} onFeatured={() => void toggleFeatured(p)}
                 onDetails={() => setDetailsId(p.id)} onPrice={(d) => void savePrice(p, d)}
-                onArm={() => { armed.current = p.id; }} />
+                onArm={() => { armed.current = p.id; }} codeHit={codeHitOf(p)} />
             ))}
           </div>
           {list.length > limit && (

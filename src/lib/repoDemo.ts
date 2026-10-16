@@ -2027,7 +2027,8 @@ const demoRepo = {
     const db = loadDB();
     const co = new Map((db.companies ?? []).map((c) => [c.id, c.name]));
     return (db.products ?? []).filter((p) => !p.farm_id).map((p) => ({
-      id: p.id, name: p.name, barcode: p.barcode ?? null, category: p.category ?? null, subcategory: p.subcategory ?? null,
+      // 0243: الرموزُ الإضافية مع الأساسيّ — قائمةٌ فارغة لا null، كالخادم.
+      id: p.id, name: p.name, barcode: p.barcode ?? null, alt_codes: p.alt_codes ?? [], category: p.category ?? null, subcategory: p.subcategory ?? null,
       company_id: p.company_id ?? null, company_name: p.company_id ? co.get(p.company_id) ?? null : null,
       image_path: p.image_path ?? null, store_visible: !!p.store_visible, store_featured: !!p.store_featured,
       store_desc: p.store_desc ?? null, sell_price: p.sell_price ?? null, stock: p.stock ?? null,

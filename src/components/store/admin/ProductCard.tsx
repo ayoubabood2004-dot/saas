@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Boxes, Camera, Eye, EyeOff, ImagePlus, Pencil, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Barcode, Boxes, Camera, Eye, EyeOff, ImagePlus, Pencil, SlidersHorizontal, Sparkles } from "lucide-react";
 import type { Product } from "@/types";
 import { cardImagePath, catGlyph, productImageUrl, shelfLabel, shelfLook } from "@/lib/storeLib";
 import { playTap } from "@/lib/sounds";
@@ -17,8 +17,10 @@ import { cn, formatNum, money } from "@/lib/utils";
 
 export interface CardCat { id: string; name: string; icon: string }
 
-export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice, onPhoto, onLib, onToggle, onFeatured, onDetails, onPrice, onArm }: {
+export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice, onPhoto, onLib, onToggle, onFeatured, onDetails, onPrice, onArm, codeHit = null }: {
   p: Product;
+  /** الرمزُ الذي طابق البحثَ حين لم يطابق الاسم (0243) — يُقال على البطاقة كي لا تبدو نتيجةً عشوائية. */
+  codeHit?: string | null;
   picked: boolean;
   onPick: (v: boolean) => void;
   busy: boolean;
@@ -84,6 +86,11 @@ export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice,
 
       <div className="flex flex-1 flex-col gap-1.5 p-2.5">
         <p className="line-clamp-2 text-sm font-bold leading-snug text-ink" title={p.name} dir="auto">{p.name}</p>
+        {codeHit && (
+          <span data-cardcode className="inline-flex max-w-full items-center gap-1 self-start truncate rounded-md bg-brand-50 px-1.5 py-0.5 font-mono text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" dir="ltr">
+            <Barcode size={11} className="shrink-0" /> <span className="truncate">{codeHit}</span>
+          </span>
+        )}
         {cats.length > 0 && (
           <div className="flex flex-wrap gap-1" data-cardcats>
             {cats.slice(0, 2).map((c) => (

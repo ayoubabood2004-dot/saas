@@ -12,6 +12,7 @@ import { cardImagePath, catGlyph, categoryLook, productImageUrl, shelfLook, shel
 import { catError } from "./catErrors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatNum, localISO, searchable } from "@/lib/utils";
+import { codeMatcher } from "@/lib/productCodes";
 import { SortList } from "./SortList";
 import type { LeaveGuard } from "./CategoriesTab";
 
@@ -88,9 +89,11 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
 
   const today = localISO();
   const ql = searchable(q);
+  // والباركودُ كذلك (0243) — نفسُ codeMatcher الذي يبحث به المخزنُ وشاشةُ البيع.
+  const byCode = codeMatcher(q);
   const rows = order.filter((id) => {
     const p = byId.get(id) as Product;
-    if (ql && !searchable(p.name).includes(ql) && !searchable(p.subcategory).includes(ql)) return false;
+    if (ql && !searchable(p.name).includes(ql) && !searchable(p.subcategory).includes(ql) && !byCode(p)) return false;
     return show === "all" || (show === "on" ? on(id) : !on(id));
   });
   const nOn = order.filter(on).length;
@@ -245,7 +248,7 @@ export function CategoryChecklist({ cat, products, productsFailed, onRetryProduc
 
           <div className="relative">
             <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
-            <input className="input ps-9" value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE); }} placeholder={t("cat.checkSearch", "دوّر بالمواد…")} />
+            <input className="input ps-9" value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE); }} placeholder={t("cat.checkSearch", "دوّر بالاسم أو الباركود…")} />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {chip("all", t("cat.showAll", "الكل"))}

@@ -127,6 +127,17 @@ export function codeMatcher(query: string | null | undefined): (p: Product) => b
 }
 
 /**
+ * **أيُّ** رموز المنتج طابق البحث — بنفس مطابقة `codeMatcher` (جزئيّ، مطبَّعٌ على الطرفين).
+ * لتقول البطاقةُ لماذا ظهرت: بحثٌ بباركود المصنع يُظهر «رويال كانين» واسمُها لا يحوي رقماً واحداً،
+ * فبلا الرمز المطابِق تبدو نتيجةً عشوائية. الأساسيُّ أوّلاً، ثم الإضافيّ.
+ */
+export function matchedCode(p: Pick<Product, "barcode" | "alt_codes">, query: string | null | undefined): string | null {
+  const c = matchCode(query);
+  if (!c) return null;
+  return [p.barcode, ...(p.alt_codes ?? [])].find((x): x is string => !!x && matchCode(x).includes(c)) ?? null;
+}
+
+/**
  * مسحةٌ بلا رأسها: الرمزُ الواصل ذيلُ رمزٍ قائم ينقصه رقمٌ أو رقمان من أوّله.
  *
  * مقيسٌ على الإنتاج (ابن الهيثم، ٥ أيلول ٢٠٢٦): كلُّ مسحةٍ فاشلة باليوم ١١ أو

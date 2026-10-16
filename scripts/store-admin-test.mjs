@@ -86,6 +86,8 @@ try {
     export { CategoriesTab } from "./src/components/store/admin/CategoriesTab.tsx";
     export { CategoryChecklist } from "./src/components/store/admin/CategoryChecklist.tsx";
     export { ProductDetailsSheet } from "./src/components/store/admin/ProductDetailsSheet.tsx";
+    export { ProductCard } from "./src/components/store/admin/ProductCard.tsx";
+    export * as PC from "./src/lib/productCodes.ts";
     export { SortList } from "./src/components/store/admin/SortList.tsx";
     export * as S from "./src/lib/storeCats.ts";
     export * as X from "./src/lib/storeCatIndex.ts";
@@ -319,6 +321,38 @@ try {
   check("مفتاحُ عيادةٍ أخرى ⇒ switched (الحارسُ باقٍ)", (await open("C2", "C2")).status === "switched");
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 globalThis.__clinic = "C1"; globalThis.__uid = undefined;
+
+console.log("▸ 0243: الباركود بتفاصيل المنتج، والبحثُ بالمتجر بالرمز");
+try {
+  await ready();
+  const live = M.S.viewOf(M.S.getStoreCatsState().view).live;
+  const sheetOf = (p, lang = "ar") => html(h(M.ProductDetailsSheet, {
+    p, onClose() {}, live, catsOf: () => [], catsState: "ready", onRetryCats() {},
+    canPrice: false, onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onPrice() {}, onSave: async () => {}, busy: false,
+  }), lang);
+  const tags = (s, kind) => [...s.matchAll(new RegExp(`data-sheetcode="${kind}"[^>]*>([\\s\\S]*?)</span>`, "g"))].map((x) => text(x[1]).trim());
+  const coded = sheetOf({ ...PRODUCTS[0], barcode: "6281000123456", alt_codes: ["w90", "6281000123456", " "] });
+  check("الورقةُ تعرض الرمزَ الأساسيّ", tags(coded, "primary").join() === "6281000123456", tags(coded, "primary").join());
+  check("  والإضافيَّ كما بقائمة المخزون (+رمز) — بلا تكرار الأساسيّ ولا فراغ", tags(coded, "alt").join() === "+w90", tags(coded, "alt").join());
+  check("  وعنوانُ القسم باللغتين", text(coded).includes(AR.cat.sheetCodes) && text(sheetOf({ ...PRODUCTS[0], barcode: "1" }, "en")).includes(EN.cat.sheetCodes));
+  const none = sheetOf({ ...PRODUCTS[0], barcode: "", alt_codes: [] });
+  check("  وبلا باركود: «ما اله باركود» صريحةً لا خانةٌ فارغة", /data-sheetnocode/.test(none) && text(none).includes(AR.cat.sheetNoCode) && !/data-sheetcode=/.test(none));
+  check("  ورمزٌ إضافيٌّ وحده بلا أساسيّ يُعرض", tags(sheetOf({ ...PRODUCTS[0], barcode: "", alt_codes: ["w90"] }), "alt").join() === "+w90");
+  const card = (codeHit) => html(h(M.ProductCard, { p: PRODUCTS[0], picked: false, onPick() {}, busy: false, bulkBusy: false, cats: [], canPrice: false,
+    onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onDetails() {}, onPrice() {}, onArm() {}, codeHit }));
+  check("البطاقةُ تقول الرمزَ الذي جاء بها للنتائج، ولا شيء بلا مطابقةٍ بالرمز",
+    /data-cardcode/.test(card("6281000123456")) && text(card("6281000123456")).includes("6281000123456") && !/data-cardcode/.test(card(null)));
+  const prod = { id: "x", name: "رويال كانين", barcode: "w90", alt_codes: ["6281000123456"] };
+  check("matchedCode: الإضافيُّ يُسمّى حين هو المطابِق، والأساسيُّ أوّلاً",
+    M.PC.matchedCode(prod, "٦٢٨١") === "6281000123456" && M.PC.matchedCode(prod, "W9") === "w90" && M.PC.matchedCode(prod, "") === null && M.PC.matchedCode(prod, "777") === null);
+  check("  وهو codeMatcher نفسُه حكماً (لا مطابقةٌ ثانية)", ["٦٢٨١", "W9", "777", " 6281 000", "‎6281"].every((q) => !!M.PC.matchedCode(prod, q) === M.PC.codeMatcher(q)(prod)));
+  const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const chk = readFileSync("src/components/store/admin/CategoryChecklist.tsx", "utf8");
+  check("بحثُ التشكيلة يطابق الرمز بـcodeMatcher على قيمةٍ مؤجَّلة، وEnter برمزٍ تامّ يفتح التفاصيل",
+    /const byCode = codeMatcher\(qd\)/.test(cs) && /useDeferredValue\(q\)/.test(cs) && /findByCode\(all, q\)/.test(cs) && /setDetailsId\(hit\.id\)/.test(cs));
+  check("  ومنتجُ المصوّر يحمل رموزَه الإضافية (photoAsProduct)", /alt_codes: x\.alt_codes \?\? \[\]/.test(cs));
+  check("  وبحثُ قائمة التأشير بالرمز كذلك", /const byCode = codeMatcher\(q\)/.test(chk) && /!byCode\(p\)/.test(chk));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
 console.log(fails ? `\n✗ store-admin-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ store-admin-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

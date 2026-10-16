@@ -684,7 +684,8 @@ console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، و
   check("  وأربعُ حالاتِ تصفيةٍ لا واحدة", ["\"all\"", "\"shown\"", "\"hidden\"", "\"nophoto\""].every((k) => cs.includes(k)));
   check("وفرزٌ صريح", cs.includes("data-catsort") && cs.includes('sort === "priceDesc"'));
   check("  و«الترتيب الذكي» يقدّم المعروضَ ثم الناقصَ صورة", /rank = \(p: Product\) =>[^;]*store_visible[^;]*image_path/.test(cs));
-  check("وبحثُ التشكيلة يطبّع الطرفين مثل الستور", cs.includes("searchable(q)") && cs.includes("searchable(p.name).includes(ql)"));
+  // 0243: البحثُ على القيمة المؤجَّلة `qd` (useDeferredValue) — والطرفان مطبَّعان كما كانا.
+  check("وبحثُ التشكيلة يطبّع الطرفين مثل الستور", cs.includes("searchable(qd)") && cs.includes("useDeferredValue(q)") && cs.includes("searchable(p.name).includes(ql)"));
   // منذ 0222 يمرّ الفكُّ من `set_product_image` (الخادمُ يسأل الإذن ويحصر المسار) لا من رقعةٍ عامّة.
   // ومنذ O4 (قرارُ المالك ١٢/١٠: «لا تشيل ولا تحذف صورة») الفكُّ **وحده**: الملفُّ يبقى بالدلو
   // ويرجع من «صور سابقة» — كان هذا السطرُ يشترط deleteProductImage عمداً، وانقلب بكلمة المالك.

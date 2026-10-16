@@ -5183,7 +5183,7 @@
     "seedBanner": "Items of kind {{name}} not in this category ({{n}}) — add them",
     "seedAdd": "Tick them",
     "dismiss": "Dismiss",
-    "checkSearch": "Search items…",
+    "checkSearch": "Search by name or barcode…",
     "showAll": "All",
     "showOn": "Ticked ({{n}})",
     "showOff": "Not ticked",
@@ -5220,7 +5220,11 @@
     "dragHandle": "Drag to reorder — or use the ↑ ↓ arrows",
     "moveUp": "Up",
     "moveDown": "Down",
-    "moveTop": "To top"
+    "moveTop": "To top",
+    "searchPh": "Search by name or barcode…",
+    "sheetCodes": "Barcode",
+    "altCodesHint": "An extra code linked to this item — any scan of it finds it",
+    "sheetNoCode": "No barcode in the inventory — the manager adds it from the product's edit form."
   },
   "farm": {
     "title": "Poultry farms",

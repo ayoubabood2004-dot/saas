@@ -2404,6 +2404,8 @@ export interface PhotoProduct {
   id: string;
   name: string;
   barcode?: string | null;
+  /** 0243: الرموزُ الإضافية مع الأساسيّ — المسحُ بأيٍّ منها يلقى المنتج. */
+  alt_codes?: string[] | null;
   category?: string | null;
   subcategory?: string | null;
   company_id?: string | null;

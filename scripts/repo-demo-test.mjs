@@ -2074,5 +2074,13 @@ console.log("▸ 0242 — «تاريخ المبيع» (مرآةُ retail_checkou
   mem.delete("vp_session"); pinOff(); mem.delete("vp_demo_audit");
 }
 
+console.log("▸ 0243 — الرموزُ الإضافية تصل للمصوّر (مرآةُ photo_products)");
+{
+  seed([P("pb1", "برموزٍ إضافية", "243001", { alt_codes: ["6281000000001", "w90"] }), P("pb2", "بلا إضافية", "243002")]);
+  const pp = await repo.listPhotoProducts();
+  check("photo_products تعطي الرموزَ الإضافية مع الأساسيّ", JSON.stringify(pp.find((x) => x.id === "pb1")?.alt_codes) === JSON.stringify(["6281000000001", "w90"]) && pp.find((x) => x.id === "pb1")?.barcode === "243001");
+  check("  ومنتجٌ بلا إضافيّة: قائمةٌ فارغة لا null", Array.isArray(pp.find((x) => x.id === "pb2")?.alt_codes) && pp.find((x) => x.id === "pb2").alt_codes.length === 0);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

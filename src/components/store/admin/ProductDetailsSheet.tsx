@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Boxes, Camera, Eye, EyeOff, ImagePlus, Sparkles } from "lucide-react";
+import { Barcode, Boxes, Camera, Eye, EyeOff, ImagePlus, Sparkles } from "lucide-react";
 import type { Product } from "@/types";
 import { Modal } from "@/components/Modal";
 import { Button } from "@/components/ui";
@@ -71,6 +71,8 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRet
   const descNext = desc.trim() ? desc.replace(/\s+$/, "") : null;
   const descChanged = (descNext ?? null) !== (p.store_desc ?? null);
   const look = shelfLook(p.name);
+  // الإضافيّةُ بلا تكرار الأساسيّ ولا فراغات — كما تعرضها قائمةُ المخزون.
+  const alts = (p.alt_codes ?? []).filter((c) => !!c?.trim() && c !== p.barcode);
   const save = async () => {
     setSaving(true);
     try { await onSave({ ...(descChanged ? { desc: descNext } : {}), ...(catsChanged ? { cats: toggles } : {}) }); }
@@ -95,6 +97,29 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRet
         </div>
 
         <div className="space-y-4">
+          {/* الباركود (0243): العلبةُ بيد المصوّر أو الطبيب، والرمزُ هو ما يربطها بهذا الصفّ — الأساسيُّ
+              والإضافيُّ كما بقائمة المخزون. والغائبُ يُقال: «ما اله باركود» لا خانةٌ فارغةٌ تُفهم خطأَ تحميل. */}
+          <div data-sheetcodes>
+            <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Barcode size={13} /> {t("cat.sheetCodes", "الباركود")}</p>
+            {p.barcode || alts.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5" dir="ltr">
+                {p.barcode && (
+                  <span data-sheetcode="primary" className="inline-flex max-w-full items-center gap-1 truncate rounded-lg bg-surface-2 px-2 py-1 font-mono text-xs font-bold text-ink">
+                    <Barcode size={12} className="shrink-0 text-ink-subtle" /> {p.barcode}
+                  </span>
+                )}
+                {alts.map((c) => (
+                  <span key={c} data-sheetcode="alt" title={t("cat.altCodesHint", "رمز إضافي مربوط بهذي المادّة — أي مسحة له تلقاها")}
+                    className="inline-flex max-w-full items-center truncate rounded-lg bg-warn-50 px-2 py-1 font-mono text-xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+                    +{c}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p data-sheetnocode className="text-xs text-ink-subtle">{t("cat.sheetNoCode", "ما اله باركود بالمخزن — يضيفه المدير من تعديل المنتج.")}</p>
+            )}
+          </div>
+
           <div>
             <label className="mb-1 flex items-center justify-between text-xs font-bold text-ink-muted">
               <span>{t("cat.descLabel", "وصف يشوفه الزبون")}</span>
