@@ -5684,7 +5684,7 @@ chk "  وكلُّ دالّةٍ تكتب amount_paid أو payment_details على 
 chk "تصحيحُ التحصيل بعد إعادة تعريفه: ١٠٠ مدفوعة، ٢٠ ما وصلت ⇒ المدفوع ٨٠ وساقٌ سالبة بسببها" \
     "$(fgc "$C1" "select correct_invoice_receipt('${IV}10', 20, 'ما وصل كامل')")" "ok"
 chk "  (المدفوع ٨٠، سِيَقٌ ٢، والسالبةُ −٢٠ بملاحظتها)" \
-    "select amount_paid::int||'|'||jsonb_array_length(payment_details)||'|'||(payment_details->1->>'amount')::int||'|'||(payment_details->1->>'note') from invoices where id='${IV}10'" "80|2|-20|ماوصلكامل"
+    "select amount_paid::int||'|'||jsonb_array_length(payment_details)||'|'||(payment_details->1->>'amount')::numeric::int||'|'||(payment_details->1->>'note') from invoices where id='${IV}10'" "80|2|-20|ماوصلكامل"
 chk "  والمحفّزاتُ والقراءةُ والاستهلاك invoker بمسارٍ مثبَّت" \
     "select count(*)::text from pg_proc where proname in ('invoices_guard_forgiven','invoices_guard_legs','clinic_prefs_guard_forgive_pct','list_invoice_forgiveness','report_forgiveness','invoice_settlements','invoice_forgiveness_consume') and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
 chk "  ولا شيءَ لـanon" \
