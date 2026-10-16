@@ -806,6 +806,13 @@ export interface InvoiceForgiveness {
   void_reason: string | null;
 }
 
+/** علامةُ التوصيل لفاتورة (`invoice_delivery_marks`، 0241): لها طلبٌ غيرُ مُرجَع، ومتى حُصِّل نقدُه
+ *  (null = لم يُحصَّل بعد). فاتورةٌ بلا علامة = بلا طلبٍ حيّ. طلبٌ واحدٌ لكلّ فاتورة (0180). */
+export interface DeliveryMark {
+  invoice_id: string;
+  collected_at: string | null;
+}
+
 /** صفُّ `report_forgiveness` (0241): سطرُ الدفتر + من أعطاه + زبونُ الفاتورة وحالُها الآن. */
 export interface ForgivenessReportRow extends InvoiceForgiveness {
   created_by_name: string | null;

@@ -61,6 +61,8 @@
 -- • invoices.forgiven لا يُكتب مباشرةً أبداً (ولا من المدير): الدالّتان وحدهما — وإلا انكسر الثابت.
 -- • invoice_settlements (0240) تجيب أيضاً الفاتورةَ التي خُصم عليها منذ p_since (سطرُ «خصم على الدين»
 --   بقائمة الفواتير بوقته، كسطر التسديد).
+-- • و«تسديد دفعة» لدين الزبون وحده: ساقُ تحصيل التوصيل (السائقُ أو الشركة) لا تُرى سطراً — بعلامةٍ
+--   invoice_delivery_marks (١٠أ) يقرؤها الخادمُ والواجهةُ بالقاعدة نفسها. العرضُ وحده؛ المالُ كما هو.
 -- • audit_kind: invoice_forgiveness ⇒ debt_forgive (والإلغاء debt_forgive_void)، والدفترُ بطبقة
 --   المال بالكنس (سنة) — بالقوائم الثلاث (الكنس، معاينتُه، نبضُه) كما تتبع بعضها منذ 0226.
 --
@@ -578,8 +580,39 @@ end $$;
 revoke all on function public.report_forgiveness(timestamptz, timestamptz) from public, anon;
 grant execute on function public.report_forgiveness(timestamptz, timestamptz) to authenticated;
 
+-- ── ١٠أ) علامةُ التوصيل: أيُّ ساقٍ تحصيلُ توصيلٍ لا تسديدُ زبون ─────────────────────
+-- «تسديد دفعة» بقائمة الفواتير لدين **الزبون** وحده. وصلُ السائق وتحصيلُ الشركة يدخلان payment_details
+-- بنفس شكل ساق 0061 — فكانا يُرسمان «تسديداً» عن مالٍ لم يجئ به الزبون.
+-- المقيس (الإنتاج، ٩٠ يوماً): ٩٥٦ ساقاً لفواتيرَ بطلب توصيل، كلُّها قبل collected_at أو بعده بـ٤٫٢ ثانية
+-- على الأكثر (السائقُ يختم collected_at بساعة الجهاز قبل أن تختم settle_invoice ساقَها بالخادم؛ والشركةُ
+-- بـcourier_settle حيث الاثنان now())، وصفرٌ بعده بأكثر من ساعة. فالقاعدةُ (قرارُ المالك):
+--   ساقٌ = تحصيلُ توصيل ⇔ لفاتورتها طلبٌ status <> 'returned'
+--                         و(collected_at is null أو at <= collected_at + 10 دقائق).
+-- وما بعدها سطرُ تسديد (الزبونُ دفع الباقي بالعيادة)، والمُرجَعُ لا يُخفي ساقاً أبداً.
+-- العرضُ وحده: «المتبقّي بعده» والوصولاتُ والتقاريرُ والديونُ والخصمُ لا تتغيّر.
+-- طلبٌ واحدٌ لكلّ فاتورة (delivery_orders_invoice_uniq، 0180) — فالعلامةُ صفٌّ واحدٌ أو لا شيء، والحكمُ دقيق.
+-- بصلاحية المُستدعي (RLS + auth_clinic)، ومرآتُها isDeliveryCollection (settlementFeed.ts) بنفس المهلة.
+-- و`id` (معرّفُ الطلب) لأن الواجهةَ تقرؤها بـallPages — المؤشّرُ يتقدّم بـid، فلا سقفَ ألفٍ صامت.
+create or replace function public.invoice_delivery_marks(p_invoice_ids uuid[])
+returns table (id uuid, invoice_id uuid, collected_at timestamptz)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select d.id, d.invoice_id, d.collected_at
+    from delivery_orders d
+   where d.clinic_id = auth_clinic()
+     and d.invoice_id = any (coalesce(p_invoice_ids, '{}'::uuid[]))
+     and d.status <> 'returned'
+   order by d.id
+$$;
+revoke all on function public.invoice_delivery_marks(uuid[]) from public, anon;
+grant execute on function public.invoice_delivery_marks(uuid[]) to authenticated;
+
 -- ── ١٠) invoice_settlements (0240) + الفاتورةُ التي خُصم عليها منذ p_since ────────
--- نسخةُ 0240 حرفاً إلا الفرعَ الثاني: خصمٌ حيٌّ (غيرُ ملغى) منذ اللحظة يُرى سطراً بوقته.
+-- نسخةُ 0240 حرفاً إلا: الفرعَ الثاني (خصمٌ حيٌّ غيرُ ملغى منذ اللحظة يُرى سطراً بوقته)، وساقَ تحصيل
+-- التوصيل (١٠أ) لا تجيب فاتورتَها — بنفس القاعدة والمهلة.
 create or replace function invoice_settlements(p_q text default null, p_status text default 'all',
                                                p_since timestamptz default null)
 returns setof invoices
@@ -595,7 +628,14 @@ language sql stable security invoker set search_path = public as $$
         where coalesce(safe_num(l->>'amount'), 0) > 0.01
           and coalesce(l->>'reversal_of', '') = ''
           and safe_ts(l->>'at') > i.created_at
-          and (p_since is null or safe_ts(l->>'at') >= p_since))
+          and (p_since is null or safe_ts(l->>'at') >= p_since)
+          -- تحصيلُ توصيل (١٠أ) ليس تسديدَ زبون.
+          and not exists (
+            select 1
+              from delivery_orders d
+             where d.invoice_id = i.id and d.clinic_id = i.clinic_id
+               and d.status <> 'returned'
+               and (d.collected_at is null or safe_ts(l->>'at') <= d.collected_at + interval '10 minutes')))
        or exists (
        select 1
          from invoice_forgiveness f

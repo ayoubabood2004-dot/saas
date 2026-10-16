@@ -17,8 +17,8 @@ import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
-import { settlementsOf } from "./settlementFeed";
-import type { InvoiceForgiveness, ForgivenessReportRow, ForgiveInput } from "@/types";
+import { deliveryMarksOf, settlementsOf } from "./settlementFeed";
+import type { InvoiceForgiveness, ForgivenessReportRow, ForgiveInput, DeliveryMark } from "@/types";
 import { forgiveActor, validateForgive, validateVoid, consumeForgiveness, hasOpenDelivery, legsChangeAllowedForStaff, pgRound2, pgMoneyText,
   type ForgiveActor, type ForgiveCheck, type VoidErrorCode } from "./debtForgive";
 import { custKey } from "./customerKey";
@@ -865,6 +865,11 @@ function demoActivityRows(from: string, to: string): ActivityRow[] {
   return [...audit, ...logins];
 }
 
+
+/** مرآةُ invoice_delivery_marks (0241): طلبُ توصيلٍ غيرُ مُرجَع لكلّ فاتورة، ومتى حُصِّل نقدُه. */
+function demoDeliveryMarks(): DeliveryMark[] {
+  return deliveryMarksOf(loadDB().deliveryOrders ?? []);
+}
 
 /** مرآةُ `invoice_matches` (0150) للوضع التجريبي: اسمٌ/هاتفٌ/رقمُ فاتورة بنفس التطبيع، وفلترُ الحالة. */
 function demoMatchingInvoices(s: InvoiceSearch): Invoice[] {
@@ -4149,8 +4154,10 @@ const demoRepo = {
     const after = (at: string) => !s.since || new Date(at).getTime() >= new Date(s.since).getTime();
     const ledger = loadDB().invoiceForgiveness ?? [];
     const forgiven = new Set(ledger.filter((f) => f.kind === "forgive" && !f.voided_at && after(f.created_at)).map((f) => f.invoice_id));
+    // 0241: وساقُ تحصيل التوصيل ليست تسديداً — نفسُ العلامات التي يقرؤها الخادم (invoice_delivery_marks).
+    const marks = demoDeliveryMarks();
     return demoMatchingInvoices(s)
-      .filter((i) => settlementsOf(i, ledger).some((l) => after(l.at)) || forgiven.has(i.id))
+      .filter((i) => settlementsOf(i, ledger, marks).some((l) => after(l.at)) || forgiven.has(i.id))
       .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   },
   async openDebts(): Promise<Invoice[]> {
@@ -4540,6 +4547,11 @@ const demoRepo = {
     demoAuditPush({ action: "UPDATE", entity: "invoice_forgiveness", entity_id: row.id,
       details: { ...(row as unknown as Record<string, unknown>), __changed: { voided_at: [null, now], void_reason: [null, chk.reason] } } });
     return target;
+  },
+  /** علاماتُ التوصيل لفواتيرَ بعينها — مرآةُ invoice_delivery_marks (0241): طلبٌ غيرُ مُرجَع ومتى حُصِّل. */
+  async listDeliveryMarks(invoiceIds: string[]): Promise<DeliveryMark[]> {
+    const ids = new Set(invoiceIds);
+    return demoDeliveryMarks().filter((m) => ids.has(m.invoice_id));
   },
   /** سطورُ الدفتر لفواتيرَ بعينها (الملغاةُ معها)، بترتيب الإنشاء — مرآةُ list_invoice_forgiveness. */
   async listInvoiceForgiveness(invoiceIds: string[]): Promise<InvoiceForgiveness[]> {

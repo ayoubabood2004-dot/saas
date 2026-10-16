@@ -35,7 +35,7 @@ import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugsSnaps
 import type { StoreCategory, StoreCatsSnapshot, ProductImageFile } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { ExpenseCategory } from "@/types";
-import type { InvoiceForgiveness, ForgivenessReportRow } from "@/types";
+import type { InvoiceForgiveness, ForgivenessReportRow, DeliveryMark } from "@/types";
 import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
 import type { PricePreview } from "./priceRaise";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -405,6 +405,8 @@ function forgivenessRow<T extends InvoiceForgiveness>(r: T): T {
   return { ...r, amount: Number(r.amount), pay_amount: Number(r.pay_amount ?? 0), total_before: n(r.total_before), paid_before: n(r.paid_before),
     due_before: n(r.due_before), profit_base: n(r.profit_base), cost_total: n(r.cost_total), pct: n(r.pct), above_cap: !!r.above_cap, via_pin: !!r.via_pin };
 }
+/** صفُّ invoice_delivery_marks: العلامةُ + معرّفُ الطلب (مؤشّرُ allPages يتقدّم بـid). */
+type DeliveryMarkRow = DeliveryMark & { id: string };
 const byCreated = (a: { created_at: string; id: string }, b: { created_at: string; id: string }) =>
   a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 
@@ -2471,6 +2473,13 @@ const supabaseRepo: DemoRepo = {
   async voidInvoiceForgiveness(entryId, reason) {
     return need<Invoice>(await sbc().rpc("void_invoice_forgiveness", { p_entry: entryId, p_reason: reason }));
   },
+  /** علاماتُ التوصيل لفواتيرَ بعينها (0241، invoice_delivery_marks): طلبٌ غيرُ مُرجَع ومتى حُصِّل. **ترمي** —
+   *  علامةٌ ناقصة ترسم وصلَ السائق «تسديدَ دفعة»، والغائبُ ليس «بلا توصيل». */
+  async listDeliveryMarks(invoiceIds) {
+    if (invoiceIds.length === 0) return [];
+    const rows = await inChunks(invoiceIds, (c) => allPages<DeliveryMarkRow>(() => sbc().rpc("invoice_delivery_marks", { p_invoice_ids: c })));
+    return rows.map((r) => ({ invoice_id: r.invoice_id, collected_at: r.collected_at ?? null }));
+  },
   /** سطورُ دفتر الخصم لفواتيرَ بعينها (الملغاةُ معها)، بترتيب الإنشاء. **ترمي** — سطرٌ ناقص يقلب «المتبقّي». */
   async listInvoiceForgiveness(invoiceIds) {
     if (invoiceIds.length === 0) return [];
@@ -2967,6 +2976,8 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts", "listSettlements",
   // الخصمُ على الدين (0241): الدفترُ وتقريرُه قراءة — الخصمُ والإلغاءُ لا.
   "listInvoiceForgiveness", "reportForgiveness", "forgiveProfitPct",
+  // وعلاماتُ التوصيل لسطور «تسديد دفعة» (0241): قراءة.
+  "listDeliveryMarks",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
   "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listPhotoProducts",

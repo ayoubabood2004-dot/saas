@@ -11,7 +11,11 @@
 // 0241: «خصم على الدين» سطرٌ بوقته كذلك (بلا نقد): «المتبقّي ٧٠ ← ٥٠». والخصمُ يُنزل total، فـ«المتبقّي
 // بعده» لسطر تسديدٍ أقدم يُعيد إليه كلَّ ما تغيّر من forgiven **بعد** ساقه (خصمٌ بعده يُضاف، واستهلاكُه
 // بمرتجعٍ يُطرح، وإلغاؤه بعده يُطرح) — فخصمٌ لاحق لا يعيد كتابة سطورٍ سابقة.
-import type { ForgiveReason, Invoice, InvoiceForgiveness, PaymentMethod } from "@/types";
+//
+// و«تسديد دفعة» لدين **الزبون** وحده: وصلُ السائق وتحصيلُ الشركة سِيَقٌ بنفس الشكل، فكانا يُرسمان تسديداً.
+// علامةُ التوصيل (invoice_delivery_marks، 0241) تفصلهما بقاعدة المالك — isDeliveryCollection أدناه، ومرآتُها
+// بـinvoice_settlements حرفاً. العرضُ وحده: «المتبقّي بعده» يعدّ الساقَ المخفيّة كما هي (مالٌ وصل).
+import type { DeliveryMark, DeliveryOrder, ForgiveReason, Invoice, InvoiceForgiveness, PaymentMethod, PaymentSplit } from "@/types";
 import { dueOf, round2 } from "@/lib/debt";
 
 const EPS = 0.01;
@@ -49,6 +53,29 @@ export type FeedEntry = InvoiceEntry | SettlementEntry | ForgivenessEntry;
 
 const ms = (iso: string): number => new Date(iso).getTime();
 
+/** مهلةُ ختم التحصيل: السائقُ يختم collected_at بساعة جهازه قبل أن تختم settle_invoice ساقَه بالخادم.
+ *  المقيس (٩٠ يوماً، ٩٥٦ ساقاً): ٤٫٢ ثانية أقصى فرق، وصفرٌ بعد ساعة — وعشرُ دقائق مرآةُ 0241 حرفاً. */
+export const DELIVERY_COLLECT_GRACE_MS = 10 * 60 * 1000;
+
+/**
+ * هل الساقُ (بوقت `legMs`) تحصيلُ توصيل لا تسديدُ زبون؟ (قرارُ المالك، مرآةُ invoice_settlements):
+ * لفاتورتها طلبٌ غيرُ مُرجَع (العلامةُ موجودة) و(لم يُحصَّل بعد، أو الساقُ عند التحصيل + المهلة أو قبله).
+ * بالمللي — الساقُ مختومةٌ بالمللي، فـ`legMs <= floor(collected) + مهلة` يطابق مقارنةَ الخادم بالمايكرو.
+ */
+/** علاماتُ التوصيل من طلباتٍ بيد المستدعي — مرآةُ invoice_delivery_marks (طلبٌ غيرُ مُرجَع، ومتى حُصِّل). */
+export function deliveryMarksOf(orders: readonly Pick<DeliveryOrder, "invoice_id" | "status" | "collected_at">[]): DeliveryMark[] {
+  return orders.filter((o) => o && o.invoice_id && o.status !== "returned")
+    .map((o) => ({ invoice_id: o.invoice_id, collected_at: o.collected_at ?? null }));
+}
+
+export function isDeliveryCollection(legMs: number, mark: DeliveryMark | undefined): boolean {
+  if (!mark) return false;
+  if (mark.collected_at == null) return true;
+  const c = ms(mark.collected_at);
+  // ختمٌ لا يُقرأ لا يجعل التحصيلَ «تسديدَ زبون» — يبقى مخفيّاً كالذي لم يُحصَّل.
+  return !Number.isFinite(c) || legMs <= c + DELIVERY_COLLECT_GRACE_MS;
+}
+
 /** هل وقع سطرُ الدفتر بعد ساقٍ بوقت `legMs`؟ الخصمُ والساقُ بنفس الدالّة («تسوية») يحملان نفسَ
  *  اللحظة (now() بالمعاملة) — والدفعةُ قبل الخصم فيها، فالتعادلُ «بعد» حين للسطر دفعة. */
 const rowAfter = (rowMs: number, legMs: number, pay: number): boolean => rowMs > legMs || (rowMs === legMs && pay > 0);
@@ -65,6 +92,22 @@ function forgivenSince(rows: readonly InvoiceForgiveness[], legMs: number): numb
   return s;
 }
 
+/** وقتُ الساق إن كانت **مرشّحةً** للتسديد (موجبةٌ مختومةٌ بعد الإنشاء وليست فكّاً)، وإلا null. */
+function candidateMs(l: PaymentSplit | null | undefined, created: number): number | null {
+  if (!l || !l.at || l.reversal_of) return null;
+  if ((Number(l.amount) || 0) <= EPS) return null;
+  const t = ms(l.at);
+  return Number.isFinite(t) && t > created ? t : null;
+}
+
+/** هل للفاتورة ساقٌ قد تكون تسديداً (قبل حكم علامة التوصيل)؟ — فاتورةٌ بلاها لا يُرسم لها سطرُ تسديدٍ أيّاً كانت
+ *  علامتُها، فلا تحتاج علامةً تُجلب. الحكمُ نفسُه الذي يبدأ به settlementsOf. */
+export function mayHaveSettlements(inv: Invoice): boolean {
+  const legs = Array.isArray(inv.payment_details) ? inv.payment_details : [];
+  const created = ms(inv.created_at);
+  return legs.some((l) => candidateMs(l, created) != null);
+}
+
 /**
  * أرجلُ التسديد بفاتورة: موجبةٌ مختومةٌ بوقتٍ **بعد** إنشائها، وليست ساقَ فكّ.
  *  • ساقُ البيع بلا `at` — دُفعت عند البيع؛
@@ -75,8 +118,10 @@ function forgivenSince(rows: readonly InvoiceForgiveness[], legMs: number): numb
  * و`forgiveness` سطورُ دفتر هذه الفاتورة (0241): ما تغيّر من الخصم بعد الساق يُعاد إليها. **لازمٌ بلا افتراض**:
  * `[]` افتراضيّاً كان يعني «لا خصم» لا «لا نعرف»، فمستدعٍ نسيه يرى خصماً لاحقاً «تسديداً كاملاً» — رقمُ مالٍ
  * كاذبٌ يُصدَّق. فـtsc يمسك كلَّ مستدعٍ لم يجلب الدفتر، ومن لم يجلبه بعدُ لا يرسم سطورَ التسديد أصلاً.
+ * و`marks` علاماتُ التوصيل (invoice_delivery_marks) — **لازمةٌ كذلك**: الغائبُ ليس «بلا توصيل»، ومستدعٍ نسيها
+ * يرسم وصلَ السائق «تسديدَ دفعة». ساقُ التحصيل لا تُرسم، ويبقى مبلغُها بـ«المتبقّي بعده» لما قبلها (مالٌ وصل).
  */
-export function settlementsOf(inv: Invoice, forgiveness: readonly InvoiceForgiveness[]): SettlementEntry[] {
+export function settlementsOf(inv: Invoice, forgiveness: readonly InvoiceForgiveness[], marks: readonly DeliveryMark[]): SettlementEntry[] {
   const legs = Array.isArray(inv.payment_details) ? inv.payment_details : [];
   if (!legs.length) return [];
   const created = ms(inv.created_at);
@@ -86,14 +131,13 @@ export function settlementsOf(inv: Invoice, forgiveness: readonly InvoiceForgive
   for (let i = legs.length - 1; i >= 0; i--) { tail[i] = after; after += Number(legs[i]?.amount) || 0; }
   const due = dueOf(inv);
   const rows = forgiveness.filter((r) => r.invoice_id === inv.id);
+  const mark = marks.find((m) => m.invoice_id === inv.id);
   legs.forEach((l, i) => {
-    if (!l || !l.at || l.reversal_of) return;
-    const amount = Number(l.amount) || 0;
-    if (amount <= EPS) return;
-    const t = ms(l.at);
-    if (!Number.isFinite(t) || t <= created) return;
+    const t = candidateMs(l, created);
+    if (t == null || !l?.at) return;
+    if (isDeliveryCollection(t, mark)) return;
     out.push({
-      kind: "settlement", key: `${inv.id}:pay:${i}`, inv, at: l.at, amount: round2(amount),
+      kind: "settlement", key: `${inv.id}:pay:${i}`, inv, at: l.at, amount: round2(Number(l.amount) || 0),
       method: (l.method ?? "cash") as PaymentMethod,
       remainingAfter: Math.max(0, round2(due + tail[i] + (rows.length ? forgivenSince(rows, t) : 0))),
     });
@@ -131,9 +175,10 @@ const RANK: Record<FeedEntry["kind"], number> = { invoice: 0, settlement: 1, for
  * يقع بمدىً لم تُجلب فواتيرُه بعد، فلا يُعرض حتى لا يبدو المدى كاملاً وهو ناقص.
  * `forgiveness` سطورُ دفتر الخصم لهذه الفواتير (listInvoiceForgiveness): خصمٌ حيّ سطرٌ بوقته، وكلُّها
  * تدخل «المتبقّي بعده» لسطور التسديد. سطرٌ لفاتورةٍ ليست بالمصادر لا يُعرض (لا شيءَ يُفتح منه).
+ * `marks` علاماتُ التوصيل لهذه الفواتير (listDeliveryMarks) — ساقُ تحصيل التوصيل ليست سطراً.
  */
 export function buildInvoiceFeed(invoices: Invoice[], sources: Invoice[], floor: string | null,
-  forgiveness: readonly InvoiceForgiveness[]): FeedEntry[] {
+  forgiveness: readonly InvoiceForgiveness[], marks: readonly DeliveryMark[]): FeedEntry[] {
   const lo = floor ? ms(floor) : -Infinity;
   const byId = new Map<string, Invoice>();
   for (const s of sources) byId.set(s.id, s);
@@ -146,10 +191,13 @@ export function buildInvoiceFeed(invoices: Invoice[], sources: Invoice[], floor:
     const list = rowsOf.get(r.invoice_id);
     if (list) list.push(r); else rowsOf.set(r.invoice_id, [r]);
   }
+  const markOf = new Map<string, DeliveryMark>();
+  for (const mk of marks) if (mk) markOf.set(mk.invoice_id, mk);
   const feed: FeedEntry[] = invoices.map((inv) => ({ kind: "invoice", key: inv.id, inv, at: inv.created_at }));
   for (const inv of byId.values()) {
     const rows = rowsOf.get(inv.id) ?? [];
-    for (const s of settlementsOf(inv, rows)) if (ms(s.at) >= lo) feed.push(s);
+    const mk = markOf.get(inv.id);
+    for (const s of settlementsOf(inv, rows, mk ? [mk] : [])) if (ms(s.at) >= lo) feed.push(s);
     for (const f of forgivenessOf(inv, rows)) if (ms(f.at) >= lo) feed.push(f);
   }
   // ثابتٌ: الأحدثُ أوّلاً، وبالتعادل الخصمُ فوق دفعة تسويته، ثم ترتيبُ المفتاح — نفسُ القائمة تُرسم بنفس الترتيب.

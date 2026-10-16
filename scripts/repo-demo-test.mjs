@@ -1974,6 +1974,31 @@ console.log("▸ 0241 — «خصم على الدين» (مرآةُ forgive_invoi
   check("  وبلا مدّة: range_required (لا قائمةٌ فارغة)", (await fgc(() => repo.reportForgiveness({ from: null, to: null }))) === "range_required");
   const since = (await repo.listSettlements({ since: "2000-01-01T00:00:00.000Z" })).map((i) => i.id);
   check("listSettlements تجيب فاتورةً خُصم عليها (١) ولا تجيب ما أُلغي خصمُه ولا سِيَقَ له (ب)", since.includes("iv01") && since.includes("iv02") && !since.includes("iv0b"), since.join());
+  {
+    // 0241: تحصيلُ التوصيل ليس «تسديد دفعة» — مرآةُ invoice_settlements وinvoice_delivery_marks بالقاعدة نفسها.
+    const C = "2026-10-02T10:00:00.000Z";
+    const d = db();
+    const tpl = d.invoices.find((i) => i.id === "iv0c");
+    const mkInv = (id, legs) => ({ ...tpl, id, forgiven: 0, created_at: "2026-10-02T09:00:00.000Z", payment_details: legs });
+    d.invoices.push(
+      mkInv("ivd1", [{ method: "cash", amount: 100, at: "2026-10-02T10:00:04.000Z" }]),
+      mkInv("ivd2", [{ method: "cash", amount: 60, at: "2026-10-02T10:00:03.000Z" }, { method: "card", amount: 40, at: "2026-10-02T12:00:00.000Z" }]),
+      mkInv("ivd3", [{ method: "cash", amount: 100, at: "2026-10-03T10:00:00.000Z" }]));
+    d.deliveryOrders.push(
+      { id: "dd1", invoice_id: "ivd1", status: "delivered", cod_amount: 100, delivered_at: C, collected_at: C },
+      { id: "dd2", invoice_id: "ivd2", status: "delivered", cod_amount: 100, delivered_at: C, collected_at: C },
+      { id: "dd3", invoice_id: "ivd3", status: "returned", cod_amount: 100, delivered_at: null, collected_at: null });
+    mem.set(DB_KEY, JSON.stringify(d));
+    const got = (await repo.listSettlements({ since: "2000-01-01T00:00:00.000Z" })).map((i) => i.id).filter((id) => id.startsWith("ivd")).sort();
+    check("listSettlements: وصلُ السائق وحده لا (د١)، ودفعةُ الزبون بعده نعم (د٢)، والمُرجَعُ لا يُخفي (د٣)", got.join() === "ivd2,ivd3", got.join());
+    const mk = (await repo.listDeliveryMarks(["ivd1", "ivd2", "ivd3"])).map((m) => `${m.invoice_id}:${m.collected_at === C}`).sort();
+    check("  listDeliveryMarks: الطلبُ غيرُ المُرجَع ومتى حُصِّل، وقراءةٌ بالاشتراك المنتهي",
+      mk.join() === "ivd1:true,ivd2:true" && (await repo.listDeliveryMarks([])).length === 0 && mod.isReadAllowed("listDeliveryMarks"), mk.join());
+    const d2 = db();
+    d2.invoices = d2.invoices.filter((i) => !i.id.startsWith("ivd"));
+    d2.deliveryOrders = d2.deliveryOrders.filter((o) => !o.id.startsWith("dd"));
+    mem.set(DB_KEY, JSON.stringify(d2));
+  }
   check("القراءتان بالاشتراك المنتهي، والكتابتان لا", mod.isReadAllowed("listInvoiceForgiveness") && mod.isReadAllowed("reportForgiveness")
     && !mod.isReadAllowed("forgiveInvoiceDebt") && !mod.isReadAllowed("voidInvoiceForgiveness") && mod.isReadAllowed("forgiveProfitPct"));
   {

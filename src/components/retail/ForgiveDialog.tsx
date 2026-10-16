@@ -21,7 +21,7 @@ import {
   forgiveAccount, approverOf, FORGIVE_TOL, ABOVE_CAP_NOTE_MIN, FORGIVE_NOTE_MAX, VOID_REASON_MAX, type ForgiveActor,
 } from "@/lib/debtForgive";
 import { REASONS, reasonKey } from "@/lib/forgiveText";
-import { settlementsOf } from "@/lib/settlementFeed";
+import { deliveryMarksOf, settlementsOf } from "@/lib/settlementFeed";
 import { staffRoster } from "@/lib/staffNames";
 import { expectedServerClinic } from "@/lib/workspaceClinic";
 
@@ -266,7 +266,9 @@ export function ForgiveDialog({ invoice, items, itemsOk, onClose, onDone }: {
     if (!data) return null;
     const live = data.invoices.filter((i) => (i.status ?? "paid") !== "refunded");
     let last: { at: string; amount: number } | null = null;
-    for (const i of live) for (const s of settlementsOf(i, data.ledger)) if (!last || s.at > last.at) last = { at: s.at, amount: s.amount };
+    // «آخر دفعة» دفعةُ الزبون: وصلُ السائق وتحصيلُ الشركة ليسا منه (علامةُ التوصيل من الطلبات نفسها، 0241).
+    const marks = deliveryMarksOf(data.orders);
+    for (const i of live) for (const s of settlementsOf(i, data.ledger, marks)) if (!last || s.at > last.at) last = { at: s.at, amount: s.amount };
     return { ...forgiveAccount(data.invoices, data.ledger, data.orders), last };
   }, [data]);
 

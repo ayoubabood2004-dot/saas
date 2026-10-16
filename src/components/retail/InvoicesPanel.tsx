@@ -5,7 +5,7 @@ import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
   ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2, BadgePercent,
 } from "lucide-react";
-import type { Invoice, InvoiceForgiveness, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
+import type { DeliveryMark, Invoice, InvoiceForgiveness, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
 import { getInvoicesPaged } from "@/lib/settings";
 import { RECENT_DAYS } from "@/lib/prefetchData";
@@ -24,7 +24,7 @@ import { LoadBoundary } from "@/components/LoadBoundary";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
-import { buildInvoiceFeed, forgivenessOf, settlementsOf, type FeedEntry } from "@/lib/settlementFeed";
+import { buildInvoiceFeed, forgivenessOf, mayHaveSettlements, settlementsOf, type FeedEntry } from "@/lib/settlementFeed";
 import { reasonKey } from "@/lib/forgiveText";
 import { forgiveActor } from "@/lib/debtForgive";
 
@@ -105,13 +105,30 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   // يُجلب **مع** الصفوف بنفس الطلب ويُكتب معها، فلا تُرسم فاتورةٌ بدفترٍ أقدم منها. وجودُ المفتاح = «جُلب»
   // (ولو فارغاً): فاتورةٌ بلا مفتاح لا يُرسم لها تسديدٌ ولا خصم — الدفترُ الغائب ليس «لا خصم».
   const [ledger, setLedger] = useState<Map<string, InvoiceForgiveness[]>>(() => new Map());
-  const mergeLedger = (invs: Invoice[], got: InvoiceForgiveness[]) => setLedger((prev) => {
-    const fresh = new Map<string, InvoiceForgiveness[]>(invs.map((inv) => [inv.id, []]));
-    for (const r of got) fresh.get(r.invoice_id)?.push(r);
-    const next = new Map(prev);
-    for (const [id, list] of fresh) next.set(id, list);
-    return next;
-  });
+  // ومعه علامةُ التوصيل (0241): ساقُ تحصيل السائق/الشركة ليست «تسديد دفعة». المفتاحُ = «جُلبت» (null = بلا طلبٍ
+  // حيّ) — والغائبُ ليس «بلا توصيل»: فاتورةٌ بلا مفتاح لا يُرسم لها تسديد. تُجلب للمرشّحة وحدها
+  // (mayHaveSettlements): غيرُها لا سطرَ تسديدٍ لها أيّاً كانت علامتُها، فتُختم null بلا طلب.
+  const [marks, setMarks] = useState<Map<string, DeliveryMark | null>>(() => new Map());
+  const mergeLedger = (invs: Invoice[], got: InvoiceForgiveness[], mk: DeliveryMark[]) => {
+    setLedger((prev) => {
+      const fresh = new Map<string, InvoiceForgiveness[]>(invs.map((inv) => [inv.id, []]));
+      for (const r of got) fresh.get(r.invoice_id)?.push(r);
+      const next = new Map(prev);
+      for (const [id, list] of fresh) next.set(id, list);
+      return next;
+    });
+    setMarks((prev) => {
+      const next = new Map(prev);
+      for (const inv of invs) next.set(inv.id, null);
+      for (const m of mk) if (next.has(m.invoice_id)) next.set(m.invoice_id, m);
+      return next;
+    });
+  };
+  /** دفترُ الخصم وعلاماتُ التوصيل لفواتيرَ بنفس الدفعة — **يرميان**، والفشلُ «أعد المحاولة». */
+  const fetchSide = (invs: Invoice[]) => Promise.all([
+    repo.listInvoiceForgiveness(invs.map((r) => r.id)),
+    repo.listDeliveryMarks(invs.filter(mayHaveSettlements).map((r) => r.id)),
+  ]);
 
   useEffect(() => {
     if (!paged) return;
@@ -131,11 +148,11 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
           repo.searchInvoices({ ...search, limit, since: from }),
           repo.countInvoicesMatching(search),
         ]);
-        // دفترُ الخصم (0241) مع صفوفه بنفس الدفعة: «المتبقّي بعده» لا يُرسم من فاتورةٍ بلا دفترها.
-        const fl = await repo.listInvoiceForgiveness(page.map((r) => r.id));
+        // دفترُ الخصم وعلاماتُ التوصيل (0241) مع صفوفها بنفس الدفعة: لا سطرَ تسديدٍ من فاتورةٍ بلاهما.
+        const [fl, mk] = await fetchSide(page);
         if (my !== reqRef.current) return;
         setRows(page);
-        mergeLedger(page, fl);
+        mergeLedger(page, fl, mk);
         setTotal(n);
         setSince(from);
         setExhausted(page.length < limit);
@@ -179,12 +196,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         }
         nextExhausted = got.length < WINDOW_LIMIT;
       }
-      const fl = await repo.listInvoiceForgiveness(got.map((r) => r.id));
+      const [fl, mk] = await fetchSide(got);
       if (my !== reqRef.current) return;
       // المؤشّرُ يضمن ألّا يتكرّر صفٌّ، والفلترُ بالمعرّف احتياطٌ إن دخلت فاتورةٌ بنفس اللحظة.
       const seen = new Set(cur.map((r) => r.id));
       setRows([...cur, ...got.filter((r) => !seen.has(r.id))]);
-      mergeLedger(got, fl);
+      mergeLedger(got, fl, mk);
       setSince(nextSince);
       setExhausted(nextExhausted);
     } catch {
@@ -219,9 +236,9 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     const timer = setTimeout(async () => {
       try {
         const got = await repo.listSettlements({ q: q.trim() || undefined, status, since: settleSince });
-        const fl = await repo.listInvoiceForgiveness(got.map((r) => r.id));
+        const [fl, mk] = await fetchSide(got);
         if (my !== settleReqRef.current) return;
-        setSettled(got); mergeLedger(got, fl); setSettleFailed(false);
+        setSettled(got); mergeLedger(got, fl, mk); setSettleFailed(false);
       } catch {
         if (my !== settleReqRef.current) return;
         // تسديدٌ ناقص يُصدَّق — الفشلُ يُقال بصوت كفشل الصفوف.
@@ -233,7 +250,8 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
 
   // الوضعُ القديم (كلُّ الفواتير بالمتصفّح): الدفترُ كلُّه منذ أقدم فاتورة بطلبٍ واحد بمدّة — لا آلافُ المعرّفات.
   // والنتيجةُ مختومةٌ بلقطة الفواتير التي جُلبت لها؛ لقطةٌ أحدثُ منها تنتظر دفترَها.
-  const [legacyLedger, setLegacyLedger] = useState<{ of: Invoice[]; rows: InvoiceForgiveness[] } | null>(null);
+  // وعلاماتُ التوصيل (0241) بنفس الدفعة، للفواتير المرشّحة لسطر تسديدٍ وحدها (mayHaveSettlements).
+  const [legacyLedger, setLegacyLedger] = useState<{ of: Invoice[]; rows: InvoiceForgiveness[]; marks: DeliveryMark[] } | null>(null);
   const [ledgerFailed, setLedgerFailed] = useState(false);
   useEffect(() => {
     if (paged) return;
@@ -242,10 +260,13 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
       try {
         let lo = Infinity;
         for (const inv of invoices) { const t0 = new Date(inv.created_at).getTime(); if (t0 < lo) lo = t0; }
-        const got = Number.isFinite(lo)
-          ? await repo.reportForgiveness({ from: new Date(lo).toISOString(), to: new Date(Date.now() + 86_400_000).toISOString() })
-          : [];
-        if (alive) { setLegacyLedger({ of: invoices, rows: got }); setLedgerFailed(false); }
+        const [got, mk] = await Promise.all([
+          Number.isFinite(lo)
+            ? repo.reportForgiveness({ from: new Date(lo).toISOString(), to: new Date(Date.now() + 86_400_000).toISOString() })
+            : Promise.resolve([]),
+          repo.listDeliveryMarks(invoices.filter(mayHaveSettlements).map((i) => i.id)),
+        ]);
+        if (alive) { setLegacyLedger({ of: invoices, rows: got, marks: mk }); setLedgerFailed(false); }
       } catch {
         if (alive) { setLegacyLedger(null); setLedgerFailed(true); }
       }
@@ -260,12 +281,20 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   /** دفترُ فاتورةٍ مرسومة، أو null إن لم يُجلب بعد (فلا يُحكم عليها بتسديدٍ ولا خصم). */
   const ledgerOf = (id: string): InvoiceForgiveness[] | null =>
     paged ? (ledger.get(id) ?? null) : legacyLedger && legacyLedger.of === invoices ? (legacyById.get(id) ?? []) : null;
-  /** علامةُ الأصلية: خُصم من دينها (خصمٌ حيّ)، أو سُدِّد (تسديدٌ بلا خصم)، أو لا شيء — ولا حكمَ بلا دفترها. */
+  /** علامةُ توصيل فاتورةٍ مرسومة: [] بلا طلبٍ حيّ، [علامة]، أو null إن لم تُجلب بعد (فلا يُحكم عليها بتسديد). */
+  const marksOf = (id: string): DeliveryMark[] | null => {
+    if (paged) { if (!marks.has(id)) return null; const m = marks.get(id); return m ? [m] : []; }
+    if (!legacyLedger || legacyLedger.of !== invoices) return null;
+    return legacyLedger.marks.filter((m) => m.invoice_id === id);
+  };
+  /** علامةُ الأصلية: خُصم من دينها (خصمٌ حيّ)، أو سُدِّد (تسديدٌ بلا خصم)، أو لا شيء — ولا حكمَ بلا دفترها وعلامتها. */
   const wasDebtMark = (inv: Invoice): "forgiven" | "settled" | null => {
     const lr = ledgerOf(inv.id);
     if (!lr) return null;
     if (forgivenessOf(inv, lr).length > 0) return "forgiven";
-    return settlementsOf(inv, lr).length > 0 ? "settled" : null;
+    const mk = marksOf(inv.id);
+    if (!mk) return null;
+    return settlementsOf(inv, lr, mk).length > 0 ? "settled" : null;
   };
 
   const shown = useMemo(() => {
@@ -291,18 +320,25 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     const invoicesOnly = (list: Invoice[]): FeedEntry[] => list.map((inv) => ({ kind: "invoice", key: inv.id, inv, at: inv.created_at }));
     if (!paged) {
       if (!legacyLedger || legacyLedger.of !== invoices) return invoicesOnly(shown);
-      return buildInvoiceFeed(shown, shown, null, legacyLedger.rows);
+      return buildInvoiceFeed(shown, shown, null, legacyLedger.rows, legacyLedger.marks);
     }
-    if (!rows.every((r) => ledger.has(r.id))) return invoicesOnly(rows);
+    // وقبل علامات التوصيل كذلك: وصلُ السائق لا يُرسم «تسديداً» لأن علامتَه لم تصل بعد.
+    const ready = (id: string) => ledger.has(id) && marks.has(id);
+    if (!rows.every((r) => ready(r.id))) return invoicesOnly(rows);
     const last = rows[rows.length - 1];
     const partial = windowed ? !exhausted : hasMore;
     const floor = partial && last ? last.created_at : windowed ? since : null;
-    const src = settled.filter((s) => ledger.has(s.id));
+    const src = settled.filter((s) => ready(s.id));
     const ids = new Set([...rows, ...src].map((i) => i.id));
     const fl: InvoiceForgiveness[] = [];
-    for (const id of ids) fl.push(...(ledger.get(id) ?? []));
-    return buildInvoiceFeed(rows, src, floor, fl);
-  }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since, ledger, legacyLedger, invoices]);
+    const mk: DeliveryMark[] = [];
+    for (const id of ids) {
+      fl.push(...(ledger.get(id) ?? []));
+      const m = marks.get(id);
+      if (m) mk.push(m);
+    }
+    return buildInvoiceFeed(rows, src, floor, fl, mk);
+  }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since, ledger, marks, legacyLedger, invoices]);
   const anyFailed = failed || settleFailed || ledgerFailed;
 
   const FILTERS: { id: StatusFilter; label: string }[] = [

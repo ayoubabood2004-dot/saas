@@ -5665,6 +5665,39 @@ chk "  وبلا مدّة: خطأٌ لا قائمةٌ فارغة (range_required)
     "$(fgc "$C1" "select * from report_forgiveness(null, now())")" "range_required"
 chk "invoice_settlements: الخصمُ الحيّ منذ ساعة يُرى (الفاتورة ١)، والملغى وحده لا (الفاتورة ب)" \
     "select _fgv('$RCP', \$q\$select (bool_or(s.id = '${IV}01') and not bool_or(s.id = '${IV}0b'))::text from invoice_settlements(null, 'all', now() - interval '1 hour') s\$q\$)" "true"
+# «تسديد دفعة» لدين الزبون وحده (قرارُ المالك): ساقُ تحصيل التوصيل — طلبٌ غيرُ مُرجَع و(collected_at فارغ أو
+# at ≤ collected_at + ١٠ دقائق) — لا تجيب فاتورتَها. ٢٠: السائقُ ختم collected_at بساعة جهازه والساقُ بعده بـ٤ ثوانٍ؛
+# ٢١: التحصيلُ ثم دفعةُ الزبون بالعيادة بعد ساعتين؛ ٢٢: طلبٌ مُرجَع؛ ٢٣: شركةٌ لم يُختم تحصيلُها (سدادٌ جزئيّ).
+$P -c "insert into invoices (id, clinic_id, customer_name, subtotal, total, cost_total, profit, amount_paid, status, created_at, payment_details) values
+         ('${IV}20', '$C1', 'وصل سائق',  100, 100, 50, 50, 100, 'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-02T10:00:04.000Z\"}]'),
+         ('${IV}21', '$C1', 'باقي بالعيادة', 100, 100, 50, 50, 100, 'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":60,\"at\":\"2026-10-02T10:00:03.000Z\"},{\"method\":\"card\",\"amount\":40,\"at\":\"2026-10-02T12:00:00.000Z\"}]'),
+         ('${IV}22', '$C1', 'رجع الطلب', 100, 100, 50, 50, 100, 'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-03T10:00:00.000Z\"}]'),
+         ('${IV}23', '$C1', 'شركة جزئي', 100, 100, 50, 50, 60,  'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":60,\"at\":\"2026-10-04T10:00:00.000Z\"}]')
+       on conflict (id) do nothing;
+       insert into delivery_orders (id, clinic_id, invoice_id, status, cod_amount, delivered_at, collected_at, returned_at) values
+         ('${II}e0', '$C1', '${IV}20', 'delivered', 100, '2026-10-02T09:55:00Z', '2026-10-02T10:00:00Z', null),
+         ('${II}e1', '$C1', '${IV}21', 'delivered', 100, '2026-10-02T09:55:00Z', '2026-10-02T10:00:00Z', null),
+         ('${II}e2', '$C1', '${IV}22', 'returned',  100, null,                   null,                   '2026-10-02T11:00:00Z'),
+         ('${II}e3', '$C1', '${IV}23', 'delivered', 100, '2026-10-03T09:00:00Z', null,                   null)
+       on conflict (id) do nothing;" >/dev/null
+# «on conflict do nothing» يبلع تصادمَ معرّف بصمت (كان طلبُ ٢١ بمعرّف d1، وهو طلبُ الفاتورة ١١ قائماً، فبقيت ٢١ بلا طلبٍ ومرّ حكمُها صدفةً) — فالقالبُ يُعدّ قبل أيّ حكم.
+chk "  (القالب: لكلّ فاتورةٍ من ٢٠–٢٣ طلبُها بحالته وختمه)" \
+    "select string_agg(right(invoice_id::text, 2)||':'||status||':'||(collected_at is null)::text, ',' order by invoice_id) from delivery_orders where invoice_id in ('${IV}20','${IV}21','${IV}22','${IV}23')" \
+    "20:delivered:false,21:delivered:false,22:returned:true,23:delivered:true"
+chk "invoice_settlements: تحصيلُ التوصيل وحده لا يجيب فاتورتَه (٢٠، ٢٣)، ودفعةُ الزبون بعده تجيبها (٢١)، والمُرجَعُ لا يُخفي (٢٢)" \
+    "select _fgv('$RCP', \$q\$select coalesce(string_agg(right(s.id::text, 2), ',' order by s.id), '-') from invoice_settlements(null, 'all', '2026-09-01T00:00:00Z') s where s.id in ('${IV}20','${IV}21','${IV}22','${IV}23')\$q\$)" "21,22"
+chk "  ومنذ ما بعد التحصيل: ٢١ بدفعة الزبون وحدها" \
+    "select _fgv('$RCP', \$q\$select coalesce(string_agg(right(s.id::text, 2), ',' order by s.id), '-') from invoice_settlements(null, 'all', '2026-10-02T11:00:00Z') s where s.id in ('${IV}20','${IV}21')\$q\$)" "21"
+chk "invoice_delivery_marks: طلبٌ غيرُ مُرجَع ومتى حُصِّل (٢٢ المُرجَع بلا علامة)" \
+    "select _fgv('$RCP', \$q\$select string_agg(right(invoice_id::text, 2)||':'||(collected_at is null)::text, ',' order by invoice_id) from invoice_delivery_marks(array['${IV}20','${IV}21','${IV}22','${IV}23','${IV}01']::uuid[])\$q\$)" "20:false,21:false,23:true"
+chk "  وعيادةٌ أخرى والمصوّر لا يريان شيئاً" \
+    "select _fgv('$C2', \$q\$select count(*)::text from invoice_delivery_marks(array['${IV}20','${IV}23']::uuid[])\$q\$)||'|'||_fgv('$PHO', \$q\$select count(*)::text from invoice_delivery_marks(array['${IV}20','${IV}23']::uuid[])\$q\$)" "0|0"
+chk "  وبلا معرّفات: لا شيء (لا كلُّ العيادة)" \
+    "select _fgv('$RCP', \$q\$select count(*)::text from invoice_delivery_marks(null)\$q\$)" "0"
+chk "  invoker بمسارٍ مثبَّت، وممنوعةٌ على anon، ومسموحةٌ للمسجَّل" \
+    "select (not prosecdef)::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||':'||has_function_privilege('anon', oid, 'execute')::text||':'||has_function_privilege('authenticated', oid, 'execute')::text from pg_proc where proname='invoice_delivery_marks'" "true:true:false:true"
+chk "  وinvoice_settlements تقرأ القاعدةَ نفسَها (المُرجَع + المهلة)" \
+    "select (prosrc like '%d.status <> ''returned''%' and prosrc like '%d.collected_at is null or safe_ts(l->>''at'') <= d.collected_at + interval ''10 minutes''%')::text from pg_proc where proname='invoice_settlements'" "true"
 chk "عزل: العيادةُ الأخرى لا ترى الدفتر، ولا المصوّر" \
     "select _rls_try('$C2', 'select 1 from invoice_forgiveness')||'|'||_rls_try('$PHO', 'select 1 from invoice_forgiveness')" "rows:0|rows:0"
 chk "التدقيق: الخصمُ debt_forgive والإلغاءُ debt_forgive_void" \
