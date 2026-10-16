@@ -10,6 +10,7 @@
 // لا نصَّ عربياً هنا: الرموزُ ومفاتيحُ الترجمة وحدها — والنصُّ بالواجهة عبر t()، وتلميحاتُ
 // التجريبيّ نسخةُ تلميحات الدالّة بـrepoDemo.
 import type { DeliveryOrder, ForgiveReason, Invoice, InvoiceForgiveness, InvoiceItem, PaymentSplit } from "@/types";
+import { dueOf, paidOf, grossOf } from "@/lib/debt";
 
 /** تسامحُ الدالّة: فرقٌ دون فلسٍ ونصف ليس فرقاً. */
 export const FORGIVE_TOL = 0.005;
@@ -292,6 +293,80 @@ export const isOpenDeliveryFor = (o: Pick<DeliveryOrder, "status" | "collected_a
   o.status === "preparing" || o.status === "out" || (o.status === "delivered" && !o.collected_at);
 export const hasOpenDelivery = (orders: readonly Pick<DeliveryOrder, "invoice_id" | "status" | "collected_at">[] | null | undefined, invoiceId: string): boolean =>
   (orders ?? []).some((o) => o.invoice_id === invoiceId && isOpenDeliveryFor(o));
+
+/* ── حسابُ الزبون بالنافذة ─────────────────────────────────────────────────── */
+export interface ForgiveAccount {
+  /** الفواتيرُ الحيّة (بلا المرجعة). */
+  count: number;
+  bought: number;
+  paid: number;
+  /** ما على الزبون نفسه — بلا ما بذمّة التوصيل (قاعدةُ DebtsPanel حرفاً). */
+  due: number;
+  /** ما بذمّة السائق أو الشركة على فواتيره (طلبٌ مفتوح) — ليس ديناً على الزبون. */
+  courierDue: number;
+  /** الخصوماتُ السابقة: عددُها ومجموعُها كما مُنحت (الحيّةُ، لا الملغاة)، وما رجع منها بمرتجعٍ أو تعديل.
+   *  العددُ والمبلغُ من نفس السطور — «١ مرّة · ٠» عن خصمٍ استهلكه مرتجع كان يقول عددَ شيءٍ ومبلغَ آخر. */
+  priorCount: number;
+  priorGranted: number;
+  priorBack: number;
+}
+export function forgiveAccount(
+  invoices: readonly Invoice[],
+  ledger: readonly Pick<InvoiceForgiveness, "invoice_id" | "kind" | "amount" | "voided_at">[],
+  orders: readonly Pick<DeliveryOrder, "invoice_id" | "status" | "collected_at">[] | null | undefined,
+): ForgiveAccount {
+  const live = invoices.filter((i) => (i.status ?? "paid") !== "refunded");
+  const ids = new Set(live.map((i) => i.id));
+  let bought = 0, paid = 0, due = 0, courierDue = 0;
+  for (const i of live) {
+    bought += grossOf(i);
+    paid += paidOf(i);
+    if (hasOpenDelivery(orders, i.id)) courierDue += dueOf(i); else due += dueOf(i);
+  }
+  let priorCount = 0, priorGranted = 0, priorBack = 0;
+  for (const r of ledger) {
+    if (!ids.has(r.invoice_id)) continue;
+    if (r.kind === "forgive" && !r.voided_at) { priorCount++; priorGranted += num(r.amount); }
+    else if (r.kind === "consumed") priorBack += Math.abs(num(r.amount));
+  }
+  return {
+    count: live.length, bought: pgRound2(bought), paid: pgRound2(paid), due: pgRound2(due), courierDue: pgRound2(courierDue),
+    priorCount, priorGranted: pgRound2(priorGranted), priorBack: pgRound2(priorBack),
+  };
+}
+
+/* ── «خصومات الديون» بالتقارير ─────────────────────────────────────────────── */
+/** يُحسب بالمجموع؟ لا الملغى، ولا ما على فاتورةٍ مرجعة (الفاتورةُ كلُّها خرجت من المبيعات). */
+export const forgiveRowCounts = (r: Pick<InvoiceForgiveness, "voided_at"> & { invoice_status?: string | null }): boolean =>
+  !r.voided_at && (r.invoice_status ?? "paid") !== "refunded";
+export interface ForgiveTotals {
+  /** ما مُنح بالفترة (سطورُ forgive الحيّة) وعددُه — وهو ما تجمعه مجموعاتُ «من وافق» و«السبب». */
+  granted: number;
+  count: number;
+  /** ما رجع بالفترة بمرتجعٍ أو تعديل (سطورُ consumed، موجباً). */
+  back: number;
+  /** granted − back: قد يكون سالباً بفترةٍ فيها مرتجعٌ وحده — فلا يُطبع «− -10» أبداً. */
+  net: number;
+}
+export function forgiveTotals(rows: readonly (Pick<InvoiceForgiveness, "kind" | "amount" | "voided_at"> & { invoice_status?: string | null })[]): ForgiveTotals {
+  let granted = 0, count = 0, back = 0;
+  for (const r of rows) {
+    if (!forgiveRowCounts(r)) continue;
+    if (r.kind === "forgive") { granted += num(r.amount); count++; } else back += Math.abs(num(r.amount));
+  }
+  granted = pgRound2(granted); back = pgRound2(back);
+  return { granted, count, back, net: pgRound2(granted - back) };
+}
+
+/** مَن وافق: اسمُ الكادر، وإلا صاحبُ العيادة — حسابُه معرّفُ العيادة ولا صفَّ كادرٍ له (0083 تستثنيه:
+ *  `clinic_id <> user_id`)، وكلُّ خصمٍ فوق السقف بيده هو — وإلا مجهول. */
+export type Approver = { kind: "name"; name: string } | { kind: "owner" } | { kind: "unknown" };
+export function approverOf(id: string | null | undefined, name: string | null | undefined, clinicId: string | null | undefined): Approver {
+  const n = (name ?? "").trim();
+  if (n) return { kind: "name", name: n };
+  if (id && clinicId && id === clinicId) return { kind: "owner" };
+  return { kind: "unknown" };
+}
 
 /** سطورُ منتجٍ كلفتُها صفر: ربحُ الفاتورة المعروض أعلى من الحقيقيّ، فالنافذةُ تحذّر.
  *  (سطرٌ بلا منتج — خدمة، أجرةُ توصيل — كلفتُه صفرٌ بطبيعته ولا يُعدّ.) */

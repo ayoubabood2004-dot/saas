@@ -8,6 +8,9 @@
  *   ١) لا يقرأ مفاتيحَه إلا ملفُّ مالكه **ورفاقُه المعلَنون** (`with`)؛
  *   ٢) المالكُ لا يستورده أحدٌ استيراداً ثابتاً (وإلا صار جزءاً من صفحةٍ أخرى)؛
  *   ٣) App.tsx يحمّل المالكَ بـpage(…, [..."ns"...]) — وإلا فالصفحةُ نفسُها بلا نصوصها؛
+ *      والمالكُ قد يكون **مكوّناً** لا صفحة (0241: نوافذُ «خصم على الدين» تُفتح من الفاتورة
+ *      بأربع شاشات، والنصفُ الباردُ ممتلئ): يُحمَّل بـpage(…, [ns]) من ملفٍّ يستعمله، والشرطُ
+ *      نفسُه — نداءُ page() بالنطاق موجود، ولا استيرادَ ثابتاً للمالك (ولا بمسارٍ نسبيّ)؛
  *   ٤) الرفيقُ (متجر v1: ألواحُ «المتجر الإلكتروني» بملفّاتها) موجودٌ ويقرأ النطاق، ولا
  *      يستورده — ثابتاً أو كسولاً — إلا المالكُ أو رفيقٌ آخر: رفيقٌ تستورده صفحةٌ غريبة
  *      يُرسم هناك بلا نطاقه، وهو نفسُ العطل بخطوةٍ أبعد.
@@ -38,6 +41,19 @@ function importsOf(fileRel, text) {
   return out;
 }
 
+/** مُحدِّداتُ الاستيراد **الثابت** وحدَه (`from "…"`) محلولةً — بالاسم المستعار والمسار النسبيّ معاً. */
+function staticImportsOf(fileRel, text) {
+  const out = new Set();
+  for (const m of text.matchAll(/\bfrom\s*["']([^"']+)["']/g)) {
+    const spec = m[1];
+    let r = null;
+    if (spec.startsWith("@/")) r = "src/" + spec.slice(2);
+    else if (spec.startsWith("./") || spec.startsWith("../")) r = path.posix.normalize(path.posix.join(path.posix.dirname(fileRel), spec));
+    if (r) out.add(noExt(r));
+  }
+  return out;
+}
+
 /**
  * الفحصُ خالصاً: `files` = [{rel, text}] (نصُّ src كاملاً)، و`app` = نصُّ App.tsx. يرجع الأخطاء.
  */
@@ -54,10 +70,15 @@ export function checkOwned(owned, files, app) {
     if (strangers.length) errs.push(`النطاقُ ${ns} مملوكٌ لـ${owner} ويقرؤه غيرُه: ${strangers.join("، ")} — انقل مفاتيحَه لنطاقٍ بارد، أو أعلن الملفَّ رفيقاً (with) إن كان لا يستورده إلا المالك`);
     if (!readers.includes(owner)) errs.push(`النطاقُ ${ns}: مالكُه ${owner} لا يقرؤه — مالكٌ خاطئ بـhot-paths.json`);
     const mod = owner.replace(/^src\//, "@/").replace(/\.tsx?$/, "");
-    const ownerImporters = files.filter((f) => f.rel !== "src/App.tsx" && new RegExp(`from ["']${mod}["']`).test(f.text)).map((f) => f.rel);
+    // بالمسار المحلول لا بالنصّ: `from "./ForgiveDialog"` استيرادٌ ثابتٌ كـ`from "@/components/retail/ForgiveDialog"`.
+    const ownerKey = noExt(owner);
+    const ownerImporters = files.filter((f) => f.rel !== "src/App.tsx" && f.rel !== owner && staticImportsOf(f.rel, strip(f.text)).has(ownerKey)).map((f) => f.rel);
     if (ownerImporters.length) errs.push(`${owner} مستوردٌ استيراداً ثابتاً من ${ownerImporters.join("، ")} — نطاقُه ${ns} لن يصله`);
     const call = new RegExp(`page\\(\\(\\) => import\\(["']${mod}["']\\)[\\s\\S]{0,120}?,\\s*\\[[^\\]]*["']${ns}["'][^\\]]*\\]\\)`);
-    if (!call.test(appS)) errs.push(`App.tsx لا يحمّل ${owner} بـpage(…, ["${ns}"]) — الصفحةُ ستُرسم بلا نصوص نطاقها`);
+    // الصفحةُ تُحمَّل من App.tsx؛ والمكوّنُ المالك (0241) من الملفّ الذي يستعمله — بنفس النداء.
+    if (!call.test(appS) && !files.some((f) => f.rel !== owner && call.test(strip(f.text)))) {
+      errs.push(`لا ملفَّ يحمّل ${owner} بـpage(() => import("${mod}")…, ["${ns}"]) — الصفحةُ (أو النافذة) ستُرسم بلا نصوص نطاقها`);
+    }
     for (const mate of mates) {
       if (!byRel.has(mate)) { errs.push(`النطاقُ ${ns}: الرفيقُ ${mate} غيرُ موجود — احذفه من with`); continue; }
       if (!readers.includes(mate)) errs.push(`النطاقُ ${ns}: الرفيقُ ${mate} لا يقرؤه — احذفه من with`);
@@ -82,8 +103,22 @@ function selfCases() {
     ["غريبٌ يقرأ zz.* ⇒ يفشل", [ownerF, mateF, { rel: "src/pages/Other.tsx", text: `t("zz.title")` }], 1],
     ["رفيقٌ لا يقرأ النطاق ⇒ يفشل", [ownerF, { rel: "src/components/zz/Panel.tsx", text: `export const Panel = 1;` }], 1],
   ];
+  // المالكُ مكوّنٌ (0241): يُحمَّل بـpage() من مستعمله لا من App.tsx.
+  const ownedC = { cc: { owner: "src/components/cc/Sheet.tsx", with: [] } };
+  const sheetF = { rel: "src/components/cc/Sheet.tsx", text: `export function Sheet() { return t("cc.title"); }` };
+  const hostLazy = { rel: "src/components/cc/Host.tsx", text: `const S = page(() => import("@/components/cc/Sheet").then((m) => ({ default: m.Sheet })), ["cc"]);` };
+  const casesC = [
+    ["مكوّنٌ مالك يحمّله مستعملُه بـpage(…, [ns]) ⇒ يمرّ", [sheetF, hostLazy], 0],
+    ["ومستعملٌ يستورده ثابتاً بمسارٍ نسبيّ ⇒ يفشل", [sheetF, hostLazy, { rel: "src/components/cc/Other.tsx", text: `import { Sheet } from "./Sheet";` }], 1],
+    ["ومستعملٌ يحمّله بـlazy() بلا نطاقه ⇒ يفشل", [sheetF, { rel: "src/components/cc/Host.tsx", text: `const S = lazy(() => import("@/components/cc/Sheet"));` }], 1],
+  ];
+  for (const [name, files, want] of casesC) {
+    const got = checkOwned(ownedC, files, app).length;
+    if ((want === 0) !== (got === 0)) cases.push([`${name} — خرج ${got} خطأً`, null, -1]);
+  }
   const bad = [];
   for (const [name, files, want] of cases) {
+    if (want === -1) { bad.push(name); continue; }
     const got = checkOwned(owned, files, app).length;
     if ((want === 0) !== (got === 0)) bad.push(`${name} — خرج ${got} خطأً`);
   }
@@ -110,5 +145,5 @@ if (isMain) {
     process.exit(1);
   }
   const mates = Object.values(owned).reduce((n, o) => n + o.with.length, 0);
-  console.log(`✓ i18n-owned-guard: فُحص ${Object.keys(owned).length} نطاقاً مملوكاً (${Object.entries(owned).map(([n, o]) => `${n} ← ${path.basename(o.owner)}${o.with.length ? ` +${o.with.length}` : ""}`).join("، ")}) و${mates} رفيقاً على ${files.length} ملفّاً، وخمسُ حالاتٍ مصنوعة على الحارس نفسه`);
+  console.log(`✓ i18n-owned-guard: فُحص ${Object.keys(owned).length} نطاقاً مملوكاً (${Object.entries(owned).map(([n, o]) => `${n} ← ${path.basename(o.owner)}${o.with.length ? ` +${o.with.length}` : ""}`).join("، ")}) و${mates} رفيقاً على ${files.length} ملفّاً، وثماني حالاتٍ مصنوعة على الحارس نفسه`);
 }

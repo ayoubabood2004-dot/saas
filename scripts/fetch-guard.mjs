@@ -50,6 +50,8 @@ const CRITICAL_SCREENS = [
   "src/components/inventory/BarcodeStudio.tsx",
   "src/components/retail/ReturnsPanel.tsx",
   "src/components/retail/InvoicesPanel.tsx",
+  // «خصم على الدين» (0241): حسابُ الزبون الناقص يقول «ما خصمنا له قبل» عن موجود — والنافذةُ تحجب الحفظ حتى يكتمل.
+  "src/components/retail/ForgiveDialog.tsx",
   "src/components/retail/usePrintInvoice.ts",
   // شاشةُ البيع وبحثُ زبونها (0232): «ماكو زبون» عن خطأٍ يجعل الكاشير يكتب زبوناً موجوداً
   // من جديد، و«لا توجد حيوانات» عن خطأٍ تُخبَّأ طولَ الجلسة.
@@ -93,12 +95,18 @@ const SWALLOW = /\.catch\s*\(\s*\(\s*\)\s*=>\s*(\[\s*\]|\{\s*\}|null|undefined)\
 /* ونفسُ الابتلاع بصيغة `try/catch`: `catch { setX([]) }` يكتب «ماكو» مكانَ «ما وصلنا»
  * (بحثُ الزبون ومنتقي الحيوانات بشاشة البيع كانا هكذا — 0232). */
 const CATCH_EMPTY = /catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\s*\[\s*\]\s*\)/;
+/* وبصيغة الوعد: `.catch(() => { if (alive) setItems([]); })` — سطورُ الفاتورة بتفاصيلها كانت هكذا، وصارت
+ * تُقرأ لثلاثة قراراتِ مال (تحذيرُ الكلفة الصفرية بالخصم، و«ترجع للرف»، والوصلُ المطبوع) — 0241. */
+const PROMISE_EMPTY = /\.catch\s*\(\s*\(\s*\w*\s*\)\s*=>\s*\{\s*(?:if\s*\([^)]*\)\s*)?set\w+\(\s*\[\s*\]\s*\)/;
 for (const f of CRITICAL_SCREENS) {
   if (!fs.existsSync(f)) { console.error(`   ✗ ${f} — مفقود من قائمة الحارس (حدِّث القائمة أو أعد الملف)`); bad++; continue; }
   const lines = fs.readFileSync(f, "utf8").split(/\r?\n/);
   lines.forEach((line, i) => {
     if (SWALLOW.test(line) && !WAIVER.test(line)) {
       say(f, i + 1, "ابتلاعٌ صامت `.catch(() => …)` — اعرض «تعذّر — أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");
+    }
+    if (PROMISE_EMPTY.test(line) && !WAIVER.test(line)) {
+      say(f, i + 1, "`.catch(() => { setX([]) })` يكتب قائمةً فارغةً عن خطأ — احفظ الفشلَ حالةً واعرض «أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");
     }
     if (CATCH_EMPTY.test(line) && !WAIVER.test(line)) {
       say(f, i + 1, "`catch { setX([]) }` يكتب قائمةً فارغةً عن خطأ — اعرض «تعذّر — أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");

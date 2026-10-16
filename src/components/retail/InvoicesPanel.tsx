@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -18,15 +18,26 @@ import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { cn, formatDate, money, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
-import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";
+import { dueOf, paidOf, isDebt, paymentStatusOf, round2, grossOf, forgivenOf } from "@/lib/debt";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { buildInvoiceFeed, forgivenessOf, settlementsOf, type FeedEntry } from "@/lib/settlementFeed";
 import { reasonKey } from "@/lib/forgiveText";
+import { forgiveActor } from "@/lib/debtForgive";
 
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
 const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "retail.payCard", transfer: "retail.payTransfer" };
+
+/* «خصم على الدين» ونوافذُ تأكيد الترجيع والحذف (0241): قطعةٌ كسولة بنطاقها المملوك fgv
+   (hot-paths.json) — النصفُ الباردُ ممتلئ، والنصوصُ تصل مع النافذة وحدَها. `lazy()` يخبّئ
+   الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadForgiveSection = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ForgiveSection })), ["fgv"]);
+const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ReturnSheet })), ["fgv"]);
+let ForgiveSectionLazy = loadForgiveSection();
+let ReturnSheetLazy = loadReturnSheet();
 
 type StatusFilter = "all" | "paid" | "refunded";
 
@@ -475,7 +486,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const { can } = usePermissions();
+  const { can, baseRole } = usePermissions();
   const ov = useOverride();
   /* حذفُ فاتورةٍ وتصحيحُ وصلها فعلان لا رجعةَ فيهما بيدِ من يقف على جهاز
      الاستقبال. وقفلُ الجهاز لا ينزّل الدور، فحسابُ المدير المقفول كان يحذف
@@ -484,11 +495,19 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const print = useInvoicePrinter();
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(false);
+  /* فشلُ جلب السطور ليس «فاتورة بلا سطور»: ثلاثةُ قراراتِ مالٍ تقرؤها (تحذيرُ «مواد بلا سعر شراء» بالخصم،
+     وما «ترجع للرف» بالترجيع، والوصلُ المطبوع) — فالفشلُ يُقال ويُعاد، وما يبنى عليها ينتظر. */
+  const [itemsFailed, setItemsFailed] = useState(false);
+  const [itemsTick, setItemsTick] = useState(0);
   const [busy, setBusy] = useState<"refund" | "delete" | null>(null);
   const [payBusy, setPayBusy] = useState(false);
   const [editLegs, setEditLegs] = useState<PaymentSplit[] | null>(null);
   const [legsBusy, setLegsBusy] = useState(false);
   const [fixOpen, setFixOpen] = useState(false);
+  // تأكيدُ الترجيع والحذف بالشاشة لا بنافذة المتصفّح (0241): ما يرجع للرفّ والدرج والدَّين مكتوبٌ قبل الضغطة.
+  const [sheet, setSheet] = useState<"refund" | "delete" | null>(null);
+  // «أعد المحاولة» على قطعةٍ كسولة فشلت: قطعةٌ جديدة، ورسمٌ جديد يلتقطها.
+  const [, setLazyTick] = useState(0);
   // اسم البائع (من كاش الكادر) — يظهر أعلى التفاصيل حتى يُعرف منو باعها.
   const [sellerName, setSellerName] = useState<string | null>(null);
   const staffId = invoice?.staff_id ?? null;
@@ -503,16 +522,19 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // needlessly reload the line items.
   const invoiceId = invoice?.id;
   useEffect(() => {
+    setSheet(null); // تأكيدٌ مفتوحٌ لفاتورةٍ لا يُعرض فوق غيرها
     if (!invoiceId) return;
     let alive = true;
     setLoading(true);
     setItems([]);
+    setItemsFailed(false);
     repo.listInvoiceItems(invoiceId)
       .then((r) => { if (alive) setItems(r); })
-      .catch(() => { if (alive) setItems([]); })
+      .catch(() => { if (alive) setItemsFailed(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [invoiceId]);
+  }, [invoiceId, itemsTick]);
+  const itemsOk = !loading && !itemsFailed;
 
   if (!invoice) return null;
   const refunded = (invoice.status ?? "paid") === "refunded";
@@ -531,15 +553,22 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // تقسيمُ الدفعة (المبالغ والأوقات) للمدير — والقاعدةُ ترفضه لغيره منذ 0241 (payment_legs_frozen)؛
   // المحرّرُ يعيد بناءَ السِّيَق كلِّها، فلا يُعرض لمن سيُرفض حفظُه.
   const canEditLegs = canDelete && !refunded;
+  // «خصم على الدين» (0241): حكمُ الحذف (قفلُ الجهاز) **و**دورُ الخادم — «حذف الفواتير» صلاحيةٌ تُمنح لطبيبٍ
+  // أو استقبال بالتخصيص، والدالّتان تريدان auth_role() = مدير (أو المفتاح حيّاً): زرٌّ يُرى ولا يُحفظ أبداً
+  // لا يُعرض. على دينٍ حيٍّ باسم زبون — الدينُ بلا صاحبٍ لا يُخصم.
+  const forgiveRoleOk = forgiveActor({ base: baseRole, pin: ov.active || (baseRole === "manager" && ov.deviceLocked) }).role === "manager";
+  const canForgive = canDelete && forgiveRoleOk && !refunded && isDebt(invoice) && !!customerOf;
+  const canVoidForgive = canDelete && forgiveRoleOk && !refunded;
+  const forgiven = forgivenOf(invoice);
 
   const refund = async () => {
     if (busy) return;
-    if (!window.confirm(t("retail.confirmRefund", "Refund this sale and return its items to stock?"))) return;
     setBusy("refund");
     try {
       const updated = await repo.refundInvoice(invoice.id);
       playSuccess();
       toast.success(t("retail.refundedOk", "Sale refunded — stock restored"));
+      setSheet(null);
       onChanged();
       setOpen(updated ?? { ...invoice, status: "refunded" });
     } catch (e) {
@@ -550,12 +579,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
 
   const remove = async () => {
     if (busy) return;
-    if (!window.confirm(t("retail.confirmDelete", "Permanently delete this invoice? This cannot be undone."))) return;
     setBusy("delete");
     try {
       await repo.deleteInvoice(invoice.id);
       playSuccess();
       toast.success(t("retail.deletedOk", "Invoice deleted"));
+      setSheet(null);
       onChanged();
       onClose();
     } catch (e) {
@@ -627,6 +656,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           </div>
           {refunded ? (
             <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>
+          ) : paymentStatusOf(invoice) === "paid" && forgivenOf(invoice) > 0.005 ? (
+            /* صفرُ متبقٍّ بخصمٍ ليس «مدفوعة بالكامل»: جزءٌ منها لم يُدفع، تنازلنا عنه (0241). */
+            <Badge tone="warn"><BadgePercent size={12} /> {t("forgive.badge", "Debt discounted")}</Badge>
           ) : paymentStatusOf(invoice) === "paid" ? (
             <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.statusPaid", "مدفوعة بالكامل")}</Badge>
           ) : paymentStatusOf(invoice) === "partial" ? (
@@ -640,6 +672,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         <div className="rounded-2xl border border-line">
           {loading ? (
             <div className="space-y-2 p-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 rounded-lg" />)}</div>
+          ) : itemsFailed ? (
+            <div role="alert" className="flex flex-wrap items-center gap-2 p-3 text-xs" data-invitems-failed>
+              <AlertTriangle size={14} className="shrink-0 text-danger-600" />
+              <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-300">{t("retail.printItemsFailed")}</span>
+              <Button size="sm" variant="secondary" leftIcon={<RotateCcw size={13} />} onClick={() => { playTap(); setItemsTick((n) => n + 1); }}>{t("common.retry")}</Button>
+            </div>
           ) : items.length === 0 ? (
             <div className="grid place-items-center p-6 text-sm text-ink-subtle"><Package size={20} className="mb-1 opacity-40" /> {t("retail.noLines", "No line items.")}</div>
           ) : (
@@ -675,12 +713,22 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           )}
           <div className="flex items-center justify-between border-t border-line pt-1.5">
             <span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span>
-            <span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(invoice.total)}</span>
+            {/* بعد «خصم على الدين» (0241) total نزل (نموذجُ يوم البيع)؛ فالإجماليُّ المعروض قيمةُ البضاعة
+                (total + forgiven) والخصمُ سطرٌ ظاهرٌ تحته — الإجمالي − المدفوع − الخصم = المتبقّي، كما بالوصل. */}
+            <span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(forgiven > 0 ? grossOf(invoice) : invoice.total)}</span>
           </div>
-          {isDebt(invoice) && (
-            <div className="space-y-0.5 rounded-lg bg-warn-50 px-2.5 py-1.5 text-xs dark:bg-warn-500/10">
+          {(isDebt(invoice) || forgiven > 0) && (
+            <div className="space-y-0.5 rounded-lg bg-warn-50 px-2.5 py-1.5 text-xs dark:bg-warn-500/10" data-invdebtbox>
               <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.paidSoFar", "المدفوع")}</span><span className="tabular-nums text-success-600">{money(paidOf(invoice))}</span></div>
-              <div className="flex items-center justify-between font-bold text-warn-700 dark:text-warn-300"><span>{t("retail.remainingDue", "المبلغ المتبقي")}</span><span className="tabular-nums">{money(dueOf(invoice))}</span></div>
+              {forgiven > 0 && (
+                <div className="flex items-center justify-between text-warn-700 dark:text-warn-300" data-invforgiven>
+                  <span className="flex items-center gap-1"><BadgePercent size={12} /> {t("forgive.row", "Debt discount")}</span>
+                  <span className="tabular-nums">−{money(forgiven)}</span>
+                </div>
+              )}
+              {isDebt(invoice) && (
+                <div className="flex items-center justify-between font-bold text-warn-700 dark:text-warn-300"><span>{t("retail.remainingDue", "المبلغ المتبقي")}</span><span className="tabular-nums">{money(dueOf(invoice))}</span></div>
+              )}
             </div>
           )}
 
@@ -741,10 +789,22 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           )}
         </div>
 
+        {/* «خصم على الدين» (0241): سجلُّه (الملغى مشطوب، والمستهلَك بمرتجعٍ ظاهر) وزرُّه ونافذتُه. بلا زبونٍ
+            لا خصمَ ولا سجلّ، فلا طلب. والقطعةُ كسولةٌ بحارسٍ بمكانها: فشلُها لا يُسقط الفاتورة. */}
+        {customerOf && (
+          <LoadBoundary scope="forgive" onRetry={() => { ForgiveSectionLazy = loadForgiveSection(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <ForgiveSectionLazy invoice={invoice} items={items} itemsOk={itemsOk} canForgive={canForgive} canVoid={canVoidForgive}
+                onUpdated={(u: Invoice) => { setOpen(u); onChanged(); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+
         {/* Actions */}
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
+          {/* سطورٌ لم تصل ⇒ لا تُمرَّر: الطابعةُ تجلبها بنفسها وترمي «ما تنطبع ناقصة» بدل وصلٍ بلا سطور. */}
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
         </div>
         {canFixReceipt && (
           <Button variant="secondary" className="w-full" leftIcon={<Undo2 size={16} />} data-invfixopen
@@ -754,16 +814,31 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         )}
         <div className="flex items-center gap-2">
           {!refunded && (
-            <Button variant="outline" className="flex-1" loading={busy === "refund"} leftIcon={<RotateCcw size={16} />} onClick={refund}>{t("retail.refund", "Refund")}</Button>
+            <Button variant="outline" className="flex-1" loading={busy === "refund"} disabled={!itemsOk} leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setSheet("refund"); }}>{t("retail.refund", "Refund")}</Button>
           )}
           {canDelete && (
-            <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", refunded && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={remove}>
+            <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", refunded && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={() => { playTap(); setSheet("delete"); }}>
               {t("retail.delete", "Delete")}
             </Button>
           )}
         </div>
         {!canDelete && !refunded && (
           <p className="flex items-center gap-1.5 text-2xs text-ink-subtle"><AlertTriangle size={12} /> {t("retail.deleteAdminOnly", "Only clinic admins can permanently delete invoices.")}</p>
+        )}
+
+        {sheet && (
+          <LoadBoundary scope="return-sheet" onRetry={() => { ReturnSheetLazy = loadReturnSheet(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              {/* الترجيعُ الكامل: كلُّ السطور للرفّ، والمدفوعُ كلُّه للزبون، والدينُ يصير صفراً. */}
+              <ReturnSheetLazy mode={sheet} invoice={invoice}
+                lines={items.map((it) => ({ name: it.name, qty: it.qty }))}
+                back={sheet === "refund" ? Math.max(0, paidOf(invoice)) : 0}
+                dueBefore={dueOf(invoice)} dueAfter={0} consumed={0}
+                busy={busy !== null}
+                onConfirm={() => void (sheet === "refund" ? refund() : remove())}
+                onClose={() => { if (!busy) setSheet(null); }} />
+            </Suspense>
+          </LoadBoundary>
         )}
 
         {fixOpen && (

@@ -170,6 +170,31 @@ for (const [dev, elev, base] of orows) {
 check("واحدةٌ من الثمانية تسمح لا أكثر", orows.filter(([d, e, b]) => ownerAccountFrom(d, e, b)).length === 1);
 check("  والكشكُ المقفولُ بحساب المالك المفتوحُ بالرمز (unlockLocal) يُرفض", ownerAccountFrom(true, true, true) === false);
 
+/* ── ٦ج) مواضعُ «خصم على الدين» تقرأ من الدالّتين لا تعيد الحكم (0241) ─────*/
+console.log("▸ خصمٌ على الدين — الزرُّ والنافذةُ والتقريرُ والإعداد من نفس الحكم");
+const fdlg = fs.readFileSync("src/components/retail/ForgiveDialog.tsx", "utf8");
+const hub = fs.readFileSync("src/pages/AnalyticsHub.tsx", "utf8");
+const setts = fs.readFileSync("src/pages/Settings.tsx", "utf8");
+const retp = fs.readFileSync("src/components/retail/ReturnsPanel.tsx", "utf8");
+const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+// «حذف الفواتير» تُمنح لطبيبٍ أو استقبال بالتخصيص، والدالّتان تريدان auth_role() = مدير: الحذفُ وحده
+// كان يُري زرّاً لا يُحفظ أبداً. فالدورُ من مرآة الطالب نفسِها (forgiveActor) فوق قفل الجهاز.
+check("زرُّ الخصم يتبع الحذفَ (قفلُ الجهاز) + دورَ الخادم + دينٌ حيٌّ باسم زبون",
+  invp.includes('const forgiveRoleOk = forgiveActor({ base: baseRole, pin: ov.active || (baseRole === "manager" && ov.deviceLocked) }).role === "manager";')
+  && invp.includes("const canForgive = canDelete && forgiveRoleOk && !refunded && isDebt(invoice) && !!customerOf;"));
+check("  والإلغاءُ كذلك", invp.includes("const canVoidForgive = canDelete && forgiveRoleOk && !refunded;") && invp.includes("canVoid={canVoidForgive}"));
+// (قيمُ forgiveActor نفسِها — طبيبٌ بلا مفتاح ليس مديراً، وبالمفتاح مدير — مفحوصةٌ بـdebt-forgive-test.)
+check("النافذةُ تحكم «فوق السقف» بـownerAccountFrom (لا بالدور وحده)",
+  fdlg.includes('ownerAccountFrom(ov.deviceLocked, ov.active, baseRole === "manager")'));
+check("  والطالبُ بالمرآة: المفتاحُ حيٌّ إن رُفع أو قُفل الجهازُ بحساب المدير",
+  fdlg.includes('pin: ov.active || (baseRole === "manager" && ov.deviceLocked)'));
+check("سجلُّ خصومات الديون بالتقارير خلف بوّابة الأرباح وقفلِ الجهاز",
+  hub.includes('const canForgiveReport = !capLockedFrom(ovr.deviceLocked, ovr.active, can("viewProfits"));'));
+check("وسقفُ الخصم بالإعدادات يُكتب من حساب المالك وحده",
+  /function ForgiveCapCard\(\)[\s\S]{0,600}ownerAccountFrom\(ov\.deviceLocked, ov\.active, baseRole === "manager"\)/.test(setts));
+check("ولا window.confirm للمال: الترجيعُ والحذفُ والمرتجعُ بنافذةٍ بالشاشة",
+  !/window\.confirm/.test(code(invp)) && !/window\.confirm/.test(code(retp)));
+
 /* ── ٧) شاشةُ المخزن لا تُفتح بالرابط لمن لا يملك صلاحيتها ───────────────*/
 // الشريطُ كان يخفيها، والصفحةُ ما تفحص شيئاً — وبطاقةُ النواقص بالرئيسية
 // تنقل إليها بضغطةٍ للجميع. فتُرى رؤوسُ الأموال وأسعارُ الشراء **وأزرارُ

@@ -277,9 +277,63 @@ console.log("▸ الطالبُ لازم — فحصُ الواجهة لا يقو
   check("  وصاحبُ العيادة بحسابه بنفس الطلب يمرّ فوق السقف", v(i, m.forgiveActor({ base: "manager", pin: false }), over).ok === true);
 }
 
+console.log("▸ حسابُ الزبون بالنافذة — «الباقي عليه» بقاعدة DebtsPanel، والخصوماتُ السابقة من نفس السطور");
+{
+  // A: ٥٠ عليه. B: ١٠٠ آجلٌ مع شركة توصيل وصل ولم يُحصَّل — بذمّة الشركة لا الزبون. C: مُرجَعة.
+  const invs = [
+    { id: "A", total: 80, amount_paid: 30, forgiven: 20, status: "paid" },
+    { id: "B", total: 100, amount_paid: 0, forgiven: 0, status: "paid" },
+    { id: "C", total: 40, amount_paid: 40, forgiven: 0, status: "refunded" },
+  ];
+  const orders = [{ invoice_id: "B", status: "delivered", collected_at: null }];
+  // خصمٌ ٢٠ على A ثم مرتجعٌ استهلكه كلَّه (والفاتورةُ صار forgiven صفراً بالواقع) — وسطرٌ ملغى، وسطرٌ على المُرجَعة.
+  const ledger = [
+    { invoice_id: "A", kind: "forgive", amount: 20, voided_at: null },
+    { invoice_id: "A", kind: "consumed", amount: -20, voided_at: null },
+    { invoice_id: "A", kind: "forgive", amount: 7, voided_at: "2026-10-01T00:00:00Z" },
+    { invoice_id: "C", kind: "forgive", amount: 9, voided_at: null },
+  ];
+  const a = m.forgiveAccount(invs, ledger, orders);
+  check("الباقي عليه ٥٠ لا ١٥٠: ما بذمّة التوصيل خارجُه وسطرُه وحده (١٠٠)", a.due === 50 && a.courierDue === 100, a);
+  check("  والمُرجَعةُ خارجُ العدد والمشتريات (٢ فاتورة، ١٠٠+٢٠+١٠٠)", a.count === 2 && a.bought === 200 && a.paid === 30, a);
+  check("  وخصومات سابقة: ١ مرّة · ٢٠ ورجع منها ٢٠ — لا «١ مرّة · ٠»", a.priorCount === 1 && a.priorGranted === 20 && a.priorBack === 20, a);
+  check("  وبلا طلبات (لم تُجلب بعد) كلُّه على الزبون", m.forgiveAccount(invs, [], null).due === 150);
+}
+
+console.log("▸ رأسُ «خصومات الديون» بالتقارير — الممنوحُ والراجعُ والصافي");
+{
+  const T = m.forgiveTotals([
+    { kind: "forgive", amount: 20, voided_at: null, invoice_status: "paid" },
+    { kind: "consumed", amount: -15, voided_at: null, invoice_status: "paid" },
+    { kind: "forgive", amount: 9, voided_at: "2026-10-01T00:00:00Z", invoice_status: "paid" },
+    { kind: "forgive", amount: 4, voided_at: null, invoice_status: "refunded" },
+  ]);
+  check("خُصم ٢٠ (١) · رجع ١٥ · الصافي ٥ — والمجموعاتُ تجمع ٢٠ فتطابق «خُصم»", T.granted === 20 && T.count === 1 && T.back === 15 && T.net === 5, T);
+  const onlyBack = m.forgiveTotals([{ kind: "consumed", amount: -10, voided_at: null, invoice_status: "paid" }]);
+  check("  فترةٌ فيها مرتجعٌ وحده: خُصم ٠ (٠)، رجع ١٠ — لا «(0) − -10»", onlyBack.granted === 0 && onlyBack.count === 0 && onlyBack.back === 10 && onlyBack.net === -10, onlyBack);
+  check("  وفترةٌ ملغاةٌ كلُّها: صفرٌ بلا عدد", JSON.stringify(m.forgiveTotals([{ kind: "forgive", amount: 9, voided_at: "x", invoice_status: "paid" }])) === JSON.stringify({ granted: 0, count: 0, back: 0, net: 0 }));
+}
+
+console.log("▸ مَن وافق — صاحبُ العيادة بلا صفّ كادر");
+{
+  // 0083 تستثني صاحبَ العيادة من الكادر (clinic_id <> user_id): حسابُه معرّفُ العيادة ولا اسمَ له بالقائمة.
+  const CL = "c1";
+  check("اسمُ الكادر يُقدَّم", m.approverOf("u2", "سارة", CL).kind === "name" && m.approverOf("u2", "سارة", CL).name === "سارة");
+  check("  وصاحبُ العيادة بلا اسم: owner لا «غير معروف»", m.approverOf(CL, null, CL).kind === "owner" && m.approverOf(CL, "  ", CL).kind === "owner");
+  check("  وغيرُه بلا اسم: unknown، وبلا معرّفِ عيادةٍ بعد: unknown", m.approverOf("u3", null, CL).kind === "unknown" && m.approverOf(CL, null, null).kind === "unknown" && m.approverOf(null, null, CL).kind === "unknown");
+}
+
 console.log("▸ الرموزُ وترتيبُها");
 check("كلُّ رمزٍ يُرجعه validateForgive من قائمة الدالّة", ["not_allowed", "operator_not_allowed", "invoice_not_found", "due_changed", "above_due", "confirm_loss_required"].every((c) => m.FORGIVE_ERRORS.includes(c)));
-check("ومفتاحُ ترجمة الرفض بنطاقه", tx.forgiveErrorKey("above_due") === "forgive.err.above_due");
+{
+  // نصُّ الرفض بنطاق النافذة المملوك (fgv، hot-paths.json): كلُّ رمزٍ ترجعه الدالّتان له نصٌّ بالقاموسين —
+  // رمزٌ بلا نصّ يُرسم مفتاحاً خاماً بالضبط لحظةَ يحتاج المديرُ أن يفهم لماذا رُفض.
+  const en = JSON.parse(readFileSync("src/i18n/en.json", "utf8")), ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8"));
+  const codes = [...new Set([...m.FORGIVE_ERRORS, ...m.VOID_ERRORS])];
+  const missing = codes.filter((c) => !(typeof en.fgv?.err?.[c] === "string" && en.fgv.err[c] && typeof ar.fgv?.err?.[c] === "string" && ar.fgv.err[c]));
+  check(`ولكلّ رمز رفضٍ (${codes.length}) نصٌّ بـfgv.err بالقاموسين`, missing.length === 0, missing);
+  check("  والنافذةُ تقرأ الرفضَ من fgv.err لا من نطاقٍ بارد", /fgv.err./.test(readFileSync("src/components/retail/ForgiveDialog.tsx", "utf8")) && !("forgiveErrorKey" in tx));
+}
 
 console.log(`\n${fail ? "✗" : "✓"} الخصمُ على الدين: ${pass} نجح، ${fail} فشل`);
 process.exit(fail ? 1 : 0);

@@ -822,6 +822,20 @@ export function getForgiveProfitPct(): number {
   const n = Math.round(Number(prefs().forgive_profit_pct));
   return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 100;
 }
+/** حفظُ السقف — **يُنتظر ويرمي**، لا `patchPrefs`: محفّزُ 0241 (clinic_prefs_guard_forgive_pct) يرفضه
+ *  لغير صاحب العيادة من حسابه، وتعليقُه «معلّقاً» كان يُعاد دفعُه ويُرفض بكلّ إقلاع، والنافذةُ تقول
+ *  «انحفظ» ولا شيء انحفظ. فالكتابةُ مباشرةٌ والرفضُ يصل الشاشةَ بتلميحه العربيّ، والمرآةُ المحلّيةُ
+ *  لا تتغيّر إلا بعد قبول الخادم (والتجريبيُّ: المحلّيُّ هو المصدر). */
+export async function setForgiveProfitPct(pct: number): Promise<void> {
+  const n = Math.round(Number(pct));
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw Object.assign(new Error("forgive_pct_range"), { code: "forgive_pct_range" });
+  const client = sb();
+  if (client) {
+    const res = await client.from("clinic_prefs").upsert({ forgive_profit_pct: n }, { onConflict: "clinic_id" });
+    if (res.error) throw res.error;
+  }
+  savePrefsLocal({ ...prefs(), forgive_profit_pct: n });
+}
 
 /* ---- مطابقة الصندوق اليومية (0119) -----------------------------------------
  * خيار تفعيلي: زر «مطابقة الصندوق» بشاشة المبيعات — تأكيد نهائي بنهاية كل
