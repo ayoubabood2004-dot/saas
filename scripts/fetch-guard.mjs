@@ -55,6 +55,9 @@ const CRITICAL_SCREENS = [
   // من جديد، و«لا توجد حيوانات» عن خطأٍ تُخبَّأ طولَ الجلسة.
   "src/components/retail/SaleBuilder.tsx",
   "src/components/retail/CustomerSearch.tsx",
+  // دفترُ الديون: طلباتُ التوصيل تفرز مالَ المندوب عن دين الزبون — «ماكو طلبات» عن خطأٍ
+  // يُهبط ما دفعه الزبونُ للمندوب ديناً عليه، فيُطالَب بمالٍ دفعه.
+  "src/components/retail/DebtsPanel.tsx",
 ];
 
 const files = [];
@@ -93,6 +96,10 @@ const SWALLOW = /\.catch\s*\(\s*\(\s*\)\s*=>\s*(\[\s*\]|\{\s*\}|null|undefined)\
 /* ونفسُ الابتلاع بصيغة `try/catch`: `catch { setX([]) }` يكتب «ماكو» مكانَ «ما وصلنا»
  * (بحثُ الزبون ومنتقي الحيوانات بشاشة البيع كانا هكذا — 0232). */
 const CATCH_EMPTY = /catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\s*\[\s*\]\s*\)/;
+/* وبصيغة الاحتياط داخل `.catch`: `setX((cur) => cur ?? [])` — «ماكو» ما لم تكن لقطة.
+ * دفترُ الديون كان هكذا: فشلُ جلب التوصيل صار «ماكو طلبات»، فهبط مالُ المندوب ديناً
+ * على الزبون. اللقطةُ تُبقى إن وُجدت؛ وإلا فحالةُ خطأٍ تُعرض لا قائمةٌ فارغة. */
+const CATCH_SET_EMPTY = /\.catch\s*\(.*\bset\w+\(\s*\(?\s*\w*\s*\)?\s*=>\s*\w+\s*(?:\?\?|\|\|)\s*\[\s*\]/;
 for (const f of CRITICAL_SCREENS) {
   if (!fs.existsSync(f)) { console.error(`   ✗ ${f} — مفقود من قائمة الحارس (حدِّث القائمة أو أعد الملف)`); bad++; continue; }
   const lines = fs.readFileSync(f, "utf8").split(/\r?\n/);
@@ -102,6 +109,9 @@ for (const f of CRITICAL_SCREENS) {
     }
     if (CATCH_EMPTY.test(line) && !WAIVER.test(line)) {
       say(f, i + 1, "`catch { setX([]) }` يكتب قائمةً فارغةً عن خطأ — اعرض «تعذّر — أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");
+    }
+    if (CATCH_SET_EMPTY.test(line) && !WAIVER.test(line)) {
+      say(f, i + 1, "`.catch(() => setX((cur) => cur ?? []))` يجعل الفشلَ بلا لقطةٍ قائمةً فارغة — احفظ حالةَ خطأٍ واعرض «أعد المحاولة» أو وسّمه /* swallow-ok: السبب */");
     }
   });
 }
