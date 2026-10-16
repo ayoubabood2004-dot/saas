@@ -766,7 +766,68 @@ export interface Invoice {
   /** مرجعُ المحاولة (0135) — بالتجريبي أيضاً منذ 0178: نفسُ المرجع = نفسُ
    *  الفاتورة، فقبولُ طلبِ متجرٍ مكرّراً لا يبيع البضاعة مرّتين. */
   client_ref?: string | null;
+  /** الخصمُ على الدين (0241): ما أسقطته العيادةُ من باقي هذه الفاتورة بعد البيع — total نزل به
+   *  (نموذجُ يوم البيع)، فقيمةُ البضاعة = total + forgiven (`grossOf`). يساوي دائماً مجموعَ سطور
+   *  `invoice_forgiveness` غيرِ الملغاة، ويُكتب من الدوالّ وحدها. غيابُه = صفر. */
+  forgiven?: number;
   created_at: string;
+}
+
+/** سببُ الخصم على الدين — قائمةٌ ثابتة بقيد الجدول (0241). */
+export type ForgiveReason = "negotiation" | "loyal" | "hardship" | "dispute" | "other";
+
+/** سطرٌ بدفتر الخصم على الدين (`invoice_forgiveness`، 0241). `forgive` موجبٌ أعطاه المدير؛
+ *  `consumed` سالبٌ استهلكه مرتجعٌ أو تعديلٌ بعده. الإلغاءُ ختمٌ (voided_*) لا حذف. */
+export interface InvoiceForgiveness {
+  id: string;
+  clinic_id?: string | null;
+  invoice_id: string;
+  kind: "forgive" | "consumed";
+  amount: number;
+  reason_code: ForgiveReason | null;
+  note: string | null;
+  /** «تسوية»: ما قُبض بنفس النداء قبل الخصم. */
+  pay_amount: number;
+  pay_method: PaymentMethod | null;
+  /** لقطةُ الفاتورة لحظةَ الخصم (بعد دفعة التسوية، قبل الخصم). */
+  total_before: number | null;
+  paid_before: number | null;
+  due_before: number | null;
+  profit_base: number | null;
+  cost_total: number | null;
+  pct: number | null;
+  above_cap: boolean;
+  via_pin: boolean;
+  cust_key: string | null;
+  created_at: string;
+  created_by: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
+}
+
+/** صفُّ `report_forgiveness` (0241): سطرُ الدفتر + من أعطاه + زبونُ الفاتورة وحالُها الآن. */
+export interface ForgivenessReportRow extends InvoiceForgiveness {
+  created_by_name: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  invoice_total: number | null;
+  invoice_status: InvoiceStatus | null;
+  invoice_created_at: string | null;
+}
+
+/** ما يرسله «خصم على الدين» — مرآةُ وسائط forgive_invoice_debt. */
+export interface ForgiveInput {
+  amount: number;
+  reason: ForgiveReason | string;
+  note?: string | null;
+  /** المتبقّي الذي رآه المدير — تغيّرٌ بأكثر من فلس يُرفض (due_changed). */
+  expectDue?: number | null;
+  /** «تسوية»: يدفع الآن ثم يُخصم الباقي — بنفس القفل والمعاملة. */
+  pay?: number | null;
+  method?: PaymentMethod | null;
+  /** إقرارٌ صريح بالبيع بخسارة (فوق سقف الربح). */
+  confirmLoss?: boolean;
 }
 
 /** Where a withdrawal's money physically came from — the drawer, the card
@@ -1558,6 +1619,8 @@ export interface DemoDB {
   companyMerges?: CompanyMerge[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
+  /** دفترُ الخصم على الدين (0241). */
+  invoiceForgiveness?: InvoiceForgiveness[];
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
   purchaseEffects?: PurchaseEffect[];

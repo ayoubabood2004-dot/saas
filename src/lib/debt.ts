@@ -15,6 +15,13 @@ export const paidOf = (inv: Invoice): number => (inv.amount_paid != null ? inv.a
 /** Outstanding balance still owed by the client (never negative). */
 export const dueOf = (inv: Invoice): number => Math.max(0, round2(inv.total - paidOf(inv)));
 
+/** الخصمُ على الدين (0241) — ما أسقطته العيادةُ من باقي الفاتورة بعد البيع. غيابُه = صفر. */
+export const forgivenOf = (inv: Pick<Invoice, "forgiven">): number => Math.max(0, Number(inv.forgiven) || 0);
+
+/** قيمةُ البضاعة قبل الخصم على الدين: total نزل بالخصم (نموذجُ يوم البيع)، فالأصلُ = total + forgiven.
+ *  `dueOf` لا يتغيّر — المتبقّي يُحسب من total بعد الخصم. */
+export const grossOf = (inv: Pick<Invoice, "total" | "forgiven">): number => round2((Number(inv.total) || 0) + forgivenOf(inv));
+
 /** Settlement status derived from what has been paid against the total. */
 export const paymentStatusOf = (inv: Invoice): PaymentStatus => {
   const paid = paidOf(inv);

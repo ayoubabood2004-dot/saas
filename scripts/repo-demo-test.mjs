@@ -1759,5 +1759,245 @@ console.log("▸ 0232 — دليلُ الزبائن (مرآةُ customer_search)
   check("findCustomers قراءةٌ تبقى بالاشتراك المنتهي", mod.isReadAllowed("findCustomers") === true);
 }
 
+console.log("▸ 0241 — «خصم على الدين» (مرآةُ forgive_invoice_debt بأرقام run.sh)");
+{
+  const ACTIVE = /const ACTIVE_KEY = "([^"]+)"/.exec(readFileSync("src/lib/clinics.ts", "utf8"))?.[1];
+  const clinic = () => mem.get(ACTIVE) || "default";
+  // الجلسةُ **بشكل AuthContext.persistRaw حرفاً** (signInDemo/signInClinic): `rawRole` لا `role` — هويّةٌ يكتبها
+  // القالبُ بمفتاحٍ لا يكتبه التطبيق هويّةٌ لم تُفحص (CLAUDE.md).
+  const as = (id, rawRole) => mem.set("vp_session", JSON.stringify({
+    raw: { id, full_name: `موظف ${id}`, email: `${id}@demo.vet`, rawRole, roles: [rawRole === "owner" ? "owner" : "clinic"], clinic_id: "clinic-happy-paws" },
+    active: rawRole === "owner" ? "owner" : "clinic",
+  }));
+  const pinOn = () => mem.set(`vp_override_until_${clinic()}`, String(Date.now() + 30 * 60 * 1000));
+  const pinOff = () => mem.delete(`vp_override_until_${clinic()}`);
+  const OWNER = () => { pinOff(); as("c1", "admin"); };
+  const RCP = () => { pinOff(); as("r1", "reception"); };
+  const RCP_PIN = () => { as("r1", "reception"); pinOn(); };
+  /** «ok» أو الرمز (و`full` يضيف التلميح) — كـfgc/fgh بالحزمة. */
+  const fgc = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
+  const fgh = async (fn) => { try { await fn(); return "ok"; } catch (e) { return `${e.message}|${e.code}|${e.hint ?? ""}`; } };
+  const T0 = "2026-10-01T09:00:00.000Z";
+  const leg = (amount) => [{ method: "cash", amount, at: T0 }];
+  const I = (id, customer_name, subtotal, cost, paid, over = {}) => ({
+    id, clinic_id: null, customer_name, customer_phone: null, subtotal, discount: 0, total: subtotal, cost_total: cost, profit: subtotal - cost,
+    amount_paid: paid, status: "paid", created_at: T0, payment_details: [], payment_method: "cash", item_count: 1, ...over,
+  });
+  mem.set(DB_KEY, JSON.stringify({
+    products: [], companies: [], companySections: [], purchases: [], purchaseItems: [], generatedBarcodes: [], productsTrash: [],
+    invoices: [
+      I("iv01", "أبو حسن", 200, 125, 150, { customer_phone: "07701234567", payment_details: leg(150) }),
+      I("iv02", "خسارة", 200, 125, 0),
+      I("iv03", "تسوية", 100, 60, 0),
+      I("iv04", "مرجعة", 100, 50, 0, { status: "refunded" }),
+      I("iv05", "بالطريق", 100, 50, 0),
+      I("iv06", "بذمة شركة", 100, 50, 0),
+      I("iv07", "وصل وتحصل", 100, 50, 0),
+      I("iv08", "  ", 100, 50, 0, { customer_phone: " " }),
+      I("iv09", "مرتجع", 70, 20, 30, { payment_details: leg(30) }),
+      I("iv0a", "تعديل", 100, 40, 20, { payment_details: leg(20) }),
+      I("iv0b", "إلغاء", 100, 50, 0),
+      I("iv0c", "سيقان", 100, 50, 100, { payment_details: leg(100) }),
+      I("iv0d", "نسبة", 200, 125, 0),
+      I("iv0e", "ضمني", 100, 50, 40),
+      I("iv11", "إلغاء وتوصيل", 100, 50, 0),
+    ],
+    invoiceItems: [
+      { id: "a1", invoice_id: "iv09", product_id: null, name: "أربعون", qty: 1, unit_price: 40, unit_cost: 10, line_total: 40 },
+      { id: "a2", invoice_id: "iv09", product_id: null, name: "ثلاثون", qty: 1, unit_price: 30, unit_cost: 10, line_total: 30 },
+      { id: "b1", invoice_id: "iv0a", product_id: null, name: "مية", qty: 1, unit_price: 100, unit_cost: 40, line_total: 100 },
+    ],
+    deliveryOrders: [
+      { id: "c5", invoice_id: "iv05", status: "out", cod_amount: 100, delivered_at: null, collected_at: null },
+      { id: "c6", invoice_id: "iv06", status: "delivered", cod_amount: 100, delivered_at: T0, collected_at: null },
+      { id: "c7", invoice_id: "iv07", status: "delivered", cod_amount: 100, delivered_at: T0, collected_at: T0 },
+    ],
+  }));
+  mem.delete("vp_demo_audit");
+  const db = () => JSON.parse(mem.get(DB_KEY));
+  const iv = (id) => db().invoices.find((x) => x.id === id);
+  const rows = (id) => (db().invoiceForgiveness ?? []).filter((r) => r.invoice_id === id);
+  const due = (i) => Math.round((i.total - i.amount_paid) * 100) / 100;
+  const F = (id, amount, reason, o = {}) => repo.forgiveInvoiceDebt(id, { amount, reason, ...o });
+
+  // ١) من يقدر
+  RCP();
+  check("الاستقبالُ بلا مفتاح المدير لا يخصم (not_allowed) — بتلميح الخادم", (await fgh(() => F("iv02", 10, "loyal"))) === "not_allowed|P0001|الخصمُ على الدين للمدير — أو افتح وضعَ المدير برمزه.");
+  pinOff(); as("demo-vet", "doctor");
+  check("  والطبيبُ (دورُ DEMO_VET) بلا مفتاح: not_allowed", (await fgc(() => F("iv02", 10, "loyal"))) === "not_allowed");
+  pinOff(); mem.set("vp_session", JSON.stringify({ raw: { id: "x1", full_name: "؟", rawRole: "cashier?" }, active: "clinic" }));
+  check("  وجلسةٌ بدورٍ لا يُعرف ليست مديراً (لا رفعَ صامتاً): not_allowed", (await fgc(() => F("iv02", 10, "loyal"))) === "not_allowed");
+  pinOff(); mem.set("vp_session", JSON.stringify({ raw: { id: "s1", full_name: "؟", rawRole: "admin", staff: { clinicId: "c", role: "reception", staffRole: "receptionist" } }, active: "clinic" }));
+  check("  وموظّفُ استقبالٍ بعضويّة (staff.staffRole) لا يخصم: not_allowed", (await fgc(() => F("iv02", 10, "loyal"))) === "not_allowed");
+  OWNER();
+  check("  وفاتورةٌ غيرُ موجودة: invoice_not_found", (await fgc(() => F("nope", 10, "loyal"))) === "invoice_not_found");
+
+  // ٢) فوق الربح (٢٠٠، ربح ٧٥، متبقٍّ ٢٠٠ ⇒ المسموح ٧٥)
+  RCP_PIN();
+  const pinH = await fgh(() => F("iv02", 100, "negotiation", { note: "اتفقنا على خسارة", confirmLoss: true }));
+  check("فوق الربح بمفتاح المدير على الاستقبال: above_profit_needs_owner، والتلميحُ يقول إنّ المفتاحَ لا يكفي",
+    pinH.startsWith("above_profit_needs_owner|") && pinH.includes("مفتاحُ المدير") && pinH.includes("(75)"), pinH);
+  OWNER();
+  check("  المديرُ بحسابه بملاحظةٍ قصيرة: note_required", (await fgc(() => F("iv02", 100, "negotiation", { note: "قصير", confirmLoss: true }))) === "note_required");
+  const lossH = await fgh(() => F("iv02", 100, "negotiation", { note: "اتفقنا على خسارة مع الزبون" }));
+  check("  صاحبُ العيادة بلا إقرار: confirm_loss_required، والتلميحُ يسمّي الخسارة (بخسارة 25)", lossH.startsWith("confirm_loss_required|") && lossH.includes("بخسارة 25"), lossH);
+  check("  وبالملاحظة والإقرار يمرّ", (await fgc(() => F("iv02", 100, "negotiation", { note: "اتفقنا على خسارة مع الزبون", expectDue: 200, confirmLoss: true }))) === "ok");
+  const i02 = iv("iv02"), r02 = rows("iv02")[0];
+  check("  الفاتورة: الإجمالي ١٠٠، الربح −٢٥، الخصم ١٠٠", `${i02.total}|${i02.profit}|${i02.forgiven}` === "100|-25|100", `${i02.total}|${i02.profit}|${i02.forgiven}`);
+  check("  والسطرُ مختومٌ «فوق السقف» بلا مفتاح، بلقطته (ربحٌ قبله ٧٥، متبقٍّ ٢٠٠، نسبة ١٠٠)",
+    `${r02?.above_cap}|${r02?.via_pin}|${r02?.profit_base}|${r02?.due_before}|${r02?.pct}|${r02?.reason_code}|${r02?.created_by === "c1"}` === "true|false|75|200|100|negotiation|true", JSON.stringify(r02));
+
+  // ٣) داخل الربح (الفاتورة ١: ٢٠٠، ربح ٧٥، دُفع ١٥٠ ⇒ متبقٍّ ٥٠)
+  RCP_PIN();
+  check("متبقٍّ غيرُ الذي رآه المدير: due_changed (والتلميحُ يقول صار 50)", (await fgh(() => F("iv01", 10, "loyal", { expectDue: 60 }))).startsWith("due_changed|P0001|تغيّر المتبقّي على هذه الفاتورة (صار 50)"));
+  check("  أكبرُ من المتبقّي: above_due", (await fgc(() => F("iv01", 60, "loyal", { expectDue: 50 }))) === "above_due");
+  check("  سببٌ مجهول: reason_required", (await fgc(() => F("iv01", 10, "xx"))) === "reason_required");
+  check("  «غير ذلك» بلا ملاحظة: note_required", (await fgc(() => F("iv01", 10, "other"))) === "note_required");
+  check("  صفر: amount_invalid", (await fgc(() => F("iv01", 0, "loyal"))) === "amount_invalid");
+  check("  ولا شيءَ تحرّك بالرفض (لا سطرَ ولا تغيّر)", rows("iv01").length === 0 && iv("iv01").total === 200);
+  check("  ٣٠ بمفتاح المدير داخل الربح: يمرّ", (await fgc(() => F("iv01", 30, "loyal", { expectDue: 50 }))) === "ok");
+  const i01 = iv("iv01");
+  check("  الإجمالي ١٧٠، الربح ٤٥، الخصم ٣٠، المتبقّي ٢٠ — والمدفوعُ والسِّيَقُ كما هي",
+    `${i01.total}|${i01.profit}|${i01.forgiven}|${due(i01)}|${i01.amount_paid}|${i01.payment_details.length}` === "170|45|30|20|150|1");
+  const r01 = rows("iv01")[0];
+  check("  والسطرُ: بمفتاح المدير، داخل السقف، ومفتاحُ الزبون بمفتاح دولة العيادة",
+    `${r01.via_pin}|${r01.above_cap}|${r01.cust_key}|${r01.total_before}|${r01.due_before}` === "true|false|p:7701234567|200|50", JSON.stringify(r01));
+  check("  والثاني يأخذ ما بقي من الربح (المسموح ٢٠)", (await fgc(() => F("iv01", 20, "dispute", { expectDue: 20 }))) === "ok");
+  check("  فصار المتبقّي صفراً والخصمُ ٥٠", `${due(iv("iv01"))}|${iv("iv01").forgiven}` === "0|50");
+
+  // ٤) المرفوض بطبيعته
+  OWNER();
+  check("فاتورةٌ مُرجَعة: invoice_refunded", (await fgc(() => F("iv04", 10, "loyal"))) === "invoice_refunded");
+  check("طلبُ توصيلٍ بالطريق: invoice_has_open_delivery", (await fgc(() => F("iv05", 10, "loyal"))) === "invoice_has_open_delivery");
+  check("  ووصل ولم يُحصَّل (بذمّة الشركة): مرفوضٌ كذلك", (await fgc(() => F("iv06", 10, "loyal"))) === "invoice_has_open_delivery");
+  check("  ووصل وتحصّل: يمرّ", (await fgc(() => F("iv07", 5, "loyal"))) === "ok");
+  check("بلا اسمٍ ولا هاتف: customer_required", (await fgc(() => F("iv08", 10, "loyal"))) === "customer_required");
+
+  // ٥) «تسوية»
+  check("تسوية: ١٠٠ دين، يدفع ٧٠ بطاقة ونخصم ٣٠", (await fgc(() => F("iv03", 30, "negotiation", { expectDue: 100, pay: 70, method: "card" }))) === "ok");
+  const i03 = iv("iv03");
+  check("  المدفوع ٧٠، الإجمالي ٧٠، الخصم ٣٠، المتبقّي صفر، والطريقةُ الغالبة بطاقة", `${i03.amount_paid}|${i03.total}|${i03.forgiven}|${due(i03)}|${i03.payment_method}` === "70|70|30|0|card");
+  const l03 = i03.payment_details;
+  check("  ساقٌ واحدة بشكل 0061: {method, amount, at …Z}", l03.length === 1 && l03[0].method === "card" && l03[0].amount === 70
+    && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(l03[0].at) && Object.keys(l03[0]).sort().join() === "amount,at,method", JSON.stringify(l03));
+  const r03 = rows("iv03");
+  check("  وسطرٌ واحد بالدفتر يحمل الدفعة ولقطةَ ما بعدها (إجمالي ١٠٠، مدفوع ٧٠، متبقٍّ ٣٠)",
+    `${r03.length}|${r03[0].pay_amount}|${r03[0].pay_method}|${r03[0].total_before}|${r03[0].paid_before}|${r03[0].due_before}` === "1|70|card|100|70|30");
+  check("  والسطرُ والساقُ بنفس اللحظة (الخصمُ بعد الدفعة بنفس النداء)", r03[0].created_at === l03[0].at);
+  check("بيعةٌ بلا سِيَق (٤٠ ضمنيّة): التسويةُ تثبّت الضمنيّةَ بتاريخ الفاتورة قبل ساقها", (await fgc(() => F("iv0e", 30, "loyal", { expectDue: 60, pay: 30, method: "cash" }))) === "ok");
+  const l0e = iv("iv0e").payment_details;
+  check("  فالسِّيَق ٤٠ يوم البيع + ٣٠ اليوم (لا ٣٠ وحدها)", l0e.map((l) => l.amount).join() === "40,30" && l0e[0].at === T0, JSON.stringify(l0e));
+
+  // ٦) المرتجعُ يستهلك الخصمَ قبل النقد
+  check("خصمُ ٢٠ على ٤٠+٣٠ مدفوعٌ منها ٣٠", (await fgc(() => F("iv09", 20, "loyal", { expectDue: 40 }))) === "ok");
+  RCP();
+  check("  إرجاعُ سطر الـ٣٠ (الاستقبالُ يرجع)", (await fgc(() => repo.returnInvoiceItems("iv09", [{ item_id: "a2", qty: 1 }]))) === "ok");
+  const i09 = iv("iv09");
+  check("  الإجمالي ٣٠، الخصم ١٠، المدفوع ٣٠، المتبقّي ٠، الربح ٢٠ — ولا ساقَ سالبة",
+    `${i09.total}|${i09.forgiven}|${i09.amount_paid}|${due(i09)}|${i09.profit}|${i09.payment_details.length}` === "30|10|30|0|20|1", `${i09.total}|${i09.forgiven}|${i09.amount_paid}|${due(i09)}|${i09.profit}|${i09.payment_details.length}`);
+  check("  وسطرُ استهلاكٍ بالسالب (−١٠، «مرتجع»)", rows("iv09").map((r) => `${r.kind}:${r.amount}:${r.note ?? ""}`).join() === "forgive:20:,consumed:-10:مرتجع",
+    rows("iv09").map((r) => `${r.kind}:${r.amount}:${r.note ?? ""}`).join());
+  OWNER();
+  const f09 = rows("iv09").find((r) => r.kind === "forgive").id;
+  check("  وإلغاءُ خصمٍ استُهلك منه شيء يُرفض (forgiveness_consumed)", (await fgc(() => repo.voidInvoiceForgiveness(f09, "غلط بالمبلغ"))) === "forgiveness_consumed");
+
+  // ٧) التعديل
+  check("خصمُ ٣٠ على ١٠٠ مدفوعٌ منها ٢٠", (await fgc(() => F("iv0a", 30, "hardship", { expectDue: 80 }))) === "ok");
+  await repo.editInvoiceLines("iv0a", [{ name: "مية", qty: 1, unit_price: 100, unit_cost: 40 }, { name: "عشرة", qty: 1, unit_price: 10, unit_cost: 5 }]);
+  const a1 = iv("iv0a");
+  check("  المديرُ يضيف سطر ١٠: إجمالي ٨٠، خصم ٣٠، ربح ٣٥، متبقٍّ ٦٠، ولا سطرَ استهلاك",
+    `${a1.total}|${a1.forgiven}|${a1.profit}|${due(a1)}|${rows("iv0a").length}` === "80|30|35|60|1", `${a1.total}|${a1.forgiven}|${a1.profit}|${due(a1)}|${rows("iv0a").length}`);
+  await repo.editInvoiceLines("iv0a", [{ name: "أربعون", qty: 1, unit_price: 40, unit_cost: 10 }]);
+  const a2 = iv("iv0a");
+  check("  وينزل لسطر ٤٠ وحده: إجمالي ٢٠، خصم ٢٠، متبقٍّ ٠، واستهلاكُ −١٠ «تعديل»",
+    `${a2.total}|${a2.forgiven}|${due(a2)}|${rows("iv0a").filter((r) => r.kind === "consumed").map((r) => `${r.amount}:${r.note}`).join()}` === "20|20|0|-10:تعديل");
+
+  // ٨) الإلغاء
+  check("خصمُ ٤٠ على ١٠٠ (ربح ٥٠)", (await fgc(() => F("iv0b", 40, "loyal"))) === "ok");
+  const f0b = rows("iv0b")[0].id;
+  RCP();
+  check("  الاستقبالُ بلا مفتاح لا يلغي", (await fgc(() => repo.voidInvoiceForgiveness(f0b, "غلط بالمبلغ"))) === "not_allowed");
+  OWNER();
+  check("  والإلغاءُ بلا سبب: reason_required", (await fgc(() => repo.voidInvoiceForgiveness(f0b, "  "))) === "reason_required");
+  const c09 = rows("iv09").find((r) => r.kind === "consumed").id;
+  check("  وسطرُ الاستهلاك لا يُلغى وحده (entry_not_voidable)", (await fgc(() => repo.voidInvoiceForgiveness(c09, "غلط بالمبلغ"))) === "entry_not_voidable");
+  check("  المديرُ يلغي بسبب", (await fgc(() => repo.voidInvoiceForgiveness(f0b, "غلط بالمبلغ"))) === "ok");
+  const i0b = iv("iv0b"), r0b = rows("iv0b")[0];
+  check("  الإجمالي ١٠٠ والربح ٥٠ والخصم ٠، والسطرُ باقٍ مختوماً بسببه ومن ألغاه",
+    `${i0b.total}|${i0b.profit}|${i0b.forgiven}|${!!r0b.voided_at}|${r0b.void_reason}|${r0b.voided_by === "c1"}` === "100|50|0|true|غلط بالمبلغ|true");
+  check("  ومرّةً ثانية: already_voided", (await fgc(() => repo.voidInvoiceForgiveness(f0b, "غلط بالمبلغ"))) === "already_voided");
+  check("خصمُ ٤٠ ثم طلبُ توصيلٍ بالطريق بوصل ٦٠", (await fgc(() => F("iv11", 40, "loyal", { expectDue: 100 }))) === "ok");
+  { const d = db(); d.deliveryOrders.push({ id: "d1", invoice_id: "iv11", status: "out", cod_amount: 60, delivered_at: null, collected_at: null }); mem.set(DB_KEY, JSON.stringify(d)); }
+  const f11 = rows("iv11")[0].id;
+  check("  الإلغاءُ وطلبُ التوصيل مفتوح: invoice_has_open_delivery", (await fgc(() => repo.voidInvoiceForgiveness(f11, "غلط بالمبلغ"))) === "invoice_has_open_delivery");
+  check("    (الإجمالي ٦٠ والخصم ٤٠ — لا شيءَ تحرّك)", `${iv("iv11").total}|${iv("iv11").forgiven}` === "60|40");
+  { const d = db(); Object.assign(d.deliveryOrders.find((o) => o.id === "d1"), { status: "delivered", delivered_at: T0, collected_at: T0 }); mem.set(DB_KEY, JSON.stringify(d)); }
+  check("  وبعد التحصيل: يمرّ", (await fgc(() => repo.voidInvoiceForgiveness(f11, "غلط بالمبلغ"))) === "ok");
+
+  // ٩) النسبة ٥٠
+  const prefsKey = `vp_clinic_prefs_${clinic()}`;
+  const prevPrefs = mem.get(prefsKey);
+  mem.set(prefsKey, JSON.stringify({ ...(prevPrefs ? JSON.parse(prevPrefs) : {}), forgive_profit_pct: 50 }));
+  RCP_PIN();
+  check("forgiveProfitPct (قراءةُ النافذة) تقرأ ما يقرؤه الخصمُ نفسُه: ٥٠", (await repo.forgiveProfitPct()) === 50);
+  check("نسبة ٥٠ ⇒ المسموح ٣٧٫٥ من ربح ٧٥: ٤٠ بالمفتاح فوق السقف", (await fgc(() => F("iv0d", 40, "loyal"))) === "above_profit_needs_owner");
+  check("  و٣٧٫٥ تمرّ", (await fgc(() => F("iv0d", 37.5, "loyal"))) === "ok");
+  check("    والسطرُ يحفظ النسبة", rows("iv0d").map((r) => `${r.pct}:${r.amount}`).join() === "50:37.5", rows("iv0d").map((r) => `${r.pct}:${r.amount}`).join());
+  if (prevPrefs == null) mem.delete(prefsKey); else mem.set(prefsKey, prevPrefs);
+
+  // ١٠) سِيَقُ الدفع
+  RCP();
+  check("الاستقبالُ يغيّر طريقةَ الساق الوحيدة (setInvoicePaymentMethod)", (await fgc(() => repo.setInvoicePaymentMethod("iv0c", "card"))) === "ok" && iv("iv0c").payment_details[0].method === "card");
+  check("  ولا يقسّم (payment_legs_frozen)", (await fgc(() => repo.setInvoicePaymentDetails("iv0c", [{ method: "cash", amount: 60, at: T0 }, { method: "card", amount: 40, at: T0 }]))) === "payment_legs_frozen"
+    && iv("iv0c").payment_details.length === 1);
+  check("  ولا يغيّر وقتَ الساق ولو بطريقتها", (await fgc(() => repo.setInvoicePaymentDetails("iv0c", [{ method: "cash", amount: 100 }]))) === "payment_legs_frozen");
+  check("  ويغيّر الطريقةَ وحدها من المحرّر نفسه", (await fgc(() => repo.setInvoicePaymentDetails("iv0c", [{ method: "cash", amount: 100, at: T0 }]))) === "ok");
+  RCP_PIN();
+  check("  وبمفتاح المدير يقسّم", (await fgc(() => repo.setInvoicePaymentDetails("iv0c", [{ method: "cash", amount: 60, at: T0 }, { method: "card", amount: 40, at: T0 }]))) === "ok"
+    && iv("iv0c").payment_details.length === 2);
+  OWNER();
+
+  // ١١) الثابت والقراءة
+  const bad = db().invoices.filter((i) => Math.abs((i.forgiven ?? 0) - rows(i.id).filter((r) => !r.voided_at).reduce((s, r) => s + r.amount, 0)) > 0.001).map((i) => i.id);
+  check("الثابت: forgiven = Σ السطور غير الملغاة، لكلّ فاتورة", bad.length === 0, bad.join());
+  const badT = db().invoices.filter((i) => i.status !== "refunded" && rows(i.id).length && Math.abs(i.total - (Math.max(i.subtotal - (i.discount ?? 0), 0) - (i.forgiven ?? 0))) > 0.001).map((i) => i.id);
+  check("  وكلُّ فاتورةٍ خُصم عليها بقي إجماليُّها = (المجموع − الخصم) − forgiven", badT.length === 0, badT.join());
+  const l01 = await repo.listInvoiceForgiveness(["iv01"]);
+  // السطران قد يقعان بنفس المللي ثانية هنا — فالترتيبُ بالإنشاء ثمّ المعرّف، لا بالمبلغ.
+  check("listInvoiceForgiveness: سطرا الفاتورة ١ بترتيب الإنشاء، والملغى معها", l01.map((r) => r.amount).sort().join() === "20,30"
+    && l01.every((r, k) => k === 0 || l01[k - 1].created_at < r.created_at || (l01[k - 1].created_at === r.created_at && l01[k - 1].id < r.id))
+    && (await repo.listInvoiceForgiveness(["iv0b"]))[0]?.voided_at != null && (await repo.listInvoiceForgiveness([])).length === 0);
+  const rep = await repo.reportForgiveness({ from: "2000-01-01T00:00:00.000Z", to: "2999-01-01T00:00:00.000Z" });
+  const repLen = (db().invoiceForgiveness ?? []).length;
+  check("report_forgiveness: كلُّ سطور المدّة باسم الزبون وإجماليِّ الفاتورة الآن", rep.length === repLen && rep.find((r) => r.invoice_id === "iv01")?.customer_name === "أبو حسن"
+    && rep.find((r) => r.invoice_id === "iv01")?.invoice_total === 150 && rep.find((r) => r.created_by === "c1")?.created_by_name === "موظف c1", JSON.stringify(rep[0]));
+  check("  وبلا مدّة: range_required (لا قائمةٌ فارغة)", (await fgc(() => repo.reportForgiveness({ from: null, to: null }))) === "range_required");
+  const since = (await repo.listSettlements({ since: "2000-01-01T00:00:00.000Z" })).map((i) => i.id);
+  check("listSettlements تجيب فاتورةً خُصم عليها (١) ولا تجيب ما أُلغي خصمُه ولا سِيَقَ له (ب)", since.includes("iv01") && since.includes("iv02") && !since.includes("iv0b"), since.join());
+  check("القراءتان بالاشتراك المنتهي، والكتابتان لا", mod.isReadAllowed("listInvoiceForgiveness") && mod.isReadAllowed("reportForgiveness")
+    && !mod.isReadAllowed("forgiveInvoiceDebt") && !mod.isReadAllowed("voidInvoiceForgiveness") && mod.isReadAllowed("forgiveProfitPct"));
+  {
+    // النسبةُ بالسحابيّ طازجةٌ من clinic_prefs (coalesce → ١٠٠) لا من خبيئة الإعدادات ولا مرآة الجهاز؛ وبلا صفٍّ
+    // ترطيبُ الإعدادات لا يتبنّى نسبةَ المرآة (قد تكون قالبَ عيادةٍ أخرى).
+    const rs = readFileSync("src/lib/repo.ts", "utf8");
+    const body = rs.slice(rs.indexOf("async forgiveProfitPct()"), rs.indexOf("async voidInvoiceForgiveness("));
+    check("السحابيّ: forgiveProfitPct يسأل clinic_prefs ويرمي، و١٠٠ بلا قيمة، بلا الخبيئة",
+      /from\("clinic_prefs"\)\.select\("forgive_profit_pct"\)/.test(body) && /if \(error\) throw error/.test(body) && /\? 100 :/.test(body)
+        && !/getForgiveProfitPct|prefs\(\)/.test(body), body.slice(0, 200));
+    const ss = readFileSync("src/lib/settings.ts", "utf8");
+    check("  وترطيبُ الإعدادات بلا صفّ: النسبةُ ١٠٠ لا نسبةُ المرآة",
+      /prefsCache = \{ \.\.\.local, forgive_profit_pct: DEFAULT_PREFS\.forgive_profit_pct \}/.test(ss) && !/\n\s*prefsCache = local;/.test(ss));
+  }
+  const au = JSON.parse(mem.get("vp_demo_audit") || "[]");
+  const ledgerAudit = au.filter((x) => x.entity === "invoice_forgiveness");
+  check("سجلُّ الحركات: سطرُ الدفتر كمحفّزه (خصم، استهلاك، إلغاء) وتحديثُ الفاتورة معه",
+    ledgerAudit.some((x) => x.action === "INSERT" && x.details.kind === "forgive") && ledgerAudit.some((x) => x.action === "INSERT" && x.details.kind === "consumed")
+      && ledgerAudit.some((x) => x.action === "UPDATE" && x.details.__changed?.voided_at) && au.some((x) => x.entity === "invoices" && x.entity_id === "iv01" && x.details.__changed?.forgiven),
+    ledgerAudit.map((x) => `${x.action}:${x.details.kind}`).join());
+  await repo.deleteInvoice("iv0b");
+  check("حذفُ الفاتورة يحذف دفترَها (on delete cascade)", rows("iv0b").length === 0);
+  mem.delete("vp_session"); pinOff(); mem.delete("vp_demo_audit");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

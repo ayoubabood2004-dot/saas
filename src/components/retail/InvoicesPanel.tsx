@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2, BadgePercent,
 } from "lucide-react";
-import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
+import type { Invoice, InvoiceForgiveness, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
 import { getInvoicesPaged } from "@/lib/settings";
 import { RECENT_DAYS } from "@/lib/prefetchData";
@@ -22,7 +22,8 @@ import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
-import { buildInvoiceFeed, settlementsOf } from "@/lib/settlementFeed";
+import { buildInvoiceFeed, forgivenessOf, settlementsOf, type FeedEntry } from "@/lib/settlementFeed";
+import { reasonKey } from "@/lib/forgiveText";
 
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
 const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "retail.payCard", transfer: "retail.payTransfer" };
@@ -89,6 +90,18 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   const rowsRef = useRef(rows); rowsRef.current = rows;
   const sinceRef = useRef(since); sinceRef.current = since;
 
+  // ---- دفترُ «خصم على الدين» (0241) لكلّ فاتورةٍ مرسومة ----
+  // يُجلب **مع** الصفوف بنفس الطلب ويُكتب معها، فلا تُرسم فاتورةٌ بدفترٍ أقدم منها. وجودُ المفتاح = «جُلب»
+  // (ولو فارغاً): فاتورةٌ بلا مفتاح لا يُرسم لها تسديدٌ ولا خصم — الدفترُ الغائب ليس «لا خصم».
+  const [ledger, setLedger] = useState<Map<string, InvoiceForgiveness[]>>(() => new Map());
+  const mergeLedger = (invs: Invoice[], got: InvoiceForgiveness[]) => setLedger((prev) => {
+    const fresh = new Map<string, InvoiceForgiveness[]>(invs.map((inv) => [inv.id, []]));
+    for (const r of got) fresh.get(r.invoice_id)?.push(r);
+    const next = new Map(prev);
+    for (const [id, list] of fresh) next.set(id, list);
+    return next;
+  });
+
   useEffect(() => {
     if (!paged) return;
     const my = ++reqRef.current;
@@ -107,8 +120,11 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
           repo.searchInvoices({ ...search, limit, since: from }),
           repo.countInvoicesMatching(search),
         ]);
+        // دفترُ الخصم (0241) مع صفوفه بنفس الدفعة: «المتبقّي بعده» لا يُرسم من فاتورةٍ بلا دفترها.
+        const fl = await repo.listInvoiceForgiveness(page.map((r) => r.id));
         if (my !== reqRef.current) return;
         setRows(page);
+        mergeLedger(page, fl);
         setTotal(n);
         setSince(from);
         setExhausted(page.length < limit);
@@ -152,10 +168,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         }
         nextExhausted = got.length < WINDOW_LIMIT;
       }
+      const fl = await repo.listInvoiceForgiveness(got.map((r) => r.id));
       if (my !== reqRef.current) return;
       // المؤشّرُ يضمن ألّا يتكرّر صفٌّ، والفلترُ بالمعرّف احتياطٌ إن دخلت فاتورةٌ بنفس اللحظة.
       const seen = new Set(cur.map((r) => r.id));
       setRows([...cur, ...got.filter((r) => !seen.has(r.id))]);
+      mergeLedger(got, fl);
       setSince(nextSince);
       setExhausted(nextExhausted);
     } catch {
@@ -190,8 +208,9 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     const timer = setTimeout(async () => {
       try {
         const got = await repo.listSettlements({ q: q.trim() || undefined, status, since: settleSince });
+        const fl = await repo.listInvoiceForgiveness(got.map((r) => r.id));
         if (my !== settleReqRef.current) return;
-        setSettled(got); setSettleFailed(false);
+        setSettled(got); mergeLedger(got, fl); setSettleFailed(false);
       } catch {
         if (my !== settleReqRef.current) return;
         // تسديدٌ ناقص يُصدَّق — الفشلُ يُقال بصوت كفشل الصفوف.
@@ -200,6 +219,43 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     }, q.trim() ? 300 : 0);
     return () => clearTimeout(timer);
   }, [paged, windowed, settleSince, q, status, tick]);
+
+  // الوضعُ القديم (كلُّ الفواتير بالمتصفّح): الدفترُ كلُّه منذ أقدم فاتورة بطلبٍ واحد بمدّة — لا آلافُ المعرّفات.
+  // والنتيجةُ مختومةٌ بلقطة الفواتير التي جُلبت لها؛ لقطةٌ أحدثُ منها تنتظر دفترَها.
+  const [legacyLedger, setLegacyLedger] = useState<{ of: Invoice[]; rows: InvoiceForgiveness[] } | null>(null);
+  const [ledgerFailed, setLedgerFailed] = useState(false);
+  useEffect(() => {
+    if (paged) return;
+    let alive = true;
+    void (async () => {
+      try {
+        let lo = Infinity;
+        for (const inv of invoices) { const t0 = new Date(inv.created_at).getTime(); if (t0 < lo) lo = t0; }
+        const got = Number.isFinite(lo)
+          ? await repo.reportForgiveness({ from: new Date(lo).toISOString(), to: new Date(Date.now() + 86_400_000).toISOString() })
+          : [];
+        if (alive) { setLegacyLedger({ of: invoices, rows: got }); setLedgerFailed(false); }
+      } catch {
+        if (alive) { setLegacyLedger(null); setLedgerFailed(true); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [paged, invoices, tick]);
+  const legacyById = useMemo(() => {
+    const m = new Map<string, InvoiceForgiveness[]>();
+    for (const r of legacyLedger?.rows ?? []) { const l = m.get(r.invoice_id); if (l) l.push(r); else m.set(r.invoice_id, [r]); }
+    return m;
+  }, [legacyLedger]);
+  /** دفترُ فاتورةٍ مرسومة، أو null إن لم يُجلب بعد (فلا يُحكم عليها بتسديدٍ ولا خصم). */
+  const ledgerOf = (id: string): InvoiceForgiveness[] | null =>
+    paged ? (ledger.get(id) ?? null) : legacyLedger && legacyLedger.of === invoices ? (legacyById.get(id) ?? []) : null;
+  /** علامةُ الأصلية: خُصم من دينها (خصمٌ حيّ)، أو سُدِّد (تسديدٌ بلا خصم)، أو لا شيء — ولا حكمَ بلا دفترها. */
+  const wasDebtMark = (inv: Invoice): "forgiven" | "settled" | null => {
+    const lr = ledgerOf(inv.id);
+    if (!lr) return null;
+    if (forgivenessOf(inv, lr).length > 0) return "forgiven";
+    return settlementsOf(inv, lr).length > 0 ? "settled" : null;
+  };
 
   const shown = useMemo(() => {
     // بالوضع المُصفَّح الخادمُ فلتر ورتّب (الأحدث إنشاءً أوّلاً — ترتيبُ المؤشّر نفسه).
@@ -219,14 +275,24 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
 
   /* القائمةُ المرسومة: الفواتيرُ وسطورُ التسديد بالوقت. الأرضيّةُ = أقدمُ لحظةٍ جُلبت فواتيرُها
      كاملةً — تحتها مدىً لم يُجلب، فتسديدٌ فيه يجعله يبدو كاملاً وهو ناقص. */
-  const feed = useMemo(() => {
-    if (!paged) return buildInvoiceFeed(shown, shown, null);
+  const feed = useMemo((): FeedEntry[] => {
+    // قبل أن يصل دفترُ الخصم: الفواتيرُ وحدها بمكانها، بلا سطور تسديدٍ يُحسب «المتبقّي بعده» فيها بلا خصمٍ لاحق.
+    const invoicesOnly = (list: Invoice[]): FeedEntry[] => list.map((inv) => ({ kind: "invoice", key: inv.id, inv, at: inv.created_at }));
+    if (!paged) {
+      if (!legacyLedger || legacyLedger.of !== invoices) return invoicesOnly(shown);
+      return buildInvoiceFeed(shown, shown, null, legacyLedger.rows);
+    }
+    if (!rows.every((r) => ledger.has(r.id))) return invoicesOnly(rows);
     const last = rows[rows.length - 1];
     const partial = windowed ? !exhausted : hasMore;
     const floor = partial && last ? last.created_at : windowed ? since : null;
-    return buildInvoiceFeed(rows, settled, floor);
-  }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since]);
-  const anyFailed = failed || settleFailed;
+    const src = settled.filter((s) => ledger.has(s.id));
+    const ids = new Set([...rows, ...src].map((i) => i.id));
+    const fl: InvoiceForgiveness[] = [];
+    for (const id of ids) fl.push(...(ledger.get(id) ?? []));
+    return buildInvoiceFeed(rows, src, floor, fl);
+  }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since, ledger, legacyLedger, invoices]);
+  const anyFailed = failed || settleFailed || ledgerFailed;
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: t("retail.fAll", "All") },
@@ -264,7 +330,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </div>
       )}
 
-      {paged && anyFailed ? (
+      {anyFailed ? (
         /* فشلُ الجلب يُقال بصوت — لا يُعرض فراغاً يُصدَّق. */
         <div className="card space-y-3 p-8 text-center" data-invfailed>
           <p className="mx-auto max-w-md text-sm text-ink-subtle">{t("retail.invoicesLoadFailed", "Could not load invoices. It is a connection problem and no invoice is lost — try again.")}</p>
@@ -310,6 +376,33 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 </motion.button>
               );
             }
+            if (e.kind === "forgiveness") {
+              // «خصم على الدين» (0241): صفرُ نقد — سطرٌ بوقته بلقطته «المتبقّي قبل ← بعد»، والضغطُ يفتح الأصلية.
+              const rk = reasonKey(e.reason);
+              return (
+                <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(e.inv); }} data-forgiveness={e.inv.id}
+                  className="card flex w-full items-center gap-3 border-dashed p-3.5 text-start transition hover:border-warn-300 hover:shadow-raised">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300">
+                    <BadgePercent size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
+                      {displayCustomerName(e.inv.customer_name) || t("retail.walkIn", "Walk-in")}
+                      <Badge tone={e.aboveCap ? "danger" : "warn"}>{t("forgive.row", "Debt discount")}</Badge>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
+                      <span>{formatDate(e.at, i18n.language)} · {new Date(e.at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                      {rk && <span>{t(rk)}</span>}
+                      <span className="font-mono text-2xs">· {t("retail.settlementOf", { no: invoiceNo(e.inv.id), defaultValue: "on {{no}}" })}</span>
+                    </div>
+                  </div>
+                  <div className="text-end">
+                    <p className="font-display font-bold tabular-nums text-warn-600 dark:text-warn-300">−{money(e.amount)}</p>
+                    <p className="text-2xs text-ink-subtle">{t("forgive.dueArrow", { before: money(e.dueBefore), after: money(e.dueAfter), defaultValue: "Left {{before}} → {{after}}" })}</p>
+                  </div>
+                </motion.button>
+              );
+            }
             const inv = e.inv;
             const refunded = (inv.status ?? "paid") === "refunded";
             const PayIcon = inv.payment_method ? PAY_ICON[inv.payment_method] : null;
@@ -336,8 +429,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 </div>
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
                 {!refunded && isDebt(inv) && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
-                {/* كانت ديناً وسُدِّدت — علامةٌ على الأصلية بمكانها؛ التسديدُ نفسُه سطرُه بوقته. */}
-                {!refunded && !isDebt(inv) && settlementsOf(inv).length > 0 && (
+                {/* كانت ديناً وسُدِّدت — علامةٌ على الأصلية بمكانها؛ التسديدُ نفسُه سطرُه بوقته. وما خُصم من دينها
+                    لا يقال عنه «سُدِّد» (0241): علامةُ الخصم بدلها. بلا دفترٍ بعدُ لا علامة — لا حكمَ بلا الدفتر. */}
+                {!refunded && wasDebtMark(inv) === "forgiven" && (
+                  <Badge tone="warn"><BadgePercent size={12} /> {t("forgive.badge", "Debt discounted")}</Badge>
+                )}
+                {!refunded && !isDebt(inv) && wasDebtMark(inv) === "settled" && (
                   <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.wasDebt", "سُدِّد دَينها")}</Badge>
                 )}
                 <div className="text-end">

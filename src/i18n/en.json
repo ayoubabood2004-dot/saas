@@ -6344,5 +6344,17 @@
       "mlL": "ml/L",
       "gL": "g/L"
     }
+  },
+  "forgive": {
+    "row": "Debt discount",
+    "dueArrow": "Left {{before}} → {{after}}",
+    "badge": "Debt discounted",
+    "reason": {
+      "negotiation": "Settlement deal",
+      "loyal": "Regular customer",
+      "hardship": "Customer hardship",
+      "dispute": "Disputed amount",
+      "other": "Other"
+    }
   }
 }

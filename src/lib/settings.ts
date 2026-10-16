@@ -143,8 +143,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; cage_layout_rev: number; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean; expiry_return_days: number; expiry_critical_days: number; reorder_lead_days: number; count_daily_n: number }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, cage_layout_rev: 0, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null, manager_mode_stock_edit: false, expiry_return_days: 90, expiry_critical_days: 30, reorder_lead_days: 7, count_daily_n: 5 };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; cage_layout_rev: number; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean; expiry_return_days: number; expiry_critical_days: number; reorder_lead_days: number; count_daily_n: number; forgive_profit_pct: number }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, cage_layout_rev: 0, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null, manager_mode_stock_edit: false, expiry_return_days: 90, expiry_critical_days: 30, reorder_lead_days: 7, count_daily_n: 5, forgive_profit_pct: 100 };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -285,11 +285,14 @@ export async function hydrateClinicPrefs(): Promise<void> {
         expiry_critical_days: typeof d.expiry_critical_days === "number" ? d.expiry_critical_days : local.expiry_critical_days,
         reorder_lead_days: typeof d.reorder_lead_days === "number" ? d.reorder_lead_days : local.reorder_lead_days,
         count_daily_n: typeof d.count_daily_n === "number" ? d.count_daily_n : local.count_daily_n,
+        // 0241: سقفُ الخصم على الدين قرارُ صاحب العيادة — السحابةُ تفوز، ولا يُبذَر من الجهاز أبداً.
+        forgive_profit_pct: typeof d.forgive_profit_pct === "number" ? d.forgive_profit_pct : DEFAULT_PREFS.forgive_profit_pct,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
       const local = readPrefsLocal();
-      prefsCache = local;
+      // 0241: بلا صفٍّ الخادمُ يقرأ coalesce(null, 100) — لا نسبةَ مرآةٍ قد تكون من قالب عيادةٍ أخرى.
+      prefsCache = { ...local, forgive_profit_pct: DEFAULT_PREFS.forgive_profit_pct };
       // بذرةُ صفٍّ جديد بأرض صاحبها وحدها (0153): `readPrefsLocal` يتبنّى القالبَ
       // الوحيد بالجهاز حين يفرغ مفتاحُ العيادة — وهو ما يجعل شعارَ عيادةٍ واسمَها
       // يهبطان بعيادةِ غيرها لو اختلف الخادمُ والمتصفّح على الهويّة.
@@ -812,6 +815,12 @@ export function getCountDailyN(): number {
 export function setCountDailyN(count: number) {
   const n = Math.round(Number(count));
   patchPrefs({ count_daily_n: Number.isFinite(n) && n >= 1 ? Math.min(50, n) : 5 }, "count-daily-set");
+}
+/** أقصى الخصم على الدين من ربح الفاتورة بلا صاحب العيادة (0241). ٠..١٠٠، افتراضي ١٠٠
+ *  (يطابق عمودَ clinic_prefs.forgive_profit_pct). الكتابةُ لصاحب العيادة من حسابه — مع الواجهة. */
+export function getForgiveProfitPct(): number {
+  const n = Math.round(Number(prefs().forgive_profit_pct));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 100;
 }
 
 /* ---- مطابقة الصندوق اليومية (0119) -----------------------------------------
