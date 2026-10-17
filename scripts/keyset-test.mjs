@@ -122,6 +122,8 @@ const CONTRACT = {
   listInvoiceItemsFor: null,
   listInvoicesByIds: null,
   openDebts: null,
+  // 0240: فواتيرُ سُدِّد عليها منذ لحظة — buildInvoiceFeed ترتّب سطورَ التسديد بوقتها، فترتيبُ الجلب لا يعني شيئاً.
+  listSettlements: null,
   listExpenses: ["spent_at", false, "time"],
   // 0208: علاماتُ التذكير تُفهرَس بخريطةٍ بالمفتاح — ترتيبُها لا يعني شيئاً.
   listReminderMarks: null,
@@ -143,6 +145,11 @@ const CONTRACT = {
   listReturnRows: null,
   // ١٤/١٠: صفوفُ زيارةٍ واحدة لتمديد الخطة — آخرُ يومٍ يُحسب بالمتصفّح (max)، فالترتيبُ لا يعني شيئاً.
   listVisitTreatments: null,
+  // 0241: دفترُ الخصم على الدين (لفواتيرَ بعينها) وتقريرُه بالفترة — يُرتَّبان بالمتصفّح بالإنشاء ثمّ المعرّف.
+  listInvoiceForgiveness: null,
+  reportForgiveness: null,
+  // 0241: علاماتُ التوصيل لفواتيرَ بعينها — تُفهرَس بخريطةٍ بالمعرّف (طلبٌ واحدٌ لكلّ فاتورة)، فالترتيبُ لا يعني شيئاً.
+  listDeliveryMarks: null,
 };
 
 console.log("▸ ٢) عقدُ المستدعين الـ٣١ — لا ترتيبَ بالخادم، والعرضُ بنفس ترتيبه");
@@ -168,7 +175,7 @@ for (let i = 0; i < lines.length; i++) {
   const sort = split >= 0 ? args.slice(split + 1).trim() : "";
   calls.push({ name, make, sort });
 }
-check("عددُ المستدعين ٤١ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 41, `طلع ${calls.length}`);
+check("عددُ المستدعين ٤٥ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 45, `طلع ${calls.length}`);
 const names = new Set(calls.map((c) => c.name));
 check("  وكلُّهم بالعقد بأسمائهم", Object.keys(CONTRACT).every((n) => names.has(n)) && [...names].every((n) => n in CONTRACT),
   `ناقص: ${Object.keys(CONTRACT).filter((n) => !names.has(n)).join("، ")} / زائد: ${[...names].filter((n) => !(n in CONTRACT)).join("، ")}`);

@@ -17,6 +17,11 @@ import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
+import { deliveryMarksOf, settlementsOf } from "./settlementFeed";
+import type { InvoiceForgiveness, ForgivenessReportRow, ForgiveInput, DeliveryMark } from "@/types";
+import { forgiveActor, validateForgive, validateVoid, consumeForgiveness, hasOpenDelivery, legsChangeAllowedForStaff, pgRound2, pgMoneyText,
+  type ForgiveActor, type ForgiveCheck, type VoidErrorCode } from "./debtForgive";
+import { custKey } from "./customerKey";
 import { cleanRef } from "./deliverySearch";
 import { phoneDigits } from "./phone";
 import { searchable, invNormName } from "./utils";
@@ -37,7 +42,7 @@ import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo } from "./storeLib";
 import { expenseMethodOf } from "./pockets";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
-import { getClinicName, getClinicLogo, getClinicSocials, getDialCode } from "./settings";
+import { getClinicName, getClinicLogo, getClinicSocials, getDialCode, getForgiveProfitPct } from "./settings";
 import { buildCustomerDirectory } from "./customerDirectory";
 import type { CustomerPage, CustomerSearchOpts } from "@/types";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
@@ -350,6 +355,84 @@ const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 
 /* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
 function demoHint(code: string, hint: string): Error {
   return Object.assign(new Error(code), { code: "P0001", hint });
+}
+
+/* ---- الخصمُ على الدين بالتجريبيّ (مرآةُ 0241): الحسابُ والحرّاسُ من debtForgive.ts نفسِها،
+ *      والتلميحاتُ نسخةُ تلميحات الدالّتين حرفاً. ---- */
+/** مَن يطلب، بقدر ما تعبّر عنه جلسةُ التجريبيّ: الدورُ الأساس من الجلسة (الاستقبالُ والطبيبُ ليسا
+ *  مديراً)، ورفعُ المفتاح من مفتاح وضع المدير بالجهاز. لا مشغّلَ منصّةٍ بالتجريبيّ. */
+function demoForgiveActor(): ForgiveActor {
+  return forgiveActor({ base: demoBaseRole(), pin: demoPinLive() });
+}
+/** الدورُ الأساس (auth_role_base) بالمفاتيح التي **يكتبها** AuthContext.persistRaw: `raw.staff.staffRole`، ثمّ
+ *  `raw.staff.role ?? raw.rawRole` (owner/admin مدير، doctor طبيب، reception استقبال) — قراءةُ demoStaffRole
+ *  نفسُها (demoStoreCats.ts كسولةٌ فلا تُستورد هنا). بلا جلسةٍ = صاحبُ العيادة كباقي التجريبيّ؛ أمّا جلسةٌ بدورٍ
+ *  لا يُعرف فليست مديراً — مفتاحٌ يضيع أو يتهجّى غلطاً لا يرفع موظّفاً لمدير بصمت. */
+function demoBaseRole(): string {
+  let s: { raw?: { rawRole?: string; staff?: { role?: string; staffRole?: string | null } | null } } | null = null;
+  try { s = JSON.parse(localStorage.getItem("vp_session") || "null"); } catch { /* swallow-ok: جلسةٌ تالفة كغيابها */ }
+  if (!s?.raw) return "manager";
+  const staffRole = s.raw.staff?.staffRole;
+  if (staffRole) return staffRole;
+  const r = s.raw.staff?.role ?? s.raw.rawRole;
+  return r === "owner" || r === "admin" ? "manager" : r === "doctor" ? "veterinarian" : r === "reception" ? "receptionist" : `unknown:${r ?? ""}`;
+}
+function demoPinLive(): boolean {
+  try { return Number(localStorage.getItem(`vp_override_until_${getActiveClinicId()}`) || 0) > Date.now(); } catch { return false; /* swallow-ok: بلا تخزين = بلا رفع */ }
+}
+function demoUserId(): string | null {
+  try { return (JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { id?: string } } | null)?.raw?.id ?? null; } catch { return null; }
+}
+function forgiveRefusal(f: Extract<ForgiveCheck, { ok: false }>): Error {
+  const m = (n: number | undefined) => pgMoneyText(n ?? 0);
+  switch (f.code) {
+    case "not_allowed": return demoHint("not_allowed", "الخصمُ على الدين للمدير — أو افتح وضعَ المدير برمزه.");
+    case "operator_not_allowed": return demoHint("operator_not_allowed", "مشغّلُ المنصّة لا يخصم من ديون العيادة — الخصمُ سطرُ مالٍ يسمّي شخصاً من كادرها.");
+    case "invoice_not_found": return demoHint("invoice_not_found", "الفاتورةُ غيرُ موجودة بعيادتك.");
+    case "invoice_refunded": return demoHint("invoice_refunded", "الفاتورةُ مُرجَعة — لا دينَ عليها يُخصم.");
+    case "customer_required": return demoHint("customer_required", "الخصمُ على دين زبونٍ معروف — اكتب اسمَه أو رقمَه بالفاتورة أوّلاً.");
+    case "invoice_has_open_delivery": return demoHint("invoice_has_open_delivery", "لهذه الفاتورة طلبُ توصيلٍ مفتوح — المبلغُ بذمّة السائق أو الشركة لا الزبون. حصّله من «التوصيل» أوّلاً.");
+    case "due_changed": return demoHint("due_changed", `تغيّر المتبقّي على هذه الفاتورة (صار ${m(f.due)}) — جهازٌ آخر سدّد أو عدّل. افتحها من جديد.`);
+    case "reason_required": return demoHint("reason_required", "اختر سببَ الخصم: اتفاق تسوية، زبون دائم، ظرف الزبون، خلاف على المبلغ، أو غير ذلك.");
+    case "note_required": return f.aboveCap
+      ? demoHint("note_required", "الخصمُ فوق المسموح من الربح يحتاج ملاحظةً مكتوبة تشرح السبب (٨ أحرف فأكثر).")
+      : demoHint("note_required", "«غير ذلك» يحتاج ملاحظةً تشرح السبب.");
+    case "amount_invalid": return demoHint("amount_invalid", "مبلغُ الخصم لازم يكون أكبر من صفر.");
+    case "above_due": return demoHint("above_due", `الخصمُ أكبر من المتبقّي على الفاتورة (${m(f.due)}).`);
+    case "above_profit_needs_owner": return f.pin
+      ? demoHint("above_profit_needs_owner", `الخصمُ أكبر من المسموح من ربح الفاتورة (${m(f.allowed)}) — يحتاج صاحبَ العيادة من حسابه هو بلا مفتاح المدير؛ ومفتاحُ المدير مفتوحٌ على حسابك الآن (على جهازٍ ما). أقفله أو انتظر انتهاءه ثم أعد المحاولة.`)
+      : demoHint("above_profit_needs_owner", `الخصمُ أكبر من المسموح من ربح الفاتورة (${m(f.allowed)}) — يحتاج صاحبَ العيادة من حسابه.`);
+    case "confirm_loss_required": return (f.loss ?? 0) > 0
+      ? demoHint("confirm_loss_required", `هذا الخصمُ بيعٌ بخسارة ${m(f.loss)} — أكّد أنّك تفهم هذا قبل الحفظ.`)
+      : demoHint("confirm_loss_required", `هذا الخصمُ فوق المسموح من الربح (${m(f.allowed)}) — أكّد قبل الحفظ.`);
+  }
+}
+function voidRefusal(code: VoidErrorCode): Error {
+  switch (code) {
+    case "not_allowed": return demoHint("not_allowed", "إلغاءُ الخصم للمدير — أو افتح وضعَ المدير برمزه.");
+    case "operator_not_allowed": return demoHint("operator_not_allowed", "مشغّلُ المنصّة لا يلغي خصوماتِ العيادة — الإلغاءُ سطرُ مالٍ يسمّي شخصاً من كادرها.");
+    case "reason_required": return demoHint("reason_required", "اكتب سببَ إلغاء الخصم.");
+    case "entry_not_found": return demoHint("entry_not_found", "سطرُ الخصم غيرُ موجود بعيادتك.");
+    case "invoice_not_found": return demoHint("invoice_not_found", "الفاتورةُ غيرُ موجودة بعيادتك.");
+    case "entry_not_voidable": return demoHint("entry_not_voidable", "هذا السطرُ استهلاكٌ تبع مرتجعاً أو تعديلاً — لا يُلغى وحده.");
+    case "already_voided": return demoHint("already_voided", "هذا الخصمُ مُلغى من قبل.");
+    case "invoice_refunded": return demoHint("invoice_refunded", "الفاتورةُ مُرجَعة — لا دينَ يرجع عليها.");
+    case "invoice_has_open_delivery": return demoHint("invoice_has_open_delivery", "لهذه الفاتورة طلبُ توصيلٍ مفتوح — إلغاءُ الخصم يرفع مبلغاً لم يُطلب من السائق جمعُه. حصّل الطلبَ من «التوصيل» أوّلاً.");
+    case "forgiveness_consumed": return demoHint("forgiveness_consumed", "استُهلك جزءٌ من هذا الخصم بمرتجعٍ أو تعديلٍ بعده — إلغاؤه يرفع ديناً على بضاعةٍ رجعت.");
+  }
+}
+/** مرآةُ invoice_forgiveness_consume: سطرٌ سالب بلقطة الفاتورة **قبل** تحديثها (تُنادى قبله). */
+function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: string, totalBefore: number, paidBefore: number): void {
+  if (!(amount > 0)) return;
+  const row: InvoiceForgiveness = {
+    id: uuid(), clinic_id: null, invoice_id: inv.id, kind: "consumed", amount: -pgRound2(amount), reason_code: null, note,
+    pay_amount: 0, pay_method: null, total_before: totalBefore, paid_before: paidBefore,
+    due_before: Math.max(0, pgRound2(totalBefore - paidBefore)), profit_base: null, cost_total: inv.cost_total ?? null, pct: null,
+    above_cap: false, via_pin: demoForgiveActor().pin, cust_key: custKey(inv.customer_phone, inv.customer_name, getDialCode()),
+    created_at: new Date().toISOString(), created_by: demoUserId(), voided_at: null, voided_by: null, void_reason: null,
+  };
+  db.invoiceForgiveness = [...(db.invoiceForgiveness ?? []), row];
+  demoAuditPush({ action: "INSERT", entity: "invoice_forgiveness", entity_id: row.id, details: row as unknown as Record<string, unknown> });
 }
 function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
   if (!(db.companies ?? []).some((c) => c.id === companyId)) throw demoHint("no_company", "الشركةُ غيرُ موجودة بعيادتك.");
@@ -782,6 +865,11 @@ function demoActivityRows(from: string, to: string): ActivityRow[] {
   return [...audit, ...logins];
 }
 
+
+/** مرآةُ invoice_delivery_marks (0241): طلبُ توصيلٍ غيرُ مُرجَع لكلّ فاتورة، ومتى حُصِّل نقدُه. */
+function demoDeliveryMarks(): DeliveryMark[] {
+  return deliveryMarksOf(loadDB().deliveryOrders ?? []);
+}
 
 /** مرآةُ `invoice_matches` (0150) للوضع التجريبي: اسمٌ/هاتفٌ/رقمُ فاتورة بنفس التطبيع، وفلترُ الحالة. */
 function demoMatchingInvoices(s: InvoiceSearch): Invoice[] {
@@ -4060,6 +4148,18 @@ const demoRepo = {
   async countInvoicesMatching(s: InvoiceSearch): Promise<number> {
     return demoMatchingInvoices(s).length;
   },
+  /** مرآةُ invoice_settlements (0240): المطابقةُ التي فيها تسديدٌ منذ since — الحكمُ نفسُه من settlementsOf. */
+  async listSettlements(s: Pick<InvoiceSearch, "q" | "status" | "since">): Promise<Invoice[]> {
+    // 0241: والفاتورةُ التي خُصم عليها (خصمٌ حيّ) منذ since — سطرُ «خصم على الدين» بوقته.
+    const after = (at: string) => !s.since || new Date(at).getTime() >= new Date(s.since).getTime();
+    const ledger = loadDB().invoiceForgiveness ?? [];
+    const forgiven = new Set(ledger.filter((f) => f.kind === "forgive" && !f.voided_at && after(f.created_at)).map((f) => f.invoice_id));
+    // 0241: وساقُ تحصيل التوصيل ليست تسديداً — نفسُ العلامات التي يقرؤها الخادم (invoice_delivery_marks).
+    const marks = demoDeliveryMarks();
+    return demoMatchingInvoices(s)
+      .filter((i) => settlementsOf(i, ledger, marks).some((l) => after(l.at)) || forgiven.has(i.id))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+  },
   async openDebts(): Promise<Invoice[]> {
     return (loadDB().invoices ?? [])
       .filter((i) => (i.status ?? "paid") !== "refunded" && dueOf(i) > 0.01)
@@ -4086,6 +4186,8 @@ const demoRepo = {
     }
     db.invoices = (db.invoices ?? []).filter((x) => x.id !== invoiceId);
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
+    // مرآةُ `on delete cascade` لدفتر الخصم (0241).
+    if (db.invoiceForgiveness) db.invoiceForgiveness = db.invoiceForgiveness.filter((x) => x.invoice_id !== invoiceId);
     saveDB(db);
     // Mirror the server audit trigger so the demo's security log shows deletions.
     if (inv) demoAuditPush({ action: "DELETE", entity: "invoices", entity_id: invoiceId, details: inv as unknown as Record<string, unknown> });
@@ -4160,12 +4262,16 @@ const demoRepo = {
     const discount = Math.max(0, Number(inv.discount) || 0);
     // أجرة التوصيل ليست عموداً بالفاتورة بل سطراً داخلها («أجرة توصيل»)، فهي
     // محسوبة ضمن المجموع الفرعي تلقائياً — ولا تُجمع مرتين.
+    const paid = inv.amount_paid != null ? inv.amount_paid : 0;
+    // 0241: الخصمُ على الدين لا يبقى أكبرَ من الدين الذي كان يُسقطه — ما نقص يُستهلك (سطرٌ سالب «تعديل»).
+    const forg = consumeForgiveness(Math.max(0, r2(subtotal - discount)), paid, inv.forgiven);
+    if (forg.consumed > 0) demoConsumeForgiveness(db, inv, forg.consumed, "\u062A\u0639\u062F\u064A\u0644", oldTotal, paid);
     inv.subtotal = subtotal;
-    inv.total = Math.max(0, r2(subtotal - discount));
+    inv.total = forg.total;
+    if (inv.forgiven != null || forg.forgiven) inv.forgiven = forg.forgiven;
     inv.cost_total = cost;
     inv.profit = r2(inv.total - cost);
     inv.item_count = clean.reduce((n, l) => n + l.qty, 0);
-    const paid = inv.amount_paid != null ? inv.amount_paid : 0;
     // المدفوع أكبر من الإجمالي الجديد (نقص أصناف بعد الدفع) → يبقى كما هو
     // ويظهر كفائض للزبون؛ لا نتصرّف بنقد الزبون تلقائياً.
     const cod = Math.max(0, r2(inv.total - paid));
@@ -4241,14 +4347,19 @@ const demoRepo = {
     const subtotal = r2(left.reduce((s, l) => s + l.line_total, 0));
     const discount = Math.max(0, Number(inv.discount) || 0);
     const oldTotal = Number(inv.total) || 0;
+    // المدفوع كما بالدالّة: coalesce(amount_paid, total) — بالإجمالي **قبل** المرتجع.
+    const paid = inv.amount_paid != null ? inv.amount_paid : oldTotal;
+    // 0241: الخصمُ على الدين يُستهلك قبل أيّ نقد — لا يخرج نقدٌ إلا حين ينزل المجموعُ تحت المدفوع.
+    const forg = consumeForgiveness(Math.max(0, r2(subtotal - discount)), paid, inv.forgiven);
+    if (forg.consumed > 0) demoConsumeForgiveness(db, inv, forg.consumed, "\u0645\u0631\u062A\u062C\u0639", oldTotal, paid);
     inv.subtotal = subtotal;
-    inv.total = Math.max(0, r2(subtotal - discount));
+    inv.total = forg.total;
+    if (inv.forgiven != null || forg.forgiven) inv.forgiven = forg.forgiven;
     inv.cost_total = r2(left.reduce((s, l) => s + l.qty * l.unit_cost, 0));
     inv.profit = r2(inv.total - inv.cost_total);
     inv.item_count = left.reduce((n, l) => n + l.qty, 0);
 
     // النقد الخارج فعلاً = المدفوع فوق الإجمالي الجديد. آجلة ⇒ الدين ينقص وحده.
-    const paid = inv.amount_paid != null ? inv.amount_paid : inv.total;
     const back = Math.max(0, r2(paid - inv.total));
     if (back > 0) {
       const legs = [...(inv.payment_details ?? [])];
@@ -4328,6 +4439,10 @@ const demoRepo = {
       // سطور التصحيح (السالبة) تُحفظ كما هي: إعادة توزيع السِّيَق تخصّ ما
       // وصل فعلاً، وإسقاطُ عكسٍ سابق هنا يعيد للفاتورة مالاً لم يصل.
       const fixes = (inv.payment_details ?? []).filter((l) => Number(l.amount) < 0);
+      // مرآةُ invoices_guard_legs (0241): غيرُ المدير يغيّر طريقةَ ساقٍ قائمة بمكانها وحدها.
+      if (demoForgiveActor().role !== "manager" && !legsChangeAllowedForStaff(inv.payment_details, [...clean, ...fixes])) {
+        throw demoHint("payment_legs_frozen", "تقسيمُ الدفعة (المبالغ والأوقات وعددُ الدفعات) للمدير — تقدر تغيّر طريقةَ الدفع وحدها.");
+      }
       inv.payment_details = [...clean, ...fixes];
       inv.payment_method = clean.reduce((b, p) => (p.amount > b.amount ? p : b), clean[0]).method;
       saveDB(db);
@@ -4368,6 +4483,97 @@ const demoRepo = {
     if (pos.length) inv.payment_method = pos.reduce((b, p) => (p.amount > b.amount ? p : b), pos[0]).method;
     saveDB(db);
     return inv;
+  },
+  /* ---- «خصم على الدين» (0241) — مرآةُ forgive_invoice_debt / void_invoice_forgiveness: نفسُ الرموز
+   *      بنفس الترتيب (validateForgive/validateVoid)، ونفسُ الحساب، ونفسُ شكل الساق والسطر. ---- */
+  async forgiveInvoiceDebt(invoiceId: string, input: ForgiveInput): Promise<Invoice> {
+    const db = loadDB();
+    const actor = demoForgiveActor();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId) ?? null;
+    const chk = validateForgive({
+      actor, inv, openDelivery: inv ? hasOpenDelivery(db.deliveryOrders, inv.id) : false, pct: getForgiveProfitPct(),
+      amount: input.amount, reason: input.reason, note: input.note, expectDue: input.expectDue, pay: input.pay, confirmLoss: input.confirmLoss,
+    });
+    if (!chk.ok) throw forgiveRefusal(chk);
+    const target = inv as Invoice;
+    const now = new Date().toISOString();
+    const method = (input.method || "cash") as PaymentMethod;
+    if (chk.pay > 0) {
+      // «تسوية»: الدفعةُ أوّلاً بشكل ساق 0061؛ وبيعةٌ بلا سِيَق تُثبَّت ضمنيّتُها بتاريخ الفاتورة قبلها (درسُ 0113).
+      const legs: PaymentSplit[] = Array.isArray(target.payment_details) ? [...target.payment_details] : [];
+      if (legs.length === 0 && (target.amount_paid ?? 0) > 0.005) {
+        legs.push({ method: (target.payment_method ?? method) as PaymentMethod, amount: target.amount_paid as number, at: new Date(target.created_at).toISOString() });
+      }
+      legs.push({ method, amount: chk.pay, at: now });
+      target.amount_paid = pgRound2((target.amount_paid ?? 0) + chk.pay);
+      target.payment_details = legs;
+      target.payment_method = legs.reduce((b, p) => (p.amount > b.amount ? p : b), legs[0]).method;
+    }
+    const totalBefore = target.total;
+    const paidBefore = target.amount_paid ?? target.total;
+    target.forgiven = pgRound2((target.forgiven ?? 0) + chk.amount);
+    target.total = pgRound2(target.total - chk.amount);
+    target.profit = pgRound2((target.profit ?? 0) - chk.amount);
+    const row: InvoiceForgiveness = {
+      id: uuid(), clinic_id: null, invoice_id: target.id, kind: "forgive", amount: chk.amount, reason_code: chk.reason, note: chk.note,
+      pay_amount: chk.pay, pay_method: chk.pay > 0 ? method : null, total_before: totalBefore, paid_before: paidBefore,
+      due_before: chk.caps.due, profit_base: chk.caps.profitBase, cost_total: target.cost_total ?? null, pct: chk.caps.pct,
+      above_cap: chk.aboveCap, via_pin: actor.pin, cust_key: custKey(target.customer_phone, target.customer_name, getDialCode()),
+      created_at: now, created_by: demoUserId(), voided_at: null, voided_by: null, void_reason: null,
+    };
+    db.invoiceForgiveness = [...(db.invoiceForgiveness ?? []), row];
+    saveDB(db);
+    // سطرُ الدفتر كمحفّزه (audit_all على invoice_forgiveness)؛ وتحديثُ الفاتورة يلتقطه DEMO_ACTIVITY_MAP.
+    demoAuditPush({ action: "INSERT", entity: "invoice_forgiveness", entity_id: row.id, details: row as unknown as Record<string, unknown> });
+    return target;
+  },
+  /** مرآةُ قراءة النسبة الطازجة: التجريبيُّ يقرأ ما يقرؤه forgiveInvoiceDebt هنا نفسُه. */
+  async forgiveProfitPct(): Promise<number> {
+    return getForgiveProfitPct();
+  },
+  async voidInvoiceForgiveness(entryId: string, reason: string): Promise<Invoice> {
+    const db = loadDB();
+    const entry = (db.invoiceForgiveness ?? []).find((r) => r.id === entryId) ?? null;
+    const inv = entry ? (db.invoices ?? []).find((x) => x.id === entry.invoice_id) ?? null : null;
+    const chk = validateVoid({ actor: demoForgiveActor(), reason, entry, inv, openDelivery: inv ? hasOpenDelivery(db.deliveryOrders, inv.id) : false });
+    if (!chk.ok) throw voidRefusal(chk.code);
+    const target = inv as Invoice, row = entry as InvoiceForgiveness;
+    target.forgiven = Math.max(0, pgRound2((target.forgiven ?? 0) - row.amount));
+    target.total = pgRound2(target.total + row.amount);
+    target.profit = pgRound2((target.profit ?? 0) + row.amount);
+    const now = new Date().toISOString();
+    row.voided_at = now; row.voided_by = demoUserId(); row.void_reason = chk.reason;
+    saveDB(db);
+    demoAuditPush({ action: "UPDATE", entity: "invoice_forgiveness", entity_id: row.id,
+      details: { ...(row as unknown as Record<string, unknown>), __changed: { voided_at: [null, now], void_reason: [null, chk.reason] } } });
+    return target;
+  },
+  /** علاماتُ التوصيل لفواتيرَ بعينها — مرآةُ invoice_delivery_marks (0241): طلبٌ غيرُ مُرجَع ومتى حُصِّل. */
+  async listDeliveryMarks(invoiceIds: string[]): Promise<DeliveryMark[]> {
+    const ids = new Set(invoiceIds);
+    return demoDeliveryMarks().filter((m) => ids.has(m.invoice_id));
+  },
+  /** سطورُ الدفتر لفواتيرَ بعينها (الملغاةُ معها)، بترتيب الإنشاء — مرآةُ list_invoice_forgiveness. */
+  async listInvoiceForgiveness(invoiceIds: string[]): Promise<InvoiceForgiveness[]> {
+    const ids = new Set(invoiceIds);
+    return (loadDB().invoiceForgiveness ?? []).filter((r) => ids.has(r.invoice_id))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  },
+  /** مرآةُ report_forgiveness: مدّةٌ لازمة، وسطورُ الدفتر بيومها مع زبون الفاتورة وحالِها الآن. */
+  async reportForgiveness(range: { from: string; to: string }): Promise<ForgivenessReportRow[]> {
+    if (!range?.from || !range?.to || range.to < range.from) throw demoHint("range_required", "تقريرُ خصومات الديون يحتاج مدّةً (من — إلى).");
+    const db = loadDB();
+    const lo = new Date(range.from).getTime(), hi = new Date(range.to).getTime();
+    const byId = new Map((db.invoices ?? []).map((i) => [i.id, i]));
+    const me = demoUserId(), myName = demoActorName();
+    return (db.invoiceForgiveness ?? [])
+      .filter((r) => { const t = new Date(r.created_at).getTime(); return t >= lo && t <= hi && byId.has(r.invoice_id); })
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+      .map((r) => {
+        const i = byId.get(r.invoice_id) as Invoice;
+        return { ...r, created_by_name: r.created_by && r.created_by === me ? myName : null, customer_name: i.customer_name ?? null,
+          customer_phone: i.customer_phone ?? null, invoice_total: i.total, invoice_status: i.status ?? "paid", invoice_created_at: i.created_at };
+      });
   },
   /** مرآةُ customer_search (0232): نفسُ الخطوات بـbuildCustomerDirectory، بمفتاح دولة العيادة. */
   async findCustomers(q: string | null, opts?: CustomerSearchOpts): Promise<CustomerPage> {
@@ -4805,6 +5011,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   correctInvoiceReceipt: { entity: "invoices", action: "UPDATE" },
   editInvoiceLines: { entity: "invoices", action: "UPDATE" },
   returnInvoiceItems: { entity: "invoices", action: "UPDATE" },
+  // 0241: تحديثُ الفاتورة (total/profit/forgiven، والدفعةُ بالتسوية) كمحفّز invoices؛ وسطرُ الدفتر
+  // (debt_forgive / debt_forgive_void) تكتبه الدالّتان نفسُهما كمحفّز invoice_forgiveness.
+  forgiveInvoiceDebt: { entity: "invoices", action: "UPDATE" },
+  voidInvoiceForgiveness: { entity: "invoices", action: "UPDATE" },
   refundInvoice: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentMethod: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentDetails: { entity: "invoices", action: "UPDATE" },
@@ -4841,7 +5051,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
       /* «كان ← صار» كالمحفّز (0139): تحديثٌ بمعرّفٍ يُصوَّر صفُّه قبلَه فيُحفظ ما تغيّر وحدَه.
        * بلاه كان التجريبيُّ يسمّي كلَّ تعديلٍ «تعديل منتج» — الكتمُ والمخزونُ سواء. */
       const tbl = meta.action === "UPDATE" && typeof args[0] === "string" ? (loadDB() as unknown as Record<string, unknown>)[meta.entity] : null;
-      const before = Array.isArray(tbl) ? { ...(tbl.find((x: { id?: unknown }) => x.id === args[0]) ?? {}) } as Record<string, unknown> : null;
+      /* صفٌّ لا يُوجد بالمعرّف (voidInvoiceForgiveness: الوسيطُ سطرُ الدفتر لا الفاتورة) ⇒ بلا «كان»،
+       * لا «كان» فارغٌ يجعل كلَّ عمودٍ «تغيّر». */
+      const hit = Array.isArray(tbl) ? tbl.find((x: { id?: unknown }) => x.id === args[0]) : undefined;
+      const before = hit ? { ...hit } as Record<string, unknown> : null;
       const res = await orig.apply(demoRepo, args);
       try {
         const row = (res && typeof res === "object" ? res : (typeof args[0] === "object" && args[0] !== null ? args[0] : undefined)) as Record<string, unknown> | undefined;

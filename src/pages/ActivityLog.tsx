@@ -91,6 +91,7 @@ const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
   sale: { icon: Receipt, tone: "success" }, refund: { icon: Receipt, tone: "danger" }, payment: { icon: HandCoins, tone: "success" },
   sale_edit: { icon: Receipt, tone: "muted" }, sale_delete: { icon: Trash2, tone: "danger" }, sale_line: { icon: Receipt, tone: "muted" },
   sale_expired: { icon: CalendarX, tone: "danger" },
+  debt_forgive: { icon: HandCoins, tone: "warn" }, debt_forgive_void: { icon: HandCoins, tone: "muted" },
   print: { icon: Printer, tone: "muted" }, export: { icon: FileDown, tone: "muted" },
   product_add: { icon: Package, tone: "brand" }, product_edit: { icon: Package, tone: "muted" }, stock: { icon: Package, tone: "warn" },
   product_delete: { icon: Trash2, tone: "danger" }, price_change: { icon: TrendingUp, tone: "warn" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },

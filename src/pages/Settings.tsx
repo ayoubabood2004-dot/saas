@@ -17,7 +17,8 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows, getReorderLeadDays, setReorderLeadDays } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows, getReorderLeadDays, setReorderLeadDays, getForgiveProfitPct, setForgiveProfitPct } from "@/lib/settings";
+import { useOverride, ownerAccountFrom } from "@/lib/managerOverride";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
@@ -251,6 +252,7 @@ export function Settings() {
       <SettingsSection id="selling" icon={<BadgePercent size={15} />} title={t("settings.secSelling")} onMeasure={measure}>
         {canSettings && <CashierOptions />}
         {canSettings && <ExpiryAlertsCard />}
+        {canSettings && <ForgiveCapCard />}
         {canSettings && <ServiceSettings />}
         {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
         {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
@@ -877,6 +879,59 @@ function ExpiryAlertsCard() {
         <Button data-expiry-save onClick={save} disabled={!!bad}>{t("common.save")}</Button>
         {flash && <p className="flex items-center gap-1.5 text-sm font-medium text-brand-700"><Check size={16} /> {t("settings.saved")}</p>}
       </div>
+    </div>
+  );
+}
+
+/* ------------- سقفُ الخصم على الدين (0241) -------------------------------------
+ * «أقصى خصم على الدين من ربح الفاتورة» — داخله يخصم المديرُ (ولو بالمفتاح)، وفوقه صاحبُ العيادة
+ * من حسابه بملاحظةٍ وإقرار. ومحفّزُ الخادم يقبل تغييرَه من صاحب العيادة بحسابه وحده (بلا مفتاح)،
+ * فالحقلُ للعرض لغيره والسببُ مكتوب — والحفظُ يُنتظر ورفضُه يُقال بتلميحه، لا «انحفظ» صامتة. */
+function ForgiveCapCard() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { can, baseRole } = usePermissions();
+  const ov = useOverride();
+  const ownerOk = ownerAccountFrom(ov.deviceLocked, ov.active, baseRole === "manager");
+  const [val, setVal] = useState(String(getForgiveProfitPct()));
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!can("manageSettings")) return null;
+  const n = Math.round(Number(val));
+  const bad = val.trim() === "" || !Number.isFinite(n) || n < 0 || n > 100;
+  const save = async () => {
+    if (bad || busy || !ownerOk) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await setForgiveProfitPct(n);
+      playSuccess();
+      setFlash(true);
+      setTimeout(() => setFlash(false), 2500);
+    } catch (e) {
+      playWarning();
+      const msg = describeDbError(e, t);
+      setErr(msg);
+      toast.error(msg);
+      setVal(String(getForgiveProfitPct()));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="card p-5 mb-4" data-forgive-cap-card>
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><BadgePercent size={18} className="text-warn-600" /> {t("fgset.title")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("fgset.hint")}</p>
+      <p className="text-sm font-bold text-ink">{t("fgset.label")}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <input type="number" min={0} max={100} step={1} inputMode="numeric" data-testid="forgive-pct" disabled={!ownerOk}
+          className="input h-11 w-24 text-center font-bold tabular-nums" value={val} onChange={(e) => setVal(e.target.value)} />
+        <span className="text-xs font-bold text-ink-subtle">%</span>
+        <Button onClick={() => void save()} disabled={bad || !ownerOk} loading={busy} data-forgive-pct-save>{t("common.save")}</Button>
+        {flash && <p className="flex items-center gap-1.5 text-sm font-medium text-brand-700"><Check size={16} /> {t("settings.saved")}</p>}
+      </div>
+      {bad && ownerOk && <p className="mt-2 text-xs font-semibold text-warn-700 dark:text-warn-300">{t("fgset.range")}</p>}
+      {!ownerOk && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-ink-muted"><ShieldAlert size={13} /> {t("fgset.ownerOnly")}</p>}
+      {err && <p className="mt-2 rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">{err}</p>}
     </div>
   );
 }

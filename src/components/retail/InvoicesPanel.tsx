@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2, BadgePercent,
 } from "lucide-react";
-import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
+import type { DeliveryMark, Invoice, InvoiceForgiveness, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
 import { getInvoicesPaged } from "@/lib/settings";
 import { RECENT_DAYS } from "@/lib/prefetchData";
@@ -18,13 +18,26 @@ import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { cn, formatDate, money, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
-import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";
+import { dueOf, paidOf, isDebt, paymentStatusOf, round2, grossOf, forgivenOf } from "@/lib/debt";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
+import { buildInvoiceFeed, forgivenessOf, mayHaveSettlements, settlementsOf, type FeedEntry } from "@/lib/settlementFeed";
+import { reasonKey } from "@/lib/forgiveText";
+import { forgiveActor } from "@/lib/debtForgive";
 
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
 const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "retail.payCard", transfer: "retail.payTransfer" };
+
+/* «خصم على الدين» ونوافذُ تأكيد الترجيع والحذف (0241): قطعةٌ كسولة بنطاقها المملوك fgv
+   (hot-paths.json) — النصفُ الباردُ ممتلئ، والنصوصُ تصل مع النافذة وحدَها. `lazy()` يخبّئ
+   الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadForgiveSection = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ForgiveSection })), ["fgv"]);
+const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ReturnSheet })), ["fgv"]);
+let ForgiveSectionLazy = loadForgiveSection();
+let ReturnSheetLazy = loadReturnSheet();
 
 type StatusFilter = "all" | "paid" | "refunded";
 
@@ -88,6 +101,35 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   const rowsRef = useRef(rows); rowsRef.current = rows;
   const sinceRef = useRef(since); sinceRef.current = since;
 
+  // ---- دفترُ «خصم على الدين» (0241) لكلّ فاتورةٍ مرسومة ----
+  // يُجلب **مع** الصفوف بنفس الطلب ويُكتب معها، فلا تُرسم فاتورةٌ بدفترٍ أقدم منها. وجودُ المفتاح = «جُلب»
+  // (ولو فارغاً): فاتورةٌ بلا مفتاح لا يُرسم لها تسديدٌ ولا خصم — الدفترُ الغائب ليس «لا خصم».
+  const [ledger, setLedger] = useState<Map<string, InvoiceForgiveness[]>>(() => new Map());
+  // ومعه علامةُ التوصيل (0241): ساقُ تحصيل السائق/الشركة ليست «تسديد دفعة». المفتاحُ = «جُلبت» (null = بلا طلبٍ
+  // حيّ) — والغائبُ ليس «بلا توصيل»: فاتورةٌ بلا مفتاح لا يُرسم لها تسديد. تُجلب للمرشّحة وحدها
+  // (mayHaveSettlements): غيرُها لا سطرَ تسديدٍ لها أيّاً كانت علامتُها، فتُختم null بلا طلب.
+  const [marks, setMarks] = useState<Map<string, DeliveryMark | null>>(() => new Map());
+  const mergeLedger = (invs: Invoice[], got: InvoiceForgiveness[], mk: DeliveryMark[]) => {
+    setLedger((prev) => {
+      const fresh = new Map<string, InvoiceForgiveness[]>(invs.map((inv) => [inv.id, []]));
+      for (const r of got) fresh.get(r.invoice_id)?.push(r);
+      const next = new Map(prev);
+      for (const [id, list] of fresh) next.set(id, list);
+      return next;
+    });
+    setMarks((prev) => {
+      const next = new Map(prev);
+      for (const inv of invs) next.set(inv.id, null);
+      for (const m of mk) if (next.has(m.invoice_id)) next.set(m.invoice_id, m);
+      return next;
+    });
+  };
+  /** دفترُ الخصم وعلاماتُ التوصيل لفواتيرَ بنفس الدفعة — **يرميان**، والفشلُ «أعد المحاولة». */
+  const fetchSide = (invs: Invoice[]) => Promise.all([
+    repo.listInvoiceForgiveness(invs.map((r) => r.id)),
+    repo.listDeliveryMarks(invs.filter(mayHaveSettlements).map((r) => r.id)),
+  ]);
+
   useEffect(() => {
     if (!paged) return;
     const my = ++reqRef.current;
@@ -106,8 +148,11 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
           repo.searchInvoices({ ...search, limit, since: from }),
           repo.countInvoicesMatching(search),
         ]);
+        // دفترُ الخصم وعلاماتُ التوصيل (0241) مع صفوفها بنفس الدفعة: لا سطرَ تسديدٍ من فاتورةٍ بلاهما.
+        const [fl, mk] = await fetchSide(page);
         if (my !== reqRef.current) return;
         setRows(page);
+        mergeLedger(page, fl, mk);
         setTotal(n);
         setSince(from);
         setExhausted(page.length < limit);
@@ -151,10 +196,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         }
         nextExhausted = got.length < WINDOW_LIMIT;
       }
+      const [fl, mk] = await fetchSide(got);
       if (my !== reqRef.current) return;
       // المؤشّرُ يضمن ألّا يتكرّر صفٌّ، والفلترُ بالمعرّف احتياطٌ إن دخلت فاتورةٌ بنفس اللحظة.
       const seen = new Set(cur.map((r) => r.id));
       setRows([...cur, ...got.filter((r) => !seen.has(r.id))]);
+      mergeLedger(got, fl, mk);
       setSince(nextSince);
       setExhausted(nextExhausted);
     } catch {
@@ -174,16 +221,80 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     return () => { alive = false; };
   }, []);
 
-  // "Last activity" = the newest of the sale itself and any later payment. Settlement
-  // legs carry an `at` timestamp, so recording a debt payment bumps that invoice back
-  // to the top of the list — a quiet signal that it was just settled — without adding
-  // or duplicating anything on the sale.
-  const lastActivity = (inv: Invoice): number => {
-    let ms = new Date(inv.created_at).getTime();
-    for (const leg of inv.payment_details ?? []) {
-      if (leg?.at) { const t = new Date(leg.at).getTime(); if (t > ms) ms = t; }
-    }
-    return ms;
+  // ---- سطورُ «تسديد دفعة» (0240) ----
+  // التسديدُ سطرٌ بوقته وسط القائمة، والفاتورةُ الأصلية بمكان إنشائها بدينها المتبقّي — عرضٌ
+  // لساقٍ مسجَّلةٍ أصلاً (settle_invoice تختمها بـ`at`) لا فاتورةٌ جديدة، فلا مالَ يُحسب مرّتين.
+  // الدينُ عادةً أقدمُ من النافذة، فأرجلُه تجيبها invoice_settlements منذ أرضيّة المدى المعروض.
+  const [settled, setSettled] = useState<Invoice[]>([]);
+  const [settleFailed, setSettleFailed] = useState(false);
+  const settleReqRef = useRef(0);
+  const settleSince = windowed ? since : null;
+  useEffect(() => {
+    if (!paged) return;
+    if (windowed && !settleSince) return; // النافذةُ لم تُعرف بعد
+    const my = ++settleReqRef.current;
+    const timer = setTimeout(async () => {
+      try {
+        const got = await repo.listSettlements({ q: q.trim() || undefined, status, since: settleSince });
+        const [fl, mk] = await fetchSide(got);
+        if (my !== settleReqRef.current) return;
+        setSettled(got); mergeLedger(got, fl, mk); setSettleFailed(false);
+      } catch {
+        if (my !== settleReqRef.current) return;
+        // تسديدٌ ناقص يُصدَّق — الفشلُ يُقال بصوت كفشل الصفوف.
+        setSettled([]); setSettleFailed(true);
+      }
+    }, q.trim() ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [paged, windowed, settleSince, q, status, tick]);
+
+  // الوضعُ القديم (كلُّ الفواتير بالمتصفّح): الدفترُ كلُّه منذ أقدم فاتورة بطلبٍ واحد بمدّة — لا آلافُ المعرّفات.
+  // والنتيجةُ مختومةٌ بلقطة الفواتير التي جُلبت لها؛ لقطةٌ أحدثُ منها تنتظر دفترَها.
+  // وعلاماتُ التوصيل (0241) بنفس الدفعة، للفواتير المرشّحة لسطر تسديدٍ وحدها (mayHaveSettlements).
+  const [legacyLedger, setLegacyLedger] = useState<{ of: Invoice[]; rows: InvoiceForgiveness[]; marks: DeliveryMark[] } | null>(null);
+  const [ledgerFailed, setLedgerFailed] = useState(false);
+  useEffect(() => {
+    if (paged) return;
+    let alive = true;
+    void (async () => {
+      try {
+        let lo = Infinity;
+        for (const inv of invoices) { const t0 = new Date(inv.created_at).getTime(); if (t0 < lo) lo = t0; }
+        const [got, mk] = await Promise.all([
+          Number.isFinite(lo)
+            ? repo.reportForgiveness({ from: new Date(lo).toISOString(), to: new Date(Date.now() + 86_400_000).toISOString() })
+            : Promise.resolve([]),
+          repo.listDeliveryMarks(invoices.filter(mayHaveSettlements).map((i) => i.id)),
+        ]);
+        if (alive) { setLegacyLedger({ of: invoices, rows: got, marks: mk }); setLedgerFailed(false); }
+      } catch {
+        if (alive) { setLegacyLedger(null); setLedgerFailed(true); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [paged, invoices, tick]);
+  const legacyById = useMemo(() => {
+    const m = new Map<string, InvoiceForgiveness[]>();
+    for (const r of legacyLedger?.rows ?? []) { const l = m.get(r.invoice_id); if (l) l.push(r); else m.set(r.invoice_id, [r]); }
+    return m;
+  }, [legacyLedger]);
+  /** دفترُ فاتورةٍ مرسومة، أو null إن لم يُجلب بعد (فلا يُحكم عليها بتسديدٍ ولا خصم). */
+  const ledgerOf = (id: string): InvoiceForgiveness[] | null =>
+    paged ? (ledger.get(id) ?? null) : legacyLedger && legacyLedger.of === invoices ? (legacyById.get(id) ?? []) : null;
+  /** علامةُ توصيل فاتورةٍ مرسومة: [] بلا طلبٍ حيّ، [علامة]، أو null إن لم تُجلب بعد (فلا يُحكم عليها بتسديد). */
+  const marksOf = (id: string): DeliveryMark[] | null => {
+    if (paged) { if (!marks.has(id)) return null; const m = marks.get(id); return m ? [m] : []; }
+    if (!legacyLedger || legacyLedger.of !== invoices) return null;
+    return legacyLedger.marks.filter((m) => m.invoice_id === id);
+  };
+  /** علامةُ الأصلية: خُصم من دينها (خصمٌ حيّ)، أو سُدِّد (تسديدٌ بلا خصم)، أو لا شيء — ولا حكمَ بلا دفترها وعلامتها. */
+  const wasDebtMark = (inv: Invoice): "forgiven" | "settled" | null => {
+    const lr = ledgerOf(inv.id);
+    if (!lr) return null;
+    if (forgivenessOf(inv, lr).length > 0) return "forgiven";
+    const mk = marksOf(inv.id);
+    if (!mk) return null;
+    return settlementsOf(inv, lr, mk).length > 0 ? "settled" : null;
   };
 
   const shown = useMemo(() => {
@@ -199,8 +310,36 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
           || invoiceNo(inv.id).toLowerCase().includes(ql)
           || ((inv.staff_id && staffById.get(inv.staff_id)) ?? "").toLowerCase().includes(ql);
       })
-      .sort((a, b) => lastActivity(b) - lastActivity(a));
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   }, [paged, rows, invoices, q, status, staffById]);
+
+  /* القائمةُ المرسومة: الفواتيرُ وسطورُ التسديد بالوقت. الأرضيّةُ = أقدمُ لحظةٍ جُلبت فواتيرُها
+     كاملةً — تحتها مدىً لم يُجلب، فتسديدٌ فيه يجعله يبدو كاملاً وهو ناقص. */
+  const feed = useMemo((): FeedEntry[] => {
+    // قبل أن يصل دفترُ الخصم: الفواتيرُ وحدها بمكانها، بلا سطور تسديدٍ يُحسب «المتبقّي بعده» فيها بلا خصمٍ لاحق.
+    const invoicesOnly = (list: Invoice[]): FeedEntry[] => list.map((inv) => ({ kind: "invoice", key: inv.id, inv, at: inv.created_at }));
+    if (!paged) {
+      if (!legacyLedger || legacyLedger.of !== invoices) return invoicesOnly(shown);
+      return buildInvoiceFeed(shown, shown, null, legacyLedger.rows, legacyLedger.marks);
+    }
+    // وقبل علامات التوصيل كذلك: وصلُ السائق لا يُرسم «تسديداً» لأن علامتَه لم تصل بعد.
+    const ready = (id: string) => ledger.has(id) && marks.has(id);
+    if (!rows.every((r) => ready(r.id))) return invoicesOnly(rows);
+    const last = rows[rows.length - 1];
+    const partial = windowed ? !exhausted : hasMore;
+    const floor = partial && last ? last.created_at : windowed ? since : null;
+    const src = settled.filter((s) => ready(s.id));
+    const ids = new Set([...rows, ...src].map((i) => i.id));
+    const fl: InvoiceForgiveness[] = [];
+    const mk: DeliveryMark[] = [];
+    for (const id of ids) {
+      fl.push(...(ledger.get(id) ?? []));
+      const m = marks.get(id);
+      if (m) mk.push(m);
+    }
+    return buildInvoiceFeed(rows, src, floor, fl, mk);
+  }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since, ledger, marks, legacyLedger, invoices]);
+  const anyFailed = failed || settleFailed || ledgerFailed;
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: t("retail.fAll", "All") },
@@ -226,7 +365,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
       </div>
 
       {/* العدّاد: «معروض ٥٠ من ١٬٥٠٨» — القائمةُ المُصفَّحة تقول حجمها دائماً. */}
-      {paged && !failed && (
+      {paged && !anyFailed && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-subtle" data-invcount>
           <span className="flex items-center gap-1.5">
             {loading && <Loader2 size={12} className="animate-spin" />}
@@ -238,13 +377,13 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </div>
       )}
 
-      {paged && failed ? (
+      {anyFailed ? (
         /* فشلُ الجلب يُقال بصوت — لا يُعرض فراغاً يُصدَّق. */
         <div className="card space-y-3 p-8 text-center" data-invfailed>
           <p className="mx-auto max-w-md text-sm text-ink-subtle">{t("retail.invoicesLoadFailed", "Could not load invoices. It is a connection problem and no invoice is lost — try again.")}</p>
           <Button variant="secondary" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setTick((n) => n + 1); }}>{t("common.retry", "Retry")}</Button>
         </div>
-      ) : shown.length === 0 ? (
+      ) : feed.length === 0 ? (
         <div className="card grid place-items-center p-12 text-center text-ink-subtle">
           <Receipt size={30} className="mb-2 opacity-40" />
           {paged && loading
@@ -255,11 +394,67 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
-          {shown.map((inv) => {
+          {feed.map((e) => {
+            if (e.kind === "settlement") {
+              const PayIcon = PAY_ICON[e.method] ?? Banknote;
+              return (
+                <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(e.inv); }} data-settlement={e.inv.id}
+                  className="card flex w-full items-center gap-3 border-dashed p-3.5 text-start transition hover:border-success-300 hover:shadow-raised">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300">
+                    <Wallet size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
+                      {displayCustomerName(e.inv.customer_name) || t("retail.walkIn", "Walk-in")}
+                      <Badge tone="success">{t("retail.settlementRow", "Debt payment")}</Badge>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
+                      <span>{formatDate(e.at, i18n.language)} · {new Date(e.at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                      <span className="flex items-center gap-0.5"><PayIcon size={11} /> {t(PAY_KEY[e.method] ?? PAY_KEY.cash)}</span>
+                      <span className="font-mono text-2xs">· {t("retail.settlementOf", { no: invoiceNo(e.inv.id), defaultValue: "on {{no}}" })}</span>
+                    </div>
+                  </div>
+                  <div className="text-end">
+                    <p className="font-display font-bold tabular-nums text-success-600 dark:text-success-300">+{money(e.amount)}</p>
+                    {e.remainingAfter > 0.009
+                      ? <p className="text-2xs text-warn-600">{t("retail.settlementLeft", { amount: money(e.remainingAfter), defaultValue: "Left after: {{amount}}" })}</p>
+                      : <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><CheckCircle2 size={10} /> {t("retail.settlementCleared", "Fully settled")}</p>}
+                  </div>
+                </motion.button>
+              );
+            }
+            if (e.kind === "forgiveness") {
+              // «خصم على الدين» (0241): صفرُ نقد — سطرٌ بوقته بلقطته «المتبقّي قبل ← بعد»، والضغطُ يفتح الأصلية.
+              const rk = reasonKey(e.reason);
+              return (
+                <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(e.inv); }} data-forgiveness={e.inv.id}
+                  className="card flex w-full items-center gap-3 border-dashed p-3.5 text-start transition hover:border-warn-300 hover:shadow-raised">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300">
+                    <BadgePercent size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
+                      {displayCustomerName(e.inv.customer_name) || t("retail.walkIn", "Walk-in")}
+                      <Badge tone={e.aboveCap ? "danger" : "warn"}>{t("forgive.row", "Debt discount")}</Badge>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
+                      <span>{formatDate(e.at, i18n.language)} · {new Date(e.at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                      {rk && <span>{t(rk)}</span>}
+                      <span className="font-mono text-2xs">· {t("retail.settlementOf", { no: invoiceNo(e.inv.id), defaultValue: "on {{no}}" })}</span>
+                    </div>
+                  </div>
+                  <div className="text-end">
+                    <p className="font-display font-bold tabular-nums text-warn-600 dark:text-warn-300">−{money(e.amount)}</p>
+                    <p className="text-2xs text-ink-subtle">{t("forgive.dueArrow", { before: money(e.dueBefore), after: money(e.dueAfter), defaultValue: "Left {{before}} → {{after}}" })}</p>
+                  </div>
+                </motion.button>
+              );
+            }
+            const inv = e.inv;
             const refunded = (inv.status ?? "paid") === "refunded";
             const PayIcon = inv.payment_method ? PAY_ICON[inv.payment_method] : null;
             return (
-              <motion.button key={inv.id} variants={staggerItem} onClick={() => { playTap(); setOpen(inv); }}
+              <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(inv); }}
                 className="card flex w-full items-center gap-3 p-3.5 text-start transition hover:border-brand-300 hover:shadow-raised">
                 <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl", refunded ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300" : "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300")}>
                   <Receipt size={20} />
@@ -281,8 +476,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 </div>
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
                 {!refunded && isDebt(inv) && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
-                {/* Was a debt, now paid off — a quiet marker on the invoice that just floated up. */}
-                {!refunded && !isDebt(inv) && (inv.payment_details ?? []).some((l) => l?.at) && (
+                {/* كانت ديناً وسُدِّدت — علامةٌ على الأصلية بمكانها؛ التسديدُ نفسُه سطرُه بوقته. وما خُصم من دينها
+                    لا يقال عنه «سُدِّد» (0241): علامةُ الخصم بدلها. بلا دفترٍ بعدُ لا علامة — لا حكمَ بلا الدفتر. */}
+                {!refunded && wasDebtMark(inv) === "forgiven" && (
+                  <Badge tone="warn"><BadgePercent size={12} /> {t("forgive.badge", "Debt discounted")}</Badge>
+                )}
+                {!refunded && !isDebt(inv) && wasDebtMark(inv) === "settled" && (
                   <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.wasDebt", "سُدِّد دَينها")}</Badge>
                 )}
                 <div className="text-end">
@@ -298,7 +497,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
       )}
 
       {/* «المزيد»: الصفحةُ التالية بالمؤشّر — لا تكرارٌ ولا قفزٌ إن دخلت فاتورةٌ أثناء التصفّح. */}
-      {paged && !failed && hasMore && (
+      {paged && !anyFailed && hasMore && (
         <Button variant="secondary" className="w-full" loading={more} data-invmore onClick={() => { playTap(); void loadMore(); }}>
           {windowed && exhausted
             ? t("retail.loadMoreDays", { d: RECENT_DAYS, defaultValue: "Show {{d}} more days" })
@@ -323,7 +522,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const { can } = usePermissions();
+  const { can, baseRole } = usePermissions();
   const ov = useOverride();
   /* حذفُ فاتورةٍ وتصحيحُ وصلها فعلان لا رجعةَ فيهما بيدِ من يقف على جهاز
      الاستقبال. وقفلُ الجهاز لا ينزّل الدور، فحسابُ المدير المقفول كان يحذف
@@ -332,11 +531,19 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const print = useInvoicePrinter();
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(false);
+  /* فشلُ جلب السطور ليس «فاتورة بلا سطور»: ثلاثةُ قراراتِ مالٍ تقرؤها (تحذيرُ «مواد بلا سعر شراء» بالخصم،
+     وما «ترجع للرف» بالترجيع، والوصلُ المطبوع) — فالفشلُ يُقال ويُعاد، وما يبنى عليها ينتظر. */
+  const [itemsFailed, setItemsFailed] = useState(false);
+  const [itemsTick, setItemsTick] = useState(0);
   const [busy, setBusy] = useState<"refund" | "delete" | null>(null);
   const [payBusy, setPayBusy] = useState(false);
   const [editLegs, setEditLegs] = useState<PaymentSplit[] | null>(null);
   const [legsBusy, setLegsBusy] = useState(false);
   const [fixOpen, setFixOpen] = useState(false);
+  // تأكيدُ الترجيع والحذف بالشاشة لا بنافذة المتصفّح (0241): ما يرجع للرفّ والدرج والدَّين مكتوبٌ قبل الضغطة.
+  const [sheet, setSheet] = useState<"refund" | "delete" | null>(null);
+  // «أعد المحاولة» على قطعةٍ كسولة فشلت: قطعةٌ جديدة، ورسمٌ جديد يلتقطها.
+  const [, setLazyTick] = useState(0);
   // اسم البائع (من كاش الكادر) — يظهر أعلى التفاصيل حتى يُعرف منو باعها.
   const [sellerName, setSellerName] = useState<string | null>(null);
   const staffId = invoice?.staff_id ?? null;
@@ -351,16 +558,19 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // needlessly reload the line items.
   const invoiceId = invoice?.id;
   useEffect(() => {
+    setSheet(null); // تأكيدٌ مفتوحٌ لفاتورةٍ لا يُعرض فوق غيرها
     if (!invoiceId) return;
     let alive = true;
     setLoading(true);
     setItems([]);
+    setItemsFailed(false);
     repo.listInvoiceItems(invoiceId)
       .then((r) => { if (alive) setItems(r); })
-      .catch(() => { if (alive) setItems([]); })
+      .catch(() => { if (alive) setItemsFailed(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [invoiceId]);
+  }, [invoiceId, itemsTick]);
+  const itemsOk = !loading && !itemsFailed;
 
   if (!invoice) return null;
   const refunded = (invoice.status ?? "paid") === "refunded";
@@ -376,15 +586,25 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // الباقي بعده يصير ديناً، والدين بلا صاحبٍ مطلوبٌ لا مَدين له.
   const customerOf = ((invoice.customer_name ?? "").trim() || (invoice.customer_phone ?? "").trim()) || null;
   const canFixReceipt = canDelete && !refunded && paidOf(invoice) > 0;
+  // تقسيمُ الدفعة (المبالغ والأوقات) للمدير — والقاعدةُ ترفضه لغيره منذ 0241 (payment_legs_frozen)؛
+  // المحرّرُ يعيد بناءَ السِّيَق كلِّها، فلا يُعرض لمن سيُرفض حفظُه.
+  const canEditLegs = canDelete && !refunded;
+  // «خصم على الدين» (0241): حكمُ الحذف (قفلُ الجهاز) **و**دورُ الخادم — «حذف الفواتير» صلاحيةٌ تُمنح لطبيبٍ
+  // أو استقبال بالتخصيص، والدالّتان تريدان auth_role() = مدير (أو المفتاح حيّاً): زرٌّ يُرى ولا يُحفظ أبداً
+  // لا يُعرض. على دينٍ حيٍّ باسم زبون — الدينُ بلا صاحبٍ لا يُخصم.
+  const forgiveRoleOk = forgiveActor({ base: baseRole, pin: ov.active || (baseRole === "manager" && ov.deviceLocked) }).role === "manager";
+  const canForgive = canDelete && forgiveRoleOk && !refunded && isDebt(invoice) && !!customerOf;
+  const canVoidForgive = canDelete && forgiveRoleOk && !refunded;
+  const forgiven = forgivenOf(invoice);
 
   const refund = async () => {
     if (busy) return;
-    if (!window.confirm(t("retail.confirmRefund", "Refund this sale and return its items to stock?"))) return;
     setBusy("refund");
     try {
       const updated = await repo.refundInvoice(invoice.id);
       playSuccess();
       toast.success(t("retail.refundedOk", "Sale refunded — stock restored"));
+      setSheet(null);
       onChanged();
       setOpen(updated ?? { ...invoice, status: "refunded" });
     } catch (e) {
@@ -395,12 +615,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
 
   const remove = async () => {
     if (busy) return;
-    if (!window.confirm(t("retail.confirmDelete", "Permanently delete this invoice? This cannot be undone."))) return;
     setBusy("delete");
     try {
       await repo.deleteInvoice(invoice.id);
       playSuccess();
       toast.success(t("retail.deletedOk", "Invoice deleted"));
+      setSheet(null);
       onChanged();
       onClose();
     } catch (e) {
@@ -472,6 +692,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           </div>
           {refunded ? (
             <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>
+          ) : paymentStatusOf(invoice) === "paid" && forgivenOf(invoice) > 0.005 ? (
+            /* صفرُ متبقٍّ بخصمٍ ليس «مدفوعة بالكامل»: جزءٌ منها لم يُدفع، تنازلنا عنه (0241). */
+            <Badge tone="warn"><BadgePercent size={12} /> {t("forgive.badge", "Debt discounted")}</Badge>
           ) : paymentStatusOf(invoice) === "paid" ? (
             <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.statusPaid", "مدفوعة بالكامل")}</Badge>
           ) : paymentStatusOf(invoice) === "partial" ? (
@@ -485,6 +708,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         <div className="rounded-2xl border border-line">
           {loading ? (
             <div className="space-y-2 p-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 rounded-lg" />)}</div>
+          ) : itemsFailed ? (
+            <div role="alert" className="flex flex-wrap items-center gap-2 p-3 text-xs" data-invitems-failed>
+              <AlertTriangle size={14} className="shrink-0 text-danger-600" />
+              <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-300">{t("retail.printItemsFailed")}</span>
+              <Button size="sm" variant="secondary" leftIcon={<RotateCcw size={13} />} onClick={() => { playTap(); setItemsTick((n) => n + 1); }}>{t("common.retry")}</Button>
+            </div>
           ) : items.length === 0 ? (
             <div className="grid place-items-center p-6 text-sm text-ink-subtle"><Package size={20} className="mb-1 opacity-40" /> {t("retail.noLines", "No line items.")}</div>
           ) : (
@@ -520,12 +749,22 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           )}
           <div className="flex items-center justify-between border-t border-line pt-1.5">
             <span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span>
-            <span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(invoice.total)}</span>
+            {/* بعد «خصم على الدين» (0241) total نزل (نموذجُ يوم البيع)؛ فالإجماليُّ المعروض قيمةُ البضاعة
+                (total + forgiven) والخصمُ سطرٌ ظاهرٌ تحته — الإجمالي − المدفوع − الخصم = المتبقّي، كما بالوصل. */}
+            <span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(forgiven > 0 ? grossOf(invoice) : invoice.total)}</span>
           </div>
-          {isDebt(invoice) && (
-            <div className="space-y-0.5 rounded-lg bg-warn-50 px-2.5 py-1.5 text-xs dark:bg-warn-500/10">
+          {(isDebt(invoice) || forgiven > 0) && (
+            <div className="space-y-0.5 rounded-lg bg-warn-50 px-2.5 py-1.5 text-xs dark:bg-warn-500/10" data-invdebtbox>
               <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.paidSoFar", "المدفوع")}</span><span className="tabular-nums text-success-600">{money(paidOf(invoice))}</span></div>
-              <div className="flex items-center justify-between font-bold text-warn-700 dark:text-warn-300"><span>{t("retail.remainingDue", "المبلغ المتبقي")}</span><span className="tabular-nums">{money(dueOf(invoice))}</span></div>
+              {forgiven > 0 && (
+                <div className="flex items-center justify-between text-warn-700 dark:text-warn-300" data-invforgiven>
+                  <span className="flex items-center gap-1"><BadgePercent size={12} /> {t("forgive.row", "Debt discount")}</span>
+                  <span className="tabular-nums">−{money(forgiven)}</span>
+                </div>
+              )}
+              {isDebt(invoice) && (
+                <div className="flex items-center justify-between font-bold text-warn-700 dark:text-warn-300"><span>{t("retail.remainingDue", "المبلغ المتبقي")}</span><span className="tabular-nums">{money(dueOf(invoice))}</span></div>
+              )}
             </div>
           )}
 
@@ -551,7 +790,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               {isSplit ? (
                 <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">
                   <Wallet size={13} /> {t("retail.split", "دفع مجزأ")}
-                  {!refunded && editLegs === null && (
+                  {canEditLegs && editLegs === null && (
                     <button type="button" onClick={() => { playTap(); setEditLegs(payLegs.map((l) => ({ method: l.method, amount: l.amount, at: l.at }))); }}
                       className="ms-1 inline-flex items-center gap-1 rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-2xs font-semibold text-ink-muted transition hover:border-brand-300 hover:text-ink">
                       <Pencil size={11} /> {t("retail.edit", "تعديل")}
@@ -586,10 +825,22 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           )}
         </div>
 
+        {/* «خصم على الدين» (0241): سجلُّه (الملغى مشطوب، والمستهلَك بمرتجعٍ ظاهر) وزرُّه ونافذتُه. بلا زبونٍ
+            لا خصمَ ولا سجلّ، فلا طلب. والقطعةُ كسولةٌ بحارسٍ بمكانها: فشلُها لا يُسقط الفاتورة. */}
+        {customerOf && (
+          <LoadBoundary scope="forgive" onRetry={() => { ForgiveSectionLazy = loadForgiveSection(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <ForgiveSectionLazy invoice={invoice} items={items} itemsOk={itemsOk} canForgive={canForgive} canVoid={canVoidForgive}
+                onUpdated={(u: Invoice) => { setOpen(u); onChanged(); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+
         {/* Actions */}
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
+          {/* سطورٌ لم تصل ⇒ لا تُمرَّر: الطابعةُ تجلبها بنفسها وترمي «ما تنطبع ناقصة» بدل وصلٍ بلا سطور. */}
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
         </div>
         {canFixReceipt && (
           <Button variant="secondary" className="w-full" leftIcon={<Undo2 size={16} />} data-invfixopen
@@ -599,16 +850,31 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         )}
         <div className="flex items-center gap-2">
           {!refunded && (
-            <Button variant="outline" className="flex-1" loading={busy === "refund"} leftIcon={<RotateCcw size={16} />} onClick={refund}>{t("retail.refund", "Refund")}</Button>
+            <Button variant="outline" className="flex-1" loading={busy === "refund"} disabled={!itemsOk} leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setSheet("refund"); }}>{t("retail.refund", "Refund")}</Button>
           )}
           {canDelete && (
-            <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", refunded && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={remove}>
+            <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", refunded && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={() => { playTap(); setSheet("delete"); }}>
               {t("retail.delete", "Delete")}
             </Button>
           )}
         </div>
         {!canDelete && !refunded && (
           <p className="flex items-center gap-1.5 text-2xs text-ink-subtle"><AlertTriangle size={12} /> {t("retail.deleteAdminOnly", "Only clinic admins can permanently delete invoices.")}</p>
+        )}
+
+        {sheet && (
+          <LoadBoundary scope="return-sheet" onRetry={() => { ReturnSheetLazy = loadReturnSheet(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              {/* الترجيعُ الكامل: كلُّ السطور للرفّ، والمدفوعُ كلُّه للزبون، والدينُ يصير صفراً. */}
+              <ReturnSheetLazy mode={sheet} invoice={invoice}
+                lines={items.map((it) => ({ name: it.name, qty: it.qty }))}
+                back={sheet === "refund" ? Math.max(0, paidOf(invoice)) : 0}
+                dueBefore={dueOf(invoice)} dueAfter={0} consumed={0}
+                busy={busy !== null}
+                onConfirm={() => void (sheet === "refund" ? refund() : remove())}
+                onClose={() => { if (!busy) setSheet(null); }} />
+            </Suspense>
+          </LoadBoundary>
         )}
 
         {fixOpen && (

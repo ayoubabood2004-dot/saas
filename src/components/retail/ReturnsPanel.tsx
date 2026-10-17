@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   RotateCcw, Search, Receipt, Plus, Minus, Wallet, Banknote, CreditCard,
@@ -13,6 +13,13 @@ import { cn, money, normalizeAr, formatNum, formatDate } from "@/lib/utils";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { consumeForgiveness } from "@/lib/debtForgive";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* تأكيدُ المرتجع بالشاشة (0241) — قطعةُ نوافذ الدَّين بنطاقها المملوك fgv (hot-paths.json). */
+const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ReturnSheet })), ["fgv"]);
+let ReturnSheetLazy = loadReturnSheet();
 
 /* ============================================================================
  * المرتجع — تبويب داخل المبيعات.
@@ -44,6 +51,9 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // التأكيدُ بالشاشة لا بـwindow.confirm: الدينُ قبل ← بعد، وما يرجع للرفّ وللزبون، مكتوبةٌ قبل الضغطة.
+  const [confirming, setConfirming] = useState(false);
+  const [, setLazyTick] = useState(0);
 
   /** الفواتير المرشّحة: غير المرجعة، الأحدث أولاً، ويضيّقها البحث بالاسم
    *  أو الهاتف أو رقم الفاتورة. */
@@ -104,19 +114,18 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
     const full = items.length > 0 && items.every((it) => (ret[it.id] ?? 0) + 0.0005 >= it.qty);
     const subtotalLeft = round2(items.reduce((s, it) => s + (it.qty - (ret[it.id] ?? 0)) * it.unit_price, 0));
     const discount = Math.max(0, Number(picked.discount) || 0);
-    const newTotal = full ? 0 : Math.max(0, round2(subtotalLeft - discount));
     const paid = paidOf(picked);
+    // «خصم على الدين» (0241) يُستهلك قبل أيّ نقد — نفسُ قاعدة return_invoice_items (consumeForgiveness).
+    const forg = full ? null : consumeForgiveness(Math.max(0, round2(subtotalLeft - discount)), paid, picked.forgiven);
+    const newTotal = forg ? forg.total : 0;
     const back = full ? paid : Math.max(0, round2(paid - newTotal));
     const count = items.reduce((n, it) => n + (ret[it.id] ?? 0), 0);
-    return { retVal: round2(retVal), full, newTotal, back, count, due: dueOf(picked) };
+    const dueAfter = full ? 0 : Math.max(0, round2(newTotal - paid));
+    return { retVal: round2(retVal), full, newTotal, back, count, due: dueOf(picked), dueAfter, consumed: forg?.consumed ?? 0 };
   }, [picked, items, ret]);
 
   const save = async () => {
     if (!picked || !calc || saving || calc.count <= 0) return;
-    const msg = calc.full
-      ? t("ret.confirmFull", { n: money(calc.back), defaultValue: "إرجاع الفاتورة كاملةً؟ البضاعة كلها ترجع للمخزون وترجّع للزبون {{n}}." })
-      : t("ret.confirmPart", { c: formatNum(calc.count), n: money(calc.back), defaultValue: "تأكيد إرجاع {{c}} قطعة؟ ترجع للمخزون فوراً، وترجّع للزبون {{n}}." });
-    if (!window.confirm(msg)) return;
     setSaving(true);
     try {
       const lines = items
@@ -127,6 +136,7 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
       toast.success(calc.back > 0
         ? t("ret.doneBack", { n: money(calc.back), defaultValue: "تم الإرجاع — البضاعة رجعت للمخزون، ورجّع للزبون {{n}}" })
         : t("ret.doneNoBack", "تم الإرجاع — البضاعة رجعت للمخزون ونقص دين الفاتورة"));
+      setConfirming(false);
       setPicked(null);
       setItems([]);
       setRet({});
@@ -306,13 +316,24 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
               <input data-retnote className="input" value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder={t("ret.notePh", "سبب الإرجاع (اختياري) — ينختم بالفاتورة")} />
               <Button data-retconfirm className="w-full" style={{ minHeight: 48 }} loading={saving}
-                disabled={calc.count <= 0} leftIcon={<CheckCircle2 size={17} />} onClick={() => void save()}>
+                disabled={calc.count <= 0} leftIcon={<CheckCircle2 size={17} />} onClick={() => { playTap(); setConfirming(true); }}>
                 {t("ret.confirmBtn", "تأكيد الإرجاع")}
               </Button>
               <p className="text-center text-2xs text-ink-subtle">{t("ret.confirmHint", "البضاعة ترجع للمخزون والصندوق ينضبط بنفس الضغطة.")}</p>
             </div>
           )}
         </div>
+
+        {confirming && picked && calc && calc.count > 0 && (
+          <LoadBoundary scope="return-sheet" onRetry={() => { ReturnSheetLazy = loadReturnSheet(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <ReturnSheetLazy mode={calc.full ? "refund" : "return"} invoice={picked}
+                lines={items.filter((it) => (ret[it.id] ?? 0) > 0).map((it) => ({ name: it.name, qty: ret[it.id] ?? 0 }))}
+                back={calc.back} dueBefore={calc.due} dueAfter={calc.dueAfter} consumed={calc.consumed}
+                busy={saving} onConfirm={() => void save()} onClose={() => { if (!saving) setConfirming(false); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* مرتجعات اليوم */}
         <div className="card p-4">

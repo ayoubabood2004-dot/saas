@@ -93,6 +93,8 @@ function strings(lang: string) {
      * سقفُ النصّ الصلب بالملفّ ممتلئ، والقاعدةُ أنه ينزل ولا يصعد. و`lng`
      * صريحةٌ لأن الوصلَ يُطبع بلغةِ الإيصال لا بلغةِ الشاشة. */
     settled: tp("rcSettled", lang, "Paid in full"),
+    // صفرُ متبقٍّ بخصمٍ على الدين ليس «مدفوعة بالكامل» — جزءٌ منها تنازلت عنه العيادة (0241).
+    settledForgive: tp("rcSettledForgive", lang, "Settled with a discount"),
     partly: tp("rcPartly", lang, "Balance due"),
     preSaleShort: tp("rcProforma", lang, "PRO-FORMA"),
     sigCustomer: tp("rcSigCustomer", lang, "Received by"),
@@ -117,6 +119,7 @@ function strings(lang: string) {
     sigPayer: tp("rcSigPayer", lang, "Clinic signature"),
     sigIssuer: tp("rcSigIssuer", lang, "Signature & stamp"),
     remaining: tp("rcRemaining", lang, "Remaining"),
+    forgiven: tp("rcForgiven", lang, "Debt discount"),
   };
 }
 
@@ -406,9 +409,18 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const amountPaid = invoice.amount_paid != null ? invoice.amount_paid : invoice.total;
   const dueAmt = Math.max(0, Math.round((invoice.total - amountPaid) * 100) / 100);
   const isCreditInv = dueAmt > 0.01 && !refunded;
-  const dueLinesThermal = isCreditInv
+  /* «خصم على الدين» (0241): total نزل بالخصم، فالإجماليُّ المطبوع قيمةُ البضاعة (total + forgiven)
+   * والخصمُ سطرٌ بعد «المدفوع» — الإجمالي − المدفوع − الخصم = المتبقّي، فلا يرى الزبونُ رقماً لا يُجمع.
+   * والمُرجَعةُ كذلك: refund_invoice يُبقي total وforgiven كما هما، فإسقاطُ السطر هنا كان يطبع سطوراً
+   * مجموعُها ٢٠٠ تحت «الإجمالي ١٥٠» بلا تفسير — والشاشةُ (InvoiceDetail) تعرضه. قاعدةٌ واحدة بالطرفين. */
+  const forgivenAmt = Math.max(0, Math.round((Number(invoice.forgiven) || 0) * 100) / 100);
+  const grandAmt = forgivenAmt > 0 ? Math.round((invoice.total + forgivenAmt) * 100) / 100 : invoice.total;
+  const showPaidLines = isCreditInv || forgivenAmt > 0;
+  const forgivenLineThermal = forgivenAmt > 0 ? `<div class="pay"><span>${s.forgiven}</span><span>${moneyNeg(forgivenAmt)}</span></div>` : "";
+  const dueLinesThermal = showPaidLines
     ? `<div class="pay"><span>${s.paid}</span><span>${money(amountPaid)}</span></div>`
-      + `<div class="pay" style="font-weight:800"><span>${s.due}</span><span>${money(dueAmt)}</span></div>`
+      + forgivenLineThermal
+      + (isCreditInv ? `<div class="pay" style="font-weight:800"><span>${s.due}</span><span>${money(dueAmt)}</span></div>` : "")
     : "";
   // Phones print with the green WhatsApp mark instead of a "Phone:" label —
   // it says "message us here" in any language.
@@ -590,7 +602,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       ${discount > 0 ? `<div class="r"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div>
         <div class="r"><span>${s.discount}</span><span>${moneyNeg(discount)}</span></div>` : ""}
     </div>
-    <div class="grand"><span class="lbl">${s.total}</span><span class="val">${money(invoice.total)}</span></div>
+    <div class="grand"><span class="lbl">${s.total}</span><span class="val">${money(grandAmt)}</span></div>
     ${payLinesThermal}
     ${dueLinesThermal}
 
@@ -631,7 +643,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       <div class="chips">
         ${preSale ? `<span class="chip bad">${s.preSale}</span>` : ""}
         ${refunded ? `<span class="chip bad">${s.refunded}</span>` : ""}
-        ${!preSale && !refunded ? `<span class="chip ${isCreditInv ? "due" : "ok"}">${isCreditInv ? s.partly : s.settled}</span>` : ""}
+        ${!preSale && !refunded ? `<span class="chip ${isCreditInv ? "due" : "ok"}">${isCreditInv ? s.partly : forgivenAmt > 0 ? s.settledForgive : s.settled}</span>` : ""}
         ${payLabel && !isSplitPay ? `<span class="chip">${esc(payLabel)}</span>` : ""}
         ${isSplitPay ? `<span class="chip">${esc(splitLabel)}</span>` : ""}
         ${opts.printNo && opts.printNo > 1 ? `<span class="chip">${s.printNo} ${ltr(`#${opts.printNo}`)}</span>` : ""}
@@ -681,9 +693,10 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
           <div class="tot">
             ${discount > 0 ? `<div class="r"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div>
               <div class="r disc"><span>${s.discount}</span><span>${moneyNeg(discount)}</span></div>` : ""}
-            <div class="grand"><span class="l">${s.total}</span><span class="v">${money(invoice.total)}</span></div>
-            ${isCreditInv ? `<div class="r after"><span>${s.paid}</span><span>${money(amountPaid)}</span></div>
-              <div class="due"><span class="l">${s.due}</span><span class="v">${money(dueAmt)}</span></div>` : ""}
+            <div class="grand"><span class="l">${s.total}</span><span class="v">${money(grandAmt)}</span></div>
+            ${showPaidLines ? `<div class="r after"><span>${s.paid}</span><span>${money(amountPaid)}</span></div>` : ""}
+            ${forgivenAmt > 0 ? `<div class="r disc"><span>${s.forgiven}</span><span>${moneyNeg(forgivenAmt)}</span></div>` : ""}
+            ${isCreditInv ? `<div class="due"><span class="l">${s.due}</span><span class="v">${money(dueAmt)}</span></div>` : ""}
           </div>
         </div>
       </section>

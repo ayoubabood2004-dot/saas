@@ -157,5 +157,16 @@ console.log("▸ ٧) الحراريُّ لم يُمسّ");
 check("قالبُ ٨٠مم ما زال يطبع بنودَه", thermal.includes('class="item"'));
 check("  وبلا أنماط A4", !thermal.includes(".masthead"));
 
+console.log("▸ ٨) «خصم على الدين» (0241): الوصلُ يُجمع — والمُرجَعةُ كالشاشة");
+/* بضاعةٌ ٢٠٠، خصمٌ ٥٠ (total ١٥٠)، مدفوعٌ ١٥٠. refund_invoice يُبقي total وforgiven: فوصلُ المُرجَعة
+   يطبع الإجماليَّ ٢٠٠ وسطرَ الخصم كما تعرضه InvoiceDetail — لا سطوراً مجموعُها ٢٠٠ تحت «١٥٠» بلا تفسير. */
+const FINV = { ...INV, subtotal: 200000, discount: 0, total: 150000, amount_paid: 150000, forgiven: 50000 };
+for (const [label, inv] of [["الحيّة", FINV], ["المُرجَعة", { ...FINV, status: "refunded" }]]) {
+  for (const format of ["a4", "thermal"]) {
+    const h = mod.buildInvoiceHTML(inv, ITEMS, { ...CLINIC, format });
+    check(`${label} (${format}): سطرُ الخصم مطبوع والإجماليُّ قيمةُ البضاعة`, h.includes(AR.retail.rcForgiven) && h.includes("200,000") && h.includes("50,000"));
+  }
+}
+
 console.log(fails ? `\n✗ blank-form-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ blank-form-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

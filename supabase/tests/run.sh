@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -5325,6 +5325,432 @@ chk "والعملياتُ القديمة كما كانت (نجمةٌ ونقلٌ 
 $P -c "delete from clinic_drug_group_items where clinic_id='$C2';" >/dev/null
 $P -c "delete from clinic_drug_groups where clinic_id='$C2';" >/dev/null
 $P -c "delete from clinic_drugs where clinic_id='$C2' and name like 'عضو 0239 %';" >/dev/null
+
+# ── 0240: سطورُ «تسديد دفعة» — الفواتيرُ التي سُدِّد عليها منذ لحظة، بكلّ عمرها ──────────
+# بدور authenticated فعلاً (RLS + auth_clinic). الحكمُ الدقيق بالواجهة (settlementsOf، settlement-feed-test)؛
+# هنا: أنّ الخادم يجيب **كلَّ** ما تعرضه الواجهة — الدينُ الأقدمُ من النافذة أوّلاً — ولا يجيب ساقَ التثبيت
+# (at = created_at مقصوصاً)، ولا الفكّ، ولا عيادةً أخرى، ويحترم البحثَ والحالة.
+echo "▸ 0240: سطورُ تسديد الدين بقائمة الفواتير"
+ST=dddddddd-0240-4000-8000-00000000000
+$P -c "insert into invoices (id, clinic_id, customer_name, total, amount_paid, status, created_at, payment_details) values
+         ('${ST}1', '$C1', 'سارة',    100, 55,  'paid', '2026-09-01T10:00:00Z',
+            '[{\"method\":\"cash\",\"amount\":30},{\"method\":\"card\",\"amount\":25,\"at\":\"2026-10-10T08:00:00.000Z\"}]'),
+         ('${ST}2', '$C1', 'تثبيت',   100, 70,  'paid', '2026-10-09T10:00:00.123456Z',
+            '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-09T10:00:00.123Z\"},{\"method\":\"cash\",\"amount\":-30,\"at\":\"2026-10-10T10:00:00.000Z\",\"note\":\"x\"}]'),
+         ('${ST}3', '$C1', 'فكّ',     50,  50,  'paid', '2026-09-01T10:00:00Z',
+            '[{\"method\":\"cash\",\"amount\":50,\"at\":\"2026-10-10T10:00:00.000Z\",\"reversal_of\":\"s1\"}]'),
+         ('${ST}4', '$C1', 'قديم',    100, 100, 'paid', '2026-09-01T10:00:00Z',
+            '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-09-05T10:00:00.000Z\"}]'),
+         ('${ST}5', '$C2', 'غريب',    100, 100, 'paid', '2026-09-01T10:00:00Z',
+            '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-10T10:00:00.000Z\"}]'),
+         ('${ST}6', '$C1', 'أبو علي', 100, 60,  'paid', '2026-08-01T10:00:00Z',
+            '[{\"method\":\"transfer\",\"amount\":60,\"at\":\"2026-10-11T10:00:00.000Z\"}]')
+       on conflict (id) do nothing;" >/dev/null
+$P -c "create or replace function _settle_ids(who uuid, q text, st text, since timestamptz) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         select coalesce(string_agg(right(s.id::text, 1), '' order by s.created_at desc, s.id desc), '-') into r
+           from invoice_settlements(q, st, since) s where s.id::text like 'dddddddd-0240-%';
+         reset role; return r;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;" >/dev/null
+chk "منذ ١/١٠: دينُ أيلول المسدَّد بـ١٠/١٠ ودينُ آب المسدَّد بـ١١/١٠ — لا التثبيتُ ولا الفكُّ ولا عيادةٌ أخرى" \
+    "select _settle_ids('$RCP', null, 'all', '2026-10-01T00:00:00Z')" "16"
+chk "  وبلا أرضيّة يدخل تسديدُ ٥/٩ أيضاً" \
+    "select _settle_ids('$RCP', null, 'all', null)" "416"
+chk "  والبحثُ بالاسم مطبَّعاً (ابو علي ← أبو علي)" \
+    "select _settle_ids('$RCP', 'ابو علي', 'all', null)" "6"
+chk "  وفلترُ المُرجَعة لا يجيب مدفوعة" \
+    "select _settle_ids('$RCP', null, 'refunded', null)" "-"
+chk "  وعيادةٌ أخرى ترى تسديدَها وحده" \
+    "select _settle_ids('$C2', null, 'all', '2026-10-01T00:00:00Z')" "5"
+chk "invoice_settlements: invoker بمسارٍ مثبَّت، وممنوعةٌ على anon" \
+    "select (not prosecdef)::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||':'||has_function_privilege('anon', oid, 'execute')::text from pg_proc where proname='invoice_settlements'" "true:true:false"
+$P -c "delete from invoices where id::text like 'dddddddd-0240-%';" >/dev/null
+
+# ── 0241: الخصمُ على الدين — سقفُ الربح، وصاحبُ العيادة فوقه، والمرتجعُ يستهلك الخصمَ قبل النقد ──────
+# كلُّ نداءٍ بدور authenticated: `_fg` يرجع ok أو «guarded:الرمز:التلميح» (و`fgc` الرمزَ وحده)، و`_fgv` قيمةً.
+# الأدوار: C1 صاحبُ العيادة (عضويةُ مدير)، MGR مديرٌ بحسابه، RCP استقبال (ومعه رفعٌ بمفتاح المدير حين يُزرع
+# صفُّه بـstaff_elevations)، ADM مشغّلُ المنصّة داخل C1، PHO مصوّر، C2 عيادةٌ أخرى.
+# الكتّابُ الحقيقيّون: settle_invoice وreturn_invoice_items وedit_invoice_lines_unguarded من 0241 نفسِها، والغلافُ
+# edit_invoice_lines من 0110 ثم 0113 (خارج الموجة؛ هكذا هي بالإنتاج) — ثم تُعاد 0241: المنحُ الشامل بالحزمة
+# (0159) أعاد للمسجَّل الكتابةَ على الدفتر والدالّتين الداخليّتين، والإعادةُ تستردّ النزع (وتفحص الإعادةَ ثانيةً).
+# السِّيَقُ بشكل الإنتاج: `at` نصٌّ بصيغة to_char …Z.
+echo "▸ 0241: الخصمُ على الدين"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+PHO=88888888-8888-8888-8888-888888888888
+ADM=33333333-3333-3333-3333-333333333333
+MGR=a2410000-0000-4000-8000-000000000001
+IV=dddddddd-0241-4000-8000-0000000000
+II=e2410000-0000-4000-8000-0000000000
+for f in 0110_edit_invoice_lines.sql 0113_receipt_correction.sql 0241_debt_forgiveness.sql; do
+  out=$($P -f "$MIG/$f" 2>&1) || { echo "$out"; echo "   ✗ $f ما نزلت"; fail=1; }
+done
+$P -c "create or replace function _fg(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q;
+         reset role;
+         return 'ok';
+       exception when others then
+         get stacked diagnostics h = pg_exception_hint;
+         return 'guarded:' || sqlerrm || ':' || coalesce(h, '');
+       end \$fn\$;
+       create or replace function _fgv(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q into r;
+         reset role;
+         return coalesce(r, '-');
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;" >/dev/null
+# الرمزُ وحده: ok أو رمزُ الرفض. ($q$ يغني عن مضاعفة الفواصل المفردة.)
+fgc() { echo "select case when r = 'ok' then 'ok' else split_part(r, ':', 2) end from (select _fg('$1', \$q\$$2\$q\$) as r) x"; }
+# التلميحُ يحوي نصّاً: true/false.
+fgh() { echo "select (position('$3' in _fg('$1', \$q\$$2\$q\$)) > 0)::text"; }
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions; delete from staff_elevations;
+       insert into auth.users(id) values ('$MGR') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$MGR','$C1','manager','active');
+       insert into clinic_prefs(clinic_id) values ('$C1') on conflict (clinic_id) do nothing;
+       update clinic_prefs set forgive_profit_pct = 100 where clinic_id = '$C1';
+       insert into invoices (id, clinic_id, customer_name, customer_phone, subtotal, total, cost_total, profit, amount_paid, status, created_at, payment_details) values
+         ('${IV}01', '$C1', 'أبو حسن', '07701234567', 200, 200, 125, 75, 150, 'paid', '2026-10-01T09:00:00Z', '[{\"method\":\"cash\",\"amount\":150,\"at\":\"2026-10-01T09:00:00.000Z\"}]'),
+         ('${IV}02', '$C1', 'خسارة',   null,          200, 200, 125, 75, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}03', '$C1', 'تسوية',   null,          100, 100, 60,  40, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}04', '$C1', 'مرجعة',   null,          100, 100, 50,  50, 0,   'refunded', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}05', '$C1', 'بالطريق', null,          100, 100, 50,  50, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}06', '$C1', 'بذمة شركة', null,        100, 100, 50,  50, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}07', '$C1', 'وصل وتحصل', null,        100, 100, 50,  50, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}08', '$C1', '  ',      ' ',           100, 100, 50,  50, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}09', '$C1', 'مرتجع',   null,          70,  70,  20,  50, 30,  'paid', '2026-10-01T09:00:00Z', '[{\"method\":\"cash\",\"amount\":30,\"at\":\"2026-10-01T09:00:00.000Z\"}]'),
+         ('${IV}0a', '$C1', 'تعديل',   null,          100, 100, 40,  60, 20,  'paid', '2026-10-01T09:00:00Z', '[{\"method\":\"cash\",\"amount\":20,\"at\":\"2026-10-01T09:00:00.000Z\"}]'),
+         ('${IV}0b', '$C1', 'إلغاء',   null,          100, 100, 50,  50, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}0c', '$C1', 'سيقان',   null,          100, 100, 50,  50, 100, 'paid', '2026-10-01T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-01T09:00:00.000Z\"}]'),
+         ('${IV}0d', '$C1', 'نسبة',    null,          200, 200, 125, 75, 0,   'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}0e', '$C1', 'ضمني',    null,          100, 100, 50,  50, 40,  'paid', '2026-10-01T09:00:00Z', '[]'),
+         ('${IV}0f', '$C1', 'مجزأ',    null,          150, 150, 75,  75, 120, 'paid', '2026-10-01T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-01T09:00:00.000Z\"},{\"method\":\"cash\",\"amount\":-30,\"at\":\"2026-10-02T09:00:00.000Z\",\"note\":\"مرتجع: علبة\"},{\"method\":\"cash\",\"amount\":50,\"at\":\"2026-10-03T09:00:00.000Z\"}]'),
+         ('${IV}10', '$C1', 'تصحيح',   null,          100, 100, 50,  50, 100, 'paid', '2026-10-01T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-01T09:00:00.000Z\"}]'),
+         ('${IV}11', '$C1', 'إلغاء وتوصيل', null,     100, 100, 50,  50, 0,   'paid', '2026-10-01T09:00:00Z', '[]')
+       on conflict (id) do nothing;
+       insert into invoice_items (id, invoice_id, clinic_id, name, qty, unit_price, unit_cost, line_total) values
+         ('${II}a1', '${IV}09', '$C1', 'أربعون', 1, 40, 10, 40),
+         ('${II}a2', '${IV}09', '$C1', 'ثلاثون', 1, 30, 10, 30),
+         ('${II}b1', '${IV}0a', '$C1', 'مية',    1, 100, 40, 100)
+       on conflict (id) do nothing;
+       insert into delivery_orders (id, clinic_id, invoice_id, status, cod_amount, delivered_at, collected_at) values
+         ('${II}c5', '$C1', '${IV}05', 'out',       100, null,  null),
+         ('${II}c6', '$C1', '${IV}06', 'delivered', 100, now(), null),
+         ('${II}c7', '$C1', '${IV}07', 'delivered', 100, now(), now())
+       on conflict (id) do nothing;" >/dev/null
+
+# ١) من يقدر — والرفضُ بالرمز
+chk "الاستقبالُ بلا مفتاح المدير لا يخصم (not_allowed)" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}02', 10, 'loyal')")" "not_allowed"
+chk "  ولا المصوّر" \
+    "$(fgc "$PHO" "select forgive_invoice_debt('${IV}02', 10, 'loyal')")" "not_allowed"
+chk "  وعيادةٌ أخرى لا تجد الفاتورة" \
+    "$(fgc "$C2" "select forgive_invoice_debt('${IV}02', 10, 'loyal')")" "invoice_not_found"
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "  ولا مشغّلُ المنصّة داخل العيادة (operator_not_allowed)" \
+    "$(fgc "$ADM" "select forgive_invoice_debt('${IV}02', 10, 'loyal')")" "operator_not_allowed"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$RCP','$C1', now() + interval '30 minutes')
+       on conflict (user_id) do update set until = excluded.until;" >/dev/null
+
+# ٢) فوق الربح (الفاتورة ٢: ٢٠٠، كلفة ١٢٥، ربح ٧٥، متبقٍّ ٢٠٠ ⇒ المسموح ٧٥)
+chk "فوق الربح بمفتاح المدير على الاستقبال: above_profit_needs_owner" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}02', 100, 'negotiation', 'اتفقنا على خسارة', null, 0, 'cash', true)")" "above_profit_needs_owner"
+chk "  وتلميحُه يقول إنّ مفتاحَ المدير لا يكفي" \
+    "$(fgh "$RCP" "select forgive_invoice_debt('${IV}02', 100, 'negotiation', 'اتفقنا على خسارة', null, 0, 'cash', true)" "مفتاحُ المدير")" "true"
+chk "  المديرُ بحسابه بملاحظةٍ قصيرة: note_required" \
+    "$(fgc "$MGR" "select forgive_invoice_debt('${IV}02', 100, 'negotiation', 'قصير', null, 0, 'cash', true)")" "note_required"
+chk "  صاحبُ العيادة بلا إقرار: confirm_loss_required" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}02', 100, 'negotiation', 'اتفقنا على خسارة مع الزبون')")" "confirm_loss_required"
+chk "  والتلميحُ يسمّي الخسارة (١٠٠ − ٧٥ = ٢٥)" \
+    "$(fgh "$C1" "select forgive_invoice_debt('${IV}02', 100, 'negotiation', 'اتفقنا على خسارة مع الزبون')" "بخسارة 25")" "true"
+chk "  وبالملاحظة والإقرار يمرّ" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}02', 100, 'negotiation', 'اتفقنا على خسارة مع الزبون', 200, 0, 'cash', true)")" "ok"
+chk "  الفاتورة: الإجمالي ١٠٠، الربح −٢٥، الخصم ١٠٠" \
+    "select total::int||'|'||profit::int||'|'||forgiven::int from invoices where id='${IV}02'" "100|-25|100"
+chk "  والسطرُ مختومٌ «فوق السقف» بلا مفتاح، بلقطته (ربحٌ قبله ٧٥، متبقٍّ ٢٠٠، نسبة ١٠٠)" \
+    "select above_cap::text||'|'||via_pin::text||'|'||profit_base::int||'|'||due_before::int||'|'||pct||'|'||reason_code||'|'||(created_by='$C1')::text from invoice_forgiveness where invoice_id='${IV}02'" "true|false|75|200|100|negotiation|true"
+
+# ٣) داخل الربح (الفاتورة ١: ٢٠٠، ربح ٧٥، دُفع ١٥٠ ⇒ متبقٍّ ٥٠ والمسموح ٥٠)
+chk "متبقٍّ غيرُ الذي رآه المدير: due_changed" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 10, 'loyal', null, 60)")" "due_changed"
+chk "  أكبرُ من المتبقّي: above_due" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 60, 'loyal', null, 50)")" "above_due"
+chk "  سببٌ مجهول: reason_required" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 10, 'xx')")" "reason_required"
+chk "  «غير ذلك» بلا ملاحظة: note_required" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 10, 'other')")" "note_required"
+chk "  صفر: amount_invalid" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 0, 'loyal')")" "amount_invalid"
+chk "  ٣٠ بمفتاح المدير داخل الربح: يمرّ" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 30, 'loyal', null, 50)")" "ok"
+chk "  الإجمالي ١٧٠، الربح ٤٥، الخصم ٣٠، المتبقّي ٢٠ — والمدفوعُ والسِّيَقُ كما هي" \
+    "select total::int||'|'||profit::int||'|'||forgiven::int||'|'||(total-amount_paid)::int||'|'||amount_paid::int||'|'||jsonb_array_length(payment_details) from invoices where id='${IV}01'" "170|45|30|20|150|1"
+chk "  والسطرُ: بمفتاح المدير، داخل السقف، ومفتاحُ الزبون بمفتاح دولة العيادة" \
+    "select via_pin::text||'|'||above_cap::text||'|'||cust_key||'|'||total_before::int||'|'||due_before::int from invoice_forgiveness where invoice_id='${IV}01'" "true|false|p:7701234567|200|50"
+chk "  والثاني يأخذ ما بقي من الربح (المسموح الآن ٢٠ = min(المتبقّي ٢٠، ٧٥ − ٣٠))" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}01', 20, 'dispute', null, 20)")" "ok"
+chk "  فصار المتبقّي صفراً والخصمُ ٥٠" \
+    "select (total-amount_paid)::int||'|'||forgiven::int from invoices where id='${IV}01'" "0|50"
+
+# ٤) المرفوض بطبيعته
+chk "فاتورةٌ مُرجَعة: invoice_refunded" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}04', 10, 'loyal')")" "invoice_refunded"
+chk "طلبُ توصيلٍ بالطريق: invoice_has_open_delivery" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}05', 10, 'loyal')")" "invoice_has_open_delivery"
+chk "  ووصل ولم يُحصَّل (بذمّة الشركة): مرفوضٌ كذلك" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}06', 10, 'loyal')")" "invoice_has_open_delivery"
+chk "  ووصل وتحصّل: الزبونُ هو المدين — يمرّ" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}07', 5, 'loyal')")" "ok"
+chk "بلا اسمٍ ولا هاتف: customer_required" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}08', 10, 'loyal')")" "customer_required"
+
+# ٥) «تسوية»: يدفع الآن ونخصم الباقي — ساقٌ موجبةٌ واحدة وسطرٌ واحد، والتقاريرُ تعدّ الدفعة لا الخصم
+chk "تسوية: ١٠٠ دين، يدفع ٧٠ بطاقة ونخصم ٣٠" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}03', 30, 'negotiation', null, 100, 70, 'card')")" "ok"
+chk "  المدفوع ٧٠، الإجمالي ٧٠، الخصم ٣٠، المتبقّي صفر، والطريقةُ الغالبة بطاقة" \
+    "select amount_paid::int||'|'||total::int||'|'||forgiven::int||'|'||(total-amount_paid)::int||'|'||payment_method from invoices where id='${IV}03'" "70|70|30|0|card"
+chk "  ساقٌ واحدة بشكل 0061 حرفاً: {method, amount, at …Z}" \
+    "select jsonb_array_length(payment_details)||'|'||(payment_details->0->>'method')||'|'||(payment_details->0->>'amount')::numeric::int||'|'||((payment_details->0->>'at') ~ '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$')::text||'|'||(select string_agg(k, ',' order by k) from jsonb_object_keys(payment_details->0) k) from invoices where id='${IV}03'" "1|card|70|true|amount,at,method"
+chk "  وسطرٌ واحد بالدفتر يحمل الدفعة (٧٠ بطاقة) ولقطةَ ما بعدها (إجمالي ١٠٠، مدفوع ٧٠، متبقٍّ ٣٠)" \
+    "select count(*)||'|'||max(pay_amount)::int||'|'||max(pay_method)||'|'||max(total_before)::int||'|'||max(paid_before)::int||'|'||max(due_before)::int from invoice_forgiveness where invoice_id='${IV}03'" "1|70|card|100|70|30"
+chk "  receipt_legs يعدّ الدفعةَ (٧٠) لا الخصم" \
+    "select coalesce(sum(r.amount), 0)::int::text from (select set_config('request.jwt.claim.sub','$C1',true)) s, receipt_legs() r where r.invoice_id='${IV}03'" "70"
+chk "بيعةٌ بلا سِيَق (٤٠ ضمنيّة): التسويةُ تثبّت الضمنيّةَ بتاريخ الفاتورة قبل ساقها" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}0e', 30, 'loyal', null, 60, 30, 'cash')")" "ok"
+chk "  فالتقاريرُ ترى ٤٠ يوم البيع + ٣٠ اليوم = ٧٠ (لا ٣٠ وحدها)" \
+    "select string_agg(r.amount::int::text, ',' order by r.at)||'|'||(min(r.at) = '2026-10-01T09:00:00Z')::text from (select set_config('request.jwt.claim.sub','$C1',true)) s, receipt_legs() r where r.invoice_id='${IV}0e'" "40,30|true"
+
+# ٦) المرتجعُ يستهلك الخصمَ قبل النقد (٤٠+٣٠، دُفع ٣٠، خُصم ٢٠ ⇒ يرجع الـ٣٠: الإجمالي ٣٠، المتبقّي ٠، ولا نقد)
+chk "خصمُ ٢٠ على ٤٠+٣٠ مدفوعٌ منها ٣٠" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}09', 20, 'loyal', null, 40)")" "ok"
+chk "  إرجاعُ سطر الـ٣٠ (الاستقبالُ يرجع — كما بالإنتاج)" \
+    "$(fgc "$RCP" "select return_invoice_items('${IV}09', '[{\"item_id\":\"${II}a2\",\"qty\":1}]'::jsonb)")" "ok"
+chk "  الإجمالي ٣٠، الخصم ١٠، المدفوع ٣٠، المتبقّي ٠، الربح ٢٠ — ولا ساقَ سالبة (لا نقدَ خرج)" \
+    "select total::int||'|'||forgiven::int||'|'||amount_paid::int||'|'||(total-amount_paid)::int||'|'||profit::int||'|'||jsonb_array_length(payment_details) from invoices where id='${IV}09'" "30|10|30|0|20|1"
+chk "  وسطرُ استهلاكٍ بالسالب (−١٠، «مرتجع»)" \
+    "select string_agg(kind||':'||amount::int||':'||coalesce(note,''), ',' order by created_at, amount desc) from invoice_forgiveness where invoice_id='${IV}09'" "forgive:20:,consumed:-10:مرتجع"
+chk "  وإلغاءُ خصمٍ استُهلك منه شيء يُرفض (forgiveness_consumed)" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}09' and kind='forgive'), 'غلط بالمبلغ')")" "forgiveness_consumed"
+
+# ٧) التعديلُ يبقي الخصمَ ما دام الدينُ يحمله، ويستهلكه حين لا
+chk "خصمُ ٣٠ على ١٠٠ مدفوعٌ منها ٢٠" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}0a', 30, 'hardship', null, 80)")" "ok"
+chk "  المديرُ يضيف سطر ١٠: الخام ١١٠ ⇒ الخصمُ يبقى ٣٠ والإجمالي ٨٠" \
+    "$(fgc "$C1" "select edit_invoice_lines('${IV}0a', '[{\"name\":\"مية\",\"qty\":1,\"unit_price\":100,\"unit_cost\":40},{\"name\":\"عشرة\",\"qty\":1,\"unit_price\":10,\"unit_cost\":5}]'::jsonb)")" "ok"
+chk "    (إجمالي ٨٠، خصم ٣٠، ربح ٣٥، متبقٍّ ٦٠، ولا سطرَ استهلاك)" \
+    "select total::int||'|'||forgiven::int||'|'||profit::int||'|'||(total-amount_paid)::int||'|'||(select count(*) from invoice_forgiveness where invoice_id='${IV}0a') from invoices where id='${IV}0a'" "80|30|35|60|1"
+chk "  وينزل لسطر ٤٠ وحده: الخام ٤٠ والمدفوع ٢٠ ⇒ الخصمُ ٢٠ والإجمالي ٢٠" \
+    "$(fgc "$C1" "select edit_invoice_lines('${IV}0a', '[{\"name\":\"أربعون\",\"qty\":1,\"unit_price\":40,\"unit_cost\":10}]'::jsonb)")" "ok"
+chk "    (إجمالي ٢٠، خصم ٢٠، متبقٍّ ٠، واستهلاكُ −١٠ «تعديل»)" \
+    "select total::int||'|'||forgiven::int||'|'||(total-amount_paid)::int||'|'||(select string_agg(amount::int||':'||coalesce(note,''), ',') from invoice_forgiveness where invoice_id='${IV}0a' and kind='consumed') from invoices where id='${IV}0a'" "20|20|0|-10:تعديل"
+
+# ٨) الإلغاء: يرجع الدينُ كما كان، والسطرُ يبقى مشطوباً
+chk "خصمُ ٤٠ على ١٠٠ (ربح ٥٠)" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}0b', 40, 'loyal')")" "ok"
+$P -c "delete from staff_elevations where user_id = '$RCP';" >/dev/null
+chk "  الاستقبالُ بلا مفتاح لا يلغي" \
+    "$(fgc "$RCP" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}0b'), 'غلط بالمبلغ')")" "not_allowed"
+chk "  والإلغاءُ بلا سبب: reason_required" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}0b'), '  ')")" "reason_required"
+chk "  وسطرُ الاستهلاك لا يُلغى وحده (entry_not_voidable)" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}09' and kind='consumed'), 'غلط بالمبلغ')")" "entry_not_voidable"
+chk "  المديرُ يلغي بسبب" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}0b'), 'غلط بالمبلغ')")" "ok"
+chk "  الإجمالي ١٠٠ والربح ٥٠ والخصم ٠، والسطرُ باقٍ مختوماً بسببه ومن ألغاه" \
+    "select i.total::int||'|'||i.profit::int||'|'||i.forgiven::int||'|'||(f.voided_at is not null)::text||'|'||f.void_reason||'|'||(f.voided_by='$C1')::text from invoices i join invoice_forgiveness f on f.invoice_id=i.id where i.id='${IV}0b'" "100|50|0|true|غلطبالمبلغ|true"
+chk "  ومرّةً ثانية: already_voided" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}0b'), 'غلط بالمبلغ')")" "already_voided"
+# خصمُ ٤٠ (الإجمالي ٦٠)، ثم طلبُ توصيلٍ بوصلٍ ٦٠ — الإلغاءُ يرفع الإجماليَّ ١٠٠ والسائقُ مطلوبٌ منه ٦٠.
+chk "خصمُ ٤٠ ثم طلبُ توصيلٍ بالطريق بوصل ٦٠" \
+    "$(fgc "$C1" "select forgive_invoice_debt('${IV}11', 40, 'loyal', null, 100)")" "ok"
+$P -c "insert into delivery_orders (id, clinic_id, invoice_id, status, cod_amount) values ('${II}d1', '$C1', '${IV}11', 'out', 60) on conflict (id) do nothing;" >/dev/null
+chk "  الإلغاءُ وطلبُ التوصيل مفتوح: invoice_has_open_delivery" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}11'), 'غلط بالمبلغ')")" "invoice_has_open_delivery"
+chk "    (الإجمالي ٦٠ والخصم ٤٠ ووصلُ السائق ٦٠ — لا شيءَ تحرّك)" \
+    "select i.total::int||'|'||i.forgiven::int||'|'||d.cod_amount::int from invoices i join delivery_orders d on d.invoice_id = i.id where i.id='${IV}11'" "60|40|60"
+$P -c "update delivery_orders set status = 'delivered', delivered_at = now(), collected_at = now() where id = '${II}d1';" >/dev/null
+chk "  وبعد التحصيل (الزبونُ هو المدين): يمرّ" \
+    "$(fgc "$C1" "select void_invoice_forgiveness((select id from invoice_forgiveness where invoice_id='${IV}11'), 'غلط بالمبلغ')")" "ok"
+
+# ٩) النسبة: صاحبُ العيادة وحده يغيّرها، والسقفُ يتبعها
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$RCP','$C1', now() + interval '30 minutes')
+       on conflict (user_id) do update set until = excluded.until;" >/dev/null
+chk "الاستقبالُ بمفتاح المدير لا يغيّر النسبة (forgive_pct_owner_only)" \
+    "$(fgc "$RCP" "update clinic_prefs set forgive_profit_pct = 50 where clinic_id = '$C1'")" "forgive_pct_owner_only"
+chk "  ولا يدرج صفّاً بنسبةٍ غير الافتراضيّة" \
+    "$(fgc "$RCP" "insert into clinic_prefs (clinic_id, forgive_profit_pct) values ('$C1', 50) on conflict (clinic_id) do nothing")" "forgive_pct_owner_only"
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "  مشغّلُ المنصّة داخل العيادة يرى صفَّها (فالرفضُ التالي من المحفّز لا من RLS)" \
+    "select _fgv('$ADM', \$q\$select forgive_profit_pct::text from clinic_prefs where clinic_id = '$C1'\$q\$)" "100"
+chk "  ولا يغيّر النسبة — auth_role_base() مديرٌ له بلا صفِّ مفتاح (forgive_pct_owner_only)" \
+    "$(fgc "$ADM" "update clinic_prefs set forgive_profit_pct = 50 where clinic_id = '$C1'")" "forgive_pct_owner_only"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "  وصاحبُ العيادة يغيّرها" \
+    "select _rls_try('$C1', 'update clinic_prefs set forgive_profit_pct = 50 where clinic_id = ''$C1''')" "rows:1"
+chk "  وخارج ٠–١٠٠ يُرفض (23514)" \
+    "select left(_rls_try('$C1', 'update clinic_prefs set forgive_profit_pct = 150 where clinic_id = ''$C1'''), 13)" "guarded:23514"
+chk "  ونسبة ٥٠ ⇒ المسموح ٣٧.٥ من ربح ٧٥: ٤٠ بالمفتاح فوق السقف" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}0d', 40, 'loyal')")" "above_profit_needs_owner"
+chk "  و٣٧.٥ تمرّ" \
+    "$(fgc "$RCP" "select forgive_invoice_debt('${IV}0d', 37.5, 'loyal')")" "ok"
+chk "    والسطرُ يحفظ النسبة" \
+    "select pct||':'||amount from invoice_forgiveness where invoice_id='${IV}0d'" "50:37.50"
+$P -c "update clinic_prefs set forgive_profit_pct = 100 where clinic_id = '$C1';" >/dev/null
+
+# ١٠) سِيَقُ الدفع: الموظّفُ يغيّر الطريقةَ وحدها، والمبالغُ للمدير
+$P -c "delete from staff_elevations where user_id = '$RCP';" >/dev/null
+chk "الاستقبالُ يغيّر طريقةَ الساق الوحيدة (setInvoicePaymentMethod)" \
+    "select _rls_try('$RCP', 'update invoices set payment_method = ''card'', payment_details = jsonb_set(payment_details, ''{0,method}'', ''\"card\"'') where id = ''${IV}0c''')" "rows:1"
+chk "  ولا مبلغَها (payment_legs_frozen)" \
+    "$(fgc "$RCP" "update invoices set payment_details = jsonb_set(payment_details, '{0,amount}', '60') where id = '${IV}0c'")" "payment_legs_frozen"
+chk "  ولا وقتَها" \
+    "$(fgc "$RCP" "update invoices set payment_details = jsonb_set(payment_details, '{0,at}', '\"2026-01-01T00:00:00.000Z\"') where id = '${IV}0c'")" "payment_legs_frozen"
+chk "  ولا يضيف ساقاً" \
+    "$(fgc "$RCP" "update invoices set payment_details = payment_details || '[{\"method\":\"cash\",\"amount\":1}]'::jsonb where id = '${IV}0c'")" "payment_legs_frozen"
+chk "  والمديرُ يقسّم" \
+    "select _rls_try('$C1', 'update invoices set payment_details = ''[{\"method\":\"cash\",\"amount\":60,\"at\":\"2026-10-01T09:00:00.000Z\"},{\"method\":\"card\",\"amount\":40,\"at\":\"2026-10-01T09:00:00.000Z\"}]'' where id = ''${IV}0c''')" "rows:1"
+# فاتورةٌ بثلاث سِيَق، بينها مرتجعٌ سالبٌ بملاحظته (الفاتورة و): ما يكتبه محرّرُ «دفع مجزأ»
+# (setInvoicePaymentDetails: يبني {method, amount, at} ويرمي الملاحظة ويؤخّر السالب) مرفوضٌ للموظّف
+# ولو غيّر الطريقةَ وحدها — فالواجهةُ تُخفي المحرّرَ عنه (canEditLegs، manager-mode-test).
+chk "سِيَقٌ ثلاث بسالبٍ موسوم: الاستقبالُ يغيّر طريقةَ الساق الثالثة بمكانها" \
+    "select _rls_try('$RCP', 'update invoices set payment_details = jsonb_set(payment_details, ''{2,method}'', ''\"card\"'') where id = ''${IV}0f''')" "rows:1"
+chk "  والملاحظةُ والسالبُ بمكانهما" \
+    "select (payment_details->1->>'note')||'|'||(payment_details->1->>'amount')::int||'|'||(payment_details->2->>'method') from invoices where id='${IV}0f'" "مرتجع:علبة|-30|card"
+chk "  وما يرسله محرّرُ «دفع مجزأ» (السالبُ آخراً، والملاحظةُ لا) مرفوضٌ له (payment_legs_frozen)" \
+    "$(fgc "$RCP" "update invoices set payment_details = jsonb_build_array(payment_details->0, payment_details->2, payment_details->1) where id = '${IV}0f'")" "payment_legs_frozen"
+chk "  ونفسُه للمدير يمرّ" \
+    "select _rls_try('$C1', 'update invoices set payment_details = jsonb_build_array(payment_details->0, payment_details->2, payment_details->1) where id = ''${IV}0f''')" "rows:1"
+chk "  والتسديدُ من «تحصيل» (settle_invoice) يبقى للاستقبال" \
+    "select _rls_try('$RCP', 'select settle_invoice(''${IV}02'', 10, ''cash'')')" "rows:1"
+chk "    (دُفع ١٠ من ١٠٠)" "select amount_paid::int::text from invoices where id='${IV}02'" "10"
+
+# ١١) forgiven والدفترُ لا يُكتبان مباشرةً
+chk "الاستقبالُ لا يكتب forgiven مباشرةً (invoice_forgiven_frozen)" \
+    "$(fgc "$RCP" "update invoices set forgiven = 0 where id = '${IV}01'")" "invoice_forgiven_frozen"
+chk "  ولا المديرُ (الثابتُ لا ينكسر من PATCH)" \
+    "$(fgc "$C1" "update invoices set forgiven = 0 where id = '${IV}01'")" "invoice_forgiven_frozen"
+chk "  ولا فاتورةٌ تُدرج بخصمٍ جاهز" \
+    "$(fgc "$C1" "insert into invoices (id, clinic_id, total, forgiven) values ('${IV}ff', '$C1', 10, 5)")" "invoice_forgiven_frozen"
+chk "الدفترُ لا يُدرج فيه مباشرةً (42501)" \
+    "select left(_rls_try('$C1', 'insert into invoice_forgiveness (clinic_id, invoice_id, kind, amount, reason_code) values (''$C1'', ''${IV}01'', ''forgive'', 1, ''loyal'')'), 13)" "guarded:42501"
+chk "  ولا يُعدَّل" \
+    "select left(_rls_try('$C1', 'update invoice_forgiveness set amount = 1'), 13)" "guarded:42501"
+chk "  ولا يُحذف" \
+    "select left(_rls_try('$C1', 'delete from invoice_forgiveness'), 13)" "guarded:42501"
+chk "  والدالّةُ الداخليّة لا تُنادى" \
+    "select left(_rls_try('$C1', 'select invoice_forgiveness_consume(''$C1'', ''${IV}01'', 1, ''x'', 1, 1)'), 13)" "guarded:42501"
+
+# ١٢) الثابت والقراءة
+chk "الثابت: forgiven = Σ السطور غير الملغاة، لكلّ فاتورة" \
+    "select count(*)::text from invoices i where i.id::text like 'dddddddd-0241-%' and i.forgiven <> coalesce((select sum(f.amount) from invoice_forgiveness f where f.invoice_id = i.id and f.voided_at is null), 0)" "0"
+chk "  وكلُّ فاتورةٍ خُصم عليها بقي إجماليُّها = (المجموع − الخصم) − forgiven" \
+    "select count(*)::text from invoices i where i.id::text like 'dddddddd-0241-%' and i.status <> 'refunded' and exists (select 1 from invoice_forgiveness f where f.invoice_id = i.id) and i.total <> greatest(i.subtotal - i.discount, 0) - i.forgiven" "0"
+chk "list_invoice_forgiveness: الاستقبالُ يرى سطرَي الفاتورة ١، والعيادةُ الأخرى لا شيء" \
+    "select _fgv('$RCP', \$q\$select count(*)::text from list_invoice_forgiveness(array['${IV}01'::uuid])\$q\$)||'|'||_fgv('$C2', \$q\$select count(*)::text from list_invoice_forgiveness(array['${IV}01'::uuid])\$q\$)" "2|0"
+chk "  والملغى معها (الفاتورة ب: سطرٌ مختوم)" \
+    "select _fgv('$RCP', \$q\$select string_agg((voided_at is not null)::text, ',') from list_invoice_forgiveness(array['${IV}0b'::uuid])\$q\$)" "true"
+chk "report_forgiveness: كلُّ سطور العيادة بالمدّة، باسم الزبون" \
+    "select (_fgv('$C1', \$q\$select count(*)::text||':'||count(*) filter (where r.customer_name = 'أبو حسن') from report_forgiveness(now() - interval '1 hour', now() + interval '1 hour') r where r.invoice_id::text like 'dddddddd-0241-%'\$q\$) = (select count(*)::text||':2' from invoice_forgiveness where invoice_id::text like 'dddddddd-0241-%'))::text" "true"
+chk "  والعيادةُ الأخرى لا شيء" \
+    "select _fgv('$C2', \$q\$select count(*)::text from report_forgiveness(now() - interval '1 hour', now() + interval '1 hour')\$q\$)" "0"
+chk "  وبلا مدّة: خطأٌ لا قائمةٌ فارغة (range_required)" \
+    "$(fgc "$C1" "select * from report_forgiveness(null, now())")" "range_required"
+chk "invoice_settlements: الخصمُ الحيّ منذ ساعة يُرى (الفاتورة ١)، والملغى وحده لا (الفاتورة ب)" \
+    "select _fgv('$RCP', \$q\$select (bool_or(s.id = '${IV}01') and not bool_or(s.id = '${IV}0b'))::text from invoice_settlements(null, 'all', now() - interval '1 hour') s\$q\$)" "true"
+# «تسديد دفعة» لدين الزبون وحده (قرارُ المالك): ساقُ تحصيل التوصيل — طلبٌ غيرُ مُرجَع و(collected_at فارغ أو
+# at ≤ collected_at + ١٠ دقائق) — لا تجيب فاتورتَها. ٢٠: السائقُ ختم collected_at بساعة جهازه والساقُ بعده بـ٤ ثوانٍ؛
+# ٢١: التحصيلُ ثم دفعةُ الزبون بالعيادة بعد ساعتين؛ ٢٢: طلبٌ مُرجَع؛ ٢٣: شركةٌ لم يُختم تحصيلُها (سدادٌ جزئيّ).
+$P -c "insert into invoices (id, clinic_id, customer_name, subtotal, total, cost_total, profit, amount_paid, status, created_at, payment_details) values
+         ('${IV}20', '$C1', 'وصل سائق',  100, 100, 50, 50, 100, 'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-02T10:00:04.000Z\"}]'),
+         ('${IV}21', '$C1', 'باقي بالعيادة', 100, 100, 50, 50, 100, 'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":60,\"at\":\"2026-10-02T10:00:03.000Z\"},{\"method\":\"card\",\"amount\":40,\"at\":\"2026-10-02T12:00:00.000Z\"}]'),
+         ('${IV}22', '$C1', 'رجع الطلب', 100, 100, 50, 50, 100, 'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":100,\"at\":\"2026-10-03T10:00:00.000Z\"}]'),
+         ('${IV}23', '$C1', 'شركة جزئي', 100, 100, 50, 50, 60,  'paid', '2026-10-02T09:00:00Z', '[{\"method\":\"cash\",\"amount\":60,\"at\":\"2026-10-04T10:00:00.000Z\"}]')
+       on conflict (id) do nothing;
+       insert into delivery_orders (id, clinic_id, invoice_id, status, cod_amount, delivered_at, collected_at, returned_at) values
+         ('${II}e0', '$C1', '${IV}20', 'delivered', 100, '2026-10-02T09:55:00Z', '2026-10-02T10:00:00Z', null),
+         ('${II}e1', '$C1', '${IV}21', 'delivered', 100, '2026-10-02T09:55:00Z', '2026-10-02T10:00:00Z', null),
+         ('${II}e2', '$C1', '${IV}22', 'returned',  100, null,                   null,                   '2026-10-02T11:00:00Z'),
+         ('${II}e3', '$C1', '${IV}23', 'delivered', 100, '2026-10-03T09:00:00Z', null,                   null)
+       on conflict (id) do nothing;" >/dev/null
+# «on conflict do nothing» يبلع تصادمَ معرّف بصمت (كان طلبُ ٢١ بمعرّف d1، وهو طلبُ الفاتورة ١١ قائماً، فبقيت ٢١ بلا طلبٍ ومرّ حكمُها صدفةً) — فالقالبُ يُعدّ قبل أيّ حكم.
+chk "  (القالب: لكلّ فاتورةٍ من ٢٠–٢٣ طلبُها بحالته وختمه)" \
+    "select string_agg(right(invoice_id::text, 2)||':'||status||':'||(collected_at is null)::text, ',' order by invoice_id) from delivery_orders where invoice_id in ('${IV}20','${IV}21','${IV}22','${IV}23')" \
+    "20:delivered:false,21:delivered:false,22:returned:true,23:delivered:true"
+chk "invoice_settlements: تحصيلُ التوصيل وحده لا يجيب فاتورتَه (٢٠، ٢٣)، ودفعةُ الزبون بعده تجيبها (٢١)، والمُرجَعُ لا يُخفي (٢٢)" \
+    "select _fgv('$RCP', \$q\$select coalesce(string_agg(right(s.id::text, 2), ',' order by s.id), '-') from invoice_settlements(null, 'all', '2026-09-01T00:00:00Z') s where s.id in ('${IV}20','${IV}21','${IV}22','${IV}23')\$q\$)" "21,22"
+chk "  ومنذ ما بعد التحصيل: ٢١ بدفعة الزبون وحدها" \
+    "select _fgv('$RCP', \$q\$select coalesce(string_agg(right(s.id::text, 2), ',' order by s.id), '-') from invoice_settlements(null, 'all', '2026-10-02T11:00:00Z') s where s.id in ('${IV}20','${IV}21')\$q\$)" "21"
+chk "invoice_delivery_marks: طلبٌ غيرُ مُرجَع ومتى حُصِّل (٢٢ المُرجَع بلا علامة)" \
+    "select _fgv('$RCP', \$q\$select string_agg(right(invoice_id::text, 2)||':'||(collected_at is null)::text, ',' order by invoice_id) from invoice_delivery_marks(array['${IV}20','${IV}21','${IV}22','${IV}23','${IV}01']::uuid[])\$q\$)" "20:false,21:false,23:true"
+chk "  وعيادةٌ أخرى والمصوّر لا يريان شيئاً" \
+    "select _fgv('$C2', \$q\$select count(*)::text from invoice_delivery_marks(array['${IV}20','${IV}23']::uuid[])\$q\$)||'|'||_fgv('$PHO', \$q\$select count(*)::text from invoice_delivery_marks(array['${IV}20','${IV}23']::uuid[])\$q\$)" "0|0"
+chk "  وبلا معرّفات: لا شيء (لا كلُّ العيادة)" \
+    "select _fgv('$RCP', \$q\$select count(*)::text from invoice_delivery_marks(null)\$q\$)" "0"
+chk "  invoker بمسارٍ مثبَّت، وممنوعةٌ على anon، ومسموحةٌ للمسجَّل" \
+    "select (not prosecdef)::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||':'||has_function_privilege('anon', oid, 'execute')::text||':'||has_function_privilege('authenticated', oid, 'execute')::text from pg_proc where proname='invoice_delivery_marks'" "true:true:false:true"
+chk "  وinvoice_settlements تقرأ القاعدةَ نفسَها (المُرجَع + المهلة)" \
+    "select (prosrc like '%d.status <> ''returned''%' and prosrc like '%d.collected_at is null or safe_ts(l->>''at'') <= d.collected_at + interval ''10 minutes''%')::text from pg_proc where proname='invoice_settlements'" "true"
+chk "عزل: العيادةُ الأخرى لا ترى الدفتر، ولا المصوّر" \
+    "select _rls_try('$C2', 'select 1 from invoice_forgiveness')||'|'||_rls_try('$PHO', 'select 1 from invoice_forgiveness')" "rows:0|rows:0"
+chk "التدقيق: الخصمُ debt_forgive والإلغاءُ debt_forgive_void" \
+    "select string_agg(distinct audit_kind(entity, action, details), ',' order by audit_kind(entity, action, details)) from audit_log where entity = 'invoice_forgiveness' and clinic_id = '$C1' and coalesce(details->>'kind', '') <> 'consumed'" "debt_forgive,debt_forgive_void"
+chk "  وسطرُ الاستهلاك (كتبه مرتجعُ الاستقبال) تعديلُ فاتورة لا «خصم على الدين»" \
+    "select string_agg(distinct audit_kind(entity, action, details), ',')||'|'||count(*) filter (where actor = '$RCP')::text from audit_log where entity = 'invoice_forgiveness' and clinic_id = '$C1' and details->>'kind' = 'consumed'" "sale_edit|1"
+
+# ١٣) الثوابتُ الساكنة
+chk "الخصمُ والإلغاء: definer بمسارٍ مثبَّت، ويقرآن الفاتورةَ بعيادة الجلسة نصّاً، ويقفلان الصفّ" \
+    "select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||':'||(prosrc like '%clinic_id = v_clinic%' and prosrc like '%for update%')::text, ',' order by proname) from pg_proc where proname in ('forgive_invoice_debt','void_invoice_forgiveness')" \
+    "forgive_invoice_debt:true:true:true,void_invoice_forgiveness:true:true:true"
+chk "  والكتّابُ الأربعة يقفلون الفاتورة (settle_invoice، تصحيحُ التحصيل، تعديلُ البنود، المرتجع)" \
+    "select string_agg(proname||':'||(prosrc ~ 'from invoices where id = p_invoice and clinic_id = v_clinic for update')::text, ',' order by proname) from pg_proc where proname in ('settle_invoice','correct_invoice_receipt','edit_invoice_lines_unguarded','return_invoice_items')" \
+    "correct_invoice_receipt:true,edit_invoice_lines_unguarded:true,return_invoice_items:true,settle_invoice:true"
+chk "  وكلُّ دالّةٍ تكتب amount_paid أو payment_details على invoices تقفل صفَّها (لا كاتبَ خامساً بلا قفل)" \
+    "select count(*)::text||':'||coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.prolang = (select oid from pg_language where lanname = 'plpgsql') and p.prosrc ~* 'update\s+invoices\s+set[^;]*(amount_paid|payment_details)' and p.prosrc !~* 'from\s+invoices\s+where[^;]*for\s+update' and p.proname not like '\_%'" "0:"
+chk "تصحيحُ التحصيل بعد إعادة تعريفه: ١٠٠ مدفوعة، ٢٠ ما وصلت ⇒ المدفوع ٨٠ وساقٌ سالبة بسببها" \
+    "$(fgc "$C1" "select correct_invoice_receipt('${IV}10', 20, 'ما وصل كامل')")" "ok"
+chk "  (المدفوع ٨٠، سِيَقٌ ٢، والسالبةُ −٢٠ بملاحظتها)" \
+    "select amount_paid::int||'|'||jsonb_array_length(payment_details)||'|'||(payment_details->1->>'amount')::numeric::int||'|'||(payment_details->1->>'note') from invoices where id='${IV}10'" "80|2|-20|ماوصلكامل"
+chk "  والمحفّزاتُ والقراءةُ والاستهلاك invoker بمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('invoices_guard_forgiven','invoices_guard_legs','clinic_prefs_guard_forgive_pct','list_invoice_forgiveness','report_forgiveness','invoice_settlements','invoice_forgiveness_consume') and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
+chk "  ولا شيءَ لـanon" \
+    "select count(*)::text from pg_proc p where p.proname in ('forgive_invoice_debt','void_invoice_forgiveness','list_invoice_forgiveness','report_forgiveness','pin_elevation_live','invoice_forgiveness_consume') and has_function_privilege('anon', p.oid, 'execute')" "0"
+chk "  والداخليّتان لا تُنادَيان من المسجَّل" \
+    "select count(*)::text from pg_proc p where p.proname in ('invoice_forgiveness_consume','edit_invoice_lines_unguarded') and has_function_privilege('authenticated', p.oid, 'execute')" "0"
+chk "  والدفترُ: قراءةٌ وحدها للمسجَّل، ولا شيءَ لـanon" \
+    "select has_table_privilege('authenticated','public.invoice_forgiveness','select')::text||'|'||has_table_privilege('authenticated','public.invoice_forgiveness','insert')::text||'|'||has_table_privilege('anon','public.invoice_forgiveness','select')::text" "true|false|false"
+chk "السياجُ يغطّي الدفتر، ولا سياسةَ تقرأ جدولَها" \
+    "select coalesce(string_agg(t, ','), '')||'|'||(select count(*) from verify_no_self_ref_policies())::text from verify_photographer_fence() t where t like 'invoice_forgiveness%'" "|0"
+chk "والكنسُ ومعاينتُه ونبضُه يعدّون الدفترَ مالاً (سنة)" \
+    "select count(*)::text from pg_proc where proname in ('purge_audit_log','audit_log_preview','system_health') and prosrc like '%invoice_forgiveness%'" "3"
+# حالةُ الإنتاج (مقيسةٌ ١٦/١٠ بالبصمة): غلافُ 0113 لم ينزل، وedit_invoice_lines هو جسمُ البنود نفسُه بلا
+# _unguarded. نعيد الحالةَ ذاتها هنا ثم 0241: لو أنشأت _unguarded وحدها لبقي الإنتاجُ ينادي الجسمَ القديم.
+$P -c "drop function edit_invoice_lines(uuid, jsonb, text);
+       alter function edit_invoice_lines_unguarded(uuid, jsonb, text) rename to edit_invoice_lines;
+       grant execute on function edit_invoice_lines(uuid, jsonb, text) to authenticated;" >/dev/null
+chk "  (الحالةُ المقيسة: لا _unguarded، والاسمُ العامّ هو الجسمُ بلا حارس دور)" \
+    "select (to_regprocedure('edit_invoice_lines_unguarded(uuid, jsonb, text)') is null)::text||'|'||(select (prosrc not like '%auth_role()%')::text from pg_proc where proname='edit_invoice_lines')" "true|true"
+out=$($P -f "$MIG/0241_debt_forgiveness.sql" 2>&1) || { echo "$out"; echo "   ✗ 0241 ما انعادت على حالة الإنتاج"; fail=1; }
+chk "حالةُ الإنتاج بلا غلاف 0113: 0241 تعيد التسمية وتنشئ الغلاف، والجسمُ الداخليّ يستهلك الخصم ولا منحَ له" \
+    "select (to_regprocedure('edit_invoice_lines_unguarded(uuid, jsonb, text)') is not null)::text
+            ||'|'||(select (prosrc like '%auth_role()%' and prosrc like '%edit_invoice_lines_unguarded%')::text from pg_proc where proname='edit_invoice_lines')
+            ||'|'||(select (prosrc like '%invoice_forgiveness_consume%')::text from pg_proc where proname='edit_invoice_lines_unguarded')
+            ||'|'||(select has_function_privilege('authenticated', 'edit_invoice_lines_unguarded(uuid, jsonb, text)', 'execute')::text)
+            ||'|'||(select has_function_privilege('authenticated', 'edit_invoice_lines(uuid, jsonb, text)', 'execute')::text)" "true|true|true|false|true"
+$P -c "delete from staff_elevations;" >/dev/null
+chk "  والاستقبالُ يُرفض بالغلاف نفسِه (المديرُ وحده — حارسُ 0113 الذي ظُنّ نازلاً)" \
+    "select regexp_replace(_rls_try('$RCP', format('select edit_invoice_lines(%L::uuid, %L::jsonb, null)', '${IV}10', '[]')), '^guarded:[^:]*:', '')" "notallowed"
+$P -c "delete from staff_elevations; delete from memberships where user_id = '$MGR';
+       delete from delivery_orders where invoice_id::text like 'dddddddd-0241-%';
+       delete from invoice_items where invoice_id::text like 'dddddddd-0241-%';
+       delete from invoices where id::text like 'dddddddd-0241-%';" >/dev/null
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

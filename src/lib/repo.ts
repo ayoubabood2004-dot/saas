@@ -35,6 +35,7 @@ import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugsSnaps
 import type { StoreCategory, StoreCatsSnapshot, ProductImageFile } from "@/types";
 import type { PurchaseEffect } from "@/types";
 import type { ExpenseCategory } from "@/types";
+import type { InvoiceForgiveness, ForgivenessReportRow, DeliveryMark } from "@/types";
 import type { PriceChange, PriceChangeSummary, PriceChangeDetail, PricePriorMap } from "@/types";
 import type { PricePreview } from "./priceRaise";
 import type { PortalMe, PortalPetDetail, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -397,6 +398,17 @@ function normPreview(p: PricePreview): PricePreview {
   return { ...p, pct_bp: Number(p.pct_bp), max_step: Number(p.max_step),
     lines: (p.lines ?? []).map((l) => ({ ...l, o: Number(l.o), w: Number(l.w), s: Number(l.s), fl: l.fl ?? [] })) };
 }
+
+/** سطرُ دفتر الخصم (0241) بأرقامه أرقاماً (numeric قد يصل نصّاً). */
+function forgivenessRow<T extends InvoiceForgiveness>(r: T): T {
+  const n = (x: unknown) => (x == null ? null : Number(x));
+  return { ...r, amount: Number(r.amount), pay_amount: Number(r.pay_amount ?? 0), total_before: n(r.total_before), paid_before: n(r.paid_before),
+    due_before: n(r.due_before), profit_base: n(r.profit_base), cost_total: n(r.cost_total), pct: n(r.pct), above_cap: !!r.above_cap, via_pin: !!r.via_pin };
+}
+/** صفُّ invoice_delivery_marks: العلامةُ + معرّفُ الطلب (مؤشّرُ allPages يتقدّم بـid). */
+type DeliveryMarkRow = DeliveryMark & { id: string };
+const byCreated = (a: { created_at: string; id: string }, b: { created_at: string; id: string }) =>
+  a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 
 /** «السعرُ تغيّر من جهازٍ آخر» — رمزٌ يترجمه describeDbError (لا نصَّ عربياً هنا). */
 function priceMoved(): Error {
@@ -2383,6 +2395,10 @@ const supabaseRepo: DemoRepo = {
   async openDebts() {
     return allPages<Invoice>(() => sbc().rpc("open_debts"));
   },
+  async listSettlements(s) {
+    // فواتيرُ سُدِّد عليها منذ p_since (0240) بكلّ عمرها — بلا سقفٍ صامت: سطرُ تسديدٍ ناقص يُصدَّق.
+    return allPages<Invoice>(() => sbc().rpc("invoice_settlements", { p_q: s.q ?? null, p_status: s.status ?? "all", p_since: s.since ?? null }));
+  },
   async refundInvoice(invoiceId) {
     // Server marks refunded + returns units to stock (idempotent).
     return need<Invoice>(await sbc().rpc("refund_invoice", { p_invoice: invoiceId }));
@@ -2435,6 +2451,45 @@ const supabaseRepo: DemoRepo = {
     });
     if (error) throw error;
     return data as Invoice;
+  },
+  /* «خصم على الدين» (0241): الدورُ والسقفُ والقفلُ بالخادم، والرجوعُ صفُّ الفاتورة بعده. */
+  async forgiveInvoiceDebt(invoiceId, input) {
+    return need<Invoice>(await sbc().rpc("forgive_invoice_debt", {
+      p_invoice: invoiceId, p_amount: input.amount, p_reason: input.reason, p_note: input.note ?? null,
+      p_expect_due: input.expectDue ?? null, p_pay: input.pay ?? 0, p_method: input.method ?? "cash", p_confirm_loss: !!input.confirmLoss,
+    }));
+  },
+  /** نسبةُ السقف **كما تقرؤها الدالّةُ الآن**: `coalesce(clinic_prefs.forgive_profit_pct, 100)` بطلبٍ طازج — لا
+   *  خبيئةُ الإعدادات (تُرطَّب مرّةً بفتح العيادة، فتبويبٌ مفتوحٌ من أمس يحسب «المسموح» بنسبةٍ غيّرها صاحبُ العيادة
+   *  من جهازه)، ولا مرآةُ الجهاز (بلا صفٍّ قد تحمل قالبَ عيادةٍ أخرى؛ الخادمُ حينها ١٠٠). النافذةُ تسألها عند
+   *  فتحها، وتعيد سؤالها على above_profit_needs_owner/confirm_loss_required قبل أن تعرض الحكم. **ترمي.** */
+  async forgiveProfitPct() {
+    const { data, error } = await sbc().from("clinic_prefs").select("forgive_profit_pct").maybeSingle();
+    if (error) throw error;
+    const raw = (data as { forgive_profit_pct?: number | string | null } | null)?.forgive_profit_pct;
+    const n = Number(raw);
+    return raw == null || !Number.isFinite(n) ? 100 : n;
+  },
+  async voidInvoiceForgiveness(entryId, reason) {
+    return need<Invoice>(await sbc().rpc("void_invoice_forgiveness", { p_entry: entryId, p_reason: reason }));
+  },
+  /** علاماتُ التوصيل لفواتيرَ بعينها (0241، invoice_delivery_marks): طلبٌ غيرُ مُرجَع ومتى حُصِّل. **ترمي** —
+   *  علامةٌ ناقصة ترسم وصلَ السائق «تسديدَ دفعة»، والغائبُ ليس «بلا توصيل». */
+  async listDeliveryMarks(invoiceIds) {
+    if (invoiceIds.length === 0) return [];
+    const rows = await inChunks(invoiceIds, (c) => allPages<DeliveryMarkRow>(() => sbc().rpc("invoice_delivery_marks", { p_invoice_ids: c })));
+    return rows.map((r) => ({ invoice_id: r.invoice_id, collected_at: r.collected_at ?? null }));
+  },
+  /** سطورُ دفتر الخصم لفواتيرَ بعينها (الملغاةُ معها)، بترتيب الإنشاء. **ترمي** — سطرٌ ناقص يقلب «المتبقّي». */
+  async listInvoiceForgiveness(invoiceIds) {
+    if (invoiceIds.length === 0) return [];
+    const rows = await inChunks(invoiceIds, (c) => allPages<InvoiceForgiveness>(() => sbc().rpc("list_invoice_forgiveness", { p_invoice_ids: c })));
+    return rows.map(forgivenessRow).sort(byCreated);
+  },
+  /** «خصومات الديون» بالفترة — مدّةٌ لازمة (الخادمُ يرفض بلاها: range_required)، و**ترمي** على الفشل. */
+  async reportForgiveness(range) {
+    const rows = await allPages<ForgivenessReportRow>(() => sbc().rpc("report_forgiveness", { p_from: range.from, p_to: range.to }));
+    return rows.map((r) => ({ ...forgivenessRow(r), invoice_total: r.invoice_total == null ? null : Number(r.invoice_total) })).sort(byCreated);
   },
   /* دليلُ الزبائن بالخادم (0232): كلُّ التاريخ والحيوانات، والرقمُ بمفتاح دولة العيادة.
    * **يرمي** على الفشل — «ماكو زبون» عن زبونٍ موجود تجعل الكاشير يكتبه من جديد. */
@@ -2918,7 +2973,11 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   "companyTwins", "listDeletedCompanies", "listDeletedCompanySections",
   "listInvoicesTouching", "customerInvoices", "listReminderMarks", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
-  "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
+  "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts", "listSettlements",
+  // الخصمُ على الدين (0241): الدفترُ وتقريرُه قراءة — الخصمُ والإلغاءُ لا.
+  "listInvoiceForgiveness", "reportForgiveness", "forgiveProfitPct",
+  // وعلاماتُ التوصيل لسطور «تسديد دفعة» (0241): قراءة.
+  "listDeliveryMarks",
   "activitySummary", "activityPage", "activityActors",
   "productMovements", "productBatches", "productSalesRate",
   "listStockCounts", "listProductCounts", "reportStockLosses", "stockCountState", "listProductLots", "listActiveLots", "listWaTemplates", "listPhotoProducts",

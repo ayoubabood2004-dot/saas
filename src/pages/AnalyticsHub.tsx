@@ -17,6 +17,7 @@ import {
   Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import type { ForgivenessReportRow } from "@/types";
 import type { CustomerHit, Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseCategory, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
@@ -25,7 +26,11 @@ import { loadAnalyticsSnap, analyticsKey, analyticsPrefix, analyticsRange, defau
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useOverride, noteLockedTap } from "@/lib/managerOverride";
+import { useOverride, noteLockedTap, capLockedFrom } from "@/lib/managerOverride";
+import { reasonKey } from "@/lib/forgiveText";
+import { approverOf, forgiveRowCounts, forgiveTotals, type ForgiveTotals } from "@/lib/debtForgive";
+import { expectedServerClinic } from "@/lib/workspaceClinic";
+import { InvoiceDetail } from "@/components/retail/InvoicesPanel";
 import { useToast, Skeleton, Button, Dialog } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
 import { money, formatNum, formatDec, cn, dateLocale } from "@/lib/utils";
@@ -332,6 +337,32 @@ export function AnalyticsHub() {
   }, [startMin, endMin]);
   // Convenience: test an ISO timestamp's LOCAL wall-clock time against the window.
   const tsOk = useMemo(() => (iso: string) => { const d = new Date(iso); return inWindow(d.getHours() * 60 + d.getMinutes()); }, [inWindow]);
+
+  /* ---- «خصومات الديون» (0241): رقمٌ مؤرَّخٌ بيوم الخصم من الدفتر نفسه، وسجلٌّ للمدير ----
+   * بوّابةُ الأرباح نفسُها (السقفُ والخسارةُ أرقامُ ربح)، وقفلُ الجهاز يغلبها كالتقارير. والقائمةُ
+   * من report_forgiveness بمدّة الصفحة؛ فشلُها يُقال ويُعاد — لا «٠» عن خطأ. */
+  const ovr = useOverride();
+  const canForgiveReport = !capLockedFrom(ovr.deviceLocked, ovr.active, can("viewProfits"));
+  const [forgiveRows, setForgiveRows] = useState<ForgivenessReportRow[] | null>(null);
+  const [forgiveFailed, setForgiveFailed] = useState(false);
+  const [forgiveTick, setForgiveTick] = useState(0);
+  useEffect(() => {
+    if (!canForgiveReport) { setForgiveRows(null); setForgiveFailed(false); return; }
+    let alive = true;
+    setForgiveFailed(false);
+    repo.reportForgiveness({ from: new Date(lo).toISOString(), to: new Date(hi).toISOString() })
+      .then((r) => { if (alive) setForgiveRows(r); })
+      .catch(() => { if (alive) { setForgiveRows(null); setForgiveFailed(true); } });
+    return () => { alive = false; };
+  }, [canForgiveReport, lo, hi, refreshTick, forgiveTick]);
+  const forgiveSummary = useMemo((): ForgiveSummary | null => {
+    if (!canForgiveReport) return null;
+    if (forgiveFailed) return { state: "failed", rows: [], totals: NO_FORGIVE };
+    if (!forgiveRows) return { state: "loading", rows: [], totals: NO_FORGIVE };
+    const rows = forgiveRows.filter((r) => tsOk(r.created_at));
+    return { state: "ok", rows, totals: forgiveTotals(rows) };
+  }, [canForgiveReport, forgiveFailed, forgiveRows, tsOk]);
+  const retryForgive = () => setForgiveTick((n) => n + 1);
 
   // Invoices in range (date) AND within the optional shift window.
   const invInRange = useMemo(() => invoices.filter((i) => { const tm = new Date(i.created_at).getTime(); return tm >= lo && tm <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
@@ -777,6 +808,9 @@ export function AnalyticsHub() {
   const exportCSV = () => {
     // ملفٌّ بـ«المصروفات ٠» و«صافي النقد» منتفخ عن قراءةٍ فشلت يُفتح بإكسل ويُصدَّق — لا يُصدَّر.
     if (expensesFailed) { playWarning(); toast.error(t("wdr.loadFailCash", "تعذّر تحميل السحوبات — المسحوب وصافي النقد ما ينحسبون هسة.")); return; }
+    // وخصوماتُ الديون كذلك: ملفٌّ بلا سطرها عن قراءةٍ فشلت يبدو «ما خصمنا شي» (0241).
+    // و«لسّه يتحمّل» ليس «فشل»: رسالةُ فشلٍ بلا لوحةِ إعادةٍ تجعل المديرَ يبلّغ عن عطلٍ ما صار.
+    if (forgiveSummary && forgiveSummary.state !== "ok") { playWarning(); toast.error(t(forgiveSummary.state === "loading" ? "fgr.loading" : "fgr.failed")); return; }
     const rows: string[][] = [
       [t("rpt.csv.title", "تقرير doctorVet"), new Date().toLocaleDateString("en-GB")],
       [],
@@ -799,6 +833,17 @@ export function AnalyticsHub() {
       // يُفتح بإكسل أسهلُ تسريباً من شاشة.
       ...POCKETS.map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count),
         ...(canProfit ? [String(Math.round(pockets[k].out)), String(Math.round(pockets[k].net))] : [])]),
+      /* «خصومات الديون» (0241) قسمٌ بعنوانه لا سطرٌ تحت «صافي النقد في الصندوق»: صفرُ نقد، ونزلت من
+         مبيعات يوم البيع — سطرٌ بين أرقام الدرج يُطرح منه ثانيةً بإكسل. */
+      ...(forgiveSummary?.state === "ok" && (forgiveSummary.totals.count > 0 || forgiveSummary.totals.back > 0) ? [
+        [],
+        [t("fgr.total"), t("fgr.nonCash")],
+        [t("fgr.granted", { n: forgiveSummary.totals.count }), String(Math.round(forgiveSummary.totals.granted))],
+        ...(forgiveSummary.totals.back > 0 ? [
+          [t("fgr.back"), String(Math.round(forgiveSummary.totals.back))],
+          [t("fgr.net"), String(Math.round(forgiveSummary.totals.net))],
+        ] : []),
+      ] : []),
       [],
       [t("rpt.csv.topSellers", "الأكثر مبيعاً"), t("rpt.csv.qty", "الكمية"), t("rpt.csv.revenue", "الإيراد")],
       ...movers.top.map((p) => [p.name, String(p.qty), String(Math.round(p.revenue))]),
@@ -1038,6 +1083,7 @@ export function AnalyticsHub() {
               cashExpensesTotal={cashExpensesTotal} netCash={netCash} pockets={pockets}
               returnsTotal={returnsTotal} returnsCount={returnsCount}
               expensesFailed={expensesFailed} onRetry={() => setRefreshTick((n) => n + 1)}
+              forgive={forgiveSummary} onForgiveRetry={retryForgive} onChanged={() => setRefreshTick((n) => n + 1)}
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
@@ -1224,7 +1270,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount, expensesFailed, onRetry }: {
+function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount, expensesFailed, onRetry, forgive, onForgiveRetry, onChanged }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -1241,6 +1287,10 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
    *  الدرجَ بأكثر مما فيه، والمديرُ يطابقه آخرَ اليوم. */
   expensesFailed: boolean;
   onRetry: () => void;
+  /** «خصومات الديون» (0241) — null لمن لا يرى الأرباح (أو جهازٍ مقفول). */
+  forgive: ForgiveSummary | null;
+  onForgiveRetry: () => void;
+  onChanged: () => void;
 }) {
   const { t } = useTranslation();
   const methods: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -1391,6 +1441,8 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
                 <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(returnsTotal)}</span>
               </div>
             )}
+            {/* «خصومات الديون» (0241) لا تُكتب هنا: صفرُ نقد — سطرٌ بـ«−» تحت السحوبات والمرتجعات يطرحه
+                الكاشيرُ من الدرج، وقد نزلت من مبيعات يوم البيع أصلاً. رقمُها بسجلّها تحت، موسوماً «بلا نقد». */}
             {/* سطرُ «سحوباتُ بطاقة/حوالة» المجمَّع أُلغي: كان يقول كم خرج بلا أن
                 يقول **من أيّ جيب**، ولا يُطرح من شيء. صار الصافي بكلّ صفِّ طريقةٍ
                 أعلاه، فالرقمُ صار مقابلَ صاحبه. */}
@@ -1471,7 +1523,145 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
           )}
         </Panel>
       </div>
+
+      {forgive && forgive.state !== "loading" && <ForgiveRegister forgive={forgive} onRetry={onForgiveRetry} onChanged={onChanged} />}
     </div>
+  );
+}
+
+/* ----------------------------- «خصومات الديون» (0241) ----------------------------- */
+interface ForgiveSummary {
+  state: "loading" | "ok" | "failed";
+  rows: ForgivenessReportRow[];
+  /** الممنوحُ وعددُه، وما رجع بمرتجعٍ أو تعديل، والصافي — بلا الملغى ولا ما على فاتورةٍ مرجعة (debtForgive.ts). */
+  totals: ForgiveTotals;
+}
+const NO_FORGIVE: ForgiveTotals = { granted: 0, count: 0, back: 0, net: 0 };
+
+function ForgiveRegister({ forgive, onRetry, onChanged }: { forgive: ForgiveSummary; onRetry: () => void; onChanged: () => void }) {
+  const { t, i18n } = useTranslation();
+  const toast = useToast();
+  const [openInv, setOpenInv] = useState<Invoice | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  // صاحبُ العيادة بلا صفّ كادر (0083 تستثنيه) — حسابُه معرّفُ العيادة، وكلُّ خصمٍ فوق السقف بيده.
+  const [clinicId, setClinicId] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void expectedServerClinic().then((c) => { if (alive) setClinicId(c); }); // لا ترمي: تقع على المفتاح
+    return () => { alive = false; };
+  }, []);
+  const approverLabel = (r: ForgivenessReportRow): string => {
+    const a = approverOf(r.created_by, r.created_by_name, clinicId);
+    return a.kind === "name" ? a.name : a.kind === "owner" ? t("fgr.owner") : t("fgr.unknown");
+  };
+  // المجموعاتُ تجمع **الممنوح** (سطورَ forgive)، فمجموعُها = «خُصم» بالرأس؛ وما رجع بمرتجعٍ سطرٌ بجانبه والصافي بعده.
+  const live = forgive.rows.filter((r) => r.kind === "forgive" && forgiveRowCounts(r));
+  const tot = forgive.totals;
+  const group = (keyOf: (r: ForgivenessReportRow) => string) => {
+    const m = new Map<string, { label: string; n: number; amount: number }>();
+    for (const r of live) {
+      const k = keyOf(r);
+      const g = m.get(k) ?? { label: k, n: 0, amount: 0 };
+      g.n++; g.amount = Math.round((g.amount + (Number(r.amount) || 0)) * 100) / 100;
+      m.set(k, g);
+    }
+    return [...m.values()].sort((a, b) => b.amount - a.amount);
+  };
+  const byApprover = group(approverLabel);
+  const byReason = group((r) => { const k = reasonKey(r.reason_code); return k ? t(k) : t("fgr.unknown"); });
+  const open = async (id: string) => {
+    if (opening) return;
+    setOpening(id);
+    try {
+      const [inv] = await repo.listInvoicesByIds([id]);
+      if (inv) setOpenInv(inv);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t));
+    } finally { setOpening(null); }
+  };
+  const groups: [string, { label: string; n: number; amount: number }[]][] = [[t("fgr.byApprover"), byApprover], [t("fgr.byReason"), byReason]];
+  return (
+    <Panel title={t("fgr.title")} icon={BadgePercent}>
+      {forgive.state === "failed" ? (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm dark:border-danger-500/30 dark:bg-danger-500/10" data-forgive-register-failed>
+          <AlertTriangle size={16} className="shrink-0 text-danger-600" />
+          <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-200">{t("fgr.failed")}</span>
+          <Button size="sm" variant="secondary" leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); onRetry(); }}>{t("common.retry")}</Button>
+        </div>
+      ) : forgive.rows.length === 0 ? <Empty text={t("fgr.empty")} /> : (
+        <div className="space-y-4" data-forgive-register>
+          {/* الرأس: الممنوحُ والراجعُ والصافي كلٌّ بإشارته — لا «− -10» ولا «(0) − 0» عن فترةٍ فيها مرتجعٌ وحده. */}
+          <div className="space-y-1.5 rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10" data-forgive-total>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <span className="font-semibold text-warn-700 dark:text-warn-300">{t("fgr.granted", { n: formatNum(tot.count) })}</span>
+              <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(tot.granted)}</span>
+            </div>
+            {tot.back > 0 && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-ink-muted" data-forgive-total-back>
+                  <span>{t("fgr.back")}</span>
+                  <span className="tabular-nums">{money(tot.back)}</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-warn-200 pt-1.5 font-bold text-ink dark:border-warn-500/30" data-forgive-total-net>
+                  <span>{t("fgr.net")}</span>
+                  <span className="font-display tabular-nums">{money(tot.net)}</span>
+                </div>
+              </>
+            )}
+            <p className="text-2xs font-semibold text-ink-muted" data-forgive-noncash>{t("fgr.nonCash")}</p>
+          </div>
+          <p className="text-2xs text-ink-subtle">{t("fgr.hint")}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {groups.map(([title, list]) => (
+              <div key={title} className="rounded-xl border border-line bg-surface-2 p-3 text-xs">
+                <p className="mb-1.5 text-2xs font-bold text-ink-muted">{title}</p>
+                {list.length === 0 ? <p className="text-ink-subtle">—</p> : list.map((g) => (
+                  <div key={g.label} className="flex items-center justify-between gap-2 py-0.5">
+                    <span className="min-w-0 truncate text-ink">{g.label} <span className="text-ink-subtle">· {formatNum(g.n)}</span></span>
+                    <span className="shrink-0 font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(g.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <ul className="divide-y divide-line rounded-xl border border-line">
+            {forgive.rows.map((r) => {
+              const voided = !!r.voided_at;
+              const refunded = (r.invoice_status ?? "paid") === "refunded";
+              const consumed = r.kind === "consumed";
+              const amt = Number(r.amount) || 0;
+              const rk = reasonKey(r.reason_code);
+              const before = r.due_before;
+              return (
+                <li key={r.id} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 p-2.5 text-xs", (refunded || voided) && "opacity-70")} data-forgive-reg-row={consumed ? "consumed" : voided ? "voided" : "live"}>
+                  <span className="w-28 shrink-0 tabular-nums text-ink-subtle">{new Date(r.created_at).toLocaleString(i18n.language === "ar" ? dateLocale() : "en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className={cn("min-w-0 flex-1", voided && "line-through")}>
+                    <span className="font-semibold text-ink">{displayCustomerName(r.customer_name) || (r.customer_phone ?? "").trim() || t("fgr.unknown")}</span>
+                    <button type="button" disabled={opening === r.invoice_id} className="ms-1.5 font-mono text-2xs text-brand-600 underline-offset-2 hover:underline" onClick={() => { playTap(); void open(r.invoice_id); }} data-forgive-reg-open={r.invoice_id}>
+                      {invoiceNo(r.invoice_id)}
+                    </button>
+                    {consumed ? <span className="ms-1.5 text-ink-muted">{t("fgr.consumed")}</span> : rk && <span className="ms-1.5 text-ink-muted">{t(rk)}</span>}
+                    {!consumed && <span className="ms-1.5 text-ink-subtle">· {approverLabel(r)}</span>}
+                  </span>
+                  {!consumed && before != null && (
+                    <span className="shrink-0 tabular-nums text-ink-subtle">{t("fgr.colDue", { before: money(before), after: money(Math.max(0, Math.round((before - amt) * 100) / 100)) })}</span>
+                  )}
+                  {r.via_pin && <span className="chip bg-surface-2 text-2xs text-ink-muted">{t("fgr.pin")}</span>}
+                  {r.above_cap && <span className="chip bg-danger-50 text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("fgr.above")}</span>}
+                  {voided && <span className="chip bg-surface-2 text-2xs font-bold text-ink-muted">{t("fgr.voided")}</span>}
+                  {refunded && <span className="chip bg-surface-2 text-2xs text-ink-muted">{t("fgr.refunded")}</span>}
+                  <span className={cn("w-24 shrink-0 text-end font-display font-bold tabular-nums", consumed ? "text-ink-muted" : "text-warn-700 dark:text-warn-300", voided && "line-through")}>
+                    {consumed ? "+" + money(Math.abs(amt)) : "−" + money(amt)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      <InvoiceDetail invoice={openInv} onClose={() => setOpenInv(null)} onChanged={() => { onChanged(); onRetry(); }} setOpen={setOpenInv} />
+    </Panel>
   );
 }
 

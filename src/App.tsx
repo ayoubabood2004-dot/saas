@@ -32,7 +32,7 @@ const ScanChart = page(() => import("@/pages/ScanChart").then((m) => ({ default:
 const BookingWizard = page(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
 const Reception = page(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
 const Consultation = page(() => import("@/pages/Consultation").then((m) => ({ default: m.Consultation })));
-const Settings = page(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })), ["promos", "services", "vax", "breeds", "mmset"]);
+const Settings = page(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })), ["promos", "services", "vax", "breeds", "mmset", "fgset"]);
 const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })), ["act"]);
 const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
@@ -53,7 +53,7 @@ const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ de
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
 const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
 const Payroll = page(() => import("@/pages/Payroll").then((m) => ({ default: m.Payroll })));
-const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })), ["wdr", "scust"]);
+const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })), ["wdr", "scust", "fgr"]);
 const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
 const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
