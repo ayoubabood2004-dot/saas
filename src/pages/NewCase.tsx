@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint } from "lucide-react";
-import type { Species, Sex, AdmissionKind, Pet } from "@/types";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint, History } from "lucide-react";
+import type { Species, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
 import { branchStore } from "@/lib/branchStore";
@@ -23,34 +23,18 @@ import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout, describeDbError, isTimeoutError, describeUploadError } from "@/lib/errors";
 import { prepareUpload } from "@/lib/image";
-import { uid, localISO } from "@/lib/utils";
+import { uid, localISO, formatTime, formatDate } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
+import { useFormDraft } from "@/lib/useFormDraft";
+import type { DraftRecord } from "@/lib/formDraft";
+import {
+  caseDraftIsEmpty, caseDraftWho, emptyOwner, lightenCaseDraft,
+  type AnimalDraft, type CaseDraft, type Disposition, type Health, type OwnerFields, type SerialDraft,
+} from "@/lib/caseDraft";
 
-type Disposition = "log" | "boarding" | "boardingCare" | "record";
-
-type Health = "healthy" | "sick";
-
-interface AnimalDraft {
-  key: string;
-  photo: string | null;
-  name: string;
-  species: Species;
-  breed: string;
-  sex: Sex;
-  dob: string;
-  weight: string;
-  color: string;
-  microchip: string;
-  allergies: string;
-  notes: string;
-  health: Health;
-  diagnosis: string;
-  disp: Disposition;
-  cage: string;
-  addMeds: boolean;
-  /** معلوماتُ الحالة (intake.ts) — التشخيصُ فيها يُقرأ من health/diagnosis أعلاه لا مكرَّراً. */
-  intake: IntakeDraft;
-}
+const emptySerial = (today: string): SerialDraft => ({
+  serial: "", found: false, admittedOn: today, disp: "log", cage: "", addMeds: true, health: "healthy", diagnosis: "", intake: emptyIntake(),
+});
 
 function newAnimal(): AnimalDraft {
   return {
@@ -134,6 +118,51 @@ export function NewCase() {
   // Synchronous re-entrancy guard: blocks a second click that fires before React
   // has re-rendered the disabled button (a state boolean alone can be raced).
   const submittingRef = useRef(false);
+
+  /* مسودّةُ الحالة (formDraft.ts): كلُّ ما يُكتب يُحفظ على الجهاز، وتحميلُ الصفحة — نسخةٌ
+   * جديدة، F5، انقطاع — لا يمحوه: يُعرض عند الفتح التالي «رجّعها / احذفها». تبويبُ الرقم
+   * التسلسليّ يرفع حالتَه هنا (`serial`) ليدخل المسودّةَ نفسها؛ و`formKey` يعيد بناءَ النموذج كلِّه
+   * بالمسترجَع. وبياناتُ مالكٍ جاءت جاهزةً من السجلّ ليست كتابة — لا تصنع مسودّة وحدها. */
+  const [serial, setSerial] = useState<SerialDraft>(() => emptySerial(today));
+  const [formKey, setFormKey] = useState(0);
+  const ownerBaseline = useRef<OwnerFields>(prefill ? { ...emptyOwner(), ...prefill } : emptyOwner()).current;
+  const draftValue = useMemo<CaseDraft>(() => ({
+    v: 1, entry, step, admittedOn, ownerCollapsed,
+    owner: { name: ownerName, phone, email, governorate, area },
+    animals, serial,
+  }), [entry, step, admittedOn, ownerCollapsed, ownerName, phone, email, governorate, area, animals, serial]);
+  const draft = useFormDraft<CaseDraft>({
+    scope: user ? { form: "newcase", clinic: user.clinic_id ?? user.id, user: user.id } : null,
+    value: draftValue,
+    isEmpty: (d) => caseDraftIsEmpty(d, ownerBaseline),
+    lighten: lightenCaseDraft,
+  });
+  const restoreDraft = () => {
+    const rec = draft.take();
+    if (!rec) return;
+    playTap();
+    const d = rec.data;
+    const restoredAnimals = d.animals?.length ? d.animals : [newAnimal()];
+    setEntry(d.entry === "serial" ? "serial" : "new");
+    setAdmittedOn(d.admittedOn || today);
+    setOwnerName(d.owner?.name ?? ""); setPhone(d.owner?.phone ?? ""); setEmail(d.owner?.email ?? "");
+    setGovernorate(d.owner?.governorate ?? ""); setArea(d.owner?.area ?? "");
+    setOwnerCollapsed(false);
+    setAnimals(restoredAnimals);
+    setStep(d.step === 2 && restoredAnimals.some((a) => a.name.trim()) ? 2 : 1);
+    setSerial({ ...emptySerial(today), ...d.serial });
+    setFormKey((k) => k + 1); // حقولٌ تأخذ قيمتَها مرّةً عند البناء (الهاتف، المحافظة، العمر…) تُبنى بالمسترجَع
+  };
+  const discardDraft = () => {
+    const rec = draft.dismiss();
+    if (!rec) return;
+    playTap();
+    toast.toast({
+      tone: "info",
+      title: t("newCase.draftDiscarded", "Draft deleted"),
+      action: { label: t("newCase.draftUndo", "Undo"), onClick: () => draft.restoreDismissed(rec) },
+    });
+  };
 
   const Next = i18n.dir() === "rtl" ? ArrowLeft : ArrowRight;
   const Prev = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
@@ -230,6 +259,7 @@ export function NewCase() {
       setIsSubmitting(false);
     }
     playSuccess();
+    draft.clear(); // انحفظت بالقاعدة — المسودّةُ أدّت عملها
     if (intakeFailed.length) toast.error(t("intake.saveFail", { names: intakeFailed.join("، "), defaultValue: "انفتحت الحالة، بس معلومات الحالة ما انحفظت لـ{{names}} — ضيفها كملاحظة من ملفه." }));
     // Open Record Only with a single new patient: jump straight to the new file so
     // the doctor can verify it was opened (it's already in Clinic Records too).
@@ -290,7 +320,16 @@ export function NewCase() {
         <h1 className="text-xl font-extrabold text-ink">{t("newCase.title")}</h1>
         <span className="text-sm text-ink-subtle">{step === 1 ? t("newCase.step1") : t("newCase.step2")}</span>
       </div>
-      <p className="text-xs text-ink-subtle mb-5">{t("newCase.subtitle")}</p>
+      <p className="text-xs text-ink-subtle mb-5">
+        {t("newCase.subtitle")}{" "}
+        <span className={draft.saved !== "full" ? "font-semibold text-warn-700 dark:text-warn-300" : undefined}>
+          · {draft.saved === "failed" ? t("newCase.draftFailed", "Not saved on this device — storage is full")
+            : draft.saved === "light" ? t("newCase.draftLight", "Saved on this device without photos — storage is full")
+            : t("newCase.draftAuto", "Auto-saved on this device")}
+        </span>
+      </p>
+
+      {draft.offer && <DraftOffer rec={draft.offer} more={draft.more} onRestore={restoreDraft} onDiscard={discardDraft} />}
 
       <div className="flex gap-1 mb-5 bg-surface-2 p-1 rounded-xl max-w-md">
         <button className={`flex-1 py-2 rounded-lg text-sm font-semibold ${entry === "new" ? "bg-white text-brand-700 shadow-card" : "text-ink-muted"}`} onClick={() => setEntry("new")}>{t("newCase.entryNew")}</button>
@@ -318,10 +357,11 @@ export function NewCase() {
 
       {entry === "serial" ? (
         <div className="mx-auto max-w-2xl">
-          <SerialAdmit today={today} doctorName={user?.full_name ?? "Doctor"} onAdmitted={(o) => setOutcomes([o])} />
+          <SerialAdmit key={formKey} today={today} doctorName={user?.full_name ?? "Doctor"} initial={serial} onDraft={setSerial}
+            onAdmitted={(o) => { draft.clear(); setOutcomes([o]); }} />
         </div>
       ) : step === 1 ? (
-        <div className="space-y-6 animate-fade-in">
+        <div key={formKey} className="space-y-6 animate-fade-in">
           {/* Owner (once) — a full-width card with a precise multi-column field grid.
               مطويّة عندما تصل بيانات المالك جاهزة من سجلات العيادة. */}
           <div className={cn("card p-4 sm:p-5", ownerCollapsed && "hidden")}>
@@ -451,7 +491,7 @@ export function NewCase() {
           </button>
         </div>
       ) : (
-        <div className="mx-auto max-w-3xl space-y-5 animate-fade-in">
+        <div key={formKey} className="mx-auto max-w-3xl space-y-5 animate-fade-in">
           <h2 className="font-bold text-ink">{t("newCase.disposition")}</h2>
 
           {/* Admission date (تاريخ الدخول) — auto-set to today, editable for late/back-dated entries. */}
@@ -508,6 +548,34 @@ export function NewCase() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** حالةٌ ما انحفظت من فتحةٍ سابقة — تُعرض بما فيها، ولا تهبط على النموذج وحدها:
+ *  حالةُ أمس على مريض اليوم أخطرُ من نموذجٍ فارغ. والحذفُ يقول ماذا يحذف، وله تراجع. */
+function DraftOffer({ rec, more, onRestore, onDiscard }: { rec: DraftRecord<CaseDraft>; more: number; onRestore: () => void; onDiscard: () => void }) {
+  const { t, i18n } = useTranslation();
+  const who = caseDraftWho(rec.data);
+  const at = new Date(rec.savedAt).toISOString();
+  const sameDay = localISO(new Date(rec.savedAt)) === localISO();
+  const when = sameDay ? formatTime(at, i18n.language) : `${formatDate(at, i18n.language)} ${formatTime(at, i18n.language)}`;
+  const what = [who.owner, who.animals.join(t("common.listSep", "، ")), who.serial && `#${who.serial}`].filter(Boolean).join(" — ");
+  return (
+    <div role="status" className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-brand-200 bg-brand-50/70 p-3.5 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white"><History size={17} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-extrabold text-ink">{t("newCase.draftTitle", { when, defaultValue: "Unsaved case from {{when}}" })}</span>
+        <span className="block truncate text-xs text-ink-muted">
+          {what || t("newCase.draftNoName", "No name yet")}
+          {rec.lightened && <> · {t("newCase.draftNoPhoto", "without photos")}</>}
+          {more > 0 && <> · {t("newCase.draftMore", { n: more, defaultValue: "+{{n}} more" })}</>}
+        </span>
+      </span>
+      <span className="flex shrink-0 gap-2">
+        <button type="button" onClick={onRestore} className="btn-primary px-4 py-1.5 text-xs">{t("newCase.draftRestore", "Restore")}</button>
+        <button type="button" onClick={onDiscard} className="btn-ghost px-3 py-1.5 text-xs text-ink-muted">{t("newCase.draftDiscard", "Delete")}</button>
+      </span>
     </div>
   );
 }
@@ -581,30 +649,44 @@ function DispMini({ active, icon: Icon, label, onClick }: { active: boolean; ico
 }
 
 /** Admit an EXISTING animal to the clinic by its serial — no new registration. */
-function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorName: string; onAdmitted: (o: Outcome) => void }) {
+function SerialAdmit({ today, doctorName, initial, onDraft, onAdmitted }: {
+  today: string; doctorName: string; initial: SerialDraft; onDraft: (d: SerialDraft) => void; onAdmitted: (o: Outcome) => void;
+}) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
-  const [serial, setSerial] = useState("");
+  const [serial, setSerial] = useState(initial.serial);
   const [pet, setPet] = useState<Pet | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [admittedOn, setAdmittedOn] = useState(today);
-  const [disp, setDisp] = useState<Disposition>("log");
-  const [cage, setCage] = useState("");
-  const [addMeds, setAddMeds] = useState(true);
-  const [health, setHealth] = useState<Health>("healthy");
-  const [diagnosis, setDiagnosis] = useState("");
-  const [intake, setIntake] = useState<IntakeDraft>(emptyIntake);
+  const [admittedOn, setAdmittedOn] = useState(initial.admittedOn || today);
+  const [disp, setDisp] = useState<Disposition>(initial.disp);
+  const [cage, setCage] = useState(initial.cage);
+  const [addMeds, setAddMeds] = useState(initial.addMeds);
+  const [health, setHealth] = useState<Health>(initial.health);
+  const [diagnosis, setDiagnosis] = useState(initial.diagnosis);
+  const [intake, setIntake] = useState<IntakeDraft>(initial.intake ?? emptyIntake());
   const [admitting, setAdmitting] = useState(false);
   const admittingRef = useRef(false);
 
-  const lookup = async () => {
+  // كلُّ تغييرٍ يصعد لمسودّة الحالة (الأب يحفظها).
+  useEffect(() => {
+    // «وُجد» يبقى ما دام البحثُ عن رقم المسودّة لم يرجع بعد — وإلا حفظت تحميلةٌ بينهما «لم يوجد».
+    const found = !!pet || (initial.found && serial === initial.serial && !notFound);
+    onDraft({ serial, found, admittedOn, disp, cage, addMeds, health, diagnosis, intake });
+  }, [serial, pet, notFound, admittedOn, disp, cage, addMeds, health, diagnosis, intake, onDraft, initial.found, initial.serial]);
+
+  const lookup = async (q: string = serial) => {
     setNotFound(false);
-    const found = await repo.getPetBySerial(serial);
+    const found = await repo.getPetBySerial(q);
     if (!found) { playWarning(); setPet(null); setNotFound(true); return; }
     playTap();
     setPet(found);
   };
+  // مسودّةٌ مسترجعة وجدت حيوانَها: يُبحث برقمه من جديد (الحيوانُ نفسُه لا يُحفظ بالجهاز).
+  useEffect(() => {
+    if (initial.found && initial.serial.trim()) void lookup(initial.serial).catch(() => setNotFound(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const admit = async () => {
     // Same double-submit guard as the new-registration flow (synchronous ref + state).
@@ -645,7 +727,7 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
         <label className="label">{t("newCase.serialLabel")}</label>
         <div className="flex gap-2">
           <input className="input font-mono tracking-widest" value={serial} onChange={(e) => setSerial(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup()} placeholder="10001" autoFocus />
-          <button className="btn-primary px-4" onClick={lookup}><Search size={18} /></button>
+          <button className="btn-primary px-4" onClick={() => void lookup()}><Search size={18} /></button>
         </div>
         {notFound && <p className="text-sm text-red-600 mt-2">{t("newCase.serialNotFound")}</p>}
       </div>

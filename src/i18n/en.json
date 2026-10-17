@@ -2894,7 +2894,18 @@
     "createdBoarding": "Animal admitted for boarding.",
     "createdRelease": "Visit logged and animal released.",
     "goCalendar": "Master calendar",
-    "goRecords": "Go to records"
+    "goRecords": "Go to records",
+    "draftAuto": "Auto-saved on this device",
+    "draftLight": "Saved on this device without photos — storage is full",
+    "draftTitle": "Unsaved case from {{when}}",
+    "draftNoName": "No name yet",
+    "draftNoPhoto": "without photos",
+    "draftMore": "+{{n}} more",
+    "draftRestore": "Restore",
+    "draftDiscard": "Delete",
+    "draftDiscarded": "Draft deleted",
+    "draftUndo": "Undo",
+    "draftFailed": "Not saved on this device — storage is full"
   },
   "records": {
     "title": "Clinic records",

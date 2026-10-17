@@ -60,7 +60,13 @@ export default defineConfig({
     i18nSplit(),
     storeEntry(),
     VitePWA({
-      registerType: "autoUpdate",
+      /* «prompt» لا «autoUpdate» (١٧/١٠): autoUpdate يجعل الخدمةَ الجديدة تتخطّى
+       * الانتظار ويُعيد تحميلَ كلّ تبويبٍ مفتوح لحظةَ استيلائها — قيس بالإنتاج إقلاعاً
+       * ثانياً بعد ~٢٥ ثانية من فتح التطبيق بعد كلّ نشر، فتضيع الحالةُ النصفُ مكتوبة.
+       * الآن تنتظر، و`src/lib/swUpdate.ts` يطبّقها عند تبديل الصفحة أو قبل أوّل لمسة،
+       * ويسجّلها بنفسه (`injectRegister: false`). sw-update-test يفحص الناتجَ المبنيّ. */
+      registerType: "prompt",
+      injectRegister: false,
       includeAssets: ["favicon.svg"],
       manifest: {
         name: "doctorVet — Veterinary Care System",

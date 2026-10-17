@@ -2894,7 +2894,18 @@
     "createdBoarding": "تم قبول الحيوان للإقامة.",
     "createdRelease": "سُجّلت الزيارة وتم إخراج الحيوان.",
     "goCalendar": "التقويم الرئيسي",
-    "goRecords": "الذهاب للسجلات"
+    "goRecords": "الذهاب للسجلات",
+    "draftAuto": "تنحفظ تلقائياً على هذا الجهاز",
+    "draftLight": "انحفظت على الجهاز بلا الصور — الذاكرة ممتلئة",
+    "draftTitle": "حالة ما انحفظت — من {{when}}",
+    "draftNoName": "بلا اسم بعد",
+    "draftNoPhoto": "بلا الصور",
+    "draftMore": "و{{n}} غيرها",
+    "draftRestore": "رجّعها",
+    "draftDiscard": "احذفها",
+    "draftDiscarded": "انحذفت المسودّة",
+    "draftUndo": "تراجع",
+    "draftFailed": "ما تنحفظ على هذا الجهاز — الذاكرة ممتلئة"
   },
   "records": {
     "title": "سجلات العيادة",

@@ -1,6 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./components/ui";
@@ -12,6 +11,7 @@ import { pruneStaleStorage } from "./lib/demoStore";
 import { installDigitNormalizer } from "./lib/digits";
 import { applyFontScale, applyCrispMode } from "./lib/fontScale";
 import { recoverFromStaleShell } from "./lib/appUpdate";
+import { startAppUpdates } from "./lib/swUpdate";
 
 // Western numerals everywhere: typing or pasting Arabic-Indic digits into ANY
 // input converts them to 0-9 on the fly — no data is ever lost to a digit-shape
@@ -70,25 +70,14 @@ window.addEventListener("unhandledrejection", (e) => {
   });
 });
 
-// Keep long-lived installs fresh. The default registration only checks for a
-// new build on a full page load — but on tablets the app runs as a standalone
-// PWA that iOS *resumes* (never reloads), so a clinic could sit on an old
-// bundle for days. Ask the service worker to re-check whenever the app comes
-// back to the foreground, plus a slow background timer; in autoUpdate mode an
-// updated worker activates immediately and the page reloads itself onto the
-// new version.
-{
-  const registration = registerSW({
-    immediate: true,
-    onRegisteredSW(_url, r) {
-      if (!r) return;
-      const check = () => { r.update().catch(() => { /* offline — next resume retries */ }); };
-      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
-      setInterval(check, 20 * 60 * 1000);
-    },
-  });
-  void registration;
-}
+// Keep long-lived installs fresh — WITHOUT reloading under the user. A new
+// build downloads in the background (on resume + every 20 min) and waits; it is
+// applied only before the user has touched the page, or at the next page change
+// (swUpdate.ts). The old autoUpdate mode reloaded the moment the new worker
+// activated: measured in production as a second boot ~25 s after opening the
+// app after every deploy, wiping a half-written case. (Dev has no sw.js — the
+// old virtual module was a no-op there too.)
+if (import.meta.env.PROD) startAppUpdates();
 
 // After a new deploy, a device still holding the previous build asks for hashed
 // chunk URLs that no longer exist on the server. Reloading alone does NOT fix it

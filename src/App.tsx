@@ -18,6 +18,7 @@ import { Spinner, useToast } from "@/components/ui";
 import { startOutbox } from "@/lib/outbox";
 import { page } from "@/lib/lazyPage";
 import { useNavFolded } from "@/lib/navFold";
+import { notePageChange } from "@/lib/swUpdate";
 
 /* كلُّ صفحةٍ كسولةٍ تمرّ من `page()` (`src/lib/lazyPage.ts`): تنتظر حزمتَها
  * ونصفَ القاموس العربيّ البارد معاً، وتتعافى من القشرة القديمة بعد النشر. */
@@ -165,6 +166,19 @@ function Housekeeping() {
    * المسطَّحة (٣٠ يوماً لكلّ شيء) فيهدم تدرُّجَ 0129 الذي يحفظ المالَ والمخزونَ
    * سنةً. الكنسُ شغلُ الجدولة وحدَها (cron `purge_audit_log(90, 365)`). */
 
+  return null;
+}
+
+/** النسخةُ الجديدة تنزل عند تبديل الصفحة (swUpdate.ts) — التبديلُ يرمي حالةَ الصفحة
+ *  القديمة أصلاً، فلا يضيع بالتحميل شيءٌ لم يضع. وتغيّرُ `?tab=` ليس تبديلاً: الصفحةُ باقية. */
+function UpdateAtPageChange() {
+  const { pathname } = useLocation();
+  const prev = useRef(pathname);
+  useEffect(() => {
+    if (pathname === prev.current) return;
+    prev.current = pathname;
+    notePageChange();
+  }, [pathname]);
   return null;
 }
 
@@ -329,6 +343,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Housekeeping />
+          <UpdateAtPageChange />
           <Shell />
         </BrowserRouter>
       </AuthProvider>
