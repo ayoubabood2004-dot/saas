@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn, money, formatNum, localISO } from "@/lib/utils";
 import { fmtClock } from "@/lib/clock";
 import { getWorkHours, getCashConfirms, addCashConfirm, type CashConfirm } from "@/lib/settings";
+import { localDayRange, drawerInvoices, drawerExpenses } from "@/lib/cashDay";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /* ============================================================================
@@ -82,13 +83,16 @@ export function CashReconcile({ open, onClose }: { open: boolean; onClose: () =>
     if (!open) return;
     setLoading(true);
     setConfirms(getCashConfirms());
+    // يومُ الصندوق محلّيّ على الطرفين — الطلبُ والتصفية (cashDay.ts). يومُ غرينتش
+    // كان يُسقط فواتيرَ ما بعد منتصف الليل من كلّ صندوق.
+    const range = localDayRange(todayISO);
     Promise.all([
       // فواتيرُ اليوم فقط — الصندوقُ يطابق يوماً واحداً، لا التاريخَ كله (0149).
-      repo.listInvoices(undefined, { from: new Date(todayISO + "T00:00:00").toISOString() }).catch(() => [] as Invoice[]),
-      repo.listExpenses().catch(() => [] as Expense[]),
+      repo.listInvoices(undefined, range).catch(() => [] as Invoice[]),
+      repo.listExpenses(undefined, range).catch(() => [] as Expense[]),
     ]).then(([inv, exp]) => {
-      setInvoices(inv.filter((i) => i.created_at.slice(0, 10) === todayISO && i.status !== "refunded"));
-      setExpenses(exp.filter((e) => (e.spent_at || e.created_at).slice(0, 10) === todayISO));
+      setInvoices(drawerInvoices(inv, todayISO));
+      setExpenses(drawerExpenses(exp, todayISO));
       setLoading(false);
     });
   }, [open, todayISO]);

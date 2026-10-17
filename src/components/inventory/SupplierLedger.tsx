@@ -135,7 +135,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
       const found = new Map<string, { id: string; name: string }>();
       for (let i = 0; i < orphans.length; i += 6) {
         const chunk = orphans.slice(i, i + 6);
-        const rows = await Promise.all(chunk.map((p) => repo.listPurchaseItems(p.id).catch(() => [] as PurchaseItem[])));
+        const rows = await Promise.all(chunk.map((p) => repo.listPurchaseItems(p.id).catch(() => [] as PurchaseItem[]))); /* swallow-ok: النسبُ تخمينُ عرضٍ بشارة «نُسبت من منتجاتها» — فشلُه يُبقي الفاتورةَ «بدون شركة» كما خُزّنت ودينُها ظاهرٌ هناك، لا يُخفي مالاً ولا يكتب شيئاً */
         chunk.forEach((p, j) => {
           const cids = new Set(rows[j].map((it) => (it.product_id ? companyOfProduct.get(it.product_id) : undefined)).filter(Boolean) as string[]);
           if (cids.size === 1) {

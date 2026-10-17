@@ -113,6 +113,8 @@ check("listPurchaseItems — سطورُ كشفِ مورّد",
   await throws(() => repo.listPurchaseItems("pur-1")));
 check("listPurchaseEffects — كشفٌ فارغٌ عن خطأ يقول «ماكو شي تغيّر» عن فاتورةٍ بدّلت أسعاراً",
   await throws(() => repo.listPurchaseEffects("pur-1")));
+check("listPurchasePayments — سجلٌّ فارغٌ عن خطأ يقول «ما سدّدنا شي» عن فاتورةٍ سُدّدت",
+  await throws(() => repo.listPurchasePayments("pur-1")));
 check("searchInvoices — «ماكو نتائج» كانت تُقال عن فشل",
   await throws(() => repo.searchInvoices({ q: "x" })));
 check("listDeletedProducts — سلّةُ الاسترجاع نفسُها",
