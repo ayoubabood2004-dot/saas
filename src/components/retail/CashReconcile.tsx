@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn, money, formatNum, localISO } from "@/lib/utils";
 import { fmtClock } from "@/lib/clock";
 import { getWorkHours, getCashConfirms, addCashConfirm, type CashConfirm } from "@/lib/settings";
-import { localDayRange, drawerInvoices, drawerExpenses } from "@/lib/cashDay";
+import { loadDrawer, drawerShifts, type DrawerFigures } from "@/lib/cashDay";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /* ============================================================================
@@ -23,118 +23,71 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
  * الحدود تُنسب لأقرب دوام منطقياً: كل ما قبل بداية المسائي للصباحي، والباقي
  * للمسائي — فلا تضيع فاتورة بيعت بالاستراحة بين الدوامين من الحساب أبداً.
  *
- * «النقد المتوقع» = أرجل الدفع النقدية لفواتير الدوام − المصروفات النقدية
- * المسجّلة أثناءه. البطاقة والحوالة تُعرضان منفصلتين للمعلومة — ما تدخلان
- * عدّ الدرج لأنهما ما مرّتا به أصلاً.
+ * «النقد المتوقع» = النقدُ الذي **وصل** أثناء الدوام − المصروفات النقدية
+ * المسجّلة أثناءه. كلُّ ساقِ دفعٍ بيوم وصولها ودوامه لا بيوم فاتورتها: تسديدُ
+ * دينٍ قديمٍ اليوم بدرج اليوم (cashDay.ts). البطاقة والحوالة تُعرضان منفصلتين
+ * للمعلومة — ما تدخلان عدّ الدرج لأنهما ما مرّتا به أصلاً.
  * ==========================================================================*/
 
 type ShiftId = CashConfirm["shift"];
 
-interface ShiftCalc {
-  id: ShiftId;
+interface ShiftCalc extends DrawerFigures {
   label: string;
   window: string;         // نص المدى للعرض
-  salesTotal: number;     // إجمالي فواتير الدوام (كل الطرق)
-  invoiceCount: number;
-  cash: number;           // النقد الداخل
-  card: number;
-  transfer: number;
-  cashOut: number;        // مصروفات نقدية أثناء الدوام
-  expected: number;       // cash - cashOut
 }
+
+/* الفشلُ حالةٌ لا قائمةٌ فارغة: «صفر» عن خطأ شبكةٍ كان درجاً كاذباً يُؤكَّد ويُحفظ فرقُه باسم الكاشير. */
+type DrawerLoad =
+  | { status: "loading" }
+  | { status: "failed" }
+  | { status: "ready"; invoices: Invoice[]; expenses: Expense[] };
 
 const minOf = (hhmm: string | undefined): number => {
   const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm ?? "").trim());
   return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
 };
-const minuteOfISO = (iso: string): number => {
-  const d = new Date(iso);
-  return d.getHours() * 60 + d.getMinutes();
-};
-
-/** أرجل النقد/البطاقة/الحوالة لفاتورة — القديمة بلا أرجل تُحسب بطريقتها المفردة. */
-function legsOf(inv: Invoice): { cash: number; card: number; transfer: number } {
-  const out = { cash: 0, card: 0, transfer: 0 };
-  if (inv.payment_details?.length) {
-    for (const l of inv.payment_details) {
-      const k = l.method === "card" ? "card" : l.method === "transfer" ? "transfer" : "cash";
-      out[k] += Number(l.amount) || 0;
-    }
-    return out;
-  }
-  const paid = inv.amount_paid ?? inv.total;
-  const k = inv.payment_method === "card" ? "card" : inv.payment_method === "transfer" ? "transfer" : "cash";
-  out[k] = paid;
-  return out;
-}
 
 export function CashReconcile({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
   const todayISO = localISO();
-  const [loading, setLoading] = useState(true);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [load, setLoad] = useState<DrawerLoad>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
   const [confirms, setConfirms] = useState<CashConfirm[]>(() => getCashConfirms());
   const [counted, setCounted] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
+    let alive = true;
+    setLoad({ status: "loading" });
     setConfirms(getCashConfirms());
-    // يومُ الصندوق محلّيّ على الطرفين — الطلبُ والتصفية (cashDay.ts). يومُ غرينتش
-    // كان يُسقط فواتيرَ ما بعد منتصف الليل من كلّ صندوق.
-    const range = localDayRange(todayISO);
-    Promise.all([
-      // فواتيرُ اليوم فقط — الصندوقُ يطابق يوماً واحداً، لا التاريخَ كله (0149).
-      repo.listInvoices(undefined, range).catch(() => [] as Invoice[]),
-      repo.listExpenses(undefined, range).catch(() => [] as Expense[]),
-    ]).then(([inv, exp]) => {
-      setInvoices(drawerInvoices(inv, todayISO));
-      setExpenses(drawerExpenses(exp, todayISO));
-      setLoading(false);
-    });
-  }, [open, todayISO]);
+    // يومُ الصندوق محلّيّ (cashDay.ts)، والفواتيرُ ما لمسه اليوم — أُنشئت أو قُبض عليها.
+    loadDrawer(repo, todayISO)
+      .then((d) => { if (alive) setLoad({ status: "ready", ...d }); })
+      .catch(() => { if (alive) setLoad({ status: "failed" }); });
+    return () => { alive = false; };
+  }, [open, todayISO, attempt]);
 
   const shifts = useMemo<ShiftCalc[]>(() => {
+    if (load.status !== "ready") return [];
     const wh = getWorkHours();
     const two = !!(wh.am && wh.pm);
     /* الحدّ الفاصل بين الدوامين: بداية المسائي. بلا دوامين، اليوم كله دوام واحد. */
-    const cutoff = two ? minOf(wh.pm!.from) : Infinity;
-
-    const mk = (id: ShiftId, label: string, window: string): ShiftCalc =>
-      ({ id, label, window, salesTotal: 0, invoiceCount: 0, cash: 0, card: 0, transfer: 0, cashOut: 0, expected: 0 });
-
-    const list: ShiftCalc[] = two
-      ? [
-          mk("am", t("cashrec.amShift", "الدوام الصباحي"), `${fmtClock(wh.am!.from)} – ${fmtClock(wh.am!.to)}`),
-          mk("pm", t("cashrec.pmShift", "الدوام المسائي"), `${fmtClock(wh.pm!.from)} – ${fmtClock(wh.pm!.to)}`),
-        ]
-      : [mk("day", t("cashrec.dayShift", "صندوق اليوم"), wh.am ? `${fmtClock(wh.am.from)} – ${fmtClock(wh.am.to)}` : t("cashrec.allDay", "اليوم كامل"))];
-
-    const bucket = (iso: string): ShiftCalc => (two && minuteOfISO(iso) >= cutoff ? list[1] : list[0]);
-
-    for (const inv of invoices) {
-      const s = bucket(inv.created_at);
-      const legs = legsOf(inv);
-      s.salesTotal += inv.total;
-      s.invoiceCount += 1;
-      s.cash += legs.cash;
-      s.card += legs.card;
-      s.transfer += legs.transfer;
-    }
-    for (const e of expenses) {
-      if ((e.method ?? "cash") !== "cash") continue;
-      bucket(e.spent_at || e.created_at).cashOut += e.amount;
-    }
-    for (const s of list) s.expected = Math.round((s.cash - s.cashOut) * 100) / 100;
-    return list;
-  }, [invoices, expenses, t]);
+    const figures = drawerShifts(load.invoices, load.expenses, todayISO, two ? minOf(wh.pm!.from) : null);
+    const label = (id: ShiftId) =>
+      id === "am" ? t("cashrec.amShift", "الدوام الصباحي") : id === "pm" ? t("cashrec.pmShift", "الدوام المسائي") : t("cashrec.dayShift", "صندوق اليوم");
+    const windowOf = (id: ShiftId) =>
+      id === "am" ? `${fmtClock(wh.am!.from)} – ${fmtClock(wh.am!.to)}`
+        : id === "pm" ? `${fmtClock(wh.pm!.from)} – ${fmtClock(wh.pm!.to)}`
+          : wh.am ? `${fmtClock(wh.am.from)} – ${fmtClock(wh.am.to)}` : t("cashrec.allDay", "اليوم كامل");
+    return figures.map((f) => ({ ...f, label: label(f.id), window: windowOf(f.id) }));
+  }, [load, todayISO, t]);
 
   const confirmOf = (id: ShiftId) => confirms.find((c) => c.date === todayISO && c.shift === id);
 
   const confirmShift = (s: ShiftCalc) => {
+    if (load.status !== "ready") return;
     const val = Number(counted[s.id]);
     if (!Number.isFinite(val) || val < 0) { playWarning(); toast.error(t("cashrec.countFirst", "اكتب النقد المعدود بالصندوق أولاً.")); return; }
     const rec: CashConfirm = {
@@ -151,8 +104,13 @@ export function CashReconcile({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Modal open={open} onClose={onClose} title={t("cashrec.title", "مطابقة الصندوق اليومية")}>
-      {loading ? (
+      {load.status === "loading" ? (
         <div className="py-10 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> {t("charts.loading", "جارٍ التحميل…")}</div>
+      ) : load.status === "failed" ? (
+        <div className="space-y-3 py-8 text-center" data-cashfailed>
+          <p className="mx-auto max-w-md text-sm text-ink-subtle">{t("retail.invoicesLoadFailed", "تعذّر جلب الفواتير. المشكلة بالاتصال ولا فاتورة ضاعت — أعد المحاولة.")}</p>
+          <Button variant="secondary" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setAttempt((n) => n + 1); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-ink-subtle">

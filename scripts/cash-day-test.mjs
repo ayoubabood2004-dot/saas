@@ -78,11 +78,116 @@ check("  وأوّلُ الشهر (١/١١) مدّتُه سليمة", m.localDayR
 const demoRow = new Date(`${T}T01:30:00`).toISOString();
 check("  وبمقارنة النصّ (النسخة التجريبيّة) فاتورةُ ٠١:٣٠ داخل المدّة", demoRow >= r.from && demoRow <= r.to, demoRow);
 
+/* ── المالُ بيوم وصوله ─────────────────────────────────────────────────────
+ * الخادمُ يؤرّخ كلَّ ساقٍ بـ`at`ها: settle_invoice تختم now()، وreceipt_legs (0149) تقرأ
+ * coalesce(at, created_at)، وreceiptsOf تقول «التسديدُ يُحسب يومَ قُبض». والصندوقُ كان يجلب
+ * فواتيرَ أُنشئت اليوم ويرمي كلَّ ساقٍ بدوام إنشاء فاتورتها: تسديدُ دينٍ قديم اليوم لا يصل
+ * درجَ أحد، فالمفروضُ ناقص والعدُّ المؤكَّد يُحفظ «زيادة» وهمية باسم الكاشير. */
+console.log("▸ cash-day: كلُّ ساقٍ بيوم وصولها ودوامه — لا بيوم فاتورتها");
+// ساقُ التسديد كما تكتبها settle_invoice: to_char(now() at time zone 'utc', …MS"Z"). ساقُ الكاشير بلا `at`.
+const leg = (method, amount, at) => (at ? { method, amount, at } : { method, amount });
+const PM_FROM = 16 * 60; // المسائيّ من ٤:٠٠ العصر
+const fig = (s) => JSON.stringify(s);
+
+// ١) فاتورةُ أمس سُدِّد دينُها اليوم («تسديد دين») — المالُ بدرج اليوم.
+const OLD_DEBT = inv("idebt", "2026-10-16T09:00:00+00:00", { total: 50000, amount_paid: 50000,
+  payment_details: [leg("cash", 10000), leg("cash", 40000, "2026-10-17T08:00:00.000Z")] }); // ١١:٠٠ بغداد اليوم
+let [d] = m.drawerShifts([OLD_DEBT], [], T, null);
+check("فاتورةُ أمس سُدِّد دينُها اليوم: التسديدُ بنقد اليوم، والمقدَّمُ (أمس) خارجه", d.cash === 40000, fig(d));
+check("  والمفروضُ بالدرج ٤٠٬٠٠٠ — لا صفر فـ«زيادة» وهمية عند العدّ", d.expected === 40000, fig(d));
+check("  ومبيعاتُ اليوم وعددُ فواتيره لا تحسبها (أُنشئت أمس)", d.salesTotal === 0 && d.invoiceCount === 0, fig(d));
+// تحصيلُ مندوبٍ اليوم لطلبِ توصيلٍ قبل يومين (courier_settle → settle_invoice)، وتسديدٌ بحوالة.
+const COD = inv("icod", "2026-10-15T12:00:00+00:00", { total: 25000, amount_paid: 25000,
+  payment_details: [leg("cash", 25000, "2026-10-17T10:15:00.000Z")] });
+const XFER = inv("ixfer", "2026-10-14T12:00:00+00:00", { total: 8000, amount_paid: 8000,
+  payment_details: [leg("transfer", 8000, "2026-10-17T11:00:00.000Z")] });
+[d] = m.drawerShifts([OLD_DEBT, COD, XFER], [], T, null);
+check("  وتحصيلُ المندوب اليوم لطلبٍ قبل يومين بنقد اليوم", d.cash === 65000, fig(d));
+check("  والتسديدُ بحوالةٍ اليوم بالحوالة لا بالدرج", d.transfer === 8000 && d.cash === 65000, fig(d));
+
+// ٢) فاتورةُ اليوم سُدِّد باقيها غداً — التسديدُ لدرج غدٍ.
+const TMRW = inv("itmrw", "2026-10-17T07:00:00+00:00", { total: 30000, amount_paid: 30000,
+  payment_details: [leg("cash", 5000), leg("cash", 25000, "2026-10-18T06:00:00.000Z")] }); // ٠٩:٠٠ بغداد غداً
+[d] = m.drawerShifts([TMRW], [], T, null);
+check("فاتورةُ اليوم سُدِّد باقيها غداً: نقدُ اليوم مقدَّمُها وحده", d.cash === 5000 && d.expected === 5000, fig(d));
+check("  وهي من مبيعات اليوم بقيمتها كاملة", d.salesTotal === 30000 && d.invoiceCount === 1, fig(d));
+// تسديدُ ٠٠:٣٠ بعد منتصف الليل: غرينتش يقول «اليوم» (٢١:٣٠Z) — والمالكُ قال: لليوم الجديد.
+const MIDN = inv("imidn", "2026-10-17T07:00:00+00:00", { total: 12000, amount_paid: 12000,
+  payment_details: [leg("cash", 2000), leg("cash", 10000, "2026-10-17T21:30:00.000Z")] });
+[d] = m.drawerShifts([MIDN], [], T, null);
+check("  وتسديدُ ٠٠:٣٠ بعد منتصف الليل لليوم الجديد لا لهذا (بقرار المالك)", d.cash === 2000, fig(d));
+
+// ٣) عيادةٌ بدوامين: بيعٌ صباحيّ بلا مقدَّم سُدِّد مساءً.
+const AMPM = inv("iampm", "2026-10-17T06:00:00+00:00", { total: 20000, amount_paid: 20000, // ٠٩:٠٠ بغداد
+  payment_details: [leg("cash", 20000, "2026-10-17T14:30:00.000Z")] });                        // ١٧:٣٠ بغداد
+let [am, pm] = m.drawerShifts([AMPM], [], T, PM_FROM);
+check("بيعٌ صباحيّ سُدِّد مساءً: النقدُ بالدوام المسائيّ", pm?.cash === 20000 && pm?.expected === 20000, `${fig(am)} ${fig(pm)}`);
+check("  والصباحيُّ لا يراه نقداً", am?.cash === 0 && am?.expected === 0, fig(am));
+check("  والبيعُ نفسُه (المبيعات والعدد) بدوام إنشائه", am?.salesTotal === 20000 && am?.invoiceCount === 1 && pm?.salesTotal === 0 && pm?.invoiceCount === 0, `${fig(am)} ${fig(pm)}`);
+// والمصروفُ النقديّ بدوام خروجه (كما كان).
+[am, pm] = m.drawerShifts([AMPM], [exp("epm", "2026-10-17T14:45:00+00:00", { amount: 3000 })], T, PM_FROM);
+check("  ومصروفُ ١٧:٤٥ يُنقص المسائيّ", pm?.cashOut === 3000 && pm?.expected === 17000 && am?.cashOut === 0, `${fig(am)} ${fig(pm)}`);
+
+// ٤) «تاريخ المبيع» (0242): السِّيَقُ بلا `at` فتُؤرَّخ بيوم البيع — لا يتضخّم بها درجُ يوم الإدخال.
+const BACK = inv("iback", "2026-10-15T09:00:00+00:00", { recorded_at: "2026-10-17T08:00:00.000Z",
+  total: 15000, amount_paid: 15000, payment_details: [leg("cash", 15000)] });
+const BACK_SETTLED = inv("ibset", "2026-10-16T09:00:00+00:00", { recorded_at: "2026-10-17T08:05:00.000Z",
+  total: 9000, amount_paid: 9000, payment_details: [leg("cash", 3000), leg("cash", 6000, "2026-10-17T12:00:00.000Z")] });
+[d] = m.drawerShifts([BACK, BACK_SETTLED], [], T, null);
+check("فاتورةٌ بيومٍ سابق (0242) بيوم بيعها لا بدرج يوم إدخالها", d.salesTotal === 0 && d.invoiceCount === 0, fig(d));
+check("  ونقدُها ليس لليوم — إلا تسديداً قُبض اليوم", d.cash === 6000, fig(d));
+
+// ٥) بلا أرجل (قديمة): دفعةٌ واحدة بيوم الفاتورة وطريقتها؛ والمرتجعةُ لا مقبوضات.
+const LEGACY = inv("ilegacy", "2026-10-17T08:00:00+00:00", { total: 7000, payment_method: "card" });
+const LEGACY_OLD = inv("ilold", "2026-10-10T08:00:00+00:00", { total: 7000, amount_paid: 2000 }); // دينٌ مفتوح يرجعه الجلب
+const REF_TODAY = inv("ireft", "2026-10-17T08:30:00+00:00", { status: "refunded", total: 4000, amount_paid: 4000,
+  payment_details: [leg("cash", 4000)] });
+[d] = m.drawerShifts([LEGACY, LEGACY_OLD, REF_TODAY], [], T, null);
+check("فاتورةٌ بلا أرجل: دفعةٌ واحدة بيومها وطريقتها، ودينٌ قديمٌ بلا تسديدٍ اليوم لا شيء", d.card === 7000 && d.cash === 0, fig(d));
+check("  والمرتجعةُ خارج المبيعات والنقد", d.salesTotal === 7000 && d.invoiceCount === 1, fig(d));
+
+// ٦) مرآةٌ مستقلّة لـreceipt_legs (0149) بحرفها: مجموعُ الدرج = مقبوضاتُ اليوم كما يجمعها الخادم.
+const ALL = [AT_0130, AT_0000, AT_2359, NEXT_00, PREV_23, NOON, REFUND, OLD_DEBT, COD, XFER, TMRW, MIDN, AMPM, BACK, BACK_SETTLED, LEGACY, LEGACY_OLD, REF_TODAY];
+const serverLegs = ALL.filter((i) => (i.status ?? "paid") !== "refunded").flatMap((i) => (i.payment_details?.length
+  ? i.payment_details.filter((l) => Math.abs(l.amount ?? 0) > 0.01).map((l) => ({ amount: l.amount, at: l.at ?? i.created_at }))
+  : ((i.amount_paid ?? i.total) > 0.01 ? [{ amount: i.amount_paid ?? i.total, at: i.created_at }] : [])));
+const bag = (at) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Baghdad" }).format(new Date(at));
+const serverToday = serverLegs.filter((l) => bag(l.at) === T).reduce((s, l) => s + l.amount, 0);
+const shifts2 = m.drawerShifts(ALL, [], T, PM_FROM);
+const drawerToday = shifts2.reduce((s, x) => s + x.cash + x.card + x.transfer, 0);
+check("مجموعُ الدرج بدوامَيه = مقبوضاتُ اليوم بمرآة receipt_legs (يومُ بغداد)", drawerToday === serverToday, `${drawerToday} ≠ ${serverToday}`);
+
+/* ── الفشلُ لا يُرسم درجاً ────────────────────────────────────────────────
+ * `.catch(() => [] as Invoice[])` كان يجعل خطأَ الشبكة «يومٌ بلا فواتير»: المفروضُ صفر،
+ * وزرُّ التأكيد يحفظ العدَّ كلَّه «زيادة» باسم الكاشير (CLAUDE.md §٣). */
+console.log("▸ cash-day: الجلبُ يقرأ ما لمس اليوم، ولا يبتلع فشلاً");
+const calls = [];
+const api = (fail) => ({
+  listInvoices: async (...a) => { calls.push(["listInvoices", a]); return []; },
+  listInvoicesTouching: async (range) => { calls.push(["touching", range]); if (fail === "inv") throw new Error("net"); return [OLD_DEBT]; },
+  listExpenses: async (c, range) => { calls.push(["expenses", range]); if (fail === "exp") throw new Error("net"); return []; },
+});
+const okLoad = typeof m.loadDrawer === "function" ? await m.loadDrawer(api(null), T).catch((e) => e) : null;
+check("الفواتيرُ تُجلب بـlistInvoicesTouching بمدّة اليوم المحلّيّ (تسديدُ دينٍ قديم يصل)",
+  calls.some(([k, r]) => k === "touching" && r?.from === "2026-10-16T21:00:00.000Z" && r?.to === "2026-10-17T21:00:00.000Z") && !calls.some(([k]) => k === "listInvoices"),
+  JSON.stringify(calls));
+check("  ويرجع ما جُلب كما هو", okLoad?.invoices?.[0]?.id === "idebt" && Array.isArray(okLoad?.expenses), String(okLoad));
+for (const which of ["inv", "exp"]) {
+  const r = typeof m.loadDrawer === "function" ? await m.loadDrawer(api(which), T).then(() => "resolved", () => "rejected") : "missing";
+  check(`  وفشلُ ${which === "inv" ? "الفواتير" : "المصروفات"} يُرمى — لا قائمةٌ فارغة تُرسم صفراً`, r === "rejected", r);
+}
+
 console.log("▸ cash-day: الشاشةُ تمرّ من القاعدة");
 const src = readFileSync("src/components/retail/CashReconcile.tsx", "utf8");
 check("لا قطعَ لليوم بـslice(0, 10) بالمطابقة", !/\.slice\(0,\s*10\)/.test(src));
-check("  الفواتيرُ والمصروفاتُ تُصفّى بـdrawerInvoices/drawerExpenses", /drawerInvoices\(/.test(src) && /drawerExpenses\(/.test(src));
-check("  والطلبان بمدّة اليوم المحلّيّ (المصروفاتُ لم تعد بلا مدّة)", /listInvoices\([^)]*range\)/.test(src) && /listExpenses\([^)]*range\)/.test(src) && /localDayRange\(/.test(src));
+check("  الأرقامُ من drawerShifts والجلبُ من loadDrawer (لا نسخةَ ثانية بالشاشة)", /drawerShifts\(/.test(src) && /loadDrawer\(repo/.test(src) && !/created_at\)/.test(src));
+check("  ولا ابتلاعَ فشلٍ بقائمةٍ فارغة", !/\.catch\(\s*\(\s*\)\s*=>\s*\[\s*\]/.test(src));
+check("  والفشلُ بطاقةُ «أعد المحاولة» بدل الأرقام", /status === "failed"/.test(src) && /data-cashfailed/.test(src) && /common\.retry/.test(src));
+// التأكيدُ محجوبٌ إلا بدرجٍ جاهز: الزرُّ بفرع الجاهز وحده، والدالّةُ ترفض قبله.
+const confirmFn = /const confirmShift = [^\n]*\n\s*if \(load\.status !== "ready"\) return;/.test(src);
+const readyIdx = src.search(/load\.status === "loading"[\s\S]*?load\.status === "failed"/);
+check("  والتأكيدُ محجوبٌ بلا درجٍ جاهز (الدالّةُ ترفض، والزرُّ بعد فرعَي التحميل والفشل)",
+  confirmFn && readyIdx >= 0 && src.indexOf("data-confirmshift") > readyIdx, `confirmFn=${confirmFn} readyIdx=${readyIdx}`);
 
 console.log(`\ncash-day: ${pass} ✓  ${fail} ✗`);
 if (fail) process.exit(1);
