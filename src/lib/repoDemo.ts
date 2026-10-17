@@ -2026,17 +2026,20 @@ const demoRepo = {
   async listPhotoProducts(): Promise<PhotoProduct[]> {
     const db = loadDB();
     const co = new Map((db.companies ?? []).map((c) => [c.id, c.name]));
+    // 0243 (قرارُ المالك): المصوّرُ بلا سعر بيع — بقالبه manageStore أو بلاه.
+    const noPrice = demoBaseRole() === "photographer";
     return (db.products ?? []).filter((p) => !p.farm_id).map((p) => ({
       // 0243: الرموزُ الإضافية مع الأساسيّ — قائمةٌ فارغة لا null، كالخادم.
       id: p.id, name: p.name, barcode: p.barcode ?? null, alt_codes: p.alt_codes ?? [], category: p.category ?? null, subcategory: p.subcategory ?? null,
       company_id: p.company_id ?? null, company_name: p.company_id ? co.get(p.company_id) ?? null : null,
       image_path: p.image_path ?? null, store_visible: !!p.store_visible, store_featured: !!p.store_featured,
-      store_desc: p.store_desc ?? null, sell_price: p.sell_price ?? null, stock: p.stock ?? null,
+      store_desc: p.store_desc ?? null, sell_price: noPrice ? null : p.sell_price ?? null, stock: p.stock ?? null,
       pooled: !!p.pooled, expiry_date: p.expiry_date ?? null,
     })).sort((a, b) => a.name.localeCompare(b.name));
-  },  /** مرآةُ store_set_price (0228): نطاقُ photo_products (بلا منتجات الحقول)، والسعرُ بشرط أنه
-   *  ما زال ما رآه — وإلا price_moved كالخادم. */
+  },  /** مرآةُ store_set_price (0228، و0243: لا للمصوّر): نطاقُ photo_products (بلا منتجات الحقول)، والسعرُ بشرط
+   *  أنه ما زال ما رآه — وإلا price_moved كالخادم. */
   async setStorePrice(productId: string, price: number, expected: number | null): Promise<number> {
+    if (demoBaseRole() === "photographer") throw demoHint("not_authorized", "تعديل السعر للمدير والطبيب.");
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === productId && !x.farm_id);
     if (!p) throw demoHint("product_not_found", "المنتج مو موجود بعيادتك — حدّث القائمة.");

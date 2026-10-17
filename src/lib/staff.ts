@@ -68,7 +68,7 @@ export const CAPABILITIES: { id: Capability; label: string }[] = [
   // مطفأة لكل دور غير المدير، ولا تُمنح إلا صراحةً.
   { id: "viewPayroll", label: "Staff payroll & advances" },
   { id: "manageProductPhotos", label: "Product photos" },
-  { id: "manageStore", label: "Online store (products, storefront & sell price, no orders)" },
+  { id: "manageStore", label: "Online store (products & storefront, no orders; sell price: manager & vet)" },
 ];
 
 export const PERMISSIONS: Record<StaffRole, Capability[]> = {

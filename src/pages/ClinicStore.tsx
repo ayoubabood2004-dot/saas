@@ -210,7 +210,7 @@ export function ClinicStore() {
           {tab === "orders"
             ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => go("settings")} goCatalog={goCatalog} />
             : tab === "catalog"
-              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} priceViaStore={photoMode} />
+              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} canPrice={!photoMode} showPrice={!photoMode} />
               : tab === "cats"
                 ? <CategoriesTab products={products} productsFailed={failed && products === null} onRetryProducts={() => void load()} guard={leave} />
                 : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
@@ -540,15 +540,16 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
 
 /* ============================== التشكيلة ============================== */
 
-function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true, canSuggest = true, priceViaStore = false }: {
+function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true, canSuggest = true, showPrice = true }: {
   products: Product[] | null; reload: () => Promise<void>; storeOn: boolean;
   filter: CatFilter; setFilter: (f: CatFilter) => void;
   /** السعرُ سعرُ الكاشير نفسُه. */
   canPrice?: boolean;
   /** «انشر أكثر ما تبيع» مبنيٌّ على المبيعات والإيراد — ليس لموظّف التصوير. */
   canSuggest?: boolean;
-  /** المصوّرُ يكتب السعرَ من `store_set_price` (المنتجاتُ مسيَّجةٌ له كتابةً)؛ والكادرُ كما كان. */
-  priceViaStore?: boolean;
+  /** 0243 (قرارُ المالك): موظّفُ التصوير لا يرى سعرَ البيع — الخادمُ لا يرسله له (photo_products)، فلا سعرٌ
+   *  يُعرض ولا يُرتَّب به ولا «بلا سعر» تُعدّ — صفرٌ هنا «لا نعرف» لا «بلا سعر». */
+  showPrice?: boolean;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -682,7 +683,9 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     const r = await repo.setStoreVisible(ids, on);
     // الصفوفُ تُحدَّث بمكانها: الخادمُ حَكَمٌ على ما تبدّل، والمعروضُ يتبعه بلا رحلة.
     const done = new Set(ids);
-    for (const p of all) if (done.has(p.id) && (on ? (p.sell_price ?? 0) > 0 : true)) p.store_visible = on;
+    // بلا أسعارٍ بيده (المصوّر، 0243) لا يُحكم محلّياً أيُّها انتشر: الخادمُ يتخطّى غيرَ المسعَّر، فيُقرأ منه.
+    for (const p of all) if (done.has(p.id) && (on ? !showPrice || (p.sell_price ?? 0) > 0 : true)) p.store_visible = on;
+    if (!showPrice && on && r.skipped_no_price > 0) await reload();
     if (r.skipped_no_price > 0) {
       // «قائمةٌ ناقصة أخطرُ من خطأ ظاهر» — المتخطَّى يُقال بعدده وسببه.
       toast.error(
@@ -841,8 +844,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     if (!Number.isFinite(v) || v < 0 || v === p.sell_price) return;
     // بشرط أن السعرَ ما زال ما يراه: قائمةٌ فُتحت قبل رفعِ أسعارٍ كانت تكتب رقمَها فوق الرفع بصمت.
     try {
-      if (priceViaStore) await repo.setStorePrice(p.id, Math.round(v * 100) / 100, p.sell_price);
-      else await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }, { sell_price: p.sell_price });
+      // السعرُ للمدير والطبيب وحدهما (0243: لا للمصوّر — `canPrice` مطفأٌ له، والخادمُ يرفضه بنفسه).
+      await repo.updateProduct(p.id, { sell_price: Math.round(v * 100) / 100 }, { sell_price: p.sell_price });
       playSuccess(); await reload();
     }
     catch (e) { playWarning(); toast.error(t("cat.priceFailed", "تعذّر تعديل السعر"), describeDbError(e, t)); await reload(); }
@@ -876,8 +879,8 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
           className="shrink-0 rounded-full border border-line bg-surface-1 px-3 py-1.5 text-xs font-semibold text-ink-muted outline-none">
           <option value="smart">{t("cat.sortSmart", "الترتيب الذكي")}</option>
           <option value="name">{t("cat.sortName", "بالاسم")}</option>
-          <option value="priceDesc">{t("cat.sortPriceDesc", "الأغلى أولاً")}</option>
-          <option value="priceAsc">{t("cat.sortPriceAsc", "الأرخص أولاً")}</option>
+          {showPrice && <option value="priceDesc">{t("cat.sortPriceDesc", "الأغلى أولاً")}</option>}
+          {showPrice && <option value="priceAsc">{t("cat.sortPriceAsc", "الأرخص أولاً")}</option>}
         </select>
       </div>
 
@@ -893,7 +896,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
           ["shown", t("cat.fShown", "معروض"), shownCount],
           ["hidden", t("cat.fHidden", "مخفي"), hiddenCount],
           ["nophoto", t("cat.fNoPhoto", "بلا صورة"), noPhotoCount],
-          ...(noPriceShown > 0 || filter === "noprice" ? [["noprice", t("cat.fNoPrice", "بلا سعر"), noPriceShown] as const] : []),
+          ...(showPrice && (noPriceShown > 0 || filter === "noprice") ? [["noprice", t("cat.fNoPrice", "بلا سعر"), noPriceShown] as const] : []),
           ...(noStockShown > 0 || filter === "nostock" ? [["nostock", t("cat.fNoStock", "نافد"), noStockShown] as const] : []),
           ...(noDescShown > 0 || filter === "nodesc" ? [["nodesc", t("cat.fNoDesc", "بلا وصف"), noDescShown] as const] : []),
           ...(cats.seeded && (noCatCount > 0 || filter === "nocat") ? [["nocat", t("cat.fNoCat", "بلا تصنيف"), noCatCount] as const] : []),
@@ -1044,7 +1047,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
             {list.slice(0, limit).map((p) => (
               <ProductCard key={p.id} p={p} picked={picked.has(p.id)} busy={busyId === p.id} bulkBusy={bulkBusy}
                 onPick={(v) => setPicked((prev) => { const n = new Set(prev); v ? n.add(p.id) : n.delete(p.id); return n; })}
-                cats={chipsOf(p.id)} canPrice={canPrice}
+                cats={chipsOf(p.id)} canPrice={canPrice} showPrice={showPrice}
                 onPhoto={(f) => openEditor(p, f)} onLib={() => setLibFor(p)}
                 onToggle={() => void toggle(p)} onFeatured={() => void toggleFeatured(p)}
                 onDetails={() => setDetailsId(p.id)} onPrice={(d) => void savePrice(p, d)}
@@ -1064,7 +1067,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
         onPick={(row) => { if (libFor) void pickFromLib(libFor, row.path); }} />
       <ProductDetailsSheet p={detailsP} onClose={() => setDetailsId(null)} live={cats.live} catsOf={cats.catsOf}
         catsState={cats.status === "switched" ? "switched" : cats.writable ? (cats.seeded ? "ready" : "unseeded") : cats.status === "error" ? "error" : "loading"}
-        onRetryCats={cats.retry} canPrice={canPrice} busy={!!detailsP && busyId === detailsP.id}
+        onRetryCats={cats.retry} canPrice={canPrice} showPrice={showPrice} busy={!!detailsP && busyId === detailsP.id}
         onPhoto={() => { if (detailsP) { setDetailsId(null); openEditor(detailsP, null); } }}
         onLib={() => { if (detailsP) { setDetailsId(null); setLibFor(detailsP); } }}
         onToggle={() => { if (detailsP) void toggle(detailsP); }} onFeatured={() => { if (detailsP) void toggleFeatured(detailsP); }}
@@ -1098,8 +1101,10 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
   const { t } = useTranslation();
   /* O5 (0235): فتحُ المتجر ورابطُه وتشغيلُه للمدير — والخادمُ يفرضها بمحفّز؛ هنا تُقال ولا تُخفى.
    * المدير = الدورُ الفعليّ (يشمل فتحَ الرمز السرّيّ ومشغّلَ المنصّة)، كالخادم. */
-  const { role } = usePermissions();
+  const { role, baseRole } = usePermissions();
   const ownerOnly = role !== "manager";
+  /* 0243: المصوّرُ بلا أسعار — صفرُه «لا نعرف» لا «بلا سعر»، فلا يُعدّ ولا يُقال. */
+  const showPrice = baseRole !== "photographer";
   const [slug, setSlug] = useState(profile?.slug ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [fee, setFee] = useState(profile?.delivery_fee ? String(profile.delivery_fee) : "");
@@ -1325,7 +1330,7 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           <ReadyRow ok={enabled} label={t("cat.readyOn", "المتجر مفعّل")} />
 
           {/* ما ينقص المعروضَ نفسَه — لا يُعرض سطرٌ عن صفر. */}
-          {noPriceCount > 0 && (
+          {showPrice && noPriceCount > 0 && (
             <ReadyRow ok={false} warn label={t("cat.readyNoPrice", "{{n}} معروض بلا سعر — ما راح يظهر للزبون", { n: formatNum(noPriceCount) })}
               onGo={() => goCatalog("noprice")} />
           )}

@@ -342,6 +342,21 @@ try {
     onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onDetails() {}, onPrice() {}, onArm() {}, codeHit }));
   check("البطاقةُ تقول الرمزَ الذي جاء بها للنتائج، ولا شيء بلا مطابقةٍ بالرمز",
     /data-cardcode/.test(card("6281000123456")) && text(card("6281000123456")).includes("6281000123456") && !/data-cardcode/.test(card(null)));
+  /* قرارُ المالك (١٧/١٠): المصوّرُ يرى الباركودات ولا يرى السعر. السعرُ هنا 7,654 عمداً — رقمٌ لا يظهر بغير السعر. */
+  const priced = { ...PRODUCTS[0], sell_price: 7654, barcode: "6281000123456", alt_codes: ["w90"] };
+  const sheetNoPrice = html(h(M.ProductDetailsSheet, {
+    p: priced, onClose() {}, live, catsOf: () => [], catsState: "ready", onRetryCats() {},
+    canPrice: false, showPrice: false, onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onPrice() {}, onSave: async () => {}, busy: false,
+  }));
+  const cardNoPrice = html(h(M.ProductCard, { p: priced, picked: false, onPick() {}, busy: false, bulkBusy: false, cats: [], canPrice: false, showPrice: false,
+    onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onDetails() {}, onPrice() {}, onArm() {} }));
+  const hasPrice = (s) => /7[,٬]?654|٧[,٬]?٦٥٤/.test(text(s));
+  check("المصوّر (showPrice مطفأ): الورقةُ بالباركودات وبلا سعر", !hasPrice(sheetNoPrice) && tags(sheetNoPrice, "primary").join() === "6281000123456" && tags(sheetNoPrice, "alt").join() === "+w90", text(sheetNoPrice).slice(0, 200));
+  check("  والبطاقةُ بلا سعرٍ ولا زرّ تسعير", !hasPrice(cardNoPrice) && !/data-catprice/.test(cardNoPrice) && /data-catnoprice/.test(cardNoPrice));
+  check("  والمديرُ يرى السعرَ كما كان (شاهدٌ: الرقمُ يُرسم حين يُسمح)", hasPrice(html(h(M.ProductDetailsSheet, {
+    p: priced, onClose() {}, live, catsOf: () => [], catsState: "ready", onRetryCats() {},
+    canPrice: false, onPhoto() {}, onLib() {}, onToggle() {}, onFeatured() {}, onPrice() {}, onSave: async () => {}, busy: false,
+  }))));
   const prod = { id: "x", name: "رويال كانين", barcode: "w90", alt_codes: ["6281000123456"] };
   check("matchedCode: الإضافيُّ يُسمّى حين هو المطابِق، والأساسيُّ أوّلاً",
     M.PC.matchedCode(prod, "٦٢٨١") === "6281000123456" && M.PC.matchedCode(prod, "W9") === "w90" && M.PC.matchedCode(prod, "") === null && M.PC.matchedCode(prod, "777") === null);

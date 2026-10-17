@@ -2080,6 +2080,17 @@ console.log("▸ 0243 — الرموزُ الإضافية تصل للمصوّر 
   const pp = await repo.listPhotoProducts();
   check("photo_products تعطي الرموزَ الإضافية مع الأساسيّ", JSON.stringify(pp.find((x) => x.id === "pb1")?.alt_codes) === JSON.stringify(["6281000000001", "w90"]) && pp.find((x) => x.id === "pb1")?.barcode === "243001");
   check("  ومنتجٌ بلا إضافيّة: قائمةٌ فارغة لا null", Array.isArray(pp.find((x) => x.id === "pb2")?.alt_codes) && pp.find((x) => x.id === "pb2").alt_codes.length === 0);
+  // قرارُ المالك (١٧/١٠): الباركوداتُ للمصوّر والسعرُ لا — لا قراءةً ولا كتابة. الجلسةُ بشكل AuthContext.persistRaw.
+  seed([P("pb1", "برموزٍ إضافية", "243001", { alt_codes: ["6281000000001"], sell_price: 1000, purchase_price: 500 })]);
+  mem.set("vp_session", JSON.stringify({ raw: { id: "ph1", full_name: "مصوّر", rawRole: "doctor", staff: { role: "doctor", staffRole: "photographer" } } }));
+  const ph = (await repo.listPhotoProducts()).find((x) => x.id === "pb1");
+  check("المصوّرُ: الرموزُ نعم، وسعرُ البيع null وسعرُ الشراء غائب", ph?.alt_codes?.[0] === "6281000000001" && ph?.sell_price === null && !("purchase_price" in (ph ?? {})), JSON.stringify(ph));
+  let refused = "";
+  try { await repo.setStorePrice("pb1", 2000, null); } catch (e) { refused = `${e.message}|${e.hint ?? ""}`; }
+  check("  ولا يغيّر السعر (not_authorized بتلميح الخادم) — والسعرُ باقٍ", refused.startsWith("not_authorized|") && JSON.parse(mem.get(DB_KEY)).products.find((x) => x.id === "pb1").sell_price === 1000, refused);
+  mem.set("vp_session", JSON.stringify({ raw: { id: "c1", full_name: "مدير", rawRole: "admin" } }));
+  check("  والمديرُ يرى السعرَ ويغيّره كما كان", (await repo.listPhotoProducts()).find((x) => x.id === "pb1")?.sell_price === 1000 && (await repo.setStorePrice("pb1", 1500, 1000)) === 1500);
+  mem.delete("vp_session");
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

@@ -27,8 +27,10 @@ export const DESC_MAX = 2000;
  */
 export type SheetCats = "ready" | "loading" | "error" | "unseeded" | "switched";
 
-export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRetryCats, canPrice, onPhoto, onLib, onToggle, onFeatured, onPrice, onSave, busy }: {
+export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRetryCats, canPrice, onPhoto, onLib, onToggle, onFeatured, onPrice, onSave, busy, showPrice = true }: {
   p: Product | null;
+  /** 0243: موظّفُ التصوير لا يرى سعرَ البيع (قرارُ المالك) — الورقةُ له باركوداتٌ ووصفٌ وتصنيفات. */
+  showPrice?: boolean;
   onClose: () => void;
   /** التصنيفاتُ الحيّة بترتيب العيادة. */
   live: CatRow[];
@@ -131,7 +133,7 @@ export function ProductDetailsSheet({ p, onClose, live, catsOf, catsState, onRet
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {canPrice ? (
+            {!showPrice ? null : canPrice ? (
               <label className="flex items-center gap-2 text-xs font-bold text-ink-muted">
                 {t("cat.priceLabel", "السعر")}
                 <input type="number" inputMode="decimal" min={0} value={price} onChange={(e) => setPrice(e.target.value)}

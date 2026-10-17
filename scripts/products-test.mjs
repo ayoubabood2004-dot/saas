@@ -1131,14 +1131,30 @@ console.log("▸ 0228 — المصوّر: الألبوم، والمتجرُ كل
   check("  والمكتبةُ الفاشلة تقول فشلَها وتُعيد (لا «المكتبة فارغة» عن خطأ)", /setFailed\(m\)/.test(lib) && !/setRows\(\[\]\)/.test(lib));
 
   const st = readFileSync("src/pages/ClinicStore.tsx", "utf8");
-  check("المتجر: المصوّرُ يعدّل السعرَ من store_set_price، والكادرُ من updateProduct كما كان",
-    st.includes("canSuggest={!photoMode} priceViaStore={photoMode}")
-    && /if \(priceViaStore\) await repo\.setStorePrice\(p\.id, Math\.round\(v \* 100\) \/ 100, p\.sell_price\);/.test(st));
+  // 0243 (قرارُ المالك ١٧/١٠): «ما اريد المصور يشوف سعر الشراء والبيع» — 0228 أعطته السعرَ وتعديلَه، فالعقدُ صار:
+  // لا سعرَ يُرسم له (البطاقة، الورقة، الترتيب، «بلا سعر»، الجاهزية)، ولا تعديل، والكادرُ يعدّل من updateProduct كما كان.
+  check("المتجر: المصوّرُ بلا سعرٍ يُرى أو يُعدَّل (0243)، والكادرُ يعدّل من updateProduct كما كان",
+    st.includes("canSuggest={!photoMode} canPrice={!photoMode} showPrice={!photoMode}")
+    && /await repo\.updateProduct\(p\.id, \{ sell_price: Math\.round\(v \* 100\) \/ 100 \}, \{ sell_price: p\.sell_price \}\);/.test(st)
+    && !/priceViaStore|setStorePrice/.test(st));
+  check("  ولا يُرتَّب بسعرٍ لا يُرى، ولا «بلا سعر» تُعدّ له (صفرُه «لا نعرف»)، ولا يُحكم محلّياً أيُّ منشورٍ انتشر",
+    /\{showPrice && <option value="priceDesc">/.test(st) && /showPrice && \(noPriceShown > 0/.test(st)
+    && /\{showPrice && noPriceCount > 0 && \(/.test(st) && /!showPrice \|\| \(p\.sell_price \?\? 0\) > 0/.test(st));
+  const cardSrc = readFileSync("src/components/store/admin/ProductCard.tsx", "utf8");
+  const sheetSrc = readFileSync("src/components/store/admin/ProductDetailsSheet.tsx", "utf8");
+  check("  والبطاقةُ والورقةُ لا ترسمان السعرَ حين showPrice مطفأ",
+    /\) : !showPrice \? \(\s*<span data-catnoprice \/>/.test(cardSrc) && /\{!showPrice \? null : canPrice \? \(/.test(sheetSrc));
   check("  وحقلُ سعرٍ مُسح ثم تُرك لا يكتب صفراً (Number(\"\") = 0)",
     /if \(!canPrice\) return;[\s\S]{0,260}if \(!draft\.trim\(\)\) return;\s*\n\s*const v = Number\(draft\);/.test(st));
-  const m28s = readFileSync("supabase/migrations/0228_photographer_store.sql", "utf8");
-  check("  والسعرُ بالخادم للمدير والطبيب والمصوّر وحدهم (لا استقبالٍ بإذن متجر)، ولا صفر",
-    /auth_role\(\) in \('manager', 'veterinarian'\) or is_photographer\(\)/.test(m28s) && /p_price <= 0/.test(m28s));
+  // آخرُ تعريفٍ لـstore_set_price هو ما يعيش بالإنتاج — 0243 أرجعت المصوّرَ منه.
+  const lastSsp = readdirSync("supabase/migrations").filter((f) => /\.sql$/.test(f)).sort()
+    .filter((f) => /create or replace function public\.store_set_price\(/.test(readFileSync(`supabase/migrations/${f}`, "utf8"))).pop();
+  const sspSrc = readFileSync(`supabase/migrations/${lastSsp}`, "utf8");
+  check(`  والسعرُ بالخادم للمدير والطبيب وحدهما — لا مصوّر ولا استقبالٍ بإذن متجر، ولا صفر (${lastSsp})`,
+    /if not \(auth_role\(\) in \('manager', 'veterinarian'\)\) or is_photographer\(\) then/.test(sspSrc) && /p_price <= 0/.test(sspSrc));
+  const pp43 = sspSrc.slice(sspSrc.indexOf("create or replace function public.photo_products()"));
+  check("  وphoto_products لا ترسل سعرَ البيع للمصوّر ولو حمل manageStore (0243)",
+    /v_price := v_store and not is_photographer\(\);/.test(pp43) && /'sell_price', case when v_price then p\.sell_price end/.test(pp43) && !/purchase_price/.test(pp43));
   const ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8"));
   check("  ووصفُ إذن المتجر بشاشة الكادر يقول السعرَ (كان «بلا السعر»)", /سعر البيع/.test(ar.caps.manageStore) && !/والسعر\)/.test(ar.caps.manageStore));
   check("  والاقتراحُ (مبنيٌّ على المبيعات) ما زال ليس له، والطلباتُ مخفيّة",

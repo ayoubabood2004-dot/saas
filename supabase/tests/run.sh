@@ -4336,21 +4336,26 @@ $P -c "update staff set permissions = '{}' where id = '${PP}f1';
        update products set sell_price = 12000, farm_id = null where id = '${PP}01';" >/dev/null
 chk "المصوّرُ بلا استثناء: المتجرُ بقالبه (ينشر ويعدّل الواجهة)" \
     "select _rls_try('$PHO', 'select store_set_visible(array[''${PP}01''::uuid], true)')||'|'||_rls_try('$PHO', 'update store_profiles set enabled = true')" "rows:1|rows:1"
-chk "  ويرى السعرَ والرصيدَ والمجمَّعَ والانتهاء" \
-    "select _pf('$PHO', 'select (photo_products()->0 ?& array[''sell_price'',''stock'',''pooled'',''expiry_date''] and photo_products()->0->>''sell_price'' is not null)::text')" "true"
-chk "  ويغيّر السعرَ من المتجر بشرطه (12000 ⇒ 13500)" \
-    "select _rls_try('$PHO', 'select store_set_price(''${PP}01'', 13500, 12000)')" "rows:1"
+# 0243 (قرارُ المالك ١٧/١٠): «ما اريد المصور يشوف سعر الشراء والبيع» — 0228 أعطته سعرَ البيع وتعديلَه بقالب
+# manageStore، فالعقدُ هنا صار عقدَ 0243: الرصيدُ والجاهزيةُ نعم، والسعرُ لا قراءةً ولا كتابة. وآليّةُ store_set_price
+# نفسُها (الشرط، المنتجُ الغريب، الصفر، التدقيق) تُفحص بالمدير — البابُ باقٍ لمن يملك السعر.
+chk "  ويرى الرصيدَ والمجمَّعَ والانتهاء — وسعرُ البيع لا (0243)" \
+    "select _pf('$PHO', 'select (photo_products()->0 ?& array[''sell_price'',''stock'',''pooled'',''expiry_date''] and photo_products()->0->>''sell_price'' is null and photo_products()->0->>''stock'' is not null)::text')" "true"
+chk "  ولا يغيّر السعرَ من المتجر (0243) — والسعرُ باقٍ كما هو" \
+    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 13500, 12000)'), ':', 3)||'|'||(select sell_price::int::text from products where id='${PP}01')" "not_authorized|12000"
+chk "والمديرُ يغيّر السعرَ من المتجر بشرطه (12000 ⇒ 13500)" \
+    "select _rls_try('$C1', 'select store_set_price(''${PP}01'', 13500, 12000)')" "rows:1"
 chk "    (انكتب فعلاً)" \
     "select sell_price::int::text from products where id='${PP}01'" "13500"
-chk "    وسطرُ التدقيق «تعديل منتج» باسم المصوّر بالسعر القديم والجديد" \
-    "select (actor = '$PHO')::text||'|'||(details->'__changed'->'sell_price'->>0)::numeric::int::text||'>'||(details->'__changed'->'sell_price'->>1)::numeric::int::text from audit_log where entity='products' and entity_id='${PP}01' and action='UPDATE' order by created_at desc, id desc limit 1" "true|12000>13500"
+chk "    وسطرُ التدقيق «تعديل منتج» باسم المدير بالسعر القديم والجديد" \
+    "select (actor = '$C1')::text||'|'||(details->'__changed'->'sell_price'->>0)::numeric::int::text||'>'||(details->'__changed'->'sell_price'->>1)::numeric::int::text from audit_log where entity='products' and entity_id='${PP}01' and action='UPDATE' order by created_at desc, id desc limit 1" "true|12000>13500"
 chk "  وسعرٌ تغيّر بعد فتح القائمة لا يُكتب فوقه (price_moved)" \
-    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 9000, 12000)'), ':', 3)||'|'||(select sell_price::int::text from products where id='${PP}01')" "price_moved|13500"
+    "select split_part(_rls_try('$C1', 'select store_set_price(''${PP}01'', 9000, 12000)'), ':', 3)||'|'||(select sell_price::int::text from products where id='${PP}01')" "price_moved|13500"
 chk "  ولا منتجَ عيادةٍ أخرى، ولا سعرٌ صفرٌ أو سالبٌ أو NaN (حقلٌ مُسح كان يكتب صفراً)" \
-    "select split_part(_rls_try('$PHO', 'select store_set_price(''${PP}02'', 1, 2000)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', 0, 13500)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', -1, 13500)'), ':', 3)||'|'||split_part(_rls_try('$PHO', 'select store_set_price(''${PP}01'', ''NaN''::numeric, 13500)'), ':', 3)" "product_not_found|bad_price|bad_price|bad_price"
-chk "  والكتابةُ المباشرة على products ما زالت مسيَّجة (الدالّةُ البابُ الوحيد)" \
+    "select split_part(_rls_try('$C1', 'select store_set_price(''${PP}02'', 1, 2000)'), ':', 3)||'|'||split_part(_rls_try('$C1', 'select store_set_price(''${PP}01'', 0, 13500)'), ':', 3)||'|'||split_part(_rls_try('$C1', 'select store_set_price(''${PP}01'', -1, 13500)'), ':', 3)||'|'||split_part(_rls_try('$C1', 'select store_set_price(''${PP}01'', ''NaN''::numeric, 13500)'), ':', 3)" "product_not_found|bad_price|bad_price|bad_price"
+chk "  والكتابةُ المباشرة على products ما زالت مسيَّجةً للمصوّر" \
     "select _rls_try('$PHO', 'update products set sell_price = 1 where id = ''${PP}01''')||'|'||(select sell_price::int::text from products where id='${PP}01')" "rows:0|13500"
-chk "  والبوّابةُ تفتح store_set_price ولا تفتح الطلباتِ ولا الاقتراح" \
+chk "  والبوّابةُ كما كانت: store_set_price بقائمتها (والدالّةُ ترفضه بنفسها)، ولا الطلباتِ ولا الاقتراح" \
     "select _gate('$PHO', '/rpc/store_set_price')||'|'||split_part(_gate('$PHO', '/rpc/store_accept_order'), ':', 3)||'|'||split_part(_gate('$PHO', '/rpc/store_suggest_products'), ':', 3)" "rows:1|photographer_forbidden|photographer_forbidden"
 chk "  ولا يرى طلبات الزبائن (السياج)" \
     "select _rls_try('$PHO', 'select 1 from store_orders')" "rows:0"
@@ -4360,7 +4365,7 @@ chk "إطفاءُ المدير للمتجر عن مصوّرٍ بعينه يُح�
 $P -c "update staff set permissions = '{}' where id = '${PP}f1';" >/dev/null
 chk "والاستقبالُ ما اتّسع له شي (لا متجرَ بقالبه)" \
     "select split_part(_rls_try('$RCP', 'select store_set_price(''${PP}01'', 1, 13500)'), ':', 3)" "not_authorized"
-# سعرُ البيع للمدير والطبيب والمصوّر وحدهم: استقبالٌ منحه المديرُ المتجرَ ينشر ويصف — ولا يسعّر
+# سعرُ البيع للمدير والطبيب وحدهما (0243: لا للمصوّر): استقبالٌ منحه المديرُ المتجرَ ينشر ويصف — ولا يسعّر
 # (كان يمرّ له من الدالّة والجدولُ يرفضه — تدقيقٌ عدائيّ).
 $P -c "insert into staff(id, clinic_id, name, user_id, role, permissions) values ('${PP}f3','$C1','استقبال بإذن المتجر','$RCP','receptionist','{\"manageStore\": true}') on conflict (id) do update set permissions = excluded.permissions;" >/dev/null
 chk "  حتى بإذن المتجر: الاستقبالُ ينشر ولا يغيّر السعر" \
@@ -5813,6 +5818,10 @@ chk "  **وإعادتُها بلا تاريخ (مسودّةٌ فقدته) ترج
 # كلُّ جزءٍ يقول نفسَه إن غاب: كان NULL واحدٌ (sold_at غائب) يمحو السطرَ كلَّه فيرجع الفحصُ «» لا يُعرف ما الناقص.
 chk "  وسطرُ التدقيق يسمّيها «بيعة بيومٍ سابق» ويحمل يومَها" \
     "select coalesce((select coalesce(audit_kind(entity, action, details), 'no-kind')||'|'||coalesce(((details->>'sold_at')::timestamptz = (select created_at from invoices where id='$ID1'))::text, 'no-sold_at')||'|'||(details ? 'recorded_at')::text from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID1' limit 1), 'no-audit-row')" "sale_backdated|true|true"
+# والبابُ الذي تقرأ منه صفحةُ «سجل الحركات» نفسُه (activity_page: النوعُ من audit_kind والمختصرُ من activity_brief) —
+# لا السطرُ الخامّ وحده: صفحةٌ لا ترى النوعَ أو اليومَ ميزةٌ غيرُ موجودة ولو كان السطرُ صحيحاً.
+chk "  وصفحةُ «سجل الحركات» تقرؤها «بيع بيوم سابق» بيومها (activity_page)" \
+    "select _pf('$C1', 'select coalesce((select kind||''|''||coalesce(((brief->>''sold_at'')::timestamptz = (select created_at from invoices where id = ''$ID1''))::text, ''no-sold_at'') from activity_page(now() - interval ''1 hour'', now() + interval ''1 hour'', array[''sale_backdated'']) where entity_id = ''$ID1'' limit 1), ''no-row'')')" "sale_backdated|true"
 chk "  وحركةُ المادة تُسمّى «بيع» برقم الفاتورة — لا «تعديل» مجهول" \
     "select kind||':'||delta::int::text||':'||(ref_id = '$ID1')::text from (select set_config('request.jwt.claim.sub','$C1',true)) s, product_movements('${BD}01') order by at desc limit 1" "sale:-2:true"
 
@@ -5868,16 +5877,19 @@ chk "photo_products تعطي المصوّرَ الرموزَ الإضافية م
     "select _pf('$PHO', 'select (e->>''barcode'')||''|''||(e->''alt_codes'')::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "243001|[\"6281000000001\",\"w90\"]"
 chk "  ومنتجٌ بلا إضافيّة: قائمةٌ فارغة لا null" \
     "select _pf('$PHO', 'select (e->''alt_codes'')::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}02''')" "[]"
-# العقدُ المقيس (CI أوّلاً، ثم الإنتاج قراءةً ١٧/١٠): سعرُ البيع يصل لمن يملك manageStore منذ 0228 — وقالبُ المصوّر
-# يحمله بقرار المالك (فحصُ «ويرى السعرَ والرصيد» بقسم 0228). كان هذا الفحصُ ينتظر عقدَ 0222 فطلع false. فالحارسُ
-# الصحيح مجموعةُ المفاتيح نفسُها: مفاتيحُ 0228 + alt_codes وحدها — أيُّ مفتاحٍ جديد (سعرُ شراء أو غيره) يُفشلها.
-chk "  ومفاتيحُ المصوّر هي عقدُ 0228 + alt_codes وحدها — لا سعرَ شراء ولا مفتاحَ بلا قرار" \
+# قرارُ المالك (١٧/١٠): الباركودات نعم، والسعرُ لا — لا شراءً ولا بيعاً. أوّلُ تشغيلٍ بـCI قاس أنّ 0228 كانت تعطيه
+# سعرَ البيع بقالب manageStore (والإنتاجُ قراءةً كذلك)؛ فـ0243 تحجبه عنه وحده. والمديرُ يراه كما كان.
+chk "  ولا سعرَ شراءٍ ولا سعرَ بيعٍ للمصوّر — كما كان" \
+    "select _pf('$PHO', 'select (not (e ? ''purchase_price'') and e->>''sell_price'' is null)::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "true"
+chk "    ولو حمل قالبُه manageStore (الحجبُ للمصوّر بعينه، لا لفقد الإذن)" \
+    "select _pf('$PHO', 'select staff_can(''manageStore'')::text')" "true"
+chk "  ومفاتيحُه مفاتيحُ 0228 + alt_codes وحدها — لا مفتاحَ جديد بلا قرار (سعرُ الشراء أو غيره يُفشلها)" \
     "select _pf('$PHO', 'select string_agg(k, '','' order by k collate \"C\") from jsonb_array_elements(photo_products()) e, jsonb_object_keys(e) k where e->>''id'' = ''${PB}01''')" \
     "alt_codes,barcode,category,company_id,company_name,expiry_date,id,image_path,name,pooled,sell_price,stock,store_desc,store_featured,store_visible,subcategory"
-chk "  وسعرُ البيع يُرى بقدر manageStore وحده (عقدُ 0228 كما هو)" \
-    "select _pf('$PHO', 'select ((e->>''sell_price'' is not null) = staff_can(''manageStore''))::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "true"
 chk "  والمديرُ يراها كذلك (صفُّه الكامل يحملها أصلاً — والمتجرُ يتّفق للاثنين)" \
     "select _pf('$C1', 'select (e->''alt_codes'')::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "[\"6281000000001\",\"w90\"]"
+chk "  والمديرُ يرى سعرَ البيع كما كان — الحجبُ للمصوّر وحده" \
+    "select _pf('$C1', 'select (e->>''sell_price'')::numeric::int::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "1000"
 chk "  والسياجُ كاملٌ بعدها" \
     "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
 

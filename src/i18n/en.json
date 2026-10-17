@@ -4503,7 +4503,7 @@
     "manageStaff": "Manage staff and permissions",
     "viewPayroll": "Staff payroll and advances",
     "manageProductPhotos": "Product photos (shoot and replace)",
-    "manageStore": "Online store — products, storefront & sell price (no orders)"
+    "manageStore": "Online store — products & storefront (no orders); sell price for manager & vet"
   },
   "features": {
     "pos": "Point of sale, billing and invoices",

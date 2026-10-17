@@ -17,8 +17,10 @@ import { cn, formatNum, money } from "@/lib/utils";
 
 export interface CardCat { id: string; name: string; icon: string }
 
-export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice, onPhoto, onLib, onToggle, onFeatured, onDetails, onPrice, onArm, codeHit = null }: {
+export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice, onPhoto, onLib, onToggle, onFeatured, onDetails, onPrice, onArm, codeHit = null, showPrice = true }: {
   p: Product;
+  /** 0243: موظّفُ التصوير لا يرى سعرَ البيع (قرارُ المالك) — لا يُرسم سعرٌ، والرصيدُ وحده. */
+  showPrice?: boolean;
   /** الرمزُ الذي طابق البحثَ حين لم يطابق الاسم (0243) — يُقال على البطاقة كي لا تبدو نتيجةً عشوائية. */
   codeHit?: string | null;
   picked: boolean;
@@ -106,6 +108,8 @@ export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice,
             <input autoFocus type="number" inputMode="decimal" value={draft} onChange={(e) => setDraft(e.target.value)}
               onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setPricing(false); }}
               aria-label={t("cat.priceLabel", "السعر")} className="input h-8 w-full text-end text-sm font-bold" />
+          ) : !showPrice ? (
+            <span data-catnoprice />
           ) : canPrice ? (
             <button type="button" onClick={() => { playTap(); setDraft(String(p.sell_price)); setPricing(true); }} data-catprice
               title={t("cat.priceEdit", "اضغط لتعديل السعر")} className="group flex items-center gap-1 rounded-lg px-1 py-0.5 transition hover:bg-surface-2">
