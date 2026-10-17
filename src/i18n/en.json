@@ -947,6 +947,7 @@
     "loadMoreDays": "Show {{d}} more days",
     "searchAllHistory": "Search covers the whole history",
     "invoicesLoadFailed": "Could not load invoices. It is a connection problem and no invoice is lost — try again.",
+    "debtsDeliveryFailed": "Could not load delivery orders. Without them, money a customer already paid the courier shows as their debt — try again before reviewing debts.",
     "retSearchServerHint": "Type a name, phone or invoice number — search covers the whole history",
     "multPadTitle": "Bulk quantity",
     "multPadHint": "Type the number, then scan the barcode or tap the item — it is added in one go",

@@ -222,6 +222,12 @@ const db = SRC("src/components/retail/DebtsPanel.tsx");
 check("دفترُ الديون يبني رقمَ الذمّة بـcompanyOwed", /companyOwed\(carrierOwedOrders/.test(db));
 check("ولا يجمع dueOf بحلقةٍ فوق المسلَّم غيرِ المختوم",
   !/for\s*\(const o of carrierOwedOrders\)/.test(db));
+/* وفشلُ جلب التوصيل بلا لقطةٍ لا يصير «ماكو طلبات»: كان كلُّ مالِ المندوب يهبط ديناً
+ * على الزبون. الدفترُ لا يُرسم قبل أن تُعرف الطلبات، والفشلُ بطاقةُ إعادة. */
+check("فشلُ جلب التوصيل حالةُ خطأ، لا قائمةٌ فارغة",
+  /\.catch\(\(\)\s*=>\s*\{\s*if\s*\(alive\)\s*setDeliveryFailed\(true\)/.test(db) && !/setDeliveryOrders\(\s*\(\w*\)\s*=>\s*\w+\s*\?\?\s*\[\]/.test(db));
+check("ودفترُ الديون لا يُرسم قبل أن تُعرف الطلبات — بطاقةُ إعادةٍ عند الفشل",
+  /if\s*\(!deliveryReady\)\s*\{\s*return\s+deliveryFailed\s*\?/.test(db) && /data-debtsfailed/.test(db));
 
 console.log(`\n${fails ? "✗" : "✓"} courier-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

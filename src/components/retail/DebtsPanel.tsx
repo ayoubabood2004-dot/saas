@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Search, HandCoins, User, Phone, CalendarClock, Coins, Users,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Wallet, ChevronLeft,
-  ArrowRight, Receipt, BookUser, ReceiptText, Building2,
+  ArrowRight, Receipt, BookUser, ReceiptText, Building2, RotateCcw, Loader2,
 } from "lucide-react";
 import type { Invoice, PaymentMethod, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
@@ -56,14 +56,19 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
   // FLASH in the debtors list for a beat and then vanish.
   const dKey = `delivorders_${clinicId ?? ""}`;
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[] | null>(() => getCached<DeliveryOrder[]>(dKey) ?? null);
+  /* فشلُ الجلب ليس «ماكو طلبات». كان الاحتياطُ `cur ?? []`، فبلا لقطةٍ يصير كلُّ
+   * طلبِ دفعٍ عند الاستلام بالطريق وكلُّ مسلَّمٍ بذمّة الشركة ديناً على الزبون —
+   * فيُتّصل به على مالٍ دفعه للمندوب. اللقطةُ تُبقى إن وُجدت؛ وإلا فبطاقةُ إعادة. */
+  const [deliveryFailed, setDeliveryFailed] = useState(false);
+  const [deliveryTry, setDeliveryTry] = useState(0);
   useEffect(() => {
     let alive = true;
     repo.listDeliveryOrders(clinicId)
-      .then((os: DeliveryOrder[]) => { setCached(dKey, os); if (alive) setDeliveryOrders(os); })
-      .catch(() => { if (alive) setDeliveryOrders((cur) => cur ?? []); });
+      .then((os: DeliveryOrder[]) => { setCached(dKey, os); if (alive) { setDeliveryOrders(os); setDeliveryFailed(false); } })
+      .catch(() => { if (alive) setDeliveryFailed(true); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clinicId, invoices]);
+  }, [clinicId, invoices, deliveryTry]);
   const deliveryReady = deliveryOrders !== null;
   const activeDeliveryOrders = useMemo(
     () => (deliveryOrders ?? []).filter((o) => o.status === "preparing" || o.status === "out"),
@@ -144,6 +149,19 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
   const open = openKey ? ledgers.find((g) => g.key === openKey) ?? null : null;
   if (openKey) {
     return <CustomerLedger ledger={open} onBack={() => setOpenKey(null)} onChanged={onChanged} />;
+  }
+
+  // بلا طلبات التوصيل لا يُفرز دينُ الزبون عن مال المندوب — فلا مجموعَ ولا أسماء:
+  // بطاقةُ إعادةٍ عند الفشل، ودوّارةٌ أثناء أوّل جلب (لا «لا توجد ديون» قبل أن نعرف).
+  if (!deliveryReady) {
+    return deliveryFailed ? (
+      <div className="card space-y-3 p-8 text-center" data-debtsfailed>
+        <p className="mx-auto max-w-md text-sm text-ink-subtle">{t("retail.debtsDeliveryFailed", "تعذّر جلب طلبات التوصيل، وبدونها يظهر على الزبون مالٌ دفعه للمندوب. أعد المحاولة قبل ما تراجع الديون.")}</p>
+        <Button variant="secondary" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setDeliveryFailed(false); setDeliveryTry((n) => n + 1); }}>{t("common.retry", "Retry")}</Button>
+      </div>
+    ) : (
+      <div className="card grid place-items-center p-12 text-ink-subtle"><Loader2 size={18} className="animate-spin" /></div>
+    );
   }
 
   // ── Level 1: debtors list ──
