@@ -57,6 +57,7 @@ import { draftOnMount } from "@/lib/retailBridge";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError, shouldReleaseRef } from "@/lib/errors";
+import { readPriceDraft } from "@/lib/priceDraft";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
@@ -1787,10 +1788,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const codAmount = round2(Math.max(0, effTotal - totalPaid));
 
   // ---- Final-price override (acts as an approximate discount) ----------------
-  const beginEditTotal = () => { setTotalDraft(String(Math.round(total))); setEditingTotal(true); };
+  // يفتح فارغاً والإجماليُّ باهتٌ فيه، والفارغُ «لا تغيير» — كان مسحُ الحقل ثم النقرُ خارجه
+  // يجعل الفاتورةَ كلَّها صفراً، والكتابةُ فوق القديم تُلحَق به (`priceDraft.ts`).
+  const beginEditTotal = () => { setTotalDraft(""); setEditingTotal(true); };
   const commitTotal = () => {
-    const v = Number(totalDraft);
-    if (!Number.isNaN(v) && v >= 0) { setFinalOverride(Math.max(0, Math.round(v))); setDiscountValue(""); }
+    const v = readPriceDraft(totalDraft);
+    if (v != null) { setFinalOverride(Math.max(0, Math.round(v))); setDiscountValue(""); }
     setEditingTotal(false);
   };
   const clearFinalOverride = () => { playTap(); setFinalOverride(null); };
@@ -2091,6 +2094,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
+      /* F2 ومحرّرُ سعرٍ مفتوح: المكتوبُ فيه **مسوّدة** لم تدخل السلّة بعد، فكان F2 يبيع بالسعر
+       * القديم والرقمُ الجديد ظاهرٌ بالحقل — «كتبتُ السعر بالكيبورد وما تغيّر». فالضغطةُ تحفظ
+       * المسوّدةَ (الإغلاقُ يحفظ) وتقف: يرى الطبيبُ الإجماليَّ الجديد، والضغطةُ الثانية تبيع. */
+      if (e.key === "F2" && el instanceof HTMLInputElement && (el.dataset.priceedit != null || el.dataset.totaledit != null)) {
+        e.preventDefault(); el.blur(); return;
+      }
       // بعد إتمام البيع (شاشة الإيصال) لا يُعاد الإصدار بـF2 — كان يصنع طلبَ توصيلٍ ثانياً.
       if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !switchAsk && !needsDebtName && !busy && !done && !custClearAsk && !resetAsk) void checkout(); }
     };
@@ -3831,10 +3840,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                   <span className="text-2xs font-bold text-ink-subtle">{currencySymbol()}</span>
                   <input
                     autoFocus type="number" min="0" step="1" inputMode="numeric" value={totalDraft}
+                    placeholder={String(Math.round(total))} data-totaledit
                     onChange={(e) => setTotalDraft(e.target.value)}
                     onBlur={commitTotal}
-                    onKeyDown={(e) => { if (e.key === "Enter") commitTotal(); if (e.key === "Escape") setEditingTotal(false); }}
-                    className="w-28 rounded-lg border border-brand-400 bg-surface-1 px-2 py-1 text-end font-display text-lg font-extrabold tabular-nums text-ink outline-none"
+                    // العجلةُ والسهمان على حقلٍ فارغ يكتبان «0»/«1» إجماليّاً — انظر PriceEdit.
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+                      if (e.key === "Enter") commitTotal();
+                      if (e.key === "Escape") setEditingTotal(false);
+                    }}
+                    className="w-28 rounded-lg border border-brand-400 bg-surface-1 px-2 py-1 text-end font-display text-lg font-extrabold tabular-nums text-ink outline-none placeholder:text-ink-subtle"
                   />
                 </div>
               ) : (
@@ -4166,15 +4182,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
 }
 
 /** Inline click-to-edit price — the crux of the per-sale override. Edits only this
- *  cart line's price; the service's default in Settings is never touched. */
+ *  cart line's price; the service's default in Settings is never touched.
+ *  يفتح فارغاً والسعرُ الحاليّ باهتٌ فيه: كان يفتح والقديمُ فيه فتُلحَق الكتابةُ به
+ *  (١٨ ثم «٢٥» ⇐ ١٬٨٢٥). والفارغُ «لا تغيير» لا صفر — `priceDraft.ts`. */
 function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
   const commit = () => {
-    const n = Number(draft);
-    if (!Number.isNaN(n) && n >= 0) onChange(n);
+    const n = readPriceDraft(draft);
+    if (n != null) onChange(n);
     setEditing(false);
   };
 
@@ -4182,17 +4200,26 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
     return (
       <input
         autoFocus type="number" min="0" step="1" inputMode="numeric" value={draft}
+        placeholder={String(Math.round(value * 100) / 100)} data-priceedit
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
-        className="w-16 rounded-md border border-brand-400 bg-surface-1 px-1.5 py-0.5 text-xs font-bold tabular-nums text-ink outline-none"
+        /* الحقلُ فارغ، والعجلةُ والسهمان يخطوان من الصفر لا من السعر: نقرةُ عجلةٍ واحدة كانت
+           تكتب «0» ويحفظها الإغلاقُ سعراً مقصوداً — بيعٌ مجّانيّ. فالعجلةُ تُغلق (الفارغُ لا يغيّر)،
+           والسهمان لا يخطوان. (`preventDefault` بالعجلة لا يعمل: مستمعُ React عليها سلبيّ.) */
+        onWheel={(e) => e.currentTarget.blur()}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-16 rounded-md border border-brand-400 bg-surface-1 px-1.5 py-0.5 text-xs font-bold tabular-nums text-ink outline-none placeholder:text-ink-subtle"
       />
     );
   }
   return (
     <button
       type="button"
-      onClick={() => { setDraft(String(Math.round(value))); setEditing(true); }}
+      onClick={() => { setDraft(""); setEditing(true); }}
       title={t("retail.editPrice", "Edit price")}
       className="inline-flex items-center gap-1 rounded-md px-1 font-bold tabular-nums text-brand-700 underline decoration-dotted underline-offset-2 transition hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/15"
     >
