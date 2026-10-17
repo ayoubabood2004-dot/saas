@@ -2057,14 +2057,13 @@ const supabaseRepo: DemoRepo = {
   },
 
   async listPurchasePayments(purchaseId) {
-    // قبل ترحيل 0076 لا يوجد جدول purchase_payments — أعد قائمة فارغة.
-    try {
-      const r = await sbc().from("purchase_payments").select("*").eq("purchase_id", purchaseId).order("paid_at", { ascending: false });
-      if (r.error) return [];
-      return (r.data ?? []) as PurchasePayment[];
-    } catch {
-      return [];
-    }
+    // يرمي ولا يبلع: سجلٌّ فارغٌ عن خطأ يقول «ما سدّدنا شي» عن فاتورةٍ سُدّدت، والنافذةُ تقول
+    // «تعذّر» بدله. كان `if (r.error) return []` يبلع **كلَّ** خطأ — و`postgrest-js` يحوّل فشلَ
+    // الشبكة إلى `res.error` — فكان `catch` النافذة ميّتاً. يُستثنى غيابُ الجدول وحده (قبل 0076،
+    // والتسديدُ مخفيٌّ عندها بـsupportsSupplierLedger).
+    const r = await sbc().from("purchase_payments").select("*").eq("purchase_id", purchaseId).order("paid_at", { ascending: false });
+    if (r.error && (r.error.code === "42P01" || r.error.code === "PGRST205")) return [];
+    return listOrThrow<PurchasePayment>(r);
   },
   async settlePurchase(purchaseId, amount, method = "cash", note) {
     return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));

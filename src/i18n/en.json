@@ -1368,6 +1368,7 @@
     "settleAll": "Full amount ({{v}})",
     "settleOpen": "Settle the debt — {{v}} remaining",
     "paymentsLog": "Payment log",
+    "paymentsFailed": "Could not load the payment log — the amounts above are correct. Retry.",
     "supplierName": "Supplier / rep name",
     "supplierNamePh": "e.g. Abu Ali — company rep",
     "supplierPhone": "Supplier phone",

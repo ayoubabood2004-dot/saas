@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles, ListChecks, AlertTriangle,
   Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
-  UserRound, Phone, HandCoins, Pencil,
+  UserRound, Phone, HandCoins, Pencil, RotateCcw,
 } from "lucide-react";
 import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
@@ -326,9 +326,13 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
-  const [items, setItems] = useState<PurchaseItem[]>([]);
-  const [payments, setPayments] = useState<PurchasePayment[]>([]);
-  const [loading, setLoading] = useState(false);
+  /* البضاعةُ والتسديداتُ ولمن هي: «تعذّر» حالةٌ لا قائمةٌ فارغة. كان الفشلُ يُبلع إلى `[]`
+     فتُعرض الفاتورةُ بجدولٍ بلا بضاعة تحت إجماليٍّ حقيقيّ، وتُطبع ناقصة، و«تعديل» يفتح
+     البنّاءَ بلا سطور — وحفظُه يعكس مخزونَ كلِّ سطرٍ غاب (`update_purchase` يقرأ القديمَ من
+     القاعدة). والمعرّفُ يمنع إطاراً بسطورِ فاتورةٍ سابقة. */
+  const [lines, setLines] = useState<{ of: string; items: PurchaseItem[] | "failed" } | null>(null);
+  const [pays, setPays] = useState<{ of: string; list: PurchasePayment[] | "failed" } | null>(null);
+  const [linesTry, setLinesTry] = useState(0);
   // التسديد يحدّث الفاتورة — نعرض نسخة محلية تعكس الدفعات فوراً.
   const [purchase, setPurchase] = useState<Purchase | null>(purchaseProp);
   const [settling, setSettling] = useState(false);
@@ -342,22 +346,37 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   useEffect(() => {
     setPurchase(purchaseProp);
     setSettling(false); setPayAmount(""); setPayMethod("cash"); setPayNote("");
-    if (!purchaseProp) { setItems([]); setPayments([]); return; }
-    let alive = true;
-    setLoading(true);
-    Promise.all([
-      repo.listPurchaseItems(purchaseProp.id).catch(() => [] as PurchaseItem[]),
-      repo.listPurchasePayments(purchaseProp.id).catch(() => [] as PurchasePayment[]),
-      repo.supportsSupplierLedger().catch(() => true),
-    ])
-      .then(([rows, pays, ok]) => { if (alive) { setItems(rows); setPayments(pays); setLedgerOk(ok); } })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
   }, [purchaseProp]);
 
+  useEffect(() => {
+    setLines(null); setPays(null);
+    if (!purchaseProp) return;
+    const id = purchaseProp.id;
+    let alive = true;
+    // كلٌّ يُحكم وحده: بضاعةٌ وصلت لا تُحجب لأن سجلَّ التسديدات تعذّر، والعكس.
+    repo.listPurchaseItems(id)
+      .then((r) => { if (alive) setLines({ of: id, items: r }); })
+      .catch(() => { if (alive) setLines({ of: id, items: "failed" }); });
+    repo.listPurchasePayments(id)
+      .then((r) => { if (alive) setPays({ of: id, list: r }); })
+      .catch(() => { if (alive) setPays({ of: id, list: "failed" }); });
+    repo.supportsSupplierLedger().catch(() => true).then((ok) => { if (alive) setLedgerOk(ok); });
+    return () => { alive = false; };
+  }, [purchaseProp, linesTry]);
+
   if (!purchase) return null;
+  const gotLines = lines?.of === purchase.id ? lines.items : null;
+  const itemsFailed = gotLines === "failed";
+  /** null = لم تُعرف بعد (تُجلب أو تعذّرت) — فلا جدولٌ فارغ، ولا طباعة، ولا تعديل. */
+  const items = Array.isArray(gotLines) ? gotLines : null;
+  const gotPays = pays?.of === purchase.id ? pays.list : null;
+  const paymentsFailed = gotPays === "failed";
+  const payments = Array.isArray(gotPays) ? gotPays : null;
+  /* المدفوعُ والمتبقّي من صفّ الفاتورة (`amount_paid`) لا من سجلّ التسديدات — فالتسديدُ لا
+     ينتظر السجلّ، والسجلُّ عرضٌ وحده. */
   const paid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
   const due = Math.max(0, purchase.total - paid);
+  const retry = () => { playTap(); setLinesTry((n) => n + 1); };
 
   const settle = async () => {
     if (payBusy) return;
@@ -367,8 +386,10 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
     try {
       const updated = await repo.settlePurchase(purchase.id, amt, payMethod, payNote.trim() || null);
       if (updated) setPurchase(updated);
-      const pays = await repo.listPurchasePayments(purchase.id).catch(() => payments);
-      setPayments(pays);
+      // السجلُّ القديم بلا الدفعة التي سُدّدت للتوّ قائمةٌ ناقصة — فإن تعذّر جلبُه قيل «تعذّر».
+      const id = purchase.id;
+      try { setPays({ of: id, list: await repo.listPurchasePayments(id) }); }
+      catch { setPays({ of: id, list: "failed" }); }
       setSettling(false); setPayAmount(""); setPayNote("");
       playSuccess();
       toast.success(t("purchase.settled", { v: money(amt), defaultValue: "سُدِّد {{v}} من دين هذه الفاتورة" }));
@@ -382,6 +403,7 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   };
 
   const print = () => {
+    if (!items) return;
     const ok = openPurchasePrint(purchase, items, printOptions(user, i18n.language));
     if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
     else void repo.logClientEvent("purchase.print", { ref: purchaseNo(purchase.id) });
@@ -403,7 +425,12 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
           <Badge tone={statusTone(purchase.status)}>{t(`purchase.status.${purchase.status ?? "paid"}`, purchase.status ?? "paid")}</Badge>
         </div>
 
-        {loading ? (
+        {itemsFailed ? (
+          <div className="space-y-2.5 rounded-2xl border border-line p-4 text-center" data-puritemsfailed>
+            <p className="text-sm text-ink-subtle">{t("retail.printItemsFailed", "تعذّر جلب سطور الفاتورة — ما تنطبع ناقصة. أعد المحاولة.")}</p>
+            <Button variant="secondary" size="sm" leftIcon={<RotateCcw size={14} />} onClick={retry}>{t("common.retry", "إعادة المحاولة")}</Button>
+          </div>
+        ) : !items ? (
           <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-line">
@@ -475,8 +502,13 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
           )
         )}
 
-        {/* سجل التسديدات — كل دفعة انسدّت على هذه الفاتورة */}
-        {payments.length > 0 && (
+        {/* سجل التسديدات — كل دفعة انسدّت على هذه الفاتورة. وتعذُّرُه يُقال: غيابُ السجلّ يُقرأ «ما سدّدنا شي». */}
+        {paymentsFailed ? (
+          <div className="space-y-2.5 rounded-2xl border border-line p-4 text-center" data-purpaysfailed>
+            <p className="text-sm text-ink-subtle">{t("purchase.paymentsFailed", "تعذّر جلب سجل التسديدات — المبالغ أعلاه صحيحة. أعد المحاولة.")}</p>
+            <Button variant="secondary" size="sm" leftIcon={<RotateCcw size={14} />} onClick={retry}>{t("common.retry", "إعادة المحاولة")}</Button>
+          </div>
+        ) : payments && payments.length > 0 && (
           <div className="overflow-hidden rounded-2xl border border-line">
             <p className="flex items-center gap-1.5 bg-surface-2 p-2.5 text-xs font-bold text-ink-muted"><HandCoins size={13} /> {t("purchase.paymentsLog", "سجل التسديدات")}</p>
             {payments.map((pp) => (
@@ -494,13 +526,15 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
         <div className="flex flex-col gap-2 sm:flex-row">
           {/* تعديل الفاتورة: نسيت سطراً؟ كمية غلط؟ — يفتح البنّاء بنفس السطور
-              والمخزون يتحرك بالفرق فقط عند الحفظ. */}
-          {onEdit && !loading && (
-            <Button variant="secondary" className="flex-1" data-editpurchase leftIcon={<Pencil size={16} />} onClick={() => { playTap(); onEdit(purchase, items); }}>
+              والمخزون يتحرك بالفرق فقط عند الحفظ. ولا تعديلَ ولا طباعةَ قبل أن تُعرف
+              البضاعة: البنّاءُ بلا سطورٍ يعكس مخزونَها كلَّه عند الحفظ، والورقةُ بلا
+              سطورٍ إجماليٌّ بلا بضاعة. */}
+          {onEdit && (
+            <Button variant="secondary" className="flex-1" data-editpurchase disabled={!items} leftIcon={<Pencil size={16} />} onClick={() => { if (!items) return; playTap(); onEdit(purchase, items); }}>
               {t("purchase.editTitle", "تعديل فاتورة شراء")}
             </Button>
           )}
-          <Button className="flex-1" leftIcon={<Printer size={16} />} onClick={print}>{t("purchase.print", "طباعة الفاتورة")}</Button>
+          <Button className="flex-1" data-purprint disabled={!items} leftIcon={<Printer size={16} />} onClick={print}>{t("purchase.print", "طباعة الفاتورة")}</Button>
         </div>
       </div>
     </Modal>

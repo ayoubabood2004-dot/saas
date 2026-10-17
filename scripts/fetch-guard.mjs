@@ -26,6 +26,8 @@ const ROOT = "src";
 const DECISION_LISTS = [
   "listInvoiceItems",
   "listPurchaseItems",
+  // سجلُّ تسديدات فاتورة الشراء: فارغٌ عن خطأ يقول «ما سدّدنا شي» عن فاتورةٍ سُدّدت.
+  "listPurchasePayments",
   "searchInvoices",
   "listDeletedProducts",
   "listStoreOrders",
@@ -91,7 +93,10 @@ for (const name of DECISION_LISTS) {
 }
 
 /* ── ٢) لا ابتلاعَ صامتاً بالشاشات الحرجة ──────────────────────────────── */
-const SWALLOW = /\.catch\s*\(\s*\(\s*\)\s*=>\s*(\[\s*\]|\{\s*\}|null|undefined)\s*\)/;
+/* والصبُّ لا يغيّر المعنى: `.catch(() => [] as PurchaseItem[])` هو `.catch(() => [])` بثوبٍ
+ * يرضي tsc — وبه نجت تفاصيلُ فاتورة الشراء: فشلُ `listPurchaseItems` صار «فاتورةٌ بلا بضاعة»
+ * تُطبع ناقصةً ويفتح «تعديل» بنّاءها بلا سطور. ومثلُه وسيطٌ مُسمّى (`(e) =>` و`e =>`). */
+const SWALLOW = /\.catch\s*\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*(?:\[\s*\]|\{\s*\}|null|undefined)(?:\s+as\s+[^)]+)?\s*\)/;
 /* ونفسُ الابتلاع بصيغة `try/catch`: `catch { setX([]) }` يكتب «ماكو» مكانَ «ما وصلنا»
  * (بحثُ الزبون ومنتقي الحيوانات بشاشة البيع كانا هكذا — 0232). */
 const CATCH_EMPTY = /catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\s*\[\s*\]\s*\)/;
