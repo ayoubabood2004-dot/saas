@@ -5755,6 +5755,17 @@ $P -c "delete from staff_elevations; delete from memberships where user_id = '$M
 # ── 0242: «تاريخ المبيع» — فاتورةٌ نُسيت تُسجَّل بيومها ─────────────────────────
 echo "▸ 0242: فاتورةٌ نُسيت تُسجَّل بيومها — بشرطها، وبلا بابٍ جانبيّ"
 BD=b2420000-0000-4000-8000-0000000000
+# الحزمةُ تعيد تنزيلَ هجراتٍ أقدم بأقسامها (0226 بقسم الأسعار، و0241 مرّتين بقسمها) فترجع audit_change
+# وaudit_kind لنسختيهما — وبالإنتاج 0242 آخرُ من يعرّفهما. أوّلُ تشغيلٍ بـCI قاسها: سطرُ التدقيق بلا sold_at
+# فرجع الفحصُ فارغاً. فالشرطُ نفسُه يُقاس أوّلاً **على الملفّات** (آخرُ تعريفٍ بالهجرات هو ما يعيش بالإنتاج — نسخةٌ
+# لاحقةٌ من نصٍّ أقدم كانت ستُسقط الفرعين بصمت)، ثم تُعاد 0242 هنا كما يعيد قسمُ 0241 هجرتَه.
+LAST_AC=$(grep -lE "create or replace function (public\.)?audit_change\(" "$MIG"/*.sql | sort | tail -1)
+LAST_AK=$(grep -lE "create or replace function (public\.)?audit_kind\(" "$MIG"/*.sql | sort | tail -1)
+chk "آخرُ تعريفٍ لـaudit_change بالهجرات يحفظ ختمَ الإدخال ويومَ البيع ($(basename "$LAST_AC"))" \
+    "select '$(grep -q "'recorded_at'" "$LAST_AC" && grep -q "sold_at" "$LAST_AC" && echo true || echo false)'" "true"
+chk "  وآخرُ تعريفٍ لـaudit_kind يسمّي sale_backdated ($(basename "$LAST_AK"))" \
+    "select '$(grep -q "sale_backdated" "$LAST_AK" && echo true || echo false)'" "true"
+out=$($P -f "$MIG/0242_backdated_sale.sql" 2>&1) || { echo "$out"; echo "   ✗ 0242 ما انعادت"; fail=1; }
 # محفّزُ التدقيق على الفواتير بشكل الإنتاج (audit_all) — القالبُ كان بلاه، والتسميةُ تُقرأ منه.
 $P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
        drop trigger if exists audit_all on invoices;
@@ -5799,8 +5810,9 @@ chk "  والإعادةُ بنفس المرجع ترجع نفسَ الفاتور
     "select (_fgv('$C1', \$q\$$(co r242-1 "$(dayAt 1)")\$q\$) = '$ID1')::text||'|'||(select stock::int from products where id='${BD}01')::text" "true|8"
 chk "  **وإعادتُها بلا تاريخ (مسودّةٌ فقدته) ترجعها كما ثبتت — لا بيعةَ ثانيةً باليوم**" \
     "select (_fgv('$C1', \$q\$$(co r242-1 null)\$q\$) = '$ID1')::text||'|'||((select created_at from invoices where id='$ID1') < now() - interval '12 hours')::text" "true|true"
+# كلُّ جزءٍ يقول نفسَه إن غاب: كان NULL واحدٌ (sold_at غائب) يمحو السطرَ كلَّه فيرجع الفحصُ «» لا يُعرف ما الناقص.
 chk "  وسطرُ التدقيق يسمّيها «بيعة بيومٍ سابق» ويحمل يومَها" \
-    "select audit_kind(entity, action, details)||'|'||((details->>'sold_at')::timestamptz = (select created_at from invoices where id='$ID1'))::text||'|'||(details ? 'recorded_at')::text from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID1'" "sale_backdated|true|true"
+    "select coalesce((select coalesce(audit_kind(entity, action, details), 'no-kind')||'|'||coalesce(((details->>'sold_at')::timestamptz = (select created_at from invoices where id='$ID1'))::text, 'no-sold_at')||'|'||(details ? 'recorded_at')::text from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID1' limit 1), 'no-audit-row')" "sale_backdated|true|true"
 chk "  وحركةُ المادة تُسمّى «بيع» برقم الفاتورة — لا «تعديل» مجهول" \
     "select kind||':'||delta::int::text||':'||(ref_id = '$ID1')::text from (select set_config('request.jwt.claim.sub','$C1',true)) s, product_movements('${BD}01') order by at desc limit 1" "sale:-2:true"
 
@@ -5856,8 +5868,14 @@ chk "photo_products تعطي المصوّرَ الرموزَ الإضافية م
     "select _pf('$PHO', 'select (e->>''barcode'')||''|''||(e->''alt_codes'')::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "243001|[\"6281000000001\",\"w90\"]"
 chk "  ومنتجٌ بلا إضافيّة: قائمةٌ فارغة لا null" \
     "select _pf('$PHO', 'select (e->''alt_codes'')::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}02''')" "[]"
-chk "  ولا سعرَ شراءٍ ولا سعرَ بيعٍ للمصوّر — كما كان" \
-    "select _pf('$PHO', 'select (not (e ? ''purchase_price'') and e->>''sell_price'' is null)::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "true"
+# العقدُ المقيس (CI أوّلاً، ثم الإنتاج قراءةً ١٧/١٠): سعرُ البيع يصل لمن يملك manageStore منذ 0228 — وقالبُ المصوّر
+# يحمله بقرار المالك (فحصُ «ويرى السعرَ والرصيد» بقسم 0228). كان هذا الفحصُ ينتظر عقدَ 0222 فطلع false. فالحارسُ
+# الصحيح مجموعةُ المفاتيح نفسُها: مفاتيحُ 0228 + alt_codes وحدها — أيُّ مفتاحٍ جديد (سعرُ شراء أو غيره) يُفشلها.
+chk "  ومفاتيحُ المصوّر هي عقدُ 0228 + alt_codes وحدها — لا سعرَ شراء ولا مفتاحَ بلا قرار" \
+    "select _pf('$PHO', 'select string_agg(k, '','' order by k collate \"C\") from jsonb_array_elements(photo_products()) e, jsonb_object_keys(e) k where e->>''id'' = ''${PB}01''')" \
+    "alt_codes,barcode,category,company_id,company_name,expiry_date,id,image_path,name,pooled,sell_price,stock,store_desc,store_featured,store_visible,subcategory"
+chk "  وسعرُ البيع يُرى بقدر manageStore وحده (عقدُ 0228 كما هو)" \
+    "select _pf('$PHO', 'select ((e->>''sell_price'' is not null) = staff_can(''manageStore''))::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "true"
 chk "  والمديرُ يراها كذلك (صفُّه الكامل يحملها أصلاً — والمتجرُ يتّفق للاثنين)" \
     "select _pf('$C1', 'select (e->''alt_codes'')::text from jsonb_array_elements(photo_products()) e where e->>''id'' = ''${PB}01''')" "[\"6281000000001\",\"w90\"]"
 chk "  والسياجُ كاملٌ بعدها" \
