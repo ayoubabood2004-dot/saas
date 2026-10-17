@@ -5,6 +5,7 @@
  * ==========================================================================*/
 import type { Species, Sex } from "@/types";
 import { isEmptyIntake, type IntakeDraft } from "./intake";
+import { searchable } from "./utils";
 
 export type Disposition = "log" | "boarding" | "boardingCare" | "record";
 export type Health = "healthy" | "sick";
@@ -77,6 +78,31 @@ export function caseDraftIsEmpty(d: CaseDraft, baseline: OwnerFields = emptyOwne
 
 /** التخزينُ ممتلئ: نفس المسودّة بلا الصور (أثقلُ ما فيها). */
 export const lightenCaseDraft = (d: CaseDraft): CaseDraft => ({ ...d, animals: d.animals.map((a) => ({ ...a, photo: null })) });
+
+/**
+ * هل تصف هذه المسودّةُ الحالةَ التي انحفظت للتوّ؟ نفسُ المالك (اسمُه أو هاتفُه) وكلُّ حيوانٍ
+ * مسمّى فيها من المحفوظين. الطرفان يمرّان من `searchable` (همزة/ة/ى/أرقام)، والهاتفُ بأرقامه.
+ * مسودّةُ مالكٍ آخر أو حيوانٍ آخر تبقى — هي حالةٌ أخرى ما انحفظت.
+ */
+export function draftIsSavedCase(d: CaseDraft, owner: OwnerFields, savedNames: string[]): boolean {
+  const n = (s: string | null | undefined) => searchable(s ?? "").trim();
+  const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
+  const nameHit = !!n(d.owner?.name) && n(d.owner?.name) === n(owner.name);
+  const phoneHit = digits(d.owner?.phone).length >= 6 && digits(d.owner?.phone) === digits(owner.phone);
+  if (!nameHit && !phoneHit) return false;
+  const saved = new Set(savedNames.map(n).filter(Boolean));
+  return (d.animals ?? []).map((a) => n(a.name)).filter(Boolean).every((x) => saved.has(x));
+}
+
+/**
+ * «وُجد الحيوان» بمسودّة الرقم التسلسليّ: فقط والمربّعُ ما زال يحمل رقمَ الحيوان المعروض.
+ * عُدِّل المربّعُ بعد البحث ⇒ «لم يوجد» — الاسترجاعُ لا يبحث وحده عن رقمٍ لم يؤكّده الطبيب
+ * فيعلّق ملاحظاتِ حيوانٍ على آخر (تدقيقٌ عدائيّ).
+ */
+export function serialFound(text: string, petSerial: string | number | null | undefined, initial: Pick<SerialDraft, "found" | "serial">, notFound: boolean): boolean {
+  if (petSerial != null) return text.trim() !== "" && text.trim() === String(petSerial).trim();
+  return initial.found && text === initial.serial && !notFound;
+}
 
 /** ما يُقال بالعرض: المالك، وأسماءُ الحيوانات، ورقمُ التسلسل إن كان. */
 export function caseDraftWho(d: CaseDraft): { owner: string; animals: string[]; serial: string } {

@@ -26,9 +26,10 @@ import { prepareUpload } from "@/lib/image";
 import { uid, localISO, formatTime, formatDate } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useFormDraft } from "@/lib/useFormDraft";
+import { holdUpdates } from "@/lib/inflight";
 import type { DraftRecord } from "@/lib/formDraft";
 import {
-  caseDraftIsEmpty, caseDraftWho, emptyOwner, lightenCaseDraft,
+  caseDraftIsEmpty, caseDraftWho, draftIsSavedCase, emptyOwner, lightenCaseDraft, serialFound,
   type AnimalDraft, type CaseDraft, type Disposition, type Health, type OwnerFields, type SerialDraft,
 } from "@/lib/caseDraft";
 
@@ -180,6 +181,8 @@ export function NewCase() {
     // that arrives before the disabled state has rendered — no duplicate records.
     if (submittingRef.current || valid.length === 0) return;
     submittingRef.current = true;
+    // السلسلةُ (حيوان ثم دخول ثم زيارة ثم معلومات الحالة) لا يقطعها تحميلُ نسخةٍ جديدة إن بُدّلت الصفحة.
+    const releaseUpdates = holdUpdates();
     setIsSubmitting(true);
     // In live (Supabase) mode the pet's owner_id must reference a real account
     // (FK + row-level security). Clinic walk-ins have no owner account, so we
@@ -256,14 +259,18 @@ export function NewCase() {
     } finally {
       // Always re-enable, whether the save succeeded or failed.
       submittingRef.current = false;
+      releaseUpdates();
       setIsSubmitting(false);
     }
     playSuccess();
-    draft.clear(); // انحفظت بالقاعدة — المسودّةُ أدّت عملها
+    // انحفظت بالقاعدة — تُمسح مسودّتُها، وكلُّ مسودّةٍ أخرى تصف الحالةَ نفسَها (نفسُ المالك والحيوانات).
+    draft.clear((d) => draftIsSavedCase(d, { name: ownerName, phone, email, governorate, area }, results.map((r) => r.name)));
     if (intakeFailed.length) toast.error(t("intake.saveFail", { names: intakeFailed.join("، "), defaultValue: "انفتحت الحالة، بس معلومات الحالة ما انحفظت لـ{{names}} — ضيفها كملاحظة من ملفه." }));
     // Open Record Only with a single new patient: jump straight to the new file so
     // the doctor can verify it was opened (it's already in Clinic Records too).
-    if (results.length === 1 && results[0].disp === "record") {
+    // والانتقالُ لملفّه فقط بلا خطأ: توستُ «ما انحفظت معلومات الحالة» قبل الانتقال كان يمسحه
+    // تحميلُ النسخة الجديدة عند تبديل الصفحة — فيبقى على شاشة النتيجة (تدقيقٌ عدائيّ).
+    if (results.length === 1 && results[0].disp === "record" && intakeFailed.length === 0) {
       toast.success(t("newCase.recordOpened", "Record opened"));
       navigate(`/pet/${results[0].petId}`);
       return;
@@ -358,7 +365,7 @@ export function NewCase() {
       {entry === "serial" ? (
         <div className="mx-auto max-w-2xl">
           <SerialAdmit key={formKey} today={today} doctorName={user?.full_name ?? "Doctor"} initial={serial} onDraft={setSerial}
-            onAdmitted={(o) => { draft.clear(); setOutcomes([o]); }} />
+            onAdmitted={(o, sn) => { draft.clear((d) => d.entry === "serial" && !!sn && d.serial?.serial?.trim() === sn); setOutcomes([o]); }} />
         </div>
       ) : step === 1 ? (
         <div key={formKey} className="space-y-6 animate-fade-in">
@@ -650,7 +657,7 @@ function DispMini({ active, icon: Icon, label, onClick }: { active: boolean; ico
 
 /** Admit an EXISTING animal to the clinic by its serial — no new registration. */
 function SerialAdmit({ today, doctorName, initial, onDraft, onAdmitted }: {
-  today: string; doctorName: string; initial: SerialDraft; onDraft: (d: SerialDraft) => void; onAdmitted: (o: Outcome) => void;
+  today: string; doctorName: string; initial: SerialDraft; onDraft: (d: SerialDraft) => void; onAdmitted: (o: Outcome, serial: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -671,7 +678,7 @@ function SerialAdmit({ today, doctorName, initial, onDraft, onAdmitted }: {
   // كلُّ تغييرٍ يصعد لمسودّة الحالة (الأب يحفظها).
   useEffect(() => {
     // «وُجد» يبقى ما دام البحثُ عن رقم المسودّة لم يرجع بعد — وإلا حفظت تحميلةٌ بينهما «لم يوجد».
-    const found = !!pet || (initial.found && serial === initial.serial && !notFound);
+    const found = serialFound(serial, pet ? pet.serial : null, initial, notFound);
     onDraft({ serial, found, admittedOn, disp, cage, addMeds, health, diagnosis, intake });
   }, [serial, pet, notFound, admittedOn, disp, cage, addMeds, health, diagnosis, intake, onDraft, initial.found, initial.serial]);
 
@@ -692,6 +699,7 @@ function SerialAdmit({ today, doctorName, initial, onDraft, onAdmitted }: {
     // Same double-submit guard as the new-registration flow (synchronous ref + state).
     if (!pet || admittingRef.current) return;
     admittingRef.current = true;
+    const releaseUpdates = holdUpdates();
     setAdmitting(true);
     try {
       const dx = health === "sick" ? diagnosis.trim() : "";
@@ -715,10 +723,11 @@ function SerialAdmit({ today, doctorName, initial, onDraft, onAdmitted }: {
       return;
     } finally {
       admittingRef.current = false;
+      releaseUpdates();
       setAdmitting(false);
     }
     playSuccess();
-    onAdmitted({ petId: pet.id, name: pet.name, species: pet.species, disp, addMeds });
+    onAdmitted({ petId: pet.id, name: pet.name, species: pet.species, disp, addMeds }, String(pet.serial ?? "").trim());
   };
 
   return (

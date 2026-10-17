@@ -34,6 +34,7 @@ import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
+import { holdUpdates } from "@/lib/inflight";
 import { canBackdate, checkSaleMoment, saleTz } from "@/lib/saleDate";
 import { clockOf24 } from "@/lib/backdate";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -2282,6 +2283,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (exp.some((l) => !ack.expiredIds?.includes(l.id))) { playWarning(); setExpiredAsk({ lines: exp, ack }); return; }
     if (inFlightRef.current) return;
     inFlightRef.current = true;
+    /* النسخةُ الجديدة لا تُطبَّق حتى `finally`: بعد الوصل تكمل السلسلةُ مباشرةً بالخادم (الجرعة
+     * ثم المعزّزة، العملية، ملاحظةُ الحيوان) وزرُّ «رجوع لسجل» مفتوح — وتحميلٌ عند تبديل الصفحة
+     * كان يقطعها بلا توست (inflight.ts، تدقيقٌ عدائيّ ١٧/١٠). كلُّ انتظارٍ بعدها بمهلة، فالإفلاتُ مضمون. */
+    const releaseUpdates = holdUpdates();
     /* هل وُلد المرجعُ لهذا النداء؟ مرجعٌ قائم = محاولةٌ سابقةٌ مجهولةُ المصير (مهلة، أو
      * مسودّةٌ رجعت بعد تحديث) — ورفضُ هذه لا يقول شيئاً عن تلك. */
     const freshRef = !saleRefRef.current;
@@ -2620,6 +2625,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       setBusy(false);
       setPaying(false);   // شبكةُ أمان: خطأٌ غيرُ متوقَّع بين التثبيت والختم لا يُبقي القفل
       inFlightRef.current = false;
+      releaseUpdates();
     }
   };
 

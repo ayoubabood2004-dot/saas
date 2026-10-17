@@ -14,13 +14,21 @@
  *    حسم الأولى — لا تكتب واحدةٌ فوق الأخرى. فالعرضُ لا يُستبدل بالكتابة الجديدة.
  *  - العرض لا الاسترجاع الصامت: حالةُ أمس لا تهبط على مريض اليوم. يُعرض أحدثُها
  *    بما فيها (المالك، الحيوانات، الوقت) و«رجّعها» أو «احذفها».
- *  - تنتهي بعد ٧ أيام، وأقصاها ٥ بالنطاق (الأقدمُ يُطوى). والحفظُ الناجح يمسح مسودّتَه.
- *  - امتلأ التخزين؟ تُحفظ بلا الصور (`lighten`) ويُقال ذلك عند العرض.
+ *  - تنتهي بعد ٧ أيام، وأقصاها ٥ بالنطاق و١٢ بالجهاز كلِّه — والكنسُ يمرّ على **كلّ** النطاقات
+ *    عند فتح أيّ نموذج (`sweepDrafts`): مسودّةُ موظّفٍ ترك أو عيادةٍ زارها المشغّل لا تبقى للأبد.
+ *    والحفظُ الناجح يمسح مسودّتَه **ومسودّاتِ الحالة نفسِها** (`clear(also)`)، والخروجُ يمسحها كلَّها.
+ *  - الحجم: فوق ٤٠٠ ألف حرف، أو امتلأ التخزين، تُحفظ بلا الصور (`lighten`) ويُقال ذلك —
+ *    المسودّةُ لا تأكل مكانَ سلّة البيع ولا الطابور (تدقيقٌ عدائيّ).
  * ==========================================================================*/
 
-const PREFIX = "vp_draft:";
+import { DRAFT_PREFIX as PREFIX, draftsSuspended } from "./draftPurge";
+
 export const DRAFT_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 export const DRAFT_MAX_PER_SCOPE = 5;
+/** بالجهاز كلِّه (كلُّ المستخدمين والعيادات). */
+export const DRAFT_MAX_TOTAL = 12;
+/** فوقها تُحفظ بلا الصور — الصورةُ ١٥٠–٢٧٠ ألف حرف، والنصُّ وحده لا يبلغها. */
+export const DRAFT_MAX_CHARS = 400_000;
 
 /** ما يلزم من `localStorage` — تكفيه خريطةٌ بالفحص. */
 export interface DraftStorage {
@@ -75,13 +83,19 @@ export function listDrafts<T>(scope: DraftScope, store: DraftStorage | null = de
  */
 export function saveDraft<T>(scope: DraftScope, id: string, data: T, opts: { lighten?: (d: T) => T; store?: DraftStorage | null; now?: number } = {}): "full" | "light" | "failed" {
   const store = opts.store === undefined ? defaultStorage() : opts.store;
-  if (!store) return "failed";
+  if (!store || draftsSuspended()) return "failed";
   const now = opts.now ?? Date.now();
-  const put = (rec: DraftRecord<T>) => { store.setItem(keyOf(scope, id), JSON.stringify(rec)); };
+  // `id` و`savedAt` أوّلاً: الكنسُ يقرأ العمرَ من رأس القيمة بلا قراءة الصور.
+  const full = JSON.stringify({ id, savedAt: now, data } satisfies DraftRecord<T>);
+  const light = () => JSON.stringify({ id, savedAt: now, data: opts.lighten!(data), lightened: true } satisfies DraftRecord<T>);
   let result: "full" | "light" | "failed" = "failed";
-  try { put({ id, savedAt: now, data }); result = "full"; } catch {
-    if (opts.lighten) {
-      try { put({ id, savedAt: now, data: opts.lighten(data), lightened: true }); result = "light"; } catch { result = "failed"; }
+  if (full.length > DRAFT_MAX_CHARS && opts.lighten) {
+    try { store.setItem(keyOf(scope, id), light()); result = "light"; } catch { result = "failed"; }
+  } else {
+    try { store.setItem(keyOf(scope, id), full); result = "full"; } catch {
+      if (opts.lighten) {
+        try { store.setItem(keyOf(scope, id), light()); result = "light"; } catch { result = "failed"; }
+      }
     }
   }
   if (result !== "failed") {
@@ -94,6 +108,25 @@ export function saveDraft<T>(scope: DraftScope, id: string, data: T, opts: { lig
 
 export function dropDraft(scope: DraftScope, id: string, store: DraftStorage | null = defaultStorage()): void {
   try { store?.removeItem(keyOf(scope, id)); } catch { /* ignore */ }
+}
+
+/**
+ * كنسُ الجهاز كلِّه: كلُّ مسودّةٍ تالفة أو أقدمُ من ٧ أيام — أيّاً كان نطاقُها — تُمسح، ولا يبقى
+ * فوق `DRAFT_MAX_TOTAL` (الأقدمُ يُطوى). العمرُ يُقرأ من رأس القيمة (الصورُ لا تُقرأ).
+ */
+export function sweepDrafts(store: DraftStorage | null = defaultStorage(), now = Date.now()): void {
+  if (!store) return;
+  const live: { k: string; at: number }[] = [];
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k?.startsWith(PREFIX)) keys.push(k); }
+    for (const k of keys) {
+      const at = Number(/"savedAt":(\d+)/.exec((store.getItem(k) ?? "").slice(0, 160))?.[1] ?? NaN);
+      if (!Number.isFinite(at) || now - at > DRAFT_MAX_AGE_MS) store.removeItem(k);
+      else live.push({ k, at });
+    }
+    live.sort((a, b) => b.at - a.at).slice(DRAFT_MAX_TOTAL).forEach((d) => store.removeItem(d.k));
+  } catch { /* تخزينٌ ممنوع */ }
 }
 
 export function newDraftId(): string {

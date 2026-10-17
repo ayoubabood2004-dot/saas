@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dropDraft, listDrafts, newDraftId, saveDraft, type DraftRecord, type DraftScope } from "./formDraft";
+import { dropDraft, listDrafts, newDraftId, saveDraft, scopePrefix, sweepDrafts, type DraftRecord, type DraftScope } from "./formDraft";
 
 /**
  * مسودّةُ نموذجٍ بحياة المكوّن (formDraft.ts للقواعد).
  *  - تحفظ كلَّ تغييرٍ بعد ٣٠٠ms، وفوراً عند `pagehide` (التحميل والإغلاق) وعند خروج المكوّن.
  *  - `offer`: أحدثُ مسودّةٍ غير فارغة **لفتحةٍ أخرى** — تُعرض، ولا تُسترجع وحدها.
  *  - `take()` يتبنّاها (يكمل الحفظَ عليها)، و`dismiss()` يمسحها ويرجعها للتراجع.
- *  - `clear()` بعد الحفظ الناجح: تُمسح مسودّةُ هذه الفتحة ويقف الحفظ.
+ *  - `clear(also)` بعد الحفظ الناجح: تُمسح مسودّةُ هذه الفتحة **وما يصف الحالةَ نفسَها**
+ *    من فتحاتٍ أخرى (كُتبت ثم رُجع للسجلّ وبُدئت من جديد) — وإلا بقيت «ما انحفظت» عن حالةٍ
+ *    انحفظت، ومن يصدّقها يسجّل الحيوانَ مرّتين (تدقيقٌ عدائيّ).
+ *  - **الفتحةُ مربوطةٌ بنطاقها**: عيادةٌ أو مستخدمٌ تبدّل والنموذجُ مفتوح (جلسةُ المشغّل انتهت،
+ *    my_workspace فشل لحظةً، عضويةٌ أُزيلت) ⇒ يقف الحفظ؛ ما كُتب لعيادة لا يُكتب بنطاق أخرى
+ *    فيُعرض فيها ويُسجَّل بأرضها (0153، ١٣/١٠). يرجع النطاقُ ⇒ يرجع الحفظ.
  * `scope` فارغ (لا مستخدم بعد) ⇒ لا حفظَ ولا عرض.
  */
 export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
@@ -15,8 +20,10 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
   isEmpty: (v: T) => boolean;
   lighten?: (v: T) => T;
 }) {
-  const scopeKey = scope ? `${scope.form}|${scope.clinic ?? ""}|${scope.user ?? ""}` : "";
+  const scopeKey = scope ? scopePrefix(scope) : "";
   const idRef = useRef<string>(newDraftId());
+  /** النطاقُ الذي تكتب فيه هذه الفتحة — يُثبَّت بأوّل نطاقٍ معروف. */
+  const slot = useRef<DraftScope | null>(scope);
   const closed = useRef(false);
   const latest = useRef({ scope, value, isEmpty, lighten });
   latest.current = { scope, value, isEmpty, lighten };
@@ -27,7 +34,7 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
     return listDrafts<T>(s).filter((d) => d.id !== idRef.current && !latest.current.isEmpty(d.data));
   }, []);
 
-  const [offers, setOffers] = useState<DraftRecord<T>[]>(() => others());
+  const [offers, setOffers] = useState<DraftRecord<T>[]>(() => { sweepDrafts(); return others(); });
   const [saved, setSaved] = useState<"full" | "light" | "failed">("full");
   // عيادةٌ أو مستخدمٌ تبدّل والنموذجُ مفتوح: العرضُ يُقرأ للنطاق الجديد.
   const seenScope = useRef(scopeKey);
@@ -40,6 +47,8 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
   const flush = useCallback(() => {
     const { scope: s, value: v, isEmpty: empty, lighten: lt } = latest.current;
     if (closed.current || !s) return;
+    slot.current ??= s; // المستخدمُ عُرف بعد الفتح
+    if (scopePrefix(slot.current) !== scopePrefix(s)) return; // النطاقُ تبدّل تحت النموذج
     if (empty(v)) { dropDraft(s, idRef.current); return; }
     setSaved(saveDraft(s, idRef.current, v, { lighten: lt }));
   }, []);
@@ -74,6 +83,7 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
       if (!offer || !scope) return null;
       flush(); // ما كُتب بهذه الفتحة قبل الاسترجاع يبقى مسودّةً تُعرض لاحقاً
       idRef.current = offer.id;
+      slot.current = scope; // المسترجَعةُ من هذا النطاق — والحفظُ يكمل فيه
       setOffers(others());
       return offer;
     },
@@ -90,10 +100,13 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
       saveDraft(scope, rec.id, rec.data, { now: rec.savedAt });
       setOffers(others());
     },
-    /** حُفظ النموذج: امسح مسودّتَه وأوقف الحفظ. */
-    clear(): void {
+    /** حُفظ النموذج: امسح مسودّتَه، وما يصف الحالةَ نفسَها (`also`)، وأوقف الحفظ. */
+    clear(also?: (d: T) => boolean): void {
       closed.current = true;
-      if (scope) dropDraft(scope, idRef.current);
+      const s = slot.current ?? scope;
+      if (!s) return;
+      dropDraft(s, idRef.current);
+      if (also) for (const d of listDrafts<T>(s)) if (also(d.data)) dropDraft(s, d.id);
     },
   };
 }

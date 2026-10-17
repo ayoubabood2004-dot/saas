@@ -18,7 +18,7 @@ import { Spinner, useToast } from "@/components/ui";
 import { startOutbox } from "@/lib/outbox";
 import { page } from "@/lib/lazyPage";
 import { useNavFolded } from "@/lib/navFold";
-import { notePageChange } from "@/lib/swUpdate";
+import { notePageChange } from "@/lib/inflight";
 
 /* كلُّ صفحةٍ كسولةٍ تمرّ من `page()` (`src/lib/lazyPage.ts`): تنتظر حزمتَها
  * ونصفَ القاموس العربيّ البارد معاً، وتتعافى من القشرة القديمة بعد النشر. */
@@ -170,14 +170,20 @@ function Housekeeping() {
 }
 
 /** النسخةُ الجديدة تنزل عند تبديل الصفحة (swUpdate.ts) — التبديلُ يرمي حالةَ الصفحة
- *  القديمة أصلاً، فلا يضيع بالتحميل شيءٌ لم يضع. وتغيّرُ `?tab=` ليس تبديلاً: الصفحةُ باقية. */
+ *  القديمة أصلاً، فلا يضيع بالتحميل شيءٌ لم يضع. وتغيّرُ `?tab=` ليس تبديلاً: الصفحةُ باقية.
+ *  **وتبديلٌ يحمل تسليماً لا يطبّق**: جسرُ البيع (/retail?customer=…&petId=…&labId=…) وحالةُ
+ *  الراوتر (تعبئةُ الحملة، مالكُ «حالة جديدة») تقرؤها الوجهةُ مرّةً وتمسحها بنفس الرسمة — فالتحميلُ
+ *  بعدها يفتح الصفحةَ بلاها: حيوانٌ بلا petId، وتحليلٌ لا يُختم «مدفوع» (تدقيقٌ عدائيّ، ١٧/١٠).
+ *  المسحُ لاحقاً لا يغيّر المسار فلا يعيد المحاولة؛ التطبيقُ باللحظة الآمنة التالية. */
 function UpdateAtPageChange() {
-  const { pathname } = useLocation();
+  const { pathname, search, state } = useLocation();
   const prev = useRef(pathname);
   useEffect(() => {
     if (pathname === prev.current) return;
     prev.current = pathname;
+    if (search || state != null) return;
     notePageChange();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
   return null;
 }

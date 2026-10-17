@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { trackedFetch } from "./inflight";
 
 /**
  * Read a Vite env var as a clean string. Vite exposes only `VITE_`-prefixed
@@ -70,5 +71,7 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         // restores it instead of logging the user out.
         storage: typeof window !== "undefined" ? window.localStorage : undefined,
       },
+      // يعدّ الكتاباتِ بالطريق — النسخةُ الجديدة لا تُطبَّق فوقها (inflight.ts / swUpdate.ts).
+      global: { fetch: trackedFetch },
     })
   : null;

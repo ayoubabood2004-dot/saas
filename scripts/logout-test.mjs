@@ -188,6 +188,11 @@ const seqAt = signOutBody.indexOf("void endElevationThenSignOut({");
 check("  والتنظيفُ (finish) **بعد** التسلسل لا قبله",
   seqAt > 0 && /\}\)\s*\.catch\([\s\S]*?\)\s*\.then\(finish\);/.test(signOutBody.slice(seqAt))
   && !/\bfinish\(\);/.test(signOutBody.slice(signOutBody.indexOf("if (isSupabaseConfigured && supabase) {"), seqAt)));
+/* مسودّاتُ النماذج (formDraft.ts، ١٧/١٠): هاتفُ المالك وصورُ الحيوان والتشخيص على الجهاز —
+ * الخروجُ يمسحها ويوقف حفظَها **قبل** `setRaw(null)`، وإلا حفظها النموذجُ عند خروجه من الشاشة
+ * ثانيةً (السلوكُ نفسُه بـcase-draft-test). وخروجُ الجلسة الميّتة لا يمسحها: تبقى لصاحبها. */
+check("الخروجُ يمسح مسودّاتِ النماذج قبل أن يزيح النموذجَ المفتوح",
+  signOutBody.indexOf("purgeDrafts();") > 0 && signOutBody.indexOf("purgeDrafts();") < signOutBody.indexOf("setRaw(null);"));
 /* وخروجُ الجلسة الميّتة (SIGNED_OUT: رمزٌ أُلغي بجهازٍ آخر) يمسح أعلامَ الرفع أيضاً — كانت
  * تبقى، والأعلامُ بمفتاح العيادة لا المستخدم، فيرث الداخلُ التالي واجهةَ المدير. */
 check("خروجُ الجلسة الميّتة يمسح أعلامَ الرفع (لا يرثها الداخلُ التالي)",

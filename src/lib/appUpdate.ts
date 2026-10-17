@@ -13,6 +13,8 @@
  * لا localStorage ولا IndexedDB — فقط مخبأ الملفات الثابتة.
  * ==========================================================================*/
 
+import { updateTaken } from "./inflight";
+
 const ONCE_KEY = "vp_shell_recovered_at";
 const GAP_MS = 30000; // حارس ضد دوّامة تحديث لو كان الفشل لسبب آخر
 
@@ -36,6 +38,14 @@ export function recoverFromStaleShell(): Promise<boolean> {
   if (recoveredRecently()) return Promise.resolve(false);
   if (typeof navigator !== "undefined" && navigator.onLine === false) return Promise.resolve(false);
   sessionStorage.setItem(ONCE_KEY, String(Date.now()));
+  /* تبويبٌ استولت عليه نسخةٌ أحدث (swUpdate «taken»): الخدمةُ المتحكّمة هي الجديدة ومخبؤها
+   * طازج — القطعةُ ناقصةٌ لأن الشِّفرة قديمة لا لأن القشرة قديمة. تحميلٌ عاديّ يكفي؛ مسحُ المخبأ
+   * وإلغاءُ الخدمة كان سيعيد تنزيلَ ٧ ميغا ويترك الجهاز بلا عملٍ بلا نت (تدقيقٌ عدائيّ). */
+  if (updateTaken()) {
+    window.location.reload();
+    inFlight = Promise.resolve(true);
+    return inFlight;
+  }
   inFlight = (async () => {
     try {
       if (typeof caches !== "undefined") {

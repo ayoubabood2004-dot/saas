@@ -11,7 +11,6 @@ import { pruneStaleStorage } from "./lib/demoStore";
 import { installDigitNormalizer } from "./lib/digits";
 import { applyFontScale, applyCrispMode } from "./lib/fontScale";
 import { recoverFromStaleShell } from "./lib/appUpdate";
-import { startAppUpdates } from "./lib/swUpdate";
 
 // Western numerals everywhere: typing or pasting Arabic-Indic digits into ANY
 // input converts them to 0-9 on the fly — no data is ever lost to a digit-shape
@@ -76,8 +75,9 @@ window.addEventListener("unhandledrejection", (e) => {
 // (swUpdate.ts). The old autoUpdate mode reloaded the moment the new worker
 // activated: measured in production as a second boot ~25 s after opening the
 // app after every deploy, wiping a half-written case. (Dev has no sw.js — the
-// old virtual module was a no-op there too.)
-if (import.meta.env.PROD) startAppUpdates();
+// old virtual module was a no-op there too.) Its own chunk, fetched at boot itself — the
+// boot bundle had 215 bytes of budget left; App.tsx reaches it through inflight.ts.
+if (import.meta.env.PROD) void import("./lib/swUpdate").then((m) => m.startAppUpdates()).catch(() => { /* no SW this load */ });
 
 // After a new deploy, a device still holding the previous build asks for hashed
 // chunk URLs that no longer exist on the server. Reloading alone does NOT fix it

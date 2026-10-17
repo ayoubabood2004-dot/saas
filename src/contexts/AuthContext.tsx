@@ -15,6 +15,7 @@ import { startPresenceBeat } from "@/lib/presence";
 import { watchPriceEpoch, resetPriceEpoch } from "@/lib/priceSync";
 import { repo } from "@/lib/repo";
 import { endElevationOnLogout, clearElevationFlags } from "@/lib/managerOverride";
+import { purgeDrafts } from "@/lib/draftPurge";
 import { endElevationThenSignOut } from "@/lib/logoutSequence";
 import type { OwnerAccount } from "@/lib/owners";
 
@@ -621,6 +622,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // والنداءُ يُحفظ ليُنتظر قبل مسح الجلسة (أسفل): يخرج بهويّة المستخدم لا مجهولاً.
     let ending: PromiseLike<unknown> | undefined;
     try { ending = endElevationOnLogout(); } catch { /* ignore */ }
+    // مسودّاتُ النماذج (هاتفُ المالك، صورُ الحيوان، التشخيص) تُمسح ويقف حفظُها **قبل** أن
+    // يزيح `setRaw(null)` النموذجَ المفتوح — وإلا حفظها خروجُه من الشاشة ثانيةً (draftPurge.ts).
+    purgeDrafts();
     // Purge the service-worker media cache so the previous clinic's patient
     // photos (cached from Supabase storage) can't be read by the next person on
     // a shared/kiosk device via DevTools → Cache Storage.
