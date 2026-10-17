@@ -66,8 +66,9 @@ export function StockCount() {
   const [n, setN] = useState(getCountDailyN);
   /* عدٌّ لم يُرسل يعيش بحالة الصفحة وحدها — لا نسخةٌ جديدة تُحمَّل فوقه ولو خمل التبويب وذهب
    * صاحبُه للغداء (تدقيقٌ عدائيّ: ٤٠ سطراً تضيع). الإرسالُ أو مغادرةُ الصفحة يُفلتان. */
-  // بمحتواه لا بوجود السطر: رقمٌ كُتب ثم مُسح يترك سطراً فارغاً كان يُبقي الإمساكَ بلا عمل.
-  const dirty = Object.values(lines).some((l) => l.counted.trim() !== "" || !!l.reason || l.note.trim() !== "" || Object.values(l.lots).some((v) => v.trim() !== ""));
+  // عدٌّ مكتوب لا وجودُ السطر: رقمٌ كُتب ثم مُسح، أو سببٌ وملاحظةٌ بقيا بعد مسح الرقم (لا يُرسلان بلاه
+  // ولا يُريان) — كانا يُبقيان الإمساكَ بلا عملٍ يُرى (تدقيقٌ عدائيّ رابع).
+  const dirty = Object.values(lines).some((l) => l.counted.trim() !== "" || Object.values(l.lots).some((v) => v.trim() !== ""));
   useEffect(() => (dirty ? holdUpdates(Infinity) : undefined), [dirty]);
 
   const load = useCallback(async () => {

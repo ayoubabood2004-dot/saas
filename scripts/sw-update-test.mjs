@@ -480,7 +480,7 @@ console.log("▸ appUpdate: قطعةٌ ناقصة بتبويبٍ «استُول�
   nav.onLine = false; release();
   check("انقطع النتّ أثناء انتظار الكتابة ⇒ لا تحميل", (await started) === false && reloads === 0, String(reloads));
   // ٢) كتابةٌ ممسوكة ثم تهدأ ⇒ تحميلٌ واحد بلا مسح المخبأ
-  nav.onLine = true; ss.clear();
+  nav.onLine = true; // بلا مسحٍ يدويّ للحارس: التراجعُ لا يختمه (تدقيقٌ عدائيّ رابع)
   release = au.holdUpdates();         // سلسلةُ ما بعد البيعة جارية
   started = au.recoverFromStaleShell();
   await new Promise((r) => setTimeout(r, 700));
@@ -522,7 +522,9 @@ console.log("▸ الإعداد والتوصيل");
     (rec.match(/await waitForWrites\(\);|waitForWrites\(\)\.then/g) ?? []).length === 2
     && rec.indexOf("await waitForWrites();") < rec.indexOf("caches.keys()")
     && (rec.match(/if \(offline\(\)\) \{ inFlight = null; return false; \}/g) ?? []).length === 2);
-  check("  ونموذجٌ مفتوح (عدُّ المخزن) يُنتظر بلا سقف", /if \(formHeld\(\) \|\| \(writesBusy\(\) && Date\.now\(\) - t0 < WRITE_WAIT_MS\)\)/.test(aus));
+  check("  ونموذجٌ مفتوح (عدُّ المخزن) يُنتظر بلا سقف، وسقفُ الكتابة يبدأ بعد إفلاته", /if \(formHeld\(\)\) \{ t0 = Date\.now\(\); setTimeout\(tick, 250\); return; \}/.test(aus));
+  check("  وحارسُ الدوّامة يُختم عند الالتزام بالتحميل لا قبل الانتظار",
+    (rec.match(/commit\(\);/g) ?? []).length === 2 && rec.indexOf("const commit") < rec.indexOf("updateTaken()") && !/^ {2}sessionStorage\.setItem\(ONCE_KEY/m.test(rec));
   const swu = readFileSync("src/lib/swUpdate.ts", "utf8");
   check("اللمسةُ بالجهاز كلِّه (vp_last_input) والسياسةُ تقرؤها", /localStorage\.setItem\(SHARED_INPUT_KEY/.test(swu) && /localStorage\.getItem\(SHARED_INPUT_KEY\)/.test(swu));
   check("  والخمولُ لا يطبّق فوق حقلِ نصٍّ حرّ كُتب فيه — لا قائمةَ ولا مربّعَ اختيار ولا تاريخ",
@@ -532,7 +534,8 @@ console.log("▸ الإعداد والتوصيل");
   check("  وسلسلةُ العملية بعد البيعة حتى يستقرّ **كلُّ** حيوان (holdAll لا Promise.all)", /withTimeout\(\s*holdAll\(Array\.from\(byPet/.test(sale) && !/holdUntil\(Promise\.all\(Array\.from\(byPet/.test(sale));
   const sc = readFileSync("src/pages/StockCount.tsx", "utf8");
   check("عدُّ المخزن غيرُ المرسل يمسك بلا سقف — وبمحتواه لا بوجود السطر",
-    /useEffect\(\(\) => \(dirty \? holdUpdates\(Infinity\) : undefined\), \[dirty\]\);/.test(sc) && /const dirty = Object\.values\(lines\)\.some\(\(l\) => l\.counted\.trim\(\) !== ""/.test(sc));
+    /useEffect\(\(\) => \(dirty \? holdUpdates\(Infinity\) : undefined\), \[dirty\]\);/.test(sc) && /const dirty = Object\.values\(lines\)\.some\(\(l\) => l\.counted\.trim\(\) !== ""/.test(sc)
+    && !/const dirty = [^\n]*l\.(reason|note)/.test(sc)); // سببٌ أو ملاحظةٌ بلا عدٍّ لا يُرسلان ولا يُريان
 
   /* كلُّ تحميلٍ للصفحة بالشِّفرة له سببٌ مسمّى هنا. تحميلٌ جديد = قرارٌ يُقرأ. */
   const ALLOWED = new Map([

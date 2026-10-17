@@ -331,6 +331,44 @@ console.log("▸ تدقيقٌ عدائيّ ثالث: لا قفلَ صامت، و
   LS.m.clear();
 }
 
+console.log("▸ تدقيقٌ عدائيّ رابع: بطاقةٌ قديمة، وحدثُ التخزين، وهاتفُ غير العراق");
+{
+  const props = (value) => ({ scope: A, value, isEmpty: (d) => cd.caseDraftIsEmpty(d), lighten: cd.lightenCaseDraft });
+  const fireStorage = (key) => [...(winListeners.storage ?? [])].forEach((fn) => fn({ key }));
+  const X = kase({ owner: owner({ name: "ابو علي" }), animals: [animal({ name: "لولو" })] });
+  // التبويب «ب» يكتب X؛ التبويب «أ» يفتح فيرى بطاقتَها؛ ثم «ب» يحفظها
+  const hb = fd3.__render(fd3.useFormDraft, props(X)); runTimers();
+  let ha = fd.__render(fd.useFormDraft, props(kase()));
+  check("«أ» يرى بطاقةَ X", ha.offer?.data.owner.name === "ابو علي");
+  hb.clear((d) => cd.draftIsSavedCase(d, X.owner, ["لولو"]));
+  const rec = ha.take();                                     // ضغط «رجّعها» على البطاقة القديمة
+  ha = fd.__render(fd.useFormDraft, props(kase())); runTimers();
+  check("بطاقةٌ قديمةٌ لحالةٍ انحفظت بتبويبٍ آخر ⇒ لا تُسترجع", rec === null && ha.offer === null);
+  fd.__unmount(); fd3.__unmount();
+  check("  ولا تعود مسودّةً «ما انحفظت»", fd.listDrafts(A).length === 0, String(fd.listDrafts(A).length));
+  LS.m.clear();
+}
+{
+  const props = (value) => ({ scope: A, value, isEmpty: (d) => cd.caseDraftIsEmpty(d), lighten: cd.lightenCaseDraft });
+  const fireStorage = (key) => [...(winListeners.storage ?? [])].forEach((fn) => fn({ key }));
+  const X = kase({ owner: owner({ name: "ابو علي" }), animals: [animal({ name: "لولو" })] });
+  let ha = fd.__render(fd.useFormDraft, props(X)); runTimers();        // «أ» كتب X
+  const hb = fd3.__render(fd3.useFormDraft, props(X)); runTimers();    // «ب» كتبها من جديد وحفظها
+  hb.clear((d) => cd.draftIsSavedCase(d, X.owner, ["لولو"]));
+  fireStorage("vp_draft_done:x");                                      // المتصفّحُ يبلّغ «أ» بتغيّر التخزين
+  ha = fd.__render(fd.useFormDraft, props(X));
+  check("حدثُ التخزين ⇒ «أ» يعرف أنها انحفظت فلا يقول «تنحفظ تلقائياً»", ha.saved === "stopped", ha.saved);
+  fd.__unmount(); fd3.__unmount();
+  LS.m.clear();
+}
+{
+  const saved = owner({ name: "Ali", phone: "+90 5321234567" });
+  check("«+90 0532…» و«+90 532…» شخصٌ واحد (الصفرُ الوطنيّ بكلّ دولة)",
+    cd.draftIsSavedCase(kase({ owner: owner({ name: "Ali", phone: "+90 05321234567" }), animals: [animal({ name: "Max" })] }), saved, ["Max"]));
+  check("  وتركيا والعراق برقمٍ وطنيٍّ متشابه شخصان",
+    !cd.draftIsSavedCase(kase({ owner: owner({ name: "Ali", phone: "+964 5321234567" }), animals: [animal({ name: "Max" })] }), saved, ["Max"]));
+}
+
 console.log("▸ الإشعار يقول ما حدث (تدقيقٌ عدائيّ ثانٍ)");
 {
   const en = JSON.parse(readFileSync("src/i18n/en.json", "utf8")).newCase;

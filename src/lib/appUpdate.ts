@@ -23,10 +23,13 @@ const WRITE_WAIT_MS = 60_000;
 
 /** انتظر الكتاباتِ (بسقفٍ) ونموذجاً فيه عملٌ لم يُرسل (بلا سقف — عدُّ المخزن لا يُمحى بمؤقّت). */
 function waitForWrites(): Promise<void> {
-  const t0 = Date.now();
+  let t0 = Date.now();
   return new Promise((done) => {
     const tick = () => {
-      if (formHeld() || (writesBusy() && Date.now() - t0 < WRITE_WAIT_MS)) { setTimeout(tick, 250); return; }
+      // سقفُ الكتابة يبدأ بعد أن يُفلَت النموذج — لا من أوّل الانتظار: عدٌّ دام دقيقتين ثم إرسالُه
+      // كان يُحمَّل فوق طلبه (تدقيقٌ عدائيّ رابع).
+      if (formHeld()) { t0 = Date.now(); setTimeout(tick, 250); return; }
+      if (writesBusy() && Date.now() - t0 < WRITE_WAIT_MS) { setTimeout(tick, 250); return; }
       done();
     };
     tick();
@@ -55,13 +58,16 @@ export function recoverFromStaleShell(): Promise<boolean> {
   if (inFlight) return inFlight;
   if (recoveredRecently()) return Promise.resolve(false);
   if (typeof navigator !== "undefined" && navigator.onLine === false) return Promise.resolve(false);
-  sessionStorage.setItem(ONCE_KEY, String(Date.now()));
+  /* حارسُ الدوّامة يُختم لحظةَ الالتزام بالتحميل لا قبل الانتظار: تراجعٌ لانقطاع النتّ كان يتركه
+   * مختوماً فتُرفض محاولةٌ صحيحةٌ بعد رجوعه ٣٠ ثانية (تدقيقٌ عدائيّ رابع). */
+  const commit = () => sessionStorage.setItem(ONCE_KEY, String(Date.now()));
   /* تبويبٌ استولت عليه نسخةٌ أحدث (swUpdate «taken»): الخدمةُ المتحكّمة هي الجديدة ومخبؤها
    * طازج — القطعةُ ناقصةٌ لأن الشِّفرة قديمة لا لأن القشرة قديمة. تحميلٌ عاديّ يكفي؛ مسحُ المخبأ
    * وإلغاءُ الخدمة كان سيعيد تنزيلَ ٧ ميغا ويترك الجهاز بلا عملٍ بلا نت (تدقيقٌ عدائيّ). */
   if (updateTaken()) {
     inFlight = waitForWrites().then(() => {
       if (offline()) { inFlight = null; return false; }
+      commit();
       window.location.reload();
       return true;
     });
@@ -72,6 +78,7 @@ export function recoverFromStaleShell(): Promise<boolean> {
      * «لا اتصال» بدل تطبيقٍ يعمل (تدقيقٌ عدائيّ ثالث). فإن انقطع أثناءها نتراجع ولا نمسّ شيئاً. */
     await waitForWrites();
     if (offline()) { inFlight = null; return false; }
+    commit();
     try {
       if (typeof caches !== "undefined") {
         const keys = await caches.keys();

@@ -90,12 +90,20 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
     window.addEventListener("pagehide", onHide);
     const onVis = () => { if (document.visibilityState === "hidden") flush(); };
     document.addEventListener("visibilitychange", onVis);
+    // تبويبٌ آخر حفظ أو حذف أو خرج: العرضُ والحالةُ يُقرآن من جديد — لا بطاقةَ قديمة ولا «تنحفظ» كاذبة.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && !e.key.startsWith("vp_draft")) return;
+      setOffers(others());
+      if (stopped()) setSaved("stopped");
+    };
+    window.addEventListener("storage", onStorage);
     return () => {
+      window.removeEventListener("storage", onStorage);
       window.removeEventListener("pagehide", onHide);
       document.removeEventListener("visibilitychange", onVis);
       flush(); // خروجُ المكوّن (تبديل صفحة، عطلٌ بالحدّ) لا يُسقط آخرَ حرف
     };
-  }, [flush]);
+  }, [flush, others, stopped]);
 
   const offer = offers[0] ?? null;
 
@@ -108,10 +116,11 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
     /** تبنَّ المسودّةَ المعروضة: يرجع بياناتِها ليضعها النموذج، والحفظُ يكمل عليها. */
     take(): DraftRecord<T> | null {
       if (!offer || !scope) return null;
+      // العرضُ لقطةٌ قديمة؟ حالةٌ انحفظت بتبويبٍ آخر بعدها لا تُسترجع «ما انحفظت» (تدقيقٌ عدائيّ رابع).
+      if (draftDone(offer.id) || !listDrafts<T>(scope).some((d) => d.id === offer.id)) { setOffers(others()); return null; }
       flush(); // ما كُتب بهذه الفتحة قبل الاسترجاع يبقى مسودّةً تُعرض لاحقاً
       idRef.current = offer.id;
       lastSaved.current = undefined;
-      clearDraftDone(offer.id); // اختارها بيده: تُحفظ
       slot.current = scope; // المسترجَعةُ من هذا النطاق — والحفظُ يكمل فيه
       setOffers(others());
       return offer;
