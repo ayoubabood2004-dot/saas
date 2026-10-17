@@ -80,8 +80,11 @@ export const IDLE_VISIBLE_MS = 3 * 3600_000;
 export function createUpdater(env: UpdaterEnv) {
   let reg: RegLike | null = null;
   let state: UpdateState = "none";
-  /** قرارُ تحميلٍ جارٍ (ينتظر أن تهدأ الكتابات). */
-  let applying = false;
+  /** محاولةٌ تنتظر لحظتَها (خطوةٌ أو كتابةٌ تُفرَّغ) ولم تلتزم بعد — لحظةٌ آمنةٌ أحدث **تحلّ محلّها**
+   *  لا تُرفض (تدقيقٌ عدائيّ ثالث: ضغطةُ الشريط أثناء انتظار الإقلاع كانت تُرفض ثم تُلغي القديمة). */
+  let pending = false;
+  /** التزمنا: طُلب التخطّي أو بدأ قرارُ التحميل — لا محاولةَ أخرى حتى يُحمَّل التبويب أو نتراجع. */
+  let committed = false;
   /** طلبنا التخطّي في هذه اللحظة ولم يُحمَّل التبويبُ بعد — الاستيلاءُ المتأخّر لنا. */
   let requestedAt = 0;
   /** معرّفُ المحاولة — محاولةٌ أحدث تُبطل مؤقّتاتِ ما قبلها. */
@@ -93,10 +96,10 @@ export function createUpdater(env: UpdaterEnv) {
 
   /** حمّل الآن إن بقي الشرطان، وإلا انتظر الكتابةَ حتى المهلة، أو تراجع. */
   const reloadWhenSafe = (my: number, since: number, deadline: number) => {
-    if (my !== attempt || !applying) return;
-    if (touchedSince(since)) { applying = false; return; }
+    if (my !== attempt || !committed) return;
+    if (touchedSince(since)) { committed = false; return; }
     if (env.busy()) {
-      if (env.now() >= deadline) { applying = false; return; }
+      if (env.now() >= deadline) { committed = false; return; }
       env.setTimer(() => reloadWhenSafe(my, since, deadline), DRAIN_STEP_MS);
       return;
     }
@@ -105,20 +108,22 @@ export function createUpdater(env: UpdaterEnv) {
 
   /** ابدأ التطبيق. `since` = لحظةُ القرار (لمسةٌ بعدها تلغيه)، `drainMs` = كم تُنتظر الكتابات. */
   const apply = (since: number, drainMs: number): boolean => {
-    if (applying || state === "none") return false;
+    if (committed || state === "none") return false;
     if (touchedSince(since)) return false;
     if (env.now() - Number(env.session.getItem(APPLIED_KEY) || 0) < LOOP_GAP_MS) return false;
-    const my = ++attempt;
-    applying = true;
+    const my = ++attempt; // محاولةٌ معلّقةٌ أقدم تبطل: هذه لحظةٌ آمنةٌ أحدث
+    pending = true;
     const deadline = env.now() + drainMs;
     const go = () => {
-      if (my !== attempt || !applying) return;
-      if (touchedSince(since)) { applying = false; return; }
+      if (my !== attempt || committed) return;
+      if (touchedSince(since)) { pending = false; return; }
       if (env.busy()) {
-        if (env.now() >= deadline) { applying = false; return; } // كتابةٌ لم تنتهِ: تُتخطّى هذه اللحظة
+        if (env.now() >= deadline) { pending = false; return; } // كتابةٌ لم تنتهِ: تُتخطّى هذه اللحظة
         env.setTimer(go, DRAIN_STEP_MS);
         return;
       }
+      pending = false;
+      committed = true;
       const at = env.now();
       env.session.setItem(APPLIED_KEY, String(at));
       const waiting = reg?.waiting;
@@ -126,10 +131,10 @@ export function createUpdater(env: UpdaterEnv) {
         requestedAt = at;
         waiting.postMessage({ type: "SKIP_WAITING" }); // والتحميلُ عند `controllerchange`
         env.setTimer(() => {
-          if (my !== attempt || !applying) return; // الاستيلاءُ وصل وتسلّم القرار
+          if (my !== attempt || !committed) return; // الاستيلاءُ وصل وتسلّم القرار
           // ما زالت تنتظر = التفعيلُ مؤجَّل؛ تحميلٌ الآن تخدمه القديمةُ نفسُها — نتراجع،
           // و`requestedAt` يبقى: الاستيلاءُ المتأخّر يحمّل ما لم يُلمس منذ الطلب.
-          if (reg?.waiting) { applying = false; return; }
+          if (reg?.waiting) { committed = false; return; }
           reloadWhenSafe(my, at, at + drainMs + FALLBACK_MS); // فُعِّلت ولم يصل الحدث
         }, FALLBACK_MS);
       } else {
@@ -149,15 +154,18 @@ export function createUpdater(env: UpdaterEnv) {
   env.onControllerChange(() => {
     if (!wasControlled) { wasControlled = true; return; } // أوّلُ تثبيت: لا نسخةَ قديمة
     state = "taken";
+    // محاولةٌ أحدث معلّقة: تأخذ فرعَ «taken» بلحظتها هي — طلبُنا القديمُ انتهى دورُه.
+    if (pending) { requestedAt = 0; return; }
     if (requestedAt) {
       // طلبُنا — ولم يُحمَّل التبويبُ منذه، فلا دوّامةَ يحرسها APPLIED_KEY: حمّل إن لم يُلمس منذ الطلب.
       const since = requestedAt;
       requestedAt = 0;
       const my = ++attempt;
-      applying = true;
+      committed = true;
       reloadWhenSafe(my, since, env.now() + DRAIN_LONG_MS);
       return;
     }
+    if (committed) return; // قرارُ تحميلٍ جارٍ أصلاً
     ready("taken"); // طلبه تبويبٌ آخر
   });
 
@@ -186,7 +194,7 @@ export function createUpdater(env: UpdaterEnv) {
     },
     /** كلّ دقيقة: خمولٌ طويل بالجهاز كلِّه، بلا حقلٍ مكتوب ⇒ تُطبَّق. */
     idleTick(): boolean {
-      if (state === "none" || applying || env.held() || env.editing()) return false;
+      if (state === "none" || pending || committed || env.held() || env.editing()) return false;
       const last = Math.max(env.lastInput(), bootAt);
       if (env.now() - last < (env.hidden() ? IDLE_HIDDEN_MS : IDLE_VISIBLE_MS)) return false;
       return apply(last, DRAIN_LONG_MS);
@@ -196,6 +204,13 @@ export function createUpdater(env: UpdaterEnv) {
 }
 
 const SHARED_INPUT_KEY = "vp_last_input";
+
+/** حقلُ نصٍّ حرّ (لا قائمةَ ولا مربّعَ اختيارٍ ولا تاريخ): قيمُ تلك لا تُفرغ فكانت تُبقي الخمولَ مطفأً
+ *  ما دامت معروضة — مربّعٌ أُلغي اختيارُه قيمتُه "on" (تدقيقٌ عدائيّ ثالث). */
+const freeText = (t: EventTarget | null): boolean =>
+  t instanceof HTMLTextAreaElement
+  || (t instanceof HTMLInputElement && /^(text|search|tel|email|url|number|password)$/.test(t.type))
+  || (t instanceof HTMLElement && t.isContentEditable);
 
 /** الإقلاع (`main.tsx` يحمّل هذه القطعةَ فوراً): سجّل الخدمة بسياسة «لا تحميلَ تحت اليد».
  *  `App.tsx` و`appUpdate.ts` يصلانها من جسر `inflight.ts` (`notePageChange`/`updateTaken`). */
@@ -208,7 +223,7 @@ export function startAppUpdates(): void {
   const typed = new Set<Element>();
   const stamp = (e: Event) => {
     lastInput = Date.now();
-    if (e.type === "input" && e.target instanceof Element) typed.add(e.target);
+    if (e.type === "input" && freeText(e.target)) typed.add(e.target as Element);
     // ختمٌ مشترك بين التبويبات (كلّ ثانية بالأكثر): تبويبٌ خلفيّ لا يطبّق والآخرُ يعمل.
     if (lastInput - sharedAt > 1000) {
       sharedAt = lastInput;

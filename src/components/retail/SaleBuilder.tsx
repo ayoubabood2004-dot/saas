@@ -34,7 +34,7 @@ import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
-import { holdUpdates, holdUntil } from "@/lib/inflight";
+import { holdAll, holdUpdates } from "@/lib/inflight";
 import { canBackdate, checkSaleMoment, saleTz } from "@/lib/saleDate";
 import { clockOf24 } from "@/lib/backdate";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -2551,7 +2551,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             byPet.set(pid, arr);
           }
           await withTimeout(
-            holdUntil(Promise.all(Array.from(byPet, async ([pid, matches]) => {
+            holdAll(Array.from(byPet, async ([pid, matches]) => {
               // الطبلة المفتوحة إن وُجدت — وإلا تُفتَح طبلة جديدة للعملية فوراً.
               // طبلة مسدودة (علاج منتهٍ) لا تُستعمل أبداً: البيع بعد السد يفتح جديدة.
               let visitId: string | null = null;
@@ -2582,7 +2582,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 });
                 synced++;
               }
-            }))),
+            })),
             12000,
           );
           if (synced) {

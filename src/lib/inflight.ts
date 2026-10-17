@@ -14,6 +14,8 @@
 let writes = 0;
 let lastWriteDone = 0;
 let holds = 0;
+/** إمساكُ نموذجٍ مفتوحٍ عمداً (Infinity): لا وقتَ يُفلته — ومسارُ القطعة الناقصة ينتظره بلا سقف. */
+let formHolds = 0;
 
 /** بعد آخر كتابة: سلسلةٌ تنتظر جواباً ثم تكتب ما بعده لا تُعدّ «هادئة» بين الخطوتين. */
 export const QUIET_MS = 1500;
@@ -25,6 +27,8 @@ export function writesBusy(now = Date.now()): boolean {
 
 /** سلسلةٌ لا يُقطع نصُّها: كلُّ تحديثٍ عند تبديل الصفحة يُتخطّى حتى تُفلت. */
 export const holdsActive = (): boolean => holds > 0;
+/** نموذجٌ فيه عملٌ لم يُرسل يمسك (عدُّ المخزن) — التحميلُ لا يقع فوقه ولو بعد دقيقة. */
+export const formHeld = (): boolean => formHolds > 0;
 
 /** سقفُ الإمساك: وعدٌ عالقٌ (شبكةٌ لا تجيب) لا يوقف التحديثَ للأبد. */
 export const HOLD_MAX_MS = 120_000;
@@ -32,11 +36,13 @@ export const HOLD_MAX_MS = 120_000;
 /** أمسِك التحديثَ حتى تنتهي السلسلة — والإفلاتُ مرّةً واحدة ولو نودي مرّتين، وبعد السقف وحده.
  *  `Infinity` لنموذجٍ مفتوحٍ عمداً (عدٌّ لم يُرسل): يُفلته الإرسالُ أو المغادرة، لا الوقت. */
 export function holdUpdates(maxMs: number = HOLD_MAX_MS): () => void {
+  const form = !Number.isFinite(maxMs);
   holds++;
+  if (form) formHolds++;
   let done = false;
   let cap: ReturnType<typeof setTimeout> | undefined;
-  const release = () => { if (!done) { done = true; holds--; if (cap !== undefined) clearTimeout(cap); } };
-  if (Number.isFinite(maxMs)) cap = setTimeout(release, maxMs);
+  const release = () => { if (!done) { done = true; holds--; if (form) formHolds--; if (cap !== undefined) clearTimeout(cap); } };
+  if (!form) cap = setTimeout(release, maxMs);
   return release;
 }
 
@@ -48,6 +54,18 @@ export function holdUntil<T>(work: Promise<T>): Promise<T> {
   const release = holdUpdates();
   work.then(release, release);
   return work;
+}
+
+/**
+ * مثلُ Promise.all، لكن الإمساكُ حتى يستقرّ **كلُّ** عمل: Promise.all يرفض بأوّل فشل والباقي يكمل
+ * خلفه — فسلسلةُ حيوانٍ ثانٍ كانت تُقطع لأن عمليةَ الأوّل فشلت (تدقيقٌ عدائيّ ثالث). والرفضُ نفسُه
+ * يُرمى بعد أن يستقرّ الكلّ.
+ */
+export async function holdAll<T>(works: Promise<T>[]): Promise<T[]> {
+  const settled = await holdUntil(Promise.allSettled(works));
+  const bad = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (bad) throw bad.reason;
+  return settled.map((r) => (r as PromiseFulfilledResult<T>).value);
 }
 
 /* ── الجسرُ إلى سياسة التحديث ─────────────────────────────────────────────

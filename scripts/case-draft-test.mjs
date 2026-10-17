@@ -48,7 +48,7 @@ writeFileSync(join(dir, "entry.ts"), [
   `export { __render, __unmount } from "react";`,
 ].join("\n"));
 // نسختان من الحزمة = تبويبان: حالةُ الوحدات مستقلّة (React والإيقاف)، والتخزينُ مشترك.
-for (const out of ["m.mjs", "m2.mjs"]) {
+for (const out of ["m.mjs", "m2.mjs", "m3.mjs"]) {
   await build({ entryPoints: [join(dir, "entry.ts")], bundle: true, format: "esm", platform: "node", outfile: join(dir, out), logLevel: "silent",
     alias: { "@": join(process.cwd(), "src"), react: join(dir, "react-shim.mjs") } });
 }
@@ -74,16 +74,21 @@ function memStore(capBytes = Infinity) {
 const LS = memStore();
 let timers = [];
 globalThis.localStorage = LS;
+const winListeners = {};
 globalThis.window = {
   setTimeout: (fn) => { timers.push(fn); return timers.length; },
   clearTimeout: (id) => { timers[id - 1] = null; },
-  addEventListener() {}, removeEventListener() {},
+  addEventListener: (t, fn) => { (winListeners[t] ??= new Set()).add(fn); },
+  removeEventListener: (t, fn) => { winListeners[t]?.delete(fn); },
 };
+/** حدثُ المتصفّح نفسُه (pagehide): كلُّ نموذجٍ مفتوح يحفظ — بلا تغيير قيمة. */
+const firePagehide = () => [...(winListeners.pagehide ?? [])].forEach((fn) => fn());
 globalThis.document = { visibilityState: "visible", addEventListener() {}, removeEventListener() {} };
 const runTimers = () => { const t = timers; timers = []; t.forEach((f) => f && f()); };
 
 const fd = await import(pathToFileURL(join(dir, "m.mjs")).href);
 const fd2 = await import(pathToFileURL(join(dir, "m2.mjs")).href); // التبويبُ الثاني
+const fd3 = await import(pathToFileURL(join(dir, "m3.mjs")).href); // تبويبٌ ثالث لم يخرج منه أحد
 rmSync(dir, { recursive: true, force: true });
 const cd = fd, intake = fd;
 
@@ -284,6 +289,44 @@ console.log("▸ تبويبان على الجهاز نفسِه (تدقيقٌ ع�
   await new Promise((r) => setTimeout(r, 5));
   fd.__render(fd.useFormDraft, props(X)); runTimers();     // دخولٌ جديد بعده: النموذجُ يحفظ عادياً
   check("  ونموذجٌ فُتح بعد الخروج يحفظ عادياً", fd.listDrafts(A).length === 1);
+  fd.__unmount();
+  LS.m.clear();
+}
+
+console.log("▸ تدقيقٌ عدائيّ ثالث: لا قفلَ صامت، والهاتفُ بمفتاحه، والساعةُ لا تحكم");
+{
+  const props = (value) => ({ scope: A, value, isEmpty: (d) => cd.caseDraftIsEmpty(d), lighten: cd.lightenCaseDraft });
+  // التبويب ٢ كتب اسمَ المالك وحده؛ التبويب ١ يحفظ حالةً أخرى لمالكٍ بالاسم نفسِه
+  const ownerOnly = kase({ owner: owner({ name: "ابو علي" }) });
+  let h2 = fd3.__render(fd3.useFormDraft, props(ownerOnly)); runTimers();
+  const saved1 = kase({ owner: owner({ name: "ابو علي", phone: "+964 7701234567" }), animals: [animal({ name: "لولو" })] });
+  const h1 = fd.__render(fd.useFormDraft, props(saved1)); runTimers();
+  h1.clear((d) => cd.draftIsSavedCase(d, saved1.owner, ["لولو"]));   // مطابقةٌ بالاسم تمسح مسودّةَ التبويب ٢
+  firePagehide();                                            // التبويب ٢ يُخفى: يحفظ بلا تغيير
+  h2 = fd3.__render(fd3.useFormDraft, props(ownerOnly));     // نفسُ القيمة (useMemo لم يتغيّر)
+  check("مسحتها مطابقةٌ من تبويبٍ آخر ولم يُكتب جديد ⇒ موقوفة، والعنوانُ لا يدّعي الحفظ", h2.saved === "stopped" && fd.listDrafts(A).length === 0, h2.saved);
+  const other = kase({ owner: owner({ name: "ابو علي", phone: "+964 7809998888" }), animals: [animal({ name: "مشمش", diagnosis: "جرب", weight: "4" })] });
+  h2 = fd3.__render(fd3.useFormDraft, props(other)); runTimers();
+  check("  وكتب حالتَه (هاتفٌ آخر وحيوانٌ آخر) ⇒ الحفظُ يرجع", fd.listDrafts(A).length === 1 && fd.listDrafts(A)[0].data.animals[0].name === "مشمش");
+  fd3.__unmount();
+  check("  ويبقى بعد إغلاق التبويب (لا قفلَ صامتٌ يضيّع الحالة)", fd.listDrafts(A).length === 1);
+  fd.__unmount();
+  LS.m.clear();
+}
+{
+  const saved = owner({ name: "ابو علي", phone: "+964 7701234567" });
+  check("الهاتفُ بمفتاحه: «+964 07701…» و«+964 7701…» شخصٌ واحد (المسودّةُ تُمسح)",
+    cd.draftIsSavedCase(kase({ owner: owner({ name: "ابو علي", phone: "+964 07701234567" }), animals: [animal({ name: "لولو" })] }), saved, ["لولو"]));
+  check("  و«07701234567» القديمة و«+964 770…» شخصٌ واحد",
+    cd.draftIsSavedCase(kase({ owner: owner({ phone: "07701234567" }), animals: [animal({ name: "لولو" })] }), saved, ["لولو"]));
+  check("  و«محمد» بهاتفين مختلفين حقاً شخصان",
+    !cd.draftIsSavedCase(kase({ owner: owner({ name: "محمد", phone: "07709998888" }) }), owner({ name: "محمد", phone: "+964 7801112222" }), []));
+}
+{
+  const props = (value) => ({ scope: A, value, isEmpty: (d) => cd.caseDraftIsEmpty(d), lighten: cd.lightenCaseDraft });
+  LS.setItem("vp_draft_purged", String(Date.now() + 3_600_000)); // خروجٌ والساعةُ متقدّمة ساعة، ثم صُحّحت للوراء
+  fd.__render(fd.useFormDraft, props(kase({ owner: owner({ name: "س" }) }))); runTimers();
+  check("ختمُ خروجٍ «من المستقبل» لا يوقف نموذجاً فُتح بعده (مقارنةٌ بالقيمة لا بالساعة)", fd.listDrafts(A).length === 1);
   fd.__unmount();
   LS.m.clear();
 }

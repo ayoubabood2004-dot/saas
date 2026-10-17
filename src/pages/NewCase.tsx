@@ -329,11 +329,14 @@ export function NewCase() {
       </div>
       <p className="text-xs text-ink-subtle mb-5">
         {t("newCase.subtitle")}{" "}
-        <span className={draft.saved !== "full" ? "font-semibold text-warn-700 dark:text-warn-300" : undefined}>
-          · {draft.saved === "failed" ? t("newCase.draftFailed", "Not saved on this device — storage is full")
-            : draft.saved === "light" ? t("newCase.draftLight", "Saved on this device without photos")
-            : t("newCase.draftAuto", "Auto-saved on this device")}
-        </span>
+        {/* موقوف (حُفظت بتبويبٍ آخر، أو خروج) ⇒ لا يُدّعى «تنحفظ تلقائياً». */}
+        {draft.saved !== "stopped" && (
+          <span className={draft.saved !== "full" ? "font-semibold text-warn-700 dark:text-warn-300" : undefined}>
+            · {draft.saved === "failed" ? t("newCase.draftFailed", "Not saved on this device — storage is full")
+              : draft.saved === "light" ? t("newCase.draftLight", "Saved on this device without photos")
+              : t("newCase.draftAuto", "Auto-saved on this device")}
+          </span>
+        )}
       </p>
 
       {draft.offer && <DraftOffer rec={draft.offer} more={draft.more} onRestore={restoreDraft} onDiscard={discardDraft} />}

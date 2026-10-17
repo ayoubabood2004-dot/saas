@@ -346,6 +346,57 @@ console.log("▸ الخمول: حاسوبُ الكاشير الذي لا يبد�
   check("«استُولي» وخامل ⇒ تحميلٌ مباشر", h.u.idleTick() === true && (h.advance(STEP), h.reloads() === 1), h.log.join(","));
 }
 
+console.log("▸ لحظةٌ آمنةٌ أحدث تحلّ محلَّ المعلّقة (تدقيقٌ عدائيّ ثالث)");
+{
+  const h = harness({ waiting: true });
+  h.io.busy = true;                // طلباتُ الإقلاع بالطريق — محاولةُ الإقلاع تنتظر
+  await h.u.start(); h.advance(2_000);
+  h.touch();                       // ضغط رابطاً بالشريط
+  check("ضغطةُ الشريط أثناء انتظار الإقلاع ⇒ تبديلُ الصفحة يُقبل (لا يُرفض لأن الأولى معلّقة)", h.u.pageChanged() === true);
+  h.advance(1_000); h.io.busy = false; h.advance(STEP);
+  check("  وتُطبَّق بلحظتها حين تهدأ (الأولى تبطل ولا تُلغيها)", h.posts() === 1, h.log.join(","));
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.touch(); h.installNew();
+  h.io.busy = true;                // كتابةُ الصفحة المغادَرة تُفرَّغ
+  h.u.pageChanged(); h.advance(1_000);
+  h.touch();                       // تبديلٌ ثانٍ بعد ثانية ونصف
+  h.advance(500);
+  check("تبديلٌ ثانٍ والأوّلُ ينتظر الكتابة ⇒ يُقبل", h.u.pageChanged() === true);
+  h.io.busy = false; h.advance(STEP);
+  check("  ولا تضيع اللحظتان كلتاهما", h.posts() === 1, h.log.join(","));
+}
+{
+  const h = harness({ waiting: true });
+  await h.u.start(); h.advance(STEP);       // طُلب التخطّي عند الإقلاع
+  h.touch(); h.advance(4_500);              // الاحتياطيُّ تراجع (التفعيلُ مؤجَّل)، والمستخدمُ يعمل
+  h.advance(40_000); h.touch();
+  check("تبديلُ صفحةٍ بعد التراجع ⇒ يُقبل", h.u.pageChanged() === true);
+  h.advance(100); h.controllerChange();     // الاستيلاءُ المتأخّر يصل أثناء خطوة المحاولة الجديدة
+  h.advance(STEP);
+  check("  والاستيلاءُ المتأخّر أثناء خطوتها ⇒ تحميلٌ واحد بلحظتها هي (لا تتراجع على الضغطة نفسِها)", h.reloads() === 1, h.log.join(","));
+}
+
+console.log("▸ holdAll: كلُّ حيوانٍ حتى يستقرّ (تدقيقٌ عدائيّ ثالث)");
+{
+  let finishB;
+  const a = Promise.reject(new Error("pet A surgery failed"));
+  const b = new Promise((res) => { finishB = res; });
+  let threw = null;
+  const all = inf.holdAll([a, b]).catch((e) => { threw = e; });
+  await new Promise((r) => setTimeout(r, 10));
+  check("فشلُ حيوانٍ والآخرُ يكتب ⇒ ما زال ممسوكاً (Promise.all كان يُفلت)", inf.holdsActive() && threw === null);
+  finishB("ok"); await all;
+  check("  واستقرّ الكلّ ⇒ يُفلت، ويُرمى الفشلُ بعدها", !inf.holdsActive() && threw?.message === "pet A surgery failed");
+  const form = inf.holdUpdates(Infinity), short = inf.holdUpdates(1_000);
+  check("إمساكُ النموذج (Infinity) يُعدّ «نموذجاً» والمحدودُ لا", inf.formHeld());
+  form();
+  check("  وإفلاتُه يُنهيه والمحدودُ يبقى إمساكاً عادياً", !inf.formHeld() && inf.holdsActive());
+  short();
+}
+
 console.log("▸ أوّلُ تثبيت، ولا دوّامة");
 {
   const h = harness({ controlled: false });
@@ -413,16 +464,25 @@ console.log("▸ inflight: عدّادُ الكتابات والإمساك");
   check("  وبعده يبلّغها تبديلَ الصفحة ويقول حالتَها", calls === 1 && inf.updateTaken() === true);
 }
 
-console.log("▸ appUpdate: قطعةٌ ناقصة بتبويبٍ «استُولي» لا تقطع كتابة (تدقيقٌ عدائيّ ثانٍ)");
+console.log("▸ appUpdate: قطعةٌ ناقصة بتبويبٍ «استُولي» لا تقطع كتابة ولا تحمّل بلا نت (تدقيقان عدائيّان)");
 {
   let reloads = 0;
   const ss = new Map();
+  const nav = { onLine: true };
   globalThis.window = { location: { reload: () => { reloads++; } } };
   globalThis.sessionStorage = { getItem: (k) => ss.get(k) ?? null, setItem: (k, v) => ss.set(k, String(v)) };
-  if (!globalThis.navigator || globalThis.navigator.onLine === false) globalThis.navigator = { onLine: true };
+  Object.defineProperty(globalThis, "navigator", { value: nav, configurable: true, writable: true });
   au.setUpdater({ pageChanged() {}, state: "taken" });
-  const release = au.holdUpdates();         // سلسلةُ ما بعد البيعة جارية
-  const started = au.recoverFromStaleShell();
+  // ١) انقطع النتّ أثناء انتظار الكتابة ⇒ لا تحميل (صفحةُ «لا اتصال» أسوأ)
+  let release = au.holdUpdates();
+  let started = au.recoverFromStaleShell();
+  await new Promise((r) => setTimeout(r, 300));
+  nav.onLine = false; release();
+  check("انقطع النتّ أثناء انتظار الكتابة ⇒ لا تحميل", (await started) === false && reloads === 0, String(reloads));
+  // ٢) كتابةٌ ممسوكة ثم تهدأ ⇒ تحميلٌ واحد بلا مسح المخبأ
+  nav.onLine = true; ss.clear();
+  release = au.holdUpdates();         // سلسلةُ ما بعد البيعة جارية
+  started = au.recoverFromStaleShell();
   await new Promise((r) => setTimeout(r, 700));
   check("«استُولي» وكتابةٌ ممسوكة ⇒ لا تحميلَ بعد", reloads === 0, String(reloads));
   release();
@@ -458,14 +518,21 @@ console.log("▸ الإعداد والتوصيل");
   const aus = readFileSync("src/lib/appUpdate.ts", "utf8");
   check("قطعةٌ ناقصة بتبويبٍ «استُولي» ⇒ تحميلٌ عاديّ قبل مسح المخبأ", aus.indexOf("updateTaken()") > 0 && aus.indexOf("updateTaken()") < aus.indexOf("caches.keys()"));
   const rec = aus.slice(aus.indexOf("export function recoverFromStaleShell"), aus.indexOf("export function retryImport"));
-  check("  والفرعان (عاديّ ومسح) يحمّلان بعد أن تهدأ الكتابات", (rec.match(/reloadAfterWrites\(\)/g) ?? []).length === 2 && !/window\.location\.reload\(\)/.test(rec));
+  check("  والفرعان ينتظران الكتاباتِ **قبل** أيّ مسح، ثم يسألان النتّ قبل التحميل",
+    (rec.match(/await waitForWrites\(\);|waitForWrites\(\)\.then/g) ?? []).length === 2
+    && rec.indexOf("await waitForWrites();") < rec.indexOf("caches.keys()")
+    && (rec.match(/if \(offline\(\)\) \{ inFlight = null; return false; \}/g) ?? []).length === 2);
+  check("  ونموذجٌ مفتوح (عدُّ المخزن) يُنتظر بلا سقف", /if \(formHeld\(\) \|\| \(writesBusy\(\) && Date\.now\(\) - t0 < WRITE_WAIT_MS\)\)/.test(aus));
   const swu = readFileSync("src/lib/swUpdate.ts", "utf8");
   check("اللمسةُ بالجهاز كلِّه (vp_last_input) والسياسةُ تقرؤها", /localStorage\.setItem\(SHARED_INPUT_KEY/.test(swu) && /localStorage\.getItem\(SHARED_INPUT_KEY\)/.test(swu));
-  check("  والخمولُ لا يطبّق فوق حقلٍ كُتب فيه (لا المركَّزُ وحده)", /typed\.add\(e\.target\)/.test(swu) && /for \(const el of typed\)/.test(swu));
+  check("  والخمولُ لا يطبّق فوق حقلِ نصٍّ حرّ كُتب فيه — لا قائمةَ ولا مربّعَ اختيار ولا تاريخ",
+    /if \(e\.type === "input" && freeText\(e\.target\)\) typed\.add/.test(swu) && /\^\(text\|search\|tel\|email\|url\|number\|password\)\$/.test(swu) && !/select|checkbox|date/i.test(swu.slice(swu.indexOf("const freeText"), swu.indexOf("isContentEditable);"))));
   check("سلسلةُ الجرعة والمعزّزة ممسوكةٌ حتى تستقرّ (medSync وdoseCycle)",
     /return holdUntil\(persistMedicalEntriesNow\(/.test(readFileSync("src/lib/medSync.ts", "utf8")) && /return holdUntil\(syncDoseCycleForPetNow\(/.test(readFileSync("src/lib/doseCycle.ts", "utf8")));
-  check("  وسلسلةُ العملية بعد البيعة", /withTimeout\(\s*holdUntil\(Promise\.all\(Array\.from\(byPet/.test(sale));
-  check("عدُّ المخزن غيرُ المرسل يمسك بلا سقف", /useEffect\(\(\) => \(dirty \? holdUpdates\(Infinity\) : undefined\), \[dirty\]\);/.test(readFileSync("src/pages/StockCount.tsx", "utf8")));
+  check("  وسلسلةُ العملية بعد البيعة حتى يستقرّ **كلُّ** حيوان (holdAll لا Promise.all)", /withTimeout\(\s*holdAll\(Array\.from\(byPet/.test(sale) && !/holdUntil\(Promise\.all\(Array\.from\(byPet/.test(sale));
+  const sc = readFileSync("src/pages/StockCount.tsx", "utf8");
+  check("عدُّ المخزن غيرُ المرسل يمسك بلا سقف — وبمحتواه لا بوجود السطر",
+    /useEffect\(\(\) => \(dirty \? holdUpdates\(Infinity\) : undefined\), \[dirty\]\);/.test(sc) && /const dirty = Object\.values\(lines\)\.some\(\(l\) => l\.counted\.trim\(\) !== ""/.test(sc));
 
   /* كلُّ تحميلٍ للصفحة بالشِّفرة له سببٌ مسمّى هنا. تحميلٌ جديد = قرارٌ يُقرأ. */
   const ALLOWED = new Map([

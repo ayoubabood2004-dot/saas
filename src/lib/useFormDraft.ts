@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { draftDone, dropDraft, listDrafts, markDraftDone, newDraftId, saveDraft, scopePrefix, sweepDrafts, type DraftRecord, type DraftScope } from "./formDraft";
+import { clearDraftDone, draftDone, dropDraft, listDrafts, markDraftDone, newDraftId, saveDraft, scopePrefix, sweepDrafts, type DraftRecord, type DraftScope } from "./formDraft";
 import { purgedAt } from "./draftPurge";
 
 /**
@@ -27,16 +27,29 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
   const idRef = useRef<string>(newDraftId());
   /** النطاقُ الذي تكتب فيه هذه الفتحة — يُثبَّت بأوّل نطاقٍ معروف. */
   const slot = useRef<DraftScope | null>(scope);
+  /** حُفظ النموذجُ هنا (clear) أو خرج المستخدم بعد فتحه — يقف للأبد. */
   const closed = useRef(false);
-  /** لحظةُ فتح النموذج — خروجٌ بعدها (من أيّ تبويب) يوقف حفظَه. */
-  const openedAt = useRef(Date.now());
-  /** هل يقف الحفظ؟ (حُفظ هنا، أو مسحه حفظٌ بتبويبٍ آخر، أو خرج المستخدم بعد فتحه) */
-  const stopped = useCallback((): boolean => {
-    if (!closed.current && (purgedAt() >= openedAt.current || draftDone(idRef.current))) closed.current = true;
-    return closed.current;
-  }, []);
+  /** ختمُ الخروج كما كان لحظةَ الفتح: تغيّرُه = خرج أحدٌ بعد الفتح (من أيّ تبويب). مقارنةٌ بالقيمة لا
+   *  بالساعة — ساعةٌ رجعت للوراء كانت تُوقف كلَّ نموذجٍ لاحق بصمت (تدقيقٌ عدائيّ ثالث). */
+  const purgeSeen = useRef(purgedAt());
+  /** آخرُ قيمةٍ حُفظت فعلاً — علامةُ «انحفظت» من تبويبٍ آخر توقف الحفظَ ما دامت القيمةُ هي هي. */
+  const lastSaved = useRef<T | undefined>(undefined);
   const latest = useRef({ scope, value, isEmpty, lighten });
   latest.current = { scope, value, isEmpty, lighten };
+  /**
+   * هل يقف الحفظ؟ خروجٌ أو حفظٌ هنا ⇒ للأبد. أمّا «انحفظت» من تبويبٍ آخر (مطابقةٌ بالمالك والحيوان،
+   * وقد تخطئ: «ابو علي» آخر) ⇒ **ما دام لم يُكتب جديد**؛ كُتب ⇒ العلامةُ تُرفع والحفظُ يرجع — كانت
+   * تُقفل نموذجاً حيّاً للأبد والعنوانُ يقول «تنحفظ تلقائياً» (تدقيقٌ عدائيّ ثالث، الكبيرة).
+   */
+  const stopped = useCallback((): boolean => {
+    if (!closed.current && purgedAt() !== purgeSeen.current) closed.current = true;
+    if (closed.current) return true;
+    if (draftDone(idRef.current)) {
+      if (latest.current.value === lastSaved.current) return true;
+      clearDraftDone(idRef.current);
+    }
+    return false;
+  }, []);
 
   const others = useCallback((): DraftRecord<T>[] => {
     const s = latest.current.scope;
@@ -45,7 +58,8 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
   }, []);
 
   const [offers, setOffers] = useState<DraftRecord<T>[]>(() => { sweepDrafts(); return others(); });
-  const [saved, setSaved] = useState<"full" | "light" | "failed">("full");
+  /** آخرُ حفظ: كاملة، بلا صور، لم تُحفظ، أو موقوف (حُفظت بمكانٍ آخر، أو خروج) — يُقال بصدق. */
+  const [saved, setSaved] = useState<"full" | "light" | "failed" | "stopped">("full");
   // عيادةٌ أو مستخدمٌ تبدّل والنموذجُ مفتوح: العرضُ يُقرأ للنطاق الجديد.
   const seenScope = useRef(scopeKey);
   useEffect(() => {
@@ -56,11 +70,14 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
 
   const flush = useCallback(() => {
     const { scope: s, value: v, isEmpty: empty, lighten: lt } = latest.current;
-    if (!s || stopped()) return;
+    if (!s) return;
+    if (stopped()) { setSaved("stopped"); return; }
     slot.current ??= s; // المستخدمُ عُرف بعد الفتح
     if (scopePrefix(slot.current) !== scopePrefix(s)) return; // النطاقُ تبدّل تحت النموذج
     if (empty(v)) { dropDraft(s, idRef.current); return; }
-    setSaved(saveDraft(s, idRef.current, v, { lighten: lt }));
+    const r = saveDraft(s, idRef.current, v, { lighten: lt });
+    if (r !== "failed") lastSaved.current = v;
+    setSaved(r);
   }, [stopped]);
 
   useEffect(() => {
@@ -93,6 +110,8 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
       if (!offer || !scope) return null;
       flush(); // ما كُتب بهذه الفتحة قبل الاسترجاع يبقى مسودّةً تُعرض لاحقاً
       idRef.current = offer.id;
+      lastSaved.current = undefined;
+      clearDraftDone(offer.id); // اختارها بيده: تُحفظ
       slot.current = scope; // المسترجَعةُ من هذا النطاق — والحفظُ يكمل فيه
       setOffers(others());
       return offer;
@@ -106,7 +125,7 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
     },
     /** تراجعٌ عن `dismiss`. */
     restoreDismissed(rec: DraftRecord<T>): void {
-      if (!scope || purgedAt() >= openedAt.current) return;
+      if (!scope || purgedAt() !== purgeSeen.current) return;
       saveDraft(scope, rec.id, rec.data, { now: rec.savedAt });
       setOffers(others());
     },

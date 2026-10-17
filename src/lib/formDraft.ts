@@ -115,6 +115,11 @@ export function markDraftDone(id: string, store: DraftStorage | null = defaultSt
   try { store?.setItem(DONE_PREFIX + id, String(now)); } catch { /* ممتلئ — أسوأُ الحال عرضٌ يُحذف بيده */ }
 }
 
+/** نموذجٌ عُلِّم «انحفظت» بتبويبٍ آخر ثم كُتب فيه جديد: العلامةُ تُرفع والحفظُ يرجع (تدقيقٌ عدائيّ ثالث). */
+export function clearDraftDone(id: string, store: DraftStorage | null = defaultStorage()): void {
+  try { store?.removeItem(DONE_PREFIX + id); } catch { /* ignore */ }
+}
+
 export function draftDone(id: string, store: DraftStorage | null = defaultStorage()): boolean {
   try { return !!store?.getItem(DONE_PREFIX + id); } catch { return false; }
 }

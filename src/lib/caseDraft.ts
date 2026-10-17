@@ -6,6 +6,7 @@
 import type { Species, Sex } from "@/types";
 import { isEmptyIntake, type IntakeDraft } from "./intake";
 import { searchable } from "./utils";
+import { phoneKey, samePhone } from "./phone";
 
 export type Disposition = "log" | "boarding" | "boardingCare" | "record";
 export type Health = "healthy" | "sick";
@@ -86,12 +87,13 @@ export const lightenCaseDraft = (d: CaseDraft): CaseDraft => ({ ...d, animals: d
  */
 export function draftIsSavedCase(d: CaseDraft, owner: OwnerFields, savedNames: string[]): boolean {
   const n = (s: string | null | undefined) => searchable(s ?? "").trim();
-  const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
-  const dp = digits(d.owner?.phone), sp = digits(owner.phone);
-  // هاتفان كاملان مختلفان = شخصان، ولو تشابه الاسم (تدقيقٌ عدائيّ: «محمد» غيرُ «محمد»).
-  if (dp.length >= 6 && sp.length >= 6 && dp !== sp) return false;
+  // مفتاحُ الهاتف (phone.ts): +964 و00964 والصفرُ الأوّل والأرقامُ الشرقية رقمٌ واحد — المقارنةُ بالأرقام
+  // الخامّ كانت تعدّ «07701…» و«7701…» شخصين فتُبقي مسودّةَ حالةٍ انحفظت (تدقيقٌ عدائيّ ثالث).
+  const dp = phoneKey(d.owner?.phone ?? ""), sp = phoneKey(owner.phone ?? "");
+  // هاتفان كاملان مختلفان = شخصان، ولو تشابه الاسم («محمد» غيرُ «محمد»).
+  if (dp.length >= 8 && sp.length >= 8 && dp !== sp) return false;
   const nameHit = !!n(d.owner?.name) && n(d.owner?.name) === n(owner.name);
-  const phoneHit = dp.length >= 6 && dp === sp;
+  const phoneHit = samePhone(d.owner?.phone ?? "", owner.phone ?? "");
   if (!nameHit && !phoneHit) return false;
   const saved = new Set(savedNames.map(n).filter(Boolean));
   // كلُّ حيوانٍ فيه شغل (صورة، تشخيص، وزن…) لازم يكون مسمّىً ومن المحفوظين — حيوانٌ بلا اسم

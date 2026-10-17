@@ -13,7 +13,7 @@
  * لا localStorage ولا IndexedDB — فقط مخبأ الملفات الثابتة.
  * ==========================================================================*/
 
-import { updateTaken, writesBusy } from "./inflight";
+import { formHeld, updateTaken, writesBusy } from "./inflight";
 
 const ONCE_KEY = "vp_shell_recovered_at";
 const GAP_MS = 30000; // حارس ضد دوّامة تحديث لو كان الفشل لسبب آخر
@@ -21,17 +21,20 @@ const GAP_MS = 30000; // حارس ضد دوّامة تحديث لو كان ال�
  *  على كلّ حال، فالانتظارُ لا يُضيع شيئاً، والتحميلُ فوقها كان يقطعها بلا توست (تدقيقٌ عدائيّ). */
 const WRITE_WAIT_MS = 60_000;
 
-function reloadAfterWrites(): Promise<void> {
+/** انتظر الكتاباتِ (بسقفٍ) ونموذجاً فيه عملٌ لم يُرسل (بلا سقف — عدُّ المخزن لا يُمحى بمؤقّت). */
+function waitForWrites(): Promise<void> {
   const t0 = Date.now();
   return new Promise((done) => {
     const tick = () => {
-      if (writesBusy() && Date.now() - t0 < WRITE_WAIT_MS) { setTimeout(tick, 250); return; }
-      window.location.reload();
+      if (formHeld() || (writesBusy() && Date.now() - t0 < WRITE_WAIT_MS)) { setTimeout(tick, 250); return; }
       done();
     };
     tick();
   });
 }
+
+/** بلا نت لحظةَ القرار ⇒ لا تحميل: صفحةُ «لا اتصال» أسوأ من تطبيقٍ ينقصه جزء (الطابورُ يعمل). */
+const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
 
 /** تعافٍ واحد لكل صفحة: مستمع vite:preloadError وغلاف الاستيراد قد ينطلقان
  *  معاً على نفس الفشل — يتشاركان هذه العملية بدل ما يتسابقان. */
@@ -57,10 +60,18 @@ export function recoverFromStaleShell(): Promise<boolean> {
    * طازج — القطعةُ ناقصةٌ لأن الشِّفرة قديمة لا لأن القشرة قديمة. تحميلٌ عاديّ يكفي؛ مسحُ المخبأ
    * وإلغاءُ الخدمة كان سيعيد تنزيلَ ٧ ميغا ويترك الجهاز بلا عملٍ بلا نت (تدقيقٌ عدائيّ). */
   if (updateTaken()) {
-    inFlight = reloadAfterWrites().then(() => true);
+    inFlight = waitForWrites().then(() => {
+      if (offline()) { inFlight = null; return false; }
+      window.location.reload();
+      return true;
+    });
     return inFlight;
   }
   inFlight = (async () => {
+    /* الانتظارُ **قبل** المسح: مسحُ المخبأ وإلغاءُ الخدمة ثم دقيقةُ انتظار ثم انقطاعُ النت = صفحةُ
+     * «لا اتصال» بدل تطبيقٍ يعمل (تدقيقٌ عدائيّ ثالث). فإن انقطع أثناءها نتراجع ولا نمسّ شيئاً. */
+    await waitForWrites();
+    if (offline()) { inFlight = null; return false; }
     try {
       if (typeof caches !== "undefined") {
         const keys = await caches.keys();
@@ -70,7 +81,7 @@ export function recoverFromStaleShell(): Promise<boolean> {
       const regs = await navigator.serviceWorker?.getRegistrations?.();
       await Promise.all((regs ?? []).map((r) => r.unregister()));
     } catch { /* أي فشل هنا لا يمنع المحاولة الأهم: إعادة التحميل */ }
-    await reloadAfterWrites();
+    window.location.reload();
     return true;
   })();
   return inFlight;
