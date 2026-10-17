@@ -13,19 +13,20 @@
  * ── السياسة ───────────────────────────────────────────────────────────────
  * الخدمةُ الجديدة تُنزَّل بالخلفية وتنتظر (`registerType: "prompt"`)، وتُطبَّق
  * (SKIP_WAITING ثم تحميلٌ واحد) بإحدى ثلاث لحظات:
- *   ١) قبل أن يلمس المستخدمُ الصفحة منذ تحميلها؛
- *   ٢) عند تبديل `pathname` — التبديلُ يرمي حالةَ الصفحة القديمة أصلاً — ما لم يحمل
+ *   ١) لم يلمس أحدٌ الجهازَ منذ تحميل الصفحة؛
+ *   ٢) تبديلُ `pathname` — التبديلُ يرمي حالةَ الصفحة القديمة أصلاً — ما لم يحمل
  *      التبديلُ تسليماً تقرؤه الوجهةُ وتمسحه (App.tsx)؛
- *   ٣) بعد خمولٍ طويل (التبويبُ مخفيّ ٣٠ دقيقة، أو ظاهرٌ بلا لمسة ٣ ساعات، ولا حقلَ
- *      مركَّزٌ فيه نصّ) — حاسوبُ الكاشير الذي لا يبدّل صفحتَه أبداً كان سيبقى على
- *      النسخة القديمة بلا حدّ (تدقيقٌ عدائيّ).
+ *   ٣) خمولٌ طويل: لا لمسةَ **بالجهاز كلِّه** (كلُّ التبويبات — `vp_last_input`) ٣٠ دقيقة
+ *      والتبويبُ مخفيّ، أو ٣ ساعات وهو ظاهر، ولا حقلَ بالصفحة كُتب فيه ولم يُفرغ —
+ *      حاسوبُ الكاشير الذي لا يبدّل صفحتَه كان سيبقى على القديمة بلا حدّ، وتبويبٌ خلفيّ
+ *      خامل كان يطبّقها فوق تبويبٍ يعمل (تدقيقٌ عدائيّ).
  * وبكلّها شرطان يُعادان حتى لحظةِ التحميل نفسها:
- *   - **لا لمسةَ منذ بدأت المحاولة** — وإلا تراجعت (تُطبَّق باللحظة الآمنة التالية)؛
- *   - **لا كتابةَ بالطريق** (`inflight.ts`): سلسلةُ ما بعد البيعة ممسوكةٌ صراحةً، وأيُّ
- *     كتابةٍ أخرى تُنتظر قليلاً — وإلا تُتخطّى.
- * وتبويبٌ استولت عليه نسخةٌ طبّقها تبويبٌ آخر («taken») **لا يُحمَّل** — شِفرتُه القديمة
- * تكمل، ويُحمَّل باللحظة الآمنة التالية؛ وإن طلب قطعةً انحذفت فـ`appUpdate.ts` يحمّله
- * تحميلاً عادياً (الخدمةُ الجديدة تخدم الجديد) بلا مسح المخبأ.
+ *   - **لا لمسةَ بالجهاز منذ القرار** — وإلا تراجعت (تُطبَّق باللحظة الآمنة التالية)؛
+ *   - **لا كتابةَ بالطريق** (`inflight.ts`) — والقرارُ نفسُه يُؤجَّل خطوةً: كتابةُ الصفحة
+ *     المغادَرة (تفريغُ ملاحظةٍ عند خروجها) تصل العدّادَ بعد جولةٍ من الوعود.
+ * وطلبُنا للتخطّي محفوظٌ حتى يُحمَّل التبويب: استيلاءٌ تأخّر (القديمةُ تُكمل صوراً) يحمّله
+ * ما لم يُلمس منذ الطلب. وتبويبٌ استولت عليه نسخةٌ طلبها غيرُه («taken») **لا يُحمَّل** —
+ * يُحمَّل باللحظة الآمنة التالية؛ وإن طلب قطعةً انحذفت فـ`appUpdate.ts` يحمّله بعد أن تهدأ الكتابات.
  *
  * القرارُ كلُّه بـ`createUpdater` على بيئةٍ تُحقن، فيُفحص بسلوكه (sw-update-test).
  * ==========================================================================*/
@@ -47,14 +48,14 @@ export interface UpdaterEnv {
   onControllerChange(fn: () => void): void;
   reload(): void;
   now(): number;
-  /** وقتُ آخر ضغطةٍ أو حرف بالصفحة (0 = لم يلمسها أحدٌ منذ تحميلها). */
+  /** وقتُ آخر ضغطةٍ أو حرف **بالجهاز** (هذا التبويب أو غيرُه؛ 0 = لا شيء). */
   lastInput(): number;
   /** كتابةٌ بالطريق أو ممسوكة (`inflight.writesBusy`). */
   busy(): boolean;
   /** سلسلةٌ ممسوكةٌ صراحةً (`inflight.holdsActive`) — تبديلُ الصفحة لا ينتظرها، يتخطّى. */
   held(): boolean;
   hidden(): boolean;
-  /** حقلٌ مركَّزٌ فيه نصّ — الخمولُ لا يطبّق فوقه. */
+  /** بالصفحة حقلٌ كُتب فيه وما زال فيه نصّ — الخمولُ لا يطبّق فوقه. */
   editing(): boolean;
   /** ذاكرةُ الجلسة — حارسُ الدوّامة يعيش عبر التحميل. */
   session: { getItem(k: string): string | null; setItem(k: string, v: string): void };
@@ -66,7 +67,8 @@ export type UpdateState = "none" | "waiting" | "taken";
 const APPLIED_KEY = "vp_sw_applied_at";
 /** تطبيقٌ واحد كلّ ٣٠ ثانية: إن لم تنفع إعادةُ التحميل فلا دوّامة. */
 const LOOP_GAP_MS = 30_000;
-/** بعد طلب التخطّي: إن بقيت الخدمةُ تنتظر فالتفعيلُ مؤجَّل (الخدمةُ القديمة تُكمل صوراً) — نتراجع. */
+/** بعد طلب التخطّي: إن بقيت الخدمةُ تنتظر فالتفعيلُ مؤجَّل (القديمةُ تُكمل صوراً) — نتراجع ونترك
+ *  الاستيلاءَ المتأخّر يقرّر. */
 const FALLBACK_MS = 4_000;
 /** كم تُنتظر كتابةٌ بالطريق قبل التخطّي: عند تبديل الصفحة قصيراً، وعند الإقلاع والخمول أطول. */
 const DRAIN_PAGE_MS = 3_000;
@@ -78,78 +80,85 @@ export const IDLE_VISIBLE_MS = 3 * 3600_000;
 export function createUpdater(env: UpdaterEnv) {
   let reg: RegLike | null = null;
   let state: UpdateState = "none";
+  /** قرارُ تحميلٍ جارٍ (ينتظر أن تهدأ الكتابات). */
   let applying = false;
-  let appliedAt = 0;
-  let attempt = 0; // معرّفُ المحاولة الجارية — محاولةٌ أحدث تُلغي مؤقّتاتِ ما قبلها
+  /** طلبنا التخطّي في هذه اللحظة ولم يُحمَّل التبويبُ بعد — الاستيلاءُ المتأخّر لنا. */
+  let requestedAt = 0;
+  /** معرّفُ المحاولة — محاولةٌ أحدث تُبطل مؤقّتاتِ ما قبلها. */
+  let attempt = 0;
   let wasControlled = env.controlled();
+  const bootAt = env.now();
 
-  /** هل لمس أحدٌ الصفحةَ بعد `since`؟ (0 = منذ التحميل) */
   const touchedSince = (since: number) => env.lastInput() > since;
 
   /** حمّل الآن إن بقي الشرطان، وإلا انتظر الكتابةَ حتى المهلة، أو تراجع. */
-  const reloadWhenSafe = (since: number, deadline: number) => {
-    if (touchedSince(since)) { standDown(); return; }
+  const reloadWhenSafe = (my: number, since: number, deadline: number) => {
+    if (my !== attempt || !applying) return;
+    if (touchedSince(since)) { applying = false; return; }
     if (env.busy()) {
-      if (env.now() >= deadline) { standDown(); return; }
-      env.setTimer(() => { if (applying) reloadWhenSafe(since, deadline); }, DRAIN_STEP_MS);
+      if (env.now() >= deadline) { applying = false; return; }
+      env.setTimer(() => reloadWhenSafe(my, since, deadline), DRAIN_STEP_MS);
       return;
     }
     env.reload();
-  };
-
-  /** تراجع: الخدمةُ إن استولت فالحالةُ «taken» — تُطبَّق باللحظة الآمنة التالية. */
-  const standDown = () => {
-    applying = false;
-    if (!reg?.waiting && env.controlled() && state === "waiting") state = "taken";
   };
 
   /** ابدأ التطبيق. `since` = لحظةُ القرار (لمسةٌ بعدها تلغيه)، `drainMs` = كم تُنتظر الكتابات. */
   const apply = (since: number, drainMs: number): boolean => {
     if (applying || state === "none") return false;
     if (touchedSince(since)) return false;
-    const last = Number(env.session.getItem(APPLIED_KEY) || 0);
-    if (env.now() - last < LOOP_GAP_MS) return false;
+    if (env.now() - Number(env.session.getItem(APPLIED_KEY) || 0) < LOOP_GAP_MS) return false;
     const my = ++attempt;
+    applying = true;
     const deadline = env.now() + drainMs;
     const go = () => {
-      if (my !== attempt) return;
-      if (touchedSince(since)) return;
+      if (my !== attempt || !applying) return;
+      if (touchedSince(since)) { applying = false; return; }
       if (env.busy()) {
-        if (env.now() >= deadline) return; // كتابةٌ لم تنتهِ: تُتخطّى هذه اللحظة
+        if (env.now() >= deadline) { applying = false; return; } // كتابةٌ لم تنتهِ: تُتخطّى هذه اللحظة
         env.setTimer(go, DRAIN_STEP_MS);
         return;
       }
-      env.session.setItem(APPLIED_KEY, String(env.now()));
-      applying = true;
-      appliedAt = env.now();
+      const at = env.now();
+      env.session.setItem(APPLIED_KEY, String(at));
       const waiting = reg?.waiting;
       if (state === "waiting" && waiting) {
-        // التخطّي يُطلب، والتحميلُ عند `controllerchange` (أدناه).
-        waiting.postMessage({ type: "SKIP_WAITING" });
+        requestedAt = at;
+        waiting.postMessage({ type: "SKIP_WAITING" }); // والتحميلُ عند `controllerchange`
         env.setTimer(() => {
-          if (!applying || my !== attempt) return;
-          // ما زالت تنتظر = التفعيلُ مؤجَّل؛ تحميلٌ الآن تخدمه القديمةُ نفسُها — نتراجع.
+          if (my !== attempt || !applying) return; // الاستيلاءُ وصل وتسلّم القرار
+          // ما زالت تنتظر = التفعيلُ مؤجَّل؛ تحميلٌ الآن تخدمه القديمةُ نفسُها — نتراجع،
+          // و`requestedAt` يبقى: الاستيلاءُ المتأخّر يحمّل ما لم يُلمس منذ الطلب.
           if (reg?.waiting) { applying = false; return; }
-          reloadWhenSafe(appliedAt, appliedAt + drainMs + FALLBACK_MS);
+          reloadWhenSafe(my, at, at + drainMs + FALLBACK_MS); // فُعِّلت ولم يصل الحدث
         }, FALLBACK_MS);
       } else {
-        // «taken»: الخدمةُ الجديدة تتحكّم أصلاً — ما بقي إلا شِفرتُها.
-        reloadWhenSafe(appliedAt, appliedAt + drainMs);
+        reloadWhenSafe(my, at, at + drainMs); // «taken»: الجديدةُ تتحكّم — ما بقي إلا شِفرتُها
       }
     };
-    go();
+    // خطوةً لا فوراً: كتابةُ الصفحة المغادَرة تمرّ بـgetSession قبل أن يعدّها trackedFetch.
+    env.setTimer(go, DRAIN_STEP_MS);
     return true;
   };
 
   const ready = (s: Exclude<UpdateState, "none">) => {
     if (state !== "taken") state = s;
-    if (!touchedSince(0)) apply(0, DRAIN_LONG_MS);
+    if (!touchedSince(bootAt)) apply(bootAt, DRAIN_LONG_MS);
   };
 
   env.onControllerChange(() => {
-    if (!wasControlled) { wasControlled = true; return; }      // أوّلُ تثبيت: لا نسخةَ قديمة
-    if (applying) { state = "taken"; reloadWhenSafe(appliedAt, appliedAt + DRAIN_LONG_MS); return; } // نحن طلبناه
-    ready("taken");                                              // تبويبٌ آخر طبّقه
+    if (!wasControlled) { wasControlled = true; return; } // أوّلُ تثبيت: لا نسخةَ قديمة
+    state = "taken";
+    if (requestedAt) {
+      // طلبُنا — ولم يُحمَّل التبويبُ منذه، فلا دوّامةَ يحرسها APPLIED_KEY: حمّل إن لم يُلمس منذ الطلب.
+      const since = requestedAt;
+      requestedAt = 0;
+      const my = ++attempt;
+      applying = true;
+      reloadWhenSafe(my, since, env.now() + DRAIN_LONG_MS);
+      return;
+    }
+    ready("taken"); // طلبه تبويبٌ آخر
   });
 
   return {
@@ -175,16 +184,18 @@ export function createUpdater(env: UpdaterEnv) {
       if (state === "none" || env.held()) return false;
       return apply(env.now(), DRAIN_PAGE_MS);
     },
-    /** كلّ دقيقة: خمولٌ طويل بلا حقلٍ مكتوب ⇒ تُطبَّق. */
+    /** كلّ دقيقة: خمولٌ طويل بالجهاز كلِّه، بلا حقلٍ مكتوب ⇒ تُطبَّق. */
     idleTick(): boolean {
       if (state === "none" || applying || env.held() || env.editing()) return false;
-      const idle = env.now() - env.lastInput();
-      if (idle < (env.hidden() ? IDLE_HIDDEN_MS : IDLE_VISIBLE_MS)) return false;
-      return apply(env.lastInput(), DRAIN_LONG_MS);
+      const last = Math.max(env.lastInput(), bootAt);
+      if (env.now() - last < (env.hidden() ? IDLE_HIDDEN_MS : IDLE_VISIBLE_MS)) return false;
+      return apply(last, DRAIN_LONG_MS);
     },
     get state(): UpdateState { return state; },
   };
 }
+
+const SHARED_INPUT_KEY = "vp_last_input";
 
 /** الإقلاع (`main.tsx` يحمّل هذه القطعةَ فوراً): سجّل الخدمة بسياسة «لا تحميلَ تحت اليد».
  *  `App.tsx` و`appUpdate.ts` يصلانها من جسر `inflight.ts` (`notePageChange`/`updateTaken`). */
@@ -192,7 +203,18 @@ export function startAppUpdates(): void {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
   const sw = navigator.serviceWorker;
   let lastInput = 0;
-  const stamp = () => { lastInput = Date.now(); };
+  let sharedAt = 0;
+  /** حقولٌ كُتب فيها بهذه الصفحة — الخمولُ لا يطبّق ما دام فيها نصّ (عدٌّ للمخزن، ملاحظة…). */
+  const typed = new Set<Element>();
+  const stamp = (e: Event) => {
+    lastInput = Date.now();
+    if (e.type === "input" && e.target instanceof Element) typed.add(e.target);
+    // ختمٌ مشترك بين التبويبات (كلّ ثانية بالأكثر): تبويبٌ خلفيّ لا يطبّق والآخرُ يعمل.
+    if (lastInput - sharedAt > 1000) {
+      sharedAt = lastInput;
+      try { localStorage.setItem(SHARED_INPUT_KEY, String(lastInput)); } catch { /* ممنوع */ }
+    }
+  };
   for (const ev of ["pointerdown", "keydown", "input"] as const) {
     window.addEventListener(ev, stamp, { capture: true, passive: true });
   }
@@ -202,15 +224,21 @@ export function startAppUpdates(): void {
     onControllerChange: (fn) => sw.addEventListener("controllerchange", fn),
     reload: () => window.location.reload(),
     now: () => Date.now(),
-    lastInput: () => lastInput,
+    lastInput: () => {
+      let shared = 0;
+      try { shared = Number(localStorage.getItem(SHARED_INPUT_KEY) || 0); } catch { /* ممنوع */ }
+      return Math.max(lastInput, shared);
+    },
     busy: () => writesBusy(),
     held: () => holdsActive(),
     hidden: () => document.visibilityState === "hidden",
     editing: () => {
-      const el = document.activeElement as (HTMLElement & { value?: unknown }) | null;
-      if (!el) return false;
-      if (el.isContentEditable) return !!el.textContent?.trim();
-      return /^(INPUT|TEXTAREA)$/.test(el.tagName) && typeof el.value === "string" && el.value.trim() !== "";
+      for (const el of typed) {
+        if (!el.isConnected) { typed.delete(el); continue; }
+        const v = (el as HTMLElement & { value?: unknown }).value;
+        if (typeof v === "string" ? v.trim() !== "" : !!(el as HTMLElement).isContentEditable && !!el.textContent?.trim()) return true;
+      }
+      return false;
     },
     session: {
       getItem: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
@@ -226,4 +254,3 @@ export function startAppUpdates(): void {
   window.setInterval(() => u.check(), 20 * 60 * 1000);
   window.setInterval(() => u.idleTick(), 60 * 1000);
 }
-

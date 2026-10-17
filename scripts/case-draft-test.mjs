@@ -47,8 +47,11 @@ writeFileSync(join(dir, "entry.ts"), [
   `export { useFormDraft } from "${src("src/lib/useFormDraft.ts")}";`,
   `export { __render, __unmount } from "react";`,
 ].join("\n"));
-await build({ entryPoints: [join(dir, "entry.ts")], bundle: true, format: "esm", platform: "node", outfile: join(dir, "m.mjs"), logLevel: "silent",
-  alias: { "@": join(process.cwd(), "src"), react: join(dir, "react-shim.mjs") } });
+// نسختان من الحزمة = تبويبان: حالةُ الوحدات مستقلّة (React والإيقاف)، والتخزينُ مشترك.
+for (const out of ["m.mjs", "m2.mjs"]) {
+  await build({ entryPoints: [join(dir, "entry.ts")], bundle: true, format: "esm", platform: "node", outfile: join(dir, out), logLevel: "silent",
+    alias: { "@": join(process.cwd(), "src"), react: join(dir, "react-shim.mjs") } });
+}
 
 /** localStorage مزيّف — بسقفٍ اختياريّ للبايتات (امتلاء الجهاز). */
 function memStore(capBytes = Infinity) {
@@ -80,6 +83,7 @@ globalThis.document = { visibilityState: "visible", addEventListener() {}, remov
 const runTimers = () => { const t = timers; timers = []; t.forEach((f) => f && f()); };
 
 const fd = await import(pathToFileURL(join(dir, "m.mjs")).href);
+const fd2 = await import(pathToFileURL(join(dir, "m2.mjs")).href); // التبويبُ الثاني
 rmSync(dir, { recursive: true, force: true });
 const cd = fd, intake = fd;
 
@@ -230,6 +234,66 @@ console.log("▸ caseDraft: متى تُعدّ فارغة، و«وُجد»، و«
   check("  حيوانٌ آخر ⇒ حالةٌ أخرى", !cd.draftIsSavedCase(kase({ owner: owner({ name: "ابو علي" }), animals: [animal({ name: "ريكس" })] }), saved, ["لولو"]));
   check("  مالكٌ آخر ⇒ حالةٌ أخرى", !cd.draftIsSavedCase(kase({ owner: owner({ name: "ام حسن" }), animals: [animal({ name: "لولو" })] }), saved, ["لولو"]));
   check("  وهاتفٌ قصيرٌ لا يطابق وحده", !cd.draftIsSavedCase(kase({ owner: owner({ phone: "77" }) }), owner({ phone: "77" }), []));
+}
+
+console.log("▸ «انحفظت»: هاتفٌ مختلف، وحيوانٌ بلا اسم فيه شغل (تدقيقٌ عدائيّ ثانٍ)");
+{
+  const savedOwner = owner({ name: "محمد", phone: "+964 7801112222" });
+  check("نفسُ الاسم وهاتفان كاملان مختلفان ⇒ شخصان (لا تُمسح مسودّتُه)",
+    !cd.draftIsSavedCase(kase({ owner: owner({ name: "محمد", phone: "+964 7709998888" }), animals: [animal({ name: "مشمش", diagnosis: "x" })] }), savedOwner, ["مشمش"]));
+  check("  وحيوانٌ بلا اسم فيه تشخيصٌ وصورة ⇒ ليس «هذه الحالة»",
+    !cd.draftIsSavedCase(kase({ owner: owner({ name: "محمد" }), animals: [animal({ weight: "4", diagnosis: "التهاب", photo: "data:x" })] }), savedOwner, ["لولو"]));
+  check("  ومالكٌ وحده بلا حيوانٍ مكتوب ⇒ نعم (جزءٌ من الحالة نفسِها)",
+    cd.draftIsSavedCase(kase({ owner: owner({ name: "محمد" }) }), savedOwner, ["لولو"]));
+  check("  ونفسُ الاسم وهاتفُ المسودّة ناقص ⇒ يطابق بالاسم",
+    cd.draftIsSavedCase(kase({ owner: owner({ name: "محمد", phone: "+964 " }), animals: [animal({ name: "مشمش" })] }), savedOwner, ["مشمش"]));
+}
+
+console.log("▸ تبويبان على الجهاز نفسِه (تدقيقٌ عدائيّ ثانٍ)");
+{
+  const props = (value) => ({ scope: A, value, isEmpty: (d) => cd.caseDraftIsEmpty(d), lighten: cd.lightenCaseDraft });
+  const X = kase({ owner: owner({ name: "ابو علي" }), animals: [animal({ name: "لولو" })] });
+  const savedOf = (d) => cd.draftIsSavedCase(d, X.owner, ["لولو"]);
+  // (أ) التبويب ١ يكتب، والتبويب ٢ يسترجعها ويحفظها، ثم يُغلق التبويب ١
+  fd.__render(fd.useFormDraft, props(X)); runTimers();
+  let h2 = fd2.__render(fd2.useFormDraft, props(kase()));
+  const rec = h2.take();
+  h2 = fd2.__render(fd2.useFormDraft, props(rec.data)); runTimers();
+  h2.clear(savedOf);
+  check("الحفظُ بتبويبٍ آخر ⇒ لا مسودّة", fd.listDrafts(A).length === 0);
+  fd.__unmount(); fd2.__unmount();
+  check("  وإغلاقُ التبويب الأوّل لا يعيدها «ما انحفظت»", fd.listDrafts(A).length === 0, String(fd.listDrafts(A).length));
+  LS.m.clear();
+  // (ب) التبويب ٢ كتبها من جديد بلا استرجاع وحفظها
+  fd.__render(fd.useFormDraft, props(X)); runTimers();
+  h2 = fd2.__render(fd2.useFormDraft, props(X)); runTimers();
+  h2.clear(savedOf);
+  fd.__unmount(); fd2.__unmount();
+  check("  وكتابتُها من جديد وحفظُها ⇒ الأوّلُ لا يعيدها أيضاً", fd.listDrafts(A).length === 0, String(fd.listDrafts(A).length));
+  LS.m.clear();
+}
+{
+  const props = (value) => ({ scope: A, value, isEmpty: (d) => cd.caseDraftIsEmpty(d), lighten: cd.lightenCaseDraft });
+  const X = kase({ owner: owner({ name: "ابو علي", phone: "+964 7701234567" }), animals: [animal({ name: "لولو" })] });
+  fd.__render(fd.useFormDraft, props(X)); runTimers();     // «حالة جديدة» مفتوحةٌ بالتبويب ١
+  await new Promise((r) => setTimeout(r, 5));
+  fd2.purgeDrafts();                                         // الخروجُ ضُغط بالتبويب ٢
+  check("الخروجُ بتبويبٍ آخر يمسحها", fd.listDrafts(A).length === 0);
+  fd.__unmount();                                            // SIGNED_OUT يزيح نموذجَ التبويب ١ فيحفظه
+  check("  وإزاحةُ النموذج بالتبويب ١ لا تعيد كتابتَها (هاتفُ المالك لا يبقى)", fd.listDrafts(A).length === 0 && ![...LS.m.keys()].some((k) => k.startsWith("vp_draft:")));
+  await new Promise((r) => setTimeout(r, 5));
+  fd.__render(fd.useFormDraft, props(X)); runTimers();     // دخولٌ جديد بعده: النموذجُ يحفظ عادياً
+  check("  ونموذجٌ فُتح بعد الخروج يحفظ عادياً", fd.listDrafts(A).length === 1);
+  fd.__unmount();
+  LS.m.clear();
+}
+
+console.log("▸ الإشعار يقول ما حدث (تدقيقٌ عدائيّ ثانٍ)");
+{
+  const en = JSON.parse(readFileSync("src/i18n/en.json", "utf8")).newCase;
+  const ar = JSON.parse(readFileSync("src/i18n/ar.json", "utf8")).newCase;
+  check("«بلا الصور» لا يدّعي «الذاكرة ممتلئة» (فوق ٤٠٠ ألف حرف ليس امتلاءً)", !/full/i.test(en.draftLight) && !/ممتلئ/.test(ar.draftLight), `${en.draftLight} | ${ar.draftLight}`);
+  check("  و«لم تُحفظ» يقولها", /full/i.test(en.draftFailed) && /ممتلئ/.test(ar.draftFailed));
 }
 
 console.log("▸ الخروج: تُمسح المسودّاتُ ويقف حفظُها (تدقيقٌ عدائيّ)");

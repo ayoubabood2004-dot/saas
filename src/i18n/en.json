@@ -2898,7 +2898,7 @@
     "goCalendar": "Master calendar",
     "goRecords": "Go to records",
     "draftAuto": "Auto-saved on this device",
-    "draftLight": "Saved on this device without photos — storage is full",
+    "draftLight": "Saved on this device without photos",
     "draftTitle": "Unsaved case from {{when}}",
     "draftNoName": "No name yet",
     "draftNoPhoto": "without photos",

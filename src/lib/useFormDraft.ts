@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dropDraft, listDrafts, newDraftId, saveDraft, scopePrefix, sweepDrafts, type DraftRecord, type DraftScope } from "./formDraft";
+import { draftDone, dropDraft, listDrafts, markDraftDone, newDraftId, saveDraft, scopePrefix, sweepDrafts, type DraftRecord, type DraftScope } from "./formDraft";
+import { purgedAt } from "./draftPurge";
 
 /**
  * مسودّةُ نموذجٍ بحياة المكوّن (formDraft.ts للقواعد).
@@ -12,6 +13,8 @@ import { dropDraft, listDrafts, newDraftId, saveDraft, scopePrefix, sweepDrafts,
  *  - **الفتحةُ مربوطةٌ بنطاقها**: عيادةٌ أو مستخدمٌ تبدّل والنموذجُ مفتوح (جلسةُ المشغّل انتهت،
  *    my_workspace فشل لحظةً، عضويةٌ أُزيلت) ⇒ يقف الحفظ؛ ما كُتب لعيادة لا يُكتب بنطاق أخرى
  *    فيُعرض فيها ويُسجَّل بأرضها (0153، ١٣/١٠). يرجع النطاقُ ⇒ يرجع الحفظ.
+ *  - **وعبر التبويبات**: فتحةٌ مسحها حفظٌ بتبويبٍ آخر (`vp_draft_done:`) تقف ولا تعيدها، ونموذجٌ
+ *    فُتح قبل خروجٍ من أيّ تبويب (`vp_draft_purged`) يقف — تبويبٌ آخر كان يعيد كتابةَ ما مُسح.
  * `scope` فارغ (لا مستخدم بعد) ⇒ لا حفظَ ولا عرض.
  */
 export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
@@ -25,6 +28,13 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
   /** النطاقُ الذي تكتب فيه هذه الفتحة — يُثبَّت بأوّل نطاقٍ معروف. */
   const slot = useRef<DraftScope | null>(scope);
   const closed = useRef(false);
+  /** لحظةُ فتح النموذج — خروجٌ بعدها (من أيّ تبويب) يوقف حفظَه. */
+  const openedAt = useRef(Date.now());
+  /** هل يقف الحفظ؟ (حُفظ هنا، أو مسحه حفظٌ بتبويبٍ آخر، أو خرج المستخدم بعد فتحه) */
+  const stopped = useCallback((): boolean => {
+    if (!closed.current && (purgedAt() >= openedAt.current || draftDone(idRef.current))) closed.current = true;
+    return closed.current;
+  }, []);
   const latest = useRef({ scope, value, isEmpty, lighten });
   latest.current = { scope, value, isEmpty, lighten };
 
@@ -46,12 +56,12 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
 
   const flush = useCallback(() => {
     const { scope: s, value: v, isEmpty: empty, lighten: lt } = latest.current;
-    if (closed.current || !s) return;
+    if (!s || stopped()) return;
     slot.current ??= s; // المستخدمُ عُرف بعد الفتح
     if (scopePrefix(slot.current) !== scopePrefix(s)) return; // النطاقُ تبدّل تحت النموذج
     if (empty(v)) { dropDraft(s, idRef.current); return; }
     setSaved(saveDraft(s, idRef.current, v, { lighten: lt }));
-  }, []);
+  }, [stopped]);
 
   useEffect(() => {
     const t = window.setTimeout(flush, 300);
@@ -96,7 +106,7 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
     },
     /** تراجعٌ عن `dismiss`. */
     restoreDismissed(rec: DraftRecord<T>): void {
-      if (!scope) return;
+      if (!scope || purgedAt() >= openedAt.current) return;
       saveDraft(scope, rec.id, rec.data, { now: rec.savedAt });
       setOffers(others());
     },
@@ -106,7 +116,8 @@ export function useFormDraft<T>({ scope, value, isEmpty, lighten }: {
       const s = slot.current ?? scope;
       if (!s) return;
       dropDraft(s, idRef.current);
-      if (also) for (const d of listDrafts<T>(s)) if (also(d.data)) dropDraft(s, d.id);
+      markDraftDone(idRef.current);
+      if (also) for (const d of listDrafts<T>(s)) if (also(d.data)) { dropDraft(s, d.id); markDraftDone(d.id); }
     },
   };
 }

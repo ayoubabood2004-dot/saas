@@ -22,7 +22,7 @@
  *   node scripts/sw-update-test.mjs [--built]
  * ==========================================================================*/
 import { build } from "esbuild";
-import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -38,19 +38,28 @@ const load = async (entry) => {
 };
 const m = await load("src/lib/swUpdate.ts");
 const inf = await load("src/lib/inflight.ts");
+// appUpdate مع inflight بحزمةٍ واحدة: يقرأ العدّادَ نفسَه الذي يمسكه الفحص.
+const srcAbs = (p) => join(process.cwd(), p).split("\\").join("/");
+writeFileSync(join(dir, "au-entry.ts"), `export * from "${srcAbs("src/lib/appUpdate.ts")}";\nexport * from "${srcAbs("src/lib/inflight.ts")}";\n`);
+const au = await load(join(dir, "au-entry.ts"));
 rmSync(dir, { recursive: true, force: true });
 
+
 const MIN = 60_000, HOUR = 3_600_000;
+/** ساعةٌ بحجم Date.now() الحقيقيّ — الساعةُ الصغيرة كانت تُخفي «لم يلمسه أحدٌ قطّ = خاملٌ بلا حدّ». */
+const T0 = 1_760_000_000_000;
+/** القرارُ يُؤجَّل خطوةً (DRAIN_STEP) — كتابةُ الصفحة المغادَرة تصل العدّادَ أوّلاً. */
+const STEP = 300;
 
 /** خدمةٌ مزيّفة + ساعة: تسجيل، نسخةٌ تُثبَّت، استيلاء، مؤقّتات، لمسات، كتابات — وسجلُّ ما طُلب. */
-function harness({ controlled = true, waiting = false, session = new Map(), t0 = 1_000_000 } = {}) {
+function harness({ controlled = true, waiting = false, session = new Map(), t0 = T0 } = {}) {
   const log = [];
   let ctrl = controlled;
   const onCC = [];
   let timers = [];
   let now = t0;
   const io = { lastInput: 0, busy: false, held: false, hidden: false, editing: false };
-  const worker = () => ({ postMessage: (msg) => log.push(`post:${msg?.type}`) });
+  const worker = () => ({ postMessage: (msg) => log.push(`post:${msg?.type}@${now - t0}`) });
   const reg = {
     waiting: waiting ? worker() : null,
     installing: null,
@@ -62,7 +71,7 @@ function harness({ controlled = true, waiting = false, session = new Map(), t0 =
     controlled: () => ctrl,
     register: async () => reg,
     onControllerChange: (fn) => onCC.push(fn),
-    reload: () => log.push("reload"),
+    reload: () => log.push(`reload@${now - t0}`),
     now: () => now,
     lastInput: () => io.lastInput,
     busy: () => io.busy || io.held,
@@ -72,8 +81,10 @@ function harness({ controlled = true, waiting = false, session = new Map(), t0 =
     session: { getItem: (k) => session.get(k) ?? null, setItem: (k, v) => session.set(k, v) },
     setTimer: (fn, ms) => timers.push({ fn, at: now + ms }),
   });
-  const h = {
+  now += 1_000; // الصفحةُ حُمّلت قبل ثانية: لمسةٌ «الآن» بعد التحميل لا بنفس جزء الثانية
+  return {
     u, log, io, reg, session,
+    get t() { return now - t0; },
     /** الخادمُ فيه نسخةٌ أحدث: تُنزَّل وتُثبَّت وتنتظر. */
     installNew() {
       const w = { state: "installing", sc: [], addEventListener(_t, fn) { this.sc.push(fn); } };
@@ -81,9 +92,10 @@ function harness({ controlled = true, waiting = false, session = new Map(), t0 =
       w.state = "installed"; reg.installing = null; reg.waiting = worker();
       w.sc.forEach((f) => f());
     },
-    /** تبدّلت الخدمةُ المتحكّمة (فُعِّلت): الانتظارُ فرغ. */
+    /** القديمةُ ما زالت مشغولة: طلبُ التخطّي لا يفعّل بعد (الانتظارُ يبقى). */
+    /** فُعِّلت: الانتظارُ فرغ والمتحكّمةُ تبدّلت. */
     controllerChange() { ctrl = true; reg.waiting = null; onCC.forEach((f) => f()); },
-    /** المستخدمُ ضغط أو كتب الآن. */
+    /** المستخدمُ (بهذا التبويب أو غيره) ضغط أو كتب الآن. */
     touch() { io.lastInput = now; },
     /** تقدّمُ الساعة وتُطلق المؤقّتاتُ المستحقّة (ومنها ما يُضاف أثناءها). */
     advance(ms) {
@@ -96,10 +108,9 @@ function harness({ controlled = true, waiting = false, session = new Map(), t0 =
       }
       now = end;
     },
-    reloads: () => log.filter((e) => e === "reload").length,
-    posts: () => log.filter((e) => e === "post:SKIP_WAITING").length,
+    reloads: () => log.filter((e) => e.startsWith("reload")).length,
+    posts: () => log.filter((e) => e.startsWith("post:SKIP_WAITING")).length,
   };
-  return h;
 }
 
 console.log("▸ الشكوى نفسُها: الطبيبُ يكتب والنسخةُ تنزل");
@@ -113,8 +124,10 @@ console.log("▸ الشكوى نفسُها: الطبيبُ يكتب والنسخ
   check("  والحالةُ «تنتظر»", h.u.state === "waiting", h.u.state);
   h.u.check(); h.u.check(); h.advance(10_000);
   check("عودةُ التبويب ومؤقّتُ ٢٠ دقيقة يسألان فقط", h.reloads() === 0 && h.log.filter((e) => e === "update").length === 2, h.log.join(","));
-  check("تبديلُ الصفحة ⇒ طلبُ تخطٍّ واحد", h.u.pageChanged() === true && h.posts() === 1, h.log.join(","));
-  check("  ولا تحميلَ قبل أن تستولي", h.reloads() === 0);
+  check("تبديلُ الصفحة ⇒ يبدأ التطبيق", h.u.pageChanged() === true);
+  check("  والقرارُ بعد خطوة لا فوراً (كتابةُ الصفحة المغادَرة تُعدّ أوّلاً)", h.posts() === 0);
+  h.advance(STEP);
+  check("  ثم طلبُ تخطٍّ واحد، ولا تحميلَ قبل أن تستولي", h.posts() === 1 && h.reloads() === 0, h.log.join(","));
   h.controllerChange();
   check("  واستيلاؤها ⇒ تحميلٌ واحد", h.reloads() === 1, h.log.join(","));
 }
@@ -122,23 +135,24 @@ console.log("▸ الشكوى نفسُها: الطبيبُ يكتب والنسخ
 console.log("▸ لم يلمس الصفحةَ بعد");
 {
   const h = harness({ waiting: true });
-  await h.u.start();
-  check("نسخةٌ تنتظر عند الإقلاع ولا لمسة ⇒ تُطبَّق فوراً", h.posts() === 1, h.log.join(","));
+  await h.u.start(); h.advance(STEP);
+  check("نسخةٌ تنتظر عند الإقلاع ولا لمسة ⇒ تُطبَّق", h.posts() === 1, h.log.join(","));
   h.controllerChange();
   check("  وتحميلٌ واحد عند الاستيلاء", h.reloads() === 1);
 }
 {
   const h = harness();
+  h.io.lastInput = T0 - HOUR;      // ختمٌ مشترك من أمس/قبل التحميل: ليس لمسةً لهذه الصفحة
   await h.u.start();
-  h.installNew();
-  check("نسخةٌ تكتمل قبل أيّ لمسة ⇒ تُطبَّق", h.posts() === 1, h.log.join(","));
+  h.installNew(); h.advance(STEP);
+  check("نسخةٌ تكتمل قبل أيّ لمسةٍ منذ التحميل ⇒ تُطبَّق (لمسةٌ قبله لا تُحسب)", h.posts() === 1, h.log.join(","));
 }
 {
   const h = harness({ waiting: true });
   h.io.busy = true;                // طلباتُ الإقلاع بالطريق (my_workspace…)
-  await h.u.start();
+  await h.u.start(); h.advance(2_000);
   check("الإقلاعُ وكتاباتُه بالطريق ⇒ تُنتظر", h.posts() === 0, h.log.join(","));
-  h.advance(2_000); h.io.busy = false; h.advance(500);
+  h.io.busy = false; h.advance(500);
   check("  وتُطبَّق حين تهدأ", h.posts() === 1, h.log.join(","));
 }
 {
@@ -146,7 +160,14 @@ console.log("▸ لم يلمس الصفحةَ بعد");
   h.io.busy = true;
   await h.u.start();
   h.advance(1_000); h.touch(); h.io.busy = false; h.advance(1_000);
-  check("  ولمسةٌ أثناء الانتظار ⇒ تراجع (لا تحميلَ تحت يده)", h.posts() === 0 && h.reloads() === 0, h.log.join(","));
+  check("  ولمسةٌ أثناء الانتظار ⇒ تراجع", h.posts() === 0 && h.reloads() === 0, h.log.join(","));
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.advance(2_000); h.touch();     // تبويبٌ آخر بالجهاز يعمل (الختمُ المشترك)
+  h.installNew(); h.advance(STEP);
+  check("لمسةٌ بأيّ تبويبٍ بالجهاز بعد التحميل ⇒ ليست «لم يُلمس»", h.posts() === 0, h.log.join(","));
 }
 
 console.log("▸ الحاجز: سلسلةُ ما بعد البيعة (تدقيقٌ عدائيّ — المانع)");
@@ -157,19 +178,19 @@ console.log("▸ الحاجز: سلسلةُ ما بعد البيعة (تدقيق
   h.io.held = true;                // checkout ممسوك: الجرعة ثم المعزّزة ثم العملية
   check("سلسلةٌ ممسوكة ⇒ تبديلُ الصفحة لا يطبّق", h.u.pageChanged() === false, h.log.join(","));
   h.advance(30_000);
-  check("  ولا يطبّق لاحقاً تحت اليد (تُتخطّى اللحظة كلُّها)", h.posts() === 0 && h.reloads() === 0, h.log.join(","));
+  check("  ولا يطبّق لاحقاً تحت اليد", h.posts() === 0 && h.reloads() === 0, h.log.join(","));
   h.io.held = false; h.advance(1_000);
-  check("  والإفلاتُ ثم تبديلٌ تالٍ ⇒ يطبّق", h.u.pageChanged() === true && h.posts() === 1, h.log.join(","));
+  check("  والإفلاتُ ثم تبديلٌ تالٍ ⇒ يطبّق", h.u.pageChanged() === true && (h.advance(STEP), h.posts() === 1), h.log.join(","));
 }
 {
   const h = harness();
   await h.u.start();
   h.touch(); h.installNew();
-  h.io.busy = true;                // تفريغُ ملاحظةٍ لاصقة عند خروجها، أو حفظٌ لم يرجع
   h.u.pageChanged();
+  h.advance(100); h.io.busy = true; // تفريغُ ملاحظةٍ عند خروجها يصل العدّادَ بعد getSession
   h.advance(1_000);
-  check("كتابةٌ بالطريق عند التبديل ⇒ تُنتظر", h.posts() === 0);
-  h.io.busy = false; h.advance(300);
+  check("كتابةُ الصفحة المغادَرة تصل بعد التبديل بلحظة ⇒ تُنتظر (القرارُ لم يُتّخذ بعد)", h.posts() === 0, h.log.join(","));
+  h.io.busy = false; h.advance(STEP);
   check("  وتهدأ خلال ٣ ثوانٍ ⇒ يطبّق", h.posts() === 1, h.log.join(","));
 }
 {
@@ -193,26 +214,71 @@ console.log("▸ الحاجز: سلسلةُ ما بعد البيعة (تدقيق
 {
   const h = harness();
   await h.u.start();
-  h.touch(); h.installNew();
-  h.advance(1_000);
-  h.u.pageChanged();               // طُلب التخطّي
+  h.touch(); h.installNew(); h.advance(1_000);
+  h.u.pageChanged(); h.advance(STEP);
   h.advance(300); h.touch();       // كتب بالصفحة الجديدة قبل الاستيلاء
   h.controllerChange();
-  check("لمسةٌ بين طلب التخطّي والاستيلاء ⇒ لا تحميل (يُحمَّل بلحظةٍ تالية)", h.reloads() === 0, h.log.join(","));
-  check("  والحالةُ «استُولي»", h.u.state === "taken", h.u.state);
+  check("لمسةٌ بين طلب التخطّي والاستيلاء ⇒ لا تحميل", h.reloads() === 0, h.log.join(","));
+  check("  والحالةُ «استُولي» (يُحمَّل بلحظةٍ تالية)", h.u.state === "taken", h.u.state);
 }
 {
   const h = harness();
   await h.u.start();
-  h.touch(); h.installNew();
-  h.advance(1_000);
-  h.u.pageChanged();
+  h.touch(); h.installNew(); h.advance(1_000);
+  h.u.pageChanged(); h.advance(STEP);
   h.io.busy = true;                // الصفحةُ الجديدة بدأت كتابةً قبل الاستيلاء
   h.controllerChange();
   h.advance(1_000);
   check("كتابةٌ بالطريق عند الاستيلاء ⇒ يُنتظر التحميل", h.reloads() === 0);
-  h.io.busy = false; h.advance(300);
+  h.io.busy = false; h.advance(STEP);
   check("  ويحمّل حين تهدأ (ولا لمسة)", h.reloads() === 1, h.log.join(","));
+}
+
+console.log("▸ استيلاءٌ متأخّر (تدقيقٌ عدائيّ ثانٍ)");
+{
+  const h = harness({ waiting: true });
+  await h.u.start(); h.advance(STEP); // طُلب التخطّي — والقديمةُ تُكمل صوراً فلا تُفعَّل
+  h.advance(4_500);
+  check("ما زالت تنتظر بعد ٤ ثوانٍ ⇒ لا تحميلَ على القديمة", h.reloads() === 0 && h.posts() === 1, h.log.join(","));
+  h.advance(5_000); h.controllerChange();   // فُعِّلت عند +١٠ث ولم يلمسه أحد
+  check("  واستيلاؤها المتأخّر بلا لمسةٍ منذ الطلب ⇒ تحميلٌ واحد (لا يمنعه حارسُ الدوّامة)", h.reloads() === 1, h.log.join(","));
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.touch(); h.installNew(); h.advance(1_000);
+  h.u.pageChanged(); h.advance(STEP); // المستخدمُ يقرأ الصفحةَ الجديدة فقط
+  h.advance(8_000); h.controllerChange();
+  check("تبديلُ صفحة ثم استيلاءٌ بعد ٨ث ولا لمسةَ منذ الطلب ⇒ تحميلٌ واحد", h.reloads() === 1, h.log.join(","));
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.touch(); h.installNew(); h.advance(1_000);
+  h.u.pageChanged(); h.advance(STEP);
+  h.advance(5_000); h.touch();     // بدأ يكتب قبل أن تُفعَّل
+  h.advance(3_000); h.controllerChange();
+  check("  ولمسةٌ قبل الاستيلاء المتأخّر ⇒ لا تحميل («استُولي»)", h.reloads() === 0 && h.u.state === "taken", h.log.join(","));
+  h.advance(30_000);
+  check("  وتبديلُ الصفحة بعده ⇒ تحميلٌ واحد", h.u.pageChanged() === true && (h.advance(STEP), h.reloads() === 1), h.log.join(","));
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.touch(); h.installNew(); h.advance(1_000);
+  h.u.pageChanged(); h.advance(STEP);
+  h.io.busy = true;
+  h.advance(700); h.controllerChange(); // استولت عند +١ث والكتاباتُ مستمرّة
+  h.advance(7_500);                     // الاحتياطيُّ (٤ث) لا يبدأ حلقةً ثانية تتراجع عند +٧ث
+  h.io.busy = false; h.advance(STEP);
+  check("استيلاءٌ والكتاباتُ مستمرّة ٨٫٥ث ⇒ تحميلٌ واحد حين تهدأ (لا حلقتان تُلغي إحداهما الأخرى)", h.reloads() === 1, h.log.join(","));
+}
+{
+  const h = harness({ waiting: true });
+  await h.u.start(); h.advance(STEP);
+  h.reg.waiting = null;            // فُعِّلت ولم يصل الحدث
+  h.advance(4_500);
+  check("فُعِّلت بلا حدث ⇒ تحميلٌ احتياطيّ واحد", h.reloads() === 1, h.log.join(","));
 }
 
 console.log("▸ تبويبٌ آخر طبّقها");
@@ -220,11 +286,16 @@ console.log("▸ تبويبٌ آخر طبّقها");
   const h = harness();
   await h.u.start();
   h.touch(); h.installNew();
-  h.controllerChange();            // تبويبٌ ثانٍ بدّل صفحتَه فطبّقها — هذا لم يطلب شيئاً
+  h.controllerChange();            // تبويبٌ ثانٍ طلبها — هذا لم يطلب شيئاً
   check("الاستيلاءُ من تبويبٍ آخر لا يحمّل هذا التبويب", h.reloads() === 0, h.log.join(","));
-  check("  والحالةُ «استُولي» (appUpdate يكتفي بتحميلٍ عاديّ)", h.u.state === "taken", h.u.state);
+  check("  والحالةُ «استُولي» (appUpdate يحمّله بعد أن تهدأ الكتابات)", h.u.state === "taken", h.u.state);
   h.advance(1_000);
-  check("  وتبديلُ صفحتِه ⇒ تحميلٌ مباشر (بلا طلب تخطٍّ)", h.u.pageChanged() === true && h.reloads() === 1 && h.posts() === 0, h.log.join(","));
+  check("  وتبديلُ صفحتِه ⇒ يبدأ", h.u.pageChanged() === true && h.reloads() === 0);
+  h.advance(50); h.io.busy = true;  // كتابةُ الصفحة المغادَرة وصلت بعد التبديل بلحظة
+  h.advance(STEP);
+  check("  ولا يحمّل والكتابةُ بالطريق (القرارُ مؤجَّلٌ خطوة)", h.reloads() === 0, h.log.join(","));
+  h.io.busy = false; h.advance(STEP);
+  check("  ثم تحميلٌ مباشر (بلا طلب تخطٍّ)", h.reloads() === 1 && h.posts() === 0, h.log.join(","));
 }
 
 console.log("▸ الخمول: حاسوبُ الكاشير الذي لا يبدّل صفحتَه (تدقيقٌ عدائيّ)");
@@ -235,7 +306,7 @@ console.log("▸ الخمول: حاسوبُ الكاشير الذي لا يبد�
   h.advance(3 * HOUR - MIN);
   check("ظاهرٌ وخاملٌ أقلَّ من ٣ ساعات ⇒ لا", h.u.idleTick() === false && h.posts() === 0);
   h.advance(MIN);
-  check("  ٣ ساعات بلا لمسة ⇒ يطبّق", h.u.idleTick() === true && h.posts() === 1, h.log.join(","));
+  check("  ٣ ساعات بلا لمسةٍ بالجهاز ⇒ يطبّق", h.u.idleTick() === true && (h.advance(STEP), h.posts() === 1), h.log.join(","));
 }
 {
   const h = harness();
@@ -244,48 +315,42 @@ console.log("▸ الخمول: حاسوبُ الكاشير الذي لا يبد�
   h.advance(29 * MIN);
   check("مخفيٌّ ٢٩ دقيقة ⇒ لا", h.u.idleTick() === false);
   h.advance(MIN);
-  check("  ٣٠ دقيقة ⇒ يطبّق", h.u.idleTick() === true && h.posts() === 1);
+  check("  ٣٠ دقيقة ⇒ يطبّق", h.u.idleTick() === true && (h.advance(STEP), h.posts() === 1));
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.touch(); h.installNew(); h.io.hidden = true;
+  h.advance(40 * MIN - MIN); h.touch(); h.advance(MIN); // تبويبٌ آخر يعمل (الختمُ المشترك قبل دقيقة)
+  check("تبويبٌ خلفيّ خامل والجهازُ يعمل بتبويبٍ آخر ⇒ لا يطبّق (لا يدفع العاملَ إلى «استُولي»)", h.u.idleTick() === false && h.posts() === 0);
 }
 {
   const h = harness();
   await h.u.start();
   h.touch(); h.installNew(); h.io.editing = true;
   h.advance(5 * HOUR);
-  check("حقلٌ مركَّزٌ فيه نصّ ⇒ الخمولُ لا يطبّق فوقه", h.u.idleTick() === false && h.posts() === 0);
+  check("حقلٌ كُتب فيه وما زال فيه نصّ ⇒ الخمولُ لا يطبّق", h.u.idleTick() === false && h.posts() === 0);
+}
+{
+  const h = harness();
+  await h.u.start();
+  h.touch(); h.installNew(); h.io.hidden = true; h.io.held = true;
+  h.advance(5 * HOUR);
+  check("عدٌّ للمخزن لم يُرسل (ممسوك) ⇒ الخمولُ لا يطبّق", h.u.idleTick() === false && h.posts() === 0);
 }
 {
   const h = harness();
   await h.u.start();
   h.touch(); h.installNew(); h.controllerChange();
   h.advance(3 * HOUR);
-  check("«استُولي» وخامل ⇒ تحميلٌ مباشر", h.u.idleTick() === true && h.reloads() === 1, h.log.join(","));
-}
-
-console.log("▸ التفعيلُ المؤجَّل والاحتياطيّ (تدقيقٌ عدائيّ)");
-{
-  const h = harness({ waiting: true });
-  await h.u.start();               // طُلب التخطّي — والقديمةُ تُكمل صوراً فلا تُفعَّل
-  h.advance(4_500);
-  check("ما زالت تنتظر بعد ٤ ثوانٍ ⇒ لا تحميلَ على القديمة", h.reloads() === 0, h.log.join(","));
-  h.touch(); h.advance(10_000);
-  h.controllerChange();            // فُعِّلت متأخّرة والمستخدمُ يعمل
-  check("  واستيلاؤها المتأخّر والصفحةُ ملموسة ⇒ لا تحميل", h.reloads() === 0, h.log.join(","));
-  h.advance(30_000);
-  check("  وتبديلُ الصفحة بعده ⇒ تحميلٌ واحد", h.u.pageChanged() === true && h.reloads() === 1, h.log.join(","));
-}
-{
-  const h = harness({ waiting: true });
-  await h.u.start();
-  h.reg.waiting = null;            // فُعِّلت ولم يصل الحدث
-  h.advance(4_500);
-  check("فُعِّلت بلا حدث ⇒ تحميلٌ احتياطيّ واحد", h.reloads() === 1, h.log.join(","));
+  check("«استُولي» وخامل ⇒ تحميلٌ مباشر", h.u.idleTick() === true && (h.advance(STEP), h.reloads() === 1), h.log.join(","));
 }
 
 console.log("▸ أوّلُ تثبيت، ولا دوّامة");
 {
   const h = harness({ controlled: false });
   await h.u.start();
-  h.installNew();
+  h.installNew(); h.advance(STEP);
   h.controllerChange();
   check("أوّلُ تثبيت ليس تحديثاً: لا تحميلَ ولا طلب", h.reloads() === 0 && h.posts() === 0, h.log.join(","));
   check("  ولا شيءَ ينتظر", h.u.state === "none" && h.u.pageChanged() === false);
@@ -293,13 +358,13 @@ console.log("▸ أوّلُ تثبيت، ولا دوّامة");
 {
   const session = new Map();
   const h = harness({ waiting: true, session });
-  await h.u.start();
+  await h.u.start(); h.advance(STEP);
   check("طُلب التخطّي مرّة", h.posts() === 1);
-  const h2 = harness({ waiting: true, session, t0: 1_005_000 });   // إقلاعٌ تالٍ بعد ٥ ثوانٍ
-  await h2.u.start();
+  const h2 = harness({ waiting: true, session, t0: T0 + 5_000 });   // إقلاعٌ تالٍ بعد ٥ ثوانٍ
+  await h2.u.start(); h2.advance(STEP);
   check("  والإقلاعُ بعده بثوانٍ لا يعيد المحاولة", h2.posts() === 0 && h2.reloads() === 0, h2.log.join(","));
   h2.touch(); h2.advance(40_000);
-  check("  وبعد ٣٠ ثانية تُطبَّق عند تبديل الصفحة", h2.u.pageChanged() === true && h2.posts() === 1, h2.log.join(","));
+  check("  وبعد ٣٠ ثانية تُطبَّق عند تبديل الصفحة", h2.u.pageChanged() === true && (h2.advance(STEP), h2.posts() === 1), h2.log.join(","));
 }
 
 console.log("▸ inflight: عدّادُ الكتابات والإمساك");
@@ -321,12 +386,48 @@ console.log("▸ inflight: عدّادُ الكتابات والإمساك");
   check("إمساكٌ ⇒ مشغولٌ ومُمسَك", inf.holdsActive() && inf.writesBusy(Date.now() + 10 * 60_000));
   rel(); rel();
   check("  والإفلاتُ مرّتين يُفلت مرّةً واحدة", !inf.holdsActive());
+  // holdUntil: الإمساكُ حتى يستقرّ العملُ نفسُه، لا حتى يرفض سباقُه (withTimeout) — تدقيقٌ عدائيّ ثانٍ
+  let finish;
+  const work = new Promise((res) => { finish = res; });
+  const raced = Promise.race([inf.holdUntil(work), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5))]);
+  await raced.catch(() => undefined);
+  check("holdUntil: السباقُ رفض بالمهلة والعملُ مستمرّ ⇒ ما زال ممسوكاً", inf.holdsActive());
+  finish(); await work; await new Promise((r) => setTimeout(r, 0));
+  check("  واستقرّ العمل ⇒ يُفلت", !inf.holdsActive());
+  const failing = Promise.reject(new Error("x"));
+  await inf.holdUntil(failing).catch(() => undefined); await new Promise((r) => setTimeout(r, 0));
+  check("  وعملٌ يفشل يُفلت أيضاً", !inf.holdsActive());
+  const capped = inf.holdUpdates(20);
+  await new Promise((r) => setTimeout(r, 40));
+  check("السقف: وعدٌ عالق لا يمسك التحديثَ للأبد", !inf.holdsActive());
+  capped();
+  const open = inf.holdUpdates(Infinity);
+  await new Promise((r) => setTimeout(r, 40));
+  check("  و`Infinity` (نموذجٌ مفتوحٌ عمداً) لا يُفلته الوقت", inf.holdsActive());
+  open();
   globalThis.fetch = origFetch;
   check("الجسرُ قبل وصول السياسة: لا شيء ولا «مستولى»", (inf.notePageChange(), true) && inf.updateTaken() === false);
   let calls = 0;
   inf.setUpdater({ pageChanged() { calls++; }, state: "taken" });
   inf.notePageChange();
   check("  وبعده يبلّغها تبديلَ الصفحة ويقول حالتَها", calls === 1 && inf.updateTaken() === true);
+}
+
+console.log("▸ appUpdate: قطعةٌ ناقصة بتبويبٍ «استُولي» لا تقطع كتابة (تدقيقٌ عدائيّ ثانٍ)");
+{
+  let reloads = 0;
+  const ss = new Map();
+  globalThis.window = { location: { reload: () => { reloads++; } } };
+  globalThis.sessionStorage = { getItem: (k) => ss.get(k) ?? null, setItem: (k, v) => ss.set(k, String(v)) };
+  if (!globalThis.navigator || globalThis.navigator.onLine === false) globalThis.navigator = { onLine: true };
+  au.setUpdater({ pageChanged() {}, state: "taken" });
+  const release = au.holdUpdates();         // سلسلةُ ما بعد البيعة جارية
+  const started = au.recoverFromStaleShell();
+  await new Promise((r) => setTimeout(r, 700));
+  check("«استُولي» وكتابةٌ ممسوكة ⇒ لا تحميلَ بعد", reloads === 0, String(reloads));
+  release();
+  await new Promise((r) => setTimeout(r, au.QUIET_MS + 600));
+  check("  وتهدأ ⇒ تحميلٌ واحد (بلا مسح المخبأ)", reloads === 1 && (await started) === true, String(reloads));
 }
 
 console.log("▸ الإعداد والتوصيل");
@@ -354,8 +455,17 @@ console.log("▸ الإعداد والتوصيل");
   check("البيعُ يمسك من قفله إلى finally (والسلسلةُ الطبّية بينهما)", lockAt > 0 && holdAt > lockAt && medAt > holdAt && relAt > finAt && finAt > medAt, `${lockAt}/${holdAt}/${medAt}/${finAt}/${relAt}`);
   const nc = readFileSync("src/pages/NewCase.tsx", "utf8");
   check("«حالة جديدة» تمسك سلسلتَي الحفظ (تسجيلٌ ورقمٌ تسلسليّ)", (nc.match(/holdUpdates\(\)/g) ?? []).length === 2 && (nc.match(/releaseUpdates\(\);/g) ?? []).length === 2);
-  const au = readFileSync("src/lib/appUpdate.ts", "utf8");
-  check("قطعةٌ ناقصة بتبويبٍ «استُولي» ⇒ تحميلٌ عاديّ قبل مسح المخبأ", au.indexOf("updateTaken()") > 0 && au.indexOf("updateTaken()") < au.indexOf("caches.keys()"));
+  const aus = readFileSync("src/lib/appUpdate.ts", "utf8");
+  check("قطعةٌ ناقصة بتبويبٍ «استُولي» ⇒ تحميلٌ عاديّ قبل مسح المخبأ", aus.indexOf("updateTaken()") > 0 && aus.indexOf("updateTaken()") < aus.indexOf("caches.keys()"));
+  const rec = aus.slice(aus.indexOf("export function recoverFromStaleShell"), aus.indexOf("export function retryImport"));
+  check("  والفرعان (عاديّ ومسح) يحمّلان بعد أن تهدأ الكتابات", (rec.match(/reloadAfterWrites\(\)/g) ?? []).length === 2 && !/window\.location\.reload\(\)/.test(rec));
+  const swu = readFileSync("src/lib/swUpdate.ts", "utf8");
+  check("اللمسةُ بالجهاز كلِّه (vp_last_input) والسياسةُ تقرؤها", /localStorage\.setItem\(SHARED_INPUT_KEY/.test(swu) && /localStorage\.getItem\(SHARED_INPUT_KEY\)/.test(swu));
+  check("  والخمولُ لا يطبّق فوق حقلٍ كُتب فيه (لا المركَّزُ وحده)", /typed\.add\(e\.target\)/.test(swu) && /for \(const el of typed\)/.test(swu));
+  check("سلسلةُ الجرعة والمعزّزة ممسوكةٌ حتى تستقرّ (medSync وdoseCycle)",
+    /return holdUntil\(persistMedicalEntriesNow\(/.test(readFileSync("src/lib/medSync.ts", "utf8")) && /return holdUntil\(syncDoseCycleForPetNow\(/.test(readFileSync("src/lib/doseCycle.ts", "utf8")));
+  check("  وسلسلةُ العملية بعد البيعة", /withTimeout\(\s*holdUntil\(Promise\.all\(Array\.from\(byPet/.test(sale));
+  check("عدُّ المخزن غيرُ المرسل يمسك بلا سقف", /useEffect\(\(\) => \(dirty \? holdUpdates\(Infinity\) : undefined\), \[dirty\]\);/.test(readFileSync("src/pages/StockCount.tsx", "utf8")));
 
   /* كلُّ تحميلٍ للصفحة بالشِّفرة له سببٌ مسمّى هنا. تحميلٌ جديد = قرارٌ يُقرأ. */
   const ALLOWED = new Map([

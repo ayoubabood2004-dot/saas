@@ -11,6 +11,7 @@ import { historyRows } from "./backdate";
 import { givenToday, pendingToConsume, sameVaccine } from "./vaxNext";
 import type { Vaccination } from "@/types";
 import type { MedicalDraft } from "@/components/MedicalEntry";
+import { holdUntil } from "./inflight";
 
 const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
 
@@ -21,7 +22,12 @@ const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "T
  *  • medication → a treatment-sheet row for today.
  * Throws on the first failure so callers can surface it and keep their draft.
  */
-export async function persistMedicalEntries(
+export function persistMedicalEntries(...args: Parameters<typeof persistMedicalEntriesNow>): Promise<void> {
+  // الجرعةُ ثم المعزّزةُ ثم الجدول: تحميلُ نسخةٍ جديدة لا يقطعها بنصّها (inflight.ts).
+  return holdUntil(persistMedicalEntriesNow(...args));
+}
+
+async function persistMedicalEntriesNow(
   petId: string,
   doctorName: string | undefined,
   entries: MedicalDraft[],

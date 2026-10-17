@@ -13,10 +13,25 @@
  * لا localStorage ولا IndexedDB — فقط مخبأ الملفات الثابتة.
  * ==========================================================================*/
 
-import { updateTaken } from "./inflight";
+import { updateTaken, writesBusy } from "./inflight";
 
 const ONCE_KEY = "vp_shell_recovered_at";
 const GAP_MS = 30000; // حارس ضد دوّامة تحديث لو كان الفشل لسبب آخر
+/** التحميلُ ينتظر كتابةً بالطريق (سلسلةُ ما بعد البيعة، حفظُ الحالة) بهذا السقف — القطعةُ ناقصةٌ
+ *  على كلّ حال، فالانتظارُ لا يُضيع شيئاً، والتحميلُ فوقها كان يقطعها بلا توست (تدقيقٌ عدائيّ). */
+const WRITE_WAIT_MS = 60_000;
+
+function reloadAfterWrites(): Promise<void> {
+  const t0 = Date.now();
+  return new Promise((done) => {
+    const tick = () => {
+      if (writesBusy() && Date.now() - t0 < WRITE_WAIT_MS) { setTimeout(tick, 250); return; }
+      window.location.reload();
+      done();
+    };
+    tick();
+  });
+}
 
 /** تعافٍ واحد لكل صفحة: مستمع vite:preloadError وغلاف الاستيراد قد ينطلقان
  *  معاً على نفس الفشل — يتشاركان هذه العملية بدل ما يتسابقان. */
@@ -42,8 +57,7 @@ export function recoverFromStaleShell(): Promise<boolean> {
    * طازج — القطعةُ ناقصةٌ لأن الشِّفرة قديمة لا لأن القشرة قديمة. تحميلٌ عاديّ يكفي؛ مسحُ المخبأ
    * وإلغاءُ الخدمة كان سيعيد تنزيلَ ٧ ميغا ويترك الجهاز بلا عملٍ بلا نت (تدقيقٌ عدائيّ). */
   if (updateTaken()) {
-    window.location.reload();
-    inFlight = Promise.resolve(true);
+    inFlight = reloadAfterWrites().then(() => true);
     return inFlight;
   }
   inFlight = (async () => {
@@ -56,7 +70,7 @@ export function recoverFromStaleShell(): Promise<boolean> {
       const regs = await navigator.serviceWorker?.getRegistrations?.();
       await Promise.all((regs ?? []).map((r) => r.unregister()));
     } catch { /* أي فشل هنا لا يمنع المحاولة الأهم: إعادة التحميل */ }
-    window.location.reload();
+    await reloadAfterWrites();
     return true;
   })();
   return inFlight;

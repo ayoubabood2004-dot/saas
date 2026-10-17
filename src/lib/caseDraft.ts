@@ -87,11 +87,16 @@ export const lightenCaseDraft = (d: CaseDraft): CaseDraft => ({ ...d, animals: d
 export function draftIsSavedCase(d: CaseDraft, owner: OwnerFields, savedNames: string[]): boolean {
   const n = (s: string | null | undefined) => searchable(s ?? "").trim();
   const digits = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
+  const dp = digits(d.owner?.phone), sp = digits(owner.phone);
+  // هاتفان كاملان مختلفان = شخصان، ولو تشابه الاسم (تدقيقٌ عدائيّ: «محمد» غيرُ «محمد»).
+  if (dp.length >= 6 && sp.length >= 6 && dp !== sp) return false;
   const nameHit = !!n(d.owner?.name) && n(d.owner?.name) === n(owner.name);
-  const phoneHit = digits(d.owner?.phone).length >= 6 && digits(d.owner?.phone) === digits(owner.phone);
+  const phoneHit = dp.length >= 6 && dp === sp;
   if (!nameHit && !phoneHit) return false;
   const saved = new Set(savedNames.map(n).filter(Boolean));
-  return (d.animals ?? []).map((a) => n(a.name)).filter(Boolean).every((x) => saved.has(x));
+  // كلُّ حيوانٍ فيه شغل (صورة، تشخيص، وزن…) لازم يكون مسمّىً ومن المحفوظين — حيوانٌ بلا اسم
+  // فيه تشخيص ليس «هذه الحالة» ولو تطابق المالك. ومالكٌ وحده بلا حيوانٍ مكتوب يطابق.
+  return (d.animals ?? []).filter(animalHasContent).every((a) => { const x = n(a.name); return !!x && saved.has(x); });
 }
 
 /**

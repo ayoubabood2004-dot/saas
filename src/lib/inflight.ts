@@ -26,11 +26,28 @@ export function writesBusy(now = Date.now()): boolean {
 /** سلسلةٌ لا يُقطع نصُّها: كلُّ تحديثٍ عند تبديل الصفحة يُتخطّى حتى تُفلت. */
 export const holdsActive = (): boolean => holds > 0;
 
-/** أمسِك التحديثَ حتى تنتهي السلسلة — والإفلاتُ مرّةً واحدة ولو نودي مرّتين. */
-export function holdUpdates(): () => void {
+/** سقفُ الإمساك: وعدٌ عالقٌ (شبكةٌ لا تجيب) لا يوقف التحديثَ للأبد. */
+export const HOLD_MAX_MS = 120_000;
+
+/** أمسِك التحديثَ حتى تنتهي السلسلة — والإفلاتُ مرّةً واحدة ولو نودي مرّتين، وبعد السقف وحده.
+ *  `Infinity` لنموذجٍ مفتوحٍ عمداً (عدٌّ لم يُرسل): يُفلته الإرسالُ أو المغادرة، لا الوقت. */
+export function holdUpdates(maxMs: number = HOLD_MAX_MS): () => void {
   holds++;
   let done = false;
-  return () => { if (!done) { done = true; holds--; } };
+  let cap: ReturnType<typeof setTimeout> | undefined;
+  const release = () => { if (!done) { done = true; holds--; if (cap !== undefined) clearTimeout(cap); } };
+  if (Number.isFinite(maxMs)) cap = setTimeout(release, maxMs);
+  return release;
+}
+
+/**
+ * أمسِك حتى **يستقرّ العملُ نفسُه** لا سباقُه: `withTimeout` يرفض بعد المهلة والسلسلةُ تكمل خلفه
+ * (قراءةٌ بطيئة ثم كتابة) — إمساكٌ يُفلت بالمهلة كان يترك الكتابةَ الأخيرة لتحميلٍ يقطعها (تدقيقٌ عدائيّ).
+ */
+export function holdUntil<T>(work: Promise<T>): Promise<T> {
+  const release = holdUpdates();
+  work.then(release, release);
+  return work;
 }
 
 /* ── الجسرُ إلى سياسة التحديث ─────────────────────────────────────────────

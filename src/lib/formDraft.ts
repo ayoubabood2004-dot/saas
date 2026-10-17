@@ -21,7 +21,7 @@
  *    المسودّةُ لا تأكل مكانَ سلّة البيع ولا الطابور (تدقيقٌ عدائيّ).
  * ==========================================================================*/
 
-import { DRAFT_PREFIX as PREFIX, draftsSuspended } from "./draftPurge";
+import { DONE_PREFIX, DRAFT_PREFIX as PREFIX, draftsSuspended } from "./draftPurge";
 
 export const DRAFT_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 export const DRAFT_MAX_PER_SCOPE = 5;
@@ -110,6 +110,15 @@ export function dropDraft(scope: DraftScope, id: string, store: DraftStorage | n
   try { store?.removeItem(keyOf(scope, id)); } catch { /* ignore */ }
 }
 
+/** «انحفظت»: مُسحت بعد حفظٍ ناجح — تبويبٌ آخر ما زال يكتب هذه الفتحة يقف ولا يعيدها «ما انحفظت». */
+export function markDraftDone(id: string, store: DraftStorage | null = defaultStorage(), now = Date.now()): void {
+  try { store?.setItem(DONE_PREFIX + id, String(now)); } catch { /* ممتلئ — أسوأُ الحال عرضٌ يُحذف بيده */ }
+}
+
+export function draftDone(id: string, store: DraftStorage | null = defaultStorage()): boolean {
+  try { return !!store?.getItem(DONE_PREFIX + id); } catch { return false; }
+}
+
 /**
  * كنسُ الجهاز كلِّه: كلُّ مسودّةٍ تالفة أو أقدمُ من ٧ أيام — أيّاً كان نطاقُها — تُمسح، ولا يبقى
  * فوق `DRAFT_MAX_TOTAL` (الأقدمُ يُطوى). العمرُ يُقرأ من رأس القيمة (الصورُ لا تُقرأ).
@@ -119,8 +128,12 @@ export function sweepDrafts(store: DraftStorage | null = defaultStorage(), now =
   const live: { k: string; at: number }[] = [];
   try {
     const keys: string[] = [];
-    for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k?.startsWith(PREFIX)) keys.push(k); }
+    for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k?.startsWith(PREFIX) || k?.startsWith(DONE_PREFIX)) keys.push(k); }
     for (const k of keys) {
+      if (k.startsWith(DONE_PREFIX)) { // علامةُ «انحفظت» قيمتُها وقتُها
+        if (!(now - Number(store.getItem(k) || 0) <= DRAFT_MAX_AGE_MS)) store.removeItem(k);
+        continue;
+      }
       const at = Number(/"savedAt":(\d+)/.exec((store.getItem(k) ?? "").slice(0, 160))?.[1] ?? NaN);
       if (!Number.isFinite(at) || now - at > DRAFT_MAX_AGE_MS) store.removeItem(k);
       else live.push({ k, at });

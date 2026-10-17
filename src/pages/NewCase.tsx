@@ -331,7 +331,7 @@ export function NewCase() {
         {t("newCase.subtitle")}{" "}
         <span className={draft.saved !== "full" ? "font-semibold text-warn-700 dark:text-warn-300" : undefined}>
           · {draft.saved === "failed" ? t("newCase.draftFailed", "Not saved on this device — storage is full")
-            : draft.saved === "light" ? t("newCase.draftLight", "Saved on this device without photos — storage is full")
+            : draft.saved === "light" ? t("newCase.draftLight", "Saved on this device without photos")
             : t("newCase.draftAuto", "Auto-saved on this device")}
         </span>
       </p>

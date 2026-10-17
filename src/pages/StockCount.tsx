@@ -13,6 +13,7 @@ import { useOverride } from "@/lib/managerOverride";
 import { getCountDailyN, setCountDailyN } from "@/lib/settings";
 import { pickToday, reasonsFor, diffValue, deadStock, abcClasses, countable, WITHDRAWAL_REASONS, type CountPick, type CountState } from "@/lib/countPick";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
+import { holdUpdates } from "@/lib/inflight";
 
 /* ============================================================================
  * الجردُ الدوريّ — م٦ (docs/inventory-vnext-plan.md، هجرة 0216).
@@ -63,6 +64,10 @@ export function StockCount() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [n, setN] = useState(getCountDailyN);
+  /* عدٌّ لم يُرسل يعيش بحالة الصفحة وحدها — لا نسخةٌ جديدة تُحمَّل فوقه ولو خمل التبويب وذهب
+   * صاحبُه للغداء (تدقيقٌ عدائيّ: ٤٠ سطراً تضيع). الإرسالُ أو مغادرةُ الصفحة يُفلتان. */
+  const dirty = Object.keys(lines).length > 0 || extra.length > 0;
+  useEffect(() => (dirty ? holdUpdates(Infinity) : undefined), [dirty]);
 
   const load = useCallback(async () => {
     setData("loading");

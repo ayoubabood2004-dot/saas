@@ -15,8 +15,14 @@
 // ============================================================================
 import { repo } from "./repo";
 import { localISO } from "./utils";
+import { holdUntil } from "./inflight";
 
-export async function syncDoseCycleForPet(petId: string): Promise<void> {
+export function syncDoseCycleForPet(petId: string): Promise<void> {
+  // قراءتان ثم كتابة: «الهدوء» لا يجسر قراءةً بطيئة بينهما — فتُمسك حتى تنتهي (inflight.ts).
+  return holdUntil(syncDoseCycleForPetNow(petId));
+}
+
+async function syncDoseCycleForPetNow(petId: string): Promise<void> {
   try {
     const [treatments, admissions] = await Promise.all([
       repo.listTreatments(petId),
