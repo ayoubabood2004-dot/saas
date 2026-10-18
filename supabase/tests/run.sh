@@ -5899,13 +5899,15 @@ echo "▸ 0244: حضورُ المشغّل لا يُكتب بعيادة زبون"
 $P -c "delete from platform_sessions; delete from staff_presence where user_id='$ADM';
        update _dvtest_flags set admin = true;
        select platform_enter('$C1'::uuid) from (select set_config('request.jwt.claim.sub','$ADM',true)) s;" >/dev/null
-chk "المشغّلُ داخلُ ١١١١ وينبض: لا صفَّ حضورٍ باسمه عندها" \
-    "select _rls_try('$ADM', 'select presence_beat(''المشغّل'')')||'|'||(select count(*) from staff_presence where user_id='$ADM' and clinic_id='$C1')::text" "rows:1|0"
-chk "  والكادرُ الحقيقيّ ينبض بعيادته كما كان" \
-    "select _rls_try('$RCP', 'select presence_beat(''استقبال'')')||'|'||(select count(*) from staff_presence where user_id='$RCP')::text" "rows:1|1"
+# النبضةُ والعدُّ بجملتين: بجملةٍ واحدة يقرأ العدُّ لقطةَ أوّلها فلا يرى ما كتبته النبضة (صفرٌ كاذب).
+chk "المشغّلُ داخلُ ١١١١ ينبض بلا خطأ" "select _rls_try('$ADM', 'select presence_beat(''المشغّل'')')" "rows:1"
+chk "  ولا صفَّ حضورٍ باسمه عندها ولا بغيرها" "select count(*)::text from staff_presence where user_id='$ADM'" "0"
+chk "  والكادرُ الحقيقيّ ينبض بعيادته كما كان" "select _rls_try('$RCP', 'select presence_beat(''استقبال'')')" "rows:1"
+chk "    فصفُّه يُرى (والعدُّ نفسُه يرى ما يُكتب — صفرُ المشغّل ليس عمى)" \
+    "select count(*)::text from staff_presence where user_id='$RCP'" "1"
 $P -c "select platform_leave() from (select set_config('request.jwt.claim.sub','$ADM',true)) s;" >/dev/null
-chk "  وخارجَ أيّ عيادة ينبض بعيادته هو" \
-    "select _rls_try('$ADM', 'select presence_beat(''المشغّل'')')||'|'||(select string_agg(clinic_id::text, ',') from staff_presence where user_id='$ADM')" "rows:1|$ADM"
+chk "  وخارجَ أيّ عيادة ينبض" "select _rls_try('$ADM', 'select presence_beat(''المشغّل'')')" "rows:1"
+chk "    بعيادته هو" "select string_agg(clinic_id::text, ',') from staff_presence where user_id='$ADM'" "$ADM"
 # صفٌّ قديم (قبل 0244) بعيادةٍ دخلها، وصفٌّ بعيادةٍ لم يدخلها قطّ — الإعادةُ تمسح الأوّلَ وحده.
 $P -c "insert into staff_presence (clinic_id, user_id, name, role) values ('$C1','$ADM','قديم','manager'), ('$C3','$ADM','لم يدخلها','manager') on conflict do nothing;" >/dev/null
 $P -f "$MIG/0244_presence_not_operator.sql" >/dev/null
