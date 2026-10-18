@@ -620,6 +620,9 @@ alter table staff add column if not exists user_id uuid;
 alter table clinic_prefs add column if not exists clinic_name text;
 alter table staff_presence add column if not exists clinic_id uuid;
 alter table staff_presence add column if not exists last_seen timestamptz not null default now();
+-- كالإنتاج (0072، مقيسٌ ١٨/١٠): عمودُ الدور ومفتاحُ (العيادة، المستخدم) الذي يقصده on conflict بـpresence_beat.
+alter table staff_presence add column if not exists role text;
+create unique index if not exists staff_presence_clinic_user_key on staff_presence(clinic_id, user_id);
 create table if not exists staff_elevations (user_id uuid primary key, clinic_id uuid not null, until timestamptz not null);
 create table if not exists login_events (
   id bigint generated always as identity primary key, clinic_id uuid not null, user_id uuid,
