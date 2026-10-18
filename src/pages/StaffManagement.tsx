@@ -22,6 +22,7 @@ import { prepareUpload } from "@/lib/image";
 import { createInvite, listInvites, revokeInvite, joinLink, type Invite } from "@/lib/invites";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { isPlatformAdmin, platformContext } from "@/lib/platformAdmin";
 import { getCached, setCached } from "@/lib/swrCache";
 import { listPresence, isOnline, presenceBackendReady, type PresenceRow } from "@/lib/presence";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -95,10 +96,21 @@ export function StaffManagement() {
     const id = window.setInterval(pull, 30_000);
     return () => { alive = false; window.clearInterval(id); };
   }, []);
+  // مشغّلُ المنصّة داخل عيادة زبون ليس من كادرها (0244): لا يُضاف «متصلاً» ولا يُعرض صفٌّ قديمٌ باسمه.
+  // حتى يتأكّد أنه بعيادته هو، يُعامَل كداخلٍ — إخفاؤه عن نفسه بعيادته لا يضرّ أحداً.
+  const operator = isPlatformAdmin(user?.email);
+  const [operatorAtHome, setOperatorAtHome] = useState(false);
+  useEffect(() => {
+    if (!operator) return;
+    let alive = true;
+    void platformContext().then((c) => { if (alive) setOperatorAtHome(!c.acting); }).catch(() => {});
+    return () => { alive = false; };
+  }, [operator]);
+  const countSelf = !operator || operatorAtHome;
   // Always count the viewing manager himself (his own beat may lag a few seconds).
   const presenceRows = (() => {
-    const rows = [...presence];
-    if (user && !rows.some((r) => r.user_id === user.id)) {
+    const rows = countSelf ? [...presence] : presence.filter((r) => r.user_id !== user?.id);
+    if (countSelf && user && !rows.some((r) => r.user_id === user.id)) {
       rows.unshift({ clinic_id: user.clinic_id ?? user.id, user_id: user.id, name: user.full_name, role: "manager", last_seen: new Date().toISOString() });
     }
     return rows;
