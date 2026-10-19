@@ -118,6 +118,8 @@ P({ name: "رف بإضافي مصنع", barcode: "248", alt_codes: [GOOD("629333
 P({ name: "إضافيّ وحده", barcode: "", alt_codes: ["249"], stock: 3 });
 P({ name: "رف منقول للإضافي", barcode: null, alt_codes: ["  ", "250"], stock: 3 });          // مسحُ رقم الرفّ من النموذج ينقله هنا
 P({ name: "مصنع بالإضافي وحده", barcode: " ", alt_codes: ["", GOOD("629123450003")], stock: 3 });
+P({ name: "إضافي مشوّه وحده", barcode: "", alt_codes: ["اففحس"], stock: 3 });                 // لا رمزَ يُمسح ⇒ بلا باركود
+P({ name: "مشوّه ثم رقم رف", barcode: null, alt_codes: ["1.23457E+12", "248"], stock: 3 });     // يُحكم «248» لا المشوَّه
 P({ name: "أرقام شرقية", barcode: east(GOOD("628444455556")), stock: 3 });
 
 // ٢) المكرّر

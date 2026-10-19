@@ -207,6 +207,9 @@ export function Inventory() {
    * الصفحات ولا يرى البيعَ، والنموذجُ يحفظ الرصيدَ كما فُتح — فتحُه من لقطةٍ قديمة ثم «حفظ»
    * لتصحيح الشركة كان سيعيد رصيدَ ما قبل بيعات اليوم. */
   const [listFresh, setListFresh] = useState(false);
+  /* الرابطُ لسياقه وحده: من ترك تبويبَ المنتجات قبل وصول القائمة ترك الرابط — وإلا فُتحت
+   * المادةُ بلا طلبٍ ساعةَ يرجع للتبويب بعد ساعة. */
+  useEffect(() => { if (view !== "products") setOpenId(null); }, [view]);
   useEffect(() => {
     const f = params.get("filter");
     // والرجوعُ من دفتر شركة (`?view=ledger`) يرجع لتبويب الديون لا للمنتجات.
@@ -592,8 +595,16 @@ export function Inventory() {
           <Button leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
         </div>
       ) : view === "products" ? (
-        <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load}
-          filter={stockFilter} onFilter={setStockFilter} openId={listFresh ? openId : null} onOpened={() => setOpenId(null)} />
+        <>
+          {/* الرابطُ ينتظر قائمةً طازجة — يُقال ولا يُترك صامتاً فوق قائمة الكاش (نصٌّ قائمٌ بلا بايتٍ جديد). */}
+          {openId && !listFresh && (
+            <p className="mb-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-800 dark:bg-brand-500/10 dark:text-brand-200" data-openwait>
+              <Loader2 size={14} className="animate-spin" /> {t("common.loading", "جارٍ التحميل…")}
+            </p>
+          )}
+          <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load}
+            filter={stockFilter} onFilter={setStockFilter} openId={listFresh ? openId : null} onOpened={() => setOpenId(null)} />
+        </>
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "ledger" ? (
@@ -942,9 +953,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   useEffect(() => {
     if (!openId) return;
     const p = products.find((x) => x.id === openId);
-    if (p && !locked) setEditing(p);
+    /* ومن فتح مادةً أو بدأ يضيف أثناء الانتظار فقد اختار: الرابطُ يُستهلك ولا يفتح فوق شغله
+     * (النموذجُ يُعاد ملؤه بمادة الرابط فيضيع ما كتبه وصورتُه بلا سؤال). */
+    if (p && !locked && !editing && !adding) setEditing(p);
     onOpened?.();
-  }, [openId, products, onOpened, locked]);
+  }, [openId, products, onOpened, locked, editing, adding]);
   /* ٢·٣: قائمةٌ تُلصق بواتساب المندوب — ما تعرضه الشريحةُ الآن بالضبط (بعد البحث)،
    * مجمَّعةً بالشركة وبلا أسعار. الواتسابُ يدويٌّ اليوم (wa.me) فالنسخُ أصدقُ من «أُرسلت». */
   const expiryFilter = filter === "soon" || filter === "return" || filter === "expired" || filter === "muted" || filter === "marked";

@@ -26,6 +26,9 @@ export function gtinOk(v: string): boolean {
   return (10 - (sum % 10)) % 10 === Number(v[v.length - 1]);
 }
 
+/** رمزٌ يُمسح فعلاً: لا فارغٌ بالتطبيع ولا مشوَّهٌ (عربيّ/إكسل). */
+const scannable = (c: string | null | undefined): boolean => !["none", "skip"].includes(codeKind(c));
+
 const SEQ = /(0123456|1234567|2345678|3456789|6543210|7654321|8765432|9876543)/;
 
 /** شكلُ الرمز — مرآةُ `inv_code_kind`، بنفس الترتيب («internal» قبل «pattern»). */
@@ -111,10 +114,11 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
 
   const base = input.products.filter((p) => p.farm_id == null).map((p) => {
     const stock = num(p.stock);
-    // الرمزُ المحكوم (`ec` بالقاعدة): الأساسيّ، أو أوّلُ إضافيٍّ غيرِ فارغ إن فرغ الأساسيُّ بالتطبيع —
-    // مسحُ رقم الرفّ من النموذج ينقله للإضافيّات (keepOldCode) فكانت المادةُ تختفي من الفحص.
+    // الرمزُ المحكوم (`ec` بالقاعدة): الأساسيّ، أو أوّلُ إضافيٍّ يُمسح إن فرغ الأساسيُّ بالتطبيع —
+    // مسحُ رقم الرفّ من النموذج ينقله للإضافيّات (keepOldCode) فكانت المادةُ تختفي من الفحص. والمشوَّه
+    // (skip) لا يُحكم: 0168 لا تقرأ الإضافيّات، فاختيارُه كان يُخفيها عن الاثنين.
     const ec = matchCode(p.barcode) !== "" ? p.barcode ?? null
-      : (p.alt_codes ?? []).find((a) => matchCode(a) !== "") ?? p.barcode ?? null;
+      : (p.alt_codes ?? []).find(scannable) ?? p.barcode ?? null;
     const n = matchCode(ec);
     const ck = codeKind(ec);
     const s = sales.get(p.id);
@@ -140,7 +144,7 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
       else if (b.ck === "internal" && !gen.has(b.n)) hand = "internal";
       else if (b.ck === "ean8" && thirteen.some((o) => o.p.id !== b.p.id && o.n.slice(0, 8) === b.n)) hand = "ean8_prefix";
     }
-    const noCode = (b.p.barcode ?? "") === "" && !(b.p.alt_codes ?? []).some((a) => matchCode(a) !== "");
+    const noCode = (b.p.barcode ?? "") === "" && !(b.p.alt_codes ?? []).some(scannable);
     const factory = (b.ck === "gtin" || b.ck === "ean8") && hand === null;
     return { ...b, hand, noCode, factory, shelf: noCode || hand !== null };
   });

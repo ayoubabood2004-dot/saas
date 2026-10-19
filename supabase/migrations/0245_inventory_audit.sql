@@ -22,7 +22,7 @@
 -- التطبيع لـ0168)، والرمزُ العربيّ وشكلُ إكسل يُتركان لها (`inv_code_kind` = skip).
 --
 -- ── الأنواع (kind / why) ─────────────────────────────────────────────────
---   no_code        بلا باركود ولا رمزٍ إضافيّ.
+--   no_code        الأساسيُّ فارغٌ خامّاً ولا إضافيَّ يُمسح (الفارغُ والمشوَّه لا يُعدّان).
 --   hand_code      رمزٌ مكتوبٌ باليد: short (أقلّ من ٨)، length (أرقامٌ بطولٍ ليس
 --                  GTIN)، check (طولُ GTIN ورقمُ التحقق خطأ)، pattern (تحققٌ سليم
 --                  وتسلسلُ ٧، أو ستّةٌ من رقمٍ غير الصفر، أو ستّةُ أصفارٍ بأوّله، أو عشرةٌ بأيّ
@@ -176,13 +176,15 @@ begin
   return query
   with
   -- مخزنُ العيادة وحده (لا مخزنَ الحقل — 0191)، وشكلُ رمز كلّ مادة مرّةً واحدة. والرمزُ
-  -- المحكومُ (`ec`) الأساسيّ، أو أوّلُ إضافيٍّ غيرِ فارغ إن فرغ الأساسيُّ بالتطبيع: مسحُ رقمِ
+  -- المحكومُ (`ec`) الأساسيّ، أو أوّلُ إضافيٍّ **يُمسح** إن فرغ الأساسيُّ بالتطبيع: مسحُ رقمِ
   -- الرفّ من النموذج ينقله للإضافيّات (keepOldCode)، فكانت المادةُ تختفي من الفحص كأنها صُلّحت.
+  -- والإضافيُّ المشوَّه (عربيّ/إكسل — skip) لا يُحكم: 0168 لا تقرأ الإضافيّات، فاختيارُه كان
+  -- يُخفي المادةَ عن الاثنين؛ ومادةٌ لم يبقَ لها رمزٌ يُمسح «بلا باركود».
   p0 as (
     select pr.*,
            coalesce(case when inv_norm_code(pr.barcode) <> '' then pr.barcode end,
                     (select a.c from unnest(coalesce(pr.alt_codes, '{}')) with ordinality a(c, o)
-                      where inv_norm_code(a.c) <> '' order by a.o limit 1),
+                      where inv_code_kind(a.c) not in ('none', 'skip') order by a.o limit 1),
                     pr.barcode) as ec
       from products pr
      where pr.clinic_id = v_clinic and pr.farm_id is null
@@ -239,7 +241,7 @@ begin
   f as materialized (
     select c.*,
            (coalesce(c.barcode, '') = '' and not exists (
-              select 1 from unnest(coalesce(c.alt_codes, '{}')) a(x) where inv_norm_code(a.x) <> '')) as no_code,
+              select 1 from unnest(coalesce(c.alt_codes, '{}')) a(x) where inv_code_kind(a.x) not in ('none', 'skip'))) as no_code,
            (c.ck in ('gtin', 'ean8') and c.hand is null) as factory
       from c
   ),
