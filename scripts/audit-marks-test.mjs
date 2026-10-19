@@ -85,6 +85,12 @@ console.log("▸ ورقةُ الطباعة");
   const poolRow = html.split("<tr").find((r) => r.includes('class="pool"'));
   check("  والسطرُ المجمَّعُ موجودٌ وبلا علامة", !!poolRow && !poolRow.includes('class="audit"'));
   check("والاسمُ يُهرَّب (لا <script> خامّ)", !html.includes("<script>") && html.includes("&lt;script&gt;"));
+  // الباركودُ مرسومٌ يُمسح من الورقة — وما يزيد عن عرض العمود نصٌّ (التصغيرُ يرقّق الخطوط تحت ما تقرؤه طابعة)
+  const bcHtml = M.buildStockReportHTML([...products, P("4", "رمز طويل", { company_id: "co1", barcode: "ABCDEFGHIJKLMNOPQRSTUVWXYZ12" })], [CO], [SEC]);
+  const bcRow = (name) => bcHtml.split("<tr").find((r) => r.includes(name)) ?? "";
+  check("باركودُ «مادة سليمة» مرسوم (svg) ونصُّه تحته", bcRow("مادة سليمة").includes('<svg class="bc"') && bcRow("مادة سليمة").includes(">6200000000002<"));
+  check("  ورمزٌ من ٢٨ حرفاً (أعرضُ من العمود) نصٌّ لا رسمٌ مصغَّر", !bcRow("رمز طويل").includes("<svg") && bcRow("رمز طويل").includes('class="mono">ABCDEFGHIJKLMNOPQRSTUVWXYZ12<'));
+  check("  و«بلا رمز» شرطةٌ لا رسم", !bcRow("بلا رمز").includes("<svg"));
 }
 
 console.log("▸ ملفُّ الإكسل");

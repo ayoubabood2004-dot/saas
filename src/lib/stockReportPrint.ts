@@ -16,9 +16,20 @@ import type { Product, Company, CompanySection } from "@/types";
 import { getClinicName, getClinicLogo, getExpiryWindows } from "./settings";
 import { money } from "./utils";
 import { buildStocktake, flagsText, type AuditMarks, type StocktakeLine } from "./stocktake";
+import { drawBarcode } from "./barcodeDraw";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** أعرضُ رسمٍ يسعه عمودُ الباركود (`.bcw svg` أدناه) بلا تصغير. */
+const BC_MAX_MM = 44;
+/** الباركودُ مرسوماً يُمسح من الورقة (العادّ يطابق العلبةَ بالصفّ)، ونصّاً تحته — وما لا يُرسم نصٌّ وحده.
+ *  ورمزٌ أعرضُ من العمود (Code 128 طويل) نصٌّ أيضاً: تصغيرُه يرقّق الخطوط تحت ما تقرؤه طابعةٌ عاديّة. */
+const barcodeCell = (code: string | null | undefined): string => {
+  const b = drawBarcode(code, { heightMm: 8 });
+  const wide = b ? Number(/width:([\d.]+)mm/.exec(b.svg)?.[1] ?? 0) > BC_MAX_MM : false;
+  return b && !wide ? `<div class="bcw">${b.svg}<span>${esc(b.text)}</span></div>` : `<span class="mono">${esc(code ?? "—")}</span>`;
+};
 
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/\.?0+$/, ""));
 
@@ -42,7 +53,7 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
     const approx = isPool ? "≈" : "";
     return `<tr${isPool ? ' class="pool"' : ""}>
       <td class="c">${isPool ? "—" : l.seq}</td>
-      <td class="mono">${esc(l.barcode ?? "—")}</td>
+      <td class="bcc">${barcodeCell(l.barcode)}</td>
       <td class="name">${esc(l.name)}</td>
       <td class="c">${approx}${money(l.buy)}</td>
       <td class="c">${approx}${money(l.sell)}</td>
@@ -93,7 +104,11 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 4px 6px; font-size: 10px; color: #334155; }
   td { border: 1px solid #cbd5e1; padding: 4px 6px; vertical-align: middle; }
   td.c, th.c { text-align: center; }
-  td.mono { font-family: ui-monospace, Consolas, monospace; direction: ltr; text-align: center; font-size: 10px; }
+  td.mono, span.mono { font-family: ui-monospace, Consolas, monospace; direction: ltr; text-align: center; font-size: 10px; }
+  td.bcc { text-align: center; padding: 2px 4px; }
+  .bcw { display: inline-flex; flex-direction: column; align-items: center; direction: ltr; }
+  .bcw svg { display: block; max-width: ${BC_MAX_MM}mm; }
+  .bcw span { font-family: ui-monospace, Consolas, monospace; font-size: 8.5px; letter-spacing: .03em; }
   td.name { font-weight: 600; }
   td.qty { font-weight: 800; font-size: 12px; }
   td.blank { background: #fafafa; min-width: 52px; }

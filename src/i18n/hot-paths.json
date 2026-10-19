@@ -32,7 +32,7 @@
     "farm": "src/pages/PoultryFarms.tsx",
     "cnt": "src/pages/StockCount.tsx",
     "watch": "src/pages/StockWatch.tsx",
-    "audit": { "owner": "src/pages/InventoryAudit.tsx", "with": ["src/lib/auditMarks.ts"] },
+    "audit": { "owner": "src/pages/InventoryAudit.tsx", "with": ["src/lib/auditMarks.ts", "src/lib/auditReport.ts"] },
     "photos": "src/pages/ProductPhotos.tsx",
     "vbk": "src/pages/VisitPage.tsx",
     "cbook": "src/pages/CompanyBook.tsx",
