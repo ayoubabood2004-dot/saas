@@ -118,7 +118,7 @@ P({ name: "رف بإضافي مصنع", barcode: "248", alt_codes: [GOOD("629333
 P({ name: "إضافيّ وحده", barcode: "", alt_codes: ["249"], stock: 3 });
 P({ name: "رف منقول للإضافي", barcode: null, alt_codes: ["  ", "250"], stock: 3 });          // مسحُ رقم الرفّ من النموذج ينقله هنا
 P({ name: "مصنع بالإضافي وحده", barcode: " ", alt_codes: ["", GOOD("629123450003")], stock: 3 });
-P({ name: "إضافي مشوّه وحده", barcode: "", alt_codes: ["اففحس"], stock: 3 });                 // لا رمزَ يُمسح ⇒ بلا باركود
+P({ name: "إضافي مشوّه وحده", barcode: null, alt_codes: ["اففحس"], stock: 3 });               // لا رمزَ يُمسح ⇒ بلا باركود (null كما يحفظه النموذج)
 P({ name: "مشوّه ثم رقم رف", barcode: null, alt_codes: ["1.23457E+12", "248"], stock: 3 });     // يُحكم «248» لا المشوَّه
 P({ name: "أرقام شرقية", barcode: east(GOOD("628444455556")), stock: 3 });
 
@@ -261,17 +261,20 @@ for (const raw of CODES) expected.codes.push({ raw, kind: A.codeKind(raw) });
 for (const raw of CODES) { const n = String(raw); expected.gtin.push({ v: n, ok: A.gtinOk(n) }); }
 
 /* ---- SQL ---------------------------------------------------------------------- */
+/* إدراجٌ صارم بلا «on conflict do nothing»: قيدٌ يرفض صفّاً يُقال لا يُبلع. أسقط مرّةً صفّاً
+ * بصمت — منتجان بباركود '' بعيادةٍ واحدة يخرقان products_clinic_barcode_idx (0007) — فقيس الفحصُ
+ * على قالبٍ ناقص. والقالبُ بحالٍ تُنتجه القاعدة: الباركودُ الممسوح null كما يحفظه النموذج. */
 const sql = [];
 sql.push(`insert into auth.users(id) values (${q(AU1)}), (${q(AU2)}) on conflict do nothing;`);
-sql.push(`insert into poultry_farms(id, clinic_id, name) values (${q(FARM)}, ${q(AU1)}, 'حقل الفحص') on conflict do nothing;`);
-sql.push(`insert into companies(id, clinic_id, name) values\n${companies.map((c) => `(${q(c.id)}, ${q(c.clinic)}, ${q(c.name)})`).join(",\n")} on conflict do nothing;`);
-sql.push(`insert into company_sections(id, clinic_id, company_id, name, pooled_stock) values\n${sections.map((s) => `(${q(s.id)}, ${q(s.clinic)}, ${q(s.company_id)}, ${q(s.name)}, ${s.pooled_stock})`).join(",\n")} on conflict do nothing;`);
+sql.push(`insert into poultry_farms(id, clinic_id, name) values (${q(FARM)}, ${q(AU1)}, 'حقل الفحص');`);
+sql.push(`insert into companies(id, clinic_id, name) values\n${companies.map((c) => `(${q(c.id)}, ${q(c.clinic)}, ${q(c.name)})`).join(",\n")};`);
+sql.push(`insert into company_sections(id, clinic_id, company_id, name, pooled_stock) values\n${sections.map((s) => `(${q(s.id)}, ${q(s.clinic)}, ${q(s.company_id)}, ${q(s.name)}, ${s.pooled_stock})`).join(",\n")};`);
 sql.push(`insert into products(id, clinic_id, name, barcode, alt_codes, company_id, section_id, farm_id, pooled, stock, purchase_price, sell_price, created_at, has_sub_unit, units_per_box) values\n${products.map((p) =>
-  `(${q(p.id)}, ${q(p.clinic)}, ${q(p.name)}, ${q(p.barcode)}, ${arr(p.alt_codes)}, ${q(p.company_id)}, ${q(p.section_id)}, ${q(p.farm_id)}, ${p.pooled}, ${p.stock}, ${p.purchase_price}, ${p.purchase_price * 2}, ${q(p.created_at)}, ${p.has_sub_unit}, ${p.units_per_box ?? "null"})`).join(",\n")} on conflict do nothing;`);
+  `(${q(p.id)}, ${q(p.clinic)}, ${q(p.name)}, ${q(p.barcode)}, ${arr(p.alt_codes)}, ${q(p.company_id)}, ${q(p.section_id)}, ${q(p.farm_id)}, ${p.pooled}, ${p.stock}, ${p.purchase_price}, ${p.purchase_price * 2}, ${q(p.created_at)}, ${p.has_sub_unit}, ${p.units_per_box ?? "null"})`).join(",\n")};`);
 sql.push(`insert into generated_barcodes(clinic_id, barcode) values\n${generated.map((g) => `(${q(g.clinic)}, ${q(g.barcode)})`).join(",\n")};`);
-sql.push(`insert into invoices(id, clinic_id, created_at, status) values\n${invoices.map((i) => `(${q(i.id)}, ${q(i.clinic)}, ${q(i.created_at)}, ${q(i.status)})`).join(",\n")} on conflict do nothing;`);
+sql.push(`insert into invoices(id, clinic_id, created_at, status) values\n${invoices.map((i) => `(${q(i.id)}, ${q(i.clinic)}, ${q(i.created_at)}, ${q(i.status)})`).join(",\n")};`);
 sql.push(`insert into invoice_items(id, clinic_id, invoice_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty, created_at) values\n${items.map((it) =>
-  `(${q(it.id)}, ${q(it.clinic)}, ${q(it.invoice_id)}, ${q(it.product_id)}, ${q(it.name)}, ${it.qty}, 100, 50, ${it.qty * 100}, ${it.stock_qty ?? "null"}, ${q(it.created_at)})`).join(",\n")} on conflict do nothing;`);
+  `(${q(it.id)}, ${q(it.clinic)}, ${q(it.invoice_id)}, ${q(it.product_id)}, ${q(it.name)}, ${it.qty}, 100, 50, ${it.qty * 100}, ${it.stock_qty ?? "null"}, ${q(it.created_at)})`).join(",\n")};`);
 sql.push(`create table if not exists _audit_codes(raw text, expected text);\ntruncate _audit_codes;\ninsert into _audit_codes values\n${expected.codes.map((c) => `(${q(c.raw)}, ${q(c.kind)})`).join(",\n")};`);
 sql.push(`create table if not exists _audit_gtin(v text, ok boolean);\ntruncate _audit_gtin;\ninsert into _audit_gtin values\n${expected.gtin.map((c) => `(${q(c.v)}, ${c.ok})`).join(",\n")};`);
 
