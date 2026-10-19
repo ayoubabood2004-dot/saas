@@ -4,6 +4,7 @@ import i18next, { type TFunction } from "i18next";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, ClipboardCheck, FileSearch, Hourglass, Lock, PackageSearch, RotateCw, Search, TrendingDown, X } from "lucide-react";
 import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 import type { CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
@@ -35,8 +36,12 @@ const TABS: readonly Tab[] = ["today", "pending", "report", "audit"];
 
 /* فحصُ المخزن (0245) **مثبَّتٌ داخل الجرد** (طلبُ المالك): تبويبٌ هنا، وأزرارُ التقرير بعلاماته.
  * مالكُ نصوصه InventoryAudit.tsx (نطاق `audit`) — يُحمَّل كسولاً بنطاقه فلا يقرأ هذا الملفُّ مفاتيحَه. */
-const AuditView = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.InventoryAuditView })), ["audit"]);
-const ReportButtons = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
+/* وفشلُ تحميلها يبقى بمكانه (LoadBoundary، نمطُ 0241): `lazy()` يخبّئ الوعدَ المرفوض للأبد، فـ«أعد
+ * المحاولة» تصنع قطعةً جديدة — وإلا أسقط زرٌّ لم يصل شاشةَ الجرد كلَّها وما كُتب فيها. */
+const loadAuditView = () => page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.InventoryAuditView })), ["audit"]);
+const loadReportButtons = () => page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
+let AuditView = loadAuditView();
+let ReportButtons = loadReportButtons();
 /** `lots`: عدُّ كلّ دفعة (0217) لمادةٍ فيها أكثرُ من دفعة — والمادةُ = مجموعُها. */
 interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string> }
 
@@ -66,7 +71,10 @@ export function StockCount() {
   const isManager = role === "manager";
   /* الفحصُ للمدير والطبيب كدالّته؛ والجردُ نفسُه لكلّ من له manageInventory (الشرطُ أدناه). */
   const canAudit = role === "manager" || role === "veterinarian";
-  const [tab, setTab] = useState<Tab>("today");
+  const [tabState, setTab] = useState<Tab>("today");
+  /* انتهاءُ رفع PIN المدير يُسقط تبويبَ الفحص — والصفحةُ ترجع لـ«عدّ اليوم» لا لجسمٍ بلا تبويبٍ مختار. */
+  const tab: Tab = tabState === "audit" && !canAudit ? "today" : tabState;
+  const [, setLazyTick] = useState(0);
   /* `?tab=audit` (رابطُ بطاقة الباركود، والعنوانُ القديم /inventory/audit) و`?tab=today` (طريقُ
    * «الجرد اليومي» من الفحص وهو هنا): يُطبَّق ثم يُمسح كرابط المخزن — وإلا أعاده الرجوعُ فوق اختيارك. */
   const [params, setParams] = useSearchParams();
@@ -187,12 +195,17 @@ export function StockCount() {
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("cnt.title", "الجرد اليومي")}</h1>
           <p className="text-sm text-ink-subtle">{t("cnt.sub", "عدّ كم مادة كل يوم — والفرق ما يتغيّر بالرصيد إلا بموافقة المدير")}</p>
         </div>
-        {/* تقريرُ الجرد الكامل بعلامات الفحص على كلّ سطر — من هنا كما من المخزن. */}
-        <Suspense fallback={null}>
-          <div className="flex flex-wrap gap-2" data-count-reports>
-            <ReportButtons products={ready?.products} />
-          </div>
-        </Suspense>
+        {/* تقريرُ الجرد الكامل بعلامات الفحص على كلّ سطر — من هنا كما من المخزن، وبشرطه هناك:
+            مخزنٌ فيه موادّ (ورقةٌ فارغة تحسب معادلاتُ ملخّصها صفَّ العناوين «فرقاً»). */}
+        {ready && ready.products.length > 0 && (
+          <LoadBoundary scope="count-reports" onRetry={() => { ReportButtons = loadReportButtons(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <div className="flex flex-wrap gap-2" data-count-reports>
+                <ReportButtons products={ready.products} />
+              </div>
+            </Suspense>
+          </LoadBoundary>
+        )}
       </div>
 
       {/* أربعةُ تبويباتٍ (مع الفحص) أعرضُ من شاشة الهاتف: تلتفّ لصفّين بدل أن تمدّ الصفحةَ أفقياً —
@@ -206,10 +219,13 @@ export function StockCount() {
         ]} />
 
       {/* الفحصُ يجلب بياناته بنفسه — لا ينتظر بياناتِ العدّ ولا يسقط بفشلها. */}
-      {tab === "audit" && canAudit ? (
-        <Suspense fallback={<div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>}>
-          <AuditView embedded />
-        </Suspense>
+      {tab === "audit" ? (
+        <LoadBoundary scope="count-audit" onRetry={() => { AuditView = loadAuditView(); setLazyTick((n) => n + 1); }}>
+          <Suspense fallback={<div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>}>
+            {/* عدٌّ مكتوبٌ لم يُرسل: روابطُ الفحص الخارجة بتبويبٍ جديد فلا يضيع (حالةُ الصفحة وحدها تحمله). */}
+            <AuditView embedded newTabLinks={dirty} />
+          </Suspense>
+        </LoadBoundary>
       ) : data === "loading" ? (
         <div className="space-y-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>
       ) : data === "error" ? (

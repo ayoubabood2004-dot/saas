@@ -11,7 +11,9 @@ import { formatNum } from "./utils";
  * صلبةً هناك. نقيٌّ بلا شبكة، مفحوصٌ بـaudit-marks-test.
  *
  * كلمةٌ يقرؤها العادُّ وهو بالرف، لا شرحٌ: الشرحُ والطريقُ بتبويب الفحص. وما تقوله الورقةُ أصلاً
- * لا يُكرَّر — «نافد» (zero_sold) و«بدون شركة» (مجموعتُها). والترتيبُ بالخطورة.
+ * لا يُكرَّر — «نافد» (zero_sold) و«بدون شركة» (مجموعتُها). أمّا «بادئةُ مصنعٍ بشركتين» فالمادةُ
+ * جالسةٌ بمجموعة شركةٍ قد تكون غلطاً ولا شيءَ يقوله — فلها «شركة؟». والترتيبُ بالخطورة.
+ * و«ماكو ملاحظات ✓» لا تُقال إلا والفحصُ فارغٌ فعلاً: ملاحظاتٌ لا علامةَ لها تُقال بعددها.
  * ==========================================================================*/
 
 /** نافذةُ معدّل البيع لعلامات الورقة — نفسُ افتراض الشاشة. */
@@ -24,10 +26,11 @@ export function auditMarks(t: TFunction, audit: readonly InventoryAuditRow[], he
     noCode: t("audit.tagNoCode", "بلا باركود"),
     hand: t("audit.tagHand", "رمز يدوي"),
     broken: t("audit.tagBroken", "رمز معطوب"),
+    co: t("audit.tagCo", "شركة؟"),
     idle: t("audit.tagIdle", "ما ينباع"),
     slow: t("audit.tagSlow", "بطيء"),
   };
-  const order = [L.qty, L.dup, L.noCode, L.hand, L.broken, L.idle, L.slow];
+  const order = [L.qty, L.dup, L.noCode, L.hand, L.broken, L.co, L.idle, L.slow];
   const tagOf = (k: AuditKind): string | null => {
     switch (k) {
       case "impossible": return L.qty;
@@ -36,7 +39,8 @@ export function auditMarks(t: TFunction, audit: readonly InventoryAuditRow[], he
       case "hand_code": return L.hand;
       case "never_sold": case "stopped": return L.idle;
       case "slow": return L.slow;
-      default: return null;
+      case "prefix_split": return L.co;
+      default: return null;   // zero_sold و no_company: الورقةُ تقولهما
     }
   };
   const sets = new Map<string, Set<string>>();
@@ -46,7 +50,11 @@ export function auditMarks(t: TFunction, audit: readonly InventoryAuditRow[], he
     s.add(tag);
     sets.set(id, s);
   };
-  for (const r of audit) add(r.product_id, tagOf(r.kind));
+  const untagged = new Set<string>();
+  for (const r of audit) {
+    const tag = tagOf(r.kind);
+    if (tag) add(r.product_id, tag); else untagged.add(r.product_id);
+  }
   for (const r of health) add(r.product_id, r.kind === "twin" || r.kind === "alt_owned" ? L.dup : L.broken);
 
   const byProduct = new Map<string, string[]>();
@@ -62,7 +70,9 @@ export function auditMarks(t: TFunction, audit: readonly InventoryAuditRow[], he
     header: t("audit.marksHeader", "ملاحظات الفحص"),
     summary: parts.length
       ? t("audit.marksSummary", { parts: parts.join(" · "), n: formatNum(MARKS_DAYS), defaultValue: "فحص المخزن (بيع آخر {{n}} يوم): {{parts}}" })
-      : t("audit.marksClean", "فحص المخزن: ماكو ملاحظات ✓"),
+      : untagged.size
+        ? t("audit.marksElsewhere", { n: formatNum(untagged.size), defaultValue: "فحص المخزن: ماكو علامات على هالورقة — و{{n}} مادة بيها ملاحظة (شركة أو رصيد صفر) بتبويب «فحص المخزن»." })
+        : t("audit.marksClean", "فحص المخزن: ماكو ملاحظات ✓"),
   };
 }
 

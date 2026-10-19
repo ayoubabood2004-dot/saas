@@ -10,7 +10,7 @@ import type { AuditKind, BarcodeAilment, BarcodeHealthRow, Company, CompanySecti
 import { repo } from "@/lib/repo";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { cn, dateLocale, formatNum, formatQty, matchCode, money, searchable } from "@/lib/utils";
-import { describeDbError } from "@/lib/errors";
+import { describeDbError, withTimeout } from "@/lib/errors";
 import { COVER_MAX } from "@/lib/inventoryAudit";
 import { getClinicName } from "@/lib/settings";
 import type { AuditMarks } from "@/lib/stocktake";
@@ -141,7 +141,7 @@ function buildModel(t: TFunction, data: Data, keep: (name: string, code: string 
       .map((r) => ({ id: r.product_id, name: r.product_name, code: r.code, stock: null, value: 0, grp: null, chip: null, detail: null })),
   }));
 
-  return [
+  const model: SectionM[] = [
     { id: "codes", icon: ScanBarcode, title: t("audit.sCodes", "الباركود"), money: false, checks: [
       { key: "no_code", title: t("audit.noCode", "بلا باركود"), grouped: false, showValue: false, rows: rowsOf("no_code"),
         why: t("audit.noCodeWhy", "ما تنمسح — تنباع بالبحث بالاسم بس، وأول ما تجي علبتها تنضاف مرة ثانية كمادة جديدة."),
@@ -197,7 +197,15 @@ function buildModel(t: TFunction, data: Data, keep: (name: string, code: string 
         fix: t("audit.prefixSplitFix", "افتح المادة اللي شركتها تختلف عن أخواتها وصحّحها. وإذا نفس المصنع يجيك فعلاً من موزّعين، خليها.") },
     ] },
   ];
+  /* ترتيبٌ واحد للشاشة والورقة (كان بالشاشة وحدها، فطُبعت الصفوفُ بترتيب المعرّف): ما له قيمةٌ
+   * الأثقلُ أوّلاً، وغيرُه بالاسم، والمجموعاتُ بمفتاحها ثم الاسم. */
+  for (const s of model) for (const c of s.checks) {
+    c.rows.sort((a, b) => (c.grouped ? cmp(a.grp ?? "", b.grp ?? "") : c.showValue ? b.value - a.value : 0) || a.name.localeCompare(b.name));
+  }
+  return model;
 }
+
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** الفحصُ للمدير والطبيب كالدالّة، وبإذن المخزن كالمخزن نفسِه. */
 function useAuditAllowed(): boolean {
@@ -208,7 +216,9 @@ function useAuditAllowed(): boolean {
 /* ── الشاشة ───────────────────────────────────────────────────────────────── */
 
 /** `embedded`: داخل «الجرد اليومي» — بلا رأس صفحةٍ ولا رجوع، والباقي حرفاً كما هو. */
-export function InventoryAuditView({ embedded = false }: { embedded?: boolean }) {
+/** `newTabLinks`: بالجرد عدٌّ مكتوبٌ لم يُرسل — روابطُ الفحص الخارجة تنفتح بتبويبٍ جديد، فلا تُغلق
+ *  صفحةُ الجرد ويضيع ما كُتب (حالةُ الصفحة وحدها تحمله). و«الجرد اليومي» من هنا يقلب التبويبَ نفسه. */
+export function InventoryAuditView({ embedded = false, newTabLinks = false }: { embedded?: boolean; newTabLinks?: boolean }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const { restricted, stockLocked } = useOverride();
@@ -338,6 +348,7 @@ export function InventoryAuditView({ embedded = false }: { embedded?: boolean })
           <p className="mb-4 rounded-xl bg-surface-2 px-3 py-2 text-2xs leading-relaxed text-ink-muted" data-audit-nobulk>
             {t("audit.noBulk", "ما نصلّح بالجملة ولا ندمج وحدنا: بياناتك تبقى مثل ما دخّلتها. كل ملاحظة تحتها طريق تصليحها بالتطبيق — وأنت تقرر.")}
             {stockLocked && <span className="mt-1 block font-bold text-warn-700 dark:text-warn-300">{t("audit.locked", "الجهاز مقفول على وضع المدير — فتح المواد للتعديل يحتاج رمز المدير.")}</span>}
+            {newTabLinks && <span className="mt-1 block font-bold text-brand-700 dark:text-brand-300" data-audit-keepcounts>{t("audit.keepCounts", "عندك عدّ ما انسجل بعد — روابط الفحص تنفتح بتبويب جديد حتى ما يضيع.")}</span>}
           </p>
 
           {total === 0 && q.trim() === "" && (
@@ -353,7 +364,7 @@ export function InventoryAuditView({ embedded = false }: { embedded?: boolean })
                 {s.checks.map((c) => (
                   /* أنواعُ 0168 لا تُعرض فارغة (كبطاقتها)، وأنواعُ 0245 تقول «ماكو ✓». */
                   c.key.startsWith("bc_") && c.rows.length === 0 ? null
-                    : <CheckBlock key={c.key} c={c} canOpen={!stockLocked} restricted={restricted} />
+                    : <CheckBlock key={c.key} c={c} canOpen={!stockLocked} restricted={restricted} newTab={newTabLinks} />
                 ))}
               </div>
             </section>
@@ -364,11 +375,12 @@ export function InventoryAuditView({ embedded = false }: { embedded?: boolean })
   );
 }
 
-function OpenLink({ id, show }: { id: string; show: boolean }) {
+function OpenLink({ id, show, newTab }: { id: string; show: boolean; newTab: boolean }) {
   const { t } = useTranslation();
   if (!show) return null;
   return (
     <Link to={`/inventory?edit=${encodeURIComponent(id)}`} onClick={() => playTap()} data-audit-open
+      {...(newTab ? { target: "_blank", rel: "noopener" } : {})}
       aria-label={t("audit.open", "افتح المادة")} title={t("audit.open", "افتح المادة")}
       className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
       <Pencil size={14} />
@@ -376,7 +388,7 @@ function OpenLink({ id, show }: { id: string; show: boolean }) {
   );
 }
 
-function Row({ r, canOpen, restricted, showValue }: { r: VRow; canOpen: boolean; restricted: boolean; showValue: boolean }) {
+function Row({ r, canOpen, restricted, showValue, newTab }: { r: VRow; canOpen: boolean; restricted: boolean; showValue: boolean; newTab: boolean }) {
   const { t } = useTranslation();
   return (
     <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5" data-audit-row>
@@ -390,18 +402,17 @@ function Row({ r, canOpen, restricted, showValue }: { r: VRow; canOpen: boolean;
         </p>
       </div>
       {r.chip && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">{r.chip}</span>}
-      <OpenLink id={r.id} show={canOpen} />
+      <OpenLink id={r.id} show={canOpen} newTab={newTab} />
     </li>
   );
 }
 
-function CheckBlock({ c, canOpen, restricted }: { c: CheckM; canOpen: boolean; restricted: boolean }) {
+function CheckBlock({ c, canOpen, restricted, newTab }: { c: CheckM; canOpen: boolean; restricted: boolean; newTab: boolean }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [limit, setLimit] = useState(PAGE);
   const n = countOf(c);
-  const sorted = useMemo(() => (c.grouped ? c.rows
-    : [...c.rows].sort((a, b) => (c.showValue ? b.value - a.value : 0) || a.name.localeCompare(b.name))), [c]);
+  const sorted = c.rows;
   const groups = useMemo(() => (c.grouped ? groupsOf(sorted) : []), [c.grouped, sorted]);
   if (n === 0) {
     return (
@@ -428,7 +439,9 @@ function CheckBlock({ c, canOpen, restricted }: { c: CheckM; canOpen: boolean; r
           </p>
           {c.action && !(c.action.hideWhenLocked && !canOpen) && (
             <div className="flex flex-wrap gap-2">
-              <Link to={c.action.to} onClick={() => playTap()} className="btn-secondary gap-1.5 px-3.5 py-1.5 text-xs">
+              {/* «الجرد اليومي» نفسُ الصفحة (يقلب التبويب) فلا تبويبَ جديد له. */}
+              <Link to={c.action.to} onClick={() => playTap()} className="btn-secondary gap-1.5 px-3.5 py-1.5 text-xs"
+                {...(newTab && !c.action.to.startsWith("/inventory/count") ? { target: "_blank", rel: "noopener" } : {})}>
                 <c.action.icon size={14} /> {c.action.label}
               </Link>
             </div>
@@ -439,14 +452,14 @@ function CheckBlock({ c, canOpen, restricted }: { c: CheckM; canOpen: boolean; r
                 <div key={g} className="rounded-xl border border-line px-2.5 py-1" data-audit-group>
                   {c.groupLabel && <p className="pt-1 font-mono text-2xs font-bold text-ink-subtle" dir="ltr">{c.groupLabel(g)}</p>}
                   <ul className="divide-y divide-line/60">
-                    {list.map((r) => <Row key={r.id} r={r} canOpen={canOpen} restricted={restricted} showValue={c.showValue} />)}
+                    {list.map((r) => <Row key={r.id} r={r} canOpen={canOpen} restricted={restricted} showValue={c.showValue} newTab={newTab} />)}
                   </ul>
                 </div>
               ))}
             </div>
           ) : (
             <ul className="divide-y divide-line/60">
-              {sorted.slice(0, limit).map((r, i) => <Row key={`${r.id}-${i}`} r={r} canOpen={canOpen} restricted={restricted} showValue={c.showValue} />)}
+              {sorted.slice(0, limit).map((r, i) => <Row key={`${r.id}-${i}`} r={r} canOpen={canOpen} restricted={restricted} showValue={c.showValue} newTab={newTab} />)}
             </ul>
           )}
           {total > limit && (
@@ -553,9 +566,9 @@ export function StockReportButtons({ products, companies, sections }: {
   const [busy, setBusy] = useState<"print" | "xlsx" | null>(null);
 
   const lists = async () => {
-    const [p, c, s] = await Promise.all([
+    const [p, c, s] = await withTimeout(Promise.all([
       products ?? repo.listProducts(), companies ?? repo.listCompanies(), sections ?? repo.listCompanySections(),
-    ]);
+    ]), 15000);
     return { p, c, s };
   };
   /* فشلُ الفحص لا يمنع الورقة (الجردُ لا ينتظر)، لكنه يُقال بسطرها الأعلى — ورقةٌ بلا علاماتٍ
@@ -565,7 +578,9 @@ export function StockReportButtons({ products, companies, sections }: {
     try {
       const to = new Date();
       const from = new Date(to.getTime() - MARKS_DAYS * DAY);
-      const [audit, health] = await Promise.all([repo.inventoryAudit(from.toISOString(), to.toISOString()), repo.barcodeHealth()]);
+      /* بمهلة: فحصٌ معلَّقٌ على نتٍّ متوقّف كان يحبس الورقةَ على «جارٍ التحميل» — والورقةُ لا تنتظره
+       * (المهلةُ فشلٌ يُقال بسطرها كأيّ فشل). */
+      const [audit, health] = await withTimeout(Promise.all([repo.inventoryAudit(from.toISOString(), to.toISOString()), repo.barcodeHealth()]), 15000);
       return auditMarks(t, audit, health);
     } catch {
       return auditMarksFailed(t);

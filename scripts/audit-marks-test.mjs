@@ -121,20 +121,23 @@ console.log("▸ auditMarks — من ملاحظات الفحص إلى كلمةٍ
   const H = (kind, id) => ({ kind, product_id: id, product_name: id, code: "x" });
   const m = M.auditMarks(tr,
     [A("hand_code", "a", "short"), A("dup_twin", "a", "shelf"), A("impossible", "a", "value"), A("never_sold", "b"), A("stopped", "c"),
-      A("slow", "d"), A("zero_sold", "e"), A("no_company", "e"), A("prefix_split", "e"), A("no_code", "f")],
+      A("slow", "d"), A("zero_sold", "e"), A("no_company", "e"), A("prefix_split", "e"), A("no_code", "f"), A("zero_sold", "z"), A("no_company", "z")],
     [H("twin", "a"), H("arabic", "g"), H("alt_owned", "h")]);
   check("ترتيبٌ بالخطورة وبلا تكرار: «a» كمية ثم تكرار ثم رمز يدوي",
     JSON.stringify(m.byProduct.get("a")) === JSON.stringify(["كمية مشكوكة", "تكرار؟", "رمز يدوي"]), JSON.stringify(m.byProduct.get("a")));
   check("  وما انباعت ووقف بيعها كلمةٌ واحدة، والبطيئةُ غيرُها",
     m.byProduct.get("b")?.[0] === "ما ينباع" && m.byProduct.get("c")?.[0] === "ما ينباع" && m.byProduct.get("d")?.[0] === "بطيء");
-  check("  وما تقوله الورقةُ أصلاً لا يُكرَّر (نافد، الشركات)", !m.byProduct.has("e"));
+  check("  وما تقوله الورقةُ أصلاً لا يُكرَّر (نافد، بدون شركة)", !m.byProduct.has("z"));
+  check("  وبادئةٌ بشركتين «شركة؟» — المادةُ بمجموعةٍ قد تكون غلطاً ولا شيءَ يقوله", JSON.stringify(m.byProduct.get("e")) === JSON.stringify(["شركة؟"]), JSON.stringify(m.byProduct.get("e")));
   check("  و0168: العربيُّ «رمز معطوب» والمستعارُ «تكرار؟»", m.byProduct.get("g")?.[0] === "رمز معطوب" && m.byProduct.get("h")?.[0] === "تكرار؟");
   // الأرقامُ بلغة الواجهة (formatNum) — تُوحَّد لاتينيةً للمقارنة.
   const sum = m.summary.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
   check("  والملخّصُ يعدّ الموادَّ بكلّ علامة وبترتيبها",
-    sum.includes("كمية مشكوكة 1 · تكرار؟ 2 · بلا باركود 1 · رمز يدوي 1 · رمز معطوب 1 · ما ينباع 2 · بطيء 1") && sum.includes("90"), m.summary);
-  const clean = M.auditMarks(tr, [A("zero_sold", "e")], []);
-  check("ومخزنٌ بلا علامة يقول «ماكو ملاحظات» لا سطراً فارغاً", clean.byProduct.size === 0 && clean.summary.includes("ماكو ملاحظات"), clean.summary);
+    sum.includes("كمية مشكوكة 1 · تكرار؟ 2 · بلا باركود 1 · رمز يدوي 1 · رمز معطوب 1 · شركة؟ 1 · ما ينباع 2 · بطيء 1") && sum.includes("90"), m.summary);
+  const clean = M.auditMarks(tr, [], []);
+  check("وفحصٌ فارغٌ فعلاً يقول «ماكو ملاحظات»", clean.byProduct.size === 0 && clean.summary.includes("ماكو ملاحظات"), clean.summary);
+  const elsewhere = M.auditMarks(tr, [A("zero_sold", "e"), A("no_company", "e"), A("no_company", "y")], []);
+  check("  وملاحظاتٌ بلا علامة لا تُقال «ماكو» — تُقال بعدد موادّها", elsewhere.byProduct.size === 0 && !elsewhere.summary.includes("✓") && elsewhere.summary.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).includes("2 مادة"), elsewhere.summary);
   const failed = M.auditMarksFailed(tr);
   check("وفشلُ الفحص يُقال بسطر الورقة، بلا علامات", failed.byProduct.size === 0 && failed.summary.includes("ما وصلت"), failed.summary);
 }

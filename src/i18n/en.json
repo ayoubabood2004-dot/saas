@@ -4910,7 +4910,7 @@
     "gkPrices": "Prices",
     "gvPrices": "Written at full precision with no rounding — so the variance value matches reality to the last fraction.",
     "gkId": "The ID",
-    "gvId": "The last column is the product's ID in the system. Do not edit it; it is what matches a row to its product when two names look alike.",
+    "gvId": "Column U is the product's ID in the system. Do not edit it; it is what matches a row to its product when two names look alike.",
     "gkFreeze": "Freezing headers",
     "gvFreeze": "To keep the header row visible while scrolling: View tab → Freeze Panes → Freeze Top Row.",
     "fReturn": "In return window"
@@ -5696,7 +5696,10 @@
     "marksSummary": "Inventory audit (sales of the last {{n}} days): {{parts}}",
     "marksClean": "Inventory audit: no findings ✓",
     "marksFailed": "The inventory audit notes did not arrive — this sheet has no audit marks, and we never call a failure “clean”.",
-    "reportFailed": "We couldn't load the inventory for the report — try again."
+    "reportFailed": "We couldn't load the inventory for the report — try again.",
+    "keepCounts": "You have counts not saved yet — audit links open in a new tab so they are not lost.",
+    "tagCo": "company?",
+    "marksElsewhere": "Inventory audit: no marks on this sheet — and {{n}} items have a note (company or zero stock) in the “Inventory audit” tab."
   },
   "watch": {
     "noAccess": "Stock watch needs the manage-inventory permission. Ask the clinic manager.",

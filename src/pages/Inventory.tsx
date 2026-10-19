@@ -41,6 +41,7 @@ import type { EncodedPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 import { catalogLookup, type CatalogHit } from "@/lib/catalog";
 /* وضع المدير: جهاز مقفل بلا جلسة مدير → أسعار الشراء والأرباح تختفي من
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
@@ -84,7 +85,9 @@ const isMutedExpiry = (p: Product) => bucketOf(p) === "muted";
 /** «معدّة للإرجاع» (م٤): موسومةٌ بتاريخها الحاليّ وعلى الرفّ — ما يُسلَّم للمندوب فعلاً. */
 const isMarkedForReturn = (p: Product) => isReturnMarked(p) && !p.pooled && (Number(p.stock) || 0) > 0;
 /* أزرارُ تقرير الجرد بعلامات فحص المخزن (0245): مالكُ نصوصها InventoryAudit.tsx (نطاق `audit`). */
-const ReportButtons = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
+/* وفشلُ تحميلها يبقى بمكانه (LoadBoundary، نمطُ 0241) — زرّان لم يصلا لا يُسقطان شاشةَ المخزن كلَّها. */
+const loadReportButtons = () => page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
+let ReportButtons = loadReportButtons();
 
 export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked";
 const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
@@ -208,6 +211,8 @@ export function Inventory() {
    * الصفحات ولا يرى البيعَ، والنموذجُ يحفظ الرصيدَ كما فُتح — فتحُه من لقطةٍ قديمة ثم «حفظ»
    * لتصحيح الشركة كان سيعيد رصيدَ ما قبل بيعات اليوم. */
   const [listFresh, setListFresh] = useState(false);
+  /* «أعد المحاولة» بحارس الزرّين تصنع قطعةً جديدة — والرسمُ يلحقها بهذا العدّاد. */
+  const [, setLazyTick] = useState(0);
   /* الرابطُ لسياقه وحده: من ترك تبويبَ المنتجات قبل وصول القائمة ترك الرابط — وإلا فُتحت
    * المادةُ بلا طلبٍ ساعةَ يرجع للتبويب بعد ساعة. */
   useEffect(() => { if (view !== "products") setOpenId(null); }, [view]);
@@ -487,12 +492,14 @@ export function Inventory() {
           <>
             {/* والزرّان بعلامات فحص المخزن (0245) على كلّ سطر — يُحمَّلان كسولاً بنطاق `audit`،
                 والبديلُ أثناء التحميل الزرّان نفساهما معطَّلين لا فراغاً يقفز. */}
-            <Suspense fallback={<>
-              <Button variant="secondary" disabled leftIcon={<Printer size={16} />}>{t("pos.stockReport", "طباعة تقرير جرد")}</Button>
-              <Button variant="secondary" disabled leftIcon={<FileSpreadsheet size={16} />}>{t("pos.stockXlsx", "تصدير جرد إكسل")}</Button>
-            </>}>
-              <ReportButtons products={products} companies={companies} sections={sections} />
-            </Suspense>
+            <LoadBoundary scope="stock-report" onRetry={() => { ReportButtons = loadReportButtons(); setLazyTick((n) => n + 1); }}>
+              <Suspense fallback={<>
+                <Button variant="secondary" disabled leftIcon={<Printer size={16} />}>{t("pos.stockReport", "طباعة تقرير جرد")}</Button>
+                <Button variant="secondary" disabled leftIcon={<FileSpreadsheet size={16} />}>{t("pos.stockXlsx", "تصدير جرد إكسل")}</Button>
+              </>}>
+                <ReportButtons products={products} companies={companies} sections={sections} />
+              </Suspense>
+            </LoadBoundary>
             {/* الجردُ اليوميّ (م٦): عدٌّ صغيرٌ كلَّ يوم، والفرقُ بموافقة المدير — صفحتُه تحمل نصوصَها. */}
             {/* مراقبةُ المخزون: شكد باقي لكل مادة — للانتهاء وللنفاد، بمدىً تختاره العيادة. */}
             <Link to="/inventory/watch" className="btn btn-primary" data-watchlink onClick={() => playTap()}>
