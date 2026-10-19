@@ -40,7 +40,9 @@ export function codeKind(raw: string | null | undefined): CodeKind {
   if (![8, 12, 13, 14].includes(n.length)) return "length";
   if (!gtinOk(n)) return "check";
   if (n.length === 13 && n[0] === "2") return "internal";
-  if (/([0-9])\1{5}/.test(n) || SEQ.test(n)) return "pattern";
+  // ستّةٌ من رقمٍ غير الصفر، أو ستّةُ أصفارٍ بأوّله، أو عشرةٌ بأيّ موضع. أصفارُ الوسط دون العشرة
+  // حقيقيّة: بادئةٌ تنتهي بأصفار + مادةٌ 00000 (UPC كوكاكولا 049000000443 بستّة).
+  if (/([1-9])\1{5}/.test(n) || /^0{6}/.test(n) || /0{10}/.test(n) || SEQ.test(n)) return "pattern";
   if (n.length === 8) return "ean8";
   return "gtin";
 }
@@ -64,6 +66,8 @@ export interface AuditInput {
 }
 
 const DAY = 86400000;
+/** سقفُ الكفاية بالأيام (مئةُ سنة) — `least(…, 36500)` بالقاعدة. */
+export const COVER_MAX = 36500;
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 /** ثلاثةُ أرقامٍ عشرية بالضبط — كـround(x, 3) بالقاعدة، بعددٍ صحيح يُقارن بلا كسرٍ عائم. */
 const milli = (v: number): number => Math.round(v * 1000);
@@ -107,12 +111,16 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
 
   const base = input.products.filter((p) => p.farm_id == null).map((p) => {
     const stock = num(p.stock);
-    const n = matchCode(p.barcode);
-    const ck = codeKind(p.barcode);
+    // الرمزُ المحكوم (`ec` بالقاعدة): الأساسيّ، أو أوّلُ إضافيٍّ غيرِ فارغ إن فرغ الأساسيُّ بالتطبيع —
+    // مسحُ رقم الرفّ من النموذج ينقله للإضافيّات (keepOldCode) فكانت المادةُ تختفي من الفحص.
+    const ec = matchCode(p.barcode) !== "" ? p.barcode ?? null
+      : (p.alt_codes ?? []).find((a) => matchCode(a) !== "") ?? p.barcode ?? null;
+    const n = matchCode(ec);
+    const ck = codeKind(ec);
     const s = sales.get(p.id);
     const pool = p.section_id ? pools.get(p.section_id) ?? 0 : 0;
     return {
-      p, stock, n, ck,
+      p, stock, ec, n, ck,
       value: Math.max(stock, 0) * Math.max(num(p.purchase_price), 0),
       nn: searchable(p.name),
       altFactory: (p.alt_codes ?? []).some((a) => ["gtin", "ean8"].includes(codeKind(a))),
@@ -173,13 +181,14 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
   const push = (kind: AuditKind, r: R, o: { why?: string | null; grp?: string | null; qty?: number | null; days?: number | null; co?: string | null } = {}): void => {
     const co = o.co !== undefined ? o.co : kind === "no_company" ? null : r.p.company_id ?? null;
     out.push({
-      kind, why: o.why ?? null, product_id: r.p.id, product_name: r.p.name, code: r.p.barcode ?? null, grp: o.grp ?? null,
+      kind, why: o.why ?? null, product_id: r.p.id, product_name: r.p.name, code: r.ec, grp: o.grp ?? null,
       stock: r.stock, value: r.value, qty: o.qty ?? null, days: o.days ?? null,
       company_id: co, company_name: co ? companyName.get(co) ?? null : null,
     });
   };
   const sinceLast = (r: R): number | null => (r.last === null ? null : Math.floor((to - r.last) / DAY));
-  const cover = (r: R): number | null => (r.w > 0 ? floorDays((r.stock * D) / r.w) : null);
+  /** الكفايةُ بالأيام، وسقفُها مئةُ سنة كالقاعدة: رصيدٌ خياليّ بمبيعٍ ضئيل كان يتجاوز int هناك. */
+  const cover = (r: R): number | null => (r.w > 0 ? Math.min(floorDays((r.stock * D) / r.w), COVER_MAX) : null);
 
   for (const r of rows) {
     if (r.noCode) push("no_code", r);

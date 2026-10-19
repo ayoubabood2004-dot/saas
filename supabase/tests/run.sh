@@ -5948,6 +5948,15 @@ chk "  ولا تُنادى بلا هويّة، وتبقى للمسجَّلين" 
              and has_function_privilege('authenticated','public.report_inventory_audit(timestamptz,timestamptz)','execute'))::text" "true"
 chk "  والمساعدتان immutable بمسار" \
     "select count(*)::text from pg_proc where proname in ('inv_code_kind','inv_gtin_ok') and provolatile = 'i' and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "2"
+# النداءُ الذي تناديه الواجهة (مصفوفةٌ واحدة): invoker فوق الدالّة الحارسة، ولا anon — والقالبُ
+# كلُّه (audit-parity أعلاه) مرّ منها، فهنا يكفي أن يساوي عددُها عددَ الجدول.
+chk "report_inventory_audit_json: invoker بمسار، ولا تُنادى بلا هويّة" \
+    "select (not prosecdef and proconfig @> array['search_path=public']
+             and not has_function_privilege('anon','public.report_inventory_audit_json(timestamptz,timestamptz)','execute'))::text
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'report_inventory_audit_json'" "true"
+chk "  وعددُها عددُ الجدول (لا صفَّ يضيع بالتجميع)" \
+    "select (jsonb_array_length(report_inventory_audit_json(now() - interval '90 days', now())) = (select count(*) from report_inventory_audit(now() - interval '90 days', now())))::text
+       from (select set_config('request.jwt.claim.sub','$AU1',true)) s" "true"
 AQ="select 1 from report_inventory_audit(now() - interval ''90 days'', now())"
 # بدور authenticated فعلاً (الحزمةُ superuser لا ترى صنفَ الصلاحيات) — والرفضُ 42501 لا خطأٌ آخر.
 chk "بدور authenticated: المديرُ والطبيبُ يقرآنه، والاستقبالُ والمصوّرُ يُرفضان" \
@@ -5994,4 +6003,8 @@ chk "  والنشرُ بالمتجر رجع للمدير والطبيب" \
     "select _rls_try('$VET', 'select store_set_visible(array[''${PP}01''::uuid], false)')||'|'||split_part(_rls_try('$RCP', 'select store_set_visible(array[''${PP}01''::uuid], false)'), ':', 3)" "rows:1|not_authorized"
 chk "  والدوالُّ الجديدة زالت بعد تصفير الخطّاف" \
     "select (to_regprocedure('public.api_gate()') is null and to_regprocedure('public.staff_can(text)') is null)::text" "true"
+# 0245 تسأل is_photographer بـexecute إن وُجدت — نداءٌ ثابتٌ كان يرمي 42883 لكلّ عيادةٍ بعد هذا التراجع.
+chk "  وفحصُ المخزن (0245) باقٍ للطبيب والمدير بعد حذف is_photographer" \
+    "select (to_regprocedure('public.is_photographer()') is null)::text||'|'||left(_rls_try('$VET', 'select 1 from report_inventory_audit(now() - interval ''90 days'', now())'), 5)||'|'||left(_rls_try('$C1', 'select report_inventory_audit_json(now() - interval ''90 days'', now())'), 5)" \
+    "true|rows:|rows:"
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

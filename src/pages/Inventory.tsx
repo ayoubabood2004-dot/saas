@@ -203,6 +203,10 @@ export function Inventory() {
   /* فحصُ المخزن (0245) يقول لكلّ ملاحظةٍ طريقَها: `?edit=<id>` يفتح نموذجَ المادة نفسِها
    * (ومنه «دمج بمنتج ثاني» والشركة والباركود)، و`?view=barcodes` مولّدَ الباركود. */
   const [openId, setOpenId] = useState<string | null>(null);
+  /* جُلبت القائمةُ بهذه الزيارة؟ الرابطُ يفتح منها وحدها لا من لقطة الكاش: الكاشُ يعيش بين
+   * الصفحات ولا يرى البيعَ، والنموذجُ يحفظ الرصيدَ كما فُتح — فتحُه من لقطةٍ قديمة ثم «حفظ»
+   * لتصحيح الشركة كان سيعيد رصيدَ ما قبل بيعات اليوم. */
+  const [listFresh, setListFresh] = useState(false);
   useEffect(() => {
     const f = params.get("filter");
     // والرجوعُ من دفتر شركة (`?view=ledger`) يرجع لتبويب الديون لا للمنتجات.
@@ -265,6 +269,7 @@ export function Inventory() {
       setProducts(p);
       setCompanies(c);
       setSections(s);
+      setListFresh(true);
       setFailed(false);
       setWsStale(false);
       retried.current = false;
@@ -588,7 +593,7 @@ export function Inventory() {
         </div>
       ) : view === "products" ? (
         <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load}
-          filter={stockFilter} onFilter={setStockFilter} openId={loading ? null : openId} onOpened={() => setOpenId(null)} />
+          filter={stockFilter} onFilter={setStockFilter} openId={listFresh ? openId : null} onOpened={() => setOpenId(null)} />
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "ledger" ? (

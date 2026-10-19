@@ -116,6 +116,8 @@ P({ name: "شكل إكسل", barcode: "1.23457E+12", stock: 3 });
 P({ name: "فارغ بالتطبيع", barcode: "‎ ", stock: 3 });
 P({ name: "رف بإضافي مصنع", barcode: "248", alt_codes: [GOOD("629333344445")], stock: 3 });
 P({ name: "إضافيّ وحده", barcode: "", alt_codes: ["249"], stock: 3 });
+P({ name: "رف منقول للإضافي", barcode: null, alt_codes: ["  ", "250"], stock: 3 });          // مسحُ رقم الرفّ من النموذج ينقله هنا
+P({ name: "مصنع بالإضافي وحده", barcode: " ", alt_codes: ["", GOOD("629123450003")], stock: 3 });
 P({ name: "أرقام شرقية", barcode: east(GOOD("628444455556")), stock: 3 });
 
 // ٢) المكرّر
@@ -137,6 +139,10 @@ const pSubOk = P({ name: "فرعيّة تنباع", barcode: GOOD("629888899993"
 S(pSubOk, 5, 85);
 const pBigFast = P({ name: "قيمة كبيرة سريعة", barcode: GOOD("629888899994"), stock: 1000, purchase_price: 5000 });
 S(pBigFast, 3, 900);
+const pHugeSlow = P({ name: "رصيد خيالي بلا سعر", barcode: GOOD("629888899996"), stock: 99999999, purchase_price: 0 });
+S(pHugeSlow, 2, 1, { stock_qty: 0.001 });
+const pHugeImp = P({ name: "رصيد خيالي بسعر", barcode: GOOD("629888899997"), stock: 99999999, purchase_price: 1 });
+S(pHugeImp, 3, 1, { stock_qty: 0.001 });
 const pBigSlow = P({ name: "قيمة كبيرة بطيئة", barcode: GOOD("629888899995"), stock: 400, purchase_price: 5000 });
 S(pBigSlow, 20, 10);
 
@@ -244,6 +250,8 @@ const CODES = [
   "اففحس", "٦٢٨١٢٣٤٥٦٧٨٩٧", "۶۲۸۱۲۳۴۵۶۷۸۹۷", "٦٢٨١أ٢٣٤٥", "1.23457E+12", "1.2e12", "8681234567890.0", "86812.0",
   " 1.2E+12", "6281234567897‏", "‪6281234567897", "62 81 23 45 67 89 7", "6281234567897\t",
   "😀😀😀😀", "😀😀😀😀😀", "😀😀😀😀😀😀😀😀", "۱۲۳", "ک۱۲۳۴۵۶۷۸", "İ12345678", "x".repeat(40),
+  "6261000000016", "049000000443", "0049000000443", withCheck("100000000006"), withCheck("100000000000"),
+  withCheck("000009876541"), withCheck("000000987654"), withCheck("871000000000"),
   GOOD("062811112222"), GOOD("00062811112"), GOOD("1062811112222"), "0".repeat(8), "9".repeat(14),
   "0123456789012", "7654321000001", "9876543210", "12345670", withCheck("1234567"), withCheck("9999999"),
 ];
@@ -271,7 +279,7 @@ const callSql = [
   `create or replace function _audit_call(who uuid, f timestamptz, t timestamptz) returns json language plpgsql as $fn$
      declare r json; begin
        perform set_config('request.jwt.claim.sub', who::text, true);
-       select coalesce(json_agg(x), '[]'::json) into r from report_inventory_audit(f, t) x;
+       r := report_inventory_audit_json(f, t)::json;   -- ما تناديه الواجهة نفسُه
        return r;
      exception when others then return json_build_object('error', sqlerrm); end $fn$;`,
   ...Object.entries(calls).map(([k, c]) => `insert into _audit_out values (${q(k)}, _audit_call(${q(AU1)}, ${q(c.from)}, ${q(c.to)}));`),

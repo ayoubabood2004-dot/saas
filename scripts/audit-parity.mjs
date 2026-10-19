@@ -22,7 +22,7 @@ const check = (name, cond, detail = "") => {
 const near = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(Number(a) - Number(b)) <= 1e-6 * Math.max(1, Math.abs(Number(b))));
 const key = (r) => `${r.kind}|${r.product_id}`;
 
-let rows = 0;
+let rows = 0, capped = 0;
 const seen = new Set();
 for (const [id, e] of Object.entries(expected.calls)) {
   const s = got[id];
@@ -37,6 +37,7 @@ for (const [id, e] of Object.entries(expected.calls)) {
     const sr = sm.get(k);
     if (!sr) continue;
     rows++;
+    if (er.days === 36500) capped++;
     seen.add(er.kind + "/" + (er.why ?? "∅"));
     const pairs = [
       ["why", sr.why ?? null, er.why ?? null], ["grp", sr.grp ?? null, er.grp ?? null],
@@ -60,6 +61,9 @@ const must = [
 ];
 const missing = must.filter((m) => !seen.has(m));
 check(`القالبُ يغطّي كلَّ نوعٍ وسبب (${must.length}) — ${rows} صفّاً قورن`, missing.length === 0 && rows >= 400, `غائب: ${missing.join("، ")} · صفوف ${rows}`);
+
+/* رصيدٌ خياليّ بمبيعٍ ضئيل يبلغ سقفَ الكفاية (٣٦٥٠٠) بالطرفين — كان يتجاوز int فيُسقط النداءَ كلَّه. */
+check(`سقفُ الكفاية (مئةُ سنة) يُبلغ ويطابق — ${capped} صفّاً`, capped >= 4, `${capped}`);
 
 /* المدّةُ خارج ٧..٤٠٠ ترمي بالطرفين. */
 const r6 = got.range6;

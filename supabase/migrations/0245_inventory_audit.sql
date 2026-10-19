@@ -25,10 +25,13 @@
 --   no_code        بلا باركود ولا رمزٍ إضافيّ.
 --   hand_code      رمزٌ مكتوبٌ باليد: short (أقلّ من ٨)، length (أرقامٌ بطولٍ ليس
 --                  GTIN)، check (طولُ GTIN ورقمُ التحقق خطأ)، pattern (تحققٌ سليم
---                  وتكرارُ ٦ أرقام أو تسلسلُ ٧ — مقيسٌ: 6901234567892 وأخواتها)،
---                  internal (٢٠–٢٩ بـ١٣ رقماً وليس بسجلّ مولّد العيادة)، ean8_prefix
---                  (EAN-8 هو أوّلُ ثمانيةٍ من EAN-13 مادةٍ أخرى). ومادةٌ أحدُ رموزها
---                  الإضافية باركودُ مصنعٍ سليم لا تُعدّ: المسحُ يجدها.
+--                  وتسلسلُ ٧، أو ستّةٌ من رقمٍ غير الصفر، أو ستّةُ أصفارٍ بأوّله، أو عشرةٌ بأيّ
+--                  موضع — مقيسٌ: 6901234567892 و15666666 وأخواتها. والأصفارُ بالوسط دون العشرة
+--                  لا تُعدّ: بادئةٌ تنتهي بأصفارٍ ورقمُ مادةٍ 00000 تصنعها بباركودٍ حقيقيّ (UPC
+--                  كوكاكولا 049000000443 بستّة)؛ و«نمطٌ» كاذبٌ يصير «رفّاً» فيُقترح دمجُه بغيره)، internal (٢٠–٢٩
+--                  بـ١٣ رقماً وليس بسجلّ مولّد العيادة)، ean8_prefix (EAN-8 هو أوّلُ ثمانيةٍ
+--                  من EAN-13 مادةٍ أخرى). ومادةٌ أحدُ رموزها الإضافية باركودُ مصنعٍ سليم لا
+--                  تُعدّ: المسحُ يجدها. ومادةٌ بلا أساسيٍّ ولها إضافيّ تُحكم بأوّل إضافيّاتها.
 --   dup_twin       نفسُ الاسم (search_norm، مرآةُ searchable) وفيها صفٌّ «رفّ» (بلا رمز
 --                  أو رمزٌ باليد) وصفٌّ بباركود مصنع — النمطُ المقيس. why: shelf/factory/other.
 --   dup_name       نفسُ الاسم بلا ذلك النمط (رموزٌ مختلفة أو فارغة) — «افحص».
@@ -56,16 +59,26 @@
 -- البيعُ كتعريف report_top_products: فواتيرُ العيادة غيرُ المردودة، والصافي بسطور
 -- الإرجاع السالبة، وبمكافئ العلبة (`coalesce(stock_qty, qty)`) لأن الرصيدَ بالعلب.
 -- والجمعُ بالقاعدة (قاعدةُ 0149) — لا سطرَ فاتورةٍ يعبر للمتصفّح.
+-- والكفايةُ بالأيام سقفُها ٣٦٥٠٠ (مئةُ سنة): رصيدٌ خياليّ (باركودٌ لُصق بخانة الرصيد) ومبيعٌ
+-- بجزءٍ من ألف كانا يتجاوزان int فيُسقطان الفحصَ كلَّه للعيادة — ساعةَ أحوجِ ما تكون إليه.
+--
+-- ── النداء ───────────────────────────────────────────────────────────────
+-- الواجهةُ تنادي `report_inventory_audit_json` مرّةً واحدة: مصفوفةٌ واحدة من لقطةٍ واحدة.
+-- أثقلُ عيادةٍ ~١٦٠٠ ملاحظة فوق سقف الصفوف (ألف)، وصفحاتٌ بإزاحةٍ تعيد الحسابَ كلَّه لكلّ
+-- صفحة، وتغيّرٌ بينها يزيح الصفوف فيتكرّر صفٌّ أو يسقط. الجدولُ يبقى للحزمة والمرآة.
 --
 -- ── الصلاحية ─────────────────────────────────────────────────────────────
 -- `security definer` بمسارٍ مثبَّت، للمدير والطبيب وحدهما، ومحصورةٌ بـ`auth_clinic()`
 -- (فالمشغّلُ الداخلُ عيادةً يراها كمديرها — 0151 — ولا أثرَ: لا كتابة). وموظّفُ
 -- التصوير مرفوضٌ بالدور الأساس هنا، و**ليست بقائمة `api_gate`** (0222/0233) فالبوّابةُ
 -- ترفضه قبلها — طبقتان. لا جدولَ جديد فلا سياجَ جديد. ولا تُمنح لـanon.
+-- و`is_photographer()` تُسأل بـexecute إن وُجدت: تراجعُ 0222 الموثَّق يحذفها (ومعها المصوّرون
+-- يُعلَّقون)، ونداءٌ ثابتٌ كان سيُسقط الفحصَ لكلّ عيادةٍ بعده بـ42883.
 --
 -- لا نصَّ عربيَّ بالمخرَج (كـ0168): kind/why لاتينيان، والشرحُ والطريقُ بـt() بالواجهة.
 --
--- تراجع: drop function report_inventory_audit(timestamptz, timestamptz);
+-- تراجع: drop function report_inventory_audit_json(timestamptz, timestamptz);
+--        drop function report_inventory_audit(timestamptz, timestamptz);
 --        drop function inv_code_kind(text); drop function inv_gtin_ok(text);
 --        والواجهةُ القديمة لا تناديها.
 -- تُطبَّق بعد 0244. وتُعاد بلا أثرٍ ثانٍ.
@@ -93,7 +106,7 @@ $function$;
 -- ── ٢) شكلُ الرمز — مرآتُه `codeKind` بـinventoryAudit.ts ──────────────────
 -- none | skip (عربيّ/إكسل — لـ0168) | short | alnum | length | check | internal |
 -- pattern | ean8 | gtin. والترتيبُ مقصود: «internal» قبل «pattern» لأن مولّدنا يبدأ
--- بـ2000000000008 (ستةُ أصفارٍ وأكثر) وهو سليمٌ إن كان بسجلّ العيادة.
+-- بـ2000000000008 (عشرةُ أصفار) وهو سليمٌ إن كان بسجلّ العيادة.
 create or replace function public.inv_code_kind(v text)
 returns text
 language sql
@@ -110,7 +123,7 @@ as $function$
     when length(n) not in (8, 12, 13, 14) then 'length'
     when not inv_gtin_ok(n) then 'check'
     when length(n) = 13 and left(n, 1) = '2' then 'internal'
-    when n ~ '([0-9])\1{5}'
+    when n ~ '([1-9])\1{5}' or n ~ '^0{6}' or n ~ '0{10}'
       or n ~ '(0123456|1234567|2345678|3456789|6543210|7654321|8765432|9876543)' then 'pattern'
     when length(n) = 8 then 'ean8'
     else 'gtin'
@@ -140,10 +153,15 @@ declare
   v_role   text := auth_role();
   v_days   numeric;
   v_30     timestamptz;
+  v_pho    boolean := false;
 begin
   if v_clinic is null then raise exception 'not authenticated'; end if;
-  -- الدورُ الأساس للمصوّر: رفعُ PIN المدير لا يفتحها له (0222).
-  if v_role is null or v_role not in ('manager', 'veterinarian') or is_photographer() then
+  -- الدورُ الأساس للمصوّر: رفعُ PIN المدير لا يفتحها له (0222). وبـexecute: تراجعُ 0222 يحذف
+  -- الدالّة، ونداءٌ ثابتٌ يُحلَّل ساعةَ التنفيذ فيرمي 42883 لكلّ مُستدعٍ بعده.
+  if to_regprocedure('public.is_photographer()') is not null then
+    execute 'select public.is_photographer()' into v_pho;
+  end if;
+  if v_role is null or v_role not in ('manager', 'veterinarian') or coalesce(v_pho, false) then
     raise exception 'forbidden: inventory role required' using errcode = '42501';
   end if;
   if p_from is null or p_to is null or p_to <= p_from
@@ -157,21 +175,31 @@ begin
 
   return query
   with
-  -- مخزنُ العيادة وحده (لا مخزنَ الحقل — 0191)، وشكلُ رمز كلّ مادة مرّةً واحدة.
+  -- مخزنُ العيادة وحده (لا مخزنَ الحقل — 0191)، وشكلُ رمز كلّ مادة مرّةً واحدة. والرمزُ
+  -- المحكومُ (`ec`) الأساسيّ، أو أوّلُ إضافيٍّ غيرِ فارغ إن فرغ الأساسيُّ بالتطبيع: مسحُ رقمِ
+  -- الرفّ من النموذج ينقله للإضافيّات (keepOldCode)، فكانت المادةُ تختفي من الفحص كأنها صُلّحت.
+  p0 as (
+    select pr.*,
+           coalesce(case when inv_norm_code(pr.barcode) <> '' then pr.barcode end,
+                    (select a.c from unnest(coalesce(pr.alt_codes, '{}')) with ordinality a(c, o)
+                      where inv_norm_code(a.c) <> '' order by a.o limit 1),
+                    pr.barcode) as ec
+      from products pr
+     where pr.clinic_id = v_clinic and pr.farm_id is null
+  ),
   p as materialized (
-    select pr.id, pr.name, pr.barcode, pr.alt_codes, pr.company_id, pr.section_id,
+    select pr.id, pr.name, pr.barcode, pr.ec, pr.alt_codes, pr.company_id, pr.section_id,
            coalesce(pr.stock, 0) as stock,
            greatest(coalesce(pr.stock, 0), 0) * greatest(coalesce(pr.purchase_price, 0), 0) as value,
            pr.created_at, pr.has_sub_unit, pr.units_per_box,
-           inv_norm_code(pr.barcode) as n,
-           inv_code_kind(pr.barcode) as ck,
+           inv_norm_code(pr.ec) as n,
+           inv_code_kind(pr.ec) as ck,
            search_norm(pr.name) as nn,
            exists (select 1 from unnest(coalesce(pr.alt_codes, '{}')) a(c)
                     where inv_code_kind(a.c) in ('gtin', 'ean8')) as alt_factory,
            case when coalesce(cs.pooled_stock, 0) > 0 then cs.pooled_stock else 0 end as pool
-      from products pr
+      from p0 pr
       left join company_sections cs on cs.id = pr.section_id
-     where pr.clinic_id = v_clinic and pr.farm_id is null
   ),
   gen as (
     select distinct inv_norm_code(g.barcode) as n
@@ -266,7 +294,7 @@ begin
     union all
     select 'impossible', imp.why, g.id, null,
            case when imp.why = 'units' then round(g.stock + g.total, 3) end,
-           case when g.w > 0 then floor(g.stock * v_days / g.w)::int end, null
+           case when g.w > 0 then least(floor(g.stock * v_days / g.w), 36500)::int end, null
       from g join imp on imp.id = g.id
     union all
     select 'never_sold', null, g.id, null, null, g.age, null
@@ -279,7 +307,7 @@ begin
        and not exists (select 1 from imp where imp.id = g.id)
     union all
     select 'slow', null, g.id, null, g.w,
-           case when g.w > 0 then floor(g.stock * v_days / g.w)::int end, null
+           case when g.w > 0 then least(floor(g.stock * v_days / g.w), 36500)::int end, null
       from g where g.stock > 0 and g.last_at >= v_30
        and (g.w <= 0 or g.stock * v_days > 180 * g.w)
        and not exists (select 1 from imp where imp.id = g.id)
@@ -298,7 +326,7 @@ begin
       from pre join pfx on pfx.pfx = pre.pfx
      where pfx.ncos >= 2 and pre.company_id is not null
   )
-  select o.kind, o.why, g.id, g.name, g.barcode, o.grp,
+  select o.kind, o.why, g.id, g.name, g.ec, o.grp,
          g.stock, g.value, o.qty, o.days,
          coalesce(o.co, case when o.kind <> 'no_company' then g.company_id end),
          co.name
@@ -312,11 +340,31 @@ $function$;
 revoke all on function public.report_inventory_audit(timestamptz, timestamptz) from public, anon;
 grant execute on function public.report_inventory_audit(timestamptz, timestamptz) to authenticated;
 
+-- ── ٤) النداءُ الواحد ────────────────────────────────────────────────────────
+-- مصفوفةٌ واحدة من لقطةٍ واحدة (انظر الترويسة). invoker: الصلاحيةُ والعيادةُ تفحصهما الدالّةُ
+-- التي تحتها بنفسها، وهذه لا تقرأ جدولاً. والترتيبُ ثابتٌ بالنوع ثم المادة.
+create or replace function public.report_inventory_audit_json(p_from timestamptz, p_to timestamptz)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path to 'public'
+as $function$
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.kind, x.product_id), '[]'::jsonb)
+    from public.report_inventory_audit(p_from, p_to) x
+$function$;
+
+revoke all on function public.report_inventory_audit_json(timestamptz, timestamptz) from public, anon;
+grant execute on function public.report_inventory_audit_json(timestamptz, timestamptz) to authenticated;
+
 comment on function public.report_inventory_audit(timestamptz, timestamptz) is
   'فحصُ مخزن العيادة الحالية (0245) — قراءةٌ فقط، بلا إصلاحٍ جماعيّ ولا دمجٍ تلقائيّ '
   '(الخطّ الأحمر: بياناتُ العيادة تبقى كما أدخلها أصحابُها). تُكمل verify_barcode_health '
   '(0168) ولا تكرّرها. kind/why لاتينيان والشرحُ بالواجهة؛ مرآتُها src/lib/inventoryAudit.ts '
   'ويطابقهما audit-parity بالحزمة. للمدير والطبيب، وليست بقائمة api_gate.';
+comment on function public.report_inventory_audit_json(timestamptz, timestamptz) is
+  'report_inventory_audit (0245) مصفوفةً واحدة بنداءٍ واحد — لقطةٌ واحدة بلا صفحاتٍ تُزيحها '
+  'الكتابات. الصلاحيةُ من الدالّة التي تحتها.';
 comment on function public.inv_code_kind(text) is
   'شكلُ رمز المنتج للفحص (0245): none/skip/short/alnum/length/check/internal/pattern/ean8/gtin. '
   'مرآتُه codeKind بـsrc/lib/inventoryAudit.ts — أيُّ تعديلٍ هنا يقابله تعديلٌ هناك.';

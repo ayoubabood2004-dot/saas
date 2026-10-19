@@ -1603,8 +1603,9 @@ const supabaseRepo: DemoRepo = {
     return (r.data ?? []) as BarcodeHealthRow[];
   },
   async inventoryAudit(from, to) {
-    /* فحصُ المخزن (0245) يُجمع بالقاعدة، وصفحاتُه (سقفُ الألف) بقطعةٍ كسولة — هذا الملفُّ بالإقلاع. */
-    return (await import("./auditPages")).auditPages(sbc(), listOrThrow, from, to);
+    /* فحصُ المخزن (0245): مصفوفةٌ واحدة بنداءٍ واحد من لقطةٍ واحدة — ~١٦٠٠ ملاحظة تتجاوز سقفَ
+     * الألف، وصفحاتٌ بإزاحةٍ كانت تعيد الحسابَ لكلّ صفحة ويُكرّر بينها صفٌّ أو يسقط. ويرمي. */
+    return need(await sbc().rpc("report_inventory_audit_json", { p_from: from, p_to: to }));
   },
 
   /* ---------------- Companies (الشركات) ---------------- */

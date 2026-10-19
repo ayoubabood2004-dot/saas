@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
@@ -10,6 +10,7 @@ import { repo } from "@/lib/repo";
 import { Button, Skeleton } from "@/components/ui";
 import { cn, formatNum, formatQty, matchCode, money, searchable } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
+import { COVER_MAX } from "@/lib/inventoryAudit";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
 import { playTap, playWarning } from "@/lib/sounds";
@@ -44,21 +45,28 @@ type Data = { audit: InventoryAuditRow[]; health: BarcodeHealthRow[] };
 
 export function InventoryAudit() {
   const { t } = useTranslation();
-  const { role } = usePermissions();
+  const { role, can } = usePermissions();
   const { restricted, stockLocked } = useOverride();
-  const allowed = role === "manager" || role === "veterinarian";
+  /* الدورُ كالدالّة (مدير/طبيب)، والإذنُ كالمخزن نفسِه: طبيبٌ سحب منه المديرُ manageInventory لا يدخلها برابط. */
+  const allowed = (role === "manager" || role === "veterinarian") && can("manageInventory");
   const [win, setWin] = useState<Win>(readWin);
   const [data, setData] = useState<Data | "loading" | { error: string }>("loading");
   const [q, setQ] = useState("");
 
+  /* آخرُ طلبٍ وحده يكتب: ٣٠ ثم ١٨٠ بسرعة، والأبطأُ الأقدمُ كان يكتب فوق الأحدث تحت زرّه. */
+  const seq = useRef(0);
+  useEffect(() => () => { seq.current++; }, []);
   const load = useCallback(async (days: Win) => {
+    const my = ++seq.current;
     setData("loading");
     const to = new Date();
     const from = new Date(to.getTime() - days * 86400000);
     try {
       const [audit, health] = await Promise.all([repo.inventoryAudit(from.toISOString(), to.toISOString()), repo.barcodeHealth()]);
+      if (my !== seq.current) return;
       setData({ audit, health });
     } catch (e) {
+      if (my !== seq.current) return;
       playWarning();
       setData({ error: describeDbError(e, t) });
     }
@@ -141,7 +149,7 @@ export function InventoryAudit() {
       ) : "error" in data ? (
         <div className="card space-y-3 p-8 text-center" data-audit-failed>
           <p className="text-sm font-bold text-danger-700 dark:text-danger-300">{data.error}</p>
-          <p className="text-xs text-ink-subtle">{t("audit.failed", "ما وصلت النتيجة — وما نعرض «سليم» عن فشل. المشكلة بالاتصال ولا شي تغيّر.")}</p>
+          <p className="text-xs text-ink-subtle">{t("audit.failed", "ما وصلت النتيجة — وما نعرض «سليم» عن فشل. الفحص قراءة فقط، فما تغيّر شي.")}</p>
           <Button leftIcon={<RotateCw size={16} />} onClick={() => { playTap(); void load(win); }}>{t("common.retry", "أعد المحاولة")}</Button>
         </div>
       ) : (
@@ -224,7 +232,7 @@ export function InventoryAudit() {
             <Check kind="slow" rows={rows("slow")} title={t("audit.slow", "بطيئة")}
               why={t("audit.slowWhy", "تنباع، بس رصيدها يكفي أكثر من ١٨٠ يوم بمعدّل البيع الحالي.")}
               fix={t("audit.idleFix", "رجّعها للشركة، أو نزّل سعرها، أو اطلب أقل المرة الجاية. وإذا الرصيد نفسه غلط صحّحه من «الجرد اليومي».")}
-              detail={(r) => (r.days == null ? t("audit.noSaleWindow", "صافي بيعها بالمدة صفر") : t("audit.coverDays", { n: formatNum(r.days), defaultValue: "تكفي {{n}} يوم" }))}
+              detail={(r) => coverText(t, r.days)}
               canOpen={!stockLocked} restricted={restricted} showValue />
           </Section>
 
@@ -270,8 +278,15 @@ function handWhy(t: TFn, why: string | null): string | null {
   return why ? m[why] ?? null : null;
 }
 
+/** الكفاية: لا بيع بالمدّة، أو أيامٌ — وسقفُها (مئةُ سنة) يُقال كما هو لا رقماً يوهم بالدقّة. */
+function coverText(t: TFn, days: number | null): string {
+  if (days == null) return t("audit.noSaleWindow", "صافي بيعها بالمدة صفر");
+  if (days >= COVER_MAX) return t("audit.coverCentury", "تكفي أكثر من مئة سنة");
+  return t("audit.coverDays", { n: formatNum(days), defaultValue: "تكفي {{n}} يوم" });
+}
+
 function impossibleDetail(t: TFn, r: InventoryAuditRow): string {
-  const cover = r.days == null ? t("audit.noSaleWindow", "صافي بيعها بالمدة صفر") : t("audit.coverDays", { n: formatNum(r.days), defaultValue: "تكفي {{n}} يوم" });
+  const cover = coverText(t, r.days);
   return r.why === "units"
     ? `${t("audit.unitsShape", { n: formatQty(r.qty ?? 0), defaultValue: "الرصيد + المبيع = {{n}} بالضبط مضاعف لعدد الوحدات بالعلبة — الأرجح عدد وحدات انكتب علب" })} · ${cover}`
     : cover;
@@ -445,27 +460,35 @@ function HealthChecks({ rows }: { rows: BarcodeHealthRow[] }) {
     excel: t("barcodeHealth.excelFix", "الرقم الأصلي ما ينسترجع من هذا الشكل. امسح العلبة من جديد — وبإكسل خلّي عمود الباركود «نص» قبل اللصق."),
   };
   const { stockLocked } = useOverride();
-  const [limit, setLimit] = useState(PAGE);
+  const why = t("audit.healthWhy", "من فحص صحة الباركودات بمولد الباركود.");
   return (
     <>
       {kinds.map((k) => {
         const list = rows.filter((r) => r.kind === k);
-        if (list.length === 0) return null;
-        return (
-          <Shell key={k} kind={`bc_${k}`} title={title[k]} n={list.length} why={t("audit.healthWhy", "من فحص صحة الباركودات بمولد الباركود.")} fix={fix[k]}>
-            <ul className="divide-y divide-line/60">
-              {list.slice(0, limit).map((r, i) => (
-                <li key={`${r.product_id}-${r.code}-${i}`} className="flex flex-wrap items-center gap-x-2 py-1.5" data-audit-row>
-                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink">{r.product_name}</span>
-                  <span className="font-mono text-2xs text-ink-subtle" dir="ltr">{r.code}</span>
-                  <OpenLink id={r.product_id} show={!stockLocked} />
-                </li>
-              ))}
-            </ul>
-            <More shown={limit} total={list.length} onMore={() => setLimit((n) => n + PAGE * 4)} />
-          </Shell>
-        );
+        return list.length === 0 ? null
+          : <HealthCheck key={k} kind={k} list={list} title={title[k]} why={why} fix={fix[k]} canOpen={!stockLocked} />;
       })}
     </>
+  );
+}
+
+/** نوعٌ واحد من 0168 — بعدّاد «اعرض الباقي» خاصٍّ به لا مشتركٍ بين الخمسة. */
+function HealthCheck({ kind, list, title, why, fix, canOpen }: {
+  kind: BarcodeAilment; list: BarcodeHealthRow[]; title: string; why: string; fix: string; canOpen: boolean;
+}) {
+  const [limit, setLimit] = useState(PAGE);
+  return (
+    <Shell kind={`bc_${kind}`} title={title} n={list.length} why={why} fix={fix}>
+      <ul className="divide-y divide-line/60">
+        {list.slice(0, limit).map((r, i) => (
+          <li key={`${r.product_id}-${r.code}-${i}`} className="flex flex-wrap items-center gap-x-2 py-1.5" data-audit-row>
+            <span className="min-w-0 flex-1 truncate text-xs font-bold text-ink">{r.product_name}</span>
+            <span className="font-mono text-2xs text-ink-subtle" dir="ltr">{r.code}</span>
+            <OpenLink id={r.product_id} show={canOpen} />
+          </li>
+        ))}
+      </ul>
+      <More shown={limit} total={list.length} onMore={() => setLimit((n) => n + PAGE * 4)} />
+    </Shell>
   );
 }
