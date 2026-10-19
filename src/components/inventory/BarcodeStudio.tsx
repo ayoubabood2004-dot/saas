@@ -489,7 +489,7 @@ function BarcodeHealthCard() {
           {/* فحصُ المخزن (0245) يُكمل هذه البطاقة ولا يكرّرها: الباقي هناك، وهذه الأنواعُ معه.
               ومفتاحٌ واحدٌ قصير للرابطين: النصفُ البارد على حدّ سقفه (مقيس). */}
           {(role === "manager" || role === "veterinarian") && (
-            <Link to="/inventory/audit" data-fullaudit onClick={() => playTap()} className="inline-flex items-center gap-1 text-2xs font-bold text-brand-700 hover:underline dark:text-brand-300">
+            <Link to="/inventory/count?tab=audit" data-fullaudit onClick={() => playTap()} className="inline-flex items-center gap-1 text-2xs font-bold text-brand-700 hover:underline dark:text-brand-300">
               <FileSearch size={12} /> {t("barcodeHealth.fullAudit", "فحص المخزن")}
             </Link>
           )}

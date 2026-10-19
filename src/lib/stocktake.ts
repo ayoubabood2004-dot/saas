@@ -61,6 +61,19 @@ export interface StocktakeLine {
 
 export interface StockTotals { products: number; units: number; cost: number; retail: number }
 
+/**
+ * علاماتُ فحص المخزن (0245) على ورقة الجرد — نصوصٌ **مترجمةٌ سلفاً** يبنيها مالكُ نطاق
+ * `audit` (InventoryAudit.tsx) ويمرّرها بيانات: المخرجان (الطباعة والإكسل) لا يقرآن النطاقَ
+ * ولا يضيفان عربيةً صلبة. و`summary` سطرٌ واحد بأعلى الورقة — أو قولُ أن الفحصَ ما وصل،
+ * لا ورقةٌ بلا علاماتٍ تُصدَّق «نظيفة».
+ */
+export interface AuditMarks {
+  byProduct: Map<string, string[]>;
+  summary: string;
+  /** عنوانُ عمود الإكسل. */
+  header: string;
+}
+
 export interface StocktakeGroup {
   companyName: string;
   sectionName: string;

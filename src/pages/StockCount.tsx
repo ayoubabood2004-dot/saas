@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18next, { type TFunction } from "i18next";
-import { Link } from "react-router-dom";
-import { ArrowRight, Check, ClipboardCheck, Hourglass, Lock, PackageSearch, RotateCw, Search, TrendingDown, X } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowRight, Check, ClipboardCheck, FileSearch, Hourglass, Lock, PackageSearch, RotateCw, Search, TrendingDown, X } from "lucide-react";
+import { page } from "@/lib/lazyPage";
 import type { CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
@@ -28,8 +29,14 @@ import { holdUpdates } from "@/lib/inflight";
  *     ٩٠ يوماً، وABC.
  * ========================================================================= */
 
-type Tab = "today" | "pending" | "report";
+type Tab = "today" | "pending" | "report" | "audit";
 type Range = "month" | "last" | "d90";
+const TABS: readonly Tab[] = ["today", "pending", "report", "audit"];
+
+/* فحصُ المخزن (0245) **مثبَّتٌ داخل الجرد** (طلبُ المالك): تبويبٌ هنا، وأزرارُ التقرير بعلاماته.
+ * مالكُ نصوصه InventoryAudit.tsx (نطاق `audit`) — يُحمَّل كسولاً بنطاقه فلا يقرأ هذا الملفُّ مفاتيحَه. */
+const AuditView = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.InventoryAuditView })), ["audit"]);
+const ReportButtons = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
 /** `lots`: عدُّ كلّ دفعة (0217) لمادةٍ فيها أكثرُ من دفعة — والمادةُ = مجموعُها. */
 interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string> }
 
@@ -57,7 +64,18 @@ export function StockCount() {
   const { can, role } = usePermissions();
   const { restricted } = useOverride();
   const isManager = role === "manager";
+  /* الفحصُ للمدير والطبيب كدالّته؛ والجردُ نفسُه لكلّ من له manageInventory (الشرطُ أدناه). */
+  const canAudit = role === "manager" || role === "veterinarian";
   const [tab, setTab] = useState<Tab>("today");
+  /* `?tab=audit` (رابطُ بطاقة الباركود، والعنوانُ القديم /inventory/audit) و`?tab=today` (طريقُ
+   * «الجرد اليومي» من الفحص وهو هنا): يُطبَّق ثم يُمسح كرابط المخزن — وإلا أعاده الرجوعُ فوق اختيارك. */
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const want = params.get("tab") as Tab | null;
+    if (!want) return;
+    if (TABS.includes(want) && (want !== "audit" || canAudit)) setTab(want);
+    setParams({}, { replace: true });
+  }, [params, setParams, canAudit]);
   const [data, setData] = useState<{ products: Product[]; sold: Map<string, number>; state: Map<string, CountState>; pending: CountRow[]; lots: Map<string, ProductLot[]> } | "loading" | "error">("loading");
   const [lines, setLines] = useState<Record<string, Line>>({});
   const [extra, setExtra] = useState<string[]>([]);
@@ -169,16 +187,30 @@ export function StockCount() {
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("cnt.title", "الجرد اليومي")}</h1>
           <p className="text-sm text-ink-subtle">{t("cnt.sub", "عدّ كم مادة كل يوم — والفرق ما يتغيّر بالرصيد إلا بموافقة المدير")}</p>
         </div>
+        {/* تقريرُ الجرد الكامل بعلامات الفحص على كلّ سطر — من هنا كما من المخزن. */}
+        <Suspense fallback={null}>
+          <div className="flex flex-wrap gap-2" data-count-reports>
+            <ReportButtons products={ready?.products} />
+          </div>
+        </Suspense>
       </div>
 
-      <Segmented<Tab> layoutId="cnt-tab" value={tab} onChange={(v) => { playTap(); setTab(v); }} className="mb-4"
+      {/* أربعةُ تبويباتٍ (مع الفحص) أعرضُ من شاشة الهاتف: تلتفّ لصفّين بدل أن تمدّ الصفحةَ أفقياً —
+          والالتفافُ لا التمرير، كي لا يختبئ التبويبُ الرابع خارج الشاشة. */}
+      <Segmented<Tab> layoutId="cnt-tab" value={tab} onChange={(v) => { playTap(); setTab(v); }} className="mb-4 max-w-full flex-wrap rounded-3xl"
         options={[
           { value: "today", label: t("cnt.tabToday", "عدّ اليوم"), icon: <ClipboardCheck size={14} /> },
           { value: "pending", label: t("cnt.tabPending", { n: formatNum(ready?.pending.length ?? 0), defaultValue: "تنتظر موافقة ({{n}})" }), icon: <Hourglass size={14} /> },
           { value: "report", label: t("cnt.tabReport", "وين راحت الفلوس"), icon: <TrendingDown size={14} /> },
+          ...(canAudit ? [{ value: "audit" as const, label: t("cnt.tabAudit", "فحص المخزن"), icon: <FileSearch size={14} /> }] : []),
         ]} />
 
-      {data === "loading" ? (
+      {/* الفحصُ يجلب بياناته بنفسه — لا ينتظر بياناتِ العدّ ولا يسقط بفشلها. */}
+      {tab === "audit" && canAudit ? (
+        <Suspense fallback={<div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>}>
+          <AuditView embedded />
+        </Suspense>
+      ) : data === "loading" ? (
         <div className="space-y-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>
       ) : data === "error" ? (
         <div className="card space-y-3 p-8 text-center">

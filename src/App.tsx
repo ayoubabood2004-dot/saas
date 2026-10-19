@@ -42,8 +42,6 @@ const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.N
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
-/* فحصُ المخزن (0245): للمدير والطبيب — نصوصُه نطاقٌ يملكه وحدَه (`audit`). */
-const InventoryAudit = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.InventoryAudit })), ["audit"]);
 /* مراجعةُ ما لم يصل الخادمَ بلا ختمِ هويّة (outbox.ts، قرارُ المالك ١٣/١٠) — الشارةُ الحمراء تنقل إليها. */
 const OutboxReview = page(() => import("@/pages/OutboxReview").then((m) => ({ default: m.OutboxReview })), ["obx"]);
 const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ default: m.CompanyBook })), ["cbook"]);
@@ -274,7 +272,8 @@ function Shell() {
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
             <Route path="/inventory/count" element={<Protected><ClinicOnly><StockCount /></ClinicOnly></Protected>} />
             <Route path="/inventory/watch" element={<Protected><ClinicOnly><StockWatch /></ClinicOnly></Protected>} />
-            <Route path="/inventory/audit" element={<Protected><ClinicOnly><InventoryAudit /></ClinicOnly></Protected>} />
+            {/* فحصُ المخزن (0245) مثبَّتٌ داخل الجرد (طلبُ المالك): العنوانُ القديم يفتح تبويبَه هناك. */}
+            <Route path="/inventory/audit" element={<Navigate to="/inventory/count?tab=audit" replace />} />
             <Route path="/outbox" element={<Protected><ClinicOnly><OutboxReview /></ClinicOnly></Protected>} />
             <Route path="/inventory/companies/:id" element={<Protected><ClinicOnly><CompanyBook /></ClinicOnly></Protected>} />
             <Route path="/inventory/prices" element={<Protected><ClinicOnly><PriceRaise /></ClinicOnly></Protected>} />

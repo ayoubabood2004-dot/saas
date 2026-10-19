@@ -2,7 +2,7 @@ import type { Product, Company, CompanySection } from "@/types";
 import i18n from "@/i18n";
 import { getClinicName, getExpiryWindows } from "./settings";
 import { currencyInfo, getActiveCurrency } from "./currency";
-import { buildStocktake, flatLines, flagsText, type Stocktake, type StocktakeLine } from "./stocktake";
+import { buildStocktake, flatLines, flagsText, type AuditMarks, type Stocktake, type StocktakeLine } from "./stocktake";
 import { asciiFileName } from "./excelExport";
 
 /* ============================================================================
@@ -34,6 +34,9 @@ const COL = {
   minStock: "P", expiry: "Q", daysLeft: "R", status: "S", subUnit: "T", id: "U",
 } as const;
 const LAST_COL = 20;            // U بالفهرسة الصفرية
+/** عمودُ علامات فحص المخزن (0245) — بعد الأخير لا وسطَ الخريطة: معادلاتُ الفرق والملخّص تشير
+ *  لأعمدتها بالحرف، وعمودٌ يُدرَج قبلها ينقلها بصمت. ويُضاف حين تصل العلاماتُ وحدها. */
+const AUDIT_COL = "V";
 /** فهرسُ العمود الذي يملؤه العادّ بيده — يُشتقّ من الخريطة لا يُكتب رقماً.
  *  كان `11` مكتوباً بالنصّ، فأوّلُ عمودٍ يُدرَج قبله نقل التظليلَ لعمودٍ آخر
  *  بصمت: الورقةُ تطلب من العادّ أن يملأ خانةً محسوبة. */
@@ -88,29 +91,14 @@ function fileNameFor(clinic: string, d: Date): string {
 }
 
 export async function exportStocktakeXlsx(
-  products: Product[], companies: Company[], sections: CompanySection[],
+  products: Product[], companies: Company[], sections: CompanySection[], marks?: AuditMarks,
 ): Promise<string> {
   const mod: any = await import("xlsx-js-style");
   const XLSX: any = mod.default ?? mod;
 
   const now = new Date();
   const clinic = getClinicName() || "doctorVet";
-  const cur = currencyInfo(getActiveCurrency());
-  /* صيغة العملة تتبع عملة العيادة: عمودٌ اسمه «قيمة الشراء» بلا وحدة يُقرأ
-   * دولاراً بمكانٍ ودنانير بآخر. وعملةٌ بلا أجزاء تُعرض بلا كسورٍ **إلا حين
-   * توجد فعلاً** (‎.###‎): فلا ضجيج «٢٢٫٠٠» ولا ابتلاع «٦٫٥». */
-  const MONEY = `#,##0.${cur.frac ? "00" : "###"}" ${cur.code}"`;
-  const QTY = "#,##0.###";
-
-  const take = buildStocktake(products, companies, sections, now, getExpiryWindows());
-  const lines = flatLines(take);
-
-  const wb: any = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: true }] };
-
-  XLSX.utils.book_append_sheet(wb, countSheet(XLSX, take, lines, clinic, now, MONEY, QTY), i18n.t("stock.tabCount", "ورقة الجرد"));
-  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, take, clinic, now, MONEY, QTY, lines.length), i18n.t("stock.tabSummary", "الملخّص"));
-  XLSX.utils.book_append_sheet(wb, guideSheet(XLSX), i18n.t("stock.tabGuide", "التعليمات"));
+  const wb = buildStocktakeWorkbook(XLSX, products, companies, sections, now, clinic, marks);
 
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -130,14 +118,41 @@ export async function exportStocktakeXlsx(
   return name;
 }
 
+/** الكتابُ كاملاً بلا تنزيل — نقيٌّ يُفحص خارج المتصفّح (audit-marks-test). */
+export function buildStocktakeWorkbook(
+  XLSX: any, products: Product[], companies: Company[], sections: CompanySection[],
+  now: Date, clinic: string, marks?: AuditMarks,
+): any {
+  const cur = currencyInfo(getActiveCurrency());
+  /* صيغة العملة تتبع عملة العيادة: عمودٌ اسمه «قيمة الشراء» بلا وحدة يُقرأ
+   * دولاراً بمكانٍ ودنانير بآخر. وعملةٌ بلا أجزاء تُعرض بلا كسورٍ **إلا حين
+   * توجد فعلاً** (‎.###‎): فلا ضجيج «٢٢٫٠٠» ولا ابتلاع «٦٫٥». */
+  const MONEY = `#,##0.${cur.frac ? "00" : "###"}" ${cur.code}"`;
+  const QTY = "#,##0.###";
+
+  const take = buildStocktake(products, companies, sections, now, getExpiryWindows());
+  const lines = flatLines(take);
+
+  const wb: any = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+
+  XLSX.utils.book_append_sheet(wb, countSheet(XLSX, take, lines, clinic, now, MONEY, QTY, marks), i18n.t("stock.tabCount", "ورقة الجرد"));
+  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, take, clinic, now, MONEY, QTY, lines.length), i18n.t("stock.tabSummary", "الملخّص"));
+  XLSX.utils.book_append_sheet(wb, guideSheet(XLSX), i18n.t("stock.tabGuide", "التعليمات"));
+  return wb;
+}
+
 /* ── ورقة الجرد ─────────────────────────────────────────────────────────── */
 function countSheet(
   XLSX: any, take: Stocktake, lines: StocktakeLine[],
-  clinic: string, now: Date, MONEY: string, QTY: string,
+  clinic: string, now: Date, MONEY: string, QTY: string, marks?: AuditMarks,
 ): any {
   const ws: any = {};
   const put = (addr: string, cell: Cell) => { ws[addr] = cell; };
   const txt = (v: string, s?: Cell) => ({ t: "s", v, ...(s ? { s } : {}) });
+  /* عمودُ الفحص آخراً وحين يوجد وحده — فالورقةُ بلا علاماتٍ (دورٌ لا يرى الفحص) كما كانت حرفاً. */
+  const lastCol = marks ? LAST_COL + 1 : LAST_COL;
+  const lastLetter = marks ? AUDIT_COL : COL.id;
   const num = (v: number, z: string, s?: Cell) => ({ t: "n", v, z, ...(s ? { s } : {}) });
 
   const titleStyle = { font: { bold: true, sz: 16, color: { rgb: INK } }, alignment: { horizontal: "center", vertical: "center", readingOrder: 2 } };
@@ -149,7 +164,10 @@ function countSheet(
   };
 
   put("A1", txt(`${clinic} — ${i18n.t("stock.fileName", "جرد المخزون")}`, titleStyle));
-  put("A2", txt(i18n.t("stock.snapshotAt", { d: stamp(now), defaultValue: "لقطة المخزون: {{d}}" }), stampStyle));
+  /* سطرُ الفحص الواحد بجانب ساعة اللقطة لا بصفٍّ جديد: صفُّ العناوين ثابتٌ (HEAD_ROW) ومعادلاتُ
+   * الملخّص تشير لأوّل صفّ بيانات — صفٌّ يُدرَج فوقه ينقلها كلَّها. */
+  const snap = i18n.t("stock.snapshotAt", { d: stamp(now), defaultValue: "لقطة المخزون: {{d}}" });
+  put("A2", txt(marks ? `${snap}  —  ${marks.summary}` : snap, stampStyle));
   put("A3", txt(i18n.t("stock.fillHint", "املأ عمود «العدد الفعلي» فقط — الفرق وقيمته يُحسبان تلقائياً. أي بيعٍ يقع بعد ساعة اللقطة أعلاه لا يظهر بهذه الورقة."), warnStyle));
 
   const headStyle = {
@@ -161,6 +179,7 @@ function countSheet(
   /* عمود العدد الفعلي بلونٍ صارخ: العادّ يجب أن يعرف أين يكتب من نظرةٍ واحدة. */
   const headFill = { ...headStyle, fill: { patternType: "solid", fgColor: { rgb: "B45309" } } };
   headers().forEach((h, c) => put(XLSX.utils.encode_cell({ r: HEAD_ROW - 1, c }), txt(h, c === FILL_COL ? headFill : headStyle)));
+  if (marks) put(`${AUDIT_COL}${HEAD_ROW}`, txt(marks.header, { ...headStyle, fill: { patternType: "solid", fgColor: { rgb: "991B1B" } } }));
 
   const cellBase = (extra?: Cell): Cell => ({
     alignment: { horizontal: "right", vertical: "center", readingOrder: 2 },
@@ -223,6 +242,10 @@ function countSheet(
     put(at(COL.status), txt(status, tint(cellBase(status ? { font: alertFont } : undefined))));
     put(at(COL.subUnit), txt(l.subUnit ? `${l.subUnit.name || i18n.t("stock.unit", "وحدة")} ×${l.subUnit.perBox}` : "", tint(centred)));
     put(at(COL.id), txt(l.productId ?? "", tint({ ...centred, font: { sz: 9, color: { rgb: "94A3B8" } } })));
+    if (marks) {
+      const tags = l.productId ? marks.byProduct.get(l.productId) ?? [] : [];
+      put(at(AUDIT_COL), txt(tags.join(" · "), tint(cellBase(tags.length ? { font: alertFont } : undefined))));
+    }
 
     void R;
   });
@@ -245,20 +268,21 @@ function countSheet(
   put(`${COL.diff}${totalRow}`, { t: "n", f: `SUM(${span(COL.diff)})`, v: 0, z: QTY, s: sumStyle });
   put(`${COL.diffValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.diffValue)})`, v: 0, z: MONEY, s: sumStyle });
   for (const c of [COL.barcode, COL.altCodes, COL.name, COL.company, COL.section, COL.category, COL.buy, COL.sell,
-    COL.minStock, COL.expiry, COL.daysLeft, COL.status, COL.subUnit, COL.id]) {
+    COL.minStock, COL.expiry, COL.daysLeft, COL.status, COL.subUnit, COL.id, ...(marks ? [AUDIT_COL] : [])]) {
     put(`${c}${totalRow}`, txt("", sumStyle));
   }
 
-  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: totalRow - 1, c: LAST_COL } });
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: totalRow - 1, c: lastCol } });
   ws["!views"] = [{ RTL: true }];
-  ws["!merges"] = [0, 1, 2].map((r) => ({ s: { r, c: 0 }, e: { r, c: LAST_COL } }));
-  ws["!autofilter"] = { ref: `A${HEAD_ROW}:${COL.id}${FIRST_DATA + lines.length - 1}` };
+  ws["!merges"] = [0, 1, 2].map((r) => ({ s: { r, c: 0 }, e: { r, c: lastCol } }));
+  ws["!autofilter"] = { ref: `A${HEAD_ROW}:${lastLetter}${FIRST_DATA + lines.length - 1}` };
   ws["!rows"] = [{ hpt: 26 }, { hpt: 17 }, { hpt: 17 }, { hpt: 34 }];
   ws["!cols"] = [
     { wch: 5 }, { wch: 17 }, { wch: 22 }, { wch: 40 }, { wch: 20 }, { wch: 18 }, { wch: 10 },
     { wch: 14 }, { wch: 14 }, { wch: 13 }, { wch: 16 }, { wch: 16 },
     { wch: 13 }, { wch: 11 }, { wch: 17 },
     { wch: 11 }, { wch: 13 }, { wch: 11 }, { wch: 26 }, { wch: 14 }, { wch: 16 },
+    ...(marks ? [{ wch: 30 }] : []),
   ];
   return ws;
 }

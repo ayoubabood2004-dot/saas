@@ -19,7 +19,6 @@ import { History,
   ClipboardCheck,
   Telescope,
   CalendarRange,
-  FileSearch,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -41,8 +40,7 @@ import { cardImagePath, productImageUrl } from "@/lib/storeLib";
 import type { EncodedPhoto } from "@/lib/photoPipeline";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { openStockReport } from "@/lib/stockReportPrint";
-import { exportStocktakeXlsx } from "@/lib/stockReportXlsx";
+import { page } from "@/lib/lazyPage";
 import { catalogLookup, type CatalogHit } from "@/lib/catalog";
 /* وضع المدير: جهاز مقفل بلا جلسة مدير → أسعار الشراء والأرباح تختفي من
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
@@ -85,6 +83,9 @@ const isExpired = (p: Product) => bucketOf(p) === "expired";
 const isMutedExpiry = (p: Product) => bucketOf(p) === "muted";
 /** «معدّة للإرجاع» (م٤): موسومةٌ بتاريخها الحاليّ وعلى الرفّ — ما يُسلَّم للمندوب فعلاً. */
 const isMarkedForReturn = (p: Product) => isReturnMarked(p) && !p.pooled && (Number(p.stock) || 0) > 0;
+/* أزرارُ تقرير الجرد بعلامات فحص المخزن (0245): مالكُ نصوصها InventoryAudit.tsx (نطاق `audit`). */
+const ReportButtons = page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
+
 export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked";
 const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
   all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, return: isInReturn, expired: isExpired, muted: isMutedExpiry, marked: isMarkedForReturn,
@@ -224,7 +225,6 @@ export function Inventory() {
   }, [params, setParams]);
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
-  const [xlsxBusy, setXlsxBusy] = useState(false);
 
   const mounted = useRef(true);
   /** فشلَ آخرُ تحميل؟ تُعرض حينها رسالةُ إعادةِ محاولة لا شاشةُ «فارغ». */
@@ -446,22 +446,8 @@ export function Inventory() {
     }
   };
 
-  /* تصدير الجرد إكسل. مكتبة الإكسل تُحمَّل عند الضغط لا مع الصفحة (‏~٩٠٠ك)،
-   * فتبقى شاشة المخزون خفيفة لمن لا يصدّر. والفشل يُقال صراحةً: ملفٌّ لم
-   * ينزل بصمت يجعل الطبيب يبدأ الجرد بورقةٍ ليست بيده. */
-  const exportXlsx = async () => {
-    if (xlsxBusy) return;
-    playTap();
-    setXlsxBusy(true);
-    try {
-      const name = await exportStocktakeXlsx(products, companies, sections);
-      toast.success(t("pos.stockXlsxDone", { name, defaultValue: "نُزّل {{name}}" }));
-    } catch (e) {
-      toast.error(t("pos.stockXlsxFail", "تعذّر تصدير ملف الجرد"), e instanceof Error ? e.message : undefined);
-    } finally {
-      if (mounted.current) setXlsxBusy(false);
-    }
-  };
+  /* تصدير الجرد إكسل وطباعتُه: بـ`StockReportButtons` (InventoryAudit.tsx) — بعلامات فحص المخزن،
+   * ومكتبةُ الإكسل ما زالت تُحمَّل عند الضغط لا مع الصفحة (‏~٩٠٠ك)، والفشلُ يُقال صراحةً. */
 
   // Pooled products carry no per-barcode count (they sell from the section pool),
   // so a stock of 0 is expected — never flag them as low stock.
@@ -499,12 +485,14 @@ export function Inventory() {
             بنفسه. كلاهما يقرأ `stocktake.ts` فلا يفترقان برقم. */}
         {!loading && products.length > 0 && (
           <>
-            <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => { playTap(); openStockReport(products, companies, sections); }}>
-              {t("pos.stockReport", "طباعة تقرير جرد")}
-            </Button>
-            <Button data-xlsxbtn variant="secondary" loading={xlsxBusy} leftIcon={<FileSpreadsheet size={16} />} onClick={() => void exportXlsx()}>
-              {t("pos.stockXlsx", "تصدير جرد إكسل")}
-            </Button>
+            {/* والزرّان بعلامات فحص المخزن (0245) على كلّ سطر — يُحمَّلان كسولاً بنطاق `audit`،
+                والبديلُ أثناء التحميل الزرّان نفساهما معطَّلين لا فراغاً يقفز. */}
+            <Suspense fallback={<>
+              <Button variant="secondary" disabled leftIcon={<Printer size={16} />}>{t("pos.stockReport", "طباعة تقرير جرد")}</Button>
+              <Button variant="secondary" disabled leftIcon={<FileSpreadsheet size={16} />}>{t("pos.stockXlsx", "تصدير جرد إكسل")}</Button>
+            </>}>
+              <ReportButtons products={products} companies={companies} sections={sections} />
+            </Suspense>
             {/* الجردُ اليوميّ (م٦): عدٌّ صغيرٌ كلَّ يوم، والفرقُ بموافقة المدير — صفحتُه تحمل نصوصَها. */}
             {/* مراقبةُ المخزون: شكد باقي لكل مادة — للانتهاء وللنفاد، بمدىً تختاره العيادة. */}
             <Link to="/inventory/watch" className="btn btn-primary" data-watchlink onClick={() => playTap()}>
@@ -513,12 +501,6 @@ export function Inventory() {
             <Link to="/inventory/count" className="btn btn-secondary" data-countlink onClick={() => playTap()}>
               <ClipboardCheck size={16} /> {t("pos.countDaily", "الجرد اليومي")}
             </Link>
-            {/* فحصُ المخزن (0245): للمدير والطبيب كالدالّة — والنصُّ من نطاقٍ باردٍ لا من «pos» الحارّ. */}
-            {(role === "manager" || role === "veterinarian") && (
-              <Link to="/inventory/audit" className="btn btn-secondary" data-auditlink onClick={() => playTap()}>
-                <FileSearch size={16} /> {t("barcodeHealth.fullAudit", "فحص المخزن")}
-              </Link>
-            )}
             {/* رفعُ الأسعار بنسبة (0226): للمدير وحده ولا على جهازٍ مقفول — صفحتُه تحمل نصوصَها. */}
             {role === "manager" && !restricted && (
               <Link to="/inventory/prices" className="btn btn-secondary" data-pricelink onClick={() => playTap()}>

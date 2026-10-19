@@ -15,14 +15,16 @@
 import type { Product, Company, CompanySection } from "@/types";
 import { getClinicName, getClinicLogo, getExpiryWindows } from "./settings";
 import { money } from "./utils";
-import { buildStocktake, flagsText, type StocktakeLine } from "./stocktake";
+import { buildStocktake, flagsText, type AuditMarks, type StocktakeLine } from "./stocktake";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/\.?0+$/, ""));
 
-export function buildStockReportHTML(products: Product[], companies: Company[], sections: CompanySection[]): string {
+/** `marks`: علاماتُ فحص المخزن (0245) — مترجمةٌ سلفاً، فلا عربيةَ صلبةً جديدة هنا. غيابُها =
+ *  ورقةٌ كما كانت (دورٌ لا يرى الفحص)؛ وفشلُها يصل `summary` يقوله لا ورقةً تبدو نظيفة. */
+export function buildStockReportHTML(products: Product[], companies: Company[], sections: CompanySection[], marks?: AuditMarks): string {
   const clinic = getClinicName() || "doctorVet";
   const logo = getClinicLogo();
   const now = new Date();
@@ -31,6 +33,10 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
 
   const take = buildStocktake(products, companies, sections, now, getExpiryWindows());
 
+  const auditTags = (l: StocktakeLine): string => {
+    const tags = l.productId ? marks?.byProduct.get(l.productId) : undefined;
+    return tags?.length ? `<span class="audit">${tags.map(esc).join(" · ")}</span>` : "";
+  };
   const rowFor = (l: StocktakeLine): string => {
     const isPool = l.kind === "pool";
     const approx = isPool ? "≈" : "";
@@ -44,7 +50,7 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
       <td class="c">${approx}${money(l.cost)}</td>
       <td class="blank"></td>
       <td class="blank"></td>
-      <td class="note">${esc(isPool ? "تقديري بمتوسط أسعار الصنف" : flagsText(l.flags))}</td>
+      <td class="note">${esc(isPool ? "تقديري بمتوسط أسعار الصنف" : flagsText(l.flags))}${auditTags(l)}</td>
     </tr>`;
   };
 
@@ -66,8 +72,9 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>تقرير جرد المخزون — ${esc(clinic)}</title>
 <style>
   @page { size: A4; margin: 12mm; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Segoe UI", Tahoma, sans-serif; color: #0f172a; font-size: 11px; }
+  body { font-family: "Segoe UI", Tahoma, sans-serif; color: #0f172a; background: #fff; font-size: 11px; }
   .head { display: flex; align-items: center; gap: 10px; border-bottom: 2.5px solid #0f172a; padding-bottom: 8px; }
   .head img { height: 44px; width: 44px; object-fit: contain; border-radius: 8px; }
   .head .c1 { font-size: 17px; font-weight: 800; }
@@ -92,6 +99,8 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   td.blank { background: #fafafa; min-width: 52px; }
   th.wide { min-width: 56px; }
   td.note { color: #b45309; font-size: 9.5px; }
+  td.note .audit { display: block; color: #b91c1c; font-weight: 800; }
+  .auditsum { margin: 0 0 8px; border: 1.5px solid #fecaca; background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 700; }
   tr.pool td { background: #eff6ff; color: #1e40af; }
   tr.pool td.name { font-weight: 700; }
   .totals { margin-top: 14px; border: 2px solid #0f172a; border-radius: 10px; overflow: hidden; break-inside: avoid; }
@@ -114,6 +123,7 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
     <div class="kpi"><b>${money(Math.round(totals.retail))}</b><span>قيمة البيع</span></div>
     <div class="kpi"><b>${money(Math.round(totals.retail - totals.cost))}</b><span>الربح المتوقع</span></div>
   </div>
+  ${marks ? `<div class="auditsum">${esc(marks.summary)}</div>` : ""}
 
   ${blocks}
 
@@ -130,12 +140,20 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
 </body></html>`;
 }
 
-export function openStockReport(products: Product[], companies: Company[], sections: CompanySection[]): boolean {
-  const html = buildStockReportHTML(products, companies, sections);
-  const w = window.open("", "_blank", "width=900,height=1000");
-  if (!w) return false;
+/** نافذةُ الطباعة تُفتح **بلحظة الضغطة** (وإلا حجبها المتصفّح) ثم تُكتب حين تصل علاماتُ الفحص. */
+export function openPrintWindow(): Window | null {
+  return window.open("", "_blank", "width=900,height=1000");
+}
+
+export function writePrintWindow(w: Window, html: string): void {
   w.document.open();
   w.document.write(html);
   w.document.close();
+}
+
+export function openStockReport(products: Product[], companies: Company[], sections: CompanySection[], marks?: AuditMarks): boolean {
+  const w = openPrintWindow();
+  if (!w) return false;
+  writePrintWindow(w, buildStockReportHTML(products, companies, sections, marks));
   return true;
 }
