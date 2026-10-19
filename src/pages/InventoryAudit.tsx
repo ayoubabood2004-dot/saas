@@ -226,6 +226,10 @@ export function InventoryAuditView({ embedded = false, newTabLinks = false }: { 
   const [win, setWin] = useState<Win>(readWin);
   const [data, setData] = useState<Data | "loading" | { error: string }>("loading");
   const [q, setQ] = useState("");
+  /* تطبيقُ الشاشة الرئيسية بآيفون يفتح التبويبَ الجديد بعرض سفاري **بلا جلسته** (تخزينٌ منفصل) — فالرابطُ
+   * يصل شاشةَ الدخول. هناك تُطفأ روابطُ الفتح ما دام عدٌّ معلَّقاً، ويُقال «سجّله أول». */
+  const iosApp = typeof navigator !== "undefined" && (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const links: "same" | "new" | "off" = !newTabLinks ? "same" : iosApp ? "off" : "new";
 
   /* آخرُ طلبٍ وحده يكتب: ٣٠ ثم ١٨٠ بسرعة، والأبطأُ الأقدمُ كان يكتب فوق الأحدث تحت زرّه. */
   const seq = useRef(0);
@@ -348,7 +352,8 @@ export function InventoryAuditView({ embedded = false, newTabLinks = false }: { 
           <p className="mb-4 rounded-xl bg-surface-2 px-3 py-2 text-2xs leading-relaxed text-ink-muted" data-audit-nobulk>
             {t("audit.noBulk", "ما نصلّح بالجملة ولا ندمج وحدنا: بياناتك تبقى مثل ما دخّلتها. كل ملاحظة تحتها طريق تصليحها بالتطبيق — وأنت تقرر.")}
             {stockLocked && <span className="mt-1 block font-bold text-warn-700 dark:text-warn-300">{t("audit.locked", "الجهاز مقفول على وضع المدير — فتح المواد للتعديل يحتاج رمز المدير.")}</span>}
-            {newTabLinks && <span className="mt-1 block font-bold text-brand-700 dark:text-brand-300" data-audit-keepcounts>{t("audit.keepCounts", "عندك عدّ ما انسجل بعد — روابط الفحص تنفتح بتبويب جديد حتى ما يضيع.")}</span>}
+            {links === "new" && <span className="mt-1 block font-bold text-brand-700 dark:text-brand-300" data-audit-keepcounts>{t("audit.keepCounts", "عندك عدّ ما انسجل بعد — روابط الفحص تنفتح بتبويب جديد حتى ما يضيع.")}</span>}
+            {links === "off" && <span className="mt-1 block font-bold text-warn-700 dark:text-warn-300" data-audit-savefirst>{t("audit.saveFirst", "عندك عدّ ما انسجل بعد — سجّله أول، وبعدين تفتح المواد من هنا.")}</span>}
           </p>
 
           {total === 0 && q.trim() === "" && (
@@ -364,7 +369,7 @@ export function InventoryAuditView({ embedded = false, newTabLinks = false }: { 
                 {s.checks.map((c) => (
                   /* أنواعُ 0168 لا تُعرض فارغة (كبطاقتها)، وأنواعُ 0245 تقول «ماكو ✓». */
                   c.key.startsWith("bc_") && c.rows.length === 0 ? null
-                    : <CheckBlock key={c.key} c={c} canOpen={!stockLocked} restricted={restricted} newTab={newTabLinks} />
+                    : <CheckBlock key={c.key} c={c} canOpen={!stockLocked && links !== "off"} restricted={restricted} newTab={links === "new"} />
                 ))}
               </div>
             </section>
@@ -616,7 +621,7 @@ export function StockReportButtons({ products, companies, sections }: {
       toast.success(t("pos.stockXlsxDone", { name, defaultValue: "نُزّل {{name}}" }));
     } catch (e) {
       playWarning();
-      toast.error(t("pos.stockXlsxFail", "تعذّر تصدير ملف الجرد"), e instanceof Error ? e.message : undefined);
+      toast.error(t("pos.stockXlsxFail", "تعذّر تصدير ملف الجرد"), describeDbError(e, t));
     } finally { setBusy(null); }
   };
 

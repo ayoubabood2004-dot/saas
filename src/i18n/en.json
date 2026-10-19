@@ -5699,7 +5699,8 @@
     "reportFailed": "We couldn't load the inventory for the report — try again.",
     "keepCounts": "You have counts not saved yet — audit links open in a new tab so they are not lost.",
     "tagCo": "company?",
-    "marksElsewhere": "Inventory audit: no marks on this sheet — and {{n}} items have a note (company or zero stock) in the “Inventory audit” tab."
+    "marksElsewhere": "Inventory audit: no marks on this sheet — and {{n}} items have a note (company or zero stock) in the “Inventory audit” tab.",
+    "saveFirst": "You have counts not saved yet — save them first, then open items from here."
   },
   "watch": {
     "noAccess": "Stock watch needs the manage-inventory permission. Ask the clinic manager.",

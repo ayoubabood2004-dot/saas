@@ -74,6 +74,8 @@ export function StockCount() {
   const [tabState, setTab] = useState<Tab>("today");
   /* انتهاءُ رفع PIN المدير يُسقط تبويبَ الفحص — والصفحةُ ترجع لـ«عدّ اليوم» لا لجسمٍ بلا تبويبٍ مختار. */
   const tab: Tab = tabState === "audit" && !canAudit ? "today" : tabState;
+  /* ويُحفظ الرجوعُ لا يُحسب وحده: رفعُ PIN لاحق كان يعيد تبويبَ الفحص فوق قائمة عدٍّ يكتب فيها الموظف. */
+  useEffect(() => { if (!canAudit && tabState === "audit") setTab("today"); }, [canAudit, tabState]);
   const [, setLazyTick] = useState(0);
   /* `?tab=audit` (رابطُ بطاقة الباركود، والعنوانُ القديم /inventory/audit) و`?tab=today` (طريقُ
    * «الجرد اليومي» من الفحص وهو هنا): يُطبَّق ثم يُمسح كرابط المخزن — وإلا أعاده الرجوعُ فوق اختيارك. */
