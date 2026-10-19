@@ -2093,5 +2093,34 @@ console.log("▸ 0243 — الرموزُ الإضافية تصل للمصوّر 
   mem.delete("vp_session");
 }
 
+console.log("\n▸ inventoryAudit — مرآةُ report_inventory_audit (0245) على جداول النسخة التجريبية");
+{
+  // المنطقُ نفسُه يطابقه audit-parity بالحزمة؛ هنا الأسلاك: أيُّ مفتاحٍ بالمخزن يقرأ (invoiceItems،
+  // companySections، generatedBarcodes) — اسمٌ غلط يرجع قائمةً فارغةً تُصدَّق «ماكو ملاحظات».
+  const now = Date.now(), ago = (d) => new Date(now - d * 86400000).toISOString();
+  mem.set(DB_KEY, JSON.stringify({
+    products: [
+      P("ia1", "بلا رمز", null, { stock: 3, created_at: ago(100) }),
+      P("ia2", "مجمّعة", "6291234500017", { stock: 0, pooled: true, section_id: "sec1", created_at: ago(100) }),
+      P("ia3", "صفر وتنباع", "6291234500024", { stock: 0, created_at: ago(100) }),
+      P("ia4", "داخلي مولّد", "2000000000008", { stock: 1, created_at: ago(5) }),
+      P("ia5", "داخلي غريب", "2000000000015", { stock: 1, created_at: ago(5) }),
+    ],
+    companies: [], companySections: [{ id: "sec1", pooled_stock: 4 }], purchases: [], purchaseItems: [],
+    invoices: [{ id: "inv1", created_at: ago(1), status: "paid" }, { id: "inv2", created_at: ago(1), status: "paid" }],
+    invoiceItems: [{ id: "it1", invoice_id: "inv1", product_id: "ia2", qty: 2 }, { id: "it2", invoice_id: "inv2", product_id: "ia3", qty: 1 }],
+    generatedBarcodes: [{ id: "g1", barcode: "2000000000008" }], productsTrash: [],
+  }));
+  const rows = await repo.inventoryAudit(ago(90), ago(0));
+  const has = (k, id, why = null) => rows.some((r) => r.kind === k && r.product_id === id && r.why === why);
+  check("بلا باركود، وما انباعت أبداً بعمر ١٠٠ يوم", has("no_code", "ia1") && rows.some((r) => r.kind === "never_sold" && r.product_id === "ia1" && r.days === 100), JSON.stringify(rows.filter((r) => r.product_id === "ia1")));
+  check("الفواتيرُ تُقرأ: صفرٌ بيع أمس ⇒ zero_sold", has("zero_sold", "ia3"));
+  check("  وحوضُ القسم يُقرأ: المجمّعةُ ليست صفراً", !rows.some((r) => r.kind === "zero_sold" && r.product_id === "ia2"));
+  check("ومولّدُ العيادة يُقرأ: الداخليُّ المولَّد سليم، والغريبُ «باليد»", !rows.some((r) => r.kind === "hand_code" && r.product_id === "ia4") && has("hand_code", "ia5", "internal"));
+  let rangeErr = "";
+  try { await repo.inventoryAudit(ago(6), ago(0)); } catch (e) { rangeErr = String(e.message); }
+  check("ومدّةٌ أقصرُ من ٧ أيام تُرفض كما بالقاعدة", rangeErr.includes("bad range"), rangeErr);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

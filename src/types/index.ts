@@ -207,6 +207,34 @@ export interface BarcodeHealthRow {
   code: string;
 }
 
+/** نوعُ ملاحظةٍ بفحص المخزن — من `report_inventory_audit()` (0245). الشرحُ والطريقُ بالواجهة. */
+export type AuditKind =
+  | "no_code" | "hand_code" | "dup_twin" | "dup_name" | "impossible"
+  | "never_sold" | "stopped" | "slow" | "zero_sold" | "no_company" | "prefix_split";
+
+/** صفٌّ من فحص المخزن — قراءةٌ فقط، بلا إصلاحٍ جماعيّ ولا دمجٍ تلقائيّ. */
+export interface InventoryAuditRow {
+  kind: AuditKind;
+  /** السببُ الفرعيّ: short/length/check/pattern/internal/ean8_prefix · shelf/factory/other · value/units · hint. */
+  why: string | null;
+  product_id: string;
+  product_name: string;
+  /** الباركودُ كما هو مخزون (خامّاً). */
+  code: string | null;
+  /** مفتاحُ المجموعة: الاسمُ المطويّ للمكرّر، وبادئةُ المصنع للشركات. */
+  grp: string | null;
+  stock: number;
+  /** الرصيد × سعر الشراء (لا ينزل تحت صفر). */
+  value: number;
+  /** units: الكميةُ كما كُتبت (رصيد + مبيع) · slow: مبيعُ المدّة · zero_sold: مبيعُ ٣٠ يوماً. */
+  qty: number | null;
+  /** never_sold: العمر · stopped/zero_sold: منذ آخر بيع · slow/impossible: الكفايةُ بالأيام (null = لا بيع). */
+  days: number | null;
+  /** شركةُ المادة — وبـno_company/hint: الشركةُ المقترحة. */
+  company_id: string | null;
+  company_name: string | null;
+}
+
 /** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
 export interface PetNote {
   id: string;

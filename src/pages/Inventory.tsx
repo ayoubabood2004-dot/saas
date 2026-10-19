@@ -19,6 +19,7 @@ import { History,
   ClipboardCheck,
   Telescope,
   CalendarRange,
+  FileSearch,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -199,12 +200,18 @@ export function Inventory() {
    * العنوان — وإلا أعاده التحديثُ أو الرجوعُ فوق ما اختاره المستخدمُ بعده. بأثرٍ على
    * `params` لا بقيمةٍ ابتدائية: الشاشةُ قد تكون مركّبةً أصلاً حين يصلها الرابط. */
   const [params, setParams] = useSearchParams();
+  /* فحصُ المخزن (0245) يقول لكلّ ملاحظةٍ طريقَها: `?edit=<id>` يفتح نموذجَ المادة نفسِها
+   * (ومنه «دمج بمنتج ثاني» والشركة والباركود)، و`?view=barcodes` مولّدَ الباركود. */
+  const [openId, setOpenId] = useState<string | null>(null);
   useEffect(() => {
     const f = params.get("filter");
     // والرجوعُ من دفتر شركة (`?view=ledger`) يرجع لتبويب الديون لا للمنتجات.
     const v = params.get("view");
-    if (!f && v !== "ledger") return;
+    const e = params.get("edit");
+    if (!f && v !== "ledger" && v !== "barcodes" && !e) return;
     if (v === "ledger") setView("ledger");
+    else if (v === "barcodes") setView("barcodes");
+    else if (e) { setView("products"); setOpenId(e); }
     else if (f && isStockFilter(f)) { setView("products"); setStockFilter(f); }
     setParams({}, { replace: true });
   }, [params, setParams]);
@@ -498,6 +505,12 @@ export function Inventory() {
             <Link to="/inventory/count" className="btn btn-secondary" data-countlink onClick={() => playTap()}>
               <ClipboardCheck size={16} /> {t("pos.countDaily", "الجرد اليومي")}
             </Link>
+            {/* فحصُ المخزن (0245): للمدير والطبيب كالدالّة — والنصُّ من نطاقٍ باردٍ لا من «pos» الحارّ. */}
+            {(role === "manager" || role === "veterinarian") && (
+              <Link to="/inventory/audit" className="btn btn-secondary" data-auditlink onClick={() => playTap()}>
+                <FileSearch size={16} /> {t("barcodeHealth.fullAudit", "فحص المخزن")}
+              </Link>
+            )}
             {/* رفعُ الأسعار بنسبة (0226): للمدير وحده ولا على جهازٍ مقفول — صفحتُه تحمل نصوصَها. */}
             {role === "manager" && !restricted && (
               <Link to="/inventory/prices" className="btn btn-secondary" data-pricelink onClick={() => playTap()}>
@@ -575,7 +588,7 @@ export function Inventory() {
         </div>
       ) : view === "products" ? (
         <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load}
-          filter={stockFilter} onFilter={setStockFilter} />
+          filter={stockFilter} onFilter={setStockFilter} openId={loading ? null : openId} onOpened={() => setOpenId(null)} />
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "ledger" ? (
@@ -861,7 +874,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
 });
 
 /* ---------------- Products tab ---------------- */
-function InventoryTab({ products, companies, sections, clinicId, onChanged, filter, onFilter }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void; filter: StockFilter; onFilter: (f: StockFilter) => void }) {
+function InventoryTab({ products, companies, sections, clinicId, onChanged, filter, onFilter, openId, onOpened }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void; filter: StockFilter; onFilter: (f: StockFilter) => void; openId?: string | null; onOpened?: () => void }) {
   const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
@@ -918,6 +931,15 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
   const { stockLocked: locked } = useOverride();
   const toast = useToast();
+  /* رابطٌ عميق من فحص المخزن: يُفتح بعد وصول القائمة (`openId` فارغٌ أثناء التحميل)، ولا
+   * يفتح نموذجاً يُخفي القفلُ قلمَه. ومادةٌ غابت منذ الفحص (دُمجت، حُذفت) لا تبقى معلّقةً
+   * تُفتح لاحقاً بلا طلب. وبعد تعريف `locked`: مصفوفةُ الاعتماد تُقرأ ساعةَ الرسم. */
+  useEffect(() => {
+    if (!openId) return;
+    const p = products.find((x) => x.id === openId);
+    if (p && !locked) setEditing(p);
+    onOpened?.();
+  }, [openId, products, onOpened, locked]);
   /* ٢·٣: قائمةٌ تُلصق بواتساب المندوب — ما تعرضه الشريحةُ الآن بالضبط (بعد البحث)،
    * مجمَّعةً بالشركة وبلا أسعار. الواتسابُ يدويٌّ اليوم (wa.me) فالنسخُ أصدقُ من «أُرسلت». */
   const expiryFilter = filter === "soon" || filter === "return" || filter === "expired" || filter === "muted" || filter === "marked";

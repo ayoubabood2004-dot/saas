@@ -12,7 +12,7 @@ import { loadDB, saveDB } from "./demoStore";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
-import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
+import type { BarcodeAilment, BarcodeHealthRow, InventoryAuditRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -2392,6 +2392,19 @@ const demoRepo = {
       if (!invNormCode(raw)) row("empty", p, raw);
     }
     return out.sort((a, b) => a.kind.localeCompare(b.kind) || a.product_name.localeCompare(b.product_name));
+  },
+
+  /** مرآةُ `report_inventory_audit` (0245) — منطقُها بوحدةٍ تُحمَّل عند النداء
+   *  (`inventoryAudit.ts`) لا هنا: هذا الملفُّ يُحمَّل بكلّ فتحٍ تجريبيّ. */
+  async inventoryAudit(from: string, to: string): Promise<InventoryAuditRow[]> {
+    const db = loadDB();
+    const { inventoryAudit } = await import("./inventoryAudit");
+    return inventoryAudit({
+      products: db.products ?? [], sections: db.companySections ?? [],
+      invoices: db.invoices ?? [], items: db.invoiceItems ?? [],
+      generated: (db.generatedBarcodes ?? []).map((g) => g.barcode),
+      companies: db.companies ?? [], from, to,
+    });
   },
 
   /* ---- سجل الباركودات المولدة (مولد الباركود الداخلي) ---- */

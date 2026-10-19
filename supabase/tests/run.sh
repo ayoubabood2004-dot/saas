@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -5919,6 +5919,61 @@ chk "  وإعادةٌ ثانية بلا أثر" \
 chk "  والنبضةُ definer بمسار" \
     "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='presence_beat'" "true"
 $P -c "delete from staff_presence where user_id='$ADM'; delete from platform_sessions; update _dvtest_flags set admin = false;" >/dev/null
+
+# ── 0245: فحصُ المخزن — القاعدةُ والمرآة صفّاً بصفّ، والدورُ والعزلُ والبوّابة ─────────
+# القالبُ (audit-fixture.mjs) عيادتان بكلّ نوعٍ وسببٍ وحدّ (عمرُ ٣٠ يوماً بالضبط، بيعٌ قبل ٣٠ بالضبط،
+# صافٍ سالب، فاتورةٌ مردودة، حوضُ قسم، مادةُ حقل)، والمتوقَّعُ تحسبه inventoryAudit من المصدر بأربع
+# نوافذ — ورابعتُها تنتهي قبل «الآن» فبيعُ ما بعدها لا يُحسب. والعيادةُ الثانية تحمل ما لو تسرّب لغيّر
+# ناتجَ الأولى (نفسُ البادئة بشركةٍ أخرى، نفسُ الاسم، الرمزُ الداخليّ بمولّدها، فاتورتُها تبيع مادةَ الأولى).
+echo "▸ 0245: فحصُ المخزن — القاعدة والمرآة"
+AU1=a2450000-0000-4000-8000-0000000000a1
+AU2=a2450000-0000-4000-8000-0000000000a2
+AUF=$(mktemp -d)
+node "$HERE/../../scripts/audit-fixture.mjs" "$AUF" >/dev/null
+$P -f "$AUF/fixture.sql" >/dev/null
+$P -f "$AUF/calls.sql" >/dev/null
+psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select json_object_agg(id, res) from _audit_out" > "$AUF/out.json"
+if node "$HERE/../../scripts/audit-parity.mjs" "$AUF" | sed 's/^/ /'; then :; else fail=1; fi
+chk "inv_code_kind = codeKind على كلّ رمزٍ ملغوم (عربيّ، إكسل، شرقيّ، خفيّ، خارج BMP)" \
+    "select count(*)::text from _audit_codes where inv_code_kind(raw) is distinct from expected" "0"
+chk "  والقالبُ يقيس شيئاً: ٦٠ رمزاً فأكثر بكلّ الأشكال العشرة" \
+    "select (count(*) >= 60 and count(distinct expected) = 10)::text from _audit_codes" "true"
+chk "inv_gtin_ok = gtinOk" \
+    "select count(*)::text from _audit_gtin where inv_gtin_ok(v) is distinct from ok" "0"
+chk "الدالّة definer بمسارٍ مثبَّت، stable، وتحصر عيادتَها بنصّها" \
+    "select (prosecdef and proconfig @> array['search_path=public'] and provolatile = 's' and prosrc like '%clinic_id = v_clinic%')::text
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'report_inventory_audit'" "true"
+chk "  ولا تُنادى بلا هويّة، وتبقى للمسجَّلين" \
+    "select (not has_function_privilege('anon','public.report_inventory_audit(timestamptz,timestamptz)','execute')
+             and has_function_privilege('authenticated','public.report_inventory_audit(timestamptz,timestamptz)','execute'))::text" "true"
+chk "  والمساعدتان immutable بمسار" \
+    "select count(*)::text from pg_proc where proname in ('inv_code_kind','inv_gtin_ok') and provolatile = 'i' and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "2"
+AQ="select 1 from report_inventory_audit(now() - interval ''90 days'', now())"
+# بدور authenticated فعلاً (الحزمةُ superuser لا ترى صنفَ الصلاحيات) — والرفضُ 42501 لا خطأٌ آخر.
+chk "بدور authenticated: المديرُ والطبيبُ يقرآنه، والاستقبالُ والمصوّرُ يُرفضان" \
+    "select left(_rls_try('$C1', '$AQ'), 5)||'|'||left(_rls_try('$VET', '$AQ'), 5)||'|'||split_part(_rls_try('$RCP', '$AQ'), ':', 2)||'|'||split_part(_rls_try('$PHO', '$AQ'), ':', 2)" \
+    "rows:|rows:|42501|42501"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$PHO','$C1', now() + interval '10 minutes')
+         on conflict (user_id) do update set until = excluded.until, clinic_id = excluded.clinic_id;" >/dev/null
+chk "  والمصوّرُ المرفوعُ بـPIN المدير ما زال مرفوضاً (الدورُ الأساس)" \
+    "select _pf('$PHO', 'select auth_role()')||'|'||split_part(_rls_try('$PHO', '$AQ'), ':', 2)" "manager|42501"
+$P -c "delete from staff_elevations where user_id = '$PHO';" >/dev/null
+chk "  والبوّابةُ ترفضها للمصوّر قبلها (ليست بقائمته)، ولا تمسّ المدير" \
+    "select split_part(_gate('$PHO', '/rpc/report_inventory_audit'), ':', 3)||'|'||_gate('$C1', '/rpc/report_inventory_audit')" "photographer_forbidden|rows:1"
+chk "عيادةٌ أخرى لا ترى موادَّ الأولى" \
+    "select count(*)::text from (select set_config('request.jwt.claim.sub','$AU2',true)) s cross join lateral report_inventory_audit(now() - interval '90 days', now()) h where h.product_id::text like 'a2450000-b000-%'" "0"
+chk "  وتلقى موادَّها هي" \
+    "select (count(*) > 0)::text from (select set_config('request.jwt.claim.sub','$AU2',true)) s cross join lateral report_inventory_audit(now() - interval '90 days', now()) h where h.product_id::text like 'a2450000-b002-%'" "true"
+W90F=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$AUF/expected.json','utf8')).calls.w90.from)")
+W90T=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$AUF/expected.json','utf8')).calls.w90.to)")
+$P -f "$MIG/0245_inventory_audit.sql" >/dev/null
+chk "  والإعادةُ بلا أثر: نفسُ الناتج حرفاً" \
+    "select (_audit_call('$AU1', '$W90F', '$W90T')::text = (select res::text from _audit_out where id = 'w90'))::text" "true"
+chk "  ولا تكتب شيئاً: لا جدولَ تغيّر بالنداءات" \
+    "select (select count(*) from products where clinic_id = '$AU1')::text||'|'||(select count(*) from invoices where clinic_id = '$AU1')::text" \
+    "$(node -e "const e=JSON.parse(require('fs').readFileSync('$AUF/expected.json','utf8'));console.log(e.counts.products+'|'+e.counts.invoices)")"
+$P -c "drop table if exists _audit_codes, _audit_gtin, _audit_out; drop function if exists _audit_call(uuid, timestamptz, timestamptz);" >/dev/null
+rm -rf "$AUF"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

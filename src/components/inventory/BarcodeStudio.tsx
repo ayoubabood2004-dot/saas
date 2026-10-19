@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle, Barcode as BarcodeIcon, Check, Link2, Loader2, Package, Pencil, Printer,
-  ScanBarcode, ScanLine, Search, Sparkles, Stethoscope, History,
+  ScanBarcode, ScanLine, Search, Sparkles, Stethoscope, History, FileSearch,
 } from "lucide-react";
 import type { BarcodeAilment, BarcodeHealthRow, GeneratedBarcode, Product } from "@/types";
 import { repo } from "@/lib/repo";
@@ -11,6 +12,7 @@ import { createScanAssembler } from "@/lib/scanBuffer";
 import { hasArabicLetters, layoutFix } from "@/lib/productCodes";
 import { getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { formatNum, formatDate, cn, matchCode, searchable } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
@@ -434,6 +436,7 @@ const AILMENTS: BarcodeAilment[] = ["twin", "alt_owned", "empty", "arabic", "exc
 
 function BarcodeHealthCard() {
   const { t } = useTranslation();
+  const { role } = usePermissions();
   const [rows, setRows] = useState<BarcodeHealthRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   /** سببُ الفشل كما قالته القاعدة — لا مجرّد «فشل». */
@@ -483,6 +486,13 @@ function BarcodeHealthCard() {
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-extrabold text-ink">{t("barcodeHealth.title", "فحص صحة الباركودات")}</h3>
           <p className="text-2xs text-ink-subtle">{t("barcodeHealth.sub", "يقرأ رموز مخزنك ويقول وين الخلل — بلا ما يغيّر شي.")}</p>
+          {/* فحصُ المخزن (0245) يُكمل هذه البطاقة ولا يكرّرها: الباقي هناك، وهذه الأنواعُ معه.
+              ومفتاحٌ واحدٌ قصير للرابطين: النصفُ البارد على حدّ سقفه (مقيس). */}
+          {(role === "manager" || role === "veterinarian") && (
+            <Link to="/inventory/audit" data-fullaudit onClick={() => playTap()} className="inline-flex items-center gap-1 text-2xs font-bold text-brand-700 hover:underline dark:text-brand-300">
+              <FileSearch size={12} /> {t("barcodeHealth.fullAudit", "فحص المخزن")}
+            </Link>
+          )}
         </div>
         <Button size="sm" variant="secondary" loading={busy} leftIcon={<Stethoscope size={14} />} onClick={() => void run()}>
           {rows === null ? t("barcodeHealth.run", "افحص") : t("barcodeHealth.again", "افحص من جديد")}

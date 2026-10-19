@@ -1602,6 +1602,10 @@ const supabaseRepo: DemoRepo = {
     if (r.error) throw r.error;
     return (r.data ?? []) as BarcodeHealthRow[];
   },
+  async inventoryAudit(from, to) {
+    /* فحصُ المخزن (0245) يُجمع بالقاعدة، وصفحاتُه (سقفُ الألف) بقطعةٍ كسولة — هذا الملفُّ بالإقلاع. */
+    return (await import("./auditPages")).auditPages(sbc(), listOrThrow, from, to);
+  },
 
   /* ---------------- Companies (الشركات) ---------------- */
   async listGeneratedBarcodes() {
@@ -2988,7 +2992,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "lastDoseOf",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
-  "adminListFeatureRequests", "systemHealth", "barcodeHealth",
+  "adminListFeatureRequests", "systemHealth", "barcodeHealth", "inventoryAudit",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
   "storeFrontPublic", "storeCatalogPublic", "storeCatalogInPublic", "placeStoreOrder", "trackStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",
