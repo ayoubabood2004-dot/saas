@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0246_quota_window_tiles.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -5991,6 +5991,83 @@ chk "  ولا تكتب شيئاً: لا جدولَ تغيّر بالنداءات
     "$(node -e "const e=JSON.parse(require('fs').readFileSync('$AUF/expected.json','utf8'));console.log(e.counts.products+'|'+e.counts.invoices)")"
 $P -c "drop table if exists _audit_codes, _audit_gtin, _audit_out; drop function if exists _audit_call(uuid, timestamptz, timestamptz);" >/dev/null
 rm -rf "$AUF"
+
+# ── 0246: نافذةُ الحصّة الشهرية تتلاصق، والآنُ داخلها دائماً ──────────────────────
+# البدايات: أيامُ ٢٨–٣١ من كلّ شهرٍ بأربعةٍ وعشرين (٢٠٢٧ شباطُه قصير، ٢٠٢٨ كبيس) بساعتين: ١٠:٠٠ (تأخّرُ
+# 0105 بعدها حتى منتصف الليل ١٤ ساعة) ومنتصفُ ليل UTC. واللحظات: كلُّ يومٍ لأربعةٍ وعشرين شهراً بعدها بساعة
+# البداية وقبلها بميكروثانية — الحدُّ نصفُ المفتوح هو حيث تُخطئ النوافذ. البداياتُ من timestamp بلا منطقة
+# والخطوةُ ٢٤ ساعةً لا «يوم»، فاللحظاتُ نفسُها بأيّ توقيتِ جلسة ومقارنتُها بين توقيتين تقيس الدالّةَ وحدها.
+echo "▸ 0246: نافذةُ الحصّة الشهرية بلا فجوةٍ ولا تداخل"
+q246_probe() { # q246_probe الجدول دالّةُ_البداية دالّةُ_النهاية [ساعاتُ البداية]
+  echo "create table $1 as
+    select s, a, $2(s, a) ps, $3(s, a) pe
+      from (select (t + tod) at time zone 'UTC' s
+              from generate_series(timestamp '2027-01-01', timestamp '2028-12-31', interval '1 day') t
+             cross join (values ${4:-(interval '10 hours'), (interval '0')}) v(tod)
+             where extract(day from t) >= 28) b
+     cross join generate_series(0, 731) d
+     cross join (values (interval '0'), (interval '-1 microsecond')) o(off)
+     cross join lateral (select s + d * interval '24 hours' + o.off a) x
+     where a >= s"
+}
+# الفحوصُ الثلاثة على أيّ جدول لحظات: الآنُ خارج نافذته؛ نوافذُ لا تتلاصق (الأولى لا تبدأ بالبداية، أو
+# فارغة، أو بدايةٌ بنهايتين، أو نهايةٌ ليست بدايةَ التالية)؛ وحدٌّ ليس ذكرى (ساعةٌ غير ساعة البداية، أو يومٌ
+# غير يومها مقصوصاً لآخر الشهر).
+q246_out()  { echo "select count(*)::text from $1 where not (ps <= a and a < pe)"; }
+q246_tile() { echo "select count(*)::text from (
+    select s, ps, pe, lead(ps) over (partition by s order by ps) nxt, row_number() over (partition by s order by ps) i
+      from (select distinct s, ps, pe from $1) w) x
+   where (i = 1 and ps <> s) or ps >= pe or nxt <> pe
+      or (s, ps) in (select s, ps from (select distinct s, ps, pe from $1) y group by s, ps having count(*) > 1)"; }
+q246_day()  { echo "select count(*)::text from (select s, ps x from $1 union select s, pe from $1) w
+   where (x at time zone 'UTC')::time <> (s at time zone 'UTC')::time
+      or extract(day from x at time zone 'UTC') <> least(extract(day from s at time zone 'UTC'),
+           extract(day from date_trunc('month', x at time zone 'UTC') + interval '1 month - 1 day'))"; }
+w246() { echo "'['||to_char(quota_period_start('$1','$2') at time zone 'UTC','YYYY-MM-DD/HH24:MI')||','||to_char(quota_period_end('$1','$2') at time zone 'UTC','YYYY-MM-DD/HH24:MI')||')'"; }
+
+$P -c "set timezone = 'UTC'; $(q246_probe _q246 quota_period_start quota_period_end)" >/dev/null
+$P -c "set timezone = 'America/New_York'; $(q246_probe _q246_ny quota_period_start quota_period_end "(interval '10 hours')")" >/dev/null
+# (جدولُ نيويورك وجدولُ 0105 ببدايات ١٠:٠٠ وحدها: يكفيان لما يقيسانه، والحزمةُ لا تدفع ثمنَهما مرّتين.)
+# وحسابُ 0105 نفسُه — نصُّها من ملفّها، وnow() معاملٌ — على نفس اللحظات: فحصٌ لا يُسقطها لا يفحص شيئاً.
+sed -n '/^create or replace function quota_period_/,/^\$\$;/p' "$MIG/0105_monthly_quota_reset.sql" \
+  | sed -e 's/quota_period_\(start\|end\)(p_start timestamptz)/_q0105_\1(p_start timestamptz, p_at timestamptz)/' \
+        -e 's/quota_period_start(p_start)/_q0105_start(p_start, p_at)/' -e 's/now()/p_at/g' | $P >/dev/null
+$P -c "set timezone = 'UTC'; $(q246_probe _q246_old _q0105_start _q0105_end "(interval '10 hours')")" >/dev/null
+
+chk "الآنُ داخل نافذته بكلّ لحظة — بدايةٌ بأيام ٢٨–٣١ × ٢٤ شهراً" "$(q246_out _q246)" "0"
+chk "  والنوافذُ تتلاصق: الأولى من البداية، وكلُّ نهايةٍ بدايةُ التالية، بلا تداخل" "$(q246_tile _q246)" "0"
+chk "  وكلُّ حدٍّ ذكرى: يومُ البداية مقصوصاً لآخر الشهر، بساعتها" "$(q246_day _q246)" "0"
+chk "  ولا تتحرّك بتوقيت الجلسة (نيويورك بصيفها وشتائها = UTC)" \
+    "select count(*)::text from _q246_ny n left join _q246 u using (s, a) where u.ps is distinct from n.ps or u.pe is distinct from n.pe" "0"
+chk "  والفحوصُ الثلاثة تُسقط 0105 على نفس اللحظات" \
+    "select (($(q246_out _q246_old))::int > 0 and ($(q246_tile _q246_old))::int > 0 and ($(q246_day _q246_old))::int > 0)::text" "true"
+chk "  ٣١ آب، ظهرَ ٣٠ أيلول: تصفّر من ١٠:٠٠ (0105: ما زال [٣١ آب، ٣٠ أيلول) حتى منتصف الليل)" \
+    "select $(w246 '2026-08-31 10:00Z' '2026-09-30 12:00Z')" "[2026-09-30/10:00,2026-10-31/10:00)"
+chk "  ٣١ آب، ظهرَ ٣٠ تشرين: يتجدّد ٣١ تشرين (0105: نهايتُها ٣٠ تشرين ١٠:٠٠ — ماضية)" \
+    "select $(w246 '2026-08-31 10:00Z' '2026-10-30 12:00Z')" "[2026-09-30/10:00,2026-10-31/10:00)"
+chk "  والحدُّ نفسُه للنافذة التالية، وقبله بميكروثانية للسابقة" \
+    "select $(w246 '2026-08-31 10:00Z' '2026-10-31 10:00Z')||'|'||$(w246 '2026-08-31 10:00Z' '2026-10-31 09:59:59.999999Z')" \
+    "[2026-10-31/10:00,2026-11-30/10:00)|[2026-09-30/10:00,2026-10-31/10:00)"
+chk "  بعد شباطٍ قصير يرجع ليومه: [٢٨ شباط، ٣١ آذار)" \
+    "select $(w246 '2027-01-31 10:00Z' '2027-03-29 00:00Z')" "[2027-02-28/10:00,2027-03-31/10:00)"
+chk "  وبالكبيس شباطُ ٢٩ يومُه" \
+    "select $(w246 '2027-01-30 10:00Z' '2028-02-29 12:00Z')" "[2028-02-29/10:00,2028-03-30/10:00)"
+chk "  وبدايةٌ مستقبلية: نافذتُها الأولى؛ وبلا بداية: من الأزل بلا نهاية (كما 0105)" \
+    "select $(w246 '2030-01-31 10:00Z' '2029-12-01 00:00Z')||'|'||quota_period_start(null::timestamptz)::text||'|'||coalesce(quota_period_end(null::timestamptz)::text, 'null')" \
+    "[2030-01-31/10:00,2030-02-28/10:00)|-infinity|null"
+# مسارُ الإنتاج: تعريفا 0105 كما هما هناك (immutable، ومسارُ 0163 — مقيسٌ ١٩/١٠) ثم 0246 فوقهما.
+sed -n '/^create or replace function quota_period_/,/^\$\$;/p' "$MIG/0105_monthly_quota_reset.sql" | $P >/dev/null
+$P -c "alter function quota_period_start(timestamptz) set search_path = public;
+       alter function quota_period_end(timestamptz) set search_path = public;" >/dev/null
+chk "  (حالُ الإنتاج قبلها: نسختا المعامل الواحد immutable)" \
+    "select string_agg(provolatile::text, ',') from pg_proc where proname in ('quota_period_start', 'quota_period_end') and pronargs = 1" "i,i"
+$P -f "$MIG/0246_quota_window_tiles.sql" >/dev/null
+chk "  وبعدها: ثابتتان بلحظة، وstable على now()، والأربعُ بمسار public" \
+    "select count(*) filter (where (pronargs = 2 and provolatile = 'i') or (pronargs = 1 and provolatile = 's'))::text||'|'||count(*) filter (where array_to_string(proconfig, ',') like '%search_path=public%')::text from pg_proc where proname in ('quota_period_start', 'quota_period_end') and pronamespace = 'public'::regnamespace" "4|4"
+chk "  ونسختا المعامل الواحد = (البداية، now()) — وما تناديه clinic_quota_usage يرى ذلك" \
+    "select count(*)::text from (values (now() - interval '1 month'), (now() - interval '40 days'), (date_trunc('month', now()) - interval '1 day'), (now() - interval '13 months 2 days'), (now() + interval '3 days'), (null::timestamptz)) v(s)
+      where quota_period_start(s) is distinct from quota_period_start(s, now()) or quota_period_end(s) is distinct from quota_period_end(s, now())" "0"
+$P -c "drop table _q246, _q246_ny, _q246_old; drop function _q0105_start(timestamptz, timestamptz), _q0105_end(timestamptz, timestamptz);" >/dev/null
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
