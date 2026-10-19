@@ -147,6 +147,10 @@ const pHugeImp = P({ name: "رصيد خيالي بسعر", barcode: GOOD("629888
 S(pHugeImp, 3, 1, { stock_qty: 0.001 });
 const pBigSlow = P({ name: "قيمة كبيرة بطيئة", barcode: GOOD("629888899995"), stock: 400, purchase_price: 5000 });
 S(pBigSlow, 20, 10);
+// «لا بيعَ بالمدّة» يحتاج عمراً ≥ ٧: بضاعةٌ وصلت قبل ٣ أيام بقيمةٍ كبيرة ليست مستحيلةً بعد (ولا «ما انباعت»)،
+// وبعمر ٧ بالضبط تصير — والحقيبةُ أعلاه (عمرُها ١٠) كحقيبة ابن الهيثم (٢٥ يوماً يومَ الجرد) تبقى.
+P({ name: "وصلت قبل ثلاث", barcode: GOOD("629888899998"), stock: 1000, purchase_price: 10000, created_at: at(3) });
+P({ name: "وصلت قبل سبع بالضبط", barcode: GOOD("629888899999"), stock: 1000, purchase_price: 10000, created_at: at(7) });
 
 // ٤) الراكد والصفر
 P({ name: "ما انباعت", barcode: F(11), stock: 4 });
@@ -175,6 +179,15 @@ S(pAfter, 5, 10);
 P({ name: "مادة حقل", barcode: F(24), stock: 9, farm_id: FARM });
 const pZeroNoRecent = P({ name: "صفر بلا بيع قريب", barcode: F(25), stock: 0, section_id: SEC_N, company_id: CO_B });
 S(pZeroNoRecent, 50, 4);
+// نافذةُ المادة: عمرُ ١٥ يوماً تبيع واحدةً يومياً برصيد ٤٠ — بالتسعين «تكفي ٢٤٠ — بطيئة»، وبعمرها ٤٠ يوماً.
+const pYoung = P({ name: "جديدة تنباع يومياً", barcode: F(26), stock: 40, created_at: at(15) });
+for (let d = 0; d < 15; d++) S(pYoung, d, 1, { hours: 1 });
+// عمرُ ٤٥ يوماً (فوق شرط الثلاثين) — النافذةُ وحدها تحكم: بالتسعين ١٠٠×٩٠÷٤٥ = ٢٠٠ «بطيئة»، وبعمرها ١٠٠ لا.
+const pMid = P({ name: "عمر خمسة وأربعين", barcode: F(27), stock: 100, created_at: at(45) });
+for (let d = 0; d < 45; d += 3) S(pMid, d, 3, { hours: 2 });
+// صفٌّ أحدثُ من بيعه (الدمجُ ينقل إلى الباقي سطورَ توأمه الأقدم): العمرُ من أوّل بيع (٦٠) لا من الإنشاء (١٠).
+const pMerged = P({ name: "باقية بعد دمج", barcode: F(28), stock: 100, created_at: at(10) });
+for (const d of [60, 40, 20, 5]) S(pMerged, d, 5);
 
 // ٥) الشركات والبادئات
 P({ name: "بادئة ١ أ", barcode: GOOD(P1 + "00001"), stock: 2, company_id: CO_A });
@@ -281,10 +294,13 @@ sql.push(`create table if not exists _audit_gtin(v text, ok boolean);\ntruncate 
 const callSql = [
   `create table if not exists _audit_out(id text primary key, res json);`,
   `truncate _audit_out;`,
+  /* الواجهةُ تنادي report_inventory_audit_json(p_days) بساعة الخادم، والقالبُ بتواريخَ ثابتة — فالنداءُ
+   * هنا التجميعُ نفسُه على الجدول بنافذةٍ ثابتة، والحزمةُ تفحص أن الغلافَ = هذا التجميع على now() (run.sh). */
   `create or replace function _audit_call(who uuid, f timestamptz, t timestamptz) returns json language plpgsql as $fn$
      declare r json; begin
        perform set_config('request.jwt.claim.sub', who::text, true);
-       r := report_inventory_audit_json(f, t)::json;   -- ما تناديه الواجهة نفسُه
+       select coalesce(jsonb_agg(to_jsonb(x) order by x.kind, x.product_id), '[]'::jsonb)::json into r
+         from report_inventory_audit(f, t) x;
        return r;
      exception when others then return json_build_object('error', sqlerrm); end $fn$;`,
   ...Object.entries(calls).map(([k, c]) => `insert into _audit_out values (${q(k)}, _audit_call(${q(AU1)}, ${q(c.from)}, ${q(c.to)}));`),

@@ -2394,16 +2394,19 @@ const demoRepo = {
     return out.sort((a, b) => a.kind.localeCompare(b.kind) || a.product_name.localeCompare(b.product_name));
   },
 
-  /** مرآةُ `report_inventory_audit` (0245) — منطقُها بوحدةٍ تُحمَّل عند النداء
-   *  (`inventoryAudit.ts`) لا هنا: هذا الملفُّ يُحمَّل بكلّ فتحٍ تجريبيّ. */
-  async inventoryAudit(from: string, to: string): Promise<InventoryAuditRow[]> {
+  /** مرآةُ `report_inventory_audit_json(p_days)` (0245) — منطقُها بوحدةٍ تُحمَّل عند النداء
+   *  (`inventoryAudit.ts`) لا هنا: هذا الملفُّ يُحمَّل بكلّ فتحٍ تجريبيّ. والنافذةُ كالخادم:
+   *  آخرُ days × ٢٤ ساعة حتى الآن (وساعةُ الجهاز هنا هي «الخادم»). */
+  async inventoryAudit(days: number): Promise<InventoryAuditRow[]> {
     const db = loadDB();
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 86_400_000);
     const { inventoryAudit } = await import("./inventoryAudit");
     return inventoryAudit({
       products: db.products ?? [], sections: db.companySections ?? [],
       invoices: db.invoices ?? [], items: db.invoiceItems ?? [],
       generated: (db.generatedBarcodes ?? []).map((g) => g.barcode),
-      companies: db.companies ?? [], from, to,
+      companies: db.companies ?? [], from: from.toISOString(), to: to.toISOString(),
     });
   },
 

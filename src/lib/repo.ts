@@ -1602,10 +1602,11 @@ const supabaseRepo: DemoRepo = {
     if (r.error) throw r.error;
     return (r.data ?? []) as BarcodeHealthRow[];
   },
-  async inventoryAudit(from, to) {
+  async inventoryAudit(days) {
     /* فحصُ المخزن (0245): مصفوفةٌ واحدة بنداءٍ واحد من لقطةٍ واحدة — ~١٦٠٠ ملاحظة تتجاوز سقفَ
-     * الألف، وصفحاتٌ بإزاحةٍ كانت تعيد الحسابَ لكلّ صفحة ويُكرّر بينها صفٌّ أو يسقط. ويرمي. */
-    return need(await sbc().rpc("report_inventory_audit_json", { p_from: from, p_to: to }));
+     * الألف، وصفحاتٌ بإزاحةٍ كانت تعيد الحسابَ لكلّ صفحة ويُكرّر بينها صفٌّ أو يسقط. ويرمي.
+     * والأيامُ وحدها: النافذةُ تنتهي بساعة الخادم — جهازٌ متأخّرٌ أيّاماً كان يُسقط آخرَ بيعه بصمت. */
+    return need(await sbc().rpc("report_inventory_audit_json", { p_days: days }));
   },
 
   /* ---------------- Companies (الشركات) ---------------- */

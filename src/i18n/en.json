@@ -5614,7 +5614,7 @@
     "sub": "Where your inventory is off — read only: nothing is changed, and you fix it yourself, item by item.",
     "windowLabel": "Sales rate from the last:",
     "days": "{{n}} days",
-    "windowHint": "Idle stock and impossible quantities are measured at this rate.",
+    "windowHint": "Idle stock and impossible quantities are measured at this rate — items newer than that at the rate of their own days.",
     "failed": "The result did not arrive — and we never show “clean” for a failure. The audit only reads, so nothing changed.",
     "searchPh": "Search by name or barcode",
     "noBulk": "No bulk fixing and no automatic merging: your data stays exactly as you entered it. Every finding shows its fix path inside the app — and you decide.",

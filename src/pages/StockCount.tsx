@@ -71,21 +71,22 @@ export function StockCount() {
   const isManager = role === "manager";
   /* الفحصُ للمدير والطبيب كدالّته؛ والجردُ نفسُه لكلّ من له manageInventory (الشرطُ أدناه). */
   const canAudit = role === "manager" || role === "veterinarian";
-  const [tabState, setTab] = useState<Tab>("today");
-  /* انتهاءُ رفع PIN المدير يُسقط تبويبَ الفحص — والصفحةُ ترجع لـ«عدّ اليوم» لا لجسمٍ بلا تبويبٍ مختار. */
-  const tab: Tab = tabState === "audit" && !canAudit ? "today" : tabState;
-  /* ويُحفظ الرجوعُ لا يُحسب وحده: رفعُ PIN لاحق كان يعيد تبويبَ الفحص فوق قائمة عدٍّ يكتب فيها الموظف. */
-  useEffect(() => { if (!canAudit && tabState === "audit") setTab("today"); }, [canAudit, tabState]);
-  const [, setLazyTick] = useState(0);
-  /* `?tab=audit` (رابطُ بطاقة الباركود، والعنوانُ القديم /inventory/audit) و`?tab=today` (طريقُ
-   * «الجرد اليومي» من الفحص وهو هنا): يُطبَّق ثم يُمسح كرابط المخزن — وإلا أعاده الرجوعُ فوق اختيارك. */
+  /* التبويبُ بالعنوان (`?tab=`) لا بحالة الصفحة: «افتح المادة» من الفحص ثم الرجوع كان يُنزل على «عدّ
+   * اليوم» فيُفتح الفحصُ ويُختار من جديد بعد كلّ تصليح. التبديلُ يستبدل العنوانَ (replace) فلا يملأ
+   * التاريخ، و«عدّ اليوم» بلا معامل. ومن يصل: بطاقةُ الباركود والعنوانُ القديم /inventory/audit (`audit`)،
+   * و«الجرد اليومي» من الفحص (`today` — دفعٌ للتاريخ فالرجوعُ يعيد الفحص). وقيمةٌ غريبة، أو `audit` لمن
+   * لا يراه (انتهى رفعُ PIN المدير)، تُمسح من العنوان نفسِه — فرفعُ PIN لاحق لا يعيد تبويبَ الفحص فوق
+   * قائمة عدٍّ يكتب فيها الموظف. */
   const [params, setParams] = useSearchParams();
-  useEffect(() => {
-    const want = params.get("tab") as Tab | null;
-    if (!want) return;
-    if (TABS.includes(want) && (want !== "audit" || canAudit)) setTab(want);
-    setParams({}, { replace: true });
-  }, [params, setParams, canAudit]);
+  const asked = params.get("tab");
+  const tab: Tab = asked !== null && (TABS as readonly string[]).includes(asked) && (asked !== "audit" || canAudit) ? (asked as Tab) : "today";
+  const setTab = useCallback((v: Tab) => setParams((p) => {
+    const next = new URLSearchParams(p);
+    if (v === "today") next.delete("tab"); else next.set("tab", v);
+    return next;
+  }, { replace: true }), [setParams]);
+  useEffect(() => { if (asked !== null && (asked === "today" || asked !== tab)) setTab(tab); }, [asked, tab, setTab]);
+  const [, setLazyTick] = useState(0);
   const [data, setData] = useState<{ products: Product[]; sold: Map<string, number>; state: Map<string, CountState>; pending: CountRow[]; lots: Map<string, ProductLot[]> } | "loading" | "error">("loading");
   const [lines, setLines] = useState<Record<string, Line>>({});
   const [extra, setExtra] = useState<string[]>([]);

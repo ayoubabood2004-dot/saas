@@ -2111,14 +2111,14 @@ console.log("\n▸ inventoryAudit — مرآةُ report_inventory_audit (0245) �
     invoiceItems: [{ id: "it1", invoice_id: "inv1", product_id: "ia2", qty: 2 }, { id: "it2", invoice_id: "inv2", product_id: "ia3", qty: 1 }],
     generatedBarcodes: [{ id: "g1", barcode: "2000000000008" }], productsTrash: [],
   }));
-  const rows = await repo.inventoryAudit(ago(90), ago(0));
+  const rows = await repo.inventoryAudit(90);   // الأيامُ وحدها، والنافذةُ تنتهي «الآن» كالخادم
   const has = (k, id, why = null) => rows.some((r) => r.kind === k && r.product_id === id && r.why === why);
   check("بلا باركود، وما انباعت أبداً بعمر ١٠٠ يوم", has("no_code", "ia1") && rows.some((r) => r.kind === "never_sold" && r.product_id === "ia1" && r.days === 100), JSON.stringify(rows.filter((r) => r.product_id === "ia1")));
   check("الفواتيرُ تُقرأ: صفرٌ بيع أمس ⇒ zero_sold", has("zero_sold", "ia3"));
   check("  وحوضُ القسم يُقرأ: المجمّعةُ ليست صفراً", !rows.some((r) => r.kind === "zero_sold" && r.product_id === "ia2"));
   check("ومولّدُ العيادة يُقرأ: الداخليُّ المولَّد سليم، والغريبُ «باليد»", !rows.some((r) => r.kind === "hand_code" && r.product_id === "ia4") && has("hand_code", "ia5", "internal"));
   let rangeErr = "";
-  try { await repo.inventoryAudit(ago(6), ago(0)); } catch (e) { rangeErr = String(e.message); }
+  try { await repo.inventoryAudit(6); } catch (e) { rangeErr = String(e.message); }
   check("ومدّةٌ أقصرُ من ٧ أيام تُرفض كما بالقاعدة", rangeErr.includes("bad range"), rangeErr);
 }
 

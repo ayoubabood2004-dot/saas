@@ -98,16 +98,17 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
     const at = Date.parse(i.created_at);
     if (at <= to) invAt.set(i.id, at);
   }
-  const sales = new Map<string, { w: number; q30: number; total: number; last: number | null }>();
+  const sales = new Map<string, { w: number; q30: number; total: number; first: number | null; last: number | null }>();
   for (const it of input.items) {
     if (!it.product_id) continue;
     const at = invAt.get(it.invoice_id);
     if (at === undefined) continue;
     const sq = it.stock_qty == null ? num(it.qty) : num(it.stock_qty);
-    const s = sales.get(it.product_id) ?? { w: 0, q30: 0, total: 0, last: null };
+    const s = sales.get(it.product_id) ?? { w: 0, q30: 0, total: 0, first: null, last: null };
     s.total += sq;
     if (at >= from) s.w += sq;
     if (at >= t30) s.q30 += sq;
+    if (sq > 0 && (s.first === null || at < s.first)) s.first = at;
     if (sq > 0 && (s.last === null || at > s.last)) s.last = at;
     sales.set(it.product_id, s);
   }
@@ -123,6 +124,11 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
     const ck = codeKind(ec);
     const s = sales.get(p.id);
     const pool = p.section_id ? pools.get(p.section_id) ?? 0 : 0;
+    // العمرُ من أقدمِ الإنشاء وأوّلِ بيع (least بالقاعدة يتجاهل الغائب)، ونافذةُ المعدّل `ve` أقلُّ المدّة
+    // وعمرِها، يومٌ أقلُّها — مادةُ ١٥ يوماً كانت تُقسَّم على ٩٠ فتُقال «بطيئة» (الترويسة بـ0245).
+    const created = Date.parse(p.created_at);
+    const start = s?.first != null && s.first < created ? s.first : created;
+    const age = Math.floor((to - start) / DAY);
     return {
       p, stock, ec, n, ck,
       value: Math.max(stock, 0) * Math.max(num(p.purchase_price), 0),
@@ -130,7 +136,7 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
       altFactory: (p.alt_codes ?? []).some((a) => ["gtin", "ean8"].includes(codeKind(a))),
       pool: pool > 0 ? pool : 0,
       w: s?.w ?? 0, q30: s?.q30 ?? 0, total: s?.total ?? 0, last: s?.last ?? null,
-      age: Math.floor((to - Date.parse(p.created_at)) / DAY),
+      age, ve: Math.min(D, Math.max(age, 1)),
       upb: num(p.units_per_box),
       sub: !!p.has_sub_unit,
     };
@@ -158,7 +164,8 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
     if (a) a.push(r); else names.set(r.nn, [r]);
   }
 
-  // المستحيل: ١٠٠ × وسيط القيم الموجبة (percentile_cont)، والكفايةُ > سنة.
+  // المستحيل: ١٠٠ × وسيط القيم الموجبة (percentile_cont)، والكفايةُ بنافذة المادة > سنة — أو لا بيعَ
+  // بالمدّة وعمرُها ≥ ٧ أيام (أقصرُ مدّة؛ والثلاثون كانت تُخفي حقيبةَ ابن الهيثم — الترويسة بـ0245).
   const vals = rows.map((r) => r.value).filter((v) => v > 0).sort((a, b) => a - b);
   const med = vals.length === 0 ? null
     : vals.length % 2 ? vals[(vals.length - 1) / 2] : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2;
@@ -167,7 +174,7 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
   const imp = new Map<string, "units" | "value">();
   for (const r of rows) {
     if (!(r.stock > 0)) continue;
-    if (!(r.w <= 0 || r.stock * D > 365 * r.w)) continue;
+    if (!((r.w <= 0 && r.age >= 7) || (r.w > 0 && r.stock * r.ve > 365 * r.w))) continue;
     if ((med !== null && r.value >= 100 * med) || unitsShape(r)) imp.set(r.p.id, unitsShape(r) ? "units" : "value");
   }
 
@@ -192,7 +199,7 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
   };
   const sinceLast = (r: R): number | null => (r.last === null ? null : Math.floor((to - r.last) / DAY));
   /** الكفايةُ بالأيام، وسقفُها مئةُ سنة كالقاعدة: رصيدٌ خياليّ بمبيعٍ ضئيل كان يتجاوز int هناك. */
-  const cover = (r: R): number | null => (r.w > 0 ? Math.min(floorDays((r.stock * D) / r.w), COVER_MAX) : null);
+  const cover = (r: R): number | null => (r.w > 0 ? Math.min(floorDays((r.stock * r.ve) / r.w), COVER_MAX) : null);
 
   for (const r of rows) {
     if (r.noCode) push("no_code", r);
@@ -211,7 +218,7 @@ export function inventoryAudit(input: AuditInput): InventoryAuditRow[] {
     if (!im && r.stock > 0) {
       if (r.last === null && r.age >= 30) push("never_sold", r, { days: r.age });
       else if (r.last !== null && r.last < t30) push("stopped", r, { days: sinceLast(r) });
-      else if (r.last !== null && r.last >= t30 && (r.w <= 0 || r.stock * D > 180 * r.w)) push("slow", r, { qty: r.w, days: cover(r) });
+      else if (r.last !== null && r.last >= t30 && r.age >= 30 && (r.w <= 0 || r.stock * r.ve > 180 * r.w)) push("slow", r, { qty: r.w, days: cover(r) });
     }
     if (r.stock + r.pool <= 0 && r.q30 > 0) push("zero_sold", r, { qty: r.q30, days: sinceLast(r) });
 

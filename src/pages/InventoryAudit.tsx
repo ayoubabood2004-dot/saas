@@ -41,7 +41,11 @@ const WINDOWS = [30, 90, 180] as const;
 type Win = (typeof WINDOWS)[number];
 const KEY = "vp_audit_days";
 const PAGE = 25;
-const DAY = 86400000;
+/** مهلةُ الفحص: طلبٌ عالقٌ على نتٍّ متوقّف كان يترك الهياكلَ للأبد بلا «أعد المحاولة». */
+const AUDIT_TIMEOUT = 20_000;
+/** الكتلُ المفتوحة تعيش ما عاشت الصفحة (لا تخزين): «افتح المادة» ثم الرجوع كان يطويها كلَّها،
+ *  فمن يصلّح عشرَ مواد من كتلةٍ واحدة يفتحها ويبحث عن مكانه عشرَ مرّات. */
+const openBlocks = new Set<string>();
 
 function readWin(): Win {
   try {
@@ -234,25 +238,30 @@ export function InventoryAuditView({ embedded = false, newTabLinks = false }: { 
   /* آخرُ طلبٍ وحده يكتب: ٣٠ ثم ١٨٠ بسرعة، والأبطأُ الأقدمُ كان يكتب فوق الأحدث تحت زرّه. */
   const seq = useRef(0);
   useEffect(() => () => { seq.current++; }, []);
+  /* `t` بمرجعٍ لا باعتماد الجلب (src/i18n/index.ts): وصولُ نطاقٍ كسول يبدّل `t` فيُعاد الجلبُ مرّتين. */
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
   const load = useCallback(async (days: Win) => {
     const my = ++seq.current;
     setData("loading");
-    const to = new Date();
-    const from = new Date(to.getTime() - days * DAY);
     try {
-      const [audit, health] = await Promise.all([repo.inventoryAudit(from.toISOString(), to.toISOString()), repo.barcodeHealth()]);
+      /* الأيامُ وحدها — النافذةُ تنتهي بساعة الخادم (0245). وبمهلة: الفشلُ يُقال ويُعاد. */
+      const [audit, health] = await withTimeout(Promise.all([repo.inventoryAudit(days), repo.barcodeHealth()]), AUDIT_TIMEOUT);
       if (my !== seq.current) return;
       setData({ audit, health });
     } catch (e) {
       if (my !== seq.current) return;
       playWarning();
-      setData({ error: describeDbError(e, t) });
+      setData({ error: describeDbError(e, tRef.current) });
     }
-  }, [t]);
+  }, []);
   useEffect(() => { if (allowed) void load(win); }, [allowed, load, win]);
 
+  /* الضغطُ على المدّة المختارة نفسِها يعيد الجلب — كان لا يفعل شيئاً فوق هياكلَ عالقة. */
   const pickWin = (w: Win) => {
-    playTap(); setWin(w);
+    playTap();
+    if (w === win) { void load(w); return; }
+    setWin(w);
     try { localStorage.setItem(KEY, String(w)); } catch { /* swallow-ok: تفضيلُ عرض */ }
   };
 
@@ -313,7 +322,7 @@ export function InventoryAuditView({ embedded = false, newTabLinks = false }: { 
             {t("audit.days", { n: formatNum(w), defaultValue: "{{n}} يوم" })}
           </button>
         ))}
-        <span className="text-2xs text-ink-subtle">{t("audit.windowHint", "الراكد والكميات المستحيلة تنحسب بهذا المعدّل.")}</span>
+        <span className="text-2xs text-ink-subtle">{t("audit.windowHint", "الراكد والكميات المستحيلة تنحسب بهذا المعدّل — والمادة الأحدث منه بمعدّل أيامها هي.")}</span>
         <Button size="sm" variant="secondary" className="ms-auto" leftIcon={<Printer size={14} />} disabled={!ready} onClick={print} data-audit-print>
           {t("audit.print", "اطبع الفحص")}
         </Button>
@@ -414,7 +423,12 @@ function Row({ r, canOpen, restricted, showValue, newTab }: { r: VRow; canOpen: 
 
 function CheckBlock({ c, canOpen, restricted, newTab }: { c: CheckM; canOpen: boolean; restricted: boolean; newTab: boolean }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(() => openBlocks.has(c.key));
+  const setOpen = (f: (o: boolean) => boolean) => setOpenState((o) => {
+    const v = f(o);
+    if (v) openBlocks.add(c.key); else openBlocks.delete(c.key);
+    return v;
+  });
   const [limit, setLimit] = useState(PAGE);
   const n = countOf(c);
   const sorted = c.rows;
@@ -581,11 +595,9 @@ export function StockReportButtons({ products, companies, sections }: {
   const marks = async (): Promise<AuditMarks | undefined> => {
     if (!allowed) return undefined;
     try {
-      const to = new Date();
-      const from = new Date(to.getTime() - MARKS_DAYS * DAY);
       /* بمهلة: فحصٌ معلَّقٌ على نتٍّ متوقّف كان يحبس الورقةَ على «جارٍ التحميل» — والورقةُ لا تنتظره
        * (المهلةُ فشلٌ يُقال بسطرها كأيّ فشل). */
-      const [audit, health] = await withTimeout(Promise.all([repo.inventoryAudit(from.toISOString(), to.toISOString()), repo.barcodeHealth()]), 15000);
+      const [audit, health] = await withTimeout(Promise.all([repo.inventoryAudit(MARKS_DAYS), repo.barcodeHealth()]), AUDIT_TIMEOUT);
       return auditMarks(t, audit, health);
     } catch {
       return auditMarksFailed(t);

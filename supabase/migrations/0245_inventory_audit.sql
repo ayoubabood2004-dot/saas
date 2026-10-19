@@ -35,7 +35,7 @@
 --   dup_twin       نفسُ الاسم (search_norm، مرآةُ searchable) وفيها صفٌّ «رفّ» (بلا رمز
 --                  أو رمزٌ باليد) وصفٌّ بباركود مصنع — النمطُ المقيس. why: shelf/factory/other.
 --   dup_name       نفسُ الاسم بلا ذلك النمط (رموزٌ مختلفة أو فارغة) — «افحص».
---   impossible     رصيدٌ يحتاج أكثرَ من سنةٍ ليُباع (أو لا يُباع بالمدّة) **و**:
+--   impossible     رصيدٌ يحتاج أكثرَ من سنةٍ ليُباع بمعدّل نافذته (أو لا بيعَ بالمدّة وعمرُها ≥ ٧ أيام) **و**:
 --                  value  قيمتُه ≥ ١٠٠ × وسيطِ قيم مواد العيادة (مقيسٌ على الإنتاج: يلتقط
 --                         الحقيبةَ والويسكاس وحدهما من ١١٠١، ومادةً واحدة بعيادةٍ أخرى،
 --                         وصفراً بعيادة ٥٨ مادة — حيث «٥٪ من المجموع» كان يلتقط أربعاً)؛
@@ -44,8 +44,8 @@
 --                         (مقيسٌ: صفٌّ واحد بكلّ العيادات — الويسكاس.)
 --   never_sold     رصيدٌ ولا بيعَ قطّ، وعمرُ المادة ≥ ٣٠ يوماً.          days = العمر
 --   stopped        رصيدٌ وآخرُ بيعٍ قبل أكثر من ٣٠ يوماً.               days = منذ آخر بيع
---   slow           بيعت بآخر ٣٠ يوماً ورصيدُها يكفي > ١٨٠ يوماً بمعدّل المدّة. days = الكفاية
---                  (والمستحيلُ لا يُعدّ راكداً: يُصلَّح رقمُه أوّلاً.)
+--   slow           بيعت بآخر ٣٠ يوماً، وعمرُها ≥ ٣٠ يوماً، ورصيدُها يكفي > ١٨٠ يوماً بمعدّل
+--                  نافذتها. days = الكفاية. (والمستحيلُ لا يُعدّ راكداً: يُصلَّح رقمُه أوّلاً.)
 --   zero_sold      رصيدُ البيع (الصفّ + حوضُ قسمه، `sellable.ts`) صفرٌ أو أقلّ، وبيعت
 --                  بآخر ٣٠ يوماً.                                          qty = مبيعُ ٣٠ يوماً
 --   no_company     بلا شركة. why = hint حين تشترك مع موادّ شركةٍ **واحدة** بأوّل ٧ أرقام
@@ -62,10 +62,23 @@
 -- والكفايةُ بالأيام سقفُها ٣٦٥٠٠ (مئةُ سنة): رصيدٌ خياليّ (باركودٌ لُصق بخانة الرصيد) ومبيعٌ
 -- بجزءٍ من ألف كانا يتجاوزان int فيُسقطان الفحصَ كلَّه للعيادة — ساعةَ أحوجِ ما تكون إليه.
 --
+-- **نافذةُ كلّ مادة** (`ve`) = أقلُّ المدّة وعمرِها، وعمرُها من أقدمِ إنشائها وأوّلِ بيعٍ لها (الدمجُ
+-- ينقل إلى الباقي بيعاً أقدمَ منه) — وأقلُّها يومٌ واحد. فالمعدّلُ مبيعُ المدّة ÷ ما عاشته منها: مادةٌ
+-- عمرُها ١٥ يوماً تبيع واحدةً يومياً برصيد ٤٠ كانت تُقسَّم على ٩٠ فتُقال «تكفي ٢٤٠ يوماً — بطيئة»
+-- وتُطبع «بطيء» على ورقة الجرد مع نصيحة الإرجاع. مقيسٌ بـ«ابن الهيثم» (١٨/١٠، ٩٠ يوماً): البطيئة
+-- ٢٢٢ ⇒ ١٣٩ (١٥٨ بالنافذة وحدها، ثم شرطُ العمر). و«البطيئة» تحتاج عمراً ≥ ٣٠ يوماً كـnever_sold:
+-- أقلُّ منه لا معدّلَ يُحكم به.
+-- و«لا بيعَ بالمدّة» في المستحيل يحتاج عمراً ≥ ٧ أيام (أقصرُ مدّةٍ تقبلها الدالّة) لا ٣٠: بضاعةٌ
+-- وصلت أمس بقيمةٍ كبيرة ليست «مستحيلة» بعد، لكن مقيسٌ أن هذا الفرعَ بكلّ العيادات (١٩/١٠) يلتقط
+-- مادةً واحدة — حقيبةُ ابن الهيثم، ١٠٠ مليون، ٥٦٪ من قيمة المخزن، عمرُها ٢٥ يوماً يومَ الجرد بلا
+-- بيعةٍ قطّ. شرطُ الثلاثين كان يُخفيها حتى ٢٣/١٠، وهي أكبرُ ما وجده الجرد.
+--
 -- ── النداء ───────────────────────────────────────────────────────────────
--- الواجهةُ تنادي `report_inventory_audit_json` مرّةً واحدة: مصفوفةٌ واحدة من لقطةٍ واحدة.
+-- الواجهةُ تنادي `report_inventory_audit_json(p_days)` مرّةً واحدة: مصفوفةٌ واحدة من لقطةٍ واحدة.
 -- أثقلُ عيادةٍ ~١٦٠٠ ملاحظة فوق سقف الصفوف (ألف)، وصفحاتٌ بإزاحةٍ تعيد الحسابَ كلَّه لكلّ
 -- صفحة، وتغيّرٌ بينها يزيح الصفوف فيتكرّر صفٌّ أو يسقط. الجدولُ يبقى للحزمة والمرآة.
+-- و**النافذةُ بساعة الخادم** (`now()`) لا بساعة الجهاز: حاسوبٌ متأخّرٌ خمسةَ أيام كان يُسقط
+-- آخرَ خمسة أيام بيعٍ بصمت (فتصير موادُّ تُباع «وقفت» أو «ما انباعت»). فالواجهةُ ترسل عددَ الأيام وحده.
 --
 -- ── الصلاحية ─────────────────────────────────────────────────────────────
 -- `security definer` بمسارٍ مثبَّت، للمدير والطبيب وحدهما، ومحصورةٌ بـ`auth_clinic()`
@@ -77,7 +90,7 @@
 --
 -- لا نصَّ عربيَّ بالمخرَج (كـ0168): kind/why لاتينيان، والشرحُ والطريقُ بـt() بالواجهة.
 --
--- تراجع: drop function report_inventory_audit_json(timestamptz, timestamptz);
+-- تراجع: drop function report_inventory_audit_json(int);
 --        drop function report_inventory_audit(timestamptz, timestamptz);
 --        drop function inv_code_kind(text); drop function inv_gtin_ok(text);
 --        والواجهةُ القديمة لا تناديها.
@@ -214,6 +227,7 @@ begin
            sum(coalesce(it.stock_qty, it.qty)) filter (where i.created_at >= p_from) as w,
            sum(coalesce(it.stock_qty, it.qty)) filter (where i.created_at >= v_30) as q30,
            sum(coalesce(it.stock_qty, it.qty)) as total,
+           min(i.created_at) filter (where coalesce(it.stock_qty, it.qty) > 0) as first_at,
            max(i.created_at) filter (where coalesce(it.stock_qty, it.qty) > 0) as last_at
       from invoice_items it
       join invoices i on i.id = it.invoice_id
@@ -227,7 +241,8 @@ begin
   c as materialized (
     select p.*,
            coalesce(s.w, 0) as w, coalesce(s.q30, 0) as q30, coalesce(s.total, 0) as total, s.last_at,
-           floor(extract(epoch from (p_to - p.created_at)) / 86400.0)::int as age,
+           -- العمرُ من أقدمِ الإنشاء وأوّلِ بيع (least يتجاهل الغائب): بلا بيعٍ هو عمرُ الإنشاء كما كان.
+           floor(extract(epoch from (p_to - least(p.created_at, s.first_at))) / 86400.0)::int as age,
            case
              when p.alt_factory then null
              when p.ck in ('short', 'length', 'check', 'pattern') then p.ck
@@ -245,9 +260,11 @@ begin
            (c.ck in ('gtin', 'ean8') and c.hand is null) as factory
       from c
   ),
+  -- `ve` نافذةُ المعدّل لكلّ مادة: المدّة، أو عمرُها إن كانت أحدثَ منها (يومٌ أقلُّه) — الترويسة.
   g as (
     select f.*,
-           (f.no_code or f.hand is not null) as shelf
+           (f.no_code or f.hand is not null) as shelf,
+           least(v_days, greatest(f.age, 1)::numeric) as ve
       from f
   ),
   -- المجموعات بالاسم المطويّ (حرفان فأكثر).
@@ -255,7 +272,8 @@ begin
     select g.nn, count(*) as k, bool_or(g.shelf) as any_shelf, bool_or(g.factory) as any_factory
       from g where length(g.nn) >= 2 group by g.nn having count(*) > 1
   ),
-  -- المستحيل: وسيطُ القيم الموجبة، والكفايةُ > ٣٦٥ يوماً أو لا بيعَ بالمدّة.
+  -- المستحيل: وسيطُ القيم الموجبة، والكفايةُ بنافذة المادة > ٣٦٥ يوماً، أو لا بيعَ بالمدّة وعمرُها
+  -- ≥ ٧ أيام. والفرعان منفصلان بـw: بلا «w > 0» كان الثاني صادقاً لكلّ صافٍ صفرٍ أو سالب فيلغي شرطَ العمر.
   med as (select percentile_cont(0.5) within group (order by g.value) as m from g where g.value > 0),
   imp as (
     select g.id,
@@ -265,7 +283,7 @@ begin
                 then 'units' else 'value' end as why
       from g, med
      where g.stock > 0
-       and (g.w <= 0 or g.stock * v_days > 365 * g.w)
+       and ((g.w <= 0 and g.age >= 7) or (g.w > 0 and g.stock * g.ve > 365 * g.w))
        and ((med.m is not null and g.value >= 100 * med.m)
             or (g.has_sub_unit and coalesce(g.units_per_box, 0) > 1
                 and round(g.stock + g.total, 3) >= 10 * g.units_per_box
@@ -296,7 +314,7 @@ begin
     union all
     select 'impossible', imp.why, g.id, null,
            case when imp.why = 'units' then round(g.stock + g.total, 3) end,
-           case when g.w > 0 then least(floor(g.stock * v_days / g.w), 36500)::int end, null
+           case when g.w > 0 then least(floor(g.stock * g.ve / g.w), 36500)::int end, null
       from g join imp on imp.id = g.id
     union all
     select 'never_sold', null, g.id, null, null, g.age, null
@@ -309,9 +327,9 @@ begin
        and not exists (select 1 from imp where imp.id = g.id)
     union all
     select 'slow', null, g.id, null, g.w,
-           case when g.w > 0 then least(floor(g.stock * v_days / g.w), 36500)::int end, null
-      from g where g.stock > 0 and g.last_at >= v_30
-       and (g.w <= 0 or g.stock * v_days > 180 * g.w)
+           case when g.w > 0 then least(floor(g.stock * g.ve / g.w), 36500)::int end, null
+      from g where g.stock > 0 and g.last_at >= v_30 and g.age >= 30
+       and (g.w <= 0 or g.stock * g.ve > 180 * g.w)
        and not exists (select 1 from imp where imp.id = g.id)
     union all
     select 'zero_sold', null, g.id, null, g.q30,
@@ -345,7 +363,11 @@ grant execute on function public.report_inventory_audit(timestamptz, timestamptz
 -- ── ٤) النداءُ الواحد ────────────────────────────────────────────────────────
 -- مصفوفةٌ واحدة من لقطةٍ واحدة (انظر الترويسة). invoker: الصلاحيةُ والعيادةُ تفحصهما الدالّةُ
 -- التي تحتها بنفسها، وهذه لا تقرأ جدولاً. والترتيبُ ثابتٌ بالنوع ثم المادة.
-create or replace function public.report_inventory_audit_json(p_from timestamptz, p_to timestamptz)
+-- والنافذةُ تنتهي بـnow() الخادم (الترويسة)، وتبدأ قبلها بـp_days × ٢٤ ساعة — ساعاتٌ لا «أيام»
+-- لأن فترةَ الأيام تتبع صيفَ توقيت الجلسة فتصير المدّةُ ٨٩٫٩٦ يوماً. والمدى (٧–٤٠٠) تفحصه التي تحتها.
+-- والصيغةُ الأولى (from, to من ساعة الجهاز) تُحذف: لم تنزل للإنتاج، وبقاؤها بابٌ للساعة الخاطئة.
+drop function if exists public.report_inventory_audit_json(timestamptz, timestamptz);
+create or replace function public.report_inventory_audit_json(p_days int)
 returns jsonb
 language sql
 stable
@@ -353,20 +375,20 @@ security invoker
 set search_path to 'public'
 as $function$
   select coalesce(jsonb_agg(to_jsonb(x) order by x.kind, x.product_id), '[]'::jsonb)
-    from public.report_inventory_audit(p_from, p_to) x
+    from public.report_inventory_audit(now() - make_interval(hours => p_days * 24), now()) x
 $function$;
 
-revoke all on function public.report_inventory_audit_json(timestamptz, timestamptz) from public, anon;
-grant execute on function public.report_inventory_audit_json(timestamptz, timestamptz) to authenticated;
+revoke all on function public.report_inventory_audit_json(int) from public, anon;
+grant execute on function public.report_inventory_audit_json(int) to authenticated;
 
 comment on function public.report_inventory_audit(timestamptz, timestamptz) is
   'فحصُ مخزن العيادة الحالية (0245) — قراءةٌ فقط، بلا إصلاحٍ جماعيّ ولا دمجٍ تلقائيّ '
   '(الخطّ الأحمر: بياناتُ العيادة تبقى كما أدخلها أصحابُها). تُكمل verify_barcode_health '
   '(0168) ولا تكرّرها. kind/why لاتينيان والشرحُ بالواجهة؛ مرآتُها src/lib/inventoryAudit.ts '
   'ويطابقهما audit-parity بالحزمة. للمدير والطبيب، وليست بقائمة api_gate.';
-comment on function public.report_inventory_audit_json(timestamptz, timestamptz) is
-  'report_inventory_audit (0245) مصفوفةً واحدة بنداءٍ واحد — لقطةٌ واحدة بلا صفحاتٍ تُزيحها '
-  'الكتابات. الصلاحيةُ من الدالّة التي تحتها.';
+comment on function public.report_inventory_audit_json(int) is
+  'report_inventory_audit (0245) لآخر p_days يوماً بساعة الخادم — مصفوفةً واحدة بنداءٍ واحد، لقطةٌ '
+  'واحدة بلا صفحاتٍ تُزيحها الكتابات. الصلاحيةُ والمدى من الدالّة التي تحتها.';
 comment on function public.inv_code_kind(text) is
   'شكلُ رمز المنتج للفحص (0245): none/skip/short/alnum/length/check/internal/pattern/ean8/gtin. '
   'مرآتُه codeKind بـsrc/lib/inventoryAudit.ts — أيُّ تعديلٍ هنا يقابله تعديلٌ هناك.';

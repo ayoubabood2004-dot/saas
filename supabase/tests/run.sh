@@ -5952,11 +5952,19 @@ chk "  والمساعدتان immutable بمسار" \
 # كلُّه (audit-parity أعلاه) مرّ منها، فهنا يكفي أن يساوي عددُها عددَ الجدول.
 chk "report_inventory_audit_json: invoker بمسار، ولا تُنادى بلا هويّة" \
     "select (not prosecdef and proconfig @> array['search_path=public']
-             and not has_function_privilege('anon','public.report_inventory_audit_json(timestamptz,timestamptz)','execute'))::text
+             and not has_function_privilege('anon','public.report_inventory_audit_json(int)','execute')
+             and to_regprocedure('public.report_inventory_audit_json(timestamptz,timestamptz)') is null)::text
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'report_inventory_audit_json'" "true"
-chk "  وعددُها عددُ الجدول (لا صفَّ يضيع بالتجميع)" \
-    "select (jsonb_array_length(report_inventory_audit_json(now() - interval '90 days', now())) = (select count(*) from report_inventory_audit(now() - interval '90 days', now())))::text
-       from (select set_config('request.jwt.claim.sub','$AU1',true)) s" "true"
+# والنافذةُ بساعة الخادم: الغلافُ يأخذ الأيامَ وحدها. يساوي التجميعَ نفسَه (الذي مرّ منه القالبُ أعلاه)
+# على now()-p_days×24h..now() حرفاً — now() واحدةٌ بالمعاملة — ولا صفَّ يضيع.
+chk "  وهي التجميعُ نفسُه على آخر ٩٠ يوماً بساعة الخادم، حرفاً" \
+    "select (r = (select coalesce(jsonb_agg(to_jsonb(x) order by x.kind, x.product_id), '[]'::jsonb)
+                  from report_inventory_audit(now() - make_interval(hours => 2160), now()) x)
+             and jsonb_array_length(r) > 0)::text
+       from (select set_config('request.jwt.claim.sub','$AU1',true)) s, lateral (select report_inventory_audit_json(90) as r) j" "true"
+chk "  والمدى يُفحص تحتها: ٦ و٤٠١ وnull تُرفض بـ22023، و٧ تمرّ" \
+    "select split_part(_rls_try('$C1', 'select report_inventory_audit_json(6)'), ':', 2)||'|'||split_part(_rls_try('$C1', 'select report_inventory_audit_json(401)'), ':', 2)||'|'||split_part(_rls_try('$C1', 'select report_inventory_audit_json(null)'), ':', 2)||'|'||left(_rls_try('$C1', 'select report_inventory_audit_json(7)'), 5)" \
+    "22023|22023|22023|rows:"
 AQ="select 1 from report_inventory_audit(now() - interval ''90 days'', now())"
 # بدور authenticated فعلاً (الحزمةُ superuser لا ترى صنفَ الصلاحيات) — والرفضُ 42501 لا خطأٌ آخر.
 chk "بدور authenticated: المديرُ والطبيبُ يقرآنه، والاستقبالُ والمصوّرُ يُرفضان" \
@@ -6005,6 +6013,6 @@ chk "  والدوالُّ الجديدة زالت بعد تصفير الخطّا
     "select (to_regprocedure('public.api_gate()') is null and to_regprocedure('public.staff_can(text)') is null)::text" "true"
 # 0245 تسأل is_photographer بـexecute إن وُجدت — نداءٌ ثابتٌ كان يرمي 42883 لكلّ عيادةٍ بعد هذا التراجع.
 chk "  وفحصُ المخزن (0245) باقٍ للطبيب والمدير بعد حذف is_photographer" \
-    "select (to_regprocedure('public.is_photographer()') is null)::text||'|'||left(_rls_try('$VET', 'select 1 from report_inventory_audit(now() - interval ''90 days'', now())'), 5)||'|'||left(_rls_try('$C1', 'select report_inventory_audit_json(now() - interval ''90 days'', now())'), 5)" \
+    "select (to_regprocedure('public.is_photographer()') is null)::text||'|'||left(_rls_try('$VET', 'select 1 from report_inventory_audit(now() - interval ''90 days'', now())'), 5)||'|'||left(_rls_try('$C1', 'select report_inventory_audit_json(90)'), 5)" \
     "true|rows:|rows:"
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
