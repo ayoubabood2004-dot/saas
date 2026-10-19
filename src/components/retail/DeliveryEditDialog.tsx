@@ -13,7 +13,7 @@ import { cn, money, normalizeAr, formatNum } from "@/lib/utils";
 import { codeMatcher } from "@/lib/productCodes";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { sendWhatsApp } from "@/lib/quotas";
+import { useWaAfterSave } from "@/hooks/useWaAfterSave";
 import { waNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { invoiceNo } from "@/lib/invoiceNo";
@@ -72,6 +72,7 @@ export function DeliveryEditDialog({
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const waAfterSave = useWaAfterSave();
   const [rows, setRows] = useState<Row[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [pools, setPools] = useState<Map<string, number>>(new Map());
@@ -259,21 +260,20 @@ export function DeliveryEditDialog({
       if (order) toast.success(t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" }));
       else toast.success(t("retail.invEditSaved", { n: money(Number(inv.total) || newTotal), defaultValue: "تم تعديل الفاتورة — الإجمالي الجديد {{n}} والمخزون تزامن تلقائياً" }));
       // الإشعار بعد نجاح الحفظ فقط: رسالة عن تعديل لم يُحفظ أسوأ من لا رسالة.
+      // والمنعُ بعد الحفظ (سفاري) يُقال باسم السائق ومعه زرٌّ يرسلها — لا يُبلع (useWaAfterSave).
       if (order && notify && courier?.phone) {
-        try {
-          await sendWhatsApp({
-            phone: waNumber(courier.phone, getDialCode()),
-            text: t("retail.dEditWaMsg", {
-              no: invoiceNo(order.invoice_id),
-              customer: order.customer_name ?? "",
-              items: live.map((r) => `• ${r.name}${r.unit_label ? ` (${r.unit_label})` : ""} ×${formatNum(r.qty)}`).join("\n"),
-              n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))),
-            }), // النص بمفتاح ar/en وحده — بلا نسخة صلبة تتخلّف عن الترجمة
-            ownerName: order.customer_name ?? null,
-            ownerPhone: order.customer_phone ?? null,
-            kind: "manual",
-          });
-        } catch { /* الحصة أو نافذة منبثقة محجوبة — التعديل محفوظ على أي حال */ }
+        await waAfterSave({
+          phone: waNumber(courier.phone, getDialCode()),
+          text: t("retail.dEditWaMsg", {
+            no: invoiceNo(order.invoice_id),
+            customer: order.customer_name ?? "",
+            items: live.map((r) => `• ${r.name}${r.unit_label ? ` (${r.unit_label})` : ""} ×${formatNum(r.qty)}`).join("\n"),
+            n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))),
+          }), // النص بمفتاح ar/en وحده — بلا نسخة صلبة تتخلّف عن الترجمة
+          ownerName: order.customer_name ?? null,
+          ownerPhone: order.customer_phone ?? null,
+          kind: "manual",
+        }, courier.name);
       }
       onSaved();
       onClose();

@@ -12,7 +12,7 @@ import { invoiceNo } from "@/lib/invoiceNo";
 import { cn, money, normalizeAr } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { sendWhatsApp } from "@/lib/quotas";
+import { useWaAfterSave } from "@/hooks/useWaAfterSave";
 import { waNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 
@@ -53,6 +53,7 @@ export function CourierSwapDialog({
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const waAfterSave = useWaAfterSave();
   const [pick, setPick] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [reason, setReason] = useState("");
@@ -103,23 +104,21 @@ export function CourierSwapDialog({
         n: money(order.cod_amount), other: (c.id === next.id ? current?.name : next.name) ?? "",
         defaultValue: def,
       });
+      // التبديلُ محفوظ على أي حال. والإرسالُ بعد الحفظ يُمنع بسفاري (والثاني بكلّ متصفّح —
+      // ضغطةٌ واحدة تفتح نافذةً واحدة): فيُقال باسم السائق ومعه زرٌّ يرسلها (useWaAfterSave).
       if (opts.tellNew && next.phone) {
-        try {
-          await sendWhatsApp({
-            phone: waNumber(next.phone, getDialCode()),
-            text: text("retail.swapWaNew", "طلب #{{no}} صار عندك — الزبون {{customer}} · {{zone}} · تستلم منه {{n}}.", next),
-            ownerName: order.customer_name ?? null, ownerPhone: order.customer_phone ?? null, kind: "manual",
-          });
-        } catch { /* الحصة أو نافذة محجوبة — التبديل محفوظ على أي حال */ }
+        await waAfterSave({
+          phone: waNumber(next.phone, getDialCode()),
+          text: text("retail.swapWaNew", "طلب #{{no}} صار عندك — الزبون {{customer}} · {{zone}} · تستلم منه {{n}}.", next),
+          ownerName: order.customer_name ?? null, ownerPhone: order.customer_phone ?? null, kind: "manual",
+        }, next.name);
       }
       if (opts.tellOld && current?.phone) {
-        try {
-          await sendWhatsApp({
-            phone: waNumber(current.phone, getDialCode()),
-            text: text("retail.swapWaOld", "طلب #{{no}} ({{customer}}) ما عاد عندك — راح مع {{other}}. لا تحتاج توصله.", current),
-            ownerName: order.customer_name ?? null, ownerPhone: order.customer_phone ?? null, kind: "manual",
-          });
-        } catch { /* نافذة ثانية قد تُحجب — الرسالة الأهم راحت للجديد */ }
+        await waAfterSave({
+          phone: waNumber(current.phone, getDialCode()),
+          text: text("retail.swapWaOld", "طلب #{{no}} ({{customer}}) ما عاد عندك — راح مع {{other}}. لا تحتاج توصله.", current),
+          ownerName: order.customer_name ?? null, ownerPhone: order.customer_phone ?? null, kind: "manual",
+        }, current.name);
       }
       if (opts.print) openDeliverySlip({ ...order, courier_id: next.id }, next, no);
 

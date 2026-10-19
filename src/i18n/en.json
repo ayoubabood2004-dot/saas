@@ -180,6 +180,9 @@
     "done": "Catalog enabled: {{n}} products in place",
     "doneSub": "New companies: {{co}} · new sections: {{sec}} — items learn their barcodes from the first purchase invoice"
   },
+  "waSend": {
+    "blocked": "WhatsApp didn't open — the browser blocked it. Tap the button again."
+  },
   "waMsgs": {
     "rem": {
       "vaccine": [
@@ -517,6 +520,9 @@
     "photos": "Product photos"
   },
   "campaigns": {
+    "remOther": "A message to this client — it won't count as the reminder (the template changed)",
+    "remReady": "Reminder ready to send",
+    "remEditHint": "Want to change the text? Edit it in the message box below — this card follows it.",
     "title": "WhatsApp Campaigns",
     "subtitle": "Reach clients via direct WhatsApp links — no API cost, no ban risk.",
     "templates": "Templates",

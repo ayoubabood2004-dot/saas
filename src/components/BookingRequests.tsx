@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { sendWhatsApp, quotaMessage, type WaSend } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota, type WaSend } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { BellRing, Check, X, Phone, MessageCircle, CalendarClock, Stethoscope } from "lucide-react";
 import type { Appointment, Pet } from "@/types";
@@ -21,6 +21,7 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
  */
 export function BookingRequests() {
   const { t, i18n } = useTranslation();
+  useWarmWaQuota();
   const toast = useToast();
   const [requests, setRequests] = useState<Appointment[]>([]);
   const [pets, setPets] = useState<Record<string, Pet>>({});

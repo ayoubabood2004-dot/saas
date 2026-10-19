@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useToast, Skeleton } from "@/components/ui";
 import { cn, dateLocale } from "@/lib/utils";
+import { audienceMatcher } from "@/lib/audienceSearch";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { phoneDigits, waNumber } from "@/lib/phone";
 import { playTap } from "@/lib/sounds";
@@ -50,6 +51,7 @@ export function WhatsAppCampaigns() {
   const dial = getDialCode();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const prefillApplied = useRef(false);
+  useWarmWaQuota();
 
   // Synchronous cache seed — seeding inside the effect paints one skeleton
   // frame first (effects run after paint) = a fake loading intro on revisit.
@@ -207,16 +209,13 @@ export function WhatsAppCampaigns() {
 
   // One row per pet (so {{اسم_الحيوان}} is meaningful); filtered by species + segment + search.
   const rows = useMemo(() => {
-    const ql = query.trim().toLowerCase();
+    const match = audienceMatcher(query, dial);
     return pets.filter((p) => {
       if (filter !== "all" && p.species !== filter) return false;
       if (segment !== "all" && !segmentSets[segment].has(p.id)) return false;
-      if (!ql) return true;
-      return p.name.toLowerCase().includes(ql)
-        || (p.owner_name ?? "").toLowerCase().includes(ql)
-        || phoneDigits(p.owner_phone ?? "").includes(phoneDigits(ql));
+      return !match || match(p);
     });
-  }, [pets, filter, segment, query, segmentSets]);
+  }, [pets, filter, segment, query, segmentSets, dial]);
 
   const selectedRows = useMemo(() => pets.filter((p) => selected.has(p.id)), [pets, selected]);
   const allFilteredSelected = rows.length > 0 && rows.every((p) => selected.has(p.id));
@@ -268,11 +267,22 @@ export function WhatsAppCampaigns() {
     });
   };
 
+  /** النصُّ كما يصل صاحبَ المجموعة — مصدرٌ واحد للإرسال ولمعاينة بطاقة التذكير. */
+  const groupText = (g: QueueGroup) =>
+    renderMessage(noRawTokens(withVars(withClinic(message))), g.ownerName, g.pets.map((p) => p.name).join(" و ")); // Arabic "and"
+  const namesOf = (g: QueueGroup) => g.pets.map((p) => p.name).join("، ");
+  /** التذكيرُ الذي تمثّله هذه المجموعة، أو null. شرطٌ واحد للإرسال وللبطاقة: البطاقةُ كانت تقول
+   *  «تذكير جاهز» و«تم الإرسال» بعد تبديل القالب، والإرسالُ لا يختمه — فيبقى أحمرَ بعد «تم». */
+  const reminderFor = (g: QueueGroup) =>
+    fromReminder && activeTpl === fromReminder.tpl && g.pets.some((p) => p.id === fromReminder.petId) ? fromReminder : null;
+  /** مجموعاتٌ تُرسَل الآن: ضغطتان سريعتان كانتا تفتحان نافذتين وتعدّان رسالتين من الحصّة. */
+  const sending = useRef(new Set<string>());
+
   const sendTo = async (group: QueueGroup) => {
     if (!group.phone) { toast.error(t("campaigns.noPhone", "No number")); return; }
     if (!message.trim()) { toast.error(t("campaigns.noTemplate", "Write the message first.")); return; }
-    const petNames = group.pets.map((p) => p.name).join(" و "); // Arabic "and"
-    const text = renderMessage(noRawTokens(withVars(withClinic(message))), group.ownerName, petNames);
+    if (sending.current.has(group.key)) return;
+    const text = groupText(group);
     const num = waNumber(group.phone, dial);
     /* رسالةُ تذكيرٍ تُسجَّل **بنوع التذكير** لا بشريحة الصفحة. منذ c3680c1 كانت تُسجَّل
      * `manual` دائماً (الشريحةُ الافتراضية «الكل») — ومركزُ التذكيرات يطابق السجلَّ بـ
@@ -281,8 +291,10 @@ export function WhatsAppCampaigns() {
     // شريحةٌ أخرى، أو صاحبٌ آخر بعد إلغاء الأوّل) كان يُسجَّل بنوعه ويختم تذكيرَه «أُرسلت».
     // **وما دام قالبُه مختاراً**: بدّل الطبيبُ إلى «عرض» فما يُرسَل ليس التذكير — وكان يختمه
     // «أُرسلت» على كلّ جهاز، فيخرج من الأحمر وصاحبُه ما وصله شيءٌ عن اللقاح.
-    const forReminder = fromReminder && activeTpl === fromReminder.tpl && group.pets.some((p) => p.id === fromReminder.petId) ? fromReminder : null;
+    const forReminder = reminderFor(group);
     const kind = forReminder?.kind ?? (segment === "all" ? "manual" : segment);
+    // لا await قبل sendWhatsApp: الفتحُ داخل الضغطة وإلا منعه سفاري (انظر lib/quotas).
+    sending.current.add(group.key);
     try {
       await sendWhatsApp({
         phone: num, text,
@@ -294,6 +306,7 @@ export function WhatsAppCampaigns() {
         kind,
       });
     } catch (e) { playTap(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
+    finally { sending.current.delete(group.key); }
     setSent((s) => new Set(s).add(group.key));
     // جئنا من تذكير؟ نترك له علامةً بمخزن الجلسة، فيقرأها مركز التذكيرات عند
     // الرجوع وينقل التذكير من الأحمر إلى «أُرسلت» بلا انتظار مزامنة السجل.
@@ -311,6 +324,10 @@ export function WhatsAppCampaigns() {
   };
 
   const sentCount = queueGroups.filter((g) => sent.has(g.key)).length;
+  /* جئنا من تذكير: بالهاتف كان زرُّ الإرسال بآخر الصفحة تحت القوالب وقائمة الزبائن (y=1651 من
+   * 1807 على ٣٧٥×٨١٢، مقيس) — فالطبيبُ يرى النصَّ ولا يرى الزرّ. البطاقةُ تحمل النصَّ كما سيصل
+   * وزرَّه بأعلى الصفحة؛ وبالعمودين (lg) الطابورُ أعلى اليمين أصلاً فتُخفى. */
+  const remGroup = fromReminder ? queueGroups.find((g) => g.pets.some((p) => p.id === fromReminder.petId)) : undefined;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -328,6 +345,25 @@ export function WhatsAppCampaigns() {
           <BellRing size={17} /> {t("nav.reminders", "التذكيرات")}
         </button>
       </div>
+
+      {remGroup && (
+        <div className="card mb-5 border-success-300 p-4 lg:hidden dark:border-success-500/40" data-campremcard>
+          <p className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300">
+            <BellRing size={14} /> {reminderFor(remGroup)
+              ? t("campaigns.remReady", "تذكير جاهز للإرسال")
+              : t("campaigns.remOther", "رسالة لصاحب التذكير — ما تنحسب تذكيراً لأن القالب تبدّل")}
+          </p>
+          <p className="mt-1 truncate text-sm font-semibold text-ink">{remGroup.ownerName || "—"} · {namesOf(remGroup)}</p>
+          <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-2 p-3 text-sm leading-relaxed text-ink" dir="auto">{groupText(remGroup)}</p>
+          <button type="button" onClick={() => sendTo(remGroup)} disabled={!remGroup.phone} data-campremsend
+            className={cn("mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold shadow-soft transition disabled:cursor-not-allowed disabled:opacity-50",
+              sent.has(remGroup.key) ? "bg-surface-2 text-ink-muted" : "bg-success-600 text-white hover:bg-success-700")}>
+            {sent.has(remGroup.key) ? <Check size={16} /> : <MessageCircle size={16} />}
+            {sent.has(remGroup.key) ? t("campaigns.sent", "Sent") : t("campaigns.send", "Send via WhatsApp")}
+          </button>
+          <p className="mt-2 text-2xs text-ink-subtle">{t("campaigns.remEditHint", "تريد تعدّل النص؟ عدّله بمربّع الرسالة تحت، والبطاقة تتحدّث وياه.")}</p>
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1fr,380px] lg:items-start">
         {/* LEFT — template + audience */}
@@ -489,7 +525,7 @@ export function WhatsAppCampaigns() {
                 {queueGroups.map((g) => {
                   const isSent = sent.has(g.key);
                   const hasPhone = !!g.phone;
-                  const petNames = g.pets.map((p) => p.name).join("، ");
+                  const petNames = namesOf(g);
                   return (
                     <li key={g.key} className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface-1 p-2.5">
                       <PetAvatar pet={g.pets[0]} size={34} photoFallback />

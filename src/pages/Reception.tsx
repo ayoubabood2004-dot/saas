@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -120,6 +120,7 @@ function monthMatrix(cursor: Date): Date[][] {
 }
 
 export function Reception() {
+  useWarmWaQuota();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const toast = useToast();

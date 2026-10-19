@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
 const alertQuota = (e: unknown) => { const m = quotaMessage(e); if (m) window.alert(m); };
 import { useTranslation } from "react-i18next";
 import { Gift, MessageCircle } from "lucide-react";
@@ -36,6 +36,7 @@ function upcomingBirthdays(pets: Pet[], windowDays = 7): BirthdayEntry[] {
 /** Dashboard CRM widget — upcoming pet birthdays this week with a one-tap WhatsApp greeting. */
 export function BirthdaysWidget({ pets }: { pets: Pet[] }) {
   const { t } = useTranslation();
+  useWarmWaQuota();
   const list = useMemo(() => upcomingBirthdays(pets), [pets]);
 
   const whenLabel = (inDays: number) =>
