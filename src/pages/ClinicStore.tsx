@@ -11,7 +11,7 @@
 //                 الحد الأدنى، ولوحة مشاركة الرابط (نسخ/فتح/واتساب/بايو).
 // ============================================================================
 import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingBag, Inbox, Boxes, Settings2, Check, X, Phone, MessageCircle, MapPin,
@@ -312,6 +312,7 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
 
   // الإرسال يمرّ بنقطة الاختناق: تفحص حصة الرسائل وتسجّلها. الرابط المباشر
   // كان يتخطّى الاثنين، فالعدّاد ما يشوف رسائل المتجر أصلاً.
+  useWarmWaQuota();
   const waSend = (o: StoreOrder, msg: string) => {
     playTap();
     void sendWhatsApp({ phone: waNumber(o.customer_phone, getDialCode()), text: msg, ownerName: o.customer_name ?? null, ownerPhone: o.customer_phone ?? null, kind: "store" })

@@ -14,6 +14,7 @@ import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, M
 import { indexMarks, serverSentDay, markOf, localDay, judgeLifecycle, overlayWrites, type MarkWrite } from "@/lib/reminderMarks";
 import { describeDbError } from "@/lib/errors";
 import { repo } from "@/lib/repo";
+import { useWarmWaQuota } from "@/lib/quotas";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -142,6 +143,8 @@ export function RemindersHub() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  // الإرسالُ بصفحة الحملات، والحصّةُ تُسخَّن من هنا فتصلها معروفة (انظر lib/quotas).
+  useWarmWaQuota();
 
   // Synchronous cache seed — effects run AFTER paint, so seeding there flashes
   // one skeleton frame on every revisit (the "loading intro" the doctor sees).
@@ -848,12 +851,15 @@ export function RemindersHub() {
                             : r.detail}
                         </p>
                         <p className="truncate text-2xs text-ink-subtle">
+                          {/* بالهاتف الاستحقاقُ أوّلَ السطر بدل شارته: «ذكّر» صار بنصّه فأخذ مكانها،
+                              والشارةُ مع الزرّ كانت تعصر اسمَ الحيوان لحرفين على ٣٧٥ (تدقيقٌ عدائيّ). */}
+                          <span className={cn("font-bold sm:hidden", r.inDays < 0 ? "text-danger-600 dark:text-danger-300" : r.inDays === 0 ? "text-warn-700 dark:text-warn-300" : "")}>{relLabel(r.inDays)} · </span>
                           {r.ownerName && <>{r.ownerName} · </>}
                           {r.phone ? <span className="font-mono" dir="ltr">{r.phone}</span> : "بلا هاتف"}
                           {" · "}{formatDate(r.date, i18n.language)}{r.time ? ` · ${r.time}` : ""}
                         </p>
                       </div>
-                      <span className={cn("chip shrink-0 text-2xs font-extrabold tabular-nums",
+                      <span className={cn("chip hidden shrink-0 text-2xs font-extrabold tabular-nums sm:inline-flex",
                         r.inDays < 0 ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
                           : r.inDays === 0 ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
                             : "bg-surface-2 text-ink-muted")}>
@@ -864,7 +870,7 @@ export function RemindersHub() {
                         <button onClick={(e) => { e.stopPropagation(); openInCampaigns(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
                           data-remsend={r.id}
                           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#25D366] px-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-[#1fb959]">
-                          <MessageCircle size={16} /> <span className="hidden sm:inline">{t("rem.sendShort", "ذكّر")}</span>
+                          <MessageCircle size={16} /> <span>{t("rem.sendShort", "ذكّر")}</span>
                         </button>
                       )}
                       {/* «تم التذكير» — كأنه انرسل واكتمل، على كل الأجهزة. والصفُّ بلا هاتف

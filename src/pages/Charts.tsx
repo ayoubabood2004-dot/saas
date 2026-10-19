@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -191,6 +191,7 @@ const dayNumber = (iso: string, todayISO: string) => {
 
 export function Charts() {
   const { t, i18n } = useTranslation();
+  useWarmWaQuota();
   const lang = i18n.language;
   const navigate = useNavigate();
   const toast = useToast();

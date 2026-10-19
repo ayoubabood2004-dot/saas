@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { sendWhatsApp, quotaMessage, type WaSend } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota, type WaSend } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -68,6 +68,7 @@ const FILTER_KEYS: FilterKey[] = ["all", "requested", "confirmed", "attended", "
 
 export function BookingsHub() {
   const { t, i18n } = useTranslation();
+  useWarmWaQuota();
   const toast = useToast();
   const navigate = useNavigate();
   const saved = loadUI();

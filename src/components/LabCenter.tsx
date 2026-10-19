@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
 import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox, LabStatusValue } from "@/types";
 import {
@@ -918,6 +918,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
   const next = nextStatus(st);
   const tat = tatMinutes(r, nowISO);
   const waNum = pet.owner_phone ? waNumber(pet.owner_phone, getDialCode()) : "";
+  useWarmWaQuota();
   const sendWa = async () => {
     if (!waNum) return;
     playTap();

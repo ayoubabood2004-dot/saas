@@ -245,8 +245,11 @@ const CAMP = read("src/pages/WhatsAppCampaigns.tsx");
 check("رسالةُ التذكير تُسجَّل بنوع التذكير لا بشريحة الصفحة (كانت manual دائماً منذ c3680c1)",
   /const kind = forReminder\?\.kind \?\? \(segment === "all" \? "manual" : segment\);/.test(CAMP) && /\n\s+kind,\n/.test(CAMP) && !/kind: segment === "all" \? "manual" : segment/.test(CAMP));
 check("  والتذكيرُ يخصّ **مجموعةَ حيوانه وحدَها** (إرسالٌ لغيره كان يُسجَّل بنوعه ويختمه «أُرسلت»)",
-  /const forReminder = fromReminder && activeTpl === fromReminder\.tpl && group\.pets\.some\(\(p\) => p\.id === fromReminder\.petId\) \? fromReminder : null;/.test(CAMP)
+  /const reminderFor = \(g: QueueGroup\) =>\s+fromReminder && activeTpl === fromReminder\.tpl && g\.pets\.some\(\(p\) => p\.id === fromReminder\.petId\) \? fromReminder : null;/.test(CAMP)
+  && /const forReminder = reminderFor\(group\);/.test(CAMP)
   && /if \(forReminder\) \{/.test(CAMP) && /const fr = forReminder;/.test(CAMP));
+check("  وبطاقةُ الهاتف تقول «تذكير» بنفس الشرط (كانت تقوله والقالبُ مبدَّل، والإرسالُ لا يختمه)",
+  /\{reminderFor\(remGroup\)\s+\? t\("campaigns\.remReady"/.test(CAMP));
 check("  والنوعُ والحيوانُ يُحملان من التذكير", /kind: prefill\.reminderKind \?\? null, petId: prefill\.targetPetId/.test(CAMP));
 check("  ويُسجَّل بحيوان التذكير لا بأوّل المجموعة (أخوه بنفس الهاتف كان يُختم «أُرسلت»)",
   /petId: forReminder\?\.petId \?\? group\.pets\[0\]\?\.id \?\? null,/.test(CAMP));
