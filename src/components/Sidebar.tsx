@@ -119,6 +119,9 @@ export function Sidebar() {
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
     // لوحةُ المنصّة (0151) — لمشغّل المنصّة وحده؛ الخادمُ يحرسها بنفسه أيضاً.
     { to: "/platform", icon: ShieldCheck, label: t("nav.platform", "لوحة المنصّة"), show: isPlatformAdmin(user?.email) },
+    // حقلُ المشغّل (0247): مساحتُه بباقة الحقل، يدخلها بضغطة. يُخفى حين تكون الباقةُ الحاليةُ
+    // فيها الحقلُ أصلاً (هو داخلُه، أو عيادةٌ بباقة حقل) — فرابطُ «/poultry» فوقه يكفي.
+    { to: "/platform/farm", icon: Bird, label: t("nav.poultry"), show: isPlatformAdmin(user?.email) && !has("farm") },
     // وللكادر الذي يملك إذنَ الصور (مديرٌ أو طبيبٌ أو من أُذن له) — المصوّرُ له قائمتُه فوق.
     { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), show: can("manageProductPhotos") && can("manageInventory") },
   ] as NavItem[]).filter((it) => it.show !== false);

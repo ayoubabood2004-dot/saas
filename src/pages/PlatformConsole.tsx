@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShieldCheck, Lock, Search, RefreshCw, LogIn, LogOut, Activity, KeyRound, Users, Wifi, Receipt, Images,
-  HandCoins, Boxes, Bike, CreditCard, Building2, ExternalLink, AlertTriangle, History,
+  HandCoins, Boxes, Bike, CreditCard, Building2, ExternalLink, AlertTriangle, History, Bird,
 } from "lucide-react";
 import { ImageLibraryManager } from "@/components/admin/ImageLibraryManager";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   isPlatformAdmin, platformPulse, platformActivity, platformLogins, platformEnter, platformLeave, platformContext,
-  type ClinicPulse, type PlatformActivityRow, type PlatformLoginRow, type PlatformContext,
+  platformWorkspaceIds,
+  type ClinicPulse, type PlatformActivityRow, type PlatformLoginRow, type PlatformContext, type PlatformWorkspaces,
 } from "@/lib/platformAdmin";
+import { platformFarmEnter } from "@/lib/platformFarm";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { cn, money, formatNum } from "@/lib/utils";
@@ -25,7 +27,18 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  * الدخولُ يقلب الجلسةَ كلَّها إلى تلك العيادة (auth_clinic بالخادم) فتشتغل كلُّ
  * شاشات النظام بلا استثناء — لذا يُعاد تحميلُ الصفحة بعده، ويظهر شريطٌ ثابت.
  * بالاتفاق مع العيادات: لا أثرَ للدخول عندها؛ السببُ يُحفظ بسجلّ المشغّل وحده.
+ *
+ * و«حقلي» (0247): مساحةُ دواجن للمشغّل بباقة «حقل» ثابتة، مفصولةٌ عن عيادته — يدخلها
+ * بنفس الدخول، فيرى ما يراه صاحبُ حقلٍ مشترك ويضيف إعداداته، وباقةُ عيادته لا تُمسّ.
+ * وتُعزل عن نبض العيادات: أرقامُ اللوحة أرقامُ الزبائن، لا أرقامُ المشغّل.
  * ==========================================================================*/
+
+/** نصُّ فشل دخول الحقل: الهجرةُ الناقصة تُسمّى، وغيرُها يُعرض كما جاء. */
+function farmEnterError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : "";
+  if (/does not exist|schema cache|pgrst202/i.test(msg) && /platform_farm_enter/i.test(msg)) return "شغّل هجرة 0247 على القاعدة أولاً.";
+  return msg || "فشل";
+}
 
 type Tab = "clinics" | "activity" | "logins" | "library";
 
@@ -53,10 +66,14 @@ export function PlatformConsole() {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("clinics");
   const [ctx, setCtx] = useState<PlatformContext | null>(null);
+  const [ws, setWs] = useState<PlatformWorkspaces>({ mine: null, all: [] });
+  const [farmBusy, setFarmBusy] = useState(false);
 
   useEffect(() => {
     if (!isPlatformAdmin(user?.email)) return;
     platformContext().then(setCtx).catch(() => setCtx(null));
+    // فشلُها (قبل 0247) يُبقي حقلي ضمن العيادات — قائمةٌ أطول لا أقصر، فلا تُحجب اللوحة.
+    platformWorkspaceIds().then(setWs).catch(() => setWs({ mine: null, all: [] }));
   }, [user?.email]);
 
   if (!isPlatformAdmin(user?.email)) {
@@ -75,6 +92,23 @@ export function PlatformConsole() {
     catch (e) { playWarning(); toast.error("تعذّر الخروج", e instanceof Error ? e.message : undefined); }
   };
 
+  const inMyFarm = !!ctx?.acting && ctx.acting === ws.mine;
+  // الجلسةُ كلُّها تتبدّل بالخادم — فالتحميلُ كامل كدخول عيادة، والوجهةُ الحقولُ مباشرةً.
+  const openFarm = async () => {
+    if (farmBusy) return;
+    setFarmBusy(true);
+    try {
+      const r = await platformFarmEnter();
+      playSuccess();
+      toast.success(r.created ? "انفتح حقلك" : "دخلت حقلك", "مفصول عن عيادتك — «ارجع لعيادتي» من الشريط فوق.");
+      window.location.assign("/poultry");
+    } catch (e) {
+      playWarning();
+      toast.error("تعذّر دخول الحقل", farmEnterError(e));
+      setFarmBusy(false);
+    }
+  };
+
   const TABS: { id: Tab; label: string; icon: typeof Building2 }[] = [
     { id: "clinics", label: "العيادات", icon: Building2 },
     { id: "activity", label: "الحركة", icon: Activity },
@@ -90,6 +124,10 @@ export function PlatformConsole() {
           <h1 className="font-display text-2xl font-extrabold text-ink">لوحة المنصّة</h1>
           <p className="text-sm text-ink-subtle">كل العيادات بنظرة — وادخل أيّها لتصلح ما يصعب على الطبيب.</p>
         </div>
+        <Button leftIcon={<Bird size={16} />} loading={farmBusy} onClick={() => { playTap(); void openFarm(); }} data-pfarm
+          title="مساحة دواجن لك بباقة الحقل — مفصولة عن عيادتك وباقتها">
+          {inMyFarm ? "افتح حقلي" : "ادخل حقلي (الدواجن)"}
+        </Button>
         <Button variant="secondary" leftIcon={<CreditCard size={16} />} onClick={() => { playTap(); navigate("/admin"); }}>الاشتراكات والأسعار</Button>
       </div>
 
@@ -97,9 +135,11 @@ export function PlatformConsole() {
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-warn-300 bg-warn-50 p-3 text-sm dark:border-warn-500/40 dark:bg-warn-500/10" data-acting>
           <AlertTriangle size={18} className="shrink-0 text-warn-600" />
           <p className="min-w-0 flex-1 font-semibold text-warn-800 dark:text-warn-200">
-            أنت الآن داخل عيادة «{ctx.clinicName ?? "بلا اسم"}» منذ {ago(ctx.since)}{ctx.reason ? ` — السبب: ${ctx.reason}` : ""}. الشاشات كلها تعرض بياناتها وتكتب فيها.
+            {inMyFarm
+              ? <>أنت الآن بحقلك «{ctx.clinicName || "حقلي"}» منذ {ago(ctx.since)} — مساحة مفصولة عن عيادتك، والشاشات كلها تعرضها وتكتب فيها.</>
+              : <>أنت الآن داخل عيادة «{ctx.clinicName ?? "بلا اسم"}» منذ {ago(ctx.since)}{ctx.reason ? ` — السبب: ${ctx.reason}` : ""}. الشاشات كلها تعرض بياناتها وتكتب فيها.</>}
           </p>
-          <Button size="sm" variant="secondary" leftIcon={<LogOut size={15} />} onClick={() => void leave()} data-leave>اخرج من العيادة</Button>
+          <Button size="sm" variant="secondary" leftIcon={<LogOut size={15} />} onClick={() => void leave()} data-leave>{inMyFarm ? "ارجع لعيادتي" : "اخرج من العيادة"}</Button>
         </div>
       )}
 
@@ -113,7 +153,7 @@ export function PlatformConsole() {
         ))}
       </div>
 
-      {tab === "clinics" ? <ClinicsTab acting={ctx?.acting ?? null} onShowActivity={() => setTab("activity")} />
+      {tab === "clinics" ? <ClinicsTab acting={ctx?.acting ?? null} hidden={ws.all} onShowActivity={() => setTab("activity")} />
         : tab === "activity" ? <ActivityTab />
         : tab === "library" ? <ImageLibraryManager />
         : <LoginsTab />}
@@ -122,7 +162,7 @@ export function PlatformConsole() {
 }
 
 /* ---------------------------------------------------------------- العيادات */
-function ClinicsTab({ acting, onShowActivity }: { acting: string | null; onShowActivity: (clinicId: string) => void }) {
+function ClinicsTab({ acting, hidden, onShowActivity }: { acting: string | null; hidden: string[]; onShowActivity: (clinicId: string) => void }) {
   const toast = useToast();
   const [rows, setRows] = useState<ClinicPulse[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -138,13 +178,20 @@ function ClinicsTab({ acting, onShowActivity }: { acting: string | null; onShowA
   };
   useEffect(() => { void load(); }, []);
 
+  // حقولُ المشغّلين (0247) ليست زبائن: لا تُعدّ ولا تُعرض بينهم — زرُّ «ادخل حقلي» فوق.
+  const clinics = useMemo(() => {
+    if (!rows) return null;
+    const skip = new Set(hidden);
+    return skip.size ? rows.filter((r) => !skip.has(r.clinicId)) : rows;
+  }, [rows, hidden]);
+
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return (rows ?? []).filter((r) => !s || (r.clinicName ?? "").toLowerCase().includes(s) || (r.email ?? "").toLowerCase().includes(s) || r.clinicId.includes(s));
-  }, [rows, q]);
+    return (clinics ?? []).filter((r) => !s || (r.clinicName ?? "").toLowerCase().includes(s) || (r.email ?? "").toLowerCase().includes(s) || r.clinicId.includes(s));
+  }, [clinics, q]);
 
   const kpi = useMemo(() => {
-    const all = rows ?? [];
+    const all = clinics ?? [];
     return {
       clinics: all.length,
       online: all.reduce((n, r) => n + r.onlineNow, 0),
@@ -153,7 +200,7 @@ function ClinicsTab({ acting, onShowActivity }: { acting: string | null; onShowA
       debts: all.reduce((n, r) => n + r.openDebtTotal, 0),
       zero: all.reduce((n, r) => n + r.zeroStock, 0),
     };
-  }, [rows]);
+  }, [clinics]);
 
   const enter = async () => {
     if (!target || busy) return;
@@ -180,7 +227,7 @@ function ClinicsTab({ acting, onShowActivity }: { acting: string | null; onShowA
       </div>
     );
   }
-  if (!rows) return <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>;
+  if (!clinics) return <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>;
 
   return (
     <div className="space-y-4">
@@ -396,6 +443,62 @@ function LoginsTab() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------- /platform/farm (0247) */
+/** رابطُ «حقول الدواجن» بقائمة المشغّل: يدخل حقلَه ثم يفتح الحقول — ضغطةٌ واحدة من أيّ شاشة.
+ *  `replace` لا `assign`: الرجوعُ بالمتصفّح لا يعيد الدخولَ مرّةً ثانية. */
+export function PlatformFarmEntry() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const admin = isPlatformAdmin(user?.email);
+  const [failed, setFailed] = useState<string | null>(null);
+  const started = useRef(false);
+
+  const go = async () => {
+    setFailed(null);
+    try { await platformFarmEnter(); window.location.replace("/poultry"); }
+    catch (e) { playWarning(); setFailed(farmEnterError(e)); }
+  };
+  useEffect(() => {
+    // مرّةً واحدة ولو رُكّب المكوّنُ مرّتين (StrictMode) — الدخولُ كتابةٌ بالخادم.
+    if (!admin || started.current) return;
+    started.current = true;
+    void go();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin]);
+
+  if (!admin) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-20 text-center">
+        <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-danger-50 text-danger-600 dark:bg-danger-500/15"><Lock size={26} /></span>
+        <h1 className="font-display text-xl font-extrabold text-ink">غير مصرّح</h1>
+        <p className="mt-2 text-sm text-ink-muted">هذه الصفحة مخصّصة لمشغّل المنصّة فقط.</p>
+        <Button className="mt-5" variant="secondary" onClick={() => navigate("/")}>الرجوع للرئيسية</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-md px-4 py-20 text-center" data-pfarm-entry>
+      <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-3xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><Bird size={26} /></span>
+      {failed ? (
+        <>
+          <h1 className="font-display text-xl font-extrabold text-ink">تعذّر دخول حقلك</h1>
+          <p className="mt-2 text-sm text-ink-muted">{failed}</p>
+          <div className="mt-5 flex justify-center gap-2">
+            <Button leftIcon={<RefreshCw size={15} />} onClick={() => { playTap(); void go(); }}>أعد المحاولة</Button>
+            <Button variant="secondary" onClick={() => navigate("/platform")}>لوحة المنصّة</Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <h1 className="font-display text-xl font-extrabold text-ink">ندخل حقلك…</h1>
+          <p className="mt-2 text-sm text-ink-muted">مساحة دواجن لك وحدك — مفصولة عن عيادتك، وباقة عيادتك ما تتغيّر.</p>
+        </>
       )}
     </div>
   );

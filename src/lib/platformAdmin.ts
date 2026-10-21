@@ -288,6 +288,31 @@ export async function platformLeave(): Promise<void> {
   forgetServerClinic();
 }
 
+/* ======================================================================
+ * حقلُ المشغّل (0247): مساحةُ دواجن له بباقة «حقل» ثابتة، مفصولةٌ عن عيادته.
+ * هنا ما يقرؤه الشريطُ (بحزمة الإقلاع) وحده: أيُّ المساحات للمشغّلين. والدخولُ
+ * نفسُه بـplatformFarm.ts — لا تناديه إلا لوحةُ المنصّة، وهي كسولة.
+ * ====================================================================== */
+
+export interface PlatformWorkspaces {
+  /** حقلي أنا — null إن لم أدخله قطّ. */
+  mine: string | null;
+  /** مساحاتُ كلّ المشغّلين — تُعزل عن نبض العيادات وعدّها. */
+  all: string[];
+}
+
+export async function platformWorkspaceIds(): Promise<PlatformWorkspaces> {
+  const client = sb();
+  if (!client) return { mine: null, all: [] };
+  const { data, error } = await client.rpc("platform_workspace_ids");
+  if (error) throw new Error(error.message);
+  const d = (data ?? {}) as Record<string, unknown>;
+  return {
+    mine: d.mine == null ? null : String(d.mine),
+    all: Array.isArray(d.all) ? d.all.map(String) : [],
+  };
+}
+
 export interface ClinicPulse {
   clinicId: string; clinicName: string | null; email: string | null;
   plan: string | null; periodEnd: string | null; trialEnd: string | null;

@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -5991,6 +5991,92 @@ chk "  ولا تكتب شيئاً: لا جدولَ تغيّر بالنداءات
     "$(node -e "const e=JSON.parse(require('fs').readFileSync('$AUF/expected.json','utf8'));console.log(e.counts.products+'|'+e.counts.invoices)")"
 $P -c "drop table if exists _audit_codes, _audit_gtin, _audit_out; drop function if exists _audit_call(uuid, timestamptz, timestamptz);" >/dev/null
 rm -rf "$AUF"
+
+# ── 0247: حقلُ المشغّل — مساحةُ دواجن له، مفصولةٌ عن عيادته، بنفس طريق الدخول ─────
+# الحارسُ (غيرُ المشغّل يُرفض ولا يُنشأ شيء)، والإنشاءُ مرّةً (حسابٌ واحد مهما تكرّر الدخول)،
+# والباقةُ «حقل» تُثبَّت بكلّ دخول، وعيادتُه وباقتُها لا تُمسّان، والكتابةُ بدور authenticated
+# تهبط بالحقل، وحسابُ المساحة بشكل GoTrue (لا null بحقلٍ نصّيّ) وبملفٍّ لا يظهر بدليل العيادات —
+# والملفُّ يكتبه محفّزُ handle_new_user كما بالإنتاج (منسوخٌ بأعمدة القالب: الدورُ هنا text).
+echo "▸ 0247: حقلُ المشغّل"
+$P -c "delete from platform_sessions; update _dvtest_flags set admin = false;
+       insert into subscriptions (clinic_id, plan, period, current_period_end, was_subscriber)
+         values ('$ADM', 'super', 'annual', now() + interval '300 days', true)
+         on conflict (clinic_id) do update set plan = 'super', period = 'annual',
+           current_period_end = now() + interval '300 days', was_subscriber = true;
+       create or replace function _t247_new_user() returns trigger language plpgsql security definer set search_path = public as \$fn\$
+       declare meta_role text := coalesce(new.raw_user_meta_data->>'role', 'owner');
+               acct text := case when meta_role = 'owner' then 'owner' else 'clinic' end;
+       begin
+         insert into public.profiles (id, full_name, role, phone, roles)
+         values (new.id, coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email,'@',1)), meta_role,
+                 nullif(new.raw_user_meta_data->>'phone',''), array[acct])
+         on conflict (id) do nothing;
+         return new;
+       end \$fn\$;
+       drop trigger if exists _t247_on_auth_user_created on auth.users;
+       create trigger _t247_on_auth_user_created after insert on auth.users for each row execute function _t247_new_user();" >/dev/null
+chk "غيرُ المشغّل لا يدخل حقلاً" \
+    "select left(_pf_try('$ADM', 'select platform_farm_enter()::text'), 7) || '|' || left(_pf_try('$ADM', 'select platform_workspace_ids()::text'), 7)" "guarded|guarded"
+chk "  ولا يُنشأ له حسابٌ ولا مساحة" \
+    "select (select count(*) from platform_workspaces)::text || '|' || (select count(*) from auth.users where email like '%@workspace.doctorvet.invalid')::text" "0|0"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل حقله — أوّلَ مرّةٍ يُنشأ" \
+    "select _pf('$ADM', 'select (platform_farm_enter()->>''created'')')" "true"
+WS=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select clinic_id from platform_workspaces where admin_id='$ADM' and kind='farm'" | tr -d '[:space:]')
+chk "  مساحةٌ ثانية لا عيادتُه ولا عيادةُ زبون" \
+    "select ('$WS' <> '' and '$WS' not in ('$ADM','$C1','$C2'))::text" "true"
+chk "  فتصير عيادتُه الحقلَ وبدور مدير" \
+    "select (_pf('$ADM', 'select auth_clinic()::text') = '$WS')::text || '|' || _pf('$ADM', 'select auth_role()')" "true|manager"
+chk "  والسياقُ والمعرّفُ يقولانها" \
+    "select (_pf('$ADM', 'select platform_context()->>''acting''') = '$WS' and _pf('$ADM', 'select platform_workspace_ids()->>''mine''') = '$WS' and _pf('$ADM', 'select (platform_workspace_ids()->''all'') ? ''$WS''') = 'true')::text" "true"
+chk "  وباقتُها «حقل» سنويةٌ حتى ٢٠٩٩ — لا تجربةَ تنقضي" \
+    "select plan || '/' || period || '/' || was_subscriber::text || '/' || (current_period_end = '2099-12-31 00:00:00+03')::text from subscriptions where clinic_id='$WS'" "farm/annual/true/true"
+chk "  وباقةُ عيادته لم تُمسّ" \
+    "select plan || '/' || (current_period_end > now() + interval '200 days')::text from subscriptions where clinic_id='$ADM'" "super/true"
+chk "  واسمُها «حقلي»، وبسجلّ الجلسات الداخلي سببُها" \
+    "select (select clinic_name from clinic_prefs where clinic_id='$WS') || '|' || (select count(*) from platform_session_log where admin_id='$ADM' and acting_clinic='$WS' and left_at is null and reason='حقلي (الدواجن)')::text" "حقلي|1"
+chk "حسابُ المساحة بشكل GoTrue: لا null بحقلٍ نصّيّ، بلا كلمة سرّ، محظورٌ، وبريدُه لا يُسلَّم" \
+    "select (aud = 'authenticated' and role = 'authenticated' and instance_id = '00000000-0000-0000-0000-000000000000'
+             and encrypted_password = '' and confirmation_token = '' and recovery_token = '' and email_change_token_new = ''
+             and email_change = '' and email_change_token_current = '' and reauthentication_token = '' and phone_change = ''
+             and phone_change_token = '' and not is_sso_user and not is_anonymous and banned_until > now() + interval '900 years'
+             and email like 'farm-%@workspace.doctorvet.invalid' and raw_app_meta_data->>'doctorvet_workspace' = 'farm')::text
+       from auth.users where id='$WS'" "true"
+chk "  وملفُّه (من المحفّز) owner لا clinic — فلا يظهر بدليل العيادات العامّ (0078)" \
+    "select (select role || ':' || array_to_string(roles, ',') from profiles where id='$WS') || '|' || (select count(*) from profiles where id='$WS' and ('clinic' = any(coalesce(roles, '{}'::text[])) or role = 'admin'))::text" "owner:owner|0"
+# الكتابةُ بدور authenticated فعلاً (الحزمةُ superuser تتجاوز RLS): حقلٌ يُضاف داخل المساحة يهبط بها.
+chk "داخلَ الحقل: حقلٌ يُضاف بدور authenticated" \
+    "select _rls_try('$ADM', 'insert into poultry_farms (name) values (''حقلُ المشغّل'')')" "rows:1"
+chk "  فيهبط بالمساحة لا بعيادته" \
+    "select (select count(*) from poultry_farms where name='حقلُ المشغّل' and clinic_id='$WS')::text || '|' || (select count(*) from poultry_farms where name='حقلُ المشغّل' and clinic_id <> '$WS')::text" "1|0"
+$P -c "update clinic_prefs set clinic_name = 'حقل التجربة' where clinic_id='$WS';
+       update subscriptions set plan = 'super', period = 'monthly', current_period_end = now() - interval '1 day' where clinic_id='$WS';" >/dev/null
+chk "الدخولُ الثاني لا يُنشئ شيئاً" \
+    "select _pf('$ADM', 'select (platform_farm_enter()->>''created'')') || '|' || (select count(*) from platform_workspaces)::text || '|' || (select count(*) from auth.users where email like '%@workspace.doctorvet.invalid')::text" "false|1|1"
+chk "  ويعيد الباقةَ «حقلاً» لو أُلغيت من لوحة الاشتراكات" \
+    "select plan || '/' || period || '/' || (current_period_end = '2099-12-31 00:00:00+03')::text from subscriptions where clinic_id='$WS'" "farm/annual/true"
+chk "  ولا يدهس اسماً سمّاه المشغّل" "select clinic_name from clinic_prefs where clinic_id='$WS'" "حقلالتجربة"
+chk "  وسجلُّ الجلسات: الأولى مقفلة والثانية مفتوحة" \
+    "select count(*) filter (where left_at is not null)::text || '/' || count(*) filter (where left_at is null)::text from platform_session_log where admin_id='$ADM' and acting_clinic='$WS'" "1/1"
+chk "النبضُ يراها كعيادة — فالواجهةُ تعزلها بـplatform_workspace_ids" \
+    "select count(*)::text from platform_pulse() where clinic_id='$WS'" "1"
+chk "الانتقالُ من الحقل لعيادة زبون بنفس الطريق" \
+    "select (_pf('$ADM', 'select (platform_enter(''$C1'')->>''clinic_id'')') = '$C1' and _pf('$ADM', 'select auth_clinic()::text') = '$C1')::text" "true"
+chk "والخروجُ يعيده لعيادته، وباقتُها كما كانت" \
+    "select _pf('$ADM', 'select (platform_leave()->>''was_acting'')') || '|' || (_pf('$ADM', 'select auth_clinic()::text') = '$ADM')::text || '|' || (select plan from subscriptions where clinic_id='$ADM')" "true|true|super"
+chk "الدالّتان definer بمسارٍ مثبَّت، وممنوعتان على anon" \
+    "select count(*) filter (where prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text || '|' || count(*) filter (where has_function_privilege('anon', p.oid, 'execute'))::text
+       from pg_proc p where proname in ('platform_farm_enter','platform_workspace_ids')" "2|0"
+chk "  والبوّابةُ ترفضها للمصوّر (ليست بقائمته)" \
+    "select split_part(_gate('$PHO', '/rpc/platform_farm_enter'), ':', 3)" "photographer_forbidden"
+chk "والجدولُ محميٌّ بلا سياسة، وحجبُه موثَّق" \
+    "select ((select relrowsecurity from pg_class where relname='platform_workspaces') and (select count(*) from pg_policies where tablename='platform_workspaces') = 0
+             and not exists (select 1 from verify_rls_coverage() v where v.\"الجدول\" = 'platform_workspaces'))::text" "true"
+$P -f "$MIG/0247_operator_farm_workspace.sql" >/dev/null
+chk "  والإعادةُ بلا أثر: مساحةٌ واحدة وحسابٌ واحد" \
+    "select (select count(*) from platform_workspaces)::text || '|' || (select count(*) from auth.users where email like '%@workspace.doctorvet.invalid')::text" "1|1"
+$P -c "drop trigger if exists _t247_on_auth_user_created on auth.users; drop function if exists _t247_new_user();
+       delete from platform_sessions; update _dvtest_flags set admin = false;" >/dev/null
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"

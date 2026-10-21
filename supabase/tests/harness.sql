@@ -630,9 +630,36 @@ create table if not exists login_events (
 create table if not exists subscriptions (
   clinic_id uuid primary key, plan text, period text, trial_ends_at timestamptz,
   current_period_end timestamptz, was_subscriber boolean not null default false);
+-- وأعمدةُ الإنتاج الباقية (مقيسةٌ ٢١/١٠ من information_schema): 0247 تكتب updated_at.
+alter table subscriptions add column if not exists updated_at  timestamptz not null default now();
+alter table subscriptions add column if not exists pet_limit   integer;
+alter table subscriptions add column if not exists wa_limit    integer;
+alter table subscriptions add column if not exists quota_start timestamptz;
 -- مشغّلُ الفحص — حسابٌ ثالث لا عيادةَ له.
 insert into auth.users(id) values ('33333333-3333-3333-3333-333333333333') on conflict do nothing;
 alter table auth.users add column if not exists email text;
+-- أعمدةُ GoTrue التي تكتبها 0247 حين تُنشئ حسابَ مساحة (مقيسةٌ ٢١/١٠ من الإنتاج،
+-- بأنواعها). بلاها تمرّ الدالّةُ هنا بجدولٍ لا يشبه جدولَ الإنتاج أو تسقط بعمودٍ مفقود.
+alter table auth.users add column if not exists instance_id                uuid;
+alter table auth.users add column if not exists aud                        varchar(255);
+alter table auth.users add column if not exists role                       varchar(255);
+alter table auth.users add column if not exists encrypted_password         varchar(255);
+alter table auth.users add column if not exists confirmation_token         varchar(255);
+alter table auth.users add column if not exists recovery_token             varchar(255);
+alter table auth.users add column if not exists email_change_token_new     varchar(255);
+alter table auth.users add column if not exists email_change               varchar(255);
+alter table auth.users add column if not exists email_change_token_current varchar(255);
+alter table auth.users add column if not exists reauthentication_token     varchar(255);
+alter table auth.users add column if not exists phone_change               text;
+alter table auth.users add column if not exists phone_change_token         varchar(255);
+alter table auth.users add column if not exists raw_app_meta_data          jsonb;
+alter table auth.users add column if not exists raw_user_meta_data         jsonb;
+alter table auth.users add column if not exists is_super_admin             boolean;
+alter table auth.users add column if not exists is_sso_user                boolean not null default false;
+alter table auth.users add column if not exists is_anonymous               boolean not null default false;
+alter table auth.users add column if not exists banned_until               timestamptz;
+alter table auth.users add column if not exists created_at                 timestamptz;
+alter table auth.users add column if not exists updated_at                 timestamptz;
 
 -- 0219/0220: الإقاماتُ بشكل الإنتاج (0002 + عمودُ العيادة بقيمته الافتراضية ومفتاحه،
 -- وسياستُها «الملكيّة» كما هي هناك) وسجلُّ الحركات (0070). الأقفاصُ صارت تُربط بها،

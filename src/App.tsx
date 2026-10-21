@@ -60,6 +60,8 @@ const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.L
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
+// «ادخل حقلي» (0247): رابطٌ بضغطة من القائمة — يدخل مساحةَ الدواجن ثم يفتح الحقول.
+const PlatformFarmEntry = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformFarmEntry })));
 const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })), ["cat"]);
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const StoreTrack = page(() => import("@/pages/StoreTrack").then((m) => ({ default: m.StoreTrack })));
@@ -299,6 +301,7 @@ function Shell() {
             <Route path="/subscribe" element={<Protected><Subscribe /></Protected>} />
             <Route path="/admin" element={<Protected><AdminBilling /></Protected>} />
             <Route path="/platform" element={<Protected><PlatformConsole /></Protected>} />
+            <Route path="/platform/farm" element={<Protected><PlatformFarmEntry /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
       </Suspense>
