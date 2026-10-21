@@ -1149,8 +1149,26 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
     (await repo.ensureCompany("رويال كانين", "c1")).id === (await repo.ensureCompany("\u200fرويال\u200bكانين", "c1")).id);
 }
 
+/* يومٌ ثابت لفحوص الوجبات والدفعات. منطقُها يُحكم باليوم (localISO): المنتهيةُ لا تصير تاريخَ
+ * المادة، والبيعُ يأخذ من الصالحة أوّلاً — وتواريخُها هنا مكتوبةٌ ثابتة يوم ٢٦/٩. فمرّ «٢٠٢٦-١٠-٢٠»
+ * يوم ٢١/١٠ وصار منتهياً: فحصُ الفصل احمرّ بلا تغييرٍ بالشِفرة، و`npm run build` (بناءُ Vercel)
+ * وقف لكلّ نشر. والقادمةُ مثله: ٥/١١ (الافتتاحية) و١/١٢ (الدفعةُ باليد، ووجبةُ «lb»). يومٌ ثابت
+ * يفحص المنطقَ نفسَه إلى الأبد، وتاريخٌ نسبيّ لليوم كان سيغيّر ما يُفحص كلَّ شهر. والوقتُ يمشي
+ * داخل اليوم (إزاحةٌ لا تجميد): شراءان متتاليان لا يتساويان إلا حيث يُقصد التعادل (أدناه). */
+const RealDateNow = Date;
+function atDay(iso) {
+  const off = RealDateNow.parse(iso) - RealDateNow.now();
+  globalThis.Date = class extends RealDateNow {
+    constructor(...a) { super(...(a.length ? a : [RealDateNow.now() + off])); }
+    static now() { return RealDateNow.now() + off; }
+  };
+  return () => { globalThis.Date = RealDateNow; };
+}
+
 console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزمة)");
 {
+  const undoDay = atDay("2026-10-10T09:00:00.000Z");
+  try {
   seed([P("lb", "سيفوتاكس الوجبات", "LB-1", { stock: 0, expiry_date: null })]);
   const a = await repo.recordPurchase([{ product_id: "lb", name: "سيفوتاكس الوجبات", qty: 10, purchase_price: 1, sell_price: 0, expiry_date: "2026-12-01" }], { company_name: "وجبة أ" });
   await repo.recordPurchase([{ product_id: "lb", name: "سيفوتاكس الوجبات", qty: 5, purchase_price: 1, sell_price: 0, expiry_date: "2027-06-01" }], { company_name: "وجبة ب" });
@@ -1161,6 +1179,7 @@ console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزم
   check("  وتعديلُ الفاتورة القديمة يُبقي تاريخَ وجبتها (batch_expiry)", items[0]?.expiry_date === "2026-12-01");
   // 0217 غيّرت القاعدة بقرار المالك: تاريخُ الرفّ = **أقربُ** دفعةٍ فيها رصيد (كانت «الأحدث»).
   check("  وتاريخُ الرفّ = أقربُ وجبةٍ فيها رصيد (0217)", (await repo.listProducts()).find((p) => p.id === "lb")?.expiry_date === "2026-12-01");
+  } finally { undoDay(); }
 
   /* شراءان بنفس الجزء من الألف من الثانية — آلةُ CI السريعة تصنعهما (مقيسٌ: purchased_at
    * 11:48:43.048Z للاثنين فاحمرّ الفحصُ أعلاه بلا تغييرٍ بالمشتريات). الخادمُ يختمهما بدقّة
@@ -1184,6 +1203,8 @@ console.log("▸ 0214 — الوجباتُ الخفيفة (مرآةُ الحزم
 
 console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
 {
+  const undoDay = atDay("2026-10-10T09:00:00.000Z"); // يومٌ ثابت — انظر atDay فوق
+  try {
   seed([P("la", "دفعات أ", null, { stock: 10, purchase_price: 100, expiry_date: "2026-11-05" })]);
   mem.delete("vp_demo_lots"); mem.delete("vp_demo_counts");
   const lotsOf = async (id) => (await repo.listProductLots(id)).filter((l) => l.qty > 0).sort((x, y) => (x.expiry_date ?? "").localeCompare(y.expiry_date ?? ""));
@@ -1240,6 +1261,7 @@ console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
   { const d = JSON.parse(mem.get(DB_KEY)); const x = d.products.find((q) => q.id === "lx"); x.pooled = true; x.stock = 0; mem.set(DB_KEY, JSON.stringify(d)); }
   check("  ومادةٌ صارت مجمَّعة تفقد دفعاتها", (await repo.listProductLots("lx")).length === 0);
   mem.delete("vp_session");
+  } finally { undoDay(); }
 }
 
 console.log("▸ 0215 — معدّلُ البيع (مرآةُ الحزمة)");
