@@ -3,8 +3,10 @@
 //
 // Called from the app when a clinic chooses a plan. Runs on the server so the
 // Wayl SECRET KEY never reaches the browser. It:
-//   1. authenticates the caller (their Supabase JWT) → the clinic id;
-//   2. prices the plan SERVER-SIDE (the client never states the amount);
+//   1. authenticates the caller (their Supabase JWT) → the clinic id, from
+//      auth_clinic() asked as the caller;
+//   2. prices the plan SERVER-SIDE from plan_prices (the client never states
+//      the amount);
 //   3. records a billing_orders row (service role);
 //   4. asks Wayl to create a payment link;
 //   5. returns the hosted payment URL for the browser to redirect to.
@@ -29,10 +31,6 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-// Server-side price table (USD) — the single source of truth for money. Keep in
-// sync with src/lib/plans.ts. Annual = 12 × monthly (no discount).
-const PLAN_USD: Record<string, number> = { basic: 30, advanced: 55, super: 78 };
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -60,25 +58,41 @@ Deno.serve(async (req) => {
   if (userErr || !userData?.user) return json({ error: "unauthorized" }, 401);
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-  // The clinic id = the member's clinic (fall back to their own id for solo owners).
-  let clinicId = userData.user.id;
-  const { data: membership } = await admin
-    .from("memberships").select("clinic_id").eq("user_id", userData.user.id).maybeSingle();
-  if (membership?.clinic_id) clinicId = membership.clinic_id;
+  // The clinic = auth_clinic(), asked AS THE CALLER — the function the
+  // subscription row on the subscribe screen is keyed by (get_or_init_subscription),
+  // operator-inside-a-clinic included. Reading memberships here a second way drifted
+  // from it: .maybeSingle() errors on two rows (an owner who is also staff elsewhere),
+  // so the payment fell back to the caller's own id, and suspended rows counted.
+  // No answer = no order: a fallback id would credit a workspace nobody chose.
+  const { data: clinicData, error: clinicErr } = await asUser.rpc("auth_clinic");
+  if (clinicErr || typeof clinicData !== "string" || !clinicData) {
+    return json({ error: "clinic_unresolved", detail: clinicErr?.message }, 503);
+  }
+  const clinicId: string = clinicData;
 
   // 2) Validate + price the plan server-side.
   let payload: { plan?: string; period?: string };
   try { payload = await req.json(); } catch { return json({ error: "bad_request" }, 400); }
   const plan = String(payload.plan ?? "");
   const period = payload.period === "annual" ? "annual" : "monthly";
-  if (!(plan in PLAN_USD)) return json({ error: "unknown_plan" }, 400);
+
+  // The price = the plan_prices row (0104) — the row the plans screen shows and
+  // the operator edits. A price table kept here drifted from it (super charged
+  // $78 / $936 after plans.ts moved it to $100 / $1000; operator edits never
+  // reached the charge). No row = not for sale; a failed read = no charge at a
+  // guessed price.
+  const { data: priceRow, error: priceErr } = await admin
+    .from("plan_prices").select("monthly_usd,annual_usd").eq("plan", plan).maybeSingle();
+  if (priceErr) return json({ error: "price_unavailable", detail: priceErr.message }, 503);
+  if (!priceRow) return json({ error: "unknown_plan" }, 400);
+  const usd = Number(period === "annual" ? priceRow.annual_usd : priceRow.monthly_usd);
+  if (!Number.isFinite(usd) || usd <= 0) return json({ error: "price_unavailable" }, 503);
 
   // Live USD→IQD rate from app_config (admin-editable), falling back to env/default.
   const { data: cfg } = await admin.from("app_config").select("value").eq("key", "usd_rate").maybeSingle();
   const RATE = Number(cfg?.value) || Number(Deno.env.get("WAYL_USD_RATE") ?? "1535");
 
   const months = period === "annual" ? 12 : 1;
-  const usd = PLAN_USD[plan] * months;
   const amountIqd = Math.max(1000, Math.round(usd * RATE));
   const referenceId = crypto.randomUUID();
 
