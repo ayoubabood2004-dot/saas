@@ -69,7 +69,11 @@ begin
          -- فالحالةُ النهائية للفحص هي المكسورة.
          'store_catalog', 'store_front', 'store_place_order', 'store_order_track',
          'clinic_directory', 'clinic_staff_public', 'doctor_busy_slots',
-         'track_journey', 'react_journey', 'ingest_device_message')
+         'track_journey', 'react_journey', 'ingest_device_message',
+         -- `public_pricing` (0250): أسعارُ الباقات للزائر بلا حساب — الموقعُ يسألها بالمفتاح العامّ.
+         -- غيابُها هنا سحبها عن anon عند إعادة هذه الهجرة بالحزمة (بوستغريس الحقيقيّ أمسكه)، وأيُّ
+         -- إعادةٍ يوماً بالإنتاج كانت ستُسقط أسعارَ الموقع الحيّة بصمت إلى أسعار البناء.
+         'public_pricing')
        and has_function_privilege('anon', p.oid, 'execute')
   loop
     -- امتيازُ anon يأتي من PUBLIC (الافتراضيّ لكل دالّة)، فسحبُه عن anon وحده
