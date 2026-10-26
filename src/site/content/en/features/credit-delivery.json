@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Credit sales and delivery for veterinary clinics | doctorVet",
+    "description": "Take part payment and the rest is recorded as a debt in the customer's name, collected in parts from their ledger. Send orders with a driver or a courier company, see what each one owes you, and money only enters your cash when it reaches you. On the Super plan."
+  },
+  "hero": {
+    "eyebrow": "Sales & stock",
+    "title": "Every debt under a name. Every delivery followed until the money is in.",
+    "sub": "When a customer pays part of an invoice, the rest is recorded as a debt in their name and you collect it in parts from their ledger. A delivery goes out with a driver who hands you the cash when he gets back, or with a courier company that settles later, and the money only enters your cash when it actually reaches you."
+  },
+  "pains": {
+    "title": "When money owed lives in someone's memory",
+    "items": [
+      {
+        "title": "“Who owes us, and since when?”",
+        "body": "The debt is in a notebook by the till or in the memory of whoever made the sale, and the customer says they paid half last week. Here each customer has a ledger of open invoices, what they paid and what they still owe, sorted by the largest balance with the date of the oldest debt."
+      },
+      {
+        "title": "“The driver is back. How much should he hand over?”",
+        "body": "Three orders went out with him and one came back. The delivery board groups what's on the road per driver with the cash expected from each. Receive it order by order or all together, and a returned order puts its goods back in stock."
+      },
+      {
+        "title": "“The courier company says it paid everything”",
+        "body": "The company delivers to your customers today and settles weeks later, sometimes in parts. Each company has a statement: what it owes now, what it has paid before, and the value of what went out with it, item by item."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Sell on credit or for delivery",
+        "body": "At the till choose “Partial” and enter what the customer pays now, or choose “Delivery”. Both need the customer's name, so no debt or order is left without an owner."
+      },
+      {
+        "title": "Prepare and send the order",
+        "body": "Pick the driver or company now or later, pick the zone to fill in its fee, and print a slip from the delivery board showing the amount to collect at the door. Stock comes off the shelf at the moment of sale."
+      },
+      {
+        "title": "Record the money when it arrives",
+        "body": "When the driver hands over the cash, you record it and it enters the cash drawer on that date. A company order is marked “Delivered to customer” and its amount stays owed by the company until you collect it, in full or in parts."
+      },
+      {
+        "title": "Collect debts from the customer's ledger",
+        "body": "Open the customer's ledger, tap “Settle” on the invoice, and enter the amount and method. If you agree to drop part of a debt, record it as a debt discount with its reason, within a cap you set."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's inside credit and delivery",
+    "groups": [
+      {
+        "title": "Credit sales and the debt ledger",
+        "items": [
+          {
+            "title": "Part payment at the till",
+            "body": "Lower the amount paid, or pick half or a quarter, and the rest is recorded as a debt in the customer's name. Before you save, the checkout button shows what they pay now and what they will owe. A debt can't be saved without a name."
+          },
+          {
+            "title": "A ledger per customer",
+            "body": "A customer's debts are grouped by phone number, or by name when there is no number. The list is sorted by the largest balance, shows the date of the oldest debt, and searches by name or phone."
+          },
+          {
+            "title": "A clear statement for each customer",
+            "body": "Total invoiced, total paid, what's still owed and how many debts are open. Invoices run oldest first like a paper ledger, and each one opens in full with its lines."
+          },
+          {
+            "title": "Pay in parts",
+            "body": "Record any amount up to what's left, in cash, card or bank transfer, with quick buttons for half or all of the balance. You see what will remain before you record the payment."
+          }
+        ]
+      },
+      {
+        "title": "Debt discount",
+        "items": [
+          {
+            "title": "Everything on screen before you save",
+            "body": "The invoice's profit and its share of the total, what the customer has paid, what they still owe across all their invoices, earlier discounts and their last payment."
+          },
+          {
+            "title": "A profit cap you set",
+            "body": "The clinic owner sets, from their own account, the largest share of an invoice's profit that may be discounted; if it isn't set, the cap is the whole profit. Within it a manager or the manager PIN can discount; above it only the owner, with a written note and an explicit acknowledgement."
+          },
+          {
+            "title": "A reason for each discount, and cancelling erases nothing",
+            "body": "Pick a reason: settlement deal, regular customer, customer hardship, disputed amount, or other with a note, and record it with a payment made now or as a discount alone. Cancelling restores the debt and leaves the line struck through with who cancelled and why, and the reports group discounts by approver and by reason."
+          }
+        ]
+      },
+      {
+        "title": "Delivery with a driver or a company",
+        "items": [
+          {
+            "title": "A delivery order from the sale screen",
+            "body": "Address, zone and its fee, whether the fee stays with the clinic (added to the invoice) or goes to the driver, any amount paid in advance, and the courier's order number, which you can scan from their waybill instead of typing."
+          },
+          {
+            "title": "A board by order stage",
+            "body": "Separate sections for drivers and companies. Preparing, then on the road grouped by driver or company with the cash expected from each, then completed and returned. On top: cash on the road, owed by companies, received today and returned today. With branches, you see the selected branch's orders."
+          },
+          {
+            "title": "Driver hand-over and returns",
+            "body": "Receive the cash for one order, or for everything a driver carries at once after a confirmation that states the amount and the number of orders. A returned order cancels its invoice and puts the goods back in stock. Change the driver without touching the money, and a manager can edit an order's items until it is completed."
+          },
+          {
+            "title": "A printable delivery slip",
+            "body": "An A5 sheet with your logo, the customer's name and phone, zone and address, the amount to collect at the door in large type, what the driver hands back to the clinic, and two signature lines."
+          },
+          {
+            "title": "Orders from your online store",
+            "body": "Accepting an order from your clinic's store creates the invoice and the delivery order in one step, and it appears on the delivery board with the rest."
+          }
+        ]
+      },
+      {
+        "title": "Company accounts and search",
+        "items": [
+          {
+            "title": "A statement for each courier company",
+            "body": "What it owes now, what it has paid before, the value of goods it delivered and how many came back. View what went with it by product (quantity and in how many orders) or by order, at the prices of the sale day."
+          },
+          {
+            "title": "Full or partial collection",
+            "body": "Record what the company paid, in cash, card or bank transfer, with a note such as the transfer number. It pays off the company's oldest orders first and the rest stays owed. A manager can undo a collection recorded by mistake: the amount goes back to the company's balance and the entry stays in the log, marked as undone."
+          },
+          {
+            "title": "Search every order",
+            "body": "By customer name, phone in any format, order number (BX-1234 and bx 1234 match), invoice number, address or note. It covers orders from day one, and you can narrow it to one company, driver or status."
+          },
+          {
+            "title": "Delivery money is not a customer debt",
+            "body": "Orders still on the road, or delivered and still owed by a company, appear on the debts screen as separate lines, not under the customer's name, so nobody gets called about money they already paid the driver."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "super",
+  "planNote": "Credit sales, the customer debt ledger, debt discounts, delivery with drivers and companies, and company statements are all on the Super plan only. On Advanced the till doesn't show the Partial and Delivery options, the Debts and Delivery tabs are hidden, and split payment across several methods is still there. The ledger of what your clinic owes its suppliers is on every plan. The 14-day trial unlocks everything, no card needed.",
+  "mock": {
+    "title": "Debts",
+    "rows": [
+      { "label": "Total outstanding", "value": "1,840", "tone": "warn" },
+      { "label": "Customers who owe", "value": "6", "tone": "info" },
+      { "label": "Credit out for delivery", "value": "320 · 3 orders · not a debt", "tone": "info" },
+      { "label": "Owed by courier companies", "value": "465 · 4 orders", "tone": "info" },
+      { "label": "Abu Khaled · 3 invoices", "value": "owes 1,230", "tone": "bad" },
+      { "label": "Sara · part paid", "value": "owes 150", "tone": "warn" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Are credit sales and delivery on every plan?",
+      "a": "No, only on Super. On Advanced the till doesn't show the Partial and Delivery options, and the Debts and Delivery tabs don't appear. You can try all of it for 14 days without a card before you choose."
+    },
+    {
+      "q": "I used credit during the trial and then chose another plan. What happens to those debts?",
+      "a": "They stay stored in your account, and on Advanced the invoices themselves stay in the invoice list. The debt ledger and the delivery board are hidden until you move to Super, and then they come back as you left them."
+    },
+    {
+      "q": "Do I need an internet connection to sell and record payments?",
+      "a": "Yes. Sales, debt payments and recording what a driver or company hands over all need a connection. If it drops, you see a clear message and try again, and retrying a sale doesn't create a second invoice."
+    },
+    {
+      "q": "Our courier company settles monthly, in parts. Does this fit?",
+      "a": "Yes. Add it as a company, not a driver. Its orders are marked “Delivered to customer” without any cash coming in, and the amount stays owed by the company. Record each payment from its card; it pays off the oldest orders first, and the statement always shows what's left. Undoing a collection recorded by mistake is for managers only."
+    },
+    {
+      "q": "Who can write off part of a customer's debt?",
+      "a": "A manager, or the manager PIN on the front-desk device, within a profit cap the clinic owner sets. Above the cap only the owner, from their own account, with a note and an acknowledgement. Every discount is saved with who approved it and why. An invoice with an open delivery order can't be discounted, because the one who owes is the driver or the company."
+    },
+    {
+      "q": "Does the system message customers about their debts?",
+      "a": "No. The debts screen shows each customer's phone next to their name and balance, and contacting them is up to you. There is no ready-made WhatsApp message for debts."
+    }
+  ],
+  "related": ["pos", "store", "reports"]
+}

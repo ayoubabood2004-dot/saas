@@ -1,0 +1,177 @@
+{
+  "meta": {
+    "title": "Reception & appointments for vet clinics | doctorVet",
+    "description": "A daily reception board where you drag cases between columns, a monthly calendar of reminders, booking requests from owners' accounts that you confirm or decline, and a follow-up link for owners. On every plan."
+  },
+  "hero": {
+    "eyebrow": "Before the visit",
+    "title": "Know who's in your clinic now, and who's coming today",
+    "sub": "A daily board where you drag cases between care, boarding and discharge, booking requests from owners' accounts that you confirm or decline, and a follow-up link that lets owners check on their pet without calling."
+  },
+  "pains": {
+    "title": "Does this happen in your clinic?",
+    "items": [
+      {
+        "title": "“Who's in right now? Who left?”",
+        "body": "Cases under treatment, animals staying over and the ones discharged this morning are split between a notebook and the on-duty vet's memory. The question comes back at every shift change, and answering it takes a walk past the cages."
+      },
+      {
+        "title": "Booking requests scattered across calls and chats",
+        "body": "Nobody is sure which appointment was confirmed, who showed up and who didn't. And there's no number telling you how much of the doctor's time goes to bookings nobody came to."
+      },
+      {
+        "title": "The phone rings while the vet is in surgery",
+        "body": "The owner is worried and has every right to ask: has it started, is he out safely, when can I pick him up? But every call pulls the vet away, or keeps reception from the person standing at the desk."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Register the case on arrival",
+        "body": "Owner name and phone, one or more animals, and the reason for the visit. Then choose where it goes: medical care, therapeutic boarding, boarding, or just open a record for future visits."
+      },
+      {
+        "title": "Move it on the board",
+        "body": "The card appears in its column straight away. Drag it to another column when its status changes, and on discharge the system asks: recovered or deceased?"
+      },
+      {
+        "title": "Confirm booking requests",
+        "body": "An owner's request appears at the top of the reception screen with an alert. Confirm or decline it, then open the ready confirmation message in WhatsApp and send it in one tap."
+      },
+      {
+        "title": "Mark arrivals and keep the owner posted",
+        "body": "On the day's bookings timeline: arrived, no-show, or visit completed. From the visit page, start a follow-up journey, then copy its link and send it to the owner on WhatsApp."
+      }
+    ]
+  },
+  "caps": {
+    "title": "Reception in detail",
+    "groups": [
+      {
+        "title": "The daily board and walk-ins",
+        "items": [
+          {
+            "title": "Four columns, drag and drop",
+            "body": "Under medical care, therapeutic boarding, boarding, and completed or discharged, each with its case count on top. Drag a card with a mouse or a finger, and tap it to open the animal's file."
+          },
+          {
+            "title": "Discharge outcome",
+            "body": "Drop a case on the “completed or discharged” column and you're asked: recovered or deceased? A deceased animal's birthday no longer shows on the calendar. The card stays for 14 days from discharge so you can drag it back if the animal returns, then it leaves the board only. Its file and invoices stay as they are."
+          },
+          {
+            "title": "Search the board",
+            "body": "By pet name, serial or microchip number, or the owner's name or phone. With more than one branch, the board shows the selected branch's cases, plus any not assigned to a branch."
+          },
+          {
+            "title": "New case registration",
+            "body": "A new owner, or an existing animal found by its serial number. Several animals for the same owner in one registration, each with photo, allergies, health status, diagnosis and symptoms, plus a cage number for boarding, saved to the animal's file straight away."
+          },
+          {
+            "title": "A draft kept on the device",
+            "body": "What you type during registration is saved on the device. If the page reloads, you're offered to restore it or delete it, and it's never restored without asking."
+          }
+        ]
+      },
+      {
+        "title": "Monthly calendar and reminders",
+        "items": [
+          {
+            "title": "The month at a glance",
+            "body": "Each day carries coloured dots for vaccines, deworming, birthdays and reminders, a badge with its case count, and a red mark if anything is overdue. A boarding animal shows on every day of its stay, and a strip above the calendar counts what's due today and what's overdue, jumping to the oldest in one tap."
+          },
+          {
+            "title": "The selected day in full",
+            "body": "Tap any day to see its reminders and cases by name. Each row with an owner's number has a WhatsApp button that opens a ready message, and “Done” on a vaccine or deworming dose opens the dose window that asks when the next dose is due."
+          },
+          {
+            "title": "Due doses and quick reminders",
+            "body": "A treatment case whose next dose is due shows “dose due now”, and you record it in one tap. You can also add a one-line reminder to any day without leaving the calendar."
+          }
+        ]
+      },
+      {
+        "title": "Booking requests and the bookings timeline",
+        "items": [
+          {
+            "title": "Booking in four steps",
+            "body": "From a free account, the owner picks the pet, then a service such as a consultation, vaccination, surgery or home visit, then the clinic, doctor and time, and finally reviews the request with an optional note about symptoms."
+          },
+          {
+            "title": "Nearest free slot",
+            "body": "The owner finds a clinic by name or city, and clinics that already treat their pets come first. Each doctor shows their next free time with a button to book it, each day shows how many slots are open, and the slot is checked again before the request is saved."
+          },
+          {
+            "title": "Requests wait for your decision",
+            "body": "A new request appears at the top of the reception screen, with a counter in the sidebar, a sound, and a browser notification if you allow it. You see the service, doctor, time and the owner's note, and confirm or decline it in one tap."
+          },
+          {
+            "title": "A day timeline with a “now” line",
+            "body": "Every booking at its time with the service, doctor and the owner's note, and on today's schedule a red line between what's past and what's ahead. Buttons for arrived, no-show, visit completed, and “came after all” for someone marked absent by mistake, plus call and WhatsApp."
+          },
+          {
+            "title": "Attendance numbers",
+            "body": "Bookings for the day or month, who's waiting, who attended with the attendance rate, and no-shows, with filters by status. The month view shows each day's booking count, and one tap opens its timeline."
+          }
+        ]
+      },
+      {
+        "title": "The owner's follow-up link",
+        "items": [
+          {
+            "title": "Stages for each kind of visit",
+            "body": "Check-up, surgery, grooming, lab tests or boarding, each with its own stages from arrival to “ready for pickup”. You move to the next stage with one large button, and the owner's page refreshes every 15 seconds while it's open."
+          },
+          {
+            "title": "Reassurance in one tap, replies in emoji",
+            "body": "Ready-made reassurance messages such as all is well, ate and drank, or sleeping comfortably, or a photo from the device's camera. The owner replies with an emoji only, and you see whether and when they opened the link."
+          },
+          {
+            "title": "What never shows",
+            "body": "No diagnosis, results or prices on the page, and no box for free-text messages. Hard news is never sent as a message: “close quietly” ends the link at once with no message, and the phone is the channel. The link expires 48 hours after you close the journey."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "On every plan, Basic included: the daily board, case registration, the monthly calendar with its reminders, booking requests from owners, the bookings timeline and the follow-up link, with their ready messages sent in one tap on WhatsApp. The owner's account they book from is free for them. The reminders hub that gathers everything due across the clinic, upcoming bookings included, and WhatsApp campaigns are on the Super plan. The 14-day free trial opens all of it, no card needed.",
+  "mock": {
+    "title": "Bookings — today",
+    "rows": [
+      { "label": "09:40 · Mishu · Consultation", "value": "No-show", "tone": "bad" },
+      { "label": "10:00 · Lulu · Vaccination", "value": "Arrived", "tone": "ok" },
+      { "label": "10:20 · Simba · Consultation", "value": "Confirmed", "tone": "info" },
+      { "label": "11:00 · Nimr · Surgery", "value": "Awaiting confirmation", "tone": "warn" },
+      { "label": "Attendance rate", "value": "50%" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does the owner need an account to book?",
+      "a": "Yes, a free owner account created with an email address. Animals you've registered under their phone number are linked to it when the same number is on their account, and from there they choose your clinic, the doctor and the time. The request reaches your reception screen for you to confirm or decline."
+    },
+    {
+      "q": "Can reception enter a booking for someone who phones in?",
+      "a": "No. The bookings timeline currently shows only the requests owners send from their accounts. For a caller, add a one-line reminder on the day of their visit in the monthly calendar, and register the case on the board when they arrive. The same goes for online bookings: marking one “arrived” on the timeline doesn't add it to the board."
+    },
+    {
+      "q": "Can I set my working hours and appointment length?",
+      "a": "Not currently. Booking from an owner's account offers 20-minute slots from 9:00 to 17:00 on every day of the week, from tomorrow up to 12 days ahead, for each doctor separately. Every request comes to you to confirm or decline, so you can decline any time that doesn't suit your clinic."
+    },
+    {
+      "q": "Does the owner get a confirmation or reminder?",
+      "a": "Nothing goes out without someone on your team. Every request and booking with the owner's number has a WhatsApp button that opens a ready confirmation with the owner's name, the pet's name, the day and the time, and staff send it in one tap. To remind them before the visit, the reminders hub on the Super plan lists upcoming bookings alongside everything else that's due, each with a ready message sent in one tap."
+    },
+    {
+      "q": "What does the owner see on the follow-up link?",
+      "a": "Their pet's name and your clinic's name, the current stage, the reassurance messages and photos you send, and a button to call the clinic if its number is on file. They see no diagnosis, results or prices, need no account, and can reply with an emoji only. The page and the ready messages are in Arabic, currently worded in Iraqi dialect."
+    },
+    {
+      "q": "Will I know about a new request if I'm not on the reception screen?",
+      "a": "Yes, as long as doctorVet is open on the device. It checks for new requests about every 45 seconds, shows a counter in the sidebar, plays a sound, and sends a browser notification if you allow it."
+    }
+  ],
+  "related": ["owners", "hospital", "vaccines"]
+}

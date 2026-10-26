@@ -1,0 +1,172 @@
+{
+  "meta": {
+    "title": "WhatsApp messages & reminders for vet clinics | doctorVet",
+    "description": "Ready messages to pet owners from the calendar, bookings, lab results and treatment boards, sent in one tap from your clinic's WhatsApp on every plan. On Super, a reminders hub that gathers everything due, plus campaigns and your clinic's saved templates."
+  },
+  "hero": {
+    "eyebrow": "After the visit",
+    "title": "A ready message for every owner, sent in one tap from your clinic's WhatsApp",
+    "sub": "Appointment confirmations, lab results, vaccine reminders, birthday wishes: doctorVet writes the message from the pet's file and opens it in your clinic's WhatsApp, in the owner's chat, and you press send. On Super, a reminder list that builds itself from your clinic's data, and campaigns for pets due a vaccine or owners who stopped coming."
+  },
+  "pains": {
+    "title": "What slips between the notebook and the phone",
+    "items": [
+      {
+        "title": "\"He missed the booster, and nobody reminded him\"",
+        "body": "Reminding takes someone who remembers to remind: who is due this week, what's the number, what do we write? So the date passes. Here the pet that's due shows on the reception calendar, with a button beside it that opens a ready message naming the pet and the vaccine."
+      },
+      {
+        "title": "\"We type the same message from scratch every day\"",
+        "body": "Copy the number from the notebook, then the greeting, the name, the date, then a typo in a number or a name. Here the text comes from the pet's file, and a number saved with its local leading zero or with spaces is turned into the international WhatsApp format using your clinic's country code."
+      },
+      {
+        "title": "\"Did anyone message him? Who?\"",
+        "body": "Two colleagues send the same reminder to the same person, or nobody does because each assumed the other had. In the reminders hub (Super) a reminder moves to Sent on every device in the clinic, and campaigns show the last-contact date next to every owner."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "doctorVet prepares the message",
+        "body": "There's a WhatsApp button on calendar reminders, bookings and booking requests, lab results, the birthdays card and the treatment boards. The text is already written with the pet's name and your clinic's name as saved in settings, plus the date or the result."
+      },
+      {
+        "title": "You tap and check the text",
+        "body": "Your clinic's WhatsApp opens in the owner's chat with the text in place. Edit it if you like, then press send. Nothing goes out without a tap from your team."
+      },
+      {
+        "title": "The message is logged",
+        "body": "Every message you open from the system is recorded: to whom, when and what kind. If the browser blocks WhatsApp from opening, which can happen on iPhone and iPad, you're told straight away and nothing is counted as sent, so you tap again."
+      },
+      {
+        "title": "On Super: the whole list",
+        "body": "Open the reminders hub and see everything due, sorted from overdue to later. Tap Remind on a line and its message opens ready, with the detail and date, the time if it has one, and a send button. Send it, then go back to the list for the next one."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's in WhatsApp messaging",
+    "groups": [
+      {
+        "title": "One-tap messages from your working screens · every plan",
+        "items": [
+          {
+            "title": "Calendar reminders",
+            "body": "Tap a day on the reception calendar to see its vaccines, deworming doses, birthdays and your reminders. Next to each line is a WhatsApp button with a message naming the pet and the vaccine whenever the owner has a number, and anything past its date carries an Overdue tag."
+          },
+          {
+            "title": "Appointment confirmations",
+            "body": "On bookings in the day timeline, and on every booking request from an owner: a confirmation with their name, the pet's name, the day, the time and your clinic's name."
+          },
+          {
+            "title": "Lab results to the owner",
+            "body": "One message with each value, its unit and normal range, and a one-word verdict with an arrow, or a quick test's positive or negative result, then the vet's notes."
+          },
+          {
+            "title": "Patients who stopped coming",
+            "body": "The treatment boards have a lost-to-follow-up section for cases that stopped coming. From there, a gentle message tells the owner how many doses are left in the treatment plan and offers another time if they can't make it."
+          },
+          {
+            "title": "Birthdays and case cards",
+            "body": "The week's birthdays card on today's dashboard sends a greeting with the pet's name and your clinic's, and never shows a pet recorded as deceased. Every case card on the reception board has a button that opens the owner's chat with a greeting from your clinic."
+          },
+          {
+            "title": "Reminders you write yourself",
+            "body": "A reminder in your own words, like changing a dressing, from the pet's file or today's dashboard, once or daily, weekly or monthly, or a quick note on a calendar day. If it's for a specific pet, a WhatsApp button to its owner appears beside it."
+          }
+        ]
+      },
+      {
+        "title": "Reminders hub · Super plan",
+        "items": [
+          {
+            "title": "Everything due, in one list",
+            "body": "Scheduled vaccines, deworming doses and surgery follow-ups show however far ahead they fall, alongside bookings within 60 days, manual reminders, and birthdays within 30 days. One list that builds itself from your clinic's data."
+          },
+          {
+            "title": "Sorted by time, filtered in a tap",
+            "body": "Overdue, today, tomorrow, this week, this month and later. The count cards at the top filter the list, alongside a filter by type, search by pet, owner or phone, and a bar showing how many of today's and overdue owners you've contacted."
+          },
+          {
+            "title": "Statuses read from your clinic's data",
+            "body": "Pending, then Sent, then Came when the vaccine is given, a visit is recorded after the follow-up date, or the booking is completed. A sent reminder with no sign 3 days after both its date and the send moves to Didn't come, as does a cancelled or no-show booking, and you remind the owner again in one tap. The vet can also set the status by hand."
+          },
+          {
+            "title": "A mark every device sees",
+            "body": "A sent reminder shows as Sent on every device in the clinic. Reminder done records what you handled by phone or in person without writing anything to the medical record, and stays visible with an undo button."
+          }
+        ]
+      },
+      {
+        "title": "WhatsApp campaigns & your clinic's templates · Super plan",
+        "items": [
+          {
+            "title": "Ready-made segments",
+            "body": "Vaccine due within 30 days or overdue, deworming the same, birthdays within 30 days, and Inactive for pets with no visit recorded in 180 days, plus a species filter and search by name or phone."
+          },
+          {
+            "title": "One message per owner",
+            "body": "An owner with three pets gets one message naming all of them, not three. Pets are grouped by phone number, and you can switch grouping off."
+          },
+          {
+            "title": "Names filled in for each person",
+            "body": "Write the message once with the owner-name and pet-name variables and each person gets their own names, with your clinic's name taken from settings. Open the page from a reminder and three more variables fill in from it: the detail (such as the vaccine), the date and the time."
+          },
+          {
+            "title": "Ten wordings per template",
+            "body": "Birthday greeting, vaccine reminder, deworming reminder and general offer each have ten wordings: the suggested one changes from day to day, and the Another wording button cycles through them. The reminders hub's messages also have ten wordings per type, varying from one reminder to the next."
+          },
+          {
+            "title": "Your clinic's templates",
+            "body": "Save your own message under a name, like Summer offer, and find it on every device in the clinic, pick it in one tap, and update or delete it whenever you like. The list holds up to 100 templates."
+          },
+          {
+            "title": "The send queue",
+            "body": "The people you select line up in a queue, each with a send button, and a counter shows how many are sent out of how many. In the audience list, each name shows the date of your last WhatsApp message to them, and anyone with no number is flagged."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "On every plan, Basic included: one-tap WhatsApp messages from the reception calendar and case cards, bookings and booking requests, lab results, treatment boards, the birthdays card, and the reminders you write yourself. On Super only: the reminders hub, WhatsApp campaigns and your clinic's saved templates, along with the messages for online-store orders and delivery drivers, since the store and delivery are Super features. On every plan, each message goes out from your clinic's WhatsApp when someone on your team taps send. The 14-day free trial unlocks all of it, no card needed.",
+  "mock": {
+    "title": "Reminders hub · Super plan",
+    "rows": [
+      { "label": "Misho · rabies vaccine", "value": "3 days overdue · message ready", "tone": "bad" },
+      { "label": "Lulu · deworming dose", "value": "Today · sent", "tone": "info" },
+      { "label": "Bunduq · surgery follow-up", "value": "Tomorrow · stitch removal", "tone": "warn" },
+      { "label": "Simba · 3-in-1 vaccine", "value": "Came · vaccine given yesterday", "tone": "ok" },
+      { "label": "Contacted today", "value": "4 of 7 due", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does the system send messages by itself?",
+      "a": "No, and we say so plainly. doctorVet builds the list of who's due and writes each message with the owner's name, then opens it in your clinic's WhatsApp, and your staff press send, one message at a time. It records the message the moment WhatsApp opens and can't see what happens inside WhatsApp after that; if you close the chat without sending, tap the button again, or Resend in the reminders hub's Sent section. The upside: when the device's WhatsApp is on the clinic's number, the message comes from a number the owner knows, so they reply to you directly."
+    },
+    {
+      "q": "Do I need WhatsApp Business or a paid messaging service?",
+      "a": "No. The button opens whichever WhatsApp is on the staff member's device: the regular app, WhatsApp Business, or WhatsApp on a computer. The message goes out from the number signed in to that WhatsApp, like any message you type yourself, so use your clinic's number there. There's no messaging service in between and no new number to get."
+    },
+    {
+      "q": "Is there a limit on the number of messages?",
+      "a": "Each clinic has a monthly counter for messages opened from the system. Its cap is set per clinic by the platform operator; by default there is none, it isn't tied to your plan, and the count renews every month. We don't charge per message: it's an ordinary WhatsApp message from your number."
+    },
+    {
+      "q": "Could this get my clinic's number banned?",
+      "a": "Bans are WhatsApp's decision alone, and we can't promise anything about them. What we do: each message goes out on its own from your number with a tap from you, as if you'd typed it; in campaigns an owner with several pets gets one message, and each built-in template has ten wordings that change from day to day, so the same wording doesn't go out every time. The safest course is to message owners who know your clinic, and to stop messaging anyone who asks you to."
+    },
+    {
+      "q": "What language are the messages in?",
+      "a": "Arabic, mostly simple Modern Standard Arabic, with some still in Iraqi phrasing. When your screens are in English, most reminder, campaign, booking, lab, birthday and treatment-board messages come out in English, though some Arabic words can remain, such as a service type; the reception calendar's and the online store's messages are still Arabic only. Either way, the text opens in WhatsApp before you send so you can edit it, and in campaigns you can save your clinic's own wording as a template."
+    },
+    {
+      "q": "I'm on Basic. What do I get?",
+      "a": "Every one-tap message from the reception calendar and case cards, bookings and booking requests, lab results, treatment boards and the birthdays card, plus manual and recurring reminders. What needs Super: the reminders hub that gathers everything due with its status in one place, campaigns to a group of owners, and your clinic's saved templates. The 14-day free trial opens all of it so you can decide for yourself."
+    }
+  ],
+  "related": ["vaccines", "reception", "owners"]
+}

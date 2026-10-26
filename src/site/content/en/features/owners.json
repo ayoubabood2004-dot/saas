@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Pet owner account, QR passport & visit tracking | doctorVet",
+    "description": "A link where owners follow each stage of a check-up, surgery or stay with no diagnosis or prices, a free owner account to see their pet's file and due vaccines and request appointments, and a QR passport card for every pet. On every plan."
+  },
+  "hero": {
+    "eyebrow": "After the visit",
+    "title": "Owners know how their pet is doing, without calling to ask",
+    "sub": "A link that shows a check-up, surgery or stay stage by stage, a free account where the owner finds their pet's file and due vaccines and requests appointments, and a QR passport card for every pet. You decide what reaches them: each stage is a tap from your team, the link carries no diagnosis or prices, and the medical file in their account is theirs to read, not edit."
+  },
+  "pains": {
+    "title": "When worry eats into your clinic's time",
+    "items": [
+      {
+        "title": "“Fourth call: is he out of surgery yet?”",
+        "body": "The owner waits outside, the phone rings while the vet is in theatre, and reception doesn't know what to say. Here they follow the stages on a link open on their phone, “Out of surgery and doing well” shows up seconds after you tap it, and you can see when they last opened it."
+      },
+      {
+        "title": "“The vaccine booklet is lost. When was the last shot?”",
+        "body": "The owner arrives with no booklet and no dates, or goes to another clinic not knowing what their pet was given. Here their account lists the pet's vaccines with dates, and alerts them to every overdue dose and every dose due within 30 days."
+      },
+      {
+        "title": "“Every appointment takes a phone call”",
+        "body": "The owner calls to ask for a free slot, then the appointment goes on paper or gets forgotten. Here they request it from their account: the pet, the visit type, the doctor, the time and what's wrong. The request reaches your bookings page with a sound and a counter, and it only becomes an appointment once you confirm it."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Register the pet under the owner's number",
+        "body": "Just as reception does today: the pet's name and the owner's phone number. Every pet gets a serial number, a passport code and a QR card you can print or share."
+      },
+      {
+        "title": "The owner creates a free account",
+        "body": "With an email, a password and that same phone number. Pets registered under the number at your clinic, or at any clinic using doctorVet, appear in their account without being added, with their vaccines, visits and lab results."
+      },
+      {
+        "title": "Start a tracking journey from the visit page",
+        "body": "Pick the type: check-up, surgery, grooming and care, lab tests or a stay. Copy its link and paste it into a WhatsApp chat with the owner. As the work moves on, tap the next stage, and add a reassurance message or a photo in one tap."
+      },
+      {
+        "title": "They book, you confirm",
+        "body": "The owner picks the pet, visit type, doctor and time, and the request lands on your bookings page as “New, awaiting confirmation”. Confirm or decline it; when you confirm, you tell them the appointment with a ready WhatsApp message sent in one tap."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's on the owner's side, in detail",
+    "groups": [
+      {
+        "title": "Visit tracking link",
+        "items": [
+          {
+            "title": "Five journeys, staged in the owner's words",
+            "body": "Check-up, surgery, grooming and care, lab tests, and a stay. Each has fixed stages such as “In the operating room”, “Out of surgery and doing well” and “Ready for pickup”, moved on with one big button on the visit page. Nothing reaches the owner without a tap from your team."
+          },
+          {
+            "title": "Reassurance in one tap, replies by emoji",
+            "body": "Five ready messages, including “ate his meal and drank his water” and one asking the owner to call you, plus a photo from the device camera, shrunk so it opens quickly on mobile data. The owner replies with one of four emoji only, so following up never turns into a chat that ties up the vet."
+          },
+          {
+            "title": "What stays off the link",
+            "body": "No diagnosis, no results, no prices, held back on the server, not just hidden on screen. The lab journey only says the results have reached the doctor, who discusses them. You see when the owner last opened the link, and their latest reply."
+          },
+          {
+            "title": "Hard news is never a message",
+            "body": "“End quietly” closes the link at once with no message, so the news goes by phone. After handover the link stays open for 48 hours and then expires, and it carries a button to call your clinic."
+          }
+        ]
+      },
+      {
+        "title": "Owner account · free for the owner",
+        "items": [
+          {
+            "title": "Their pets appear by phone number",
+            "body": "Every pet registered under their number, at your clinic or any clinic using doctorVet, is linked to their account when they open it, with a banner naming the pets. A pet already linked to another owner's account is never moved."
+          },
+          {
+            "title": "Health alerts and the next appointment",
+            "body": "Every overdue vaccine, however late, and every dose due within 30 days, deworming included. A card for the next appointment with its day, time and doctor, and a list of the next 14 days: appointments, vaccines, reminders, and the feeds still to come today."
+          },
+          {
+            "title": "The pet's file, read-only",
+            "body": "Visits, timeline, vaccines, lab results, treatments and images, as your clinic wrote them; nothing on the owner's screen lets them edit any of it. A drug's name shows for 7 days after prescribing; after that, only its drug class."
+          },
+          {
+            "title": "What the owner keeps up to date",
+            "body": "The pet's photo, its diet plan and meal times, its distinctive markings, and caretakers with their contact details. All of it sits on the same file you open."
+          },
+          {
+            "title": "Their pets' clinics",
+            "body": "The clinics treating their pets, each with its name, city and which of their pets it treats, plus buttons to WhatsApp, call or book an appointment."
+          },
+          {
+            "title": "A learning corner",
+            "body": "Six short guides in Arabic and English: care after surgery, giving a pill, checking body weight, signs of pain, the puppy and kitten vaccine timeline, and emergency signs. Each carries a note that their own vet's advice comes first."
+          }
+        ]
+      },
+      {
+        "title": "Online booking",
+        "items": [
+          {
+            "title": "Four steps from their account",
+            "body": "Pick the pet, then one of five visit types such as a check-up, vaccination, surgery or home visit, then the clinic, doctor and time, then confirm with an optional note on symptoms. They find your clinic by name or city, and clinics already treating their pets come first with a badge."
+          },
+          {
+            "title": "The nearest free slot",
+            "body": "Next to each doctor on your team, a “nearest appointment” button picks that slot in one tap, or the owner chooses “any available doctor”. Days run from tomorrow to 12 days ahead, booked times are hidden, and the time is checked once more before sending: if it was taken meanwhile, it's cleared so the owner picks another."
+          },
+          {
+            "title": "A request that waits for you",
+            "body": "It lands on your bookings page as “New, awaiting confirmation”, with a sound, a counter in the side menu, and a browser notification if you allow it. Confirm or decline it; when you confirm, tell the owner with a ready WhatsApp message sent in one tap."
+          }
+        ]
+      },
+      {
+        "title": "Pet passport & QR",
+        "items": [
+          {
+            "title": "A passport card for every pet",
+            "body": "Photo, name, species and breed, serial number, QR code and passport code, with allergies in red when recorded. Print it, share it from the device or copy the code; the owner has it in their account too."
+          },
+          {
+            "title": "Open a file by its code",
+            "body": "On the “Scan a pet passport” page, type the code or scan it with a reader to open the pet's summary: allergies, weight curve, vaccines, and visits with their treatments, ready to print."
+          },
+          {
+            "title": "Shared or private, the owner decides",
+            "body": "A pet the owner added from their own account is “shared” by default, so any clinic using doctorVet can open it by its code or the owner's email, and the owner can make it “private” whenever they like. Pets your clinic registered can't be opened by another clinic this way."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "Everything on this page is on every plan, Basic included: the visit tracking link, the passport card and opening a file by its code, booking requests from the owner's account, and the one-tap WhatsApp message from the bookings page. The owner account is free for the owner. The reminders hub and WhatsApp campaigns are on Super only and have their own page. The 14-day trial unlocks everything, no card needed.",
+  "mock": {
+    "title": "The tracking link as the owner sees it: Buddy · surgery",
+    "rows": [
+      { "label": "Arrived at the clinic", "value": "09:05", "tone": "ok" },
+      { "label": "Getting ready for surgery", "value": "09:30", "tone": "ok" },
+      { "label": "In the operating room", "value": "10:10", "tone": "ok" },
+      { "label": "Out of surgery and doing well", "value": "11:42", "tone": "ok" },
+      { "label": "Message from the clinic · 12:05", "value": "Sleeping and comfortable · owner replied with a heart", "tone": "info" },
+      { "label": "Stage now", "value": "Recovering under observation", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does the owner pay anything or need an app?",
+      "a": "No. Their account is free and created in their phone's browser with an email, a password and their phone number. The visit tracking link needs no account at all: they open it from the WhatsApp message in their phone's browser."
+    },
+    {
+      "q": "Can owners sign in with their phone number and a code?",
+      "a": "Not today. Sign-in with a code by text message or WhatsApp isn't switched on yet, so owners create their account with an email and a password. The phone number they enter when signing up is what links their registered pets to them."
+    },
+    {
+      "q": "What does the owner see of the medical file?",
+      "a": "In their account they read their pet's file as your clinic wrote it: visits, vaccines, lab results, treatments and images, and nothing on their screen lets them change it. A drug's name shows for 7 days after prescribing, then only its class. The tracking link carries no diagnosis, results or prices, because whoever holds it can open it without signing in."
+    },
+    {
+      "q": "Can I set my clinic's hours for online booking?",
+      "a": "Not yet. Slots run every 20 minutes from 9 am to 5 pm, every day of the week, from tomorrow to 12 days ahead, and times already booked are hidden. No request becomes an appointment until you confirm it, so if one lands at a time that doesn't suit you, or on your day off, decline it and agree another time with the owner."
+    },
+    {
+      "q": "Can another clinic open my patients' files from the passport code?",
+      "a": "No. Pets your clinic registers can't be opened by another clinic by their code or the owner's email. The one exception is a pet its owner added from their own account and left “shared”: other clinics can open its file by its code or the owner's email, and the owner can make it “private” whenever they like."
+    },
+    {
+      "q": "What language do owners see?",
+      "a": "Their account is in Arabic, or in English on most screens. The visit tracking page and its ready reassurance messages are in Arabic only today, some with Iraqi wording, so look through them during your trial before sending the link to owners."
+    }
+  ],
+  "related": ["reception", "vaccines", "whatsapp"]
+}

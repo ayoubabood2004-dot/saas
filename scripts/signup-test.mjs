@@ -129,11 +129,14 @@ const runDoor = (pathname, search, hash, dev = {}) => {
   let to = null;
   const kv = new Map(Object.entries(dev.storage ?? {}));
   const ls = { get length() { return kv.size; }, key: (i) => [...kv.keys()][i] ?? null, getItem: (k) => (kv.has(k) ? kv.get(k) : null) };
+  const matchMedia = (q) => ({ matches: q === "(display-mode: standalone)" && !!dev.standalone });
   vm.runInNewContext(door, {
     location: { pathname, search, hash, hostname: dev.host ?? "www.doctorvet.vet", replace: (u) => { to = u; } },
     localStorage: ls,
-    navigator: { languages: dev.langs ?? ["ar"], language: (dev.langs ?? ["ar"])[0] },
+    navigator: { languages: dev.langs ?? ["ar"], language: (dev.langs ?? ["ar"])[0], onLine: !dev.offline },
     Intl: { DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone: dev.tz ?? "UTC" }) }) },
+    window: { matchMedia },
+    matchMedia,
   });
   return to;
 };
@@ -146,6 +149,44 @@ check("ولا حلقة: auth_error موجودٌ ⇒ لا تحويل", runDoor("/
 check("ولا شيء بلا خطأ", runDoor("/inventory", "?tab=x", "") === null);
 check("  ورمزٌ غريبٌ بالخطأ لا يُحقن", !/script/.test(String(runDoor("/", "", "#error_code=<script>"))));
 
+console.log("▸ الزائرُ على الجذر يذهب لنسخة بلده — وصاحبُ الحساب يبقى بالتطبيق");
+check("بغداد بمتصفّحٍ إنكليزيّ ⇒ /iq (المنطقةُ الزمنية قبل اللغة)", runDoor("/", "", "", { tz: "Asia/Baghdad", langs: ["en-US", "en"] }) === "/iq");
+check("الرياض ⇒ /sa", runDoor("/", "", "", { tz: "Asia/Riyadh" }) === "/sa");
+check("القاهرة ⇒ /eg، والاستعلامُ يبقى", runDoor("/", "?utm_source=wa", "", { tz: "Africa/Cairo" }) === "/eg?utm_source=wa");
+check("بلا منطقةٍ عربية ولغةُ ar-JO ⇒ /jo", runDoor("/", "", "", { tz: "Europe/Berlin", langs: ["ar-JO"] }) === "/jo");
+check("لندن بالإنكليزية ⇒ /en", runDoor("/", "", "", { tz: "Europe/London", langs: ["en-GB"] }) === "/en");
+check("لا شيء يدلّ ⇒ /iq (السوقُ الأوّل)", runDoor("/", "", "", { tz: "UTC", langs: ["ar"] }) === "/iq");
+check("اختيارٌ محفوظ يغلب التخمين", runDoor("/", "", "", { tz: "Asia/Riyadh", storage: { dv_edition: "kw" } }) === "/kw");
+check("  واختيارٌ تالف لا يُتّبع", runDoor("/", "", "", { tz: "Asia/Riyadh", storage: { dv_edition: "../x" } }) === "/sa");
+check("جلسةُ Supabase بالجهاز ⇒ يبقى بالتطبيق", runDoor("/", "", "", { tz: "Asia/Riyadh", storage: { "sb-brydcepzrckstddcuuou-auth-token": "{}" } }) === null);
+check("  والجلسةُ التجريبية كذلك", runDoor("/", "", "", { storage: { vp_session: "{}" } }) === null);
+check("نطاقُ app. لا يُحوَّل", runDoor("/", "", "", { host: "app.doctorvet.vet", tz: "Asia/Riyadh" }) === null);
+check("رابطُ PKCE (?code=) لا يُمسّ", runDoor("/", "?code=abc", "", { tz: "Asia/Riyadh" }) === null);
+check("ومساراتُ التطبيق لا تُمسّ", runDoor("/reception", "", "", { tz: "Asia/Riyadh" }) === null);
+
+/* ما تبنيه البوّابةُ يجب أن يتركه العاملُ الخدميّ للخادم — باستعلامه (fbclid، utm). كان `(\/|$)` لا يطابق
+ * `/sa?fbclid=…` فخدم العاملُ قشرةَ التطبيق، ونقلتها `*` إلى «/» فالعراق (تدقيقٌ عدائيّ). */
+const { SITE_EDITIONS, SITE_PATHS } = await import(pathToFileURL("scripts/site-paths.mjs").href);
+const doorEds = (/var E = "([a-z ]+)"/.exec(door) ?? [])[1]?.split(" ") ?? [];
+check("قائمةُ البوّابة = قائمةُ مسارات الموقع", doorEds.join() === SITE_EDITIONS.join(), doorEds.join());
+for (const [tz, q] of [["Asia/Riyadh", "?fbclid=IwAR0"], ["Africa/Cairo", "?utm_source=wa"], ["Asia/Baghdad", ""]]) {
+  const to = runDoor("/", q, "", { tz });
+  check(`  ${to} لا يخدمه العاملُ من قشرة التطبيق`, !!to && SITE_PATHS.test(to));
+}
+check("  ولا تبتلع القائمةُ مساراً للتطبيق", !["/sales", "/subscribe?x=1", "/login", "/", "/eng", "/s/x"].some((p) => SITE_PATHS.test(p)));
+const app = readFileSync("src/App.tsx", "utf8");
+// جلسةٌ لم تُحسم أو رابطُ تأكيدٍ يُتحقَّق منه: انتظارٌ بالمكان — لا صفحةُ الدخول (تنظيفُها يمسح الجلسةَ التي
+// تُحفظ للتوّ، مقيسٌ بمتصفّح) ولا الموقع. والانتظارُ نفسُه لا ينتقل للدخول وحده.
+check("جلسةٌ محفوظةٌ لم تُحسم ورابطُ تأكيدٍ يُتحقَّق منه: ينتظران بالمكان (لا الدخول ولا الموقع)",
+  /if \(hasStoredSession\(\) \|\| isAuthCallback\(\)\) return <AwaitAuth \/>;[\s\S]{0,600}?return <ToSite \/>;/.test(app)
+  && app.includes('/access_token|refresh_token|[?&](code|token_hash|type)=/.test(window.location.hash + window.location.search)')
+  && door.includes("/access_token|refresh_token|[?&](code|token_hash|type)=/.test(l.hash + l.search)"));
+const awaitAuth = app.slice(app.indexOf("function AwaitAuth"), app.indexOf("function AwaitAuth") + 1400);
+check("  والانتظارُ لا ينتقل لصفحة الدخول وحده (زرّان بيد المستخدم)", awaitAuth.length > 100 && !/<Navigate/.test(awaitAuth) && /href="\/login"/.test(awaitAuth));
+check("التطبيقُ المثبَّت لا يُحوَّل للموقع (الموقعُ خارجه)", runDoor("/", "", "", { tz: "Asia/Riyadh", standalone: true }) === null);
+check("  ولا جهازٌ بلا نت (الموقعُ لا يُخبَّأ — صفحةُ خطأ المتصفّح)", runDoor("/", "", "", { tz: "Asia/Riyadh", offline: true }) === null);
+check("  وفي التطبيق: المثبَّتُ وبلا نت (بلا جلسة) إلى الدخول لا الموقع", /if \(isInstalledOrOffline\(\)\) return <Navigate to="\/login" replace \/>;\s*return <ToSite \/>;/.test(app));
+check("  والموقعُ يُختار بالبوّابة نفسها (إعادةُ «/») وبكاسر حلقة", /window\.location\.replace\(`\/\$\{window\.location\.search\}`\)/.test(app) && /dv_to_site/.test(app) && !/getItem\("dv_edition"\)/.test(app));
 
 /* ════════════════════ F15 / F19 — بذرُ دولة التسجيل ════════════════════ */
 console.log("▸ بذرُ الدولة ينتظر قراءةَ الخادم (F15)");
@@ -240,8 +281,45 @@ check("والتسجيلُ بمهلة (F7)", /new Promise<never>\(\(_, rej\) => s
 // بطاقةُ البريد وحدها: بطاقةُ رمز الهاتف تستلم نصّاً ترجمه مغلِّفا sbSendOtp/sbVerifyOtp قبلها.
 const emailCard = login.slice(login.indexOf("function SupabaseAuthCard"), login.indexOf("type Intent ="));
 check("لا setError(res.error) خامٌ بنداءات البريد", emailCard.length > 1000 && !/setError\(res\.error\)/.test(emailCard));
-check("الدولةُ الافتراضية ليست «IQ» ثابتة (F8)", /useState\(\(\) => initialCountry\(intent\.country\)\)/.test(login));
+check("الدولةُ الافتراضية ليست «IQ» ثابتة (F8)", /useState\(\(\) => signupCountry\(intent\.country\)\)/.test(login));
 check("الهاتفُ يتبع الدولة (F9)", /defaultCode=\{portal === "clinic" && !staff \? countryByCode\(country\)\?\.dial : undefined\}/.test(login));
+
+/* ════════════════════ دولةُ كلّ نسخةٍ من الموقع ════════════════════ */
+console.log("▸ رابطُ كلّ نسخةٍ يفتح التسجيلَ ببلده — أو «دولة أخرى»، لا العراق");
+const CUR = await load("src/lib/currency.ts");
+const edCountries = [...readFileSync("src/site/editions.ts", "utf8").matchAll(/E\("[a-z]{2}", "([A-Z]{2})"/g)].map((m) => m[1]);
+check("  النسخُ مقروءة", edCountries.length >= 19, String(edCountries.length));
+for (const cc of edCountries) {
+  const got = CUR.signupCountry(cc);
+  check(`  ${cc} ⇒ ${got}`, got === cc || (got === "XX" && !CUR.countryByCode(cc)), "بلدٌ معروفٌ استُبدل، أو مجهولٌ صار العراق");
+}
+check("  موريتانيا (لا عملةَ لها بالنظام) ⇒ دولة أخرى", CUR.signupCountry("MR") === "XX");
+check("  رمزٌ عبثيّ ⇒ دولة أخرى لا العراق", CUR.signupCountry("ZZ") === "XX");
+check("  الرمزُ بأحرفٍ صغيرة يُطبَّع", CUR.signupCountry("eg") === "EG");
+// النسخةُ الإنكليزية تمرّر «auto»: جهازٌ لا يدلّ على بلدٍ نعرفه ⇒ «دولة أخرى»، لا العراق.
+{
+  // جهازٌ بطوكيو وباليابانية: لا بلدَ نعرفه (الألمانيةُ تُخمَّن «أوروبا») — فالتخمينُ فارغ، والجوابُ «دولة أخرى» بالضبط.
+  const realDTF = Intl.DateTimeFormat, hadNav = "navigator" in globalThis, realNav = globalThis.navigator;
+  Intl.DateTimeFormat = () => ({ resolvedOptions: () => ({ timeZone: "Asia/Tokyo" }) });
+  Object.defineProperty(globalThis, "navigator", { value: { languages: ["ja-JP"], language: "ja-JP" }, configurable: true, writable: true });
+  try {
+    check("  النسخةُ الإنكليزية من جهازٍ لا يدلّ ⇒ دولة أخرى (لا العراق)", CUR.signupCountry("auto") === "XX", CUR.signupCountry("auto"));
+    check("  وبلا رابطٍ أصلاً ⇒ العراق (من يفتح /login مباشرةً)", CUR.signupCountry(null) === "IQ", CUR.signupCountry(null));
+    Intl.DateTimeFormat = () => ({ resolvedOptions: () => ({ timeZone: "Asia/Riyadh" }) });
+    // الرابطُ الحقيقيّ كما تقرؤه صفحةُ الدخول: signupHref ⇒ تعبيرُ urlIntent نفسُه (يرفع الحالة) ⇒ signupCountry.
+    const loginSrc = readFileSync("src/pages/Login.tsx", "utf8");
+    const parse = /country: \(q\.get\("country"\) \|\| ""\)\.toUpperCase\(\) \|\| null/.test(loginSrc) ? (v) => (v || "").toUpperCase() || null : null;
+    check("  صفحةُ الدخول تقرأ country كما يفترضه الفحص (ترفع الحالة)", !!parse);
+    const enLink = new URL(`https://x${"/login?as=clinic&new=1&lang=en&country=auto&from=home"}`);
+    check("  والإنكليزيةُ من الرياض عبر الرابط الحقيقيّ ⇒ السعودية", parse && CUR.signupCountry(parse(enLink.searchParams.get("country"))) === "SA", parse && CUR.signupCountry(parse(enLink.searchParams.get("country"))));
+    Intl.DateTimeFormat = () => ({ resolvedOptions: () => ({ timeZone: "Asia/Baghdad" }) });
+    check("  ومن بغداد ⇒ العراق", parse && CUR.signupCountry(parse("auto")) === "IQ");
+  } finally {
+    Intl.DateTimeFormat = realDTF;
+    if (hadNav) Object.defineProperty(globalThis, "navigator", { value: realNav, configurable: true, writable: true }); else delete globalThis.navigator;
+  }
+}
+check("  ورابطُها يحمل country=auto", /q\.set\("country", ed\.country \?\? "auto"\)/.test(readFileSync("src/site/ctx.ts", "utf8")));
 
 console.log(`\n${fails ? "✗" : "✓"} signup: ${passes} نجح، ${fails} فشل`);
 if (fails) process.exit(1);

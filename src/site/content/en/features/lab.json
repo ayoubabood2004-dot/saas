@@ -1,0 +1,173 @@
+{
+  "meta": {
+    "title": "Veterinary lab: slip reading & analyser link | doctorVet",
+    "description": "Lab results in the pet's file: photograph the analyser slip and the system reads the numbers, or link the analyser by cable or over the clinic network. Dog and cat ranges, critical values first, and you decide. On every plan."
+  },
+  "hero": {
+    "eyebrow": "In the clinic",
+    "title": "Lab results in the pet's file, without copying the numbers by hand",
+    "sub": "Photograph the analyser slip and the system reads its numbers, or link the analyser to a clinic computer so its results arrive without retyping. You review every value before saving, next to the dog or cat normal range, with critical values on top."
+  },
+  "pains": {
+    "title": "Does this happen in your clinic?",
+    "items": [
+      {
+        "title": "The slip gets lost, and the numbers get written twice",
+        "body": "The analyser prints a slip, then someone copies each number by hand into a notebook or file. One misplaced decimal changes the reading, and a week later the slip itself is gone."
+      },
+      {
+        "title": "\"What was the kidney value last time?\"",
+        "body": "The owner comes back a month later and the previous test is in another notebook or on a colleague's phone. Comparing starts with a search before any reading."
+      },
+      {
+        "title": "One dangerous value among twenty normal ones",
+        "body": "On a busy day a potassium or glucose in the danger zone can slip past unnoticed, because it is one line on a long slip."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Open the Lab tab in the pet's file",
+        "body": "Tap Record tests. On Advanced and Super, selling a lab service at the cashier for a registered animal opens its order in the lab, waiting for results."
+      },
+      {
+        "title": "Get the numbers in the easiest way for you",
+        "body": "Photograph the slip, accept a result from a linked analyser, type the values, or tap an arrow per test when you have no number."
+      },
+      {
+        "title": "Review, then save",
+        "body": "Each value is flagged as you enter it: low, normal or high against the dog or cat range. Correct anything that needs it, then save."
+      },
+      {
+        "title": "Approve the result and share it",
+        "body": "The result is saved as awaiting approval until you approve it with one tap. Then print a report with your clinic logo, or open its summary for the owner in WhatsApp with one tap and send it yourself."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What the lab does, in detail",
+    "groups": [
+      {
+        "title": "Getting results in",
+        "items": [
+          {
+            "title": "Reading the slip photo",
+            "body": "Photograph the slip with a phone camera or pick its image. The system reads the printed Latin test codes, such as WBC and ALT, and the number after each, then fills the fields for you to review. The photo is saved with the result."
+          },
+          {
+            "title": "Cable link to the analyser",
+            "body": "On a computer running Chrome or Edge, connect the analyser by serial cable or USB adapter. Its values drop into the entry form as the analyser sends them, ready for you to review and save."
+          },
+          {
+            "title": "Bridge app over the clinic network",
+            "body": "Analyser in one room, system in another? Download a small bridge app from Settings, already paired with your clinic, and run it on a Windows or Mac computer on the analyser's network. It searches the network for the analyser, takes an address you type, or waits for the analyser to send to it."
+          },
+          {
+            "title": "The lab inbox",
+            "body": "Every result the analyser sends through the bridge waits in the lab inbox, with its sample number when the analyser sends one and a glimpse of its values. Accept it from the pet's file and the fields fill in for review, or dismiss it. If the animal has one open order, the result is recorded on it; with several, you pick which."
+          },
+          {
+            "title": "Analyser messages and codes",
+            "body": "Reads HL7 and ASTM messages, and understands the standard LOINC codes some analysers send instead of test names. If your analyser sends a code the system doesn't know, you pick the matching test once and the system remembers it on that computer."
+          },
+          {
+            "title": "Tests without numbers",
+            "body": "Snap tests such as Parvo, FeLV and FIV as positive or negative; faecal exam, skin scraping, cytology and culture as text and a photo. Every numeric test also takes a quick arrow verdict, ↓↓ ↓ ✓ ↑ ↑↑, when you don't have the number."
+          }
+        ]
+      },
+      {
+        "title": "Reading the result",
+        "items": [
+          {
+            "title": "One entry sheet, dog and cat ranges",
+            "body": "Values grouped by body system: blood with differential, kidney, liver, glucose and protein, electrolytes, pancreas and glands, urine, with a search across every test. Anything not on the list goes in with its own name, value, unit and range. The range and unit are saved with each value, so an old result is never re-judged against a newer range."
+          },
+          {
+            "title": "Critical values first",
+            "body": "Potassium, sodium, calcium, glucose, creatinine, haematocrit or platelets past a danger threshold show first, with a red alert and a suggested action. For the latest test, a bar at the top of the Lab tab says \"needs attention\" or \"critical\" and repeats the critical lines."
+          },
+          {
+            "title": "Compared with the last test",
+            "body": "If a value changes sharply from the same animal's previous test, the system flags it: check the sample first, and if the value holds, it is a fast change worth following."
+          },
+          {
+            "title": "Reading values together",
+            "body": "Fixed rules from veterinary clinical pathology read the values as a group: stress or inflammatory leukogram, the likely anaemia type from MCV, a kidney, liver or pancreas picture, protein patterns, and a low sodium-to-potassium ratio. Each note says what it sees and a suggested next step, labelled: decision support, the vet decides."
+          },
+          {
+            "title": "Trends and before/after",
+            "body": "A table lays each test across the last 6 tests in their flag colours, and a comparison of any two tests shows whether each value moved toward its normal range or away from it."
+          }
+        ]
+      },
+      {
+        "title": "From order to owner",
+        "items": [
+          {
+            "title": "Order stages and the lab queue",
+            "body": "An order opened from the cashier moves through stages, each stamped with its time: requested, sample taken, running, awaiting approval, approved. The lab queue at the top of the Lab tab gathers every unfinished test in the clinic, overdue and urgent first: an urgent test counts as overdue after 30 minutes with no result, a routine one after 4 hours."
+          },
+          {
+            "title": "Nothing final before approval",
+            "body": "A new result is saved as awaiting approval and stays that way in the file until someone approves it with a tap. The approver's name and the time are recorded."
+          },
+          {
+            "title": "Tests not yet on an invoice",
+            "body": "Any result not on an invoice carries a \"not billed\" tag, and the system reminds you of it when you approve. On Advanced and Super, the Bill button puts the test in the cashier's cart, and completing the sale marks it billed. On every plan you can also mark it billed by hand."
+          },
+          {
+            "title": "A printed report with your logo",
+            "body": "Values with units, ranges and flags, plus the assistive reading notes, under your clinic's name and logo, with the animal's and owner's details. Print one result or the whole lab record, or save it as PDF."
+          },
+          {
+            "title": "A WhatsApp summary for the owner",
+            "body": "One tap opens WhatsApp with a ready message to the owner by name: each value with its normal range and a plain-word verdict, plus your notes if any. You press send."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "the whole Lab tab: recording, reading the slip photo, the cable and network analyser links, the lab inbox, assistive reading, value trends, approval, the printed report and the one-tap WhatsApp summary. Two things go through the cashier and so need Advanced or Super: the lab order that opens when a lab service is sold for a registered animal (with its stages before the result: requested, sample taken, running), and the Bill button that puts the test in the sales cart. On every plan you can mark a result billed by hand. The 14-day free trial unlocks all of it, no card needed.",
+  "mock": {
+    "title": "CBC · Misha · cat",
+    "rows": [
+      { "label": "WBC white cells", "value": "24.6 ↑", "tone": "bad" },
+      { "label": "NEU neutrophils", "value": "17.8 ↑", "tone": "bad" },
+      { "label": "LYM lymphocytes", "value": "1.1 ↓", "tone": "info" },
+      { "label": "HCT haematocrit", "value": "38 ✓", "tone": "ok" },
+      { "label": "System reading", "value": "Stress pattern", "tone": "info" },
+      { "label": "Status", "value": "Needs attention", "tone": "warn" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does it read every slip without mistakes?",
+      "a": "We don't promise that. Reading is optical character recognition that runs in the browser: it looks for the printed Latin test codes and the number after each. A close, sharp photo reads more accurately. Everything it reads lands in the fields for you to check and correct before saving. If it finds no clear numbers it tells you so, and the photo stays attached to the result so you can finish the numbers by hand."
+    },
+    {
+      "q": "Will it work with my analyser?",
+      "a": "If your analyser sends its results as HL7 or ASTM messages over the network or a serial cable, the system is built to receive them. We don't publish a list of tested models, so try your own analyser during the 14-day trial. The cable link needs Chrome or Edge on a computer, not a phone. Photographing the slip is always there alongside both."
+    },
+    {
+      "q": "What does the network bridge need?",
+      "a": "A Windows or Mac computer on the same network as the analyser, connected to the internet, with the free Node.js installed from nodejs.org. You download the bridge from Settings as a zip file already paired with your clinic, extract it and double-click to start; Windows or macOS asks you to confirm the first time. A page in Arabic then walks you through each step. Its window stays open during working hours, and you can set it to start with the computer. The Test button in Settings sends a sample message to the lab inbox so you can see where results will appear."
+    },
+    {
+      "q": "Does the system diagnose for me?",
+      "a": "No. The assistive reading is a set of fixed rules from veterinary clinical pathology. It shows what it notices in the values and a suggested next step, and every note is labelled: decision support, the vet decides. Nothing reaches the owner until you press send. Today these notes, the order stage labels and the printed report are in Arabic only."
+    },
+    {
+      "q": "What about species other than dogs and cats?",
+      "a": "The built-in normal ranges cover dogs and cats. Any other species is compared against the dog range today, so keep that in mind when reading. For a test that needs its own range, add it as a test not on the list and enter the range yourself."
+    },
+    {
+      "q": "Can I record tests done before I started?",
+      "a": "Yes. Set the test date when you record it, and it takes its proper place in the trend table and in comparisons."
+    }
+  ],
+  "related": ["records", "hospital", "printing"]
+}

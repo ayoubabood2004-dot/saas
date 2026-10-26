@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Multi-branch vet clinics in one account | doctorVet",
+    "description": "Add your clinic's branches to the same account, on every plan: each device is pinned to its branch, new cases are tagged with it, and the treatment sheet and master calendar show its cases. Pet files, stock and reports stay shared across all branches."
+  },
+  "hero": {
+    "eyebrow": "Management",
+    "title": "Each branch sees its own cases. You see every branch, in one account",
+    "sub": "Add branches in Settings and pin each device to its branch: the cases and delivery orders recorded on it are tagged with that branch, and the treatment sheet and master calendar show its cases. Each pet's file, your stock and your reports stay shared across all branches, and \"All branches\" shows everything together."
+  },
+  "pains": {
+    "title": "When you open a second branch",
+    "items": [
+      {
+        "title": "“Do we need a second system for the new branch?”",
+        "body": "Two systems mean two files for the same pet, the owner registered twice, and stock counted in two places. Here the branch is added to your clinic's own account, so any branch opens the pet's file with its full history."
+      },
+      {
+        "title": "“Our treatment sheet is full of the other branch's cases”",
+        "body": "When two locations share one sheet, the nurse hunts for her patients among cases that aren't hers. Once each device is pinned to its branch, a case recorded at any branch other than the main one shows only in that branch and under \"All branches\". Cases recorded on the main branch, under \"All branches\", or before branches were added show in every branch."
+      },
+      {
+        "title": "“I want to see both branches without switching accounts”",
+        "body": "The owner wants the whole picture in one place. \"All branches\" shows cases and delivery orders from every branch together, and reports already cover the whole clinic."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How branches work",
+    "items": [
+      {
+        "title": "Add the branch in Settings",
+        "body": "A manager opens Settings, then the Clinic branches card, types the branch name and taps Add branch. The first time, a Main branch is created with it, and all your existing data stays under it."
+      },
+      {
+        "title": "The branch switcher appears for the team",
+        "body": "Once the clinic has two branches, the switcher appears in the side menu and the phone menu for every staff member, with \"All branches\" and each branch in its own colour."
+      },
+      {
+        "title": "Pin each device to its branch",
+        "body": "Choose the branch once on each branch's reception computer. The choice is saved in that device's browser, so it's still there after a reload and the next morning."
+      },
+      {
+        "title": "Work as usual",
+        "body": "Cases recorded on the device and delivery orders sent from it are tagged with its branch, and the treatment sheet, master calendar and delivery board show what belongs to it plus anything not tagged with another branch. \"All branches\" shows everything together."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What branches do, and what stays shared",
+    "groups": [
+      {
+        "title": "Adding branches",
+        "items": [
+          {
+            "title": "A new branch by name",
+            "body": "From the Clinic branches card in Settings, for managers only. A duplicate name is refused with \"A branch with this name already exists.\""
+          },
+          {
+            "title": "A Main branch comes with the first one",
+            "body": "It carries a Main badge, and every case and order recorded before branches stays under it, so nothing is moved and nothing is lost."
+          },
+          {
+            "title": "Renaming and the activity log",
+            "body": "A Rename button sits next to each branch, and adding or editing a branch is recorded in the activity log with its name."
+          },
+          {
+            "title": "A single-branch clinic sees no change",
+            "body": "While the clinic has one branch, the switcher doesn't appear and no screen is filtered, so the clinic works exactly as before."
+          }
+        ]
+      },
+      {
+        "title": "The branch switcher",
+        "items": [
+          {
+            "title": "In the side menu and the phone menu",
+            "body": "It appears for every staff member once the clinic has two or more branches, with a colour dot for each branch. When the side menu is folded, it stays as an icon that opens it."
+          },
+          {
+            "title": "\"All branches\" for the full picture",
+            "body": "The default choice: it shows every branch's cases and delivery orders together, as the clinic was before branches."
+          },
+          {
+            "title": "The choice is saved in the device's browser",
+            "body": "Each branch's reception computer remembers its branch, without anyone choosing every morning. If the browser's data is cleared, the device goes back to \"All branches\" and you pick its branch again."
+          }
+        ]
+      },
+      {
+        "title": "What's tagged with the branch",
+        "items": [
+          {
+            "title": "New cases take the device's branch",
+            "body": "A treatment case, a boarding stay or both, whether recorded from New case or by checking the pet in from its file, is tagged with the branch of the device that recorded it."
+          },
+          {
+            "title": "Treatment sheet and master calendar by branch",
+            "body": "The treatment sheet shows the chosen branch's active treatment cases, and the master calendar shows its cases on the daily board, the month view and the counts. Cases recorded at any other branch except the main one stay off both."
+          },
+          {
+            "title": "No case disappears when you switch",
+            "body": "Cases recorded before branches were added, on the main branch, or under \"All branches\" show in every branch. A case another branch recorded shows in its own branch and under \"All branches\"."
+          },
+          {
+            "title": "Delivery orders carry the branch",
+            "body": "A delivery order created at the till carries the branch of the device it was sent from, and the delivery board's lists show the chosen branch's orders plus anything not tagged with another branch. Search and courier-company balances cover all branches."
+          }
+        ]
+      },
+      {
+        "title": "What stays one for the clinic",
+        "items": [
+          {
+            "title": "The pet's and owner's file",
+            "body": "One file per pet across all branches: if one branch treated it and it then comes to another, its file opens with all its visits, vaccines and lab results."
+          },
+          {
+            "title": "One stock",
+            "body": "Products, quantities, purchases, expiry and counts belong to the whole clinic; each branch's quantities aren't kept separately today."
+          },
+          {
+            "title": "Sales and reports cover the whole clinic",
+            "body": "Till invoices aren't tagged with a branch, and the reports hub shows the whole clinic's figures, so there is no per-branch sales report."
+          },
+          {
+            "title": "Bookings, reminders and the cage room",
+            "body": "Booking requests, the bookings timeline, the reminders list and the cage room show the whole clinic; they aren't split by branch today."
+          },
+          {
+            "title": "A branch organises work; it doesn't lock it",
+            "body": "Any staff member can switch to another branch or to \"All branches\". What they can do is set by their role and permissions, not by the branch."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "Branches and the switcher are on every plan: adding and renaming branches, pinning each device to its branch, tagging new cases with it, and showing the treatment sheet and master calendar by branch. Tagging delivery orders with the branch and filtering the delivery board by it come with delivery itself, which is on the Super plan. Stock is shared across the clinic on every plan; the till and the reports hub are from the Advanced plan and up, and neither is split by branch. The 14-day free trial opens everything, no card needed.",
+  "mock": {
+    "title": "Downtown branch · what this device shows",
+    "rows": [
+      { "label": "Chosen branch", "value": "Downtown branch · saved on this device", "tone": "info" },
+      { "label": "Treatment sheet", "value": "4 cases from this branch · 2 from the main branch", "tone": "ok" },
+      { "label": "East side branch cases", "value": "In their branch and under \"All branches\"", "tone": "info" },
+      { "label": "Delivery board", "value": "3 orders sent from this branch", "tone": "ok" },
+      { "label": "Stock", "value": "One for the whole clinic", "tone": "info" },
+      { "label": "Reports", "value": "Whole-clinic figures", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Do I pay a separate subscription for each branch?",
+      "a": "No. Branches are added inside your clinic's own account, and the subscription is for the clinic, not the branch. Adding branches is on every plan, and the 14-day free trial opens everything."
+    },
+    {
+      "q": "Does each branch have its own stock, sales and reports?",
+      "a": "No. Stock is one for the whole clinic, so a sale at any branch comes off the same quantities; till invoices aren't tagged with a branch; and the reports hub shows the whole clinic. What's split by branch today is cases and delivery orders."
+    },
+    {
+      "q": "What happens to my existing data when I add a branch?",
+      "a": "Nothing is moved or deleted. A Main branch is created and all earlier cases and orders stay under it; those cases show in every branch and under \"All branches\", so nothing disappears for anyone."
+    },
+    {
+      "q": "Do the main branch's cases show at the other branches?",
+      "a": "Yes. Cases recorded on the main branch, under \"All branches\", or before branches were added aren't tied to one branch, so they show in every branch. If you want each location to see only its own cases, add each location as a named branch and pin its devices to it; the Main branch then holds your earlier data."
+    },
+    {
+      "q": "Does a branch stop staff from seeing another branch's cases?",
+      "a": "No. A branch arranges what the screens show; it doesn't hide data. Any staff member can switch to another branch or to \"All branches\". What limits a staff member is their role and permissions, and the activity log keeps who did what."
+    },
+    {
+      "q": "Can I delete a branch or merge two branches?",
+      "a": "No. You can rename any branch, but deleting a branch or merging two isn't available today."
+    }
+  ],
+  "related": ["hospital", "reception", "team"]
+}

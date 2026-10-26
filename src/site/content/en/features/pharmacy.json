@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Veterinary pharmacy & inventory software | doctorVet",
+    "description": "Your clinic pharmacy on every plan: purchase invoices by scanning, a ledger for each supplier, an alert before the return window closes, batches with expiry dates, reorder suggestions from your sales rate, daily counts, and price raises you preview and undo."
+  },
+  "hero": {
+    "eyebrow": "Sales & stock",
+    "title": "Every box on your shelf accounted for: its stock, its expiry, and when to reorder",
+    "sub": "Receive stock with a purchase invoice you scan, and see what you owe each supplier. You're warned before an item's supplier return window closes, you get a suggested order from your real sales rate, and a few items are picked for you to count each day. A product deleted by mistake comes back from Deleted with its stock and sales history."
+  },
+  "pains": {
+    "title": "What slips when stock lives in someone's memory",
+    "items": [
+      {
+        "title": "“The box expired on the shelf, and we noticed after the return window closed”",
+        "body": "So you lose everything you paid for it. Set the return period you agreed with the rep, and the item shows on the home card before the window closes, with its value at cost and a return list ready to copy."
+      },
+      {
+        "title": "“It's on the shelf, but the system says it doesn't exist”",
+        "body": "It was entered with a shelf number, then the box barcode was scanned and not recognised, so it was added again and its stock split across two rows. Here one product takes several codes, the add screen tells you when a barcode is already in your stock, and an existing twin can be merged so its stock adds up."
+      },
+      {
+        "title": "“We order by guesswork: what sells runs out, what doesn't piles up”",
+        "body": "The suggested order works from the last 30 days of sales and your delivery lead time, and lists what will run out before the next order arrives, grouped by supplier. The inventory audit names idle stock that hasn't sold for more than 30 days."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Build your stock",
+        "body": "Turn on the starter catalogue to create common veterinary companies with their sections and products, keeping only the ones you deal with, or add products yourself: scan the box barcode first, and if the item already exists you're told before you duplicate it."
+      },
+      {
+        "title": "Receive with a purchase invoice",
+        "body": "Scan the barcode and type only the count: a known item goes to its supplier and section with its prices, and you can record the new batch's expiry date. Then say whether you paid in full or in part, and the rest is recorded as debt on that supplier's ledger."
+      },
+      {
+        "title": "Check in each day",
+        "body": "The home card shows what entered the return window and what expired on the shelf, the suggested order shows what will run out, and the daily count picks a few items for you to count on the shelf."
+      },
+      {
+        "title": "Correct with confidence",
+        "body": "The inventory audit points to problems item by item without changing anything, count differences touch stock only after the manager approves, and a price raise is previewed before saving and undone line by line."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's in pharmacy & inventory",
+    "groups": [
+      {
+        "title": "Products, purchasing & suppliers",
+        "items": [
+          {
+            "title": "Supplier, then section, then product",
+            "body": "Arrange stock the way you buy it: the supplier, its sections and their items. Goods you don't count piece by piece get a pooled stock for their section, and a box sells whole or split into tablets, strips or ml from the same stock."
+          },
+          {
+            "title": "One product, several codes",
+            "body": "The old shelf number and the maker's barcode on the box point to the same item. Extra codes show in the inventory list and can be unlinked from the edit form, merging two twins adds up their stock and keeps the old code as an extra, and an item with no barcode gets an internal EAN-13 code from the barcode generator, printed as a label."
+          },
+          {
+            "title": "Purchase invoices by scanning",
+            "body": "Scan and type the count, or tick what arrived from the supplier's product list, with a low-stock-only view. After saving you see what the invoice did to stock: what went up, what was created for the first time, and what changed price or date."
+          },
+          {
+            "title": "A ledger for each supplier",
+            "body": "Every movement with its number, date and the balance after it: an opening balance from before the system, invoices, payments, charges without an invoice, and adjustments. A payment on account goes to the opening balance first, then to invoices oldest first; a voided movement stays struck through with its reason; the statement prints."
+          },
+          {
+            "title": "The starter catalogue in one tap",
+            "body": "Common veterinary companies with their sections and products; you pick the ones you deal with. Prices start empty because every clinic prices for its own market, so your first purchase invoice fills them, and each product learns its barcode from its first scan. A supplier you already have is completed, and a product you already have under the same name isn't added twice."
+          }
+        ]
+      },
+      {
+        "title": "Expiry, batches & reordering",
+        "items": [
+          {
+            "title": "Two alert windows you set",
+            "body": "A supplier return window (90 days by default) and a critical window (30 days). The home card counts what has entered the window and its value at cost, and you can mute one item's alert until its expiry date changes or its stock goes up."
+          },
+          {
+            "title": "A return list for the rep",
+            "body": "Set an item aside for return and find it under its own filter, then print a return statement grouped by supplier at cost, or copy the list with name, quantity and date and paste it into your chat with the rep on WhatsApp."
+          },
+          {
+            "title": "Batches with their own dates",
+            "body": "Each quantity keeps its expiry date and where it came from: a purchase invoice, earlier stock, or a manual addition. Sales are taken first from the unexpired batch that expires soonest, and the count checks each batch separately."
+          },
+          {
+            "title": "How long is left for each item?",
+            "body": "Stock watch looks ahead from one to six months, or to a day you choose: what will expire, what will run out, and how many units will be left to expire on the shelf at the current pace, so you return or discount them before the window closes."
+          },
+          {
+            "title": "Suggested order from your sales rate",
+            "body": "From net sales over the last 30 days and the lead time you set (7 days by default): what will run out before an order arrives and how much to order, grouped by supplier. The quantity is a suggestion you edit, then you copy the order for the rep or open a purchase invoice with it."
+          }
+        ]
+      },
+      {
+        "title": "Counting & corrections",
+        "items": [
+          {
+            "title": "A daily count of a few items",
+            "body": "Each day the system picks the number of items you set (5 by default): high-value items that move a lot, items not counted for a while, and items that had a difference before. The system's number stays hidden until you type what you counted, a difference needs a reason, and stock changes only after the manager approves. A losses report then shows what left stock, by reason."
+          },
+          {
+            "title": "The inventory audit and its printed report",
+            "body": "Read-only: it names likely twins, items with no barcode or a hand-typed code, broken barcodes, impossible quantities, idle stock, and zero stock that still sells. Each finding shows how to fix it in the app, and the printed report orders the fixes and draws barcodes you can scan at the shelf. A stocktake sheet in Excel lets you type only what you counted, and the variance value is worked out for you."
+          },
+          {
+            "title": "Price raise by percentage, previewed and reversible",
+            "body": "Manager only: choose products, services or both (everything, by category or supplier, or hand-picked items, with exclusions), then the percentage and a rounding that always goes up. Preview every line before saving, with flags for prices still below cost; a product group rises together, and a box sold by the tablet never comes to less than the whole box. Past invoices are never touched, and undo works line by line."
+          },
+          {
+            "title": "Deleting sends it to Deleted",
+            "body": "A deleted product is kept exactly as it was, and Restore brings it back with its stock and invoices. A wrong merge is undone from the same tab. Each product also has a movement log showing every stock change over the past year and its cause: sale, purchase, return or adjustment."
+          }
+        ]
+      },
+      {
+        "title": "From shelf to prescription",
+        "items": [
+          {
+            "title": "A dose worked out to the syringe mark",
+            "body": "Enter the weight and the dose is calculated in mg, then in ml at the vial's concentration, rounded to what a syringe can measure, or as a tablet count. The drug card in the treatment plan and the medicine picker both show how much of it you have in stock."
+          },
+          {
+            "title": "Stops before a mistake",
+            "body": "Each drug is checked the moment it joins the treatment plan: a drug banned for the species, a dose above the ceiling, a drug already prescribed, a risky combination, an allergy recorded on the file, or an NSAID or aminoglycoside with dehydration or kidney disease. A critical risk appears with its reason in a red box above the plan, and in round mode it blocks marking the dose as given. The rules are fixed and written down, and the decision stays with the vet."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "The whole inventory is on every plan: products, purchasing, supplier ledgers, expiry, batches, counts, the inventory audit, barcodes, price raises, Deleted, the starter catalogue and the dose calculator. Selling from this stock at the till is from the Advanced plan, and with it selling single tablets from a box, the wholesale tab, the confirmation when an expired item is sold, and selling a medicine straight into the pet's file. Product photos appear in the online store on the Super plan. The suggested order counts the sales recorded in doctorVet; if you don't sell through it, it relies on the low-stock level you set for each product. The 14-day free trial opens everything.",
+  "mock": {
+    "title": "Pharmacy & stock — today",
+    "rows": [
+      { "label": "Items in the return window", "value": "12", "tone": "warn" },
+      { "label": "Expired on the shelf", "value": "2", "tone": "bad" },
+      { "label": "Suggested order", "value": "7 items", "tone": "info" },
+      { "label": "Today's count", "value": "3 of 5", "tone": "ok" },
+      { "label": "Differences awaiting manager approval", "value": "3", "tone": "warn" },
+      { "label": "Last price raise", "value": "8% · can be undone", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "I have hundreds of items. Do I enter them one by one?",
+      "a": "Not necessarily. The starter catalogue creates common veterinary companies with their sections and products in one tap; you pick the ones you deal with, and your first purchase invoice fills in prices and quantities. There is no import from an Excel file today, so anything not in the catalogue you add by scanning its barcode."
+    },
+    {
+      "q": "How does the return list reach the rep?",
+      "a": "You copy it in one tap, with name, quantity and expiry date and no prices, and paste it into your WhatsApp chat with the rep, or you print the return statement grouped by supplier at cost. The system never messages the rep on its own."
+    },
+    {
+      "q": "A staff member deleted a product by mistake. Is it gone?",
+      "a": "No. Deleting moves it to the Deleted tab exactly as it was, and Restore brings it back with its stock and invoices. If two products were merged by mistake, restoring from the same tab undoes the merge."
+    },
+    {
+      "q": "The item was entered with a shelf number, and the box has a barcode. What do I do?",
+      "a": "Open the item and scan the box barcode into the barcode field: the old number stays as an extra code, so both scans find it. If the item was entered twice, merging adds up its stock and moves its sales history to the row you keep. The inventory audit lists items with hand-typed codes and likely twins."
+    },
+    {
+      "q": "If I raise prices and then change my mind, do old invoices change?",
+      "a": "No. Every invoice keeps the price it was sold at. Only the manager can raise prices, you preview the raise before saving, and other devices pick up the new prices within a minute. Undo in “History & undo” restores the original price line by line and keeps anything you changed by hand after the raise."
+    },
+    {
+      "q": "Do I need the Advanced plan to use the inventory?",
+      "a": "No. Inventory, purchasing, expiry, counts, barcodes and price raises are on every plan. Selling from stock at the till is from the Advanced plan, and the suggested order is based on recorded sales; without them, it relies on the low-stock level you set for each product."
+    }
+  ],
+  "related": ["pos", "printing", "store"]
+}

@@ -1,7 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: "class",
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  // الموقعُ التسويقيّ له إعدادُه (tailwind.site.config.js) — أصنافُه لا تدخل CSS التطبيق ولا ميزانيةَ إقلاعه.
+  content: ["./index.html", "./src/**/*.{ts,tsx}", "!./src/site/**"],
   theme: {
     container: {
       center: true,

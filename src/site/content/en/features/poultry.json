@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Poultry farms: a log and running numbers for every batch | doctorVet",
+    "description": "For vets who supervise poultry farms: farms, houses and batches, a daily round for every house on one screen, a store for each farm drawn down at purchase cost, feed conversion ratio and cost per live kilo, and the withdrawal end date worked out from the days you read off the box. On a plan of its own, separate from the clinic plans."
+  },
+  "hero": {
+    "eyebrow": "Poultry farms",
+    "title": "Know each batch's feed conversion and cost per live kilo before the cycle ends",
+    "sub": "Log the day's deaths and feed for every house on one screen, add a sample weight when you weigh, and type each medicine's withdrawal period off the box. doctorVet works out the batch age, mortality, average weight and feed conversion, plus the cost per live kilo at purchase price, and shows when the withdrawal ends. Close the batch with the sale figures and you see the profit or loss."
+  },
+  "pains": {
+    "title": "What gets lost when the farm lives on paper",
+    "items": [
+      {
+        "title": "“How many died this week?” and the numbers are in a notebook back at the farm",
+        "body": "Each day goes on a sheet of paper or into a message, and nobody adds up the week. Here a batch's days are grouped into weeks counted from placement: the week's deaths, feed, latest weight and cost, with a note when some of its days were never entered."
+      },
+      {
+        "title": "“What did a kilo cost us?” and no answer until the cycle ends",
+        "body": "Feed sacks, medicine boxes and the chick bill sit on different invoices. Here feed and medicine are drawn from the farm store onto the batch at purchase price, and the chick cost is added on day one, so you see the batch cost to date, and the cost per live kilo from the first sample weight."
+      },
+      {
+        "title": "“When does the withdrawal end?” and the box is long gone",
+        "body": "An antibiotic went in a few days ago and the sale is close. Here you type the withdrawal days off the box when you log the medicine, the safe date shows before you save, and the batch carries a banner counting the days until the last withdrawal ends."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Add the farm and its houses",
+        "body": "Name the farm, then add its houses with their capacity. Each house keeps defaults that are copied into every new batch: broiler or layer, the breed, and the usual count."
+      },
+      {
+        "title": "Start a batch",
+        "body": "Enter the placement date, the number of chicks and the cost per chick. The batch age counts from that day, and the house can't open a second batch until the first one is closed."
+      },
+      {
+        "title": "Log your day",
+        "body": "Today's round lists every house with an active batch: deaths, culls and kilos of feed for each, then “Save all”. Sample weights, medicines and their withdrawal periods go in from the batch screen."
+      },
+      {
+        "title": "Read the numbers and close the cycle",
+        "body": "Feed conversion, cost per live kilo and the efficiency index are worked out from the latest sample weight. When you close the batch you enter the birds sold, total weight and sale amount, and see the cost per kilo sold and the profit or loss."
+      }
+    ]
+  },
+  "caps": {
+    "title": "Everything in the farm section",
+    "groups": [
+      {
+        "title": "Farms, houses and batches",
+        "items": [
+          {
+            "title": "Several farms in one account",
+            "body": "Each farm has its houses by name and capacity, and the farm page shows every house with its active batch and that batch's age."
+          },
+          {
+            "title": "House defaults",
+            "body": "Type, breed and usual count are set once on the house and copied into each new batch, and you can change the count when you open the batch. Each batch keeps its own values, so a new batch never overwrites the history of the one before."
+          },
+          {
+            "title": "One active batch per house",
+            "body": "A house with an active batch can't open a second one, so no day is filed under the wrong batch. Closed batches stay under the farm with their dates and chick counts, and you can open them any time."
+          }
+        ]
+      },
+      {
+        "title": "The farm day",
+        "items": [
+          {
+            "title": "Today's round",
+            "body": "Every house with an active batch on one screen: deaths, culls and kilos of feed, with one feed type you pick for the round. Each house saves on its own; if some fail you're told how many saved, for example “Saved 5 of 6”, and which houses didn't."
+          },
+          {
+            "title": "What's left for today",
+            "body": "Each house card says “Entered today” in green, or shows the last entry date in red, along with mortality so far. If the status can't be loaded, it says so instead of reassuring you."
+          },
+          {
+            "title": "A missed day or a wrong number",
+            "body": "Pick the date of the missed day and enter it. Each batch has one entry per day, so opening a day that's already logged brings up its numbers (deaths, culls, sample weight and note) to correct, not to repeat."
+          },
+          {
+            "title": "Sample weight with a sanity check",
+            "body": "Enter the sample weight in grams and the number of birds, and the average weight in kilos shows before you save. If the figure is too small for a bird, or more than a bird could grow to at that age, you're warned about the unit or the count, and you can still save."
+          },
+          {
+            "title": "When the signal is weak at the farm",
+            "body": "The day's entry and draws from the farm store wait on the device and upload when the connection returns, a draw is never deducted twice, and a badge shows how many are waiting. Adding a farm or house, and opening or closing a batch, need a connection."
+          }
+        ]
+      },
+      {
+        "title": "Farm store and cost",
+        "items": [
+          {
+            "title": "A store for each farm",
+            "body": "The farm's feed and medicines with their names, quantities and unit cost; the barcode is optional. They don't appear in the clinic's stock or its counts, and can't be sold at the till."
+          },
+          {
+            "title": "Drawn at purchase cost",
+            "body": "Every draw onto a batch takes the stock out and writes the cost line together, or neither happens. The cost is the purchase price at that moment with no margin, and it never enters the clinic's expenses or profit."
+          },
+          {
+            "title": "Shortfalls are flagged, not hidden",
+            "body": "If you draw more than the balance, the draw is recorded as it happened, you're told how much was short, and the balance shows negative in red so you check the store. The gap never disappears quietly."
+          }
+        ]
+      },
+      {
+        "title": "Numbers and withdrawal",
+        "items": [
+          {
+            "title": "The batch numbers come first",
+            "body": "Age, birds alive, mortality (flagged from 5%), feed, average weight and feed conversion, then the batch cost to date, cost per live kilo and the efficiency index (EPEF). Anything not yet measured shows “—”, never zero."
+          },
+          {
+            "title": "A log grouped by week",
+            "body": "A batch's days are grouped into weeks from placement: the week's deaths, feed, latest weight and cost, with “4 of 7 days” when entries are missing. Two small trend lines sit alongside: weight by age and deaths per day."
+          },
+          {
+            "title": "Withdrawal from the box",
+            "body": "When you draw a medicine you type its withdrawal days as printed on the box, or zero if it has none, and “Safe to slaughter from” shows with its date before you save. The system adds no numbers of its own and doesn't stop you closing the batch: the call is yours."
+          },
+          {
+            "title": "Batch outcome",
+            "body": "At closing you enter birds sold, total weight and the sale amount, and see the cost per kilo sold and the profit or loss with its margin on sales. Nothing you leave out is guessed: close without sale figures and you see the cost alone."
+          },
+          {
+            "title": "The full farm ledger as a file",
+            "body": "A CSV file that opens in Excel, with a row for every recorded movement (deaths, culls, draws, day notes) across the farm's batches: house, batch, date, day number, kind, item, quantity, cost, withdrawal days, safe date and note."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "farm",
+  "planNote": "The poultry farm section comes on its own plan, the poultry farm plan, and isn't part of Basic, Advanced or Super. The farm plan doesn't include the till. The free trial (14 days, no card) opens the section along with every other feature. The farm plan can't be bought through online checkout yet; the doctorVet team activates it manually.",
+  "mock": {
+    "title": "Batch of 20,000 birds · House 2",
+    "rows": [
+      { "label": "Age", "value": "24 days", "tone": "info" },
+      { "label": "Birds alive", "value": "19,412" },
+      { "label": "Mortality", "value": "2.9%" },
+      { "label": "Average weight", "value": "1.21 kg", "tone": "info" },
+      { "label": "Feed conversion", "value": "1.48" },
+      { "label": "Withdrawal", "value": "3 days left", "tone": "warn" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Is the poultry section part of the Super plan?",
+      "a": "No. It isn't in any clinic plan: Basic, Advanced or Super. It's a separate plan, the poultry farm plan, and it doesn't include the till. The 14-day free trial opens the farm section so you can try it on a real farm before you decide."
+    },
+    {
+      "q": "How do I subscribe to the farm plan?",
+      "a": "The farm plan can't be bought through online checkout yet; the doctorVet team activates it on your account manually. If the trial ends before then, your data stays in your account and the app stops at the subscription screen until the plan is activated."
+    },
+    {
+      "q": "Does the system know each medicine's withdrawal period?",
+      "a": "No, on purpose. It carries no drug table, because a wrong number here means meat sold too early. You read the number off the box and type it when you draw the medicine, and the safe date is worked out from it. Leave the field empty and the system shows no date of its own."
+    },
+    {
+      "q": "What if the connection drops while I'm at the farm?",
+      "a": "The day's entry (deaths, culls, sample weight and note) and draws from the farm store are kept on the device and upload when the connection returns, and a draw is never deducted twice. Anything that can't upload is reviewed by the manager from the waiting badge. Adding a farm or house, and opening or closing a batch, need a connection."
+    },
+    {
+      "q": "Does it work for layers?",
+      "a": "You can set a house to broiler or layer, and its batches take that type; you log their deaths, feed, medicine and cost. But the indicators (average weight, feed conversion and cost per live kilo) are built for broilers, and there's no egg production log yet."
+    },
+    {
+      "q": "Does it compare my batch with a breed standard?",
+      "a": "No. The breed is recorded to identify the batch, and the system doesn't judge your farm against a reference that may not fit it. The only weight check is a wide limit that catches typing mistakes, such as a weight entered in kilos in the grams field."
+    }
+  ],
+  "related": ["pharmacy", "records", "team"]
+}

@@ -1,0 +1,132 @@
+{
+  "meta": {
+    "title": "Terms of use | doctorVet",
+    "description": "doctorVet's terms in plain language: the 14-day free trial, paying for the period you choose with no automatic renewal, what happens to your data when a period ends, and who is responsible for what."
+  },
+  "title": "Terms of use",
+  "updated": "2026-10-26",
+  "intro": "These terms cover your use of doctorVet, the veterinary clinic management system. We wrote them plainly so you know what you get and what you are responsible for before you start. By using the service you accept them. If anything is unclear, ask us.",
+  "sections": [
+    {
+      "title": "The service",
+      "paragraphs": [
+        "doctorVet is an online service for running a veterinary clinic. Every plan includes animal files and visits, lab and vaccines, hospitalisation and cages, appointments, and the pharmacy and stock. The Advanced plan adds the till, sales invoices, reports and payroll, and the Super plan adds credit sales, delivery, an online store and WhatsApp campaigns on top.",
+        "It runs in the browser on computers and phones, and can be installed on a device like an app. The pricing page lists what each plan includes in detail."
+      ]
+    },
+    {
+      "title": "Your account and who runs it",
+      "paragraphs": [
+        "A clinic account is created by someone authorised to act for the clinic, who becomes its manager. The manager invites staff by email or with an invite code and sets each person's role and permissions.",
+        "Your clinic is responsible for the people it invites and for what they do in the account. The activity log records who did each action, and only managers can see it.",
+        "Keep your password to yourself, and give each staff member their own account instead of sharing one, so the log shows who did each action.",
+        "Pet owners can create a free account to see their pets' files and request appointments. These terms apply to them where relevant."
+      ]
+    },
+    {
+      "title": "Your clinic's data and who is responsible for it",
+      "paragraphs": [
+        "What your clinic enters, such as medical records, clients' names and phone numbers, invoices and stock, is your clinic's data. We store and process it to provide the service to you; the privacy policy explains the details.",
+        "Your clinic is responsible for the accuracy of what it enters, and for having the right to record its clients' details and to contact them.",
+        "Each clinic's data is kept separate from other clinics' data on the server, so the animals your clinic registers are not visible to any other clinic. A pet's owner can see the pet's file in their own account if the pet is registered under their phone number. A pet that the owner adds from their own account is different: any clinic on doctorVet can open its file with the passport code or the owner's email, unless the owner has set it to private.",
+        "The doctorVet team can enter your clinic's account for support and maintenance, that is, when you ask for help or a fault appears, and for no other purpose. We log every such entry on our side; the privacy policy has the details."
+      ]
+    },
+    {
+      "title": "Clinical tools assist; the vet decides",
+      "paragraphs": [
+        "The dose calculator, drug-safety warnings, lab result interpretation and differential diagnosis suggestions work on fixed rules to help you in your work. They do not replace your professional judgement.",
+        "The vet makes every diagnosis, prescription and dose, and is responsible for them. Check each dose before giving it, and check the numbers the app reads from a photo of a lab slip before saving them, because reading a photo can get numbers wrong."
+      ]
+    },
+    {
+      "title": "WhatsApp messages and the online store",
+      "paragraphs": [
+        "The app prepares each WhatsApp message and opens it in WhatsApp on the staff member's device, where they send it themselves in one tap. doctorVet does not send messages on your behalf. Your clinic is the sender, and is responsible for the content, for the client's agreement to be contacted, and for following WhatsApp's rules.",
+        "On the Super plan, the online store is your clinic's store. Your clinic is the seller to its customers and is responsible for its products, prices, delivery and payment collection, and for following its country's rules on selling medicines and veterinary products online."
+      ]
+    },
+    {
+      "title": "The free trial",
+      "paragraphs": [
+        "Every new clinic starts with a 14-day free trial that unlocks every feature. No payment card is needed.",
+        "If the trial ends and you have not subscribed, the account is locked and shows only the subscription screen. Your data stays stored, and you find it as you left it when you subscribe.",
+        "If you pay during the trial, the trial ends on the day the payment is confirmed and the paid period starts that day; the remaining trial days are not added to it. From then on, only the features of the plan you chose are available. To use the whole trial, pay near its end."
+      ]
+    },
+    {
+      "title": "Subscriptions and payment",
+      "paragraphs": [
+        "You choose a plan and a period, one month or one year, and pay for it in advance.",
+        "There is no automatic renewal, so nothing is charged when a period ends. To continue, you pay for a new period yourself. The days you have left are shown in your account menu.",
+        "Online payment is currently available only inside Iraq, through Wayl, in Iraqi dinars. There is no online payment yet for clinics outside Iraq; to ask about a way to pay, message us through the assistant in the app before your trial ends, because a locked account shows only the subscription screen. Your period starts once we confirm the payment has arrived.",
+        "If you pay online for a different plan while a period is still running, the new plan applies at once to all your remaining days, and the new period is added after them. So moving to a lower plan before your period ends puts your remaining days on the lower plan."
+      ]
+    },
+    {
+      "title": "When a paid period ends",
+      "paragraphs": [
+        "If your period ends and you do not pay for a new one, your clinic's account becomes read-only: you can open and view your records, but you cannot add, change or sell anything until you pay.",
+        "The end of a period or a trial does not delete your data. When you pay, everything works as before."
+      ]
+    },
+    {
+      "title": "Prices and price changes",
+      "paragraphs": [
+        "Prices are shown on the pricing page. What you actually pay is the amount shown on the payment screen before you confirm it.",
+        "If we change our prices, the new price applies only to periods you pay for after the change. The price of a period you have already paid for does not change.",
+        "A price shown in a currency other than the one you pay in is a guide only, and may differ from the amount you pay after conversion."
+      ]
+    },
+    {
+      "title": "Acceptable use",
+      "paragraphs": [
+        "Use doctorVet to run your clinic and its lawful work, and keep to the following.",
+        "Do not enter data you have no right to record, and do not message people who have not agreed to hear from you.",
+        "Do not try to reach another clinic's data or an account that is not yours, and do not test, attack or deliberately overload the service without our written permission.",
+        "Do not sell or rent access to your account to anyone outside your clinic, and do not use the store to sell anything the law forbids.",
+        "If we see use that harms the service or other people, we may stop or limit it, and we will tell you why where we can."
+      ]
+    },
+    {
+      "title": "Availability",
+      "paragraphs": [
+        "We work to keep the service available and working properly, but we do not promise it will run without interruptions or errors. It may sometimes stop for maintenance or updates, or because of a problem with our hosting or network providers.",
+        "The service needs an internet connection. If the connection drops, some entries, such as products, expenses and returns, wait on the device and upload when it is back; anything that cannot be uploaded stays on the device for a manager to review. Sales need a connection, and retrying a sale never creates a second invoice.",
+        "We keep developing doctorVet, so we may add, change or remove features. What each plan includes today is listed on the pricing page."
+      ]
+    },
+    {
+      "title": "Stopping and closing your account",
+      "paragraphs": [
+        "There is nothing to cancel: the subscription does not renew, so to stop you simply do not pay for a new period, and nothing more is charged.",
+        "Before you stop, save what you need by printing or as Excel files. Available today: each animal's unified record and the stocktake on every plan, and report tables on the Advanced and Super plans. There is no single export today that gathers all of a clinic's data. If you are on the trial, do this before it ends, because a locked account shows only the subscription screen.",
+        "There is no button today to close your clinic's account yourself. To close it or have its data deleted, send us a request through the assistant in the app.",
+        "We may suspend or close an account that seriously or repeatedly breaks these terms, or when the law requires it. Where we can, we will tell you the reason first and give you a chance to put it right."
+      ]
+    },
+    {
+      "title": "Limits of liability",
+      "paragraphs": [
+        "We provide doctorVet as it is, and we work to fix errors as they come up.",
+        "We are not responsible for clinical decisions, for data entered incorrectly, for losses caused by internet outages, faults in your device or outside services such as WhatsApp and the payment provider, or for indirect losses such as lost profit.",
+        "In every case, our total liability for any claim is limited to the subscription fees you paid us in the 12 months before it.",
+        "Nothing in these terms limits a right that the law of your country gives you and does not allow you to give up."
+      ]
+    },
+    {
+      "title": "Changes to these terms",
+      "paragraphs": [
+        "We may update these terms. The date on this page is the date of the latest version, and continuing to use the service after an update means you accept the new version. An update does not change the price of a period you have already paid for."
+      ]
+    },
+    {
+      "title": "Law and contact",
+      "paragraphs": [
+        "These terms apply subject to the law in force in your country. If anything here conflicts with a mandatory rule of that law, the mandatory rule applies.",
+        "For any question about these terms or your account, open the doctorVet assistant from the button fixed at the bottom of every staff screen and write your question. If it has no ready answer, it shows a button that sends your message to our team, and you follow its status and our reply under My requests (طلباتي).",
+        "If you are a pet owner, contact the clinic you deal with; it can send your request on to us."
+      ]
+    }
+  ]
+}

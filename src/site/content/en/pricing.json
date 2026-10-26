@@ -1,0 +1,209 @@
+{
+  "meta": {
+    "title": "Pricing and plans | doctorVet",
+    "description": "doctorVet's three plans for your veterinary clinic, Basic, Advanced and Super, and what each includes. Try every feature for 14 days with no card and no automatic renewal."
+  },
+  "hero": {
+    "title": "Pay for what your clinic needs, after you've tried everything",
+    "sub": "Every plan includes medical records, vaccines, inpatient care and the full stock module. Plans differ in sales, money and client outreach: the POS, reports and payroll from Advanced; credit sales, delivery, the online store and campaigns in Super. The 14-day trial opens everything, no card needed."
+  },
+  "toggle": {
+    "monthly": "Monthly",
+    "annual": "Annual",
+    "save": "Save {{amount}} a year"
+  },
+  "perMonth": "per month",
+  "perYear": "per year",
+  "perDay": "about {{amount}} a day",
+  "usdLine": "Equal to about {{amount}}",
+  "approx": "approx.",
+  "plans": {
+    "basic": {
+      "name": "Basic",
+      "for": "For clinics that want records, vaccines and stock in one place, without selling through a POS.",
+      "cta": "Start free trial",
+      "highlights": [
+        "A file for every animal: visits, exams, lab results, photos and X-rays",
+        "Vaccine schedule that asks when the next dose is due each time you give one",
+        "Inpatient care and surgery: hourly dose board, care sheet and cage room",
+        "Full pharmacy and stock: purchases, supplier ledger, expiry dates and counts",
+        "Appointments, plus online booking requests from owners' accounts that you confirm",
+        "Permissions for each staff member, an activity log, and printouts with your logo"
+      ]
+    },
+    "advanced": {
+      "name": "Advanced",
+      "for": "For clinics that sell medicines and supplies directly and want to see their numbers every day.",
+      "cta": "Start free trial",
+      "highlights": [
+        "Everything in Basic, plus:",
+        "POS: scan or search, split payment, A4 and thermal receipts",
+        "Line-by-line returns, quantity offers and bundles",
+        "The full reports hub, with Excel and print",
+        "Cash drawer count at the end of each shift, and expenses by category",
+        "Payroll, advances and loans in instalments, with printed payslips"
+      ]
+    },
+    "super": {
+      "name": "Super",
+      "for": "For clinics that sell on credit, deliver orders and follow up with clients on WhatsApp.",
+      "cta": "Start free trial",
+      "badge": "Most complete",
+      "highlights": [
+        "Everything in Advanced, plus:",
+        "Credit sales and partial payments, with a statement for every client",
+        "Delivery by your own drivers or courier companies: collect from each driver, with a statement for each company",
+        "An online store on your clinic's own link, with cash on delivery",
+        "Reminders hub: the list of who's due builds itself, and each WhatsApp message is ready to send in one tap",
+        "WhatsApp campaigns by client group: vaccines due, birthdays, clients who stopped coming"
+      ]
+    }
+  },
+  "includes": {
+    "title": "In every plan",
+    "items": [
+      "A medical file for every animal: visits, SOAP exams, diagnosis, photos and X-rays",
+      "Weight-based dose calculator that flags out-of-range doses and blocks a drug the animal is recorded as allergic to",
+      "Lab: photograph the analyser printout and the numbers fill in for you to check, critical values first",
+      "Vaccines and reminders on the clinic calendar",
+      "Inpatient care, surgeries and cages, with an hourly dose board",
+      "Reception and appointments, plus a link where the owner follows each stage of the visit",
+      "Pharmacy and stock: batches and expiry, counts, price raises by percentage, barcodes",
+      "Consent forms, and every printout with your clinic's logo",
+      "Roles and permissions for each staff member, an activity log by name, and branches under one account",
+      "Ready WhatsApp messages sent in one tap from reception, bookings and the lab"
+    ]
+  },
+  "compare": {
+    "title": "Compare plans",
+    "plansHeader": "Plans",
+    "groups": [
+      {
+        "title": "Before the visit",
+        "rows": [
+          { "label": "Calendar and appointments", "basic": true, "advanced": true, "super": true },
+          { "label": "Online booking from the owner's account, confirmed by the clinic", "basic": true, "advanced": true, "super": true },
+          { "label": "Vaccines, with a next-dose prompt at every dose", "basic": true, "advanced": true, "super": true },
+          { "label": "Reminders on the calendar: vaccines, deworming, birthdays", "basic": true, "advanced": true, "super": true },
+          { "label": "Reminders hub: a list of everything due that builds itself, each message ready in one tap", "basic": false, "advanced": false, "super": true }
+        ]
+      },
+      {
+        "title": "In the clinic",
+        "rows": [
+          { "label": "Medical file, visits and SOAP exams", "basic": true, "advanced": true, "super": true },
+          { "label": "Dose calculator and drug-safety warnings", "basic": true, "advanced": true, "super": true },
+          { "label": "Lab: printout reading from a photo, analyser link, printed report", "basic": true, "advanced": true, "super": true },
+          { "label": "Inpatients: hourly dose board, care sheet and fluid balance", "basic": true, "advanced": true, "super": true },
+          { "label": "Surgeries, cages and consent forms", "basic": true, "advanced": true, "super": true }
+        ]
+      },
+      {
+        "title": "Sales & stock",
+        "rows": [
+          { "label": "Stock: purchases, supplier ledger, batches and expiry, counts", "basic": true, "advanced": true, "super": true },
+          { "label": "Price raises by percentage, and movement history per product", "basic": true, "advanced": true, "super": true },
+          { "label": "POS: A4 and thermal receipts, split payment", "basic": false, "advanced": true, "super": true },
+          { "label": "Returns and promotions", "basic": false, "advanced": true, "super": true },
+          { "label": "Wholesale sales screen", "basic": false, "advanced": true, "super": true },
+          { "label": "Credit sales and debt ledger", "basic": false, "advanced": false, "super": true },
+          { "label": "Delivery: drivers, courier companies and collections", "basic": false, "advanced": false, "super": true },
+          { "label": "Online store on your clinic's own link", "basic": false, "advanced": false, "super": true }
+        ]
+      },
+      {
+        "title": "After the visit",
+        "rows": [
+          { "label": "Ready WhatsApp messages sent in one tap from reception, bookings and the lab", "basic": true, "advanced": true, "super": true },
+          { "label": "Visit tracking link for the owner", "basic": true, "advanced": true, "super": true },
+          { "label": "Pet passport with a QR code", "basic": true, "advanced": true, "super": true },
+          { "label": "WhatsApp campaigns by client group", "basic": false, "advanced": false, "super": true }
+        ]
+      },
+      {
+        "title": "Management",
+        "rows": [
+          { "label": "Roles and permissions for each staff member, and an activity log", "basic": true, "advanced": true, "super": true },
+          { "label": "Manager PIN to lock the front-desk device", "basic": true, "advanced": true, "super": true },
+          { "label": "Branches under one account", "basic": true, "advanced": true, "super": true },
+          { "label": "Printouts with your logo, plus a barcode and label generator", "basic": true, "advanced": true, "super": true },
+          { "label": "Reports hub with Excel and print", "basic": false, "advanced": true, "super": true },
+          { "label": "Cash drawer count and expenses", "basic": false, "advanced": true, "super": true },
+          { "label": "Payroll and advances", "basic": false, "advanced": true, "super": true }
+        ]
+      },
+      {
+        "title": "Poultry farms",
+        "rows": [
+          { "label": "Houses, batches, daily log and cost per cycle", "basic": "Separate plan", "advanced": "Separate plan", "super": "Separate plan" }
+        ]
+      }
+    ]
+  },
+  "trial": {
+    "title": "The free trial, and what happens after",
+    "items": [
+      "14 days with every feature of every plan, from the POS to the store and campaigns.",
+      "No card needed for the trial, and nothing is charged.",
+      "On day 15, if you haven't subscribed, the account pauses at the subscription screen until you pay for a plan.",
+      "Your data isn't deleted when the trial ends: subscribe and you carry on with it as it is.",
+      "No automatic renewal: you pay only for the period you choose. If a paid period ends and you don't renew, the account becomes read-only: you see your files and invoices but can't add new ones."
+    ]
+  },
+  "payment": {
+    "title": "Payment and renewal",
+    "iraq": "In Iraq, you pay in Iraqi dinar through Wayl, the Iraqi online payment gateway, for the period you choose: a month or a year.",
+    "other": "In {{country}}: online payment for clinics outside Iraq is being prepared, and the free trial is open to you now with every feature. If its 14 days end before payment is available, the account pauses at the subscription screen and your data isn't deleted.",
+    "howTitle": "How to pay from your country"
+  },
+  "roi": {
+    "title": "Run the numbers for your clinic",
+    "sub": "Every booster that misses its date is a visit that didn't happen. Enter your own numbers to see what that adds up to each month. On every plan, the system asks when the next dose is due each time you give one, and puts it on the calendar on its day.",
+    "visitsLabel": "Visits per day",
+    "feeLabel": "Average booster fee",
+    "missedLabel": "Missed boosters per month",
+    "result": "That's about {{amount}} a month",
+    "note": "An estimate from your own numbers, not a promise. It counts booster fees only, and that is revenue, not profit."
+  },
+  "faq": {
+    "title": "Questions about pricing and payment",
+    "items": [
+      {
+        "q": "Do I need a card to start the trial?",
+        "a": "No. The trial runs for 14 days with every feature, and we don't ask for a card or any other payment method to start it."
+      },
+      {
+        "q": "What happens on day 15?",
+        "a": "Nothing is charged. If you choose a plan and pay, you carry on with the same data. If you don't subscribe, the account pauses at the subscription screen until you do, and your data isn't deleted."
+      },
+      {
+        "q": "Should I subscribe before the trial ends?",
+        "a": "There's no need. A paid period starts on the day you pay and ends the trial, and the remaining trial days aren't added to it. If you pick a smaller plan, the features outside it close straight away. So we suggest paying in the last days of your trial."
+      },
+      {
+        "q": "Does the subscription renew automatically?",
+        "a": "No. Nothing is charged unless you pay yourself, for the period you choose: a month or a year. The days left are always shown in your account menu. If a period ends and you don't renew, the account becomes read-only: you can see your files and invoices but can't add new ones until you renew."
+      },
+      {
+        "q": "Does paying annually save anything?",
+        "a": "Switch the toggle above the plans to Annual: wherever a year costs less than 12 months, the card shows how much you save. Where no saving appears, the only difference is paying once instead of every month."
+      },
+      {
+        "q": "Are there fees per case or per animal?",
+        "a": "No. You pay the plan price for the month or the year, with no fee per case, per animal or per WhatsApp message. Messages go out from the WhatsApp app on your own device, not through a paid messaging service."
+      },
+      {
+        "q": "Can I change plans later?",
+        "a": "Yes. When you pay for another plan you move to it right away, its period is added to what's left of your current one, and all those remaining days count on the new plan. That's why it makes sense to move to a smaller plan near the end of your period."
+      },
+      {
+        "q": "How do I pay if my clinic is outside Iraq?",
+        "a": "Online payment works only from inside Iraq today, in dinar through Wayl. Payment from other countries is being prepared, and the trial is open to you now with every feature. If the trial ends before payment from your country is available, the account pauses at the subscription screen and your data isn't deleted."
+      }
+    ]
+  },
+  "final": {
+    "title": "Start with every feature, and choose your plan once you know what you need",
+    "sub": "14 days free, with no card and no automatic renewal. When you subscribe, you carry on with the same data."
+  }
+}

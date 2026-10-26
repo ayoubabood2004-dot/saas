@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -57,7 +57,6 @@ const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) =>
 const Payroll = page(() => import("@/pages/Payroll").then((m) => ({ default: m.Payroll })));
 const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })), ["wdr", "scust", "fgr"]);
 const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })), ["join"]);
-const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
@@ -217,7 +216,71 @@ function HomeRoute() {
     return <Home />;
   }
   if (isAppHost()) return <Navigate to="/login" replace />;
-  return <Landing />;
+  // جلسةٌ بالجهاز لم تُحسم بعد (تحديثُ رمزٍ بطيء، أو INITIAL_SESSION فارغٌ عن خطأٍ عابر، أو مهلةُ الـ12
+  // ثانية): لا نغادر التطبيق — صفحةُ الدخول داخله، وLoginRoute يعيده للرئيسية لحظةَ تُحسم. مغادرتُه كانت
+  // ترمي عيادةً فتحت التطبيقَ المثبَّت (start_url = /) على موقع العراق، وبلا نتٍّ على صفحة خطأ المتصفّح.
+  // ورابطُ تأكيدٍ يُتحقَّق منه الآن (#access_token أو ?code=): التحقّقُ بطيئاً كان ينتهي بمهلة الستّ ثوانٍ
+  // فيُغادَر التطبيقُ ويضيع الرمز — والعيادةُ الجديدة على الموقع بلا دخول. ننتظر هنا لا بصفحة الدخول (انظر AwaitAuth).
+  if (hasStoredSession() || isAuthCallback()) return <AwaitAuth />;
+  // ويبقى بالتطبيق مَن فتحه مثبَّتاً أو بلا نت (ولا جلسةَ له): الموقعُ خارجه صفحةُ خطأ المتصفّح. نفسُ إعفاء البوّابة.
+  if (isInstalledOrOffline()) return <Navigate to="/login" replace />;
+  return <ToSite />;
+}
+
+/** جلسةٌ بالجهاز تُحسم أو رابطُ تأكيدٍ يُتحقَّق منه: ننتظر بمكاننا، فإن حُسمت صارت الرئيسية وحدها. وليست صفحةُ
+ *  الدخول مكانَ الانتظار: تنظيفُها عند الفتح (signOut محلّيّ) ينتظر قفلَ المصادقة ثم يحذف الجلسةَ التي حُفظت
+ *  للتوّ — قيس بمتصفّح: تأكيدٌ بطيءٌ ⇒ لوحةٌ بلا جلسةٍ محفوظة ⇒ الموقعُ بعد إعادة الفتح (تدقيقٌ عدائيّ). وبعد
+ *  ١٥ ثانية بلا حسم: زرّان بيد المستخدم — إعادةُ المحاولة أو الدخول — لا انتقالٌ يمسح جلسةً ربما ما زالت صالحة. */
+function AwaitAuth() {
+  const { t } = useTranslation();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const id = setTimeout(() => setSlow(true), 15_000); return () => clearTimeout(id); }, []);
+  if (!slow) return <FullScreenLoader />;
+  return (
+    <div className="grid min-h-screen place-items-center p-6">
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button type="button" onClick={() => window.location.assign("/")} className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white">{t("common.retry")}</button>
+        <a href="/login" className="rounded-xl border border-line px-5 py-2.5 text-sm font-bold text-ink">{t("auth.signIn")}</a>
+      </div>
+    </div>
+  );
+}
+
+/** رابطُ مصادقةٍ لم يُستهلك بعد — نفسُ تعبير بوّابة index.html. */
+function isAuthCallback(): boolean {
+  return /access_token|refresh_token|[?&](code|token_hash|type)=/.test(window.location.hash + window.location.search);
+}
+
+function isInstalledOrOffline(): boolean {
+  try { return navigator.onLine === false || window.matchMedia("(display-mode: standalone)").matches; } catch { return false; }
+}
+
+/** نفسُ فحص بوّابة index.html: رمزُ جلسةٍ محفوظ، صالحاً كان أو يُحدَّث. */
+function hasStoredSession(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) ?? "";
+      if (k === "vp_session" || /^sb-.+-auth-token$/.test(k)) return true;
+    }
+  } catch { /* بلا تخزين: لا جلسةَ تُنتظر */ }
+  return false;
+}
+
+/** الزائرُ بلا حساب على الجذر داخل التطبيق (بعد خروجٍ مثلاً) ينتقل للموقع التسويقيّ: يُعاد تحميلُ «/»
+ *  فتختار البوّابةُ نسختَه (المحفوظة، ثم المنطقة الزمنية، ثم اللغة) — مصدرٌ واحدٌ للاختيار لا نسختان.
+ *  وكاسرُ حلقة: مضيفٌ يخدم التطبيقَ لمسار النسخة (`vite dev`، أو عاملٌ قديم) كان يعيدنا هنا بلا
+ *  نهاية؛ فإن عدنا خلال ١٠ ثوانٍ — أو لا تخزينَ نحفظ به العودة — بقينا: صفحةُ الدخول داخل التطبيق. */
+function ToSite() {
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    try {
+      const last = Number(sessionStorage.getItem("dv_to_site") || 0);
+      if (Date.now() - last < 10_000) { setStuck(true); return; }
+      sessionStorage.setItem("dv_to_site", String(Date.now()));
+    } catch { setStuck(true); return; }
+    window.location.replace(`/${window.location.search}`);
+  }, []);
+  return stuck ? <Navigate to="/login" replace /> : <FullScreenLoader />;
 }
 
 /** حشوة المحتوى تتبع عرض الشريط لحظةً بلحظة — الطيّ يوسّع الصفحة بلا قفزة. */

@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Staff, permissions and payroll for vet clinics | doctorVet",
+    "description": "Invite each staff member to their own account, pick their role, and switch permissions on or off, with the sensitive ones off unless you allow them. A manager PIN for the shared computer and an activity log with names. From Advanced: payroll with advances, deductions and reasons, and a printed payslip for each person."
+  },
+  "hero": {
+    "eyebrow": "Management",
+    "title": "Everyone on their own account and permissions, and you know who did what, and when",
+    "sub": "Invite your team by link or code, give each person a role, then switch their permissions on or off. Sensitive ones, like profits and deleting invoices, stay off unless you allow them. The manager PIN protects the shared reception computer, and the activity log keeps the name and time of each action. From the Advanced plan, payroll is worked out with advances, deductions and their reasons, and each person gets a printed payslip."
+  },
+  "pains": {
+    "title": "When your clinic team grows",
+    "items": [
+      {
+        "title": "“We all use one account, so nobody knows who did what”",
+        "body": "An invoice disappears or a price changes, and everyone works under the manager's login. Here each person signs in to their own account and what they do is recorded with their name and the time, so “who?” becomes a line in the log, not an inquiry among the team."
+      },
+      {
+        "title": "“I don't want every employee seeing the clinic's profits”",
+        "body": "Reception needs sales and appointments, not profits, invoice deletion or settings. Each role comes with its own permissions, you adjust them per person with a switch, and sensitive permissions only open after you confirm."
+      },
+      {
+        "title": "“At the end of the month we argue about advances and deductions”",
+        "body": "An advance written on a scrap of paper, absence worked out on 30 days one month and 26 the next, a deduction nobody can explain. Payroll here keeps advances with their instalments, asks for a reason for every penalty or bonus, and prints on the payslip how each line was worked out."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How to get your team started",
+    "items": [
+      {
+        "title": "Invite the person and pick their role",
+        "body": "In Staff Management, tap Invite staff, choose an email or code invite, then the role. You get a code and a join link to copy and send them; they sign in or create an account and join your team in that role."
+      },
+      {
+        "title": "Set their permissions",
+        "body": "Picking a role sets every permission switch at once, then you switch on or off whatever you like from their profile. When you turn on a sensitive permission, the app shows its name and asks: are you sure?"
+      },
+      {
+        "title": "Set a manager PIN for reception",
+        "body": "A 4-digit PIN that you set. It locks the sensitive screens on the shared computer while the day's work stays open, and lets a staff member get manager access for 10 minutes when they need it, without knowing your password."
+      },
+      {
+        "title": "Follow your team and pay them",
+        "body": "See who is working in the app right now, and open the activity log to see who did what. From the Advanced plan, you work out the month's payroll, review it and approve it, then print each person's payslip."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What you manage in your team, in detail",
+    "groups": [
+      {
+        "title": "Invites and roles",
+        "items": [
+          {
+            "title": "Invite by the person's email or by code",
+            "body": "An email invite can only be accepted by the account with that email, and only once; a code invite can be accepted by whoever receives its link. Every invite expires after 72 hours, and pending invites stay in a list where you copy the link or cancel the invite."
+          },
+          {
+            "title": "Five ready-made roles",
+            "body": "Clinic manager, veterinarian, receptionist, groomer and photographer, each with its starting permissions. The server fences the photographer account to product photos and the online store's products and storefront, with no access to orders."
+          },
+          {
+            "title": "A staff profile for each person",
+            "body": "Name, photo, phone, email, specialty, join date and a short bio. At the top of the page: team size, active staff, who is waiting to join, and who is working in the app right now."
+          },
+          {
+            "title": "Removing someone ends their access",
+            "body": "When a staff member leaves and you remove them, their access to the clinic is closed on the server in the same step and their invite code is voided. Adding, editing and removing staff are recorded in the activity log with who did it."
+          }
+        ]
+      },
+      {
+        "title": "Permissions and the manager PIN",
+        "items": [
+          {
+            "title": "A switch for each permission",
+            "body": "From the calendar, adding patients and editing medical records to the till, stock, sales reports and settings: start from the role's defaults, then switch each permission on or off for each person."
+          },
+          {
+            "title": "Sensitive ones stay off unless you allow them",
+            "body": "Five permissions are marked sensitive: profit and revenue, deleting invoices permanently, clinic settings, staff management, and payroll. They are off for every role except manager, and granting one shows its name and asks you to confirm."
+          },
+          {
+            "title": "Locking the shared computer",
+            "body": "A manager locks the shared reception computer from their account. The day's work stays open, and until the manager PIN is entered it locks reports and the activity log before today, profits, invoice deletion, staff editing, and stock editing unless you allow it."
+          },
+          {
+            "title": "Manager access for 10 minutes",
+            "body": "A staff member types the PIN and the server grants manager access for 10 minutes, then it ends. Every five wrong tries lock the PIN, for 5 minutes the first time and then double each time up to 24 hours, and every unlock and every wrong try goes into the activity log."
+          }
+        ]
+      },
+      {
+        "title": "Who did what, and who's here now",
+        "items": [
+          {
+            "title": "An activity log with names",
+            "body": "Sales, refunds, invoice edits and deletions; stock, prices, purchases and expenses; pets, doses and vaccines; staff and settings changes; sign-ins and the manager PIN. Money and stock entries are kept for a year, everything else for 90 days."
+          },
+          {
+            "title": "Filters that take you to the action",
+            "body": "Pick the period (today, yesterday, 7 days, 30 days, this month, last month or your own range), then the type of action from chips with counts, or the staff member, or search by action, staff name or pet name. The chart shows a single day hour by hour and longer ranges day by day; tap a bar to zoom into it."
+          },
+          {
+            "title": "\"Was → now\" for every edit",
+            "body": "The log shows each changed field's value before and after the edit. A deleted invoice stays visible in it with who deleted it and when, and nobody in the clinic, the manager included, can edit or erase a line of the log."
+          },
+          {
+            "title": "\"Online now\" and \"last seen\"",
+            "body": "A green dot shows who is working in the app this moment, and when everyone else was last seen. Each person's app checks in once a minute while it's open, and the list refreshes every 30 seconds."
+          }
+        ]
+      },
+      {
+        "title": "Payroll (from the Advanced plan)",
+        "items": [
+          {
+            "title": "Dated salaries, and a run that freezes once approved",
+            "body": "A raise is a new row that applies from its date, so older payslips keep the salary of their day. The monthly run is calculated and reviewed, then approved, which freezes its payslips and deducts advance instalments, then paid and closed. Spot a mistake? Undo the recorded payment if there is one, then un-approve and the instalments return to their balances; both work until the period is closed."
+          },
+          {
+            "title": "Additions and deductions with reasons",
+            "body": "Fixed allowance, on-call, overtime, bonus and retroactive difference; absence, unpaid leave, social security, income tax, lateness, cash shortage, damage and penalty. Bonuses, penalties, shortages, damage and similar items aren't accepted without a written reason, and any item can be reversed in full or in part while its record stays in the history."
+          },
+          {
+            "title": "Advances and draws",
+            "body": "An advance is paid from the cash drawer or by transfer and recovered in monthly instalments, deducted when the run is approved. A draw against the month's pay comes off that month's salary in full. A write-off stops the instalments with a written reason and erases nothing from the history."
+          },
+          {
+            "title": "A deduction cap, and a payslip that explains itself",
+            "body": "You set the day-rate basis (base ÷ 30 or ÷ working days), which absence is worked out from, and a maximum share for deductions; anything above it carries to next month, penalties and other discretionary items first. The payslip prints with your clinic's logo, how each line was worked out, and two signature lines, and the payment is recorded in expenses at the net paid."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "On every plan: staff invites and roles, permission switches including the sensitive ones, the manager PIN and shared-computer lock, the activity log, and \"Online now\". Payroll (salary structure, the monthly run and its approval, advances and draws, the deduction policy, and the printed payslip) is from the Advanced plan, and comes in full on Super too. The 14-day free trial opens everything, no card needed.",
+  "mock": {
+    "title": "Staff Management · this morning",
+    "rows": [
+      { "label": "Dr. Sara · Veterinarian", "value": "Online now", "tone": "ok" },
+      { "label": "Ahmed · Receptionist", "value": "Last seen 12 minutes ago", "tone": "info" },
+      { "label": "Code invite · Groomer", "value": "Waiting to join", "tone": "warn" },
+      { "label": "\"Delete invoices permanently\" for Ahmed", "value": "Sensitive · off", "tone": "warn" },
+      { "label": "Reception computer", "value": "Locked · manager PIN opens it for 10 minutes", "tone": "info" },
+      { "label": "Activity log today", "value": "86 actions, each with a name", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "A vet on my team already uses doctorVet for their own clinic. Can they join mine?",
+      "a": "Yes. When they accept the invite, the app warns them that their account will move into your clinic's workspace and asks them to confirm. Their own clinic's data is hidden, not deleted, and comes back as it was when they leave your team."
+    },
+    {
+      "q": "Can my receptionist see the clinic's profits?",
+      "a": "No, unless you allow it. \"See profit and revenue\" is a sensitive permission, off for every role except manager, and granting it asks you to confirm. To be precise: the server enforces the role itself (manager, vet, reception…) and checks the product-photo and online-store switches; the other switches set what a person sees and does in the app's screens."
+    },
+    {
+      "q": "An invoice disappeared. How do I find out who deleted it?",
+      "a": "Open the activity log and choose the period and the \"Invoice deleted\" type: you'll see who deleted it and when. The server only deletes an invoice for a manager account, or for someone who opened manager access with the PIN, and that unlock is logged too. Money and stock entries stay in the log for a year, everything else for 90 days, and the log is for the manager."
+    },
+    {
+      "q": "The manager is out and reception needs manager access. What do we do?",
+      "a": "The staff member types the manager PIN on their computer and gets manager access for 10 minutes, then it ends, and the unlock is recorded in the activity log. They don't need your password, and only the manager can set or change the PIN. The PIN doesn't open payroll: there the server goes by the account's own role, not the PIN."
+    },
+    {
+      "q": "Which plan has payroll? Can staff see each other's pay?",
+      "a": "Payroll is on the Advanced and Super plans, and the free trial opens it too. The server serves the team's salaries and advances only to an account whose own role is manager, and no staff member is ever served a colleague's pay. A manager can't approve a run that includes their own pay while the clinic has another manager, and who approved the run, and when, stays on record."
+    },
+    {
+      "q": "Does it calculate tax and social security under my country's law?",
+      "a": "No. The social security share and income tax are items whose amounts you enter, or set once as a monthly item that repeats in every run. The deduction cap starts at 50% and you change it to suit your clinic; it's worth reviewing with your accountant."
+    }
+  ],
+  "related": ["reports", "pos", "branches"]
+}

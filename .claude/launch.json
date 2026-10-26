@@ -20,6 +20,18 @@
         "5199"
       ],
       "port": 5199
+    },
+    {
+      "name": "site-preview",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "preview",
+        "--port",
+        "4180",
+        "--strictPort"
+      ],
+      "port": 4180
     }
   ]
 }

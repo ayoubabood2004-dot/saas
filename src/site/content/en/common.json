@@ -1,0 +1,67 @@
+{
+  "nav": {
+    "product": "Product",
+    "pricing": "Pricing",
+    "why": "Why doctorVet",
+    "security": "Security",
+    "faq": "FAQ",
+    "start": "How to start",
+    "login": "Sign in",
+    "menu": "Menu",
+    "close": "Close"
+  },
+  "mega": {
+    "groups": [
+      { "title": "Before the visit", "items": ["reception", "vaccines"] },
+      { "title": "In the clinic", "items": ["records", "lab", "hospital"] },
+      { "title": "Sales & stock", "items": ["pharmacy", "pos", "credit-delivery", "store"] },
+      { "title": "After the visit", "items": ["whatsapp", "owners"] },
+      { "title": "Management", "items": ["team", "reports", "branches", "printing"] }
+    ],
+    "featured": {
+      "title": "Poultry farms",
+      "body": "For anyone who runs or supervises poultry farms: houses and batches, a daily log of mortality, water, sample weight and temperature, plus feed conversion ratio (FCR) and the cost of each cycle.",
+      "slug": "poultry"
+    },
+    "all": "All features"
+  },
+  "cta": {
+    "primary": "Start your 14-day free trial",
+    "secondary": "Explore the features",
+    "reassure": "14 days with every feature · No card needed · No automatic renewal",
+    "login": "Already have an account? Sign in"
+  },
+  "switcher": {
+    "label": "Country & currency",
+    "title": "Choose your country",
+    "search": "Search for a country",
+    "suggest": "Your device settings suggest you're in {{country}}. Switch to your country page?",
+    "yes": "Yes, switch",
+    "no": "No, stay here",
+    "english": "English",
+    "arabic": "العربية"
+  },
+  "footer": {
+    "tagline": "Arabic-first software for vet clinics: every animal's file and upcoming doses, your stock and its expiry dates, in one place.",
+    "product": "Product",
+    "resources": "Resources",
+    "company": "Company",
+    "legal": "Legal",
+    "privacy": "Privacy policy",
+    "terms": "Terms of use",
+    "rights": "© {{year}} doctorVet. All rights reserved.",
+    "available": "Country sites",
+    "madeIn": "Made in Iraq and in use at Iraqi vet clinics today"
+  },
+  "demoLabel": "Sample data",
+  "breadcrumbHome": "Home",
+  "planBadge": {
+    "all": "On every plan",
+    "advanced": "Advanced plan and up",
+    "super": "On the Super plan",
+    "farm": "On the poultry farm plan"
+  },
+  "learnMore": "Learn more",
+  "backToFeatures": "Back to all features",
+  "related": "Related features"
+}

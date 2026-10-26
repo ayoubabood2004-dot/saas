@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "title": "doctorVet features: every part of the system",
+    "description": "Medical records, inpatients, lab, vaccines, pharmacy, point of sale, reports and more: what each part of doctorVet does, and which plan includes it."
+  },
+  "hero": {
+    "title": "From reception to the till, one system for your clinic",
+    "sub": "Each section has its own page: what it does, how it works, and which plan includes it. The 14-day free trial opens every section, no card needed."
+  },
+  "cards": {
+    "records": {
+      "title": "Medical records & visits",
+      "short": "One file per animal for visits, exams, treatment, vaccines and images, with a weight-based dose calculator that stops a drug the pet is recorded as allergic to."
+    },
+    "hospital": {
+      "title": "Inpatients, surgery & cages",
+      "short": "An hourly dose board showing what is late and what is due now, a care sheet that keeps the fluid balance, a cage room, and a log of surgeries and their outcomes."
+    },
+    "lab": {
+      "title": "Lab",
+      "short": "Photograph the analyser slip and the system reads the numbers for you to check before saving, with normal ranges per species and critical values first."
+    },
+    "vaccines": {
+      "title": "Vaccines & reminders",
+      "short": "Every dose you give prompts for the next due date, due vaccines show on the calendar and today's dashboard, and vaccines given before you started are recorded on their real dates."
+    },
+    "reception": {
+      "title": "Reception & appointments",
+      "short": "A daily board where you drag cases between treatment, boarding and done, a timeline of today's appointments, and booking requests owners send from their accounts for you to confirm."
+    },
+    "pharmacy": {
+      "title": "Pharmacy & inventory",
+      "short": "An alert before the supplier return window closes, batches with their own expiry dates, reorder quantities suggested from sales pace and your low-stock level, and a few items counted each day."
+    },
+    "pos": {
+      "title": "Point of sale & invoices",
+      "short": "Scan a barcode or search by name, split payment across cash, card and bank transfer, print A4 or 80 mm receipts with your logo, and return line by line so stock comes back."
+    },
+    "credit-delivery": {
+      "title": "Credit & delivery",
+      "short": "Sell on credit and collect in parts with a statement per customer, send orders with a driver or a courier company, and record the money when it reaches you."
+    },
+    "store": {
+      "title": "Online store",
+      "short": "A store on its own link for your clinic, where customers order without an account and pay on delivery; accepting an order creates the invoice and the delivery order."
+    },
+    "whatsapp": {
+      "title": "WhatsApp & campaigns",
+      "short": "Ready-made messages to owners that you send in one tap from your clinic's WhatsApp; on Super, campaigns for pets due a vaccine or owners who stopped visiting."
+    },
+    "owners": {
+      "title": "Pet owners & passport",
+      "short": "A QR passport card for every pet, a link where the owner follows each stage of the visit, and a free owner account to see vaccines and request appointments."
+    },
+    "reports": {
+      "title": "Reports",
+      "short": "Cash box and payment methods, staff performance, top and slowest sellers, expenses and purchases, for any period you choose, with Excel export and print."
+    },
+    "team": {
+      "title": "Staff, permissions & payroll",
+      "short": "Ready-made roles and permissions you switch on or off per person, a log of who did what, and from Advanced, payroll with advances, deductions and printed payslips."
+    },
+    "branches": {
+      "title": "Branches",
+      "short": "Add your branches to one account: pin each device to its branch, tag new cases with it, and view the daily board and treatment sheet by branch. Stock stays shared across the clinic."
+    },
+    "poultry": {
+      "title": "Poultry farms",
+      "short": "Farm, houses and batches; daily mortality, weight, water and temperature; feed conversion ratio and each cycle's cost at purchase price."
+    },
+    "printing": {
+      "title": "Printing & barcodes",
+      "short": "Consent forms, lab reports and stock reports print with your clinic's logo, and an in-house barcode generator prints standard EAN-13 labels."
+    }
+  }
+}

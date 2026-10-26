@@ -1,0 +1,33 @@
+/* أنماطُ الموقع التسويقيّ — من إعداد Tailwind الخاصّ به (tailwind.site.config.js)،
+ * فلا يدخل CSS التطبيق ولا يأخذ منه. فاتحٌ وحدَه: صفحةُ بيعٍ تُقرأ بالنهار على الهاتف. */
+@config "../../tailwind.site.config.js";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body { @apply bg-paper font-sans text-navy antialiased; text-rendering: optimizeLegibility; }
+  h1, h2, h3, h4 { @apply font-display text-navy; letter-spacing: -0.01em; }
+  ::selection { background: #d9ebff; }
+  :focus-visible { outline: 3px solid #1266d8; outline-offset: 2px; border-radius: 6px; }
+  summary { cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+  }
+}
+
+@layer components {
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-base font-semibold text-white shadow-[0_10px_24px_-12px_rgb(18_102_216/0.7)] transition hover:bg-brand-700 active:translate-y-px; }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-full border border-rule bg-white px-5 py-3 text-base font-semibold text-navy transition hover:border-brand-300 hover:text-brand-700; }
+  .eyebrow { @apply inline-flex items-center gap-2 text-sm font-semibold text-stamp; }
+  .section { @apply py-16 sm:py-24; }
+  .h2 { @apply text-balance font-display text-[1.85rem] font-bold leading-[1.25] sm:text-[2.5rem]; }
+  .lead { @apply text-lg leading-8 text-navy-3; }
+  .card { @apply rounded-3xl border border-rule bg-white; }
+  /* الختم: دائرةٌ بحبرٍ بنفسجيّ مائلةٌ قليلاً — توقيعُ الموقع، مأخوذٌ من دفتر التطعيم. */
+  .stamp { @apply grid shrink-0 place-items-center rounded-full border-2 border-dashed border-stamp/70 text-stamp; transform: rotate(-9deg); }
+  .prose-site p { @apply mb-4 leading-8 text-navy-2; }
+  .num { font-variant-numeric: tabular-nums; }
+}

@@ -1,0 +1,326 @@
+{
+  "meta": {
+    "title": "doctorVet | Arabic-first software for veterinary clinics",
+    "description": "A medical file for every animal, doses and vaccines on schedule, stock that tracks expiry dates, plus a till and reports from the Advanced plan. Try every feature for 14 days, no card."
+  },
+  "hero": {
+    "badge": "Veterinary clinic software, Arabic first",
+    "title": "Every animal, every dose, every box on your shelves, accounted for.",
+    "titleAccent": "So you can focus on medicine.",
+    "sub": "A complete file for every animal with its upcoming doses, stock that knows its expiry dates, and from the Advanced plan, a till and reports for your clinic's money. One system, built in Arabic from the start.",
+    "points": [
+      "Each vaccine dose you record asks when the next is due and puts it on the calendar",
+      "Expiry alerts as early as you choose, in time to return stock to the supplier",
+      "A ready WhatsApp message for the owner, sent in one tap"
+    ],
+    "card": {
+      "label": "Sample data",
+      "title": "Vaccination record",
+      "pet": "Misha — cat, 2 years",
+      "owner": "Owner: Abu Yousef",
+      "rows": [
+        {
+          "vaccine": "Feline triple — first dose",
+          "date": "12 Mar 2026",
+          "status": "given"
+        },
+        {
+          "vaccine": "Feline triple — booster",
+          "date": "9 Apr 2026",
+          "status": "given"
+        },
+        {
+          "vaccine": "Rabies",
+          "date": "9 Apr 2026",
+          "status": "given"
+        },
+        {
+          "vaccine": "Triple — annual booster",
+          "date": "2 Nov 2026",
+          "status": "due"
+        }
+      ],
+      "givenStamp": "Given",
+      "dueBadge": "Due",
+      "message": "Hello Abu Yousef, Misha's annual booster is due on 2 Nov. Shall we book a visit for you? — Al-Rahma Vet Clinic",
+      "send": "Send on WhatsApp",
+      "oneTap": "The message is ready — the clinic sends it in one tap"
+    }
+  },
+  "segments": {
+    "title": "Where is your clinic today?",
+    "sub": "Pick the situation closest to yours to see where to start and what fits.",
+    "items": [
+      {
+        "key": "paper",
+        "title": "Paper or Excel",
+        "body": "Enter past visits, doses and vaccines on their real dates, so each animal's file is complete and its next doses show on the calendar. There is no Excel import yet.",
+        "link": "records"
+      },
+      {
+        "key": "switch",
+        "title": "Another system",
+        "body": "There is no tool to bring your data over from another system yet. What exists: a ready catalog of market suppliers and their sections to build your stock, and past records entered on their real dates. Run doctorVet for 14 days alongside your current system before you decide.",
+        "link": "start"
+      },
+      {
+        "key": "new",
+        "title": "A new clinic",
+        "body": "Start organized from day one: pick the suppliers you work with from the ready catalog and your stock is built, with its sections, in one tap. If medical records and stock are all you need, the Basic plan covers them.",
+        "link": "pricing"
+      },
+      {
+        "key": "branches",
+        "title": "Several branches",
+        "body": "Add your branches to one account, on every plan. Cases show by branch and each sale carries its branch name. Stock and reports are shared across the whole clinic.",
+        "link": "branches"
+      },
+      {
+        "key": "pharmacy",
+        "title": "Vet pharmacy or pet shop",
+        "body": "Stock with batches and expiry dates, a count of a few items each day, and one product that answers to both its shelf code and the box barcode. The till, invoices and returns come with the Advanced plan.",
+        "link": "pharmacy"
+      },
+      {
+        "key": "poultry",
+        "title": "Poultry vet",
+        "body": "Farms, houses and batches, with age counted from the day the chicks were placed. Daily mortality, water and weight, plus feed conversion and cost per live kilo. This module is on its own separate plan, the poultry farm plan.",
+        "link": "poultry"
+      }
+    ]
+  },
+  "pains": {
+    "title": "Problems every clinic knows",
+    "sub": "Each one with what doctorVet does about it today, and the plan you need when the fix is not on every plan.",
+    "items": [
+      {
+        "pain": "The owner forgot the booster date, and so did everyone else.",
+        "fix": "Every vaccine dose you record asks when the next one is due, so it shows on the calendar and the dashboard. On the Super plan, the reminders hub gathers everyone who is due, each with a ready message you send in one tap.",
+        "feature": "vaccines"
+      },
+      {
+        "pain": "A box expired on the shelf after the supplier-return window had closed.",
+        "fix": "You get an alert ahead of expiry, as early as you set in settings, so the item can still go back. The return list copies in one tap to send to the rep, and selling an expired item asks for confirmation first.",
+        "feature": "pharmacy"
+      },
+      {
+        "pain": "An inpatient's dose ran late, and nobody knows by how much.",
+        "fix": "The hourly dose board shows what is late, what is due now and what was given today, with the minutes late on every overdue dose. Marking a dose given takes one tap.",
+        "feature": "hospital"
+      },
+      {
+        "pain": "Who owes us money, and how much have they paid?",
+        "fix": "Sell on credit, take partial payments whenever the customer pays, and see a full statement for every customer. On the Super plan.",
+        "feature": "credit-delivery"
+      }
+    ]
+  },
+  "tour": {
+    "title": "The clinic day, from front desk to final numbers",
+    "sub": "The system follows the order of your day. Pick a stage to see what happens there.",
+    "tabs": [
+      {
+        "key": "reception",
+        "label": "Reception & bookings",
+        "title": "The front desk knows who is in and who is waiting",
+        "body": "Today's board shows cases in columns, under care, boarding and done, and you move them by dragging. Bookings sit on a day timeline with a marker for the current time.",
+        "bullets": [
+          "Quick new-case intake, kept as a draft if the page reloads",
+          "Confirmed, arrived, in the room, done, no-show: every booking has its status",
+          "Owners with an account request a slot from their phone, and the clinic confirms",
+          "A sound, a badge and a browser notification when a new booking request comes in"
+        ],
+        "feature": "reception"
+      },
+      {
+        "key": "exam",
+        "label": "Exam & medical record",
+        "title": "A structured exam, and a dose worked out by weight",
+        "body": "SOAP exams with vital signs and templates for common cases, and one file per animal holding its visits, vaccines, lab results and images, with treatments, vaccines and notes together on a single timeline.",
+        "bullets": [
+          "Dose calculator: mg per kg times weight, then the mL to draw to the syringe mark, or the tablet count",
+          "Live warnings for out-of-range doses, drugs banned for the species and interactions; a recorded allergy stops the drug",
+          "Photograph the analyser slip and the numbers fill in for you to check before saving",
+          "Surgery and anaesthesia consent forms in Arabic or English, with your logo"
+        ],
+        "feature": "records"
+      },
+      {
+        "key": "pharmacy",
+        "label": "Pharmacy, stock & till",
+        "title": "Stock that knows what is on the shelf and what is about to expire",
+        "body": "Purchase invoices bring stock in by scanning, and every product keeps its batches and expiry dates. From the Advanced plan, a till sells by scan or search and prints invoices with your logo.",
+        "bullets": [
+          "Count a few items each day, with the expected balance hidden until you finish",
+          "Reorder suggestions from how fast items actually sell and each product's low-stock level",
+          "Raise prices by a percentage: preview before saving, revert line by line, old invoices untouched",
+          "Till (Advanced): split payment across cash, card and transfer, A4 or 80 mm receipts, returns line by line"
+        ],
+        "feature": "pharmacy"
+      },
+      {
+        "key": "hospital",
+        "label": "Hospital & surgeries",
+        "title": "Every inpatient in front of you on one board",
+        "body": "One card per inpatient, coloured by status: critical, late, due or stable. The hourly dose board tells you what is late and by how many minutes.",
+        "bullets": [
+          "A treatment-room wall screen with large numbers, and the 'given' button still works from it",
+          "Hourly care sheet for fluids, vitals, intake and output, with a running fluid balance",
+          "The cage room with its occupants, and admission straight from the cage",
+          "Surgery records with outcomes and follow-ups, and stats per surgeon"
+        ],
+        "feature": "hospital"
+      },
+      {
+        "key": "after",
+        "label": "After the visit: WhatsApp & reminders",
+        "title": "Owners know what is happening, and the next appointment is not forgotten",
+        "body": "From reception, bookings and lab results you open a ready WhatsApp message and send it in one tap from the WhatsApp on your device.",
+        "bullets": [
+          "Visit tracking link: owners follow the stay the way they track a delivery, with no diagnosis and no prices",
+          "Reminders hub (Super): the list of who is due builds itself, from vaccines and deworming to surgery follow-ups and bookings",
+          "WhatsApp campaigns (Super): ready segments such as vaccines due within 30 days, and one message per owner",
+          "Your staff send every message with one tap, one at a time, never in bulk"
+        ],
+        "feature": "whatsapp"
+      },
+      {
+        "key": "office",
+        "label": "Back office: team, payroll, reports",
+        "title": "Know who did what, and where the money went",
+        "body": "Each staff member signs in with their own account by invitation, each role has its permissions, and the activity log records who added, changed or deleted what, and when.",
+        "bullets": [
+          "Permission switches for each staff member; sensitive ones such as profits, deleting invoices and payroll stay off unless you allow them",
+          "A manager PIN locks the front-desk device and lifts access for 10 minutes when needed",
+          "Payroll (Advanced): allowances, overtime, advances and loans in instalments, with printed payslips",
+          "Reports hub (Advanced): cash box, sales by customer and staff, top and slow sellers, expenses, with Excel and print"
+        ],
+        "feature": "team"
+      }
+    ]
+  },
+  "diff": {
+    "title": "What sets doctorVet apart, in things you can check",
+    "sub": "No generic adjectives. These are things you will see for yourself during the trial.",
+    "items": [
+      {
+        "title": "Arabic first, in your clinic's currency",
+        "body": "Right-to-left throughout, and search treats احمد and أحمد as one name, along with ta marbuta and alif maqsura, in either style of digits. Pick your clinic's country at sign-up to set the currency and dialling code; if your country isn't listed, choose the 'other country' option and work in US dollars. English covers most screens."
+      },
+      {
+        "title": "A deleted product is never gone",
+        "body": "A deleted product goes to the trash and comes back with the same ID, and merged products can be split again from there. Retrying a sale after the connection drops never writes a second invoice. Deleting an invoice is final, which is why it is a permission that stays off unless you allow it."
+      },
+      {
+        "title": "Every action under a name",
+        "body": "The activity log records who added, changed or deleted what, and when. Money and stock entries are kept for a year, everything else for 90 days, and only managers can see it."
+      },
+      {
+        "title": "One-tap WhatsApp, and you stay in control",
+        "body": "The system prepares each message and your staff send it in one tap from the WhatsApp on their device. Nothing goes out unless someone presses send."
+      },
+      {
+        "title": "A poultry module",
+        "body": "Farms, houses and batches, daily mortality, water and weight, feed conversion and cost per live kilo, and a farm store kept at cost. On the separate poultry farm plan."
+      },
+      {
+        "title": "Entries that wait for the connection",
+        "body": "If the connection drops, new products, suppliers and sections, expenses, returns and poultry daily entries wait on the device and upload when it is back; anything that can't upload stays in a badge for the manager to review. Sales and new cases need a connection."
+      }
+    ]
+  },
+  "start": {
+    "title": "How to start",
+    "sub": "Four steps, with every feature open for 14 days and no card.",
+    "steps": [
+      {
+        "title": "Create the clinic account",
+        "body": "Clinic name, country, email and a password. The country sets your currency and dialling code, and you can change the currency later in settings."
+      },
+      {
+        "title": "Set up stock and services",
+        "body": "Pick your suppliers from the ready catalog and your stock is built with its sections in one tap. Prices and quantities come in with your first purchase invoice, barcodes with the first scan. Then add your services and fees: exams, vaccinations, surgeries."
+      },
+      {
+        "title": "Invite your team",
+        "body": "Send each staff member an invitation by email or code, choose their role (manager, vet, reception or care assistant) and turn permissions on or off. Working alone? Skip this step."
+      },
+      {
+        "title": "Register your first case",
+        "body": "Owner, animal and case details on one screen. Past doses and vaccines go in on their real dates, so upcoming ones show on the calendar from day one."
+      }
+    ],
+    "link": "Getting started in detail"
+  },
+  "pricingTeaser": {
+    "title": "Three clinic plans",
+    "sub": "Start with a 14-day trial that unlocks everything, then pick the plan your clinic needs. Medical records, stock and one-tap WhatsApp are on every plan; the till and reports start at Advanced. No automatic renewal: you pay only for the period you choose.",
+    "link": "Compare plans",
+    "from": "From"
+  },
+  "security": {
+    "title": "Your clinic's data, and how it is protected",
+    "sub": "Everything here exists in the system today. We don't write what we can't show.",
+    "items": [
+      {
+        "title": "Each clinic is isolated",
+        "body": "Each clinic's data is kept apart from every other clinic's inside the database, with access rules the server checks on every request."
+      },
+      {
+        "title": "Roles checked on the server",
+        "body": "A staff member's role (manager, vet, reception and others) is checked by the server, not just on screen, and permission switches on top decide what each person sees."
+      },
+      {
+        "title": "A log written by the server",
+        "body": "Every addition, change and deletion your staff make is recorded under the name of the person who made it, and the log is written by the server, not the browser."
+      },
+      {
+        "title": "Case images kept private",
+        "body": "Photos, X-rays and lab files sit in private file storage and open only through short-lived links issued to people with access to the animal's file."
+      }
+    ],
+    "link": "Security details and limits"
+  },
+  "faq": {
+    "title": "Questions vets ask before they start",
+    "items": [
+      {
+        "q": "What happens after the 14 days?",
+        "a": "Nothing is charged. You pick a plan and a period, pay yourself, and carry on with the same data. If you don't subscribe, the account locks on the subscription screen until you do, and your data stays stored. If a paid period ends and you don't renew, the account becomes read-only. One thing to know: subscribing before the trial ends starts the paid period that day, ends the remaining trial days and moves you straight to the features of the plan you chose, so it makes sense to subscribe near the end of the trial."
+      },
+      {
+        "q": "Do I need a card? How do I pay?",
+        "a": "The trial needs no card. Online payment is available today from inside Iraq, in Iraqi dinars through the Wayl gateway, and subscriptions do not renew automatically. Outside Iraq you can start the trial now, but online payment from your country is not available yet, and we'd rather you know that before you begin."
+      },
+      {
+        "q": "What if the internet goes down?",
+        "a": "The app installs on your device like any app. If the connection drops, new products, suppliers and sections, expenses, returns and poultry daily entries wait on the device and upload when it is back, shown in a badge. Sales, cases, visits, vaccines and bookings need a connection, and a new-case form stays as a draft on the device until you save it. If the connection drops while you are selling, just retry: the invoice is never written twice."
+      },
+      {
+        "q": "Do reminders go out on their own?",
+        "a": "No. The system builds the list of who is due and prepares each message, and your staff send them one by one, each with one tap from the WhatsApp on their device. The reminders hub and campaigns are on the Super plan; one-tap messages from reception, bookings and lab results are on every plan."
+      },
+      {
+        "q": "My records are on paper, in Excel or in another system. How do I move them?",
+        "a": "Honestly: there is no import from Excel or from other systems today. What exists: a ready catalog builds your stock from market suppliers and their sections in one tap, with prices and quantities from your first purchase invoice and barcodes from the first scan. Past visits, doses and vaccines go in on their real dates, so each animal's file is complete."
+      },
+      {
+        "q": "Who can see my clinic's data?",
+        "a": "Your staff, each according to their role and permissions. Your clinic's data is isolated from other clinics, and case images sit in private storage. An animal's record opens at another clinic that uses doctorVet only if it scans the animal's passport QR code or searches by the owner's email, and the owner can set it to private from their account. The doctorVet team can access your clinic's account to provide technical support."
+      },
+      {
+        "q": "Can I take my data out?",
+        "a": "Partly, and we'll be clear about it. You can export your stock count, and each animal's treatments, vaccines and notes, to Excel on every plan, and reports with Excel and print from the Advanced plan. There is no single full export of clients, animals and invoices today."
+      },
+      {
+        "q": "My staff aren't comfortable with computers. Will they manage?",
+        "a": "The interface is in Arabic, and search forgives different spellings of hamza and ta marbuta. A built-in help guide answers how-to questions from written articles, with steps and button names, and each answer has a button that opens the right page; when it has no answer, it says so, and you can request the feature from it. Each staff member has their own account and permissions, and you can lock the front-desk device with a manager PIN."
+      }
+    ],
+    "link": "All questions"
+  },
+  "final": {
+    "title": "Try doctorVet on your real clinic",
+    "sub": "14 days with every feature, no card and no automatic renewal. Everything you enter during the trial is still there when you subscribe."
+  }
+}

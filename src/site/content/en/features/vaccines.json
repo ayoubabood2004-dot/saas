@@ -1,0 +1,177 @@
+{
+  "meta": {
+    "title": "Vaccines and reminders for veterinary clinics | doctorVet",
+    "description": "Every dose you record asks when the next one is due. Due doses show in the pet's file, on the clinic calendar and on today's dashboard, and past vaccines are recorded on their real dates. On every plan. On Super, a reminders hub gathers everything due, with a WhatsApp message ready for each owner that you send in one tap."
+  },
+  "hero": {
+    "eyebrow": "Before the visit",
+    "title": "The next dose is set before the pet leaves your clinic",
+    "sub": "Every time you give a dose, doctorVet asks when the next one is due. The date then shows in the pet's file and on the clinic calendar, reaches today's dashboard as it gets close, and turns red if it's missed. The reminder is written with the pet's name and the vaccine, ready to send in one tap from your clinic's WhatsApp."
+  },
+  "pains": {
+    "title": "What happens when the due date lives on paper",
+    "items": [
+      {
+        "title": "\"When is the booster?\" Nobody knows",
+        "body": "The date went home on a card the owner lost, or was never written down. The pet comes back two months late, or not at all."
+      },
+      {
+        "title": "A whole morning to find who's due",
+        "body": "You leaf through the notebook to see who is due this week, then look up each owner's number and type the same message again and again."
+      },
+      {
+        "title": "Old vaccine records on paper",
+        "body": "The pet was vaccinated before you started using the system. Either its file starts empty, or old doses get today's date and the next one is worked out wrong."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Record the dose",
+        "body": "Pick the vaccine from the list for that species and mark it given today or scheduled. The lot number is optional."
+      },
+      {
+        "title": "Answer: when is the next dose?",
+        "body": "In 2 weeks, 3 weeks, 1 month and up to 1 year, on a date you pick, or \"no next dose\" if this was the last. When you mark a scheduled dose as given, it isn't saved until you answer."
+      },
+      {
+        "title": "Due doses show where you look",
+        "body": "The date appears in the pet's file, on the reception calendar on its day, and in the reminders card on today's dashboard as it gets close. Once it's missed, it turns red."
+      },
+      {
+        "title": "Remind the owner in one tap",
+        "body": "A WhatsApp message with your clinic's name, the vaccine and the pet's name opens in the device's WhatsApp, and you press send. On Super, the message also carries the owner's name, and the reminders hub tracks who was messaged and who came."
+      }
+    ]
+  },
+  "caps": {
+    "title": "Everything in this section",
+    "groups": [
+      {
+        "title": "The schedule and the next dose",
+        "items": [
+          {
+            "title": "Vaccine list by species",
+            "body": "The list is filtered by species: dogs, cats, horses, cattle, rabbits. Add your clinic's own vaccines in Settings by brand and scientific name; owners see the scientific name."
+          },
+          {
+            "title": "The next-dose question",
+            "body": "Ready intervals from 2 weeks to 1 year, another date, or \"no next dose\". When you give a scheduled dose, a ★ marks the same interval as last time: a hint, not a preselection. The vet decides."
+          },
+          {
+            "title": "No duplicate doses",
+            "body": "If the next dose is already booked, it says so and doesn't book it twice. \"Given today\" counts the due dose of the same vaccine as given instead of adding a second row, and tells you before you save."
+          },
+          {
+            "title": "Change the date",
+            "body": "Postpone a dose or bring it forward. The status follows the date: a future date clears the red, a date that has passed stays overdue."
+          },
+          {
+            "title": "The pet's vaccines tab",
+            "body": "Counts of given, upcoming and overdue doses. For each vaccine: its numbered doses, the date each was given, the lot number, and how many days an overdue dose is late."
+          }
+        ]
+      },
+      {
+        "title": "Past records on their real dates",
+        "items": [
+          {
+            "title": "\"Vaccinated before?\"",
+            "body": "Enter the dates of earlier doses from paper or a previous system. Each is saved as a given dose on its own day, numbered in order."
+          },
+          {
+            "title": "Next date from the last real dose",
+            "body": "Intervals count from the last dose, not from the day you type it in. If the next date has already passed, it's saved as overdue and shows in red."
+          },
+          {
+            "title": "Date checks and a \"past record\" badge",
+            "body": "No future dates, nothing before 2000, and the next date must come after the last dose. Doses entered after their day carry a \"past record\" badge; hover over it to see when it was entered."
+          }
+        ]
+      },
+      {
+        "title": "Reminders on every plan",
+        "items": [
+          {
+            "title": "Monthly calendar",
+            "body": "Vaccines, deworming, birthdays and your own reminders sit on their days in the reception calendar, with overdue ones flagged. \"Done\" opens the same give-dose window, with the next-dose question."
+          },
+          {
+            "title": "One-tap WhatsApp from the calendar",
+            "body": "Every row with a phone number has a button that opens WhatsApp with a short message ready: your clinic's name, the vaccine and the pet's name."
+          },
+          {
+            "title": "Reminders card on today's dashboard",
+            "body": "The 6 nearest items due within 7 days, overdue ones first: vaccines, deworming and birthdays."
+          },
+          {
+            "title": "The owner sees it too",
+            "body": "An owner with a free doctorVet account sees their pet's vaccines and a ring showing how complete they are."
+          }
+        ]
+      },
+      {
+        "title": "Reminders hub (Super plan)",
+        "items": [
+          {
+            "title": "Everything due in one list",
+            "body": "Vaccines, deworming, surgery follow-ups, bookings and birthdays, plus manual reminders that repeat daily, weekly or monthly, however far ahead. Grouped as overdue, today, tomorrow, this week, this month and later, with search by pet, owner or phone."
+          },
+          {
+            "title": "A message for each owner",
+            "body": "Prepared with the owner's and pet's names, the vaccine and the date, from 10 different wordings. It opens on the campaigns page, where you can edit it, then send it in one tap. If the browser blocks WhatsApp from opening, it isn't counted as sent and you're asked to tap again."
+          },
+          {
+            "title": "\"Sent\", \"came\" and \"didn't come\"",
+            "body": "A dose given, a visit after the follow-up date or a completed booking moves the reminder to \"came\". If the grace period passes after sending with no sign of the owner, it moves to \"didn't come\" so you can remind again. You can set the status by hand and undo it."
+          },
+          {
+            "title": "\"Reminded\" and today's progress",
+            "body": "Called the owner instead? Mark it \"reminded\" and every device in the clinic sees it. A progress bar shows how many owners due today or overdue you have messaged."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "On every plan: the vaccine schedule and next-dose question, past vaccines on their real dates, due doses on the calendar and today's dashboard, and one-tap WhatsApp from the calendar. On Super only: the reminders hub with its \"sent\", \"came\" and \"didn't come\" tracking, and the campaigns page that the dashboard card's \"prepare to send\" button opens. Selling a vaccine at the till, so it goes into the pet's file and counts the due dose as given, starts on Advanced. The 14-day free trial opens all of it, no card needed.",
+  "mock": {
+    "title": "Vaccines tab: Misha · cat",
+    "rows": [
+      { "label": "FVRCP, dose 1", "value": "Given · past record", "tone": "ok" },
+      { "label": "FVRCP, dose 2", "value": "Given today", "tone": "ok" },
+      { "label": "FVRCP, dose 3", "value": "In 3 weeks", "tone": "warn" },
+      { "label": "Rabies", "value": "4 days overdue", "tone": "bad" },
+      { "label": "Deworming", "value": "In 12 days", "tone": "warn" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does the system send reminders by itself?",
+      "a": "No, and we say so plainly. It builds the list of who is due and prepares a message for each owner, then a member of your staff sends it in one tap from the clinic's WhatsApp, one message at a time. Nothing reaches an owner unless someone in your clinic presses send."
+    },
+    {
+      "q": "Do I need WhatsApp Business or a messaging subscription?",
+      "a": "No. The message opens in whichever WhatsApp is on the device you're using, regular or Business, with the text already written, and you press send. During the trial, register a pet under your own name and number and send yourself a reminder to see exactly what owners receive."
+    },
+    {
+      "q": "My vaccine records are on paper. Can I enter them?",
+      "a": "Yes, with their real dates. Open the pet's file, choose the vaccine in the Vaccines tab, then \"Vaccinated before?\" and enter the earlier dates; the next date is then worked out from the last dose. There's no import from Excel today, so records are entered pet by pet."
+    },
+    {
+      "q": "Does the system pick the next date for me?",
+      "a": "No. It shows the ready intervals and, when you give a scheduled dose, marks the one used last time with a star; you choose an interval, another date, or \"no next dose\". The last date may have been postponed, or this may be the final dose in the series, so the choice stays with the vet."
+    },
+    {
+      "q": "What do I get on the Basic plan?",
+      "a": "The full vaccine schedule with the next-dose question, past records on their real dates, due doses on the calendar and today's dashboard, and a one-tap WhatsApp button on each calendar row with a phone number. The reminders hub, which gathers everything due and tracks who came, is on Super."
+    },
+    {
+      "q": "How do I know the owner came after the reminder?",
+      "a": "In the reminders hub (Super plan), the reminder moves to \"came\" when the dose is recorded, a visit is logged after the follow-up date, or the booking is completed. If the grace period passes after sending with no sign of them, it moves to \"didn't come\". You can also set the status yourself when you know something the system doesn't."
+    }
+  ],
+  "related": ["whatsapp", "reception", "records"]
+}

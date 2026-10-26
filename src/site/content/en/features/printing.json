@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Vet clinic printing & barcodes: consent forms, receipts, labels | doctorVet",
+    "description": "Your clinic's logo on its consent forms, reports and papers on every plan: ready consent forms in Arabic or English, lab reports, treatment sheets and stock-count sheets. An in-house barcode generator prints labels your scanner reads, and a health check finds broken codes. Sales receipts on A4 or 58 to 80 mm thermal paper on the Advanced plan and up."
+  },
+  "hero": {
+    "eyebrow": "Management",
+    "title": "Printouts that carry your clinic's logo, and a code your scanner reads for every product on the shelf",
+    "sub": "Upload your logo once and it appears on consent forms, lab reports, treatment sheets, purchase invoices and stock-count sheets. Print on A4, or on a thermal printer once you set its width with a measuring strip. A product with no barcode gets an in-house code that never repeats, and you print its label right away."
+  },
+  "pains": {
+    "title": "What keeps happening when papers and codes are done by hand",
+    "items": [
+      {
+        "title": "“We handwrite the consent form before every surgery”",
+        "body": "The owner's name and phone, the animal's species, breed and age, written out again each time on a sheet without the clinic's name. Here you open the pet's file and pick the surgery, anaesthesia, or treatment and estimated cost form, and it prints on A4 with your logo and the details filled in, in Arabic or English."
+      },
+      {
+        "title": "“The thermal receipt wraps: half the line here, half over there”",
+        "body": "“80 mm” is the paper, not the print width, and every printer prints a slightly different width. Print the measuring strip once and pick the longest bar that came out clean; the receipt is then laid out for that width: font, margins, logo and QR code."
+      },
+      {
+        "title": "“The item is on the shelf, and the scanner says it doesn't exist”",
+        "body": "An item with no barcode at all, a code entered while the keyboard was in Arabic, a number Excel mangled, or one code on two products. Here you generate a code for every product without one and print its label, the barcode health check names each broken code and how to fix it, and the scanner test tells you whether the scanner itself is the problem."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Set up your clinic once",
+        "body": "In Settings, upload the clinic logo and add your Facebook and Instagram handles to print with your details. The logo sits at the top of printouts and as a faint watermark behind consent forms, treatment sheets and A4 invoices, and is turned black and white on thermal receipts so it prints clearly."
+      },
+      {
+        "title": "Set the thermal printer width",
+        "body": "Print the measuring strip from Settings and pick the width that printed cleanly, from 58 to 80 mm. The setting is kept per device, so a clinic with two printers sets each computer for its own."
+      },
+      {
+        "title": "Give every box a code",
+        "body": "In Inventory, on the barcode generator tab, products without a barcode are listed. Tap one and its code is generated and linked to it, or generate for the whole list at once, then print the labels."
+      },
+      {
+        "title": "Print where you work",
+        "body": "Consent forms and the QR card from the pet's file, the lab report from the lab tab, the treatment plan sheet and care report from the visit page, and the stock-count sheet from the stock audit. Every print opens your browser's print window, to any printer your device can reach."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What prints, and how",
+    "groups": [
+      {
+        "title": "Clinic papers with your logo",
+        "items": [
+          {
+            "title": "Logo and watermark",
+            "body": "Upload the logo once in Settings, on every plan. It prints with the clinic's name at the top of consent forms, lab reports, treatment sheets, invoices and the stock-count sheet, and as a faint watermark behind consent forms, treatment sheets and A4 invoices."
+          },
+          {
+            "title": "Consent forms",
+            "body": "Surgery, anaesthesia, and treatment with estimated cost. Filled from the pet's file: owner, phone and address; the animal's number, species, breed, sex, colour and exact age in years, months and days; and the vet's name. The on-screen preview is exactly what prints, and the print is noted in the activity log."
+          },
+          {
+            "title": "Medical papers",
+            "body": "A lab report with normal-range flags and reading notes; a treatment plan sheet with the owner's undertaking, the pet's photo and the daily treatment table; a care report for the owner that tells what happened without naming drugs; and the passport card with its QR code."
+          },
+          {
+            "title": "Stock and supplier papers",
+            "body": "Purchase invoice, supplier statement, a return statement for expired or near-expiry items grouped by company with quantity, expiry date and purchase price, and a stock-count sheet with the system balance, a blank column for the actual count and boxes for signatures."
+          }
+        ]
+      },
+      {
+        "title": "Receipts and thermal printing",
+        "items": [
+          {
+            "title": "A4 invoice and thermal receipt",
+            "body": "The same invoice prints on A4 or on the thermal printer, with the seller, the payment parts and its status: paid, balance due or refunded. At the foot, a QR code opens your clinic's WhatsApp, or its online store when that is switched on."
+          },
+          {
+            "title": "Laid out for your printer's width",
+            "body": "Pick 58, 62, 66, 70, 72, 76 or 80 mm, starting at a safe 66 mm. Font, margins, logo and QR code are sized from the chosen width, so a 58 mm receipt is designed for that paper, not an 80 mm receipt cut short."
+          },
+          {
+            "title": "A number on every reprint",
+            "body": "The print counter is kept on the server, so a second copy reads “Print #2”, and the print is noted in the activity log with its format. A pro-forma invoice printed before the sale can be switched on in Settings."
+          },
+          {
+            "title": "Payslip",
+            "body": "On A4 or 80 mm, with a line under an item explaining how it was calculated and why, such as days × day rate. Any amount this month's pay couldn't cover is printed with the reason it moves to next month."
+          }
+        ]
+      },
+      {
+        "title": "Barcode generator and labels",
+        "items": [
+          {
+            "title": "In-house EAN-13 codes",
+            "body": "Every code starts with 20, a range reserved worldwide for in-store use, so it won't clash with a manufacturer's barcode. The check digit is calculated, so any ordinary barcode scanner reads it."
+          },
+          {
+            "title": "No code is ever repeated",
+            "body": "Each new code is checked against your products' barcodes and every code generated before it, and the database rejects any duplicate in the code log. If the log can't load, generating stops and says why instead of restarting the numbering. A product another device has just given a code is not overwritten."
+          },
+          {
+            "title": "Generate and link in one tap",
+            "body": "Products without a barcode are listed at the top: tap one to generate its code and link it, or use Generate for all to do the whole list. For stock on its way, generate a free batch of up to 200 codes and name what it is for."
+          },
+          {
+            "title": "Labels and log",
+            "body": "Labels print on A4 paper, four to a row, with the product name under the code if you want it. Print the last batch, your selection, or a single label. The log keeps who generated each code, when, and for which product, and searches by code, purpose or name."
+          }
+        ]
+      },
+      {
+        "title": "Code health and the scanner",
+        "items": [
+          {
+            "title": "One product, several codes",
+            "body": "A shelf number and the factory barcode together. When you change a product's code, the old one stays as an extra code, so labels already printed keep working. Merging duplicate products keeps both sets of codes, and extra codes show in the inventory list and can be removed from the edit form."
+          },
+          {
+            "title": "Barcode health check",
+            "body": "Run by the manager or a vet, it reads your stock's codes and groups the faults: one code on several products, an extra code that is another product's main code, a code that looks filled but is blank or hidden characters, a code with Arabic letters, and a number Excel mangled. Each fault comes with its fix, and the check changes nothing by itself."
+          },
+          {
+            "title": "Scanner test",
+            "body": "Scan a code shown on the screen and it tells you whether it arrived complete or lost digits at the start, whether the keyboard was in Arabic, whether the scanner ends with Enter or Tab, how fast it sends, and whether the sales screen would accept that scan."
+          },
+          {
+            "title": "Barcodes drawn on the count sheet",
+            "body": "The stock-count sheet printed from the stock audit draws each item's code in its box's own standard: EAN-13, UPC-A, EAN-8, or Code 128 for shelf numbers; a code too long for its column prints as text. The person counting scans the paper to confirm the box in hand is the same row."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "On every plan: your logo on printouts, consent forms, lab reports, the treatment plan sheet, the care report and QR card, purchase, supplier, return and stock-count papers, the barcode generator and its labels, the barcode health check and the scanner test. On the Advanced plan and up: the sales invoice on A4 or thermal paper and the pro-forma, since both come from the sales screen, plus the payslip and printing from the reports hub under your clinic's name. Super only: the delivery slip the driver carries, and the receipt QR code when it opens your online store. The 14-day free trial unlocks everything, no card needed.",
+  "mock": {
+    "title": "Barcode generator",
+    "rows": [
+      { "label": "Codes generated", "value": "148", "tone": "info" },
+      { "label": "Linked to a product", "value": "141", "tone": "ok" },
+      { "label": "Products without a barcode", "value": "6", "tone": "warn" },
+      { "label": "One code on several products", "value": "2", "tone": "bad" },
+      { "label": "Scanner test", "value": "Arrived complete · ends with Enter", "tone": "ok" },
+      { "label": "Last batch", "value": "20 labels ready to print", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Do I need a special printer or software to install?",
+      "a": "Nothing to install. Every print opens your browser's print window, so it works with any printer your device can print to: a regular A4 printer, or a thermal printer with 58 or 80 mm paper once you set the width with the measuring strip. Allow pop-ups for the site so the print window can open."
+    },
+    {
+      "q": "Can labels print on a roll label printer?",
+      "a": "Labels are laid out for A4 paper, four to a row, with the product name under the code if you want it. There is no layout for roll label printers."
+    },
+    {
+      "q": "Will the system's codes clash with factory barcodes?",
+      "a": "No. In-house codes start with 20, a range reserved worldwide for in-store use, and factory goods don't carry it. Each new code is also checked against the codes in your stock before it is given to a product."
+    },
+    {
+      "q": "We entered items by shelf number, and the boxes carry a factory barcode. What now?",
+      "a": "You don't have to pick one. A product accepts several codes: enter the factory barcode on the product and the shelf number stays as an extra code, so old labels and the box both scan. If the item went in twice, merge the two rows from Inventory; their stock adds up and their codes are kept."
+    },
+    {
+      "q": "Do papers print in English?",
+      "a": "Consent forms let you pick Arabic or English for each print, whatever language the app is in. Sales and purchase invoices, the supplier statement, the return statement and the payslip print in the app's language at the time. The lab report, the treatment plan sheet, the care report, the stock-count sheet and the delivery slip print in Arabic only for now."
+    },
+    {
+      "q": "The scanner reads sometimes and fails sometimes. Where is the problem?",
+      "a": "Open the scanner test in the barcode generator and scan the code it shows. It tells you if the keyboard was in Arabic when you scanned, so you switch it to English; if the scanner sends neither Enter nor Tab at the end, so you turn one on in its settings; or if it is so slow the sales screen rejects the scan, so you try a cable instead of Bluetooth. If the fault is in the stored codes themselves, the barcode health check names them one by one."
+    }
+  ],
+  "related": ["pharmacy", "pos", "records"]
+}

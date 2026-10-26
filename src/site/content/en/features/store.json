@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Online store for veterinary clinics | doctorVet",
+    "description": "A store on your clinic's own link showing the products you choose from your stock, with photos and prices. Clients order without an account and pay on delivery; accepting creates the invoice and deducts stock together. On the Super plan."
+  },
+  "hero": {
+    "eyebrow": "Sales & stock",
+    "title": "Your clients order from your shelves without leaving home",
+    "sub": "A store page on your clinic's own link, showing what you choose from your stock with photos and prices. Clients order from their phone without an account and pay on delivery, and the order lands in doctorVet. You review it and accept: the invoice is created, stock goes down and the order appears on the delivery screen, in one step."
+  },
+  "pains": {
+    "title": "When your store is a WhatsApp chat",
+    "items": [
+      {
+        "title": "“I answer price questions between patients”",
+        "body": "A photo of a box, then “how much?”, then “do you deliver?”. In your store clients see the photo, the price and what's out of stock before they ask, with the delivery fee and minimum order at the top of the page."
+      },
+      {
+        "title": "“The order got lost in the messages”",
+        "body": "The items in one message, the address in another, and nobody knows if it was confirmed. Here every order lands in one inbox with its number, items and address, with a badge and a sound, and an order left over 6 hours without a decision is flagged."
+      },
+      {
+        "title": "“We sold it online, then found the shelf empty”",
+        "body": "Or found the box had expired. Expired and unpriced products never appear in the store, and out-of-stock ones show as out of stock. Before you accept, each line is checked against your stock right now, and stock only goes down when you accept."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How the store works",
+    "items": [
+      {
+        "title": "Pick your link and open the store",
+        "body": "doctorVet suggests a link in Latin letters from your clinic's name and checks it isn't taken. Then add a short bio under your name, the delivery fee, a minimum order and a WhatsApp number your clients can reach you on. Opening the store and changing its link are for the manager alone."
+      },
+      {
+        "title": "Choose what's shown",
+        "body": "“Publish what you sell most” gathers your top sellers from the last 90 days, already ticked; untick what you don't want and publish the rest in one tap. Then add photos and descriptions and arrange your categories. The price is the same one your till uses."
+      },
+      {
+        "title": "Share the link",
+        "body": "Copy it or send it in a ready WhatsApp message, and put it in your Instagram and Facebook bio. While the store is on, printed sales receipts carry a QR code that opens it."
+      },
+      {
+        "title": "Review, then accept or reject",
+        "body": "The order arrives as new with a badge and a sound. Confirm it with the client by phone or with a ready WhatsApp message sent in one tap, then accept: the cash-on-delivery invoice is created, stock goes down and the order moves to the delivery screen together. Or reject it and nothing changes."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's in the online store",
+    "groups": [
+      {
+        "title": "Your store, as the client sees it",
+        "items": [
+          {
+            "title": "A link with your clinic's name",
+            "body": "One page that opens in any phone's browser, no app needed, like /s/al-rahma: your logo, name and bio, call and WhatsApp buttons, and Facebook and Instagram links if you add them. The first products appear with the page itself, before the app has finished loading."
+          },
+          {
+            "title": "Categories you arrange",
+            "body": "You start with five categories filled from your stock: medicines, food, supplies, consumables and miscellaneous. Rename them, change their icons and order, or hide them, and bring back any you delete. One product can sit in more than one category."
+          },
+          {
+            "title": "Search, and a page per product",
+            "body": "Search copes with Arabic spelling variants, and clients can sort by price either way. Each product has its own page with the full photo, full-screen zoom and your description as you wrote it, and your picks lead the “All” list marked “Clinic's pick”."
+          },
+          {
+            "title": "Your link reaches your clients",
+            "body": "Shared on WhatsApp or Facebook, the link's preview card shows your clinic's name and bio, and your logo if you've uploaded one. While your store is on, every sales receipt you print carries a QR code to it, captioned “Scan to order delivery”."
+          }
+        ]
+      },
+      {
+        "title": "Ordering and cash on delivery",
+        "items": [
+          {
+            "title": "Ordering without an account",
+            "body": "The client writes their name, phone number, address and an optional note, and pays on delivery. Before sending they see what they'll pay at the door including delivery, or that the delivery fee is set on confirmation. Orders under your minimum can't be sent."
+          },
+          {
+            "title": "Nothing shown that can't be sold",
+            "body": "Expired and unpriced products don't appear, and out-of-stock ones sit at the end of the list marked as out of stock. The price is read from your stock at the moment of ordering and fixed in the order, and an order's lines and prices can't be edited after it arrives."
+          },
+          {
+            "title": "A tracking page for the client",
+            "body": "With the order number and phone number the client sees its status: waiting for the clinic, accepted or rejected, with the time and amount, never the address or items. Their last order number stays saved in their phone's browser."
+          },
+          {
+            "title": "Protection from fake orders",
+            "body": "A hidden field catches simple bots, with a daily cap on orders from the same phone number and an hourly cap for the whole store. The client's cart stays on their phone if they close the page, and anything removed from the store before they return is named to them."
+          }
+        ]
+      },
+      {
+        "title": "The order inbox in your clinic",
+        "items": [
+          {
+            "title": "An alert for every new order",
+            "body": "A red badge on “Online store” in the sidebar, a sound, the count in the tab title, and a browser notification if you allow it. doctorVet checks for new orders every 45 seconds while it's on screen, and as soon as you return to it."
+          },
+          {
+            "title": "Availability before you accept",
+            "body": "Each line is checked against your stock right now, showing “only 1 available” or that the product was deleted, before you promise anything. Every order has a call button and a confirmation message, ready with the client's name, order number and total, sent in one tap."
+          },
+          {
+            "title": "Accepting is one step",
+            "body": "The cash-on-delivery invoice, the stock deduction and a job on the delivery screen happen together or not at all. You can set this order's delivery fee as you accept it, and if an item has expired since the order was placed, acceptance stops and names it."
+          },
+          {
+            "title": "Rejecting, the log and your numbers",
+            "body": "Rejecting creates no invoice and moves no stock, then a WhatsApp apology button appears in the order log. Above the inbox: orders waiting, accepted today, store sales and acceptance rate."
+          }
+        ]
+      },
+      {
+        "title": "Your store's range, and who runs it",
+        "items": [
+          {
+            "title": "Publish what you sell most",
+            "body": "A suggestion of up to 40 of your top sellers from the last 90 days that are in stock and priced, pre-ticked, and nothing is published until you tap. Publish, hide or add many products to a category at once; unpriced ones are skipped and you're told how many."
+          },
+          {
+            "title": "Photos where you need them",
+            "body": "From the product's own card: take a photo, pick a file or paste one, then crop and rotate it, or take it from the image library if your product is there, and move on to the next one without a photo. Previous photos are kept, and each product takes a description of up to 2000 characters."
+          },
+          {
+            "title": "Store readiness, in numbers",
+            "body": "A panel counts what your shown products are missing: no price (so hidden), expired (hidden), out of stock, no photo, no description, and most lines open their products in one tap. Search your range by name, or scan a barcode to open that product."
+          },
+          {
+            "title": "Who runs the store",
+            "body": "Opening the store, switching it on or off and changing its link are for the manager alone, enforced on the server rather than by a hidden button. A photographer account adds photos and descriptions, publishes products and sorts them into categories, with no access to client orders and no prices on their screen."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "super",
+  "planNote": "The online store is on the Super plan only: the store page and tracking page, the order inbox, and accepting orders into an invoice and onto the delivery screen (also Super). The stock it shows from, with product photos, barcodes and expiry dates, and the photographer account are on every plan. If your subscription period ends, clients see the store as closed and it takes no orders. The 14-day trial opens the store and every other feature, no card needed.",
+  "mock": {
+    "title": "Online store · Orders",
+    "rows": [
+      { "label": "Waiting for you", "value": "2 · oldest 40 min ago", "tone": "warn" },
+      { "label": "SO-3F9A2C · Sara", "value": "3 items · cash on delivery", "tone": "info" },
+      { "label": "Stock check", "value": "Cat litter 10 kg · only 1 available", "tone": "bad" },
+      { "label": "Accepted today", "value": "5 · on the delivery screen", "tone": "ok" },
+      { "label": "Store readiness", "value": "4 shown without a photo", "tone": "warn" },
+      { "label": "Store link", "value": "/s/al-rahma · live", "tone": "ok" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Do my clients need an account or an app to order?",
+      "a": "No. They open the link in their phone's browser, pick products, write their name, phone number and address, send the order and pay on delivery. Later they can track it with the order number and the phone number they ordered with."
+    },
+    {
+      "q": "Can clients pay by card or bank transfer in the store?",
+      "a": "Not today: store orders are cash on delivery only. When you accept an order its invoice is created with the amount due, then you record the money received, or the order returned, from the delivery screen; a returned order goes back into stock."
+    },
+    {
+      "q": "When does stock go down? What if two clients order the last box?",
+      "a": "Only when you accept; a new order reserves nothing. That's why each line in an order shows what's in your stock at that moment, such as “only 1 available”, so you can call the client before accepting. Rejecting creates no invoice and moves no stock."
+    },
+    {
+      "q": "Do I enter my products again for the store?",
+      "a": "No. The store shows products from your own stock at your till price; you choose what appears and add the photo, description and category. If you change a price in stock or raise prices by a percentage, new orders use the new price, and earlier orders keep theirs."
+    },
+    {
+      "q": "How is the delivery fee set?",
+      "a": "Set one fee in the store settings that clients see before ordering, or leave it at zero so they see it will be set on confirmation. When you accept each order you can write its fee after agreeing it with the client. You can also set a minimum order value."
+    },
+    {
+      "q": "My clinic is outside Iraq. Does the store suit me?",
+      "a": "Ordering, accepting and tracking work the same way, but note three things today: the store page your clients see is in Arabic only, with Iraqi wording in some of its phrases and ready messages; prices appear to clients next to the Iraqi dinar symbol; and the WhatsApp button on the store page is built for Iraqi numbers. Try the store during the trial and open it from a phone that has never used doctorVet, to see it as your clients will, before you share the link."
+    }
+  ],
+  "related": ["credit-delivery", "pharmacy", "pos"]
+}

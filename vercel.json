@@ -6,6 +6,9 @@
     { "source": "/t/:token", "destination": "/store.html" },
     { "source": "/wa-webhook", "destination": "/api/wa-webhook" },
     { "source": "/api/track", "destination": "/api/track" },
+    { "source": "/:cc(iq|sa|ae|kw|qa|bh|om|jo|ps|lb|sy|eg|sd|ly|tn|dz|ma|mr|ye|en)", "destination": "/:cc/index.html" },
+    { "source": "/:cc(iq|sa|ae|kw|qa|bh|om|jo|ps|lb|sy|eg|sd|ly|tn|dz|ma|mr|ye|en)/:path+", "destination": "/:cc/:path+/index.html" },
+    { "source": "/:page(privacy|terms)", "destination": "/:page/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

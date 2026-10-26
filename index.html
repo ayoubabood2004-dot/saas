@@ -9,11 +9,30 @@
          صاحبه) يرجعه Supabase إلى الجذر بـ`#error_code=otp_expired` — فكان يهبط على الصفحة الرئيسية
          بلا كلمة، ولا شيء بالشِفرة يقرأ الخطأ. يُحوَّل قبل أيّ حزمةٍ إلى صفحة الدخول برسالةٍ وزرّ
          «أرسل رابطاً جديداً». ورمزُ دخولٍ ناجح (`#access_token`) لا يُمسّ — يقرؤه supabase-js. -->
+    <!-- والزائرُ (٢٥/١٠): من يفتح الجذرَ بلا حسابٍ بهذا الجهاز يذهب لنسخة بلده من الموقع (اختيارُه
+         المحفوظ ← منطقتُه الزمنية ← لغةُ جهازه ← العراق) قبل أن ينزّل حزمةَ التطبيق كلَّها. صاحبُ الجلسة
+         (Supabase أو التجريبيّ) ونطاقُ `app.` ورمزُ دخولٍ بالرابط يبقون بالتطبيق كما هم. -->
     <script>
       (function () {
         try {
           var l = location, m = /[#&?]error_code=([\w-]+)/.exec(l.hash + "&" + l.search);
-          if (m && !/[?&]auth_error=/.test(l.search)) l.replace("/login?auth_error=" + m[1]);
+          if (m && !/[?&]auth_error=/.test(l.search)) return l.replace("/login?auth_error=" + m[1]);
+          if (l.pathname !== "/" || /^app\./.test(l.hostname) || /access_token|refresh_token|[?&](code|token_hash|type)=/.test(l.hash + l.search)) return;
+          if (navigator.onLine === false || (window.matchMedia && matchMedia("(display-mode: standalone)").matches)) return;
+          var s = localStorage, i, k;
+          for (i = 0; i < s.length; i++) { k = s.key(i) || ""; if (k === "vp_session" || /^sb-.+-auth-token$/.test(k)) return; }
+          var E = "iq sa ae kw qa bh om jo ps lb sy eg sd ly tn dz ma mr ye en".split(" "), Z = {
+            Baghdad: "iq", Riyadh: "sa", Dubai: "ae", Kuwait: "kw", Qatar: "qa", Bahrain: "bh", Muscat: "om", Amman: "jo", Gaza: "ps", Hebron: "ps",
+            Beirut: "lb", Damascus: "sy", Cairo: "eg", Khartoum: "sd", Tripoli: "ly", Tunis: "tn", Algiers: "dz", Casablanca: "ma", El_Aaiun: "ma", Nouakchott: "mr", Aden: "ye"
+          };
+          var c = s.getItem("dv_edition");
+          if (E.indexOf(c) < 0) c = Z[(Intl.DateTimeFormat().resolvedOptions().timeZone || "").split("/")[1]];
+          if (!c) {
+            var L = navigator.languages || [navigator.language], r;
+            for (i = 0; i < L.length && !c; i++) { r = (/-([a-z]{2})\b/i.exec(L[i] || "") || [])[1]; if (r && E.indexOf(r.toLowerCase()) >= 0) c = r.toLowerCase(); }
+            if (!c) c = /^en/i.test(L[0] || "") ? "en" : "iq";
+          }
+          l.replace("/" + c + l.search);
         } catch (e) {}
       })();
     </script>

@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Veterinary medical records & visits | doctorVet",
+    "description": "One file per animal: anatomy map, symptoms and blood count, species-based diagnosis suggestions, a treatment plan dosed on body weight, a problem list read at prescribing, images and X-rays, and consent forms printed with your logo. On every plan."
+  },
+  "hero": {
+    "eyebrow": "In the clinic",
+    "title": "Everything that has happened to this animal, in one file in front of you",
+    "sub": "From the body map, symptoms and blood count to a diagnosis and a treatment plan dosed on weight, then one timeline that holds treatments, vaccines and notes, each line with the name of whoever wrote it. What you write today is there for a colleague six months from now, exactly as you wrote it."
+  },
+  "pains": {
+    "title": "What gets lost when the record is scattered",
+    "items": [
+      {
+        "title": "\"We treated him two months ago... with what?\"",
+        "body": "The note is in a notebook or in another vet's memory, and whoever is on duty starts from scratch. Here every treatment, vaccine and clinical note sits on one timeline, newest first, with the name of the person who wrote it."
+      },
+      {
+        "title": "\"The X-ray is on a colleague's phone\"",
+        "body": "And then it gets lost in a chat. X-rays, ultrasound and lab slips are uploaded to the pet's own file, and you can put two or more images side by side to see what changed."
+      },
+      {
+        "title": "\"We forgot he has a kidney problem\"",
+        "body": "An old diagnosis stays buried inside its visit. The problem list stays open across visits and is read when you prescribe: an active kidney problem raises a red stop alert if you add an NSAID."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How a visit goes",
+    "items": [
+      {
+        "title": "Open the pet's file",
+        "body": "Search by pet name, owner name or phone number and the file opens with its tabs: visits, timeline, diet, vaccinations, lab, medical history, treatment, notes, images and X-rays, and the passport code."
+      },
+      {
+        "title": "Work through the diagnosis steps",
+        "body": "Mark the area on the body map, pick the symptoms, enter the blood count, then choose the diagnosis from suggestions based on what you picked, or type your own."
+      },
+      {
+        "title": "Write the treatment plan",
+        "body": "Add drugs and the dose is worked out from the animal's weight; on the visit page the plan becomes a dose schedule by day and hour. If the pet has a recorded allergy to a drug or its class, a red stop alert heads the plan."
+      },
+      {
+        "title": "Save and print what you need",
+        "body": "The diagnosis and treatment are saved to the timeline under the vet's name. Then print the internal treatment sheet, a report for the owner, or a consent form to sign before surgery."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's in the medical record",
+    "groups": [
+      {
+        "title": "Exam & diagnosis",
+        "items": [
+          {
+            "title": "Five steps from exam to treatment",
+            "body": "Anatomy, symptoms, blood count, diagnosis, treatment. Move between steps in whatever order suits you; the anatomy step is optional."
+          },
+          {
+            "title": "Species-specific anatomy map",
+            "body": "Tap a region of the animal's body, then the organ or bone by its scientific name if you want, and the case is linked to it in the record. The region's body system then opens first in the symptom and diagnosis steps."
+          },
+          {
+            "title": "Symptoms grouped by body system",
+            "body": "Pick a sign in one tap from the system boxes or by search, then describe it in detail. Some descriptions raise a red-flag warning on the spot, such as blood in the vomit or a complete urinary blockage."
+          },
+          {
+            "title": "Blood count with a normal band",
+            "body": "Each value has a slider showing normal, high and low, using dog and cat ranges. Or photograph the lab slip: the photo is filed with the case images and the numbers it reads are filled in for you to review. When the visit's first diagnosis is saved, the values are also recorded as a result in the lab tab."
+          },
+          {
+            "title": "Diagnosis by body system and species",
+            "body": "Suggestions ranked by how well they match the symptoms you chose, a browse by body system that lists only that species' diseases, or a diagnosis you type yourself. A flag shows if the disease is zoonotic or notifiable."
+          }
+        ]
+      },
+      {
+        "title": "Treatment plan & follow-up",
+        "items": [
+          {
+            "title": "Doses worked out from weight",
+            "body": "mg/kg × weight gives the mg, then the ml rounded to the syringe mark, or the tablet count. On the visit page each dose becomes a timed line in the dose schedule, and a drug with no dose is pointed out before you save."
+          },
+          {
+            "title": "Prescription guard",
+            "body": "A red stop alert heads the plan if the pet is allergic to the drug or its class, the drug is banned for the species, or the dose goes over its ceiling; duplicates and interactions are flagged. It covers the drugs in the built-in drug reference, and where a disease has a treatment protocol, you add it in one tap."
+          },
+          {
+            "title": "Daily follow-up against species ranges",
+            "body": "Temperature logged in the visit's follow-up schedule is coloured against the species' normal range, and your clinic can adjust each species' ranges in settings. Appetite, stool, urine and general condition are one-tap choices."
+          }
+        ]
+      },
+      {
+        "title": "Problem list & timeline",
+        "items": [
+          {
+            "title": "A problem list that spans visits",
+            "body": "Open a problem once (kidney, liver, heart, endocrine, digestive, skin, neuro, reproductive or pregnancy...) or pick a common one in one tap, and it shows on every visit until you close it, with a chronic marker and severity."
+          },
+          {
+            "title": "Problems are read at prescribing",
+            "body": "On the visit page, an active kidney problem raises a red stop alert on NSAIDs and aminoglycosides, pregnancy raises a warning on drug classes that affect the foetus, and an animal under six months raises a warning on fluoroquinolones and tetracyclines."
+          },
+          {
+            "title": "One unified timeline",
+            "body": "Treatments, vaccines and clinical notes in time order, newest first, with the vet's name. Print it on A4 with your letterhead or download it as an Excel file."
+          },
+          {
+            "title": "Entries on their real dates",
+            "body": "Visits, doses and vaccines from paper or a previous system are recorded on the day they happened, not the day you typed them, and each past dose asks whether it was given, so the history is complete."
+          }
+        ]
+      },
+      {
+        "title": "Images & printouts",
+        "items": [
+          {
+            "title": "Images, X-rays and lab files in the record",
+            "body": "Photos, X-rays, ultrasound and lab slips (image or PDF) up to 15MB per file, kept in private storage. Pick two or more images to compare side by side in date order."
+          },
+          {
+            "title": "Ready consent forms",
+            "body": "Surgery, anaesthesia, and treatment with estimated cost: A4 in Arabic or English, prefilled with pet and owner details and your logo, and signed by the owner on paper."
+          },
+          {
+            "title": "Two sheets from the visit page",
+            "body": "An internal treatment sheet with every dose for the team, and a report for the owner that explains the case and care without naming drugs."
+          },
+          {
+            "title": "QR passport card",
+            "body": "A card for each animal with its photo, serial number and passport code: print it for the owner, share it from the device, or copy the code."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "The whole medical record is on every plan: diagnosis and treatment plans, the problem list, the timeline, images, consent forms and printing with your logo. Selling medicines and vaccines at the cashier linked to the pet, so they land in its record, starts on the Advanced plan because it needs the cashier. The 14-day trial unlocks everything, no card needed.",
+  "mock": {
+    "title": "Visit: Luna · cat · 4.2 kg",
+    "rows": [
+      { "label": "Temperature", "value": "39.8 °C · above the cat range", "tone": "bad" },
+      { "label": "Blood count", "value": "WBC 22.4 ↑ · other values normal", "tone": "warn" },
+      { "label": "Diagnosis", "value": "Pneumonia · respiratory system", "tone": "info" },
+      { "label": "Problem list", "value": "Chronic kidney disease · stop alert on NSAIDs", "tone": "warn" },
+      { "label": "Treatment plan", "value": "2 drugs · 7 days · 21 doses scheduled", "tone": "ok" },
+      { "label": "Attachments", "value": "2 X-rays · 1 lab slip (PDF)", "tone": "info" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "My records are on paper or in another system. How do I move them?",
+      "a": "There is no import from Excel or another system today. What you can do is record past visits, doses and vaccines on their real dates, so each one appears on its own day on the timeline and the pet's file is complete."
+    },
+    {
+      "q": "Does the software make the diagnosis for me?",
+      "a": "No. Diagnosis suggestions are fixed rules that match the symptoms you choose against that species' diseases, and they only list possibilities. You pick the diagnosis, and you can type one that isn't on the list."
+    },
+    {
+      "q": "Does it work for animals other than dogs and cats?",
+      "a": "Yes. The species are dog, cat, bird, rabbit, horse, cow and other, and your clinic can adjust the normal temperature range for each. To be clear: the suggested disease list is richest for dogs, cats and birds, and the blood-count sliders use dog and cat ranges today; for other species you can always type the diagnosis yourself."
+    },
+    {
+      "q": "Who can see the medical record?",
+      "a": "Your clinic's staff, each according to their role and permissions, and the owner from their own account if they have one; owners see a drug's name for seven days, then only its drug class. No other clinic sees an animal your clinic registered: each clinic's data is kept apart by rules inside the database itself, not only on screen. Case photos and X-rays sit in private storage that no public link opens."
+    },
+    {
+      "q": "How large can uploaded files be?",
+      "a": "Up to 15MB per file: JPG, PNG, WEBP and HEIC images, and lab slips as PDF too. The limit is the same on every plan."
+    },
+    {
+      "q": "Do I need internet to record a visit?",
+      "a": "Yes, saving diagnoses, visits and vaccines needs a connection. If a save fails, the page stays as you wrote it with a message, so you can save again when the connection is back. The New case form is kept as a draft on the device, and you choose whether to restore or delete it."
+    }
+  ],
+  "related": ["lab", "hospital", "vaccines"]
+}

@@ -1,0 +1,95 @@
+{
+  "meta": {
+    "title": "How to start with doctorVet",
+    "description": "Five steps from sign-up to your first invoice: your clinic's identity and services, stock, team and first case. A 14-day free trial with every feature, no card needed."
+  },
+  "hero": {
+    "title": "From sign-up to your first invoice, in five steps",
+    "sub": "What setting up your clinic involves, step by step, and what we don't offer yet. You start with a 14-day free trial with every feature, no card and no automatic renewal."
+  },
+  "steps": [
+    {
+      "title": "Create your clinic's account",
+      "body": "Choose your clinic's country, then enter the clinic name, its city, your phone, your email and a password. Open the confirmation link that arrives in your inbox, and you're in.",
+      "bullets": [
+        "The country sets your clinic's currency and phone dialling code from the start.",
+        "Your trial starts straight away: 14 days with every feature open, and no card asked for.",
+        "Throughout the trial, your dashboard shows a “Set up your clinic” list: products, first case, first sale, staff and clinic identity. Each step ticks itself off when you finish it."
+      ]
+    },
+    {
+      "title": "Your clinic's logo, currency and services",
+      "body": "In Settings, add your logo and check the clinic name and currency. You'll also find a starter list of services in five categories: lab, imaging, consultations, grooming and care, and surgeries. Edit the names and prices, and add anything else your clinic offers.",
+      "bullets": [
+        "The starter prices are placeholders, not your market's prices: change each one before your first sale.",
+        "Set the currency before you enter prices: changing it later changes the symbol only, not the amounts already entered.",
+        "Your logo prints on invoices, consent forms, lab reports and other printouts, on every plan.",
+        "Group services into your own categories; they appear at the till and go onto an invoice in one tap."
+      ]
+    },
+    {
+      "title": "Bring in your stock",
+      "body": "Start from the ready-made catalogue, or straight from the boxes on your shelves. Either way, your first purchase invoice fills in quantities and prices.",
+      "bullets": [
+        "Ready-made catalogue: pick the companies you work with, and their sections and products are created in one tap. A product you already have under the same name isn't added twice.",
+        "The catalogue has no prices or barcodes, on purpose: you set the prices, and each product keeps its barcode from the first purchase invoice it's scanned on.",
+        "On a purchase invoice you enter quantity, cost price, selling price and expiry for each item, by scanning the box with a barcode scanner or searching by name.",
+        "For items with no barcode, you generate an internal one and print it as a label."
+      ]
+    },
+    {
+      "title": "Invite your team",
+      "body": "Create an invitation for each person with their role (vet, receptionist, groomer or manager), then send them the join code or link. They create their own account and join your clinic. Working alone? Skip this step.",
+      "bullets": [
+        "An invitation is valid for 72 hours, and one tied to an email address can only be accepted by that address.",
+        "Each person has their own role and permissions, and the activity log shows the manager who did what, and when.",
+        "Lock the front-desk device with a manager PIN; entering it opens manager access for 10 minutes.",
+        "The in-app help assistant takes questions in Arabic or English and answers in Arabic with numbered steps; many answers include a button that opens the page in question."
+      ]
+    },
+    {
+      "title": "Record your first case and make your first sale",
+      "body": "Register the owner, the animal and the visit on one screen. Then sell at the till: scan or search, add services, and print the invoice with your clinic's name and logo.",
+      "bullets": [
+        "If the page reloads mid-entry, the new-case form offers your draft back, to restore or delete.",
+        "Coming from paper records or another system? Enter past visits, doses and vaccinations with the dates they really happened.",
+        "Invoices print on A4 or on an 80 mm receipt printer.",
+        "The till, invoices and returns are in the Advanced and Super plans, and open to every clinic during the trial."
+      ]
+    }
+  ],
+  "honest": {
+    "title": "What we don't offer yet, and what to know before you start",
+    "items": [
+      "No import from Excel files or other systems yet. The quick way in is the ready-made catalogue and your purchase invoices.",
+      "Old records go in by hand, but with their real dates: past visits, doses and vaccinations show in the animal's file on the day they happened, not the day you typed them.",
+      "We don't send WhatsApp messages for you. Each message is prepared for you, and your staff send it in one tap from the WhatsApp on the device they're using.",
+      "Selling needs an internet connection. If it drops, new products, companies, sections, expenses and returns wait on the device and upload when it's back, and retrying a sale never creates a second invoice.",
+      "There is no one-click export of all your data yet. Stock counts and each animal's medical record export to Excel on every plan, and full reports from the Advanced plan up.",
+      "Branches share one stock and one set of reports for now; cases can be filtered by branch, and sales are tagged with it.",
+      "The interface is Arabic first. English covers most screens, not all of them yet."
+    ]
+  },
+  "faq": [
+    {
+      "q": "Do I have to finish setting up before I start working?",
+      "a": "No. You can record cases from day one and build your stock as purchase invoices come in. Throughout the trial, the “Set up your clinic” list on your dashboard shows what's left."
+    },
+    {
+      "q": "Can you move my data from Excel or my old system?",
+      "a": "Not yet: there is no import tool. What exists today: the ready-made catalogue builds your stock's companies, sections and products in one tap, purchase invoices fill in quantities and prices, and old visits and vaccinations can be entered by hand with their real dates."
+    },
+    {
+      "q": "What devices do I need?",
+      "a": "A computer, tablet or phone with an up-to-date browser, and you can install doctorVet on it like an app. A barcode scanner connected to the device works at the till and on purchase invoices, and invoices print on A4 or on an 80 mm receipt printer."
+    },
+    {
+      "q": "What if the internet drops while I'm setting up?",
+      "a": "Products, companies, sections, expenses and returns you add are saved on the device and upload when the connection is back; a small badge shows how many are waiting, and the manager reviews anything that doesn't go through. Recording cases, visits and vaccinations, purchase invoices and sales need a connection, and the new-case form keeps a draft on the device."
+    },
+    {
+      "q": "What happens when the 14 days end?",
+      "a": "Nothing is charged. You choose the plan and the period, pay when you decide to, and carry on with the same data. If you don't subscribe, the account stays locked on the subscription screen until you do, and your data stays stored. No period ever renews by itself. Note: paying during the trial starts the paid period that day, ends the remaining trial days and moves you straight to your plan's features only, so there's nothing to gain by paying early. Online payment is currently in Iraqi dinars through Wayl."
+    }
+  ]
+}

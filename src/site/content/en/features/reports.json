@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "title": "Veterinary clinic reports: till, staff & stock | doctorVet",
+    "description": "Reports in 12 tabs for any period or shift hours: register close by payment method, each staff member's performance, what sells and what sits in stock, expenses and purchases, and deleted invoices and sign-ins, with Excel and print. From the Advanced plan."
+  },
+  "hero": {
+    "eyebrow": "Management",
+    "title": "See what came into your till today, who made the sales, and where the money went",
+    "sub": "Reports are built from the invoices, returns, purchases and expenses your team already records, so nobody enters a number twice. In 12 tabs: register close by payment method, each staff member's performance, what sells and what stays on the shelf, expenses by category, and deleted invoices and sign-ins. Pick the period once and the tabs follow it, then print the table or download it as an Excel file."
+  },
+  "pains": {
+    "title": "End-of-day questions that go unanswered",
+    "items": [
+      {
+        "title": "\"End of shift: how much should be in the drawer?\"",
+        "body": "You count the cash and check it against a notebook or the cashier's memory. Here the register close splits what was collected into cash, card and transfer and subtracts cash taken out of the drawer, so you see the net cash that should be there. With the drawer count on the sale screen, the cashier enters what they counted at the end of their shift; any surplus or shortfall shows, and the confirmation is saved with their name and the time."
+      },
+      {
+        "title": "\"Who sold the most this month? And how much did they discount?\"",
+        "body": "Without a report, the answer is a hunch. The staff tab ranks sellers by their share of the period's sales, and for each person shows invoices, average ticket, customers served, discounts given and their top five items."
+      },
+      {
+        "title": "\"The shelves are full and the money is stuck in stock that doesn't move\"",
+        "body": "You buy every month without knowing how much of it sold. The categories tab puts sales revenue next to purchase cost for each category, counts the products that sold nothing in the period, and flags in the item table what you bought but didn't sell, next to its current stock, so you can review it before the next order."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How you read your clinic's numbers",
+    "items": [
+      {
+        "title": "Pick the period",
+        "body": "Today, yesterday, this week, this month, last month, or any date range, or step through one day at a time with the arrows. One period drives every tab, so you never set it twice."
+      },
+      {
+        "title": "Start from the overview",
+        "body": "Total sales, number of transactions, net profit and margin for those allowed to see it, and a sales chart across the period, then cards that open the detailed reports, each showing its headline figure."
+      },
+      {
+        "title": "Open the detail",
+        "body": "Go to money and register, the transaction log, staff, categories or expenses. Search by invoice number or customer name, sort the columns, and open any customer's ledger to see their invoices line by line."
+      },
+      {
+        "title": "Print or download Excel",
+        "body": "Print the table with your clinic name, the report title, the period and the issue date at the top, or download it as an Excel file whose cells stay numbers you can add up. The activity log records who printed or downloaded a file, and when."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What you'll find in the reports",
+    "groups": [
+      {
+        "title": "Money & register",
+        "items": [
+          {
+            "title": "Register close (Z-report)",
+            "body": "What was collected in the period, split into cash, card and transfer, with the number of transactions and share for each, then refunds, cash withdrawals from the drawer, the net cash in the drawer, and each payment method's net after what was withdrawn from it. The summary downloads as a CSV file."
+          },
+          {
+            "title": "Drawer count for each shift",
+            "body": "A button on the sale screen that you switch on in settings. For each of today's shifts, morning and evening by your clinic's hours, it works out the expected cash: what arrived in cash during the shift minus the cash expenses recorded in it. The cashier enters the count and any surplus or shortfall shows; card and transfer are listed separately because they never pass through the drawer."
+          },
+          {
+            "title": "Transaction log",
+            "body": "Every invoice in the period, plus debt settlements on the day they were collected where there are any, with search by invoice number or customer name, sorting, total discounts, and a revenue and profit chart over time."
+          },
+          {
+            "title": "Quick reports on the sale screen",
+            "body": "Money actually received today and its net profit, a receipts chart by day, week, month or year based on the day the money arrived, the top five products by sales, and sales by staff member. The database adds these up and sends back the figures, and our tests check its totals against the app's own calculation."
+          },
+          {
+            "title": "Set shift hours, and a comparison with yesterday",
+            "body": "Under advanced options, limit a report to a time window, even one that runs past midnight such as 22:00 to 04:00. From there you can also turn on a strip in the money and register tab with yesterday's sales, transactions and net profit, showing the change in percent when you're viewing today."
+          }
+        ]
+      },
+      {
+        "title": "Staff & customers",
+        "items": [
+          {
+            "title": "A sales profile for every staff member",
+            "body": "Sellers ranked by their share of the period's sales, and for each: invoices, revenue, average ticket, customers and discounts, services versus products, payment methods, their biggest invoice and top five items. A chart compares staff sales across the period."
+          },
+          {
+            "title": "A ledger for every customer",
+            "body": "All their invoices across their whole history, exactly what they bought, what they returned, what they paid and what they still owe. The list is ordered by what each customer spent in the period, and the reports also show your top 10 customers by spend with their invoice counts."
+          },
+          {
+            "title": "Walk-in buyers without a pet file",
+            "body": "People who buy from your clinic but whose animal has no file there: name and number, how often they bought, their last purchase, and what they usually buy. Drawn from all history, with no money figures."
+          }
+        ]
+      },
+      {
+        "title": "Stock, purchases & expenses",
+        "items": [
+          {
+            "title": "What moves and what sits",
+            "body": "Top-selling items by quantity, the items in your stock that sold least or nothing at all in the period, and your top 10 services by how often they were requested and what they brought in."
+          },
+          {
+            "title": "Categories: what you sold against what you bought",
+            "body": "For each category, the revenue from what sold and the cost of what was bought in the period. Pick a category to see its top and slowest item and how many of its products sold nothing. The item table shows sold, bought and current stock for each item, flags what was bought but not sold, and prints or downloads as Excel."
+          },
+          {
+            "title": "Purchase invoices",
+            "body": "Supplier purchase invoices in the same period, grouped by day, each opening onto its goods, with the purchase total, what was paid to suppliers and what is still owed to them."
+          },
+          {
+            "title": "Expenses and withdrawals by category",
+            "body": "The manager records each manual withdrawal with a required category your clinic defines (rent, electricity, petty cash...) and a source: cash, card or bank transfer; only cash comes off the drawer's net. What the system writes itself, such as returns, salaries and loans, has its own table. The ledger view numbers each entry, totals each day with a running balance, and prints on A4 with your logo and lines for \"Prepared by\" and \"Approved by\"."
+          }
+        ]
+      },
+      {
+        "title": "Clinical, oversight & permissions",
+        "items": [
+          {
+            "title": "Clinical report",
+            "body": "Lab results recorded by type (blood and chemistry, rapid tests and how many were positive, microscopy and culture), how many results haven't been invoiced yet, and the number of lab, X-ray and ultrasound files uploaded. For each medicine, the doses scheduled in the period and how many were actually given. The reports also count visits per vet and per species."
+          },
+          {
+            "title": "Oversight & activity",
+            "body": "The most recent deleted invoices with their amount, customer, who deleted them and when, and the latest sign-ins with name and time."
+          },
+          {
+            "title": "Profit for those you allow",
+            "body": "The reports hub needs the \"View sales reports\" permission, and its profit, cost and net-drawer figures need \"See profit and revenue\"; without it they are hidden on screen and left out of the CSV and Excel files too. The quick reports on the sale screen, however, show net profit to anyone with the reports permission. On a front-desk device locked with the manager PIN, the hub shows today only and the quick reports disappear until the PIN is entered."
+          },
+          {
+            "title": "Excel and print under your clinic's name",
+            "body": "The staff, transaction log and category tables download as right-to-left Excel files whose cells are numbers, not text, so they add up directly, with your clinic name and the period at the top. They print as a clean page without the app's buttons, headed with your clinic name, the report title and the period."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "advanced",
+  "planNote": "The 12-tab reports hub, Excel and print, the quick reports on the sale screen, the drawer count and the expenses and withdrawals ledger start on the Advanced plan and are the same in full on Super. Debt figures in the reports and the debt discount register only fill in with credit sales, which are on Super only. On every plan, Basic included: the home dashboard (today's cases, patients under treatment, boarders, low stock, without sales amounts), surgery statistics, stock-count losses by reason, the stocktake as an Excel file, the printed stock audit report, and each pet's timeline to print or download as Excel. The 14-day free trial unlocks everything, no card needed.",
+  "mock": {
+    "title": "Drawer count · evening shift",
+    "rows": [
+      { "label": "Sales", "value": "4,860 · 37 invoices", "tone": "info" },
+      { "label": "Cash in", "value": "3,120", "tone": "ok" },
+      { "label": "Card / transfer", "value": "1,740 · not in the drawer count", "tone": "info" },
+      { "label": "Cash expenses", "value": "−260", "tone": "warn" },
+      { "label": "Should be in the drawer", "value": "2,860", "tone": "ok" },
+      { "label": "Actually counted", "value": "2,840 · 20 short", "tone": "bad" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Do we have to enter the numbers again for the reports?",
+      "a": "No. Reports are built from what your team records during the day: till invoices, returns, purchase invoices, withdrawals and visits. If an invoice was forgotten within the last 7 days, the manager can record it on its real day and it shows in that day's report."
+    },
+    {
+      "q": "Can my receptionist see the clinic's profit?",
+      "a": "In the reports hub, only if you give them the \"See profit and revenue\" permission; without it, profit and cost figures are hidden on screen and left out of downloaded files. The quick reports on the sale screen, however, show net profit to anyone with the \"View sales reports\" permission, so don't grant it to someone who shouldn't see profit. On a front-desk device locked with the manager PIN, the hub shows only today's figures until the PIN is entered."
+    },
+    {
+      "q": "Can I give my accountant an Excel file?",
+      "a": "Yes. The staff, transaction log and category tables download as Excel files with numbers that add up, the register summary downloads as CSV, and the tables print under your clinic name. To be clear: these are report files. There is no single export today that covers all your clinic's data, such as customers, pets and invoices."
+    },
+    {
+      "q": "We work two shifts. Can I see each one on its own?",
+      "a": "Yes. Under advanced options you can limit a report to a time window, even one that runs past midnight. The drawer count on the sale screen, once switched on in settings, confirms each shift separately using the shift hours you set."
+    },
+    {
+      "q": "I have more than one branch. Are reports split by branch?",
+      "a": "Not today. Sales are tagged with their branch, but reports and stock are combined for the whole clinic, and there is no separate report per branch."
+    },
+    {
+      "q": "What if the connection drops while register figures are loading?",
+      "a": "The screen says loading failed and offers a retry instead of showing zeros, both in the quick reports on the sale screen and in the drawer count. In the money and register tab, if withdrawals fail to load, net cash is withheld with a retry button, and no CSV file is downloaded with figures missing. Reports need an internet connection."
+    }
+  ],
+  "related": ["pos", "team", "pharmacy"]
+}

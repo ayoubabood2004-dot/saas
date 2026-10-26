@@ -1,0 +1,177 @@
+{
+  "meta": {
+    "title": "Inpatients, surgery & cages for vet clinics | doctorVet",
+    "description": "An hourly dose board that puts late doses first, a treatment-room wall screen, round mode, a care sheet with fluid balance, a cage room and a surgery log with outcomes. On every plan."
+  },
+  "hero": {
+    "eyebrow": "In the clinic",
+    "title": "See at a glance which doses are late and which are due now",
+    "sub": "The treatment plan gives every dose a clock time within your working hours. Record it with one tap from the treatment sheet or the treatment-room screen, follow fluids and vitals on one care sheet, and see who is in each cage and which cages are free."
+  },
+  "pains": {
+    "title": "Does this happen in your clinic?",
+    "items": [
+      {
+        "title": "“Who's in cage 4, and did they get their dose?”",
+        "body": "The answer is on a sheet taped to the cage, so you walk past every cage to see what was given and what's left, and whoever takes over after you does the same walk again."
+      },
+      {
+        "title": "A dose ran late and nobody noticed",
+        "body": "Between walk-ins at reception and the patients staying in, a late dose is found at the next round, and no one knows how late it was."
+      },
+      {
+        "title": "The fluid rate is worked out on scrap paper",
+        "body": "Drops per minute are a guess, and what went in and what came out never add up to one number, so at the end of the day you don't know the net balance."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Admit the case and give it a cage",
+        "body": "Open a treatment or boarding stay from reception, or tap a free cage in the cage room and pick the animal. Treatment cases join the active list right away."
+      },
+      {
+        "title": "Write the plan or apply a protocol",
+        "body": "Pick the drug from the guide and the dose fills in from the animal's weight; set the times per day and the number of days, or apply a ready protocol after reviewing it. Each dose gets a clock time within your hours, and you can change any of them."
+      },
+      {
+        "title": "Record with a tap, follow by the hour",
+        "body": "Late doses come first with how late they are, then what's due now, then the rest by hour. Tap a cell to record a dose; temperature, fluids and feeding take a value."
+      },
+      {
+        "title": "Close the stay with a report",
+        "body": "At discharge, record the outcome and print the owner a report of the care days, doses and follow-up, without drug names. The case moves to the closed-cases archive."
+      }
+    ]
+  },
+  "caps": {
+    "title": "What's included",
+    "groups": [
+      {
+        "title": "Treatment plan & doses",
+        "items": [
+          {
+            "title": "Every dose at a clock time",
+            "body": "Choose once to 4 times a day, or as needed with no fixed times. Doses are spread across your working hours, or a dose window you set, and every time can be edited."
+          },
+          {
+            "title": "Doses from the drug guide",
+            "body": "Search for the drug or pick it from My medicines, and the dose, route and frequency fill in for the species, converted to ml at the vial's concentration. With no recorded weight, no dose is calculated and you're told the weight is missing."
+          },
+          {
+            "title": "Ready-made protocols",
+            "body": "8 protocols including acute gastroenteritis, parvo support, post-op care, feline urinary obstruction and dehydration, plus protocols your clinic builds. Each opens in full with doses worked out from the guide for the animal's weight, so you remove what doesn't fit, then apply it."
+          },
+          {
+            "title": "A warning before the dose",
+            "body": "A drug banned for the species, or one the animal is recorded as allergic to, is flagged while you write the plan, and in round mode the Given button is disabled for that dose. Round mode also shows the documented dose range to compare with what you're holding."
+          }
+        ]
+      },
+      {
+        "title": "Treatment sheet & dose board",
+        "items": [
+          {
+            "title": "Late first, and by how much",
+            "body": "A dose turns late 60 minutes after its time, and the board shows how many hours or days late it is. A dose missed yesterday stays on the board until someone deals with it."
+          },
+          {
+            "title": "One tap to record, one tap to undo",
+            "body": "Tap a cell and the dose is recorded with your name and the time; a bar then offers Undo or “Actually missed” with a ready reason: out of the cage for an exam or imaging, refused or vomited, vet postponed it, drug out of stock, workload."
+          },
+          {
+            "title": "Measurements take a value",
+            "body": "Temperature, fluids, feeding and output can't be closed with “Done”: type the number on a keypad or pick a ready grade, and temperature is coloured against the species' normal range before you save."
+          },
+          {
+            "title": "Treatment-room wall screen",
+            "body": "A full-screen view with large counts for late, due now and done today, plus the clock, readable from across the room. Recording works from it too."
+          },
+          {
+            "title": "Round mode",
+            "body": "One task at a time, full screen, in the order of rooms and cages as you set them up, with only today's late and due-now tasks. Three buttons: Given, Missed and Skip, with a tally at the end."
+          }
+        ]
+      },
+      {
+        "title": "Care sheet & fluids",
+        "items": [
+          {
+            "title": "Hourly care sheet",
+            "body": "Fluid rate, monitoring (temperature, pulse, respiration, systolic pressure, SpO2, blood glucose), intake and output next to each hour's doses, with a running total in ml of what went in, what came out and the net."
+          },
+          {
+            "title": "Fluid calculator",
+            "body": "Daily maintenance from weight and species, plus the dehydration deficit (you pick the grade from its clinical signs) and ongoing losses, gives ml per hour and drops per minute for your giving set. It warns above 10 ml/kg/h, or 6 for cats, and never blends the shock bolus into the rate."
+          }
+        ]
+      },
+      {
+        "title": "Cages, surgery & records",
+        "items": [
+          {
+            "title": "Cage room",
+            "body": "Set up your rooms and cages once, stacked in two tiers if you like and numbered your way. See who's in each cage and on which day of the stay, which are free and which have a dose due, and admit or move with a tap. The layout is saved for the clinic, so every device shows the same one, with an optional 3D view."
+          },
+          {
+            "title": "Surgery log",
+            "body": "Pick the procedure from a catalogue of 8 sections or type its name, then record the approach, suture pattern, material and size, anaesthesia, duration and outcome. A follow-up date is suggested for each procedure."
+          },
+          {
+            "title": "Surgeries page",
+            "body": "Total, this month, success rate, average duration and upcoming follow-ups, a 6-month trend, the most performed procedures and a split by surgeon, plus a full log you can search and filter by outcome."
+          },
+          {
+            "title": "Stay log & archive",
+            "body": "Each day of a stay in one place: admission, discharge, cage changes, doses, labs, weight and notes. The archive holds closed cases and a record of deaths with their cause. A case with overdue doses and none given for 48 hours is put in front of you to decide: a WhatsApp message to the owner, prepared and sent in one tap, or a move to lost to follow-up."
+          },
+          {
+            "title": "Two printouts",
+            "body": "An internal treatment sheet with the dose table and the owner's undertaking, and a care report for the owner that tells the story of the stay without drug names. Both carry your clinic logo."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "all",
+  "planNote": "Everything on this page is on every plan: treatment plans, the treatment sheet and dose board, the wall screen and round mode, the care sheet and fluid calculator, the cage room, and the surgery log and page. Links into other sections follow their plan: selling a surgery as a service at the till, so it's recorded in the pet's file, needs Advanced or Super, and surgery follow-ups in the reminders hub need Super. The 14-day free trial opens everything, no card needed.",
+  "mock": {
+    "title": "Hourly dose board",
+    "rows": [
+      { "label": "Luna · Ceftriaxone IV", "value": "2 h late", "tone": "bad" },
+      { "label": "Simba · Ringer's fluids", "value": "Due now", "tone": "warn" },
+      { "label": "Luna · Temperature", "value": "39.6 °C", "tone": "warn" },
+      { "label": "Coco · Meloxicam oral", "value": "6:00 pm", "tone": "info" },
+      { "label": "Done today", "value": "14 of 19", "tone": "ok" }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does the system alert a vet's phone when a dose is late?",
+      "a": "No, nothing is sent to phones. A late dose shows first, in red, with how late it is, on the treatment sheet and the dose board, and on the treatment-room screen if you set one up."
+    },
+    {
+      "q": "What happens if the internet drops while I record a dose?",
+      "a": "Recording doses needs a connection. If a save fails, the cell goes back to how it was and you're asked to try again, so nothing stays looking saved when it isn't. A new-case form is kept as a draft on the device, and you choose whether to restore or delete it."
+    },
+    {
+      "q": "My clinic is small, with two cages. Is this useful to me?",
+      "a": "Yes, and it's on every plan. Set up your two cages once and use the dose board for one patient or ten. The wall screen and round mode are optional."
+    },
+    {
+      "q": "Does the system decide the dose instead of the vet?",
+      "a": "No. The suggested dose comes from the drug guide for the species and weight, every field can be edited, and the decision stays with the vet. If the animal has no recorded weight, no dose is calculated at all."
+    },
+    {
+      "q": "Can I record a stay that started before we used the system?",
+      "a": "Yes. Record the visit on its real date and the plan starts from that day. Past doses are marked on their own day, given at their time or not given, so they don't stay red on the board."
+    },
+    {
+      "q": "What does the owner see of the stay?",
+      "a": "You can print them a care report: when the animal came in, how many days it stayed, how many of the planned doses were given, the daily follow-up and how it left, with no drug names. You can also send the visit tracking link in a WhatsApp message that's prepared for you and sent in one tap; it shows the stages of the stay without diagnosis or prices."
+    }
+  ],
+  "related": ["records", "owners", "printing"]
+}

@@ -1,0 +1,200 @@
+{
+  "meta": {
+    "title": "Veterinary clinic POS: barcodes, A4 & 80 mm receipts, returns | doctorVet",
+    "description": "Sell from your clinic's stock by barcode or name, by the box, strip or kilo, and take cash, card, transfer or a mix. A4 and 80 mm invoices with your logo, line-by-line returns, offers and a drawer count for every shift. From the Advanced plan."
+  },
+  "hero": {
+    "eyebrow": "Sales & stock",
+    "title": "Every sale on an invoice. Every shift ends with a counted drawer.",
+    "sub": "Scan a barcode or search by name, sell by the box, strip or kilo, and take cash, card, transfer or a mix. Print an A4 or 80 mm invoice with your clinic's logo; a return puts stock back and adjusts the drawer in the same step."
+  },
+  "pains": {
+    "title": "Sound familiar at your counter?",
+    "items": [
+      {
+        "title": "“The drawer is short and nobody knows why”",
+        "body": "You count the cash at night and it doesn't match the cash book. Some customers paid by card, some by transfer, and an expense left the drawer without being written down."
+      },
+      {
+        "title": "A customer brings back one bottle of three",
+        "body": "You refund it from the drawer, but stock never learns it came back and the invoice still says three. Now the shelf, the drawer and the book all disagree."
+      },
+      {
+        "title": "You raised prices, the other device sells at the old ones",
+        "body": "You changed prices on your computer this morning, but the front-desk device still charges yesterday's, and a cart opened before the change goes through at the old price unnoticed."
+      }
+    ]
+  },
+  "steps": {
+    "title": "How it works",
+    "items": [
+      {
+        "title": "Fill the cart",
+        "body": "Scan a barcode, search by name, or pick a service from your price list. For a large quantity, type the count and scan once."
+      },
+      {
+        "title": "Link the owner and pet, if you like",
+        "body": "Pick the owner, or open the sale from the pet's file, and medicines and vaccines go into its record. Choose the seller so the sale counts for them."
+      },
+      {
+        "title": "Take payment and issue the invoice",
+        "body": "Cash, card, transfer or a mix, with discounts, offers and change due. Then print A4 or 80 mm."
+      },
+      {
+        "title": "Reconcile the drawer at closing",
+        "body": "Once reconciling is switched on in Settings, count the cash and type it in. The system shows what was expected and any difference, and saves the confirmation with your name and the time."
+      }
+    ]
+  },
+  "caps": {
+    "title": "The till in detail",
+    "groups": [
+      {
+        "title": "At the counter",
+        "items": [
+          {
+            "title": "Scan or search",
+            "body": "Works with barcode scanners that type like a keyboard, wired or Bluetooth, without clicking into the search box first. Name search ignores hamza and ta marbuta differences, and one product can carry several codes, such as a shelf number and the factory barcode. If the server can't be reached, the till says so instead of claiming the item isn't in stock."
+          },
+          {
+            "title": "By the box, strip or kilo",
+            "body": "Sell a tablet, strip or ml from the same box, a weight in one tap such as half a kilo of dry food, or type the weight as the scale reads it. For bulk, type the count and scan."
+          },
+          {
+            "title": "Services and the pet's file",
+            "body": "Sell services from your price list next to products, or scan a barcode you print for a frequent service. For a registered animal, medicines and vaccines go into its record with the next dose date, a lab test appears in the lab awaiting its result, and a surgery is logged in its file and the surgery log. Several pets of the same owner can share one invoice."
+          },
+          {
+            "title": "Warnings before a mistake",
+            "body": "An out-of-stock item is flagged plainly after a check with the server, selling an expired item asks for confirmation, and selling an entire stock of 10 or more is confirmed by name and count."
+          }
+        ]
+      },
+      {
+        "title": "Payment and invoice",
+        "items": [
+          {
+            "title": "Split payment",
+            "body": "Split one invoice across cash, card and bank transfer. Type the amount received and the change appears. Each part of the payment prints on the invoice."
+          },
+          {
+            "title": "Discount and final price",
+            "body": "Discount by percentage or amount, or type the final price yourself and the gap shows as a discount or a surcharge. Any line's price can be edited right in the cart."
+          },
+          {
+            "title": "Offers",
+            "body": "A bundle offer on a category, such as “any 3 cans for one price”, applies once the set is complete in the cart. Quantity offers on products or services you choose give a discount or a set price for every N items; they show on the cart and you apply them with one tap."
+          },
+          {
+            "title": "A4 invoice and 80 mm receipt",
+            "body": "Your logo on top with a faint watermark, the seller, your notes and the payment parts, and a QR code at the foot that opens your clinic's WhatsApp, or its online store when that is switched on. Reprints are numbered, and a pro-forma before the sale is an option in Settings."
+          },
+          {
+            "title": "Thermal printer width",
+            "body": "Print a measuring strip once and pick the width that printed cleanly, from 58 to 80 mm, separately for each device, so lines don't wrap on the paper."
+          }
+        ]
+      },
+      {
+        "title": "Returns and the drawer",
+        "items": [
+          {
+            "title": "Line-by-line returns",
+            "body": "Find the invoice by name, phone or number across the whole history, set the returned quantity per item, and choose how the money goes back: cash, card or transfer. Stock comes back, the invoice and its profit are recalculated, and the drawer is adjusted in one step."
+          },
+          {
+            "title": "Returns and exchanges at the till",
+            "body": "Switch on Return mode and everything you scan goes in as a negative line. Mixed with new items it offsets them as an exchange; on its own it is recorded as a refund from the drawer, item by item, with the time."
+          },
+          {
+            "title": "Drawer reconcile per shift",
+            "body": "An option you switch on in Settings; if your clinic hours have a morning and an evening shift, each shift gets its own count. It shows sales, cash in, cash expenses and what should be in the drawer, with card and transfer kept out of the drawer count. Type what you counted and the difference shows as over or short, saved with your name and the time."
+          },
+          {
+            "title": "A forgotten invoice, on its own day",
+            "body": "Record a missed sale on its real day, up to 7 days back, as a manager or with the manager PIN. Its money lands in that day's reports and drawer, and the invoice is marked as recorded later."
+          }
+        ]
+      },
+      {
+        "title": "Prices, wholesale and records",
+        "items": [
+          {
+            "title": "Sells at today's price",
+            "body": "After a price raise, every device learns of it within a minute while the screen is open, and the till checks with the server before each sale. An open cart is repriced and shown to you before you sell, and past invoices are never touched."
+          },
+          {
+            "title": "Wholesale tab",
+            "body": "From Inventory, sell to bulk buyers at a price that starts from cost and that you can adjust, with a warning when an item has no purchase price. The invoice is saved as a wholesale sale."
+          },
+          {
+            "title": "Invoices and quick reports",
+            "body": "Search every invoice and reprint it, and edit its payment methods or delete it if you hold the permission. The reports tab shows day, week, month and year, money actually received, top sellers and sales by staff."
+          }
+        ]
+      }
+    ]
+  },
+  "plan": "advanced",
+  "planNote": "The full sales screen is on Advanced and Super: scanning and search, selling by box, strip or weight, services, A4 and 80 mm invoices, returns, offers, split payment, drawer reconcile, backdated invoices, the wholesale tab and quick reports. Super alone adds two choices to the payment panel: credit sales with a debt ledger, and delivery by driver or courier company. Basic has no till, though it includes the whole inventory. The 14-day free trial unlocks all of it, no card needed.",
+  "mock": {
+    "title": "New sale · Luna, cat",
+    "rows": [
+      {
+        "label": "Amoxicillin 250 mg",
+        "value": "2 strips"
+      },
+      {
+        "label": "Dry food",
+        "value": "0.5 kg"
+      },
+      {
+        "label": "Rabies vaccine",
+        "value": "Goes into Luna's file",
+        "tone": "ok"
+      },
+      {
+        "label": "Any 3 cans offer",
+        "value": "Applied",
+        "tone": "ok"
+      },
+      {
+        "label": "Ear drops",
+        "value": "Expired · confirm first",
+        "tone": "warn"
+      },
+      {
+        "label": "Payment",
+        "value": "Cash + card",
+        "tone": "info"
+      }
+    ]
+  },
+  "faqs": [
+    {
+      "q": "Does selling need an internet connection?",
+      "a": "Yes. Issuing an invoice needs a connection, because stock and invoices are saved on the server. If the connection drops while you take payment, the cart stays saved on the device, and pressing again once it is back never records the invoice twice. You can install the system on the device like an app, but selling still needs the connection."
+    },
+    {
+      "q": "Which barcode scanner and printer do I need?",
+      "a": "A barcode scanner that types the code like a keyboard, wired or Bluetooth. There is no phone-camera scanning on the sales screen today, so without a scanner you search by name or type the code. Printing goes through the browser's print window, so it works with any printer your device can print to: a regular A4 printer, or a thermal one with 80 or 58 mm paper once you set the width with the measuring strip. Allow pop-ups for the site so the print window can open."
+    },
+    {
+      "q": "Can I sell on credit or send an order with a driver?",
+      "a": "On the Super plan, yes: the payment panel gains a Partial payment choice that records the rest as a debt in the customer's name in the debt ledger, and a Delivery choice with a driver or courier company and collection on delivery. On Advanced, every sale is paid in full, by cash, card, transfer or a mix."
+    },
+    {
+      "q": "What happens to the cart if I raise prices mid-sale?",
+      "a": "The till learns of the change and checks with the server before completing the sale. Lines whose price you didn't edit by hand take the new price and are shown to you by name to confirm before you sell; if you agreed the old price with the customer, edit it by hand. Return mode suggests the pre-raise price, and past invoices don't change."
+    },
+    {
+      "q": "Who can delete an invoice or record one on an earlier day?",
+      "a": "Deleting an invoice or editing its payment methods needs the Delete invoices permission, one of the sensitive permissions that stay off for everyone but managers unless you grant it to a specific staff member. Recording an invoice on an earlier day is for managers, or for staff after the manager PIN is entered. The reports tab inside the till is hidden from anyone without the reports permission."
+    },
+    {
+      "q": "Can I start on Basic and add the till later?",
+      "a": "Yes. The whole inventory is on every plan, and when you move to Advanced the till sells from that same stock, so there is nothing to re-enter. The 14 days of the free trial unlock the till so you can try it on your own stock before deciding, with no card."
+    }
+  ],
+  "related": ["pharmacy", "credit-delivery", "printing"]
+}

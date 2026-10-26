@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "title": "Security and your data | doctorVet",
+    "description": "How doctorVet protects your clinic's data today: each clinic walled off in the database, roles and permissions, a manager PIN, an activity log by name, a trash for deleted products, and a plain list of what isn't built yet."
+  },
+  "hero": {
+    "title": "Your clinic's data: what we protect, how, and what isn't built yet",
+    "sub": "This page describes what the system actually does today to keep your data safe, and says plainly what it doesn't do yet. The protections described here come with every plan."
+  },
+  "sections": [
+    {
+      "title": "Your clinic's data is walled off from every other clinic",
+      "body": "All clinics share one database, but every record carries its clinic's identity, and the database itself refuses to show or change it for anyone outside that clinic. This is called row-level security, and it runs on the server, not as a filter on your screen.",
+      "bullets": [
+        "Row-level security is on for every table, and a built-in database check lists any table that lacks it.",
+        "The app in your browser holds only a public key that can't go beyond these rules. The master database key stays on the server.",
+        "Animals your clinic registers are never visible to another clinic.",
+        "One deliberate exception: an animal that its owner registers in their own doctorVet account has a shared passport, so any clinic on doctorVet can open its record by scanning its QR code or searching the owner's email. The owner can set it to private at any time."
+      ]
+    },
+    {
+      "title": "Each person has a role, and you set the rest",
+      "body": "Every staff member signs in with their own account, invited by email or with a join code. Their role (clinic manager, vet, receptionist, care specialist or photographer) is checked on the server. On top of the role, you set permission switches for each person that decide what they see and can do in the app.",
+      "bullets": [
+        "Five permissions are marked sensitive: profits and revenue, deleting invoices, clinic settings, managing staff and permissions, and payroll. They are off for every role except the manager, and granting one asks you to confirm.",
+        "An invite sent to an email address works only for that address.",
+        "Removing someone from your staff ends their access on the server straight away and voids their invite code.",
+        "A photographer account is fenced on the server to product photos and the online store, without its customer orders. It can't open invoices, client records, medical files or reports."
+      ]
+    },
+    {
+      "title": "A manager PIN for shared devices",
+      "body": "The front-desk computer is usually shared. The clinic's 4-digit manager PIN lets the manager lock that device to the reception view, and lets a staff member get manager access for a few minutes when a task needs it, without ever learning the manager's password.",
+      "bullets": [
+        "Manager access opened by the PIN is granted by the server and ends after 10 minutes.",
+        "The PIN is never stored as plain text, only as a one-way hash, and only the manager can set or change it.",
+        "Five wrong attempts lock the PIN for 5 minutes, and each further round of wrong attempts locks it longer, up to 24 hours.",
+        "Every unlock and every wrong attempt is recorded in the activity log."
+      ]
+    },
+    {
+      "title": "Every action is logged under the name of who did it",
+      "body": "The activity log records what changed in your clinic, who changed it and when: sales, returns, invoice edits, stock changes, new products, deletions, settings and sign-ins. You can filter it by type, staff member and period.",
+      "bullets": [
+        "Money and stock entries are kept for 1 year, everything else for 90 days.",
+        "Only manager access can open the log, and the server enforces it.",
+        "No one inside the clinic, the manager included, can edit or erase an entry.",
+        "A deleted invoice stays visible in the log, with who deleted it and when."
+      ]
+    },
+    {
+      "title": "A deleted product goes to the trash, not into thin air",
+      "body": "On a busy shared screen, deleting a product by mistake is easy. So a deleted product is kept in the trash with its links to sales and purchases, and restoring it brings back the same product with the same ID, not a new copy.",
+      "bullets": [
+        "A full snapshot is taken before a product leaves the list by any route: deletion, merging it with a duplicate, or anything else.",
+        "Merging two duplicate products can be undone from the trash tab.",
+        "Deleted supplier companies go to the trash too, with their sections and the amounts recorded against them, and come back in full."
+      ]
+    },
+    {
+      "title": "When the connection drops, entries wait and are never posted twice",
+      "body": "On a weak connection, some entries are saved on the device and uploaded when the connection returns: new products, supplier companies and their sections, expenses, returns, and poultry farm daily records. A badge shows how many are waiting.",
+      "bullets": [
+        "Each waiting entry is stamped with who created it and the clinic the server confirmed, and it uploads only under that same identity. If someone else signs in on the device, the entry waits for its owner.",
+        "Uploading a waiting entry never creates a duplicate, even if the first attempt had actually arrived.",
+        "Anything that can't upload, or whose clinic wasn't confirmed, goes to a review page for the manager. Nothing is dropped silently.",
+        "Sales need a connection. If it drops mid-sale, retry with confidence: the same sale is never billed twice.",
+        "A new version of the app isn't applied while you're in the middle of something, and the new-case form keeps a draft on the device and offers to bring it back."
+      ]
+    },
+    {
+      "title": "Where your data is stored and how it travels",
+      "body": "Your clinic's data is stored in a managed PostgreSQL database on Supabase, a cloud database service. The app is served from doctorvet.vet, and every connection between your device and doctorVet is encrypted with HTTPS.",
+      "bullets": [
+        "The app is only allowed to connect to its own site and its database, and other websites can't embed it in their pages.",
+        "Case photos, X-rays and lab files are kept in private storage. They open only through links that expire after 8 hours, issued only to people allowed to see that animal's file.",
+        "Subscription payments are confirmed on the server directly with the payment gateway before any time is added to your account."
+      ]
+    },
+    {
+      "title": "What the doctorVet team can see in your clinic",
+      "body": "For support and to fix problems, designated doctorVet platform accounts can enter a clinic's workspace. Inside, they see and act with manager access, as a member of your team would. We'd rather you hear this from us than find it out later.",
+      "bullets": [
+        "Each visit is recorded in an internal session log that only the platform team can read: who entered, which clinic, and when they entered and left.",
+        "A visit ends 12 hours after it starts unless it is renewed.",
+        "The visit itself doesn't add a line to your activity log. Changes made during it are recorded there, currently under the label “clinic manager”.",
+        "Even without entering, the platform console shows an overview of each clinic: its subscription, team size, sales totals for today and the past 7 days, unpaid balances, product counts, and its activity log and sign-ins."
+      ]
+    },
+    {
+      "title": "If your trial or subscription ends, your records stay",
+      "body": "Ending a free trial or a subscription doesn't delete your clinic's records.",
+      "bullets": [
+        "If your clinic has paid before and its period ends, the system switches to read-only: you can look up your records but not add to them or change them.",
+        "If your free trial ends without a subscription, the clinic is locked until you subscribe, and its data stays stored.",
+        "There's no automatic renewal. You pay for the period you choose, and nothing is charged unless you pay it yourself."
+      ]
+    }
+  ],
+  "limits": {
+    "title": "What isn't there yet",
+    "items": [
+      "No one-step export of all your data. You can't export your full lists of clients, animals, invoices or vaccines, and there's no backup file to download. What you can export to Excel today: each animal's timeline, your stocktake, and report tables (reports come with Advanced and Super).",
+      "No two-step sign-in. Clinic accounts sign in with email and password, and a forgotten password is reset by email.",
+      "Most per-person switches work inside the app. On the server, protection is by clinic and by role (for example, only manager access can delete an invoice or open the activity log), and individual switches are checked there only for product photos and the online store.",
+      "The manager PIN is 4 digits. It keeps a shared device in check, but it isn't strong protection against a technically skilled staff member, so give each person their own account and only the role they need.",
+      "Changes our team makes during a support visit appear in your activity log as “clinic manager”, not under the team's name, and the visit itself isn't listed there.",
+      "Only products and supplier companies can be restored from the trash. Deleting an invoice is final and needs manager access, and deleting an animal's file permanently removes its visits, vaccines, photos and files with it.",
+      "Activity older than its retention period (90 days, or 1 year for money and stock) is deleted and can't be recovered.",
+      "Waiting entries live in that device's browser until they upload. Clearing the browser's data before then loses them.",
+      "Sales, visits, vaccines and bookings need an internet connection. Only the entries listed in the connection section can wait for it to return.",
+      "This page doesn't state a hosting region, a backup schedule or any security certification, because none of these is confirmed yet."
+    ]
+  }
+}

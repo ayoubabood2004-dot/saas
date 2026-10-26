@@ -1,8 +1,10 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { i18nSplit } from "./scripts/i18n-split.mjs";
+import { SITE_PATHS } from "./scripts/site-paths.mjs";
 
 
 /**
@@ -65,6 +67,28 @@ function stripHtmlComments() {
   };
 }
 
+/* الموقعُ التسويقيّ (٢٥/١٠): صفحاتٌ ثابتةٌ مولَّدة لكلّ نسخة (`/sa`، `/eg/pricing`…) ببناءٍ مستقلّ
+ * (`vite.site.config.ts`). العاملُ الخدميّ لا يجيب عنها من `index.html` المخبوء — وإلا رأى من زار
+ * التطبيقَ مرّةً الموجّهَ يحوّله للجذر بدل صفحة بلده. القائمةُ وسببُ شكلها بـ`scripts/site-paths.mjs`.
+ *
+ * و`vite preview` لا يقرأ vercel.json: `/sa` بلا شرطةٍ أخيرة كان يعطي قشرةَ التطبيق فيدور الزائرُ بين
+ * `/` و`/sa` بلا نهاية. هذا يعيد إعادةَ كتابة Vercel نفسها محلّياً، فيُفحص الموقعُ المبنيّ كما سيُخدم. */
+function sitePreview(): Plugin {
+  return {
+    name: "site-preview",
+    configurePreviewServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const [p, q] = (req.url ?? "").split("?");
+        if (SITE_PATHS.test(p) && !/\.[a-z0-9]+$/i.test(p)) {
+          const page = `${p.replace(/\/$/, "")}/index.html`;
+          if (existsSync(path.join(__dirname, "dist", page))) req.url = q ? `${page}?${q}` : page;
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // Visible build stamp (الإصدار) — lets anyone verify WHICH deploy their
   // device is actually running when debugging stale caches.
@@ -78,6 +102,7 @@ export default defineConfig({
     i18nSplit(),
     storeEntry(),
     stripHtmlComments(),
+    sitePreview(),
     VitePWA({
       /* «prompt» لا «autoUpdate» (١٧/١٠): autoUpdate يجعل الخدمةَ الجديدة تتخطّى
        * الانتظار ويُعيد تحميلَ كلّ تبويبٍ مفتوح لحظةَ استيلائها — قيس بالإنتاج إقلاعاً
@@ -109,11 +134,12 @@ export default defineConfig({
          * لا يعرف تطبيقَ العيادة. ولولا استثناؤهما لأرجعت الخدمةُ العاملة
          * `index.html` من الذاكرة لكلّ زائرٍ عاد — فيدفع الـ٤٦٣ كيلو الي
          * خرجنا منها، ويُلغى المدخلُ الثاني بصمتٍ عند من زار مرّتين. */
-        navigateFallbackDenylist: [/^\/wa-webhook/, /^\/api\//, /^\/s\//, /^\/t\//],
+        navigateFallbackDenylist: [/^\/wa-webhook/, /^\/api\//, /^\/s\//, /^\/t\//, SITE_PATHS],
         // محرك OCR (~10MB) ومشهد الأقفاص المجسّم (three.js ~1MB) يُحمَّلان عند
         // الطلب فقط — إدراجهما بالتثبيت المسبق يخلي تنصيب الـPWA ينزّل أضعاف
         // حجم التطبيق على موبايل ببيانات محدودة.
-        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js"],
+        // والموقعُ يُبنى بعد التطبيق فلا يراه هذا المسح أصلاً؛ الاستثناءُ حارسٌ لبناءٍ يُعاد فوق dist قديم.
+        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js", "site.html", "site-assets/**", "site-manifest.json", "*/index.html", "*/*/index.html", "*/*/*/index.html", "sitemap.xml"],
         runtimeCaching: [
           {
             // Cache Supabase storage objects (patient photos) only. Bounded by a

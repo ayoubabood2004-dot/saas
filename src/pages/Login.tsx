@@ -33,7 +33,7 @@ import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useT
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import { COUNTRIES, countryByCode, countryName, currencyName, guessCountry } from "@/lib/currency";
+import { COUNTRIES, countryByCode, countryName, currencyName, signupCountry } from "@/lib/currency";
 import { authErr, e164, emailTypo, inboxFor } from "@/lib/authErrors";
 import { safeNext } from "@/lib/authNext";
 import { seedClinicLocale } from "@/lib/settings";
@@ -282,7 +282,7 @@ function SupabaseAuthCard() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
-  const [country, setCountry] = useState(() => initialCountry(intent.country));
+  const [country, setCountry] = useState(() => signupCountry(intent.country));
   const [password, setPassword] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
@@ -847,11 +847,6 @@ function rememberPortal(p: Portal) {
 
 /** دولةُ العيادة الافتراضية (F8): ما حمله رابطُ نسخة البلد، ثم تخمينُ الجهاز، ثم العراق.
  *  كانت «العراق» دائماً، فعيادةٌ سعوديةٌ لا تنتبه للحقل الأوّل تعمل بالدينار و+964. */
-function initialCountry(fromUrl: string | null): string {
-  if (fromUrl && countryByCode(fromUrl)) return fromUrl;
-  const g = guessCountry();
-  return g && COUNTRIES.some((c) => c.code === g.code) ? g.code : "IQ";
-}
 
 /** لغة الرابط تُطبَّق مرّة عند الوصول — ولا تُطبَّق إن كانت هي الحالية. */
 function useUrlLang(current: string) {

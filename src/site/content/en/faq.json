@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "title": "doctorVet FAQ",
+    "description": "Clear answers about the free trial, prices and payment, data security, getting started, daily use and support: what doctorVet does today, and what it doesn't do yet."
+  },
+  "hero": {
+    "title": "Your questions before you start, answered plainly",
+    "sub": "These are the questions vets usually ask before subscribing. Each answer says what the system does today, and its limits where there are any."
+  },
+  "groups": [
+    {
+      "title": "Trial and sign-up",
+      "items": [
+        {
+          "q": "Do I need a bank card to start the trial?",
+          "a": "No. You open your clinic account with your email and a password, and get 14 days with every feature unlocked. We don't ask for a card or any payment details for the trial."
+        },
+        {
+          "q": "Is the trial a limited version?",
+          "a": "No. Every module is open for the full 14 days, including the ones that otherwise come only with Super: credit sales, delivery, the online store, and campaigns with the reminders hub. You work on your clinic's real data, and if you subscribe you carry on with it as it is."
+        },
+        {
+          "q": "How do I sign up my clinic?",
+          "a": "Tap “Start your 14-day free trial”, pick your clinic's country, then enter the clinic name, phone number, city, your email and a password. You may get a confirmation link by email; open it and you're signed in. The clinic's country sets the system currency and phone code, and you can change the currency later in Settings."
+        },
+        {
+          "q": "What happens when the 14 days are over?",
+          "a": "Nothing is charged, because you never gave us a card. If you subscribe, you carry on with the same data from where you left off. If you don't, the account stops at the subscription screen until you subscribe, and your data stays stored as it is."
+        },
+        {
+          "q": "Can my staff work with me during the trial?",
+          "a": "Yes. You invite each staff member by email or with a join code, and choose their role: clinic manager, vet, receptionist or groomer. Everyone signs in with their own account, so their actions are recorded under their name."
+        },
+        {
+          "q": "My clinic is outside Iraq. Can I still try it?",
+          "a": "Yes, from any country. You pick your country at sign-up and the system works in its currency and phone code. Online payment for a subscription is available only inside Iraq today; the details are under “Prices and payment”."
+        }
+      ]
+    },
+    {
+      "title": "Prices and payment",
+      "items": [
+        {
+          "q": "What's the difference between the three plans?",
+          "a": "Every plan includes medical records, visits, lab, vaccines and surgeries; hospitalisation with the hourly dose board and cages; appointments and bookings; the full pharmacy and inventory (purchase invoices, suppliers, expiry dates, batches, stock counts, price raises and barcodes); consent forms; your logo on printouts; permissions and the activity log; branches; and one-tap WhatsApp messages. Advanced adds the cashier, invoices, returns and promotions, cash reconciliation and expenses, the reports hub with Excel, and payroll. Super adds credit sales and the debt ledger, delivery with your own drivers or courier companies, the online store, and campaigns with the reminders hub."
+        },
+        {
+          "q": "Will my subscription renew itself and take money from my account?",
+          "a": "No. There is no automatic renewal: you pay yourself for the period you choose, a month or a year, and nothing else is charged. If your period ends and you don't renew, the account becomes read-only: you can see your data and records but not add to them until you renew."
+        },
+        {
+          "q": "Does paying yearly save anything?",
+          "a": "Switch the pricing page to “Annual”: where a year costs less than 12 months, the plan card shows the saving. Where no saving shows, the only difference is that you pay once instead of every month."
+        },
+        {
+          "q": "How do I pay?",
+          "a": "Inside Iraq you pay online from the subscription screen in your account, through the Wayl gateway, in Iraqi dinars, for a month or a year. Outside Iraq there is no online payment yet: send us a request from inside the app before your trial ends to arrange payment, and your period starts once we confirm the payment has arrived."
+        },
+        {
+          "q": "If I subscribe before the trial ends, do I lose the remaining days?",
+          "a": "Yes, that is how payment works today: your paid period starts on the day you pay, the remaining trial days end, and you move straight to the features of the plan you chose. To use the whole trial, subscribe in its last days; you carry on with the same data."
+        },
+        {
+          "q": "Can I change my plan later?",
+          "a": "Yes, by paying for the new plan from the subscription screen. Its period is added to whatever is left of your current one, and the whole period then runs on the new plan. So upgrading during a paid period costs you nothing, while moving to a smaller plan is best done near the end of your period."
+        }
+      ]
+    },
+    {
+      "title": "Data and security",
+      "items": [
+        {
+          "q": "Who can see my clinic's data?",
+          "a": "Only your staff, each according to their role. Every clinic's data is isolated from the others inside the database, the role (manager, vet, receptionist…) is checked on the server, not just on screen, and case photos and X-rays sit in private storage. On top of the role, permission switches control what each staff member sees. doctorVet's technical team can also access your clinic account to provide support and fix problems."
+        },
+        {
+          "q": "Can other clinics on doctorVet see my patients?",
+          "a": "No. Animals your clinic registers are not visible to any other clinic. The one exception is a pet whose owner registered it in their own doctorVet account and left it “Shared”, which is the default: clinics can then open its record from its passport code or the owner's email, and the owner can switch it to “Private” at any time."
+        },
+        {
+          "q": "If my device breaks or gets lost, is my data gone?",
+          "a": "No. Your data is kept on the system's servers, not on the device, so you sign in from another device and find everything as you left it. The only exception is anything still waiting in the old device's queue because the internet was down, and not yet uploaded."
+        },
+        {
+          "q": "Can I see who did what in the clinic?",
+          "a": "Yes. The activity log records your staff's actions with their name and time: who added a pet, who gave a dose or recorded a vaccine, who created, returned or deleted an invoice, stock changes, and staff sign-ins. Money and stock actions are kept for a year, everything else for 90 days, and only managers can open the log."
+        },
+        {
+          "q": "A staff member deleted a product by mistake. Is it gone?",
+          "a": "No. A deleted product goes to the trash and comes back with the same ID, so its invoices and stock movements stay linked to it. Permanently deleting invoices is a sensitive permission that only managers have unless you grant it, and deleting a product or an invoice shows in the activity log under the name of whoever did it."
+        },
+        {
+          "q": "Can I export my data?",
+          "a": "Partly, and we'll be clear about it. On every plan you can export each pet's record and your stocktake to Excel, and from Advanced up the report tables too (sales, cash box, customers, expenses and more). There is no single export today that takes your clients, pets and invoices out together in one file."
+        }
+      ]
+    },
+    {
+      "title": "Getting started and your existing records",
+      "items": [
+        {
+          "q": "I have records in Excel or another system. Will you move them over?",
+          "a": "Honestly, no: there is no import from Excel or CSV files today, and no transfer from another system. You start fresh on doctorVet, with two shortcuts: the starter catalogue for your stock, and entering past visits and vaccines on their real dates."
+        },
+        {
+          "q": "How do I build my stock without typing every product by hand?",
+          "a": "With the starter catalogue: pick the companies you buy from out of a list of veterinary market companies, and they are created with their sections and products in one tap; a product you already have under the same name isn't duplicated. Prices, quantities and barcodes are left to you because they differ from clinic to clinic; you enter them yourself or from your first purchase invoice. Anything not in the catalogue you add yourself with its name and barcode."
+        },
+        {
+          "q": "I have vaccination records on paper. Can I enter them?",
+          "a": "Yes, with their real dates. You record past vaccines, visits and doses on the day they happened, not the day you type them in, so the pet's file is complete and you set the next dose from the correct date."
+        },
+        {
+          "q": "Do I have to enter all my clients and their pets before I start?",
+          "a": "No. You register each pet when it comes in, from the quick “New case” screen, so your records fill up over the days without one long day of data entry. If your work is cut off before saving, say the page reloads, the form stays as a draft on the device and you choose to restore or delete it."
+        },
+        {
+          "q": "What should I set up on my first day?",
+          "a": "A suggested order: upload your clinic logo in Settings so it appears on printouts, invite your staff and set their roles, load the starter catalogue and enter your prices, then register your first case. If you need any screen explained, the in-app assistant will point you to it."
+        },
+        {
+          "q": "I have more than one branch. How does that work?",
+          "a": "You add your branches to the same account in Settings, on every plan, and your existing data belongs to the “main branch”. Cases are shown by branch, sales are tagged with it, and so are deliveries on Super. Stock and reports stay combined for the whole clinic, and picking a branch filters the view rather than locking it, so staff can switch between branches. Deleting or merging a branch isn't available yet."
+        }
+      ]
+    },
+    {
+      "title": "Features and daily use",
+      "items": [
+        {
+          "q": "What happens if the internet drops?",
+          "a": "Sales need a connection, and so does recording cases, visits, vaccines and bookings. If it drops while you're selling, try again when the connection is back; the invoice is never written twice. Some entries wait in a queue on the device and upload when the connection returns: products, companies, sections, expenses and returns. A badge shows how many are waiting, and anything that fails to upload is reviewed by a manager."
+        },
+        {
+          "q": "Which devices does it run on, and can it print?",
+          "a": "It runs in the browser on a computer, tablet or phone, can be installed on the home screen like an app, and needs no server in the clinic. Consent forms and lab reports print on A4 with your logo, and cashier receipts (from Advanced) print on A4 or on an 80 mm thermal printer."
+        },
+        {
+          "q": "Does the system send reminders to clients by itself?",
+          "a": "No, and we say so plainly. The system builds the list of who is due by itself (vaccines, deworming, post-surgery follow-ups, appointments, birthdays) and prepares each client's message with their name; your staff then send it in one tap from the clinic's WhatsApp, one message at a time. The reminders hub and campaigns come with Super; one-tap sending from reception, bookings and lab results is on every plan."
+        },
+        {
+          "q": "Do I need WhatsApp Business or an official WhatsApp integration?",
+          "a": "No. The message opens in the WhatsApp on your staff member's device, regular or Business, ready with the client's number and text, and they tap “Send”. There is no integration with WhatsApp that sends on your behalf."
+        },
+        {
+          "q": "Can it read results from lab analysers?",
+          "a": "In two ways. Photograph the analyser's result slip and, when the photo is clear, the numbers fill in for you to review and correct before saving. Or connect the analyser directly over USB or a serial port from Chrome or Edge on a computer, if it outputs results in HL7 or ASTM. Each result shows next to the normal range for the species, with critical values first."
+        },
+        {
+          "q": "Is the software available in English?",
+          "a": "The interface is Arabic first, right to left, and can be switched to English. Most screens are translated, but some are still Arabic only. Digits are Western (0-9) on every screen, and Arabic search finds a name with or without hamza, and with ta marbuta or ha. Consent forms print in Arabic or English."
+        }
+      ]
+    },
+    {
+      "title": "Support and help",
+      "items": [
+        {
+          "q": "If I get stuck on a screen, where do I find help?",
+          "a": "In the assistant inside the app. Type your question in Arabic or English and it searches step-by-step help articles that name the actual buttons, then shows the closest one with a button that opens the page in question; if several are close, it asks which one you mean. The articles are written in Arabic, in the Iraqi dialect."
+        },
+        {
+          "q": "What if the assistant doesn't know the answer?",
+          "a": "It tells you so plainly instead of guessing, suggests rewording your question, or offers to pass it to the doctorVet team as a request."
+        },
+        {
+          "q": "How do I ask for a feature or send feedback?",
+          "a": "From the assistant itself: write your request and it goes to the doctorVet team. You follow it under “My requests” with its status (new, planned, done, or declined) and the team's reply if they write one."
+        },
+        {
+          "q": "Is there a phone or WhatsApp number for support?",
+          "a": "Not yet. Support today runs inside the app: the assistant and its articles, and the requests you send, which the team answers there."
+        },
+        {
+          "q": "Who trains my staff?",
+          "a": "There is no formal training programme today. Each staff member learns from the assistant, which explains the screens step by step and opens them with a button, and you use permissions to decide what each person sees, so nobody sees what they don't need."
+        },
+        {
+          "q": "How do updates reach me, and do they interrupt my work?",
+          "a": "You install nothing: the new version comes from the server. It never applies in the middle of your work; it waits until you move between pages or stop using the app, and never while something is being saved. The “New case” form is also kept as a draft on the device, just in case."
+        }
+      ]
+    }
+  ]
+}

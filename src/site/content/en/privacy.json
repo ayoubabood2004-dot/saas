@@ -1,0 +1,153 @@
+{
+  "meta": {
+    "title": "Privacy Policy | doctorVet",
+    "description": "What doctorVet stores about your clinic and its clients, why, where, who can see it and how long it stays, as the system works today."
+  },
+  "title": "Privacy Policy",
+  "updated": "2026-10-26",
+  "intro": "This page explains what doctorVet stores, why we store it, where, who can see it and how long it stays. It describes what the system does today, in plain words.",
+  "sections": [
+    {
+      "title": "In short",
+      "paragraphs": [
+        "Your clinic's data is kept apart from every other clinic's, and your staff see it according to their role and permissions.",
+        "The doctorVet team can enter your clinic's workspace for support and maintenance, and we record every entry: who entered, and when they entered and left.",
+        "We do not sell your data or your clients' data, and we do not use it for advertising.",
+        "WhatsApp messages go out from your clinic's own WhatsApp: the system prepares each message and a staff member sends it in one tap. doctorVet never sends a message by itself.",
+        "Our website counts its visitors without cookies and keeps no IP addresses in those counts."
+      ]
+    },
+    {
+      "title": "What we store",
+      "paragraphs": [
+        "Clinic account: clinic name, email, phone number, country, city, currency and language, your logo and settings, and your subscription status and payment records. Your password is handled by the sign-in service; our team cannot see it.",
+        "Staff: each member's name, email, role and permissions, sign-in times, and when they were last seen in the app. If you use payroll: salary items, advances, loans and deductions.",
+        "Clients and pet owners: name and phone number, email and address when recorded, and their purchases, debts, payments and bookings.",
+        "Pets and medical records: the pet's details, weight, photos, allergies and problem list; visits, exams, diagnoses, treatments and doses; vaccines; lab results; X-ray and ultrasound images and files; surgeries; and hospital stays.",
+        "Money: sales invoices and returns, debts and repayments, delivery orders and drivers, expenses and withdrawals, cash-drawer reconciliations, and online store orders.",
+        "Stock: products with their prices and balances, suppliers and purchase invoices, product batches and their expiry dates, stock counts, product photos, and each product's movement history.",
+        "Activity log: who did what and when, such as adding, editing or deleting an invoice, printing or exporting a report, printing a consent form, or locking a device with the manager PIN. When a record the log watches is deleted, the log keeps a copy of it.",
+        "WhatsApp log: which pet owner and number a message was prepared for, its type and when. We do not store its text.",
+        "Requests you send to our team from inside the app, with the sender's name and the clinic's name."
+      ]
+    },
+    {
+      "title": "Why we store it",
+      "paragraphs": [
+        "To run the system for you: show pet files, work out balances and debts, print invoices and reports, and build the reminder list from vaccine and follow-up dates.",
+        "To show who did what inside your clinic, so a manager can answer 'who deleted this invoice?' from the activity log.",
+        "To help when you ask for support, to find and fix faults, and to see how much each clinic uses the system so we can improve it and set its plans.",
+        "To activate your subscription once the payment is verified.",
+        "To know how many people visit our website and which pages they stop at, as totals that follow no one.",
+        "We do not use your clinic's or your clients' data for advertising, and we do not contact your clients to sell them anything."
+      ]
+    },
+    {
+      "title": "Where data is kept and how we protect it",
+      "paragraphs": [
+        "App data is kept in a database and file storage on Supabase's managed cloud platform, and the app and website are served through Vercel. The servers may be outside your country. Both providers keep technical logs of the requests that reach the server, and we consult them when needed to find faults.",
+        "Each clinic's data is separated inside the database itself: the server checks every request so it reaches only that clinic's data. Some manager-only areas, such as the activity log and sign-in records, are also checked against the role on the server. Most limits on other roles are applied by the app's screens, except the photographer account, which is locked on the server.",
+        "Case photos, X-rays and lab files sit in private storage that opens only through short-lived links issued to the pet's clinic staff or its owner. Connections to the app use HTTPS."
+      ]
+    },
+    {
+      "title": "Who can see your clinic's data",
+      "paragraphs": [
+        "Your staff: each account sees what its role and the permissions you set allow. Within your clinic, the activity log is for managers only. A photographer account is locked on the server out of invoices, clients, medical files and money: it sees product photos, and the store if you allow it, but not customer orders.",
+        "Pet owners with a doctorVet account: when the phone number on a pet owner's account matches the number your clinic recorded, their pet is linked to it, and they see that pet's file, records, vaccines and appointments.",
+        "Other clinics: they cannot see your clinic's data. The one exception is a pet its owner added to their own account: it is 'shared' unless the owner makes it 'private', so any clinic using doctorVet can open its file by scanning its passport code or searching by the owner's email. Pets your clinic registers cannot be opened this way.",
+        "The doctorVet team: for support and maintenance, as the next section explains.",
+        "We do not sell or rent data, and we do not give it to advertisers. The outside services listed below receive the data their work requires."
+      ]
+    },
+    {
+      "title": "When the doctorVet team enters your clinic",
+      "paragraphs": [
+        "When you ask for help or a fault appears, a member of the doctorVet team can enter your clinic's workspace from the platform console. Inside, they can see and do what a clinic manager can.",
+        "We record every entry in a log on our side: who entered, which clinic, when they entered and left, and the reason when one is written. An entry ends when they leave, or after 12 hours unless renewed.",
+        "The entry itself adds no line to your clinic's activity log. Changes made during it are recorded there like any other change; today they carry no team member's name and usually appear as 'Clinic manager'.",
+        "Without entering, the team sees an overview of each clinic to watch the service's health: plan, trial and subscription dates, number of staff and who is online now, invoice counts and sales totals, open debts, product counts and items out of stock, pending deliveries, and last activity. It also sees each clinic's usage counts over a period it chooses (new pets, cases, invoices, WhatsApp messages, sales and active days), activity logs and sign-ins across clinics, and the requests you send it."
+      ]
+    },
+    {
+      "title": "WhatsApp",
+      "paragraphs": [
+        "When a staff member taps a WhatsApp button, the system opens WhatsApp on their device with the message ready, and they send it from the WhatsApp account signed in on that device. doctorVet does not send messages for you and does not see conversations or replies.",
+        "We record that a message was prepared: for which pet owner and number, of what type, and when, without its text. WhatsApp is a Meta service with its own terms and policy."
+      ]
+    },
+    {
+      "title": "Pet owners and store customers",
+      "paragraphs": [
+        "Your clinic decides what it records about its clients and their pets, and we keep it on the clinic's behalf. If you are a pet owner and want to know, correct or delete what a clinic recorded about you, ask that clinic.",
+        "A pet owner account is free and stores the owner's name, email and phone number. From it the owner sees the pets linked to the account and requests appointments, and can make a pet they added themselves 'private' so other clinics cannot open it.",
+        "Visit tracking link: whoever holds the link sees the pet's name, the clinic's name, the stages of the visit and reassurance messages, with no diagnosis, results or prices, and can reply with an emoji only. The link stops working 48 hours after the visit is closed, and the server records the IP address of whoever opens it, with a per-minute request count, to block automated requests. So send it to the pet owner alone.",
+        "Online store (if your clinic uses it): its public page shows the clinic's name, logo, products and prices. A customer who orders enters a name, phone number and address, which reach the clinic so it can deliver, and tracks the order with its number and the phone number."
+      ]
+    },
+    {
+      "title": "How long data stays",
+      "paragraphs": [
+        "Your clinic's records stay as long as its account exists. We do not delete them after a set time.",
+        "Activity log: entries about money and stock (invoices, purchases, expenses, products, price changes, deliveries and store orders) stay for 1 year, and everything else for 90 days, then they are deleted. The same applies to the copy the log keeps of anything deleted.",
+        "Sign-in records (who signed in and when) are kept separately and have no deletion period today.",
+        "Deleted products, suppliers and their sections move to the trash and can still be restored.",
+        "Free trial: if the 14-day trial ends without a subscription, the account is locked and its data stays stored, back as it was when you subscribe. A clinic that paid and whose period ended becomes read-only: it sees its data but cannot add to it.",
+        "There is no button today to delete a whole clinic account yourself. Send us a request from inside the app, as described under 'Contact us'."
+      ]
+    },
+    {
+      "title": "What stays on your device",
+      "paragraphs": [
+        "The app keeps some data in the browser of the device you use: your sign-in session, display preferences, a copy of some clinic settings so it opens faster, entries waiting for the connection to return, and the draft of a new case not yet saved.",
+        "A draft is tied to the clinic and the user, and is cleared when the case is saved or when you sign out. Waiting entries stay on the device until they upload or a manager reviews them. Your chat with the doctorVet assistant stays in that browser tab and reaches us only if you send it as a request. Reading the numbers from a photo of a lab slip happens on the device itself.",
+        "On a shared device, sign out at the end of your shift."
+      ]
+    },
+    {
+      "title": "Website visit counts",
+      "paragraphs": [
+        "To know how many people visit the site and where they stop, the page sends our server a short event when a page opens, a start button is pressed, or sign-up starts or completes. We use no cookies for this and store no identifier on your device. The only things your browser remembers from the site are the country version you picked and, until you close the tab, that you dismissed the version suggestion.",
+        "We do not store your IP address in these events. The server combines your IP address, browser and today's date into a code that changes every day, so we can count distinct visitors per day without following anyone from one day to the next.",
+        "With each event we keep: the page address, the domain of the site you came from (not the full link), the page language, the device type (phone or computer), and a small detail such as where the pressed button sits. Clinic store pages are counted the same way: the visit, the category chosen, the product added to the cart, opening the cart and sending the order, without the customer's name or phone, and searches without their text.",
+        "We do not delete these events after a set time, but they carry no IP address and no identifier that lasts beyond a day. We run no third-party analytics or advertising tools on the site."
+      ]
+    },
+    {
+      "title": "Outside services we rely on",
+      "paragraphs": [
+        "Supabase: the database, file storage and sign-in. Account emails, such as email confirmation and password reset, go out through its sign-in service.",
+        "Vercel: serves the website and the app, and runs the website's visit counter.",
+        "Wayl: online subscription payment inside Iraq, in Iraqi dinars. You enter your payment details on Wayl's own page. We send it the amount, the plan and its period, your clinic's internal ID and a reference number; your card or wallet details never reach us.",
+        "WhatsApp (Meta): messages go out from your clinic's own WhatsApp.",
+        "Google Fonts: the app's and website's fonts load from Google's servers, so your browser connects to them.",
+        "Unsplash: stock animal pictures shown in place of a pet's photo until you upload one.",
+        "Each of these services handles what reaches it under its own policy."
+      ]
+    },
+    {
+      "title": "What you can do with your data",
+      "paragraphs": [
+        "See and correct your clinic's data inside the app. Managers see in the activity log who did what.",
+        "Control who gets in: invite staff, change their roles and permissions, and suspend or remove anyone who leaves.",
+        "Export: each pet's medical timeline and your stocktake go to Excel on every plan, and report tables too on Advanced and Super. There is no single export of all your data today.",
+        "Delete: you delete records from inside the app, and deleted products and suppliers go to the trash. To delete the whole clinic account, send us a request."
+      ]
+    },
+    {
+      "title": "Contact us",
+      "paragraphs": [
+        "Today the way to reach us is from inside the app. Open the doctorVet assistant from its button in the bottom-left corner of staff screens and write your request. If it has no ready answer, it shows a button that sends your message to our team, and you follow its status and our reply under My requests (طلباتي) at the top of the assistant window. The assistant does not appear on an account locked after the trial.",
+        "Requests sent this way are visible to your clinic's staff and to our team, so never write passwords in them.",
+        "If you are a pet owner or have no account, contact the clinic you deal with; it can send your request to us."
+      ]
+    },
+    {
+      "title": "Changes to this policy",
+      "paragraphs": [
+        "When we change this policy, we publish the new version on this page and update the date at the top.",
+        "If a change widens who can see your data or what we do with it, we say so plainly at the top of the page."
+      ]
+    }
+  ]
+}
