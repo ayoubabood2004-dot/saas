@@ -88,12 +88,25 @@ Deno.serve(async (req) => {
   const usd = Number(period === "annual" ? priceRow.annual_usd : priceRow.monthly_usd);
   if (!Number.isFinite(usd) || usd <= 0) return json({ error: "price_unavailable" }, 503);
 
-  // Live USD→IQD rate from app_config (admin-editable), falling back to env/default.
-  const { data: cfg } = await admin.from("app_config").select("value").eq("key", "usd_rate").maybeSingle();
+  // Live USD→IQD rate from app_config (admin-editable), falling back to env/default only when the row is
+  // absent or not a number. A failed READ refuses: charging at a default would differ from the rate the
+  // site and the subscribe screen show (public_pricing).
+  const { data: cfg, error: cfgErr } = await admin.from("app_config").select("value").eq("key", "usd_rate").maybeSingle();
+  if (cfgErr) return json({ error: "price_unavailable", detail: cfgErr.message }, 503);
   const RATE = Number(cfg?.value) || Number(Deno.env.get("WAYL_USD_RATE") ?? "1535");
 
   const months = period === "annual" ? 12 : 1;
-  const amountIqd = Math.max(1000, Math.round(usd * RATE));
+  // سعرُ الدينار الذي ثبّته المالكُ من لوحته (0250) يُقبض بعينه — هو ما يعرضه الموقعُ للعراق.
+  // بلاه: الدولارُ × سعرُ الصرف كما كان. وقراءةٌ فاشلة = لا قبض (لا رقمَ يخالف المعروض).
+  const { data: localRow, error: localErr } = await admin
+    .from("plan_local_prices").select("monthly,annual").eq("plan", plan).eq("currency", "IQD").maybeSingle();
+  // غيابُ الجدول وحده (الدالّةُ نُشرت قبل هجرتها) يسقط للدولار؛ أيُّ خطأٍ آخر يرفض.
+  if (localErr && localErr.code !== "42P01" && localErr.code !== "PGRST205") return json({ error: "price_unavailable", detail: localErr.message }, 503);
+  const localIqd = localRow ? Number(period === "annual" ? localRow.annual : localRow.monthly) : NaN;
+  const useLocal = Number.isFinite(localIqd) && localIqd > 0;
+  const amountIqd = useLocal ? Math.max(1000, Math.round(localIqd)) : Math.max(1000, Math.round(usd * RATE));
+  // ما يساويه المقبوضُ بالدولار — يُحفظ مع الطلب كما قُبض لا كما بجدول الدولار.
+  const usdCharged = useLocal ? Math.round((amountIqd / RATE) * 100) / 100 : usd;
   const referenceId = crypto.randomUUID();
 
   // A human label for the checkout line — Wayl shows it on the payment page.
@@ -103,7 +116,7 @@ Deno.serve(async (req) => {
   // 3) Record the pending order (trusted amount/clinic live here, not in the client).
   const { error: insErr } = await admin.from("billing_orders").insert({
     reference_id: referenceId, clinic_id: clinicId, plan, period, months,
-    usd, amount_iqd: amountIqd, status: "created",
+    usd: usdCharged, amount_iqd: amountIqd, status: "created",
   });
   if (insErr) return json({ error: "order_failed", detail: insErr.message }, 500);
 

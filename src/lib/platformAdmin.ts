@@ -211,6 +211,25 @@ export async function adminSetPlanPrice(plan: PlanId, monthlyUsd: number, annual
   await hydratePlanPrices(); // اعكسه فوراً على الواجهة
 }
 
+/** أسعارُ الموقع المحلّية (0250) — بالعملة ⇒ الباقة. قراءةٌ للجميع، وفشلُها يُرمى (لوحةُ أسعارٍ ناقصة
+ *  أخطرُ من خطأ ظاهر: المشغّلُ يظنّ البلدَ بلا سعرٍ فيكتب فوق سعرٍ قائم). */
+export interface LocalPriceRow { plan: PlanId; currency: string; monthly: number; annual: number }
+export async function adminListLocalPrices(): Promise<LocalPriceRow[]> {
+  const client = sb();
+  if (!client) return [];
+  const { data, error } = await client.from("plan_local_prices").select("plan,currency,monthly,annual");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as LocalPriceRow[]).map((r) => ({ ...r, monthly: Number(r.monthly), annual: Number(r.annual) }));
+}
+
+/** Admin: ثبّت سعرَ باقةٍ بعملة بلد — أو null/null يمسحه فيعود الموقعُ للمقترح. */
+export async function adminSetLocalPrice(plan: PlanId, currency: string, monthly: number | null, annual: number | null): Promise<void> {
+  const client = sb();
+  if (!client) throw new Error("no_backend");
+  const { error } = await client.rpc("admin_set_local_price", { p_plan: plan, p_currency: currency, p_monthly: monthly, p_annual: annual });
+  if (error) throw new Error(error.message);
+}
+
 /** Admin: فعّل اشتراكاً بعدد أيام محدد، مع حصص اختيارية (null = بلا حد). */
 export async function adminActivateDays(
   email: string, plan: PlanId, days: number,

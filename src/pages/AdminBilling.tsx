@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check, Stethoscope, PawPrint, Receipt, Activity, AlertTriangle, Tag, MessageCircle, CalendarDays } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, adminSetPlanPrice, adminActivateDays, adminSetLimits, hydratePlanPrices, type AdminClinic } from "@/lib/platformAdmin";
-import { PLANS, planCopy, usdToIqd, priceUsd, planPrice, type BillingPeriod, type PlanId } from "@/lib/plans";
+import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, adminSetPlanPrice, adminActivateDays, adminSetLimits, hydratePlanPrices, adminListLocalPrices, adminSetLocalPrice, type AdminClinic, type LocalPriceRow } from "@/lib/platformAdmin";
+import { EDITIONS, SUGGESTED, editionByCode, localComplete, priceFor } from "@/site/editions";
+import type { PricingData } from "@/site/types";
+import { PLANS, planCopy, usdToIqd, priceUsd, planPrice, DEFAULT_USD_RATE, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { MarketInsights } from "@/components/admin/MarketInsights";
 import { SystemHealth } from "@/components/admin/SystemHealth";
 import { repo } from "@/lib/repo";
@@ -153,6 +155,11 @@ export function AdminBilling() {
     finally { setRowBusy(null); }
   };
 
+  // أسعارُ الدينار المثبَّتة لمبلغ التفعيل اليدويّ أدناه — من قسم «أسعار كل بلد» نفسه (مصدرٌ واحد، وزرُّ
+  // «أعد المحاولة» هناك يحدّثها هنا). null = لم تُجلب أو فشل جلبُها: لا رقمَ بالصرف يُعرض كأنه المقبوض.
+  // (قبل الرجوع المبكر: ترتيبُ الخطّافات ثابت.)
+  const [iqdPins, setIqdPins] = useState<LocalPriceRow[] | null>(null);
+
   if (!isPlatformAdmin(user?.email)) {
     return (
       <div className="mx-auto max-w-md px-4 py-20 text-center">
@@ -258,6 +265,22 @@ export function AdminBilling() {
   const selectedUsd = byDays
     ? Math.round((planPrice(selectedPlan).monthlyUsd / 30) * Math.max(0, Math.floor(Number(days) || 0)) * 100) / 100
     : priceUsd(selectedPlan, period);
+  /* المبلغُ بالدينار الذي يحصّله المندوب = ما يعرضه الموقعُ وتقبضه Wayl (priceFor نفسها): سعرُ الدينار
+   * المثبَّت إن وُجد، وإلا الدولار × الصرف. كان الدولار × الصرف دائماً، فمع ٤٥٬٠٠٠ مثبّتةٍ يحصّل المندوبُ
+   * ٤٦٬٠٥٠ (تدقيقٌ عدائيّ). وبالأيام: الشهريُّ بالتناسب. أسعارُ الدينار المثبَّتة تُجلب أعلى المكوّن. */
+  const pin = iqdPins?.find((r) => r.plan === plan);
+  const selectedIqd = ((): number | null => {
+    const pp = planPrice(selectedPlan);
+    if (plan === "farm") return usdToIqd(selectedUsd, Number(rate) || undefined);
+    if (!iqdPins) return null;
+    const shown = priceFor(editionByCode("iq")!, plan, {
+      usd: { [plan]: { monthly: pp.monthlyUsd, annual: pp.annualUsd } } as PricingData["usd"],
+      usdRate: Number(rate) || DEFAULT_USD_RATE,
+      local: { IQD: pin ? { [plan]: { monthly: pin.monthly, annual: pin.annual } } : {} },
+      at: "",
+    });
+    return byDays ? Math.round((shown.monthly / 30) * Math.max(0, Math.floor(Number(days) || 0))) : shown[period];
+  })();
 
   /* ---- الاستعمال: الحصيلة والترتيب ---- */
   // خادم قبل هجرة 0101 يرجّع usage=null — نقولها صراحةً بدل ما نعرض أصفاراً.
@@ -484,6 +507,9 @@ export function AdminBilling() {
         </div>
       </section>
 
+      {/* أسعارُ كلّ بلد بعملته — ما يعرضه موقعُ ذلك البلد (0250) */}
+      <LocalPrices rate={Number(rate) || 0} onRows={(r) => setIqdPins(r ? r.filter((x) => x.currency === "IQD") : null)} />
+
       {/* Exchange rate */}
       <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
         <div className="mb-3 flex items-center gap-2">
@@ -595,7 +621,7 @@ export function AdminBilling() {
 
         <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-surface-2 px-4 py-3">
           <span className="text-sm text-ink-muted">المبلغ المكافئ{byDays ? " (بالتناسب)" : ""}</span>
-          <span className="font-display font-bold tabular-nums text-ink">${selectedUsd} · ≈ {money(usdToIqd(selectedUsd, Number(rate) || undefined))}</span>
+          <span className="font-display font-bold tabular-nums text-ink">${selectedUsd} · {selectedIqd == null ? "الدينار: انتظر جلب الأسعار المثبَّتة" : `${pin && plan !== "farm" ? "" : "≈ "}${money(selectedIqd)}${pin && plan !== "farm" ? " (سعر الدينار المثبَّت)" : ""}`}</span>
         </div>
 
         <Button className="mt-4 w-full" leftIcon={<ShieldCheck size={16} />} onClick={activate} loading={actBusy}>فعّل الاشتراك يدوياً</Button>
@@ -667,5 +693,127 @@ export function AdminBilling() {
         <ArrowLeft size={15} /> الرجوع
       </button>
     </div>
+  );
+}
+
+/* ============================================================================
+ * أسعارُ كلّ بلد بعملته (0250) — ما يعرضه موقعُ ذلك البلد.
+ *
+ * فارغٌ ⇒ الموقعُ يعرض الدولارَ الذي أقررتَه (plan_prices)، والمقترحُ (دراسةُ السوق: أرقامٌ مستديرةٌ
+ * يألفها السوق) رماديٌّ للتعبئة وحدها — لا يُنشر رقمٌ لم يُحفظ هنا. والدينارُ فارغاً ⇒ الدولار × سعر
+ * الصرف كما تقبضه Wayl؛ وإن ثُبّت تقبضه Wayl بعينه، عدداً صحيحاً لا يقلّ عن ألف (كما تقبض). وبقيةُ
+ * العملات عرضٌ وحده حتى تُفتح بوابةُ دفعٍ لها.
+ * ==========================================================================*/
+function LocalPrices({ rate, onRows }: { rate: number; onRows: (rows: LocalPriceRow[] | null) => void }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<LocalPriceRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [draft, setDraft] = useState<Record<string, { m: string; a: string }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = () => {
+    setFailed(false);
+    adminListLocalPrices().then((r) => { setRows(r); onRows(r); }).catch(() => { setRows(null); setFailed(true); onRows(null); });
+  };
+  useEffect(load, []);
+
+  // كلُّ عملات النسخ، والدينارُ أوّلاً؛ والدولارُ خارجها (أسعارُ الأساس بالقسم الذي فوق).
+  const currencies = Array.from(new Set(EDITIONS.map((e) => e.currency).filter((c) => c !== "USD")));
+  const ids: PlanId[] = ["basic", "advanced", "super"];
+  const key = (cur: string, p: PlanId) => `${cur}:${p}`;
+  const saved = (cur: string, p: PlanId) => rows?.find((r) => r.currency === cur && r.plan === p);
+  const ratio = (p: PlanId) => { const pp = planPrice(PLANS.find((x) => x.id === p)!); return pp.monthlyUsd > 0 ? pp.annualUsd / pp.monthlyUsd : 12; };
+  const suggestion = (cur: string, p: PlanId) => {
+    // بلا سعر صرفٍ بعد (يُحمَّل أو حقلُه فارغ) لا اقتراح: كان يصير ١٠٠٠/١٠٠٠ و«املأ المقترح» يثبّته.
+    if (cur === "IQD") { if (!(rate >= 100)) return null; const pp = planPrice(PLANS.find((x) => x.id === p)!); return { m: Math.max(1000, Math.round(pp.monthlyUsd * rate)), a: Math.max(1000, Math.round(pp.annualUsd * rate)) }; }
+    const m = SUGGESTED[cur]?.[p as "basic" | "advanced" | "super"];
+    return m ? { m, a: Math.round(m * ratio(p)) } : null;
+  };
+
+  const save = async (cur: string, p: PlanId, clear = false) => {
+    const k = key(cur, p);
+    const d = draft[k];
+    const m = clear ? null : Number(d?.m), a = clear ? null : Number(d?.a);
+    if (!clear && (!(m! > 0) || !(a! > 0))) { toast.error("اكتب الشهريّ والسنويّ — أرقاماً أكبر من صفر"); return; }
+    if (!clear && cur === "IQD" && (m! < 1000 || a! < 1000 || !Number.isInteger(m) || !Number.isInteger(a))) { toast.error("سعر الدينار عدد صحيح لا يقلّ عن 1000 — هكذا تقبضه Wayl"); return; }
+    setBusy(k);
+    try {
+      await adminSetLocalPrice(p, cur, m, a);
+      playSuccess();
+      // عملةٌ غيرُ الدينار لا تظهر حتى تكتمل باقاتُها الثلاث (priceFor) — فالرسالةُ تقول ما سيحدث فعلاً.
+      const next = (rows ?? []).filter((r) => !(r.currency === cur && r.plan === p)).concat(clear ? [] : [{ plan: p, currency: cur, monthly: m!, annual: a! }]);
+      const live = cur === "IQD" || localComplete({ usd: {} as PricingData["usd"], usdRate: 0, local: { [cur]: Object.fromEntries(next.filter((r) => r.currency === cur).map((r) => [r.plan, { monthly: r.monthly, annual: r.annual }])) }, at: "" }, cur);
+      toast.success(clear
+        ? (cur === "IQD" ? "مُسح — الدينار يعود: الدولار × سعر الصرف" : "مُسح — الموقعُ يعرض السعر بالدولار")
+        : live ? "حُفظ — يظهر بموقع البلد فوراً" : "حُفظ — يظهر بالموقع حين تُثبَّت الباقات الثلاث");
+      setDraft((s0) => { const n = { ...s0 }; delete n[k]; return n; });
+      load();
+    } catch (e) {
+      playWarning();
+      toast.error("ما انحفظ", e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><Coins size={18} /></span>
+        <h2 className="font-display font-bold text-ink">أسعار كل بلد بعملته (الموقع)</h2>
+      </div>
+      <p className="mb-4 text-sm text-ink-muted">
+        الفارغ يعرض بالموقع السعر بالدولار، والمقترح (رمادي) للتعبئة فقط حتى تحفظه. سعر الدينار إن ثبّتته تقبضه Wayl بعينه؛ وبقية العملات عرضٌ بالموقع حتى تُفتح لها بوابة دفع.
+      </p>
+      {failed ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-danger-50 p-3 text-sm text-danger-700 dark:bg-danger-500/10 dark:text-danger-200">
+          <span>تعذّر جلب الأسعار المحلّية — لا تعدّل قبل أن تظهر.</span>
+          <Button size="sm" variant="outline" onClick={load}>أعد المحاولة</Button>
+        </div>
+      ) : !rows ? (
+        <Skeleton className="h-40 rounded-2xl" />
+      ) : (
+        <div className="space-y-3">
+          {currencies.map((cur) => (
+            <div key={cur} className="rounded-2xl border border-line p-3">
+              <p className="mb-2 text-sm font-bold text-ink" dir="ltr">{cur}</p>
+              {/* عملةٌ غيرُ الدينار تظهر بالموقع حين تُثبَّت باقاتُها الثلاث (priceFor) — لا جدولَ بعملتين. */}
+              {cur !== "IQD" && rows.some((r) => r.currency === cur) && !localComplete({ usd: {} as PricingData["usd"], usdRate: 0, local: { [cur]: Object.fromEntries(rows.filter((r) => r.currency === cur).map((r) => [r.plan, { monthly: r.monthly, annual: r.annual }])) }, at: "" }, cur) && (
+                <p className="mb-2 text-2xs font-semibold text-warn-700 dark:text-warn-300">لا يظهر بالموقع حتى تُثبَّت الباقات الثلاث — الموقع يعرض الدولار إلى ذلك الحين.</p>
+              )}
+              <div className="grid gap-2 sm:grid-cols-3">
+                {ids.map((p) => {
+                  const k = key(cur, p);
+                  const s = saved(cur, p);
+                  const sug = suggestion(cur, p);
+                  const d = draft[k] ?? { m: s ? String(s.monthly) : "", a: s ? String(s.annual) : "" };
+                  const set = (patch: Partial<{ m: string; a: string }>) => setDraft((s0) => ({ ...s0, [k]: { ...d, ...patch } }));
+                  return (
+                    <div key={p} className="rounded-xl bg-surface-2 p-2.5">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-xs font-bold text-ink">{planCopy(p).name}</span>
+                        {s ? <Badge tone="success">مثبَّت</Badge> : <span className="text-2xs text-ink-subtle">مقترح</span>}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input inputMode="decimal" dir="ltr" aria-label="شهري" className="input w-full py-1 text-center text-sm"
+                          placeholder={sug ? String(sug.m) : ""} value={d.m} onChange={(e) => set({ m: e.target.value.replace(/[^\d.]/g, "") })} />
+                        <input inputMode="decimal" dir="ltr" aria-label="سنوي" className="input w-full py-1 text-center text-sm"
+                          placeholder={sug ? String(sug.a) : ""} value={d.a} onChange={(e) => set({ a: e.target.value.replace(/[^\d.]/g, "") })} />
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        {sug && !s && !draft[k] && (
+                          <button type="button" className="text-2xs font-semibold text-brand-600 hover:underline" onClick={() => set({ m: String(sug.m), a: String(sug.a) })}>املأ المقترح</button>
+                        )}
+                        <Button size="sm" className="ms-auto" loading={busy === k} onClick={() => save(cur, p)}>حفظ</Button>
+                        {s && <Button size="sm" variant="ghost" loading={busy === k} onClick={() => save(cur, p, true)}>مسح</Button>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

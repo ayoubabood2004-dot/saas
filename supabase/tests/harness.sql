@@ -64,6 +64,22 @@ language sql stable security definer set search_path = public as $$
 create or replace function has_permission(cap text) returns boolean
 language sql stable security definer set search_path = public as $$ select true $$;
 
+-- أسعارُ المنصّة كما بالإنتاج (0054 `app_config`، 0104 `plan_prices`) — قبل الموجة لأن
+-- `public_pricing()` (0250) دالّةُ SQL تُترجَم ساعةَ إنشائها، فبلا جدوليها تسقط الموجة.
+create table if not exists app_config (key text primary key, value text not null, updated_at timestamptz not null default now());
+insert into app_config (key, value) values ('usd_rate', '1535') on conflict (key) do nothing;
+create table if not exists plan_prices (plan text primary key, monthly_usd numeric not null, annual_usd numeric not null, updated_at timestamptz not null default now());
+insert into plan_prices (plan, monthly_usd, annual_usd) values ('basic', 30, 360), ('advanced', 55, 660), ('super', 100, 1000)
+  on conflict (plan) do nothing;
+-- وسياساتُهما كما بالإنتاج: الدولارُ للداخل وحده (0054)، والأسعارُ للجميع (0104).
+alter table app_config enable row level security;
+drop policy if exists app_config_select on app_config;
+create policy app_config_select on app_config for select using (auth.uid() is not null);
+alter table plan_prices enable row level security;
+drop policy if exists plan_prices_select on plan_prices;
+create policy plan_prices_select on plan_prices for select using (true);
+grant select on plan_prices to anon, authenticated;
+
 -- بديلٌ لـ`audit_change()` حتى تصل 0139 وتعرّفها فعلاً. 0095 تنشئ محفّزَها
 -- بهذه الدالّة وهي أقدمُ من 0139 بالترتيب — فبلا هذا البديل تسقط الموجةُ
 -- بأوّل سطر. تُستبدَل حين تجري 0139 بنفس الموجة، فما يُفحَص هو الحقيقية.

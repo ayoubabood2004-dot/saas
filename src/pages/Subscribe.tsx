@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Crown, Sparkles, Clock, ShieldCheck, Wallet, AlertTriangle, ArrowDown } from "lucide-react";
+import { Check, Sparkles, Clock, ShieldCheck, Wallet, AlertTriangle, ArrowDown } from "lucide-react";
 import { PLANS, CLINIC_PLANS, planCopy, priceUsd, periodMonths, usdToIqd, DEFAULT_USD_RATE, TRIAL_DAYS, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { getCurrencyCode } from "@/lib/settings";
 import { currencyInfo, usdTo, fetchLiveRates, rateFor } from "@/lib/currency";
@@ -11,6 +11,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button, useToast } from "@/components/ui";
 import { money, formatNum, formatDec, cn } from "@/lib/utils";
+import { editionByCode, priceFor } from "@/site/editions";
+import type { PricingData } from "@/site/types";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /**
@@ -38,6 +40,26 @@ export function Subscribe() {
   useEffect(() => { if (clinicCur !== "IQD") void fetchLiveRates().then(setLive).catch(() => {}); }, [clinicCur]);
   /** المكافئ المحلي لسعر دولاري: الدينار عبر سعر المنصّة (نفس ما يُدفع عبر
    *  Wayl)، وبقية العملات بسعر الصرف الحي/الثابت. */
+  /* ما تقبضه Wayl بالدينار — من public_pricing() وبحساب الموقع نفسه (priceFor): صفُّ المالك إن ثبّته،
+   * وإلا الدولار × سعرَ الصرف الحيّ. كان المعروضُ الدولار × 1535 الثابت، فيخالف المقبوضَ حين يثبّت المالكُ
+   * سعراً بالدينار أو يغيّر الصرف (تدقيقٌ عدائيّ، ٢٦/١٠). وبلا جواب: «≈» كما كان، لا رقمٌ يُدّعى مقبوضاً. */
+  // ولكلّ عيادة لا للعراقية وحدها: الدفعُ الوحيد اليوم Wayl بالدينار، فعيادةٌ سعوديةٌ تُقبض ديناراً أيضاً —
+  // ويُقال لها المبلغُ بجانب مكافئ عملتها.
+  const [pricing, setPricing] = useState<PricingData | null>(null);
+  useEffect(() => {
+    const c = sb();
+    if (!c) return;
+    void c.rpc("public_pricing").then(({ data, error }) => { if (!error && data?.usd?.basic) setPricing(data as PricingData); });
+  }, []);
+  const iqdPair = (id: PlanId) => (pricing && id !== "farm" ? priceFor(editionByCode("iq")!, id, pricing) : null);
+  const iqdCharged = (id: PlanId): number | null => iqdPair(id)?.[period] ?? null;
+  /** «شهران مجاناً» حين يوفّر السنويُّ شهرين بالضبط ممّا يُقبض فعلاً (الدينار إن عُرف، وإلا الدولار). */
+  const twoMonthsFree = (p: (typeof PLANS)[number]) => {
+    const q = iqdPair(p.id);
+    const m = q ? q.monthly : priceUsd(p, "monthly"), a = q ? q.annual : priceUsd(p, "annual");
+    // بالضبط لا بالتقريب: توفيرُ ١٫٦ شهر كان يُسمّى «شهرين» (تدقيقٌ عدائيّ) — والدولارُ بكسوره، فهامشُ سنتٍ واحد.
+    return m > 0 && Math.abs(m * 12 - a - 2 * m) < 0.01;
+  };
   const localEq = (usd: number) => {
     if (clinicCur === "IQD") return money(usdToIqd(usd));
     const v = usdTo(usd, clinicCur, live);
@@ -97,9 +119,9 @@ export function Subscribe() {
           خطة تكبر مع عيادتك
         </h1>
         <p className="mt-3 text-lg text-ink-muted">
-          {clinicCur === "IQD"
-            ? "أسعار واضحة بالدولار، تُدفع بالدينار بالسعر المكافئ. بدّل أو ألغِ متى ما تحب."
-            : `أسعار واضحة بالدولار، وبجانبها المكافئ التقريبي بالـ${curInfo.nameAr}. بدّل أو ألغِ متى ما تحب.`}
+          {pricing
+            ? "أسعار واضحة بالدولار، وتحت كل باقة المبلغ بالدينار الذي تدفعه عبر Wayl. والاشتراك ما يتجدد تلقائياً."
+            : `أسعار واضحة بالدولار، وبجانبها المكافئ التقريبي بالـ${curInfo.nameAr}. والاشتراك ما يتجدد تلقائياً.`}
         </p>
       </div>
 
@@ -149,11 +171,7 @@ export function Subscribe() {
                   : "border border-line bg-surface-1 shadow-card hover:shadow-raised",
               )}
             >
-              {p.popular && (
-                <span className="absolute -top-3.5 start-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full bg-brand-grad px-4 py-1.5 text-2xs font-extrabold text-white shadow-soft">
-                  <Crown size={13} /> الأكثر شيوعاً
-                </span>
-              )}
+              {/* لا شارةَ «الأكثر شيوعاً»: لا مبيعاتٍ مقيسةً تسندها — والتمييزُ بالإطار وحده. */}
 
               {/* Name + positioning */}
               <div className="flex items-center gap-2">
@@ -179,9 +197,9 @@ export function Subscribe() {
                 <span className="mb-1.5 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
               </div>
               <p className="mt-2 inline-flex w-fit items-center gap-1 rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-muted">
-                ≈ {localEq(usd)} {clinicCur === "IQD" ? "بالدينار" : `بالـ${curInfo.nameAr}`}
+                {iqdCharged(p.id) == null ? `≈ ${localEq(usd)} ${clinicCur === "IQD" ? "بالدينار" : `بالـ${curInfo.nameAr}`}` : clinicCur === "IQD" ? `تدفع ${money(iqdCharged(p.id)!)} عبر Wayl` : `≈ ${localEq(usd)} · تدفع ${formatNum(iqdCharged(p.id)!)} د.ع عبر Wayl`}
               </p>
-              {annual && priceUsd(p, "annual") < priceUsd(p, "monthly") * 12 && (
+              {annual && twoMonthsFree(p) && (
                 <p className="mt-2 w-fit rounded-full bg-success-50 px-2.5 py-1 text-2xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
                   🎁 شهران مجاناً مقارنة بالشهري
                 </p>
@@ -228,7 +246,7 @@ export function Subscribe() {
       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-2xs font-medium text-ink-subtle">
         <span className="inline-flex items-center gap-1.5"><ShieldCheck size={14} className="text-success-600" /> دفع آمن عبر Wayl</span>
         <span className="opacity-40">•</span>
-        <span>$1 ≈ {clinicCur === "IQD" ? `${formatNum(DEFAULT_USD_RATE)} دينار` : `${formatDec(rateFor(clinicCur, live))} ${curInfo.symAr}`}</span>
+        <span>$1 ≈ {clinicCur === "IQD" ? `${formatNum(pricing?.usdRate ?? DEFAULT_USD_RATE)} دينار` : `${formatDec(rateFor(clinicCur, live))} ${curInfo.symAr}`}</span>
         <span className="opacity-40">•</span>
         <span>زين كاش · فاست باي · Qi</span>
         <span className="opacity-40">•</span>

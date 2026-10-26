@@ -56,7 +56,10 @@ const fresh = (over = {}) => ({
   authClinic: OWNER,          // ما ترجعه auth_clinic() بهويّة الدافع (تعريفُ 0151)
   authClinicErr: null,
   prices: { basic: [30, 360], advanced: [55, 660], super: [100, 1000] },
+  local: [],            // plan_local_prices (0250)
+  localErr: null,
   priceErr: null,
+  cfgErr: null,
   rate: 1500,
   orders: [], updates: [], wayl: [], rpcs: [],
   ...over,
@@ -69,7 +72,8 @@ function rowsOf(table) {
     if (S.priceErr) return { error: S.priceErr };
     return { rows: Object.entries(S.prices).map(([plan, [m, a]]) => ({ plan, monthly_usd: m, annual_usd: a })) };
   }
-  if (table === "app_config") return { rows: [{ key: "usd_rate", value: S.rate }] };
+  if (table === "app_config") return S.cfgErr ? { error: S.cfgErr } : { rows: [{ key: "usd_rate", value: S.rate }] };
+  if (table === "plan_local_prices") return S.localErr ? { error: S.localErr } : { rows: S.local };
   if (table === "memberships") return { rows: S.memberships };
   return { rows: [] };
 }
@@ -184,6 +188,75 @@ console.log("▸ سعرُ الصرف من app_config");
 {
   const r = await pay("advanced", "monthly", { rate: 1320 });
   check("٥٥$ × ١٣٢٠", r.order?.amount_iqd === 72600, `iqd=${r.order?.amount_iqd}`);
+}
+
+console.log("▸ سعرُ الدينار الذي ثبّته المالك يُقبض بعينه (0250)");
+{
+  const local = [{ plan: "basic", currency: "IQD", monthly: 45000, annual: 540000 }, { plan: "basic", currency: "SAR", monthly: 119, annual: 1428 }];
+  const r = await pay("basic", "monthly", { local });
+  check("العاديةُ بـ45,000 دينار كما بالموقع", r.order?.amount_iqd === 45000 && r.wayl?.total === 45000 && r.wayl?.lineItem?.[0]?.amount === 45000, `${r.order?.amount_iqd}/${r.wayl?.total}`);
+  check("  ودولارُه المحفوظ = المقبوض ÷ السعر", r.order?.usd === 30, String(r.order?.usd));
+  const a = await pay("basic", "annual", { local });
+  check("  وسنويُّها 540,000", a.order?.amount_iqd === 540000 && a.order?.months === 12, String(a.order?.amount_iqd));
+  const o = await pay("advanced", "monthly", { local });
+  check("باقةٌ بلا سعرٍ محلّيّ ⇒ الدولار × السعر كما كان", o.order?.amount_iqd === 82500, String(o.order?.amount_iqd));
+  const sar = await pay("super", "monthly", { local: [{ plan: "super", currency: "SAR", monthly: 399, annual: 3990 }] });
+  check("سعرُ عملةٍ أخرى لا يمسّ الدينار", sar.order?.amount_iqd === 150000, String(sar.order?.amount_iqd));
+}
+{
+  const r = await pay("basic", "monthly", { localErr: { code: "PGRST205", message: "Could not find the table" } });
+  check("الجدولُ غائب (الدالّةُ قبل هجرتها) ⇒ الدولار × السعر", r.status === 200 && r.order?.amount_iqd === 45000, `${r.status} ${r.order?.amount_iqd}`);
+  const e = await pay("basic", "monthly", { localErr: { code: "57014", message: "statement timeout" } });
+  check("  وأيُّ خطأٍ آخر بقراءته ⇒ رفض بلا طلب", e.status >= 500 && e.body?.error === "price_unavailable" && !e.order && !e.wayl, `${e.status} ${e.body?.error}`);
+}
+
+/* المعروضُ = المقبوض: الموقعُ وشاشةُ الاشتراك يعرضان الدينارَ بـ`priceFor` (src/site/editions.ts)، والدالّةُ
+ * تقبض بحسابها هي — فيُقارَن الاثنان حالةً بحالة: سعرُ صرفٍ غيرُ الافتراضيّ، وصفُّ دينارٍ ثبّته المالك،
+ * وصفٌّ تحت الألف أو بكسر (الهجرةُ ترفضهما اليوم، والحسابان يتّفقان عليهما مع ذلك). */
+console.log("▸ ما يعرضه الموقعُ وشاشةُ الاشتراك = ما تقبضه الدالّة");
+{
+  const ed = await esbuild.build({ entryPoints: ["src/site/editions.ts"], bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent" });
+  const d2 = mkdtempSync(join(tmpdir(), "wayl-ed-"));
+  writeFileSync(join(d2, "ed.mjs"), ed.outputFiles[0].text);
+  let E;
+  try { E = await import(pathToFileURL(join(d2, "ed.mjs")).href); } finally { try { rmSync(d2, { recursive: true, force: true }); } catch { /* ignore */ } }
+  const iq = E.editionByCode("iq");
+  const PRICES = { basic: [30, 360], advanced: [55, 660], super: [100, 1000] };
+  const LOCALS = [
+    [],
+    [{ plan: "basic", currency: "IQD", monthly: 45000, annual: 540000 }],
+    [{ plan: "super", currency: "IQD", monthly: 150000.4, annual: 999 }],
+  ];
+  let n = 0, bad = [];
+  for (const rate of [1500, 1535, 1532.5]) for (const local of LOCALS) for (const plan of ["basic", "advanced", "super"]) for (const period of ["monthly", "annual"]) {
+    const r = await pay(plan, period, { rate, local, prices: PRICES });
+    const data = {
+      usd: Object.fromEntries(Object.entries(PRICES).map(([p, [m, a]]) => [p, { monthly: m, annual: a }])),
+      usdRate: rate,
+      local: { IQD: Object.fromEntries(local.filter((l) => l.currency === "IQD").map((l) => [l.plan, { monthly: l.monthly, annual: l.annual }])) },
+      at: "",
+    };
+    const x = E.priceFor(iq, plan, data);
+    const shown = x[period], shownUsd = period === "annual" ? x.usdAnnual : x.usdMonthly;
+    n++;
+    if (shown !== r.order?.amount_iqd || shown !== r.wayl?.total) bad.push(`${plan}/${period} rate=${rate} local=${local.length}: shown ${shown} charged ${r.order?.amount_iqd}`);
+    // و«يعادل نحو $X» بجانبه = الدولارُ المحفوظ بالطلب (للدينار المثبَّت: المقبوضُ ÷ الصرف).
+    if (shownUsd !== r.order?.usd) bad.push(`${plan}/${period} rate=${rate} local=${local.length}: shown $${shownUsd} order $${r.order?.usd}`);
+  }
+  check(`${n} حالةً: الرقمُ المعروض هو المقبوض`, bad.length === 0, bad.slice(0, 4).join("؛ "));
+  const usdEd = E.editionByCode("lb");
+  check("نسخةٌ بلا سعرٍ ثبّته المالك تعرض الدولارَ الذي أقرّه لا مقترحاً", E.priceFor(usdEd, "basic", { usd: { basic: { monthly: 30, annual: 360 } }, usdRate: 1535, local: {}, at: "" }).monthly === 30);
+  check("  وعملةٌ بلا صفٍّ (الريال) تعرض الدولار", E.priceFor(E.editionByCode("sa"), "super", { usd: { super: { monthly: 100, annual: 1000 } }, usdRate: 1535, local: {}, at: "" }).currency === "USD");
+  const subscribe = (await import("node:fs")).readFileSync("src/pages/Subscribe.tsx", "utf8");
+  check("شاشةُ الاشتراك تعرض الدينارَ بالحساب نفسه (priceFor على public_pricing) لا بـ1535 ثابتاً",
+    /rpc\("public_pricing"\)/.test(subscribe) && /priceFor\(editionByCode\("iq"\)!, id, pricing\)/.test(subscribe) && /تدفع \$\{money\(iqdCharged\(p\.id\)!\)\}/.test(subscribe));
+  check("  والدينارُ الكويتيّ بكسره كما ثبّته المالك", E.fmtPrice(E.editionByCode("kw"), "KWD", 9.5) === "9.5 د.ك" && E.fmtPrice(E.editionByCode("kw"), "KWD", 10) === "10 د.ك", E.fmtPrice(E.editionByCode("kw"), "KWD", 9.5));
+}
+
+console.log("▸ قراءةُ سعر الصرف الفاشلة ترفض — لا قبضَ بسعرٍ افتراضيّ يخالف المعروض");
+{
+  const r = await pay("basic", "monthly", { cfgErr: { message: "connection reset" } });
+  check("فشلُ قراءة app_config ⇒ رفض بلا طلبٍ ولا رابط", r.status >= 500 && r.body?.error === "price_unavailable" && !r.order && !r.wayl, `${r.status} ${r.body?.error}`);
 }
 
 console.log("▸ لا قبضَ بسعرٍ لم يُعرض");
