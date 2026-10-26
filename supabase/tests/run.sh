@@ -25,7 +25,9 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql"
+# و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
+# الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0249_owner_reads_verified_claim.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -6077,6 +6079,135 @@ chk "  والإعادةُ بلا أثر: مساحةٌ واحدة وحسابٌ و
     "select (select count(*) from platform_workspaces)::text || '|' || (select count(*) from auth.users where email like '%@workspace.doctorvet.invalid')::text" "1|1"
 $P -c "drop trigger if exists _t247_on_auth_user_created on auth.users; drop function if exists _t247_new_user();
        delete from platform_sessions; update _dvtest_flags set admin = false;" >/dev/null
+
+# ── 0249: صاحبُ الحيوان يقرأ سجلَّ العيادة ولا يكتبه، ويطالب برقمٍ أكّده الخادم ──────
+# كلُّ ما يخصّ المالكَ هنا بـ`_rls_try` (دور authenticated فعلاً): الحزمةُ superuser تتجاوز
+# RLS، فـ«المالكُ لا يكتب» بلاه يمرّ قبل الهجرة وبعدها. والقالبُ بأسماء الإنتاج وسياساته:
+# حلقةُ 0001 على الخمسة كلّها، وقارئةُ 0004 وكاتبتُها، و`profiles_self_delete` (0049).
+echo "▸ 0249: المالكُ يقرأ ولا يكتب، والمطالبةُ برقمٍ مؤكَّد"
+C1=11111111-1111-1111-1111-111111111111
+OF=f2490000-0000-4000-8000-0000000000f1   # كتب رقمَ زبونٍ بملفّه — لم يُثبته
+OU=f2490000-0000-4000-8000-0000000000f2   # رقمُ الدخول نفسُه بلا تأكيد
+OR=f2490000-0000-4000-8000-0000000000f3   # صاحبُ الرقم: أكّدته GoTrue
+OS=f2490000-0000-4000-8000-0000000000f4   # ربطٌ قديمٌ قبل 0249 (حيوانُ زبونٍ آخر)
+PA=f2490000-0000-4000-8000-0000000000a1; PB=f2490000-0000-4000-8000-0000000000a2; PS=f2490000-0000-4000-8000-0000000000a3
+R=f2490000-0000-4000-8000-0000000000
+$P -c "insert into auth.users(id, phone, phone_confirmed_at) values
+         ('$OF', null, null), ('$OU', '9647701112233', null), ('$OR', '9647701112233', now()), ('$OS', null, null)
+       on conflict (id) do update set phone = excluded.phone, phone_confirmed_at = excluded.phone_confirmed_at;
+       insert into profiles(id, role, roles, phone) values
+         ('$OF','owner','{owner}','0770 111 2233'), ('$OU','owner','{owner}',null),
+         ('$OR','owner','{owner}',null), ('$OS','owner','{owner}',null)
+       on conflict (id) do update set role = excluded.role, roles = excluded.roles, phone = excluded.phone;
+       -- حيوانا عيادةٍ سجّلتهما برقم الزبون (صفُّ المراجع: صاحبُه حسابُ العيادة، كما بالإنتاج)،
+       -- وثالثٌ رُبط بحساب مالكٍ قبل اليوم ورقمُه رقمُ زبونٍ آخر.
+       insert into pets(id, name, clinic_id, owner_id, owner_phone) values
+         ('$PA','بسبوسة','$C1','$C1','0770 111 2233'), ('$PB','ريكس','$C1','$C1','+964 770 111 2233'),
+         ('$PS','لولو','$C1','$OS','07709998877')
+       on conflict (id) do nothing;
+       insert into vaccinations(id, pet_id, name, clinic_id, notes) values ('${R}01','$PA','سعار','$C1','العيادة') on conflict do nothing;
+       insert into medical_visits(id, pet_id, clinic_id) values ('${R}02','$PA','$C1') on conflict do nothing;
+       insert into treatment_entries(id, pet_id, medication, time, amount, clinic_id) values ('${R}03','$PA','سيفترياكسون','08:00','1ml','$C1') on conflict do nothing;
+       insert into weight_logs(id, pet_id, weight_kg, clinic_id) values ('${R}04','$PA',4.2,'$C1') on conflict do nothing;
+       insert into media_items(id, pet_id, kind, url, clinic_id) values ('${R}05','$PA','xray','$PA/x.png','$C1') on conflict do nothing;" >/dev/null
+
+chk "الخمسة: سياسةُ المالك قراءةٌ وحدها (<t>_owner = SELECT)" \
+    "select string_agg(tablename || ':' || cmd, ',' order by tablename) from pg_policies
+      where schemaname='public' and policyname = tablename || '_owner'
+        and tablename in ('weight_logs','vaccinations','media_items','medical_visits','treatment_entries')" \
+    "media_items:SELECT,medical_visits:SELECT,treatment_entries:SELECT,vaccinations:SELECT,weight_logs:SELECT"
+chk "  ولا متساهلةَ كتابةٍ بملكيّة الحيوان باقية (verify_owner_read_only)" \
+    "select count(*)::text from verify_owner_read_only()" "0"
+chk "  وكلُّ ما أُسقط مدوَّنٌ بنصّه وسببه — سبعٌ بالقالب" \
+    "select count(*)::text || '|' || count(*) filter (where qual is not null or with_check is not null)::text from rls_policy_superseded where migration='0249'" "7|7"
+chk "  وبرهانُ 0128 يستثني المدوَّن وحده: لا ضاع شيءٌ ولا تبدّل" \
+    "select (ضاعت + تغير_شرطها + تغيرت_صلاحياتها)::text || '|' || (سياسات_انفحصت > 0)::text from verify_rls_equivalence()" "0|true"
+chk "  والسياجُ قائمٌ على كلّ أمر" \
+    "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
+
+# (أ) رقمٌ بالملفّ الشخصيّ لا يربط شيئاً — ولا تعديلُه بعد التسجيل
+chk "(أ) ملفٌّ برقم الزبون بلا تأكيد: يطالب فيربط صفراً" \
+    "select _rls_try('$OF', 'select 1 from claim_pets_by_phone()')" "rows:0"
+chk "  ويبدّل رقمَه بملفّه (مسموح) ثم يطالب: صفرٌ أيضاً" \
+    "select _rls_try('$OF', 'update profiles set phone=''07701112233'' where id=''$OF''') || '|' || _rls_try('$OF', 'select 1 from claim_pets_by_phone()')" "rows:1|rows:0"
+chk "  ورقمُ الدخول نفسُه قبل تأكيده: صفر" \
+    "select _rls_try('$OU', 'select 1 from claim_pets_by_phone()')" "rows:0"
+chk "  والحيوانان باقيان بحساب العيادة" \
+    "select count(*)::text from pets where id in ('$PA','$PB') and owner_id='$C1'" "2"
+
+# (ب) الرقمُ المؤكَّد يطالب كما كان — بكلّ صيغ كتابة الرقم
+chk "(ب) رقمٌ أكّدته GoTrue: يربط حيوانَي رقمه" \
+    "select _rls_try('$OR', 'select 1 from claim_pets_by_phone(''أم علي'')')" "rows:2"
+chk "  مربوطان به، واسمُ المراجع الذي كتبته العيادة لا يُمسّ إلا فارغاً" \
+    "select count(*)::text || '|' || min(owner_name) from pets where id in ('$PA','$PB') and owner_id='$OR'" "2|أمعلي"
+chk "  والمطالبةُ الثانية لا تربط شيئاً جديداً" \
+    "select _rls_try('$OR', 'select 1 from claim_pets_by_phone()')" "rows:0"
+chk "  والدالّةُ definer بمسارٍ مثبَّت، تقرأ تأكيدَ GoTrue ولا تقرأ هاتفَ الملفّ" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'
+             and prosrc like '%phone_confirmed_at%' and prosrc not like '%pr.phone%')::text
+       from pg_proc where proname='claim_pets_by_phone'" "true"
+
+# (ج) المالكُ لا يعدّل ولا يحذف سجلَّ العيادة — لا مباشرةً ولا بالتسلسل
+chk "(ج) يعدّل لقاحَ العيادة لحيوانه: صفرُ صفوف" \
+    "select _rls_try('$OR', 'update vaccinations set notes=''مزوّر'' where id=''${R}01''')" "rows:0"
+chk "  ويحذفه: صفر" \
+    "select _rls_try('$OR', 'delete from vaccinations where id=''${R}01''')" "rows:0"
+chk "  ويعدّل زيارتَها: صفر، ويحذفها: صفر" \
+    "select _rls_try('$OR', 'update medical_visits set created_at = now() where id=''${R}02''') || '|' || _rls_try('$OR', 'delete from medical_visits where id=''${R}02''')" "rows:0|rows:0"
+chk "  والعلاجُ والوزنُ والوسائط: صفرٌ كلُّها" \
+    "select _rls_try('$OR', 'delete from treatment_entries where id=''${R}03''') || '|' || _rls_try('$OR', 'update weight_logs set weight_kg = 1 where id=''${R}04''') || '|' || _rls_try('$OR', 'delete from media_items where id=''${R}05''')" \
+    "rows:0|rows:0|rows:0"
+chk "  ويُدرج لقاحاً باسم العيادة: مرفوضٌ بالسياسة" \
+    "select left(_rls_try('$OR', 'insert into vaccinations(pet_id, name, clinic_id) values (''$PA'', ''سعار'', ''$C1'')'), 13)" "guarded:42501"
+chk "  ويحذف الحيوانَ نفسَه (التسلسلُ يمحو سجلَّه): مرفوضٌ بالمحفّز" \
+    "select split_part(_rls_try('$OR', 'delete from pets where id=''$PA'''), ':', 3)" "pet_clinic_record"
+chk "  وينقله لمساحته: مرفوض" \
+    "select split_part(_rls_try('$OR', 'update pets set clinic_id=''$OR'' where id=''$PA'''), ':', 3)" "pet_clinic_record"
+chk "  ويحذف ملفَّه (يتسلسل إلى الحيوان): مرفوض" \
+    "select split_part(_rls_try('$OR', 'delete from profiles where id=''$OR'''), ':', 3)" "profile_has_clinic_pets"
+chk "  والسجلُّ كلُّه باقٍ كما كتبته العيادة" \
+    "select (select notes from vaccinations where id='${R}01') || '|' || (select count(*) from medical_visits where id='${R}02') || (select count(*) from treatment_entries where id='${R}03') || (select count(*) from weight_logs where id='${R}04' and weight_kg=4.2) || (select count(*) from media_items where id='${R}05') || '|' || (select count(*) from pets where id='$PA' and clinic_id='$C1')" \
+    "العيادة|1111|1"
+chk "  والعيادةُ تكتب سجلَّها وحيوانَها كما كانت" \
+    "select _rls_try('$C1', 'update vaccinations set notes=''العيادة'' where id=''${R}01''') || '|' || _rls_try('$C1', 'update pets set name=name where id=''$PA''')" "rows:1|rows:1"
+
+# (د) ما تقرؤه شاشاتُ المالك فعلاً (PetPassport ولوحتُه) يعمل، وما يكتبه يعمل
+chk "(د) PetPassport: الخمسة بـpet_id كما ينادي repo" \
+    "select _rls_try('$OR', 'select * from weight_logs where pet_id=''$PA'' order by measured_at') || '|' ||
+            _rls_try('$OR', 'select * from vaccinations where pet_id=''$PA''') || '|' ||
+            _rls_try('$OR', 'select * from medical_visits where pet_id=''$PA''') || '|' ||
+            _rls_try('$OR', 'select * from media_items where pet_id=''$PA'' order by created_at desc') || '|' ||
+            _rls_try('$OR', 'select * from treatment_entries where pet_id=''$PA'' order by day, time')" \
+    "rows:1|rows:1|rows:1|rows:1|rows:1"
+chk "  ولوحةُ المالك: حيواناتُه" \
+    "select _rls_try('$OR', 'select * from pets where owner_id=''$OR''')" "rows:2"
+chk "  وتعديلُه لحيوانه (الاسم، الغذاء…) يمرّ" \
+    "select _rls_try('$OR', 'update pets set name=''بسبوسة الصغيرة'' where id=''$PA''')" "rows:1"
+# فحصان لا واحد: استعلامٌ فرعيٌّ بجانب `_rls_try` يُحسب قبلها (initplan) فيقرأ ما قبل الإدراج.
+chk "  وصورتُه من تبويب الوسائط تُحفظ (بلا media_items_owner_write)" \
+    "select _rls_try('$OR', 'insert into media_items(pet_id, kind, url, caption) values (''$PA'', ''photo'', ''$PA/me.jpg'', ''me.jpg'')')" "rows:1"
+chk "    بمساحته هو — لا باسم العيادة" \
+    "select clinic_id::text from media_items where url='$PA/me.jpg'" "$OR"
+chk "  وغريبٌ لا يقرأ سجلَّ حيوانٍ ليس له" \
+    "select _rls_try('$OF', 'select * from vaccinations where pet_id=''$PA''') || '|' || _rls_try('$OF', 'select * from medical_visits where pet_id=''$PA''')" "rows:0|rows:0"
+
+# الربطُ القديم: يُعدّ للمشغّل ولا يُفكّ — ولا بإعادة التنزيل
+chk "الربطُ القديم بلا رقمٍ مؤكَّد يُعدّ (والمؤكَّدُ المطابق لا)" \
+    "select string_agg(pet_id::text, ',') from owner_links_unverified() where pet_id::text like 'f2490000-%'" "$PS"
+$P -f "$MIG/0249_owner_reads_verified_claim.sql" >/dev/null
+chk "  والإعادةُ بلا أثر: الربطُ باقٍ، والدفترُ سبعٌ، والسياساتُ قراءة" \
+    "select ((select owner_id::text from pets where id='$PS') = '$OS' and (select count(*) from rls_policy_superseded where migration='0249') = 7 and (select count(*) from verify_owner_read_only()) = 0)::text" "true"
+# بعد الإعادة لا قبلها: المنحُ الشامل لـ`_rls_try` (كتلة 0159) أعطى authenticated كلَّ دالّة،
+# والهجرةُ تنزعه — فالقياسُ هنا قياسُ ما تتركه الهجرةُ نفسُها.
+chk "  والعدُّ ممنوعٌ على الواجهة (بياناتُ زبائن كلِّ العيادات)، والمطالبةُ للداخلين وحدهم" \
+    "select has_function_privilege('authenticated','public.owner_links_unverified()','execute')::text || '|' || has_function_privilege('anon','public.owner_links_unverified()','execute')::text
+       || '|' || has_function_privilege('authenticated','public.claim_pets_by_phone(text,text)','execute')::text || '|' || has_function_privilege('anon','public.claim_pets_by_phone(text,text)','execute')::text" \
+    "false|false|true|false"
+chk "  ودالّتا المحفّز منزوعتان عن الواجهة — والمحفّزُ يجري بلا الامتياز" \
+    "select has_function_privilege('authenticated','public.pets_guard_clinic_record()','execute')::text || '|' || split_part(_rls_try('$OR', 'delete from pets where id=''$PA'''), ':', 3)" \
+    "false|pet_clinic_record"
+chk "  والمحفّزان invoker (يحرسان authenticated وحده) لا definer" \
+    "select count(*) filter (where not prosecdef)::text from pg_proc where proname in ('pets_guard_clinic_record','profiles_guard_clinic_pets')" "2"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
