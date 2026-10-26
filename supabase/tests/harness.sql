@@ -311,6 +311,28 @@ create table if not exists invoice_items (
 );
 -- 0144: سطرُ الفاتورة يشير إلى منتجٍ — الدمج يعيده إلى الأصل قبل حذف النسخة.
 alter table invoice_items  add column if not exists product_id uuid references products(id) on delete set null;
+-- وسطرُ الفاتورة يُحذف مع فاتورته (`on delete cascade`) كما بالإنتاج (0007:39): عليه يقوم
+-- `delete_invoice` (0066 — يحذف الفاتورةَ وحدها) ومحفّزُ AFTER DELETE على السطور (0252). والقالبُ
+-- كان بلا تتالٍ (NO ACTION) فيرفض حذفَ فاتورةٍ لها سطور، والإنتاجُ يحذفها بسطورها — عالَمٌ غيرُ العالَم.
+-- يُفكّ أيُّ مفتاحٍ للفاتورة بلا تتالٍ ثمّ يُضاف المتتالي مرّةً واحدة. (العمودُ يبقى nullable هنا
+-- والإنتاجُ not null: كتلُ 0144–0146 تزرع سطوراً بلا فاتورة.)
+do $fk$
+declare r record;
+begin
+  for r in
+    select conname from pg_constraint
+     where conrelid = 'invoice_items'::regclass and contype = 'f'
+       and confrelid = 'invoices'::regclass and confdeltype <> 'c'
+  loop
+    execute format('alter table invoice_items drop constraint %I', r.conname);
+  end loop;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'invoice_items'::regclass and contype = 'f'
+                    and confrelid = 'invoices'::regclass and confdeltype = 'c') then
+    alter table invoice_items add constraint invoice_items_invoice_id_fkey
+      foreign key (invoice_id) references invoices(id) on delete cascade;
+  end if;
+end $fk$;
 
 -- قيد 0051 كما هو بالإنتاج — تصلّحه 0131
 do $ii$ begin
@@ -353,13 +375,43 @@ alter table invoices add column if not exists staff_id      uuid;
 alter table invoices add column if not exists notes         text;
 alter table invoices add column if not exists status        text not null default 'paid';
 
+-- نصُّ 0066 حرفاً لا بديل (0066 خارج الموجة — تبدأ 0124 — فالأساسُ يحمله). البديلُ القديم كان
+-- `stock − qty` وحده: لا يحصر ولا يأخذ من حوض القسم — دالّةٌ ليست بالإنتاج، فكلُّ بيعٍ بالحزمة
+-- كان يقيس غيرَ ما يجري بالعيادات. وحارسُ 0253 (`_drift_assert`) يقارن جسمَها الحيَّ ببصمة 0066
+-- فيرفض أن ينزل على بديل؛ و0253 تعيد تعريفها فوقه بالموجة.
 create or replace function deduct_stock_pooled(p_product uuid, p_qty numeric, p_clinic uuid)
-returns numeric language plpgsql security definer set search_path = public as $ds$
+returns numeric language plpgsql security definer set search_path = public as $$
+declare
+  v_sec       uuid;
+  v_stock     numeric(14,3);
+  v_pool      numeric(14,3);
+  v_fromstock numeric(14,3) := 0;
+  v_frompool  numeric(14,3) := 0;
+  v_rem       numeric(14,3);
 begin
-  update products set stock = round(coalesce(stock,0) - p_qty, 3)
-   where id = p_product and clinic_id = p_clinic;
-  return 0;
-end $ds$;
+  if p_product is null or coalesce(p_qty, 0) <= 0 then return 0; end if;
+  -- Known/tracked stock first — lock the product row.
+  select stock, section_id into v_stock, v_sec from products
+   where id = p_product and clinic_id = p_clinic for update;
+  if not found then return 0; end if;
+  v_fromstock := least(p_qty, greatest(0, coalesce(v_stock, 0)));
+  if v_fromstock > 0 then
+    update products set stock = greatest(0, stock - v_fromstock)
+     where id = p_product and clinic_id = p_clinic;
+  end if;
+  v_rem := p_qty - v_fromstock;
+  -- Only the shortfall draws on the section pool (the unknown legacy reserve).
+  if v_rem > 0 and v_sec is not null then
+    select pooled_stock into v_pool from company_sections
+     where id = v_sec and clinic_id = p_clinic for update;
+    if v_pool is not null and v_pool > 0 then
+      v_frompool := least(v_rem, v_pool);
+      update company_sections set pooled_stock = greatest(0, pooled_stock - v_frompool)
+       where id = v_sec and clinic_id = p_clinic;
+    end if;
+  end if;
+  return v_frompool;
+end $$;
 
 -- سياسةٌ تحرس مبالغ الفاتورة (نظير invoices_update بالإنتاج): غيرُ المدير
 -- لا يغيّر المبالغ. تعتمد على أعمدة numeric — فهي بالضبط ما منع التوسيع
@@ -367,6 +419,84 @@ end $ds$;
 alter table invoices add column if not exists total       numeric(12,2) not null default 0;
 alter table invoices add column if not exists amount_paid numeric(14,2) not null default 0;
 alter table invoices add column if not exists refunded_at timestamptz;
+
+-- الترجيعُ والحذف (0066، خارج الموجة) بنصّهما حرفاً — كانا غائبَين عن القالب كلّياً، فلا عكسَ لبيعةٍ
+-- يُفحص بالدالّة التي تعكس بها العيادات (والمرتجعُ وتعديلُ البنود يُفحصان من 0241 وحدهما). وصلاحياتُهما
+-- كما بالإنتاج (0009): لا شيء لـanon، والتنفيذُ للمسجَّل. و0253 تعيد تعريفَ الحذف فوقه بالموجة.
+create or replace function refund_invoice(p_invoice uuid)
+returns invoices language plpgsql security definer set search_path = public as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_invoice invoices;
+  r record;
+begin
+  if v_clinic is null then raise exception 'not authenticated'; end if;
+  update invoices set status = 'refunded', refunded_at = now()
+    where id = p_invoice and clinic_id = v_clinic and status is distinct from 'refunded'
+    returning * into v_invoice;
+  if not found then
+    select * into v_invoice from invoices where id = p_invoice and clinic_id = v_clinic;
+    if not found then raise exception 'invoice not found'; end if;
+    return v_invoice; -- already refunded → no double restock
+  end if;
+  for r in
+    select ii.product_id, ii.qty, ii.stock_qty, ii.pooled_qty, p.section_id
+      from invoice_items ii
+      left join products p on p.id = ii.product_id and p.clinic_id = v_clinic
+     where ii.invoice_id = p_invoice and ii.clinic_id = v_clinic
+  loop
+    if r.product_id is not null then
+      if coalesce(r.pooled_qty, 0) > 0 and r.section_id is not null then
+        update company_sections set pooled_stock = pooled_stock + r.pooled_qty
+          where id = r.section_id and clinic_id = v_clinic;
+        update products set stock = stock + (coalesce(r.stock_qty, r.qty) - r.pooled_qty)
+          where id = r.product_id and clinic_id = v_clinic;
+      else
+        update products set stock = stock + coalesce(r.stock_qty, r.qty)
+          where id = r.product_id and clinic_id = v_clinic;
+      end if;
+    end if;
+  end loop;
+  return v_invoice;
+end $$;
+revoke all on function refund_invoice(uuid) from public, anon;
+grant execute on function refund_invoice(uuid) to authenticated;
+
+create or replace function delete_invoice(p_invoice uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_status text;
+  r record;
+begin
+  if v_clinic is null then raise exception 'not authenticated'; end if;
+  if auth_role() <> 'manager' then raise exception 'forbidden: managers only'; end if;
+  select status into v_status from invoices where id = p_invoice and clinic_id = v_clinic for update;
+  if not found then raise exception 'invoice not found'; end if;
+  if v_status is distinct from 'refunded' then
+    for r in
+      select ii.product_id, ii.qty, ii.stock_qty, ii.pooled_qty, p.section_id
+        from invoice_items ii
+        left join products p on p.id = ii.product_id and p.clinic_id = v_clinic
+       where ii.invoice_id = p_invoice and ii.clinic_id = v_clinic
+    loop
+      if r.product_id is not null then
+        if coalesce(r.pooled_qty, 0) > 0 and r.section_id is not null then
+          update company_sections set pooled_stock = pooled_stock + r.pooled_qty
+            where id = r.section_id and clinic_id = v_clinic;
+          update products set stock = stock + (coalesce(r.stock_qty, r.qty) - r.pooled_qty)
+            where id = r.product_id and clinic_id = v_clinic;
+        else
+          update products set stock = stock + coalesce(r.stock_qty, r.qty)
+            where id = r.product_id and clinic_id = v_clinic;
+        end if;
+      end if;
+    end loop;
+  end if;
+  delete from invoices where id = p_invoice and clinic_id = v_clinic;
+end $$;
+revoke all on function delete_invoice(uuid) from public, anon;
+grant execute on function delete_invoice(uuid) to authenticated;
 
 -- 0148: التوصيل (0069) كما بالإنتاج — سواق/شركات وطلبات، وتسديد الفاتورة (0061).
 create table if not exists couriers (

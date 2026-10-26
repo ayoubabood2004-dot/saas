@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   RotateCcw, Search, Receipt, Plus, Minus, Wallet, Banknote, CreditCard,
@@ -20,6 +20,10 @@ import { LoadBoundary } from "@/components/LoadBoundary";
 /* تأكيدُ المرتجع بالشاشة (0241) — قطعةُ نوافذ الدَّين بنطاقها المملوك fgv (hot-paths.json). */
 const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ReturnSheet })), ["fgv"]);
 let ReturnSheetLazy = loadReturnSheet();
+/* وما رجع للمخزن من موادّ الخدمة بعد المرتجع (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ بحارسٍ
+   بمكانها، لمرتجعٍ يلمس سطرَ خدمة وحده، ولا ينتظرها الحفظ. */
+const loadConsNotice = () => page(() => import("@/components/retail/ConsumablesSheet").then((m) => ({ default: m.ConsumptionNotice })), ["rcp"]);
+let ConsNoticeLazy = loadConsNotice();
 
 /* ============================================================================
  * المرتجع — تبويب داخل المبيعات.
@@ -50,10 +54,22 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
+  /* سطورُ الفاتورة المختارة ما وصلت: حالةٌ تُعرض بإعادتها — لا سطورُ الفاتورة السابقة تحت رقم هذي، ولا
+     قائمةٌ فارغة تُصدَّق. وجوابُ اختيارٍ سابقٍ وصل متأخّراً لا يكتب فوق اللاحق (`pickSeq`). */
+  const [itemsErr, setItemsErr] = useState<unknown>(null);
+  const pickSeq = useRef(0);
   const [saving, setSaving] = useState(false);
   // التأكيدُ بالشاشة لا بـwindow.confirm: الدينُ قبل ← بعد، وما يرجع للرفّ وللزبون، مكتوبةٌ قبل الضغطة.
   const [confirming, setConfirming] = useState(false);
   const [, setLazyTick] = useState(0);
+  // مرتجعٌ نجح ولمس سطرَ خدمة (0252): ما رجع من موادّها يبقى ظاهراً حتى يبدأ مرتجعٌ آخر — ومعه لحظةُ طلبه
+  // (performance.now قبله: بها تُعرف دفعتُه بالدفتر) وهل خرج نقدٌ للزبون.
+  const [returned, setReturned] = useState<{ id: string; sentAt: number; cashBack: boolean } | null>(null);
+  /* والإشعارُ حيث العين: كان تحت «خلاصة المرتجع» بالعمود الأيمن، فبالهاتف (عمودٌ واحد تحت ١٠٢٤) نزل تحت البحث واثنتي
+     عشرة فاتورة والصفحةُ على زرّ التأكيد — و«سجّلها هدر» بداخله مدخلُ السند الوحيد لهذا المرتجع، واختيارُ فاتورةٍ تالية
+     يمسحه قبل أن يُرى. فصار أوّلَ العمود الأيسر، والشاشةُ تمرّره لمكانه مرّةً عند ظهوره — بمرجعٍ ثابت يُنادى لحظةَ
+     يُركَّب غلافُه (لا بأثرٍ على `returned`: يجري قبل أن يُطوى الاختيارُ فلا يجد الغلاف إن لم تُجمع التحديثات). */
+  const consRef = useCallback((el: HTMLDivElement | null) => { el?.scrollIntoView?.({ block: "center", behavior: "smooth" }); }, []);
 
   /** الفواتير المرشّحة: غير المرجعة، الأحدث أولاً، ويضيّقها البحث بالاسم
    *  أو الهاتف أو رقم الفاتورة. */
@@ -90,18 +106,26 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
   }, [serverQ, retry]);
   const candidates = serverQ && remote ? remote : localCandidates;
 
+  const loadItems = (id: string) => {
+    const seq = ++pickSeq.current;
+    setItems([]);
+    setItemsErr(null);
+    setLoading(true);
+    repo.listInvoiceItems(id)
+      .then((r) => { if (pickSeq.current === seq) setItems(r); })
+      .catch((e) => { if (pickSeq.current === seq) setItemsErr(e ?? new Error("items")); })
+      .finally(() => { if (pickSeq.current === seq) setLoading(false); });
+  };
+
   const pick = (inv: Invoice) => {
     playTap();
     setPicked(inv);
+    setReturned(null);
     setRet({});
     setNote("");
-    setLoading(true);
     const dominant = (inv.payment_details ?? []).filter((l) => l.amount > 0).sort((a, b) => b.amount - a.amount)[0]?.method;
     setMethod((dominant ?? inv.payment_method ?? "cash") as PaymentMethod);
-    repo.listInvoiceItems(inv.id)
-      .then(setItems)
-      .catch((e) => toast.error(describeDbError(e, t)))
-      .finally(() => setLoading(false));
+    loadItems(inv.id);
   };
 
   const setQty = (id: string, max: number, v: number) =>
@@ -124,6 +148,12 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
     return { retVal: round2(retVal), full, newTotal, back, count, due: dueOf(picked), dueAfter, consumed: forg?.consumed ?? 0 };
   }, [picked, items, ret]);
 
+  /* المستهلكات (0252): سطورُ الخدمة (بخدمتها — وحدها تصرف موادّاً) التي يلمسها المرتجع ← كمّيتُها بعده.
+     فارغةٌ = لا قطعةَ ولا طلب؛ والمرتجعُ الكامل يُرجع الفاتورةَ كلَّها إلى صفر فبلا أهداف. */
+  const consTargets = items
+    .filter((it) => (ret[it.id] ?? 0) > 0 && it.product_id == null && !!it.service_id)
+    .map((it) => ({ item_id: it.id, qty: Math.max(0, Math.round((it.qty - (ret[it.id] ?? 0)) * 1000) / 1000) }));
+
   const save = async () => {
     if (!picked || !calc || saving || calc.count <= 0) return;
     setSaving(true);
@@ -131,12 +161,15 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
       const lines = items
         .map((it) => ({ item_id: it.id, qty: ret[it.id] ?? 0 }))
         .filter((l) => l.qty > 0);
+      const cashBack = calc.back > 0.005;
+      const sentAt = performance.now();
       await repo.returnInvoiceItems(picked.id, lines, method, note.trim() || null);
       playSuccess();
       toast.success(calc.back > 0
         ? t("ret.doneBack", { n: money(calc.back), defaultValue: "تم الإرجاع — البضاعة رجعت للمخزون، ورجّع للزبون {{n}}" })
         : t("ret.doneNoBack", "تم الإرجاع — البضاعة رجعت للمخزون ونقص دين الفاتورة"));
       setConfirming(false);
+      setReturned(consTargets.length > 0 ? { id: picked.id, sentAt, cashBack } : null);
       setPicked(null);
       setItems([]);
       setRet({});
@@ -173,6 +206,16 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
       <div className="space-y-3">
         {!picked ? (
           <>
+            {/* ما رجع للمخزن من موادّ الخدمة بالمرتجع الأخير (0252) — ومعه «سجّلها هدر» لمن يدير المخزن. */}
+            {returned && (
+              <div ref={consRef} data-retcons>
+                <LoadBoundary scope="cons-returned" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setLazyTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <ConsNoticeLazy mode="returned" invoiceIds={[returned.id]} sentAt={returned.sentAt} cashBack={returned.cashBack} />
+                  </Suspense>
+                </LoadBoundary>
+              </div>
+            )}
             <div className="relative">
               <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input data-retsearch className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)}
@@ -236,6 +279,11 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
 
             {loading ? (
               <p className="p-6 text-center text-sm text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</p>
+            ) : itemsErr != null ? (
+              <div role="alert" className="flex flex-col items-center gap-2 p-6 text-center" data-retitems-failed>
+                <p className="text-sm text-ink-subtle">{describeDbError(itemsErr, t)}</p>
+                <Button size="sm" variant="secondary" onClick={() => { playTap(); loadItems(picked.id); }}>{t("common.retry", "Retry")}</Button>
+              </div>
             ) : (
               <div className="space-y-1.5">
                 {items.map((it) => {
@@ -330,6 +378,7 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
               <ReturnSheetLazy mode={calc.full ? "refund" : "return"} invoice={picked}
                 lines={items.filter((it) => (ret[it.id] ?? 0) > 0).map((it) => ({ name: it.name, qty: ret[it.id] ?? 0 }))}
                 back={calc.back} dueBefore={calc.due} dueAfter={calc.dueAfter} consumed={calc.consumed}
+                consumption={consTargets.length > 0 ? (calc.full ? {} : { targets: consTargets }) : null}
                 busy={saving} onConfirm={() => void save()} onClose={() => { if (!saving) setConfirming(false); }} />
             </Suspense>
           </LoadBoundary>

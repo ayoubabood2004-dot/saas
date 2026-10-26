@@ -213,7 +213,9 @@ console.log("\n▸ updatePurchase — مرآةُ 0205 (التعديلُ لا ي�
   await repo.updatePurchase(pur.id,
     [{ product_id: "fast", barcode: "FAST-50", name: "رملٌ سريعُ الحركة", qty: 30, purchase_price: 1000, sell_price: 1500 }], {});
   const less = (await repo.listProducts()).find((p) => p.id === "fast");
-  check("  وتخفيضُ الكمية يُطرح فعلاً ولا ينزل تحت صفر", less?.stock === 0, `stock=${less?.stock}`);
+  /* 0253 (update_purchase، 0253:486-491): الحصرةُ الأخيرة «سالبٌ ⇒ صفر» شيلت — قطعُ الفاتورة تحت ما بيع منها (٣٠ وقد
+   * بيع ٤٥ من ٥٠) يترك العجزَ ظاهراً: ٥ − ٥٠ + ٣٠ = −١٥، لا صفرٌ يمحو ما بيع. */
+  check("  وتخفيضُ الكمية يُطرح فعلاً، والعجزُ يبقى ظاهراً (−١٥ لا صفر — 0253)", less?.stock === -15, `stock=${less?.stock}`);
 }
 
 console.log("\n▸ الكشف — مرآةُ 0211 (نفسُ قالب الحزمة)");
@@ -250,7 +252,8 @@ console.log("\n▸ الكشف — مرآةُ 0211 (نفسُ قالب الحزم�
   const U = (n) => ef2.find((e) => e.line_no === n && e.op === "update");
   check("التعديلُ يضيف op=update ولا يمسح record (٤/٤)",
     ef2.filter((e) => e.op === "record").length === 4 && ef2.filter((e) => e.op === "update").length === 4);
-  check("  «كان» قبل التعديل (٤) و«صار» بعد الحصرة (صفر)", U(1)?.before?.stock === 4 && U(1)?.after?.stock === 0 && U(1)?.matched_by === "id",
+  // 0253 (0253:494-500): لا حصرة، و«صار» الرصيدُ النهائيّ ولو سالباً: ٤ − ٥٠ + ٤٠ = −٦ (الإيصالُ «كان ٤ صار −٦»).
+  check("  «كان» قبل التعديل (٤) و«صار» الرصيدُ النهائيّ بلا حصرة (−٦)", U(1)?.before?.stock === 4 && U(1)?.after?.stock === -6 && U(1)?.matched_by === "id",
     JSON.stringify([U(1)?.before?.stock, U(1)?.after?.stock]));
   const rm = ef2.find((e) => e.op === "update" && e.outcome === "removed");
   check("  والمشالُ يُقال: removed بـ-١٥ و١٥ ⇒ ٠", rm?.qty === -15 && rm?.before?.stock === 15 && rm?.after?.stock === 0, JSON.stringify(rm));
@@ -1149,6 +1152,72 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
     (await repo.ensureCompany("رويال كانين", "c1")).id === (await repo.ensureCompany("\u200fرويال\u200bكانين", "c1")).id);
 }
 
+console.log("\n▸ فكُّ الطيّ بلا أرضيّة — restore_company وrestore_company_section (0203/0197 ← 0253)");
+{
+  /* 0253 (الجولة الثانية): الفكُّ يطرح ما أضافه الطيُّ بالضبط **ولو صار الباقي سالباً** — ما جرى على الحوض المدموج بعد الطيّ
+     (بيعٌ منه، أو مادّةٌ سالبةٌ طُويت إليه) يبقى عليه. الأرضيّةُ (max(0, …)) كانت تردّه بضاعةً لم تكن. */
+  const db = () => JSON.parse(mem.get(DB_KEY));
+  const sec = (id) => (db().companySections ?? []).find((x) => x.id === id)?.pooled_stock;
+  const setPool = (id, v) => { const d = db(); d.companySections.find((x) => x.id === id).pooled_stock = v; mem.set(DB_KEY, JSON.stringify(d)); };
+  const base = { purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [] };
+  mem.set(DB_KEY, JSON.stringify({ ...base,
+    products: [{ id: "pk", name: "علف-ك", company_id: "K", section_id: "sk", stock: 0 }, { id: "pd", name: "علف-د", company_id: "D", section_id: "sd", stock: 0 }],
+    companies: [{ id: "K", clinic_id: "c1", name: "شركة باقية", note: null, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "D", clinic_id: "c1", name: "شركة مطوية", note: null, created_at: "2026-02-01T00:00:00.000Z" }],
+    companySections: [{ id: "sk", clinic_id: "c1", company_id: "K", name: "أدوية", pooled_stock: 0, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "sd", clinic_id: "c1", company_id: "D", name: "أدوية", pooled_stock: 2, created_at: "2026-02-01T00:00:00.000Z" }],
+  }));
+  await repo.mergeCompanies("K", "D");
+  check("[2b] الطيُّ يجمع الحوضين: ٠ + ٢ = ٢", sec("sk") === 2, String(sec("sk")));
+  setPool("sk", 0);                                                                              // بيع ٢ من الحوض المدموج
+  await repo.restoreCompany("D");
+  check("[2b] فكُّ الشركة بعد بيعٍ من الحوض المدموج: الباقي −٢ والمطويُّ ٢ (الأرضيّةُ كانت ٠ و٢: المبيعُ رجع للرفّ)",
+    sec("sk") === -2 && sec("sd") === 2, `${sec("sk")}/${sec("sd")}`);
+  mem.set(DB_KEY, JSON.stringify({ ...base,
+    products: [{ id: "pq", name: "علف-ق", company_id: "K", section_id: "sq", stock: 0 }],
+    companies: [{ id: "K", clinic_id: "c1", name: "شركة الأصناف", note: null, created_at: "2026-01-01T00:00:00.000Z" }],
+    companySections: [{ id: "sq", clinic_id: "c1", company_id: "K", name: "حوض باق", pooled_stock: 0, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "sr", clinic_id: "c1", company_id: "K", name: "حوض مطوي", pooled_stock: 2, created_at: "2026-02-01T00:00:00.000Z" }],
+  }));
+  await repo.mergeCompanySections("sq", "sr");
+  setPool("sq", -1);                                                                             // مادّةٌ عند −٣ طُويت إليه
+  await repo.restoreCompanySection("sr");
+  check("[2b] فكُّ الصنف: −١ − ٢ = −٣ والمطويُّ ٢ (الأرضيّةُ كانت ٠ و٢: ثلاثُ قطعٍ لم تكن)", sec("sq") === -3 && sec("sr") === 2, `${sec("sq")}/${sec("sr")}`);
+}
+
+console.log("\n▸ poolProduct — الرصيدُ ينتقل للحوض كلُّه ولو سالباً، والطيُّ للمدير والطبيب (0171 ← 0253)");
+{
+  const world = (stock, pool) => mem.set(DB_KEY, JSON.stringify({
+    products: [{ id: "pn", clinic_id: "c", name: "مادة سالبة", barcode: null, stock, pooled: false, section_id: "sn", alt_codes: [] }],
+    companies: [], companySections: [{ id: "sn", clinic_id: "c", company_id: "co1", name: "صنف", pooled_stock: pool }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  }));
+  const state = async () => {
+    const p = (await repo.listProducts()).find((x) => x.id === "pn"), s = (await repo.listCompanySections()).find((x) => x.id === "sn");
+    return `${s?.pooled_stock}/${p?.stock}/${p?.pooled === true}`;
+  };
+  world(-2, 5);
+  await repo.poolProduct("pn", "sn");
+  check("[2b] −٢ تُطوى بحوضٍ ٥ ⇒ الحوضُ ٣ والصفُّ صفر (الحصرُ كان يعطي ٥: +٢ لم تكن)", (await state()) === "3/0/true", await state());
+  world(-3, 1);
+  await repo.poolProduct("pn", "sn");
+  check("[2b] −٣ بحوضٍ ١ ⇒ الحوضُ −٢ (المجموعُ قبل الطيّ هو بعده)", (await state()) === "-2/0/true", await state());
+  world(1.25, 0.5);
+  await repo.poolProduct("pn", "sn");
+  check("[2b] والموجبُ كما كان: ١٫٢٥ + ٠٫٥ = ١٫٧٥", (await state()) === "1.75/0/true", await state());
+  // الدور (0171: auth_role() مديرٌ أو طبيب) قبل البحث — والبوّابةُ قبله للمصوّر. بشكل persistRaw (`rawRole`).
+  world(-2, 5);
+  mem.set("vp_session", JSON.stringify({ raw: { id: "r", full_name: "استقبال", rawRole: "reception" } }));
+  let refused = "";
+  try { await repo.poolProduct("pn", "sn"); } catch (e) { refused = e.message; }
+  check("[2b] الاستقبالُ لا يطوي: forbidden: inventory role required (كان التجريبيُّ يطوي لأيّ دور)", refused === "forbidden: inventory role required", refused);
+  check("[2b]   ولا شيءَ تحرّك برفضه", (await state()) === "5/-2/false", await state());
+  mem.set("vp_session", JSON.stringify({ raw: { id: "v", full_name: "طبيب", rawRole: "doctor" } }));
+  await repo.poolProduct("pn", "sn");
+  check("[2b]   والطبيبُ يطوي", (await state()) === "3/0/true", await state());
+  mem.delete("vp_session");
+}
+
 /* يومٌ ثابت لفحوص الوجبات والدفعات. منطقُها يُحكم باليوم (localISO): المنتهيةُ لا تصير تاريخَ
  * المادة، والبيعُ يأخذ من الصالحة أوّلاً — وتواريخُها هنا مكتوبةٌ ثابتة يوم ٢٦/٩. فمرّ «٢٠٢٦-١٠-٢٠»
  * يوم ٢١/١٠ وصار منتهياً: فحصُ الفصل احمرّ بلا تغييرٍ بالشِفرة، و`npm run build` (بناءُ Vercel)
@@ -1218,7 +1287,9 @@ console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
   ls = await lotsOf("la");
   check("البيعُ من الأقرب انتهاءً (الافتتاحيةُ تخلص والشراءُ ١٨)", ls.length === 1 && ls[0].source === "purchase" && ls[0].qty === 18, JSON.stringify(ls.map((l) => l.qty)));
   check("  وتاريخُ المادة صار تاريخَ الباقية", (await repo.listProducts()).find((p) => p.id === "la")?.expiry_date === "2027-04-14");
-  mem.set("vp_session", JSON.stringify({ raw: { id: "u", full_name: "مدير", role: "admin" } }));
+  // الجلسةُ بمفتاح AuthContext.persistRaw (`rawRole`) — `role` الذي كان هنا لا يكتبه التطبيق، فكان الحارسُ ميّتاً
+  // ويمرّ الفحص (demo-role-test يفحص الحارسَين بالأدوار كلّها).
+  mem.set("vp_session", JSON.stringify({ raw: { id: "u", full_name: "مدير", rawRole: "admin" } }));
   await repo.addLot("la", 5, "2026-12-01", "وصلت من المندوب");
   ls = await lotsOf("la");
   check("إضافةُ دفعةٍ باليد تزيد الرصيد، والمادةُ تأخذ الأقرب", ls.length === 2 && (await repo.listProducts()).find((p) => p.id === "la")?.stock === 23 && (await repo.listProducts()).find((p) => p.id === "la")?.expiry_date === "2026-12-01");
@@ -1230,7 +1301,7 @@ console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
   await repo.editLot(ls[1].id, "2026-10-20", 3);
   ls = await lotsOf("la");
   check("فصلُ ٣ بتاريخٍ أقرب لا يغيّر الرصيد، والمادةُ تأخذه", ls.map((l) => l.qty).join() === "3,4,15" && (await repo.listProducts()).find((p) => p.id === "la")?.expiry_date === "2026-10-20");
-  mem.set("vp_session", JSON.stringify({ raw: { id: "r", full_name: "استقبال", role: "reception" } }));
+  mem.set("vp_session", JSON.stringify({ raw: { id: "r", full_name: "استقبال", rawRole: "reception" } }));
   let refused = "";
   try { await repo.addLot("la", 1, null); } catch (e) { refused = e.message; }
   check("  والاستقبالُ لا يضيف دفعات", refused === "lot_forbidden");
@@ -1252,7 +1323,7 @@ console.log("▸ 0217 — الدفعات (مرآةُ الحزمة)");
   await repo.listProductLots("lx");
   check("  وتاريخُ المادة = الأقربُ الصالح لا المنتهي الباقي", (await repo.listProducts()).find((p) => p.id === "lx")?.expiry_date === "2027-03-01");
   const dated = (await repo.listProductLots("lx")).find((l) => l.company_name === "مؤرّخة");
-  mem.set("vp_session", JSON.stringify({ raw: { id: "u", full_name: "مدير", role: "admin" } }));
+  mem.set("vp_session", JSON.stringify({ raw: { id: "u", full_name: "مدير", rawRole: "admin" } }));
   await repo.editLot(dated.id, "2027-05-01");
   const pur = JSON.parse(mem.get(DB_KEY)).purchases.find((x) => x.company_name === "مؤرّخة");
   await repo.updatePurchase(pur.id, [{ product_id: "lx", name: "منتهٍ وجديد", qty: 6, purchase_price: 1, sell_price: 0, expiry_date: "2027-03-01" }], { company_name: "مؤرّخة" });
@@ -1284,7 +1355,8 @@ console.log("▸ 0216 — الجردُ بموافقة وسحبُ المخزن (�
     P("np", "بلا سعر", null, { stock: 3, purchase_price: 0 }), P("pl", "مجمّع", null, { stock: 0, pooled: true }),
   ]);
   mem.delete("vp_demo_counts"); mem.delete("vp_demo_expenses");
-  const as = (role) => mem.set("vp_session", JSON.stringify({ raw: { id: "u-" + role, full_name: "موظف " + role, role } }));
+  // بمفتاح persistRaw (`rawRole`) كالتطبيق — انظر 0217 فوق.
+  const as = (role) => mem.set("vp_session", JSON.stringify({ raw: { id: "u-" + role, full_name: "موظف " + role, rawRole: role } }));
   const stockOf = (id) => JSON.parse(mem.get(DB_KEY)).products.find((p) => p.id === id).stock;
   const code = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.message; } };
   as("reception");
@@ -2142,6 +2214,50 @@ console.log("\n▸ inventoryAudit — مرآةُ report_inventory_audit (0245) �
   let rangeErr = "";
   try { await repo.inventoryAudit(6); } catch (e) { rangeErr = String(e.message); }
   check("ومدّةٌ أقصرُ من ٧ أيام تُرفض كما بالقاعدة", rangeErr.includes("bad range"), rangeErr);
+}
+
+/* ---- قطعةُ repoDemo تبقى «واجهةً» لوحدتها، فـimport() بحزمة الإقلاع بلا `.then(e=>e.r)` -----------------------
+ * Rollup يطوي demoRole.ts داخل قطعة repoDemo (كلُّ طريقٍ إليها يمرّ من repoDemo — demo-role-test)، وdemoCounts وdemoLots
+ * وdemoConsumption قطعٌ كسولة تستوردها من تلك القطعة. فإن طلبت قطعةٌ أخرى منها اسماً ليس من صادرات repoDemo.ts فقدت
+ * القطعةُ واجهتَها: يُبنى لها كائنُ مساحة أسماء، ويصير نداءُ repo.ts (repo-*.js بحزمة الإقلاع)
+ * `import("./repoDemo-….js").then(e=>e.r)`. مقيسٌ ببناء vite (٣١/١٠): +١٣ بايتاً خاماً و+٦ مضغوطة بـmain، وتزول كلُّها
+ * حين يعيد repoDemo.ts تصديرَ ما يُستورد من demoRole. الفحصُ بالنصّ لأن تقسيمَ Rollup لا يجري إلا ببناء vite؛ والقياسُ
+ * نفسُه: `vite build` ثم ابحث بـrepo-*.js عن `.then(` بعد import("./repoDemo-…"). */
+console.log("▸ قطعةُ repoDemo واجهةٌ لوحدتها: ما تستورده المرايا من demoRole تعيد repoDemo.ts تصديرَه");
+{
+  const { readdirSync } = await import("node:fs");
+  const wanted = new Map();   // الاسمُ ⇒ مستوردوه
+  for (const f of readdirSync("src/lib").filter((x) => /\.ts$/.test(x) && x !== "repoDemo.ts" && x !== "demoRole.ts")) {
+    for (const m of readFileSync(`src/lib/${f}`, "utf8").matchAll(/^\s*import\s*\{([^}]*)\}\s*from\s*["'](?:\.\/|@\/lib\/)demoRole["']/gm)) {
+      for (const part of m[1].split(",").map((x) => x.trim()).filter((x) => x && !/^type\s/.test(x))) {
+        const name = part.split(/\s+as\s+/)[0].trim();
+        wanted.set(name, [...(wanted.get(name) ?? []), f]);
+      }
+    }
+  }
+  const reexported = new Set([...readFileSync("src/lib/repoDemo.ts", "utf8").matchAll(/^\s*export\s*\{([^}]*)\}\s*from\s*["']\.\/demoRole["']/gm)]
+    .flatMap((m) => m[1].split(",").map((x) => x.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean)));
+  const importers = [...new Set([...wanted.values()].flat())].sort();
+  check(`  والمستوردون يُرَون: ${importers.join("، ")}`, ["demoCounts.ts", "demoLots.ts", "demoConsumption.ts"].every((f) => importers.includes(f)), importers.join("، ") || "ولا أحد");
+  const missing = [...wanted.keys()].filter((n) => !reexported.has(n)).sort();
+  check(`  و${wanted.size} أسماء (${[...wanted.keys()].sort().join("، ")}) يعيد repoDemo.ts تصديرَها من ./demoRole`, wanted.size > 0 && missing.length === 0,
+    `ناقص: ${missing.join("، ")} (${missing.map((n) => wanted.get(n).join("+")).join("؛ ")}) — أضفه إلى export { … } from "./demoRole" بـrepoDemo.ts`);
+}
+
+/* ---- شكلُ الاستيراد بين المرايا الكسولة (0254/0255) ---------------------------------------------------------------
+ * repoDemo.ts بحزمة الإقلاع طريقُه import() وحده: لا يستورد ثابتاً consumption.ts ولا avgCost.ts ولا demoConsumption.ts ولا
+ * demoCounts.ts (الثابتُ يُدخل قطعتَها قائمةَ تحميل repoDemo بالإقلاع، أو يطويها داخل قطعته). وdemoCounts لا تستورد
+ * demoConsumption بأيّ طريق: مرحِّلُ سند التلف (stockPostLocal، 'external') يُمرَّر إليها من الطالب — فلا دائرةَ بين القطعتين.
+ * مقيسٌ ببناء vite المثبَّت لشجرتين لا يفرقهما إلا ملفّاتُ المرآة (٣١/١٠): main بالعدّ المحايد للبصمات ٣٥٤٬٣٠٣ بالحالتين،
+ * وrepo-*.js ٩٢٬٢٨٨ خاماً بلا `.then(e=>e.r)`، وقائمةُ تحميل repoDemo ٢٣ اسماً. */
+console.log("▸ شكلُ الاستيراد بين المرايا الكسولة: repoDemo بلا ثابتٍ للمستهلكات والجرد، وdemoCounts بلا demoConsumption");
+{
+  const code = (f) => readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+  const rd = code("src/lib/repoDemo.ts"), dc = code("src/lib/demoCounts.ts");
+  const staticFrom = (s, m) => new RegExp(`^\\s*(?:import|export)\\s+(?!type\\b)[^;]*?from\\s*["']\\./${m}["']`, "m").test(s);
+  const bad = ["consumption", "avgCost", "demoConsumption", "demoCounts"].filter((m) => staticFrom(rd, m));
+  check("  repoDemo.ts لا يستورد ثابتاً consumption ولا avgCost ولا demoConsumption ولا demoCounts", bad.length === 0, bad.join("، "));
+  check("  وdemoCounts.ts لا تستورد demoConsumption (ثابتاً ولا import()) — المرحِّلُ يُمرَّر إليها", !/["']\.\/demoConsumption["']/.test(dc));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

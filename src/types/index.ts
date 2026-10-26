@@ -703,6 +703,9 @@ export interface Product {
   /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
   subcategory?: string | null;
   purchase_price: number;
+  /** 0255: moving-average cost of one stock unit (6 dp). Null = unknown → the cost is `purchase_price`.
+   *  Written by the server alone (purchases, merges, `product_cost_reset`); the product form never sends it. */
+  avg_cost?: number | null;
   sell_price: number;
   stock: number;
   /** Reorder level — stock at or below this triggers a low-stock warning. */
@@ -1071,6 +1074,17 @@ export interface InvoiceItem {
   pooled_qty?: number | null;
   /** Unit the customer bought, snapshotted for the receipt (e.g. "علبة" / "حبة"). */
   unit_label?: string | null;
+  /** 0252: the clinic service this line sold (soft; null for products and old devices). Its recipe is
+   *  what the line consumed, and an edit re-attaches the consumption through it. */
+  service_id?: string | null;
+}
+
+/** 0252: one material a service consumes per case — `qty` in `unit` ("stock" = the product's stock unit,
+ *  "sub" = its sub-unit, e.g. ml of a 500 ml bottle). Used by recipes and by a per-case override. */
+export interface ConsumableEntry {
+  product_id: string;
+  qty: number;
+  unit: "stock" | "sub";
 }
 
 /** A line in the POS cart before checkout. */
@@ -1091,6 +1105,15 @@ export interface CheckoutItem {
   stock_qty?: number;
   /** Sale unit label persisted for the receipt (e.g. "علبة" / "حبة"). */
   unit_label?: string | null;
+  /** 0252: the clinic service of a service line. The server plans the line from its recipe (or from
+   *  `consumables`), prices it at the materials' cost, and deducts them. Three cases, all told apart:
+   *  a uuid = that service; null = a line the device knows is not a catalog service (a medicine, a vaccine,
+   *  the delivery fee) — no recipe, no skip row; absent = an old device that never sends the key — the
+   *  server checks the line's name against the recipe services and records `old_device` on a match. */
+  service_id?: string | null;
+  /** 0252: this case's consumables instead of the recipe (vet or manager only). Absent/null = the recipe;
+   *  [] = nothing for this case. A list equal to the recipe is dropped by the server. */
+  consumables?: ConsumableEntry[] | null;
 }
 
 /** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */
@@ -1269,6 +1292,8 @@ export interface PurchaseEffectSnap {
   company_id?: string | null;
   section_id?: string | null;
   pooled?: boolean | null;
+  /** متوسّطُ الكلفة لحظتَها (0255) — لا يدخل changed: يتبدّل بكلّ شراءٍ كالرصيد. */
+  avg_cost?: number | null;
 }
 
 /** ما فعله سطرُ شراءٍ بالمخزن (0211 `purchase_effects`) — يكتبه الخادمُ لا المتصفّح. */
@@ -1289,6 +1314,8 @@ export interface PurchaseEffect {
   after: PurchaseEffectSnap | null;
   /** ما تبدّل عدا الرصيد. */
   changed: string[];
+  /** فرقُ الكلفة بالفلوس (0255): استلامٌ على رصيدٍ سالب بمتوسّطٍ معروف — فارغٌ حين لا يقع. */
+  cost_variance?: number | null;
   created_at: string;
 }
 
@@ -1513,8 +1540,9 @@ export interface ActivityRow {
 /** خطوةٌ بخطّ زمنِ رصيد مادّة (0207). الأرقامُ من التدقيق لا محسوبة. */
 export interface ProductMovement {
   at: string;
-  /** open = أوّلُ إدخال · purchase · purchase_edit · sale · return · adjust */
-  kind: "open" | "purchase" | "purchase_edit" | "sale" | "return" | "adjust";
+  /** open = أوّلُ إدخال · purchase · purchase_edit · sale · return · adjust
+   *  · consume / consume_return = مستهلكاتُ خدمةٍ صُرفت أو رجعت (0252؛ ref_id = الفاتورة) */
+  kind: "open" | "purchase" | "purchase_edit" | "sale" | "return" | "consume" | "consume_return" | "adjust";
   from_qty: number | null;
   to_qty: number | null;
   delta: number;
@@ -1641,6 +1669,90 @@ export interface PriceChangeDetail { change: Omit<PriceChange, "spec">; spec: im
 /** السعرُ قبل الرفع لكلّ منتجٍ رُفع برفعٍ قائمٍ خلال ١٢٠ يوماً — لمرتجع الكاشير. */
 export type PricePriorMap = Record<string, { o: number; at: string; w: number }>;
 
+/* 0252 demo mirror (src/lib/demoConsumption.ts). Exact amounts are scaled integers kept as BigInt decimal
+ * text, never floats: suffix _n = ×10⁹ (stock units), _m = ×10³ (qty/stock), _u = ×10⁶ (unit cost),
+ * _c = ×10² (money). E.g. qty_n "-500000" = −0.0005 of a stock unit. */
+/** clinic_service_recipe_items — what ONE unit of a service consumes. */
+export interface DemoRecipeRow {
+  id: string;
+  service_id: string;
+  product_id: string;
+  product_name: string;
+  qty_m: string;
+  unit: "stock" | "sub";
+  position: number;
+  updated_at: string;
+  updated_by: string | null;
+  /** The clinic key (getActiveClinicId) the row was saved under. Services are kept per clinic key while DemoDB is not, so
+   *  only rows of the active key are pruned when their service is gone (the demo's mirror of `on delete cascade`). */
+  clinic?: string;
+}
+/** invoice_consumption — one append-only use/restore event of one spec (frozen values repeated on each). */
+export interface DemoConsumptionEvent {
+  id: string;
+  invoice_id: string;
+  item_id: string;
+  spec_id: string;
+  from_item: string | null;
+  service_id: string | null;
+  product_id: string;
+  product_name: string;
+  unit: "stock" | "sub";
+  unit_label: string | null;
+  per_qty_m: string;
+  per_div_m: string;
+  unit_cost_u: string;
+  per_value_c: string;
+  line_qty_m: string;
+  qty_n: string;
+  posted_m: string;
+  value_c: string;
+  shortfall_m: string;
+  kind: "use" | "restore";
+  note: "in_trash" | "product_gone" | null;
+  source: "recipe" | "override" | "relink";
+  created_at: string;
+  /** µs since 1970 of the operation that wrote the event — every event of one operation shares it (its "batch", the
+   *  server's `created_at = now()` of the transaction), and two operations never do. Absent on rows written before
+   *  round 2: read as created_at × 1000. */
+  at_us?: number;
+  created_by: string | null;
+}
+/** invoice_consumption_skips — what a sold line did not consume, and why (never moved by any sync). */
+export interface DemoConsumptionSkip {
+  id: string;
+  invoice_id: string;
+  item_id: string;
+  service_id: string | null;
+  line_name: string;
+  product_id: string | null;
+  product_name: string | null;
+  qty_m: string | null;
+  unit: "stock" | "sub" | null;
+  line_qty_m: string;
+  note: "in_trash" | "product_gone" | "pooled" | "farm_stock" | "no_sub_unit" | "service_missing" | "old_device" | "override_none";
+  source: "recipe" | "override" | "relink" | "none";
+  created_at: string;
+  /** Who wrote the skip (0252 round 2: invoice_consumption_skips.created_by): the seller or editor — for override_none the
+   *  person who zeroed the case, named by report_consumables. A relink copy keeps its original's. Absent on rows written
+   *  before round 2b (read as null). */
+  created_by?: string | null;
+}
+/** product_stock_carry — the exact residue between the 9-dp ledger and the 3-dp stock, per product. */
+export interface DemoStockCarry { carry_n: string; ext_in_n: string; ext_out_m: string; updated_at: string }
+/** rpc_refs (0136) — the first result of a call made with a device `client_ref`; a retry returns it unchanged. */
+export interface DemoRpcRef { fn: string; client_ref: string; result: unknown; created_at: string }
+/** A stock_counts row as the demo stores it (vp_demo_counts): the shared row plus the waste voucher's source columns
+ *  (0254 + the round-2 contract) — the invoice the line was filled from and every ledger batch (at_us) it came from. */
+export interface DemoStockCount extends StockCount {
+  source_invoice?: string | null;
+  source_batches?: number[] | null;
+  /** The product a sourced line was filed for (0254 round 2: stock_counts.source_product) — set exactly when source_invoice
+   *  is, repointed by merges like the ledger, and read back as `product_id ?? source_product`, so a delete → restore (which
+   *  empties product_id) still names it. */
+  source_product?: string | null;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -1700,6 +1812,15 @@ export interface DemoDB {
   photoHistory?: Record<string, ProductImageFile[]>;
   journeys?: Journey[];
   journeyEvents?: JourneyEvent[];
+  /** 0252 service consumables (demoConsumption.ts): recipes, the ledger, its skips, and the per-product carry. */
+  serviceRecipes?: DemoRecipeRow[];
+  consumption?: DemoConsumptionEvent[];
+  consumptionSkips?: DemoConsumptionSkip[];
+  stockCarry?: Record<string, DemoStockCarry>;
+  /** The last µs handed to an operation (the ledger's batch clock) — every new batch is strictly above it. */
+  clockUs?: number;
+  /** rpc_refs (0136) mirror, keyed `${fn}\u0000${client_ref}` — stock_waste_submit's replay (0254). */
+  rpcRefs?: Record<string, DemoRpcRef>;
 }
 
 /* ----------------------------- رحلة الحيوان بالعيادة ----------------------------- */
@@ -2328,11 +2449,21 @@ export interface StockCount {
   decided_by: string | null;
   decided_by_name: string | null;
   decided_at: string | null;
-  /** ما طُبّق على الرصيد فعلاً (الفرقُ، مقصوصاً عند الصفر). */
+  /** ما طُبّق على الرصيد فعلاً: الفرقُ كلُّه ولو نزل تحت الصفر (0254 — كان مقصوصاً عند الصفر)، والسندُ −d بالضبط. */
   applied_delta: number | null;
   expense_id: string | null;
   /** عدُّ كلّ دفعة (0217)، أو null لعدّ المادة كلّها. */
   lot_counts?: { lot_id: string; expiry_date: string | null; system: number; counted: number }[] | null;
+  /** 0254: «count» جرد، «waste» سندُ تلف — فرقٌ لا عدّ: system_qty = المقدارُ التالف d بوحدة المخزون، counted_qty = 0.
+   *  غائبٌ (قبل 0254 أو نسخةٌ قديمة) = جرد. */
+  source?: "count" | "waste";
+  /** سندُ التلف: الكميةُ كما كُتبت بوحدتها (entered_unit). */
+  entered_qty?: number | null;
+  entered_unit?: "stock" | "sub" | null;
+  /** لقطةُ اسم الوحدة الصغيرة لحظةَ التسجيل (null للعلبة). */
+  unit_label?: string | null;
+  /** ما كتبته الموافقةُ بالرصيد عبر المرحَّل (٣ منازل) — المقدارُ الدقيق −applied_delta. */
+  posted?: number | null;
 }
 /** `lots`: عدٌّ بالدفعة (0217) — والمادةُ = مجموعُها + ما لم يُعدّ من دفعاتها. */
 export interface CountLineInput { product_id: string; counted: number; reason?: CountReason | null; note?: string | null; lots?: { lot_id: string; counted: number }[] }

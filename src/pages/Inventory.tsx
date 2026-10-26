@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ProductMovementsDialog } from "@/components/inventory/ProductMovements";
+import { ProductMovementsDialog, AvgCostSlot } from "@/components/inventory/ProductMovements";
 import { ProductLotsDialog } from "@/components/inventory/ProductLots";
 import { ExpiryPicker } from "@/components/ExpiryPicker";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ import { PRICES_EVENT, priceGen, noteListGen, listGenOf } from "@/lib/priceSync"
 import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
 import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
+import { stockCostPatch, updateAsSeen, type CasExpect } from "@/lib/productPatch";
 import { Dialog } from "@/components/ui/Dialog";
 import { History,
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -674,10 +675,16 @@ function Kpi({ icon: Icon, tone, label, value, sub, onClick, active }: { icon: t
  *  of each section's pooled (legacy) units valued at the average price of that
  *  section's barcodes (prices within a section are typically close). */
 function computeInventoryValue(products: Product[], sections: CompanySection[]) {
+  /* كلفةُ وحدة المخزون كما يكلّف بها الخادم (stock_unit_cost، 0255): المتوسّطُ المتحرّك إن عُرف وإلا سعرُ الشراء،
+   * بلا سالب — وهي ما ينزل كلفةً حين تُباع أو تُستهلك. وسعرُ البيع يبقى سعرَ البيع. (هنا لا من consumption.ts:
+   * المسارُ لا يستورد وحدةً جديدة ثابتاً، والدالّةُ تُقيَّم بنصّها وحدَه بـinventory-cas-test.) */
+  const unitCost = (p: Product) => Math.max(Number(p.avg_cost ?? p.purchase_price ?? 0) || 0, 0);
   let trackedCost = 0, trackedRetail = 0;
   for (const p of products) {
-    trackedCost += (p.stock || 0) * (p.purchase_price || 0);
-    trackedRetail += (p.stock || 0) * (p.sell_price || 0);
+    // الرصيدُ السالب عجزٌ مسجَّل لا بضاعةٌ بالرفّ (§7.1): القيمةُ تعدّ الموجودَ وحده — سالبٌ مضروبٌ بالسعر كان يُنقص رأسَ المال.
+    const onHand = Math.max(0, p.stock || 0);
+    trackedCost += onHand * unitCost(p);
+    trackedRetail += onHand * (p.sell_price || 0);
   }
   let pooledCost = 0, pooledRetail = 0;
   for (const sec of sections) {
@@ -685,7 +692,8 @@ function computeInventoryValue(products: Product[], sections: CompanySection[]) 
     if (pool <= 0) continue;
     const inSec = products.filter((p) => p.section_id === sec.id);
     if (!inSec.length) continue;
-    const avgBuy = inSec.reduce((s, p) => s + (p.purchase_price || 0), 0) / inSec.length;
+    // والحوضُ تقديرٌ بمتوسّط كلفة باركودات صنفه — بالكلفة نفسِها، فلا يُقاس رأسُ المال بأساسين.
+    const avgBuy = inSec.reduce((s, p) => s + unitCost(p), 0) / inSec.length;
     const avgSell = inSec.reduce((s, p) => s + (p.sell_price || 0), 0) / inSec.length;
     pooledCost += pool * avgBuy;
     pooledRetail += pool * avgSell;
@@ -839,7 +847,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
       {p.pooled ? (
         <Badge tone="brand"><Layers size={12} /> {t("pos.pooledItem", "مجمّع")}</Badge>
       ) : (
-        <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
+        <Badge tone={p.stock <= 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
           {byWeight
             ? t("pos.qtyStockKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" })
             : t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
@@ -1087,6 +1095,33 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
 
 /** رفضُ المقارنة ثمّ التبديل على السعر (0226) — يحتاج قراءةً جديدة لا إعادةَ نفس الطلب. */
 const isPriceMoved = (e: unknown) => (e as { code?: string } | null)?.code === "price_moved";
+/** وما رآه النموذج صار قديماً — سعرٌ تحرّك، أو رصيدٌ وحده (`updateAsSeen` يقولها no_row_updated):
+ *  القائمةُ تُقرأ من جديد، وإلا فإعادةُ الفتح تحمل البائتَ نفسَه ويُرفض الحفظُ مرّةً بعد مرّة. */
+const isSeenStale = (e: unknown) => isPriceMoved(e) || (e as { code?: string } | null)?.code === "no_row_updated";
+/** كتابةُ المنتج بشرط ما رآه النموذج (productPatch.ts): الخادمُ يقول price_moved لأيّ مفتاحٍ تحرّك،
+ *  والصفُّ يُقرأ ثانيةً ليُقال ما تحرّك فعلاً — بيعةٌ والنموذجُ مفتوح تحرّك الرصيدَ لا السعر. */
+const productIO = {
+  update: (id: string, patch: Partial<Product>, expect: CasExpect) => repo.updateProduct(id, patch, expect),
+  reread: (id: string) => repo.getProductById(id),
+};
+
+/** علمُ «مجمّع» بكتابة منتجٍ قائم (ui3) — قاعدةٌ واحدة للنموذج المفرد ولتعديل المجموعة: يُرسَل كالرصيد، حين يغيّره المستخدم وحده.
+ *  `patch` حمولةُ stockCostPatch (فيها `pooled` النموذج دائماً، و`stock` إن كتب المستخدمُ رصيداً)، و`toggled` أن مفتاحَ التجميع
+ *  غيرُ ما فُتح عليه النموذج أو أن الكتابةَ تترك المادّةَ بلا صنف («مجمّع» يعني حوضَ صنفها، فبلا صنفٍ تُكتب «معدودة»)،
+ *  و`wasPooled` علمُ الصفّ كما تعرفه القائمة (undefined: صفٌّ غاب عنها).
+ *  - قُلب إلى «مجمّع» والصفُّ غيرُ مجمَّع ⇒ `fold`: الكتابةُ بلا رصيدٍ ولا علم، ثمّ pool_product تنقل رصيدَ الصفّ كلَّه ولو سالباً
+ *    (0253). فلا `pooled: true` بكتابةٍ مباشرةٍ أبداً: تلك تترك رصيدَ الصفّ تحت شارة «مجمّع» لا يُعدّ ولا يُرى.
+ *  - قُلب إلى «معدود»، أو كُتب رصيدُ الصفّ (الحقلُ لا يظهر إلا والمفتاحُ مطفأ) ⇒ `pooled: false` معها: المادّةُ صارت معدودة.
+ *  - غيرُ ذلك ⇒ بلا علم. علمُ لحظة الفتح كان يُرسل بكلّ حفظ: شراءٌ من جهازٍ آخر يجعل المادّةَ معدودةً بكميتها (0255)، فتعديلُ
+ *    اسمٍ بنموذجٍ فُتح قبله يرجعها مجمَّعةً وكميتُها مخفيّة؛ وبالمجموعة يأخذ كلُّ عضوٍ علمَ العضو الذي فُتحت منه — فعضوٌ اشتُري
+ *    كان يُطوى بتعديل اسمٍ ويذهب عدُّه لحوض القسم (مقيس: ١٠ ⇒ ٠ والحوضُ ٥ ⇒ ١٥). */
+function poolingPatch(patch: Partial<Product>, toggled: boolean, wasPooled: boolean | null | undefined): { patch: Partial<Product>; fold: boolean } {
+  const { stock: _s, pooled, ...folded } = patch;
+  if (toggled && pooled && !wasPooled) return { patch: folded, fold: true };
+  if (!pooled && (toggled || patch.stock !== undefined)) return { patch, fold: false };
+  const { pooled: _p, ...kept } = patch;
+  return { patch: kept, fold: false };
+}
 
 function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved, onChanged, onOpenExisting }: {
   open: boolean; product: Product | null; companies: Company[]; sections: CompanySection[]; clinicId?: string; subcategories: string[];
@@ -1100,7 +1135,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const { stockLocked: locked } = useOverride();
+  const { stockLocked: locked, restricted } = useOverride();
+  const { can } = usePermissions();
   const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "", sold_by_weight: false };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
@@ -1128,7 +1164,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
   // each row differing only in barcode, name, count and expiry. Surfaced on wide
   // screens (iPad/desktop); phone keeps the classic one-product layout.
-  type BulkRow = { barcode: string; name: string; stock: string; expiry_date: string; productId?: string };
+  type BulkRow = { barcode: string; name: string; stock: string; expiry_date: string; productId?: string;
+    stockWas?: number }; // رصيدُ العضو لحظةَ فتح المجموعة: ما يُقاس به التعديل وما يُشترط عليه الحفظ
   const blankRow: BulkRow = { barcode: "", name: "", stock: "", expiry_date: "" };
   const [bulk, setBulk] = useState(false);
   const [rows, setRows] = useState<BulkRow[]>([{ ...blankRow }]);
@@ -1371,11 +1408,6 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
         sold_by_weight: byWeight,
       };
-      /* طيُّ رصيدٍ متتبَّع إلى الحوض: نداءٌ **واحدٌ ذرّيّ** (0171). كان يُكتب
-       * على مرحلتين — الحوضُ أوّلاً ثم المنتج — و`rollbackGrouping` لا تُنقص
-       * الحوض، فنجاحُ الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين. والحوضُ كان
-       * يُقرأ من `props` بائتة فيدوس تعديلَ جهازٍ آخر. */
-      const foldingToPool = !!product && pooled && !product.pooled && (product.stock || 0) > 0 && !!section_id;
       if (product) {
         /* الرمزُ القديم ينزل `alt_codes` **بنفس النداء** (ح٢): ملصقاتُ رقم
          * الرفّ المطبوعةُ تبقى تعمل بعد أن يُكتب باركودُ المصنع مكانَه. */
@@ -1395,14 +1427,36 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         const priced = sellChanged ? dated : noSell;
         const { sub_unit_price: _su, ...noSub } = priced;
         const sent = subChanged ? priced : noSub;
-        const expect: Partial<Record<"sell_price" | "sub_unit_price", number | null>> = {};
+        const expect: CasExpect = {};
         if (sellChanged) expect.sell_price = product.sell_price;
         // إطفاءُ المفرد (null) لا يكتب سعراً فوق شيء — لا شرطَ عليه، وإلا رُفض حفظُ الاسم لأن
         // المفردَ رُفع بعد فتح النموذج.
         if (subChanged && payload.sub_unit_price != null) expect.sub_unit_price = product.sub_unit_price ?? null;
-        const { stock: _s, pooled: _p, ...rest } = sent;
-        await repo.updateProduct(product.id, foldingToPool ? rest : sent, expect);
-        if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
+        /* والرصيدُ وسعرُ الشراء كالسعر (§7.1، ثغرة M7): كانا يُرسلان بكلّ حفظ — فتعديلُ اسمٍ بنموذجٍ فُتح قبل
+         * بيعةٍ يُرجع رصيدَ الفتح (بضاعةٌ وهمية)، وقبل شراءٍ يُرجع الكلفةَ القديمة فوق الجديدة، وحارسُ «≥ ٠» يكتب
+         * الرصيدَ السالبَ صفراً بلا أن يلمسه أحد. الآن لا يُرسل أيٌّ منهما إلا إن غيّره المستخدم، وبشرط ما فُتح
+         * عليه النموذج. والمجمَّعُ رصيدُه ليس بيد النموذج (الحقلُ مخفيّ)، والطيُّ إلى الحوض بدالّته كما كان. */
+        const cas = stockCostPatch(sent, {
+          stockTyped: pooled ? null : Number(f.stock) || 0,
+          stockWas: product.stock,
+          costShown: product.purchase_price,
+          costWas: product.purchase_price,
+        }, expect);
+        /* طيُّ رصيدٍ متتبَّع إلى الحوض: نداءٌ **واحدٌ ذرّيّ** (0171). كان يُكتب
+         * على مرحلتين — الحوضُ أوّلاً ثم المنتج — و`rollbackGrouping` لا تُنقص
+         * الحوض، فنجاحُ الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين. والحوضُ كان
+         * يُقرأ من `props` بائتة فيدوس تعديلَ جهازٍ آخر.
+         * وبأيّ رصيد (ui3): منذ 0253 تنقل الدالّةُ رصيدَ الصفّ كلَّه ولو سالباً، والصفرُ لا ينقل شيئاً. شرطُ «رصيدٌ موجب»
+         * كان يقلب `pooled` بكتابةٍ مباشرة حين يُفتح النموذجُ والرصيدُ ≤ ٠ — مادّةٌ عند −٢ على حوضٍ ٥ تبقى −٢ على صفٍّ
+         * مجمَّعٍ لا يُعرض، والحوضُ ٥ لا ٣: وحدتان تُباعان من الحوض ولا وجودَ لهما (مقيسٌ على 0253 بدور المدير).
+         * والعلمُ نفسُه لا يُكتب إلا إن قلبه المستخدم أو عدّ المادّة (poolingPatch): نموذجٌ فُتح قبل شراءٍ من جهازٍ آخر كان
+         * يرجع المادّةَ المعدودةَ مجمَّعةً بتعديل اسم. والكتابةُ أوّلاً: فشلُ الطيّ بعدها يُقال، وإعادةُ الضغط تطويها — وما أُنشئ
+         * بهذا الحفظ (صنف/شركة) صار تحت المنتج فلا يُتراجع عنه: التراجعُ لكتابةٍ فشلت وحدها. كان فشلُ الطيّ يحذف الصنفَ الجديد
+         * فتخرج المادّةُ من صنفها القديم والجديد معاً (section_id ⇒ null، مقيسٌ على المرآة)، وإعادةُ الضغط تُنشئه ثانيةً. */
+        const pooling = poolingPatch(cas.patch, pooled !== !!product.pooled || section_id == null, product.pooled);
+        await updateAsSeen(productIO, product.id, pooling.patch, cas.expect);
+        createdCompany = null; createdSection = null;
+        if (pooling.fold) await repo.poolProduct(product.id, section_id as string);
         if (keep) {
           toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
         }
@@ -1439,8 +1493,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       await rollbackGrouping(createdCompany, createdSection);
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
-      // السعرُ تحرّك: القائمةُ تُقرأ من جديد — وإلا فإعادةُ الفتح تحمل نفسَ السعر البائت ويُرفض للأبد.
-      if (isPriceMoved(e)) onChanged?.();
+      // السعرُ (أو الرصيدُ) تحرّك: القائمةُ تُقرأ من جديد — وإلا فإعادةُ الفتح تحمل نفسَ البائت ويُرفض للأبد.
+      if (isSeenStale(e)) onChanged?.();
     } finally {
       setBusy(false);
     }
@@ -1533,6 +1587,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       createdSection = g.createdSection;
       const { company_id, section_id } = g;
       const pooled = f.pooled && section_id != null;
+      /* المفتاحُ المشترك يُملأ من العضو الذي فُتحت منه المجموعة، فلا يُطبَّق على الأعضاء إلا إن قلبه المستخدم (poolingPatch):
+       * المجموعةُ المختلطة نتيجةُ شراءٍ عاديّة (الشراءُ يجعل العضوَ المشترى وحده معدوداً) وتبقى مختلطةً بحفظٍ لا يلمسه. وبلا
+       * صنفٍ مشترك يُفكّ كلُّ عضو: لا تجميعَ بلا صنف. */
+      const poolToggled = pooled !== !!product?.pooled || section_id == null;
       const shared = {
         company_id,
         section_id,
@@ -1567,6 +1625,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         }
       }
       let groupMoved = false;
+      /** كُتب عضوٌ واحدٌ على الأقلّ: ما أُنشئ بهذا الحفظ (صنف/شركة) صار تحته، فلا يُتراجع عنه ولو فشل طيُّ كلّ الأعضاء. */
+      let wrote = false;
       // Create sequentially; collect failures instead of stopping so one bad row
       // never blocks the rest of the batch.
       const failedIdx: number[] = [];
@@ -1600,10 +1660,27 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             // وسعرُ المجموعة كذلك (0226): غيرُ المعدَّل لا يُرسل، والمعدَّلُ بالمقارنة على ما رآه.
             const { sell_price: _gs, ...rowNoSell } = rowDated;
             const rowSent = groupSellChanged ? rowDated : rowNoSell;
+            /* والرصيدُ وسعرُ الشراء بنفس القاعدة سطراً سطراً (§7.1). الرصيدُ يُقاس بما فُتح عليه **السطر** (`stockWas`)
+             * لا بالقائمة الحيّة: القائمةُ تُقرأ من جديد والنافذةُ مفتوحة (رفعُ أسعارٍ، أو رفضُ سعرٍ قبلها)، فسطرٌ بائتٌ
+             * يُقاس بالحيّ يبدو «معدَّلاً» ويكتب رصيدَ الفتح فوق ما بِيع بعده — والشرطُ يمرّ لأنه على الحيّ نفسِه.
+             * والكلفةُ حقلُ المجموعة: تُرسل إن غيّرها المستخدم عمّا فُتح عليه (`product`)، بشرط كلفة العضو نفسِه —
+             * وإلا كتب حفظُ اسمٍ كلفةَ العضو المفتوح فوق عضوٍ اشتُري بسعرٍ آخر. والسطرُ الجديد يُنشأ كما كان. */
+            const cas = stockCostPatch(keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent, {
+              stockTyped: pooled ? null : Number(r.stock) || 0,
+              stockWas: r.stockWas ?? 0,
+              costShown: product?.purchase_price ?? null,
+              costWas: before?.purchase_price ?? null,
+            }, groupSellChanged && before ? { sell_price: before.sell_price } : {});
+            /* والتجميعُ بقاعدة النموذج المفرد (poolingPatch، ui3): عضوٌ يصير مجمَّعاً بقلب المفتاح يمرّ من pool_product — رصيدُه
+             * كلُّه للحوض ولو سالباً (0253) — بعد كتابته بلا رصيدٍ ولا علم. كانت `pooled: true` تُكتب لكلّ عضوٍ مباشرةً بأيّ رصيد،
+             * فيبقى رصيدُه على صفٍّ مجمَّعٍ لا تعرضه القائمةُ ولا بطاقةُ الصنف (شارة «مجمّع» وحدها). وعضوٌ لا تعرفه القائمةُ يُطوى
+             * كذلك (الدالّةُ تنقل ما بالصفّ أيّاً كان)؛ وبلا قلبٍ يبقى كلُّ عضوٍ على علمه. */
+            const pooling = poolingPatch(cas.patch, poolToggled, before?.pooled);
             try {
-              await repo.updateProduct(r.productId, keep ? { ...rowSent, alt_codes: keep.alt_codes } : rowSent,
-                groupSellChanged && before ? { sell_price: before.sell_price } : undefined);
+              await updateAsSeen(productIO, r.productId, pooling.patch, cas.expect);
             } catch (e) { if (isPriceMoved(e)) groupMoved = true; throw e; }
+            wrote = true;
+            if (pooling.fold) await repo.poolProduct(r.productId, section_id as string);
             if (keep) keptOld.push(keep.kept);
           }
           else if (groupMoved) throw Object.assign(new Error("price_moved"), { code: "price_moved" });
@@ -1642,7 +1719,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       } else {
         // Keep ONLY the failed rows so a retry re-sends just those.
         setRows([...rows.filter((_, i) => failedIdx.includes(i)), { ...blankRow }]);
-        if (done === 0) await rollbackGrouping(createdCompany, createdSection);
+        if (done === 0 && !wrote) await rollbackGrouping(createdCompany, createdSection);
         playWarning();
         /* الفشلُ الجزئيّ كان يُسقط **سببَ** الفشل: العنوانُ يقول «أُضيف ٣ وفشل
          * ٢» والوصفُ يعرض `e.message` اللاتينيّ الخام — بينما الفشلُ الكامل
@@ -1654,7 +1731,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             : describeDbError(lastErr, t),
           done > 0 ? describeDbError(lastErr, t) : (lastErr instanceof Error ? lastErr.message : undefined),
         );
-        if (isPriceMoved(lastErr)) onChanged?.();
+        if (isSeenStale(lastErr)) onChanged?.();
       }
     } catch (e) {
       await rollbackGrouping(createdCompany, createdSection);
@@ -1871,6 +1948,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
         <div className="space-y-3">
           {priceFields}
+          {/* متوسّطُ الكلفة (0255) بجانب سعر الشراء: لمادّةٍ قائمة ولمن يرى الكلفة — لا يُحمَّل لغيره. */}
+          {product && can("viewProfits") && !restricted && <AvgCostSlot product={product} onChanged={onChanged ?? onSaved} />}
           {profitStrip}
           {pooledToggle}
           <div className={cn("grid gap-3", pooledOn ? "grid-cols-1" : "grid-cols-2")}>
@@ -2120,7 +2199,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 const members = (allProducts ?? []).filter((p) => p.bulk_group === groupId)
                   .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
                 setRows([
-                  ...members.map((p) => ({ barcode: p.barcode ?? "", name: p.name, stock: String(p.stock ?? 0), expiry_date: p.expiry_date ?? "", productId: p.id })),
+                  ...members.map((p) => ({ barcode: p.barcode ?? "", name: p.name, stock: String(p.stock ?? 0), expiry_date: p.expiry_date ?? "", productId: p.id, stockWas: p.stock ?? 0 })),
                   { ...blankRow },
                 ]);
                 setRemovedIds([]);

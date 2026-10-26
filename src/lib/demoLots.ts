@@ -1,6 +1,14 @@
 import type { DemoDB, Product, ProductLot } from "@/types";
 import { loadDB, saveDB } from "./demoStore";
 import { localISO, uid } from "./utils";
+import { demoBaseRole, demoPinLive } from "./demoRole";
+import { fromScaled, roundScaled } from "./consumption";
+
+/** كميةُ دفعةٍ كما يحفظها عمودُها (product_lots.qty numeric) بالضبط — بعشرين منزلة لا بالعائم: ٠٫٠٥ + ٠٫٠٧ عائماً
+ *  ٠٫١٢٠٠٠٠٠٠٠٠٠٠٠٠٠٠١، فكان الحارسُ «يصحّح» فرقاً بـ١٠⁻¹⁷ ويكتب دفعةً ٠٫٠٤٩٩٩٩٩٩٩٩٩٩٩٩٩٩ — والجردُ بالدفعات بعده «زايدة»
+ *  عمّا يقول عنه الخادمُ «مطابقة» (قيسَ بالمراجعة العدائية، 2أ). وسندُ التلف وفاتورةُ الشراء يمرّان من هنا بعد كلّ ترحيل. */
+const lotQ = (x: number | string | null | undefined): bigint => roundScaled(Number(x) || 0, 20);
+const lotN = (v: bigint): number => fromScaled(v > 0n ? v : 0n, 20);
 
 /* ============================================================================
  * مرآةُ الدفعات (0217) للوضع التجريبي — تُحمَّل عند النداء لا مع الإقلاع.
@@ -46,26 +54,28 @@ function reconcile(db: DemoDB, lots: ProductLot[], p: Product, today: string, ex
   lots = lots.filter((l) => !(l.product_id === p.id && l.source === "purchase"
     && !items.some((it) => it.purchase_id === l.purchase_id && it.product_id === p.id)));
   const mine = lots.filter((l) => l.product_id === p.id);
-  const diff = Math.max(0, Number(p.stock) || 0) - mine.reduce((s, l) => s + l.qty, 0);
-  if (diff < 0) {
+  // greatest(stock, 0) بمنازل عموده الثلاث ناقصَ Σ الدفعات — بالضبط (lotQ).
+  const diff = roundScaled(Math.max(0, Number(p.stock) || 0), 3) * 10n ** 17n - mine.reduce((s, l) => s + lotQ(l.qty), 0n);
+  if (diff < 0n) {
     let need = -diff;
     const order = mine.filter((l) => l.qty > 0).sort((a, b) => {
       const ea = isExpired(a.expiry_date, today) ? 1 : 0, eb = isExpired(b.expiry_date, today) ? 1 : 0;
       return (expiredFirst ? eb - ea : ea - eb) || byExpiry(a, b);
     });
     for (const l of order) {
-      const take = Math.min(l.qty, need);
-      l.qty -= take; need -= take;
-      if (need <= 0) break;
+      const have = lotQ(l.qty);
+      const take = have < need ? have : need;
+      l.qty = lotN(have - take); need -= take;
+      if (need <= 0n) break;
     }
-  } else if (diff > 0) {
+  } else if (diff > 0n) {
     const head = mine.filter((l) => l.qty > 0 && !isExpired(l.expiry_date, today)).sort(byExpiry)[0];
-    if (head) head.qty += diff;
+    if (head) head.qty = lotN(lotQ(head.qty) + diff);
     else {
       const first = mine.length === 0;
       const exp = p.expiry_date ? String(p.expiry_date).slice(0, 10) : null;
       lots.push({
-        id: uid("lot"), product_id: p.id, qty: diff, received_qty: diff,
+        id: uid("lot"), product_id: p.id, qty: lotN(diff), received_qty: lotN(diff),
         expiry_date: first ? exp : (exp && exp >= today ? exp : null),
         received_at: first ? (p.created_at ?? new Date().toISOString()) : new Date().toISOString(),
         source: first ? "opening" : "adjust", purchase_id: null, company_name: null, note: null,
@@ -99,11 +109,11 @@ export function syncPurchase(purchaseId: string): void {
   const lots = loadLots();
   const pur = (db.purchases ?? []).find((x) => x.id === purchaseId);
   if (!pur) return;
-  const byProduct = new Map<string, { qty: number; exp: string | null }>();
+  const byProduct = new Map<string, { qty: bigint; exp: string | null }>();
   for (const it of db.purchaseItems ?? []) {
     if (it.purchase_id !== purchaseId || !it.product_id) continue;
-    const cur = byProduct.get(it.product_id) ?? { qty: 0, exp: null };
-    cur.qty += Number(it.qty) || 0;
+    const cur = byProduct.get(it.product_id) ?? { qty: 0n, exp: null };
+    cur.qty += lotQ(it.qty);
     const e = it.expiry_date ? String(it.expiry_date).slice(0, 10) : null;
     if (e && (!cur.exp || e > cur.exp)) cur.exp = e;
     byProduct.set(it.product_id, cur);
@@ -119,13 +129,13 @@ export function syncPurchase(purchaseId: string): void {
     const exp = v.exp ?? liveDates[liveDates.length - 1] ?? (ownDate && ownDate >= today ? ownDate : null);
     const lot = lots.find((l) => l.purchase_id === purchaseId && l.product_id === productId);
     if (lot) {
-      lot.qty = Math.max(0, lot.qty + (v.qty - lot.received_qty));
-      lot.received_qty = v.qty;
+      lot.qty = lotN(lotQ(lot.qty) + v.qty - lotQ(lot.received_qty));
+      lot.received_qty = lotN(v.qty);
       if (!lot.expiry_fixed) lot.expiry_date = exp ?? lot.expiry_date;
       lot.company_name = pur.company_name ?? null;
-    } else if (v.qty > 0) {
+    } else if (v.qty > 0n) {
       lots.push({
-        id: uid("lot"), product_id: productId, qty: v.qty, received_qty: v.qty, expiry_date: exp,
+        id: uid("lot"), product_id: productId, qty: lotN(v.qty), received_qty: lotN(v.qty), expiry_date: exp,
         received_at: pur.purchased_at ?? pur.created_at ?? new Date().toISOString(), source: "purchase",
         purchase_id: purchaseId, company_name: pur.company_name ?? null, note: null,
       });
@@ -153,11 +163,11 @@ function refuse(code: string): never {
   e.code = "P0001";
   throw e;
 }
+/** مرآةُ حارس lot_add/lot_edit: `auth_role()` مديرٌ أو طبيب — ومفتاحُ وضع المدير الحيّ يجعله مديراً كما
+ *  بالخادم. والاستقبالُ ودورٌ لا يُعرف: لا. (كان يقرأ `raw.role` الذي لا يُكتب، فما رُفض أحد.) */
 function canEditLots(): boolean {
-  try {
-    const s = JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { role?: string } } | null;
-    return s?.raw?.role !== "reception";
-  } catch { return true; }
+  const base = demoBaseRole();
+  return base === "manager" || base === "veterinarian" || demoPinLive();
 }
 
 export function addLot(productId: string, qty: number, expiry: string | null, note?: string | null): string {
@@ -205,7 +215,7 @@ export function applyLotCounts(productId: string, counts: { lot_id: string; syst
   const lots = loadLots();
   for (const c of counts) {
     const l = lots.find((x) => x.id === c.lot_id && x.product_id === productId);
-    if (l) l.qty = Math.max(0, l.qty + (c.counted - c.system));
+    if (l) l.qty = lotN(lotQ(l.qty) + lotQ(c.counted) - lotQ(c.system));   // greatest(qty + (counted − system), 0) بالضبط
   }
   saveLots(lots);
 }

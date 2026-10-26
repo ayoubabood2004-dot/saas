@@ -38,6 +38,10 @@ const loadForgiveSection = () => page(() => import("@/components/retail/ForgiveD
 const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ReturnSheet })), ["fgv"]);
 let ForgiveSectionLazy = loadForgiveSection();
 let ReturnSheetLazy = loadReturnSheet();
+/* وما رجع للمخزن من موادّ الخدمة بعد الترجيع والحذف (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ
+   بحارسٍ بمكانها، لفاتورةٍ فيها سطرُ خدمة وحدها، ولا ينتظرها الفعلُ نفسُه. */
+const loadConsNotice = () => page(() => import("@/components/retail/ConsumablesSheet").then((m) => ({ default: m.ConsumptionNotice })), ["rcp"]);
+let ConsNoticeLazy = loadConsNotice();
 
 type StatusFilter = "all" | "paid" | "refunded";
 
@@ -549,6 +553,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const [fixOpen, setFixOpen] = useState(false);
   // تأكيدُ الترجيع والحذف بالشاشة لا بنافذة المتصفّح (0241): ما يرجع للرفّ والدرج والدَّين مكتوبٌ قبل الضغطة.
   const [sheet, setSheet] = useState<"refund" | "delete" | null>(null);
+  // ترجيعٌ أو حذفٌ نجح على فاتورةٍ فيها خدمة (0252): ما رجع للمخزن من موادّها يبقى ظاهراً حتى تُغلق الفاتورة.
+  // ومعه لحظةُ الطلب (performance.now قبله — بها يُعرف أيُّ دفعةٍ بالدفتر دفعتُه) وهل ردّ مالاً للزبون.
+  const [reversed, setReversed] = useState<{ kind: "refund" | "delete"; sentAt: number; cashBack: boolean } | null>(null);
   // «أعد المحاولة» على قطعةٍ كسولة فشلت: قطعةٌ جديدة، ورسمٌ جديد يلتقطها.
   const [, setLazyTick] = useState(0);
   // اسم البائع (من كاش الكادر) — يظهر أعلى التفاصيل حتى يُعرف منو باعها.
@@ -566,6 +573,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const invoiceId = invoice?.id;
   useEffect(() => {
     setSheet(null); // تأكيدٌ مفتوحٌ لفاتورةٍ لا يُعرض فوق غيرها
+    setReversed(null); // ولا ما رجع من موادّ فاتورةٍ تحت غيرها
     if (!invoiceId) return;
     let alive = true;
     setLoading(true);
@@ -578,6 +586,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
     return () => { alive = false; };
   }, [invoiceId, itemsTick]);
   const itemsOk = !loading && !itemsFailed;
+  /* المستهلكات (0252): سطرُ خدمةٍ يحمل خدمتَه وحده يصرف موادّاً (المادّةُ سطرُها، والقديمُ بلا خدمة) — فلا قطعةَ
+     ولا طلبَ لغيره. وسطورٌ لم تصل لا يُحكم عليها «بلا خدمة»: الخادمُ يُسأل. */
+  const consumes = !itemsOk || items.some((it) => it.product_id == null && !!it.service_id);
 
   if (!invoice) return null;
   const refunded = (invoice.status ?? "paid") === "refunded";
@@ -607,11 +618,15 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const refund = async () => {
     if (busy) return;
     setBusy("refund");
+    // المالُ الراجع كما تقوله نافذةُ التأكيد: المدفوعُ كلُّه للزبون.
+    const cashBack = paidOf(invoice) > 0.005;
     try {
+      const sentAt = performance.now();
       const updated = await repo.refundInvoice(invoice.id);
       playSuccess();
       toast.success(t("retail.refundedOk", "Sale refunded — stock restored"));
       setSheet(null);
+      if (consumes) setReversed({ kind: "refund", sentAt, cashBack });
       onChanged();
       setOpen(updated ?? { ...invoice, status: "refunded" });
     } catch (e) {
@@ -624,12 +639,16 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
     if (busy) return;
     setBusy("delete");
     try {
+      const sentAt = performance.now();
       await repo.deleteInvoice(invoice.id);
       playSuccess();
       toast.success(t("retail.deletedOk", "Invoice deleted"));
       setSheet(null);
       onChanged();
-      onClose();
+      // حذفُ فاتورةٍ حيّة فيها خدمة يردّ موادَّها للمخزن (0252): النافذةُ تبقى تقوله (ومعه «سجّلها هدر») حتى «تم».
+      // والحذفُ لا يردّ للزبون شيئاً من الدرج (نافذتُه بلا سطر مال).
+      if (consumes && !refunded) setReversed({ kind: "delete", sentAt, cashBack: false });
+      else onClose();
     } catch (e) {
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
@@ -677,6 +696,28 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
       setLegsBusy(false);
     }
   };
+
+  // ما رجع للمخزن من موادّ الخدمة — بحارسٍ بمكانه: فشلُ القطعة سطرٌ يُعاد، والفاتورةُ بحالها.
+  const consNotice = (
+    <LoadBoundary scope="cons-returned" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setLazyTick((n) => n + 1); }}>
+      <Suspense fallback={null}>
+        <ConsNoticeLazy mode="returned" invoiceIds={[invoice.id]} sentAt={reversed?.sentAt} cashBack={reversed?.cashBack} />
+      </Suspense>
+    </LoadBoundary>
+  );
+
+  /* بعد الحذف الفاتورةُ ما عادت موجودة: يبقى سطرُ النجاح وما رجع من موادّها حتى «تم». */
+  if (reversed?.kind === "delete") {
+    return (
+      <Modal open onClose={onClose} title={invoiceNo(invoice.id)}>
+        <div className="space-y-4" data-invdeleted>
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><CheckCircle2 size={15} className="shrink-0 text-success-600" /> {t("retail.deletedOk")}</p>
+          {consNotice}
+          <Button className="w-full" onClick={onClose}>{t("common.done")}</Button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal open={!!invoice} onClose={onClose} title={invoiceNo(invoice.id)}>
@@ -849,6 +890,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           </LoadBoundary>
         )}
 
+        {/* ما رجع للمخزن من موادّ الخدمة بعد الترجيع (0252) — ومعه «سجّلها هدر» لمن يدير المخزن. */}
+        {reversed?.kind === "refund" && consNotice}
+
         {/* Actions */}
         <div className="grid grid-cols-2 gap-2">
           {/* سطورٌ لم تصل ⇒ لا تُمرَّر: الطابعةُ تجلبها بنفسها وترمي «ما تنطبع ناقصة» بدل وصلٍ بلا سطور. */}
@@ -883,6 +927,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
                 lines={items.map((it) => ({ name: it.name, qty: it.qty }))}
                 back={sheet === "refund" ? Math.max(0, paidOf(invoice)) : 0}
                 dueBefore={dueOf(invoice)} dueAfter={0} consumed={0}
+                consumption={consumes && !refunded ? {} : null}
                 busy={busy !== null}
                 onConfirm={() => void (sheet === "refund" ? refund() : remove())}
                 onClose={() => { if (!busy) setSheet(null); }} />

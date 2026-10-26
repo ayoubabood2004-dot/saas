@@ -30,7 +30,7 @@
   "owned": {
     "act": "src/pages/ActivityLog.tsx",
     "farm": "src/pages/PoultryFarms.tsx",
-    "cnt": "src/pages/StockCount.tsx",
+    "cnt": { "owner": "src/pages/StockCount.tsx", "with": ["src/components/stock/WasteTab.tsx"] },
     "watch": "src/pages/StockWatch.tsx",
     "audit": { "owner": "src/pages/InventoryAudit.tsx", "with": ["src/lib/auditMarks.ts", "src/lib/auditReport.ts"] },
     "photos": "src/pages/ProductPhotos.tsx",
@@ -41,7 +41,7 @@
     "scust": "src/pages/AnalyticsHub.tsx",
     "campaigns": "src/pages/WhatsAppCampaigns.tsx",
     "promos": "src/pages/Settings.tsx",
-    "services": "src/pages/Settings.tsx",
+    "services": { "owner": "src/pages/Settings.tsx", "with": ["src/components/settings/RecipeEditor.tsx"] },
     "vax": "src/pages/Settings.tsx",
     "breeds": "src/pages/Settings.tsx",
     "mmset": "src/pages/Settings.tsx",
@@ -64,6 +64,8 @@
         "src/components/store/admin/SortList.tsx",
         "src/components/store/admin/catErrors.ts"
       ]
-    }
+    },
+    "rcp": "src/components/retail/ConsumablesSheet.tsx",
+    "avgc": "src/components/inventory/AvgCostNote.tsx"
   }
 }
