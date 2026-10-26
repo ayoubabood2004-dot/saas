@@ -608,13 +608,23 @@ create policy pets_owner on pets for all
   using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy pets_shared_read on pets for select
   using (clinic_id is null and shared_with_clinic is true and is_clinic_staff());
-create policy visits_owner on medical_visits for all
+-- باسم الإنتاج: حلقةُ 0001 تسمّي `%s_owner` بالجدول كاملاً (medical_visits_owner)،
+-- و0249 تطابق السياسةَ بشرطها لا باسمها — فاسمٌ مختصرٌ هنا كان سيمرّ ويخفي فرقاً.
+create policy medical_visits_owner on medical_visits for all
   using (exists (select 1 from pets p where p.id = medical_visits.pet_id and p.owner_id = auth.uid()))
   with check (exists (select 1 from pets p where p.id = medical_visits.pet_id and p.owner_id = auth.uid()));
+-- واللقاحاتُ عندها مثلُها من نفس الحلقة — كانت غائبةً هنا، فلم يُفحص قطّ ما يكتبه المالكُ عليها.
+create policy vaccinations_owner on vaccinations for all
+  using (exists (select 1 from pets p where p.id = vaccinations.pet_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from pets p where p.id = vaccinations.pet_id and p.owner_id = auth.uid()));
 create policy visits_clinic_all on medical_visits for all
   using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
 create policy profiles_self_select on profiles for select using (id = auth.uid());
 create policy profiles_self_insert on profiles for insert with check (id = auth.uid());
+-- كالإنتاج (0049، لم تُسقطها هجرةٌ بعدها): صاحبُ الملفّ يحذفه. 0249 تحرس هذا الحذفَ لأن
+-- `pets.owner_id` يتسلسل منه إلى حيوانات العيادة — وبلا السياسة هنا كان فحصُه يمرّ بالرفض
+-- الخطأ (صفرُ صفوفٍ من RLS) لا بالمحفّز.
+create policy profiles_self_delete on profiles for delete using (id = auth.uid());
 -- شرطُ عيادةٍ وحده: كانت تنادي has_permission('pos.sell') على بديلٍ يرجع true دائماً —
 -- وقدرةُ 'pos.sell' لا وجود لها بالإنتاج، ولا سياسةَ بالإنتاج تنادي has_permission أصلاً
 -- (مقيس ٣٠/٩). فلمّا عرّفتها 0222 كالإنتاج انطفأت هذه وبدا كأن الاستقبال فقد الفواتير.
@@ -805,3 +815,49 @@ drop policy if exists treatment_entries_owner on treatment_entries;
 create policy treatment_entries_owner on treatment_entries for all
   using (exists (select 1 from pets p where p.id = treatment_entries.pet_id and p.owner_id = auth.uid()))
   with check (exists (select 1 from pets p where p.id = treatment_entries.pet_id and p.owner_id = auth.uid()));
+
+-- 0249: بقيّةُ جداول السجلّ الطبيّ التي تمنحها حلقةُ 0001 للمالك `for all` — بشكل الإنتاج
+-- (0001 + clinic_id من 0006 بشرط 0014، وسياستا الوسائط من 0004). بلاها كان فحصُ «المالكُ
+-- يقرأ ولا يكتب» يجري على ثلاثة جداول من خمسة، والاثنان الباقيان يمرّان بلا قياس.
+do $$ begin create type media_kind as enum ('photo','xray','ultrasound','lab','document'); exception when duplicate_object then null; end $$;
+create table if not exists weight_logs (
+  id uuid primary key default gen_random_uuid(),
+  pet_id uuid not null references pets(id) on delete cascade,
+  weight_kg numeric(6,2) not null,
+  measured_at date not null default current_date,
+  clinic_id uuid default auth_clinic()
+);
+create index if not exists weight_pet_idx on weight_logs(pet_id);
+alter table weight_logs enable row level security;
+create policy weight_logs_clinic_all on weight_logs for all
+  using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
+create policy weight_logs_owner on weight_logs for all
+  using (exists (select 1 from pets p where p.id = weight_logs.pet_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from pets p where p.id = weight_logs.pet_id and p.owner_id = auth.uid()));
+create table if not exists media_items (
+  id uuid primary key default gen_random_uuid(),
+  pet_id uuid not null references pets(id) on delete cascade,
+  kind media_kind not null default 'photo',
+  url text not null,
+  caption text,
+  created_at timestamptz not null default now(),
+  clinic_id uuid default auth_clinic()
+);
+create index if not exists media_pet_idx on media_items(pet_id);
+alter table media_items enable row level security;
+create policy media_items_clinic_all on media_items for all
+  using (clinic_id = auth_clinic()) with check (clinic_id = auth_clinic());
+create policy media_items_owner on media_items for all
+  using (exists (select 1 from pets p where p.id = media_items.pet_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from pets p where p.id = media_items.pet_id and p.owner_id = auth.uid()));
+create policy media_items_owner_read on media_items for select
+  using (exists (select 1 from pets p where p.id = media_items.pet_id and p.owner_id = auth.uid()));
+create policy media_items_owner_write on media_items for insert
+  with check (exists (select 1 from pets p where p.id = media_items.pet_id and p.owner_id = auth.uid()));
+
+-- مطالبةُ المالك بهاتفه (0077 ثم 0249): رقمُ الدخول المؤكَّد بأعمدة GoTrue — `phone` نصٌّ فريد
+-- و`phone_confirmed_at` ختمُ تأكيد الرمز. **غيرُ مقيسَين من الإنتاج هنا** (لا وصولَ للقاعدة
+-- من هذه الجلسة): شكلُهما من مخطّط GoTrue، واستعلامُ ما قبل النشر بالدفعة يقيسهما هناك.
+alter table auth.users add column if not exists phone              text;
+alter table auth.users add column if not exists phone_confirmed_at timestamptz;
+alter table pets add column if not exists owner_email text;

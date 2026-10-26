@@ -556,9 +556,10 @@ const supabaseRepo: DemoRepo = {
     return updated<Pet>(await sbc().from("pets").update(patch).eq("id", cur.id).select().maybeSingle());
   },
   async claimPetsByPhone(input) {
-    // Server-side matching (migration 0077): the RPC uses the PROFILE's stored
-    // phone — never a client-supplied one — so an account can only ever claim
-    // pets registered under its own verified number. Missing RPC ⇒ no-op.
+    // Server-side matching (0077, tightened in 0249): the RPC matches only the
+    // login phone GoTrue verified by SMS code (auth.users.phone_confirmed_at) —
+    // never profiles.phone (self-typed) nor a client value. No verified phone ⇒
+    // it links nothing. Missing RPC ⇒ no-op.
     try {
       const { data, error } = await sbc().rpc("claim_pets_by_phone", {
         p_name: input.name ?? null,
