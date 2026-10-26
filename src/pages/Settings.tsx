@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock, Archive, Pencil, Star, ArrowUp, ArrowDown, Tags } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
@@ -13,7 +13,7 @@ import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
 import { cn, currencySymbol , formatNum, uuid, money, searchable } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
-import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken, updateServicePrice, ServicePriceMoved } from "@/lib/services";
+import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken, updateServicePrice, ServicePriceMoved, refreshServices } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
@@ -42,6 +42,8 @@ import { PhoneInput } from "@/components/PhoneInput";
 import { ManagerOverrideCard } from "@/components/ManagerOverride";
 import { Button, Dialog, useToast } from "@/components/ui";
 import { describeDbError } from "@/lib/errors";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { page } from "@/lib/lazyPage";
 
 /* ============================================================================
  * ترتيب صفحة الإعدادات
@@ -2234,11 +2236,71 @@ function PromotionsManager({ clinicId }: { clinicId?: string }) {
 }
 
 /* ---------------- Services & non-barcode items ---------------- */
+/* محرّرُ المستهلكات (0252، التصميم §11.4): قطعةٌ كسولة رفيقةُ نطاق services، لا تُجلب حتى يُفتح.
+   وفشلُ تحميلها يُقال بمكانه (LoadBoundary) — `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» قطعةٌ جديدة. */
+const loadRecipeEditor = () => page(() => import("@/components/settings/RecipeEditor"));
+let RecipeEditorLazy = loadRecipeEditor();
+/** ملخّصُ وصفات الخدمات من الخادم، أو حالُه — «ما وصل» و«فشل» حالتان لا صفر: قائمةٌ ناقصة تُصدَّق. */
+type RecipeChips = Awaited<ReturnType<typeof import("@/lib/consumptionApi").consumptionApi.recipeSummary>> | "loading" | "failed";
+/** هل للخدمة وصفة؟ null = لا نعرف بعد (الملخّصُ لم يصل أو فشل) — «ما نعرف» ليست «ما إلها». */
+const recipeKnown = (chips: RecipeChips, id: string): boolean | null => (typeof chips === "object" ? (chips[id]?.lines ?? 0) > 0 : null);
+
+/** حذفُ خدمةٍ لها وصفة (أو لا نعرف) يُسقط وصفتَها معها (المفتاحُ الأجنبيّ): جملةٌ تقول ذلك وضغطةٌ ثانية — بمكانَي
+ *  الحذف كليهما: زرُّ القائمة، وإطفاءُ العملية بمكتبة العمليات (كان يحذفها وما كتبه أحدٌ بلمسةٍ واحدة).
+ *  ويُرسم تحت صفّه مباشرةً، ويُطلب أن يُرى عند ظهوره (block: "nearest" لا يحرّك ما هو ظاهرٌ كلُّه): بعد القائمة كلّها
+ *  وقع ٦٩٠–٨٦٦px تحت أوّل صفٍّ بتصنيفٍ من ١٢ خدمة، وما على الشاشة لا يتغيّر — فزرُّ الحذف يبدو ميّتاً. */
+function RecipeDelAsk({ svc, chips, onYes, onNo }: { svc: Service; chips: RecipeChips; onYes: () => void; onNo: () => void }) {
+  const { t } = useTranslation();
+  const lines = typeof chips === "object" ? (chips[svc.id]?.lines ?? 0) : 0;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { ref.current?.scrollIntoView?.({ block: "nearest" }); }, []);
+  return (
+    <div ref={ref} data-svcdel-ask={svc.id} className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">
+      <span className="min-w-0 flex-1">{lines > 0
+        ? t("services.rcp.delAsk", { name: svc.name, n: formatNum(lines), defaultValue: "تحذف \"{{name}}\" ووصفتها ({{n}} مواد)؟ الفواتير القديمة ما تتأثر" })
+        : t("services.rcp.delAskUnknown", { name: svc.name, defaultValue: "تحذف \"{{name}}\"؟ إذا إلها وصفة مستهلكات تنحذف وياها. الفواتير القديمة ما تتأثر" })}</span>
+      <button type="button" data-svcdel-yes onClick={onYes} className="inline-flex items-center gap-1 rounded-full bg-danger-600 px-2.5 py-1.5 text-2xs font-extrabold text-white transition hover:bg-danger-700"><Trash2 size={12} /> {t("common.delete", "حذف")}</button>
+      <button type="button" onClick={onNo} className="rounded-full px-2.5 py-1.5 text-2xs font-bold text-ink-muted hover:text-ink">{t("common.cancel", "إلغاء")}</button>
+    </div>
+  );
+}
+
 function ServiceSettings() {
   const { t } = useTranslation();
+  const toast = useToast();
+  const { can } = usePermissions();
+  const { restricted } = useOverride();
+  // الكلفُ خلف الأرباح وقفلِ الجهاز (§11.9)؛ والتعديلُ لمن يعدّل الإعدادات — والقسمُ كلُّه خلفه أصلاً.
+  const showCost = can("viewProfits") && !restricted;
+  const canEdit = can("manageSettings");
   const [catalog, setCatalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   const [catName, setCatName] = useState("");
   const refresh = () => setCatalog(getServiceCatalog());
+  /* الملخّصُ مرّةً عند فتح القسم وبعد كلّ حفظ، والأحدثُ طلباً يفوز. والوحدةُ كسولة: import() وحده. */
+  const [chips, setChips] = useState<RecipeChips>("loading");
+  const chipsSeq = useRef(0);
+  const loadChips = useCallback(async () => {
+    const my = ++chipsSeq.current;
+    setChips((c) => (c === "failed" ? "loading" : c));
+    try {
+      const { consumptionApi } = await import("@/lib/consumptionApi");
+      const s = await consumptionApi.recipeSummary();
+      if (my === chipsSeq.current) setChips(s);
+    } catch {
+      if (my === chipsSeq.current) setChips("failed");
+    }
+  }, []);
+  useEffect(() => { void loadChips(); }, [loadChips]);
+  const [recipeFor, setRecipeFor] = useState<Service | null>(null);
+  const [, setLazyTick] = useState(0);
+  /* بعد الحفظ: الملخّصُ من جديد، والكلفةُ اليدوية إن صفّرها الخادم تُقرأ منه — وإلا بقي حقلُها
+     يعرض رقماً لم يعد بالقاعدة. */
+  const afterRecipe = async (r: { clearedFlat: boolean }) => {
+    void loadChips();
+    if (!r.clearedFlat) return;
+    try { await refreshServices(); } catch { toast.warn(t("services.rcp.listStale", "انحفظت الوصفة وتصفّرت الكلفة، بس ما گدرنا نحدّث قائمة الخدمات — حدّث الصفحة")); }
+    refresh();
+  };
 
   const addCat = () => {
     if (!catName.trim()) return;
@@ -2254,9 +2316,23 @@ function ServiceSettings() {
         <span className="chip bg-surface-2 text-ink-muted text-xs ms-auto">{t("services.count", { n: catalog.services.length, defaultValue: "{{n}} services" })}</span>
       </div>
       <p className="mb-4 text-xs text-ink-subtle">{t("services.subtitle", "CBC tests, X-rays, consultations, grooming… these appear in the POS for one-tap billing.")}</p>
+      {chips === "failed" && (
+        <p data-svcrcp-failed className="mb-3 rounded-xl bg-warn-50 px-3 py-2 text-xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+          {t("services.rcp.sumFailed", "ما گدرنا نجيب ملخّص المستهلكات")}
+          <button type="button" data-svcrcp-retry onClick={() => { playTap(); void loadChips(); }} className="ms-1 underline">{t("common.retry", "إعادة المحاولة")}</button>
+        </p>
+      )}
+      {recipeFor && (
+        <LoadBoundary scope="recipe" onRetry={() => { RecipeEditorLazy = loadRecipeEditor(); setLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <RecipeEditorLazy open service={recipeFor} canEdit={canEdit} showCost={showCost}
+              onClose={() => setRecipeFor(null)} onSaved={(r) => void afterRecipe(r)} />
+          </Suspense>
+        </LoadBoundary>
+      )}
 
       {/* مكتبة العمليات الجاهزة — فعّل، سعّر، وعدّل الاسم براحتك */}
-      <SurgeryLibrary catalog={catalog} onChanged={refresh} />
+      <SurgeryLibrary catalog={catalog} onChanged={refresh} chips={chips} />
 
       {/* Add category */}
       <div className="mb-4 flex items-end gap-2">
@@ -2272,7 +2348,8 @@ function ServiceSettings() {
       ) : (
         <div className="space-y-3">
           {catalog.categories.map((cat) => (
-            <CategoryBlock key={cat.id} cat={cat} services={catalog.services.filter((s) => s.category_id === cat.id)} onChanged={refresh} />
+            <CategoryBlock key={cat.id} cat={cat} services={catalog.services.filter((s) => s.category_id === cat.id)} onChanged={refresh}
+              chips={chips} showCost={showCost} onRecipe={setRecipeFor} />
           ))}
         </div>
       )}
@@ -2304,8 +2381,11 @@ function useServicePriceSaver(onChanged: () => void) {
   };
 }
 
-function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onChanged: () => void }) {
+function SurgeryLibrary({ catalog, onChanged, chips }: { catalog: ServiceCatalog; onChanged: () => void; chips: RecipeChips }) {
   const [open, setOpen] = useState(false);
+  /* إطفاءُ عمليةٍ = حذفُ خدمتها (removeService)، ووصفتُها تنحذف وياها: لها وصفة أو لا نعرف ⇒ ضغطةٌ ثانية تقولها،
+     كزرّ الحذف بالقائمة؛ وبلا وصفة تنطفئ بلمسة كما كانت. والتفعيلُ من جديد خدمةٌ جديدة بلا وصفة. */
+  const [offAsk, setOffAsk] = useState<string | null>(null);
   const byRef = new Map(catalog.services.filter((s) => s.surgery_ref).map((s) => [s.surgery_ref as string, s]));
   const enabledCount = byRef.size;
 
@@ -2317,17 +2397,18 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
     return created ? created.id : (getServiceCatalog().categories.find((c) => isSurgeryCategoryName(c.name))?.id ?? "");
   };
 
+  const switchOff = (s: Service) => { removeService(s.id); playTap(); setOffAsk(null); onChanged(); };
   const toggle = (ref: string, arName: string) => {
     const existing = byRef.get(ref);
     if (existing) {
-      removeService(existing.id);
-      playTap();
-    } else {
-      const catId = ensureSurgeryCategory();
-      if (!catId) return;
-      addService(catId, arName, 0, ref);
-      playSuccess();
+      if (recipeKnown(chips, existing.id) === false) switchOff(existing);
+      else { playTap(); setOffAsk(ref); }
+      return;
     }
+    const catId = ensureSurgeryCategory();
+    if (!catId) return;
+    addService(catId, arName, 0, ref);
+    playSuccess();
     onChanged();
   };
 
@@ -2362,7 +2443,8 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
                     const svc = byRef.get(ref);
                     const on = !!svc;
                     return (
-                      <div key={ref} className={cn("flex flex-wrap items-center gap-2.5 rounded-xl border p-2.5 transition", on ? "border-rose-300 bg-rose-50/50 dark:border-rose-500/30 dark:bg-rose-500/5" : "border-line bg-surface-1")}>
+                      <Fragment key={ref}>
+                      <div className={cn("flex flex-wrap items-center gap-2.5 rounded-xl border p-2.5 transition", on ? "border-rose-300 bg-rose-50/50 dark:border-rose-500/30 dark:bg-rose-500/5" : "border-line bg-surface-1")}>
                         <button role="switch" aria-checked={on} aria-label={it.name} onClick={() => toggle(ref, it.name)} className="shrink-0">
                           <span className={cn("relative block h-5.5 w-10 rounded-full transition-colors", on ? "bg-rose-600" : "border border-line bg-surface-3")} style={{ height: 22 }}>
                             <span className={cn("absolute start-0.5 top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-transform", on && "translate-x-[18px] rtl:-translate-x-[18px]")} />
@@ -2387,6 +2469,8 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
                           </span>
                         )}
                       </div>
+                      {svc && offAsk === ref && <RecipeDelAsk svc={svc} chips={chips} onYes={() => switchOff(svc)} onNo={() => setOffAsk(null)} />}
+                      </Fragment>
                     );
                   })}
                 </div>
@@ -2402,7 +2486,10 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
   );
 }
 
-function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; services: Service[]; onChanged: () => void }) {
+function CategoryBlock({ cat, services, onChanged, chips, showCost, onRecipe }: {
+  cat: ServiceCategory; services: Service[]; onChanged: () => void;
+  chips: RecipeChips; showCost: boolean; onRecipe: (s: Service) => void;
+}) {
   const { t } = useTranslation();
   const savePrice = useServicePriceSaver(onChanged);
   const [name, setName] = useState("");
@@ -2410,6 +2497,27 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
   const [cost, setCost] = useState("");
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  /* حذفُ خدمةٍ لها وصفة يُسقط وصفتَها معها (المفتاحُ الأجنبيّ) فيُسأل بضغطةٍ ثانية تقول ذلك، وخدمةٌ لا نعرف
+     وصفتَها (الملخّصُ لم يصل أو فشل) تُسأل كذلك — «ما نعرف» ليست «ما إلها». وبلا وصفة تُحذف كما كانت.
+     المعرّفُ وحده: السؤالُ يُرسم تحت صفّه بخدمة الصفّ الحيّة، وخدمةٌ غابت عن القائمة لا سؤالَ لها. */
+  const [delAsk, setDelAsk] = useState<string | null>(null);
+  /* وحذفُ التصنيف يأخذ خدماتِه ووصفاتِها معاً: كان window.confirm («حذف … وكل خدماته؟») يُقبل بلا قراءة ولا يذكر
+     الوصفات — فصار جملةً بالشاشة تقول كم وصفةً تنحذف (أو أنّا لا نعرف بعد)، وضغطةً ثانية. */
+  const [catAsk, setCatAsk] = useState(false);
+  const recipeOf = (id: string) => (typeof chips === "object" ? chips[id] : undefined);
+  /** null = لا نعرف بعد. */
+  const hasRecipe = (id: string): boolean | null => recipeKnown(chips, id);
+  const withRecipe = services.filter((s) => hasRecipe(s.id) === true).length;
+  const chipText = (id: string): string => {
+    const r = recipeOf(id);
+    if (chips === "loading") return t("pos.cat.consumables", "مستهلكات");
+    if (chips === "failed") return t("services.rcp.chipUnknown", "مستهلكات (؟)");
+    if (!r || r.lines <= 0) return t("services.rcp.chipAdd", "+ مستهلكات");
+    return showCost
+      ? t("services.rcp.chipCost", { n: formatNum(r.lines), v: money(r.cost), defaultValue: "مستهلكات ({{n}}) · {{v}}" })
+      : t("services.rcp.chip", { n: formatNum(r.lines), defaultValue: "مستهلكات ({{n}})" });
+  };
+  const delService = (s: Service) => { removeService(s.id); playTap(); setDelAsk(null); onChanged(); };
 
   const add = () => {
     if (!name.trim()) return;
@@ -2426,9 +2534,9 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
   };
 
   const delCategory = () => {
-    if (!window.confirm(t("services.confirmDelCat", { name: cat.name, defaultValue: `Delete "${cat.name}" and its ${services.length} service(s)?` }))) return;
     removeServiceCategory(cat.id);
     playTap();
+    setCatAsk(false);
     onChanged();
   };
 
@@ -2436,14 +2544,38 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
     <div className="rounded-2xl border border-line bg-surface-1 p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-sm font-bold text-ink"><Tag size={14} className="text-brand-600" /> {cat.name}</span>
-        <button onClick={delCategory} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+        <button data-svccat-del={cat.id} onClick={() => { playTap(); setCatAsk(true); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
       </div>
+      {catAsk && (
+        <div data-svccat-ask={cat.id} className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">
+          <span className="min-w-0 flex-1">
+            {t("services.confirmDelCat", { name: cat.name, defaultValue: `Delete "${cat.name}" and its ${services.length} service(s)?` })}
+            {services.length > 0 && typeof chips !== "object"
+              ? <> {t("services.rcp.delCatUnknown", "وإذا بيه خدمات إلها وصفة مستهلكات تنحذف وياه. الفواتير القديمة ما تتأثر")}</>
+              : withRecipe > 0 && <> {t("services.rcp.delCatRecipes", { n: formatNum(withRecipe), defaultValue: "وتنحذف وياه وصفات المستهلكات لـ{{n}} من خدماته. الفواتير القديمة ما تتأثر" })}</>}
+          </span>
+          <button type="button" data-svccat-yes onClick={delCategory} className="inline-flex items-center gap-1 rounded-full bg-danger-600 px-2.5 py-1.5 text-2xs font-extrabold text-white transition hover:bg-danger-700"><Trash2 size={12} /> {t("common.delete", "حذف")}</button>
+          <button type="button" onClick={() => setCatAsk(false)} className="rounded-full px-2.5 py-1.5 text-2xs font-bold text-ink-muted hover:text-ink">{t("common.cancel", "إلغاء")}</button>
+        </div>
+      )}
 
       {services.length > 0 && (
         <div className="mb-2 space-y-1.5">
           {services.map((s) => (
-            <div key={s.id} className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
-              <span className="min-w-0 flex-1 truncate text-sm text-ink">{s.name}</span>
+            <Fragment key={s.id}>
+            <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
+              {/* الاسمُ وتحته شريحةُ المستهلكات (0252): ما تخصمه كلَّ مرّةٍ تنباع — العددُ والكلفةُ من الخادم، و«؟» حين لم
+                  يصل. كانت بجانب زرّ الحذف فأكلت عمودَ الاسم: مقيسٌ بشاشة حاسوب ١٠٢٤ — الاسمُ ٤٤px بـ«+ مستهلكات»، وصفرٌ
+                  بـ«مستهلكات (٤) · ٣٬٠٠٠ د.ع» (١٣٧px): خدمةٌ لها وصفة تختفي من قائمتها. */}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-ink">{s.name}</span>
+                <button type="button" data-svcrcp={s.id} onClick={() => { playTap(); onRecipe(s); }}
+                  title={(recipeOf(s.id)?.broken ?? 0) > 0 ? t("services.rcp.chipBroken", { n: formatNum(recipeOf(s.id)?.broken ?? 0), defaultValue: "{{n}} من موادها ما تنخصم هسّة — افتحها" }) : undefined}
+                  className="chip mt-0.5 gap-1 bg-surface-1 px-2 py-0.5 text-2xs text-ink-muted transition hover:text-ink">
+                  {(recipeOf(s.id)?.broken ?? 0) > 0 && <ShieldAlert size={12} className="text-warn-600" />}
+                  {chipText(s.id)}
+                </button>
+              </span>
               <div className="flex items-center gap-1 text-sm text-ink-muted">
                 <input
                   key={`${s.id}:${s.price}`}
@@ -2456,10 +2588,13 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
                 <span className="text-2xs text-ink-subtle">{currencySymbol()}</span>
               </div>
               {/* كلفة الخدمة الاختيارية: مواد مستهلكة أو مختبر خارجي — فيصير
-                  الربح بالتقارير = السعر − الكلفة بدل 100% غير المنطقية. */}
+                  الربح بالتقارير = السعر − الكلفة بدل 100% غير المنطقية.
+                  ومع وصفةٍ تصير «كلفة غير المواد»: المواد يحسبها الخادم منها، وكتابتُها هنا تعدّها مرّتين.
+                  والمفتاحُ بالكلفة: تصفيرُها من المحرّر يُعاد رسمُه — حقلٌ يأخذ قيمتَه مرّةً يبقى بالقديم. */}
               <div className="flex items-center gap-1" title={t("services.costHint", "كلفة الخدمة (اختياري) — الربح بالتقارير يصير السعر ناقص الكلفة")}>
-                <span className="text-2xs font-bold text-ink-subtle">{t("services.costShort", "كلفة")}</span>
+                <span className="text-2xs font-bold text-ink-subtle">{hasRecipe(s.id) ? t("services.rcp.costOther", "كلفة غير المواد") : t("services.costShort", "كلفة")}</span>
                 <input
+                  key={`${s.id}:${s.cost ?? ""}`}
                   type="number" min="0" step="1" inputMode="numeric" data-svccost={s.id}
                   defaultValue={s.cost ?? ""}
                   placeholder="0"
@@ -2484,8 +2619,10 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
                   className="w-28 rounded-lg border border-line bg-surface-1 px-2 py-1 text-center text-xs font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
                 />
               </div>
-              <button onClick={() => { removeService(s.id); playTap(); onChanged(); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
+              <button data-svcdel={s.id} onClick={() => { if (hasRecipe(s.id) === false) delService(s); else { playTap(); setDelAsk(s.id); } }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
             </div>
+            {delAsk === s.id && <RecipeDelAsk svc={s} chips={chips} onYes={() => delService(s)} onNo={() => setDelAsk(null)} />}
+            </Fragment>
           ))}
         </div>
       )}

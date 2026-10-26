@@ -9,12 +9,15 @@
  * العقدُ لم يتغيّر: نفسُ الدوالّ ونفسُ الحرّاس، و`repo` يوجّه إليها.
  * ========================================================================= */
 import { loadDB, saveDB } from "./demoStore";
+// مَن يطلب (الدور، مفتاحُ المدير، المعرّف) ورفضُ الخادم برمزه — وحدةٌ تشترك بها المرايا الكسولة كلُّها.
+import { demoBaseRole, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow, InventoryAuditRow } from "@/types";
 import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { ExpenseCategory } from "@/types";
+import type { Service } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { deliveryMarksOf, settlementsOf } from "./settlementFeed";
@@ -56,7 +59,7 @@ import { EXPENSE_CATEGORY_HINTS, categoryNameProblem, cleanCategoryName, restore
 import type { PriceChange, PriceChangeLine, PriceChangeSummary, PriceChangeDetail, PriceDetailLine, PricePriorMap } from "@/types";
 import { buildPlan, demoHash, isFracCurrency, ladderFor, missingIds, normalizeSpec, productScopeOf, bpText, type PriceSpec, type PricePreview } from "./priceRaise";
 import { getActiveCurrency } from "./currency";
-import { getServiceCatalog, setServicePricesLocal } from "./services";
+import { getServiceCatalog, setServicePricesLocal, updateService } from "./services";
 import { listStaff } from "./staff";
 import type { PreparedUpload } from "./image";
 import { LAB_STAGE_COL, assertUpdated, assertUploadableImage, blankOwnerField, dailyNoteLocalGet, dailyNoteLocalSet, labLifecycleFields, pickByPurchaseName, purchaseCoRank, sayAmbiguousCode } from "./repo";
@@ -108,12 +111,12 @@ const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt
       || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
 };
 
-/** صورةُ المنتج للكشف — نفسُ حقول `purchase_effect_snap` (0211). */
+/** صورةُ المنتج للكشف — نفسُ حقول `purchase_effect_snap` (0211)، ومعها المتوسّط (0255:308–317؛ لا يدخل changed). */
 const effectSnap = (p: Product | undefined): PurchaseEffectSnap | null => p ? {
   name: p.name, barcode: p.barcode ?? null, stock: p.stock ?? 0,
   purchase_price: p.purchase_price ?? 0, sell_price: p.sell_price ?? 0, min_stock: p.min_stock ?? 0,
   expiry_date: p.expiry_date ?? null, category: p.category ?? null, company_id: p.company_id ?? null,
-  section_id: p.section_id ?? null, pooled: p.pooled ?? false,
+  section_id: p.section_id ?? null, pooled: p.pooled ?? false, avg_cost: p.avg_cost ?? null,
 } : null;
 
 const EFFECT_FIELDS = ["barcode", "category", "company_id", "expiry_date", "min_stock", "purchase_price", "sell_price"] as const;
@@ -266,6 +269,8 @@ const effectChanged = (b: PurchaseEffectSnap | null, a: PurchaseEffectSnap | nul
 function applyPurchaseLine(
   db: DemoDB, l: PurchaseDraftLine, companyId: string | null, now: string,
   nums: { qty: number; cost: number; sell: number; minStock: number | null }, addStock: (stock: number, qty: number) => number,
+  /** 0255: المتوسّطُ يُحسب من الصفّ **قبل** سطره (`before`) ويُكتب بعده (`after`، ومعه: هل وُلدت المادّة). */
+  avg?: { before?: (p: Product) => void; after?: (p: Product, created: boolean) => void },
 ): { pid: string; how: PurchaseEffect["matched_by"]; before: PurchaseEffectSnap | null; after: Product } {
   const products = db.products ?? (db.products = []);
   let pid = l.product_id ?? null;
@@ -286,6 +291,7 @@ function applyPurchaseLine(
   const existing = pid ? products.find((x) => x.id === pid) : undefined;
   if (existing) {
     const before = effectSnap(existing);
+    avg?.before?.(existing);
     if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
     existing.stock = addStock(existing.stock || 0, nums.qty);
     // A received count makes this a TRACKED product — no longer part of the
@@ -299,6 +305,7 @@ function applyPurchaseLine(
     if (l.expiry_date) existing.expiry_date = l.expiry_date;
     if (l.category) existing.category = l.category;
     if (!existing.company_id && companyId) existing.company_id = companyId;
+    avg?.after?.(existing, false);
     return { pid: existing.id, how, before, after: existing };
   }
   // صنف القطعة الجديدة — يُقبل فقط إن كان صنفاً حقيقياً لهذه الشركة.
@@ -315,6 +322,7 @@ function applyPurchaseLine(
     created_at: now,
   };
   products.push(np);
+  avg?.after?.(np, true);
   return { pid: np.id, how: null, before: null, after: np };
 }
 
@@ -353,36 +361,12 @@ const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 
  * **`on delete cascade`**، فالصفُّ نفسُه يُمحى ولا يعيده معرّف. لذا تُحفظ
  * **صفوفُ المطالبات كاملةً** هنا كما بالقاعدة، وصفوفُ الأصناف بسلّتها.
  */
-/* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
-function demoHint(code: string, hint: string): Error {
-  return Object.assign(new Error(code), { code: "P0001", hint });
-}
-
 /* ---- الخصمُ على الدين بالتجريبيّ (مرآةُ 0241): الحسابُ والحرّاسُ من debtForgive.ts نفسِها،
  *      والتلميحاتُ نسخةُ تلميحات الدالّتين حرفاً. ---- */
 /** مَن يطلب، بقدر ما تعبّر عنه جلسةُ التجريبيّ: الدورُ الأساس من الجلسة (الاستقبالُ والطبيبُ ليسا
  *  مديراً)، ورفعُ المفتاح من مفتاح وضع المدير بالجهاز. لا مشغّلَ منصّةٍ بالتجريبيّ. */
 function demoForgiveActor(): ForgiveActor {
   return forgiveActor({ base: demoBaseRole(), pin: demoPinLive() });
-}
-/** الدورُ الأساس (auth_role_base) بالمفاتيح التي **يكتبها** AuthContext.persistRaw: `raw.staff.staffRole`، ثمّ
- *  `raw.staff.role ?? raw.rawRole` (owner/admin مدير، doctor طبيب، reception استقبال) — قراءةُ demoStaffRole
- *  نفسُها (demoStoreCats.ts كسولةٌ فلا تُستورد هنا). بلا جلسةٍ = صاحبُ العيادة كباقي التجريبيّ؛ أمّا جلسةٌ بدورٍ
- *  لا يُعرف فليست مديراً — مفتاحٌ يضيع أو يتهجّى غلطاً لا يرفع موظّفاً لمدير بصمت. */
-function demoBaseRole(): string {
-  let s: { raw?: { rawRole?: string; staff?: { role?: string; staffRole?: string | null } | null } } | null = null;
-  try { s = JSON.parse(localStorage.getItem("vp_session") || "null"); } catch { /* swallow-ok: جلسةٌ تالفة كغيابها */ }
-  if (!s?.raw) return "manager";
-  const staffRole = s.raw.staff?.staffRole;
-  if (staffRole) return staffRole;
-  const r = s.raw.staff?.role ?? s.raw.rawRole;
-  return r === "owner" || r === "admin" ? "manager" : r === "doctor" ? "veterinarian" : r === "reception" ? "receptionist" : `unknown:${r ?? ""}`;
-}
-function demoPinLive(): boolean {
-  try { return Number(localStorage.getItem(`vp_override_until_${getActiveClinicId()}`) || 0) > Date.now(); } catch { return false; /* swallow-ok: بلا تخزين = بلا رفع */ }
-}
-function demoUserId(): string | null {
-  try { return (JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { id?: string } } | null)?.raw?.id ?? null; } catch { return null; }
 }
 /** رفضُ «تاريخ المبيع» بالتجريبيّ — تلميحاتُ retail_checkout (0242) حرفاً. */
 function saleDateRefusal(code: SaleDateCode): Error {
@@ -445,6 +429,7 @@ function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: 
   db.invoiceForgiveness = [...(db.invoiceForgiveness ?? []), row];
   demoAuditPush({ action: "INSERT", entity: "invoice_forgiveness", entity_id: row.id, details: row as unknown as Record<string, unknown> });
 }
+/* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
 function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
   if (!(db.companies ?? []).some((c) => c.id === companyId)) throw demoHint("no_company", "الشركةُ غيرُ موجودة بعيادتك.");
   if (date && (date > localISO() || date < "2000-01-01")) throw demoHint("bad_date", "التاريخُ لازم يكون اليوم أو قبله.");
@@ -600,7 +585,32 @@ function pushMovementLocal(db: DemoDB, m: Omit<PetMovement, "id" | "at" | "creat
 }
 
 
-function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
+/** مرآةُ مستهلكات الخدمات (0252–0253، demoConsumption.ts): تُحمَّل كسولاً من دوالّ repo غير المتزامنة وتُمرَّر
+ *  للدوالّ المتزامنة هنا. لا استيرادَ ثابتاً منها ولا من consumption.ts — الثابتُ يُدخل قطعتَها المشتركة سجلَّ
+ *  تحميل repoDemo بحزمة الإقلاع (مقيس). والنوعُ وحده يُمحى عند البناء. */
+type Cons = typeof import("./demoConsumption");
+
+/** invoice_items.product_id → products(id) (0007:40، on delete set null): سطرُ مادّةٍ تسمّي مادّةً غيرَ حيّة (بالمحذوفات،
+ *  أو انطوت بغيرها) يرفضه المفتاحُ عند الإدراج — deduct_stock_pooled لا يجدها فلا يخصم، ثمّ يرفض الإدراجُ البيعةَ كلَّها
+ *  (23503). كان التجريبيُّ يبيعها بلا رصيد (قيسَ بالفرق مع الخادم). */
+const lineProductFk = (): Error => Object.assign(
+  new Error('insert or update on table "invoice_items" violates foreign key constraint "invoice_items_product_id_fkey"'), { code: "23503" });
+/** invoice_items_nonneg (0131/0133، NOT VALID: يفحص كلَّ صفٍّ يُدرج أو يُحدَّث لا القائم): qty <> 0، وunit_price ≥ 0، وunit_cost ≥ 0،
+ *  وstock_qty فارغٌ أو صفر أو بإشارة الكمية. والفارغُ يمرّ (قيدٌ نتيجتُه null لا يرفض). كان التجريبيُّ يكتب ما يرفضه الخادم: سطراً
+ *  بكمية صفر، وبسعرٍ سالب، وبـstock_qty عكسَ الكمية (قيسَ بمِسبار المراجعة على 0252 + 0253). */
+function lineNonneg(r: { qty: number; unit_price?: number | null; unit_cost?: number | null; stock_qty?: number | null }): void {
+  const q = Number(r.qty), sq = r.stock_qty == null ? null : Number(r.stock_qty);
+  const ok = q !== 0 && (r.unit_price == null || Number(r.unit_price) >= 0) && (r.unit_cost == null || Number(r.unit_cost) >= 0)
+    && (sq == null || sq === 0 || Math.sign(sq) === Math.sign(q));
+  if (!ok) throw Object.assign(new Error('new row for relation "invoice_items" violates check constraint "invoice_items_nonneg"'), { code: "23514" });
+}
+
+/** `retail_checkout` بترتيبه: الإعادة ← التأريخ ← الخطّة (planLocal، كلُّ رفضٍ بلا أثر) ← المالُ بالفلس الصحيح ←
+ *  السطور (المادّةُ تخصم أوّلاً بلا حصر، 0253) ← الصرفُ وتخطّياتُ السطور. `plan: false` لـpos_checkout القديم
+ *  (لا يخطّط ولا يحفظ service_id أبداً). */
+function createInvoiceLocal(items: CheckoutItem[], meta: SaleMeta | undefined, cons: Cons, opts: { plan: boolean } = { plan: true }): Invoice {
+  // retail_checkout وpos_checkout: «empty cart» أوّلاً — قبل فحص الإعادة نفسِه (كان التجريبيُّ يكتب فاتورةً بلا سطور).
+  if (!Array.isArray(items) || items.length === 0) throw new Error("empty cart");
   const db = loadDB();
   if (!db.products) db.products = [];
   if (!db.invoices) db.invoices = [];
@@ -635,15 +645,17 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
    * عددٌ صحيح بينما كان يبقى كسرياً (0.125).
    *
    * والأعمدةُ مقيسةٌ على الإنتاج لا مفترَضة: المالُ scale=2، الكميةُ 3،
-   * `item_count` integer. */
-  const rq = (n: number) => Math.round(n * 1000) / 1000;
-  let subtotal = 0, cost = 0, count = 0;
-  for (const i of items) {
-    const q = rq(i.qty);
-    subtotal = round2(subtotal + q * i.unit_price);
-    cost = round2(cost + q * i.unit_cost);
-    count = rq(count + q);
-  }
+   * `item_count` integer.
+   *
+   * 0252: والمجموعُ الجاري بالفلس الصحيح (addLineCents — ١٫٥ × ٨١٥٫٠١ = ١٢٢٢٫٥٢ كالخادم لا ١٢٢٢٫٥١ العائم)،
+   * والسطرُ المخطَّط كلفتُه من الخادم: الثابتةُ من الكتالوج + كلفةُ موادّه — كلفةُ الجهاز تُهمل. والخطّةُ قبلها
+   * كلُّها: كلُّ رفضٍ فيها قبل أيّ كتابة. */
+  const plan = opts.plan ? cons.planLocal(db, items) : null;
+  /* 0255 (V1b): retail_checkout يكلّف كلَّ سطر مادّةٍ حيّةٍ ليست من الحقل بكلفة الخادم (_product_line_cost) بالحلقتين، وكلفةُ
+   * الجهاز للحقل وللمجهولة وحدهما — وpos_checkout القديم (`plan: false`) لم يتغيّر. فلا كلفةَ جهازٍ لمادّةٍ يعرفها الخادم:
+   * طلبُ المتجر يرسل purchase_price وشاشةُ البيع المتوسّط، والمحفوظُ واحد. */
+  const money = cons.cartMoneyLocal(items, plan, opts.plan ? db : null);
+  const { subtotal, cost, count } = money;
   const dtype = meta?.discount_type ?? null;
   // v_dinput numeric(12,2): المدخَلُ نفسُه يُدوَّر قبل القصّ.
   const dinput = round2(meta?.discount_value ?? 0);
@@ -681,7 +693,8 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     payment_details: meta?.payment_details && meta.payment_details.length
       ? (saleAt ? stripLegTimes(meta.payment_details) : meta.payment_details)
       : null,
-    total, amount_paid: amountPaid, cost_total: cost, profit: round2(total - cost), item_count: Math.round(count),
+    // item_count عمودٌ integer: round(v_count) — النصفُ بعيداً عن الصفر (Math.round كان يقول −٢ عن −٢٫٥ والخادمُ −٣).
+    total, amount_paid: amountPaid, cost_total: cost, profit: round2(total - cost), item_count: cons.colInt(count),
     print_count: 0, status: "paid", refunded_at: null,
     staff_id: meta?.staff_id?.trim() || null,
     notes: meta?.notes?.trim() || null,
@@ -693,44 +706,69 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     recorded_at: saleAt ? new Date().toISOString() : null,
   };
   db.invoices.push(invoice);
-  const r3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
-  for (const i of items) {
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  const lineIds = new Map<number, { id: string; qty: number }>();
+  items.forEach((i, idx) => {
     // Box-equivalent removed from stock: the fraction for sub-unit sales, else the qty.
-    const stockQty = i.stock_qty != null ? i.stock_qty : i.qty;
+    // v_stockq numeric(14,3) (0242): the server deducts and stores stock_qty rounded to 3 dp, exactly.
+    const stockQty = cons.qty3(i.stock_qty != null ? i.stock_qty : i.qty);
     let fromPool = 0;
+    // مادّةٌ غيرُ حيّة: deduct_stock_pooled لا يجدها فلا يخصم، ثمّ يرفض الإدراجُ — والقيدُ (CHECK) قبل المفتاح (محفّز AFTER) تحت.
+    let fkBad = false;
     if (i.product_id) {
       const p = db.products.find((x) => x.id === i.product_id);
+      if (!p) fkBad = true;
       // سطر راجع (كمية سالبة، 0122): القطعة ترجع لرصيد المنتج المعروف —
       // نفس مسار دالّة السيرفر حرفياً فلا يختلف حسابان للمخزون.
       if (p && stockQty < 0) {
         p.stock = Math.round((p.stock + -stockQty) * 1000) / 1000;
-      } else if (p) {
-        // Known-first: sell the product's own tracked stock, then fall back to
-        // its section pool (the unknown legacy reserve). Round to 3 dp to avoid drift.
-        let rem = stockQty;
-        const fromStock = Math.min(rem, Math.max(0, p.stock || 0));
-        if (fromStock > 0) { p.stock = r3(p.stock - fromStock); rem -= fromStock; }
+      } else if (p && stockQty > 0) {
+        /* مرآةُ deduct_stock_pooled (0253): الحوضُ يأخذ ما زاد على الرصيد **الموجب** وحده كما كان، والرصيدُ
+         * يعطي الباقي ولو صار سالباً — كان الزائدُ يُرمى (Math.max(0, …)) والسطرُ يحفظ stock_qty كاملاً، فيعود
+         * بالعكس للرفّ قطعةً لم تكن. فما يردّه العكسُ الآن هو ما خرج بالضبط. */
+        const fromStock = Math.min(stockQty, Math.max(0, p.stock || 0));
+        const rem = stockQty - fromStock;
         if (rem > 0 && p.section_id) {
           const sec = (db.companySections ?? []).find((x) => x.id === p.section_id);
           const pool = sec?.pooled_stock ?? 0;
           if (sec && pool > 0) {
-            fromPool = Math.min(rem, pool);
-            sec.pooled_stock = r3(pool - fromPool);
-            rem -= fromPool;
+            // v_frompool numeric(14,3): exact (3 − 2.9 is 0.10000000000000009 in floats, and pooled_qty stores it)
+            fromPool = cons.qty3(Math.min(rem, pool));
+            sec.pooled_stock = r3(Math.max(0, pool - fromPool));
           }
         }
+        if (stockQty - fromPool > 0) p.stock = r3((p.stock || 0) - (stockQty - fromPool));
       }
     }
-    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: rq(i.qty), unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: round2(rq(i.qty) * i.unit_price), stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null });
-  }
+    // 0252: معرّفٌ جديد لكلّ سطر، وخدمتُه (المخطَّط وغيرُ المخطَّط من خدمات العيادة)، وكلفتُه من الخطّة إن خُطِّط.
+    const id = uid("ii");
+    const qty = cons.qty3(i.qty);
+    const svc = cons.planServiceId(plan, idx + 1);
+    // unit_price/unit_cost numeric(14,2): stored as the column rounds them (the money above summed them unrounded,
+    // like v_subtotal/v_cost) — every later return and edit recomputes from these stored values.
+    // coalesce(name, 'Item') وnullif(unit_label, '') كالخادم؛ والصفُّ يمرّ من قيد invoice_items_nonneg قبل أن يُكتب.
+    const row: InvoiceItem = { id, invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name ?? "Item", barcode: i.barcode ?? null, qty, unit_price: cons.col2(i.unit_price),
+      unit_cost: money.unitCost(idx + 1) ?? cons.col2(i.unit_cost), line_total: cons.lineMoney(qty, i.unit_price), stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label || null,
+      ...(svc ? { service_id: svc } : {}) };
+    lineNonneg(row);
+    if (fkBad) throw lineProductFk();
+    db.invoiceItems.push(row);
+    lineIds.set(idx + 1, { id, qty });
+  });
+  // 0252: الاستهلاكُ بعد آخر سطر — كلُّ سطور المواد خصمت قبله — ثمّ تخطّياتُ السطور؛ والكلُّ بـsaveDB واحد مع الفاتورة،
+  // وبدفعةٍ واحدة (at_us) لكلّ أحداث البيعة.
+  if (plan) cons.afterLinesLocal(db, invoice.id, plan, lineIds, cons.opStamp(db));
   saveDB(db);
   return invoice;
 }
 
 /** Credit a refunded/voided line back to inventory, reversing the pool-first
  *  split: the part that came from the section pool returns to the pool, the rest
- *  to the product's tracked stock. Legacy rows (pooled_qty absent) → all to stock. */
-function restockLocal(db: ReturnType<typeof loadDB>, it: InvoiceItem) {
+ *  to the product's tracked stock. Legacy rows (pooled_qty absent) → all to stock.
+ *  0252: والسطرُ يخرج (ترجيع، حذف، عكسُ التعديل، المرتجعُ الكامل) ⇒ مستهلكاتُه إلى صفر **أوّلاً** — قبل «بلا مادّة
+ *  ⇒ لا شيء»: سطرُ الخدمة بلا مادّة وموادُّه بالدفتر (مرآةُ محفّزَي الحذف والحالة). */
+function restockLocal(db: ReturnType<typeof loadDB>, it: InvoiceItem, cons: Cons, now: ReturnType<Cons["opStamp"]>) {
+  cons.syncItemLocal(db, it.id, 0, now);
   if (!it.product_id) return;
   const p = (db.products ?? []).find((x) => x.id === it.product_id);
   if (!p) return;
@@ -1971,6 +2009,8 @@ const demoRepo = {
     const code = normalizeCode(input.barcode) || null;
     throwIfCodeTaken(db, code, null);
     const p: Product = { ...input, barcode: code, id: uid("prod"), created_at: new Date().toISOString() };
+    // 0255 (products_guard_avg): إدراجُ المتصفّح بلا متوسّط — مادّةٌ جديدة كلفتُها مجهولة، ونسخُ مادّةٍ قائمة لا ينسخه.
+    if ("avg_cost" in p) p.avg_cost = null;
     db.products.push(p);
     saveDB(db);
     return p;
@@ -2229,14 +2269,31 @@ const demoRepo = {
     assertUploadableImage(upload);
     return upload.dataUrl;
   },
-  async updateProduct(id: string, patch: Partial<Product>, expect?: Partial<Record<"sell_price" | "sub_unit_price", number | null>>): Promise<Product | undefined> {
+  async updateProduct(id: string, patch: Partial<Product>, expect?: Partial<Record<"sell_price" | "sub_unit_price" | "stock" | "purchase_price", number | null>>): Promise<Product | undefined> {
+    // حارسُ المتوسّط والتجميع (0255) من مرآة المستهلكات — يُحمَّل قبل القراءة حين تحمل الرقعةُ avg_cost أو pooled: true وحدهما.
+    const guard = "avg_cost" in patch || patch.pooled === true ? await loadDemoConsumption() : null;
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) return undefined;
-    // مرآةُ المقارنة ثمّ التبديل بالسحابيّ (0226): سعرٌ تغيّر منذ فُتح النموذج ⇒ price_moved.
+    /* مرآةُ المقارنة ثمّ التبديل بالسحابيّ (0226): سعرٌ — أو رصيدٌ أو كلفةُ شراء — تغيّر منذ فُتح النموذج
+     * ⇒ price_moved. والحكمُ حكمُه حرفاً: القيمةُ عدداً (`Number`) والغائبُ null، بلا تسامح — والطرفان من
+     * الدالّة نفسها (تطبيعُ طرفٍ واحد يفشل بصمت). فنموذجٌ فُتح قبل بيعٍ أو شراء لا يكتب رصيدَه البائت ولا
+     * كلفتَه فوق ما صار، بالمرآة كما بالسحابة. */
+    const num = (x: unknown): number | null => (x == null ? null : Number(x));
     for (const [k, v] of Object.entries(expect ?? {})) {
-      if ((p[k as keyof Product] ?? null) !== (v ?? null)) throw Object.assign(new Error("price_moved"), { code: "price_moved" });
+      if (num(p[k as keyof Product]) !== num(v)) throw Object.assign(new Error("price_moved"), { code: "price_moved" });
     }
+    /* 0255 (products_guard_avg، قبل التحديث للمسجَّل وحده): المتوسّطُ يكتبه الخادمُ وحده — كتابةٌ مباشرة تغيّره ⇒ avg_cost_frozen
+     * بتلميحه، وإعادتُه كما هو أو تحديثُ غيره يمرّ. والتصحيحُ product_cost_reset (consumptionApi). */
+    if (guard && "avg_cost" in patch && guard.avgCostChanged(patch.avg_cost, p.avg_cost)) throw guard.avgFrozenError();
+    /* 0255 (الجولة الثالثة، المحفّزُ نفسُه بعد المتوسّط): التجميعُ بكتابةٍ مباشرة — pooled من غير true إلى true — يُرفض pool_direct
+     * بتلميحه ولا يُكتب شيء، أيّاً كان الرصيد (−٢، ٠، ٣). نسخٌ قديمة (النموذجُ حين الرصيدُ ≤ ٠، وتعديلُ المجموعة لكلّ عضو) كانت تكتبه
+     * فيختفي الرصيدُ الموقَّع تحت «مجمّع» أو يُصفَّر؛ والتجميعُ بـpoolProduct وحدها. وإبقاءُ المجمَّع مجمَّعاً، وفكُّه (false)،
+     * وإنشاءُ مادّةٍ مجمَّعة (createProduct) تمرّ. */
+    if (guard && patch.pooled === true && p.pooled !== true) throw guard.poolDirectError();
+    /* ما مرّ من الحارس هو المتوسّطُ نفسُه بعد أن يقرّبه العمودُ numeric(24,6) — NEW يُقرَّب قبل المحفّز، فيُحفظ ما كان لا الرقمُ
+     * كما أُرسل (١١٧١٫٤٢٨٥٧١٦ يبقى ١١٧١٫٤٢٨٥٧٢، والعائمُ غيرُ المحدود null كما يرسله JSON). كان يُحفظ خاماً (الفحصُ النهائيّ للجولة 2أ). */
+    if (guard && "avg_cost" in patch) patch = { ...patch, avg_cost: p.avg_cost ?? null };
     // الخادمُ يطبّع الباركود عند الحفظ ويحرسه بالمحفّز (0167)؛ وهنا كان بلا
     // أيّهما — فكان الفحصُ يمرّ على سلوكٍ لا وجودَ له بالإنتاج.
     if ("barcode" in patch) {
@@ -2253,15 +2310,24 @@ const demoRepo = {
     return p;
   },
   async deleteProduct(id: string, reason?: string | null): Promise<void> {
+    demoInventoryRole();                                                   // delete_product (0146:66–68): المديرُ أو الطبيب قبل البحث
+    // مرآةُ الجرد قبل القراءة: لا await بين قراءة المخزن وحفظه.
+    const counts = await import("./demoCounts");
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) throw new Error("product not found");
+    /* 0254 (products_waste_guard، قبل الحذف): مادّةٌ عليها سندُ تلفٍ معلَّق لا تُحذف حتى يبتّ المدير — وإلا أفرغ المفتاحُ
+     * product_id فأبطلته الموافقةُ وضاعت خسارتُه. وسطورُ جردها تبقى باسمها بلا معرّف (on delete set null). */
+    const list = counts.loadCounts();
+    counts.wasteDeleteGuard(list, { id, name: p.name });
     trashProduct(db, p, { reason });
     // السطور تفقد صنفها كما بالخادم (set null) — والاسترجاع يعيده.
     for (const i of db.invoiceItems ?? []) if (i.product_id === id) i.product_id = null;
     for (const i of db.purchaseItems ?? []) if (i.product_id === id) i.product_id = null;
     db.products = (db.products ?? []).filter((x) => x.id !== id);
+    const counted = counts.countsProductGone(list, id);
     saveDB(db);
+    if (counted) counts.saveCounts(list);
   },
   async listDeletedProducts(): Promise<DeletedProduct[]> {
     return (loadDB().productsTrash ?? []).slice().sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
@@ -2271,6 +2337,7 @@ const demoRepo = {
     return (loadDB().invoiceItems ?? []).filter((i) => i.product_id === id && i.qty > 0).length;
   },
   async restoreProduct(id: string): Promise<Product> {
+    demoInventoryRole();                                                   // restore_product (0253:790–791)
     const db = loadDB();
     const t = (db.productsTrash ?? []).find((x) => x.id === id);
     if (!t) throw new Error("not in trash");
@@ -2279,7 +2346,9 @@ const demoRepo = {
     // فكُّ الدمج (0146): الأصل يردّ الرصيدَ ورمزَ النسخة من رموزه الإضافية.
     const keep = t.merged_into ? (db.products ?? []).find((x) => x.id === t.merged_into) : undefined;
     if (keep) {
-      keep.stock = Math.max(0, (keep.stock || 0) - (t.stock || 0));
+      // 0253 (restore_product): الفكُّ بلا أرضيّة — الأصلُ ٢ والتوأمُ ٣ وبيع ٦ ⇒ −١؛ والفكُّ: الأصلُ −٤ والتوأمُ ٣
+      // (المجموعُ −١ كما كان؛ الأرضيّةُ كانت تجعله ٣).
+      keep.stock = round3((keep.stock || 0) - (t.stock || 0));
       const drop = new Set([row.barcode, ...(row.alt_codes ?? [])].filter(Boolean));
       keep.alt_codes = (keep.alt_codes ?? []).filter((c) => !drop.has(c));
       /* مرآةُ فكّ التوريث (0167): إن كان الأصلُ بلا باركودٍ لحظةَ الطيّ
@@ -2320,7 +2389,12 @@ const demoRepo = {
   },
   /** دمجُ توأمين (0144): الرصيد يُجمع، ورمزُ النسخة يصير إضافياً، والفواتير تعود للأصل. */
   async mergeProducts(keepId: string, dropId: string): Promise<Product> {
+    // merge_products (0184:76–80) بترتيبه: الدور (والبوّابة) ← المعرّفان ← الدمجُ بنفسه ← الأصل ← التوأم ← الحوض.
+    demoInventoryRole();
+    if (keepId == null || dropId == null) throw new Error("both products are required");
     if (keepId === dropId) throw new Error("cannot merge a product into itself");
+    const cons = await loadDemoConsumption();
+    const counts = await import("./demoCounts");                         // قبل القراءة: لا await بين قراءة المخزن وحفظه
     const db = loadDB();
     const keep = (db.products ?? []).find((x) => x.id === keepId);
     const drop = (db.products ?? []).find((x) => x.id === dropId);
@@ -2330,6 +2404,13 @@ const demoRepo = {
     // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
     // باركودُ الأصل **قبل** ضمّ الرموز (0167): به يميّز الفكُّ ملكَه الأصيل من الموروث.
     trashProduct(db, drop, { merged_into: keepId, keep_barcode: keep.barcode?.trim() ? keep.barcode : null });
+    /* 0254 (products_trash_consumption): توأمٌ عليه سندُ تلفٍ معلَّق وأصلُه عليه معلَّق ⇒ merge_waste_pending قبل أيّ نقل؛ وإلا
+     * سنداتُ التوأم كلُّها للأصل. وسطورُ جرده الباقية تفقد معرّفها بحذفه (on delete set null). */
+    const list = counts.loadCounts();
+    const movedWaste = counts.wasteFollowMerge(list, { id: dropId, name: drop.name }, { id: keepId, name: keep.name, live: true });
+    // 0252 (products_trash_consumption): صفُّ المحذوفات بـmerged_into ⇒ الوصفةُ والدفترُ والمتخطّى للأصل، ومرحَّلُ التوأم يُطوى فيه —
+    // و0255: متوسّطُ الأصل يزن الكلفتين قبل أن يتحرّك رصيدُه.
+    cons.followMergeLocal(db, dropId, keepId, new Date().toISOString());
     const codes = new Set(keep.alt_codes ?? []);
     if (drop.barcode && drop.barcode !== keep.barcode) codes.add(drop.barcode);
     for (const c of drop.alt_codes ?? []) if (c && c !== keep.barcode) codes.add(c);
@@ -2337,12 +2418,15 @@ const demoRepo = {
     for (const it of db.invoiceItems ?? []) if (it.product_id === dropId) it.product_id = keepId;
     for (const it of db.purchaseItems ?? []) if (it.product_id === dropId) it.product_id = keepId;
     for (const g of db.generatedBarcodes ?? []) if (g.product_id === dropId) g.product_id = keepId;
-    keep.stock = (keep.stock || 0) + (drop.stock || 0);
+    // stock = stock + v_drop.stock بعمود numeric: بالضبط — ٠٫٤ + ٠٫٢ عائماً ٠٫٦٠٠٠٠٠٠٠٠٠٠٠٠٠٠١ (قيسَ بالفرق مع الخادم).
+    keep.stock = cons.qty3((keep.stock || 0) + (drop.stock || 0));
     keep.alt_codes = Array.from(codes);
     keep.min_stock = Math.max(keep.min_stock ?? 0, drop.min_stock ?? 0) || keep.min_stock;
     if (!keep.expiry_date || (drop.expiry_date && drop.expiry_date > keep.expiry_date)) keep.expiry_date = drop.expiry_date ?? keep.expiry_date;
     db.products = (db.products ?? []).filter((x) => x.id !== dropId);
+    const goneCounts = counts.countsProductGone(list, dropId);
     saveDB(db);
+    if (movedWaste || goneCounts) counts.saveCounts(list);
     return keep;
   },
 
@@ -3197,7 +3281,8 @@ const demoRepo = {
         }
         if (note.pooled_moved) {
           const keep = (db.companySections ?? []).find((x) => x.id === note.folded_into);
-          if (keep) keep.pooled_stock = round3(Math.max(0, (keep.pooled_stock || 0) - note.pooled_moved));
+          // 0253 (restore_company): الباقي ناقصَ ما أضافه الطيُّ بالضبط ولو صار سالباً — الأرضيّةُ كانت تردّ المبيعَ من الحوض بضاعةً لم تكن.
+          if (keep) keep.pooled_stock = round3((keep.pooled_stock || 0) - note.pooled_moved);
           const back = (db.companySections ?? []).find((x) => x.id === note.id);
           if (back) back.pooled_stock = note.pooled_moved;
         }
@@ -3235,7 +3320,8 @@ const demoRepo = {
     (db.companySections ??= []).push(row);
     if (t.folded_into && t.pooled_moved) {
       const keep = (db.companySections ?? []).find((x) => x.id === t.folded_into);
-      if (keep) keep.pooled_stock = round3(Math.max(0, (keep.pooled_stock || 0) - t.pooled_moved));
+      // 0253 (restore_company_section): بلا أرضيّة — الباقي ناقصَ ما أُضيف إليه بالضبط ولو سالباً، والمجموعُ قبل الفكّ هو بعده.
+      if (keep) keep.pooled_stock = round3((keep.pooled_stock || 0) - t.pooled_moved);
     }
     const mine = new Set(t.product_ids ?? []);
     for (const p of db.products ?? []) if (mine.has(p.id) && (!t.folded_into || p.section_id === t.folded_into)) p.section_id = id;
@@ -3316,9 +3402,14 @@ const demoRepo = {
    *  prices), create new products for unknown barcodes, and save a purchase
    *  record. Mirrors the record_purchase RPC used on Supabase. */
   async recordPurchase(lines: PurchaseDraftLine[], meta: PurchaseMeta): Promise<Purchase> {
+    // record_purchase (0255:357–361) بترتيبه: المديرُ أو الطبيب (والمصوّرُ تردّه البوّابة)، ثمّ «empty purchase» — قبل أيّ قراءةٍ
+    // أو كتابة. كان التجريبيُّ يشتري لأيّ دور ويكتب فاتورةً بلا سطور (قيسَ بالمراجعة على الخادم).
+    demoInventoryRole();
+    if (!Array.isArray(lines) || lines.length === 0) throw new Error("empty purchase");
     // مرآةُ 0217: الرصيدُ القائم دفعتُه قبل الشراء (بالخادم وُلدت مع المادة) — وإلا ذاب
     // القديمُ بدفعة الشراء الجديدة ولبس تاريخَها.
     (await import("./demoLots")).reconcileAll();
+    const cons = await loadDemoConsumption();
     const db = loadDB();
     if (!db.products) db.products = [];
     if (!db.purchases) db.purchases = [];
@@ -3326,10 +3417,12 @@ const demoRepo = {
     const now = new Date().toISOString();
     const companyId = meta.company_id ?? null;
     const purchaseId = uid("pur");
-    const round3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
-    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100; // match numeric(12,2) on the server
+    /* v_qty numeric(14,3) وv_cost/v_sell numeric(12,2): النصفُ بعيداً عن الصفر بالضبط — Math.round العائم كان يقول ١٫٠٠ عن ١٫٠٠٥
+     * والعمودُ ١٫٠١ (والمتوسّطُ يُحسب من المقرَّب نفسِه). والكميةُ السالبة تُحصر بصفر كما كانت: فجوةٌ قديمة لا تصلها الشاشة. */
+    const round3 = (n: number) => Math.max(0, cons.qty3(n));
+    const round2 = (n: number) => cons.col2(Number(n) || 0);
     const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
-    let total = 0, count = 0;
+    const sums: { qty: number; cost: number }[] = [];
     /* الكشف (مرآةُ 0211): صورةُ المادّة قبل سطرها — سطرٌ ثانٍ لنفس المادّة يرى ما
      * تركه الأوّل، كالخادم. */
     const effects: PurchaseEffect[] = [];
@@ -3337,12 +3430,22 @@ const demoRepo = {
       const qty = round3(Number(l.qty) || 0);
       const cost = round2(Number(l.purchase_price) || 0);
       const sell = round2(Number(l.sell_price) || 0);
-      total += qty * cost;
-      count += qty;
+      sums.push({ qty, cost });
       // Resolve a product: explicit id → barcode **موحَّداً** → الاسم موحَّداً.
       // ٥٣٩١ و5391 قطعةٌ واحدة، والقطعة المسجّلة بلا باركود تُشترى باسمها
       // فتُرصَّد بمكانها وتتعلّم الباركود — لا توأمَ أعمى بـ«بدون صنف».
-      const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => round3(st + q));
+      /* 0253 (record_purchase): greatest(least(stock, 0), stock + qty) — عجزٌ أكبرُ من الشراء يبقى ظاهراً (−٠٫٠٤ + ٠٫٠٢
+       * = −٠٫٠٢ لا صفر)، والموجبُ كما كان. كان `round3` (يحصر بصفر) يمحو العجزَ كلَّه بأصغر شراء. */
+      /* 0255 (record_purchase، 0255:428–462 و476–483 و495–502): المتوسّطُ بنفس الـSET الذي يرفع الرصيد — والـSET يرى الصفَّ
+       * القديم: _avg_receive على رصيده وأساس كلفته، وفرقُه على الرصيد السالب cost_variance بالكشف — والمادّةُ الجديدة تبدأ
+       * بكلفة سطرها، والحقلُ خارج المتوسّط. سطرٌ ثانٍ لنفس المادّة يرى ما كتبه الأوّل. */
+      let rec: { avg: number | null; variance: number | null } | null = null;
+      const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) },
+        (st, q) => Math.max(Math.min(st, 0), Math.round((st + q) * 1000) / 1000),
+        {
+          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost); },
+          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost) : rec!.avg; },
+        });
       const pid = r.pid;
       const snapBefore = r.before;
       const after = effectSnap(r.after);
@@ -3350,7 +3453,8 @@ const demoRepo = {
         id: uid("pe"), clinic_id: null, purchase_id: purchaseId, op: "record", line_no: effects.length + 1,
         product_id: pid, product_name: r.after.name, barcode_in: l.barcode?.trim() || null,
         outcome: r.how === null ? "created" : "matched", matched_by: r.how, qty,
-        before: snapBefore, after, changed: effectChanged(snapBefore, after), created_at: now,
+        before: snapBefore, after, changed: effectChanged(snapBefore, after),
+        cost_variance: r.how === null ? null : (rec as { variance: number | null } | null)?.variance ?? null, created_at: now,
       });
       db.purchaseItems.push({
         id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
@@ -3360,11 +3464,15 @@ const demoRepo = {
         expiry_date: l.expiry_date || l.batch_expiry || null, created_at: now,
       });
     }
-    const totalR = Math.round(total * 100) / 100;
-    const paid = meta.amount_paid != null ? Math.max(0, Math.min(totalR, Math.round(meta.amount_paid * 100) / 100)) : totalR;
+    /* المجموعُ سطراً سطراً بمنزلتين كما تجمعه الدالّة (v_total numeric(14,2) يقرّب بكلّ إسناد): نصفا علبةٍ بـ٧٧٧٫٧٧ = ٧٧٧٫٧٨ لا
+     * ٧٧٧٫٧٧ (قيسَ بالفرق مع الخادم). والمدفوعُ least(greatest(coalesce(amount_paid, v_total), 0), v_total) ثمّ عمودُه — وما لا
+     * يعبر JSON رقماً (NaN، اللانهاية) يصل الخادمَ null فيُدفع كلُّه. */
+    const { total: totalR, itemCount } = cons.purchaseTotalLocal(sums);
+    const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : null;
+    const paid = paidIn !== null ? cons.col2(Math.min(totalR, Math.max(0, paidIn))) : totalR;
     const purchase: Purchase = {
       id: purchaseId, clinic_id: null, company_id: companyId, company_name: meta.company_name ?? null,
-      reference: meta.reference?.trim() || null, total: totalR, item_count: Math.round(count),
+      reference: meta.reference?.trim() || null, total: totalR, item_count: itemCount,
       amount_paid: paid, payment_method: meta.payment_method ?? null,
       status: paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial",
       supplier_name: meta.supplier_name?.trim() || null,
@@ -3383,14 +3491,18 @@ const demoRepo = {
    *  السطور الجديدة بنفس المطابقة الذكية — السطر غير المتغيّر أثره الصافي صفر.
    *  المدفوع يبقى كما سُدِّد (مقصوصاً على الإجمالي الجديد). يطابق update_purchase RPC. */
   async updatePurchase(purchaseId: string, lines: PurchaseDraftLine[], meta: PurchaseMeta): Promise<Purchase> {
+    // update_purchase (0255:564–573) بترتيبه: الدور ← «empty purchase» ← «purchase not found».
+    demoInventoryRole();
+    if (!Array.isArray(lines) || lines.length === 0) throw new Error("empty purchase");
     (await import("./demoLots")).reconcileAll();
+    const cons = await loadDemoConsumption();
     const db = loadDB();
     const purchase = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!purchase) throw new Error("purchase not found");
-    if (!lines.length) throw new Error("empty purchase");
     const companyId = purchase.company_id ?? null;
-    const round3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
-    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+    // v_qty numeric(14,3) وv_cost/v_sell numeric(12,2) بالضبط — كالتسجيل (والسالبةُ تُحصر بصفر كما كانت).
+    const round3 = (n: number) => Math.max(0, cons.qty3(n));
+    const round2 = (n: number) => cons.col2(Number(n) || 0);
     const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
     /* **بلا حصرٍ بصفر** (مرآةُ 0205). `round3` نفسُها تحصر، فالعكسُ يحتاج تقريباً
      * حرّاً: حصرُ خطوةٍ وسطى يخترع بضاعةً لمّا يكون بيعَ أكثرُ الكمية —
@@ -3403,9 +3515,14 @@ const demoRepo = {
     const oldQty = new Map<string, number>();
     const seen = new Set<string>();
     const effects: PurchaseEffect[] = [];
+    /* 0255: إعادةُ التطبيق لا تمسّ المتوسّط — لكلّ مادّةٍ لقطتُها عند أوّل لمس (قبل عكس سطرها أو قبل سطرها الجديد)، ثمّ
+     * _avg_adjust مرّةً بعد الحلقة بالرصيد النهائيّ (purchaseAdjustLocal). */
+    const adj = cons.purchaseAdjustLocal();
+    const oldItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId);
     // ١) اعكس السطور القديمة ثم أزلها
-    for (const it of (db.purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId)) {
+    for (const it of oldItems) {
       const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
+      if (it.product_id) adj.touchOld(p, it.product_id, oldItems.filter((x) => x.product_id === it.product_id));
       if (p && !orig.has(p.id)) orig.set(p.id, effectSnap(p)!);
       if (it.product_id) oldQty.set(it.product_id, (oldQty.get(it.product_id) ?? 0) + (it.qty || 0));
       if (p) { p.stock = rnd3((p.stock || 0) - (it.qty || 0)); touched.add(p.id); }
@@ -3413,14 +3530,14 @@ const demoRepo = {
     db.purchaseItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id !== purchaseId);
     // ٢) نزّل الجديدة — نفس مطابقة recordPurchase
     const now = new Date().toISOString();
-    let total = 0, count = 0;
+    const sums: { qty: number; cost: number }[] = [];
     for (const l of lines) {
       const qty = round3(Number(l.qty) || 0);
       const cost = round2(Number(l.purchase_price) || 0);
       const sell = round2(Number(l.sell_price) || 0);
-      total += qty * cost;
-      count += qty;
-      const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => rnd3(st + q));
+      sums.push({ qty, cost });
+      const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => rnd3(st + q),
+        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost) : adj.line(p.id, qty, cost)) });
       const pid = r.pid;
       if (r.how !== null) touched.add(pid);
       const snapBefore = r.how !== null && orig.has(pid) && !seen.has(pid) ? orig.get(pid)! : r.before;
@@ -3429,7 +3546,7 @@ const demoRepo = {
         id: uid("pe"), clinic_id: null, purchase_id: purchaseId, op: "update", line_no: effects.length + 1,
         product_id: pid, product_name: r.after.name, barcode_in: l.barcode?.trim() || null,
         outcome: r.how === null ? "created" : "matched", matched_by: r.how, qty,
-        before: snapBefore, after, changed: effectChanged(snapBefore, after), created_at: now,
+        before: snapBefore, after, changed: effectChanged(snapBefore, after), cost_variance: null, created_at: now,
       });
       seen.add(pid);
       db.purchaseItems.push({
@@ -3440,33 +3557,42 @@ const demoRepo = {
         expiry_date: l.expiry_date || l.batch_expiry || null, created_at: now,
       });
     }
-    // ٢·٥) الحصرةُ الوحيدة: بضاعةٌ سُحبت من الفاتورة ولم تعد تغطّي ما بيع
-    //      ⇒ صفرٌ لا سالب. على ما لمسته الفاتورةُ وحدَه (مرآةُ 0205).
-    for (const id of touched) {
-      const p = db.products.find((x) => x.id === id);
-      if (p && (p.stock || 0) < 0) p.stock = 0;
+    /* ٢·٥) 0253 (update_purchase): لا حصرة. قطعُ فاتورةٍ تحت ما صُرف منها يترك الرصيدَ سالباً ويُقال — اشترى ١ وصُرف
+     *      ٠٫٨ ثمّ عُدّلت إلى ٠٫٥ ⇒ −٠٫٣. الحصرةُ («سالبٌ ⇒ صفر» على ما لمسته الفاتورة) كانت تمحو العجزَ فيبدو المصروفُ
+     *      كأنه لم يُصرف. (`touched` يبقى كما يبقى v_touched بالخادم.) */
+    // ٢·٤) 0255: المتوسّطُ مرّةً لكلّ مادّة بالرصيد النهائيّ، وما لم يتغيّر لا يُكتب — ثمّ «صار» بكشف هذا النداء يقول المتوسّطَ
+    // النهائيّ (صورةُ السطر داخل الحلقة سبقته).
+    adj.finish(db);
+    for (const e of effects) {
+      const p = e.after ? db.products.find((x) => x.id === e.product_id) : undefined;
+      if (p && e.after) e.after = { ...e.after, avg_cost: p.avg_cost ?? null };
     }
-    // «صار» بعد الحصرة، والمشالُ من الفاتورة يُقال (مرآةُ 0211).
+    // «صار» الرصيدُ النهائيّ (سالبٌ وسطيٌّ لسطرين لنفس المادّة يصير النهائيّ)، والمشالُ من الفاتورة يُقال (مرآةُ 0211).
     for (const e of effects) {
       if ((e.after?.stock ?? 0) < 0) e.after = effectSnap(db.products.find((x) => x.id === e.product_id));
     }
-    for (const [id, snap] of orig) {
+    /* المشالُ بترتيب `jsonb_object_keys(v_orig)`: jsonb يحفظ مفاتيحَه مرتّبةً (الطولُ ثمّ البايتات)، فالمشالُ بترتيب المعرّف لا
+     * بترتيب السطور القديمة — مادّتان شيلتا بتعديلٍ واحد كانتا تأخذان رقمَي سطرٍ معكوسَين (قيسَ بالفرق مع الخادم). */
+    const keyLen = (s: string) => new TextEncoder().encode(s).length;
+    for (const [id, snap] of [...orig].sort(([a], [b]) => keyLen(a) - keyLen(b) || (a < b ? -1 : a > b ? 1 : 0))) {
       if (seen.has(id)) continue;
       const p = db.products.find((x) => x.id === id);
       effects.push({
         id: uid("pe"), clinic_id: null, purchase_id: purchaseId, op: "update", line_no: effects.length + 1,
         product_id: id, product_name: p?.name ?? snap.name ?? "Item", barcode_in: null,
         outcome: "removed", matched_by: null, qty: -(oldQty.get(id) ?? 0),
-        before: snap, after: effectSnap(p), changed: [], created_at: now,
+        before: snap, after: effectSnap(p), changed: [], cost_variance: null, created_at: now,
       });
     }
     db.purchaseEffects = [...(db.purchaseEffects ?? []), ...effects];
-    // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد
-    const totalR = round2(total);
+    // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد. المجموعُ سطراً سطراً بمنزلتين (v_total numeric(14,2))،
+    // والمدفوعُ least(coalesce(amount_paid, القديم), v_total) بعمودِه ثمّ greatest(…, 0) — كالدالّة حرفاً.
+    const { total: totalR, itemCount } = cons.purchaseTotalLocal(sums);
     const prevPaid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
-    const paid = Math.max(0, Math.min(totalR, round2(meta.amount_paid != null ? meta.amount_paid : prevPaid)));
+    const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : Number(prevPaid) || 0;
+    const paid = Math.max(0, cons.col2(Math.min(totalR, paidIn)));
     purchase.total = totalR;
-    purchase.item_count = Math.round(count);
+    purchase.item_count = itemCount;
     purchase.amount_paid = paid;
     purchase.status = paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial";
     if (meta.reference?.trim()) purchase.reference = meta.reference.trim();
@@ -3832,28 +3958,43 @@ const demoRepo = {
     return p;
   },
   async poolProduct(productId: string, sectionId: string): Promise<Product> {
+    // pool_product (0171 ← 0253) بترتيبه: الدور (والبوّابة) ← المنتج ← الصنف. كان التجريبيُّ يطوي لأيّ دور.
+    demoInventoryRole();
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === productId);
     if (!p) throw new Error("product_not_found");
     const s = (db.companySections ?? []).find((x) => x.id === sectionId);
     if (!s) throw new Error("section_not_found");
-    s.pooled_stock = Math.round(((s.pooled_stock ?? 0) + Math.max(0, p.stock || 0)) * 1000) / 1000;
+    /* 0253: الرصيدُ ينتقل للحوض كلُّه ولو سالباً — round(v_pool + stock, 3)، فالمجموعُ (الحوضُ + الصفّ) قبل الطيّ هو بعده. الحصرُ
+     * (max(0, stock)) كان يمحو العجز: مادّةٌ عند −٢ على حوضٍ ٥ ⇒ الحوضُ ٥ والصفُّ صفر (+٢ لم تكن)، والآن ٣. */
+    s.pooled_stock = Math.round(((s.pooled_stock ?? 0) + (p.stock || 0)) * 1000) / 1000;
     p.pooled = true; p.section_id = sectionId; p.stock = 0;
     saveDB(db);
     return p;
   },
   async tidyInventory(): Promise<{ merged: number; kept: number }> {
+    demoInventoryRole();                                                   // inventory_tidy_uncat (0253:876–877)
+    const cons = await loadDemoConsumption();
+    const counts = await import("./demoCounts");
     const db = loadDB();
+    const list = counts.loadCounts();
+    let countsMoved = false;
+    const now = new Date().toISOString();
     const items = db.purchaseItems ?? [];
     const inv = db.invoiceItems ?? [];
     let merged = 0, kept = 0;
-    for (const dup of [...(db.products ?? [])].filter((p) => !p.section_id)) {
+    /* inventory_tidy_uncat (0253): التوائمُ `order by created_at`، والهدفُ `order by created_at limit 1` — لا بترتيب المصفوفة: صفٌّ
+     * مسترجَعٌ يُلحق بآخرها وعمرُه قديم، فكان يُطوى بغير دوره أو في غير هدفه. ومنذ 0255 يتبع المتوسّطُ الدور: أصلٌ بلا كلفةٍ معروفة
+     * يأخذ كلفةَ أوّل توأمٍ يُطوى فيه، ثمّ يزن الثاني عليها (قيسَ بالفرق مع الخادم: ١٥٠٠ لا ٢٥٠٠). والفرزُ ثابت: التعادلُ بترتيبه. */
+    const byAge = (a: Product, b: Product): number => { const x = a.created_at ?? "", y = b.created_at ?? ""; return x < y ? -1 : x > y ? 1 : 0; };
+    const oldest = (pred: (p: Product) => boolean): Product | undefined => (db.products ?? []).filter(pred).sort(byAge)[0];
+    for (const dup of [...(db.products ?? [])].filter((p) => !p.section_id).sort(byAge)) {
       const code = invNormCode(dup.barcode);
       const name = invNormName(dup.name);
       let target =
-        (code ? db.products.find((p) => p.id !== dup.id && p.section_id && invNormCode(p.barcode) === code && (p.barcode ?? "") !== "") : undefined)
+        (code ? oldest((p) => p.id !== dup.id && !!p.section_id && invNormCode(p.barcode) === code && (p.barcode ?? "") !== "") : undefined)
         ?? (name.length >= 2
-          ? db.products.find((p) => p.id !== dup.id && p.section_id
+          ? oldest((p) => p.id !== dup.id && !!p.section_id
               && (p.company_id ?? null) === (dup.company_id ?? null)
               && invNormName(p.name) === name)
           : undefined);
@@ -3862,7 +4003,13 @@ const demoRepo = {
       // من `products`، وكان يخرج هنا **بلا صورة** — فيختفي بلا رجعة بينما
       // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
       trashProduct(db, dup, { merged_into: target.id, keep_barcode: target.barcode?.trim() ? target.barcode : null });
-      target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
+      // 0254: نفسُ محفّز المحذوفات — سندٌ معلَّقٌ على التوأم ومعلَّقٌ على الأصل يردّ الترتيبَ كلَّه (معاملةٌ واحدة) بالاسمين.
+      if (counts.wasteFollowMerge(list, { id: dup.id, name: dup.name }, { id: target.id, name: target.name, live: true })) countsMoved = true;
+      // 0252: نفسُ محفّز المحذوفات — الوصفةُ والدفترُ والمتخطّى للأصل، ومرحَّلُ التوأم يُطوى فيه (و0255: المتوسّطُ قبل الرصيد).
+      cons.followMergeLocal(db, dup.id, target.id, now);
+      // 0253 (inventory_tidy_uncat): رصيدُ التوأم كلُّه ولو سالباً — الحصرتان كانتا تمحوان عجزَه ثمّ يطرحه الفكُّ
+      // فيزيد الأصلُ بما لم يكن (٣ + (−١) كان ٣ وفكُّه ٤، وهو ٢ وفكُّه ٣).
+      target.stock = round3((target.stock || 0) + (dup.stock || 0));
       /* رموزُ المطويّ تلحق بالهدف (0169) — الأساسيُّ والإضافية معاً، بنفس منطق
        * `merge_products`. كان الطيُّ يدفنها: هدفٌ له باركودُه لا يرث شيئاً، فأوّلُ
        * مسحةٍ لباركود المصنع بعد «رتّب المخزن» تقول «مو موجود» والمادّةُ بالمخزن،
@@ -3889,9 +4036,11 @@ const demoRepo = {
       // والباركوداتُ المولَّدة تتبع الأصل كما بالدمج، لا تبقى معلّقةً على صفٍّ محذوف.
       for (const g of db.generatedBarcodes ?? []) if (g.product_id === dup.id) g.product_id = target.id;
       db.products = db.products.filter((p) => p.id !== dup.id);
+      if (counts.countsProductGone(list, dup.id)) countsMoved = true;
       merged++;
     }
     saveDB(db);
+    if (countsMoved) counts.saveCounts(list);
     return { merged, kept };
   },
 
@@ -3903,7 +4052,8 @@ const demoRepo = {
     return within(loadDB().invoices ?? [], "created_at", range).sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
   async checkout(items: CheckoutItem[]): Promise<Invoice> {
-    return createInvoiceLocal(items);
+    // pos_checkout القديم: لا يخطّط ولا يستهلك ولا يحفظ service_id (والمادّةُ بلا حصر — deduct_stock_pooled 0253).
+    return createInvoiceLocal(items, undefined, await loadDemoConsumption(), { plan: false });
   },
 
   /* ---------------- Delivery (التوصيل — الدفع عند الاستلام) ---------------- */
@@ -4030,7 +4180,7 @@ const demoRepo = {
 
   /* ---------------- Retail & advanced invoicing ---------------- */
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
-    return createInvoiceLocal(items, meta);
+    return createInvoiceLocal(items, meta, await loadDemoConsumption());
   },
   /** إرجاعٌ خالص — مرآةُ `retail_return` (هجرة 0132) بنفس قواعدها حرفياً:
    *  ما تُنشأ فاتورة، والبضاعة ترجع للرصيد، وسحبٌ منفصل لكل صنف. */
@@ -4209,11 +4359,15 @@ const demoRepo = {
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
   async refundInvoice(invoiceId: string): Promise<Invoice | undefined> {
+    const cons = await loadDemoConsumption();
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
-    if (!inv) return undefined;
+    // refund_invoice (0066): فاتورةٌ غائبة ⇒ «invoice not found» — كان التجريبيُّ يرجع undefined بصمت؛ والمرجَّعةُ ترجع كما هي.
+    if (!inv) throw new Error("invoice not found");
     if (inv.status !== "refunded") {
-      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) restockLocal(db, it);
+      // 0252: «مرجَّعة» ⇒ كلُّ سطرٍ بدفترٍ إلى صفر (invoices_consumption_status) — الموادُّ ترجع للمخزن بالضبط، بدفعةٍ واحدة.
+      const now = cons.opStamp(db);
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) restockLocal(db, it, cons, now);
       inv.status = "refunded";
       inv.refunded_at = new Date().toISOString();
       saveDB(db);
@@ -4221,11 +4375,20 @@ const demoRepo = {
     return inv;
   },
   async deleteInvoice(invoiceId: string): Promise<void> {
+    // delete_invoice (0066 → 0253): `auth_role() <> 'manager'` ⇒ forbidden — قبل قراءة الفاتورة، ثمّ «غير موجودة» ترمي.
+    // كان التجريبيُّ يحذف لأيّ دور، وفاتورةً غائبةً بصمت (قيسَ بالفرق مع الخادم: استقبالٌ يحذف بالتجريبيّ ويُرفض بالسحابة).
+    if (demoBaseRole() !== "manager" && !demoPinLive()) throw new Error("forbidden: managers only");
+    const cons = await loadDemoConsumption();
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) throw new Error("invoice not found");
+    const now = cons.opStamp(db);
     // Restock unless it was already refunded (which already restocked).
     if (inv && inv.status !== "refunded") {
-      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) restockLocal(db, it);
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) restockLocal(db, it, cons, now);
+    } else {
+      // 0252: الحذفُ المتتالي يمرّ بمحفّز الحذف لكلّ سطر — بعد ترجيعٍ هو صفرٌ لا شيء، والدفترُ يبقى تاريخاً.
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) cons.syncItemLocal(db, it.id, 0, now);
     }
     db.invoices = (db.invoices ?? []).filter((x) => x.id !== invoiceId);
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
@@ -4250,58 +4413,101 @@ const demoRepo = {
    *      المطلوب من السواق = الإجمالي الجديد − المدفوع.
    * فاتورة مرتجعة لا تُعدَّل: سجلّها مغلق والطريق الصحيح إرجاعٌ جديد. ---- */
   async editInvoiceLines(invoiceId: string, lines: EditLine[], note?: string | null): Promise<Invoice> {
+    // غلافُ edit_invoice_lines (0113 → 0241): auth_role() <> 'manager' ⇒ 'not allowed' — قبل قراءة الفاتورة. كان التجريبيُّ
+    // يعدّل لأيّ دور (قيسَ بالفرق مع الخادم: استقبالٌ يعدّل بالتجريبيّ ويُرفض بالسحابة).
+    if (demoBaseRole() !== "manager" && !demoPinLive()) throw new Error("not allowed");
     const money2 = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-US");
+    const cons = await loadDemoConsumption();
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
+    // coalesce(price, 0) بلا حصرٍ بصفر: سعرٌ سالب يرفضه قيدُ invoice_items_nonneg (23514) كالخادم — كان التجريبيُّ يكتبه صفراً بصمت.
     const clean = (lines ?? [])
-      .map((l) => ({ ...l, qty: Math.round((Number(l.qty) || 0) * 1000) / 1000, unit_price: Math.max(0, Number(l.unit_price) || 0), unit_cost: Math.max(0, Number(l.unit_cost) || 0) }))
+      .map((l) => ({ ...l, qty: cons.qty3(Number(l.qty) || 0), unit_price: Number(l.unit_price) || 0, unit_cost: Number(l.unit_cost) || 0 }))
       .filter((l) => l.qty > 0);
     if (!clean.length) throw new Error("empty invoice");
 
     const oldTotal = Number(inv.total) || 0;
     const before = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
-    // ١) العكس الكامل — نفس دالة الإرجاع حرفياً فلا يختلف حسابان للمخزون أبداً.
-    for (const it of before) restockLocal(db, it);
+    // دفعةٌ واحدة للتعديل كلِّه: ردُّ السطور القديمة وربطُ الجديدة بـat_us نفسِه (كمعاملته بالخادم).
+    const now = cons.opStamp(db);
+    // 0252: خدمةُ كلّ سطرٍ قبل حذفه — السطرُ المعاد يرثها بمعرّفه، وإلا ضاع ما يربطه بوصفته.
+    const oldSvc = new Map(before.filter((b) => b.service_id).map((b) => [b.id, b.service_id as string]));
+    // 0255: ومادّةُ كلّ سطرِ مادّة — سطرٌ يعود بمعرّفه ومادّتِه يبقى بالكلفة التي يحملها، وما سواه بكلفة الخادم.
+    const oldProd = new Map(before.filter((b) => b.product_id).map((b) => [b.id, b.product_id as string]));
+    // ١) العكس الكامل — نفس دالة الإرجاع حرفياً فلا يختلف حسابان للمخزون أبداً (ومعه مستهلكاتُ كلّ سطرٍ إلى صفر).
+    for (const it of before) restockLocal(db, it, cons, now);
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
 
     // ٢) إعادة الخصم بنفس منطق البيع (المعروف أولاً ثم القسم المشترك).
-    const r3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
-    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const seen = new Set<string>();
+    const relinks: { from: string; to: string; qty: number }[] = [];
     for (const i of clean) {
-      const prev = i.id ? before.find((b) => b.id === i.id) : undefined;
-      // سطر قائم بكمية معدّلة: نسبة المخزون تتبع الكمية (بيع الأجزاء).
-      const perUnit = prev && prev.qty > 0 && prev.stock_qty != null ? prev.stock_qty / prev.qty : 1;
-      // الواجهة تمرّر المسحوب صراحةً للأسطر الجديدة ببيع الأجزاء؛ وإلا نستنتجه
-      // من نسبة السطر القديم — فلا ينزلق المخزون عند تغيير كمية حبّات.
-      const stockQty = i.stock_qty != null ? r3(i.stock_qty) : r3(i.qty * perUnit);
+      /* المسحوب كالخادم حرفاً: round(coalesce(stock_qty, qty), 3) (0241) — الغائبُ هو الكميةُ نفسُها. كان التجريبيُّ
+       * يستنتجه من نسبة السطر القديم فيخصم ٧/٣٠ علبة حيث يخصم الخادمُ ٧ علب (قيسَ بالفرق مع الخادم). الواجهةُ ترسله
+       * دائماً (DeliveryEditDialog: qty × perUnit)، فالنسبةُ مكانُها هناك لا هنا. */
+      // وبلا أرضيّة: stock_qty سالبٌ على كميةٍ موجبة يرفضه القيدُ عند الإدراج (23514) — لا يُكتب صفراً بصمت.
+      const stockQty = cons.qty3(i.stock_qty != null ? Number(i.stock_qty) : i.qty);
       let fromPool = 0;
+      let fkBad = false;                                     // مادّةٌ غيرُ حيّة: لا خصم، ثمّ القيدُ ثمّ المفتاح عند الإدراج
       if (i.product_id) {
         const p = (db.products ?? []).find((x) => x.id === i.product_id);
+        if (!p) fkBad = true;
         if (p) {
-          const avail = r3((p.stock || 0) + (p.section_id ? ((db.companySections ?? []).find((x) => x.id === p.section_id)?.pooled_stock ?? 0) : 0));
-          if (stockQty > avail + 0.0005) throw new Error(`not enough stock: ${i.name}`);
-          let rem = stockQty;
-          const fromStock = Math.min(rem, Math.max(0, p.stock || 0));
-          if (fromStock > 0) { p.stock = r3(p.stock - fromStock); rem -= fromStock; }
-          if (rem > 0 && p.section_id) {
+          /* 0252 (edit_invoice_lines_unguarded، الجولة الثانية): كالبيعة منذ 0253 بلا «not enough stock» — الحوضُ يأخذ ما زاد على
+           * الرصيد الموجب، والرصيدُ يعطي الباقي ولو صار سالباً، بكتابةٍ واحدة بعد الحوض (قرارُ المالك: لا منعَ ولا حصر). كان
+           * التجريبيُّ يرفض: فاتورةٌ أنزلت مادّةً تحت الصفر ما تنحفظ حتى بلا تغيير، والخادمُ يحفظها ويقول السالبَ بالقراءة. */
+          const fromStock = Math.min(stockQty, Math.max(0, p.stock || 0));
+          if (stockQty - fromStock > 0 && p.section_id) {
             const sec = (db.companySections ?? []).find((x) => x.id === p.section_id);
             const pool = sec?.pooled_stock ?? 0;
-            if (sec && pool > 0) { fromPool = Math.min(rem, pool); sec.pooled_stock = r3(pool - fromPool); rem -= fromPool; }
+            // v_from_pool numeric(12,3), exact — the line's pooled_qty is what a later reversal gives back to the pool
+            if (sec && pool > 0) {
+              fromPool = cons.qty3(Math.min(stockQty - fromStock, pool));
+              if (fromPool > 0) sec.pooled_stock = cons.qty3(pool - fromPool);
+            }
           }
+          if (stockQty - fromPool > 0) p.stock = cons.qty3((p.stock || 0) - (stockQty - fromPool));
         }
       }
-      db.invoiceItems.push({
-        id: i.id && prev ? i.id : uid("ii"), invoice_id: invoiceId, product_id: i.product_id ?? null,
-        name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost,
-        line_total: r2(i.qty * i.unit_price), stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null,
-      });
+      /* 0252: معرّفٌ جديد لكلّ سطرٍ معاد (كالخادم: يحذف ويعيد بلا معرّفات) — وسطرُ الخدمة يرث خدمتَه من سابقه
+       * بمعرّفه ويُربط به بعد الحلقة كلّها. ومعرّفٌ مرّتين يصرف موادَّه مرّتين، فيُرفض قبل أيّ حفظ. */
+      const id = uid("ii");
+      const src = !i.product_id && typeof i.id === "string" && i.id ? i.id : null;
+      const svc = src ? oldSvc.get(src) ?? null : null;
+      /* 0255 (edit_invoice_lines_unguarded، 0255:1368–1371 و1392): سطرُ مادّةٍ يعود بمعرّف سطرٍ قديمٍ **بنفس المادّة** يبقى بالكلفة
+       * التي يحملها (DeliveryEditDialog يرسل المحفوظة — الفاتورةُ القديمة لا تُعاد كتابتُها)، وما سواه سطرٌ جديد بكلفة الخادم
+       * كالبيعة (الحقلُ والمجهولةُ بكلفة الجهاز). والمجموعُ تحت من الكلفة نفسِها: Σ round(qty × v_uc, 2). */
+      const kept = !i.product_id || (typeof i.id === "string" && !!i.id && oldProd.get(i.id) === i.product_id);
+      const serverCost = kept ? null : cons.productLineCost(db, i.product_id, i.qty, i.stock_qty);
+      if (serverCost !== null) i.unit_cost = serverCost;
+      const row: InvoiceItem = {
+        id, invoice_id: invoiceId, product_id: i.product_id ?? null,
+        // unit_price/unit_cost numeric(14,2): محفوظان كما يقرّبهما العمود؛ والمجموعُ تحت من المُرسَل كـv_subtotal/v_cost.
+        // والاسمُ coalesce(name, '')، والباركودُ والوحدةُ nullif(…, '') — كسطور 0241 حرفاً.
+        name: i.name ?? "", barcode: i.barcode || null, qty: i.qty, unit_price: cons.col2(i.unit_price), unit_cost: cons.col2(i.unit_cost),
+        line_total: cons.lineMoney(i.qty, i.unit_price), stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label || null,
+        ...(svc ? { service_id: svc } : {}),
+      };
+      lineNonneg(row);
+      if (fkBad) throw lineProductFk();
+      db.invoiceItems.push(row);
+      if (src) {
+        if (seen.has(src)) throw cons.editLineTwiceError();
+        seen.add(src);
+        relinks.push({ from: src, to: id, qty: i.qty });
+      }
     }
+    // 0252: الربطُ بعد حلقة الإدراج كلِّها (سطورُ المواد خصمت قبله): مواصفاتُ القديم تُنسخ بقيمها المجمَّدة إلى كمية
+    // الجديد، وتخطّياتُه تُكتب عليه تاريخاً. العكسُ فوق ردّ القديم إلى صفر.
+    for (const r of relinks) cons.relinkLocal(db, invoiceId, r.from, r.to, r.qty, now);
 
-    // ٣) إعادة الحساب — الخصم ورسوم التوصيل كما هي، والمدفوع لا يُمَس.
-    const subtotal = r2(clean.reduce((s, l) => s + l.qty * l.unit_price, 0));
-    const cost = r2(clean.reduce((s, l) => s + l.qty * l.unit_cost, 0));
+    // ٣) إعادة الحساب — الخصم ورسوم التوصيل كما هي، والمدفوع لا يُمَس. والمالُ سطراً سطراً بالفلس الصحيح كالخادم
+    // (Σ round(qty × سعر, 2)) لا تقريباً واحداً لمجموعٍ عائم.
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const subtotal = cons.sumMoney(clean.map((l) => cons.lineMoney(l.qty, l.unit_price)));
+    const cost = cons.sumMoney(clean.map((l) => cons.lineMoney(l.qty, l.unit_cost)));
     const discount = Math.max(0, Number(inv.discount) || 0);
     // أجرة التوصيل ليست عموداً بالفاتورة بل سطراً داخلها («أجرة توصيل»)، فهي
     // محسوبة ضمن المجموع الفرعي تلقائياً — ولا تُجمع مرتين.
@@ -4314,7 +4520,8 @@ const demoRepo = {
     if (inv.forgiven != null || forg.forgiven) inv.forgiven = forg.forgiven;
     inv.cost_total = cost;
     inv.profit = r2(inv.total - cost);
-    inv.item_count = clean.reduce((n, l) => n + l.qty, 0);
+    // item_count عمودٌ integer: v_items (numeric(12,3)) يُقرَّب عند الإسناد — ٢٫٥ ⇒ ٣ لا ٢٫٥ (قيسَ بالفرق مع الخادم).
+    inv.item_count = cons.colInt(cons.qty3(clean.reduce((n, l) => n + l.qty, 0)));
     // المدفوع أكبر من الإجمالي الجديد (نقص أصناف بعد الدفع) → يبقى كما هو
     // ويظهر كفائض للزبون؛ لا نتصرّف بنقد الزبون تلقائياً.
     const cod = Math.max(0, r2(inv.total - paid));
@@ -4334,60 +4541,86 @@ const demoRepo = {
    *  سالباً (نفس آلية تصحيح التحصيل). إرجاع الكل = refund كامل بدلالاته. */
   async returnInvoiceItems(invoiceId: string, returns: { item_id: string; qty: number }[], method?: PaymentMethod | null, note?: string | null): Promise<Invoice> {
     const money2 = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-US");
-    const r3 = (n: number) => Math.round(n * 1000) / 1000;
     const r2 = (n: number) => Math.round(n * 100) / 100;
+    const cons = await loadDemoConsumption();
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
-    const wanted = new Map((returns ?? []).filter((x) => x && x.qty > 0).map((x) => [x.item_id, r3(x.qty)]));
-    if (!wanted.size) throw new Error("nothing to return");
+    // return_invoice_items (0121 → 0253) بترتيبه: «nothing to return» للمصفوفة الغائبة أو الفارغة هنا، ولمرتجعٍ جزئيٍّ لم يرجّع مدخلٌ منه شيئاً تحت.
+    if (!Array.isArray(returns) || returns.length === 0) throw new Error("nothing to return");
     const items = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+    const now = cons.opStamp(db);                                          // دفعةٌ واحدة لكلّ سطور هذا المرتجع
+    const itemIdOf = (e: unknown): string | null => {
+      const v = e && typeof e === "object" ? (e as { item_id?: unknown }).item_id : null;
+      return v == null || String(v) === "" ? null : String(v);            // nullif(e->>'item_id', '')
+    };
+    const qtyOf = (e: unknown): number | string => {
+      const v = e && typeof e === "object" ? (e as { qty?: unknown }).qty : null;
+      return v == null ? 0 : (v as number | string);                       // coalesce((e->>'qty')::numeric, 0)
+    };
 
-    // إرجاع كامل؟ ⇒ نفس دلالات refundInvoice: استرجاع الكل وقلب الحالة فقط.
-    const full = items.length > 0 && items.every((it) => (wanted.get(it.id) ?? 0) + 0.0005 >= it.qty);
+    // إرجاع كامل؟ أوّلُ مدخلٍ يسمّي كلَّ سطر (limit 1) بكميته كما أُرسلت ⇒ نفس دلالات refundInvoice: استرجاع الكل وقلب الحالة فقط.
+    const full = items.every((it) => cons.returnCovers(qtyOf(returns.find((e) => itemIdOf(e) === it.id) ?? null), it.qty));
     if (full) {
-      for (const it of items) restockLocal(db, it);
+      for (const it of items) restockLocal(db, it, cons, now);
       inv.status = "refunded";
       inv.refunded_at = new Date().toISOString();
       saveDB(db);
       return inv;
     }
 
-    for (const it of items) {
-      const retQty = Math.min(wanted.get(it.id) ?? 0, it.qty);
-      if (retQty <= 0) continue;
-      // المخزون بنسب البيع نفسها: المسحوب لكل وحدة، وحصة القسم نسبية.
+    /* المرتجعُ الجزئيّ مدخلاً مدخلاً **بترتيب p_returns** كالخادم: كلُّ مدخلٍ يقرأ سطرَه من جديد (فالسطرُ مرّتين يُرجَع مرّتين)،
+     * ومعرّفٌ ليس من سطور هذه الفاتورة ⇒ item not found — التعديلُ يجدّد المعرّفات (0252)، فلوحةُ مرتجعٍ فُتحت قبله كانت
+     * تقول «تم» هنا ولا ترجع شيئاً. والحصّتان بالضبط كالخادم (returnShareLocal: v_per numeric(14,6)، لا القسمةُ العائمة). */
+    for (const e of returns) cons.numericIn(qtyOf(e));                      // حلقةُ الخادم تقرأ كلَّ المداخل رقماً قبل أوّل لفّة (22P02)
+    let counted = 0;                                                         // 0253 (v_n): مداخلُ رجّعت شيئاً فعلاً
+    for (const e of returns) {
+      const itemId = itemIdOf(e);
+      const want = qtyOf(e);
+      if (itemId == null || cons.numericIn(want) <= 0n) continue;           // r.item_id is null or r.ret_qty <= 0
+      const it = (db.invoiceItems ?? []).find((x) => x.id === itemId && x.invoice_id === invoiceId);
+      if (!it) throw new Error("item not found");
+      const s = cons.returnShareLocal(it, want);
+      // 0253: ما يُعدّ هو ما يرجع فعلاً — least(round(ret, 3), qty) صفرٌ (٠٫٠٠٠٤) لا يلمس سطرَه ولا مادّتَه ولا يُعدّ.
+      if (s.ret === 0) continue;
+      counted++;
+      let retPool = s.pool;
+      // المخزون بنسب البيع نفسها: المسحوب لكل وحدة، وحصة القسم نسبية — لقسم المادّة الآن، وبلا قسم (أو بلا مادّة) فكلُّه للرصيد.
       if (it.product_id) {
-        const per = it.qty > 0 && it.stock_qty != null ? it.stock_qty / it.qty : 1;
-        const retStock = r3(retQty * per);
-        let retPool = r3((it.pooled_qty ?? 0) * (retQty / it.qty));
         const p = (db.products ?? []).find((x) => x.id === it.product_id);
-        if (p) {
-          const sec = retPool > 0 && p.section_id ? (db.companySections ?? []).find((s) => s.id === p.section_id) : undefined;
-          if (sec) sec.pooled_stock = r3((sec.pooled_stock ?? 0) + retPool);
-          else retPool = 0;
-          p.stock = r3(p.stock + (retStock - retPool));
+        if (retPool > 0) {
+          const secId = p?.section_id ?? null;
+          if (secId) {
+            const sec = (db.companySections ?? []).find((x) => x.id === secId);
+            if (sec) sec.pooled_stock = cons.qty3((sec.pooled_stock ?? 0) + retPool);
+          } else retPool = 0;
         }
-        if (retQty + 0.0005 >= it.qty) {
-          db.invoiceItems = db.invoiceItems.filter((x) => x.id !== it.id);
-        } else {
-          it.qty = r3(it.qty - retQty);
-          it.line_total = r2(it.qty * it.unit_price);
-          if (it.stock_qty != null) it.stock_qty = r3(it.stock_qty - retStock);
-          if (it.pooled_qty != null) it.pooled_qty = r3(it.pooled_qty - retPool);
-        }
-      } else if (retQty + 0.0005 >= it.qty) {
+        if (p) p.stock = cons.qty3((p.stock || 0) + (s.stock - retPool));
+      }
+      if (s.deletes) {
         db.invoiceItems = db.invoiceItems.filter((x) => x.id !== it.id);
+        cons.syncItemLocal(db, it.id, 0, now);                               // 0252: محفّزُ الحذف
       } else {
-        it.qty = r3(it.qty - retQty);
-        it.line_total = r2(it.qty * it.unit_price);
+        const before = it.qty;
+        it.qty = cons.qty3(it.qty - s.ret);
+        it.line_total = cons.lineMoney(it.qty, it.unit_price);
+        if (it.stock_qty != null) it.stock_qty = cons.qty3(it.stock_qty - s.stock);
+        if (it.pooled_qty != null) it.pooled_qty = cons.qty3(it.pooled_qty - retPool);
+        lineNonneg(it);                                                      // القيدُ يفحص الصفَّ المحدَّث (NOT VALID)
+        // 0252: محفّزُ الكمية (when new.qty is distinct from old.qty) — T(الكمية الجديدة) يبقى حيّاً
+        if (it.qty !== before) cons.syncItemLocal(db, it.id, Math.max(it.qty, 0), now);
       }
     }
+    /* 0253: ولا مدخلَ رجّع شيئاً (كلُّ كميةٍ ≤ ٠ أو تُقرَّب صفراً، أو بلا سطر) ⇒ «nothing to return» — رمزُ المصفوفة الفارغة نفسُه، قبل
+     * أيّ حفظ. كان يمرّ بلا حركة ويختم «مرتجع» ويعيد المجموعَ من السطور: فاتورةٌ مجموعُها فوق سطورها تردّ الفرقَ نقداً بلا شيءٍ راجع. */
+    if (counted === 0) throw new Error("nothing to return");
 
-    // إعادة الحساب — الخصم الثابت يبقى كما هو.
+    // إعادة الحساب — الخصم الثابت يبقى كما هو. والمالُ بالفلس الصحيح سطراً سطراً كالخادم:
+    // Σ line_total وΣ round(qty × unit_cost, 2) — لا تقريباً واحداً لمجموعٍ عائم.
     const left = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
-    const subtotal = r2(left.reduce((s, l) => s + l.line_total, 0));
+    if (!left.length) throw new Error("nothing left");                     // الكاملُ عولج فوق
+    const subtotal = cons.sumMoney(left.map((l) => l.line_total));
     const discount = Math.max(0, Number(inv.discount) || 0);
     const oldTotal = Number(inv.total) || 0;
     // المدفوع كما بالدالّة: coalesce(amount_paid, total) — بالإجمالي **قبل** المرتجع.
@@ -4398,9 +4631,9 @@ const demoRepo = {
     inv.subtotal = subtotal;
     inv.total = forg.total;
     if (inv.forgiven != null || forg.forgiven) inv.forgiven = forg.forgiven;
-    inv.cost_total = r2(left.reduce((s, l) => s + l.qty * l.unit_cost, 0));
+    inv.cost_total = cons.sumMoney(left.map((l) => cons.lineMoney(l.qty, l.unit_cost)));
     inv.profit = r2(inv.total - inv.cost_total);
-    inv.item_count = left.reduce((n, l) => n + l.qty, 0);
+    inv.item_count = cons.colInt(cons.qty3(left.reduce((n, l) => n + l.qty, 0)));   // integer كالعمود (round عند الإسناد)
 
     // النقد الخارج فعلاً = المدفوع فوق الإجمالي الجديد. آجلة ⇒ الدين ينقص وحده.
     const back = Math.max(0, r2(paid - inv.total));
@@ -4880,7 +5113,9 @@ const demoRepo = {
     return (await import("./demoCounts")).demoSubmitCount(lines);
   },
   async decideStockCounts(ids: string[], approve: boolean): Promise<CountDecision> {
-    return (await import("./demoCounts")).demoDecideCounts(ids, approve, demoAddExpense);
+    // 0254: سندُ التلف يُرحَّل −d بالضبط عبر مرحِّل المستهلكات ('external') — يُمرَّر من هنا فلا تستورد مرآةُ الجرد تلك.
+    const cons = await loadDemoConsumption();
+    return (await import("./demoCounts")).demoDecideCounts(ids, approve, demoAddExpense, (db, pid, x, mode, now) => cons.stockPostLocal(db, pid, x, mode, now));
   },
   async listStockCounts(q: { pending: true } | { from: string; to: string }): Promise<StockCount[]> {
     const all = (await import("./demoCounts")).loadCounts();
@@ -5122,3 +5357,26 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
 
 export { demoRepo };
 export type DemoRepo = typeof demoRepo;
+
+/* مرآةُ مستهلكات الخدمات (0252–0255) لا تُحمَّل إلا من هنا: consumptionApi يمرّ بهذا الباب لا يستوردها
+ * مباشرةً. وحدةٌ تبلغها الحزمةُ من طريقٍ لا يمرّ بـrepoDemo تُقسَم demoRole (وكلَّ ما تشترك به معها)
+ * قطعةً مستقلّة يدخل اسمُها قائمةَ التحميل المسبق لـrepoDemo بحزمة الإقلاع (مقيس: +١٥ بايت مضغوطة). */
+export const loadDemoConsumption = () => import("./demoConsumption");
+
+/* وما تحتاجه المرآةُ من هنا (الاستيرادُ دائريٌّ وآمن: يُقرأ ساعةَ النداء). كتالوجُ الخدمات (clinic_services بالتجريبيّ) يمرّ
+ * من هنا لا من services.ts مباشرةً — فلا تكسب قطعةُ المرآة مستورداً جديداً يغيّر تقسيمَ القطع المشتركة. */
+export { demoAuditPush };
+/** وسحبُ المخزن (سند التلف بموافقته الفورية، 0254) يمرّ من مسلك المصروف الواحد هنا. */
+export { demoAddExpense };
+export const demoServices = {
+  list: (): Service[] => getServiceCatalog().services,
+  /** p_clear_flat_cost: `update clinic_services set cost = null … and cost is not null`. */
+  clearCost: (id: string): void => updateService(id, { cost: null }),
+};
+
+/* وdemoRole تُصدَّر من هنا أيضاً — لا ليستوردها أحدٌ من هنا (المستوردون يأخذونها من demoRole.ts)، بل للحزمة: Rollup
+ * يطويها داخل قطعة repoDemo، وdemoCounts وdemoLots وdemoConsumption يستوردونها من تلك القطعة. وبأسماءٍ ليست من صادرات
+ * repoDemo.ts تفقد القطعةُ واجهتَها، فيصير import() بـrepo.ts (حزمة الإقلاع) `.then(e=>e.r)` مع كائنِ مساحة أسماء.
+ * مقيسٌ ببناء vite: بلا هذا السطر repo-*.js 92,301 بايتاً خاماً (+١٣، و+٦ مضغوطة)، وبه 92,288 كالرأس؛ وقائمةُ
+ * التحميل المسبق لـrepoDemo ٢٣ اسماً بالحالتين. */
+export { demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";

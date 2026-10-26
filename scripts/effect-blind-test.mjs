@@ -6,7 +6,7 @@ import { mkdtempSync, readdirSync, copyFileSync, writeFileSync, rmSync } from "n
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { buildModel, analyze } from "./db-guard.mjs";
+import { buildModel, analyze, invoiceWriters, wiringChecks, atUsInline } from "./db-guard.mjs";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
 let fail = 0;
@@ -53,5 +53,112 @@ writeFileSync(join(nr, "0999_norm.sql"), `${redefine}\nreindex index public.clin
 ok(reNorm(nr) === "", "  وبـreindex index للثلاثة: يمرّ");
 rmSync(nr, { recursive: true, force: true });
 
+/* invoice-writers وconsumption-wiring (0252): كاتبٌ جديدٌ لسطور الفواتير بلا سببٍ مسمّى يفشل ويُسمّى (وتعليقٌ
+ * يذكر الكتابةَ لا يُعدّ)، وبيعةٌ لاحقةٌ بلا تخطيطٍ ولا صرف تُسمّى، ومحفّزُ عكسٍ يُسقط أو يُعطَّل يُسمّى — وحذفُ
+ * الكاتب وإعادةُ المحفّز وتفعيلُه يُرى. والغلافُ الذي تنشئه كتلةُ do (0241) هو آخرُ جسمٍ لا نصُّ 0110. */
+const rule = (dir, r) => analyze(buildModel(dir)).filter((f) => f.rule === r).map((f) => f.where).sort();
+const same = (a, b) => JSON.stringify(a) === JSON.stringify([...b].sort());
+const real = buildModel(MIG);
+ok(rule(MIG, "invoice-writers").length === 0 && invoiceWriters(real).length === 10, "الشجرةُ الحقيقية: عشرةُ كتّابٍ للفواتير، كلٌّ بسببه بالقائمة");
+ok(rule(MIG, "consumption-wiring").length === 0 && wiringChecks(real).length >= 15, "  والربطُ كامل: البيعةُ والتعديلُ والمرتجعُ والحذفُ والمحفّزات (١٥ رابطاً فأكثر)");
+ok(real.fnBodies.get("edit_invoice_lines/3")?.file.startsWith("0241"), "  وغلافُ edit_invoice_lines آخرُه كتلةُ 0241 (do/execute) لا جسمُ 0110 الكاتب");
+const iw = copy(() => true);
+writeFileSync(join(iw, "0998_writer.sql"), `
+create or replace function public.sneaky_fix(p uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.invoice_items set qty = 1 where id = p;
+end $$;
+create or replace function public.only_says(p uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  -- delete from invoice_items — تعليقٌ لا يكتب
+  perform 1;
+end $$;
+create or replace function public.retail_checkout(p_items jsonb, p_meta jsonb default '{}'::jsonb) returns invoices
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into invoice_items (invoice_id) values (null);
+  return null;
+end $$;
+drop trigger if exists invoice_items_consumption_del on public.invoice_items;
+alter table public.products disable trigger products_waste_guard;`);
+ok(same(rule(iw, "invoice-writers"), ["sneaky_fix (invoice_items)"]), "كاتبٌ جديدٌ لسطور الفواتير بلا سبب: يفشل ويسمّيه (والتعليقُ وحده لا يُعدّ)");
+ok(same(rule(iw, "consumption-wiring"), [
+  "retail_checkout/2 ⇐ _consumption_plan( — بلا _consumption_plan(",
+  "retail_checkout/2 ⇐ _consumption_apply( — بلا _consumption_apply(",
+  "محفّز invoice_items_consumption_del@invoice_items — غائب",
+  "محفّز products_waste_guard@products — معطَّل",
+]), "  وبيعةٌ لاحقةٌ بلا تخطيطٍ ولا صرف، ومحفّزٌ أُسقط وآخرُ عُطّل: تُسمّى كلُّها");
+writeFileSync(join(iw, "0999_undo.sql"), `
+drop function if exists public.sneaky_fix(uuid);
+create trigger invoice_items_consumption_del after delete on public.invoice_items
+  for each row execute function public.invoice_items_consumption_del();
+alter table public.products enable trigger products_waste_guard;`);
+ok(rule(iw, "invoice-writers").length === 0, "  وحذفُ الكاتب يُرى: لا كاتبَ بلا سبب");
+ok(same(rule(iw, "consumption-wiring"), [
+  "retail_checkout/2 ⇐ _consumption_plan( — بلا _consumption_plan(",
+  "retail_checkout/2 ⇐ _consumption_apply( — بلا _consumption_apply(",
+]), "  وإعادةُ المحفّز وتفعيلُه تُرى: تبقى البيعةُ وحدها");
+rmSync(iw, { recursive: true, force: true });
+const pre = copy((f) => f < "0252");
+const preModel = buildModel(pre);
+ok(wiringChecks(preModel).length === 0 && invoiceWriters(preModel).length === 10 && rule(pre, "invoice-writers").length === 0,
+  "وقبل 0252 لا ربطَ يُطلب، والكتّابُ العشرة بأجسامهم الأقدم بالقائمة");
+ok(atUsInline(preModel).length === 0 && rule(pre, "at-us-expr").length === 0, "  ولا مصدرَ واحدَ لـat_us يُطلب قبل 0252");
+rmSync(pre, { recursive: true, force: true });
+
+/* at-us-expr (0252 §6): at_us = _cons_at_us(created_at) دفعةُ الفعل، والواجهةُ تقارن دفعاتِ سند الهدر بأحداث الدفتر
+ * بالتساوي — فقارئُ دفعاتٍ أحدث يحسب الميكروثانيةَ بنفسه (أو بـdate_part العائم) يُسمّى بالقاعدتين، وجسمٌ ينادي
+ * _cons_at_us( يمرّ، والشجرةُ الحقيقية نظيفة. */
+ok(rule(MIG, "at-us-expr").length === 0 && wiringChecks(real).some((c) => c.what.startsWith("invoice_consumption_get/1") && c.ok),
+  "at_us: الشجرةُ الحقيقية لا تحسبه إلا بـ_cons_at_us، وآخرُ invoice_consumption_get ينادي _cons_at_us(");
+const us = copy(() => true);
+writeFileSync(join(us, "0999_us.sql"), `
+create or replace function public.invoice_consumption_get(p_invoice_ids uuid[]) returns jsonb
+language plpgsql stable security invoker set search_path = public as $$
+begin
+  -- _cons_at_us( — تعليقٌ لا ينادي
+  return (select jsonb_agg((extract(epoch from c.created_at) * 1000000)::bigint) from invoice_consumption c);
+end $$;
+create or replace function public.stock_waste_submit(p_lines jsonb, p_apply boolean default false, p_meta jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  perform 1 from invoice_consumption c where 1e6 * date_part('epoch', c.created_at) = 0;
+  return null;
+end $$;`);
+ok(same(rule(us, "at-us-expr"), [
+  "invoice_consumption_get/1: ميكروثانيةٌ من الحقبة خارج _cons_at_us(",
+  "stock_waste_submit/3: ميكروثانيةٌ من الحقبة خارج _cons_at_us(",
+]) && same(rule(us, "consumption-wiring"), ["invoice_consumption_get/1 ⇐ _cons_at_us( — بلا _cons_at_us("]),
+  "  وقارئٌ أحدث يحسب الميكروثانيةَ بنفسه، وكاتبٌ يقارن بـdate_part العائم: يُسمّيان (والتعليقُ لا ينادي)");
+writeFileSync(join(us, "0999_us.sql"), `
+create or replace function public.invoice_consumption_get(p_invoice_ids uuid[]) returns jsonb
+language plpgsql stable security invoker set search_path = public as $$
+begin
+  return (select jsonb_agg(public._cons_at_us(c.created_at)) from invoice_consumption c);
+end $$;`);
+ok(rule(us, "at-us-expr").length === 0 && rule(us, "consumption-wiring").length === 0, "  وبـ_cons_at_us( يمرّ");
+/* والمليونُ بأيّ كتابةٍ له تعبيرٌ ثانٍ مثلُه: نمطٌ يعرف 1000000 و1e6 وحدهما كان يمرّر 10^6 و1000 * 1000 و1_000_000
+ * (وpower(10, 6) و1e+6 و'epoch' بين علامتين) — كاتبٌ يقارن الدفعات بأيٍّ منها يُسمّى، كلٌّ وحده. */
+for (const [spell, expr] of [
+  ["10^6", "extract(epoch from c.created_at) * 10^6"],
+  ["1000 * 1000", "extract(epoch from c.created_at) * 1000 * 1000"],
+  ["1_000_000", "extract(epoch from c.created_at) * 1_000_000"],
+  ["power(10, 6)", "power(10, 6) * extract(epoch from c.created_at)"],
+  ["1e+6", "date_part('epoch', c.created_at) * 1e+6"],
+  ["extract('epoch') * 1000000.0", "extract('epoch' from c.created_at) * 1000000.0"],
+]) {
+  writeFileSync(join(us, "0999_us.sql"), `
+create or replace function public.stock_waste_submit(p_lines jsonb, p_apply boolean default false, p_meta jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  perform 1 from invoice_consumption c where (${expr})::bigint = 0;
+  return null;
+end $$;`);
+  ok(same(rule(us, "at-us-expr"), ["stock_waste_submit/3: ميكروثانيةٌ من الحقبة خارج _cons_at_us("]), `  والمليونُ بكتابة ${spell}: يُسمّى`);
+}
+rmSync(us, { recursive: true, force: true });
+
 if (fail) { console.error(`effect-blind-test: ${fail} فشل`); process.exit(1); }
-console.log("effect-blind-test: ٧ فحوص عبرت (effect-blind ×٣، norm-reindex ×٤)");
+console.log("effect-blind-test: ٢٥ فحصاً عبرت (effect-blind ×٣، norm-reindex ×٤، invoice-writers/consumption-wiring ×٨، at-us ×١٠)");

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search, Plus, Minus, Trash2, Undo2, AlertTriangle, Wallet, PackageOpen,
@@ -11,12 +11,20 @@ import { Button, useToast } from "@/components/ui";
 import { round2 } from "@/lib/debt";
 import { cn, money, normalizeAr, formatNum } from "@/lib/utils";
 import { codeMatcher } from "@/lib/productCodes";
+import { sellableRow } from "@/lib/sellable";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { useWaAfterSave } from "@/hooks/useWaAfterSave";
 import { waNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { invoiceNo } from "@/lib/invoiceNo";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* ما رجع للمخزن من موادّ الخدمة بعد تعديلٍ نقّص سطرَ خدمةٍ أو شاله، وما انصرف بلا رصيد بعد تعديلٍ رفعه (0252): قطعةُ
+   «المستهلكات» بنطاقها المملوك rcp — كسولةٌ بحارسٍ بمكانها، تُحمَّل بعد الحفظ وحده، ولا ينتظرها الحفظ. */
+const loadConsNotice = () => page(() => import("@/components/retail/ConsumablesSheet").then((m) => ({ default: m.ConsumptionNotice })), ["rcp"]);
+let ConsNoticeLazy = loadConsNotice();
 
 /* ============================================================================
  * DeliveryEditDialog — تعديل طلب توصيل بعد إنشائه.
@@ -27,8 +35,9 @@ import { invoiceNo } from "@/lib/invoiceNo";
  *
  * ثلاث قواعد تحكم هذه الشاشة، وكلها مرئية للطبيب قبل أن يضغط حفظ:
  *   ١) المخزون لا ينزلق: الحاجة الإضافية لكل منتج = (المسحوب الجديد − القديم)،
- *      وتُقاس مقابل رصيد المنتج + مخزون قسمه المشترك. التجاوز يمنع الحفظ هنا
- *      قبل أن يرفضه السيرفر — الطبيب يرى الرقم المتاح لا رسالة خطأ غامضة.
+ *      وتُقاس مقابل رصيد الكاشير نفسه (sellable.ts: الصفّ + حوضُ قسمه إن كان
+ *      موجباً) — فتمنع النافذةُ ما يمنعه الكاشير وحده. التجاوز يمنع الحفظ هنا
+ *      — الطبيب يرى الرقم المتاح لا رسالة خطأ غامضة.
  *   ٢) نقد الزبون لا يُمَس: المدفوع يبقى كما هو، ويُعاد حساب ما يستلمه السواق
  *      (= الإجمالي الجديد − المدفوع) ويُعرض بوضوح قبل الحفظ وبعده.
  *   ٣) السبب اختياري: إلزامه كان يوقف الطبيب عن تعديلٍ يريده الآن ويده على
@@ -77,6 +86,12 @@ export function DeliveryEditDialog({
   const [products, setProducts] = useState<Product[]>([]);
   const [pools, setPools] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
+  /* سطورُ الفاتورة أو مخزنُ العيادة ما وصلت: لا محرّرَ فارغاً — «لا نتائج» عن مادّةٍ على الرفّ تُصدَّق فتُدخَل
+     توأماً، وطلبٌ «بلا أصناف» يُقال عن طلبٍ فيه. فالفشلُ يُقال ويُعاد بمكانه. وحوضُ الأقسام يكمّل المتاح ولا
+     يحجب التعديل، لكنّ فشلَه يُقال: «المتوفر» بلا حوضه أقلُّ من الحقيقة. */
+  const [loadErr, setLoadErr] = useState<unknown>(null);
+  const [loadTick, setLoadTick] = useState(0);
+  const [poolsFailed, setPoolsFailed] = useState(false);
   const [q, setQ] = useState("");
   const [reason, setReason] = useState("");
   const [notify, setNotify] = useState(order?.status === "out" && !!courier?.phone);
@@ -86,17 +101,36 @@ export function DeliveryEditDialog({
    * على الطلب لا على الفاتورة، فتُحفظ بنداءٍ مستقلّ عن تعديل الأصناف. */
   const [fee, setFee] = useState(String(order?.delivery_fee ?? 0));
   const [feeToClinic, setFeeToClinic] = useState(!!order?.fee_to_clinic);
+  /* حفظٌ غيّر كميةَ سطر خدمةٍ أو شاله (0252): موادُّه رجعت للمخزن أو انصرف منها أكثر، فالنافذةُ تبقى بسطر النجاح وما
+     يقوله الإشعار (ما رجع، أو ما انصرف بلا رصيد) حتى «تم».
+     والمضيفُ يُبلَّغ بالحفظ عند إغلاقها (مضيفٌ يغلقها بـonSaved كان سيُسقط ما يُقال) — أو إن أزالها بغيره.
+     ومع سطر النجاح لحظةُ طلب التعديل (performance.now قبله): بها تُعرف دفعتُه بدفتر المستهلكات. */
+  const [done, setDone] = useState<{ msg: string; sentAt: number } | null>(null);
+  // «أعد المحاولة» على قطعة المستهلكات: قطعةٌ جديدة، ورسمٌ جديد يلتقطها.
+  const [, setLazyTick] = useState(0);
+  const savedPending = useRef(false);
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+  useEffect(() => () => { if (savedPending.current) { savedPending.current = false; onSavedRef.current(); } }, []);
+  const finish = () => {
+    if (savedPending.current) { savedPending.current = false; onSaved(); }
+    onClose();
+  };
 
   useEffect(() => {
     let alive = true;
+    setLoading(true);
+    setLoadErr(null);
     void (async () => {
       try {
+        let poolsLost = false;
         const [items, prods, secs] = await Promise.all([
           repo.listInvoiceItems(invoice.id),
           repo.listProducts(clinicId),
-          repo.listCompanySections(undefined, clinicId).catch(() => [] as CompanySection[]),
+          repo.listCompanySections(undefined, clinicId).catch(() => { poolsLost = true; return [] as CompanySection[]; }),
         ]);
         if (!alive) return;
+        setPoolsFailed(poolsLost);
         const byId = new Map(prods.map((p) => [p.id, p]));
         setRows(items.map((it, i) => ({
           key: it.id || `src-${i}`,
@@ -116,12 +150,12 @@ export function DeliveryEditDialog({
         setProducts(prods);
         setPools(new Map(secs.map((s) => [s.id, s.pooled_stock ?? 0])));
       } catch (e) {
-        toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+        if (alive) setLoadErr(e ?? new Error("load"));
       } finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [invoice.id, clinicId]);
+  }, [invoice.id, clinicId, loadTick]);
 
   const live = rows.filter((r) => !r.removed && r.qty > 0);
 
@@ -142,6 +176,9 @@ export function DeliveryEditDialog({
   const collectNow = round2(newCod + (feeToClinic ? 0 : feeNum));
 
   /* ---- حارس المخزون: الحاجة الإضافية لكل منتج مقابل المتاح فعلاً ------------ */
+  /* المتاحُ رصيدُ الكاشير بمعادلته الواحدة (sellableRow): الحوضُ يُضاف إن كان موجباً. كانت النافذةُ تجمعه بإشارته، والحوضُ صار
+     يحفظ إشارتَه (0253: طيُّ مادّةٍ سالبة للحوض) — فحوضٌ −٢ تحت صفٍّ ٣ قال «المتوفر 1 فقط» ومنع رفعَ سطرٍ يبيعه الكاشير (رصيدُه ٣). */
+  const availOf = (p: Product): number => r3(sellableRow(p, p.section_id ? (pools.get(p.section_id) ?? 0) : 0).stock || 0);
   const shortages = useMemo(() => {
     const need = new Map<string, number>();
     for (const r of rows) {
@@ -155,10 +192,11 @@ export function DeliveryEditDialog({
       if (extra <= 0.0005) continue;
       const p = products.find((x) => x.id === pid);
       if (!p) continue;
-      const avail = r3((p.stock || 0) + (p.section_id ? (pools.get(p.section_id) ?? 0) : 0));
+      const avail = availOf(p);
       if (extra > avail + 0.0005) out.push({ name: p.name, avail });
     }
     return out;
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [rows, products, pools]);
 
   const changed = useMemo(() => {
@@ -228,6 +266,11 @@ export function DeliveryEditDialog({
     if (shortages.length) { playWarning(); toast.error(t("retail.dEditStockShort", { name: shortages[0].name, n: formatNum(shortages[0].avail), defaultValue: "المتوفر من {{name}}: {{n}} فقط" })); return; }
 
     setSaving(true);
+    // سطرُ خدمةٍ بخدمته (وحده يصرف موادّاً) تغيّرت كميتُه أو انشال ⇒ محفّزُ الحذف يردّ موادَّه، والربطُ بمعرّف السطر
+    // (`id` أدناه) يصرف كميتَه الجديدة بالقيم المجمَّدة — فالنقصُ يرجّع للمخزن، والزيادةُ تصرف حالةً أكثر بلا منع وقد تنزل
+    // بالمادّة تحت الصفر («لا منع، والسالبُ يُقال»). كانت الزيادةُ تُغلق النافذةَ بـ«المخزون تزامن تلقائياً» والرصيدُ صار
+    // سالباً بلا كلمة؛ فالنافذةُ تبقى بعد الحفظ والإشعارُ يقول صافيَ الدفعة: ما رجع، أو ما انصرف بلا رصيد، أو لا شيء.
+    const consMoved = rows.some((r) => !!r.src && r.src.product_id == null && !!r.src.service_id && (!!r.removed || r.qty !== r.src.qty));
     try {
       const lines: EditLine[] = live.map((r) => ({
         id: r.src?.id,
@@ -240,6 +283,7 @@ export function DeliveryEditDialog({
         unit_label: r.unit_label,
         stock_qty: r.product_id ? r3(r.qty * r.perUnit) : 0,
       }));
+      const sentAt = performance.now();
       const inv = await repo.editInvoiceLines(invoice.id, lines, reason.trim() || null);
 
       /* الأجرة على صفّ الطلب لا على الفاتورة، فتُحفظ بنداءٍ ثانٍ — **بعد** نجاح
@@ -257,8 +301,10 @@ export function DeliveryEditDialog({
 
       playSuccess();
       if (feeFailed) toast.error(t("retail.dFeeSaveFailed", "انحفظ تعديل الأصناف، بس الأجرة ما انحفظت — جرّبها مرّة ثانية"));
-      if (order) toast.success(t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" }));
-      else toast.success(t("retail.invEditSaved", { n: money(Number(inv.total) || newTotal), defaultValue: "تم تعديل الفاتورة — الإجمالي الجديد {{n}} والمخزون تزامن تلقائياً" }));
+      const savedMsg = order
+        ? t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" })
+        : t("retail.invEditSaved", { n: money(Number(inv.total) || newTotal), defaultValue: "تم تعديل الفاتورة — الإجمالي الجديد {{n}} والمخزون تزامن تلقائياً" });
+      toast.success(savedMsg);
       // الإشعار بعد نجاح الحفظ فقط: رسالة عن تعديل لم يُحفظ أسوأ من لا رسالة.
       // والمنعُ بعد الحفظ (سفاري) يُقال باسم السائق ومعه زرٌّ يرسلها — لا يُبلع (useWaAfterSave).
       if (order && notify && courier?.phone) {
@@ -275,6 +321,7 @@ export function DeliveryEditDialog({
           kind: "manual",
         }, courier.name);
       }
+      if (consMoved) { savedPending.current = true; setDone({ msg: savedMsg, sentAt }); return; }
       onSaved();
       onClose();
     } catch (e) {
@@ -283,8 +330,28 @@ export function DeliveryEditDialog({
     } finally { setSaving(false); }
   };
 
+  const title = order ? t("retail.dEditTitle", "تعديل طلب التوصيل") : t("retail.invEditTitle", "تعديل الفاتورة");
+
+  /* بعد حفظٍ حرّك موادَّ خدمة: سطرُ النجاح وما رجع للمخزن (ومعه «سجّلها هدر») أو ما انصرف بلا رصيد — والإغلاقُ يبلّغ المضيف. */
+  if (done !== null) {
+    return (
+      <Modal open onClose={finish} size="wide" title={title}>
+        <div className="space-y-3.5" data-dedit-done>
+          <p className="rounded-2xl border border-success-300 bg-success-50/60 p-3 text-sm font-bold text-success-700 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-300">{done.msg}</p>
+          <LoadBoundary scope="cons-returned" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              {/* التعديلُ لا يردّ مالاً للزبون: «رجعت الفلوس» لا تُقال بعده. */}
+              <ConsNoticeLazy mode="returned" invoiceIds={[invoice.id]} sentAt={done.sentAt} cashBack={false} />
+            </Suspense>
+          </LoadBoundary>
+          <Button className="w-full" style={{ minHeight: 48 }} onClick={finish}>{t("common.done")}</Button>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
-    <Modal open onClose={onClose} size="wide" title={order ? t("retail.dEditTitle", "تعديل طلب التوصيل") : t("retail.invEditTitle", "تعديل الفاتورة")}>
+    <Modal open onClose={onClose} size="wide" title={title}>
       <div className="space-y-3.5" data-dedit>
         {/* الطلب خرج فعلاً — تحذير قبل أي ضغطة، لا بعدها */}
         {order?.status === "out" && (
@@ -298,6 +365,15 @@ export function DeliveryEditDialog({
 
         {loading ? (
           <div className="p-8 text-center text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</div>
+        ) : loadErr != null ? (
+          <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-danger-300 bg-danger-50 p-3 text-sm dark:border-danger-500/40 dark:bg-danger-500/10" data-dedit-failed>
+            <AlertTriangle size={17} className="mt-0.5 shrink-0 text-danger-600" />
+            <div className="min-w-0 flex-1 text-danger-700 dark:text-danger-200">
+              <p>{t("pos.loadFailed")}</p>
+              <p className="mt-1 text-2xs text-ink-subtle">{describeDbError(loadErr, t)}</p>
+            </div>
+            <Button variant="secondary" onClick={() => { playTap(); setLoadTick((n) => n + 1); }}>{t("common.retry")}</Button>
+          </div>
         ) : (
           <>
             {/* أصناف الطلب */}
@@ -376,7 +452,7 @@ export function DeliveryEditDialog({
                   {results.length === 0 ? (
                     <p className="p-2 text-center text-xs text-ink-subtle">{t("retail.dEditNoResults", "لا نتائج")}</p>
                   ) : results.map((p) => {
-                    const avail = r3((p.stock || 0) + (p.section_id ? (pools.get(p.section_id) ?? 0) : 0));
+                    const avail = availOf(p);
                     return (
                       <button key={p.id} data-dadd onClick={() => addProduct(p)}
                         className="flex w-full items-center gap-2.5 rounded-xl p-2 text-start transition hover:bg-surface-2">
@@ -391,6 +467,12 @@ export function DeliveryEditDialog({
                 </div>
               )}
             </div>
+
+            {poolsFailed && products.some((p) => !!p.section_id) && (
+              <p className="rounded-xl bg-amber-100 px-2.5 py-1.5 text-2xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200" data-dedit-poolsfailed>
+                {t("pos.pooledStockFailed")}
+              </p>
+            )}
 
             {/* نقص مخزون: يُمنع الحفظ ويُعرض المتاح فعلاً */}
             {shortages.length > 0 && (

@@ -1,5 +1,5 @@
 import { noteScan } from "@/lib/scanStats";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -8,7 +8,7 @@ import {
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
   ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX, Hash, History,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder, ConsumableEntry } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { checkoutPhone, custNameKey, custPhoneKey } from "@/lib/customerKey";
@@ -61,6 +61,8 @@ import { withTimeout, describeDbError, isNetworkError, isTimeoutError, shouldRel
 import { readPriceDraft } from "@/lib/priceDraft";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -74,7 +76,7 @@ interface Line {
   name: string;
   barcode: string | null;
   unit_price: number; // editable
-  unit_cost: number; // product purchase price; 0 for services
+  unit_cost: number; // كلفةُ الوحدة: للمادّة ما يكتبه الخادم (0255، productLineCost)، وللخدمة كلفتُها الثابتة
   qty: number;
   stock: number | null; // product stock IN BOXES (fractional ok); null = unlimited (service / med)
   product_id: string | null;
@@ -120,6 +122,11 @@ interface Line {
   /** سطرُ راجع لمنتجٍ رُفع سعرُه: «قبل الرفع» افتراضُه (0226). undefined = لم يُحسم بعد،
    *  null = لا رفعَ يخصّه. `list` سعرُ اليوم — زرٌّ واحد لمن اشترى بعد الرفع. */
   retPrior?: { o: number; at: string; list: number } | null;
+  /** مستهلكاتُ **حالةٍ واحدة** من هذا السطر بدل الوصفة (0252، ورقةُ المستهلكات): غائبٌ = الوصفةُ كما هي
+   *  ساعةَ البيعة، و[] = لا شيء. يكتبها الطبيبُ أو المدير (والخادمُ يفرضه)، وتعيش بالمسودّة. */
+  consumables?: ConsumableEntry[] | null;
+  /** كلفةُ مواد الحالة الواحدة كما حسبتها الورقةُ لحظةَ الحفظ — لمعاينة الربح وحدها، والخادمُ يحسب الحقيقيّة. */
+  consEst?: number | null;
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -185,8 +192,39 @@ interface SaleDraft {
 const POS_MAX = 60;
 
 const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "default"}`;
+/** مستهلكاتُ سطرٍ من مسودّةٍ محفوظة (0252): قائمةٌ بشكل ما يقبله الخادم تبقى كما هي، وأيُّ شيءٍ غيرُها يسقط
+ *  **كلُّه** فيرجع السطرُ للوصفة — نصفُ قائمةٍ أخطرُ من لا قائمة، ومادّةٌ مكسورةٌ واحدة يرفض الخادمُ عليها
+ *  البيعةَ كلَّها (consumables_bad). مسودّةٌ من نسخةٍ أقدم أو مخزنٌ عُبث به لا يُسقط الشاشة. */
+function draftConsumables(v: unknown): ConsumableEntry[] | undefined {
+  if (!Array.isArray(v) || v.length > 40) return undefined;
+  const seen = new Set<string>();
+  for (const e of v) {
+    if (!e || typeof e !== "object" || typeof e.product_id !== "string" || !e.product_id) return undefined;
+    if (typeof e.qty !== "number" || !Number.isFinite(e.qty) || e.qty <= 0 || e.qty > 1e6 || Math.round(e.qty * 1000) / 1000 !== e.qty) return undefined;
+    if (e.unit !== "stock" && e.unit !== "sub") return undefined;
+    const k = e.product_id.toLowerCase();
+    if (seen.has(k)) return undefined;
+    seen.add(k);
+  }
+  return v.map((e: ConsumableEntry) => ({ product_id: e.product_id, qty: e.qty, unit: e.unit }));
+}
+function draftLine(l: Line): Line {
+  if (!l || typeof l !== "object" || (l.consumables == null && l.consEst == null)) return l;
+  const consumables = draftConsumables(l.consumables);
+  const out: Line = { ...l };
+  delete out.consumables; delete out.consEst;
+  if (consumables) {
+    out.consumables = consumables;
+    if (typeof l.consEst === "number" && Number.isFinite(l.consEst) && l.consEst >= 0) out.consEst = l.consEst;
+  }
+  return out;
+}
 function loadSaleDraft(clinicId?: string): SaleDraft | null {
-  try { const raw = localStorage.getItem(saleDraftKey(clinicId)); return raw ? (JSON.parse(raw) as SaleDraft) : null; } catch { return null; }
+  try {
+    const raw = localStorage.getItem(saleDraftKey(clinicId));
+    const d = raw ? (JSON.parse(raw) as SaleDraft) : null;
+    return d && Array.isArray(d.cart) ? { ...d, cart: d.cart.map(draftLine) } : d;
+  } catch { return null; }
 }
 function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
   try {
@@ -205,6 +243,165 @@ function releaseSavedRef(clinicId: string | undefined, ref: string): void {
     const d = loadSaleDraft(clinicId);
     if (d && d.clientRef === ref) localStorage.setItem(saleDraftKey(clinicId), JSON.stringify({ ...d, clientRef: null }));
   } catch { /* ignore */ }
+}
+
+/* ---- مستهلكاتُ الخدمة (0252): التعديلُ بالسطر لا بمعرّفه ------------------------
+ * تعديلُ حالةٍ يعيش بـ`consumables` والمعرّفُ لا يتبدّل أبداً: بندُ المختبر يبقى `s:lab:` فيتخطّاه تتبّعُ
+ * المختبر ويبقى مربوطاً بالزبون، وكلُّ ما يُقرأ بالمعرّف (الوميض، الأسعارُ التي تغيّرت، لوحةُ الكمية) يبقى على
+ * سطره. وسطرٌ ثانٍ لنفس الخدمة يأخذ `<أصله>#k` بأصغر k حرّ من ٢ — والخدمةُ تُعرف بـ`serviceId` لا بالمعرّف. */
+const caseBase = (id: string) => id.replace(/#\d+$/, "");
+function nextCaseId(cart: readonly Line[], id: string): string {
+  const base = caseBase(id);
+  const ids = new Set(cart.map((l) => l.id));
+  let k = 2;
+  while (ids.has(`${base}#${k}`)) k++;
+  return `${base}#${k}`;
+}
+/** أين تنزل خدمةٌ تُضاف: أوّلُ سطرٍ عاديٍّ لها يزيد (بلا مستهلكاتٍ معدَّلة، ولا بندَ مختبر) — تعديلُ حالةٍ واحدة
+ *  لا يصير تعديلَ حالتين بإضافةٍ لاحقة. وإلا فسطرٌ جديد: `s:<id>` إن كان حرّاً، وإلا `s:<id>#k`. */
+function serviceLineId(cart: readonly Line[], serviceId: string): string {
+  const plain = cart.find((l) => l.kind === "service" && !l.ret && l.serviceId === serviceId && !Array.isArray(l.consumables) && !l.id.startsWith("s:lab:"));
+  if (plain) return plain.id;
+  const base = `s:${serviceId}`;
+  return cart.some((l) => l.id === base) ? nextCaseId(cart, base) : base;
+}
+/** حفظُ ورقة المستهلكات على السلّة. `line`: التعديلُ (أو الوصفةُ إن كان null) للسطر كلِّه. `one`: حالةٌ واحدة
+ *  تُفصل — السطرُ ينقص واحداً، ونسخةٌ بكمية ١ بعده مباشرةً تحمل التعديل (نفسُ الحيوان والسعر وكلُّ حقلٍ إلا
+ *  المعرّفَ والكمية): ٣ ⇐ ٢ + ١ بالضبط. وتُفصل ما دام بالسطر بعدها حالةٌ كاملة (٢ فأكثر — كمياتُ الخدمة صحيحةٌ
+ *  بالشاشة، والورقةُ لا تعرض «هالحالة بس» دون ذلك)، وإلا فالحالةُ هي السطرُ كلُّه. ومعرّفُ السطر القائم لا يُمسّ. */
+function consSaved(cart: Line[], id: string, next: ConsumableEntry[] | null, est: number | null, scope: "line" | "one"): { cart: Line[]; copyId: string | null } {
+  const at = cart.findIndex((l) => l.id === id);
+  if (at < 0) return { cart, copyId: null };
+  const l = cart[at];
+  const withCons = (x: Line): Line => {
+    const y: Line = { ...x };
+    delete y.consumables; delete y.consEst;
+    if (next !== null) { y.consumables = next; y.consEst = est; }
+    return y;
+  };
+  const out = cart.slice();
+  if (scope === "line" || l.qty < 2) { out[at] = withCons(l); return { cart: out, copyId: null }; }
+  // «هالحالة بس» على الوصفة والسطرُ أصلاً على الوصفة: ما من شيءٍ يُفصل.
+  if (next === null && !Array.isArray(l.consumables)) return { cart, copyId: null };
+  const copyId = nextCaseId(cart, l.id);
+  out.splice(at, 1, { ...l, qty: l.qty - 1 }, withCons({ ...l, id: copyId, qty: 1 }));
+  return { cart: out, copyId };
+}
+/** سطرٌ من عائلة سطرٍ قبله (نفسُ الأصل قبل `#k`) ولنفس الحيوان — حالةٌ فُصلت بمستهلكاتها، أو خدمةٌ أُضيفت بعد
+ *  سطرٍ معدَّل: لا يكتب بسجلّ الحيوان مرّةً ثانية (تحليلٌ «بانتظار النتائج»، عملية). قبل الفصل كانت سطراً واحداً
+ *  وقيداً واحداً. */
+function repeatsCase(cart: readonly Line[], l: Line): boolean {
+  const base = caseBase(l.id);
+  for (const x of cart) {
+    if (x === l) return false;
+    if (caseBase(x.id) === base && (x.petId ?? null) === (l.petId ?? null)) return true;
+  }
+  return false;
+}
+/** ملخّصُ الوصفات كما يرجعه consumptionApi.recipeSummary — خدمةٌ لها وصفة ← كلفةُ موادّها لمرّةٍ واحدة بسعر
+ *  اليوم. نوعٌ هنا لا استيراد: الوحدةُ تُطلب بـimport() وحده. null بالشاشة = لم يصل بعد. */
+type ConsSummary = { data: Record<string, { cost: number }> } | { error: unknown };
+/** ملخّصٌ بدأت قراءتُه قبل أقلَّ من هذا لا يُقرأ ثانيةً: القائمةُ تصل بعد البيعة بثانية والبيعةُ التالية تبدأ بعدها — قراءةٌ
+ *  واحدةٌ للدفعة لا ثلاث. والفاشلُ لا ينتظره. */
+const CONS_SUM_FRESH_MS = 15_000;
+/** معرّفُ خدمة السطر كما يعرفه الخادم — uuid (clinic_services.id) — أو null. كتالوجُ ١٥–٢٢/٦ ولّد معرّفاتِه بـ`uid("svc")`،
+ *  وكتالوجٌ محلّيٌّ بقي عليها لم يصل السحابةَ قطّ (عمودُها uuid يردّ الدفعة، و`pushCatalog` لا يقرأ الردّ): لا وصفةَ له
+ *  هناك ولا شيءَ يُخصم، وإرسالُ معرّفه يرفض البيعةَ كلَّها (`service_id_bad`، والتجريبيُّ كذلك) و«حدّث الصفحة» لا تصلحه.
+ *  فسطرُه كبندٍ بلا معرّف: لا شارة، ولا service_id، ولا كلفةَ مواد، ولا إشعار. */
+const SVC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function cloudServiceId(l: Line): string | null {
+  return l.kind === "service" && !l.ret && !!l.serviceId && SVC_UUID.test(l.serviceId) ? l.serviceId : null;
+}
+/** كلفةُ مستهلكات حالةٍ واحدة من السطر كما تُعرف الآن، لمعاينة الربح: تعديلُ الحالة بكلفته من الورقة، والوصفةُ
+ *  من ملخّص الخادم، وخدمةٌ بلا وصفة صفر. null = لا تُعرف (الملخّصُ ما وصل أو فشل) — فالمعاينةُ «—» لا رقمٌ منفوخ. */
+function consCaseCost(l: Line, sum: ConsSummary | null): number | null {
+  const sid = cloudServiceId(l);
+  if (!sid) return 0;
+  if (Array.isArray(l.consumables)) return typeof l.consEst === "number" && Number.isFinite(l.consEst) ? l.consEst : null;
+  if (!sum || "error" in sum) return null;
+  const c = sum.data[sid];
+  if (!c) return 0;
+  return typeof c.cost === "number" && Number.isFinite(c.cost) ? c.cost : null;
+}
+/** سطرٌ قد يُخصم له شيء فيُقرأ دفترُه بعد البيعة: وصفةٌ بالملخّص، أو تعديلُ حالة، أو أيُّ خدمةٍ من الكتالوج
+ *  والملخّصُ مجهول. */
+function consCandidate(l: Line, sum: ConsSummary | null): boolean {
+  const sid = cloudServiceId(l);
+  if (!sid) return false;
+  return Array.isArray(l.consumables) || !sum || "error" in sum || !!sum.data[sid];
+}
+/** بعد البيعة تقرأ شاشةُ «تمّ» دفترَها (ConsumptionNotice) لسطرٍ قد يُخصم له (consCandidate) — ولسطرِ مادّةٍ يخرج من الرفّ:
+ *  الخادمُ ما عاد يقصّ عند الصفر (0253)، فمادّةٌ بيعت من قائمةٍ قديمة (جهازٌ ثانٍ باع آخرَ علبة، طلبُ متجرٍ قبله) أو من حوضٍ
+ *  نفد ينزل رصيدُها تحت الصفر والبيعةُ تمرّ؛ وقرارُ المالك (ب٢): تكمل وتُقال بصوت. والقراءةُ تشمل سطورَ المواد (negatives)،
+ *  والنظيفةُ صامتة. والراجعُ يزيد الرصيد فلا يُسأل عنه. */
+function noticeLine(l: Line, sum: ConsSummary | null): boolean {
+  return consCandidate(l, sum) || (!!l.product_id && !l.ret);
+}
+/* ورقةُ المستهلكات وإشعارُ ما بعد البيعة: قطعةٌ كسولة بنطاقها المملوك rcp — لا استيرادَ ثابتاً لها ولا للباب
+ * (consumptionApi): قطعةُ البيع يحمّلها الكاشيرُ والمخزن، ووحدةٌ جديدةٌ فيها اسمٌ يدفعه الإقلاع. و`lazy()`
+ * يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadConsSheet = () => page(() => import("@/components/retail/ConsumablesSheet"), ["rcp"]);
+const loadConsNotice = () => page(() => import("@/components/retail/ConsumablesSheet").then((m) => ({ default: m.ConsumptionNotice })), ["rcp"]);
+let ConsSheetLazy = loadConsSheet();
+let ConsNoticeLazy = loadConsNotice();
+/* وتُسخَّن مع الشاشة (ConsWarmLazy): شاشةُ «تمّ» تطلب الإشعارَ بعد كلّ بيعةٍ تقريباً، وكان أوّلُ طلبٍ للقطعة هناك — بتبويبٍ
+ * استولت عليه نسخةٌ أحدث طلبها تبويبٌ آخر (swUpdate «taken») فحُذفت قطعتُه القديمة من المخبأ والخادم، فيحمّل appUpdate
+ * الصفحةَ بعد ثوانٍ ويرمي الإيصالَ والطباعة من تحت يد الكاشير بلا ضغطة. فالقطعةُ وقاموسُها rcp يُطلبان مع الشاشة (بـpage نفسِه
+ * — ensureOwned بطريقه) ونسختُهما ما زالت موجودة، ويبقيان بالذاكرة لكلّ ورقةٍ وإشعارٍ بعدها. والتسخينُ لا يرسم شيئاً،
+ * وفشلُه صامت (الورقةُ والإشعارُ يطلبانها بمكانهما ويقولان فشلَهما هناك) ويُعاد بالفتحة التالية. */
+const ConsWarmDone = () => null;
+const loadConsWarm = () => page(() => import("@/components/retail/ConsumablesSheet").then(() => ({ default: ConsWarmDone })), ["rcp"]);
+let ConsWarmLazy = loadConsWarm();
+class ConsWarmBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  componentDidCatch(): void {
+    ConsWarmLazy = loadConsWarm();   // `lazy()` يخبّئ الرفض: الفتحةُ التالية تطلب قطعةً جديدة
+  }
+  render(): ReactNode {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/* ---- كلفةُ سطر المادّة (0255): ما يكتبه الخادم، لا آخرُ سعر شراء ----------------------------
+ * الخادمُ يكلّف كلَّ سطرِ مادّةٍ حيّةٍ من العيادة بنفسه (`_product_line_cost`): المتوسّطُ المتحرّك وإلا سعرُ الشراء (والسالبُ
+ * صفر) لعلبتها أو كيلوها بمنزلتين، ولوحدتها الصغيرة بقسمةٍ دقيقة على units_per_box؛ وما لا يعرفه أو من الحقل بكلفة الجهاز.
+ * فالسطرُ يحمل ما سيُكتب — معاينةُ الربح وما يُطبع وما يُرسل رقمٌ واحد. والحسابُ مرآتُه الوحيدة `productLineCostCents`
+ * (consumption.ts، فلساً بفلس) بـimport() كالباب: قطعةُ البيع لا تستورد وحدةً جديدة استيراداً ثابتاً. وحتى يصل (لحظاتٌ بعد
+ * الفتح) أو إن فشل: كلفةُ الجهاز كما كانت والمعاينةُ «—»، وحين يصل تُعاد كلفةُ السلّة به (recostLines). */
+let lineCostFn: ((p: Product, per: number | null) => number) | null = null;
+let lineCostLoad: Promise<void> | null = null;
+function loadLineCost(): Promise<void> {
+  lineCostLoad ??= import("@/lib/consumption").then((m) => {
+    lineCostFn = (p, per) => {
+      /* المفردُ يسلك فرعَه بالخادم حين |stock_qty| ≠ |qty|، والإتمامُ يرسل stock_qty = الكمية ÷ unitsPerBox **السطر** (`per`) لا
+       * المادّة: لوحدةٍ واحدة ١ ÷ per يساويها بقاسمٍ ١ وحده، والكلفتان عندها واحدة — فحكمُ الوحدة الواحدة حكمُ السطر بأيّ كميةٍ
+       * صحيحة. وسطرٌ وُضع والعلبةُ بوحدةٍ واحدة ثم تبدّلت يُرسل stock_qty = الكمية فيكلّفه الخادمُ علبة (مقيسٌ بـ_product_line_cost). */
+      return m.fromScaled(m.productLineCostCents(p, 1000n, per != null && per > 0 ? m.roundScaled(1 / per, 3) : 1000n, 0n), 2);
+    };
+  }, (e) => { lineCostLoad = null; throw e; });   // فشلٌ يُعاد بفتحة الشاشة التالية
+  return lineCostLoad;
+}
+/** كلفةُ وحدةٍ من سطر مادّةٍ كما يكتبها الخادم (`per`: قاسمُ stock_qty بالإتمام لسطرٍ بالمفرد — unitsPerBox السطر — وnull للعلبة
+ *  والكيلو) — أو كلفةُ الجهاز `device` كما كانت: لمادّةٍ لا يعرفها الجهاز (`p` غائب) أو من الحقل، وهي ما يأخذه الخادمُ لهما،
+ *  أو والحسابُ لم يصل. */
+function productLineCost(p: Product | undefined, per: number | null, device: number): number {
+  return p && !p.farm_id && lineCostFn ? lineCostFn(p, per) : device;
+}
+/** السلّةُ بكلفة الخادم من القائمة: سطرُ مادّةٍ صفُّه بالقائمة يأخذ كلفةَ وحدته الآن (متوسّطٌ تحرّك بشراءٍ من جهازٍ آخر يصل مع
+ *  القائمة، والخادمُ يكلّف لحظةَ البيعة)، وما غاب صفُّه يبقى بكلفته. نفسُ السلّة إن لم يتغيّر شيء. */
+function recostLines(cart: Line[], byId: ReadonlyMap<string, Product>): Line[] {
+  let changed = false;
+  const next = cart.map((l) => {
+    if (l.kind !== "product" || !l.product_id) return l;
+    const unit_cost = productLineCost(byId.get(l.product_id), l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0 ? l.unitsPerBox : null, l.unit_cost);
+    if (unit_cost === l.unit_cost) return l;
+    changed = true;
+    return { ...l, unit_cost };
+  });
+  return changed ? next : cart;
 }
 
 /* ---- طلباتُ توصيلٍ لم تُسجَّل: تُحفظ بالجهاز لا بحالة المكوّن -------------
@@ -639,6 +836,19 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return changed ? next : c;
     });
   }, [products]);
+  /* والكلفةُ تتبع القائمة كذلك (0255): حسابُ الخادم يصل مرّةً للتبويب (loadLineCost)، ثم كلُّ قائمةٍ تعيد كلفةَ السلّة — سطرٌ
+   * أُضيف قبل وصوله، أو من مسودّةٍ قديمة، أو متوسّطٌ تحرّك بشراءٍ من جهازٍ آخر. وما دام لم يصل (أو فشل) فالمعاينةُ «—». */
+  const [lineCostState, setLineCostState] = useState<"ready" | "loading" | "failed">(() => (lineCostFn ? "ready" : "loading"));
+  useEffect(() => {
+    let alive = true;
+    loadLineCost().then(() => { if (alive) setLineCostState("ready"); }, () => { if (alive) setLineCostState("failed"); });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (lineCostState !== "ready") return;
+    const byId = new Map(products.map((p) => [p.id, p]));
+    setCart((c) => recostLines(c, byId));
+  }, [products, lineCostState]);
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
   /* شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة. تُقرأ مرة عند الرسم:
    * تبديلها من الإعدادات يعيد تحميل الصفحة، فلا حاجة لمراقبة حيّة. */
@@ -708,7 +918,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * والخادمُ يفرضه بنفسه؛ ويومٌ رجع من مسودّةٍ بلا صلاحيةٍ الآن يُقال بالشريط ولا يُخفى. */
   const [saleDay, setSaleDay] = useState<string | null>(draft0?.saleDay ?? null);
   const [saleTime, setSaleTime] = useState<string>(draft0?.saleTime || clockOf24(new Date().toISOString()));
-  const { role: effRole } = usePermissions();
+  const { role: effRole, can } = usePermissions();
   const { restricted: devRestricted } = useOverride();
   const backdateOk = canBackdate({ role: effRole, restricted: devRestricted });
   /** «فاتورة ثانية لنفس اليوم» من شاشة الإتمام: اليومُ يبقى للبيعة التالية بقرارٍ صريح لا افتراضاً. */
@@ -831,6 +1041,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [mult, setMult] = useState<number | null>(null);
   const [multPad, setMultPad] = useState(false);
   const [qtyPadFor, setQtyPadFor] = useState<string | null>(null);
+  /** ورقةُ مستهلكات سطر خدمةٍ مفتوحة (0252) — معرّفُ السطر. */
+  const [consFor, setConsFor] = useState<string | null>(null);
+  /** ملخّصُ وصفات العيادة: يُقرأ عند الفتح ويتجدّد (warmConsSummary)، ويُعاد بضغطة شارةٍ بعد فشله. null = لم يصل بعد. */
+  const [consSum, setConsSum] = useState<ConsSummary | null>(null);
+  const consSeqRef = useRef(0);
+  /** متى بدأت آخرُ قراءةٍ للملخّص لم تفشل (Date.now) — null: لا قراءة، أو فشلت فتُعاد بأوّل فرصة. */
+  const consSumAtRef = useRef<number | null>(null);
+  /** البيعةُ المُتمَّة فيها ما قد يُخصم له أو سطرُ مادّة (noticeLine) ⇒ شاشةُ «تمّ» تقرأ دفترَها وتقول العجزَ والسالب (ConsumptionNotice). */
+  const [doneCons, setDoneCons] = useState(false);
+  const [, setConsLazyTick] = useState(0);
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
   /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
@@ -1033,7 +1253,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const pr = retPriorOf(p);
       return {
         id: `r:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
-        unit_price: pr ? pr.o : listPrice(p), unit_cost: p.purchase_price,
+        unit_price: pr ? pr.o : listPrice(p), unit_cost: productLineCost(p, null, p.purchase_price),
         qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
         ret: true, retPrior: pr, priceManual: !!pr,
       };
@@ -1048,7 +1268,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const pr = ret ? retPriorOf(p) : null;
     const line: Line = {
       id, kind: "product", name: p.name, barcode: p.barcode ?? null,
-      unit_price: pr ? pr.o : listPrice(p), unit_cost: p.purchase_price,
+      unit_price: pr ? pr.o : listPrice(p), unit_cost: productLineCost(p, null, p.purchase_price),
       qty, stock: ret || p.pooled ? null : p.stock,
       product_id: p.id, subcategory: p.subcategory ?? null,
       byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
@@ -1089,16 +1309,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const unitsPerBox = p.units_per_box ?? null;
       // No whole box left but singles remain → start the line on the sub-unit.
       const startSub = hasSub && Math.floor(p.stock) < 1;
+      // كلفةُ الجهاز كما كانت — لا تُكتب إلا والحسابُ لم يصل (productLineCost، 0255).
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
       return {
         id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
         expiry: p.expiry_date ?? null,
         unit_price: startSub ? listSubPrice(p) : listPrice(p),
-        unit_cost: startSub ? subCost : p.purchase_price,
+        unit_cost: productLineCost(p, startSub ? unitsPerBox : null, startSub ? subCost : p.purchase_price),
         // A pooled (legacy, unknown-count) product sells from its section pool —
         // it has no own per-barcode count, so leave the cart line UNCAPPED (the
-        // server deducts tracked-then-pool and clamps). Capping it at its 0 stock
-        // is what collapsed a second scan to qty 0.
+        // server deducts tracked-then-pool; past an empty pool the row goes below
+        // zero since 0253 — no clamp — and the done screen says so: noticeLine).
+        // Capping it at its 0 stock is what collapsed a second scan to qty 0.
         qty: 1, stock: p.pooled ? null : p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
         hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
         boxPrice: listPrice(p), subPrice: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null), boxCost: p.purchase_price,
@@ -1108,14 +1330,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   };
 
   // Switch a product line between selling a whole box and a single sub-unit. The price
-  // and cost follow the unit (sub-cost = box cost ÷ units-per-box); qty re-clamps to the
-  // new unit's stock cap. Only ever called for units that have at least one available.
+  // and cost follow the unit — the cost as the server books it (productLineCost, 0255; the
+  // device's box cost ÷ units-per-box only for a product gone from the list); qty re-clamps to
+  // the new unit's stock cap. Only ever called for units that have at least one available.
   const setSaleUnit = (id: string, unit: "box" | "sub") =>
     setCart((c) => c.map((l) => {
       if (l.id !== id || l.kind !== "product") return l;
       const toSub = unit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
       const unit_price = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
-      const unit_cost = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
+      const device = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
+      const unit_cost = productLineCost(products.find((p) => p.id === l.product_id), toSub ? (l.unitsPerBox as number) : null, device);
       const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false };
       const cap = unitCap(next);
       return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
@@ -1124,7 +1348,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const addService = (s: Service, n = takeMult()): number => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    return bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, listAt: s.price, priceManual: false, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
+    // سطرُها العاديّ يزيد؛ وسطرٌ عُدّلت مستهلكاتُه لا يكبر بإضافةٍ لاحقة — سطرٌ جديدٌ لها (من السلّة الحيّة كـbump).
+    const id = serviceLineId(cartRef.current, s.id);
+    return bump(id, () => ({ id, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, listAt: s.price, priceManual: false, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -1495,7 +1721,52 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * تبيعه — منتهياً أو رفّاً كاملاً — بلا أن يُذكر بالسؤال. */
   /* ومنتقي الأدوية مفتوحٌ فوق الشاشة: مسحةٌ خلفه كانت تُضيف منتجاً لا يراه الكاشير. */
   const medPickerOpen = useMedPickerOpen();
-  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || medPickerOpen });
+  /* وورقةُ المستهلكات كذلك: لها حقلُ مسحٍ بنفسها («امسح العلبة اللي استعملتها») — مسحةٌ تهبط سطراً بالسلّة خلفها
+   * كانت تُباع علبةً على الزبون وهي مادّةٌ انصرفت على حالته. */
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || !!consFor || medPickerOpen });
+  // سطرُ الورقة خرج من السلّة (مُسح، صُفّرت) أو تمّت البيعة: تُغلق — وإلا بقي الماسحُ وF2 صامتَين بلا ورقة.
+  useEffect(() => {
+    if (consFor && (done || !cart.some((l) => l.id === consFor && !!cloudServiceId(l)))) setConsFor(null);
+  }, [cart, consFor, done]);
+  /* ملخّصُ الوصفات (0252): شارةُ «مستهلكات» تظهر حين بالعيادة وصفة، ومعاينةُ الربح تطرح كلفتَها، وشاشةُ «تمّ» تقرأ
+   * دفترَ ما قد يُخصم له. وفشلُه حالةٌ تُقال لا «ماكو وصفات»: الشارةُ على كلّ سطر خدمة، والربحُ «—»، والضغطةُ تعيده.
+   * وبمهلة: لا مهلةَ fetch عامّة، ونداءٌ عالقٌ بلا مهلة كان يُبقي الشارةَ غائبةً والربحَ «—» للأبد — فيصير فشلاً يُقال.
+   * والأحدثُ وحده يكتب (إعادةٌ وأولى بالطريق معاً).
+   * ويتجدّد: كان يُقرأ مرّةً للتركيب، وتابُ الكاشير يبقى على «بيع» ساعات (القائمةُ تتجدّد تحته ولا يُعاد تركيبُه) — فوصفةٌ
+   * حفظها المديرُ من جهازه بعد الفتح بقيت «بلا وصفة» طولَ الجلسة: لا شارة، وربحٌ منفوخ، ولا إشعارَ بعد البيعة والخادمُ يخصم.
+   * فيُقرأ مع كلّ قائمةٍ تصل (كلَّ ٥ دقائق، بعد البيعة، عند العودة)، ومع كلّ بيعةٍ تبدأ، وعند الإتمام — وما قُرئ قبل أقلَّ من
+   * CONS_SUM_FRESH_MS لا يُقرأ ثانيةً، والفاشلُ يُعاد بأوّل فرصة. والقديمُ يبقى معروضاً حتى يصل الجديد (لا شارةَ تختفي وتعود).
+   * (حفظُ الوصفة لا يحرّك عدّادَ الأسعار — PRICES_EVENT لا يصلح جرساً له.) */
+  const warmConsSummary = () => {
+    const now = Date.now();
+    const at = consSumAtRef.current;
+    // ساعةُ الجهاز رجعت للوراء (ضبطُ الوقت) ⇒ ليس طازجاً: الفرقُ السالب كان يُسكت القراءةَ حتى تلحق الساعة.
+    if (at !== null && now >= at && now - at < CONS_SUM_FRESH_MS) return;
+    consSumAtRef.current = now;
+    const seq = ++consSeqRef.current;
+    const failed = (error: unknown) => {
+      if (seq !== consSeqRef.current) return;
+      consSumAtRef.current = null;   // الفاشلُ ليس طازجاً: يُعاد بأوّل فرصة
+      setConsSum({ error });
+    };
+    void import("@/lib/consumptionApi")
+      .then((m) => withTimeout(m.consumptionApi.recipeSummary(), 10000))
+      .then(
+        (data) => {
+          if (!data || typeof data !== "object" || Array.isArray(data)) failed(new Error("recipe_summary_shape"));
+          else if (seq === consSeqRef.current) setConsSum({ data });
+        },
+        failed,
+      );
+  };
+  useEffect(() => { warmConsSummary(); }, [products]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const saleStarted = cart.length > 0;
+  useEffect(() => { if (saleStarted) warmConsSummary(); }, [saleStarted]);   // eslint-disable-line react-hooks/exhaustive-deps
+  /* وجوابٌ وصل بعد البيعة (سُئل عند الإتمام، أو مع القائمة بعدها) يقول إن خدمةً فيها صار لها وصفة: شاشةُ «تمّ» تقرأ دفترَها
+   * هي الأخرى. والإشعارُ إن رُكّب لا يُرفع بجوابٍ لاحق — ما يقوله يبقى. */
+  useEffect(() => {
+    if (done && !doneCons && cart.some((l) => noticeLine(l, consSum))) setDoneCons(true);
+  }, [done, consSum]);   // eslint-disable-line react-hooks/exhaustive-deps
   // وبعد أن يهبط التصفير: تُمرَّر المسحةُ المحفوظة على سلّةٍ نظيفة.
   useEffect(() => {
     if (done || pendingScanRef.current === null) return;
@@ -1653,6 +1924,38 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const discountAmt = Math.max(0, subtotal - total);
   const surchargeAmt = Math.max(0, total - subtotal);
   const profit = total - cost;
+  /* معاينةُ الربح بكلفة مستهلكات الخدمات (0252): الخادمُ يضيف كلفةَ المواد لكلفة السطر المخطَّط، فالمعاينةُ تطرحها
+   * كذلك؛ وسطرٌ لا تُعرف كلفتُه بعد (الملخّصُ ما وصل أو فشل) يجعلها «—» لا ربحاً منفوخاً. ولمن يرى الأرباح وحده
+   * والجهازُ غيرُ مقيَّد — كلفةُ المواد تُقرأ من فرقها. */
+  const consCost = cart.reduce<number | null>((s, l) => {
+    const c = consCaseCost(l, consSum);
+    return s === null || c === null ? null : s + l.qty * c;
+  }, 0);
+  /* وسطرُ مادّةٍ وحسابُ الخادم لم يصل (أو فشل): كلفتُه بيد الجهاز آخرُ سعر شراءٍ لا ما يكتبه الخادم (0255) — «—» كذلك. */
+  const lineCostUnknown = lineCostState !== "ready" && cart.some((l) => l.kind === "product" && !!l.product_id);
+  const profitShown = consCost === null || lineCostUnknown ? null : profit - consCost;
+  const showProfit = can("viewProfits") && !devRestricted;
+  /* شارةُ «مستهلكات» بسطور الخدمة: حين بالعيادة وصفةٌ واحدة على الأقلّ، أو والملخّصُ فشل (§11.5) — لا وهو بالطريق:
+   * الشارةُ بسطرٍ تحت الاسم، وسطرٌ يظهر ثم يختفي لحظةَ وصول ملخّصٍ فارغ (أغلبُ العيادات بلا وصفة) يقفز بالسلّة عند كلّ
+   * فتحٍ ورجوعٍ للتبويب. والسطرُ المعدَّل شارتُه باقيةٌ بكلّ حال (شرطُ الرسم). */
+  const consOn = !!consSum && ("error" in consSum || Object.keys(consSum.data).length > 0);
+  /** تعديلُ مستهلكات الحالة للطبيب أو المدير — `role` يقرأ مفتاحَ المدير الحيّ كما يقرؤه auth_role() بالخادم. */
+  const consCanEdit = effRole === "manager" || effRole === "veterinarian";
+  const openCons = (id: string) => {
+    playTap();
+    if (consSum && "error" in consSum) warmConsSummary();   // الملخّصُ فشل ⇒ يُعاد مع الضغطة
+    setConsFor(id);
+  };
+  /** حفظُ الورقة: «كل حالات السطر» على السطر نفسه، و«هالحالة بس» تفصل حالةً بسطرها (consSaved). سطرُ النسخة يرث
+   *  «سعر جديد» إن كان على أصله — فيُسمّى بسؤال الأسعار قبل البيع كأصله. */
+  const saveCons = (id: string, next: ConsumableEntry[] | null, est: number | null, scope: "line" | "one") => {
+    const { cart: after, copyId } = consSaved(cartRef.current, id, next, est, scope);
+    cartRef.current = after;
+    setCart((c) => consSaved(c, id, next, est, scope).cart);
+    if (copyId) setRepriced((m) => { const r = m.get(id); if (!r) return m; const n = new Map(m); n.set(copyId, { ...r, id: copyId }); return n; });
+    setConsFor(null);
+    playSuccess();
+  };
 
   // When the cart changes while a manual final price is active, move the final
   // price by the same amount the subtotal moved — so the discount/surcharge the
@@ -2092,6 +2395,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const onKey = (e: KeyboardEvent) => {
       // F2 و«/» خلف منتقي الأدوية لا يمسّان السلّة — المنتقي فوقها والكاشيرُ يختار دواءً.
       if (medPickerOpen) return;
+      if (consFor) return;   // ولا خلف ورقة المستهلكات: F2 كان يبيع السلّةَ وتعديلُ الحالة لم يُحفظ بعد
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
@@ -2262,6 +2566,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * الضغطةَ معلّقة، والكاشيرُ يضغط ثانيةً فتتمّ البيعة، ثمّ يبدأ زبوناً جديداً — فيصحو
      * الجوابُ القديم ويبيع سلّةَ الزبون الأوّل مرّةً ثانية بمرجعٍ جديد (تدقيقٌ عدائيّ). */
     if (inFlightRef.current || checkingRef.current) return;
+    /* وملخّصُ الوصفات يُسأل مع الإتمام ولا يُنتظر: وصفةٌ حُفظت والسلّةُ مفتوحة يصل جوابُها مع جواب البيعة أو بعده، فتقرأ
+     * شاشةُ «تمّ» دفترَها (أثرُ noticeLine بعد done). */
+    warmConsSummary();
     checkingRef.current = true;
     setChecking(true);
     const genAtClick = priceGen();
@@ -2311,18 +2618,26 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         // سطر راجع ⇒ كميةٌ سالبة بالفاتورة وردٌّ للمخزون (0122). الاسم يحمل
         // كلمة «راجع» فتقرأها الفاتورة المطبوعة والتقارير بلا أي تفسير.
         const s = l.ret ? -1 : 1;
+        const sid = cloudServiceId(l);
         return {
           product_id: l.product_id,
           name: l.ret ? `${t("retail.retPrefix", "راجع")} — ${l.name}` : l.name,
           barcode: l.barcode,
           qty: s * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
           stock_qty: s * stock_qty, unit_label,
+          // خدمةٌ من الكتالوج (0252): الخادمُ يخطّطها من وصفتها — أو من مستهلكات الحالة إن عُدّلت (لكلّ حالةٍ واحدة).
+          // ومعرّفٌ ليس uuid لا يُرسل (cloudServiceId): الخادمُ لا يعرفه ويرفض به البيعةَ كلَّها.
+          // وسطرٌ بلا مادّة ليس خدمة (دواءٌ أو لقاحٌ من تبويب الأدوية) يقولها بـnull صريح: غيابُ المفتاح يقرؤه الخادمُ «جهازاً
+          // ما تحدّث» ويصنّفه بالاسم (old_device) — لقاحٌ اسمُه اسمُ خدمةٍ لها وصفة كان يُقال عنه «ما انخصمت مستهلكاتها، حدّث
+          // الأجهزة». وبندُ خدمةٍ بلا معرّفٍ يعرفه الخادم (مختبرٌ ما طابق، كتالوجٌ قديم) خدمةٌ فعلاً: يبقى بلا المفتاح فيقول عنه اسمُه.
+          ...(sid ? { service_id: sid, ...(Array.isArray(l.consumables) ? { consumables: l.consumables } : {}) } : !l.product_id && l.kind !== "service" ? { service_id: null } : {}),
         };
       });
       // Delivery fee kept by the clinic → a real service line on the invoice, so
       // revenue/profit reports include it with zero special-casing.
+      // وهو ليس خدمةً من الكتالوج: service_id: null صريحاً كسطر الدواء (لا يُصنَّف بالاسم «جهازاً ما تحدّث»).
       if (feeToClinic) {
-        items.push({ product_id: null, name: t("retail.deliveryFeeLine", "أجرة توصيل"), barcode: null, qty: 1, unit_price: deliveryFee, unit_cost: 0, stock_qty: 0, unit_label: null });
+        items.push({ product_id: null, name: t("retail.deliveryFeeLine", "أجرة توصيل"), barcode: null, qty: 1, unit_price: deliveryFee, unit_cost: 0, stock_qty: 0, unit_label: null, service_id: null });
       }
       // Payment legs received today. Anything tendered ABOVE the total is change handed
       // back, so the recorded legs are trimmed to sum to the total (largest leg first) —
@@ -2473,6 +2788,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // Show the completion screen immediately — the sale is final. The medical-record
       // sync runs AFTER, time-bounded and non-fatal, so its latency can never freeze
       // the receipt/print UI even if Supabase stalls mid-flow.
+      // وفيها سطرٌ قد يُخصم له (وصفة، تعديلُ حالة، أو خدمةٌ والملخّصُ مجهول) أو سطرُ مادّة (0253: الرصيدُ ينزل تحت الصفر
+      // ولا يُقصّ) ⇒ الشاشةُ تقرأ دفترَها وتقول العجزَ والسالب (noticeLine). وملخّصٌ يصل بعدها يكمّل القرار (الأثرُ بعد done).
+      setDoneCons(cart.some((l) => noticeLine(l, consSum)));
       setDone({ invoice, items: invItems });
       clearSaleDraft(draftScope); // sale is final — drop the saved draft
       /* بيعُ المنتهي يُسجَّل بعد الحسم وبرقم الفاتورة — تسجيلٌ عند «أكيد» كان يشهد لبيعةٍ
@@ -2498,7 +2816,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         const labCatIds = new Set(catalog.categories.filter((c) => /مختبر|تحاليل|مختبرات/.test(c.name)).map((c) => c.id));
         for (const l of cart) {
           if (l.kind !== "service" || !l.petId || l.id.startsWith("s:lab:")) continue;
-          const sid = l.id.startsWith("s:") ? l.id.slice(2) : "";
+          if (repeatsCase(cart, l)) continue;   // حالةٌ فُصلت عن سطرها: قيدُ السطر الأوّل يكفي، كما قبل الفصل
+          /* الخدمةُ من `serviceId` لا من المعرّف: سطرٌ ثانٍ لها معرّفُه `s:<id>#k` (0252)، وقصُّ «s:» منه كان
+           * يطلب خدمةً اسمُها «<id>#k» فلا يجدها. */
+          const sid = l.serviceId ?? "";
           const svc = catalog.services.find((x) => x.id === sid);
           const isLab = (svc && labCatIds.has(svc.category_id)) || /تحليل|CBC|كيمياء|مسحة|زراع/i.test(l.name);
           if (!isLab) continue;
@@ -2527,7 +2848,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // تلقائياً إلى طبلة الحيوان وسجل عملياته — مثل الأدوية واللقاحات تماماً.
       const surgeryLines = cart
         .map((l) => {
-          if (l.kind !== "service") return { l, m: null };
+          // وحالةٌ فُصلت عن سطرها (نفسُ الأصل ونفسُ الحيوان) لا تفتح عمليةً ثانية — كانت سطراً واحداً وقيداً واحداً.
+          if (l.kind !== "service" || repeatsCase(cart, l)) return { l, m: null };
           // الأولوية: مرجع «مكتبة العمليات» (تعريف قاطع) ← مطابقة الاسم
           // والمرادفات ← قاعدة تصنيف "عمليات" كشبكة أمان أخيرة.
           const m = surgeryByRef(l.surgeryRef)
@@ -2709,7 +3031,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               <span className="font-display text-4xl font-extrabold text-ink tabular-nums">{money(done.invoice.total)}</span>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-ink-muted">
-              <span className="flex items-center gap-1 text-success-600"><TrendingUp size={14} /> {t("retail.profit", "Profit")} {money(done.invoice.profit)}</span>
+              {/* ربحُ الخادم وفيه كلفةُ المواد (0252) — لمن يرى الأرباح والجهازُ غيرُ مقيَّد كمعاينة السلّة (§11.9): معاينةٌ
+                  مخفيّةٌ وربحٌ ظاهرٌ هنا بعد ثانيتين لا يُخفي شيئاً. */}
+              {showProfit && <span className="flex items-center gap-1 text-success-600"><TrendingUp size={14} /> {t("retail.profit", "Profit")} {money(done.invoice.profit)}</span>}
               {done.invoice.customer_name && <span className="flex items-center gap-1"><User size={14} /> {done.invoice.customer_name}</span>}
               {done.invoice.pet_name && <span className="flex items-center gap-1"><PawPrint size={14} /> {done.invoice.pet_name}</span>}
             </div>
@@ -2728,6 +3052,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 <History size={15} className="mt-0.5 shrink-0" />
                 <span>{t("sdate.doneOn", { day: new Date(done.invoice.created_at).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" }) })}</span>
               </div>
+            )}
+            {/* المستهلكات (0252): البيعةُ لا تنمنع على رصيدٍ ما كفّى — فيُقال هنا بالمادّة والرصيد، وما لم ينخصم يُقال
+                بسببه، وفشلُ القراءة يُقال فشلاً. والنظيفةُ صامتة (الإشعارُ لا يرسم شيئاً). */}
+            {doneCons && (
+              <LoadBoundary scope="cons-notice" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setConsLazyTick((n) => n + 1); }}>
+                <Suspense fallback={null}>
+                  <ConsNoticeLazy mode="sale" invoiceIds={[done.invoice.id]} />
+                </Suspense>
+              </LoadBoundary>
             )}
             {lastPrints > 0 && <p className="text-xs text-ink-subtle">{t("retail.printedTimes", { n: lastPrints, defaultValue: "Printed {{n}}×" })}</p>}
             <div className="grid grid-cols-2 gap-2">
@@ -3205,7 +3538,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             )}
           </div>
         ) : browseTab === "services" ? (
-          <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} compact={compact} />
+          /* الوميضُ بأصل السطر: خدمةٌ نزلت بسطرٍ ثانٍ لها (`s:<id>#k`) تومض بطاقتُها كأيّ إضافة. */
+          <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash && caseBase(flash)} compact={compact} />
         ) : (
           <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} onAddProduct={addMedProduct} products={products}
             listPrice={listPrice} petId={activePet?.id ?? null} petName={activePet?.name ?? null} />
@@ -3369,6 +3703,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted" data-linepets><PawPrint size={10} className="me-0.5 inline" />{linePetNames(l).join(" + ")}</span>
                         )}
                       </p>
+                      {/* مستهلكاتُ الحالة (0252): كلُّ دورٍ يفتحها ويراها، والتعديلُ للطبيب أو المدير. والنقطةُ = عُدّلت
+                          لهالفاتورة. خدمةٌ بلا معرّف (بندُ مختبرٍ ما طابق الكتالوج) أو بمعرّفٍ لا يعرفه الخادم
+                          (cloudServiceId) لا يُخصم لها شيءٌ فلا شارة. وبسطرٍ تحت الاسم لا بجانبه: سطرُ الاسم `truncate`،
+                          وبسلّةٍ عرضُها ٣٦٢ (١٣٦٦ والقائمةُ مفتوحة) كان عمودُ الاسم ١٣٢ والشارةُ بعد «خدمة» تُقصّ كلُّها —
+                          لا تُرى ولا تُضغط، ولا نقطةُ التعديل (مقيسٌ بالمتصفّح). */}
+                      {!!cloudServiceId(l) && (consOn || Array.isArray(l.consumables)) && (
+                        <div className="mt-0.5 flex items-center gap-1">
+                          <button type="button" data-conschip={l.id} onClick={() => openCons(l.id)}
+                            className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted transition hover:bg-surface-3 hover:text-ink">
+                            {t("pos.cat.consumables", "مستهلكات")}
+                            {Array.isArray(l.consumables) && <span data-consdot className="text-brand-600 dark:text-brand-300">•</span>}
+                          </button>
+                        </div>
+                      )}
                       {l.med && (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle">
                           {l.med.kind === "vaccination"
@@ -3880,7 +4228,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 <span className="tabular-nums">+{money(deliveryFee)} = <b>{money(effTotal)}</b></span>
               </div>
             )}
-            <div className={cn("items-center justify-end gap-1 text-2xs text-success-600", posV2 && !payTools ? "hidden" : "flex")}><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
+            {/* معاينةُ الربح لمن يرى الأرباح (وبكلفة المستهلكات؛ «—» ما دامت لا تُعرف) — انظر profitShown. */}
+            {showProfit && <div data-profitpreview className={cn("items-center justify-end gap-1 text-2xs text-success-600", posV2 && !payTools ? "hidden" : "flex")}><TrendingUp size={11} /> {t("retail.profit", "Profit")} {profitShown === null ? "—" : money(profitShown)}</div>}
           </div>
 
           {preSaleEnabled && (
@@ -3998,6 +4347,29 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               if (n <= unitCap(l)) { setQty(l.id, n); playSuccess(); } else raiseLine(l, n);
             }}
           />
+        );
+      })()}
+
+      {/* تسخينُ قطعة الورقة والإشعار مع الشاشة (ConsWarmLazy) — لا ترسم شيئاً، وفشلُها صامت؛ لا أوّلَ طلبٍ لها بعد البيعة. */}
+      <ConsWarmBoundary><Suspense fallback={null}><ConsWarmLazy /></Suspense></ConsWarmBoundary>
+      {/* ورقةُ مستهلكات سطر الخدمة (0252) — قطعةٌ كسولة بنطاقها rcp، وحارسُها بمكانه: فشلُ تحميلها لا يُسقط السلّة. */}
+      {consFor && (() => {
+        const l = cart.find((x) => x.id === consFor);
+        const sid = l ? cloudServiceId(l) : null;
+        if (!l || !sid) return null;
+        return (
+          <LoadBoundary scope="cons-sheet" onRetry={() => { ConsSheetLazy = loadConsSheet(); setConsLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <ConsSheetLazy
+                open serviceId={sid} serviceName={l.name} value={l.consumables} products={products}
+                /* «هالحالة بس» ما دام بعدها حالةٌ كاملة بالسطر (consSaved) — فالكميةُ دون ٢ حالةٌ واحدة. */
+                lineQty={l.qty >= 2 ? l.qty : 1}
+                canEdit={consCanEdit} showCost={showProfit}
+                onClose={() => setConsFor(null)}
+                onSave={(next, est, scope) => saveCons(l.id, next, est, scope)}
+              />
+            </Suspense>
+          </LoadBoundary>
         );
       })()}
 

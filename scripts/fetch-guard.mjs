@@ -9,7 +9,8 @@
  *
  * فحصان ساكنان:
  *  ١) قوائمُ القرار المسمّاة أدناه لا تمرّ بـ`listOf` — تمرّ بـ`listOrThrow`
- *     أو `allPages` أو `need`.
+ *     أو `allPages` أو `need` (وبباب المستهلكات `rpcJson`) — ولا تبلع فشلَها بـ`.catch`.
+ *     وكلُّ اسمٍ بالقائمة يجب أن يُلقى معرَّفاً: اسمٌ لا يُلقى فحصٌ لم يجرِ.
  *  ٢) لا `.catch(() => [])` ولا `.catch(() => {})` جديدةً بالشاشات الحرجة.
  *
  * والاستثناءُ ممكنٌ لكنه **مرئيٌّ ومكتوبٌ سببُه**: وسمُ السطر بـ
@@ -40,7 +41,16 @@ const DECISION_LISTS = [
   "findCustomers",
   // تمديدُ الخطة يقرأ آخرَ يومٍ من القاعدة قبل أن يكتب: قائمةٌ ناقصة تمدّد يوماً غيرَ الأخير.
   "listVisitTreatments",
+  // مستهلكاتُ الخدمات (0252، consumptionApi.ts): وصفةٌ فارغةٌ عن خطأ تُحفظ فوق الحقيقية، وملخّصٌ فارغ
+  // يحذف خدمةً بوصفتها بضغطة، وصرفُ فاتورةٍ فارغ يسكت عن نقصٍ ولا يملأ سندَ التلف، وتقريرٌ فارغ أصفار.
+  "recipeGet",
+  "recipeSummary",
+  "invoiceConsumption",
+  "reportConsumables",
 ];
+
+/** ملفّاتٌ تُعرَّف بها قوائمُ القرار: الريبو، وبابُ المستهلكات الكسول (خارجه لأن الريبو بحزمة الإقلاع). */
+const DECISION_SOURCES = ["src/lib/repo.ts", "src/lib/consumptionApi.ts"];
 
 /** شاشاتٌ فشلُها يقلب قراراً — لا تبتلع بها فشلاً بلا سببٍ مكتوب. */
 const CRITICAL_SCREENS = [
@@ -65,6 +75,19 @@ const CRITICAL_SCREENS = [
   // مطابقةُ الصندوق: «ماكو فواتير» عن خطأٍ يرسم مفروضاً صفراً، وزرُّ التأكيد يحفظ العدَّ كلَّه
   // «زيادة» باسم الكاشير. الفشلُ بطاقةُ إعادةٍ والتأكيدُ محجوب حتى يكتمل الجلب.
   "src/components/retail/CashReconcile.tsx",
+  // تعديلُ طلب التوصيل والفاتورة (0110): الحفظُ يستبدل سطورَ الفاتورة كلَّها، ومنها ما يستلمه السائق (الإجمالي الجديد
+  // − المدفوع) وحارسُ المخزون (الحاجةُ الإضافية مقابل الرصيد + حوض القسم). سطورٌ فارغةٌ عن خطأ يُضاف لها الصنفُ
+  // المطلوب فتُحفظ فاتورةً بلا ما كان فيها — يرجع للمخزن ما خرج، ويُحسب ما يستلمه السائق على صنفٍ واحد.
+  "src/components/retail/DeliveryEditDialog.tsx",
+  // مستهلكاتُ الخدمات (0252–0254): محرّرُ الوصفة (موادُّ ناقصة = «ماكو مادة» عن موجودٍ يُضاف توأماً أو
+  // وصفةٌ تُحفظ ناقصة)، وورقةُ السطر وإشعارُها (فشلٌ صامت = «ما انصرف شي» والرصيدُ تحت الصفر)،
+  // وتبويبُ التلف (صرفُ فاتورةٍ فارغ عن خطأ = موادُّ رجعت للمخزن ولا تُشطب، وبطاقاتُ التقرير أصفار).
+  "src/components/settings/RecipeEditor.tsx",
+  "src/components/retail/ConsumablesSheet.tsx",
+  "src/components/stock/WasteTab.tsx",
+  // الجردُ وسنداتُ التلف (0216، 0254): الموافقةُ تُرحّل الرصيد وتكتب الخسارة — معلَّقاتٌ فارغةٌ عن خطأ تقول «ماكو
+  // شي ينتظر» فيبقى الفرقُ بلا قرار، ومنتجاتٌ فارغةٌ عن خطأ تُخفي ما يُعدّ.
+  "src/pages/StockCount.tsx",
 ];
 
 const files = [];
@@ -80,29 +103,13 @@ const WAIVER = /\/\*\s*swallow-ok:/;
 let bad = 0;
 const say = (file, line, msg) => { bad++; console.error(`   ✗ ${file}:${line} — ${msg}`); };
 
-/* ── ١) قوائمُ القرار لا تمرّ بالبلّاعة ─────────────────────────────────── */
-const repoSrc = fs.readFileSync("src/lib/repo.ts", "utf8").split(/\r?\n/);
-for (const name of DECISION_LISTS) {
-  // نبحث عن تعريف الدالّة ثم نفحص جسمها حتى الإغلاق بمستوى المِلكية
-  for (let i = 0; i < repoSrc.length; i++) {
-    if (repoSrc[i].trim() !== `async ${name}(` && !repoSrc[i].trim().startsWith(`async ${name}(`)) continue;
-    let depth = 0, started = false;
-    for (let j = i; j < repoSrc.length && j < i + 40; j++) {
-      const line = repoSrc[j];
-      if (/\blistOf\s*</.test(line) && !WAIVER.test(line)) {
-        say("src/lib/repo.ts", j + 1, `\`${name}\` قائمةُ قرارٍ تمرّ بـlistOf — استعمل listOrThrow أو allPages (أو وسّمها /* swallow-ok: السبب */)`);
-      }
-      for (const ch of line) { if (ch === "{") { depth++; started = true; } else if (ch === "}") depth--; }
-      if (started && depth <= 0) break;
-    }
-  }
-}
-
-/* ── ٢) لا ابتلاعَ صامتاً بالشاشات الحرجة ──────────────────────────────── */
+/* ── أنماطُ الابتلاع (يقرؤها الفحصان) ─────────────────────────────────── */
 /* والصبُّ لا يغيّر المعنى: `.catch(() => [] as PurchaseItem[])` هو `.catch(() => [])` بثوبٍ
  * يرضي tsc — وبه نجت تفاصيلُ فاتورة الشراء: فشلُ `listPurchaseItems` صار «فاتورةٌ بلا بضاعة»
- * تُطبع ناقصةً ويفتح «تعديل» بنّاءها بلا سطور. ومثلُه وسيطٌ مُسمّى (`(e) =>` و`e =>`). */
-const SWALLOW = /\.catch\s*\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*(?:\[\s*\]|\{\s*\}|null|undefined)(?:\s+as\s+[^)]+)?\s*\)/;
+ * تُطبع ناقصةً ويفتح «تعديل» بنّاءها بلا سطور. ومثلُه وسيطٌ مُسمّى (`(e) =>` و`e =>`).
+ * ومثلُه الخريطةُ الفارغة `({})`: ملخّصُ الوصفات أو صرفُ الفواتير خريطةٌ لا مصفوفة (0252)، و`{}` عن
+ * خطأ يقول «ماكو وصفة» فتُحذف خدمةٌ بوصفتها بضغطة، و«ما انصرف شي» عن فاتورةٍ صرفت. */
+const SWALLOW = /\.catch\s*\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*(?:\[\s*\]|\{\s*\}|\(\s*\{\s*\}\s*\)|null|undefined)(?:\s+as\s+[^)]+)?\s*\)/;
 /* ونفسُ الابتلاع بصيغة `try/catch`: `catch { setX([]) }` يكتب «ماكو» مكانَ «ما وصلنا»
  * (بحثُ الزبون ومنتقي الحيوانات بشاشة البيع كانا هكذا — 0232). */
 const CATCH_EMPTY = /catch\s*(\([^)]*\))?\s*\{\s*set\w+\(\s*\[\s*\]\s*\)/;
@@ -113,6 +120,43 @@ const PROMISE_EMPTY = /\.catch\s*\(\s*\(\s*\w*\s*\)\s*=>\s*\{\s*(?:if\s*\([^)]*\
  * دفترُ الديون كان هكذا: فشلُ جلب التوصيل صار «ماكو طلبات»، فهبط مالُ المندوب ديناً
  * على الزبون. اللقطةُ تُبقى إن وُجدت؛ وإلا فحالةُ خطأٍ تُعرض لا قائمةٌ فارغة. */
 const CATCH_SET_EMPTY = /\.catch\s*\(.*\bset\w+\(\s*\(?\s*\w*\s*\)?\s*=>\s*\w+\s*(?:\?\?|\|\|)\s*\[\s*\]/;
+
+/* ── ١) قوائمُ القرار لا تمرّ بالبلّاعة ─────────────────────────────────── */
+/* التعريفُ بصيغتين: دالّةُ الريبو `async name(…) {`، وخاصّيّةُ الباب الكسول `name: (…) =>` أو
+ * `name: async (…) =>` (نصفا consumptionApi: السحابةُ والتجريبيّة). وجسمُ سهمٍ بلا قوسٍ معقوف سطرُه
+ * وحده — وإلا امتدّ الفحصُ إلى جسم الخاصّيّة التالية ونُسب ما فيه لغيرها. */
+const found = new Map(DECISION_LISTS.map((n) => [n, 0]));
+for (const src of DECISION_SOURCES) {
+  if (!fs.existsSync(src)) { console.error(`   ✗ ${src} — مفقود من مصادر قوائم القرار (حدِّث DECISION_SOURCES أو أعد الملف)`); bad++; continue; }
+  const lines = fs.readFileSync(src, "utf8").split(/\r?\n/);
+  for (const name of DECISION_LISTS) {
+    const def = new RegExp(`^(?:async\\s+${name}\\s*\\(|${name}\\s*:\\s*(?:async\\s*)?(?:\\(|\\w+\\s*=>))`);
+    for (let i = 0; i < lines.length; i++) {
+      if (!def.test(lines[i].trim())) continue;
+      found.set(name, found.get(name) + 1);
+      let depth = 0, started = false;
+      for (let j = i; j < lines.length && j < i + 40; j++) {
+        const line = lines[j];
+        if (/\blistOf\s*</.test(line) && !WAIVER.test(line)) {
+          say(src, j + 1, `\`${name}\` قائمةُ قرارٍ تمرّ بـlistOf — استعمل listOrThrow أو allPages (أو وسّمها /* swallow-ok: السبب */)`);
+        }
+        if (SWALLOW.test(line) && !WAIVER.test(line)) {
+          say(src, j + 1, `\`${name}\` قائمةُ قرارٍ تبلع فشلَها بـ\`.catch(() => …)\` — ارمِ الخطأ ودَع الشاشةَ تقول «أعد المحاولة» (أو وسّمها /* swallow-ok: السبب */)`);
+        }
+        for (const ch of line) { if (ch === "{") { depth++; started = true; } else if (ch === "}") depth--; }
+        if (started && depth <= 0) break;
+        if (!started && /=>/.test(line) && /[,;]\s*$/.test(line.replace(/\s\/\/.*$/, ""))) break;
+      }
+    }
+  }
+}
+for (const [name, n] of found) {
+  if (n) continue;
+  bad++;
+  console.error(`   ✗ \`${name}\` بقائمة القرار ولا تعريفَ له بـ${DECISION_SOURCES.join(" ولا ")} — فحصٌ لم يجرِ (حدِّث القائمة أو المصادر)`);
+}
+
+/* ── ٢) لا ابتلاعَ صامتاً بالشاشات الحرجة ──────────────────────────────── */
 for (const f of CRITICAL_SCREENS) {
   if (!fs.existsSync(f)) { console.error(`   ✗ ${f} — مفقود من قائمة الحارس (حدِّث القائمة أو أعد الملف)`); bad++; continue; }
   const lines = fs.readFileSync(f, "utf8").split(/\r?\n/);
@@ -136,4 +180,5 @@ if (bad) {
   console.error(`\n✗ fetch-guard: ${bad} موضعاً يبلع الفشل. قائمةٌ ناقصة أخطرُ من خطأ ظاهر — الخطأ يُرى ويُعاد، والنقصُ يُصدَّق.\n`);
   process.exit(1);
 }
-console.log(`✓ fetch-guard: ${DECISION_LISTS.length} قائمةَ قرارٍ ترمي، و${CRITICAL_SCREENS.length} شاشةً حرجةً بلا ابتلاعٍ صامت.`);
+const defs = [...found.values()].reduce((a, b) => a + b, 0);
+console.log(`✓ fetch-guard: ${DECISION_LISTS.length} قائمةَ قرارٍ ترمي (${defs} تعريفاً بـ${DECISION_SOURCES.join(" و")})، و${CRITICAL_SCREENS.length} شاشةً حرجةً بلا ابتلاعٍ صامت.`);

@@ -91,10 +91,11 @@ export function pickToday(
   return picks.slice(0, Math.max(0, Math.floor(n))).map(({ value: _v, ...rest }) => rest);
 }
 
-/** الراكد: رصيدٌ بلا مبيعٍ بالمدّة — قيمتُه بسعر الشراء، الأغلى أوّلاً. */
+/** الراكد: رصيدٌ بلا مبيعٍ بالمدّة — قيمتُه بكلفة الخادم لوحدة المخزون (stock_unit_cost، 0255: المتوسّطُ
+ *  المتحرّك إن عُرف وإلا سعرُ الشراء)، الأغلى أوّلاً. */
 export function deadStock(products: readonly Product[], sold: ReadonlyMap<string, number>): { product: Product; value: number }[] {
   return products
     .filter((p) => countable(p) && (Number(p.stock) || 0) > 0 && !((Number(sold.get(p.id)) || 0) > 0))
-    .map((p) => ({ product: p, value: (Number(p.stock) || 0) * Math.max(0, Number(p.purchase_price) || 0) }))
+    .map((p) => ({ product: p, value: (Number(p.stock) || 0) * Math.max(0, Number(p.avg_cost ?? p.purchase_price ?? 0) || 0) }))
     .sort((a, b) => b.value - a.value || a.product.name.localeCompare(b.product.name));
 }

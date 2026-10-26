@@ -63,6 +63,9 @@ const fromDateInput = (s: string): Date | null => {
 
 /* ── «كان ← صار» ─────────────────────────────────────────────────────────── */
 const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
+/* حقولٌ نصُّها هو الخبر فيُعرض كاملاً: وصفةُ الخدمة (0252، `service_recipe_set`: «المستهلكات: كانت … صارت …»)
+ * يقصّها الخادمُ عند ١٤٠ حرفاً، وقصُّها هنا عند ٢٨ كان يُخفي المادّةَ التي تغيّرت نفسَها. */
+const FULL_TEXT = new Set(["recipe"]);
 interface FieldChange { key: string; from: unknown; to: unknown }
 function changesOf(brief: Record<string, unknown> | null | undefined): FieldChange[] {
   const c = brief?.["__changed"];
@@ -292,14 +295,14 @@ export function ActivityLog() {
     setKinds((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };
 
-  /** قيمةٌ خامّ → نصٌّ قصير. */
-  const val = useMemo(() => (v: unknown): string => {
+  /** قيمةٌ خامّ → نصٌّ قصير (`full`: كاملاً — FULL_TEXT). */
+  const val = useMemo(() => (v: unknown, full = false): string => {
     if (v === null || v === undefined) return t("act.chEmpty", "فارغ");
     if (typeof v === "boolean") return v ? t("act.chYes", "نعم") : t("act.chNo", "لا");
     if (typeof v === "number") return formatDec(v);
     const sv = String(v);
     if (/^\[large:\d+\]$/.test(sv)) return t("act.chBig", "محتوى كبير");
-    return sv.length > 28 ? sv.slice(0, 28) + "…" : sv;
+    return !full && sv.length > 28 ? sv.slice(0, 28) + "…" : sv;
   }, [t]);
 
   /** (entity, action, brief) → جملةٌ تُقرأ. نفسُ الجمل السابقة؛ المصدرُ مختصرٌ لا صفٌّ كامل. */
@@ -658,9 +661,9 @@ export function ActivityLog() {
                             {shownCh.map((c) => (
                               <span key={c.key} className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-muted">
                                 <b className="font-semibold text-ink-subtle">{t(`act.f.${c.key}`, { defaultValue: c.key })}</b>
-                                <span className="tabular-nums line-through opacity-60">{val(c.from)}</span>
+                                <span className="tabular-nums line-through opacity-60">{val(c.from, FULL_TEXT.has(c.key))}</span>
                                 <ArrowLeft size={9} className="shrink-0 rtl:rotate-180" />
-                                <span className="tabular-nums font-semibold text-ink">{val(c.to)}</span>
+                                <span className="tabular-nums font-semibold text-ink">{val(c.to, FULL_TEXT.has(c.key))}</span>
                               </span>
                             ))}
                             {ch.length > 3 && (
