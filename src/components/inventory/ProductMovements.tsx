@@ -8,18 +8,25 @@
  * **وما لا تدّعيه هذه الشاشة**: السجلُّ يُكنس (٩٠ يوماً للضجيج و٣٦٥ للمخزون)،
  * فما قبل ذلك لا سجلَّ له — وتُقال صراحةً بذيل القائمة بدل أن توحي بالاكتمال.
  * ========================================================================= */
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowDownRight, PackagePlus, Pencil, RotateCcw, ShoppingBag } from "lucide-react";
 import { Dialog, Button, Skeleton } from "@/components/ui";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { page } from "@/lib/lazyPage";
 import { repo } from "@/lib/repo";
 import { formatQty, formatDate } from "@/lib/utils";
 import type { Product, ProductMovement, ProductBatch, StockCount } from "@/types";
 
 const KIND_ICON = {
   open: PackagePlus, purchase: ShoppingBag, purchase_edit: Pencil,
-  sale: ArrowDownRight, return: RotateCcw, adjust: Pencil,
+  sale: ArrowDownRight, return: RotateCcw,
+  // مستهلكاتُ خدمة (0252): خروجٌ كالبيع ورجوعٌ كالإرجاع — نفسُ الأيقونتين.
+  consume: ArrowDownRight, consume_return: RotateCcw, adjust: Pencil,
 } as const;
+
+/** سندُ التلف (0254) صفُّ جردٍ بـ`source = 'waste'`، و`posted` ما كتبه بالرصيد فعلاً (٣ منازل). */
+type CountRow = StockCount & { source?: string | null; posted?: number | string | null };
 
 export function ProductMovementsDialog({ product, open, onClose }: {
   product: Product; open: boolean; onClose: () => void;
@@ -58,9 +65,14 @@ export function ProductMovementsDialog({ product, open, onClose }: {
     if (m.kind === "purchase_edit") return t("mv.purchaseEdit", "تعديل فاتورة شراء");
     if (m.kind === "sale") return t("mv.sale", "بيع");
     if (m.kind === "return") return t("mv.return", "إرجاع");
-    // الموافقةُ تكتب الرصيدَ وسطرَ الجرد بمعاملةٍ واحدة: نفسُ اللحظة ونفسُ الفرق.
-    const c = counts.find((x) => x.decided_at && Math.abs(new Date(x.decided_at).getTime() - new Date(m.at).getTime()) < 4000
-      && Math.abs((x.applied_delta ?? 0) - m.delta) < 1e-9);
+    // مستهلكاتُ خدمةٍ بِيعت أو رجعت (0252) — والمرجعُ الفاتورةُ كالبيع.
+    if (m.kind === "consume") return t("pos.cat.consumables", "مستهلكات");
+    if (m.kind === "consume_return") return `${t("pos.cat.consumables", "مستهلكات")} — ${t("mv.return", "إرجاع")}`;
+    // الموافقةُ تكتب الرصيدَ وسطرَ الجرد بمعاملةٍ واحدة: نفسُ اللحظة ونفسُ الفرق. وسندُ التلف (0254) فرقُه
+    // المسجَّل −d بتسع منازل ورصيدُه تغيّر بما رحّله (posted، ٣ منازل) — فيُطابَق بهذا لا بذاك، وإلا صار
+    // «١٠ مل» من مكعّب ٢٠ لتراً «تعديل يدوي». ويُسمّى بسببه (mv.cr.damaged / expired) ومن وافق كالجرد.
+    const c = (counts as CountRow[]).find((x) => x.decided_at && Math.abs(new Date(x.decided_at).getTime() - new Date(m.at).getTime()) < 4000
+      && Math.abs((x.source === "waste" ? -(Number(x.posted) || 0) : (x.applied_delta ?? 0)) - m.delta) < 1e-9);
     if (c?.reason) return t("mv.count", { reason: t(`mv.cr.${c.reason}`), who: c.decided_by_name || "—", defaultValue: "جرد — {{reason}} (وافق {{who}})" });
     return t("mv.adjust", "تعديل يدوي أو جرد");
   };
@@ -119,5 +131,28 @@ export function ProductMovementsDialog({ product, open, onClose }: {
         </ul>
       )}
     </Dialog>
+  );
+}
+
+/* ── متوسّطُ الكلفة بنموذج المادة (0255) ─────────────────────────────────────
+ * قطعةٌ كسولة بنطاقها المملوك avgc (hot-paths.json): النصفُ الباردُ ممتلئ، فالنصوصُ تصل مع النموذج
+ * وحدَه. `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary، نمطُ 0241) تصنع قطعةً جديدة،
+ * وفشلُ تحميلها يبقى سطراً بمكانه لا يُسقط النموذج. والحلقةُ هنا بجانب «حركات» المادّة لا بـInventory.tsx:
+ * المسارُ يرسم مكوّناً واحداً مستورداً — وفحصُ النموذج المرسوم (inventory-cas-test ح) يبدّل كلَّ مكوّنٍ
+ * مستورد ببديلٍ فارغ ويبدّل page() بلا شيء، فقطعةٌ كسولةٌ بنصّ النموذج نفسه تُسقط رسمَه هناك (مقيس: ٢٨
+ * فحصاً من ١١٧ سقطت بـ«Element type is invalid»). والحلقةُ نفسُها مفحوصةٌ بـavg-cost-note-test ج. */
+const loadAvgCostNote = () => page(() => import("@/components/inventory/AvgCostNote"), ["avgc"]);
+let AvgCostNoteLazy = loadAvgCostNote();
+
+/** يُرسم بجانب سعر الشراء لمادّةٍ قائمة ولمن يرى الكلفة (النموذجُ يحرسه، والقطعةُ تحرس نفسَها ثانيةً).
+ *  `onChanged`: بعد تصحيح المتوسط — القائمةُ تُقرأ من جديد. */
+export function AvgCostSlot({ product, onChanged }: { product: Product; onChanged: () => void }) {
+  const [, setLazyTick] = useState(0);
+  return (
+    <LoadBoundary scope="avg-cost" onRetry={() => { AvgCostNoteLazy = loadAvgCostNote(); setLazyTick((n) => n + 1); }}>
+      <Suspense fallback={null}>
+        <AvgCostNoteLazy key={product.id} product={product} onChanged={onChanged} />
+      </Suspense>
+    </LoadBoundary>
   );
 }

@@ -15,11 +15,17 @@
  *
  *   node scripts/jsx-text-guard.mjs
  * ==========================================================================*/
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
-const files = execSync("git ls-files --cached --others --exclude-standard 'src/**/*.tsx'",
-  { encoding: "utf8" }).split("\n").filter(Boolean);
+/* بلا صَدَفة، كـi18n-guard: execSync يمرّ بـcmd.exe على ويندوز، وcmd لا يقشّر العلامات المفردة — فيصل git
+ * المسارُ بعلامتيه حرفياً فلا يطابق شيئاً، وكان الحارسُ يقول «✓ 0 ملفاً» على كلّ جهاز ويندوز. execFileSync
+ * لا يمرّ بصَدَفة أصلاً، فالمسارُ يصل git كما هو على النظامين. ونمطُ النجمتين لا يطابق ملفاتِ src العليا
+ * (App.tsx وmain.tsx وstore-main.tsx) على أيّ نظام — فالنمطُ الثاني يضمّها، ولا ملفَّ يُعفى بلا كلمة. */
+const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "src/**/*.tsx", "src/*.tsx"],
+  { encoding: "utf8" }).split("\n").filter(Boolean)
+  // و`--cached` يعدّ ما بالفهرس: ملفٌّ حُذف ولم يُسجَّل حذفُه يُسقَط (كـi18n-guard) بدل أن يرمي ENOENT ويسقط الحارسُ بمسارٍ خام.
+  .filter((f) => fs.existsSync(f));
 
 /* نصُّ JSX = ما بين `>` و`<` بلا `{` ولا `}` بينهما (فلو كان بأقواسٍ صار
  * تعبيراً، والسلسلةُ داخله تفكّ هروبَها كما ينبغي).
@@ -43,6 +49,12 @@ for (const f of files) {
     bad++;
     console.error(`   ✗ ${f}:${lineOf(src, m.index)} — هروبٌ حرفيّ بنصّ JSX: «${m[1].trim().slice(0, 60)}»`);
   }
+}
+
+/* وصفرُ ملفٍّ ليس «لا هروبَ عارياً» — هو فحصٌ لم يجرِ: «حارسٌ يخرج صفراً بلا كلمة ليس حارساً» (CLAUDE.md). */
+if (scanned === 0) {
+  console.error("✗ jsx-text-guard: لم يُفحص أيُّ ملف — عطلٌ بجرد الملفات لا نظافةٌ بالشِفرة.");
+  process.exit(1);
 }
 
 if (bad) {

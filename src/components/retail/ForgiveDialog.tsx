@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle, BadgePercent, Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, RotateCcw, Trash2, User, Wallet,
@@ -24,6 +24,8 @@ import { REASONS, reasonKey } from "@/lib/forgiveText";
 import { deliveryMarksOf, settlementsOf } from "@/lib/settlementFeed";
 import { staffRoster } from "@/lib/staffNames";
 import { expectedServerClinic } from "@/lib/workspaceClinic";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 
 /* ============================================================================
  * «خصم على الدين» (0241) — النافذةُ وسجلُّها ونوافذُ التأكيد التي تمسّ الدين.
@@ -52,6 +54,12 @@ const hasCustomer = (inv: Invoice) => !!((inv.customer_name ?? "").trim() || (in
 const customerLabel = (inv: Invoice) => displayCustomerName(inv.customer_name) || (inv.customer_phone ?? "").trim();
 /** «مرتجع» كما تختمه الدالّةُ سطرَ الاستهلاك (بيانات لا نصّ واجهة). */
 const CONSUMED_BY_RETURN = "\u0645\u0631\u062A\u062C\u0639";
+
+/* ما يرجع للمخزن من موادّ الخدمة قبل الضغطة (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ بحارسٍ
+   بمكانها، فشلُها سطرٌ يُعاد ولا يمسّ زرَّ التأكيد، والتأكيدُ لا ينتظرها. `lazy()` يخبّئ الوعدَ المرفوض،
+   فـ«أعد المحاولة» تصنع قطعةً جديدة. */
+const loadConsNotice = () => page(() => import("@/components/retail/ConsumablesSheet").then((m) => ({ default: m.ConsumptionNotice })), ["rcp"]);
+let ConsNoticeLazy = loadConsNotice();
 
 /** الطالبُ كما يراه الخادم: الدورُ الأساس، والمفتاحُ حيٌّ إن رُفع أو كان الجهازُ مقفولاً بحساب المدير
  *  (`ownerAccountFrom`: كشكٌ مفتوحٌ بالرمز محلّياً ليس «صاحب العيادة من حسابه»). */
@@ -625,12 +633,18 @@ export interface ReturnSheetProps {
   dueAfter: number;
   /** ما يُستهلك من «خصم على الدين» قبل أيّ نقد (0241). */
   consumed: number;
+  /** المستهلكات (0252): الترجيعُ يلمس سطرَ خدمةٍ يحمل خدمتَه ⇒ يُقال قبل الضغطة ما يرجع للمخزن من موادّها.
+   *  غائبٌ = لا سطرَ خدمة (لا قطعةَ ولا طلب). و`targets` للمرتجع الجزئيّ: كلُّ سطرٍ يُلمس ← كمّيتُه بعد؛
+   *  بلاها الفاتورةُ كلُّها إلى صفر (ترجيعٌ كامل أو حذف). */
+  consumption?: { targets?: { item_id: string; qty: number }[] } | null;
   busy: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
-export function ReturnSheet({ mode, invoice, lines, back, dueBefore, dueAfter, consumed, busy, onConfirm, onClose }: ReturnSheetProps) {
+export function ReturnSheet({ mode, invoice, lines, back, dueBefore, dueAfter, consumed, consumption, busy, onConfirm, onClose }: ReturnSheetProps) {
   const { t } = useTranslation();
+  // «أعد المحاولة» على قطعة المستهلكات: قطعةٌ جديدة، ورسمٌ جديد يلتقطها.
+  const [, setLazyTick] = useState(0);
   const title = mode === "delete" ? t("fgv.ret.titleDelete") : mode === "refund" ? t("fgv.ret.titleRefund") : t("fgv.ret.titleReturn");
   const showDebt = dueBefore > 0.005 || dueAfter > 0.005;
   return (
@@ -656,6 +670,14 @@ export function ReturnSheet({ mode, invoice, lines, back, dueBefore, dueAfter, c
               ))}
             </ul>
           </div>
+        )}
+        {/* وما يرجع من موادّ الخدمة — معلومةٌ لا شرط: يُرسم حين يصل، ولا يقول شيئاً إن لم يرجع شيء. */}
+        {consumption && (
+          <LoadBoundary scope="cons-preview" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <ConsNoticeLazy mode="preview" invoiceIds={[invoice.id]} targets={consumption.targets} action={mode === "delete" ? "delete" : undefined} />
+            </Suspense>
+          </LoadBoundary>
         )}
         {mode !== "delete" && (
           <div className="space-y-1 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs font-semibold dark:border-warn-500/40 dark:bg-warn-500/10" data-return-sheet-money>
