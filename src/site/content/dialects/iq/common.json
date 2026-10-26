@@ -1,0 +1,26 @@
+{
+  "$base": {
+    "nav.why": "38a4890436",
+    "nav.start": "871fe218a4",
+    "cta.primary": "0d62c2a0d9",
+    "cta.secondary": "d2b8677ff6",
+    "cta.reassure": "292fbdf86e",
+    "cta.login": "cd2fae4075",
+    "footer.madeIn": "f3eb3e06b4",
+    "backToFeatures": "f989bc5541"
+  },
+  "nav": {
+    "why": "ليش doctorVet",
+    "start": "شلون تبدي"
+  },
+  "cta": {
+    "primary": "جرّبه ببلاش 14 يوم",
+    "secondary": "شوف الميزات",
+    "reassure": "14 يوم بكل الميزات · ما نطلب بطاقة دفع · الاشتراك ما يتجدد وحده",
+    "login": "عندك حساب؟ سجّل دخولك"
+  },
+  "footer": {
+    "madeIn": "مصنوع بالعراق، وتشتغل عليه هسه عيادات بيطرية عراقية"
+  },
+  "backToFeatures": "ارجع لكل الميزات"
+}

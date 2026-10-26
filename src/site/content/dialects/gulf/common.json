@@ -1,0 +1,28 @@
+{
+  "$base": {
+    "nav.why": "38a4890436",
+    "cta.primary": "0d62c2a0d9",
+    "cta.secondary": "d2b8677ff6",
+    "cta.reassure": "292fbdf86e",
+    "cta.login": "cd2fae4075",
+    "switcher.suggest": "399c6a507e",
+    "switcher.yes": "2c7ae43026",
+    "switcher.no": "ad172d8aba",
+    "backToFeatures": "f989bc5541"
+  },
+  "nav": {
+    "why": "ليش doctorVet"
+  },
+  "cta": {
+    "primary": "جرّبه مجاناً 14 يوم",
+    "secondary": "شوف الميزات",
+    "reassure": "14 يوم بكل الميزات · بدون بطاقة دفع · ما يتجدد تلقائياً",
+    "login": "عندك حساب؟ سجّل دخولك"
+  },
+  "switcher": {
+    "suggest": "يبدو من إعدادات جهازك إنك في {{country}}. تبي تنتقل لصفحة بلدك؟",
+    "yes": "نعم، انقلني",
+    "no": "لا، خلّني هنا"
+  },
+  "backToFeatures": "ارجع لكل الميزات"
+}
