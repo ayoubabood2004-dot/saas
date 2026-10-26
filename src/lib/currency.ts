@@ -169,21 +169,22 @@ const TZ_COUNTRY: Record<string, string> = {
   "Europe/Istanbul": "TR", "Europe/London": "GB",
 };
 
-/** تخمين دولة الزائر: منطقة اللغة (ar-SA) أولاً، ثم المنطقة الزمنية. */
+/** تخمين دولة الزائر: المنطقةُ الزمنية العربية أولاً، ثم منطقةُ اللغة (ar-SA)، ثم أمريكا/أوروبا.
+ *  كانت اللغةُ أوّلاً — وأغلبُ أجهزة العراق بكروم أو ويندوز إنكليزيّ (`en-US`)، فصار تسجيلُ عيادةٍ
+ *  ببغداد يقترح «الولايات المتحدة» والدولار (تدقيقٌ عدائيّ، ٢٥/١٠). المنطقةُ الزمنية تتبع البلد لا اللغة. */
 export function guessCountry(): CountryInfo | null {
+  let tz = "";
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? ""; } catch { /* ignore */ }
+  const byTz = TZ_COUNTRY[tz];
+  if (byTz) return countryByCode(byTz) ?? null;
   try {
     for (const lang of navigator.languages ?? [navigator.language]) {
       const region = /-([A-Za-z]{2})\b/.exec(lang ?? "")?.[1];
       if (region) { const c = countryByCode(region); if (c) return c; }
     }
   } catch { /* ignore */ }
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
-    const cc = TZ_COUNTRY[tz];
-    if (cc) return countryByCode(cc) ?? null;
-    if (tz.startsWith("America/")) return countryByCode("US") ?? null;
-    if (tz.startsWith("Europe/")) return countryByCode("EU") ?? null;
-  } catch { /* ignore */ }
+  if (tz.startsWith("America/")) return countryByCode("US") ?? null;
+  if (tz.startsWith("Europe/")) return countryByCode("EU") ?? null;
   return null;
 }
 

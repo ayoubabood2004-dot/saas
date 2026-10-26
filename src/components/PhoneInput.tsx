@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { DIAL_CODES, POPULAR_CODES, POPULAR_ISO, dialName, parsePhone, type DialCodeInfo } from "@/lib/dialcodes";
 import { getDialCode } from "@/lib/settings";
+import { normalizeDigits } from "@/lib/digits";
 
 /**
  * Phone entry with a per-number country-code selector. Defaults to the clinic's
@@ -14,10 +15,19 @@ import { getDialCode } from "@/lib/settings";
  * المعروض لدولة غير شائعة) — فالنماذج التسعة التي فيها هاتف تبقى نظيفة،
  * والوصول لأي دولة يبقى بضغطة وكتابة حرفين.
  */
-export function PhoneInput({ value, onChange }: { value: string; onChange: (full: string) => void }) {
+export function PhoneInput({ value, onChange, defaultCode, autoComplete, id }: {
+  value: string; onChange: (full: string) => void;
+  /** مفتاحٌ افتراضيٌّ غيرُ مفتاح العيادة — نموذجُ التسجيل يمرّر مفتاحَ الدولة المختارة (F9)،
+   *  فرقمٌ سعوديّ لا يُحفظ «+964 05…». والمستدعي يعيد بناءَ الحقل بمفتاحٍ حين تتغيّر الدولة. */
+  defaultCode?: string;
+  /** «off» افتراضاً: أغلبُ حقول الهاتف رقمُ زبونٍ أو موظّف — `tel-national` كان يجعل المتصفّحَ يعرض
+   *  رقمَ صاحب الجهاز نفسه لتعبئة رقم الزبون (تدقيقٌ عدائيّ). نموذجُ التسجيل وحده يمرّر `tel-national`. */
+  autoComplete?: string;
+  id?: string;
+}) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
-  const fallback = getDialCode();
+  const fallback = defaultCode || getDialCode();
   // Initialise once from the incoming value; the component remounts when a modal reopens.
   const parsed = parsePhone(value, fallback);
   const [code, setCode] = useState(parsed.code);
@@ -29,7 +39,8 @@ export function PhoneInput({ value, onChange }: { value: string; onChange: (full
   );
 
   const emit = (c: string, n: string) => {
-    const nat = n.replace(/\D/g, "");
+    // الأرقامُ الشرقية تُترجم قبل حذف ما ليس رقماً: `\D` يمحو «٠٧٧٠…» كلَّه (لصقٌ أو تعبئةٌ تلقائية).
+    const nat = normalizeDigits(n).replace(/\D/g, "");
     onChange(nat ? `${c} ${nat}` : "");
   };
   const pick = (c: string) => { setCode(c); emit(c, national); };
@@ -84,6 +95,9 @@ export function PhoneInput({ value, onChange }: { value: string; onChange: (full
         <input
           type="tel"
           inputMode="tel"
+          dir="ltr"
+          id={id}
+          autoComplete={autoComplete ?? "off"}
           className="input flex-1"
           value={national}
           placeholder={t("phone.number")}

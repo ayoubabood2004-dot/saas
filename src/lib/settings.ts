@@ -150,6 +150,10 @@ const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
 
 let prefsCache: ClinicPrefs | null = null;
+/* هل قرأنا صفَّ الإعدادات من الخادم بهذه الجلسة؟ بذرُ التسجيل ينتظره (F15، ٢٥/١٠): بجهازٍ
+ * جديد كان البذرُ يسبق القراءة فيرى «بلا عملة» ويكتب عملةَ التسجيل فوق ما اختارته العيادةُ
+ * بالإعدادات — والمعلَّقُ يفوز على الخادم بعدها. */
+let prefsFromServer = false;
 
 const PREFS_PREFIX = "vp_clinic_prefs_";
 
@@ -353,13 +357,15 @@ export async function hydrateClinicPrefs(): Promise<void> {
       }, "prefs-pending-resync"));
     }
     savePrefsLocal(prefsCache);
+    prefsFromServer = true;
   } catch {
+    prefsFromServer = false;
     prefsCache = readPrefsLocal();
     setActiveCurrency(prefsCache.currency);
   }
 }
 registerHydrator(hydrateClinicPrefs);
-registerReset(() => { prefsCache = null; });
+registerReset(() => { prefsCache = null; prefsFromServer = false; });
 
 /** Write one or more pref fields: optimistic cache+local update, then cloud upsert.
  *  The patch stays "pending" until the upsert is confirmed, so a write the DB
@@ -404,16 +410,21 @@ export function getClinicCountry(): string | null {
 /** بذر عملة العيادة مرة واحدة بعد أول دخول: الدولة المختارة عند التسجيل تصل
  *  هنا (من الذاكرة المحلية أو من بيانات الحساب) فتُثبَّت العملة ورمز الاتصال —
  *  ولا تلمس شيئاً لو سبق للعيادة أن اختارت عملة. */
-export function seedClinicLocale(countryCode?: string | null, currency?: string | null) {
+export function seedClinicLocale(countryCode?: string | null, currency?: string | null, clinicName?: string | null): boolean {
+  // لم يُقرأ الخادم بعد ⇒ «بلا عملة» هنا قد تعني «جهازٌ جديد» لا «عيادةٌ جديدة». لم يُبذر شيء.
+  if (sb() && !prefsFromServer) return false;
   const cur = prefs();
-  if (cur.currency) return; // العيادة محسومة العملة — لا نغيّر قرارها
+  if (cur.currency) return true; // العيادة محسومة العملة — لا نغيّر قرارها
   const c = countryCode ? countryByCode(countryCode) : undefined;
   const code = (currency || c?.cur || "").toUpperCase();
-  if (!code) return;
+  if (!code) return true;
   const patch: Partial<ClinicPrefs> = { currency: code, country: c?.code ?? countryCode ?? null };
+  // اسمُ العيادة المكتوب بالتسجيل كان يُحفظ اسماً للشخص وحده، فتطبع القسائمُ «doctorVet» (F19).
+  if (clinicName?.trim() && !cur.clinic_name.trim()) patch.clinic_name = clinicName.trim();
   // رمز الاتصال يتبع الدولة فقط إذا ما زال على افتراضه العراقي.
   if (c && c.dial.length > 1 && cur.dial_code === DEFAULT_DIAL_CODE) patch.dial_code = c.dial;
   patchPrefs(patch, "locale-seed");
+  return true;
 }
 
 /**

@@ -19,13 +19,14 @@ import { startOutbox } from "@/lib/outbox";
 import { page } from "@/lib/lazyPage";
 import { useNavFolded } from "@/lib/navFold";
 import { notePageChange } from "@/lib/inflight";
+import { safeNext, peekJoinCode } from "@/lib/authNext";
 
 /* كلُّ صفحةٍ كسولةٍ تمرّ من `page()` (`src/lib/lazyPage.ts`): تنتظر حزمتَها
  * ونصفَ القاموس العربيّ البارد معاً، وتتعافى من القشرة القديمة بعد النشر. */
 
 // Route-level code splitting — each page is its own chunk.
-const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
-const Dashboard = page(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login })), ["signup"]);
+const Dashboard = page(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })), ["onb"]);
 const OwnerDashboard = page(() => import("@/pages/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
 const PetPassport = page(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })));
 const VisitPage = page(() => import("@/pages/VisitPage"), ["vbk"]);
@@ -55,7 +56,7 @@ const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ defa
 const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
 const Payroll = page(() => import("@/pages/Payroll").then((m) => ({ default: m.Payroll })));
 const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })), ["wdr", "scust", "fgr"]);
-const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
+const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })), ["join"]);
 const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
@@ -111,7 +112,8 @@ function LoginRoute() {
   if (loading) return <FullScreenLoader />;
   // رابط «نسيت كلمة المرور» يسجّل دخولاً مؤقتاً — لولا هذا الشرط لطُرد المستخدم
   // إلى الرئيسية قبل أن يرى نموذج تعيين كلمة المرور الجديدة.
-  if (user && !recovery) return <Navigate to="/" replace />;
+  // و`?next=` (رابطُ دعوةٍ مثلاً) يُرجعه حيث كان — لا للرئيسية ثم «افتح الرابط ثانيةً».
+  if (user && !recovery) return <Navigate to={safeNext() ?? "/"} replace />;
   return <Login />;
 }
 
@@ -208,7 +210,12 @@ function HomeRoute() {
   const { user, loading } = useAuth();
   if (loading) return <FullScreenLoader />;
   if (user?.staff_role === "photographer") return <Navigate to="/photos" replace />;
-  if (user) return <Home />;
+  if (user) {
+    // موظّفٌ أكّد بريدَه برابطٍ يهبط هنا: دعوتُه المحفوظة تُكمَل مرّةً واحدة (F13).
+    const join = peekJoinCode();
+    if (join) return <Navigate to={`/join?code=${encodeURIComponent(join)}`} replace />;
+    return <Home />;
+  }
   if (isAppHost()) return <Navigate to="/login" replace />;
   return <Landing />;
 }

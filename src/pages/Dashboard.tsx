@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { Appointment, Pet, Admission, Species, Reminder, Invoice, Product } from "@/types";
 import { repo } from "@/lib/repo";
+import { useSubscription } from "@/lib/subscription";
 import { statusOf } from "@/lib/opsStatus";
 import { cageStudio } from "@/components/cage3d/store";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +37,7 @@ import { BirthdaysWidget } from "@/components/BirthdaysWidget";
 import { StickyNotes } from "@/components/StickyNotes";
 import { RemindersWidget } from "@/components/RemindersWidget";
 import { ExpiryWatchCard } from "@/components/dashboard/ExpiryWatchCard";
+import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 import { buildUpcomingEvents } from "@/lib/events";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, type CurvePoint } from "@/components/ui";
@@ -70,7 +72,8 @@ const CAGE_DOT: Record<string, string> = {
 export function Dashboard() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, baseRole } = usePermissions();
+  const { status: subStatus } = useSubscription();
   const canStock = can("manageInventory");
   const navigate = useNavigate();
 
@@ -315,6 +318,9 @@ export function Dashboard() {
           })}
         </motion.div>
       </motion.div>
+
+      {/* دليلُ اليوم الأوّل — لصاحب العيادة ومديرها، يختفي بإتمامه (F16) */}
+      {baseRole === "manager" && subStatus === "trialing" && <SetupChecklist title={t("onb.title")} />}
 
       {/* KPI grid */}
       <motion.div variants={staggerContainer} initial="initial" animate="animate" className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">

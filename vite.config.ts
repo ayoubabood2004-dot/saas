@@ -47,6 +47,24 @@ function storeEntry() {
   };
 }
 
+/**
+ * تعليقاتُ HTML لا تُشحن (٢٥/١٠).
+ *
+ * تعليقاتُ `index.html` توثيقٌ للمطوّر — لماذا الرأسُ إنكليزيّ، ولماذا الخطُّ غيرُ حاجب —
+ * وكانت تنزل لكلّ زائرٍ مع كلّ فتحة: ١٬٧٣٧ بايتاً مضغوطةً من ٣٬٥٧٣ (نصفُ المستند)، داخل
+ * ميزانية الإقلاع التي بقيت فسحتُها ٣٣١ بايتاً. تبقى بالمصدر، وتُشال من الناتج وحده.
+ */
+function stripHtmlComments() {
+  return {
+    name: "strip-html-comments",
+    apply: "build" as const,
+    transformIndexHtml: {
+      order: "post" as const,
+      handler: (html: string) => html.replace(/<!--(?!\[)[\s\S]*?-->\s*/g, ""),
+    },
+  };
+}
+
 export default defineConfig({
   // Visible build stamp (الإصدار) — lets anyone verify WHICH deploy their
   // device is actually running when debugging stale caches.
@@ -59,6 +77,7 @@ export default defineConfig({
      * البناءَ إن عاد النصفُ البارد لمسار الإقلاع أو دخل حزمةً غيرَ حزمته. */
     i18nSplit(),
     storeEntry(),
+    stripHtmlComments(),
     VitePWA({
       /* «prompt» لا «autoUpdate» (١٧/١٠): autoUpdate يجعل الخدمةَ الجديدة تتخطّى
        * الانتظار ويُعيد تحميلَ كلّ تبويبٍ مفتوح لحظةَ استيلائها — قيس بالإنتاج إقلاعاً

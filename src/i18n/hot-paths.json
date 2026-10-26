@@ -49,6 +49,9 @@
     "fgr": "src/pages/AnalyticsHub.tsx",
     "fgset": "src/pages/Settings.tsx",
     "fgv": "src/components/retail/ForgiveDialog.tsx",
+    "signup": { "owner": "src/pages/Login.tsx", "with": ["src/lib/authErrors.ts"] },
+    "join": "src/pages/JoinClinic.tsx",
+    "onb": { "owner": "src/pages/Dashboard.tsx", "with": ["src/components/dashboard/SetupChecklist.tsx"] },
     "cat": {
       "owner": "src/pages/ClinicStore.tsx",
       "with": [

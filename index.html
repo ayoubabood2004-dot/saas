@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1266d8" />
+    <!-- البوّابة (٢٥/١٠، F1): رابطُ تأكيدٍ أو استعادةٍ انتهى أو استُعمل (أو فتحه ماسحُ بريدٍ قبل
+         صاحبه) يرجعه Supabase إلى الجذر بـ`#error_code=otp_expired` — فكان يهبط على الصفحة الرئيسية
+         بلا كلمة، ولا شيء بالشِفرة يقرأ الخطأ. يُحوَّل قبل أيّ حزمةٍ إلى صفحة الدخول برسالةٍ وزرّ
+         «أرسل رابطاً جديداً». ورمزُ دخولٍ ناجح (`#access_token`) لا يُمسّ — يقرؤه supabase-js. -->
+    <script>
+      (function () {
+        try {
+          var l = location, m = /[#&?]error_code=([\w-]+)/.exec(l.hash + "&" + l.search);
+          if (m && !/[?&]auth_error=/.test(l.search)) l.replace("/login?auth_error=" + m[1]);
+        } catch (e) {}
+      })();
+    </script>
     <!-- الوسوم الثابتة إنجليزية رغم أن لغة العرض الافتراضية صارت عربية:
          الزاحف ومعاينة الرابط بالواتساب يقرآن هذا الرأس قبل أن يشتغل أي
          جافاسكربت، فوسمٌ عربي فوق مستند lang="en" تناقضٌ يفهرَس. وقلبُ الرأس

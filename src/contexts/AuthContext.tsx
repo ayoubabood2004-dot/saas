@@ -26,6 +26,8 @@ interface SignupExtra {
   country?: string;
   /** عملة الدولة (ISO 4217) — تُبذر في تفضيلات العيادة بعد أول دخول. */
   currency?: string;
+  /** لغة واجهة التسجيل — قوالبُ البريد تتفرّع بها (`{{ .Data.lang }}`). */
+  lang?: string;
 }
 
 /** الدولة/العملة المختارتان عند التسجيل تُحفظان محلياً لحين أول دخول فعلي
@@ -69,16 +71,16 @@ interface AuthState {
   signInClinic: (clinic: ClinicAccount) => void;
   signInOwner: (owner: OwnerAccount) => void;
   // Live Supabase email/password auth (used when env vars are configured).
-  signUpEmail: (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => Promise<{ error: string | null; needsConfirm?: boolean; alreadyExists?: boolean }>;
+  signUpEmail: (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => Promise<{ error: string | null; code?: string; needsConfirm?: boolean; alreadyExists?: boolean; createdAt?: string; confirmationSentAt?: string }>;
   signInEmail: (email: string, password: string) => Promise<{ error: string | null }>;
   /** Re-send the email-confirmation LINK (link-based signup; no numeric code). */
-  resendConfirmation: (email: string) => Promise<{ error: string | null }>;
+  resendConfirmation: (email: string) => Promise<{ error: string | null; code?: string }>;
   /** Owner phone-OTP: send the code (WhatsApp first, SMS fallback). */
   sendPhoneOtp: (phone: string, name?: string) => Promise<{ error: string | null; notEnabled?: boolean }>;
   /** Owner phone-OTP: verify the code and sign in. */
   verifyPhoneOtp: (phone: string, code: string) => Promise<{ error: string | null }>;
-  resetPassword: (email: string) => Promise<{ error: string | null }>;
-  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  resetPassword: (email: string) => Promise<{ error: string | null; code?: string }>;
+  updatePassword: (newPassword: string) => Promise<{ error: string | null; code?: string }>;
   /** Update the signed-in user's own name/phone (profiles table; reflects immediately). */
   updateProfile: (patch: { full_name?: string; phone?: string }) => Promise<{ error: string | null }>;
   signOut: () => void;
@@ -212,6 +214,30 @@ async function hydrateSession(u: SbUserLike): Promise<RawProfile> {
   fallback.staff = m.staff;
   fallback.own_clinic = m.own;
   return fallback;
+}
+
+/** بذرُ ما اختاره صاحبُ العيادة بالتسجيل (الدولة، العملة، اسم العيادة) بعد أوّل دخول.
+ *  ثلاثةُ أقفال (F15، ٢٥/١٠): الخادمُ قُرئ قبله (`seedClinicLocale` يرفض قبلها)، والعيادةُ عيادتُه
+ *  بتأكيد الخادم (لا مشغّلٌ داخل عيادة زبون ولا كادرٌ بعيادة غيره)، والمعلَّقُ المحلّيّ باسمه هو —
+ *  كان مفتاحاً واحداً للجهاز يرثه من يدخل بعده. */
+async function seedSignupLocale(raw: RawProfile) {
+  if (isSupabaseConfigured && !raw.own_clinic) return;
+  type Pend = { uid?: string; country?: string | null; currency?: string | null; clinic?: string | null };
+  try {
+    let pend: Pend | null = null;
+    try { pend = JSON.parse(localStorage.getItem(PENDING_LOCALE_KEY) ?? "null") as Pend | null; } catch { /* ignore */ }
+    const mine = !!pend && (!isSupabaseConfigured || pend.uid === raw.id);
+    if (!mine) pend = null;
+    if (!pend && supabase) {
+      // getSession قراءة محلية — بيانات الحساب تحمل الدولة حتى لو صار أول دخول من جهاز آخر.
+      const u = (await supabase.auth.getSession()).data.session?.user;
+      const meta = (u?.id === raw.id ? u.user_metadata ?? {} : {}) as Pend & { role?: string; full_name?: string; clinic_name?: string };
+      if (meta.country || meta.currency) pend = { country: meta.country, currency: meta.currency, clinic: meta.clinic_name ?? (meta.role === "admin" ? meta.full_name : null) };
+    }
+    if (pend && seedClinicLocale(pend.country, pend.currency, pend.clinic) && mine) {
+      try { localStorage.removeItem(PENDING_LOCALE_KEY); } catch { /* ignore */ }
+    }
+  } catch { /* non-blocking */ }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -371,7 +397,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else if (key !== "keep") setActiveClinicId(key.set);
     if (resolvedActive === "clinic") {
       const key = getActiveClinicId();
-      if (key !== hydratedFor()) void hydrateClinicConfig(key).then(applyFontScale);
+      // بذرُ دولة التسجيل **بعد** قراءة إعدادات الخادم لا بموازاتها (F15) — وإلا رأى جهازٌ جديد
+      // «بلا عملة» قبل وصول الصفّ فكتب فوق اختيار العيادة.
+      void (key !== hydratedFor() ? hydrateClinicConfig(key).then(applyFontScale) : Promise.resolve()).then(() => raw && seedSignupLocale(raw));
       // الأسعار الحيّة (0104) — تُجلب مرة، وتسقط بصمت للافتراضي قبل الترحيل.
       void hydratePlanPrices();
     }
@@ -383,30 +411,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (scope) void syncSubscriptionFromServer();
     }
   }, [resolvedActive, raw]);
-
-  // بذر عملة العيادة: الدولة المختارة عند التسجيل (محلياً أو من بيانات الحساب)
-  // تُثبَّت في تفضيلات العيادة أول ما يدخل فعلاً — ولا تلمس عيادة سبق واختارت.
-  useEffect(() => {
-    if (resolvedActive !== "clinic" || !raw) return;
-    void (async () => {
-      try {
-        let pend: { country?: string | null; currency?: string | null } | null = null;
-        try { pend = JSON.parse(localStorage.getItem(PENDING_LOCALE_KEY) ?? "null") as typeof pend; } catch { /* ignore */ }
-        if (!pend && isSupabaseConfigured && supabase) {
-          // getSession قراءة محلية (بلا شبكة) — البيانات الوصفية تحمل الدولة
-          // حتى لو صار أول دخول من جهاز غير جهاز التسجيل.
-          const { data } = await supabase.auth.getSession();
-          const meta = (data.session?.user?.user_metadata ?? {}) as { country?: string | null; currency?: string | null };
-          if (meta.country || meta.currency) pend = { country: meta.country, currency: meta.currency };
-        }
-        if (pend) {
-          seedClinicLocale(pend.country, pend.currency);
-          try { localStorage.removeItem(PENDING_LOCALE_KEY); } catch { /* ignore */ }
-        }
-      } catch { /* non-blocking */ }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedActive, raw?.id]);
 
   // Live presence heartbeat (منو فاتح السستم الآن) — beats once a minute while a
   // clinic user has the app open, so إدارة الكادر shows who's online right now.
@@ -487,12 +491,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null, country: extra?.country || null, currency: extra?.currency || null }, emailRedirectTo },
+      options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null, country: extra?.country || null, currency: extra?.currency || null, lang: extra?.lang || null, clinic_name: role === "admin" ? fullName.trim() : null }, emailRedirectTo },
     });
-    if (error) return { error: error.message };
-    // الدولة المختارة تُحفظ لحين أول دخول (بعد تأكيد الإيميل) فتُبذر عملة العيادة.
+    if (error) return { error: error.message, code: error.code };
+    // الدولة المختارة تُحفظ لحين أول دخول (بعد تأكيد الإيميل) فتُبذر عملة العيادة — باسم صاحبها.
     if (extra?.country || extra?.currency) {
-      try { localStorage.setItem(PENDING_LOCALE_KEY, JSON.stringify({ country: extra.country ?? null, currency: extra.currency ?? null })); } catch { /* ignore */ }
+      try { localStorage.setItem(PENDING_LOCALE_KEY, JSON.stringify({ uid: data.user?.id, country: extra.country ?? null, currency: extra.currency ?? null, clinic: role === "admin" ? fullName.trim() : null })); } catch { /* ignore */ }
     }
     // Enumeration protection: an existing confirmed email returns a user with no
     // identities and sends no code. Surface that so the UI can route to "sign in
@@ -501,7 +505,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // If the project has email-confirmation disabled, signUp returns a live
     // session — set the user now so navigate("/") goes straight to the app.
     if (data.session && data.user) setRaw(await hydrateSession(data.user));
-    return { error: null, needsConfirm: !data.session };
+    return { error: null, needsConfirm: !data.session, createdAt: data.user?.created_at, confirmationSentAt: data.user?.confirmation_sent_at };
   };
 
   const signInEmail = async (email: string, password: string) => {
@@ -580,21 +584,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return { error: "Supabase is not configured." };
     const emailRedirectTo = typeof window !== "undefined" ? `${window.location.origin}/` : undefined;
     const { error } = await supabase.auth.resend({ type: "signup", email: email.trim(), options: { emailRedirectTo } });
-    return { error: error?.message ?? null };
+    return { error: error?.message ?? null, code: error?.code };
   };
 
   const resetPassword = async (email: string) => {
     if (!supabase) return { error: "Supabase is not configured." };
     const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
-    return { error: error?.message ?? null };
+    return { error: error?.message ?? null, code: error?.code };
   };
 
   const updatePassword = async (newPassword: string) => {
     if (!supabase) return { error: "Supabase is not configured." };
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (!error) setRecovery(false);
-    return { error: error?.message ?? null };
+    return { error: error?.message ?? null, code: error?.code };
   };
 
   const updateProfile = async (patch: { full_name?: string; phone?: string }): Promise<{ error: string | null }> => {

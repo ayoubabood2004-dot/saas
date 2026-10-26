@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -33,7 +33,9 @@ import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useT
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import { COUNTRIES, countryByCode, countryName, currencyName } from "@/lib/currency";
+import { COUNTRIES, countryByCode, countryName, currencyName, guessCountry } from "@/lib/currency";
+import { authErr, e164, emailTypo, inboxFor } from "@/lib/authErrors";
+import { safeNext } from "@/lib/authNext";
 import { seedClinicLocale } from "@/lib/settings";
 import { setActiveClinicId } from "@/lib/clinics";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -48,10 +50,10 @@ function pwScore(pw: string): { score: number; bar: string; text: string; key: s
   if (pw.length >= 10) n++;
   if (/[A-Z]/.test(pw) && /\d/.test(pw)) n++;
   if (/[^A-Za-z0-9]/.test(pw)) n++;
-  if (n <= 1) return { score: 1, bar: "bg-danger-500", text: "text-danger-600", key: "auth.pwWeak", def: "Weak" };
-  if (n === 2) return { score: 2, bar: "bg-warn-500", text: "text-warn-600", key: "auth.pwFair", def: "Fair" };
-  if (n === 3) return { score: 3, bar: "bg-sky-500", text: "text-sky-600", key: "auth.pwGood", def: "Good" };
-  return { score: 4, bar: "bg-success-500", text: "text-success-600", key: "auth.pwStrong", def: "Strong" };
+  if (n <= 1) return { score: 1, bar: "bg-danger-500", text: "text-danger-600", key: "signup.pw.weak", def: "Weak" };
+  if (n === 2) return { score: 2, bar: "bg-warn-500", text: "text-warn-600", key: "signup.pw.fair", def: "Fair" };
+  if (n === 3) return { score: 3, bar: "bg-sky-500", text: "text-sky-600", key: "signup.pw.good", def: "Good" };
+  return { score: 4, bar: "bg-success-500", text: "text-success-600", key: "signup.pw.strong", def: "Strong" };
 }
 
 function PasswordField({ label, value, onChange, show, setShow, autoComplete, withStrength, t }: {
@@ -64,7 +66,7 @@ function PasswordField({ label, value, onChange, show, setShow, autoComplete, wi
       <label className="label">{label}</label>
       <div className="relative">
         <input className="input pe-10" type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} required minLength={6} />
-        <button type="button" onClick={() => setShow(!show)} aria-label="Show password" className="absolute end-3 top-1/2 -translate-y-1/2 text-ink-subtle transition hover:text-ink">
+        <button type="button" onClick={() => setShow(!show)} aria-label={t("signup.showPw")} className="absolute end-3 top-1/2 -translate-y-1/2 text-ink-subtle transition hover:text-ink">
           {show ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
@@ -248,7 +250,8 @@ function SupabaseAuthCard() {
   // بلوغُ هذه الشاشة بنيّة تسجيل عيادة هو دخول القمع — يُسجَّل مرّة.
   useEffect(() => {
     const it = urlIntent();
-    if (it.portal === "clinic") track("signup_start", { new: it.signup }, true);
+    // بدايةُ القمع نيّةُ تسجيل عيادةٍ جديدة (`new=1`) — لا كلُّ دخولٍ لعيادةٍ قائمة صار يفتح بوّابتها.
+    if (it.portal === "clinic" && it.signup) track("signup_start", { new: true }, true);
   }, []);
   const { signUpEmail, signInEmail, resendConfirmation, sendPhoneOtp, verifyPhoneOtp, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -267,8 +270,10 @@ function SupabaseAuthCard() {
   // النيّة تأتي من الرابط: من ضغط «ابدأ مجاناً» بصفحة الهبوط يصل وهو ينوي
   // **فتح عيادة جديدة**، فإسقاطه على «دخول مالك» يجعله يبحث عن الطريق مرّة
   // أخرى — وأكثر الناس لا يبحثون، يغادرون.
-  const [mode, setMode] = useState<"signin" | "signup">(() => (urlIntent().signup ? "signup" : "signin"));
-  const [portal, setPortal] = useState<Portal>(() => urlIntent().portal);
+  const intent = useMemo(urlIntent, []);
+  const nextAtMount = useMemo(safeNext, []);
+  const [mode, setMode] = useState<"signin" | "signup">(() => (intent.signup && !intent.authError ? "signup" : "signin"));
+  const [portal, setPortal] = useState<Portal>(() => intent.portal);
   // When an existing email tries to sign up for a second role, we route them to
   // sign in and append this role to their account afterwards.
   const [pendingRole, setPendingRole] = useState<Portal | null>(null);
@@ -277,16 +282,44 @@ function SupabaseAuthCard() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
-  const [country, setCountry] = useState("IQ");
+  const [country, setCountry] = useState(() => initialCountry(intent.country));
   const [password, setPassword] = useState("");
   const [newPw, setNewPw] = useState("");
+  const [newPw2, setNewPw2] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // رابطُ تأكيدٍ أو استعادةٍ انتهى أو استُعمل (F1): كان يهبط على الصفحة الرئيسية بلا كلمة.
+  const [linkErr, setLinkErr] = useState<string | null>(intent.authError);
+  // «بريدك لم يتأكد» بالدخول صار له زرّ إرسالٍ بمكانه (F2) — كان الزرّ بشاشة «أكّد بريدك» وحدها.
+  const [notConfirmed, setNotConfirmed] = useState(false);
+  // الخادمُ يرفض إعادةَ الإرسال قبل ٦٠ ثانية: عدّادٌ ظاهر بدل جملةٍ إنكليزية فيها رقم.
+  const [cooldown, setCooldown] = useState(0);
+  const [reSignup, setReSignup] = useState(false);
+  const [pollStopped, setPollStopped] = useState(false);
+  const [typo, setTypo] = useState<string | null>(null);
+  const staff = intent.staff;
 
-  const clear = () => { setError(null); setInfo(null); };
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [cooldown]);
+
+  const clear = () => { setError(null); setInfo(null); setNotConfirmed(false); };
   const emailOk = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+  /** كلُّ خطأ مصادقةٍ يمرّ من هنا بالعربية (F4) — والثواني تصير عدّاداً. */
+  const showErr = (message: string | null | undefined, code?: string) => {
+    const e = authErr(message, code);
+    if (e.kind === "notConfirmed") setNotConfirmed(true);
+    if (e.seconds) setCooldown(e.seconds);
+    setError(t(e.key, e.vars));
+    return e;
+  };
+  // الوجهةُ تُقرأ مرّةً عند فتح الصفحة: بعد إضافة دورٍ قد يكون LoginRoute نقله لوجهته ومسحت الدعوةُ رمزَها،
+  // فقراءةُ الرابط وقتَها تجده بلا `next` وترسله للرئيسية فتضيع الدعوة (تدقيقٌ عدائيّ).
+  const done = () => { rememberPortal(portal); playSuccess(); if (window.location.pathname === "/login") navigate(nextAtMount ?? "/"); };
 
   // شاشة «أكّد بريدك» ما تنتظر المستخدم يرجع يسجّل بنفسه: ما دامت مفتوحة
   // والاعتماديات بالذاكرة، نحاول الدخول تلقائياً — محاولة فورية كلما رجع
@@ -294,13 +327,26 @@ function SupabaseAuthCard() {
   // معدّل Supabase). أول ما يتأكد الحساب تنجح المحاولة ويدخل مباشرة.
   useEffect(() => {
     if (view !== "sent" || !password || !emailOk(email)) return;
+    setPollStopped(false);
     let stopped = false, attempting = false, tries = 0;
     const attempt = async () => {
-      if (stopped || attempting || tries >= 75) return; // ٧٥ نبضة ≈ ربع ساعة ثم نتوقف
+      if (stopped || attempting) return;
+      // ٧٥ نبضة ≈ ربع ساعة ثم نتوقف — ونقولها، لا نبقي «ستدخل تلقائياً» على شاشةٍ لم تعد تحاول (F24).
+      if (tries >= 75) { setPollStopped(true); return; }
       attempting = true; tries++;
       try {
+        // رابطُ التأكيد فُتح بتبويبٍ آخر من نفس المتصفّح؟ جلستُه هنا — ندخل بها. كان الاستطلاعُ
+        // يسجّل دخولاً جديداً يبدأ بـsignOut محلّيّ، فيُبطل الجلسةَ التي فتحها الرابطُ للتوّ (F6).
+        // سياقُ الدخول بهذا التبويب يعرفها عبر قناة البثّ ثم يحوّل LoginRoute — والتنقّلُ قبله كان يهبط
+        // على الجذر بلا مستخدم فيخرج للموقع. فإن لم يتحوّل خلال ثوانٍ، تحميلٌ كاملٌ يقرأ الجلسةَ من التخزين.
+        if (supabase && (await supabase.auth.getSession()).data.session) {
+          stopped = true;
+          setTimeout(() => { if (window.location.pathname === "/login") window.location.assign(safeNext() ?? "/"); }, 4000);
+          return;
+        }
+        // وإعادةُ التسجيل لبريدٍ ينتظر التأكيد لا تغيّر كلمةَ السرّ (F5) — فلا تُجرَّب الجديدةُ عبثاً.
         const res = await signInEmail(email, password);
-        if (!res.error && !stopped) { playSuccess(); navigate("/"); }
+        if (!res.error && !stopped) done();
       } catch { /* لسّه غير مؤكد — نحاول لاحقاً */ } finally { attempting = false; }
     };
     const iv = setInterval(() => void attempt(), 12000);
@@ -319,13 +365,13 @@ function SupabaseAuthCard() {
   const [method, setMethod] = useState<"phone" | "email">("phone");
 
   const sbSendOtp = async (p: string, nm: string) => {
-    const res = await sendPhoneOtp(p, nm);
+    const res = await sendPhoneOtp(e164(p), nm);
     if (res.notEnabled) return { error: null, notEnabled: true };
     if (res.error) return { error: describeAuthError(res.error, t) };
     return { error: null };
   };
   const sbVerifyOtp = async (p: string, code: string) => {
-    const res = await verifyPhoneOtp(p, code);
+    const res = await verifyPhoneOtp(e164(p), code);
     if (res.error) {
       return { error: /invalid|expired|incorrect/i.test(res.error) ? t("auth.otpWrong", "الرمز غير صحيح — دقق وحاول مرة ثانية.") : describeAuthError(res.error, t) };
     }
@@ -338,17 +384,30 @@ function SupabaseAuthCard() {
     e.preventDefault();
     clear();
     if (!emailOk(email)) { setError(t("auth.invalidEmail", "Enter a valid email address.")); return; }
-    if (password.length < 6) { setError(t("auth.pwTooShort", "Password must be at least 6 characters.")); return; }
+    // الحسابُ الجديد 8 أحرف فأكثر؛ والدخولُ يقبل ما سبق (حساباتٌ قديمة بـ6 أحرف موجودة).
+    if (password.length < (mode === "signup" ? 8 : 6)) { setError(t("signup.err.pwShort", { n: mode === "signup" ? 8 : 6 })); return; }
     playTap();
     setBusy(true);
     try {
       if (mode === "signup") {
         if (!name.trim()) { setError(t("auth.nameRequired", "Please enter your name.")); return; }
-        const role: Role = portal === "clinic" ? "admin" : "owner";
-        const co = portal === "clinic" ? countryByCode(country) : undefined;
-        const res = await signUpEmail(email, password, name, role, { phone, city, country: co?.code, currency: co?.cur });
-        if (!res.error && portal === "clinic") track("signup_done", { via: "supabase" });
-        if (res.error) { setError(res.error); return; }
+        // الموظّفُ القادم من دعوة لا يفتح عيادة: «admin» كانت تجعله عيادةً بدليل العيادات العامّ (0078) باسمه
+        // ورقمه حتى يقبل الدعوة — وللأبد إن لم يقبلها. يسجّل كما كان قبلها، ويصير كادراً بالعضوية.
+        const role: Role = portal === "clinic" && !staff ? "admin" : "owner";
+        // الموظّفُ القادم من دعوة لا يفتح عيادةً: لا دولةَ ولا عملةَ تُبذر باسمه.
+        const co = portal === "clinic" && !staff ? countryByCode(country) : undefined;
+        // التسجيلُ بلا مهلة كان يترك «لحظة…» للأبد على شبكةٍ متعثّرة (F7).
+        const res = await Promise.race([
+          signUpEmail(email, password, name, role, { phone, city: staff ? "" : city, country: co?.code, currency: co?.cur, lang: i18n.language }),
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000)),
+        ]);
+        if (res.error) {
+          const e = authErr(res.error, res.code);
+          // بريدٌ مسجَّلٌ وتأكيدُ البريد مطفأ: الخادمُ يقولها خطأً لا مستخدماً بلا هويّات (F28).
+          if (e.kind !== "exists") { showErr(res.error, res.code); return; }
+          res.alreadyExists = true;
+        }
+        if (portal === "clinic" && !staff && !res.alreadyExists) track("signup_done", { via: "supabase" });
         if (res.alreadyExists) {
           // Existing account → switch to sign-in and append this role after login
           // (no duplicate auth.users row).
@@ -361,43 +420,49 @@ function SupabaseAuthCard() {
         if (res.needsConfirm) {
           // Link-based confirmation: show the "check your inbox" state. Clicking the
           // link signs them in automatically (onAuthStateChange → LoginRoute redirect).
+          // حسابٌ أُنشئ قبل دقائق = إعادةُ تسجيلٍ لبريدٍ ينتظر التأكيد: الخادمُ أعاد الرسالةَ وأبقى
+          // كلمةَ السرّ الأولى (F5) — نقولها بدل انتظارٍ لا ينتهي بكلمةٍ لن تعمل.
+          // بختمَي الخادم نفسه لا بساعة الجهاز: إعادةُ التسجيل ترسل التأكيدَ بعد إنشاء الحساب بدقيقةٍ فأكثر
+          // (حدُّ إعادة الإرسال)، والتسجيلُ الجديد يرسله بنفس اللحظة.
+          setReSignup(!!res.createdAt && !!res.confirmationSentAt && Date.parse(res.confirmationSentAt) - Date.parse(res.createdAt) > 60_000);
+          setCooldown(60);
           playSuccess();
           setView("sent");
           return;
         }
-        playSuccess();
-        navigate("/");
+        done();
       } else {
         const res = await signInEmail(email, password);
-        if (res.error) { const msg = describeAuthError(res.error, t); setError(msg); toast.error(msg); return; }
+        if (res.error) { const e = showErr(res.error); toast.error(t(e.key, e.vars)); return; }
         if (pendingRole) {
           const add = await addRole(pendingRole);
           setPendingRole(null);
           if (add.error) toast.error(t("auth.roleAddFailed", "Signed in, but couldn't add the new role."), add.error);
           else toast.success(t("auth.roleAdded", { role: t(`role.${pendingRole}`), defaultValue: "{{role}} access added to your account." }));
         }
-        playSuccess();
-        navigate("/");
+        done();
       }
     } catch (err) {
       // Any unexpected failure — surface it and (critically) reset the button below.
-      const msg = describeAuthError(err instanceof Error ? err.message : null, t);
-      setError(msg);
-      toast.error(msg);
+      const e = showErr(err instanceof Error ? err.message : null);
+      toast.error(t(e.key, e.vars));
     } finally {
       setBusy(false); // the button NEVER stays stuck on "Loading…"
     }
   };
 
   const resend = async () => {
-    if (busy) return;
+    if (busy || cooldown > 0) return;
+    if (!emailOk(email)) { setError(t("auth.invalidEmail", "Enter a valid email address.")); return; }
     clear();
     playTap();
     setBusy(true);
     try {
       const res = await resendConfirmation(email);
-      if (res.error) setError(res.error);
-      else setInfo(t("auth.linkResent", "Sent — check your inbox again."));
+      if (res.error) showErr(res.error, res.code);
+      else { setInfo(t("signup.link.resent")); setCooldown(60); setLinkErr(null); }
+    } catch (err) {
+      showErr(err instanceof Error ? err.message : null);
     } finally {
       setBusy(false);
     }
@@ -411,8 +476,10 @@ function SupabaseAuthCard() {
     setBusy(true);
     try {
       const res = await resetPassword(email);
-      if (res.error) { setError(res.error); return; }
+      if (res.error) { showErr(res.error, res.code); return; }
       setInfo(t("auth.resetSent", "Check your email for a password-reset link."));
+    } catch (err) {
+      showErr(err instanceof Error ? err.message : null);
     } finally {
       setBusy(false);
     }
@@ -421,14 +488,16 @@ function SupabaseAuthCard() {
   const submitReset = async (e: FormEvent) => {
     e.preventDefault();
     clear();
-    if (newPw.length < 6) { setError(t("auth.pwTooShort", "Password must be at least 6 characters.")); return; }
+    if (newPw.length < 8) { setError(t("signup.err.pwShort", { n: 8 })); return; }
+    if (newPw !== newPw2) { setError(t("signup.err.pwMismatch")); return; }
     playTap();
     setBusy(true);
     try {
       const res = await updatePassword(newPw);
-      if (res.error) { setError(res.error); return; }
-      playSuccess();
-      navigate("/");
+      if (res.error) { showErr(res.error, res.code); return; }
+      done();
+    } catch (err) {
+      showErr(err instanceof Error ? err.message : null);
     } finally {
       setBusy(false);
     }
@@ -441,11 +510,21 @@ function SupabaseAuthCard() {
     </>
   );
 
-  const features = [
-    { icon: QrCode, title: t("login.f1Title", "One universal passport"), body: t("login.f1Body", "A single QR your pet carries to any clinic, anywhere.") },
-    { icon: HeartPulse, title: t("login.f2Title", "Complete medical record"), body: t("login.f2Body", "Vitals, vaccines, treatments and history — always in sync.") },
-    { icon: ShieldCheck, title: t("login.f3Title", "Private & secure"), body: t("login.f3Body", "You decide what each clinic can see. Always.") },
-  ];
+  // صفحةُ تسجيل العيادة كانت تبيع لأصحاب الحيوانات («جوازٌ واحد لكلّ حيوان») وبلا كلمةٍ عن
+  // التجربة المجانية (F25). بوّابةُ العيادة لها كلامُها.
+  const clinicHero = portal === "clinic" && !staff;
+  const features = clinicHero && mode === "signup"
+    ? [
+      { icon: CheckCircle2, title: t("signup.hero.p1"), body: "" },
+      { icon: ShieldCheck, title: t("signup.hero.p2"), body: "" },
+      { icon: Sparkles, title: t("signup.hero.p3"), body: "" },
+    ]
+    : [
+      { icon: QrCode, title: t("login.f1Title", "One universal passport"), body: t("login.f1Body", "A single QR your pet carries to any clinic, anywhere.") },
+      { icon: HeartPulse, title: t("login.f2Title", "Complete medical record"), body: t("login.f2Body", "Vitals, vaccines, treatments and history — always in sync.") },
+      { icon: ShieldCheck, title: t("login.f3Title", "Private & secure"), body: t("login.f3Body", "You decide what each clinic can see. Always.") },
+    ];
+  const inbox = inboxFor(email);
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -466,9 +545,9 @@ function SupabaseAuthCard() {
 
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="relative max-w-md text-white">
           <motion.h2 variants={staggerItem} className="font-display text-4xl font-extrabold leading-tight tracking-tighter2">
-            {t("login.heroTitle", "Every pet deserves a record that travels with them.")}
+            {clinicHero ? t("signup.hero.title") : t("login.heroTitle", "Every pet deserves a record that travels with them.")}
           </motion.h2>
-          <motion.p variants={staggerItem} className="mt-4 text-lg text-white/80">{t("app.tagline")}</motion.p>
+          <motion.p variants={staggerItem} className="mt-4 text-lg text-white/80">{clinicHero ? t("signup.hero.sub") : t("app.tagline")}</motion.p>
           <div className="mt-10 space-y-5">
             {features.map((f) => {
               const Icon = f.icon;
@@ -477,7 +556,7 @@ function SupabaseAuthCard() {
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15 backdrop-blur"><Icon size={22} /></span>
                   <div>
                     <p className="font-display font-bold">{f.title}</p>
-                    <p className="text-sm text-white/75">{f.body}</p>
+                    {f.body && <p className="text-sm text-white/75">{f.body}</p>}
                   </div>
                 </motion.div>
               );
@@ -485,9 +564,11 @@ function SupabaseAuthCard() {
           </div>
         </motion.div>
 
-        <div className="relative flex items-center gap-2 text-sm text-white/70">
-          <Sparkles size={16} /> {t("login.trust", "Trusted by veterinarians, loved by pet owners.")}
-        </div>
+        {clinicHero ? <span /> : (
+          <div className="relative flex items-center gap-2 text-sm text-white/70">
+            <Sparkles size={16} /> {t("login.trust", "Trusted by veterinarians, loved by pet owners.")}
+          </div>
+        )}
       </div>
 
       {/* ── Auth panel ── */}
@@ -514,6 +595,7 @@ function SupabaseAuthCard() {
                 <h2 className="font-display text-xl font-extrabold text-ink">{t("auth.setNewPassword", "Set a new password")}</h2>
                 <p className="text-sm text-ink-muted">{t("auth.setNewPasswordSub", "Choose a new password for your account.")}</p>
                 <PasswordField label={t("auth.newPassword", "New password")} value={newPw} onChange={setNewPw} show={showPw} setShow={setShowPw} autoComplete="new-password" withStrength t={t} />
+                <PasswordField label={t("signup.confirmPw")} value={newPw2} onChange={setNewPw2} show={showPw} setShow={setShowPw} autoComplete="new-password" t={t} />
                 {msg}
                 <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? t("common.loading") : t("auth.updatePassword", "Update password")}</Button>
               </form>
@@ -548,23 +630,52 @@ function SupabaseAuthCard() {
                 </div>
                 {/* المراقبة الحيّة: نجرّب الدخول تلقائياً — فور ما يؤكد من بريده
                     يدخل النظام مباشرة بلا رجعة لنموذج تسجيل الدخول. */}
-                <div data-autologin className="mx-auto flex w-fit items-center gap-2 rounded-full border border-brand-200/60 bg-brand-50 px-4 py-2 text-xs font-semibold text-brand-700 dark:border-brand-500/25 dark:bg-brand-500/10 dark:text-brand-300">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-60" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-500" />
-                  </span>
-                  {t("auth.waitingConfirm", "بانتظار تأكيدك… ستدخل تلقائياً فور الضغط على الرابط")}
-                </div>
+                {reSignup ? (
+                  <p className="rounded-2xl border border-warn-200 bg-warn-50 px-4 py-3 text-start text-xs text-warn-700 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">{t("signup.sent.reSignup")}</p>
+                ) : pollStopped ? (
+                  <p className="rounded-2xl border border-line bg-surface-2 px-4 py-3 text-xs text-ink-muted">{t("signup.sent.stopped")}</p>
+                ) : (
+                  <div data-autologin className="mx-auto flex w-fit items-center gap-2 rounded-full border border-brand-200/60 bg-brand-50 px-4 py-2 text-xs font-semibold text-brand-700 dark:border-brand-500/25 dark:bg-brand-500/10 dark:text-brand-300">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-60" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-500" />
+                    </span>
+                    {t("auth.waitingConfirm", "بانتظار تأكيدك… ستدخل تلقائياً فور الضغط على الرابط")}
+                  </div>
+                )}
+                {inbox && (
+                  <a href={inbox.url} target="_blank" rel="noreferrer" className="mx-auto inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface-1 px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-2">
+                    <MailCheck size={16} /> {t("signup.sent.openMail", { app: inbox.app })}
+                  </a>
+                )}
                 {msg}
                 <div className="rounded-2xl border border-line bg-surface-2 px-4 py-3 text-xs text-ink-subtle">{t("auth.checkSpam", "Can't find it? Check your spam or promotions folder.")}</div>
                 <div className="space-y-2.5 pt-1">
-                  <button type="button" onClick={resend} disabled={busy} className="text-sm font-semibold text-brand-600 transition hover:underline disabled:opacity-50">{busy ? t("common.loading") : t("auth.resendLink", "Resend confirmation email")}</button>
-                  <button type="button" onClick={() => { setView("auth"); setMode("signin"); clear(); }} className="flex w-full items-center justify-center gap-1 text-sm text-ink-muted transition hover:text-ink"><ArrowLeft size={15} /> {t("auth.backToSignin", "Back to sign in")}</button>
+                  <button type="button" onClick={resend} disabled={busy || cooldown > 0} className="text-sm font-semibold text-brand-600 transition hover:underline disabled:opacity-50">
+                    {busy ? t("common.loading") : cooldown > 0 ? t("signup.sent.resendIn", { s: cooldown }) : t("auth.resendLink", "Resend confirmation email")}
+                  </button>
+                  <button type="button" onClick={() => { setView("auth"); setMode("signup"); clear(); }} className="block w-full text-sm font-medium text-ink-muted transition hover:text-ink">{t("signup.sent.wrongEmail")}</button>
+                  <button type="button" onClick={() => { setView("auth"); setMode("signin"); clear(); }} className="flex w-full items-center justify-center gap-1 text-sm text-ink-muted transition hover:text-ink"><ArrowLeft size={15} /> {pollStopped || reSignup ? t("signup.sent.signInNow") : t("auth.backToSignin", "Back to sign in")}</button>
                 </div>
               </motion.div>
             ) : (
               /* Sign in / Sign up */
               <>
+                {linkErr && (
+                  <motion.div variants={staggerItem} role="alert" className="mb-5 space-y-2 rounded-2xl border border-warn-200 bg-warn-50 p-4 text-sm text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-100">
+                    <p className="flex items-center gap-1.5 font-bold"><AlertCircle size={16} className="shrink-0" /> {t("signup.link.expiredTitle")}</p>
+                    <p className="text-xs leading-relaxed">{t("signup.link.expiredBody")}</p>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs font-semibold">
+                      <button type="button" onClick={resend} disabled={busy || cooldown > 0} className="text-brand-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-brand-300">
+                        {cooldown > 0 ? t("signup.sent.resendIn", { s: cooldown }) : t("signup.link.resend")}
+                      </button>
+                      <button type="button" onClick={() => { setLinkErr(null); setView("forgot"); clear(); }} className="text-ink-muted underline-offset-2 hover:underline">{t("signup.link.newReset")}</button>
+                    </div>
+                  </motion.div>
+                )}
+                {staff && mode === "signup" && (
+                  <motion.p variants={staggerItem} className="mb-4 rounded-2xl bg-brand-50 px-4 py-3 text-xs text-brand-700 dark:bg-brand-500/10 dark:text-brand-200">{t("signup.staffSub")}</motion.p>
+                )}
                 <motion.div variants={staggerItem}>
                   <Segmented
                     className="mb-5 w-full [&>button]:flex-1"
@@ -611,35 +722,74 @@ function SupabaseAuthCard() {
                 <motion.form variants={staggerItem} onSubmit={submitAuth} className="space-y-3" data-authmode={mode} data-authportal={portal}>
                   {mode === "signup" && (
                     <>
-                      {portal === "clinic" && <CountrySelect value={country} onChange={setCountry} t={t} />}
+                      {portal === "clinic" && !staff && <CountrySelect value={country} onChange={(cc) => {
+                        setCountry(cc);
+                        // رقمٌ كُتب قبل تغيير الدولة يحمل مفتاحَها القديم — والحقلُ يُبنى من القيمة، فيُعاد مفتاحُه هنا.
+                        const dial = countryByCode(cc)?.dial;
+                        if (dial) setPhone((p) => (p ? p.replace(/^\+\d+\s*/, `${dial} `) : p));
+                      }} t={t} />}
                       <div>
-                        <label className="label">{portal === "clinic" ? t("auth.clinicName", "Clinic name") : t("auth.fullName", "Full name")}</label>
-                        <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                        <label className="label" htmlFor="su-name">{portal === "clinic" && !staff ? t("auth.clinicName", "Clinic name") : staff ? t("signup.yourName") : t("auth.fullName", "Full name")}</label>
+                        <input id="su-name" className="input" dir="auto" value={name} onChange={(e) => setName(e.target.value)} autoComplete={portal === "clinic" && !staff ? "organization" : "name"} />
                       </div>
                       <div>
-                        <label className="label">{t("auth.phone", "Phone")}</label>
-                        <PhoneInput value={phone} onChange={setPhone} />
+                        <label className="label" htmlFor="su-phone">{t("auth.phone", "Phone")}</label>
+                        {/* المفتاحُ يتبع الدولة (F9): رقمٌ سعوديٌّ كان يُحفظ «+964 05…». والإعادةُ بمفتاح
+                            لأن الحقل يأخذ مفتاحَه مرّةً عند البناء. */}
+                        <PhoneInput key={portal === "clinic" && !staff ? country : "x"} id="su-phone" autoComplete="tel-national" value={phone} onChange={setPhone} defaultCode={portal === "clinic" && !staff ? countryByCode(country)?.dial : undefined} />
                       </div>
-                      {portal === "clinic" && (
+                      {portal === "clinic" && !staff && (
                         <div>
-                          <label className="label">{t("auth.city", "City")}</label>
-                          <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
+                          <label className="label" htmlFor="su-city">{t("auth.city", "City")}</label>
+                          <input id="su-city" className="input" dir="auto" value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />
                         </div>
                       )}
                     </>
                   )}
                   <div>
-                    <label className="label">{t("phone.email", "Email")}</label>
-                    <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+                    <label className="label" htmlFor="su-email">{t("phone.email", "Email")}</label>
+                    <input
+                      id="su-email" className="input" type="email" dir="ltr" inputMode="email" autoCapitalize="none" spellCheck={false}
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setTypo(null); }}
+                      onBlur={() => setTypo(mode === "signup" ? emailTypo(email) : null)}
+                      autoComplete="email" required
+                    />
+                    {typo && (
+                      <p className="mt-1 text-xs text-ink-muted">
+                        {t("signup.didYouMean", { email: typo })}{" "}
+                        <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => { setEmail(typo); setTypo(null); }}>{t("signup.useIt")}</button>
+                      </p>
+                    )}
                   </div>
                   <PasswordField label={t("auth.password", "Password")} value={password} onChange={setPassword} show={showPw} setShow={setShowPw} autoComplete={mode === "signin" ? "current-password" : "new-password"} withStrength={mode === "signup"} t={t} />
+                  {mode === "signup" && <p className="-mt-1 text-2xs text-ink-subtle">{t("signup.pwHint")}</p>}
                   {mode === "signin" && (
                     <button type="button" onClick={() => { setView("forgot"); clear(); }} className="block w-full text-end text-sm font-medium text-brand-600 hover:underline">{t("auth.forgotLink", "Forgot password?")}</button>
                   )}
                   {msg}
+                  {notConfirmed && (
+                    <button type="button" onClick={resend} disabled={busy || cooldown > 0} className="w-full rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-50 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
+                      {cooldown > 0 ? t("signup.sent.resendIn", { s: cooldown }) : t("signup.resendConfirm")}
+                    </button>
+                  )}
                   <Button type="submit" size="lg" className="w-full" disabled={busy}>
                     {busy ? t("common.loading") : mode === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Create account")}
                   </Button>
+                  {mode === "signup" && (
+                    <div className="space-y-1 text-center text-2xs text-ink-subtle">
+                      {portal === "clinic" && !staff && <p className="font-semibold text-success-700 dark:text-success-300">{t("signup.trial")}</p>}
+                      <p>
+                        <Trans
+                          i18nKey="signup.consent"
+                          components={{
+                            terms: <a href="/terms" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-ink" />,
+                            privacy: <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-ink" />,
+                          }}
+                        />
+                      </p>
+                    </div>
+                  )}
                 </motion.form>
 
                 <motion.p variants={staggerItem} className="mt-5 text-center text-sm text-ink-muted">
@@ -667,16 +817,40 @@ function SupabaseAuthCard() {
  * والرابط يحمل كذلك لغته: نطاق التطبيق قد ينفصل يوماً عن النطاق الرئيسي،
  * وحينها لا يعبر المخزن المحلي بينهما — فتُقرأ اللغة من الرابط لا منه.
  * ==========================================================================*/
-function urlIntent(): { portal: Portal; signup: boolean } {
+type Intent = { portal: Portal; signup: boolean; staff: boolean; authError: string | null; country: string | null };
+const PORTAL_KEY = "vp_login_portal";
+
+function urlIntent(): Intent {
   try {
     const q = new URLSearchParams(window.location.search);
+    const as = (q.get("as") || "").toLowerCase();
+    // عيادةٌ عائدة تفتح «تسجيل الدخول» بلا `as`: كانت تهبط على بوّابة أصحاب الحيوانات (رقم الهاتف)
+    // وتبحث عن زرّ «عيادة» بكلّ مرّة (F11). آخرُ بوّابةٍ دخل منها هذا الجهاز تُتذكّر.
+    let remembered: string | null = null;
+    try { remembered = localStorage.getItem(PORTAL_KEY); } catch { /* ignore */ }
     return {
-      portal: (q.get("as") || "").toLowerCase() === "clinic" ? "clinic" : "owner",
+      // ورابطُ تأكيدٍ منتهٍ (F1) يخصّ تسجيلاً بالبريد — بوّابةُ العيادة فيها حقلُ البريد لإعادة الإرسال.
+      portal: as === "clinic" || (!as && (remembered === "clinic" || q.has("auth_error"))) ? "clinic" : "owner",
       signup: q.get("new") === "1",
+      staff: q.get("staff") === "1",
+      authError: (q.get("auth_error") || "").replace(/[^\w-]/g, "") || null,
+      country: (q.get("country") || "").toUpperCase() || null,
     };
   } catch {
-    return { portal: "owner", signup: false };
+    return { portal: "owner", signup: false, staff: false, authError: null, country: null };
   }
+}
+
+function rememberPortal(p: Portal) {
+  try { localStorage.setItem(PORTAL_KEY, p); } catch { /* ignore */ }
+}
+
+/** دولةُ العيادة الافتراضية (F8): ما حمله رابطُ نسخة البلد، ثم تخمينُ الجهاز، ثم العراق.
+ *  كانت «العراق» دائماً، فعيادةٌ سعوديةٌ لا تنتبه للحقل الأوّل تعمل بالدينار و+964. */
+function initialCountry(fromUrl: string | null): string {
+  if (fromUrl && countryByCode(fromUrl)) return fromUrl;
+  const g = guessCountry();
+  return g && COUNTRIES.some((c) => c.code === g.code) ? g.code : "IQ";
 }
 
 /** لغة الرابط تُطبَّق مرّة عند الوصول — ولا تُطبَّق إن كانت هي الحالية. */
@@ -701,7 +875,8 @@ function DemoLogin() {
   // بلوغُ هذه الشاشة بنيّة تسجيل عيادة هو دخول القمع — يُسجَّل مرّة.
   useEffect(() => {
     const it = urlIntent();
-    if (it.portal === "clinic") track("signup_start", { new: it.signup }, true);
+    // بدايةُ القمع نيّةُ تسجيل عيادةٍ جديدة (`new=1`) — لا كلُّ دخولٍ لعيادةٍ قائمة صار يفتح بوّابتها.
+    if (it.portal === "clinic" && it.signup) track("signup_start", { new: true }, true);
   }, []);
   const { signInDemo, signInClinic, signInOwner } = useAuth();
   const navigate = useNavigate();

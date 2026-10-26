@@ -98,7 +98,7 @@ function Nav() {
         </nav>
         <div className="flex items-center gap-2">
           <LanguagePicker />
-          <a href={appUrl(`/login?lang=${i18n.language}`)} className="hidden rounded-full px-4 py-2 text-sm font-semibold text-ink-muted transition hover:text-ink sm:block">{t("landing.nav.login", "تسجيل الدخول")}</a>
+          <a href={appUrl(`/login?as=clinic&lang=${i18n.language}`)} className="hidden rounded-full px-4 py-2 text-sm font-semibold text-ink-muted transition hover:text-ink sm:block">{t("landing.nav.login", "تسجيل الدخول")}</a>
           <a href={startHref(i18n.language)} onClick={() => track("cta_click", { at: "nav" })} className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised">
             {t("landing.cta.start")} <ArrowLeft size={15} className="rtl:rotate-0 ltr:-scale-x-100" />
           </a>
@@ -112,7 +112,7 @@ function Nav() {
           {links.map((l) => (
             <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 font-semibold text-ink hover:bg-surface-2">{l.label}</a>
           ))}
-          <a href={appUrl(`/login?lang=${i18n.language}`)} className="block rounded-xl px-3 py-3 font-semibold text-brand-700 dark:text-brand-300">{t("landing.nav.login", "تسجيل الدخول")}</a>
+          <a href={appUrl(`/login?as=clinic&lang=${i18n.language}`)} className="block rounded-xl px-3 py-3 font-semibold text-brand-700 dark:text-brand-300">{t("landing.nav.login", "تسجيل الدخول")}</a>
         </div>
       )}
     </header>
@@ -778,7 +778,7 @@ function Footer() {
         <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-semibold text-ink-muted">
           <a href="#features" className="hover:text-ink">{t("landing.nav.features")}</a>
           <a href="#pricing" className="hover:text-ink">{t("landing.nav.pricing")}</a>
-          <a href={appUrl(`/login?lang=${i18n.language}`)} className="hover:text-ink">{t("landing.nav.login")}</a>
+          <a href={appUrl(`/login?as=clinic&lang=${i18n.language}`)} className="hover:text-ink">{t("landing.nav.login")}</a>
         </nav>
         <p className="text-2xs text-ink-subtle">© {new Date().getFullYear()} doctorVet · {t("landing.footer.rights")}</p>
       </div>

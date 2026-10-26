@@ -25,3 +25,6 @@ graphify-out/graph.html
 graphify-out/cache/
 graphify-out/cost.json
 graphify-out/.graphify_analysis.json
+
+# ربطُ مشروع Supabase المحلّيّ (CLI) — فيه معرّفُ المشروع والمنظّمة، والمستودعُ عامّ
+supabase/.temp/
