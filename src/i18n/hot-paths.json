@@ -47,6 +47,7 @@
     "mmset": "src/pages/Settings.tsx",
     "obx": "src/pages/OutboxReview.tsx",
     "fgr": "src/pages/AnalyticsHub.tsx",
+    "pnl": { "owner": "src/pages/AnalyticsHub.tsx", "with": ["src/components/reports/PnlPanel.tsx"] },
     "fgset": "src/pages/Settings.tsx",
     "fgv": "src/components/retail/ForgiveDialog.tsx",
     "signup": { "owner": "src/pages/Login.tsx", "with": ["src/lib/authErrors.ts"] },

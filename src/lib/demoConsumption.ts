@@ -67,6 +67,7 @@ import { getActiveClinicId } from "./clinics";
  * داخلها ويصدّره (مقيس: +٢٤٨ بايت مضغوطة). وeffectiveCan لا roleCan: هي مصدَّرةٌ للقطع الكسولة من قبل
  * (demoStoreCats)، وroleCan تصير تصديراً جديداً للإقلاع (+٥). وبلا تجاوزٍ هما واحد لكلّ دور. */
 import { effectiveCan, listStaff, STAFF_ROLES } from "./staff";
+import type { Capability } from "./staff";
 import { uid } from "./utils";
 import { demoAddExpense, demoAuditPush, demoServices } from "./repoDemo";
 
@@ -166,8 +167,9 @@ const vetOrManagerNow = (): boolean => managerNow() || demoBaseRole() === "veter
 function gate(): void {
   if (demoBaseRole() === "photographer") throw Object.assign(new Error("photographer_forbidden"), { code: "42501", hint: H.photographer });
 }
-/** مرآةُ staff_can(cap) (0222): المدير، وإلا إذنُ صفّ الموظّف الصريح، وإلا قالبُ دوره. */
-async function staffCan(cap: "manageSettings"): Promise<boolean> {
+/** مرآةُ staff_can(cap) (0222): المدير، وإلا إذنُ صفّ الموظّف الصريح، وإلا قالبُ دوره. مصدَّرةٌ لمرآة الأرباح والخسائر
+ *  (demoPnl، 0256: viewProfits) — نسخةٌ ثانيةٌ منها تنحرف. */
+export async function staffCan(cap: Capability): Promise<boolean> {
   if (managerNow()) return true;
   const me = demoUserId();
   if (!me) return false;
