@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -10094,6 +10094,109 @@ chk "آخرَ القسم: الحالُ حالُ الإنتاج — لا رفعَ
     "select (select count(*) from staff_elevations)::text||'|'||(select count(*) from verify_consumption_wiring())::text||'|'||($VC255)" "0|0|clean"
 
 # ── التراجع يُجرَّب لا يُكتب ورقاً (آخرَ الحزمة لأنه يعيد الباب القديم) ─────────
+# ══ 0256: الأرباح والخسائر شهراً بشهر — القاعدةُ تجمع، والمرآةُ تطابقها فلساً بفلس ══════════════════════
+# (١) القالب: شهرٌ ذهبيٌّ محسوبٌ باليد + عيّنةٌ ببذرةٍ ثابتة، والقاعدةُ مقابل computePnl (src/lib/pnl.ts) ومرايا مغلوطة.
+# (٢) الصلاحية: viewProfits بالخادم نفسه (المدير، أو إذنٌ صريح، أو مفتاحُ المدير الحيّ)، والمصوّرُ أبداً، وanon لا.
+# (٣) على بيانات الحزمة كلِّها — ما كتبته البيعاتُ والترجيعُ والمرتجعُ والسندُ والرواتبُ فعلاً، لكلّ عيادة: التقريرُ
+#     يساوي مجاميعَ الجداول نفسِها، والسطورُ تُجمع. القالبُ يُقاس على ما تُنتجه القاعدة، لا على ما يُسهّل الفحص.
+echo "▸ 0256: الأرباح والخسائر شهراً بشهر"
+PNL=$(mktemp -d)
+if node "$HERE/pnl-parity.mjs" gen "$PNL" >"$PNL/gen.log" 2>&1; then
+  out=$($P -f "$PNL/seed.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ بياناتُ عيادة التطابق ما نزلت"; fail=1; }
+  if $P -tA -f "$PNL/run.sql" >"$PNL/actual.txt" 2>"$PNL/run.err"; then :; else tail -3 "$PNL/run.err"; echo "   ✗ نداءُ التطابق ما رجع"; fail=1; fi
+  if node "$HERE/pnl-parity.mjs" check "$PNL"; then :; else fail=1; fi
+else
+  tail -5 "$PNL/gen.log"; echo "   ✗ قالبُ تطابق الأرباح والخسائر ما تولّد"; fail=1
+fi
+
+PNLQ="select (report_pnl(now() - interval '30 days', now(), 'Asia/Baghdad') ? 'months')::text"
+chk "report_pnl بصلاحية المُعرِّف وبمسارٍ مثبَّت، للداخلين لا لـanon" \
+    "select (prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%'
+             and has_function_privilege('authenticated', 'public.report_pnl(timestamptz,timestamptz,text)', 'execute')
+             and not has_function_privilege('anon', 'public.report_pnl(timestamptz,timestamptz,text)', 'execute'))::text
+       from pg_proc where oid = 'public.report_pnl(timestamptz,timestamptz,text)'::regprocedure" "true"
+chk "  وتقرأ بعيادة auth_clinic() وحدها — clinic_id = v_clinic بكلّ جدولٍ تقرؤه، خمسُ قراءات (فحصٌ ثابت: definer يتجاوز RLS)" \
+    "select (select count(*) from regexp_matches(prosrc, '(^|[^a-z_])(i|ii|c|e)\\.clinic_id = v_clinic', 'g'))::text
+       from pg_proc where oid = 'public.report_pnl(timestamptz,timestamptz,text)'::regprocedure" "5"
+# الإذنُ الصريح بمستخدمٍ جديدٍ له صفُّ كادرٍ واحد: VET له صفٌّ بـC1 من قسم المتجر (manageStore)، وstaff_can تأخذ
+# limit 1 من صفوف المستخدم بالعيادة — صفٌّ ثانٍ له كان يجعل الجوابَ تبعَ أيِّ الصفّين يرجع أوّلاً، لا تبعَ الإذن.
+PNLV=a2560c00-0000-4000-8000-00000000e001
+PNLRESET="delete from staff where user_id = '$PNLV'; delete from memberships where user_id = '$PNLV'; delete from staff_elevations where user_id in ('$VET', '$RCP', '$PNLV');"
+$P -c "insert into auth.users(id) values ('$PNLV') on conflict do nothing; $PNLRESET" >/dev/null
+chk "صاحبُ العيادة يقرأ" "select $(rv $C1 "$PNLQ")" "true"
+chk "  والطبيبُ بلا إذن يُرفض pnl_forbidden (42501)" "select $(rv $VET "$PNLQ")" "guarded:42501:pnl_forbidden"
+chk "  والاستقبالُ كذلك" "select $(rv $RCP "$PNLQ")" "guarded:42501:pnl_forbidden"
+chk "  والمصوّرُ أبداً" "select $(rv $PHO "$PNLQ")" "guarded:42501:pnl_forbidden"
+$P -c "insert into memberships(user_id, clinic_id, role, status) values ('$PNLV', '$C1', 'veterinarian', 'active');
+       insert into staff(id, clinic_id, name, user_id, role, permissions)
+         values ('a2560c00-0000-4000-8000-00000000f001', '$C1', 'طبيبٌ يرى الأرباح', '$PNLV', 'veterinarian', '{\"viewProfits\": true}');" >/dev/null
+chk "  والطبيبُ الذي أعطاه المديرُ viewProfits صراحةً يقرأ (staff.permissions — قالبُ الواجهة نفسُه)" "select $(rv $PNLV "$PNLQ")" "true"
+$P -c "update staff set permissions = '{\"viewProfits\": false}' where user_id = '$PNLV';" >/dev/null
+chk "  وسحبُ الإذن يرجعه مرفوضاً" "select $(rv $PNLV "$PNLQ")" "guarded:42501:pnl_forbidden"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$RCP', '$C1', now() + interval '10 minutes');" >/dev/null
+chk "  ومفتاحُ المدير الحيّ (PIN) يفتحه للاستقبال كباقي تقارير الأرباح" "select $(rv $RCP "$PNLQ")" "true"
+$P -c "$PNLRESET" >/dev/null
+chk "المدّةُ المقلوبة تُرفض pnl_range" "select $(rv $C1 "select report_pnl(now(), now() - interval '1 day', 'Asia/Baghdad')::text")" "guarded:P0001:pnl_range"
+chk "  والأطولُ من ٤٠٠ يوم pnl_range_long" "select $(rv $C1 "select report_pnl(now() - interval '401 days', now(), 'Asia/Baghdad')::text")" "guarded:P0001:pnl_range_long"
+chk "  وتوقيتٌ مجهول يُقرأ ببغداد (لا رفضٌ لتقريرٍ صحيح بسبب جهاز)" \
+    "select ($(rv $C1 "select report_pnl(now() - interval '60 days', now(), 'Mars/Olympus')::text") = $(rv $C1 "select report_pnl(now() - interval '60 days', now(), 'Asia/Baghdad')::text"))::text" "true"
+
+# (٣) لكلّ عيادةٍ بالحزمة: التقريرُ = مجاميعُ الجداول بالمدّة نفسِها، والسطورُ تُجمع.
+$P -c "create or replace function _pnl_audit(c uuid, f timestamptz, t timestamptz) returns text language plpgsql as \$fn\$
+       declare r jsonb; m jsonb; bad text := ''; inv record; ex numeric; mat numeric; prod numeric;
+         sum_n numeric; sum_rev numeric; sum_ex numeric; sum_net numeric;
+       begin
+         perform set_config('request.jwt.claim.sub', c::text, true);
+         r := report_pnl(f, t, 'Asia/Baghdad');
+         select count(*) n, coalesce(sum(total), 0) rev, coalesce(sum(cost_total), 0) cogs, coalesce(sum(profit), 0) gross into inv
+           from invoices where clinic_id = c and coalesce(status, 'paid') <> 'refunded' and created_at between f and t;
+         select coalesce(sum(x.value), 0) into mat from invoice_consumption x join invoices i on i.id = x.invoice_id
+          where i.clinic_id = c and x.clinic_id = c and coalesce(i.status, 'paid') <> 'refunded' and i.created_at between f and t;
+         select coalesce(sum(round(ii.qty * ii.unit_cost, 2)), 0) into prod from invoice_items ii join invoices i on i.id = ii.invoice_id
+          where i.clinic_id = c and ii.clinic_id = c and ii.product_id is not null and coalesce(i.status, 'paid') <> 'refunded'
+            and i.created_at between f and t;
+         select coalesce(sum(amount), 0) into ex from expenses where clinic_id = c and spent_at between f and t;
+         if (r->'total'->>'invoices')::numeric <> inv.n then bad := bad || ' invoices'; end if;
+         if (r->'total'->>'revenue')::numeric <> inv.rev then bad := bad || ' revenue'; end if;
+         if (r->'total'->>'cogs')::numeric <> inv.cogs then bad := bad || ' cogs'; end if;
+         if (r->'total'->>'gross')::numeric <> inv.gross then bad := bad || ' gross'; end if;
+         if (r->'total'->>'cogs_materials')::numeric <> mat then bad := bad || ' materials'; end if;
+         if (r->'total'->>'cogs_products')::numeric <> prod then bad := bad || ' products'; end if;
+         -- السحوباتُ تُقرَّب لفلسٍ بكلّ جدولٍ وشهر (amount بلا مقياس): الفرقُ عن المجموع الخامّ لا يتجاوز نصفَ فلسٍ لكلّ صفّ.
+         -- (مساواةٌ تامّة كانت ستُفشل تقريراً صحيحاً يومَ يكتب قسمٌ لاحقٌ سحباً بثلاث منازل.)
+         if abs((r->'total'->>'expenses')::numeric - ex)
+            > 0.005 * (select count(*) from expenses where clinic_id = c and spent_at between f and t) then bad := bad || ' expenses'; end if;
+         -- السطورُ تُجمع: بكلّ شهرٍ وبالمجموع.
+         for m in select x from jsonb_array_elements(r->'months') x union all select r->'total' loop
+           if (m->>'revenue')::numeric - (m->>'cogs')::numeric + (m->>'adjust')::numeric <> (m->>'gross')::numeric then bad := bad || ' gross-adds'; end if;
+           if (m->>'cogs_products')::numeric + (m->>'cogs_materials')::numeric + (m->>'cogs_other')::numeric <> (m->>'cogs')::numeric then bad := bad || ' cogs-adds'; end if;
+           if (m->>'stock_loss')::numeric + (m->>'returns')::numeric + (m->>'payroll')::numeric + (m->>'payroll_loan')::numeric
+              + (m->>'uncategorized')::numeric + coalesce((select sum((k->>'amount')::numeric) from jsonb_array_elements(m->'categories') k), 0)
+              <> (m->>'expenses')::numeric then bad := bad || ' expenses-adds'; end if;
+           if (m->>'gross')::numeric - (m->>'expenses')::numeric <> (m->>'net')::numeric then bad := bad || ' net-adds'; end if;
+         end loop;
+         select coalesce(sum((x->>'invoices')::numeric), 0), coalesce(sum((x->>'revenue')::numeric), 0),
+                coalesce(sum((x->>'expenses')::numeric), 0), coalesce(sum((x->>'net')::numeric), 0)
+           into sum_n, sum_rev, sum_ex, sum_net from jsonb_array_elements(r->'months') x;
+         if sum_n <> (r->'total'->>'invoices')::numeric or sum_rev <> (r->'total'->>'revenue')::numeric
+            or sum_ex <> (r->'total'->>'expenses')::numeric or sum_net <> (r->'total'->>'net')::numeric then bad := bad || ' months-sum'; end if;
+         return nullif(btrim(bad), '');
+       end \$fn\$;" >/dev/null
+chk "على بيانات الحزمة لكلّ عيادة: التقريرُ = مجاميعُ الجداول (فواتير، كلفة، ربح، مستهلكات، مواد، سحوبات)، والسطورُ تُجمع بكلّ شهر وبالمجموع" \
+    "select coalesce(string_agg(c::text || ':' || p, '; '), 'clean')
+       from (select c, _pnl_audit(c, now() - interval '399 days', now() + interval '1 day') p
+               from (select distinct clinic_id c from invoices union select distinct clinic_id from expenses) cs
+              -- عيادةُ القالب أعلاه سحوباتُها بأربع منازل عمداً (تقريبُ الجدول بشهره) ويطابقها pnl-parity بالضبط؛ هنا ما كتبته الدوالُّ.
+              where c <> 'a2560c00-0000-4000-8000-0000000000c1') a
+      where p is not null" "clean"
+chk "  وعياداتُ الحزمة فيها فعلاً ما يُفحص: مستهلكاتٌ وسحبُ مخزن ومرتجعٌ ورواتب (لا تطابقٌ على صفر)" \
+    "select ((select count(*) from invoice_consumption) > 0 and (select count(*) from expenses where method = 'stock') > 0
+             and (select count(*) from expenses where category = 'مرتجع') > 0 and (select count(*) from expenses where category like 'payroll%') > 0)::text" "true"
+# دفترُ عيادة القالب مصنوعٌ باليد (لا عبر _stock_post) فلا يحفظ ثوابتَ المرحَّل — verify_consumption تعدّه بعد هنا
+# (تراجعُ 0252 أدناه يسأله نظيفاً). انتهى دورُه: يُحذف، وتبقى فواتيرُها وسحوباتُها.
+$P -c "delete from invoice_consumption where clinic_id = 'a2560c00-0000-4000-8000-0000000000c1';" >/dev/null
+chk "  (ودفترُ القالب حُذف بعد التطابق: verify_consumption نظيفٌ كما قبله)" "select count(*)::text from verify_consumption()" "0"
+
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null
 chk "الرسمةُ المجمَّدة صارت ترتيبَ اليوم (من الصفوف) ونسختُها ارتفعت" \
@@ -10102,6 +10205,8 @@ chk "  وsave_cage_layout تحفظ من جديد بدور authenticated" \
     "select _rls_try('$C3', format('select save_cage_layout(%L, %s)', '{\"v\":2,\"rooms\":[],\"cages\":[]}', (select cage_layout_rev from clinic_prefs where clinic_id='$C3')))" "rows:1"
 echo "▸ rollback_0222: السياجُ يُرفع والمصوّرُ يُعلَّق لا يُحذف"
 $P -f "$HERE/rollback_0222.sql" >/dev/null
+chk "0256 بعد تراجع 0222: الأرباحُ والخسائرُ تقرأ للمدير بلا staff_can (لا «لا توجد دالّة»)" \
+    "select $(rv $C1 "select (report_pnl(now() - interval '30 days', now(), 'Asia/Baghdad') ? 'months')::text")" "true"
 chk "لا سياسةَ سياجٍ باقية (ولا على الملفّات)" \
     "select count(*)::text from pg_policies where policyname like 'photographer_fence%'" "0"
 chk "  والمصوّرُ معلَّقٌ بدورٍ قديم — صفُّه باقٍ" \

@@ -11,6 +11,8 @@ import { join } from "node:path";
 const SOURCES = [
   ["src/lib/repo.ts", /need(?:<[^>]*>)?\(\s*await\s+sbc\(\)\.rpc\(\s*"([a-z_0-9]+)"/g],
   ["src/lib/consumptionApi.ts", /rpcJson(?:<[^>]*>)?\(\s*"([a-z_0-9]+)"/g],
+  // وبابُ الأرباح والخسائر (0256) — rpcJson نفسُه (src/lib/rpcJson.ts).
+  ["src/lib/pnlApi.ts", /rpcJson(?:<[^>]*>)?\(\s*"([a-z_0-9]+)"/g],
 ];
 let empty = 0;
 const called = [], perFile = [];

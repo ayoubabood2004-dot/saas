@@ -8,6 +8,7 @@
  * من حارس «القراءة فقط» كما تمرّ كتاباتُ الإعدادات (services.ts). والأخطاءُ تحمل رمزَ الخادم وتلميحَه
  * العربيّ (P0001 + hint) فيعرضها describeDbError كما هي. */
 import { supabase } from "./supabase";
+import { rpcJson } from "./rpcJson";
 import { isConfigReadOnly } from "./clinicSync";
 
 export type RecipeUnit = "stock" | "sub";
@@ -188,23 +189,6 @@ export interface ConsumptionApi {
   /** `clientRef` يُولَّد قبل النداء ويُعاد مع إعادة المحاولة — الخادمُ يرجع نتيجةَ الأولى ولا يسجّل مرّتين. */
   submitWaste(lines: WasteLineInput[], apply: boolean, clientRef: string): Promise<WasteSubmitResult>;
   productCostReset(productId: string, cost: number | null): Promise<CostResetResult>;
-}
-
-type RpcError = { message: string; code?: string; details?: string; hint?: string } | null;
-
-/** نداءٌ يرجع jsonb: خطأٌ أو «لا بيانات» يُرمى برمز الخادم وتلميحه (نظيرُ need في repo.ts). */
-async function rpcJson<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  if (!supabase) throw new Error("no_cloud");
-  const res = (await supabase.rpc(fn, args)) as { data: unknown; error: RpcError };
-  if (res.error || res.data == null) {
-    const src = res.error;
-    const err = new Error(src?.message ?? "No data returned") as Error & { code?: string; details?: string; hint?: string };
-    if (src?.code) err.code = src.code;
-    if (src?.details) err.details = src.details;
-    if (src?.hint) err.hint = src.hint;
-    throw err;
-  }
-  return res.data as T;
 }
 
 /** حارسُ «القراءة فقط» لكتابات هذا الباب — بنفس خطأ repo (ReadOnlyError) فتعرضه الشاشاتُ كما تعرضه. */

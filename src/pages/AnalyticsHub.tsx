@@ -11,7 +11,7 @@ import {
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
   ScrollText, Search, Eye, X, BadgePercent, SlidersHorizontal, ChevronDown,
   ChevronLeft, ChevronRight, LayoutDashboard, History, TrendingDown, Plus, BookUser,
-  Landmark, ShoppingBag,
+  Landmark, ShoppingBag, Calculator,
   Undo2,
   BookOpen,
   Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch,
@@ -33,6 +33,7 @@ import { expectedServerClinic } from "@/lib/workspaceClinic";
 import { InvoiceDetail } from "@/components/retail/InvoicesPanel";
 import { useToast, Skeleton, Button, Dialog } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
+import { PnlPanel } from "@/components/reports/PnlPanel";
 import { money, formatNum, formatDec, cn, dateLocale } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import {
@@ -70,7 +71,7 @@ import { CustomersTab } from "@/components/reports/CustomerLedger";
  * ==========================================================================*/
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "lastMonth" | "custom";
-type TabKey = "overview" | "money" | "ledger" | "customers" | "salesCust" | "staff" | "best" | "categories" | "clinical" | "audit" | "expenses" | "purchases";
+type TabKey = "overview" | "money" | "ledger" | "customers" | "salesCust" | "staff" | "best" | "categories" | "clinical" | "audit" | "expenses" | "purchases" | "pnl";
 
 /** One staff member's sales performance in the selected range. */
 interface StaffTopItem { name: string; qty: number; revenue: number }
@@ -363,6 +364,10 @@ export function AnalyticsHub() {
     return { state: "ok", rows, totals: forgiveTotals(rows) };
   }, [canForgiveReport, forgiveFailed, forgiveRows, tsOk]);
   const retryForgive = () => setForgiveTick((n) => n + 1);
+  /* «الأرباح والخسائر» (0256): بوّابةُ تقارير الأرباح نفسُها — الإذنُ، وقفلُ الجهاز يغلبه بلا مفتاح المدير الحيّ. والخادمُ
+   * يسأل viewProfits بنفسه (report_pnl)؛ هذه تُخفي التبويبَ عمّن سيُرفض لا غير. */
+  const canPnl = !capLockedFrom(ovr.deviceLocked, ovr.active, canProfit);
+  useEffect(() => { if (tab === "pnl" && !canPnl) setTab("overview"); }, [tab, canPnl]);
 
   // Invoices in range (date) AND within the optional shift window.
   const invInRange = useMemo(() => invoices.filter((i) => { const tm = new Date(i.created_at).getTime(); return tm >= lo && tm <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
@@ -877,6 +882,7 @@ export function AnalyticsHub() {
   const TABS: { id: TabKey; label: string; icon: typeof BarChart3 }[] = [
     { id: "overview", label: t("rpt.tab.overview", "نظرة عامة"), icon: LayoutDashboard },
     { id: "money", label: t("rpt.tab.money", "المال والصندوق"), icon: Wallet },
+    ...(canPnl ? [{ id: "pnl" as const, label: t("pnl.tab", "الأرباح والخسائر"), icon: Calculator }] : []),
     { id: "ledger", label: t("rpt.tab.ledger", "سجل الحركات"), icon: ScrollText },
     { id: "customers", label: t("rpt.tab.customers", "سجل العملاء"), icon: BookUser },
     { id: "salesCust", label: t("scust.tab", "زبائن المبيعات"), icon: UserSearch },
@@ -1063,7 +1069,10 @@ export function AnalyticsHub() {
       </div>
 
       {/* «زبائن المبيعات» لا تنتظر لقطةَ المدّة: كلُّ التاريخ من الخادم، بلا مال. */}
-      {tab === "salesCust" ? <SalesCustomersTab /> : loading ? (
+      {/* «الأرباح والخسائر» لا تنتظر لقطةَ المدّة كذلك: نداءٌ واحدٌ بالخادم بمدّة الصفحة. وتبويبٌ أُغلقت بوّابتُه (قُفل
+          الجهاز، انتهى مفتاحُ المدير) لا يبقى مرسوماً — يرجع للنظرة العامة. */}
+      {tab === "pnl" && canPnl ? <PnlPanel from={new Date(lo).toISOString()} to={new Date(hi).toISOString()} rangeLabel={rangeLabel} shiftActive={timeActive} />
+        : tab === "salesCust" ? <SalesCustomersTab /> : loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
       ) : (
         <>
