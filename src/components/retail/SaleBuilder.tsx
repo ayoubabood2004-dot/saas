@@ -14,6 +14,7 @@ import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { checkoutPhone, custNameKey, custPhoneKey } from "@/lib/customerKey";
 import { cleanRef, unmangleRef, MAX_REF_LEN } from "@/lib/deliverySearch";
 import { getServiceCatalog, findServiceByBarcode } from "@/lib/services";
+import { matchLabService } from "@/lib/labServiceMatch";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1807,24 +1808,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (prefill.service) {
       const label = prefill.service;
       const lineId = `s:lab:${prefill.labId ?? label}`;
-      // طابق التحليل مع خدمة الكتالوج مال العيادة نفسها — وإذا لكيناها ناخذ
-      // اسمها وسعرها كما حددهما الدكتور بالضبط (تطابق تام أولاً، وإلا أعلى
-      // تقاطع كلمات مع أفضلية خدمات تصنيف «المختبر»).
-      const catalog = getServiceCatalog();
-      const labCatIds = new Set(catalog.categories.filter((c) => /مختبر|تحاليل|مختبرات/.test(c.name)).map((c) => c.id));
-      const tok = (x: string) => x.toLowerCase().replace(/[()\u064B-\u065F،.\-]/g, " ").split(/\s+/).filter((w) => w.length >= 2);
-      const want = new Set(tok(label));
-      let best: { s: Service; score: number } | null = null;
-      for (const svc of catalog.services) {
-        if (svc.name.trim() === label.trim()) { best = { s: svc, score: 999 }; break; }
-        let score = tok(svc.name).filter((w) => want.has(w)).length;
-        if (score > 0 && labCatIds.has(svc.category_id)) score += 0.5;
-        if (score > 0 && (!best || score > best.score)) best = { s: svc, score };
-      }
+      // طابق التحليل مع خدمة الكتالوج مال العيادة نفسها — وإذا لكيناها ناخذ اسمها وسعرها كما حددهما
+      // الدكتور بالضبط. والمطابقةُ تقرّر أيَّ وصفةٍ تنخصم (0252)، فلا تخمين: الاسمُ نفسُه بعد الطيّ، أو
+      // الأقربُ وحدَه بكلمةٍ مميِّزة — وإلا البندُ باسم التحليل بلا خدمة (labServiceMatch.ts).
+      const hit = matchLabService(label, getServiceCatalog().services);
       setCart((c) => c.some((l) => l.id === lineId) ? c : [...c, {
-        id: lineId, kind: "service", name: best ? best.s.name : label, barcode: null,
-        unit_price: best ? best.s.price : 0, unit_cost: best?.s.cost ?? 0, listAt: best ? best.s.price : undefined,
-        qty: 1, stock: null, product_id: null, subcategory: null, serviceId: best ? best.s.id : null,
+        id: lineId, kind: "service", name: hit ? hit.name : label, barcode: null,
+        unit_price: hit ? hit.price : 0, unit_cost: hit?.cost ?? 0, listAt: hit ? hit.price : undefined,
+        qty: 1, stock: null, product_id: null, subcategory: null, serviceId: hit ? hit.id : null,
         petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
       }]);
     }
