@@ -86,6 +86,10 @@ $P -c "alter table invoice_items drop constraint if exists invoice_items_nonneg;
 
 echo "▸ الهجرات…"
 for f in $WAVE; do
+  # قالبُ الإنتاج قبل 0252: شِفرةُ المستودع وتعليقاتٌ غائبة (prodlike_comments.sql) — 0252–0255 تنزل عليه كما بالإنتاج.
+  if [ "$(basename "$f")" = "0252_service_consumption.sql" ]; then
+    out=$($P -f "$HERE/prodlike_comments.sql" 2>&1) || { echo "$out"; echo "✗ قالبُ الإنتاج ما نزل"; exit 1; }
+  fi
   printf '   %s\n' "$(basename "$f")"
   out=$($P -f "$f" 2>&1) || { echo "$out"; echo "✗ فشلت"; exit 1; }
   echo "$out" | grep -E "ERROR" && { echo "✗ فشلت"; exit 1; } || true
@@ -6514,10 +6518,36 @@ chk "حارسُ الانحراف: جسمٌ لا نصُّ المستودع ولا
             ||'|'||_pf_try('$C1', 'select public._drift_assert(''public.no_such_fn_0252(uuid)'', ''x'', ''-- +0252'')::text')
             ||'|'||_pf_try('$C1', 'select public._drift_assert(''public.product_movements(uuid,integer)'', ''x'', ''-- +0252'')::text')" \
     "guarded:drift_body|guarded:drift_missing|allowed"
+# البصمةُ بصمةُ الشِفرة (٣/١١): الإنتاجُ رفض 0252 على ١٢ دالّةً شِفرتُها المستودعُ حرفاً وتعليقاتُها غائبة. القالبُ
+# (prodlike_comments.sql) صنع هذه الحالةَ قبل 0252 بتعبيراتٍ نمطية مستقلّة، و0252–0255 نزلت عليها أعلاه.
+chk "  قالبُ الإنتاج صنع فرقاً فعلاً قبل 0252: بصمةُ النصّ تغيّرت للدوالّ الاثنتي عشرة (كلّها، سطراً، مسودّة)" \
+    "select count(*) filter (where before_fp <> after_fp)::text || '/' || count(*)::text || '|' || string_agg(distinct how, ',' order by how) from dvtest.prodlike" "12/12|all,draft,lines"
+chk "  _drift_code: التعليقُ يُحذف خارج النصوص وحدها، والمتداخلُ كاملاً، والمسافاتُ" \
+    "select _drift_code(E'a -- x\nb') || '|' || _drift_code(\$s\$x := '-- +%s'; -- c\$s\$) || '|' || _drift_code('/* a /* b */ c */d')
+            || '|' || _drift_code(\$s\$\$q\$ -- in \$q\$ -- out\$s\$) || '|' || _drift_code(\$s\$it''s -- \$1\$s\$)" \
+    "ab|x:='--+%s';|d|\$q\$--in\$q\$|it''s"
+chk "  والحارسُ: فرقُ تعليقٍ يمرّ، وفرقُ شِفرةٍ يُرفض" \
+    "select (md5(_drift_code(E'select 1; -- قديم\n')) = md5(_drift_code(E'-- جديد\nselect 1;')))::text
+            || '|' || (md5(_drift_code('select 1;')) = md5(_drift_code('select 2;')))::text" "true|false"
+# والمرآةُ (codeOf بـredefine-fingerprint.mjs) تطابق _drift_code على كلّ دالّةٍ بالقاعدة — بها تُحسب بصماتُ الحرّاس.
+DCJ=$(mktemp)
+$P -tA -c "select json_agg(json_build_object('s', p.oid::regprocedure::text, 'src', p.prosrc, 'fp', md5(public._drift_code(p.prosrc))))
+             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public' and p.prolang in (select oid from pg_language where lanname in ('plpgsql', 'sql'))" > "$DCJ"
+DCP=$(T_FP="$HERE/../../scripts/redefine-fingerprint.mjs" T_J="$DCJ" node --input-type=module 2>&1 <<'JS' | tr -cd '0-9|'
+const { pathToFileURL } = await import('node:url'); const fs = await import('node:fs');
+const m = await import(pathToFileURL(process.env.T_FP).href);
+const rows = JSON.parse(fs.readFileSync(process.env.T_J, 'utf8'));
+const bad = rows.filter((r) => m.md5(r.src) !== r.fp);
+console.log(`${rows.length > 300 ? 1 : 0}|${bad.length}`);
+JS
+)
+rm -f "$DCJ"
+chk "  ومرآتُها codeOf تطابقها على كلّ دالّةٍ بالقاعدة (أكثر من ٣٠٠، ولا فرق)" "select '$DCP'" "1|0"
 
 # ── ١) الأمن: S5 S6 S7 (S1–S4 مع الوصفة والبيعة) ──
-NEW252="'public._drift_assert(text,text,text)','public._cons_round_div(numeric,numeric,integer)','public.stock_unit_cost(public.products)','public._stock_post(uuid,uuid,numeric,text)','public._invoice_lock_products(uuid,uuid,uuid[])','public._consumption_plan(uuid,jsonb)','public._consumption_apply(uuid,uuid,uuid,numeric,jsonb)','public._consumption_move(uuid,uuid,uuid,jsonb,numeric,text,uuid)','public._consumption_sync_item(uuid,uuid,numeric)','public._consumption_relink(uuid,uuid,uuid,uuid,numeric)','public.invoice_items_consumption_del()','public.invoice_items_consumption_qty()','public.invoices_consumption_status()','public.products_trash_consumption()','public.service_recipe_get(uuid)','public.service_recipe_set(uuid,jsonb,text,boolean)','public.service_recipe_summary()','public.invoice_consumption_get(uuid[])','public.report_consumables(timestamptz,timestamptz)','public.verify_consumption()','public.verify_consumption_wiring()','public.retail_checkout(jsonb,jsonb)','public.edit_invoice_lines_unguarded(uuid,jsonb,text)','public.product_movements(uuid,integer)','public._cons_at_us(timestamptz)'"
-INT252="'public._drift_assert(text,text,text)','public._stock_post(uuid,uuid,numeric,text)','public._invoice_lock_products(uuid,uuid,uuid[])','public._consumption_plan(uuid,jsonb)','public._consumption_apply(uuid,uuid,uuid,numeric,jsonb)','public._consumption_move(uuid,uuid,uuid,jsonb,numeric,text,uuid)','public._consumption_sync_item(uuid,uuid,numeric)','public._consumption_relink(uuid,uuid,uuid,uuid,numeric)','public.invoice_items_consumption_del()','public.invoice_items_consumption_qty()','public.invoices_consumption_status()','public.products_trash_consumption()','public.verify_consumption()','public.verify_consumption_wiring()','public.edit_invoice_lines_unguarded(uuid,jsonb,text)'"
+NEW252="'public._drift_assert(text,text,text)','public._drift_code(text)','public._cons_round_div(numeric,numeric,integer)','public.stock_unit_cost(public.products)','public._stock_post(uuid,uuid,numeric,text)','public._invoice_lock_products(uuid,uuid,uuid[])','public._consumption_plan(uuid,jsonb)','public._consumption_apply(uuid,uuid,uuid,numeric,jsonb)','public._consumption_move(uuid,uuid,uuid,jsonb,numeric,text,uuid)','public._consumption_sync_item(uuid,uuid,numeric)','public._consumption_relink(uuid,uuid,uuid,uuid,numeric)','public.invoice_items_consumption_del()','public.invoice_items_consumption_qty()','public.invoices_consumption_status()','public.products_trash_consumption()','public.service_recipe_get(uuid)','public.service_recipe_set(uuid,jsonb,text,boolean)','public.service_recipe_summary()','public.invoice_consumption_get(uuid[])','public.report_consumables(timestamptz,timestamptz)','public.verify_consumption()','public.verify_consumption_wiring()','public.retail_checkout(jsonb,jsonb)','public.edit_invoice_lines_unguarded(uuid,jsonb,text)','public.product_movements(uuid,integer)','public._cons_at_us(timestamptz)'"
+INT252="'public._drift_assert(text,text,text)','public._drift_code(text)','public._stock_post(uuid,uuid,numeric,text)','public._invoice_lock_products(uuid,uuid,uuid[])','public._consumption_plan(uuid,jsonb)','public._consumption_apply(uuid,uuid,uuid,numeric,jsonb)','public._consumption_move(uuid,uuid,uuid,jsonb,numeric,text,uuid)','public._consumption_sync_item(uuid,uuid,numeric)','public._consumption_relink(uuid,uuid,uuid,uuid,numeric)','public.invoice_items_consumption_del()','public.invoice_items_consumption_qty()','public.invoices_consumption_status()','public.products_trash_consumption()','public.verify_consumption()','public.verify_consumption_wiring()','public.edit_invoice_lines_unguarded(uuid,jsonb,text)'"
 RPC252="'public.service_recipe_get(uuid)','public.service_recipe_set(uuid,jsonb,text,boolean)','public.service_recipe_summary()','public.invoice_consumption_get(uuid[])','public.report_consumables(timestamptz,timestamptz)','public.retail_checkout(jsonb,jsonb)','public.product_movements(uuid,integer)','public._cons_round_div(numeric,numeric,integer)','public.stock_unit_cost(public.products)','public._cons_at_us(timestamptz)'"
 chk "S6: لا دالّةَ جديدة ولا معادة يناديها anon — ولا القارئةُ invoker" \
     "select coalesce(string_agg(s, ',' order by s $CC), '') from unnest(array[$NEW252]) s where to_regprocedure(s) is null or has_function_privilege('anon', to_regprocedure(s), 'execute')" ""

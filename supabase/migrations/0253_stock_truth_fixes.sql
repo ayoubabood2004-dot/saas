@@ -126,16 +126,16 @@ begin
   end if;
 end $$;
 
-select public._drift_assert('public.deduct_stock_pooled(uuid,numeric,uuid)', '16f1973b375dd537cf0d3840f99778d9', '-- +0253');
-select public._drift_assert('public.record_purchase(jsonb,jsonb)', 'ed02e92bae3c9bae89d83f9bc40346ed', '-- +0253');
-select public._drift_assert('public.update_purchase(uuid,jsonb,jsonb)', '7bd496aaeba4b7127499961c4126b545', '-- +0253');
-select public._drift_assert('public.return_invoice_items(uuid,jsonb,text,text)', 'b0879a0be60c8d67669595a8096a8a8b', '-- +0253');
+select public._drift_assert('public.deduct_stock_pooled(uuid,numeric,uuid)', 'd88ea06cf6fa966ee88c9de7570cf548', '-- +0253');
+select public._drift_assert('public.record_purchase(jsonb,jsonb)', '51f94edb16e2837f287ee8e80c103935', '-- +0253');
+select public._drift_assert('public.update_purchase(uuid,jsonb,jsonb)', '044b1e49c3a9842658bd26f83959d6bb', '-- +0253');
+select public._drift_assert('public.return_invoice_items(uuid,jsonb,text,text)', '8e5d2b1ce5342775f0d1d8acb6ceade5', '-- +0253');
 select public._drift_assert('public.delete_invoice(uuid)', 'f75d9e1467c1b2fbb6920655014c2b9c', '-- +0253');
-select public._drift_assert('public.restore_product(uuid)', '99dba23f07144eb131df48847502007e', '-- +0253');
-select public._drift_assert('public.inventory_tidy_uncat()', '5c72fef13ee214b8f1d04398bad19639', '-- +0253');
-select public._drift_assert('public.pool_product(uuid,uuid)', '051bf05b3ab6beec9e18524f42cad79d', '-- +0253');
-select public._drift_assert('public.restore_company(uuid)', 'bae3d7bd6c3108c335b3e8e338e4aa11', '-- +0253');
-select public._drift_assert('public.restore_company_section(uuid)', 'c3bce0573ae391aac8d72c9c8c338fff', '-- +0253');
+select public._drift_assert('public.restore_product(uuid)', 'e0c80bbe6552b21e81af23fe8a997a4b', '-- +0253');
+select public._drift_assert('public.inventory_tidy_uncat()', '78c883b943926dd3e1bcf30f0d42fd5e', '-- +0253');
+select public._drift_assert('public.pool_product(uuid,uuid)', '7a24d76fdcd7e4940272ec9efde6e7d9', '-- +0253');
+select public._drift_assert('public.restore_company(uuid)', '901f0d78c4631ae67af7e2cd729796fe', '-- +0253');
+select public._drift_assert('public.restore_company_section(uuid)', 'a768a797ef1be87260c0e772b93206a6', '-- +0253');
 
 -- ── ١) الخصمُ من الرصيد ثمّ الحوض — نصُّ 0066 حرفاً، والرصيدُ يعطي ما لم يعطه الحوض ──────
 create or replace function public.deduct_stock_pooled(p_product uuid, p_qty numeric, p_clinic uuid)

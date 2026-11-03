@@ -69,6 +69,9 @@
 -- — جسمُها الحيُّ ببصمة مصدرها بالمستودع، أو بعلامتنا (إعادةُ هذه الهجرة)، وإلا رفضٌ قبل أيّ بناء
 -- (درسُ 0241: نسخةٌ حيّةٌ غيرُ نسخة المستودع دُهست بصمت). والبصماتُ يفحصها
 -- `scripts/redefine-fingerprint.mjs`، والعلاماتُ تفحصها verify_consumption_wiring() على القاعدة.
+-- **والبصمةُ بصمةُ الشِفرة لا النصّ** (`_drift_code`: بلا تعليقٍ خارج النصوص، وبلا مسافات): أوّلُ تطبيقٍ على الإنتاج
+-- (٣/١١) رُفض على ١٢ دالّةً شِفرتُها نصُّ المستودع حرفاً وتعليقاتُها وحدها غائبة — الهجراتُ القديمة طُبّقت بأدواتٍ تحذف
+-- التعليق. فرقُ تعليقٍ لا يغيّر سلوكاً فلا يرفض؛ وفرقُ شِفرةٍ يرفض كما كان.
 --
 -- تُطبَّق بعد 0251 **وقبل الواجهة** (مظلمةً: لا وصفةَ بعد، والجهازُ القديم لا يرسل service_id).
 -- وقبل 0253/0254/0255 (حارسُها و_invoice_lock_products و_stock_post منها). إضافيةٌ وتُعاد بلا أثرٍ ثانٍ.
@@ -92,6 +95,55 @@
 set lock_timeout = '5s';
 
 -- ── ٠) حارسُ الانحراف — قبل أيّ بناء ───────────────────────────────────────
+-- الشِفرةُ بلا تعليقاتها ولا مسافاتها — مرآتُها codeOf بـscripts/redefine-fingerprint.mjs حرفاً بحرف (والحزمةُ تطابقهما على
+-- كلّ دالّةٍ بالقاعدة). التعليقُ `--` إلى آخر السطر و`/* … */` متداخلاً، **خارج** '…' و"…" (بتضعيف الحرف) و$وسم$…$وسم$ —
+-- فـformat('-- +%s') شِفرةٌ. ما لا يُغلق: النصُّ يبقى إلى الآخر، والتعليقُ يُحذف إلى الآخر.
+create or replace function public._drift_code(p_src text) returns text
+language plpgsql immutable strict set search_path = public as $$
+declare
+  a text[] := regexp_split_to_array(p_src, '');
+  n int := coalesce(array_length(a, 1), 0);
+  o text[] := '{}';
+  i int := 1; j int; d int; c text; tag text;
+begin
+  while i <= n loop
+    c := a[i];
+    if c = '''' or c = '"' then
+      j := i + 1;
+      while j <= n loop
+        if a[j] = c then
+          if j < n and a[j + 1] = c then j := j + 2; continue; end if;
+          exit;
+        end if;
+        j := j + 1;
+      end loop;
+      o := o || a[i:least(j, n)];
+      i := j + 1;
+    elsif c = '-' and i < n and a[i + 1] = '-' then
+      while i <= n and a[i] <> E'\n' loop i := i + 1; end loop;
+    elsif c = '/' and i < n and a[i + 1] = '*' then
+      d := 1; j := i + 2;
+      while j <= n and d > 0 loop
+        if a[j] = '/' and j < n and a[j + 1] = '*' then d := d + 1; j := j + 2;
+        elsif a[j] = '*' and j < n and a[j + 1] = '/' then d := d - 1; j := j + 2;
+        else j := j + 1; end if;
+      end loop;
+      i := j;
+    elsif c = '$' then
+      tag := (regexp_match(array_to_string(a[i:least(i + 79, n)], ''), '^(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)'))[1];
+      if tag is null then o := o || c; i := i + 1; continue; end if;
+      j := strpos(array_to_string(a[i + length(tag):n], ''), tag);
+      if j = 0 then o := o || a[i:n]; i := n + 1;
+      else o := o || a[i:i + length(tag) + j - 2 + length(tag)]; i := i + length(tag) + j - 1 + length(tag);
+      end if;
+    else
+      o := o || c; i := i + 1;
+    end if;
+  end loop;
+  return regexp_replace(array_to_string(o, ''), '[ \t\n\r\f\v]', '', 'g');
+end $$;
+revoke all on function public._drift_code(text) from public, anon, authenticated;
+
 create or replace function public._drift_assert(p_sig text, p_source_md5 text, p_marker text) returns void
 language plpgsql set search_path = public as $$
 declare v_oid oid := to_regprocedure(p_sig); v_src text; v_md5 text;
@@ -100,7 +152,7 @@ begin
     raise exception 'drift_missing' using hint = format('الدالة %s مو موجودة بالقاعدة — طبّق الهجرات بالترتيب', p_sig);
   end if;
   select prosrc into v_src from pg_proc where oid = v_oid;
-  v_md5 := md5(regexp_replace(v_src, '[ \t\n\r\f\v]', '', 'g'));
+  v_md5 := md5(public._drift_code(v_src));
   if v_md5 = p_source_md5 or position(p_marker in v_src) > 0 then return; end if;   -- the repo's source text, or already ours
   raise exception 'drift_body' using hint = format(
     'نسخة %s بالقاعدة غير اللي بالمستودع (البصمة %s) — لا تطبّق هالهجرة، بلّغ المطوّر حتى يقارن', p_sig, v_md5);
@@ -110,9 +162,9 @@ revoke all on function public._drift_assert(text, text, text) from public, anon,
 -- البيعةُ والحركاتُ من 0242، والتعديلُ من 0241 — بصمةُ كلٍّ منها بلا مسافات.
 -- ووجودُ التعديل نفسِه حارسٌ هنا (drift_missing): الإنتاجُ ظلّ ينادي جسمَ 0110 القديم لأن
 -- edit_invoice_lines_unguarded لم يكن موجوداً (0241)، ولو أُنشئت هنا من الصفر ما ناداها أحد.
-select public._drift_assert('public.retail_checkout(jsonb,jsonb)', 'cffd26be36b9e03c4a21cb8b7c07b0a8', '-- +0252');
-select public._drift_assert('public.edit_invoice_lines_unguarded(uuid,jsonb,text)', 'dcefbec79efb18131db509117be06c51', '-- +0252');
-select public._drift_assert('public.product_movements(uuid,integer)', '34dac5e2fd6bf2cb71b81912a66959ee', '-- +0252');
+select public._drift_assert('public.retail_checkout(jsonb,jsonb)', 'a42ab7e636aec79c4182f8accb8d397e', '-- +0252');
+select public._drift_assert('public.edit_invoice_lines_unguarded(uuid,jsonb,text)', 'a62560983d277860b21fcf2294a8eac1', '-- +0252');
+select public._drift_assert('public.product_movements(uuid,integer)', '07304f5a1c11830632c22aa88ec35ce4', '-- +0252');
 
 -- ── ١) الجداول ───────────────────────────────────────────────────────────
 -- الخدمةُ التي بيع بها السطر: لمعرفة وصفته، ولربط سطرِ التعديل بسابقه. ليّنٌ عمداً (لا مفتاح):

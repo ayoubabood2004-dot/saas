@@ -52,7 +52,49 @@ export const MANIFEST = [
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
 const fileOf = (num) => files.find((f) => f.startsWith(num + "_"));
 const strip = (s) => s.replace(/[ \t\n\r\f\v]/g, "");
-export const md5 = (s) => createHash("md5").update(strip(s), "utf8").digest("hex");
+
+/* الشِفرةُ بلا تعليقاتها — مرآةُ `public._drift_code` (0252) حرفاً بحرف، والبصمةُ md5 ما يبقى بلا مسافات.
+ *
+ * لماذا: الإنتاجُ (٣/١١) رفض 0252 بـdrift_body على ١٢ دالّة، وقياسُها كلّها: **الشِفرةُ نصُّ المستودع حرفاً، والتعليقاتُ
+ * وحدها غائبةٌ أو بنصٍّ أقدم** — الهجراتُ القديمة طُبّقت بأدواتٍ تحذف التعليق (سطراً كاملاً، أو كلَّه، أو بنصّ مسودّة).
+ * والحارسُ يحرس الشِفرة: تعليقٌ لا يغيّر سلوكاً، فالبصمةُ لا تراه.
+ *
+ * التعليقُ `--` حتى نهاية السطر و`/* … *\/` (متداخلاً كبوستغريس) **خارج** النصوص وحدها: '…' و"…" (بتضعيف الحرف) و$وسم$…$وسم$
+ * — فـformat('-- +%s') شِفرةٌ لا تعليق. وما لا يُغلق: النصُّ يبقى إلى الآخر، والتعليقُ يُحذف إلى الآخر. */
+export function codeOf(s) {
+  let out = "", i = 0;
+  const n = s.length;
+  while (i < n) {
+    const c = s[i];
+    if (c === "'" || c === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (s[j] === c) { if (s[j + 1] === c) { j += 2; continue; } break; }
+        j++;
+      }
+      if (j >= n) { out += s.slice(i); i = n; } else { out += s.slice(i, j + 1); i = j + 1; }
+    } else if (c === "-" && s[i + 1] === "-") {
+      const j = s.indexOf("\n", i);
+      i = j < 0 ? n : j;
+    } else if (c === "/" && s[i + 1] === "*") {
+      let depth = 1, j = i + 2;
+      while (j < n && depth > 0) {
+        if (s[j] === "/" && s[j + 1] === "*") { depth++; j += 2; }
+        else if (s[j] === "*" && s[j + 1] === "/") { depth--; j += 2; }
+        else j++;
+      }
+      i = j;
+    } else if (c === "$") {
+      const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(s.slice(i, i + 80));
+      if (!m) { out += c; i++; continue; }
+      const tag = m[0], k = s.indexOf(tag, i + tag.length);
+      if (k < 0) { out += s.slice(i); i = n; } else { out += s.slice(i, k + tag.length); i = k + tag.length; }
+    } else { out += c; i++; }
+  }
+  return out;
+}
+/* بصمةُ الحارس: md5 الشِفرة بلا تعليقٍ ولا مسافات — `md5(public._drift_code(prosrc))` بالقاعدة. */
+export const md5 = (s) => createHash("md5").update(strip(codeOf(s)), "utf8").digest("hex");
 
 /* آخرُ تعريفٍ للدالّة بالملفّ (بعدد وسائطها الداخلة) — نصُّ ما بين علامتَي الدولار. */
 export function bodyOf(txt, fn, nIn) {
