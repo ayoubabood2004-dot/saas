@@ -121,10 +121,10 @@ begin
   end if;
 end $$;
 
-select public._drift_assert('public.stock_count_decide(uuid[],boolean)', '2ed820e2f49de184fa9b606c2ae9f13e', '-- +0254');
+select public._drift_assert('public.stock_count_decide(uuid[],boolean)', 'd95ae30481b3b95e1a2522fda8ea1621', '-- +0254');
 select public._drift_assert('public.stock_count_state()', 'f3eb84d7952ba6ce0099679bd0e90601', '-- +0254');
-select public._drift_assert('public.products_trash_consumption()', '0dc88673dbdbd6e6fb95c5d576986d40', '-- +0254');
-select public._drift_assert('public.invoice_consumption_get(uuid[])', '5b33e0eb915538897cf01a929a34fa26', '-- +0254');
+select public._drift_assert('public.products_trash_consumption()', 'abe6ca177465d16bca8e9839f693d5dc', '-- +0254');
+select public._drift_assert('public.invoice_consumption_get(uuid[])', 'e7964fca9970811a3f18091f2c00433f', '-- +0254');
 
 -- ── ١) السندُ صفُّ جرد مكتوبٌ فرقاً ─────────────────────────────────────────
 -- source بافتراضٍ ثابت: إضافتُه تعديلٌ بالكتالوج لا إعادةُ كتابةٍ للجدول، وكلُّ صفٍّ قائم «جرد».

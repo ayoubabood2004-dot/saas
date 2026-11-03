@@ -144,14 +144,14 @@ begin
   end if;
 end $$;
 
-select public._drift_assert('public.retail_checkout(jsonb,jsonb)', '4fcd03a6343892a2d79c8ba9e54821bf', '-- +0255');
-select public._drift_assert('public.edit_invoice_lines_unguarded(uuid,jsonb,text)', 'e71d84141fed847a310103853692c3ae', '-- +0255');
-select public._drift_assert('public.record_purchase(jsonb,jsonb)', '9655ba1cd0700e47ef01c59ecbc47fff', '-- +0255');
-select public._drift_assert('public.update_purchase(uuid,jsonb,jsonb)', '7323a2102de68087ee5b83f18346c7cb', '-- +0255');
-select public._drift_assert('public.stock_count_submit(jsonb)', '49f84bfc1c8bc2531bbb9aa4a2206867', '-- +0255');
-select public._drift_assert('public.products_trash_consumption()', '7ed7617366bd7f298c0f27507eb30ca1', '-- +0255');
+select public._drift_assert('public.retail_checkout(jsonb,jsonb)', '0da4f12081983e823ca824d75f46b661', '-- +0255');
+select public._drift_assert('public.edit_invoice_lines_unguarded(uuid,jsonb,text)', 'd78b75ce20e7e8631e22ba4482dd97ac', '-- +0255');
+select public._drift_assert('public.record_purchase(jsonb,jsonb)', '9485e8780edf26cc644977d45edbcd30', '-- +0255');
+select public._drift_assert('public.update_purchase(uuid,jsonb,jsonb)', '8740f1be67ed5d2934e5ce4726d6f094', '-- +0255');
+select public._drift_assert('public.stock_count_submit(jsonb)', '9a411ea27e438262f8d11f0cc5c6320c', '-- +0255');
+select public._drift_assert('public.products_trash_consumption()', 'a7ebca2b96320b13b7e9b303d0464a80', '-- +0255');
 select public._drift_assert('public.purchase_effect_snap(public.products)', '451eacfc09d5e506be83c8dc53a1af8d', '-- +0255');
-select public._drift_assert('public.verify_consumption_wiring()', 'a526b1e9bd63741f882d04c2d5bf24c8', '-- +0255');
+select public._drift_assert('public.verify_consumption_wiring()', 'e9110b08e859aa6fac6c97d51e8cbe88', '-- +0255');
 
 -- ── ١) العمودان ──────────────────────────────────────────────────────────
 -- المتوسّطُ لوحدة المخزون (العلبة، أو الكيلو للموزون) بستّ منازل. فارغٌ = لم يمرّ بالمادّة شراءٌ منذ
