@@ -143,3 +143,14 @@ export function readCustomerQuery(q: string | null | undefined, dial?: string | 
   const key = custNorm(t);
   return [...key].length >= 2 ? { mode: "name", key } : { mode: "short" };
 }
+
+/** حيواناتُ الزبون من صفوف الدليل: المجموعةُ التي مفتاحُها `key` حرفاً وحدها — وإلا لا حيوان. يقرؤها «ملف حيواناته» بدفتر الديون (DebtorPets.tsx)، مفحوصةٌ بـvax-edit-test. */
+export function petsOfKey<T>(rows: { key: string; pets: T[] }[], key: string | null): T[] {
+  if (!key) return [];
+  return rows.find((h) => h.key === key)?.pets ?? [];
+}
+
+/** نصُّ السؤال للدليل: الهاتفُ إن وُجد (يطابق بمفتاح الدولة)، وإلا الاسم. */
+export function debtorQuery(phone: string | null, name: string | null): string {
+  return (phone ?? "").trim() || (name ?? "").trim();
+}

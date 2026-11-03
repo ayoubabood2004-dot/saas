@@ -158,8 +158,10 @@ console.log("▸ «زبائن المبيعات» بالتقارير، والدل
   const files = [];
   (function walk(d) { for (const e of readdirSync(d)) { const p = join(d, e); if (statSync(p).isDirectory()) walk(p); else if (/\.tsx?$/.test(p)) files.push(p.split("\\").join("/")); } })("src");
   const users = files.filter((f) => /\bfindCustomers\(/.test(read(f))).sort();
-  check("الدليلُ يقرؤه البيعُ والتقاريرُ وحدهما (لا واتساب ولا استقبال ولا لوحة أوامر)",
-    users.join(",") === ["src/components/retail/CustomerSearch.tsx", "src/lib/repo.ts", "src/lib/repoDemo.ts", "src/pages/AnalyticsHub.tsx"].join(","), users.join(","));
+  // و«ملف حيواناته» بدفتر الديون (DebtorPets، طلبُ المالك ٣/١١): الدفترُ تبويبٌ بشاشة البيع نفسِها — يسأل عن زبونٍ واحد
+  // بمفتاحه ليفتح ملفَّ حيوانه، لا قائمةَ زبائن.
+  check("الدليلُ يقرؤه البيعُ (ودفترُ ديونه) والتقاريرُ وحدها (لا واتساب ولا استقبال ولا لوحة أوامر)",
+    users.join(",") === ["src/components/retail/CustomerSearch.tsx", "src/components/retail/DebtorPets.tsx", "src/lib/repo.ts", "src/lib/repoDemo.ts", "src/pages/AnalyticsHub.tsx"].join(","), users.join(","));
   const AH = read("src/pages/AnalyticsHub.tsx");
   const at = AH.indexOf("function SalesCustomersTab()");
   const tab = at < 0 ? "" : AH.slice(at);

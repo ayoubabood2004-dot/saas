@@ -7118,5 +7118,51 @@
     "noteLoans": "Advances count on the day they're paid out, then get deducted from salaries, so salaries come in lower by the same amount.",
     "noteAdjust": "Old invoice adjustments: invoices whose recorded profit doesn't equal their price minus their cost.",
     "noteShift": "The working-hours filter (advanced options) doesn't apply here: this report covers whole days, so «Sales profit» may differ from the Money tab right now."
+  },
+  "dpets": {
+    "failed": "Couldn't load their pets — tap to retry",
+    "openHint": "Open the pet's record",
+    "open": "{{name}}'s file",
+    "unnamed": "Unnamed pet",
+    "deceased": "deceased"
+  },
+  "vxed": {
+    "title": "Edit vaccines",
+    "managerOnly": "Manager only",
+    "pick": "Choose a vaccine",
+    "nameLabel": "Vaccine name",
+    "nameHint": "Changes on all its doses ({{n}})",
+    "badName": "Write the vaccine name",
+    "saveName": "Save name",
+    "nameSaved": "Renamed to «{{name}}»",
+    "dose": "Dose {{n}}",
+    "doseNoNum": "Dose",
+    "st": {
+      "administered": "Given",
+      "scheduled": "Scheduled",
+      "overdue": "Overdue"
+    },
+    "givenOn": "Date given",
+    "dueOn": "Due date",
+    "lot": "Lot number",
+    "notes": "Notes",
+    "badGiven": "Invalid date given — not in the future and not before 2000",
+    "badDue": "Invalid due date — pick it from the calendar",
+    "save": "Save",
+    "saved": "Dose saved",
+    "deleteDose": "Delete this dose",
+    "confirmDose": "{{dose}} of «{{name}}» ({{when}}) will be deleted. It can't be undone — it stays in the activity log.",
+    "whenGiven": "given {{date}}",
+    "whenDue": "due {{date}}",
+    "whenNone": "no date",
+    "deleteForever": "Delete permanently",
+    "keep": "Keep it",
+    "deleted": "Dose deleted",
+    "deleteAll": "Delete the whole vaccine with its doses ({{n}})",
+    "confirmAll": "«{{name}}» will be deleted with all its doses ({{n}}) from {{pet}}'s record. It can't be undone — it stays in the activity log.",
+    "confirmAllNoPet": "«{{name}}» will be deleted with all its doses ({{n}}). It can't be undone — it stays in the activity log.",
+    "allDeleted": "«{{name}}» deleted",
+    "partial": "Done on {{n}} of {{m}} — the rest changed on another device; the record was refreshed",
+    "gone": "Nothing changed — it changed on another device, or deleting is for the manager only. The record was refreshed."
   }
 }
