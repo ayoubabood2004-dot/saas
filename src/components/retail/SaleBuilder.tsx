@@ -64,6 +64,18 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
+import type { PosTab } from "@/lib/posTabs";
+
+/* خاناتُ الطبيب (0258): الشريطُ والشبكةُ والمحرّرُ قطعةٌ كسولةٌ بنطاقها المملوك ptab، والبابُ (posTabsApi) بـimport() — لا ثابت،
+ * كباب المستهلكات: وحدةٌ جديدةٌ ثابتةٌ بقطعة البيع اسمٌ يدفعه الإقلاع. و«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadTabPills = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabPills })), ["ptab"]);
+const loadTabGrid = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabGrid })), ["ptab"]);
+const loadTabEditor = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabEditor })), ["ptab"]);
+let TabPillsLazy = loadTabPills();
+let TabGridLazy = loadTabGrid();
+let TabEditorLazy = loadTabEditor();
+/** جدولُ الخانات غائبٌ بالقاعدة (واجهةٌ سبقت 0258): الميزةُ تختفي بصمت بدل «تعذّر» دائم. */
+const tabsTableMissing = (e: unknown) => ["42P01", "PGRST205", "PGRST202"].includes(String((e as { code?: string } | null)?.code ?? ""));
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -850,7 +862,26 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const byId = new Map(products.map((p) => [p.id, p]));
     setCart((c) => recostLines(c, byId));
   }, [products, lineCostState]);
-  const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
+  const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds" | `tab:${string}`>("products");
+  /* خاناتُ الطبيب (0258): لصاحبها وحده (الخادمُ يقصرها عليه)، وفشلُ جلبها يُقال بالشريط مع «أعد» — لا «ماكو خانات». */
+  const [posTabs, setPosTabs] = useState<PosTab[] | null>(null);
+  const [posTabsFailed, setPosTabsFailed] = useState(false);
+  const [posTabsOff, setPosTabsOff] = useState(false);
+  const [posTabsTry, setPosTabsTry] = useState(0);
+  const [tabEdit, setTabEdit] = useState<PosTab | "new" | null>(null);
+  const [, setTabLazyTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setPosTabsFailed(false);
+    import("@/lib/posTabsApi").then((m) => m.posTabsApi.list())
+      .then((list) => { if (alive) setPosTabs(list); })
+      .catch((e) => { if (!alive) return; if (tabsTableMissing(e)) setPosTabsOff(true); else setPosTabsFailed(true); });
+    return () => { alive = false; };
+  }, [clinicId, posTabsTry]);
+  const activeTabId = browseTab.startsWith("tab:") ? browseTab.slice(4) : null;
+  const activeTab = activeTabId ? posTabs?.find((x) => x.id === activeTabId) ?? null : null;
+  // خانةٌ انحذفت (من هنا أو من جهازٍ ثانٍ) والشاشةُ عليها: إلى المنتجات.
+  useEffect(() => { if (activeTabId && posTabs && !activeTab) setBrowseTab("products"); }, [activeTabId, posTabs, activeTab]);
   /* شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة. تُقرأ مرة عند الرسم:
    * تبديلها من الإعدادات يعيد تحميل الصفحة، فلا حاجة لمراقبة حيّة. */
   const posV2 = getPosV2();
@@ -3080,7 +3111,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // ---- Builder --------------------------------------------------------------
   /* شريطُ الأقسام (منتجات · خدمات · أدوية): سطرٌ وحده، أو جنبَ زرّ الراجع بالعرض المضغوط. */
   const browseToggle = (
-    <div className={cn("inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1", compact ? "min-w-0 flex-1" : "w-full", posV2 && "shrink-0")}>
+    <div className={cn("inline-flex items-center gap-1 overflow-x-auto rounded-full border border-line bg-surface-2 p-1 [scrollbar-width:none]", compact ? "min-w-0 flex-1" : "w-full", posV2 && "shrink-0")}>
       {([
         { v: "products", label: t("retail.products", "Products"), icon: <Package size={15} /> },
         { v: "services", label: t("retail.services", "Services"), icon: <Stethoscope size={15} /> },
@@ -3096,6 +3127,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           {o.icon}{o.label}
         </button>
       ))}
+      {/* خاناتُ الطبيب (0258) — بجانب الثلاث، وزرُّ «+» لخانةٍ جديدة */}
+      {!posTabsOff && (
+        <LoadBoundary scope="ptab-pills" onRetry={() => { TabPillsLazy = loadTabPills(); setTabLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <TabPillsLazy tabs={posTabs} failed={posTabsFailed} activeId={activeTabId} compact={compact}
+              onPick={(id: string) => setBrowseTab(`tab:${id}`)} onNew={() => setTabEdit("new")} onRetry={() => setPosTabsTry((n) => n + 1)} />
+          </Suspense>
+        </LoadBoundary>
+      )}
     </div>
   );
   return (
@@ -3379,7 +3419,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         {/* Products | Services | Medications toggle */}
         {(!compact || retMode) && browseToggle}
 
-        {browseTab === "products" ? (
+        {browseTab.startsWith("tab:") ? (
+          /* خانةُ الطبيب: الضغطُ يمرّ من tapProduct/addService — طريقُ البيع نفسُه بطزاجته وسؤال خادمه، لا طريقٌ ثانٍ. */
+          activeTab ? (
+            <LoadBoundary scope="ptab-grid" onRetry={() => { TabGridLazy = loadTabGrid(); setTabLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}>
+                <TabGridLazy tab={activeTab} products={products} services={catalog.services} listPrice={listPrice}
+                  flash={flash && caseBase(flash)} gridZoom={posV2 ? layout.gridZoom : 1} posV2={posV2}
+                  onProduct={tapProduct} onService={(sv: Service) => { addService(sv); }} onEdit={() => setTabEdit(activeTab)} />
+              </Suspense>
+            </LoadBoundary>
+          ) : null
+        ) : browseTab === "products" ? (
           // منطقة التصفّح: البحث ثابت والشبكة وحدها تمرّر داخلياً (التصميم أ).
           <div className={cn(posV2 ? "flex min-h-0 flex-1 flex-col gap-3" : "contents")}>
             {/* Product search + scan + مضاعِف الكمية */}
@@ -4363,6 +4414,24 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           </LoadBoundary>
         );
       })()}
+
+      {/* محرّرُ خانات الطبيب (0258) — قطعةٌ كسولة بنطاقها ptab */}
+      {tabEdit && (
+        <LoadBoundary scope="ptab-editor" onRetry={() => { TabEditorLazy = loadTabEditor(); setTabLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <TabEditorLazy tab={tabEdit === "new" ? null : tabEdit} tabs={posTabs ?? []} products={products} services={catalog.services}
+              listPrice={listPrice} onClose={() => setTabEdit(null)}
+              onSaved={(r: PosTab | null | "reload") => {
+                const was = tabEdit === "new" ? null : tabEdit;
+                setTabEdit(null);
+                if (r === "reload") { setPosTabsTry((n) => n + 1); return; }
+                if (r === null) { setPosTabs((l) => (l ?? []).filter((x) => x.id !== was?.id)); setBrowseTab("products"); return; }
+                setPosTabs((l) => { const list = l ?? []; return list.some((x) => x.id === r.id) ? list.map((x) => (x.id === r.id ? r : x)) : [...list, r]; });
+                setBrowseTab(`tab:${r.id}`);
+              }} />
+          </Suspense>
+        </LoadBoundary>
+      )}
 
       {/* منتقي الوزن (كتلة، 0124) */}
       {weightFor && (() => {
