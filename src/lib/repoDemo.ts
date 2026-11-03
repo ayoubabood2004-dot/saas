@@ -5364,6 +5364,8 @@ export type DemoRepo = typeof demoRepo;
 export const loadDemoConsumption = () => import("./demoConsumption");
 /** مرآةُ report_pnl (0256) — كسولةٌ من هذا الباب وحده (pnlApi)، كمرآة المستهلكات. */
 export const loadDemoPnl = () => import("./demoPnl");
+/** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
+export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 
 /* وما تحتاجه المرآةُ من هنا (الاستيرادُ دائريٌّ وآمن: يُقرأ ساعةَ النداء). كتالوجُ الخدمات (clinic_services بالتجريبيّ) يمرّ
  * من هنا لا من services.ts مباشرةً — فلا تكسب قطعةُ المرآة مستورداً جديداً يغيّر تقسيمَ القطع المشتركة. */

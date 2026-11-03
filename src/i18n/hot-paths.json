@@ -67,6 +67,8 @@
       ]
     },
     "rcp": "src/components/retail/ConsumablesSheet.tsx",
+    "dpets": "src/components/retail/DebtorPets.tsx",
+    "vxed": "src/components/vaccines/VaccineEditSheet.tsx",
     "avgc": "src/components/inventory/AvgCostNote.tsx"
   }
 }

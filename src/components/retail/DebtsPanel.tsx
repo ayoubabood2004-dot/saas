@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
@@ -21,6 +21,13 @@ import { staggerContainer, staggerItem } from "@/lib/motion";
 import { paidOf, dueOf, paymentStatusOf, isDebt, round2 } from "@/lib/debt";
 import { companyOwed } from "@/lib/courierLedger";
 import { getCached, setCached } from "@/lib/swrCache";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* «ملف حيواناته» بدفتر الزبون: قطعةٌ كسولة بنطاقها المملوك dpets (hot-paths.json) — retail حارٌّ والنصفُ البارد
+   ممتلئ. `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadDebtorPets = () => page(() => import("@/components/retail/DebtorPets").then((m) => ({ default: m.DebtorPets })), ["dpets"]);
+let DebtorPetsLazy = loadDebtorPets();
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.payCash", def: "نقدي" },
@@ -273,6 +280,7 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
   const { t, i18n } = useTranslation();
   const [settling, setSettling] = useState<Invoice | null>(null);
   const [detail, setDetail] = useState<Invoice | null>(null);
+  const [, setLazyTick] = useState(0);
 
   const BackBtn = (
     <button onClick={() => { playTap(); onBack(); }} className="inline-flex items-center gap-1.5 text-sm font-bold text-ink-muted transition hover:text-ink">
@@ -307,6 +315,12 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg font-bold text-ink">{ledger.name || t("retail.walkIn", "عميل نقدي")}</p>
             {ledger.phone && <p className="flex items-center gap-1 text-sm text-ink-subtle" dir="ltr"><Phone size={12} /> {ledger.phone}</p>}
+            {/* «ملف حيواناته» — زرٌّ لكلّ حيوانٍ للزبون نفسِه (بمفتاحه لا بتشابه الاسم)، ولا شيء إن ما عنده حيوان. */}
+            <LoadBoundary scope="debtorpets" onRetry={() => { DebtorPetsLazy = loadDebtorPets(); setLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}>
+                <DebtorPetsLazy phone={ledger.phone} name={ledger.name || null} />
+              </Suspense>
+            </LoadBoundary>
           </div>
           <div className="text-end">
             <p className="text-2xs font-semibold text-ink-subtle">{t("retail.totalOwed", "إجمالي الدين")}</p>

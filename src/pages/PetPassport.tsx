@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -54,6 +54,14 @@ import { medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* قلمُ «حالة اللقاحات» (المدير): نافذةُ تعديل اللقاح وحذفه قطعةٌ كسولة بنطاقها المملوك vxed (hot-paths.json) — النصفُ
+   البارد ممتلئ. `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadVaxEdit = () => page(() => import("@/components/vaccines/VaccineEditSheet").then((m) => ({ default: m.VaccineEditSheet })), ["vxed"]);
+let VaxEditLazy = loadVaxEdit();
 import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockPlus } from "lucide-react";
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
@@ -282,6 +290,12 @@ export function PetPassport() {
   // Owners may view their pet's health record but not modify clinical data.
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
+  // تعديلُ اللقاح وحذفُه للمدير (ومفتاحُه الحيّ) — والحذفُ محروسٌ بالقاعدة أيضاً (0257).
+  const { role: staffRole } = usePermissions();
+  const canEditVax = !isOwner && staffRole === "manager";
+  /** اللقاحُ المفتوح بالقلم (مفتاحُه، "" = أوّلُ لقاح)، أو null = مغلقة. */
+  const [vaxEdit, setVaxEdit] = useState<string | null>(null);
+  const [, setVaxLazyTick] = useState(0);
   const [medOpen, setMedOpen] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
@@ -466,6 +480,13 @@ export function PetPassport() {
 
       {/* تذكير حر لهذا الحيوان — يُخزَّن بجدول التذكيرات نفسه فيظهر هنا وبمركز التذكيرات */}
       <PetReminderModal open={reminderOpen} onClose={() => setReminderOpen(false)} pet={pet} onSaved={reload} />
+      {canEditVax && vaxEdit !== null && (
+        <LoadBoundary scope="vxed" onRetry={() => { VaxEditLazy = loadVaxEdit(); setVaxLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <VaxEditLazy vaccines={vaccines} initialKey={vaxEdit} petName={pet.name} onClose={() => setVaxEdit(null)} onSaved={reload} />
+          </Suspense>
+        </LoadBoundary>
+      )}
 
       {isOwner && (
         <div className="mb-6 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{t("passport.ownerViewOnly")}</div>
@@ -491,7 +512,8 @@ export function PetPassport() {
             <div className="border-t border-line p-4 sm:p-5 lg:border-t-0 lg:border-s"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>
             <div className="border-t border-line p-4 sm:p-5 xl:border-t-0 xl:border-s"><IdentityFactsCard pet={pet} canEdit={canEditClinical} onChanged={reload} bare /></div>
             <div className="border-t border-line lg:border-s xl:border-t-0">
-              <VaccineStatusCard vaccines={vaccines} onOpen={() => { playTap(); setTab("vaccines"); }} />
+              <VaccineStatusCard vaccines={vaccines} onOpen={() => { playTap(); setTab("vaccines"); }}
+                onEdit={canEditVax ? (k) => { playTap(); setVaxEdit(k); } : undefined} />
             </div>
           </div>
         )}
@@ -1308,7 +1330,9 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 /** حالة اللقاحات بنظرة (رأس السجل) — سطر ملوّن لكل لقاح: أخضر ✓ مأخوذ،
  *  كهرماني ⏰ موعده قادم، أحمر ⚠ متأخر — فيعرف الدكتور فور دخوله هل الحيوان
  *  محصّن وشنو اللقاحات عليه، بلا ما يفتح التبويب. */
-function VaccineStatusCard({ vaccines, onOpen, display }: { vaccines: Vaccination[]; onOpen: () => void; /** Optional row-name transform (owner view shows scientific names). */ display?: (name: string) => string }) {
+function VaccineStatusCard({ vaccines, onOpen, display, onEdit }: { vaccines: Vaccination[]; onOpen: () => void; /** Optional row-name transform (owner view shows scientific names). */ display?: (name: string) => string;
+  /** قلمُ المدير: يفتح نافذةَ تعديل اللقاح بمفتاحه ("" = أوّلُها). غائبٌ = لا قلم. */
+  onEdit?: (key: string) => void }) {
   const { t, i18n } = useTranslation();
   const rows = useMemo(() => {
     const m = new Map<string, Vaccination[]>();
@@ -1327,7 +1351,7 @@ function VaccineStatusCard({ vaccines, onOpen, display }: { vaccines: Vaccinatio
       const lastGiven = ds
         .filter((d) => d.status === "administered")
         .sort((a, b) => (b.administered_at ?? "").localeCompare(a.administered_at ?? ""))[0] ?? null;
-      return { name: ds[0].name, next, late, lastGiven };
+      return { key: ds[0].name.trim().toLowerCase(), name: ds[0].name, next, late, lastGiven };
     });
     const rank = (x: (typeof items)[number]) => (x.late ? 0 : x.next ? 1 : 2);
     return items.sort((a, b) => rank(a) - rank(b) || (a.next?.due_date ?? "").localeCompare(b.next?.due_date ?? ""));
@@ -1345,15 +1369,22 @@ function VaccineStatusCard({ vaccines, onOpen, display }: { vaccines: Vaccinatio
 
   return (
     /* العمود كله زر واحد — ضغطة بأي مكان تفتح تبويب التطعيمات.
-       النص أسود كباقي الأعمدة؛ اللون محصور بالأزرار الجانبية الثلاثة. */
-    <button
+       النص أسود كباقي الأعمدة؛ اللون محصور بالأزرار الجانبية الثلاثة.
+       عنصرٌ بدور زرّ لا <button>: قلمُ المدير زرٌّ داخله، وزرٌّ داخل زرّ HTML غيرُ صالح. */
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); } }}
       title={t("passport.vaxGlanceOpen", "فتح التطعيمات — كل التفاصيل والجرعات")}
-      className="group flex h-full w-full flex-col p-4 text-start transition hover:bg-surface-2/50 sm:p-5"
+      className="group flex h-full w-full cursor-pointer flex-col p-4 text-start transition hover:bg-surface-2/50 sm:p-5"
     >
       <span className="mb-1 flex w-full items-center gap-2 font-bold text-ink">
         <Syringe size={18} className="text-brand-600" /> {t("passport.vaxGlance", "حالة اللقاحات")}
-        <ChevronLeft size={16} className="ms-auto shrink-0 text-ink-subtle transition group-hover:-translate-x-0.5 group-hover:text-ink ltr:rotate-180" />
+        {onEdit && rows.length > 0 && (
+          <EditPen label={t("common.edit")} onClick={() => onEdit("")} data-vxedit-all className="ms-auto" />
+        )}
+        <ChevronLeft size={16} className={cn("shrink-0 text-ink-subtle transition group-hover:-translate-x-0.5 group-hover:text-ink ltr:rotate-180", !(onEdit && rows.length > 0) && "ms-auto")} />
       </span>
       <span className="mb-3 block text-xs text-ink-subtle">{verdictText}</span>
 
@@ -1383,6 +1414,7 @@ function VaccineStatusCard({ vaccines, onOpen, display }: { vaccines: Vaccinatio
                   r.late ? "bg-danger-500" : r.next ? "bg-orange-500" : "bg-success-500")}>
                   <RowIcon size={13} strokeWidth={2.75} />
                 </span>
+                {onEdit && <EditPen label={t("common.edit")} onClick={() => onEdit(r.key)} data-vxedit={r.key} />}
               </span>
             );
           })}
@@ -1397,6 +1429,18 @@ function VaccineStatusCard({ vaccines, onOpen, display }: { vaccines: Vaccinatio
       <span className="mt-auto flex items-center gap-1 pt-3 text-2xs font-semibold text-ink-subtle transition group-hover:text-ink">
         {t("passport.vaxGlanceHint", "اضغط لكل التفاصيل والجرعات")}
       </span>
+    </div>
+  );
+}
+
+/** قلمُ المدير بـ«حالة اللقاحات»: زرٌّ صغير داخل البطاقة — ضغطتُه لا تفتح تبويبَ التطعيمات (البطاقةُ كلُّها زرٌّ لذاك). */
+function EditPen({ label, onClick, className, ...data }: { label: string; onClick: () => void; className?: string } & Record<`data-${string}`, string | boolean>) {
+  return (
+    <button type="button" title={label} aria-label={label} {...data}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onKeyDown={(e) => e.stopPropagation()}
+      className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-brand-50 hover:text-brand-700 dark:hover:bg-brand-500/15 dark:hover:text-brand-300", className)}>
+      <Pencil size={14} />
     </button>
   );
 }
