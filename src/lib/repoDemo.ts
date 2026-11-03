@@ -5366,6 +5366,8 @@ export const loadDemoConsumption = () => import("./demoConsumption");
 export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
+/** مرآةُ خانات الطبيب بشاشة البيع (posTabsApi، 0258) — كسولةٌ من هذا الباب وحده. */
+export const loadDemoPosTabs = () => import("./demoPosTabs");
 
 /* وما تحتاجه المرآةُ من هنا (الاستيرادُ دائريٌّ وآمن: يُقرأ ساعةَ النداء). كتالوجُ الخدمات (clinic_services بالتجريبيّ) يمرّ
  * من هنا لا من services.ts مباشرةً — فلا تكسب قطعةُ المرآة مستورداً جديداً يغيّر تقسيمَ القطع المشتركة. */

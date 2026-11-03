@@ -318,6 +318,9 @@ const STUB = {
     export function ConsumptionNotice(p) { ${SB}.notice = p; return createElement("x-ConsNotice", { mode: p.mode }); }
     ConsumptionNotice.__which = "notice";`,
   "@/lib/consumptionApi": `export const consumptionApi = { recipeSummary: (...a) => ${SB}.recipeSummary(...a) };`,
+  /* خاناتُ الطبيب (0258): قطعتُها وبابُها بديلان صامتان — هذا الحارسُ يقيس المستهلكات، وخاناتُ الطبيب يقيسها pos-tabs-test. */
+  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
+  "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
 };
 /** أسماءُ ما يستورده الملفّ من كلّ مُحدِّد (لا الأنواع) — لتوليد البديل. */
 function importsOf(src) {
@@ -738,7 +741,7 @@ async function mountChecks(M, ck) {
   await scenario("د١", async (use) => {
     const S = use(await session(M));
     const pages0 = globalThis.__pages.length;
-    const [g0, g1, g2] = globalThis.__pages;
+    const [g0, g1, g2] = globalThis.__pages.filter((p) => J(p.ns) === J(["rcp"]));   // وقطعُ ptab (0258) بجانبها
     ck("د١) قطعُ الورقة والإشعار والتسخين كسولةٌ عند التحميل، كلٌّ بنطاقها rcp", pages0 >= 3 && [g0, g1, g2].every((p) => J(p?.ns) === J(["rcp"])), J(globalThis.__pages.map((p) => p.ns)));
     const [m0, m1, m2] = await Promise.all([g0, g1, g2].map((p) => p?.load?.()));
     ck("  والمحمِّلات: الورقةُ (default) والإشعارُ (ConsumptionNotice) من ConsumablesSheet نفسِها، والتسخينُ مكوّنٌ لا يرسم شيئاً",
@@ -1198,13 +1201,16 @@ async function failChecks(M, ck, setFail, setHold) {
  * وفشلُه صامت (الورقةُ والإشعارُ يقولان فشلَهما بمكانهما) ويُعاد بالفتحة التالية. */
 async function warmChecks(M, ck, setWarmFail) {
   const P = () => globalThis.__pages ?? [];
-  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين", P().length === 3 && P().every((p) => J(p.ns) === J(["rcp"])), J(P().map((p) => p.ns)));
+  // ومعها منذ 0258 ثلاثُ قطع خانات الطبيب (الشريطُ والشبكةُ والمحرّر) بنطاقها ptab — قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
+  const rcpPages = () => P().filter((p) => J(p.ns) === J(["rcp"]));
+  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab ولا غيرُها",
+    rcpPages().length === 3 && P().length === 6 && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"])), J(P().map((p) => p.ns)));
   setWarmFail(true);
   const loud = console.error;
   console.error = () => {};   // React يكتب الخطأَ الممسوك بالكونسول — المقيسُ أنه لم يُفلت
   let S = null;
   try { S = await session(M); } finally { console.error = loud; }
-  const calls = P().map((p) => p.calls);
+  const calls = rcpPages().map((p) => p.calls);
   ck("  وأوّلُ تركيبٍ يطلب التسخينَ وحده قبل أيّ بيعة — لا الورقةَ ولا الإشعار", calls[2] === 1 && calls[0] === 0 && calls[1] === 0 && S.log.checkout.length === 0, J(calls));
   ck("  وفشلُ التسخين صامت: لا خطأ رسم، والشاشةُ بمكانها (لا حارسَ يقول «تعذّر» بلا شيءٍ طُلب)",
     S.ui.errors.length === 0 && !!S.ui.find("data-retmode") && !S.ui.all().some((n) => n.type === "x-LoadBoundary" && n.props?.scope === "cons-warm"),
@@ -1212,9 +1218,9 @@ async function warmChecks(M, ck, setWarmFail) {
   S.end();
   setWarmFail(false);
   S = await session(M);
-  const w = P()[3];
-  ck("  ويُعاد بالفتحة التالية: قطعةُ تسخينٍ جديدة يطلبها التركيبُ التالي وتصل بلا خطأ", P().length === 4 && J(w?.ns) === J(["rcp"]) && w?.calls === 1 && S.ui.errors.length === 0,
-    J({ n: P().length, calls: P().map((p) => p.calls), errors: S.ui.errors.map(String) }));
+  const w = rcpPages()[3];
+  ck("  ويُعاد بالفتحة التالية: قطعةُ تسخينٍ جديدة يطلبها التركيبُ التالي وتصل بلا خطأ", rcpPages().length === 4 && J(w?.ns) === J(["rcp"]) && w?.calls === 1 && S.ui.errors.length === 0,
+    J({ n: rcpPages().length, calls: rcpPages().map((p) => p.calls), errors: S.ui.errors.map(String) }));
   S.end();
 }
 
