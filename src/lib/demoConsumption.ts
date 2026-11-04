@@ -58,7 +58,7 @@ import {
   type CarryState, type ConsProduct, type PostMode, type RecipeUnit,
 } from "./consumption";
 // 0255: المتوسّطُ المتحرّك حرفاً من مرآة الخادم (avgCost.ts) — لا تقريبَ يُعاد هنا.
-import { avgAdjust, avgBase, avgMerge, avgReceive, receiveVarianceCents } from "./avgCost";
+import { avgAdjust, avgBase, avgMerge, avgReceive, purchaseUnitCostU, receiveVarianceCents } from "./avgCost";
 import { loadDB, saveDB } from "./demoStore";
 import { demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";
 // مفتاحُ العيادة الفعّال: كتالوجُ الخدمات لكلّ مفتاح (services.ts) والمخزنُ التجريبيّ واحد — clinics.ts بحزمة الإقلاع أصلاً.
@@ -917,16 +917,41 @@ export async function demoSubmitWaste(lines: WasteLineInput[], apply: boolean, c
 }
 
 /* ── متوسّطُ الكلفة (0255) ─────────────────────────────────────────────────────────────── */
-/** `case when v_cost > 0 then v_cost end` بالمليون: كلفةُ سطر شراءٍ كما يحفظها numeric(12,2)، والصفرُ والسالبُ null. */
-const posMicro = (cost: number | string | null | undefined): bigint | null => {
+/** نسبةُ خصم الشركة لفاتورة شراء (0260): الصافي والمجموعُ قبله بالفلوس — null = بلا خصم (الكلفةُ كما كُتبت). */
+export interface PurchaseShare { netC: bigint; grossC: bigint }
+/** كلفةُ وحدة السطر للمتوسّط بالمليون: `v_cost numeric(12,2)` ثمّ نصيبُه من الخصم (`_purchase_unit_cost`، 0260). */
+const unitMicro = (cost: number | string | null | undefined, share?: PurchaseShare | null): bigint => {
   const c = roundScaled(cost ?? 0, 2) * 10_000n;                   // purchase_price numeric(12,2) بالمليون
+  return share ? (purchaseUnitCostU(c, share.netC, share.grossC) ?? c) : c;
+};
+/** `case when v_ucost > 0 then v_ucost end` بالمليون: كلفةُ سطرٍ بعد نصيبه من الخصم، والصفرُ والسالبُ null. */
+const posMicro = (cost: number | string | null | undefined, share?: PurchaseShare | null): bigint | null => {
+  const c = unitMicro(cost, share);
   return c > 0n ? c : null;
 };
+/** خصمُ رأس الفاتورة كما تكتبه record_purchase وupdate_purchase (0260): `case when v_gross > 0 then least(greatest(d, 0), v_gross)
+ *  else 0 end` ثمّ عمودُه numeric(14,2) (التقريبُ بعد القصّ). ما لا يعبر JSON رقماً (NaN، اللانهاية) أو فارغٌ يصل null فيُحسب صفراً،
+ *  ومجموعٌ ≤ صفر (سطرٌ بسعرٍ سالب) بلا خصم. يرجع الخصمَ والصافيَ رقمَين، والنسبةَ للسطور (null بلا خصم). */
+export function purchaseShareLocal(gross: number, discount: unknown): { discount: number; net: number; share: PurchaseShare | null } {
+  const grossC = roundScaled(gross, 2);
+  let d9 = 0n;
+  if (discount != null && discount !== "" && Number.isFinite(Number(discount))) d9 = roundScaled(discount as number | string, 9);
+  const g9 = grossC * 10_000_000n;
+  const discC = grossC > 0n ? roundDiv(d9 < 0n ? 0n : d9 > g9 ? g9 : d9, 10_000_000n) : 0n;
+  const netC = grossC - discC;
+  return { discount: fromScaled(discC, 2), net: fromScaled(netC, 2), share: discC > 0n ? { netC, grossC } : null };
+}
+/** نسبةُ فاتورةٍ محفوظة لعكس سطورها القديمة (0260): `_purchase_unit_cost(c, total, total + discount)` — ما أدخله استلامُها بالضبط. */
+export function purchaseStoredShare(p: { total?: number | null; discount?: number | null }): PurchaseShare | null {
+  const netC = roundScaled(p.total ?? 0, 2), discC = roundScaled(p.discount ?? 0, 2);
+  return discC > 0n ? { netC, grossC: netC + discC } : null;
+}
 /** record_purchase (0255:428–462) لسطرٍ لقي مادّةً قائمة — من صفّها **القديم** قبل الـSET: المتوسّطُ _avg_receive وفرقُه
  *  _avg_variance على رصيدها وأساس كلفتها _avg_base. ومخزنُ الحقل خارج المتوسّط: يبقى كما هو وبلا فرق. */
-export function purchaseReceiveLocal(p: Product, qty: number, cost: number): { avg: number | null; variance: number | null } {
+export function purchaseReceiveLocal(p: Product, qty: number, cost: number, share?: PurchaseShare | null): { avg: number | null; variance: number | null } {
   if (p.farm_id) return { avg: p.avg_cost ?? null, variance: null };
-  const sM = milliOf(p.stock), aU = avgBase(p), qM = roundScaled(qty, 3), cU = roundScaled(cost ?? 0, 2) * 10_000n;
+  // 0260: الاستلامُ والفرقُ بكلفة السطر بعد نصيبه من خصم الشركة (v_ucost) — والمكتوبُ بالسطر وسعرُ الشراء كما هما.
+  const sM = milliOf(p.stock), aU = avgBase(p), qM = roundScaled(qty, 3), cU = unitMicro(cost, share);
   const a = avgReceive(sM, aU, qM, cU);
   // الفرقُ الذي يُقرَّب صفراً لم يقع: receiveVarianceCents يرجعه null (0255 _avg_variance بـnullif) — ويمرّ هنا كما هو.
   const v = receiveVarianceCents(sM, aU, qM, cU);
@@ -935,9 +960,9 @@ export function purchaseReceiveLocal(p: Product, qty: number, cost: number): { a
    * كما هو (صفرٌ صريح ثمّ ٥ بـ٨٠٠ ⇒ ٨٠٠)، ومتوسّطٌ فارغ مع سطرٍ مجّانيّ يكتب الأساسَ (سعرَ الشراء) كما كان. */
   return { avg: a === null ? (p.avg_cost ?? null) : fromScaled(a, 6), variance: v === null ? null : fromScaled(v, 2) };
 }
-/** مادّةٌ يولدها record_purchase: تبدأ بكلفة سطرها (`case when v_cost > 0 then v_cost end`)، وبلا كلفةٍ مجهولة. */
-export function purchaseNewAvg(cost: number): number | null {
-  const c = posMicro(cost);
+/** مادّةٌ يولدها record_purchase: تبدأ بكلفة سطرها بعد نصيبه من الخصم (`case when v_ucost > 0 then v_ucost end`)، وبلا كلفةٍ مجهولة. */
+export function purchaseNewAvg(cost: number, share?: PurchaseShare | null): number | null {
+  const c = posMicro(cost, share);
   return c === null ? null : fromScaled(c, 6);
 }
 /** رأسُ فاتورة الشراء كما تجمعه record_purchase وupdate_purchase: `v_total numeric(14,2) := v_total + v_qty × v_cost` **سطراً
@@ -962,13 +987,14 @@ export function purchaseAdjustLocal() {
   const SKIP: AvgTouch = { skip: true, s0: 0n, a0: null, vo: 0n, vn: 0n, cl: null };
   return {
     /** أوّلُ لمسٍ بسطرٍ قديم — قبل عكسه: vo = Σ سطورِ المادّة القديمة **كلِّها** بالفاتورة. */
-    touchOld(p: Product | undefined, productId: string, oldLines: readonly { qty?: number | null; purchase_price?: number | null }[]): void {
+    touchOld(p: Product | undefined, productId: string, oldLines: readonly { qty?: number | null; purchase_price?: number | null }[], share?: PurchaseShare | null): void {
       if (m.has(productId)) return;
       if (!p || p.farm_id) { m.set(productId, SKIP); return; }
       const a0 = avgBase(p);
       let vo = 0n;
       for (const l of oldLines) {
-        const c = posMicro(l.purchase_price) ?? a0;                 // sum يتخطّى qty × null
+        // 0260: السطرُ القديم بنسبة خصم فاتورته كما حُفظ، والصفرُ (مجّانيٌّ أو أكله الخصمُ كلَّه) بالأساس — كما استُلم.
+        const c = posMicro(l.purchase_price, share) ?? a0;          // sum يتخطّى qty × null
         if (c !== null) vo += roundScaled(l.qty ?? 0, 3) * c;
       }
       m.set(productId, { skip: false, s0: milliOf(p.stock), a0, vo, vn: 0n, cl: null });
@@ -979,15 +1005,15 @@ export function purchaseAdjustLocal() {
       m.set(p.id, p.farm_id ? SKIP : { skip: false, s0: milliOf(p.stock), a0: avgBase(p), vo: 0n, vn: 0n, cl: null });
     },
     /** مادّةٌ وُلدت بهذا التعديل: سطرُها أوّلُ لمسها — رصيدُها وكلفتُه أساسٌ لما بعده، وقيمتُه لا تُجمع. */
-    born(p: Product, cost: number): void {
-      const c = posMicro(cost);
+    born(p: Product, cost: number, share?: PurchaseShare | null): void {
+      const c = posMicro(cost, share);
       m.set(p.id, { skip: false, s0: milliOf(p.stock), a0: c, vo: 0n, vn: 0n, cl: c });
     },
     /** قيمةُ سطرٍ جديد لمادّةٍ قائمة (والصفريُّ بـa0، ثمّ صفر) وآخرُ كلفةٍ موجبة. */
-    line(productId: string, qty: number, cost: number): void {
+    line(productId: string, qty: number, cost: number, share?: PurchaseShare | null): void {
       const e = m.get(productId);
       if (!e || e.skip) return;
-      const c = posMicro(cost);
+      const c = posMicro(cost, share);
       e.vn += roundScaled(qty, 3) * (c ?? e.a0 ?? 0n);
       if (c !== null) e.cl = c;
     },

@@ -36,13 +36,15 @@ const parse = (iso: string | null | undefined) => {
   return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
 };
 
-export function ExpiryPicker({ value, onChange, suggest, compact, id }: {
+export function ExpiryPicker({ value, onChange, suggest, compact, cell, id }: {
   value: string;
   onChange: (iso: string) => void;
   /** تاريخٌ يُقترح بضغطة (آخرُ تاريخٍ معروفٍ للمادة، إن لم يفُت). */
   suggest?: string | null;
   /** زرٌّ أصغر لسطورٍ ضيّقة (السطرُ السريع بالشراء). */
   compact?: boolean;
+  /** خانةُ جدول (جدولُ فاتورة الشراء): يملأ الخانةَ بلا إطارٍ ولا خلفية، وحلقةُ التركيز داخلها كبقية خاناته. */
+  cell?: boolean;
   id?: string;
 }) {
   const { t, i18n } = useTranslation();
@@ -116,10 +118,14 @@ export function ExpiryPicker({ value, onChange, suggest, compact, id }: {
     <div className="relative" ref={box}>
       <button type="button" id={id} data-expiry-picker aria-expanded={open}
         onClick={() => { playTap(); setOpen((o) => !o); }}
-        className={cn("input flex items-center gap-1.5 text-start", compact ? "h-10 w-36 px-2 text-sm" : "w-full", tone)}>
+        className={cn(cell
+          /* تحديدُه حلقةٌ داخل الخانة كبقية خانات الجدول — `pg-xp` بأنماط الجدول (purchaseGrid.css، تصل مع قطعته الكسولة). */
+          ? "pg-xp flex h-10 w-full items-center gap-1.5 bg-transparent px-2.5 text-start text-sm outline-none transition"
+          : cn("input flex items-center gap-1.5 text-start", compact ? "h-10 w-36 px-2 text-sm" : "w-full"), tone)}>
         <CalendarClock size={14} className="shrink-0 opacity-70" />
         <span className={cn("min-w-0 flex-1 truncate font-semibold", !value && "font-normal text-ink-subtle")}>
-          {value ? label(value) : t("xp.pick", "ينتهي…")}
+          {/* بخانة الجدول الفارغُ «—» كبقية خاناته — رأسُ العمود يقول «ينتهي» مرّةً لا بكلّ صفّ. */}
+          {value ? label(value) : cell ? "—" : t("xp.pick", "ينتهي…")}
         </span>
         <ChevronDown size={14} className="shrink-0 opacity-60" />
       </button>

@@ -3,7 +3,8 @@
  *
  * الجهازُ يقول كلفةَ سطر المادّة قبل البيعة (معاينةُ الكاشير، وunit_cost الذي يرسله) بـproductLineCostCents
  * (src/lib/consumption.ts)، والخادمُ يكتبها بـ_product_line_cost. والشاشاتُ تحسب المتوسّطَ بـsrc/lib/avgCost.ts،
- * والخادمُ بـ_avg_base/_avg_receive/_avg_variance/_avg_adjust/_avg_merge. فرقُ فلسٍ بينهما ربحٌ يقوله الجهاز
+ * والخادمُ بـ_avg_base/_avg_receive/_avg_variance/_avg_adjust/_avg_merge، ونصيبَ سطر الشراء من خصم الشركة بـ
+ * _purchase_unit_cost (0260). فرقُ فلسٍ بينهما ربحٌ يقوله الجهاز
  * غيرَ الذي يكتبه الخادم. الطرفان من مصدرهما: الواجهةُ تُحزَم من ملفّي src/lib نفسيهما (esbuild — لا نسخة:
  * فحصٌ على نسخةٍ يفحص النسخة)، والقاعدةُ بدوالّها الحيّة بعد الموجة.
  *
@@ -61,7 +62,7 @@ function gen() {
   const A = [null, "-1", "0", "0.000001", "1", "999.999999", "1000", "1147.619048", "25000"];
   const Q = ["-1", "0", "0.001", "1", "5", "10"];
   const C = ["-1", "0", "0.000001", "0.5", "700", "1000", "1300"];
-  const base = [], receive = [], adjust = [], merge = [];
+  const base = [], receive = [], adjust = [], merge = [], unit = [];
   for (const a of [null, "-10", "-0.000001", "0", "0.000001", "1000", "1171.428572"])
     for (const pp of [null, "-10", "0", "0.01", "1000"]) base.push({ a, pp });
   for (const s of S) for (const a of A) for (const q of Q) for (const c of C) receive.push({ s, a, q, c });
@@ -70,11 +71,20 @@ function gen() {
       for (const s1 of ["-1", "0", "13", "21"]) for (const cl of [null, "1000", "1250.5"]) adjust.push({ s0, a0, vo, vn, s1, cl });
   const SM = ["-5", "-1", "0", "0.001", "1", "5", "10", "30"], AM = [null, "-1", "0", "0.000001", "1000", "1100", "2000"];
   for (const s1 of SM) for (const a1 of AM) for (const s2 of SM) for (const a2 of AM) merge.push({ s1, a1, s2, a2 });
+  // نصيبُ السطر (0260): كلفةٌ بستّ منازل، وصافٍ ومجموعٌ بالفلوس — بلا خصم، وبخصمٍ يأكل كلَّ شيء، وبصافٍ سالبٍ أو غائب.
+  const UC = [null, "-1", "0", "0.000001", "0.01", "1", "333.33", "1000", "1171.428572", "99999999.99"];
+  const UN = [null, "-100", "0", "0.01", "1", "999.99", "18000", "19999.99", "20000", "25000"];
+  const UG = [null, "-5", "0", "0.01", "1", "3", "1000", "20000", "99999999999.99"];
+  for (const c of UC) for (const net of UN) for (const gross of UG) unit.push({ c, net, gross });
   // ── العيّنة ──
   for (let i = 0; i < 500; i++) base.push({ a: c6(), pp: pick([null, D(int(-100_000, 100_000_000), 2), "0"]) });
   for (let i = 0; i < 2500; i++) receive.push({ s: q3(), a: c6(), q: q3(), c: c6nn() });
   for (let i = 0; i < 2500; i++) adjust.push({ s0: q3(), a0: c6(), vo: v9(), vn: v9(), s1: q3(), cl: c6() });
   for (let i = 0; i < 2500; i++) merge.push({ s1: q3(), a1: c6(), s2: q3(), a2: c6() });
+  for (let i = 0; i < 2500; i++) {
+    const g = int(1, 2_000_000_000), d = pick([0, int(0, g), int(0, Math.min(g, 500)), g, g + int(1, 1000)]);
+    unit.push({ c: c6(), net: D(g - d, 2), gross: D(g, 2) });
+  }
 
   // ── كلفةُ سطر المادّة: موادُّ بكلّ شكل، ولكلٍّ سطورٌ بكلّ شكل ──
   const products = [];
@@ -106,9 +116,9 @@ function gen() {
   // مادّةٌ مجهولة، ومادّةُ عيادةٍ أخرى (موجودةٌ هناك)، وسطرٌ بلا مادّة: كلُّها بكلفة الجهاز.
   const foreign = pid(products.length); products.push({ id: foreign, pp: "4000", avg: "4100", sub: true, upb: "10", farm: false, clinic: POTHER });
   for (const p of [...UNKNOWN, foreign, null]) LINES.forEach(([q, sq], k) => plc.push({ cl: PCL, p, q, sq, d: DEV[k % DEV.length] }));
-  [base, receive, adjust, merge, plc].forEach((t) => t.forEach((x, i) => { x.i = i; }));
+  [base, receive, adjust, merge, plc, unit].forEach((t) => t.forEach((x, i) => { x.i = i; }));
 
-  fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify({ base, receive, adjust, merge, plc }));
+  fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify({ base, receive, adjust, merge, plc, unit }));
 
   const q = (v) => (v == null ? "null" : `'${String(v).replace(/'/g, "''")}'`);
   const rows = products.map((p) => `(${q(p.id)}, ${q(p.clinic ?? PCL)}, ${q(`تطابق الكلفة ${p.id.slice(-5)}`)}, 1, ${p.pp}, ${p.avg ?? "null"}, `
@@ -134,12 +144,14 @@ function gen() {
     `           from jsonb_to_recordset(${J(merge, ["s1", "a1", "s2", "a2"])}) as x(i int, s1 numeric, a1 numeric, s2 numeric, a2 numeric)),`,
     `  'plc', (select json_agg(json_build_array(x.i, _product_line_cost(x.cl, x.p, x.q, x.sq, x.d)::text) order by x.i)`,
     `           from jsonb_to_recordset(${J(plc, ["cl", "p", "q", "sq", "d"])}) as x(i int, cl uuid, p uuid, q numeric, sq numeric, d numeric)),`,
+    `  'unit', (select json_agg(json_build_array(x.i, _purchase_unit_cost(x.c, x.net, x.gross)::text) order by x.i)`,
+    `           from jsonb_to_recordset(${J(unit, ["c", "net", "gross"])}) as x(i int, c numeric, net numeric, gross numeric)),`,
     `  'rows', (select json_object_agg(p.id, json_build_object('purchase_price', p.purchase_price, 'avg_cost', p.avg_cost, 'has_sub_unit', p.has_sub_unit,`,
     `                                  'units_per_box', p.units_per_box, 'pooled', p.pooled, 'farm_id', p.farm_id))`,
     `             from products p where p.clinic_id = ${q(PCL)})`,
     ")::text;",
   ].join("\n") + "\n");
-  console.log(`cost-parity gen: ${base.length} base، ${receive.length} receive، ${adjust.length} adjust، ${merge.length} merge، ${plc.length} سطر مادّة على ${products.length} مادّة`);
+  console.log(`cost-parity gen: ${base.length} base، ${receive.length} receive، ${adjust.length} adjust، ${merge.length} merge، ${unit.length} unit، ${plc.length} سطر مادّة على ${products.length} مادّة`);
 }
 
 /* ══ المقارنة ═════════════════════════════════════════════════════════════ */
@@ -176,9 +188,10 @@ async function check() {
     adjust: (x) => M.avgAdjust(mi(x.s0), mu(x.a0), M.toNano(x.vo), M.toNano(x.vn), mi(x.s1), mu(x.cl)),
     merge: (x) => M.avgMerge(mi(x.s1), mu(x.a1), mi(x.s2), mu(x.a2)),
     plc: (x) => M.productLineCostCents(x.p == null ? null : rowsById[x.p], mi(x.q), mi(x.sq), ce(x.d)),
+    unit: (x) => M.purchaseUnitCostU(mu(x.c), ce(x.net), ce(x.gross)),
   };
-  const server = { base: (r) => mu(r[1]), receive: (r) => mu(r[1]), variance: (r) => ce(r[2]), adjust: (r) => mu(r[1]), merge: (r) => mu(r[1]), plc: (r) => ce(r[1]) };
-  const table = { base: "base", receive: "receive", variance: "receive", adjust: "adjust", merge: "merge", plc: "plc" };
+  const server = { base: (r) => mu(r[1]), receive: (r) => mu(r[1]), variance: (r) => ce(r[2]), adjust: (r) => mu(r[1]), merge: (r) => mu(r[1]), plc: (r) => ce(r[1]), unit: (r) => mu(r[1]) };
+  const table = { base: "base", receive: "receive", variance: "receive", adjust: "adjust", merge: "merge", plc: "plc", unit: "unit" };
   const got = {};
   for (const k of Object.keys(table)) {
     const rs = act[table[k]];
@@ -202,6 +215,7 @@ async function check() {
   compare("adjust", mirror.adjust, "_avg_adjust = avgAdjust (تعديلُ فاتورة الشراء)");
   compare("merge", mirror.merge, "_avg_merge = avgMerge (الدمج)");
   compare("plc", mirror.plc, "_product_line_cost = productLineCostCents (سطرُ المادّة بالكاشير)");
+  compare("unit", mirror.unit, "_purchase_unit_cost = purchaseUnitCostU (نصيبُ سطر الشراء من خصم الشركة)");
 
   // ── القالبُ يقيس كلَّ فرع: عددُ الحالات بكلّ فرعٍ من فروع النصّ (الشروطُ نفسُها مكتوبةً بالإدخال) ──
   const n = (x) => (x == null ? null : Number(x));
@@ -224,10 +238,15 @@ async function check() {
     if (!p) tag("plc:device_unknown"); else if (p.farm_id) tag("plc:device_farm");
     else if (p.has_sub_unit && Number(p.units_per_box) > 0 && x.sq != null && Math.abs(Number(x.sq)) !== Math.abs(Number(x.q))) tag("plc:sub"); else tag("plc:box");
   }
+  for (const x of cases.unit) {
+    if (!pos(x.c) || !pos(x.gross) || x.net == null || !(n(x.net) < n(x.gross))) tag("unit:as_is");
+    else tag(n(x.net) <= 0 ? "unit:all_off" : "unit:share");
+  }
   const NEED = { "base:null": 10, "base:value": 10, "receive:keep_a": 200, "receive:unknown_a": 200, "receive:s_le_0": 200, "receive:weighted": 200,
     "variance:null": 200, "variance:value": 200, "adjust:s1_le_0": 100, "adjust:divide": 100, "adjust:c_last": 100,
     "merge:weighted": 100, "merge:no_weight": 50, "merge:a2": 100, "merge:a1": 100,
-    "plc:device_unknown": 40, "plc:device_farm": 100, "plc:sub": 300, "plc:box": 300 };
+    "plc:device_unknown": 40, "plc:device_farm": 100, "plc:sub": 300, "plc:box": 300,
+    "unit:as_is": 200, "unit:share": 500, "unit:all_off": 30 };
   const thin = Object.entries(NEED).filter(([k, v]) => (tally[k] ?? 0) < v).map(([k, v]) => `${k} ${tally[k] ?? 0} < ${v}`);
   if (thin.length) no("والقالبُ يقيس كلَّ فرع (حالاتٌ كافية بكلّ فرعٍ من النصّ)", thin.join("، "), "كلُّ فرعٍ فوق حدّه");
   else ok(`والقالبُ يقيس كلَّ فرع: ${Object.entries(tally).map(([k, v]) => `${k}=${v}`).join(" ")}`);
@@ -251,6 +270,12 @@ async function check() {
       const k = M.stockUnitCost(p), u = M.subUnitMilli(p), q = mi(x.q), sq = mi(x.sq);
       if (u !== null && sq !== null && (sq < 0n ? -sq : sq) !== (q < 0n ? -q : q)) return k / (u * 10n); return M.roundDiv(k, 10_000n); }],
     "مادّةُ الحقل بكلفة الخادم": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; return !p ? ce(x.d) : M.productLineCostCents({ ...p, farm_id: null }, mi(x.q), mi(x.sq), ce(x.d)); }],
+    "النصيبُ يُقطع ولا يُقرَّب": ["unit", (x) => { const c = mu(x.c), net = ce(x.net), g = ce(x.gross);
+      if (c === null || c <= 0n || g === null || g <= 0n || (net ?? g) >= g) return c; return (c * (net > 0n ? net : 0n)) / g; }],
+    "الصافي السالب لا يُقصّ": ["unit", (x) => { const c = mu(x.c), net = ce(x.net), g = ce(x.gross);
+      if (c === null || c <= 0n || g === null || g <= 0n || (net ?? g) >= g) return c; return M.roundDiv(c * net, g); }],
+    "الخصمُ يُحسب على المجموع (c × الخصم ÷ المجموع)": ["unit", (x) => { const c = mu(x.c), net = ce(x.net), g = ce(x.gross);
+      if (c === null || c <= 0n || g === null || g <= 0n || (net ?? g) >= g) return c; return M.roundDiv(c * (g - (net > 0n ? net : 0n)), g); }],
     "الوحدةُ الصغيرة تُقارن بالإشارة": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; if (!p || p.farm_id) return ce(x.d);
       const k = M.stockUnitCost(p), u = M.subUnitMilli(p), q = mi(x.q), sq = mi(x.sq);
       if (u !== null && sq !== null && sq !== q) return M.roundDiv(k, u * 10n); return M.roundDiv(k, 10_000n); }],

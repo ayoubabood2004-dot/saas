@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -526,12 +526,12 @@ $P -f "$MIG/0193_poultry_withdrawal.sql" >/dev/null 2>&1
 # (`_drift_assert`) يرفض بحقٍّ أن ينزل فوق جسمٍ غيرِ مصدره. و0197 لا تُعاد كاملةً (تُرجع طيَّ الشركات
 # 0198/0201/0203 لنصٍّ أقدم): يُنزَّل جسمُ الدالّة وحده مقتطعاً من ملفّها حرفاً، ثم 0253 فوقه، ثم 0255 لأن
 # 0253 تعيد الشراءَ (record/update_purchase) لنصّها وآخرُهما 0255. من يعيد تعريفَ restore_product يضيف ملفَّه هنا
-# (0259: الاسترجاعُ والترتيبُ والطيّ يحملون التعبئة).
+# (0259: الاسترجاعُ والترتيبُ والطيّ يحملون التعبئة؛ و0260: الشراءُ بخصم الشركة — 0253 و0255 تُرجعانه لنصّهما).
 RP0197=$(sed -n '/^create or replace function public\.restore_product(p_id uuid)/,/^end \$function\$;/p' "$MIG/0197_company_merge_safe.sql")
 if [ -n "$RP0197" ]; then
   out=$($P -c "$RP0197" 2>&1) || { echo "$out" | tail -3; echo "   ✗ جسمُ 0197 لـrestore_product ما نزل"; fail=1; }
 else echo "   ✗ ما لكيت restore_product بملفّ 0197"; fail=1; fi
-for f in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs; do
+for f in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount; do
   out=$($P -f "$MIG/$f.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f ما انعادت بعد جسم 0197"; fail=1; }
 done
 
@@ -10115,8 +10115,9 @@ out=$($P -c "$RS2552" 2>&1) || { echo "$out" | tail -3; echo "   ✗ جسمُ 01
 chk "R2w: فكُّ طيّ الشركة والصنف بجسمَي مصدرهما (0203، 0197) ⇒ فحصُ التوصيل يسمّيهما «lacks -- +0253»، ووحدهما" \
     "select coalesce(string_agg(problem, ';' order by problem collate \"C\"), '') from verify_consumption_wiring()" \
     "public.restore_company(uuid):lacks--+0253;public.restore_company_section(uuid):lacks--+0253"
-# و0259 بعدهما: تعيد الاسترجاعَ والترتيب (0253 تُرجعهما لنصّها) — وإلا فحصت الأقسامُ بعدها جسماً ليس بالإنتاج.
-for f2552 in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs; do
+# و0259 بعدهما: تعيد الاسترجاعَ والترتيب (0253 تُرجعهما لنصّها)، و0260 الشراءَ بخصمه (0253 و0255 تُرجعانه) — وإلا
+# فحصت الأقسامُ بعدها جسماً ليس بالإنتاج.
+for f2552 in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount; do
   out=$($P -f "$MIG/$f2552.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f2552 ما انعادت بعد جسمَي المصدر"; fail=1; }
 done
 chk "  وإعادةُ 0253 ثمّ 0255 ترجعه صفراً، والجسمان بعلامتهما" \
@@ -10449,6 +10450,202 @@ chk "  والتوأمُ ذو التعبئة باقٍ بكراتينه (طيُّ�
 chk "والطيُّ والفكُّ والترتيبُ لا تُنادى بلا هويّة" \
     "select (has_function_privilege('anon', 'public.merge_products(uuid,uuid)', 'execute') or has_function_privilege('anon', 'public.restore_product(uuid)', 'execute')
              or has_function_privilege('anon', 'public.inventory_tidy_uncat()', 'execute'))::text" "false"
+
+# ── 0260: خصمُ الشركة على فاتورة الشراء ─────────────────────────────────────────────────────────────
+# total صافٍ (ما يُدفع ويُدان)، والمجموعُ قبله total + discount، وكلُّ سطرٍ يحمل نصيبَه بكلفة المتوسّط (_purchase_unit_cost)
+# والمكتوبُ (purchase_items، purchase_price) كما هو. عيادةٌ للخصم (K6)، وعيادتان للموازنة بلا خصم (K6B بنصّ 0255، K6C بنصّنا)
+# — صفوفُها كلُّها من هذا القسم (البادئة a2600000-…، والمراجع a260-…). الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).
+echo "▸ 0260: خصمُ الشركة — total صافٍ، وكلُّ سطرٍ يحمل نصيبَه من الخصم بكلفة المتوسّط"
+# الأقسامُ قبلنا تعيد 0255 وحدها (فتُرجع الشراءَ لنصّها بلا خصم) والمنحُ الشامل (0159) فتح الأدواتِ الداخلية للداخلين —
+# فالهجرةُ تُعاد أوّلاً: آخرُ جسمٍ لكلّ دالّة وصلاحياتُها = حالُ الإنتاج.
+_m260() { local out; out=$($P -f "$MIG/0260_purchase_discount.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0260 ما انعادت"; fail=1; }; }
+_m260
+out=$($P -c "update _dvtest_flags set admin = false; delete from platform_sessions; delete from staff_elevations;" 2>&1) || { echo "$out" | tail -3; fail=1; }
+chk "قبل القسم: الشراءُ وتعديلُه وفحصُ التوصيل بعلامة 0260" \
+    "select count(*)::text from pg_proc where oid in (to_regprocedure('public.record_purchase(jsonb,jsonb)'), to_regprocedure('public.update_purchase(uuid,jsonb,jsonb)'), to_regprocedure('public.verify_consumption_wiring()')) and position('-- +0260' in prosrc) > 0" "3"
+K6=a2600000-0000-4000-8000-00000000c260
+K6B=a2600000-0000-4000-8000-00000000c26b
+K6C=a2600000-0000-4000-8000-00000000c26c
+Q6=a2600000-0000-4000-8000-0000000000
+v6()  { echo "_v255('$1', \$q\$$2\$q\$)"; }
+pu6() { echo "(select id from purchases where clinic_id = '${2:-$K6}' and reference = '$1')"; }
+# رأسُ الفاتورة: الإجماليّ|الخصم|المدفوع|الحالة.
+hd6() { echo "coalesce((select total::text || '|' || discount::text || '|' || coalesce(amount_paid::text, 'null') || '|' || status from purchases where clinic_id = '${2:-$K6}' and reference = '$1'), 'none')"; }
+# المادّة: الرصيد|المتوسّط|سعرُ الشراء — بمعرّفها أو باسمها بالعيادة.
+pr6() { echo "coalesce((select stock::text || '|' || coalesce(avg_cost::text, 'null') || '|' || coalesce(purchase_price::text, 'null') from products where id = '$1'), 'gone')"; }
+pn6() { echo "coalesce((select stock::text || '|' || coalesce(avg_cost::text, 'null') || '|' || coalesce(purchase_price::text, 'null') from products where clinic_id = '${2:-$K6}' and name = '$1'), 'gone')"; }
+pl6() { local id=null; [ -n "$1" ] && id="'$1'"; echo "jsonb_build_object('product_id', $id, 'name', '$2', 'qty', $3, 'purchase_price', $4)"; }
+rp6() { echo "select (record_purchase(jsonb_build_array($2), jsonb_build_object('reference', '$1')${3:+ || $3})).reference"; }
+up6() { echo "select (update_purchase($(pu6 "$1" "${4:-$K6}"), jsonb_build_array($2), ${3:-'{}'::jsonb})).reference"; }
+# الرصيدُ = مجموعُ الوجبات لموادّ القسم (0217)، ودفترُ المستهلكات (0252) سليمٌ لها.
+LT6="select count(*)::text from products p where (p.id::text like 'a2600000-%' or p.clinic_id in ('$K6', '$K6B', '$K6C')) and not coalesce(p.pooled, false) and p.farm_id is null and greatest(coalesce(p.stock, 0), 0) <> (select coalesce(sum(qty), 0) from product_lots l where l.product_id = p.id)"
+VC6="select coalesce(string_agg(v.\"check\" || '@' || coalesce(v.product_id::text, '-'), ';' order by v.\"check\" collate \"C\"), 'clean') from verify_consumption() v where v.product_id in (select id from products where clinic_id in ('$K6', '$K6B', '$K6C'))"
+$P -c "create or replace function _su260(q text) returns text language plpgsql as \$fn\$
+       begin execute q; return 'ok'; exception when others then return sqlstate; end \$fn\$;" >/dev/null
+
+# ── ٠) البذرة ──
+out=$($P -c "insert into auth.users(id) values ('$K6'), ('$K6B'), ('$K6C') on conflict do nothing;
+       insert into companies (id, clinic_id, name) values ('${Q6}e0', '$K6', 'شركة الخصم') on conflict do nothing;
+       insert into products (id, clinic_id, name, stock, purchase_price, avg_cost) values
+         ('${Q6}01', '$K6', 'دواء قائم', 5, 1500, 1500)
+       on conflict do nothing;" 2>&1) || { echo "$out" | tail -3; echo "   ✗ بذرةُ 0260 ما نزلت"; fail=1; }
+
+# ── ١) العمودُ والدالّةُ والصلاحيات ──
+chk "العمودُ discount رقمٌ غيرُ فارغ افتراضيُّه صفر، وقيدُه مرّةً واحدة ويرفض السالب" \
+    "select (select is_nullable || ':' || column_default from information_schema.columns where table_schema = 'public' and table_name = 'purchases' and column_name = 'discount')
+            || '|' || (select count(*) from pg_constraint where conrelid = 'public.purchases'::regclass and conname = 'purchases_discount_ok')::text
+            || '|' || _su260('insert into purchases (clinic_id, reference, discount) values (''$K6'', ''a260-neg'', -1)')" "NO:0|1|23514"
+chk "_purchase_unit_cost: c × صافٍ ÷ مجموع بستّ منازل (النصفُ بعيداً عن الصفر)؛ وبلا خصمٍ أو بلا سعرٍ أو بمجموعٍ صفر كما هي" \
+    "select _purchase_unit_cost(1000, 18000, 20000)::text || '|' || _purchase_unit_cost(2, 1, 3)::text || '|' || _purchase_unit_cost(1, 1, 2000000)::text
+            || '|' || _purchase_unit_cost(1000, 20000, 20000)::text || '|' || _purchase_unit_cost(1000, 25000, 20000)::text || '|' || _purchase_unit_cost(0, 18000, 20000)::text
+            || '|' || coalesce(_purchase_unit_cost(null, 18000, 20000)::text, 'null') || '|' || _purchase_unit_cost(1000, 18000, 0)::text
+            || '|' || _purchase_unit_cost(1000, null, 20000)::text || '|' || _purchase_unit_cost(1000, 0, 20000)::text" \
+    "900.000000|0.666667|0.000001|1000|1000|0|null|1000|1000|0.000000"
+chk "  داخليّةٌ (لا anon ولا authenticated)، والشراءُ وتعديلُه للداخلين لا لـanon" \
+    "select has_function_privilege('authenticated', 'public._purchase_unit_cost(numeric,numeric,numeric)', 'execute')::text || '|' || has_function_privilege('anon', 'public._purchase_unit_cost(numeric,numeric,numeric)', 'execute')::text
+            || '|' || has_function_privilege('authenticated', 'public.record_purchase(jsonb,jsonb)', 'execute')::text || '|' || has_function_privilege('anon', 'public.record_purchase(jsonb,jsonb)', 'execute')::text
+            || '|' || has_function_privilege('authenticated', 'public.update_purchase(uuid,jsonb,jsonb)', 'execute')::text || '|' || has_function_privilege('anon', 'public.update_purchase(uuid,jsonb,jsonb)', 'execute')::text" \
+    "false|false|true|false|true|false"
+chk "  وسؤالُ الواجهة (purchase_discount_ready) للداخلين لا لـanon، ويقول «نعم» بحال الإنتاج" \
+    "select has_function_privilege('anon', 'public.purchase_discount_ready()', 'execute')::text || '|' || $(v6 $K6 "select purchase_discount_ready()::text")" "false|true"
+
+# ── ٢) الاستلامُ بخصم: ٢٠٬٠٠٠ − ٢٬٠٠٠ = ١٨٬٠٠٠ (٩٠٪ لكلّ سطر) ──
+# مادّةٌ جديدة ١٠ × ١٠٠٠ (كلفتُها ٩٠٠)، وقائمةٌ ٥ × ٢٠٠٠ (كلفتُها ١٨٠٠) على ٥ بـ١٥٠٠ ⇒ (٧٥٠٠ + ٩٠٠٠) ÷ ١٠ = ١٦٥٠.
+chk "الاستلامُ بخصمٍ من الشركة يُقبل" \
+    "select $(v6 $K6 "$(rp6 a260-p1 "$(pl6 '' 'مادة بخصم' 10 1000), $(pl6 ${Q6}01 'دواء قائم' 5 2000)" "jsonb_build_object('company_id', '${Q6}e0', 'discount', 2000, 'amount_paid', 8000)")")" "a260-p1"
+chk "  الرأسُ صافٍ: الإجماليّ ١٨٬٠٠٠ والخصمُ ٢٬٠٠٠، والمدفوعُ ٨٬٠٠٠ جزئيٌّ على الصافي" "select $(hd6 a260-p1)" "18000.00|2000.00|8000.00|partial"
+chk "  والسطورُ بسعرها المكتوب (١٠٠٠، ٢٠٠٠) — الخصمُ برأس الفاتورة لا بسطورها" \
+    "select string_agg(name || ':' || qty::text || ':' || purchase_price::text, ',' order by name collate \"C\") from purchase_items where purchase_id = $(pu6 a260-p1)" \
+    "دواءقائم:5.000:2000.00,مادةبخصم:10.000:1000.00"
+chk "  والجديدةُ بكلفة ٩٠٠ وسعرُ شرائها ١٠٠٠ (آخرُ سعرٍ كما كُتب)، ومصدرُ الكلفة (stock_unit_cost) ٩٠٠" \
+    "select $(pn6 'مادة بخصم') || '|' || (select stock_unit_cost(p)::text from products p where clinic_id = '$K6' and name = 'مادة بخصم')" "10.000|900.000000|1000.00|900.000000"
+chk "  والقائمةُ ١٦٥٠ بالمتوسّط المتحرّك على كلفتها بعد الخصم (١٨٠٠)" "select $(pr6 ${Q6}01)" "10.000|1650.000000|2000.00"
+
+# ── ٣) دفترُ الشركة على الصافي: الدَّينُ ١٠٬٠٠٠ والتسديدُ يُكمله ──
+chk "دفترُ الشركة يقرأ الصافي: تسديدُ ١٠٬٠٠٠ يجعلها مدفوعة" \
+    "select $(v6 $K6 "select (company_pay('${Q6}e0', 10000, 'cash', current_date) is not null)::text")" "true"
+chk "  (المدفوعُ ١٨٬٠٠٠ = الإجماليّ، والخصمُ باقٍ)" "select $(hd6 a260-p1)" "18000.00|2000.00|18000.00|paid"
+
+# ── ٤) التعديل: القديمُ يُعكس بنسبة خصمه كما حُفظ، والجديدُ بنسبته ──
+L6="$(pl6 '' 'مادة بخصم' 10 1000), $(pl6 ${Q6}01 'دواء قائم' 5 2000)"
+chk "تعديلٌ يلغي الخصم (discount: 0) يُقبل" "select $(v6 $K6 "$(up6 a260-p1 "$L6" "jsonb_build_object('discount', 0)")")" "a260-p1"
+chk "  الرأسُ: ٢٠٬٠٠٠ بلا خصم، والمدفوعُ ١٨٬٠٠٠ كما كان فجزئيّ" "select $(hd6 a260-p1)" "20000.00|0.00|18000.00|partial"
+chk "  والمتوسّطان بلا خصم: الجديدةُ ١٠٠٠، والقائمةُ (١٦٥٠×١٠ − ٥×١٨٠٠ + ٥×٢٠٠٠) ÷ ١٠ = ١٧٥٠" \
+    "select $(pn6 'مادة بخصم') || '#' || $(pr6 ${Q6}01)" "10.000|1000.000000|1000.00#10.000|1750.000000|2000.00"
+chk "وإرجاعُ الخصم نفسِه يُقبل" "select $(v6 $K6 "$(up6 a260-p1 "$L6" "jsonb_build_object('discount', 2000)")")" "a260-p1"
+chk "  الرأسُ ١٨٬٠٠٠ بخصم ٢٬٠٠٠ فمدفوعة" "select $(hd6 a260-p1)" "18000.00|2000.00|18000.00|paid"
+chk "  والمتوسّطان رجعا بالضبط (٩٠٠، ١٦٥٠) — العكسُ ما أدخله الاستلام" "select $(pn6 'مادة بخصم') || '#' || $(pr6 ${Q6}01)" "10.000|900.000000|1000.00#10.000|1650.000000|2000.00"
+chk "جهازٌ بلا مفتاح discount (نسخةٌ قديمة) يعدّل الملاحظة" "select $(v6 $K6 "$(up6 a260-p1 "$L6" "jsonb_build_object('notes', 'من جهازٍ قديم')")")" "a260-p1"
+chk "  فيبقى الخصمُ كما حُفظ (والملاحظةُ كُتبت — التعديلُ وقع فعلاً)" "select $(hd6 a260-p1) || '|' || (select notes from purchases where id = $(pu6 a260-p1))" "18000.00|2000.00|18000.00|paid|منجهازٍقديم"
+chk "  والمتوسّطان كما هما (نسبةٌ واحدة للعكس والبناء)" "select $(pn6 'مادة بخصم') || '#' || $(pr6 ${Q6}01)" "10.000|900.000000|1000.00#10.000|1650.000000|2000.00"
+# خصمٌ أكبرُ من المجموع الجديد يُقصّ عليه: الصافي صفر، والسطرُ «مجّانيّ» فيُستلم بالأساس كما يستلم _avg_receive سطرَ الصفر.
+chk "خصمٌ أكبرُ من المجموع (٥٠٠٠ على ١٠٠) يُقبل" "select $(v6 $K6 "$(up6 a260-p1 "$(pl6 '' 'مادة بخصم' 1 100)" "jsonb_build_object('discount', 5000)")")" "a260-p1"
+chk "  ويُقصّ عليه: الصافي صفر والمدفوعُ صفر" "select $(hd6 a260-p1)" "0.00|100.00|0.00|paid"
+chk "  والقائمةُ شيلت فرجعت لما قبل الفاتورة (٥ بـ١٥٠٠)، والجديدةُ سطرُها كلُّه خصمٌ فتبقى بأساسها (٩٠٠)" \
+    "select $(pr6 ${Q6}01) || '#' || $(pn6 'مادة بخصم')" "5.000|1500.000000|2000.00#1.000|900.000000|100.00"
+# والعودةُ منه: السطرُ الذي أكله الخصمُ يُعكس بأساسه (كما استلمه) لا بصفر — وإلا صار المتوسّطُ (٩٠٠ − ٠ + ٩٠٠٠) ÷ ١٠ = ٩٩٠.
+chk "والعودةُ من خصمٍ أكل السطرَ كلَّه تُقبل" "select $(v6 $K6 "$(up6 a260-p1 "$L6" "jsonb_build_object('discount', 2000)")")" "a260-p1"
+chk "  وتعكسه بأساسه لا بصفر: الجديدةُ ٩٠٠ والقائمةُ ١٦٥٠ كأوّل مرّة (والمدفوعُ صفرٌ كما قصّه التعديلُ قبلها)" \
+    "select $(hd6 a260-p1) || '#' || $(pn6 'مادة بخصم') || '#' || $(pr6 ${Q6}01)" "18000.00|2000.00|0.00|unpaid#10.000|900.000000|1000.00#10.000|1650.000000|2000.00"
+
+# ── ٥) المدخلُ يُنظَّف: السالبُ والفارغُ صفر، والأكبرُ يُقصّ، والمدفوعُ على الصافي ──
+chk "خصمٌ سالب، وفارغ، وأكبرُ من المجموع، ومدفوعٌ أكبرُ من الصافي — تُقبل" \
+    "select $(v6 $K6 "$(rp6 a260-n1 "$(pl6 '' 'مدخل ١' 2 250)" "jsonb_build_object('discount', -50)")")
+            || '#' || $(v6 $K6 "$(rp6 a260-n2 "$(pl6 '' 'مدخل ٢' 2 250)" "jsonb_build_object('discount', '')")")
+            || '#' || $(v6 $K6 "$(rp6 a260-n3 "$(pl6 '' 'مدخل ٣' 2 250)" "jsonb_build_object('discount', 99999)")")
+            || '#' || $(v6 $K6 "$(rp6 a260-n4 "$(pl6 '' 'مدخل ٤' 4 250)" "jsonb_build_object('discount', 100, 'amount_paid', 950)")")" \
+    "a260-n1#a260-n2#a260-n3#a260-n4"
+chk "  السالبُ ⇒ صفر، والفارغُ ⇒ صفر، والأكبرُ ⇒ المجموعُ كلُّه (والصافي صفرٌ مدفوع)، والمدفوعُ ⇒ يُقصّ على الصافي" \
+    "select $(hd6 a260-n1) || '#' || $(hd6 a260-n2) || '#' || $(hd6 a260-n3) || '#' || $(hd6 a260-n4)" \
+    "500.00|0.00|500.00|paid#500.00|0.00|500.00|paid#0.00|500.00|0.00|paid#900.00|100.00|900.00|paid"
+# ومجموعٌ ≤ صفر (سطرٌ بسعرٍ سالب — كان يُقبل قبلنا) بلا خصم: القصُّ عليه يكتب خصماً سالباً فيرفضه القيدُ ويسقط الشراء.
+chk "مجموعٌ سالب مع خصم: الاستلامُ وتعديلُه يُقبلان كما قبلنا (لا يرفضهما القيد)" \
+    "select $(v6 $K6 "$(rp6 a260-z1 "$(pl6 '' 'مرتجع للشركة' 1 -100)" "jsonb_build_object('discount', 50)")")" "a260-z1"
+chk "  (التعديل بخصمٍ صريح)" "select $(v6 $K6 "$(up6 a260-z1 "$(pl6 '' 'مرتجع للشركة' 2 -100)" "jsonb_build_object('discount', 30)")")" "a260-z1"
+chk "  بلا خصم: الإجماليُّ المجموعُ نفسُه (−٢٠٠) والخصمُ صفر (والمدفوعُ يحصره التعديلُ بصفر كما قبلنا)" "select $(hd6 a260-z1)" "-200.00|0.00|0.00|paid"
+# بالفلس: ٣ × ٣٣٣٫٣٣ + ١ × ٠٫٠١ = ١٠٠٠، وخصمُ فلس ⇒ ٣٣٣٫٣٣ × ٩٩٩٫٩٩ ÷ ١٠٠٠ = ٣٣٣٫٣٢٦٦٦٦٧ ⇒ ٣٣٣٫٣٢٦٦٦٧،
+# و٠٫٠١ × ٩٩٩٫٩٩ ÷ ١٠٠٠ = ٠٫٠٠٩٩٩٩٩ ⇒ ٠٫٠١٠٠٠٠ (النصفُ وما فوقه للأعلى).
+chk "خصمُ فلسٍ على ألف يُقبل" \
+    "select $(v6 $K6 "$(rp6 a260-f1 "$(pl6 '' 'كسر ١' 3 333.33), $(pl6 '' 'كسر ٢' 1 0.01)" "jsonb_build_object('discount', 0.01)")")" "a260-f1"
+chk "  والنصيبُ بستّ منازل (٣٣٣٫٣٢٦٦٦٧، ٠٫٠١٠٠٠٠)، والصافي ٩٩٩٫٩٩" \
+    "select $(hd6 a260-f1) || '#' || $(pn6 'كسر ١') || '#' || $(pn6 'كسر ٢')" \
+    "999.99|0.01|999.99|paid#3.000|333.326667|333.33#1.000|0.010000|0.01"
+chk "الوجباتُ تطابق الأرصدة، ودفترُ المستهلكات سليمٌ لموادّ القسم" "select ($LT6) || '|' || ($VC6)" "0|clean"
+
+# ── ٦) بلا خصمٍ = نصُّ 0255 حرفاً بالأثر: السلسلةُ نفسُها بعيادتين — نصُّ 0255 (K6B) ونصُّنا (K6C) ──
+# على رصيدٍ موجب وسالب (فرقُ الكلفة)، وسطرٍ مجّانيّ، ومادّةٍ تولد بالاسم، وتعديلٍ يشيل ويضيف ويغيّر المدفوع، وفاتورةٍ غيرِ مدفوعة.
+seed6() { $P -c "insert into products (id, clinic_id, name, stock, purchase_price, avg_cost) values
+         ('${Q6}${2}1', '$1', 'موازنة موجب', 3, 700, 700),
+         ('${Q6}${2}2', '$1', 'موازنة سالب', -2, 500, 500),
+         ('${Q6}${2}3', '$1', 'موازنة بلا متوسط', 4, 300, null)
+       on conflict do nothing;" >/dev/null; }
+ops6() { # العيادة، بادئةُ المعرّف ⇒ مراجعُ الخطوات
+  echo "$(v6 $1 "$(rp6 a260-q1 "$(pl6 ${Q6}${2}1 'موازنة موجب' 4 900), $(pl6 '' 'موازنة جديدة' 6 250), $(pl6 ${Q6}${2}2 'موازنة سالب' 5 600), $(pl6 ${Q6}${2}1 'موازنة موجب' 2 0)")")
+        || '#' || $(v6 $1 "$(up6 a260-q1 "$(pl6 ${Q6}${2}1 'موازنة موجب' 3 950), $(pl6 '' 'موازنة جديدة' 6 260), $(pl6 '' 'موازنة ثانية' 2 0), $(pl6 ${Q6}${2}3 'موازنة بلا متوسط' 1 410)" "jsonb_build_object('amount_paid', 1000)" $1)")
+        || '#' || $(v6 $1 "$(rp6 a260-q2 "$(pl6 ${Q6}${2}3 'موازنة بلا متوسط' 2 333.33)" "jsonb_build_object('amount_paid', 0)")")"
+}
+# لقطةُ العيادة بلا معرّفاتها: الموادُّ والرؤوسُ والسطورُ والكشف (ما قبل وما بعد بلا الشركة والصنف — معرّفاتٌ بعيادتها).
+snap6() { echo "select md5(coalesce((select string_agg(name || ':' || stock::text || ':' || coalesce(avg_cost::text, '-') || ':' || purchase_price::text, ',' order by name collate \"C\") from products where clinic_id = '$1'), '')
+                || '#' || coalesce((select string_agg(reference || ':' || total::text || ':' || round(discount, 2)::text || ':' || coalesce(amount_paid::text, '-') || ':' || status || ':' || item_count::text, ',' order by reference) from purchases where clinic_id = '$1'), '')
+                || '#' || coalesce((select string_agg(p.reference || ':' || i.name || ':' || i.qty::text || ':' || i.purchase_price::text, ',' order by p.reference, i.name collate \"C\", i.qty) from purchase_items i join purchases p on p.id = i.purchase_id where i.clinic_id = '$1'), '')
+                || '#' || coalesce((select string_agg(p.reference || ':' || e.op || ':' || e.line_no::text || ':' || e.product_name || ':' || e.outcome || ':' || coalesce(e.matched_by, '-') || ':' || e.qty::text || ':' || coalesce(e.cost_variance::text, '-')
+                                                || ':' || coalesce((e.before - 'company_id' - 'section_id')::text, '-') || ':' || coalesce((e.after - 'company_id' - 'section_id')::text, '-'), ',' order by p.reference, e.op, e.line_no) from purchase_effects e join purchases p on p.id = e.purchase_id where e.clinic_id = '$1'), ''))"; }
+out=$($P -f "$MIG/0255_moving_average.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0255 ما انعادت للموازنة"; fail=1; }
+seed6 $K6B b
+chk "الموازنة: بنصّ 0255 (أُعيدت وحدها) — الاستلامُ والتعديلُ والاستلامُ الثاني تُقبل" "select $(ops6 $K6B b)" "a260-q1#a260-q1#a260-q2"
+# وهذا الحالُ نفسُه (0255 وحدها فوقنا: العمودُ باقٍ والجسمان بلا خصم) يُقال للواجهة — فتُخفي الخانةَ ولا يُبلع خصمٌ بصمت.
+chk "  وسؤالُ الواجهة يقولها: الجسمان بنصّ 0255 ⇒ purchase_discount_ready() «لا» (فتُخفى خانةُ الخصم)" "select $(v6 $K6B "select purchase_discount_ready()::text")" "false"
+B6=$($P -tAc "$(snap6 $K6B)")
+_m260
+seed6 $K6C c
+chk "  وبنصّنا (0260 فوقها، حارسُها يعرف نصَّ 0255 ببصمته) — السلسلةُ نفسُها تُقبل، والسؤالُ رجع «نعم»" "select $(ops6 $K6C c) || '#' || $(v6 $K6C "select purchase_discount_ready()::text")" "a260-q1#a260-q1#a260-q2#true"
+chk "  والأثرُ واحدٌ حرفاً: الموادُّ والرؤوسُ والسطورُ والكشف (والخصمُ صفرٌ بالعيادتين)" "select (($(snap6 $K6C)) = '$B6')::text || '|' || (select count(*) from purchases where clinic_id in ('$K6B', '$K6C') and discount <> 0)::text" "true|0"
+chk "  (ولم تمرّ بلا معنى: الفرقُ والمجّانيّ والمولودُ بالاسم وقعت)" \
+    "select (select count(*) from purchase_effects where clinic_id = '$K6C' and cost_variance is not null)::text || '|' || $(pn6 'موازنة جديدة' $K6C) || '|' || $(pn6 'موازنة ثانية' $K6C)" \
+    "1|6.000|260.000000|260.00|2.000|null|0.00"
+
+# ── ٧) فحصُ التوصيل: إعادةُ 0253 وحدها تُرجع الشراءَ والاسترجاعَ والترتيبَ لنصّها — ويقولها ──
+chk "فحصُ التوصيل صفرٌ بحال الإنتاج" "select count(*)::text from verify_consumption_wiring()" "0"
+out=$($P -f "$MIG/0253_stock_truth_fixes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0253 ما انعادت"; fail=1; }
+chk "إعادةُ 0253 وحدها تُرى: الشراءُ وتعديلُه بلا علامتي 0255 و0260، والاسترجاعُ والترتيبُ بلا علامة 0259، ولا شيءَ غيرُها" \
+    "select coalesce(string_agg(problem, ';' order by problem collate \"C\"), '') from verify_consumption_wiring()" \
+    "public.inventory_tidy_uncat():lacks--+0259;public.record_purchase(jsonb,jsonb):lacks--+0255;public.record_purchase(jsonb,jsonb):lacks--+0260;public.restore_product(uuid):lacks--+0259;public.update_purchase(uuid,jsonb,jsonb):lacks--+0255;public.update_purchase(uuid,jsonb,jsonb):lacks--+0260"
+for f260 in 0255_moving_average 0259_product_packs 0260_purchase_discount; do
+  out=$($P -f "$MIG/$f260.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f260 ما انعادت بعد 0253"; fail=1; }
+done
+chk "  وإعادةُ 0255 و0259 و0260 بعدها ترجعه صفراً" "select count(*)::text from verify_consumption_wiring()" "0"
+
+# ── ٨) الحارس: ما تبني عليه، وجسمٌ ليس نصَّ 0255 ولا بعلامتنا ⇒ تُرفض قبل أيّ تعريف ──
+o=$($P -c "alter function public._avg_receive(numeric, numeric, numeric, numeric) rename to _avg_receive_t260;" 2>&1) || { echo "$o" | tail -3; fail=1; }
+if o=$($P -f "$MIG/0260_purchase_discount.sql" 2>&1); then G6=applied; else G6=refused; fi
+case "$o" in *needs_0255*) GN6=1;; *) GN6=0;; esac
+o=$($P -c "alter function public._avg_receive_t260(numeric, numeric, numeric, numeric) rename to _avg_receive;" 2>&1) || { echo "$o" | tail -3; echo "   ✗ _avg_receive ما رجعت باسمها"; fail=1; }
+chk "بلا المتوسّط المتحرّك (0255) تُرفض بـneeds_0255، والدالّةُ رجعت باسمها" \
+    "select '$G6|$GN6|' || (to_regprocedure('public._avg_receive(numeric,numeric,numeric,numeric)') is not null)::text" "refused|1|true"
+UP0253=$(sed -n '/^create or replace function public\.update_purchase(/,/^end \$function\$;/p' "$MIG/0253_stock_truth_fixes.sql")
+R6=$($P -tAc "select md5(prosrc) from pg_proc where oid = to_regprocedure('public.record_purchase(jsonb,jsonb)')")
+out=$($P -c "$UP0253" 2>&1) || { echo "$out" | tail -3; echo "   ✗ جسمُ 0253 لـupdate_purchase ما نزل"; fail=1; }
+if o=$($P -f "$MIG/0260_purchase_discount.sql" 2>&1); then G6=applied; else G6=refused; fi
+case "$o" in *drift_body*) GD6=1;; *) GD6=0;; esac
+case "$o" in *update_purchase*) GU6=1;; *) GU6=0;; esac
+chk "تعديلُ الشراء بجسمٍ غيرِ نصّ 0255 (نصُّ 0253) ⇒ 0260 تُرفض بـdrift_body وتسمّيه" "select '$G6|$GD6|$GU6'" "refused|1|1"
+chk "  ولا تكتب شيئاً: الاستلامُ كما كان، والتعديلُ الغريبُ باقٍ للمطوّر يقارنه" \
+    "select ((select md5(prosrc) from pg_proc where oid = to_regprocedure('public.record_purchase(jsonb,jsonb)')) = '$R6')::text
+            || '|' || (select (position('-- +0260' in prosrc) = 0 and position('-- +0253' in prosrc) > 0)::text from pg_proc where oid = to_regprocedure('public.update_purchase(uuid,jsonb,jsonb)'))" "true|true"
+for f260 in 0255_moving_average 0260_purchase_discount; do
+  out=$($P -f "$MIG/$f260.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f260 ما انعادت بعد جسم 0253"; fail=1; }
+done
+chk "  وإعادةُ 0255 ثمّ 0260 ترجعه: الجسمان بعلامتنا، والتوصيلُ صفر" \
+    "select (select count(*) from pg_proc where oid in (to_regprocedure('public.record_purchase(jsonb,jsonb)'), to_regprocedure('public.update_purchase(uuid,jsonb,jsonb)')) and position('-- +0260' in prosrc) > 0)::text
+            || '|' || (select count(*) from verify_consumption_wiring())::text" "2|0"
+
+# ── ٩) الإعادةُ بلا أثرٍ ثانٍ ──
+F6="select md5(string_agg(p.oid::regprocedure::text || ':' || md5(p.prosrc) || ':' || coalesce(array_to_string(p.proacl, ','), ''), ',' order by p.oid::regprocedure::text collate \"C\")) from pg_proc p where p.oid in (to_regprocedure('public.record_purchase(jsonb,jsonb)'), to_regprocedure('public.update_purchase(uuid,jsonb,jsonb)'), to_regprocedure('public.verify_consumption_wiring()'), to_regprocedure('public._purchase_unit_cost(numeric,numeric,numeric)'), to_regprocedure('public.purchase_discount_ready()'))"
+Z6=$($P -tAc "$F6"); H6=$($P -tAc "select md5(string_agg(reference || ':' || total::text || ':' || discount::text, ',' order by reference)) from purchases where clinic_id = '$K6'")
+_m260
+chk "والإعادةُ بلا أثرٍ ثانٍ: الأجسامُ والصلاحياتُ ورؤوسُ الفواتير كما هي، والقيدُ مرّةً واحدة" \
+    "select (($F6) = '$Z6')::text || '|' || ((select md5(string_agg(reference || ':' || total::text || ':' || discount::text, ',' order by reference)) from purchases where clinic_id = '$K6') = '$H6')::text
+            || '|' || (select count(*) from pg_constraint where conrelid = 'public.purchases'::regclass and conname = 'purchases_discount_ok')::text" "true|true|1"
 
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null

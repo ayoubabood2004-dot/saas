@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/* إعادةُ التعريف تُفحص بنصّها (0252–0255، 0259): كلُّ دالّةٍ قائمةٍ تُعاد كتابتُها (MANIFEST: إحدى وعشرون دالّةً
- * بثماني وعشرين إعادة، لكلٍّ منها حارسُها بالهجرة) «نصَّ مصدرها حرفاً وفوقه أسطرٌ معلَّمة» — والانحرافُ
+/* إعادةُ التعريف تُفحص بنصّها (0252–0255، 0259، 0260): كلُّ دالّةٍ قائمةٍ تُعاد كتابتُها (MANIFEST: إحدى وعشرون دالّةً
+ * بإحدى وثلاثين إعادة، لكلٍّ منها حارسُها بالهجرة) «نصَّ مصدرها حرفاً وفوقه أسطرٌ معلَّمة» — والانحرافُ
  * عن المصدر بلا علامةٍ هو ما أسقط 0241 (نسخةٌ قديمة دُهست بصمت).
  *
  * لكلّ سطرٍ بالقائمة: جسمُ الدالّة بالهجرة الهدف، بعد حذف كلّ سطرٍ ينتهي بـ`-- +NNNN` وفكّ كلّ
@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -51,6 +51,11 @@ export const MANIFEST = [
   ["merge_products", 2, "public.merge_products(uuid,uuid)", "0184", "0259"],
   ["restore_product", 1, "public.restore_product(uuid)", "0253", "0259"],
   ["inventory_tidy_uncat", 0, "public.inventory_tidy_uncat()", "0253", "0259"],
+  // 0260: خصمُ الشركة على فاتورة الشراء — total صافٍ، وكلُّ سطرٍ يحمل نصيبَه من الخصم بكلفة المتوسّط.
+  ["record_purchase", 2, "public.record_purchase(jsonb,jsonb)", "0255", "0260"],
+  ["update_purchase", 3, "public.update_purchase(uuid,jsonb,jsonb)", "0255", "0260"],
+  // 0260: فحصُ التوصيل يعرف مجموعتي 0259 و0260 — إعادةُ 0253 وحدها تُرجع أجسامَهما لنصّها وعلامتُها فيه.
+  ["verify_consumption_wiring", 0, "public.verify_consumption_wiring()", "0255", "0260"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
