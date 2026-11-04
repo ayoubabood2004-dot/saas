@@ -40,7 +40,7 @@ const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ 
 const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
 const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
 const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
-const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
+const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })), ["pkg"]);
 const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
 /* مراجعةُ ما لم يصل الخادمَ بلا ختمِ هويّة (outbox.ts، قرارُ المالك ١٣/١٠) — الشارةُ الحمراء تنقل إليها. */

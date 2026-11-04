@@ -50,6 +50,8 @@ import { getClinicName, getClinicLogo, getClinicSocials, getDialCode, getForgive
 import { buildCustomerDirectory } from "./customerDirectory";
 import type { CustomerPage, CustomerSearchOpts } from "@/types";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
+import { hasPackaging } from "./packs";
+import { packagingShapeError, levelGuardError, mergePackaging, unmergePackaging, snapshotFree } from "./packsMirror";
 import { scanVariants } from "./productCodes";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -893,6 +895,12 @@ function decisionLocked(status: string): Error {
  *  كشفاً متناظراً (الأساسيّ والإضافيّ) ومطبَّعاً، والصفُّ نفسُه مستثنى. ويرمي
  *  بشكل الخادم — P0001 وhint عربيّ — لا بشكل 23505 القديم: فحصٌ على صيغةِ خطأٍ
  *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
+/** مرآةُ ما يجري على كلّ كتابةٍ لصفّ مادة منذ 0259: محفّزُ المستويات أوّلاً (BEFORE)، ثمّ قيدُ الشكل — كترتيب الخادم.
+ *  `skipId` التوأمُ الذي يُطوى (`doctorvet.codes_from`). */
+function throwIfPackagingBad(db: DemoDB, next: Product, prev: Product | null, skipId?: string | null): void {
+  const e = levelGuardError(db.products ?? [], next, prev, skipId) ?? packagingShapeError(next);
+  if (e) throw e;
+}
 function throwIfCodeTaken(db: DemoDB, code: string | null, selfId: string | null): void {
   if (!code) return;
   const c = matchCode(code);
@@ -1996,6 +2004,8 @@ const demoRepo = {
     const p = (db.products ?? []).find((x) => x.id === productId);
     if (!p) throw new Error("product not found");
     if (matchCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => matchCode(x) === c)) {
+      // 0259: رمزُ كارتونِ غيره أو مغلّفِه لا يصير إضافياً هنا (محفّزُ المستويات على alt_codes).
+      throwIfPackagingBad(db, { ...p, alt_codes: [...(p.alt_codes ?? []), store] }, p);
       p.alt_codes = [...(p.alt_codes ?? []), store];
       saveDB(db);
     }
@@ -2011,6 +2021,7 @@ const demoRepo = {
     const p: Product = { ...input, barcode: code, id: uid("prod"), created_at: new Date().toISOString() };
     // 0255 (products_guard_avg): إدراجُ المتصفّح بلا متوسّط — مادّةٌ جديدة كلفتُها مجهولة، ونسخُ مادّةٍ قائمة لا ينسخه.
     if ("avg_cost" in p) p.avg_cost = null;
+    throwIfPackagingBad(db, p, null);                                       // 0259: كلُّ رموزه جديدة
     db.products.push(p);
     saveDB(db);
     return p;
@@ -2305,6 +2316,8 @@ const demoRepo = {
     if ("expiry_date" in patch && (patch.expiry_date ?? null) !== (p.expiry_date ?? null)) {
       patch = { ...patch, expiry_date: (await import("./demoLots")).userExpiry(id, p.expiry_date ?? null, patch.expiry_date ?? null) };
     }
+    // 0259: الصفُّ كما سيصير — رمزٌ جديدٌ بمستواه وشكلُ التعبئة (والقيدُ على كلّ تحديث: مادةٌ بكراتين لا تصير بالوزن).
+    throwIfPackagingBad(db, { ...p, ...patch } as Product, p);
     Object.assign(p, patch);
     saveDB(db);
     return p;
@@ -2357,6 +2370,8 @@ const demoRepo = {
        * فيرجع المنتجُ بلا باركوده هنا، بينما السحابةُ تردّه — مرآةٌ تقول غيرَ
        * ما يقوله الخادم بمسارِ استرجاعٍ هو آخرُ خطِّ دفاعٍ عن صفٍّ مطويّ. */
       if (t.keep_barcode == null && row.barcode && keep.barcode === row.barcode) keep.barcode = null;
+      // 0259: والمغلّفُ والكراتينُ التي حملها الطيّ تُشال من الأصل.
+      if (hasPackaging(keep)) Object.assign(keep, unmergePackaging(keep, row));
     }
     /* مرآةُ 0165 و0167 — والانحرافُ هنا كان يصنع بالضبط ما تمنعه القاعدة:
      *  ١) الرموزُ الإضافية التي **صارت لغيره** أثناء غيابه لا تُعاد. الصفُّ
@@ -2376,6 +2391,8 @@ const demoRepo = {
     if (droppedAlts.length) row.alt_codes = (row.alt_codes ?? []).filter((c) => !takenBy(c));
     const droppedBarcode = !!row.barcode && takenBy(row.barcode);
     if (droppedBarcode) row.barcode = null;
+    // 0259 (_pkg_snapshot_free): ما صار لغيره بمستوىً آخر يسقط، ولقطةٌ قديمة ترجع بمستوياتٍ فارغة لا null.
+    Object.assign(row, snapshotFree(row, (db.products ?? []).filter((o) => o.id !== id)));
     if (!db.products) db.products = [];
     db.products.push(row);
     // السطور التي كانت له ترجع إليه بمعرّفاتها كما بالخادم (بلا صنف، أو على الأصل المدموج فيه).
@@ -2401,6 +2418,9 @@ const demoRepo = {
     if (!keep) throw new Error("product to keep not found");
     if (!drop) throw new Error("product to drop not found");
     if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
+    // 0259: ما لا يُحمل (مغلّفٌ بلا وحدةٍ صغرى بنفس العدد، كراتينُ لمادةٍ بالوزن، أكثرُ من أربعة) يُرمى قبل أيّ كتابة.
+    const pkg = mergePackaging(keep, drop);
+    const keepWas = { ...keep };
     // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
     // باركودُ الأصل **قبل** ضمّ الرموز (0167): به يميّز الفكُّ ملكَه الأصيل من الموروث.
     trashProduct(db, drop, { merged_into: keepId, keep_barcode: keep.barcode?.trim() ? keep.barcode : null });
@@ -2421,6 +2441,9 @@ const demoRepo = {
     // stock = stock + v_drop.stock بعمود numeric: بالضبط — ٠٫٤ + ٠٫٢ عائماً ٠٫٦٠٠٠٠٠٠٠٠٠٠٠٠٠٠١ (قيسَ بالفرق مع الخادم).
     keep.stock = cons.qty3((keep.stock || 0) + (drop.stock || 0));
     keep.alt_codes = Array.from(codes);
+    // 0259: المغلّفُ والكراتين تتبع الأصل، واسمُ الوحدة وسعرُ شراء المغلّف يملآن فراغه — والتوأمُ حيٌّ لحظتَها فيُستثنى من الحارس.
+    if (hasPackaging(keep) || hasPackaging(drop) || pkg.unit_name != null || pkg.sub_purchase_price != null) Object.assign(keep, pkg);
+    throwIfPackagingBad(db, keep, keepWas, dropId);
     keep.min_stock = Math.max(keep.min_stock ?? 0, drop.min_stock ?? 0) || keep.min_stock;
     if (!keep.expiry_date || (drop.expiry_date && drop.expiry_date > keep.expiry_date)) keep.expiry_date = drop.expiry_date ?? keep.expiry_date;
     db.products = (db.products ?? []).filter((x) => x.id !== dropId);
@@ -3953,6 +3976,7 @@ const demoRepo = {
     const next = normalizeCode(code) || null;
     if (!next) throw new Error("empty code");
     throwIfCodeTaken(db, next, id);
+    throwIfPackagingBad(db, { ...p, barcode: next }, p);                    // 0259
     p.barcode = next;
     saveDB(db);
     return p;
@@ -3999,6 +4023,8 @@ const demoRepo = {
               && invNormName(p.name) === name)
           : undefined);
       if (!target) { kept++; continue; }
+      // 0259: توأمٌ له تعبئة لا يُطوى هنا (هذا الطيُّ لا يحملها) — يبقى للطيّ اليدويّ.
+      if (hasPackaging(dup)) { kept++; continue; }
       // صورةُ الطيّ قبل الحذف (0146): «رتّبِ المخزن» طريقٌ ثالثٌ يخرج به صفٌّ
       // من `products`، وكان يخرج هنا **بلا صورة** — فيختفي بلا رجعة بينما
       // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
