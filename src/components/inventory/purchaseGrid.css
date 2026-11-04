@@ -1,0 +1,55 @@
+/* ============================================================================
+ * جدولُ فاتورة الشراء — ما لا تملكه ورقةُ الأنماط العامّة.
+ *
+ * أصنافُ Tailwind تُجمع بورقةٍ واحدة تُحزم بالإقلاع (main.html)، وهذا الجدولُ لا يُرسم إلا بفاتورة الشراء الكسولة — فما
+ * انفرد به هنا، وVite يُحمّل هذا الملفّ مع قطعتها وحدَها. (المقيس: أصنافُه الجديدة رفعت ورقةَ الإقلاع ٣٦٧ بايتاً مضغوطة
+ * فتجاوزت سقفَ store-weight-guard.) وما كان بالورقة العامّة أصلاً يبقى أصنافاً بالشِفرة — بلا كلفة. الألوانُ من رموز التصميم.
+ * ========================================================================== */
+
+.pg-scroll { max-height: 62vh; overflow: auto; }
+.pg-table { min-width: 70rem; }
+
+/* العمودُ الثاني المجمَّد (الاسم): بعد عمود الرقم (2.75rem)، وحافّتُه أقوى من خطوط الخانات. وبالهاتف أضيق — والاسمُ يلتفّ
+ * سطرين — فيبقى للأرقام المتمرّرة مكانُ عمودٍ ونصف. */
+th.pg-f1, td.pg-f1, .pg-f1 { inset-inline-start: 2.75rem; }
+th.pg-f1, td.pg-f1 { border-inline-end-color: rgb(var(--line-strong)); }
+.pg-name { width: 8.5rem; min-width: 8.5rem; }
+@media (min-width: 640px) { .pg-name { width: auto; min-width: 14rem; } }
+
+/* شريطُ حال الصفّ (معروف، جديد، مكرّر) على حافّة البداية. */
+.pg-rail { width: 3px; }
+
+/* الأرقامُ لليمين بمنازلها (آحادٌ تحت آحاد) بالاتّجاهين — كدفتر الحساب لا كالنصّ. والباركودُ بالعربية لليمين كبقية الصفّ. */
+.pg-num { text-align: right; }
+[dir="rtl"] .pg-code { text-align: right; }
+.pg-wrap { white-space: normal; }
+th.pg-last, td.pg-last { border-inline-end-width: 0; }
+
+/* الخانةُ حقلٌ بلا إطار يملؤها، وتحديدُها حلقةٌ داخلها كخلية إكسل. */
+.pg-cell::placeholder { color: rgb(var(--ink-subtle) / 0.7); }
+.pg-cell:focus, .pg-xp:focus-visible { background-color: rgb(var(--surface-1)); box-shadow: inset 0 0 0 2px #2f7df2; }
+.dark .pg-cell:focus, .dark .pg-xp:focus-visible { background-color: rgb(var(--surface-2)); }
+.pg-n { -webkit-appearance: textfield; -moz-appearance: textfield; appearance: textfield; }
+.pg-n::-webkit-inner-spin-button, .pg-n::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+
+/* الصفُّ المحدَّد (التركيزُ داخله) بلونٍ معتم: الخانتان المجمّدتان ترثانه (bg-inherit) فلا يظهر تحتهما ما يتمرّر. */
+.pg-row:focus-within { background-color: #eef6ff; }
+.dark .pg-row:focus-within { background-color: rgb(var(--surface-3)); }
+
+/* شريطُ ملاحظات الصفّ يلصق بعد العمودين المجمّدين ولا يمدّ الجدول. */
+.pg-notes { max-width: calc(100vw - 5rem); }
+@media (min-width: 640px) { .pg-notes { max-width: 60rem; } }
+
+/* شركةُ المادّة وصنفُها تحت اسمها — بالهاتف تُخفى (علامةُ «موجود» تبقى) فلا يطول الصفّ. */
+.pg-chip { display: none; }
+@media (min-width: 640px) { .pg-chip { display: inline-flex; } }
+
+.pg-sec { max-width: 10rem; }
+.pg-discamt { min-width: 5.5rem; }
+
+/* ذيلُ الورقة: الدفعُ بجانب والحسابُ بجانب، والصافي تحت خطٍّ مزدوجٍ كخاتمة فاتورة. */
+@media (min-width: 1024px) { .pg-foot { grid-template-columns: minmax(0, 1fr) minmax(0, 25rem); } }
+.pg-net { border-top: 3px double rgb(var(--line-strong)); }
+
+/* تلميحٌ عربيّ بحقلٍ أحاديّ الخطّ: الأحاديُّ يفصل الحروف — والمكتوبُ (رمزٌ ورقم) يبقى أحادياً. */
+.pg-ph-sans::placeholder { font-family: Inter, "IBM Plex Sans Arabic", system-ui, sans-serif; }

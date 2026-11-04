@@ -200,6 +200,13 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                                     <td className="py-1.5 text-end font-extrabold tabular-nums text-ink">{money((it.qty || 0) * (it.purchase_price || 0))}</td>
                                   </tr>
                                 ))}
+                                {/* 0260: بخصم الشركة الإجماليُّ صافٍ — والخصمُ سطرٌ قبله، وإلا بدت السطورُ لا تجمع إليه. */}
+                                {(p.discount ?? 0) > 0 && (
+                                  <tr className="border-t border-line/50" data-logdiscount>
+                                    <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("retail.discount", "الخصم")}</td>
+                                    <td className="py-1.5 text-end font-bold tabular-nums text-danger-600 dark:text-danger-400"><bdi>−{money(p.discount ?? 0)}</bdi></td>
+                                  </tr>
+                                )}
                                 <tr className="border-t border-line">
                                   <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("purchase.log.invoiceTotal", "إجمالي الفاتورة")}{pPaid < (p.total || 0) ? ` — ${t("purchase.log.paidPart", { v: money(pPaid), defaultValue: "المدفوع {{v}}" })}` : ""}</td>
                                   <td className="py-1.5 text-end font-black tabular-nums text-ink">{money(p.total || 0)}</td>

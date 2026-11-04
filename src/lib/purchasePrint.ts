@@ -11,6 +11,8 @@ export interface PurchasePrintOptions {
   logoUrl?: string | null;
   facebook?: string | null;
   instagram?: string | null;
+  /** أسماءُ سطور خصم الشركة (0260) من قاموس الشاشة — ملفُّ الطباعة لا يُضاف له نصٌّ صلب. */
+  labels?: { subtotal?: string; discount?: string; net?: string };
 }
 
 const esc = (s: unknown) =>
@@ -59,6 +61,9 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
   const created = new Date(purchase.purchased_at || purchase.created_at);
   const dateStr = created.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   const total = purchase.total ?? 0;
+  // 0260: الإجماليُّ صافٍ بعد خصم الشركة — فالمجموعُ قبله والخصمُ يُطبعان، وإلا بدت السطورُ لا تجمع إلى الرقم تحتها.
+  const discount = Math.max(0, Number(purchase.discount ?? 0) || 0);
+  const L = { subtotal: opts.labels?.subtotal || "Subtotal", discount: opts.labels?.discount || "Discount", net: opts.labels?.net || "Net" };
   const paid = purchase.amount_paid != null ? purchase.amount_paid : total;
   const due = Math.max(0, total - paid);
   const logo = opts.logoUrl ? esc(String(opts.logoUrl)) : "";
@@ -116,8 +121,9 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
     .i-bc { display: block; font-size: 10px; color: #94a3b8; font-family: ui-monospace, monospace; font-weight: 400; }
     .totals { margin-top: 16px; margin-inline-start: auto; width: 280px; }
     .totals .row { display: flex; justify-content: space-between; padding: 5px 0; color: #475569; }
-    .totals .grand { font-size: 18px; font-weight: 800; color: #0b1220; border-top: 2px solid #0b1220; margin-top: 6px; padding-top: 8px; }
+    .totals .grand { font-size: 18px; font-weight: 800; color: #0b1220; border-top: 3px double #0b1220; margin-top: 6px; padding-top: 8px; }
     .totals .due { color: #b91c1c; font-weight: 700; }
+    .totals .disc { color: #b91c1c; font-weight: 600; }
     .foot { margin-top: 28px; text-align: center; color: #64748b; border-top: 1px solid #e8edf3; padding-top: 14px; }
   `;
 
@@ -163,7 +169,9 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
       </table>
 
       <div class="totals">
-        <div class="row grand"><span>${s.total}</span><span>${money(total)}</span></div>
+        ${discount > 0 ? `<div class="row"><span>${esc(L.subtotal)}</span><span>${money(total + discount)}</span></div>
+        <div class="row disc"><span>${esc(L.discount)}</span><span>−${money(discount)}</span></div>` : ""}
+        <div class="row grand"><span>${discount > 0 ? esc(L.net) : s.total}</span><span>${money(total)}</span></div>
         <div class="row"><span>${s.paid}</span><span>${money(paid)}</span></div>
         ${due > 0 ? `<div class="row due"><span>${s.due}</span><span>${money(due)}</span></div>` : ""}
       </div>

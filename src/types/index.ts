@@ -1180,7 +1180,11 @@ export interface Purchase {
   company_name?: string | null;
   /** The supplier's own invoice/reference number (optional). */
   reference?: string | null;
-  total: number;            // sum of line costs (qty × purchase_price)
+  /** ما يُدفع ويُدان: Σ (qty × purchase_price) ناقصَ خصم الشركة (0260) — والمجموعُ قبله total + discount. */
+  total: number;
+  /** خصمُ الشركة على الفاتورة كلّها مبلغاً (0260). غائبٌ = صفر (فاتورةٌ أو قاعدةٌ قبل 0260). كلُّ سطرٍ يحمل نصيبَه منه
+   *  بكلفة المتوسّط، وسعرُ الشراء بالسطر يبقى كما كُتب. */
+  discount?: number | null;
   item_count: number;       // total units received across all lines
   /** Amount paid to the supplier so far. Absent = fully paid (legacy). */
   amount_paid?: number;
@@ -1491,6 +1495,9 @@ export interface PurchaseMeta {
   company_name?: string | null;
   reference?: string | null;
   amount_paid?: number;
+  /** خصمُ الشركة مبلغاً (0260) — يُقصّ على المجموع بالخادم. **غائبٌ بالتعديل = يبقى المحفوظ** (جهازٌ ما تحدّث)، وnull أو ٠ = بلا خصم.
+   *  ولا يُرسل إلا لقاعدةٍ تعرفه (purchaseDiscountReady، lib/purchaseApi). */
+  discount?: number | null;
   payment_method?: PaymentMethod | null;
   supplier_name?: string | null;
   supplier_phone?: string | null;

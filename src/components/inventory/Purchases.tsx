@@ -3,17 +3,18 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles, ListChecks, AlertTriangle,
-  Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
+  Wallet, CalendarClock, X, ScanLine, FolderTree, ChevronDown, Percent,
   UserRound, Phone, HandCoins, Pencil, RotateCcw,
 } from "lucide-react";
-import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
-import { repo } from "@/lib/repo";
+import type { TFunction } from "i18next";
+import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod, DiscountType } from "@/types";
+import { repo, resolveDiscount } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { PurchasePicker, type PickedLine } from "@/components/inventory/PurchasePicker";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton, Dialog } from "@/components/ui";
-import { cn, money, formatDate, formatNum, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName, invNormName } from "@/lib/utils";
+import { cn, money, formatDate, formatNum, formatDec, formatQty, currencySymbol, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName, invNormName } from "@/lib/utils";
 import { sellPriceToSend, purchaseBlockers } from "@/lib/purchaseIntent";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
@@ -30,6 +31,9 @@ import { daysToExpiry } from "@/lib/expiry";
 import { getExpiryWindows } from "@/lib/settings";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
+import { purchaseDiscountReady } from "@/lib/purchaseApi";
+/* أنماطُ الجدول التي لا تملكها الورقةُ العامّة — تصل مع هذه القطعة الكسولة لا بحزمة الإقلاع (store-weight-guard). */
+import "./purchaseGrid.css";
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 /* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
@@ -40,6 +44,19 @@ const normKey = groupKey;
 
 const CATEGORY_KEYS: ProductCategory[] = ["medicine", "food", "accessories", "consumables", "other"];
 const PAY_METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
+
+/* ── خاناتُ جدول الفاتورة ── خطوطٌ شعرية بين الخانات، والخانةُ حقلٌ بلا إطار يملؤها، وتحديدُها حلقةٌ داخلها كخلية إكسل.
+ * والأرقامُ لليمين بمنازلها (آحادٌ تحت آحاد) بالاتّجاهين — كدفتر الحساب لا كالنصّ. والرأسُ وصفُّ المجموع لاصقان، ولكلّ
+ * خلفيةٌ معتمة: ما يتمرّر لا يظهر تحتهما. */
+/* وما لا تملكه الورقةُ العامّة من أصناف (الأعمدةُ المجمّدة، تحديدُ الخانة، الأرقامُ لليمين…) بـpurchaseGrid.css (`pg-*`). */
+const TH = "sticky top-0 z-20 border-b border-e border-line-strong bg-surface-2 px-2.5 py-2.5 text-2xs font-bold text-ink-subtle";
+const TH_TXT = "whitespace-nowrap text-start";
+const NUM_TH = "pg-num whitespace-nowrap";
+const TD = "border-e border-line p-0 align-top";
+const TF = "sticky bottom-0 z-20 border-t border-line-strong bg-surface-2 py-2 align-middle";
+const CELL = "pg-cell block h-10 w-full min-w-0 bg-transparent px-2.5 text-sm text-ink outline-none transition";
+const NUM = `${CELL} pg-num pg-n tabular-nums`;
+const SUB = "pg-num px-2.5 pb-1.5 text-2xs tabular-nums text-ink-subtle";
 
 /** One editable line in the purchase builder. */
 type Line = {
@@ -164,8 +181,10 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+      {/* يلتفّ على الهاتف: البحثُ وأزرارُ العرض وزرّان بسطرٍ واحد كانت تمدّ الصفحةَ ٤٧٠ بكسل على شاشةٍ ٣٩٠ (مقيس) — فتنفتح
+        * نافذةُ الفاتورة فوقها أعرضَ من الشاشة ومقصوصةً من طرفها. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[12rem] flex-1">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("purchase.search", "ابحث بالشركة أو رقم الفاتورة…")} />
         </div>
@@ -404,7 +423,7 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
   const print = () => {
     if (!items) return;
-    const ok = openPurchasePrint(purchase, items, printOptions(user, i18n.language));
+    const ok = openPurchasePrint(purchase, items, printOptions(user, i18n.language, t));
     if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
     else void repo.logClientEvent("purchase.print", { ref: purchaseNo(purchase.id) });
   };
@@ -460,8 +479,15 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
           </div>
         )}
 
-        <div className="ms-auto w-full max-w-xs space-y-1.5 text-sm">
-          <div className="flex items-center justify-between font-bold text-ink"><span>{t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{money(purchase.total)}</span></div>
+        <div className="ms-auto w-full max-w-xs space-y-1.5 text-sm" data-pdtotals>
+          {/* 0260: بخصم الشركة الإجماليُّ صافٍ — فيُقال المجموعُ قبله والخصم، وإلا بدت سطورُ الجدول لا تجمع إلى الرقم تحتها. */}
+          {(purchase.discount ?? 0) > 0 && (
+            <>
+              <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{money(Number(purchase.total) + Number(purchase.discount ?? 0))}</span></div>
+              <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{money(purchase.discount ?? 0)}</bdi></div>
+            </>
+          )}
+          <div className="flex items-center justify-between font-bold text-ink"><span>{(purchase.discount ?? 0) > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{money(purchase.total)}</span></div>
           <div className="flex items-center justify-between text-ink-muted"><span>{t("purchase.paid", "المدفوع")}</span><span className="tabular-nums">{money(paid)}</span></div>
           {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{money(due)}</span></div>}
         </div>
@@ -541,10 +567,12 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   );
 }
 
-/** ترويسةُ طباعة فاتورة الشراء — موضعٌ واحد لنافذة التفاصيل ولكشف ما بعد الحفظ. */
-function printOptions(user: { full_name?: string | null; phone?: string | null } | null | undefined, lang: string) {
+/** ترويسةُ طباعة فاتورة الشراء — موضعٌ واحد لنافذة التفاصيل ولكشف ما بعد الحفظ. وأسماءُ سطور الخصم (0260) من القاموس
+ *  هنا لا من ملفّ الطباعة: سقفُ نصّه الصلب لا يصعد. */
+function printOptions(user: { full_name?: string | null; phone?: string | null } | null | undefined, lang: string, t: TFunction) {
   const socials = getClinicSocials();
   return {
+    labels: { subtotal: t("retail.subtotal", "المجموع الفرعي"), discount: t("retail.discount", "الخصم"), net: t("retail.net", "الصافي") },
     clinicName: getClinicName() || user?.full_name || "doctorVet",
     clinicPhone: user?.phone ?? null,
     brand: "doctorVet",
@@ -594,11 +622,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   /* بعد الحفظ النافذةُ **ما تنطوي** — تنقلب لكشف ما صار بالمخزن (م٢). والقائمةُ
    * خلفها تُحدَّث عند الإغلاق الصريح (`onSaved`)، لا عند الحفظ. */
   const [saved, setSaved] = useState<Purchase | null>(null);
-  // Matched (restock) lines render COMPACT — barcode, name, where it lives, and
-  // ONE required field: the count. This set holds lines the user expanded to
-  // optionally adjust prices/alerts.
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  /* خصمُ الشركة على الفاتورة كلّها (0260): بالمبلغ (الافتراض — هكذا يُطبع أسفلَ ورقة المورّد) أو بالنسبة كشاشة البيع، ويُرسل
+   * مبلغاً. ولا خانةَ إلا لقاعدةٍ يعرف جسما شرائها الخصمَ (purchaseDiscountReady؛ null = ما عُرف بعد ⇒ لا خانة ولا مفتاح): خصمٌ يُكتب ولا يُحفظ أسوأُ
+   * من خانةٍ غائبة. وكلُّ سطرٍ يحمل نصيبَه بكلفة المخزون، وسعرُ الشراء بالسطر يبقى كما كُتب. */
+  const [discType, setDiscType] = useState<DiscountType>("fixed");
+  const [discValue, setDiscValue] = useState("");
+  const [discOk, setDiscOk] = useState<boolean | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const gridRef = useRef<HTMLTableElement>(null);
   const scanRef = useRef<HTMLInputElement>(null);
   /** مجمِّعُ المسحة لهذا الحقل — يحكم على Tab: ماسحٌ أم إنسانٌ يتنقّل. */
   const scanAsm = useRef(createScanAssembler());
@@ -624,6 +655,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setPurchasedAt((p.purchased_at ?? "").slice(0, 10) || localISO());
       setPayMethod((p.payment_method as PaymentMethod) ?? "cash");
       setAmountPaid(p.amount_paid != null ? String(p.amount_paid) : "");
+      // الخصمُ المحفوظ مبلغاً كما حُفظ — والحفظُ يرسل ما يُرى (لا غيابَ يُبقي القديمَ خفيّاً).
+      setDiscType("fixed"); setDiscValue((p.discount ?? 0) > 0 ? String(p.discount) : "");
       setLines(editing.items.map((it) => blankLine({
         product_id: it.product_id ?? null,
         barcode: it.barcode ?? "",
@@ -640,12 +673,21 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setCompany(seed?.companyName || defaultCompanyName || "");
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
       setPayMethod("cash"); setAmountPaid(""); setPaidMode(null);
+      setDiscType("fixed"); setDiscValue("");
       setLines(seed?.items.length ? seed.items.map(({ product, qty }) => ({ ...lineFromProduct(product, ""), qty: String(qty) })) : [blankLine()]);
     }
     setScan("");
-    setExpandedKeys(new Set());
     setTimeout(() => scanRef.current?.focus(), 90);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setDiscOk(null);
+    // فحصُ قدرةٍ لا قائمةُ قرار: الفشلُ «لا خانة» (purchaseDiscountReady نفسُها لا ترمي).
+    purchaseDiscountReady().catch(() => false).then((ok) => { if (alive) setDiscOk(ok); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُخفي خانةَ الخصم ولا يحفظ شيئاً */
+    return () => { alive = false; };
   }, [open]);
 
   /* بوضع التعديل: كمية السطر القديمة داخل المخزون أصلاً — قفزة المخزون تُحسب
@@ -857,7 +899,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   }, [company, companies, sections]);
 
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
-  const total = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
+  /* المجموعُ قبل الخصم، والخصمُ مقصوصاً عليه (resolveDiscount كشاشة البيع، ومجموعٌ ≤ صفر بلا خصم — كالخادم)، و`total` الصافي:
+   * ما يُدفع ويُدان — فالمدفوعُ والحالةُ والشارةُ أدناه كلُّها على الصافي كما يكتبها الخادم. */
+  const subtotal = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
+  const discRaw = Number(discValue) || 0;
+  const discountAmt = discOk && subtotal > 0 ? resolveDiscount(subtotal, discType, discRaw) : 0;
+  const discClamped = discOk === true && discRaw > 0 && (discType === "percent" ? discRaw > 100 : discRaw > subtotal);
+  const total = subtotal - discountAmt;
   const totalUnits = validLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   /* للفراغ دلالتان بهذه الشاشة (م٤): بالإنشاء «مدفوعٌ كامل»، وبالتعديل «يبقى
    * المدفوعُ كما هو» — والتسمية أسفلَه تقولهما بالنصّ، و`amount_paid` تُرسَل
@@ -898,10 +946,41 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     return false;
   };
 
+  /* م٥: وجبةٌ انتهاؤها أقصرُ من مدة الإرجاع — تُقال قبل الحفظ بشريط صفّها: بعد الاستلام ما يقبلها المندوبُ راجعة إلا ضمن
+   * المدة، فكلُّ ما لا يُباع قبلها خسارة. */
+  const shortDated = (iso: string) => {
+    const d = daysToExpiry(iso);
+    const rd = getExpiryWindows().returnDays;
+    if (d == null || d > rd) return null;
+    return (
+      <span key="short" className="inline-flex items-center gap-1 font-semibold text-warn-700 dark:text-warn-300" data-shortdated>
+        <CalendarClock size={11} />
+        {d < 0
+          ? t("purchase.expiredBatch", "هذا التاريخ فات — المادة منتهية وهي بعدها بالكرتون")
+          : t("purchase.shortDated", { d: formatNum(d), rd: formatNum(rd), defaultValue: "انتهاؤها بعد {{d}} يوم بس — أقصر من مدة إرجاعك ({{rd}} يوم)" })}
+      </span>
+    );
+  };
+
+  /* Enter بخانةٍ من الجدول ينزل لخانة العمود نفسِه بالسطر التالي الذي فيه خانةٌ منه (اسمُ المادّة المعروفة نصٌّ لا خانة فيُتخطّى)،
+   * وShift+Enter يصعد، ومن آخر سطرٍ يرجع لصندوق المسح — فتُكتب الأعدادُ عموداً عموداً كما تُقرأ من الورقة. والأسهمُ لا تُخطف:
+   * داخل الخانة لتحريك المؤشّر. ومنتقي الانتهاء زرٌّ بلا عمود: Enter يفتحه كما يُتوقَّع من زرّ. */
+  const onGridKey = (e: React.KeyboardEvent<HTMLTableElement>) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    const el = e.target as HTMLElement;
+    const col = el.getAttribute("data-col");
+    if (!col || !gridRef.current) return;
+    e.preventDefault();
+    const all = [...gridRef.current.querySelectorAll<HTMLElement>(`[data-col="${col}"]`)];
+    const next = all[all.indexOf(el) + (e.shiftKey ? -1 : 1)];
+    if (next) { next.focus(); if (next instanceof HTMLInputElement) next.select(); }
+    else if (!e.shiftKey) scanRef.current?.focus();
+  };
+
   const printSaved = async (p: Purchase) => {
     try {
       const its = await repo.listPurchaseItems(p.id);
-      const ok = openPurchasePrint(p, its, printOptions(user, i18n.language));
+      const ok = openPurchasePrint(p, its, printOptions(user, i18n.language, t));
       if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
       else void repo.logClientEvent("purchase.print", { ref: purchaseNo(p.id) });
     } catch (e) {
@@ -1053,6 +1132,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
          * عقده: `undefined` تعني «أبقِ المدفوع كما هو». */
         amount_paid: editing ? (amountPaid.trim() === "" ? undefined : paidNum) : (paidMode === "debt" ? paidNum : total),
         payment_method: payMethod,
+        /* 0260: مبلغاً — والجديدةُ والتعديلُ يرسلان ما يُرى (صفرٌ = بلا خصم). ولقاعدةٍ لا تعرفه لا مفتاح: التعديلُ من جهازٍ
+         * بلا الخانة يُبقي المحفوظَ بالخادم، والإنشاءُ عليها بلا خصمٍ كما كان. */
+        discount: discOk ? discountAmt : undefined,
         supplier_name: supplierName.trim() || null,
         supplier_phone: supplierPhone.trim() || null,
         notes: notes.trim() || null,
@@ -1113,7 +1195,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           </div>
           <div>
             <label className="label">{t("purchase.reference", "رقم فاتورة المورّد")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
-            <input className="input font-mono" dir="ltr" value={reference} onChange={(e) => setReference(e.target.value)} data-purchase-ref
+            <input className="input pg-ph-sans font-mono" dir="ltr" value={reference} onChange={(e) => setReference(e.target.value)} data-purchase-ref
               placeholder={t("purchase.referencePh", "مثلاً 4587 — من ورقة فاتورة الشركة")} />
           </div>
           <div>
@@ -1138,7 +1220,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
               <Barcode size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input
                 ref={scanRef}
-                className="input font-mono ltr:pl-9 rtl:pr-9"
+                className="input pg-ph-sans font-mono ltr:pl-9 rtl:pr-9"
                 value={scan}
                 onChange={(e) => setScan(e.target.value)}
                 /* Enter يُضيف دائماً (إنساناً كان أو ماسحاً). وTab **للماسح
@@ -1204,286 +1286,325 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           }
         />
 
-        {/* Lines */}
-        <div className="space-y-2">
-          {lines.map((l, idx) => {
-            const matched = !!l.product_id;
-            const product = matched ? products.find((p) => p.id === l.product_id) : undefined;
-            /* السعرُ الحاليُّ على الرفّ — تلميحةً لا قيمة. يُقرأ من المنتج المطابَق،
-             * وإلا من منتجٍ يطابقه **الخادمُ بالاسم** (الفرعُ الذي لا تعرفه الشاشة). */
-            const sellRef = product ?? (!l.product_id && l.name.trim()
-              ? products.find((p) => invNormName(p.name) === invNormName(l.name))
-              : undefined);
-            const sellNow = sellRef ? Number(freshSell[sellRef.id] ?? sellRef.sell_price ?? 0) || null : null;
-            const dupTotal = dupOf.get(l.key);
-            const dupBadge = dupTotal != null ? (
-              <span className="chip shrink-0 bg-warn-50 text-2xs font-bold text-warn-800 dark:bg-warn-500/15 dark:text-warn-200">
-                <AlertTriangle size={10} /> {t("purchase.dupLine", "نفس المادة بسطر ثاني — المجموع {{n}}", { n: formatNum(dupTotal) })}
-              </span>
-            ) : null;
-            /* م٥: وجبةٌ انتهاؤها أقصرُ من مدة الإرجاع — تُقال قبل الحفظ، بالسطر السريع والمفتوح معاً:
-             * بعد الاستلام ما يقبلها المندوبُ راجعة إلا ضمن المدة، فكلُّ ما لا يُباع قبلها خسارة. */
-            const shortDated = (iso: string) => {
-              const d = daysToExpiry(iso);
-              const rd = getExpiryWindows().returnDays;
-              if (d == null || d > rd) return null;
-              return (
-                <p className="mt-1 basis-full text-2xs font-semibold text-warn-700 dark:text-warn-300" data-shortdated>
-                  {d < 0
-                    ? t("purchase.expiredBatch", "هذا التاريخ فات — المادة منتهية وهي بعدها بالكرتون")
-                    : t("purchase.shortDated", { d: formatNum(d), rd: formatNum(rd), defaultValue: "انتهاؤها بعد {{d}} يوم بس — أقصر من مدة إرجاعك ({{rd}} يوم)" })}
-                </p>
-              );
-            };
-            // FAST restock row: the product is already known and already filed —
-            // show where it lives + the stock jump, and ask ONLY for the count.
-            if (matched && product && !expandedKeys.has(l.key)) {
-              const coName = product.company_id ? companies.find((c) => c.id === product.company_id)?.name : undefined;
-              const secName = product.section_id ? (sections ?? []).find((s) => s.id === product.section_id)?.name : undefined;
-              const qtyN = Number(l.qty) || 0;
-              const baseStock = Math.max(0, (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0));
-              return (
-                <div key={l.key} className="rounded-2xl border border-success-200 bg-success-50/40 p-3 dark:border-success-500/25 dark:bg-success-500/5">
-                  {dupBadge && <div className="mb-1.5">{dupBadge}</div>}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <span className="chip shrink-0 bg-success-100 text-2xs font-semibold text-success-700 dark:bg-success-500/20 dark:text-success-200"><PackageCheck size={11} /> {t("purchase.restock", "موجود · تحديث مخزون")}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-bold text-ink">
-                        {l.name}
-                        {coName && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {coName}</span>}
-                        {secName && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><FolderTree size={11} /> {secName}</span>}
-                      </p>
-                      <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-ink-subtle">
-                        {l.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={10} /> {l.barcode}</span>}
-                        <span className="tabular-nums">
-                          {t("purchase.stockJump", { from: baseStock, to: baseStock + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}
-                        </span>
-                        {/* سعرُ البيع المعروضُ هو **سعرُ الرفّ** لا خانةُ السطر — الخانةُ
-                          * تبقى فارغةً قصداً، وعرضُ صفرٍ مكانها كذبٌ بالاتجاه المعاكس. */}
-                        <span>
-                          {t("pos.buy", "شراء")} {money(Number(l.purchase_price) || 0)} · {t("pos.sell", "بيع")}{" "}
-                          {money(sellPriceToSend(l.sell_price) || Number(product.sell_price) || 0)}
-                          {sellPriceToSend(l.sell_price) > 0
-                            ? ` ${t("purchase.sellNew", "(جديد)")}`
-                            : ` ${t("purchase.sellSame", "(ما راح يتغيّر)")}`}
-                        </span>
-                        {product.expiry_date && <span className="flex items-center gap-1"><CalendarClock size={10} /> {t("purchase.currentExpiry", { d: product.expiry_date.slice(0, 10), defaultValue: "الانتهاء الحالي {{d}}" })}</span>}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {/* الانتهاءُ على السطر السريع نفسه (كان مخفيّاً خلف «تعديل الأسعار» — صفرُ سطرٍ
-                        * من ٩٤٦ حمل تاريخاً). ضغطتان، أو «نفس آخر مرة» بضغطة. */}
-                      <div data-fast-expiry>
-                        <label className="label text-2xs">{t("xp.expires", "ينتهي")}</label>
-                        <ExpiryPicker compact value={l.expiry} onChange={(iso) => patchLine(l.key, { expiry: iso })}
-                          suggest={product.expiry_date ?? null} />
-                      </div>
-                      <div>
-                        <label className="label text-2xs">{t("purchase.qty", "الكمية المستلمة")}</label>
-                        <input
-                          type="number" inputMode="numeric" min="0" step="1"
-                          className="input h-10 w-24 text-center text-base font-extrabold tabular-nums"
-                          value={l.qty}
-                          onChange={(e) => patchLine(l.key, { qty: e.target.value })}
-                          onFocus={(e) => e.target.select()}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanRef.current?.focus(); } }}
-                          placeholder="0"
-                        />
-                      </div>
-                      <button
-                        onClick={() => { playTap(); setExpandedKeys((s) => new Set(s).add(l.key)); }}
-                        title={t("purchase.editOptional", "تعديل الأسعار (اختياري)")}
-                        aria-label={t("purchase.editOptional", "تعديل الأسعار (اختياري)")}
-                        className="mt-4 grid h-9 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"
-                      >
-                        <SlidersHorizontal size={15} />
+        {/* ── الورقة: جدولُ الفاتورة كما تُقرأ ورقةُ الشركة ──
+          * صفٌّ لكلّ مادّة وعمودٌ لكلّ رقم — الاسمُ ثمّ الباركود ثمّ الأعدادُ والأسعار، والإجماليُّ آخرَ الصفّ كورقة المورّد،
+          * والأرقامُ بمنازلها تحت بعض. عمودا الرقم والاسم مجمَّدان، والرأسُ وصفُّ المجموع ثابتان، والجدولُ يتمرّر داخله: ثلاثون
+          * سطراً تُراجَع مقابل الورقة بلا نزولِ صفحة. Enter ينزل للخانة نفسِها بالسطر التالي (وShift+Enter يصعد)، ومن آخر سطرٍ
+          * يرجع لصندوق المسح. وما كان «سطراً سريعاً» و«مفتوحاً» صار صفّاً واحداً: كلُّ خانةٍ ظاهرةٌ بمكانها، والملاحظاتُ
+          * (سطرٌ مكرّر، وجبةٌ قصيرة، اسمٌ يطابق مادّةً عندك) بشريطٍ تحت صفّها لا بين خاناته. */}
+        {/* isolate: طبقاتُ الجدول اللاصقة (الرأس، والعمودان المجمّدان، وصفُّ المجموع) داخله وحدَه — كانت تُرسم فوق شريط الحفظ. */}
+        <div className="isolate overflow-hidden rounded-2xl border border-line-strong bg-surface-1 shadow-soft" data-pgrid>
+          <div className="pg-scroll">
+            <table ref={gridRef} onKeyDown={onGridKey} aria-label={t("purchase.new", "فاتورة شراء")}
+              className="pg-table w-full border-separate border-spacing-0 text-sm">
+              <thead>
+                <tr>
+                  <th scope="col" className={cn(TH, "sticky start-0 z-30 w-11 text-center")}>#</th>
+                  {/* بالهاتف الاسمُ المجمَّد أضيق (والاسمُ يلتفّ سطرين) فيبقى للأرقام المتمرّرة مكانُ عمودٍ ونصف. */}
+                  <th scope="col" className={cn(TH, TH_TXT, "pg-f1 pg-name z-30")}>{t("pos.name", "الاسم")}</th>
+                  <th scope="col" className={cn(TH, TH_TXT, "w-32")}>{t("pos.barcode", "الباركود")}</th>
+                  <th scope="col" className={cn(TH, TH_TXT, "w-28")}>{t("pos.category", "الفئة")}</th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-24")}>{t("purchase.log.colQty", "الكمية")}</th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.purchasePrice", "سعر الشراء")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.sellPrice", "سعر البيع")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, "pg-num pg-wrap w-20 leading-tight")}>{t("pos.minStock", "تنبيه المخزون")}</th>
+                  <th scope="col" className={cn(TH, TH_TXT, "w-36")}>{t("xp.expires", "ينتهي")}</th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("purchase.log.colTotal", "الإجمالي")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, "pg-last w-10")}><span className="sr-only">{t("common.delete", "حذف")}</span></th>
+                </tr>
+              </thead>
+              {lines.map((l, idx) => {
+                const matched = !!l.product_id;
+                const product = matched ? products.find((p) => p.id === l.product_id) : undefined;
+                /* السعرُ الحاليُّ على الرفّ — تلميحةً لا قيمة. يُقرأ من المنتج المطابَق،
+                 * وإلا من منتجٍ يطابقه **الخادمُ بالاسم** (الفرعُ الذي لا تعرفه الشاشة). */
+                const sellRef = product ?? (!l.product_id && l.name.trim()
+                  ? products.find((p) => invNormName(p.name) === invNormName(l.name))
+                  : undefined);
+                const sellNow = sellRef ? Number(freshSell[sellRef.id] ?? sellRef.sell_price ?? 0) || null : null;
+                const sellTyped = sellPriceToSend(l.sell_price);
+                const dupTotal = dupOf.get(l.key);
+                const qtyN = Number(l.qty) || 0;
+                const buyN = Number(l.purchase_price) || 0;
+                const lineTotal = qtyN * buyN;
+                const coName = product?.company_id ? companies.find((c) => c.id === product.company_id)?.name : undefined;
+                const secName = product?.section_id ? (sections ?? []).find((s) => s.id === product.section_id)?.name : undefined;
+                /* بوضع التعديل كميةُ السطر القديمة داخل الرصيد أصلاً — القفزةُ من الرصيد بعد عكسها. */
+                const baseStock = product ? Math.max(0, (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0)) : 0;
+                /* الاسمُ المكتوب يطابق منتجاً موجوداً؟ يُعرض بشريط الصفّ — ضغطةٌ تحوّل السطرَ لإعادة تعبئة بدل توأمٍ أعمى. */
+                const sugg = !matched && l.name.trim().length >= 2 ? findByName(l.name).slice(0, 4) : [];
+                const short = l.expiry ? shortDated(l.expiry) : null;
+                const filled = !!(l.barcode.trim() || l.name.trim());
+                const rail = dupTotal != null ? "bg-warn-500" : matched ? "bg-success-500" : filled ? "bg-brand-500" : "bg-transparent";
+                const rowNotes: JSX.Element[] = [];
+                if (dupTotal != null) rowNotes.push(
+                  <span key="dup" className="inline-flex items-center gap-1 font-bold text-warn-700 dark:text-warn-300">
+                    <AlertTriangle size={11} /> {t("purchase.dupLine", "نفس المادة بسطر ثاني — المجموع {{n}}", { n: formatNum(dupTotal) })}
+                  </span>);
+                if (short) rowNotes.push(short);
+                if (l.batchExpiry && !l.expiry) rowNotes.push(
+                  <span key="batch" className="text-ink-subtle" data-batchsaved>
+                    {t("purchase.batchSaved", { d: l.batchExpiry.replace(/-/g, "/"), defaultValue: "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ" })}
+                  </span>);
+                if (sugg.length) rowNotes.push(
+                  <span key="sugg" className="inline-flex flex-wrap items-center gap-1">
+                    {sugg.map((p) => (
+                      <button key={p.id} type="button"
+                        onClick={() => { playTap(); setLines((ls) => ls.map((x) => (x.key === l.key ? { ...lineFromProduct(p, p.barcode ?? ""), key: x.key, qty: x.qty || "1" } : x))); }}
+                        className="inline-flex items-center gap-1 rounded-full border border-success-300 bg-success-50/70 px-2 py-0.5 text-2xs font-bold text-success-700 transition hover:bg-success-100 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-300">
+                        <PackageCheck size={10} /> {t("purchase.useExisting", "موجود:")} {p.name}
                       </button>
-                      <button onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")} className="mt-4 grid h-9 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
-                    </div>
-                  </div>
-                  {l.expiry && shortDated(l.expiry)}
-                </div>
-              );
-            }
-            return (
-              <div key={l.key} className={cn("rounded-2xl border p-3", matched ? "border-success-200 bg-success-50/40 dark:border-success-500/25 dark:bg-success-500/5" : "border-line bg-surface-1")}>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-ink-subtle">
-                    {t("purchase.lineN", { n: idx + 1, defaultValue: "صنف {{n}}" })}
-                    {matched
-                      ? <span className="chip bg-success-100 text-2xs font-semibold text-success-700 dark:bg-success-500/20 dark:text-success-200"><PackageCheck size={11} /> {t("purchase.restock", "موجود · تحديث مخزون")}</span>
-                      : (l.barcode || l.name) ? <span className="chip bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Sparkles size={11} /> {t("purchase.newItem", "منتج جديد")}</span> : null}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    {matched && expandedKeys.has(l.key) && (
-                      <button onClick={() => { playTap(); setExpandedKeys((s) => { const n = new Set(s); n.delete(l.key); return n; }); }} aria-label={t("purchase.collapse", "طيّ")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><ChevronDown size={15} className="rotate-180" /></button>
+                    ))}
+                  </span>);
+                /* الصفُّ وشريطُه بجسمٍ واحد: الخلفيةُ (التناوب، والتحديدُ حين التركيز داخله) على الجسم وتُورَث — فالخانتان
+                 * المجمّدتان معتمتان بلون صفّهما (bg-inherit) ولا يظهر تحتهما ما يتمرّر، وشريطُ الملاحظات يتلوّن معه. */
+                const cellB = rowNotes.length ? "" : "border-b border-line";
+                return (
+                  <tbody key={l.key} data-pline={l.key} data-pstate={dupTotal != null ? "dup" : matched ? "restock" : filled ? "new" : "empty"}
+                    className={cn("pg-row transition-colors", idx % 2 ? "bg-surface-2" : "bg-surface-1")}>
+                    <tr className="bg-inherit align-top">
+                      <td className={cn("sticky start-0 z-10 bg-inherit", cellB)}>
+                        <span aria-hidden className={cn("pg-rail absolute inset-y-0 start-0", rail)} />
+                        <span className="block pt-3 text-center text-2xs font-bold tabular-nums text-ink-subtle">{idx + 1}</span>
+                      </td>
+                      {/* الحافّةُ المجمّدة بلونها هي (border-e-…) بعد لون الخطّ السفليّ: twMerge يُسقط لوناً عامّاً سبقه لونٌ عامّ. */}
+                      <td className={cn(cellB, "pg-f1 sticky z-10 border-e bg-inherit")}>
+                        {matched && product ? (
+                          <div className="px-2.5 py-2">
+                            <p className="line-clamp-2 font-bold leading-snug text-ink" title={l.name}>{l.name}</p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-ink-subtle">
+                              <span className="inline-flex items-center gap-0.5 font-bold text-success-700 dark:text-success-300"><PackageCheck size={10} /> {t("purchase.restock", "موجود · تحديث مخزون")}</span>
+                              {coName && <span className="pg-chip items-center gap-0.5"><Building2 size={10} /> {coName}</span>}
+                              {secName && <span className="pg-chip items-center gap-0.5"><FolderTree size={10} /> {secName}</span>}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <input data-col="name" className={CELL} value={l.name} onChange={(e) => patchLine(l.key, { name: e.target.value })}
+                              placeholder={t("pos.namePh", "اسم المنتج")} aria-label={t("pos.name", "الاسم")} />
+                            {(filled || companySections.length > 0) && (
+                              <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-1.5">
+                                {filled && <span className="inline-flex items-center gap-0.5 text-2xs font-bold text-brand-700 dark:text-brand-300"><Sparkles size={10} /> {t("purchase.newItem", "منتج جديد")}</span>}
+                                {/* أصناف الشركة المختارة: القطعةُ الجديدة تهبط بمكانها من أوّل يوم بدل «بدون صنف». */}
+                                {companySections.length > 0 && (
+                                  <select data-linesection aria-label={t("purchase.sectionIn", "الصنف داخل الشركة")} value={l.section_id}
+                                    onChange={(e) => patchLine(l.key, { section_id: e.target.value })}
+                                    className="pg-sec h-6 rounded-md border border-line bg-surface-1 px-1 text-2xs text-ink outline-none focus:border-brand-400">
+                                    <option value="">{t("pos.uncategorized", "بدون صنف")}</option>
+                                    {companySections.map((sec) => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+                                  </select>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        <input data-col="code" dir="ltr" className={cn(CELL, "pg-code font-mono text-xs")} value={l.barcode}
+                          onChange={(e) => onBarcode(l.key, e.target.value)} placeholder="—" aria-label={t("pos.barcode", "الباركود")} />
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        <select data-col="cat" className={cn(CELL, "cursor-pointer")} value={l.category}
+                          onChange={(e) => patchLine(l.key, { category: e.target.value })} aria-label={t("pos.category", "الفئة")}>
+                          <option value="">—</option>
+                          {CATEGORY_KEYS.map((c) => <option key={c} value={c}>{t(`pos.cat.${c}`)}</option>)}
+                        </select>
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        <input data-col="qty" type="number" inputMode="decimal" min="0" step="any" className={cn(NUM, "font-extrabold")}
+                          value={l.qty} onChange={(e) => patchLine(l.key, { qty: e.target.value })} onFocus={(e) => e.target.select()}
+                          placeholder="0" aria-label={t("purchase.qty", "الكمية المستلمة")} />
+                        {product && (
+                          <p className={SUB} title={t("purchase.stockJump", { from: baseStock, to: baseStock + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}>
+                            {formatQty(baseStock)} ← {formatQty(baseStock + qtyN)}
+                          </p>
+                        )}
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        <input data-col="buy" type="number" inputMode="decimal" min="0" step="any" className={NUM} value={l.purchase_price}
+                          onChange={(e) => patchLine(l.key, { purchase_price: e.target.value })} onFocus={(e) => e.target.select()}
+                          placeholder="0" aria-label={t("pos.purchasePrice", "سعر الشراء")} />
+                        {/* نصيبُ الوحدة من خصم الشركة — ما يدخل كلفةَ المخزون (المتوسّط)، والمكتوبُ يبقى سعرَ الشراء. */}
+                        {discountAmt > 0 && buyN > 0 && subtotal > 0 && (
+                          <p className={SUB} data-unitnet>{t("retail.net", "الصافي")} {formatDec((buyN * total) / subtotal)}</p>
+                        )}
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        {/* التلميحةُ تحمل السعرَ الحاليّ، والقيمةُ تبقى فارغةً حتى يكتب: الفارغُ «لا تلمس سعرَ الرفّ». */}
+                        <input data-col="sell" type="number" inputMode="decimal" min="0" step="any" className={NUM} value={l.sell_price}
+                          onChange={(e) => patchLine(l.key, { sell_price: e.target.value })} onFocus={(e) => e.target.select()}
+                          placeholder={sellNow != null ? formatDec(sellNow) : "0"} aria-label={t("pos.sellPrice", "سعر البيع")} />
+                        {sellNow != null && sellTyped > 0 && sellTyped !== sellNow && (
+                          <p className={cn(SUB, "font-bold text-warn-700 dark:text-warn-300")} data-sellchange
+                            title={t("purchase.sellWillChange", "راح يتغيّر سعر البيع: {{from}} ← {{to}}", { from: formatNum(sellNow), to: formatNum(sellTyped) })}>
+                            {formatDec(sellNow)} ← {formatDec(sellTyped)}
+                          </p>
+                        )}
+                        {sellNow != null && sellTyped <= 0 && <p className={SUB}>{t("purchase.sellSame", "(ما راح يتغيّر)")}</p>}
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        <input data-col="min" type="number" inputMode="numeric" min="0" step="1" className={NUM} value={l.min_stock}
+                          onChange={(e) => patchLine(l.key, { min_stock: e.target.value })} onFocus={(e) => e.target.select()}
+                          placeholder="0" aria-label={t("pos.minStock", "تنبيه المخزون")} />
+                      </td>
+                      <td className={cn(TD, cellB)} data-fast-expiry>
+                        <ExpiryPicker cell value={l.expiry} onChange={(iso) => patchLine(l.key, { expiry: iso })} suggest={product?.expiry_date ?? null} />
+                        {!l.expiry && product?.expiry_date && (
+                          <p className={cn(SUB, "text-start")} dir="ltr" title={t("purchase.currentExpiry", { d: product.expiry_date.slice(0, 10), defaultValue: "الانتهاء الحالي {{d}}" })}>
+                            {product.expiry_date.slice(0, 10).replace(/-/g, "/")}
+                          </p>
+                        )}
+                      </td>
+                      <td className={cn(TD, cellB)}>
+                        <p className="pg-num px-2.5 pt-2.5 font-bold tabular-nums text-ink">{lineTotal ? formatDec(lineTotal) : <span className="font-normal text-ink-subtle">—</span>}</p>
+                      </td>
+                      <td className={cn(TD, "pg-last", cellB)}>
+                        <button type="button" onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")}
+                          className="mx-auto mt-1.5 grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
+                          <X size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                    {rowNotes.length > 0 && (
+                      <tr className="bg-inherit" data-pnotes>
+                        <td className="sticky start-0 z-10 border-b border-line bg-inherit">
+                          <span aria-hidden className={cn("pg-rail absolute inset-y-0 start-0", rail)} />
+                        </td>
+                        <td colSpan={10} className="border-b border-line px-0 pb-2">
+                          <div className="pg-f1 pg-notes sticky flex w-max flex-wrap items-center gap-x-4 gap-y-1 px-2.5 text-2xs">{rowNotes}</div>
+                        </td>
+                      </tr>
                     )}
-                    <button onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
-                  </span>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-12">
-                  <div className="sm:col-span-3">
-                    <label className="label text-2xs">{t("pos.barcode", "الباركود")}</label>
-                    <input className="input font-mono text-sm" dir="ltr" value={l.barcode} onChange={(e) => onBarcode(l.key, e.target.value)} placeholder="—" />
-                  </div>
-                  <div className="sm:col-span-4">
-                    <label className="label text-2xs">{t("pos.name", "الاسم")}</label>
-                    <input className="input text-sm" value={l.name} onChange={(e) => patchLine(l.key, { name: e.target.value })} placeholder={t("pos.namePh", "اسم المنتج")} readOnly={matched} />
-                    {/* الاسم المكتوب يطابق منتجاً موجوداً؟ اعرضه — ضغطة تحوّل السطر
-                        لإعادة تعبئة بدل ما ينخلق توأم أعمى بنفس الاسم. */}
-                    {!matched && l.name.trim().length >= 2 && (() => {
-                      const sugg = findByName(l.name).slice(0, 4);
-                      if (!sugg.length) return null;
-                      return (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {sugg.map((p) => (
-                            <button key={p.id} type="button"
-                              onClick={() => { playTap(); setLines((ls) => ls.map((x) => (x.key === l.key ? { ...lineFromProduct(p, p.barcode ?? ""), key: x.key, qty: x.qty || "1" } : x))); }}
-                              className="inline-flex items-center gap-1 rounded-full border border-success-300 bg-success-50/60 px-2 py-0.5 text-[10px] font-bold text-success-800 transition hover:bg-success-100 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
-                              <PackageCheck size={10} /> {t("purchase.useExisting", "موجود:")} {p.name}
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  {!matched && companySections.length > 0 && (
-                    <div className="sm:col-span-3">
-                      <label className="label text-2xs">{t("purchase.sectionIn", "الصنف داخل الشركة")}</label>
-                      <select className="input text-sm" data-linesection value={l.section_id}
-                        onChange={(e) => patchLine(l.key, { section_id: e.target.value })}>
-                        <option value="">{t("pos.uncategorized", "بدون صنف")}</option>
-                        {companySections.map((sec) => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  <div className="sm:col-span-2">
-                    <label className="label text-2xs">{t("pos.category", "الفئة")}</label>
-                    <select className="input text-sm" value={l.category} onChange={(e) => patchLine(l.key, { category: e.target.value })}>
-                      <option value="">—</option>
-                      {CATEGORY_KEYS.map((c) => <option key={c} value={c}>{t(`pos.cat.${c}`)}</option>)}
-                    </select>
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label text-2xs">{t("purchase.qty", "الكمية المستلمة")}</label>
-                    <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm font-bold" value={l.qty} onChange={(e) => patchLine(l.key, { qty: e.target.value })} placeholder="0" />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label text-2xs">{t("pos.purchasePrice", "سعر الشراء")}</label>
-                    <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm" value={l.purchase_price} onChange={(e) => patchLine(l.key, { purchase_price: e.target.value })} placeholder="0" />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label text-2xs">{t("pos.sellPrice", "سعر البيع")}</label>
-                    {/* التلميحةُ تحمل السعرَ الحاليّ، والقيمةُ تبقى فارغةً حتى يكتب. */}
-                    <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm"
-                      value={l.sell_price} onChange={(e) => patchLine(l.key, { sell_price: e.target.value })}
-                      placeholder={sellNow != null
-                        ? t("purchase.sellKeep", "{{v}} — اتركها فارغة", { v: formatNum(sellNow) })
-                        : "0"} />
-                    {sellNow != null && sellPriceToSend(l.sell_price) > 0 && sellPriceToSend(l.sell_price) !== sellNow && (
-                      <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
-                        {t("purchase.sellWillChange", "راح يتغيّر سعر البيع: {{from}} ← {{to}}",
-                          { from: formatNum(sellNow), to: formatNum(sellPriceToSend(l.sell_price)) })}
-                      </div>
-                    )}
-                    {sellNow != null && sellPriceToSend(l.sell_price) <= 0 && (
-                      <div className="mt-1 text-2xs text-ink-subtle">
-                        {t("purchase.sellUnchanged", "سعر البيع ما راح يتغيّر")}
-                      </div>
-                    )}
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label text-2xs">{t("pos.minStock", "تنبيه المخزون")}</label>
-                    <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm" value={l.min_stock} onChange={(e) => patchLine(l.key, { min_stock: e.target.value })} placeholder="0" />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="label text-2xs">{t("purchase.batchExpiry", "انتهاء الوجبة الجديدة")} <span className="font-normal text-ink-subtle">{t("purchase.batchExpiryHint", "(اختياري — فارغ يبقي القديم)")}</span></label>
-                    <ExpiryPicker value={l.expiry} onChange={(iso) => patchLine(l.key, { expiry: iso })}
-                      suggest={product?.expiry_date ?? null} />
-                    {l.expiry && shortDated(l.expiry)}
-                    {l.batchExpiry && !l.expiry && (
-                      <p className="mt-1 text-2xs text-ink-subtle" data-batchsaved>
-                        {t("purchase.batchSaved", { d: l.batchExpiry.replace(/-/g, "/"), defaultValue: "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ" })}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-end sm:col-span-3">
-                    <div className="w-full rounded-xl bg-surface-2 px-3 py-2 text-center">
-                      <p className="text-2xs text-ink-subtle">{t("purchase.lineTotal", "إجمالي الصنف")}</p>
-                      <p className="text-sm font-bold text-ink tabular-nums">{money((Number(l.qty) || 0) * (Number(l.purchase_price) || 0))}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          <button onClick={() => { playTap(); setLines((ls) => [...ls, blankLine()]); }} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line py-3 text-sm font-semibold text-ink-muted transition hover:border-brand-300 hover:text-brand-600">
-            <Plus size={16} /> {t("purchase.addLine", "أضف صنفاً")}
-          </button>
+                  </tbody>
+                );
+              })}
+              <tfoot>
+                <tr>
+                  <td className={cn(TF, "sticky start-0 z-30")} />
+                  <td className={cn(TF, "pg-f1 z-30 border-e")}>
+                    <button type="button" onClick={() => { playTap(); setLines((ls) => [...ls, blankLine()]); }} data-paddline
+                      className="flex w-full items-center gap-1.5 px-2.5 py-1 text-sm font-bold text-brand-700 transition hover:text-brand-600 dark:text-brand-300">
+                      <Plus size={15} /> {t("purchase.addLine", "أضف صنفاً")}
+                    </button>
+                  </td>
+                  <td className={TF} colSpan={2}>
+                    <span className="px-2.5 text-2xs font-semibold text-ink-subtle">{t("purchase.itemsCount", "أصناف")} <b className="tabular-nums text-ink">{formatNum(validLines.length)}</b></span>
+                  </td>
+                  <td className={cn(TF, "pg-num")}><span className="px-2.5 font-extrabold tabular-nums text-ink" data-psumqty>{formatQty(totalUnits)}</span></td>
+                  <td className={TF} colSpan={4} />
+                  <td className={cn(TF, "pg-num")}><span className="px-2.5 font-extrabold tabular-nums text-ink" data-psumtotal>{formatDec(subtotal)}</span></td>
+                  <td className={TF} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
 
-        {/* Payment + notes */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <label className="label">{t("purchase.payMethod", "طريقة الدفع")}</label>
-            <div className="flex gap-1.5">
-              {PAY_METHODS.map((m) => (
-                <button key={m} onClick={() => { playTap(); setPayMethod(m); }}
-                  className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", payMethod === m ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                  {t(`pay.${m}`, m)}
-                </button>
-              ))}
+        {/* ── ذيلُ الورقة: الدفعُ بجانب، والحسابُ بجانب كأسفل فاتورة المورّد ── */}
+        <div className="pg-foot grid gap-3">
+          <div className="grid gap-3 rounded-2xl border border-line bg-surface-1 p-3.5 sm:grid-cols-2">
+            <div>
+              <label className="label">{t("purchase.payMethod", "طريقة الدفع")}</label>
+              <div className="flex gap-1.5">
+                {PAY_METHODS.map((m) => (
+                  <button key={m} type="button" onClick={() => { playTap(); setPayMethod(m); }}
+                    className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", payMethod === m ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                    {t(`pay.${m}`, m)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              {/* **الفراغُ كان يعني «مدفوعةٌ كاملة» بصمت** — وخطؤه باتّجاهٍ واحد
+                * دائماً: دَينُ العيادة يُبخَس، ودفترُ المورّد يقول «ما عليها شي».
+                * فصار سؤالاً صريحاً بدل افتراض. ووضعُ التعديل يبقى كما هو:
+                * الفاتورةُ لها مدفوعٌ مسجَّلٌ فعلاً، والفراغُ يعني «لا تغيّره». والمدفوعُ على الصافي بعد الخصم. */}
+              <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")}
+                {editing && <span className="font-normal text-ink-subtle">{t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)")}</span>}
+              </label>
+              {editing ? (
+                <input type="number" inputMode="decimal" min="0" step="any" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing.purchase.amount_paid ?? total)} />
+              ) : (
+                <>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => { playTap(); setPaidMode("full"); setAmountPaid(""); }}
+                      className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "full" ? "bg-success-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                      {t("purchase.paidFull", "دفعناها كلّها")}
+                    </button>
+                    <button type="button" onClick={() => { playTap(); setPaidMode("debt"); }}
+                      className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "debt" ? "bg-warn-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                      {t("purchase.paidDebt", "عليها دَين")}
+                    </button>
+                  </div>
+                  {paidMode === "debt" && (
+                    <>
+                      <input type="number" inputMode="decimal" min="0" step="any" className="input mt-1.5" value={amountPaid}
+                        onChange={(e) => setAmountPaid(e.target.value)} placeholder={t("purchase.paidHowMuch", "شكَد دفعنا هسّه؟")} />
+                      <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
+                        {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: money(Math.max(0, total - paidNum)) })}
+                      </div>
+                    </>
+                  )}
+                  {paidMode === "full" && total > 0 && (
+                    <div className="mt-1 text-2xs text-ink-subtle">{t("purchase.paidNone", "ما راح ينسجّل دَين لهذي الفاتورة")}</div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">{t("purchase.notes", "ملاحظات")}</label>
+              <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="—" />
             </div>
           </div>
-          <div>
-            {/* **الفراغُ كان يعني «مدفوعةٌ كاملة» بصمت** — وخطؤه باتّجاهٍ واحد
-              * دائماً: دَينُ العيادة يُبخَس، ودفترُ المورّد يقول «ما عليها شي».
-              * فصار سؤالاً صريحاً بدل افتراض. ووضعُ التعديل يبقى كما هو:
-              * الفاتورةُ لها مدفوعٌ مسجَّلٌ فعلاً، والفراغُ يعني «لا تغيّره». */}
-            <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")}
-              {editing && <span className="font-normal text-ink-subtle">{t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)")}</span>}
-            </label>
-            {editing ? (
-              <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing.purchase.amount_paid ?? total)} />
-            ) : (
-              <>
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { playTap(); setPaidMode("full"); setAmountPaid(""); }}
-                    className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "full" ? "bg-success-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                    {t("purchase.paidFull", "دفعناها كلّها")}
-                  </button>
-                  <button type="button" onClick={() => { playTap(); setPaidMode("debt"); }}
-                    className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "debt" ? "bg-warn-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                    {t("purchase.paidDebt", "عليها دَين")}
-                  </button>
+
+          {/* الحساب: المجموعُ − الخصم = الصافي، بخطٍّ مزدوجٍ فوق الصافي كخاتمة فاتورة. والخصمُ بالنسبة أو بالمبلغ كشاشة البيع
+            * (resolveDiscount)، ويُرسل مبلغاً يقصّه الخادمُ على المجموع. ولا خانةَ لقاعدةٍ لا تعرفه (purchaseDiscountReady). */}
+          <div className="rounded-2xl border border-line bg-surface-1 p-4" data-ptotals>
+            <dl className="space-y-2.5 text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-ink-muted">{discOk ? t("retail.subtotal", "المجموع الفرعي") : t("purchase.grandTotal", "الإجمالي")}</dt>
+                <dd className="font-bold tabular-nums text-ink">{money(subtotal)}</dd>
+              </div>
+              {discOk && (
+                <div className="flex flex-wrap items-center justify-between gap-2" data-pdiscount>
+                  <dt className="flex items-center gap-2 text-ink-muted">
+                    {t("retail.discount", "الخصم")}
+                    <span className="inline-flex overflow-hidden rounded-lg border border-line" role="group" aria-label={t("retail.discount", "الخصم")}>
+                      <button type="button" aria-pressed={discType === "fixed"} data-pdisctype="fixed" onClick={() => { playTap(); setDiscType("fixed"); }}
+                        className={cn("grid h-8 place-items-center px-2 text-2xs font-bold transition", discType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")}>
+                        {currencySymbol()}
+                      </button>
+                      <button type="button" aria-pressed={discType === "percent"} data-pdisctype="percent" onClick={() => { playTap(); setDiscType("percent"); }}
+                        className={cn("grid h-8 w-8 place-items-center transition", discType === "percent" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")}>
+                        <Percent size={13} />
+                      </button>
+                    </span>
+                  </dt>
+                  <dd className="flex items-center gap-2">
+                    <input type="number" inputMode="decimal" min="0" step="any" data-pdiscvalue value={discValue}
+                      onChange={(e) => setDiscValue(e.target.value)} onFocus={(e) => e.target.select()} placeholder="0" aria-label={t("retail.discount", "الخصم")}
+                      className={cn("input pg-num pg-n h-9 w-28 rounded-xl px-2.5 py-0 text-sm font-bold tabular-nums",
+                        discClamped && "border-warn-400 text-warn-700 dark:text-warn-300")} />
+                    <span className={cn("pg-discamt text-end font-bold tabular-nums", discountAmt > 0 ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle")} data-pdiscamt>
+                      {discountAmt > 0 ? <bdi>−{money(discountAmt)}</bdi> : "—"}
+                    </span>
+                  </dd>
                 </div>
-                {paidMode === "debt" && (
-                  <>
-                    <input type="number" inputMode="numeric" min="0" step="1" className="input mt-1.5" value={amountPaid}
-                      onChange={(e) => setAmountPaid(e.target.value)} placeholder={t("purchase.paidHowMuch", "شكَد دفعنا هسّه؟")} />
-                    <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
-                      {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: money(Math.max(0, total - paidNum)) })}
-                    </div>
-                  </>
-                )}
-                {paidMode === "full" && total > 0 && (
-                  <div className="mt-1 text-2xs text-ink-subtle">{t("purchase.paidNone", "ما راح ينسجّل دَين لهذي الفاتورة")}</div>
-                )}
-              </>
-            )}
-          </div>
-          <div>
-            <label className="label">{t("purchase.notes", "ملاحظات")}</label>
-            <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="—" />
+              )}
+              <div className="pg-net flex items-baseline justify-between gap-3 pt-2.5">
+                <dt className="text-base font-extrabold text-ink">{discOk ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</dt>
+                <dd className="text-xl font-extrabold tabular-nums text-ink" data-pnet>{money(total)}</dd>
+              </div>
+            </dl>
           </div>
         </div>
 
         {/* Summary + save */}
-        <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1/95 p-3 backdrop-blur">
+        <div className="sticky bottom-0 z-30 -mx-1 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1/95 p-3 backdrop-blur">
           <div className="flex flex-1 flex-wrap gap-x-5 gap-y-1">
             <Summary label={t("purchase.itemsCount", "أصناف")} value={String(validLines.length)} />
-            <Summary label={t("purchase.unitsLabel", "قطعة")} value={String(totalUnits)} />
-            <Summary label={t("purchase.grandTotal", "الإجمالي")} value={money(total)} strong />
+            <Summary label={t("purchase.unitsLabel", "قطعة")} value={formatQty(totalUnits)} />
+            <Summary label={discountAmt > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={money(total)} strong />
             <div className="flex flex-col">
               <span className="text-2xs text-ink-subtle">{t("purchase.settle", "الحالة")}</span>
               <Badge tone={statusTone(status)}>{t(`purchase.status.${status}`, status)}</Badge>

@@ -3446,6 +3446,11 @@ const demoRepo = {
     const round2 = (n: number) => cons.col2(Number(n) || 0);
     const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
     const sums: { qty: number; cost: number }[] = [];
+    /* 0260: خصمُ الشركة من رأس الفاتورة — المجموعُ قبله بحلقةٍ أولى كالخادم (نسبتُه تلزم كلَّ سطرٍ داخل الثانية)، ثمّ يُقصّ عليه.
+     * وكلُّ سطرٍ يُستلم بكلفته بعد نصيبه (المتوسّطُ والفرق)، والمكتوبُ بالسطر وسعرُ الشراء كما هما. */
+    const disc = cons.purchaseShareLocal(
+      cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total,
+      meta.discount);
     /* الكشف (مرآةُ 0211): صورةُ المادّة قبل سطرها — سطرٌ ثانٍ لنفس المادّة يرى ما
      * تركه الأوّل، كالخادم. */
     const effects: PurchaseEffect[] = [];
@@ -3466,8 +3471,8 @@ const demoRepo = {
       const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) },
         (st, q) => Math.max(Math.min(st, 0), Math.round((st + q) * 1000) / 1000),
         {
-          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost); },
-          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost) : rec!.avg; },
+          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost, disc.share); },
+          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost, disc.share) : rec!.avg; },
         });
       const pid = r.pid;
       const snapBefore = r.before;
@@ -3490,12 +3495,14 @@ const demoRepo = {
     /* المجموعُ سطراً سطراً بمنزلتين كما تجمعه الدالّة (v_total numeric(14,2) يقرّب بكلّ إسناد): نصفا علبةٍ بـ٧٧٧٫٧٧ = ٧٧٧٫٧٨ لا
      * ٧٧٧٫٧٧ (قيسَ بالفرق مع الخادم). والمدفوعُ least(greatest(coalesce(amount_paid, v_total), 0), v_total) ثمّ عمودُه — وما لا
      * يعبر JSON رقماً (NaN، اللانهاية) يصل الخادمَ null فيُدفع كلُّه. */
-    const { total: totalR, itemCount } = cons.purchaseTotalLocal(sums);
+    // والإجماليُّ صافٍ بعد الخصم (0260): المدفوعُ والحالةُ عليه كما كانا على المجموع.
+    const { itemCount } = cons.purchaseTotalLocal(sums);
+    const totalR = disc.net;
     const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : null;
     const paid = paidIn !== null ? cons.col2(Math.min(totalR, Math.max(0, paidIn))) : totalR;
     const purchase: Purchase = {
       id: purchaseId, clinic_id: null, company_id: companyId, company_name: meta.company_name ?? null,
-      reference: meta.reference?.trim() || null, total: totalR, item_count: itemCount,
+      reference: meta.reference?.trim() || null, total: totalR, discount: disc.discount, item_count: itemCount,
       amount_paid: paid, payment_method: meta.payment_method ?? null,
       status: paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial",
       supplier_name: meta.supplier_name?.trim() || null,
@@ -3542,10 +3549,16 @@ const demoRepo = {
      * _avg_adjust مرّةً بعد الحلقة بالرصيد النهائيّ (purchaseAdjustLocal). */
     const adj = cons.purchaseAdjustLocal();
     const oldItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId);
+    /* 0260: السطورُ القديمة تُعكس بنسبة خصم فاتورتها كما حُفظ (total صافٍ، والمجموعُ total + discount) — ما أدخله استلامُها؛
+     * والجديدةُ بنسبة الخصم الجديد على مجموعها الجديد (بحلقةٍ أولى كالخادم). ومفتاحٌ غائب (جهازٌ ما تحدّث) يُبقي الخصمَ المحفوظ. */
+    const oldShare = cons.purchaseStoredShare(purchase);
+    const disc = cons.purchaseShareLocal(
+      cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total,
+      meta.discount !== undefined ? meta.discount : (purchase.discount ?? 0));
     // ١) اعكس السطور القديمة ثم أزلها
     for (const it of oldItems) {
       const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
-      if (it.product_id) adj.touchOld(p, it.product_id, oldItems.filter((x) => x.product_id === it.product_id));
+      if (it.product_id) adj.touchOld(p, it.product_id, oldItems.filter((x) => x.product_id === it.product_id), oldShare);
       if (p && !orig.has(p.id)) orig.set(p.id, effectSnap(p)!);
       if (it.product_id) oldQty.set(it.product_id, (oldQty.get(it.product_id) ?? 0) + (it.qty || 0));
       if (p) { p.stock = rnd3((p.stock || 0) - (it.qty || 0)); touched.add(p.id); }
@@ -3560,7 +3573,7 @@ const demoRepo = {
       const sell = round2(Number(l.sell_price) || 0);
       sums.push({ qty, cost });
       const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => rnd3(st + q),
-        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost) : adj.line(p.id, qty, cost)) });
+        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost, disc.share) : adj.line(p.id, qty, cost, disc.share)) });
       const pid = r.pid;
       if (r.how !== null) touched.add(pid);
       const snapBefore = r.how !== null && orig.has(pid) && !seen.has(pid) ? orig.get(pid)! : r.before;
@@ -3610,11 +3623,13 @@ const demoRepo = {
     db.purchaseEffects = [...(db.purchaseEffects ?? []), ...effects];
     // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد. المجموعُ سطراً سطراً بمنزلتين (v_total numeric(14,2))،
     // والمدفوعُ least(coalesce(amount_paid, القديم), v_total) بعمودِه ثمّ greatest(…, 0) — كالدالّة حرفاً.
-    const { total: totalR, itemCount } = cons.purchaseTotalLocal(sums);
+    const { itemCount } = cons.purchaseTotalLocal(sums);
+    const totalR = disc.net;                                         // 0260: صافٍ — والمدفوعُ والحالةُ عليه
     const prevPaid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
     const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : Number(prevPaid) || 0;
     const paid = Math.max(0, cons.col2(Math.min(totalR, paidIn)));
     purchase.total = totalR;
+    purchase.discount = disc.discount;
     purchase.item_count = itemCount;
     purchase.amount_paid = paid;
     purchase.status = paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial";

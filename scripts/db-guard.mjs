@@ -387,6 +387,13 @@ export const WIRING = [
   ["invoices_consumption_status/0", "_invoice_lock_products(", "_invoice_lock_products"],
   ["product_movements/2", "invoice_consumption", "_consumption_move"],
   ["invoice_consumption_get/1", "_cons_at_us(", "_cons_at_us"],
+  // 0259: الطيُّ يضمّ التعبئة، والاسترجاعُ يحرّر رموزَها، والترتيبُ لا يطوي ما له تعبئة.
+  ["merge_products/2", "_pkg_packs_union(", "_pkg_packs_union"],
+  ["restore_product/1", "_pkg_snapshot_free(", "_pkg_snapshot_free"],
+  ["inventory_tidy_uncat/0", "dup.sub_codes", "_pkg_snapshot_free"],
+  // 0260: خصمُ الشركة — كلفةُ المتوسّط بنصيب السطر منه، بالاستلام والتعديل.
+  ["record_purchase/2", "_purchase_unit_cost(", "_purchase_unit_cost"],
+  ["update_purchase/3", "_purchase_unit_cost(", "_purchase_unit_cost"],
 ];
 /** محفّزاتُ العكس (و0254 حارسُ السند): قائمةٌ ومفعَّلة متى وُجدت دالّتُها. */
 export const WIRED_TRIGGERS = [

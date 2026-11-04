@@ -1,5 +1,6 @@
 /* ============================================================================
- * متوسّطُ الكلفة المتحرّك (0255) — مرآةُ _avg_receive و_avg_adjust و_avg_merge حرفاً بحرف.
+ * متوسّطُ الكلفة المتحرّك (0255) — مرآةُ _avg_receive و_avg_adjust و_avg_merge حرفاً بحرف،
+ * ونصيبُ سطر الشراء من خصم الشركة (_purchase_unit_cost، 0260).
  *
  * قرارُ المالك (٣١/١٠): الكلفةُ للمستهلكات والتلف وبيع المواد = المتوسّطُ المتحرّك من يوم 0255،
  * و«سعر الشراء» يبقى آخرَ سعر. فـstock_unit_cost(p) = greatest(coalesce(avg_cost, purchase_price, 0), 0)
@@ -54,6 +55,17 @@ export function receiveVarianceCents(sM: bigint, aU: bigint | null, qM: bigint, 
   if (qM <= 0n || cU <= 0n || !known(aU) || sM >= 0n) return null;
   const v = roundDiv(-sM * (cU - aU), 10_000_000n);   // ألف·مليون (×10⁹) ← فلوس (×10²)
   return v === 0n ? null : v;
+}
+
+/** `_purchase_unit_cost(c, net, gross)` (0260) ← كلفةُ وحدة سطر الشراء للمتوسّط بعد نصيبه من خصم الشركة:
+ *  c × max(net, 0) ÷ gross بستّ منازل (النصفُ بعيداً عن الصفر). بلا خصمٍ (net غائبٌ أو ≥ gross)، أو مجموعٍ ≤ 0،
+ *  أو كلفةٍ ≤ 0 أو غائبة ⇒ c كما هي (والصفرُ يبقى «مجهولاً» لـavgReceive كما كان). c بالمليون، وnet وgross بالفلوس
+ *  (numeric(14,2) — الإجماليُّ الصافي ومجموعُ الفاتورة قبل الخصم). */
+export function purchaseUnitCostU(cU: bigint | null, netC: bigint | null, grossC: bigint | null): bigint | null {
+  if (cU === null || cU <= 0n || grossC === null || grossC <= 0n) return cU;
+  const net = netC ?? grossC;
+  if (net >= grossC) return cU;
+  return roundDiv(cU * (net > 0n ? net : 0n), grossC);
 }
 
 /** قيمةُ سطر شراءٍ دقيقة q·c بالمليار — لجمع v_old و v_new بلا تقريب. */
