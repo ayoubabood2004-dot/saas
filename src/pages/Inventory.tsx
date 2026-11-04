@@ -923,12 +923,12 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
           {packsOf(p).map((k) => (
             <span key={k.id} className="chip max-w-full min-w-0 truncate bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" data-pkgchip={k.id}
               title={(k.codes ?? []).join(" · ")}>
-              <Boxes size={11} /> {t("pkg.chipPack", { name: k.name, per: k.per })}{(k.codes ?? []).length > 0 && <span className="font-mono" dir="ltr">{` · ${(k.codes ?? []).join(" · ")}`}</span>}
+              <Boxes size={11} /> {t("pkg.chipPack", { name: k.name, per: k.per })}{(k.codes ?? []).length > 0 && <>{" · "}<span className="font-mono" dir="ltr">{(k.codes ?? []).join(" · ")}</span></>}
             </span>
           ))}
           {subCodesOf(p).length > 0 && (
             <span className="chip max-w-full min-w-0 truncate bg-surface-2 text-2xs font-semibold text-ink-muted" data-pkgsubchip title={subCodesOf(p).join(" · ")}>
-              {p.sub_unit_name?.trim() || t("pkg.level.sub")}<span className="font-mono" dir="ltr">{` · ${subCodesOf(p).join(" · ")}`}</span>
+              {p.sub_unit_name?.trim() || t("pkg.level.sub")}{" · "}<span className="font-mono" dir="ltr">{subCodesOf(p).join(" · ")}</span>
             </span>
           )}
         </div>
