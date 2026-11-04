@@ -739,7 +739,25 @@ export interface Product {
   store_featured?: boolean;
   /** حقلُ الدواجن المالك لهذا الصنف (0191). فارغٌ = مخزنُ العيادة — الافتراض. */
   farm_id?: string | null;
+  /** التعبئة (0259) — اسمُ الوحدة الوسطى («علبة»، «قنينة»)؛ فارغٌ = «علبة» بالعرض. */
+  unit_name?: string | null;
+  /** باركوداتُ الوحدة الصغرى (المغلّف) — للوحدة الفرعية القائمة. null من لقطةٍ قديمة = لا شيء (`subCodesOf`). */
+  sub_codes?: string[] | null;
+  /** سعرُ شراء المغلّف؛ فارغٌ = شراءُ العلبة ÷ العدد (`subPurchasePrice`). */
+  sub_purchase_price?: number | null;
+  /** الكراتين (حتى أربعة) — كلٌّ بعدده من العلب. null = لا كراتين (`packsOf`). */
+  packs?: ProductPack[] | null;
   created_at: string;
+}
+
+/** كارتونٌ (0259): عددٌ صحيح من العلب (≥ ٢)، وباركوداتُه، وسعراه — الفارغُ = العلبة × العدد (`packPrice`). */
+export interface ProductPack {
+  id: string;
+  name: string;
+  codes: string[];
+  per: number;
+  purchase_price: number | null;
+  sell_price: number | null;
 }
 
 export type PaymentMethod = "cash" | "card" | "transfer";

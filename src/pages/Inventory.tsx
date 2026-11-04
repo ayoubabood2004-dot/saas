@@ -12,6 +12,9 @@ import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
 import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
 import { stockCostPatch, updateAsSeen, type CasExpect } from "@/lib/productPatch";
+import { draftOf, packagingFromDraft, packagingPatch, firstTakenCode, levelMatcher, levelCodes, breakdown, packsOf, subCodesOf, type PackagingDraft, type PackagingProblem } from "@/lib/packs";
+import PackagingEditor from "@/components/inventory/PackagingEditor";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { Dialog } from "@/components/ui/Dialog";
 import { History,
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -749,6 +752,26 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
   );
 }
 
+/* ---------------- التعبئة (0259): نصوصُ الرفض بنطاق الصفحة ---------------- */
+/** لماذا لا تُحفظ التعبئة — جملةٌ تقول المكانَ والحلّ (مرآةُ القيد وحارس المستويات بالشاشة). */
+function pkgProblemText(pr: PackagingProblem, t: (k: string, o?: Record<string, unknown>) => string): string {
+  const i = "index" in pr ? pr.index + 1 : 0;
+  if (pr.kind === "level_twin") return t("pkg.err.level_twin", { code: pr.code });
+  if (pr.kind === "code_len") return t("pkg.err.code_len", { code: pr.code });
+  return t(`pkg.err.${pr.kind}`, { i });
+}
+/** رفضُ الخادم (أو مرآتِه) لما يخصّ التعبئة: التلميحُ العربيّ من الخادم يُقال كما هو (describeDbError)، وبلاه — المرآةُ التجريبية
+ *  ترمي الرمزَ وحده، والقيدُ 23514 بلا تلميح — يُقال من هنا. null = ليس للتعبئة. */
+function pkgDbError(e: unknown, t: (k: string, o?: Record<string, unknown>) => string): string | null {
+  const err = (e && typeof e === "object" ? e : {}) as { message?: string; hint?: string; level_code?: string };
+  const m = String(err.message ?? "");
+  if (m.includes("products_packaging_ok")) return t("pkg.err.shape");
+  if (err.hint && /[؀-ۿ]/.test(err.hint)) return null;
+  if (m === "code_level_twin") return t("pkg.err.level_twin", { code: err.level_code ?? "" });
+  if (m === "merge_sub_codes" || m === "merge_packs_unit" || m === "merge_packs_overflow") return t(`pkg.err.${m}`);
+  return null;
+}
+
 /* ---------------- Shared product row ---------------- */
 /* صفٌّ محفوظ (ع٨): تسعُمئةِ صفٍّ كانت تُعاد تصفيتُها ورسمُها على كلّ ضغطةِ
  * مفتاح، فتتجمّد الشاشةُ على أجهزة العيادات البطيئة. **علّةُ أداءٍ لا فقدانُ
@@ -807,8 +830,16 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
   // يُباع بالوزن: السعر لكل كيلو والمخزون بالكيلو.
   const byWeight = !!p.sold_by_weight;
   const perKg = t("pos.perKg", "/كغ");
+  /* الرصيدُ مفصّلاً بالكارتون الأوّل (0259، قرارُ المالك): «٢ كارتون + ٣ علبة + ٥ شريط». والعجزُ (سالب) رقمٌ كما هو. */
+  const bd = p.pooled ? null : breakdown(p, Number(p.stock) || 0);
+  const bdText = bd ? ([
+    bd.packs > 0 ? t("pkg.part", { n: formatNum(bd.packs), name: bd.pack.name }) : null,
+    bd.boxes > 0 ? t("pkg.part", { n: formatNum(bd.boxes), name: p.unit_name?.trim() || t("pkg.level.box") }) : null,
+    bd.subs > 0 ? t("pkg.part", { n: formatNum(bd.subs), name: p.sub_unit_name?.trim() || t("pkg.level.sub") }) : null,
+  ].filter(Boolean).join(" + ") || t("pkg.part", { n: 0, name: p.unit_name?.trim() || t("pkg.level.box") })) : null;
   return (
-    <motion.div variants={staggerItem} className="card flex items-center gap-3 p-3">
+    <motion.div variants={staggerItem} className="card p-3">
+      <div className="flex items-center gap-3">
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><Package size={20} /></span>
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm font-semibold text-ink">
@@ -831,6 +862,7 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
               +{p.alt_codes!.join(" · ")}
             </span>
           )}
+
           {!locked && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
           <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}{byWeight ? perKg : ""}</span>
           {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
@@ -882,6 +914,25 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
       {lotsOpen && <ProductLotsDialog product={p} open={lotsOpen} onClose={() => setLotsOpen(false)} canEdit={!locked} onChanged={onMuteChanged} />}
       {!locked && <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>}
       {!locked && <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>}
+      </div>
+      {/* التعبئة (0259) بسطرٍ بعرض البطاقة: الرصيدُ مفصّلاً والكراتينُ والمغلّفُ برموزهم — ربطٌ غلط يُكتشف بالعين، والبحثُ برمز كارتونٍ
+          يُظهرها هنا. وبسطرها لا بعمود المعلومات: عمودُ المعلومات على الهاتف ضيّقٌ أصلاً (أزرارُ الصفّ)، فكانت الشرائحُ حرفين. */}
+      {(bdText || packsOf(p).length > 0 || subCodesOf(p).length > 0) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2 text-xs" data-pkgline>
+          {bdText && <span className="font-semibold text-ink-muted" data-breakdown>{bdText}</span>}
+          {packsOf(p).map((k) => (
+            <span key={k.id} className="chip max-w-full min-w-0 truncate bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" data-pkgchip={k.id}
+              title={(k.codes ?? []).join(" · ")}>
+              <Boxes size={11} /> {t("pkg.chipPack", { name: k.name, per: k.per })}{(k.codes ?? []).length > 0 && <span className="font-mono" dir="ltr">{` · ${(k.codes ?? []).join(" · ")}`}</span>}
+            </span>
+          ))}
+          {subCodesOf(p).length > 0 && (
+            <span className="chip max-w-full min-w-0 truncate bg-surface-2 text-2xs font-semibold text-ink-muted" data-pkgsubchip title={subCodesOf(p).join(" · ")}>
+              {p.sub_unit_name?.trim() || t("pkg.level.sub")}<span className="font-mono" dir="ltr">{` · ${subCodesOf(p).join(" · ")}`}</span>
+            </span>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 });
@@ -915,12 +966,15 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   const ql = dq.trim();
   const nq = searchable(ql);
   const byCode = useMemo(() => codeMatcher(ql), [ql]);
+  /* ورموزُ المغلّف والكراتين (0259): مسحُ باركود الكارتون بحقل البحث يُظهر المادةَ وشريحةَ كارتونها — لا «لا نتائج» عن مادةٍ بالرفّ. */
+  const byLevel = useMemo(() => levelMatcher(ql), [ql]);
   const hits = useMemo(() => (ql
     ? products.filter((p) =>
       searchable(p.name).includes(nq)
       || byCode(p)
+      || byLevel(p) != null
       || searchable(companyName(p.company_id) ?? "").includes(nq))
-    : products), [products, ql, nq, byCode, companyName]);
+    : products), [products, ql, nq, byCode, byLevel, companyName]);
   /* رمزٌ لُصق بحقل البحث بصيغةِ ماسحٍ (رأسُ AIM، صفرُ GTIN-14، ذيلٌ ناقص):
    * `codeMatcher` احتواءٌ فلا يطابقه، والشاشةُ تقول «لا نتائج» عن مادّةٍ
    * بالرفّ — وهذه شاشةُ قرار «أُعيد إدخالها». */
@@ -1143,6 +1197,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   /** الرموزُ الإضافية المربوطة (0141): تُربط من نافذة الكاشير، ولم يكن لها وجهٌ
    *  بأي شاشة ولا فكّ — فربطٌ غلط كان يبيع مادّةً بمسحة مادّةٍ أخرى إلى الأبد. */
   const [altCodes, setAltCodes] = useState<string[]>([]);
+  /** التعبئة (0259): مسودّةُ الكراتين والمغلّف — تُحكم وتُرسل بالحفظ وحده، وما لم يتغيّر لا يُرسل. */
+  const [pkgDraft, setPkgDraft] = useState<PackagingDraft>(() => draftOf(null));
+  /** قاعدةٌ قبل 0259 لا تعرف الأعمدة (واجهةٌ سبقت هجرتها): المحرّرُ يغيب، ولا يُرسل شيء. الصفوفُ السحابية (`select *`) تحمل `packs` منذها. */
+  const pkgReady = !isSupabaseConfigured || !(allProducts?.length) || allProducts.some((x) => "packs" in x);
   /** صورة المتجر (0174): تمرّ من المحرّر (تُرى كاملةً وتُدار وتُقصّ — متجر v1) وتُرفع بعد نجاح
    *  الحفظ — ففشلُ صورةٍ لا يضيّع منتجاً، والعكسُ يُقال بجملته لا يُبلع. */
   const [photo, setPhoto] = useState<EncodedPhoto | null>(null);
@@ -1242,9 +1300,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sold_by_weight: !!product.sold_by_weight,
       });
       setAltCodes(product.alt_codes ?? []);
+      setPkgDraft(draftOf(product));
     } else {
       setF({ ...blank, company: defaultCompanyName ?? "", section: defaultSectionName ?? "" });
       setAltCodes([]);
+      setPkgDraft(draftOf(null));
       setTimeout(() => barcodeRef.current?.focus(), 80);
     }
     setBulk(false);
@@ -1376,6 +1436,21 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       toast.error(t("pos.subUnitNeedsCount", "أدخل عدد الوحدات في العلبة (أكبر من صفر)"));
       return;
     }
+    /* التعبئة (0259): شكلُها قبل الشبكة (مرآةُ القيد)، ثمّ كلُّ رمزٍ جديدٍ بمستواه لا يملكه غيرُه (مرآةُ حارس المستويات) —
+     * يُقالان بالاسم والمستوى هنا بدل رفضٍ من الخادم. وما لم يتغيّر لا يُرسل (packagingPatch). */
+    const pk = pkgReady
+      ? packagingFromDraft(pkgDraft, { barcode: f.barcode.trim() || null, alt_codes: altCodes, hasSubUnit: subUnitOn, unitsPerBox, byWeight, pooled: f.pooled && !!f.section.trim() })
+      : null;
+    if (pk && !pk.ok) { playWarning(); toast.error(pkgProblemText(pk.problem, t)); return; }
+    const pkgFields = pk?.ok ? packagingPatch(product ?? null, pk.value) : {};
+    const takenCode = pk?.ok
+      ? firstTakenCode(allProducts ?? [], { barcode: f.barcode.trim() || null, alt_codes: altCodes, ...pk.value }, product ?? null, product?.id ?? null)
+      : null;
+    if (takenCode) {
+      playWarning();
+      toast.error(t("pkg.err.owned", { code: takenCode.code, name: takenCode.hit.product.name, level: t(`pkg.level.${takenCode.hit.level}`) }));
+      return;
+    }
     setBusy(true);
     // A company/section we create as a side effect of THIS save — rolled back if
     // the product write then fails, so no empty orphan is left behind.
@@ -1406,6 +1481,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_name: subUnitOn ? (f.sub_unit_name.trim() || "وحدة") : null,
         units_per_box: subUnitOn ? unitsPerBox : null,
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
+        ...pkgFields,
         sold_by_weight: byWeight,
       };
       if (product) {
@@ -1492,7 +1568,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     } catch (e) {
       await rollbackGrouping(createdCompany, createdSection);
       playWarning();
-      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      toast.error(pkgDbError(e, t) ?? describeDbError(e, t), e instanceof Error ? e.message : undefined);
       // السعرُ (أو الرصيدُ) تحرّك: القائمةُ تُقرأ من جديد — وإلا فإعادةُ الفتح تحمل نفسَ البائت ويُرفض للأبد.
       if (isSeenStale(e)) onChanged?.();
     } finally {
@@ -2016,6 +2092,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               </div>
             )}
           </div>
+          )}
+
+          {/* التعبئة (0259): الكارتون ← العلبة ← المغلّف، كلٌّ بباركوده وسعرَيه — والفارغُ محسوبٌ من العلبة. */}
+          {pkgReady && (
+            <PackagingEditor value={pkgDraft} onChange={setPkgDraft}
+              boxSell={Number(f.sell_price) || 0} boxPurchase={Number(f.purchase_price) || 0}
+              hasSubUnit={f.has_sub_unit} unitsPerBox={Number(f.units_per_box) || 0} subUnitName={f.sub_unit_name}
+              byWeight={byWeight} pooled={f.pooled && !!f.section.trim()} products={allProducts ?? []} selfId={product?.id ?? null} disabled={busy} />
           )}
 
           <div>
@@ -3223,7 +3307,7 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
       const m = String((e as Error).message ?? e);
       toast.error(m.includes("itself") ? t("pos.mergeSelf", "ما ينفع تدمج المنتج بنفسه")
         : m.includes("pooled") ? t("pos.mergePooled", "المنتجات المجمّعة ما تندمج")
-        : describeDbError(e, t), m);
+        : pkgDbError(e, t) ?? describeDbError(e, t), m);
     } finally { setBusy(false); }
   };
 
@@ -3368,6 +3452,12 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
       const lostAlts = (d.row.alt_codes ?? []).filter((c) => c && !keptAlts.has(matchCode(c)));
       if (lostAlts.length) {
         toast.warn(t("pos.restoredLostAlts", "رجع بلا {{n}} رمز إضافي — صارت لمنتجات ثانية: {{codes}}", { n: lostAlts.length, codes: lostAlts.join("، ") }), p.name);
+      }
+      /* ورموزُ المغلّف والكراتين (0259) بالحكم نفسه: الاسترجاعُ يُسقط ما صار لغيره بأيّ مستوى (_pkg_snapshot_free) — يُقال لا يُبلع. */
+      const keptPkg = new Set(levelCodes(p).filter((c) => c.level !== "box").map((c) => c.norm));
+      const lostPkg = levelCodes(d.row as Product).filter((c) => c.level !== "box" && !keptPkg.has(c.norm)).map((c) => c.raw);
+      if (lostPkg.length) {
+        toast.warn(t("pkg.restoredLost", { n: lostPkg.length, codes: lostPkg.join("، ") }), p.name);
       }
       await load();
       onChanged();

@@ -473,7 +473,8 @@ console.log("▸ ز) الشاشةُ موصولة: النموذجُ والمجم�
  * (السحابيُّ بعميله المحاكي، والتجريبيُّ بمخزنه) — فيُرى ما يُكتب فعلاً بالقاعدة لا شكلُ السطر.
  * كلُّ استيرادٍ آخر لـInventory.tsx بديلٌ يُولَّد من سطور استيراده (فاستيرادٌ جديد يأخذ بديلاً بلا تعديلٍ
  * هنا)، إلا القواعدَ الصِّرفة. والترجمةُ ترجع المفتاح: الأزرارُ والرسائلُ تُطابَق بمفاتيحها. */
-const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors"]);
+// والتعبئةُ (0259، `@/lib/packs`) قاعدةٌ صِرفة كذلك: بديلُها المولَّد يرجع undefined فيسقط رسمُ الصفّ.
+const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs"]);
 const UI_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",

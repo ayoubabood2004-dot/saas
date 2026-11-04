@@ -1,5 +1,5 @@
 -- ============================================================================
--- قالبُ الإنتاج قبل 0252: الدوالُّ التي تعيد 0252–0255 كتابتَها **بشِفرة المستودع حرفاً وتعليقاتٍ غائبة**.
+-- قالبُ الإنتاج قبل 0252: الدوالُّ التي تعيد 0252–0255 و0259 كتابتَها **بشِفرة المستودع حرفاً وتعليقاتٍ غائبة**.
 --
 -- قيس على الإنتاج (٣/١١): ١٢ دالّةً من ١٧ بصمتُها النصّيّة غيرُ نصّ المستودع، وكلُّها تُعاد بإعادة بناء جسم مصدرها
 -- بحذف التعليق — سطراً كاملاً (update_purchase، return_invoice_items)، أو كلَّه (الباقي)، أو بنصّ مسودّةٍ أقدم
@@ -28,7 +28,9 @@ begin
       ('public.pool_product(uuid,uuid)', 'draft'),
       ('public.restore_company_section(uuid)', 'all'),
       ('public.stock_count_decide(uuid[],boolean)', 'all'),
-      ('public.stock_count_submit(jsonb)', 'all')) v(sig, how)
+      ('public.stock_count_submit(jsonb)', 'all'),
+      -- 0259 تعيد الطيَّ (نصُّ 0184) — وجسمُه بالإنتاج غيرُ مقيسٍ بعد: يُفحص بأسوأ ما قيس (التعليقُ كلُّه غائب).
+      ('public.merge_products(uuid,uuid)', 'all')) v(sig, how)
   loop
     select md5(regexp_replace(prosrc, '[ \t\n\r\f\v]', '', 'g')) into v_fp from pg_proc where oid = to_regprocedure(r.sig);
     v_def := pg_get_functiondef(to_regprocedure(r.sig));
