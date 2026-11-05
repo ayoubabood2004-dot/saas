@@ -14,10 +14,14 @@
  * فتقوله الشاشةُ قبل الطباعة. السكربتُ نفسُه بالمعاينة والطباعة؛ والطباعةُ الآليةُ بنافذة الطباعة وحدها.
  *
  * والترتيبُ **يُعاد** لا يُختم مرّةً: ترتيبٌ مؤقّت حين يتأخّر شيء، ثم النهائيُّ بعد تحميل الصور والخطوط (`data-final`)،
- * ويُعاد كلّما وصل خطٌّ أو صورة. ورقةُ خطوط Google **لا تدخل المستندَ إلا بعد تحميله** (`data-fonts`): ورقةٌ معلَّقة
- * بالوسوم كانت تحجب حدثَ التحميل فلا تسمع المعاينةُ قياسَها، وورقةٌ وصلت بعد النهائيّ القسريّ كانت تُطبَّق على ورق
- * لم يُقس بها. والنهائيُّ القسريّ (٩ ثوانٍ) لا يُغلق الباب: صورةٌ تصل بعده تُعيد الترتيبَ قبل الطباعة، وورقةُ خطوطٍ لم
- * تصل تُشال (فالخطُّ الاحتياطيّ هو المقيس والمطبوع). ورقمُ الصفحة محجوزٌ سطرُه **وعرضُه** قبل القياس (رقمٌ يُكتب بعد
+ * ويُعاد كلّما وصل خطٌّ أو صورة. ورقةُ خطوط Google **تُطلب مع المستند وتُطبَّق بعد تحميله**: `rel=preload` يجلبها موازيةً
+ * للصور ولا يحجب حدثَ التحميل (مقيس: ٢٢ م.ث مقابل ٥ ثوانٍ لورقةٍ معلَّقة بالوسوم — ولو media=print)، والسكربتُ يضيفها
+ * ورقةً بعد التحميل (`data-fonts`) فتُطبَّق من الذاكرة بلا طلبٍ ثانٍ. ورقةٌ بالوسوم كانت تحجب التحميلَ فلا تسمع المعاينةُ
+ * قياسَها، وطلبُها بعد التحميل وحده كان يجعل صورةً بطيئة تُكلّف الخطوط (لا تُطلب إلا بعد آخر صورة). والنهائيُّ القسريّ
+ * (٩ ثوانٍ) لا يُغلق الباب: صورةٌ تصل بعده تُعيد الترتيبَ قبل الطباعة؛ وورقةُ خطوطٍ وصلت بالـpreload والتحميلُ لم يحصل
+ * (صورةٌ معلَّقة) تُطبَّق عنده ويُعاد الترتيبُ حين تصل خطوطُها، وورقةٌ لم تصل تُشال (فالخطُّ الاحتياطيّ هو المقيس
+ * والمطبوع). والترتيبُ المؤقّت بعد التحميل ينتظر الخطوطَ لحظةً (٤٠٠ م.ث): خطوطٌ مخبّأة تصل قبلها فلا تومض المعاينةُ بترتيب
+ * الخطّ الاحتياطيّ مع كلّ تعديل. ورقمُ الصفحة محجوزٌ سطرُه **وعرضُه** قبل القياس (رقمٌ يُكتب بعد
  * الترتيب كان يكبّر التذييل — سطراً، أو بلفّ سطر الحسابات — فيقصّ أو يُرفض)، والفائضُ يُفحص على كلّ صفحة بعد الترقيم.
  * والمعاينةُ تبلّغ كلَّ ترتيب لإطارها الأب برسالة (`{rxLayout}`) لا بحدث التحميل — صورةٌ معلَّقة كانت تُعمي الشاشة.
  * ونافذةُ الطباعة **حَكَم**: لا تطبع إلا ترتيباً نهائياً بعد التحميل (أو بعد مهلته)، ولا تطبع أبداً ما فيه فائض — تقوله
@@ -98,7 +102,8 @@ function bodyLines(body: string): string {
  * المائية معها)، ويقسم السطرَ الأطولَ من الصفحة عند كلمة. ويُعاد من أوّله كلَّ مرّة (`__rxLayout`): يشيل المستنسخات
  * ويرجّع الأسطرَ كما كُتبت. يختم <html> بـdata-pages وdata-overflow (أيُّ صفحةٍ فاضت) وdata-final (بعد الصور والخطوط
  * أو بعد مهلتها) وdata-ready، ويطلق «rx-ready» بعد كلّ ترتيب — وداخل إطار يرسل القياسَ لأبيه (`{rxLayout}` برقم المستند).
- * والخطوطُ بعد التحميل (addFonts)، والقسريُّ (`forced`) يبقي التحميلَ مسموعاً ويشيل ورقةَ خطوطٍ لم تصل. */
+ * والخطوطُ بعد التحميل (addFonts) من الـpreload (`#rxpre`، يختم وصولَه بـdata-ok)، والمؤقّتُ بعد التحميل بمهلة ٤٠٠ م.ث، والقسريُّ
+ * (`forced`) يبقي التحميلَ مسموعاً، ويشيل ورقةَ خطوطٍ لم تصل أو يطبّق ما وصل بالـpreload والتحميلُ لم يحصل (ثمّ يُعاد الترتيبُ حين تصل خطوطُها). */
 const LAYOUT_JS = `(function(){var root=document.documentElement,pristine=null,loaded=false,css=false,settling=false,forced=false;
 function L(p){return p.querySelector('.rx-lines');}
 function over(b){return b.scrollHeight>b.clientHeight+1;}
@@ -130,14 +135,16 @@ function settle(){if(!loaded||!css||settling)return;var f=document.fonts;if(!f||
 var done=function(){settling=false;run(true);};
 Promise.all(faces().map(function(x){return f.load(x).catch(function(){});})).then(function(){return f.ready;}).then(done,done);}
 var lk=null;
+function preOk(){var p=document.getElementById('rxpre');return !!p&&p.getAttribute('data-ok')==='1';}
 function onCss(){if(css)return;css=true;if(!forced)settle();}
-function addFonts(){var h=root.getAttribute('data-fonts');if(!h){onCss();return;}lk=document.createElement('link');lk.rel='stylesheet';lk.id='rxf';
+function addFonts(){if(lk)return;var h=root.getAttribute('data-fonts');if(!h){onCss();return;}lk=document.createElement('link');lk.rel='stylesheet';lk.id='rxf';
 lk.addEventListener('load',onCss);lk.addEventListener('error',onCss);lk.href=h;document.head.appendChild(lk);}
-function onLoad(){if(loaded)return;loaded=true;run(forced);if(!forced)addFonts();}
+function onLoad(){if(loaded)return;loaded=true;if(forced){run(true);return;}addFonts();
+setTimeout(function(){if(root.getAttribute('data-final')!=='1')run(false);},400);}
 if(document.readyState==='complete')onLoad();else window.addEventListener('load',onLoad);
-if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){if(loaded&&(css||forced)&&!settling)run(true);});
+if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){if(!settling&&(forced||(loaded&&css)))run(true);});
 setTimeout(function(){if(!root.getAttribute('data-ready'))run(false);},4000);
-setTimeout(function(){if(root.getAttribute('data-final')!=='1'){forced=true;if(!css&&lk&&lk.parentNode)lk.parentNode.removeChild(lk);run(true);}},9000);})();`;
+setTimeout(function(){if(root.getAttribute('data-final')!=='1'){forced=true;if(!css&&lk&&lk.parentNode)lk.parentNode.removeChild(lk);else if(!lk&&preOk())addFonts();run(true);}},9000);})();`;
 
 /* نافذةُ الطباعة: تطبع مرّةً بعد أوّل ترتيبٍ نهائيّ **والتحميل** — وما فيه فائضٌ لا يُطبع أبداً: الشريطُ يقوله، والنافذةُ التي
    فتحتها تُبلَّغ. نهائيٌّ قسريٌّ قبل التحميل (صورةٌ بطيئة) ينتظر التحميلَ ثلاثَ ثوانٍ: صورةٌ تصل فيها تُعيد الترتيبَ (مستمعُ
@@ -331,12 +338,15 @@ ${image && !printBg ? `@media print{.ov{transform:translate(${n(cfg.nudge.x, -15
     ? [`400 12px Cairo`, `600 12px Cairo`]
     : [`${font.face} 16px ${font.family}`, `400 12px Cairo`, `600 12px Cairo`, `700 12px Cairo`, `600 12px "Cormorant Garamond"`, `italic 700 12px "Cormorant Garamond"`];
   const warn = opts.print && d.overflowNote ? `<div id="rxwarn" class="rxwarn" role="alert" hidden>${esc(d.overflowNote)}</div>` : "";
-  /* ورقةُ الخطوط **ليست وسماً بالمستند**: سكربتُ الترتيب يضيفها بعد التحميل (data-fonts). ورقةٌ بالوسوم — ولو media=print —
-     تحجب حدثَ التحميل ما دامت معلَّقة: المعاينةُ لا تسمع قياسَها (فكلُّ طباعةٍ تنتظر حكمَ نافذتها)، ونافذةُ الطباعة لا تطبع. */
+  /* ورقةُ الخطوط **ليست ورقةً بالمستند**: سكربتُ الترتيب يضيفها بعد التحميل (data-fonts). ورقةٌ بالوسوم — ولو media=print —
+     تحجب حدثَ التحميل ما دامت معلَّقة: المعاينةُ لا تسمع قياسَها (فكلُّ طباعةٍ تنتظر حكمَ نافذتها)، ونافذةُ الطباعة لا تطبع.
+     وتُطلب مع المستند بـ`preload` (لا يحجب التحميل — مقيس) فتصل موازيةً للصور، وتختم وصولَها على وسمها (data-ok) قبل أن يبدأ
+     السكربت — المخبّأةُ تصل قبله. والأحداثُ بالوسم مسموحةٌ بسياسة المحتوى ('unsafe-inline')، والطلبُ نوعُه style (style-src). */
   return `<!doctype html><html lang="${cfg.lang}" dir="${dir}"${opts.print ? "" : " data-preview"} data-faces="${esc(JSON.stringify(faces))}" data-fonts="${esc(fontsHref)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(d.docTitle)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" id="rxpre" href="${esc(fontsHref)}" onload="this.setAttribute('data-ok','1')" onerror="this.setAttribute('data-ok','0')">
 <style>${css}</style></head>
 <body>${warn}<div class="page${calibrate ? " cal" : ""}">${pageInner}</div>${scripts}</body></html>`;
 }
