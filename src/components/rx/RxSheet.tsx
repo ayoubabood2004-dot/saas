@@ -49,7 +49,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const { role } = usePermissions();
   const pad = useRxPad();
   const cfg = pad.cfg;
-  const { labels, ready: labelsReady, failed: labelsFailed, retry: labelsRetry, reload: labelsReload, tp } = useRxLabels(cfg.lang);
+  const { labels, ready: labelsReady, failed: labelsFailed, slow: labelsSlow, retry: labelsRetry, reload: labelsReload, tp } = useRxLabels(cfg.lang);
 
   const [fields, setFields] = useState<RxFields | null>(null);
   const [body, setBody] = useState("");
@@ -70,11 +70,16 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const [histN, setHistN] = useState(0);
   const [medOpen, setMedOpen] = useState(false);
   const [plan, setPlan] = useState<PlanState>({ status: "closed" });
-  /* سببُ سؤال الخروج يُختم لحظةَ السؤال: ورقةٌ انطبعت ولم تُحفظ، أو نافذةٌ تقرّر، أو مسودّة. */
-  const [leaveAsk, setLeaveAsk] = useState<null | "pending" | "waiting" | "dirty">(null);
+  /* سؤالُ الخروج مفتوح — وعنوانُه من الحال **الآن** لا لحظةَ فتحه: نافذةٌ تقرّر قد تطبع وهو مفتوح ويفشل حفظُها، وعنوانٌ مختومٌ
+     كان يقول «بعدها ما طبعت» والورقةُ بيد الطبيب، فيطلع فتضيع لقطتُها. */
+  const [leaveAsk, setLeaveAsk] = useState(false);
   const [reloadAsk, setReloadAsk] = useState(false);
-  /* الطبيبُ اختار تحديثَ الصفحة (القاموسُ العربيّ لا يصل بدونه): نصُّه لا يمسك النسخةَ بعدها — نُبّه للنسخ قبله. */
-  const [letGo, setLetGo] = useState(false);
+  /* نتيجةُ «انسخ النص» داخل سؤالها (لا توست: بالهاتف يغطّي أزرارَ السؤال السفلية ٤ ثوانٍ فتضيع ضغطةُ «حدّث»). */
+  const [copied, setCopied] = useState<null | "ok" | "fail">(null);
+  /* الطبيبُ اختار تحديثَ الصفحة (القاموسُ العربيّ لا يصل بدونه) **لهذه المسودّة** ونُبّه للنسخ: نصُّها لا يمسك النسخةَ بعدها. وبالبصمة لا
+     علماً عامّاً: نصٌّ كُتب بعد الضغطة (والتحديثُ ينتظر) أو نافذةٌ انسدّت فرجعت المسودّة — علمٌ يعيش بعد ما أُذن له كان يحمّل فوقه. */
+  const [letGoKey, setLetGoKey] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
   const [voidFor, setVoidFor] = useState<RxRecord | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [voiding, setVoiding] = useState(false);
@@ -145,12 +150,20 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const saved = !!clean.trim() && saver.isSaved(key);
   /* مسودّةٌ لم تنطبع: لا محفوظة، ولا بالطابور، ولا نافذةٌ تقرّر عنها (تلك تُحفظ وحدها حين تطبع). */
   const dirty = !!clean.trim() && !saved && !saver.isPending(key) && !saver.isWaiting(key);
-  /* ونافذةٌ تقرّر عن هذه المسودّة: حفظُها يكمل بعد الإغلاق إن طبعت — لكنها قد تنسدّ بلا طباعة فتضيع المسودّة، فالخروجُ يُسأل. */
-  const waiting = !!clean.trim() && saver.isWaiting(key);
+  /* ونافذةٌ تقرّر عن هذه المسودّة **ولم تُحفظ**: حفظُها يكمل بعد الإغلاق إن طبعت — لكنها قد تنسدّ بلا طباعة فتضيع المسودّة، فالخروجُ
+     يُسأل. ومسودّةٌ حفظتها طباعةٌ ثانية لا يضيع منها شيء (كان يُسأل «يضيع اللي كتبته» عنها). */
+  const waiting = !!clean.trim() && !saved && saver.isWaiting(key);
   const pendingN = saver.pendingCount;
+  const letGo = letGoKey !== null && letGoKey === key;
   /* نصٌّ لم يُحفظ أو ورقةٌ انطبعت ولم تُحفظ: النسخةُ الجديدة لا تنزل فوقه (خمولٌ طويل كان يعيد التحميل فيضيع ما كُتب). والورقةُ
      التي لم تُحفظ تبقى ممسوكةً ولو اختار الطبيبُ التحديث. */
   useEffect(() => (pendingN > 0 || (dirty && !letGo) ? holdUpdates(Infinity) : undefined), [dirty, pendingN, letGo]);
+  /* لم يبقَ ما يضيع (طبعت النافذةُ وانحفظت والسؤالُ مفتوح): السؤالُ يُغلق — الشاشةُ باقية، والخروجُ (أو التحديثُ) بعده بلا سؤال.
+     وورقةٌ انطبعت ولم تُحفظ تُغلق سؤالَ التحديث أيضاً: التحديثُ موقوفٌ حتى تُحفظ («احفظها بالسجل» تحته). */
+  useEffect(() => {
+    if (leaveAsk && !dirty && !pendingN && !waiting) setLeaveAsk(false);
+    if (reloadAsk && !dirty && !waiting) setReloadAsk(false);
+  }, [leaveAsk, reloadAsk, dirty, pendingN, waiting]);
   const overflowed = () => { playWarning(); toast.error(t("rx.overflowPrint")); };
 
   /* داخل الضغطة: النافذةُ ومستندُها أوّلاً (قبل أيّ await)، ثمّ السجلّ — بلقطة ما كُتب فيها. */
@@ -243,27 +256,31 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
      (حفظُها يكمل بعد الإغلاق إن طبعت — وإن انسدّت بلا طباعة ضاعت المسودّةُ بصمت، كان يُخرج بلا سؤال). */
   const confirmClose = () => {
     if (!dirty && !pendingN && !waiting) return true;
-    setLeaveAsk(pendingN ? "pending" : waiting ? "waiting" : "dirty");
+    setLeaveAsk(true);
     return false;
   };
 
-  /* القاموسُ العربيّ لا يصل بهذه الصفحة (قطعتُه فشلت، والمتصفّحُ يحفظ الفشل): التحديثُ بطريق التعافي بعد أن يُفلت النصُّ إمساكَه —
-     الطبيبُ اختاره ونُبّه للنسخ. رُفض (بلا نت، أو جُرّب للتو) ⇒ يُقال ويُعاد الإمساك. */
+  /* القاموسُ العربيّ لا يصل بهذه الصفحة (قطعتُه فشلت، والمتصفّحُ يحفظ الفشل): التحديثُ بطريق التعافي بعد أن يُفلت **نصُّ هذه المسودّة**
+     إمساكَه — الطبيبُ اختاره ونُبّه للنسخ. والتعافي قد ينتظر (ورقةٌ لم تُحفظ، نافذةٌ تقرّر، نصٌّ كُتب بعد الضغطة) فـ«راح تتحدّث» يُرى
+     بدل زرٍّ يُضغط ثانيةً بلا أثر. رُفض (بلا نت، أو جُرّب للتو) ⇒ يُقال ويُعاد الإمساك. */
   const reloadPage = () => {
     setReloadAsk(false);
-    setLetGo(true);
+    setLetGoKey(key);
+    setReloading(true);
     void labelsReload().then((ok) => {
       if (ok) return;
-      setLetGo(false);
+      setLetGoKey(null);
+      setReloading(false);
       playWarning();
       toast.error(t("rx.reloadFail"));
     });
   };
-  const askReload = () => { playTap(); if (dirty) setReloadAsk(true); else reloadPage(); };
+  /* يُسأل ما دام شيءٌ يضيع: مسودّةٌ لم تنطبع، **أو نافذتُها تقرّر** (إن انسدّت بلا طباعة رجعت مسودّةً فوقها تحديثٌ ينتظر). */
+  const askReload = () => { playTap(); if (dirty || waiting) { setCopied(null); setReloadAsk(true); } else reloadPage(); };
   const copyText = () => {
-    const fail = () => { playWarning(); toast.error(t("rx.copyFail")); };
+    const fail = () => { playWarning(); setCopied("fail"); };
     try {
-      navigator.clipboard.writeText(clean).then(() => { playTap(); toast.success(t("rx.copied")); }, fail);
+      navigator.clipboard.writeText(clean).then(() => { playTap(); setCopied("ok"); }, fail);
     } catch {
       fail();
     }
@@ -280,11 +297,18 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
             <div className="flex items-center gap-2 text-sm text-danger-700 dark:text-danger-300">
               <AlertTriangle size={16} /> <span>{t("rx.labelsReload")}</span>
               <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>
-              <button className="font-semibold underline" onClick={askReload} data-rx-reload>{t("rx.reloadPage")}</button>
+              {reloading
+                ? <span className="text-ink-muted" data-rx-reloading>{t("rx.reloading")}</span>
+                : <button className="font-semibold underline" onClick={askReload} data-rx-reload>{t("rx.reloadPage")}</button>}
             </div>
           </div>
         ) : loading ? (
-          <div className="grid h-60 place-items-center"><Spinner /></div>
+          <div className="grid h-60 place-items-center">
+            <div className="flex flex-col items-center gap-2">
+              <Spinner />
+              {labelsSlow && <span className="text-xs text-ink-muted" data-rx-labels-slow>{t("rx.labelsSlow")}</span>}
+            </div>
+          </div>
         ) : (
           <div className="isolate" data-rx-sheet>
             <div className="mb-3 lg:hidden">
@@ -375,9 +399,15 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
                   <span className="flex min-w-0 items-start gap-1.5"><AlertTriangle size={14} className="mt-px shrink-0" /> {t("rx.labelsReload")}</span>
                   <span className="flex gap-3">
                     <button className="underline" onClick={labelsRetry}>{t("common.retry")}</button>
-                    <button className="underline disabled:opacity-50" onClick={askReload} disabled={pendingN > 0} data-rx-reload>{t("rx.reloadPage")}</button>
+                    {reloading
+                      ? <span className="font-normal text-ink-muted" data-rx-reloading>{t("rx.reloading")}</span>
+                      : <button className="underline disabled:opacity-50" onClick={askReload} disabled={pendingN > 0} data-rx-reload>{t("rx.reloadPage")}</button>}
                   </span>
                 </div>
+              )}
+              {/* تنزيلٌ بطيءٌ يصل وحده: يُقال لماذا «اطبع» موقوف، بلا «تعذّر» ولا تحديثٍ يرمي ما نزل. */}
+              {labelsSlow && (
+                <div className="flex w-full items-center gap-1.5 text-xs text-ink-muted" data-rx-labels-slow><Spinner size={12} /> {t("rx.labelsSlow")}</div>
               )}
               <div className="min-w-0 flex-1 text-xs">
                 {tooLong ? (
@@ -408,19 +438,25 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
         onPick={(m) => setBody((b) => appendLines(b, [m.name]))}
         onUnpick={(m) => setBody((b) => removeDrugLine(b, m.name))} />
 
-      <Dialog open={!!leaveAsk} onClose={() => setLeaveAsk(null)} size="sm"
-        title={leaveAsk === "pending" ? t("rx.leavePending") : leaveAsk === "waiting" ? t("rx.leaveWaiting") : t("rx.leaveTitle")}
+      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm"
+        title={pendingN ? t("rx.leavePending") : waiting ? t("rx.leaveWaiting") : t("rx.leaveTitle")}
         footer={<div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setLeaveAsk(null)}>{t("rx.stay")}</Button>
-          <Button variant="danger" onClick={() => { setLeaveAsk(null); onClose(); }} data-rx-leave>{t("rx.leaveDo")}</Button>
+          <Button variant="ghost" onClick={() => setLeaveAsk(false)}>{t("rx.stay")}</Button>
+          <Button variant="danger" onClick={() => { setLeaveAsk(false); onClose(); }} data-rx-leave>{t("rx.leaveDo")}</Button>
         </div>} />
 
       <Dialog open={reloadAsk} onClose={() => setReloadAsk(false)} size="sm" title={t("rx.reloadAsk")}
         footer={<div className="flex flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={() => setReloadAsk(false)}>{t("rx.stay")}</Button>
           <Button variant="secondary" onClick={copyText} data-rx-copy>{t("rx.copyText")}</Button>
-          <Button variant="danger" onClick={reloadPage} data-rx-reload-do>{t("rx.reloadPage")}</Button>
-        </div>} />
+          <Button variant="danger" onClick={reloadPage} disabled={pendingN > 0} data-rx-reload-do>{t("rx.reloadPage")}</Button>
+        </div>}>
+        {copied && (
+          <p role="status" className={cn("text-sm font-semibold", copied === "ok" ? "text-success-700 dark:text-success-300" : "text-danger-700 dark:text-danger-300")} data-rx-copied={copied}>
+            {t(copied === "ok" ? "rx.copied" : "rx.copyFail")}
+          </p>
+        )}
+      </Dialog>
 
       <Dialog open={!!voidFor} onClose={() => (voiding ? undefined : setVoidFor(null))} size="sm" title={t("rx.voidTitle")} description={t("rx.voidHint")}
         footer={<div className="flex justify-end gap-2">
