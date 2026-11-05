@@ -337,8 +337,10 @@ export function Dashboard() {
       </motion.div>
 
       {/* Main working area — two balanced columns; items-start so no card is
-          stretched into the tall empty void the old layout showed. */}
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">
+          stretched into the tall empty void the old layout showed.
+          grid-cols-1 تحت lg: بلا قالبٍ يصير العمودُ ضمنياً `auto` فلا ينزل تحت أعرض محتوى، ومخطّطُ
+          recharts يرسم SVG بعرضٍ مقيس — فقاس ٤٢٣ مرّةً وبقي، والصفحةُ ٤٣٩ بهاتفٍ ٣٩٠ (مقيس). */}
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
         {/* Left: schedule + activity */}
         <div className="space-y-6 lg:col-span-2">
           <Card padded>

@@ -25,6 +25,7 @@
     "live:intake": "node scripts/live/intake.mjs",
     "live:company-book": "node scripts/live/company-book.mjs",
     "live:delivery-search": "node scripts/live/delivery-search.mjs",
+    "live:mobile-width": "node scripts/live/mobile-width.mjs",
     "freshness": "node scripts/freshness-test.mjs",
     "keyset": "node scripts/keyset-test.mjs"
   },

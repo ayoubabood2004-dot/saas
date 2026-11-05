@@ -2563,11 +2563,13 @@ function CategoryBlock({ cat, services, onChanged, chips, showCost, onRecipe }: 
         <div className="mb-2 space-y-1.5">
           {services.map((s) => (
             <Fragment key={s.id}>
-            <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
               {/* الاسمُ وتحته شريحةُ المستهلكات (0252): ما تخصمه كلَّ مرّةٍ تنباع — العددُ والكلفةُ من الخادم، و«؟» حين لم
                   يصل. كانت بجانب زرّ الحذف فأكلت عمودَ الاسم: مقيسٌ بشاشة حاسوب ١٠٢٤ — الاسمُ ٤٤px بـ«+ مستهلكات»، وصفرٌ
-                  بـ«مستهلكات (٤) · ٣٬٠٠٠ د.ع» (١٣٧px): خدمةٌ لها وصفة تختفي من قائمتها. */}
-              <span className="min-w-0 flex-1">
+                  بـ«مستهلكات (٤) · ٣٬٠٠٠ د.ع» (١٣٧px): خدمةٌ لها وصفة تختفي من قائمتها.
+                  وبالهاتف: السعرُ والكلفةُ والباركود ~٤٠٠px بصفٍّ ٢٩٠ — فالاسمُ صفرٌ وزرُّ الحذف خارج الشاشة والصفحةُ ٤٥٣
+                  (مقيس، ٣٩٠). تحت sm الاسمُ سطرٌ كامل والحقولُ تلتفّ تحته؛ وsm:flex-1 يُرجع الأساسَ صفراً فالواسعةُ كما كانت. */}
+              <span className="min-w-0 basis-full sm:flex-1">
                 <span className="block truncate text-sm text-ink">{s.name}</span>
                 <button type="button" data-svcrcp={s.id} onClick={() => { playTap(); onRecipe(s); }}
                   title={(recipeOf(s.id)?.broken ?? 0) > 0 ? t("services.rcp.chipBroken", { n: formatNum(recipeOf(s.id)?.broken ?? 0), defaultValue: "{{n}} من موادها ما تنخصم هسّة — افتحها" }) : undefined}

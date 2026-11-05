@@ -3155,7 +3155,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         (cartResize.gridRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
       }}
       className={cn(
-        "grid", posV2 && compact ? "gap-2.5" : "gap-4",
+        // grid-cols-1 تحت lg: العمودُ الضمنيّ `auto` لا ينزل تحت أعرض محتوى فيمدّ الصفحة (مقيس: ٤٠٢ بهاتفٍ ٣٩٠).
+        "grid grid-cols-1", posV2 && compact ? "gap-2.5" : "gap-4",
         // السلة هي بطل الشاشة لا الشبكة: على الضيّقة تحتل النصف السفلي ثابتةً
         // مفتوحةً (لا شريط مطويّ)، وعلى الواسعة عموداً بـ٤٠٪ من العرض بخطٍّ
         // كبير مقروء من وقفة الكاشير. الشبكة تخدم السلة لا العكس.

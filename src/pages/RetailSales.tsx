@@ -303,10 +303,12 @@ export function RetailSales() {
         )}
       </div>
 
-      <div className={cn("flex gap-1 rounded-2xl border border-line bg-surface-1 p-1", compactChrome ? "mb-2.5" : "mb-4")}>
+      {/* ستّةُ تبويباتٍ بأيقونةٍ واسم تحتاج ~٥٢٠px: بلا تمريرٍ كانت تمدّ الصفحةَ لـ٥٥٥ بهاتفٍ ٣٩٠ فيصغّرها
+          المتصفّحُ وتنقصّ النوافذُ الثابتة. شريطٌ يُمرَّر كتبويبات التذكيرات والملفّ؛ والواسعةُ كما كانت. */}
+      <div className={cn("flex gap-1 overflow-x-auto rounded-2xl border border-line bg-surface-1 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", compactChrome ? "mb-2.5" : "mb-4")}>
         {TABS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => { playTap(); setTab(id); }} disabled={payInFlight && id !== tab} data-tablocked={payInFlight && id !== tab ? "" : undefined}
-            className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-40", compactChrome ? "py-1.5" : "py-2.5",
+            className={cn("flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-40", compactChrome ? "py-1.5" : "py-2.5",
               tab === id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2 hover:text-ink")}>
             <Icon size={16} /> {label}
           </button>
