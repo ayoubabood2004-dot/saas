@@ -56,8 +56,10 @@ export const RX_LABELS_STUCK_MS = 8000;
  *  القاموس (`retry` لا يُخفيه). و`slow` = علق **ولا تعافٍ ينتظر**: تنزيلٌ بطيءٌ يصل وحده — «تعذّر، حدّث الصفحة» عنه كان كذباً، وتحديثُه
  *  يرمي ما نزل ويبدأ من الصفر (مقيس بخطٍّ بطيءٍ بأوّل زيارة). والقطعةُ التي فشلت لا تصل بنفس الصفحة (المتصفّحُ يحفظ فشلَ الاستيراد حتى
  *  التحديث، مقيس) فـ`reload` يحدّثها بطريق التعافي — والمستدعي يُفلت إمساكَه قبله، ويرجع false إن رُفض (بلا نت، أو جُرّب للتو).
+ *  و`armed` = تحديثٌ بالطريق والقاموسُ ناقص — بضغطة `reload` أو **بلا ضغطة** (استيرادٌ فشل والنتُّ موجود فبدأه retryImport، أو «أعد
+ *  المحاولة»): يحمّل حين يُفلت ما يمسكه، فالشاشةُ تقول «راح تتحدّث» لا زرّاً (كانت تحمّل بعد الحفظ والزرُّ معروض — مراجعةُ d2f074d).
  *  و`tp` مترجمُ لغة الورقة (خاناتُ المريض بلغتها لا بلغة الواجهة). */
-export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; failed: boolean; slow: boolean; retry: () => void; reload: () => Promise<boolean>; tp: TFunction } {
+export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; failed: boolean; slow: boolean; armed: boolean; retry: () => void; reload: () => Promise<boolean>; tp: TFunction } {
   const { i18n, t } = useTranslation();
   const needLoad = lang === "ar" && !i18n.language.startsWith("ar");
   /* «جاهز» يُحسب بنفس الرسمة من «حُمِّل» — لا حالةٌ تُضبط بأثرٍ بعدها: التصميمُ يصل عربياً بعد أن كان الافتراضيُّ إنكليزياً، وحالةُ
@@ -77,18 +79,26 @@ export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; f
     ).finally(() => window.clearTimeout(timer));
     return () => { alive = false; window.clearTimeout(timer); };
   }, [needLoad, n]);
-  /* علقَ: يُسأل كلَّ ثانية — تنزيلٌ بطيء يصير عالقاً حين يفشل ويقف التعافي خلف نصٍّ ممسوك. */
+  /* علقَ أو تعذّر: التعافي يُسأل عنه كلَّ ثانية — تنزيلٌ بطيء يصير عالقاً حين يفشل ويقف التعافي خلف نصٍّ ممسوك، وتعافٍ بدأ بلا ضغطة
+     (استيرادٌ فشل والنتُّ موجود، أو «أعد المحاولة») يُرى `armed`. */
   useEffect(() => {
-    if (!needLoad || !stuck || loaded) return;
+    if (!needLoad || loaded || !(stuck || failed)) return;
     const check = () => setParked(recoveryPending());
     check();
     const iv = window.setInterval(check, 1000);
     return () => window.clearInterval(iv);
-  }, [needLoad, stuck, loaded]);
+  }, [needLoad, stuck, failed, loaded]);
   const ready = !needLoad || loaded;
   const isFailed = needLoad && !loaded && (failed || (stuck && parked));
   const retry = useCallback(() => setN((x) => x + 1), []);
-  const reload = useCallback(() => recoverFromStaleShell(), []);
+  /* والضغطةُ تقول حالَها فوراً وحين يستقرّ وعدُها — لا ثانيةَ يبقى فيها «راح تتحدّث» بعد «ما يصير تحديث». */
+  const reload = useCallback(() => {
+    const p = recoverFromStaleShell();
+    const now = () => setParked(recoveryPending());
+    now();
+    p.then(now, now);
+    return p;
+  }, []);
   const labels = useMemo<RxLabels>(() => {
     if (lang !== "ar") return RX_LABELS_EN;
     const ta = i18n.getFixedT("ar");
@@ -101,7 +111,7 @@ export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, ready, i18n]);
   const tp = useMemo<TFunction>(() => (lang === "ar" && ready ? i18n.getFixedT("ar") : t), [lang, ready, i18n, t]);
-  return { labels: lang === "ar" ? labels : RX_LABELS_EN, ready: lang === "ar" ? ready : true, failed: isFailed, slow: needLoad && !loaded && stuck && !isFailed, retry, reload, tp };
+  return { labels: lang === "ar" ? labels : RX_LABELS_EN, ready: lang === "ar" ? ready : true, failed: isFailed, slow: needLoad && !loaded && stuck && !isFailed, armed: needLoad && !loaded && parked, retry, reload, tp };
 }
 
 /** "2026-11-05" ⇒ "05/11/2026" — كما تُكتب التواريخ على الراجيتات هنا (يوم/شهر/سنة، أرقامٌ غربية). */

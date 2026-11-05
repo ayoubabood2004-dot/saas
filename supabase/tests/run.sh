@@ -5837,8 +5837,11 @@ chk "  والدينُ ٥٠٠ والمخزونُ نزل ٢ (من الرصيد ا�
     "select (total - amount_paid)::int::text||'|'||(select stock::int from products where id='${BD}01')::text from invoices where id='$ID1'" "500|8"
 chk "  والإعادةُ بنفس المرجع ترجع نفسَ الفاتورة بلا خصمٍ ثانٍ" \
     "select (_fgv('$C1', \$q\$$(co r242-1 "$(dayAt 1)")\$q\$) = '$ID1')::text||'|'||(select stock::int from products where id='${BD}01')::text" "true|8"
+# «كما ثبتت» = ختمُ الفاتورة نفسُه قبل الإعادة وبعدها — لا «أقدمُ من ١٢ ساعة»: «أمس ١٥:٠٠ ببغداد» أقربُ من ذلك بين منتصف الليل والثالثة
+# فجراً ببغداد، فكان الفحصُ يسقط بتلك الساعات وحدها والفاتورةُ سليمة (مقيس: ٠١:٠٩ ببغداد).
+STAMP242=$(Q "select extract(epoch from created_at)::text from invoices where id='$ID1'")
 chk "  **وإعادتُها بلا تاريخ (مسودّةٌ فقدته) ترجعها كما ثبتت — لا بيعةَ ثانيةً باليوم**" \
-    "select (_fgv('$C1', \$q\$$(co r242-1 null)\$q\$) = '$ID1')::text||'|'||((select created_at from invoices where id='$ID1') < now() - interval '12 hours')::text" "true|true"
+    "select (_fgv('$C1', \$q\$$(co r242-1 null)\$q\$) = '$ID1')::text||'|'||((select extract(epoch from created_at)::text from invoices where id='$ID1') = '$STAMP242' and '$STAMP242' <> '')::text" "true|true"
 # كلُّ جزءٍ يقول نفسَه إن غاب: كان NULL واحدٌ (sold_at غائب) يمحو السطرَ كلَّه فيرجع الفحصُ «» لا يُعرف ما الناقص.
 chk "  وسطرُ التدقيق يسمّيها «بيعة بيومٍ سابق» ويحمل يومَها" \
     "select coalesce((select coalesce(audit_kind(entity, action, details), 'no-kind')||'|'||coalesce(((details->>'sold_at')::timestamptz = (select created_at from invoices where id='$ID1'))::text, 'no-sold_at')||'|'||(details ? 'recorded_at')::text from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID1' limit 1), 'no-audit-row')" "sale_backdated|true|true"
