@@ -8,8 +8,10 @@
  *
  * والترتيبُ يُقرأ **كلَّ مرّة** يُعاد (ترتيبٌ مؤقّت ثم النهائيّ بعد الخطوط والصور) لا أوّلَ مرّةٍ وحدها، ويُقال معه **أيُّ
  * مستندٍ قِيس** (`html`): المستدعي يحكم على المستند الحاليّ بقياسه هو، لا بقياس ما قبله (ربعُ الثانية بعد كلّ حرف).
+ * والقياسُ يصل **برسالةٍ من الإطار** (`{rxLayout}`، مصدرُها نافذةُ إطارنا) لا بحدث تحميله: صورةٌ معلَّقة تحجب التحميل، وكان
+ * المستمعُ يُركَّب فيه — فلا فائضَ يُقال ولا عددَ صفحات، وكلُّ طباعةٍ تنتظر حكمَ نافذتها.
  * ========================================================================= */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { RX_PAPER, type RxPaperSize } from "@/lib/rxLayout";
 import "./rxPad.css";
 
@@ -73,22 +75,25 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
     return () => window.clearTimeout(id);
   }, [html, shown]);
 
-  /* بعد كلّ ترتيبٍ داخل الإطار: عددُ الصفحات وما فاض، ونهائيٌّ أم مؤقّت — من <html data-*>. */
-  const onLoad = () => {
-    const w = frame.current?.contentWindow;
-    const doc = frame.current?.contentDocument;
-    if (!w || !doc) return;
-    const read = () => {
-      const root = doc.documentElement;
-      const src = seq.current.byN.get(Number(root.getAttribute("data-rxseq")));
-      if (src === undefined) return;
-      const n = Math.max(1, Number(root.getAttribute("data-pages")) || 1);
+  /* بعد كلّ ترتيبٍ داخل الإطار: عددُ الصفحات وما فاض، ونهائيٌّ أم مؤقّت — رسالةُ سكربت الترتيب برقم مستندها. ورقمٌ أقدمُ مما
+     قُرئ لا يُقرأ (رسالةُ مستندٍ سبق التبديل). والمستمعُ يُركَّب قبل أن يبدأ الإطار (useLayoutEffect) فلا تفوته أوّلُ رسالة. */
+  const last = useRef(0);
+  useLayoutEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (!frame.current || e.source !== frame.current.contentWindow) return;
+      const d = (e.data as { rxLayout?: { seq?: unknown; pages?: unknown; overflow?: unknown; final?: unknown } } | null)?.rxLayout;
+      if (!d) return;
+      const k = Number(d.seq);
+      const src = seq.current.byN.get(k);
+      if (src === undefined || k < last.current) return;
+      last.current = k;
+      const n = Math.max(1, Number(d.pages) || 1);
       setPages(n);
-      layoutCb.current?.({ pages: n, overflow: root.getAttribute("data-overflow") === "1", final: root.getAttribute("data-final") === "1", html: src });
+      layoutCb.current?.({ pages: n, overflow: d.overflow === true, final: d.final === true, html: src });
     };
-    w.addEventListener("rx-ready", read);
-    if (doc.documentElement.getAttribute("data-ready")) read();
-  };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
 
   const scale = width > 0 ? width / pw : 0;
   const totalH = ph * pages;
@@ -99,7 +104,6 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
           ref={frame}
           title={title}
           srcDoc={tagged}
-          onLoad={onLoad}
           tabIndex={-1}
           sandbox="allow-same-origin allow-scripts"
           className="rxp-frame pointer-events-none absolute left-0 top-0"

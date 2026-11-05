@@ -728,7 +728,7 @@ await caught("القطعةُ بلا نطاقها avgc", mvMut('page(() => import
 await caught("«أعد المحاولة» لا تصنع قطعةً جديدة", mvMut("AvgCostNoteLazy = loadAvgCostNote(); setLazyTick", "setLazyTick", slotSuite));
 await caught("السندُ يُطابَق بفرقه الدقيق", mvMut('(x.source === "waste" ? -(Number(x.posted) || 0) : (x.applied_delta ?? 0))', "(x.applied_delta ?? 0)", movementsSuite));
 await caught("الاستهلاكُ بلا اسمه", mvMut('    if (m.kind === "consume") return t("pos.cat.consumables", "مستهلكات");\n', "", movementsSuite));
-await caught("نصُّ الوصفة يُقصّ كغيره", async (ck) => activitySuite(await loadAct((s) => swap(s, 'const FULL_TEXT = new Set(["recipe"]);', "const FULL_TEXT = new Set<string>();"), "act-mut"), ck));
+await caught("نصُّ الوصفة يُقصّ كغيره", async (ck) => activitySuite(await loadAct((s) => swap(s, 'const FULL_TEXT = new Set(["recipe", "void_reason"]);', 'const FULL_TEXT = new Set(["void_reason"]);'), "act-mut"), ck));
 await caught("اسمُ العمود خامّاً بالشرائح (avg_cost، cost)", async (ck) => activitySuite(await loadAct((s) => swap(s, "{t(`act.f.${c.key}`, { defaultValue: c.key })}", "{c.key}"), "act-mut2"), ck));
 const AVG = "p.avg_cost ?? ";
 const siteMut = (name, edit) => caught(name, async (ck) => {
