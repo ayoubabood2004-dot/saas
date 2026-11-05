@@ -10655,8 +10655,14 @@ out=$($P -f "$MIG/0261_rx_pad.sql" 2>&1) || { echo "$out" | tail -3; echo "   �
 RXP=a2610000-0000-4000-8000-0000000000a1
 RXQ=a2610000-0000-4000-8000-0000000000a2
 RXD=a2610000-0000-4000-8000-0000000000a3
+RXS=a2610000-0000-4000-8000-0000000000a4
+RXK=a2610000-0000-4000-8000-0000000000b1
 out=$($P -c "insert into pets(id, name, clinic_id) values ('$RXP', 'راجيتة', '$C1'), ('$RXQ', 'عيادة ثانية', '$C2'), ('$RXD', 'حيوان يُحذف', '$C1') on conflict (id) do nothing;
-       delete from pet_prescriptions where pet_id in ('$RXP', '$RXQ', '$RXD'); delete from clinic_rx_pad where clinic_id in ('$C1', '$C2');
+       insert into pets(id, name, clinic_id, shared_with_clinic) values ('$RXS', 'حيوان مالكٍ مشترك', null, true) on conflict (id) do nothing;
+       create table if not exists _rx261_prof as select id, role from profiles where id = '$VET';
+       insert into profiles(id, role) values ('$VET', 'doctor') on conflict (id) do update set role = 'doctor';
+       delete from audit_log where entity = 'pet_prescriptions' and (details->>'pet_id') in ('$RXP', '$RXQ', '$RXD', '$RXS');
+       delete from pet_prescriptions where pet_id in ('$RXP', '$RXQ', '$RXD', '$RXS'); delete from clinic_rx_pad where clinic_id in ('$C1', '$C2');
        delete from staff_elevations where user_id in ('$VET', '$RCP'); update _dvtest_flags set admin = false; delete from platform_sessions;" 2>&1) || { echo "$out" | tail -3; echo "   ✗ بذرةُ 0261 ما نزلت"; fail=1; }
 # أوّلُ ثلاثة أجزاء من جواب _rls_try: «guarded:الرمز:الرسالة» بلا تفاصيل الرسالة.
 g3() { echo "(select split_part(r, ':', 1) || ':' || split_part(r, ':', 2) || ':' || split_part(split_part(r, ':', 3), ' ', 1) from (select $1 as r) x)"; }
@@ -10665,22 +10671,34 @@ RX1="(select id from pet_prescriptions where pet_id = ''$RXP'' order by created_
 chk "الطبيبُ يكتب راجيتةً لحيوان عيادته" "select _rls_try('$VET', '$RXI')" "rows:1"
 chk "  والخادمُ يختمها: الكاتبُ والعيادةُ منه، ولا تولد ملغاة" \
     "select author_id::text || '|' || clinic_id::text || '|' || (voided_at is null)::text from pet_prescriptions where pet_id = '$RXP'" "$VET|$C1|true"
+chk "  وحيوانُ عيادةٍ أخرى لا تُكتب له (المفتاحُ الأجنبيّ لا يمرّ من RLS — السياسةُ تسأل pets بصلاحية الكاتب)" \
+    "select $(g3 "_rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXQ'', ''x'')')")" "guarded:42501:new"
+chk "    وحيوانُ مالكٍ مشتركٌ مع العيادات يُكتب له (الجوازُ العامّ: يراه كادرُ العيادة)" \
+    "select _rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXS'', ''للمشترك'')')" "rows:1"
+chk "  ومعرّفُ الجهاز يُحفظ كما أُرسل، وإعادتُه بعد ردٍّ ضائع 23505 لا صفٌّ ثانٍ" \
+    "select _rls_try('$VET', 'insert into pet_prescriptions(id, pet_id, body) values (''$RXK'', ''$RXP'', ''مرّة'')') || '|' || left(_rls_try('$VET', 'insert into pet_prescriptions(id, pet_id, body) values (''$RXK'', ''$RXP'', ''مرّة'')'), 13)" "rows:1|guarded:23505"
+chk "    (بجملةٍ ثانية: صفٌّ واحدٌ بمعرّفه)" "select count(*)::text from pet_prescriptions where id = '$RXK'" "1"
 chk "  وكاتبٌ ولحظةٌ وإلغاءٌ مزوَّرةٌ من الجهاز لا تُقبل: الخادمُ يكتبها" \
     "select _rls_try('$VET', 'insert into pet_prescriptions(pet_id, body, author_id, issued_at, voided_at, voided_by, void_reason) values (''$RXP'', ''ثانية'', ''$RCP'', ''2020-01-01'', now(), ''$RCP'', ''مزوّر'')')" "rows:1"
 chk "    (بجملةٍ ثانية: الكاتبُ الطبيب، واللحظةُ الآن، وليست ملغاة)" \
     "select author_id::text || '|' || (issued_at > now() - interval '5 minutes')::text || '|' || (voided_at is null and voided_by is null and void_reason is null)::text from pet_prescriptions where pet_id = '$RXP' and body = 'ثانية'" "$VET|true|true"
 chk "  ويراها الاستقبالُ وصاحبُ العيادة، ولا تراها عيادةٌ أخرى ولا المصوّر" \
-    "select $(rv $RCP "select count(*)::text from pet_prescriptions") || '|' || $(rv $C1 "select count(*)::text from pet_prescriptions") || '|' || $(rv $C2 "select count(*)::text from pet_prescriptions") || '|' || $(rv $PHO "select count(*)::text from pet_prescriptions")" "2|2|0|0"
+    "select $(rv $RCP "select count(*)::text from pet_prescriptions") || '|' || $(rv $C1 "select count(*)::text from pet_prescriptions") || '|' || $(rv $C2 "select count(*)::text from pet_prescriptions") || '|' || $(rv $PHO "select count(*)::text from pet_prescriptions")" "4|4|0|0"
 chk "  والمصوّرُ لا يكتبها (السياج)، ولا anon يصل الجدول" \
     "select $(g3 "_rls_try('$PHO', '$RXI')") || '|' || has_table_privilege('anon', 'public.pet_prescriptions', 'select')::text" "guarded:42501:new|false"
 chk "بعد ما انطبعت ما تتعدّل: النصّ، والدكتور، والخانات، والحيوان — ولو صاحبُ العيادة" \
     "select $(g3 "_rls_try('$VET', 'update pet_prescriptions set body = ''غيرها'' where id = $RX1')")
        || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set doctor_name = ''د. ثاني'' where id = $RX1')")
        || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set fields = ''{}'' where id = $RX1')")
-       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set pet_id = ''$RXD'' where id = $RX1')")" \
-    "guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen"
+       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set pet_id = ''$RXD'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$VET', 'update pet_prescriptions set id = gen_random_uuid() where id = $RX1')")" \
+    "guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen"
 chk "  ولا سببَ إلغاءٍ على راجيتةٍ غيرِ ملغاة" "select $(g3 "_rls_try('$C1', 'update pet_prescriptions set void_reason = ''x'' where id = $RX1')")" "guarded:P0001:rx_frozen"
 chk "  وتحديثٌ لا يغيّر شيئاً يمرّ (حفظٌ مكرّرٌ من جهازٍ لا يُرفض)" "select _rls_try('$VET', 'update pet_prescriptions set body = body where id = $RX1')" "rows:1"
+RXA0=$($P -tAc "select count(*) from audit_log where entity = 'pet_prescriptions'")
+chk "  و«ألغِ» بلا تغيير (voided_at = null على حيّة) يمرّ ولا يكتب «ألغى» بسجلّ الحركات" \
+    "select _rls_try('$RCP', 'update pet_prescriptions set voided_at = null where id = $RX1')" "rows:1"
+chk "    (بجملةٍ ثانية: لا سطرَ تدقيق)" "select (count(*) - $RXA0)::text from audit_log where entity = 'pet_prescriptions'" "0"
 chk "الإلغاءُ للمدير: الطبيبُ والاستقبالُ يُرفضان" \
     "select $(g3 "_rls_try('$VET', 'update pet_prescriptions set voided_at = now(), void_reason = ''غلط'' where id = $RX1')")
        || '|' || $(g3 "_rls_try('$RCP', 'update pet_prescriptions set voided_at = now() where id = $RX1')")" \
@@ -10695,6 +10713,19 @@ chk "  والملغاةُ لا تتعدّل ولا يرجع إلغاؤها ول�
        || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set void_reason = ''سببٌ آخر'' where id = $RX1')")
        || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set body = ''x'' where id = $RX1')")" \
     "guarded:P0001:rx_voided|guarded:P0001:rx_voided|guarded:P0001:rx_voided"
+RXV="(select id from pet_prescriptions where pet_id = ''$RXP'' and body = ''ثانية'')"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$VET','$C1', now() + interval '10 minutes')
+       on conflict (user_id) do update set until = excluded.until;" >/dev/null
+chk "  ومفتاحُ المدير الحيّ على الطبيب يلغي (auth_role: مدير)" \
+    "select _rls_try('$VET', 'update pet_prescriptions set voided_at = now() where id = $RXV')" "rows:1"
+$P -c "delete from staff_elevations where user_id = '$VET'; update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "  ومشغّلُ المنصّة داخل العيادة يلغي (كمديرٍ من كادرها)" \
+    "select _rls_try('$ADM', 'update pet_prescriptions set voided_at = now() where id = ''$RXK''')" "rows:1"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "    (بجملةٍ ثانية: الاثنتان ملغاتان، والخادمُ ختم مَن، وكلُّ إلغاءٍ بلا سببٍ سطرُ تدقيق)" \
+    "select string_agg(voided_by::text, ',' order by body) || '|' || (select count(*) from audit_log a where a.entity = 'pet_prescriptions' and a.action = 'UPDATE'
+            and a.entity_id in (select id::text from pet_prescriptions where pet_id = '$RXP' and body in ('ثانية', 'مرّة')))::text
+       from pet_prescriptions where pet_id = '$RXP' and body in ('ثانية', 'مرّة')" "$VET,$ADM|2"
 chk "ولا تُحذف: لا صاحبُ العيادة ولا الطبيب (لا صلاحية)" \
     "select $(g3 "_rls_try('$C1', 'delete from pet_prescriptions')") || '|' || $(g3 "_rls_try('$VET', 'delete from pet_prescriptions')")" \
     "guarded:42501:permission|guarded:42501:permission"
@@ -10710,6 +10741,12 @@ chk "التدقيقُ يكتب الراجيتةَ وإلغاءها باسم ال
        from audit_log where entity = 'pet_prescriptions' and entity_id = (select id::text from pet_prescriptions where pet_id = '$RXP' order by created_at limit 1)" "1|1|true"
 out=$($P -c "insert into pet_prescriptions(pet_id, clinic_id, body) values ('$RXD', '$C1', 'تُحذف مع حيوانها'); delete from pets where id = '$RXD';" 2>&1) || { echo "$out" | tail -3; fail=1; }
 chk "وحذفُ الحيوان يحذف راجيتاتِه (المفتاحُ الأجنبيّ — كملاحظاته)" "select count(*)::text from pet_prescriptions where pet_id = '$RXD'" "0"
+chk "  ولا تختفي بلا أثر: سطرُ حذفٍ بلقطتها كاملة (النصُّ والحيوان) — كملاحظاته ولقاحاته" \
+    "select count(*)::text || '|' || coalesce(max(details->>'pet_id'), '') from audit_log where entity = 'pet_prescriptions' and action = 'DELETE' and details->>'body' = 'تُحذف مع حيوانها'" "1|$RXD"
+chk "ونوعُها بسجلّ الحركات «ملف طبي» (كتابةً وإلغاءً وحذفاً) والتصميمُ «إعدادات» — وaudit_kind ممنوعةٌ على anon" \
+    "select audit_kind('pet_prescriptions', 'INSERT', '{}') || '|' || audit_kind('pet_prescriptions', 'UPDATE', '{\"__changed\":{\"voided_at\":[null,\"x\"]}}') || '|' || audit_kind('pet_prescriptions', 'DELETE', '{}')
+            || '|' || audit_kind('clinic_rx_pad', 'UPDATE', '{}') || '|' || has_function_privilege('anon', 'public.audit_kind(text,text,jsonb)', 'execute')::text
+            || '|' || has_function_privilege('authenticated', 'public.audit_kind(text,text,jsonb)', 'execute')::text" "medical|medical|medical|settings|false|true"
 
 RXC="insert into clinic_rx_pad(config) values (''{\"v\":1,\"mode\":\"template\",\"doctors\":[{\"name\":\"Dr. Ali\",\"lines\":\"B.V.M.S\"}]}'')"
 chk "التصميم: كادرُ العيادة يحفظه (كإعدادات العيادة)، وعيادتُه من الخادم" "select _rls_try('$VET', '$RXC')" "rows:1"
@@ -10719,7 +10756,9 @@ RXU0=$($P -tAc "select updated_at::text from clinic_rx_pad where clinic_id = '$C
 chk "  والتعديلُ بشرط «كما فُتح» يمرّ" "select _rls_try('$C1', 'update clinic_rx_pad set config = ''{\"v\":1,\"mode\":\"image\"}'' where updated_at = ''$RXU0''')" "rows:1"
 chk "    وبنسخةٍ قديمة صفرُ صفوف (لا دوسٌ صامت)، والختمُ تقدّم ومَن صار صاحبَ العيادة" \
     "select _rls_try('$VET', 'update clinic_rx_pad set config = ''{}'' where updated_at = ''$RXU0''') || '|' || (select (updated_at > '$RXU0'::timestamptz)::text || '|' || updated_by::text || '|' || (config->>'mode') from clinic_rx_pad where clinic_id = '$C1')" "rows:0|true|$C1|image"
-chk "  ولا ينتقل لعيادةٍ أخرى بتعديل (المحفّزُ يثبّتها)" "select _rls_try('$C1', 'update clinic_rx_pad set clinic_id = ''$C2''') || '|' || (select count(*)::text from clinic_rx_pad where clinic_id = '$C1')" "rows:1|1"
+chk "  ولا ينتقل لعيادةٍ أخرى بتعديل (المحفّزُ يثبّتها)" "select _rls_try('$C1', 'update clinic_rx_pad set clinic_id = ''$C2''')" "rows:1"
+chk "    (بجملةٍ ثانية — العدُّ بلقطة بداية الجملة كان يرى الصفَّ مكانه أبداً: درسُ 0257)" \
+    "select (select count(*) from clinic_rx_pad where clinic_id = '$C1')::text || '|' || (select count(*) from clinic_rx_pad where clinic_id = '$C2')::text" "1|0"
 chk "  ولا بايتاتِ صورٍ بالقاعدة: data: بأيّ حالة، ومصفوفةٌ، وأكبرُ من ٢٤ ألفاً" \
     "select left(_rls_try('$C2', 'insert into clinic_rx_pad(config) values (''{\"bgPath\":\"data:image/png;base64,AAAA\"}'')'), 13)
        || '|' || left(_rls_try('$C2', 'insert into clinic_rx_pad(config) values (''{\"emblemPath\":\"DATA:image/jpeg;base64,AA\"}'')'), 13)
@@ -10738,7 +10777,9 @@ RXN="select (select count(*) from pet_prescriptions where pet_id = '$RXP')::text
 RXN0=$($P -tAc "$RXN")
 out=$($P -f "$MIG/0261_rx_pad.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0261 ما انعادت"; fail=1; }
 chk "وتُعاد بلا أثرٍ ثانٍ (الصفوفُ والمحفّزاتُ كما هي)" "$RXN" "$RXN0"
-$P -c "delete from pet_prescriptions where pet_id in ('$RXP', '$RXQ'); delete from clinic_rx_pad where clinic_id in ('$C1', '$C2');" >/dev/null
+$P -c "delete from pet_prescriptions where pet_id in ('$RXP', '$RXQ', '$RXS'); delete from clinic_rx_pad where clinic_id in ('$C1', '$C2'); delete from pets where id = '$RXS';
+       delete from profiles p where p.id = '$VET' and not exists (select 1 from _rx261_prof);
+       update profiles p set role = r.role from _rx261_prof r where p.id = r.id; drop table _rx261_prof;" >/dev/null
 
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null

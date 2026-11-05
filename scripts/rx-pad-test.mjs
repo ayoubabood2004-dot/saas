@@ -89,6 +89,8 @@ const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(
 const { L, P, X, A, encodeClinical, registerConfigReadOnlyChecker } = mod;
 if (!L || !P || !X || !A || !registerConfigReadOnlyChecker) { console.error("✗ rx-pad-test: ما انحمّلت الوحدات"); process.exit(1); }
 const errOf = async (f) => { try { await f(); return "قُبل"; } catch (e) { return e.code ?? e.name ?? e.message; } };
+/* الرمزُ والرسالةُ معاً: رفضُ السياج العامّ 42501 أيضاً — والشاشةُ تقرأ «للمدير» من الرسالة (rxErrorText). */
+const errFull = async (f) => { try { await f(); return "قُبل"; } catch (e) { return `${e.code ?? ""}|${e.message ?? ""}`; } };
 
 /* ── أ) التنظيف ─────────────────────────────────────────────────────────── */
 console.log("▸ التنظيف: تصميمٌ مكسور يُقرأ ولا يُسقط الطباعة");
@@ -119,7 +121,7 @@ console.log("▸ التنظيف: تصميمٌ مكسور يُقرأ ولا يُ�
   check("  وبالتجريبيّ data:image تبقى، وdata:text لا", demo.emblemPath === "data:image/png;base64,AAAA" && demo.bgPath === null);
   check("  ومسارُ الدلو يبقى كما هو", L.cleanRxPad({ bgPath: "11111111-1111-1111-1111-111111111111/rx-bg-lk3.jpg" }).bgPath === "11111111-1111-1111-1111-111111111111/rx-bg-lk3.jpg");
   check("والتنظيفُ ثابت (تنظيفُ النظيف لا يغيّره) — «حفظ» لا يرى تغييراً لم يحصل", L.sameRxPad(L.cleanRxPad(g), g) && L.sameRxPad(L.cleanRxPad(L.RX_DEFAULT), L.RX_DEFAULT));
-  const big = L.cleanRxPad({ title: "x".repeat(500), address: "‮abc\u0007  def", subtitle: "a\nb" });
+  const big = L.cleanRxPad({ title: "x".repeat(500), address: "\u202eabc\u0007  def", subtitle: "a\nb" });
   check("والنصوصُ بسطرٍ واحد وبسقفها، بلا محارف تحكّمٍ ولا اتّجاهٍ مقلوب", big.title.length === 60 && big.address === "abc def" && big.subtitle === "a b");
   const f = L.cleanRxFields({ date: "2026-1-5", name: "x".repeat(200), kind: "dragon", owner: 5 });
   check("خاناتُ المريض: تاريخٌ بصيغته وإلا فارغ، والنوعُ من الثلاثة، والنصُّ ٨٠ حرفاً",
@@ -186,7 +188,32 @@ const doc = (over = {}) => ({
   const cal = P.buildRxHTML(doc({ cfg: L.cleanRxPad({ mode: "image", bgPrint: true }), clinic: { ...doc().clinic, bgUrl: "https://x.supabase.co/bg.jpg" } }), { print: true, calibrate: true });
   check("  وصفحةُ المعايرة: الإطاراتُ متقطّعة والصورةُ لا تُطبع، وعلاماتُ الأنواع الثلاثة كلُّها", cal.includes('class="page cal"') && cal.includes(".cal .bg{display:none}") && (cal.match(/data-tick=/g) ?? []).length === 3);
   check("سكربتُ الترتيب: يصغّر حتى حدّه ثم صفحةٌ ثانية بترويستها ويقسم السطرَ عند كلمة، ويقول ما لم ينقسم",
-    a5.includes("data-overflow") && a5.includes("cloneNode(true)") && a5.includes("split(/(\\s+)/)") && a5.includes("data-pages") && a5.includes("document.fonts.ready"));
+    a5.includes("data-overflow") && a5.includes("cloneNode(true)") && a5.includes("split(/(\\s+)/)") && a5.includes("data-pages") && a5.includes("f.ready"));
+  /* ── ما أمسكته المراجعةُ العدائيّة (٥/١١) ── */
+  check("الترتيبُ يُعاد لا يُختم مرّةً: يشيل المستنسخات ويرجّع الأسطرَ كما كُتبت، ويُعاد حين يصل خطّ، ويقول نهائيٌّ أم مؤقّت",
+    a5.includes("window.__rxLayout=run") && a5.includes("pristine===null") && a5.includes("removeChild(all[i])") && a5.includes("'loadingdone'") && a5.includes("data-final"));
+  check("  والنهائيُّ بعد الصور والخطوط بالاسم (data-faces → document.fonts.load)، والمؤقّتُ بعد ٤ ثوانٍ، والنهائيُّ قسراً بعد ٩",
+    a5.includes("f.load(x)") && /data-faces="[^"]*Aref Ruqaa[^"]*Cormorant Garamond/.test(a5) && a5.includes("},4000)") && a5.includes("},9000)")
+    && /data-faces="\[&quot;400 12px Cairo&quot;,&quot;600 12px Cairo&quot;\]"/.test(img({})));
+  check("  وورقةُ الخطوط لا تحجب السكربتين (media=print ثمّ all حين تصل) وتختم وصولَها أو فشلَها بنفسها (فشلٌ قبل السكربت لا يُفوَّت) — لا <link rel=stylesheet> حاجبة",
+    /<link id="rxf" href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]+" rel="stylesheet" media="print" onload="this\.setAttribute\('data-s','1'\)" onerror="this\.setAttribute\('data-s','1'\)">/.test(a5)
+    && (a5.match(/rel="stylesheet"/g) ?? []).length === 1 && a5.includes("lk.media='all'") && a5.includes("lk.getAttribute('data-s')"));
+  check("رقمُ الصفحة: سطرُه محجوزٌ قبل القياس (&#8203; وارتفاعٌ ثابت) — كتابتُه بعد الترتيب لا تكبّر التذييلَ فتقصّ آخرَ سطر",
+    a5.includes('<span class="pno">&#8203;</span>') && /\.pno\{[^}]*line-height:1\.3;min-height:1\.3em/.test(a5) && /\.ft\{[^}]*line-height:1\.3/.test(a5));
+  check("  والفائضُ يُفحص على **كلّ** صفحة بعد الترقيم (لا الأخيرة وحدها)", a5.includes("number(ps);") && a5.includes("for(i=0;i<ps.length;i++){var pb=L(ps[i]);if(pb&&over(pb))overflow=true;}"));
+  check("  وصورةُ الراجيتة ترقّم صفحاتها أيضاً — تحت مربّع الوصفة بالطبقة نفسِها (فالمعايرةُ تزحزحه معها)",
+    /<div class="pno pi" style="left:[\d.]+%;top:[\d.]+%;width:[\d.]+%">&#8203;<\/div>\s*<\/div>/.test(im) && /\.pi\{position:absolute/.test(im));
+  const pr = P.buildRxHTML(doc({ overflowNote: "ما انطبعت <b>" }), { print: true });
+  check("نافذةُ الطباعة حَكَم: تطبع بعد ترتيبٍ نهائيّ وحده، ولا تطبع ما فيه فائض — تُظهر الشريطَ وتبلّغ من فتحها",
+    pr.includes("data-final')!=='1')return") && /if\(root\.getAttribute\('data-overflow'\)\)\{var w=document\.getElementById\('rxwarn'\);if\(w\)w\.hidden=false;tell\('overflow'\);return;\}/.test(pr)
+    && pr.indexOf("tell('overflow')") < pr.indexOf("window.print()") && pr.includes("window.opener.postMessage({rx:t},'*')"));
+  check("  والشريطُ نصُّ المستدعي مهرَّباً، مخفيٌّ حتى يلزم، ولا يُطبع — ولا يظهر بالمعاينة",
+    pr.includes('<div id="rxwarn" class="rxwarn" role="alert" hidden>ما انطبعت &lt;b&gt;</div>') && pr.includes("@media print{.rxwarn{display:none!important}}")
+    && !P.buildRxHTML(doc({ overflowNote: "x" })).includes('id="rxwarn"'));
+  const arPad = P.buildRxHTML(doc({ cfg: { ...doc().cfg, lang: "ar" }, clinic: { ...doc().clinic, hours: "10:00 ص – 2:00 م" } }));
+  check("الدوامُ باتّجاه نصّه (<bdi> بلا dir): «10:00 ص – 2:00 م» بعزلٍ يساريّ كان ينقلب — والهواتفُ وحدها يسار",
+    arPad.includes("<bdi>10:00 ص – 2:00 م</bdi>") && !/<bdi dir="ltr">10:00/.test(arPad) && arPad.includes('<bdi dir="ltr">+9647700000000</bdi>'));
+  check("وآخرُ صفحة بلا فاصل صفحةٍ بعدها (last-of-type: السكربتان بعد الصفحات)", a5.includes(".page:last-of-type{") && !a5.includes(".page:last-child"));
 }
 
 /* ── ج) الأسطر ─────────────────────────────────────────────────────────── */
@@ -212,6 +239,20 @@ console.log("▸ «من خطة العلاج»: أحدثُ خطةٍ بأدوية�
   check("المنتقي: الدواءُ «بالنصّ» بسطرٍ يبدأ باسمه، والشيلُ للسطر كما أُدرج وحده (سطرٌ عليه جرعة يبقى)",
     X.hasDrugLine("Amoxicillin 250 mg\nX", "amoxicillin") && !X.hasDrugLine("Amoxicillinum", "Amoxicillin")
     && X.removeDrugLine("Amoxicillin\nAmoxicillin 250 mg", "Amoxicillin") === "Amoxicillin 250 mg");
+  const old = "Metronidazole 250 mg\n1×1 لمدة 5 أيام\n\nVitamin B complex\n1×1 لمدة 5 أيام";
+  check("«أضفها هنا» تنسخ نصَّها كما هو بعد سطرٍ فارغ — سطرُ الجرعة المكرّر لا يسقط (كان يُحذف بصمت)",
+    X.appendBlock("Ceftriaxone 1 g IM\n1×1 لمدة 5 أيام\n", old) === `Ceftriaxone 1 g IM\n1×1 لمدة 5 أيام\n\n${old}`
+    && X.appendBlock("", `\n\n   1×2\n${old}\n\n`) === `   1×2\n${old}` && X.appendBlock("A", "  \n ") === "A");
+  const T = ["د", "دكتور", "دكتورة", "الدكتور", "الدكتورة", "dr", "doctor"];
+  const pick = (me, names) => X.pickDoctor(me, names, T);
+  check("الدكتورُ الموقّع بكلماتٍ كاملة: «حسن» ليس «محسن»، و«حسن علي» ليس «محسن علي»، و«علي» ليس «عليا»",
+    pick("حسن", ["د. محسن جواد", "د. حسن علي"]) === "د. حسن علي" && pick("حسن علي", ["د. محسن علي", "د. حسن علي"]) === "د. حسن علي"
+    && pick("علي", ["د. عليا كريم", "د. علي حسن"]) === "د. علي حسن");
+  check("  واثنان طابقا ⇒ لا تخمين («علي» بـ«عباس علي» و«علي كاظم»)، وبلا مطابقة الوحيدُ وإلا لا أحد",
+    pick("علي", ["د. عباس علي", "د. علي كاظم"]) === "" && pick("زيد", ["د. علي"]) === "د. علي" && pick("زيد", ["د. علي", "د. حسن"]) === "" && pick("", ["د. علي"]) === "د. علي");
+  check("  والألقابُ لا تُعدّ كلمة، والهمزةُ والتشكيلُ والحالةُ مطويّة",
+    pick("علي حسن", ["دكتور علي", "د. زيد"]) === "دكتور علي" && pick("Ali Hassan", ["Dr. Ali", "Dr. Omar"]) === "Dr. Ali"
+    && pick("احمد", ["د. أحمد كريم", "د. زينب"]) === "د. أحمد كريم" && pick("عَلِيّ", ["د. علي"]) === "د. علي" && pick("ZAINAB", ["Dr. Zainab Kareem", "Dr. Ali"]) === "Dr. Zainab Kareem");
 }
 
 /* ── د) المرآة ─────────────────────────────────────────────────────────── */
@@ -237,10 +278,17 @@ const as = (id, rawRole, staff) => mem.set(SESSION, JSON.stringify({
   check("الطبيبُ يكتب راجيتة: تُختم بالكاتب واللحظة، وليست ملغاة، والنصُّ منظَّف", r1.author_id === "v1" && !!r1.issued_at && r1.voided_at === null && r1.body === "  Amoxicillin");
   check("  وتظهر بسجلّ الحيوان (الأحدثُ أوّلاً)، ولا تظهر لحيوانٍ آخر", (await api.listForPet(pet)).length === 1 && (await api.listForPet("other")).length === 0);
   check("  ونصٌّ فارغٌ (فراغات) يُرفض 23514 كالقيد", await errOf(() => api.add({ pet_id: pet, pet_name: "", doctor_name: "", fields: {}, body: "  \n  " })) === "23514");
-  check("الإلغاءُ للمدير: الطبيبُ يُرفض (rx_void_manager)", await errOf(() => api.voidRx(r1.id, "غلط")) === "42501" && (await api.listForPet(pet))[0].voided_at === null);
+  check("الإلغاءُ للمدير: الطبيبُ يُرفض برمزه ورسالته (42501|rx_void_manager — الشاشةُ تقول «للمدير» من الرسالة)",
+    await errFull(() => api.voidRx(r1.id, "غلط")) === "42501|rx_void_manager" && (await api.listForPet(pet))[0].voided_at === null);
+  const cid = "0b0c0d0e-1111-4222-8333-944455556666";
+  const k1 = await api.add({ id: cid, pet_id: pet, pet_name: "Bobby", doctor_name: "", fields: {}, body: "Ceftriaxone" });
+  const k2 = await api.add({ id: cid, pet_id: pet, pet_name: "Bobby", doctor_name: "", fields: {}, body: "Ceftriaxone" });
+  check("ومعرّفُ الجهاز يُحفظ، وإعادةُ الحفظ بنفسه (ردٌّ ضاع) ترجعها نفسَها — لا صفٌّ ثانٍ لورقةٍ واحدة",
+    k1.id === cid && k2.id === cid && (await api.listForPet(pet)).filter((x) => x.id === cid).length === 1 && (await api.listForPet(pet)).length === 2);
+  check("  ومعرّفٌ ليس uuid لا يُرسل (الخادمُ يختار)", !("id" in A.rxInsertRow({ id: "rx_123", pet_id: pet, pet_name: "", doctor_name: "", fields: {}, body: "x" })) && A.rxInsertRow({ id: cid.toUpperCase(), pet_id: pet, pet_name: "", doctor_name: "", fields: {}, body: "x" }).id === cid);
   as("m1", "admin");
   const v = await api.voidRx(r1.id, "  كُتبت لحيوانٍ ثانٍ  ");
-  check("  والمديرُ يلغيها مرّةً — والسببُ منظّف", !!v.voided_at && v.void_reason === "كُتبت لحيوانٍ ثانٍ" && (await api.listForPet(pet))[0].voided_at !== null);
+  check("  والمديرُ يلغيها مرّةً — والسببُ منظّف", !!v.voided_at && v.void_reason === "كُتبت لحيوانٍ ثانٍ" && (await api.listForPet(pet)).find((x) => x.id === r1.id).voided_at !== null);
   check("  وإلغاءٌ ثانٍ ⇒ rx_stale (صفرُ صفوف)", await errOf(() => api.voidRx(r1.id, "x")) === "rx_stale");
   as("p1", "doctor", { clinicId: "c", role: "doctor", staffRole: "photographer" });
   check("والمصوّرُ مسيَّج: لا يرى السجلَّ ولا التصميم، ولا يكتب (42501)",
@@ -248,11 +296,11 @@ const as = (id, rawRole, staff) => mem.set(SESSION, JSON.stringify({
   as("v1", "doctor");
   registerConfigReadOnlyChecker(() => true);
   check("و«القراءة فقط» يمنع الكتابةَ بخطأ repo نفسِه (ReadOnlyError) — والقراءةُ تبقى",
-    await errOf(() => api.add({ pet_id: pet, pet_name: "", doctor_name: "", fields: {}, body: "x" })) === "ReadOnlyError" && (await api.listForPet(pet)).length === 1);
+    await errOf(() => api.add({ pet_id: pet, pet_name: "", doctor_name: "", fields: {}, body: "x" })) === "ReadOnlyError" && (await api.listForPet(pet)).length === 2);
   registerConfigReadOnlyChecker(() => false);
   quota = 10;
   check("والامتلاءُ يُرمى ولا يُبلع («ما انحفظ» لا «تمّ»)", await errOf(() => api.add({ pet_id: pet, pet_name: "", doctor_name: "", fields: {}, body: "x" })) === "QuotaExceededError"
-    && (quota = Infinity, (await api.listForPet(pet)).length === 1));
+    && (quota = Infinity, (await api.listForPet(pet)).length === 2));
   quota = Infinity;
 }
 
@@ -263,13 +311,66 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
   const lazyRx = /page\(\(\) => import\("@\/components\/rx\/RxPad"\)\.then\(\(m\) => \(\{ default: m\.(RxButton|RxSettingsCard) \}\)\), \["rx"\]\)/;
   check("ملفُّ الحيوان وصفحةُ الحالة والإعدادات تحمّل المالكَ كسولاً بنطاقه (page(…, [\"rx\"]))، ولا استيرادَ ثابتاً",
     lazyRx.test(pp) && lazyRx.test(vp) && lazyRx.test(st) && ![pp, vp, st].some((s) => /from\s*["']@\/components\/rx\//.test(s)));
-  check("  والزرُّ لمن يكتب بالسجلّ الطبيّ (editMedical) ولا يراه المالك", /const canRx = !isOwner && can\("editMedical"\)/.test(pp) && /\{canRx && \(/.test(pp) && /const canRx = can\("editMedical"\)/.test(vp));
+  /* كلُّ <RxButtonLazy بعد فتح `{canRx && ` لم يُغلق قبله (الزرُّ داخل البوّابة لا بجانبها). */
+  const gated = (s) => {
+    const uses = [...s.matchAll(/<RxButtonLazy\b/g)].map((m) => m.index);
+    return uses.length > 0 && uses.every((i) => { const open = s.lastIndexOf("{canRx && ", i); return open >= 0 && !/\n\s{0,14}\)\}\n/.test(s.slice(open, i)); });
+  };
+  check("  والزرُّ لمن يكتب بالسجلّ الطبيّ (editMedical) ولا يراه المالك — بملفّ الحيوان وبصفحة الحالة (تُفتح لجلسة المالك أيضاً)",
+    /const canRx = !isOwner && can\("editMedical"\)/.test(pp) && /const canRx = user\?\.role !== "owner" && can\("editMedical"\)/.test(vp) && gated(pp) && gated(vp));
   check("  وبطاقةُ الإعدادات لمن يملك إدارة الإعدادات", /\{canSettings && <RxCardSlot \/>\}/.test(st));
   const sheet = code("src/components/rx/RxSheet.tsx"), designer = code("src/components/rx/RxDesigner.tsx");
   const printFn = /const print = \(\) => \{([\s\S]*?)\n  \};/.exec(sheet)?.[1] ?? "";
-  check("الطباعةُ داخل الضغطة: openRxPrint قبل أيّ await، والحفظُ بعدها",
-    !!printFn && printFn.indexOf("openRxPrint(") >= 0 && !/await/.test(printFn.slice(0, printFn.indexOf("openRxPrint("))) && printFn.indexOf("save()") > printFn.indexOf("openRxPrint("));
-  check("  وطباعةٌ ثانيةٌ بلا تغيير لا تكتب سجلّاً ثانياً (البصمة)، والفارغةُ لا تُحفظ", /key === savedKey/.test(printFn) && /if \(!clean\.trim\(\)\)/.test(printFn));
+  check("الطباعةُ داخل الضغطة: openRxPrint (والمستندُ فيها) قبل أيّ await، والحفظُ بعدها",
+    !!printFn && printFn.indexOf("openRxPrint(") >= 0 && !/await/.test(printFn) && printFn.indexOf("enqueue(snap)") > printFn.indexOf("openRxPrint("));
+  check("  وطباعةٌ ثانيةٌ بلا تغيير لا تكتب سجلّاً ثانياً (البصمة، ولا لقطةً ثانيةً لما ينتظر الحفظ)، والفارغةُ لا تُحفظ",
+    /key === savedKey/.test(printFn) && /pendingRef\.current\.find\(\(p\) => p\.key === key\)/.test(printFn) && /if \(!clean\.trim\(\)\)/.test(printFn));
+  check("المحفوظُ لقطةُ ما انطبع لحظةَ الطباعة (بمعرّفٍ من الجهاز والنصِّ النظيف) — و«احفظها بالسجل» تحفظها هي لا المسودّةَ بعد تعديلها",
+    /const snap: Snap = \{ key, input: \{ id: uuid\(\), pet_id: pet\.id, visit_id: visitId, pet_name: fields\.name \|\| pet\.name, doctor_name: doctor, fields, body: clean \} \}/.test(printFn)
+    && /onClick=\{\(\) => void flush\(\)\}[^>]*data-rx-retry/.test(sheet) && /rec = await rxApi\.add\(snap\.input\)/.test(sheet)
+    && !/rxApi\.add\(\{/.test(sheet) && !/const save = /.test(sheet));
+  check("  والخروجُ يُسأل ما دامت ورقةٌ انطبعت ولم تُحفظ (ولو فُرّغ النصّ بعدها)", /if \(!dirty && !pending\.length\) return true;/.test(sheet));
+  check("  ونافذةُ الطباعة حَكَم: قياسُ المعاينة لهذا المستند نهائيٌّ بلا فائض ⇒ حفظٌ فوراً، وإلا حين تقول «طبعتُ» (ولا يُحفظ ما رفضته)",
+    /const measured = layout\.html === html;/.test(sheet) && /if \(measured && layout\.final && !layout\.overflow\) \{[\s\S]*?enqueue\(snap\);[\s\S]*?\} else \{[\s\S]*?onPrint: \(\) => enqueue\(snap\), onOverflow: overflowed/.test(printFn)
+    && /disabled=\{!labelsReady \|\| tooLong \|\| knownOverflow\}/.test(sheet) && /const knownOverflow = measured && layout\.overflow;/.test(sheet));
+  check("  وإعادةُ الطباعة من السجلّ (بلا معاينة) تسمع رفضَ النافذة", /const reprint = [\s\S]*?watchPrint\(w, \{ onOverflow: overflowed \}\)/.test(sheet));
+  check("الورقةُ من النصّ كما يُحفظ (cleanRxBody)، وأطولُ من السقف لا يُطبع ويُقال", /rxDoc\(cfg, labels, fields, clean, doctor, title\)/.test(sheet) && /const tooLong = body\.length > RX_LIMITS\.body;/.test(sheet) && /data-rx-toolong/.test(sheet));
+  check("سطرٌ حُفظ يدخل القائمةَ إن كانت قائمةَ الخادم وحدها — فاشلةٌ أو قيدَ القراءة تُقرأ من جديد (لا «سابقة (1)» كاذبة)",
+    /if \(h\.status === "ready"\) setHist\(\{ status: "ready", list: \[rec, \.\.\.h\.list\.filter/.test(sheet) && /else if \(h\.status !== "missing"\) setHistN\(\(x\) => x \+ 1\)/.test(sheet)
+    && !/status: h\.status === "loading" \? "loading" : "ready"/.test(sheet));
+  check("«أضفها هنا» تنسخ النصَّ كتلةً (appendBlock) لا سطراً سطراً بحذف المكرّر", /onReuse=\{\(r\) => \{ playTap\(\); setBody\(\(b\) => appendBlock\(b, r\.body\)\); \}\}/.test(sheet));
+  check("والدكتورُ الموقّع بكلماتٍ كاملة ودكتورٍ واحد (pickDoctor) لا احتواءٌ أوّلُه يفوز", /setDoctor\(pickDoctor\(user\?\.full_name, cfg\.doctors\.map\(\(d\) => d\.name\), t\("rx\.drTitles"\)\.split\(","\)\)\)/.test(sheet) && !/includes\(me\)/.test(sheet));
+  check("وخاناتُ المريض بلغة الورقة بعد وصول قاموسها (tp)، وفشلُ القاموس «أعد المحاولة» لا عناوينُ إنكليزية بصمت",
+    /if \(pad\.status === "loading" \|\| !labelsReady \|\| fields\) return;\s*setFields\(initialFields\(pet, cfg\.lang, tp\)\)/.test(sheet) && /data-rx-labels-fail/.test(sheet)
+    && /\(\) => \{ if \(alive\) setFailed\(true\); \}/.test(code("src/components/rx/rxShared.ts")) && !/\(\) => \{ if \(alive\) setReady\(true\); \}, \(\) => \{ if \(alive\) setReady\(true\); \}/.test(code("src/components/rx/rxShared.ts"))
+    /* «جاهز» بنفس الرسمة لا حالةٌ قديمة: التصميمُ يصل عربياً بعد الافتراضيّ الإنكليزيّ فكانت الخاناتُ تُبذر قبل القاموس («2 years» على ورقةٍ عربية — مشيٌ بالمتصفّح أمسكه). */
+    && /const ready = !needLoad \|\| loaded;/.test(code("src/components/rx/rxShared.ts")) && !/useState\(!needLoad\)/.test(code("src/components/rx/rxShared.ts")));
+  check("  وعلمُ «المكوّن حيّ» يُرفع بكلّ تركيب (StrictMode يعيد الأثر) — كان يُطفأ ولا يُشعل فلا تتحدّث القائمةُ بعد الحفظ",
+    /useEffect\(\(\) => \{ alive\.current = true; return \(\) => \{ alive\.current = false; \}; \}, \[\]\);/.test(sheet));
+  check("  وأيامُ سطر الخطة بلغة الورقة أيضاً، وكلُّ قراءةٍ للخطة برقمها (جوابٌ متأخّر لا يفتح لوحةً أُغلقت)",
+    /const planDays = \(n: number\) => tp\("rx\.days", \{ count: n \}\);/.test(sheet) && /const my = \+\+planSeq\.current;/.test(sheet) && /if \(my !== planSeq\.current\) return;/.test(sheet)
+    && /if \(plan\.status !== "closed"\) \{ planSeq\.current\+\+; setPlan\(\{ status: "closed" \}\); return; \}/.test(sheet));
+  const shared = code("src/components/rx/rxShared.ts");
+  check("المصمِّم: «أعد التحميل» تقول «تحميل» بنفس الرسمة (لا يُبذر من الصفّ القديم وختمه)، وفشلُ القراءة لا يبذر الافتراضيّ",
+    /const reload = useCallback\(\(\) => \{\s*setSt\(\(s\) => \(\{ \.\.\.s, status: "loading", error: null \}\)\);\s*setN/.test(shared)
+    && /if \(pad\.status === "loading" \|\| pad\.status === "error" \|\| draft\) return;/.test(designer) && /data-rxd-loadfail/.test(designer));
+  check("  والحفظُ موقوفٌ أثناء رفع صورة، والنسخةُ الجديدة لا تنزل فوق تصميمٍ لم يُحفظ، والرقمُ المبذور تعديلٌ يُحفظ",
+    /disabled=\{missing \|\| pad\.status !== "ready" \|\| !dirty \|\| uploading !== null\}/.test(designer) && /if \(!draft \|\| missing \|\| uploading\) return;/.test(designer)
+    && /useEffect\(\(\) => \(dirty \|\| uploading \? holdUpdates\(Infinity\) : undefined\), \[dirty, uploading\]\)/.test(designer) && /setDraft\(seeded\);\s*setBase\(c\);/.test(designer));
+  check("  والمقبضُ يأخذ التركيزَ بالضغطة (الأسهمُ له)، والسحبُ يكتب خانتَه وحدها فوق المسودّة الحالية",
+    /closest<HTMLElement>\("\[data-handle\]"\)\?\.focus\(\{ preventScroll: true \}\)/.test(designer) && /setDraft\(\(cur\) => \{/.test(designer) && !/setDraft\(\(\) => apply\(d\.start/.test(designer));
+  check("  ومنزلقُ المعايرة يمين/يسار فيزيائيّ (dir=ltr) — بالعربية كان يزحزح الطباعةَ عكسَ عنوانه، وصورةُ الراجيتة تُسطَّح على أبيض",
+    /dir="ltr" onChange=\{\(v\) => set\(\{ nudge: \{ \.\.\.draft\.nudge, x: v \} \}\)\} data-r="nudge-x"/.test(designer) && /background: "#ffffff"/.test(designer)
+    && /if \(opts\.background\) \{ ctx\.fillStyle = opts\.background; ctx\.fillRect\(0, 0, width, height\); \}\s*ctx\.drawImage/.test(code("src/lib/image.ts")));
+  const act = code("src/pages/ActivityLog.tsx");
+  check("سجلُّ الحركات: الحذفُ مع الحيوان باسمه، و«ألغى» حين تغيّر الإلغاءُ وحده، وبلا شاراتٍ خامّة (voided_at/voided_by/updated_by/config)",
+    /: del \? t\("act\.rxDel", \{ pet: pn\(\) \}\)/.test(act) && /changesOfRaw\(d\)\.has\("voided_at"\) \? t\("act\.rxVoid"/.test(act)
+    && /const CHANGE_NOISE = new Set\(\[[^\]]*"voided_at", "voided_by", "updated_by", "config"\]\)/.test(act));
+  const mig = src("supabase/migrations/0261_rx_pad.sql");
+  check("والهجرة: تدقيقُ الحذف بلقطته، والإلغاءُ حين يتغيّر وحده، والتجميدُ للصفّ كلّه إلا الإلغاء (ومنه المعرّف)، والحيوانُ يراه الكاتب",
+    /create trigger audit_all after insert or delete on public\.pet_prescriptions/.test(mig) && /when \(old\.voided_at is distinct from new\.voided_at\) execute function audit_change\(\)/.test(mig)
+    && /\(to_jsonb\(new\) - array\['voided_at', 'voided_by', 'void_reason'\]\)\s*is distinct from \(to_jsonb\(old\) - array\['voided_at', 'voided_by', 'void_reason'\]\)/.test(mig)
+    && /and exists \(select 1 from public\.pets p where p\.id = pet_prescriptions\.pet_id\)/.test(mig) && /when p_entity = 'pet_prescriptions' then 'medical'   -- \+0261/.test(mig));
   check("لا autoFocus (المكوّنُ يرسم MedPicker) ولا window.confirm بالنافذة والمصمِّم",
     !/autoFocus/.test(sheet) && !/autoFocus/.test(designer) && !/\b(window\.)?confirm\(/.test(sheet.replace(/confirmClose\(|confirmVoid\(/g, "")) && !/\b(window\.)?confirm\(/.test(designer.replace(/confirmClose\(/g, "")));
   check("الإلغاءُ بتأكيدٍ داخل النافذة يقول ما يحصل، وللمدير وحده", /t\("rx\.voidHint"\)/.test(sheet) && /isManager && <button/.test(sheet) && /const isManager = role === "manager"/.test(sheet));

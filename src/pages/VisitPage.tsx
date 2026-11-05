@@ -159,7 +159,8 @@ export default function VisitPage() {
   const [pet, setPet] = useState<Pet | null>(seeded ? seed!.pet! : null);
   const [visit, setVisit] = useState<ClinicVisit | null>(seeded ? seed!.visit! : null);
   const { can } = usePermissions();
-  const canRx = can("editMedical");
+  /* الراجيتةُ لكادر العيادة وحده — كسجلّ الحيوان (!isOwner): صفحةُ الحالة تُفتح لجلسة المالك أيضاً (Protected لا ClinicOnly)، و`can()` يقرأ المالكَ مديراً. */
+  const canRx = user?.role !== "owner" && can("editMedical");
   const [, setRxLazyTick] = useState(0);
   const [notes, setNotes] = useState<PetNote[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seeded ? (seed!.treatments ?? []) : []);

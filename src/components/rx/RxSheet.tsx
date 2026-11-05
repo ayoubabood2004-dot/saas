@@ -2,15 +2,18 @@
  * نافذةُ الراجيتة من سجلّ الحيوان (0261): خاناتُ المريض نازلةٌ من ملفّه، والوصفةُ نصٌّ حرّ يُكتب فيه كلُّ شيء — أو يُدرج
  * من منتقي الأدوية ومن آخر خطة علاج — والورقةُ بجانبه كما ستُطبع، ثم «اطبع الراجيتة».
  *
- *  • الطباعةُ نافذةٌ تُفتح **داخل الضغطة** قبل أيّ await (سفاري يمنع غيرَها بصمت)، ثم الحفظُ بسجلّ الحيوان. والحفظُ يُسمع:
- *    فشلُه يُقال ويبقى زرُّ «احفظها بالسجل»؛ وطباعةٌ ثانية بلا تغيير لا تكتب سجلّاً ثانياً.
+ *  • الطباعةُ نافذةٌ تُفتح **داخل الضغطة** قبل أيّ await (سفاري يمنع غيرَها بصمت) ويُكتب فيها المستندُ بالضغطة نفسها، ثم الحفظُ
+ *    بسجلّ الحيوان. والمحفوظُ **لقطةُ ما انطبع** (بمعرّفها، rxApi): «احفظها بالسجل» بعد فشلٍ يحفظ الورقةَ التي خرجت لا المسودّةَ
+ *    بعد تعديلها، وردٌّ ضائع ثمّ إعادةٌ لا تكتب صفّاً ثانياً. والحفظُ يُسمع: فشلُه يُقال ويبقى الزرّ، والخروجُ قبله يُسأل.
+ *  • نافذةُ الطباعة حَكَم (rxPrint): قياسُ المعاينة لهذا المستند نفسِه ونهائيٌّ بلا فائض ⇒ الحفظُ فوراً؛ وإلا (كُتب حرفٌ قبل ربع
+ *    ثانية، أو الخطوطُ لم تصل) ⇒ يُحفظ حين تقول النافذةُ «طبعتُ»، ولا يُحفظ ما رفضته لفائض (تقوله هي والشاشة).
  *  • «من خطة العلاج» قراءةٌ طازجة ترمي (rxApi.notes): «ما مسجّلة خطة» بعد قراءةٍ نجحت وحدها، والفشلُ «أعد المحاولة».
  *  • الجرعةُ تُكتب كما حُفظت (rxLines) — لا formatNum.
  *  • الراجيتةُ المطبوعة لا تتعدّل (المحفّز)؛ «أضفها هنا» تنسخ نصَّها لراجيتةٍ جديدة، والإلغاءُ للمدير بتأكيدٍ يقول ماذا يحصل.
  *  • لا autoFocus (med-entry-guard: المكوّنُ يرسم MedPicker)، والخروجُ بنصٍّ لم يُحفظ يُسأل داخل النافذة (لا window.confirm).
  * رفيقٌ لنطاق rx: يُحمَّل كسولاً من مالكه (RxPad) وحدَه.
  * ========================================================================= */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Ban, ClipboardList, CopyPlus, Pill, Printer, RotateCcw, Check, History } from "lucide-react";
 import { Modal } from "@/components/Modal";
@@ -19,21 +22,42 @@ import { MedPicker } from "@/components/meds/MedPicker";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
-import { ageFromDOB, cn, formatDate, formatDec, localISO, searchable } from "@/lib/utils";
-import { rxApi, isRxMissing, isRxStale, RX_NOTES_LIMIT, type RxRecord } from "@/lib/rxApi";
+import { ageFromDOB, cn, formatDate, formatDec, localISO, uuid } from "@/lib/utils";
+import { rxApi, isRxMissing, isRxStale, RX_NOTES_LIMIT, type RxNew, type RxRecord } from "@/lib/rxApi";
 import { buildRxHTML, openRxPrint } from "@/lib/rxPrint";
 import { RX_LIMITS, ageTextEn, cleanRxBody, rxDraftKey, rxKindOf, type RxFields, type RxKind, type RxLang } from "@/lib/rxLayout";
-import { appendLines, hasDrugLine, latestPlan, planLine, removeDrugLine, type RxPlan } from "@/lib/rxLines";
+import { appendBlock, appendLines, hasDrugLine, latestPlan, pickDoctor, planLine, removeDrugLine, type RxPlan } from "@/lib/rxLines";
 import type { Pet } from "@/types";
 import { RX_FIT, RX_FIT_SCROLL, RxPaper, type RxLayoutInfo } from "./RxPaper";
 import { rxDoc, rxErrorText, useRxLabels, useRxPad } from "./rxShared";
 
 type HistState = { status: "loading" | "ready" | "error" | "missing"; list: RxRecord[] };
+/** ما انطبع ولم يُحفظ بعد: لقطتُه كما خرجت ومعرّفُه (المفتاحُ يكشف إعادتَها). */
+type Snap = { key: string; input: RxNew & { id: string } };
+/* نوافذُ الطباعة المفتوحة ورسائلُها (PRINT_JS: «print» قبل الطباعة، «overflow» بدلها). على مستوى الوحدة لا المكوّن: حفظٌ ينتظر
+   «طبعتُ» يكمل ولو أُغلقت النافذةُ الصغيرة قبلها. */
+type PrintWatch = { onPrint?: () => void; onOverflow: () => void };
+const watching = new Map<Window, PrintWatch>();
+let listening = false;
+function watchPrint(w: Window, h: PrintWatch) {
+  watching.set(w, h);
+  if (!listening) {
+    listening = true;
+    window.addEventListener("message", (e) => {
+      const src = e.source as Window | null;
+      const kind = (e.data as { rx?: unknown } | null)?.rx;
+      const got = src ? watching.get(src) : undefined;
+      if (!got || (kind !== "print" && kind !== "overflow")) return;
+      watching.delete(src!);
+      if (kind === "print") got.onPrint?.();
+      else got.onOverflow();
+    });
+  }
+  const iv = window.setInterval(() => { if (w.closed || !watching.has(w)) { watching.delete(w); window.clearInterval(iv); } }, 3000);
+}
 type PlanState = { status: "closed" } | { status: "loading" } | { status: "error" } | { status: "none" } | { status: "ready"; plan: RxPlan; picked: boolean[] };
 const KIND_OPTS = ["canine", "feline", "exotic", "none"] as const;
 
-/* الدكتورُ الافتراضيّ: اسمُ الحساب بأسماء دكاترة الراجيتة — الطرفان من searchable نفسِها (الهمزة والتاء والمسافات)،
-   والمطابقةُ احتواءٌ بالاتّجاهين فاللقبُ قبل الاسم («د. علي حسن») لا يمنعها. */
 
 export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string | null; onClose: () => void }) {
   const { t, i18n } = useTranslation();
@@ -42,17 +66,27 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const { role } = usePermissions();
   const pad = useRxPad();
   const cfg = pad.cfg;
-  const { labels, ready: labelsReady } = useRxLabels(cfg.lang);
+  const { labels, ready: labelsReady, failed: labelsFailed, retry: labelsRetry, tp } = useRxLabels(cfg.lang);
 
   const [fields, setFields] = useState<RxFields | null>(null);
   const [body, setBody] = useState("");
   const [doctor, setDoctor] = useState("");
   const [tab, setTab] = useState<"write" | "paper">("write");
-  const [layout, setLayout] = useState<RxLayoutInfo>({ pages: 1, overflow: false });
+  const [layout, setLayout] = useState<RxLayoutInfo>({ pages: 1, overflow: false, final: false, html: "" });
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [pending, setPending] = useState<Snap[]>([]);
+  const pendingRef = useRef<Snap[]>([]);
+  const flushing = useRef(false);
+  const alive = useRef(true);
+  /* يُرفع بكلّ تركيب لا بأوّله وحده: StrictMode (والتركيبُ المعاد) ينادي التنظيفَ ثمّ الأثرَ ثانيةً — علمٌ يُطفأ ولا يُشعل كان يُسقط
+     تحديثَ القائمة بعد كلّ حفظ. */
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [hist, setHist] = useState<HistState>({ status: "loading", list: [] });
+  const histRef = useRef(hist);
+  histRef.current = hist;
+  const planSeq = useRef(0);
   const [histN, setHistN] = useState(0);
   const [medOpen, setMedOpen] = useState(false);
   const [plan, setPlan] = useState<PlanState>({ status: "closed" });
@@ -61,15 +95,13 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const [voidReason, setVoidReason] = useState("");
   const [voiding, setVoiding] = useState(false);
 
-  /* خاناتُ المريض بلغة الورقة — بعد وصول التصميم مرّةً واحدة؛ وبعدها هي ما كتبه الطبيب. */
+  /* خاناتُ المريض **بلغة الورقة** (مترجمُها tp بعد وصول قاموسها) — بعد وصول التصميم مرّةً واحدة؛ وبعدها هي ما كتبه الطبيب.
+     والدكتورُ الموقّع: اسمُ الحساب بكلماتٍ كاملة ودكتورٌ واحدٌ طابق (pickDoctor) — لا تخمينٌ تحت التوقيع. */
   useEffect(() => {
-    if (pad.status === "loading" || fields) return;
-    setFields(initialFields(pet, cfg.lang, t));
-    const docs = cfg.doctors.filter((d) => d.name);
-    const me = searchable(user?.full_name);
-    const mine = me ? docs.find((d) => { const k = searchable(d.name); return k && (k.includes(me) || me.includes(k)); }) : undefined;
-    setDoctor(mine?.name ?? (docs.length === 1 ? docs[0].name : ""));
-  }, [pad.status, fields, pet, cfg, t, user?.full_name]);
+    if (pad.status === "loading" || !labelsReady || fields) return;
+    setFields(initialFields(pet, cfg.lang, tp));
+    setDoctor(pickDoctor(user?.full_name, cfg.doctors.map((d) => d.name), t("rx.drTitles").split(",")));
+  }, [pad.status, labelsReady, fields, pet, cfg, tp, t, user?.full_name]);
 
   useEffect(() => {
     let alive = true;
@@ -82,78 +114,133 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   }, [pet.id, histN]);
 
   const title = t("rx.docTitle", { name: fields?.name || pet.name });
-  const doc = useMemo(() => (fields ? rxDoc(cfg, labels, fields, body, doctor, title) : null), [cfg, labels, fields, body, doctor, title]);
-  const html = useMemo(() => (doc ? buildRxHTML(doc) : ""), [doc]);
+  /* الورقةُ من النصّ **كما يُحفظ** (cleanRxBody: بلا محارف اتّجاهٍ خفيّة، وبسقفه) — فالورقةُ والسجلُّ نصٌّ واحد. */
   const clean = cleanRxBody(body);
-  const key = fields ? rxDraftKey(fields, body, doctor) : "";
-  const dirty = !!clean.trim() && key !== savedKey;
+  const tooLong = body.length > RX_LIMITS.body;
+  const doc = useMemo(() => (fields ? rxDoc(cfg, labels, fields, clean, doctor, title) : null), [cfg, labels, fields, clean, doctor, title]);
+  const html = useMemo(() => (doc ? buildRxHTML(doc) : ""), [doc]);
+  const key = fields ? rxDraftKey(fields, clean, doctor) : "";
+  const dirty = !!clean.trim() && key !== savedKey && !pending.some((p) => p.key === key);
   const canRecord = hist.status !== "missing" && pad.status !== "missing";
+  /* قياسُ المعاينة يخصّ **هذا** المستند (لا ما قبل آخر حرف)؛ ومؤكَّدٌ = نهائيٌّ بعد الخطوط. */
+  const measured = layout.html === html;
+  const knownOverflow = measured && layout.overflow;
 
   const setField = <K extends keyof RxFields>(k: K, v: RxFields[K]) => setFields((f) => (f ? { ...f, [k]: v } : f));
 
-  const save = async () => {
-    if (!fields || !clean.trim()) return;
-    const k = key;
-    setSaving(true);
-    try {
-      const rec = await rxApi.add({ pet_id: pet.id, visit_id: visitId, pet_name: fields.name || pet.name, doctor_name: doctor, fields, body: clean });
-      setSavedKey(k);
-      setSaveFailed(false);
-      setHist((h) => ({ status: h.status === "loading" ? "loading" : "ready", list: [rec, ...h.list.filter((x) => x.id !== rec.id)] }));
-      playSuccess();
-      toast.success(t("rx.printed", { name: fields.name || pet.name }));
-    } catch (e) {
-      setSaveFailed(true);
-      playWarning();
-      toast.error(t("rx.saveFail"), rxErrorText(e, t));
-    } finally {
-      setSaving(false);
-    }
+  /** سطرٌ حُفظ يدخل القائمة **إن كانت قائمةَ الخادم**: قائمةٌ فشلت أو ما زالت تُقرأ تُقرأ من جديد (فيها هو) — لا «سابقة (1)» كاذبة. */
+  const mergeHistory = (rec: RxRecord) => {
+    const h = histRef.current;
+    if (h.status === "ready") setHist({ status: "ready", list: [rec, ...h.list.filter((x) => x.id !== rec.id)] });
+    else if (h.status !== "missing") setHistN((x) => x + 1);
   };
 
-  /* داخل الضغطة: النافذةُ أوّلاً (قبل أيّ await)، ثمّ السجلّ. */
+  /** يحفظ ما انطبع ولم يُحفظ، بالترتيب، ويقف عند أوّل فشل (يبقى بالقائمة لـ«احفظها بالسجل»). يكمل ولو أُغلقت الشاشة. */
+  const flush = async () => {
+    if (flushing.current) return;
+    flushing.current = true;
+    if (alive.current) setSaving(true);
+    try {
+      while (pendingRef.current.length) {
+        const snap = pendingRef.current[0];
+        let rec: RxRecord;
+        try {
+          rec = await rxApi.add(snap.input);
+        } catch (e) {
+          if (alive.current) setSaveFailed(true);
+          playWarning();
+          toast.error(t("rx.saveFail"), rxErrorText(e, t));
+          return;
+        }
+        pendingRef.current = pendingRef.current.filter((x) => x !== snap);
+        if (alive.current) {
+          setPending(pendingRef.current);
+          setSavedKey(snap.key);
+          setSaveFailed(false);
+          mergeHistory(rec);
+        }
+        playSuccess();
+        toast.success(t("rx.printed", { name: snap.input.pet_name }));
+      }
+    } finally {
+      flushing.current = false;
+      if (alive.current) setSaving(false);
+    }
+  };
+  const enqueue = (snap: Snap) => {
+    if (!pendingRef.current.some((p) => p.key === snap.key)) pendingRef.current = [...pendingRef.current, snap];
+    if (alive.current) setPending(pendingRef.current);
+    void flush();
+  };
+  const overflowed = () => { playWarning(); toast.error(t("rx.overflowPrint")); };
+
+  /* داخل الضغطة: النافذةُ ومستندُها أوّلاً (قبل أيّ await)، ثمّ السجلّ — بلقطة ما كُتب فيها. */
   const print = () => {
-    if (!doc || !labelsReady) return;
-    if (!openRxPrint(buildRxHTML(doc, { print: true }))) {
+    if (!doc || !fields || !labelsReady || tooLong || knownOverflow) return;
+    const w = openRxPrint(buildRxHTML({ ...doc, overflowNote: t("rx.overflowPrint") }, { print: true }));
+    if (!w) {
       playWarning();
       toast.error(t("retail.popupBlocked"), t("retail.popupBlockedHint"));
       return;
     }
-    if (!clean.trim()) { toast.success(t("rx.printedBlank")); return; }
-    if (!canRecord || key === savedKey) { toast.success(t("rx.printedOnly")); return; }
-    void save();
+    if (!clean.trim()) { watchPrint(w, { onOverflow: overflowed }); toast.success(t("rx.printedBlank")); return; }
+    const waiting = pendingRef.current.find((p) => p.key === key);
+    if (!canRecord || key === savedKey || waiting) {
+      watchPrint(w, { onOverflow: overflowed });
+      if (waiting) void flush(); else toast.success(t("rx.printedOnly"));
+      return;
+    }
+    const snap: Snap = { key, input: { id: uuid(), pet_id: pet.id, visit_id: visitId, pet_name: fields.name || pet.name, doctor_name: doctor, fields, body: clean } };
+    if (measured && layout.final && !layout.overflow) {
+      watchPrint(w, { onOverflow: overflowed });
+      enqueue(snap);
+    } else {
+      /* المعاينةُ لم تقس هذا المستندَ بعد: النافذةُ تقرّر — «طبعتُ» ⇒ يُحفظ، «فائض» ⇒ لا ورقة ولا سجلّ. */
+      watchPrint(w, { onPrint: () => enqueue(snap), onOverflow: overflowed });
+    }
   };
 
   const reprint = (r: RxRecord) => {
     if (!labelsReady) return;
     playTap();
-    if (!openRxPrint(buildRxHTML(rxDoc(cfg, labels, r.fields, r.body, r.doctor_name, t("rx.docTitle", { name: r.fields.name || r.pet_name || pet.name })), { print: true }))) {
+    const d = rxDoc(cfg, labels, r.fields, r.body, r.doctor_name, t("rx.docTitle", { name: r.fields.name || r.pet_name || pet.name }));
+    /* بلا معاينة (التصميمُ ربما تغيّر بعدها): نافذةُ الطباعة تحرسها — لا تطبع فائضاً وتقوله. */
+    const w = openRxPrint(buildRxHTML({ ...d, overflowNote: t("rx.overflowPrint") }, { print: true }));
+    if (!w) {
       playWarning();
       toast.error(t("retail.popupBlocked"), t("retail.popupBlockedHint"));
+      return;
     }
+    watchPrint(w, { onOverflow: overflowed });
   };
 
-  /* القراءةُ وحدَها (وزرُّ «أعد المحاولة» يناديها مباشرةً — لا عبر الفتح/الإغلاق، فنسخةُ الحالة القديمة بإغلاقٍ كانت تُغلق اللوحةَ بدل إعادتها). */
+  /* القراءةُ وحدَها (وزرُّ «أعد المحاولة» يناديها مباشرةً — لا عبر الفتح/الإغلاق، فنسخةُ الحالة القديمة بإغلاقٍ كانت تُغلق اللوحةَ بدل إعادتها).
+     وكلُّ قراءةٍ برقمها: جوابٌ متأخّر بعد «أغلق» أو بعد قراءةٍ أحدث لا يفتح اللوحة ولا يرجّع الصحّ على ما شيله الطبيب. */
   const loadPlan = async () => {
+    const my = ++planSeq.current;
     setPlan({ status: "loading" });
     try {
       const notes = await rxApi.notes(pet.id);
+      if (my !== planSeq.current) return;
       const p = latestPlan(notes);
       /* بلا خطة وقد بلغت القراءةُ سقفَها: ربما الخطةُ أقدمُ مما وصل — «تعذّر» لا «ماكو». */
       setPlan(p ? { status: "ready", plan: p, picked: p.items.map(() => true) } : notes.length >= RX_NOTES_LIMIT ? { status: "error" } : { status: "none" });
     } catch {
-      setPlan({ status: "error" });
+      if (my === planSeq.current) setPlan({ status: "error" });
     }
   };
   const togglePlan = () => {
-    if (plan.status !== "closed") { setPlan({ status: "closed" }); return; }
+    if (plan.status !== "closed") { planSeq.current++; setPlan({ status: "closed" }); return; }
     playTap();
     void loadPlan();
   };
+  /* الأيامُ بلغة الورقة (tp): السطرُ يُطبع عليها. */
+  const planDays = (n: number) => tp("rx.days", { count: n });
   const insertPlan = () => {
     if (plan.status !== "ready") return;
-    const lines = plan.plan.items.filter((_, i) => plan.picked[i]).map((it) => planLine(it, (n) => t("rx.days", { count: n })));
+    const lines = plan.plan.items.filter((_, i) => plan.picked[i]).map((it) => planLine(it, planDays));
     setBody((b) => appendLines(b, lines));
+    planSeq.current++;
     setPlan({ status: "closed" });
     playTap();
   };
@@ -176,8 +263,9 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
     }
   };
 
+  /* الخروجُ يُسأل: مسودّةٌ لم تنطبع، أو **ورقةٌ انطبعت ولم تُحفظ** (ولو فرّغ الطبيبُ النصَّ بعدها). */
   const confirmClose = () => {
-    if (!dirty) return true;
+    if (!dirty && !pending.length) return true;
     setLeaveAsk(true);
     return false;
   };
@@ -188,7 +276,14 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   return (
     <>
       <Modal open onClose={onClose} size="full" title={title} confirmClose={confirmClose}>
-        {loading ? (
+        {labelsFailed && !fields ? (
+          <div className="grid h-60 place-items-center" data-rx-labels-fail>
+            <div className="flex items-center gap-2 text-sm text-danger-700 dark:text-danger-300">
+              <AlertTriangle size={16} /> <span>{t("rx.labelsFail")}</span>
+              <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>
+            </div>
+          </div>
+        ) : loading ? (
           <div className="grid h-60 place-items-center"><Spinner /></div>
         ) : (
           <div className="isolate" data-rx-sheet>
@@ -240,7 +335,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
                     <Button size="sm" variant="secondary" leftIcon={<Pill size={15} />} onClick={() => { playTap(); setMedOpen(true); }} data-rx-drug>{t("rx.addDrug")}</Button>
                     <Button size="sm" variant={plan.status === "closed" ? "outline" : "secondary"} leftIcon={<ClipboardList size={15} />} onClick={togglePlan} data-rx-plan>{t("rx.fromPlan")}</Button>
                   </div>
-                  {plan.status !== "closed" && <PlanPanel plan={plan} lang={i18n.language} t={t} onRetry={() => void loadPlan()}
+                  {plan.status !== "closed" && <PlanPanel plan={plan} lang={i18n.language} t={t} days={planDays} onRetry={() => void loadPlan()}
                     onToggle={(i) => setPlan((p) => (p.status === "ready" ? { ...p, picked: p.picked.map((x, j) => (j === i ? !x : x)) } : p))}
                     onInsert={insertPlan} />}
                   <div className="relative">
@@ -254,13 +349,13 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
                       onChange={(e) => setBody(e.target.value)}
                       data-rx-body
                     />
-                    {body.length > 6000 && <span className="absolute bottom-2 end-3 text-2xs text-ink-subtle">{t("rx.bodyCount", { n: body.length, max: RX_LIMITS.body })}</span>}
+                    {body.length > 6000 && <span className={cn("absolute bottom-2 end-3 text-2xs", tooLong ? "font-bold text-danger-600" : "text-ink-subtle")}>{t("rx.bodyCount", { n: body.length, max: RX_LIMITS.body })}</span>}
                   </div>
                 </section>
 
                 <HistoryList hist={hist} lang={i18n.language} isManager={isManager} t={t}
                   onRetry={() => setHistN((x) => x + 1)} onReprint={reprint}
-                  onReuse={(r) => { playTap(); setBody((b) => appendLines(b, r.body.split("\n"))); }}
+                  onReuse={(r) => { playTap(); setBody((b) => appendBlock(b, r.body)); }}
                   onVoid={(r) => { playTap(); setVoidReason(""); setVoidFor(r); }} />
               </div>
 
@@ -275,20 +370,22 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
             {/* ── الطباعة ── */}
             <div className="rxp-bleed sticky bottom-0 z-10 mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line bg-surface-1/95 px-5 py-3 backdrop-blur">
               <div className="min-w-0 flex-1 text-xs">
-                {layout.overflow ? (
+                {tooLong ? (
+                  <span className="flex items-center gap-1.5 font-semibold text-danger-700 dark:text-danger-300" data-rx-toolong><AlertTriangle size={14} /> {t("rx.tooLong", { max: RX_LIMITS.body })}</span>
+                ) : layout.overflow ? (
                   <span className="flex items-center gap-1.5 font-semibold text-danger-700 dark:text-danger-300" data-rx-overflow><AlertTriangle size={14} /> {t("rx.overflow")}</span>
                 ) : layout.pages > 1 ? (
                   <span className="text-ink-muted" data-rx-pages>{t("rx.pages", { n: layout.pages })}</span>
                 ) : null}
-                {saveFailed && dirty && (
+                {saveFailed && pending.length > 0 && (
                   <span className="mt-1 flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300">
                     {t("rx.saveFail")}
-                    <button className="underline" onClick={() => void save()} disabled={saving} data-rx-retry>{t("rx.saveRetry")}</button>
+                    <button className="underline" onClick={() => void flush()} disabled={saving} data-rx-retry>{t("rx.saveRetry")}</button>
                   </span>
                 )}
-                {!dirty && savedKey && <span className="flex items-center gap-1 text-success-700 dark:text-success-300"><Check size={14} /> {t("rx.printedOnly")}</span>}
+                {savedKey && key === savedKey && <span className="flex items-center gap-1 text-success-700 dark:text-success-300"><Check size={14} /> {t("rx.printedOnly")}</span>}
               </div>
-              <Button leftIcon={saving ? undefined : <Printer size={17} />} loading={saving} onClick={print} disabled={!labelsReady || layout.overflow} data-rx-print>
+              <Button leftIcon={saving ? undefined : <Printer size={17} />} loading={saving} onClick={print} disabled={!labelsReady || tooLong || knownOverflow} data-rx-print>
                 {t("rx.print")}
               </Button>
             </div>
@@ -301,7 +398,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
         onPick={(m) => setBody((b) => appendLines(b, [m.name]))}
         onUnpick={(m) => setBody((b) => removeDrugLine(b, m.name))} />
 
-      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm" title={t("rx.leaveTitle")}
+      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm" title={pending.length ? t("rx.leavePending") : t("rx.leaveTitle")}
         footer={<div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setLeaveAsk(false)}>{t("rx.stay")}</Button>
           <Button variant="danger" onClick={() => { setLeaveAsk(false); onClose(); }} data-rx-leave>{t("rx.leaveDo")}</Button>
@@ -360,10 +457,12 @@ function TextField({ label, value, onChange, span, ...rest }: { label: string; v
   );
 }
 
-function PlanPanel({ plan, lang, t, onRetry, onToggle, onInsert }: {
+function PlanPanel({ plan, lang, t, days, onRetry, onToggle, onInsert }: {
   plan: Exclude<PlanState, { status: "closed" }>;
   lang: string;
   t: (k: string, o?: Record<string, unknown>) => string;
+  /** «٧ أيام» بلغة الورقة — السطرُ يُرى كما سيُدرج. */
+  days: (n: number) => string;
   onRetry: () => void;
   onToggle: (i: number) => void;
   onInsert: () => void;
@@ -389,7 +488,7 @@ function PlanPanel({ plan, lang, t, onRetry, onToggle, onInsert }: {
               <li key={i}>
                 <label className="flex cursor-pointer items-start gap-2 rounded-lg p-1.5 text-sm hover:bg-surface-1">
                   <input type="checkbox" className="mt-1 h-4 w-4 accent-brand-600" checked={plan.picked[i]} onChange={() => onToggle(i)} />
-                  <span className="min-w-0 flex-1 text-ink" dir="auto">{planLine(it, (n) => t("rx.days", { count: n }))}</span>
+                  <span className="min-w-0 flex-1 text-ink" dir="auto">{planLine(it, days)}</span>
                 </label>
               </li>
             ))}

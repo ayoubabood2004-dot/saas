@@ -34,24 +34,40 @@ export function useRxPad(): PadState {
     );
     return () => { alive = false; };
   }, [n]);
-  const reload = useCallback(() => setN((x) => x + 1), []);
+  /* «تحميل» بنفس الرسمة لا بعدها: المصمِّمُ يفرّغ مسودّته ويطلب الأحدث — لو بقيت الحالةُ «جاهز» رسمةً واحدة لبذر المسودّةَ
+     من الصفّ القديم وختمه (فيرفض الحفظُ التالي «تغيّر من جهاز ثاني» مرّةً ثانية، و«أعد المحاولة» بعد فشلٍ تعرض الافتراضيّ كأنه
+     تصميمُ العيادة). */
+  const reload = useCallback(() => {
+    setSt((s) => ({ ...s, status: "loading", error: null }));
+    setN((x) => x + 1);
+  }, []);
   /* هويّةٌ ثابتة ما لم يتغيّر الصفّ: المستندُ (عشراتُ الكيلوبايتات) لا يُعاد بناؤه مع كلّ رسم. */
   const cfg = useMemo(() => st.row?.cfg ?? cleanRxPad(RX_DEFAULT, { allowData: !supabase }), [st.row]);
   return { ...st, cfg, reload };
 }
 
-/** عناوينُ الورقة بلغتها. `ready` = القاموسُ حاضر (الإنكليزيةُ ثابتةٌ دائماً). */
-export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean } {
-  const { i18n } = useTranslation();
+/** عناوينُ الورقة بلغتها. `ready` = القاموسُ حاضر (الإنكليزيةُ ثابتةٌ دائماً)، و`failed` = تعذّر تحميلُه: الورقةُ العربية لا تُطبع
+ *  بعناوين إنكليزية بصمت — تُقال «أعد المحاولة» (`retry`). و`tp` مترجمُ لغة الورقة (خاناتُ المريض بلغتها لا بلغة الواجهة). */
+export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; failed: boolean; retry: () => void; tp: TFunction } {
+  const { i18n, t } = useTranslation();
   const needLoad = lang === "ar" && !i18n.language.startsWith("ar");
-  const [ready, setReady] = useState(!needLoad);
+  /* «جاهز» يُحسب بنفس الرسمة من «حُمِّل» — لا حالةٌ تُضبط بأثرٍ بعدها: التصميمُ يصل عربياً بعد أن كان الافتراضيُّ إنكليزياً، وحالةُ
+     «جاهز» القديمة كانت تُبذر خاناتِ المريض قبل وصول القاموس (فيسقط مترجمُ الورقة للإنكليزية: «2 years» على ورقةٍ عربية). */
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [n, setN] = useState(0);
   useEffect(() => {
-    if (!needLoad) { setReady(true); return; }
+    if (!needLoad) return;
     let alive = true;
-    setReady(false);
-    Promise.all([ensureOwned("rx", "ar"), ensureDictionary("ar")]).then(() => { if (alive) setReady(true); }, () => { if (alive) setReady(true); });
+    setFailed(false);
+    Promise.all([ensureOwned("rx", "ar"), ensureDictionary("ar")]).then(
+      () => { if (alive) setLoaded(true); },
+      () => { if (alive) setFailed(true); },
+    );
     return () => { alive = false; };
-  }, [needLoad]);
+  }, [needLoad, n]);
+  const ready = !needLoad || loaded;
+  const retry = useCallback(() => setN((x) => x + 1), []);
   const labels = useMemo<RxLabels>(() => {
     if (lang !== "ar") return RX_LABELS_EN;
     const ta = i18n.getFixedT("ar");
@@ -63,7 +79,8 @@ export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean } 
     // `ready`: بعد وصول القاموس العربيّ لواجهةٍ إنكليزية تُقرأ العناوينُ من جديد.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, ready, i18n]);
-  return { labels: lang === "ar" ? labels : RX_LABELS_EN, ready: lang === "ar" ? ready : true };
+  const tp = useMemo<TFunction>(() => (lang === "ar" && ready ? i18n.getFixedT("ar") : t), [lang, ready, i18n, t]);
+  return { labels: lang === "ar" ? labels : RX_LABELS_EN, ready: lang === "ar" ? ready : true, failed: needLoad && failed && !loaded, retry, tp };
 }
 
 /** "2026-11-05" ⇒ "05/11/2026" — كما تُكتب التواريخ على الراجيتات هنا (يوم/شهر/سنة، أرقامٌ غربية). */

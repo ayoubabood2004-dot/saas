@@ -63,9 +63,13 @@ export async function demoRxAdd(r: RxNew): Promise<RxRecord> {
   const row = rxInsertRow(r);
   const len = row.body.trim().length;
   if (len < 1 || len > 8000) throw checkErr();
+  const list = loadList();
+  /* معرّفُ الجهاز موجود ⇒ كالسحابة (23505 ثمّ قراءتُها): هي نفسُها، لا صفٌّ ثانٍ. */
+  const had = "id" in row ? list.find((x) => x.id === row.id) : undefined;
+  if (had) return readRx(had);
   const now = new Date().toISOString();
   const rec = { id: uid("rx"), ...row, author_id: demoUserId(), issued_at: now, created_at: now, voided_at: null, voided_by: null, void_reason: null };
-  write(listKey(), [rec, ...loadList()]);
+  write(listKey(), [rec, ...list]);
   demoAuditPush({ action: "INSERT", entity: "pet_prescriptions", entity_id: rec.id, details: { pet_id: rec.pet_id, pet_name: rec.pet_name, doctor_name: rec.doctor_name } });
   return readRx(rec);
 }
