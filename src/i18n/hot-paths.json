@@ -71,6 +71,7 @@
     "vxed": "src/components/vaccines/VaccineEditSheet.tsx",
     "ptab": "src/components/retail/PosCustomTabs.tsx",
     "avgc": "src/components/inventory/AvgCostNote.tsx",
-    "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] }
+    "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] },
+    "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] }
   }
 }

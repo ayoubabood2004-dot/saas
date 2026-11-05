@@ -358,6 +358,9 @@ export function ActivityLog() {
           : t("act.vacAdd", { name: s("vaccine") || s("name"), pet: pn(), defaultValue: "سجّل لقاح {{name}} لـ {{pet}}" });
       case "medical_visits": return t("act.visitAdd", { pet: pn(), doctor: s("doctor_name"), defaultValue: "أضاف استشارة لـ {{pet}} — {{doctor}}" });
       case "pet_notes": return t("act.noteAdd", { pet: pn(), defaultValue: "أضاف ملاحظة سريرية لـ {{pet}}" });
+      /* الراجيتة (0261): الكتابةُ والإلغاءُ وحدَهما يُدقَّقان (المحفّزُ يجمّد ما عداهما). */
+      case "pet_prescriptions": return r.action === "INSERT" ? t("act.rxAdd", { pet: pn() }) : t("act.rxVoid", { pet: pn() });
+      case "clinic_rx_pad": return t("act.rxPad");
       case "media_items": {
         const kind = MEDIA_LABEL[s("kind")];
         return t("act.mediaAdd", { kind: kind ? t(kind.key, kind.def) : t("act.mediaFile", "ملف / صورة"), pet: pn(), defaultValue: "رفع {{kind}} لـ {{pet}}" });

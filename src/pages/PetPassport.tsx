@@ -62,6 +62,9 @@ import { LoadBoundary } from "@/components/LoadBoundary";
    البارد ممتلئ. `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
 const loadVaxEdit = () => page(() => import("@/components/vaccines/VaccineEditSheet").then((m) => ({ default: m.VaccineEditSheet })), ["vxed"]);
 let VaxEditLazy = loadVaxEdit();
+/* «راجيتة» (0261): الزرُّ ونافذتُه قطعةٌ كسولة بنطاقها المملوك rx — نصُّ الزرّ نفسُه من هناك (النصفُ البارد ممتلئ). */
+const loadRxButton = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxButton })), ["rx"]);
+let RxButtonLazy = loadRxButton();
 import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockPlus } from "lucide-react";
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
@@ -291,8 +294,11 @@ export function PetPassport() {
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
   // تعديلُ اللقاح وحذفُه للمدير (ومفتاحُه الحيّ) — والحذفُ محروسٌ بالقاعدة أيضاً (0257).
-  const { role: staffRole } = usePermissions();
+  const { role: staffRole, can } = usePermissions();
   const canEditVax = !isOwner && staffRole === "manager";
+  /* الراجيتةُ لمن يكتب بالسجلّ الطبيّ (الطبيبُ والمدير؛ والاستقبالُ بإذنٍ من المدير). */
+  const canRx = !isOwner && can("editMedical");
+  const [, setRxLazyTick] = useState(0);
   /** اللقاحُ المفتوح بالقلم (مفتاحُه، "" = أوّلُ لقاح)، أو null = مغلقة. */
   const [vaxEdit, setVaxEdit] = useState<string | null>(null);
   const [, setVaxLazyTick] = useState(0);
@@ -433,6 +439,13 @@ export function PetPassport() {
             >
               {t("passport.medicalEntry", "Medical entry")}
             </Button>
+            {canRx && (
+              <LoadBoundary scope="rx" onRetry={() => { RxButtonLazy = loadRxButton(); setRxLazyTick((n) => n + 1); }}>
+                <Suspense fallback={null}>
+                  <RxButtonLazy pet={pet} />
+                </Suspense>
+              </LoadBoundary>
+            )}
             <Button
               size="sm"
               variant="ghost"

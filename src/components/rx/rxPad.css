@@ -1,0 +1,37 @@
+/* ============================================================================
+ * راجيتةُ العيادة — ما تنفرد به نافذتُها ومصمِّمُها من الأنماط.
+ *
+ * أصنافُ Tailwind تُجمع بورقةٍ واحدة تُحزم بالإقلاع ولو لم يرسمها إلا شاشةٌ كسولة (درسُ 0260) — أصنافُ هذه الميزة
+ * الجديدة رفعتها ٢٠٠ بايت مضغوطة (مقيسٌ بالبناء على الشجرتين) فتجاوز الإقلاعُ سقفَه. فما انفرد بها هنا، ويُحمَّل مع قطعتها
+ * وحدَها (Vite يقسم CSS القطع الكسولة)؛ وما كان بالورقة العامّة أصلاً يبقى أصنافاً. والاسمُ لا يبدأ بـ«rx-»: حزمةُ النطاق
+ * المملوك rx-*.js، وقطعةٌ ثانية بالاسم نفسِه تُفشل store-weight-guard.
+ * ========================================================================= */
+@media (min-width: 1024px) {
+  .rxp-cols { grid-template-columns: minmax(0, 27rem) minmax(0, 1fr); }
+  .rxp-dcols { grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); }
+  .rxp-stick { position: sticky; top: 5rem; }
+}
+/* شريطُ الطباعة اللاصق يمتدّ لحافّتي النافذة (حشوتُها 1.25rem). */
+.rxp-bleed { margin-inline: -1.25rem; margin-bottom: -1.25rem; }
+.rxp-sheet { box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 12px 32px -14px rgb(15 23 42 / .32), 0 0 0 1px rgb(0 0 0 / .05); }
+.rxp-frame { border: 0; transform-origin: top left; }
+.rxp-body { min-height: 15rem; }
+.rxp-lines2 { resize: none; }
+
+/* مقابضُ صورة الراجيتة: خانةٌ (سطرٌ بعرضه)، وعلامةُ نوع (نقطة)، ومربّعُ الوصفة — فوق الورقة البيضاء بالوضعين. */
+.rxp-h { position: absolute; border-radius: 3px; border: 2px dashed rgb(47 125 242 / .8); background: rgb(47 125 242 / .1); cursor: move; touch-action: none; user-select: none; outline: none; }
+.rxp-h.rxp-box { border-color: rgb(47 125 242 / .7); background: rgb(47 125 242 / .05); }
+.rxp-h.is-on { border-style: solid; border-color: rgb(18 102 216); background: rgb(47 125 242 / .15); }
+.rxp-h:focus-visible, .rxp-t:focus-visible { box-shadow: 0 0 0 2px rgb(47 125 242); }
+.rxp-chip { position: absolute; top: -1.15rem; left: 0; pointer-events: none; white-space: nowrap; border-radius: 4px; background: rgb(18 102 216); padding: 0 .25rem; font-size: 10px; font-weight: 700; line-height: 1rem; color: #fff; }
+.rxp-grip { position: absolute; right: -.375rem; top: 50%; width: .5rem; height: 1rem; transform: translateY(-50%); cursor: ew-resize; border-radius: 2px; background: rgb(18 102 216); }
+.rxp-corner { position: absolute; right: -.375rem; bottom: -.375rem; width: .875rem; height: .875rem; cursor: nwse-resize; border-radius: 2px; border: 2px solid #fff; background: rgb(18 102 216); }
+.rxp-t { position: absolute; display: grid; place-items: center; width: 1rem; height: 1rem; transform: translate(-50%, -50%); cursor: move; touch-action: none; user-select: none; outline: none; border-radius: 9999px; border: 2px solid rgb(18 102 216); background: rgb(255 255 255 / .9); color: rgb(15 81 176); font-size: 9px; font-weight: 900; }
+.rxp-t.is-on { border-color: rgb(15 81 176); background: rgb(18 102 216); color: #fff; }
+.rxp-tchip { position: absolute; left: 50%; top: 1.05rem; transform: translateX(-50%); pointer-events: none; white-space: nowrap; border-radius: 4px; background: rgb(18 102 216); padding: 0 .25rem; font-size: 9px; font-weight: 700; line-height: 1rem; color: #fff; }
+
+/* الورقةُ بتبويبها المخفيّ على الهاتف: تبقى مرسومةً (لا display:none) — إطارٌ مخفيٌّ بـdisplay:none لا يُرتَّب، فيقيس سكربتُ الصفحات
+   صفراً ويقول «صفحةٌ واحدة ولا فائض» عن وصفةٍ تفيض: يتعطّل حارسُ «اطبع» بصمت وتُرسم الورقةُ مقصوصةً عند فتح تبويبها. */
+@media (max-width: 1023.98px) {
+  .rxp-offstage { height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+}

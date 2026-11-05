@@ -5409,6 +5409,8 @@ export const loadDemoPnl = () => import("./demoPnl");
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 /** مرآةُ خانات الطبيب بشاشة البيع (posTabsApi، 0258) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoPosTabs = () => import("./demoPosTabs");
+/** مرآةُ الراجيتة — تصميمُها وسجلُّها (rxApi، 0261) — كسولةٌ من هذا الباب وحده. */
+export const loadDemoRx = () => import("./demoRx");
 
 /* وما تحتاجه المرآةُ من هنا (الاستيرادُ دائريٌّ وآمن: يُقرأ ساعةَ النداء). كتالوجُ الخدمات (clinic_services بالتجريبيّ) يمرّ
  * من هنا لا من services.ts مباشرةً — فلا تكسب قطعةُ المرآة مستورداً جديداً يغيّر تقسيمَ القطع المشتركة. */
