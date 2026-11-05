@@ -94,7 +94,8 @@ export function recoverFromStaleShell(): Promise<boolean> {
     /* والمسحُ قد يطول (أوّلُ زيارة: إلغاءُ الخدمة ينتظر تثبيتَها — ٣٢ ثانية مقيسة) وما كُتب أثناءه لا يُحمَّل فوقه: كان الفحصُ
      * مرّةً قبل الانتظار، فراجيتةٌ كُتبت بعد «حدّث الصفحة» ضاعت بلا كلمة (تدقيقٌ عدائيّ خامس). */
     await waitForWrites();
-    if (offline()) { inFlight = null; return false; }
+    /* وتراجعٌ هنا يمسح ختمَه: الختمُ لتحميلٍ حصل، وبقاؤه كان يرفض «حدّث الصفحة» ٣٠ ثانيةً بـ«تأكّد من النت» والنتُّ رجع (تدقيقٌ سادس). */
+    if (offline()) { inFlight = null; try { sessionStorage.removeItem(ONCE_KEY); } catch { /* ignore */ } return false; }
     window.location.reload();
     return true;
   })();

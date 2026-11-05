@@ -76,8 +76,9 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const [reloadAsk, setReloadAsk] = useState(false);
   /* نتيجةُ «انسخ النص» داخل سؤالها (لا توست: بالهاتف يغطّي أزرارَ السؤال السفلية ٤ ثوانٍ فتضيع ضغطةُ «حدّث»). */
   const [copied, setCopied] = useState<null | "ok" | "fail">(null);
-  /* الطبيبُ اختار تحديثَ الصفحة (القاموسُ العربيّ لا يصل بدونه) **لهذه المسودّة** ونُبّه للنسخ: نصُّها لا يمسك النسخةَ بعدها. وبالبصمة لا
-     علماً عامّاً: نصٌّ كُتب بعد الضغطة (والتحديثُ ينتظر) أو نافذةٌ انسدّت فرجعت المسودّة — علمٌ يعيش بعد ما أُذن له كان يحمّل فوقه. */
+  /* الطبيبُ اختار تحديثَ الصفحة (القاموسُ العربيّ لا يصل بدونه) **لهذه المسودّة كما هي** ونُبّه للنسخ: نصُّها لا يمسك النسخةَ بعدها.
+     والإذنُ للحال التي أُعطي فيها وحدها، ومرّةً: يسقط بأوّل تغيّر (حرفٌ، أو طباعةٌ تجعلها «تقرّر») ولا يرجع برجوع النصّ — إذنٌ بالبصمة
+     وحدها كان يحمّل فوق مسودّةٍ رجعت من نافذةٍ انسدّت (بصمتُها بصمتُه)، أو فوق نصٍّ مُسح حرفاً حرفاً حتى ساواه (تدقيقٌ سادس). */
   const [letGoKey, setLetGoKey] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const [voidFor, setVoidFor] = useState<RxRecord | null>(null);
@@ -154,16 +155,31 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
      يُسأل. ومسودّةٌ حفظتها طباعةٌ ثانية لا يضيع منها شيء (كان يُسأل «يضيع اللي كتبته» عنها). */
   const waiting = !!clean.trim() && !saved && saver.isWaiting(key);
   const pendingN = saver.pendingCount;
-  const letGo = letGoKey !== null && letGoKey === key;
-  /* نصٌّ لم يُحفظ أو ورقةٌ انطبعت ولم تُحفظ: النسخةُ الجديدة لا تنزل فوقه (خمولٌ طويل كان يعيد التحميل فيضيع ما كُتب). والورقةُ
-     التي لم تُحفظ تبقى ممسوكةً ولو اختار الطبيبُ التحديث. */
-  useEffect(() => (pendingN > 0 || (dirty && !letGo) ? holdUpdates(Infinity) : undefined), [dirty, pendingN, letGo]);
+  /* ما قد يضيع: مسودّةٌ لم تنطبع، أو نافذتُها تقرّر (إن انسدّت بلا طباعة رجعت مسودّة). */
+  const atRisk = dirty || waiting;
+  const letGo = letGoKey !== null && letGoKey === key && dirty;
+  /* نصٌّ لم يُحفظ، أو نافذتُه تقرّر، أو ورقةٌ انطبعت ولم تُحفظ: النسخةُ الجديدة لا تنزل فوقه (خمولٌ طويل كان يعيد التحميل فيضيع ما
+     كُتب). والإمساكُ **واحدٌ من «تقرّر» إلى «رجعت مسودّة»** (لا يتبدّل بينهما): كان يُؤخذ للمسودّة وحدها، فنافذةٌ تنسدّ تُفلت إمساكَها
+     قبل أن يُؤخذ إمساكُ المسودّة برسمةٍ لاحقة — فجوةٌ يمرّ فيها تحديثٌ ينتظر. والورقةُ التي لم تُحفظ تبقى ممسوكةً ولو اختار الطبيبُ التحديث. */
+  useEffect(() => (pendingN > 0 || (atRisk && !letGo) ? holdUpdates(Infinity) : undefined), [atRisk, pendingN, letGo]);
+  /* الإذنُ يسقط بأوّل تغيّر، والتحديثُ الذي ينتظر نصّاً لم يُؤذن له يرجع زرّاً: نافذةٌ انسدّت بعد «حدّث» فرجعت المسودّة، أو كُتب بعد
+     الإذن — «راح تتحدّث الصفحة أوّل ما ينحفظ كلشي» كذبٌ عن نصٍّ لا يُطبع هنا (القاموسُ ناقص) فلا يُحفظ أبداً. */
+  useEffect(() => {
+    if (letGoKey !== null && (letGoKey !== key || !dirty)) setLetGoKey(null);
+    if (reloading && dirty && !letGo) setReloading(false);
+  }, [letGoKey, key, dirty, reloading, letGo]);
   /* لم يبقَ ما يضيع (طبعت النافذةُ وانحفظت والسؤالُ مفتوح): السؤالُ يُغلق — الشاشةُ باقية، والخروجُ (أو التحديثُ) بعده بلا سؤال.
      وورقةٌ انطبعت ولم تُحفظ تُغلق سؤالَ التحديث أيضاً: التحديثُ موقوفٌ حتى تُحفظ («احفظها بالسجل» تحته). */
   useEffect(() => {
-    if (leaveAsk && !dirty && !pendingN && !waiting) setLeaveAsk(false);
-    if (reloadAsk && !dirty && !waiting) setReloadAsk(false);
-  }, [leaveAsk, reloadAsk, dirty, pendingN, waiting]);
+    if (leaveAsk && !atRisk && !pendingN) setLeaveAsk(false);
+    if (reloadAsk && !dirty) setReloadAsk(false);
+  }, [leaveAsk, reloadAsk, atRisk, dirty, pendingN]);
+  /* وعنوانُه آخرُ سببٍ قائم: الرسمةُ التي تُغلقه لا شيءَ فيها يضيع، فكان يومض «تطلع وتضيّع اللي كتبته؟» بكامل وضوحه عن راجيتةٍ انحفظت
+     للتو، طوالَ خروجه (تدقيقٌ سادس). */
+  const whyNow = pendingN ? "pending" : waiting ? "waiting" : dirty ? "dirty" : null;
+  const lastWhy = useRef<"pending" | "waiting" | "dirty">("dirty");
+  useEffect(() => { if (whyNow) lastWhy.current = whyNow; });
+  const leaveWhy = whyNow ?? lastWhy.current;
   const overflowed = () => { playWarning(); toast.error(t("rx.overflowPrint")); };
 
   /* داخل الضغطة: النافذةُ ومستندُها أوّلاً (قبل أيّ await)، ثمّ السجلّ — بلقطة ما كُتب فيها. */
@@ -261,22 +277,25 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   };
 
   /* القاموسُ العربيّ لا يصل بهذه الصفحة (قطعتُه فشلت، والمتصفّحُ يحفظ الفشل): التحديثُ بطريق التعافي بعد أن يُفلت **نصُّ هذه المسودّة**
-     إمساكَه — الطبيبُ اختاره ونُبّه للنسخ. والتعافي قد ينتظر (ورقةٌ لم تُحفظ، نافذةٌ تقرّر، نصٌّ كُتب بعد الضغطة) فـ«راح تتحدّث» يُرى
-     بدل زرٍّ يُضغط ثانيةً بلا أثر. رُفض (بلا نت، أو جُرّب للتو) ⇒ يُقال ويُعاد الإمساك. */
+     إمساكَه — الطبيبُ اختاره ونُبّه للنسخ. والتعافي قد ينتظر (ورقةٌ لم تُحفظ، نافذةٌ تقرّر حتى تطبع وتُحفظ) فـ«راح تتحدّث» يُرى بدل زرٍّ
+     يُضغط ثانيةً بلا أثر. رُفض (بلا نت، أو جُرّب للتو) ⇒ يُقال ويُعاد الإمساك — مرّةً للضغطة الأخيرة (الضغطتان تنتظران الوعدَ نفسَه). */
+  const reloadSeq = useRef(0);
   const reloadPage = () => {
     setReloadAsk(false);
     setLetGoKey(key);
     setReloading(true);
+    const my = ++reloadSeq.current;
     void labelsReload().then((ok) => {
-      if (ok) return;
+      if (ok || my !== reloadSeq.current) return;
       setLetGoKey(null);
       setReloading(false);
       playWarning();
       toast.error(t("rx.reloadFail"));
     });
   };
-  /* يُسأل ما دام شيءٌ يضيع: مسودّةٌ لم تنطبع، **أو نافذتُها تقرّر** (إن انسدّت بلا طباعة رجعت مسودّةً فوقها تحديثٌ ينتظر). */
-  const askReload = () => { playTap(); if (dirty || waiting) { setCopied(null); setReloadAsk(true); } else reloadPage(); };
+  /* يُسأل عن مسودّةٍ لم تنطبع وحدها (يضيع نصُّها). ونافذةٌ تقرّر لا تُسأل: لا إذنَ يُعطى عنها — الإمساكُ باقٍ حتى تطبع وتُحفظ فيتحدّث،
+     وإن انسدّت رجعت مسودّةً ممسوكة والزرُّ معها (كان يُسأل ويُعطى الإذنُ للبصمة فيُحمَّل فوقها حين ترجع). */
+  const askReload = () => { playTap(); if (dirty) { setCopied(null); setReloadAsk(true); } else reloadPage(); };
   const copyText = () => {
     const fail = () => { playWarning(); setCopied("fail"); };
     try {
@@ -439,7 +458,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
         onUnpick={(m) => setBody((b) => removeDrugLine(b, m.name))} />
 
       <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm"
-        title={pendingN ? t("rx.leavePending") : waiting ? t("rx.leaveWaiting") : t("rx.leaveTitle")}
+        title={leaveWhy === "pending" ? t("rx.leavePending") : leaveWhy === "waiting" ? t("rx.leaveWaiting") : t("rx.leaveTitle")}
         footer={<div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setLeaveAsk(false)}>{t("rx.stay")}</Button>
           <Button variant="danger" onClick={() => { setLeaveAsk(false); onClose(); }} data-rx-leave>{t("rx.leaveDo")}</Button>
