@@ -231,7 +231,7 @@ const doc = (over = {}) => ({
   const pr = P.buildRxHTML(doc({ overflowNote: "ما انطبعت <b>" }), { print: true });
   check("نافذةُ الطباعة حَكَم: تطبع بعد ترتيبٍ نهائيّ وحده، ولا تطبع ما فيه فائض — تُظهر الشريطَ وتبلّغ من فتحها (وسلوكُها بقسم ح)",
     pr.includes("data-final')!=='1')return") && pr.includes("function refuse(){var w=document.getElementById('rxwarn');if(w)w.hidden=false;tell('overflow');}")
-    && /if\(!measure\(\)\)\{refuse\(\);return;\}tell\('print'\);setTimeout\(function\(\)\{if\(!measure\(\)\)\{refuse\(\);return;\}window\.focus\(\);window\.print\(\);\},150\);/.test(pr)
+    && /if\(!measure\(\)\)\{refuse\(\);return;\}setTimeout\(function\(\)\{if\(!measure\(\)\)\{refuse\(\);return;\}tell\('print'\);window\.focus\(\);window\.print\(\);\},150\);/.test(pr)
     && pr.includes("window.opener.postMessage({rx:t},'*')"));
   check("  وتنتظر التحميلَ **بحدثه** ثلاثَ ثوانٍ بعد نهائيٍّ قسريّ (صورةٌ تصل فيها تُعيد الترتيبَ قبل الحكم)، لا بـreadyState (complete بعد ١٠ م.ث بنافذة document.write)",
     pr.includes("window.addEventListener('load',function(){loaded=true;if(armed)setTimeout(fire,0);});") && pr.includes("if(loaded){fire();return;}setTimeout(fire,3000);")
@@ -365,21 +365,29 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
     && !/rxApi\.add\(\{/.test(sheet) && !/const save = /.test(sheet));
   check("  والخروجُ يُسأل ما دامت ورقةٌ انطبعت ولم تُحفظ (ولو فُرّغ النصّ بعدها) أو نافذتُها تقرّر (قد تنسدّ بلا طباعة)، والنسخةُ الجديدة لا تنزل فوق نصٍّ لم يُحفظ — إلا بتحديثٍ اختاره الطبيب، والورقةُ غيرُ المحفوظة ممسوكةٌ دائماً",
     /if \(!dirty && !pendingN && !waiting\) return true;\s*setLeaveAsk\(true\);/.test(sheet)
-    && /useEffect\(\(\) => \(pendingN > 0 \|\| \(dirty && !letGo\) \? holdUpdates\(Infinity\) : undefined\), \[dirty, pendingN, letGo\]\)/.test(sheet));
+    /* والإمساكُ واحدٌ من «تقرّر» إلى «رجعت مسودّة» (تدقيقٌ سادس: كان للمسودّة وحدها، فنافذةٌ تنسدّ تُفلت إمساكَها قبل أن يُؤخذ إمساكُ المسودّة). */
+    && /const atRisk = dirty \|\| waiting;/.test(sheet)
+    && /useEffect\(\(\) => \(pendingN > 0 \|\| \(atRisk && !letGo\) \? holdUpdates\(Infinity\) : undefined\), \[atRisk, pendingN, letGo\]\)/.test(sheet));
   /* تدقيقٌ خامس: «تقرّر» عن مسودّةٍ محفوظة كان يسأل «يضيع اللي كتبته»، والعنوانُ مختومٌ لحظةَ الفتح قال «بعدها ما طبعت» والورقةُ مطبوعة
      وحفظُها فشل فخرج الطبيبُ وضاعت لقطتُها، وإذنُ التحديث علمٌ عامّ عاش بعد ما أُذن له (نافذةٌ انسدّت فرجعت المسودّةُ بلا إمساك). */
   check("  و«تقرّر» لمسودّةٍ لم تُحفظ وحدها، وعنوانُ سؤال الخروج من الحال الآن (لا مختومٌ لحظةَ الفتح)، والسؤالُ يُغلق حين لا يبقى ما يضيع",
     /const waiting = !!clean\.trim\(\) && !saved && saver\.isWaiting\(key\);/.test(sheet)
-    && /title=\{pendingN \? t\("rx\.leavePending"\) : waiting \? t\("rx\.leaveWaiting"\) : t\("rx\.leaveTitle"\)\}/.test(sheet)
-    && /if \(leaveAsk && !dirty && !pendingN && !waiting\) setLeaveAsk\(false\);/.test(sheet) && /if \(reloadAsk && !dirty && !waiting\) setReloadAsk\(false\);/.test(sheet)
+    /* وعنوانُه آخرُ سببٍ قائم (تدقيقٌ سادس: رسمةُ الإغلاق لا شيءَ فيها يضيع، فكان يومض «تطلع وتضيّع اللي كتبته؟» عن راجيتةٍ انحفظت). */
+    && /const whyNow = pendingN \? "pending" : waiting \? "waiting" : dirty \? "dirty" : null;/.test(sheet)
+    && /useEffect\(\(\) => \{ if \(whyNow\) lastWhy\.current = whyNow; \}\);/.test(sheet) && /const leaveWhy = whyNow \?\? lastWhy\.current;/.test(sheet)
+    && /title=\{leaveWhy === "pending" \? t\("rx\.leavePending"\) : leaveWhy === "waiting" \? t\("rx\.leaveWaiting"\) : t\("rx\.leaveTitle"\)\}/.test(sheet)
+    && /if \(leaveAsk && !atRisk && !pendingN\) setLeaveAsk\(false\);/.test(sheet) && /if \(reloadAsk && !dirty\) setReloadAsk\(false\);/.test(sheet)
     && !/setLeaveAsk\(pendingN \?/.test(sheet) && !/leaveAsk === "/.test(sheet));
   check("  ونافذةٌ انسدّت قبل أن تطبع تُقال (onGone) — كانت تُضيّع المسودّةَ بصمت",
     /onGone: \(\) => \{ playWarning\(\); toast\.warn\(t\("rx\.goneUnprinted"\)\); \}/.test(sheet));
-  check("  والقاموسُ العربيّ الذي لا يصل يُقال والنصُّ موجود (كان «اطبع» موقوفاً بلا كلمة)، والتحديثُ بطريق التعافي بعد أن يُفلت **نصُّ هذه المسودّة** إمساكَه، بسؤالٍ ونسخٍ إن كان نصّ أو نافذتُه تقرّر، وموقوفٌ مع ورقةٍ لم تُحفظ",
+  /* تدقيقٌ سادس: الإذنُ بالبصمة وحدها حمّل فوق مسودّةٍ رجعت من نافذةٍ انسدّت (بصمتُها بصمتُه) وفوق نصٍّ مُسح حتى ساواه —
+     صار للمسودّة غيرِ المطبوعة كما هي، يسقط بأوّل تغيّر، والتحديثُ الذي ينتظر نصّاً بلا إذن يرجع زرّاً. */
+  check("  والقاموسُ العربيّ الذي لا يصل يُقال والنصُّ موجود (كان «اطبع» موقوفاً بلا كلمة)، والتحديثُ بطريق التعافي بعد أن يُفلت **نصُّ هذه المسودّة كما هي** إمساكَه (بسؤالٍ ونسخ)، والإذنُ يسقط بأوّل تغيّر، ونافذةٌ تقرّر تُنتظر حتى تُحفظ، وموقوفٌ مع ورقةٍ لم تُحفظ",
     /\{labelsFailed && \(\s*<div[^>]*data-rx-labels-fail/.test(sheet) && /onClick=\{askReload\} disabled=\{pendingN > 0\} data-rx-reload/.test(sheet)
-    && /const askReload = \(\) => \{ playTap\(\); if \(dirty \|\| waiting\) \{ setCopied\(null\); setReloadAsk\(true\); \} else reloadPage\(\); \};/.test(sheet)
-    && /const letGo = letGoKey !== null && letGoKey === key;/.test(sheet)
-    && /setLetGoKey\(key\);\s*setReloading\(true\);\s*void labelsReload\(\)\.then\(\(ok\) => \{\s*if \(ok\) return;\s*setLetGoKey\(null\);\s*setReloading\(false\);/.test(sheet)
+    && /const askReload = \(\) => \{ playTap\(\); if \(dirty\) \{ setCopied\(null\); setReloadAsk\(true\); \} else reloadPage\(\); \};/.test(sheet)
+    && /const letGo = letGoKey !== null && letGoKey === key && dirty;/.test(sheet)
+    && /if \(letGoKey !== null && \(letGoKey !== key \|\| !dirty\)\) setLetGoKey\(null\);\s*if \(reloading && dirty && !letGo\) setReloading\(false\);/.test(sheet)
+    && /setLetGoKey\(key\);\s*setReloading\(true\);\s*const my = \+\+reloadSeq\.current;\s*void labelsReload\(\)\.then\(\(ok\) => \{\s*if \(ok \|\| my !== reloadSeq\.current\) return;\s*setLetGoKey\(null\);\s*setReloading\(false\);/.test(sheet)
     && /onClick=\{reloadPage\} disabled=\{pendingN > 0\} data-rx-reload-do/.test(sheet) && /data-rx-reloading/.test(sheet) && !/setLetGo\(true\)/.test(sheet)
     && /navigator\.clipboard\.writeText\(clean\)/.test(sheet));
   check("  ونتيجةُ «انسخ النص» داخل سؤالها لا توست (بالهاتف يغطّي أزرارَه السفلية ٤ ثوانٍ)، والتنزيلُ البطيء يُقال بلا «تعذّر» ولا تحديث",
@@ -434,8 +442,8 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
   check("  وما تغيّر أثناء حفظ التصميم لا يُرمى (يبقى مفتوحاً بالباقي)، ورفعٌ تُرك بـ«اطلع» بلا نغمةٍ ولا رسالة",
     /const sent = draft;[\s\S]*?rxApi\.savePad\(sent, expect\)[\s\S]*?const now = draftRef\.current;\s*if \(now && !same\(now, sent\)\) \{\s*toast\.success\(t\("rx\.saved"\), t\("rx\.savedMore"\)\);\s*return;\s*\}\s*setDraft\(row\.cfg\);/.test(designer)
     && /if \(alive\.current\) playSuccess\(\);/.test(designer) && /if \(alive\.current\) \{\s*playWarning\(\);\s*toast\.error\(t\("rx\.uploadFail"\)/.test(designer));
-  check("  وحفظٌ رجع بعد «اطلع» يُقال ولا يُغلق مصمِّماً فُتح بعده (onClose يُغلق ما هو مفتوح — كان يُطفئه ويرمي ما كُتب)، وفشلُه عن مصمِّمٍ متروك لا يُقال",
-    /rxApi\.savePad\(sent, expect\);\s*if \(!alive\.current\) \{\s*onSaved\(\);\s*playSuccess\(\);\s*toast\.success\(t\("rx\.saved"\)\);\s*return;\s*\}/.test(designer)
+  check("  وحفظٌ رجع بعد «اطلع» يُقال ولا يُغلق مصمِّماً فُتح بعده (onClose يُغلق ما هو مفتوح — كان يُطفئه ويرمي ما كُتب)، وما غُيّر بعد «احفظ» يُقال أنه راح (لا «انحفظ» وحدها بعد «تضيّع التعديلات؟»)، وفشلُه عن مصمِّمٍ متروك لا يُقال",
+    /rxApi\.savePad\(sent, expect\);\s*if \(!alive\.current\) \{\s*onSaved\(\);\s*playSuccess\(\);\s*const left = draftRef\.current;\s*if \(left && !same\(left, sent\)\) toast\.success\(t\("rx\.saved"\), t\("rx\.savedLeft"\)\);\s*else toast\.success\(t\("rx\.saved"\)\);\s*return;\s*\}/.test(designer)
     && /\} catch \(e\) \{\s*if \(!alive\.current\) return;/.test(designer));
   check("  والمقبضُ يأخذ التركيزَ بالضغطة (الأسهمُ له)، والسحبُ يكتب خانتَه وحدها فوق المسودّة الحالية",
     /closest<HTMLElement>\("\[data-handle\]"\)\?\.focus\(\{ preventScroll: true \}\)/.test(designer) && /setDraft\(\(cur\) => \{/.test(designer) && !/setDraft\(\(\) => apply\(d\.start/.test(designer));
@@ -627,10 +635,10 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     return import(pathToFileURL(f).href).finally(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } });
   };
   async function goneSuite(SM, ck) {
-    const mk2 = () => {
+    const mk2 = (o = {}) => {
       const log = { gone: [], adds: 0 };
       const sv = SM.createRxSaver({
-        add: async (input) => { log.adds++; return { id: input.id }; }, hold: () => () => {},
+        add: async (input) => { log.adds++; if (o.gate) await o.gate; if (o.fail) throw new Error("save"); return { id: input.id }; }, hold: () => () => {},
         onSaved() {}, onFail() {}, onChange() {}, onGone: (snap) => log.gone.push(snap.key),
       });
       return { sv, log };
@@ -673,13 +681,37 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
       shut(e, w);
       ck("  ونافذةٌ قالت «فائض» ثمّ انسدّت: الفائضُ وحده يُقال — لا «انسدّت قبل ما تطبع» فوقه", over === 1 && log.gone.length === 0, `${over} ${log.gone}`);
     }
+    /* تدقيقٌ سادس: كلُّ مشهدٍ قبله انتظر الحفظَ الثاني حتى يستقرّ، فركنُ «بالطابور» لم يُفحص — حذفُه مرّ ٢٠٤/٠. */
+    {
+      let open;
+      const gate = new Promise((r) => { open = r; });
+      const { sv, log } = mk2({ gate }), e = env(), watch = SM.createPrintWatch(e);
+      const w1 = { closed: false };
+      watch(w1, sv.deferTo(sv.snapFor("K", make), () => {}));
+      const p = sv.enqueue(sv.snapFor("K", make));
+      await settle();
+      shut(e, w1);
+      const mid = log.gone.length;
+      open();
+      await p;
+      ck("  وطباعةٌ ثانية حفظُها بالطريق والأولى انسدّت ⇒ لا «ذهبت» عن ورقةٍ انطبعت، ثمّ تُحفظ", mid === 0 && log.gone.length === 0 && sv.isSaved("K"), `${mid} ${log.gone}`);
+    }
+    {
+      const { sv, log } = mk2({ fail: true }), e = env(), watch = SM.createPrintWatch(e);
+      const w1 = { closed: false };
+      watch(w1, sv.deferTo(sv.snapFor("K", make), () => {}));
+      await sv.enqueue(sv.snapFor("K", make));
+      shut(e, w1);
+      ck("  وحفظُها فشل (باقٍ لـ«احفظها بالسجل») والأولى انسدّت ⇒ لا «ذهبت» (الورقةُ انطبعت ولقطتُها تنتظر)", log.gone.length === 0 && sv.isPending("K") && sv.failed, `${log.gone}`);
+    }
   }
   await goneSuite(await loadSave(), check);
   {
     const swapS = (from, to) => (s) => { if (!s.includes(from)) throw new Error(`الطفرة لم تجد نصَّها: ${from.slice(0, 50)}`); return s.split(from).join(to); };
     const MUT_S = [
-      ["«ذهبت» بلا سؤالٍ عن المحفوظ (نسخةُ الجولة الرابعة)", swapS("if (!saved.has(snap.key) && !s.isPending(snap.key) && !waiting.has(snap.key)) s.deps.onGone?.(snap);", "s.deps.onGone?.(snap);")],
+      ["«ذهبت» بلا سؤالٍ عن المحفوظ (نسخةُ الجولة الثالثة)", swapS("if (!saved.has(snap.key) && !s.isPending(snap.key) && !waiting.has(snap.key)) s.deps.onGone?.(snap);", "s.deps.onGone?.(snap);")],
       ["«ذهبت» ونافذةٌ أخرى ما زالت تقرّر", swapS(" && !waiting.has(snap.key)) s.deps.onGone", ") s.deps.onGone")],
+      ["«ذهبت» وحفظُ الطباعة الثانية بالطريق أو فشل", swapS("!s.isPending(snap.key) && ", "")],
       ["الفائضُ يقول «ذهبت» أيضاً", swapS("onOverflow: () => { if (settle()) { release(); onOverflow(); } },", "onOverflow: () => { if (settle()) { release(); onOverflow(); s.deps.onGone?.(snap); } },")],
     ];
     for (const [name, edit] of MUT_S) {
@@ -953,7 +985,8 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       focus() {}, close() { closed = true; },
       /* المطبوعُ: الصفحاتُ والخطوطُ والأسطرُ المخفيّة تحت مربّعها لحظتَها — وشعارٌ يصل **أثناء** حوار الطباعة (أحداثُه بعده). */
       print: () => {
-        const rec = { t: clock.now, pages: root.querySelectorAll(".page").length, fonts: M.fonts, hidden: hiddenNow() };
+        const im = root.getElementsByTagName("img");
+        const rec = { t: clock.now, pages: root.querySelectorAll(".page").length, fonts: M.fonts, hidden: hiddenNow(), imgs: im.length, shown: im.filter((i) => M.img === "ok" && i.style.display !== "none").length };
         if (M.arriveDuringPrint && M.img === "pending") { M.img = "ok"; rec.afterHidden = hiddenNow(); setT(() => fireImg("load"), 0); }
         prints.push(rec);
       },
@@ -1073,7 +1106,7 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       await E.at(12, E.css);
       await E.at(30, E.fonts);
       await E.at(20000);
-      ck("نافذةُ الطباعة: تطبع مرّةً بعد النهائيّ والتحميل، وتقول «طبعتُ» قبلها", E.prints.length === 1 && E.prints[0].pages === 5 && E.prints[0].fonts && E.told.join() === "print@30", JSON.stringify([E.prints, E.told]));
+      ck("نافذةُ الطباعة: تطبع مرّةً بعد النهائيّ والتحميل، وتقول «طبعتُ» معها (بعد القياس الذي يحكمها)", E.prints.length === 1 && E.prints[0].pages === 5 && E.prints[0].fonts && E.told.join() === "print@180" && E.prints[0].t === 180, JSON.stringify([E.prints, E.told]));
       E.afterprint();
       await E.at(20400);
       ck("  وبعد الطباعة تُغلق نفسَها (afterprint) — كانت تُفحص نصّاً وحده", E.closed());
@@ -1085,7 +1118,7 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       await E.at(9300, E.fonts);
       await E.at(20000);
       ck("  وصورةٌ معلَّقة: تنتظر التحميلَ ثلاثَ ثوانٍ بعد القسريّ ثمّ تطبع الترتيبَ الأخير (بخطوطه)",
-        E.prints.length === 1 && E.prints[0].t >= 12000 && E.prints[0].pages === 5 && E.prints[0].fonts && E.told.join() === "print@12000", JSON.stringify([E.prints, E.told]));
+        E.prints.length === 1 && E.prints[0].t >= 12000 && E.prints[0].pages === 5 && E.prints[0].fonts && E.told.join() === "print@12150", JSON.stringify([E.prints, E.told]));
     }
     {
       const E = makeEnv(mkHtml(`Rx\n${"x".repeat(3000)}`, { print: true }), edit);
@@ -1107,7 +1140,7 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       await E.at(13000, () => { E.face("ruqaa"); E.load(); });
       await E.at(20000);
       ck("الشعارُ يصل بعد القسريّ والوجوهُ تتوالى (التحميلُ محجوبٌ بها): نافذةُ الطباعة تنتظر الخطوطَ وتقيس من جديد — لا سطرَ مخفيّاً تحت مربّع الوصفة",
-        E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].fonts && E.told.join() === "print@13000", JSON.stringify([E.prints, E.told]));
+        E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].fonts && E.told.join() === "print@13150", JSON.stringify([E.prints, E.told]));
     }
     {
       const E = makeEnv(mkHtml(S70, { print: true }), edit, { logo: true });
@@ -1116,7 +1149,7 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       await E.at(10000, () => E.face("cairo"));
       await E.at(30000);
       ck("  ووجهٌ وصل والآخرُ والشعارُ معلَّقان: تنتظر الخطوطَ بسقفها (٤ ثوانٍ) ثمّ تطبع ما قاسته لحظتَها — لا سطرَ مخفيّاً",
-        E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].t === 16150 && E.told.join() === "print@16000", JSON.stringify([E.prints, E.told]));
+        E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].t === 16150 && E.told.join() === "print@16150", JSON.stringify([E.prints, E.told]));
     }
     {
       const E = makeEnv(mkHtml(S70, { print: true }), edit);
@@ -1178,6 +1211,83 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       ck("  وخطٌّ أضيقُ من الاحتياطيّ: الترتيبُ النهائيّ بعد المؤقّت يمسح «فائض» المؤقّت ويرجّع حجمَ الخطّ كترتيبٍ طازج",
         before[0] === "1" && E.root.getAttribute("data-overflow") === null && E.fs() === Fr.fs() && E.fs() !== before[1], `${JSON.stringify(before)} → ${E.root.getAttribute("data-overflow")} ${E.fs()} (طازج ${Fr.fs()})`);
     }
+    /* تدقيقٌ سادس: ترتيباتٌ مجاورة مرّت طفراتُها ٢٠٤/٠ وكلُّها تغيّر الورقةَ أو المعاينة بكروميوم (مقيس) — صورةٌ قبل القسريّ، وتحميلٌ
+       والوجوهُ تنزل، وفائضٌ بالصفحة الثانية وحدها، وصورةٌ بين القياسين، ووجهٌ بعد ثانيتين، وقرارٌ يثق بفائضٍ قديم، و«طبعتُ» قبل الرفض. */
+    {
+      const E = makeEnv(mkHtml(S70), edit, { logo: true });
+      await E.at(5, E.preOk);
+      await E.at(2000, E.imgArrive);
+      await E.at(2100, E.load);
+      await E.at(2200, E.css);
+      await E.at(2400, E.fonts);
+      await E.at(5000);
+      ck("المعاينة: صورةٌ تصل قبل القسريّ والخطوطُ بالطريق ⇒ لا «نهائيّ» بالخطّ الاحتياطيّ (الشاشةُ تحفظ عليه فوراً) — النهائيُّ بخطوطه",
+        !E.msgs.some((m) => m.final && m.t < 2400) && E.msgs.some((m) => m.final && m.t === 2400) && E.M.fonts, fmt(E.msgs));
+    }
+    {
+      const body = `${short(5)}\n${"abcd ".repeat(200).trim()}`;
+      const E = makeEnv(mkHtml(body), edit);
+      const boxes = () => E.root.querySelectorAll(".page").map((p) => { const b = p.querySelector(".rx-lines"); return `${Math.round(b.scrollHeight)}/${b.clientHeight}`; });
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      const before = boxes();
+      await E.at(10000, () => E.face("cairo"));
+      const mid = boxes();
+      await E.at(10300);
+      ck("  والبصمةُ لكلّ صفحة: وجهٌ يحلّ فيفيض مربّعُ الصفحة الثانية وحدها (الأولى فيها متّسع) ⇒ يُعاد الترتيب، لا سطرَ مخفيّاً بالثانية",
+        before.length === 2 && before[0] === mid[0] && before[1] !== mid[1] && E.hiddenNow() === 0 && E.msgs.some((m) => m.final && m.t > 10000 && m.t <= 10250),
+        `${before} → ${mid} | ${E.hiddenNow()} ${fmt(E.msgs)}`);
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit);
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(12000, () => E.face("cairo"));
+      await E.at(12300);
+      ck("  ووجهٌ يحلّ بعد القسريّ بثلاث ثوانٍ والآخرُ معلَّق ⇒ المراقبةُ ما زالت تعمل فيُعاد الترتيب (لا سطرَ مخفيّ)",
+        E.hiddenNow() === 0 && E.msgs.some((m) => m.final && m.t > 12000 && m.t <= 12250), `${E.hiddenNow()} ${fmt(E.msgs)}`);
+    }
+    {
+      const E = makeEnv(mkHtml(S70, { print: true }), edit);
+      await E.at(5, E.preOk);
+      await E.at(10, E.load);
+      await E.at(12, E.css);
+      await E.at(10600, E.fonts);
+      await E.at(20000);
+      ck("نافذةُ الطباعة: التحميلُ جاء والوجوهُ ما زالت تنزل بعد القسريّ ⇒ تنتظر الخطوطَ وتطبع بها (لا بالاحتياطيّ عند القسريّ)",
+        E.prints.length === 1 && E.prints[0].fonts && E.prints[0].hidden === 0 && E.prints[0].t === 10750 && E.told.join() === "print@10750", JSON.stringify([E.prints, E.told]));
+    }
+    {
+      const E = makeEnv(mkHtml(S70, { print: true }), edit, { logo: true });
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(9100, E.fonts);
+      await E.at(12050, E.imgArrive);
+      await E.at(20000);
+      ck("  وشعارٌ وصل بين القياسين يُطبع (أُخفي بالأوّل ويظهر بالثاني) ولا سطرَ مخفيّاً",
+        E.prints.length === 1 && E.prints[0].imgs > 0 && E.prints[0].shown === E.prints[0].imgs && E.prints[0].hidden === 0 && E.told.join() === "print@12150", JSON.stringify([E.prints, E.told]));
+    }
+    {
+      /* ٨٥٠ حرفاً: تسع بوجهٍ واحد وتفيض بالوجهين (٨٠٠–٩٠٠ كذلك؛ ٩٢٠ يرفضها القياسُ الأوّل) — مقيسٌ بالمحرّك نفسِه. */
+      const E = makeEnv(mkHtml(`Rx\n${"x".repeat(850)}`, { print: true }), edit);
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(10000, () => E.face("cairo"));
+      await E.at(16050, () => E.face("ruqaa"));
+      await E.at(30000);
+      ck("  والقياسُ الأوّل يمرّ والثاني يرفض (وجهٌ أعرضُ بينهما وكلمةٌ لا تنقسم) ⇒ «فائض» وحدها — «طبعتُ» قبلها كانت تحفظ سجلّاً لورقةٍ لم تنطبع",
+        E.prints.length === 0 && E.told.join() === "overflow@16150", JSON.stringify([E.prints, E.told]));
+    }
+    {
+      const E = makeEnv(mkHtml("x".repeat(1150), { print: true }), edit, { kPer: -0.075 });
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      const stale = E.root.getAttribute("data-overflow");
+      await E.at(15900, () => E.face("cairo"));
+      await E.at(30000);
+      ck("  والقرارُ يقيس من جديد ولا يثق بفائضٍ قديم: وجهٌ أضيقُ حلّ بلا حدث قبله مباشرةً ⇒ تطبع (لا «ما انطبعت» كاذبة)",
+        stale === "1" && E.prints.length === 1 && E.prints[0].hidden === 0 && E.told.join() === "print@16150", `${stale} ${JSON.stringify([E.prints, E.told])}`);
+    }
   }
   await suite(undefined, check);
   const swapJs = (from, to) => (js) => (js.includes(from) ? js.split(from).join(to) : js);
@@ -1191,7 +1301,7 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     ["تحميلٌ بعد القسريّ لا يعيد الترتيب", swapJs("if(forced){run(true);return;}", "if(forced)return;")],
     ["الطباعةُ لا تنتظر التحميلَ بعد القسريّ", swapJs("if(loaded){fire();return;}setTimeout(fire,3000);", "fire();")],
     ["الفائضُ يُطبع", swapJs("return !root.getAttribute('data-overflow');}", "return true;}")],
-    ["الطباعةُ لا تقيس من جديد (نسخةُ الجولة الرابعة)", swapJs("if(window.__rxLayout)window.__rxLayout(true);return !root", "return !root")],
+    ["الطباعةُ لا تقيس من جديد (نسخةُ الجولة الثالثة)", swapJs("if(window.__rxLayout)window.__rxLayout(true);return !root", "return !root")],
     ["الطباعةُ لا تنتظر خطوطاً تصل", swapJs("if(f&&f.ready&&f.status==='loading'){f.ready.then(go2,go2);setTimeout(go2,4000);}else go2();", "go2();")],
     ["صورةٌ لم تصل لا تُخفى عند الطباعة", swapJs("im[i].style.display=im[i].complete?'':'none';", ";")],
     ["صورةٌ تصل بعد القسريّ لا تُسمع بحدثها", swapJs("im[j].addEventListener('load',late);im[j].addEventListener('error',late);", ";")],
@@ -1200,6 +1310,13 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     ["نافذةُ الطباعة لا تُغلق بعدها", swapJs("window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},250);});", "")],
     ["الإعادةُ لا تمسح الفائض", swapJs("root.removeAttribute('data-overflow');var b=", "var b=")],
     ["الإعادةُ لا ترجّع حجمَ الخطّ", swapJs("fs=max;b.style.fontSize=fs+'pt';", "fs=max;")],
+    ["صورةٌ قبل القسريّ تُعلن «نهائيّ» بالاحتياطيّ", swapJs("function late(){if(forced)run(true);}", "function late(){run(true);}")],
+    ["البصمةُ للصفحة الأولى وحدها", swapJs("for(var i=0;i<ps.length;i++){var b=L(ps[i]);if(b)s+=", "for(var i=0;i<1;i++){var b=L(ps[i]);if(b)s+=")],
+    ["المراقبةُ تقف بعد ثانيتين", swapJs("if(++ticks<120&&", "if(++ticks<8&&")],
+    ["انتظارُ الخطوط قبل التحميل وحده", swapJs("var f=document.fonts,once=false,go2=", "var f=loaded?null:document.fonts,once=false,go2=")],
+    ["صورةٌ أُخفيت بالقياس الأوّل لا تظهر بالثاني", swapJs("for(var i=0;i<im.length;i++)im[i].style.display=im[i].complete?'':'none';", "for(var i=0;i<im.length;i++)if(im[i].style.display!=='none')im[i].style.display=im[i].complete?'':'none';")],
+    ["القرارُ يثق بفائضٍ قديم", swapJs("function decide(){if(!measure()){refuse();return;}", "function decide(){if(root.getAttribute('data-overflow')){refuse();return;}")],
+    ["«طبعتُ» قبل القياس الثاني (نسخةُ الجولة الرابعة)", swapJs("setTimeout(function(){if(!measure()){refuse();return;}tell('print');", "tell('print');setTimeout(function(){if(!measure()){refuse();return;}")],
   ];
   for (const [name, edit] of MUT) {
     let caught = 0, applied = false;
@@ -1323,6 +1440,20 @@ console.log("▸ عناوينُ الورقة والتعافي بسلوكهما: 
       const got = await run(() => new Promise(() => {}), true, async () => { await advance(STUCK); return snap(); });
       ck("  والتعافي واقفٌ عند المهلة (القطعةُ فشلت والنصُّ ممسوك) ⇒ «تعذّر» فوراً", got.failed && !got.slow, JSON.stringify(got));
     }
+    {
+      /* تدقيقٌ سادس: «بطيء» ثمّ رُفض بلا تعافٍ ينتظر (بلا نت، أو جُرّب للتو) — لم يُفحص، فـ«بطيء» يغلب الرفضَ للأبد مرّ ٢٠٤/٠. */
+      let rej;
+      const p = new Promise((_, r) => { rej = r; });
+      const got = await run(() => p, false, async () => {
+        await advance(STUCK);
+        const a = snap();
+        rej(new Error("chunk"));
+        await tickR();
+        await advance(1000);
+        return { a, b: snap() };
+      });
+      ck("  و«بطيء» ثمّ رُفض التحميلُ بلا تعافٍ ينتظر ⇒ «تعذّر» بزرَّيه — لا «بطيء» بلا مخرج", got.a.slow && !got.a.failed && got.b.failed && !got.b.slow, JSON.stringify(got));
+    }
   }
   try {
     await labelsSuite(await loadLabels(), check);
@@ -1330,8 +1461,9 @@ console.log("▸ عناوينُ الورقة والتعافي بسلوكهما: 
     const MUT_L = [
       ["«أعد المحاولة» تمسح «تعذّر» بنداءها", swapL("const retry = useCallback(() => setN((x) => x + 1), []);", "const retry = useCallback(() => { setFailed(false); setN((x) => x + 1); }, []);")],
       ["«أعد المحاولة» تمسح «تعذّر» ببداية الأثر", swapL("const timer = window.setTimeout(", "setFailed(false);\n    const timer = window.setTimeout(")],
-      ["البطيءُ «تعذّر» (نسخةُ الجولة الرابعة)", swapL("(failed || (stuck && parked))", "(failed || stuck)")],
+      ["البطيءُ «تعذّر» (نسخةُ الجولة الثالثة)", swapL("(failed || (stuck && parked))", "(failed || stuck)")],
       ["التعافي لا يُسأل عنه بعد المهلة", swapL("const iv = window.setInterval(check, 1000);", "const iv = 0;")],
+      ["«بطيء» يغلب رفضاً بعده", swapL("failed: isFailed, slow: needLoad && !loaded && stuck && !isFailed", "failed: isFailed && !(stuck && !parked && failed), slow: needLoad && !loaded && stuck && !(isFailed && !(stuck && !parked && failed))")],
     ];
     for (const [name, edit] of MUT_L) {
       let caught = 0;
@@ -1386,16 +1518,66 @@ console.log("▸ عناوينُ الورقة والتعافي بسلوكهما: 
     }
   }
   await auSuite(await loadAU(), check);
+
+  /* تدقيقٌ سادس: انقطع النتُّ أثناء المسح ⇒ تراجعٌ بلا تحميل يمسح ختمَه — باقياً كان يرفض «حدّث الصفحة» ٣٠ ثانيةً بـ«تأكّد من النت»
+     والنتُّ رجع. بوحدةٍ طازجة: تعافٍ حمّل يُبقي وعدَه. */
+  async function auStampSuite({ U: UU }, ck) {
+    const reloads = [];
+    const prev = { loc: W.location, ss: globalThis.sessionStorage, caches: globalThis.caches };
+    const store = new Map();
+    let unreg = null, online = true;
+    W.location = { reload: () => reloads.push(1) };
+    globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => { store.set(k, String(v)); }, removeItem: (k) => { store.delete(k); } };
+    globalThis.caches = { keys: async () => ["workbox-precache-v2"], delete: async () => true };
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { getRegistrations: async () => [{ unregister: () => new Promise((r) => { unreg = r; }) }] } });
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+    try {
+      const p1 = UU.recoverFromStaleShell();
+      for (let i = 0; i < 50 && !unreg; i++) await sleep(10);
+      const stampedMid = store.size;
+      online = false;
+      unreg?.(true);
+      const r1 = await Promise.race([p1, sleep(1500).then(() => "timeout")]);
+      const after1 = { r1, stamp: store.size, pending: UU.recoveryPending(), reloads: reloads.length };
+      online = true;
+      unreg = null;
+      const p2 = UU.recoverFromStaleShell();
+      for (let i = 0; i < 50 && !unreg; i++) await sleep(10);
+      unreg?.(true);
+      const r2 = await Promise.race([p2, sleep(1500).then(() => "timeout")]);
+      ck("  وانقطع النتُّ أثناء المسح ⇒ لا تحميل، والتراجعُ يمسح ختمَ الدوّامة: «حدّث» بعد رجوعه يُحمّل فوراً (كان «تأكّد من النت» ٣٠ ثانية)",
+        stampedMid === 1 && after1.r1 === false && after1.stamp === 0 && !after1.pending && after1.reloads === 0 && r2 === true && reloads.length === 1,
+        JSON.stringify({ stampedMid, after1, r2, reloads: reloads.length }));
+    } finally {
+      W.location = prev.loc;
+      globalThis.sessionStorage = prev.ss;
+      globalThis.caches = prev.caches;
+      delete navigator.serviceWorker;
+      delete navigator.onLine;
+    }
+  }
+  await auStampSuite(await loadAU(), check);
   {
     let caught = 0;
     try {
       await auSuite(await loadAU((s) => {
-        const from = "await waitForWrites();\n    if (offline()) { inFlight = null; return false; }\n    window.location.reload();";
+        const from = "await waitForWrites();\n    /* وتراجعٌ هنا يمسح ختمَه";
         if (!s.includes(from)) throw new Error("الطفرة لم تجد نصَّها");
-        return s.split(from).join("window.location.reload();");
+        return s.split(from).join("/* وتراجعٌ هنا يمسح ختمَه");
       }), (_n, ok) => { if (!ok) caught++; });
     } catch { caught = -1; }
-    check("  طفرة «الفحصُ مرّةً قبل المسح وحده (نسخةُ الجولة الرابعة)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
+    check("  طفرة «الفحصُ مرّةً قبل المسح وحده (نسخةُ الجولة الثالثة)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
+  }
+  {
+    let caught = 0;
+    try {
+      await auStampSuite(await loadAU((s) => {
+        const from = " try { sessionStorage.removeItem(ONCE_KEY); } catch { /* ignore */ }";
+        if (!s.includes(from)) throw new Error("الطفرة لم تجد نصَّها");
+        return s.split(from).join("");
+      }), (_n, ok) => { if (!ok) caught++; });
+    } catch { caught = -1; }
+    check("  طفرة «التراجعُ بعد المسح يُبقي الختم (نسخةُ الجولة الرابعة)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
   }
 }
 

@@ -160,14 +160,16 @@ setTimeout(function(){if(root.getAttribute('data-final')!=='1'){forced=true;if(!
    فتحتها تُبلَّغ. نهائيٌّ قسريٌّ قبل التحميل (صورةٌ بطيئة) ينتظر التحميلَ ثلاثَ ثوانٍ، وصورةٌ معلَّقة للأبد لا توقف الطباعة.
    و**الورقةُ هي القياس**: لحظةَ القرار تُنتظر خطوطٌ ما زالت تصل (بسقف ٤ ثوانٍ)، ثمّ يُقاس الترتيبُ من جديد والصورةُ التي لم
    تصل تُخفى (وصولُها أثناء حوار الطباعة لا يحرّك شيئاً)، ويُقاس ثانيةً قبل print() مباشرةً — ترتيبٌ قِيس قبل الشعار
-   والخطوط كان يُطبع وآخرُ الوصفة مخفيٌّ تحت مربّعها بلا فائضٍ يُقال (حدثُ التحميل محجوبٌ بالخطوط فلا يُعاد الترتيب). والتحميلُ
-   **بحدثه** لا بـreadyState: بنافذةٍ كُتبت بـdocument.write يصير «complete» بعد ١٠ م.ث والصورُ معلَّقة (مقيس). */
+   والخطوط كان يُطبع وآخرُ الوصفة مخفيٌّ تحت مربّعها بلا فائضٍ يُقال (حدثُ التحميل محجوبٌ بالخطوط فلا يُعاد الترتيب). و«طبعتُ»
+   **بعد القياس الذي يحكم print()** لا قبله: شعارٌ وصل بين القياسين فرفض الثاني، والشاشةُ حفظت السجلَّ بـ«طبعتُ» الأولى وأسقطت
+   «فائض» بعدها — «انطبعت وانحفظت» وسجلٌّ لا يُحذف وما انطبع شيء (تدقيقٌ سادس). والتحميلُ **بحدثه** لا بـreadyState: بنافذةٍ
+   كُتبت بـdocument.write يصير «complete» بعد ١٠ م.ث والصورُ معلَّقة (مقيس). */
 const PRINT_JS = `(function(){var done=false,armed=false,loaded=false,root=document.documentElement;
 function tell(t){try{if(window.opener)window.opener.postMessage({rx:t},'*');}catch(e){}}
 function refuse(){var w=document.getElementById('rxwarn');if(w)w.hidden=false;tell('overflow');}
 function measure(){var im=document.getElementsByTagName('img');for(var i=0;i<im.length;i++)im[i].style.display=im[i].complete?'':'none';
 if(window.__rxLayout)window.__rxLayout(true);return !root.getAttribute('data-overflow');}
-function decide(){if(!measure()){refuse();return;}tell('print');setTimeout(function(){if(!measure()){refuse();return;}window.focus();window.print();},150);}
+function decide(){if(!measure()){refuse();return;}setTimeout(function(){if(!measure()){refuse();return;}tell('print');window.focus();window.print();},150);}
 function fire(){if(done)return;done=true;var f=document.fonts,once=false,go2=function(){if(once)return;once=true;decide();};
 if(f&&f.ready&&f.status==='loading'){f.ready.then(go2,go2);setTimeout(go2,4000);}else go2();}
 window.addEventListener('load',function(){loaded=true;if(armed)setTimeout(fire,0);});

@@ -99,11 +99,14 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
     try {
       const row = await rxApi.savePad(sent, expect);
       /* حفظٌ رجع والمصمِّمُ أُغلق بـ«اطلع» أثناءه: انحفظ فعلاً فيُقال (الطبيبُ ظنّه ضاع)، لكن لا يُغلق مصمِّماً **آخر** فُتح بعده —
-         onClose يُغلق ما هو مفتوح، فكان يُطفئ المصمِّمَ الجديد بيد الطبيب ويرمي ما كتبه بلا سؤال. */
+         onClose يُغلق ما هو مفتوح، فكان يُطفئ المصمِّمَ الجديد بيد الطبيب ويرمي ما كتبه بلا سؤال. وما غُيّر بعد «احفظ» ضاع مع
+         «اطلع» فيُقال معه: «انحفظ» وحدها بعد «تطلع وتضيّع التعديلات؟» تُقرأ «انحفظ كلشي» فلا يعيد الطبيبُ تصحيحَه (تدقيقٌ سادس). */
       if (!alive.current) {
         onSaved();
         playSuccess();
-        toast.success(t("rx.saved"));
+        const left = draftRef.current;
+        if (left && !same(left, sent)) toast.success(t("rx.saved"), t("rx.savedLeft"));
+        else toast.success(t("rx.saved"));
         return;
       }
       setExpect(row.updated_at);
