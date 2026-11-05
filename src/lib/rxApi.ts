@@ -7,6 +7,8 @@
  *    السجلّ والحفظ بصمت، لا «تعذّر» دائم.
  *  • الكتابةُ تُسمع: التصميمُ بشرط «كما فُتح» (updated_at يختمه الخادم) ⇒ `rx_stale`، لا دوسٌ صامت؛ والإلغاءُ صفرُ
  *    صفوفٍ ⇒ `rx_stale` كذلك (أُلغيت من جهازٍ ثانٍ). ورفضُ المحفّز (تجميد/مدير) يصل برسالته وhint الخادم.
+ *  • الراجيتةُ تُكتب **بمعرّفٍ من الجهاز** يُختم لحظةَ الطباعة: ردٌّ ضاع بعد أن كُتبت ثمّ «احفظها» ⇒ 23505 على المفتاح
+ *    ⇒ تُقرأ بمعرّفها وتُعدّ محفوظة — لا صفٌّ ثانٍ لورقةٍ واحدة (والصفُّ لا يُحذف، فالمكرّرُ كان يبقى أبداً).
  *  • «القراءة فقط» (اشتراكٌ منتهٍ) يمنع الكتابةَ بخطأ repo نفسِه (ReadOnlyError).
  *  • الصورُ ملفّاتٌ بالدلو بمجلّد العيادة **كما يؤكّدها الخادم** (my_workspace — لا مفتاحُ العيادة المحلّيّ).
  * ========================================================================= */
@@ -30,7 +32,7 @@ export interface RxRecord {
   voided_at: string | null;
   void_reason: string | null;
 }
-export interface RxNew { pet_id: string; visit_id?: string | null; pet_name: string; doctor_name: string; fields: RxFields; body: string }
+export interface RxNew { id?: string; pet_id: string; visit_id?: string | null; pet_name: string; doctor_name: string; fields: RxFields; body: string }
 export interface RxNote { note_text: string; created_at: string }
 /** سقفُ قراءة الملاحظات المنظّمة: بلا خطةٍ فيها وقد بلغته ⇒ «تعذّر» لا «ماكو» (قائمةٌ ناقصة لا تُصدَّق). */
 export const RX_NOTES_LIMIT = 200;
@@ -79,8 +81,10 @@ export function readRx(r: Record<string, unknown>): RxRecord {
   };
 }
 /** ما يُرسل للإدخال: منظَّفاً كما يقبله القيد (النصُّ ١–٨٠٠٠، الأسماءُ ≤ ١٢٠). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function rxInsertRow(r: RxNew) {
   return {
+    ...(r.id && UUID_RE.test(r.id) ? { id: r.id.toLowerCase() } : {}),
     pet_id: r.pet_id,
     visit_id: r.visit_id ?? null,
     pet_name: cleanLine(r.pet_name, 120) || null,
@@ -119,8 +123,18 @@ const cloud: RxApi = {
   },
   async add(r) {
     writable();
-    const { data, error } = await supabase!.from("pet_prescriptions").insert(rxInsertRow(r)).select(COLS).single();
-    if (error) throw fail(error);
+    const row = rxInsertRow(r);
+    const { data, error } = await supabase!.from("pet_prescriptions").insert(row).select(COLS).single();
+    if (error) {
+      /* المعرّفُ موجود ⇒ الإدخالُ السابق كُتب وضاع ردُّه: تُقرأ هي (لا صفٌّ ثانٍ). وإن لم تُرَ بمعرّفها ⇒ الخطأُ كما هو. */
+      if (error.code === "23505" && "id" in row) {
+        const again = await supabase!.from("pet_prescriptions").select(COLS).eq("id", row.id).limit(1);
+        if (again.error) throw fail(again.error);
+        const hit = (again.data ?? [])[0];
+        if (hit) return readRx(hit as Record<string, unknown>);
+      }
+      throw fail(error);
+    }
     return readRx(data as Record<string, unknown>);
   },
   async voidRx(id, reason) {

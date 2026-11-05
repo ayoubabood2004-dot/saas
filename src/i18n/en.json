@@ -3701,7 +3701,8 @@
       "archived_at": "Archived",
       "recipe": "Consumables",
       "avg_cost": "Average cost",
-      "cost": "Cost"
+      "cost": "Cost",
+      "void_reason": "Void reason"
     },
     "saleExpired": "Sold expired items after confirming: {{names}} ({{ref}})",
     "expiryMuted": "Muted expiry alert for {{name}}",
@@ -3717,7 +3718,9 @@
     "catDrugOut": "Removed {{name}} from the category «{{cat}}»",
     "rxAdd": "Wrote a prescription for {{pet}}",
     "rxVoid": "Voided a prescription — {{pet}}",
-    "rxPad": "Changed the prescription pad design"
+    "rxPad": "Changed the prescription pad design",
+    "rxDel": "Prescription removed with its pet — {{pet}}",
+    "rxUpd": "Updated a prescription — {{pet}}"
   },
   "override": {
     "title": "Manager mode",
@@ -7296,6 +7299,15 @@
     },
     "kg": "kg",
     "days": "{{count}} days",
+    "days_one": "1 day",
+    "days_two": "2 days",
+    "days_few": "{{count}} days",
+    "days_many": "{{count}} days",
+    "drTitles": "د,دكتور,دكتورة,الدكتور,الدكتورة,dr,doctor",
+    "overflowPrint": "Not printed: a word in the prescription is longer than the page — break it onto a new line and print again",
+    "tooLong": "The prescription is longer than {{max}} characters — shorten it to print and save",
+    "labelsFail": "Couldn't load the Arabic pad labels",
+    "leavePending": "The prescription was printed but isn't saved to the record — leave without saving it?",
     "docTitle": "Prescription — {{name}}",
     "sample": {
       "name": "Bobby",

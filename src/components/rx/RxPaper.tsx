@@ -5,13 +5,23 @@
  * وحدةٌ بلا نصوص (العنوانُ من المستدعي) يستعملها المحرّرُ والمصمِّم. والإطارُ لا يُلمس (pointer-events: none):
  * المصمِّمُ يضع فوقه طبقتَه (children) بإحداثيات الصفحة الأولى نفسِها — نسبٌ مئوية من يسارها وأعلاها.
  * والمستندُ يُعاد رسمُه بعد هدوء الكتابة (ربعُ ثانية) لا مع كلّ حرف: الإطارُ يعيد تحميلَ خطوطه كلَّ مرّة.
+ *
+ * والترتيبُ يُقرأ **كلَّ مرّة** يُعاد (ترتيبٌ مؤقّت ثم النهائيّ بعد الخطوط والصور) لا أوّلَ مرّةٍ وحدها، ويُقال معه **أيُّ
+ * مستندٍ قِيس** (`html`): المستدعي يحكم على المستند الحاليّ بقياسه هو، لا بقياس ما قبله (ربعُ الثانية بعد كلّ حرف).
  * ========================================================================= */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { RX_PAPER, type RxPaperSize } from "@/lib/rxLayout";
 import "./rxPad.css";
 
 const PX_PER_MM = 96 / 25.4;
-export interface RxLayoutInfo { pages: number; overflow: boolean }
+export interface RxLayoutInfo {
+  pages: number;
+  overflow: boolean;
+  /** بعد تحميل الخطوط والصور (أو مهلتها) — المؤقّتُ قد يتغيّر. */
+  final: boolean;
+  /** المستندُ الذي قِيس (كما مُرِّر بـ`html`). */
+  html: string;
+}
 
 /** عرضُ الورقة حتى تسعها الشاشةُ طولاً (النافذةُ ٩٢vh ناقصَ رأسها وشريطها) — ورقةٌ أطولُ من مكانها تُدفع تحت الرأس. */
 export const RX_FIT: CSSProperties = { maxWidth: "min(34rem, calc((92vh - 15rem) * 0.705))", marginInline: "auto" };
@@ -35,6 +45,15 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
   const [pages, setPages] = useState(1);
   const layoutCb = useRef(onLayout);
   layoutCb.current = onLayout;
+  /* كلُّ مستندٍ بالإطار يحمل رقمَه (data-rxseq) — فالقياسُ يُنسب لمستنده ولو تبدّل الإطارُ بينهما. */
+  const seq = useRef({ n: 0, byN: new Map<number, string>() });
+  const tagged = useMemo(() => {
+    const m = seq.current;
+    m.n += 1;
+    m.byN.set(m.n, shown);
+    if (m.byN.size > 8) m.byN.delete(m.byN.keys().next().value as number);
+    return shown.replace(/^<!doctype html><html /i, (h) => `${h}data-rxseq="${m.n}" `);
+  }, [shown]);
 
   const pw = RX_PAPER[paper].w * PX_PER_MM;
   const ph = RX_PAPER[paper].h * PX_PER_MM;
@@ -54,19 +73,21 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
     return () => window.clearTimeout(id);
   }, [html, shown]);
 
-  /* بعد الترتيب داخل الإطار: عددُ الصفحات وما لم ينقسم — من <html data-pages/data-overflow>. */
+  /* بعد كلّ ترتيبٍ داخل الإطار: عددُ الصفحات وما فاض، ونهائيٌّ أم مؤقّت — من <html data-*>. */
   const onLoad = () => {
     const w = frame.current?.contentWindow;
     const doc = frame.current?.contentDocument;
     if (!w || !doc) return;
     const read = () => {
       const root = doc.documentElement;
+      const src = seq.current.byN.get(Number(root.getAttribute("data-rxseq")));
+      if (src === undefined) return;
       const n = Math.max(1, Number(root.getAttribute("data-pages")) || 1);
       setPages(n);
-      layoutCb.current?.({ pages: n, overflow: root.getAttribute("data-overflow") === "1" });
+      layoutCb.current?.({ pages: n, overflow: root.getAttribute("data-overflow") === "1", final: root.getAttribute("data-final") === "1", html: src });
     };
+    w.addEventListener("rx-ready", read);
     if (doc.documentElement.getAttribute("data-ready")) read();
-    else w.addEventListener("rx-ready", read, { once: true });
   };
 
   const scale = width > 0 ? width / pw : 0;
@@ -77,7 +98,7 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
         <iframe
           ref={frame}
           title={title}
-          srcDoc={shown}
+          srcDoc={tagged}
           onLoad={onLoad}
           tabIndex={-1}
           sandbox="allow-same-origin allow-scripts"

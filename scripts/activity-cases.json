@@ -62,5 +62,9 @@
   { "entity": "price_changes", "action": "UPDATE", "details": { "title": "+25%", "__changed": { "status": ["applied", "undone"] } }, "kind": "price_change" },
   { "entity": "invoice_forgiveness", "action": "INSERT", "details": { "kind": "forgive", "amount": 20 }, "kind": "debt_forgive" },
   { "entity": "invoice_forgiveness", "action": "INSERT", "details": { "kind": "consumed", "amount": -10 }, "kind": "sale_edit" },
-  { "entity": "invoice_forgiveness", "action": "UPDATE", "details": { "kind": "forgive", "amount": 20, "__changed": { "voided_at": [null, "2026-10-16"] } }, "kind": "debt_forgive_void" }
+  { "entity": "invoice_forgiveness", "action": "UPDATE", "details": { "kind": "forgive", "amount": 20, "__changed": { "voided_at": [null, "2026-10-16"] } }, "kind": "debt_forgive_void" },
+  { "entity": "pet_prescriptions", "action": "INSERT", "details": { "pet_id": "p1", "pet_name": "بوبي", "doctor_name": "د. علي" }, "kind": "medical" },
+  { "entity": "pet_prescriptions", "action": "UPDATE", "details": { "pet_id": "p1", "pet_name": "بوبي", "__changed": { "voided_at": [null, "2026-11-05T10:00:00+00:00"] } }, "kind": "medical" },
+  { "entity": "pet_prescriptions", "action": "DELETE", "details": { "pet_id": "p1", "pet_name": "بوبي", "body": "Amoxicillin" }, "kind": "medical" },
+  { "entity": "clinic_rx_pad", "action": "UPDATE", "details": { "__changed": { "config": [{}, { "mode": "image" }] } }, "kind": "settings" }
 ]

@@ -3,8 +3,11 @@
  * المائية، لونُ الحبر) — أو صورةُ راجيتة العيادة خلفيةً تُسحب الخاناتُ على خطوطها، مع معايرة الطابعة للطباعة فوق
  * الراجيتة المطبوعة. والورقةُ بجانبه بمريضٍ تجريبيّ، كما ستُطبع.
  *
- *  • الحفظُ بشرط «كما فُتح» (rx_stale ⇒ يُقال ويُعاد آخرُ تصميم)، والخروجُ بتعديلٍ لم يُحفظ يُسأل داخل النافذة.
- *  • الصورُ تُرفع فوراً للدلو (مجلّدُ العيادة كما يؤكّده الخادم) والتصميمُ يحمل مسارَها؛ «رجّع الافتراضي» لا يمسّها.
+ *  • الحفظُ بشرط «كما فُتح» (rx_stale ⇒ يُقال ويُعاد آخرُ تصميم — بختمه، فالحفظُ التالي يمرّ)، والخروجُ بتعديلٍ لم يُحفظ يُسأل
+ *    داخل النافذة، والنسخةُ الجديدة لا تنزل فوقه (holdUpdates: السحبُ والمنزلقاتُ والرفعُ ليست كتابةً يراها editing()).
+ *  • فشلُ القراءة يُقال بـ«أعد المحاولة» لا يُبذر الافتراضيُّ كأنه تصميمُ العيادة (حفظُه كان يُرفض ويُضيّع ما بُني).
+ *  • الصورُ تُرفع فوراً للدلو (مجلّدُ العيادة كما يؤكّده الخادم) والتصميمُ يحمل مسارَها؛ «رجّع الافتراضي» لا يمسّها،
+ *    والحفظُ موقوفٌ حتى ينتهي الرفع (وإلا حُفظ التصميمُ بلاها وقيل «انحفظ»). وصورةُ الراجيتة تُسطَّح على أبيض (JPEG بلا شفافية).
  *  • شعارُ الدائرة خانةٌ ثابتة بالجهة الثانية من الترويسة — ترفعه العيادةُ مرّةً (لا نحمل صورةَ شعارٍ رسميّ).
  *  • جدولٌ غائب (واجهةٌ قبل هجرتها): المعاينةُ تعمل والحفظُ موقوفٌ بجملةٍ تقوله.
  * رفيقٌ لنطاق rx: يُحمَّل كسولاً من مالكه (RxPad) وحدَه.
@@ -21,6 +24,7 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { prepareLogo, prepareUpload } from "@/lib/image";
 import { describeUploadError } from "@/lib/errors";
 import { cn, localISO } from "@/lib/utils";
+import { holdUpdates } from "@/lib/inflight";
 import { getClinicLogo, getClinicName, getClinicSocials, getClockFormat, getWorkHours } from "@/lib/settings";
 import { supabase } from "@/lib/supabase";
 import { rxApi, isRxStale } from "@/lib/rxApi";
@@ -52,13 +56,14 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [tab, setTab] = useState<"edit" | "paper">("edit");
   const { labels, ready } = useRxLabels(draft?.lang ?? "en");
 
-  /* أوّلُ فتح (وبعد «تغيّر من جهاز ثاني»): المحفوظُ، أو الافتراضيُّ ورقمُ هاتف الحساب بذرةً — الطبيبُ يعدّله. */
+  /* أوّلُ فتح (وبعد «تغيّر من جهاز ثاني»): المحفوظُ، أو الافتراضيُّ ورقمُ هاتف الحساب بذرةً — **تعديلاً لم يُحفظ** (الأساسُ بلا
+     البذرة): المعاينةُ تعرضه والطباعةُ تقرأ المحفوظ، فرقمٌ يظهر هنا ولا يُطبع كان يبقى بلا «احفظ» يقدر عليه. وفشلُ القراءة لا يبذر. */
   useEffect(() => {
-    if (pad.status === "loading" || draft) return;
+    if (pad.status === "loading" || pad.status === "error" || draft) return;
     const c = pad.cfg;
     const seeded = !pad.row && c.phones.length === 0 && user?.phone ? { ...c, phones: [user.phone.trim()].filter(Boolean).slice(0, RX_LIMITS.phones) } : c;
     setDraft(seeded);
-    setBase(seeded);
+    setBase(c);
     setExpect(pad.row?.updated_at ?? null);
   }, [pad.status, pad.cfg, pad.row, draft, user?.phone]);
 
@@ -71,9 +76,11 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   const html = useMemo(() => (draft ? buildRxHTML(rxDoc(draft, labels, sample, t("rx.sample.body"), doctorName, title)) : ""), [draft, labels, sample, t, doctorName, title]);
   const dirty = !!draft && !!base && !sameRxPad(cleanRxPad(draft, { allowData: !supabase }), cleanRxPad(base, { allowData: !supabase }));
   const missing = pad.status === "missing";
+  /* تصميمٌ لم يُحفظ أو صورةٌ بالطريق: النسخةُ الجديدة تنتظر (خمولٌ طويل كان يعيد التحميل فيضيع ما سُحب ورُفع). */
+  useEffect(() => (dirty || uploading ? holdUpdates(Infinity) : undefined), [dirty, uploading]);
 
   const save = async () => {
-    if (!draft || missing) return;
+    if (!draft || missing || uploading) return;
     setSaving(true);
     try {
       const row = await rxApi.savePad(draft, expect);
@@ -102,7 +109,7 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
     if (!file) return;
     setUploading(kind);
     try {
-      const prepared = kind === "emblem" ? await prepareLogo(file, { maxDim: 520 }) : await prepareUpload(file, { maxDim: 2000, quality: 0.82 });
+      const prepared = kind === "emblem" ? await prepareLogo(file, { maxDim: 520 }) : await prepareUpload(file, { maxDim: 2000, quality: 0.82, background: "#ffffff" });
       const path = await rxApi.uploadImage(kind, prepared);
       setDraft((d) => (d ? (kind === "bg" ? { ...d, bgPath: path } : { ...d, emblemPath: path }) : d));
       playSuccess();
@@ -116,7 +123,8 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
 
   const printCalibration = () => {
     if (!draft || !ready) return;
-    if (!openRxPrint(buildRxHTML(rxDoc(draft, labels, sample, t("rx.sample.body"), doctorName, title), { print: true, calibrate: true }))) {
+    /* نافذةُ الطباعة لا تطبع فائضاً (مربّعُ وصفةٍ أصغرُ من نصّ المثال) — فتقول لماذا بدل أن تقف صامتة. */
+    if (!openRxPrint(buildRxHTML({ ...rxDoc(draft, labels, sample, t("rx.sample.body"), doctorName, title), overflowNote: t("rx.overflowPrint") }, { print: true, calibrate: true }))) {
       playWarning();
       toast.error(t("retail.popupBlocked"), t("retail.popupBlockedHint"));
     }
@@ -131,7 +139,14 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   return (
     <>
       <Modal open onClose={onClose} size="full" title={t("rx.dTitle")} confirmClose={confirmClose}>
-        {!draft ? (
+        {!draft && pad.status === "error" ? (
+          <div className="grid h-60 place-items-center" data-rxd-loadfail>
+            <div className="flex items-center gap-2 text-sm text-danger-700 dark:text-danger-300">
+              <AlertTriangle size={16} /> <span>{t("rx.loadFail")}</span>
+              <button className="font-semibold underline" onClick={pad.reload}>{t("common.retry")}</button>
+            </div>
+          </div>
+        ) : !draft ? (
           <div className="grid h-60 place-items-center"><Spinner /></div>
         ) : (
           <div className="isolate" data-rx-designer={draft.mode}>
@@ -180,14 +195,8 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
               <Button variant="ghost" size="sm" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setResetAsk(true); }} data-rxd-reset>{t("rx.reset")}</Button>
               <div className="min-w-0 flex-1 text-xs">
                 {missing && <span className="flex items-center gap-1.5 text-warn-700 dark:text-warn-300" data-rx-missing><AlertTriangle size={14} /> {t("rx.needsUpdate")}</span>}
-                {pad.status === "error" && (
-                  <span className="flex items-center gap-2 text-danger-700 dark:text-danger-300">
-                    {t("rx.loadFail")}
-                    <button className="font-semibold underline" onClick={() => { setDraft(null); pad.reload(); }}>{t("common.retry")}</button>
-                  </span>
-                )}
               </div>
-              <Button onClick={() => void save()} loading={saving} disabled={missing || pad.status === "error" || !dirty} data-rxd-save>{t("rx.save")}</Button>
+              <Button onClick={() => void save()} loading={saving} disabled={missing || pad.status !== "ready" || !dirty || uploading !== null} data-rxd-save>{t("rx.save")}</Button>
             </div>
           </div>
         )}
@@ -236,11 +245,13 @@ function Toggle({ label, checked, onChange, ...rest }: { label: string; checked:
     </label>
   );
 }
-function Range({ label, value, min, max, step = 1, suffix = "", onChange, ...rest }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; onChange: (v: number) => void; "data-r"?: string }) {
+/** `dir`: منزلقٌ معناه اتّجاهٌ على الورق (المعايرة يمين/يسار) **فيزيائيٌّ** — بواجهةٍ عربية كان طرفُه الأيمن سالباً فيزحزح الطباعةَ
+ *  عكسَ ما يقوله عنوانُه، وكلُّ تجربةٍ ورقةُ راجيتةٍ مطبوعة. */
+function Range({ label, value, min, max, step = 1, suffix = "", dir, onChange, ...rest }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; dir?: "ltr"; onChange: (v: number) => void; "data-r"?: string }) {
   return (
     <label className="block py-1">
       <span className="flex items-center justify-between text-xs text-ink-muted"><span>{label}</span><span className="font-mono tabular-nums text-ink" dir="ltr">{value}{suffix}</span></span>
-      <input type="range" className="mt-1 w-full accent-brand-600" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} {...rest} />
+      <input type="range" className="mt-1 w-full accent-brand-600" dir={dir} min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} {...rest} />
     </label>
   );
 }
@@ -441,7 +452,7 @@ function ImageControls({ draft, set, uploading, onUpload, sel, onCalibrate }: {
           <div className="mt-3 rounded-xl bg-surface-2 p-2.5">
             <p className="text-sm font-semibold text-ink">{t("rx.calib")}</p>
             <p className="mt-0.5 text-2xs text-ink-subtle">{t("rx.calibHint")}</p>
-            <Range label={t("rx.nudgeX")} value={draft.nudge.x} min={-15} max={15} step={0.5} suffix=" mm" onChange={(v) => set({ nudge: { ...draft.nudge, x: v } })} data-r="nudge-x" />
+            <Range label={t("rx.nudgeX")} value={draft.nudge.x} min={-15} max={15} step={0.5} suffix=" mm" dir="ltr" onChange={(v) => set({ nudge: { ...draft.nudge, x: v } })} data-r="nudge-x" />
             <Range label={t("rx.nudgeY")} value={draft.nudge.y} min={-15} max={15} step={0.5} suffix=" mm" onChange={(v) => set({ nudge: { ...draft.nudge, y: v } })} data-r="nudge-y" />
             <Button size="sm" variant="outline" leftIcon={<Printer size={15} />} onClick={onCalibrate} data-rxd-calib>{t("rx.calibPrint")}</Button>
           </div>
@@ -522,9 +533,12 @@ function Handles({ draft, setDraft, sel, setSel }: {
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    /* preventDefault يمنع التركيزَ مع الضغطة: الأسهمُ كانت تحرّك آخرَ ما رُكّز عليه (حجمُ الخطّ) لا الخانةَ المختارة. */
+    (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-handle]")?.focus({ preventScroll: true });
     setSel(key);
     drag.current = { key, mode, sx: e.clientX, sy: e.clientY, start: draft };
   };
+  /* السحبُ يكتب **الخانةَ المسحوبة وحدها** فوق المسودّة الحالية — لقطةُ بداية السحب كاملةً كانت ترجّع ما تغيّر أثناءه (صورةٌ رُفعت). */
   const move = (e: RPointerEvent) => {
     const d = drag.current;
     const el = layer.current;
@@ -532,7 +546,14 @@ function Handles({ draft, setDraft, sel, setSel }: {
     const r = el.getBoundingClientRect();
     const dx = ((e.clientX - d.sx) / r.width) * 100;
     const dy = ((e.clientY - d.sy) / r.height) * 100;
-    setDraft(() => apply(d.start, d.key, d.mode, dx, dy));
+    const nx = apply(d.start, d.key, d.mode, dx, dy);
+    setDraft((cur) => {
+      if (!cur) return cur;
+      if (d.key === "body") return { ...cur, body: nx.body };
+      if (d.key.startsWith("tick:")) { const k = d.key.slice(5) as RxTickKey; return { ...cur, ticks: { ...cur.ticks, [k]: nx.ticks[k] } }; }
+      const k = d.key.slice(5) as RxSlotKey;
+      return { ...cur, slots: { ...cur.slots, [k]: nx.slots[k] } };
+    });
   };
   const up = () => { drag.current = null; };
   const key = (e: RKeyboardEvent, k: HandleKey) => {

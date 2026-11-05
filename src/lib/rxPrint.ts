@@ -12,6 +12,12 @@
  * والوصفةُ لا تُقصّ بصمت (قائمةٌ ناقصة أخطرُ من خطأ ظاهر): سكربتُ الترتيب يصغّر الخطَّ حتى حدّه، ثم يكمل بصفحةٍ
  * ثانية بنفس الترويسة، ويقسم السطرَ الطويل عند كلمة. وما لا ينقسم (كلمةٌ أطولُ من الصفحة) يُعلَّم `data-overflow`
  * فتقوله الشاشةُ قبل الطباعة. السكربتُ نفسُه بالمعاينة والطباعة؛ والطباعةُ الآليةُ بنافذة الطباعة وحدها.
+ *
+ * والترتيبُ **يُعاد** لا يُختم مرّةً: ترتيبٌ مؤقّت حين يتأخّر شيء (الخطوطُ من Google لا تحجب المستند — تُجلب بلا حجب
+ * وتُفعَّل حين تصل)، ثم النهائيُّ بعد تحميل الصور والخطوط (`data-final`)، ويُعاد كلّما وصل خطّ. ورقمُ الصفحة محجوزٌ
+ * سطرُه قبل القياس (رقمٌ يُكتب بعد الترتيب كان يكبّر التذييل فيقصّ آخرَ سطرٍ من كلّ صفحة)، والفائضُ يُفحص على كلّ
+ * صفحة بعد الترقيم. ونافذةُ الطباعة **حَكَم**: لا تطبع إلا ترتيباً نهائياً، ولا تطبع أبداً ما فيه فائض — تقوله بشريطٍ
+ * وتبلّغ النافذةَ التي فتحتها (`postMessage({rx: "overflow"|"print"})`)، فالطباعةُ من السجلّ بلا معاينة محروسةٌ أيضاً.
  * ========================================================================= */
 import { RX_PAPER, type RxFields, type RxLabels, type RxPadConfig } from "./rxLayout";
 
@@ -37,6 +43,8 @@ export interface RxDocInput {
   labels: RxLabels;
   /** عنوانُ نافذة الطباعة. */
   docTitle: string;
+  /** ما تقوله نافذةُ الطباعة (بلغة الواجهة) حين ترفض الطباعةَ لفائض — لا يظهر بالمعاينة ولا يُطبع. */
+  overflowNote?: string;
 }
 
 const INK = "#19213a";
@@ -58,10 +66,10 @@ export function rxSafeUrl(u: string | null | undefined): string | null {
   return null;
 }
 
-const FONT_FAMILY: Record<RxPadConfig["font"], { css: string; stack: string }> = {
-  ruqaa: { css: "Aref+Ruqaa:wght@700", stack: `"Aref Ruqaa", "Amiri", serif` },
-  naskh: { css: "Amiri:wght@700", stack: `"Amiri", serif` },
-  kufi: { css: "Reem+Kufi:wght@600", stack: `"Reem Kufi", "Cairo", sans-serif` },
+const FONT_FAMILY: Record<RxPadConfig["font"], { css: string; stack: string; family: string; face: string }> = {
+  ruqaa: { css: "Aref+Ruqaa:wght@700", stack: `"Aref Ruqaa", "Amiri", serif`, family: `"Aref Ruqaa"`, face: "700" },
+  naskh: { css: "Amiri:wght@700", stack: `"Amiri", serif`, family: `"Amiri"`, face: "700" },
+  kufi: { css: "Reem+Kufi:wght@600", stack: `"Reem Kufi", "Cairo", sans-serif`, family: `"Reem Kufi"`, face: "600" },
 };
 
 /* أيقوناتٌ صغيرةٌ بخطّ الحبر — تُرسم بلون الطباعة، ولا خطوطَ أيقوناتٍ تُنزَّل. */
@@ -82,34 +90,56 @@ function bodyLines(body: string): string {
 }
 
 /* ── سكربتُ الترتيب (بالمعاينة والطباعة) ─────────────────────────────────────
- * بعد تحميل الخطوط: يصغّر خطَّ الوصفة حتى حدّه الأدنى، ثمّ ينقل الأسطرَ الفائضة لصفحةٍ مستنسخة (الترويسةُ وخاناتُ
- * المريض والعلامةُ المائية معها)، ويقسم السطرَ الأطولَ من الصفحة عند كلمة. يختم <html> بـdata-pages/data-ready،
- * وdata-overflow لما لم ينقسم، ويطلق «rx-ready». */
-const LAYOUT_JS = `(function(){var done=false;
+ * يصغّر خطَّ الوصفة حتى حدّه الأدنى، ثمّ ينقل الأسطرَ الفائضة لصفحةٍ مستنسخة (الترويسةُ وخاناتُ المريض والعلامةُ
+ * المائية معها)، ويقسم السطرَ الأطولَ من الصفحة عند كلمة. ويُعاد من أوّله كلَّ مرّة (`__rxLayout`): يشيل المستنسخات
+ * ويرجّع الأسطرَ كما كُتبت. يختم <html> بـdata-pages وdata-overflow (أيُّ صفحةٍ فاضت) وdata-final (بعد الصور والخطوط
+ * أو بعد مهلتها) وdata-ready، ويطلق «rx-ready» بعد كلّ ترتيب. */
+const LAYOUT_JS = `(function(){var root=document.documentElement,pristine=null,loaded=false,css=false,settling=false;
 function L(p){return p.querySelector('.rx-lines');}
 function over(b){return b.scrollHeight>b.clientHeight+1;}
 function split(el,b){var t=el.textContent||'';var parts=t.split(/(\\s+)/);if(parts.length<2)return null;var lo=1,hi=parts.length-1,best=0;
 while(lo<=hi){var mid=(lo+hi)>>1;el.textContent=parts.slice(0,mid).join('');if(over(b))hi=mid-1;else{best=mid;lo=mid+1;}}
 if(best===0){el.textContent=t;return null;}el.textContent=parts.slice(0,best).join('');var rest=el.cloneNode(false);rest.textContent=parts.slice(best).join('').replace(/^\\s+/,'');return rest.textContent?rest:null;}
 function fire(){try{window.dispatchEvent(new Event('rx-ready'));}catch(e){}}
-function run(){if(done)return;done=true;var root=document.documentElement;var first=document.querySelector('.page');var b=first&&L(first);
-if(!b){root.setAttribute('data-pages','1');root.setAttribute('data-ready','1');fire();return;}
+function number(ps){for(var i=0;i<ps.length;i++){var ns=ps[i].querySelectorAll('.pno');for(var j=0;j<ns.length;j++)ns[j].textContent=ps.length>1?(i+1)+' / '+ps.length:'\\u200b';}}
+function run(final){var first=document.querySelector('.page');if(!first)return;
+var all=document.querySelectorAll('.page');for(var i=all.length-1;i>0;i--)all[i].parentNode.removeChild(all[i]);
+number([first]);root.removeAttribute('data-overflow');var b=L(first),overflow=false;
+if(b){if(pristine===null)pristine=b.innerHTML;else b.innerHTML=pristine;
 var max=parseFloat(b.getAttribute('data-max'))||12,min=parseFloat(b.getAttribute('data-min'))||9,fs=max;b.style.fontSize=fs+'pt';
 while(over(b)&&fs>min){fs=Math.max(min,fs-0.5);b.style.fontSize=fs+'pt';}
-var page=first,guard=0,overflow=false;
+var page=first,guard=0,stuck=false;
 while(over(b)&&guard++<30){var clone=page.cloneNode(true);var nb=L(clone);nb.innerHTML='';page.parentNode.insertBefore(clone,page.nextSibling);
 while(over(b)&&b.children.length>1)nb.insertBefore(b.lastElementChild,nb.firstChild);
-if(over(b)){var rest=split(b.lastElementChild,b);if(rest)nb.insertBefore(rest,nb.firstChild);else{overflow=true;}}
+if(over(b)){var rest=split(b.lastElementChild,b);if(rest)nb.insertBefore(rest,nb.firstChild);else stuck=true;}
 if(!nb.children.length){clone.parentNode.removeChild(clone);break;}
-if(overflow)break;page=clone;b=nb;}
-if(over(b))overflow=true;
-var pages=document.querySelectorAll('.page');if(pages.length>1)for(var i=0;i<pages.length;i++){var pn=pages[i].querySelector('.pno');if(pn)pn.textContent=(i+1)+' / '+pages.length;}
-root.setAttribute('data-pages',String(pages.length));if(overflow)root.setAttribute('data-overflow','1');root.setAttribute('data-ready','1');fire();}
-function go(){if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run,run);else run();}
-if(document.readyState==='complete')go();else window.addEventListener('load',go);setTimeout(run,4000);})();`;
+if(stuck)break;page=clone;b=nb;}}
+var ps=document.querySelectorAll('.page');number(ps);
+for(i=0;i<ps.length;i++){var pb=L(ps[i]);if(pb&&over(pb))overflow=true;}
+root.setAttribute('data-pages',String(ps.length));if(overflow)root.setAttribute('data-overflow','1');
+root.setAttribute('data-final',final?'1':'0');root.setAttribute('data-ready','1');fire();}
+window.__rxLayout=run;
+function faces(){try{return JSON.parse(root.getAttribute('data-faces')||'[]');}catch(e){return [];}}
+function settle(){if(!loaded||!css||settling)return;var f=document.fonts;if(!f||!f.load){run(true);return;}settling=true;
+var done=function(){settling=false;run(true);};
+Promise.all(faces().map(function(x){return f.load(x).catch(function(){});})).then(function(){return f.ready;}).then(done,done);}
+var lk=document.getElementById('rxf');
+function onCss(){if(css)return;css=true;if(lk)lk.media='all';settle();}
+if(!lk||lk.sheet||lk.getAttribute('data-s'))onCss();else{lk.addEventListener('load',onCss);lk.addEventListener('error',onCss);}
+function onLoad(){if(loaded)return;loaded=true;if(!css)run(false);settle();}
+if(document.readyState==='complete')onLoad();else window.addEventListener('load',onLoad);
+if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){if(loaded&&css&&!settling)run(true);});
+setTimeout(function(){if(!root.getAttribute('data-ready'))run(false);},4000);
+setTimeout(function(){if(root.getAttribute('data-final')!=='1'){loaded=true;css=true;settling=false;run(true);}},9000);})();`;
 
-const PRINT_JS = `(function(){var p=false;function go(){if(p)return;p=true;setTimeout(function(){window.focus();window.print();},150);}
-if(document.documentElement.getAttribute('data-ready'))go();else window.addEventListener('rx-ready',go);setTimeout(go,7000);
+/* نافذةُ الطباعة: تطبع مرّةً بعد أوّل ترتيبٍ نهائيّ — وما فيه فائضٌ لا يُطبع أبداً: الشريطُ يقوله، والنافذةُ التي فتحتها تُبلَّغ. */
+const PRINT_JS = `(function(){var done=false,root=document.documentElement;
+function tell(t){try{if(window.opener)window.opener.postMessage({rx:t},'*');}catch(e){}}
+function go(force){if(done)return;if(!force&&root.getAttribute('data-final')!=='1')return;done=true;
+if(root.getAttribute('data-overflow')){var w=document.getElementById('rxwarn');if(w)w.hidden=false;tell('overflow');return;}
+tell('print');setTimeout(function(){window.focus();window.print();},150);}
+window.addEventListener('rx-ready',function(){go(false);});if(root.getAttribute('data-final')==='1')go(false);
+setTimeout(function(){if(!done&&window.__rxLayout)window.__rxLayout(true);go(true);},12000);
 window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},250);});})();`;
 
 /**
@@ -139,14 +169,20 @@ html,body{margin:0;padding:0}
 html{background:#dfe2e6}
 body{font-family:"Cairo","IBM Plex Sans Arabic",system-ui,sans-serif;color:${INK}}
 .page{position:relative;width:${paper.w}mm;height:${paper.h}mm;overflow:hidden;background:#fff;margin:0 auto 6mm;box-shadow:0 2px 14px rgba(20,24,33,.16);break-after:page;page-break-after:always}
-.page:last-child{break-after:auto;page-break-after:auto;margin-bottom:0}
+.page:last-of-type{break-after:auto;page-break-after:auto;margin-bottom:0}
+.rxwarn{margin:0 auto 4mm;max-width:${paper.w}mm;padding:3mm 4mm;border-radius:2mm;background:#fff4e5;color:#7a3e00;border:1px solid #f0b46a;font:600 11pt/1.5 "Cairo",system-ui,sans-serif;text-align:start}
+.rxwarn[hidden]{display:none}
+@media print{.rxwarn{display:none!important}}
 html[data-preview] {background:#fff}
 html[data-preview] .page{margin:0;box-shadow:none}
 html[data-preview] .page+.page{border-top:1px dashed #b9bec7}
 @media print{html,body{background:#fff}.page{margin:0;box-shadow:none;border:0!important}}
 .ic{width:1em;height:1em;flex:none;fill:none;stroke:${accent};stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.14em}
 .ln{min-height:1.55em;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext}
-.pno{font-size:${pt(7)};color:${accent};opacity:.8;font-variant-numeric:tabular-nums}
+/* رقمُ الصفحة: سطرُه محجوزٌ قبل القياس (min-height + line-height ثابت) — كتابتُه بعد الترتيب لا تكبّر شيئاً. */
+.pno{font-size:${pt(7)};line-height:1.3;min-height:1.3em;color:${accent};opacity:.8;font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+.ft .pno{display:inline-block}
+.pi{position:absolute;display:block;margin-top:.8mm;text-align:${dir === "rtl" ? "left" : "right"}}
 /* ── القالب ── */
 .tp{display:flex;flex-direction:column;height:100%;padding:${n(7 * k, 4, 14, 7)}mm ${n(8 * k, 4, 16, 8)}mm ${n(6 * k, 3, 12, 6)}mm}
 .wm{position:absolute;left:50%;top:${n(cfg.wm.y, 15, 85, 58)}%;width:${n(cfg.wm.size, 15, 95, 55)}%;transform:translate(-50%,-50%);opacity:${n(cfg.wm.opacity / 100, 0.02, 0.3, 0.08)};${cfg.wm.gray ? "filter:grayscale(1);" : ""}pointer-events:none;z-index:0}
@@ -191,7 +227,7 @@ html[data-preview] .page+.page{border-top:1px dashed #b9bec7}
 .sgl{font-size:${pt(7)};color:${accent};font-weight:600;text-align:start}
 .sgline{margin-top:${n(7 * k, 4, 12, 7)}mm;border-top:.8px solid ${accent}}
 .sgn{font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;font-size:${pt(10)};margin-top:.8mm;unicode-bidi:plaintext}
-.ft{display:flex;align-items:center;justify-content:space-between;gap:3mm;margin-top:${n(2.5 * k, 1, 5, 2.5)}mm;padding-top:1.4mm;border-top:.6px solid ${accent};font-size:${pt(7)};color:${accent};min-height:${n(4 * k, 2, 8, 4)}mm}
+.ft{display:flex;align-items:center;justify-content:space-between;gap:3mm;margin-top:${n(2.5 * k, 1, 5, 2.5)}mm;padding-top:1.4mm;border-top:.6px solid ${accent};font-size:${pt(7)};line-height:1.3;color:${accent};min-height:${n(4 * k, 2, 8, 4)}mm}
 .ft .so{display:inline-flex;gap:${n(3.5 * k, 2, 7, 3.5)}mm;flex-wrap:wrap}
 .ft .so span{display:inline-flex;align-items:center;gap:1mm}
 /* ── صورةُ راجيتة العيادة ── */
@@ -228,7 +264,8 @@ ${image && !printBg ? `@media print{.ov{transform:translate(${n(cfg.nudge.x, -15
     const right = cfg.logoSide === "left" ? emb : brand;
     const contact = [
       cfg.address ? `<span>${icon("pin")}${esc(cfg.address)}</span>` : "",
-      clinic.hours ? `<span>${icon("clock")}<b>${esc(labels.hours)}:</b> <bdi dir="ltr">${esc(clinic.hours)}</bdi></span>` : "",
+      // الدوامُ باتّجاه نصّه (bdi بلا dir = auto): «10:00 ص – 2:00 م» بعزلٍ يساريّ كان ينقلب («ص – 2:00 م … 10:00»). الأرقامُ وحدها يسار.
+      clinic.hours ? `<span>${icon("clock")}<b>${esc(labels.hours)}:</b> <bdi>${esc(clinic.hours)}</bdi></span>` : "",
       cfg.phones.length ? `<span>${icon("phone")}<b>${esc(labels.tel)}:</b> <bdi dir="ltr">${cfg.phones.map(esc).join("  /  ")}</bdi></span>` : "",
     ].filter(Boolean).join("");
     const ticks = (["canine", "feline", "exotic"] as const).map((kk) => `<span class="tk"><i class="bx">${f.kind === kk ? CHECK : ""}</i>${esc(labels[kk])}</span>`).join("");
@@ -252,7 +289,7 @@ ${image && !printBg ? `@media print{.ov{transform:translate(${n(cfg.nudge.x, -15
   </div>
   <div class="rxa"><div class="rxm">R<i>x</i></div>${linesBox}</div>
   ${sign}
-  <footer class="ft"><span class="so">${socials}</span><span class="pno"></span></footer>
+  <footer class="ft"><span class="so">${socials}</span><span class="pno">&#8203;</span></footer>
 </div>`;
   } else {
     const slot = (key: "date" | "name" | "age" | "owner" | "weight" | "doctor", text: string) => {
@@ -269,28 +306,44 @@ ${image && !printBg ? `@media print{.ov{transform:translate(${n(cfg.nudge.x, -15
   ${slot("date", d.dateText)}${slot("name", f.name)}${slot("age", f.age)}${slot("owner", f.owner)}${slot("weight", f.weight)}${slot("doctor", d.doctor)}
   ${tick}
   <div class="box" style="left:${n(b.x, 0, 100, 8)}%;top:${n(b.y, 0, 100, 38)}%;width:${n(b.w, 1, 100, 84)}%;height:${n(b.h, 1, 100, 48)}%">${linesBox}</div>
+  <div class="pno pi" style="left:${n(b.x, 0, 100, 8)}%;top:${n(Math.min(b.y + b.h, 96), 0, 96, 86)}%;width:${n(b.w, 1, 100, 84)}%">&#8203;</div>
 </div>`;
   }
 
   const scripts = `<script>${LAYOUT_JS}<\/script>${opts.print ? `<script>${PRINT_JS}<\/script>` : ""}`;
-  return `<!doctype html><html lang="${cfg.lang}" dir="${dir}"${opts.print ? "" : " data-preview"}><head><meta charset="utf-8">
+  /* الخطوطُ التي يطلبها الترتيبُ النهائيّ بالاسم (document.fonts.load) — لا ينتظر ما لا يُرسم. */
+  const faces = image
+    ? [`400 12px Cairo`, `600 12px Cairo`]
+    : [`${font.face} 16px ${font.family}`, `400 12px Cairo`, `600 12px Cairo`, `700 12px Cairo`, `600 12px "Cormorant Garamond"`, `italic 700 12px "Cormorant Garamond"`];
+  const warn = opts.print && d.overflowNote ? `<div id="rxwarn" class="rxwarn" role="alert" hidden>${esc(d.overflowNote)}</div>` : "";
+  /* ورقةُ الخطوط بلا حجب (media=print ثمّ all حين تصل — كـindex.html): ورقةٌ حاجبة كانت توقف السكربتين حتى يجيب Google.
+     وتختم نفسَها حين تصل أو تفشل (data-s، بمستمعٍ على الوسم نفسِه): فشلٌ سريع (بلا إنترنت) قبل أن يصل السكربتُ لا يُرى بـ`sheet`
+     فكان النهائيُّ ينتظر مهلتَه (٩ ثوانٍ) — والحفظُ ينتظر معه. */
+  return `<!doctype html><html lang="${cfg.lang}" dir="${dir}"${opts.print ? "" : " data-preview"} data-faces="${esc(JSON.stringify(faces))}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(d.docTitle)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="${fontsHref}" rel="stylesheet">
+<link id="rxf" href="${fontsHref}" rel="stylesheet" media="print" onload="this.setAttribute('data-s','1')" onerror="this.setAttribute('data-s','1')">
 <style>${css}</style></head>
-<body><div class="page${calibrate ? " cal" : ""}">${pageInner}</div>${scripts}</body></html>`;
+<body>${warn}<div class="page${calibrate ? " cal" : ""}">${pageInner}</div>${scripts}</body></html>`;
 }
 
 /**
- * نافذةُ الطباعة — **تُنادى داخل الضغطة قبل أيّ await** (سفاري يمنع نافذةً بعد انتهاء الضغطة بصمت، درسُ الواتساب).
- * بلا noopener: المقبضُ لازمٌ للكتابة، وnoopener يرجع null فُتحت أو مُنعت. يرجع false إن مُنعت.
+ * نافذةُ الطباعة — **تُنادى داخل الضغطة قبل أيّ await** (سفاري يمنع نافذةً بعد انتهاء الضغطة بصمت، درسُ الواتساب)،
+ * والمستندُ يُكتب فيها بالضغطة نفسها (آيباد يعلّق التبويبَ الذي فتحها — كتابةٌ بعد انتظارٍ قد لا تحصل).
+ * بلا noopener: المقبضُ لازمٌ للكتابة ولرسائلها (`postMessage` من PRINT_JS)، وnoopener يرجع null فُتحت أو مُنعت.
+ * يرجع النافذة، أو null إن مُنعت.
  */
-export function openRxPrint(html: string): boolean {
+export function openRxPrint(html: string): Window | null {
   const w = window.open("", "_blank", "width=760,height=980");
-  if (!w) return false;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  return true;
+  if (!w) return null;
+  try {
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  } catch {
+    try { w.close(); } catch { /* أُغلقت */ }
+    return null;
+  }
+  return w;
 }
