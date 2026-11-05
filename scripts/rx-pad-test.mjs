@@ -17,7 +17,9 @@
  *      وأحداثٌ بيد الفحص): الإعادةُ لا تكرّر سطراً ولا تُبقي فائضاً ولا حجماً، والخطوطُ تُطلب مع المستند وتُطبَّق بعده، والطباعةُ تنتظر
  *      الخطوطَ وتقيس من جديد فلا سطرَ مخفيّاً، والفائضُ لا يُطبع، والنافذةُ تُغلق بعدها — وطفراتٌ على السكربت نفسِه.
  *   ط) عناوينُ الورقة والتعافي بسلوكهما: «تعذّر» لا تُمسح بإعادة المحاولة، والتنزيلُ البطيء ليس «تعذّر»، والتحديثُ لا يُحمَّل فوق نصٍّ
- *      كُتب أثناء إلغاء الخدمة — وطفراتٌ على كلٍّ.
+ *      كُتب أثناء إلغاء الخدمة، والتراجعُ قبل المسح لا يمسّ شيئاً، والختمُ لتحميلٍ حصل — وطفراتٌ على كلٍّ.
+ *   ي) شاشةُ الراجيتة مرسومةً (react-mini) مع الحفظ والإمساك الحقيقيّين: لا تحميلَ فوق مسودّة، و«راح تتحدّث» حين يصدق، والحفظُ
+ *      الفوريّ بقياسٍ رأى كلَّ شيء، و«انطبعت» حين تقولها النافذة — وطفراتٌ على الشاشة نفسِها.
  *
  *   node scripts/rx-pad-test.mjs
  * ==========================================================================*/
@@ -221,7 +223,9 @@ const doc = (over = {}) => ({
   check("  والنهائيُّ القسريّ لا يُغلق الباب (لا loaded=css=true) — وسلوكُه كلُّه بالقسم ح على مستندٍ مزيَّف",
     !a5.includes("loaded=true;css=true") && a5.includes("function onCss(){if(css)return;css=true;if(!forced)settle();}"));
   check("  والمعاينةُ تبلّغ كلَّ ترتيب لإطارها الأب برسالةٍ برقم مستندها (لا بحدث التحميل الذي تحجبه صورةٌ معلَّقة)، ونافذةُ الطباعة لا ترسلها",
-    a5.includes("if(window.parent!==window){try{window.parent.postMessage({rxLayout:{seq:root.getAttribute('data-rxseq')") && a5.includes("final:root.getAttribute('data-final')==='1'}},'*')"));
+    a5.includes("if(window.parent!==window){try{window.parent.postMessage({rxLayout:{seq:root.getAttribute('data-rxseq')") && a5.includes("final:root.getAttribute('data-final')==='1',whole:root.getAttribute('data-whole')==='1'}},'*')")
+    /* و«رأى كلَّ شيء» يُختم مع النهائيّ وحده (سلوكُه بالقسم ح). */
+    && a5.includes("root.setAttribute('data-whole',final&&whole()?'1':'0');"));
   check("رقمُ الصفحة: سطرُه **وعرضُه** محجوزان قبل القياس (&#8203;، ارتفاعٌ ثابت، ٧ch لا يُلفّ ولا ينكمش) — كتابتُه بعد الترتيب لا تكبّر التذييل (سطراً، أو بلفّ سطر الحسابات)",
     a5.includes('<span class="pno">&#8203;</span>') && /\.pno\{[^}]*line-height:1\.3;min-height:1\.3em/.test(a5) && /\.ft\{[^}]*line-height:1\.3/.test(a5)
     && /\.ft \.pno\{display:inline-block;flex:none;white-space:nowrap;min-width:7ch;/.test(a5));
@@ -386,7 +390,11 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
     /\{labelsFailed && \(\s*<div[^>]*data-rx-labels-fail/.test(sheet) && /onClick=\{askReload\} disabled=\{pendingN > 0\} data-rx-reload/.test(sheet)
     && /const askReload = \(\) => \{ playTap\(\); if \(dirty\) \{ setCopied\(null\); setReloadAsk\(true\); \} else reloadPage\(\); \};/.test(sheet)
     && /const letGo = letGoKey !== null && letGoKey === key && dirty;/.test(sheet)
-    && /if \(letGoKey !== null && \(letGoKey !== key \|\| !dirty\)\) setLetGoKey\(null\);\s*if \(reloading && dirty && !letGo\) setReloading\(false\);/.test(sheet)
+    && /useEffect\(\(\) => \{\s*if \(letGoKey !== null && \(letGoKey !== key \|\| !dirty\)\) setLetGoKey\(null\);\s*\}, \[letGoKey, key, dirty\]\);/.test(sheet)
+    /* و«راح تتحدّث» يُحسب من التعافي المضغوط بالرسمة لا يُمسح بحرف (مراجعةُ 6c80aa5: مُسح والتعافي باقٍ فتحمّلت الصفحةُ بلا كلمة
+       والزرُّ معروض) — سلوكُه بالقسم ي. */
+    && /const reloadShown = reloading && !\(dirty && !letGo\);/.test(sheet) && (sheet.match(/\{reloadShown\n/g) ?? []).length === 2
+    && (sheet.match(/setReloading\(false\)/g) ?? []).length === 1
     && /setLetGoKey\(key\);\s*setReloading\(true\);\s*const my = \+\+reloadSeq\.current;\s*void labelsReload\(\)\.then\(\(ok\) => \{\s*if \(ok \|\| my !== reloadSeq\.current\) return;\s*setLetGoKey\(null\);\s*setReloading\(false\);/.test(sheet)
     && /onClick=\{reloadPage\} disabled=\{pendingN > 0\} data-rx-reload-do/.test(sheet) && /data-rx-reloading/.test(sheet) && !/setLetGo\(true\)/.test(sheet)
     && /navigator\.clipboard\.writeText\(clean\)/.test(sheet));
@@ -394,10 +402,14 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
     /setCopied\("ok"\)/.test(sheet) && /setCopied\("fail"\)/.test(sheet) && /data-rx-copied=\{copied\}/.test(sheet) && !/toast\.(success|error)\(t\("rx\.(copied|copyFail)"\)\)/.test(sheet)
     && /\{labelsSlow && \(\s*<div[^>]*data-rx-labels-slow/.test(sheet) && /data-rxd-labels-slow/.test(designer));
   check("  ونافذةُ الطباعة حَكَم: قياسُ المعاينة لهذا المستند نهائيٌّ بلا فائض ⇒ حفظٌ فوراً، وإلا حين تقول «طبعتُ» (ولا يُحفظ ما رفضته) والنسخةُ الجديدة ممسوكة",
-    /const measured = layout\.html === html;/.test(sheet) && /if \(saver\.isPending\(key\) \|\| \(measured && layout\.final && !layout\.overflow\)\) \{[\s\S]*?void saver\.enqueue\(snap\);[\s\S]*?\} else \{[\s\S]*?watchPrint\(w, saver\.deferTo\(snap, overflowed\)\)/.test(printFn)
+    /const measured = layout\.html === html;/.test(sheet) && /if \(saver\.isPending\(key\) \|\| \(measured && layout\.final && layout\.whole && !layout\.overflow\)\) \{[\s\S]*?void saver\.enqueue\(snap\);[\s\S]*?\} else \{[\s\S]*?watchPrint\(w, saver\.deferTo\(snap, overflowed\)\)/.test(printFn)
     && /disabled=\{!labelsReady \|\| tooLong \|\| knownOverflow\}/.test(sheet) && /const knownOverflow = measured && layout\.overflow;/.test(sheet)
     && /hold: holdUpdates,/.test(sheet) && /const watchPrint = createPrintWatch\(browserWatchEnv\(\)\);/.test(sheet));
   check("  وإعادةُ الطباعة من السجلّ (بلا معاينة) تسمع رفضَ النافذة", /const reprint = [\s\S]*?watchPrint\(w, \{ onOverflow: overflowed \}\)/.test(sheet));
+  /* مراجعةُ 6c80aa5: «انطبعت» عن ورقةٍ لا تُحفظ كانت تُقال بالضغطة ثمّ ترفض النافذةُ أو تنسدّ — سلوكُه بالقسم ي. */
+  check("  و«انطبعت» عن ورقةٍ لا تُحفظ (فارغة، أو محفوظة) حين تقولها النافذة لا بالضغطة",
+    /if \(!clean\.trim\(\)\) \{ watchPrint\(w, \{ onPrint: \(\) => toast\.success\(t\("rx\.printedBlank"\)\), onOverflow: overflowed \}\); return; \}/.test(printFn)
+    && /if \(!canRecord \|\| saver\.isSaved\(key\)\) \{ watchPrint\(w, \{ onPrint: \(\) => toast\.success\(t\("rx\.printedOnly"\)\), onOverflow: overflowed \}\); return; \}/.test(printFn));
   check("الورقةُ من النصّ كما يُحفظ (cleanRxBody)، وأطولُ من السقف لا يُطبع ويُقال", /rxDoc\(cfg, labels, fields, clean, doctor, title\)/.test(sheet) && /const tooLong = body\.length > RX_LIMITS\.body;/.test(sheet) && /data-rx-toolong/.test(sheet));
   check("سطرٌ حُفظ يدخل القائمةَ إن كانت قائمةَ الخادم وحدها — فاشلةٌ أو قيدَ القراءة تُقرأ من جديد (لا «سابقة (1)» كاذبة)",
     /if \(h\.status === "ready"\) setHist\(\{ status: "ready", list: \[rec, \.\.\.h\.list\.filter/.test(sheet) && /else if \(h\.status !== "missing"\) setHistN\(\(x\) => x \+ 1\)/.test(sheet)
@@ -495,7 +507,7 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
   const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
   /* مدخِلٌ مزيَّف: يسجّل المعرّفات، ويُفشَل أو يُعلَّق بالطلب. */
   const mk = () => {
-    const log = { adds: [], holds: 0, released: 0, saved: [], failed: [], gone: [] };
+    const log = { adds: [], holds: 0, released: 0, ms: [], rel: [], saved: [], failed: [], gone: [] };
     const ctl = { fail: false, gate: null };
     const sv = S.createRxSaver({
       add: async (input) => {
@@ -504,7 +516,7 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
         if (ctl.fail) throw Object.assign(new Error("net"), { code: "net" });
         return { id: input.id };
       },
-      hold: () => { log.holds++; let done = false; return () => { if (!done) { done = true; log.released++; } }; },
+      hold: (ms) => { log.holds++; log.ms.push(ms); let done = false; const r = () => { if (!done) { done = true; log.released++; } }; log.rel.push(r); return r; },
       onSaved: (snap) => log.saved.push(snap.key), onFail: (snap) => log.failed.push(snap.key), onChange() {},
       onGone: (snap) => log.gone.push(`${snap.key}@${log.released}`),
     });
@@ -512,6 +524,8 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
   };
   let n = 0;
   const make = () => ({ id: `id-${++n}` });
+  /** إمساكٌ قائمٌ الآن (أُخذ ولم يُفلت). */
+  const held = (log) => log.holds - log.released;
 
   {
     const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
@@ -525,7 +539,7 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     e.post(w2, { rx: "print" });
     await settle();
     check("  والنافذتان تقولان «طبعتُ» ⇒ إدخالٌ واحد وسجلٌّ واحد — لا صفٌّ ثانٍ لا يُحذف", log.adds.join() === "id-1" && log.saved.join() === "K" && sv.isSaved("K") && !sv.isWaiting("K"), JSON.stringify(log));
-    check("  والإمساكُ يُفلت بعد أن يستقرّ الحفظ (مرّةً لكلّ نافذة)", log.released === 2, JSON.stringify(log));
+    check("  والإمساكُ يُفلت بعد أن يستقرّ الحفظ (لكلّ نافذة)", held(log) === 0, JSON.stringify(log));
   }
   {
     const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
@@ -535,7 +549,7 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     await sv.enqueue(sv.snapFor("K", make));
     e.post(w, { rx: "print" });
     await settle();
-    check("ضغطةٌ قبل القياس ثمّ ضغطةٌ بعده (حفظٌ فوريّ): رسالةُ الأولى المتأخّرة لا تكتب سجلّاً ثانياً", log.adds.length === 1 && sv.isSaved("K") && log.released === 1, JSON.stringify(log));
+    check("ضغطةٌ قبل القياس ثمّ ضغطةٌ بعده (حفظٌ فوريّ): رسالةُ الأولى المتأخّرة لا تكتب سجلّاً ثانياً", log.adds.length === 1 && sv.isSaved("K") && held(log) === 0, JSON.stringify(log));
   }
   {
     const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
@@ -588,10 +602,10 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     watch(w, sv.deferTo(sv.snapFor("K", make), () => {}));
     e.post(w, { rx: "print" });
     await settle();
-    check("«طبعتُ» والحفظُ بالطريق: الإمساكُ باقٍ حتى يستقرّ (تحميلٌ بين الرسالة والكتابة كان يُسقطها)", log.adds.length === 1 && log.released === 0);
+    check("«طبعتُ» والحفظُ بالطريق: الإمساكُ باقٍ حتى يستقرّ (تحميلٌ بين الرسالة والكتابة كان يُسقطها)", log.adds.length === 1 && held(log) === 1, JSON.stringify(log));
     open();
     await settle();
-    check("  ويُفلت بعده", log.released === 1 && sv.isSaved("K"));
+    check("  ويُفلت بعده", held(log) === 0 && sv.isSaved("K"));
   }
   {
     const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
@@ -604,7 +618,7 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     e.post(w, { rx: "overflow" });
     e.post(w, { rx: "print" });
     await settle();
-    check("«فائض» ⇒ لا ورقة ولا سجلّ، ويُقال، والإمساكُ يُفلت — ورسالةٌ بعدها من النافذة نفسِها لا تُحسب", over === 1 && log.adds.length === 0 && log.released === 1 && !sv.isWaiting("K") && !sv.isPending("K"), JSON.stringify(log));
+    check("«فائض» ⇒ لا ورقة ولا سجلّ، ويُقال، والإمساكُ يُفلت — ورسالةٌ بعدها من النافذة نفسِها لا تُحسب", over === 1 && log.adds.length === 0 && held(log) === 0 && log.holds === 1 && !sv.isWaiting("K") && !sv.isPending("K"), JSON.stringify(log));
   }
   {
     const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
@@ -613,16 +627,16 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     w.closed = true;
     e.tick();
     e.tick();
-    check("نافذةٌ أُغلقت تُمهَل قبل «ذهبت» (رسالتُها قد تكون خلف حوار الطباعة)", log.released === 0 && sv.isWaiting("K"));
+    check("نافذةٌ أُغلقت تُمهَل قبل «ذهبت» (رسالتُها قد تكون خلف حوار الطباعة)", held(log) === 1 && sv.isWaiting("K"));
     e.post(w, { rx: "print" });
     await settle();
-    check("  ورسالتُها بالمهلة تُحفظ (ولا «ذهبت»)", log.adds.length === 1 && sv.isSaved("K") && log.released === 1 && log.gone.length === 0);
+    check("  ورسالتُها بالمهلة تُحفظ (ولا «ذهبت»)", log.adds.length === 1 && sv.isSaved("K") && held(log) === 0 && log.gone.length === 0);
     const w2 = { closed: false };
     watch(w2, sv.deferTo(sv.snapFor("Q", make), () => {}));
     w2.closed = true;
     e.tick(); e.tick(); e.tick();
     check("  وبلا كلمة بعد المهلة ⇒ لا سجلّ، والإمساكُ يُفلت، والمؤقّتُ يقف — و«ذهبت» تُقال مرّةً بعد الإفلات (كانت صامتة فتضيع المسودّة)",
-      log.adds.length === 1 && !sv.isWaiting("Q") && log.released === 2 && e.timers === 0 && log.gone.join() === "Q@2", `${e.timers} ${log.gone}`);
+      log.adds.length === 1 && !sv.isWaiting("Q") && held(log) === 0 && e.timers === 0 && log.gone.join() === `Q@${log.released}`, `${e.timers} ${log.gone} ${log.released}`);
   }
   /* «ذهبت بلا شي» عن مسودّةٍ لم يحفظها غيرُها وحدها (تدقيقٌ خامس: بعد «انطبعت وانحفظت» قالت «ما انحفظ شي» عن الراجيتة نفسِها) —
      بسلوك الوحدة الحقيقية، وبطفراتٍ عليها تُثبت أنّ الفحصَ ليس فارغاً. */
@@ -719,6 +733,41 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
       try { await goneSuite(await loadSave(edit), (_n, ok) => { if (!ok) caught++; }); } catch { caught = -1; }
       check(`  طفرة «${name}» تُسقط فحصاً`, caught > 0, `caught=${caught}`);
     }
+  }
+  /* مراجعةُ 6c80aa5: «طبعتُ» تُرسَل مع print() وكروميوم يوقف الأمَّ طوالَ الحوار (مقيس: حوارٌ بخمسين ثانية ⇒ «طبعتُ» بالحادية والخمسين)
+     — سقفُ الضغطة ينفد قبلها، والحفظُ كان يكمل بلا إمساك. بسلوك الوحدة الحقيقية وبطفرةٍ تُرجع الحفظَ لإمساك الضغطة وحده. */
+  async function holdSuite(SM, ck) {
+    const log = { holds: 0, released: 0, ms: [], rel: [] };
+    let open;
+    const gate = new Promise((r) => { open = r; });
+    const sv = SM.createRxSaver({
+      add: async (input) => { await gate; return { id: input.id }; },
+      hold: (ms) => { log.holds++; log.ms.push(ms); let done = false; const r = () => { if (!done) { done = true; log.released++; } }; log.rel.push(r); return r; },
+      onSaved() {}, onFail() {}, onChange() {},
+    });
+    const e = env(), watch = SM.createPrintWatch(e);
+    const w = { closed: false };
+    watch(w, sv.deferTo(sv.snapFor("K", make), () => {}));
+    log.rel[0]();
+    e.post(w, { rx: "print" });
+    await settle();
+    const mid = { held: log.holds - log.released, holds: log.holds, ms: log.ms[1] };
+    open();
+    await settle();
+    ck("حوارُ طباعةٍ أطولُ من سقف الضغطة (الأمُّ موقوفةٌ طوالَه فنفد قبل «طبعتُ»): الحفظُ بإمساكٍ جديدٍ بسقفه حتى يستقرّ — لا حفظَ بلا إمساك",
+      mid.held === 1 && mid.holds === 2 && mid.ms === SM.RX_WAIT_HOLD_MS && log.holds - log.released === 0 && sv.isSaved("K"), JSON.stringify(mid));
+  }
+  await holdSuite(await loadSave(), check);
+  {
+    let caught = 0;
+    try {
+      await holdSuite(await loadSave((raw) => {
+        const from = "const saving = s.deps.hold(RX_WAIT_HOLD_MS);\n          release();\n          void s.enqueue(snap).finally(saving);";
+        if (!raw.includes(from)) throw new Error("الطفرة لم تجد نصَّها");
+        return raw.split(from).join("void s.enqueue(snap).finally(release);");
+      }), (_n, ok) => { if (!ok) caught++; });
+    } catch { caught = -1; }
+    check("  طفرة «الحفظُ بإمساك الضغطة وحده (نسخةُ الجولة الخامسة)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
   }
   {
     const t = (k) => `T:${k}`;
@@ -856,7 +905,7 @@ console.log("▸ سجلُّ الحركات: الجملُ والشرائحُ وا
   const swap = (from, to) => (s) => { if (!s.includes(from)) throw new Error(`الطفرة لم تجد نصَّها: ${from.slice(0, 60)}`); return s.split(from).join(to); };
   const MUT = [
     ["الطبيبُ فاعلاً لكلّ صفّ", swap('const doc = r.action === "INSERT" ? d?.["doctor_name"] ?? d?.["doctor"] : null;', 'const doc = d?.["doctor_name"] ?? d?.["doctor"];')],
-    ["والطبيبُ لكلّ صفٍّ بلا فاعل (نسخةُ الجولة الثالثة)", swap('const doc = r.action === "INSERT" ?', 'const doc = !r.actor || r.action === "INSERT" ?')],
+    ["والطبيبُ لكلّ صفٍّ بلا فاعل (نسخةُ الجولة الثانية)", swap('const doc = r.action === "INSERT" ?', 'const doc = !r.actor || r.action === "INSERT" ?')],
     ["ولا طبيبَ حتى للإنشاء", swap('const doc = r.action === "INSERT" ?', 'const doc = false ?')],
     ["سببُ الإلغاء يُقصّ", swap('const FULL_TEXT = new Set(["recipe", "void_reason"]);', 'const FULL_TEXT = new Set(["recipe"]);')],
     ["مفاتيحُ التغيير الخامّ تُقرأ خطأً", swap('return new Set(c && typeof c === "object" && !Array.isArray(c) ? Object.keys(c) : []);', "return new Set<string>();")],
@@ -923,6 +972,8 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       getElementsByTagName(tag) { const T = tag.toUpperCase(), out = []; const walk = (e) => { for (const k of e.children) { if (k.tagName === T) out.push(k); walk(k); } }; walk(this); return out; }
       /* الصورةُ: «مكتملة» حين تصل أو تفشل (المصدرُ واحدٌ لنسخ الصفحات كلّها). */
       get complete() { return this.tagName === "IMG" ? M.img !== "pending" : undefined; }
+      /* وصلت سليمةً ⇒ لها عرض؛ فشلت (مكتملةٌ بلا صورة) أو معلَّقة ⇒ صفر — كالمتصفّح. */
+      get naturalWidth() { return this.tagName === "IMG" && M.img === "ok" ? 100 : 0; }
       addEventListener(t, f) { (this.ls[t] ||= []).push(f); }
       fire(t) { for (const f of this.ls[t] ?? []) f({ type: t }); }
       get innerHTML() { return JSON.stringify(this.children.map((c) => [c.getAttribute("class"), c.getAttribute("dir"), c.textContent])); }
@@ -970,6 +1021,7 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       querySelector: (s) => root.querySelector(s), querySelectorAll: (s) => root.querySelectorAll(s),
       getElementById: (id) => find(root, id), createElement: (t) => new El(t), getElementsByTagName: (t) => root.getElementsByTagName(t),
       fonts: { load: () => waitFonts(), get ready() { return waitFonts(); }, get status() { return loadingFaces() ? "loading" : "loaded"; },
+        forEach: (f) => Object.values(M.face).forEach((st) => f({ status: st })),
         addEventListener: (t, f) => { if (t === "loadingdone") fl.ls.push(f); } },
     });
     const msgs = [], told = [], prints = [];
@@ -1019,6 +1071,10 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       /* ورقةُ الخطوط تصل: تُطبَّق إن كانت بالمستند (وسمُ #rxf ملصوق) فتبدأ الوجوهُ تنزل، وإلا لا شيء. */
       css: () => { const l = rxf()[0]; if (!l) return; M.css = true; for (const k of Object.keys(M.face)) if (M.face[k] === "unloaded") M.face[k] = "loading"; l.fire("load"); },
       face: (name) => faceDone(name),
+      /* وجهٌ فشل (خطأ) — والمجموعةُ تستقرّ كما مع الواصل: loadingdone والجاهزية بعد آخر ما ينزل. */
+      faceFail: (name) => { if (M.face[name] !== "loading") return; M.face[name] = "error"; if (!loadingFaces()) { fl.pend.splice(0).forEach((r) => r([])); fl.ls.forEach((f) => f()); } },
+      cssFail: () => { const l = rxf()[0]; if (l) l.fire("error"); },
+      imgFail: () => { M.img = "err"; fireImg("error"); },
       fonts: () => { if (!M.css) return; for (const k of Object.keys(M.face)) faceDone(k); },
       /* الخطوطُ حاضرةٌ قبل أيّ قياس (مستندٌ يُفتح والخطوطُ مخبّأة) — للمقارنة بترتيبٍ طازج. */
       fontsNow: () => { M.css = true; for (const k of Object.keys(M.face)) M.face[k] = "loaded"; },
@@ -1211,8 +1267,9 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       ck("  وخطٌّ أضيقُ من الاحتياطيّ: الترتيبُ النهائيّ بعد المؤقّت يمسح «فائض» المؤقّت ويرجّع حجمَ الخطّ كترتيبٍ طازج",
         before[0] === "1" && E.root.getAttribute("data-overflow") === null && E.fs() === Fr.fs() && E.fs() !== before[1], `${JSON.stringify(before)} → ${E.root.getAttribute("data-overflow")} ${E.fs()} (طازج ${Fr.fs()})`);
     }
-    /* تدقيقٌ سادس: ترتيباتٌ مجاورة مرّت طفراتُها ٢٠٤/٠ وكلُّها تغيّر الورقةَ أو المعاينة بكروميوم (مقيس) — صورةٌ قبل القسريّ، وتحميلٌ
-       والوجوهُ تنزل، وفائضٌ بالصفحة الثانية وحدها، وصورةٌ بين القياسين، ووجهٌ بعد ثانيتين، وقرارٌ يثق بفائضٍ قديم، و«طبعتُ» قبل الرفض. */
+    /* تدقيقٌ سادس: ترتيباتٌ مجاورة مرّت طفراتُ ستٍّ منها ٢٠٤/٠ (القرارُ بالفائض القديم أمسكه نصٌّ) — صورةٌ قبل القسريّ، وتحميلٌ والوجوهُ
+       تنزل، وفائضٌ بالصفحة الثانية وحدها، وصورةٌ بين القياسين، ووجهٌ بعد ثلاث ثوانٍ، وقرارٌ يثق بفائضٍ قديم، و«طبعتُ» قبل الرفض. كلُّها تغيّر
+       الورقةَ أو المعاينة بكروميوم (مقيس) إلا الصفحةَ الثانية وحدها: بالمزيَّف وحده (خطٌّ يصل يغيّر مربّعَ كلّ صفحة بالمستند الحقيقيّ). */
     {
       const E = makeEnv(mkHtml(S70), edit, { logo: true });
       await E.at(5, E.preOk);
@@ -1288,6 +1345,62 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       ck("  والقرارُ يقيس من جديد ولا يثق بفائضٍ قديم: وجهٌ أضيقُ حلّ بلا حدث قبله مباشرةً ⇒ تطبع (لا «ما انطبعت» كاذبة)",
         stale === "1" && E.prints.length === 1 && E.prints[0].hidden === 0 && E.told.join() === "print@16150", `${stale} ${JSON.stringify([E.prints, E.told])}`);
     }
+    /* مراجعةُ 6c80aa5: «نهائيٌّ بلا فائض» بالمعاينة كان يكفي للحفظ فوراً — وشعارٌ فشل طلبُه هنا (أو معلَّقٌ عند القسريّ) يصل للنافذة بطلبها
+       فتطبعه أعلى بـ١٧ ملم وترفض، والسجلُّ محفوظ. النهائيُّ يقول الآن هل رأى كلَّ ما ستراه النافذة (whole). */
+    const fins = (E) => E.msgs.filter((m) => m.final);
+    {
+      const E = makeEnv(mkHtml(S70), edit, { logo: true });
+      await E.at(5, E.preOk);
+      await E.at(8, E.imgArrive);
+      await E.at(10, E.load);
+      await E.at(12, E.css);
+      await E.at(30, E.fonts);
+      await E.at(10000);
+      ck("«رأى كلَّ شيء» (whole): الشعارُ وصل سليماً والخطوطُ طُبّقت ⇒ النهائيُّ whole (يُحفظ بقياسه فوراً)",
+        fins(E).length > 0 && fins(E).every((m) => m.whole) && E.msgs.every((m) => m.final || !m.whole), JSON.stringify(E.msgs));
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit, { logo: true });
+      await E.at(5, E.preOk);
+      await E.at(8, E.imgFail);
+      await E.at(10, E.load);
+      await E.at(12, E.css);
+      await E.at(30, E.fonts);
+      await E.at(10000);
+      ck("  وشعارٌ فشل طلبُه بالمعاينة ⇒ نهائيٌّ لكن ليس whole (النافذةُ تطلبه ثانيةً وقد ينجح فتطبع أعلى) — الحكمُ للنافذة",
+        fins(E).length > 0 && fins(E).every((m) => !m.whole), JSON.stringify(E.msgs));
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit, { logo: true });
+      await E.at(5, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(9100, E.fonts);
+      await E.at(10000);
+      const atForced = fins(E).slice(-1)[0];
+      await E.at(11000, E.imgArrive);
+      await E.at(11500);
+      const after = fins(E).slice(-1)[0];
+      ck("  ونهائيٌّ قسريٌّ والشعارُ معلَّق ⇒ ليس whole، ويصير whole حين يصل الشعارُ ويُعاد الترتيبُ بحدثه",
+        !!atForced && !atForced.whole && !!after && after.whole && after.t === 11000, JSON.stringify(E.msgs));
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit);
+      await E.at(5, E.preOk);
+      await E.at(10, E.load);
+      await E.at(12, E.cssFail);
+      await E.at(10000);
+      ck("  وورقةُ الخطوط فشلت ⇒ النهائيُّ بالاحتياطيّ ليس whole (النافذةُ قد تصلها فتطبع بخطوطها)", fins(E).length > 0 && fins(E).every((m) => !m.whole), JSON.stringify(E.msgs));
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit);
+      await E.at(5, E.preOk);
+      await E.at(10, E.load);
+      await E.at(12, E.css);
+      await E.at(20, () => E.face("cairo"));
+      await E.at(30, () => E.faceFail("ruqaa"));
+      await E.at(10000);
+      ck("  ووجهٌ فشل والآخرُ وصل ⇒ ليس whole", fins(E).length > 0 && fins(E).every((m) => !m.whole), JSON.stringify(E.msgs));
+    }
   }
   await suite(undefined, check);
   const swapJs = (from, to) => (js) => (js.includes(from) ? js.split(from).join(to) : js);
@@ -1316,6 +1429,10 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     ["انتظارُ الخطوط قبل التحميل وحده", swapJs("var f=document.fonts,once=false,go2=", "var f=loaded?null:document.fonts,once=false,go2=")],
     ["صورةٌ أُخفيت بالقياس الأوّل لا تظهر بالثاني", swapJs("for(var i=0;i<im.length;i++)im[i].style.display=im[i].complete?'':'none';", "for(var i=0;i<im.length;i++)if(im[i].style.display!=='none')im[i].style.display=im[i].complete?'':'none';")],
     ["القرارُ يثق بفائضٍ قديم", swapJs("function decide(){if(!measure()){refuse();return;}", "function decide(){if(root.getAttribute('data-overflow')){refuse();return;}")],
+    ["whole لا يسأل عن الصور (نسخةُ الجولة الخامسة: النهائيُّ وحده)", swapJs("if(!im[i].complete||!im[i].naturalWidth)return false;", "")],
+    ["whole لا يسأل عن ورقة الخطوط", swapJs("function whole(){if(!cssOk)return false;", "function whole(){")],
+    ["ورقةُ خطوطٍ فشلت تُحسب مطبَّقة", swapJs("lk.addEventListener('error',onCss);", "lk.addEventListener('error',function(){cssOk=true;onCss();});")],
+    ["whole لا يسأل عن وجهٍ فشل", swapJs("if(x.status==='error'||x.status==='loading')bad=true;", "if(x.status==='loading')bad=true;")],
     ["«طبعتُ» قبل القياس الثاني (نسخةُ الجولة الرابعة)", swapJs("setTimeout(function(){if(!measure()){refuse();return;}tell('print');", "tell('print');setTimeout(function(){if(!measure()){refuse();return;}")],
   ];
   for (const [name, edit] of MUT) {
@@ -1532,22 +1649,28 @@ console.log("▸ عناوينُ الورقة والتعافي بسلوكهما: 
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { getRegistrations: async () => [{ unregister: () => new Promise((r) => { unreg = r; }) }] } });
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
     try {
+      /* الختمُ يُقرأ بسلوكه (recoveredRecently) لا بحجم المخزن: ختمٌ يُصفَّر بـ"0" مكافئٌ لمسحه (مراجعةُ 6c80aa5). */
       const p1 = UU.recoverFromStaleShell();
       for (let i = 0; i < 50 && !unreg; i++) await sleep(10);
-      const stampedMid = store.size;
+      const stampedMid = UU.recoveredRecently();
       online = false;
       unreg?.(true);
       const r1 = await Promise.race([p1, sleep(1500).then(() => "timeout")]);
-      const after1 = { r1, stamp: store.size, pending: UU.recoveryPending(), reloads: reloads.length };
+      const after1 = { r1, recent: UU.recoveredRecently(), pending: UU.recoveryPending(), reloads: reloads.length };
       online = true;
       unreg = null;
       const p2 = UU.recoverFromStaleShell();
       for (let i = 0; i < 50 && !unreg; i++) await sleep(10);
       unreg?.(true);
       const r2 = await Promise.race([p2, sleep(1500).then(() => "timeout")]);
+      const after2 = { recent: UU.recoveredRecently(), same: UU.recoverFromStaleShell() === p2 };
+      await sleep(50);
       ck("  وانقطع النتُّ أثناء المسح ⇒ لا تحميل، والتراجعُ يمسح ختمَ الدوّامة: «حدّث» بعد رجوعه يُحمّل فوراً (كان «تأكّد من النت» ٣٠ ثانية)",
-        stampedMid === 1 && after1.r1 === false && after1.stamp === 0 && !after1.pending && after1.reloads === 0 && r2 === true && reloads.length === 1,
+        stampedMid && after1.r1 === false && !after1.recent && !after1.pending && after1.reloads === 0 && r2 === true && reloads.length === 1,
         JSON.stringify({ stampedMid, after1, r2, reloads: reloads.length }));
+      /* والنصفُ الآخر لم يُفحص (مراجعةُ 6c80aa5): ختمٌ يُمسح بطريق التحميل أيضاً يُسقط حارسَ الدوّامة — قطعةٌ ما زالت ناقصةً بعده تمسح وتحمّل ثانيةً. */
+      ck("  وتعافٍ حمّل يُبقي ختمَه (حارسُ الدوّامة) ووعدَه: نداءٌ بعده ينتظر الوعدَ نفسَه بلا مسحٍ ولا تحميلٍ ثانٍ",
+        after2.recent && after2.same && reloads.length === 1, JSON.stringify({ after2, reloads: reloads.length }));
     } finally {
       W.location = prev.loc;
       globalThis.sessionStorage = prev.ss;
@@ -1578,6 +1701,263 @@ console.log("▸ عناوينُ الورقة والتعافي بسلوكهما: 
       }), (_n, ok) => { if (!ok) caught++; });
     } catch { caught = -1; }
     check("  طفرة «التراجعُ بعد المسح يُبقي الختم (نسخةُ الجولة الرابعة)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
+  }
+  {
+    let caught = 0;
+    try {
+      await auStampSuite(await loadAU((s) => {
+        const from = "    window.location.reload();\n    return true;\n  })();";
+        if (!s.includes(from)) throw new Error("الطفرة لم تجد نصَّها");
+        return s.split(from).join("    try { sessionStorage.setItem(ONCE_KEY, \"0\"); } catch { /* x */ }\n    window.location.reload();\n    return true;\n  })();");
+      }), (_n, ok) => { if (!ok) caught++; });
+    } catch { caught = -1; }
+    check("  طفرة «التحميلُ يصفّر الختم (حارسُ الدوّامة يسقط)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
+  }
+
+  /* مراجعةُ 6c80aa5: التراجعُ **قبل** المسح (انقطع النتُّ والتعافي ينتظر نموذجاً ممسوكاً) لا يمسّ شيئاً — إرخاءُ نصّه بـsw-update أسقط
+     حراستَه، وتراجعٌ يكمل للمسح بلا نتّ (يمسح المخبأ ويلغي الخدمة: لا فتحَ بلا نتّ، و٧ ميغا من جديد) مرّ الفحصين. */
+  async function auPreWipeSuite({ U: UU, F: FF }, ck) {
+    const reloads = [], deleted = [], unregs = [];
+    const prev = { loc: W.location, ss: globalThis.sessionStorage, caches: globalThis.caches };
+    const store = new Map();
+    let online = true;
+    W.location = { reload: () => reloads.push(1) };
+    globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => { store.set(k, String(v)); }, removeItem: (k) => { store.delete(k); } };
+    globalThis.caches = { keys: async () => ["workbox-precache-v2"], delete: async (k) => { deleted.push(k); return true; } };
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { getRegistrations: async () => [{ unregister: async () => { unregs.push(1); return true; } }] } });
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
+    const rel = FF.holdUpdates(Infinity);
+    try {
+      const p = UU.recoverFromStaleShell();
+      await sleep(300);
+      const waiting = UU.recoveryPending() && deleted.length === 0 && reloads.length === 0;
+      online = false;
+      rel();
+      const r = await Promise.race([p, sleep(1500).then(() => "timeout")]);
+      const got = { waiting, r, deleted: deleted.length, unregs: unregs.length, recent: UU.recoveredRecently(), pending: UU.recoveryPending(), reloads: reloads.length };
+      ck("  وانقطع النتُّ والتعافي ينتظر نموذجاً ممسوكاً (قبل المسح) ⇒ يتراجع ولا يمسّ شيئاً: لا مسحَ للمخبأ ولا إلغاءَ للخدمة ولا ختمَ ولا تحميل",
+        got.waiting && got.r === false && got.deleted === 0 && got.unregs === 0 && !got.recent && !got.pending && got.reloads === 0, JSON.stringify(got));
+    } finally {
+      rel();
+      W.location = prev.loc;
+      globalThis.sessionStorage = prev.ss;
+      globalThis.caches = prev.caches;
+      delete navigator.serviceWorker;
+      delete navigator.onLine;
+    }
+  }
+  await auPreWipeSuite(await loadAU(), check);
+  {
+    let caught = 0;
+    try {
+      await auPreWipeSuite(await loadAU((s) => {
+        const from = "await waitForWrites();\n    if (offline()) { inFlight = null; return false; }\n    commit();";
+        if (!s.includes(from)) throw new Error("الطفرة لم تجد نصَّها");
+        return s.split(from).join("await waitForWrites();\n    if (offline()) { inFlight = null; }\n    commit();");
+      }), (_n, ok) => { if (!ok) caught++; });
+    } catch { caught = -1; }
+    check("  طفرة «التراجعُ قبل المسح يكمل للمسح بلا نتّ» تُسقط فحصاً", caught > 0, `caught=${caught}`);
+  }
+}
+
+/* ── ي) شاشةُ الراجيتة بسلوكها: RxSheet الحقيقيّة مرسومةً (react-mini) مع rxSave وinflight الحقيقيّتين — وبدائلُ لعُدّة الواجهة والباب
+   والمعاينة والعناوين وحدها. الإمساكُ والإذنُ و«راح تتحدّث» كانت تُفحص نصّاً: سطرٌ غيرُ مثبَّت (`dirty` بلا «تقرّر»، أو مصفوفةُ أثرٍ مقصوصة)
+   مرّ ٢٢٥/٠ وأرجع تحميلاً فوق المسودّة أو رسالةً كاذبة (مراجعةُ 6c80aa5). والتعافي هنا بديلٌ بسلوك appUpdate: ينتظر ما دام نموذجٌ ممسوكاً
+   ثمّ «يحمّل» (عدّاد) — وسلوكُه الحقيقيّ بالقسم ط. ── */
+console.log("▸ شاشةُ الراجيتة بسلوكها: لا تحميلَ فوق مسودّة، و«راح تتحدّث» حين يصدق، والحفظُ الفوريّ بقياسٍ رأى كلَّ شيء");
+{
+  const SHEET_FILE = "src/components/rx/RxSheet.tsx";
+  const sheetRe = new RegExp(`[\\\\/]${SHEET_FILE.split("/").join("[\\\\/]")}$`);
+  const icons = Object.keys(await import("lucide-react")).filter((k) => /^[A-Z]\w*$/.test(k));
+  const STUBS_SH = {
+    "lucide-react": `const I = () => null; ${icons.map((k) => `export const ${k} = I;`).join("\n")}`,
+    "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'en', getFixedT: () => (k) => k } });",
+    i18next: "const i = { t: (k) => k, language: 'en', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'ltr' }; export default i;",
+    "@/components/Modal": `import { createElement } from "react"; export const Modal = ({ open, children }) => (open ? createElement("x-Modal", null, children) : null);`,
+    "@/components/ui": `import { createElement, forwardRef } from "react";
+      export const Button = forwardRef(({ children, leftIcon, rightIcon, loading, variant, size, ...p }, _r) => createElement("x-Button", { ...p, disabled: !!(p.disabled || loading) }, children));
+      export const Dialog = ({ open, title, footer, children }) => (open ? createElement("x-Dialog", { "data-dialog": title }, footer, children) : null);
+      export const Segmented = () => null; export const Spinner = () => null;
+      const toast = { success: (...a) => globalThis.__shToasts.push(["ok", ...a]), error: (...a) => globalThis.__shToasts.push(["err", ...a]), warn: (...a) => globalThis.__shToasts.push(["warn", ...a]) };
+      export const useToast = () => toast;`,
+    "@/components/meds/MedPicker": "export const MedPicker = () => null;",
+    "@/contexts/AuthContext": "const u = { id: 'u1', full_name: 'Dr X' }; export const useAuth = () => ({ user: u });",
+    "@/hooks/usePermissions": "export const usePermissions = () => ({ role: 'manager', can: () => true });",
+    "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n;",
+    "@/lib/rxApi": `export const RX_NOTES_LIMIT = 50; export const isRxMissing = () => false; export const isRxStale = () => false;
+      export const rxApi = { add: (input) => globalThis.__shAdd(input), listForPet: async () => [], notes: async () => [], voidRx: async () => ({}) };`,
+    "@/lib/rxPrint": "export const buildRxHTML = (d, o) => JSON.stringify([d.body, !!(o && o.print)]); export const openRxPrint = () => { const w = { closed: false }; globalThis.__shWins.push(w); return w; };",
+    "@/lib/rxSave": `export * from ${JSON.stringify(path.resolve("src/lib/rxSave.ts"))}; export const browserWatchEnv = () => globalThis.__shEnv;`,
+    "./RxPaper": "export const RX_FIT = {}; export const RX_FIT_SCROLL = {}; export const RxPaper = (p) => { globalThis.__shPaper = p; return null; };",
+    "./rxShared": `import { useState } from "react";
+      export const rxDoc = (cfg, labels, fields, body, doctor, title) => ({ cfg, labels, fields, body, doctor, title });
+      export const rxErrorText = () => "err";
+      export const useRxPad = () => ({ status: "ready", cfg: globalThis.__shCfg, reload() {} });
+      export const useRxLabels = () => { const [st, set] = useState(globalThis.__shLabels0); globalThis.__shSetLabels = set; return st; };`,
+  };
+  const loadSheet = async (edit) => {
+    const built = await esbuild.build({
+      stdin: { contents: `export { RxSheet } from "./${SHEET_FILE}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";\nexport * as I from "./src/lib/inflight.ts";\nexport { cleanRxPad } from "./src/lib/rxLayout.ts";`, resolveDir: process.cwd(), sourcefile: "rx-sheet.tsx", loader: "tsx" },
+      bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
+      define: { "import.meta.env": "__VITE_ENV__", "process.env.NODE_ENV": '"development"' }, banner: { js: "const __VITE_ENV__ = {};" },
+      plugins: [{
+        name: "rx-sheet-stubs",
+        setup(b) {
+          b.onResolve({ filter: /.*/ }, (a) => (Object.prototype.hasOwnProperty.call(STUBS_SH, a.path) && ((a.path !== "./RxPaper" && a.path !== "./rxShared") || sheetRe.test(a.importer)) ? { path: a.path, namespace: "stub" } : undefined));
+          b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: STUBS_SH[a.path], loader: "jsx", resolveDir: process.cwd() }));
+          b.onLoad({ filter: sheetRe }, (a) => ({ contents: (edit ?? ((x) => x))(readFileSync(a.path, "utf8")), loader: "tsx", resolveDir: path.dirname(a.path) }));
+        },
+      }],
+    });
+    /* نافذةُ الشاشة الأمّ: رسائلُ ومؤقّتُ النوافذ بيد الفحص — تُقرأ عند استيراد الوحدة (watchPrint على مستوى الوحدة). */
+    const ls = [], timers = new Map();
+    let tid = 0;
+    globalThis.__shEnv = { listen: (fn) => ls.push(fn), every: (fn) => { timers.set(++tid, fn); return tid; }, stop: (i) => timers.delete(i) };
+    const d = mkdtempSync(path.join(tmpdir(), "rx-sheet-"));
+    const f = path.join(d, "m.mjs");
+    writeFileSync(f, built.outputFiles[0].text);
+    const M = await import(pathToFileURL(f).href).finally(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } });
+    return { M, post: (w, data) => ls.forEach((fn) => fn(w, data)), tick: () => [...timers.values()].forEach((fn) => fn()), timers };
+  };
+  const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+  /* ما يُنتظر وصولُه (التحميلُ بعد الحفظ) يُنتظر بشرطه لا بمهلةٍ ثابتة — جهازٌ مشغول لا يُسقط الفحص. */
+  const until = async (cond, ms = 2000) => { for (let i = 0; i < ms / 10 && !cond(); i++) await nap(10); };
+
+  async function sheetSuite({ M, post, tick, timers }, ck) {
+    const cfg = M.cleanRxPad({ lang: "en", doctors: [{ name: "Dr X", lines: "" }] });
+    const pet = { id: "p1", name: "Bobby", species: "dog", dob: null, weight: null };
+    const labelsOk = { labels: {}, ready: true, failed: false, slow: false, retry() {}, reload: () => globalThis.__shReload(), tp: (k) => k };
+    const labelsBad = { ...labelsOk, ready: false, failed: true };
+    async function scene(name, steps, opt = {}) {
+      globalThis.__shCfg = cfg;
+      globalThis.__shLabels0 = labelsOk;
+      globalThis.__shWins = []; globalThis.__shToasts = []; timers.clear();
+      const adds = [];
+      globalThis.__shAdd = async (input) => { adds.push(input.id); return { ...input, issued_at: "2026-11-05T10:00:00Z", voided_at: null, void_reason: null, voided_by: null, created_by: "u1" }; };
+      /* تعافٍ واحد للصفحة: ينتظر ما دام نموذجٌ ممسوكاً (أو `park` — تعافٍ لا يصل) ثمّ «يحمّل». */
+      let loads = 0, rec = null;
+      globalThis.__shReload = () => {
+        if (!rec) rec = new Promise((res) => { const go = () => { if (opt.park || M.I.formHeld()) { setTimeout(go, 5); return; } loads++; res(true); }; setTimeout(go, 5); });
+        return rec;
+      };
+      const ui = M.mount(M.React.createElement(M.RxSheet, { pet, visitId: null, onClose() {} }));
+      await ui.settle();
+      const settle = async () => { await ui.settle(); await nap(25); await ui.settle(); };
+      const S = {
+        ui, settle, post, tick, adds,
+        loads: () => loads,
+        held: () => M.I.formHeld(),
+        toasts: () => globalThis.__shToasts.map((x) => x[1]),
+        type: async (v) => { ui.find("data-rx-body").props.onChange({ target: { value: v } }); await settle(); },
+        /* المعاينةُ تقول قياسَ المستند الحاليّ (RxPaper بديلٌ يحفظ خصائصَه). */
+        preview: async (o) => { const p = globalThis.__shPaper; p.onLayout({ pages: 1, overflow: false, final: true, whole: true, ...o, html: p.html }); await settle(); },
+        print: async () => { ui.click(ui.find("data-rx-print")); await settle(); return globalThis.__shWins[globalThis.__shWins.length - 1]; },
+        failLabels: async () => { globalThis.__shSetLabels(labelsBad); await settle(); },
+        reload: async () => { ui.click(ui.find("data-rx-reload")); await settle(); },
+        consent: async () => { const b = ui.find("data-rx-reload-do"); if (b) { ui.click(b); await settle(); } return !!b; },
+        shut: async (w) => { w.closed = true; tick(); tick(); tick(); await settle(); },
+        say: async (w, rx) => { post(w, { rx }); await settle(); },
+        line: () => (ui.find("data-rx-reloading") ? "reloading" : ui.find("data-rx-reload") ? "button" : "none"),
+      };
+      try { await steps(S); } catch (e) { ck(`${name} (رمى)`, false, String(e?.stack ?? e).slice(0, 300)); }
+      ui.unmount();
+      await ui.settle();
+    }
+
+    await scene("deciding-closed", async (S) => {
+      await S.type("Amoxicillin 250 mg");
+      const w = await S.print();
+      await S.failLabels();
+      await S.reload();
+      const asked = await S.consent();
+      const during = { held: S.held(), line: S.line(), loads: S.loads() };
+      await S.shut(w);
+      const after = { held: S.held(), line: S.line(), loads: S.loads(), gone: S.toasts().includes("rx.goneUnprinted") };
+      ck("«حدّث» والنافذةُ تقرّر (بلا سؤال) ثمّ انسدّت بلا طباعة ⇒ ممسوكٌ طوالَها، لا تحميلَ فوق المسودّة الراجعة، و«راح تتحدّث» يصير زرّاً",
+        !asked && during.held && during.line === "reloading" && during.loads === 0 && after.gone && after.held && after.line === "button" && after.loads === 0 && S.adds.length === 0,
+        JSON.stringify({ asked, during, after }));
+    });
+    await scene("deciding-printed", async (S) => {
+      await S.type("Amoxicillin 250 mg");
+      const w = await S.print();
+      await S.failLabels();
+      await S.reload();
+      await S.say(w, "print");
+      await until(() => S.loads() > 0);
+      const got = { held: S.held(), loads: S.loads(), adds: S.adds.length, printed: S.toasts().includes("rx.printed") };
+      ck("  وطبعت وانحفظت ⇒ يُفلت، والتعافي المضغوط يحمّل بعد الحفظ (سجلٌّ واحد)", !got.held && got.loads === 1 && got.adds === 1 && got.printed, JSON.stringify(got));
+    });
+    await scene("consent-dirty", async (S) => {
+      await S.type("Amoxicillin 250 mg");
+      await S.failLabels();
+      await S.reload();
+      const asked = await S.consent();
+      const a = S.held();
+      await S.type("Amoxicillin 250 mg + Meloxicam");
+      const b = { held: S.held(), line: S.line() };
+      await S.type("Amoxicillin 250 mg");
+      const c = { held: S.held(), line: S.line() };
+      ck("  وإذنٌ لمسودّةٍ لم تنطبع ⇒ يُفلت، ثمّ حرفٌ ⇒ يُمسك والزرُّ يرجع، والرجوعُ لنصّ الإذن ⇒ ممسوكٌ (الإذنُ مرّة)",
+        asked && !a && b.held && b.line === "button" && c.held && c.line === "button", JSON.stringify({ asked, a, b, c }));
+    }, { park: true });
+    await scene("armed-type-revert", async (S) => {
+      await S.type("Amoxicillin 250 mg");
+      const w = await S.print();
+      await S.failLabels();
+      await S.reload();
+      const a = { line: S.line(), held: S.held() };
+      await S.type("Amoxicillin 250 mg + Meloxicam");
+      const b = { line: S.line(), held: S.held() };
+      await S.type("Amoxicillin 250 mg");
+      const c = { line: S.line(), held: S.held(), loads: S.loads() };
+      await S.say(w, "print");
+      await until(() => S.loads() > 0);
+      const d = { loads: S.loads(), adds: S.adds.length };
+      ck("  و«حدّث» مضغوطٌ ثمّ كُتب (زرّ) ثمّ رجع النصُّ لما ينتظر نافذتَه ⇒ «راح تتحدّث» يرجع (التعافي ما زال مضغوطاً)، ويحمّل بعد الحفظ وحده",
+        a.line === "reloading" && a.held && b.line === "button" && b.held && c.line === "reloading" && c.held && c.loads === 0 && d.loads === 1 && d.adds === 1,
+        JSON.stringify({ a, b, c, d }));
+    });
+    await scene("immediate-needs-whole", async (S) => {
+      await S.type("Amoxicillin 250 mg");
+      await S.preview({ whole: false });
+      const w = await S.print();
+      const a = { adds: S.adds.length, toasts: S.toasts().slice() };
+      await S.say(w, "overflow");
+      const b = { adds: S.adds.length, toasts: S.toasts().slice() };
+      await S.type("Amoxicillin 500 mg");
+      await S.preview({ whole: true });
+      await S.print();
+      const c = { adds: S.adds.length, printed: S.toasts().filter((x) => x === "rx.printed").length };
+      ck("  ونهائيٌّ بلا فائض لم يرَ كلَّ شيء (شعارٌ معلَّق أو فشل) ⇒ الحكمُ للنافذة: رفضت ⇒ لا سجلّ ولا «انطبعت»؛ ورأى كلَّ شيء ⇒ يُحفظ بالضغطة",
+        a.adds === 0 && a.toasts.length === 0 && b.adds === 0 && b.toasts.join() === "rx.overflowPrint" && c.adds === 1 && c.printed === 1, JSON.stringify({ a, b, c }));
+    });
+    await scene("printed-only-on-print", async (S) => {
+      const w1 = await S.print();
+      const a = S.toasts().slice();
+      await S.say(w1, "print");
+      const b = S.toasts().slice();
+      const w2 = await S.print();
+      await S.say(w2, "overflow");
+      const c = S.toasts().slice();
+      ck("  و«انطبعت» عن ورقةٍ لا تُحفظ (فارغة) حين تقولها النافذة: لا شيءَ بالضغطة، و«فائض» وحدها إن رفضت",
+        a.length === 0 && b.join() === "rx.printedBlank" && c.join() === "rx.printedBlank,rx.overflowPrint" && S.adds.length === 0, JSON.stringify({ a, b, c }));
+    });
+  }
+  const real = await loadSheet();
+  await sheetSuite(real, check);
+  const swapSh = (from, to) => (s) => { if (!s.includes(from)) throw new Error(`الطفرة لم تجد نصَّها: ${from.slice(0, 60)}`); return s.split(from).join(to); };
+  const MUT_SH = [
+    ["«مسودّة» تشمل ما تقرّر نافذتُه (الإذنُ يُعطى عنها)", swapSh("const dirty = !!clean.trim() && !saved && !saver.isPending(key) && !saver.isWaiting(key);", "const dirty = !!clean.trim() && !saved && !saver.isPending(key);")],
+    ["الإمساكُ للمسودّة وحدها (لا «تقرّر»)", swapSh("const atRisk = dirty || waiting;", "const atRisk = dirty;")],
+    ["«راح تتحدّث» لا يرى نصّاً لم يُؤذن له", swapSh("const reloadShown = reloading && !(dirty && !letGo);", "const reloadShown = reloading;")],
+    ["حرفٌ يمسح «راح تتحدّث» والتعافي باقٍ (نسخةُ الجولة الخامسة)", swapSh("const reloadShown = reloading && !(dirty && !letGo);", "const reloadShown = reloading;\n  useEffect(() => { if (reloading && dirty && !letGo) setReloading(false); }, [reloading, dirty, letGo]);")],
+    ["الحفظُ الفوريّ بنهائيٍّ لم يرَ كلَّ شيء (نسخةُ الجولة الخامسة)", swapSh("(measured && layout.final && layout.whole && !layout.overflow)", "(measured && layout.final && !layout.overflow)")],
+    ["«انطبعت» بالضغطة (نسخةُ الجولة الخامسة)", swapSh(`{ watchPrint(w, { onPrint: () => toast.success(t("rx.printedBlank")), onOverflow: overflowed }); return; }`, `{ watchPrint(w, { onOverflow: overflowed }); toast.success(t("rx.printedBlank")); return; }`)],
+  ];
+  for (const [name, edit] of MUT_SH) {
+    let caught = 0;
+    try { await sheetSuite(await loadSheet(edit), (_n, ok) => { if (!ok) caught++; }); } catch { caught = -1; }
+    check(`  طفرة «${name}» تُسقط فحصاً`, caught > 0, `caught=${caught}`);
   }
 }
 

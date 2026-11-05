@@ -21,6 +21,9 @@ export interface RxLayoutInfo {
   overflow: boolean;
   /** بعد تحميل الخطوط والصور (أو مهلتها) — المؤقّتُ قد يتغيّر. */
   final: boolean;
+  /** نهائيٌّ رأى كلَّ ما ستراه نافذةُ الطباعة: الصورُ كلُّها وصلت سليمة، والخطوطُ طُبّقت بلا فشل. نهائيٌّ قسريٌّ وصورةٌ معلَّقة، أو
+   *  صورةٌ فشلت هنا وتصل للنافذة بطلبها، ليس كذلك — قياسُه بلا الشعار، والنافذةُ تطبعه به. */
+  whole: boolean;
   /** المستندُ الذي قِيس (كما مُرِّر بـ`html`). */
   html: string;
 }
@@ -81,7 +84,7 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
   useLayoutEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow) return;
-      const d = (e.data as { rxLayout?: { seq?: unknown; pages?: unknown; overflow?: unknown; final?: unknown } } | null)?.rxLayout;
+      const d = (e.data as { rxLayout?: { seq?: unknown; pages?: unknown; overflow?: unknown; final?: unknown; whole?: unknown } } | null)?.rxLayout;
       if (!d) return;
       const k = Number(d.seq);
       const src = seq.current.byN.get(k);
@@ -89,7 +92,7 @@ export function RxPaper({ html, paper, title, onLayout, children, className, sty
       last.current = k;
       const n = Math.max(1, Number(d.pages) || 1);
       setPages(n);
-      layoutCb.current?.({ pages: n, overflow: d.overflow === true, final: d.final === true, html: src });
+      layoutCb.current?.({ pages: n, overflow: d.overflow === true, final: d.final === true, whole: d.whole === true, html: src });
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
