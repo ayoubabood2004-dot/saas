@@ -472,9 +472,10 @@ export function ActivityLog() {
     const d = r.brief as Record<string, unknown> | null;
     const sid = d?.["staff_id"];
     if (typeof sid === "string" && staffById.get(sid)) return staffById.get(sid)!;
-    /* طبيبُ الصفّ لمن لم يُعرف فاعلُه (سطورُ الملء الرجعيّ 0046) أو لإنشاءٍ من حسابٍ بلا اسم (الحسابُ المشترك) — لا لتعديلٍ أو حذف:
-       إلغاءُ راجيتةٍ (للمدير وحده) وحذفُها مع حيوانها كانا يُنسبان لطبيبها الموقِّع. */
-    const doc = !r.actor || r.action === "INSERT" ? d?.["doctor_name"] ?? d?.["doctor"] : null;
+    /* طبيبُ الصفّ **للإنشاء وحده** — من حسابٍ بلا اسم (الحسابُ المشترك) أو بلا فاعل (سطورُ الملء الرجعيّ 0046، وكلُّها INSERT) —
+       لا لتعديلٍ أو حذف: إلغاءُ راجيتةٍ (للمدير وحده) وحذفُها مع حيوانها كانا يُنسبان لطبيبها الموقِّع، وحذفٌ بلا فاعل (من لوحة
+       القاعدة، أو تتابعُ حذف حساب) «النظام» لا الطبيب. */
+    const doc = r.action === "INSERT" ? d?.["doctor_name"] ?? d?.["doctor"] : null;
     if (typeof doc === "string" && doc.trim()) return doc.trim();
     return r.actor ? t("act.manager", "مدير العيادة") : t("act.system", "النظام");
   };

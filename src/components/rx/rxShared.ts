@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ensureDictionary, ensureOwned } from "@/i18n";
+import { recoverFromStaleShell } from "@/lib/appUpdate";
 import { getClinicLogo, getClinicName, getClinicSocials, getClockFormat, getWorkHours } from "@/lib/settings";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
@@ -46,9 +47,15 @@ export function useRxPad(): PadState {
   return { ...st, cfg, reload };
 }
 
-/** عناوينُ الورقة بلغتها. `ready` = القاموسُ حاضر (الإنكليزيةُ ثابتةٌ دائماً)، و`failed` = تعذّر تحميلُه: الورقةُ العربية لا تُطبع
- *  بعناوين إنكليزية بصمت — تُقال «أعد المحاولة» (`retry`). و`tp` مترجمُ لغة الورقة (خاناتُ المريض بلغتها لا بلغة الواجهة). */
-export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; failed: boolean; retry: () => void; tp: TFunction } {
+/** تحميلٌ معلَّقٌ بهذا القدر يُقال «تعذّر»: قطعةُ القاموس فشلت والتعافي (تحديثُ الصفحة) ينتظر نموذجاً فيه عملٌ لم يُحفظ
+ *  (holdUpdates) — الوعدُ لا يستقرّ أبداً، فكان «اطبع» يبقى موقوفاً بلا كلمة والورقةُ العربية بعناوين إنكليزية (مقيس). */
+export const RX_LABELS_STUCK_MS = 8000;
+
+/** عناوينُ الورقة بلغتها. `ready` = القاموسُ حاضر (الإنكليزيةُ ثابتةٌ دائماً)، و`failed` = تعذّر تحميلُه أو علق: الورقةُ العربية لا
+ *  تُطبع بعناوين إنكليزية بصمت — يُقال، ويبقى مقولاً حتى يصل القاموس (`retry` لا يُخفيه). والقطعةُ التي فشلت لا تصل بنفس الصفحة
+ *  (المتصفّحُ يحفظ فشلَ الاستيراد حتى التحديث، مقيس) فـ`reload` يحدّثها بطريق التعافي — والمستدعي يُفلت إمساكَه قبله، ويرجع false
+ *  إن رُفض (بلا نت، أو جُرّب للتو). و`tp` مترجمُ لغة الورقة (خاناتُ المريض بلغتها لا بلغة الواجهة). */
+export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; failed: boolean; retry: () => void; reload: () => Promise<boolean>; tp: TFunction } {
   const { i18n, t } = useTranslation();
   const needLoad = lang === "ar" && !i18n.language.startsWith("ar");
   /* «جاهز» يُحسب بنفس الرسمة من «حُمِّل» — لا حالةٌ تُضبط بأثرٍ بعدها: التصميمُ يصل عربياً بعد أن كان الافتراضيُّ إنكليزياً، وحالةُ
@@ -59,15 +66,16 @@ export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; f
   useEffect(() => {
     if (!needLoad) return;
     let alive = true;
-    setFailed(false);
+    const stuck = window.setTimeout(() => { if (alive) setFailed(true); }, RX_LABELS_STUCK_MS);
     Promise.all([ensureOwned("rx", "ar"), ensureDictionary("ar")]).then(
-      () => { if (alive) setLoaded(true); },
+      () => { if (alive) { setLoaded(true); setFailed(false); } },
       () => { if (alive) setFailed(true); },
-    );
-    return () => { alive = false; };
+    ).finally(() => window.clearTimeout(stuck));
+    return () => { alive = false; window.clearTimeout(stuck); };
   }, [needLoad, n]);
   const ready = !needLoad || loaded;
   const retry = useCallback(() => setN((x) => x + 1), []);
+  const reload = useCallback(() => recoverFromStaleShell(), []);
   const labels = useMemo<RxLabels>(() => {
     if (lang !== "ar") return RX_LABELS_EN;
     const ta = i18n.getFixedT("ar");
@@ -80,7 +88,7 @@ export function useRxLabels(lang: RxLang): { labels: RxLabels; ready: boolean; f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, ready, i18n]);
   const tp = useMemo<TFunction>(() => (lang === "ar" && ready ? i18n.getFixedT("ar") : t), [lang, ready, i18n, t]);
-  return { labels: lang === "ar" ? labels : RX_LABELS_EN, ready: lang === "ar" ? ready : true, failed: needLoad && failed && !loaded, retry, tp };
+  return { labels: lang === "ar" ? labels : RX_LABELS_EN, ready: lang === "ar" ? ready : true, failed: needLoad && failed && !loaded, retry, reload, tp };
 }
 
 /** "2026-11-05" ⇒ "05/11/2026" — كما تُكتب التواريخ على الراجيتات هنا (يوم/شهر/سنة، أرقامٌ غربية). */

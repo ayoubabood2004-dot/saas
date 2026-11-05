@@ -59,7 +59,13 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [leaveAsk, setLeaveAsk] = useState(false);
   const [resetAsk, setResetAsk] = useState(false);
   const [tab, setTab] = useState<"edit" | "paper">("edit");
-  const { labels, failed: labelsFailed, retry: labelsRetry } = useRxLabels(draft?.lang ?? "en");
+  const { labels, failed: labelsFailed, retry: labelsRetry, reload: labelsReload } = useRxLabels(draft?.lang ?? "en");
+  /* أحدثُ مسودّةٍ للحفظ الجاري (ما تغيّر أثناءه لا يُرمى)، وحياةُ المصمِّم لرفعٍ يكمل بعد «اطلع» (لا صوتَ ولا رسالةَ عن تصميمٍ مُغلق).
+     العلمُ يُرفع بكلّ تركيب (StrictMode ينادي التنظيفَ ثمّ الأثرَ ثانيةً). */
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   /* أوّلُ فتح (وبعد «تغيّر من جهاز ثاني»): المحفوظُ، أو الافتراضيُّ ورقمُ هاتف الحساب بذرةً — **تعديلاً لم يُحفظ** (الأساسُ بلا
      البذرة): المعاينةُ تعرضه والطباعةُ تقرأ المحفوظ، فرقمٌ يظهر هنا ولا يُطبع كان يبقى بلا «احفظ» يقدر عليه. وفشلُ القراءة لا يبذر. */
@@ -79,22 +85,31 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   const title = t("rx.dTitle");
   const doctorName = draft?.doctors.find((d) => d.name)?.name ?? "";
   const html = useMemo(() => (draft ? buildRxHTML(rxDoc(draft, labels, sample, t("rx.sample.body"), doctorName, title)) : ""), [draft, labels, sample, t, doctorName, title]);
-  const dirty = !!draft && !!base && !sameRxPad(cleanRxPad(draft, { allowData: !supabase }), cleanRxPad(base, { allowData: !supabase }));
+  const same = (a: RxPadConfig, b: RxPadConfig) => sameRxPad(cleanRxPad(a, { allowData: !supabase }), cleanRxPad(b, { allowData: !supabase }));
+  const dirty = !!draft && !!base && !same(draft, base);
   const missing = pad.status === "missing";
   /* تصميمٌ لم يُحفظ أو صورةٌ بالطريق: النسخةُ الجديدة تنتظر (خمولٌ طويل كان يعيد التحميل فيضيع ما سُحب ورُفع). */
   useEffect(() => (dirty || uploading ? holdUpdates(Infinity) : undefined), [dirty, uploading]);
 
   const save = async () => {
     if (!draft || missing || uploading || saving) return;
+    const sent = draft;
     setSaving(true);
     try {
-      const row = await rxApi.savePad(draft, expect);
+      const row = await rxApi.savePad(sent, expect);
       setExpect(row.updated_at);
       setBase(row.cfg);
-      setDraft(row.cfg);
       playSuccess();
-      toast.success(t("rx.saved"));
       onSaved();
+      /* ما تغيّر أثناء الحفظ (الحقولُ مفتوحة والحفظُ رحلةٌ للخادم) لا يُرمى: انحفظ ما أُرسل، والمصمِّمُ يبقى مفتوحاً بالباقي و«احفظ»
+         له — كان يُغلق ويقول «انحفظ» وما كُتب أثناءه ضاع (والمربّعُ المشطوب أقربُ للصمت). */
+      const now = draftRef.current;
+      if (now && !same(now, sent)) {
+        toast.success(t("rx.saved"), t("rx.savedMore"));
+        return;
+      }
+      setDraft(row.cfg);
+      toast.success(t("rx.saved"));
       onClose();
     } catch (e) {
       playWarning();
@@ -118,10 +133,13 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
       const prepared = kind === "emblem" ? await prepareLogo(file, { maxDim: 520 }) : await prepareUpload(file, { maxDim: 2000, quality: 0.82, background: "#ffffff" });
       const path = await withTimeout(rxApi.uploadImage(kind, prepared), UPLOAD_MS);
       setDraft((d) => (d ? (kind === "bg" ? { ...d, bgPath: path } : { ...d, emblemPath: path }) : d));
-      playSuccess();
+      if (alive.current) playSuccess();
     } catch (e) {
-      playWarning();
-      toast.error(t("rx.uploadFail"), describeUploadError(e, t));
+      /* رفعٌ تُرك بـ«اطلع» يكمل بالخلفية: لا نغمةَ ولا رسالةَ عن مصمِّمٍ مُغلق (كانت تُسمع بصفحةٍ أخرى عن صورةٍ لا تُحفظ). */
+      if (alive.current) {
+        playWarning();
+        toast.error(t("rx.uploadFail"), describeUploadError(e, t));
+      }
     } finally {
       bump(-1);
     }
@@ -135,6 +153,17 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
       playWarning();
       toast.error(t("retail.popupBlocked"), t("retail.popupBlockedHint"));
     }
+  };
+
+  /* القاموسُ العربيّ لا يصل بهذه الصفحة (قطعتُه فشلت): التحديثُ بطريق التعافي — والتصميمُ الذي لم يُحفظ يمسك النسخة، فالزرُّ بعد
+     الحفظ (والسطرُ يقوله). رُفض (بلا نت، أو جُرّب للتو) ⇒ يُقال. */
+  const reloadPage = () => {
+    playTap();
+    void labelsReload().then((ok) => {
+      if (ok) return;
+      playWarning();
+      toast.error(t("rx.reloadFail"));
+    });
   };
 
   /* ورفعٌ بالطريق يُسأل أيضاً: الخروجُ يُضيّع الصورةَ التي اختيرت. */
@@ -193,9 +222,10 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
                 <div className="rxp-stick rounded-3xl bg-surface-2 p-3 sm:p-5">
                   <p className="mb-2 text-center text-2xs font-semibold text-ink-subtle">{t("rx.preview")}</p>
                   {labelsFailed && (
-                    <p className="mb-2 flex items-center justify-center gap-2 text-xs text-danger-700 dark:text-danger-300" data-rxd-labels-fail>
-                      <AlertTriangle size={14} /> {t("rx.labelsFail")}
+                    <p className="mb-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-xs text-danger-700 dark:text-danger-300" data-rxd-labels-fail>
+                      <AlertTriangle size={14} className="shrink-0" /> {t(dirty || uploading ? "rx.labelsSaveFirst" : "rx.labelsReload")}
                       <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>
+                      {!dirty && !uploading && <button className="font-semibold underline" onClick={reloadPage} data-rxd-reload>{t("rx.reloadPage")}</button>}
                     </p>
                   )}
                   <RxPaper html={html} paper={draft.paper} title={title} style={RX_FIT}>
@@ -468,12 +498,14 @@ function ImageControls({ draft, set, uploads, saving, onUpload, sel, onCalibrate
             <p className="text-sm font-semibold text-ink">{t("rx.calib")}</p>
             <p className="mt-0.5 text-2xs text-ink-subtle">{t("rx.calibHint")}</p>
             <Range label={t("rx.nudgeX")} value={draft.nudge.x} min={-15} max={15} step={0.5} suffix=" mm" dir="ltr" onChange={(v) => set({ nudge: { ...draft.nudge, x: v } })} data-r="nudge-x" />
-            {/* السهمُ لفوق يرفع الطباعة (قيمةٌ أصغر) والسهمُ لجوه ينزّلها — المنزلقُ يزيد القيمةَ بالسهم لفوق فكان يزحزح عكسَ عنوانه. */}
+            {/* السهمُ لفوق (وPageUp) يرفع الطباعة (قيمةٌ أصغر) والسهمُ لجوه (وPageDown) ينزّلها — المنزلقُ يزيد القيمةَ بالسهم لفوق
+                فكان يزحزح عكسَ عنوانه، وPageUp بقي ينزّلها ٣ مم بعد تصليح الأسهم. وHome/End أطرافُه كما هي: الأعلى ثم الأسفل. */}
             <Range label={t("rx.nudgeY")} value={draft.nudge.y} min={-15} max={15} step={0.5} suffix=" mm" onChange={(v) => set({ nudge: { ...draft.nudge, y: v } })}
               onKeyDown={(e) => {
-                if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                const step = e.shiftKey ? 2 : 0.5;
+                const by = ({ ArrowUp: -step, ArrowDown: step, PageUp: -3, PageDown: 3 } as Record<string, number>)[e.key];
+                if (!by) return;
                 e.preventDefault();
-                const by = (e.shiftKey ? 2 : 0.5) * (e.key === "ArrowUp" ? -1 : 1);
                 set({ nudge: { ...draft.nudge, y: clamp(r1(draft.nudge.y + by), -15, 15) } });
               }} data-r="nudge-y" />
             <Button size="sm" variant="outline" leftIcon={<Printer size={15} />} onClick={onCalibrate} data-rxd-calib>{t("rx.calibPrint")}</Button>
