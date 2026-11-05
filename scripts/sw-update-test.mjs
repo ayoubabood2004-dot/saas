@@ -524,7 +524,10 @@ console.log("▸ الإعداد والتوصيل");
     (rec.match(/await waitForWrites\(\);|waitForWrites\(\)\.then/g) ?? []).length === 3
     && rec.indexOf("await waitForWrites();") < rec.indexOf("caches.keys()")
     && rec.lastIndexOf("await waitForWrites();") > rec.indexOf("r.unregister()") && rec.lastIndexOf("await waitForWrites();") < rec.lastIndexOf("window.location.reload();")
-    && (rec.match(/if \(offline\(\)\) \{ inFlight = null;/g) ?? []).length === 3);
+    && (rec.match(/if \(offline\(\)\) \{ inFlight = null;/g) ?? []).length === 3
+    /* والتراجعان قبل الختم يرجعان **حرفاً** (مراجعةُ 6c80aa5: إرخاءُ هذا لسطر الختم أسقط `return false` من الحراسة، فتراجعٌ يكمل
+       للمسح بلا نتّ — يمسح المخبأ ويلغي الخدمة — مرّ الفحصين؛ سلوكُه الآن بـrx-pad-test ط). */
+    && (rec.match(/if \(offline\(\)\) \{ inFlight = null; return false; \}/g) ?? []).length === 2);
   /* والتراجعُ بعد المسح يمسح ختمَه: الختمُ لتحميلٍ حصل — باقياً كان يرفض «حدّث الصفحة» ٣٠ ثانيةً والنتُّ رجع (تدقيقٌ سادس؛ سلوكُه بـrx-pad-test ط). */
   check("  وتراجعُ ما بعد المسح يمسح ختمَ الدوّامة (والتراجعان قبله قبل الختم)",
     /^ {4}if \(offline\(\)\) \{ inFlight = null; try \{ sessionStorage\.removeItem\(ONCE_KEY\); \}/m.test(rec.slice(rec.indexOf("r.unregister()")))

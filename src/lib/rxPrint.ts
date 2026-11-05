@@ -105,19 +105,24 @@ function bodyLines(body: string): string {
  * المائية معها)، ويقسم السطرَ الأطولَ من الصفحة عند كلمة. ويُعاد من أوّله كلَّ مرّة (`__rxLayout`): يشيل المستنسخات
  * ويرجّع الأسطرَ كما كُتبت. يختم <html> بـdata-pages وdata-overflow (أيُّ صفحةٍ فاضت) وdata-final (بعد الصور والخطوط
  * أو بعد مهلتها) وdata-ready، ويطلق «rx-ready» بعد كلّ ترتيب — وداخل إطار يرسل القياسَ لأبيه (`{rxLayout}` برقم المستند).
+ * ومع النهائيّ data-whole: **رأى كلَّ ما ستراه نافذةُ الطباعة** — الصورُ كلُّها وصلت سليمة، وورقةُ الخطوط طُبّقت ووجوهُها بلا فشل.
+ * نهائيٌّ قسريٌّ وشعارٌ معلَّق، أو شعارٌ فشل طلبُه بالمعاينة ونجح بالنافذة، يُقاس بلا الشعار وتطبعه النافذةُ به (أعلى بـ١٧ ملم):
+ * الشاشةُ كانت تحفظ بقياسه فوراً سجلَّ ورقةٍ رفضتها النافذة (مراجعةُ 6c80aa5) — فالحفظُ الفوريّ لـwhole وحده، وغيرُه تحكمه النافذة.
  * والخطوطُ بعد التحميل (addFonts) من الـpreload (`#rxpre`، يختم وصولَه بـdata-ok)، والمؤقّتُ بعد التحميل بمهلة ٤٠٠ م.ث، والقسريُّ
  * (`forced`) يبقي التحميلَ مسموعاً، ويشيل ورقةَ خطوطٍ لم تصل أو يطبّق ما وصل بالـpreload والتحميلُ لم يحصل. وبعده: صورةٌ تصل
  * تُعيد الترتيبَ بحدثها (`late`)، وما دامت الخطوطُ تصل تُقارَن بصمةُ المربّعات (`sig`: ارتفاعُ المحتوى والمربّع لكلّ صفحة) كلَّ
  * ربع ثانية — وجهٌ حلّ محلَّ الاحتياطيّ غيّرها ⇒ يُعاد. */
-const LAYOUT_JS = `(function(){var root=document.documentElement,pristine=null,loaded=false,css=false,settling=false,forced=false,sig='';
+const LAYOUT_JS = `(function(){var root=document.documentElement,pristine=null,loaded=false,css=false,cssOk=false,settling=false,forced=false,sig='';
 function L(p){return p.querySelector('.rx-lines');}
 function over(b){return b.scrollHeight>b.clientHeight+1;}
 function split(el,b){var t=el.textContent||'';var parts=t.split(/(\\s+)/);if(parts.length<2)return null;var lo=1,hi=parts.length-1,best=0;
 while(lo<=hi){var mid=(lo+hi)>>1;el.textContent=parts.slice(0,mid).join('');if(over(b))hi=mid-1;else{best=mid;lo=mid+1;}}
 if(best===0){el.textContent=t;return null;}el.textContent=parts.slice(0,best).join('');var rest=el.cloneNode(false);rest.textContent=parts.slice(best).join('').replace(/^\\s+/,'');return rest.textContent?rest:null;}
 function fire(){try{window.dispatchEvent(new Event('rx-ready'));}catch(e){}
-if(window.parent!==window){try{window.parent.postMessage({rxLayout:{seq:root.getAttribute('data-rxseq'),pages:Number(root.getAttribute('data-pages'))||1,overflow:root.getAttribute('data-overflow')==='1',final:root.getAttribute('data-final')==='1'}},'*');}catch(e){}}}
+if(window.parent!==window){try{window.parent.postMessage({rxLayout:{seq:root.getAttribute('data-rxseq'),pages:Number(root.getAttribute('data-pages'))||1,overflow:root.getAttribute('data-overflow')==='1',final:root.getAttribute('data-final')==='1',whole:root.getAttribute('data-whole')==='1'}},'*');}catch(e){}}}
 function number(ps){for(var i=0;i<ps.length;i++){var ns=ps[i].querySelectorAll('.pno');for(var j=0;j<ns.length;j++)ns[j].textContent=ps.length>1?(i+1)+' / '+ps.length:'\\u200b';}}
+function whole(){if(!cssOk)return false;var im=document.getElementsByTagName('img');for(var i=0;i<im.length;i++)if(!im[i].complete||!im[i].naturalWidth)return false;
+var f=document.fonts,bad=false;if(f){if(f.status==='loading')return false;try{f.forEach(function(x){if(x.status==='error'||x.status==='loading')bad=true;});}catch(e){}}return !bad;}
 function sigNow(){var s='',ps=document.querySelectorAll('.page');for(var i=0;i<ps.length;i++){var b=L(ps[i]);if(b)s+=b.scrollHeight+'/'+b.clientHeight+';';}return s;}
 function run(final){var first=document.querySelector('.page');if(!first)return;
 var all=document.querySelectorAll('.page');for(var i=all.length-1;i>0;i--)all[i].parentNode.removeChild(all[i]);
@@ -134,7 +139,7 @@ if(stuck)break;page=clone;b=nb;}}
 var ps=document.querySelectorAll('.page');number(ps);
 for(i=0;i<ps.length;i++){var pb=L(ps[i]);if(pb&&over(pb))overflow=true;}
 root.setAttribute('data-pages',String(ps.length));if(overflow)root.setAttribute('data-overflow','1');
-root.setAttribute('data-final',final?'1':'0');root.setAttribute('data-ready','1');sig=sigNow();fire();}
+root.setAttribute('data-final',final?'1':'0');root.setAttribute('data-whole',final&&whole()?'1':'0');root.setAttribute('data-ready','1');sig=sigNow();fire();}
 window.__rxLayout=run;
 function faces(){try{return JSON.parse(root.getAttribute('data-faces')||'[]');}catch(e){return [];}}
 function settle(){if(!loaded||!css||settling)return;var f=document.fonts;if(!f||!f.load){run(true);return;}settling=true;
@@ -143,8 +148,8 @@ Promise.all(faces().map(function(x){return f.load(x).catch(function(){});})).the
 var lk=null;
 function preOk(){var p=document.getElementById('rxpre');return !!p&&p.getAttribute('data-ok')==='1';}
 function onCss(){if(css)return;css=true;if(!forced)settle();}
-function addFonts(){if(lk)return;var h=root.getAttribute('data-fonts');if(!h){onCss();return;}lk=document.createElement('link');lk.rel='stylesheet';lk.id='rxf';
-lk.addEventListener('load',onCss);lk.addEventListener('error',onCss);lk.href=h;document.head.appendChild(lk);}
+function addFonts(){if(lk)return;var h=root.getAttribute('data-fonts');if(!h){cssOk=true;onCss();return;}lk=document.createElement('link');lk.rel='stylesheet';lk.id='rxf';
+lk.addEventListener('load',function(){if(lk.parentNode)cssOk=true;onCss();});lk.addEventListener('error',onCss);lk.href=h;document.head.appendChild(lk);}
 function onLoad(){if(loaded)return;loaded=true;if(forced){run(true);return;}addFonts();
 setTimeout(function(){if(root.getAttribute('data-final')!=='1')run(false);},400);}
 if(document.readyState==='complete')onLoad();else window.addEventListener('load',onLoad);

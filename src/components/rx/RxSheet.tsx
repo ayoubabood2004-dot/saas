@@ -6,8 +6,9 @@
  *    بسجلّ الحيوان. والمحفوظُ **لقطةُ ما انطبع** — واحدةٌ لكلّ مسودّة بمعرّفٍ واحد (rxSave): «احفظها بالسجل» بعد فشلٍ يحفظ الورقةَ
  *    التي خرجت لا المسودّةَ بعد تعديلها، وطباعتان لمسودّةٍ واحدة (ولو قبل أن تقرّر الأولى) أو ردٌّ ضائع ثمّ إعادةٌ لا تكتب صفّاً
  *    ثانياً. والحفظُ يُسمع: فشلُه يُقال ويبقى الزرّ، والخروجُ قبله يُسأل، والنسخةُ الجديدة لا تنزل فوق نصٍّ لم يُحفظ.
- *  • نافذةُ الطباعة حَكَم (rxPrint): قياسُ المعاينة لهذا المستند نفسِه ونهائيٌّ بلا فائض ⇒ الحفظُ فوراً؛ وإلا (كُتب حرفٌ قبل ربع
- *    ثانية، أو الخطوطُ لم تصل) ⇒ يُحفظ حين تقول النافذةُ «طبعتُ» والنسخةُ الجديدة ممسوكةٌ حتى تقرّر، ولا يُحفظ ما رفضته لفائض.
+ *  • نافذةُ الطباعة حَكَم (rxPrint): قياسُ المعاينة لهذا المستند نفسِه ونهائيٌّ **رأى كلَّ شيء** (الصورُ والخطوط) بلا فائض ⇒ الحفظُ
+ *    فوراً؛ وإلا (كُتب حرفٌ قبل ربع ثانية، أو الخطوطُ لم تصل، أو الشعارُ معلَّقٌ أو فشل هنا) ⇒ يُحفظ حين تقول النافذةُ «طبعتُ» والنسخةُ
+ *    الجديدة ممسوكةٌ حتى تقرّر، ولا يُحفظ ما رفضته لفائض. و«انطبعت» عن ورقةٍ لا تُحفظ (فارغة، أو محفوظة) حين تقولها النافذةُ أيضاً.
  *  • «من خطة العلاج» قراءةٌ طازجة ترمي (rxApi.notes): «ما مسجّلة خطة» بعد قراءةٍ نجحت وحدها، والفشلُ «أعد المحاولة».
  *  • الجرعةُ تُكتب كما حُفظت (rxLines) — لا formatNum.
  *  • الراجيتةُ المطبوعة لا تتعدّل (المحفّز)؛ «أضفها هنا» تنسخ نصَّها لراجيتةٍ جديدة، والإلغاءُ للمدير بتأكيدٍ يقول ماذا يحصل.
@@ -55,7 +56,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const [body, setBody] = useState("");
   const [doctor, setDoctor] = useState("");
   const [tab, setTab] = useState<"write" | "paper">("write");
-  const [layout, setLayout] = useState<RxLayoutInfo>({ pages: 1, overflow: false, final: false, html: "" });
+  const [layout, setLayout] = useState<RxLayoutInfo>({ pages: 1, overflow: false, final: false, whole: false, html: "" });
   /* الحفظُ وطابورُه ونوافذُه (rxSave): يبقى بعد إغلاق الشاشة ما دامت نافذةٌ تقرّر أو حفظٌ جارٍ — والشاشةُ ترسمه ما دامت حيّة. */
   const [, redraw] = useReducer((x: number) => x + 1, 0);
   const saverRef = useRef<RxSaver<RxInput, RxRecord> | null>(null);
@@ -162,12 +163,15 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
      كُتب). والإمساكُ **واحدٌ من «تقرّر» إلى «رجعت مسودّة»** (لا يتبدّل بينهما): كان يُؤخذ للمسودّة وحدها، فنافذةٌ تنسدّ تُفلت إمساكَها
      قبل أن يُؤخذ إمساكُ المسودّة برسمةٍ لاحقة — فجوةٌ يمرّ فيها تحديثٌ ينتظر. والورقةُ التي لم تُحفظ تبقى ممسوكةً ولو اختار الطبيبُ التحديث. */
   useEffect(() => (pendingN > 0 || (atRisk && !letGo) ? holdUpdates(Infinity) : undefined), [atRisk, pendingN, letGo]);
-  /* الإذنُ يسقط بأوّل تغيّر، والتحديثُ الذي ينتظر نصّاً لم يُؤذن له يرجع زرّاً: نافذةٌ انسدّت بعد «حدّث» فرجعت المسودّة، أو كُتب بعد
-     الإذن — «راح تتحدّث الصفحة أوّل ما ينحفظ كلشي» كذبٌ عن نصٍّ لا يُطبع هنا (القاموسُ ناقص) فلا يُحفظ أبداً. */
+  /* الإذنُ يسقط بأوّل تغيّر. */
   useEffect(() => {
     if (letGoKey !== null && (letGoKey !== key || !dirty)) setLetGoKey(null);
-    if (reloading && dirty && !letGo) setReloading(false);
-  }, [letGoKey, key, dirty, reloading, letGo]);
+  }, [letGoKey, key, dirty]);
+  /* «حدّث» مضغوطٌ والتعافي ينتظر (`reloading`) حتى يُرفض أو تُحمَّل الصفحة — لا يُلغيه حرف (لا شيءَ يُلغي تعافياً بالطريق). وما يُرى
+     يُحسب منه بالرسمة: نصٌّ لم يُؤذن له يمسكه، فالزرُّ يرجع (ضغطتُه تسأل عن هذا النصّ) — «راح تتحدّث أوّل ما ينحفظ كلشي» كذبٌ عن نصٍّ
+     لا يُطبع هنا (القاموسُ ناقص) فلا يُحفظ؛ وحين لا يبقى ما يمسكه (انحفظ، أو فُرّغ، أو رجع لما ينتظر نافذتَه) يرجع «راح تتحدّث» لأنه
+     صدق: كان يُمسح بأوّل حرف والتعافي باقٍ، فتحمّلت الصفحةُ بعدها بلا كلمة والزرُّ معروض (مراجعةُ 6c80aa5). */
+  const reloadShown = reloading && !(dirty && !letGo);
   /* لم يبقَ ما يضيع (طبعت النافذةُ وانحفظت والسؤالُ مفتوح): السؤالُ يُغلق — الشاشةُ باقية، والخروجُ (أو التحديثُ) بعده بلا سؤال.
      وورقةٌ انطبعت ولم تُحفظ تُغلق سؤالَ التحديث أيضاً: التحديثُ موقوفٌ حتى تُحفظ («احفظها بالسجل» تحته). */
   useEffect(() => {
@@ -191,11 +195,14 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
       toast.error(t("retail.popupBlocked"), t("retail.popupBlockedHint"));
       return;
     }
-    if (!clean.trim()) { watchPrint(w, { onOverflow: overflowed }); toast.success(t("rx.printedBlank")); return; }
-    if (!canRecord || saver.isSaved(key)) { watchPrint(w, { onOverflow: overflowed }); toast.success(t("rx.printedOnly")); return; }
+    /* ورقةٌ لا تُحفظ (فارغة، أو محفوظةٌ قبل، أو بلا سجلّ): «انطبعت» حين تقولها النافذة — كانت تُقال بالضغطة ثمّ ترفض النافذةُ أو تنسدّ. */
+    if (!clean.trim()) { watchPrint(w, { onPrint: () => toast.success(t("rx.printedBlank")), onOverflow: overflowed }); return; }
+    if (!canRecord || saver.isSaved(key)) { watchPrint(w, { onPrint: () => toast.success(t("rx.printedOnly")), onOverflow: overflowed }); return; }
     /* لقطةٌ واحدة لهذه المسودّة بمعرّفٍ واحد: طباعتُها ثانيةً — ولو قبل أن تقرّر نافذتُها الأولى — لا تكتب سجلّاً ثانياً. */
     const snap = saver.snapFor(key, () => ({ id: uuid(), pet_id: pet.id, visit_id: visitId, pet_name: fields.name || pet.name, doctor_name: doctor, fields, body: clean }));
-    if (saver.isPending(key) || (measured && layout.final && !layout.overflow)) {
+    /* الحفظُ الفوريّ بقياسٍ **رأى كلَّ شيء** (whole): شعارٌ فشل طلبُه بالمعاينة ونجح بالنافذة، أو معلَّقٌ عند النهائيّ القسريّ، قِيس
+       بلا الشعار وطبعته النافذةُ به فرفضت — والسجلُّ محفوظٌ و«انطبعت وانحفظت» قبل «ما انطبعت» (مراجعةُ 6c80aa5). */
+    if (saver.isPending(key) || (measured && layout.final && layout.whole && !layout.overflow)) {
       watchPrint(w, { onOverflow: overflowed });
       void saver.enqueue(snap);
     } else {
@@ -316,7 +323,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
             <div className="flex items-center gap-2 text-sm text-danger-700 dark:text-danger-300">
               <AlertTriangle size={16} /> <span>{t("rx.labelsReload")}</span>
               <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>
-              {reloading
+              {reloadShown
                 ? <span className="text-ink-muted" data-rx-reloading>{t("rx.reloading")}</span>
                 : <button className="font-semibold underline" onClick={askReload} data-rx-reload>{t("rx.reloadPage")}</button>}
             </div>
@@ -418,7 +425,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
                   <span className="flex min-w-0 items-start gap-1.5"><AlertTriangle size={14} className="mt-px shrink-0" /> {t("rx.labelsReload")}</span>
                   <span className="flex gap-3">
                     <button className="underline" onClick={labelsRetry}>{t("common.retry")}</button>
-                    {reloading
+                    {reloadShown
                       ? <span className="font-normal text-ink-muted" data-rx-reloading>{t("rx.reloading")}</span>
                       : <button className="underline disabled:opacity-50" onClick={askReload} disabled={pendingN > 0} data-rx-reload>{t("rx.reloadPage")}</button>}
                   </span>

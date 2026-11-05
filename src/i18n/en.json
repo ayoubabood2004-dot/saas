@@ -7319,7 +7319,7 @@
     "leaveWaiting": "The print window hasn't printed yet — if it closes without printing, what you wrote is lost. Leave?",
     "goneUnprinted": "The print window closed before printing — nothing was saved to the record",
     "savedMore": "Changes you made while saving aren't saved yet",
-    "savedLeft": "What you changed after pressing Save was dropped when you left the designer",
+    "savedLeft": "What you changed after pressing “Save design” was lost when you left the designer",
     "leavePending": "The prescription was printed but isn't saved to the record — leave without saving it?",
     "docTitle": "Prescription — {{name}}",
     "sample": {
