@@ -62,9 +62,10 @@ function nameWords(s: string | null | undefined, titles: ReadonlySet<string>): s
 }
 
 /**
- * الدكتورُ الموقّعُ افتراضاً: اسمُ الحساب بأسماء دكاترة الراجيتة **كلماتٍ كاملة** — كلُّ كلمةٍ من الاسم الأقصر كلمةٌ بالأطول
- * («حسن» لا يطابق «محسن»، و«علي» لا يطابق «عليا»)، ولا يُختار إلا دكتورٌ واحدٌ طابق: اثنان طابقا («علي» بـ«عباس علي»
- * و«علي كاظم») تخمينٌ لا يُكتب تحت التوقيع. وبلا مطابقة: الدكتورُ الوحيدُ بالراجيتة، وإلا لا أحد.
+ * الدكتورُ الموقّعُ افتراضاً: اسمُ الحساب بأسماء دكاترة الراجيتة **كلماتٍ كاملة وبترتيبها من أوّلها** — الاسمُ الأقصر أوّلُ
+ * كلمات الأطول (الاسمُ ثمّ اسمُ الأب): «حسن» لا يطابق «محسن»، و«علي» لا يطابق «عليا» ولا «عباس علي» (علي اسمُ أبيه)، و«علي حسن»
+ * لا يطابق «حسن علي» (ابنُه غالباً). ولا يُختار إلا دكتورٌ واحدٌ طابق: اثنان طابقا («علي» بـ«علي حسن» و«علي كاظم») تخمينٌ لا يُكتب
+ * تحت التوقيع. وبلا مطابقة: الدكتورُ الوحيدُ بالراجيتة، وإلا لا أحد.
  * `titles`: الألقابُ التي لا تُعدّ كلمة (د، دكتور، Dr…) — من القاموس (rx.drTitles) لا من الشِفرة.
  */
 export function pickDoctor(me: string | null | undefined, names: readonly string[], titles: readonly string[]): string {
@@ -76,7 +77,7 @@ export function pickDoctor(me: string | null | undefined, names: readonly string
       const d = nameWords(n, T);
       if (!d.length) return false;
       const [short, long] = d.length <= mine.length ? [d, mine] : [mine, d];
-      return short.every((w) => long.includes(w));
+      return short.every((w, i) => long[i] === w);
     });
     if (hits.length === 1) return hits[0];
     if (hits.length > 1) return "";

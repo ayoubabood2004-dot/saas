@@ -66,8 +66,9 @@ const fromDateInput = (s: string): Date | null => {
  * كانت تُرسم شاراتٍ خامّة («voided_by فارغ ← 6f1c…»). */
 const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id", "voided_at", "voided_by", "updated_by", "config"]);
 /* حقولٌ نصُّها هو الخبر فيُعرض كاملاً: وصفةُ الخدمة (0252، `service_recipe_set`: «المستهلكات: كانت … صارت …»)
- * يقصّها الخادمُ عند ١٤٠ حرفاً، وقصُّها هنا عند ٢٨ كان يُخفي المادّةَ التي تغيّرت نفسَها. */
-const FULL_TEXT = new Set(["recipe"]);
+ * يقصّها الخادمُ عند ١٤٠ حرفاً، وقصُّها هنا عند ٢٨ كان يُخفي المادّةَ التي تغيّرت نفسَها. وسببُ إلغاء الراجيتة (0261، ≤ ٢٠٠):
+ * «كُتبت لحيوانٍ ثانٍ — الصحيح لونا» كان يُقصّ قبل الحيوان الصحيح. */
+const FULL_TEXT = new Set(["recipe", "void_reason"]);
 interface FieldChange { key: string; from: unknown; to: unknown }
 /** مفاتيحُ التغيير كما كتبها الخادم (بالضجيج): الجملةُ تقرأ منها ما لا يُرسم شارة. */
 const changesOfRaw = (brief: Record<string, unknown> | null | undefined): Set<string> => {
@@ -471,7 +472,9 @@ export function ActivityLog() {
     const d = r.brief as Record<string, unknown> | null;
     const sid = d?.["staff_id"];
     if (typeof sid === "string" && staffById.get(sid)) return staffById.get(sid)!;
-    const doc = d?.["doctor_name"] ?? d?.["doctor"];
+    /* طبيبُ الصفّ لمن لم يُعرف فاعلُه (سطورُ الملء الرجعيّ 0046) أو لإنشاءٍ من حسابٍ بلا اسم (الحسابُ المشترك) — لا لتعديلٍ أو حذف:
+       إلغاءُ راجيتةٍ (للمدير وحده) وحذفُها مع حيوانها كانا يُنسبان لطبيبها الموقِّع. */
+    const doc = !r.actor || r.action === "INSERT" ? d?.["doctor_name"] ?? d?.["doctor"] : null;
     if (typeof doc === "string" && doc.trim()) return doc.trim();
     return r.actor ? t("act.manager", "مدير العيادة") : t("act.system", "النظام");
   };

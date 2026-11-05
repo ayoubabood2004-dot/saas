@@ -7,7 +7,8 @@
  *    داخل النافذة، والنسخةُ الجديدة لا تنزل فوقه (holdUpdates: السحبُ والمنزلقاتُ والرفعُ ليست كتابةً يراها editing()).
  *  • فشلُ القراءة يُقال بـ«أعد المحاولة» لا يُبذر الافتراضيُّ كأنه تصميمُ العيادة (حفظُه كان يُرفض ويُضيّع ما بُني).
  *  • الصورُ تُرفع فوراً للدلو (مجلّدُ العيادة كما يؤكّده الخادم) والتصميمُ يحمل مسارَها؛ «رجّع الافتراضي» لا يمسّها،
- *    والحفظُ موقوفٌ حتى ينتهي الرفع (وإلا حُفظ التصميمُ بلاها وقيل «انحفظ»). وصورةُ الراجيتة تُسطَّح على أبيض (JPEG بلا شفافية).
+ *    والحفظُ موقوفٌ حتى ينتهي **كلُّ** رفع (عدّادٌ لكلّ نوع — خانةٌ واحدة كان يفرّغها أوّلُ رفعٍ ينتهي فيُحفظ التصميمُ بلا الثاني
+ *    ويُقال «انحفظ»)، والرفعُ موقوفٌ أثناء الحفظ، ورفعٌ عالق يُقطع بمهلة (كان يقفل «احفظ» للأبد). وصورةُ الراجيتة تُسطَّح على أبيض.
  *  • شعارُ الدائرة خانةٌ ثابتة بالجهة الثانية من الترويسة — ترفعه العيادةُ مرّةً (لا نحمل صورةَ شعارٍ رسميّ).
  *  • جدولٌ غائب (واجهةٌ قبل هجرتها): المعاينةُ تعمل والحفظُ موقوفٌ بجملةٍ تقوله.
  * رفيقٌ لنطاق rx: يُحمَّل كسولاً من مالكه (RxPad) وحدَه.
@@ -22,7 +23,7 @@ import { Button, Dialog, Segmented, Spinner, useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { prepareLogo, prepareUpload } from "@/lib/image";
-import { describeUploadError } from "@/lib/errors";
+import { describeUploadError, withTimeout } from "@/lib/errors";
 import { cn, localISO } from "@/lib/utils";
 import { holdUpdates } from "@/lib/inflight";
 import { getClinicLogo, getClinicName, getClinicSocials, getClockFormat, getWorkHours } from "@/lib/settings";
@@ -37,6 +38,9 @@ import { RX_FIT, RxPaper } from "./RxPaper";
 import { rxDoc, rxErrorText, rxImageUrl, useRxLabels, useRxPad } from "./rxShared";
 
 type HandleKey = `slot:${RxSlotKey}` | `tick:${RxTickKey}` | "body";
+type UpKind = "bg" | "emblem";
+/** رفعٌ عالق (شبكةٌ لا تجيب) يُقطع: «ما انرفعت» وتُعاد — بلا مهلة كان «احفظ» يبقى مقفولاً حتى تُغلق النافذة. */
+const UPLOAD_MS = 90_000;
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -49,12 +53,13 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [base, setBase] = useState<RxPadConfig | null>(null);
   const [expect, setExpect] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState<null | "bg" | "emblem">(null);
+  const [uploads, setUploads] = useState<Record<UpKind, number>>({ bg: 0, emblem: 0 });
+  const uploading = uploads.bg + uploads.emblem > 0;
   const [sel, setSel] = useState<HandleKey | null>(null);
   const [leaveAsk, setLeaveAsk] = useState(false);
   const [resetAsk, setResetAsk] = useState(false);
   const [tab, setTab] = useState<"edit" | "paper">("edit");
-  const { labels, ready } = useRxLabels(draft?.lang ?? "en");
+  const { labels, failed: labelsFailed, retry: labelsRetry } = useRxLabels(draft?.lang ?? "en");
 
   /* أوّلُ فتح (وبعد «تغيّر من جهاز ثاني»): المحفوظُ، أو الافتراضيُّ ورقمُ هاتف الحساب بذرةً — **تعديلاً لم يُحفظ** (الأساسُ بلا
      البذرة): المعاينةُ تعرضه والطباعةُ تقرأ المحفوظ، فرقمٌ يظهر هنا ولا يُطبع كان يبقى بلا «احفظ» يقدر عليه. وفشلُ القراءة لا يبذر. */
@@ -80,7 +85,7 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   useEffect(() => (dirty || uploading ? holdUpdates(Infinity) : undefined), [dirty, uploading]);
 
   const save = async () => {
-    if (!draft || missing || uploading) return;
+    if (!draft || missing || uploading || saving) return;
     setSaving(true);
     try {
       const row = await rxApi.savePad(draft, expect);
@@ -105,24 +110,26 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
     }
   };
 
-  const upload = async (kind: "bg" | "emblem", file: File | undefined) => {
-    if (!file) return;
-    setUploading(kind);
+  const upload = async (kind: UpKind, file: File | undefined) => {
+    if (!file || saving) return;
+    const bump = (by: 1 | -1) => setUploads((u) => ({ ...u, [kind]: Math.max(0, u[kind] + by) }));
+    bump(1);
     try {
       const prepared = kind === "emblem" ? await prepareLogo(file, { maxDim: 520 }) : await prepareUpload(file, { maxDim: 2000, quality: 0.82, background: "#ffffff" });
-      const path = await rxApi.uploadImage(kind, prepared);
+      const path = await withTimeout(rxApi.uploadImage(kind, prepared), UPLOAD_MS);
       setDraft((d) => (d ? (kind === "bg" ? { ...d, bgPath: path } : { ...d, emblemPath: path }) : d));
       playSuccess();
     } catch (e) {
       playWarning();
       toast.error(t("rx.uploadFail"), describeUploadError(e, t));
     } finally {
-      setUploading(null);
+      bump(-1);
     }
   };
 
+  /* صفحةُ المعايرة لصورة الراجيتة وحدها، وخاناتُها قيمٌ بلا عناوين — فلا تنتظر قاموسَ العناوين (كان فشلُه يُسكت الزرّ بلا كلمة). */
   const printCalibration = () => {
-    if (!draft || !ready) return;
+    if (!draft) return;
     /* نافذةُ الطباعة لا تطبع فائضاً (مربّعُ وصفةٍ أصغرُ من نصّ المثال) — فتقول لماذا بدل أن تقف صامتة. */
     if (!openRxPrint(buildRxHTML({ ...rxDoc(draft, labels, sample, t("rx.sample.body"), doctorName, title), overflowNote: t("rx.overflowPrint") }, { print: true, calibrate: true }))) {
       playWarning();
@@ -130,8 +137,9 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
     }
   };
 
+  /* ورفعٌ بالطريق يُسأل أيضاً: الخروجُ يُضيّع الصورةَ التي اختيرت. */
   const confirmClose = () => {
-    if (!dirty) return true;
+    if (!dirty && !uploading) return true;
     setLeaveAsk(true);
     return false;
   };
@@ -173,9 +181,9 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
                 </Sec>
 
                 {draft.mode === "template" ? (
-                  <TemplateControls draft={draft} set={set} uploading={uploading} onUpload={upload} />
+                  <TemplateControls draft={draft} set={set} uploads={uploads} saving={saving} onUpload={upload} />
                 ) : (
-                  <ImageControls draft={draft} set={set} uploading={uploading} onUpload={upload} sel={sel} onCalibrate={printCalibration} />
+                  <ImageControls draft={draft} set={set} uploads={uploads} saving={saving} onUpload={upload} sel={sel} onCalibrate={printCalibration} />
                 )}
 
                 <DoctorsSec draft={draft} set={set} />
@@ -184,6 +192,12 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
               <div className={cn("min-w-0", tab === "edit" && "rxp-offstage")}>
                 <div className="rxp-stick rounded-3xl bg-surface-2 p-3 sm:p-5">
                   <p className="mb-2 text-center text-2xs font-semibold text-ink-subtle">{t("rx.preview")}</p>
+                  {labelsFailed && (
+                    <p className="mb-2 flex items-center justify-center gap-2 text-xs text-danger-700 dark:text-danger-300" data-rxd-labels-fail>
+                      <AlertTriangle size={14} /> {t("rx.labelsFail")}
+                      <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>
+                    </p>
+                  )}
                   <RxPaper html={html} paper={draft.paper} title={title} style={RX_FIT}>
                     {draft.mode === "image" && <Handles draft={draft} setDraft={setDraft} sel={sel} setSel={setSel} />}
                   </RxPaper>
@@ -196,7 +210,7 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
               <div className="min-w-0 flex-1 text-xs">
                 {missing && <span className="flex items-center gap-1.5 text-warn-700 dark:text-warn-300" data-rx-missing><AlertTriangle size={14} /> {t("rx.needsUpdate")}</span>}
               </div>
-              <Button onClick={() => void save()} loading={saving} disabled={missing || pad.status !== "ready" || !dirty || uploading !== null} data-rxd-save>{t("rx.save")}</Button>
+              <Button onClick={() => void save()} loading={saving} disabled={missing || pad.status !== "ready" || !dirty || uploading} data-rxd-save>{t("rx.save")}</Button>
             </div>
           </div>
         )}
@@ -247,27 +261,28 @@ function Toggle({ label, checked, onChange, ...rest }: { label: string; checked:
 }
 /** `dir`: منزلقٌ معناه اتّجاهٌ على الورق (المعايرة يمين/يسار) **فيزيائيٌّ** — بواجهةٍ عربية كان طرفُه الأيمن سالباً فيزحزح الطباعةَ
  *  عكسَ ما يقوله عنوانُه، وكلُّ تجربةٍ ورقةُ راجيتةٍ مطبوعة. */
-function Range({ label, value, min, max, step = 1, suffix = "", dir, onChange, ...rest }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; dir?: "ltr"; onChange: (v: number) => void; "data-r"?: string }) {
+function Range({ label, value, min, max, step = 1, suffix = "", dir, onChange, onKeyDown, ...rest }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; dir?: "ltr"; onChange: (v: number) => void; onKeyDown?: (e: RKeyboardEvent<HTMLInputElement>) => void; "data-r"?: string }) {
   return (
     <label className="block py-1">
       <span className="flex items-center justify-between text-xs text-ink-muted"><span>{label}</span><span className="font-mono tabular-nums text-ink" dir="ltr">{value}{suffix}</span></span>
-      <input type="range" className="mt-1 w-full accent-brand-600" dir={dir} min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} {...rest} />
+      <input type="range" className="mt-1 w-full accent-brand-600" dir={dir} min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} onKeyDown={onKeyDown} {...rest} />
     </label>
   );
 }
-function ImagePick({ label, busy, onFile, accept = "image/png,image/jpeg,image/webp", ...rest }: { label: string; busy: boolean; onFile: (f: File | undefined) => void; accept?: string; "data-up"?: string }) {
+/** `busy`: رفعُ هذا النوع بالطريق (يقوله)؛ `off`: موقوفٌ بلا كلمة (الحفظُ جارٍ). */
+function ImagePick({ label, busy, off, onFile, accept = "image/png,image/jpeg,image/webp", ...rest }: { label: string; busy: boolean; off?: boolean; onFile: (f: File | undefined) => void; accept?: string; "data-up"?: string }) {
   const { t } = useTranslation();
   return (
-    <label className={cn("btn-secondary cursor-pointer text-sm", busy && "pointer-events-none opacity-60")}>
+    <label className={cn("btn-secondary cursor-pointer text-sm", (busy || off) && "pointer-events-none opacity-60")}>
       {busy ? <Spinner size={15} /> : <CloudUpload size={15} />} {busy ? t("rx.uploading") : label}
-      <input type="file" accept={accept} className="hidden" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; onFile(f); }} {...rest} />
+      <input type="file" accept={accept} className="hidden" disabled={busy || off} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; onFile(f); }} {...rest} />
     </label>
   );
 }
 
 type Setter = (patch: Partial<RxPadConfig>) => void;
 
-function TemplateControls({ draft, set, uploading, onUpload }: { draft: RxPadConfig; set: Setter; uploading: null | "bg" | "emblem"; onUpload: (k: "bg" | "emblem", f: File | undefined) => void }) {
+function TemplateControls({ draft, set, uploads, saving, onUpload }: { draft: RxPadConfig; set: Setter; uploads: Record<UpKind, number>; saving: boolean; onUpload: (k: UpKind, f: File | undefined) => void }) {
   const { t } = useTranslation();
   const logo = getClinicLogo();
   const emblem = rxImageUrl(draft.emblemPath);
@@ -315,7 +330,7 @@ function TemplateControls({ draft, set, uploading, onUpload }: { draft: RxPadCon
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <ImagePick label={emblem ? t("rx.change") : t("rx.emblemUpload")} busy={uploading === "emblem"} onFile={(f) => onUpload("emblem", f)} data-up="emblem" />
+              <ImagePick label={emblem ? t("rx.change") : t("rx.emblemUpload")} busy={uploads.emblem > 0} off={saving} onFile={(f) => onUpload("emblem", f)} data-up="emblem" />
               {emblem && <button className="chip bg-surface-1 text-xs font-semibold text-danger-600 hover:bg-danger-50" onClick={() => set({ emblemPath: null })} data-rxd="emblem-remove"><Trash2 size={13} /> {t("common.remove")}</button>}
             </div>
           </div>
@@ -394,8 +409,8 @@ function TemplateControls({ draft, set, uploading, onUpload }: { draft: RxPadCon
   );
 }
 
-function ImageControls({ draft, set, uploading, onUpload, sel, onCalibrate }: {
-  draft: RxPadConfig; set: Setter; uploading: null | "bg" | "emblem"; onUpload: (k: "bg" | "emblem", f: File | undefined) => void; sel: HandleKey | null; onCalibrate: () => void;
+function ImageControls({ draft, set, uploads, saving, onUpload, sel, onCalibrate }: {
+  draft: RxPadConfig; set: Setter; uploads: Record<UpKind, number>; saving: boolean; onUpload: (k: UpKind, f: File | undefined) => void; sel: HandleKey | null; onCalibrate: () => void;
 }) {
   const { t } = useTranslation();
   const bg = rxImageUrl(draft.bgPath);
@@ -407,7 +422,7 @@ function ImageControls({ draft, set, uploading, onUpload, sel, onCalibrate }: {
             {bg ? <img src={bg} alt="" className="h-full w-full object-cover" /> : <Camera size={18} className="text-ink-subtle/60" />}
           </div>
           <div className="min-w-0 flex-1 space-y-2">
-            <ImagePick label={bg ? t("rx.bgChange") : t("rx.bgUpload")} busy={uploading === "bg"} onFile={(f) => onUpload("bg", f)} data-up="bg" />
+            <ImagePick label={bg ? t("rx.bgChange") : t("rx.bgUpload")} busy={uploads.bg > 0} off={saving} onFile={(f) => onUpload("bg", f)} data-up="bg" />
             <p className="text-2xs text-ink-subtle">{t("rx.bgHint")}</p>
           </div>
         </div>
@@ -453,7 +468,14 @@ function ImageControls({ draft, set, uploading, onUpload, sel, onCalibrate }: {
             <p className="text-sm font-semibold text-ink">{t("rx.calib")}</p>
             <p className="mt-0.5 text-2xs text-ink-subtle">{t("rx.calibHint")}</p>
             <Range label={t("rx.nudgeX")} value={draft.nudge.x} min={-15} max={15} step={0.5} suffix=" mm" dir="ltr" onChange={(v) => set({ nudge: { ...draft.nudge, x: v } })} data-r="nudge-x" />
-            <Range label={t("rx.nudgeY")} value={draft.nudge.y} min={-15} max={15} step={0.5} suffix=" mm" onChange={(v) => set({ nudge: { ...draft.nudge, y: v } })} data-r="nudge-y" />
+            {/* السهمُ لفوق يرفع الطباعة (قيمةٌ أصغر) والسهمُ لجوه ينزّلها — المنزلقُ يزيد القيمةَ بالسهم لفوق فكان يزحزح عكسَ عنوانه. */}
+            <Range label={t("rx.nudgeY")} value={draft.nudge.y} min={-15} max={15} step={0.5} suffix=" mm" onChange={(v) => set({ nudge: { ...draft.nudge, y: v } })}
+              onKeyDown={(e) => {
+                if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                e.preventDefault();
+                const by = (e.shiftKey ? 2 : 0.5) * (e.key === "ArrowUp" ? -1 : 1);
+                set({ nudge: { ...draft.nudge, y: clamp(r1(draft.nudge.y + by), -15, 15) } });
+              }} data-r="nudge-y" />
             <Button size="sm" variant="outline" leftIcon={<Printer size={15} />} onClick={onCalibrate} data-rxd-calib>{t("rx.calibPrint")}</Button>
           </div>
         )}

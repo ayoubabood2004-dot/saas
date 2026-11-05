@@ -3,17 +3,18 @@
  * من منتقي الأدوية ومن آخر خطة علاج — والورقةُ بجانبه كما ستُطبع، ثم «اطبع الراجيتة».
  *
  *  • الطباعةُ نافذةٌ تُفتح **داخل الضغطة** قبل أيّ await (سفاري يمنع غيرَها بصمت) ويُكتب فيها المستندُ بالضغطة نفسها، ثم الحفظُ
- *    بسجلّ الحيوان. والمحفوظُ **لقطةُ ما انطبع** (بمعرّفها، rxApi): «احفظها بالسجل» بعد فشلٍ يحفظ الورقةَ التي خرجت لا المسودّةَ
- *    بعد تعديلها، وردٌّ ضائع ثمّ إعادةٌ لا تكتب صفّاً ثانياً. والحفظُ يُسمع: فشلُه يُقال ويبقى الزرّ، والخروجُ قبله يُسأل.
+ *    بسجلّ الحيوان. والمحفوظُ **لقطةُ ما انطبع** — واحدةٌ لكلّ مسودّة بمعرّفٍ واحد (rxSave): «احفظها بالسجل» بعد فشلٍ يحفظ الورقةَ
+ *    التي خرجت لا المسودّةَ بعد تعديلها، وطباعتان لمسودّةٍ واحدة (ولو قبل أن تقرّر الأولى) أو ردٌّ ضائع ثمّ إعادةٌ لا تكتب صفّاً
+ *    ثانياً. والحفظُ يُسمع: فشلُه يُقال ويبقى الزرّ، والخروجُ قبله يُسأل، والنسخةُ الجديدة لا تنزل فوق نصٍّ لم يُحفظ.
  *  • نافذةُ الطباعة حَكَم (rxPrint): قياسُ المعاينة لهذا المستند نفسِه ونهائيٌّ بلا فائض ⇒ الحفظُ فوراً؛ وإلا (كُتب حرفٌ قبل ربع
- *    ثانية، أو الخطوطُ لم تصل) ⇒ يُحفظ حين تقول النافذةُ «طبعتُ»، ولا يُحفظ ما رفضته لفائض (تقوله هي والشاشة).
+ *    ثانية، أو الخطوطُ لم تصل) ⇒ يُحفظ حين تقول النافذةُ «طبعتُ» والنسخةُ الجديدة ممسوكةٌ حتى تقرّر، ولا يُحفظ ما رفضته لفائض.
  *  • «من خطة العلاج» قراءةٌ طازجة ترمي (rxApi.notes): «ما مسجّلة خطة» بعد قراءةٍ نجحت وحدها، والفشلُ «أعد المحاولة».
  *  • الجرعةُ تُكتب كما حُفظت (rxLines) — لا formatNum.
  *  • الراجيتةُ المطبوعة لا تتعدّل (المحفّز)؛ «أضفها هنا» تنسخ نصَّها لراجيتةٍ جديدة، والإلغاءُ للمدير بتأكيدٍ يقول ماذا يحصل.
  *  • لا autoFocus (med-entry-guard: المكوّنُ يرسم MedPicker)، والخروجُ بنصٍّ لم يُحفظ يُسأل داخل النافذة (لا window.confirm).
  * رفيقٌ لنطاق rx: يُحمَّل كسولاً من مالكه (RxPad) وحدَه.
  * ========================================================================= */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Ban, ClipboardList, CopyPlus, Pill, Printer, RotateCcw, Check, History } from "lucide-react";
 import { Modal } from "@/components/Modal";
@@ -21,40 +22,22 @@ import { Button, Dialog, Segmented, Spinner, useToast } from "@/components/ui";
 import { MedPicker } from "@/components/meds/MedPicker";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { holdUpdates } from "@/lib/inflight";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { ageFromDOB, cn, formatDate, formatDec, localISO, uuid } from "@/lib/utils";
 import { rxApi, isRxMissing, isRxStale, RX_NOTES_LIMIT, type RxNew, type RxRecord } from "@/lib/rxApi";
 import { buildRxHTML, openRxPrint } from "@/lib/rxPrint";
-import { RX_LIMITS, ageTextEn, cleanRxBody, rxDraftKey, rxKindOf, type RxFields, type RxKind, type RxLang } from "@/lib/rxLayout";
+import { browserWatchEnv, createPrintWatch, createRxSaver, type RxSaver } from "@/lib/rxSave";
+import { RX_LIMITS, ageTextEn, cleanRxBody, daysTextEn, rxDraftKey, rxKindOf, type RxFields, type RxKind, type RxLang, type RxPadConfig } from "@/lib/rxLayout";
 import { appendBlock, appendLines, hasDrugLine, latestPlan, pickDoctor, planLine, removeDrugLine, type RxPlan } from "@/lib/rxLines";
 import type { Pet } from "@/types";
 import { RX_FIT, RX_FIT_SCROLL, RxPaper, type RxLayoutInfo } from "./RxPaper";
 import { rxDoc, rxErrorText, useRxLabels, useRxPad } from "./rxShared";
 
 type HistState = { status: "loading" | "ready" | "error" | "missing"; list: RxRecord[] };
-/** ما انطبع ولم يُحفظ بعد: لقطتُه كما خرجت ومعرّفُه (المفتاحُ يكشف إعادتَها). */
-type Snap = { key: string; input: RxNew & { id: string } };
-/* نوافذُ الطباعة المفتوحة ورسائلُها (PRINT_JS: «print» قبل الطباعة، «overflow» بدلها). على مستوى الوحدة لا المكوّن: حفظٌ ينتظر
-   «طبعتُ» يكمل ولو أُغلقت النافذةُ الصغيرة قبلها. */
-type PrintWatch = { onPrint?: () => void; onOverflow: () => void };
-const watching = new Map<Window, PrintWatch>();
-let listening = false;
-function watchPrint(w: Window, h: PrintWatch) {
-  watching.set(w, h);
-  if (!listening) {
-    listening = true;
-    window.addEventListener("message", (e) => {
-      const src = e.source as Window | null;
-      const kind = (e.data as { rx?: unknown } | null)?.rx;
-      const got = src ? watching.get(src) : undefined;
-      if (!got || (kind !== "print" && kind !== "overflow")) return;
-      watching.delete(src!);
-      if (kind === "print") got.onPrint?.();
-      else got.onOverflow();
-    });
-  }
-  const iv = window.setInterval(() => { if (w.closed || !watching.has(w)) { watching.delete(w); window.clearInterval(iv); } }, 3000);
-}
+type RxInput = RxNew & { id: string };
+/* نوافذُ الطباعة على مستوى الوحدة لا المكوّن: حفظٌ ينتظر «طبعتُ» يكمل ولو أُغلقت الشاشة (rxSave). */
+const watchPrint = createPrintWatch(browserWatchEnv());
 type PlanState = { status: "closed" } | { status: "loading" } | { status: "error" } | { status: "none" } | { status: "ready"; plan: RxPlan; picked: boolean[] };
 const KIND_OPTS = ["canine", "feline", "exotic", "none"] as const;
 
@@ -73,12 +56,9 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const [doctor, setDoctor] = useState("");
   const [tab, setTab] = useState<"write" | "paper">("write");
   const [layout, setLayout] = useState<RxLayoutInfo>({ pages: 1, overflow: false, final: false, html: "" });
-  const [savedKey, setSavedKey] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
-  const [pending, setPending] = useState<Snap[]>([]);
-  const pendingRef = useRef<Snap[]>([]);
-  const flushing = useRef(false);
+  /* الحفظُ وطابورُه ونوافذُه (rxSave): يبقى بعد إغلاق الشاشة ما دامت نافذةٌ تقرّر أو حفظٌ جارٍ — والشاشةُ ترسمه ما دامت حيّة. */
+  const [, redraw] = useReducer((x: number) => x + 1, 0);
+  const saverRef = useRef<RxSaver<RxInput, RxRecord> | null>(null);
   const alive = useRef(true);
   /* يُرفع بكلّ تركيب لا بأوّله وحده: StrictMode (والتركيبُ المعاد) ينادي التنظيفَ ثمّ الأثرَ ثانيةً — علمٌ يُطفأ ولا يُشعل كان يُسقط
      تحديثَ القائمة بعد كلّ حفظ. */
@@ -95,13 +75,22 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const [voidReason, setVoidReason] = useState("");
   const [voiding, setVoiding] = useState(false);
 
-  /* خاناتُ المريض **بلغة الورقة** (مترجمُها tp بعد وصول قاموسها) — بعد وصول التصميم مرّةً واحدة؛ وبعدها هي ما كتبه الطبيب.
-     والدكتورُ الموقّع: اسمُ الحساب بكلماتٍ كاملة ودكتورٌ واحدٌ طابق (pickDoctor) — لا تخمينٌ تحت التوقيع. */
+  /* خاناتُ المريض **بلغة الورقة** (مترجمُها tp بعد وصول قاموسها) — بعد وصول التصميم؛ وبعدها هي ما كتبه الطبيب.
+     والدكتورُ الموقّع: اسمُ الحساب بأوّل كلمات الاسم ودكتورٌ واحدٌ طابق (pickDoctor) — لا تخمينٌ تحت التوقيع.
+     وتصميمٌ وصل بعد البذر («أعد المحاولة» بعد فشل القراءة، فبُذر بالافتراضيّ الإنكليزيّ) يعيد بذرَ **ما لم يلمسه الطبيب** وحده
+     (العمرُ والوزنُ بلغة الورقة الجديدة، والدكتورُ من دكاترتها) — كانت الورقةُ العربية تطبع «العمر: 2 years 8 months». */
+  const seeded = useRef<{ cfg: RxPadConfig; age: string; weight: string; doctor: string } | null>(null);
   useEffect(() => {
-    if (pad.status === "loading" || !labelsReady || fields) return;
-    setFields(initialFields(pet, cfg.lang, tp));
-    setDoctor(pickDoctor(user?.full_name, cfg.doctors.map((d) => d.name), t("rx.drTitles").split(",")));
-  }, [pad.status, labelsReady, fields, pet, cfg, tp, t, user?.full_name]);
+    if (pad.status === "loading" || !labelsReady) return;
+    const s = seeded.current;
+    if (s && s.cfg === cfg) return;
+    const f = initialFields(pet, cfg.lang, tp);
+    const dr = pickDoctor(user?.full_name, cfg.doctors.map((d) => d.name), t("rx.drTitles").split(","));
+    if (!s) setFields(f);
+    else setFields((cur) => (cur ? { ...cur, age: cur.age === s.age ? f.age : cur.age, weight: cur.weight === s.weight ? f.weight : cur.weight } : f));
+    setDoctor((cur) => (!s || cur === s.doctor ? dr : cur));
+    seeded.current = { cfg, age: f.age, weight: f.weight, doctor: dr };
+  }, [pad.status, labelsReady, pet, cfg, tp, t, user?.full_name]);
 
   useEffect(() => {
     let alive = true;
@@ -120,7 +109,6 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const doc = useMemo(() => (fields ? rxDoc(cfg, labels, fields, clean, doctor, title) : null), [cfg, labels, fields, clean, doctor, title]);
   const html = useMemo(() => (doc ? buildRxHTML(doc) : ""), [doc]);
   const key = fields ? rxDraftKey(fields, clean, doctor) : "";
-  const dirty = !!clean.trim() && key !== savedKey && !pending.some((p) => p.key === key);
   const canRecord = hist.status !== "missing" && pad.status !== "missing";
   /* قياسُ المعاينة يخصّ **هذا** المستند (لا ما قبل آخر حرف)؛ ومؤكَّدٌ = نهائيٌّ بعد الخطوط. */
   const measured = layout.html === html;
@@ -135,43 +123,26 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
     else if (h.status !== "missing") setHistN((x) => x + 1);
   };
 
-  /** يحفظ ما انطبع ولم يُحفظ، بالترتيب، ويقف عند أوّل فشل (يبقى بالقائمة لـ«احفظها بالسجل»). يكمل ولو أُغلقت الشاشة. */
-  const flush = async () => {
-    if (flushing.current) return;
-    flushing.current = true;
-    if (alive.current) setSaving(true);
-    try {
-      while (pendingRef.current.length) {
-        const snap = pendingRef.current[0];
-        let rec: RxRecord;
-        try {
-          rec = await rxApi.add(snap.input);
-        } catch (e) {
-          if (alive.current) setSaveFailed(true);
-          playWarning();
-          toast.error(t("rx.saveFail"), rxErrorText(e, t));
-          return;
-        }
-        pendingRef.current = pendingRef.current.filter((x) => x !== snap);
-        if (alive.current) {
-          setPending(pendingRef.current);
-          setSavedKey(snap.key);
-          setSaveFailed(false);
-          mergeHistory(rec);
-        }
-        playSuccess();
-        toast.success(t("rx.printed", { name: snap.input.pet_name }));
-      }
-    } finally {
-      flushing.current = false;
-      if (alive.current) setSaving(false);
-    }
+  /* يحفظ ما انطبع ولم يُحفظ، بالترتيب، ويقف عند أوّل فشل (يبقى بالطابور لـ«احفظها بالسجل») — ويكمل ولو أُغلقت الشاشة. */
+  if (!saverRef.current) saverRef.current = createRxSaver<RxInput, RxRecord>({ add: rxApi.add, hold: holdUpdates, onSaved() {}, onFail() {}, onChange() {} });
+  const saver = saverRef.current;
+  saver.deps = {
+    add: (input) => rxApi.add(input),
+    hold: holdUpdates,
+    onChange: () => { if (alive.current) redraw(); },
+    onSaved: (snap, rec) => {
+      if (alive.current) mergeHistory(rec);
+      playSuccess();
+      toast.success(t("rx.printed", { name: snap.input.pet_name }));
+    },
+    onFail: (_snap, e) => { playWarning(); toast.error(t("rx.saveFail"), rxErrorText(e, t)); },
   };
-  const enqueue = (snap: Snap) => {
-    if (!pendingRef.current.some((p) => p.key === snap.key)) pendingRef.current = [...pendingRef.current, snap];
-    if (alive.current) setPending(pendingRef.current);
-    void flush();
-  };
+  const saved = !!clean.trim() && saver.isSaved(key);
+  /* مسودّةٌ لم تنطبع: لا محفوظة، ولا بالطابور، ولا نافذةٌ تقرّر عنها (تلك تُحفظ وحدها حين تطبع). */
+  const dirty = !!clean.trim() && !saved && !saver.isPending(key) && !saver.isWaiting(key);
+  const pendingN = saver.pendingCount;
+  /* نصٌّ لم يُحفظ أو ورقةٌ انطبعت ولم تُحفظ: النسخةُ الجديدة لا تنزل فوقه (خمولٌ طويل كان يعيد التحميل فيضيع ما كُتب). */
+  useEffect(() => (dirty || pendingN > 0 ? holdUpdates(Infinity) : undefined), [dirty, pendingN]);
   const overflowed = () => { playWarning(); toast.error(t("rx.overflowPrint")); };
 
   /* داخل الضغطة: النافذةُ ومستندُها أوّلاً (قبل أيّ await)، ثمّ السجلّ — بلقطة ما كُتب فيها. */
@@ -184,19 +155,16 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
       return;
     }
     if (!clean.trim()) { watchPrint(w, { onOverflow: overflowed }); toast.success(t("rx.printedBlank")); return; }
-    const waiting = pendingRef.current.find((p) => p.key === key);
-    if (!canRecord || key === savedKey || waiting) {
+    if (!canRecord || saver.isSaved(key)) { watchPrint(w, { onOverflow: overflowed }); toast.success(t("rx.printedOnly")); return; }
+    /* لقطةٌ واحدة لهذه المسودّة بمعرّفٍ واحد: طباعتُها ثانيةً — ولو قبل أن تقرّر نافذتُها الأولى — لا تكتب سجلّاً ثانياً. */
+    const snap = saver.snapFor(key, () => ({ id: uuid(), pet_id: pet.id, visit_id: visitId, pet_name: fields.name || pet.name, doctor_name: doctor, fields, body: clean }));
+    if (saver.isPending(key) || (measured && layout.final && !layout.overflow)) {
       watchPrint(w, { onOverflow: overflowed });
-      if (waiting) void flush(); else toast.success(t("rx.printedOnly"));
-      return;
-    }
-    const snap: Snap = { key, input: { id: uuid(), pet_id: pet.id, visit_id: visitId, pet_name: fields.name || pet.name, doctor_name: doctor, fields, body: clean } };
-    if (measured && layout.final && !layout.overflow) {
-      watchPrint(w, { onOverflow: overflowed });
-      enqueue(snap);
+      void saver.enqueue(snap);
     } else {
-      /* المعاينةُ لم تقس هذا المستندَ بعد: النافذةُ تقرّر — «طبعتُ» ⇒ يُحفظ، «فائض» ⇒ لا ورقة ولا سجلّ. */
-      watchPrint(w, { onPrint: () => enqueue(snap), onOverflow: overflowed });
+      /* المعاينةُ لم تقس هذا المستندَ بعد: النافذةُ تقرّر — «طبعتُ» ⇒ يُحفظ، «فائض» ⇒ لا ورقة ولا سجلّ — والنسخةُ الجديدة ممسوكةٌ
+         من الآن حتى يستقرّ ذلك (تبديلُ صفحةٍ ونسخةٌ تنتظر كان يعيد التحميل فتطبع الورقةُ بلا سجلّ). */
+      watchPrint(w, saver.deferTo(snap, overflowed));
     }
   };
 
@@ -234,8 +202,8 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
     playTap();
     void loadPlan();
   };
-  /* الأيامُ بلغة الورقة (tp): السطرُ يُطبع عليها. */
-  const planDays = (n: number) => tp("rx.days", { count: n });
+  /* الأيامُ بلغة الورقة: السطرُ يُطبع عليها — والإنكليزيةُ ثابتة (مترجمُ الورقة الإنكليزية بواجهةٍ عربية هو مترجمُ الواجهة). */
+  const planDays = (n: number) => (cfg.lang === "en" ? daysTextEn(n) : tp("rx.days", { count: n }));
   const insertPlan = () => {
     if (plan.status !== "ready") return;
     const lines = plan.plan.items.filter((_, i) => plan.picked[i]).map((it) => planLine(it, planDays));
@@ -263,9 +231,10 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
     }
   };
 
-  /* الخروجُ يُسأل: مسودّةٌ لم تنطبع، أو **ورقةٌ انطبعت ولم تُحفظ** (ولو فرّغ الطبيبُ النصَّ بعدها). */
+  /* الخروجُ يُسأل: مسودّةٌ لم تنطبع، أو **ورقةٌ انطبعت ولم تُحفظ** (ولو فرّغ الطبيبُ النصَّ بعدها). ونافذةٌ تقرّر لا تُسأل:
+     حفظُها يكمل بعد الإغلاق والنسخةُ الجديدة ممسوكةٌ له. */
   const confirmClose = () => {
-    if (!dirty && !pending.length) return true;
+    if (!dirty && !pendingN) return true;
     setLeaveAsk(true);
     return false;
   };
@@ -377,15 +346,15 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
                 ) : layout.pages > 1 ? (
                   <span className="text-ink-muted" data-rx-pages>{t("rx.pages", { n: layout.pages })}</span>
                 ) : null}
-                {saveFailed && pending.length > 0 && (
+                {saver.failed && pendingN > 0 && (
                   <span className="mt-1 flex items-center gap-2 font-semibold text-danger-700 dark:text-danger-300">
                     {t("rx.saveFail")}
-                    <button className="underline" onClick={() => void flush()} disabled={saving} data-rx-retry>{t("rx.saveRetry")}</button>
+                    <button className="underline" onClick={() => void saver.flush()} disabled={saver.busy} data-rx-retry>{t("rx.saveRetry")}</button>
                   </span>
                 )}
-                {savedKey && key === savedKey && <span className="flex items-center gap-1 text-success-700 dark:text-success-300"><Check size={14} /> {t("rx.printedOnly")}</span>}
+                {saved && <span className="flex items-center gap-1 text-success-700 dark:text-success-300"><Check size={14} /> {t("rx.printedOnly")}</span>}
               </div>
-              <Button leftIcon={saving ? undefined : <Printer size={17} />} loading={saving} onClick={print} disabled={!labelsReady || tooLong || knownOverflow} data-rx-print>
+              <Button leftIcon={saver.busy ? undefined : <Printer size={17} />} loading={saver.busy} onClick={print} disabled={!labelsReady || tooLong || knownOverflow} data-rx-print>
                 {t("rx.print")}
               </Button>
             </div>
@@ -398,7 +367,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
         onPick={(m) => setBody((b) => appendLines(b, [m.name]))}
         onUnpick={(m) => setBody((b) => removeDrugLine(b, m.name))} />
 
-      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm" title={pending.length ? t("rx.leavePending") : t("rx.leaveTitle")}
+      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm" title={pendingN ? t("rx.leavePending") : t("rx.leaveTitle")}
         footer={<div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setLeaveAsk(false)}>{t("rx.stay")}</Button>
           <Button variant="danger" onClick={() => { setLeaveAsk(false); onClose(); }} data-rx-leave>{t("rx.leaveDo")}</Button>

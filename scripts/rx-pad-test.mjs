@@ -9,6 +9,10 @@
  *   د) المرآةُ التجريبية بالمستودع الحقيقيّ: التصميمُ بشرط «كما فُتح»، والراجيتةُ تُختم ولا تولد ملغاة، والإلغاءُ مرّةً
  *      وللمدير، والمصوّرُ مسيَّج، و«القراءة فقط» يمنع الكتابة، والامتلاءُ يُرمى لا يُبلع.
  *   هـ) الأسلاك: الملفّاتُ لا تستورد القطعةَ ثابتاً، والطباعةُ داخل الضغطة قبل أيّ await، ولا autoFocus ولا window.confirm.
+ *   و) الحفظُ ونوافذُ الطباعة (rxSave) بسلوكهما: لقطةٌ واحدة لكلّ مسودّة، ونافذتان سجلٌّ واحد، والمحفوظُ مجموعة، والطابورُ يقف
+ *      عند أوّل فشل، والنسخةُ الجديدة ممسوكةٌ حتى يستقرّ الحفظ، والرسائلُ تُوزَّع لنافذتها — ورسالةُ الرفض «للمدير» من rxErrorText نفسِها.
+ *   ز) سجلُّ الحركات مرسوماً (react-mini) بصفوفٍ كما يكتبها الخادم: الجملُ، وسببُ الإلغاء كاملاً، ولا طبيبَ موقِّعٌ فاعلاً لإلغاءٍ
+ *      أو حذف — وطفراتٌ تُثبت أنّ الفحصَ ليس فارغاً.
  *
  *   node scripts/rx-pad-test.mjs
  * ==========================================================================*/
@@ -58,10 +62,14 @@ const stubs = {
     const map = {
       i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
       "./supabase": "export const supabase = null;",
+      "@/lib/supabase": "export const supabase = null;",
       "./globalToast": "export const emitGlobalToast = () => {};",
+      /* rxShared (لـrxErrorText وحدها): قاموسٌ ونطاقٌ لا يُحمَّلان بالفحص. */
+      "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar', getFixedT: () => (k) => k } }); export const initReactI18next = {};",
+      "@/i18n": "const i = { t: (k) => k, language: 'ar' }; export default i; export const ensureDictionary = async () => {}; export const ensureOwned = async () => {};",
     };
     b.onResolve({ filter: /.*/ }, (a) => (EMPTY.has(a.path) ? { path: a.path, namespace: "stub" } : undefined));
-    b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
+    b.onResolve({ filter: /^(i18next|\.\/supabase|@\/lib\/supabase|\.\/globalToast|react-i18next|@\/i18n)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
     b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
     b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
   },
@@ -74,6 +82,8 @@ const built = await esbuild.build({
       'export * as P from "./src/lib/rxPrint.ts";',
       'export * as X from "./src/lib/rxLines.ts";',
       'export * as A from "./src/lib/rxApi.ts";',
+      'export * as S from "./src/lib/rxSave.ts";',
+      'export { rxErrorText } from "./src/components/rx/rxShared.ts";',
       'export { encodeClinical } from "./src/lib/clinicalRecord.ts";',
       'export { registerConfigReadOnlyChecker } from "./src/lib/clinicSync.ts";',
     ].join("\n"),
@@ -86,8 +96,8 @@ const dir = mkdtempSync(path.join(tmpdir(), "rx-pad-test-"));
 const file = path.join(dir, "bundle.mjs");
 writeFileSync(file, built.outputFiles[0].text);
 const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
-const { L, P, X, A, encodeClinical, registerConfigReadOnlyChecker } = mod;
-if (!L || !P || !X || !A || !registerConfigReadOnlyChecker) { console.error("✗ rx-pad-test: ما انحمّلت الوحدات"); process.exit(1); }
+const { L, P, X, A, S, rxErrorText, encodeClinical, registerConfigReadOnlyChecker } = mod;
+if (!L || !P || !X || !A || !S || !rxErrorText || !registerConfigReadOnlyChecker) { console.error("✗ rx-pad-test: ما انحمّلت الوحدات"); process.exit(1); }
 const errOf = async (f) => { try { await f(); return "قُبل"; } catch (e) { return e.code ?? e.name ?? e.message; } };
 /* الرمزُ والرسالةُ معاً: رفضُ السياج العامّ 42501 أيضاً — والشاشةُ تقرأ «للمدير» من الرسالة (rxErrorText). */
 const errFull = async (f) => { try { await f(); return "قُبل"; } catch (e) { return `${e.code ?? ""}|${e.message ?? ""}`; } };
@@ -135,6 +145,7 @@ console.log("▸ التنظيف: تصميمٌ مكسور يُقرأ ولا يُ�
     && L.hoursLine({ am: { from: "10:00", to: "14:00" }, pm: { from: "16:00", to: "00:00" } }, "12", "am", "pm") === "10:00 am – 2:00 pm  ·  4:00 pm – 12:00 am"
     && L.hoursLine({ am: null, pm: null }, "12", "am", "pm") === "");
   check("العمرُ بالإنكليزية", L.ageTextEn({ years: 1, months: 0 }) === "1 year" && L.ageTextEn({ years: 3, months: 4 }) === "3 years 4 months" && L.ageTextEn({ years: 0, months: 0 }) === "Newborn" && L.ageTextEn(null) === "");
+  check("  والأيامُ بالإنكليزية لسطر الخطة على الورقة الإنكليزية (بواجهةٍ عربية كان يُدرج «7 أيام»)", L.daysTextEn(1) === "1 day" && L.daysTextEn(7) === "7 days" && L.daysTextEn(2) === "2 days");
   const fx = { date: "2026-11-05", name: "Bobby", owner: "", age: "", weight: "", kind: "canine" };
   check("بصمةُ المسودّة: نفسُ المكتوب بفراغٍ زائد = نفسُها (طباعةٌ ثانية لا تكتب سجلّاً ثانياً)، وتغييرُ حرفٍ يغيّرها",
     L.rxDraftKey(fx, "A\n", "Dr") === L.rxDraftKey({ ...fx }, "A", "Dr") && L.rxDraftKey(fx, "A", "Dr") !== L.rxDraftKey(fx, "B", "Dr"));
@@ -190,16 +201,21 @@ const doc = (over = {}) => ({
   check("سكربتُ الترتيب: يصغّر حتى حدّه ثم صفحةٌ ثانية بترويستها ويقسم السطرَ عند كلمة، ويقول ما لم ينقسم",
     a5.includes("data-overflow") && a5.includes("cloneNode(true)") && a5.includes("split(/(\\s+)/)") && a5.includes("data-pages") && a5.includes("f.ready"));
   /* ── ما أمسكته المراجعةُ العدائيّة (٥/١١) ── */
-  check("الترتيبُ يُعاد لا يُختم مرّةً: يشيل المستنسخات ويرجّع الأسطرَ كما كُتبت، ويُعاد حين يصل خطّ، ويقول نهائيٌّ أم مؤقّت",
-    a5.includes("window.__rxLayout=run") && a5.includes("pristine===null") && a5.includes("removeChild(all[i])") && a5.includes("'loadingdone'") && a5.includes("data-final"));
+  check("الترتيبُ يُعاد لا يُختم مرّةً: يشيل المستنسخات ويرجّع الأسطرَ كما كُتبت (فرعُ الإرجاع نفسُه — بلاه يضيع ما نُقل لصفحةٍ شيلت)، ويُعاد حين يصل خطّ، ويقول نهائيٌّ أم مؤقّت",
+    a5.includes("window.__rxLayout=run") && a5.includes("if(pristine===null)pristine=b.innerHTML;else b.innerHTML=pristine;") && a5.includes("removeChild(all[i])") && a5.includes("'loadingdone'") && a5.includes("data-final"));
   check("  والنهائيُّ بعد الصور والخطوط بالاسم (data-faces → document.fonts.load)، والمؤقّتُ بعد ٤ ثوانٍ، والنهائيُّ قسراً بعد ٩",
     a5.includes("f.load(x)") && /data-faces="[^"]*Aref Ruqaa[^"]*Cormorant Garamond/.test(a5) && a5.includes("},4000)") && a5.includes("},9000)")
     && /data-faces="\[&quot;400 12px Cairo&quot;,&quot;600 12px Cairo&quot;\]"/.test(img({})));
-  check("  وورقةُ الخطوط لا تحجب السكربتين (media=print ثمّ all حين تصل) وتختم وصولَها أو فشلَها بنفسها (فشلٌ قبل السكربت لا يُفوَّت) — لا <link rel=stylesheet> حاجبة",
-    /<link id="rxf" href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]+" rel="stylesheet" media="print" onload="this\.setAttribute\('data-s','1'\)" onerror="this\.setAttribute\('data-s','1'\)">/.test(a5)
-    && (a5.match(/rel="stylesheet"/g) ?? []).length === 1 && a5.includes("lk.media='all'") && a5.includes("lk.getAttribute('data-s')"));
-  check("رقمُ الصفحة: سطرُه محجوزٌ قبل القياس (&#8203; وارتفاعٌ ثابت) — كتابتُه بعد الترتيب لا تكبّر التذييلَ فتقصّ آخرَ سطر",
-    a5.includes('<span class="pno">&#8203;</span>') && /\.pno\{[^}]*line-height:1\.3;min-height:1\.3em/.test(a5) && /\.ft\{[^}]*line-height:1\.3/.test(a5));
+  check("  وورقةُ الخطوط ليست وسماً بالمستند (معلَّقةً كانت تحجب التحميلَ فلا تسمع المعاينةُ قياسَها ولا تطبع النافذة): عنوانُها بـdata-fonts وتُضاف بعد التحميل",
+    !/<link[^>]*rel="stylesheet"/.test(a5) && !a5.includes('id="rxf"') && /<html[^>]* data-fonts="https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]*&amp;display=swap"/.test(a5)
+    && a5.includes("function onLoad(){if(loaded)return;loaded=true;run(forced);if(!forced)addFonts();}") && a5.includes("lk.href=h;document.head.appendChild(lk);"));
+  check("  والنهائيُّ القسريّ لا يُغلق الباب: صورةٌ تصل بعده تعيد الترتيب، وورقةُ خطوطٍ لم تصل تُشال (المقيسُ هو المطبوع) — لا loaded=css=true",
+    a5.includes("forced=true;if(!css&&lk&&lk.parentNode)lk.parentNode.removeChild(lk);run(true);") && !a5.includes("loaded=true;css=true") && a5.includes("function onCss(){if(css)return;css=true;if(!forced)settle();}"));
+  check("  والمعاينةُ تبلّغ كلَّ ترتيب لإطارها الأب برسالةٍ برقم مستندها (لا بحدث التحميل الذي تحجبه صورةٌ معلَّقة)، ونافذةُ الطباعة لا ترسلها",
+    a5.includes("if(window.parent!==window){try{window.parent.postMessage({rxLayout:{seq:root.getAttribute('data-rxseq')") && a5.includes("final:root.getAttribute('data-final')==='1'}},'*')"));
+  check("رقمُ الصفحة: سطرُه **وعرضُه** محجوزان قبل القياس (&#8203;، ارتفاعٌ ثابت، ٧ch لا يُلفّ ولا ينكمش) — كتابتُه بعد الترتيب لا تكبّر التذييل (سطراً، أو بلفّ سطر الحسابات)",
+    a5.includes('<span class="pno">&#8203;</span>') && /\.pno\{[^}]*line-height:1\.3;min-height:1\.3em/.test(a5) && /\.ft\{[^}]*line-height:1\.3/.test(a5)
+    && /\.ft \.pno\{display:inline-block;flex:none;white-space:nowrap;min-width:7ch;/.test(a5));
   check("  والفائضُ يُفحص على **كلّ** صفحة بعد الترقيم (لا الأخيرة وحدها)", a5.includes("number(ps);") && a5.includes("for(i=0;i<ps.length;i++){var pb=L(ps[i]);if(pb&&over(pb))overflow=true;}"));
   check("  وصورةُ الراجيتة ترقّم صفحاتها أيضاً — تحت مربّع الوصفة بالطبقة نفسِها (فالمعايرةُ تزحزحه معها)",
     /<div class="pno pi" style="left:[\d.]+%;top:[\d.]+%;width:[\d.]+%">&#8203;<\/div>\s*<\/div>/.test(im) && /\.pi\{position:absolute/.test(im));
@@ -207,6 +223,9 @@ const doc = (over = {}) => ({
   check("نافذةُ الطباعة حَكَم: تطبع بعد ترتيبٍ نهائيّ وحده، ولا تطبع ما فيه فائض — تُظهر الشريطَ وتبلّغ من فتحها",
     pr.includes("data-final')!=='1')return") && /if\(root\.getAttribute\('data-overflow'\)\)\{var w=document\.getElementById\('rxwarn'\);if\(w\)w\.hidden=false;tell\('overflow'\);return;\}/.test(pr)
     && pr.indexOf("tell('overflow')") < pr.indexOf("window.print()") && pr.includes("window.opener.postMessage({rx:t},'*')"));
+  check("  وتنتظر التحميلَ **بحدثه** ثلاثَ ثوانٍ بعد نهائيٍّ قسريّ (صورةٌ تصل فيها تُعيد الترتيبَ قبل الحكم)، لا بـreadyState (complete بعد ١٠ م.ث بنافذة document.write)",
+    pr.includes("window.addEventListener('load',function(){loaded=true;if(armed)setTimeout(fire,0);});") && pr.includes("if(loaded){fire();return;}setTimeout(fire,3000);")
+    && !/readyState==='complete'\)\{?fire/.test(pr.slice(pr.indexOf("var done=false,armed=false"))));
   check("  والشريطُ نصُّ المستدعي مهرَّباً، مخفيٌّ حتى يلزم، ولا يُطبع — ولا يظهر بالمعاينة",
     pr.includes('<div id="rxwarn" class="rxwarn" role="alert" hidden>ما انطبعت &lt;b&gt;</div>') && pr.includes("@media print{.rxwarn{display:none!important}}")
     && !P.buildRxHTML(doc({ overflowNote: "x" })).includes('id="rxwarn"'));
@@ -248,8 +267,11 @@ console.log("▸ «من خطة العلاج»: أحدثُ خطةٍ بأدوية�
   check("الدكتورُ الموقّع بكلماتٍ كاملة: «حسن» ليس «محسن»، و«حسن علي» ليس «محسن علي»، و«علي» ليس «عليا»",
     pick("حسن", ["د. محسن جواد", "د. حسن علي"]) === "د. حسن علي" && pick("حسن علي", ["د. محسن علي", "د. حسن علي"]) === "د. حسن علي"
     && pick("علي", ["د. عليا كريم", "د. علي حسن"]) === "د. علي حسن");
-  check("  واثنان طابقا ⇒ لا تخمين («علي» بـ«عباس علي» و«علي كاظم»)، وبلا مطابقة الوحيدُ وإلا لا أحد",
-    pick("علي", ["د. عباس علي", "د. علي كاظم"]) === "" && pick("زيد", ["د. علي"]) === "د. علي" && pick("زيد", ["د. علي", "د. حسن"]) === "" && pick("", ["د. علي"]) === "د. علي");
+  check("  واثنان طابقا ⇒ لا تخمين («علي» بـ«علي حسن» و«علي كاظم»)، وبلا مطابقة الوحيدُ وإلا لا أحد",
+    pick("علي", ["د. علي حسن", "د. علي كاظم"]) === "" && pick("زيد", ["د. علي"]) === "د. علي" && pick("زيد", ["د. علي", "د. حسن"]) === "" && pick("", ["د. علي"]) === "د. علي");
+  check("  والكلماتُ بترتيبها من أوّل الاسم: «علي» ليس «عباس علي» (علي اسمُ أبيه)، و«علي حسن» ليس «حسن علي» (ابنُه غالباً)",
+    pick("علي", ["د. عباس علي", "د. علي كاظم"]) === "د. علي كاظم" && pick("علي", ["د. عباس علي", "د. زينب كاظم"]) === ""
+    && pick("علي حسن", ["د. حسن علي", "د. زينب كاظم"]) === "" && pick("علي حسن كاظم", ["د. علي حسن", "د. زينب"]) === "د. علي حسن");
   check("  والألقابُ لا تُعدّ كلمة، والهمزةُ والتشكيلُ والحالةُ مطويّة",
     pick("علي حسن", ["دكتور علي", "د. زيد"]) === "دكتور علي" && pick("Ali Hassan", ["Dr. Ali", "Dr. Omar"]) === "Dr. Ali"
     && pick("احمد", ["د. أحمد كريم", "د. زينب"]) === "د. أحمد كريم" && pick("عَلِيّ", ["د. علي"]) === "د. علي" && pick("ZAINAB", ["Dr. Zainab Kareem", "Dr. Ali"]) === "Dr. Zainab Kareem");
@@ -322,41 +344,56 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
   const sheet = code("src/components/rx/RxSheet.tsx"), designer = code("src/components/rx/RxDesigner.tsx");
   const printFn = /const print = \(\) => \{([\s\S]*?)\n  \};/.exec(sheet)?.[1] ?? "";
   check("الطباعةُ داخل الضغطة: openRxPrint (والمستندُ فيها) قبل أيّ await، والحفظُ بعدها",
-    !!printFn && printFn.indexOf("openRxPrint(") >= 0 && !/await/.test(printFn) && printFn.indexOf("enqueue(snap)") > printFn.indexOf("openRxPrint("));
-  check("  وطباعةٌ ثانيةٌ بلا تغيير لا تكتب سجلّاً ثانياً (البصمة، ولا لقطةً ثانيةً لما ينتظر الحفظ)، والفارغةُ لا تُحفظ",
-    /key === savedKey/.test(printFn) && /pendingRef\.current\.find\(\(p\) => p\.key === key\)/.test(printFn) && /if \(!clean\.trim\(\)\)/.test(printFn));
+    !!printFn && printFn.indexOf("openRxPrint(") >= 0 && !/await/.test(printFn) && printFn.indexOf("saver.enqueue(snap)") > printFn.indexOf("openRxPrint(")
+    && printFn.indexOf("saver.deferTo(snap, overflowed)") > printFn.indexOf("openRxPrint("));
+  check("  وطباعةٌ ثانيةٌ بلا تغيير لا تكتب سجلّاً ثانياً — المحفوظُ بالبصمة، ولقطةُ المسودّة واحدةٌ بمعرّفها (saver.snapFor)، والفارغةُ لا تُحفظ",
+    /if \(!canRecord \|\| saver\.isSaved\(key\)\)/.test(printFn) && /const snap = saver\.snapFor\(key, /.test(printFn) && /if \(!clean\.trim\(\)\)/.test(printFn)
+    && !/uuid\(\)[^;]*\};\s*$/m.test(printFn.split("saver.snapFor")[0]));
   check("المحفوظُ لقطةُ ما انطبع لحظةَ الطباعة (بمعرّفٍ من الجهاز والنصِّ النظيف) — و«احفظها بالسجل» تحفظها هي لا المسودّةَ بعد تعديلها",
-    /const snap: Snap = \{ key, input: \{ id: uuid\(\), pet_id: pet\.id, visit_id: visitId, pet_name: fields\.name \|\| pet\.name, doctor_name: doctor, fields, body: clean \} \}/.test(printFn)
-    && /onClick=\{\(\) => void flush\(\)\}[^>]*data-rx-retry/.test(sheet) && /rec = await rxApi\.add\(snap\.input\)/.test(sheet)
+    /saver\.snapFor\(key, \(\) => \(\{ id: uuid\(\), pet_id: pet\.id, visit_id: visitId, pet_name: fields\.name \|\| pet\.name, doctor_name: doctor, fields, body: clean \}\)\)/.test(printFn)
+    && /onClick=\{\(\) => void saver\.flush\(\)\}[^>]*data-rx-retry/.test(sheet) && /add: \(input\) => rxApi\.add\(input\)/.test(sheet)
     && !/rxApi\.add\(\{/.test(sheet) && !/const save = /.test(sheet));
-  check("  والخروجُ يُسأل ما دامت ورقةٌ انطبعت ولم تُحفظ (ولو فُرّغ النصّ بعدها)", /if \(!dirty && !pending\.length\) return true;/.test(sheet));
-  check("  ونافذةُ الطباعة حَكَم: قياسُ المعاينة لهذا المستند نهائيٌّ بلا فائض ⇒ حفظٌ فوراً، وإلا حين تقول «طبعتُ» (ولا يُحفظ ما رفضته)",
-    /const measured = layout\.html === html;/.test(sheet) && /if \(measured && layout\.final && !layout\.overflow\) \{[\s\S]*?enqueue\(snap\);[\s\S]*?\} else \{[\s\S]*?onPrint: \(\) => enqueue\(snap\), onOverflow: overflowed/.test(printFn)
-    && /disabled=\{!labelsReady \|\| tooLong \|\| knownOverflow\}/.test(sheet) && /const knownOverflow = measured && layout\.overflow;/.test(sheet));
+  check("  والخروجُ يُسأل ما دامت ورقةٌ انطبعت ولم تُحفظ (ولو فُرّغ النصّ بعدها)، والنسخةُ الجديدة لا تنزل فوق نصٍّ لم يُحفظ",
+    /if \(!dirty && !pendingN\) return true;/.test(sheet) && /useEffect\(\(\) => \(dirty \|\| pendingN > 0 \? holdUpdates\(Infinity\) : undefined\), \[dirty, pendingN\]\)/.test(sheet));
+  check("  ونافذةُ الطباعة حَكَم: قياسُ المعاينة لهذا المستند نهائيٌّ بلا فائض ⇒ حفظٌ فوراً، وإلا حين تقول «طبعتُ» (ولا يُحفظ ما رفضته) والنسخةُ الجديدة ممسوكة",
+    /const measured = layout\.html === html;/.test(sheet) && /if \(saver\.isPending\(key\) \|\| \(measured && layout\.final && !layout\.overflow\)\) \{[\s\S]*?void saver\.enqueue\(snap\);[\s\S]*?\} else \{[\s\S]*?watchPrint\(w, saver\.deferTo\(snap, overflowed\)\)/.test(printFn)
+    && /disabled=\{!labelsReady \|\| tooLong \|\| knownOverflow\}/.test(sheet) && /const knownOverflow = measured && layout\.overflow;/.test(sheet)
+    && /hold: holdUpdates,/.test(sheet) && /const watchPrint = createPrintWatch\(browserWatchEnv\(\)\);/.test(sheet));
   check("  وإعادةُ الطباعة من السجلّ (بلا معاينة) تسمع رفضَ النافذة", /const reprint = [\s\S]*?watchPrint\(w, \{ onOverflow: overflowed \}\)/.test(sheet));
   check("الورقةُ من النصّ كما يُحفظ (cleanRxBody)، وأطولُ من السقف لا يُطبع ويُقال", /rxDoc\(cfg, labels, fields, clean, doctor, title\)/.test(sheet) && /const tooLong = body\.length > RX_LIMITS\.body;/.test(sheet) && /data-rx-toolong/.test(sheet));
   check("سطرٌ حُفظ يدخل القائمةَ إن كانت قائمةَ الخادم وحدها — فاشلةٌ أو قيدَ القراءة تُقرأ من جديد (لا «سابقة (1)» كاذبة)",
     /if \(h\.status === "ready"\) setHist\(\{ status: "ready", list: \[rec, \.\.\.h\.list\.filter/.test(sheet) && /else if \(h\.status !== "missing"\) setHistN\(\(x\) => x \+ 1\)/.test(sheet)
     && !/status: h\.status === "loading" \? "loading" : "ready"/.test(sheet));
   check("«أضفها هنا» تنسخ النصَّ كتلةً (appendBlock) لا سطراً سطراً بحذف المكرّر", /onReuse=\{\(r\) => \{ playTap\(\); setBody\(\(b\) => appendBlock\(b, r\.body\)\); \}\}/.test(sheet));
-  check("والدكتورُ الموقّع بكلماتٍ كاملة ودكتورٍ واحد (pickDoctor) لا احتواءٌ أوّلُه يفوز", /setDoctor\(pickDoctor\(user\?\.full_name, cfg\.doctors\.map\(\(d\) => d\.name\), t\("rx\.drTitles"\)\.split\(","\)\)\)/.test(sheet) && !/includes\(me\)/.test(sheet));
-  check("وخاناتُ المريض بلغة الورقة بعد وصول قاموسها (tp)، وفشلُ القاموس «أعد المحاولة» لا عناوينُ إنكليزية بصمت",
-    /if \(pad\.status === "loading" \|\| !labelsReady \|\| fields\) return;\s*setFields\(initialFields\(pet, cfg\.lang, tp\)\)/.test(sheet) && /data-rx-labels-fail/.test(sheet)
+  check("والدكتورُ الموقّع بكلماتٍ كاملة ودكتورٍ واحد (pickDoctor) لا احتواءٌ أوّلُه يفوز", /const dr = pickDoctor\(user\?\.full_name, cfg\.doctors\.map\(\(d\) => d\.name\), t\("rx\.drTitles"\)\.split\(","\)\)/.test(sheet) && !/includes\(me\)/.test(sheet));
+  check("وخاناتُ المريض بلغة الورقة بعد وصول قاموسها (tp)، وتصميمٌ وصل بعد البذر يعيد بذرَ ما لم يُلمس وحده، وفشلُ القاموس «أعد المحاولة»",
+    /if \(pad\.status === "loading" \|\| !labelsReady\) return;\s*const s = seeded\.current;\s*if \(s && s\.cfg === cfg\) return;\s*const f = initialFields\(pet, cfg\.lang, tp\)/.test(sheet)
+    && /age: cur\.age === s\.age \? f\.age : cur\.age, weight: cur\.weight === s\.weight \? f\.weight : cur\.weight/.test(sheet) && /setDoctor\(\(cur\) => \(!s \|\| cur === s\.doctor \? dr : cur\)\)/.test(sheet)
+    && /data-rx-labels-fail/.test(sheet)
     && /\(\) => \{ if \(alive\) setFailed\(true\); \}/.test(code("src/components/rx/rxShared.ts")) && !/\(\) => \{ if \(alive\) setReady\(true\); \}, \(\) => \{ if \(alive\) setReady\(true\); \}/.test(code("src/components/rx/rxShared.ts"))
     /* «جاهز» بنفس الرسمة لا حالةٌ قديمة: التصميمُ يصل عربياً بعد الافتراضيّ الإنكليزيّ فكانت الخاناتُ تُبذر قبل القاموس («2 years» على ورقةٍ عربية — مشيٌ بالمتصفّح أمسكه). */
     && /const ready = !needLoad \|\| loaded;/.test(code("src/components/rx/rxShared.ts")) && !/useState\(!needLoad\)/.test(code("src/components/rx/rxShared.ts")));
   check("  وعلمُ «المكوّن حيّ» يُرفع بكلّ تركيب (StrictMode يعيد الأثر) — كان يُطفأ ولا يُشعل فلا تتحدّث القائمةُ بعد الحفظ",
     /useEffect\(\(\) => \{ alive\.current = true; return \(\) => \{ alive\.current = false; \}; \}, \[\]\);/.test(sheet));
-  check("  وأيامُ سطر الخطة بلغة الورقة أيضاً، وكلُّ قراءةٍ للخطة برقمها (جوابٌ متأخّر لا يفتح لوحةً أُغلقت)",
-    /const planDays = \(n: number\) => tp\("rx\.days", \{ count: n \}\);/.test(sheet) && /const my = \+\+planSeq\.current;/.test(sheet) && /if \(my !== planSeq\.current\) return;/.test(sheet)
+  check("  وأيامُ سطر الخطة بلغة الورقة أيضاً (والإنكليزيةُ ثابتة)، وكلُّ قراءةٍ للخطة برقمها (جوابٌ متأخّر — نجاحاً أو فشلاً — لا يفتح لوحةً أُغلقت)",
+    /const planDays = \(n: number\) => \(cfg\.lang === "en" \? daysTextEn\(n\) : tp\("rx\.days", \{ count: n \}\)\);/.test(sheet) && /const my = \+\+planSeq\.current;/.test(sheet) && /if \(my !== planSeq\.current\) return;/.test(sheet)
+    && /if \(my === planSeq\.current\) setPlan\(\{ status: "error" \}\)/.test(sheet)
     && /if \(plan\.status !== "closed"\) \{ planSeq\.current\+\+; setPlan\(\{ status: "closed" \}\); return; \}/.test(sheet));
   const shared = code("src/components/rx/rxShared.ts");
   check("المصمِّم: «أعد التحميل» تقول «تحميل» بنفس الرسمة (لا يُبذر من الصفّ القديم وختمه)، وفشلُ القراءة لا يبذر الافتراضيّ",
     /const reload = useCallback\(\(\) => \{\s*setSt\(\(s\) => \(\{ \.\.\.s, status: "loading", error: null \}\)\);\s*setN/.test(shared)
     && /if \(pad\.status === "loading" \|\| pad\.status === "error" \|\| draft\) return;/.test(designer) && /data-rxd-loadfail/.test(designer));
-  check("  والحفظُ موقوفٌ أثناء رفع صورة، والنسخةُ الجديدة لا تنزل فوق تصميمٍ لم يُحفظ، والرقمُ المبذور تعديلٌ يُحفظ",
-    /disabled=\{missing \|\| pad\.status !== "ready" \|\| !dirty \|\| uploading !== null\}/.test(designer) && /if \(!draft \|\| missing \|\| uploading\) return;/.test(designer)
-    && /useEffect\(\(\) => \(dirty \|\| uploading \? holdUpdates\(Infinity\) : undefined\), \[dirty, uploading\]\)/.test(designer) && /setDraft\(seeded\);\s*setBase\(c\);/.test(designer));
+  check("  والحفظُ موقوفٌ ما دام **أيُّ** رفعٍ بالطريق (عدّادٌ لكلّ نوع)، والرفعُ موقوفٌ أثناء الحفظ، ورفعٌ عالق يُقطع بمهلة، والخروجُ أثناءه يُسأل",
+    /disabled=\{missing \|\| pad\.status !== "ready" \|\| !dirty \|\| uploading\}/.test(designer) && /if \(!draft \|\| missing \|\| uploading \|\| saving\) return;/.test(designer)
+    && /const uploading = uploads\.bg \+ uploads\.emblem > 0;/.test(designer) && /setUploads\(\(u\) => \(\{ \.\.\.u, \[kind\]: Math\.max\(0, u\[kind\] \+ by\) \}\)\)/.test(designer)
+    && /if \(!file \|\| saving\) return;/.test(designer) && /await withTimeout\(rxApi\.uploadImage\(kind, prepared\), UPLOAD_MS\)/.test(designer)
+    && (designer.match(/off=\{saving\}/g) ?? []).length === 2 && /if \(!dirty && !uploading\) return true;/.test(designer));
+  check("  والنسخةُ الجديدة لا تنزل فوق تصميمٍ لم يُحفظ، والرقمُ المبذور تعديلٌ يُحفظ",
+    /useEffect\(\(\) => \(dirty \|\| uploading \? holdUpdates\(Infinity\) : undefined\), \[dirty, uploading\]\)/.test(designer) && /setDraft\(seeded\);\s*setBase\(c\);/.test(designer));
+  check("  وصفحةُ المعايرة لا تنتظر قاموسَ العناوين (خاناتُها قيمٌ بلا عناوين — فشلُه كان يُسكت الزرّ)، وفشلُه بالمعاينة يُقال بـ«أعد المحاولة»",
+    /const printCalibration = \(\) => \{\s*if \(!draft\) return;/.test(designer) && /data-rxd-labels-fail/.test(designer) && /onClick=\{labelsRetry\}/.test(designer));
+  check("  والسهمُ لفوق بمنزلق «فوق ↕ جوه» يرفع الطباعة (قيمةٌ أصغر) — كان يزيدها فيزحزح عكسَ عنوانه",
+    /e\.key === "ArrowUp" \? -1 : 1/.test(designer) && /data-r="nudge-y"/.test(designer) && /set\(\{ nudge: \{ \.\.\.draft\.nudge, y: clamp\(r1\(draft\.nudge\.y \+ by\), -15, 15\) \} \}\)/.test(designer));
   check("  والمقبضُ يأخذ التركيزَ بالضغطة (الأسهمُ له)، والسحبُ يكتب خانتَه وحدها فوق المسودّة الحالية",
     /closest<HTMLElement>\("\[data-handle\]"\)\?\.focus\(\{ preventScroll: true \}\)/.test(designer) && /setDraft\(\(cur\) => \{/.test(designer) && !/setDraft\(\(\) => apply\(d\.start/.test(designer));
   check("  ومنزلقُ المعايرة يمين/يسار فيزيائيّ (dir=ltr) — بالعربية كان يزحزح الطباعةَ عكسَ عنوانه، وصورةُ الراجيتة تُسطَّح على أبيض",
@@ -390,6 +427,281 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
   const hp = JSON.parse(src("src/i18n/hot-paths.json"));
   check("النطاقُ مملوكٌ لـRxPad ورفاقُه الثلاثة", hp.owned.rx?.owner === "src/components/rx/RxPad.tsx" && (hp.owned.rx?.with ?? []).length === 3);
   check("وهجرةُ 0261 بموجة الحزمة وقسمُها فيها", /WAVE="[^"]*\$MIG\/0261_rx_pad\.sql/.test(src("supabase/tests/run.sh")) && /▸ 0261:/.test(src("supabase/tests/run.sh")));
+}
+
+/* ── و) الحفظُ ونوافذُ الطباعة (rxSave) بسلوكهما ───────────────────────────────── */
+console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ونافذتان سجلٌّ واحد، والطابورُ يقف عند الفشل، والنسخةُ الجديدة ممسوكة");
+{
+  /* نافذةٌ أمٌّ مزيَّفة: رسائلُ تُرسل بيد الفحص، ومؤقّتٌ يُدقّ بيده. */
+  const env = () => {
+    const ls = [], timers = new Map();
+    let id = 0;
+    return {
+      listen: (f) => ls.push(f), every: (f) => { timers.set(++id, f); return id; }, stop: (i) => timers.delete(i),
+      post: (source, data) => ls.forEach((f) => f(source, data)), tick: () => [...timers.values()].forEach((f) => f()), get timers() { return timers.size; },
+    };
+  };
+  const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  /* مدخِلٌ مزيَّف: يسجّل المعرّفات، ويُفشَل أو يُعلَّق بالطلب. */
+  const mk = () => {
+    const log = { adds: [], holds: 0, released: 0, saved: [], failed: [] };
+    const ctl = { fail: false, gate: null };
+    const sv = S.createRxSaver({
+      add: async (input) => {
+        log.adds.push(input.id);
+        if (ctl.gate) await ctl.gate;
+        if (ctl.fail) throw Object.assign(new Error("net"), { code: "net" });
+        return { id: input.id };
+      },
+      hold: () => { log.holds++; let done = false; return () => { if (!done) { done = true; log.released++; } }; },
+      onSaved: (snap) => log.saved.push(snap.key), onFail: (snap) => log.failed.push(snap.key), onChange() {},
+    });
+    return { sv, log, ctl };
+  };
+  let n = 0;
+  const make = () => ({ id: `id-${++n}` });
+
+  {
+    const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
+    const w1 = { closed: false }, w2 = { closed: false };
+    const a = sv.snapFor("K", make), b = sv.snapFor("K", make);
+    watch(w1, sv.deferTo(a, () => {}));
+    watch(w2, sv.deferTo(b, () => {}));
+    check("مسودّةٌ واحدة طُبعت مرّتين قبل أن تقرّر نافذتُها: لقطةٌ واحدة بمعرّفٍ واحد، والإمساكُ من الضغطة", a === b && a.input.id === "id-1" && log.holds === 2 && sv.isWaiting("K") && log.released === 0);
+    e.post(w1, { rx: "print" });
+    await settle();
+    e.post(w2, { rx: "print" });
+    await settle();
+    check("  والنافذتان تقولان «طبعتُ» ⇒ إدخالٌ واحد وسجلٌّ واحد — لا صفٌّ ثانٍ لا يُحذف", log.adds.join() === "id-1" && log.saved.join() === "K" && sv.isSaved("K") && !sv.isWaiting("K"), JSON.stringify(log));
+    check("  والإمساكُ يُفلت بعد أن يستقرّ الحفظ (مرّةً لكلّ نافذة)", log.released === 2, JSON.stringify(log));
+  }
+  {
+    const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
+    const w = { closed: false };
+    const k = sv.snapFor("K", make);
+    watch(w, sv.deferTo(k, () => {}));
+    await sv.enqueue(sv.snapFor("K", make));
+    e.post(w, { rx: "print" });
+    await settle();
+    check("ضغطةٌ قبل القياس ثمّ ضغطةٌ بعده (حفظٌ فوريّ): رسالةُ الأولى المتأخّرة لا تكتب سجلّاً ثانياً", log.adds.length === 1 && sv.isSaved("K") && log.released === 1, JSON.stringify(log));
+  }
+  {
+    const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
+    const wx = { closed: false };
+    watch(wx, sv.deferTo(sv.snapFor("X", make), () => {}));
+    await sv.enqueue(sv.snapFor("Y", make));
+    e.post(wx, { rx: "print" });
+    await settle();
+    check("نافذةٌ أقدم تقرّر بعد حفظ الأحدث: المحفوظُ مجموعة — الأحدثُ يبقى «انطبعت» ولا يُعاد", sv.isSaved("Y") && sv.isSaved("X") && log.adds.length === 2 && log.saved.join() === "Y,X", JSON.stringify(log));
+  }
+  {
+    const { sv, log, ctl } = mk();
+    ctl.fail = true;
+    await sv.enqueue(sv.snapFor("A", make));
+    check("فشلُ الحفظ يقف ويُبقي اللقطة (لـ«احفظها بالسجل») — لا تُرمى ويكمل", sv.failed && sv.isPending("A") && !sv.isSaved("A") && sv.pendingCount === 1 && log.failed.join() === "A");
+    await sv.enqueue(sv.snapFor("B", make));
+    check("  ولقطةٌ جديدة بعده تنتظر دورَها خلف الفاشلة (الترتيب) — والفاشلةُ تُعاد أوّلاً بمعرّفها", sv.pendingCount === 2 && log.adds.join() === `${sv.snapFor("A", make).input.id},${sv.snapFor("A", make).input.id}`, JSON.stringify(log.adds));
+    ctl.fail = false;
+    await sv.flush();
+    check("  و«احفظها بالسجل» تحفظ الاثنتين بترتيبهما", log.saved.join() === "A,B" && sv.pendingCount === 0 && !sv.failed, JSON.stringify(log));
+  }
+  {
+    let calls = 0;
+    const sv = S.createRxSaver({
+      add: (input) => { calls++; if (calls === 1) throw new Error("sync"); return Promise.resolve({ id: input.id }); },
+      hold: () => () => {}, onSaved() {}, onFail() {}, onChange() {},
+    });
+    await sv.enqueue(sv.snapFor("A", make));
+    await sv.flush();
+    check("  ومُدخِلٌ يرمي فوراً (لا وعداً) لا يعلّق الطابورَ بجولةٍ منتهية: «احفظها» بعده تحفظ", !sv.busy && sv.isSaved("A") && calls === 2, `${calls}`);
+  }
+  {
+    const { sv, log, ctl } = mk();
+    let open;
+    ctl.gate = new Promise((r) => { open = r; });
+    const p1 = sv.enqueue(sv.snapFor("A", make));
+    await settle();
+    const p2 = sv.enqueue(sv.snapFor("B", make));
+    check("لقطةٌ تُضاف أثناء حفظٍ جارٍ تلحقه الجولةُ نفسُها (لا تبقى بالطابور)", sv.busy && p1 === p2);
+    open();
+    ctl.gate = null;
+    await p1;
+    check("  وتُحفظ بعد الأولى", log.saved.join() === "A,B" && !sv.busy && sv.pendingCount === 0, JSON.stringify(log));
+  }
+  {
+    const { sv, log, ctl } = mk(), e = env(), watch = S.createPrintWatch(e);
+    let open;
+    ctl.gate = new Promise((r) => { open = r; });
+    const w = { closed: false };
+    watch(w, sv.deferTo(sv.snapFor("K", make), () => {}));
+    e.post(w, { rx: "print" });
+    await settle();
+    check("«طبعتُ» والحفظُ بالطريق: الإمساكُ باقٍ حتى يستقرّ (تحميلٌ بين الرسالة والكتابة كان يُسقطها)", log.adds.length === 1 && log.released === 0);
+    open();
+    await settle();
+    check("  ويُفلت بعده", log.released === 1 && sv.isSaved("K"));
+  }
+  {
+    const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
+    let over = 0;
+    const w = { closed: false };
+    watch(w, sv.deferTo(sv.snapFor("K", make), () => { over++; }));
+    e.post({ closed: false }, { rx: "print" });
+    e.post(w, { rx: "nope" });
+    check("رسالةٌ من نافذةٍ أخرى أو بنوعٍ آخر لا تُحسب", log.adds.length === 0 && sv.isWaiting("K"));
+    e.post(w, { rx: "overflow" });
+    e.post(w, { rx: "print" });
+    await settle();
+    check("«فائض» ⇒ لا ورقة ولا سجلّ، ويُقال، والإمساكُ يُفلت — ورسالةٌ بعدها من النافذة نفسِها لا تُحسب", over === 1 && log.adds.length === 0 && log.released === 1 && !sv.isWaiting("K") && !sv.isPending("K"), JSON.stringify(log));
+  }
+  {
+    const { sv, log } = mk(), e = env(), watch = S.createPrintWatch(e);
+    const w = { closed: false };
+    watch(w, sv.deferTo(sv.snapFor("K", make), () => {}));
+    w.closed = true;
+    e.tick();
+    e.tick();
+    check("نافذةٌ أُغلقت تُمهَل قبل «ذهبت» (رسالتُها قد تكون خلف حوار الطباعة)", log.released === 0 && sv.isWaiting("K"));
+    e.post(w, { rx: "print" });
+    await settle();
+    check("  ورسالتُها بالمهلة تُحفظ", log.adds.length === 1 && sv.isSaved("K") && log.released === 1);
+    const w2 = { closed: false };
+    watch(w2, sv.deferTo(sv.snapFor("Q", make), () => {}));
+    w2.closed = true;
+    e.tick(); e.tick(); e.tick();
+    check("  وبلا كلمة بعد المهلة ⇒ لا سجلّ، والإمساكُ يُفلت، والمؤقّتُ يقف", log.adds.length === 1 && !sv.isWaiting("Q") && log.released === 2 && e.timers === 0, `${e.timers}`);
+  }
+  {
+    const t = (k) => `T:${k}`;
+    check("رسالةُ الرفض كما تقولها الشاشة (rxErrorText نفسُها): «للمدير» من رسالة المحفّز ولو برمز السياج العامّ، و«تغيّرت» و«مجمّدة»",
+      rxErrorText(Object.assign(new Error("rx_void_manager"), { code: "42501" }), t) === "T:rx.voidManagerOnly"
+      && rxErrorText(A.rxStale(), t) === "T:rx.stale" && rxErrorText(Object.assign(new Error("rx_frozen"), { code: "P0001" }), t) === "T:rx.frozen"
+      && rxErrorText(Object.assign(new Error("rx_voided"), { code: "P0001" }), t) === "T:rx.frozen");
+    as("v1", "doctor");
+    const pet = "pet-rx-err";
+    const r = await A.rxApi.add({ pet_id: pet, pet_name: "Bobby", doctor_name: "", fields: {}, body: "x" });
+    let said = "";
+    try { await A.rxApi.voidRx(r.id, "x"); } catch (e) { said = rxErrorText(e, t); }
+    check("  وإلغاءُ الطبيب بالمرآة يصل الشاشةَ «للمدير» (الخطأُ نفسُه عبر rxErrorText — لا خطأَ قاعدةٍ عامّ)", said === "T:rx.voidManagerOnly", said);
+  }
+  const paper = code("src/components/rx/RxPaper.tsx");
+  check("المعاينةُ تسمع القياسَ برسالةٍ من نافذة إطارها وحدها، وتنسبه لمستنده برقمه (لا لأحدث ما مُرّر)، والأقدمُ لا يُقرأ — ولا حدثَ تحميل",
+    /if \(!frame\.current \|\| e\.source !== frame\.current\.contentWindow\) return;/.test(paper) && /const src = seq\.current\.byN\.get\(k\);/.test(paper)
+    && /if \(src === undefined \|\| k < last\.current\) return;/.test(paper) && /html: src \}\)/.test(paper) && /useLayoutEffect\(\(\) => \{/.test(paper) && !/onLoad=/.test(paper));
+}
+
+/* ── ز) سجلُّ الحركات مرسوماً (react-mini، كـavg-cost-note-test) ─────────────────── */
+console.log("▸ سجلُّ الحركات: الجملُ والشرائحُ والفاعلُ بصفوفٍ كما يكتبها الخادم — وطفراتٌ تُثبت أنّ الفحصَ ليس فارغاً");
+{
+  const ACT_FILE = "src/pages/ActivityLog.tsx";
+  const AR = JSON.parse(src("src/i18n/ar.json"));
+  const T_STUB = `
+    const D = ${JSON.stringify({ act: AR.act, common: AR.common, errors: AR.errors })};
+    const get = (k) => k.split(".").reduce((o, p) => (o && typeof o === "object" ? o[p] : undefined), D);
+    const T = (k, d, x) => {
+      const o = d && typeof d === "object" ? d : x && typeof x === "object" ? x : {};
+      let s = get(k);
+      if (typeof s !== "string") s = typeof d === "string" ? d : (o.defaultValue ?? k);
+      return s.replace(/\\{\\{(\\w+)\\}\\}/g, (_, v) => (o[v] == null ? "" : String(o[v])));
+    };
+    export const useTranslation = () => ({ t: T, i18n: { language: "ar" } });
+    export default {};`;
+  const icons = Object.keys(await import("lucide-react")).filter((k) => /^[A-Z]\w*$/.test(k));
+  const STUBS = {
+    "lucide-react": `const I = () => null; ${icons.map((k) => `export const ${k} = I;`).join("\n")}`,
+    "react-i18next": T_STUB,
+    i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
+    "@/components/ui": `import { createElement, forwardRef } from "react";
+      export const Button = forwardRef(({ children, leftIcon, rightIcon, loading, variant, size, ...p }, _r) => createElement("x-Button", { ...p, disabled: !!(p.disabled || loading) }, children));
+      export const Skeleton = () => null;`,
+    "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n;",
+    "@/lib/repo": "export const repo = { activitySummary: async () => [], activityActors: async () => [], activityPage: async () => globalThis.__actRows };",
+    "@/lib/staff": "export const listStaff = async () => [];",
+    "@/contexts/AuthContext": "export const useAuth = () => ({ user: { id: 'u1', full_name: 'x' } });",
+    "@/hooks/usePermissions": "export const usePermissions = () => ({ can: () => true, role: 'manager', baseRole: 'manager' });",
+    "@/lib/managerOverride": "export const useOverride = () => ({ restricted: false });",
+  };
+  const fileRe = new RegExp(`[\\\\/]${ACT_FILE.split("/").join("[\\\\/]")}$`);
+  const loadAct = async (edit) => {
+    const built = await esbuild.build({
+      stdin: { contents: `export { ActivityLog } from "./${ACT_FILE}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`, resolveDir: process.cwd(), sourcefile: "rx-act.tsx", loader: "tsx" },
+      bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
+      define: { "import.meta.env": "__VITE_ENV__", "process.env.NODE_ENV": '"development"' }, banner: { js: "const __VITE_ENV__ = {};" },
+      plugins: [{
+        name: "rx-act-stubs",
+        setup(b) {
+          b.onResolve({ filter: /.*/ }, (a) => (Object.prototype.hasOwnProperty.call(STUBS, a.path) ? { path: a.path, namespace: "stub" } : undefined));
+          b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: STUBS[a.path], loader: "jsx", resolveDir: process.cwd() }));
+          if (edit) b.onLoad({ filter: fileRe }, (a) => ({ contents: edit(readFileSync(a.path, "utf8")), loader: "tsx" }));
+        },
+      }],
+    });
+    const d = mkdtempSync(path.join(tmpdir(), "rx-act-"));
+    const f = path.join(d, "m.mjs");
+    writeFileSync(f, built.outputFiles[0].text);
+    return import(pathToFileURL(f).href).finally(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } });
+  };
+  const tick = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setImmediate(r)); };
+  const REASON = "كُتبت لحيوانٍ ثانٍ — الصحيح لونا";
+  const now = new Date().toISOString();
+  const ROWS = [
+    // إلغاءٌ من حساب العيادة (لا صفَّ كادرٍ له، 0083): الفاعلُ «مدير العيادة» لا طبيبُها الموقِّع
+    { id: 11, src: "a", created_at: now, actor: "c1", actor_name: null, kind: "medical", action: "UPDATE", entity: "pet_prescriptions", entity_id: "r1",
+      brief: { pet_name: "بوبي", doctor_name: "د. علي", __changed: { voided_at: [null, now], voided_by: [null, "c1"], void_reason: [null, REASON] } } },
+    // حذفُها مع حيوانها (المفتاحُ الأجنبيّ) بيد صاحب الحيوان
+    { id: 12, src: "a", created_at: now, actor: "o1", actor_name: null, kind: "medical", action: "DELETE", entity: "pet_prescriptions", entity_id: "r2",
+      brief: { pet_name: "بوبي", doctor_name: "د. علي", body: "Amoxicillin" } },
+    // كتابتُها من الحساب المشترك: الطبيبُ بالصفّ أصدقُ ما يُعرف
+    { id: 13, src: "a", created_at: now, actor: "c1", actor_name: null, kind: "medical", action: "INSERT", entity: "pet_prescriptions", entity_id: "r3",
+      brief: { pet_name: "بوبي", doctor_name: "د. علي" } },
+    // تحديثٌ لا يمسّ الإلغاء: «حدّث» لا «ألغى»، وبلا شرائح ضجيج
+    { id: 14, src: "a", created_at: now, actor: "u2", actor_name: "أحمد", kind: "medical", action: "UPDATE", entity: "pet_prescriptions", entity_id: "r4",
+      brief: { pet_name: "بوبي", __changed: { updated_by: [null, "u2"] } } },
+  ];
+  async function suite(M, ck) {
+    try {
+      globalThis.__actRows = ROWS;
+      const ui = M.mount(M.React.createElement(M.ActivityLog));
+      await tick();
+      const rows = ui.all().filter((x) => x.props && "data-actrow" in x.props);
+      const info = rows.map((row) => {
+        const ps = [];
+        const walk = (x) => { if (x.type === "p") ps.push(x); x.children.forEach(walk); };
+        walk(row);
+        const chips = [];
+        const walkC = (x) => { if (x.type === "span" && /rounded-lg bg-surface-2/.test(x.props.className ?? "")) chips.push(x.children.filter((c) => c.type === "b" || c.type === "span").map((c) => ui.text(c))); x.children.forEach(walkC); };
+        walkC(row);
+        const actor = [];
+        const walkA = (x) => { if (x.type === "span" && /font-semibold text-ink-muted/.test(x.props.className ?? "")) actor.push(ui.text(x).trim()); x.children.forEach(walkA); };
+        walkA(row);
+        return { said: ui.text(ps[0] ?? row), chips, actor: actor[0] ?? "" };
+      });
+      ui.unmount();
+      const [vd, del, add, upd] = info;
+      const J = JSON.stringify;
+      ck("الإلغاءُ «ألغى راجيتة — بوبي»، وسببُه شريحةٌ واحدة بنصّه كاملاً (لا قصَّ عند ٢٨ قبل الحيوان الصحيح)، وبلا voided_at/voided_by خامّة",
+        info.length === 4 && vd.said.includes("ألغى راجيتة — بوبي") && vd.chips.length === 1 && vd.chips[0][2] === REASON && vd.chips[0][0] === AR.act.f.void_reason, J(vd));
+      ck("  وفاعلُه «مدير العيادة» — لا طبيبُها الموقِّع (الإلغاءُ للمدير وحده)", vd.actor === AR.act.manager, J(vd.actor));
+      ck("الحذفُ مع الحيوان «انحذفت راجيتة مع حيوانها — بوبي»، وفاعلُه لا يُنسب للطبيب الموقِّع", del?.said.includes("انحذفت راجيتة مع حيوانها — بوبي") && del.actor === AR.act.manager, J(del));
+      ck("الكتابةُ من الحساب المشترك تُنسب لطبيب الراجيتة (أصدقُ ما يُعرف)", add?.said.includes("كتب راجيتة لـ بوبي") && add.actor === "د. علي", J(add));
+      ck("تحديثٌ لا يمسّ الإلغاء «حدّث راجيتة» بلا شرائح ضجيج، وبفاعله المسمّى", upd?.said.includes("حدّث راجيتة — بوبي") && upd.chips.length === 0 && upd.actor === "أحمد", J(upd));
+    } catch (e) {
+      ck("سجلُّ الحركات يُرسم", false, String(e?.stack ?? e));
+    }
+  }
+  await suite(await loadAct(), check);
+  const swap = (from, to) => (s) => { if (!s.includes(from)) throw new Error(`الطفرة لم تجد نصَّها: ${from.slice(0, 60)}`); return s.split(from).join(to); };
+  const MUT = [
+    ["الطبيبُ فاعلاً لكلّ صفّ", swap('const doc = !r.actor || r.action === "INSERT" ? d?.["doctor_name"] ?? d?.["doctor"] : null;', 'const doc = d?.["doctor_name"] ?? d?.["doctor"];')],
+    ["سببُ الإلغاء يُقصّ", swap('const FULL_TEXT = new Set(["recipe", "void_reason"]);', 'const FULL_TEXT = new Set(["recipe"]);')],
+    ["مفاتيحُ التغيير الخامّ تُقرأ خطأً", swap('return new Set(c && typeof c === "object" && !Array.isArray(c) ? Object.keys(c) : []);', "return new Set<string>();")],
+    ["الضجيجُ يُرسم شرائح", swap('"voided_at", "voided_by", "updated_by", "config"]);', '"config"]);')],
+  ];
+  for (const [name, edit] of MUT) {
+    let caught = 0;
+    try { await suite(await loadAct(edit), (_n, ok) => { if (!ok) caught++; }); } catch { caught = -1; }
+    check(`  طفرة «${name}» تُسقط فحصاً`, caught > 0, `caught=${caught}`);
+  }
 }
 
 console.log(fails ? `\n✗ rx-pad-test: ${passes} نجح، ${fails} فشل` : `\n✓ rx-pad-test: ${passes} نجح، 0 فشل`);

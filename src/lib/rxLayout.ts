@@ -277,6 +277,12 @@ export function ageTextEn(age: { years: number; months: number } | null): string
   return parts.join(" ");
 }
 
+/** «7 days» لسطر الخطة على الورقة الإنكليزية — مترجمُ الورقة الإنكليزية بواجهةٍ عربية هو مترجمُ الواجهة (قاموسُها الإنكليزيّ لا
+ *  يُنزَّل)، فكان السطرُ يُدرج «7 أيام» على ورقةٍ إنكليزية. */
+export function daysTextEn(n: number): string {
+  return n === 1 ? "1 day" : `${n} days`;
+}
+
 /** "14:30" ⇒ "2:30 pm" بصيغة ١٢ (بكلمتي اللغة)، أو كما هو بصيغة ٢٤. */
 export function clockText(hhmm: string, fmt: "12" | "24", am: string, pm: string): string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
