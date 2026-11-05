@@ -59,8 +59,10 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [leaveAsk, setLeaveAsk] = useState(false);
   const [resetAsk, setResetAsk] = useState(false);
   const [tab, setTab] = useState<"edit" | "paper">("edit");
-  const { labels, failed: labelsFailed, slow: labelsSlow, retry: labelsRetry, reload: labelsReload } = useRxLabels(draft?.lang ?? "en");
+  const { labels, failed: labelsFailed, slow: labelsSlow, armed: labelsArmed, retry: labelsRetry, reload: labelsReload } = useRxLabels(draft?.lang ?? "en");
   const [reloading, setReloading] = useState(false);
+  /* تحديثٌ بالطريق — بالضغطة أو بلاها (القاموسُ فشل والنتُّ موجود): يحمّل حين يُحفظ التصميم، فيُقال لا زرّ (مراجعةُ d2f074d). */
+  const armed = reloading || labelsArmed;
   /* أحدثُ مسودّةٍ للحفظ الجاري (ما تغيّر أثناءه لا يُرمى)، وحياةُ المصمِّم لرفعٍ يكمل بعد «اطلع» (لا صوتَ ولا رسالةَ عن تصميمٍ مُغلق).
      العلمُ يُرفع بكلّ تركيب (StrictMode ينادي التنظيفَ ثمّ الأثرَ ثانيةً). */
   const draftRef = useRef(draft);
@@ -239,9 +241,9 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
                   <p className="mb-2 text-center text-2xs font-semibold text-ink-subtle">{t("rx.preview")}</p>
                   {labelsFailed && (
                     <p className="mb-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-xs text-danger-700 dark:text-danger-300" data-rxd-labels-fail>
-                      <AlertTriangle size={14} className="shrink-0" /> {t(reloading ? "rx.reloading" : dirty || uploading ? "rx.labelsSaveFirst" : "rx.labelsReload")}
-                      {!reloading && <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>}
-                      {!reloading && !dirty && !uploading && <button className="font-semibold underline" onClick={reloadPage} data-rxd-reload>{t("rx.reloadPage")}</button>}
+                      <AlertTriangle size={14} className="shrink-0" /> {t(armed ? "rx.reloading" : dirty || uploading ? "rx.labelsSaveFirst" : "rx.labelsReload")}
+                      {!armed && <button className="font-semibold underline" onClick={labelsRetry}>{t("common.retry")}</button>}
+                      {!armed && !dirty && !uploading && <button className="font-semibold underline" onClick={reloadPage} data-rxd-reload>{t("rx.reloadPage")}</button>}
                     </p>
                   )}
                   {labelsSlow && <p className="mb-2 text-center text-xs text-ink-muted" data-rxd-labels-slow>{t("rx.labelsSlow")}</p>}
@@ -263,7 +265,7 @@ export function RxDesigner({ onClose, onSaved }: { onClose: () => void; onSaved:
         )}
       </Modal>
 
-      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm" title={t("rx.leaveDesign")}
+      <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm" title={t("rx.leaveDesign")} description={armed ? t("rx.reloading") : undefined}
         footer={<div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setLeaveAsk(false)}>{t("rx.stay")}</Button>
           <Button variant="danger" onClick={() => { setLeaveAsk(false); onClose(); }} data-rxd-leave>{t("rx.leaveDo")}</Button>

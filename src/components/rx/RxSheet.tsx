@@ -50,7 +50,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   const { role } = usePermissions();
   const pad = useRxPad();
   const cfg = pad.cfg;
-  const { labels, ready: labelsReady, failed: labelsFailed, slow: labelsSlow, retry: labelsRetry, reload: labelsReload, tp } = useRxLabels(cfg.lang);
+  const { labels, ready: labelsReady, failed: labelsFailed, slow: labelsSlow, armed: labelsArmed, retry: labelsRetry, reload: labelsReload, tp } = useRxLabels(cfg.lang);
 
   const [fields, setFields] = useState<RxFields | null>(null);
   const [body, setBody] = useState("");
@@ -167,11 +167,14 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
   useEffect(() => {
     if (letGoKey !== null && (letGoKey !== key || !dirty)) setLetGoKey(null);
   }, [letGoKey, key, dirty]);
-  /* «حدّث» مضغوطٌ والتعافي ينتظر (`reloading`) حتى يُرفض أو تُحمَّل الصفحة — لا يُلغيه حرف (لا شيءَ يُلغي تعافياً بالطريق). وما يُرى
+  /* تحديثٌ بالطريق (`armed`): «حدّث» مضغوطٌ (`reloading`) حتى يُرفض أو تُحمَّل الصفحة — لا يُلغيه حرف (لا شيءَ يُلغي تعافياً بالطريق)
+     — أو تعافٍ بدأ **بلا ضغطة** (القاموسُ فشل والنتُّ موجود، أو «أعد المحاولة» — مراجعةُ d2f074d: حمّل بعد الحفظ والزرُّ معروض). وما يُرى
      يُحسب منه بالرسمة: نصٌّ لم يُؤذن له يمسكه، فالزرُّ يرجع (ضغطتُه تسأل عن هذا النصّ) — «راح تتحدّث أوّل ما ينحفظ كلشي» كذبٌ عن نصٍّ
      لا يُطبع هنا (القاموسُ ناقص) فلا يُحفظ؛ وحين لا يبقى ما يمسكه (انحفظ، أو فُرّغ، أو رجع لما ينتظر نافذتَه) يرجع «راح تتحدّث» لأنه
-     صدق: كان يُمسح بأوّل حرف والتعافي باقٍ، فتحمّلت الصفحةُ بعدها بلا كلمة والزرُّ معروض (مراجعةُ 6c80aa5). */
-  const reloadShown = reloading && !(dirty && !letGo);
+     صدق: كان يُمسح بأوّل حرف والتعافي باقٍ، فتحمّلت الصفحةُ بعدها بلا كلمة والزرُّ معروض (مراجعةُ 6c80aa5). وسؤالُ الخروج يقوله أيضاً:
+     الخروجُ يُفلت الإمساكَ فيحمّل. */
+  const armed = reloading || labelsArmed;
+  const reloadShown = armed && !(dirty && !letGo);
   /* لم يبقَ ما يضيع (طبعت النافذةُ وانحفظت والسؤالُ مفتوح): السؤالُ يُغلق — الشاشةُ باقية، والخروجُ (أو التحديثُ) بعده بلا سؤال.
      وورقةٌ انطبعت ولم تُحفظ تُغلق سؤالَ التحديث أيضاً: التحديثُ موقوفٌ حتى تُحفظ («احفظها بالسجل» تحته). */
   useEffect(() => {
@@ -195,9 +198,11 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
       toast.error(t("retail.popupBlocked"), t("retail.popupBlockedHint"));
       return;
     }
-    /* ورقةٌ لا تُحفظ (فارغة، أو محفوظةٌ قبل، أو بلا سجلّ): «انطبعت» حين تقولها النافذة — كانت تُقال بالضغطة ثمّ ترفض النافذةُ أو تنسدّ. */
+    /* ورقةٌ لا تُحفظ لا يُقال عنها «انطبعت»: «طبعتُ» من النافذة تعني «فُتح حوارُ الطباعة» — كروميوم لا يميّز «اطبع» من «ألغِ» (مقيسٌ
+       بالحوار الحقيقيّ)، وبالضغطة قد ترفض النافذةُ أو تنسدّ بعدها (مراجعتا 6c80aa5 وd2f074d). فالفارغةُ يُقال ما هو أكيد — لا تُحفظ —
+       بعد الحوار، والمحفوظةُ قبل (علامتُها ✓ ظاهرة) أو بلا سجلّ لا يُقال عنها شيء. */
     if (!clean.trim()) { watchPrint(w, { onPrint: () => toast.success(t("rx.printedBlank")), onOverflow: overflowed }); return; }
-    if (!canRecord || saver.isSaved(key)) { watchPrint(w, { onPrint: () => toast.success(t("rx.printedOnly")), onOverflow: overflowed }); return; }
+    if (!canRecord || saver.isSaved(key)) { watchPrint(w, { onOverflow: overflowed }); return; }
     /* لقطةٌ واحدة لهذه المسودّة بمعرّفٍ واحد: طباعتُها ثانيةً — ولو قبل أن تقرّر نافذتُها الأولى — لا تكتب سجلّاً ثانياً. */
     const snap = saver.snapFor(key, () => ({ id: uuid(), pet_id: pet.id, visit_id: visitId, pet_name: fields.name || pet.name, doctor_name: doctor, fields, body: clean }));
     /* الحفظُ الفوريّ بقياسٍ **رأى كلَّ شيء** (whole): شعارٌ فشل طلبُه بالمعاينة ونجح بالنافذة، أو معلَّقٌ عند النهائيّ القسريّ، قِيس
@@ -466,6 +471,7 @@ export function RxSheet({ pet, visitId, onClose }: { pet: Pet; visitId: string |
 
       <Dialog open={leaveAsk} onClose={() => setLeaveAsk(false)} size="sm"
         title={leaveWhy === "pending" ? t("rx.leavePending") : leaveWhy === "waiting" ? t("rx.leaveWaiting") : t("rx.leaveTitle")}
+        description={armed ? t("rx.reloading") : undefined}
         footer={<div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setLeaveAsk(false)}>{t("rx.stay")}</Button>
           <Button variant="danger" onClick={() => { setLeaveAsk(false); onClose(); }} data-rx-leave>{t("rx.leaveDo")}</Button>

@@ -7364,7 +7364,7 @@
     "pages": "Prints on more than one page ({{n}})",
     "print": "Print prescription",
     "printed": "Printed and saved to {{name}}'s record",
-    "printedBlank": "Printed blank — a prescription with no treatment isn't saved",
+    "printedBlank": "A blank prescription isn't saved to the record",
     "printedOnly": "Printed",
     "saveFail": "Printed, but not saved to the record",
     "saveRetry": "Save to record",
