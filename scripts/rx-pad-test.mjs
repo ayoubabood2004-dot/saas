@@ -13,8 +13,11 @@
  *      عند أوّل فشل، والنسخةُ الجديدة ممسوكةٌ حتى يستقرّ الحفظ، والرسائلُ تُوزَّع لنافذتها — ورسالةُ الرفض «للمدير» من rxErrorText نفسِها.
  *   ز) سجلُّ الحركات مرسوماً (react-mini) بصفوفٍ كما يكتبها الخادم: الجملُ، وسببُ الإلغاء كاملاً، ولا طبيبَ موقِّعٌ فاعلاً لإلغاءٍ
  *      أو حذف (ولا لحذفٍ بلا فاعل — «النظام») — وطفراتٌ تُثبت أنّ الفحصَ ليس فارغاً.
- *   ح) سكربتا الترتيب والطباعة بسلوكهما على مستندٍ مزيَّف (محرّكُ قياسٍ صغير وساعةٌ وأحداثٌ بيد الفحص): الإعادةُ لا تكرّر سطراً،
- *      والخطوطُ تُطلب مع المستند وتُطبَّق بعده، والقسريُّ لا يطبع ما لم يُقس، والفائضُ لا يُطبع — وطفراتٌ على السكربت نفسِه.
+ *   ح) سكربتا الترتيب والطباعة بسلوكهما على مستندٍ مزيَّف (محرّكُ قياسٍ صغير، ووجوهُ خطٍّ تصل وحدها، وشعارٌ يأخذ من المربّع، وساعةٌ
+ *      وأحداثٌ بيد الفحص): الإعادةُ لا تكرّر سطراً ولا تُبقي فائضاً ولا حجماً، والخطوطُ تُطلب مع المستند وتُطبَّق بعده، والطباعةُ تنتظر
+ *      الخطوطَ وتقيس من جديد فلا سطرَ مخفيّاً، والفائضُ لا يُطبع، والنافذةُ تُغلق بعدها — وطفراتٌ على السكربت نفسِه.
+ *   ط) عناوينُ الورقة والتعافي بسلوكهما: «تعذّر» لا تُمسح بإعادة المحاولة، والتنزيلُ البطيء ليس «تعذّر»، والتحديثُ لا يُحمَّل فوق نصٍّ
+ *      كُتب أثناء إلغاء الخدمة — وطفراتٌ على كلٍّ.
  *
  *   node scripts/rx-pad-test.mjs
  * ==========================================================================*/
@@ -88,6 +91,8 @@ const built = await esbuild.build({
       'export { rxErrorText } from "./src/components/rx/rxShared.ts";',
       'export { encodeClinical } from "./src/lib/clinicalRecord.ts";',
       'export { registerConfigReadOnlyChecker } from "./src/lib/clinicSync.ts";',
+      'export * as U from "./src/lib/appUpdate.ts";',
+      'export * as F from "./src/lib/inflight.ts";',
     ].join("\n"),
     resolveDir: process.cwd(), sourcefile: "rx-pad-test-entry.ts", loader: "ts",
   },
@@ -98,8 +103,8 @@ const dir = mkdtempSync(path.join(tmpdir(), "rx-pad-test-"));
 const file = path.join(dir, "bundle.mjs");
 writeFileSync(file, built.outputFiles[0].text);
 const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
-const { L, P, X, A, S, rxErrorText, encodeClinical, registerConfigReadOnlyChecker } = mod;
-if (!L || !P || !X || !A || !S || !rxErrorText || !registerConfigReadOnlyChecker) { console.error("✗ rx-pad-test: ما انحمّلت الوحدات"); process.exit(1); }
+const { L, P, X, A, S, U, F, rxErrorText, encodeClinical, registerConfigReadOnlyChecker } = mod;
+if (!L || !P || !X || !A || !S || !U || !F || !rxErrorText || !registerConfigReadOnlyChecker) { console.error("✗ rx-pad-test: ما انحمّلت الوحدات"); process.exit(1); }
 const errOf = async (f) => { try { await f(); return "قُبل"; } catch (e) { return e.code ?? e.name ?? e.message; } };
 /* الرمزُ والرسالةُ معاً: رفضُ السياج العامّ 42501 أيضاً — والشاشةُ تقرأ «للمدير» من الرسالة (rxErrorText). */
 const errFull = async (f) => { try { await f(); return "قُبل"; } catch (e) { return `${e.code ?? ""}|${e.message ?? ""}`; } };
@@ -224,9 +229,10 @@ const doc = (over = {}) => ({
   check("  وصورةُ الراجيتة ترقّم صفحاتها أيضاً — تحت مربّع الوصفة بالطبقة نفسِها (فالمعايرةُ تزحزحه معها)",
     /<div class="pno pi" style="left:[\d.]+%;top:[\d.]+%;width:[\d.]+%">&#8203;<\/div>\s*<\/div>/.test(im) && /\.pi\{position:absolute/.test(im));
   const pr = P.buildRxHTML(doc({ overflowNote: "ما انطبعت <b>" }), { print: true });
-  check("نافذةُ الطباعة حَكَم: تطبع بعد ترتيبٍ نهائيّ وحده، ولا تطبع ما فيه فائض — تُظهر الشريطَ وتبلّغ من فتحها",
-    pr.includes("data-final')!=='1')return") && /if\(root\.getAttribute\('data-overflow'\)\)\{var w=document\.getElementById\('rxwarn'\);if\(w\)w\.hidden=false;tell\('overflow'\);return;\}/.test(pr)
-    && pr.indexOf("tell('overflow')") < pr.indexOf("window.print()") && pr.includes("window.opener.postMessage({rx:t},'*')"));
+  check("نافذةُ الطباعة حَكَم: تطبع بعد ترتيبٍ نهائيّ وحده، ولا تطبع ما فيه فائض — تُظهر الشريطَ وتبلّغ من فتحها (وسلوكُها بقسم ح)",
+    pr.includes("data-final')!=='1')return") && pr.includes("function refuse(){var w=document.getElementById('rxwarn');if(w)w.hidden=false;tell('overflow');}")
+    && /if\(!measure\(\)\)\{refuse\(\);return;\}tell\('print'\);setTimeout\(function\(\)\{if\(!measure\(\)\)\{refuse\(\);return;\}window\.focus\(\);window\.print\(\);\},150\);/.test(pr)
+    && pr.includes("window.opener.postMessage({rx:t},'*')"));
   check("  وتنتظر التحميلَ **بحدثه** ثلاثَ ثوانٍ بعد نهائيٍّ قسريّ (صورةٌ تصل فيها تُعيد الترتيبَ قبل الحكم)، لا بـreadyState (complete بعد ١٠ م.ث بنافذة document.write)",
     pr.includes("window.addEventListener('load',function(){loaded=true;if(armed)setTimeout(fire,0);});") && pr.includes("if(loaded){fire();return;}setTimeout(fire,3000);")
     && !/readyState==='complete'\)\{?fire/.test(pr.slice(pr.indexOf("var done=false,armed=false"))));
@@ -358,15 +364,27 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
     && /onClick=\{\(\) => void saver\.flush\(\)\}[^>]*data-rx-retry/.test(sheet) && /add: \(input\) => rxApi\.add\(input\)/.test(sheet)
     && !/rxApi\.add\(\{/.test(sheet) && !/const save = /.test(sheet));
   check("  والخروجُ يُسأل ما دامت ورقةٌ انطبعت ولم تُحفظ (ولو فُرّغ النصّ بعدها) أو نافذتُها تقرّر (قد تنسدّ بلا طباعة)، والنسخةُ الجديدة لا تنزل فوق نصٍّ لم يُحفظ — إلا بتحديثٍ اختاره الطبيب، والورقةُ غيرُ المحفوظة ممسوكةٌ دائماً",
-    /if \(!dirty && !pendingN && !waiting\) return true;/.test(sheet) && /setLeaveAsk\(pendingN \? "pending" : waiting \? "waiting" : "dirty"\)/.test(sheet)
-    && /const waiting = !!clean\.trim\(\) && saver\.isWaiting\(key\);/.test(sheet) && /t\("rx\.leaveWaiting"\)/.test(sheet)
+    /if \(!dirty && !pendingN && !waiting\) return true;\s*setLeaveAsk\(true\);/.test(sheet)
     && /useEffect\(\(\) => \(pendingN > 0 \|\| \(dirty && !letGo\) \? holdUpdates\(Infinity\) : undefined\), \[dirty, pendingN, letGo\]\)/.test(sheet));
+  /* تدقيقٌ خامس: «تقرّر» عن مسودّةٍ محفوظة كان يسأل «يضيع اللي كتبته»، والعنوانُ مختومٌ لحظةَ الفتح قال «بعدها ما طبعت» والورقةُ مطبوعة
+     وحفظُها فشل فخرج الطبيبُ وضاعت لقطتُها، وإذنُ التحديث علمٌ عامّ عاش بعد ما أُذن له (نافذةٌ انسدّت فرجعت المسودّةُ بلا إمساك). */
+  check("  و«تقرّر» لمسودّةٍ لم تُحفظ وحدها، وعنوانُ سؤال الخروج من الحال الآن (لا مختومٌ لحظةَ الفتح)، والسؤالُ يُغلق حين لا يبقى ما يضيع",
+    /const waiting = !!clean\.trim\(\) && !saved && saver\.isWaiting\(key\);/.test(sheet)
+    && /title=\{pendingN \? t\("rx\.leavePending"\) : waiting \? t\("rx\.leaveWaiting"\) : t\("rx\.leaveTitle"\)\}/.test(sheet)
+    && /if \(leaveAsk && !dirty && !pendingN && !waiting\) setLeaveAsk\(false\);/.test(sheet) && /if \(reloadAsk && !dirty && !waiting\) setReloadAsk\(false\);/.test(sheet)
+    && !/setLeaveAsk\(pendingN \?/.test(sheet) && !/leaveAsk === "/.test(sheet));
   check("  ونافذةٌ انسدّت قبل أن تطبع تُقال (onGone) — كانت تُضيّع المسودّةَ بصمت",
     /onGone: \(\) => \{ playWarning\(\); toast\.warn\(t\("rx\.goneUnprinted"\)\); \}/.test(sheet));
-  check("  والقاموسُ العربيّ الذي لا يصل يُقال والنصُّ موجود (كان «اطبع» موقوفاً بلا كلمة)، والتحديثُ بطريق التعافي بعد أن يُفلت النصُّ إمساكَه، بسؤالٍ ونسخٍ إن كان نصّ، وموقوفٌ مع ورقةٍ لم تُحفظ",
+  check("  والقاموسُ العربيّ الذي لا يصل يُقال والنصُّ موجود (كان «اطبع» موقوفاً بلا كلمة)، والتحديثُ بطريق التعافي بعد أن يُفلت **نصُّ هذه المسودّة** إمساكَه، بسؤالٍ ونسخٍ إن كان نصّ أو نافذتُه تقرّر، وموقوفٌ مع ورقةٍ لم تُحفظ",
     /\{labelsFailed && \(\s*<div[^>]*data-rx-labels-fail/.test(sheet) && /onClick=\{askReload\} disabled=\{pendingN > 0\} data-rx-reload/.test(sheet)
-    && /const askReload = \(\) => \{ playTap\(\); if \(dirty\) setReloadAsk\(true\); else reloadPage\(\); \};/.test(sheet)
-    && /setLetGo\(true\);\s*void labelsReload\(\)\.then\(\(ok\) => \{\s*if \(ok\) return;\s*setLetGo\(false\);/.test(sheet) && /navigator\.clipboard\.writeText\(clean\)/.test(sheet));
+    && /const askReload = \(\) => \{ playTap\(\); if \(dirty \|\| waiting\) \{ setCopied\(null\); setReloadAsk\(true\); \} else reloadPage\(\); \};/.test(sheet)
+    && /const letGo = letGoKey !== null && letGoKey === key;/.test(sheet)
+    && /setLetGoKey\(key\);\s*setReloading\(true\);\s*void labelsReload\(\)\.then\(\(ok\) => \{\s*if \(ok\) return;\s*setLetGoKey\(null\);\s*setReloading\(false\);/.test(sheet)
+    && /onClick=\{reloadPage\} disabled=\{pendingN > 0\} data-rx-reload-do/.test(sheet) && /data-rx-reloading/.test(sheet) && !/setLetGo\(true\)/.test(sheet)
+    && /navigator\.clipboard\.writeText\(clean\)/.test(sheet));
+  check("  ونتيجةُ «انسخ النص» داخل سؤالها لا توست (بالهاتف يغطّي أزرارَه السفلية ٤ ثوانٍ)، والتنزيلُ البطيء يُقال بلا «تعذّر» ولا تحديث",
+    /setCopied\("ok"\)/.test(sheet) && /setCopied\("fail"\)/.test(sheet) && /data-rx-copied=\{copied\}/.test(sheet) && !/toast\.(success|error)\(t\("rx\.(copied|copyFail)"\)\)/.test(sheet)
+    && /\{labelsSlow && \(\s*<div[^>]*data-rx-labels-slow/.test(sheet) && /data-rxd-labels-slow/.test(designer));
   check("  ونافذةُ الطباعة حَكَم: قياسُ المعاينة لهذا المستند نهائيٌّ بلا فائض ⇒ حفظٌ فوراً، وإلا حين تقول «طبعتُ» (ولا يُحفظ ما رفضته) والنسخةُ الجديدة ممسوكة",
     /const measured = layout\.html === html;/.test(sheet) && /if \(saver\.isPending\(key\) \|\| \(measured && layout\.final && !layout\.overflow\)\) \{[\s\S]*?void saver\.enqueue\(snap\);[\s\S]*?\} else \{[\s\S]*?watchPrint\(w, saver\.deferTo\(snap, overflowed\)\)/.test(printFn)
     && /disabled=\{!labelsReady \|\| tooLong \|\| knownOverflow\}/.test(sheet) && /const knownOverflow = measured && layout\.overflow;/.test(sheet)
@@ -383,9 +401,10 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
     && /age: cur\.age === s\.age \? f\.age : cur\.age, weight: cur\.weight === s\.weight \? f\.weight : cur\.weight/.test(sheet) && /setDoctor\(\(cur\) => \(!s \|\| cur === s\.doctor \? dr : cur\)\)/.test(sheet)
     && /data-rx-labels-fail/.test(sheet)
     && /\(\) => \{ if \(alive\) setFailed\(true\); \}/.test(code("src/components/rx/rxShared.ts")) && !/\(\) => \{ if \(alive\) setReady\(true\); \}, \(\) => \{ if \(alive\) setReady\(true\); \}/.test(code("src/components/rx/rxShared.ts"))
-    /* و«تعذّر» لا يُمسح بإعادة المحاولة، ويُقال حين يعلق التحميلُ (التعافي ينتظر نموذجاً ممسوكاً فلا يستقرّ الوعدُ أبداً)، والتحديثُ بطريق التعافي. */
+    /* و«تعذّر» لا يُمسح بإعادة المحاولة (يفحصه سلوكُ الخطّاف بقسم ط — هذا سلكٌ وحده)، ويُقال حين يعلق التحميلُ والتعافي ينتظر، والتحديثُ بطريق التعافي. */
     && !/setFailed\(false\);\s*Promise\.all/.test(code("src/components/rx/rxShared.ts"))
-    && /window\.setTimeout\(\(\) => \{ if \(alive\) setFailed\(true\); \}, RX_LABELS_STUCK_MS\)/.test(code("src/components/rx/rxShared.ts"))
+    && /window\.setTimeout\(\(\) => \{ if \(alive\) setStuck\(true\); \}, RX_LABELS_STUCK_MS\)/.test(code("src/components/rx/rxShared.ts"))
+    && /const check = \(\) => setParked\(recoveryPending\(\)\);/.test(code("src/components/rx/rxShared.ts"))
     && /const reload = useCallback\(\(\) => recoverFromStaleShell\(\), \[\]\);/.test(code("src/components/rx/rxShared.ts"))
     /* «جاهز» بنفس الرسمة لا حالةٌ قديمة: التصميمُ يصل عربياً بعد الافتراضيّ الإنكليزيّ فكانت الخاناتُ تُبذر قبل القاموس («2 years» على ورقةٍ عربية — مشيٌ بالمتصفّح أمسكه). */
     && /const ready = !needLoad \|\| loaded;/.test(code("src/components/rx/rxShared.ts")) && !/useState\(!needLoad\)/.test(code("src/components/rx/rxShared.ts")));
@@ -408,13 +427,16 @@ console.log("▸ الأسلاك: القطعةُ كسولة بنطاقها، وا
     /useEffect\(\(\) => \(dirty \|\| uploading \? holdUpdates\(Infinity\) : undefined\), \[dirty, uploading\]\)/.test(designer) && /setDraft\(seeded\);\s*setBase\(c\);/.test(designer));
   check("  وصفحةُ المعايرة لا تنتظر قاموسَ العناوين (خاناتُها قيمٌ بلا عناوين — فشلُه كان يُسكت الزرّ)، وفشلُه بالمعاينة يُقال بـ«أعد المحاولة»",
     /const printCalibration = \(\) => \{\s*if \(!draft\) return;/.test(designer) && /data-rxd-labels-fail/.test(designer) && /onClick=\{labelsRetry\}/.test(designer)
-    && /t\(dirty \|\| uploading \? "rx\.labelsSaveFirst" : "rx\.labelsReload"\)/.test(designer) && /\{!dirty && !uploading && <button[^>]*onClick=\{reloadPage\}/.test(designer));
+    && /t\(reloading \? "rx\.reloading" : dirty \|\| uploading \? "rx\.labelsSaveFirst" : "rx\.labelsReload"\)/.test(designer) && /\{!reloading && !dirty && !uploading && <button[^>]*onClick=\{reloadPage\}/.test(designer));
   check("  والسهمُ لفوق وPageUp بمنزلق «فوق ↕ جوه» يرفعان الطباعة (قيمةٌ أصغر) — كانا يزيدانها فيزحزحان عكسَ عنوانه",
     /\(\{ ArrowUp: -step, ArrowDown: step, PageUp: -3, PageDown: 3 \} as Record<string, number>\)\[e\.key\]/.test(designer) && /data-r="nudge-y"/.test(designer)
     && /set\(\{ nudge: \{ \.\.\.draft\.nudge, y: clamp\(r1\(draft\.nudge\.y \+ by\), -15, 15\) \} \}\)/.test(designer));
   check("  وما تغيّر أثناء حفظ التصميم لا يُرمى (يبقى مفتوحاً بالباقي)، ورفعٌ تُرك بـ«اطلع» بلا نغمةٍ ولا رسالة",
     /const sent = draft;[\s\S]*?rxApi\.savePad\(sent, expect\)[\s\S]*?const now = draftRef\.current;\s*if \(now && !same\(now, sent\)\) \{\s*toast\.success\(t\("rx\.saved"\), t\("rx\.savedMore"\)\);\s*return;\s*\}\s*setDraft\(row\.cfg\);/.test(designer)
     && /if \(alive\.current\) playSuccess\(\);/.test(designer) && /if \(alive\.current\) \{\s*playWarning\(\);\s*toast\.error\(t\("rx\.uploadFail"\)/.test(designer));
+  check("  وحفظٌ رجع بعد «اطلع» يُقال ولا يُغلق مصمِّماً فُتح بعده (onClose يُغلق ما هو مفتوح — كان يُطفئه ويرمي ما كُتب)، وفشلُه عن مصمِّمٍ متروك لا يُقال",
+    /rxApi\.savePad\(sent, expect\);\s*if \(!alive\.current\) \{\s*onSaved\(\);\s*playSuccess\(\);\s*toast\.success\(t\("rx\.saved"\)\);\s*return;\s*\}/.test(designer)
+    && /\} catch \(e\) \{\s*if \(!alive\.current\) return;/.test(designer));
   check("  والمقبضُ يأخذ التركيزَ بالضغطة (الأسهمُ له)، والسحبُ يكتب خانتَه وحدها فوق المسودّة الحالية",
     /closest<HTMLElement>\("\[data-handle\]"\)\?\.focus\(\{ preventScroll: true \}\)/.test(designer) && /setDraft\(\(cur\) => \{/.test(designer) && !/setDraft\(\(\) => apply\(d\.start/.test(designer));
   check("  ومنزلقُ المعايرة يمين/يسار فيزيائيّ (dir=ltr) — بالعربية كان يزحزح الطباعةَ عكسَ عنوانه، وصورةُ الراجيتة تُسطَّح على أبيض",
@@ -594,6 +616,78 @@ console.log("▸ الحفظ: لقطةٌ واحدة لكلّ مسودّة، ون�
     check("  وبلا كلمة بعد المهلة ⇒ لا سجلّ، والإمساكُ يُفلت، والمؤقّتُ يقف — و«ذهبت» تُقال مرّةً بعد الإفلات (كانت صامتة فتضيع المسودّة)",
       log.adds.length === 1 && !sv.isWaiting("Q") && log.released === 2 && e.timers === 0 && log.gone.join() === "Q@2", `${e.timers} ${log.gone}`);
   }
+  /* «ذهبت بلا شي» عن مسودّةٍ لم يحفظها غيرُها وحدها (تدقيقٌ خامس: بعد «انطبعت وانحفظت» قالت «ما انحفظ شي» عن الراجيتة نفسِها) —
+     بسلوك الوحدة الحقيقية، وبطفراتٍ عليها تُثبت أنّ الفحصَ ليس فارغاً. */
+  const loadSave = async (edit) => {
+    const raw = src("src/lib/rxSave.ts");
+    const t = await esbuild.transform(edit ? edit(raw) : raw, { loader: "ts", format: "esm" });
+    const d = mkdtempSync(path.join(tmpdir(), "rx-save-"));
+    const f = path.join(d, "m.mjs");
+    writeFileSync(f, t.code);
+    return import(pathToFileURL(f).href).finally(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } });
+  };
+  async function goneSuite(SM, ck) {
+    const mk2 = () => {
+      const log = { gone: [], adds: 0 };
+      const sv = SM.createRxSaver({
+        add: async (input) => { log.adds++; return { id: input.id }; }, hold: () => () => {},
+        onSaved() {}, onFail() {}, onChange() {}, onGone: (snap) => log.gone.push(snap.key),
+      });
+      return { sv, log };
+    };
+    const shut = (e, ...ws) => { for (const w of ws) w.closed = true; e.tick(); e.tick(); e.tick(); };
+    {
+      const { sv, log } = mk2(), e = env(), watch = SM.createPrintWatch(e);
+      const w = { closed: false };
+      watch(w, sv.deferTo(sv.snapFor("K", make), () => {}));
+      await sv.enqueue(sv.snapFor("K", make));
+      shut(e, w);
+      ck("نافذةٌ تقرّر ثمّ طباعةٌ ثانية حفظت فوراً، والأولى انسدّت: لا «ما انحفظ شي» بعد «انطبعت وانحفظت» (سجلٌّ واحد)", log.gone.length === 0 && log.adds === 1 && sv.isSaved("K"), JSON.stringify(log));
+    }
+    {
+      const { sv, log } = mk2(), e = env(), watch = SM.createPrintWatch(e);
+      const w1 = { closed: false }, w2 = { closed: false };
+      watch(w1, sv.deferTo(sv.snapFor("K", make), () => {}));
+      watch(w2, sv.deferTo(sv.snapFor("K", make), () => {}));
+      e.post(w2, { rx: "print" });
+      await settle();
+      shut(e, w1);
+      ck("  ونافذتان تقرّران: الثانيةُ طبعت والأولى انسدّت ⇒ لا «ذهبت»", log.gone.length === 0 && sv.isSaved("K"), JSON.stringify(log));
+    }
+    {
+      const { sv, log } = mk2(), e = env(), watch = SM.createPrintWatch(e);
+      const w1 = { closed: false }, w2 = { closed: false };
+      watch(w1, sv.deferTo(sv.snapFor("K", make), () => {}));
+      watch(w2, sv.deferTo(sv.snapFor("K", make), () => {}));
+      shut(e, w1);
+      const mid = log.gone.length;
+      shut(e, w2);
+      ck("  والاثنتان انسدّتا بلا طباعة ⇒ «ذهبت» مرّةً بعد الأخيرة (لا والثانيةُ ما زالت تقرّر)", mid === 0 && log.gone.join() === "K" && !sv.isWaiting("K"), `${mid} ${log.gone}`);
+    }
+    {
+      const { sv, log } = mk2(), e = env(), watch = SM.createPrintWatch(e);
+      const w = { closed: false };
+      let over = 0;
+      watch(w, sv.deferTo(sv.snapFor("K", make), () => { over++; }));
+      e.post(w, { rx: "overflow" });
+      shut(e, w);
+      ck("  ونافذةٌ قالت «فائض» ثمّ انسدّت: الفائضُ وحده يُقال — لا «انسدّت قبل ما تطبع» فوقه", over === 1 && log.gone.length === 0, `${over} ${log.gone}`);
+    }
+  }
+  await goneSuite(await loadSave(), check);
+  {
+    const swapS = (from, to) => (s) => { if (!s.includes(from)) throw new Error(`الطفرة لم تجد نصَّها: ${from.slice(0, 50)}`); return s.split(from).join(to); };
+    const MUT_S = [
+      ["«ذهبت» بلا سؤالٍ عن المحفوظ (نسخةُ الجولة الرابعة)", swapS("if (!saved.has(snap.key) && !s.isPending(snap.key) && !waiting.has(snap.key)) s.deps.onGone?.(snap);", "s.deps.onGone?.(snap);")],
+      ["«ذهبت» ونافذةٌ أخرى ما زالت تقرّر", swapS(" && !waiting.has(snap.key)) s.deps.onGone", ") s.deps.onGone")],
+      ["الفائضُ يقول «ذهبت» أيضاً", swapS("onOverflow: () => { if (settle()) { release(); onOverflow(); } },", "onOverflow: () => { if (settle()) { release(); onOverflow(); s.deps.onGone?.(snap); } },")],
+    ];
+    for (const [name, edit] of MUT_S) {
+      let caught = 0;
+      try { await goneSuite(await loadSave(edit), (_n, ok) => { if (!ok) caught++; }); } catch { caught = -1; }
+      check(`  طفرة «${name}» تُسقط فحصاً`, caught > 0, `caught=${caught}`);
+    }
+  }
   {
     const t = (k) => `T:${k}`;
     check("رسالةُ الرفض كما تقولها الشاشة (rxErrorText نفسُها): «للمدير» من رسالة المحفّز ولو برمز السياج العامّ، و«تغيّرت» و«مجمّدة»",
@@ -688,6 +782,9 @@ console.log("▸ سجلُّ الحركات: الجملُ والشرائحُ وا
     // إنشاءٌ بلا فاعل (سطورُ الملء الرجعيّ 0046 — كلُّها INSERT): طبيبُ الصفّ أصدقُ ما يُعرف
     { id: 16, src: "a", created_at: now, actor: null, actor_name: null, kind: "medical", action: "INSERT", entity: "pet_prescriptions", entity_id: "r6",
       brief: { pet_name: "بوبي", doctor_name: "د. علي" } },
+    // تحديثٌ بلا فاعل (إلغاءٌ من لوحة القاعدة): «النظام» — لا الطبيبُ الموقِّع (كان صفُّ التحديث غائباً عن الفحص)
+    { id: 17, src: "a", created_at: now, actor: null, actor_name: null, kind: "medical", action: "UPDATE", entity: "pet_prescriptions", entity_id: "r7",
+      brief: { pet_name: "بوبي", doctor_name: "د. علي", __changed: { voided_at: [null, now], void_reason: [null, "x"] } } },
   ];
   async function suite(M, ck) {
     try {
@@ -708,16 +805,17 @@ console.log("▸ سجلُّ الحركات: الجملُ والشرائحُ وا
         return { said: ui.text(ps[0] ?? row), chips, actor: actor[0] ?? "" };
       });
       ui.unmount();
-      const [vd, del, add, upd, sysDel, backfill] = info;
+      const [vd, del, add, upd, sysDel, backfill, sysUpd] = info;
       const J = JSON.stringify;
       ck("الإلغاءُ «ألغى راجيتة — بوبي»، وسببُه شريحةٌ واحدة بنصّه كاملاً (لا قصَّ عند ٢٨ قبل الحيوان الصحيح)، وبلا voided_at/voided_by خامّة",
-        info.length === 6 && vd.said.includes("ألغى راجيتة — بوبي") && vd.chips.length === 1 && vd.chips[0][2] === REASON && vd.chips[0][0] === AR.act.f.void_reason, J(vd));
+        info.length === 7 && vd.said.includes("ألغى راجيتة — بوبي") && vd.chips.length === 1 && vd.chips[0][2] === REASON && vd.chips[0][0] === AR.act.f.void_reason, J(vd));
       ck("  وفاعلُه «مدير العيادة» — لا طبيبُها الموقِّع (الإلغاءُ للمدير وحده)", vd.actor === AR.act.manager, J(vd.actor));
       ck("الحذفُ مع الحيوان «انحذفت راجيتة مع حيوانها — بوبي»، وفاعلُه لا يُنسب للطبيب الموقِّع", del?.said.includes("انحذفت راجيتة مع حيوانها — بوبي") && del.actor === AR.act.manager, J(del));
       ck("الكتابةُ من الحساب المشترك تُنسب لطبيب الراجيتة (أصدقُ ما يُعرف)", add?.said.includes("كتب راجيتة لـ بوبي") && add.actor === "د. علي", J(add));
       ck("تحديثٌ لا يمسّ الإلغاء «حدّث راجيتة» بلا شرائح ضجيج، وبفاعله المسمّى", upd?.said.includes("حدّث راجيتة — بوبي") && upd.chips.length === 0 && upd.actor === "أحمد", J(upd));
       ck("حذفٌ بلا فاعل «النظام» لا الطبيبُ الموقِّع، وإنشاءٌ بلا فاعل (0046) بطبيبه",
         sysDel?.said.includes("انحذفت راجيتة مع حيوانها — بوبي") && sysDel.actor === AR.act.system && backfill?.actor === "د. علي", J([sysDel, backfill]));
+      ck("  وإلغاءٌ بلا فاعل (لوحةُ القاعدة) «ألغى» وفاعلُه «النظام» لا الطبيبُ الموقِّع", sysUpd?.said.includes("ألغى راجيتة — بوبي") && sysUpd.actor === AR.act.system, J(sysUpd));
     } catch (e) {
       ck("سجلُّ الحركات يُرسم", false, String(e?.stack ?? e));
     }
@@ -751,9 +849,16 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     fields: { date: "2026-11-05", name: "Bobby", owner: "", age: "", weight: "", kind: "" }, dateText: "05/11/2026", body, doctor: "",
     labels: L.RX_LABELS_EN, docTitle: "Rx", overflowNote: "OVER",
   }, opts);
-  /* المحرّك: مربّعُ الوصفة ٣٠٠ بكسل عرضاً وطولاً؛ السطرُ = (حروفُه ÷ ما يسعه السطر) × حجمُ الخطّ × ١٫٥٥، والخطُّ الحقيقيّ ×١٫١٥. */
-  function makeEnv(html, edit = (x) => x) {
-    const M = { css: false, fonts: false };
+  /* المحرّك: مربّعُ الوصفة ٣٠٠ بكسل عرضاً وطولاً؛ السطرُ = (حروفُه ÷ ما يسعه السطر) × حجمُ الخطّ × ١٫٥٥ × k. وكما كروميوم (تدقيقٌ
+     خامس — مزيَّفٌ أعمى عنها مرّر عيبَ القصّ): الخطوطُ **وجهان** يصلان كلٌّ وحده (k يتغيّر مع كلّ وجه، وloadingdone بعد آخرهما
+     وحده)، والشعارُ يأخذ ٤٠ بكسل من المربّع حين يصل (ومخفيّاً لا شيء)، وحدثُ التحميل بيد الفحص (المشهدُ يؤخّره ما دامت الخطوطُ
+     تصل). `kPer` سالبٌ = الخطُّ الحقيقيّ أضيقُ من الاحتياطيّ. */
+  function makeEnv(html, edit = (x) => x, opt = {}) {
+    const kPer = opt.kPer ?? 0.075;
+    const M = { css: false, face: { cairo: "unloaded", ruqaa: "unloaded" }, img: "pending", arriveDuringPrint: !!opt.arriveDuringPrint,
+      get fonts() { return Object.values(this.face).every((s) => s === "loaded"); } };
+    const loadingFaces = () => Object.values(M.face).some((s) => s === "loading");
+    const kNow = () => 1 + kPer * Object.values(M.face).filter((s) => s === "loaded").length;
     const clock = { now: 0, q: [], n: 0 };
     const setT = (f, ms) => { clock.q.push({ at: clock.now + Math.max(0, Number(ms) || 0), f, id: ++clock.n }); return clock.n; };
     const doc = {};
@@ -783,6 +888,9 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       cloneNode(deep) { const c = new El(this.tagName, Object.fromEntries(this.attrs)); c.style = { ...this.style }; if (deep) { c.text = this.text; for (const k of this.children) c.appendChild(k.cloneNode(true)); } return c; }
       querySelectorAll(sel) { const cls = sel.replace(/^\./, ""), out = []; const walk = (e) => { for (const k of e.children) { if (k.has(cls)) out.push(k); walk(k); } }; walk(this); return out; }
       querySelector(sel) { return this.querySelectorAll(sel)[0] ?? null; }
+      getElementsByTagName(tag) { const T = tag.toUpperCase(), out = []; const walk = (e) => { for (const k of e.children) { if (k.tagName === T) out.push(k); walk(k); } }; walk(this); return out; }
+      /* الصورةُ: «مكتملة» حين تصل أو تفشل (المصدرُ واحدٌ لنسخ الصفحات كلّها). */
+      get complete() { return this.tagName === "IMG" ? M.img !== "pending" : undefined; }
       addEventListener(t, f) { (this.ls[t] ||= []).push(f); }
       fire(t) { for (const f of this.ls[t] ?? []) f({ type: t }); }
       get innerHTML() { return JSON.stringify(this.children.map((c) => [c.getAttribute("class"), c.getAttribute("dir"), c.textContent])); }
@@ -791,12 +899,19 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
         if (h) for (const [cls, dir, t] of JSON.parse(h)) { const e = new El("div", dir ? { class: cls, dir } : { class: cls }); e.text = t; this.appendChild(e); }
       }
       lineH(c) {
-        const fs = parseFloat(this.style.fontSize) || 12, k = M.fonts ? 1.15 : 1;
+        const fs = parseFloat(this.style.fontSize) || 12, k = kNow();
         const cpl = Math.max(1, Math.floor(300 / (fs * 0.6 * k)));
         return Math.max(1, Math.ceil([...c.textContent].length / cpl)) * fs * 1.55 * k;
       }
-      get clientHeight() { return this.has("rx-lines") ? 300 : 0; }
-      get scrollHeight() { return this.has("rx-lines") ? Math.max(300, this.children.reduce((h, c) => h + this.lineH(c), 0)) : 0; }
+      /* المربّعُ ٣٠٠ ناقصَ الشعار الواصل الظاهر بصفحته. */
+      get clientHeight() {
+        if (!this.has("rx-lines")) return 0;
+        let p = this;
+        while (p && !p.has("page")) p = p.parentNode;
+        const logo = p ? p.getElementsByTagName("img").filter((i) => M.img === "ok" && i.style.display !== "none").length * 40 : 0;
+        return 300 - logo;
+      }
+      get scrollHeight() { return this.has("rx-lines") ? Math.max(this.clientHeight, this.children.reduce((h, c) => h + this.lineH(c), 0)) : 0; }
     }
     const attrs = Object.fromEntries([.../<html([^>]*)>/.exec(html)[1].matchAll(/([\w-]+)="([^"]*)"/g)].map((m) => [m[1], unesc(m[2])]));
     const root = new El("html", attrs), head = new El("head"), body = new El("body");
@@ -807,25 +922,41 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     const page = new El("div", { class: "page" }), box = new El("div", { class: "rx-lines", "data-max": lm[1], "data-min": lm[2] });
     for (const m of lm[3].matchAll(/<div class="ln"( dir="auto")?>([^<]*)<\/div>/g)) { const e = new El("div", m[1] ? { class: "ln", dir: "auto" } : { class: "ln" }); e.text = unesc(m[2]); box.appendChild(e); }
     const foot = new El("footer", { class: "ft" }), pno = new El("span", { class: "pno" });
+    if (opt.logo) { const hd = new El("header", { class: "hd" }); hd.appendChild(new El("img", { src: "logo" })); page.appendChild(hd); }
     foot.appendChild(pno); page.appendChild(box); page.appendChild(foot); body.appendChild(page);
     const find = (e, id) => { if (e.getAttribute("id") === id) return e; for (const k of e.children) { const r = find(k, id); if (r) return r; } return null; };
     const fl = { ls: [], pend: [] };
-    const waitFonts = () => (M.css && !M.fonts ? new Promise((r) => fl.pend.push(r)) : Promise.resolve([]));
+    const waitFonts = () => (loadingFaces() ? new Promise((r) => fl.pend.push(r)) : Promise.resolve([]));
+    /* وجهٌ يصل: يحلّ محلَّ الاحتياطيّ بلا حدث؛ وآخرُ الواصلين يُطلق loadingdone ويحلّ «الجاهزية». */
+    const faceDone = (name) => {
+      if (M.face[name] !== "loading") return;
+      M.face[name] = "loaded";
+      if (!loadingFaces()) { fl.pend.splice(0).forEach((r) => r([])); fl.ls.forEach((f) => f()); }
+    };
     Object.assign(doc, {
       documentElement: root, head, body, readyState: "loading",
       querySelector: (s) => root.querySelector(s), querySelectorAll: (s) => root.querySelectorAll(s),
-      getElementById: (id) => find(root, id), createElement: (t) => new El(t),
-      fonts: { load: () => waitFonts(), get ready() { return waitFonts(); }, addEventListener: (t, f) => { if (t === "loadingdone") fl.ls.push(f); } },
+      getElementById: (id) => find(root, id), createElement: (t) => new El(t), getElementsByTagName: (t) => root.getElementsByTagName(t),
+      fonts: { load: () => waitFonts(), get ready() { return waitFonts(); }, get status() { return loadingFaces() ? "loading" : "loaded"; },
+        addEventListener: (t, f) => { if (t === "loadingdone") fl.ls.push(f); } },
     });
     const msgs = [], told = [], prints = [];
     const ws = {};
+    const hiddenNow = () => root.querySelectorAll(".page").filter((p) => { const b = p.querySelector(".rx-lines"); return b && b.scrollHeight > b.clientHeight + 1; }).length;
+    const fireImg = (t) => root.getElementsByTagName("img").forEach((i) => i.fire(t));
+    let closed = false;
     const win = {
       parent: { postMessage: (m) => { if (m && m.rxLayout) msgs.push({ t: clock.now, ...m.rxLayout }); } },
       opener: { postMessage: (m) => told.push(`${m.rx}@${clock.now}`) },
       addEventListener: (t, f) => { (ws[t] ||= []).push(f); },
       dispatchEvent: (e) => { for (const f of ws[e.type] ?? []) f(e); return true; },
-      focus() {}, close() {},
-      print: () => prints.push({ t: clock.now, pages: root.querySelectorAll(".page").length, fonts: M.fonts }),
+      focus() {}, close() { closed = true; },
+      /* المطبوعُ: الصفحاتُ والخطوطُ والأسطرُ المخفيّة تحت مربّعها لحظتَها — وشعارٌ يصل **أثناء** حوار الطباعة (أحداثُه بعده). */
+      print: () => {
+        const rec = { t: clock.now, pages: root.querySelectorAll(".page").length, fonts: M.fonts, hidden: hiddenNow() };
+        if (M.arriveDuringPrint && M.img === "pending") { M.img = "ok"; rec.afterHidden = hiddenNow(); setT(() => fireImg("load"), 0); }
+        prints.push(rec);
+      },
     };
     class Ev { constructor(type) { this.type = type; } }
     for (const js of scriptsOf(html)) new Function("window", "document", "setTimeout", "Event", edit(js))(win, doc, setT, Ev);
@@ -845,14 +976,20 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     const linesNow = () => root.querySelectorAll(".page").flatMap((p) => p.querySelector(".rx-lines").children.map((c) => c.textContent));
     const rxf = () => head.children.filter((c) => c.getAttribute("id") === "rxf");
     return {
-      root, win, msgs, told, prints, M, rxf, linesNow,
+      root, win, msgs, told, prints, M, rxf, linesNow, hiddenNow,
       pages: () => root.querySelectorAll(".page").length,
+      fs: () => root.querySelector(".rx-lines")?.style.fontSize ?? "",
+      closed: () => closed,
       at: async (t, f) => { await advance(t); if (f) f(); await flush(); },
       load: () => { doc.readyState = "complete"; win.dispatchEvent({ type: "load" }); },
       preOk: () => find(root, "rxpre")?.setAttribute("data-ok", "1"),
-      /* ورقةُ الخطوط تصل: تُطبَّق إن كانت بالمستند (وسمُ #rxf ملصوق)، وإلا لا شيء. */
-      css: () => { const l = rxf()[0]; if (!l) return; M.css = true; l.fire("load"); },
-      fonts: () => { if (!M.css) return; M.fonts = true; fl.pend.splice(0).forEach((r) => r([])); fl.ls.forEach((f) => f()); },
+      /* ورقةُ الخطوط تصل: تُطبَّق إن كانت بالمستند (وسمُ #rxf ملصوق) فتبدأ الوجوهُ تنزل، وإلا لا شيء. */
+      css: () => { const l = rxf()[0]; if (!l) return; M.css = true; for (const k of Object.keys(M.face)) if (M.face[k] === "unloaded") M.face[k] = "loading"; l.fire("load"); },
+      face: (name) => faceDone(name),
+      fonts: () => { if (!M.css) return; for (const k of Object.keys(M.face)) faceDone(k); },
+      /* الخطوطُ حاضرةٌ قبل أيّ قياس (مستندٌ يُفتح والخطوطُ مخبّأة) — للمقارنة بترتيبٍ طازج. */
+      fontsNow: () => { M.css = true; for (const k of Object.keys(M.face)) M.face[k] = "loaded"; },
+      imgArrive: () => { M.img = "ok"; fireImg("load"); },
       afterprint: () => win.dispatchEvent({ type: "afterprint" }),
     };
   }
@@ -937,6 +1074,9 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       await E.at(30, E.fonts);
       await E.at(20000);
       ck("نافذةُ الطباعة: تطبع مرّةً بعد النهائيّ والتحميل، وتقول «طبعتُ» قبلها", E.prints.length === 1 && E.prints[0].pages === 5 && E.prints[0].fonts && E.told.join() === "print@30", JSON.stringify([E.prints, E.told]));
+      E.afterprint();
+      await E.at(20400);
+      ck("  وبعد الطباعة تُغلق نفسَها (afterprint) — كانت تُفحص نصّاً وحده", E.closed());
     }
     {
       const E = makeEnv(mkHtml(S70, { print: true }), edit);
@@ -956,6 +1096,88 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
       const warn = E.root.querySelectorAll(".x").length === 0 && (function f(e) { if (e.getAttribute("id") === "rxwarn") return e; for (const k of e.children) { const r = f(k); if (r) return r; } return null; })(E.root);
       ck("  وما فيه فائضٌ لا يُطبع أبداً: الشريطُ يظهر و«فائض» تُقال (لا «طبعتُ»)", E.prints.length === 0 && E.told.join() === "overflow@30" && warn && warn.hidden === false, JSON.stringify([E.prints, E.told]));
     }
+    /* تدقيقٌ خامس: النهائيُّ القسريّ يطبّق الخطوط فتنزل وتحجب حدثَ التحميل، والشعارُ يصل بعده، والوجوهُ تحلّ وجهاً وجهاً بلا حدث —
+       ونافذةُ الطباعة كانت تطبع الترتيبَ المقيس قبلها وآخرُ الوصفة مخفيٌّ تحت مربّعها، بلا فائضٍ يُقال والسجلُّ «انطبعت». */
+    {
+      const E = makeEnv(mkHtml(S70, { print: true }), edit, { logo: true });
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(10000, E.imgArrive);
+      await E.at(11000, () => E.face("cairo"));
+      await E.at(13000, () => { E.face("ruqaa"); E.load(); });
+      await E.at(20000);
+      ck("الشعارُ يصل بعد القسريّ والوجوهُ تتوالى (التحميلُ محجوبٌ بها): نافذةُ الطباعة تنتظر الخطوطَ وتقيس من جديد — لا سطرَ مخفيّاً تحت مربّع الوصفة",
+        E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].fonts && E.told.join() === "print@13000", JSON.stringify([E.prints, E.told]));
+    }
+    {
+      const E = makeEnv(mkHtml(S70, { print: true }), edit, { logo: true });
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(10000, () => E.face("cairo"));
+      await E.at(30000);
+      ck("  ووجهٌ وصل والآخرُ والشعارُ معلَّقان: تنتظر الخطوطَ بسقفها (٤ ثوانٍ) ثمّ تطبع ما قاسته لحظتَها — لا سطرَ مخفيّاً",
+        E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].t === 16150 && E.told.join() === "print@16000", JSON.stringify([E.prints, E.told]));
+    }
+    {
+      const E = makeEnv(mkHtml(S70, { print: true }), edit);
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(16050, () => E.face("cairo"));
+      await E.at(30000);
+      ck("  ووجهٌ يحلّ بين القرار والطباعة (١٥٠ م.ث): يُقاس ثانيةً قبل print() مباشرةً", E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].t === 16150, JSON.stringify([E.prints, E.told]));
+    }
+    {
+      const E = makeEnv(mkHtml(S70, { print: true }), edit, { logo: true, arriveDuringPrint: true });
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(9100, E.fonts);
+      await E.at(30000);
+      ck("  وصورةٌ لم تصل حتى القرار تُخفى: وصولُها أثناء حوار الطباعة لا يحرّك سطراً", E.prints.length === 1 && E.prints[0].hidden === 0 && E.prints[0].afterHidden === 0, JSON.stringify(E.prints));
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit);
+      await E.at(300, E.preOk);
+      await E.at(9010, E.css);
+      await E.at(10000, () => E.face("cairo"));
+      await E.at(10300);
+      const h = E.hiddenNow();
+      ck("المعاينة: وجهٌ يحلّ محلَّ الاحتياطيّ بلا حدث بعد القسريّ (والآخرُ معلَّق فلا loadingdone) ⇒ يُعاد الترتيبُ نهائياً خلال ربع ثانية",
+        h === 0 && E.msgs.some((m) => m.final && m.t > 10000 && m.t <= 10250), `${h} ${fmt(E.msgs)}`);
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit, { logo: true });
+      await E.at(9200);
+      await E.at(10000, E.imgArrive);
+      ck("  وصورةٌ تصل بعد القسريّ وحدثُ التحميل لم يأتِ ⇒ يُعاد الترتيبُ بحدثها هي (لا أسطرَ مخفيّة تحت الشعار)", E.hiddenNow() === 0 && E.msgs.some((m) => m.final && m.t === 10000), fmt(E.msgs));
+    }
+    {
+      const E = makeEnv(mkHtml(S70), edit);
+      await E.at(9200);
+      await E.at(11000, E.load);
+      await E.at(11500, E.preOk);
+      await E.at(11600, E.css);
+      await E.at(11700, E.fonts);
+      ck("  وتحميلٌ بعد القسريّ يعيد الترتيبَ ولا يضيف ورقةَ الخطوط (المقيسُ بالقسريّ لا يتبدّل بخطوطٍ بلا قياس)",
+        E.rxf().length === 0 && !E.M.fonts && fmt(E.msgs) === JSON.stringify(["p4@4000", "F4@9000", "F4@11000"]), `${E.rxf().length} ${fmt(E.msgs)}`);
+    }
+    {
+      /* الخطُّ الحقيقيّ أضيقُ من الاحتياطيّ: المؤقّتُ فاض وصغّر الخطَّ لحدّه، والنهائيُّ بخطوطه يتّسع — الإعادةُ تمسح الفائضَ وترجّع الحجمَ
+         من أوّله (كان «يُعاد من أوّله» يُفحص بعدد الأسطر وحده فمرّ فائضٌ باقٍ وحجمٌ لا يُرجَع). */
+      const body = "x".repeat(1200);
+      const E = makeEnv(mkHtml(body), edit, { kPer: -0.075 });
+      await E.at(5, E.preOk);
+      await E.at(10, E.load);
+      await E.at(12, E.css);
+      await E.at(1000);
+      const before = [E.root.getAttribute("data-overflow"), E.fs()];
+      await E.at(2500, E.fonts);
+      await E.at(3000);
+      const Fr = makeEnv(mkHtml(body), edit, { kPer: -0.075 });
+      Fr.fontsNow();
+      Fr.win.__rxLayout(true);
+      ck("  وخطٌّ أضيقُ من الاحتياطيّ: الترتيبُ النهائيّ بعد المؤقّت يمسح «فائض» المؤقّت ويرجّع حجمَ الخطّ كترتيبٍ طازج",
+        before[0] === "1" && E.root.getAttribute("data-overflow") === null && E.fs() === Fr.fs() && E.fs() !== before[1], `${JSON.stringify(before)} → ${E.root.getAttribute("data-overflow")} ${E.fs()} (طازج ${Fr.fs()})`);
+    }
   }
   await suite(undefined, check);
   const swapJs = (from, to) => (js) => (js.includes(from) ? js.split(from).join(to) : js);
@@ -968,13 +1190,212 @@ console.log("▸ سكربتا الترتيب والطباعة بسلوكهما: 
     ["ورقةٌ لم تصل لا تُشال عند القسريّ", swapJs("if(!css&&lk&&lk.parentNode)lk.parentNode.removeChild(lk);else ", "")],
     ["تحميلٌ بعد القسريّ لا يعيد الترتيب", swapJs("if(forced){run(true);return;}", "if(forced)return;")],
     ["الطباعةُ لا تنتظر التحميلَ بعد القسريّ", swapJs("if(loaded){fire();return;}setTimeout(fire,3000);", "fire();")],
-    ["الفائضُ يُطبع", swapJs("if(root.getAttribute('data-overflow')){", "if(false){")],
+    ["الفائضُ يُطبع", swapJs("return !root.getAttribute('data-overflow');}", "return true;}")],
+    ["الطباعةُ لا تقيس من جديد (نسخةُ الجولة الرابعة)", swapJs("if(window.__rxLayout)window.__rxLayout(true);return !root", "return !root")],
+    ["الطباعةُ لا تنتظر خطوطاً تصل", swapJs("if(f&&f.ready&&f.status==='loading'){f.ready.then(go2,go2);setTimeout(go2,4000);}else go2();", "go2();")],
+    ["صورةٌ لم تصل لا تُخفى عند الطباعة", swapJs("im[i].style.display=im[i].complete?'':'none';", ";")],
+    ["صورةٌ تصل بعد القسريّ لا تُسمع بحدثها", swapJs("im[j].addEventListener('load',late);im[j].addEventListener('error',late);", ";")],
+    ["لا مراقبةَ للقياس والخطوطُ تصل", swapJs("run(true);setTimeout(watch,250);}},9000);", "run(true);}},9000);")],
+    ["تحميلٌ بعد القسريّ يضيف ورقةَ الخطوط", swapJs("if(forced){run(true);return;}", "if(forced){addFonts();run(true);return;}")],
+    ["نافذةُ الطباعة لا تُغلق بعدها", swapJs("window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},250);});", "")],
+    ["الإعادةُ لا تمسح الفائض", swapJs("root.removeAttribute('data-overflow');var b=", "var b=")],
+    ["الإعادةُ لا ترجّع حجمَ الخطّ", swapJs("fs=max;b.style.fontSize=fs+'pt';", "fs=max;")],
   ];
   for (const [name, edit] of MUT) {
     let caught = 0, applied = false;
     const ed = (js) => { const o = edit(js); if (o !== js) applied = true; return o; };
     try { await suite(ed, (_n, ok) => { if (!ok) caught++; }); } catch { caught = -1; }
     check(`  طفرة «${name}» تُسقط فحصاً`, applied && caught !== 0, `applied=${applied} caught=${caught}`);
+  }
+}
+
+/* ── ط) عناوينُ الورقة العربية والتعافي بسلوكهما: خطّافُ useRxLabels مرسوماً (react-mini) بساعةٍ وتحميلٍ بيد الفحص، وrecoverFromStaleShell
+   بمخبأٍ وخدمةٍ مزيَّفين. كان «أعد المحاولة» يُفحص بنصٍّ سالبٍ يطابق صيغةَ الجولة الثالثة وحدها (صيغتان شائعتان مرّتا)، وتنزيلٌ بطيءٌ
+   يُقال «تعذّر»، والتحديثُ يُحمَّل فوق نصٍّ كُتب أثناء إلغاء الخدمة (تدقيقٌ خامس). ── */
+console.log("▸ عناوينُ الورقة والتعافي بسلوكهما: «تعذّر» لا تُمسح بإعادة المحاولة، والبطيءُ ليس «تعذّر»، والتحديثُ لا يُحمَّل فوق نصٍّ كُتب أثناءه");
+{
+  const SH_FILE = "src/components/rx/rxShared.ts";
+  const shRe = new RegExp(`[\\\\/]${SH_FILE.split("/").join("[\\\\/]")}$`);
+  const STUBS_L = {
+    "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'en', getFixedT: () => (k) => k } }); export const initReactI18next = {};",
+    "@/i18n": "export const ensureOwned = (...a) => globalThis.__lbl('owned', ...a); export const ensureDictionary = (...a) => globalThis.__lbl('dict', ...a); export default {};",
+    "@/lib/appUpdate": "export const recoverFromStaleShell = async () => true; export const recoveryPending = () => !!globalThis.__parked;",
+    "@/lib/settings": "export const getClinicLogo = () => null, getClinicName = () => '', getClinicSocials = () => ({}), getClockFormat = () => '12', getWorkHours = () => ({});",
+    "@/lib/storeLib": "export const productImageUrl = (p) => p;",
+    "@/lib/errors": "export const describeDbError = () => '';",
+    "@/lib/supabase": "export const supabase = null;",
+    "@/lib/rxApi": "export const rxApi = {}; export const isRxMissing = () => false;",
+  };
+  const loadLabels = async (edit) => {
+    const built = await esbuild.build({
+      stdin: { contents: `export { useRxLabels, RX_LABELS_STUCK_MS } from "./${SH_FILE}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`, resolveDir: process.cwd(), sourcefile: "rx-labels.tsx", loader: "tsx" },
+      bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
+      define: { "import.meta.env": "__VITE_ENV__", "process.env.NODE_ENV": '"development"' }, banner: { js: "const __VITE_ENV__ = {};" },
+      plugins: [{
+        name: "rx-labels-stubs",
+        setup(b) {
+          b.onResolve({ filter: /.*/ }, (a) => (Object.prototype.hasOwnProperty.call(STUBS_L, a.path) ? { path: a.path, namespace: "stub" } : undefined));
+          b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: STUBS_L[a.path], loader: "js" }));
+          if (edit) b.onLoad({ filter: shRe }, (a) => ({ contents: edit(readFileSync(a.path, "utf8")), loader: "ts" }));
+        },
+      }],
+    });
+    const d = mkdtempSync(path.join(tmpdir(), "rx-lbl-"));
+    const f = path.join(d, "m.mjs");
+    writeFileSync(f, built.outputFiles[0].text);
+    return import(pathToFileURL(f).href).finally(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } });
+  };
+  const tickR = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setImmediate(r)); };
+  /* ساعةٌ لمؤقّتات الخطّاف (window.setTimeout/setInterval) بيد الفحص. */
+  const W = globalThis.window, saved = { st: W.setTimeout, ct: W.clearTimeout, si: W.setInterval, ci: W.clearInterval };
+  const clk = { now: 0, q: [], n: 0 };
+  W.setTimeout = (f, ms) => { clk.q.push({ at: clk.now + (ms || 0), f, id: ++clk.n }); return clk.n; };
+  W.clearTimeout = (id) => { clk.q = clk.q.filter((x) => x.id !== id); };
+  W.setInterval = (f, ms) => { const id = ++clk.n; const arm = (at) => clk.q.push({ at, f: () => { arm(clk.now + ms); f(); }, id }); arm(clk.now + ms); return id; };
+  W.clearInterval = W.clearTimeout;
+  const advance = async (ms) => {
+    const to = clk.now + ms;
+    for (;;) {
+      clk.q.sort((a, b) => a.at - b.at || a.id - b.id);
+      const t = clk.q[0];
+      if (!t || t.at > to) break;
+      clk.q.shift();
+      clk.now = t.at;
+      t.f();
+      await tickR();
+    }
+    clk.now = to;
+    await tickR();
+  };
+  async function labelsSuite(M, ck) {
+    const STUCK = M.RX_LABELS_STUCK_MS;
+    const Probe = () => { globalThis.__r = M.useRxLabels("ar"); return null; };
+    const snap = () => ({ ready: globalThis.__r.ready, failed: globalThis.__r.failed, slow: globalThis.__r.slow });
+    const run = async (lbl, parked, steps) => {
+      clk.q = []; clk.now = 0;
+      globalThis.__lbl = lbl;
+      globalThis.__parked = parked;
+      const ui = M.mount(M.React.createElement(Probe));
+      await tickR();
+      try { return await steps(); } finally { ui.unmount(); await tickR(); }
+    };
+    {
+      let attempt = 0;
+      const got = await run((w) => { if (w === "owned") attempt++; return attempt === 1 ? Promise.reject(new Error("chunk")) : new Promise(() => {}); }, false, async () => {
+        const a = snap();
+        globalThis.__r.retry();
+        const b = snap();
+        await tickR();
+        const c = snap();
+        return { a, b, c };
+      });
+      ck("قطعةُ القاموس فشلت ⇒ «تعذّر»، و«أعد المحاولة» لا تُخفيه — لا لحظةَ الضغط ولا والمحاولةُ الثانية معلَّقة (القطعةُ لا تصل بنفس الصفحة)",
+        got.a.failed && !got.a.slow && got.b.failed && got.c.failed && !got.c.ready, JSON.stringify(got));
+    }
+    {
+      const got = await run(() => new Promise(() => {}), false, async () => {
+        await advance(STUCK - 1);
+        const a = snap();
+        await advance(1);
+        const b = snap();
+        globalThis.__parked = true;
+        await advance(1000);
+        const c = snap();
+        return { a, b, c };
+      });
+      ck("  وتنزيلٌ بطيءٌ بلا تعافٍ ينتظر ⇒ «بطيء» بعد مهلته لا «تعذّر» (تحديثٌ كان يرمي ما نزل)، ثمّ تعافٍ وقف خلف نصٍّ ممسوك ⇒ «تعذّر» خلال ثانية",
+        !got.a.slow && !got.a.failed && got.b.slow && !got.b.failed && got.c.failed && !got.c.slow, JSON.stringify(got));
+    }
+    {
+      let open;
+      const p = new Promise((r) => { open = r; });
+      const got = await run(() => p, false, async () => {
+        await advance(STUCK);
+        const a = snap();
+        open();
+        await tickR();
+        const b = snap();
+        return { a, b };
+      });
+      ck("  و«بطيء» يزول حين يصل القاموس (جاهز، بلا «تعذّر»)", got.a.slow && got.b.ready && !got.b.slow && !got.b.failed, JSON.stringify(got));
+    }
+    {
+      const got = await run(() => new Promise(() => {}), true, async () => { await advance(STUCK); return snap(); });
+      ck("  والتعافي واقفٌ عند المهلة (القطعةُ فشلت والنصُّ ممسوك) ⇒ «تعذّر» فوراً", got.failed && !got.slow, JSON.stringify(got));
+    }
+  }
+  try {
+    await labelsSuite(await loadLabels(), check);
+    const swapL = (from, to) => (s) => { if (!s.includes(from)) throw new Error(`الطفرة لم تجد نصَّها: ${from.slice(0, 50)}`); return s.split(from).join(to); };
+    const MUT_L = [
+      ["«أعد المحاولة» تمسح «تعذّر» بنداءها", swapL("const retry = useCallback(() => setN((x) => x + 1), []);", "const retry = useCallback(() => { setFailed(false); setN((x) => x + 1); }, []);")],
+      ["«أعد المحاولة» تمسح «تعذّر» ببداية الأثر", swapL("const timer = window.setTimeout(", "setFailed(false);\n    const timer = window.setTimeout(")],
+      ["البطيءُ «تعذّر» (نسخةُ الجولة الرابعة)", swapL("(failed || (stuck && parked))", "(failed || stuck)")],
+      ["التعافي لا يُسأل عنه بعد المهلة", swapL("const iv = window.setInterval(check, 1000);", "const iv = 0;")],
+    ];
+    for (const [name, edit] of MUT_L) {
+      let caught = 0;
+      try { await labelsSuite(await loadLabels(edit), (_n, ok) => { if (!ok) caught++; }); } catch { caught = -1; }
+      check(`  طفرة «${name}» تُسقط فحصاً`, caught > 0, `caught=${caught}`);
+    }
+  } finally {
+    Object.assign(W, { setTimeout: saved.st, clearTimeout: saved.ct, setInterval: saved.si, clearInterval: saved.ci });
+  }
+
+  /* التعافي: المسحُ ثمّ إعادةُ الانتظار قبل التحميل — نصٌّ كُتب أثناء إلغاء الخدمة (أوّلُ زيارة: ٣٢ ثانية مقيسة) لا يُحمَّل فوقه. */
+  const AU_FILE = "src/lib/appUpdate.ts";
+  const auRe = new RegExp(`[\\\\/]${AU_FILE.split("/").join("[\\\\/]")}$`);
+  const loadAU = async (edit) => {
+    const built = await esbuild.build({
+      stdin: { contents: `export * as U from "./${AU_FILE}";\nexport * as F from "./src/lib/inflight.ts";`, resolveDir: process.cwd(), sourcefile: "rx-au.ts", loader: "ts" },
+      bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent",
+      plugins: edit ? [{ name: "au-edit", setup(b) { b.onLoad({ filter: auRe }, (a) => ({ contents: edit(readFileSync(a.path, "utf8")), loader: "ts" })); } }] : [],
+    });
+    const d = mkdtempSync(path.join(tmpdir(), "rx-au-"));
+    const f = path.join(d, "m.mjs");
+    writeFileSync(f, built.outputFiles[0].text);
+    return import(pathToFileURL(f).href).finally(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ } });
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function auSuite({ U: UU, F: FF }, ck) {
+    const reloads = [];
+    const prev = { loc: W.location, ss: globalThis.sessionStorage, caches: globalThis.caches };
+    let unreg = null;
+    W.location = { reload: () => reloads.push(1) };
+    globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+    globalThis.caches = { keys: async () => ["workbox-precache-v2"], delete: async () => true };
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { getRegistrations: async () => [{ unregister: () => new Promise((r) => { unreg = r; }) }] } });
+    try {
+      const p = UU.recoverFromStaleShell();
+      for (let i = 0; i < 20 && !unreg; i++) await sleep(10);
+      const pending = UU.recoveryPending();
+      const rel = FF.holdUpdates(Infinity);
+      unreg(true);
+      await sleep(700);
+      const during = reloads.length;
+      rel();
+      await sleep(500);
+      const ok = await Promise.race([p, sleep(1000).then(() => "timeout")]);
+      ck("التعافي ينتظر ثانيةً بعد إلغاء الخدمة: نصٌّ كُتب أثناءه (نموذجٌ ممسوك) لا يُحمَّل فوقه، ويُحمَّل حين يُفلت — و«تعافٍ بالطريق» يُقال",
+        !!unreg && pending && during === 0 && reloads.length === 1 && ok === true, JSON.stringify({ pending, during, reloads: reloads.length, ok }));
+    } finally {
+      W.location = prev.loc;
+      globalThis.sessionStorage = prev.ss;
+      globalThis.caches = prev.caches;
+      delete navigator.serviceWorker;
+    }
+  }
+  await auSuite(await loadAU(), check);
+  {
+    let caught = 0;
+    try {
+      await auSuite(await loadAU((s) => {
+        const from = "await waitForWrites();\n    if (offline()) { inFlight = null; return false; }\n    window.location.reload();";
+        if (!s.includes(from)) throw new Error("الطفرة لم تجد نصَّها");
+        return s.split(from).join("window.location.reload();");
+      }), (_n, ok) => { if (!ok) caught++; });
+    } catch { caught = -1; }
+    check("  طفرة «الفحصُ مرّةً قبل المسح وحده (نسخةُ الجولة الرابعة)» تُسقط فحصاً", caught > 0, `caught=${caught}`);
   }
 }
 

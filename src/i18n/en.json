@@ -7309,6 +7309,8 @@
     "labelsReload": "Couldn't load the Arabic pad labels — they load after a page reload",
     "labelsSaveFirst": "Couldn't load the Arabic pad labels — save your design first, then reload the page",
     "reloadPage": "Reload page",
+    "reloading": "The page will reload as soon as everything is saved",
+    "labelsSlow": "The Arabic pad labels are still loading — the connection is slow",
     "reloadAsk": "Reload the page? What you wrote is lost unless you copy it first.",
     "reloadFail": "Can't reload right now — check the internet and try again",
     "copyText": "Copy text",

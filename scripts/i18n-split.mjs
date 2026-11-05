@@ -217,9 +217,13 @@ export function i18nSplit() {
     },
     handleHotUpdate(ctx) {
       if (!watched().includes(norm(ctx.file))) return undefined;
+      const before = Object.keys(split?.owned ?? {});
       resplit();
       const { hot, cold, owned } = ids();
-      for (const id of [hot, cold, owned]) {
+      /* وحزمُ النطاقات المملوكة نفسُها (`\0virtual:ar-owned/<ns>`) — قبل القسمة وبعدها: كانت تُخدم من تحويلٍ مخبّأ فيبقى مفتاحٌ
+         جديدٌ بنطاقٍ مملوك خاماً حتى يُعاد تشغيلُ الخادم، والقاموسُ سليم (تدقيقٌ عدائيّ خامس — لا «تُحسب عند البدء»). */
+      const nss = new Set([...before, ...Object.keys(split.owned ?? {})]);
+      for (const id of [hot, cold, owned, ...[...nss].map((ns) => `\0${OWNED_PREFIX}${ns}`)]) {
         const mod = ctx.server.moduleGraph.getModuleById(id);
         if (mod) ctx.server.moduleGraph.invalidateModule(mod);
       }

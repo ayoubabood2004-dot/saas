@@ -18,10 +18,13 @@
  * للصور ولا يحجب حدثَ التحميل (مقيس: ٢٢ م.ث مقابل ٥ ثوانٍ لورقةٍ معلَّقة بالوسوم — ولو media=print)، والسكربتُ يضيفها
  * ورقةً بعد التحميل (`data-fonts`) فتُطبَّق من الذاكرة بلا طلبٍ ثانٍ. ورقةٌ بالوسوم كانت تحجب التحميلَ فلا تسمع المعاينةُ
  * قياسَها، وطلبُها بعد التحميل وحده كان يجعل صورةً بطيئة تُكلّف الخطوط (لا تُطلب إلا بعد آخر صورة). والنهائيُّ القسريّ
- * (٩ ثوانٍ) لا يُغلق الباب: صورةٌ تصل بعده تُعيد الترتيبَ قبل الطباعة؛ وورقةُ خطوطٍ وصلت بالـpreload والتحميلُ لم يحصل
- * (صورةٌ معلَّقة) تُطبَّق عنده ويُعاد الترتيبُ حين تصل خطوطُها، وورقةٌ لم تصل تُشال (فالخطُّ الاحتياطيّ هو المقيس
- * والمطبوع). والترتيبُ المؤقّت بعد التحميل ينتظر الخطوطَ لحظةً (٤٠٠ م.ث): خطوطٌ مخبّأة تصل قبلها فلا تومض المعاينةُ بترتيب
- * الخطّ الاحتياطيّ مع كلّ تعديل. ورقمُ الصفحة محجوزٌ سطرُه **وعرضُه** قبل القياس (رقمٌ يُكتب بعد
+ * (٩ ثوانٍ) لا يُغلق الباب: وورقةُ خطوطٍ وصلت بالـpreload والتحميلُ لم يحصل (صورةٌ معلَّقة) تُطبَّق عنده، وورقةٌ لم تصل
+ * تُشال (فالخطُّ الاحتياطيّ هو المقيس والمطبوع). وما يصل بعده **لا يعلن عن نفسه بحدث التحميل**: خطوطٌ طُلبت والتحميلُ لم
+ * يحصل تحجبه حتى تصل كلُّها (مقيس — شعارٌ وصل بالعاشرة وحدثُ التحميل بالرابعةَ عشرة)، والخطُّ يحلّ محلَّ الاحتياطيّ وجهاً
+ * وجهاً بلا حدث (loadingdone بعد آخرها وحده). فالصورةُ تُسمع بحدثها هي، والقياسُ يُراقَب ما دامت الخطوطُ تصل (بصمةُ
+ * مربّعات الوصفة)، و**نافذةُ الطباعة تقيس من جديد لحظةَ الطباعة** — كان آخرُ سطرين أو ثلاثة يُقصّان بصمت تحت ترتيبٍ قِيس
+ * قبل الشعار والخطوط، والسجلُّ يقول «انطبعت». والترتيبُ المؤقّت بعد التحميل ينتظر الخطوطَ لحظةً (٤٠٠ م.ث): خطوطٌ مخبّأة
+ * تصل قبلها فلا تومض المعاينةُ بترتيب الخطّ الاحتياطيّ مع كلّ تعديل. ورقمُ الصفحة محجوزٌ سطرُه **وعرضُه** قبل القياس (رقمٌ يُكتب بعد
  * الترتيب كان يكبّر التذييل — سطراً، أو بلفّ سطر الحسابات — فيقصّ أو يُرفض)، والفائضُ يُفحص على كلّ صفحة بعد الترقيم.
  * والمعاينةُ تبلّغ كلَّ ترتيب لإطارها الأب برسالة (`{rxLayout}`) لا بحدث التحميل — صورةٌ معلَّقة كانت تُعمي الشاشة.
  * ونافذةُ الطباعة **حَكَم**: لا تطبع إلا ترتيباً نهائياً بعد التحميل (أو بعد مهلته)، ولا تطبع أبداً ما فيه فائض — تقوله
@@ -103,8 +106,10 @@ function bodyLines(body: string): string {
  * ويرجّع الأسطرَ كما كُتبت. يختم <html> بـdata-pages وdata-overflow (أيُّ صفحةٍ فاضت) وdata-final (بعد الصور والخطوط
  * أو بعد مهلتها) وdata-ready، ويطلق «rx-ready» بعد كلّ ترتيب — وداخل إطار يرسل القياسَ لأبيه (`{rxLayout}` برقم المستند).
  * والخطوطُ بعد التحميل (addFonts) من الـpreload (`#rxpre`، يختم وصولَه بـdata-ok)، والمؤقّتُ بعد التحميل بمهلة ٤٠٠ م.ث، والقسريُّ
- * (`forced`) يبقي التحميلَ مسموعاً، ويشيل ورقةَ خطوطٍ لم تصل أو يطبّق ما وصل بالـpreload والتحميلُ لم يحصل (ثمّ يُعاد الترتيبُ حين تصل خطوطُها). */
-const LAYOUT_JS = `(function(){var root=document.documentElement,pristine=null,loaded=false,css=false,settling=false,forced=false;
+ * (`forced`) يبقي التحميلَ مسموعاً، ويشيل ورقةَ خطوطٍ لم تصل أو يطبّق ما وصل بالـpreload والتحميلُ لم يحصل. وبعده: صورةٌ تصل
+ * تُعيد الترتيبَ بحدثها (`late`)، وما دامت الخطوطُ تصل تُقارَن بصمةُ المربّعات (`sig`: ارتفاعُ المحتوى والمربّع لكلّ صفحة) كلَّ
+ * ربع ثانية — وجهٌ حلّ محلَّ الاحتياطيّ غيّرها ⇒ يُعاد. */
+const LAYOUT_JS = `(function(){var root=document.documentElement,pristine=null,loaded=false,css=false,settling=false,forced=false,sig='';
 function L(p){return p.querySelector('.rx-lines');}
 function over(b){return b.scrollHeight>b.clientHeight+1;}
 function split(el,b){var t=el.textContent||'';var parts=t.split(/(\\s+)/);if(parts.length<2)return null;var lo=1,hi=parts.length-1,best=0;
@@ -113,6 +118,7 @@ if(best===0){el.textContent=t;return null;}el.textContent=parts.slice(0,best).jo
 function fire(){try{window.dispatchEvent(new Event('rx-ready'));}catch(e){}
 if(window.parent!==window){try{window.parent.postMessage({rxLayout:{seq:root.getAttribute('data-rxseq'),pages:Number(root.getAttribute('data-pages'))||1,overflow:root.getAttribute('data-overflow')==='1',final:root.getAttribute('data-final')==='1'}},'*');}catch(e){}}}
 function number(ps){for(var i=0;i<ps.length;i++){var ns=ps[i].querySelectorAll('.pno');for(var j=0;j<ns.length;j++)ns[j].textContent=ps.length>1?(i+1)+' / '+ps.length:'\\u200b';}}
+function sigNow(){var s='',ps=document.querySelectorAll('.page');for(var i=0;i<ps.length;i++){var b=L(ps[i]);if(b)s+=b.scrollHeight+'/'+b.clientHeight+';';}return s;}
 function run(final){var first=document.querySelector('.page');if(!first)return;
 var all=document.querySelectorAll('.page');for(var i=all.length-1;i>0;i--)all[i].parentNode.removeChild(all[i]);
 number([first]);root.removeAttribute('data-overflow');var b=L(first),overflow=false;
@@ -128,7 +134,7 @@ if(stuck)break;page=clone;b=nb;}}
 var ps=document.querySelectorAll('.page');number(ps);
 for(i=0;i<ps.length;i++){var pb=L(ps[i]);if(pb&&over(pb))overflow=true;}
 root.setAttribute('data-pages',String(ps.length));if(overflow)root.setAttribute('data-overflow','1');
-root.setAttribute('data-final',final?'1':'0');root.setAttribute('data-ready','1');fire();}
+root.setAttribute('data-final',final?'1':'0');root.setAttribute('data-ready','1');sig=sigNow();fire();}
 window.__rxLayout=run;
 function faces(){try{return JSON.parse(root.getAttribute('data-faces')||'[]');}catch(e){return [];}}
 function settle(){if(!loaded||!css||settling)return;var f=document.fonts;if(!f||!f.load){run(true);return;}settling=true;
@@ -143,18 +149,27 @@ function onLoad(){if(loaded)return;loaded=true;if(forced){run(true);return;}addF
 setTimeout(function(){if(root.getAttribute('data-final')!=='1')run(false);},400);}
 if(document.readyState==='complete')onLoad();else window.addEventListener('load',onLoad);
 if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',function(){if(!settling&&(forced||(loaded&&css)))run(true);});
+function late(){if(forced)run(true);}
+var im=document.getElementsByTagName('img');for(var j=0;j<im.length;j++)if(!im[j].complete){im[j].addEventListener('load',late);im[j].addEventListener('error',late);}
+var ticks=0;
+function watch(){if(sigNow()!==sig)run(true);var f=document.fonts;if(++ticks<120&&((lk&&lk.parentNode&&!css)||(f&&f.status==='loading')))setTimeout(watch,250);}
 setTimeout(function(){if(!root.getAttribute('data-ready'))run(false);},4000);
-setTimeout(function(){if(root.getAttribute('data-final')!=='1'){forced=true;if(!css&&lk&&lk.parentNode)lk.parentNode.removeChild(lk);else if(!lk&&preOk())addFonts();run(true);}},9000);})();`;
+setTimeout(function(){if(root.getAttribute('data-final')!=='1'){forced=true;if(!css&&lk&&lk.parentNode)lk.parentNode.removeChild(lk);else if(!lk&&preOk())addFonts();run(true);setTimeout(watch,250);}},9000);})();`;
 
 /* نافذةُ الطباعة: تطبع مرّةً بعد أوّل ترتيبٍ نهائيّ **والتحميل** — وما فيه فائضٌ لا يُطبع أبداً: الشريطُ يقوله، والنافذةُ التي
-   فتحتها تُبلَّغ. نهائيٌّ قسريٌّ قبل التحميل (صورةٌ بطيئة) ينتظر التحميلَ ثلاثَ ثوانٍ: صورةٌ تصل فيها تُعيد الترتيبَ (مستمعُ
-   سكربت الترتيب قبلنا) ثمّ يُحكم على الترتيب الجديد. وصورةٌ معلَّقة للأبد لا توقف الطباعة: بعد المهلة يُطبع المقيس.
-   والتحميلُ **بحدثه** لا بـreadyState: بنافذةٍ كُتبت بـdocument.write يصير «complete» بعد ١٠ م.ث والصورُ معلَّقة (مقيس). */
+   فتحتها تُبلَّغ. نهائيٌّ قسريٌّ قبل التحميل (صورةٌ بطيئة) ينتظر التحميلَ ثلاثَ ثوانٍ، وصورةٌ معلَّقة للأبد لا توقف الطباعة.
+   و**الورقةُ هي القياس**: لحظةَ القرار تُنتظر خطوطٌ ما زالت تصل (بسقف ٤ ثوانٍ)، ثمّ يُقاس الترتيبُ من جديد والصورةُ التي لم
+   تصل تُخفى (وصولُها أثناء حوار الطباعة لا يحرّك شيئاً)، ويُقاس ثانيةً قبل print() مباشرةً — ترتيبٌ قِيس قبل الشعار
+   والخطوط كان يُطبع وآخرُ الوصفة مخفيٌّ تحت مربّعها بلا فائضٍ يُقال (حدثُ التحميل محجوبٌ بالخطوط فلا يُعاد الترتيب). والتحميلُ
+   **بحدثه** لا بـreadyState: بنافذةٍ كُتبت بـdocument.write يصير «complete» بعد ١٠ م.ث والصورُ معلَّقة (مقيس). */
 const PRINT_JS = `(function(){var done=false,armed=false,loaded=false,root=document.documentElement;
 function tell(t){try{if(window.opener)window.opener.postMessage({rx:t},'*');}catch(e){}}
-function fire(){if(done)return;done=true;
-if(root.getAttribute('data-overflow')){var w=document.getElementById('rxwarn');if(w)w.hidden=false;tell('overflow');return;}
-tell('print');setTimeout(function(){window.focus();window.print();},150);}
+function refuse(){var w=document.getElementById('rxwarn');if(w)w.hidden=false;tell('overflow');}
+function measure(){var im=document.getElementsByTagName('img');for(var i=0;i<im.length;i++)im[i].style.display=im[i].complete?'':'none';
+if(window.__rxLayout)window.__rxLayout(true);return !root.getAttribute('data-overflow');}
+function decide(){if(!measure()){refuse();return;}tell('print');setTimeout(function(){if(!measure()){refuse();return;}window.focus();window.print();},150);}
+function fire(){if(done)return;done=true;var f=document.fonts,once=false,go2=function(){if(once)return;once=true;decide();};
+if(f&&f.ready&&f.status==='loading'){f.ready.then(go2,go2);setTimeout(go2,4000);}else go2();}
 window.addEventListener('load',function(){loaded=true;if(armed)setTimeout(fire,0);});
 function go(){if(done||armed||root.getAttribute('data-final')!=='1')return;armed=true;
 if(loaded){fire();return;}setTimeout(fire,3000);}
