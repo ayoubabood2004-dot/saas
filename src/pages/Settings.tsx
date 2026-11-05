@@ -246,6 +246,7 @@ export function Settings() {
       <SettingsSection id="clinic" icon={<Building2 size={15} />} title={t("settings.secClinic")} onMeasure={measure}>
         {canSettings && <ClinicIdentity />}
         {canSettings && <WorkHoursCard />}
+        {canSettings && <RxCardSlot />}
         {canSettings && <BranchesManager />}
         {canSettings && <ManagerOverrideCard />}
         <ClinicMembership />
@@ -2240,6 +2241,17 @@ function PromotionsManager({ clinicId }: { clinicId?: string }) {
    وفشلُ تحميلها يُقال بمكانه (LoadBoundary) — `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» قطعةٌ جديدة. */
 const loadRecipeEditor = () => page(() => import("@/components/settings/RecipeEditor"));
 let RecipeEditorLazy = loadRecipeEditor();
+/* بطاقةُ «الراجيتة» (0261) ومصمِّمُها: قطعةٌ كسولة بنطاقها المملوك rx (النصفُ البارد ممتلئ، ونصُّ البطاقة من هناك). */
+const loadRxCard = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxSettingsCard })), ["rx"]);
+let RxCardLazy = loadRxCard();
+function RxCardSlot() {
+  const [, setTick] = useState(0);
+  return (
+    <LoadBoundary scope="rx-card" onRetry={() => { RxCardLazy = loadRxCard(); setTick((n) => n + 1); }}>
+      <Suspense fallback={null}><RxCardLazy /></Suspense>
+    </LoadBoundary>
+  );
+}
 /** ملخّصُ وصفات الخدمات من الخادم، أو حالُه — «ما وصل» و«فشل» حالتان لا صفر: قائمةٌ ناقصة تُصدَّق. */
 type RecipeChips = Awaited<ReturnType<typeof import("@/lib/consumptionApi").consumptionApi.recipeSummary>> | "loading" | "failed";
 /** هل للخدمة وصفة؟ null = لا نعرف بعد (الملخّصُ لم يصل أو فشل) — «ما نعرف» ليست «ما إلها». */

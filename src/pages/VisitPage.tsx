@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -55,6 +55,13 @@ import { describeDbError } from "@/lib/errors";
 import { dropTargets, addAttemptIds, type AddAttempt, type DropScope } from "@/lib/treatmentDrop";
 import { formatAmount, parseAmount, editDosePatch, pickerShowsAmount, type DoseValue } from "@/lib/doseUnits";
 import { DosePicker } from "@/components/treatment/DosePicker";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { usePermissions } from "@/hooks/usePermissions";
+
+/* «راجيتة» (0261) من صفحة الحالة — الزرُّ ونافذتُه بنطاقها المملوك rx، والراجيتةُ تُربط بهذه الحالة. */
+const loadRxButton = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxButton })), ["rx"]);
+let RxButtonLazy = loadRxButton();
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -151,6 +158,9 @@ export default function VisitPage() {
   const seeded = !!(seed?.pet && seed?.visit && seed.visit.id === visitId);
   const [pet, setPet] = useState<Pet | null>(seeded ? seed!.pet! : null);
   const [visit, setVisit] = useState<ClinicVisit | null>(seeded ? seed!.visit! : null);
+  const { can } = usePermissions();
+  const canRx = can("editMedical");
+  const [, setRxLazyTick] = useState(0);
   const [notes, setNotes] = useState<PetNote[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seeded ? (seed!.treatments ?? []) : []);
   const [labs, setLabs] = useState<LabResult[]>([]);
@@ -929,6 +939,13 @@ export default function VisitPage() {
         >
           <FileText size={16} /> {t("visit.printReport", "تقرير للزبون")}
         </button>
+        {canRx && pet && (
+          <LoadBoundary scope="rx" onRetry={() => { RxButtonLazy = loadRxButton(); setRxLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <RxButtonLazy pet={pet} visitId={visit?.id ?? visitId ?? null} variant="outline" />
+            </Suspense>
+          </LoadBoundary>
+        )}
         <span className="text-2xs font-semibold text-ink-subtle">
           {hasFlowsheet || primary
             ? t("visit.printBothHint", "الطبلة: ورقة داخلية بكل الجرعات · التقرير: ورقة لصاحب الحيوان تحكي الحالة والرعاية بلا ذكر أسماء الأدوية.")
