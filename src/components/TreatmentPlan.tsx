@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
@@ -34,6 +34,12 @@ import { Button, useToast } from "@/components/ui";
 import { formatNum, normalizeAr, cn, formatDec, searchable } from "@/lib/utils";
 import { playTap, playSuccess, playWarning, playStepDone } from "@/lib/sounds";
 import { useClinicDrugs, loadMedicineStock, loadRecentMeds } from "@/lib/clinicDrugs";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* «صوّر» (كاميرا داخل السستم) و«من الجهاز» لورقة التحليل — كان منتقياً بـcapture يفتح الكاميرا وحدها (بلاغُ المالك ٦/١١). */
+const loadPhotoSource = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.PhotoSource })), ["att"]);
+let PhotoSourceLazy = loadPhotoSource();
 
 /** How often a treatment is given — drives the dose-count math.
  *  `label` is the canonical Arabic (kept for the persisted record text);
@@ -178,7 +184,7 @@ export function TreatmentPlan({
   const [photoBusy, setPhotoBusy] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrCount, setOcrCount] = useState<number | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [, setSourceTick] = useState(0);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>(() => initial?.diagnoses ?? []);
   const [notes, setNotes] = useState(() => initial?.notes ?? "");
   // \u062a\u0628\u062f\u0623 \u0641\u0627\u0631\u063a\u0629: \u0635\u0641\u0651\u064c \u0628\u0644\u0627 \u0627\u0633\u0645\u064d \u0644\u064a\u0633 \u0648\u0635\u0641\u0629\u064b\u060c \u0648\u0625\u0646\u0645\u0627 \u0646\u0645\u0648\u0630\u062c\u064c \u064a\u0637\u0644\u0628 \u0627\u0644\u0643\u062a\u0627\u0628\u0629.
@@ -209,10 +215,8 @@ export function TreatmentPlan({
   const stockFor = (name: string) => { const key = searchable(name); return stockFailed ? undefined : stockMeds.find((p) => searchable(p.name) === key); };
 
   /* ---- Lab photo: take a picture and file it into the pet's media vault ---- */
-  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || photoBusy) return;
+  const onPickPhoto = async (file: File) => {
+    if (photoBusy) return;
     if (!petId) { toast.error(t("tplan.attachFail", "تعذّر إرفاق الصورة")); return; }
     setPhotoBusy(true);
     try {
@@ -607,7 +611,6 @@ export function TreatmentPlan({
               <StepTitle icon={Droplets} title={t("tplan.labsTitle", "نتيجة التحليل — تحليل الدم (CBC)")} hint={t("tplan.labsHint", "اسحب مؤشر كل قيمة يمين/يسار — يظهر الطبيعي والمرتفع والمنخفض فوراً حسب نوع الحيوان.")} />
               <CbcPanel species={species} value={cbc} onChange={setCbc} />
               <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3">
-                <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
                 {labPhoto ? (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3">
@@ -616,7 +619,11 @@ export function TreatmentPlan({
                         <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> {t("tplan.addedToGallery", "أُضيفت إلى المعرض")}</div>
                         <div className="text-2xs text-ink-subtle">{t("tplan.filedAsLab", "صُنّفت كتحليل مخبري في صور الحالة")}</div>
                       </div>
-                      <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || ocrBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">{t("tplan.change", "تغيير")}</button>
+                      <LoadBoundary scope="tplan-photo-source" onRetry={() => { PhotoSourceLazy = loadPhotoSource(); setSourceTick((n) => n + 1); }}>
+                        <Suspense fallback={null}>
+                          <PhotoSourceLazy size="sm" onFile={(f) => void onPickPhoto(f)} disabled={photoBusy || ocrBusy} cameraLabel={t("tplan.change", "تغيير")} />
+                        </Suspense>
+                      </LoadBoundary>
                     </div>
                     {/* Auto-read status */}
                     {ocrBusy ? (
@@ -640,11 +647,17 @@ export function TreatmentPlan({
                     )}
                   </div>
                 ) : (
-                  <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || !petId}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
-                    {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                    {photoBusy ? t("tplan.uploading", "جارٍ الرفع…") : t("tplan.snapLab", "صوّر ورقة التحليل — تُقرأ القيم تلقائياً")}
-                  </button>
+                  <div className="space-y-2">
+                    <p className="flex items-center justify-center gap-2 text-sm font-bold text-brand-700 dark:text-brand-300">
+                      {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                      {photoBusy ? t("tplan.uploading", "جارٍ الرفع…") : t("tplan.snapLab", "صوّر ورقة التحليل — تُقرأ القيم تلقائياً")}
+                    </p>
+                    <LoadBoundary scope="tplan-photo-source" onRetry={() => { PhotoSourceLazy = loadPhotoSource(); setSourceTick((n) => n + 1); }}>
+                      <Suspense fallback={null}>
+                        <PhotoSourceLazy onFile={(f) => void onPickPhoto(f)} busy={photoBusy} disabled={!petId} cameraTitle={t("tplan.snapLab", "صوّر ورقة التحليل — تُقرأ القيم تلقائياً")} />
+                      </Suspense>
+                    </LoadBoundary>
+                  </div>
                 )}
               </div>
             </section>

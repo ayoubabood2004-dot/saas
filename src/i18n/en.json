@@ -7522,5 +7522,51 @@
     "leaveDesign": "Leave and lose your pad changes?",
     "uploadFail": "Image not uploaded",
     "uploading": "Uploading…"
+  },
+  "att": {
+    "cam": {
+      "title": "Camera",
+      "close": "Close",
+      "starting": "Opening the camera…",
+      "shoot": "Take photo",
+      "retake": "Retake",
+      "use": "Use this photo",
+      "switch": "Switch camera",
+      "denied": "The browser did not allow the camera. Allow it from the site settings (the lock next to the address), or use the device camera below.",
+      "busy": "Another app is using the camera. Close it and try again, or use the device camera below.",
+      "unavailable": "No camera is reachable from here. Use the device camera, or pick a saved photo.",
+      "failed": "The camera did not open.",
+      "retry": "Try again",
+      "deviceCamera": "Device camera",
+      "pickSaved": "Pick a saved photo",
+      "shotFailed": "The photo was not taken — try again"
+    },
+    "src": {
+      "camera": "Take a photo",
+      "device": "From device"
+    },
+    "up": {
+      "kind": "What is it?",
+      "uploading": "Uploading…",
+      "done": "Attached to the visit"
+    },
+    "visit": {
+      "title": "Lab results & imaging",
+      "hint": "Lab reports, X-rays and ultrasound — done here or elsewhere. Photograph them or pick the file.",
+      "loading": "Loading attachments…",
+      "empty": "Nothing attached to this visit yet.",
+      "loadFailed": "The attachments did not load.",
+      "fromFile": "From the pet file ({{n}})",
+      "pickTitle": "Attach from {{name}}’s file",
+      "pickHint": "Files in the pet’s vault that are not attached to any visit.",
+      "attachN": "Attach {{n}}",
+      "attached": "{{n}} attached to the visit",
+      "moved": "Some were attached to another visit meanwhile — the list is refreshed.",
+      "open": "Open in a new tab",
+      "unlink": "Remove from this visit",
+      "unlinkHint": "It stays in the pet’s file.",
+      "unlinked": "Removed from the visit — still in the pet’s file",
+      "changed": "This attachment changed from another device — the list is refreshed."
+    }
   }
 }
