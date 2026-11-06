@@ -46,7 +46,7 @@ import type { PgSort } from "./pgOrder";
 import type { ActivityRow } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent } from "@/types";
 import { isValidSlug, normalizeSlug, productImageUrl, shapeFrontCats } from "./storeLib";
-import { expenseMethodOf } from "./pockets";
+import { expenseMethodOf } from "./expenseMethod";
 import { journeyToken } from "./journey";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
 import { getActiveClinicId } from "./clinics";

@@ -893,8 +893,10 @@ export interface ForgiveInput {
  *  terminal balance, or the bank account. Rows recorded before this existed
  *  are treated as cash (the ledger's original semantics).
  *  `stock` (0216) = «من المخزن»: خسارةُ جردٍ معتمدة (تالف/منتهي/عجز). فلوسُها طلعت
- *  يوم الشراء، فلا تُطرح من أيّ جيب — تُرى بالسحوبات وتُكتب من موافقة الجرد وحدها. */
-export type ExpenseMethod = "cash" | "card" | "bank" | "stock";
+ *  يوم الشراء، فلا تُطرح من أيّ جيب — تُرى بالسحوبات وتُكتب من موافقة الجرد وحدها.
+ *  `account` (0262) = «من الحساب»: البطاقةُ والتحويل حسابٌ بنكيٌّ واحد بالعيادة، فالسحبُ منه
+ *  لا بطاقةٌ ولا تحويل — يُكتب كما حصل ولا يُقسَّم تخميناً (pockets.ts). */
+export type ExpenseMethod = "cash" | "card" | "bank" | "stock" | "account";
 
 /** An expense / withdrawal from the clinic (rent, supplies, salaries, petty
  *  cash…). Append-only ledger, clinic-isolated. `description` says WHERE &
@@ -908,7 +910,7 @@ export interface Expense {
   /** تصنيفُ السحب (0227) — مصدرُ العضوية الوحيد بجداول التصنيفات. فارغٌ لما يكتبه
    *  النظام (مرتجع، رواتب، سلف، سحب مخزن) ولما سبق التصنيفات. */
   category_id?: string | null;
-  method?: ExpenseMethod | null;  // cash (default) / card / bank
+  method?: ExpenseMethod | null;  // cash (default) / card / bank / account (0262) / stock
   staff_id?: string | null;       // who recorded it (auto-stamped)
   spent_at: string;               // ISO — when the money actually left
   created_at: string;             // ISO — when it was recorded

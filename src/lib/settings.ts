@@ -143,7 +143,7 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; cage_layout_rev: number; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean; expiry_return_days: number; expiry_critical_days: number; reorder_lead_days: number; count_daily_n: number; forgive_profit_pct: number }
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; cage_layout_rev: number; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean; expiry_return_days: number; expiry_critical_days: number; reorder_lead_days: number; count_daily_n: number; forgive_profit_pct: number; one_account?: boolean }
 const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, cage_layout_rev: 0, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null, manager_mode_stock_edit: false, expiry_return_days: 90, expiry_critical_days: 30, reorder_lead_days: 7, count_daily_n: 5, forgive_profit_pct: 100 };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
@@ -291,6 +291,8 @@ export async function hydrateClinicPrefs(): Promise<void> {
         count_daily_n: typeof d.count_daily_n === "number" ? d.count_daily_n : local.count_daily_n,
         // 0241: سقفُ الخصم على الدين قرارُ صاحب العيادة — السحابةُ تفوز، ولا يُبذَر من الجهاز أبداً.
         forgive_profit_pct: typeof d.forgive_profit_pct === "number" ? d.forgive_profit_pct : DEFAULT_PREFS.forgive_profit_pct,
+        // 0262: قاعدةٌ بلا العمود (قبل الهجرة) ⇒ ما بالجهاز، والغائبُ نعم (getCardTransferOneAccount). العمودُ لا يُفرَّغ.
+        one_account: d.one_account ?? local.one_account,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -342,6 +344,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.expiry_critical_days !== DEFAULT_PREFS.expiry_critical_days) boolPatch.expiry_critical_days = local.expiry_critical_days;
       if (local.reorder_lead_days !== DEFAULT_PREFS.reorder_lead_days) boolPatch.reorder_lead_days = local.reorder_lead_days;
       if (local.count_daily_n !== DEFAULT_PREFS.count_daily_n) boolPatch.count_daily_n = local.count_daily_n;
+      if (local.one_account === false) boolPatch.one_account = false;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -857,6 +860,17 @@ export function getCashReconcile(): boolean {
 }
 export function setCashReconcile(on: boolean) {
   patchPrefs({ cash_reconcile: on }, "cash-reconcile-set");
+}
+
+/* ---- البطاقةُ والتحويل حسابٌ واحد (0262) ----------------------------------------
+ * أغلبُ العيادات تستلم الاثنين على نفس الحساب البنكيّ، فتقاريرُ المال تعرض جيبين: الدرج
+ * و«الحساب» — والسحبُ منه «من الحساب». **خيارُ عرضٍ لا يغيّر صفّاً** (pockets.ts): إطفاؤه
+ * يرجّع البطاقةَ والتحويل جيبين كما كانا. نعم افتراضياً (والغائبُ نعم: صفٌّ قبل الهجرة). */
+export function getCardTransferOneAccount(): boolean {
+  return prefs().one_account !== false;
+}
+export function setCardTransferOneAccount(on: boolean) {
+  patchPrefs({ one_account: on }, "one-account-set");
 }
 
 export interface CashConfirm {

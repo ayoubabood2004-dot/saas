@@ -6469,6 +6469,11 @@
     "undoReplay": "This undo had already been applied (the first reply was lost on the network) — here is its result:"
   },
   "wdr": {
+    "pocketAccount": "Account (card + transfer)",
+    "methodAccount": "From the account",
+    "methodHintAccount": "From the clinic's account (card and transfer together) — not taken from net cash.",
+    "acctMerged": "Card and transfer are counted as one account — you can change this in Settings.",
+    "acctForced": "This period has withdrawals “from the account”, so card and transfer are shown together — they can't be split.",
     "viewCats": "By category",
     "catLabel": "Category (required)",
     "manage": "Categories",
@@ -6885,6 +6890,13 @@
     "back": "Taken back by a return or edit",
     "net": "Net",
     "nonCash": "No cash — nothing left the drawer; it already came off the sale day's sales."
+  },
+  "acct": {
+    "title": "Card and transfer",
+    "label": "Card and transfer go to the same account",
+    "on": "On: money reports count them as one account, and a withdrawal comes from the drawer or from the account — so the card never shows a negative balance when you withdraw transfer money.",
+    "off": "Off: card and transfer are separate pockets, and a withdrawal picks card or bank transfer. Use this if each one goes to a different account.",
+    "note": "This changes no recorded withdrawal, only how they are shown. You can switch it back any time."
   },
   "fgset": {
     "title": "Debt discount limit",
