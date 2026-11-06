@@ -1,6 +1,6 @@
 import { Fragment, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock, Archive, Pencil, Star, ArrowUp, ArrowDown, Tags } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Wallet, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock, Archive, Pencil, Star, ArrowUp, ArrowDown, Tags } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows, getReorderLeadDays, setReorderLeadDays, getForgiveProfitPct, setForgiveProfitPct } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows, getReorderLeadDays, setReorderLeadDays, getForgiveProfitPct, setForgiveProfitPct, getCardTransferOneAccount, setCardTransferOneAccount } from "@/lib/settings";
 import { useOverride, ownerAccountFrom } from "@/lib/managerOverride";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
@@ -256,6 +256,7 @@ export function Settings() {
         {canSettings && <CashierOptions />}
         {canSettings && <ExpiryAlertsCard />}
         {canSettings && <ForgiveCapCard />}
+        {canSettings && <OneAccountCard />}
         {canSettings && <ServiceSettings />}
         {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
         {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
@@ -935,6 +936,27 @@ function ForgiveCapCard() {
       {bad && ownerOk && <p className="mt-2 text-xs font-semibold text-warn-700 dark:text-warn-300">{t("fgset.range")}</p>}
       {!ownerOk && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-ink-muted"><ShieldAlert size={13} /> {t("fgset.ownerOnly")}</p>}
       {err && <p className="mt-2 rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">{err}</p>}
+    </div>
+  );
+}
+
+/* ------------- البطاقةُ والتحويل حسابٌ واحد (0262) ----------
+ * أغلبُ العيادات تستلم الاثنين على نفس الحساب البنكيّ: استلم ٢٥٠٠ بطاقة و١٥٠٠ تحويل وسحب ٤٠٠٠ «من البطاقة»
+ * فصارت البطاقةُ −١٥٠٠ بالتقرير. مفعّلٌ افتراضياً؛ وخيارُ عرضٍ لا يغيّر سحباً مسجّلاً (pockets.ts). */
+function OneAccountCard() {
+  const { t } = useTranslation();
+  const [on, setOn] = useState(getCardTransferOneAccount());
+  const toggle = () => {
+    const next = !on;
+    setOn(next);
+    setCardTransferOneAccount(next);
+    if (next) playSuccess(); else playTap();
+  };
+  return (
+    <div className="card p-5 mb-4" data-one-account-card>
+      <h2 className="font-bold text-ink mb-3 flex items-center gap-2"><Wallet size={18} className="text-brand-600" /> {t("acct.title")}</h2>
+      <CashierToggle label={t("acct.label")} hint={t(on ? "acct.on" : "acct.off")} checked={on} onToggle={toggle} />
+      <p className="mt-3 text-2xs text-ink-subtle">{t("acct.note")}</p>
     </div>
   );
 }

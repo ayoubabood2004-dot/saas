@@ -44,7 +44,7 @@ import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, Pa
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo } from "./storeLib";
-import { expenseMethodOf } from "./pockets";
+import { expenseMethodOf } from "./expenseMethod";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials, getDialCode, getForgiveProfitPct } from "./settings";
 import { buildCustomerDirectory } from "./customerDirectory";

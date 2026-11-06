@@ -561,8 +561,11 @@ create policy invoices_update on invoices for update
  * تقتل الحزمةَ عند كتلة 0162. والأعمدةُ منقولةٌ من `information_schema`
  * بالإنتاج، بأنواعها وافتراضاتها، لا من الذاكرة. */
 create table if not exists clinic_prefs (
-  clinic_id uuid primary key, catalog_share boolean not null default false
+  clinic_id uuid primary key default auth_clinic(), catalog_share boolean not null default false
 );
+/* وافتراضُ المفتاح كالإنتاج (0021: `default auth_clinic()`، لم يتغيّر) — الواجهةُ تكتب الإعداداتِ بـupsert بلا
+ * clinic_id (patchPrefs)، والقالبُ بلا الافتراض كان يرفض نداءَها نفسَه بـ42501 (أمسكه فحصُ 0262). */
+alter table clinic_prefs alter column clinic_id set default auth_clinic();
 alter table clinic_prefs add column if not exists dial_code           text not null default '+964';
 alter table clinic_prefs add column if not exists updated_at          timestamptz not null default now();
 alter table clinic_prefs add column if not exists logo_url            text;
