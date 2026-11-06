@@ -1,0 +1,71 @@
+/* ============================================================================
+ * شاشةُ الكاميرا ومرفقاتُ الزيارة — ما لا تملكه ورقةُ الأنماط العامّة.
+ *
+ * أصنافُ Tailwind تُجمع بورقةٍ واحدة تُحزم بالإقلاع، وهذه الشاشةُ لا تُرسم إلا بقطعة المرفقات الكسولة (Attach.tsx)
+ * — فما انفرد بها هنا، وVite يحمّل هذا الملفّ مع قطعتها وحدَها (درسُ 0260). والألوانُ من رموز التصميم.
+ * ========================================================================== */
+
+/* الكاميرا: شاشةٌ كاملة سوداء فوق كلّ نافذة (النوافذُ z-50) — الصورةُ هي الشاشة. */
+.att-cam {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  background: #000; color: #fff;
+}
+.att-cam-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  padding: max(.75rem, env(safe-area-inset-top)) 1rem .75rem;
+}
+.att-cam-title { font-weight: 800; font-size: .95rem; }
+.att-cam-stage { position: relative; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.att-cam-video { width: 100%; height: 100%; object-fit: contain; }
+/* مخفيٌّ بلا display:none — سفاري لا يرسم فيديو أُخفي هكذا حين يرجع، والمسارُ مربوطٌ به من البداية. */
+.att-hidden { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.att-cam-note { display: flex; align-items: center; gap: .5rem; font-weight: 700; opacity: .85; }
+.att-cam-problem { max-width: 26rem; padding: 1.25rem; text-align: center; line-height: 1.7; font-weight: 600; }
+.att-cam-alts { margin-top: 1rem; display: grid; gap: .5rem; }
+.att-cam-alt, .att-cam-pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  min-height: 48px; padding: .6rem 1.1rem; border-radius: 999px;
+  background: rgb(255 255 255 / .12); color: #fff; font-weight: 800; font-size: .9rem;
+  border: 1px solid rgb(255 255 255 / .18);
+}
+.att-cam-alt:hover, .att-cam-pill:hover { background: rgb(255 255 255 / .2); }
+.att-cam-primary { background: #1266d8; border-color: transparent; }
+.att-cam-primary:hover { background: #0f51b0; }
+.att-cam-toast {
+  position: absolute; bottom: 1rem; inset-inline: 1rem; margin-inline: auto; max-width: 22rem;
+  padding: .5rem .9rem; border-radius: .75rem; background: rgb(0 0 0 / .7); text-align: center; font-weight: 700; font-size: .85rem;
+}
+.att-cam-controls {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
+}
+.att-cam-side { width: 3.5rem; display: flex; justify-content: center; }
+.att-cam-icon {
+  display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 999px;
+  background: rgb(255 255 255 / .12); color: #fff;
+}
+.att-cam-icon:hover { background: rgb(255 255 255 / .22); }
+/* زرُّ التصوير: دائرةٌ بيضاء بحلقة — المعروفُ من كلّ كاميرا هاتف. */
+.att-cam-shutter {
+  width: 4.5rem; height: 4.5rem; border-radius: 999px; background: #fff;
+  box-shadow: 0 0 0 4px #000, 0 0 0 7px rgb(255 255 255 / .9);
+  transition: transform .12s ease;
+}
+.att-cam-shutter:active:not(:disabled) { transform: scale(.92); }
+.att-cam-shutter:disabled { opacity: .35; }
+.att-cam-controls:has(.att-cam-pill) { justify-content: center; }
+.att-cam button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+/* مرفقاتُ الزيارة: شبكةُ مصغّراتٍ مربّعة، ونوعُ الملفّ شارةٌ عليها. */
+.att-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: .5rem; }
+.att-thumb { position: relative; display: block; overflow: hidden; border-radius: .75rem; border: 1px solid rgb(var(--line)); background: rgb(var(--surface-2)); aspect-ratio: 1 / 1; }
+.att-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.att-thumb-pdf { display: grid; height: 100%; place-items: center; align-content: center; gap: .25rem; color: rgb(var(--ink-subtle)); font-size: .7rem; font-weight: 700; padding: .5rem .5rem 1.6rem; text-align: center; }
+/* اسمُ ملفّ PDF سطرين ثمّ «…» فوق شارة النوع — اسمٌ طويلٌ بلا مسافات ينكسر بأيّ حرف. */
+.att-thumb-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; word-break: break-all; }
+.att-thumb-kind { position: absolute; bottom: .3rem; inset-inline-start: .3rem; }
+.att-thumb[aria-pressed="true"] { box-shadow: 0 0 0 3px #2f7df2; }
+.att-thumb-check { position: absolute; top: .3rem; inset-inline-end: .3rem; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 999px; border: 2px solid rgb(255 255 255 / .85); background: rgb(0 0 0 / .3); color: transparent; }
+.att-thumb[aria-pressed="true"] .att-thumb-check { background: #1266d8; border-color: #1266d8; color: #fff; }
+.att-view-img { display: block; max-height: 70vh; width: 100%; object-fit: contain; border-radius: .75rem; background: rgb(var(--surface-2)); }

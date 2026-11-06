@@ -1462,8 +1462,21 @@ const demoRepo = {
    * Upload a prepared (already client-side compressed) file and link it to a pet.
    * Demo mode has no object storage, so the compressed image is kept inline.
    */
-  async uploadMedia(petId: string, upload: PreparedUpload, kind: MediaItem["kind"], caption?: string): Promise<MediaItem> {
-    return demoRepo.addMedia({ pet_id: petId, kind, url: upload.dataUrl, caption });
+  async uploadMedia(petId: string, upload: PreparedUpload, kind: MediaItem["kind"], caption?: string, visitId?: string | null): Promise<MediaItem> {
+    return demoRepo.addMedia({ pet_id: petId, kind, url: upload.dataUrl, caption, ...(visitId ? { visit_id: visitId } : {}) });
+  },
+
+  /**
+   * إرفاقُ ملفٍّ من الخزنة بزيارة أو فكُّه منها (0263) — **بشرط حالِه كما رآها الطبيب** (`from`):
+   * ملفٌّ صار مرفقاً بزيارةٍ أخرى من جهازٍ ثانٍ لا يُسحب منها بصمت. وصفرُ تطابقٍ يُرمى كالخادم
+   * (`updatedRows`) — الشاشةُ لا تقول «انرفق» عن شيءٍ ما تغيّر.
+   */
+  async setMediaVisit(id: string, visitId: string | null, from: string | null): Promise<void> {
+    const db = loadDB();
+    const m = db.media.find((x) => x.id === id && (x.visit_id ?? null) === from);
+    if (!m) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" }); // شكلُ assertUpdated نفسُه
+    m.visit_id = visitId;
+    saveDB(db);
   },
 
   async listAppointmentsForOwner(ownerId: string): Promise<Appointment[]> {
@@ -5283,6 +5296,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   writeOffLoan: { entity: "staff_loans", action: "UPDATE" },
   setPayrollPolicy: { entity: "payroll_settings", action: "UPDATE" },
   addMedia: { entity: "media_items", action: "INSERT" },
+  setMediaVisit: { entity: "media_items", action: "UPDATE" },
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
   addTreatments: { entity: "treatment_entries", action: "INSERT" },
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },

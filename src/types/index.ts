@@ -277,6 +277,8 @@ export interface MediaItem {
   url: string; // object URL / storage URL
   caption?: string;
   created_at: string;
+  /** الزيارةُ التي أُرفق لها (0263) — الملفُّ للحيوان ويظهر بخزنته أيضاً؛ null = بالخزنة وحدها. */
+  visit_id?: string | null;
 }
 
 /** Doctor's triage of the patient's overall state at a visit. */

@@ -73,6 +73,7 @@
     "ptab": "src/components/retail/PosCustomTabs.tsx",
     "avgc": "src/components/inventory/AvgCostNote.tsx",
     "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] },
-    "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] }
+    "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] },
+    "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] }
   }
 }

@@ -882,7 +882,7 @@ const supabaseRepo: DemoRepo = {
   async addMedia(input) {
     return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
   },
-  async uploadMedia(petId, upload, kind, caption) {
+  async uploadMedia(petId, upload, kind, caption, visitId) {
     const sb = sbc();
     // UUID object name keeps uploads collision-free; foldered by pet (the folder
     // name IS the pet id — the storage RLS policy scopes access by it).
@@ -899,11 +899,17 @@ const supabaseRepo: DemoRepo = {
     }
     // Store the PATH (private bucket); link the file to the pet's record.
     const item = need<MediaItem>(
-      await sb.from("media_items").insert({ pet_id: petId, kind, url: path, caption }).select().single(),
+      // visit_id (0263) يُرسل لمرفقات الزيارة وحدها — رفعُ الخزنة بلا المفتاح فلا يتغيّر على قاعدةٍ قبل الهجرة.
+      await sb.from("media_items").insert({ pet_id: petId, kind, url: path, caption, ...(visitId ? { visit_id: visitId } : {}) }).select().single(),
     );
     // Return a ready-to-display signed URL so the just-uploaded image renders at once.
     const { data: signed } = await sb.storage.from(MEDIA_BUCKET).createSignedUrl(path, MEDIA_URL_TTL);
     return { ...item, url: signed?.signedUrl ?? item.url };
+  },
+  async setMediaVisit(id, visitId, from) {
+    let q = sbc().from("media_items").update({ visit_id: visitId }).eq("id", id);
+    q = from === null ? q.is("visit_id", null) : q.eq("visit_id", from);
+    updatedRows(await q.select("id"));
   },
   async listAppointmentsForOwner(ownerId) {
     return listOf<Appointment>(await sbc().from("appointments").select("*").eq("owner_id", ownerId).neq("status", "cancelled").order("scheduled_at", { ascending: true }));

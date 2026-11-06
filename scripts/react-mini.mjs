@@ -16,6 +16,9 @@ const BASE = {
     export const AnimatePresence = ({ children }) => children;
     export const motion = new Proxy({}, { get: (_t, tag) => (p) => createElement(tag, strip(p)) });`,
   "@/lib/sounds": "const n = () => {}; export const playTap = n, playSuccess = n, playWarning = n, playDoseGiven = n, playAchievement = n, playError = n;",
+  /* قطعةٌ كسولة داخل المكوّن (زرّا «صوّر / من الجهاز» بنطاق att) تُحمَّل بـlazy() وحده — بلا القاموس والنطاق
+   * المملوك (`page` الحقيقيّ يجرّ i18n كلَّه). فحصٌ يريد غيرَ هذا يمرّر بديلَه. */
+  "@/lib/lazyPage": `import { lazy } from "react"; export const page = (load) => lazy(load);`,
 };
 
 let iconNames = null;
@@ -29,6 +32,8 @@ export async function loadUI(entry, stubs = {}) {
   const built = await esbuild.build({
     stdin: { contents: `${entry}\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
+    // ورقةُ أنماطٍ تستوردها قطعةٌ كسولة (purchaseGrid.css، attach.css — درسُ 0260) لا شأنَ لها بالسلوك المفحوص: فارغة.
+    loader: { ".css": "empty" },
     define: { "import.meta.env": "__VITE_ENV__", "process.env.NODE_ENV": '"development"' }, banner: { js: "const __VITE_ENV__ = {};" },
     plugins: [{
       name: "ui-stubs",
