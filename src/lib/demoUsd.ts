@@ -99,7 +99,7 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   if (!Array.isArray(items) || items.length === 0) throw new Error("empty cart");
 
   const seen = new Set<string>();
-  const lines: { pid: string; name: string; barcode: string | null; qty: number; unitCents: bigint; costCents: bigint }[] = [];
+  const lines: { pid: string; name: string; barcode: string | null; qty: number; unitCents: bigint; costCents: bigint | null }[] = [];
   for (const it of items) {
     const p = (db0.products ?? []).find((x) => x.id === it.product_id);
     if (!p || p.price_currency !== "USD") throw err("usd_mixed");
@@ -109,7 +109,7 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
     if (!Number.isFinite(qty) || qty <= 0 || !Number.isInteger(qty)) throw err("usd_qty");
     const unit = it.unit_price_usd != null && it.unit_price_usd !== "" ? centsOf(it.unit_price_usd) : p.sell_price_usd == null ? null : C(p.sell_price_usd);
     if (unit == null || unit < 0n) throw err("usd_no_price");
-    lines.push({ pid: p.id, name: p.name, barcode: p.barcode ?? null, qty, unitCents: unit, costCents: C(p.purchase_price_usd ?? 0) });
+    lines.push({ pid: p.id, name: p.name, barcode: p.barcode ?? null, qty, unitCents: unit, costCents: p.purchase_price_usd == null ? null : C(p.purchase_price_usd) });
   }
   const disc = meta.discount_usd != null && meta.discount_usd !== "" ? centsOf(meta.discount_usd) ?? 0n : 0n;
   const t = cartTotals(lines.map((l) => ({ qty: BigInt(l.qty), unitCents: l.unitCents })), disc, cur.rate1e4);
@@ -123,7 +123,7 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   const inv0 = await demoUsdRetail(checkout, {
     customer_name: meta.customer_name ?? null, customer_phone: meta.customer_phone ?? null, pet_name: meta.pet_name ?? null,
     staff_id: meta.staff_id ?? null, notes: meta.notes ?? null, client_ref: ref, sale_kind: (meta.sale_kind as Invoice["sale_kind"]) ?? null,
-    payment_method: method, discount_type: t.discountIqd > 0n ? "fixed" : null, discount_value: t.discountIqd > 0n ? N(t.discountIqd * 100n) : 0,
+    payment_method: paid ? method : null, discount_type: t.discountIqd > 0n ? "fixed" : null, discount_value: t.discountIqd > 0n ? N(t.discountIqd * 100n) : 0,
     amount_paid: 0,
   });
   if (inv0.currency === "USD") return inv0;   // سباقُ ضغطتين على نفس المرجع: الأولى ختمتها
@@ -135,8 +135,9 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   let cost = 0n;
   for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === inv.id)) {
     const l = lines.find((x) => x.pid === it.product_id)!;
-    const fils = costFilsOf(l.costCents, cur.rate1e4);
-    it.unit_price_usd = N(l.unitCents); it.unit_cost_usd = N(l.costCents); it.unit_cost = N(fils);
+    // كلفةُ دولارٍ فارغة: تبقى كلفةُ مرآة retail_checkout (كالخادم) لا صفر.
+    const fils = l.costCents == null ? C(it.unit_cost) : costFilsOf(l.costCents, cur.rate1e4);
+    it.unit_price_usd = N(l.unitCents); it.unit_cost_usd = l.costCents == null ? null : N(l.costCents); it.unit_cost = N(fils);
     cost += BigInt(l.qty) * fils;
   }
   Object.assign(inv, {
@@ -198,7 +199,6 @@ async function settleLocal(invoiceId: string, usd: bigint, rate: bigint | null, 
   await demoWithUsdDoor(() => {
     inv.amount_paid = N((paidIqd + share) * 100n);
     inv.paid_usd = N(paidUsd + usd);
-    (inv as { status?: string }).status = paidUsd + usd >= totalUsd ? "paid" : "partial";
     inv.payment_details = legs;
     inv.payment_method = legs.filter((l) => l.kind !== "fx").sort((a, b) => b.amount - a.amount)[0]?.method ?? inv.payment_method ?? null;
     saveDB(db);
@@ -233,7 +233,6 @@ export async function demoUsdVoid(settlementId: string, reasonIn: string): Promi
     const paidUsd = C(inv.paid_usd) - C(row.usd);
     inv.amount_paid = N(C(inv.amount_paid ?? 0) - C(row.share));
     inv.paid_usd = N(paidUsd);
-    (inv as { status?: string }).status = paidUsd <= 0n ? "unpaid" : "partial";
     inv.payment_details = legs;
     saveDB(db);
   });

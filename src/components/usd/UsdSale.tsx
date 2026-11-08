@@ -16,6 +16,7 @@ import { Modal } from "@/components/Modal";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatNum, normalizeCode, searchable, uuid } from "@/lib/utils";
 import { usdApi, type UsdMethod } from "@/lib/usdApi";
+import { shouldReleaseRef } from "@/lib/errors";
 import { cartTotals, cashAtSale, centsOf, usdText } from "@/lib/usdMath";
 import { refreshUsdState, StaleRateBanner, UsdChip, usdErrorText, usdIso, useStaleRate, useUsdState } from "./usdShared";
 
@@ -49,6 +50,10 @@ export function UsdSaleSheet({ open, products, first, firstTick = 0, wholesale =
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine !== false);
   const ref = useRef(uuid());
+  /** أُرسل بهذا المرجع شيء؟ ونتيجتُه مجهولة؟ (انقطاعٌ أو مهلة بعد الإرسال — ربما انسجلت). مجهولةً تُقفل السلّة: الإعادةُ بالمرجع
+   *  نفسِه وحدها؛ تعديلٌ ثمّ إعادةٌ كان يرجع الفاتورةَ الأولى ويقول «انسجلت» والسطرُ المضاف لا فاتورةَ له ولا خصمَ مخزن. */
+  const sentRef = useRef(false);
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     const up = () => setOnline(true), down = () => setOnline(false);
@@ -57,7 +62,7 @@ export function UsdSaleSheet({ open, products, first, firstTick = 0, wholesale =
   }, []);
   // لمسةٌ جديدة لمادّةٍ بالدولار وهي مفتوحة: تُضاف للسلّة (أو تزيد سطرَها) — لا سلّةٌ ثانية.
   useEffect(() => {
-    if (!open || !first) return;
+    if (!open || !first || sentRef.current) return;   // سلّةٌ مقفولةٌ على نتيجةٍ مجهولة لا تتغيّر
     setLines((ls) => (ls.some((l) => l.product.id === first.id)
       ? ls.map((l) => (l.product.id === first.id ? { ...l, qty: l.qty + 1 } : l))
       : [...ls, { product: first, qty: 1 }]));
@@ -89,10 +94,12 @@ export function UsdSaleSheet({ open, products, first, firstTick = 0, wholesale =
   const needCustomer = !paid && !name.trim() && !phone.trim();
   const blocked = busy || !online || !state?.enabled || !rate || !totals || lines.length === 0 || stale || needCustomer || (discount.trim() !== "" && centsOf(discount) == null);
 
-  const reset = () => { setLines([]); setDiscount(""); setPaid(true); setMethod("cash"); setName(""); setPhone(""); setNotes(""); ref.current = uuid(); };
+  const reset = () => { setLines([]); setDiscount(""); setPaid(true); setMethod("cash"); setName(""); setPhone(""); setNotes(""); ref.current = uuid(); sentRef.current = false; setPending(false); };
   const submit = async () => {
     if (blocked || !totals || !rate) return;
     setBusy(true);
+    const fresh = !sentRef.current;
+    sentRef.current = true;
     try {
       // سعرُ الوحدة يُرسَل صريحاً: هو ما رآه الكاشير (والجملةُ بسعر قائمتها) — والخادمُ يحسب دينارَه.
       const inv = await usdApi.checkout(lines.map((l) => ({ product_id: l.product.id, qty: l.qty, unit_price_usd: plain(cents(unitOf(l.product))) })), {
@@ -106,6 +113,9 @@ export function UsdSaleSheet({ open, products, first, firstTick = 0, wholesale =
       onSold(inv);
     } catch (e) {
       playWarning();
+      // رفضٌ حاسم (رمزُ الخادم) بأوّل إرسال: لا شيء انسجل، فالمرجعُ يتحرّر والسلّةُ تتعدّل. وغيرُه مجهولُ المصير: تُقفل.
+      if (shouldReleaseRef(fresh, e)) sentRef.current = false;
+      else if (!pending) setPending(true);
       toast.error(usdErrorText(e, t));
       if ((e as Error)?.message === "usd_rate_changed") void refreshUsdState();
     } finally { setBusy(false); }
@@ -126,6 +136,13 @@ export function UsdSaleSheet({ open, products, first, firstTick = 0, wholesale =
         {!online && <p className="rounded-lg bg-danger-50 p-2 text-sm text-danger-700">{t("usd.sale.offline")}</p>}
         {stale && rate && <StaleRateBanner rate={rate} onAck={ack} />}
 
+        {pending && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-usd-pending>
+            <span className="min-w-0 flex-1">{t("usd.sale.pending")}</span>
+            <button type="button" className="text-xs font-bold text-warn-800 underline dark:text-warn-200" onClick={() => { playTap(); reset(); }}>{t("usd.sale.newCart")}</button>
+          </div>
+        )}
+        <fieldset disabled={pending} className="min-w-0 space-y-4">
         <div className="relative">
           <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
           <input data-usd-search className="input ps-9" placeholder={t("usd.sale.search")} value={q} onChange={(e) => setQ(e.target.value)}
@@ -224,8 +241,11 @@ export function UsdSaleSheet({ open, products, first, firstTick = 0, wholesale =
           </div>
         </div>
 
+        </fieldset>
+
         <Button className="w-full" size="lg" loading={busy} disabled={blocked} onClick={submit} data-usd-sale-go>
-          {totals ? t(paid ? "usd.sale.confirmCash" : "usd.sale.confirmDebt", { v: usdIso(totals.totalUsdCents) }) : t("usd.sale.title")}
+          {!totals ? t("usd.sale.title") : pending ? t("usd.sale.retry", { v: usdIso(totals.totalUsdCents) })
+            : t(paid ? "usd.sale.confirmCash" : "usd.sale.confirmDebt", { v: usdIso(totals.totalUsdCents) })}
         </Button>
       </div>
     </Modal>

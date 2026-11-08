@@ -351,8 +351,6 @@ export const INVOICE_WRITERS = {
   delete_product: "تصفّر product_id بالسطور وحده؛ الدفترُ يحفظ المعرّف ويردّ لصفّ السلّة",
   restore_product: "تعيد product_id للسطور (نفسُ المعرّف)؛ الدفترُ يتابع الصفَّ الحيّ",
   usd_checkout: "تبيع وتصرف من retail_checkout نفسِها؛ تحديثُها للسطور كلفتُها وسعرُها بالدولار وحدهما (لا كمية ولا مادّة)، والخدماتُ ممنوعةٌ بفاتورة الدولار فلا مستهلكات (0264)",
-  settle_invoice_usd: "تقلب الحالةَ بين unpaid/partial/paid وحدها — محفّزُ invoices_consumption_status لا ينطلق إلا بدخول refunded أو خروجه، وفاتورةُ الدولار بلا خدماتٍ فلا مستهلكات (0264)",
-  void_usd_settlement: "كأختها: تُرجع الحالةَ unpaid/partial وحدها، لا refunded (0264)",
 };
 
 /** ما يكتب بالفواتير: سطورُها، أو حذفُ رأسها، أو حالتُها (`update invoices … set … status =`). */

@@ -202,15 +202,25 @@ create trigger invoices_usd_door before insert or update or delete on public.inv
 
 create or replace function public.invoice_items_usd_door() returns trigger
 language plpgsql set search_path = public as $$
-declare v_cur text; v_pc text;
+declare v_cur text; v_old text; v_pc text; v_new boolean;
 begin
-  if _usd_door_open() then return new; end if;
-  select currency into v_cur from invoices where id = new.invoice_id;
+  if _usd_door_open() then return coalesce(new, old); end if;
+  if tg_op = 'DELETE' then
+    -- حذفُ سطرٍ من فاتورة دولار مباشرةً (المديرُ يملك invoice_items_write) كان يُنقص الفاتورةَ بلا رصيدٍ ولا دولار.
+    if (select currency from invoices where id = old.invoice_id) = 'USD' then
+      raise exception 'usd_door' using errcode = 'P0001', hint = 'أسطرُ فاتورة الدولار تنحذف مع فاتورتها من «حذف فاتورة الدولار».';
+    end if;
+    return old;
+  end if;
+  select currency, coalesce(recorded_at, created_at) >= now() into v_cur, v_new from invoices where id = new.invoice_id;
   if tg_op = 'INSERT' then
     if v_cur = 'USD' then
       raise exception 'usd_door' using errcode = 'P0001', hint = 'أسطرُ فاتورة الدولار تنكتب من بيع الدولار وحده.';
     end if;
-    if new.product_id is not null then
+    -- مادّةُ الدولار بفاتورة دينار **جديدة** (بيعٌ من جهازٍ بسعرٍ قديم) تُرفض. أمّا فاتورةٌ قائمة قبل هذه المعاملة (تعديلُ
+    -- سطورها يحذفها ويعيدها — edit_invoice_lines) فتمرّ: مادّةٌ حُوّلت للدولار بعد بيعها كانت تقفل تعديلَ طلب توصيلٍ مفتوح
+    -- وبيعتِها القديمة بـ«حدّث الصفحة» والتحديثُ لا يصلحها. والجديدةُ = أُدرجت بهذه المعاملة (created_at أو recorded_at = now()).
+    if new.product_id is not null and coalesce(v_new, true) then
       select price_currency into v_pc from products where id = new.product_id;
       if v_pc = 'USD' then
         raise exception 'usd_product_in_iqd' using errcode = 'P0001',
@@ -219,16 +229,17 @@ begin
     end if;
     return new;
   end if;
-  -- UPDATE: إعادةُ ربط السطر بمادّة (الدمج، 0144) مسموحة؛ المالُ على فاتورة دولار لا.
-  if v_cur = 'USD'
-     and (new.qty, new.unit_price, new.unit_cost, new.line_total, new.unit_price_usd, new.unit_cost_usd)
-         is distinct from (old.qty, old.unit_price, old.unit_cost, old.line_total, old.unit_price_usd, old.unit_cost_usd) then
+  -- UPDATE: إعادةُ ربط السطر بمادّة (الدمج، 0144) مسموحة؛ المالُ على فاتورة دولار لا، ولا نقلُ سطرٍ منها أو إليها.
+  select currency into v_old from invoices where id = old.invoice_id;
+  if (v_cur = 'USD' or v_old = 'USD')
+     and (new.invoice_id, new.qty, new.unit_price, new.unit_cost, new.line_total, new.unit_price_usd, new.unit_cost_usd)
+         is distinct from (old.invoice_id, old.qty, old.unit_price, old.unit_cost, old.line_total, old.unit_price_usd, old.unit_cost_usd) then
     raise exception 'usd_door' using errcode = 'P0001', hint = 'أسطرُ فاتورة الدولار ما تتعدّل بالمرحلة الأولى.';
   end if;
   return new;
 end $$;
 drop trigger if exists invoice_items_usd_door on public.invoice_items;
-create trigger invoice_items_usd_door before insert or update on public.invoice_items
+create trigger invoice_items_usd_door before insert or update or delete on public.invoice_items
   for each row execute function public.invoice_items_usd_door();
 
 -- ── ٧) سعرُ الصرف: للمدير (قرار ٣)، بلا المشغّل (سطرُ مالٍ يسمّي شخصاً من كادرها) ─────────────────────────────
@@ -305,6 +316,24 @@ begin
 end $$;
 revoke all on function public.usd_prefs_set(boolean, integer) from public, anon;
 grant execute on function public.usd_prefs_set(boolean, integer) to authenticated;
+
+-- سياسةُ clinic_prefs_update تسمح لكلّ الكادر بتحديث الصفّ: المفتاحُ والخطوةُ كانا يُطفآن من PostgREST مباشرةً — فيتجمّد الرفُّ
+-- والديون بلا فحص «بالعيادة موادُّ بالدولار». تجميدُ الأعمدة بمحفّزٍ (درسُ 0162) يرفض لدور authenticated وحده: usd_prefs_set
+-- definer فتمرّ، والمديرُ نفسُه يمرّ منها (لا التفافَ على فحص الإطفاء).
+create or replace function public.clinic_prefs_guard_usd() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if current_user <> 'authenticated' then return new; end if;
+  if (tg_op = 'UPDATE' and (new.usd_enabled, new.usd_round_step) is distinct from (old.usd_enabled, old.usd_round_step))
+     or (tg_op = 'INSERT' and (coalesce(new.usd_enabled, false) or coalesce(new.usd_round_step, 250) <> 250)) then
+    raise exception 'usd_prefs_direct' using errcode = 'P0001',
+      hint = 'مفتاحُ الدولار وخطوتُه من بطاقة «التسعير بالدولار» بالإعدادات وحدها.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists clinic_prefs_usd_guard on public.clinic_prefs;
+create trigger clinic_prefs_usd_guard before insert or update on public.clinic_prefs
+  for each row execute function public.clinic_prefs_guard_usd();
 
 -- ── ٨) البيعُ بالدولار ───────────────────────────────────────────────────────────────────────────────────
 -- p_items: [{product_id, qty, unit_price_usd}] — الاسمُ والباركودُ والكلفةُ من القاعدة، والدينارُ يحسبه الخادم.
@@ -388,9 +417,11 @@ begin
     v_lines := v_lines || jsonb_build_object(
       'product_id', p.id, 'name', p.name, 'barcode', p.barcode, 'qty', v_qty, 'stock_qty', v_qty,
       'unit_price', v_uiqd, 'unit_cost', 0, 'service_id', null);
+    -- كلفةُ الدولار (آخرُ سعر شراءٍ بالدولار) × سعر يوم البيع؛ وبلاها تبقى كلفةُ الخادم التي حسبتها retail_checkout
+    -- (stock_unit_cost، 0255) — صفرٌ هنا كان يبيع مادّةً محوّلةً معروفةَ الكلفة بربحٍ كامل.
     v_costs := v_costs || jsonb_build_object(p.id::text, jsonb_build_object(
-      'usd', v_uusd, 'cost_usd', coalesce(p.purchase_price_usd, 0),
-      'cost_iqd', round(coalesce(p.purchase_price_usd, 0) * v_ctx.rate, 2)));
+      'usd', v_uusd, 'cost_usd', p.purchase_price_usd,
+      'cost_iqd', case when p.purchase_price_usd is not null then round(p.purchase_price_usd * v_ctx.rate, 2) end));
   end loop;
 
   v_dusd := least(greatest(round(coalesce(nullif(p_meta->>'discount_usd', '')::numeric, 0), 2), 0), v_sub_usd);
@@ -410,7 +441,9 @@ begin
   v_inv := retail_checkout(v_lines, jsonb_strip_nulls(jsonb_build_object(
     'customer_name', p_meta->>'customer_name', 'customer_phone', p_meta->>'customer_phone',
     'pet_name', p_meta->>'pet_name', 'staff_id', p_meta->>'staff_id', 'notes', p_meta->>'notes',
-    'client_ref', v_ref, 'sale_kind', p_meta->>'sale_kind', 'payment_method', v_method,
+    -- الدَّينُ بلا طريقة دفع (كبيع الدينار الآجل): فاتورةٌ بلا سِيَقٍ وطريقتُها «نقد» يقرؤها تبويبُ المال مقبوضةً كلَّها
+    -- يومَ البيع (paymentsOf)، ثمّ تختفي من يومها بأوّل تسديد. النقدُ تختمه ساقُ التسديد بعد قليل.
+    'client_ref', v_ref, 'sale_kind', p_meta->>'sale_kind', 'payment_method', case when v_paid then v_method end,
     'discount_type', case when v_diqd > 0 then 'fixed' end, 'discount_value', case when v_diqd > 0 then v_diqd end,
     'amount_paid', 0)));   -- النقدُ يُسجَّل تسديداً كاملاً بعد الختم (أدناه)
 
@@ -424,13 +457,13 @@ begin
   end if;
 
   -- الختم: الكلفةُ بالدولار × سعر يوم البيع (م١: آخرُ سعر شراء بالدولار)، والأعمدةُ الدولارية.
-  for r in select ii.id, ii.product_id, ii.qty from invoice_items ii where ii.invoice_id = v_inv.id loop
+  for r in select ii.id, ii.product_id, ii.qty, ii.unit_cost from invoice_items ii where ii.invoice_id = v_inv.id loop
     update invoice_items
        set unit_price_usd = (v_costs->(r.product_id::text)->>'usd')::numeric,
            unit_cost_usd  = (v_costs->(r.product_id::text)->>'cost_usd')::numeric,
-           unit_cost      = (v_costs->(r.product_id::text)->>'cost_iqd')::numeric
+           unit_cost      = coalesce((v_costs->(r.product_id::text)->>'cost_iqd')::numeric, r.unit_cost)
      where id = r.id;
-    v_cost := v_cost + r.qty * (v_costs->(r.product_id::text)->>'cost_iqd')::numeric;
+    v_cost := v_cost + r.qty * coalesce((v_costs->(r.product_id::text)->>'cost_iqd')::numeric, r.unit_cost);
   end loop;
   update invoices
      set currency = 'USD', fx_rate = v_ctx.rate, total_usd = v_tusd, discount_usd = v_dusd,
@@ -516,7 +549,8 @@ begin
   v_fx := v_recv - v_share;
 
   insert into usd_settlements (id, clinic_id, invoice_id, usd, rate, rate_note, received, share, fx, method, by_user, client_ref)
-  values (v_id, v_clinic, v_inv.id, v_usd, v_rate, v_note, v_recv, v_share, v_fx, v_method, auth.uid(), v_ref)
+  values (v_id, v_clinic, v_inv.id, v_usd, v_rate, v_note, v_recv, v_share, v_fx, v_method,
+          case when platform_acting_clinic() is null then auth.uid() end, v_ref)   -- المشغّلُ لا أثرَ له (0151)
   returning * into v_set;
 
   v_legs := coalesce(v_inv.payment_details, '[]'::jsonb);
@@ -531,7 +565,6 @@ begin
   update invoices
      set amount_paid = coalesce(amount_paid, 0) + v_share,
          paid_usd = paid_usd + v_usd,
-         status = case when paid_usd + v_usd >= total_usd then 'paid' else 'partial' end,
          payment_details = v_legs,
          payment_method = (select e->>'method' from jsonb_array_elements(v_legs) e
                             where coalesce(e->>'kind', '') <> 'fx'
@@ -575,12 +608,11 @@ begin
   end if;
   perform set_config('doctorvet.usd_door', 'on', true);
   update invoices
-     set amount_paid = coalesce(amount_paid, 0) - v_set.share, paid_usd = paid_usd - v_set.usd, payment_details = v_legs,
-         status = case when paid_usd - v_set.usd <= 0 then 'unpaid' else 'partial' end
+     set amount_paid = coalesce(amount_paid, 0) - v_set.share, paid_usd = paid_usd - v_set.usd, payment_details = v_legs
    where id = v_inv.id
    returning * into v_inv;
   perform set_config('doctorvet.usd_door', 'off', true);
-  update usd_settlements set voided_at = now(), voided_by = auth.uid(), void_reason = v_reason
+  update usd_settlements set voided_at = now(), voided_by = case when platform_acting_clinic() is null then auth.uid() end, void_reason = v_reason
    where id = v_set.id returning * into v_set;
   return jsonb_build_object('invoice', to_jsonb(v_inv), 'settlement', to_jsonb(v_set));
 end $$;

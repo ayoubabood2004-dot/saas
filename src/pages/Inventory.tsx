@@ -1467,6 +1467,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     if (usdEnabled && usdDraftProblem(usd, { weight: byWeight, sub: subUnitOn, pooled: f.pooled, packs: pkgDraft.packs.length > 0 })) {
       playWarning(); setUsdShow(true); return;
     }
+    // ومسودّةُ دولارٍ تغيّرت وإعداداتُ الدولار ما وصلت: usdPatch لا يرسل شيئاً — فالحفظُ يُرفض والقطعةُ تقول لماذا (لا «انحفظ» عن سعرٍ ضاع).
+    if (!usdEnabled && JSON.stringify(usd) !== JSON.stringify(usdDraftOf(product ?? null))) { playWarning(); setUsdShow(true); return; }
     setBusy(true);
     // A company/section we create as a side effect of THIS save — rolled back if
     // the product write then fails, so no empty orphan is left behind.

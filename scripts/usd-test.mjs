@@ -64,6 +64,7 @@ const built = await esbuild.build({
       'export { usdApi } from "./src/lib/usdApi.ts";',
       'export { pnlApi } from "./src/lib/pnlApi.ts";',
       'export * as U from "./src/lib/usdMath.ts";',
+      'export { canonical } from "./src/lib/usdApi.ts";',
       'export { registerConfigReadOnlyChecker } from "./src/lib/clinicSync.ts";',
     ].join("\n"),
     resolveDir: process.cwd(), sourcefile: "usd-test-entry.ts", loader: "ts",
@@ -75,7 +76,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "usd-test-"));
 const file = path.join(dir, "bundle.mjs");
 writeFileSync(file, built.outputFiles[0].text);
 const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
-const { repo, usdApi, pnlApi, registerConfigReadOnlyChecker, U } = mod;
+const { repo, usdApi, pnlApi, registerConfigReadOnlyChecker, U, canonical } = mod;
 if (!repo || !usdApi || !pnlApi || !registerConfigReadOnlyChecker || !U) { console.error("✗ usd-test: ما انحمّلت الوحدات"); process.exit(1); }
 const errOf = async (f) => { try { await f(); return "قُبل"; } catch (e) { return e.message ?? e.code; } };
 const as = (id, rawRole, staff) => mem.set(SESSION, JSON.stringify({
@@ -97,6 +98,18 @@ check("  وفاصلةٌ ليست فاصلَ آلاف («12,5» أو «1,23») ل
 check("  والعرضُ بالأرقام الغربية: $1,234.5 ⇒ «$1,234.50»، والصحيحُ بلا كسور، والسالبُ بإشارته",
   U.usdText(123450n) === "$1,234.50" && U.usdText(100000n) === "$1,000" && U.usdText(-250n) === "-$2.50");
 
+{
+  // البابُ يرسل نصّاً قانونياً (numeric بالقاعدة يرفض «146,000» والأرقامَ الشرقية — 22P02): جاسوسٌ مكانَ السحابة.
+  const seen = [];
+  const spy = { setRate: async (p) => seen.push(["rate", p]), settle: async (...a) => seen.push(["settle", ...a.slice(1, 3), a[4]]),
+    checkout: async (items, meta) => seen.push(["sale", items[0].unit_price_usd, meta.paid_usd, meta.discount_usd]) };
+  const c = canonical(spy);
+  await c.setRate("١٤٦٬٠٠٠"); await c.settle("i", "1,000", "146,000.5", "cash", "١٠٠٠", null, "r");
+  await c.checkout([{ product_id: "p", qty: 1, unit_price_usd: "12٫5" }], { fx_rate_id: "f", paid_usd: "12.5", payment_method: "cash", discount_usd: "", client_ref: "x" });
+  check("البابُ يرسل نصّاً قانونياً: «١٤٦٬٠٠٠» ⇒ 146000.00، و«1,000» ⇒ 1000.00، و«12٫5» ⇒ 12.50، والخصمُ الفارغ null",
+    JSON.stringify(seen) === JSON.stringify([["rate", "146000.00"], ["settle", "1000.00", "146000.50", "1000.00"], ["sale", "12.50", "12.50", null]]), JSON.stringify(seen));
+}
+
 /* ── أ) A ─────────────────────────────────────────────────────────────────── */
 console.log("▸ مثالُ المالك A: دَينٌ بسعر ١٤٦٠ يُسدَّد بسعر ١٤٨٠");
 as("m1", "admin");
@@ -115,6 +128,8 @@ check("  وخطوةٌ خارج القائمة تُرفض", await errOf(() => usd
 as("r1", "reception");
 check("الاستقبالُ ما يحدّد السعر (قرار ٣)", await errOf(() => usdApi.setRate("146000")) === "usd_rate_manager");
 as("m1", "admin");
+check("  وما يُكتب بفاصلةٍ أو بأرقامٍ شرقية يُرسل قانونياً (numeric بالقاعدة يرفض «146,000» — 22P02)",
+  (await usdApi.setRate("١٤٦٬٠٠٠")).rate === "1460.0000" && (await usdApi.setRate("146,000")).rate === "1460.0000");
 const r146 = await usdApi.setRate("146000");
 check("  والمديرُ بـ«سعر ١٠٠ دولار» ⇒ ١٤٦٠٫٠٠٠٠ للدولار", r146.rate === "1460.0000" && r146.rate1e4 === 14_600_000n);
 check("  و١٤٦٠ بخانة المئة يُرفض (سعرٌ مخلوط)", await errOf(() => usdApi.setRate("1460")) === "usd_rate_bad");
@@ -129,6 +144,7 @@ const itA = (await repo.listInvoiceItems(A.id))[0];
 check("  وسطرُها ٧٣٬٠٠٠ = ٥٠$ والكلفةُ ٦٥٬٧٠٠ = ٤٥$، والرصيدُ نزل ٢٠",
   itA.unit_price === 73000 && itA.unit_price_usd === 50 && itA.unit_cost === 65700 && itA.unit_cost_usd === 45 && (await repo.listProducts()).find((p) => p.id === kit.id).stock === 80);
 check("  والإعادةُ بنفس المرجع فاتورةٌ واحدة", (await usdApi.checkout([{ product_id: kit.id, qty: 20 }], meta("u-a"))).id === A.id);
+check("  والدَّينُ بلا طريقة دفع (فاتورةٌ بلا سِيَقٍ وطريقتُها «نقد» يقرؤها تبويبُ المال مقبوضة)", A.payment_method == null, A.payment_method);
 check("  وما يُرفض: خلطُ دينار، سطرٌ مكرّر، بلا سعر، جزئيٌّ ساعةَ البيع، كميةٌ كسرية",
   await errOf(() => usdApi.checkout([{ product_id: kit.id, qty: 1 }, { product_id: sand.id, qty: 1 }], meta("u-m"))) === "usd_mixed"
   && await errOf(() => usdApi.checkout([{ product_id: kit.id, qty: 1 }, { product_id: kit.id, qty: 2 }], meta("u-d"))) === "usd_duplicate_line"
@@ -167,7 +183,9 @@ const sb1 = await usdApi.settle(B.id, "400", "147000", "cash", "1000", null, "se
 check("  ٤٠٠$ بسعر ١٤٧٠ ⇒ ٥٨٨٬٠٠٠ = ٥٨٠٬٠٠٠ حصّة + ٨٬٠٠٠ فرق، والإعادةُ بنفس المرجع تسديدٌ واحد",
   sb1.settlement.received === 588000 && sb1.settlement.share === 580000 && sb1.settlement.fx === 8000
   && (await usdApi.settle(B.id, "400", "147000", "cash", "1000", null, "set-b1")).settlement.id === sb1.settlement.id
-  && (await usdApi.settlements([B.id])).length === 1 && (await invOf(B.id)).paid_usd === 400 && (await invOf(B.id)).status === "partial");
+  && (await usdApi.settlements([B.id])).length === 1 && (await invOf(B.id)).paid_usd === 400);
+check("  والحالةُ حالةُ البيع (paid) لا تتبدّل بالتسديد — فلتر «مدفوعة» يبقى بمعناه (retail_checkout تكتب paid دائماً)",
+  (await invOf(B.id)).status === A.status);
 check("  وما يُرفض: أكثرُ من الباقي، وباقٍ تغيّر من جهازٍ ثاني",
   await errOf(() => usdApi.settle(B.id, "700", "147000", "cash", "600")) === "usd_over" && await errOf(() => usdApi.settle(B.id, "100", "147000", "cash", "1000")) === "usd_due_changed");
 await usdApi.setRate("144000");
@@ -190,13 +208,19 @@ as("m1", "admin");
 check("  وبلا سبب يُرفض", await errOf(() => usdApi.voidSettlement(sb2.settlement.id, "  ")) === "usd_void_reason");
 const v2 = await usdApi.voidSettlement(sb2.settlement.id, "غلط بالسعر");
 check("  ويُعكس بساقين سالبتين، والمسدَّدُ يرجع ٤٠٠$ والباقي ٨٧٠٬٠٠٠، وإلغاءٌ ثانٍ يُرفض",
-  v2.invoice.paid_usd === 400 && v2.invoice.total - v2.invoice.amount_paid === 870000 && v2.invoice.status === "partial"
+  v2.invoice.paid_usd === 400 && v2.invoice.total - v2.invoice.amount_paid === 870000 && v2.invoice.status === A.status
   && legsTxt(v2.invoice).endsWith("pay:-870000,fx:6000") && await errOf(() => usdApi.voidSettlement(sb2.settlement.id, "ثانية")) === "usd_already_void", legsTxt(v2.invoice));
 check("حذفُ فاتورة الدولار بتسديدٍ حيّ يُرفض", await errOf(() => usdApi.deleteInvoice(B.id)) === "usd_delete_settled");
 await usdApi.voidSettlement(sb1.settlement.id, "غلط");
 await usdApi.deleteInvoice(B.id);
 check("  وبعد إلغاء تسديدها تنحذف ورصيدُها يرجع (١٠٠ − ٢٠ لـA)", (await repo.listInvoicesByIds([B.id])).length === 0 && (await repo.listProducts()).find((p) => p.id === kit.id).stock === 80);
 check("  والإطفاءُ يُرفض ما دامت موادٌّ بالدولار", await errOf(() => usdApi.setPrefs(false)) === "usd_in_use");
+const convP = await repo.createProduct({ name: "محوّلة", barcode: "USD-T-9", stock: 5, purchase_price: 50000, sell_price: 0, min_stock: 0, price_currency: "USD", sell_price_usd: 10 });
+const rNow = (await usdApi.state()).rate;
+const E = await usdApi.checkout([{ product_id: convP.id, qty: 1 }], { fx_rate_id: rNow.id, paid_usd: "0", payment_method: "cash", client_ref: "u-e", customer_name: "أبو كرار" });
+const itE = (await repo.listInvoiceItems(E.id))[0];
+check("  وكلفةُ دولارٍ فارغة تُبقي كلفةَ الخادم (٥٠٬٠٠٠) لا صفراً — ربحٌ كامل كاذب", itE.unit_cost === 50000 && itE.unit_cost_usd == null && E.cost_total === 50000,
+  JSON.stringify({ c: itE.unit_cost, u: itE.unit_cost_usd, t: E.cost_total }));
 
 /* ── ج) C/D ───────────────────────────────────────────────────────────────── */
 console.log("▸ الرخيصُ بالكمية، والنقدُ بفرق الخطوة، والإغلاقُ بصفر");

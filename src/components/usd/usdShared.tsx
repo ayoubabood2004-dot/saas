@@ -49,7 +49,7 @@ const KNOWN = new Set<string>(["usd_disabled", "usd_no_rate", "usd_rate_changed"
   "usd_no_price", "usd_partial_at_sale", "usd_backdate", "usd_total_mismatch", "usd_due_changed", "usd_amount", "usd_over",
   "usd_rate_override", "usd_rate_bad", "usd_rate_manager", "usd_operator", "usd_too_small", "usd_not_usd", "usd_void_manager",
   "usd_void_reason", "usd_settlement_missing", "usd_already_void", "usd_delete_settled", "usd_door", "usd_product_in_iqd",
-  "usd_prefs_manager", "usd_step_bad", "usd_in_use", "photographer_forbidden"]);
+  "usd_prefs_manager", "usd_step_bad", "usd_in_use", "photographer_forbidden", "usd_prefs_direct", "usd_store"]);
 export function usdErrorText(e: unknown, t: TFunction): string {
   const code = (e as { message?: string } | null)?.message ?? "";
   if (KNOWN.has(code)) return t(`usd.err.${code}`);
