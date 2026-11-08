@@ -45,7 +45,7 @@ const GOLDEN = {
       cogs_other: "666.66", gross: "29085", adjust: "500", stock_loss: "1235", returns: "15000", payroll: "300000",
       payroll_loan: "50000", uncategorized: "1250.25",
       categories: [[CAT_OLD, "75"], [CAT_RENT, "500001"], [CAT_ELEC, "100.01"]],
-      expenses: "867661.26", net: "-838576.26",
+      fx: "1250", expenses: "867661.26", net: "-837326.26",
     }],
   },
   // نفسُ اللحظتين بغرينتش: G4 (٢١:٣٠Z ليلة ٣١/١) وسحبُ الطرف E12 يقعان بيناير.
@@ -53,12 +53,12 @@ const GOLDEN = {
     months: [
       { month: "2026-01", invoices: 1, revenue: "1000", cogs: "0", cogs_products: "0", cogs_materials: "0", cogs_other: "0",
         gross: "1000", adjust: "0", stock_loss: "0", returns: "0", payroll: "0", payroll_loan: "0", uncategorized: "0",
-        categories: [[CAT_RENT, "1"]], expenses: "1", net: "999" },
+        categories: [[CAT_RENT, "1"]], fx: "0", expenses: "1", net: "999" },
       { month: "2026-02", invoices: 3, revenue: "35500", cogs: "7915", cogs_products: "6433.34", cogs_materials: "815",
         cogs_other: "666.66", gross: "28085", adjust: "500", stock_loss: "1235", returns: "15000", payroll: "300000",
         payroll_loan: "50000", uncategorized: "1250.25",
         categories: [[CAT_OLD, "75"], [CAT_RENT, "500000"], [CAT_ELEC, "100.01"]],
-        expenses: "867660.26", net: "-839575.26" },
+        fx: "1250", expenses: "867660.26", net: "-838325.26" },
     ],
   },
 };
@@ -85,6 +85,7 @@ function gen() {
   const invoices = [], items = [], consumption = [], expenses = [];
   let nInv = 0, nItem = 0, nCons = 0, nExp = 0;
   const addInv = (o) => { const id = uid("8b00", ++nInv); invoices.push({ id, status: "paid", ...o }); return id; };
+  const inFebL = (d) => `2026-02-${String(d).padStart(2, "0")}T12:00:00.000Z`;
   const addItem = (invoice_id, product_id, qty, unit_cost) => items.push({ id: uid("8d00", ++nItem), invoice_id, product_id, qty, unit_cost });
   const addCons = (invoice_id, value) => consumption.push({ id: uid("8e00", ++nCons), invoice_id, value });
   const addExp = (o) => expenses.push({ id: uid("8f00", ++nExp), method: "cash", category: null, category_id: null, ...o });
@@ -102,8 +103,18 @@ function gen() {
   const G5 = addInv({ created_at: "2026-02-28T21:30:00.000Z", total: "2000", cost_total: "500", profit: "1500" });
   addItem(G5, P(1), "1", "500");
   const G6 = addInv({ created_at: G_TO, total: "500", cost_total: "100", profit: "400" });
+  // 0264 فرقُ الصرف: فاتورةُ دولارٍ من كانون الثاني (خارج المدّة) تسديداتُها بشباط — ساقا فرقٍ +٢٬٠٠٠ و−٧٥٠ = ١٬٢٥٠ بشباط،
+  // وساقُ حصّةٍ عادية لا تُحسب. وساقُ fx على فاتورة دينار، وعلى فاتورة دولارٍ مرجّعة، لا تُحسبان.
+  const USD = (o) => ({ currency: "USD", fx_rate: "1460", total_usd: "100", paid_usd: "0", ...o });
+  addInv(USD({ created_at: "2026-01-15T09:00:00.000Z", total: "146000", cost_total: "0", profit: "146000",
+    payment_details: [{ method: "cash", amount: 146000, at: inFebL(20) }, { method: "cash", amount: 2000, at: inFebL(20), kind: "fx" },
+      { method: "cash", amount: -750, at: inFebL(22), kind: "fx" }] }));
+  addInv({ created_at: "2026-01-16T09:00:00.000Z", total: "1000", cost_total: "0", profit: "1000",
+    payment_details: [{ method: "cash", amount: 9999, at: inFebL(21), kind: "fx" }] });
+  addInv(USD({ created_at: "2026-01-17T09:00:00.000Z", status: "refunded", total: "1000", cost_total: "0", profit: "1000",
+    payment_details: [{ method: "cash", amount: 8888, at: inFebL(21), kind: "fx" }] }));
   addItem(G6, P(1), "1", "100");
-  const inFeb = (d) => `2026-02-${String(d).padStart(2, "0")}T12:00:00.000Z`;
+  const inFeb = inFebL;
   addExp({ spent_at: inFeb(10), amount: "500000", category: "إيجار", category_id: CAT_RENT });
   addExp({ spent_at: inFeb(11), amount: "100.005", category: "كهرباء", category_id: CAT_ELEC });
   addExp({ spent_at: inFeb(12), amount: "0.005", category: "كهرباء", category_id: CAT_ELEC });
@@ -140,6 +151,11 @@ function gen() {
     const id = addInv({
       created_at: instant(), status: pick(["paid", "paid", "paid", "paid", "paid", "refunded"]),   // status NOT NULL بالقاعدة (افتراضُه paid)
       total: D(total, 2), cost_total: D(cost, 2), profit: D(total - cost + legacy, 2),
+      ...(R() < 0.3 ? {
+        currency: R() < 0.8 ? "USD" : undefined, fx_rate: "1460", total_usd: "100", paid_usd: "0",
+        payment_details: Array.from({ length: int(1, 3) }, () => ({ method: "cash", amount: Number(D(int(-50_000, 90_000), 2)),
+          ...(R() < 0.85 ? { at: instant() } : {}), ...(R() < 0.8 ? { kind: "fx" } : {}) })),
+      } : {}),
     });
     for (let k = int(0, 4); k > 0; k--) {
       const prod = R() < 0.6;
@@ -183,7 +199,9 @@ function gen() {
     `insert into auth.users(id) values ('${PCL}') on conflict do nothing;`,
     `insert into expense_categories(id, clinic_id, name, created_at, archived_at) values ${categories.map((c) => `('${c.id}', '${PCL}', ${q(c.name)}, ${q(c.created_at)}, ${q(c.archived_at)})`).join(", ")};`,
     `insert into products(id, clinic_id, name) values ${products.map((p) => `('${p.id}', '${PCL}', ${q(p.name)})`).join(", ")};`,
-    `insert into invoices(id, clinic_id, total, cost_total, profit, status, created_at) values ${invoices.map((i) => `('${i.id}', '${PCL}', ${i.total}, ${i.cost_total}, ${i.profit}, ${q(i.status)}, ${q(i.created_at)})`).join(",\n  ")};`,
+    // فواتيرُ الدولار تُكتب من باب usd_checkout وحده (محفّزُ invoices_usd_door) — القالبُ يفتح البابَ لمعاملته.
+    `select set_config('doctorvet.usd_door', 'on', true);`,
+    `insert into invoices(id, clinic_id, total, cost_total, profit, status, created_at, currency, fx_rate, total_usd, paid_usd, payment_details) values ${invoices.map((i) => `('${i.id}', '${PCL}', ${i.total}, ${i.cost_total}, ${i.profit}, ${q(i.status)}, ${q(i.created_at)}, ${q(i.currency ?? "IQD")}, ${i.fx_rate ?? "null"}, ${i.total_usd ?? "null"}, ${i.paid_usd ?? "null"}, ${i.payment_details ? `${q(JSON.stringify(i.payment_details))}::jsonb` : "null"})`).join(",\n  ")};`,
     `insert into invoice_items(id, invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty) values ${items.map((it) => `('${it.id}', '${it.invoice_id}', '${PCL}', ${q(it.product_id)}, 'سطر', ${it.qty}, 0, ${it.unit_cost}, 0, ${it.product_id ? it.qty : "null"})`).join(",\n  ")};`,
     // دفترُ 0252 بشكله: الصرفُ موجبٌ والإرجاعُ سالب، والكميةُ بإشارة القيمة.
     `insert into invoice_consumption(id, clinic_id, invoice_id, item_id, spec_id, product_id, product_name, unit, per_qty, per_div, unit_cost, per_value, line_qty, qty, posted, value, kind, source) values ${consumption.map((c) => {
@@ -236,7 +254,7 @@ async function check() {
   // مقارنةٌ تامّة: الأرقامُ بالفلس (BigInt)، والعددُ والنصوصُ كما هي — والفرقُ الأوّل يُقال بمكانه.
   const cents = (x) => (typeof x === "number" || typeof x === "string" ? M.toCents(x) : null);
   const NUM = ["revenue", "cogs", "cogs_products", "cogs_materials", "cogs_other", "gross", "adjust", "stock_loss", "returns",
-    "payroll", "payroll_loan", "uncategorized", "expenses", "net"];
+    "payroll", "payroll_loan", "uncategorized", "fx", "expenses", "net"];
   const diffTotals = (where, a, b) => {
     const d = [];
     if (!a || !b) return [`${where}: ${a ? "" : "القاعدة"}${!a && !b ? " و" : ""}${b ? "" : "المرآة"} بلا قيمة`];
@@ -295,6 +313,8 @@ async function check() {
     ["تفتح طرفي المدّة", (c) => run(inp, { ...c, from: new Date(Date.parse(c.from) + 1).toISOString(), to: new Date(Date.parse(c.to) - 1).toISOString() })],
     ["تنسى معرّفَ التصنيف (تصنّف بالنصّ)", (c) => run(input({ ...data, expenses: data.expenses.map((e) => ({ ...e, category_id: null })) }), c)],
     ["تنسى دفترَ المستهلكات", (c) => run(input({ ...data, consumption: [] }), c)],
+    ["تنسى فرقَ الصرف", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, payment_details: null })) }), c)],
+    ["تعدّ ساقَ fx على فاتورة الدينار", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, currency: "USD" })) }), c)],
     ["تنسى طريقةَ «stock»", (c) => run(input({ ...data, expenses: data.expenses.map((e) => ({ ...e, method: e.method === "stock" ? "cash" : e.method, category: e.method === "stock" ? "x" : e.category })) }), c)],
   ];
   for (const [name, f] of mutants) {

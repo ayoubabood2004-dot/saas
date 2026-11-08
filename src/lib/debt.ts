@@ -37,7 +37,7 @@ export const isDebt = (inv: Invoice): boolean => (inv.status ?? "paid") !== "ref
  *  A NEGATIVE amount is a receipt correction (0113): money booked as received
  *  that never arrived. It must survive into the reports, because that is the
  *  only way the drawer and the day both come back to the truth. */
-export interface Receipt { amount: number; at: string; method: string | null; note?: string | null }
+export interface Receipt { amount: number; at: string; method: string | null; note?: string | null; kind?: "fx" | null }
 
 /** ساقٌ سالبة = تصحيح تحصيل. */
 export const isCorrectionLeg = (l: { amount?: number | null }): boolean => (l.amount ?? 0) < -EPS;
@@ -64,5 +64,5 @@ export function receiptsOf(inv: Invoice): Receipt[] {
   // فيبقى المال المسجَّل خطأً محسوباً بالتقارير رغم عكسه على الفاتورة.
   return legs
     .filter((l) => Math.abs(l.amount ?? 0) > EPS)
-    .map((l) => ({ amount: l.amount, at: l.at ?? inv.created_at, method: l.method ?? null, note: l.note ?? null }));
+    .map((l) => ({ amount: l.amount, at: l.at ?? inv.created_at, method: l.method ?? null, note: l.note ?? null, kind: l.kind ?? null }));
 }
