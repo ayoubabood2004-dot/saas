@@ -10997,11 +10997,42 @@ chk "  والإغلاقُ ٠٫٠٨\$ يمرّ بصفرٍ للدرج — لا ف�
     "select $(rv $C1 "select (settle_invoice_usd($(inv usd-d), 0.08, 146000, 'cash', 0.08, null, 'set-d'))->'settlement'->>'received'")" "0.00"
 chk "    حصّتُه ١١٧ (باقي الدينار) وفرقُه −١١٧" \
     "select share||'|'||fx from usd_settlements where client_ref = 'set-d'" "117.00|-117.00"
-chk "    مغلقةٌ بالعملتين وحالتُها paid (وA كذلك)، وإلغاءُ تسديدها يرجعها unpaid" \
+chk "    مغلقةٌ بالعملتين، والحالةُ حالةُ البيع (paid) لا تتبدّل بالتسديد ولا بإلغائه — فلتر «مدفوعة» يبقى بمعناه" \
     "select (select (total_usd - paid_usd)||'|'||(total - amount_paid)||'|'||status from invoices where client_ref = 'usd-d')||'|'||
-            (select status from invoices where client_ref = 'usd-a')||'|'||
             $(rv $C1 "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-d'), 'تجربة'))->'invoice'->>'status'")" \
-    "0.00|0.00|paid|paid|unpaid"
+    "0.00|0.00|paid|paid"
+chk "    والإلغاءُ يرجع الباقي ٠٫٠٨\$ و١١٧ ديناراً" \
+    "select (total_usd - paid_usd)||'|'||(total - amount_paid) from invoices where client_ref = 'usd-d'" "0.08|117.00"
+# مراجعةٌ عدائيّة قبل النشر — كلٌّ بفحصه:
+chk "الدَّينُ بلا طريقة دفع (فاتورةٌ بلا سِيَقٍ وطريقتُها «نقد» يقرؤها تبويبُ المال مقبوضة)، والنقدُ يختمه تسديدُه" \
+    "select coalesce((select payment_method from invoices where client_ref = 'usd-c1'), 'none')||'|'||
+            (select payment_method from invoices where client_ref = 'usd-c2')" "none|card"
+chk "  المفتاحُ والخطوةُ لا يُكتبان مباشرةً (سياسةُ الإعدادات للكادر كلِّه): الاستقبالُ والمديرُ يُرفضان، وusd_prefs_set وحدها" \
+    "select _rls_try('$RCP', 'update clinic_prefs set usd_enabled = false where clinic_id = ''$C1''')||'|'||
+            _rls_try('$C1', 'update clinic_prefs set usd_round_step = 1000 where clinic_id = ''$C1''')||'|'||
+            (select usd_enabled::text||'/'||usd_round_step from clinic_prefs where clinic_id = '$C1')" \
+    "guarded:P0001:usd_prefs_direct|guarded:P0001:usd_prefs_direct|true/250"
+chk "  والمشغّلُ لا يترك اسمَه بالتسديد ولا بإلغائه (0151: لا أثرَ له بالعيادة) — فحصٌ ثابت" \
+    "select (select count(*) from pg_proc where proname in ('settle_invoice_usd', 'void_usd_settlement')
+              and prosrc like '%case when platform_acting_clinic() is null then auth.uid() end%')::text" "2"
+chk "  وسطرُ فاتورة الدولار لا يُحذف مباشرةً (المديرُ يملك invoice_items_write)" \
+    "select _rls_try('$C1', 'delete from invoice_items where invoice_id = (select id from invoices where client_ref = ''usd-c1'')')" \
+    "guarded:P0001:usd_door"
+# مادّةٌ حُوّلت للدولار بعد بيعها بالدينار: تعديلُ تلك الفاتورة (يحذف السطورَ ويعيدها) يمرّ، والبيعُ الجديدُ بالدينار يُرفض.
+$P -c "select set_config('doctorvet.usd_door', 'on', false);
+       insert into invoices(id, clinic_id, total, created_at) values ('${UP}e1', '$C1', 2000, now() - interval '2 days') on conflict (id) do nothing;" >/dev/null
+chk "  مادّةٌ صارت بالدولار على فاتورة دينارٍ قديمة: إعادةُ سطرها (تعديلُ الفاتورة) تمرّ — بلاها يُقفل تعديلُ طلب توصيلٍ مفتوح" \
+    "select _rls_try('$C1', 'insert into invoice_items(invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty, service_id)
+                            values (''${UP}e1'', ''$C1'', ''${UP}a1'', ''Kitcat USD'', 1, 2000, 0, 2000, 1, null)')" "rows:1"
+# كلفةٌ بالدولار فارغة: تبقى كلفةُ الخادم (stock_unit_cost) لا صفر — مادّةٌ محوّلةٌ معروفةُ الكلفة كانت تُباع بربحٍ كامل.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price_usd, purchase_price_usd, stock, sell_price, purchase_price) values
+         ('${UP}a7', '$C1', 'محوّلة بلا كلفة دولار', 'USD-0264-7', 'USD', 10, null, 5, 0, 50000)
+       on conflict (id) do nothing;" >/dev/null
+chk "  وكلفةُ الدولار الفارغة تُبقي كلفةَ الخادم: ٥٠٬٠٠٠ لا صفر، والربحُ ١٤٬٦٠٠ − ٥٠٬٠٠٠" \
+    "select $(rv $C1 "$(uco usd-e "[{\"product_id\":\"${UP}a7\",\"qty\":1}]" "jsonb_build_object('customer_name', 'أبو كرار')")")" "14600.00"
+chk "    (سطرُها ٥٠٬٠٠٠ بلا كلفة دولار، والفاتورةُ كلفتُها ٥٠٬٠٠٠ وربحُها −٣٥٬٤٠٠)" \
+    "select ii.unit_cost||'|'||coalesce(ii.unit_cost_usd::text, 'null')||'|'||i.cost_total||'|'||i.profit
+       from invoice_items ii join invoices i on i.id = ii.invoice_id where i.client_ref = 'usd-e'" "50000.00|null|50000.00|-35400.00"
 # المتجرُ ورفعُ الأسعار: مادّةٌ منشورةٌ بالدينار تُحوَّل للدولار تنزل من المتجر (لا تُعرض بدينارها القديم)، ونشرُ مادّةٍ دولارية
 # يُرفض بجملة؛ ورفعُ الأسعار يتخطّاها ولو بقي دينارُها القديم (النطاقُ نفسُه بمرآته — price-parity).
 $P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, store_visible, stock) values
@@ -11015,8 +11046,8 @@ chk "  وبعده: نزلت من المتجر، ونشرُها يُرفض usd_st
             _rls_try('$C1', 'update products set store_visible = true where id = ''${UP}a6''')||'|'||
             $(rv $C1 "select (price_change_preview($RAISE6)->'counts'->>'products')")||'|'||(select sell_price::text from products where id = '${UP}a6')" \
     "false|guarded:P0001:usd_store|0|2000.00"
-Q264="select (select count(*) from pg_proc where proname in ('usd_checkout','settle_invoice_usd','void_usd_settlement','delete_usd_invoice','fx_rate_set','usd_state','usd_prefs_set','_usd_iqd','_usd_share','_usd_rate_of','_usd_ctx','_usd_door_open','products_usd_store'))::text
-         ||'|'||(select count(*) from pg_trigger where tgname in ('invoices_usd_door','invoice_items_usd_door','products_usd_store'))::text
+Q264="select (select count(*) from pg_proc where proname in ('usd_checkout','settle_invoice_usd','void_usd_settlement','delete_usd_invoice','fx_rate_set','usd_state','usd_prefs_set','_usd_iqd','_usd_share','_usd_rate_of','_usd_ctx','_usd_door_open','products_usd_store','clinic_prefs_guard_usd'))::text
+         ||'|'||(select count(*) from pg_trigger where tgname in ('invoices_usd_door','invoice_items_usd_door','products_usd_store','clinic_prefs_usd_guard'))::text
          ||'|'||(select count(*) from pg_constraint where conname in ('products_usd_ok','invoices_usd_ok','clinic_prefs_usd_round_step'))::text
          ||'|'||(select count(*) from usd_settlements)::text||'|'||(select count(*) from clinic_fx_rates)::text||'|'||(select count(*) from invoices where currency = 'USD')::text"
 Z264=$($P -tAc "$Q264" | tr -d '[:space:]')
@@ -11024,7 +11055,7 @@ out=$($P -f "$MIG/0264_usd_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "
 chk "وتُعاد بلا أثرٍ ثانٍ: الدوالُّ والبابان والقيودُ والتسديداتُ والأسعارُ وفواتيرُ الدولار كما هي" "$Q264" "$Z264"
 $P -c "update clinic_prefs set usd_enabled = false where clinic_id = '$C1';
        select set_config('doctorvet.usd_door', 'on', false);
-       delete from invoices where client_ref in ('usd-a', 'iqd-u2', 'usd-c1', 'usd-c2', 'usd-d');
+       delete from invoices where client_ref in ('usd-a', 'iqd-u2', 'usd-c1', 'usd-c2', 'usd-d', 'usd-e') or id = '${UP}e1';
        delete from clinic_fx_rates where clinic_id = '$C1';
        delete from products where id::text like 'c2640000%';" >/dev/null
 # ── المرآة: _usd_iqd و_usd_rate_of و_usd_share، والبيعُ والتسديدُ بنداءاتٍ حقيقية = src/lib/usdMath.ts، ديناراً بدينار ──

@@ -46,6 +46,15 @@ export function decOf(v: string | number | bigint | null | undefined, scale: num
   return neg ? -r : r;
 }
 
+/** عددٌ بمقياس scale ⇒ نصٌّ عشريّ قانونيّ يقبله numeric بالقاعدة («146000.00»، «-2.50»). */
+export function decText(v: bigint, scale: number): string {
+  const neg = v < 0n, a = (neg ? -v : v).toString().padStart(scale + 1, "0");
+  return (neg ? "-" : "") + (scale ? `${a.slice(0, a.length - scale)}.${a.slice(a.length - scale)}` : a);
+}
+/** ما كتبه المستخدم ⇒ نصٌّ قانونيّ بمقياس scale، أو كما هو إن لم يُقرأ (الخادمُ يرفضه برمزه). «146,000» و«١٤٦٬٠٠٠» و«12٫5»
+ *  تُقرأ بالشاشة (decOf) — فتُرسل مقروءةً لا خاماً: numeric بالقاعدة يرفض الفاصلة والأرقامَ الشرقية (22P02). */
+export const canonDec = (v: string, scale: number): string => { const c = decOf(v, scale); return c == null ? v : decText(c, scale); };
+
 /** سنتات من نصّ أو عدد — كـ`round(x, 2)`. */
 export const centsOf = (v: string | number | null | undefined): bigint | null => decOf(v, 2);
 

@@ -266,7 +266,9 @@ async function check() {
         cmp(`unit_price[${j}]`, C(row[0]), t.unitIqd[j] * 100n);
         cmp(`unit_price_usd[${j}]`, C(row[1]), lines[j].unitCents);
         const cost = prodOf[it.product_id].cost;
-        cmp(`unit_cost[${j}]`, C(row[2]), M.costFilsOf(cost == null ? 0n : C(cost), r));
+        // كلفةُ دولارٍ فارغة: تبقى كلفةُ الخادم (stock_unit_cost) — ليست حسابَ الدولار فلا مرآةَ لها هنا (cost_total يُجمع منها أدناه).
+        if (cost == null) tags.add("cost:server");
+        else cmp(`unit_cost[${j}]`, C(row[2]), M.costFilsOf(C(cost), r));
       });
       const costTotal = sc.items.reduce((s, it) => s + BigInt(it.qty) * C(a.items[it.product_id][2]), 0n);
       cmp("cost_total", C(a.cost_total), costTotal);
@@ -302,7 +304,7 @@ async function check() {
         paidUsd += usd; paidIqd += p.share;
         cmp(`تسديد ${j}.amount_paid`, C(b.amount_paid), paidIqd * 100n);
         cmp(`تسديد ${j}.paid_usd`, C(b.paid_usd), paidUsd);
-        cmp(`تسديد ${j}.status`, b.status, paidUsd >= t.totalUsdCents ? "paid" : "partial");
+        cmp(`تسديد ${j}.status`, b.status, "paid");   // حالةُ البيع لا تتبدّل بالتسديد (retail_checkout تكتب paid دائماً)
       });
       // الثوابت: الإغلاقُ بالعملتين معاً، ومجموعُ الحصص = المدفوع، وما دخل الدرجَ بالسِّيَق = مجموعُ ما استُلم.
       const closedUsd = C(a.final_paid_usd) === C(a.total_usd), closedIqd = C(a.final_paid) === C(a.total);

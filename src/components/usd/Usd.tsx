@@ -14,6 +14,7 @@ import { Modal } from "@/components/Modal";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatDate, formatNum, formatTime, uuid } from "@/lib/utils";
 import { usdApi, type UsdMethod, type UsdRate, type UsdSettlement } from "@/lib/usdApi";
+import { shouldReleaseRef } from "@/lib/errors";
 import { centsOf, iqdOf, per100Of, previewSettle, rateOfPer100, rateOk, settleRefusal, USD_ROUND_STEPS, usdText } from "@/lib/usdMath";
 import { usdDraftProblem, type UsdBlockers, type UsdDraft } from "@/lib/usdProduct";
 export { UsdSaleSheet } from "./UsdSale";
@@ -137,9 +138,18 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
   onEnabled: (on: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { state } = useUsdState();
+  const { state, failed, reload } = useUsdState();
   useEffect(() => { onEnabled(!!state?.enabled); }, [state?.enabled, onEnabled]);
   if (!state?.enabled && !value.on) return null;
+  if (!state) {
+    // مادّةُ دولار وإعداداتُ الدولار ما وصلت: النموذجُ لا يرسل أسعارَها (قد تكون الميزةُ غائبة) — يُقال لا يُحفظ بصمت.
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-warn-200 bg-warn-50 p-3 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-usd-fields data-usd-notready>
+        <span className="min-w-0 flex-1">{t("usd.prod.notReady")}</span>
+        {failed ? <Button size="sm" variant="secondary" onClick={reload}>{t("usd.retry")}</Button> : <Loader2 size={14} className="animate-spin" />}
+      </div>
+    );
+  }
   const r = state?.rate ?? null;
   const sell = centsOf(value.sell), buy = centsOf(value.buy);
   const problem = usdDraftProblem(value, blockers);
@@ -192,13 +202,22 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   const [method, setMethod] = useState<UsdMethod>("cash");
   const [busy, setBusy] = useState(false);
   const [ref, setRef] = useState(uuid);
+  /** أُرسل بهذا المرجع شيءٌ نتيجتُه مجهولة؟ تُقفل الخاناتُ والإعادةُ بالمرجع نفسِه وحدها — مبلغٌ تغيّر ثمّ إعادةٌ كانت ترجع التسديدَ
+   *  الأوّل بـ«انسجل» عن مبلغٍ غيرِ الذي كُتب. */
+  const [sent, setSent] = useState(false);
+  const [pending, setPending] = useState(false);
   const totalUsd = centsOfNum(invoice?.total_usd), paidUsd = centsOfNum(invoice?.paid_usd);
   const due = totalUsd - paidUsd;
+  const freshRate = useCallback(() => {
+    // السعرُ يُسأل عند كلّ فتح (المخبأُ دقيقة): سعرُ أمس بخانةٍ مملوءةٍ كان يُرفض «يحتاج المدير وسبب» — أو يُسدَّد به بسبب.
+    setPer100("");
+    refreshUsdState().then((st) => setPer100(st.rate ? String(per100Of(st.rate.rate1e4)) : ""), () => { /* failed يقولها */ });
+  }, []);
   useEffect(() => {
     if (!invoice) return;
-    setUsd(usdText(due).replace(/[$,]/g, "")); setReason(""); setMethod("cash"); setRef(uuid());
+    setUsd(usdText(due).replace(/[$,]/g, "")); setReason(""); setMethod("cash"); setRef(uuid()); setSent(false); setPending(false);
+    freshRate();
   }, [invoice?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (state?.rate && per100 === "") setPer100(String(per100Of(state.rate.rate1e4))); }, [state?.rate, per100]);
 
   if (!invoice) return null;
   const step = state?.step ?? 250;
@@ -215,6 +234,8 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   const submit = async () => {
     if (blocked) return;
     setBusy(true);
+    const fresh = !sent;
+    setSent(true);
     try {
       await usdApi.settle(invoice.id, usd, per100, method, usdText(due).replace(/[$,]/g, ""), other ? reason : null, ref);
       playSuccess();
@@ -223,7 +244,11 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
     } catch (e) {
       playWarning();
       toast.error(usdErrorText(e, t));
-      if ((e as Error)?.message === "usd_rate_changed" || (e as Error)?.message === "usd_due_changed") void refreshUsdState();
+      if (shouldReleaseRef(fresh, e)) setSent(false); else setPending(true);
+      const code = (e as Error)?.message;
+      // الباقي تغيّر من جهازٍ ثانٍ: الفاتورةُ هنا قديمة — تُغلق النافذةُ وتُقرأ من جديد. والسعرُ تغيّر: يُسأل ثانيةً.
+      if (code === "usd_due_changed") onSettled();
+      else if (code === "usd_rate_changed" || code === "usd_rate_override") freshRate();
     } finally { setBusy(false); }
   };
 
@@ -239,7 +264,9 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
         {state && !state.enabled && <p className="rounded-lg bg-danger-50 p-2 text-sm text-danger-700">{t("usd.err.usd_disabled")}</p>}
         {state?.enabled && !today && <p className="rounded-lg bg-warn-50 p-2 text-sm text-warn-700">{t("usd.err.usd_no_rate")}</p>}
         {stale && today && <StaleRateBanner rate={today} onAck={ack} />}
+        {pending && <p className="rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-usd-pending>{t("usd.settle.pending")}</p>}
 
+        <fieldset disabled={pending} className="min-w-0 space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="label">{t("usd.settle.amount")}</span>
@@ -261,6 +288,7 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
             </button>
           ))}
         </div>
+        </fieldset>
 
         {pv && cents != null && rate != null && (
           <div className="space-y-1 rounded-2xl border border-line p-3 text-sm" data-usd-preview>
@@ -275,7 +303,7 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
           </div>
         )}
         <Button className="w-full" loading={busy} disabled={blocked} leftIcon={<Coins size={16} />} onClick={submit} data-usd-settle-go>
-          {t("usd.settle.confirm", { v: pv ? iqd(pv.received) : "—" })}
+          {t(pending ? "usd.settle.retry" : "usd.settle.confirm", { v: pv ? iqd(pv.received) : "—" })}
         </Button>
         <UsdSettlementList invoice={invoice} onChanged={onSettled} />
       </div>

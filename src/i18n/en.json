@@ -7175,6 +7175,7 @@
       "note": "You can't turn this off while there are dollar-priced items or open dollar debts — switch the items to dinars and settle the debts first. Dinar invoices are never affected."
     },
     "prod": {
+      "notReady": "The dollar settings haven't loaded yet — dollar prices can't be saved until they do",
       "toggle": "Priced in dollars",
       "toggleHint": "Sold through the dollar sale only; any debt on it stays in dollars",
       "buy": "Purchase price ($)",
@@ -7192,6 +7193,9 @@
       "noStore": "Dollar items aren't shown in the online store in this first phase"
     },
     "sale": {
+      "pending": "We don't know whether the sale went through (the connection dropped) — «Try again» won't record it twice. To change it, check the invoices list first, then «New cart».",
+      "newCart": "New cart",
+      "retry": "Try again · {{v}}",
       "title": "Dollar sale",
       "badge": "Dollar invoice — dollar items only",
       "rateIs": "Rate {{v}}",
@@ -7224,6 +7228,8 @@
       "askManager": "If it changed, ask a manager to update it in Settings before selling"
     },
     "settle": {
+      "pending": "We don't know whether the payment went through (the connection dropped) — «Try again» won't record it twice. To change it, close this and check the payments.",
+      "retry": "Try again · {{v}} IQD",
       "btn": "Pay in dollars",
       "title": "Pay a dollar debt",
       "due": "Remaining",
@@ -7264,6 +7270,8 @@
       "deleted": "Dollar invoice deleted and its items restocked"
     },
     "err": {
+      "usd_prefs_direct": "The dollar switch and rounding are changed from the «Pricing in dollars» card in Settings only",
+      "usd_store": "Dollar items aren't shown in the online store in this first phase",
       "usd_disabled": "Dollars aren't enabled for this clinic — see Settings",
       "usd_no_rate": "No dollar rate set — a manager sets it in Settings",
       "usd_rate_changed": "The dollar rate changed on another device — check the new total and try again",

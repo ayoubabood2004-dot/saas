@@ -13,7 +13,7 @@
 import { supabase } from "./supabase";
 import { isConfigReadOnly } from "./clinicSync";
 import { rpcJson } from "./rpcJson";
-import { rate1e4Of } from "./usdMath";
+import { canonDec, rate1e4Of } from "./usdMath";
 import type { Invoice } from "@/types";
 
 export type UsdMethod = "cash" | "card" | "transfer";
@@ -135,4 +135,17 @@ const demo: UsdApi = {
   deleteInvoice: async (id) => { writable(); return (await local()).demoUsdDelete(id); },
 };
 
-export const usdApi: UsdApi = supabase ? cloud : demo;
+/* كلُّ مبلغٍ وسعرٍ يُرسل نصّاً قانونياً — للسحابة وللتجريبيّ معاً، فلا يقبل أحدُهما ما يرفضه الآخر. */
+const c2 = (v: string) => canonDec(v, 2);
+export function canonical(api: UsdApi): UsdApi {
+  return {
+    ...api,
+    setRate: (per100, note) => api.setRate(c2(per100), note),
+    checkout: (items, meta) => api.checkout(
+      items.map((it) => (it.unit_price_usd == null || it.unit_price_usd === "" ? it : { ...it, unit_price_usd: c2(it.unit_price_usd) })),
+      { ...meta, paid_usd: c2(meta.paid_usd), discount_usd: meta.discount_usd == null || meta.discount_usd === "" ? null : c2(meta.discount_usd) }),
+    settle: (id, usd, per100, method, expect, note, ref) => api.settle(id, c2(usd), c2(per100), method, c2(expect), note, ref),
+  };
+}
+
+export const usdApi: UsdApi = canonical(supabase ? cloud : demo);
