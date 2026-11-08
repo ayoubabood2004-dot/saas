@@ -16,7 +16,7 @@ export interface PnlApi {
 }
 
 const NUM: (keyof PnlTotals)[] = ["invoices", "revenue", "cogs", "cogs_products", "cogs_materials", "cogs_other", "gross", "adjust",
-  "stock_loss", "returns", "payroll", "payroll_loan", "uncategorized", "expenses", "net"];
+  "stock_loss", "returns", "payroll", "payroll_loan", "uncategorized", "fx", "expenses", "net"];
 const shapeError = () => Object.assign(new Error("pnl_shape"), { code: "pnl_shape" });
 /** سطرٌ يُقرأ كما هو أو يرمي: رقمٌ مفقودٌ أو غيرُ رقميّ لا يصير صفراً بالشاشة. */
 function totalsOf(x: unknown): PnlTotals {
@@ -24,6 +24,8 @@ function totalsOf(x: unknown): PnlTotals {
   const o = x as Record<string, unknown>;
   const out = {} as Record<string, unknown>;
   for (const k of NUM) {
+    // fx (0264) غائبٌ بخادمٍ قبلها — وغيابُه هناك صفرٌ حقّاً (لا دولار)؛ أمّا موجودٌ غيرُ رقميّ فيرمي كغيره.
+    if (k === "fx" && o.fx === undefined) { out.fx = 0; continue; }
     const n = typeof o[k] === "string" ? Number(o[k]) : o[k];
     if (typeof n !== "number" || !Number.isFinite(n)) throw shapeError();
     out[k] = n;

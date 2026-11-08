@@ -59,7 +59,8 @@ rmSync(nr, { recursive: true, force: true });
 const rule = (dir, r) => analyze(buildModel(dir)).filter((f) => f.rule === r).map((f) => f.where).sort();
 const same = (a, b) => JSON.stringify(a) === JSON.stringify([...b].sort());
 const real = buildModel(MIG);
-ok(rule(MIG, "invoice-writers").length === 0 && invoiceWriters(real).length === 10, "الشجرةُ الحقيقية: عشرةُ كتّابٍ للفواتير، كلٌّ بسببه بالقائمة");
+// ١٣ = عشرةُ 0252–0259 + كتّابُ الدولار الثلاثة (0264: usd_checkout وsettle_invoice_usd وvoid_usd_settlement) — كاتبٌ جديد يُقرأ ويُعدّ هنا.
+ok(rule(MIG, "invoice-writers").length === 0 && invoiceWriters(real).length === 13, "الشجرةُ الحقيقية: ثلاثةَ عشرَ كاتباً للفواتير، كلٌّ بسببه بالقائمة");
 ok(rule(MIG, "consumption-wiring").length === 0 && wiringChecks(real).length >= 15, "  والربطُ كامل: البيعةُ والتعديلُ والمرتجعُ والحذفُ والمحفّزات (١٥ رابطاً فأكثر)");
 ok(real.fnBodies.get("edit_invoice_lines/3")?.file.startsWith("0241"), "  وغلافُ edit_invoice_lines آخرُه كتلةُ 0241 (do/execute) لا جسمُ 0110 الكاتب");
 const iw = copy(() => true);

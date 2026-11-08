@@ -140,6 +140,10 @@ console.log("▸ قارئُ جواب report_pnl");
   check("  وشهرٌ بغير شكله", bad({ months: [{ ...row, month: "March" }], total: row }) === "pnl_shape");
   check("  وتصنيفٌ بلا مبلغ", bad({ months: [], total: { ...row, categories: [{ id: "k", name: "x" }] } }) === "pnl_shape");
   check("  وجوابٌ بلا months", bad({ total: row }) === "pnl_shape" && bad(null) === "pnl_shape");
+  // 0264: fx غائبٌ بخادمٍ قبلها صفرٌ حقّاً (لا دولار) — وموجودٌ غيرُ رقميّ يرمي كغيره.
+  check("فرقُ الصرف: غائبٌ (خادمٌ قبل 0264) صفر، ونصّاً رقم، وغيرُ رقميّ يرمي",
+    ok.total.fx === 0 && readPnl({ months: [], total: { ...row, fx: "-750.5" } }).total.fx === -750.5
+      && bad({ months: [], total: { ...row, fx: "x" } }) === "pnl_shape");
 }
 
 /* ── ج) المرآةُ التجريبية بسلوكها ─────────────────────────────────────────── */

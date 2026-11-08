@@ -28,6 +28,9 @@ export interface PnlInvoice {
   total?: number | string | null;
   profit?: number | string | null;
   cost_total?: number | string | null;
+  /** 0264: فاتورةُ دولار وسِيَقُها — سِيَقُ `kind:'fx'` سطرُ «فرق سعر الصرف» بشهر يومها. */
+  currency?: string | null;
+  payment_details?: readonly { amount?: number | string | null; at?: string | null; kind?: string | null }[] | null;
 }
 export interface PnlItem {
   invoice_id: string;
@@ -56,6 +59,8 @@ export interface PnlTotals {
   payroll_loan: number;
   uncategorized: number;
   categories: PnlCategoryLine[];
+  /** 0264: فرقُ سعر الصرف المحقَّق بالتسديدات — ربحٌ أو خسارة، والصافي يحمله: net = gross + fx − expenses. */
+  fx: number;
   expenses: number;
   net: number;
 }
@@ -106,11 +111,11 @@ function bucketKey(e: PnlExpense): Bucket {
 
 interface Acc {
   n: number;
-  revenue: bigint; cogs: bigint; gross: bigint; products: bigint; materials: bigint;
+  revenue: bigint; cogs: bigint; gross: bigint; products: bigint; materials: bigint; fx: bigint;
   /** مجموعُ كلّ جدولٍ بالمنازل الاثنتي عشرة — يُقرَّب لفلسٍ عند الإخراج وحده. */
   buckets: Map<Bucket, bigint>;
 }
-const emptyAcc = (): Acc => ({ n: 0, revenue: 0n, cogs: 0n, gross: 0n, products: 0n, materials: 0n, buckets: new Map() });
+const emptyAcc = (): Acc => ({ n: 0, revenue: 0n, cogs: 0n, gross: 0n, products: 0n, materials: 0n, fx: 0n, buckets: new Map() });
 
 /** سطرٌ بالفلس — المجموعُ يُبنى من هذه ثمّ يُحوَّل للعرض مرّةً واحدة. */
 interface Row {
@@ -118,7 +123,7 @@ interface Row {
   revenue: bigint; cogs: bigint; products: bigint; materials: bigint; other: bigint; gross: bigint; adjust: bigint;
   stock: bigint; returns: bigint; payroll: bigint; loan: bigint; none: bigint;
   cats: Map<string, bigint>;
-  expenses: bigint; net: bigint;
+  fx: bigint; expenses: bigint; net: bigint;
 }
 
 function rowOf(a: Acc): Row {
@@ -131,17 +136,17 @@ function rowOf(a: Acc): Row {
   return {
     n: a.n, revenue: a.revenue, cogs: a.cogs, products: a.products, materials: a.materials,
     other: a.cogs - a.products - a.materials, gross: a.gross, adjust: a.gross - (a.revenue - a.cogs),
-    stock, returns, payroll, loan, none, cats, expenses, net: a.gross - expenses,
+    stock, returns, payroll, loan, none, cats, fx: a.fx, expenses, net: a.gross + a.fx - expenses,
   };
 }
 
 function addRows(rows: readonly Row[]): Row {
   const z: Row = { n: 0, revenue: 0n, cogs: 0n, products: 0n, materials: 0n, other: 0n, gross: 0n, adjust: 0n,
-    stock: 0n, returns: 0n, payroll: 0n, loan: 0n, none: 0n, cats: new Map(), expenses: 0n, net: 0n };
+    stock: 0n, returns: 0n, payroll: 0n, loan: 0n, none: 0n, cats: new Map(), fx: 0n, expenses: 0n, net: 0n };
   for (const r of rows) {
     z.n += r.n; z.revenue += r.revenue; z.cogs += r.cogs; z.products += r.products; z.materials += r.materials;
     z.other += r.other; z.gross += r.gross; z.adjust += r.adjust; z.stock += r.stock; z.returns += r.returns;
-    z.payroll += r.payroll; z.loan += r.loan; z.none += r.none; z.expenses += r.expenses; z.net += r.net;
+    z.payroll += r.payroll; z.loan += r.loan; z.none += r.none; z.fx += r.fx; z.expenses += r.expenses; z.net += r.net;
     for (const [id, v] of r.cats) z.cats.set(id, (z.cats.get(id) ?? 0n) + v);
   }
   return z;
@@ -164,7 +169,7 @@ function out(r: Row, byId: ReadonlyMap<string, PnlCategory>): PnlTotals {
     cogs_other: c2(r.other), gross: c2(r.gross), adjust: c2(r.adjust),
     stock_loss: c2(r.stock), returns: c2(r.returns), payroll: c2(r.payroll), payroll_loan: c2(r.loan), uncategorized: c2(r.none),
     categories: orderCats(r.cats.keys(), byId).map((id) => ({ id, name: byId.get(id)?.name ?? null, amount: c2(r.cats.get(id) ?? 0n) })),
-    expenses: c2(r.expenses), net: c2(r.net),
+    fx: c2(r.fx), expenses: c2(r.expenses), net: c2(r.net),
   };
 }
 
@@ -190,6 +195,17 @@ export function computePnl(input: PnlInput, from: string, to: string, tzIn?: str
     monthOfInvoice.set(inv.id, m);
     const a = acc(m);
     a.n += 1; a.revenue += cents(inv.total); a.cogs += cents(inv.cost_total); a.gross += cents(inv.profit);
+  }
+  // 0264: سِيَقُ فرق الصرف على فواتير الدولار غير المرجّعة — بشهر يوم الساق (أو يوم الفاتورة إن غاب)، داخل المدّة بيومها هي.
+  for (const inv of input.invoices) {
+    if (inv.currency !== "USD" || (inv.status ?? "paid") === "refunded") continue;
+    for (const l of inv.payment_details ?? []) {
+      if (l?.kind !== "fx") continue;
+      const at = l.at && Number.isFinite(Date.parse(l.at)) ? l.at : inv.created_at;
+      const t = inside(at);
+      if (t === null) continue;
+      acc(pnlMonthOf(t, tz)).fx += cents(l.amount);
+    }
   }
   for (const it of input.items) {
     const m = monthOfInvoice.get(it.invoice_id);

@@ -94,6 +94,7 @@ export function PnlPanel({ from, to, rangeLabel, shiftActive = false }: { from: 
     { key: "cogs_other", label: t("pnl.cogsOther", "كلفة الخدمات الثابتة وغيرها"), value: (x) => x.cogs_other, kind: "cost" },
     { key: "adjust", label: t("pnl.adjust", "تسويات فواتير قديمة"), value: (x) => x.adjust, kind: "adj" },
     { key: "gross", label: t("pnl.gross", "ربح المبيعات"), value: (x) => x.gross, kind: "sum", always: true },
+    { key: "fx", label: t("pnl.fx", "فرق سعر الصرف"), value: (x) => x.fx ?? 0, kind: "adj" },
     { key: "stock_loss", label: t("pnl.stockLoss", "خسائر التلف والجرد"), value: (x) => x.stock_loss, kind: "cost" },
     { key: "returns", label: t("pnl.returns", "مرتجعات بلا فاتورة"), value: (x) => x.returns, kind: "cost" },
     { key: "payroll", label: t("pnl.payroll", "رواتب"), value: (x) => x.payroll, kind: "cost" },
@@ -161,6 +162,7 @@ export function PnlPanel({ from, to, rangeLabel, shiftActive = false }: { from: 
         <li>{t("pnl.notePurchases", "المشتريات ما تنطرح هنا: تدخل المخزن، وكلفتها تنحسب لمّا تنباع أو تنصرف بخدمة.")}</li>
         {has("returns") && <li data-pnl-note-returns>{t("pnl.noteReturns", "مرتجعات بلا فاتورة: الفلوس رجعت للزبون والبضاعة رجعت للرف، وكلفتها ما مسجّلة — فالخسارة الحقيقية أقل من هالرقم.")}</li>}
         {has("payroll_loan") && <li data-pnl-note-loans>{t("pnl.noteLoans", "السُّلف تنحسب يوم تنصرف، وتنقطع من الرواتب بعدين فالرواتب تنزل بقدرها.")}</li>}
+        {has("fx") && <li data-pnl-note-fx>{t("pnl.noteFx", "فرق سعر الصرف: ديون الدولار لمّا تنسدّ بالدينار بسعر غير سعر يوم البيع — زايد ربح وناقص خسارة، بيوم التسديد.")}</li>}
         {has("adjust") && <li data-pnl-note-adjust>{t("pnl.noteAdjust", "تسويات فواتير قديمة: فواتير ربحها المسجّل ما يساوي سعرها ناقص كلفتها.")}</li>}
       </ul>
     </div>

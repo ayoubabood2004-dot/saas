@@ -7120,6 +7120,7 @@
     "cogsOther": "Fixed service costs & other",
     "adjust": "Old invoice adjustments",
     "gross": "Sales profit",
+    "fx": "Exchange-rate difference",
     "stockLoss": "Damage & stock-count losses",
     "returns": "Returns without an invoice",
     "payroll": "Salaries",
@@ -7135,6 +7136,7 @@
     "noteReturns": "Returns without an invoice: the money went back to the customer and the goods back to the shelf, and their cost isn't recorded — so the real loss is less than this figure.",
     "noteLoans": "Advances count on the day they're paid out, then get deducted from salaries, so salaries come in lower by the same amount.",
     "noteAdjust": "Old invoice adjustments: invoices whose recorded profit doesn't equal their price minus their cost.",
+    "noteFx": "Exchange-rate difference: dollar debts settled in dinars at a rate other than the sale day's — plus is a gain, minus a loss, on the settlement day.",
     "noteShift": "The working-hours filter (advanced options) doesn't apply here: this report covers whole days, so «Sales profit» may differ from the Money tab right now."
   },
   "dpets": {
