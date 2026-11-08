@@ -90,6 +90,10 @@ for f in $WAVE; do
   if [ "$(basename "$f")" = "0252_service_consumption.sql" ]; then
     out=$($P -f "$HERE/prodlike_comments.sql" 2>&1) || { echo "$out"; echo "✗ قالبُ الإنتاج ما نزل"; exit 1; }
   fi
+  # وقبل 0264: مقبوضاتُ اليوم بنصّها المقيس بالإنتاج (prodlike_reports.sql) — 0264 تنزل عليه كما ستنزل هناك.
+  if [ "$(basename "$f")" = "0264_usd_pricing.sql" ]; then
+    out=$($P -f "$HERE/prodlike_reports.sql" 2>&1) || { echo "$out"; echo "✗ قالبُ الإنتاج (0264) ما نزل"; exit 1; }
+  fi
   printf '   %s\n' "$(basename "$f")"
   out=$($P -f "$f" 2>&1) || { echo "$out"; echo "✗ فشلت"; exit 1; }
   echo "$out" | grep -E "ERROR" && { echo "✗ فشلت"; exit 1; } || true
@@ -10857,6 +10861,22 @@ $P -c "delete from media_items where pet_id = '${AV}a1'; delete from clinic_visi
 # كلُّ نداءٍ بدور authenticated (rv ⇐ _v0252) والقراءةُ بجملةٍ ثانية (درسُ 0257). A: ١٬٠٠٠$ بسعر ١٤٦٠ تُسدَّد بسعر ١٤٨٠؛
 # B: ١٬٠٠٠$ بسعر ١٤٥٠، جزئيٌّ ٤٠٠$ بسعر ١٤٧٠ ثمّ ٦٠٠$ بسعر ١٤٤٠ — الإغلاقُ بالعملتين، والفرقُ موجبٌ وسالب.
 echo "▸ 0264: الدولار — سعرُ اليوم، البيعُ بالدَّين، التسديدُ بالدينار، فرقُ الصرف، والأبواب"
+# أوّلُ تطبيقٍ بالإنتاج (٨/١١) رُفض بـdrift_body: مقبوضاتُ اليوم هناك نصُّ 0149 بلا أسماء الأعمدة. القالبُ صنعها قبل 0264.
+chk "الحارس: قالبُ الإنتاج نصُّ مقبوضات اليوم المقيس (البصمةُ 497f…)، و0264 نزلت عليه فصار جسمُها جسمَنا" \
+    "select (select fp from dvtest.prodlike_0264) || '|' || (position('-- +0264' in prosrc) > 0)::text
+       from pg_proc where oid = to_regprocedure('public.report_receipts_daily(timestamptz,timestamptz,text)')" \
+    "497fd195fcfc215f925d1f981f0ffda8|true"
+DPM="''public.product_movements(uuid,integer)''"
+DPF="(select md5(_drift_code(prosrc)) from pg_proc where oid = to_regprocedure($DPM))"
+chk "  _drift_assert_any: البصمةُ المسمّاة الثانية تمرّ، والغريبةُ drift_body، والغائبةُ drift_missing، وعلامتُنا تمرّ" \
+    "select _pf_try('$C1', 'select public._drift_assert_any($DPM, array[''00000000000000000000000000000000'', $DPF], ''-- +9999'')::text')
+            ||'|'||_pf_try('$C1', 'select public._drift_assert_any($DPM, array[''00000000000000000000000000000000'', ''11111111111111111111111111111111''], ''-- +9999'')::text')
+            ||'|'||_pf_try('$C1', 'select public._drift_assert_any(''public.no_such_fn_0264(uuid)'', array[''x''], ''-- +0264'')::text')
+            ||'|'||_pf_try('$C1', 'select public._drift_assert_any($DPM, array[''x''], ''-- +0252'')::text')" \
+    "allowed|guarded:drift_body|guarded:drift_missing|allowed"
+chk "  ومسحوبةٌ من authenticated وanon" \
+    "select (has_function_privilege('authenticated', 'public._drift_assert_any(text,text[],text)', 'execute')
+          or has_function_privilege('anon', 'public._drift_assert_any(text,text[],text)', 'execute'))::text" "false"
 UP=c2640000-0000-4000-8000-0000000000
 RID="(select id::text from clinic_fx_rates order by created_at desc, id desc limit 1)"
 uco() { echo "select (usd_checkout('$2'::jsonb, jsonb_build_object('fx_rate_id', $RID, 'client_ref', '$1')${3:+ || $3})).total::text"; }
