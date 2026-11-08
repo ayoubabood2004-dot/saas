@@ -474,7 +474,8 @@ console.log("▸ ز) الشاشةُ موصولة: النموذجُ والمجم�
  * كلُّ استيرادٍ آخر لـInventory.tsx بديلٌ يُولَّد من سطور استيراده (فاستيرادٌ جديد يأخذ بديلاً بلا تعديلٍ
  * هنا)، إلا القواعدَ الصِّرفة. والترجمةُ ترجع المفتاح: الأزرارُ والرسائلُ تُطابَق بمفاتيحها. */
 // والتعبئةُ (0259، `@/lib/packs`) قاعدةٌ صِرفة كذلك: بديلُها المولَّد يرجع undefined فيسقط رسمُ الصفّ.
-const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs"]);
+// 0264: usdProduct (مسودّةُ السعر بالدولار) صِرفةٌ يستوردها النموذج — بديلٌ مولَّدٌ لها undefined يُسقط رسمَه كلَّه.
+const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct"]);
 const UI_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
@@ -490,6 +491,8 @@ const UI_STUB = {
     export const useToast = () => new Proxy({}, { get: (_t, k) => globalThis.__invToast[k] });`,
   "@/components/Modal": "export const Modal = ({ open, children }) => (open ? children : null);",
   "@/components/LoadBoundary": "export const LoadBoundary = ({ children }) => children;",
+  // قطعٌ كسولة بالنموذج (0264: حقولُ الدولار) لا تُرسم هنا: مكوّنٌ لا يرسم شيئاً ⇒ الميزةُ «مطفأة» ولا يُرسل منها شيء.
+  "@/lib/lazyPage": "export const page = () => () => null;",
   "@/lib/managerOverride": "export const useOverride = () => ({ stockLocked: false, restricted: false });",
   "@/hooks/usePermissions": "export const usePermissions = () => ({ can: () => true, role: 'manager', baseRole: 'manager' });",
   "@/contexts/AuthContext": "export const useAuth = () => ({ user: null });",

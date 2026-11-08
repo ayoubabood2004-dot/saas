@@ -46,6 +46,7 @@ import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
+import { usdDraftOf, usdDraftProblem, usdPatch, usdPriceText, type UsdDraft } from "@/lib/usdProduct";
 import { catalogLookup, type CatalogHit } from "@/lib/catalog";
 /* وضع المدير: جهاز مقفل بلا جلسة مدير → أسعار الشراء والأرباح تختفي من
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
@@ -91,6 +92,9 @@ const isMarkedForReturn = (p: Product) => isReturnMarked(p) && !p.pooled && (Num
 /* أزرارُ تقرير الجرد بعلامات فحص المخزن (0245): مالكُ نصوصها InventoryAudit.tsx (نطاق `audit`). */
 /* وفشلُ تحميلها يبقى بمكانه (LoadBoundary، نمطُ 0241) — زرّان لم يصلا لا يُسقطان شاشةَ المخزن كلَّها. */
 const loadReportButtons = () => page(() => import("@/pages/InventoryAudit").then((m) => ({ default: m.StockReportButtons })), ["audit"]);
+/* حقولُ السعر بالدولار (0264): قطعةٌ كسولة بنطاقها usd — لا تُرسم إلا لعيادةٍ فعّلت الدولار (أو لمادّةٍ دولاريةٍ أصلاً). */
+const loadUsdFields = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdPriceFields })), ["usd"]);
+let UsdFieldsLazy = loadUsdFields();
 let ReportButtons = loadReportButtons();
 
 export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked";
@@ -863,8 +867,9 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
             </span>
           )}
 
-          {!locked && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
-          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}{byWeight ? perKg : ""}</span>
+          {/* مادّةُ الدولار (0264): سعراها بالدولار — دينارُها لا يُقرأ للبيع فلا يُعرض. */}
+          {!locked && <span>{t("pos.buy", "Buy")} {p.price_currency === "USD" ? <bdi dir="ltr">{usdPriceText(p.purchase_price_usd)}</bdi> : money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
+          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {p.price_currency === "USD" ? <bdi dir="ltr">{usdPriceText(p.sell_price_usd)}</bdi> : money(p.sell_price)}{byWeight ? perKg : ""}</span>
           {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
           {p.expiry_date && (
             <span data-expstate={expSt ?? "ok"} className={cn("flex items-center gap-1", muted ? "text-ink-subtle" : expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : expSt === "return" ? "text-warn-700/80 dark:text-warn-300/80" : "")}>
@@ -1199,6 +1204,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const [altCodes, setAltCodes] = useState<string[]>([]);
   /** التعبئة (0259): مسودّةُ الكراتين والمغلّف — تُحكم وتُرسل بالحفظ وحده، وما لم يتغيّر لا يُرسل. */
   const [pkgDraft, setPkgDraft] = useState<PackagingDraft>(() => draftOf(null));
+  /** السعرُ بالدولار (0264): مسودّةٌ بيد النموذج (usdProduct.ts)، ولا يُرسل منها شيءٌ حتى تقول القطعةُ إن الميزة مفعّلة. */
+  const [usd, setUsd] = useState<UsdDraft>(() => usdDraftOf(null));
+  const [usdEnabled, setUsdEnabled] = useState(false);
+  const [usdShow, setUsdShow] = useState(false);
+  const [, setUsdTick] = useState(0);
   /** قاعدةٌ قبل 0259 لا تعرف الأعمدة (واجهةٌ سبقت هجرتها): المحرّرُ يغيب، ولا يُرسل شيء. الصفوفُ السحابية (`select *`) تحمل `packs` منذها. */
   const pkgReady = !isSupabaseConfigured || !(allProducts?.length) || allProducts.some((x) => "packs" in x);
   /** صورة المتجر (0174): تمرّ من المحرّر (تُرى كاملةً وتُدار وتُقصّ — متجر v1) وتُرفع بعد نجاح
@@ -1301,10 +1311,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       });
       setAltCodes(product.alt_codes ?? []);
       setPkgDraft(draftOf(product));
+      setUsd(usdDraftOf(product));
     } else {
       setF({ ...blank, company: defaultCompanyName ?? "", section: defaultSectionName ?? "" });
       setAltCodes([]);
       setPkgDraft(draftOf(null));
+      setUsd(usdDraftOf(null));
       setTimeout(() => barcodeRef.current?.focus(), 80);
     }
     setBulk(false);
@@ -1451,6 +1463,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       toast.error(t("pkg.err.owned", { code: takenCode.code, name: takenCode.hit.product.name, level: t(`pkg.level.${takenCode.hit.level}`) }));
       return;
     }
+    // 0264: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوضٍ ولا كراتين، وبسعر بيعٍ مقروء — القطعةُ تقولها بمكانها.
+    if (usdEnabled && usdDraftProblem(usd, { weight: byWeight, sub: subUnitOn, pooled: f.pooled, packs: pkgDraft.packs.length > 0 })) {
+      playWarning(); setUsdShow(true); return;
+    }
     setBusy(true);
     // A company/section we create as a side effect of THIS save — rolled back if
     // the product write then fails, so no empty orphan is left behind.
@@ -1483,6 +1499,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
         ...pkgFields,
         sold_by_weight: byWeight,
+        ...usdPatch(usd, product ?? null, usdEnabled),
       };
       if (product) {
         /* الرمزُ القديم ينزل `alt_codes` **بنفس النداء** (ح٢): ملصقاتُ رقم
@@ -2023,10 +2040,17 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         </div>
 
         <div className="space-y-3">
-          {priceFields}
+          <LoadBoundary scope="usd-fields" onRetry={() => { UsdFieldsLazy = loadUsdFields(); setUsdTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <UsdFieldsLazy value={usd} onChange={setUsd} showProblems={usdShow} onEnabled={setUsdEnabled}
+                blockers={{ weight: byWeight, sub: !!f.has_sub_unit, pooled: !!f.pooled, packs: pkgDraft.packs.length > 0 }} />
+            </Suspense>
+          </LoadBoundary>
+          {/* مادّةُ الدولار: سعرا الدينار لا يُقرآن للبيع — يغيبان، وأسعارُها بحقول الدولار أعلاه. */}
+          {!(usd.on && usdEnabled) && priceFields}
           {/* متوسّطُ الكلفة (0255) بجانب سعر الشراء: لمادّةٍ قائمة ولمن يرى الكلفة — لا يُحمَّل لغيره. */}
           {product && can("viewProfits") && !restricted && <AvgCostSlot product={product} onChanged={onChanged ?? onSaved} />}
-          {profitStrip}
+          {!(usd.on && usdEnabled) && profitStrip}
           {pooledToggle}
           <div className={cn("grid gap-3", pooledOn ? "grid-cols-1" : "grid-cols-2")}>
             {!pooledOn && (

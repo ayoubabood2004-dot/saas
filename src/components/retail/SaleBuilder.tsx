@@ -71,6 +71,12 @@ import type { PosTab } from "@/lib/posTabs";
 const loadTabPills = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabPills })), ["ptab"]);
 const loadTabGrid = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabGrid })), ["ptab"]);
 const loadTabEditor = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabEditor })), ["ptab"]);
+/* بيعُ الدولار (0264): سلّةٌ مستقلّة بقطعةٍ كسولة ونطاقها usd — لا وحدةَ ثابتةً جديدةً هنا (الإقلاعُ على سقفه). */
+/* وتُصنع بأوّل لمسةٍ لمادّةٍ دولارية لا عند التحميل: عيادةٌ بلا دولار لا تصنع حتى غلافَها (salebuilder-cons-guard يعدّ قطعَ التحميل). */
+const loadUsdSale = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdSaleSheet })), ["usd"]);
+let UsdSaleLazy: ReturnType<typeof loadUsdSale> | null = null;
+/** سعرُ مادّة الدولار بالكرت: «$12.50» — عرضٌ وحده (الحسابُ بـusdMath داخل السلّة). */
+const usdTile = (n?: number | null): string => (n == null ? "$—" : `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`);
 let TabPillsLazy = loadTabPills();
 let TabGridLazy = loadTabGrid();
 let TabEditorLazy = loadTabEditor();
@@ -1083,6 +1089,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** البيعةُ المُتمَّة فيها ما قد يُخصم له أو سطرُ مادّة (noticeLine) ⇒ شاشةُ «تمّ» تقرأ دفترَها وتقول العجزَ والسالب (ConsumptionNotice). */
   const [doneCons, setDoneCons] = useState(false);
   const [, setConsLazyTick] = useState(0);
+  /* 0264: مادّةُ الدولار لا تدخل سلّةَ الدينار (قرار ٢) — لمسُها أو مسحُها يفتح سلّةَ الدولار بها. */
+  const [usdSale, setUsdSale] = useState<{ open: boolean; first: Product | null; tick: number }>({ open: false, first: null, tick: 0 });
+  const [, setUsdLazyTick] = useState(0);
+  const openUsd = (p: Product) => setUsdSale((x) => ({ open: true, first: p, tick: x.tick + 1 }));
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
   /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
@@ -1325,6 +1335,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** `sale`: سطرُ بيعٍ ولو كان «راجع» مشغّلاً — تبويبُ «الأدوية» يبيع دواءً لحيوانٍ دائماً
    *  (سطرُ «دواء» القديم كان موجباً مهما كان الوضع)، و«راجع» يخصّ المسحَ والكرت. */
   const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean }): number | null => {
+    if (p.price_currency === "USD") { openUsd(p); return null; }
     /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
      * يكذب كلفةَ دفعةٍ جارية. الخادمُ يستثنيه بكلّ طريقٍ اليوم — وهذا خطُّ الدفاع
      * الأخير لو وصل صفُّ حقلٍ بطريقٍ يُضاف غداً: يُرفض باسمه، لا يُباع بصمت. */
@@ -1525,6 +1536,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     /* مخزنُ الحقل يُرفض باسمه **قبل** السؤال: السؤالُ يستثني الحقل، فصفُّ حقلٍ
      * رصيدُه صفر كان يعود «لا شيء» ويُقال عنه «موجود بس رصيده صفر — زيد رصيده». */
     if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
+    if (product.price_currency === "USD") { openUsd(product); return { added: null, refused: false }; }
     const ret = retMode && !opt?.sale;
     const lineOf = (x: Product) => `${ret ? "r" : "p"}:${x.id}`;
     /* يُسأل الخادمُ حين ترفض القائمةُ الإضافةَ أو تقصّها — صفرٌ بالصفّ، **أو سطرٌ بلغ
@@ -3551,7 +3563,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-2xs font-bold tabular-nums", out ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-surface-2 text-ink-muted")}>
                           {out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : formatNum(p.stock)}
                         </span>
-                        <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
                         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white opacity-60 transition group-hover:opacity-100"><Plus size={13} /></span>
                       </button>
                     );
@@ -3570,7 +3582,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                       {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="absolute end-2 top-2 rounded-full bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">
-                        <span className="text-sm font-bold text-ink tabular-nums">{money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className="text-sm font-bold text-ink tabular-nums">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
                         <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
                       </span>
                     </button>
@@ -4613,6 +4625,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           onClick={() => setCartSheet(false)}
           className="fixed inset-0 z-30 bg-ink/40 backdrop-blur-[1px] lg:hidden"
         />
+      )}
+      {/* سلّةُ الدولار (0264): تُحمَّل بأوّل مادّةٍ دولارية تُلمس — عيادةٌ بلا دولار لا تنزّلها أبداً. */}
+      {usdSale.tick > 0 && (UsdSaleLazy ??= loadUsdSale()) && (
+        <LoadBoundary scope="usd-sale" onRetry={() => { UsdSaleLazy = loadUsdSale(); setUsdLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <UsdSaleLazy open={usdSale.open} products={products} first={usdSale.first} firstTick={usdSale.tick} wholesale={wholesale}
+              onClose={() => setUsdSale((x) => ({ ...x, open: false }))}
+              onSold={() => { setUsdSale((x) => ({ ...x, open: false })); onSold(); }} />
+          </Suspense>
+        </LoadBoundary>
       )}
     </div>
     </>

@@ -257,6 +257,7 @@ export function Settings() {
         {canSettings && <ExpiryAlertsCard />}
         {canSettings && <ForgiveCapCard />}
         {canSettings && <OneAccountCard />}
+        {canSettings && <UsdCardSlot />}
         {canSettings && <ServiceSettings />}
         {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
         {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
@@ -2265,6 +2266,17 @@ const loadRecipeEditor = () => page(() => import("@/components/settings/RecipeEd
 let RecipeEditorLazy = loadRecipeEditor();
 /* بطاقةُ «الراجيتة» (0261) ومصمِّمُها: قطعةٌ كسولة بنطاقها المملوك rx (النصفُ البارد ممتلئ، ونصُّ البطاقة من هناك). */
 const loadRxCard = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxSettingsCard })), ["rx"]);
+/* بطاقةُ «التسعير بالدولار» (0264): قطعةٌ كسولة بنطاقها المملوك usd — كلُّ نصِّ الدولار هناك. */
+const loadUsdCard = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdSettingsCard })), ["usd"]);
+let UsdCardLazy = loadUsdCard();
+function UsdCardSlot() {
+  const [, setTick] = useState(0);
+  return (
+    <LoadBoundary scope="usd-card" onRetry={() => { UsdCardLazy = loadUsdCard(); setTick((n) => n + 1); }}>
+      <Suspense fallback={null}><UsdCardLazy /></Suspense>
+    </LoadBoundary>
+  );
+}
 let RxCardLazy = loadRxCard();
 function RxCardSlot() {
   const [, setTick] = useState(0);

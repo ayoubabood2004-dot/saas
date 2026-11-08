@@ -37,6 +37,14 @@ const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "
 const loadForgiveSection = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ForgiveSection })), ["fgv"]);
 const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDialog").then((m) => ({ default: m.ReturnSheet })), ["fgv"]);
 let ForgiveSectionLazy = loadForgiveSection();
+/* فاتورةُ الدولار (0264): لوحتُها (الدولارُ أوّلاً، والتسديدُ وإلغاؤه والحذف) قطعةٌ كسولة بنطاقها usd — لا وحدةَ ثابتةً هنا. */
+const loadUsdInvoice = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdInvoicePanel })), ["usd"]);
+let UsdInvoiceLazy = loadUsdInvoice();
+/** «$50» / «$1,234.50» — عرضٌ وحده (الحسابُ بالخادم وبـusdMath داخل اللوحة). */
+const usd$ = (n: number | null | undefined): string => {
+  if (n == null) return "$—";
+  return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+};
 let ReturnSheetLazy = loadReturnSheet();
 /* وما رجع للمخزن من موادّ الخدمة بعد الترجيع والحذف (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ
    بحارسٍ بمكانها، لفاتورةٍ فيها سطرُ خدمة وحدها، ولا ينتظرها الفعلُ نفسُه. */
@@ -614,6 +622,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const canForgive = canDelete && forgiveRoleOk && !refunded && isDebt(invoice) && !!customerOf;
   const canVoidForgive = canDelete && forgiveRoleOk && !refunded;
   const forgiven = forgivenOf(invoice);
+  /* 0264: فاتورةُ الدولار — سطورُها بالدولار، ولوحتُها تحلّ محلَّ المجاميع والسِّيَق وأزرار الدينار (الخادمُ يرفضها بالباب). */
+  const usdInv = invoice.currency === "USD";
+  const usdChanged = async () => {
+    onChanged();
+    try { const [fresh] = await repo.listInvoicesByIds([invoice.id]); if (fresh) setOpen(fresh); } catch { /* القائمةُ تتحدّث بـonChanged */ }
+  };
 
   const refund = async () => {
     if (busy) return;
@@ -776,9 +790,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
                 <div key={it.id} className="flex items-center gap-3 px-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{it.name}</p>
-                    <p className="text-xs text-ink-subtle">{it.qty} × {money(it.unit_price)}</p>
+                    <p className="text-xs text-ink-subtle">{it.qty} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}</p>
                   </div>
-                  <span className="text-sm font-bold tabular-nums text-ink">{money(it.line_total)}</span>
+                  <span className="text-sm font-bold tabular-nums text-ink">{usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd == null ? null : Math.round(it.unit_price_usd * it.qty * 100) / 100)}</bdi> : money(it.line_total)}</span>
                 </div>
               ))}
             </div>
@@ -793,8 +807,16 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           </div>
         )}
 
+        {usdInv && (
+          <LoadBoundary scope="usd-invoice" onRetry={() => { UsdInvoiceLazy = loadUsdInvoice(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <UsdInvoiceLazy invoice={invoice} canDelete={canDelete} onChanged={() => void usdChanged()} onDeleted={() => { onChanged(); onClose(); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+
         {/* Totals */}
-        <div className="space-y-1 text-sm">
+        {!usdInv && <div className="space-y-1 text-sm">
           {discount > 0 && (
             <>
               <div className="flex justify-between text-ink-muted"><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
@@ -877,11 +899,11 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               </div>
             )
           )}
-        </div>
+        </div>}
 
         {/* «خصم على الدين» (0241): سجلُّه (الملغى مشطوب، والمستهلَك بمرتجعٍ ظاهر) وزرُّه ونافذتُه. بلا زبونٍ
             لا خصمَ ولا سجلّ، فلا طلب. والقطعةُ كسولةٌ بحارسٍ بمكانها: فشلُها لا يُسقط الفاتورة. */}
-        {customerOf && (
+        {customerOf && !usdInv && (
           <LoadBoundary scope="forgive" onRetry={() => { ForgiveSectionLazy = loadForgiveSection(); setLazyTick((n) => n + 1); }}>
             <Suspense fallback={null}>
               <ForgiveSectionLazy invoice={invoice} items={items} itemsOk={itemsOk} canForgive={canForgive} canVoid={canVoidForgive}
@@ -899,13 +921,13 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
           <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
         </div>
-        {canFixReceipt && (
+        {canFixReceipt && !usdInv && (
           <Button variant="secondary" className="w-full" leftIcon={<Undo2 size={16} />} data-invfixopen
             onClick={() => { playTap(); setFixOpen(true); }}>
             {t("retail.receiptFixBtn", "تصحيح تحصيل — المبلغ ما وصل كامل")}
           </Button>
         )}
-        <div className="flex items-center gap-2">
+        {!usdInv && <div className="flex items-center gap-2">
           {!refunded && (
             <Button variant="outline" className="flex-1" loading={busy === "refund"} disabled={!itemsOk} leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setSheet("refund"); }}>{t("retail.refund", "Refund")}</Button>
           )}
@@ -914,8 +936,8 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               {t("retail.delete", "Delete")}
             </Button>
           )}
-        </div>
-        {!canDelete && !refunded && (
+        </div>}
+        {!canDelete && !refunded && !usdInv && (
           <p className="flex items-center gap-1.5 text-2xs text-ink-subtle"><AlertTriangle size={12} /> {t("retail.deleteAdminOnly", "Only clinic admins can permanently delete invoices.")}</p>
         )}
 
