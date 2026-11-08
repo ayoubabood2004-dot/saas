@@ -29,8 +29,21 @@
 set lock_timeout = '5s';
 
 -- ── ٠) الحارس: الدوالُّ التي تُعاد هنا بجسمها الحاليّ (بصمةُ الشِفرة بلا تعليق ولا مسافة — 0252) ──────────────
+-- وبصماتٌ مقيسةٌ بالإنتاج غيرُ نصّ المستودع وشِفرتُها نفسُها: تُسمّى واحدةً واحدة بسببها، وغيرُها يُرفض كما كان.
+create or replace function public._drift_assert_any(p_sig text, p_source_md5s text[], p_marker text) returns void
+language plpgsql set search_path = public as $$
+declare v_md5 text := (select md5(public._drift_code(prosrc)) from pg_proc where oid = to_regprocedure(p_sig));
+begin
+  if v_md5 = any(p_source_md5s) then return; end if;
+  perform public._drift_assert(p_sig, p_source_md5s[1], p_marker);   -- غائبة، أو علامتُنا، أو غريبةٌ ببصمتها — بكلماته
+end $$;
+revoke all on function public._drift_assert_any(text, text[], text) from public, anon, authenticated;
+
 select public._drift_assert('public.receipt_legs()', '8ecc58ceb25815277ce491cbd103043f', '-- +0264');
-select public._drift_assert('public.report_receipts_daily(timestamptz,timestamptz,text)', '727b360076ee0bef661d59ad8ece01f5', '-- +0264');
+-- مقيسٌ بالإنتاج (٨/١١، أوّلُ تطبيقٍ رُفض بـdrift_body): نصُّ 0149 بلا أسماء الأعمدة (as day/gross/net/invoices) ومضغوطٌ
+-- بأربعة أسطر — نفسُ الشِفرة: دالّةُ `returns table` تأخذ أسماءَها من التصريح لا من select. والثانيةُ بصمتُه.
+select public._drift_assert_any('public.report_receipts_daily(timestamptz,timestamptz,text)',
+  array['727b360076ee0bef661d59ad8ece01f5', '497fd195fcfc215f925d1f981f0ffda8'], '-- +0264');
 select public._drift_assert('public.report_receipts_total(timestamptz,timestamptz)', '842f7919f7633856efdfaf7ac25e9c48', '-- +0264');
 select public._drift_assert('public.report_pnl(timestamptz,timestamptz,text)', 'ede01413b921832eb57c7637e8199b96', '-- +0264');
 select public._drift_assert('public._price_scope_products(uuid,jsonb)', 'ef0312bc1f924e0ef12b19680bec0159', '-- +0264');
