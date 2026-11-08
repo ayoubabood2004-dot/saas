@@ -74,6 +74,7 @@
     "avgc": "src/components/inventory/AvgCostNote.tsx",
     "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] },
     "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] },
-    "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] }
+    "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] },
+    "usd": { "owner": "src/components/usd/Usd.tsx", "with": ["src/components/usd/UsdSale.tsx", "src/components/usd/usdShared.tsx"] }
   }
 }

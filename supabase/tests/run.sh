@@ -4063,6 +4063,9 @@ chk "  والمعاينةُ stable (لقطةٌ واحدة) والحسابُ immu
 chk "السياجُ يشمل الجدولين (المصوّرُ لا يقرأ ولا يكتب)" \
     "select count(*)::text from verify_photographer_fence() v where v like '%price_change%'" "0"
 $P -f "$MIG/0226_price_changes.sql" >/dev/null 2>&1
+# إعادةُ 0226 تُرجع نطاقَ الرفع (_price_scope_products) لنصّها — و0264 أعادت تعريفَه (مادّةُ الدولار خارج الرفع)؛
+# بلا إعادتها يفحص price-parity بعدها نسخةَ 0226 لا نسخةَ الإنتاج. من يعيد تعريفَ _price_scope_products يضيف ملفَّه هنا.
+out=$($P -f "$MIG/0264_usd_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0264 ما انعادت بعد 0226"; fail=1; }
 chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: الرفوعُ والمحفّزُ كما هي" \
     "select (select count(*) from price_changes where clinic_id='$C1')::text||'/'||(select count(*) from pg_trigger where tgrelid='price_changes'::regclass and tgname='audit_all')::text" "6/1"
 chk "الأدواتُ الداخلية لا يناديها الداخلون، والأبوابُ ممنوعةٌ عن anon" \
@@ -10999,8 +11002,21 @@ chk "    مغلقةٌ بالعملتين وحالتُها paid (وA كذلك)، 
             (select status from invoices where client_ref = 'usd-a')||'|'||
             $(rv $C1 "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-d'), 'تجربة'))->'invoice'->>'status'")" \
     "0.00|0.00|paid|paid|unpaid"
-Q264="select (select count(*) from pg_proc where proname in ('usd_checkout','settle_invoice_usd','void_usd_settlement','delete_usd_invoice','fx_rate_set','usd_state','usd_prefs_set','_usd_iqd','_usd_share','_usd_rate_of','_usd_ctx','_usd_door_open'))::text
-         ||'|'||(select count(*) from pg_trigger where tgname in ('invoices_usd_door','invoice_items_usd_door'))::text
+# المتجرُ ورفعُ الأسعار: مادّةٌ منشورةٌ بالدينار تُحوَّل للدولار تنزل من المتجر (لا تُعرض بدينارها القديم)، ونشرُ مادّةٍ دولارية
+# يُرفض بجملة؛ ورفعُ الأسعار يتخطّاها ولو بقي دينارُها القديم (النطاقُ نفسُه بمرآته — price-parity).
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, store_visible, stock) values
+         ('${UP}a6', '$C1', 'منشورة', 'IQD-0264-6', 'IQD', 2000, true, 3) on conflict (id) do nothing;" >/dev/null
+RAISE6="'{\"pct_bp\":1000,\"round\":\"smart\",\"max_step\":250,\"products\":true,\"p_ids\":[\"${UP}a6\"]}'::jsonb"
+chk "المتجر: منشورةٌ بالدينار تدخل الرفعَ (سطرٌ واحد)، وتحويلُها للدولار يمرّ" \
+    "select $(rv $C1 "select (price_change_preview($RAISE6)->'counts'->>'products')")||'|'||
+            _rls_try('$C1', 'update products set price_currency = ''USD'', sell_price_usd = 1 where id = ''${UP}a6''')" "1|rows:1"
+chk "  وبعده: نزلت من المتجر، ونشرُها يُرفض usd_store، والرفعُ يتخطّاها ودينارُها ٢٬٠٠٠ باقٍ" \
+    "select (select store_visible::text from products where id = '${UP}a6')||'|'||
+            _rls_try('$C1', 'update products set store_visible = true where id = ''${UP}a6''')||'|'||
+            $(rv $C1 "select (price_change_preview($RAISE6)->'counts'->>'products')")||'|'||(select sell_price::text from products where id = '${UP}a6')" \
+    "false|guarded:P0001:usd_store|0|2000.00"
+Q264="select (select count(*) from pg_proc where proname in ('usd_checkout','settle_invoice_usd','void_usd_settlement','delete_usd_invoice','fx_rate_set','usd_state','usd_prefs_set','_usd_iqd','_usd_share','_usd_rate_of','_usd_ctx','_usd_door_open','products_usd_store'))::text
+         ||'|'||(select count(*) from pg_trigger where tgname in ('invoices_usd_door','invoice_items_usd_door','products_usd_store'))::text
          ||'|'||(select count(*) from pg_constraint where conname in ('products_usd_ok','invoices_usd_ok','clinic_prefs_usd_round_step'))::text
          ||'|'||(select count(*) from usd_settlements)::text||'|'||(select count(*) from clinic_fx_rates)::text||'|'||(select count(*) from invoices where currency = 'USD')::text"
 Z264=$($P -tAc "$Q264" | tr -d '[:space:]')

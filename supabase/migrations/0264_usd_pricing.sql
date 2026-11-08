@@ -33,6 +33,7 @@ select public._drift_assert('public.receipt_legs()', '8ecc58ceb25815277ce491cbd1
 select public._drift_assert('public.report_receipts_daily(timestamptz,timestamptz,text)', '727b360076ee0bef661d59ad8ece01f5', '-- +0264');
 select public._drift_assert('public.report_receipts_total(timestamptz,timestamptz)', '842f7919f7633856efdfaf7ac25e9c48', '-- +0264');
 select public._drift_assert('public.report_pnl(timestamptz,timestamptz,text)', 'ede01413b921832eb57c7637e8199b96', '-- +0264');
+select public._drift_assert('public._price_scope_products(uuid,jsonb)', 'ef0312bc1f924e0ef12b19680bec0159', '-- +0264');
 
 -- ── ١) المفتاح والتقريب ───────────────────────────────────────────────────────────────────────────────
 alter table public.clinic_prefs add column if not exists usd_enabled boolean not null default false;
@@ -822,3 +823,67 @@ begin
 end $$;
 revoke all on function public.report_pnl(timestamptz, timestamptz, text) from public, anon;
 grant execute on function public.report_pnl(timestamptz, timestamptz, text) to authenticated;
+
+-- ── ١٣) رفعُ الأسعار (0226) يتخطّى مادّةَ الدولار ───────────────────────────────────────────────────────
+-- سعرُها بالدولار، ودينارُها (sell_price) لا يُقرأ للبيع — ومادّةٌ حُوّلت من الدينار يبقى فيه سعرُها القديم، فكانت تظهر
+-- بمعاينة الرفع وتُرفع بلا معنى. النطاقُ نسخةُ 0226 حرفاً وسطرٌ واحد؛ ومرآتُه productsInScope (priceRaise.ts) يطابقها price-parity.
+create or replace function public._price_scope_products(p_clinic uuid, p_spec jsonb)
+returns table (id uuid, is_direct boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  -- +0264
+  with s as (
+    select coalesce((p_spec->>'products')::boolean, false) as on_,
+           _price_jtext(p_spec->'p_categories') as cats,
+           _price_juuid(p_spec->'p_companies') as cos,
+           _price_juuid(p_spec->'p_sections') as secs,
+           _price_juuid(p_spec->'p_ids') as ids,
+           coalesce(_price_juuid(p_spec->'p_exclude'), '{}') as ex
+  ),
+  base as (
+    select p.id, p.category, p.company_id, p.section_id, nullif(btrim(p.bulk_group), '') as g
+      from products p, s
+     where s.on_ and p.clinic_id = p_clinic and p.farm_id is null
+       and coalesce(p.price_currency, 'IQD') = 'IQD'   -- 0264: سعرُ مادّة الدولار بالدولار — دينارُها لا يُقرأ فلا يُرفع
+  ),
+  direct as (
+    select b.id, b.g from base b, s
+     where (s.cats is null or b.category = any (s.cats))
+       -- شركةٌ كاملة أو قسمٌ منها: اتّحادٌ لا تقاطع.
+       and ((s.cos is null and s.secs is null)
+            or (s.cos is not null and b.company_id = any (s.cos))
+            or (s.secs is not null and b.section_id = any (s.secs)))
+       and (s.ids is null or b.id = any (s.ids))
+  ),
+  exg as (select distinct b.g from base b, s where b.id = any (s.ex) and b.g is not null),
+  ing as (select distinct d.g from direct d where d.g is not null)
+  select b.id, exists (select 1 from direct d where d.id = b.id)
+    from base b, s
+   where not (b.id = any (s.ex))
+     and not exists (select 1 from exg where exg.g = b.g)
+     and (exists (select 1 from direct d where d.id = b.id) or exists (select 1 from ing where ing.g = b.g))
+$$;
+revoke all on function public._price_scope_products(uuid, jsonb) from public, anon, authenticated;
+
+-- ── ١٤) المتجرُ الإلكترونيّ لا يعرض مادّةَ الدولار بالمرحلة ١ ──────────────────────────────────────────────
+-- سعرُ الزائر بالدينار يحتاج قراراً (الخطّة §٥): مادّةٌ حُوّلت للدولار وهي منشورة كانت تُعرض بسعر دينارها القديم.
+-- فالتحويلُ يُنزلها من المتجر (والنموذجُ يقولها)، ونشرُ مادّةٍ دولارية يُرفض بجملة — لا نشرَ صامتٌ بسعرٍ كاذب.
+create or replace function public.products_usd_store() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.price_currency = 'USD' and new.store_visible then
+    if tg_op = 'UPDATE' and old.price_currency is distinct from 'USD' then
+      new.store_visible := false;
+    else
+      raise exception 'usd_store' using errcode = 'P0001',
+        hint = '«' || coalesce(new.name, '') || '» سعرها بالدولار — مواد الدولار ما تنعرض بالمتجر الإلكتروني بالمرحلة الأولى.';
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists products_usd_store on public.products;
+create trigger products_usd_store before insert or update of price_currency, store_visible on public.products
+  for each row execute function public.products_usd_store();

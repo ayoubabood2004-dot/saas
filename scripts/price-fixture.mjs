@@ -102,6 +102,8 @@ const products = [
   { id: pid(113), name: "غالي", sell_price: 4353543, purchase_price: 100, category: "toys", company_id: CO1 },
   { id: pid(114), name: "مفرد أرخص", sell_price: 3000, purchase_price: 2000, category: "medicine", company_id: CO1,
     has_sub_unit: true, sub_unit_price: 400, units_per_box: 10 },
+  // 0264: مادّةٌ حُوّلت للدولار ودينارُها القديم باقٍ — لا تدخل أيَّ رفع (النطاقُ بالطرفين يتخطّاها).
+  { id: pid(115), name: "صارت بالدولار", sell_price: 6000, purchase_price: 4000, category: "food", company_id: CO1, price_currency: "USD" },
 ];
 const services = [
   { id: pid(201), name: "فحص عام", price: 15000, category_id: SC1, cost: null },
@@ -147,7 +149,7 @@ fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(plans, null, 1));
 
 const prodRow = (cl) => (p) => `(${q(p.id)},${q(cl)},${q(p.name)},${p.sell_price},${p.purchase_price},${p.category ? q(p.category) : "null"},`
   + `${p.company_id ? q(p.company_id) : "null"},${p.section_id ? q(p.section_id) : "null"},${p.bulk_group ? q(p.bulk_group) : "null"},`
-  + `${p.farm_id ? q(p.farm_id) : "null"},${p.has_sub_unit ? "true" : "false"},${p.sub_unit_price ?? "null"},${p.units_per_box ?? "null"},5)`;
+  + `${p.farm_id ? q(p.farm_id) : "null"},${p.has_sub_unit ? "true" : "false"},${p.sub_unit_price ?? "null"},${p.units_per_box ?? "null"},5,${q(p.price_currency ?? "IQD")})`;
 fs.writeFileSync(path.join(dir, "plan-seed.sql"), [
   `insert into auth.users(id) values (${q(PCL)}), (${q(PCK)}) on conflict do nothing;`,
   `insert into clinic_prefs(clinic_id, currency) values (${q(PCL)}, null), (${q(PCK)}, 'KWD') on conflict (clinic_id) do update set currency = excluded.currency;`,
@@ -155,7 +157,7 @@ fs.writeFileSync(path.join(dir, "plan-seed.sql"), [
   `insert into companies(id, clinic_id, name) values (${q(CO1)}, ${q(PCL)}, 'شركة تطابق ١'), (${q(CO2)}, ${q(PCL)}, 'شركة تطابق ٢') on conflict do nothing;`,
   `insert into company_sections(id, clinic_id, company_id, name) values (${q(SE1)}, ${q(PCL)}, ${q(CO2)}, 'قسم تطابق') on conflict do nothing;`,
   `insert into clinic_service_categories(id, clinic_id, name) values (${q(SC1)}, ${q(PCL)}, 'فحوص'), (${q(SC2)}, ${q(PCL)}, 'عناية') on conflict do nothing;`,
-  `insert into products(id, clinic_id, name, sell_price, purchase_price, category, company_id, section_id, bulk_group, farm_id, has_sub_unit, sub_unit_price, units_per_box, stock) values`,
+  `insert into products(id, clinic_id, name, sell_price, purchase_price, category, company_id, section_id, bulk_group, farm_id, has_sub_unit, sub_unit_price, units_per_box, stock, price_currency) values`,
   products.map(prodRow(PCL)).concat(kwProducts.map(prodRow(PCK))).join(",\n") + " on conflict do nothing;",
   `insert into clinic_services(id, clinic_id, category_id, name, price, cost) values`,
   services.map((s) => `(${q(s.id)},${q(PCL)},${q(s.category_id)},${q(s.name)},${s.price},${s.cost ?? "null"})`)

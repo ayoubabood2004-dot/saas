@@ -219,6 +219,17 @@ check("  والإغلاقُ يمرّ بصفرٍ للدرج: حصّةٌ ١١٧ و
 check("  وخصمٌ كامل يأخذ الدينارَ كلَّه (لا ديناراً معلَّقاً على فاتورةٍ صفرٍ بالدولار)",
   (await usdApi.checkout([{ product_id: treat.id, qty: 7, unit_price_usd: "0.33" }], m2("u-fd", { discount_usd: "99999" }))).total === 0);
 
+/* ── المادّة: القيدُ والمتجرُ ورفعُ الأسعار ─────────────────────────────────── */
+console.log("▸ مادّةُ الدولار: القيد، والمتجر، ورفعُ الأسعار");
+check("مادّةُ دولارٍ بوحدةٍ فرعية تُرفض (products_usd_ok، 23514) كالخادم",
+  await errOf(() => repo.createProduct({ name: "حبوب USD", barcode: "USD-T-6", stock: 1, purchase_price: 0, sell_price: 0, min_stock: 0, price_currency: "USD", sell_price_usd: 5, has_sub_unit: true, units_per_box: 10, sub_unit_price: 1 }))
+    .then((m) => /products_usd_ok/.test(m)));
+const pub = await repo.createProduct({ name: "منشورة", barcode: "IQD-T-7", stock: 2, purchase_price: 1000, sell_price: 2000, min_stock: 0 });
+await repo.setStoreVisible([pub.id], true);
+const conv = await repo.updateProduct(pub.id, { price_currency: "USD", sell_price_usd: 1.5 });
+check("  وتحويلُ منشورةٍ للدولار يُنزلها من المتجر، ونشرُها بعدها يُرفض usd_store",
+  conv.store_visible === false && await errOf(() => repo.setStoreVisible([pub.id], true)) === "usd_store");
+
 /* ── هـ) السياج و«القراءة فقط» ─────────────────────────────────────────────── */
 console.log("▸ السياجُ و«القراءة فقط»");
 as("p1", "doctor", { clinicId: "c", role: "doctor", staffRole: "photographer" });
@@ -234,8 +245,16 @@ console.log("▸ البنية");
 {
   const { readdirSync, statSync } = await import("node:fs");
   const walk = (d) => readdirSync(d).flatMap((f) => { const p = path.join(d, f); return statSync(p).isDirectory() ? walk(p) : /\.(ts|tsx)$/.test(f) ? [p] : []; });
-  const statics = walk("src").filter((f) => !f.endsWith("usdApi.ts") && !f.endsWith("demoUsd.ts") && /from\s+["'](@\/lib|\.)\/usdApi["']/.test(code(f)) && !/import\s+type\s/.test(code(f).match(/[^\n]*from\s+["'](?:@\/lib|\.)\/usdApi["'][^\n]*/)?.[0] ?? ""));
-  check("البابُ كسول: لا استيرادَ ثابتاً لـusdApi (إلا «import type»)", statics.length === 0, statics.join("، "));
+  // البابُ والمالكُ ورفيقُه كسولون: لا يستوردهم ثابتاً إلا أنفسُهم (المالكُ يُحمَّل بـpage() — يحرسه i18n-owned-guard).
+  const inUsdChunk = (f) => /src[\\/]components[\\/]usd[\\/]/.test(f) || f.endsWith("usdApi.ts") || f.endsWith("demoUsd.ts");
+  const statics = walk("src").filter((f) => !inUsdChunk(f) && /from\s+["'](@\/lib|\.)\/usdApi["']/.test(code(f)) && !/import\s+type\s/.test(code(f).match(/[^\n]*from\s+["'](?:@\/lib|\.)\/usdApi["'][^\n]*/)?.[0] ?? ""));
+  check("البابُ كسول: لا استيرادَ ثابتاً لـusdApi خارج قطعة الدولار (إلا «import type»)", statics.length === 0, statics.join("، "));
+  const ownerStatic = walk("src").filter((f) => !inUsdChunk(f) && /from\s+["']@\/components\/usd\//.test(code(f)));
+  check("  ولا لمكوّنات الدولار (كلُّ شاشةٍ تحمّلها بـpage(…, [\"usd\"]))", ownerStatic.length === 0, ownerStatic.join("، "));
+  // شاشةُ البيع والديون والفواتير بقطعة البيع: لا وحدةَ ثابتةً جديدة (اسمٌ يدفعه الإقلاع) — العرضُ بمنسِّقٍ محلّيّ.
+  const saleChunk = ["src/components/retail/SaleBuilder.tsx", "src/components/retail/DebtsPanel.tsx", "src/components/retail/InvoicesPanel.tsx"]
+    .filter((f) => /from\s+["']@\/lib\/(usdMath|usdProduct|usdApi)["']/.test(code(f)));
+  check("  وقطعةُ البيع لا تستورد وحدةَ دولارٍ ثابتة (usdMath/usdProduct/usdApi)", saleChunk.length === 0, saleChunk.join("، "));
   const dm = code("src/lib/demoUsd.ts");
   check("والمرآةُ تحسب بـusdMath نفسِه (cartTotals/shareOf/iqdOf) لا بنسخة", /from "\.\/usdMath"/.test(dm) && /cartTotals\(/.test(dm) && /shareOf\(/.test(dm) && /iqdOf\(/.test(dm) && !/Math\.round/.test(dm));
   check("والتجريبيُّ يحمّلها من باب repoDemo وحده", /loadDemoUsd = \(\) => import\("\.\/demoUsd"\)/.test(code("src/lib/repoDemo.ts")));

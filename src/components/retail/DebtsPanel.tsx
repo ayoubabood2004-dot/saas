@@ -28,6 +28,14 @@ import { LoadBoundary } from "@/components/LoadBoundary";
    ممتلئ. `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
 const loadDebtorPets = () => page(() => import("@/components/retail/DebtorPets").then((m) => ({ default: m.DebtorPets })), ["dpets"]);
 let DebtorPetsLazy = loadDebtorPets();
+/* ديونُ الدولار (0264): زرُّ «سدّد بالدولار» ونافذتُه قطعةٌ كسولة بنطاقها usd — ولا وحدةَ ثابتةً جديدة هنا (قطعةُ البيع). */
+const loadUsdDebt = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdDebtActions })), ["usd"]);
+let UsdDebtLazy = loadUsdDebt();
+const isUsd = (inv: Invoice) => inv.currency === "USD";
+/** باقي فاتورة الدولار بالسنت — الأرقامُ بمنزلتين فالتقريبُ يرجعها صحيحة. */
+const usdDueCents = (inv: Invoice) => Math.max(0, Math.round(((inv.total_usd ?? 0) - (inv.paid_usd ?? 0)) * 100));
+/** «$600» / «$1,234.50» — عرضٌ وحده؛ الدولارُ لا يُجمع على دينارٍ أبداً (الخطّة §١٠). */
+const usd$ = (c: number): string => { const n = c / 100; return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`; };
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.payCash", def: "نقدي" },
@@ -44,7 +52,11 @@ interface Ledger {
   debts: Invoice[];
   total: number;   // sum of grand totals
   paid: number;    // sum paid so far
-  due: number;     // outstanding balance
+  due: number;     // outstanding balance (دينار — بلا فواتير الدولار)
+  /** 0264: باقي فواتير الدولار بالسنت — يُعرض بجانب الدينار ولا يُجمع عليه. */
+  usdDue: number;
+  /** للترتيب وحده: الدينارُ + باقي الدولار بقيمة يوم بيعه — «من يحتاج انتباهاً أوّلاً» لا مبلغٌ يُعرض. */
+  weight: number;
   oldest: string;  // ISO of the oldest open debt
 }
 
@@ -130,18 +142,22 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
       const name = displayCustomerName(inv.customer_name);
       // A stable identity: phone wins; else a named customer; else this one anonymous sale.
       const key = phone ? `p:${phoneDigits(phone)}` : name ? `n:${name.toLowerCase()}` : `i:${inv.id}`;
-      const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, oldest: inv.created_at };
+      const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, usdDue: 0, weight: 0, oldest: inv.created_at };
       g.debts.push(inv);
-      g.total = round2(g.total + inv.total);
-      g.paid = round2(g.paid + paidOf(inv));
-      g.due = round2(g.due + dueOf(inv));
+      if (isUsd(inv)) g.usdDue += usdDueCents(inv);
+      else {
+        g.total = round2(g.total + inv.total);
+        g.paid = round2(g.paid + paidOf(inv));
+        g.due = round2(g.due + dueOf(inv));
+      }
+      g.weight = round2(g.weight + dueOf(inv));
       if (inv.created_at < g.oldest) g.oldest = inv.created_at;
       if (!g.name && name) g.name = name;
       if (!g.phone && phone) g.phone = phone;
       map.set(key, g);
     }
-    // Biggest balances first — the accounts that need attention.
-    return [...map.values()].sort((a, b) => b.due - a.due);
+    // Biggest balances first — the accounts that need attention (الدولارُ بقيمة يوم بيعه للترتيب وحده).
+    return [...map.values()].sort((a, b) => b.weight - a.weight);
   }, [invoices, activeDelivery, deliveryReady]);
 
   const filtered = useMemo(() => {
@@ -151,6 +167,7 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
   }, [ledgers, q]);
 
   const outstanding = useMemo(() => round2(ledgers.reduce((s, g) => s + g.due, 0)), [ledgers]);
+  const outstandingUsd = useMemo(() => ledgers.reduce((s, g) => s + g.usdDue, 0), [ledgers]);
 
   // ── Level 2: one customer's notebook ──
   const open = openKey ? ledgers.find((g) => g.key === openKey) ?? null : null;
@@ -178,7 +195,9 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
         <div className="card flex items-center gap-3 p-3.5">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><Coins size={20} /></span>
           <div className="min-w-0">
-            <p className="truncate text-lg font-bold text-ink tabular-nums">{money(outstanding)}</p>
+            {/* الدولارُ سطرٌ وحده لا يُجمع على الدينار؛ وبلا دَينٍ بالدينار يبقى وحده (لا «0 د.ع» فوقه). */}
+            {(outstanding > 0 || outstandingUsd === 0) && <p className="truncate text-lg font-bold text-ink tabular-nums">{money(outstanding)}</p>}
+            {outstandingUsd > 0 && <p className="truncate text-lg font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-total>{usd$(outstandingUsd)}</p>}
             <p className="truncate text-xs text-ink-subtle">{t("retail.outstandingTotal", "إجمالي الديون المستحقة")}</p>
           </div>
         </div>
@@ -264,7 +283,8 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
               </div>
               <div className="text-end">
                 <p className="text-2xs text-ink-subtle">{t("retail.owesYou", "عليه")}</p>
-                <p className="font-display text-lg font-extrabold tabular-nums text-warn-600 dark:text-warn-300">{money(g.due)}</p>
+                {(g.due > 0 || g.usdDue === 0) && <p className="font-display text-lg font-extrabold tabular-nums text-warn-600 dark:text-warn-300">{money(g.due)}</p>}
+                {g.usdDue > 0 && <p className="font-display text-lg font-extrabold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-owes>{usd$(g.usdDue)}</p>}
               </div>
               <ChevronLeft size={18} className="shrink-0 text-ink-subtle ltr:rotate-180" />
             </motion.button>
@@ -324,7 +344,8 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
           </div>
           <div className="text-end">
             <p className="text-2xs font-semibold text-ink-subtle">{t("retail.totalOwed", "إجمالي الدين")}</p>
-            <p className="font-display text-2xl font-extrabold tabular-nums text-warn-600 dark:text-warn-300">{money(ledger.due)}</p>
+            {(ledger.due > 0 || ledger.usdDue === 0) && <p className="font-display text-2xl font-extrabold tabular-nums text-warn-600 dark:text-warn-300">{money(ledger.due)}</p>}
+            {ledger.usdDue > 0 && <p className="font-display text-2xl font-extrabold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-owes>{usd$(ledger.usdDue)}</p>}
           </div>
         </div>
         <div className="grid grid-cols-3 divide-x divide-line rtl:divide-x-reverse">
@@ -339,6 +360,8 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
         {debts.map((inv) => {
           const due = dueOf(inv);
           const status = paymentStatusOf(inv);
+          const usd = isUsd(inv);
+          const amt = (iqd: number, usdNum: number | null | undefined) => (usd ? <bdi dir="ltr">{usd$(Math.round((usdNum ?? 0) * 100))}</bdi> : money(iqd));
           return (
             <div key={inv.id} className="card overflow-hidden p-0">
               <button
@@ -356,13 +379,13 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
                   </p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-subtle">
                     <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(inv.created_at, i18n.language)}</span>
-                    <span>{t("retail.grandTotal", "إجمالي الفاتورة")}: <span className="font-semibold tabular-nums text-ink">{money(inv.total)}</span></span>
-                    <span>{t("retail.paidSoFar", "المدفوع")}: <span className="font-semibold tabular-nums text-success-600">{money(paidOf(inv))}</span></span>
+                    <span>{t("retail.grandTotal", "إجمالي الفاتورة")}: <span className="font-semibold tabular-nums text-ink">{amt(inv.total, inv.total_usd)}</span></span>
+                    <span>{t("retail.paidSoFar", "المدفوع")}: <span className="font-semibold tabular-nums text-success-600">{amt(paidOf(inv), inv.paid_usd)}</span></span>
                   </div>
                 </div>
                 <div className="text-end">
                   <p className="text-2xs text-ink-subtle">{t("retail.remainingDue", "المبلغ المتبقي")}</p>
-                  <p className="font-display text-lg font-extrabold tabular-nums text-warn-600 dark:text-warn-300">{money(due)}</p>
+                  <p className={cn("font-display text-lg font-extrabold tabular-nums", usd ? "text-success-700 dark:text-success-300" : "text-warn-600 dark:text-warn-300")}>{usd ? <bdi dir="ltr">{usd$(usdDueCents(inv))}</bdi> : money(due)}</p>
                 </div>
                 <Receipt size={16} className="shrink-0 text-ink-subtle" />
               </button>
@@ -370,9 +393,15 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
                 <Button size="sm" variant="secondary" leftIcon={<Receipt size={15} />} onClick={() => { playTap(); setDetail(inv); }}>
                   {t("retail.invoiceDetails", "تفاصيل الفاتورة")}
                 </Button>
-                <Button size="sm" leftIcon={<Coins size={15} />} onClick={() => { playTap(); setSettling(inv); }}>
-                  {t("retail.settle", "تسديد دفعة")}
-                </Button>
+                {usd ? (
+                  <LoadBoundary scope="usd-debt" onRetry={() => { UsdDebtLazy = loadUsdDebt(); setLazyTick((n) => n + 1); }}>
+                    <Suspense fallback={null}><UsdDebtLazy invoice={inv} onChanged={onChanged} /></Suspense>
+                  </LoadBoundary>
+                ) : (
+                  <Button size="sm" leftIcon={<Coins size={15} />} onClick={() => { playTap(); setSettling(inv); }}>
+                    {t("retail.settle", "تسديد دفعة")}
+                  </Button>
+                )}
               </div>
             </div>
           );

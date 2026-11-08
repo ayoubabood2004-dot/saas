@@ -915,6 +915,18 @@ function decisionLocked(status: string): Error {
  *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
 /** مرآةُ ما يجري على كلّ كتابةٍ لصفّ مادة منذ 0259: محفّزُ المستويات أوّلاً (BEFORE)، ثمّ قيدُ الشكل — كترتيب الخادم.
  *  `skipId` التوأمُ الذي يُطوى (`doctorvet.codes_from`). */
+/** 0264 — مرآةُ قيد products_usd_ok ومحفّز products_usd_store: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوضٍ ولا كراتين
+ *  (23514)؛ وتحويلُها للدولار يُنزلها من المتجر، ونشرُ مادّةٍ دولارية يُرفض usd_store. يرجع store_visible بعد الحكم. */
+function usdProductGuard(next: Product, prev: Product | null): boolean | undefined {
+  if (next.price_currency !== "USD") return next.store_visible;
+  if (next.sold_by_weight || next.has_sub_unit || next.pooled || (Array.isArray(next.packs) && next.packs.length > 0)) {
+    throw Object.assign(new Error('new row for relation "products" violates check constraint "products_usd_ok"'), { code: "23514" });
+  }
+  if (!next.store_visible) return next.store_visible;
+  if (prev && prev.price_currency !== "USD") return false;
+  throw Object.assign(new Error("usd_store"), { code: "P0001" });
+}
+
 function throwIfPackagingBad(db: DemoDB, next: Product, prev: Product | null, skipId?: string | null): void {
   const e = levelGuardError(db.products ?? [], next, prev, skipId) ?? packagingShapeError(next);
   if (e) throw e;
@@ -2053,6 +2065,7 @@ const demoRepo = {
     // 0255 (products_guard_avg): إدراجُ المتصفّح بلا متوسّط — مادّةٌ جديدة كلفتُها مجهولة، ونسخُ مادّةٍ قائمة لا ينسخه.
     if ("avg_cost" in p) p.avg_cost = null;
     throwIfPackagingBad(db, p, null);                                       // 0259: كلُّ رموزه جديدة
+    usdProductGuard(p, null);                                               // 0264
     db.products.push(p);
     saveDB(db);
     return p;
@@ -2349,7 +2362,9 @@ const demoRepo = {
     }
     // 0259: الصفُّ كما سيصير — رمزٌ جديدٌ بمستواه وشكلُ التعبئة (والقيدُ على كلّ تحديث: مادةٌ بكراتين لا تصير بالوزن).
     throwIfPackagingBad(db, { ...p, ...patch } as Product, p);
+    const sv = usdProductGuard({ ...p, ...patch } as Product, p);         // 0264
     Object.assign(p, patch);
+    if (p.price_currency === "USD") p.store_visible = sv;
     saveDB(db);
     return p;
   },
@@ -2645,6 +2660,10 @@ const demoRepo = {
     if (ids.length > 500) throw new Error("too_many");
     const db = loadDB();
     const want = new Set(ids);
+    // 0264 (products_usd_store): مادّةٌ دولارية بالدفعة يرفضها المحفّزُ فيسقط التحديثُ كلُّه — قبل أيّ تغيير، كالخادم.
+    if (on && (db.products ?? []).some((p) => want.has(p.id) && p.price_currency === "USD" && (p.sell_price ?? 0) > 0 && !p.store_visible)) {
+      throw Object.assign(new Error("usd_store"), { code: "P0001" });
+    }
     let changed = 0, skipped = 0;
     for (const p of db.products ?? []) {
       if (!want.has(p.id)) continue;

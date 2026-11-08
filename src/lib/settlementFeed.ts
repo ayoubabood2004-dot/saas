@@ -126,18 +126,26 @@ export function settlementsOf(inv: Invoice, forgiveness: readonly InvoiceForgive
   if (!legs.length) return [];
   const created = ms(inv.created_at);
   const out: SettlementEntry[] = [];
-  let after = 0; // مجموعُ ما بعد الساق الحالية
+  /* 0264: ساقُ «فرق صرف» (kind:'fx') ليست دفعةً على الدَّين — لا تدخل amount_paid فلا تدخل «المتبقّي بعده»، وتُضمّ لساق
+   * الحصّة من تسديدها نفسِه (settlement_id): السطرُ يقول ما استلمه الدرجُ فعلاً (١٬٤٦٠٬٠٠٠ + ٢٠٬٠٠٠ = ١٬٤٨٠٬٠٠٠) بدل سطرٍ ثانٍ
+   * يبدو دفعةً، والخسارةُ (فرقٌ سالب) تُطرح منه بدل أن تختفي. */
+  const isFx = (l: PaymentSplit | null | undefined) => l?.kind === "fx";
+  const fxOf = new Map<string, number>();
+  for (const l of legs) if (isFx(l) && l?.settlement_id && !l.reversal_of) fxOf.set(l.settlement_id, (fxOf.get(l.settlement_id) ?? 0) + (Number(l.amount) || 0));
+  let after = 0; // مجموعُ ما بعد الساق الحالية (حصصٌ ودفعاتٌ وحدها)
   const tail: number[] = new Array(legs.length).fill(0);
-  for (let i = legs.length - 1; i >= 0; i--) { tail[i] = after; after += Number(legs[i]?.amount) || 0; }
+  for (let i = legs.length - 1; i >= 0; i--) { tail[i] = after; if (!isFx(legs[i])) after += Number(legs[i]?.amount) || 0; }
   const due = dueOf(inv);
   const rows = forgiveness.filter((r) => r.invoice_id === inv.id);
   const mark = marks.find((m) => m.invoice_id === inv.id);
   legs.forEach((l, i) => {
+    if (isFx(l)) return;
     const t = candidateMs(l, created);
     if (t == null || !l?.at) return;
     if (isDeliveryCollection(t, mark)) return;
+    const fx = l.settlement_id ? fxOf.get(l.settlement_id) ?? 0 : 0;
     out.push({
-      kind: "settlement", key: `${inv.id}:pay:${i}`, inv, at: l.at, amount: round2(Number(l.amount) || 0),
+      kind: "settlement", key: `${inv.id}:pay:${i}`, inv, at: l.at, amount: round2((Number(l.amount) || 0) + fx),
       method: (l.method ?? "cash") as PaymentMethod,
       remainingAfter: Math.max(0, round2(due + tail[i] + (rows.length ? forgivenSince(rows, t) : 0))),
     });

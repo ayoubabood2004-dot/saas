@@ -237,7 +237,7 @@ export function normalizeSpec(s: PriceSpec): PriceSpec {
 /* ── الخطّة (للمرآة التجريبية؛ السحابيُّ يحسبها بالقاعدة) ─────────────────── */
 export interface PlanProduct {
   id: string; name: string; sell_price: number; purchase_price: number;
-  category?: string | null; company_id?: string | null; section_id?: string | null; bulk_group?: string | null; farm_id?: string | null;
+  category?: string | null; company_id?: string | null; section_id?: string | null; bulk_group?: string | null; farm_id?: string | null; price_currency?: string | null;
   has_sub_unit?: boolean; sub_unit_price?: number | null; units_per_box?: number | null;
 }
 export interface PlanService { id: string; name: string; price: number; category_id: string; cost?: number | null }
@@ -250,13 +250,13 @@ export const groupKeyOf = (g: string | null | undefined): string | null => {
 };
 
 /** المنتجاتُ الداخلة بالرفع.
- *  • الأساس: منتجاتُ العيادة بلا مخزن حقل (`farm_id`) — **قبل** فرز السعر.
+ *  • الأساس: منتجاتُ العيادة بلا مخزن حقل (`farm_id`) وبالدينار (0264: مادّةُ الدولار سعرُها بالدولار) — **قبل** فرز السعر.
  *  • المباشر: الأساس ∩ الأصناف ∩ الشركات ∩ المعرّفات (فارغٌ ⇒ بلا قيد؛ الصنفُ الفارغ لا يطابق).
  *  • المجموعة كلُّها أو لا شيء: تدخل إن دخل منها واحد، وتخرج كلُّها إن استُثني منها واحد.
  *  • ثمّ: السعرُ صفرٌ لا يُرفع بنسبة (يُعدّ ولا يُكتب). */
 export function productsInScope(all: PlanProduct[], spec: PriceSpec): { rows: PlanProduct[]; direct: Set<string>; zero: number } {
   if (!spec.products) return { rows: [], direct: new Set(), zero: 0 };
-  const base = all.filter((p) => !p.farm_id);
+  const base = all.filter((p) => !p.farm_id && (p.price_currency ?? "IQD") === "IQD");
   const cats = spec.p_categories ? new Set(spec.p_categories) : null;
   const cos = spec.p_companies ? new Set(spec.p_companies) : null;
   const secs = spec.p_sections ? new Set(spec.p_sections) : null;
