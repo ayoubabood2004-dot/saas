@@ -123,7 +123,8 @@ export function Sidebar() {
     { to: "/platform", icon: ShieldCheck, label: t("nav.platform", "لوحة المنصّة"), show: isPlatformAdmin(user?.email) },
     // حقلُ المشغّل (0247): مساحتُه بباقة الحقل، يدخلها بضغطة. يُخفى داخلَ مساحةٍ بباقة الحقل
     // (هو داخلُه، أو عيادةٌ بباقة حقل) — فرابطُ «/poultry» فوقه يفتح الدفترَ نفسَه.
-    { to: "/platform/farm", icon: Bird, label: t("nav.poultry"), show: isPlatformAdmin(user?.email) && plan !== "farm" },
+    // باسم الباقة («حقل الدواجن») لا باسم القائمة: بعيادةٍ زبونة يظهر بجانب «حقول الدواجن» (حالةُ الحقل) — اسمان مختلفان.
+    { to: "/platform/farm", icon: Bird, label: t("plans.farm.name"), show: isPlatformAdmin(user?.email) && plan !== "farm" },
     // وللكادر الذي يملك إذنَ الصور (مديرٌ أو طبيبٌ أو من أُذن له) — المصوّرُ له قائمتُه فوق.
     { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), show: can("manageProductPhotos") && can("manageInventory") },
   ] as NavItem[]).filter((it) => it.show !== false);

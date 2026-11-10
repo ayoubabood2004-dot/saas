@@ -26,7 +26,7 @@ import { flockApi } from "@/lib/flockApi";
 import { addDays, ageOn, dailyLosses, diffDays, dueOn, FLOCK_ALERT_PCT } from "@/lib/flockMath";
 import type { FlockBundle, FlockMedia, FlockMortality, FlockTreatment, FlockVax, FlockVisit } from "@/lib/flockTypes";
 import { ageLabel, dayLabel, flockError, isClosed, localDay, num, relDay } from "./flockShared";
-import { CaseEditSheet, CloseSheet, MortalitySheet, ProgramsSheet, VaxSheet, type VaxMode } from "./FlockSheets";
+import { CaseEditSheet, CloseSheet, FarmEditSheet, MortalitySheet, ProgramsSheet, VaxSheet, type VaxMode } from "./FlockSheets";
 import { TreatmentCard, TreatmentSheet } from "./FlockTreatment";
 
 const loadVisit = () => page(() => import("@/components/flock/FlockVisit").then((m) => ({ default: m.FlockVisit })), ["flkv"]);
@@ -40,7 +40,7 @@ type Sheet =
   | { k: "vax"; vax?: FlockVax; mode: VaxMode }
   | { k: "tx"; tx?: FlockTreatment }
   | { k: "visit"; visit?: FlockVisit }
-  | { k: "close" } | { k: "edit" } | { k: "programs" } | { k: "menu" }
+  | { k: "close" } | { k: "edit" } | { k: "farm" } | { k: "programs" } | { k: "menu" }
   | null;
 
 export function FlockCasePage() {
@@ -58,15 +58,16 @@ export function FlockCasePage() {
   const seq = useRef(0);
   const today = localISO();
 
-  const reload = useCallback(async () => {
+  /** يرجع الحزمةَ الجديدة (أو null إن فشلت) — من يفتح شيئاً بعد الحفظ يفتحه منها لا من القديمة. */
+  const reload = useCallback(async (): Promise<FlockBundle | null> => {
     const my = ++seq.current;
     try {
       const nb = await flockApi.bundle(caseId);
       if (my === seq.current) { setB(nb); setErr(null); setStale(false); }
+      return nb;
     } catch (e) {
-      if (my !== seq.current) return;
-      setErr(flockError(e, t));
-      setStale(true);
+      if (my === seq.current) { setErr(flockError(e, t)); setStale(true); }
+      return null;
     }
   }, [caseId, t]);
   useEffect(() => { setB(null); setErr(null); setStale(false); void reload(); }, [reload]);
@@ -179,7 +180,7 @@ export function FlockCasePage() {
         {!closed && layer && s.egg_withdrawal_unknown && <AlertRow tone="danger" icon={<ShieldAlert size={18} />}>{t("flk.alert.wdEggUnknown")}</AlertRow>}
         {!closed && s.mortality_alert && (
           <AlertRow tone="danger" icon={<AlertTriangle size={18} />}>
-            {s.alert_houses.length ? t("flk.alert.mortHouses", { houses: s.alert_houses.map(houseName).join("، "), pct: FLOCK_ALERT_PCT }) : t("flk.alert.mort", { pct: FLOCK_ALERT_PCT })}
+            {s.alert_houses.length ? t("flk.alert.mortHouses", { houses: s.alert_houses.map(houseName).join(t("common.listSep")), pct: FLOCK_ALERT_PCT }) : t("flk.alert.mort", { pct: FLOCK_ALERT_PCT })}
           </AlertRow>
         )}
         {!closed && s.vax_overdue > 0 && <AlertRow tone="warn" icon={<Syringe size={18} />}>{t("flk.alert.vaxLate", { n: s.vax_overdue })}</AlertRow>}
@@ -245,14 +246,14 @@ export function FlockCasePage() {
             {[...b.treatments]
               .sort((x, y) => rank(x) - rank(y) || y.start_on.localeCompare(x.start_on) || y.version - x.version)
               .map((tx) => (
-                <TreatmentCard key={tx.id} b={b} tx={tx} today={today} closed={closed}
+                <TreatmentCard key={tx.id} b={b} tx={tx} today={today} closed={closed} canEdit={can("editMedical")} canSend={can("addPets")}
                   onEdit={() => setSheet({ k: "tx", tx })} onChanged={(msg) => saved(msg)} />
               ))}
           </div>
         )}
         {tab === "feed" && <FeedTab b={b} today={today} />}
         {tab === "media" && (
-          <MediaTab b={b} canAdd={!closed && can("addPets")} canRemove={can("editMedical")} onChanged={() => saved()} />
+          <MediaTab b={b} canAdd={can("addPets")} canRemove={can("editMedical")} onChanged={() => saved()} />
         )}
       </div>
 
@@ -262,11 +263,13 @@ export function FlockCasePage() {
       {sheet?.k === "tx" && <TreatmentSheet b={b} tx={sheet.tx} onClose={() => setSheet(null)} onSaved={(msg) => saved(msg)} />}
       {sheet?.k === "close" && <CloseSheet b={b} onClose={() => setSheet(null)} onSaved={() => saved(t("flk.closedDone"))} />}
       {sheet?.k === "edit" && <CaseEditSheet b={b} onClose={() => setSheet(null)} onSaved={() => saved(t("flk.saved"))} />}
+      {sheet?.k === "farm" && <FarmEditSheet b={b} onClose={() => setSheet(null)} onSaved={() => saved(t("flk.saved"))} />}
       {sheet?.k === "programs" && <ProgramsSheet onClose={() => setSheet(null)} />}
       {sheet?.k === "menu" && (
         <Dialog open onClose={() => setSheet(null)} title={b.farm.name} size="sm">
           <div className="grid gap-2">
             {!closed && can("addPets") && <Button variant="outline" leftIcon={<Pencil size={16} />} onClick={() => setSheet({ k: "edit" })} data-flock-edit>{t("flk.editCase")}</Button>}
+            {can("addPets") && <Button variant="outline" leftIcon={<Pencil size={16} />} onClick={() => setSheet({ k: "farm" })} data-flock-farm-edit>{t("flk.farmEdit.title")}</Button>}
             {!closed && can("editMedical") && <Button variant="outline" leftIcon={<Lock size={16} />} onClick={() => setSheet({ k: "close" })} data-flock-close>{t("flk.closeCase")}</Button>}
             {closed && <p className="text-sm text-ink-muted">{t("flk.closedHint")}</p>}
           </div>
@@ -276,8 +279,16 @@ export function FlockCasePage() {
         <LoadBoundary scope="flock-visit" onRetry={() => { FlockVisitLazy = loadVisit(); setVisitTick((n) => n + 1); }}>
           <Suspense fallback={null}>
             <FlockVisitLazy key={`${visitTick}-${sheet.visit?.id ?? "new"}`} b={b} visit={sheet.visit} canEdit={!closed && can("editMedical")}
-              onClose={() => setSheet(null)}
-              onSaved={(msg: string, v?: FlockVisit) => { toast.success(msg); void reload(); setSheet(v ? { k: "visit", visit: v } : null); }} />
+              canPhoto={can("addPets")} onClose={() => setSheet(null)} onChanged={() => void reload()}
+              onSaved={async (msg: string, v?: FlockVisit) => {
+                // الزيارةُ المحفوظة تُفتح من الحزمة **الجديدة** وحدها: فتحُها من القديمة (بلا نافقها وتشريحها) ثمّ «عدّل»
+                // قبل وصول الجديدة كان يرسل [] فيمسحهما الخادم (مراجعةٌ عدائيّة). تفشل الإعادة ⇒ تبقى مغلقة وشريطُ «قديم».
+                toast.success(msg);
+                setSheet(null);
+                const nb = await reload();
+                const fresh = v && nb ? nb.visits.find((x) => x.id === v.id) : undefined;
+                if (fresh) setSheet((cur) => cur ?? { k: "visit", visit: fresh });
+              }} />
           </Suspense>
         </LoadBoundary>
       )}
@@ -530,6 +541,7 @@ function VaxTab({ b, today, canEdit, canPrograms, onAct, onPrograms, onDeleted }
   const { t } = useTranslation();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<FlockVax | null>(null);
   const list = [...b.vax].sort((x, y) => (x.planned_age ?? 999) - (y.planned_age ?? 999) || (x.given_on ?? "").localeCompare(y.given_on ?? ""));
   return (
     <div className="space-y-3" data-flock-vax>
@@ -566,10 +578,7 @@ function VaxTab({ b, today, canEdit, canPrograms, onAct, onPrograms, onDeleted }
                     <button type="button" className="grid h-9 w-9 place-items-center rounded-lg text-ink-muted hover:bg-surface-2" aria-label={t("flk.edit")} onClick={() => onAct(v, v.status === "planned" ? "edit" : v.status === "given" ? "give" : "skip")}><Pencil size={15} /></button>
                     {v.status !== "given" && (
                       <button type="button" disabled={busy === v.id} className="grid h-9 w-9 place-items-center rounded-lg text-ink-muted hover:bg-surface-2 hover:text-danger-600" aria-label={t("flk.delete")}
-                        onClick={async () => {
-                          setBusy(v.id);
-                          try { await flockApi.deleteVax(v.id); onDeleted(); } catch (e) { toast.error(flockError(e, t)); } finally { setBusy(null); }
-                        }}><Trash2 size={15} /></button>
+                        onClick={() => setConfirm(v)} data-flock-vax-del={v.id}><Trash2 size={15} /></button>
                     )}
                   </div>
                 )}
@@ -577,6 +586,18 @@ function VaxTab({ b, today, canEdit, canPrograms, onAct, onPrograms, onDeleted }
             );
           })}
         </div>
+      )}
+      {confirm && (
+        <Dialog open onClose={() => setConfirm(null)} size="sm" title={t("flk.vax.deleteTitle")}
+          footer={<>
+            <Button variant="ghost" onClick={() => setConfirm(null)}>{t("flk.cancel")}</Button>
+            <Button variant="danger" loading={busy === confirm.id} onClick={async () => {
+              setBusy(confirm.id);
+              try { await flockApi.deleteVax(confirm.id); setConfirm(null); onDeleted(); } catch (e) { toast.error(flockError(e, t)); } finally { setBusy(null); }
+            }} data-flock-confirm-delete>{t("flk.delete")}</Button>
+          </>}>
+          <p className="text-sm text-ink">{t(confirm.status === "skipped" ? "flk.vax.deleteSkipped" : "flk.vax.deleteBody", { vaccine: confirm.vaccine, reason: confirm.skip_reason ?? "" })}</p>
+        </Dialog>
       )}
     </div>
   );

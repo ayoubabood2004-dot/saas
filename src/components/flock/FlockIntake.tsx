@@ -22,6 +22,7 @@ import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFormDraft } from "@/lib/useFormDraft";
 import { cn, localISO } from "@/lib/utils";
+import { rejectedBeforeCommit } from "@/lib/errors";
 import { flockApi, type FlockFarmMatch, type FlockOpenInput } from "@/lib/flockApi";
 import { addDays, ageOn } from "@/lib/flockMath";
 import type { FlockKind, FlockProgram } from "@/lib/flockTypes";
@@ -72,6 +73,8 @@ export function FlockOpenPage() {
   const [owner, setOwner] = useState<Owner>(base);
   const [field, setField] = useState<FieldIntake>(() => emptyFieldIntake(today));
   const [formKey, setFormKey] = useState(0);
+  // فتحٌ فشل بلا جوابٍ حاسم: ربما انفتحت الحالة بمرجعها — الصفحةُ كلُّها (والزبونُ معها) تُقفل على «أعد المحاولة».
+  const [locked, setLocked] = useState(false);
   const value = useMemo<OpenDraft>(() => ({ v: 1, owner, field }), [owner, field]);
   const draft = useFormDraft<OpenDraft>({
     scope: user ? { form: "flockopen", clinic: user.clinic_id ?? user.id, user: user.id } : null,
@@ -96,7 +99,7 @@ export function FlockOpenPage() {
 
       <div key={formKey} className="space-y-5">
         {/* قسمُ الزبون — نفسُه بحالة جديدة (نصوصُه من قاموسها البارد) */}
-        <div className="card p-4 sm:p-5">
+        <fieldset disabled={locked} className="card min-w-0 p-4 sm:p-5">
           <h2 className="mb-4 flex items-center gap-2 font-bold text-ink"><User size={18} className="text-brand-600" /> {t("newCase.ownerSection")}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div><label className="label">{t("newCase.ownerName")}</label>
@@ -107,8 +110,8 @@ export function FlockOpenPage() {
               <GovernorateAreaPicker governorate={owner.governorate} area={owner.area} onChange={(g, a) => setOwner((o) => ({ ...o, governorate: g, area: a }))} />
             </div>
           </div>
-        </div>
-        <FlockIntake owner={owner} value={field} onChange={setField}
+        </fieldset>
+        <FlockIntake owner={owner} value={field} onChange={setField} locked={locked} onLock={() => setLocked(true)}
           onOpened={(id) => { draft.clear(); navigate(`/poultry/c/${id}`, { replace: true }); }} />
       </div>
     </div>
@@ -116,8 +119,8 @@ export function FlockOpenPage() {
 }
 
 /* ── الحقل والوجبة والتحصين ─────────────────────────────────────────────────── */
-function FlockIntake({ owner, value: f, onChange, onOpened }: {
-  owner: Owner; value: FieldIntake; onChange: (v: FieldIntake) => void; onOpened: (caseId: string) => void;
+function FlockIntake({ owner, value: f, onChange, onOpened, locked, onLock }: {
+  owner: Owner; value: FieldIntake; onChange: (v: FieldIntake) => void; onOpened: (caseId: string) => void; locked: boolean; onLock: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -139,8 +142,6 @@ function FlockIntake({ owner, value: f, onChange, onOpened }: {
     flockApi.farmsFor(phone, name).then((r) => { if (my === seq.current) setFarms(r); }, () => { if (my === seq.current) { setFarms(null); setFarmsErr(true); } });
   };
   useEffect(() => { const h = window.setTimeout(lookup, 450); return () => window.clearTimeout(h); }, [who]); // eslint-disable-line react-hooks/exhaustive-deps
-  // حقلٌ اختير ثمّ تبدّل الزبونُ تحته: لا يُفتح باسم زبونٍ آخر.
-  useEffect(() => { if (f.farmId && farms && !farms.some((m) => m.farm.id === f.farmId)) set({ farmId: null }); }, [farms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // برامجُ العيادة — فشلُها يُقال.
   const [programs, setPrograms] = useState<FlockProgram[] | null>(null);
@@ -152,18 +153,23 @@ function FlockIntake({ owner, value: f, onChange, onOpened }: {
 
   const placedOn = f.dateMode === "age" ? (Number(f.ageToday) >= 1 ? addDays(today, -(Math.trunc(Number(f.ageToday)) - 1)) : "") : f.placedOn;
   const houseSum = f.houses.reduce((n, h) => n + (Number(h.count) > 0 ? Math.trunc(Number(h.count)) : 0), 0);
+  // الحقلُ المختار يُحسب **من قائمة هذا الزبون الآن**: سؤالٌ فشل أو زبونٌ تبدّل ⇒ لا حقلَ مختار (كان يُفتح على حقل
+  // الزبون السابق وخانةُ الاسم مخفيّة — مراجعةٌ عدائيّة).
   const chosen = farms?.find((m) => m.farm.id === f.farmId) ?? null;
+  const farmId = chosen ? chosen.farm.id : null;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const open = async () => {
     setErr(null);
-    if (!f.farmId && !f.farmName.trim() && !owner.area.trim()) { setErr(t("flk.open.needFarm")); return; }
+    // حقولُ الزبون ما وصلت: لا يُفتح «جديد» قد يكرّر حقلاً قائماً، ولا قديمٌ لم يُتحقَّق أنه لهذا الزبون.
+    if (farmsErr) { setErr(t("flk.open.farmsFailOpen")); return; }
+    if (!farmId && !f.farmName.trim() && !owner.area.trim()) { setErr(t("flk.open.needFarm")); return; }
     if (!placedOn) { setErr(t("flk.open.needDate")); return; }
     if (f.houses.length ? f.houses.some((h) => !(Number(h.count) >= 1)) : !(Number(f.count) >= 1)) { setErr(t("flk.open.needCount")); return; }
     const p: FlockOpenInput = {
       client_ref: f.ref,
-      farm: f.farmId ? { id: f.farmId } : {
+      farm: farmId ? { id: farmId } : {
         name: f.farmName.trim() || owner.area.trim(), owner_name: owner.name.trim() || null, owner_phone: owner.phone.trim() || null,
         governorate: owner.governorate.trim() || null, area: owner.area.trim() || null, houses_count: f.houses.length || null,
       },
@@ -176,13 +182,17 @@ function FlockIntake({ owner, value: f, onChange, onOpened }: {
       const r = await flockApi.openCase(p);
       if (r.replayed) toast.toast({ tone: "info", title: t("flk.open.replayed") });
       onOpened(r.case.id);
-    } catch (e) { setErr(flockError(e, t)); }
-    finally { setBusy(false); }
+    } catch (e) {
+      const unsure = !rejectedBeforeCommit(e);
+      if (unsure) onLock();
+      setErr(`${flockError(e, t)}${unsure ? ` — ${t("flk.unknownFate")}` : ""}`);
+    } finally { setBusy(false); }
   };
 
   const chip = (on: boolean) => cn("chip text-xs", on ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted");
   return (
     <div className="space-y-5" data-flock-intake>
+      <fieldset disabled={locked} className="min-w-0 space-y-5">
       {/* ١ · الحقل */}
       <div className="card space-y-3 p-4 sm:p-5">
         <h2 className="flex items-center gap-2 font-bold text-ink"><Bird size={18} className="text-brand-600" /> {t("flk.open.farm")}</h2>
@@ -195,9 +205,9 @@ function FlockIntake({ owner, value: f, onChange, onOpened }: {
             <span className="label">{t("flk.open.ownerFarms")}</span>
             <div className="flex flex-wrap gap-1.5">
               {farms.map((m) => (
-                <button key={m.farm.id} type="button" className={chip(f.farmId === m.farm.id)} onClick={() => set({ farmId: m.farm.id })} data-flock-farm={m.farm.id}>{m.farm.name}</button>
+                <button key={m.farm.id} type="button" className={chip(farmId === m.farm.id)} onClick={() => set({ farmId: m.farm.id })} data-flock-farm={m.farm.id}>{m.farm.name}</button>
               ))}
-              <button type="button" className={chip(!f.farmId)} onClick={() => set({ farmId: null })}>{t("flk.open.newFarm")}</button>
+              <button type="button" className={chip(!farmId)} onClick={() => set({ farmId: null })}>{t("flk.open.newFarm")}</button>
             </div>
             {chosen?.open_case && (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm font-bold text-warn-700 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
@@ -207,7 +217,7 @@ function FlockIntake({ owner, value: f, onChange, onOpened }: {
             )}
           </div>
         )}
-        {!f.farmId && (
+        {!farmId && (
           <label className="block"><span className="label">{t("flk.open.farmName")}</span>
             <input className="input" value={f.farmName} maxLength={120} placeholder={owner.area.trim() || t("flk.open.farmNameHint")} onChange={(e) => set({ farmName: e.target.value })} data-flock-farm-name />
           </label>
@@ -298,9 +308,10 @@ function FlockIntake({ owner, value: f, onChange, onOpened }: {
         )}
       </div>
 
+      </fieldset>
       {err && <p className="rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm font-bold text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-200" data-flock-intake-error>{err}</p>}
       <div className="flex justify-end">
-        <Button size="lg" loading={busy} disabled={!!chosen?.open_case} onClick={() => void open()} data-flock-open>{t("flk.open.open")}</Button>
+        <Button size="lg" loading={busy} disabled={!!chosen?.open_case} onClick={() => void open()} data-flock-open>{locked ? t("flk.retry") : t("flk.open.open")}</Button>
       </div>
     </div>
   );

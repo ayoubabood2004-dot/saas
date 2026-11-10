@@ -10,9 +10,10 @@ import { useTranslation } from "react-i18next";
 import { Plus, Trash2 } from "lucide-react";
 import { Button, Dialog, useToast } from "@/components/ui";
 import { localISO } from "@/lib/utils";
+import { rejectedBeforeCommit } from "@/lib/errors";
 import { flockApi } from "@/lib/flockApi";
 import { ageOn, dueOn } from "@/lib/flockMath";
-import type { FlockBundle, FlockCase, FlockKind, FlockMortality, FlockProgram, FlockProgramStep, FlockRoute, FlockVax } from "@/lib/flockTypes";
+import type { FlockBundle, FlockCase, FlockFarm, FlockKind, FlockMortality, FlockProgram, FlockProgramStep, FlockRoute, FlockVax } from "@/lib/flockTypes";
 import { dayLabel, flockError, newRef } from "./flockShared";
 
 export type VaxMode = "new" | "give" | "skip" | "edit";
@@ -38,6 +39,9 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
     Object.fromEntries(houses.map((h) => [h.id ?? "", row && (row.house_id ?? "") === (h.id ?? "") ? { dead: String(row.dead), culled: String(row.culled) } : { dead: "", culled: "" }])));
   const [refs] = useState<Record<string, string>>(() => Object.fromEntries(houses.map((h) => [h.id ?? "", newRef()])));
   const [done, setDone] = useState<Set<string>>(new Set());
+  // قاعةٌ فشل حفظُها بلا جوابٍ حاسم (انقطاع، مهلة): ربما انحفظت بمرجعها. تُقفل خاناتُها على ما أُرسل — الإعادةُ بالمرجع نفسِه
+  // ترجع المحفوظَ هو، فتعديلٌ بعدها كان يُرمى بصمت (درسُ 0264).
+  const [unsure, setUnsure] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const shownHouses = editing ? houses.filter((h) => (h.id ?? "") === (row.house_id ?? "")) : houses;
@@ -53,6 +57,7 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
     setBusy(true);
     const nextErrs: Record<string, string> = {};
     const nextDone = new Set(done);
+    const nextUnsure = new Set(unsure);
     for (const h of todo) {
       const k = h.id ?? "";
       const dead = intOrNull(vals[k].dead) ?? 0;
@@ -63,12 +68,15 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
           ? { id: row.id, expect_updated_at: row.updated_at, house_id: h.id, on_date: day, days: n, dead, culled, note: note || null }
           : { case_id: b.case.id, house_id: h.id, on_date: day, days: n, dead, culled, source, note: note || null, client_ref: refs[k] });
         nextDone.add(k);
+        nextUnsure.delete(k);
       } catch (e) {
         nextErrs[k] = flockError(e, t);
+        if (!editing && !rejectedBeforeCommit(e)) { nextUnsure.add(k); nextErrs[k] = `${nextErrs[k]} — ${t("flk.unknownFate")}`; }
       }
     }
     setBusy(false);
     setDone(nextDone);
+    setUnsure(nextUnsure);
     setErrs(nextErrs);
     if (!Object.keys(nextErrs).length) onSaved();
     else if (nextDone.size > done.size) toast.warn(t("flk.mort.partial"));
@@ -84,12 +92,12 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="label">{t("flk.mort.day")}</span>
-            <input type="date" className="input" value={day} min={b.case.placed_on} max={today} onChange={(e) => setDay(e.target.value)} />
+            <input type="date" className="input" value={day} min={b.case.placed_on} max={today} disabled={unsure.size > 0} onChange={(e) => setDay(e.target.value)} />
             <span className="mt-1 block text-2xs text-ink-subtle">{day ? t("flk.ageShort", { age: ageOn(b.case.placed_on, day) }) : ""}</span>
           </label>
           <label className="block">
             <span className="label">{t("flk.mort.days")}</span>
-            <input type="number" inputMode="numeric" min={1} max={60} className="input" value={days} onChange={(e) => setDays(e.target.value)} />
+            <input type="number" inputMode="numeric" min={1} max={60} className="input" value={days} disabled={unsure.size > 0} onChange={(e) => setDays(e.target.value)} />
             <span className="mt-1 block text-2xs text-ink-subtle">{t("flk.mort.daysHint")}</span>
           </label>
         </div>
@@ -103,9 +111,9 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
                   {done.has(k) && <span className="text-xs text-success-600">{t("flk.mort.houseSaved")}</span>}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.dead")} disabled={done.has(k)}
+                  <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.dead")} disabled={done.has(k) || unsure.has(k)}
                     value={vals[k].dead} onChange={(e) => setVals({ ...vals, [k]: { ...vals[k], dead: e.target.value } })} data-flock-dead />
-                  <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.culled")} disabled={done.has(k)}
+                  <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.culled")} disabled={done.has(k) || unsure.has(k)}
                     value={vals[k].culled} onChange={(e) => setVals({ ...vals, [k]: { ...vals[k], culled: e.target.value } })} data-flock-culled />
                 </div>
                 {errs[k] && <p className="mt-1 text-xs font-bold text-danger-600" data-flock-house-err>{errs[k]}</p>}
@@ -119,7 +127,7 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
             <span className="label">{t("flk.mort.source")}</span>
             <div className="flex gap-2">
               {(["staff", "farmer"] as const).map((v) => (
-                <button key={v} type="button" onClick={() => setSource(v)}
+                <button key={v} type="button" onClick={() => setSource(v)} disabled={unsure.size > 0}
                   className={source === v ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.mort.src.${v}`)}</button>
               ))}
             </div>
@@ -127,7 +135,7 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
         )}
         <label className="block">
           <span className="label">{t("flk.note")}</span>
-          <input className="input" value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
+          <input className="input" value={note} maxLength={1000} disabled={unsure.size > 0} onChange={(e) => setNote(e.target.value)} />
         </label>
       </div>
     </Dialog>
@@ -144,7 +152,8 @@ export function VaxSheet({ b, vax, mode, onClose, onSaved }: { b: FlockBundle; v
   const [disease, setDisease] = useState(vax?.disease ?? "");
   const [route, setRoute] = useState<FlockRoute>(vax?.route ?? "water");
   const [age, setAge] = useState(vax?.planned_age != null ? String(vax.planned_age) : "");
-  const [givenOn, setGivenOn] = useState(vax?.given_on ?? (vax?.planned_age ? minDay(dueOn(b.case.placed_on, vax.planned_age), today) : today));
+  // اليومُ افتراضاً لا يومُ الخطّة: تحصينٌ متأخّر يُختم بيومه المخطَّط فيُخفي التأخير (مراجعةٌ عدائيّة) — ومن أعطاه بيومه يغيّره.
+  const [givenOn, setGivenOn] = useState(vax?.given_on ?? today);
   const [givenBy, setGivenBy] = useState<NonNullable<FlockVax["given_by"]>>(vax?.given_by ?? "farmer");
   const [batch, setBatch] = useState(vax?.batch_no ?? "");
   const [birds, setBirds] = useState(vax?.birds_count != null ? String(vax.birds_count) : "");
@@ -154,6 +163,17 @@ export function VaxSheet({ b, vax, mode, onClose, onSaved }: { b: FlockBundle; v
   const [busy, setBusy] = useState(false);
   const locked = mode === "give" || mode === "skip"; // البندُ معروف — الحالةُ وحدها تتغيّر
 
+  // «انعطى» بالغلط يرجع «مخطّط» (الخادمُ يمنع حذفَ المنجَز ويقول: رجّعه مخطّط).
+  const revert = async () => {
+    if (!vax) return;
+    setBusy(true);
+    try {
+      await flockApi.saveVax({ id: vax.id, expect_updated_at: vax.updated_at, case_id: b.case.id, vaccine: vax.vaccine, disease: vax.disease, route: vax.route,
+        planned_age: vax.planned_age ?? (vax.given_on ? ageOn(b.case.placed_on, vax.given_on) : 1), status: "planned", note: vax.note });
+      onSaved();
+    } catch (e) { toast.error(flockError(e, t)); }
+    finally { setBusy(false); }
+  };
   const save = async () => {
     if (!vaccine.trim()) { toast.error(t("flk.vax.needName")); return; }
     if (status === "planned" && !(Number(age) >= 1)) { toast.error(t("flk.vax.needAge")); return; }
@@ -175,6 +195,7 @@ export function VaxSheet({ b, vax, mode, onClose, onSaved }: { b: FlockBundle; v
   return (
     <Dialog open onClose={onClose} title={mode === "give" ? t("flk.vax.giveTitle", { vaccine }) : mode === "skip" ? t("flk.vax.skipTitle", { vaccine }) : vax ? t("flk.vax.editTitle") : t("flk.vax.addTitle")}
       footer={<>
+        {vax?.status === "given" && <Button variant="ghost" onClick={() => void revert()} disabled={busy} data-flock-vax-revert>{t("flk.vax.revert")}</Button>}
         <Button variant="ghost" onClick={onClose}>{t("flk.cancel")}</Button>
         <Button loading={busy} onClick={() => void save()} data-flock-save>{t("flk.save")}</Button>
       </>}>
@@ -234,7 +255,6 @@ export function VaxSheet({ b, vax, mode, onClose, onSaved }: { b: FlockBundle; v
     </Dialog>
   );
 }
-const minDay = (a: string, b: string) => (a < b ? a : b);
 
 /* ── إغلاقُ الوجبة ──────────────────────────────────────────────────────── */
 export function CloseSheet({ b, onClose, onSaved }: { b: FlockBundle; onClose: () => void; onSaved: () => void }) {
@@ -291,6 +311,42 @@ export function CloseSheet({ b, onClose, onSaved }: { b: FlockBundle; onClose: (
               : t("flk.close.wdEarly", { farm: b.farm.name, day: dayLabel(s.safe_meat_from, today), on: dayLabel(on, today) })}</span>
           </label>
         )}
+      </div>
+    </Dialog>
+  );
+}
+
+/* ── تعديلُ الحقل: رقمُ صاحبه هو عنوانُ كلّ طبلةٍ وتقرير — غلطُه يرسلها لغيره ─────────────── */
+export function FarmEditSheet({ b, onClose, onSaved }: { b: FlockBundle; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const f: FlockFarm = b.farm;
+  const [name, setName] = useState(f.name);
+  const [owner, setOwner] = useState(f.owner_name ?? "");
+  const [phone, setPhone] = useState(f.owner_phone ?? "");
+  const [area, setArea] = useState(f.area ?? "");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!name.trim()) { toast.error(t("flk.err.flock_farm_name")); return; }
+    setBusy(true);
+    try {
+      await flockApi.saveFarm({ id: f.id, name: name.trim(), owner_name: owner.trim() || null, owner_phone: phone.trim() || null, area: area.trim() || null }, f.updated_at);
+      onSaved();
+    } catch (e) { toast.error(flockError(e, t)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Dialog open onClose={onClose} title={t("flk.farmEdit.title")}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>{t("flk.cancel")}</Button>
+        <Button loading={busy} onClick={() => void save()} data-flock-save>{t("flk.save")}</Button>
+      </>}>
+      <div className="grid gap-3 sm:grid-cols-2" data-flock-farm-sheet>
+        <label className="block"><span className="label">{t("flk.open.farmName")}</span><input className="input" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="block"><span className="label">{t("flk.farmEdit.owner")}</span><input className="input" value={owner} maxLength={120} onChange={(e) => setOwner(e.target.value)} /></label>
+        <label className="block"><span className="label">{t("flk.farmEdit.phone")}</span><input className="input" dir="ltr" inputMode="tel" value={phone} maxLength={40} onChange={(e) => setPhone(e.target.value)} data-flock-farm-phone /></label>
+        <label className="block"><span className="label">{t("flk.farmEdit.area")}</span><input className="input" value={area} maxLength={120} onChange={(e) => setArea(e.target.value)} /></label>
+        <p className="text-2xs text-ink-subtle sm:col-span-2">{t("flk.farmEdit.hint")}</p>
       </div>
     </Dialog>
   );

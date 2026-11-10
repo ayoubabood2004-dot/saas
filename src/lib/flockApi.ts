@@ -90,8 +90,11 @@ const MEDIA_BUCKET = "medical-media";
 const photoPath = (caseId: string, ext: string) =>
   `flock/${caseId}/${(typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`)}.${ext.replace(/[^a-z0-9]/gi, "") || "jpg"}`;
 
+/** سقفُ قائمة الوجبات (flock_board) — والشاشةُ تقوله حين تبلغه. */
+export const FLOCK_BOARD_LIMIT = 300;
+
 const cloud: FlockApi = {
-  board: (status = "open") => rpcJson<FlockBoardRow[]>("flock_board", { p_status: status, p_limit: 300 }),
+  board: (status = "open") => rpcJson<FlockBoardRow[]>("flock_board", { p_status: status, p_limit: FLOCK_BOARD_LIMIT }),
   async bundle(caseId) {
     try { return await rpcJson<FlockBundle>("flock_case_bundle", { p_case: caseId }); }
     catch (e) { if ((e as Error)?.message === "No data returned") throw missing(); throw e; }
@@ -117,7 +120,13 @@ const cloud: FlockApi = {
   },
   saveProgram: (p) => { writable(); return rpcJson("flock_program_save", { p }); },
   addMedia: (p) => { writable(); return rpcJson("flock_media_add", { p }); },
-  removeMedia: (id) => { writable(); return rpcJson("flock_media_remove", { p_id: id }); },
+  async removeMedia(id) {
+    writable();
+    const m = await rpcJson<FlockMedia>("flock_media_remove", { p_id: id });
+    // والملفُّ من الدلو أيضاً (أفضلَ جهد) — كان الصفُّ يُحذف ويبقى الملفُّ بالدلو الخاصّ بلا مرجع (مراجعةٌ عدائيّة).
+    if (supabase && m?.path) await supabase.storage.from(MEDIA_BUCKET).remove([m.path]).catch(() => undefined);
+    return m;
+  },
   async uploadPhoto(p) {
     writable();
     if (!supabase) throw new Error("no_cloud");
