@@ -1033,7 +1033,7 @@
     "surgerySyncedNew": "Surgery recorded and a new chart opened for the animal 🔪",
     "surgerySynced": "Surgery recorded automatically in the animal's chart and the surgery log 🔪",
     "retMode": "Return",
-    "retModeOn": "Return mode is on — every barcode you scan goes in as a negative and is offset against the customer's account. Press \"Return\" again to go back to selling.",
+    "retModeOn": "Return mode is on — every barcode you scan goes in as a negative. Press \"Return\" again to go back to selling.",
     "wKg": "{{n}} kg",
     "perKgShort": "/kg",
     "retChip": "Return",
@@ -8483,5 +8483,12 @@
       "vaxLate": "Overdue vaccination: {{vaccine}} {{route}} (due at age {{age}}, {{day}})"
     },
     "mortCovered": "Mortality for {{house}} is already recorded for this day — clear the number, or edit the existing entry in the Mortality tab."
+  },
+  "rpct": {
+    "label": "Refund to customer",
+    "how": "Returns go in as negatives: they offset what the customer buys now, and if nothing is bought the money comes out of the till. They don't reduce an old debt.",
+    "keep": "The customer gets {{back}} back — {{pct}}% of {{full}}. The rest stays with the clinic, and the goods go back to stock in full.",
+    "debt": "Bought on credit? A return from here takes cash out of the till and doesn't reduce their debt — do it from Returns, on their invoice.",
+    "open": "Do it from Returns"
   }
 }

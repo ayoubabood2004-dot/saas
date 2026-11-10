@@ -44,10 +44,12 @@ const PAY_META: { id: PaymentMethod; icon: typeof Banknote }[] = [
   { id: "transfer", icon: ArrowLeftRight },
 ];
 
-export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onChanged: () => void }) {
+export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invoice[]; onChanged: () => void;
+  /** بحثٌ يُفتح به التبويب (من «سوّه من المرتجع» بشاشة البيع): هاتفُ الزبون أو اسمُه. */
+  initialQ?: string | null }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQ ?? "");
   const [picked, setPicked] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [ret, setRet] = useState<Record<string, number>>({});
@@ -198,7 +200,14 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
     return out.sort((a, b) => (b.inv.refunded_at ?? b.inv.created_at).localeCompare(a.inv.refunded_at ?? a.inv.created_at)).slice(0, 8);
   }, [invoices, todayISO]);
 
-  useEffect(() => { setQ(""); }, [picked]);
+  /* البحثُ يُمسح حين **يتبدّل** الاختيار — لا عند التركيب: كان يمسح بأوّل أثرٍ فيضيع بحثُ «سوّه من المرتجع»
+     (وتحت StrictMode يجري الأثرُ مرّتين — فالمقارنةُ بالسابق لا علمُ «أوّل مرّة»). */
+  const prevPicked = useRef(picked);
+  useEffect(() => {
+    if (prevPicked.current === picked) return;
+    prevPicked.current = picked;
+    setQ("");
+  }, [picked]);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr,400px]">
