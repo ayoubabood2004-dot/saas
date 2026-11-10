@@ -27,6 +27,7 @@ import { uid, localISO, formatTime, formatDate } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useFormDraft } from "@/lib/useFormDraft";
 import { holdUpdates } from "@/lib/inflight";
+import { useEntitlements } from "@/lib/entitlements";
 import type { DraftRecord } from "@/lib/formDraft";
 import {
   caseDraftIsEmpty, caseDraftWho, draftIsSavedCase, emptyOwner, lightenCaseDraft, serialFound,
@@ -102,6 +103,8 @@ export function NewCase() {
   const prefill = (location.state as { ownerPrefill?: OwnerPrefill } | null)?.ownerPrefill ?? null;
 
   const [entry, setEntry] = useState<"new" | "serial">("new");
+  // «حقل الدواجن» (0265): حالةُ حقلٍ بصفحتها (/poultry/new) ومعها ما كُتب بقسم الزبون — لا بباقة الحقل (دفترُها غيرُ هذا).
+  const { plan } = useEntitlements();
   // Admission date (تاريخ الدخول) — defaults to today, editable so a case entered
   // late can still be dated to the day it actually came in.
   const [admittedOn, setAdmittedOn] = useState(today);
@@ -344,6 +347,14 @@ export function NewCase() {
       <div className="flex gap-1 mb-5 bg-surface-2 p-1 rounded-xl max-w-md">
         <button className={`flex-1 py-2 rounded-lg text-sm font-semibold ${entry === "new" ? "bg-white text-brand-700 shadow-card" : "text-ink-muted"}`} onClick={() => setEntry("new")}>{t("newCase.entryNew")}</button>
         <button className={`flex-1 py-2 rounded-lg text-sm font-semibold ${entry === "serial" ? "bg-white text-brand-700 shadow-card" : "text-ink-muted"}`} onClick={() => setEntry("serial")}>{t("newCase.entrySerial")}</button>
+        {plan !== "farm" && (
+          <button className="flex-1 py-2 rounded-lg text-sm font-semibold text-ink-muted" data-entry-field onClick={() => {
+            playTap();
+            // ما كُتب هنا زبونٌ وحده (لا حيوان ولا رقم تسلسليّ) ⇒ ينتقل مع الزبون ولا يبقى «مسودّةً» بلا حالة.
+            if (caseDraftIsEmpty({ ...draftValue, owner: ownerBaseline }, ownerBaseline)) draft.clear();
+            navigate("/poultry/new", { state: { ownerPrefill: { name: ownerName, phone, governorate, area } } });
+          }}>{t("plans.farm.name")}</button>
+        )}
       </div>
 
       {/* مالك معبأ من سجلات العيادة — يوضَع أمام عينه دائماً مع مخرج للتعديل */}

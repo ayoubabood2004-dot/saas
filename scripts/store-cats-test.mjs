@@ -68,7 +68,7 @@ const repo = mod.repo;
 const SCI = mod.SCI;
 if (!repo || !SCI) { console.error("✗ store-cats-test: ما انحمّلت الوحدة"); process.exit(1); }
 
-const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
+const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
 const CASES = JSON.parse(readFileSync("scripts/store-cats-cases.json", "utf8"));
 const SQL = readFileSync("supabase/migrations/0233_store_categories.sql", "utf8") + readFileSync("supabase/migrations/0234_store_front_categories.sql", "utf8") + readFileSync("supabase/migrations/0235_store_owner_lock.sql", "utf8");
 

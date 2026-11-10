@@ -144,7 +144,7 @@ await section("▸ ١) السحابيّ: حالُ الجرعة على صفٍّ �
 
 await section("▸ ٢) النسخةُ التجريبية مرآةُ الخادم", async () => {
   const { demoRepo } = await load(`export { demoRepo } from "./src/lib/repoDemo.ts";`);
-  const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
+  const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
   const T = "2026-10-14";
   const row = (id, day, extra = {}) => ({ id, pet_id: "p1", visit_id: "v1", day, time: "08:00", medication: "Amoxicillin", amount: "1 مل", task_type: "drug", administered_at: null, missed_reason: null, result: null, created_at: "", ...extra });
   mem.set(DB_KEY, JSON.stringify({ treatments: [row("m3", "2026-10-11", { missed_reason: "past:not_given" }), row("u2", "2026-10-12"), row("t0", T), row("f1", "2026-10-15")] }));
