@@ -77,6 +77,13 @@ const loadUsdSale = () => page(() => import("@/components/usd/Usd").then((m) => 
 let UsdSaleLazy: ReturnType<typeof loadUsdSale> | null = null;
 /** سعرُ مادّة الدولار بالكرت: «$12.50» — عرضٌ وحده (الحسابُ بـusdMath داخل السلّة). */
 const usdTile = (n?: number | null): string => (n == null ? "$—" : `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`);
+/* نسبةُ الراجع (المالك، ١٠/١١): عياداتٌ تردّ للزبون جزءاً من السعر — القطعةُ ترجع للمخزن كاملةً والباقي للعيادة.
+ * النسبُ وما يحدث بالمال، وملاحظةُ الإرجاع الخالص، قطعةٌ كسولة بنطاقها rpct (نطاقُ «retail» حارٌّ يدفعه الإقلاع)،
+ * وتُصنع بأوّل «راجع» لا عند التحميل — كقطعة الدولار. */
+const loadRetBar = () => page(() => import("@/components/retail/RetPct").then((m) => ({ default: m.RetModeBar })), ["rpct"]);
+const loadRetNote = () => page(() => import("@/components/retail/RetPct").then((m) => ({ default: m.RetPureNote })), ["rpct"]);
+let RetBarLazy: ReturnType<typeof loadRetBar> | null = null;
+let RetNoteLazy: ReturnType<typeof loadRetNote> | null = null;
 let TabPillsLazy = loadTabPills();
 let TabGridLazy = loadTabGrid();
 let TabEditorLazy = loadTabEditor();
@@ -113,6 +120,9 @@ interface Line {
    *  والقطعة ترجع للمخزون بنفس الفاتورة. المفتاح `r:` يفصله عن سطر البيع
    *  لنفس المنتج، فيقدر الكاشير يرجّع واحدة ويبيع ثنتين بعملية واحدة. */
   ret?: boolean;
+  /** نسبةُ ما يُردّ للزبون من سعر سطر الراجع (المالك ١٠/١١): غائبٌ = ١٠٠. القطعةُ ترجع للمخزن كاملةً بأيّ نسبة والكلفةُ
+   *  تُعكس كاملة — الباقي من السعر يبقى للعيادة. على السطر لا بالشاشة: تنجو مع مسودّة السلّة كسائر حقوله. */
+  retPct?: number;
   /** معرّف الخدمة بالكتالوج — تحتاجه عروض الخدمات لتعرف السطر أي خدمة هو
    *  (id السطر نصّ مركّب، وأسطر المختبر تحمل شكلاً آخر). */
   serviceId?: string | null;
@@ -237,6 +247,17 @@ function draftLine(l: Line): Line {
     if (typeof l.consEst === "number" && Number.isFinite(l.consEst) && l.consEst >= 0) out.consEst = l.consEst;
   }
   return out;
+}
+/** نسبةُ سطر: سطرُ البيع ١٠٠ دائماً، وسطرُ الراجع نسبتُه — والغائبُ وما خارج (٠، ١٠٠) = ١٠٠ (مسودّةٌ قديمة أو مكسورة). */
+function retPctOf(l: Pick<Line, "ret" | "retPct">): number {
+  const p = Number(l.retPct);
+  return l.ret && Number.isFinite(p) && p > 0 && p < 100 ? p : 100;
+}
+/** سعرُ الوحدة **الواحد** للسطر: ما يُجمع ويُعرض ويُطبع ويُرسل. لسطر الراجع نسبتُه من سعره بالفلس — الخادمُ يكتب
+ *  ما يصله (retail_return وretail_checkout يحسبان round(qty × unit_price, 2)) فلا حسابَ ثانياً هناك. */
+function lineUnit(l: Pick<Line, "ret" | "retPct" | "unit_price">): number {
+  const p = retPctOf(l);
+  return p === 100 ? l.unit_price : Math.round((Math.round(l.unit_price * 100) * p) / 100) / 100;
 }
 function loadSaleDraft(clinicId?: string): SaleDraft | null {
   try {
@@ -762,7 +783,7 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
  *  إلى التالية. */
 type CheckoutAck = { bigIds?: string[]; expiredIds?: string[]; priceIds?: string[] };
 
-export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
+export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange, onOpenReturns }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
   products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
   /** جيلُ الأسعار لحظةَ **بدء** جلب `products` (`priceGen`). أقدمُ من الجيل الآن ⇒ القائمةُ
@@ -785,6 +806,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   onCustomerCleared?: () => void;
   /** طلبُ دفعٍ بالطريق (بين الإرسال والجواب) — لا «مشغول» الذي يمتدّ لمزامنة السجلّ بعده. */
   onPayingChange?: (paying: boolean) => void;
+  /** «سوّه من المرتجع»: إرجاعٌ خالص لزبونٍ أخذ بالدين لا ينقص دينه (يخرج من الدرج) — الأبُ يفتح تبويبَ «المرتجع»
+   *  بالبحث عنه. غائبٌ (شاشةُ الجملة) = لا زرّ. */
+  onOpenReturns?: (q: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -1105,6 +1129,27 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
+  /** نسبةُ الراجع المختارة: لسطور الراجع كلّها بالسلّة وللقادمة — ومن المسودّة إن رجعت سلّةٌ فيها راجع. */
+  const [retPct, setRetPct] = useState<number>(() => retPctOf(draft0?.cart?.find((l) => l.ret) ?? { ret: true }));
+  const [, setRetLazyTick] = useState(0);
+  /** نسبةٌ واحدة لسطور الراجع كلّها: ما يراه الكاشير على الشريط هو ما بكلّ سطر (نسبتان بسلّةٍ واحدة = إرجاعان). */
+  const pickRetPct = (p: number) => {
+    playTap();
+    const v = retPctOf({ ret: true, retPct: p });
+    setRetPct(v);
+    setCart((c) => c.map((l) => {
+      if (!l.ret) return l;
+      if (v < 100) return { ...l, retPct: v };
+      const rest = { ...l }; delete rest.retPct; return rest;
+    }));
+  };
+  /* وضعُ الراجع أُطفئ ولا سطرَ راجع بالسلّة ⇒ النسبةُ ترجع ١٠٠: نسبةُ زبونٍ سابق لا تنتظر الزبونَ التالي على الشريط. */
+  useEffect(() => { if (!retMode && !cart.some((l) => l.ret)) setRetPct(100); }, [retMode, cart]);
+  /** اسمُ سطر الراجع بالفاتورة والطبعة: «راجع» — و«راجع 50%» بنسبته. */
+  const retTag = (l: Pick<Line, "ret" | "retPct">): string => {
+    const p = retPctOf(l);
+    return p < 100 ? `${t("retail.retPrefix", "راجع")} ${p}%` : t("retail.retPrefix", "راجع");
+  };
 
   /* ── رفعُ الأسعار والسلّةُ المفتوحة (0226) ──────────────────────────────────
    * البيعُ لا يقرأ الكتالوج — سعرُ السطر يُنسخ لحظةَ إضافته. فـ«من لحظة الرفع» تحتاج:
@@ -1298,6 +1343,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         unit_price: pr ? pr.o : listPrice(p), unit_cost: productLineCost(p, null, p.purchase_price),
         qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
         ret: true, retPrior: pr, priceManual: !!pr,
+        ...(retPct < 100 ? { retPct } : {}),
       };
     }, n);
 
@@ -1315,7 +1361,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       product_id: p.id, subcategory: p.subcategory ?? null,
       byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
       expiry: p.expiry_date ?? null,
-      ...(ret ? { retPrior: pr, priceManual: !!pr } : {}),
+      ...(ret ? { retPrior: pr, priceManual: !!pr, ...(retPct < 100 ? { retPct } : {}) } : {}),
     };
     // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
     // لكن **سعر الكيلو المعدَّل بيد الكاشير يبقى**: تعديلُ الوزن لا يجوز أن
@@ -1876,10 +1922,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* الحساب يقرأ الراجع سالباً: قيمة المشترى ناقص قيمة الراجع = ما يدفعه
    * الزبون فعلاً. سطرٌ راجع بألف مع شراءٍ بخمسة ⇒ يدفع أربعة. */
   const sign = (l: Line) => (l.ret ? -1 : 1);
-  const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_price, 0);
+  /* والراجعُ بنسبته (lineUnit): ما يُردّ لا سعرُه — والكلفةُ كاملةً (القطعةُ ترجع للرفّ)، فالباقي ربحٌ للعيادة. */
+  const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);
   const cost = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_cost, 0);
-  /** قيمة الراجع بالسلة (موجبة للعرض) وعدد أسطره. */
-  const retValue = cart.reduce((s, l) => s + (l.ret ? l.qty * l.unit_price : 0), 0);
+  /** قيمة الراجع بالسلة (موجبة للعرض) وعدد أسطره — `retFull` قبل النسبة. */
+  const retValue = cart.reduce((s, l) => s + (l.ret ? l.qty * lineUnit(l) : 0), 0);
+  const retFull = cart.reduce((s, l) => s + (l.ret ? l.qty * l.unit_price : 0), 0);
+  /** النسبةُ الظاهرة: نسبةُ سطور الراجع (واحدةٌ للسلّة) — وبلا سطورٍ النسبةُ المختارة للقادم. */
+  const cartRetPct = retPctOf(cart.find((l) => l.ret) ?? { ret: true, retPct });
   const retLines = cart.filter((l) => l.ret).length;
   /** الراجع أكبر من المشترى ⇒ نقدٌ يخرج، وهذا ليس بيعاً: يُمنع الحفظ هنا
    *  ويُحوَّل الكاشير لتبويب «المرتجع» حيث يخرج المال بقيدٍ صحيح. */
@@ -1893,7 +1943,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // يخصّ السعر لا العدد.
   const units = cart.reduce((s, l) => s + (l.byWeight ? 1 : l.qty), 0);
   // Dynamic Mix & Match offers, evaluated against the live cart.
-  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
+  /* والراجعُ ليس شراءً: سطرُه كان يدخل الحزمةَ فيكمل عرضاً بقطعٍ ترجع — خصمٌ على ما يُردّ. */
+  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart.filter((l) => !l.ret), promoRules), [cart, promoRules]);
 
   // ---- عروض الكمية — تُحسب **مجمّعة** عبر كل الأسطر المشمولة ------------------
   // الفكرة الجوهرية: الزبون الي أخذ ثلاث قطع من ثلاثة أصناف مختلفة دفع ثمن
@@ -1902,6 +1953,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // القطع = علب كاملة: بيع المفرد بالحبة/الشريط خارج العرض عمداً حتى لا تُحسب
   // ثلاث حبات كثلاث قطع.
   const promoLines = (r: QtyPromo): Line[] => cart.filter((l) => {
+    // والراجعُ ليس شراءً — قطعةٌ تُردّ لا تكمل عرضَ «كل ٣ قطع» (كعروض الحزم فوق).
+    if (l.ret) return false;
     if (r.kind === "service") return l.kind === "service" && (!r.ids.length || (l.serviceId ? r.ids.includes(l.serviceId) : false));
     // سطر الوزن خارج العروض القِطعية عمداً: كميّته كيلواتٌ لا قطع، فـ«كل ٣
     // قطع خصم» كانت تقرأ ٣ كغ دراي فود كأنها ثلاث قطع فتخصم بلا استحقاق —
@@ -2219,7 +2272,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setRepriced(new Map());
     setSaleRefSaved(null);
     clearSaleDraft(draftScope);
-    setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
+    setCart([]); setRetPct(100); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setPromoOn([]);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
@@ -2456,9 +2509,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const draftItems: InvoiceItem[] = cart.map((l) => ({
       id: `draft-${l.id}`, invoice_id: "draft", clinic_id: clinicId ?? null,
       product_id: l.product_id,
-      name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
+      name: `${l.ret ? `${retTag(l)} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
       barcode: l.barcode,
-      qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
+      qty: sign(l) * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost, line_total: sign(l) * l.qty * lineUnit(l),
       unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
     }));
     const draft: Invoice = {
@@ -2518,9 +2571,11 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         const stock_qty = l.product_id == null ? 0
           : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
           : l.qty;
+        /* بنسبته: الخادمُ يكتب السحبَ qty × unit_price كما وصل («راجع: الاسم (50%) × 2») والقطعةُ ترجع كاملة (stock_qty). */
+        const pct = retPctOf(l);
         return {
-          product_id: l.product_id, name: l.name, barcode: l.barcode,
-          qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          product_id: l.product_id, name: pct < 100 ? `${l.name} (${pct}%)` : l.name, barcode: l.barcode,
+          qty: l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,
           stock_qty, unit_label: l.byWeight ? t("retail.unitKg", "كغ") : null,
         };
       });
@@ -2655,9 +2710,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         const sid = cloudServiceId(l);
         return {
           product_id: l.product_id,
-          name: l.ret ? `${t("retail.retPrefix", "راجع")} — ${l.name}` : l.name,
+          name: l.ret ? `${retTag(l)} — ${l.name}` : l.name,
           barcode: l.barcode,
-          qty: s * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          // الراجعُ بنسبته (سعرُه بالفاتورة ما رُدّ) وكلفتُه كاملة: القطعةُ ترجع للرفّ والباقي ربحُ العيادة.
+          qty: s * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,
           stock_qty: s * stock_qty, unit_label,
           // خدمةٌ من الكتالوج (0252): الخادمُ يخطّطها من وصفتها — أو من مستهلكات الحالة إن عُدّلت (لكلّ حالةٍ واحدة).
           // ومعرّفٌ ليس uuid لا يُرسل (cloudServiceId): الخادمُ لا يعرفه ويرفض به البيعةَ كلَّها.
@@ -2806,9 +2862,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const invItems: InvoiceItem[] = cart.map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
         product_id: l.product_id,
-        name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
+        name: `${l.ret ? `${retTag(l)} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
         barcode: l.barcode,
-        qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
+        qty: sign(l) * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost, line_total: sign(l) * l.qty * lineUnit(l),
         unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
       }));
       if (feeToClinic) {
@@ -3427,6 +3483,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           {/* بالعرض المضغوط شريطُ الأقسام يشارك زرَّ الراجع سطرَه — صفٌّ أقلّ فوق المنتجات */}
           {compact && !retMode && browseToggle}
         </div>
+        {/* نسبةُ ما يُردّ وما يحدث بالمال — تحت الزرّ ما دام الراجعُ فعّالاً (قطعةٌ كسولة بنطاقها rpct). */}
+        {retMode && (RetBarLazy ??= loadRetBar()) && (
+          <LoadBoundary scope="ret-pct" onRetry={() => { RetBarLazy = loadRetBar(); setRetLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <RetBarLazy pct={cartRetPct} onPick={pickRetPct} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* Products | Services | Medications toggle */}
         {(!compact || retMode) && browseToggle}
@@ -3720,7 +3784,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         : flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
-                        {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
+                        {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}{retPctOf(l) < 100 ? ` ${retPctOf(l)}%` : ""}</span>}
                         {l.ret && l.retPrior && (
                           /* مرتجعٌ لمادةٍ رُفع سعرُها (0226): افتراضُه سعرُ ما قبل الرفع، وضغطةٌ لمن اشترى بعده. */
                           <button type="button" data-retprior onClick={() => { playTap(); const rp = l.retPrior!; setCart((c) => c.map((x) => (x.id === l.id ? { ...x, unit_price: x.unit_price === rp.o ? rp.list : rp.o } : x))); }}
@@ -3902,7 +3966,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         عرض ضيّق فيضخّم كل صفّ ١٨px — أي ثلاثة أصناف أقل بالشاشة. */}
                     <span data-linetotal={l.id} className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold",
                       l.ret ? "text-amber-700 dark:text-amber-300" : "text-ink")}>
-                      {l.ret ? `− ${money(l.qty * l.unit_price)}` : money(l.qty * l.unit_price)}
+                      {l.ret ? `− ${money(l.qty * lineUnit(l))}` : money(l.qty * l.unit_price)}
                     </span>
                     <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Trash2 size={posV2 ? (denseCart ? 15 : 17) : 14} /></button>
                   </motion.div>
@@ -4299,7 +4363,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           {/* الراجع بالسلة — سطرٌ يقول ما الذي طُرح وكم صار يدفع فعلاً */}
           {retLines > 0 && (
             <div data-retsummary className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-              <span className="flex items-center gap-1.5"><Undo2 size={13} /> {t("retail.retInCart", { n: formatNum(retLines), defaultValue: "راجع ({{n}})" })}</span>
+              <span className="flex items-center gap-1.5"><Undo2 size={13} /> {t("retail.retInCart", { n: formatNum(retLines), defaultValue: "راجع ({{n}})" })}{cartRetPct < 100 ? ` · ${cartRetPct}%` : ""}</span>
               <span className="tabular-nums">− {money(retValue)}</span>
             </div>
           )}
@@ -4309,13 +4373,30 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <div data-purereturn className="space-y-2 rounded-2xl border-2 border-warn-300 bg-warn-50 p-3 dark:border-warn-500/40 dark:bg-warn-500/10">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-sm font-black text-warn-800 dark:text-warn-200">
-                  <Undo2 size={15} /> {t("retail.pureReturn", "إرجاع للزبون")}
+                  <Undo2 size={15} /> {t("retail.pureReturn", "إرجاع للزبون")}{cartRetPct < 100 ? ` · ${cartRetPct}%` : ""}
                 </span>
                 <span className="font-display text-xl font-black tabular-nums text-warn-800 dark:text-warn-200">{money(returnValue)}</span>
               </div>
               <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
                 {t("retail.pureReturnWhy", "البضاعة ترجع للمخزن، والمبلغ ينسجّل بالسحوبات باسم كل صنف ووقته.")}
               </p>
+              {/* ما يبقى للعيادة بنسبةٍ أقلّ من ١٠٠، و«ماخذها بالدين؟» — هذا المسارُ يُخرج من الدرج ولا ينقص ديناً:
+                  مكانُه «المرتجع» على فاتورته (يُفتح بالبحث عنه، والسلّةُ تُفرغ فلا يُرجَع الشيءُ نفسُه مرّتين). */}
+              {(RetNoteLazy ??= loadRetNote()) && (
+                <LoadBoundary scope="ret-note" onRetry={() => { RetNoteLazy = loadRetNote(); setRetLazyTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <RetNoteLazy pct={cartRetPct} full={round2(retFull)} back={returnValue}
+                      onOpenReturns={onOpenReturns && !busy && !saleRefSaved ? () => {
+                        /* قبل أيّ محاولة وحدها: إرجاعٌ أُرسل ولم يُعرف مصيرُه (مرجعُه بالسلّة) قد يكون انسجّل — تفريغُ السلّة
+                           ثمّ إرجاعُه من «المرتجع» يُرجع القطعةَ مرّتين. والسلّةُ تُفرغ: الشيءُ نفسُه لا يبقى بانتظار «تأكيد الإرجاع». */
+                        playTap();
+                        const c = splitCustomerField(name);
+                        onOpenReturns(phone.trim() || c.phone || c.name);
+                        reset();
+                      } : undefined} />
+                  </Suspense>
+                </LoadBoundary>
+              )}
               {/* من وين تطلع الفلوس — نفس خيارات الدفع، فالصندوق يطابق */}
               <div className="grid grid-cols-3 gap-1.5">
                 {PAY_OPTIONS.map((o) => {

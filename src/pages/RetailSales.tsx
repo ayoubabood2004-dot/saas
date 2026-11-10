@@ -45,6 +45,10 @@ export function RetailSales() {
   const navFolded = useNavFolded();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
+  /** «سوّه من المرتجع» من شاشة البيع (إرجاعٌ خالص لزبونٍ أخذ بالدين): «المرتجع» يُفتح بالبحث عنه — مرّةً، ويُنسى
+   *  بالخروج من التبويب فلا يعود البحثُ نفسُه لزيارةٍ لاحقة. */
+  const [returnsQ, setReturnsQ] = useState<string | null>(null);
+  useEffect(() => { if (tab !== "returns") setReturnsQ(null); }, [tab]);
 
   // Stale-while-revalidate: paint the last snapshot instantly (seeded by the
   // page's own load() or the idle background-warmer — same key + shape).
@@ -356,12 +360,13 @@ export function RetailSales() {
                   <SaleBuilder products={products} listGen={listGen} clinicId={clinicId} onSold={load} prefill={prefill}
                     onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} onPayingChange={setPayInFlight}
                     prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
-                    onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
+                    onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }}
+                    onOpenReturns={(q) => { setReturnsQ(q); setTab("returns"); }} />
                 </>
               ) : tab === "invoices" ? (
                 <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
               ) : tab === "returns" ? (
-                <ReturnsPanel invoices={invoices} onChanged={load} />
+                <ReturnsPanel invoices={invoices} onChanged={load} initialQ={returnsQ} />
               ) : tab === "debts" ? (
                 <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} onOpenDelivery={() => setTab("delivery")} />
               ) : tab === "delivery" ? (
@@ -374,7 +379,8 @@ export function RetailSales() {
                 <SaleBuilder products={products} listGen={listGen} clinicId={clinicId} onSold={load} prefill={prefill}
                   onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} onPayingChange={setPayInFlight}
                     prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
-                    onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
+                    onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }}
+                    onOpenReturns={(q) => { setReturnsQ(q); setTab("returns"); }} />
               )}
             </>
           )}

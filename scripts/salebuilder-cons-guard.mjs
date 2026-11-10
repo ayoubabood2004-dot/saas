@@ -321,6 +321,8 @@ const STUB = {
   /* خاناتُ الطبيب (0258): قطعتُها وبابُها بديلان صامتان — هذا الحارسُ يقيس المستهلكات، وخاناتُ الطبيب يقيسها pos-tabs-test. */
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
+  /* نسبةُ الراجع (المالك ١٠/١١): قطعتُها بديلٌ صامت هنا (تُستورد بـimport() وحده فلا يولّدها البديلُ الآليّ) — يقيسها ret-pct-test. */
+  "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null; export const RET_PCTS = [100];",
 };
 /** أسماءُ ما يستورده الملفّ من كلّ مُحدِّد (لا الأنواع) — لتوليد البديل. */
 function importsOf(src) {
