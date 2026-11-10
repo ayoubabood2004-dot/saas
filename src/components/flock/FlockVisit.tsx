@@ -29,7 +29,7 @@ import { describeUploadError } from "@/lib/errors";
 import { flockApi, type FlockVisitInput } from "@/lib/flockApi";
 import { addDays, ageOn, diffDays, dueOn, necropsySummary, withdrawalOf } from "@/lib/flockMath";
 import type { FeedPhase, FlockBundle, FlockCompliance, FlockGrade, FlockSnapshot, FlockTrend, FlockVisit as Visit } from "@/lib/flockTypes";
-import { ageLabel, dayLabel, flockError, newRef, num } from "./flockShared";
+import { ageLabel, dayLabel, flockError, localDay, newRef, num } from "./flockShared";
 
 const loadPhotoSource = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.PhotoSource })), ["att"]);
 let PhotoSourceLazy = loadPhotoSource();
@@ -469,7 +469,7 @@ function VisitView({ b, visit: v, canEdit, onEdit, onClose }: { b: FlockBundle; 
   const [tick, setTick] = useState(0);
   const today = localISO();
   const c = b.case;
-  const day = v.at.slice(0, 10);
+  const day = localDay(v.at);
   const birds = b.necropsy.filter((n) => n.visit_id === v.id).sort((x, y) => x.bird_no - y.bird_no);
   const morts = b.mortality.filter((m) => m.visit_id === v.id);
   const summary = necropsySummary(birds);
@@ -594,10 +594,10 @@ function snapshotText(t: TFunction, f: FlockSnapshot): string | null {
 function reportText(t: TFunction, b: FlockBundle, v: Visit): string {
   const today = localISO();
   const c = b.case;
-  const day = v.at.slice(0, 10);
+  const day = localDay(v.at);
   // النافقُ منذ الزيارة السابقة (بيوم التسجيل) — من أيّ مصدر: «نافق اليوم» بالاستقبال يُحسب كما يُحسب ما سُجّل بالزيارة.
   const prev = b.visits.filter((x) => x.id !== v.id && x.at < v.at).reduce<string | null>((mx, x) => (!mx || x.at > mx ? x.at : mx), null);
-  const from = prev ? prev.slice(0, 10) : null;
+  const from = prev ? localDay(prev) : null;
   const inRange = b.mortality.filter((m) => m.on_date <= day && (!from || m.on_date > from));
   const lost = inRange.reduce((n, m) => n + m.dead + m.culled, 0);
   const before = b.mortality.filter((m) => from && m.on_date <= from).reduce((n, m) => n + m.dead + m.culled, 0);

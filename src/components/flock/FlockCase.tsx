@@ -25,7 +25,7 @@ import { describeUploadError } from "@/lib/errors";
 import { flockApi } from "@/lib/flockApi";
 import { addDays, ageOn, dailyLosses, diffDays, dueOn, FLOCK_ALERT_PCT } from "@/lib/flockMath";
 import type { FlockBundle, FlockMedia, FlockMortality, FlockTreatment, FlockVax, FlockVisit } from "@/lib/flockTypes";
-import { ageLabel, dayLabel, flockError, isClosed, num, relDay } from "./flockShared";
+import { ageLabel, dayLabel, flockError, isClosed, localDay, num, relDay } from "./flockShared";
 import { CaseEditSheet, CloseSheet, MortalitySheet, ProgramsSheet, VaxSheet, type VaxMode } from "./FlockSheets";
 import { TreatmentCard, TreatmentSheet } from "./FlockTreatment";
 
@@ -162,7 +162,7 @@ export function FlockCasePage() {
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           <HeadStat label={t("flk.stat.alive")} value={formatNum(s.alive)} sub={t("flk.stat.of", { n: formatNum(s.placed) })} />
           <HeadStat label={t("flk.stat.mortality")} value={`${num(s.cum_pct)}%`} sub={t("flk.stat.deadCulled", { dead: formatNum(s.dead), culled: formatNum(s.culled) })} warn={s.mortality_alert} />
-          <HeadStat label={t("flk.stat.lastVisit")} value={s.last_visit_at ? relDay(t, s.last_visit_at.slice(0, 10), today) : "—"}
+          <HeadStat label={t("flk.stat.lastVisit")} value={s.last_visit_at ? relDay(t, localDay(s.last_visit_at), today) : "—"}
             sub={s.last_trend ? t(`flk.trend.${s.last_trend}`) : t("flk.stat.noVisit")} icon={trendIcon(s.last_trend)} />
         </div>
       </div>
@@ -331,7 +331,7 @@ function Timeline({ b, today, houseName }: { b: FlockBundle; today: string; hous
   for (const v of b.visits) {
     const necro = b.necropsy.filter((n) => n.visit_id === v.id).length;
     ev.push({
-      day: v.at.slice(0, 10), at: v.at, icon: <Stethoscope size={15} />,
+      day: localDay(v.at), at: v.at, icon: <Stethoscope size={15} />,
       text: t("flk.tl.visit", { kind: t(`flk.visitKind.${v.kind}`) }) + (v.dx ? ` · ${v.dx}` : ""),
       sub: [necro ? t("flk.tl.necropsy", { n: necro }) : "", v.trend ? t(`flk.trend.${v.trend}`) : ""].filter(Boolean).join(" · ") || undefined,
     });
@@ -345,7 +345,7 @@ function Timeline({ b, today, houseName }: { b: FlockBundle; today: string; hous
   }
   for (const v of b.vax) {
     if (v.status === "given" && v.given_on) ev.push({ day: v.given_on, at: `${v.given_on}T13`, icon: <Syringe size={15} />, text: t("flk.tl.vaxGiven", { vaccine: v.vaccine, route: t(`flk.route.${v.route}`) }), sub: v.given_by ? t(`flk.givenBy.${v.given_by}`) : undefined });
-    if (v.status === "skipped") ev.push({ day: v.updated_at.slice(0, 10), at: v.updated_at, icon: <Syringe size={15} />, text: t("flk.tl.vaxSkipped", { vaccine: v.vaccine }), sub: v.skip_reason ?? undefined });
+    if (v.status === "skipped") ev.push({ day: localDay(v.updated_at), at: v.updated_at, icon: <Syringe size={15} />, text: t("flk.tl.vaxSkipped", { vaccine: v.vaccine }), sub: v.skip_reason ?? undefined });
   }
   for (const x of b.treatments) {
     if (x.status === "replaced") continue;
@@ -354,7 +354,7 @@ function Timeline({ b, today, houseName }: { b: FlockBundle; today: string; hous
   }
   if (b.media.length) {
     const byDay = new Map<string, number>();
-    for (const m of b.media) byDay.set(m.created_at.slice(0, 10), (byDay.get(m.created_at.slice(0, 10)) ?? 0) + 1);
+    for (const m of b.media) { const day = localDay(m.created_at); byDay.set(day, (byDay.get(day) ?? 0) + 1); }
     for (const [day, n] of byDay) ev.push({ day, at: `${day}T16`, icon: <Camera size={15} />, text: t("flk.tl.photos", { n }) });
   }
   if (c.status === "closed" && c.closed_on) ev.push({ day: c.closed_on, at: `${c.closed_on}T23`, icon: <Lock size={15} />, text: t("flk.tl.closed", { reason: c.close_reason ? t(`flk.close.reason.${c.close_reason}`) : "—" }) });
@@ -512,8 +512,8 @@ function VisitsTab({ b, today, onOpen }: { b: FlockBundle; today: string; onOpen
               </div>
             </div>
             <div className="shrink-0 text-end text-2xs text-ink-subtle">
-              <div className="font-bold">{dayLabel(v.at.slice(0, 10), today)}</div>
-              <div>{t("flk.ageShort", { age: ageOn(b.case.placed_on, v.at.slice(0, 10)) })}</div>
+              <div className="font-bold">{dayLabel(localDay(v.at), today)}</div>
+              <div>{t("flk.ageShort", { age: ageOn(b.case.placed_on, localDay(v.at)) })}</div>
             </div>
           </button>
         );
@@ -599,7 +599,7 @@ function FeedTab({ b, today }: { b: FlockBundle; today: string }) {
         <tbody>
           {rows.map((v) => (
             <tr key={v.id} className="border-b border-line last:border-0">
-              <td className="p-2 text-xs"><div className="font-bold">{dayLabel(v.at.slice(0, 10), today)}</div><div className="text-ink-subtle">{t("flk.ageShort", { age: ageOn(b.case.placed_on, v.at.slice(0, 10)) })}</div></td>
+              <td className="p-2 text-xs"><div className="font-bold">{dayLabel(localDay(v.at), today)}</div><div className="text-ink-subtle">{t("flk.ageShort", { age: ageOn(b.case.placed_on, localDay(v.at)) })}</div></td>
               <td className="p-2">{v.flock.feed_phase ? t(`flk.feedPhase.${v.flock.feed_phase}`) : "—"}</td>
               <td className="p-2">{v.flock.feed_source || "—"}</td>
               <td className="p-2 text-center tabular-nums">{num(v.flock.feed_kg_day)}</td>
@@ -661,7 +661,7 @@ function MediaTab({ b, canAdd, canRemove, onChanged }: { b: FlockBundle; canAdd:
         </div>
       )}
       {view && (
-        <Dialog open onClose={() => setView(null)} size="lg" title={view.caption || dayLabel(view.created_at.slice(0, 10))}
+        <Dialog open onClose={() => setView(null)} size="lg" title={view.caption || dayLabel(localDay(view.created_at))}
           footer={canRemove ? (
             <Button variant="danger" leftIcon={<Trash2 size={16} />} onClick={async () => {
               try { await flockApi.removeMedia(view.id); setView(null); onChanged(); } catch (e) { toast.error(flockError(e, t)); }

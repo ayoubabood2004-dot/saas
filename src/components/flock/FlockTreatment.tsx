@@ -22,7 +22,7 @@ import { quotaMessage, sendWhatsApp, useWarmWaQuota } from "@/lib/quotas";
 import { flockApi, type FlockLineInput } from "@/lib/flockApi";
 import { addDays, ageOn, withdrawalOf } from "@/lib/flockMath";
 import type { FlockBundle, FlockDosePer, FlockDoseUnit, FlockLineKind, FlockLineRoute, FlockTreatment, FlockTreatmentLine } from "@/lib/flockTypes";
-import { dayLabel, esc, flockError, newRef, num } from "./flockShared";
+import { dayLabel, esc, flockError, localDay, newRef, num } from "./flockShared";
 
 const KINDS: FlockLineKind[] = ["med", "vitamin", "electrolyte", "disinfectant", "other"];
 const ROUTES: FlockLineRoute[] = ["water", "feed", "spray", "sc", "im", "eye", "other"];
@@ -223,8 +223,8 @@ export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
           </div>
           <div className="text-xs text-ink-muted">
             {t("flk.tx.span", { from: dayLabel(tx.start_on, today), to: dayLabel(last, today), a1: ageOn(b.case.placed_on, tx.start_on), a2: ageOn(b.case.placed_on, last) })}
-            {tx.sent_at ? ` · ${t("flk.tx.sentOn", { day: dayLabel(tx.sent_at.slice(0, 10), today) })}` : ""}
-            {tx.printed_at ? ` · ${t("flk.tx.printedOn", { day: dayLabel(tx.printed_at.slice(0, 10), today) })}` : ""}
+            {tx.sent_at ? ` · ${t("flk.tx.sentOn", { day: dayLabel(localDay(tx.sent_at), today) })}` : ""}
+            {tx.printed_at ? ` · ${t("flk.tx.printedOn", { day: dayLabel(localDay(tx.printed_at), today) })}` : ""}
           </div>
         </div>
       </div>

@@ -92,6 +92,13 @@ const MAIN = SRC("src/main.tsx");
 check("main.tsx يكنس من demoKey.ts ولا يستورد demoStore.ts", /from "\.\/lib\/demoKey"/.test(MAIN) && !/demoStore/.test(MAIN));
 check("  وdemoStore.ts يعيد تصديرَ الكنس ويأخذ مفتاحَه من demoKey (مفتاحٌ واحد)", /export \{ pruneStaleStorage \} from "\.\/demoKey"/.test(SRC("src/lib/demoStore.ts")) && /const KEY = DEMO_DB_KEY;/.test(SRC("src/lib/demoStore.ts")));
 
+/* ── ح) اليومُ المحلّيّ لختم الخادم ─────────────────────────────────────────────── */
+console.log("▸ ح) يومُ ختم الخادم يومُ بغداد لا يومُ غرينتش");
+const FLOCK_UI = ["src/pages/FlockCases.tsx", ...["FlockCase", "FlockSheets", "FlockTreatment", "FlockVisit", "FlockIntake"].map((f) => `src/components/flock/${f}.tsx`)];
+const sliced = FLOCK_UI.flatMap((f) => SRC(f).split("\n").map((l, i) => [f, i + 1, l]))
+  .filter(([, , l]) => /\b(?:at|[a-z]+_at)\.slice\(0, 10\)/.test(l) && !/\bd\.at\.slice/.test(l));
+check("لا شاشةَ حقلٍ تقطع ختماً من الخادم بـslice(0, 10) — كلُّها بـlocalDay", !sliced.length, sliced.map(([f, n]) => `${f.split("/").pop()}:${n}`).join("، "));
+
 /* ── البناء: المكوّناتُ الحقيقية مع بدائلَ للباب والسياق ─────────────────────────── */
 const mem = new Map();
 globalThis.localStorage = {
@@ -99,7 +106,8 @@ globalThis.localStorage = {
   clear: () => mem.clear(), key: (i) => [...mem.keys()][i] ?? null, get length() { return mem.size; },
 };
 globalThis.window = globalThis.window ?? { localStorage: globalThis.localStorage, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, open: () => null };
-const T = `(k, d, o) => { const opt = d && typeof d === "object" ? d : (o || {}); const s = typeof d === "string" ? d : (opt.defaultValue !== undefined ? opt.defaultValue : k); return String(s); }`;
+// النصُّ مفتاحُه، ومعه قيمُ الإقحام (اليوم، العمر…) — فالفحصُ يرى ما يُقال لا اسمَ المفتاح وحده.
+const T = `(k, d, o) => { const opt = d && typeof d === "object" ? d : (o || {}); const s = typeof d === "string" ? d : (opt.defaultValue !== undefined ? opt.defaultValue : k); const { defaultValue, ...vals } = opt; return String(s) + (Object.keys(vals).length ? "|" + JSON.stringify(vals) : ""); }`;
 const icons = Object.keys(await import("lucide-react")).filter((k) => /^[A-Z]\w*$/.test(k));
 const STUB = {
   "react-i18next": `export const useTranslation = () => ({ t: ${T}, i18n: { language: "ar" } }); export default {};`,
@@ -124,6 +132,7 @@ const STUB = {
   "@/lib/errors": "export const describeDbError = (e) => String((e && e.message) || e); export const describeUploadError = (e) => String(e);",
 };
 const FILES = {
+  shared: "src/components/flock/flockShared.ts",
   sheets: "src/components/flock/FlockSheets.tsx",
   tx: "src/components/flock/FlockTreatment.tsx",
   visit: "src/components/flock/FlockVisit.tsx",
@@ -131,7 +140,7 @@ const FILES = {
 async function build(over = {}) {
   const built = await esbuild.build({
     stdin: {
-      contents: `export { MortalitySheet, CloseSheet } from "./${FILES.sheets}";\nexport { TreatmentSheet } from "./${FILES.tx}";\nexport { FlockVisit } from "./${FILES.visit}";\nexport { flockStats, addDays } from "./src/lib/flockMath.ts";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`,
+      contents: `export { MortalitySheet, CloseSheet } from "./${FILES.sheets}";\nexport { TreatmentSheet } from "./${FILES.tx}";\nexport { FlockVisit } from "./${FILES.visit}";\nexport { flockStats, addDays } from "./src/lib/flockMath.ts";\nexport { localDay } from "./${FILES.shared}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`,
       resolveDir: process.cwd(), sourcefile: "flock-ui.tsx", loader: "tsx",
     },
     bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
@@ -258,6 +267,17 @@ async function run(M, c) {
     ui.unmount();
 
     reset();
+    c("ج٨ ختمُ ٢١:٣٠ غرينتش يومُ بغداد التالي (localDay)", M.localDay("2026-11-10T21:30:00.000Z") === "2026-11-11", M.localDay("2026-11-10T21:30:00.000Z"));
+    {
+      const late = { id: "v2", case_id: "c1", at: `${M.addDays(TODAY, -1)}T21:30:00.000Z`, kind: "routine", quick: true, vet_id: null, flock: {}, signs: [], env: {}, dx: null, dx_codes: [], dx_status: null,
+        notifiable: false, advice: null, notes: null, trend: null, next_visit_on: null, compliance: {}, created_at: "", created_by: null, updated_at: "2026-11-02T00:00:00Z" };
+      const bl = bundleOf(M, { visits: [late] });
+      const vu = M.mount(el(M.FlockVisit, { b: bl, visit: late, canEdit: false, onClose() {}, onSaved() {} }));
+      const shown = vu.text();
+      c("ج٩ زيارةٌ ٠٠:٣٠ ببغداد تُعرض بعمر اليوم (١٢) لا أمس (١١)", shown.includes('"age":12') && !shown.includes('"age":11'), shown.slice(0, 160));
+      vu.unmount();
+    }
+    reset();
     const v = { id: "v1", case_id: "c1", at: `${TODAY}T07:00:00.000Z`, kind: "routine", quick: false, vet_id: null, flock: {}, signs: [], env: {}, dx: null, dx_codes: [], dx_status: null,
       notifiable: false, advice: null, notes: null, trend: null, next_visit_on: null, compliance: {}, created_at: "", created_by: null, updated_at: "2026-11-02T00:00:00Z" };
     const nec = [1, 2].map((no) => ({ id: `n${no}`, case_id: "c1", visit_id: "v1", bird_no: no, source: "dead", weight_g: null, findings: ["lung.airsac_cloudy"], scores: {}, note: null }));
@@ -327,7 +347,7 @@ await run(BASE, check);
 
 /* ── ز) الطفرات ──────────────────────────────────────────────────────────────── */
 console.log("▸ ز) الطفرات");
-const S0 = { sheets: SRC(FILES.sheets), tx: SRC(FILES.tx), visit: SRC(FILES.visit) };
+const S0 = { shared: SRC(FILES.shared), sheets: SRC(FILES.sheets), tx: SRC(FILES.tx), visit: SRC(FILES.visit) };
 const MUTANTS = [
   ["الفارغُ يُحفظ صفراً", "sheets", `!done.has(h.id ?? "") && (v.dead.trim() !== "" || v.culled.trim() !== "")`, `!done.has(h.id ?? "") && true`],
   ["الإعادةُ ترسل المنحفظةَ ثانيةً", "sheets", `!done.has(h.id ?? "") && (v.dead`, `(v.dead`],
@@ -336,6 +356,7 @@ const MUTANTS = [
   ["مسحُ التشريح كلِّه لا يُرسل", "visit", "...(d.birds.length || hadNecro ? {", "...(d.birds.length ? {"],
   ["النافقُ «منذ آخر تسجيل» يوماً واحداً دائماً", "visit", "const n = last ? diffDays(last, day) : ageOn(c.placed_on, day);", "const n = 1;"],
   ["واجبُ التبليغ لا يُختم", "visit", "const notifiable = d.dxCodes.some((x) => NOTIFIABLE.has(x));", "const notifiable = false;"],
+  ["يومُ الختم يومُ غرينتش", "shared", "export const localDay = (iso: string): string => localISO(new Date(iso));", "export const localDay = (iso: string): string => iso.slice(0, 10);"],
   ["السحبُ الفارغ يصير صفراً", "tx", `withdrawal_meat_days: l.kind === "med" ? optInt(l.wd_meat) : null`, `withdrawal_meat_days: l.kind === "med" ? (optInt(l.wd_meat) ?? 0) : null`],
 ];
 for (const [name, file, from, to] of MUTANTS) {
