@@ -8,7 +8,7 @@
 import type { TFunction } from "i18next";
 import i18next from "i18next";
 import { describeDbError } from "@/lib/errors";
-import { searchable } from "@/lib/utils";
+import { localISO, searchable } from "@/lib/utils";
 import { addDays, ageOn, diffDays } from "@/lib/flockMath";
 import type { FlockBoardRow, FlockCase, FlockStats } from "@/lib/flockTypes";
 
@@ -28,6 +28,10 @@ export function dayLabel(iso: string | null | undefined, today?: string): string
   const short = `${Number(d.slice(8, 10))}/${Number(d.slice(5, 7))}`;
   return today && today.slice(0, 4) !== d.slice(0, 4) ? `${short}/${d.slice(0, 4)}` : short;
 }
+
+/** يومُ بغداد لختمٍ من الخادم (timestamptz بـUTC): `at.slice(0, 10)` يومُ غرينتش — زيارةٌ بعد التاسعة مساءً
+ *  بتوقيت بغداد تُقرأ يومَ أمسٍ بعمرٍ أصغر بيوم. اليومُ المحلّيّ للجهاز (عياداتُ العراق ببغداد) كـlocalISO بكلّ النظام. */
+export const localDay = (iso: string): string => localISO(new Date(iso));
 
 /** «اليوم» / «باكر» / «أمس» / «بعد ٣ أيام» / «قبل ٣ أيام» — نسبةً لليوم. */
 export function relDay(t: TFunction, iso: string, today: string): string {
