@@ -6,7 +6,7 @@
  * والإحصاءُ من الخادم (`flock_board` ⇒ `_flock_stats`)، والتجريبيُّ بمرآته المفحوصة (flock-parity).
  * وفشلُ القراءة يُقال بـ«أعد المحاولة» — لا قائمةٌ فارغة تُصدَّق «ماكو حقول» (CLAUDE.md §٣).
  * ========================================================================= */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { AlertTriangle, Bird, CalendarClock, Plus, RefreshCw, Search, ShieldAlert, Stethoscope, Syringe } from "lucide-react";
@@ -14,13 +14,16 @@ import { Badge, Button, Segmented } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn, formatNum, localISO } from "@/lib/utils";
 import { diffDays } from "@/lib/flockMath";
-import { flockApi } from "@/lib/flockApi";
+import { FLOCK_BOARD_LIMIT, flockApi } from "@/lib/flockApi";
 import type { FlockBoardRow } from "@/lib/flockTypes";
 import { ageLabel, dayLabel, flockError, matchesBoard, relDay, urgency } from "@/components/flock/flockShared";
 import { FlockCasePage } from "@/components/flock/FlockCase";
 import { FlockOpenPage } from "@/components/flock/FlockIntake";
 
 type Focus = "alert" | "vax" | "visit" | "wd" | null;
+/** البيّاض: البيضُ بالسحب (أو سحبُه غير معروف) — شارةٌ ثانية جنب اللحم. */
+const isLayer = (r: FlockBoardRow) => r.case.kind === "layer" || r.case.kind === "breeder";
+const eggWd = (r: FlockBoardRow, today: string) => isLayer(r) && ((!!r.stats.safe_egg_from && r.stats.safe_egg_from > today) || r.stats.egg_withdrawal_unknown);
 
 export function FlockCases() {
   return (
@@ -44,10 +47,13 @@ function Board() {
   const [focus, setFocus] = useState<Focus>(null);
   const today = localISO();
 
+  // جوابٌ أبطأُ لفلترٍ سابق لا يكتب فوق الحاليّ.
+  const seq = useRef(0);
   const load = useCallback(async (s: typeof status) => {
+    const my = ++seq.current;
     setErr(null);
-    try { setRows(await flockApi.board(s)); }
-    catch (e) { setRows(null); setErr(flockError(e, t)); }
+    try { const r = await flockApi.board(s); if (my === seq.current) setRows(r); }
+    catch (e) { if (my === seq.current) { setRows(null); setErr(flockError(e, t)); } }
   }, [t]);
   useEffect(() => { setRows(null); void load(status); }, [status, load]);
 
@@ -56,7 +62,7 @@ function Board() {
     alert: open.filter((r) => r.stats.mortality_alert),
     vax: open.filter((r) => r.stats.vax_overdue > 0 || (r.stats.next_vax && diffDays(today, r.stats.next_vax.due_on) <= 1)),
     visit: open.filter((r) => r.stats.visit_overdue || (r.stats.next_visit_on && r.stats.next_visit_on <= today)),
-    wd: open.filter((r) => r.stats.in_withdrawal || r.stats.withdrawal_unknown),
+    wd: open.filter((r) => r.stats.in_withdrawal || r.stats.withdrawal_unknown || eggWd(r, today)),
   };
 
   // ≤ ٣٠٠ وجبة: الفرزُ بكلّ رسمةٍ أرخصُ من مذكّرةٍ تنسى «اليوم» عند منتصف الليل.
@@ -110,6 +116,10 @@ function Board() {
           options={[{ value: "open", label: t("flk.status.open") }, { value: "closed", label: t("flk.status.closed") }, { value: "all", label: t("flk.status.all") }]} />
       </div>
 
+      {/* سقفُ القائمة يُقال لا يُخفى: الأقدمُ لا يظهر ولا يجده البحث (بحثٌ بالجهاز) — «ماكو» عن وجبةٍ موجودة كذبٌ يُصدَّق. */}
+      {rows && rows.length >= FLOCK_BOARD_LIMIT && (
+        <p className="mb-3 rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm font-bold text-warn-700 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-flock-cap>{t("flk.capNote", { n: FLOCK_BOARD_LIMIT })}</p>
+      )}
       {err ? (
         <div className="card flex flex-col items-center gap-3 p-8 text-center" data-flock-error>
           <AlertTriangle size={28} className="text-danger-600" />
@@ -163,6 +173,8 @@ function CaseCard({ r, today, onOpen }: { r: FlockBoardRow; today: string; onOpe
           {s.mortality_alert && <Badge tone="danger" className="text-xs"><AlertTriangle size={12} /> {t("flk.badge.alert")}</Badge>}
           {s.in_withdrawal && s.safe_meat_from && <Badge tone="danger" className="text-xs"><ShieldAlert size={12} /> {t("flk.badge.wd", { day: dayLabel(s.safe_meat_from, today) })}</Badge>}
           {s.withdrawal_unknown && <Badge tone="danger" className="text-xs">{t("flk.badge.wdUnknown")}</Badge>}
+          {isLayer(r) && s.safe_egg_from && s.safe_egg_from > today && <Badge tone="danger" className="text-xs">{t("flk.badge.wdEgg", { day: dayLabel(s.safe_egg_from, today) })}</Badge>}
+          {isLayer(r) && s.egg_withdrawal_unknown && <Badge tone="danger" className="text-xs">{t("flk.badge.wdEggUnknown")}</Badge>}
           {s.vax_overdue > 0 && <Badge tone="warn" className="text-xs"><Syringe size={12} /> {t("flk.badge.vaxLate", { n: s.vax_overdue })}</Badge>}
           {nv && s.vax_overdue === 0 && diffDays(today, nv.due_on) <= 2 && (
             <Badge tone="warn" className="text-xs"><Syringe size={12} /> {nv.vaccine} · {relDay(t, nv.due_on, today)}</Badge>

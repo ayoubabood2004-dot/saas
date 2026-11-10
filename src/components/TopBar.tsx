@@ -27,7 +27,7 @@ import {
   Box, Wallet } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
-import { ShieldCheck, Camera } from "lucide-react";
+import { ShieldCheck, Camera, Bird } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
@@ -54,7 +54,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const { can, baseRole } = usePermissions();
   // موظّفُ التصوير (0222): قائمتُه الصورُ والمتجرُ بإذنه — مرآةُ الشريط الجانبيّ.
   const photographer = baseRole === "photographer";
-  const { has } = useEntitlements();
+  const { has, plan } = useEntitlements();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
@@ -106,6 +106,8 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
         { to: "/records", icon: ClipboardList, label: t("records.title") },
         { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
         { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
+        // «حقول الدواجن» بالهاتف كالشريط الجانبيّ (Sidebar.tsx): حالةُ الحقل للعيادات، ودفترُ صاحب الحقل لباقته.
+        { to: "/poultry", icon: Bird, label: t("nav.poultry"), show: plan !== "farm" || can("manageInventory") },
         { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
         { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
         { to: "/reminders", icon: BellRing, label: t("nav.reminders", "التذكيرات"), show: has("whatsapp") },

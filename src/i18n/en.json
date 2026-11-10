@@ -7774,7 +7774,9 @@
       "wd": "Withdrawal until {{day}}",
       "wdUnknown": "Unknown withdrawal",
       "vaxLate": "Vaccination late ({{n}})",
-      "visitLate": "Visit overdue"
+      "visitLate": "Visit overdue",
+      "wdEgg": "Eggs withheld until {{day}}",
+      "wdEggUnknown": "Egg withdrawal unknown"
     },
     "ageWeek": "Age {{age}} days · week {{week}}",
     "ageShort": "Age {{age}}",
@@ -7956,7 +7958,11 @@
       "skipReason": "Reason not given",
       "needName": "Enter the vaccine name.",
       "needAge": "Enter the vaccination age.",
-      "needReason": "Enter why it wasn't given."
+      "needReason": "Enter why it wasn't given.",
+      "deleteTitle": "Delete this vaccination?",
+      "deleteBody": "The planned “{{vaccine}}” is removed from this batch's schedule.",
+      "deleteSkipped": "The skipped “{{vaccine}}” ({{reason}}) is removed together with its reason.",
+      "revert": "Set back to planned"
     },
     "givenBy": {
       "vet": "Vet",
@@ -8069,7 +8075,15 @@
         "done": "Done",
         "stopped": "Stopped",
         "replaced": "Old version"
-      }
+      },
+      "eggUnknown": "Egg withdrawal unknown — check the pack",
+      "eggSafe": "No eggs before {{safe}}",
+      "eggLabel": "eggs",
+      "shiftNote": "The new version starts {{day}} on the same calendar dates; what was given before stays in the old version.",
+      "stoppedOn": "Stopped on {{day}}",
+      "lineNotGiven": "Not given (the sheet stopped before it)",
+      "cut": "stopped",
+      "caseWide": "The date covers all of this batch's sheets, not just this one."
     },
     "lineKind": {
       "med": "Drug",
@@ -8117,7 +8131,7 @@
       "flock_houses": "Enter the number of birds in each house.",
       "flock_count": "The bird count is invalid (or lower than recorded mortality).",
       "flock_vax": "Vaccination details are missing or invalid.",
-      "flock_changed": "This was changed on another device at the same time — refresh and try again.",
+      "flock_changed": "Changed elsewhere — or your change was saved by an earlier attempt. Refresh and check before trying again.",
       "flock_close": "The closing reason or date is invalid.",
       "flock_withdrawal_active": "Selling is blocked until the drug withdrawal ends — confirm explicitly if you must.",
       "flock_withdrawal_unknown": "A drug in its treatment sheets has no withdrawal period written — check the pack.",
@@ -8186,8 +8200,19 @@
       "restore": "Restore",
       "discard": "Delete",
       "discarded": "Draft deleted",
-      "undo": "Undo"
-    }
+      "undo": "Undo",
+      "farmsFailOpen": "Couldn't load this customer's farms — try again before opening, so an existing farm isn't duplicated."
+    },
+    "capNote": "Showing the latest {{n}} batches — older ones don't appear here and search won't find them.",
+    "farmEdit": {
+      "title": "Edit farm and owner",
+      "owner": "Farm owner",
+      "phone": "Owner's phone",
+      "area": "Area",
+      "hint": "This number receives every treatment sheet and WhatsApp report — double-check it."
+    },
+    "unknownFate": "We don't know whether it saved (the connection dropped). Press “Try again” with the same values — if it was saved, you get that same record back, not a second one.",
+    "savedBefore": "It was already saved — this is the same record"
   },
   "flkv": {
     "newTitle": "New visit",
@@ -8452,7 +8477,11 @@
       "next": "Next visit: {{day}}",
       "advice": "Advice:",
       "notifiable": "Warning: notifiable disease — don't sell or move birds until we review.",
-      "mortalityAll": "Mortality since placement: {{n}} ({{pct}}%)"
-    }
+      "mortalityAll": "Mortality since placement: {{n}} ({{pct}}%)",
+      "safeEggUnknown": "Egg withdrawal unknown — check with us before selling eggs",
+      "safeEgg": "No eggs before: {{day}}",
+      "vaxLate": "Overdue vaccination: {{vaccine}} {{route}} (due at age {{age}}, {{day}})"
+    },
+    "mortCovered": "Mortality for {{house}} is already recorded for this day — clear the number, or edit the existing entry in the Mortality tab."
   }
 }

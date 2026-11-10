@@ -11,7 +11,7 @@
  * و«انسخ من السابق» وملخّصٍ يُحسب؛ واقتراحُ التشخيص منه **اقتراحٌ** يُنقر لا يُختم. ومرضٌ واجبُ التبليغ فرعٌ أحمر.
  * وتقريرُ المربي بعد الحفظ بضغطةٍ جديدة — sendWhatsApp أوّلُ ما يُنادى فيها (درسُ الآيفون ١٩/١٠).
  * ========================================================================= */
-import { Suspense, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { AlertTriangle, Camera, Copy, MessageCircle, Pencil, Plus, X } from "lucide-react";
@@ -25,7 +25,7 @@ import { getClinicName, getDialCode } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
 import { quotaMessage, sendWhatsApp, useWarmWaQuota } from "@/lib/quotas";
 import { prepareUpload } from "@/lib/image";
-import { describeUploadError } from "@/lib/errors";
+import { describeUploadError, rejectedBeforeCommit } from "@/lib/errors";
 import { flockApi, type FlockVisitInput } from "@/lib/flockApi";
 import { addDays, ageOn, diffDays, dueOn, necropsySummary, withdrawalOf } from "@/lib/flockMath";
 import type { FeedPhase, FlockBundle, FlockCompliance, FlockGrade, FlockSnapshot, FlockTrend, FlockVisit as Visit } from "@/lib/flockTypes";
@@ -114,11 +114,11 @@ const draftEmpty = (d: Draft) => !d.signs.length && !d.birds.length && !d.dx.tri
 /** الطبلاتُ التي يُسأل عن تطبيقها: بدأت قبل يوم الزيارة، وليست نسخةً قديمة. */
 const askedTreatments = (b: FlockBundle, day: string) => b.treatments.filter((x) => x.status !== "replaced" && x.start_on < day);
 
-export function FlockVisit({ b, visit, canEdit, onClose, onSaved }: {
-  b: FlockBundle; visit?: Visit; canEdit: boolean; onClose: () => void; onSaved: (msg: string, saved?: Visit) => void;
+export function FlockVisit({ b, visit, canEdit, canPhoto = false, onClose, onSaved, onChanged }: {
+  b: FlockBundle; visit?: Visit; canEdit: boolean; canPhoto?: boolean; onClose: () => void; onSaved: (msg: string, saved?: Visit) => void; onChanged?: () => void;
 }) {
   const [editing, setEditing] = useState(!visit);
-  if (visit && !editing) return <VisitView b={b} visit={visit} canEdit={canEdit} onEdit={() => setEditing(true)} onClose={onClose} />;
+  if (visit && !editing) return <VisitView b={b} visit={visit} canEdit={canEdit} canPhoto={canPhoto} onEdit={() => setEditing(true)} onClose={onClose} onChanged={onChanged} />;
   return <VisitForm b={b} visit={visit} onClose={visit ? () => setEditing(false) : onClose} onSaved={onSaved} />;
 }
 
@@ -132,6 +132,14 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
   const [bird, setBird] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // فشلٌ مجهولُ المصير لزيارةٍ جديدة: ربما انحفظت بمرجعها — النموذجُ يُقفل على «أعد المحاولة» بما كُتب (درسُ 0264).
+  const [locked, setLocked] = useState(false);
+  // ما حمله النموذجُ عند فتحه: الحفظُ يستبدل نافقَ الزيارة وتشريحَها **كما رآهما** — لا ما وصل بحزمةٍ أُعيدت والنموذجُ
+  // مفتوح (فتحٌ من حزمةٍ قبل الحفظ ثمّ «عدّل» كان يرسل [] فيمسحهما الخادم — مراجعةٌ عدائيّة).
+  const loaded = useRef({
+    mort: !!visit && b.mortality.some((m) => m.visit_id === visit.id),
+    necro: !!visit && b.necropsy.some((n) => n.visit_id === visit.id),
+  }).current;
   const draft = useFormDraft<Draft>({
     scope: user && !visit ? { form: `flockvisit-${c.id}`, clinic: user.clinic_id ?? user.id, user: user.id } : null,
     value: d, isEmpty: draftEmpty,
@@ -141,10 +149,13 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
   const today = localISO();
   const houses = b.houses.length ? [...b.houses].sort((x, y) => x.position - y.position) : [{ id: null as string | null, label: t("flk.wholeFlock"), placed_count: c.placed_count, position: 0 }];
 
-  // النافقُ «منذ آخر تسجيل» بالقاعة — بلا صفوف هذه الزيارة إن كانت تعديلاً.
+  // النافقُ «منذ آخر تسجيل» بالقاعة: المدى غيرُ المسجَّل الذي ينتهي بيوم الزيارة (بلا صفوف هذه الزيارة إن كانت تعديلاً).
+  // يومُ الزيارة نفسُه مسجَّلٌ بصفٍّ آخر ⇒ لا مدى؛ وصفٌّ **بعد** يوم الزيارة لا يقفلها — زيارةٌ بتاريخٍ سابق أُدخلت بعد أن
+  // سجّل الاستقبالُ نافقَ اليوم كانت تُقفل وأيامُها قبلُ فارغة (مراجعةٌ عدائيّة).
   const gap = (houseId: string | null): { days: number; from: string } | null => {
     const rows = b.mortality.filter((m) => hk(m.house_id) === hk(houseId) && m.visit_id !== visit?.id);
-    const last = rows.reduce<string | null>((mx, m) => (!mx || m.on_date > mx ? m.on_date : mx), null);
+    if (rows.some((m) => addDays(m.on_date, -(m.days - 1)) <= day && m.on_date >= day)) return null;
+    const last = rows.filter((m) => m.on_date < day).reduce<string | null>((mx, m) => (!mx || m.on_date > mx ? m.on_date : mx), null);
     const n = last ? diffDays(last, day) : ageOn(c.placed_on, day);
     if (n < 1) return null;
     const days = Math.min(60, n);
@@ -172,11 +183,12 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
       const m = d.mort[hk(h.id)];
       if (!m || (!m.dead.trim() && !m.culled.trim())) continue;
       const g = gap(h.id);
-      const days = Math.trunc(Number(m.days.trim() || g?.days || 1));
+      // رقمٌ بقاعةٍ يومُها مسجَّل: يُقال باسمها — لا يُرمى بصمت ولا يُرسل فيرفضه الخادمُ تداخلاً بكلّ حفظ.
+      if (!g) { setErr(t("flkv.mortCovered", { house: h.label })); return; }
+      const days = Math.trunc(Number(m.days.trim() || g.days));
       mortality.push({ house_id: h.id, on_date: day, days, dead: Math.trunc(Number(m.dead || 0)), culled: Math.trunc(Number(m.culled || 0)) });
     }
-    const hadMort = !!visit && b.mortality.some((m) => m.visit_id === visit.id);
-    const hadNecro = !!visit && b.necropsy.some((n) => n.visit_id === visit.id);
+    const hadMort = loaded.mort, hadNecro = loaded.necro;
     const p: FlockVisitInput = {
       id: visit?.id, expect_updated_at: visit?.updated_at ?? null, client_ref: visit ? null : d.ref, case_id: c.id,
       at: at.toISOString(), kind: d.kind, quick: d.quick, flock, signs: d.signs, env: d.env,
@@ -185,7 +197,8 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
       compliance: d.comp,
       ...(mortality.length || hadMort ? { mortality } : {}),
       ...(d.birds.length || hadNecro ? { necropsy: d.birds.map((bd) => ({ bird_no: bd.no, source: bd.source, weight_g: optNum(bd.weight) ?? null, findings: bd.findings, note: bd.note.trim() || null })) } : {}),
-      vax_given: Object.entries(d.vaxGiven).filter(([, by]) => by).map(([id, by]) => ({ id, given_on: day, given_by: by || "vet" })),
+      // المعروضُ وحده: تحصينٌ أُشّر ثمّ رُجع تاريخُ الزيارة فاختفى صفُّه لا يُختم منجَزاً بيومٍ قبل موعده.
+      vax_given: Object.entries(d.vaxGiven).filter(([id, by]) => by && dueVax.some((v) => v.id === id)).map(([id, by]) => ({ id, given_on: day, given_by: by || "vet" })),
     };
     setBusy(true);
     try {
@@ -193,8 +206,10 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
       draft.clear();
       onSaved(r.replayed ? t("flkv.savedBefore") : t("flk.saved"), r.visit);
     } catch (e) {
-      // ما انحفظ شيء (المعاملةُ كلُّها أو لا شيء) — والمسودّةُ باقية بالجهاز.
-      setErr(`${flockError(e, t)}${visit ? "" : ` — ${t("flkv.draftKept")}`}`);
+      // ما انحفظ شيء (المعاملةُ كلُّها أو لا شيء) — أو مجهول: يُقفل على الإعادة. والمسودّةُ باقية بالجهاز.
+      const unsure = !visit && !rejectedBeforeCommit(e);
+      if (unsure) setLocked(true);
+      setErr(`${flockError(e, t)}${unsure ? ` — ${t("flk.unknownFate")}` : visit ? "" : ` — ${t("flkv.draftKept")}`}`);
     } finally { setBusy(false); }
   };
 
@@ -207,9 +222,9 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
       description={<span>{ageLabel(t, c.placed_on, day)}{!visit && draft.saved !== "stopped" ? ` · ${t(draft.saved === "failed" ? "flkv.draftFailed" : "flkv.draftAuto")}` : ""}</span>}
       footer={<>
         <Button variant="ghost" onClick={onClose}>{t("flk.cancel")}</Button>
-        <Button loading={busy} onClick={() => void save()} data-flock-save>{t("flk.save")}</Button>
+        <Button loading={busy} onClick={() => void save()} data-flock-save>{locked ? t("flk.retry") : t("flk.save")}</Button>
       </>}>
-      <div className="space-y-5" data-flock-visit-form>
+      <fieldset disabled={locked} className="min-w-0 space-y-5" data-flock-visit-form>
         {draft.offer && !visit && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm dark:border-brand-500/30 dark:bg-brand-500/10" data-flock-draft-offer>
             <span className="min-w-0 flex-1 font-bold text-ink">{t("flkv.draftOffer", { time: new Date(draft.offer.savedAt).toLocaleString() })}</span>
@@ -250,9 +265,9 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                     <span className="text-2xs font-normal text-ink-subtle">{g ? t("flkv.mortSince", { from: dayLabel(g.from, today), n: Number(m.days || g.days) }) : t("flkv.mortUpToDate")}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
-                    <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.dead")} disabled={!g} value={m.dead} data-flock-v-dead
+                    <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.dead")} disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.dead} data-flock-v-dead
                       onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, dead: e.target.value } } })} />
-                    <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.culled")} disabled={!g} value={m.culled}
+                    <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.culled")} disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.culled}
                       onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, culled: e.target.value } } })} />
                     <input type="number" inputMode="numeric" min={1} max={60} className="input" placeholder={t("flk.mort.days")} disabled={!g} value={m.days}
                       onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, days: e.target.value } } })} />
@@ -434,7 +449,7 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                   <span className="min-w-0 flex-1 truncate text-ink">{v.vaccine} · {t(`flk.route.${v.route}`)} · {t("flk.ageShort", { age: v.planned_age })}</span>
                   <div className="flex gap-1">
                     {(["vet", "farmer"] as const).map((by) => (
-                      <button key={by} type="button" className={cn("chip text-2xs", d.vaxGiven[v.id] === by ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}
+                      <button key={by} type="button" className={cn("chip text-2xs", d.vaxGiven[v.id] === by ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")} data-flock-vgiven={`${v.id}:${by}`}
                         onClick={() => set({ vaxGiven: { ...d.vaxGiven, [v.id]: d.vaxGiven[v.id] === by ? "" : by } })}>{t("flkv.givenBy", { by: t(`flk.givenBy.${by}`) })}</button>
                     ))}
                   </div>
@@ -455,13 +470,15 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
           </label>}
           <p className="mt-2 text-2xs text-ink-subtle">{t("flkv.photosAfter")}</p>
         </Section>
-      </div>
+      </fieldset>
     </Dialog>
   );
 }
 
 /* ── العرض: ما انكتب بالزيارة، وصورُها، والتقريرُ للمربي ───────────────────────── */
-function VisitView({ b, visit: v, canEdit, onEdit, onClose }: { b: FlockBundle; visit: Visit; canEdit: boolean; onEdit: () => void; onClose: () => void }) {
+function VisitView({ b, visit: v, canEdit, canPhoto, onEdit, onClose, onChanged }: {
+  b: FlockBundle; visit: Visit; canEdit: boolean; canPhoto: boolean; onEdit: () => void; onClose: () => void; onChanged?: () => void;
+}) {
   const { t } = useTranslation();
   const toast = useToast();
   useWarmWaQuota();
@@ -489,6 +506,7 @@ function VisitView({ b, visit: v, canEdit, onEdit, onClose }: { b: FlockBundle; 
       const p = await prepareUpload(f, { maxDim: 1600 });
       await flockApi.uploadPhoto({ case_id: c.id, visit_id: v.id, blob: p.blob, dataUrl: p.dataUrl, ext: p.ext, contentType: p.contentType });
       toast.success(t("flk.saved"));
+      onChanged?.();   // تبويبُ المرفقات يُقرأ من جديد — وإلا بدت الصورةُ «ما انضافت» فتُرفع ثانية
     } catch (e) { toast.error((e as { code?: string })?.code ? flockError(e, t) : describeUploadError(e, t)); }
     finally { setBusy(false); }
   };
@@ -510,22 +528,22 @@ function VisitView({ b, visit: v, canEdit, onEdit, onClose }: { b: FlockBundle; 
         </div>
         {morts.length > 0 && row(t("flk.tab.mortality"), morts.map((m) => `${b.houses.length > 1 ? `${b.houses.find((h) => h.id === m.house_id)?.label ?? ""}: ` : ""}${t("flk.tl.mortality", { dead: m.dead, culled: m.culled })}${m.days > 1 ? ` (${t("flk.mort.overDays", { n: m.days })})` : ""}`).join(" · "))}
         {row(t("flkv.s1"), snapshotText(t, v.flock))}
-        {row(t("flkv.s2"), v.signs.map((x) => signLabel(t, x)).join("، "))}
+        {row(t("flkv.s2"), v.signs.map((x) => signLabel(t, x)).join(t("common.listSep")))}
         {Object.keys(v.env).length > 0 && row(t("flkv.s3"), ENV.filter((k) => v.env[k]).map((k) => `${t(`flkv.env.${k}`)}: ${t(`flkv.grade.${v.env[k]}`)}`).join(" · "))}
         {birds.length > 0 && (
           <div className="rounded-xl bg-surface-2 p-3 text-sm">
             <div className="font-bold text-ink">{t("flkv.summary", { n: birds.length })} {summary.map((x) => `${lesionLabel(t, x.code)} ${x.n}/${x.of}`).join(" · ") || t("flkv.allNormal")}</div>
             <ul className="mt-1 space-y-0.5 text-xs text-ink-muted">
               {birds.map((bd) => (
-                <li key={bd.id}>{t("flkv.birdN", { n: bd.bird_no })}{bd.source ? ` (${t(`flkv.birdSrc.${bd.source}`)})` : ""}{bd.weight_g ? ` · ${formatNum(bd.weight_g)} g` : ""}: {bd.findings.filter((f) => !f.endsWith(".normal")).map((f) => lesionLabel(t, f)).join("، ") || t("flkv.allNormal")}{bd.note ? ` — ${bd.note}` : ""}</li>
+                <li key={bd.id}>{t("flkv.birdN", { n: bd.bird_no })}{bd.source ? ` (${t(`flkv.birdSrc.${bd.source}`)})` : ""}{bd.weight_g ? ` · ${formatNum(bd.weight_g)} ${t("flk.unit.g")}` : ""}: {bd.findings.filter((f) => !f.endsWith(".normal")).map((f) => lesionLabel(t, f)).join(t("common.listSep")) || t("flkv.allNormal")}{bd.note ? ` — ${bd.note}` : ""}</li>
               ))}
             </ul>
           </div>
         )}
-        {row(t("flkv.s6"), [v.dx_codes.map((x) => t(`flkv.dx.${x}`)).join("، "), v.dx, v.dx_status ? `(${t(`flkv.dxStatus.${v.dx_status}`)})` : ""].filter(Boolean).join(" ") || null)}
+        {row(t("flkv.s6"), [v.dx_codes.map((x) => t(`flkv.dx.${x}`)).join(t("common.listSep")), v.dx, v.dx_status ? `(${t(`flkv.dxStatus.${v.dx_status}`)})` : ""].filter(Boolean).join(" ") || null)}
         {row(t("flkv.advice"), v.advice)}
         {row(t("flkv.notes"), v.notes)}
-        <div className="pt-2">
+        {canPhoto && <div className="pt-2">
           <div className="mb-2 flex items-center gap-2 text-sm font-bold text-ink"><Camera size={16} /> {t("flkv.photos")}</div>
           <LoadBoundary scope="flock-visit-photo" onRetry={() => { PhotoSourceLazy = loadPhotoSource(); setTick((n) => n + 1); }}>
             <Suspense fallback={null}>
@@ -533,7 +551,7 @@ function VisitView({ b, visit: v, canEdit, onEdit, onClose }: { b: FlockBundle; 
             </Suspense>
           </LoadBoundary>
           <p className="mt-1 text-2xs text-ink-subtle">{t("flkv.photosWhere")}</p>
-        </div>
+        </div>}
       </div>
     </Dialog>
   );
@@ -603,18 +621,25 @@ function reportText(t: TFunction, b: FlockBundle, v: Visit): string {
   const before = b.mortality.filter((m) => from && m.on_date <= from).reduce((n, m) => n + m.dead + m.culled, 0);
   const birds = b.necropsy.filter((n) => n.visit_id === v.id);
   const sum = necropsySummary(birds);
-  const live = b.treatments.filter((x) => x.status === "active");
-  const w = withdrawalOf(b.treatments.filter((x) => x.status !== "replaced"));
+  // الطبلاتُ الجارية يومَ الزيارة وحدها (لا «فعّالةٌ» انتهت أيامُها قبل أسابيع)؛ و«لا تبيع قبل» للوجبة كلّها — المستبدَلةُ
+  // بما انعطى منها حتى إيقافها، كما يحسبه الخادم (_flock_stats) ورأسُ الحالة؛ كانت تُسقطها فتقول تاريخاً أبكر (مراجعةٌ عدائيّة).
+  const live = b.treatments.filter((x) => x.status === "active" && x.start_on <= day
+    && addDays(x.start_on, x.lines.reduce((m, l) => Math.max(m, l.day_to), 1) - 1) >= day);
+  const w = withdrawalOf(b.treatments);
+  const layer = c.kind === "layer" || c.kind === "breeder";
   const nv = b.stats.next_vax;
+  const sep = t("common.listSep");
   const lines = [
     t("flkv.r.head", { farm: b.farm.name, day: dayLabel(day, today), age: ageOn(c.placed_on, day) }),
     inRange.length ? t(from ? "flkv.r.mortality" : "flkv.r.mortalityAll", { n: formatNum(lost), pct: num((lost * 100) / Math.max(1, c.placed_count - before), 2) }) : "",
-    v.signs.length ? t("flkv.r.signs", { list: v.signs.map((x) => signLabel(t, x)).join("، ") }) : "",
-    birds.length ? t("flkv.r.necropsy", { n: birds.length, list: sum.slice(0, 5).map((x) => `${t(`flkv.lesion.${x.code.split(".")[0]}.${x.code.split(".")[1]}`)} ${x.n}/${x.of}`).join("، ") || t("flkv.allNormal") }) : "",
+    v.signs.length ? t("flkv.r.signs", { list: v.signs.map((x) => signLabel(t, x)).join(sep) }) : "",
+    // الآفةُ باسم عضوها: «احتقان» و«نزف» بعضوين — بلا العضو لا يُعرف أيُّهما.
+    birds.length ? t("flkv.r.necropsy", { n: birds.length, list: sum.slice(0, 5).map((x) => `${lesionLabel(t, x.code)} ${x.n}/${x.of}`).join(sep) || t("flkv.allNormal") }) : "",
     v.dx_codes.length || v.dx ? t("flkv.r.dx", { dx: [v.dx_codes.map((x) => t(`flkv.dx.${x}`)).join(" + "), v.dx].filter(Boolean).join(" — ") }) : "",
-    live.length ? t("flkv.r.tx", { list: live.map((x) => x.title || t("flk.tx.untitled")).join("، ") }) : "",
-    w.meat && w.meat > today ? t("flkv.r.safe", { day: dayLabel(w.meat, today) }) : w.unknownMeat ? t("flkv.r.safeUnknown") : "",
-    nv ? t("flkv.r.vax", { vaccine: nv.vaccine, route: t(`flk.route.${nv.route}`), age: nv.age, day: dayLabel(nv.due_on, today) }) : "",
+    live.length ? t("flkv.r.tx", { list: live.map((x) => x.title || t("flk.tx.untitled")).join(sep) }) : "",
+    w.unknownMeat ? t("flkv.r.safeUnknown") : w.meat && w.meat > today ? t("flkv.r.safe", { day: dayLabel(w.meat, today) }) : "",
+    layer ? (w.unknownEgg ? t("flkv.r.safeEggUnknown") : w.egg && w.egg > today ? t("flkv.r.safeEgg", { day: dayLabel(w.egg, today) }) : "") : "",
+    nv ? t(nv.due_on < day ? "flkv.r.vaxLate" : "flkv.r.vax", { vaccine: nv.vaccine, route: t(`flk.route.${nv.route}`), age: nv.age, day: dayLabel(nv.due_on, today) }) : "",
     v.next_visit_on ? t("flkv.r.next", { day: dayLabel(v.next_visit_on, today) }) : "",
     v.advice ? `${t("flkv.r.advice")}\n${v.advice}` : "",
     v.notifiable ? t("flkv.r.notifiable") : "",

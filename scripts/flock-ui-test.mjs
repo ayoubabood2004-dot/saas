@@ -12,6 +12,12 @@
  *   د) الطبلة مرسومةً: سحبُ دواءٍ فارغ يبقى null («غير معروف») لا صفراً، وجرعةٌ بلا رقم بلا وحدتها؛ والمُرسَلةُ تُقال.
  *   هـ) الإغلاقُ بيعاً قبل «لا تبيع قبل»: الزرُّ مقفولٌ حتى التأكيد، والتأكيدُ يُرسل صريحاً.
  *   و) الإقلاع: main.tsx يكنس من demoKey.ts لا من demoStore.ts (كانت تجرّ بذرةَ التجريبيّ كلَّها للإقلاع).
+ *   ط) ما يصل للمربي (المراجعةُ العدائيّة): «لا تبيع قبل» للوجبة كلّها (نسخةٌ مستبدَلةٌ بسحبٍ أطول تحكم)، والبيضُ بالبيّاض،
+ *      والموقوفةُ بأيامها كما انعطت؛ والنسخةُ من طبلةٍ مُرسَلة بتواريخ أيامها نفسِها.
+ *   ي) فشلٌ مجهولُ المصير يُقفل النموذجَ على الإعادة بمرجعه، والرفضُ الحاسم لا يُقفل.
+ *   ك) الزيارة: نموذجٌ فُتح من حزمةٍ قديمة لا يمسح ما وصل بعده؛ والنافقُ «منذ آخر تسجيل» لا يقفله تسجيلٌ بعد يوم الزيارة،
+ *      ورقمٌ بقاعةٍ يومُها مسجَّل يُقال لا يُرسل؛ وتحصينٌ أُشّر ثمّ اختفى صفُّه لا يُختم.
+ *   ل) فتحُ الحالة: سؤالُ حقول الزبون فشل ⇒ لا فتح؛ وحقلٌ اختير لزبونٍ سابق لا يُفتح عليه.
  *   ز) والفحصُ ليس فارغاً: كلُّ طفرةٍ معقولة تُسقط فحصاً على الأقلّ.
  *
  *   node scripts/flock-ui-test.mjs
@@ -129,18 +135,22 @@ const STUB = {
   "@/lib/settings": "export const getClinicName = () => 'Clinic'; export const getClinicLogo = () => null; export const getDialCode = () => '+964';",
   "@/lib/phone": "export const waNumber = (p) => String(p).replace(/\\D/g, '');",
   "@/lib/image": "export const prepareUpload = async () => ({ blob: null, dataUrl: '', ext: 'jpg', contentType: 'image/jpeg' });",
-  "@/lib/errors": "export const describeDbError = (e) => String((e && e.message) || e); export const describeUploadError = (e) => String(e);",
+  // errors.ts حقيقيّة (لا اعتماديات): الإقفالُ بعد «مجهول المصير» يُفحص بتصنيفها نفسِه (rejectedBeforeCommit).
+  "@/components/PhoneInput": `import { createElement } from "react"; export const PhoneInput = ({ value, onChange }) => createElement("input", { value, onChange: (e) => onChange(e.target.value), "data-phone": 1 });`,
+  "@/components/GovernorateAreaPicker": "export const GovernorateAreaPicker = () => null;",
+  "react-router-dom": "export const useNavigate = () => (to) => { globalThis.__nav.push(to); }; export const useLocation = () => ({ state: globalThis.__locState ?? null, pathname: '/poultry/new', search: '' });",
 };
 const FILES = {
   shared: "src/components/flock/flockShared.ts",
   sheets: "src/components/flock/FlockSheets.tsx",
   tx: "src/components/flock/FlockTreatment.tsx",
   visit: "src/components/flock/FlockVisit.tsx",
+  intake: "src/components/flock/FlockIntake.tsx",
 };
 async function build(over = {}) {
   const built = await esbuild.build({
     stdin: {
-      contents: `export { MortalitySheet, CloseSheet } from "./${FILES.sheets}";\nexport { TreatmentSheet } from "./${FILES.tx}";\nexport { FlockVisit } from "./${FILES.visit}";\nexport { flockStats, addDays } from "./src/lib/flockMath.ts";\nexport { localDay } from "./${FILES.shared}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`,
+      contents: `export { MortalitySheet, CloseSheet } from "./${FILES.sheets}";\nexport { TreatmentSheet, sheetText } from "./${FILES.tx}";\nexport { FlockOpenPage } from "./${FILES.intake}";\nexport { FlockVisit } from "./${FILES.visit}";\nexport { flockStats, addDays } from "./src/lib/flockMath.ts";\nexport { localDay } from "./${FILES.shared}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`,
       resolveDir: process.cwd(), sourcefile: "flock-ui.tsx", loader: "tsx",
     },
     bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
@@ -170,7 +180,7 @@ const TODAY = `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())
 function bundleOf(M, o = {}) {
   const placed = M.addDays(TODAY, -11);
   const b = {
-    case: { id: "c1", clinic_id: "k1", farm_id: "f1", kind: "broiler", breed: null, hatchery: null, placed_on: placed, placed_count: 10000, vet_id: null,
+    case: { id: "c1", clinic_id: "k1", farm_id: "f1", kind: o.kind ?? "broiler", breed: null, hatchery: null, placed_on: placed, placed_count: 10000, vet_id: null,
       status: "open", closed_on: null, close_reason: null, sold_count: null, sold_avg_kg: null, note: null, created_at: `${placed}T08:00:00Z`, created_by: null, updated_at: "2026-11-01T00:00:00Z" },
     farm: { id: "f1", clinic_id: "k1", name: "Farm", owner_name: "Owner", owner_phone: "07701234567", cust_key: null, governorate: null, area: null, houses_count: null, note: null, archived: false, created_at: "", updated_at: "" },
     houses: o.houses ?? [], mortality: o.mortality ?? [], visits: o.visits ?? [], necropsy: o.necropsy ?? [], vax: o.vax ?? [], treatments: o.treatments ?? [], media: [],
@@ -180,8 +190,17 @@ function bundleOf(M, o = {}) {
 }
 const H2 = [{ id: "h1", case_id: "c1", label: "H1", placed_count: 6000, position: 0 }, { id: "h2", case_id: "c1", label: "H2", placed_count: 4000, position: 1 }];
 const mrow = (o) => ({ id: "m0", case_id: "c1", house_id: null, on_date: TODAY, days: 1, dead: 0, culled: 0, source: "staff", visit_id: null, note: null, created_at: "", updated_at: "", ...o });
+/** t للنداء المباشر (sheetText): المفتاحُ وقيمُ إقحامه — كبديل الحزمة. */
+const tt = (k, o) => k + (o && Object.keys(o).length ? "|" + JSON.stringify(o) : "");
+/** «١٧/١١» كما تكتبه dayLabel لسنةٍ واحدة. */
+const lbl = (iso) => `${Number(iso.slice(8, 10))}/${Number(iso.slice(5, 7))}`;
+const txRow = (o) => ({ id: "t1", case_id: "c1", visit_id: null, title: null, start_on: TODAY, status: "active", stopped_on: null, version: 1, supersedes: null,
+  sent_at: null, printed_at: null, note: null, created_at: "", updated_at: "2026-11-03T00:00:00Z", lines: [], ...o });
+const lnRow = (o) => ({ id: "l1", treatment_id: "t1", position: 0, day_from: 1, day_to: 5, product_id: null, product_name: "Drug", kind: "med", dose_amount: null,
+  dose_unit: null, dose_per: null, strength_pct: null, hours: null, route: "water", withdrawal_meat_days: 3, withdrawal_egg_days: null, note: null, ...o });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const reset = () => {
-  globalThis.__calls = []; globalThis.__wa = []; globalThis.__toasts = []; globalThis.__draftCleared = 0;
+  globalThis.__calls = []; globalThis.__wa = []; globalThis.__toasts = []; globalThis.__draftCleared = 0; globalThis.__nav = []; globalThis.__locState = null;
   globalThis.__toast = { success: (t) => __toasts.push(["ok", t]), error: (t) => __toasts.push(["err", t]), warn: (t) => __toasts.push(["warn", t]), toast: (t) => __toasts.push(["t", t.title]) };
 };
 const typeIn = (n, value) => { if (!n) throw new Error("typeIn: لا عقدة"); n.props.onChange({ target: { value, checked: value } }); };
@@ -338,6 +357,137 @@ async function run(M, c) {
     c("  وبعد التأكيد يُرسل confirm_withdrawal صريحاً", __calls.length === 1 && __calls[0][1].confirm_withdrawal === true && __calls[0][1].reason === "sold", J(__calls));
     ui.unmount();
   }
+
+  /* ط) ما يصل للمربي */
+  {
+    const D = (n) => M.addDays(TODAY, n);
+    // v1 (سحب ١٠، أُرسلت، استُبدلت اليوم) وv2 (سحب ١): الوجبةُ = آخرُ ما أُعطي من v1 (اليوم) + ١٠ + ١.
+    const v1 = txRow({ id: "t1", start_on: D(-4), status: "replaced", stopped_on: TODAY, sent_at: "x", lines: [lnRow({ day_to: 5, withdrawal_meat_days: 10 })] });
+    const v2 = txRow({ id: "t2", start_on: TODAY, version: 2, supersedes: "t1", lines: [lnRow({ id: "l2", treatment_id: "t2", day_to: 3, withdrawal_meat_days: 1 })] });
+    const bv = bundleOf(M, { treatments: [v1, v2] });
+    const t2 = M.sheetText(tt, bv, v2);
+    c("ط١ طبلةُ النسخة الثانية تقول «لا تبيع قبل» الوجبة كلّها (المستبدَلةُ بسحبها الأطول)", t2.includes(`"safe":"${lbl(D(11))}"`) && !t2.includes(`"safe":"${lbl(D(4))}"`), t2.split("\n").filter((x) => x.includes("safe")).join(" | "));
+    const ly = bundleOf(M, { kind: "layer", treatments: [txRow({ id: "t3", lines: [lnRow({ day_to: 2, withdrawal_meat_days: 0, withdrawal_egg_days: 7 })] })] });
+    const t3 = M.sheetText(tt, ly, ly.treatments[0]);
+    c("ط٢ والبيّاض: سحبُ البيض بسطره وتاريخه (اللحمُ صفر لا يُخفيه)", t3.includes("flk.tx.eggLabel") && t3.includes(`flk.tx.eggSafe|{"safe":"${lbl(D(9))}"}`), t3.split("\n").slice(-4).join(" | "));
+    const st = txRow({ id: "t4", start_on: D(-3), status: "stopped", stopped_on: D(-2), lines: [lnRow({ day_to: 5, withdrawal_meat_days: 2 }), lnRow({ id: "l9", day_from: 3, day_to: 5, withdrawal_meat_days: 9 })] });
+    const t4 = M.sheetText(tt, bundleOf(M, { treatments: [st] }), st);
+    c("ط٣ والموقوفةُ بأيامها كما انعطت: سطرٌ مقصوصٌ بيوم الإيقاف، وسطرٌ بعده «ما انعطى»، و«لا تبيع قبل» من الإيقاف",
+      t4.includes("flk.tx.cut") && t4.includes("flk.tx.lineNotGiven") && t4.includes(`"last":"${lbl(D(-2))}","safe":"${lbl(D(1))}"`), t4.replace(/\n/g, " | ").slice(0, 400));
+  }
+
+  /* ي) نسخةٌ بتواريخها، والإقفالُ بعد «مجهول المصير» */
+  {
+    reset();
+    let mode = null;
+    globalThis.__api = { saveTreatment: async (p) => { __calls.push(p);
+      if (mode === "net") throw new TypeError("Failed to fetch");
+      if (mode === "rej") throw Object.assign(new Error("flock_treatment_line"), { code: "P0001" });
+      return { id: p.id ?? "t9", version: 2, lines: [], replayed: false }; } };
+    const fz = txRow({ id: "t5", start_on: M.addDays(TODAY, -2), sent_at: "x", lines: [lnRow({ day_to: 5 })] });
+    let ui = M.mount(el(M.TreatmentSheet, { b: bundleOf(M, { treatments: [fz] }), tx: fz, onClose() {}, onSaved() {} }));
+    c("ي١ نسخةٌ من طبلةٍ مُرسَلة قبل يومين تقول إن الأيام انزاحت", ui.text(ui.find("data-flock-tx-frozen")).includes("flk.tx.shiftNote"));
+    ui.click(ui.find("data-flock-save")); await flush();
+    const ln = __calls[0]?.lines?.[0] ?? {};
+    c("  وتبدأ اليوم بتواريخ أيامها نفسِها (١–٥ قبل يومين ⇒ ١–٣ من اليوم)", __calls[0]?.start_on === TODAY && ln.day_from === 1 && ln.day_to === 3, J({ s: __calls[0]?.start_on, ln }));
+    ui.unmount();
+
+    reset(); mode = "net";
+    ui = M.mount(el(M.TreatmentSheet, { b: bundleOf(M), onClose() {}, onSaved() {} }));
+    typeIn(ui.find("data-flock-product"), "Doxy");
+    ui.click(ui.find("data-flock-save")); await flush();
+    c("ي٢ طبلةٌ جديدة بلا جواب (انقطاع) ⇒ النموذجُ مقفولٌ على الإعادة ويقولها", !!ui.find("data-flock-unknown") && ui.find("data-flock-tx-sheet")?.props.disabled === true);
+    mode = null;
+    ui.click(ui.find("data-flock-save")); await flush();
+    c("  والإعادةُ بالمرجع نفسِه وبما كُتب", __calls.length === 2 && !!__calls[0].client_ref && __calls[1].client_ref === __calls[0].client_ref && __calls[1].lines[0].product_name === "Doxy", J(__calls.map((x) => x.client_ref)));
+    ui.unmount();
+
+    reset(); mode = "rej";
+    ui = M.mount(el(M.TreatmentSheet, { b: bundleOf(M), onClose() {}, onSaved() {} }));
+    typeIn(ui.find("data-flock-product"), "Doxy");
+    ui.click(ui.find("data-flock-save")); await flush();
+    c("ي٣ والرفضُ الحاسم (P0001) لا يُقفل — يُصلَح ويُعاد", !ui.find("data-flock-unknown") && ui.find("data-flock-tx-sheet")?.props.disabled !== true);
+    ui.unmount();
+  }
+
+  /* ك) الزيارة */
+  {
+    reset();
+    globalThis.__api = { saveVisit: async (p) => { __calls.push(p); return { visit: { id: p.id ?? "v9", ...p }, replayed: false }; } };
+    const v = { id: "v1", case_id: "c1", at: `${TODAY}T07:00:00.000Z`, kind: "routine", quick: false, vet_id: null, flock: {}, signs: [], env: {}, dx: null, dx_codes: [], dx_status: null,
+      notifiable: false, advice: null, notes: null, trend: null, next_visit_on: null, compliance: {}, created_at: "", created_by: null, updated_at: "2026-11-02T00:00:00Z" };
+    const stale = bundleOf(M, { visits: [v] });
+    const fresh = bundleOf(M, { visits: [v], mortality: [mrow({ id: "mv", visit_id: "v1", source: "visit", dead: 9 })],
+      necropsy: [{ id: "n1", case_id: "c1", visit_id: "v1", bird_no: 1, source: "dead", weight_g: null, findings: ["lung.airsac_cloudy"], scores: {}, note: null }] });
+    const Wrap = () => { const [bb, setBb] = React.useState(stale); globalThis.__setB = setBb; return el(M.FlockVisit, { b: bb, visit: v, canEdit: true, onClose() {}, onSaved() {} }); };
+    let ui = M.mount(el(Wrap));
+    ui.click(ui.find("data-flock-visit-edit"));
+    globalThis.__setB(fresh); await flush();
+    ui.click(ui.find("data-flock-save")); await flush();
+    const pk = __calls[0] ?? {};
+    c("ك١ نموذجٌ فُتح من حزمةٍ قبل الحفظ لا يمسح نافقَ الزيارة وتشريحَها حين تصل الجديدة (لا مفتاح = لا مسّ)", __calls.length === 1 && !("mortality" in pk) && !("necropsy" in pk), J(Object.keys(pk)));
+    ui.unmount();
+
+    reset();
+    // آخرُ تسجيلٍ قبل ٦ أيام، والاستقبالُ سجّل اليوم: زيارةٌ بتاريخ أمس تغطّي ما بينهما (٥ أيام).
+    const bg = bundleOf(M, { mortality: [mrow({ id: "m6", on_date: M.addDays(TODAY, -6), dead: 2 }), mrow({ id: "m0", on_date: TODAY, dead: 3 })] });
+    ui = M.mount(el(M.FlockVisit, { b: bg, canEdit: true, onClose() {}, onSaved() {} }));
+    typeIn(ui.all().find((n) => n.props?.type === "datetime-local"), `${M.addDays(TODAY, -1)}T10:00`);
+    const inp = ui.find("data-flock-v-dead");
+    c("ك٢ تسجيلٌ بعد يوم الزيارة لا يقفلها — أيامُها قبلُ فارغة", inp?.props.disabled !== true);
+    typeIn(inp, "7");
+    ui.click(ui.find("data-flock-save")); await flush();
+    const pm = __calls[0]?.mortality?.[0];
+    c("  والنافقُ يغطّي ما بين آخر تسجيلٍ قبلها ويومها (٥ أيام بيوم أمس)", !!pm && pm.on_date === M.addDays(TODAY, -1) && pm.days === 5 && pm.dead === 7, J(__calls[0]?.mortality));
+    ui.unmount();
+
+    reset();
+    ui = M.mount(el(M.FlockVisit, { b: bg, canEdit: true, onClose() {}, onSaved() {} }));
+    typeIn(ui.find("data-flock-v-dead"), "4");   // يومُ الزيارة (اليوم) مسجَّل ⇒ رقمٌ لا يُرسل
+    ui.click(ui.find("data-flock-save")); await flush();
+    c("ك٣ رقمٌ بقاعةٍ يومُها مسجَّل يُقال باسمها ولا يُرسل (كان يُرفض تداخلاً بكلّ حفظ)", __calls.length === 0 && ui.text(ui.find("data-flock-visit-error") ?? { type: "#text", text: "", children: [] }).includes("flkv.mortCovered"), J(__calls.length));
+    ui.unmount();
+
+    reset();
+    const age = 12;   // الوجبةُ بعمر ١٢ اليوم (bundleOf): تحصينٌ مخطَّطٌ لليوم
+    const bx = bundleOf(M, { vax: [{ id: "x1", case_id: "c1", vaccine: "ND", disease: null, route: "water", planned_age: age, status: "planned", given_on: null, given_by: null,
+      batch_no: null, birds_count: null, take_ok: null, note: null, skip_reason: null, from_program: null, visit_id: null, updated_at: "" }] });
+    ui = M.mount(el(M.FlockVisit, { b: bx, canEdit: true, onClose() {}, onSaved() {} }));
+    ui.click(ui.find("data-flock-vgiven", "x1:vet"));
+    typeIn(ui.all().find((n) => n.props?.type === "datetime-local"), `${M.addDays(TODAY, -6)}T10:00`);
+    ui.click(ui.find("data-flock-save")); await flush();
+    c("ك٤ تحصينٌ أُشّر ثمّ رُجع تاريخُ الزيارة فاختفى صفُّه لا يُختم منجَزاً", __calls.length === 1 && Array.isArray(__calls[0].vax_given) && __calls[0].vax_given.length === 0, J(__calls[0]?.vax_given));
+    ui.unmount();
+  }
+
+  /* ل) فتحُ الحالة */
+  {
+    reset();
+    let lookup = "fail";
+    const F1 = { id: "f1", clinic_id: "k1", name: "Farm A", owner_name: "A", owner_phone: null, cust_key: null, governorate: null, area: null, houses_count: null, note: null, archived: false, created_at: "", updated_at: "" };
+    const F2 = { ...F1, id: "f2", name: "Farm B" };
+    globalThis.__api = {
+      farmsFor: async (_ph, name) => { if (lookup === "fail") throw new TypeError("Failed to fetch"); return name === "B" ? [{ farm: F2, open_case: null }] : [{ farm: F1, open_case: null }]; },
+      programs: async () => [],
+      openCase: async (p) => { __calls.push(p); return { case: { id: "cX" }, farm: F1, replayed: false }; },
+    };
+    let ui = M.mount(el(M.FlockOpenPage, {}));
+    typeIn(ui.find("data-flock-owner-name"), "A"); await wait(520); await flush();
+    typeIn(ui.find("data-flock-farm-name"), "New farm"); typeIn(ui.find("data-flock-age-today"), "5"); typeIn(ui.find("data-flock-count"), "1000");
+    ui.click(ui.find("data-flock-open")); await flush();
+    c("ل١ سؤالُ حقول الزبون فشل ⇒ لا فتح (لا «جديد» يكرّر حقلاً قائماً) ويُقال", __calls.length === 0 && !!ui.find("data-flock-farms-error") && ui.text(ui.find("data-flock-intake-error") ?? { type: "#text", text: "", children: [] }).includes("flk.open.farmsFailOpen"), J(__calls.length));
+    ui.unmount();
+
+    reset(); lookup = "ok";
+    ui = M.mount(el(M.FlockOpenPage, {}));
+    typeIn(ui.find("data-flock-owner-name"), "A"); await wait(520); await flush();
+    ui.click(ui.find("data-flock-farm", "f1"));
+    typeIn(ui.find("data-flock-owner-name"), "B"); await wait(520); await flush();
+    typeIn(ui.find("data-flock-farm-name"), "B farm"); typeIn(ui.find("data-flock-age-today"), "5"); typeIn(ui.find("data-flock-count"), "1000");
+    ui.click(ui.find("data-flock-open")); await flush();
+    c("ل٢ حقلٌ اختير لزبونٍ سابق لا يُفتح عليه بعد تبديل الزبون — حقلٌ جديدٌ باسمه", __calls.length === 1 && !("id" in (__calls[0]?.farm ?? {})) && __calls[0]?.farm?.name === "B farm", J(__calls[0]?.farm));
+    ui.unmount();
+  }
 }
 
 /* ── الأصل ───────────────────────────────────────────────────────────────────── */
@@ -346,8 +496,11 @@ const BASE = await build();
 await run(BASE, check);
 
 /* ── ز) الطفرات ──────────────────────────────────────────────────────────────── */
+/** وعدٌ مرفوضٌ بلا معالج: بالأصل فشلٌ صريح (كسلوك node الافتراضيّ)، وبطفرةٍ سقوطٌ لها. */
+let onCrash = null;
+process.on("unhandledRejection", (e) => { if (onCrash) onCrash(e); else { console.error(e); process.exit(1); } });
 console.log("▸ ز) الطفرات");
-const S0 = { shared: SRC(FILES.shared), sheets: SRC(FILES.sheets), tx: SRC(FILES.tx), visit: SRC(FILES.visit) };
+const S0 = { shared: SRC(FILES.shared), sheets: SRC(FILES.sheets), tx: SRC(FILES.tx), visit: SRC(FILES.visit), intake: SRC(FILES.intake) };
 const MUTANTS = [
   ["الفارغُ يُحفظ صفراً", "sheets", `!done.has(h.id ?? "") && (v.dead.trim() !== "" || v.culled.trim() !== "")`, `!done.has(h.id ?? "") && true`],
   ["الإعادةُ ترسل المنحفظةَ ثانيةً", "sheets", `!done.has(h.id ?? "") && (v.dead`, `(v.dead`],
@@ -357,12 +510,28 @@ const MUTANTS = [
   ["النافقُ «منذ آخر تسجيل» يوماً واحداً دائماً", "visit", "const n = last ? diffDays(last, day) : ageOn(c.placed_on, day);", "const n = 1;"],
   ["واجبُ التبليغ لا يُختم", "visit", "const notifiable = d.dxCodes.some((x) => NOTIFIABLE.has(x));", "const notifiable = false;"],
   ["يومُ الختم يومُ غرينتش", "shared", "export const localDay = (iso: string): string => localISO(new Date(iso));", "export const localDay = (iso: string): string => iso.slice(0, 10);"],
+  ["«لا تبيع قبل» للطبلة وحدها", "tx", "const w = withdrawalOf(b.treatments);\n  const last = dayLabel(lastGiven(tx), today);", "const w = withdrawalOf([tx]);\n  const last = dayLabel(lastGiven(tx), today);"],
+  ["سحبُ البيض لا يصل المربي", "tx", "  if (isLayer(b)) {\n    if (w.unknownEgg)", "  if (false) {\n    if (w.unknownEgg)"],
+  ["الموقوفةُ بأيامها المخطَّطة", "tx", "  if (tx.stopped_on && tx.stopped_on < from) return null;", "  if (false) return null;"],
+  ["النسخةُ تبدأ اليوم بأرقام أيامها", "tx", "const shift = frozen && tx ? diffDays(tx.start_on, vStart) : 0;", "const shift = 0;"],
+  ["الفشلُ المجهول لا يُقفل الطبلة", "tx", "if (!tx && !rejectedBeforeCommit(e)) setLocked(true);", "if (false) setLocked(true);"],
+  ["الحفظُ يقرأ الحزمةَ الحاليّة لا ما حمله النموذج", "visit", "const hadMort = loaded.mort, hadNecro = loaded.necro;", "const hadMort = !!visit && b.mortality.some((m) => m.visit_id === visit.id), hadNecro = !!visit && b.necropsy.some((n) => n.visit_id === visit.id);"],
+  ["تسجيلٌ بعد يوم الزيارة يقفلها", "visit", "const last = rows.filter((m) => m.on_date < day).reduce", "const last = rows.reduce"],
+  ["رقمٌ بقاعةٍ مسجَّلة يُرسل", "visit", "      if (!g) { setErr(t(\"flkv.mortCovered\", { house: h.label })); return; }\n", ""],
+  ["تحصينٌ مختفٍ يُختم", "visit", "filter(([id, by]) => by && dueVax.some((v) => v.id === id))", "filter(([, by]) => by)"],
+  ["سؤالُ الحقول الفاشل لا يمنع الفتح", "intake", "    if (farmsErr) { setErr(t(\"flk.open.farmsFailOpen\")); return; }\n", ""],
+  ["الحقلُ المختار يبقى بعد تبديل الزبون", "intake", "const farmId = chosen ? chosen.farm.id : null;", "const farmId = f.farmId;"],
   ["السحبُ الفارغ يصير صفراً", "tx", `withdrawal_meat_days: l.kind === "med" ? optInt(l.wd_meat) : null`, `withdrawal_meat_days: l.kind === "med" ? (optInt(l.wd_meat) ?? 0) : null`],
 ];
 for (const [name, file, from, to] of MUTANTS) {
   const M = await build({ [file]: swap(S0[file], from, to) });
   const fell = [];
-  await run(M, (n, cond) => { if (!cond) fell.push(n); });
+  // انهيارُ الشاشة على الحالة سقوطٌ يُرى (رقمٌ بلا فجوة كان يقرأ g.days من null): يُعدّ مُمسَكاً بسببه. والحفظُ async
+  // فانهيارُه وعدٌ مرفوضٌ بلا معالج لا استثناءٌ يصل run — يُلتقط بالمستمع ما دامت الطفرةُ تجري.
+  onCrash = (e) => fell.push(`انهار: ${e?.message ?? e}`);
+  try { await run(M, (n, cond) => { if (!cond) fell.push(n); }); } catch (e) { fell.push(`انهار: ${e?.message ?? e}`); }
+  await new Promise((r) => setTimeout(r, 20));
+  onCrash = null;
   check(`طفرة «${name}» تُمسك (${fell.length})`, fell.length > 0, "مرّت كلُّ الفحوص — الفحصُ أعمى عنها");
 }
 

@@ -6,6 +6,10 @@
  * بالأحمر، وصفرٌ = «بلا سحب» صراحةً** (معنى 0193). والطبلةُ المطبوعة أو المُرسَلة لا تتعدّل — التعديلُ نسخةٌ
  * ثانية يختمها الخادم ويوقف الأولى بيوم بدايتها، فيُقال «ابعثها من جديد».
  *
+ * و«لا تبيع قبل» بالبطاقة والمطبوعة والواتساب **للوجبة كلّها** (كلُّ طبلاتها، والمستبدَلةُ بما انعطى منها حتى إيقافها)
+ * — كما يحسبها الخادم (_flock_stats)؛ كانت للطبلة وحدها، فنسخةٌ ثانيةٌ بدواءٍ أقصرَ سحباً كانت تقول للمربي تاريخاً
+ * أبكرَ من رأس الحالة (مراجعةٌ عدائيّة). وبالبيّاض سحبُ البيض بسطره وتاريخه، والطبلةُ الموقوفة بأيامها كما انعطت.
+ *
  * والطباعةُ والواتساب **داخل الضغطة قبل أيّ انتظار** (درسُ الآيفون ١٩/١٠، wa-open-test): النافذةُ تُفتح وتُكتب
  * ثمّ يُختم «انطبعت»؛ وsendWhatsApp يُنادى أوّلاً ثمّ يُختم «انبعثت» حين يرجع — والمنعُ يُقال بزرّ إعادة.
  * ========================================================================= */
@@ -16,11 +20,12 @@ import i18next from "i18next";
 import { Copy, MessageCircle, Pause, Pencil, Play, Plus, Printer, Square, Trash2 } from "lucide-react";
 import { Badge, Button, Dialog, useToast } from "@/components/ui";
 import { localISO } from "@/lib/utils";
+import { rejectedBeforeCommit } from "@/lib/errors";
 import { getClinicLogo, getClinicName, getDialCode } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
 import { quotaMessage, sendWhatsApp, useWarmWaQuota } from "@/lib/quotas";
 import { flockApi, type FlockLineInput } from "@/lib/flockApi";
-import { addDays, ageOn, withdrawalOf } from "@/lib/flockMath";
+import { addDays, ageOn, diffDays, withdrawalOf } from "@/lib/flockMath";
 import type { FlockBundle, FlockDosePer, FlockDoseUnit, FlockLineKind, FlockLineRoute, FlockTreatment, FlockTreatmentLine } from "@/lib/flockTypes";
 import { dayLabel, esc, flockError, localDay, newRef, num } from "./flockShared";
 
@@ -42,6 +47,39 @@ export function wdText(t: TFunction, days: number | null, kind: FlockLineKind): 
   return { text: days === 0 ? t("flk.tx.wdNone") : t("flk.tx.wdDays", { n: days }), unknown: false };
 }
 const lastDayOf = (tx: Pick<FlockTreatment, "start_on" | "lines">) => addDays(tx.start_on, tx.lines.reduce((m, l) => Math.max(m, l.day_to), 1) - 1);
+const isLayer = (b: FlockBundle) => b.case.kind === "layer" || b.case.kind === "breeder";
+/** آخرُ يومٍ أُعطيت فيه: الموقوفةُ والمستبدَلةُ بيوم إيقافها (شاملاً) — كما يحسب الخادمُ السحب (stopped_on). */
+export const lastGiven = (tx: Pick<FlockTreatment, "start_on" | "lines" | "stopped_on">): string => {
+  const planned = lastDayOf(tx);
+  return tx.stopped_on && tx.stopped_on < planned ? tx.stopped_on : planned;
+};
+/** مدى السطر بالتقويم بعد الإيقاف — null: انوقفت الطبلةُ قبل أن يبدأ (ما انعطى). */
+export function lineSpan(tx: Pick<FlockTreatment, "start_on" | "stopped_on">, l: Pick<FlockTreatmentLine, "day_from" | "day_to">): { from: string; to: string; cut: boolean } | null {
+  const from = addDays(tx.start_on, l.day_from - 1), planned = addDays(tx.start_on, l.day_to - 1);
+  if (tx.stopped_on && tx.stopped_on < from) return null;
+  const to = tx.stopped_on && tx.stopped_on < planned ? tx.stopped_on : planned;
+  return { from, to, cut: to !== planned };
+}
+/** سطورُ «لا تبيع قبل» للمربي: الوجبةُ كلُّها (withdrawalOf على كلّ طبلاتها = _flock_stats)، وآخرُ يومٍ أُعطيت هذه. */
+export function safeLines(t: TFunction, b: FlockBundle, tx: FlockTreatment, today: string): { text: string; unknown: boolean }[] {
+  const w = withdrawalOf(b.treatments);
+  const last = dayLabel(lastGiven(tx), today);
+  const out = [w.unknownMeat ? { text: t("flk.tx.safeUnknown", { last }), unknown: true }
+    : w.meat ? { text: t("flk.tx.safeLine", { last, safe: dayLabel(w.meat, today) }), unknown: false }
+    : { text: t("flk.tx.noWd", { last }), unknown: false }];
+  if (isLayer(b)) {
+    if (w.unknownEgg) out.push({ text: t("flk.tx.eggUnknown"), unknown: true });
+    else if (w.egg) out.push({ text: t("flk.tx.eggSafe", { safe: dayLabel(w.egg, today) }), unknown: false });
+  }
+  return out;
+}
+/** سطرُ السحب بالسطر: اللحم، وبالبيّاض البيضُ معه. */
+const lineWd = (t: TFunction, b: FlockBundle, l: FlockTreatmentLine) => {
+  const meat = wdText(t, l.withdrawal_meat_days, l.kind);
+  if (!isLayer(b) || l.kind !== "med") return { text: meat.text, unknown: meat.unknown };
+  const egg = wdText(t, l.withdrawal_egg_days, l.kind);
+  return { text: `${meat.text} · ${t("flk.tx.eggLabel")}: ${egg.text}`, unknown: meat.unknown || egg.unknown };
+};
 
 /* ── المحرّر ─────────────────────────────────────────────────────────────── */
 type LineDraft = {
@@ -68,13 +106,25 @@ export function TreatmentSheet({ b, tx, onClose, onSaved }: { b: FlockBundle; tx
   const toast = useToast();
   const today = localISO();
   const frozen = !!tx && (!!tx.sent_at || !!tx.printed_at);
-  const layer = b.case.kind === "layer" || b.case.kind === "breeder";
+  const layer = isLayer(b);
+  // نسخةٌ من طبلةٍ مُرسَلة تبدأ اليوم (أو ببدايتها إن لم تبدأ بعد — الخادمُ يرفض نسخةً تسبق أصلَها) **بتواريخ أيامها
+  // نفسِها**: الأيامُ تُزاح بقدر ما مضى، وما انتهى قبلها يبقى بالقديمة. كانت تبدأ اليوم بأرقام الأيام نفسِها فتزيد
+  // أيامَ المضادّ وتؤخّر «لا تبيع قبل» (مراجعةٌ عدائيّة).
+  const vStart = frozen && tx ? (tx.start_on > today ? tx.start_on : today) : tx?.start_on ?? today;
+  const shift = frozen && tx ? diffDays(tx.start_on, vStart) : 0;
   const [title, setTitle] = useState(tx?.title ?? "");
-  const [start, setStart] = useState(frozen ? today : tx?.start_on ?? today);
+  const [start, setStart] = useState(vStart);
   const [note, setNote] = useState(tx?.note ?? "");
-  const [lines, setLines] = useState<LineDraft[]>(() => (tx?.lines.length ? tx.lines.map(fromLine) : [blankLine()]));
+  const [lines, setLines] = useState<LineDraft[]>(() => {
+    const ls = (tx?.lines ?? []).filter((l) => l.day_to - shift >= 1)
+      .map((l) => fromLine({ ...l, day_from: Math.max(1, l.day_from - shift), day_to: l.day_to - shift }));
+    return ls.length ? ls : [blankLine()];
+  });
   const [ref] = useState(newRef);
   const [busy, setBusy] = useState(false);
+  // فشلٌ مجهولُ المصير (انقطاع، مهلة) لطبلةٍ جديدة: ربما انحفظت بمرجعها. الإعادةُ بالمرجع نفسِه ترجعها هي —
+  // فتعديلٌ بعدها كان يُرمى بصمت؛ النموذجُ يُقفل على «أعد المحاولة» بما كُتب (درسُ 0264، shouldReleaseRef).
+  const [locked, setLocked] = useState(false);
   const known = [...new Set(b.treatments.flatMap((x) => x.lines.map((l) => l.product_name)))].slice(0, 60);
   const set = (k: string, p: Partial<LineDraft>) => setLines(lines.map((l) => (l.key === k ? { ...l, ...p } : l)));
 
@@ -99,19 +149,22 @@ export function TreatmentSheet({ b, tx, onClose, onSaved }: { b: FlockBundle; tx
         id: tx?.id, expect_updated_at: tx?.updated_at ?? null, client_ref: tx ? null : ref, case_id: b.case.id,
         title: title.trim() || null, start_on: start, note: note.trim() || null, lines: out,
       });
-      onSaved(frozen || (tx && r.id !== tx.id) ? t("flk.tx.newVersion", { n: r.version }) : t("flk.saved"));
-    } catch (e) { toast.error(flockError(e, t)); }
-    finally { setBusy(false); }
+      onSaved(r.replayed ? t("flk.savedBefore") : frozen || (tx && r.id !== tx.id) ? t("flk.tx.newVersion", { n: r.version }) : t("flk.saved"));
+    } catch (e) {
+      if (!tx && !rejectedBeforeCommit(e)) setLocked(true);
+      toast.error(flockError(e, t));
+    } finally { setBusy(false); }
   };
 
   return (
     <Dialog open onClose={onClose} size="lg" title={tx ? t("flk.tx.editTitle") : t("flk.tx.newTitle")}
       footer={<>
         <Button variant="ghost" onClick={onClose}>{t("flk.cancel")}</Button>
-        <Button loading={busy} onClick={() => void save()} data-flock-save>{frozen ? t("flk.tx.saveVersion") : t("flk.save")}</Button>
+        <Button loading={busy} onClick={() => void save()} data-flock-save>{locked ? t("flk.retry") : frozen ? t("flk.tx.saveVersion") : t("flk.save")}</Button>
       </>}>
-      <div className="space-y-4" data-flock-tx-sheet>
-        {frozen && <p className="rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm font-bold text-warn-700 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-flock-tx-frozen>{t("flk.tx.frozenNote")}</p>}
+      <fieldset disabled={locked} className="min-w-0 space-y-4" data-flock-tx-sheet>
+        {locked && <p className="rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm font-bold text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-200" data-flock-unknown>{t("flk.unknownFate")}</p>}
+        {frozen && <p className="rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm font-bold text-warn-700 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-flock-tx-frozen>{t("flk.tx.frozenNote")}{shift > 0 ? ` ${t("flk.tx.shiftNote", { day: dayLabel(vStart, today) })}` : ""}</p>}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block"><span className="label">{t("flk.tx.title")}</span><input className="input" value={title} maxLength={200} placeholder={t("flk.tx.titleHint")} onChange={(e) => setTitle(e.target.value)} /></label>
           <label className="block"><span className="label">{t("flk.tx.start")}</span>
@@ -166,14 +219,14 @@ export function TreatmentSheet({ b, tx, onClose, onSaved }: { b: FlockBundle; tx
           <Button variant="outline" leftIcon={<Plus size={16} />} onClick={() => setLines([...lines, blankLine(optInt(lines[lines.length - 1]?.day_from ?? "1") ?? 1)])} data-flock-add-line>{t("flk.tx.addLine")}</Button>
         )}
         <label className="block"><span className="label">{t("flk.note")}</span><textarea className="input min-h-16" value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} /></label>
-      </div>
+      </fieldset>
     </Dialog>
   );
 }
 
 /* ── البطاقة: السطور، «لا تبيع قبل»، والأفعال ─────────────────────────────── */
-export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
-  b: FlockBundle; tx: FlockTreatment; today: string; closed: boolean; onEdit: () => void; onChanged: (msg?: string) => void;
+export function TreatmentCard({ b, tx, today, closed, canEdit, canSend, onEdit, onChanged }: {
+  b: FlockBundle; tx: FlockTreatment; today: string; closed: boolean; canEdit: boolean; canSend: boolean; onEdit: () => void; onChanged: (msg?: string) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -181,10 +234,14 @@ export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
   const [stop, setStop] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const old = tx.status === "replaced";
-  const w = withdrawalOf([tx]);
-  const last = tx.stopped_on && tx.stopped_on < lastDayOf(tx) ? tx.stopped_on : lastDayOf(tx);
+  const last = lastGiven(tx);
+  const safe = safeLines(t, b, tx, today);
+  // التاريخُ للوجبة كلّها — ويُقال حين تؤخّره طبلةٌ أخرى، فلا يُظنّ خطأً بهذه.
+  const own = withdrawalOf([tx]).meat, all = withdrawalOf(b.treatments).meat;
   const phone = b.farm.owner_phone;
-  const live = !closed && !old;
+  // الطباعةُ والإرسال ولو أُغلقت الوجبة (سجلٌّ للمربي)؛ والتعديلُ والإيقافُ لطبيبٍ والوجبةُ مفتوحة (الخادمُ يحرسهما).
+  const sendable = !old && canSend;
+  const editable = !old && !closed && canEdit;
 
   const mark = async (what: "sent" | "printed" | "stop" | "done" | "resume", on?: string) => {
     setBusy(true);
@@ -223,6 +280,7 @@ export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
           </div>
           <div className="text-xs text-ink-muted">
             {t("flk.tx.span", { from: dayLabel(tx.start_on, today), to: dayLabel(last, today), a1: ageOn(b.case.placed_on, tx.start_on), a2: ageOn(b.case.placed_on, last) })}
+            {tx.stopped_on ? ` · ${t("flk.tx.stoppedOn", { day: dayLabel(tx.stopped_on, today) })}` : ""}
             {tx.sent_at ? ` · ${t("flk.tx.sentOn", { day: dayLabel(localDay(tx.sent_at), today) })}` : ""}
             {tx.printed_at ? ` · ${t("flk.tx.printedOn", { day: dayLabel(localDay(tx.printed_at), today) })}` : ""}
           </div>
@@ -230,12 +288,14 @@ export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
       </div>
       <ul className="mt-3 space-y-1.5">
         {tx.lines.map((l) => {
-          const wd = wdText(t, l.withdrawal_meat_days, l.kind);
+          const wd = lineWd(t, b, l);
+          const span = lineSpan(tx, l);
           return (
             <li key={l.id} className="rounded-lg bg-surface-2 px-3 py-2 text-sm">
               <div className="font-bold text-ink">{l.product_name} <span className="text-xs font-normal text-ink-muted">· {t(`flk.lineKind.${l.kind}`)}</span></div>
               <div className="text-xs text-ink-muted">
-                {[t("flk.tx.days", { from: l.day_from, to: l.day_to }), doseText(t, l), t(`flk.route.${l.route}`), l.hours ? t("flk.tx.hoursN", { n: l.hours }) : "", l.note ?? ""].filter(Boolean).join(" · ")}
+                {[!span ? t("flk.tx.lineNotGiven") : `${dayLabel(span.from, today)}–${dayLabel(span.to, today)}${span.cut ? ` (${t("flk.tx.cut")})` : ""}`,
+                  doseText(t, l), t(`flk.route.${l.route}`), l.hours ? t("flk.tx.hoursN", { n: l.hours }) : "", l.note ?? ""].filter(Boolean).join(" · ")}
               </div>
               {l.kind === "med" && <div className={wd.unknown ? "text-xs font-bold text-danger-600" : "text-xs text-ink-muted"}>{t("flk.tx.wdLabel")}: {wd.text}</div>}
             </li>
@@ -243,18 +303,21 @@ export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
         })}
       </ul>
       {!old && (
-        <div className={w.unknownMeat ? "mt-3 rounded-xl bg-danger-50 p-2.5 text-sm font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-200" : "mt-3 rounded-xl bg-surface-2 p-2.5 text-sm font-bold text-ink"}>
-          {w.unknownMeat ? t("flk.tx.safeUnknown", { last: dayLabel(last, today) }) : w.meat ? t("flk.tx.safeLine", { last: dayLabel(last, today), safe: dayLabel(w.meat, today) }) : t("flk.tx.noWd", { last: dayLabel(last, today) })}
+        <div className="mt-3 space-y-1" data-flock-tx-safe>
+          {safe.map((x, i) => (
+            <div key={i} className={x.unknown ? "rounded-xl bg-danger-50 p-2.5 text-sm font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-200" : "rounded-xl bg-surface-2 p-2.5 text-sm font-bold text-ink"}>{x.text}</div>
+          ))}
+          {all && own !== all && <p className="text-2xs text-ink-subtle">{t("flk.tx.caseWide")}</p>}
         </div>
       )}
-      {live && (
+      {(sendable || editable) && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" leftIcon={<Printer size={15} />} onClick={print} disabled={busy} data-flock-tx-print>{t("flk.tx.print")}</Button>
-          <Button size="sm" variant="outline" leftIcon={<MessageCircle size={15} />} onClick={send} disabled={busy || !phone} data-flock-tx-send>{t("flk.tx.send")}</Button>
-          <Button size="sm" variant="ghost" leftIcon={<Pencil size={15} />} onClick={onEdit} disabled={busy} data-flock-tx-edit>{t("flk.edit")}</Button>
-          {tx.status === "active" && <Button size="sm" variant="ghost" leftIcon={<Pause size={15} />} onClick={() => setStop(localISO())} disabled={busy}>{t("flk.tx.stop")}</Button>}
-          {tx.status === "active" && <Button size="sm" variant="ghost" leftIcon={<Square size={15} />} onClick={() => void mark("done")} disabled={busy}>{t("flk.tx.done")}</Button>}
-          {(tx.status === "stopped" || tx.status === "done") && <Button size="sm" variant="ghost" leftIcon={<Play size={15} />} onClick={() => void mark("resume")} disabled={busy}>{t("flk.tx.resume")}</Button>}
+          {sendable && <Button size="sm" variant="outline" leftIcon={<Printer size={15} />} onClick={print} disabled={busy} data-flock-tx-print>{t("flk.tx.print")}</Button>}
+          {sendable && <Button size="sm" variant="outline" leftIcon={<MessageCircle size={15} />} onClick={send} disabled={busy || !phone} data-flock-tx-send>{t("flk.tx.send")}</Button>}
+          {editable && <Button size="sm" variant="ghost" leftIcon={<Pencil size={15} />} onClick={onEdit} disabled={busy} data-flock-tx-edit>{t("flk.edit")}</Button>}
+          {editable && tx.status === "active" && <Button size="sm" variant="ghost" leftIcon={<Pause size={15} />} onClick={() => setStop(localISO())} disabled={busy} data-flock-tx-stop>{t("flk.tx.stop")}</Button>}
+          {editable && tx.status === "active" && <Button size="sm" variant="ghost" leftIcon={<Square size={15} />} onClick={() => void mark("done")} disabled={busy}>{t("flk.tx.done")}</Button>}
+          {editable && (tx.status === "stopped" || tx.status === "done") && <Button size="sm" variant="ghost" leftIcon={<Play size={15} />} onClick={() => void mark("resume")} disabled={busy}>{t("flk.tx.resume")}</Button>}
         </div>
       )}
       {stop != null && (
@@ -274,44 +337,45 @@ export function TreatmentCard({ b, tx, today, closed, onEdit, onChanged }: {
 }
 
 /* ── ما يصل للمربي: نصُّ واتساب ومطبوعة ─────────────────────────────────────── */
-function sheetText(t: TFunction, b: FlockBundle, tx: FlockTreatment): string {
+export function sheetText(t: TFunction, b: FlockBundle, tx: FlockTreatment): string {
   const today = localISO();
-  const w = withdrawalOf([tx]);
-  const last = lastDayOf(tx);
   const out = [
     t("flk.wa.txHead", { farm: b.farm.name, title: tx.title || t("flk.tx.untitled") }),
     t("flk.wa.txStart", { day: dayLabel(tx.start_on, today), age: ageOn(b.case.placed_on, tx.start_on) }),
+    ...(tx.stopped_on ? [t("flk.tx.stoppedOn", { day: dayLabel(tx.stopped_on, today) })] : []),
     "",
   ];
   for (const l of tx.lines) {
-    const wd = wdText(t, l.withdrawal_meat_days, l.kind);
+    const wd = lineWd(t, b, l);
+    const span = lineSpan(tx, l);
+    if (!span) { out.push(`• ${l.product_name} — ${t("flk.tx.lineNotGiven")}`); continue; }
     out.push(`• ${t("flk.wa.txLine", {
-      from: dayLabel(addDays(tx.start_on, l.day_from - 1), today), to: dayLabel(addDays(tx.start_on, l.day_to - 1), today),
+      from: dayLabel(span.from, today), to: dayLabel(span.to, today),
       product: l.product_name, dose: doseText(t, l), route: t(`flk.route.${l.route}`),
-    })}${l.hours ? ` · ${t("flk.tx.hoursN", { n: l.hours })}` : ""}${l.note ? ` · ${l.note}` : ""}${l.kind === "med" ? ` · ${t("flk.tx.wdLabel")}: ${wd.text}` : ""}`);
+    })}${span.cut ? ` (${t("flk.tx.cut")})` : ""}${l.hours ? ` · ${t("flk.tx.hoursN", { n: l.hours })}` : ""}${l.note ? ` · ${l.note}` : ""}${l.kind === "med" ? ` · ${t("flk.tx.wdLabel")}: ${wd.text}` : ""}`);
   }
   out.push("");
-  out.push(w.unknownMeat ? t("flk.tx.safeUnknown", { last: dayLabel(last, today) }) : w.meat ? t("flk.tx.safeLine", { last: dayLabel(last, today), safe: dayLabel(w.meat, today) }) : t("flk.tx.noWd", { last: dayLabel(last, today) }));
+  for (const x of safeLines(t, b, tx, today)) out.push(x.text);
   if (tx.note) out.push(tx.note);
   out.push(t("flk.wa.sign", { clinic: getClinicName() || "doctorVet" }));
   return out.join("\n");
 }
 
-function sheetHtml(t: TFunction, b: FlockBundle, tx: FlockTreatment): string {
+export function sheetHtml(t: TFunction, b: FlockBundle, tx: FlockTreatment): string {
   const today = localISO();
   const dir = i18next.dir();
-  const w = withdrawalOf([tx]);
-  const last = lastDayOf(tx);
+  const safe = safeLines(t, b, tx, today);
   const logo = getClinicLogo();
   const rows = tx.lines.map((l) => {
-    const wd = wdText(t, l.withdrawal_meat_days, l.kind);
-    const d1 = addDays(tx.start_on, l.day_from - 1), d2 = addDays(tx.start_on, l.day_to - 1);
-    return `<tr><td>${esc(`${dayLabel(d1, today)} – ${dayLabel(d2, today)}`)}<div class="s">${esc(t("flk.tx.ages", { a1: ageOn(b.case.placed_on, d1), a2: ageOn(b.case.placed_on, d2) }))}</div></td>
+    const wd = lineWd(t, b, l);
+    const span = lineSpan(tx, l);
+    const when = !span ? esc(t("flk.tx.lineNotGiven"))
+      : `${esc(`${dayLabel(span.from, today)} – ${dayLabel(span.to, today)}`)}${span.cut ? ` <span class="u">(${esc(t("flk.tx.cut"))})</span>` : ""}<div class="s">${esc(t("flk.tx.ages", { a1: ageOn(b.case.placed_on, span.from), a2: ageOn(b.case.placed_on, span.to) }))}</div>`;
+    return `<tr><td>${when}</td>
       <td><b>${esc(l.product_name)}</b><div class="s">${esc(t(`flk.lineKind.${l.kind}`))}</div></td>
       <td>${esc(doseText(t, l))}</td><td>${esc(t(`flk.route.${l.route}`))}${l.hours ? `<div class="s">${esc(t("flk.tx.hoursN", { n: l.hours }))}</div>` : ""}</td>
       <td class="${wd.unknown ? "u" : ""}">${esc(wd.text)}</td><td>${esc(l.note ?? "")}</td></tr>`;
   }).join("");
-  const safe = w.unknownMeat ? t("flk.tx.safeUnknown", { last: dayLabel(last, today) }) : w.meat ? t("flk.tx.safeLine", { last: dayLabel(last, today), safe: dayLabel(w.meat, today) }) : t("flk.tx.noWd", { last: dayLabel(last, today) });
   return `<!doctype html><html lang="${esc(i18next.language || "ar")}" dir="${dir}"><head><meta charset="utf-8"><title>${esc(tx.title || t("flk.tx.untitled"))}</title>
 <style>
 *{box-sizing:border-box}body{font-family:Tahoma,Arial,sans-serif;margin:14mm;color:#111;font-size:13px}
@@ -325,9 +389,9 @@ th,td{border:1px solid #999;padding:6px;text-align:start;vertical-align:top}th{b
 <div class="h">${logo ? `<img src="${esc(logo)}" alt="">` : ""}<div><div class="c">${esc(getClinicName() || "doctorVet")}</div>
 <div class="m">${esc(t("flk.print.farm", { farm: b.farm.name, owner: b.farm.owner_name || "—" }))}</div></div></div>
 <h1>${esc(tx.title || t("flk.tx.untitled"))}${tx.version > 1 ? ` · ${esc(t("flk.tx.version", { n: tx.version }))}` : ""}</h1>
-<div class="m">${esc(t("flk.print.meta", { kind: t(`flk.kind.${b.case.kind}`), breed: b.case.breed || "—", start: dayLabel(tx.start_on, today), age: ageOn(b.case.placed_on, tx.start_on) }))}</div>
+<div class="m">${esc(t("flk.print.meta", { kind: t(`flk.kind.${b.case.kind}`), breed: b.case.breed || "—", start: dayLabel(tx.start_on, today), age: ageOn(b.case.placed_on, tx.start_on) }))}${tx.stopped_on ? ` · <b class="u">${esc(t("flk.tx.stoppedOn", { day: dayLabel(tx.stopped_on, today) }))}</b>` : ""}</div>
 <table><thead><tr><th>${esc(t("flk.print.days"))}</th><th>${esc(t("flk.tx.product"))}</th><th>${esc(t("flk.tx.dose"))}</th><th>${esc(t("flk.tx.route"))}</th><th>${esc(t("flk.tx.wdLabel"))}</th><th>${esc(t("flk.note"))}</th></tr></thead><tbody>${rows}</tbody></table>
-<div class="f${w.unknownMeat ? " u" : ""}">${esc(safe)}</div>
+${safe.map((x) => `<div class="f${x.unknown ? " u" : ""}">${esc(x.text)}</div>`).join("")}
 ${tx.note ? `<div class="n">${esc(tx.note)}</div>` : ""}
 <button class="p" onclick="window.print()">${esc(t("flk.tx.print"))}</button>
 </body></html>`;
