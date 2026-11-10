@@ -291,8 +291,8 @@ console.log("▸ ج) casMoved وupdateAsSeen — السعرُ يبقى price_mov
 }
 
 /* ── د) updateProduct الحقيقيّ بوجهيه — نفسُ الحالات ونفسُ النتائج ──────────── */
-const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
-if (!DB_KEY) { console.error("✗ inventory-cas-test: ما انقرأ مفتاحُ مخزن الديمو من demoStore.ts"); process.exit(1); }
+const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
+if (!DB_KEY) { console.error("✗ inventory-cas-test: ما انقرأ مفتاحُ مخزن الديمو من demoKey.ts"); process.exit(1); }
 const backends = {
   cloud: {
     repo: cloud.repo,

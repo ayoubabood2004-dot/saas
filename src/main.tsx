@@ -7,7 +7,7 @@ import i18next from "i18next";
 import { i18nReady, ensureDictionary } from "./i18n";
 import "./index.css";
 import { emitGlobalToast } from "./lib/globalToast";
-import { pruneStaleStorage } from "./lib/demoStore";
+import { pruneStaleStorage } from "./lib/demoKey";
 import { installDigitNormalizer } from "./lib/digits";
 import { applyFontScale, applyCrispMode } from "./lib/fontScale";
 import { recoverFromStaleShell } from "./lib/appUpdate";

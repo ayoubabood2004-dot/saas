@@ -39,7 +39,7 @@ const keyOf = (file, re) => {
 const SESSION = keyOf("src/contexts/AuthContext.tsx", /const KEY = "([^"]+)"/);
 const ACTIVE = keyOf("src/lib/clinics.ts", /const ACTIVE_KEY = "([^"]+)"/);
 const UNTIL = keyOf("src/lib/managerOverride.ts", /const untilKey = \(\) => `([^`$]+)\$\{getActiveClinicId\(\)\}`/);
-const DB_KEY = keyOf("src/lib/demoStore.ts", /const KEY = "([^"]+)"/);
+const DB_KEY = keyOf("src/lib/demoKey.ts", /export const DEMO_DB_KEY = "([^"]+)"/);
 const COUNTS_KEY = keyOf("src/lib/demoCounts.ts", /const KEY = "([^"]+)"/);
 const LOTS_KEY = keyOf("src/lib/demoLots.ts", /const KEY = "([^"]+)"/);
 const ROLE = "src/lib/demoRole.ts";

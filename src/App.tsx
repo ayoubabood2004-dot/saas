@@ -49,7 +49,7 @@ const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ defa
 const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ default: m.PriceRaise })), ["praise"]);
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
-const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })), ["farm"]);
+const Fields = page(() => import("@/pages/Fields").then((m) => ({ default: m.Fields })));
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })), ["campaigns"]);
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
@@ -353,7 +353,7 @@ function Shell() {
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}
-            <Route path="/poultry" element={<Protected><ClinicOnly><FeatureGate feature="farm"><PoultryFarms /></FeatureGate></ClinicOnly></Protected>} />
+            <Route path="/poultry/*" element={<Protected><ClinicOnly><Fields /></ClinicOnly></Protected>} />
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
             <Route path="/s/:slug/track" element={<StoreTrack />} />
