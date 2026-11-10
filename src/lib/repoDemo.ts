@@ -5468,6 +5468,8 @@ export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 export const loadDemoUsd = () => import("./demoUsd");
+/** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
+export const loadDemoFlock = () => import("./demoFlock");
 /** 0264: بيعُ الدولار يكتب فاتورتَه بمرآة retail_checkout نفسِها والبابُ مفتوح (usd_checkout ينادي retail_checkout). */
 export async function demoUsdRetail(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
   const cons = await loadDemoConsumption();
@@ -5494,4 +5496,4 @@ export const demoServices = {
  * repoDemo.ts تفقد القطعةُ واجهتَها، فيصير import() بـrepo.ts (حزمة الإقلاع) `.then(e=>e.r)` مع كائنِ مساحة أسماء.
  * مقيسٌ ببناء vite: بلا هذا السطر repo-*.js 92,301 بايتاً خاماً (+١٣، و+٦ مضغوطة)، وبه 92,288 كالرأس؛ وقائمةُ
  * التحميل المسبق لـrepoDemo ٢٣ اسماً بالحالتين. */
-export { demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";
+export { demoApiGate, demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";

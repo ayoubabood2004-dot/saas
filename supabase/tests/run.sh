@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -11096,6 +11096,243 @@ $P -c "select set_config('doctorvet.usd_door', 'on', false);
        delete from products where clinic_id = 'a2640c00-0000-4000-8000-0000000000c1';
        update clinic_prefs set usd_enabled = false where clinic_id = 'a2640c00-0000-4000-8000-0000000000c1';
        drop function if exists _usdp_run(jsonb);" >/dev/null
+
+# ── 0265: حالةُ الحقل (م١) — الوجبةُ حالة، والكتابةُ من دوالّها، والعمرُ والنافق و«لا تبيع قبل» ────────────────
+# كلُّ نداءٍ بدور authenticated فعلاً (_flk)، والقراءةُ بجملةٍ ثانية بعد الكتابة (درسُ 0257).
+echo "▸ 0265: حالةُ الحقل — الفتح، النافق، الزيارة والتشريح، الطبلة والسحب، التحصين، الإغلاق"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+VET=55555555-5555-5555-5555-555555555555
+$P -c "insert into auth.users(id) values ('$C1'),('$C2'),('$RCP'),('$VET') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values
+         ('$C1','$C1','manager','active'),('$RCP','$C1','receptionist','active'),('$VET','$C1','veterinarian','active')
+         on conflict do nothing;
+       create or replace function _flk(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q into r;
+         reset role;
+         return coalesce(r, 'null');
+       exception when others then return 'ERR:' || sqlerrm; end \$fn\$;" >/dev/null
+T="(_flock_today())"
+
+# ── الفتح ──
+OPEN1="flock_case_open(jsonb_build_object('client_ref','fc-open-1',
+  'farm', jsonb_build_object('name','حقل الكرادة','owner_name','أبو علي','owner_phone','07701234567','area','الكرادة'),
+  'case', jsonb_build_object('kind','broiler','breed','Ross 308','placed_on',($T - 22)::text,'placed_count',10000),
+  'vax', jsonb_build_array(
+     jsonb_build_object('vaccine','ND+IB','disease','نيوكاسل','route','spray','age',1,'at_hatchery',true),
+     jsonb_build_object('vaccine','گمبورو','disease','IBD','route','water','age',14),
+     jsonb_build_object('vaccine','لاسوتا','disease','نيوكاسل','route','water','age',24))))"
+chk "الاستقبال يفتح حالة حقل (addPets)، بحقلٍ جديد وتحصينٍ بالفقّاسة منجَز وخطوتين مخطَّطتين" \
+    "select _flk('$RCP', \$q\$select ($OPEN1->>'replayed')\$q\$)" "false"
+CASE1=$($P -tAc "select id from flock_cases where client_ref = 'fc-open-1'")
+FARM1=$($P -tAc "select farm_id from flock_cases where client_ref = 'fc-open-1'")
+chk "  وإعادتُها بالمرجع نفسِه ترجع الحالةَ نفسها — لا وجبةٌ ثانية ولا حقلٌ ثانٍ" \
+    "select _flk('$RCP', \$q\$select ($OPEN1->>'replayed')\$q\$)" "true"
+chk "  (وجبةٌ واحدة، وحقلٌ واحد، وثلاثةُ تحصينات: واحدٌ منجَز بالفقّاسة بيوم الوصول)" \
+    "select (select count(*) from flock_cases where farm_id = '$FARM1')::text || '|' || (select count(*) from flock_farms where clinic_id = '$C1')::text
+       || '|' || (select string_agg(status || ':' || coalesce(given_by,'-') || ':' || coalesce(planned_age::text,'-'), ',' order by planned_age) from flock_vax where case_id = '$CASE1')
+       || '|' || (select (given_on = placed_on)::text from flock_vax v join flock_cases c on c.id = v.case_id where v.case_id = '$CASE1' and v.status = 'given')" \
+    "1|1|given:hatchery:1,planned:-:14,planned:-:24|true"
+chk "  وحقلٌ ثانٍ لنفس الزبون بنفس الاسم يُرفض (تطبيعٌ بالطرفين: «حقل  الكرادة»)" \
+    "select _flk('$RCP', \$q\$select flock_case_open(jsonb_build_object('farm', jsonb_build_object('name','حقل  الكرادة','owner_name','ابو علي','owner_phone','0770 123 4567'),'case', jsonb_build_object('kind','broiler','placed_on',($T)::text,'placed_count',500)))::text\$q\$)" \
+    "ERR:flock_farm_twin"
+chk "  ووجبةٌ ثانية لحقلٍ بيه مفتوحة تُرفض" \
+    "select _flk('$RCP', format(\$q\$select flock_case_open(jsonb_build_object('farm', jsonb_build_object('id',%L),'case', jsonb_build_object('kind','broiler','placed_on',(_flock_today())::text,'placed_count',500)))::text\$q\$, '$FARM1'))" \
+    "ERR:flock_open_exists"
+# مرفوضةٌ بالمنح (الإنتاج) أو بالسياسة (الحزمةُ تعيد المنحَ الشامل بعد الهجرات) — والاثنان رفضٌ لا صفّ.
+chk "  ولا كتابةَ مباشرة على الجداول (قراءةٌ وحدها — الكتابةُ من الدوالّ)" \
+    "select (_flk('$C1', \$q\$insert into flock_farms(name) values ('مباشر') returning id::text\$q\$) like 'ERR:%flock_farms%')::text" "true"
+chk "  وحقولُ الزبون من «حالة جديدة» بمفتاحه (الرقمُ بصيغةٍ أخرى نفسُه)" \
+    "select (_flk('$RCP', \$q\$select (flock_farms_for('+964 770 123 4567', null)->0->>'open_case')\$q\$) = '$CASE1')::text" "true"
+
+# ── العمرُ والإحصاء ──
+chk "العمرُ بحساب الطبيب: الوصولُ قبل ٢٢ يوماً = عمر ٢٣ (يومُ الوصول ١)" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'age')\$q\$, '$CASE1'))" "23"
+chk "  وعيادةٌ أخرى لا ترى الحالة (القائمةُ فارغة، والحزمةُ null)" \
+    "select _flk('$C2', \$q\$select jsonb_array_length(flock_board('open'))::text\$q\$) || '|' || _flk('$C2', format(\$q\$select coalesce(flock_case_bundle(%L)::text, 'null')\$q\$, '$CASE1'))" \
+    "0|null"
+
+# ── النافق ──
+chk "النافق: الاستقبال يسجّل يوماً (٣٠ نافق + ٥ فرز)" \
+    "select _flk('$RCP', format(\$q\$select (flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-1)::text,'dead',30,'culled',5,'source','farmer','client_ref','fm-1'))->>'replayed')\$q\$, '$CASE1'))" \
+    "false"
+chk "  وإعادتُه بالمرجع نفسِه لا تكرّره" \
+    "select _flk('$RCP', format(\$q\$select (flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-1)::text,'dead',30,'culled',5,'client_ref','fm-1'))->>'replayed')\$q\$, '$CASE1'))
+       || '|' || (select count(*) from flock_mortality where case_id = '$CASE1')::text" \
+    "true|1"
+chk "  ويومٌ مسجَّل لا يُسجَّل ثانيةً (تداخلٌ — يتعدّل الموجود)" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today())::text,'days',3,'dead',1))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_mortality_overlap"
+chk "  ولا نافقَ قبل الوصول ولا بالمستقبل" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-23)::text,'dead',1))::text\$q\$, '$CASE1'))
+       || '|' || _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()+1)::text,'dead',1))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_mortality_date|ERR:flock_mortality_date"
+chk "  ولا تراكميَّ فوق المُدخَل" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-5)::text,'dead',9999))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_mortality_over"
+chk "  والإحصاء: الحيّ ٩٩٦٥، والتراكميّ ٠٫٣٥٪" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'alive') || '|' || (_flock_stats(%L)->>'cum_pct')\$q\$, '$CASE1', '$CASE1'))" \
+    "9965|0.35"
+chk "  ويومٌ واحد فوق ٠٫٢٥٪ لا يُنذر (يحتاج يومين متتاليين)" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'mortality_alert')\$q\$, '$CASE1'))" "false"
+$P -c "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today())::text,'dead',40))::text\$q\$, '$CASE1'))" >/dev/null
+chk "  ويومان متتاليان فوقها يُنذران" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'mortality_alert')\$q\$, '$CASE1'))" "true"
+
+# ── الزيارة والتشريح ──
+VISIT1="flock_visit_save(jsonb_build_object('client_ref','fv-1','case_id','$CASE1','kind','complaint','at',(now() - interval '2 hours')::text,
+  'flock', jsonb_build_object('feed_phase','grower','avg_weight_g',950,'sample_n',20,'water_l_day',1800),
+  'signs', jsonb_build_array('resp.rales','resp.cough','dig.white_diarrhea'),
+  'env', jsonb_build_object('ventilation','poor','litter','fair'),
+  'dx','CRD مع كولاي','dx_codes', jsonb_build_array('crd','colibacillosis'),'dx_status','suspected','trend','worse',
+  'next_visit_on', (_flock_today()+2)::text,
+  'mortality', jsonb_build_object('on_date', (_flock_today()-2)::text, 'days', 1, 'dead', 12),
+  'necropsy', jsonb_build_array(
+     jsonb_build_object('bird_no',1,'source','dead','findings', jsonb_build_array('air.cloudy','heart.pericarditis','liver.perihepatitis')),
+     jsonb_build_object('bird_no',2,'source','dead','findings', jsonb_build_array('air.cloudy','heart.pericarditis')),
+     jsonb_build_object('bird_no',3,'source','cull','findings', jsonb_build_array('air.cloudy'),'scores', jsonb_build_object('air.sac',3)))))"
+chk "الزيارة: الاستقبال ما يكتبها — والرفضُ يقول السبب لا «انتهت الجلسة»" \
+    "select _flk('$RCP', \$q\$select $VISIT1::text\$q\$)" "ERR:flock_forbidden"
+chk "  والطبيب يكتبها بنافقها وتشريحها (٣ طيور) بمعاملةٍ واحدة" \
+    "select _flk('$VET', \$q\$select ($VISIT1->>'replayed')\$q\$)" "false"
+VIS1=$($P -tAc "select id from flock_visits where client_ref = 'fv-1'")
+chk "  (الطيورُ ٣، ونافقُها مربوطٌ بها، والطبيبُ مختومٌ بها)" \
+    "select (select count(*) from flock_necropsy where visit_id = '$VIS1')::text || '|' || (select dead::text || ':' || source from flock_mortality where visit_id = '$VIS1')
+       || '|' || (select (vet_id = '$VET' and created_by = '$VET')::text from flock_visits where id = '$VIS1')" \
+    "3|12:visit|true"
+chk "  وإعادتُها بالمرجع نفسِه لا تكرّرها" \
+    "select _flk('$VET', \$q\$select ($VISIT1->>'replayed')\$q\$) || '|' || (select count(*) from flock_visits where case_id = '$CASE1')::text" \
+    "true|1"
+# التعديلُ إرسالٌ كاملٌ للزيارة (الخاناتُ الغائبة تُفرَّغ)، والتشريحُ والنافقُ يُستبدلان حين يُرسَلان.
+# والعدُّ بجملةٍ ثانية بعد الكتابة — لقطةُ بداية الجملة لا ترى ما كتبته الدالّة (درسُ 0257).
+$P -c "select _flk('$VET', format(\$q\$select (flock_visit_save(jsonb_build_object('id',%L,'at',(now() - interval '2 hours')::text,'trend','same',
+        'next_visit_on', (_flock_today()+2)::text,
+        'mortality', jsonb_build_object('on_date',(_flock_today()-2)::text,'dead',14),
+        'necropsy', jsonb_build_array(jsonb_build_object('bird_no',1,'findings',jsonb_build_array('air.cloudy')),jsonb_build_object('bird_no',2)))) ->> 'replayed')\$q\$, '$VIS1'))" >/dev/null
+chk "  وتعديلُها يستبدل التشريحَ ونافقَها كلَّه (طيران بدل ثلاثة، ١٤ بدل ١٢)" \
+    "select (select count(*) from flock_necropsy where visit_id = '$VIS1')::text || '|' || (select string_agg(dead::text, ',') from flock_mortality where visit_id = '$VIS1')" \
+    "2|14"
+chk "  ونافقُ الزيارة لا يُعدَّل من «نافق اليوم» (من الزيارة وحدها)" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('id',(select id from flock_mortality where visit_id = %L),'dead',1))::text\$q\$, '$VIS1'))" \
+    "ERR:flock_mortality_visit"
+chk "  ورمزٌ غريب بالعلامات يُرفض (لا نصٌّ حرّ بخانة رمز)" \
+    "select _flk('$VET', format(\$q\$select flock_visit_save(jsonb_build_object('case_id',%L,'signs',jsonb_build_array('سعال')))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_codes"
+chk "  وخانةٌ غير معروفة بالقطيع تُرفض (لا كائنٌ حرّ يحمل ما يشاء)" \
+    "select _flk('$VET', format(\$q\$select flock_visit_save(jsonb_build_object('case_id',%L,'flock',jsonb_build_object('hack','x')))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_visit_bad"
+chk "  والزيارةُ الجاية تظهر بالإحصاء، وحالُ الحقل آخرُ ما كُتب" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'next_visit_on') = (_flock_today()+2)::text and (_flock_stats(%L)->>'last_trend') = 'same'\$q\$, '$CASE1', '$CASE1'))" \
+    "true"
+
+# ── الطبلة وفترةُ السحب ──
+TX1="flock_treatment_save(jsonb_build_object('client_ref','ft-1','case_id','$CASE1','title','CRD','start_on',(_flock_today()-2)::text,
+  'lines', jsonb_build_array(
+    jsonb_build_object('day_from',1,'day_to',5,'product_name','دوكسي ٥٠٪','kind','med','dose_amount',1,'dose_unit','g','dose_per','liter','hours',6,'withdrawal_meat_days',5),
+    jsonb_build_object('day_from',1,'day_to',3,'product_name','فيتامين AD3E','kind','vitamin','dose_amount',1,'dose_unit','ml','dose_per','liter'))))"
+chk "الطبلة: الطبيب يكتبها (دواءٌ ٥ أيام بسحب ٥، وفيتامين)" \
+    "select _flk('$VET', \$q\$select (r->>'replayed') || ':' || jsonb_array_length(r->'lines') from (select $TX1 as r) x\$q\$)" "false:2"
+TX1ID=$($P -tAc "select id from flock_treatments where client_ref = 'ft-1'")
+chk "  «لا تبيع قبل» = آخرُ يوم علاج (بعد ٢) + ٥ + ١ = بعد ٨ أيام، والفيتامينُ لا يُحسب" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'safe_meat_from') = (_flock_today()+8)::text and not (_flock_stats(%L)->>'withdrawal_unknown')::boolean
+                                          and (_flock_stats(%L)->>'in_withdrawal')::boolean\$q\$, '$CASE1', '$CASE1', '$CASE1'))" "true"
+chk "  وتعديلُها قبل الإرسال بمكانها (نفسُ المعرّف، النسخةُ ١)" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('id',%L,'title','CRD — معدّلة','lines', jsonb_build_array(
+        jsonb_build_object('day_from',1,'day_to',5,'product_name','دوكسي ٥٠٪','kind','med','dose_amount',1,'dose_unit','g','dose_per','liter','withdrawal_meat_days',5))))->>'version')\$q\$, '$TX1ID'))
+       || '|' || (select count(*) from flock_treatments where case_id = '$CASE1')::text" "1|1"
+$P -c "select _flk('$RCP', format(\$q\$select flock_treatment_mark(%L, 'sent')::text\$q\$, '$TX1ID'))" >/dev/null
+chk "  وبعد الإرسال: التعديلُ نسخةٌ ثانية" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('client_ref','ft-1b','id',%L,'start_on',(_flock_today())::text,'lines', jsonb_build_array(
+        jsonb_build_object('day_from',1,'day_to',3,'product_name','تايلوزين','kind','med','dose_amount',1,'dose_unit','g','dose_per','liter','withdrawal_meat_days',1))))->>'version')\$q\$, '$TX1ID'))" "2"
+chk "  والأولى «replaced» موقوفةٌ بيوم بداية الثانية (شاملاً)" \
+    "select status || ':' || (stopped_on = _flock_today())::text from flock_treatments where id = '$TX1ID'" "replaced:true"
+chk "  والسحبُ يذكر دوكسي القديمة (انعطت حتى اليوم ⇒ اليوم + ٥ + ١) لا التايلوزين وحده" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'safe_meat_from') = (_flock_today()+6)::text\$q\$, '$CASE1'))" "true"
+chk "  وإعادةُ حفظ النسخة بالمرجع نفسِه لا تصنع ثالثة" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('client_ref','ft-1b','id',%L,'lines',jsonb_build_array(jsonb_build_object('day_from',1,'day_to',1,'product_name','x'))))->>'replayed')\$q\$, '$TX1ID'))
+       || '|' || (select count(*) from flock_treatments where case_id = '$CASE1')::text" "true|2"
+chk "  وسطرُ دواءٍ بلا سحبٍ مكتوب = «غير معروف» بصوت" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('client_ref','ft-2','case_id',%L,'lines', jsonb_build_array(
+        jsonb_build_object('day_from',1,'day_to',2,'product_name','مجهول السحب','kind','med'))))->>'replayed')\$q\$, '$CASE1'))
+       || '|' || _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'withdrawal_unknown')\$q\$, '$CASE1'))" "false|true"
+TX2ID=$($P -tAc "select id from flock_treatments where client_ref = 'ft-2'")
+chk "  والإيقافُ قبل البداية = ما انعطى (يسقط من السحب ومن «غير معروف»)" \
+    "select _flk('$VET', format(\$q\$select flock_treatment_mark(%L, 'stop', _flock_today()-1)->>'status'\$q\$, '$TX2ID'))
+       || '|' || _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'withdrawal_unknown')\$q\$, '$CASE1'))" "stopped|false"
+chk "  وسطرٌ بجرعةٍ بلا وحدة يُرفض (كلُّها أو لا شيء)" \
+    "select _flk('$VET', format(\$q\$select flock_treatment_save(jsonb_build_object('case_id',%L,'lines', jsonb_build_array(jsonb_build_object('day_from',1,'day_to',1,'product_name','x','dose_amount',2))))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_treatment_line"
+
+# ── التحصين ──
+chk "التحصين: الجاي «گمبورو» بعمر ١٤ — ومتأخّر (العمر ٢٣)" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->'next_vax'->>'vaccine') || '|' || (_flock_stats(%L)->>'vax_overdue')\$q\$, '$CASE1', '$CASE1'))" \
+    "گمبورو|1"
+GUM=$($P -tAc "select id from flock_vax where case_id = '$CASE1' and planned_age = 14")
+chk "  والطبيب يسجّله منجَزاً (أعطاه المربي، برقم وجبة اللقاح)" \
+    "select _flk('$VET', format(\$q\$select flock_vax_save(jsonb_build_object('id',%L,'vaccine','گمبورو','route','water','planned_age',14,'status','given','given_on',(_flock_today()-9)::text,'given_by','farmer','batch_no','B-77'))->>'status'\$q\$, '$GUM'))
+       || '|' || _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'vax_overdue') || ':' || (_flock_stats(%L)->'next_vax'->>'age')\$q\$, '$CASE1', '$CASE1'))" \
+    "given|0:24"
+chk "  والمنجَزُ لا يُحذف، والتركُ يحتاج سبباً" \
+    "select _flk('$VET', format(\$q\$select flock_vax_delete(%L)::text\$q\$, '$GUM'))
+       || '|' || _flk('$VET', format(\$q\$select flock_vax_save(jsonb_build_object('case_id',%L,'vaccine','x','planned_age',30,'status','skipped'))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_vax_given|ERR:flock_vax"
+chk "  وبرنامجُ العيادة للمدير لا للاستقبال" \
+    "select _flk('$RCP', \$q\$select flock_program_save(jsonb_build_object('name','لاحم','kind','broiler','steps','[]'::jsonb))::text\$q\$)
+       || '|' || _flk('$C1', \$q\$select jsonb_array_length(flock_program_save(jsonb_build_object('name','لاحم','kind','broiler','steps',jsonb_build_array(jsonb_build_object('age',7,'vaccine','ND','route','eye'))))->'steps')::text\$q\$)" \
+    "ERR:flock_forbidden|1"
+
+# ── القائمة والحزمة والصور ──
+chk "القائمة: الاستقبال يرى الوجبة بحقلها وإحصائها" \
+    "select _flk('$RCP', \$q\$select (flock_board('open')->0->'farm'->>'name') || '|' || (flock_board('open')->0->'stats'->>'age')\$q\$)" \
+    "حقلالكرادة|23"
+chk "  والحزمةُ كاملة: ٣ تحصينات، طبلتان (وبالأولى سطرٌ واحد)، زيارة، ٣ صفوف نافق" \
+    "select _flk('$RCP', format(\$q\$select jsonb_array_length(b->'vax') || '|' || jsonb_array_length(b->'treatments') || '|' || jsonb_array_length(b->'visits') || '|' || jsonb_array_length(b->'mortality')
+        from (select flock_case_bundle(%L) as b) x\$q\$, '$CASE1'))" "3|3|1|3"
+chk "  والصورة بمسار وجبتها وحده، والإذنُ بالدلو لعيادتها وحدها" \
+    "select _flk('$VET', format(\$q\$select flock_media_add(jsonb_build_object('case_id',%L,'path','flock/' || %L || '/a.jpg'))->>'kind'\$q\$, '$CASE1', '$CASE1'))
+       || '|' || _flk('$VET', format(\$q\$select flock_media_add(jsonb_build_object('case_id',%L,'path','flock/00000000-0000-0000-0000-000000000000/a.jpg'))::text\$q\$, '$CASE1'))
+       || '|' || _flk('$C1', format(\$q\$select can_access_flock_media(%L)::text\$q\$, '$CASE1')) || '|' || _flk('$C2', format(\$q\$select can_access_flock_media(%L)::text\$q\$, '$CASE1'))" \
+    "photo|ERR:flock_media|true|false"
+
+# ── الإغلاق ──
+chk "الإغلاق بيعاً قبل «لا تبيع قبل» يُرفض بالتاريخ" \
+    "select _flk('$VET', format(\$q\$select flock_case_close(%L, jsonb_build_object('reason','sold'))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_withdrawal_active"
+chk "  وبتأكيدٍ صريح يُغلق، وإعادةُ الفتح ترجعه" \
+    "select _flk('$VET', format(\$q\$select flock_case_close(%L, jsonb_build_object('reason','sold','sold_count',9800,'confirm_withdrawal',true))->>'status'\$q\$, '$CASE1'))
+       || '|' || _flk('$VET', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-10)::text,'dead',1))::text\$q\$, '$CASE1'))
+       || '|' || _flk('$VET', format(\$q\$select flock_case_reopen(%L)->>'status'\$q\$, '$CASE1'))" \
+    "closed|ERR:flock_case_closed|open"
+chk "  وتاريخُ وصولٍ بعد نافقٍ مسجّل يُرفض" \
+    "select _flk('$RCP', format(\$q\$select flock_case_update(%L, jsonb_build_object('placed_on',(_flock_today()-1)::text))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_placed_on"
+
+# ── الثوابت ──
+chk "كلُّ دوالّ الكتابة definer بـsearch_path، وتسأل _flock_can بنفسها" \
+    "select count(*)::text from pg_proc p where p.proname in ('flock_case_open','flock_case_update','flock_case_close','flock_case_reopen','flock_farm_save',
+        'flock_mortality_save','flock_mortality_delete','flock_visit_save','flock_treatment_save','flock_treatment_mark','flock_vax_save','flock_vax_delete',
+        'flock_program_save','flock_media_add','flock_media_remove')
+       and (not p.prosecdef or not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%') or position('_flock_can(' in p.prosrc) = 0)" "0"
+chk "  والكاتبُ لمشغّل المنصّة فارغ (اتفاقُ 0151)" \
+    "select (position('platform_acting_clinic() is null then auth.uid()' in prosrc) > 0)::text from pg_proc where proname = '_flock_actor'" "true"
+chk "  والسياجُ على جداول الحقل كلّها" \
+    "select count(*)::text from public.verify_photographer_fence() x where x like 'flock_%'" "0"
+# ── المرآة: _flock_stats = flockStats (src/lib/flockMath.ts) حقلاً بحقل، على ٤٨ وجبةً بنداءاتٍ حقيقية ──
+# التجريبيُّ يحسب إحصاءَ الحقل بالمرآة والسحابةُ تأخذه من الخادم — اختلافُهما تطبيقان يقولان للطبيب شيئين. والطفراتُ
+# (العمرُ من صفر، السحبُ بلا يوم احتياط، الطبلةُ الموقوفة كاملة، الإنذارُ بيومٍ واحد…) يجب أن تُمسك كلُّها.
+FLKP=$(mktemp -d)
+if node "$HERE/flock-parity.mjs" gen "$FLKP" >"$FLKP/gen.log" 2>&1; then
+  out=$($P -f "$FLKP/run.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ وجباتُ تطابق الحقل ما نزلت"; fail=1; }
+  if $P -tA -f "$FLKP/out.sql" >"$FLKP/actual.txt" 2>"$FLKP/run.err"; then :; else tail -3 "$FLKP/run.err"; echo "   ✗ قراءةُ تطابق الحقل ما رجعت"; fail=1; fi
+  if node "$HERE/flock-parity.mjs" check "$FLKP"; then :; else fail=1; fi
+else
+  tail -5 "$FLKP/gen.log"; echo "   ✗ قالبُ تطابق الحقل ما تولّد"; fail=1
+fi
+rm -rf "$FLKP"
 
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null
