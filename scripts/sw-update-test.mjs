@@ -518,10 +518,20 @@ console.log("▸ الإعداد والتوصيل");
   const aus = readFileSync("src/lib/appUpdate.ts", "utf8");
   check("قطعةٌ ناقصة بتبويبٍ «استُولي» ⇒ تحميلٌ عاديّ قبل مسح المخبأ", aus.indexOf("updateTaken()") > 0 && aus.indexOf("updateTaken()") < aus.indexOf("caches.keys()"));
   const rec = aus.slice(aus.indexOf("export function recoverFromStaleShell"), aus.indexOf("export function retryImport"));
-  check("  والفرعان ينتظران الكتاباتِ **قبل** أيّ مسح، ثم يسألان النتّ قبل التحميل",
-    (rec.match(/await waitForWrites\(\);|waitForWrites\(\)\.then/g) ?? []).length === 2
+  /* وفرعُ المسح ينتظر **ثانيةً بعده** قبل التحميل: إلغاءُ الخدمة بأوّل زيارة ينتظر تثبيتَها (٣٢ ثانية مقيسة) وما كُتب أثناءه كان
+     يُحمَّل فوقه (تدقيقٌ خامس) — ويسأل النتّ ثانيةً (المسحُ تمّ، والتحميلُ بلا نتّ صفحةُ «لا اتصال»). سلوكُه بـrx-pad-test (ط). */
+  check("  والفرعان ينتظران الكتاباتِ **قبل** أيّ مسح، وفرعُ المسح ثانيةً بعده، ثم يسألان النتّ قبل التحميل",
+    (rec.match(/await waitForWrites\(\);|waitForWrites\(\)\.then/g) ?? []).length === 3
     && rec.indexOf("await waitForWrites();") < rec.indexOf("caches.keys()")
+    && rec.lastIndexOf("await waitForWrites();") > rec.indexOf("r.unregister()") && rec.lastIndexOf("await waitForWrites();") < rec.lastIndexOf("window.location.reload();")
+    && (rec.match(/if \(offline\(\)\) \{ inFlight = null;/g) ?? []).length === 3
+    /* والتراجعان قبل الختم يرجعان **حرفاً** (مراجعةُ 6c80aa5: إرخاءُ هذا لسطر الختم أسقط `return false` من الحراسة، فتراجعٌ يكمل
+       للمسح بلا نتّ — يمسح المخبأ ويلغي الخدمة — مرّ الفحصين؛ سلوكُه الآن بـrx-pad-test ط). */
     && (rec.match(/if \(offline\(\)\) \{ inFlight = null; return false; \}/g) ?? []).length === 2);
+  /* والتراجعُ بعد المسح يمسح ختمَه: الختمُ لتحميلٍ حصل — باقياً كان يرفض «حدّث الصفحة» ٣٠ ثانيةً والنتُّ رجع (تدقيقٌ سادس؛ سلوكُه بـrx-pad-test ط). */
+  check("  وتراجعُ ما بعد المسح يمسح ختمَ الدوّامة (والتراجعان قبله قبل الختم)",
+    /^ {4}if \(offline\(\)\) \{ inFlight = null; try \{ sessionStorage\.removeItem\(ONCE_KEY\); \}/m.test(rec.slice(rec.indexOf("r.unregister()")))
+    && (rec.match(/sessionStorage\.removeItem\(ONCE_KEY\)/g) ?? []).length === 1);
   check("  ونموذجٌ مفتوح (عدُّ المخزن) يُنتظر بلا سقف، وسقفُ الكتابة يبدأ بعد إفلاته", /if \(formHeld\(\)\) \{ t0 = Date\.now\(\); setTimeout\(tick, 250\); return; \}/.test(aus));
   check("  وحارسُ الدوّامة يُختم عند الالتزام بالتحميل لا قبل الانتظار",
     (rec.match(/commit\(\);/g) ?? []).length === 2 && rec.indexOf("const commit") < rec.indexOf("updateTaken()") && !/^ {2}sessionStorage\.setItem\(ONCE_KEY/m.test(rec));

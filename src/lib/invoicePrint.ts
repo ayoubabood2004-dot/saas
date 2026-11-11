@@ -42,7 +42,20 @@ const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
 // IQD: whole numbers with thousands separators, always Western numerals.
-const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const fmtBase = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const r2 = (n: number) => Math.round(n * 100) / 100;
+/* 0264: فاتورةُ الدولار تُطبع بالدولار — المبالغُ كلُّها بالدولار (الدَّينُ دولار)، والسِّيَقُ الدينارية لا تُطبع (حصصٌ وفرقُ صرف
+ * لا يقرؤها الزبون)، وسعرُ يوم البيع ومقابلُه بالدينار سطرٌ **بالأرقام والرموز وحدها** بالملاحظات: سقفُ النصّ الصلب بالملفّ ممتلئ. */
+function usdPrintView(inv: Invoice, curSym: string): Invoice {
+  const total = r2(Number(inv.total_usd) || 0), disc = r2(Number(inv.discount_usd) || 0);
+  const line = `$1 = ${fmtBase(Number(inv.fx_rate) || 0)} ${curSym}  ·  ${fmtBase(inv.total)} ${curSym}`;
+  return {
+    ...inv, total, subtotal: r2(total + disc), discount: disc, discount_type: disc > 0 ? "fixed" : null,
+    amount_paid: r2(Number(inv.paid_usd) || 0), payment_details: [], forgiven: 0,
+    notes: [inv.notes?.trim(), line].filter(Boolean).join("\n"),
+  };
+}
+const usdPrintItem = (it: InvoiceItem): InvoiceItem => ({ ...it, unit_price: Number(it.unit_price_usd) || 0, line_total: r2((Number(it.unit_price_usd) || 0) * it.qty) });
 
 /** مبلغ معزول اتجاهياً: بدونه تنقلب إشارة السالب لآخر الرقم داخل مستند RTL
  *  («2,000-» بدل «-2,000») — وهذا ظهر فعلياً على إيصالات مطبوعة. */
@@ -368,11 +381,17 @@ const A4_CSS = `
 `;
 
 /** Build a fully self-contained printable HTML document for an invoice. */
-export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: InvoicePrintOptions): string {
+export function buildInvoiceHTML(invoiceIn: Invoice, itemsIn: InvoiceItem[], opts: InvoicePrintOptions): string {
   const s = strings(opts.lang);
   const brand = esc(opts.brand || "doctorVet");
+  const curSym = opts.currency ?? currencySymbol();
+  const usdInv = invoiceIn.currency === "USD";
+  const invoice = usdInv ? usdPrintView(invoiceIn, curSym) : invoiceIn;
+  const items = usdInv ? itemsIn.map(usdPrintItem) : itemsIn;
+  /** الدولارُ بسنتاته («12.50»)، والدينارُ كما كان بلا كسور. */
+  const fmt = usdInv ? (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }) : fmtBase;
   // Default to Iraqi Dinar; caller may override with another label.
-  const cur = ` ${esc(opts.currency ?? currencySymbol())}`;
+  const cur = ` ${esc(usdInv ? "$" : curSym)}`;
   const money = (n: number) => ltr(`${fmt(n)}${cur}`);
   /** مبلغ سالب (خصم) — الإشارة تبقى يسار الرقم داخل المستند العربي. */
   const moneyNeg = (n: number) => ltr(`−${fmt(n)}${cur}`);

@@ -96,7 +96,7 @@ console.log("▸ ٢) القرار — لا اختيارَ صامت");
 }
 
 /* ---- مخزنُ الديمو بمفتاحه الحقيقيّ ----------------------------------------- */
-const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
+const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
 const seed = (products) => mem.set(DB_KEY, JSON.stringify({
   products, companies: [], companySections: [], purchases: [], purchaseItems: [], invoices: [], invoiceItems: [],
   generatedBarcodes: [], productsTrash: [], treatments: [], pets: [{ id: "pet-1", name: "بوبي", species: "dog" }], admissions: [], vaccinations: [],

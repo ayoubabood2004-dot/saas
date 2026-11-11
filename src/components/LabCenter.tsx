@@ -12,11 +12,11 @@
 //     descriptive form is text + photo. Ranges/units are stored WITH each
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { sendWhatsApp, quotaMessage, useWarmWaQuota } from "@/lib/quotas";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
+import { FlaskConical, Plus, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox, LabStatusValue } from "@/types";
 import {
   statusOf, nextStatus, advanceLabel, advanceOpensEntry, isInFlight, STATUS_META,
@@ -41,6 +41,13 @@ import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName, getClinicLogo } from "@/lib/settings";
 import { openLabPrint } from "@/lib/labPrint";
 import { useNavigate } from "react-router-dom";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* «صوّر» (كاميرا داخل السستم) و«من الجهاز» لصورة ورقة الجهاز — قطعةُ المرفقات الكسولة بنطاقها (att). كان الزرُّ
+ * منتقياً بـcapture: يفتح الكاميرا **وحدها** فلا تُرفق صورةٌ محفوظة ولا PDF من المختبر الخارجيّ (بلاغُ المالك ٦/١١). */
+const loadPhotoSource = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.PhotoSource })), ["att"]);
+let PhotoSourceLazy = loadPhotoSource();
 
 const FLAG_CHIP: Record<LabValueFlag, string> = {
   very_low: "bg-sky-200 text-sky-900 dark:bg-sky-500/35 dark:text-sky-100",
@@ -202,7 +209,8 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
   });
   const [freeRows, setFreeRows] = useState<{ label: string; value: string; unit: string; low: string; high: string }[]>([]);
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [, setSourceTick] = useState(0);
+  const retrySource = () => { PhotoSourceLazy = loadPhotoSource(); setSourceTick((n) => n + 1); };
 
   const pickPhoto = async (f: File | undefined) => {
     if (!f) return;
@@ -212,7 +220,6 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
     } catch { playWarning(); toast.error(t("lab.imagePrepFailed", "تعذّر تجهيز الصورة")); }
   };
 
-  const ocrRef = useRef<HTMLInputElement>(null);
   /** صورة → قراءة تلقائية: القيم المقروءة تتعبى بالحقول والصورة تنحفظ مع النتيجة. */
   const ocrPick = async (f: File | undefined) => {
     if (!f) return;
@@ -465,16 +472,17 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
 
       {mode === "numbers" && (
         <>
-          {/* أسهل طريقة: صوّر ورقة الجهاز والأرقام تنقرأ وتتعبى بروحها */}
-          <button
-            type="button"
-            disabled={ocrBusy}
-            onClick={() => { playTap(); ocrRef.current?.click(); }}
-            className="flex w-full items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed border-brand-400 bg-brand-50/60 p-4 text-base font-extrabold text-brand-700 transition hover:bg-brand-100/60 active:scale-[.99] disabled:opacity-60 dark:border-brand-500/50 dark:bg-brand-500/10 dark:text-brand-300"
-          >
-            {ocrBusy ? t("lab.ocrReading", "📸 دنقرأ الأرقام من الصورة…") : t("lab.ocrButton", "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها")}
-          </button>
-          <input ref={ocrRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void ocrPick(e.target.files?.[0]); e.target.value = ""; }} />
+          {/* أسهل طريقة: صوّر ورقة الجهاز (أو اختر صورتها) والأرقام تنقرأ وتتعبى بروحها */}
+          <div className="space-y-2 rounded-2xl border-2 border-dashed border-brand-400 bg-brand-50/60 p-3 dark:border-brand-500/50 dark:bg-brand-500/10" data-lab-ocr>
+            <p className="text-center text-sm font-extrabold text-brand-700 dark:text-brand-300">
+              {ocrBusy ? t("lab.ocrReading", "📸 دنقرأ الأرقام من الصورة…") : t("lab.ocrButton", "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها")}
+            </p>
+            <LoadBoundary scope="lab-ocr-source" onRetry={retrySource}>
+              <Suspense fallback={null}>
+                <PhotoSourceLazy onFile={(f) => void ocrPick(f)} busy={ocrBusy} cameraTitle={t("lab.ocrButton", "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها")} />
+              </Suspense>
+            </LoadBoundary>
+          </div>
 
           {/* ربط جهاز المختبر مباشرة — الأرقام تدخل من الجهاز بلا كتابة ولا تصوير */}
           {serialSupported() && (
@@ -744,10 +752,12 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
           placeholder={mode === "micro" ? t("lab.microNotesPh", "النتيجة والملاحظات (ما شوهد بالمجهر، البكتيريا والمضاد الفعال…)") : t("lab.notesPh", "ملاحظات إضافية (اختياري)")}
           className="input min-h-[64px] w-full resize-y text-sm leading-relaxed" />
         <div className="flex items-center gap-2">
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
-          <button type="button" onClick={() => fileRef.current?.click()} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
-            <Camera size={13} /> {photo ? t("lab.changePhoto", "تغيير الصورة") : t("lab.takePhoto", "صوّر ورقة الجهاز / الشريحة")}
-          </button>
+          <LoadBoundary scope="lab-photo-source" onRetry={retrySource}>
+            <Suspense fallback={null}>
+              <PhotoSourceLazy size="sm" onFile={(f) => void pickPhoto(f)}
+                cameraLabel={photo ? t("lab.changePhoto", "تغيير الصورة") : t("lab.takePhoto", "صوّر ورقة الجهاز / الشريحة")} />
+            </Suspense>
+          </LoadBoundary>
           {photo && <img src={photo} alt="lab" className="h-12 w-12 rounded-xl border border-line object-cover" />}
           {photo && <button type="button" onClick={() => setPhoto(null)} className="text-2xs font-bold text-danger-600">{t("lab.removePhoto", "إزالة")}</button>}
         </div>

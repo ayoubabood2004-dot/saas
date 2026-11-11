@@ -350,6 +350,7 @@ export const INVOICE_WRITERS = {
   inventory_tidy_uncat: "تمسّ product_id وحده؛ محفّزُ products_trash_consumption يوجّه كما بالدمج",
   delete_product: "تصفّر product_id بالسطور وحده؛ الدفترُ يحفظ المعرّف ويردّ لصفّ السلّة",
   restore_product: "تعيد product_id للسطور (نفسُ المعرّف)؛ الدفترُ يتابع الصفَّ الحيّ",
+  usd_checkout: "تبيع وتصرف من retail_checkout نفسِها؛ تحديثُها للسطور كلفتُها وسعرُها بالدولار وحدهما (لا كمية ولا مادّة)، والخدماتُ ممنوعةٌ بفاتورة الدولار فلا مستهلكات (0264)",
 };
 
 /** ما يكتب بالفواتير: سطورُها، أو حذفُ رأسها، أو حالتُها (`update invoices … set … status =`). */

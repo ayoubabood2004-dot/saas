@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -89,6 +89,10 @@ for f in $WAVE; do
   # قالبُ الإنتاج قبل 0252: شِفرةُ المستودع وتعليقاتٌ غائبة (prodlike_comments.sql) — 0252–0255 تنزل عليه كما بالإنتاج.
   if [ "$(basename "$f")" = "0252_service_consumption.sql" ]; then
     out=$($P -f "$HERE/prodlike_comments.sql" 2>&1) || { echo "$out"; echo "✗ قالبُ الإنتاج ما نزل"; exit 1; }
+  fi
+  # وقبل 0264: مقبوضاتُ اليوم بنصّها المقيس بالإنتاج (prodlike_reports.sql) — 0264 تنزل عليه كما ستنزل هناك.
+  if [ "$(basename "$f")" = "0264_usd_pricing.sql" ]; then
+    out=$($P -f "$HERE/prodlike_reports.sql" 2>&1) || { echo "$out"; echo "✗ قالبُ الإنتاج (0264) ما نزل"; exit 1; }
   fi
   printf '   %s\n' "$(basename "$f")"
   out=$($P -f "$f" 2>&1) || { echo "$out"; echo "✗ فشلت"; exit 1; }
@@ -4063,6 +4067,9 @@ chk "  والمعاينةُ stable (لقطةٌ واحدة) والحسابُ immu
 chk "السياجُ يشمل الجدولين (المصوّرُ لا يقرأ ولا يكتب)" \
     "select count(*)::text from verify_photographer_fence() v where v like '%price_change%'" "0"
 $P -f "$MIG/0226_price_changes.sql" >/dev/null 2>&1
+# إعادةُ 0226 تُرجع نطاقَ الرفع (_price_scope_products) لنصّها — و0264 أعادت تعريفَه (مادّةُ الدولار خارج الرفع)؛
+# بلا إعادتها يفحص price-parity بعدها نسخةَ 0226 لا نسخةَ الإنتاج. من يعيد تعريفَ _price_scope_products يضيف ملفَّه هنا.
+out=$($P -f "$MIG/0264_usd_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0264 ما انعادت بعد 0226"; fail=1; }
 chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: الرفوعُ والمحفّزُ كما هي" \
     "select (select count(*) from price_changes where clinic_id='$C1')::text||'/'||(select count(*) from pg_trigger where tgrelid='price_changes'::regclass and tgname='audit_all')::text" "6/1"
 chk "الأدواتُ الداخلية لا يناديها الداخلون، والأبوابُ ممنوعةٌ عن anon" \
@@ -5784,7 +5791,8 @@ $P -c "delete from staff_elevations; delete from memberships where user_id = '$M
 echo "▸ 0242: فاتورةٌ نُسيت تُسجَّل بيومها — بشرطها، وبلا بابٍ جانبيّ"
 BD=b2420000-0000-4000-8000-0000000000
 # الحزمةُ تعيد تنزيلَ هجراتٍ أقدم بأقسامها (0226 بقسم الأسعار، و0241 مرّتين بقسمها) فترجع audit_change
-# وaudit_kind لنسختيهما — وبالإنتاج 0242 آخرُ من يعرّفهما. أوّلُ تشغيلٍ بـCI قاسها: سطرُ التدقيق بلا sold_at
+# وaudit_kind لنسختيهما — وبالإنتاج 0242 آخرُ من يعرّف audit_change، و0261 آخرُ من يعرّف audit_kind (نصُّ 0242 حرفاً
+# وسطرُ الراجيتة — فالفحصُ أدناه يقرأ 0261 ويجد sale_backdated فيه). أوّلُ تشغيلٍ بـCI قاسها: سطرُ التدقيق بلا sold_at
 # فرجع الفحصُ فارغاً. فالشرطُ نفسُه يُقاس أوّلاً **على الملفّات** (آخرُ تعريفٍ بالهجرات هو ما يعيش بالإنتاج — نسخةٌ
 # لاحقةٌ من نصٍّ أقدم كانت ستُسقط الفرعين بصمت)، ثم تُعاد 0242 هنا كما يعيد قسمُ 0241 هجرتَه.
 LAST_AC=$(grep -lE "create or replace function (public\.)?audit_change\(" "$MIG"/*.sql | sort | tail -1)
@@ -5836,8 +5844,11 @@ chk "  والدينُ ٥٠٠ والمخزونُ نزل ٢ (من الرصيد ا�
     "select (total - amount_paid)::int::text||'|'||(select stock::int from products where id='${BD}01')::text from invoices where id='$ID1'" "500|8"
 chk "  والإعادةُ بنفس المرجع ترجع نفسَ الفاتورة بلا خصمٍ ثانٍ" \
     "select (_fgv('$C1', \$q\$$(co r242-1 "$(dayAt 1)")\$q\$) = '$ID1')::text||'|'||(select stock::int from products where id='${BD}01')::text" "true|8"
+# «كما ثبتت» = ختمُ الفاتورة نفسُه قبل الإعادة وبعدها — لا «أقدمُ من ١٢ ساعة»: «أمس ١٥:٠٠ ببغداد» أقربُ من ذلك بين منتصف الليل والثالثة
+# فجراً ببغداد، فكان الفحصُ يسقط بتلك الساعات وحدها والفاتورةُ سليمة (مقيس: ٠١:٠٩ ببغداد).
+STAMP242=$(Q "select extract(epoch from created_at)::text from invoices where id='$ID1'")
 chk "  **وإعادتُها بلا تاريخ (مسودّةٌ فقدته) ترجعها كما ثبتت — لا بيعةَ ثانيةً باليوم**" \
-    "select (_fgv('$C1', \$q\$$(co r242-1 null)\$q\$) = '$ID1')::text||'|'||((select created_at from invoices where id='$ID1') < now() - interval '12 hours')::text" "true|true"
+    "select (_fgv('$C1', \$q\$$(co r242-1 null)\$q\$) = '$ID1')::text||'|'||((select extract(epoch from created_at)::text from invoices where id='$ID1') = '$STAMP242' and '$STAMP242' <> '')::text" "true|true"
 # كلُّ جزءٍ يقول نفسَه إن غاب: كان NULL واحدٌ (sold_at غائب) يمحو السطرَ كلَّه فيرجع الفحصُ «» لا يُعرف ما الناقص.
 chk "  وسطرُ التدقيق يسمّيها «بيعة بيومٍ سابق» ويحمل يومَها" \
     "select coalesce((select coalesce(audit_kind(entity, action, details), 'no-kind')||'|'||coalesce(((details->>'sold_at')::timestamptz = (select created_at from invoices where id='$ID1'))::text, 'no-sold_at')||'|'||(details ? 'recorded_at')::text from audit_log where entity='invoices' and action='INSERT' and entity_id='$ID1' limit 1), 'no-audit-row')" "sale_backdated|true|true"
@@ -10148,9 +10159,10 @@ chk "report_pnl بصلاحية المُعرِّف وبمسارٍ مثبَّت، 
              and has_function_privilege('authenticated', 'public.report_pnl(timestamptz,timestamptz,text)', 'execute')
              and not has_function_privilege('anon', 'public.report_pnl(timestamptz,timestamptz,text)', 'execute'))::text
        from pg_proc where oid = 'public.report_pnl(timestamptz,timestamptz,text)'::regprocedure" "true"
-chk "  وتقرأ بعيادة auth_clinic() وحدها — clinic_id = v_clinic بكلّ جدولٍ تقرؤه، خمسُ قراءات (فحصٌ ثابت: definer يتجاوز RLS)" \
+# ستُّ قراءات: خمسُ 0256 + سِيَقُ فرق الصرف (0264، fx_m) — والموجةُ تنزل آخرَ تعريف، فالعددُ عددُه.
+chk "  وتقرأ بعيادة auth_clinic() وحدها — clinic_id = v_clinic بكلّ جدولٍ تقرؤه، ستُّ قراءات (فحصٌ ثابت: definer يتجاوز RLS)" \
     "select (select count(*) from regexp_matches(prosrc, '(^|[^a-z_])(i|ii|c|e)\\.clinic_id = v_clinic', 'g'))::text
-       from pg_proc where oid = 'public.report_pnl(timestamptz,timestamptz,text)'::regprocedure" "5"
+       from pg_proc where oid = 'public.report_pnl(timestamptz,timestamptz,text)'::regprocedure" "6"
 # الإذنُ الصريح بمستخدمٍ جديدٍ له صفُّ كادرٍ واحد: VET له صفٌّ بـC1 من قسم المتجر (manageStore)، وstaff_can تأخذ
 # limit 1 من صفوف المستخدم بالعيادة — صفٌّ ثانٍ له كان يجعل الجوابَ تبعَ أيِّ الصفّين يرجع أوّلاً، لا تبعَ الإذن.
 PNLV=a2560c00-0000-4000-8000-00000000e001
@@ -10646,6 +10658,681 @@ _m260
 chk "والإعادةُ بلا أثرٍ ثانٍ: الأجسامُ والصلاحياتُ ورؤوسُ الفواتير كما هي، والقيدُ مرّةً واحدة" \
     "select (($F6) = '$Z6')::text || '|' || ((select md5(string_agg(reference || ':' || total::text || ':' || discount::text, ',' order by reference)) from purchases where clinic_id = '$K6') = '$H6')::text
             || '|' || (select count(*) from pg_constraint where conrelid = 'public.purchases'::regclass and conname = 'purchases_discount_ok')::text" "true|true|1"
+
+# ── 0261: راجيتةُ العيادة — تصميمٌ لكلّ عيادة، وما انطبع يبقى كما انطبع ─────────────────────────────
+# حيوانان (C1 وC2) وصفوفُهما من هذا القسم (البادئة a2610000-…). الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).
+echo "▸ 0261: الراجيتة — تصميمٌ لكلّ عيادة، وكلُّ راجيتةٍ انطبعت تبقى كما انطبعت (والإلغاءُ للمدير)"
+# القسمُ 0159 منح الداخلين كلَّ شيء (ومنه الحذف) — فالهجرةُ تُعاد أوّلاً: صلاحياتُها = حالُ الإنتاج.
+out=$($P -f "$MIG/0261_rx_pad.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0261 ما انعادت"; fail=1; }
+RXP=a2610000-0000-4000-8000-0000000000a1
+RXQ=a2610000-0000-4000-8000-0000000000a2
+RXD=a2610000-0000-4000-8000-0000000000a3
+RXS=a2610000-0000-4000-8000-0000000000a4
+RXK=a2610000-0000-4000-8000-0000000000b1
+out=$($P -c "insert into pets(id, name, clinic_id) values ('$RXP', 'راجيتة', '$C1'), ('$RXQ', 'عيادة ثانية', '$C2'), ('$RXD', 'حيوان يُحذف', '$C1') on conflict (id) do nothing;
+       insert into pets(id, name, clinic_id, shared_with_clinic) values ('$RXS', 'حيوان مالكٍ مشترك', null, true) on conflict (id) do nothing;
+       create table if not exists _rx261_prof as select id, role from profiles where id = '$VET';
+       insert into profiles(id, role) values ('$VET', 'doctor') on conflict (id) do update set role = 'doctor';
+       delete from audit_log where entity = 'pet_prescriptions' and (details->>'pet_id') in ('$RXP', '$RXQ', '$RXD', '$RXS');
+       delete from pet_prescriptions where pet_id in ('$RXP', '$RXQ', '$RXD', '$RXS'); delete from clinic_rx_pad where clinic_id in ('$C1', '$C2');
+       delete from staff_elevations where user_id in ('$VET', '$RCP'); update _dvtest_flags set admin = false; delete from platform_sessions;" 2>&1) || { echo "$out" | tail -3; echo "   ✗ بذرةُ 0261 ما نزلت"; fail=1; }
+# أوّلُ ثلاثة أجزاء من جواب _rls_try: «guarded:الرمز:الرسالة» بلا تفاصيل الرسالة.
+g3() { echo "(select split_part(r, ':', 1) || ':' || split_part(r, ':', 2) || ':' || split_part(split_part(r, ':', 3), ' ', 1) from (select $1 as r) x)"; }
+RXI="insert into pet_prescriptions(pet_id, pet_name, doctor_name, fields, body) values (''$RXP'', ''راجيتة'', ''د. علي'', ''{\"date\":\"2026-11-05\",\"name\":\"راجيتة\",\"kind\":\"canine\"}'', ''Amoxicillin 250 mg — 2× daily'')"
+RX1="(select id from pet_prescriptions where pet_id = ''$RXP'' order by created_at limit 1)"
+chk "الطبيبُ يكتب راجيتةً لحيوان عيادته" "select _rls_try('$VET', '$RXI')" "rows:1"
+chk "  والخادمُ يختمها: الكاتبُ والعيادةُ منه، ولا تولد ملغاة" \
+    "select author_id::text || '|' || clinic_id::text || '|' || (voided_at is null)::text from pet_prescriptions where pet_id = '$RXP'" "$VET|$C1|true"
+chk "  وحيوانُ عيادةٍ أخرى لا تُكتب له (المفتاحُ الأجنبيّ لا يمرّ من RLS — السياسةُ تسأل pets بصلاحية الكاتب)" \
+    "select $(g3 "_rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXQ'', ''x'')')")" "guarded:42501:new"
+chk "    وحيوانُ مالكٍ مشتركٌ مع العيادات يُكتب له (الجوازُ العامّ: يراه كادرُ العيادة)" \
+    "select _rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXS'', ''للمشترك'')')" "rows:1"
+chk "  ومعرّفُ الجهاز يُحفظ كما أُرسل، وإعادتُه بعد ردٍّ ضائع 23505 لا صفٌّ ثانٍ" \
+    "select _rls_try('$VET', 'insert into pet_prescriptions(id, pet_id, body) values (''$RXK'', ''$RXP'', ''مرّة'')') || '|' || left(_rls_try('$VET', 'insert into pet_prescriptions(id, pet_id, body) values (''$RXK'', ''$RXP'', ''مرّة'')'), 13)" "rows:1|guarded:23505"
+chk "    (بجملةٍ ثانية: صفٌّ واحدٌ بمعرّفه)" "select count(*)::text from pet_prescriptions where id = '$RXK'" "1"
+chk "  وكاتبٌ ولحظةٌ وإلغاءٌ مزوَّرةٌ من الجهاز لا تُقبل: الخادمُ يكتبها" \
+    "select _rls_try('$VET', 'insert into pet_prescriptions(pet_id, body, author_id, issued_at, voided_at, voided_by, void_reason) values (''$RXP'', ''ثانية'', ''$RCP'', ''2020-01-01'', now(), ''$RCP'', ''مزوّر'')')" "rows:1"
+chk "    (بجملةٍ ثانية: الكاتبُ الطبيب، واللحظةُ الآن، وليست ملغاة)" \
+    "select author_id::text || '|' || (issued_at > now() - interval '5 minutes')::text || '|' || (voided_at is null and voided_by is null and void_reason is null)::text from pet_prescriptions where pet_id = '$RXP' and body = 'ثانية'" "$VET|true|true"
+chk "  ويراها الاستقبالُ وصاحبُ العيادة، ولا تراها عيادةٌ أخرى ولا المصوّر" \
+    "select $(rv $RCP "select count(*)::text from pet_prescriptions") || '|' || $(rv $C1 "select count(*)::text from pet_prescriptions") || '|' || $(rv $C2 "select count(*)::text from pet_prescriptions") || '|' || $(rv $PHO "select count(*)::text from pet_prescriptions")" "4|4|0|0"
+chk "  والمصوّرُ لا يكتبها (السياج)، ولا anon يصل الجدول" \
+    "select $(g3 "_rls_try('$PHO', '$RXI')") || '|' || has_table_privilege('anon', 'public.pet_prescriptions', 'select')::text" "guarded:42501:new|false"
+chk "بعد ما انطبعت ما تتعدّل: النصّ، والدكتور، والخانات، والحيوان — ولو صاحبُ العيادة" \
+    "select $(g3 "_rls_try('$VET', 'update pet_prescriptions set body = ''غيرها'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set doctor_name = ''د. ثاني'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set fields = ''{}'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set pet_id = ''$RXD'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$VET', 'update pet_prescriptions set id = gen_random_uuid() where id = $RX1')")" \
+    "guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen|guarded:P0001:rx_frozen"
+chk "  ولا سببَ إلغاءٍ على راجيتةٍ غيرِ ملغاة" "select $(g3 "_rls_try('$C1', 'update pet_prescriptions set void_reason = ''x'' where id = $RX1')")" "guarded:P0001:rx_frozen"
+chk "  وتحديثٌ لا يغيّر شيئاً يمرّ (حفظٌ مكرّرٌ من جهازٍ لا يُرفض)" "select _rls_try('$VET', 'update pet_prescriptions set body = body where id = $RX1')" "rows:1"
+RXA0=$($P -tAc "select count(*) from audit_log where entity = 'pet_prescriptions'")
+chk "  و«ألغِ» بلا تغيير (voided_at = null على حيّة) يمرّ ولا يكتب «ألغى» بسجلّ الحركات" \
+    "select _rls_try('$RCP', 'update pet_prescriptions set voided_at = null where id = $RX1')" "rows:1"
+chk "    (بجملةٍ ثانية: لا سطرَ تدقيق)" "select (count(*) - $RXA0)::text from audit_log where entity = 'pet_prescriptions'" "0"
+chk "الإلغاءُ للمدير: الطبيبُ والاستقبالُ يُرفضان" \
+    "select $(g3 "_rls_try('$VET', 'update pet_prescriptions set voided_at = now(), void_reason = ''غلط'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$RCP', 'update pet_prescriptions set voided_at = now() where id = $RX1')")" \
+    "guarded:42501:rx_void_manager|guarded:42501:rx_void_manager"
+chk "  وعيادةٌ أخرى لا تصلها أصلاً (صفرُ صفوف)" "select _rls_try('$C2', 'update pet_prescriptions set voided_at = now() where id = $RX1')" "rows:0"
+chk "  وصاحبُ العيادة (مدير) يلغيها — والخادمُ يختم اللحظةَ ومَن، والسببُ منظّف" \
+    "select _rls_try('$C1', 'update pet_prescriptions set voided_at = ''2020-01-01'', voided_by = ''$RCP'', void_reason = ''  كُتبت لحيوانٍ ثانٍ  '' where id = $RX1')" "rows:1"
+chk "    (بجملةٍ ثانية)" \
+    "select (voided_at > now() - interval '5 minutes')::text || '|' || voided_by::text || '|' || (void_reason = 'كُتبت لحيوانٍ ثانٍ')::text from pet_prescriptions where id = (select id from pet_prescriptions where pet_id = '$RXP' order by created_at limit 1)" "true|$C1|true"
+chk "  والملغاةُ لا تتعدّل ولا يرجع إلغاؤها ولا يُعاد" \
+    "select $(g3 "_rls_try('$C1', 'update pet_prescriptions set voided_at = null where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set void_reason = ''سببٌ آخر'' where id = $RX1')")
+       || '|' || $(g3 "_rls_try('$C1', 'update pet_prescriptions set body = ''x'' where id = $RX1')")" \
+    "guarded:P0001:rx_voided|guarded:P0001:rx_voided|guarded:P0001:rx_voided"
+RXV="(select id from pet_prescriptions where pet_id = ''$RXP'' and body = ''ثانية'')"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$VET','$C1', now() + interval '10 minutes')
+       on conflict (user_id) do update set until = excluded.until;" >/dev/null
+chk "  ومفتاحُ المدير الحيّ على الطبيب يلغي (auth_role: مدير)" \
+    "select _rls_try('$VET', 'update pet_prescriptions set voided_at = now() where id = $RXV')" "rows:1"
+$P -c "delete from staff_elevations where user_id = '$VET'; update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "  ومشغّلُ المنصّة داخل العيادة يلغي (كمديرٍ من كادرها)" \
+    "select _rls_try('$ADM', 'update pet_prescriptions set voided_at = now() where id = ''$RXK''')" "rows:1"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "    (بجملةٍ ثانية: الاثنتان ملغاتان، والخادمُ ختم مَن، وكلُّ إلغاءٍ بلا سببٍ سطرُ تدقيق)" \
+    "select string_agg(voided_by::text, ',' order by body) || '|' || (select count(*) from audit_log a where a.entity = 'pet_prescriptions' and a.action = 'UPDATE'
+            and a.entity_id in (select id::text from pet_prescriptions where pet_id = '$RXP' and body in ('ثانية', 'مرّة')))::text
+       from pet_prescriptions where pet_id = '$RXP' and body in ('ثانية', 'مرّة')" "$VET,$ADM|2"
+chk "ولا تُحذف: لا صاحبُ العيادة ولا الطبيب (لا صلاحية)" \
+    "select $(g3 "_rls_try('$C1', 'delete from pet_prescriptions')") || '|' || $(g3 "_rls_try('$VET', 'delete from pet_prescriptions')")" \
+    "guarded:42501:permission|guarded:42501:permission"
+chk "القيدُ يرفض: نصّاً فارغاً، وأطولَ من ٨٠٠٠، وخاناتٍ ليست كائناً، واسمَ دكتورٍ أطولَ من ١٢٠" \
+    "select left(_rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXP'', ''   '')'), 13)
+       || '|' || left(_rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXP'', repeat(''x'', 8001))'), 13)
+       || '|' || left(_rls_try('$VET', 'insert into pet_prescriptions(pet_id, body, fields) values (''$RXP'', ''x'', ''[1]'')'), 13)
+       || '|' || left(_rls_try('$VET', 'insert into pet_prescriptions(pet_id, body, doctor_name) values (''$RXP'', ''x'', repeat(''د'', 121))'), 13)" \
+    "guarded:23514|guarded:23514|guarded:23514|guarded:23514"
+chk "  و٨٠٠٠ حرفٍ تمرّ (السقفُ نفسُه بالشاشة)" "select _rls_try('$VET', 'insert into pet_prescriptions(pet_id, body) values (''$RXP'', repeat(''x'', 8000))')" "rows:1"
+chk "التدقيقُ يكتب الراجيتةَ وإلغاءها باسم الحيوان (سجلُّ الحركات يقولها)" \
+    "select count(*) filter (where action = 'INSERT')::text || '|' || count(*) filter (where action = 'UPDATE' and details ? '__changed')::text || '|' || bool_and(details->>'pet_name' = 'راجيتة')::text
+       from audit_log where entity = 'pet_prescriptions' and entity_id = (select id::text from pet_prescriptions where pet_id = '$RXP' order by created_at limit 1)" "1|1|true"
+out=$($P -c "insert into pet_prescriptions(pet_id, clinic_id, body) values ('$RXD', '$C1', 'تُحذف مع حيوانها'); delete from pets where id = '$RXD';" 2>&1) || { echo "$out" | tail -3; fail=1; }
+chk "وحذفُ الحيوان يحذف راجيتاتِه (المفتاحُ الأجنبيّ — كملاحظاته)" "select count(*)::text from pet_prescriptions where pet_id = '$RXD'" "0"
+chk "  ولا تختفي بلا أثر: سطرُ حذفٍ بلقطتها كاملة (النصُّ والحيوان) — كملاحظاته ولقاحاته" \
+    "select count(*)::text || '|' || coalesce(max(details->>'pet_id'), '') from audit_log where entity = 'pet_prescriptions' and action = 'DELETE' and details->>'body' = 'تُحذف مع حيوانها'" "1|$RXD"
+chk "ونوعُها بسجلّ الحركات «ملف طبي» (كتابةً وإلغاءً وحذفاً) والتصميمُ «إعدادات» — وaudit_kind ممنوعةٌ على anon" \
+    "select audit_kind('pet_prescriptions', 'INSERT', '{}') || '|' || audit_kind('pet_prescriptions', 'UPDATE', '{\"__changed\":{\"voided_at\":[null,\"x\"]}}') || '|' || audit_kind('pet_prescriptions', 'DELETE', '{}')
+            || '|' || audit_kind('clinic_rx_pad', 'UPDATE', '{}') || '|' || has_function_privilege('anon', 'public.audit_kind(text,text,jsonb)', 'execute')::text
+            || '|' || has_function_privilege('authenticated', 'public.audit_kind(text,text,jsonb)', 'execute')::text" "medical|medical|medical|settings|false|true"
+
+RXC="insert into clinic_rx_pad(config) values (''{\"v\":1,\"mode\":\"template\",\"doctors\":[{\"name\":\"Dr. Ali\",\"lines\":\"B.V.M.S\"}]}'')"
+chk "التصميم: كادرُ العيادة يحفظه (كإعدادات العيادة)، وعيادتُه من الخادم" "select _rls_try('$VET', '$RXC')" "rows:1"
+chk "  والخادمُ يختم مَن ومتى" "select clinic_id::text || '|' || updated_by::text from clinic_rx_pad" "$C1|$VET"
+chk "  وصفٌّ واحدٌ لكلّ عيادة: إدخالٌ ثانٍ 23505 (الشاشةُ تقرؤه «تغيّر من جهاز ثاني»)" "select left(_rls_try('$C1', '$RXC'), 13)" "guarded:23505"
+RXU0=$($P -tAc "select updated_at::text from clinic_rx_pad where clinic_id = '$C1'")
+chk "  والتعديلُ بشرط «كما فُتح» يمرّ" "select _rls_try('$C1', 'update clinic_rx_pad set config = ''{\"v\":1,\"mode\":\"image\"}'' where updated_at = ''$RXU0''')" "rows:1"
+chk "    وبنسخةٍ قديمة صفرُ صفوف (لا دوسٌ صامت)، والختمُ تقدّم ومَن صار صاحبَ العيادة" \
+    "select _rls_try('$VET', 'update clinic_rx_pad set config = ''{}'' where updated_at = ''$RXU0''') || '|' || (select (updated_at > '$RXU0'::timestamptz)::text || '|' || updated_by::text || '|' || (config->>'mode') from clinic_rx_pad where clinic_id = '$C1')" "rows:0|true|$C1|image"
+chk "  ولا ينتقل لعيادةٍ أخرى بتعديل (المحفّزُ يثبّتها)" "select _rls_try('$C1', 'update clinic_rx_pad set clinic_id = ''$C2''')" "rows:1"
+chk "    (بجملةٍ ثانية — العدُّ بلقطة بداية الجملة كان يرى الصفَّ مكانه أبداً: درسُ 0257)" \
+    "select (select count(*) from clinic_rx_pad where clinic_id = '$C1')::text || '|' || (select count(*) from clinic_rx_pad where clinic_id = '$C2')::text" "1|0"
+chk "  ولا بايتاتِ صورٍ بالقاعدة: data: بأيّ حالة، ومصفوفةٌ، وأكبرُ من ٢٤ ألفاً" \
+    "select left(_rls_try('$C2', 'insert into clinic_rx_pad(config) values (''{\"bgPath\":\"data:image/png;base64,AAAA\"}'')'), 13)
+       || '|' || left(_rls_try('$C2', 'insert into clinic_rx_pad(config) values (''{\"emblemPath\":\"DATA:image/jpeg;base64,AA\"}'')'), 13)
+       || '|' || left(_rls_try('$C2', 'insert into clinic_rx_pad(config) values (''[]'')'), 13)
+       || '|' || left(_rls_try('$C2', 'insert into clinic_rx_pad(config) select jsonb_build_object(''address'', repeat(''x'', 24001))'), 13)" \
+    "guarded:23514|guarded:23514|guarded:23514|guarded:23514"
+chk "  وعيادةٌ أخرى لا تراه، والمصوّرُ لا يراه ولا يكتبه، ولا يُحذف" \
+    "select $(rv $C2 "select count(*)::text from clinic_rx_pad") || '|' || $(rv $PHO "select count(*)::text from clinic_rx_pad")
+       || '|' || _rls_try('$PHO', 'update clinic_rx_pad set config = ''{}''') || '|' || $(g3 "_rls_try('$C1', 'delete from clinic_rx_pad')")" \
+    "0|0|rows:0|guarded:42501:permission"
+chk "  والتدقيقُ يكتب تعديلَ التصميم (نوعُه «إعدادات»: الاسمُ clinic_…)" "select (count(*) >= 2)::text from audit_log where entity = 'clinic_rx_pad'" "true"
+chk "والسياجُ كاملٌ بعدها، والسياساتُ بلا سؤالٍ لكلّ صفّ (select auth_clinic)" \
+    "select coalesce((select string_agg(t, ',') from verify_photographer_fence() t), '') || '|' ||
+            (select bool_and(coalesce(qual, '') || coalesce(with_check, '') like '%SELECT auth_clinic()%')::text from pg_policies where tablename in ('pet_prescriptions', 'clinic_rx_pad') and permissive = 'PERMISSIVE')" "|true"
+RXN="select (select count(*) from pet_prescriptions where pet_id = '$RXP')::text || '|' || (select count(*) from clinic_rx_pad)::text || '|' || (select count(*) from pg_trigger where tgrelid in ('public.pet_prescriptions'::regclass, 'public.clinic_rx_pad'::regclass) and not tgisinternal)::text"
+RXN0=$($P -tAc "$RXN")
+out=$($P -f "$MIG/0261_rx_pad.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0261 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الصفوفُ والمحفّزاتُ كما هي)" "$RXN" "$RXN0"
+$P -c "delete from pet_prescriptions where pet_id in ('$RXP', '$RXQ', '$RXS'); delete from clinic_rx_pad where clinic_id in ('$C1', '$C2'); delete from pets where id = '$RXS';
+       delete from profiles p where p.id = '$VET' and not exists (select 1 from _rx261_prof);
+       update profiles p set role = r.role from _rx261_prof r where p.id = r.id; drop table _rx261_prof;" >/dev/null
+
+# ── 0262: البطاقةُ والتحويل حسابٌ واحد — خيارُ عرضٍ لا يغيّر صفّاً، والسحبُ «من الحساب» يُكتب كما حصل ──────
+echo "▸ 0262: البطاقة والتحويل حسابٌ واحد — نعم افتراضياً، والعيادةُ تطفئه لنفسها، والسحبُ «من الحساب» يُقبل"
+chk "العمودُ نعم افتراضياً ولا يُفرَّغ — كلُّ عيادةٍ قائمة تراه نعم بلا ترحيل" \
+    "select column_default||'|'||is_nullable||'|'||(select count(*) from clinic_prefs where one_account is not true)::text
+       from information_schema.columns where table_schema = 'public' and table_name = 'clinic_prefs' and column_name = 'one_account'" "true|NO|0"
+# كتابةُ الواجهة نفسُها (patchPrefs: upsert بلا clinic_id — المفتاحُ من افتراضه)، والقراءةُ بجملةٍ ثانية:
+# جملةُ الكتابة ترى لقطةَ بدايتها (درسُ 0257 — قرأتُها بنفس الجملة أوّلاً فطلعت «true» والكتابةُ نجحت).
+chk "  والعيادةُ تطفئه لنفسها بكتابة الواجهة نفسِها (upsert بلا clinic_id، وسياسةُ الإعدادات كما هي)" \
+    "select _rls_try('$C1', 'insert into clinic_prefs (one_account) values (false) on conflict (clinic_id) do update set one_account = excluded.one_account')" "rows:1"
+chk "    وانطفأ صفُّها وحده — لا عيادةَ غيرُها انطفأت" \
+    "select (select one_account::text from clinic_prefs where clinic_id = '$C1')
+            ||'|'||(select count(*) from clinic_prefs where one_account is not true and clinic_id <> '$C1')::text" "false|0"
+$P -c "update clinic_prefs set one_account = true where clinic_id = '$C1';" >/dev/null
+chk "سحبٌ «من الحساب» يُقبل (account)، وwallet ما زال يُرفض، والمخزنُ ما زال لموافقة الجرد وحدها" \
+    "select _rls_try('$C1', 'insert into expenses (clinic_id, amount, description, method, staff_id) values (''$C1'', 7, ''من الحساب 0262'', ''account'', ''$C1'')')
+            ||'|'||left(_rls_try('$C1', 'insert into expenses (clinic_id, amount, description, method, staff_id) values (''$C1'', 5, ''x'', ''wallet'', ''$C1'')'), 13)
+            ||'|'||split_part(_rls_try('$C1', 'insert into expenses (clinic_id, amount, description, method, staff_id) values (''$C1'', 5, ''يدوي'', ''stock'', ''$C1'')'), ':', 3)" \
+    "rows:1|guarded:23514|stock_expense_locked"
+Q262="select (select count(*) from pg_constraint where conrelid = 'public.expenses'::regclass and conname = 'expenses_method_check')::text
+         ||'|'||(select md5(pg_get_constraintdef(oid)) from pg_constraint where conrelid = 'public.expenses'::regclass and conname = 'expenses_method_check')
+         ||'|'||(select count(*) from expenses where method = 'account')::text
+         ||'|'||(select count(*) from information_schema.columns where table_name = 'clinic_prefs' and column_name = 'one_account')::text"
+Z262=$($P -tAc "$Q262" | tr -d '[:space:]')
+out=$($P -f "$MIG/0262_one_account.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0262 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ: قيدٌ واحدٌ بنفس تعريفه، والسحوباتُ والعمودُ كما هي" "$Q262" "$Z262"
+$P -c "delete from expenses where description = 'من الحساب 0262';" >/dev/null
+
+# ── 0263: مرفقاتُ الزيارة — الملفُّ للحيوان، ويعرف زيارتَه ─────────────────────────────────────
+# كلُّ كتابةٍ بدور authenticated كما ترسلها الواجهة (سياسةُ العيادة القائمة وحدها)، والقراءةُ بجملةٍ ثانية
+# (جملةُ الكتابة ترى لقطةَ بدايتها — درسُ 0257).
+echo "▸ 0263: مرفقاتُ الزيارة — الرفعُ للزيارة، والإرفاقُ من الخزنة، والفكّ"
+AV=c2630000-0000-4000-8000-0000000000
+$P -c "insert into pets(id, name, clinic_id) values ('${AV}a1', 'قطة المرفقات', '$C1') on conflict (id) do nothing;
+       insert into clinic_visits(id, pet_id, clinic_id) values ('${AV}b1', '${AV}a1', '$C1') on conflict (id) do nothing;
+       insert into media_items(id, pet_id, kind, url, caption, clinic_id) values
+         ('${AV}c1', '${AV}a1', 'xray', '${AV}a1/old.jpg', 'أشعة قديمة', '$C1') on conflict (id) do nothing;" >/dev/null
+chk "العمودُ uuid اختياريّ بلا مفتاحٍ أجنبيّ، وفهرسُه جزئيّ على المرفَق وحده" \
+    "select (select data_type||'|'||is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'media_items' and column_name = 'visit_id')
+            ||'|'||(select count(*) from pg_constraint where conrelid = 'public.media_items'::regclass and contype = 'f' and conkey @> array[(select attnum from pg_attribute where attrelid = 'public.media_items'::regclass and attname = 'visit_id')])::text
+            ||'|'||(select (indexdef like '%(visit_id)%' and indexdef like '%WHERE (visit_id IS NOT NULL)%')::text from pg_indexes where indexname = 'media_items_visit_idx')" "uuid|YES|0|true"
+chk "  رفعُ الواجهة من داخل الزيارة (insert بلا clinic_id ومعه visit_id) يمرّ بسياسة العيادة" \
+    "select _rls_try('$C1', 'insert into media_items (id, pet_id, kind, url, caption, visit_id) values (''${AV}c2'', ''${AV}a1'', ''lab'', ''${AV}a1/cbc.pdf'', ''cbc.pdf'', ''${AV}b1'')')" "rows:1"
+chk "    وانختم بعيادته وزيارته" \
+    "select clinic_id::text||'|'||visit_id::text from media_items where id = '${AV}c2'" "$C1|${AV}b1"
+chk "  وإرفاقُ ملفٍّ قديمٍ من الخزنة بالزيارة: تحديثٌ واحد بشرط أنه بلا زيارة" \
+    "select _rls_try('$C1', 'update media_items set visit_id = ''${AV}b1'' where id = ''${AV}c1'' and visit_id is null')" "rows:1"
+chk "    وإرفاقُه ثانيةً (صار مرفقاً) صفرُ صفوف — الواجهةُ تسمعه ولا تقول «انرفق»" \
+    "select (select visit_id::text from media_items where id = '${AV}c1')
+            ||'|'||_rls_try('$C1', 'update media_items set visit_id = ''${AV}b1'' where id = ''${AV}c1'' and visit_id is null')" "${AV}b1|rows:0"
+chk "  وعيادةٌ ثانية لا تفكّ مرفقاتِ غيرها ولا تراها" \
+    "select _rls_try('$C2', 'update media_items set visit_id = null where id = ''${AV}c2'' and visit_id = ''${AV}b1''')
+            ||'|'||_rls_try('$C2', 'select 1 from media_items where visit_id = ''${AV}b1''')" "rows:0|rows:0"
+chk "  والفكُّ يرجّعه للخزنة وحدها — الملفُّ باقٍ" \
+    "select _rls_try('$C1', 'update media_items set visit_id = null where id = ''${AV}c2'' and visit_id = ''${AV}b1''')" "rows:1"
+chk "    باقٍ بحيوانه بلا زيارة" \
+    "select count(*)::text||'|'||coalesce(visit_id::text, 'none') from media_items where id = '${AV}c2' group by visit_id" "1|none"
+Q263="select (select count(*) from information_schema.columns where table_name = 'media_items' and column_name = 'visit_id')::text
+         ||'|'||(select count(*) from pg_indexes where tablename = 'media_items')::text
+         ||'|'||(select count(*) from media_items where visit_id is not null)::text"
+Z263=$($P -tAc "$Q263" | tr -d '[:space:]')
+out=$($P -f "$MIG/0263_visit_attachments.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0263 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ: عمودٌ واحد وفهارسُ كما هي والمرفقاتُ كما هي" "$Q263" "$Z263"
+$P -c "delete from media_items where pet_id = '${AV}a1'; delete from clinic_visits where id = '${AV}b1'; delete from pets where id = '${AV}a1';" >/dev/null
+
+# ── 0264: الدولار (م١) — مثالُ المالك بالأرقام (docs/usd-plan.md §٢)، والأبوابُ المقفولة ─────────────────────────
+# كلُّ نداءٍ بدور authenticated (rv ⇐ _v0252) والقراءةُ بجملةٍ ثانية (درسُ 0257). A: ١٬٠٠٠$ بسعر ١٤٦٠ تُسدَّد بسعر ١٤٨٠؛
+# B: ١٬٠٠٠$ بسعر ١٤٥٠، جزئيٌّ ٤٠٠$ بسعر ١٤٧٠ ثمّ ٦٠٠$ بسعر ١٤٤٠ — الإغلاقُ بالعملتين، والفرقُ موجبٌ وسالب.
+echo "▸ 0264: الدولار — سعرُ اليوم، البيعُ بالدَّين، التسديدُ بالدينار، فرقُ الصرف، والأبواب"
+# أوّلُ تطبيقٍ بالإنتاج (٨/١١) رُفض بـdrift_body: مقبوضاتُ اليوم هناك نصُّ 0149 بلا أسماء الأعمدة. القالبُ صنعها قبل 0264.
+chk "الحارس: قالبُ الإنتاج نصُّ مقبوضات اليوم المقيس (البصمةُ 497f…)، و0264 نزلت عليه فصار جسمُها جسمَنا" \
+    "select (select fp from dvtest.prodlike_0264) || '|' || (position('-- +0264' in prosrc) > 0)::text
+       from pg_proc where oid = to_regprocedure('public.report_receipts_daily(timestamptz,timestamptz,text)')" \
+    "497fd195fcfc215f925d1f981f0ffda8|true"
+DPM="''public.product_movements(uuid,integer)''"
+DPF="(select md5(_drift_code(prosrc)) from pg_proc where oid = to_regprocedure($DPM))"
+chk "  _drift_assert_any: البصمةُ المسمّاة الثانية تمرّ، والغريبةُ drift_body، والغائبةُ drift_missing، وعلامتُنا تمرّ" \
+    "select _pf_try('$C1', 'select public._drift_assert_any($DPM, array[''00000000000000000000000000000000'', $DPF], ''-- +9999'')::text')
+            ||'|'||_pf_try('$C1', 'select public._drift_assert_any($DPM, array[''00000000000000000000000000000000'', ''11111111111111111111111111111111''], ''-- +9999'')::text')
+            ||'|'||_pf_try('$C1', 'select public._drift_assert_any(''public.no_such_fn_0264(uuid)'', array[''x''], ''-- +0264'')::text')
+            ||'|'||_pf_try('$C1', 'select public._drift_assert_any($DPM, array[''x''], ''-- +0252'')::text')" \
+    "allowed|guarded:drift_body|guarded:drift_missing|allowed"
+chk "  ومسحوبةٌ من authenticated وanon" \
+    "select (has_function_privilege('authenticated', 'public._drift_assert_any(text,text[],text)', 'execute')
+          or has_function_privilege('anon', 'public._drift_assert_any(text,text[],text)', 'execute'))::text" "false"
+UP=c2640000-0000-4000-8000-0000000000
+RID="(select id::text from clinic_fx_rates order by created_at desc, id desc limit 1)"
+uco() { echo "select (usd_checkout('$2'::jsonb, jsonb_build_object('fx_rate_id', $RID, 'client_ref', '$1')${3:+ || $3})).total::text"; }
+U1J="[{\"product_id\":\"${UP}a1\",\"qty\":20,\"unit_price_usd\":50}]"
+$P -c "insert into clinic_prefs(clinic_id, usd_enabled) values ('$C1', false) on conflict (clinic_id) do update set usd_enabled = false, usd_round_step = 250;
+       insert into products(id, clinic_id, name, barcode, price_currency, sell_price_usd, purchase_price_usd, stock, sell_price, purchase_price) values
+         ('${UP}a1', '$C1', 'Kitcat USD', 'USD-0264-1', 'USD', 50, 45, 100, 0, 0),
+         ('${UP}a2', '$C1', 'رمل بالدينار', 'IQD-0264-2', 'IQD', null, null, 10, 1000, 500),
+         ('${UP}a3', '$C1', 'بلا سعر دولار', 'USD-0264-3', 'USD', null, null, 5, 0, 0)
+       on conflict (id) do nothing;" >/dev/null
+chk "المفتاحُ مطفأ: سعرُ الدولار والبيعُ بالدولار يُرفضان (عيادةٌ لم تفعّله لا تتغيّر)" \
+    "select $(rv $C1 "select (fx_rate_set(146000)).rate::text")||'|'||$(rv $C1 "$(uco usd-x "$U1J")")" \
+    "guarded:P0001:usd_disabled|guarded:P0001:usd_disabled"
+$P -c "update clinic_prefs set usd_enabled = true where clinic_id = '$C1';" >/dev/null
+chk "  مفعّلاً: الاستقبالُ ما يحدّد السعر (قرار ٣)، والمديرُ يحدّده بـ«سعر ١٠٠ دولار» فيُحفظ للدولار الواحد" \
+    "select $(rv $RCP "select (fx_rate_set(146000)).rate::text")||'|'||$(rv $C1 "select (fx_rate_set(146000)).rate::text")" \
+    "guarded:42501:usd_rate_manager|1460.0000"
+chk "  وسعرٌ مكتوبٌ للدولار الواحد بخانة المئة (١٤٦٠ ⇒ ١٤٫٦) يُرفض — لا بيعَ بسعرٍ مخلوط" \
+    "select $(rv $C1 "select (fx_rate_set(1460)).rate::text")" "guarded:P0001:usd_rate_bad"
+chk "  usd_state: ما تحتاجه الشاشات — مفعّل، الخطوة ٢٥٠، والسعرُ نصّاً (لا عائم)؛ والعيادةُ الثانية مطفأةٌ بلا سعر" \
+    "select $(rv $C1 "select (s->>'enabled')||'|'||(s->>'step')||'|'||(s->'rate'->>'rate') from usd_state() s")||'|'||
+            $(rv $C2 "select (s->>'enabled')||'|'||coalesce(s->>'rate', 'none') from usd_state() s")" "true|250|1460.0000|false|none"
+chk "  المفتاحُ للمدير: الاستقبالُ يُرفض، والخطوةُ من القائمة وحدها" \
+    "select $(rv $RCP "select usd_prefs_set(true, 250)::text")||'|'||$(rv $C1 "select usd_prefs_set(null, 333)::text")" \
+    "guarded:42501:usd_prefs_manager|guarded:P0001:usd_step_bad"
+chk "  والإطفاءُ يُرفض وبالعيادة موادُّ بالدولار (الرفُّ يتجمّد والديونُ لا تُسدَّد)" \
+    "select $(rv $C1 "select usd_prefs_set(false)::text")" "guarded:P0001:usd_in_use"
+chk "البيعُ يرفض سعراً رآه الجهازُ قبل تغيّره (fx_rate_id قديم)" \
+    "select $(rv $C1 "select (usd_checkout('$U1J'::jsonb, jsonb_build_object('fx_rate_id', 'old', 'client_ref', 'usd-old'))).total::text")" \
+    "guarded:P0001:usd_rate_changed"
+chk "  فاتورةُ A دَيناً: ٢٠ × ٥٠\$ = ١٬٠٠٠\$ ⇒ ١٬٤٦٠٬٠٠٠ دينار — الخادمُ يحسب الدينار" \
+    "select $(rv $C1 "$(uco usd-a "$U1J" "jsonb_build_object('customer_name', 'أبو علي', 'paid_usd', 0)")")" "1460000.00"
+chk "    مختومةٌ بالدولار: السعر والمبلغ وما سُدّد، والكلفةُ ٤٥\$ × ١٤٦٠ والربحُ ١٤٦٬٠٠٠ (= ١٠٠\$)" \
+    "select currency||'|'||fx_rate||'|'||total_usd||'|'||paid_usd||'|'||amount_paid||'|'||cost_total||'|'||profit from invoices where client_ref = 'usd-a'" \
+    "USD|1460.0000|1000.00|0.00|0.00|1314000.00|146000.00"
+chk "    وسطرُها: ٧٣٬٠٠٠ دينار = ٥٠\$، والكلفةُ ٦٥٬٧٠٠ = ٤٥\$، والرصيدُ نزل ٢٠" \
+    "select ii.unit_price||'|'||ii.unit_price_usd||'|'||ii.unit_cost||'|'||ii.unit_cost_usd||'|'||ii.line_total||'|'||$(stk ${UP}a1)
+       from invoice_items ii where ii.invoice_id = $(inv usd-a)" "73000.00|50.00|65700.00|45.00|1460000.00|80.000"
+chk "    والإعادةُ بنفس المرجع فاتورةٌ واحدة" \
+    "select $(rv $C1 "$(uco usd-a "$U1J")")||'|'||(select count(*) from invoices where client_ref = 'usd-a')::text" "1460000.00|1"
+chk "  وما يُرفض: خلطُ دينار، سطرٌ مكرّر، مادّةٌ بلا سعر دولار، دفعةٌ جزئية ساعةَ البيع" \
+    "select $(rv $C1 "$(uco usd-m "[{\"product_id\":\"${UP}a1\",\"qty\":1},{\"product_id\":\"${UP}a2\",\"qty\":1}]")")||'|'||
+            $(rv $C1 "$(uco usd-d "[{\"product_id\":\"${UP}a1\",\"qty\":1},{\"product_id\":\"${UP}a1\",\"qty\":2}]")")||'|'||
+            $(rv $C1 "$(uco usd-n "[{\"product_id\":\"${UP}a3\",\"qty\":1}]")")||'|'||
+            $(rv $C1 "$(uco usd-p "$U1J" "jsonb_build_object('paid_usd', 10)")")" \
+    "guarded:P0001:usd_mixed|guarded:P0001:usd_duplicate_line|guarded:P0001:usd_no_price|guarded:P0001:usd_partial_at_sale"
+chk "البابُ الثاني: مادّةُ الدولار بفاتورة دينار (retail_checkout) تُرفض، وبيعُ الدينار العادي يمرّ كما هو" \
+    "select $(rv $C1 "select (retail_checkout('[{\"product_id\":\"${UP}a1\",\"qty\":1,\"unit_price\":1000,\"unit_cost\":0,\"service_id\":null}]'::jsonb, jsonb_build_object('client_ref', 'iqd-u1'))).total::text")||'|'||
+            $(rv $C1 "select (retail_checkout('[{\"product_id\":\"${UP}a2\",\"qty\":1,\"unit_price\":1000,\"unit_cost\":0,\"service_id\":null}]'::jsonb, jsonb_build_object('client_ref', 'iqd-u2'))).total::text")" \
+    "guarded:P0001:usd_product_in_iqd|1000.00"
+chk "البابُ الأوّل: التسديدُ بالدينار والإرجاعُ والحذفُ العاديّ على فاتورة الدولار تُرفض — والملاحظةُ تتعدّل" \
+    "select $(rv $C1 "select (settle_invoice($(inv usd-a), 1000, 'cash')).amount_paid::text")||'|'||
+            $(rv $C1 "select (refund_invoice($(inv usd-a))).status::text")||'|'||
+            $(rv $C1 "select delete_invoice($(inv usd-a))::text")||'|'||
+            _rls_try('$C1', 'update invoices set notes = ''مكتب'' where client_ref = ''usd-a''')" \
+    "guarded:P0001:usd_door|guarded:P0001:usd_door|guarded:P0001:usd_door|rows:1"
+# A تُسدَّد كاملةً بسعر ١٤٨٠ — كلُّ كتابةٍ بجملة وقراءتُها بجملةٍ بعدها (درسُ 0257).
+chk "التسديد: الاستقبالُ بسعرٍ غير سعر اليوم يُرفض (قرار ٤)؛ والمديرُ يحدّد ١٤٨٬٠٠٠" \
+    "select $(rv $RCP "select (settle_invoice_usd($(inv usd-a), 100, 140000, 'cash', 1000))->>'invoice'")||'|'||$(rv $C1 "select (fx_rate_set(148000)).rate::text")" \
+    "guarded:42501:usd_rate_override|1480.0000"
+chk "  A تُسدَّد ١٬٠٠٠\$ بسعر اليوم (والاستقبالُ يسدّد بسعر اليوم) ⇒ ١٬٤٨٠٬٠٠٠ للدرج" \
+    "select $(rv $RCP "select (settle_invoice_usd($(inv usd-a), 1000, 148000, 'cash', 1000))->'settlement'->>'received'")" "1480000.00"
+chk "    = ١٬٤٦٠٬٠٠٠ حصّةُ الفاتورة + ٢٠٬٠٠٠ ربح فرق صرف" \
+    "select share||'|'||fx from usd_settlements where invoice_id = $(inv usd-a)" "1460000.00|20000.00"
+chk "    والفاتورةُ مغلقةٌ بالعملتين: الباقي صفرٌ بالدولار وبالدينار، وسِيَقُها حصّةٌ وفرقٌ معلَّم" \
+    "select (total_usd - paid_usd)||'|'||(total - amount_paid)||'|'||
+            (select string_agg(coalesce(l->>'kind', 'pay')||':'||(l->>'amount'), ',') from jsonb_array_elements(payment_details) l)
+       from invoices where client_ref = 'usd-a'" "0.00|0.00|pay:1460000.00,fx:20000.00"
+# B: بيعٌ بسعر ١٤٥٠، جزئيٌّ ٤٠٠\$ بسعر ١٤٧٠، ثمّ ٦٠٠\$ بسعر ١٤٤٠
+chk "B: ١٬٠٠٠\$ بسعر ١٤٥٠ ⇒ ١٬٤٥٠٬٠٠٠ (البيعُ يقرأ السعرَ الجديد بنفس المعاملة — clock_timestamp)" \
+    "select $(rv $C1 "select (fx_rate_set(145000)).rate::text")||'|'||$(rv $C1 "$(uco usd-b "$U1J")")" "1450.0000|1450000.00"
+chk "  تسديدٌ ٤٠٠\$ بسعر ١٤٧٠ ⇒ ٥٨٨٬٠٠٠ للدرج" \
+    "select $(rv $C1 "select (fx_rate_set(147000)).rate::text")||'|'||
+            $(rv $C1 "select (settle_invoice_usd($(inv usd-b), 400, 147000, 'cash', 1000, null, 'set-b1'))->'settlement'->>'received'")" "1470.0000|588000.00"
+chk "    = ٥٨٠٬٠٠٠ حصّة + ٨٬٠٠٠ فرق، والإعادةُ بنفس مرجع التسديد تسديدٌ واحد" \
+    "select $(rv $C1 "select (settle_invoice_usd($(inv usd-b), 400, 147000, 'cash', 1000, null, 'set-b1'))->'settlement'->>'fx'")" "8000.00"
+chk "    تسديدٌ واحد والباقي ٦٠٠\$" \
+    "select (select count(*) from usd_settlements where invoice_id = $(inv usd-b))::text||'|'||(select (total_usd - paid_usd)::text from invoices where client_ref = 'usd-b')" "1|600.00"
+chk "  وما يُرفض: أكثرُ من الباقي، وباقٍ تغيّر من جهازٍ ثاني" \
+    "select $(rv $C1 "select (settle_invoice_usd($(inv usd-b), 700, 147000, 'cash', 600))->>'invoice'")||'|'||
+            $(rv $C1 "select (settle_invoice_usd($(inv usd-b), 100, 147000, 'cash', 1000))->>'invoice'")" \
+    "guarded:P0001:usd_over|guarded:P0001:usd_due_changed"
+chk "  ثمّ ٦٠٠\$ بسعر ١٤٤٠ ⇒ ٨٦٤٬٠٠٠ = ٨٧٠٬٠٠٠ باقي الفاتورة − ٦٬٠٠٠ خسارة فرق صرف" \
+    "select $(rv $C1 "select (fx_rate_set(144000)).rate::text")||'|'||
+            $(rv $C1 "select (settle_invoice_usd($(inv usd-b), 600, 144000, 'transfer', 600, null, 'set-b2'))->'settlement'->>'fx'")" "1440.0000|-6000.00"
+chk "    B مغلقةٌ بالعملتين، وما دخل الدرجَ ١٬٤٥٢٬٠٠٠ = قيمةُ البيع + صافي الفرق ٢٬٠٠٠ — لا فلسٌ ضائع" \
+    "select (total_usd - paid_usd)||'|'||(total - amount_paid)||'|'||
+            (select sum((l->>'amount')::numeric) from jsonb_array_elements(payment_details) l)
+       from invoices where client_ref = 'usd-b'" "0.00|0.00|1452000.00"
+chk "  الربحُ المحقَّق بالقبض (receipt_legs): ربحُ B ١٤٥٬٠٠٠ + صافي الفرق ٢٬٠٠٠ = ١٤٧٬٠٠٠ — والفرقُ السالب يُطرح لا يُصفَّر" \
+    "select $(rv $C1 "select round(sum(case when r.total <> 0 then r.profit * r.amount / r.total else 0 end), 2)::text from receipt_legs() r where r.invoice_id = $(inv usd-b)")" "147000.00"
+chk "  والأرباح والخسائر: سطرُ «فرق سعر الصرف» = ٢٠٬٠٠٠ + ٨٬٠٠٠ − ٦٬٠٠٠، والصافي يحمله" \
+    "select $(rv $C1 "select (report_pnl(now() - interval '1 day', now() + interval '1 day', 'Asia/Baghdad')->'total'->>'fx')")" "22000.00"
+chk "إلغاءُ تسديد: للمدير وحده؛ ويُعكس بيومه (ساقان سالبتان) والمسدَّدُ يرجع ٤٠٠\$" \
+    "select $(rv $RCP "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-b2'), 'غلط'))->>'invoice'")||'|'||
+            $(rv $C1 "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-b2'), 'غلط بالسعر'))->'invoice'->>'paid_usd'")" \
+    "guarded:42501:usd_void_manager|400.00"
+chk "  والباقي بالدينار رجع ٨٧٠٬٠٠٠، وإلغاءٌ ثانٍ لنفس التسديد يُرفض" \
+    "select (select (total - amount_paid)::text from invoices where client_ref = 'usd-b')||'|'||
+            $(rv $C1 "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-b2'), 'مرّة ثانية'))->>'invoice'")" \
+    "870000.00|guarded:P0001:usd_already_void"
+chk "حذفُ فاتورة الدولار بتسديدٍ حيّ يُرفض" \
+    "select $(rv $C1 "select delete_usd_invoice($(inv usd-b))::text")" "guarded:P0001:usd_delete_settled"
+chk "  وبعد إلغاء تسديدها تنحذف" \
+    "select $(rv $C1 "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-b1'), 'غلط'))->'invoice'->>'paid_usd'")||'|'||
+            $(rv $C1 "select 'ok' from delete_usd_invoice($(inv usd-b))")" "0.00|ok"
+chk "    ورصيدُها رجع (١٠٠ − ٢٠ لـA)" \
+    "select (select count(*) from invoices where client_ref = 'usd-b')::text||'|'||$(stk ${UP}a1)" "0|80.000"
+chk "عيادةٌ ثانية لا ترى أسعارَ الأولى ولا تسديداتِها ولا تسدّد فواتيرَها" \
+    "select $(rv $C2 "select count(*)::text from clinic_fx_rates")||'|'||$(rv $C2 "select count(*)::text from usd_settlements")||'|'||
+            $(rv $C2 "select (settle_invoice_usd($(inv usd-a), 1, 144000))->>'invoice'")" "0|0|guarded:P0001:usd_disabled"
+# C: مادّةٌ رخيصة بالكمية — قيمةُ السطر بالدينار الكامل لا بخطوة ٢٥٠ (خطوةُ الوحدة كانت تبيع ١٠٠ × ٠٫٤٠$ بـ٥٠٬٠٠٠ بدل ٥٨٬٤٠٠)؛
+# والنقدُ = دَينٌ يُسدَّد كاملاً بسعر البيع: الدرجُ يستلم لأقرب ٢٥٠ والفرقُ «فرق صرف» بيومه.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price_usd, purchase_price_usd, stock, sell_price, purchase_price) values
+         ('${UP}a4', '$C1', 'Treat USD', 'USD-0264-4', 'USD', 0.40, 0.25, 1000, 0, 0),
+         ('${UP}a5', '$C1', 'Tiny USD', 'USD-0264-5', 'USD', 0.08, 0, 100, 0, 0)
+       on conflict (id) do nothing;" >/dev/null
+chk "C: ١٠٠ × ٠٫٤٠\$ بسعر ١٤٦٠ دَيناً ⇒ ٥٨٬٤٠٠ بالضبط (الوحدة ٥٨٤ — لا ٥٠٠ بخطوة ٢٥٠)" \
+    "select $(rv $C1 "select (fx_rate_set(146000)).rate::text")||'|'||
+            $(rv $C1 "$(uco usd-c1 "[{\"product_id\":\"${UP}a4\",\"qty\":100}]" "jsonb_build_object('customer_name', 'أبو حسن')")")" "1460.0000|58400.00"
+chk "    وسطرُها ٥٨٤ للوحدة" \
+    "select unit_price::text from invoice_items where invoice_id = $(inv usd-c1)" "584.00"
+chk "  نقداً ٣ × ٠٫٤٠\$ = ١٬٧٥٢ قيمةً: الدرجُ يستلم ١٬٧٥٠ (لأقرب ٢٥٠) والفرقُ −٢ «فرق صرف»، والفاتورةُ مدفوعةٌ بالعملتين" \
+    "select $(rv $C1 "$(uco usd-c2 "[{\"product_id\":\"${UP}a4\",\"qty\":3}]" "jsonb_build_object('paid_usd', 1.20, 'payment_method', 'card')")")" "1752.00"
+chk "    مختومة: المدفوع ١٬٧٥٢ = المجموع، ١٫٢٠\$ مسدَّد، الحالة paid، والطريقةُ بطاقة" \
+    "select amount_paid||'|'||total||'|'||paid_usd||'|'||status||'|'||payment_method from invoices where client_ref = 'usd-c2'" "1752.00|1752.00|1.20|paid|card"
+chk "    ووصلُها تسديدٌ واحد (١٬٧٥٠ = ١٬٧٥٢ − ٢)، وما دخل الدرجَ بالسِّيَق ١٬٧٥٠" \
+    "select (select count(*)||'|'||max(received)||'|'||max(share)||'|'||max(fx) from usd_settlements where invoice_id = $(inv usd-c2))||'|'||
+            (select sum((l->>'amount')::numeric)::text from invoices i, jsonb_array_elements(i.payment_details) l where i.client_ref = 'usd-c2')" \
+    "1|1750.00|1752.00|-2.00|1750.00"
+chk "  وكميةٌ كسرية لمادّة الدولار تُرفض (لا وزنَ ولا وحدةً فرعية)" \
+    "select $(rv $C1 "$(uco usd-c3 "[{\"product_id\":\"${UP}a4\",\"qty\":1.5}]")")" "guarded:P0001:usd_qty"
+# D: باقٍ أصغرُ من نصف خطوة — ٠٫٠٨\$ بسعر ١٤٦٠ = ١١٧ دينار قيمةً وصفرٌ نقداً بخطوة ٢٥٠. الجزئيُّ يُرفض، والإغلاقُ يمرّ بصفر.
+chk "D: ٠٫٠٨\$ دَيناً ⇒ ١١٧؛ تسديدٌ جزئيٌّ ٠٫٠٥\$ يطلع صفراً فيُرفض" \
+    "select $(rv $C1 "$(uco usd-d "[{\"product_id\":\"${UP}a5\",\"qty\":1}]" "jsonb_build_object('customer_name', 'أم علي')")")||'|'||
+            $(rv $C1 "select (settle_invoice_usd($(inv usd-d), 0.05, 146000))->>'invoice'")" "117.00|guarded:P0001:usd_too_small"
+chk "  والإغلاقُ ٠٫٠٨\$ يمرّ بصفرٍ للدرج — لا فاتورةَ مفتوحةً أبداً بسنتات" \
+    "select $(rv $C1 "select (settle_invoice_usd($(inv usd-d), 0.08, 146000, 'cash', 0.08, null, 'set-d'))->'settlement'->>'received'")" "0.00"
+chk "    حصّتُه ١١٧ (باقي الدينار) وفرقُه −١١٧" \
+    "select share||'|'||fx from usd_settlements where client_ref = 'set-d'" "117.00|-117.00"
+chk "    مغلقةٌ بالعملتين، والحالةُ حالةُ البيع (paid) لا تتبدّل بالتسديد ولا بإلغائه — فلتر «مدفوعة» يبقى بمعناه" \
+    "select (select (total_usd - paid_usd)||'|'||(total - amount_paid)||'|'||status from invoices where client_ref = 'usd-d')||'|'||
+            $(rv $C1 "select (void_usd_settlement((select id from usd_settlements where client_ref = 'set-d'), 'تجربة'))->'invoice'->>'status'")" \
+    "0.00|0.00|paid|paid"
+chk "    والإلغاءُ يرجع الباقي ٠٫٠٨\$ و١١٧ ديناراً" \
+    "select (total_usd - paid_usd)||'|'||(total - amount_paid) from invoices where client_ref = 'usd-d'" "0.08|117.00"
+# مراجعةٌ عدائيّة قبل النشر — كلٌّ بفحصه:
+chk "الدَّينُ بلا طريقة دفع (فاتورةٌ بلا سِيَقٍ وطريقتُها «نقد» يقرؤها تبويبُ المال مقبوضة)، والنقدُ يختمه تسديدُه" \
+    "select coalesce((select payment_method from invoices where client_ref = 'usd-c1'), 'none')||'|'||
+            (select payment_method from invoices where client_ref = 'usd-c2')" "none|card"
+chk "  المفتاحُ والخطوةُ لا يُكتبان مباشرةً (سياسةُ الإعدادات للكادر كلِّه): الاستقبالُ والمديرُ يُرفضان، وusd_prefs_set وحدها" \
+    "select _rls_try('$RCP', 'update clinic_prefs set usd_enabled = false where clinic_id = ''$C1''')||'|'||
+            _rls_try('$C1', 'update clinic_prefs set usd_round_step = 1000 where clinic_id = ''$C1''')||'|'||
+            (select usd_enabled::text||'/'||usd_round_step from clinic_prefs where clinic_id = '$C1')" \
+    "guarded:P0001:usd_prefs_direct|guarded:P0001:usd_prefs_direct|true/250"
+chk "  والمشغّلُ لا يترك اسمَه بالتسديد ولا بإلغائه (0151: لا أثرَ له بالعيادة) — فحصٌ ثابت" \
+    "select (select count(*) from pg_proc where proname in ('settle_invoice_usd', 'void_usd_settlement')
+              and prosrc like '%case when platform_acting_clinic() is null then auth.uid() end%')::text" "2"
+chk "  وسطرُ فاتورة الدولار لا يُحذف مباشرةً (المديرُ يملك invoice_items_write)" \
+    "select _rls_try('$C1', 'delete from invoice_items where invoice_id = (select id from invoices where client_ref = ''usd-c1'')')" \
+    "guarded:P0001:usd_door"
+# مادّةٌ حُوّلت للدولار بعد بيعها بالدينار: تعديلُ تلك الفاتورة (يحذف السطورَ ويعيدها) يمرّ، والبيعُ الجديدُ بالدينار يُرفض.
+$P -c "select set_config('doctorvet.usd_door', 'on', false);
+       insert into invoices(id, clinic_id, total, created_at) values ('${UP}e1', '$C1', 2000, now() - interval '2 days') on conflict (id) do nothing;" >/dev/null
+chk "  مادّةٌ صارت بالدولار على فاتورة دينارٍ قديمة: إعادةُ سطرها (تعديلُ الفاتورة) تمرّ — بلاها يُقفل تعديلُ طلب توصيلٍ مفتوح" \
+    "select _rls_try('$C1', 'insert into invoice_items(invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty, service_id)
+                            values (''${UP}e1'', ''$C1'', ''${UP}a1'', ''Kitcat USD'', 1, 2000, 0, 2000, 1, null)')" "rows:1"
+# كلفةٌ بالدولار فارغة: تبقى كلفةُ الخادم (stock_unit_cost) لا صفر — مادّةٌ محوّلةٌ معروفةُ الكلفة كانت تُباع بربحٍ كامل.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price_usd, purchase_price_usd, stock, sell_price, purchase_price) values
+         ('${UP}a7', '$C1', 'محوّلة بلا كلفة دولار', 'USD-0264-7', 'USD', 10, null, 5, 0, 50000)
+       on conflict (id) do nothing;" >/dev/null
+chk "  وكلفةُ الدولار الفارغة تُبقي كلفةَ الخادم: ٥٠٬٠٠٠ لا صفر، والربحُ ١٤٬٦٠٠ − ٥٠٬٠٠٠" \
+    "select $(rv $C1 "$(uco usd-e "[{\"product_id\":\"${UP}a7\",\"qty\":1}]" "jsonb_build_object('customer_name', 'أبو كرار')")")" "14600.00"
+chk "    (سطرُها ٥٠٬٠٠٠ بلا كلفة دولار، والفاتورةُ كلفتُها ٥٠٬٠٠٠ وربحُها −٣٥٬٤٠٠)" \
+    "select ii.unit_cost||'|'||coalesce(ii.unit_cost_usd::text, 'null')||'|'||i.cost_total||'|'||i.profit
+       from invoice_items ii join invoices i on i.id = ii.invoice_id where i.client_ref = 'usd-e'" "50000.00|null|50000.00|-35400.00"
+# المتجرُ ورفعُ الأسعار: مادّةٌ منشورةٌ بالدينار تُحوَّل للدولار تنزل من المتجر (لا تُعرض بدينارها القديم)، ونشرُ مادّةٍ دولارية
+# يُرفض بجملة؛ ورفعُ الأسعار يتخطّاها ولو بقي دينارُها القديم (النطاقُ نفسُه بمرآته — price-parity).
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, store_visible, stock) values
+         ('${UP}a6', '$C1', 'منشورة', 'IQD-0264-6', 'IQD', 2000, true, 3) on conflict (id) do nothing;" >/dev/null
+RAISE6="'{\"pct_bp\":1000,\"round\":\"smart\",\"max_step\":250,\"products\":true,\"p_ids\":[\"${UP}a6\"]}'::jsonb"
+chk "المتجر: منشورةٌ بالدينار تدخل الرفعَ (سطرٌ واحد)، وتحويلُها للدولار يمرّ" \
+    "select $(rv $C1 "select (price_change_preview($RAISE6)->'counts'->>'products')")||'|'||
+            _rls_try('$C1', 'update products set price_currency = ''USD'', sell_price_usd = 1 where id = ''${UP}a6''')" "1|rows:1"
+chk "  وبعده: نزلت من المتجر، ونشرُها يُرفض usd_store، والرفعُ يتخطّاها ودينارُها ٢٬٠٠٠ باقٍ" \
+    "select (select store_visible::text from products where id = '${UP}a6')||'|'||
+            _rls_try('$C1', 'update products set store_visible = true where id = ''${UP}a6''')||'|'||
+            $(rv $C1 "select (price_change_preview($RAISE6)->'counts'->>'products')")||'|'||(select sell_price::text from products where id = '${UP}a6')" \
+    "false|guarded:P0001:usd_store|0|2000.00"
+Q264="select (select count(*) from pg_proc where proname in ('usd_checkout','settle_invoice_usd','void_usd_settlement','delete_usd_invoice','fx_rate_set','usd_state','usd_prefs_set','_usd_iqd','_usd_share','_usd_rate_of','_usd_ctx','_usd_door_open','products_usd_store','clinic_prefs_guard_usd'))::text
+         ||'|'||(select count(*) from pg_trigger where tgname in ('invoices_usd_door','invoice_items_usd_door','products_usd_store','clinic_prefs_usd_guard'))::text
+         ||'|'||(select count(*) from pg_constraint where conname in ('products_usd_ok','invoices_usd_ok','clinic_prefs_usd_round_step'))::text
+         ||'|'||(select count(*) from usd_settlements)::text||'|'||(select count(*) from clinic_fx_rates)::text||'|'||(select count(*) from invoices where currency = 'USD')::text"
+Z264=$($P -tAc "$Q264" | tr -d '[:space:]')
+out=$($P -f "$MIG/0264_usd_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0264 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ: الدوالُّ والبابان والقيودُ والتسديداتُ والأسعارُ وفواتيرُ الدولار كما هي" "$Q264" "$Z264"
+$P -c "update clinic_prefs set usd_enabled = false where clinic_id = '$C1';
+       select set_config('doctorvet.usd_door', 'on', false);
+       delete from invoices where client_ref in ('usd-a', 'iqd-u2', 'usd-c1', 'usd-c2', 'usd-d', 'usd-e') or id = '${UP}e1';
+       delete from clinic_fx_rates where clinic_id = '$C1';
+       delete from products where id::text like 'c2640000%';" >/dev/null
+# ── المرآة: _usd_iqd و_usd_rate_of و_usd_share، والبيعُ والتسديدُ بنداءاتٍ حقيقية = src/lib/usdMath.ts، ديناراً بدينار ──
+# القالبُ (supabase/tests/usd-parity.mjs) يحزم الواجهةَ من مصدرها، ويولّد جداولَ بكلّ حافّة وسيناريوهاتٍ ببذرةٍ ثابتة بعيادةٍ
+# مستقلّة، ومعها مرآةٌ مغلوطةٌ لكلّ قاعدة تخالف. أمسك قبل النشر خصماً كاملاً يُبقي ديناراً على فاتورةٍ صفرٍ بالدولار.
+USDP=$(mktemp -d)
+if node "$HERE/usd-parity.mjs" gen "$USDP" >"$USDP/gen.log" 2>&1; then
+  out=$($P -f "$USDP/seed.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ عيادةُ تطابق الدولار ما نزلت"; fail=1; }
+  if $P -tA -f "$USDP/run.sql" >"$USDP/actual.txt" 2>"$USDP/run.err"; then :; else tail -3 "$USDP/run.err"; echo "   ✗ نداءُ تطابق الدولار ما رجع"; fail=1; fi
+  if node "$HERE/usd-parity.mjs" check "$USDP"; then :; else fail=1; fi
+else
+  tail -5 "$USDP/gen.log"; echo "   ✗ قالبُ تطابق الدولار ما تولّد"; fail=1
+fi
+rm -rf "$USDP"
+$P -c "select set_config('doctorvet.usd_door', 'on', false);
+       delete from invoices where clinic_id = 'a2640c00-0000-4000-8000-0000000000c1';
+       delete from clinic_fx_rates where clinic_id = 'a2640c00-0000-4000-8000-0000000000c1';
+       delete from products where clinic_id = 'a2640c00-0000-4000-8000-0000000000c1';
+       update clinic_prefs set usd_enabled = false where clinic_id = 'a2640c00-0000-4000-8000-0000000000c1';
+       drop function if exists _usdp_run(jsonb);" >/dev/null
+
+# ── 0265: حالةُ الحقل (م١) — الوجبةُ حالة، والكتابةُ من دوالّها، والعمرُ والنافق و«لا تبيع قبل» ────────────────
+# كلُّ نداءٍ بدور authenticated فعلاً (_flk)، والقراءةُ بجملةٍ ثانية بعد الكتابة (درسُ 0257).
+echo "▸ 0265: حالةُ الحقل — الفتح، النافق، الزيارة والتشريح، الطبلة والسحب، التحصين، الإغلاق"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+VET=55555555-5555-5555-5555-555555555555
+$P -c "insert into auth.users(id) values ('$C1'),('$C2'),('$RCP'),('$VET') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values
+         ('$C1','$C1','manager','active'),('$RCP','$C1','receptionist','active'),('$VET','$C1','veterinarian','active')
+         on conflict do nothing;
+       create or replace function _flk(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q into r;
+         reset role;
+         return coalesce(r, 'null');
+       exception when others then return 'ERR:' || sqlerrm; end \$fn\$;" >/dev/null
+T="(_flock_today())"
+
+# ── الفتح ──
+OPEN1="flock_case_open(jsonb_build_object('client_ref','fc-open-1',
+  'farm', jsonb_build_object('name','حقل الكرادة','owner_name','أبو علي','owner_phone','07701234567','area','الكرادة'),
+  'case', jsonb_build_object('kind','broiler','breed','Ross 308','placed_on',($T - 22)::text,'placed_count',10000),
+  'vax', jsonb_build_array(
+     jsonb_build_object('vaccine','ND+IB','disease','نيوكاسل','route','spray','age',1,'at_hatchery',true),
+     jsonb_build_object('vaccine','گمبورو','disease','IBD','route','water','age',14),
+     jsonb_build_object('vaccine','لاسوتا','disease','نيوكاسل','route','water','age',24))))"
+chk "الاستقبال يفتح حالة حقل (addPets)، بحقلٍ جديد وتحصينٍ بالفقّاسة منجَز وخطوتين مخطَّطتين" \
+    "select _flk('$RCP', \$q\$select ($OPEN1->>'replayed')\$q\$)" "false"
+CASE1=$($P -tAc "select id from flock_cases where client_ref = 'fc-open-1'")
+FARM1=$($P -tAc "select farm_id from flock_cases where client_ref = 'fc-open-1'")
+chk "  وإعادتُها بالمرجع نفسِه ترجع الحالةَ نفسها — لا وجبةٌ ثانية ولا حقلٌ ثانٍ" \
+    "select _flk('$RCP', \$q\$select ($OPEN1->>'replayed')\$q\$)" "true"
+chk "  (وجبةٌ واحدة، وحقلٌ واحد، وثلاثةُ تحصينات: واحدٌ منجَز بالفقّاسة بيوم الوصول)" \
+    "select (select count(*) from flock_cases where farm_id = '$FARM1')::text || '|' || (select count(*) from flock_farms where clinic_id = '$C1')::text
+       || '|' || (select string_agg(status || ':' || coalesce(given_by,'-') || ':' || coalesce(planned_age::text,'-'), ',' order by planned_age) from flock_vax where case_id = '$CASE1')
+       || '|' || (select (given_on = placed_on)::text from flock_vax v join flock_cases c on c.id = v.case_id where v.case_id = '$CASE1' and v.status = 'given')" \
+    "1|1|given:hatchery:1,planned:-:14,planned:-:24|true"
+chk "  وحقلٌ ثانٍ لنفس الزبون بنفس الاسم يُرفض (تطبيعٌ بالطرفين: «حقل  الكرادة»)" \
+    "select _flk('$RCP', \$q\$select flock_case_open(jsonb_build_object('farm', jsonb_build_object('name','حقل  الكرادة','owner_name','ابو علي','owner_phone','0770 123 4567'),'case', jsonb_build_object('kind','broiler','placed_on',($T)::text,'placed_count',500)))::text\$q\$)" \
+    "ERR:flock_farm_twin"
+chk "  ووجبةٌ ثانية لحقلٍ بيه مفتوحة تُرفض" \
+    "select _flk('$RCP', format(\$q\$select flock_case_open(jsonb_build_object('farm', jsonb_build_object('id',%L),'case', jsonb_build_object('kind','broiler','placed_on',(_flock_today())::text,'placed_count',500)))::text\$q\$, '$FARM1'))" \
+    "ERR:flock_open_exists"
+# مرفوضةٌ بالمنح (الإنتاج) أو بالسياسة (الحزمةُ تعيد المنحَ الشامل بعد الهجرات) — والاثنان رفضٌ لا صفّ.
+chk "  ولا كتابةَ مباشرة على الجداول (قراءةٌ وحدها — الكتابةُ من الدوالّ)" \
+    "select (_flk('$C1', \$q\$insert into flock_farms(name) values ('مباشر') returning id::text\$q\$) like 'ERR:%flock_farms%')::text" "true"
+chk "  وحقولُ الزبون من «حالة جديدة» بمفتاحه (الرقمُ بصيغةٍ أخرى نفسُه)" \
+    "select (_flk('$RCP', \$q\$select (flock_farms_for('+964 770 123 4567', null)->0->>'open_case')\$q\$) = '$CASE1')::text" "true"
+
+# ── العمرُ والإحصاء ──
+chk "العمرُ بحساب الطبيب: الوصولُ قبل ٢٢ يوماً = عمر ٢٣ (يومُ الوصول ١)" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'age')\$q\$, '$CASE1'))" "23"
+chk "  وعيادةٌ أخرى لا ترى الحالة (القائمةُ فارغة، والحزمةُ null)" \
+    "select _flk('$C2', \$q\$select jsonb_array_length(flock_board('open'))::text\$q\$) || '|' || _flk('$C2', format(\$q\$select coalesce(flock_case_bundle(%L)::text, 'null')\$q\$, '$CASE1'))" \
+    "0|null"
+
+# ── النافق ──
+chk "النافق: الاستقبال يسجّل يوماً (٣٠ نافق + ٥ فرز)" \
+    "select _flk('$RCP', format(\$q\$select (flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-1)::text,'dead',30,'culled',5,'source','farmer','client_ref','fm-1'))->>'replayed')\$q\$, '$CASE1'))" \
+    "false"
+chk "  وإعادتُه بالمرجع نفسِه لا تكرّره" \
+    "select _flk('$RCP', format(\$q\$select (flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-1)::text,'dead',30,'culled',5,'client_ref','fm-1'))->>'replayed')\$q\$, '$CASE1'))
+       || '|' || (select count(*) from flock_mortality where case_id = '$CASE1')::text" \
+    "true|1"
+chk "  ويومٌ مسجَّل لا يُسجَّل ثانيةً (تداخلٌ — يتعدّل الموجود)" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today())::text,'days',3,'dead',1))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_mortality_overlap"
+chk "  ولا نافقَ قبل الوصول ولا بالمستقبل" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-23)::text,'dead',1))::text\$q\$, '$CASE1'))
+       || '|' || _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()+1)::text,'dead',1))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_mortality_date|ERR:flock_mortality_date"
+chk "  ولا تراكميَّ فوق المُدخَل" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-5)::text,'dead',9999))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_mortality_over"
+chk "  والإحصاء: الحيّ ٩٩٦٥، والتراكميّ ٠٫٣٥٪" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'alive') || '|' || (_flock_stats(%L)->>'cum_pct')\$q\$, '$CASE1', '$CASE1'))" \
+    "9965|0.35"
+chk "  ويومٌ واحد فوق ٠٫٢٥٪ لا يُنذر (يحتاج يومين متتاليين)" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'mortality_alert')\$q\$, '$CASE1'))" "false"
+$P -c "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today())::text,'dead',40))::text\$q\$, '$CASE1'))" >/dev/null
+chk "  ويومان متتاليان فوقها يُنذران" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'mortality_alert')\$q\$, '$CASE1'))" "true"
+
+# ── الزيارة والتشريح ──
+VISIT1="flock_visit_save(jsonb_build_object('client_ref','fv-1','case_id','$CASE1','kind','complaint','at',(now() - interval '2 hours')::text,
+  'flock', jsonb_build_object('feed_phase','grower','avg_weight_g',950,'sample_n',20,'water_l_day',1800),
+  'signs', jsonb_build_array('resp.rales','resp.cough','dig.white_diarrhea'),
+  'env', jsonb_build_object('ventilation','poor','litter','fair'),
+  'dx','CRD مع كولاي','dx_codes', jsonb_build_array('crd','colibacillosis'),'dx_status','suspected','trend','worse',
+  'next_visit_on', (_flock_today()+2)::text,
+  'mortality', jsonb_build_object('on_date', (_flock_today()-2)::text, 'days', 1, 'dead', 12),
+  'necropsy', jsonb_build_array(
+     jsonb_build_object('bird_no',1,'source','dead','findings', jsonb_build_array('air.cloudy','heart.pericarditis','liver.perihepatitis')),
+     jsonb_build_object('bird_no',2,'source','dead','findings', jsonb_build_array('air.cloudy','heart.pericarditis')),
+     jsonb_build_object('bird_no',3,'source','cull','findings', jsonb_build_array('air.cloudy'),'scores', jsonb_build_object('air.sac',3)))))"
+chk "الزيارة: الاستقبال ما يكتبها — والرفضُ يقول السبب لا «انتهت الجلسة»" \
+    "select _flk('$RCP', \$q\$select $VISIT1::text\$q\$)" "ERR:flock_forbidden"
+chk "  والطبيب يكتبها بنافقها وتشريحها (٣ طيور) بمعاملةٍ واحدة" \
+    "select _flk('$VET', \$q\$select ($VISIT1->>'replayed')\$q\$)" "false"
+VIS1=$($P -tAc "select id from flock_visits where client_ref = 'fv-1'")
+chk "  (الطيورُ ٣، ونافقُها مربوطٌ بها، والطبيبُ مختومٌ بها)" \
+    "select (select count(*) from flock_necropsy where visit_id = '$VIS1')::text || '|' || (select dead::text || ':' || source from flock_mortality where visit_id = '$VIS1')
+       || '|' || (select (vet_id = '$VET' and created_by = '$VET')::text from flock_visits where id = '$VIS1')" \
+    "3|12:visit|true"
+chk "  وإعادتُها بالمرجع نفسِه لا تكرّرها" \
+    "select _flk('$VET', \$q\$select ($VISIT1->>'replayed')\$q\$) || '|' || (select count(*) from flock_visits where case_id = '$CASE1')::text" \
+    "true|1"
+# التعديلُ إرسالٌ كاملٌ للزيارة (الخاناتُ الغائبة تُفرَّغ)، والتشريحُ والنافقُ يُستبدلان حين يُرسَلان.
+# والعدُّ بجملةٍ ثانية بعد الكتابة — لقطةُ بداية الجملة لا ترى ما كتبته الدالّة (درسُ 0257).
+$P -c "select _flk('$VET', format(\$q\$select (flock_visit_save(jsonb_build_object('id',%L,'at',(now() - interval '2 hours')::text,'trend','same',
+        'next_visit_on', (_flock_today()+2)::text,
+        'mortality', jsonb_build_object('on_date',(_flock_today()-2)::text,'dead',14),
+        'necropsy', jsonb_build_array(jsonb_build_object('bird_no',1,'findings',jsonb_build_array('air.cloudy')),jsonb_build_object('bird_no',2)))) ->> 'replayed')\$q\$, '$VIS1'))" >/dev/null
+chk "  وتعديلُها يستبدل التشريحَ ونافقَها كلَّه (طيران بدل ثلاثة، ١٤ بدل ١٢)" \
+    "select (select count(*) from flock_necropsy where visit_id = '$VIS1')::text || '|' || (select string_agg(dead::text, ',') from flock_mortality where visit_id = '$VIS1')" \
+    "2|14"
+chk "  ونافقُ الزيارة لا يُعدَّل من «نافق اليوم» (من الزيارة وحدها)" \
+    "select _flk('$RCP', format(\$q\$select flock_mortality_save(jsonb_build_object('id',(select id from flock_mortality where visit_id = %L),'dead',1))::text\$q\$, '$VIS1'))" \
+    "ERR:flock_mortality_visit"
+chk "  ورمزٌ غريب بالعلامات يُرفض (لا نصٌّ حرّ بخانة رمز)" \
+    "select _flk('$VET', format(\$q\$select flock_visit_save(jsonb_build_object('case_id',%L,'signs',jsonb_build_array('سعال')))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_codes"
+chk "  وخانةٌ غير معروفة بالقطيع تُرفض (لا كائنٌ حرّ يحمل ما يشاء)" \
+    "select _flk('$VET', format(\$q\$select flock_visit_save(jsonb_build_object('case_id',%L,'flock',jsonb_build_object('hack','x')))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_visit_bad"
+chk "  والزيارةُ الجاية تظهر بالإحصاء، وحالُ الحقل آخرُ ما كُتب" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'next_visit_on') = (_flock_today()+2)::text and (_flock_stats(%L)->>'last_trend') = 'same'\$q\$, '$CASE1', '$CASE1'))" \
+    "true"
+
+# ── الطبلة وفترةُ السحب ──
+TX1="flock_treatment_save(jsonb_build_object('client_ref','ft-1','case_id','$CASE1','title','CRD','start_on',(_flock_today()-2)::text,
+  'lines', jsonb_build_array(
+    jsonb_build_object('day_from',1,'day_to',5,'product_name','دوكسي ٥٠٪','kind','med','dose_amount',1,'dose_unit','g','dose_per','liter','hours',6,'withdrawal_meat_days',5),
+    jsonb_build_object('day_from',1,'day_to',3,'product_name','فيتامين AD3E','kind','vitamin','dose_amount',1,'dose_unit','ml','dose_per','liter'))))"
+chk "الطبلة: الطبيب يكتبها (دواءٌ ٥ أيام بسحب ٥، وفيتامين)" \
+    "select _flk('$VET', \$q\$select (r->>'replayed') || ':' || jsonb_array_length(r->'lines') from (select $TX1 as r) x\$q\$)" "false:2"
+TX1ID=$($P -tAc "select id from flock_treatments where client_ref = 'ft-1'")
+chk "  «لا تبيع قبل» = آخرُ يوم علاج (بعد ٢) + ٥ + ١ = بعد ٨ أيام، والفيتامينُ لا يُحسب" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'safe_meat_from') = (_flock_today()+8)::text and not (_flock_stats(%L)->>'withdrawal_unknown')::boolean
+                                          and (_flock_stats(%L)->>'in_withdrawal')::boolean\$q\$, '$CASE1', '$CASE1', '$CASE1'))" "true"
+chk "  وتعديلُها قبل الإرسال بمكانها (نفسُ المعرّف، النسخةُ ١)" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('id',%L,'title','CRD — معدّلة','lines', jsonb_build_array(
+        jsonb_build_object('day_from',1,'day_to',5,'product_name','دوكسي ٥٠٪','kind','med','dose_amount',1,'dose_unit','g','dose_per','liter','withdrawal_meat_days',5))))->>'version')\$q\$, '$TX1ID'))
+       || '|' || (select count(*) from flock_treatments where case_id = '$CASE1')::text" "1|1"
+$P -c "select _flk('$RCP', format(\$q\$select flock_treatment_mark(%L, 'sent')::text\$q\$, '$TX1ID'))" >/dev/null
+chk "  وبعد الإرسال: التعديلُ نسخةٌ ثانية" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('client_ref','ft-1b','id',%L,'start_on',(_flock_today())::text,'lines', jsonb_build_array(
+        jsonb_build_object('day_from',1,'day_to',3,'product_name','تايلوزين','kind','med','dose_amount',1,'dose_unit','g','dose_per','liter','withdrawal_meat_days',1))))->>'version')\$q\$, '$TX1ID'))" "2"
+chk "  والأولى «replaced» موقوفةٌ بيوم بداية الثانية (شاملاً)" \
+    "select status || ':' || (stopped_on = _flock_today())::text from flock_treatments where id = '$TX1ID'" "replaced:true"
+chk "  والسحبُ يذكر دوكسي القديمة (انعطت حتى اليوم ⇒ اليوم + ٥ + ١) لا التايلوزين وحده" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'safe_meat_from') = (_flock_today()+6)::text\$q\$, '$CASE1'))" "true"
+chk "  وإعادةُ حفظ النسخة بالمرجع نفسِه لا تصنع ثالثة" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('client_ref','ft-1b','id',%L,'lines',jsonb_build_array(jsonb_build_object('day_from',1,'day_to',1,'product_name','x'))))->>'replayed')\$q\$, '$TX1ID'))
+       || '|' || (select count(*) from flock_treatments where case_id = '$CASE1')::text" "true|2"
+chk "  وسطرُ دواءٍ بلا سحبٍ مكتوب = «غير معروف» بصوت" \
+    "select _flk('$VET', format(\$q\$select (flock_treatment_save(jsonb_build_object('client_ref','ft-2','case_id',%L,'lines', jsonb_build_array(
+        jsonb_build_object('day_from',1,'day_to',2,'product_name','مجهول السحب','kind','med'))))->>'replayed')\$q\$, '$CASE1'))
+       || '|' || _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'withdrawal_unknown')\$q\$, '$CASE1'))" "false|true"
+TX2ID=$($P -tAc "select id from flock_treatments where client_ref = 'ft-2'")
+chk "  والإيقافُ قبل البداية = ما انعطى (يسقط من السحب ومن «غير معروف»)" \
+    "select _flk('$VET', format(\$q\$select flock_treatment_mark(%L, 'stop', _flock_today()-1)->>'status'\$q\$, '$TX2ID'))
+       || '|' || _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'withdrawal_unknown')\$q\$, '$CASE1'))" "stopped|false"
+chk "  وسطرٌ بجرعةٍ بلا وحدة يُرفض (كلُّها أو لا شيء)" \
+    "select _flk('$VET', format(\$q\$select flock_treatment_save(jsonb_build_object('case_id',%L,'lines', jsonb_build_array(jsonb_build_object('day_from',1,'day_to',1,'product_name','x','dose_amount',2))))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_treatment_line"
+
+# ── التحصين ──
+chk "التحصين: الجاي «گمبورو» بعمر ١٤ — ومتأخّر (العمر ٢٣)" \
+    "select _flk('$RCP', format(\$q\$select (_flock_stats(%L)->'next_vax'->>'vaccine') || '|' || (_flock_stats(%L)->>'vax_overdue')\$q\$, '$CASE1', '$CASE1'))" \
+    "گمبورو|1"
+GUM=$($P -tAc "select id from flock_vax where case_id = '$CASE1' and planned_age = 14")
+chk "  والطبيب يسجّله منجَزاً (أعطاه المربي، برقم وجبة اللقاح)" \
+    "select _flk('$VET', format(\$q\$select flock_vax_save(jsonb_build_object('id',%L,'vaccine','گمبورو','route','water','planned_age',14,'status','given','given_on',(_flock_today()-9)::text,'given_by','farmer','batch_no','B-77'))->>'status'\$q\$, '$GUM'))
+       || '|' || _flk('$RCP', format(\$q\$select (_flock_stats(%L)->>'vax_overdue') || ':' || (_flock_stats(%L)->'next_vax'->>'age')\$q\$, '$CASE1', '$CASE1'))" \
+    "given|0:24"
+chk "  والمنجَزُ لا يُحذف، والتركُ يحتاج سبباً" \
+    "select _flk('$VET', format(\$q\$select flock_vax_delete(%L)::text\$q\$, '$GUM'))
+       || '|' || _flk('$VET', format(\$q\$select flock_vax_save(jsonb_build_object('case_id',%L,'vaccine','x','planned_age',30,'status','skipped'))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_vax_given|ERR:flock_vax"
+chk "  وبرنامجُ العيادة للمدير لا للاستقبال" \
+    "select _flk('$RCP', \$q\$select flock_program_save(jsonb_build_object('name','لاحم','kind','broiler','steps','[]'::jsonb))::text\$q\$)
+       || '|' || _flk('$C1', \$q\$select jsonb_array_length(flock_program_save(jsonb_build_object('name','لاحم','kind','broiler','steps',jsonb_build_array(jsonb_build_object('age',7,'vaccine','ND','route','eye'))))->'steps')::text\$q\$)" \
+    "ERR:flock_forbidden|1"
+
+# ── القائمة والحزمة والصور ──
+chk "القائمة: الاستقبال يرى الوجبة بحقلها وإحصائها" \
+    "select _flk('$RCP', \$q\$select (flock_board('open')->0->'farm'->>'name') || '|' || (flock_board('open')->0->'stats'->>'age')\$q\$)" \
+    "حقلالكرادة|23"
+chk "  والحزمةُ كاملة: ٣ تحصينات، طبلتان (وبالأولى سطرٌ واحد)، زيارة، ٣ صفوف نافق" \
+    "select _flk('$RCP', format(\$q\$select jsonb_array_length(b->'vax') || '|' || jsonb_array_length(b->'treatments') || '|' || jsonb_array_length(b->'visits') || '|' || jsonb_array_length(b->'mortality')
+        from (select flock_case_bundle(%L) as b) x\$q\$, '$CASE1'))" "3|3|1|3"
+chk "  والصورة بمسار وجبتها وحده، والإذنُ بالدلو لعيادتها وحدها" \
+    "select _flk('$VET', format(\$q\$select flock_media_add(jsonb_build_object('case_id',%L,'path','flock/' || %L || '/a.jpg'))->>'kind'\$q\$, '$CASE1', '$CASE1'))
+       || '|' || _flk('$VET', format(\$q\$select flock_media_add(jsonb_build_object('case_id',%L,'path','flock/00000000-0000-0000-0000-000000000000/a.jpg'))::text\$q\$, '$CASE1'))
+       || '|' || _flk('$C1', format(\$q\$select can_access_flock_media(%L)::text\$q\$, '$CASE1')) || '|' || _flk('$C2', format(\$q\$select can_access_flock_media(%L)::text\$q\$, '$CASE1'))" \
+    "photo|ERR:flock_media|true|false"
+
+# ── الإغلاق ──
+chk "الإغلاق بيعاً قبل «لا تبيع قبل» يُرفض بالتاريخ" \
+    "select _flk('$VET', format(\$q\$select flock_case_close(%L, jsonb_build_object('reason','sold'))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_withdrawal_active"
+chk "  وبتأكيدٍ صريح يُغلق، وإعادةُ الفتح ترجعه" \
+    "select _flk('$VET', format(\$q\$select flock_case_close(%L, jsonb_build_object('reason','sold','sold_count',9800,'confirm_withdrawal',true))->>'status'\$q\$, '$CASE1'))
+       || '|' || _flk('$VET', format(\$q\$select flock_mortality_save(jsonb_build_object('case_id',%L,'on_date',(_flock_today()-10)::text,'dead',1))::text\$q\$, '$CASE1'))
+       || '|' || _flk('$VET', format(\$q\$select flock_case_reopen(%L)->>'status'\$q\$, '$CASE1'))" \
+    "closed|ERR:flock_case_closed|open"
+chk "  وتاريخُ وصولٍ بعد نافقٍ مسجّل يُرفض" \
+    "select _flk('$RCP', format(\$q\$select flock_case_update(%L, jsonb_build_object('placed_on',(_flock_today()-1)::text))::text\$q\$, '$CASE1'))" \
+    "ERR:flock_placed_on"
+
+# ── الثوابت ──
+chk "كلُّ دوالّ الكتابة definer بـsearch_path، وتسأل _flock_can بنفسها" \
+    "select count(*)::text from pg_proc p where p.proname in ('flock_case_open','flock_case_update','flock_case_close','flock_case_reopen','flock_farm_save',
+        'flock_mortality_save','flock_mortality_delete','flock_visit_save','flock_treatment_save','flock_treatment_mark','flock_vax_save','flock_vax_delete',
+        'flock_program_save','flock_media_add','flock_media_remove')
+       and (not p.prosecdef or not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%') or position('_flock_can(' in p.prosrc) = 0)" "0"
+chk "  والكاتبُ لمشغّل المنصّة فارغ (اتفاقُ 0151)" \
+    "select (position('platform_acting_clinic() is null then auth.uid()' in prosrc) > 0)::text from pg_proc where proname = '_flock_actor'" "true"
+chk "  والسياجُ على جداول الحقل كلّها" \
+    "select count(*)::text from public.verify_photographer_fence() x where x like 'flock_%'" "0"
+# ── المرآة: _flock_stats = flockStats (src/lib/flockMath.ts) حقلاً بحقل، على ٤٨ وجبةً بنداءاتٍ حقيقية ──
+# التجريبيُّ يحسب إحصاءَ الحقل بالمرآة والسحابةُ تأخذه من الخادم — اختلافُهما تطبيقان يقولان للطبيب شيئين. والطفراتُ
+# (العمرُ من صفر، السحبُ بلا يوم احتياط، الطبلةُ الموقوفة كاملة، الإنذارُ بيومٍ واحد…) يجب أن تُمسك كلُّها.
+FLKP=$(mktemp -d)
+if node "$HERE/flock-parity.mjs" gen "$FLKP" >"$FLKP/gen.log" 2>&1; then
+  out=$($P -f "$FLKP/run.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ وجباتُ تطابق الحقل ما نزلت"; fail=1; }
+  if $P -tA -f "$FLKP/out.sql" >"$FLKP/actual.txt" 2>"$FLKP/run.err"; then :; else tail -3 "$FLKP/run.err"; echo "   ✗ قراءةُ تطابق الحقل ما رجعت"; fail=1; fi
+  if node "$HERE/flock-parity.mjs" check "$FLKP"; then :; else fail=1; fi
+else
+  tail -5 "$FLKP/gen.log"; echo "   ✗ قالبُ تطابق الحقل ما تولّد"; fail=1
+fi
+rm -rf "$FLKP"
 
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null

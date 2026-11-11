@@ -62,11 +62,19 @@ const fromDateInput = (s: string): Date | null => {
 };
 
 /* ── «كان ← صار» ─────────────────────────────────────────────────────────── */
-const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
+/* والراجيتة (0261): الإلغاءُ تقوله الجملة («ألغى راجيتة») ولحظتُه ومَن معرّفاتٌ لا تُقرأ، والتصميمُ كائنٌ كاملٌ لا خانة —
+ * كانت تُرسم شاراتٍ خامّة («voided_by فارغ ← 6f1c…»). */
+const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id", "voided_at", "voided_by", "updated_by", "config"]);
 /* حقولٌ نصُّها هو الخبر فيُعرض كاملاً: وصفةُ الخدمة (0252، `service_recipe_set`: «المستهلكات: كانت … صارت …»)
- * يقصّها الخادمُ عند ١٤٠ حرفاً، وقصُّها هنا عند ٢٨ كان يُخفي المادّةَ التي تغيّرت نفسَها. */
-const FULL_TEXT = new Set(["recipe"]);
+ * يقصّها الخادمُ عند ١٤٠ حرفاً، وقصُّها هنا عند ٢٨ كان يُخفي المادّةَ التي تغيّرت نفسَها. وسببُ إلغاء الراجيتة (0261، ≤ ٢٠٠):
+ * «كُتبت لحيوانٍ ثانٍ — الصحيح لونا» كان يُقصّ قبل الحيوان الصحيح. */
+const FULL_TEXT = new Set(["recipe", "void_reason"]);
 interface FieldChange { key: string; from: unknown; to: unknown }
+/** مفاتيحُ التغيير كما كتبها الخادم (بالضجيج): الجملةُ تقرأ منها ما لا يُرسم شارة. */
+const changesOfRaw = (brief: Record<string, unknown> | null | undefined): Set<string> => {
+  const c = brief?.["__changed"];
+  return new Set(c && typeof c === "object" && !Array.isArray(c) ? Object.keys(c) : []);
+};
 function changesOf(brief: Record<string, unknown> | null | undefined): FieldChange[] {
   const c = brief?.["__changed"];
   if (!c || typeof c !== "object" || Array.isArray(c)) return [];
@@ -358,6 +366,12 @@ export function ActivityLog() {
           : t("act.vacAdd", { name: s("vaccine") || s("name"), pet: pn(), defaultValue: "سجّل لقاح {{name}} لـ {{pet}}" });
       case "medical_visits": return t("act.visitAdd", { pet: pn(), doctor: s("doctor_name"), defaultValue: "أضاف استشارة لـ {{pet}} — {{doctor}}" });
       case "pet_notes": return t("act.noteAdd", { pet: pn(), defaultValue: "أضاف ملاحظة سريرية لـ {{pet}}" });
+      /* الراجيتة (0261): الكتابةُ، والإلغاءُ (يُدقَّق حين يتغيّر وحده — المحفّزُ يجمّد ما عداه)، والحذفُ مع حيوانها بلقطتها. */
+      case "pet_prescriptions":
+        return r.action === "INSERT" ? t("act.rxAdd", { pet: pn() })
+          : del ? t("act.rxDel", { pet: pn() })
+            : changesOfRaw(d).has("voided_at") ? t("act.rxVoid", { pet: pn() }) : t("act.rxUpd", { pet: pn() });
+      case "clinic_rx_pad": return t("act.rxPad");
       case "media_items": {
         const kind = MEDIA_LABEL[s("kind")];
         return t("act.mediaAdd", { kind: kind ? t(kind.key, kind.def) : t("act.mediaFile", "ملف / صورة"), pet: pn(), defaultValue: "رفع {{kind}} لـ {{pet}}" });
@@ -458,7 +472,10 @@ export function ActivityLog() {
     const d = r.brief as Record<string, unknown> | null;
     const sid = d?.["staff_id"];
     if (typeof sid === "string" && staffById.get(sid)) return staffById.get(sid)!;
-    const doc = d?.["doctor_name"] ?? d?.["doctor"];
+    /* طبيبُ الصفّ **للإنشاء وحده** — من حسابٍ بلا اسم (الحسابُ المشترك) أو بلا فاعل (سطورُ الملء الرجعيّ 0046، وكلُّها INSERT) —
+       لا لتعديلٍ أو حذف: إلغاءُ راجيتةٍ (للمدير وحده) وحذفُها مع حيوانها كانا يُنسبان لطبيبها الموقِّع، وحذفٌ بلا فاعل (من لوحة
+       القاعدة، أو تتابعُ حذف حساب) «النظام» لا الطبيب. */
+    const doc = r.action === "INSERT" ? d?.["doctor_name"] ?? d?.["doctor"] : null;
     if (typeof doc === "string" && doc.trim()) return doc.trim();
     return r.actor ? t("act.manager", "مدير العيادة") : t("act.system", "النظام");
   };

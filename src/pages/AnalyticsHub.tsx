@@ -40,11 +40,11 @@ import {
   bucketOf, groupWithdrawals, pickableCategories, categoryNameProblem, cleanCategoryName,
   expenseCategoryErrorCode, EXPENSE_CATEGORIES_CAP, type WithdrawalTable,
 } from "@/lib/expenseCategoryRules";
-import { netPerPocket, POCKETS, type PocketTotals } from "@/lib/pockets";
+import { netPerPocket, pocketsShown, shownPocketOfExpense, type PocketView, type PocketsShown } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoiceNo";
-import { getClinicName, getDialCode } from "@/lib/settings";
+import { getClinicName, getDialCode, getCardTransferOneAccount } from "@/lib/settings";
 import { readCustomerQuery } from "@/lib/customerKey";
 import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/components/reports/UniversalReportTable";
 import { CustomersTab } from "@/components/reports/CustomerLedger";
@@ -111,15 +111,27 @@ const EXPENSE_METHODS: { id: ExpenseMethod; icon: typeof Banknote }[] = [
   { id: "cash", icon: Banknote },
   { id: "card", icon: CreditCard },
   { id: "bank", icon: Landmark },
+  { id: "account", icon: Wallet },
   { id: "stock", icon: Package },
 ];
-/** ما يُختار بنموذج التسجيل — «من المخزن» يُكتب من موافقة الجرد وحدها (0216). */
-const EXPENSE_METHODS_MANUAL = EXPENSE_METHODS.filter((m) => m.id !== "stock");
+/** ما يُختار بنموذج التسجيل — «من المخزن» يُكتب من موافقة الجرد وحدها (0216). والبطاقةُ والتحويل
+ *  حسابٌ واحد بالعيادة (0262، نعم افتراضياً) ⇒ «من الدرج» أو «من الحساب» وحدهما: سؤالُ «بطاقة لو
+ *  تحويل؟» عن حسابٍ واحد هو ما صنع البطاقةَ السالبة. والمفصولُ يبقى بثلاثته كما كان. */
+const expenseMethodsManual = (oneAccount: boolean) =>
+  EXPENSE_METHODS.filter((m) => (oneAccount ? m.id === "cash" || m.id === "account" : m.id === "cash" || m.id === "card" || m.id === "bank"));
 /* الأصنافُ العربية حُذفت من هنا: كلُّ نداءٍ يمرّ من `t(\`rpt.exp.method.${id}\`)`
  * والمفاتيحُ الثلاثةُ موجودةٌ بالقاموسين، فكانت بدائلَ ميّتة. حذفُها ينزّل سقفَ
  * النصّ الصلب لهذا الملفّ ٦ ⇒ ٣ (والسقفُ ينزل ولا يصعد). */
 const expenseMethodOf = (e: Expense): ExpenseMethod => e.method ?? "cash";
 const expenseMethodMeta = (m: ExpenseMethod) => EXPENSE_METHODS.find((x) => x.id === m) ?? EXPENSE_METHODS[0];
+/** شاراتُ «منين انسحبت» بجيب العرض (0262): الحسابُ شارةٌ واحدة حين يُدمج. `method` يسمّي الثلاثةَ القديمة بأسمائها. */
+const SHOWN_CHIPS: { id: PocketView | "stock"; method: ExpenseMethod; icon: typeof Banknote }[] = [
+  { id: "cash", method: "cash", icon: Banknote },
+  { id: "card", method: "card", icon: CreditCard },
+  { id: "transfer", method: "bank", icon: Landmark },
+  { id: "account", method: "account", icon: Wallet },
+  { id: "stock", method: "stock", icon: Package },
+];
 /** A sale's payment legs — the recorded split when present, else one leg for the whole
  *  total at the (legacy) single method. Empty when the sale is still unpaid (a receivable). */
 const paymentsOf = (inv: Invoice): { method: PaymentMethod; amount: number }[] => {
@@ -505,6 +517,10 @@ export function AnalyticsHub() {
     [collectionsInRange, expensesInRange],
   );
   const netCash = pockets.cash.net;
+  /* كما تُعرض (0262): الدرجُ و«الحساب» حين تستلم العيادةُ البطاقةَ والتحويل على حسابٍ واحد —
+   * خيارُ عرضٍ فوق الصفوف كما سُجّلت، فالمدّةُ الماضية تُقرأ صحيحةً بلا ترحيل. */
+  const oneAccount = getCardTransferOneAccount();
+  const shown = useMemo(() => pocketsShown(pockets, oneAccount), [pockets, oneAccount]);
 
   // ---- Laboratory results in range (المختبر) — feeds the clinical report.
   const labStats = useMemo(() => {
@@ -836,8 +852,19 @@ export function AnalyticsHub() {
       // ويُجمع بالشهر، فعمودٌ ناقصٌ هنا خطأٌ يُنسخ لا يُرى.
       // نفسُ بوّابة الشاشة بالضبط: عمودا المسحوب والصافي رقما ربح، وملفٌّ
       // يُفتح بإكسل أسهلُ تسريباً من شاشة.
-      ...POCKETS.map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count),
-        ...(canProfit ? [String(Math.round(pockets[k].out)), String(Math.round(pockets[k].net))] : [])]),
+      /* البيعُ بطريقته ثلاثةُ أسطرٍ دائماً؛ والمسحوبُ والصافي لجيبه كما يُعرض — والحسابُ (0262) سطرٌ رابع
+         يجمع البطاقةَ والتحويل، وخانتا المسحوب والصافي بسطريهما فارغتان: رقمٌ بهما يُجمع مرّتين بإكسل. */
+      ...(["cash", "card", "transfer"] as const).map((k) => {
+        const row = shown.rows.find((r) => r.key === k);
+        return [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count),
+          ...(canProfit ? (row ? [String(Math.round(row.flow.out)), String(Math.round(row.flow.net))] : ["", ""]) : [])];
+      }),
+      ...(shown.merged ? (() => {
+        const acc = shown.rows.find((r) => r.key === "account")!.flow;
+        return [[t("wdr.pocketAccount"), String(Math.round(zReport.byMethod.card.total + zReport.byMethod.transfer.total)),
+          String(zReport.byMethod.card.count + zReport.byMethod.transfer.count),
+          ...(canProfit ? [String(Math.round(acc.out)), String(Math.round(acc.net))] : [])]];
+      })() : []),
       /* «خصومات الديون» (0241) قسمٌ بعنوانه لا سطرٌ تحت «صافي النقد في الصندوق»: صفرُ نقد، ونزلت من
          مبيعات يوم البيع — سطرٌ بين أرقام الدرج يُطرح منه ثانيةً بإكسل. */
       ...(forgiveSummary?.state === "ok" && (forgiveSummary.totals.count > 0 || forgiveSummary.totals.back > 0) ? [
@@ -1089,7 +1116,7 @@ export function AnalyticsHub() {
               z={zReport} receivables={receivables} series={series} paymentPie={paymentPie}
               revenue={revenue} categoryData={categoryData} staffPerf={staffPerf}
               canProfit={canProfit} yesterday={yesterday} isToday={preset === "today"} onExportCSV={exportCSV}
-              cashExpensesTotal={cashExpensesTotal} netCash={netCash} pockets={pockets}
+              cashExpensesTotal={cashExpensesTotal} netCash={netCash} shown={shown}
               returnsTotal={returnsTotal} returnsCount={returnsCount}
               expensesFailed={expensesFailed} onRetry={() => setRefreshTick((n) => n + 1)}
               forgive={forgiveSummary} onForgiveRetry={retryForgive} onChanged={() => setRefreshTick((n) => n + 1)}
@@ -1112,7 +1139,7 @@ export function AnalyticsHub() {
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} labStats={labStats} />}
           {tab === "expenses" && (
             <ExpensesTab
-              rows={expensesInRange} total={expensesTotal} pockets={pockets}
+              rows={expensesInRange} total={expensesTotal} shown={shown}
               cashCollected={zReport.byMethod.cash.total} rangeLabel={rangeLabel}
               canRecord={role === "manager"} canProfit={canProfit}
               staffId={user?.id ?? null}
@@ -1279,7 +1306,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount, expensesFailed, onRetry, forgive, onForgiveRetry, onChanged }: {
+function MoneyTab({ z, shown, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount, expensesFailed, onRetry, forgive, onForgiveRetry, onChanged }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -1289,7 +1316,8 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
   onExportCSV: () => void;
   cashExpensesTotal: number;
   netCash: number;
-  pockets: PocketTotals;
+  /** الجيوبُ كما تُعرض (0262): ثلاثة، أو الدرجُ و«الحساب». */
+  shown: PocketsShown;
   returnsTotal: number;
   returnsCount: number;
   /** قراءةُ السحوبات فشلت: المسحوبُ والصافي يُخفيان — «صافي النقد» بلا سحوباتٍ يطابق
@@ -1386,9 +1414,11 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
           )}
           <div className="space-y-2">
             {methods.map((m) => {
-              const Icon = PAY_ICON[m]; const row = z.byMethod[m]; const p = pockets[m];
+              const Icon = PAY_ICON[m]; const row = z.byMethod[m];
               /* الصافي يظهر **بكلّ جيب** لا بالنقد وحدَه. وسطرُ المسحوب يُخفى
-                 حين لا سحبَ من هذا الجيب — سطرٌ بصفرٍ ضجيجٌ لا معلومة. */
+                 حين لا سحبَ من هذا الجيب — سطرٌ بصفرٍ ضجيجٌ لا معلومة. والبطاقةُ والتحويل
+                 حسابٌ واحد (0262) ⇒ صافيهما بسطر «الحساب» تحتهما لا بكلٍّ منهما (−١٥٠٠ و+١٥٠٠). */
+              const p = shown.rows.find((r) => r.key === m)?.flow ?? null;
               return (
                 <div key={m} className="rounded-xl border border-line bg-surface-1 p-3">
                   <div className="flex items-center gap-3">
@@ -1405,7 +1435,7 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
                       يُبطل البوّابة» — قاعدةٌ مكتوبةٌ بهذا الملفّ نفسِه.
                       والتسمية فوق القيمة لا بجانبها: بجانبها يبقى للرقم
                       «المسارُ ناقصَ التسمية» فينفصل «د.ع» عن رقمه بهاتفٍ ٣٦٠. */}
-                  {canProfit && !expensesFailed && p.out > 0 && (
+                  {canProfit && !expensesFailed && p && p.out > 0 && (
                     <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2 text-2xs">
                       <span className="flex flex-col text-warn-700 dark:text-warn-300">
                         <span className="font-semibold">{t("rpt.pocketOut")}</span>
@@ -1421,6 +1451,34 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
                 </div>
               );
             })}
+            {canProfit && !expensesFailed && shown.merged && (() => {
+              const a = shown.rows.find((r) => r.key === "account")!.flow;
+              if (a.in === 0 && a.out === 0) return null;
+              return (
+                <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3 dark:border-brand-500/30 dark:bg-brand-500/10" data-pocket-account>
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-1 text-brand-700 dark:text-brand-300"><Wallet size={17} /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-ink">{t("wdr.pocketAccount")}</p>
+                      <p className="text-2xs text-ink-subtle">{t(shown.forced ? "wdr.acctForced" : "wdr.acctMerged")}</p>
+                    </div>
+                    <p className="font-display font-bold tabular-nums text-ink">{money(a.in)}</p>
+                  </div>
+                  {a.out > 0 && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2 text-2xs">
+                      <span className="flex flex-col text-warn-700 dark:text-warn-300">
+                        <span className="font-semibold">{t("rpt.pocketOut")}</span>
+                        <span className="font-display font-bold tabular-nums">− {money(a.out)}</span>
+                      </span>
+                      <span className={cn("flex flex-col font-bold", a.net < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-700 dark:text-brand-300")}>
+                        <span>{t("rpt.pocketNet")}</span>
+                        <span className="font-display tabular-nums">{money(a.net)}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {z.refundCount > 0 && (
               <div className="flex items-center justify-between rounded-xl border border-danger-200 bg-danger-50/50 p-3 text-sm dark:border-danger-500/30 dark:bg-danger-500/10">
                 <span className="font-semibold text-danger-700 dark:text-danger-300">{t("rpt.refunds", { n: formatNum(z.refundCount), defaultValue: "مرتجعات ({{n}})" })}</span>
@@ -1915,10 +1973,11 @@ function AuditTab({ deleted, logins }: {
  * ==========================================================================*/
 type ExpView = "cats" | "list" | "ledger";
 
-function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecord, canProfit, staffId, loadFailed, onRetry, isShown, onChanged }: {
+function ExpensesTab({ rows, total, shown, cashCollected, rangeLabel, canRecord, canProfit, staffId, loadFailed, onRetry, isShown, onChanged }: {
   rows: Expense[];
   total: number;
-  pockets: PocketTotals;
+  /** الجيوبُ كما تُعرض (0262). */
+  shown: PocketsShown;
   cashCollected: number;
   rangeLabel: string;
   canRecord: boolean;
@@ -1937,6 +1996,11 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [method, setMethod] = useState<ExpenseMethod>("cash");
+  /* خيارُ العيادة يُقرأ كما هو الآن (تغيّر من الإعدادات بجهازٍ آخر ⇒ يتبعه هنا بأوّل رسمة)،
+     وطريقةٌ مختارةٌ خارجَ قائمته ترجع للدرج — لا يُسجَّل «بطاقة» بنموذجٍ لا يعرضها. */
+  const oneAccount = getCardTransferOneAccount();
+  const manualMethods = useMemo(() => expenseMethodsManual(oneAccount), [oneAccount]);
+  useEffect(() => { if (!manualMethods.some((m) => m.id === method)) setMethod("cash"); }, [manualMethods, method]);
   const [view, setView] = useState<ExpView>("cats");
   const [spentAt, setSpentAt] = useState(() => localISO(new Date()));
   const [busy, setBusy] = useState(false);
@@ -1978,11 +2042,12 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
   };
 
   // How much left each pocket in this period — so the doctor knows WHERE his money went from.
+  // والشاراتُ بجيب العرض (0262): البطاقةُ والحوالةُ و«من الحساب» شارةُ «الحساب» واحدة حين يُدمجان.
   const methodTotals = useMemo(() => {
-    const acc: Record<ExpenseMethod, number> = { cash: 0, card: 0, bank: 0, stock: 0 };
-    for (const e of rows) acc[expenseMethodOf(e)] += e.amount;
+    const acc: Record<PocketView | "stock", number> = { cash: 0, card: 0, transfer: 0, account: 0, stock: 0 };
+    for (const e of rows) acc[shownPocketOfExpense(expenseMethodOf(e), shown.merged) ?? "stock"] += e.amount;
     return acc;
-  }, [rows]);
+  }, [rows, shown.merged]);
 
   const grouped = useMemo(() => groupWithdrawals(rows, cats ?? []), [rows, cats]);
 
@@ -2038,7 +2103,8 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
     })();
   };
 
-  const activePockets = POCKETS.filter((k) => pockets[k].in !== 0 || pockets[k].out !== 0);
+  const activePockets = shown.rows.filter((r) => r.flow.in !== 0 || r.flow.out !== 0);
+  const pocketLabel = (k: PocketView) => (k === "account" ? t("wdr.pocketAccount") : t(`rpt.pay.${k}`, k));
 
   const rowProps = { canRecord, confirmDel, onDeleteClick, onDisarm: () => setConfirmDel(null) };
 
@@ -2066,9 +2132,9 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
           <p className="text-2xs text-ink-subtle">{formatNum(rows.length)} {t("rpt.exp.count", "عملية")}</p>
           {/* منين انسحبت — تفصيل لكل مصدر (يظهر فقط عندما ينسحب منه شيء) */}
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {EXPENSE_METHODS.filter((m) => methodTotals[m.id] > 0).map((m) => (
-              <span key={m.id} className="inline-flex items-center gap-1 rounded-full bg-warn-100/80 px-2 py-0.5 text-2xs font-bold tabular-nums text-warn-800 dark:bg-warn-500/20 dark:text-warn-200">
-                <m.icon size={11} /> {t(`rpt.exp.method.${m.id}`)}: {money(methodTotals[m.id])}
+            {SHOWN_CHIPS.filter((c) => methodTotals[c.id] > 0).map((c) => (
+              <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-warn-100/80 px-2 py-0.5 text-2xs font-bold tabular-nums text-warn-800 dark:bg-warn-500/20 dark:text-warn-200">
+                <c.icon size={11} /> {c.id === "account" ? t("wdr.pocketAccount") : t(`rpt.exp.method.${c.method}`)}: {money(methodTotals[c.id])}
               </span>
             ))}
           </div>
@@ -2086,17 +2152,17 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
              تقفل الشهرَ وهي تظنّ أنّ ما دخل البطاقةَ والتحويلَ بقي فيهما. */
           <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
             <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netByPocket")}</p>
+            {shown.merged && <p className="text-2xs text-ink-subtle" data-pockets-merged={shown.forced ? "forced" : "on"}>{t(shown.forced ? "wdr.acctForced" : "wdr.acctMerged")}</p>}
             {/* بطاقةٌ بعنوانٍ وبلا رقمٍ تُقرأ «فشل تحميل» لا «ما تحرّك شيء» —
                 وجارتاها بنفس الشريط تطبعان «٠ د.ع». فمدّةٌ بلا حركةٍ تطبع صفراً. */}
             {activePockets.length === 0 ? (
               <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(0)}</p>
             ) : (
             <ul className="mt-1.5 space-y-1">
-              {activePockets.map((k) => {
-                const p = pockets[k];
+              {activePockets.map(({ key: k, flow: p }) => {
                 return (
                   <li key={k} className="flex items-baseline justify-between gap-2">
-                    <span className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t(`rpt.pay.${k}`, k)}</span>
+                    <span className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{pocketLabel(k)}</span>
                     <span className="flex items-baseline gap-1.5">
                       <span className="text-2xs tabular-nums text-ink-subtle">{money(p.in)} − {money(p.out)}</span>
                       <span className={cn("font-display text-base font-extrabold tabular-nums", p.net < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-800 dark:text-brand-200")}>{money(p.net)}</span>
@@ -2166,7 +2232,7 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-ink-muted">{t("rpt.exp.methodLabel", "طريقة السحب")}</span>
             <div className="flex gap-1.5">
-              {EXPENSE_METHODS_MANUAL.map((m) => (
+              {manualMethods.map((m) => (
                 <button
                   key={m.id} type="button"
                   onClick={() => { playTap(); setMethod(m.id); }}
@@ -2176,14 +2242,16 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
                     method === m.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink",
                   )}
                 >
-                  <m.icon size={15} /> {t(`rpt.exp.method.${m.id}`)}
+                  <m.icon size={15} /> {m.id === "account" ? t("wdr.methodAccount") : t(`rpt.exp.method.${m.id}`)}
                 </button>
               ))}
             </div>
             <span className="text-2xs text-ink-subtle">
               {method === "cash"
                 ? t("rpt.exp.methodHintCash", "ينسحب من نقد الصندوق ويُخصم من صافي النقد.")
-                : t("rpt.exp.methodHintOther", "خارج الصندوق — لا يُخصم من صافي النقد.")}
+                : method === "account"
+                  ? t("wdr.methodHintAccount")
+                  : t("rpt.exp.methodHintOther", "خارج الصندوق — لا يُخصم من صافي النقد.")}
             </span>
           </div>
         </div>
@@ -2217,7 +2285,7 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
           <WithdrawalsLedger
             rows={rows}
             rangeLabel={rangeLabel}
-            methodLabel={(m) => t(`rpt.exp.method.${m}`)}
+            methodLabel={(m) => (m === "account" ? t("wdr.methodAccount") : t(`rpt.exp.method.${m}`))}
             categoryOf={labelOf}
           />
         </Panel>
@@ -2269,7 +2337,7 @@ function WithdrawalRow({ e, label, canRecord, confirmDel, onDeleteClick, onDisar
         <p className="truncate text-sm font-semibold text-ink">{e.description}</p>
         <p className="text-2xs text-ink-subtle">
           <span dir="ltr">{new Date(e.spent_at).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })}</span>
-          {" · "}{t(`rpt.exp.method.${m.id}`)}
+          {" · "}{m.id === "account" ? t("wdr.methodAccount") : t(`rpt.exp.method.${m.id}`)}
           {label ? ` · ${label}` : ""}
         </p>
       </div>

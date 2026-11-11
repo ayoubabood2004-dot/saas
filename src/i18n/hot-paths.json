@@ -49,6 +49,7 @@
     "fgr": "src/pages/AnalyticsHub.tsx",
     "pnl": { "owner": "src/pages/AnalyticsHub.tsx", "with": ["src/components/reports/PnlPanel.tsx"] },
     "fgset": "src/pages/Settings.tsx",
+    "acct": "src/pages/Settings.tsx",
     "fgv": "src/components/retail/ForgiveDialog.tsx",
     "signup": { "owner": "src/pages/Login.tsx", "with": ["src/lib/authErrors.ts"] },
     "join": "src/pages/JoinClinic.tsx",
@@ -71,6 +72,11 @@
     "vxed": "src/components/vaccines/VaccineEditSheet.tsx",
     "ptab": "src/components/retail/PosCustomTabs.tsx",
     "avgc": "src/components/inventory/AvgCostNote.tsx",
-    "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] }
+    "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] },
+    "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] },
+    "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] },
+    "usd": { "owner": "src/components/usd/Usd.tsx", "with": ["src/components/usd/UsdSale.tsx", "src/components/usd/usdShared.tsx"] },
+    "flk": { "owner": "src/pages/FlockCases.tsx", "with": ["src/components/flock/FlockCase.tsx", "src/components/flock/FlockSheets.tsx", "src/components/flock/FlockTreatment.tsx", "src/components/flock/FlockVisit.tsx", "src/components/flock/FlockIntake.tsx", "src/components/flock/flockShared.ts"] },
+    "flkv": "src/components/flock/FlockVisit.tsx"
   }
 }

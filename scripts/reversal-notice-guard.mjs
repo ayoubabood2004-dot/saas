@@ -235,6 +235,8 @@ const STUB = {
     export function ConsumptionNotice(p) { return createElement("x-notice", { "data-notice": p.mode, "data-ids": JSON.stringify(p.invoiceIds), "data-targets": p.targets === undefined ? "absent" : JSON.stringify(p.targets),
       "data-sentat": v(p.sentAt), "data-cashback": v(p.cashBack), "data-action": v(p.action) }); }
     export default function ConsumablesSheet() { return null; }`,
+  // لوحةُ فاتورة الدولار (0264) قطعةٌ أخرى لا يمسّها هذا الفحص (فواتيرُه بالدينار): لا ترسم شيئاً.
+  "@/components/usd/Usd": "export function UsdInvoicePanel() { return null; }\nexport function UsdDebtActions() { return null; }",
   // نافذةُ التأكيد كما تراها الفاتورةُ والمرتجع: بديلٌ يكتب ما وصله (والحقيقيّةُ تُرسم بنفسها بالقسم «أ»).
   "@/components/retail/ForgiveDialog": `import { createElement } from "react";
     export function ReturnSheet(p) { globalThis.__T.sheet = p; return createElement("x-sheet", { "data-sheet": p.mode, "data-cons": p.consumption == null ? "none" : JSON.stringify(p.consumption) }); }

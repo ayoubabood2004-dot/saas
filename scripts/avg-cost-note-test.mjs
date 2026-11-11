@@ -294,7 +294,8 @@ await noteSuite(NOTE, check);
  * (فالحلقةُ المستوردة من ProductMovements تُرسم عقدةً باسمها x-AvgCostSlot ونقرأ خصائصها). */
 const INV_FILE = "src/pages/Inventory.tsx";
 const INV = SRC(INV_FILE);
-const REAL_INV = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors"]);
+// packs وusdProduct صِرفتان يقرأ النموذجُ مسودّتيهما (0259 و0264) — بديلٌ مولَّدٌ لهما undefined يُسقط رسمَه (كـinventory-cas-test).
+const REAL_INV = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct"]);
 const INV_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: I18NEXT,
@@ -306,6 +307,8 @@ const INV_STUB = {
   "@/components/ui": UI,
   "@/components/Modal": "export const Modal = ({ open, children }) => (open ? children : null);",
   "@/components/LoadBoundary": "export const LoadBoundary = ({ children }) => children;",
+  // قطعٌ كسولة بالنموذج (0264: حقولُ الدولار) لا تُرسم هنا: الميزةُ «مطفأة» ولا يُرسل منها شيء.
+  "@/lib/lazyPage": "export const page = () => () => null;",
   "@/lib/managerOverride": "export const useOverride = () => globalThis.__ov;",
   "@/hooks/usePermissions": "export const usePermissions = () => globalThis.__perm;",
   "@/contexts/AuthContext": "export const useAuth = () => ({ user: null });",
@@ -722,13 +725,13 @@ const modalMut = (from, to, tag) => async (ck) => {
 };
 await caught("الحلقةُ بلا بوّابة الكلفة بالنموذج", modalMut('{product && can("viewProfits") && !restricted && <AvgCostSlot', "{product && <AvgCostSlot", "inv-mut1"));
 await caught("الحلقةُ بالإنشاء أيضاً", modalMut('{product && can("viewProfits") && !restricted && <AvgCostSlot product={product}', '{can("viewProfits") && !restricted && <AvgCostSlot product={product ?? ({ id: "new" } as Product)}', "inv-mut2"));
-await caught("النموذجُ يرسل avg_cost مع الحمولة", modalMut("        sold_by_weight: byWeight,\n      };", "        sold_by_weight: byWeight,\n        avg_cost: product?.avg_cost ?? null,\n      };", "inv-mut3"));
+await caught("النموذجُ يرسل avg_cost مع الحمولة", modalMut("        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled),\n      };", "        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled),\n        avg_cost: product?.avg_cost ?? null,\n      };", "inv-mut3"));
 const mvMut = (from, to, suite) => async (ck) => suite(await loadMv((s) => swap(s, from, to), "mv-mut"), ck);
 await caught("القطعةُ بلا نطاقها avgc", mvMut('page(() => import("@/components/inventory/AvgCostNote"), ["avgc"])', 'page(() => import("@/components/inventory/AvgCostNote"), [])', slotSuite));
 await caught("«أعد المحاولة» لا تصنع قطعةً جديدة", mvMut("AvgCostNoteLazy = loadAvgCostNote(); setLazyTick", "setLazyTick", slotSuite));
 await caught("السندُ يُطابَق بفرقه الدقيق", mvMut('(x.source === "waste" ? -(Number(x.posted) || 0) : (x.applied_delta ?? 0))', "(x.applied_delta ?? 0)", movementsSuite));
 await caught("الاستهلاكُ بلا اسمه", mvMut('    if (m.kind === "consume") return t("pos.cat.consumables", "مستهلكات");\n', "", movementsSuite));
-await caught("نصُّ الوصفة يُقصّ كغيره", async (ck) => activitySuite(await loadAct((s) => swap(s, 'const FULL_TEXT = new Set(["recipe"]);', "const FULL_TEXT = new Set<string>();"), "act-mut"), ck));
+await caught("نصُّ الوصفة يُقصّ كغيره", async (ck) => activitySuite(await loadAct((s) => swap(s, 'const FULL_TEXT = new Set(["recipe", "void_reason"]);', 'const FULL_TEXT = new Set(["void_reason"]);'), "act-mut"), ck));
 await caught("اسمُ العمود خامّاً بالشرائح (avg_cost، cost)", async (ck) => activitySuite(await loadAct((s) => swap(s, "{t(`act.f.${c.key}`, { defaultValue: c.key })}", "{c.key}"), "act-mut2"), ck));
 const AVG = "p.avg_cost ?? ";
 const siteMut = (name, edit) => caught(name, async (ck) => {

@@ -66,6 +66,22 @@ const reversed = inv("rev", {
 });
 check("وساقُ الفكّ (reversal_of) ليست تسديداً", m.settlementsOf(reversed, [], []).length === 0);
 check("وفاتورةٌ بلا أرجل لا شيء", m.settlementsOf(inv("z", { payment_details: null }), [], []).length === 0);
+// 0264: مثالُ المالك B — فاتورةُ دولارٍ بقيمة ١٬٤٥٠٬٠٠٠، تسديدٌ بربح فرقٍ ٨٬٠٠٠ ثمّ تسديدٌ بخسارة ٦٬٠٠٠. ساقُ الفرق
+// تُضمّ لحصّة تسديدها (ما استلمه الدرجُ فعلاً)، والخسارةُ تُطرح لا تختفي، و«المتبقّي بعده» بالحصص وحدها (الفرقُ ليس دَيناً).
+const usdB = inv("usd-b", {
+  total: 1450000, amount_paid: 1450000, currency: "USD", created_at: "2026-10-01T10:00:00.000Z",
+  payment_details: [
+    { method: "cash", amount: 580000, at: "2026-10-03T10:00:00.000Z", usd: 400, rate: 1470, settlement_id: "s1" },
+    { method: "cash", amount: 8000, at: "2026-10-03T10:00:00.000Z", kind: "fx", settlement_id: "s1" },
+    { method: "transfer", amount: 870000, at: "2026-10-05T10:00:00.000Z", usd: 600, rate: 1440, settlement_id: "s2" },
+    { method: "transfer", amount: -6000, at: "2026-10-05T10:00:00.000Z", kind: "fx", settlement_id: "s2" },
+  ],
+});
+const fxLegs = m.settlementsOf(usdB, [], []);
+check("فرقُ الصرف لا يصير تسديداً ثالثاً: سطران بما استلمه الدرج (٥٨٨٬٠٠٠ و٨٦٤٬٠٠٠ — الخسارةُ مطروحة)",
+  fxLegs.length === 2 && fxLegs[0].amount === 588000 && fxLegs[1].amount === 864000, fxLegs.map((l) => l.amount));
+check("  و«المتبقّي بعده» بالحصص وحدها: ٨٧٠٬٠٠٠ ثمّ صفر", fxLegs[0].remainingAfter === 870000 && fxLegs[1].remainingAfter === 0,
+  fxLegs.map((l) => l.remainingAfter));
 const over = inv("over", { total: 100, amount_paid: 100, payment_details: [{ method: "cash", amount: 40, at: "2026-10-11T10:00:00.000Z" }] });
 check("المتبقّي لا ينزل تحت الصفر", m.settlementsOf(over, [], [])[0].remainingAfter === 0, m.settlementsOf(over, [], []));
 

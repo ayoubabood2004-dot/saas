@@ -38,7 +38,7 @@ import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
 import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
-import { withTimeout, describeUploadError, describeDbError } from "@/lib/errors";
+import { describeUploadError, describeDbError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
 import { celebrate } from "@/lib/celebrate";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -62,6 +62,12 @@ import { LoadBoundary } from "@/components/LoadBoundary";
    البارد ممتلئ. `lazy()` يخبّئ الوعدَ المرفوض، فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
 const loadVaxEdit = () => page(() => import("@/components/vaccines/VaccineEditSheet").then((m) => ({ default: m.VaccineEditSheet })), ["vxed"]);
 let VaxEditLazy = loadVaxEdit();
+/* «راجيتة» (0261): الزرُّ ونافذتُه قطعةٌ كسولة بنطاقها المملوك rx — نصُّ الزرّ نفسُه من هناك (النصفُ البارد ممتلئ). */
+const loadRxButton = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxButton })), ["rx"]);
+/* رفعُ الخزنة: «صوّر» (كاميرا داخل السستم) و«من الجهاز» — قطعةُ المرفقات الكسولة بنطاقها (att). */
+const loadVaultUploader = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.VaultUploader })), ["att"]);
+let VaultUploaderLazy = loadVaultUploader();
+let RxButtonLazy = loadRxButton();
 import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockPlus } from "lucide-react";
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
@@ -291,8 +297,11 @@ export function PetPassport() {
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
   // تعديلُ اللقاح وحذفُه للمدير (ومفتاحُه الحيّ) — والحذفُ محروسٌ بالقاعدة أيضاً (0257).
-  const { role: staffRole } = usePermissions();
+  const { role: staffRole, can } = usePermissions();
   const canEditVax = !isOwner && staffRole === "manager";
+  /* الراجيتةُ لمن يكتب بالسجلّ الطبيّ (الطبيبُ والمدير؛ والاستقبالُ بإذنٍ من المدير). */
+  const canRx = !isOwner && can("editMedical");
+  const [, setRxLazyTick] = useState(0);
   /** اللقاحُ المفتوح بالقلم (مفتاحُه، "" = أوّلُ لقاح)، أو null = مغلقة. */
   const [vaxEdit, setVaxEdit] = useState<string | null>(null);
   const [, setVaxLazyTick] = useState(0);
@@ -433,6 +442,13 @@ export function PetPassport() {
             >
               {t("passport.medicalEntry", "Medical entry")}
             </Button>
+            {canRx && (
+              <LoadBoundary scope="rx" onRetry={() => { RxButtonLazy = loadRxButton(); setRxLazyTick((n) => n + 1); }}>
+                <Suspense fallback={null}>
+                  <RxButtonLazy pet={pet} />
+                </Suspense>
+              </LoadBoundary>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -2276,38 +2292,15 @@ const isPdfItem = (m: MediaItem) => m.url.startsWith("data:application/pdf") || 
 
 function MediaTab({ pet, media, onChanged, canEdit }: { pet: Pet; media: MediaItem[]; onChanged: () => void; canEdit: boolean }) {
   const { t, i18n } = useTranslation();
-  const toast = useToast();
   const [zoom, setZoom] = useState<MediaItem | null>(null);
   const [filter, setFilter] = useState<"all" | MediaItem["kind"]>("all");
   const [compareMode, setCompareMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);
-  const [uploadingKind, setUploadingKind] = useState<MediaItem["kind"] | null>(null);
-
-  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>, kind: MediaItem["kind"]) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file after an error
-    if (!file || uploadingKind) return;
-    setUploadingKind(kind);
-    try {
-      // 1) Compress on the client so the upload stays small and the app fast.
-      //    Clinical images (X-ray/ultrasound/lab) keep more resolution so vets can
-      //    zoom into fine detail in the viewer; everyday photos stay lighter.
-      const prepared = await prepareUpload(file, { maxDim: kind === "photo" ? 1600 : 2400 });
-      // 2) Upload to storage + permanently link it to this pet (FK pet_id). The
-      //    20s timeout means a dropped network fails fast instead of spinning.
-      await withTimeout(repo.uploadMedia(pet.id, prepared, kind, file.name), 20000);
-      playSuccess();
-      toast.success(t("media.uploaded", "Image added to the vault"));
-      onChanged();
-    } catch (err) {
-      playWarning();
-      const detail = err instanceof Error && err.name !== "FileTooLargeError" && err.name !== "TimeoutError" ? err.message : undefined;
-      toast.error(describeUploadError(err, t), detail);
-    } finally {
-      setUploadingKind(null);
-    }
-  };
+  const [, setUploaderTick] = useState(0);
+  // الرفعُ نفسُه (الضغطُ بالجهاز، المهلة، الرسائل) بـVaultUploader (components/attach/Attach.tsx) — نوعُ الملفّ ثمّ
+  // «صوّر» أو «من الجهاز». كانت أزرارُ الأنواع منتقياتٍ بلا capture، والتحليلُ يقبل PDF فيفتح أندرويد مديرَ الملفّات:
+  // ما من طريقٍ للكاميرا من داخل السستم (بلاغُ المالك ٦/١١).
 
   const kinds: MediaItem["kind"][] = canEdit ? ["photo", "xray", "ultrasound", "lab"] : ["photo"];
   const availableKinds = Array.from(new Set(media.map((m) => m.kind)));
@@ -2331,20 +2324,12 @@ function MediaTab({ pet, media, onChanged, canEdit }: { pet: Pet; media: MediaIt
 
       {compareMode && <p className="text-xs text-ink-subtle">{t("media.compareHint", "Select photos to compare side by side over time.")}</p>}
 
-      {/* Upload buttons — the active kind shows a spinner; all lock during an upload. */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {kinds.map((k) => {
-          const busy = uploadingKind === k;
-          const disabled = uploadingKind !== null;
-          return (
-            <label key={k} className={cn("btn-secondary flex-col py-3 text-xs", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
-              {busy ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-              {busy ? t("media.uploading", "Uploading…") : t(`media.kind.${k}`)}
-              <input type="file" accept={k === "lab" ? "image/*,application/pdf" : "image/*"} className="hidden" disabled={disabled} onChange={(e) => onUpload(e, k)} />
-            </label>
-          );
-        })}
-      </div>
+      {/* الرفع: نوعُ الملفّ ثمّ «صوّر» أو «من الجهاز». */}
+      <LoadBoundary scope="vault-upload" onRetry={() => { VaultUploaderLazy = loadVaultUploader(); setUploaderTick((n) => n + 1); }}>
+        <Suspense fallback={null}>
+          <VaultUploaderLazy petId={pet.id} kinds={kinds} onUploaded={onChanged} />
+        </Suspense>
+      </LoadBoundary>
 
       {/* Kind filter */}
       {media.length > 0 && availableKinds.length > 1 && (

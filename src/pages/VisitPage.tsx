@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -55,6 +55,16 @@ import { describeDbError } from "@/lib/errors";
 import { dropTargets, addAttemptIds, type AddAttempt, type DropScope } from "@/lib/treatmentDrop";
 import { formatAmount, parseAmount, editDosePatch, pickerShowsAmount, type DoseValue } from "@/lib/doseUnits";
 import { DosePicker } from "@/components/treatment/DosePicker";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { usePermissions } from "@/hooks/usePermissions";
+
+/* «راجيتة» (0261) من صفحة الحالة — الزرُّ ونافذتُه بنطاقها المملوك rx، والراجيتةُ تُربط بهذه الحالة. */
+const loadRxButton = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxButton })), ["rx"]);
+let RxButtonLazy = loadRxButton();
+/* مرفقاتُ الزيارة (0263): تحاليلُ وأشعةٌ تُصوَّر أو تُختار — قطعةٌ كسولة بنطاقها (att). */
+const loadAttachments = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.VisitAttachments })), ["att"]);
+let VisitAttachmentsLazy = loadAttachments();
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -151,6 +161,11 @@ export default function VisitPage() {
   const seeded = !!(seed?.pet && seed?.visit && seed.visit.id === visitId);
   const [pet, setPet] = useState<Pet | null>(seeded ? seed!.pet! : null);
   const [visit, setVisit] = useState<ClinicVisit | null>(seeded ? seed!.visit! : null);
+  const { can } = usePermissions();
+  /* الراجيتةُ لكادر العيادة وحده — كسجلّ الحيوان (!isOwner): صفحةُ الحالة تُفتح لجلسة المالك أيضاً (Protected لا ClinicOnly)، و`can()` يقرأ المالكَ مديراً. */
+  const canRx = user?.role !== "owner" && can("editMedical");
+  const [, setRxLazyTick] = useState(0);
+  const [, setAttLazyTick] = useState(0);
   const [notes, setNotes] = useState<PetNote[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seeded ? (seed!.treatments ?? []) : []);
   const [labs, setLabs] = useState<LabResult[]>([]);
@@ -929,6 +944,13 @@ export default function VisitPage() {
         >
           <FileText size={16} /> {t("visit.printReport", "تقرير للزبون")}
         </button>
+        {canRx && pet && (
+          <LoadBoundary scope="rx" onRetry={() => { RxButtonLazy = loadRxButton(); setRxLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <RxButtonLazy pet={pet} visitId={visit?.id ?? visitId ?? null} variant="outline" />
+            </Suspense>
+          </LoadBoundary>
+        )}
         <span className="text-2xs font-semibold text-ink-subtle">
           {hasFlowsheet || primary
             ? t("visit.printBothHint", "الطبلة: ورقة داخلية بكل الجرعات · التقرير: ورقة لصاحب الحيوان تحكي الحالة والرعاية بلا ذكر أسماء الأدوية.")
@@ -953,6 +975,15 @@ export default function VisitPage() {
           </button>
         </div>
       )}
+
+      {/* ── التحاليل والأشعة المرفقة — تُرفق ولو انتهت الزيارة: نتيجةُ المختبر الخارجيّ تجي بعدها غالباً ── */}
+      <div className="mt-4">
+        <LoadBoundary scope="attachments" onRetry={() => { VisitAttachmentsLazy = loadAttachments(); setAttLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <VisitAttachmentsLazy pet={pet} visitId={visit.id} canEdit={user?.role !== "owner"} />
+          </Suspense>
+        </LoadBoundary>
+      </div>
 
       {/* ── العمليات الجراحية — سطر واحد لمّا فاضية ── */}
       <div className="mt-4">

@@ -296,7 +296,7 @@ export async function toThermalMono(dataUrl: string, opts: { maxWidth?: number }
 
 export async function prepareUpload(
   file: File,
-  opts: { maxDim?: number; quality?: number } = {},
+  opts: { maxDim?: number; quality?: number; background?: string } = {},
 ): Promise<PreparedUpload> {
   // Guard against any non-browser context (defensive — this is a client-only SPA).
   if (typeof window === "undefined" || typeof document === "undefined") {
@@ -330,6 +330,9 @@ export async function prepareUpload(
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas is not supported in this browser");
+    // JPEG has no alpha: transparent pixels encode as black. A caller that shows the
+    // image as a page (the Rx pad background) flattens it onto paper colour first.
+    if (opts.background) { ctx.fillStyle = opts.background; ctx.fillRect(0, 0, width, height); }
     ctx.drawImage(img, 0, 0, width, height);
 
     const blob = await canvasToBlob(canvas, "image/jpeg", quality);

@@ -137,7 +137,7 @@ await section("▸ ٢) التلميحات = نصُّ 0238 حرفاً", async () 
 
 await section("▸ ٣) النسخةُ التجريبية مرآةُ الخادم", async () => {
   const { demoRepo } = await load(`export { demoRepo } from "./src/lib/repoDemo.ts";`);
-  const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
+  const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
   const localToday = (() => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
   const shift = (iso, off) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + off); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
   const rows = FIX.map((r) => ({ ...r, day: shift(localToday, Math.round((Date.parse(r.day) - Date.parse(TODAY)) / 86400000)) }));

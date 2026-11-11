@@ -109,8 +109,9 @@ if (!repo) { console.error("✗ repo-demo-test: ما انحمّلت الوحدة
  * يرجع صفراً» **نجح وهو يقيس مخزناً غير الذي زرعته**. فحصٌ يمرّ على لا شيء
  * أسوأ من فحصٍ يفشل، فصار المفتاحُ مقروءاً والزرعُ مؤكَّداً بعد كلّ زرعة. */
 const { readFileSync } = await import("node:fs");
-const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
-if (!DB_KEY) { console.error("✗ repo-demo-test: ما انقرأ مفتاحُ مخزن الديمو من demoStore.ts"); process.exit(1); }
+// المفتاحُ بـdemoKey.ts (يكنس به الإقلاعُ بلا بذرة التجريبيّ)، وdemoStore.ts يأخذه منه.
+const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
+if (!DB_KEY) { console.error("✗ repo-demo-test: ما انقرأ مفتاحُ مخزن الديمو من demoKey.ts"); process.exit(1); }
 const seed = (products) => {
   mem.set(DB_KEY, JSON.stringify({
     products, companies: [], companySections: [], purchases: [], purchaseItems: [],

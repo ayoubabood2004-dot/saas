@@ -44,7 +44,7 @@ import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, Pa
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo } from "./storeLib";
-import { expenseMethodOf } from "./pockets";
+import { expenseMethodOf } from "./expenseMethod";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials, getDialCode, getForgiveProfitPct } from "./settings";
 import { buildCustomerDirectory } from "./customerDirectory";
@@ -610,6 +610,19 @@ function lineNonneg(r: { qty: number; unit_price?: number | null; unit_cost?: nu
 /** `retail_checkout` بترتيبه: الإعادة ← التأريخ ← الخطّة (planLocal، كلُّ رفضٍ بلا أثر) ← المالُ بالفلس الصحيح ←
  *  السطور (المادّةُ تخصم أوّلاً بلا حصر، 0253) ← الصرفُ وتخطّياتُ السطور. `plan: false` لـpos_checkout القديم
  *  (لا يخطّط ولا يحفظ service_id أبداً). */
+/* 0264: البابُ الواحد لفواتير الدولار — مرآةُ invoices_usd_door/invoice_items_usd_door. demoUsd.ts يفتحه لكتابته وحدها
+ * (`demoWithUsdDoor`)؛ وغيرُه: مادّةُ الدولار بفاتورة دينار `usd_product_in_iqd`، والتسديدُ والإرجاعُ والحذفُ والتعديلُ والخصمُ
+ * العاديّ على فاتورة دولار `usd_door` — كالخادم. والرمزُ وحده (P0001) والشاشةُ تترجمه (usdErrorText). */
+let usdDoorOpen = false;
+export async function demoWithUsdDoor<T>(fn: () => Promise<T> | T): Promise<T> {
+  usdDoorOpen = true;
+  try { return await fn(); } finally { usdDoorOpen = false; }
+}
+const usdErr = (code: string) => Object.assign(new Error(code), { code: "P0001" });
+function usdInvoiceGuard(inv: Invoice | null | undefined): void {
+  if (inv?.currency === "USD" && !usdDoorOpen) throw usdErr("usd_door");
+}
+
 function createInvoiceLocal(items: CheckoutItem[], meta: SaleMeta | undefined, cons: Cons, opts: { plan: boolean } = { plan: true }): Invoice {
   // retail_checkout وpos_checkout: «empty cart» أوّلاً — قبل فحص الإعادة نفسِه (كان التجريبيُّ يكتب فاتورةً بلا سطور).
   if (!Array.isArray(items) || items.length === 0) throw new Error("empty cart");
@@ -624,6 +637,11 @@ function createInvoiceLocal(items: CheckoutItem[], meta: SaleMeta | undefined, c
   if (ref) {
     const prior = db.invoices.find((v) => v.client_ref === ref);
     if (prior) return prior;
+  }
+  // 0264 البابُ الثاني: مادّةُ الدولار تُباع ببيع الدولار وحده (invoice_items_usd_door) — لا بسعر دينارٍ قديمٍ بجهازٍ ما تحدّث.
+  if (!usdDoorOpen) for (const it of items) {
+    const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
+    if (p?.price_currency === "USD") throw usdErr("usd_product_in_iqd");
   }
   /* «تاريخ المبيع» (0242) — نفسُ شرط الخادم وبعد فحص المرجع مثله: المديرُ (أو مفتاحُه الحيّ)، يومٌ قبل
    * اليوم، ولا أقدم من ٧ أيام (saleDate.ts هو الحكمُ نفسُه). والسِّيَقُ بلا `at` فتُؤرَّخ بالفاتورة. */
@@ -897,6 +915,18 @@ function decisionLocked(status: string): Error {
  *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
 /** مرآةُ ما يجري على كلّ كتابةٍ لصفّ مادة منذ 0259: محفّزُ المستويات أوّلاً (BEFORE)، ثمّ قيدُ الشكل — كترتيب الخادم.
  *  `skipId` التوأمُ الذي يُطوى (`doctorvet.codes_from`). */
+/** 0264 — مرآةُ قيد products_usd_ok ومحفّز products_usd_store: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوضٍ ولا كراتين
+ *  (23514)؛ وتحويلُها للدولار يُنزلها من المتجر، ونشرُ مادّةٍ دولارية يُرفض usd_store. يرجع store_visible بعد الحكم. */
+function usdProductGuard(next: Product, prev: Product | null): boolean | undefined {
+  if (next.price_currency !== "USD") return next.store_visible;
+  if (next.sold_by_weight || next.has_sub_unit || next.pooled || (Array.isArray(next.packs) && next.packs.length > 0)) {
+    throw Object.assign(new Error('new row for relation "products" violates check constraint "products_usd_ok"'), { code: "23514" });
+  }
+  if (!next.store_visible) return next.store_visible;
+  if (prev && prev.price_currency !== "USD") return false;
+  throw Object.assign(new Error("usd_store"), { code: "P0001" });
+}
+
 function throwIfPackagingBad(db: DemoDB, next: Product, prev: Product | null, skipId?: string | null): void {
   const e = levelGuardError(db.products ?? [], next, prev, skipId) ?? packagingShapeError(next);
   if (e) throw e;
@@ -1462,8 +1492,21 @@ const demoRepo = {
    * Upload a prepared (already client-side compressed) file and link it to a pet.
    * Demo mode has no object storage, so the compressed image is kept inline.
    */
-  async uploadMedia(petId: string, upload: PreparedUpload, kind: MediaItem["kind"], caption?: string): Promise<MediaItem> {
-    return demoRepo.addMedia({ pet_id: petId, kind, url: upload.dataUrl, caption });
+  async uploadMedia(petId: string, upload: PreparedUpload, kind: MediaItem["kind"], caption?: string, visitId?: string | null): Promise<MediaItem> {
+    return demoRepo.addMedia({ pet_id: petId, kind, url: upload.dataUrl, caption, ...(visitId ? { visit_id: visitId } : {}) });
+  },
+
+  /**
+   * إرفاقُ ملفٍّ من الخزنة بزيارة أو فكُّه منها (0263) — **بشرط حالِه كما رآها الطبيب** (`from`):
+   * ملفٌّ صار مرفقاً بزيارةٍ أخرى من جهازٍ ثانٍ لا يُسحب منها بصمت. وصفرُ تطابقٍ يُرمى كالخادم
+   * (`updatedRows`) — الشاشةُ لا تقول «انرفق» عن شيءٍ ما تغيّر.
+   */
+  async setMediaVisit(id: string, visitId: string | null, from: string | null): Promise<void> {
+    const db = loadDB();
+    const m = db.media.find((x) => x.id === id && (x.visit_id ?? null) === from);
+    if (!m) throw Object.assign(new Error("no_row_updated"), { code: "no_row_updated" }); // شكلُ assertUpdated نفسُه
+    m.visit_id = visitId;
+    saveDB(db);
   },
 
   async listAppointmentsForOwner(ownerId: string): Promise<Appointment[]> {
@@ -2022,6 +2065,7 @@ const demoRepo = {
     // 0255 (products_guard_avg): إدراجُ المتصفّح بلا متوسّط — مادّةٌ جديدة كلفتُها مجهولة، ونسخُ مادّةٍ قائمة لا ينسخه.
     if ("avg_cost" in p) p.avg_cost = null;
     throwIfPackagingBad(db, p, null);                                       // 0259: كلُّ رموزه جديدة
+    usdProductGuard(p, null);                                               // 0264
     db.products.push(p);
     saveDB(db);
     return p;
@@ -2318,7 +2362,9 @@ const demoRepo = {
     }
     // 0259: الصفُّ كما سيصير — رمزٌ جديدٌ بمستواه وشكلُ التعبئة (والقيدُ على كلّ تحديث: مادةٌ بكراتين لا تصير بالوزن).
     throwIfPackagingBad(db, { ...p, ...patch } as Product, p);
+    const sv = usdProductGuard({ ...p, ...patch } as Product, p);         // 0264
     Object.assign(p, patch);
+    if (p.price_currency === "USD") p.store_visible = sv;
     saveDB(db);
     return p;
   },
@@ -2614,6 +2660,10 @@ const demoRepo = {
     if (ids.length > 500) throw new Error("too_many");
     const db = loadDB();
     const want = new Set(ids);
+    // 0264 (products_usd_store): مادّةٌ دولارية بالدفعة يرفضها المحفّزُ فيسقط التحديثُ كلُّه — قبل أيّ تغيير، كالخادم.
+    if (on && (db.products ?? []).some((p) => want.has(p.id) && p.price_currency === "USD" && (p.sell_price ?? 0) > 0 && !p.store_visible)) {
+      throw Object.assign(new Error("usd_store"), { code: "P0001" });
+    }
     let changed = 0, skipped = 0;
     for (const p of db.products ?? []) {
       if (!want.has(p.id)) continue;
@@ -4322,7 +4372,8 @@ const demoRepo = {
         const d = new Date(r.at);
         const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const cur = m.get(day) ?? { gross: 0, net: 0, ids: new Set<string>() };
-        cur.gross += r.amount; cur.net += total > 0 ? inv.profit * (r.amount / total) : 0; cur.ids.add(inv.id);
+        // 0264: ساقُ «فرق صرف» ربحٌ كلُّه (receipt_legs: total = profit = amount) — لا حصّةَ من ربح الفاتورة.
+        cur.gross += r.amount; cur.net += r.kind === "fx" ? r.amount : total > 0 ? inv.profit * (r.amount / total) : 0; cur.ids.add(inv.id);
         m.set(day, cur);
       }
     }
@@ -4405,6 +4456,7 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     // refund_invoice (0066): فاتورةٌ غائبة ⇒ «invoice not found» — كان التجريبيُّ يرجع undefined بصمت؛ والمرجَّعةُ ترجع كما هي.
     if (!inv) throw new Error("invoice not found");
+    if (inv.status !== "refunded") usdInvoiceGuard(inv);
     if (inv.status !== "refunded") {
       // 0252: «مرجَّعة» ⇒ كلُّ سطرٍ بدفترٍ إلى صفر (invoices_consumption_status) — الموادُّ ترجع للمخزن بالضبط، بدفعةٍ واحدة.
       const now = cons.opStamp(db);
@@ -4423,6 +4475,7 @@ const demoRepo = {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
+    usdInvoiceGuard(inv);
     const now = cons.opStamp(db);
     // Restock unless it was already refunded (which already restocked).
     if (inv && inv.status !== "refunded") {
@@ -4463,6 +4516,7 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
+    usdInvoiceGuard(inv);
     // coalesce(price, 0) بلا حصرٍ بصفر: سعرٌ سالب يرفضه قيدُ invoice_items_nonneg (23514) كالخادم — كان التجريبيُّ يكتبه صفراً بصمت.
     const clean = (lines ?? [])
       .map((l) => ({ ...l, qty: cons.qty3(Number(l.qty) || 0), unit_price: Number(l.unit_price) || 0, unit_cost: Number(l.unit_cost) || 0 }))
@@ -4588,6 +4642,7 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
+    usdInvoiceGuard(inv);
     // return_invoice_items (0121 → 0253) بترتيبه: «nothing to return» للمصفوفة الغائبة أو الفارغة هنا، ولمرتجعٍ جزئيٍّ لم يرجّع مدخلٌ منه شيئاً تحت.
     if (!Array.isArray(returns) || returns.length === 0) throw new Error("nothing to return");
     const items = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
@@ -4708,6 +4763,8 @@ const demoRepo = {
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
     const paid = inv.amount_paid != null ? inv.amount_paid : inv.total;
+    // 0264: تسديدُ دينارٍ على فاتورة دولار يُرفض — والخادمُ يرفضه حين يكتب (لا شيءَ يُكتب حين لا يبقى شيء).
+    if (Math.max(0, Math.min(Math.round((Number(amount) || 0) * 100) / 100, Math.round((inv.total - paid) * 100) / 100)) > 0) usdInvoiceGuard(inv);
     const add = Math.max(0, Math.min(Math.round((Number(amount) || 0) * 100) / 100, Math.round((inv.total - paid) * 100) / 100));
     if (add > 0) {
       inv.amount_paid = Math.round((paid + add) * 100) / 100;
@@ -4775,6 +4832,7 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
+    usdInvoiceGuard(inv);
     const who = (inv.customer_name ?? "").trim() || (inv.customer_phone ?? "").trim();
     if (!who) throw new Error("customer required");
     const cut = round2(Number(amount));
@@ -4807,6 +4865,7 @@ const demoRepo = {
     const db = loadDB();
     const actor = demoForgiveActor();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId) ?? null;
+    usdInvoiceGuard(inv);
     const chk = validateForgive({
       actor, inv, openDelivery: inv ? hasOpenDelivery(db.deliveryOrders, inv.id) : false, pct: getForgiveProfitPct(),
       amount: input.amount, reason: input.reason, note: input.note, expectDue: input.expectDue, pay: input.pay, confirmLoss: input.confirmLoss,
@@ -5283,6 +5342,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   writeOffLoan: { entity: "staff_loans", action: "UPDATE" },
   setPayrollPolicy: { entity: "payroll_settings", action: "UPDATE" },
   addMedia: { entity: "media_items", action: "INSERT" },
+  setMediaVisit: { entity: "media_items", action: "UPDATE" },
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
   addTreatments: { entity: "treatment_entries", action: "INSERT" },
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
@@ -5407,8 +5467,18 @@ export const loadDemoConsumption = () => import("./demoConsumption");
 export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
+export const loadDemoUsd = () => import("./demoUsd");
+/** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
+export const loadDemoFlock = () => import("./demoFlock");
+/** 0264: بيعُ الدولار يكتب فاتورتَه بمرآة retail_checkout نفسِها والبابُ مفتوح (usd_checkout ينادي retail_checkout). */
+export async function demoUsdRetail(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
+  const cons = await loadDemoConsumption();
+  return demoWithUsdDoor(() => createInvoiceLocal(items, meta, cons));
+}
 /** مرآةُ خانات الطبيب بشاشة البيع (posTabsApi، 0258) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoPosTabs = () => import("./demoPosTabs");
+/** مرآةُ الراجيتة — تصميمُها وسجلُّها (rxApi، 0261) — كسولةٌ من هذا الباب وحده. */
+export const loadDemoRx = () => import("./demoRx");
 
 /* وما تحتاجه المرآةُ من هنا (الاستيرادُ دائريٌّ وآمن: يُقرأ ساعةَ النداء). كتالوجُ الخدمات (clinic_services بالتجريبيّ) يمرّ
  * من هنا لا من services.ts مباشرةً — فلا تكسب قطعةُ المرآة مستورداً جديداً يغيّر تقسيمَ القطع المشتركة. */
@@ -5426,4 +5496,4 @@ export const demoServices = {
  * repoDemo.ts تفقد القطعةُ واجهتَها، فيصير import() بـrepo.ts (حزمة الإقلاع) `.then(e=>e.r)` مع كائنِ مساحة أسماء.
  * مقيسٌ ببناء vite: بلا هذا السطر repo-*.js 92,301 بايتاً خاماً (+١٣، و+٦ مضغوطة)، وبه 92,288 كالرأس؛ وقائمةُ
  * التحميل المسبق لـrepoDemo ٢٣ اسماً بالحالتين. */
-export { demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";
+export { demoApiGate, demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";

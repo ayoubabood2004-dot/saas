@@ -93,6 +93,8 @@ export function auditKind(entity: string, action: string, details: Record<string
   if (e === "treatment_entries") return "dose";
   if (e === "vaccinations") return "vaccine";
   if (["pet_notes", "media_items", "weight_logs", "lab_results"].includes(e)) return "medical";
+  // 0261: الراجيتةُ (كتابتُها وإلغاؤها وحذفُها مع حيوانها) من الملفّ الطبيّ.
+  if (e === "pet_prescriptions") return "medical";
   if (["appointments", "reminders", "journeys", "journey_events"].includes(e)) return "booking";
   if (e === "wa_messages") return "message";
   if (["store_orders", "store_profiles", "store_categories", "store_category_items"].includes(e)) return "store";

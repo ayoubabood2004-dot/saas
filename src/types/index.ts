@@ -277,6 +277,8 @@ export interface MediaItem {
   url: string; // object URL / storage URL
   caption?: string;
   created_at: string;
+  /** الزيارةُ التي أُرفق لها (0263) — الملفُّ للحيوان ويظهر بخزنته أيضاً؛ null = بالخزنة وحدها. */
+  visit_id?: string | null;
 }
 
 /** Doctor's triage of the patient's overall state at a visit. */
@@ -703,6 +705,11 @@ export interface Product {
   /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
   subcategory?: string | null;
   purchase_price: number;
+  /** 0264: عملةُ السعر — «USD» يُباع ببيع الدولار وحده (usd_checkout)، وسعراه `sell_price_usd`/`purchase_price_usd` والدينارُ
+   *  أعلاه لا يُقرأ للبيع. ممنوعٌ عليها الوزنُ والوحدةُ الفرعية والحوضُ والكراتين (products_usd_ok). غيابُه = دينار. */
+  price_currency?: "IQD" | "USD" | null;
+  sell_price_usd?: number | null;
+  purchase_price_usd?: number | null;
   /** 0255: moving-average cost of one stock unit (6 dp). Null = unknown → the cost is `purchase_price`.
    *  Written by the server alone (purchases, merges, `product_cost_reset`); the product form never sends it. */
   avg_cost?: number | null;
@@ -774,6 +781,13 @@ export interface PaymentSplit {
    *  الطريقةُ تبقى طريقةَ التحصيل نفسِه حتى يُنقَص المالُ من جيبه الصحيح؛
    *  هذا الحقلُ وحده هو ما يميّزها، لا صنفُ دفعٍ ثالث. */
   reversal_of?: string | null;
+  /** 0264: «fx» = فرقُ صرف — ما استلمه الدرجُ زيادةً أو نقصاً عن حصّة فاتورة الدولار من تسديد. يدخل الدرجَ والجيوبَ كأيّ ساق،
+   *  ولا يدخل `amount_paid` (الحصّةُ وحدها تُنقص الدَّين)، وربحُه كلُّه (receipt_legs). غيابُه = ساقٌ عادية. */
+  kind?: "fx" | null;
+  /** 0264: ساقُ تسديدٍ بالدولار — المبلغُ بالدولار وسعرُه، ومعرّفُ صفّه بـusd_settlements. */
+  usd?: number | null;
+  rate?: number | null;
+  settlement_id?: string | null;
 }
 /** Settlement state of a sale relative to its total. Derived from amount_paid vs total. */
 export type PaymentStatus = "paid" | "partial" | "unpaid";
@@ -822,6 +836,13 @@ export interface Invoice {
    *  (نموذجُ يوم البيع)، فقيمةُ البضاعة = total + forgiven (`grossOf`). يساوي دائماً مجموعَ سطور
    *  `invoice_forgiveness` غيرِ الملغاة، ويُكتب من الدوالّ وحدها. غيابُه = صفر. */
   forgiven?: number;
+  /** 0264: فاتورةُ دولار — المالُ الدينارُ أعلاه بسعر يوم البيع (`fx_rate`)، والدَّينُ بالدولار: `total_usd − paid_usd`.
+   *  تُكتب من usd_checkout/settle_invoice_usd وحدها (محفّزُ الباب). غيابُ currency = دينار. */
+  currency?: "IQD" | "USD" | null;
+  fx_rate?: number | null;
+  total_usd?: number | null;
+  paid_usd?: number | null;
+  discount_usd?: number | null;
   created_at: string;
 }
 
@@ -893,8 +914,10 @@ export interface ForgiveInput {
  *  terminal balance, or the bank account. Rows recorded before this existed
  *  are treated as cash (the ledger's original semantics).
  *  `stock` (0216) = «من المخزن»: خسارةُ جردٍ معتمدة (تالف/منتهي/عجز). فلوسُها طلعت
- *  يوم الشراء، فلا تُطرح من أيّ جيب — تُرى بالسحوبات وتُكتب من موافقة الجرد وحدها. */
-export type ExpenseMethod = "cash" | "card" | "bank" | "stock";
+ *  يوم الشراء، فلا تُطرح من أيّ جيب — تُرى بالسحوبات وتُكتب من موافقة الجرد وحدها.
+ *  `account` (0262) = «من الحساب»: البطاقةُ والتحويل حسابٌ بنكيٌّ واحد بالعيادة، فالسحبُ منه
+ *  لا بطاقةٌ ولا تحويل — يُكتب كما حصل ولا يُقسَّم تخميناً (pockets.ts). */
+export type ExpenseMethod = "cash" | "card" | "bank" | "stock" | "account";
 
 /** An expense / withdrawal from the clinic (rent, supplies, salaries, petty
  *  cash…). Append-only ledger, clinic-isolated. `description` says WHERE &
@@ -908,7 +931,7 @@ export interface Expense {
   /** تصنيفُ السحب (0227) — مصدرُ العضوية الوحيد بجداول التصنيفات. فارغٌ لما يكتبه
    *  النظام (مرتجع، رواتب، سلف، سحب مخزن) ولما سبق التصنيفات. */
   category_id?: string | null;
-  method?: ExpenseMethod | null;  // cash (default) / card / bank
+  method?: ExpenseMethod | null;  // cash (default) / card / bank / account (0262) / stock
   staff_id?: string | null;       // who recorded it (auto-stamped)
   spent_at: string;               // ISO — when the money actually left
   created_at: string;             // ISO — when it was recorded
@@ -1095,6 +1118,9 @@ export interface InvoiceItem {
   /** 0252: the clinic service this line sold (soft; null for products and old devices). Its recipe is
    *  what the line consumed, and an edit re-attaches the consumption through it. */
   service_id?: string | null;
+  /** 0264: سطرُ فاتورة دولار — سعرُ الوحدة وكلفتُها بالدولار (والدينارُ أعلاه بسعر يوم البيع). */
+  unit_price_usd?: number | null;
+  unit_cost_usd?: number | null;
 }
 
 /** 0252: one material a service consumes per case — `qty` in `unit` ("stock" = the product's stock unit,

@@ -12,7 +12,7 @@
  *   node scripts/pockets-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,7 +37,7 @@ const built = await esbuild.build({
 const dir = mkdtempSync(join(tmpdir(), "pockets-"));
 const file = join(dir, "m.mjs");
 writeFileSync(file, built.outputFiles[0].text);
-const { netPerPocket, pocketOfExpense, pocketOfPayment, expenseMethodOf, POCKETS } =
+const { netPerPocket, pocketOfExpense, pocketOfPayment, expenseMethodOf, POCKETS, pocketsShown, shownPocketOfExpense } =
   await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
 
 console.log("▸ جيبٌ واحدٌ باسمين — `transfer` القابضة و`bank` الساحبة");
@@ -47,6 +47,7 @@ check("  و`transfer` القابضة بنفس الجيب", pocketOfPayment("tran
 check("  والجيوبُ ثلاثةٌ لا أكثر", POCKETS.length === 3 && POCKETS.join() === "cash,card,transfer");
 check("سحبٌ بلا طريقةٍ نقدٌ (صفوفٌ سبقت وجودَ العمود)", pocketOfExpense(null) === "cash" && pocketOfExpense(undefined) === "cash");
 check("وطريقةٌ مجهولةٌ لا تضيع — تسقط بالنقد", pocketOfExpense("bitcoin") === "cash" && pocketOfPayment("bitcoin") === "cash");
+check("و«من الحساب» (0262) لا يسقط بالنقد — جيبُه المشترك (البطاقة والتحويل معاً)", pocketOfExpense("account") === "shared");
 
 console.log("▸ ترجمةُ الجيب بموضعٍ واحد (كانت منسوخةً بأربعة)");
 for (const [inp, out] of [["card", "card"], ["transfer", "bank"], ["bank", "bank"], ["cash", "cash"], ["TRANSFER", "bank"], [null, "cash"], ["مجهول", "cash"]]) {
@@ -91,6 +92,67 @@ console.log("▸ سحبُ المخزن (0216) لا جيبَ له");
 const stk = netPerPocket([{ method: "cash", amount: 1000 }], [{ method: "stock", amount: 600 }, { method: "cash", amount: 100 }]);
 check("خسارةُ الجرد لا تُطرح من الدرج (فلوسُها طلعت يوم الشراء)", stk.cash.out === 100 && stk.cash.net === 900, JSON.stringify(stk.cash));
 check("  ولا من البطاقة ولا التحويل", stk.card.out === 0 && stk.transfer.out === 0);
+
+/* ── 0262: البطاقةُ والتحويل حسابٌ واحد ────────────────────────────────────────────────
+   بلاغُ المالك حرفاً: استلم ٢٥٠٠ بطاقة و١٥٠٠ تحويل على نفس الحساب، ورأى ٤٠٠٠ فسحبها «من البطاقة» — والتقريرُ
+   قال البطاقةُ −١٥٠٠ والتحويلُ +١٥٠٠. والعرضُ فوق الصفوف كما سُجّلت: لا يغيّر سحباً، ومطفأً يطابق القديمَ حرفاً. */
+console.log("▸ 0262: البطاقة والتحويل حسابٌ واحد — بلاغُ المالك حرفاً");
+const sale = [{ method: "cash", amount: 1000 }, { method: "card", amount: 2500 }, { method: "transfer", amount: 1500 }];
+const owner = netPerPocket(sale, [{ method: "card", amount: 4000 }]);
+check("مفصولاً (العرضُ القديم): البطاقةُ −١٥٠٠ والتحويلُ +١٥٠٠ — العطبُ كما بُلّغ", owner.card.net === -1500 && owner.transfer.net === 1500, JSON.stringify([owner.card.net, owner.transfer.net]));
+const one = pocketsShown(owner, true);
+const accRow = one.rows.find((r) => r.key === "account");
+check("  وحساباً واحداً: جيبان (الدرج والحساب)، والحسابُ داخلُه ٤٠٠٠ ومسحوبُه ٤٠٠٠ وصافيه صفر — لا سالب",
+  one.merged && !one.forced && one.rows.map((r) => r.key).join() === "cash,account" && accRow.flow.in === 4000 && accRow.flow.out === 4000 && accRow.flow.net === 0,
+  JSON.stringify(one.rows));
+check("  والدرجُ كما هو حرفاً (١٠٠٠، لا شيءَ من الحساب)", one.rows[0].flow === owner.cash && owner.cash.net === 1000);
+
+console.log("▸ 0262: الأشهرُ الماضية — العرضُ فوق الصفوف كما سُجّلت");
+const old = netPerPocket(
+  [{ method: "transfer", amount: 2348000 }, { method: "card", amount: 4018000 }, { method: "cash", amount: 500 }],
+  [{ method: "bank", amount: 3332000 }, { method: "card", amount: 320000 }, { method: null, amount: 200 }],
+);
+const sep = pocketsShown(old, false);
+check("مطفأً: الجيوبُ الثلاثة بأرقامها القديمة نفسِها (نفسُ الكائنات، لا نسخةٌ معادة الحساب)",
+  !sep.merged && sep.rows.map((r) => r.key).join() === "cash,card,transfer" && sep.rows.every((r) => r.flow === old[r.key]));
+const merged = pocketsShown(old, true);
+const m2 = merged.rows.find((r) => r.key === "account").flow;
+check("  ومفعّلاً: الحسابُ = البطاقة + التحويل (داخلاً ومسحوباً وعدّاً) — سحوباتُ card وbank القديمة تُجمع بلا ترحيل",
+  m2.in === 4018000 + 2348000 && m2.out === 320000 + 3332000 && m2.inCount === 2 && m2.outCount === 2 && m2.net === m2.in - m2.out, JSON.stringify(m2));
+const netOf = (v) => v.rows.reduce((s, r) => s + r.flow.net, 0);
+check("  والثابت: مجموعُ الصافي بأيّ عرضٍ واحد — لا عرضَ يُخفي فلساً", netOf(sep) === netOf(merged) && netOf(merged) === (2348000 + 4018000 + 500) - (3332000 + 320000 + 200));
+
+console.log("▸ 0262: سحبٌ «من الحساب» يُكتب كما حصل ولا يُقسَّم تخميناً");
+const acc3 = netPerPocket(sale, [{ method: "account", amount: 4000 }, { method: "cash", amount: 100 }]);
+check("«من الحساب» لا يمسّ الدرجَ ولا البطاقةَ ولا التحويل — جيبُه المشترك", acc3.cash.out === 100 && acc3.card.out === 0 && acc3.transfer.out === 0 && acc3.shared.out === 4000 && acc3.shared.net === -4000, JSON.stringify(acc3.shared));
+const f = pocketsShown(acc3, false);
+check("  والعيادةُ فصلت الحسابين بعدها: مدّةٌ فيها مثلُه تُعرض مدموجةً (forced) — لا يُنسب للتحويل ولا للبطاقة",
+  f.merged && f.forced && f.rows.find((r) => r.key === "account").flow.net === 0, JSON.stringify(f));
+check("  ومدّةٌ بلا مثله تُعرض مفصولةً كما اختارت", !pocketsShown(netPerPocket(sale, [{ method: "card", amount: 10 }]), false).merged);
+check("  وصافي «الحساب» بالعرضين = الداخل − (البطاقة + الحوالة + من الحساب)", netOf(pocketsShown(acc3, true)) === netOf(f) && netOf(f) === 5000 - 4100);
+
+console.log("▸ 0262: شاراتُ «منين انسحبت» بجيب العرض");
+for (const [m, mergedOn, want] of [["cash", true, "cash"], ["card", true, "account"], ["bank", true, "account"], ["account", true, "account"], ["stock", true, null],
+  ["card", false, "card"], ["bank", false, "transfer"], ["account", false, "account"], [null, false, "cash"], [null, true, "cash"]]) {
+  check(`  shownPocketOfExpense(${JSON.stringify(m)}, ${mergedOn}) ⇒ ${want}`, shownPocketOfExpense(m, mergedOn) === want, String(shownPocketOfExpense(m, mergedOn)));
+}
+
+/* الأسلاكُ نصّاً (الحسابُ مفحوصٌ بسلوكه أعلاه): الشاشةُ تعرض الجيوبَ بخيار العيادة، ونموذجُ السحب «الدرج/الحساب»
+   حين يُدمجان، والخيارُ نعم افتراضياً والغائبُ نعم، والقاعدةُ تقبل account. */
+console.log("▸ 0262: الأسلاك");
+const rd = (f) => readFileSync(f, "utf8");
+const hub = rd("src/pages/AnalyticsHub.tsx"), set = rd("src/lib/settings.ts"), mig = rd("supabase/migrations/0262_one_account.sql");
+check("التقاريرُ تعرض الجيوبَ بخيار العيادة (pocketsShown + getCardTransferOneAccount)، ولا جيوبَ ثلاثةٌ ثابتة",
+  /const oneAccount = getCardTransferOneAccount\(\);\s*const shown = useMemo\(\(\) => pocketsShown\(pockets, oneAccount\), \[pockets, oneAccount\]\);/.test(hub) && !/POCKETS\.(map|filter)/.test(hub));
+check("  ونموذجُ السحب: الدرجُ والحساب حين يُدمجان، والثلاثةُ القديمة حين يُفصلان",
+  /oneAccount \? m\.id === "cash" \|\| m\.id === "account" : m\.id === "cash" \|\| m\.id === "card" \|\| m\.id === "bank"/.test(hub) && /manualMethods\.map\(\(m\) =>/.test(hub));
+check("  والخيارُ نعم افتراضياً: الغائبُ نعم (صفٌّ قبل الهجرة، أو جهازٌ بلا مرآة)، وما يُطفئه إلا false صريح",
+  /return prefs\(\)\.one_account !== false;/.test(set) && /one_account: d\.one_account \?\? local\.one_account,/.test(set) && !/one_account: true/.test(set));
+check("  والقاعدة: العمودُ نعم افتراضياً، وaccount بقيد طرق السحب",
+  /add column if not exists one_account boolean not null default true/.test(mig) && /check \(method in \('cash', 'card', 'bank', 'stock', 'account'\)\)/.test(mig));
+
+check("  والإقلاعُ لا يستورد حسابَ الجيوب: repo وrepoDemo من expenseMethod.ts وحدها (pockets.ts كان يُدخله كلَّه الإقلاع)",
+  ["src/lib/repo.ts", "src/lib/repoDemo.ts"].every((f) => /from "\.\/expenseMethod"/.test(rd(f)) && !/from "\.\/pockets"/.test(rd(f))));
 
 console.log(fails ? `\n✗ pockets-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ pockets-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

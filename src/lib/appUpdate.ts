@@ -43,6 +43,9 @@ const offline = () => typeof navigator !== "undefined" && navigator.onLine === f
  *  معاً على نفس الفشل — يتشاركان هذه العملية بدل ما يتسابقان. */
 let inFlight: Promise<boolean> | null = null;
 
+/** تعافٍ بالطريق (ينتظر كتابةً أو نموذجاً، أو يمسح ويحمّل): استيرادٌ فشل داخل retryImport لا يستقرّ قبله. */
+export const recoveryPending = (): boolean => inFlight !== null;
+
 /** هل جرّبنا التعافي للتو؟ (يمنع الحلقة) */
 export function recoveredRecently(): boolean {
   const last = Number(sessionStorage.getItem(ONCE_KEY) || 0);
@@ -88,6 +91,11 @@ export function recoverFromStaleShell(): Promise<boolean> {
       const regs = await navigator.serviceWorker?.getRegistrations?.();
       await Promise.all((regs ?? []).map((r) => r.unregister()));
     } catch { /* أي فشل هنا لا يمنع المحاولة الأهم: إعادة التحميل */ }
+    /* والمسحُ قد يطول (أوّلُ زيارة: إلغاءُ الخدمة ينتظر تثبيتَها — ٣٢ ثانية مقيسة) وما كُتب أثناءه لا يُحمَّل فوقه: كان الفحصُ
+     * مرّةً قبل الانتظار، فراجيتةٌ كُتبت بعد «حدّث الصفحة» ضاعت بلا كلمة (تدقيقٌ عدائيّ خامس). */
+    await waitForWrites();
+    /* وتراجعٌ هنا يمسح ختمَه: الختمُ لتحميلٍ حصل، وبقاؤه كان يرفض «حدّث الصفحة» ٣٠ ثانيةً بـ«تأكّد من النت» والنتُّ رجع (تدقيقٌ سادس). */
+    if (offline()) { inFlight = null; try { sessionStorage.removeItem(ONCE_KEY); } catch { /* ignore */ } return false; }
     window.location.reload();
     return true;
   })();
