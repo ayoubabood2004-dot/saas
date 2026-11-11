@@ -261,11 +261,16 @@ function SupabaseAuthCard() {
   // On mount, if the login screen is shown to a genuinely logged-out user, purge any
   // stale/corrupt local session so the next sign-in can't hang on a poisoned token.
   // Guarded by !user so an authenticated visitor to /login is never logged out.
+  // و`!user` ليس «لا جلسة»: المستخدمُ يُبنى من الملفّ، فقراءةُ ملفٍّ فشلت أو غاب صفُّها أو تأخّرت فوق مهلة
+  // الـ١٢ ثانية تُبقيه فارغاً والجلسةُ صالحة. ورابطُ «نسيت كلمة المرور» يهبط هنا بجلسةٍ فتحها للتوّ — مسحُها كان
+  // يُبقي نموذجَ «كلمة مرور جديدة» (وضعُ الاستعادة من الرابط لا من الجلسة) ونداؤه بلا جلسةٍ لا يصل الخادم:
+  // «ما اكتمل الطلب — جرّب مرة ثانية» للأبد، والرابطُ يُستعمل مرّةً (مقيسٌ بخادمٍ مُحاكى، ١١/١١). فبالاستعادة لا مسح.
   useEffect(() => {
     if (clearedStale.current || loading || user) return;
     clearedStale.current = true;
+    if (recovery) return;
     if (isSupabaseConfigured && supabase) void supabase.auth.signOut({ scope: "local" }).catch(() => {});
-  }, [loading, user]);
+  }, [loading, user, recovery]);
 
   // النيّة تأتي من الرابط: من ضغط «ابدأ مجاناً» بصفحة الهبوط يصل وهو ينوي
   // **فتح عيادة جديدة**، فإسقاطه على «دخول مالك» يجعله يبحث عن الطريق مرّة
@@ -299,6 +304,11 @@ function SupabaseAuthCard() {
   const [reSignup, setReSignup] = useState(false);
   const [pollStopped, setPollStopped] = useState(false);
   const [typo, setTypo] = useState<string | null>(null);
+  // جلسةُ رابط الاستعادة ماتت (kind "session"): الإعادةُ لا تنجح، فالمخرجُ رابطٌ جديد — ونترك النموذجَ إليه
+  // بيدنا لأن وضعَ الاستعادة يعيش بالسياق ويبقى ما دام التبويب.
+  const [resetDead, setResetDead] = useState(false);
+  const [leftReset, setLeftReset] = useState(false);
+  const showReset = recovery && !leftReset;
   const staff = intent.staff;
 
   useEffect(() => {
@@ -494,10 +504,10 @@ function SupabaseAuthCard() {
     setBusy(true);
     try {
       const res = await updatePassword(newPw);
-      if (res.error) { showErr(res.error, res.code); return; }
+      if (res.error) { if (showErr(res.error, res.code).kind === "session") setResetDead(true); return; }
       done();
     } catch (err) {
-      showErr(err instanceof Error ? err.message : null);
+      if (showErr(err instanceof Error ? err.message : null).kind === "session") setResetDead(true);
     } finally {
       setBusy(false);
     }
@@ -588,8 +598,8 @@ function SupabaseAuthCard() {
             <p className="mt-1 text-ink-muted">{t("app.tagline")}</p>
           </div>
 
-          <motion.div key={recovery ? "reset" : view + mode} variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-sm">
-            {recovery ? (
+          <motion.div key={showReset ? "reset" : view + mode} variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-sm">
+            {showReset ? (
               /* Set a new password (arrived via recovery link) */
               <form onSubmit={submitReset} className="space-y-3">
                 <h2 className="font-display text-xl font-extrabold text-ink">{t("auth.setNewPassword", "Set a new password")}</h2>
@@ -597,7 +607,13 @@ function SupabaseAuthCard() {
                 <PasswordField label={t("auth.newPassword", "New password")} value={newPw} onChange={setNewPw} show={showPw} setShow={setShowPw} autoComplete="new-password" withStrength t={t} />
                 <PasswordField label={t("signup.confirmPw")} value={newPw2} onChange={setNewPw2} show={showPw} setShow={setShowPw} autoComplete="new-password" t={t} />
                 {msg}
-                <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? t("common.loading") : t("auth.updatePassword", "Update password")}</Button>
+                {resetDead ? (
+                  <Button type="button" size="lg" className="w-full" data-reset-newlink onClick={() => { playTap(); setLeftReset(true); setResetDead(false); setView("forgot"); clear(); }}>
+                    {t("signup.err.newLink")}
+                  </Button>
+                ) : (
+                  <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? t("common.loading") : t("auth.updatePassword", "Update password")}</Button>
+                )}
               </form>
             ) : view === "forgot" ? (
               /* Forgot password — send a reset email */

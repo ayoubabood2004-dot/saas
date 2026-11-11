@@ -26,6 +26,7 @@
     "live:company-book": "node scripts/live/company-book.mjs",
     "live:delivery-search": "node scripts/live/delivery-search.mjs",
     "live:mobile-width": "node scripts/live/mobile-width.mjs",
+    "live:reset-password": "node scripts/live/reset-password.mjs",
     "freshness": "node scripts/freshness-test.mjs",
     "keyset": "node scripts/keyset-test.mjs"
   },

@@ -6941,7 +6941,9 @@
       "server": "Something failed on our side, not yours — try again in a minute.",
       "samePw": "The new password must be different from the old one.",
       "pwMismatch": "The two passwords don't match.",
-      "generic": "That didn't go through — please try again."
+      "generic": "That didn't go through — please try again.",
+      "resetSession": "This password-reset link no longer works on this page — trying again won't help. Request a new link and open it straight from the email.",
+      "newLink": "Request a new link"
     },
     "link": {
       "expiredTitle": "This link has expired or was already used",
