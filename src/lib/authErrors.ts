@@ -14,7 +14,7 @@ export type AuthErr = {
   key: string;
   vars?: Record<string, string>;
   /** حالاتٌ لها تصرّفٌ لا رسالةٌ فقط. */
-  kind?: "notConfirmed" | "exists" | "invalidCreds" | "wait";
+  kind?: "notConfirmed" | "exists" | "invalidCreds" | "wait" | "session";
   /** ثوانٍ قالها الخادمُ قبل أن يقبل طلباً جديداً. */
   seconds?: number;
 };
@@ -27,6 +27,14 @@ export function authErr(message: string | null | undefined, code?: string | null
   if (c === "over_email_send_rate_limit" || /email rate limit/.test(s)) return { key: "signup.err.emailBusy" };
   if (c.startsWith("over_") || /rate limit|too many/.test(s)) return { key: "signup.err.rateLimit" };
   if (c === "same_password" || /different from the old/.test(s)) return { key: "signup.err.samePw" };
+  /* لا جلسةَ صالحة لتغيير كلمة السرّ (١١/١١): رابطُ الاستعادة جلستُه حُذفت أو انتهت أو أُبطلت (رابطٌ ثانٍ، خروج)،
+   * أو «تغييرٌ آمن» يطلب دخولاً حديثاً. كلُّها كانت «ما اكتمل الطلب — جرّب مرة ثانية» — والإعادةُ لا تنجح أبداً:
+   * الطلبُ بلا جلسة لا يصل الخادمَ أصلاً. الدواءُ الوحيد رابطٌ جديد (جلستُه حديثةٌ فتُرضي إعادةَ التحقّق أيضاً). */
+  if (["session_not_found", "session_expired", "bad_jwt", "no_authorization", "refresh_token_not_found", "refresh_token_already_used",
+    "user_not_found", "reauthentication_needed", "reauthentication_not_valid"].includes(c)
+    || /auth session missing|session .*does not exist|invalid jwt|invalid refresh token|sub claim .*does not exist|requires reauthentication/.test(s)) {
+    return { key: "signup.err.resetSession", kind: "session" };
+  }
   if (c === "weak_password" || /password/.test(s) && /weak|should|at least|pwned|leak/.test(s)) {
     if (/pwned|leak|compromised|known to be weak/.test(s)) return { key: "signup.err.pwLeaked" };
     const n = /at least (\d+)/.exec(s);

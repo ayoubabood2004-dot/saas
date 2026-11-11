@@ -77,6 +77,13 @@ const CASES = [
   ["timeout", undefined, "signup.err.timeout"],
   ["Failed to fetch", undefined, "signup.err.network"],
   ["Database error saving new user", "unexpected_failure", "signup.err.server"],
+  // جلسةُ رابط الاستعادة ماتت (١١/١١): كانت كلُّها «جرّب مرة ثانية» والإعادةُ لا تنجح أبداً — الدواءُ رابطٌ جديد.
+  ["Auth session missing!", undefined, "signup.err.resetSession", "session"],
+  ["Session from session_id claim in JWT does not exist", "session_not_found", "signup.err.resetSession", "session"],
+  ["invalid JWT: unable to parse or verify signature, token has invalid claims: token is expired", "bad_jwt", "signup.err.resetSession", "session"],
+  ["Invalid Refresh Token: Refresh Token Not Found", "refresh_token_not_found", "signup.err.resetSession", "session"],
+  ["Invalid Refresh Token: Already Used", "refresh_token_already_used", "signup.err.resetSession", "session"],
+  ["Password update requires reauthentication", "reauthentication_needed", "signup.err.resetSession", "session"],
   ["something nobody expected", undefined, "signup.err.generic"],
 ];
 for (const [msg, code, key, kind] of CASES) {
@@ -87,7 +94,8 @@ const w = A.authErr("For security purposes, you can only request this after 47 s
 check("  والثواني رقمٌ يُعدّ لا جملة", w.seconds === 47 && w.vars?.s === "47");
 check("  وطولُ كلمة السرّ من نصّ الخادم", A.authErr("Password should be at least 10 characters", "weak_password").vars?.n === "10");
 check("بالرمز وحده بلا نصّ", A.authErr("", "over_email_send_rate_limit").key === "signup.err.emailBusy");
-const allKeys = new Set(CASES.map((c) => c[2]));
+check("  وسياسةُ كلمة السرّ ليست «جلسة» (نصُّها فيه password)", A.authErr("Password should contain at least one character of each: abc, ABC, 0123456789", "weak_password").key === "signup.err.weakPw");
+const allKeys = new Set([...CASES.map((c) => c[2]), "signup.err.newLink"]);
 for (const k of allKeys) check(`  المفتاح ${k} بالقاموسين`, has(AR, k) && has(EN, k));
 
 console.log("▸ خطأُ البريد الإملائيّ وزرُّ صندوقه");
