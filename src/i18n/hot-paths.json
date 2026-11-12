@@ -70,6 +70,7 @@
       ]
     },
     "rcp": "src/components/retail/ConsumablesSheet.tsx",
+    "pks": "src/components/retail/PackSale.tsx",
     "dpets": "src/components/retail/DebtorPets.tsx",
     "vxed": "src/components/vaccines/VaccineEditSheet.tsx",
     "ptab": "src/components/retail/PosCustomTabs.tsx",

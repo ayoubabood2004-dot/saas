@@ -71,7 +71,7 @@ export async function askFresh(product: Pick<Product, "id" | "barcode">, code: s
 /* ── ٣) الحكم ─────────────────────────────────────────────────────────── */
 
 /** ما يلزم من سطر السلّة القائم لحساب ما بقي. */
-export type CartSide = { qty: number; saleUnit?: "box" | "sub" } | null | undefined;
+export type CartSide = { qty: number; saleUnit?: "box" | "sub" | "pack" } | null | undefined;   // «pack» لسطر k: وحده (0267) — سطرُ p: علبةٌ أو مفرد
 
 /**
  * كم يُضاف بعدُ من هذا المنتج **برصيد هذا الصفّ**، بوحدة السطر القائم (أو وحدةِ

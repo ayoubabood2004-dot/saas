@@ -7427,8 +7427,8 @@
   },
   "pkg": {
     "title": "Packaging — carton, box and pack",
-    "hint": "Optional: define the carton and the small pack with their barcodes and prices so the system knows them. An empty price is computed from the box, and you can change it.",
-    "unitName": "Middle unit name (stock is counted in it)",
+    "hint": "Optional: define the carton and the small pack with their barcodes and prices so the system knows them. Leave the carton price empty and it is computed from the unit price above × the count — or write a different price.",
+    "unitName": "Name of the unit whose price you wrote above (box, pack, bottle…) — stock is counted in it",
     "level": {
       "box": "box",
       "sub": "pack",
@@ -7437,7 +7437,6 @@
     "subTitle": "{{sub}} — each {{unit}} holds {{n}}",
     "subCodes": "{{sub}} barcode",
     "subPurchase": "{{sub}} purchase price",
-    "derivedPh": "computed: {{v}}",
     "packsTitle": "Cartons — how many {{unit}} each holds",
     "addPack": "Add a carton",
     "packsMax": "Up to {{n}} cartons",
@@ -7474,7 +7473,14 @@
       "merge_packs_unit": "The product being folded has cartons and the one you keep is sold by weight — cartons can't move to a product sold by weight",
       "merge_packs_overflow": "Together the two have more than four cartons — remove a carton from one of them, then merge"
     },
-    "filterNoCost": "No purchase price"
+    "filterNoCost": "No purchase price",
+    "autoPh": "Automatic",
+    "autoCalc": "Automatic: {{n}} × {{each}} = {{v}}",
+    "eachIs": "That is {{v}} per {{unit}}",
+    "needPer": "Write how many {{unit}} are in the carton to compute the price",
+    "needBox": "Write the «{{unit}}» price above to compute the carton price",
+    "warnLoss": "Careful: the carton sells for {{sell}}, less than it costs ({{buy}}) — check the zeros",
+    "autoSub": "Automatic: {{box}} ÷ {{n}} = {{v}}"
   },
   "rx": {
     "btn": "Prescription",
@@ -8620,5 +8626,22 @@
       "alreadyOff": "It was already off since {{day}} — nothing changed."
     },
     "unsure": "Couldn't reach the server to confirm selling before the count is still on — «{{name}}» wasn't added. Check the connection and try again."
+  },
+  "pks": {
+    "notReady": "«{{name}}»: selling by the «{{pack}}» needs a database update — for now sell by the «{{unit}}»: type {{n}} and scan its barcode",
+    "ret": "«{{name}}»: this is a {{level}} barcode — returns are recorded by the «{{unit}}»: scan its barcode and type the count",
+    "usd": "«{{name}}» is priced in dollars — the «{{pack}}» can't be sold in dollars yet. Sell it by its base unit",
+    "short": "«{{name}}»: what's left covers only {{stock}} {{unit}} — less than a {{pack}} ({{n}} {{unit}}). Continue by the «{{unit}}»",
+    "shortStale": "«{{name}}»: what's left covers {{stock}} {{unit}} at our last update — less than a {{pack}} ({{n}}). We couldn't reach the server to check — refresh the list",
+    "changed": "«{{name}}»: the «{{pack}}» changed or was removed from the product — refresh the list and scan it again",
+    "subInBox": "«{{name}}» is in the cart by the box — switch the line to {{sub}}, then scan",
+    "found": "«{{name}}» — {{pack}} ({{n}} {{unit}})",
+    "note": "{{n}} {{unit}}",
+    "box": "box",
+    "sub": "pack",
+    "pack": "carton",
+    "buyPack": "«{{name}}»: {{pack}} = {{n}} {{unit}} — {{n}} added to the line; the line's purchase price is per {{unit}}",
+    "buyPackPrice": "«{{name}}»: {{pack}} = {{n}} {{unit}} — added to the line. The «{{pack}}» written purchase price {{price}} = {{each}} per {{unit}}: if the company charged that, fix the line price",
+    "buySub": "«{{name}}»: this is a {{sub}} barcode — purchases are recorded by the «{{unit}}». Scan its barcode or the carton's, or type the count"
   }
 }

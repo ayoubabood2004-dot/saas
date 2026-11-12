@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -535,7 +535,7 @@ RP0197=$(sed -n '/^create or replace function public\.restore_product(p_id uuid)
 if [ -n "$RP0197" ]; then
   out=$($P -c "$RP0197" 2>&1) || { echo "$out" | tail -3; echo "   ✗ جسمُ 0197 لـrestore_product ما نزل"; fail=1; }
 else echo "   ✗ ما لكيت restore_product بملفّ 0197"; fail=1; fi
-for f in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount; do
+for f in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale; do
   out=$($P -f "$MIG/$f.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f ما انعادت بعد جسم 0197"; fail=1; }
 done
 
@@ -10085,6 +10085,8 @@ chk "    (صفرُ معلَّق)" "select count(*)::text from stock_counts where
 # القالبُ (supabase/tests/cost-parity.mjs) يحزم الواجهةَ من مصدرها، ويولّد جدولاً بكلّ حافّة + عيّنةً ببذرةٍ ثابتة، وموادَّ
 # عيادةٍ للتطابق؛ والقاعدةُ تحسب كلَّها بنداءٍ واحد بدوالّها الحيّة؛ والمقارنةُ تامّة، ومعها مرآةٌ مغلوطةٌ لكلّ دالّة تخالف.
 CPF=$(mktemp -d)
+# والمرآةُ تعرف كارتونَ 0267 — وأقسامُ 0255 فوق أعادتها وحدها (جسمُ الكلفة بلا فرع الكارتون): تُعاد 0267 قبل التطابق.
+out=$($P -f "$MIG/0267_pack_sale.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0267 ما انعادت قبل تطابق الكلفة"; fail=1; }
 if node "$HERE/cost-parity.mjs" gen "$CPF" >"$CPF/gen.log" 2>&1; then
   out=$($P -f "$CPF/seed.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ موادُّ عيادة التطابق ما نزلت"; fail=1; }
   if $P -tA -f "$CPF/run.sql" >"$CPF/actual.txt" 2>"$CPF/run.err"; then :; else tail -3 "$CPF/run.err"; echo "   ✗ نداءُ التطابق ما رجع"; fail=1; fi
@@ -10128,7 +10130,7 @@ chk "R2w: فكُّ طيّ الشركة والصنف بجسمَي مصدرهما 
     "public.restore_company(uuid):lacks--+0253;public.restore_company_section(uuid):lacks--+0253"
 # و0259 بعدهما: تعيد الاسترجاعَ والترتيب (0253 تُرجعهما لنصّها)، و0260 الشراءَ بخصمه (0253 و0255 تُرجعانه) — وإلا
 # فحصت الأقسامُ بعدها جسماً ليس بالإنتاج.
-for f2552 in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount; do
+for f2552 in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale; do
   out=$($P -f "$MIG/$f2552.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f2552 ما انعادت بعد جسمَي المصدر"; fail=1; }
 done
 chk "  وإعادةُ 0253 ثمّ 0255 ترجعه صفراً، والجسمان بعلامتهما" \
@@ -10622,7 +10624,7 @@ out=$($P -f "$MIG/0253_stock_truth_fixes.sql" 2>&1) || { echo "$out" | tail -3; 
 chk "إعادةُ 0253 وحدها تُرى: الشراءُ وتعديلُه بلا علامتي 0255 و0260، والاسترجاعُ والترتيبُ بلا علامة 0259، ولا شيءَ غيرُها" \
     "select coalesce(string_agg(problem, ';' order by problem collate \"C\"), '') from verify_consumption_wiring()" \
     "public.inventory_tidy_uncat():lacks--+0259;public.record_purchase(jsonb,jsonb):lacks--+0255;public.record_purchase(jsonb,jsonb):lacks--+0260;public.restore_product(uuid):lacks--+0259;public.update_purchase(uuid,jsonb,jsonb):lacks--+0255;public.update_purchase(uuid,jsonb,jsonb):lacks--+0260"
-for f260 in 0255_moving_average 0259_product_packs 0260_purchase_discount; do
+for f260 in 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale; do
   out=$($P -f "$MIG/$f260.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f260 ما انعادت بعد 0253"; fail=1; }
 done
 chk "  وإعادةُ 0255 و0259 و0260 بعدها ترجعه صفراً" "select count(*)::text from verify_consumption_wiring()" "0"
@@ -10644,7 +10646,7 @@ chk "تعديلُ الشراء بجسمٍ غيرِ نصّ 0255 (نصُّ 0253) �
 chk "  ولا تكتب شيئاً: الاستلامُ كما كان، والتعديلُ الغريبُ باقٍ للمطوّر يقارنه" \
     "select ((select md5(prosrc) from pg_proc where oid = to_regprocedure('public.record_purchase(jsonb,jsonb)')) = '$R6')::text
             || '|' || (select (position('-- +0260' in prosrc) = 0 and position('-- +0253' in prosrc) > 0)::text from pg_proc where oid = to_regprocedure('public.update_purchase(uuid,jsonb,jsonb)'))" "true|true"
-for f260 in 0255_moving_average 0260_purchase_discount; do
+for f260 in 0255_moving_average 0260_purchase_discount 0267_pack_sale; do
   out=$($P -f "$MIG/$f260.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f260 ما انعادت بعد جسم 0253"; fail=1; }
 done
 chk "  وإعادةُ 0255 ثمّ 0260 ترجعه: الجسمان بعلامتنا، والتوصيلُ صفر" \
@@ -11590,6 +11592,103 @@ chk "  والدوالُّ الجديدة زالت بعد تصفير الخطّا
 chk "  وفحصُ المخزن (0245) باقٍ للطبيب والمدير بعد حذف is_photographer" \
     "select (to_regprocedure('public.is_photographer()') is null)::text||'|'||left(_rls_try('$VET', 'select 1 from report_inventory_audit(now() - interval ''90 days'', now())'), 5)||'|'||left(_rls_try('$C1', 'select report_inventory_audit_json(90)'), 5)" \
     "true|rows:|rows:"
+# ── 0267: البيعُ بالكارتون — كلفةُ سطرٍ يطابق كارتوناً محفوظاً، والبحثُ برمز الكارتون والمغلّف ─────────────────────────
+# عيادةُ القسم KC وحدها (صاحبُها مديرٌ بلا عضوية). كلُّ نداءٍ بدور authenticated (rv/rt)، وكلُّ قراءةٍ بعد كتابةٍ بجملةٍ بعدها (درسُ 0257).
+echo "▸ 0267: البيعُ بالكارتون — الكلفةُ المتوسّط × علبُ الكارتون المحفوظ، والبيعةُ تنقص علبَه وتردّها، والبحثُ برمز أيّ مستوى"
+KG=c2670000-0000-4000-8000-0000000000
+KC=${KG}c1
+KO=${KG}c2
+PK24='[{"id":"k24","name":"كارتون","codes":["1629 1234 5678 97"],"per":24,"purchase_price":null,"sell_price":28000},{"id":"k6","name":"شدّة","codes":["SHD-6"],"per":6,"purchase_price":null,"sell_price":null}]'
+$P -c "insert into auth.users(id) values ('$KC'),('$KO') on conflict do nothing;
+       insert into products (id, clinic_id, name, barcode, stock, purchase_price, avg_cost, has_sub_unit, sub_unit_name, units_per_box, sub_codes, packs) values
+         ('${KG}a1','$KC','مغلف كارتون', '6291234567890', 100, 900, 833.333333, false, null, null, '{}', '$PK24'::jsonb),
+         ('${KG}a2','$KC','علبة بحبوب',   '6291234567891',  50, 1200,  null,     true, 'حبّة', 10, '{SUB-10}', '[{\"id\":\"k12\",\"name\":\"كرتونة\",\"codes\":[\"CRT-12\"],\"per\":12,\"purchase_price\":null,\"sell_price\":null}]'::jsonb),
+         ('${KG}a3','$KC','بلا كراتين',   '6291234567892',  10, 500,   null,     false, null, null, '{}', null),
+         ('${KG}a4','$KO','كارتون غيرنا', '6291234567893',  10, 500,   null,     false, null, null, '{}', '[{\"id\":\"x\",\"name\":\"كارتون\",\"codes\":[\"OTHER-CTN\"],\"per\":10,\"purchase_price\":null,\"sell_price\":null}]'::jsonb)
+         on conflict (id) do nothing;
+       insert into poultry_farms (id, clinic_id, name) values ('${KG}f0','$KC','حقل الكارتون') on conflict (id) do nothing;
+       insert into products (id, clinic_id, name, stock, purchase_price, farm_id, packs) values
+         ('${KG}a5','$KC','علف بكارتون', 40, 900, '${KG}f0', '[{\"id\":\"f\",\"name\":\"شوال\",\"codes\":[\"FARM-CTN\"],\"per\":4,\"purchase_price\":null,\"sell_price\":null}]'::jsonb)
+         on conflict (id) do nothing;" >/dev/null
+plc() { echo "_product_line_cost('$KC', '$1', $2, $3, 7)"; }
+
+chk "قبل القسم: جسمُ الكلفة بعلامة 0267 (كلُّ حلقةٍ تعيد 0255 تعيد 0267 بعدها)" \
+    "select (position('-- +0267' in prosrc) > 0)::text from pg_proc where oid = to_regprocedure('public._product_line_cost(uuid,uuid,numeric,numeric,numeric)')" "true"
+chk "الحارسُ والعلامة: _product_line_cost بعلامة 0267، وpack_sale_ready «نعم» للداخل، والمساعدُ لا يناديه الداخل، والبحثُ للداخل لا لـanon" \
+    "select (position('-- +0267' in prosrc) > 0)::text from pg_proc where oid = to_regprocedure('public._product_line_cost(uuid,uuid,numeric,numeric,numeric)')
+       union all select $(rv $KC "select pack_sale_ready()::text")
+       union all select has_function_privilege('authenticated', 'public._product_line_cost(uuid,uuid,numeric,numeric,numeric)', 'execute')::text
+       union all select has_function_privilege('authenticated', 'public.product_level_by_code(text)', 'execute')::text||':'||has_function_privilege('anon', 'public.product_level_by_code(text)', 'execute')::text" \
+    "truetruefalsetrue:false"
+chk "الكلفة: كارتونُ ٢٤ (١ و٢ وراجعٌ −١) = المتوسّط × ٢٤ بمنزلتين (٨٣٣٫٣٣٣٣٣٣ × ٢٤ = ٢٠٠٠٠٫٠٠ لا ١٩٩٩٩٫٩٢)، والشدّةُ ٦ بعددها، وعلبةٌ واحدة كما كانت" \
+    "select concat_ws('|', $(plc ${KG}a1 1 24), $(plc ${KG}a1 2 48), $(plc ${KG}a1 -1 -24), $(plc ${KG}a1 1 6), $(plc ${KG}a1 1 1), $(plc ${KG}a1 3 null))" \
+    "20000.00|20000.00|20000.00|5000.00|833.33|833.33"
+chk "  وسطرٌ لا يطابق كارتوناً محفوظاً (١٢ علبة بلا كارتون ١٢، أو ٢٤ بثلاث منازل زائدة) يسلك فرعَ 0255 كما كان (علبة)" \
+    "select concat_ws('|', $(plc ${KG}a1 1 12), $(plc ${KG}a1 1 24.001), $(plc ${KG}a1 0 24))" "833.33|833.33|833.33"
+chk "  ولمادّةٍ لها وحدةٌ صغرى: الكرتونةُ ١٢ = ١٢ × ١٢٠٠، والمفردُ ÷ ١٠ كما كان، ولا كرتونةَ ٥ ⇒ فرعُ المفرد القديم حرفاً" \
+    "select concat_ws('|', $(plc ${KG}a2 1 12), $(plc ${KG}a2 10 1), $(plc ${KG}a2 1 5))" "14400.00|120.00|120.00"
+chk "  وبلا كراتين (packs فارغ) كما كانت، والحقلُ بكلفة الجهاز ولو له شوال، وعيادةٌ أخرى بكلفة الجهاز" \
+    "select concat_ws('|', $(plc ${KG}a3 1 24), $(plc ${KG}a5 1 4), _product_line_cost('$KC', '${KG}a4', 1, 10, 7))" "500.00|7|7"
+
+L267='[{"product_id":"'${KG}a1'","name":"مغلف كارتون","qty":1,"unit_price":28000,"unit_cost":7,"stock_qty":24,"unit_label":"كارتون"},{"product_id":"'${KG}a1'","name":"مغلف كارتون","qty":3,"unit_price":1250,"unit_cost":7,"stock_qty":3}]'
+chk "البيعة: كارتونٌ وثلاثُ علبٍ من المادّة نفسِها تمرّ" "select $(rt $KC "select retail_checkout('$L267'::jsonb, jsonb_build_object('client_ref', 'k267-1'))")" "rows:1"
+K267INV="(select id from invoices where clinic_id = '$KC' and client_ref = 'k267-1')"
+chk "  الرصيدُ −٢٧ (١٠٠ ⇒ ٧٣)، والكارتونُ سطرُه بكلفة ٢٠٠٠٠ وبـ٢٤ علبة واسمِه، والعلبُ بكلفة ٨٣٣٫٣٣، والمبلغُ ٢٨٠٠٠ + ٣٧٥٠" \
+    "select (select stock::text from products where id = '${KG}a1')||'|'||(select string_agg(qty::text||'×'||unit_price::text||'@'||unit_cost::text||'/'||coalesce(stock_qty::text,'-')||':'||coalesce(unit_label,'-'), ',' order by unit_price desc) from invoice_items where invoice_id = $K267INV)
+            ||'|'||(select total::text from invoices where id = $K267INV)" \
+    "73.000|1.000×28000.00@20000.00/24.000:كارتون,3.000×1250.00@833.33/3.000:-|31750.00"
+K267IT="(select id from invoice_items where invoice_id = $K267INV and unit_label = 'كارتون')"
+chk "مرتجعُ الكارتون على الفاتورة يردّ ٢٤ علبة بالضبط (stock_qty ÷ qty)" \
+    "select $(rt $KC "select return_invoice_items($K267INV, jsonb_build_array(jsonb_build_object('item_id', $K267IT, 'qty', 1)), 'cash', 'k267')")" "rows:1"
+chk "  (٧٣ ⇒ ٩٧)" "select stock::text from products where id = '${KG}a1'" "97.000"
+
+chk "البحثُ برمز الكارتون (بمسافاته وبلاها) والشدّة والمغلّف يجد مادّتَه، والعلبةُ ليست له، ولا غيرُ عيادتنا ولا الحقل ولا الفارغ" \
+    "select concat_ws('|',
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('16291234567897')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code(' 1629 1234 5678 97 ')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('shd-6')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('SUB-10')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('6291234567890')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('OTHER-CTN')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('FARM-CTN')"),
+       $(rv $KC "select string_agg(name, ',') from product_level_by_code('')"))" \
+    "مغلفكارتون|مغلفكارتون|مغلفكارتون|علبةبحبوب|-|-|-|-"
+
+# سؤالُ الواجهة يقرأ الجسمَ الحيّ: جسمٌ بلا علامتنا (إعادةُ 0255 وحدها) ⇒ «لا»، وبعلامتنا ⇒ «نعم».
+cat > "$HERE/.k267_body.sql" <<'SQL'
+create or replace function public._product_line_cost(p_clinic uuid, p_product uuid, p_qty numeric, p_stock_qty numeric, p_device numeric)
+returns numeric language plpgsql stable security definer set search_path = public as $x$
+declare v_p products;
+begin
+  if p_product is null then return p_device; end if;
+  select * into v_p from products where id = p_product and clinic_id = p_clinic;
+  if not found or v_p.farm_id is not null then return p_device; end if;
+  if coalesce(v_p.has_sub_unit, false) and coalesce(v_p.units_per_box, 0) > 0
+     and p_stock_qty is not null and abs(round(p_stock_qty, 3)) <> abs(round(coalesce(p_qty, 0), 3)) then
+    return public._cons_round_div(public.stock_unit_cost(v_p), v_p.units_per_box, 2);
+  end if;
+  return round(public.stock_unit_cost(v_p), 2);
+end $x$;
+SQL
+$P -f "$HERE/.k267_body.sql" >/dev/null
+chk "جسمُ 0255 وحده (تراجعٌ أو إعادةُ 0255): pack_sale_ready «لا»، والكارتونُ يُكلَّف علبة" \
+    "select $(rv $KC "select pack_sale_ready()::text")||'|'||$(plc ${KG}a1 1 24)" "false|833.33"
+out=$($P -f "$MIG/0267_pack_sale.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0267 ما نزلت فوق نصّ 0255"; fail=1; }
+chk "  وإعادةُ 0267 فوقه (حارسُها يعرف نصَّ 0255 ببصمته) ترجعها «نعم» والكلفةَ ٢٠٠٠٠" \
+    "select $(rv $KC "select pack_sale_ready()::text")||'|'||$(plc ${KG}a1 1 24)" "true|20000.00"
+out=$($P -f "$MIG/0267_pack_sale.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0267 ما انعادت"; fail=1; }
+chk "  وتُعاد بلا أثرٍ ثانٍ" "select $(plc ${KG}a1 1 24)||'|'||(select count(*) from pg_proc where proname = '_product_line_cost')::text" "20000.00|1"
+sed -i 's/return round(public.stock_unit_cost(v_p), 2);/return round(public.stock_unit_cost(v_p), 3);/' "$HERE/.k267_body.sql"
+$P -f "$HERE/.k267_body.sql" >/dev/null
+if o=$($P -f "$MIG/0267_pack_sale.sql" 2>&1); then G7=applied; else G7=refused; fi
+chk "جسمٌ غيرُ نصّ 0255 بالشِفرة (تقريبٌ بثلاث) ⇒ 0267 تُرفض بـdrift_body ولا تدهسه" \
+    "select '$G7|'||$(if echo "$o" | grep -q drift_body; then echo "'drift'"; else echo "'other'"; fi)||'|'||$(plc ${KG}a1 1 1)" "refused|drift|833.333"
+sed -i 's/return round(public.stock_unit_cost(v_p), 3);/return round(public.stock_unit_cost(v_p), 2);/' "$HERE/.k267_body.sql"
+$P -f "$HERE/.k267_body.sql" >/dev/null
+out=$($P -f "$MIG/0267_pack_sale.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0267 ما رجعت بعد ردّ الجسم"; fail=1; }
+rm -f "$HERE/.k267_body.sql"
+chk "  وبعد ردّ نصّ 0255 تنزل وترجع الكلفةُ ٢٠٠٠٠ والسؤالُ «نعم»" "select $(plc ${KG}a1 1 24)||'|'||$(rv $KC "select pack_sale_ready()::text")" "20000.00|true"
+
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:
 # بيعةُ خدمةٍ بعده بلا دفترٍ وبكلفة الجهاز، وترجيعُ بيعةٍ سبقته يردّ موادَّها بالضبط، والربطُ يسمّي البيعةَ

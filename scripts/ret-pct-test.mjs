@@ -424,7 +424,7 @@ const MUTANTS = [
   ["البيعةُ الجديدة تُبقي النسبة", "sb", "setCart([]); setRetPct(100);", "setCart([]);"],
   ["المسودّةُ ترجع بشريطٍ على ١٠٠", "sb", "useState<number>(() => retPctOf(draft0?.cart?.find((l) => l.ret) ?? { ret: true }))", "useState<number>(100)"],
   ["إطفاءُ الراجع يُبقي النسبة", "sb", "useEffect(() => { if (!retMode && !cart.some((l) => l.ret)) setRetPct(100); }, [retMode, cart]);", ""],
-  ["عروضُ الحزم تقرأ الراجع", "sb", "computePromotions(cart.filter((l) => !l.ret), promoRules)", "computePromotions(cart, promoRules)"],
+  ["عروضُ الحزم تقرأ الراجع", "sb", "computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(cart.filter((l) => l.saleUnit !== \"pack\"), promoRules)"],
   ["عرضُ الكمّية يكتمل بقطعةٍ تُردّ", "sb", "    if (l.ret) return false;\n    if (r.kind === \"service\")", "    if (r.kind === \"service\")"],
   ["الطريقُ لا يُفرغ السلّة", "sb", "                        onOpenReturns(phone.trim() || c.phone || c.name);\n                        reset();", "                        onOpenReturns(phone.trim() || c.phone || c.name);"],
   ["الطريقُ بعد محاولةٍ مجهولة", "sb", "onOpenReturns={onOpenReturns && !busy && !saleRefSaved ? () => {", "onOpenReturns={onOpenReturns && !busy ? () => {"],

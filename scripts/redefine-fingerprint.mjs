@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -58,6 +58,8 @@ export const MANIFEST = [
   ["verify_consumption_wiring", 0, "public.verify_consumption_wiring()", "0255", "0260"],
   // 0261: الراجيتةُ «ملف طبي» بسجلّ الحركات — audit_kind نصُّ 0242 (آخرُ من عرّفها) وسطرٌ معلَّم.
   ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0242", "0261"],
+  // 0267: البيعُ بالكارتون — كلفةُ سطرٍ يطابق كارتوناً محفوظاً = المتوسّط × عددُ علبه (نصُّ 0255 وفرعٌ معلَّم قبل فرعَيه).
+  ["_product_line_cost", 5, "public._product_line_cost(uuid,uuid,numeric,numeric,numeric)", "0255", "0267"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

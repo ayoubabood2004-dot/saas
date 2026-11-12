@@ -6,7 +6,8 @@
  *      وصاحبُ الرمز (العلبةُ مقابلَ العلبة ليست له)، والمسودّةُ تُرفض بما يرفضه القيد، ولا يُرسل ما لم يتغيّر.
  *   ب) المرآة: القيدُ وحارسُ المستويات والطيُّ والفكُّ والاسترجاع — بحالات قسم 0259 حرفاً.
  *   ج) المستودعُ التجريبيّ نفسُه: إنشاءٌ وتعديلٌ ودمجٌ وفكٌّ وحذفٌ واسترجاعٌ و«رتّب المخزن».
- *   د) الأسلاك: البيعُ لا يعرف الكارتون بعد (findByCode للعلبة وحدها)، والنطاقُ مملوكٌ ويُحمَّل مع الصفحة، والسقوفُ سقوفُ القيد.
+ *   د) الأسلاك: findByCode للعلبة وحدها والكارتونُ والمغلّفُ من بابهما (packSale، 0267 — يفحصه بسلوكه pack-sale-test)، والنطاقُ
+ *      مملوكٌ ويُحمَّل مع الصفحة، والسقوفُ سقوفُ القيد.
  *
  *   node scripts/packs-test.mjs
  * ==========================================================================*/
@@ -271,11 +272,12 @@ console.log("▸ المستودعُ التجريبيّ: إنشاءٌ وتعدي�
 }
 
 /* ── د) الأسلاك ──────────────────────────────────────────────────────────── */
-console.log("▸ الأسلاك: البيعُ لا يعرف الكارتون بعد، والنطاقُ مملوك، والسقوفُ سقوفُ القيد");
+console.log("▸ الأسلاك: العلبةُ لـfindByCode والكارتونُ لبابه، والنطاقُ مملوك، والسقوفُ سقوفُ القيد");
 {
   const P = [prod("p", { barcode: "B-1", packs: [pk("c", 12, ["C-1"])], has_sub_unit: true, units_per_box: 5, sub_codes: ["S-1"] })];
-  check("findByCode (البيعُ والشراء) للعلبة وحدها: رمزُ الكارتون والمغلّف «ما ينعرف» — لا يُباع كارتونٌ بسعر علبة (المرحلة ٣)",
-    findByCode(P, "B-1")?.id === "p" && findByCode(P, "C-1") === undefined && findByCode(P, "S-1") === undefined);
+  check("findByCode للعلبة وحدها: رمزُ الكارتون والمغلّف لا يُرجع المادّةَ علبةً (لا يُباع كارتونٌ بسعر علبة) — بابُهما levelByCode بمستواه",
+    findByCode(P, "B-1")?.id === "p" && findByCode(P, "C-1") === undefined && findByCode(P, "S-1") === undefined
+    && K.levelByCode(P, "c-1")?.level === "pack" && K.levelByCode(P, "C-1")?.pack?.per === 12 && K.levelByCode(P, "S-1")?.level === "sub");
   const mig = src("supabase/migrations/0259_product_packs.sql");
   check("سقوفُ الواجهة سقوفُ القيد بالهجرة (٤ كراتين، ٥ رموز، ٢٠ حرفاً، العددُ ٢–١٠٠٠٠٠، ٦٤ للرمز)",
     /jsonb_array_length\(p\) > 4/.test(mig) && /<= 5/.test(mig) && /between 2 and 100000/.test(mig) && /not between 1 and 64/.test(mig) && /between 1 and 20/.test(mig)
@@ -285,7 +287,11 @@ console.log("▸ الأسلاك: البيعُ لا يعرف الكارتون ب�
     hp.owned.pkg?.owner === "src/pages/Inventory.tsx" && hp.owned.pkg.with.includes("src/components/inventory/PackagingEditor.tsx")
     && /import\("@\/pages\/Inventory"\)[^;]*\["pkg"\]/.test(code("src/App.tsx")));
   const sb = code("src/components/retail/SaleBuilder.tsx");
-  check("شاشةُ البيع لا تستورد التعبئةَ بعد (حزمةُ الإقلاع وفسحتُها، والمرحلةُ ٣ تحملها)", !/@\/lib\/packs|@\/lib\/packsMirror/.test(sb));
+  check("شاشةُ البيع لا تستورد التعبئةَ ثابتاً (قطعةُ البيع وفسحةُ الإقلاع) — بابُها packSale بـimport() (0267)",
+    !/from\s*["']@\/lib\/(packs|packsMirror|packSale)["']/.test(sb) && /import\("@\/lib\/packSale"\)/.test(sb));
+  const pu = code("src/components/inventory/Purchases.tsx");
+  check("وفاتورةُ الشراء تعرف رمزَ الكارتون قبل «مادّةٌ جديدة» (levelByCode بعد العلبة وقبل صيغ الماسح)",
+    /const lv = levelByCode\(products, raw\);/.test(pu) && pu.indexOf("const lv = levelByCode(products, raw);") < pu.indexOf("rescueScan(products, raw)"));
   const inv = code("src/pages/Inventory.tsx");
   check("النموذجُ يرسل التعبئةَ بـpackagingPatch وحدها (ما لم يتغيّر لا يُرسل)، ويقول صاحبَ الرمز قبل الشبكة",
     /\.\.\.pkgFields/.test(inv) && /packagingPatch\(product \?\? null/.test(inv) && /firstTakenCode\(/.test(inv) && /packagingFromDraft\(/.test(inv));

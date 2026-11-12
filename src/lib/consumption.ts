@@ -116,6 +116,8 @@ export interface ConsProduct {
   units_per_box?: number | string | null;
   pooled?: boolean | null;
   farm_id?: string | null;
+  /** 0259: الكراتين — `[{ per, … }]` كما يخزّنها العمود (jsonb). */
+  packs?: unknown;
 }
 
 /** `stock_unit_cost(p)` بالمليون = greatest(coalesce(avg_cost, purchase_price, 0), 0) (0255، الملخّص §A3).
@@ -246,6 +248,20 @@ export function lineCents(qtyMilli: bigint, priceCents: bigint): bigint {
   return roundDiv(qtyMilli * priceCents, 1000n);
 }
 
+/** 0267: عددُ علب الكارتون الذي يطابقه سطرٌ — بالمليار — مرآةُ فرع `_product_line_cost`: كارتونٌ محفوظٌ بـ`packs` (عددُه رقمٌ ≥ ٢)
+ *  و round(per × |qty|, 3) = |stock_qty|، وqty ≠ 0 وstock_qty حاضرة؛ وإلا null (السطرُ يسلك فرعَي 0255). أوّلُ كارتونٍ يطابق — والعددُ
+ *  نفسُه لأيّ مطابق (per × |qty| يحدّده). */
+export function packPerNano(p: Pick<ConsProduct, "packs">, qtyM: bigint, stockQtyM: bigint | null | undefined): bigint | null {
+  if (stockQtyM == null || qtyM === 0n || !Array.isArray(p.packs)) return null;
+  for (const k of p.packs as unknown[]) {
+    const per = k && typeof k === "object" ? (k as { per?: unknown }).per : undefined;
+    if (typeof per !== "number" || !Number.isFinite(per) || per < 2) continue;
+    const perN = roundScaled(per, 9);
+    if (roundDiv(perN * abs(qtyM), 1_000_000_000n) === abs(stockQtyM)) return perN;
+  }
+  return null;
+}
+
 /** `_product_line_cost` (0255، الملخّص §A4): كلفةُ سطر مادّةٍ بالفلوس يحسبها الخادم.
  *  مادّةٌ حيّةٌ بالعيادة لا حقلَ لها: سطرٌ بالوحدة الصغيرة (has_sub_unit و units_per_box > 0 و stock_qty حاضرة
  *  و |stock_qty| ≠ |qty|) ← _cons_round_div(k, units_per_box, 2) = (ku/10⁶)/(upb_m/10³)·10² = ku/(upb_m·10)؛
@@ -258,6 +274,9 @@ export function productLineCostCents(
 ): bigint {
   if (!p || p.farm_id) return deviceC;
   const k = stockUnitCost(p);
+  // 0267: سطرُ كارتون ← round(k × per, 2) = k·perN / 10¹³ (k بالمليون وper بالمليار).
+  const perN = packPerNano(p, qtyM, stockQtyM);
+  if (perN !== null) return roundDiv(k * perN, 10_000_000_000_000n);
   const upb = subUnitMilli(p);
   if (upb !== null && stockQtyM != null && abs(stockQtyM) !== abs(qtyM)) return roundDiv(k, upb * 10n);
   return roundDiv(k, 10_000n);
