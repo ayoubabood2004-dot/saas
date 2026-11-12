@@ -32,6 +32,7 @@ import { getExpiryWindows } from "@/lib/settings";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 import { purchaseDiscountReady } from "@/lib/purchaseApi";
+import { levelByCode, packPrice, type CodeHit } from "@/lib/packs";
 /* أنماطُ الجدول التي لا تملكها الورقةُ العامّة — تصل مع هذه القطعة الكسولة لا بحزمة الإقلاع (store-weight-guard). */
 import "./purchaseGrid.css";
 
@@ -744,6 +745,41 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     scanRef.current?.focus();
   };
 
+  /** 0267: جملةُ المسح بالكارتون من نطاقها المملوك (pks — مالكُه PackSale بشاشة البيع؛ هنا بـimport() وensureOwned، والنصفُ البارد
+   *  على سقفه). فشلُ القطعة يُسكت الجملةَ وحدها — السطرُ نزل. */
+  const sayPack = (tone: "info" | "warn", build: (m: typeof import("@/components/retail/PackSale")) => string) => {
+    void Promise.all([import("@/components/retail/PackSale"), import("@/i18n").then((i) => i.ensureOwned("pks"))])
+      .then(([m]) => toast.toast({ tone, title: build(m) }), () => { /* swallow-ok: السطرُ نزل، والجملةُ وحدها غابت */ });
+  };
+  /** 0267: رمزُ كارتونٍ أو مغلّفٍ بفاتورة الشراء. كان يسقط إلى «مادّةٌ جديدة» بباركود الكارتون — والحفظُ يرفضه حارسُ المستويات
+   *  (الرمزُ لكارتون مادّةٍ قائمة). الكارتونُ يضيف علبَه لسطر مادّته (الشراءُ بالعلبة، وسعرُ السطر للعلبة كما هو)، ويُقال سعرُه
+   *  المكتوب إن خالف العلبةَ × العدد؛ والمغلّفُ يُقال ولا ينزل (كسرُ علبةٍ بفاتورة شراء خطأُ إدخال). */
+  const addLevelLine = (lv: CodeHit) => {
+    const p = lv.product;
+    setScan("");
+    scanRef.current?.focus();
+    const unitOf = (m: typeof import("@/components/retail/PackSale")) => (p.unit_name ?? "").trim() || m.packWords().box;
+    if (lv.level === "pack" && lv.pack) {
+      const k = lv.pack;
+      setLines((ls) => {
+        const existing = ls.find((l) => l.product_id === p.id);
+        if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + k.per) } : l));
+        const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
+        return [...base, { ...lineFromProduct(p, p.barcode ?? ""), qty: String(k.per) }];
+      });
+      playTap();
+      const written = k.purchase_price != null && Number.isFinite(k.purchase_price);
+      const derived = Math.round((Number(p.purchase_price) || 0) * 100) * k.per / 100;
+      sayPack("info", (m) => (written && k.purchase_price !== derived
+        ? m.packSay({ kind: "buyPackPrice", name: p.name, pack: k.name, per: k.per, unit: unitOf(m), price: money(packPrice(p, k, "purchase")),
+            each: money(Math.round((packPrice(p, k, "purchase") / k.per) * 100) / 100) })
+        : m.packSay({ kind: "buyPack", name: p.name, pack: k.name, per: k.per, unit: unitOf(m) })));
+      return;
+    }
+    playWarning();
+    sayPack("warn", (m) => m.packSay({ kind: "buySub", name: p.name, sub: (p.sub_unit_name ?? "").trim() || m.packWords().sub, unit: unitOf(m) }));
+  };
+
   /** دفعةٌ من المنتقي: سطرٌ لكلّ منتج، والقائمُ منها **يُجمَع** لا يُكرَّر.
    *  والدمجُ بنفس قاعدة الماسح (`addProductLine`) كي لا يكون للشاشة سلوكان. */
   const addPickedLines = (picks: PickedLine[]) => {
@@ -824,6 +860,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     const hit = matchCode(raw);
     // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
     let match = byBarcode.get(hit);
+    // 0267: كارتونٌ أو مغلّفٌ بالمطابقة التامّة — قبل صيغ الماسح والاسم وقبل «مادّةٌ جديدة».
+    if (!match) {
+      const lv = levelByCode(products, raw);
+      if (lv && lv.level !== "box") { addLevelLine(lv); return; }
+    }
     /* طبقاتُ النجدة نفسُها التي بشاشة البيع — كانت هذه الشاشةُ عمياءَ عنها،
      * فماسحٌ مضبوطٌ على AIM أو GTIN-14 يُنشئ **توأماً** بكلّ استلامِ بضاعة:
      * البيعُ تنقذه `rescueScan` فيبيع من الأصل، والأصلُ يبقى صفراً وكلُّ مسحةِ

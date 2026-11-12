@@ -10,6 +10,7 @@ import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
 import { cn, formatNum, formatQty, money, searchable } from "@/lib/utils";
 import { codeMatcher } from "@/lib/productCodes";
+import { levelMatcher } from "@/lib/packs";
 import { describeDbError, withTimeout } from "@/lib/errors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
@@ -274,8 +275,10 @@ export function StockCount() {
     if (!ready || s.length < 2) return [];
     /* الطرفان من نفس الدالّة (CLAUDE.md §٣): الاسمُ بـsearchable، والرمزُ بمصدره الواحد codeMatcher — طيُّ الحالة
        («w90» = «W90») وجزءُ الرمز الأساسيّ أو الإضافيّ كالبيع والشراء؛ === كان لا يلقى رقمَ رفٍّ بحروفٍ صغيرة. */
+    // 0267: ورمزُ الكارتون أو المغلّف يلقى مادّتَه (كبحث المخزون) — مسحُ الكارتون بالرفّ كان «ماكو». العددُ بوحدة الرصيد كما هو.
+    const byLevel = levelMatcher(q);
     const byCode = codeMatcher(q);
-    return ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && (searchable(p.name).includes(s) || byCode(p))).slice(0, 8);
+    return ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && (searchable(p.name).includes(s) || byCode(p) || !!byLevel(p))).slice(0, 8);
   }, [q, ready, pendingIds]);
 
   /* «ما انعدّت أبداً»: قابلةٌ للعدّ، بلا عدٍّ مطابقٍ أو موافَقٍ عليه بتعريف الخادم (countedIds)، ولا عدٍّ معلَّق (لا يُعدّ ثانيةً قبل

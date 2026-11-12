@@ -246,9 +246,9 @@ check("كلُّ إضافةِ منتجٍ تمرّ من sellOrExplain — لا ن�
 check("  ومسارُ ذيل الباركود (matchTruncatedCode) منها",
   /const r = await sellOrExplain\(cut, n\);/.test(SBN));
 /* المضاعِفُ يُستهلك **قبل** السؤال (كان يبقى مسلَّحاً حتى ٦ ثوانٍ فيلتقطه الصنفُ التالي)،
- * ويُعاد عند الرفض ما لم يُسلَّح غيرُه — بالكرت والمسح وذيل الباركود ثلاثتِها. */
+ * ويُعاد عند الرفض ما لم يُسلَّح غيرُه — بالكرت والمسح وذيل الباركود ورمزِ الكارتون أو المغلّف (sellLevel، 0267) أربعتِها. */
 const rearm = (SBN.match(/if \(r\.refused && armed != null\) setMult\(\(cur\) => cur \?\? armed\);/g) ?? []).length;
-check("المضاعِفُ يُعاد عند الرفض بثلاثة المسارات (كرت، مسح، ذيل)", rearm === 3, `طلعت ${rearm}`);
+check("المضاعِفُ يُعاد عند الرفض بأربعة المسارات (كرت، مسح، ذيل، كارتون/مغلّف)", rearm === 4, `طلعت ${rearm}`);
 const tapNow = SBN.slice(SBN.indexOf("const tapProduct = "), SBN.indexOf("\n  };", SBN.indexOf("const tapProduct = ")));
 check("  ويُستهلك قبل السؤال لا بعده (الكرت)",
   tapNow.indexOf("if (armed != null) setMult(null);") > 0 && tapNow.indexOf("if (armed != null) setMult(null);") < tapNow.indexOf("sellOrExplain("));

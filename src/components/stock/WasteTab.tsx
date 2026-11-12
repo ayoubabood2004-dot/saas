@@ -9,6 +9,7 @@ import { cn, formatDate, formatNum, formatQty, formatTime, matchCode, money, sea
 import { describeDbError, withTimeout } from "@/lib/errors";
 import { countable } from "@/lib/countPick";
 import { codeMatcher } from "@/lib/productCodes";
+import { levelMatcher } from "@/lib/packs";
 import { holdUpdates } from "@/lib/inflight";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -434,8 +435,10 @@ export default function WasteTab({ products, failed, pendingIds, isManager, show
     /* الطرفان من نفس الدالّة (CLAUDE.md §٣): الاسمُ بـsearchable، والرمزُ بمصدره الواحد codeMatcher (matchCode: طيُّ
        الحالة «w90» = «W90»، وجزءُ الرمز الأساسيّ أو الإضافيّ كالبيع والمحرّر) — كان === بلا طيّ ولا جزء، فرقمُ رفٍّ
        بحروفٍ صغيرة أو أربعُ خاناتٍ من باركود لا تلقى مادةً برفّها، و«ماكو» يُصدَّق. */
+    // 0267: ورمزُ الكارتون أو المغلّف يلقى مادّتَه (كبحث المخزون) — مسحُ الكارتون بالرفّ كان «ماكو». العددُ بوحدة الرصيد كما هو.
+    const byLevel = levelMatcher(q);
     const byCode = codeMatcher(q);
-    const all = products.filter((p) => countable(p) && !lines.some((l) => l.id === p.id) && (searchable(p.name).includes(s) || byCode(p)));
+    const all = products.filter((p) => countable(p) && !lines.some((l) => l.id === p.id) && (searchable(p.name).includes(s) || byCode(p) || !!byLevel(p)));
     /* رمزٌ كُتب كاملاً («47» رقمُ رفّ) لا يضيّقه حرفٌ آخر: مطابقُه بالضبط (الأساسيُّ أو الإضافيّ، بالتطبيع نفسه) أوّلاً — الجزئيُّ
        كان يدفعه خلف باركوداتٍ تحويه فقط فيسقط خارج السقف. والسقفُ يقول إنه سقف: «و٤ غيرها — اكتب أكثر» (كالورقة والبيع)؛
        قائمةٌ قُصّت بصمت تُصدَّق «ماكو» فيُختار أقربُ اسم أو تُدخل المادةُ ثانيةً. */

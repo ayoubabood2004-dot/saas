@@ -790,7 +790,8 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
                 <div key={it.id} className="flex items-center gap-3 px-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{it.name}</p>
-                    <p className="text-xs text-ink-subtle">{it.qty} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}</p>
+                    {/* الوحدةُ كما بالمطبوع («٤ كارتون × ٣٠٬٠٠٠»): كارتونٌ (0267) أو مفردٌ بلاها يُقرأ علبة. */}
+                    <p className="text-xs text-ink-subtle">{it.qty}{it.unit_label ? ` ${it.unit_label}` : ""} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}</p>
                   </div>
                   <span className="text-sm font-bold tabular-nums text-ink">{usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd == null ? null : Math.round(it.unit_price_usd * it.qty * 100) / 100)}</bdi> : money(it.line_total)}</span>
                 </div>

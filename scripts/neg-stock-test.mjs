@@ -1738,7 +1738,7 @@ const MUTANTS = [
   ["الرفعُ يتجاهل المعدودة", "!!p && now.active && !!negMod && negMod.liftable(p, now.counted) && productLineCost(p, per, -1) > 0;", "!!p && now.active && !!negMod && negMod.liftable(p, new Set()) && productLineCost(p, per, -1) > 0;"],
   ["الرفعُ يتجاهل الكلفة", "negMod.liftable(p, now.counted) && productLineCost(p, per, -1) > 0;", "negMod.liftable(p, now.counted);"],
   ["الرفعُ بلا وضعٍ مفعّل", "!!p && now.active && !!negMod && negMod.liftable(p, now.counted) && productLineCost(p, per, -1) > 0;", "!!p && !!negMod && negMod.liftable(p, now.counted) && productLineCost(p, per, -1) > 0;"],
-  ["السطرُ لا يُعلَّم", "const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > unitCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);", "const markLift = (l: Line, _now = negNow()): Line => l;"],
+  ["السطرُ لا يُعلَّم", "const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > shareCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);", "const markLift = (l: Line, _now = negNow()): Line => l;"],
   ["البيعةُ لا تسأل الخادم", "const negP = negSkip ? null : negCheckNow(negLines);", "const negP = null as Promise<NegCheck | \"unsure\"> | null;"],
   ["الرفضُ لا يوقف البيعة", "    if (negBad) { playWarning(); setNegChk({ ...negBad, ack, locked: !!saleRefRef.current }); return; }\n", ""],
   ["«ما تأكّدنا» يمرّ", "    if (res === \"unsure\") {\n      return {", "    if (res === \"unsure\") return null;\n    if (res === (\"x\" as never)) {\n      return {"],
@@ -1788,7 +1788,7 @@ const MUTANTS = [
   ["جلبٌ زائدٌ لكلّ «انعدّت»", "&& !negNow().counted.has(r.productId));", ");"],
   ["سطرٌ قائمٌ بلا مكان يقول «المتوفّر 0»", "        const stale = on && !ns.active && !!negMod && negMod.liftable(sellable, ns.counted);", "        const stale = false;"],
   ["«جرّب ثانيةً» لا يكمل", "onRetry={() => { const a = negChk.ack; setNegChk(null); negResumeRef.current = a; }}", "onRetry={() => { setNegChk(null); }}"],
-  ["الفحصُ بكمّيةٍ غيرِ ما ترسله البيعة", "    return per ? Math.round((l.qty / per) * 1000) / 1000 : l.qty;", "    return l.qty;"],
+  ["الفحصُ بكمّيةٍ غيرِ ما ترسله البيعة", "  const negStockQty = (l: Line): number => lineStockQty(l);", "  const negStockQty = (l: Line): number => l.qty;"],
 ];
 for (const [name, from, to] of MUTANTS) {
   const fell = [];

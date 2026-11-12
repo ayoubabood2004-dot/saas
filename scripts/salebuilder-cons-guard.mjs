@@ -221,7 +221,7 @@ function textChecks(src) {
     setSaleUnit: fnBody("const setSaleUnit = (id: string", "\n    }));"),
   };
   ck("١٢) كلفةُ سطر المادّة من مرآة الخادم (productLineCostCents) بـimport(\"@/lib/consumption\") مرّةً واحدة — لا حسابَ ثانٍ هنا",
-    code.split('import("@/lib/consumption")').length - 1 === 1 && /m\.productLineCostCents\(/.test(loadFn) && /lineCostFn = \(p, per\) =>/.test(loadFn),
+    code.split('import("@/lib/consumption")').length - 1 === 1 && /m\.productLineCostCents\(/.test(loadFn) && /lineCostFn = \(p, per(, pack)?\) =>/.test(loadFn),
     loadFn.replace(/\s+/g, " ").slice(0, 200));
   ck("  وكلُّ موضعٍ يُنشئ كلفةَ سطر مادّة يمرّ من productLineCost (المرتجع، الوزن، العلبة/المفرد، التبديل) — لا بسعر الشراء خاماً",
     Object.values(sites).every((b) => /unit_cost[^\n]*productLineCost\(/.test(b)) && !/unit_cost: p\.purchase_price\b/.test(code) && !/unit_cost: startSub \? subCost/.test(code),
@@ -1209,10 +1209,12 @@ async function failChecks(M, ck, setFail, setHold) {
  * وفشلُه صامت (الورقةُ والإشعارُ يقولان فشلَهما بمكانهما) ويُعاد بالفتحة التالية. */
 async function warmChecks(M, ck, setWarmFail) {
   const P = () => globalThis.__pages ?? [];
-  // ومعها منذ 0258 ثلاثُ قطع خانات الطبيب (الشريطُ والشبكةُ والمحرّر) بنطاقها ptab — قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
+  // ومعها منذ 0258 ثلاثُ قطع خانات الطبيب (الشريطُ والشبكةُ والمحرّر) بنطاقها ptab، ومنذ 0267 تسخينُ نصوص الكارتون بنطاقها pks —
+  // قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
   const rcpPages = () => P().filter((p) => J(p.ns) === J(["rcp"]));
-  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab ولا غيرُها",
-    rcpPages().length === 3 && P().length === 6 && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"])), J(P().map((p) => p.ns)));
+  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab، وتسخينُ الكارتون بـpks، ولا غيرُها",
+    rcpPages().length === 3 && P().length === 7 && P().filter((p) => J(p.ns) === J(["pks"])).length === 1
+      && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"]) || J(p.ns) === J(["pks"])), J(P().map((p) => p.ns)));
   setWarmFail(true);
   const loud = console.error;
   console.error = () => {};   // React يكتب الخطأَ الممسوك بالكونسول — المقيسُ أنه لم يُفلت

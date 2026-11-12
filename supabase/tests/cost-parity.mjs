@@ -88,7 +88,7 @@ function gen() {
 
   // ── كلفةُ سطر المادّة: موادُّ بكلّ شكل، ولكلٍّ سطورٌ بكلّ شكل ──
   const products = [];
-  const addP = (pp, avg, sub, upb, farm) => { const id = pid(products.length); products.push({ id, pp, avg, sub, upb, farm }); return id; };
+  const addP = (pp, avg, sub, upb, farm, packs = null) => { const id = pid(products.length); products.push({ id, pp, avg, sub, upb, farm, packs }); return id; };
   const COSTS = [...["-50", "0", "0.01", "999.99", "1250", "25000"].map((pp) => [pp, null]),
     ...["0", "0.000001", "0.004999", "0.005", "1.005", "128.17", "390.476190", "1171.428572", "25000", "99999999.999999"].map((a) => ["1250", a])];
   const SUBS = [[false, null], [false, "12"], [true, null], [true, "0"], [true, "0.001"], [true, "0.5"], [true, "1"],
@@ -113,6 +113,25 @@ function gen() {
       plc.push({ cl: PCL, p: id, q: D(q * 1000, 3), sq, d: pick(DEV) });
     }
   }
+  // 0267: موادُّ بكراتين — سطرٌ يطابق كارتوناً (والراجعُ ونصفُ الكارتون)، وسطرٌ بعددٍ لا كارتونَ له، وبثلاث منازل زائدة، وكميةٌ صفر.
+  const PK = (...pers) => pers.map((per, i) => ({ id: `k${i}`, name: `ك${per}`, codes: [], per, purchase_price: null, sell_price: null }));
+  const PLINES = [["1", "24"], ["2", "48"], ["-1", "-24"], ["1", "6"], ["3", "18"], ["1", "12"], ["1", "24.001"], ["0", "24"], ["0.5", "12"],
+    ["1", "1"], ["10", "1"], ["1", null], ["-2", "48"], ["0.001", "0.024"]];
+  for (const [pp, avg] of COSTS) for (const [sub, upb] of [[false, null], [true, "10"], [true, "24"]]) for (const farm of [false, true]) {
+    const id = addP(pp, avg, sub, upb, farm, PK(24, 6));
+    PLINES.forEach(([q, sq], k) => plc.push({ cl: PCL, p: id, q, sq, d: DEV[(plc.length + k) % DEV.length] }));
+  }
+  for (let i = 0; i < 300; i++) {
+    const pers = [int(2, 100), ...(R() < 0.4 ? [int(2, 1000)] : [])];
+    const sub = R() < 0.4;
+    const id = addP(pick(["0", D(int(1, 100_000_000), 2), D(int(1, 99), 2)]), R() < 0.4 ? null : pick(["0", D(int(1, 99_999_999_999), 6), D(int(1, 9_999), 6)]),
+      sub, sub ? pick(["3", "10", "2.5", "100"]) : null, false, PK(...pers));
+    for (let k = 0; k < 4; k++) {
+      const n = (R() < 0.15 ? -1 : 1) * int(1, 50), per = pick(pers);
+      const sq = R() < 0.7 ? n * per : R() < 0.5 ? n * per + (R() < 0.5 ? 1 : -1) : n;
+      plc.push({ cl: PCL, p: id, q: String(n), sq: R() < 0.05 ? null : String(sq), d: pick(DEV) });
+    }
+  }
   // مادّةٌ مجهولة، ومادّةُ عيادةٍ أخرى (موجودةٌ هناك)، وسطرٌ بلا مادّة: كلُّها بكلفة الجهاز.
   const foreign = pid(products.length); products.push({ id: foreign, pp: "4000", avg: "4100", sub: true, upb: "10", farm: false, clinic: POTHER });
   for (const p of [...UNKNOWN, foreign, null]) LINES.forEach(([q, sq], k) => plc.push({ cl: PCL, p, q, sq, d: DEV[k % DEV.length] }));
@@ -122,11 +141,11 @@ function gen() {
 
   const q = (v) => (v == null ? "null" : `'${String(v).replace(/'/g, "''")}'`);
   const rows = products.map((p) => `(${q(p.id)}, ${q(p.clinic ?? PCL)}, ${q(`تطابق الكلفة ${p.id.slice(-5)}`)}, 1, ${p.pp}, ${p.avg ?? "null"}, `
-    + `${p.sub}, ${p.sub ? "'حبّة'" : "null"}, ${p.upb ?? "null"}, ${p.farm ? q(FARM) : "null"})`);
+    + `${p.sub}, ${p.sub ? "'حبّة'" : "null"}, ${p.upb ?? "null"}, ${p.farm ? q(FARM) : "null"}, ${p.packs ? `${q(JSON.stringify(p.packs))}::jsonb` : "null"})`);
   fs.writeFileSync(path.join(dir, "seed.sql"), [
     `insert into auth.users(id) values (${q(PCL)}), (${q(POTHER)}) on conflict do nothing;`,
     `insert into poultry_farms(id, clinic_id, name) values (${q(FARM)}, ${q(PCL)}, 'حقل التطابق') on conflict (id) do nothing;`,
-    `insert into products (id, clinic_id, name, stock, purchase_price, avg_cost, has_sub_unit, sub_unit_name, units_per_box, farm_id) values`,
+    `insert into products (id, clinic_id, name, stock, purchase_price, avg_cost, has_sub_unit, sub_unit_name, units_per_box, farm_id, packs) values`,
     rows.join(",\n") + "\non conflict (id) do nothing;",
   ].join("\n") + "\n");
 
@@ -147,7 +166,7 @@ function gen() {
     `  'unit', (select json_agg(json_build_array(x.i, _purchase_unit_cost(x.c, x.net, x.gross)::text) order by x.i)`,
     `           from jsonb_to_recordset(${J(unit, ["c", "net", "gross"])}) as x(i int, c numeric, net numeric, gross numeric)),`,
     `  'rows', (select json_object_agg(p.id, json_build_object('purchase_price', p.purchase_price, 'avg_cost', p.avg_cost, 'has_sub_unit', p.has_sub_unit,`,
-    `                                  'units_per_box', p.units_per_box, 'pooled', p.pooled, 'farm_id', p.farm_id))`,
+    `                                  'units_per_box', p.units_per_box, 'pooled', p.pooled, 'farm_id', p.farm_id, 'packs', p.packs))`,
     `             from products p where p.clinic_id = ${q(PCL)})`,
     ")::text;",
   ].join("\n") + "\n");
@@ -236,6 +255,8 @@ async function check() {
   for (const x of cases.plc) {
     const p = x.p == null ? undefined : rowsById[x.p];
     if (!p) tag("plc:device_unknown"); else if (p.farm_id) tag("plc:device_farm");
+    else if (M.packPerNano(p, mi(x.q), mi(x.sq)) !== null) tag("plc:pack");
+    else if (Array.isArray(p.packs) && x.sq != null && Number(x.q) !== 0 && Math.abs(Number(x.sq)) > Math.abs(Number(x.q))) tag("plc:pack_miss");
     else if (p.has_sub_unit && Number(p.units_per_box) > 0 && x.sq != null && Math.abs(Number(x.sq)) !== Math.abs(Number(x.q))) tag("plc:sub"); else tag("plc:box");
   }
   for (const x of cases.unit) {
@@ -245,7 +266,7 @@ async function check() {
   const NEED = { "base:null": 10, "base:value": 10, "receive:keep_a": 200, "receive:unknown_a": 200, "receive:s_le_0": 200, "receive:weighted": 200,
     "variance:null": 200, "variance:value": 200, "adjust:s1_le_0": 100, "adjust:divide": 100, "adjust:c_last": 100,
     "merge:weighted": 100, "merge:no_weight": 50, "merge:a2": 100, "merge:a1": 100,
-    "plc:device_unknown": 40, "plc:device_farm": 100, "plc:sub": 300, "plc:box": 300,
+    "plc:device_unknown": 40, "plc:device_farm": 100, "plc:sub": 300, "plc:box": 300, "plc:pack": 600, "plc:pack_miss": 150,
     "unit:as_is": 200, "unit:share": 500, "unit:all_off": 30 };
   const thin = Object.entries(NEED).filter(([k, v]) => (tally[k] ?? 0) < v).map(([k, v]) => `${k} ${tally[k] ?? 0} < ${v}`);
   if (thin.length) no("والقالبُ يقيس كلَّ فرع (حالاتٌ كافية بكلّ فرعٍ من النصّ)", thin.join("، "), "كلُّ فرعٍ فوق حدّه");
@@ -269,6 +290,14 @@ async function check() {
     "الوحدةُ الصغيرة تُقطع ولا تُقرَّب": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; if (!p || p.farm_id) return ce(x.d);
       const k = M.stockUnitCost(p), u = M.subUnitMilli(p), q = mi(x.q), sq = mi(x.sq);
       if (u !== null && sq !== null && (sq < 0n ? -sq : sq) !== (q < 0n ? -q : q)) return k / (u * 10n); return M.roundDiv(k, 10_000n); }],
+    // 0267: بلا فرع الكارتون (كما قبلها) — كارتونٌ يُكلَّف علبةً أو مفرداً.
+    "الكارتونُ يُكلَّف علبة (بلا فرع 0267)": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; return !p ? ce(x.d) : M.productLineCostCents({ ...p, packs: null }, mi(x.q), mi(x.sq), ce(x.d)); }],
+    "الكارتونُ يقرّب العلبةَ قبل الضرب (round(k,2) × per)": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; if (!p || p.farm_id) return ce(x.d);
+      const perN = M.packPerNano(p, mi(x.q), mi(x.sq)); if (perN === null) return M.productLineCostCents(p, mi(x.q), mi(x.sq), ce(x.d));
+      return M.roundDiv(M.roundDiv(M.stockUnitCost(p), 10_000n) * perN, 1_000_000_000n); }],
+    "الكارتونُ بالإشارة (stock_qty = per × qty لا بالقيمة المطلقة)": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; if (!p || p.farm_id) return ce(x.d);
+      const q = mi(x.q), sq = mi(x.sq); const signed = q !== null && sq !== null && q !== 0n && Array.isArray(p.packs) && p.packs.some((k) => typeof k?.per === "number" && BigInt(k.per) * q === sq);
+      return signed ? M.productLineCostCents(p, q, sq, ce(x.d)) : M.productLineCostCents({ ...p, packs: null }, q, sq, ce(x.d)); }],
     "مادّةُ الحقل بكلفة الخادم": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; return !p ? ce(x.d) : M.productLineCostCents({ ...p, farm_id: null }, mi(x.q), mi(x.sq), ce(x.d)); }],
     "النصيبُ يُقطع ولا يُقرَّب": ["unit", (x) => { const c = mu(x.c), net = ce(x.net), g = ce(x.gross);
       if (c === null || c <= 0n || g === null || g <= 0n || (net ?? g) >= g) return c; return (c * (net > 0n ? net : 0n)) / g; }],

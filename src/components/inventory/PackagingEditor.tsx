@@ -10,7 +10,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Boxes, Plus, Trash2 } from "lucide-react";
 import type { Product } from "@/types";
-import { cn, money, normalizeCode, matchCode } from "@/lib/utils";
+import { cn, formatNum, money, normalizeCode, matchCode } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { PACK_LIMITS, codeOwner, newPackId, type CodeLevel, type PackDraft, type PackagingDraft } from "@/lib/packs";
 
@@ -92,11 +92,41 @@ export default function PackagingEditor(props: PackagingEditorProps) {
   const blocked = byWeight || pooled;
   const set = (patch: Partial<PackagingDraft>) => onChange({ ...d, ...patch });
   const setPack = (i: number, patch: Partial<PackDraft>) => set({ packs: d.packs.map((k, j) => (j === i ? { ...k, ...patch } : k)) });
-  const derivedPack = (per: string, box: number) => {
+  /* السعرُ المحسوب نصٌّ يُقرأ تحت خانته لا تلميحٌ باهتٌ داخلها: «محسوب: ٣٠٬٠٠٠ د.ع» بلون التلميح بدا خانةً فارغة («ما يحسب»)،
+   * وبنصف عرض النافذة كان يُقصّ رقمُه. والمكتوبُ بيدٍ يقول ما يعنيه للوحدة الواحدة — خطأُ صفرٍ زائد يُرى قبل الحفظ. */
+  const perOf = (per: string): number | null => {
     const n = Number(normalizeCode(per));
-    return Number.isInteger(n) && n >= PACK_LIMITS.perMin && box > 0 ? money((Math.round(box * 100) * n) / 100) : "";
+    return Number.isInteger(n) && n >= PACK_LIMITS.perMin && n <= PACK_LIMITS.perMax ? n : null;
+  };
+  const typed = (s: string): number | null => {
+    const v = normalizeCode(s).replace(/,/g, "");
+    if (!v) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  /** سعرُ الكارتون كما سيُحسب: المكتوبُ، وإلا الوحدةُ × العدد بالفلس (مرآةُ `packPrice`). */
+  const packEff = (own: string, box: number, per: number | null): number | null => {
+    const w = typed(own);
+    if (w != null) return w;
+    return per != null && box > 0 ? (Math.round(box * 100) * per) / 100 : null;
   };
   const derivedSub = unitsPerBox > 0 && boxPurchase > 0 ? money(Math.round((Math.round(boxPurchase * 100)) / unitsPerBox) / 100) : "";
+  /** سطرُ الحساب تحت خانة سعر الكارتون. */
+  const packNote = (own: string, box: number, per: number | null, attr: string) => {
+    const w = typed(own);
+    if (w != null) {
+      return per != null && w > 0
+        ? <p className="mt-1 text-2xs text-ink-muted" data-pkgnote={attr}>{t("pkg.eachIs", { v: money(Math.round((w / per) * 100) / 100), unit })}</p>
+        : null;
+    }
+    if (per == null) return <p className="mt-1 text-2xs text-ink-subtle" data-pkgnote={attr}>{t("pkg.needPer", { unit })}</p>;
+    if (box <= 0) return <p className="mt-1 text-2xs text-ink-subtle" data-pkgnote={attr}>{t("pkg.needBox", { unit })}</p>;
+    return (
+      <p className="mt-1 text-2xs font-semibold text-brand-700 dark:text-brand-300" data-pkgnote={attr}>
+        {t("pkg.autoCalc", { n: per, each: formatNum(box), v: money((Math.round(box * 100) * per) / 100) })}
+      </p>
+    );
+  };
 
   return (
     <div className="rounded-xl border border-line bg-surface-2/40 p-3" data-pkgeditor>
@@ -125,7 +155,12 @@ export default function PackagingEditor(props: PackagingEditorProps) {
                 <label className="label" htmlFor="pkg-sub-buy">{t("pkg.subPurchase", { sub })}</label>
                 <input id="pkg-sub-buy" type="number" inputMode="decimal" min="0" className="input" value={d.sub_purchase_price} disabled={disabled}
                   onChange={(e) => set({ sub_purchase_price: e.target.value })}
-                  placeholder={derivedSub ? t("pkg.derivedPh", { v: derivedSub }) : "0"} data-pkgsubbuy />
+                  placeholder={t("pkg.autoPh")} data-pkgsubbuy />
+                {!d.sub_purchase_price.trim() && derivedSub && (
+                  <p className="mt-1 text-2xs font-semibold text-brand-700 dark:text-brand-300" data-pkgnote="sub">
+                    {t("pkg.autoSub", { box: formatNum(boxPurchase), n: unitsPerBox, v: derivedSub })}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -161,21 +196,32 @@ export default function PackagingEditor(props: PackagingEditorProps) {
                 <label className="label">{t("pkg.packCodes", { name: k.name.trim() || t("pkg.level.pack") })}</label>
                 <CodesInput codes={k.codes} onChange={(c) => setPack(i, { codes: c })} level="pack" products={products} selfId={selfId} disabled={disabled} testId={`pack${i}`} />
               </div>
-              {/* عمودٌ واحد على الهاتف: «محسوب: ١٢٠٬٠٠٠ د.ع» لا يتّسع بنصف عرضه فيُقصّ رقمُه. */}
+              {/* عمودٌ واحد على الهاتف؛ والحسابُ سطرٌ تحت الخانة يلتفّ ولا يُقصّ. */}
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <label className="label">{t("pkg.packPurchase")}</label>
                   <input type="number" inputMode="decimal" min="0" className="input" value={k.purchase_price} disabled={disabled} data-pkgbuy={i}
                     onChange={(e) => setPack(i, { purchase_price: e.target.value })}
-                    placeholder={derivedPack(k.per, boxPurchase) ? t("pkg.derivedPh", { v: derivedPack(k.per, boxPurchase) }) : "0"} />
+                    placeholder={t("pkg.autoPh")} />
+                  {packNote(k.purchase_price, boxPurchase, perOf(k.per), `buy${i}`)}
                 </div>
                 <div>
                   <label className="label">{t("pkg.packSell")}</label>
                   <input type="number" inputMode="decimal" min="0" className="input" value={k.sell_price} disabled={disabled} data-pkgsell={i}
                     onChange={(e) => setPack(i, { sell_price: e.target.value })}
-                    placeholder={derivedPack(k.per, boxSell) ? t("pkg.derivedPh", { v: derivedPack(k.per, boxSell) }) : "0"} />
+                    placeholder={t("pkg.autoPh")} />
+                  {packNote(k.sell_price, boxSell, perOf(k.per), `sell${i}`)}
                 </div>
               </div>
+              {(() => {
+                /* بيعٌ أقلّ من الشراء: خطأُ كتابةٍ غالباً (صفرٌ ناقص) — يُقال ولا يُمنع (تصفيةٌ أو عرضٌ حقيقيّ). */
+                const per = perOf(k.per);
+                const buy = packEff(k.purchase_price, boxPurchase, per);
+                const sell = packEff(k.sell_price, boxSell, per);
+                return buy != null && sell != null && sell > 0 && sell < buy
+                  ? <p className="text-2xs font-semibold text-warn-700 dark:text-warn-300" data-pkgloss={i}>{t("pkg.warnLoss", { sell: money(sell), buy: money(buy) })}</p>
+                  : null;
+              })()}
             </div>
           ))}
           {!blocked && d.packs.length < PACK_LIMITS.packs && (
