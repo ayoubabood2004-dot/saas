@@ -708,6 +708,15 @@ export default function WasteTab({ products, failed, pendingIds, isManager, show
                     <button type="button" className="flex w-full items-center gap-2 py-2 text-start text-sm hover:text-brand-700" data-waste-add={p.id}
                       onClick={() => { playTap(); add(p); setQ(""); }}>
                       <PackageSearch size={14} className="text-ink-subtle" /> {p.name}
+                      {(() => {
+                        /* 0267: لقيها برمز كارتونها أو مغلّفها — العددُ بوحدة الرصيد لا بالكراتين («٣» عن ثلاثة كراتين كانت تُكتب ٣ علب). */
+                        const lv = levelMatcher(q)(p);
+                        if (!lv) return null;
+                        const unit = (p.unit_name ?? "").trim() || t("cnt.unitBox");
+                        return <span className="ms-auto text-2xs font-semibold text-warn-700 dark:text-warn-300" data-levelhint={lv.level}>
+                          {lv.level === "pack" && lv.pack ? t("cnt.byPack", { pack: lv.pack.name, n: lv.pack.per, unit }) : t("cnt.bySub", { sub: (p.sub_unit_name ?? "").trim() || lv.level, unit })}
+                        </span>;
+                      })()}
                       {pendingIds.has(p.id) && <span className="ms-auto text-2xs font-semibold text-warn-700 dark:text-warn-300">{t("cnt.waste.pendingShort", "تنتظر موافقة")}</span>}
                     </button>
                   </li>

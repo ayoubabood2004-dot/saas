@@ -5759,7 +5759,10 @@
     },
     "firstCount": "First count of this item: the reason is set to “Entry error” — no loss is recorded. Change it to “Damaged”, “Expired” or “Shortage” only if you know it is really gone — those record a loss that can't be removed.",
     "twin": "Another item with the same name is in inventory — merge them first, or count both",
-    "partial": "Submitted {{a}} of {{b}} — the rest weren't submitted and stay in the list: {{why}}"
+    "partial": "Submitted {{a}} of {{b}} — the rest weren't submitted and stay in the list: {{why}}",
+    "byPack": "«{{pack}}» barcode = {{n}} {{unit}} — enter the count in «{{unit}}»",
+    "bySub": "«{{sub}}» barcode — enter the count in «{{unit}}»",
+    "unitBox": "box"
   },
   "audit": {
     "noAccess": "The inventory audit is for the manager and vets. Ask the clinic manager.",

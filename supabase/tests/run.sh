@@ -11604,13 +11604,17 @@ $P -c "insert into auth.users(id) values ('$KC'),('$KO') on conflict do nothing;
          ('${KG}a1','$KC','مغلف كارتون', '6291234567890', 100, 900, 833.333333, false, null, null, '{}', '$PK24'::jsonb),
          ('${KG}a2','$KC','علبة بحبوب',   '6291234567891',  50, 1200,  null,     true, 'حبّة', 10, '{SUB-10}', '[{\"id\":\"k12\",\"name\":\"كرتونة\",\"codes\":[\"CRT-12\"],\"per\":12,\"purchase_price\":null,\"sell_price\":null}]'::jsonb),
          ('${KG}a3','$KC','بلا كراتين',   '6291234567892',  10, 500,   null,     false, null, null, '{}', null),
+         ('${KG}a6','$KC','مفرد نصفي',    '6291234567894',  10, 500,   null,     true, 'نص', 0.5, '{}', null),
          ('${KG}a4','$KO','كارتون غيرنا', '6291234567893',  10, 500,   null,     false, null, null, '{}', '[{\"id\":\"x\",\"name\":\"كارتون\",\"codes\":[\"OTHER-CTN\"],\"per\":10,\"purchase_price\":null,\"sell_price\":null}]'::jsonb)
          on conflict (id) do nothing;
        insert into poultry_farms (id, clinic_id, name) values ('${KG}f0','$KC','حقل الكارتون') on conflict (id) do nothing;
        insert into products (id, clinic_id, name, stock, purchase_price, farm_id, packs) values
          ('${KG}a5','$KC','علف بكارتون', 40, 900, '${KG}f0', '[{\"id\":\"f\",\"name\":\"شوال\",\"codes\":[\"FARM-CTN\"],\"per\":4,\"purchase_price\":null,\"sell_price\":null}]'::jsonb)
          on conflict (id) do nothing;" >/dev/null
-plc() { echo "_product_line_cost('$KC', '$1', $2, $3, 7)"; }
+plc() { echo "_k267try(\$q\$select _product_line_cost('$KC', '$1', $2, $3, 7)::text\$q\$)"; }
+$P -c "create or replace function _k267try(q text) returns text language plpgsql as \$fn\$
+       declare r text; begin execute q into r; return coalesce(r, '-');
+       exception when others then return 'ERR:' || sqlerrm; end \$fn\$;" >/dev/null
 
 chk "قبل القسم: جسمُ الكلفة بعلامة 0267 (كلُّ حلقةٍ تعيد 0255 تعيد 0267 بعدها)" \
     "select (position('-- +0267' in prosrc) > 0)::text from pg_proc where oid = to_regprocedure('public._product_line_cost(uuid,uuid,numeric,numeric,numeric)')" "true"
@@ -11623,12 +11627,14 @@ chk "الحارسُ والعلامة: _product_line_cost بعلامة 0267، وp
 chk "الكلفة: كارتونُ ٢٤ (١ و٢ وراجعٌ −١) = المتوسّط × ٢٤ بمنزلتين (٨٣٣٫٣٣٣٣٣٣ × ٢٤ = ٢٠٠٠٠٫٠٠ لا ١٩٩٩٩٫٩٢)، والشدّةُ ٦ بعددها، وعلبةٌ واحدة كما كانت" \
     "select concat_ws('|', $(plc ${KG}a1 1 24), $(plc ${KG}a1 2 48), $(plc ${KG}a1 -1 -24), $(plc ${KG}a1 1 6), $(plc ${KG}a1 1 1), $(plc ${KG}a1 3 null))" \
     "20000.00|20000.00|20000.00|5000.00|833.33|833.33"
-chk "  وسطرٌ لا يطابق كارتوناً محفوظاً (١٢ علبة بلا كارتون ١٢، أو ٢٤ بثلاث منازل زائدة) يسلك فرعَ 0255 كما كان (علبة)" \
-    "select concat_ws('|', $(plc ${KG}a1 1 12), $(plc ${KG}a1 1 24.001), $(plc ${KG}a1 0 24))" "833.33|833.33|833.33"
-chk "  ولمادّةٍ لها وحدةٌ صغرى: الكرتونةُ ١٢ = ١٢ × ١٢٠٠، والمفردُ ÷ ١٠ كما كان، ولا كرتونةَ ٥ ⇒ فرعُ المفرد القديم حرفاً" \
-    "select concat_ws('|', $(plc ${KG}a2 1 12), $(plc ${KG}a2 10 1), $(plc ${KG}a2 1 5))" "14400.00|120.00|120.00"
-chk "  وبلا كراتين (packs فارغ) كما كانت، والحقلُ بكلفة الجهاز ولو له شوال، وعيادةٌ أخرى بكلفة الجهاز" \
-    "select concat_ws('|', $(plc ${KG}a3 1 24), $(plc ${KG}a5 1 4), _product_line_cost('$KC', '${KG}a4', 1, 10, 7))" "500.00|7|7"
+chk "  وسطرٌ أكبرُ من كميته لا يطابق كارتوناً محفوظاً (١٢ بلا كارتون ١٢، أو ٢٤ بثلاث منازل زائدة) يُرفض pack_changed — لا يُكلَّف علبة؛ والكميةُ صفر كما كانت" \
+    "select concat_ws('|', $(plc ${KG}a1 1 12), $(plc ${KG}a1 1 24.001), $(plc ${KG}a1 0 24))" "ERR:pack_changed|ERR:pack_changed|833.33"
+chk "  ولمادّةٍ لها وحدةٌ صغرى: الكرتونةُ ١٢ = ١٢ × ١٢٠٠، والمفردُ ÷ ١٠ كما كان، ولا كرتونةَ ٥ ⇒ يُرفض (كان يُكلَّف مفرداً: ١٢٠ عن ٥ علب)" \
+    "select concat_ws('|', $(plc ${KG}a2 1 12), $(plc ${KG}a2 10 1), $(plc ${KG}a2 1 5))" "14400.00|120.00|ERR:pack_changed"
+chk "  والمفردُ بعددٍ < ١ (٠٫٥ — stock_qty ضعفُ الكمية) يُعفى: ٤ ÷ ٠٫٥ = ٨ يُكلَّف مفرداً (٥٠٠ ÷ ٠٫٥ = ١٠٠٠) لا يُرفض" \
+    "select $(plc ${KG}a6 4 8)" "1000.00"
+chk "  وبلا كراتين (packs فارغ) سطرٌ بـ٢٤ عن واحدة يُرفض، والعلبةُ كما كانت؛ والحقلُ بكلفة الجهاز ولو له شوال، وعيادةٌ أخرى بكلفة الجهاز" \
+    "select concat_ws('|', $(plc ${KG}a3 1 24), $(plc ${KG}a3 3 3), $(plc ${KG}a5 1 4), _product_line_cost('$KC', '${KG}a4', 1, 10, 7))" "ERR:pack_changed|500.00|7|7"
 
 L267='[{"product_id":"'${KG}a1'","name":"مغلف كارتون","qty":1,"unit_price":28000,"unit_cost":7,"stock_qty":24,"unit_label":"كارتون"},{"product_id":"'${KG}a1'","name":"مغلف كارتون","qty":3,"unit_price":1250,"unit_cost":7,"stock_qty":3}]'
 chk "البيعة: كارتونٌ وثلاثُ علبٍ من المادّة نفسِها تمرّ" "select $(rt $KC "select retail_checkout('$L267'::jsonb, jsonb_build_object('client_ref', 'k267-1'))")" "rows:1"
@@ -11638,6 +11644,10 @@ chk "  الرصيدُ −٢٧ (١٠٠ ⇒ ٧٣)، والكارتونُ سطرُ�
             ||'|'||(select total::text from invoices where id = $K267INV)" \
     "73.000|1.000×28000.00@20000.00/24.000:كارتون,3.000×1250.00@833.33/3.000:-|31750.00"
 K267IT="(select id from invoice_items where invoice_id = $K267INV and unit_label = 'كارتون')"
+L267S='[{"product_id":"'${KG}a1'","name":"مغلف كارتون","qty":1,"unit_price":28000,"unit_cost":7,"stock_qty":20,"unit_label":"كارتون"}]'
+chk "شاشةٌ بائتة (كارتونٌ صار ٢٠ ولا كارتونَ ٢٠): البيعةُ تُرفض pack_changed بجملتها العربية ولا تُكتب ولا ينقص شيء" \
+    "select split_part($(rt $KC "select retail_checkout('$L267S'::jsonb, jsonb_build_object('client_ref', 'k267-stale'))"), ':', 3)||'|'||(select count(*) from invoices where clinic_id = '$KC' and client_ref = 'k267-stale')::text||'|'||(select stock::text from products where id = '${KG}a1')" \
+    "pack_changed|0|73.000"
 chk "مرتجعُ الكارتون على الفاتورة يردّ ٢٤ علبة بالضبط (stock_qty ÷ qty)" \
     "select $(rt $KC "select return_invoice_items($K267INV, jsonb_build_array(jsonb_build_object('item_id', $K267IT, 'qty', 1)), 'cash', 'k267')")" "rows:1"
 chk "  (٧٣ ⇒ ٩٧)" "select stock::text from products where id = '${KG}a1'" "97.000"
@@ -11673,6 +11683,13 @@ SQL
 $P -f "$HERE/.k267_body.sql" >/dev/null
 chk "جسمُ 0255 وحده (تراجعٌ أو إعادةُ 0255): pack_sale_ready «لا»، والكارتونُ يُكلَّف علبة" \
     "select $(rv $KC "select pack_sale_ready()::text")||'|'||$(plc ${KG}a1 1 24)" "false|833.33"
+$P -f "$MIG/0267_pack_sale.sql" >/dev/null 2>&1 || { echo "   ✗ 0267 ما نزلت لفحص التعليقات"; fail=1; }
+$P -c "do \$d\$ declare s text := (select pg_get_functiondef(to_regprocedure('public._product_line_cost(uuid,uuid,numeric,numeric,numeric)'))); begin
+         execute regexp_replace(s, '--[^\n]*', '', 'g'); end \$d\$;" >/dev/null 2>&1 || { echo "   ✗ ما انعاد الجسمُ بلا تعليقات"; fail=1; }
+chk "  وجسمُ 0267 بلا تعليقاته (أداةٌ تحذفها — طُبّقت بها هجراتٌ قديمة): السؤالُ «نعم» (يسأل الشِفرة لا العلامة) والكلفةُ ٢٠٠٠٠" \
+    "select (position('-- +0267' in prosrc) = 0)::text from pg_proc where oid = to_regprocedure('public._product_line_cost(uuid,uuid,numeric,numeric,numeric)')
+       union all select $(rv $KC "select pack_sale_ready()::text")||'|'||$(plc ${KG}a1 1 24)" "truetrue|20000.00"
+$P -f "$HERE/.k267_body.sql" >/dev/null
 out=$($P -f "$MIG/0267_pack_sale.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0267 ما نزلت فوق نصّ 0255"; fail=1; }
 chk "  وإعادةُ 0267 فوقه (حارسُها يعرف نصَّ 0255 ببصمته) ترجعها «نعم» والكلفةَ ٢٠٠٠٠" \
     "select $(rv $KC "select pack_sale_ready()::text")||'|'||$(plc ${KG}a1 1 24)" "true|20000.00"

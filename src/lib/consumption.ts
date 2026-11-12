@@ -262,6 +262,15 @@ export function packPerNano(p: Pick<ConsProduct, "packs">, qtyM: bigint, stockQt
   return null;
 }
 
+/** 0267: هل يرفض الخادمُ السطرَ `pack_changed`؟ — مرآةُ شرطه: |stock_qty| > |qty| (qty ≠ 0) ولا كارتونَ محفوظاً يطابقه، وليس مفرداً
+ *  (|stock_qty| × عددُه ≤ |qty| + عددُه × ٠٫٠٠١ — بالألف: |sq|·upb ≤ |q|·1000 + upb). كارتونٌ تبدّل عددُه بعد ما نزل بشاشةٍ بائتة. */
+export function packChanged(p: Pick<ConsProduct, "packs" | "has_sub_unit" | "units_per_box">, qtyM: bigint, stockQtyM: bigint | null | undefined): boolean {
+  if (stockQtyM == null || qtyM === 0n || abs(stockQtyM) <= abs(qtyM)) return false;
+  if (packPerNano(p, qtyM, stockQtyM) !== null) return false;
+  const upb = subUnitMilli(p);
+  return !(upb !== null && abs(stockQtyM) * upb <= abs(qtyM) * 1000n + upb);
+}
+
 /** `_product_line_cost` (0255، الملخّص §A4): كلفةُ سطر مادّةٍ بالفلوس يحسبها الخادم.
  *  مادّةٌ حيّةٌ بالعيادة لا حقلَ لها: سطرٌ بالوحدة الصغيرة (has_sub_unit و units_per_box > 0 و stock_qty حاضرة
  *  و |stock_qty| ≠ |qty|) ← _cons_round_div(k, units_per_box, 2) = (ku/10⁶)/(upb_m/10³)·10² = ku/(upb_m·10)؛

@@ -975,20 +975,23 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* 0267: البيعُ بالكارتون — البابُ يُسخَّن مع الشاشة، وجاهزيةُ الخادم (pack_sale_ready) تُسأل مرّة؛ و«لا» تُسأل ثانيةً عند المسح
    * (مديرٌ لصق الهجرةَ والشاشةُ مفتوحة). */
   const packReadyRef = useRef<boolean | null>(null);
+  /* ووصولُ البابِ رسمةٌ: إعادةُ التسعير (أدناه) تقرأ أسعارَ الكراتين منه — مسودّةٌ رجعت قبله كانت تُبقي سعرَ الكارتون القديم. */
+  const [packModOn, setPackModOn] = useState(() => !!packMod);
   useEffect(() => {
     let alive = true;
-    loadPackMod().then((m) => m.packSaleReady()).then((ok) => { if (alive) packReadyRef.current = ok; }, () => { /* swallow-ok: يُسأل عند أوّل مسحة */ });
+    loadPackMod().then((m) => { if (alive) setPackModOn(true); return m.packSaleReady(); })
+      .then((r) => { if (alive && r === "ready") packReadyRef.current = true; }, () => { /* swallow-ok: يُسأل عند أوّل مسحة */ });
     return () => { alive = false; };
   }, []);
-  const packReadyNow = async (): Promise<boolean> => {
-    if (packReadyRef.current === true) return true;
+  const packReadyNow = async (): Promise<"ready" | "absent" | "unreachable"> => {
+    if (packReadyRef.current === true) return "ready";
     try {
-      const m = packMod ?? await loadPackMod();
-      const ok = await withTimeout(m.packSaleReady(), 4000);
-      packReadyRef.current = ok;
-      return ok;
+      const m = packMod ?? await withTimeout(loadPackMod(), 4000);
+      const r = await withTimeout(m.packSaleReady(), 4000);
+      if (r === "ready") packReadyRef.current = true;
+      return r;
     } catch {
-      return false;
+      return "unreachable";
     }
   };
 
@@ -1068,12 +1071,19 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** سقفُ السطر: بلا حدٍّ ما دام الوضعُ يرفعه، وإلا رصيدُه (unitCap). */
   /** 0267: سقفُ السطر من رصيد مادّته **بعد ما تأخذه سطورُها الأخرى بالسلّة** — كارتونٌ وعلبٌ من المادّة نفسِها يقتسمان رفّاً واحداً
    *  (كلٌّ بسقفه وحده كان يبيع الرفَّ مرّتين). وبلا سطرٍ آخر للمادّة (كلُّ سلّةٍ قبل الكارتون: سطرُ بيعٍ واحدٌ للمادّة) هو unitCap كما كان. */
-  const shareCap = (l: Line): number => {
-    if (l.kind !== "product" || l.ret || !l.product_id || l.stock == null) return unitCap(l);
+  /** ما تأخذه من رصيد المادّة سطورُ بيعها الأخرى بالسلّة (غيرُ `exceptId`) — بوحدة الرصيد. */
+  const sibUse = (productId: string, exceptId: string): number => {
     let used = 0;
-    for (const o of cartRef.current) if (o.id !== l.id && o.kind === "product" && !o.ret && o.product_id === l.product_id) used += lineStockQty(o);
-    return used ? unitCap({ ...l, stock: Math.round((l.stock - used) * 1000) / 1000 }) : unitCap(l);
+    for (const o of cartRef.current) if (o.id !== exceptId && o.kind === "product" && !o.ret && o.product_id === productId) used += lineStockQty(o);
+    return used;
   };
+  /** سقفُ السطر برصيدٍ معطى (طازجٍ من الخادم) بعد سطور مادّته الأخرى. */
+  const shareCapAt = (l: Line, stock: number | null): number => {
+    if (l.kind !== "product" || l.ret || !l.product_id || stock == null) return unitCap({ ...l, stock });
+    const used = sibUse(l.product_id, l.id);
+    return unitCap({ ...l, stock: used ? Math.round((stock - used) * 1000) / 1000 : stock });
+  };
+  const shareCap = (l: Line): number => shareCapAt(l, l.stock);
   const capFor = (l: Line, now = negNow()): number => (lineLifted(l, now) ? Infinity : shareCap(l));
   /** يعلّم السطرَ إن صارت كميتُه فوق رصيده والوضعُ يرفعه (لاصق: لا يُنزع). */
   const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > shareCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);
@@ -1460,7 +1470,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       toast.warn(t("retail.repricedToast", { n: formatNum(r.changed.length), defaultValue: "تحدّث سعر {{n}} مادة بالسلة حسب الأسعار الجديدة — راجعها قبل البيع." }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, catalog, paying, saleRefSaved]);
+  }, [products, catalog, paying, saleRefSaved, packModOn]);
   // سطورُ راجعٍ أُضيفت قبل وصول الجواب تُحسم حين يصل (ما لم يُعدَّل سعرُها بيد).
   useEffect(() => {
     if (!prior) return;
@@ -1574,7 +1584,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       playWarning();
       toast.error(added > 0
         ? t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" })
-        : t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(cap) }));
+        : t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(Math.max(0, cap)) }));
     }
     if (added > 0) flashLine(id);
     return added;
@@ -1834,6 +1844,40 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   });
   /** `lineId`: السطرُ الذي أُضيف إليه فعلاً — الصفُّ الطازج قد يكون غيرَ ما ضُغط (جوابُ الخادم برمزه). */
   const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean; unit?: "sub" }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+    /* (مسارُ الرفّ المشترك داخلها: كلُّ إضافةِ مادّةٍ تمرّ من sellOrExplain — freshness-test.) */
+    /** 0267: سطرُ العلبة (أو المفرد) لمادّةٍ لها سطرٌ آخر بالسلّة (كارتونُها) — الرفُّ مشترك. الحكمُ المحلّيّ والطازج بما يبقى بعد
+     *  سطورها الأخرى (لا برصيد الصفّ كلِّه — كان يضيف علبةً ورفُّها كلُّه بالكارتون، بلا سؤال)، والرفضُ يقول الباقي. مسارٌ مستقلّ:
+     *  سلّةٌ بلا سطرين للمادّة (كلُّ سلّةٍ قبل الكارتون) لا تمرّ منه أبداً. */
+    const shelfAdd = async (product: Product, n: number, opt?: { sale?: boolean; unit?: "sub" }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+      const id = `p:${product.id}`;
+      const room = (row: Product): number => {
+        const line = cartRef.current.find((l) => l.id === id);
+        const saleUnit = line?.saleUnit ?? (opt?.unit === "sub" && row.has_sub_unit && row.units_per_box ? "sub" : "box");
+        const cap = unitCap({ stock: Math.round(((row.stock ?? 0) - sibUse(row.id, id)) * 1000) / 1000, saleUnit, unitsPerBox: row.units_per_box ?? null, byWeight: !!row.sold_by_weight });
+        return cap - (line?.qty ?? 0);
+      };
+      if (room(product) >= 1) return { added: addProduct(product, n, opt), refused: false, lineId: id };
+      const { promise, first } = askServer(product);
+      const ans = await promise;
+      if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
+      if (ans.kind === "row" && ans.row.id === product.id) {
+        const fresh = sellableRow(ans.row, ans.pool);
+        if (liftFor(fresh, null)) { liftRowsRef.current.set(fresh.id, { row: fresh, listAt: products.find((p) => p.id === fresh.id) }); return { added: addProduct(fresh, n, opt), refused: false, lineId: id }; }
+        if (room(fresh) >= 1) return { added: addProduct(fresh, n, opt), refused: false, lineId: id };
+      }
+      playWarning();
+      if (!first) return { added: null, refused: true };
+      if (ans.kind === "gone") {
+        sayUnreachable(t("retail.productGone", "«{{name}}» ما عاد موجود بالمخزن — انحذف أو اندمج بغيره. حدّث القائمة، وإذا انحذف بالغلط رجّعه من المحذوفات.", { name: product.name }));
+        return { added: null, refused: true };
+      }
+      const row = ans.kind === "row" ? sellableRow(ans.row, ans.pool) : product;
+      const left = Math.round(((row.stock ?? 0) - sibUse(row.id, "")) * 1000) / 1000;
+      const msg = t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(Math.max(0, Math.round(((row.stock ?? 0) - sibUse(row.id, id)) * 1000) / 1000)) });
+      if (ans.kind === "unreachable") sayUnreachable(t("retail.capStale", "المتوفّر {{n}} بآخر تحديثٍ عندنا وكلُّه بالسلّة — ما وصلنا الخادم لنتأكد. حدّث القائمة.", { n: formatNum(Math.max(0, left)) }));
+      else toast.error(msg);
+      return { added: null, refused: true };
+    };
     /* مخزنُ الحقل يُرفض باسمه **قبل** السؤال: السؤالُ يستثني الحقل، فصفُّ حقلٍ
      * رصيدُه صفر كان يعود «لا شيء» ويُقال عنه «موجود بس رصيده صفر — زيد رصيده». */
     if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
@@ -1849,6 +1893,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       liftRowsRef.current.set(product.id, { row: product, listAt: products.find((p) => p.id === product.id) });
       return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
     }
+    // 0267: للمادّة سطرٌ آخر بالسلّة (كارتونُها) ⇒ الرفُّ مشترك — الحكمُ بما يبقى بعده (shelfAdd).
+    if (!ret && sibUse(product.id, `p:${product.id}`) > 0) return shelfAdd(product, n, opt);
     if (!needsServerCheck(product, lineBefore, n, ret)) return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
     /* والوضعُ غيرُ مفعّلٍ عندنا ⇒ يُسأل معه (مديرٌ شغّله للتو لا يُقال بعده «رصيده صفر»). سؤالٌ صغير بجانب سؤال الصفّ. */
     const negAsk = !ret && negMod && negKeyRef.current && !negNow().active && !negNow().state?.absent ? negMod.refreshNeg(negKeyRef.current) : null;
@@ -1941,7 +1987,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (p.farm_id) return refuse(t("retail.farmProductAtTill", "«{{name}}» من مخزن الحقل — يُصرف من شاشة الحقل لا من كاشير العيادة", { name: p.name }));
     if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: "ret", name: p.name, level: pack.name, unit }));
     if (p.price_currency === "USD") return refuse(m.say.packSay({ kind: "usd", name: p.name, pack: pack.name }));
-    if (!(await packReadyNow())) return refuse(m.say.packSay({ kind: "notReady", name: p.name, pack: pack.name, per: pack.per, unit }));
+    const ready = await packReadyNow();
+    if (ready === "unreachable") return refuse(t("errors.network"));
+    if (ready !== "ready") return refuse(m.say.packSay({ kind: "notReady", name: p.name, pack: pack.name, per: pack.per, unit }));
     if (blockZeroCost(p)) return { added: null, refused: true };
     const id = `k:${p.id}:${pack.id}`;
     const make = (row: Product, k: ProductPack): Line => {
@@ -2038,8 +2086,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const fresh = sellableRow(ans.row, ans.pool);
       const stock = fresh.pooled ? null : fresh.stock;
       setCart((c) => c.map((x) => (x.id === l.id ? { ...x, stock } : x)));
-      if (unitCap({ ...l, stock, saleUnit: u }) >= 1) { setSaleUnit(l.id, u); return; }
+      // 0267: بما يبقى بعد سطور المادّة الأخرى (كارتونُها) — وإن أخذته هي فالرفُّ «كلُّه بالسلّة» لا «رصيده صفر» (بابُ التوائم).
+      if (shareCapAt({ ...l, saleUnit: u }, stock) >= 1) { setSaleUnit(l.id, u); return; }
       playWarning();
+      if (l.product_id && sibUse(l.product_id, l.id) > 0) {
+        toast.error(t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(Math.max(0, shareCapAt({ ...l, saleUnit: u }, stock))) }));
+        return;
+      }
       if (u === "box") toast.error(t("retail.noWholeBox", "ما بقى علبة كاملة من «{{name}}» — الباقي مفرد فقط", { name: l.name }));
       else toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: l.name }));
       return;
@@ -2129,7 +2182,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     /* 0267: رمزُ كارتونٍ أو مغلّفٍ بالقائمة — مطابقةٌ تامّةٌ تسبق الخادمَ وصيغَ الماسح كالعلبة. كان يسقط إلى «مو موجود بمخزنك — أضفه»
      * عن كارتونٍ معرَّفٍ على مادّته (بلاغُ المالك ١٢/١١). والبابُ لم يصل (فشلَ تحميلُه) ⇒ المسارُ كما كان. */
     if (!product) {
-      const pm = packMod ?? await loadPackMod().catch(() => null /* swallow-ok: المسارُ كما كان، وسؤالُ الخادم بعده يقول «ما وصلنا» */);
+      // بمهلة: قطعةٌ عالقةٌ لا تُعلّق المسحَ (الخادمُ والخدماتُ وذيلُ الرمز بعدها).
+      const pm = packMod ?? await withTimeout(loadPackMod(), 3000).catch(() => null /* swallow-ok: المسارُ كما كان */);
       const hit = pm?.packHit(products, code);
       if (hit) { await sellLevel(hit, n); return; }
     }
@@ -2206,11 +2260,19 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     }
     /* 0267: القائمةُ بائتة؟ كارتونٌ أو مغلّفٌ عُرّف من جهازٍ آخر بعد فتح الشاشة — يُسأل الخادمُ قبل «مو موجود — أضفه» (بابُ التوائم:
      * الإضافةُ يرفضها حارسُ المستويات). وفشلُه «ما وصلنا» لا «ما عندك». */
-    if (!offline) {
+    /* والبابُ نفسُه إن لم يصل (قطعةٌ فشلت — كروم يحفظ فشلَها حتى إعادة التحميل) لا يصير «ما وصلنا الخادم» عن كلّ رمزٍ مجهول:
+     * المسارُ كما كان قبل 0267. والصفُّ الذي لقيه الخادمُ يرقّع القائمة (الإتمامُ يطابق الكارتونَ بها). */
+    const pmL = offline ? null : packMod ?? await withTimeout(loadPackMod(), 3000).catch(() => null /* swallow-ok: المسارُ كما كان */);
+    if (pmL) {
       try {
-        const pm = packMod ?? await loadPackMod();
-        const hit = pm.packHit(await withTimeout(pm.productsByLevelCode(code), 6000), code);
-        if (hit) { await sellLevel(hit, n); return; }
+        const hit = pmL.packHit(await withTimeout(pmL.productsByLevelCode(code), 6000), code);
+        if (hit) {
+          const { promise, first } = askServer(hit.product);
+          const ans = await promise;
+          if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
+          await sellLevel(hit, n);
+          return;
+        }
       } catch (e) {
         offline = true;
         console.error("[pos] level lookup failed", e);
@@ -3042,10 +3104,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * بالسقف الخامّ كانت النافذةُ تسأل عن كلّ سطرٍ تقريباً بعيادةٍ رصيدُ موادّها صفر، فيُضغط «نعم» بلا قراءة ويسقط الحارسُ
    * («اكتب ٤٧ وامسح») حيث يلزم أكثر. والسطرُ غيرُ المعلَّم كما كان. */
   /* 0267: والكارتونُ بعلبه — كارتونان من ٢٤ رفُّ ٤٨ علبة لا «كميةٌ صغيرة» لأن العددَ ٢. */
+  /* والرفُّ المشترك (كارتونٌ وعلبٌ للمادّة نفسِها) يُحكم بالمادّة: ما بالسلّة منها كلُّه ≥ ١٠ وهو الرفُّ كلُّه — كارتونٌ من ٤٧ لا يسأل،
+   * وكارتونُ ٦ و٤٢ علبة من ٤٨ يسأل (كلٌّ وحده كان يُخطئ الاتجاهين — مراجعةٌ عدائيّة). وسلّةٌ بسطرٍ واحدٍ للمادّة كما كانت حرفاً. */
+  const shelfUsed = (pid: string): number => cart.reduce((n2, o) => (o.kind === "product" && !o.ret && o.product_id === pid ? n2 + lineStockQty(o) : n2), 0);
+  const shared = (l: Line): boolean => !!l.product_id && cart.some((o) => o.id !== l.id && o.kind === "product" && !o.ret && o.product_id === l.product_id);
   const bigLines = (): Line[] => cart.filter((l) =>
-    l.kind === "product" && !l.ret && l.stock != null && (isPackLine(l)
+    l.kind === "product" && !l.ret && l.stock != null && (!l.negLift && shared(l)
+      ? shelfUsed(l.product_id as string) >= 10 && shelfUsed(l.product_id as string) + 1e-9 >= Math.floor(l.stock as number)
+      : isPackLine(l)
       ? (l.negLift ? (negMod ? negMod.bigLifted(lineStockQty(l), { sub: false, unitsPerBox: null, byWeight: false }) : lineStockQty(l) >= 10)
-        : lineStockQty(l) >= 10 && l.qty >= shareCap(l))
+        : lineStockQty(l) >= 10 && lineStockQty(l) + 1e-9 >= Math.floor(l.stock as number))
       : l.negLift
       ? (negMod ? negMod.bigLifted(l.qty, { sub: l.saleUnit === "sub", unitsPerBox: l.unitsPerBox, byWeight: l.byWeight })
         : l.byWeight ? l.qty >= 25 : (perOf(l) ? l.qty / (perOf(l) as number) : l.qty) >= 10)
@@ -3088,26 +3156,48 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const countedNew = res.refused.some((r) => r.why === "counted" && !negNow().counted.has(r.productId));
     if ((!res.active || countedNew) && negMod && negKeyRef.current) void negMod.refreshNeg(negKeyRef.current, countedNew ? { counted: true } : {});
     const byPid = new Map(res.refused.map((r) => [r.productId, r]));
-    const judged = await Promise.all(lines.map(async (l) => {
-      const r = byPid.get(l.product_id as string);
-      if (!r) return null;
-      let stock = r.why === "gone" ? null : r.stock;
-      const row = r.why === "gone" ? undefined : prodRow(l.product_id);
+    /* ١) رصيدٌ طازجٌ واحد لكلّ مادّةٍ مرفوضة (sharedAsk يجمع أسئلتها). */
+    const fresh = new Map<string, { stock: number | null; pooled: boolean; asked: boolean }>();
+    await Promise.all([...new Set(lines.map((l) => l.product_id as string))].map(async (pid) => {
+      const r = byPid.get(pid);
+      if (!r) return;
+      const f = { stock: r.why === "gone" ? null : r.stock, pooled: false, asked: false };
+      const row = r.why === "gone" ? undefined : prodRow(pid);
       if (row) {
         const ans = await askServer(row).promise;
         if (ans.kind === "row" && ans.row.id === row.id) {
-          const fresh = sellableRow(ans.row, ans.pool);
-          if (fresh.pooled || unitCap({ ...l, stock: fresh.stock }) >= l.qty) return null;
-          stock = fresh.stock;
+          const s2 = sellableRow(ans.row, ans.pool);
+          f.stock = s2.stock; f.pooled = !!s2.pooled; f.asked = true;
         }
       }
-      const per = perOf(l);
-      // بوحدة السطر: المفردُ × عددِه، والكارتونُ ÷ علبِه (0267).
-      const shown = stock == null ? null : per ? Math.round(stock * per * 1000) / 1000
-        : isPackLine(l) ? Math.round((stock / (l.packPer as number)) * 1000) / 1000 : stock;
-      const keepQty = stock == null ? 0 : Math.max(0, Math.min(l.qty, unitCap({ ...l, stock })));
-      return { line: { id: l.id, name: l.name, qty: l.qty, stock: shown, why: r.why, keep: keepQty } as NegRefusedLine, keep: { qty: keepQty, stock } };
+      fresh.set(pid, f);
     }));
+    /* ٢) والرفُّ الواحد يُقسم على سطور المادّة (0267: كارتونٌ وعلبٌ معاً): ما لم يُسأل عنه أوّلاً، ثمّ المرفوضةُ بترتيب السلّة — كلٌّ
+     *    بما يبقى قبله. «يغطّيه الطازج» و«ما يُبقى منه» كانا لكلّ سطرٍ برصيد الصفّ كلِّه، فسطران يُبقيان أكثرَ من الرفّ. */
+    const left = new Map<string, number | null>();
+    for (const [pid, f] of fresh) {
+      if (f.stock == null) { left.set(pid, null); continue; }
+      let s0 = f.stock;
+      for (const o of cart) if (o.kind === "product" && !o.ret && o.product_id === pid && !lines.includes(o)) s0 -= lineStockQty(o);
+      left.set(pid, Math.round(s0 * 1000) / 1000);
+    }
+    const judged = lines.map((l) => {
+      const pid = l.product_id as string;
+      const r = byPid.get(pid);
+      const f = fresh.get(pid);
+      if (!r || !f) return null;
+      if (f.asked && f.pooled) return null;
+      const rem = left.get(pid) ?? null;
+      if (f.asked && rem != null && unitCap({ ...l, stock: rem }) >= l.qty) { left.set(pid, Math.round((rem - lineStockQty(l)) * 1000) / 1000); return null; }
+      const keepQty = rem == null ? 0 : Math.max(0, Math.min(l.qty, unitCap({ ...l, stock: rem })));
+      if (rem != null) left.set(pid, Math.round((rem - lineStockQty({ ...l, qty: keepQty })) * 1000) / 1000);
+      const per = perOf(l);
+      // بوحدة السطر (ما يبقى له): المفردُ × عددِه، والكارتونُ ÷ علبِه (0267).
+      const shown = rem == null ? null : per ? Math.round(rem * per * 1000) / 1000
+        : isPackLine(l) ? Math.round((rem / (l.packPer as number)) * 1000) / 1000 : rem;
+      // والسطرُ يأخذ رصيدَ الصفّ كلَّه (لا الباقي): سقفُه يطرح إخوتَه بنفسه (shareCap).
+      return { line: { id: l.id, name: l.name, qty: l.qty, stock: shown, why: r.why, keep: keepQty } as NegRefusedLine, keep: { qty: keepQty, stock: f.stock } };
+    });
     const bad = judged.filter((x): x is NonNullable<typeof x> => !!x);
     if (!bad.length) return null;
     const keep: Record<string, { qty: number; stock: number | null }> = {};
@@ -3149,22 +3239,32 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     /* 0267: سطرُ الكارتون يُباع بكارتونه كما هو على صفّ المادّة الآن — كارتونٌ انشال أو تبدّل عددُه (من جهازٍ آخر، أو مسودّةٌ قديمة)
      * كان سيُرسل stock_qty بعدده القديم: الرصيدُ ينقص بعددٍ لا يعرفه الخادمُ كارتوناً فيُكلَّف علبة. ولا كارتونَ قبل أن يعرفه الخادم. */
     if (cart.some((l) => isPackLine(l))) {
-      const pm = packMod ?? await loadPackMod().catch(() => null /* swallow-ok: بلاه يُقال errors.network أدناه والسلّةُ باقية */);
-      const bad = cart.find((l) => {
-        if (!isPackLine(l)) return false;
-        const k = pm?.currentPack(prodById.get(l.product_id ?? ""), l.packId);
-        return !k || k.per !== l.packPer;
-      });
-      if (!pm || bad) {
+      const pm = packMod ?? await withTimeout(loadPackMod(), 4000).catch(() => null /* swallow-ok: بلاه يُقال errors.network أدناه والسلّةُ باقية */);
+      if (!pm) { playWarning(); toast.error(t("errors.network")); return; }
+      /* ما لا تطابقه القائمةُ يُسأل عنه الخادم قبل أن يُقال «تغيّر»: قائمةٌ بائتة لا تعرف كارتوناً عُرّف بعد فتحها (والمسحُ لقيه من
+       * الخادم) كانت تقف بـ«تغيّر» كاذبة. والقائمةُ المطابقة قد تكون بائتةً أيضاً — والخادمُ يرفض سطراً لا يطابق (pack_changed). */
+      for (const l of cart) {
+        if (!isPackLine(l)) continue;
+        const listRow = prodById.get(l.product_id ?? "");
+        const k = pm.currentPack(listRow, l.packId);
+        if (k && k.per === l.packPer) continue;
+        const ans = await askServer(listRow ?? ({ id: l.product_id, name: l.name, barcode: l.barcode } as Product)).promise;
+        /* بلا ترقيع القائمة هنا: ترقيعُها يبدّل السلّةَ (رصيدٌ وكلفة) أثناء الضغطة، فيقف الإتمامُ بصمت عند «السلّةُ تغيّرت» — مقيسٌ
+         * بالفحص. الحكمُ بالصفّ الطازج يكفي، والقائمةُ تتحدّث بعد البيعة. */
+        if (ans.kind === "row") {
+          const k2 = pm.currentPack(ans.row, l.packId);
+          if (k2 && k2.per === l.packPer) continue;
+        }
         playWarning();
-        // البابُ ما وصل (قطعةٌ فشلت بلا نت): لا يُحكم على الكارتون بلاه — «ما وصلنا» والسلّةُ باقية.
-        toast.error(pm && bad ? pm.say.packSay({ kind: "changed", name: bad.name, pack: bad.packName ?? "" }) : t("errors.network"));
+        toast.error(ans.kind === "unreachable" ? t("errors.network") : pm.say.packSay({ kind: "changed", name: l.name, pack: l.packName ?? "" }));
         return;
       }
-      if (!(await packReadyNow())) {
+      const ready = await packReadyNow();
+      if (ready !== "ready") {
         const l = cart.find((x) => isPackLine(x)) as Line;
         playWarning();
-        toast.error(pm.say.packSay({ kind: "notReady", name: l.name, pack: l.packName ?? "", per: l.packPer as number, unit: pm.say.packWords().box }));
+        toast.error(ready === "unreachable" ? t("errors.network")
+          : pm.say.packSay({ kind: "notReady", name: l.name, pack: l.packName ?? "", per: l.packPer as number, unit: pm.say.packWords().box }));
         return;
       }
     }
@@ -3198,7 +3298,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     /* 0266: سطورُ الوضع تُسأل مع سؤال الأسعار (بالتوازي) وتُحكم تحت القفل نفسِه — ضغطةٌ ثانية أثناءها لا تبدأ بيعةً موازية.
      * وإعادةٌ لمرجعٍ وافق عليه الخادمُ بنفس السلّة لا تُسأل ثانيةً: محاولةٌ مجهولةُ المصير ربما ثبتت، ورفضُها الآن (الوضعُ انتهى
      * بينهما) يحبس البيعةَ بين «ربما انسجلت» و«ما تكمل». */
-    const negLines = cart.filter((l) => l.negLift && l.kind === "product" && !l.ret && !!l.product_id && l.qty > unitCap(l));
+    // 0267: «فوق رصيده» بما يبقى بعد سطور المادّة الأخرى (shareCap) — علبٌ فوق كارتونٍ أخذ الرفَّ كانت تُباع بلا سؤال.
+    const negLines = cart.filter((l) => l.negLift && l.kind === "product" && !l.ret && !!l.product_id && l.qty > shareCap(l));
     const negFp = negLines.map((l) => `${l.id}:${l.qty}:${l.saleUnit ?? ""}`).join("|");
     const negSkip = negLines.length === 0 || (!!saleRefRef.current && negOkRef.current?.ref === saleRefRef.current && negOkRef.current.fp === negFp);
     const negP = negSkip ? null : negCheckNow(negLines);
