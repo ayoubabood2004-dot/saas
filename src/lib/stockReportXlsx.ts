@@ -222,8 +222,9 @@ function countSheet(
     put(at(COL.systemQty), num(l.systemQty, QTY, tint({ ...numeric, font: { bold: true, sz: 12 } })));
     /* القيم معادلاتٌ لا أرقاماً مطبوعة: من صحّح سعراً بالعمود G رأى قيمته
      * تتبعه فوراً، بدل ورقةٍ تناقض نفسها بصمت. */
-    put(at(COL.costValue), { t: "n", f: `${at(COL.systemQty)}*${at(COL.buy)}`, v: round4(l.cost), z: MONEY, s: tint(numeric) });
-    put(at(COL.retailValue), { t: "n", f: `${at(COL.systemQty)}*${at(COL.sell)}`, v: round4(l.retail), z: MONEY, s: tint(numeric) });
+    /* وكمرآتها (stocktake.ts): رصيدٌ تحت الصفر قيمتُه صفر — والمعادلةُ نفسُها تقولها فتتبع من يصحّح الكمية. */
+    put(at(COL.costValue), { t: "n", f: `MAX(${at(COL.systemQty)},0)*${at(COL.buy)}`, v: round4(l.cost), z: MONEY, s: tint(numeric) });
+    put(at(COL.retailValue), { t: "n", f: `MAX(${at(COL.systemQty)},0)*${at(COL.sell)}`, v: round4(l.retail), z: MONEY, s: tint(numeric) });
 
     /* خليةٌ نصّية فارغة لا خليةٌ من نوع «فراغ»: الفراغ يُكتب بلا تنسيق فيضيع
      * اللون الأصفر الذي يدلّ العادّ على مكان الكتابة. و`""` تُعامَل فارغةً

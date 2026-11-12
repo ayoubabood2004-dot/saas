@@ -5665,7 +5665,9 @@
       "needs_manager": "Only a manager can approve count differences — unlock manager mode",
       "nothing": "No lines selected",
       "already_pending": "This item was already counted and awaits manager approval — approve or reject it first",
-      "lot_missing": "A batch in the count no longer exists — refresh the page"
+      "lot_missing": "A batch in the count no longer exists — refresh the page",
+      "moved": "These items' stock changed since you typed the count (a sale or a purchase) — their count was cleared, count them again",
+      "seen_missing": "Your page is an old version — refresh it and submit the count again"
     },
     "changedLine": "“{{name}}”: {{then}} at count → {{now}} now",
     "byLot": "This item has more than one batch — count each date separately:",
@@ -5738,7 +5740,26 @@
       "byOwner": "Clinic owner"
     },
     "fine": "Enter the count with at most three decimals — the system doesn't store finer than that",
-    "badFine": "“{{name}}”: enter the count with at most three decimals"
+    "badFine": "“{{name}}”: enter the count with at most three decimals",
+    "open": {
+      "title": "Opening count",
+      "left": "{{n}} items have never been counted, {{z}} of them at or below zero",
+      "pick": "Add a company's items to the count",
+      "noCompany": "No company",
+      "added": "Added {{n}} items to the count",
+      "pending": "{{n}} counts wait for approval — stock isn't corrected before that",
+      "goPending": "Approve now",
+      "checklist": "Before you count",
+      "c1": "Record the invoices of goods that arrived, and count an item and approve its count before recording a new purchase of it",
+      "c2": "Empty the queue (pending operations) and the review shelf",
+      "c3": "Enter paper sales",
+      "c4": "Count one shelf and submit it right away — sales between counting and submitting come back as a false surplus",
+      "c5": "An item with a twin (same name, another code): merge them first, or count both",
+      "c6": "Record damaged and expired items with a “waste voucher”"
+    },
+    "firstCount": "First count of this item: the reason is set to “Entry error” — no loss is recorded. Change it to “Damaged”, “Expired” or “Shortage” only if you know it is really gone — those record a loss that can't be removed.",
+    "twin": "Another item with the same name is in inventory — merge them first, or count both",
+    "partial": "Submitted {{a}} of {{b}} — the rest weren't submitted and stay in the list: {{why}}"
   },
   "audit": {
     "noAccess": "The inventory audit is for the manager and vets. Ask the clinic manager.",
@@ -7097,7 +7118,8 @@
     "mutedNote": "Reminders for \"{{name}}\" are muted on this device",
     "unmute": "Remind me again",
     "saleFailStock": "The invoice was saved, but we couldn't confirm the stock and consumables — check the material's movements",
-    "mutedOnce": "Reminders for \"{{name}}\" are muted here only — couldn't save that on this device, so they'll show again next time"
+    "mutedOnce": "Reminders for \"{{name}}\" are muted here only — couldn't save that on this device, so they'll show again next time",
+    "negFold": "{{n}} items sold below zero — expected before the count"
   },
   "avgc": {
     "avg": "Average cost: {{avg}} (from purchase invoices)",
@@ -7451,7 +7473,8 @@
       "merge_sub_codes": "The product being folded has a small-unit barcode, and the one you keep has no small unit with the same count — set the small unit on the kept product first, then merge",
       "merge_packs_unit": "The product being folded has cartons and the one you keep is sold by weight — cartons can't move to a product sold by weight",
       "merge_packs_overflow": "Together the two have more than four cartons — remove a carton from one of them, then merge"
-    }
+    },
+    "filterNoCost": "No purchase price"
   },
   "rx": {
     "btn": "Prescription",
@@ -8490,5 +8513,104 @@
     "keep": "The customer gets {{back}} back — {{pct}}% of {{full}}. The rest stays with the clinic, and the goods go back to stock in full.",
     "debt": "Bought on credit? A return from here takes cash out of the till and doesn't reduce their debt — do it from Returns, on their invoice.",
     "open": "Do it from Returns"
+  },
+  "nstk": {
+    "chip": "Before count · until {{day}}",
+    "chipLast": "Before count · ends tonight",
+    "chipEnded": "Selling before the count has ended",
+    "chipHelp": "Selling before the count is on until the night of {{day}}: an item sells even when its system stock is zero, and the stock goes below zero until it is counted. Items that have been counted are back to normal.",
+    "turnedOn": "Selling before the count is on — items sell even at zero stock, until the night of {{day}}.",
+    "turnedOff": "Selling before the count has ended — items at or below zero can't be sold again. Ask the manager to extend it or finish the count.",
+    "noCost": "“{{name}}” has no purchase price — it can't be sold below zero until the manager sets it in Inventory, so its profit is right.",
+    "counted": "“{{name}}” has been counted and its system stock is {{stock}} — its stock is now trusted, so it can't be sold below zero. Record its purchase invoice or count it again.",
+    "ended": "“{{name}}” system stock is {{stock}} — selling before the count has ended. Don't re-enter it: count it or record its purchase, or ask the manager to extend.",
+    "openProduct": "Open item",
+    "chk": {
+      "title": "Can't sell below zero",
+      "titleOff": "Selling before the count has ended",
+      "body": "These cart items are above their system stock:",
+      "unsure": "Couldn't reach the server to confirm selling before the count is still on — the cart is kept.",
+      "line": "In cart {{qty}} — system stock {{stock}}",
+      "why": {
+        "off": "Selling before the count is off",
+        "counted": "Counted — its stock is trusted",
+        "zero_cost": "No purchase price",
+        "not_lifted": "Can't be sold below zero",
+        "gone": "No longer in inventory"
+      },
+      "remove": "Remove the extra and finish the sale",
+      "retry": "Try again",
+      "back": "Back to the cart",
+      "allCart": "Everything in the cart is one of these items — nothing would be left to sell. Go back to the cart.",
+      "allCartOff": "Everything in the cart is one of these items — ask the manager to extend selling before the count in Settings, or record their purchase.",
+      "keep": "{{n}} stays",
+      "drop": "removed",
+      "locked": "The previous attempt hasn't been confirmed by the server — don't change the cart: check «Invoices», or go back and press «Complete sale» again."
+    },
+    "set": {
+      "title": "Selling before the count (temporary)",
+      "hint": "For a clinic whose items were added but not counted yet: the cashier can sell an item even when its system stock is zero, and the stock goes below zero until it is counted. A counted item is back to normal. Turn it off after the count — turning it off changes no stock and no number.",
+      "stateOn": "On until the night of {{day}} — {{n}} days left",
+      "stateLast": "On — ends tonight",
+      "stateOff": "Off",
+      "stateEnded": "Ended on {{day}} — items at or below zero can't be sold until they are counted",
+      "zeroCost": "{{n}} items have no purchase price — they can't be sold below zero until their price is set, so their profit is right",
+      "showNoCost": "See them in Inventory",
+      "neverCounted": "{{n}} items not counted yet, {{z}} of them at or below zero",
+      "negatives": "{{n}} items with stock below zero",
+      "pending": "{{n}} counts wait for your approval — stock isn't corrected before approval",
+      "goCount": "Continue the count",
+      "days": "Duration",
+      "d7": "A week",
+      "d14": "Two weeks",
+      "d30": "A month",
+      "until": "Until the night of {{day}}",
+      "overCap": "Beyond the 60-day limit ({{day}})",
+      "ack": "I understand: items sell even at zero stock, stock goes below zero until the count, and the mode turns itself off on the night of {{day}}.",
+      "ackNoCost": "And {{n}} items without a purchase price won't sell below zero until their price is set.",
+      "notePh": "Note (optional): why?",
+      "notePhOp": "Note for the clinic (required): e.g. “At the clinic's request — before the first count”",
+      "turnOn": "Turn on until the night of {{day}}",
+      "extend": "Extend until the night of {{day}}",
+      "turnOff": "Turn off",
+      "offTitle": "Before you turn it off",
+      "offLeft": "{{n}} uncounted items are at or below zero ({{neg}} of them below zero) — all of them can't be sold at the till again until they are counted or their purchase is recorded.",
+      "offPending": "And {{n}} counts wait for your approval — their stock isn't corrected before approval.",
+      "offClean": "Every item has been counted.",
+      "offSafe": "Turning it off changes no stock and no number.",
+      "offNow": "Turn it off now",
+      "keepCounting": "Finish the count first",
+      "turnedOn": "On until the night of {{day}}",
+      "extended": "Extended until the night of {{day}}",
+      "turnedOff": "Turned off — no stock changed",
+      "managerOnly": "The clinic manager turns it on and off from their own account — not with the temporary manager PIN, and not from a locked reception device.",
+      "loadFailed": "Couldn't load the selling-before-count state",
+      "retry": "Retry",
+      "log": "History",
+      "who": "Clinic manager",
+      "logOn": "{{who}} turned it on until {{until}}",
+      "logExtend": "{{who}} extended it until {{until}}",
+      "logOff": "{{who}} turned it off — {{n}} items were still below zero",
+      "logExpired": "Ended by itself on {{until}}",
+      "steps": "Steps",
+      "step1": "Fill in the missing purchase prices",
+      "step2": "Sell as usual — items sell even at zero stock",
+      "step3": "Count shelf by shelf from “Stock count”, and submit each shelf right away",
+      "step4": "Approve the counts (manager)",
+      "step5": "Record the purchase invoice before selling new goods",
+      "step6": "When everything is counted: turn it off",
+      "lockReception": "Lock the shared reception device (manager mode) before turning it on.",
+      "store": "The online store keeps hiding items at or below zero until they are counted.",
+      "err": {
+        "neg_stock_manager": "The clinic manager turns it on and off from their own account — the temporary manager PIN isn't enough.",
+        "neg_stock_clinic_changed": "The clinic changed since you opened the page — refresh the page.",
+        "neg_stock_ack": "Confirm first that you understand what it does.",
+        "neg_stock_days": "Duration is 1 to 30 days.",
+        "neg_stock_note": "The note is 200 characters at most.",
+        "neg_stock_note_required": "Write the clinic a note on why you turned it on.",
+        "neg_stock_too_long": "Selling before the count is temporary: at most 60 days from its start — finish the count. To extend beyond that, contact support.",
+        "neg_stock_bad": "The request is incomplete — refresh the page and try again."
+      }
+    }
   }
 }

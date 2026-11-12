@@ -5470,6 +5470,8 @@ export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 export const loadDemoUsd = () => import("./demoUsd");
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
+/** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */
+export const loadDemoNeg = () => import("./demoNegStock");
 /** 0264: بيعُ الدولار يكتب فاتورتَه بمرآة retail_checkout نفسِها والبابُ مفتوح (usd_checkout ينادي retail_checkout). */
 export async function demoUsdRetail(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
   const cons = await loadDemoConsumption();

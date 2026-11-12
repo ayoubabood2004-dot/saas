@@ -12,7 +12,7 @@
  *
  * النصوصُ بنطاق ptab المملوك (hot-paths.json): القطعةُ كسولةٌ من SaleBuilder بـpage(…, ["ptab"]) — retail حارّ والبارد ممتلئ.
  * ========================================================================= */
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Plus, Pencil, Package, Stethoscope, Scale, Trash2, ChevronUp, ChevronDown, X, Search, Square, RectangleHorizontal,
@@ -73,20 +73,23 @@ function TileImage({ path, className }: { path: string; className?: string }) {
     className={cn("bg-surface-2 object-cover", className)} />;
 }
 
-function Tile({ r, images, listPrice, flash, preview, onProduct, onService }: {
+function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onService }: {
   r: Exclude<ResolvedItem, { kind: "missing" }>; images: boolean; listPrice: (p: Product) => number; flash?: string | null; preview?: boolean;
-  onProduct?: (p: Product) => void; onService?: (s: Service) => void;
+  liftOf?: (p: Product) => boolean; onProduct?: (p: Product) => void; onService?: (s: Service) => void;
 }) {
   const { t } = useTranslation();
   const wide = r.item.shape === "wide";
-  let name: string, price: number, out = false, badge: string, img: string | null = null, Icon = Package, fkey: string;
+  let name: string, price: number, out = false, lifted = false, badge: ReactNode, img: string | null = null, Icon = Package, fkey: string;
   if (r.kind === "product") {
     const p = r.product;
     const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
-    out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+    const zero = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+    /* البيعُ قبل الجرد (0266): ما يرفعه الوضعُ ليس «نفدت» — رصيدُه بإشارته بحبرٍ محايد، كشبكة المنتجات. */
+    lifted = zero && !preview && !!liftOf?.(p);
+    out = zero && !lifted;
     name = p.name; price = listPrice(p); img = images && p.image_path ? p.image_path : null;
     Icon = p.sold_by_weight ? Scale : Package;
-    badge = out ? t("ptab.out") : t("ptab.left", { n: formatNum(p.stock) });
+    badge = out ? t("ptab.out") : lifted ? <bdi dir="ltr" data-neg-stock>{formatNum(p.stock)}</bdi> : t("ptab.left", { n: formatNum(p.stock) });
     fkey = `p:${p.id}`;
   } else {
     name = r.service.name; price = r.service.price; Icon = Stethoscope; badge = t("ptab.service"); fkey = `s:${r.service.id}`;
@@ -105,7 +108,7 @@ function Tile({ r, images, listPrice, flash, preview, onProduct, onService }: {
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-1 shadow-soft"><Icon size={22} /></span>
       </span>;
   return (
-    <button type="button" data-ptile={fkey} data-shape={r.item.shape} data-out={out || undefined} onClick={tap} tabIndex={preview ? -1 : undefined}
+    <button type="button" data-ptile={fkey} data-shape={r.item.shape} data-out={out || undefined} data-lifted={lifted || undefined} onClick={tap} tabIndex={preview ? -1 : undefined}
       title={out ? `${name} — ${t("ptab.outHint")}` : name}
       className={cn("group relative flex overflow-hidden rounded-2xl border text-start transition",
         wide ? "col-span-2 aspect-[2/1] flex-row" : "aspect-square flex-col",
@@ -126,9 +129,11 @@ function Tile({ r, images, listPrice, flash, preview, onProduct, onService }: {
 }
 
 /* ── الشبكة ─────────────────────────────────────────────────────────────── */
-export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom, posV2, preview, onProduct, onService, onEdit }: {
+export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom, posV2, preview, liftOf, onProduct, onService, onEdit }: {
   tab: Pick<PosTab, "name" | "tile_size" | "show_images" | "items">; products: Product[]; services: Service[];
   listPrice: (p: Product) => number; flash?: string | null; gridZoom?: number; posV2?: boolean; preview?: boolean;
+  /** البيعُ قبل الجرد: الوضعُ يرفع هذه المادّة الآن (حكمُ شاشة البيع نفسُه) — فبطاقتُها لا تُرسم «نفدت». */
+  liftOf?: (p: Product) => boolean;
   onProduct?: (p: Product) => void; onService?: (s: Service) => void; onEdit?: () => void;
 }) {
   const { t } = useTranslation();
@@ -155,7 +160,7 @@ export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom
         <div className={cn("grid gap-2", posV2 && !preview && "min-h-0 flex-1 overflow-y-auto pb-1")} style={style}>
           {live.map((r, i) => (
             <Tile key={`${r.item.k}:${r.item.id}:${i}`} r={r} images={tab.show_images} listPrice={listPrice} flash={flash} preview={preview}
-              onProduct={onProduct} onService={onService} />
+              liftOf={liftOf} onProduct={onProduct} onService={onService} />
           ))}
         </div>
       )}

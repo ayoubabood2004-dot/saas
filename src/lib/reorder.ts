@@ -24,7 +24,8 @@ export function reorderItem(p: Product, sold: number, days: number, leadDays: nu
   if (p.pooled) return null;
   const perDay = Math.max(0, Number(sold) || 0) / Math.max(1, days);
   const min = Math.max(0, Number(p.min_stock) || 0);
-  const stock = Number(p.stock) || 0;
+  /* رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) رقمٌ لم يُعدّ لا دَينٌ على الرفّ: يُقرأ «ماكو» — لا طلبٌ بعدده فوق التغطية. */
+  const stock = Math.max(0, Number(p.stock) || 0);
   const rop = perDay * leadDays + min;
   if (rop <= 0 || stock > rop) return null;
   const suggest = Math.max(1, Math.ceil(perDay * (leadDays + COVER_DAYS) + min - stock));

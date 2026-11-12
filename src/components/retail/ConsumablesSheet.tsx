@@ -89,6 +89,10 @@ export interface ConsumptionNoticeProps {
   sentAt?: number;
   /** returned: money actually paid back to the customer by this action (> 0.005). */
   cashBack?: boolean;
+  /** sale: products this sale sold below zero through the sell-before-count mode (0266, its lifted lines). Their below-zero rows are
+   *  expected until the count, so they fold into one line with no mute button (a mute per product would silence it after the mode
+   *  too). Any other below-zero row (a counted or pooled product the mode never lifts) keeps its named row. Shortages stay as they are. */
+  negFold?: readonly string[];
 }
 
 const NANO = 1_000_000_000n;
@@ -697,7 +701,7 @@ function netByProduct(groups: Iterable<Group>): { ret: Group[]; used: Group[] } 
   return { ret, used };
 }
 
-export function ConsumptionNotice({ mode, invoiceIds, targets, action, sentAt, cashBack }: ConsumptionNoticeProps): JSX.Element | null {
+export function ConsumptionNotice({ mode, invoiceIds, targets, action, sentAt, cashBack, negFold }: ConsumptionNoticeProps): JSX.Element | null {
   const { t } = useTranslation();
   const { can } = usePermissions();
   const { user } = useAuth();
@@ -808,6 +812,8 @@ export function ConsumptionNotice({ mode, invoiceIds, targets, action, sentAt, c
 
   if (mode === "sale") {
     const out: ReactNode[] = [];
+    const folded = new Set<string>();
+    const negFoldSet = new Set(negFold ?? []);
     for (const inv of invs) {
       const byP = new Map<string, SpecN[]>();
       for (const s of inv.specs) byP.set(s.product_id, [...(byP.get(s.product_id) ?? []), s]);
@@ -853,6 +859,7 @@ export function ConsumptionNotice({ mode, invoiceIds, targets, action, sentAt, c
       // ⇒ الرقمُ وحده كما كان: «-0.5 علبة» عن رمل قططٍ بالكيلو تخمينٌ يكذب، والرقمُ وحده لا يكذب.
       for (const n of inv.negatives) {
         if (short.has(n.product_id)) continue;
+        if (negFoldSet.has(n.product_id)) { if (!muted.has(n.product_id)) folded.add(n.product_id); continue; }
         const own = inv.specs.filter((s) => s.product_id === n.product_id);
         const kg = n.bw ?? (own.some((s) => s.bw === true) ? true : own.some((s) => s.bw === false) ? false : null);
         const num = formatQty(fromScaled(n.stockM, 3));
@@ -862,6 +869,8 @@ export function ConsumptionNotice({ mode, invoiceIds, targets, action, sentAt, c
         if (row) out.push(row);
       }
     }
+    /* البيعُ قبل الجرد: السالبُ متوقّعٌ حتى يُعدّ — سطرٌ واحدٌ بعدده بلا زرّ كتم (الكتمُ لكلّ مادّة كان سيُسكتها بعد الوضع أيضاً). */
+    if (folded.size > 0) out.push(<li key="negfold" className="text-ink-muted" data-cons-negfold={folded.size}>{t("rcp.negFold", { n: folded.size })}</li>);
     if (!out.length) return null;
     // break-words على الإشعار كلّه (overflow-wrap يُورَث لكلّ سطر): اسمٌ بلا فاصلٍ أعرضُ من عموده يلتفّ داخله — كان يطلع ٣٨
     // بكسلاً فوق «لا تذكّرني بهالمادة» على ٣٧٥ بكسل (مقيس)، فضغطةُ آخر الاسم تكتم المادّة.

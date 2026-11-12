@@ -97,9 +97,14 @@ const loadUsdFields = () => page(() => import("@/components/usd/Usd").then((m) =
 let UsdFieldsLazy = loadUsdFields();
 let ReportButtons = loadReportButtons();
 
-export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked";
+export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked" | "nocost";
+/** «بلا سعر شراء» (0266): كلفةُ وحدتها بالخادم صفر (stock_unit_cost: المتوسّطُ وإلا سعرُ الشراء، بمنزلتين) — مادّةٌ كهذه لا يرفعها
+ *  البيعُ قبل الجرد (فاتورتُها تُجمَّد ربحاً كاملاً)، وبطاقةُ الإعدادات تعدّها بالتعريف نفسِه وتوصل هنا. المجمَّعةُ والحقلُ والدولار خارجه. */
+const isNoCost = (p: Product): boolean =>
+  !p.pooled && !p.farm_id && p.price_currency !== "USD" && Math.round(Math.max(Number(p.avg_cost ?? p.purchase_price ?? 0) || 0, 0) * 100) === 0;
 const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
   all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, return: isInReturn, expired: isExpired, muted: isMutedExpiry, marked: isMarkedForReturn,
+  nocost: isNoCost,
 };
 /* `in` يقبل الموروث: ?filter=__proto__ أو hasOwnProperty كان يمرّ فيسقط المخزونُ كلُّه. */
 const isStockFilter = (v: string | null): v is StockFilter => !!v && Object.prototype.hasOwnProperty.call(STOCK_FILTERS, v);
@@ -1070,7 +1075,8 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
           ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
           ["muted", t("expiry.muted"), products.filter(isMutedExpiry).length],
           ["marked", t("expiry.filterMarked", "معدّة للإرجاع"), products.filter(isMarkedForReturn).length],
-        ] as [StockFilter, string, number][]).filter(([k, , n]) => (k !== "muted" && k !== "marked") || n > 0 || filter === k).map(([k, label, n]) => (
+          ["nocost", t("pkg.filterNoCost"), products.filter(isNoCost).length],
+        ] as [StockFilter, string, number][]).filter(([k, , n]) => (k !== "muted" && k !== "marked" && k !== "nocost") || n > 0 || filter === k).map(([k, label, n]) => (
           <button
             key={k}
             type="button"
@@ -2440,8 +2446,10 @@ function statsBy(products: Product[], pred: (p: Product) => boolean): CompanySta
   for (const p of products) {
     if (!pred(p)) continue;
     count += 1;
-    units += p.stock || 0;
-    value += (p.stock || 0) * (p.sell_price || 0);
+    /* رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) ليس بضاعةً بالرفّ: لا يطرح من رصيد الشركة ولا من قيمتها ما بقي فيها فعلاً. */
+    const q = Math.max(0, p.stock || 0);
+    units += q;
+    value += q * (p.sell_price || 0);
   }
   return { count, units, value };
 }

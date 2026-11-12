@@ -1330,7 +1330,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 const coName = product?.company_id ? companies.find((c) => c.id === product.company_id)?.name : undefined;
                 const secName = product?.section_id ? (sections ?? []).find((s) => s.id === product.section_id)?.name : undefined;
                 /* بوضع التعديل كميةُ السطر القديمة داخل الرصيد أصلاً — القفزةُ من الرصيد بعد عكسها. */
-                const baseStock = product ? Math.max(0, (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0)) : 0;
+                /* بإشارته: رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) يأكل من الشراء — «٠ ← ١٠» عن مادّةٍ بـ−٣ كان يَعِد بعشرٍ تصير سبعاً. */
+                const baseStock = product ? (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0) : 0;
                 /* الاسمُ المكتوب يطابق منتجاً موجوداً؟ يُعرض بشريط الصفّ — ضغطةٌ تحوّل السطرَ لإعادة تعبئة بدل توأمٍ أعمى. */
                 const sugg = !matched && l.name.trim().length >= 2 ? findByName(l.name).slice(0, 4) : [];
                 const short = l.expiry ? shortDated(l.expiry) : null;
@@ -1416,7 +1417,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           placeholder="0" aria-label={t("purchase.qty", "الكمية المستلمة")} />
                         {product && (
                           <p className={SUB} title={t("purchase.stockJump", { from: baseStock, to: baseStock + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}>
-                            {formatQty(baseStock)} ← {formatQty(baseStock + qtyN)}
+                            <bdi dir="ltr">{formatQty(baseStock)}</bdi> ← <bdi dir="ltr">{formatQty(baseStock + qtyN)}</bdi>
                           </p>
                         )}
                       </td>

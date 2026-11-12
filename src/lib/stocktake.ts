@@ -155,8 +155,9 @@ export function buildStocktake(
       category: p.category ?? null,
       buy, sell,
       systemQty: qty,
-      cost: qty * buy,
-      retail: qty * sell,
+      /* القيمةُ لما بالرفّ: رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) قيمتُه صفر لا سالبة — والكميةُ بإشارتها (الفرقُ يُحسب منها). */
+      cost: Math.max(qty, 0) * buy,
+      retail: Math.max(qty, 0) * sell,
       minStock: p.min_stock ?? null,
       expiry: p.expiry_date ? p.expiry_date.slice(0, 10) : null,
       daysToExpiry: days,
