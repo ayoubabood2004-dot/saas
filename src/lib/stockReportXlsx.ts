@@ -298,7 +298,9 @@ function summarySheet(
 ): any {
   const S = `'${i18n.t("stock.tabCount", "ورقة الجرد")}'`;
   const rowCount = lines.length;
-  const lastData = FIRST_DATA + rowCount - 1;
+  /* عيادةٌ بلا أسطر: المدى J5:J4 مقلوب فيقرؤه البرنامجُ J4:J5 ويأخذ معه خليةَ العنوان — «أسطر فيها فرق: 1» عن ورقةٍ فارغة (قائمٌ منذ أوّل
+   * تصدير؛ مراجعةٌ عدائيّة خامسة). المدى لا يبدأ بعد نهايته. */
+  const lastData = Math.max(FIRST_DATA, FIRST_DATA + rowCount - 1);
   /* المعادلةُ تحمل قيمتَها لحظةَ التصدير (`v`) — والعمودُ الأصفرُ فارغٌ يومها: LibreOffice لا يعيد حسابَ ملفّ xlsx عند الفتح (افتراضيّاً)
    * فيعرض المخزّن، وكانت كلُّها صفراً: «أسطر لم تُعدّ» صفر، و«العدد بالنظام» صفرٌ ويبقى صفراً (لا يتبع ما يُكتب) — مقيسٌ بـsoffice. */
   const rows: { label: string; value?: string | number; z?: string; f?: string; v?: number; head?: boolean; hint?: string }[] = [];

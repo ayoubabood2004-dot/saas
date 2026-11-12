@@ -119,6 +119,10 @@ interface Entry {
   /** المعدودةُ سجلٌّ وحدها بترتيب **بدء** جلبها (آخرُ جلبٍ بدأ، وآخرُ ما نُشر) — لا تتبع جوابَ الحالة الذي طلبها. */
   cGen: number;
   cPubGen: number;
+  /** جلبٌ للمعدودة مطلوب ({counted:true}) ولم يُنشر بعد: أوّلُ cGen يقضيه (0: لا دَين). **للمفتاح لا لسؤالٍ واحد**: كان الطلبُ يعيش
+   *  بسؤاله، فسؤالٌ أحدثُ لا يجلب (ختمُه طازج) نُشر قبله، أو حالتُه فشلت مرّة، فيضيع — والمادّةُ التي ردّها الخادمُ «انعدّت» تبقى تُرفع
+   *  حتى يحين الجلب (مراجعةٌ عدائيّة خامسة). أيُّ سؤالٍ مفعّلٍ بعده يقضيه، وجلبٌ بدأ قبل الطلب لا يقضيه، وجلبٌ قاضٍ فشل يُبقيه. */
+  countedOwed: number;
   timer: ReturnType<typeof setInterval> | null;
   stop: (() => void) | null;
 }
@@ -135,7 +139,7 @@ export function negKey(userId: string | null | undefined): string {
 
 function entryOf(key: string): Entry {
   let e = entries.get(key);
-  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, pubGen: 0, latest: null, cGen: 0, cPubGen: 0, timer: null, stop: null }; entries.set(key, e); }
+  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, pubGen: 0, latest: null, cGen: 0, cPubGen: 0, countedOwed: 0, timer: null, stop: null }; entries.set(key, e); }
   return e;
 }
 function publish(e: Entry, snap: NegSnap): void {
@@ -151,9 +155,13 @@ export function negSnap(key: string): NegSnap { return entries.get(key)?.snap ??
 async function loadCounted(key: string, e: Entry): Promise<void> {
   const cg = ++e.cGen;
   let set: Set<string>;
-  try { set = await negApi.counted(); } catch { return; /* المعدودةُ القديمة تبقى — والبيعةُ يحكم بها الخادم (counted) */ }
+  try { set = await negApi.counted(); } catch {
+    if (e.countedOwed && cg >= e.countedOwed) e.countedOwed = e.cGen + 1;   // الجلبُ القاضي فشل: الدَّينُ باقٍ لسؤالٍ تالٍ
+    return; /* المعدودةُ القديمة تبقى — والبيعةُ يحكم بها الخادم (counted) */
+  }
   if (entries.get(key) !== e || cg < e.cPubGen) return;
   e.cPubGen = cg;
+  if (e.countedOwed && cg >= e.countedOwed) e.countedOwed = 0;
   e.countedAt = perf();
   publish(e, { ...e.snap, counted: set });
 }
@@ -165,12 +173,13 @@ async function loadCounted(key: string, e: Entry): Promise<void> {
  *  الثانية رأت الانتظار، والثالثة أثبتت أنه لا يكفي، والرابعة أنّ الفشلَ مرآتُه). وجوابٌ عن مفتاحٍ نُسي يُرمى. */
 export function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
   const e = entryOf(key);
+  if (opts.counted) e.countedOwed = e.cGen + 1;
   const gen = ++e.gen;
-  const p = askNeg(key, e, gen, opts);
+  const p = askNeg(key, e, gen);
   e.latest = p;
   return p;
 }
-async function askNeg(key: string, e: Entry, gen: number, opts: { counted?: boolean }): Promise<NegState | null> {
+async function askNeg(key: string, e: Entry, gen: number): Promise<NegState | null> {
   const stale = () => entries.get(key) !== e || gen < e.pubGen;
   let s: NegState;
   try {
@@ -189,7 +198,8 @@ async function askNeg(key: string, e: Entry, gen: number, opts: { counted?: bool
     return null;
   }
   if (s.clinic && !e.clinic) e.clinic = s.clinic;
-  if (s.active && (opts.counted || e.countedAt === null || perf() - e.countedAt > COUNTED_MS)) {
+  /* دَينٌ لم يبدأ جلبٌ يقضيه، أو ما حُمّلت، أو شاخت — جلبٌ قاضٍ بالطريق لا يُكرَّر. */
+  if (s.active && ((e.countedOwed > 0 && e.cGen < e.countedOwed) || e.countedAt === null || perf() - e.countedAt > COUNTED_MS)) {
     await loadCounted(key, e);
     if (stale()) return s;
   }
