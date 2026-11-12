@@ -137,7 +137,7 @@ export function buildStocktakeWorkbook(
   wb.Workbook = { Views: [{ RTL: true }] };
 
   XLSX.utils.book_append_sheet(wb, countSheet(XLSX, take, lines, clinic, now, MONEY, QTY, marks), i18n.t("stock.tabCount", "ورقة الجرد"));
-  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, take, clinic, now, MONEY, QTY, lines.length), i18n.t("stock.tabSummary", "الملخّص"));
+  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, take, clinic, now, MONEY, QTY, lines), i18n.t("stock.tabSummary", "الملخّص"));
   XLSX.utils.book_append_sheet(wb, guideSheet(XLSX), i18n.t("stock.tabGuide", "التعليمات"));
   return wb;
 }
@@ -294,11 +294,14 @@ function countSheet(
 
 /* ── ورقة الملخّص ───────────────────────────────────────────────────────── */
 function summarySheet(
-  XLSX: any, take: Stocktake, clinic: string, now: Date, MONEY: string, QTY: string, rowCount: number,
+  XLSX: any, take: Stocktake, clinic: string, now: Date, MONEY: string, QTY: string, lines: StocktakeLine[],
 ): any {
   const S = `'${i18n.t("stock.tabCount", "ورقة الجرد")}'`;
+  const rowCount = lines.length;
   const lastData = FIRST_DATA + rowCount - 1;
-  const rows: { label: string; value?: string | number; z?: string; f?: string; head?: boolean; hint?: string }[] = [];
+  /* المعادلةُ تحمل قيمتَها لحظةَ التصدير (`v`) — والعمودُ الأصفرُ فارغٌ يومها: LibreOffice لا يعيد حسابَ ملفّ xlsx عند الفتح (افتراضيّاً)
+   * فيعرض المخزّن، وكانت كلُّها صفراً: «أسطر لم تُعدّ» صفر، و«العدد بالنظام» صفرٌ ويبقى صفراً (لا يتبع ما يُكتب) — مقيسٌ بـsoffice. */
+  const rows: { label: string; value?: string | number; z?: string; f?: string; v?: number; head?: boolean; hint?: string }[] = [];
 
   rows.push({ label: `${clinic} — ${i18n.t("stock.sumTitle", "ملخّص جرد المخزون")}`, head: true });
   rows.push({ label: i18n.t("stock.sumSnapshot", "لقطة المخزون"), value: stamp(now) });
@@ -320,12 +323,13 @@ function summarySheet(
    * الأولى، فلا تحتاج تصديراً ثانياً بعد انتهاء العدّ. */
   rows.push({ label: i18n.t("stock.sumResult", "نتيجة الجرد (تتحدّث وأنت تملأ «العدد الفعلي»)"), head: true });
   rows.push({ label: i18n.t("stock.sumCounted", "أسطر عُدَّت فعلاً"), f: `COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: "0" });
-  rows.push({ label: i18n.t("stock.sumUncounted", "أسطر لم تُعدّ بعد"), f: `${rowCount}-COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: "0" });
+  rows.push({ label: i18n.t("stock.sumUncounted", "أسطر لم تُعدّ بعد"), f: `${rowCount}-COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, v: rowCount, z: "0" });
   rows.push({ label: i18n.t("stock.sumWithDiff", "أسطر فيها فرق"), f: `COUNTIF(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData},"<>0")-COUNTBLANK(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData})`, z: "0" });
   /* بيعٌ قبل الجرد (0266): «إجمالي القطع» فوق قطعُ الرفّ، والفرقُ يُقاس من العدد بالنظام بإشارته — فيُكتب هنا ليتّفق الحساب أمام العين:
    * فعلي − نظام = صافي الفرق. (لعيادةٍ بلا سالبٍ هما واحد، فلا يُكرَّر.) */
-  if (take.groups.some((g) => g.lines.some((l) => l.systemQty < 0))) {
-    rows.push({ label: i18n.t("stock.hSystemQty", "العدد بالنظام"), f: `SUM(${S}!${COL.systemQty}${FIRST_DATA}:${COL.systemQty}${lastData})`, z: QTY });
+  if (lines.some((l) => l.systemQty < 0)) {
+    rows.push({ label: i18n.t("stock.hSystemQty", "العدد بالنظام"), f: `SUM(${S}!${COL.systemQty}${FIRST_DATA}:${COL.systemQty}${lastData})`,
+      v: round4(lines.reduce((s, l) => s + l.systemQty, 0)), z: QTY });
   }
   rows.push({ label: i18n.t("stock.sumActual", "مجموع القطع الفعلية"), f: `SUM(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: QTY });
   rows.push({ label: i18n.t("stock.sumNetDiff", "صافي فرق القطع (فعلي − نظام)"), f: `SUM(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData})`, z: QTY });
@@ -347,7 +351,7 @@ function summarySheet(
     if (row.head) ws[`A${r + 1}`] = txt(row.label, headStyle);
     else if (row.label) {
       ws[`A${r + 1}`] = txt(row.label, labelStyle);
-      if (row.f) ws[`B${r + 1}`] = { t: "n", f: row.f, v: 0, z: row.z, s: valueStyle };
+      if (row.f) ws[`B${r + 1}`] = { t: "n", f: row.f, v: row.v ?? 0, z: row.z, s: valueStyle };
       else if (typeof row.value === "number") ws[`B${r + 1}`] = { t: "n", v: row.value, z: row.z, s: valueStyle };
       else if (row.value != null) ws[`B${r + 1}`] = txt(String(row.value), valueStyle);
     }

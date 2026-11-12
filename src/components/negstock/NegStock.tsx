@@ -247,15 +247,14 @@ export function NegStockCard() {
 
 /* ══ ٢) شريحةُ الكاشير ونصوصُ الرفض ═════════════════════════════════════════════════════════════════════ */
 
-export function NegBar({ view, say, onReady, compact }: {
-  /** onReady: «وصلتُ» عند التركيب، وما يرجعه يُنادى عند الفكّ — الشاشةُ لا ترسل رسالةً لشريحةٍ راحت. */
-  view: NegBarView; say: NegSay | null; onReady?: () => (() => void) | void; compact?: boolean;
+export function NegBar({ view, says, onSaid, compact }: {
+  /** says: طابورُ رسائل الرفض (كلٌّ برقمه)؛ onSaid(n): «قلتُ حتى n» — الشاشةُ تشيلها فلا تُعاد، ومؤقّتُها الحارُّ لا يقولها ثانيةً. */
+  view: NegBarView; says: readonly NegSay[]; onSaid?: (n: number) => void; compact?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const navigate = useNavigate();
   const lang = i18n.language;
-  useEffect(() => onReady?.(), [onReady]);
   /* رسالةُ الانتقال مرّةً: أوّلُ جوابٍ أساسٌ صامت، وما بعده إن تبدّل يُقال. */
   const prev = useRef<boolean | null>(null);
   useEffect(() => {
@@ -265,21 +264,26 @@ export function NegBar({ view, say, onReady, compact }: {
     if (view.active) toast.success(t("nstk.turnedOn", { day: dayText(view.until ? lastDayOf(view.until) : null, lang) }));
     else { playWarning(); toast.toast({ tone: "error", title: t("nstk.turnedOff") }); }
   }, [view.active, view.until, lang, t, toast]);
+  /* كلُّ ما بالطابور ولم يُقل بهذا التركيب يُقال بترتيبه — رفضان قبل أن تُركَّب كلاهما يُقال. */
   const lastSay = useRef(0);
   useEffect(() => {
-    if (!say || say.n === lastSay.current) return;
-    lastSay.current = say.n;
-    if (say.kind === "noCost") {
-      toast.toast({ tone: "error", title: t("nstk.noCost", { name: say.name }),
-        action: say.canOpen && say.productId ? { label: t("nstk.openProduct"), onClick: () => navigate(`/inventory?edit=${encodeURIComponent(say.productId as string)}`) } : undefined });
-    } else if (say.kind === "counted") {
-      toast.error(t("nstk.counted", { name: say.name, stock: signedQty(say.stock) }));
-    } else if (say.kind === "unsure") {
-      toast.error(t("nstk.unsure", { name: say.name }));
-    } else {
-      toast.error(t("nstk.ended", { name: say.name, stock: signedQty(say.stock) }));
+    const fresh = says.filter((x) => x.n > lastSay.current);
+    if (fresh.length === 0) return;
+    for (const say of fresh) {
+      if (say.kind === "noCost") {
+        toast.toast({ tone: "error", title: t("nstk.noCost", { name: say.name }),
+          action: say.canOpen && say.productId ? { label: t("nstk.openProduct"), onClick: () => navigate(`/inventory?edit=${encodeURIComponent(say.productId as string)}`) } : undefined });
+      } else if (say.kind === "counted") {
+        toast.error(t("nstk.counted", { name: say.name, stock: signedQty(say.stock) }));
+      } else if (say.kind === "unsure") {
+        toast.error(t("nstk.unsure", { name: say.name }));
+      } else {
+        toast.error(t("nstk.ended", { name: say.name, stock: signedQty(say.stock) }));
+      }
     }
-  }, [say, t, toast, navigate]);
+    lastSay.current = Math.max(...fresh.map((x) => x.n));
+    onSaid?.(lastSay.current);
+  }, [says, onSaid, t, toast, navigate]);
 
   const recentEnd = !view.active && view.endedAt && Date.now() - Date.parse(view.endedAt) < 3 * 86_400_000;
   if (!view.active && !recentEnd) return null;
