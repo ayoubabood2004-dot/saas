@@ -1,16 +1,16 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18next, { type TFunction } from "i18next";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, ClipboardCheck, FileSearch, Hourglass, Lock, PackageSearch, RotateCw, Search, TrendingDown, X } from "lucide-react";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
-import type { CountDecision, CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
+import type { Company, CountDecision, CountLineInput, CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
 import { cn, formatNum, formatQty, money, searchable } from "@/lib/utils";
 import { codeMatcher } from "@/lib/productCodes";
-import { describeDbError } from "@/lib/errors";
+import { describeDbError, withTimeout } from "@/lib/errors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
 import { getCountDailyN, setCountDailyN } from "@/lib/settings";
@@ -53,10 +53,38 @@ const loadWasteView = () => page(() => import("@/components/stock/WasteTab"));
 const loadConsCards = () => page(() => import("@/components/stock/WasteTab").then((m) => ({ default: m.ConsumablesCards })));
 let WasteView = loadWasteView();
 let ConsCards = loadConsCards();
-/** `lots`: عدُّ كلّ دفعة (0217) لمادةٍ فيها أكثرُ من دفعة — والمادةُ = مجموعُها. */
-interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string> }
+/** `lots`: عدُّ كلّ دفعة (0217) لمادةٍ فيها أكثرُ من دفعة — والمادةُ = مجموعُها.
+ *  `seen`: رصيدُ المادّة لحظةَ **أوّل** ضغطةٍ على سطرها (0266) — يُقرأ صفُّها طازجاً ويُجمَّد، فلا يُحدَّث ما دام بالسطر عدد. */
+interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string>; seen?: number }
+/** سطرُ الإرسال برصيده الذي رآه العادّ (stock_count_submit_seen). محلّيٌّ لا من negStockApi: الصفحةُ لا تستورد البابَ ثابتاً. */
+type SeenLine = CountLineInput & { seen: number };
 
 const DAYS = 90;
+/** سقفُ الخادم للسطور بنداءٍ واحد (count_too_many، 0216–0266) — الإرسالُ دفعاتٌ بالتتابع. */
+const CHUNK = 200;
+/** سلّةُ «بدون شركة» ببطاقة جرد البداية — ليس معرّفاً (المعرّفاتُ uuid). */
+const NO_COMPANY = "~none";
+
+/* الفرقُ الوهميّ (0266): الخادمُ يلقط رصيدَ النظام لحظةَ «سجّل العدّ» والصفحةُ تحمّل الرصيدَ مرّةً واحدة — فما انباع بين
+ * كتابة العدد وإرساله يرجع «زيادة» لم توجد، وجردُ الشهر التالي يقلبها «عجزاً» يُسجَّل خسارة. فكلُّ سطرٍ يحمل `seen`: رصيدَ صفّه
+ * الطازج لحظةَ أوّل ضغطة (وفشلُ القراءة يرجع للمحمَّل — الخادمُ يحكم على أيّ حال)، والخادمُ يقفل الموادَّ ويقارن: ما تحرّك
+ * يُردّ count_moved بمعرّفاته (detail) بلا أثر، فيُمسح عددُه وحده ويُعدّ من جديد. */
+/** معرّفاتُ ما تحرّك من تفاصيل count_moved (مصفوفةُ JSON بنصّ detail) — أو null إن لم تُقرأ. */
+function movedIdsOf(e: unknown): string[] | null {
+  const d = (e as { details?: unknown } | null)?.details;
+  if (typeof d !== "string") return null;
+  try {
+    const a: unknown = JSON.parse(d);
+    return Array.isArray(a) && a.every((x) => typeof x === "string") ? (a as string[]) : null;
+  } catch { return null; }
+}
+
+/* السطورُ مئاتٌ (بطاقةُ «جرد البداية» تضيف ٢٠٠ بضغطة)، وكلُّ سطرٍ مكوّنٌ مذكور (CountLineRow): ضغطةٌ بسطرٍ ترسمه وحده. فما يصله
+ * ثابتٌ ما لم يتغيّر هو — سطرٌ لم يُكتب فيه ودفعاتٌ لا تُعدّ بثابتين لا بجديدٍ كلَّ رسمة. */
+const NO_LINE: Line = { counted: "", reason: null, note: "", lots: {} };
+const NO_LOTS: readonly ProductLot[] = [];
+/** سطرٌ جديدٌ للكتابة (NO_LINE للقراءة وحدها). */
+const blank = (): Line => ({ counted: "", reason: null, note: "", lots: {} });
 
 /** رفضُ الجرد برمزه (`count_reason`…) وتلميحِه: الخادمُ — والمرآةُ التجريبيةُ مثلَه، بتلميحه حرفاً (refuse بـdemoCounts) — يسمّي
  *  المادةَ بـhint عربيّ فيُعرض كما هو بالعربية؛ وبغير العربية يُترجم الرمزُ هنا من نطاق الصفحة. ورفضٌ بلا تلميح يُترجم كذلك —
@@ -101,6 +129,15 @@ function diffOf(got: Exact, system: number): { sign: number; v: number } {
 }
 /** عددٌ كُتب بأكثر من منازل الرصيد الثلاث (٠٫١٢٠٤) — يُقال بالسطر ويُرفض إرسالُه (انظر أعلاه)، و«٠٫١٢٥٠» ثلاثٌ لا أربع. */
 const tooFine = (a: Exact): boolean => a.s > 3;
+/** المعدودُ بالضبط، أو null ما لم يكتمل: الواحدةُ بحقلها، والمتعدّدةُ (`ls`: دفعاتُها حين تكون أكثرَ من واحدة) حين تُعدّ دفعاتُها
+ *  كلُّها — ومجموعُها كما يجمعه الخادم (exact). */
+function countedIn(l: Line, ls: readonly ProductLot[]): Exact | null {
+  if (ls.length) {
+    if (!ls.every((x) => (l.lots[x.id] ?? "").trim() !== "" && Number.isFinite(Number(l.lots[x.id])))) return null;
+    return ls.reduce((s, x) => plus(s, exact(Number(l.lots[x.id]))), exact(0));
+  }
+  return l.counted.trim() !== "" && Number.isFinite(Number(l.counted)) ? exact(Number(l.counted)) : null;
+}
 
 /** كلفةُ وحدة المخزون كما يلقطها الخادمُ بالعدّ والسند (stock_unit_cost، 0255): المتوسّطُ إن عُرف وإلا سعرُ
  *  الشراء — فمعاينةُ الفرق بقيمة ما سيُسجَّل لا بسعر الشراء وحده. للعرض (الحسابُ الدقيق لا يدخل هذه القطعة). */
@@ -174,9 +211,39 @@ export function StockCount() {
   // ولا يُريان) — كانا يُبقيان الإمساكَ بلا عملٍ يُرى (تدقيقٌ عدائيّ رابع).
   const dirty = Object.values(lines).some((l) => l.counted.trim() !== "" || Object.values(l.lots).some((v) => v.trim() !== ""));
   useEffect(() => (dirty ? holdUpdates(Infinity) : undefined), [dirty]);
+  /* سؤالُ الرصيد الطازج لكلّ سطرٍ كُتب فيه (`seen`): واحدٌ للسطر — وجودُه هنا هو التجميد، ويُمسح مع عدد السطر (إرسالٌ نجح
+     أو count_moved) فقط. والإرسالُ ينتظر سؤالاً بالطريق بدل أن يقرأ الرصيدَ المحمَّل. */
+  const seenReq = useRef(new Map<string, Promise<number>>());
+  /* البيعُ قبل الجرد (0266): عيادةٌ شغّلت الوضعَ يوماً (`used`) رصيدُ موادّها المنقولة ما انعدّ بعد — فبطاقةُ «جرد البداية»
+     و«خطأ إدخال» مختارٌ لأوّل عدّ. بابُه كسول (لا يدخل قطعةَ الصفحة ثابتاً)؛ وغيابُ الدالّة أو فشلُ السؤال يُخفيهما — والعدُّ
+     كما كان والسببُ يُختار باليد، ولا يُطفئ «نعم» عرفناها. */
+  const [negUsed, setNegUsed] = useState(false);
+  /* «انعدّت» بتعريف الخادم (neg_stock_counted: عدٌّ مطابقٌ أو موافَقٌ عليه) — حالةُ العدّ (stock_count_state) تعدّ المرفوضَ والمعلَّقَ
+     أيضاً، فمادّةٌ رُفض عدُّها الأوّل كانت تُحسب «انعدّت» فلا «خطأ إدخال» لعدّها الحقيقيّ الأوّل والخادمُ يرفعها بالكاشير. null: ما
+     وصلت (فشلٌ أو بابٌ قديم) ⇒ حالةُ العدّ كما كانت. */
+  const [countedIds, setCountedIds] = useState<ReadonlySet<string> | null>(null);
+  const askNeg = useCallback(async () => {
+    try {
+      const api = (await import("@/lib/negStockApi")).negApi;
+      const s = await api.state();
+      if (s.used && !s.absent) {
+        setNegUsed(true);
+        try { setCountedIds(await api.counted()); } catch { /* swallow-ok: حالةُ العدّ بديلُها — أضيقُ ولا تخترع «انعدّت» */ }
+      }
+    } catch { /* swallow-ok: تلميحان لا قرار — العدُّ يعمل بلاهما، والسببُ يُختار باليد */ }
+  }, []);
+  /* شركاتُ بطاقة «جرد البداية» — تُسأل حين تظهر البطاقة؛ وفشلُها «أعد المحاولة» لا قائمةٌ ناقصة تقول «ماكو». */
+  const [cos, setCos] = useState<Company[] | "loading" | "error" | null>(null);
+  const loadCos = useCallback(async () => {
+    setCos("loading");
+    try { setCos(await repo.listCompanies()); } catch { setCos("error"); }
+  }, []);
+  /** ما أضافته البطاقةُ للعدّ — شارتُه «ما انعدّت أبداً» لا «أضفتها بالبحث». */
+  const [fromCard, setFromCard] = useState<ReadonlySet<string>>(() => new Set());
 
   const load = useCallback(async () => {
     setData("loading");
+    void askNeg();
     try {
       const [products, sold, state, pending, active] = await Promise.all([
         repo.listProducts(), repo.productSalesRate(DAYS), repo.stockCountState(), repo.listStockCounts({ pending: true }), repo.listActiveLots(),
@@ -186,7 +253,7 @@ export function StockCount() {
       for (const a of lots.values()) a.sort((x, y) => (x.expiry_date ?? "9999").localeCompare(y.expiry_date ?? "9999"));
       setData({ products, sold, state, pending, lots });
     } catch { setData("error"); }
-  }, []);
+  }, [askNeg]);
   useEffect(() => { void load(); }, [load]);
 
   const ready = typeof data === "object" ? data : null;
@@ -207,6 +274,70 @@ export function StockCount() {
     const byCode = codeMatcher(q);
     return ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && (searchable(p.name).includes(s) || byCode(p))).slice(0, 8);
   }, [q, ready, pendingIds]);
+
+  /* «ما انعدّت أبداً»: قابلةٌ للعدّ، بلا عدٍّ مطابقٍ أو موافَقٍ عليه بتعريف الخادم (countedIds)، ولا عدٍّ معلَّق (لا يُعدّ ثانيةً قبل
+     قراره) — وبلا جواب الخادم: بلا سطرٍ بحالة العدّ أصلاً. */
+  const never = useMemo(() => (ready ? ready.products.filter((p) => countable(p) && !pendingIds.has(p.id)
+    && (countedIds ? !countedIds.has(p.id) : !ready.state.has(p.id))) : []), [ready, countedIds, pendingIds]);
+  const neverIds = useMemo(() => new Set(never.map((p) => p.id)), [never]);
+  // عدٌّ ينتظر الموافقة (لا سندُ التلف): رصيدُه ما يتصحّح قبلها — البطاقةُ تقوله.
+  const pendingCounts = (ready?.pending ?? []).filter((r) => (r.source ?? "count") === "count").length;
+  const openCard = negUsed && !!ready && (never.length > 0 || pendingCounts > 0);
+  useEffect(() => { if (openCard && cos === null) void loadCos(); }, [openCard, cos, loadCos]);
+  /* موادُّ كلّ شركةٍ لم تنعدّ ولم تُعرض بعد — وما بلا شركة (أو شركتُه ما عادت بالقائمة) بسلّةٍ واحدة، فكلُّ مادّةٍ تُلقى بسلّةٍ واحدة. */
+  const buckets = useMemo(() => {
+    if (!Array.isArray(cos)) return null;
+    const known = new Set(cos.map((c) => c.id));
+    const on = new Set(shown.map((x) => x.product.id));
+    const by = new Map<string, Product[]>();
+    for (const p of never) {
+      if (on.has(p.id)) continue;
+      const k = p.company_id && known.has(p.company_id) ? p.company_id : NO_COMPANY;
+      const a = by.get(k);
+      if (a) a.push(p); else by.set(k, [p]);
+    }
+    return by;
+  }, [cos, never, shown]);
+  /* توأمٌ بالاسم (CLAUDE.md §٣: رمزٌ ثانٍ لنفس المادّة): عدُّ واحدٍ منهما يترك الآخرَ برصيده — يُقال بسطره. الاسمُ بـsearchable
+     (الهمزةُ والتاءُ المربوطة والأرقام)، والقابلةُ للعدّ وحدها: المجمَّعةُ لا تُعدّ فلا تجعل مادّةً توأماً. */
+  const twinIds = useMemo(() => {
+    const by = new Map<string, string[]>();
+    for (const p of ready?.products ?? []) {
+      if (!countable(p)) continue;
+      const k = searchable(p.name);
+      if (!k) continue;
+      const a = by.get(k);
+      if (a) a.push(p.id); else by.set(k, [p.id]);
+    }
+    return new Set([...by.values()].filter((a) => a.length > 1).flat());
+  }, [ready]);
+  /* كتابةُ السطر تُدمج على آخر حالة (m) لا على لقطة رسمة: جوابُ `seen` يصل بين ضغطتين، وسطرٌ مذكورٌ يحمل دالّةً من رسمةٍ أقدم.
+     والدوالُّ ثابتة (useCallback) — بها لا تُرسم السطورُ كلُّها مع كلّ ضغطة. */
+  const patchLine = useCallback((id: string, patch: (l: Line) => Partial<Line>) =>
+    setLines((m) => { const cur = m[id] ?? blank(); return { ...m, [id]: { ...cur, ...patch(cur) } }; }), []);
+  /** أوّلُ ضغطةٍ على سطر (حقلُ العدد أو أيُّ دفعة): صفُّه يُقرأ طازجاً — مرّةً للسطر، وهذا التجميد؛ وفشلُ القراءة يرجع للرصيد
+   *  المحمَّل (والخادمُ يحكم: ما تحرّك بعده يردّه count_moved). */
+  const touch = useCallback((p: Product) => {
+    if (seenReq.current.has(p.id)) return;
+    const req = (async () => {
+      try {
+        const fresh = await withTimeout(repo.getProductById(p.id));
+        if (fresh) return Number(fresh.stock) || 0;
+      } catch { /* swallow-ok: فشلٌ أو مهلةٌ (سؤالٌ عالق كان سيُعلّق «سجّل العدّ»): الرصيدُ المحمَّل — وما تحرّك بعده يردّه الخادمُ count_moved */ }
+      return Number(p.stock) || 0;
+    })();
+    seenReq.current.set(p.id, req);
+    void req.then((v) => setLines((m) => {
+      const cur = m[p.id];
+      // سطرٌ مُسح عددُه والسؤالُ بالطريق (انسجل، أو count_moved): جوابُه لعدٍّ ما عاد — يُرمى.
+      if (!cur || seenReq.current.get(p.id) !== req) return m;
+      return { ...m, [p.id]: { ...cur, seen: v } };
+    }));
+  }, []);
+  const onCount = useCallback((p: Product, v: string) => { touch(p); patchLine(p.id, () => ({ counted: v })); }, [touch, patchLine]);
+  const onLot = useCallback((p: Product, lot: string, v: string) => { touch(p); patchLine(p.id, (l) => ({ lots: { ...l.lots, [lot]: v } })); }, [touch, patchLine]);
+  const onReason = useCallback((id: string, r: CountReason) => { playTap(); patchLine(id, () => ({ reason: r })); }, [patchLine]);
+  const onNote = useCallback((id: string, v: string) => patchLine(id, () => ({ note: v })), [patchLine]);
 
   /* سندُ التلف خارج سلسلة التحميل: يرسم انتظارَ البيانات وفشلَها بنفسه ويبقى مركَّباً (hidden) — فلا يُعاد بناؤه حين تُعاد
      البيانات بعد إرساله، ولا حين يُبدَّل التبويب ومسودّتُه مكتوبة، **ولا حين ينتهي رفعُ PIN المدير**: شاشةُ «الجرد لمن عنده
@@ -234,50 +365,117 @@ export function StockCount() {
     );
   }
 
-  const lineOf = (id: string): Line => lines[id] ?? { counted: "", reason: null, note: "", lots: {} };
-  const setLine = (id: string, patch: Partial<Line>) => setLines((m) => ({ ...m, [id]: { ...lineOf(id), ...patch } }));
-  /** مادةٌ فيها دفعتان فأكثر تُعدّ دفعةً دفعة (0217) — الموظفُ يلقى العلبَ بتواريخها على الرف. */
-  const lotsOf = (id: string): ProductLot[] => { const a = ready?.lots.get(id) ?? []; return a.length > 1 ? a : []; };
-  /** المعدودُ بالضبط، أو null ما لم يكتمل: الواحدةُ بحقلها، والمتعدّدةُ حين تُعدّ دفعاتُها كلُّها — ومجموعُها كما يجمعه الخادم (exact). */
-  const countedOf = (p: Product): Exact | null => {
-    const l = lineOf(p.id), ls = lotsOf(p.id);
-    if (ls.length) {
-      if (!ls.every((x) => (l.lots[x.id] ?? "").trim() !== "" && Number.isFinite(Number(l.lots[x.id])))) return null;
-      return ls.reduce((s, x) => plus(s, exact(Number(l.lots[x.id]))), exact(0));
-    }
-    return l.counted.trim() !== "" && Number.isFinite(Number(l.counted)) ? exact(Number(l.counted)) : null;
+  const lineOf = (id: string): Line => lines[id] ?? NO_LINE;
+  /** أوّلُ عدٍّ لمادّةٍ بعيادةٍ استعملت البيعَ قبل الجرد: «خطأ إدخال» مختارٌ مسبقاً ويتغيّر — فرقُ الرصيد المنقول خطأُ إدخالٍ لا
+   *  خسارة («تالف/منتهي/عجز» تُسجَّل سحباً لا يُمسح). لا لمادّةٍ انعدّت قبل، ولا بعيادةٍ ما استعملت الوضع. */
+  const preReason = (p: Product): CountReason | null => (negUsed && neverIds.has(p.id) ? "entry_error" : null);
+  const reasonOf = (p: Product, l: Line): CountReason | null => l.reason ?? preReason(p);
+  /** ما رآه العادّ لسطرٍ عند الإرسال: المعروفُ، أو سؤالُه الذي بالطريق (يُنتظر — لا يُستبدل بالمحمَّل). */
+  const seenFor = async (p: Product, l: Line): Promise<number> => l.seen ?? (await seenReq.current.get(p.id)) ?? (Number(p.stock) || 0);
+  /** سطورٌ انسجلت: تُشال من العدّ والقائمة بمعرّفاتها وحدها — وما لم يُرسل يبقى كما كُتب. */
+  const forget = (ids: readonly string[]) => {
+    const gone = new Set(ids);
+    for (const id of gone) seenReq.current.delete(id);
+    setLines((m) => Object.fromEntries(Object.entries(m).filter(([id]) => !gone.has(id))));
+    setExtra((x) => x.filter((id) => !gone.has(id)));
+    setFromCard((s) => new Set([...s].filter((id) => !gone.has(id))));
   };
+  /** count_moved: عددُ ما تحرّك يُمسح وحده — ودفعاتُه ورصيدُه المجمَّد — والسببُ والملاحظةُ يبقيان؛ يُعدّ من جديد بسؤالٍ جديد. */
+  const recount = (ids: readonly string[]) => {
+    const gone = new Set(ids);
+    for (const id of gone) seenReq.current.delete(id); // يُسأل من جديد بأوّل ضغطة
+    setLines((m) => {
+      const next = { ...m };
+      for (const id of gone) {
+        const cur = next[id];
+        if (!cur) continue;
+        const { seen: _seen, ...rest } = cur;
+        next[id] = { ...rest, counted: "", lots: {} };
+      }
+      return next;
+    });
+  };
+  /** بطاقةُ «جرد البداية»: موادُّ شركةٍ ما انعدّت ولا عُرضت — ما رصيدُه صفر أو تحته أوّلاً، وبسقف دفعة إرسال. */
+  const addCompany = (key: string) => {
+    const pick = [...(buckets?.get(key) ?? [])]
+      .sort((a, b) => Number((Number(a.stock) || 0) > 0) - Number((Number(b.stock) || 0) > 0) || a.name.localeCompare(b.name) || (a.id < b.id ? -1 : 1))
+      .slice(0, CHUNK).map((p) => p.id);
+    setExtra((x) => { const have = new Set(x); return [...x, ...pick.filter((id) => !have.has(id))]; });
+    setFromCard((s) => new Set([...s, ...pick]));
+    toast.success(t("cnt.open.added", { n: formatNum(pick.length), defaultValue: "انضافت {{n}} مادة للعدّ" }));
+  };
+  /** مادةٌ فيها دفعتان فأكثر تُعدّ دفعةً دفعة (0217) — الموظفُ يلقى العلبَ بتواريخها على الرف. */
+  const lotsOf = (id: string): readonly ProductLot[] => { const a = ready?.lots.get(id); return a && a.length > 1 ? a : NO_LOTS; };
+  const countedOf = (p: Product): Exact | null => countedIn(lineOf(p.id), lotsOf(p.id));
   const entered = shown.filter(({ product }) => countedOf(product) !== null);
 
+  /** الإرسالُ دفعاتٍ بالتتابع (≤ ٢٠٠، سقفُ الخادم): كلُّ دفعةٍ نجحت تُشال سطورُها بمعرّفاتها، وأوّلُ فشلٍ يوقف ما بعده ويُقال
+   *  «انسجل a من b» — والباقي بالقائمة كما كُتب. بابُ الخادم كسول (stock_count_submit_seen، ورجوعُه للقديم إن غابت الهجرة). */
+  const send = async (payload: SeenLine[]) => {
+    let done = 0, matched = 0, pending = 0;
+    let part: SeenLine[] = [];
+    try {
+      const { negApi } = await import("@/lib/negStockApi");
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        part = payload.slice(i, i + CHUNK);
+        const r = await negApi.countSubmitSeen(part);
+        matched += Number(r.matched) || 0;
+        pending += Number(r.pending) || 0;
+        done += part.length;
+        forget(part.map((x) => x.product_id));
+      }
+    } catch (e) {
+      playWarning();
+      const code = e instanceof Error ? e.message : "";
+      /* ما تحرّك رصيدُه بعد كتابة عدده يُمسح عددُه وحده ويُعدّ من جديد. وتفاصيلُ لا تُقرأ (لا يرسلها خادمٌ اليوم) تمسح الدفعةَ كلَّها:
+         عددٌ مجمَّدٌ على رصيدٍ تحرّك يُردّ count_moved بكلّ إرسال — فخٌّ للأبد. */
+      if (code === "count_moved") recount(movedIdsOf(e) ?? part.map((x) => x.product_id));
+      const why = countError(e, t, i18n.language);
+      toast.error(done > 0 ? t("cnt.partial", { a: formatNum(done), b: formatNum(payload.length), why, defaultValue: "انسجل {{a}} من {{b}} — الباقي ما انسجل وبقى بالقائمة: {{why}}" }) : why);
+      /* الرصيدُ تغيّر من تحت الصفحة (بيعٌ بعد فتحها) أو عدّها غيرُك أو انسجل بعضُها: تُحدَّث القائمةُ ويبقى ما كتبتَه — مثبَّتاً بالقائمة،
+         فلا يختفي سطرٌ مكتوب إن تبدّل اختيارُ اليوم بعد التحميل. */
+      if (done > 0 || /^count_(reason|already_pending|product_missing|moved)$/.test(code)) {
+        const left = payload.slice(done).map((x) => x.product_id);
+        setExtra((x) => { const have = new Set(x); return [...x, ...left.filter((id) => !have.has(id))]; });
+        void load();
+      }
+      return;
+    }
+    playSuccess();
+    toast.success(t("cnt.saved", { m: formatNum(matched), p: formatNum(pending), defaultValue: "انسجل العدّ: {{m}} مطابقة، و{{p}} بيها فرق تنتظر موافقة المدير" }));
+    setQ("");
+    await load();
+  };
+
   const submit = async () => {
-    const payload = [];
+    if (busy) return;
+    const rows: { product: Product; l: Line; got: Exact; ls: readonly ProductLot[] }[] = [];
     for (const { product } of entered) {
       const l = lineOf(product.id);
       const got = countedOf(product);
       const ls = lotsOf(product.id);
       if (!got || got.n < 0n) { playWarning(); toast.error(t("cnt.badQty", { name: product.name, defaultValue: "«{{name}}»: العدد لازم يكون صفر أو أكثر" })); return; }
       if (tooFine(got)) { playWarning(); toast.error(t("cnt.badFine", { name: product.name, defaultValue: "«{{name}}»: اكتب العدد بثلاث مراتب عشرية أقصى" })); return; }
-      // الإشارةُ بالضبط (diffOf) — بها يقرّر الخادمُ «مطابق» أو «اختر السبب»، فبها يُطلب السببُ ويُرسل.
-      const diff = diffOf(got, product.stock).sign;
-      if (diff !== 0 && (!l.reason || !reasonsFor(diff).includes(l.reason))) {
-        playWarning(); toast.error(t("cnt.needReason", { name: product.name, defaultValue: "«{{name}}» بيها فرق — اختر السبب" })); return;
-      }
       if (ls.some((x) => Number(l.lots[x.id]) < 0)) { playWarning(); toast.error(t("cnt.badQty", { name: product.name, defaultValue: "«{{name}}»: العدد لازم يكون صفر أو أكثر" })); return; }
-      payload.push({ product_id: product.id, counted: toNum(got), reason: diff === 0 ? null : l.reason, note: l.note.trim() || null,
-        lots: ls.length ? ls.map((x) => ({ lot_id: x.id, counted: Number(l.lots[x.id]) })) : undefined });
+      rows.push({ product, l, got, ls });
     }
-    if (!payload.length) return;
+    if (!rows.length) return;
     setBusy(true);
     try {
-      const r = await repo.submitStockCount(payload);
-      playSuccess();
-      toast.success(t("cnt.saved", { m: formatNum(r.matched), p: formatNum(r.pending), defaultValue: "انسجل العدّ: {{m}} مطابقة، و{{p}} بيها فرق تنتظر موافقة المدير" }));
-      setLines({}); setExtra([]); setQ("");
-      await load();
-    } catch (e) {
-      playWarning(); toast.error(countError(e, t, i18n.language));
-      // الرصيدُ تغيّر من تحت الصفحة (بيعٌ بعد فتحها) أو عدّها غيرُك: تُحدَّث القائمةُ ويبقى ما كتبتَه.
-      if (/^count_(reason|already_pending|product_missing)$/.test(e instanceof Error ? e.message : "")) void load();
+      // الرصيدُ الذي رآه العادّ لكلّ سطر — سؤالٌ بالطريق يُنتظر، لا يُستبدل بالمحمَّل.
+      const seen = await Promise.all(rows.map(({ product, l }) => seenFor(product, l)));
+      const payload: SeenLine[] = [];
+      for (const [i, { product, l, got, ls }] of rows.entries()) {
+        // الإشارةُ بالضبط (diffOf) على ما رآه العادّ — بها يقرّر الخادمُ «مطابق» أو «اختر السبب»، فبها يُطلب السببُ ويُرسل.
+        const diff = diffOf(got, seen[i]).sign;
+        const reason = reasonOf(product, l);
+        if (diff !== 0 && (!reason || !reasonsFor(diff).includes(reason))) {
+          playWarning(); toast.error(t("cnt.needReason", { name: product.name, defaultValue: "«{{name}}» بيها فرق — اختر السبب" })); return;
+        }
+        payload.push({ product_id: product.id, counted: toNum(got), reason: diff === 0 ? null : reason, note: l.note.trim() || null,
+          lots: ls.length ? ls.map((x) => ({ lot_id: x.id, counted: Number(l.lots[x.id]) })) : undefined, seen: seen[i] });
+      }
+      await send(payload);
     } finally { setBusy(false); }
   };
 
@@ -349,98 +547,55 @@ export function StockCount() {
             )}
           </div>
 
+          {/* جردُ البداية (0266): عيادةٌ باعت قبل الجرد رصيدُ موادّها المنقولة ما انعدّ — كم باقي، وما ينتظر الموافقة، وموادُّ شركةٍ
+              بضغطة (ما رصيدُه صفر أو تحته أوّلاً)، وما يُفعل قبل العدّ. لعيادةٍ استعملت الوضعَ وحدها. */}
+          {openCard && (
+            <section className="card space-y-2.5 p-4" data-count-open>
+              <p className="flex items-center gap-2 text-sm font-extrabold text-ink"><ClipboardCheck size={16} className="text-brand-600" /> {t("cnt.open.title", "جرد البداية")}</p>
+              {never.length > 0 && <p className="text-xs font-semibold text-ink-muted" data-count-open-left>{t("cnt.open.left", { n: formatNum(never.length), z: formatNum(never.filter((p) => (Number(p.stock) || 0) <= 0).length), defaultValue: "باقي {{n}} مادة ما انعدّت أبداً، منها {{z}} رصيدها صفر أو تحت الصفر" })}</p>}
+              {pendingCounts > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl bg-warn-50/70 p-2.5 text-xs font-semibold text-warn-700 dark:bg-warn-500/10 dark:text-warn-200" data-count-open-pending>
+                  <Hourglass size={14} />
+                  <span className="min-w-0 flex-1">{t("cnt.open.pending", { n: formatNum(pendingCounts), defaultValue: "{{n}} عدّ ينتظر الموافقة — الرصيد ما يتصحّح قبلها" })}</span>
+                  {isManager && <Button size="sm" variant="secondary" onClick={() => { playTap(); setTab("pending"); }} data-count-open-go>{t("cnt.open.goPending", "وافق هسه")}</Button>}
+                </div>
+              )}
+              {never.length > 0 && (cos === "error" ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted" data-count-open-failed>
+                  <span className="min-w-0 flex-1">{t("cnt.loadFailed", "ما كدرنا نجيب بيانات الجرد — المشكلة بالاتصال ولا شي ضاع.")}</span>
+                  <Button size="sm" variant="secondary" leftIcon={<RotateCw size={14} />} onClick={() => { playTap(); void loadCos(); }}>{t("common.retry", "أعد المحاولة")}</Button>
+                </div>
+              ) : (
+                <label className="flex items-center gap-2">
+                  <PackageSearch size={16} className="text-ink-subtle" />
+                  {/* القائمةُ بعد وصول الشركات كلّها لا قبلها: سلّةٌ ناقصة تقول «ماكو» عن موجود. */}
+                  <select className="input h-10 min-w-0 flex-1 py-0 text-sm" value="" disabled={!buckets} data-count-open-company
+                    onChange={(e) => { if (e.target.value) { playTap(); addCompany(e.target.value); } }}>
+                    <option value="">{t("cnt.open.pick", "أضف مواد شركة للعدّ")}</option>
+                    {Array.isArray(cos) && cos.filter((c) => buckets?.has(c.id)).map((c) => (
+                      <option key={c.id} value={c.id}>{`${c.name} (${formatNum(buckets?.get(c.id)?.length ?? 0)})`}</option>
+                    ))}
+                    {buckets?.has(NO_COMPANY) && <option value={NO_COMPANY}>{`${t("cnt.open.noCompany", "بدون شركة")} (${formatNum(buckets.get(NO_COMPANY)?.length ?? 0)})`}</option>}
+                  </select>
+                </label>
+              ))}
+              <details className="text-xs text-ink-muted" data-count-open-check>
+                <summary className="cursor-pointer font-bold text-ink">{t("cnt.open.checklist", "قبل ما تعدّ")}</summary>
+                <ol className="mt-1.5 list-decimal space-y-1 ps-5">
+                  {(["c1", "c2", "c3", "c4", "c5", "c6"] as const).map((k) => <li key={k}>{t(`cnt.open.${k}`)}</li>)}
+                </ol>
+              </details>
+            </section>
+          )}
+
           {shown.length === 0 ? (
             <p className="card p-6 text-center text-sm text-ink-subtle" data-count-empty>{t("cnt.nothingToday", "ماكو مواد مقترحة اليوم — كلها انعدّت بوقتها. تكدر تضيف مادة بالبحث.")}</p>
           ) : (
             <ul className="space-y-2">
-              {shown.map(({ product: p, pick }) => {
-                const l = lineOf(p.id);
-                const ls = lotsOf(p.id);
-                const got = countedOf(p);
-                const has = got !== null;
-                const sys = Number(p.stock) || 0;
-                // عددٌ أدقّ من ثلاث منازل يُقال بالسطر (لا «الفرق +0» وسبب)؛ وغيرُه فرقُه بالضبط كما يراه الخادم: إشارتُه تحكم، وقيمتُه للعرض.
-                const fine = got !== null && tooFine(got);
-                const df = got && !fine ? diffOf(got, p.stock) : { sign: 0, v: 0 };
-                const diff = df.sign;
-                const opts = reasonsFor(diff);
-                // وحدةُ العدّ حيث يلتبس (كغ، علبة) — بالحقل وبالفرق.
-                const word = countWord(t, p), u = word ? ` ${word}` : "";
-                return (
-                  <li key={p.id} className={cn("card p-3", has && (fine || diff !== 0) && "border-warn-300 dark:border-warn-500/40")} data-count-line>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold text-ink">{p.name}</p>
-                        <div className="mt-0.5 flex flex-wrap gap-1">
-                          {(pick?.why ?? []).map((w) => (
-                            <span key={w} className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold text-ink-muted">
-                              {w === "stale" ? t("cnt.why.stale", { d: formatNum(pick?.daysSince ?? 0), defaultValue: "صارلها {{d}} يوم ما انعدّت" }) : t(`cnt.why.${w}`)}
-                            </span>
-                          ))}
-                          {!pick && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold text-ink-muted">{t("cnt.why.added", "أضفتها بالبحث")}</span>}
-                        </div>
-                      </div>
-                      {!ls.length && (
-                        <label className="flex items-center gap-1 text-xs font-semibold text-ink-muted">
-                          {t("cnt.counted", "لقيت")}
-                          <input type="number" inputMode="decimal" min={0} step="any" className="input h-10 w-24 text-center tabular-nums" data-count-input
-                            value={l.counted} onChange={(e) => setLine(p.id, { counted: e.target.value })} />
-                          {word && <span data-count-unit>{word}</span>}
-                        </label>
-                      )}
-                    </div>
-                    {ls.length > 0 && (
-                      <div className="mt-2 space-y-1.5 rounded-xl bg-surface-2 p-2.5" data-count-lots>
-                        <p className="text-2xs font-semibold text-ink-muted">{t("cnt.byLot", "هاي المادة بيها أكثر من دفعة — عدّ كل تاريخ وحده:")}</p>
-                        {ls.map((x) => {
-                          const v = l.lots[x.id] ?? "";
-                          // فرقُ الدفعة بالضبط كفرق المادة (diffOf)؛ وعددٌ أدقّ من ثلاث منازل لا فرقَ له هنا — السطرُ يقوله (لا «+0»).
-                          const lv = v.trim() !== "" && Number.isFinite(Number(v)) ? exact(Number(v)) : null;
-                          const ld = lv && !tooFine(lv) ? diffOf(lv, x.qty) : null;
-                          return (
-                            <label key={x.id} className="flex flex-wrap items-center gap-2 text-xs">
-                              <span className="min-w-0 flex-1 font-bold text-ink">
-                                {x.expiry_date ? t("cnt.lotExp", { d: x.expiry_date.slice(0, 10).replace(/-/g, "/"), defaultValue: "تنتهي {{d}}" }) : t("cnt.lotNoDate", "بلا تاريخ")}
-                                {ld && ld.sign !== 0 && <span className="ms-2 text-warn-700 dark:text-warn-300" data-count-lot-diff>{t("cnt.lotDiff", { sys: `${formatQty(x.qty)}${u}`, diff: `${ld.sign > 0 ? "+" : "−"}${formatQty(Math.abs(ld.v))}${u}`, defaultValue: "(النظام {{sys}} — {{diff}})" })}</span>}
-                              </span>
-                              <span className="text-ink-muted">{t("cnt.counted", "لقيت")}</span>
-                              <input type="number" inputMode="decimal" min={0} step="any" className="input h-9 w-20 text-center tabular-nums" data-count-lot-input
-                                value={v} onChange={(e) => setLine(p.id, { lots: { ...l.lots, [x.id]: e.target.value } })} />
-                              {word && <span className="text-ink-muted" data-count-unit>{word}</span>}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {has && (
-                      fine ? (
-                        <p className="mt-2 text-xs font-bold text-warn-700 dark:text-warn-200" data-count-fine>{t("cnt.fine", "اكتب العدد بثلاث مراتب عشرية أقصى — النظام ما يحفظ أدق منها")}</p>
-                      ) : diff === 0 ? (
-                        <p className="mt-2 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={14} /> {t("cnt.match", "مطابق للنظام")}</p>
-                      ) : (
-                        <div className="mt-2 space-y-2 rounded-xl bg-warn-50/70 p-2.5 dark:bg-warn-500/10" data-count-diff>
-                          <p className="text-xs font-bold text-warn-800 dark:text-warn-200">
-                            {t("cnt.diffLine", { sys: `${formatQty(sys)}${u}`, diff: `${diff > 0 ? "+" : "−"}${formatQty(Math.abs(df.v))}${u}`, defaultValue: "النظام يگول {{sys}} — الفرق {{diff}}" })}
-                            {!restricted && unitCostOf(p) > 0 && <> · {money(Math.abs(df.v) * unitCostOf(p))}</>}
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {opts.map((r) => (
-                              <button key={r} type="button" aria-pressed={l.reason === r} data-count-reason={r}
-                                onClick={() => { playTap(); setLine(p.id, { reason: r }); }}
-                                className={cn("rounded-full px-3 py-1 text-xs font-bold transition",
-                                  l.reason === r ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:text-ink")}>
-                                {t(`cnt.reason.${r}`)}
-                              </button>
-                            ))}
-                          </div>
-                          <input className="input h-9 text-sm" maxLength={200} placeholder={t("cnt.notePh", "ملاحظة (اختياري): شنو صار؟")}
-                            value={l.note} onChange={(e) => setLine(p.id, { note: e.target.value })} />
-                        </div>
-                      )
-                    )}
-                  </li>
-                );
-              })}
+              {shown.map(({ product: p, pick }) => (
+                <CountLineRow key={p.id} p={p} pick={pick} l={lineOf(p.id)} ls={lotsOf(p.id)} pre={preReason(p)} twin={twinIds.has(p.id)}
+                  carded={fromCard.has(p.id)} busy={busy} restricted={restricted} onCount={onCount} onLot={onLot} onReason={onReason} onNote={onNote} />
+              ))}
             </ul>
           )}
 
@@ -490,6 +645,106 @@ export function StockCount() {
     </div>
   );
 }
+
+/** سطرُ عدٍّ واحد — مذكورٌ (memo): بطاقةُ «جرد البداية» تجعل القائمةَ مئاتِ السطور، وضغطةٌ بسطرٍ كانت تعيد رسمَها كلَّها (مقيسٌ
+ *  بفحص الحزمة: ٤٥٠ سطراً تُكتب وتُرسل بـ١٨ ثانية للتشغيل قبله، وبثانيتين به). كلُّ ما يصله ثابتٌ ما لم يتغيّر هو: السطرُ نفسُه أو
+ *  NO_LINE، ودفعاتُه أو NO_LOTS، والدوالُّ من useCallback. `pre`: السببُ المختار مسبقاً لأوّل عدّ (0266)؛ `carded`: أضافته البطاقة. */
+const CountLineRow = memo(function CountLineRow({ p, pick, l, ls, pre, twin, carded, busy, restricted, onCount, onLot, onReason, onNote }: {
+  p: Product; pick: CountPick | null; l: Line; ls: readonly ProductLot[]; pre: CountReason | null; twin: boolean; carded: boolean; busy: boolean; restricted: boolean;
+  onCount: (p: Product, v: string) => void; onLot: (p: Product, lot: string, v: string) => void;
+  onReason: (id: string, r: CountReason) => void; onNote: (id: string, v: string) => void;
+}) {
+  const { t } = useTranslation();
+  const got = countedIn(l, ls);
+  const has = got !== null;
+  // ما رآه العادّ لحظةَ أوّل ضغطة (seen) — والخادمُ يقارن به، فبه يُرسم الفرقُ ويُطلب السبب.
+  const sys = l.seen ?? (Number(p.stock) || 0);
+  // عددٌ أدقّ من ثلاث منازل يُقال بالسطر (لا «الفرق +0» وسبب)؛ وغيرُه فرقُه بالضبط كما يراه الخادم: إشارتُه تحكم، وقيمتُه للعرض.
+  const fine = got !== null && tooFine(got);
+  const df = got && !fine ? diffOf(got, sys) : { sign: 0, v: 0 };
+  const diff = df.sign;
+  const opts = reasonsFor(diff);
+  const reason = l.reason ?? pre;
+  // وحدةُ العدّ حيث يلتبس (كغ، علبة) — بالحقل وبالفرق.
+  const word = countWord(t, p), u = word ? ` ${word}` : "";
+  return (
+    <li className={cn("card p-3", has && (fine || diff !== 0) && "border-warn-300 dark:border-warn-500/40")} data-count-line={p.id}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-ink">{p.name}</p>
+          <div className="mt-0.5 flex flex-wrap gap-1">
+            {(pick?.why ?? []).map((w) => (
+              <span key={w} className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold text-ink-muted">
+                {w === "stale" ? t("cnt.why.stale", { d: formatNum(pick?.daysSince ?? 0), defaultValue: "صارلها {{d}} يوم ما انعدّت" }) : t(`cnt.why.${w}`)}
+              </span>
+            ))}
+            {!pick && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold text-ink-muted">{carded ? t("cnt.why.never", "ما انعدّت أبداً") : t("cnt.why.added", "أضفتها بالبحث")}</span>}
+          </div>
+          {twin && <p className="mt-1 text-2xs font-semibold text-warn-700 dark:text-warn-200" data-count-twin>{t("cnt.twin", "بالمخزن مادة ثانية بنفس الاسم — ادمجهن أول، أو اعدّ الاثنين")}</p>}
+        </div>
+        {!ls.length && (
+          <label className="flex items-center gap-1 text-xs font-semibold text-ink-muted">
+            {t("cnt.counted", "لقيت")}
+            <input type="number" inputMode="decimal" min={0} step="any" className="input h-10 w-24 text-center tabular-nums" data-count-input
+              value={l.counted} disabled={busy} onChange={(e) => onCount(p, e.target.value)} />
+            {word && <span data-count-unit>{word}</span>}
+          </label>
+        )}
+      </div>
+      {ls.length > 0 && (
+        <div className="mt-2 space-y-1.5 rounded-xl bg-surface-2 p-2.5" data-count-lots>
+          <p className="text-2xs font-semibold text-ink-muted">{t("cnt.byLot", "هاي المادة بيها أكثر من دفعة — عدّ كل تاريخ وحده:")}</p>
+          {ls.map((x) => {
+            const v = l.lots[x.id] ?? "";
+            // فرقُ الدفعة بالضبط كفرق المادة (diffOf)؛ وعددٌ أدقّ من ثلاث منازل لا فرقَ له هنا — السطرُ يقوله (لا «+0»).
+            const lv = v.trim() !== "" && Number.isFinite(Number(v)) ? exact(Number(v)) : null;
+            const ld = lv && !tooFine(lv) ? diffOf(lv, x.qty) : null;
+            return (
+              <label key={x.id} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1 font-bold text-ink">
+                  {x.expiry_date ? t("cnt.lotExp", { d: x.expiry_date.slice(0, 10).replace(/-/g, "/"), defaultValue: "تنتهي {{d}}" }) : t("cnt.lotNoDate", "بلا تاريخ")}
+                  {ld && ld.sign !== 0 && <span className="ms-2 text-warn-700 dark:text-warn-300" data-count-lot-diff>{t("cnt.lotDiff", { sys: `${formatQty(x.qty)}${u}`, diff: `${ld.sign > 0 ? "+" : "−"}${formatQty(Math.abs(ld.v))}${u}`, defaultValue: "(النظام {{sys}} — {{diff}})" })}</span>}
+                </span>
+                <span className="text-ink-muted">{t("cnt.counted", "لقيت")}</span>
+                <input type="number" inputMode="decimal" min={0} step="any" className="input h-9 w-20 text-center tabular-nums" data-count-lot-input
+                  value={v} disabled={busy} onChange={(e) => onLot(p, x.id, e.target.value)} />
+                {word && <span className="text-ink-muted" data-count-unit>{word}</span>}
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {has && (
+        fine ? (
+          <p className="mt-2 text-xs font-bold text-warn-700 dark:text-warn-200" data-count-fine>{t("cnt.fine", "اكتب العدد بثلاث مراتب عشرية أقصى — النظام ما يحفظ أدق منها")}</p>
+        ) : diff === 0 ? (
+          <p className="mt-2 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={14} /> {t("cnt.match", "مطابق للنظام")}</p>
+        ) : (
+          <div className="mt-2 space-y-2 rounded-xl bg-warn-50/70 p-2.5 dark:bg-warn-500/10" data-count-diff>
+            <p className="text-xs font-bold text-warn-800 dark:text-warn-200">
+              {t("cnt.diffLine", { sys: `${formatQty(sys)}${u}`, diff: `${diff > 0 ? "+" : "−"}${formatQty(Math.abs(df.v))}${u}`, defaultValue: "النظام يگول {{sys}} — الفرق {{diff}}" })}
+              {!restricted && unitCostOf(p) > 0 && <> · {money(Math.abs(df.v) * unitCostOf(p))}</>}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {opts.map((r) => (
+                <button key={r} type="button" aria-pressed={reason === r} data-count-reason={r} disabled={busy}
+                  onClick={() => onReason(p.id, r)}
+                  className={cn("rounded-full px-3 py-1 text-xs font-bold transition",
+                    reason === r ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:text-ink")}>
+                  {t(`cnt.reason.${r}`)}
+                </button>
+              ))}
+            </div>
+            {/* أوّلُ عدٍّ بعد البيع قبل الجرد: لماذا «خطأ إدخال» مختار — ومتى يُغيَّر (ما دام هو المختار). */}
+            {pre !== null && reason === "entry_error" && <p className="text-2xs font-semibold text-ink-muted" data-count-first>{t("cnt.firstCount", "أول عدّ لهالمادة: السبب مختار «خطأ إدخال» — ما يسجّل خسارة. غيّره لـ«تالف» أو «منتهي» أو «عجز» بس إذا تعرف إنها راحت فعلاً — هذي تسجّل خسارة ما تنمسح.")}</p>}
+            <input className="input h-9 text-sm" maxLength={200} placeholder={t("cnt.notePh", "ملاحظة (اختياري): شنو صار؟")}
+              value={l.note} disabled={busy} onChange={(e) => onNote(p.id, e.target.value)} />
+          </div>
+        )
+      )}
+    </li>
+  );
+});
 
 function PendingTab({ rows, productOf, isManager, restricted, onChanged, onNegatives }: {
   rows: CountRow[]; productOf: (id: string | null) => Product | undefined; isManager: boolean; restricted: boolean;
