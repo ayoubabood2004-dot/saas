@@ -192,6 +192,7 @@ function freshEnv(o = {}) {
     ov: { active: false, until: null, deviceLocked: false, restricted: false, stockLocked: false },
     rpc: async (fn, args) => {
       log.rpc.push([fn, args]);
+      if (o.rpcDown) throw new TypeError("Failed to fetch");
       if (fn === "pack_sale_ready") return { data: o.ready ?? true, error: null };
       if (fn === "product_level_by_code") return { data: o.levelRows ?? [], error: null };
       return { data: null, error: { code: "42883" } };
@@ -203,7 +204,7 @@ function freshEnv(o = {}) {
           customer_name: null, customer_phone: null, pet_name: null, status: "paid", created_at: "2026-11-12T09:00:00.000Z", recorded_at: null, item_count: items.length };
       },
       getProductByBarcode: async () => undefined,
-      getProductById: async (id) => rows().find((p) => p.id === id),
+      getProductById: async (id) => { log.byId = (log.byId ?? 0) + 1; return rows().find((p) => p.id === id); },
       getSectionPool: async () => 0,
       logClientEvent: async () => {}, priceRaisePrior: async () => ({}), listClinicVisitsForPet: async () => [],
     },
@@ -222,7 +223,8 @@ async function session(M, { draft = null, products = [PC, PS, PV], ...env } = {}
   const Host = () => {
     const [ps, setPs] = useState(products);
     setProducts = (x) => { globalThis.__sb.products = x; setPs(x); };
-    return createElement(M.SaleBuilder, { products: ps, clinicId: "c1", onSold() {} });
+    const onFreshRow = (patch) => { if (patch.kind === "row") setPs((list) => { const next = list.some((x) => x.id === patch.row.id) ? list.map((x) => (x.id === patch.row.id ? patch.row : x)) : [...list, patch.row]; globalThis.__sb.products = next; return next; }); };
+    return createElement(M.SaleBuilder, { products: ps, clinicId: "c1", onSold() {}, onFreshRow });
   };
   const ui = M.mount(createElement(Host));
   await flush();
@@ -237,6 +239,7 @@ async function session(M, { draft = null, products = [PC, PS, PV], ...env } = {}
     setProducts: async (x) => { setProducts(x); await flush(); },
     checkout: async () => { ui.click(btn((s) => s.startsWith("إصدار الفاتورة"))); for (let i = 0; i < 4; i++) await flush(); },
     bigGo: async () => { const n = ui.find("data-bigsalego"); if (n) { ui.click(n); for (let i = 0; i < 4; i++) await flush(); } },
+    bigOpen: () => !!ui.find("data-bigsalego"),
     errs: () => log.errors.map(([a]) => String(a)),
     end: () => ui.unmount(),
   };
@@ -311,7 +314,24 @@ async function run(M, c) {
     await S.scan("CTN-24");
     c("هـ١ كارتونٌ عُرّف من جهازٍ آخر بعد فتح الشاشة: يُسأل الخادم (product_level_by_code) فينزل سطرُه — لا «مو موجود — أضفه»",
       S.line("k:pC:k24")?.qty === 1 && S.log.rpc.some(([f]) => f === "product_level_by_code") && !S.errs().some((x) => x.includes("مو موجود")), J({ c: S.cart(), e: S.errs() }));
+    await S.checkout(); await S.bigGo();
+    c("هـ٢ والبيعةُ تمرّ (الصفُّ الطازج رقّع القائمة) — لا «تغيّر» كاذبة", S.log.checkout.length === 1 && !S.errs().some((x) => x.startsWith("pks.changed|")), J({ n: S.log.checkout.length, e: S.errs() }));
     S.end();
+    const S2 = await session(M, { products: [{ ...PC, packs: null }, PS, PV], serverRows: [PC] });
+    const line = { id: "k:pC:k24", kind: "product", name: "مغلف فيتامين", barcode: "B-1", unit_price: 30000, unit_cost: 21600, qty: 1, stock: 100, product_id: "pC",
+      subcategory: null, hasSubUnit: false, saleUnit: "pack", packId: "k24", packPer: 24, packName: "كارتون", packNote: "24", packPrice: 30000, priceManual: false };
+    S2.end();
+    const S3 = await session(M, { products: [{ ...PC, packs: null }, PS, PV], serverRows: [PC],
+      draft: { cart: [line], name: "", phone: "", salePets: [], discountType: "percent", discountValue: "", finalOverride: null, cashierId: null } });
+    await S3.checkout(); await S3.bigGo();
+    c("هـ٣ مسودّةٌ بكارتونٍ لا تعرفه القائمةُ البائتة والخادمُ يعرفه: يُسأل الخادم قبل «تغيّر» والبيعةُ تمرّ", S3.log.checkout.length === 1 && (S3.log.byId ?? 0) >= 1, J({ n: S3.log.checkout.length, e: S3.errs() }));
+    S3.end();
+    const S4 = await session(M, { products: [{ ...PC, stock: 24, packs: null }, PS, PV], levelRows: [{ ...PC, stock: 24 }], serverRows: [{ ...PC, stock: 24 }] });
+    await S4.scan("CTN-24");
+    S4.ui.click(S4.ui.find("data-qtyplus")); await flush(); await flush();
+    c("هـ٤ والصفُّ الذي لقيه الخادمُ يرقّع القائمة: «+» على الكارتون يُحكم بالرصيد («الباقي يكفي ٠») لا «تغيّر» كاذبة",
+      (S4.errs().at(-1) ?? "").startsWith("pks.short|") && S4.line("k:pC:k24")?.qty === 1, J({ e: S4.errs(), c: S4.cart().map((l) => [l.id, l.qty]) }));
+    S4.end();
   }
 
   /* و) المغلّف */
@@ -378,6 +398,37 @@ async function run(M, c) {
     c("ك٢ مادّةٌ بمتوسّط ٨٣٣٫٣٣٣٣٣٣: الكارتونُ ٢٠٬٠٠٠٫٠٠ (المتوسّط × ٢٤ ثمّ التقريب — لا ٨٣٣٫٣٣ × ٢٤ = ١٩٬٩٩٩٫٩٢)", P.line("k:pV:k24")?.unit_cost === 20000, J(P.line("k:pV:k24")));
     P.end();
   }
+
+  /* م) المراجعةُ العدائيّة: الرفُّ الواحد بمسار العلبة، وسؤالُ الإتمام الكبير، و«ما وصلنا» ليست «حدّث القاعدة» */
+  {
+    const S = await session(M, { products: [{ ...PC, stock: 24 }, PS, PV] });
+    await S.scan("CTN-24");
+    const asked0 = S.log.byId ?? 0;
+    await S.scan("B-1");
+    c("م١ رفُّ ٢٤ وكارتونُه بالسلّة ثمّ مسحةُ علبة: لا سطرَ علبة (كان ينزل بواحدةٍ و«المتوفّر 0» معاً)، والخادمُ يُسأل قبل الرفض، والجملةُ «كلُّه بالسلّة»",
+      !S.line("p:pC") && (S.log.byId ?? 0) > asked0 && (S.errs().at(-1) ?? "").includes("كلُّه بالسلّة"), J({ c: S.cart().map((l) => [l.id, l.qty]), e: S.errs(), asked: S.log.byId }));
+    S.end();
+    const S2 = await session(M, { products: [{ ...PC, stock: 30 }, PS, PV] });
+    await S2.scan("CTN-24");
+    for (let i = 0; i < 8; i++) await S2.scan("B-1");
+    c("م٢ رفُّ ٣٠: كارتونٌ وعلبٌ تقف عند ٦ (٣٠ − ٢٤) — لا ٨", S2.line("p:pC")?.qty === 6, J(S2.cart().map((l) => [l.id, l.qty])));
+    S2.end();
+    const S3 = await session(M, { products: [{ ...PC, stock: 47 }, PS, PV] });
+    await S3.scan("CTN-24");
+    await S3.checkout();
+    c("م٣ كارتونٌ واحد من ٤٧: لا «تبيع الرصيد كلّه؟» (٢٣ باقية) والبيعةُ تمرّ", !S3.bigOpen() && S3.log.checkout.length === 1, J({ big: S3.bigOpen(), n: S3.log.checkout.length }));
+    S3.end();
+    const S4 = await session(M, { products: [{ ...PC, stock: 48 }, PS, PV] });
+    await S4.scan("SHD-6");
+    for (let i = 0; i < 42; i++) await S4.scan("B-1");
+    await S4.checkout();
+    c("م٤ شدّةُ ٦ و٤٢ علبة من ٤٨ (الرفُّ كلُّه): «تبيع الرصيد كلّه؟» تسأل (كلٌّ وحده ما كان يسأل)", S4.bigOpen() && S4.log.checkout.length === 0 && S4.line("p:pC")?.qty === 42, J({ big: S4.bigOpen(), n: S4.log.checkout.length, c: S4.cart().map((l) => [l.id, l.qty]) }));
+    S4.end();
+    const S5 = await session(M, { rpcDown: true });
+    await S5.scan("CTN-24");
+    c("م٥ الخادمُ ما وصل وقت سؤال الجاهزية: «ما وصلنا» (errors.network) لا «يحتاج تحديث القاعدة»، ولا سطر", !S5.line("k:pC:k24") && S5.errs().at(-1) === "errors.network", J(S5.errs()));
+    S5.end();
+  }
 }
 
 /* ── التشغيل ───────────────────────────────────────────────────────────────── */
@@ -391,10 +442,14 @@ console.log("▸ بالنصّ");
   const hp = JSON.parse(READ("src/i18n/hot-paths.json"));
   check("النطاقُ pks مملوكٌ لـPackSale.tsx، والشاشةُ تسخّنه بـpage(…, [\"pks\"])", hp.owned?.pks === "src/components/retail/PackSale.tsx" && /page\(\(\) => import\("@\/components\/retail\/PackSale"\)[^;]*\["pks"\]/.test(SB0));
   check("ولا استيرادَ ثابتاً للباب ولا للتعبئة بشاشة البيع (import() وحده)", !/from\s*["']@\/lib\/(packSale|packs)["']/.test(SB0) && /import\("@\/lib\/packSale"\)/.test(SB0));
+  check("وبوّاباتُ البيع قبل الجرد بالرفّ المشترك: negLines بـshareCap، وnegJudge يقسم الرفَّ (left) ويُبقي للسطر رصيدَ الصفّ كلَّه",
+    /l\.negLift && l\.kind === "product" && !l\.ret && !!l\.product_id && l\.qty > shareCap\(l\)/.test(SB0) && /left\.set\(pid, Math\.round\(\(rem - lineStockQty\(\{ \.\.\.l, qty: keepQty \}\)\)/.test(SB0)
+    && /keep: \{ qty: keepQty, stock: f\.stock \}/.test(SB0));
+  check("وتبديلُ الوحدة يحكم بما يبقى بعد الكارتون (shareCapAt) ولا يقول «رصيده صفر» عن رفٍّ بالسلّة", /if \(shareCapAt\(\{ \.\.\.l, saleUnit: u \}, stock\) >= 1\)/.test(SB0));
   const mig = READ("supabase/migrations/0267_pack_sale.sql");
   check("الهجرةُ: حارسُ البصمة قبل التعريف، وسؤالُ الواجهة بالعلامة، والبحثُ بصلاحية المُستدعي",
     mig.indexOf("_drift_assert('public._product_line_cost") < mig.indexOf("create or replace function public._product_line_cost")
-    && /position\(format\('-- \+%s', '0267'\)/.test(mig) && /function public\.product_level_by_code[\s\S]*?security invoker/.test(mig));
+    && /position\('jsonb_array_elements\(v_p\.packs\)' in p\.prosrc\)/.test(mig) && /raise exception 'pack_changed'/.test(mig) && /function public\.product_level_by_code[\s\S]*?security invoker/.test(mig));
 }
 
 /* ── ل) الطفرات ──────────────────────────────────────────────────────────────── */
@@ -402,18 +457,23 @@ console.log("▸ ل) الطفرات");
 const swap = (src, from, to) => { if (!src.includes(from)) throw new Error(`نصُّ الطفرة غائب: ${from.slice(0, 70)}`); return src.replace(from, to); };
 const MUTANTS = [
   ["الكارتونُ ينقص علبةً واحدة (stock_qty = qty)", "  if (isPackLine(l)) return Math.round(l.qty * (l.packPer as number) * 1000) / 1000;\n", ""],
-  ["الرفُّ لا يُقتسم (كلٌّ بسقفه)", "    return used ? unitCap({ ...l, stock: Math.round((l.stock - used) * 1000) / 1000 }) : unitCap(l);", "    return unitCap(l);"],
+  ["الرفُّ لا يُقتسم (كلٌّ بسقفه)", "    return unitCap({ ...l, stock: used ? Math.round((stock - used) * 1000) / 1000 : stock });", "    return unitCap({ ...l, stock });"],
   ["المسحُ لا يعرف الكارتونَ بالقائمة", "      if (hit) { await sellLevel(hit, n); return; }\n    }\n    if (!product) {", "    }\n    if (!product) {"],
-  ["القائمةُ البائتة لا تُسأل", "        const hit = pm.packHit(await withTimeout(pm.productsByLevelCode(code), 6000), code);", "        const hit = undefined as ReturnType<typeof pm.packHit>;"],
-  ["لا سؤالَ عن جاهزية الخادم", "    if (!(await packReadyNow())) return refuse(m.say.packSay({ kind: \"notReady\"", "    if (false && !(await packReadyNow())) return refuse(m.say.packSay({ kind: \"notReady\""],
+  ["القائمةُ البائتة لا تُسأل", "        const hit = pmL.packHit(await withTimeout(pmL.productsByLevelCode(code), 6000), code);", "        const hit = undefined as ReturnType<typeof pmL.packHit>;"],
+  ["لا سؤالَ عن جاهزية الخادم", "    if (ready !== \"ready\") return refuse(m.say.packSay({ kind: \"notReady\"", "    if (false && ready !== \"ready\") return refuse(m.say.packSay({ kind: \"notReady\""],
   ["الكارتونُ بسعر العلبة", "      const price = m.packSalePrice(row, k, wholesale);", "      const price = listPrice(row);"],
   ["الكلفةُ كلفةُ علبة", "unit_cost: productLineCost(row, null, Math.round((Number(row.purchase_price) || 0) * k.per * 100) / 100, k.per),", "unit_cost: productLineCost(row, null, Number(row.purchase_price) || 0),"],
-  ["البيعةُ لا تطابق الكارتونَ بالصفّ", "        return !k || k.per !== l.packPer;", "        return false;"],
+  ["البيعةُ لا تطابق الكارتونَ بالصفّ", "        if (k && k.per === l.packPer) continue;\n", "        continue;\n"],
   ["العروضُ تقرأ الكارتون", "computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(cart.filter((l) => !l.ret), promoRules)"],
   ["الراجعُ يبيع كارتوناً", "    if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: \"ret\"", "    if (false && retMode && !opt?.sale) return refuse(m.say.packSay({ kind: \"ret\""],
   ["المغلّفُ يبدّل سطرَ العلبة بصمت", "      else if (line && line.saleUnit !== \"sub\") {", "      else if (false && line && line.saleUnit !== \"sub\") {"],
   ["«الباقي» = الرصيد كلُّه", "      return formatNum(Math.round(((row.stock ?? 0) - used) * 1000) / 1000);", "      return formatNum(row.stock ?? 0);"],
   ["الوحدةُ بالفاتورة «علبة» للكارتون", "    : isPackLine(l) ? (l.packName || null)\n", ""],
+  ["مسارُ العلبة لا يعرف الرفَّ المشترك", "    if (!ret && sibUse(product.id, `p:${product.id}`) > 0) return shelfAdd(product, n, opt);\n", ""],
+  ["«تبيع الرصيد كلّه؟» لكلّ سطرٍ وحده", "    l.kind === \"product\" && !l.ret && l.stock != null && (!l.negLift && shared(l)", "    l.kind === \"product\" && !l.ret && l.stock != null && (false && shared(l)"],
+  ["«ما وصلنا» تُقال «حدّث القاعدة»", "    if (ready === \"unreachable\") return refuse(t(\"errors.network\"));\n", ""],
+  ["الإتمامُ لا يسأل الخادمَ عن كارتونٍ لا تعرفه القائمة", "        const ans = await askServer(listRow ?? ({ id: l.product_id, name: l.name, barcode: l.barcode } as Product)).promise;", "        const ans = { kind: \"gone\" } as FreshAnswer;"],
+  ["البحثُ بالخادم لا يرقّع القائمة", "          if (first && ans.kind !== \"unreachable\") onFreshRow?.(ans);\n          await sellLevel(hit, n);", "          void first; void ans;\n          await sellLevel(hit, n);"],
 ];
 let onCrash = null;
 process.on("unhandledRejection", (e) => { if (onCrash) onCrash(e); else { console.error(e); process.exit(1); } });

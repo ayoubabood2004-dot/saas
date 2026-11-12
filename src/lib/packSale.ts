@@ -28,15 +28,19 @@ export function currentPack(p: Pick<Product, "packs" | "sub_codes"> | null | und
   return p && packId ? packsOf(p).find((k) => k.id === packId) : undefined;
 }
 
-/** هل جسمُ كلفة السطر الحيّ يعرف الكارتون؟ (0267). قبلها لا دالّة، وفشلٌ شبكيّ — كلاهما «لا»: كارتونٌ يُكلَّف علبةً أسوأُ من
- *  «بيعه بالعلبة». والتجريبيُّ يعرفه (مرآتُه بـconsumption). */
-export async function packSaleReady(): Promise<boolean> {
-  if (!supabase) return true;
+/** هل جسمُ كلفة السطر الحيّ يعرف الكارتون؟ (0267). «absent»: قبلها (لا دالّة) أو جسمٌ بلا فرعها — «يحتاج تحديث القاعدة»؛
+ *  و«unreachable»: ما وصلنا — «تأكّد من النت» لا «حدّث القاعدة» (جملةٌ تكذب السبب). وكلاهما لا يبيع كارتوناً: كارتونٌ يُكلَّف علبةً
+ *  أسوأُ من «بيعه بالعلبة». والتجريبيُّ يعرفه (مرآتُه بـconsumption). */
+export type PackReady = "ready" | "absent" | "unreachable";
+export async function packSaleReady(): Promise<PackReady> {
+  if (!supabase) return "ready";
   try {
     const r = await supabase.rpc("pack_sale_ready");
-    return !r.error && r.data === true;
+    if (!r.error) return r.data === true ? "ready" : "absent";
+    const c = String((r.error as { code?: string }).code ?? "");
+    return c === "42883" || c === "PGRST202" ? "absent" : "unreachable";
   } catch {
-    return false;
+    return "unreachable";
   }
 }
 

@@ -13,13 +13,13 @@
 -- لها وحدةٌ صغرى (المتوسّط ÷ عددها) أو «علبة» لغيرها (المتوسّط) — كارتونٌ بـ٢٤ علبة يُكلَّف علبةً واحدةً أو أقلّ، والربحُ يُنفخ
 -- بكلفة ٢٣ علبة على كلّ كارتون. فالفرعُ الجديد قبلهما: سطرٌ **يطابق كارتوناً محفوظاً على المادّة** (|stock_qty| = per × |qty|
 -- بثلاث منازل، كما تُحفظ الكميتان) كلفتُه round(stock_unit_cost × per, 2) — كلفةُ ما خرج من الرفّ فعلاً (الخطّة §٦). والكارتونُ من
--- الصفّ المحفوظ لا من رقمٍ يرسله الجهاز: سطرٌ لا يطابق كارتوناً (حُذف أو تبدّل عددُه بعد ما نزل بالسلّة) يسلك الفرعين القديمين حرفاً،
--- والشاشةُ لا ترسله أصلاً (تقارن الكارتونَ بقائمتها قبل البيعة). ولا تداخلَ مع المفرد: المفردُ stock_qty أصغرُ من qty، والكارتونُ
--- (per ≥ ٢، قيدُ 0259) أكبرُ منها دائماً.
+-- الصفّ المحفوظ لا من رقمٍ يرسله الجهاز: سطرٌ أكبرُ من كميته لا يطابق كارتوناً (حُذف أو تبدّل عددُه بعد ما نزل بشاشةٍ بائتة) يُرفض
+-- `pack_changed` بجملته — فرعا 0255 كانا سيكلّفانه علبةً أو مفرداً (مراجعةٌ عدائيّة). ولا تداخلَ مع المفرد: stock_qty = الكميةُ ÷ عددِه
+-- (أصغرُ منها، وأكبرُ لعددٍ < ١ وحده فيُعفى)، والعلبةُ والكيلو stock_qty = الكمية، والكارتونُ (per ≥ ٢، قيدُ 0259) أكبرُ منها دائماً.
 -- وهي نفسُها ما تكلّف به البيعةُ وتعديلُ الفاتورة وحكمُ «كلفتُها صفر» بالبيع قبل الجرد (0266) — نداءٌ واحد يعرف الكارتون للثلاثة.
 --
 -- ── الواجهةُ تسأل قبل أن تبيع ────────────────────────────────────────────────
--- `pack_sale_ready()`: جسمُ `_product_line_cost` الحيّ يحمل علامتَنا؟ (نمطُ purchase_discount_ready، 0260): إعادةُ 0255 وحدها بعد
+-- `pack_sale_ready()`: جسمُ `_product_line_cost` الحيّ يحمل فرعَنا (بشِفرته لا بتعليقه)؟ (نمطُ purchase_discount_ready، 0260): إعادةُ 0255 وحدها بعد
 -- هالهجرة تُرجع الجسمَ لنصّها (حارسُها يمرّ) — فكارتونٌ يُباع يُكلَّف علبة. والشاشةُ بلا «نعم» تقول «البيعُ بالكارتون يحتاج تحديث
 -- القاعدة» ولا تُنزل سطرَ كارتون.
 --
@@ -69,6 +69,14 @@ begin
      limit 1;   -- +0267
     if v_per is not null then return round(public.stock_unit_cost(v_p) * v_per, 2); end if;   -- +0267
   end if;   -- +0267
+  -- وسطرٌ أكبرُ من كميته لا يطابق كارتوناً محفوظاً: كارتونٌ تبدّل عددُه أو انشال بعد ما نزل بشاشةٍ بائتة. لا علبةَ ولا كيلو بهذا الشكل،   -- +0267
+  -- ولا مفرد (stock_qty = الكميةُ ÷ عددِه — أكبرُ منها لعددٍ < ١ وحده، فيُعفى). فرعا 0255 كانا يكلّفانه علبةً أو مفرداً (ربحٌ منفوخ   -- +0267
+  -- بكلفة ما بقي من علبه، والرصيدُ ينقص بعددٍ قديم) — فيُرفض بجملته، والشاشةُ تحدّث قائمتَها.   -- +0267
+  if p_stock_qty is not null and round(coalesce(p_qty, 0), 3) <> 0 and abs(round(p_stock_qty, 3)) > abs(round(p_qty, 3))   -- +0267
+     and not (coalesce(v_p.has_sub_unit, false) and coalesce(v_p.units_per_box, 0) > 0   -- +0267
+              and abs(round(p_stock_qty, 3)) * v_p.units_per_box <= abs(round(p_qty, 3)) + v_p.units_per_box * 0.001) then   -- +0267
+    raise exception 'pack_changed' using hint = 'الكارتون تغيّر أو انشال من المادة من جهاز ثاني — حدّث القائمة وامسحه من جديد';   -- +0267
+  end if;   -- +0267
   if coalesce(v_p.has_sub_unit, false) and coalesce(v_p.units_per_box, 0) > 0
      and p_stock_qty is not null and abs(round(p_stock_qty, 3)) <> abs(round(coalesce(p_qty, 0), 3)) then
     return public._cons_round_div(public.stock_unit_cost(v_p), v_p.units_per_box, 2);
@@ -78,12 +86,14 @@ end $$;
 revoke all on function public._product_line_cost(uuid, uuid, numeric, numeric, numeric) from public, anon, authenticated;
 
 -- ── ٢) سؤالُ الواجهة: الجسمُ الحيّ يعرف الكارتون؟ ─────────────────────────────
--- pg_proc مقروءٌ للجميع: invoker. والعلامةُ تُبنى بـformat — لا حرفَ لها بنصّ هذه الدالّة.
+-- pg_proc مقروءٌ للجميع: invoker. ويُسأل **عن الشِفرة لا التعليق**: أداةٌ تحذف التعليقات (طُبّقت بها هجراتٌ قديمة — CLAUDE.md،
+-- «البصمةُ بصمةُ الشِفرة») كانت ستُطفئ البيعَ بالكارتون للأبد لو سُئلت علامةُ `-- +0267`. وجسمُ 0255 لا يحمل هذا السطر.
 create or replace function public.pack_sale_ready() returns boolean
 language sql stable security invoker set search_path = public as $$
   select exists (select 1 from pg_proc p
                   where p.oid = to_regprocedure('public._product_line_cost(uuid,uuid,numeric,numeric,numeric)')
-                    and position(format('-- +%s', '0267') in p.prosrc) > 0)
+                    and position('jsonb_array_elements(v_p.packs)' in p.prosrc) > 0
+                    and position('pack_changed' in p.prosrc) > 0)
 $$;
 revoke all on function public.pack_sale_ready() from public, anon;
 grant execute on function public.pack_sale_ready() to authenticated;

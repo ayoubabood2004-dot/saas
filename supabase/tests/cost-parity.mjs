@@ -152,6 +152,9 @@ function gen() {
   // نداءٌ واحد بجوابٍ واحد (نصّ): القيمُ نصوصٌ لا أعداد — فلا عائمَ بالطريق؛ وصفوفُ الموادّ كما تصل الجهازَ (أعداد JSON).
   const J = (t, cols) => `$j$${JSON.stringify(t.map((x) => Object.fromEntries(["i", ...cols].map((k) => [k, x[k]]))))}$j$::jsonb`;
   fs.writeFileSync(path.join(dir, "run.sql"), [
+    // 0267: سطرٌ لا يطابق كارتوناً يُرفض pack_changed — نداءٌ واحد لكلّ الحالات لا ينهار برفض واحدة: يُقرأ الرفضُ نصّاً.
+    "create or replace function pg_temp._plc_try(cl uuid, p uuid, q numeric, sq numeric, d numeric) returns text language plpgsql as $f$",
+    "begin return _product_line_cost(cl, p, q, sq, d)::text; exception when others then return 'ERR:' || sqlerrm; end $f$;",
     "select json_build_object(",
     `  'base', (select json_agg(json_build_array(x.i, _avg_base(x.a, x.pp)::text) order by x.i)`,
     `           from jsonb_to_recordset(${J(base, ["a", "pp"])}) as x(i int, a numeric, pp numeric)),`,
@@ -161,7 +164,7 @@ function gen() {
     `           from jsonb_to_recordset(${J(adjust, ["s0", "a0", "vo", "vn", "s1", "cl"])}) as x(i int, s0 numeric, a0 numeric, vo numeric, vn numeric, s1 numeric, cl numeric)),`,
     `  'merge', (select json_agg(json_build_array(x.i, _avg_merge(x.s1, x.a1, x.s2, x.a2)::text) order by x.i)`,
     `           from jsonb_to_recordset(${J(merge, ["s1", "a1", "s2", "a2"])}) as x(i int, s1 numeric, a1 numeric, s2 numeric, a2 numeric)),`,
-    `  'plc', (select json_agg(json_build_array(x.i, _product_line_cost(x.cl, x.p, x.q, x.sq, x.d)::text) order by x.i)`,
+    `  'plc', (select json_agg(json_build_array(x.i, pg_temp._plc_try(x.cl, x.p, x.q, x.sq, x.d)) order by x.i)`,
     `           from jsonb_to_recordset(${J(plc, ["cl", "p", "q", "sq", "d"])}) as x(i int, cl uuid, p uuid, q numeric, sq numeric, d numeric)),`,
     `  'unit', (select json_agg(json_build_array(x.i, _purchase_unit_cost(x.c, x.net, x.gross)::text) order by x.i)`,
     `           from jsonb_to_recordset(${J(unit, ["c", "net", "gross"])}) as x(i int, c numeric, net numeric, gross numeric)),`,
@@ -206,10 +209,11 @@ async function check() {
     variance: (x) => M.receiveVarianceCents(mi(x.s), mu(x.a), mi(x.q), mu(x.c)),
     adjust: (x) => M.avgAdjust(mi(x.s0), mu(x.a0), M.toNano(x.vo), M.toNano(x.vn), mi(x.s1), mu(x.cl)),
     merge: (x) => M.avgMerge(mi(x.s1), mu(x.a1), mi(x.s2), mu(x.a2)),
-    plc: (x) => M.productLineCostCents(x.p == null ? null : rowsById[x.p], mi(x.q), mi(x.sq), ce(x.d)),
+    plc: (x) => { const p = x.p == null ? null : rowsById[x.p];
+      return p && !p.farm_id && M.packChanged(p, mi(x.q), mi(x.sq)) ? "ERR:pack_changed" : M.productLineCostCents(p, mi(x.q), mi(x.sq), ce(x.d)); },
     unit: (x) => M.purchaseUnitCostU(mu(x.c), ce(x.net), ce(x.gross)),
   };
-  const server = { base: (r) => mu(r[1]), receive: (r) => mu(r[1]), variance: (r) => ce(r[2]), adjust: (r) => mu(r[1]), merge: (r) => mu(r[1]), plc: (r) => ce(r[1]), unit: (r) => mu(r[1]) };
+  const server = { base: (r) => mu(r[1]), receive: (r) => mu(r[1]), variance: (r) => ce(r[2]), adjust: (r) => mu(r[1]), merge: (r) => mu(r[1]), plc: (r) => (String(r[1]).startsWith("ERR:") ? String(r[1]) : ce(r[1])), unit: (r) => mu(r[1]) };
   const table = { base: "base", receive: "receive", variance: "receive", adjust: "adjust", merge: "merge", plc: "plc", unit: "unit" };
   const got = {};
   for (const k of Object.keys(table)) {
@@ -256,7 +260,8 @@ async function check() {
     const p = x.p == null ? undefined : rowsById[x.p];
     if (!p) tag("plc:device_unknown"); else if (p.farm_id) tag("plc:device_farm");
     else if (M.packPerNano(p, mi(x.q), mi(x.sq)) !== null) tag("plc:pack");
-    else if (Array.isArray(p.packs) && x.sq != null && Number(x.q) !== 0 && Math.abs(Number(x.sq)) > Math.abs(Number(x.q))) tag("plc:pack_miss");
+    else if (M.packChanged(p, mi(x.q), mi(x.sq))) tag("plc:pack_changed");
+    else if (Array.isArray(p.packs) && x.sq != null && Number(x.q) !== 0 && Math.abs(Number(x.sq)) > Math.abs(Number(x.q))) tag("plc:sub_wide");
     else if (p.has_sub_unit && Number(p.units_per_box) > 0 && x.sq != null && Math.abs(Number(x.sq)) !== Math.abs(Number(x.q))) tag("plc:sub"); else tag("plc:box");
   }
   for (const x of cases.unit) {
@@ -266,7 +271,7 @@ async function check() {
   const NEED = { "base:null": 10, "base:value": 10, "receive:keep_a": 200, "receive:unknown_a": 200, "receive:s_le_0": 200, "receive:weighted": 200,
     "variance:null": 200, "variance:value": 200, "adjust:s1_le_0": 100, "adjust:divide": 100, "adjust:c_last": 100,
     "merge:weighted": 100, "merge:no_weight": 50, "merge:a2": 100, "merge:a1": 100,
-    "plc:device_unknown": 40, "plc:device_farm": 100, "plc:sub": 300, "plc:box": 300, "plc:pack": 600, "plc:pack_miss": 150,
+    "plc:device_unknown": 40, "plc:device_farm": 100, "plc:sub": 300, "plc:box": 300, "plc:pack": 600, "plc:pack_changed": 150,
     "unit:as_is": 200, "unit:share": 500, "unit:all_off": 30 };
   const thin = Object.entries(NEED).filter(([k, v]) => (tally[k] ?? 0) < v).map(([k, v]) => `${k} ${tally[k] ?? 0} < ${v}`);
   if (thin.length) no("والقالبُ يقيس كلَّ فرع (حالاتٌ كافية بكلّ فرعٍ من النصّ)", thin.join("، "), "كلُّ فرعٍ فوق حدّه");
@@ -298,6 +303,10 @@ async function check() {
     "الكارتونُ بالإشارة (stock_qty = per × qty لا بالقيمة المطلقة)": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; if (!p || p.farm_id) return ce(x.d);
       const q = mi(x.q), sq = mi(x.sq); const signed = q !== null && sq !== null && q !== 0n && Array.isArray(p.packs) && p.packs.some((k) => typeof k?.per === "number" && BigInt(k.per) * q === sq);
       return signed ? M.productLineCostCents(p, q, sq, ce(x.d)) : M.productLineCostCents({ ...p, packs: null }, q, sq, ce(x.d)); }],
+    "سطرٌ لا يطابق كارتوناً يُكلَّف بفرعَي 0255 (بلا رفض)": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; return M.productLineCostCents(p, mi(x.q), mi(x.sq), ce(x.d)); }],
+    "المفردُ بعددٍ < ١ يُرفض (بلا إعفاء)": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p];
+      const q = mi(x.q), sq = mi(x.sq); const big = !!p && !p.farm_id && sq !== null && q !== 0n && (sq < 0n ? -sq : sq) > (q < 0n ? -q : q) && M.packPerNano(p, q, sq) === null;
+      return big ? "ERR:pack_changed" : M.productLineCostCents(p, q, sq, ce(x.d)); }],
     "مادّةُ الحقل بكلفة الخادم": ["plc", (x) => { const p = x.p == null ? null : rowsById[x.p]; return !p ? ce(x.d) : M.productLineCostCents({ ...p, farm_id: null }, mi(x.q), mi(x.sq), ce(x.d)); }],
     "النصيبُ يُقطع ولا يُقرَّب": ["unit", (x) => { const c = mu(x.c), net = ce(x.net), g = ce(x.gross);
       if (c === null || c <= 0n || g === null || g <= 0n || (net ?? g) >= g) return c; return (c * (net > 0n ? net : 0n)) / g; }],
