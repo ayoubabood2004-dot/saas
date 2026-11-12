@@ -91,7 +91,7 @@ export function ReorderDialog({ open, onClose, products, companies, onDraft }: {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold text-ink">{it.product.name}</p>
                         <p className="text-2xs text-ink-subtle">
-                          {t("reorder.line", { stock: formatQty(Number(it.product.stock) || 0), week: formatQty(Math.round(it.perDay * 7 * 10) / 10), defaultValue: "عندك {{stock}} · يطلع {{week}} بالأسبوع" })}
+                          {t("reorder.line", { stock: formatQty(it.stock), week: formatQty(Math.round(it.perDay * 7 * 10) / 10), defaultValue: "عندك {{stock}} · يطلع {{week}} بالأسبوع" })}
                         </p>
                       </div>
                       <label className="flex items-center gap-1 text-2xs text-ink-subtle">

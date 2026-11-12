@@ -30,6 +30,7 @@ console.log("▸ ١) نقطةُ إعادة الطلب");
   const neg = X.reorderItem(P("h", { stock: -40, min_stock: 2 }), 30, 30, 7);
   const zero = X.reorderItem(P("i", { stock: 0, min_stock: 2 }), 30, 30, 7);
   check("رصيدٌ −٤٠ يُقترح كالصفر تماماً (٣٩ لا ٧٩)", !!neg && neg.suggest === zero?.suggest && neg.suggest === 39, JSON.stringify([neg?.suggest, zero?.suggest]));
+  check("  والرصيدُ الذي تعرضه الشاشةُ هو ما حُسب به الاقتراح (٠ لا −٤٠ — «عندك -40 · نطلب 39» لا يتّفقان)", neg?.stock === 0 && zero?.stock === 0, JSON.stringify([neg?.stock, zero?.stock]));
 }
 console.log("▸ ٢) التجميعُ بالشركة");
 {

@@ -111,10 +111,33 @@ console.log("▸ ملفُّ الإكسل");
   check("  علامتا «حقيبة نقل» بخلية V بسطرها", r1 > 0 && ws[`V${r1}`]?.v === "كمية مشكوكة · تكرار؟", JSON.stringify(ws[`V${r1}`]?.v));
   check("  و«مادة سليمة» خليةٌ فارغة", r2 > 0 && ws[`V${r2}`]?.v === "");
   check("  و«بلا رمز» علامتُه", r3 > 0 && ws[`V${r3}`]?.v === "بلا باركود");
-  check("ومعادلاتُ الفرق لم تتحرّك (M و J و H كما كانت)",
-    ws[`N${r1}`]?.f === `IF(M${r1}="","",M${r1}-J${r1})` && ws[`O${r1}`]?.f === `IF(M${r1}="","",(M${r1}-J${r1})*H${r1})`
-    && plain[`N${r1}`]?.f === ws[`N${r1}`]?.f, ws[`N${r1}`]?.f);
+  check("ومعادلاتُ الفرق بأعمدتها: فرقُ القطع بإشارته، وقيمتُه من القيمة كما تُعرض (MAX(J،0) كعمود رأس المال)",
+    ws[`N${r1}`]?.f === `IF(M${r1}="","",M${r1}-J${r1})` && ws[`O${r1}`]?.f === `IF(M${r1}="","",(M${r1}-MAX(J${r1},0))*H${r1})`
+    && ws[`K${r1}`]?.f === `MAX(J${r1},0)*H${r1}` && plain[`N${r1}`]?.f === ws[`N${r1}`]?.f, JSON.stringify([ws[`N${r1}`]?.f, ws[`O${r1}`]?.f, ws[`K${r1}`]?.f]));
   check("  والعمودُ الأصفر للعادّ ما زال M", ws.M4?.v === plain.M4?.v);
+  /* بيعٌ قبل الجرد (0266): سطرٌ رصيدُه −٤ بسعر ٥٬٠٠٠ وسطرٌ ١٠ بسعر ١٠٠. رأسُ المال ١٬٠٠٠ قبل العدّ وبعده إن عُدّ السالبُ صفراً —
+   * فصافي أثر الجرد صفر لا +٢٠٬٠٠٠ «زيادة». المعادلاتُ تُحسب هنا بيدٍ بنصّها (الورقةُ لا تُحسب بالمكتبة). */
+  const negPs = [P("n1", "سالبة", { stock: -4, purchase_price: 5000, sell_price: 6000 }), P("n2", "موجبة", { stock: 10, purchase_price: 100, sell_price: 150 })];
+  const wn = sheetOf(M.buildStocktakeWorkbook(XLSX, negPs, [], [], now, "عيادة", undefined));
+  const rowOf = (id) => { for (let r = 5; r < 50; r++) if (wn[`U${r}`]?.v === id) return r; return -1; };
+  const rn = rowOf("n1"), rp = rowOf("n2");
+  const evalCell = (f, vals) => {
+    // IF(M="","",X) و MAX(a,0) و + − * فقط — ما تكتبه الورقةُ بهذين العمودين.
+    const m = /^IF\(M\d+="","",(.*)\)$/.exec(f);
+    const body = (m ? m[1] : f).replace(/MAX\(([A-Z]\d+),0\)/g, (_, c) => `Math.max((${vals[c.replace(/\d+/, "")]}),0)`).replace(/\b([A-Z])\d+\b/g, (_, c) => `(${vals[c]})`);
+    return Function(`return (${body});`)();
+  };
+  const counted = { n1: 0, n2: 10 };
+  let sumO = 0, sumK = 0, sumMH = 0;
+  for (const [id, r] of [["n1", rn], ["n2", rp]]) {
+    const vals = { J: wn[`J${r}`].v, H: wn[`H${r}`].v, M: counted[id] };
+    sumO += evalCell(wn[`O${r}`].f, vals); sumK += evalCell(wn[`K${r}`].f, vals); sumMH += vals.M * vals.H;
+  }
+  check("سطرٌ تحت الصفر: قيمتُه المخزّنة صفر، وصافي أثر الجرد = رأسُ المال بعد العدّ − قبله (صفرٌ لا +٢٠٬٠٠٠)",
+    rn > 0 && wn[`K${rn}`]?.v === 0 && sumK === 1000 && sumO === sumMH - sumK && sumO === 0, JSON.stringify({ K: wn[`K${rn}`]?.v, sumK, sumO, sumMH }));
+  const tot = (() => { for (let r = 5; r < 50; r++) if (String(wn[`A${r}`]?.v ?? "") === "المجموع") return r; return -1; })();
+  check("  ومجموعُ القطع قطعُ الرفّ (١٠ لا ٦) بمعادلته ورقمه — كرأس المال بجانبه",
+    tot > 0 && wn[`J${tot}`]?.f === `SUMIF(J${rn < rp ? rn : rp}:J${rn < rp ? rp : rn},">0")` && wn[`J${tot}`]?.v === 10, JSON.stringify({ f: wn[`J${tot}`]?.f, v: wn[`J${tot}`]?.v }));
 }
 
 console.log("▸ auditMarks — من ملاحظات الفحص إلى كلمةٍ لكلّ مادة");

@@ -89,9 +89,10 @@ export interface ConsumptionNoticeProps {
   sentAt?: number;
   /** returned: money actually paid back to the customer by this action (> 0.005). */
   cashBack?: boolean;
-  /** sale: products this sale sold below zero through the sell-before-count mode (0266, its lifted lines). Their below-zero rows are
-   *  expected until the count, so they fold into one line with no mute button (a mute per product would silence it after the mode
-   *  too). Any other below-zero row (a counted or pooled product the mode never lifts) keeps its named row. Shortages stay as they are. */
+  /** sale: products the sell-before-count mode (0266) covered when this sale completed — every live, uncounted product with a
+   *  positive cost, plus the lines it lifted — whether sold on the till or consumed by a recipe. Their below-zero rows are expected
+   *  until the count, so they fold into one line with no mute button (a mute per product would silence it after the mode too). A
+   *  below-zero row the mode does not cover (a counted, pooled or zero-cost product) keeps its named row. Shortages stay as they are. */
   negFold?: readonly string[];
 }
 

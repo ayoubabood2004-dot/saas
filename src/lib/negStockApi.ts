@@ -23,8 +23,8 @@ export { activeNow, bigLifted, daysLeft, lastDayOf, liftable } from "./negStock"
 
 /** سطرُ فحص البيعة كما سترسله البيعة. */
 export interface NegCheckLine { product_id: string; qty: number; stock_qty: number }
-/** سطرُ جردٍ برصيده لحظةَ كتابة العدد. */
-export type CountLineSeen = CountLineInput & { seen?: number };
+/** سطرُ جردٍ برصيده لحظةَ كتابة العدد (وحوضِ قسمه — لمادّةٍ رصيدُها ≤ ٠ بقسم: تُباع منه وصفُّها ثابت). */
+export type CountLineSeen = CountLineInput & { seen?: number; seen_pool?: number };
 
 export interface NegApi {
   state(): Promise<NegState>;
@@ -58,7 +58,7 @@ const cloud: NegApi = {
   async report() {
     try { return readNegReport(await rpcJson<unknown>("neg_stock_report", {}), perf()); }
     catch (e) {
-      if (isAbsent(e)) return { ...absentState(), periodSince: null, capUntil: null, operator: false, negatives: 0, neverCounted: 0, uncountedNonpos: 0, zeroCost: 0, zeroCostNonpos: 0, pending: 0, log: [] };
+      if (isAbsent(e)) return { ...absentState(), periodSince: null, capUntil: null, operator: false, negatives: 0, neverCounted: 0, uncountedNonpos: 0, uncountedNeg: 0, zeroCost: 0, zeroCostNonpos: 0, pending: 0, log: [] };
       throw e;
     }
   },
@@ -76,7 +76,7 @@ const cloud: NegApi = {
     } catch (e) {
       // قاعدةٌ قبل 0266: البابُ القديم كما كان (بلا seen) — لا جردَ موقوفٌ لأن الهجرةَ تأخّرت.
       if (!isAbsent(e)) throw e;
-      return rpcJson<CountSubmitResult>("stock_count_submit", { p_lines: lines.map(({ seen: _s, ...l }) => l) });
+      return rpcJson<CountSubmitResult>("stock_count_submit", { p_lines: lines.map(({ seen: _s, seen_pool: _p, ...l }) => l) });
     }
   },
 };
@@ -112,6 +112,8 @@ interface Entry {
   /** العيادةُ التي أجاب عنها الخادمُ أوّلاً لهذا المفتاح — جوابٌ عن غيرها لا يُتبنّى (المشغّلُ دخل عيادةً أخرى بتبويبٍ ثانٍ:
    *  الجلسةُ واحدة)، ففحصُ البيعة يرسلها فيردّ الخادمُ neg_stock_clinic_changed — «ما تأكّدنا» لا حكمٌ عن عيادةٍ غيرِ التي بالشاشة. */
   clinic: string | null;
+  /** السؤالُ الأحدث — من تجاوزه سؤالٌ أحدث يُرجع ما يُرجعه هذا (بعد نشره) لا جوابَه هو. */
+  latest: Promise<NegState | null> | null;
   timer: ReturnType<typeof setInterval> | null;
   stop: (() => void) | null;
 }
@@ -128,7 +130,7 @@ export function negKey(userId: string | null | undefined): string {
 
 function entryOf(key: string): Entry {
   let e = entries.get(key);
-  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, timer: null, stop: null }; entries.set(key, e); }
+  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, latest: null, timer: null, stop: null }; entries.set(key, e); }
   return e;
 }
 function publish(e: Entry, snap: NegSnap): void {
@@ -138,13 +140,24 @@ function publish(e: Entry, snap: NegSnap): void {
 
 export function negSnap(key: string): NegSnap { return entries.get(key)?.snap ?? EMPTY; }
 
-/** يسأل الخادمَ الآن (والمعدودةَ إن لزم). جوابٌ لسؤالٍ أحدث منه، أو بعد أن نُسي المفتاح، يُرمى. لا يرمي. */
-export async function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
+/** يسأل الخادمَ الآن (والمعدودةَ إن لزم). جوابٌ لسؤالٍ أحدث منه، أو بعد أن نُسي المفتاح، يُرمى. لا يرمي.
+ *  وما يُرجعه يُرجَع **بعد** نشر الحالة التي يقرؤها منتظرُه: سؤالٌ تجاوزه أحدثُ منه كان يُرجع جوابَه غيرَ المنشور فورَ وصوله،
+ *  فمنتظرُه (ضغطةٌ على مادّةٍ بالصفر) يقرأ negSnap فيجد ما قبل التشغيل — ضغطتان متتاليتان بعد تشغيل الوضع: الأولى «انتهى» أو
+ *  «زيد رصيده» عمّا يُباع، والثانية تُباع (مراجعةٌ عدائيّة). فينتظر الأحدثَ ويُرجع ما يُرجعه. */
+export function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
   const e = entryOf(key);
   const gen = ++e.gen;
+  const p = refreshOnce(key, e, gen, opts);
+  e.latest = p;
+  return p;
+}
+async function refreshOnce(key: string, e: Entry, gen: number, opts: { counted?: boolean }): Promise<NegState | null> {
+  /** تجاوزه أحدث ⇒ ما يُرجعه الأحدثُ بعد نشره؛ والمفتاحُ نُسي ⇒ الجوابُ كما هو (لا أحدَ ينشر). */
+  const newer = (fb: NegState | null): Promise<NegState | null> | NegState | null =>
+    (entries.get(key) === e && e.gen !== gen && e.latest ? e.latest : fb);
   try {
     const s = await negApi.state();
-    if (e.gen !== gen || entries.get(key) !== e) return s;
+    if (e.gen !== gen || entries.get(key) !== e) return newer(s);
     if (s.clinic && e.clinic && s.clinic !== e.clinic) {
       // جوابٌ عن عيادةٍ غيرِ عيادة هذا المفتاح: لا يُتبنّى — الحالةُ القديمةُ تشيخ وحدها (activeNow) والفحصُ يقول «تبدّلت».
       publish(e, { ...e.snap, failed: true });
@@ -158,7 +171,7 @@ export async function refreshNeg(key: string, opts: { counted?: boolean } = {}):
         counted = await negApi.counted();
         countedAt = perf();
       } catch { /* المعدودةُ القديمة تبقى — والبيعةُ يحكم بها الخادم (counted) */ }
-      if (e.gen !== gen || entries.get(key) !== e) return s;
+      if (e.gen !== gen || entries.get(key) !== e) return newer(s);
     }
     /* الختمُ مع النشر لا قبله: سؤالٌ تجاوزه أحدثُ منه كان يختم «حُمّلت» ولا ينشر، فيتخطّاها الأحدثُ وتبقى فارغةً خمسَ دقائق. */
     if (countedAt !== null) e.countedAt = countedAt;
@@ -166,7 +179,7 @@ export async function refreshNeg(key: string, opts: { counted?: boolean } = {}):
     return s;
   } catch {
     if (e.gen === gen) publish(e, { ...e.snap, failed: true });
-    return null;
+    return newer(null);
   }
 }
 

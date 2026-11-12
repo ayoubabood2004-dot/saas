@@ -100,11 +100,13 @@ end $$;
 revoke all on function public._neg_stock_period(uuid) from public, anon, authenticated;
 
 -- العدّ: المادّةُ الحيّة بالعيادة — لا المجمَّعة (رصيدُها بحوض قسمها) ولا مخزنُ الحقل (لا يُباع بالكاشير) ولا الدولارية
--- (شاشتُها وكلفتُها بالدولار). negatives تحت الصفر؛ never_counted بلا عدٍّ موثوق؛ uncounted_nonpos منها رصيدُها ≤ ٠
--- (هذي تُرفض بالكاشير بعد الإطفاء)؛ zero_cost كلفةُ علبتها صفر (القاعدةُ بالعلبة — المفردُ يُحكم بسطره بـneg_stock_check)؛
--- pending عدٌّ ينتظر الموافقة.
+-- (شاشتُها وكلفتُها بالدولار). negatives تحت الصفر (المعدودةُ معها)؛ never_counted بلا عدٍّ موثوق؛ uncounted_nonpos منها رصيدُها ≤ ٠
+-- (هذي تُرفض بالكاشير بعد الإطفاء) وuncounted_neg منها تحت الصفر — لوحةُ الإطفاء تقول «منها N تحت الصفر» عن غير المعدودة وحدها
+-- (negatives كانت تعدّ المعدودةَ فقالت «٢ منها ٥»)؛ zero_cost كلفةُ علبتها صفر (القاعدةُ بالعلبة — المفردُ يُحكم بسطره بـneg_stock_check)؛
+-- pending عدٌّ ينتظر الموافقة. والـdrop لأن أعمدةَ الخرج تغيّرت (create or replace لا يغيّرها) — لا يعتمد عليها إلا دوالُّ plpgsql هنا.
+drop function if exists public._neg_stock_counts(uuid);
 create or replace function public._neg_stock_counts(p_clinic uuid,
-  out negatives int, out never_counted int, out uncounted_nonpos int, out zero_cost int, out zero_cost_nonpos int, out pending int)
+  out negatives int, out never_counted int, out uncounted_nonpos int, out uncounted_neg int, out zero_cost int, out zero_cost_nonpos int, out pending int)
 language sql stable security definer set search_path = public as $$
   with live as (
     select p.*, public.stock_unit_cost(p) as k,
@@ -117,6 +119,7 @@ language sql stable security definer set search_path = public as $$
   select count(*) filter (where coalesce(stock, 0) < 0)::int,
          count(*) filter (where uncounted)::int,
          count(*) filter (where uncounted and coalesce(stock, 0) <= 0)::int,
+         count(*) filter (where uncounted and coalesce(stock, 0) < 0)::int,
          count(*) filter (where round(k, 2) <= 0)::int,
          count(*) filter (where round(k, 2) <= 0 and coalesce(stock, 0) <= 0)::int,
          (select count(*) from public.stock_counts c where c.clinic_id = p_clinic and c.source = 'count' and c.status = 'pending')::int
@@ -158,7 +161,7 @@ begin
   -- operator: هل **المستدعي** مشغّلُ المنصّة (لا تاريخَ أحد) — البطاقةُ تُطلق له ما فوق السقف وتطلب ملاحظته.
   return public.neg_stock_state() || jsonb_build_object('period_since', pd.since, 'cap_until', pd.cap_until,
     'operator', platform_acting_clinic() is not null,
-    'negatives', c.negatives, 'never_counted', c.never_counted, 'uncounted_nonpos', c.uncounted_nonpos,
+    'negatives', c.negatives, 'never_counted', c.never_counted, 'uncounted_nonpos', c.uncounted_nonpos, 'uncounted_neg', c.uncounted_neg,
     'zero_cost', c.zero_cost, 'zero_cost_nonpos', c.zero_cost_nonpos, 'pending', c.pending,
     'log', coalesce((select jsonb_agg(jsonb_build_object(
                                'at', l.at, 'action', l.action, 'since', l.since, 'until', l.until, 'by_name', l.by_name,
@@ -340,7 +343,8 @@ revoke all on function public.neg_stock_set(uuid, boolean, integer, boolean, tex
 grant execute on function public.neg_stock_set(uuid, boolean, integer, boolean, text, text) to authenticated;
 
 -- ── ٨) الجرد: العددُ يُسجَّل على الرصيد الذي رآه العادُّ ─────────────────────────────────────────────────────
--- p_lines كسطور stock_count_submit، وكلُّ سطرٍ يحمل seen: رصيدَ المادّة لحظةَ كتابة عددها. تُقفل الموادُّ بالمعرّف بجملةٍ
+-- p_lines كسطور stock_count_submit، وكلُّ سطرٍ يحمل seen: رصيدَ المادّة لحظةَ كتابة عددها (وseen_pool: حوضَ قسمها، لمادّةٍ رصيدُها
+-- ≤ ٠ بقسم — تُباع من الحوض وصفُّها ثابت). تُقفل الموادُّ بالمعرّف بجملةٍ
 -- واحدة وبالترتيب نفسِه (0255)، وسطرٌ تحرّك رصيدُه بعد الكتابة (بيعٌ، شراء، استهلاك) يردّ count_moved بأسمائها ومعرّفاتها
 -- (detail) بلا أثر — يُعاد عدُّها؛ وإلا تُنادى stock_count_submit كما هي، تحت القفل نفسِه فلا يتحرّك شيءٌ بينهما.
 create or replace function public.stock_count_submit_seen(p_lines jsonb) returns jsonb
@@ -368,8 +372,16 @@ begin
    where clinic_id = v_clinic and farm_id is null
      and id in (select (e->>'product_id')::uuid from jsonb_array_elements(p_lines) e where e->>'product_id' ~* c_uuid)
    order by id for update;
+  -- حوضُ القسم: مادّةٌ رصيدُها ≤ ٠ بقسمٍ له حوض تُباع منه وصفُّها لا يتحرّك (deduct_stock_pooled: الحوضُ يعطي ما فوق الرصيد
+  -- الموجب) — فبيعٌ بين الكتابة والإرسال كان يمرّ الحارسَ ويُسجَّل العددُ على رفٍّ نقص. فسطرُها يحمل seen_pool: حوضَ قسمها لحظةَ
+  -- الكتابة، ويُقارن به. ورصيدٌ موجب لا يحتاجه: أوّلُ بيعٍ ينقص الصفَّ نفسَه. والأقسامُ لا تُقفل (قفلُها بعد الموادّ يعاكس ترتيبَ
+  -- بيعةٍ تقفل مادّةً ثمّ قسمَها) — موادُّ العدّ مقفولة فلا يبيعها أحدٌ الآن، وما باعه غيرُها من الحوض «تحرّك» يُعاد عدُّه (أسلمُ).
   for x in
-    select p.id, p.name, round(coalesce(p.stock, 0), 3) as now_stock, round((e->>'seen')::numeric, 3) as seen
+    select p.id, p.name, round(coalesce(p.stock, 0), 3) as now_stock, round((e->>'seen')::numeric, 3) as seen,
+           p.section_id is not null and not coalesce(p.pooled, false) as in_section,
+           (select round(coalesce(s.pooled_stock, 0), 3) from public.company_sections s
+             where s.id = p.section_id and s.clinic_id = v_clinic) as now_pool,
+           case when jsonb_typeof(e->'seen_pool') = 'number' then round((e->>'seen_pool')::numeric, 3) end as seen_pool
       from jsonb_array_elements(p_lines) e
       join public.products p on p.id = (e->>'product_id')::uuid and p.clinic_id = v_clinic
      where e->>'product_id' ~* c_uuid
@@ -377,6 +389,14 @@ begin
     if x.now_stock <> x.seen then
       v_moved := v_moved || to_jsonb(x.id::text);
       if cardinality(v_names) < 5 then v_names := v_names || x.name; end if;
+    elsif x.in_section and x.seen <= 0 then
+      if x.seen_pool is null then
+        raise exception 'count_seen_missing' using hint = 'الصفحة عندك نسخة قديمة — حدّثها وسجّل العدّ من جديد.';
+      end if;
+      if coalesce(x.now_pool, 0) <> x.seen_pool then
+        v_moved := v_moved || to_jsonb(x.id::text);
+        if cardinality(v_names) < 5 then v_names := v_names || x.name; end if;
+      end if;
     end if;
   end loop;
   if jsonb_array_length(v_moved) > 0 then

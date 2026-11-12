@@ -55,9 +55,12 @@ let WasteView = loadWasteView();
 let ConsCards = loadConsCards();
 /** `lots`: عدُّ كلّ دفعة (0217) لمادةٍ فيها أكثرُ من دفعة — والمادةُ = مجموعُها.
  *  `seen`: رصيدُ المادّة لحظةَ **أوّل** ضغطةٍ على سطرها (0266) — يُقرأ صفُّها طازجاً ويُجمَّد، فلا يُحدَّث ما دام بالسطر عدد. */
-interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string>; seen?: number }
+interface Line { counted: string; reason: CountReason | null; note: string; lots: Record<string, string>; seen?: number; seenPool?: number | null }
 /** سطرُ الإرسال برصيده الذي رآه العادّ (stock_count_submit_seen). محلّيٌّ لا من negStockApi: الصفحةُ لا تستورد البابَ ثابتاً. */
-type SeenLine = CountLineInput & { seen: number };
+type SeenLine = CountLineInput & { seen: number; seen_pool?: number };
+/** ما رآه العادّ لحظةَ أوّل ضغطة: رصيدُ الصفّ، وحوضُ قسمه — مادّةٌ رصيدُها ≤ ٠ بقسمٍ له حوض تُباع منه وصفُّها ثابت (0266)، فبيعٌ
+ *  أثناء العدّ لا يراه الرصيدُ وحده. pool: رقمٌ قُرئ، null: لا قسمَ لها (أو مجمَّعة)، undefined: ما انقرأ (يُقرأ عند الإرسال). */
+interface Seen { v: number; pool: number | null | undefined }
 
 const DAYS = 90;
 /** سقفُ الخادم للسطور بنداءٍ واحد (count_too_many، 0216–0266) — الإرسالُ دفعاتٌ بالتتابع. */
@@ -213,7 +216,7 @@ export function StockCount() {
   useEffect(() => (dirty ? holdUpdates(Infinity) : undefined), [dirty]);
   /* سؤالُ الرصيد الطازج لكلّ سطرٍ كُتب فيه (`seen`): واحدٌ للسطر — وجودُه هنا هو التجميد، ويُمسح مع عدد السطر (إرسالٌ نجح
      أو count_moved) فقط. والإرسالُ ينتظر سؤالاً بالطريق بدل أن يقرأ الرصيدَ المحمَّل. */
-  const seenReq = useRef(new Map<string, Promise<number>>());
+  const seenReq = useRef(new Map<string, Promise<Seen>>());
   /* البيعُ قبل الجرد (0266): عيادةٌ شغّلت الوضعَ يوماً (`used`) رصيدُ موادّها المنقولة ما انعدّ بعد — فبطاقةُ «جرد البداية»
      و«خطأ إدخال» مختارٌ لأوّل عدّ. بابُه كسول (لا يدخل قطعةَ الصفحة ثابتاً)؛ وغيابُ الدالّة أو فشلُ السؤال يُخفيهما — والعدُّ
      كما كان والسببُ يُختار باليد، ولا يُطفئ «نعم» عرفناها. */
@@ -319,19 +322,23 @@ export function StockCount() {
    *  المحمَّل (والخادمُ يحكم: ما تحرّك بعده يردّه count_moved). */
   const touch = useCallback((p: Product) => {
     if (seenReq.current.has(p.id)) return;
-    const req = (async () => {
+    const req = (async (): Promise<Seen> => {
+      let src: Product = p;
       try {
         const fresh = await withTimeout(repo.getProductById(p.id));
-        if (fresh) return Number(fresh.stock) || 0;
+        if (fresh) src = fresh;
       } catch { /* swallow-ok: فشلٌ أو مهلةٌ (سؤالٌ عالق كان سيُعلّق «سجّل العدّ»): الرصيدُ المحمَّل — وما تحرّك بعده يردّه الخادمُ count_moved */ }
-      return Number(p.stock) || 0;
+      const v = Number(src.stock) || 0;
+      if (!src.section_id || src.pooled) return { v, pool: null };
+      try { return { v, pool: Number(await withTimeout(repo.getSectionPool(src.section_id))) || 0 }; }
+      catch { /* swallow-ok: الحوضُ يُقرأ ثانيةً عند الإرسال (ولا إرسالَ بلاه) */ return { v, pool: undefined }; }
     })();
     seenReq.current.set(p.id, req);
-    void req.then((v) => setLines((m) => {
+    void req.then((r) => setLines((m) => {
       const cur = m[p.id];
       // سطرٌ مُسح عددُه والسؤالُ بالطريق (انسجل، أو count_moved): جوابُه لعدٍّ ما عاد — يُرمى.
       if (!cur || seenReq.current.get(p.id) !== req) return m;
-      return { ...m, [p.id]: { ...cur, seen: v } };
+      return { ...m, [p.id]: { ...cur, seen: r.v, seenPool: r.pool } };
     }));
   }, []);
   const onCount = useCallback((p: Product, v: string) => { touch(p); patchLine(p.id, () => ({ counted: v })); }, [touch, patchLine]);
@@ -371,7 +378,8 @@ export function StockCount() {
   const preReason = (p: Product): CountReason | null => (negUsed && neverIds.has(p.id) ? "entry_error" : null);
   const reasonOf = (p: Product, l: Line): CountReason | null => l.reason ?? preReason(p);
   /** ما رآه العادّ لسطرٍ عند الإرسال: المعروفُ، أو سؤالُه الذي بالطريق (يُنتظر — لا يُستبدل بالمحمَّل). */
-  const seenFor = async (p: Product, l: Line): Promise<number> => l.seen ?? (await seenReq.current.get(p.id)) ?? (Number(p.stock) || 0);
+  const seenFor = async (p: Product, l: Line): Promise<Seen> =>
+    (l.seen !== undefined ? { v: l.seen, pool: l.seenPool } : await seenReq.current.get(p.id)) ?? { v: Number(p.stock) || 0, pool: undefined };
   /** سطورٌ انسجلت: تُشال من العدّ والقائمة بمعرّفاتها وحدها — وما لم يُرسل يبقى كما كُتب. */
   const forget = (ids: readonly string[]) => {
     const gone = new Set(ids);
@@ -389,7 +397,7 @@ export function StockCount() {
       for (const id of gone) {
         const cur = next[id];
         if (!cur) continue;
-        const { seen: _seen, ...rest } = cur;
+        const { seen: _seen, seenPool: _pool, ...rest } = cur;
         next[id] = { ...rest, counted: "", lots: {} };
       }
       return next;
@@ -464,16 +472,26 @@ export function StockCount() {
     try {
       // الرصيدُ الذي رآه العادّ لكلّ سطر — سؤالٌ بالطريق يُنتظر، لا يُستبدل بالمحمَّل.
       const seen = await Promise.all(rows.map(({ product, l }) => seenFor(product, l)));
+      /* حوضُ قسمٍ ما انقرأ بأوّل ضغطة يُقرأ الآن (أفضلُ ما بقي)، ولا إرسالَ بلاه: الخادمُ يرفض سطراً رصيدُه ≤ ٠ بقسمٍ بلا حوضه. */
+      try {
+        await Promise.all(rows.map(async ({ product }, i) => {
+          if (seen[i].pool !== undefined || !product.section_id || product.pooled) return;
+          seen[i] = { ...seen[i], pool: Number(await withTimeout(repo.getSectionPool(product.section_id))) || 0 };
+        }));
+      } catch (e) {
+        playWarning(); toast.error(describeDbError(e, t)); return;
+      }
       const payload: SeenLine[] = [];
       for (const [i, { product, l, got, ls }] of rows.entries()) {
         // الإشارةُ بالضبط (diffOf) على ما رآه العادّ — بها يقرّر الخادمُ «مطابق» أو «اختر السبب»، فبها يُطلب السببُ ويُرسل.
-        const diff = diffOf(got, seen[i]).sign;
+        const diff = diffOf(got, seen[i].v).sign;
         const reason = reasonOf(product, l);
         if (diff !== 0 && (!reason || !reasonsFor(diff).includes(reason))) {
           playWarning(); toast.error(t("cnt.needReason", { name: product.name, defaultValue: "«{{name}}» بيها فرق — اختر السبب" })); return;
         }
         payload.push({ product_id: product.id, counted: toNum(got), reason: diff === 0 ? null : reason, note: l.note.trim() || null,
-          lots: ls.length ? ls.map((x) => ({ lot_id: x.id, counted: Number(l.lots[x.id]) })) : undefined, seen: seen[i] });
+          lots: ls.length ? ls.map((x) => ({ lot_id: x.id, counted: Number(l.lots[x.id]) })) : undefined, seen: seen[i].v,
+          ...(typeof seen[i].pool === "number" ? { seen_pool: seen[i].pool as number } : {}) });
       }
       await send(payload);
     } finally { setBusy(false); }

@@ -49,7 +49,8 @@ export interface NegReport extends NegState {
   periodSince: string | null; capUntil: string | null;
   /** المستدعي مشغّلُ المنصّة: ما فوق السقف له، والملاحظةُ عليه. */
   operator: boolean;
-  negatives: number; neverCounted: number; uncountedNonpos: number; zeroCost: number; zeroCostNonpos: number; pending: number;
+  /** negatives: كلُّ ما تحت الصفر (المعدودةُ معها)؛ uncountedNonpos/uncountedNeg: غيرُ المعدودة بالصفر أو تحته / تحته. */
+  negatives: number; neverCounted: number; uncountedNonpos: number; uncountedNeg: number; zeroCost: number; zeroCostNonpos: number; pending: number;
   log: NegLogRow[];
 }
 
@@ -103,7 +104,7 @@ export function readNegReport(x: unknown, at: number): NegReport {
   });
   return {
     ...s, periodSince: str(r.period_since), capUntil: str(r.cap_until), operator: r.operator === true, negatives: int(r.negatives), neverCounted: int(r.never_counted), uncountedNonpos: int(r.uncounted_nonpos),
-    zeroCost: int(r.zero_cost), zeroCostNonpos: int(r.zero_cost_nonpos), pending: int(r.pending), log,
+    uncountedNeg: int(r.uncounted_neg), zeroCost: int(r.zero_cost), zeroCostNonpos: int(r.zero_cost_nonpos), pending: int(r.pending), log,
   };
 }
 
@@ -166,7 +167,9 @@ export function isNegativeRow(p: LiftRow & { stock?: number | null }): boolean {
 export type NegSay =
   | { kind: "noCost"; name: string; productId?: string; canOpen?: boolean; n: number }
   | { kind: "counted"; name: string; stock: number; n: number }
-  | { kind: "ended"; name: string; stock: number; n: number };
+  | { kind: "ended"; name: string; stock: number; n: number }
+  /** جوابُ «مفعّل» تجاوز عمرَه وسؤالُه ما رجع: الوضعُ ربما شغّال — لا «انتهى» ولا «زيد رصيده». */
+  | { kind: "unsure"; name: string; n: number };
 export interface NegBarView { active: boolean; until: string | null; endedAt: string | null; lastNight: boolean }
 /** سطرٌ مرفوضٌ بنافذة ما قبل البيعة: الكميةُ والرصيدُ بوحدة السطر، و`keep` ما يبقى منه إن شيل الزائد (صفرٌ يشيله). */
 export interface NegRefusedLine { id: string; name: string; qty: number; stock: number | null; why: NegWhy | "unsure"; keep?: number }

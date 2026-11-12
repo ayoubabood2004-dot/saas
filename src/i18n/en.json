@@ -8536,7 +8536,7 @@
         "counted": "Counted — its stock is trusted",
         "zero_cost": "No purchase price",
         "not_lifted": "Can't be sold below zero",
-        "gone": "No longer in inventory"
+        "gone": "No longer in stock — deleted or merged into another item"
       },
       "remove": "Remove the extra and finish the sale",
       "retry": "Try again",
@@ -8545,7 +8545,8 @@
       "allCartOff": "Everything in the cart is one of these items — ask the manager to extend selling before the count in Settings, or record their purchase.",
       "keep": "{{n}} stays",
       "drop": "removed",
-      "locked": "The previous attempt hasn't been confirmed by the server — don't change the cart: check «Invoices», or go back and press «Complete sale» again."
+      "locked": "The previous attempt hasn't been confirmed by the server — don't change the cart: check «Invoices», or go back and press «Complete sale» again.",
+      "lineGone": "{{qty}} in the cart"
     },
     "set": {
       "title": "Selling before the count (temporary)",
@@ -8610,7 +8611,13 @@
         "neg_stock_note_required": "Write the clinic a note on why you turned it on.",
         "neg_stock_too_long": "Selling before the count is temporary: at most 60 days from its start — finish the count. To extend beyond that, contact support.",
         "neg_stock_bad": "The request is incomplete — refresh the page and try again."
-      }
-    }
+      },
+      "offLeftZero": "{{n}} uncounted items are at zero — all of them can't be sold at the till again until they are counted or their purchase is recorded.",
+      "offUncounted": "{{n}} items aren't counted yet and their stock is above zero — they sell until their stock runs out, then the till refuses them until they are counted or their purchase is recorded.",
+      "offBack": "Back",
+      "unchanged": "Nothing changed — it's already on until the night of {{day}}.",
+      "alreadyOff": "It was already off since {{day}} — nothing changed."
+    },
+    "unsure": "Couldn't reach the server to confirm selling before the count is still on — «{{name}}» wasn't added. Check the connection and try again."
   }
 }

@@ -375,8 +375,8 @@ async function countOnce(M, p, lots, typed, { reason } = {}) {
  *  الوضع: `used`، وcountSubmitSeen يسجّل ما يصله (`log.sends`) ويجيب `answer(lines, k, stockOf)` — رميتُه رفضٌ (k رقمُ النداء من ١،
  *  وstockOf رصيدُ الخادم الآن). */
 async function countPage(M, { products, state = new Map(), pending = [], used = false, server = new Map(), fail = new Set(), companies = [],
-  answer = (lines) => ({ matched: lines.length, pending: 0 }), counted = undefined } = {}) {
-  const log = { sends: [], toasts: [], loads: 0, fresh: new Map(), cos: 0, missing: [] };
+  answer = (lines) => ({ matched: lines.length, pending: 0 }), counted = undefined, pools = new Map(), poolFail = 0, sold = new Map() } = {}) {
+  const log = { sends: [], toasts: [], loads: 0, fresh: new Map(), cos: 0, missing: [], pools: [] };
   globalThis.__perm = { can: () => true, role: "manager", baseRole: "manager" };
   globalThis.__toast = { success: (m) => log.toasts.push(`success:${m}`), error: (m) => log.toasts.push(`error:${m}`), warn() {}, toast() {} };
   globalThis.__holds = [];
@@ -384,7 +384,7 @@ async function countPage(M, { products, state = new Map(), pending = [], used = 
   const now = (p) => ({ ...p, stock: server.has(p.id) ? server.get(p.id) : p.stock });
   globalThis.__repo = {
     listProducts: async () => { log.loads++; return products.map(now); },
-    productSalesRate: async () => new Map(), stockCountState: async () => state, listActiveLots: async () => [],
+    productSalesRate: async () => sold, stockCountState: async () => state, listActiveLots: async () => [],
     listStockCounts: async () => pending, reportStockLosses: async () => [],
     getProductById: async (id) => {
       log.fresh.set(id, (log.fresh.get(id) ?? 0) + 1);
@@ -393,6 +393,8 @@ async function countPage(M, { products, state = new Map(), pending = [], used = 
       return p ? now(p) : undefined;
     },
     listCompanies: async () => { log.cos++; return companies; },
+    /* حوضُ القسم (0266): `pools` تتبدّل بالفحص كالرصيد، و`poolFail` أوّلُ N قراءةٍ تفشل. */
+    getSectionPool: async (id) => { log.pools.push(id); if (log.pools.length <= poolFail) throw new Error("Failed to fetch"); return pools.get(id) ?? 0; },
     submitStockCount: async () => { throw new Error("نداءٌ غير متوقّع: submitStockCount — العدُّ يمرّ من countSubmitSeen (0266)"); },
   };
   let k = 0;
@@ -1891,6 +1893,38 @@ const SCENARIOS = {
     return pg.done();
   },
 
+  /* ق١ب) حوضُ القسم (0266): مادّةٌ رصيدُها صفر بقسمٍ له حوض تُباع منه وصفُّها ثابت — فما رآه العادّ يشمل الحوض: يُقرأ بأوّل ضغطة
+   *      ويُرسل seen_pool، وقراءةٌ فشلت تُعاد عند الإرسال، وفشلُها هناك لا يرسل شيئاً (الخادمُ يرفض بلاه). ومادّةٌ بلا قسم لا تسأله. */
+  async seenpool(M, ok) {
+    const Z = P("p-pool-z", "أوكسيتوسين", { stock: 0, section_id: "sec-1" }), N = P("p-pool-n", "بلا قسم", { stock: 2 });
+    const pools = new Map([["sec-1", 6]]);
+    const sold = new Map([[Z.id, 3]]);          // رصيدُها صفر: تدخل اختيارَ اليوم بمبيعها
+    const pg = await countPage(M, { products: [Z, N], pools, sold });
+    await pg.type(Z.id, "1");
+    pools.set("sec-1", 5);                     // بيعٌ من الحوض بعد الكتابة: ما رآه العادّ يبقى ٦
+    await pg.type(Z.id, "0");                  // يطابق ما رآه (صفر) — بلا سببٍ يُطلب
+    await pg.type(N.id, "2");
+    await pg.submit();
+    const sent = pg.log.sends[0] ?? [];
+    ok("seen.pool", "أوّلُ ضغطة تقرأ حوضَ القسم أيضاً ويُرسل seen_pool كما رآه العادّ (٦ لا ٥)، ومادّةٌ بلا قسم بلا حوض",
+      sent.find((l) => l.product_id === Z.id)?.seen_pool === 6 && !("seen_pool" in (sent.find((l) => l.product_id === N.id) ?? { seen_pool: 1 }))
+        && J(pg.log.pools) === J(["sec-1"]), J({ sent, pools: pg.log.pools }));
+    const errs = pg.done();
+    const pg2 = await countPage(M, { products: [Z], pools: new Map([["sec-1", 4]]), poolFail: 1, sold });
+    await pg2.type(Z.id, "0");
+    await pg2.submit();
+    ok("seen.poolRetry", "  وقراءةُ الحوض فشلت بأوّل ضغطة: تُعاد عند الإرسال ويُرسل ما قُرئ", pg2.log.sends[0]?.[0]?.seen_pool === 4 && pg2.log.pools.length === 2,
+      J({ sends: pg2.log.sends, pools: pg2.log.pools }));
+    errs.push(...pg2.done());
+    const pg3 = await countPage(M, { products: [Z], pools: new Map([["sec-1", 4]]), poolFail: 2, sold });
+    await pg3.type(Z.id, "0");
+    await pg3.submit();
+    ok("seen.poolFail", "  وفشلت ثانيةً: لا إرسال (الخادمُ يرفض بلاه) والسببُ يُقال", pg3.log.sends.length === 0 && pg3.log.toasts.some((x) => x.startsWith("error:")),
+      J({ sends: pg3.log.sends, toasts: pg3.log.toasts }));
+    errs.push(...pg3.done());
+    return errs;
+  },
+
   /* ق٢) سؤالُ الصفّ عالق (0266): «سجّل العدّ» ينتظر ما رآه العادّ — وبلا مهلة كان يعلّق للأبد والزرُّ يدور. عند ٨ ثوانٍ (withTimeout)
    *     يرجع لرصيد الصفحة والخادمُ يحكم (seen.wait). مؤقّتاتُ الثانية فأكثر بيد الفحص كـtaken.wait، وما دونها حقيقيّ (settle). */
   async seenwait(M, ok) {
@@ -2172,6 +2206,7 @@ const R3F_KEYS = { "taken.relink": "taken", "taken.emptied": "taken", "taken.lef
  * أوّل فشل، و«خطأ إدخال» لأوّل عدٍّ بعيادةٍ استعملت الوضع، وبطاقةُ «جرد البداية»، والتوأمُ بالاسم. */
 const NEG_KEYS = {
   "seen.base": "seen", "seen.frozen": "seen", "seen.sent": "seen", "seen.fallback": "seen", "seen.wait": "seenwait",
+  "seen.pool": "seenpool", "seen.poolRetry": "seenpool", "seen.poolFail": "seenpool",
   "moved.only": "moved", "moved.toast": "moved", "moved.reload": "moved", "moved.recount": "moved",
   "chunk.sizes": "chunks", "chunk.saved": "chunks", "chunk.stop": "chunkfail", "chunk.partial": "chunkfail", "chunk.left": "chunkfail", "chunk.retry": "chunkfail",
   "first.pre": "first", "first.sent": "first", "first.change": "first", "first.rejected": "first", "first.rejectedFallback": "first", "first.pendingNot": "first",
@@ -2379,7 +2414,7 @@ const MUTANTS = [
   { file: S, from: "return ls.reduce((s, x) => plus(s, exact(Number(l.lots[x.id]))), exact(0));", to: "return exact(ls.reduce((s, x) => s + Number(l.lots[x.id]), 0));", breaks: ["count.lotSum", "count.lotSent"], why: "مجموعُ الدفعات بالعائم (الخللُ الأصليّ)" },
   { file: S, from: "counted: toNum(got),", to: "counted: ls.length ? ls.reduce((s, x) => s + Number(l.lots[x.id]), 0) : toNum(got),", breaks: ["count.lotSent"], why: "المرسَلُ مجموعٌ عائم (٠٫١٢٠٠٠٠٠٠٠٠٠٠٠٠٠٠١)" },
   // (0266: الإرسالُ يقارن بما رآه العادّ seen[i] لا بالمحمَّل — الطفرةُ نفسُها على نصّه الجديد)
-  { file: S, from: "const diff = diffOf(got, seen[i]).sign;", to: "const diff = toNum(got) - seen[i];", breaks: ["count.noisyStock"], why: "الإرسالُ يقارن بالعائم والشاشةُ بالضبط" },
+  { file: S, from: "const diff = diffOf(got, seen[i].v).sign;", to: "const diff = toNum(got) - seen[i].v;", breaks: ["count.noisyStock"], why: "الإرسالُ يقارن بالعائم والشاشةُ بالضبط" },
   /* «العدُّ يُقرَّب لثلاث منازل داخل diffOf» (plus(at3(got), …)) خرجت بتدقيق ui3: diffOf لا يُنادى إلا بعددٍ ليس tooFine فـat3 عليه
    * هويّةٌ — طفرةٌ مكافئة لا يُسقطها شيء. تقريبُ العدد نفسِه صار طفرةَ countedOf أدناه (count.fineOne). */
   { file: S, from: "const sys = at3(exact(Number(system) || 0))", to: "const sys = exact(Number(system) || 0)", breaks: ["count.noisyStock", "count.noisyDown"], why: "الرصيدُ العائمُ بلا منازل عموده الثلاث" },
@@ -2440,8 +2475,8 @@ const MUTANTS = [
   { file: W, from: "left: lines.filter((d) => a.sent.includes(d.id)).map((d) => d.id),", to: "left: lines.map((d) => d.id),", breaks: ["taken.leftRace"], why: "ما أُضيف والقراءةُ بالطريق يُعدّ من السند المرفوض" },
   // ── 0266: البيعُ قبل الجرد — ما رآه العادّ، والدفعات، وcount_moved، وأوّلُ عدّ، وبطاقةُ جرد البداية، والتوأم ──
   { file: S, from: "    if (seenReq.current.has(p.id)) return;\n", to: "", breaks: ["seen.frozen"], why: "ما رآه العادّ يُحدَّث بكلّ ضغطة (يلحق البيعَ بعد العدّ — الفرقُ الوهميّ نفسُه)" },
-  { file: S, from: ", seen: seen[i] });", to: " });", breaks: ["seen.sent"], why: "السطرُ يُرسل بلا seen (الخادمُ يرفضه count_seen_missing، والقديمُ يلقط رصيدَ الإرسال)" },
-  { file: S, from: "        const fresh = await withTimeout(repo.getProductById(p.id));\n        if (fresh) return Number(fresh.stock) || 0;\n", to: "", breaks: ["seen.base"], why: "ما رآه العادّ = رصيدُ الصفحة القديم لا صفُّه الطازج" },
+  { file: S, from: ", seen: seen[i].v,\n", to: ",\n", breaks: ["seen.sent"], why: "السطرُ يُرسل بلا seen (الخادمُ يرفضه count_seen_missing، والقديمُ يلقط رصيدَ الإرسال)" },
+  { file: S, from: "        const fresh = await withTimeout(repo.getProductById(p.id));\n        if (fresh) src = fresh;\n", to: "", breaks: ["seen.base"], why: "ما رآه العادّ = رصيدُ الصفحة القديم لا صفُّه الطازج" },
   { file: S, from: "const fresh = await withTimeout(repo.getProductById(p.id));", to: "const fresh = await repo.getProductById(p.id);", breaks: ["seen.wait"], why: "سؤالُ الصفّ بلا مهلة: عالقٌ يعلّق «سجّل العدّ» للأبد" },
   { file: S, from: "if (code === \"count_moved\") recount(movedIdsOf(e) ?? part.map((x) => x.product_id));", to: "if (code === \"count_moved\") recount(part.map((x) => x.product_id));", breaks: ["moved.only"], why: "count_moved يمسح أعدادَ الدفعة كلّها لا ما تحرّك" },
   { file: S, from: "    for (const id of gone) seenReq.current.delete(id); // يُسأل من جديد بأوّل ضغطة\n", to: "", breaks: ["moved.recount"], why: "ما تحرّك يُعاد عدُّه على الرصيد المجمَّد القديم — يُردّ count_moved للأبد" },
@@ -2453,6 +2488,9 @@ const MUTANTS = [
   { file: S, from: "toast.error(done > 0 ? t(\"cnt.partial\",", to: "toast.error(false ? t(\"cnt.partial\",", breaks: ["chunk.partial"], why: "الفشلُ بعد دفعةٍ نجحت يُقال كأن شيئاً لم ينسجل" },
   { file: S, from: "(negUsed && neverIds.has(p.id) ? \"entry_error\" : null)", to: "(neverIds.has(p.id) ? \"entry_error\" : null)", breaks: ["first.unused"], why: "«خطأ إدخال» مختارٌ بعيادةٍ ما استعملت الوضع" },
   { file: S, from: "(negUsed && neverIds.has(p.id) ? \"entry_error\" : null)", to: "(negUsed ? \"entry_error\" : null)", breaks: ["first.counted"], why: "«خطأ إدخال» مختارٌ لمادّةٍ انعدّت قبل" },
+  { file: S, from: "      try { return { v, pool: Number(await withTimeout(repo.getSectionPool(src.section_id))) || 0 }; }", to: "      try { return { v, pool: undefined }; }", breaks: ["seen.pool"], why: "الحوضُ يُقرأ عند الإرسال لا بأوّل ضغطة" },
+  { file: S, from: "          ...(typeof seen[i].pool === \"number\" ? { seen_pool: seen[i].pool as number } : {}) });", to: "          });", breaks: ["seen.pool", "seen.poolRetry"], why: "الحوضُ لا يُرسل" },
+  { file: S, from: "          if (seen[i].pool !== undefined || !product.section_id || product.pooled) return;", to: "          return;", breaks: ["seen.poolRetry"], why: "حوضٌ فشلت قراءتُه لا يُعاد عند الإرسال" },
   { file: S, from: "&& (countedIds ? !countedIds.has(p.id) : !ready.state.has(p.id))) : []), [ready, countedIds, pendingIds]);", to: "&& !ready.state.has(p.id)) : []), [ready, countedIds, pendingIds]);", breaks: ["first.rejected"], why: "«انعدّت» بحالة العدّ — المرفوضُ «انعدّت»" },
   { file: S, from: "countable(p) && !pendingIds.has(p.id)\n    && (countedIds", to: "countable(p)\n    && (countedIds", breaks: ["first.pendingNot"], why: "المعلَّقُ «ما انعدّت» بتعريف الخادم" },
   { file: S, from: "{pre !== null && reason === \"entry_error\" && <p", to: "{false && <p", breaks: ["first.pre"], why: "«خطأ إدخال» مختارٌ بلا كلمة لماذا" },
