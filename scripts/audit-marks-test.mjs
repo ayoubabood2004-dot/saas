@@ -153,6 +153,11 @@ console.log("▸ ملفُّ الإكسل");
   check("  وقيمُها المخزّنة كما يحسبها البرنامج لحظةَ التصدير (العمودُ الأصفرُ فارغ): «العدد بالنظام» ٦، و«لم تُعدّ» ٢، و«عُدّت» صفر",
     sum[`B${rSys}`]?.v === 6 && sum[`B${rLeft}`]?.v === 2 && sum[`B${rDone}`]?.v === 0 && sum[`B${rAct}`]?.v === 0 && sum[`B${rNet}`]?.v === 0,
     JSON.stringify({ sys: sum[`B${rSys}`]?.v, left: sum[`B${rLeft}`]?.v, done: sum[`B${rDone}`]?.v }));
+  /* عيادةٌ بلا أسطر: المدى لا يبدأ بعد نهايته — J5:J4 يُقرأ J4:J5 فيأخذ خليةَ العنوان («أسطر فيها فرق: 1» عن ورقةٍ فارغة، مقيسٌ بـLibreOffice). */
+  const wbe = M.buildStocktakeWorkbook(XLSX, [], [], [], now, "عيادة", undefined);
+  const sumE = wbe.Sheets[wbe.SheetNames[1]];
+  const ranges = Object.values(sumE).filter((x) => x && typeof x === "object" && x.f).flatMap((x) => [...String(x.f).matchAll(/!([A-Z])(\d+):([A-Z])(\d+)/g)].map((m) => [Number(m[2]), Number(m[4])]));
+  check("  وعيادةٌ بلا أسطر: لا مدى مقلوب بمعادلات الملخّص", ranges.length > 0 && ranges.every(([a, b]) => a <= b), JSON.stringify(ranges.slice(0, 4)));
   const wbp = M.buildStocktakeWorkbook(XLSX, products, [CO], [SEC], now, "عيادة", undefined);
   const sumP = wbp.Sheets[wbp.SheetNames[1]];
   check("  وعيادةٌ بلا سالب: لا سطرَ «العدد بالنظام» بالملخّص (هو «إجمالي القطع» نفسُه)",

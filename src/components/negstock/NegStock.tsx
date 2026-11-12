@@ -247,9 +247,10 @@ export function NegStockCard() {
 
 /* ══ ٢) شريحةُ الكاشير ونصوصُ الرفض ═════════════════════════════════════════════════════════════════════ */
 
-export function NegBar({ view, says, onSaid, compact }: {
-  /** says: طابورُ رسائل الرفض (كلٌّ برقمه)؛ onSaid(n): «قلتُ حتى n» — الشاشةُ تشيلها فلا تُعاد، ومؤقّتُها الحارُّ لا يقولها ثانيةً. */
-  view: NegBarView; says: readonly NegSay[]; onSaid?: (n: number) => void; compact?: boolean;
+export function NegBar({ view, says, claim, onSaid, compact }: {
+  /** says: طابورُ رسائل الرفض (كلٌّ برقمه)؛ claim(n): مطالبةٌ متزامنة — أوّلُ من يطالب برقمٍ يقوله (الشريحةُ أو احتياطُها الحارّ) ولا
+   *  يُقال مرّتين بأيّ ترتيبِ رسم؛ onSaid(): الشاشةُ تشيل ما قيل. */
+  view: NegBarView; says: readonly NegSay[]; claim: (n: number) => boolean; onSaid?: () => void; compact?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -264,10 +265,10 @@ export function NegBar({ view, says, onSaid, compact }: {
     if (view.active) toast.success(t("nstk.turnedOn", { day: dayText(view.until ? lastDayOf(view.until) : null, lang) }));
     else { playWarning(); toast.toast({ tone: "error", title: t("nstk.turnedOff") }); }
   }, [view.active, view.until, lang, t, toast]);
-  /* كلُّ ما بالطابور ولم يُقل بهذا التركيب يُقال بترتيبه — رفضان قبل أن تُركَّب كلاهما يُقال. */
-  const lastSay = useRef(0);
+  /* كلُّ ما بالطابور ولم يُقل بعدُ يُقال بترتيبه — رفضان قبل أن تُركَّب كلاهما يُقال، وما قيل (هنا أو بالحارّ) لا يُعاد. */
   useEffect(() => {
-    const fresh = says.filter((x) => x.n > lastSay.current);
+    const fresh: NegSay[] = [];
+    for (const x of says) if (claim(x.n)) fresh.push(x);
     if (fresh.length === 0) return;
     for (const say of fresh) {
       if (say.kind === "noCost") {
@@ -281,9 +282,8 @@ export function NegBar({ view, says, onSaid, compact }: {
         toast.error(t("nstk.ended", { name: say.name, stock: signedQty(say.stock) }));
       }
     }
-    lastSay.current = Math.max(...fresh.map((x) => x.n));
-    onSaid?.(lastSay.current);
-  }, [says, onSaid, t, toast, navigate]);
+    onSaid?.();
+  }, [says, claim, onSaid, t, toast, navigate]);
 
   const recentEnd = !view.active && view.endedAt && Date.now() - Date.parse(view.endedAt) < 3 * 86_400_000;
   if (!view.active && !recentEnd) return null;

@@ -997,15 +997,22 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** يعلّم السطرَ إن صارت كميتُه فوق رصيده والوضعُ يرفعه (لاصق: لا يُنزع). */
   const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > unitCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);
   /* رسائلُ الوضع: طابورٌ يقوله المالكُ الكسول حين يصل (`negSays`)، وما لم يقله خلال ثانيةٍ ونصف يُقال بنصٍّ حارّ — كلُّ رفضٍ يُقال مرّةً
-   * واحدة. كانت خانةً واحدة وعلمَ «الشريحةُ مركّبة»: رفضان قبل تركيبها والأوّلُ لا يُقال أبداً (الثاني يكتب فوقه ويُسكت مؤقّتَه)،
-   * وما قالته الشريحةُ ثمّ فُكّت (شاشةُ «تمّ») يُقال ثانيةً بالحارّ (مراجعةٌ عدائيّة رابعة). فالشريحةُ تقول ما قالت (`onSaid`) لا أنها رُكّبت. */
+   * واحدة. كانت خانةً واحدة وعلمَ «الشريحةُ مركّبة»: رفضان قبل تركيبها والأوّلُ لا يُقال أبداً، وما قالته ثمّ فُكّت (شاشةُ «تمّ») يُقال
+   * ثانيةً بالحارّ (مراجعةٌ رابعة). ثمّ صارت «قلتُ حتى n» — حدّاً أعلى يفترض أن الطابورَ يُرسم بترتيبه، ورسمةُ ضغطةٍ (أولويةٌ متزامنة)
+   * تتخطّى تحديثاً معلَّقاً بأولويةٍ عادية (جوابُ خادم، مؤقّت): رفضٌ ضاع، ورفضٌ قيل مرّتين (مراجعةٌ خامسة، بكروميوم وreact-dom حقيقيّين).
+   * فصار لكلّ رسالةٍ مطالبةٌ متزامنة واحدة (`negClaim`) بين الشريحة والحارّ: أوّلُ من يطالب يقول، ولا ترتيبَ رسمٍ يُضيّع أو يكرّر. */
   const [negSays, setNegSays] = useState<NegSay[]>([]);
-  /** أعلى رسالةٍ قالتها الشريحة — مؤقّتُ الحارّ لا يقول ما قيل. */
-  const negSaidRef = useRef(0);
-  /** «قلتُ حتى n»: تُشال من الطابور فلا تُعاد حين تُركَّب الشريحةُ ثانيةً (بيعةٌ جديدة). ثابتةٌ بين الرسمات. */
-  const negOnSaid = useRef((n: number) => {
-    if (n > negSaidRef.current) negSaidRef.current = n;
-    setNegSays((q) => (q.some((x) => x.n <= n) ? q.filter((x) => x.n > n) : q));
+  /** أرقامُ ما قيل (لا تُنسى — رسمةٌ متأخّرة قد تحمل الرسالةَ ثانيةً). */
+  const negClaimedRef = useRef(new Set<number>());
+  const negClaim = useRef((n: number): boolean => {
+    const s = negClaimedRef.current;
+    if (s.has(n)) return false;
+    s.add(n);
+    return true;
+  }).current;
+  /** «قلتُ ما طالبتُ به»: يُشال من الطابور ما قيل — تنظيفٌ لا حكم (الحكمُ بالمطالبة). ثابتةٌ بين الرسمات. */
+  const negOnSaid = useRef(() => {
+    setNegSays((q) => (q.some((x) => negClaimedRef.current.has(x.n)) ? q.filter((x) => !negClaimedRef.current.has(x.n)) : q));
   }).current;
   const negSayN = useRef(0);
   const negAliveRef = useRef(true);
@@ -1018,8 +1025,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * تُحمَّل — تقولها حين تُركَّب. كان النصُّ الحارُّ يُقال فوراً، وهو لـ«انتهى» و«انعدّت» «زيد رصيده من المخزن» — بابُ التوائم عن
      * مادّةٍ يقول الخادمُ «لا تدخلها». والحارُّ لما لم تقله خلال ثانيةٍ ونصف (قطعةٌ فشلت أو بطيئة، أو فُكّت قبل رسمتها). */
     window.setTimeout(() => {
-      if (!negAliveRef.current || negSaidRef.current >= n) return;
-      setNegSays((q) => q.filter((x) => x.n !== n));
+      if (!negAliveRef.current || !negClaim(n)) return;
+      negOnSaid();
       toast.error(fallback);
     }, 1500);
   };
@@ -3809,7 +3816,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <span className={retMode ? "hidden" : "contents"}>
               <LoadBoundary scope="neg-bar" onRetry={() => { NegBarLazy = loadNegBar(); setNegTick((n) => n + 1); }}>
                 <Suspense fallback={null}>
-                  <NegBarLazy view={negBarView} says={negSays} onSaid={negOnSaid} compact={compact} />
+                  <NegBarLazy view={negBarView} says={negSays} claim={negClaim} onSaid={negOnSaid} compact={compact} />
                 </Suspense>
               </LoadBoundary>
             </span>
