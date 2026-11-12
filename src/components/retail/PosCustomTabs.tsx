@@ -90,7 +90,8 @@ function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onServi
     name = p.name; price = listPrice(p); img = images && p.image_path ? p.image_path : null;
     Icon = p.sold_by_weight ? Scale : Package;
     /* بكسره وبوحدته: ربعُ علبةٍ تحت الصفر كانت «-0»، وكيلو ونصف «-2» (formatNum بلا كسور). */
-    badge = out ? t("ptab.out") : lifted ? <bdi dir="ltr" data-neg-stock>{p.sold_by_weight ? fmtKg(p.stock) : formatQty(p.stock)}</bdi> : t("ptab.left", { n: formatNum(p.stock) });
+    const qty = p.sold_by_weight ? fmtKg(p.stock) : formatQty(p.stock);
+    badge = out ? t("ptab.out") : lifted ? <bdi dir="ltr" data-neg-stock>{qty}</bdi> : t("ptab.left", { n: qty });
     fkey = `p:${p.id}`;
   } else {
     name = r.service.name; price = r.service.price; Icon = Stethoscope; badge = t("ptab.service"); fkey = `s:${r.service.id}`;

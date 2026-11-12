@@ -49,7 +49,12 @@ export function formatDec(n: number): string {
  * واحدة: من عرض كميّةً استعملها، ولا يقرّر بموضع النداء.
  */
 export function formatQty(n: number): string {
-  return Number.isInteger(n) ? formatNum(n) : formatDec(n);
+  if (Number.isInteger(n)) return formatNum(n);
+  /* كسرٌ أصغرُ مما تقوله ثلاثُ منازل (مستهلكاتُ الوصفة تُرحَّل بتسعٍ، 0252): يُكتب برقمه المعنويّ — «-0» عن رصيدٍ تحت الصفر، و«0» عن
+   * باقٍ، رقمان يكذبان. */
+  const a = Math.abs(n);
+  if (a < 0.0005) return n.toFixed(Math.min(9, Math.ceil(-Math.log10(a)))).replace(/(\.\d*?)0+$/, "$1");
+  return formatDec(n);
 }
 
 /** وزنٌ بالكيلو بلا أصفارٍ زائدة: 2 → "2"، 0.5 → "0.5"، 1.250 → "1.25".

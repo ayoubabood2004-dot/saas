@@ -46,19 +46,24 @@ const host = {
 
 const R = Reconciler(host);
 
-/** يرسم العنصر ويرجع أدواتِ القراءة والضغط. */
-export function mount(element) {
+/** يرسم العنصر ويرجع أدواتِ القراءة والضغط.
+ *  `concurrent`: جذرٌ متزامنٌ كـcreateRoot بالتطبيق (main.tsx) — الضغطةُ تجري داخل discreteUpdates كما تصل ضغطةُ المتصفّح: التحديثاتُ
+ *  مجمَّعة برسمةٍ واحدة وآثارُها تُفرغ بآخرها. الجذرُ الافتراضيّ legacy (كلُّ setState يرسم فوراً) أخفى عيباً مالياً: إكمالٌ بالرسمة نفسِها
+ *  رأى المجموعَ المثبَّت قبل أن يلحقه أثرُه (مراجعةٌ عدائيّة، 0266) — فما يقرّر بين الرسمات يُفحص بالجذرين. */
+export function mount(element, opt = {}) {
   const container = { type: "#root", props: {}, children: [], parent: null };
   const errors = [];
-  const root = R.createContainer(container, 0, null, false, null, "", (e) => errors.push(e), null);
+  const root = R.createContainer(container, opt.concurrent ? 1 : 0, null, false, null, "", (e) => errors.push(e), null);
   R.updateContainer(element, root, null, null);
   const all = () => { const out = []; const walk = (n) => { out.push(n); n.children.forEach(walk); }; container.children.forEach(walk); return out; };
   const text = (n = container) => (n.type === "#text" ? n.text : n.children.map((c) => text(c)).join(""));
   /** عقدةٌ بخاصّية data-… (القيمةُ اختيارية). */
   const find = (attr, value) => all().find((n) => n.props && attr in n.props && (value === undefined || String(n.props[attr]) === String(value))) ?? null;
   const findAll = (attr) => all().filter((n) => n.props && attr in n.props);
-  const click = (n) => { if (!n) throw new Error("click: لا عقدة"); if (n.props.disabled) throw new Error("click: الزرّ مقفول"); n.props.onClick?.({ preventDefault() {}, stopPropagation() {} }); };
+  /** معالجٌ يُنادى كما ينادي المتصفّحُ معالجَ حدث (بالجذر المتزامن: داخل discreteUpdates). */
+  const fire = (fn) => (opt.concurrent ? R.discreteUpdates(fn) : fn());
+  const click = (n) => { if (!n) throw new Error("click: لا عقدة"); if (n.props.disabled) throw new Error("click: الزرّ مقفول"); return fire(() => n.props.onClick?.({ preventDefault() {}, stopPropagation() {} })); };
   /** الأثرُ المؤجَّل (useEffect) ونتائجُ الوعود. */
   const settle = async () => { for (let i = 0; i < 5; i++) { R.flushPassiveEffects(); await new Promise((r) => setTimeout(r, 0)); } R.flushPassiveEffects(); };
-  return { container, all, text, find, findAll, click, settle, errors, unmount: () => R.updateContainer(null, root, null, null) };
+  return { container, all, text, find, findAll, click, fire, settle, errors, unmount: () => R.updateContainer(null, root, null, null) };
 }

@@ -136,8 +136,21 @@ console.log("▸ ملفُّ الإكسل");
   check("سطرٌ تحت الصفر: قيمتُه المخزّنة صفر، وصافي أثر الجرد = رأسُ المال بعد العدّ − قبله (صفرٌ لا +٢٠٬٠٠٠)",
     rn > 0 && wn[`K${rn}`]?.v === 0 && sumK === 1000 && sumO === sumMH - sumK && sumO === 0, JSON.stringify({ K: wn[`K${rn}`]?.v, sumK, sumO, sumMH }));
   const tot = (() => { for (let r = 5; r < 50; r++) if (String(wn[`A${r}`]?.v ?? "") === "المجموع") return r; return -1; })();
-  check("  ومجموعُ القطع قطعُ الرفّ (١٠ لا ٦) بمعادلته ورقمه — كرأس المال بجانبه",
-    tot > 0 && wn[`J${tot}`]?.f === `SUMIF(J${rn < rp ? rn : rp}:J${rn < rp ? rp : rn},">0")` && wn[`J${tot}`]?.v === 10, JSON.stringify({ f: wn[`J${tot}`]?.f, v: wn[`J${tot}`]?.v }));
+  const lo = Math.min(rn, rp), hi = Math.max(rn, rp);
+  check("  ومجموعُ عمود «العدد بالنظام» مجموعُه كما هو (٦ بإشارته) — ورقةُ العدّ تُطابَق به: فعلي − نظام = الفرق",
+    tot > 0 && wn[`J${tot}`]?.f === `SUM(J${lo}:J${hi})` && wn[`J${tot}`]?.v === 6, JSON.stringify({ f: wn[`J${tot}`]?.f, v: wn[`J${tot}`]?.v }));
+  const wbn = M.buildStocktakeWorkbook(XLSX, negPs, [], [], now, "عيادة", undefined);
+  const sum = wbn.Sheets[wbn.SheetNames[1]];
+  const cells = Object.keys(sum).filter((k) => /^A\d+$/.test(k)).map((k) => ({ r: Number(k.slice(1)), label: String(sum[k].v ?? "") }));
+  const rowOfLabel = (txt) => cells.find((x) => x.label.startsWith(txt))?.r ?? -1;
+  const rUnits = rowOfLabel("إجمالي القطع"), rSys = rowOfLabel("العدد بالنظام"), rAct = rowOfLabel("مجموع القطع الفعلية"), rNet = rowOfLabel("صافي فرق القطع");
+  check("  والملخّص: «إجمالي القطع» قطعُ الرفّ (١٠ كبطاقة الشركة)، و«العدد بالنظام» (٦ بإشارته) قبل «الفعلية» و«صافي الفرق» — فيتّفق الحساب أمام العين",
+    rUnits > 0 && sum[`B${rUnits}`]?.v === 10 && rSys > 0 && rSys < rAct && rAct < rNet && /^SUM\('[^']+'!J\d+:J\d+\)$/.test(String(sum[`B${rSys}`]?.f ?? "")),
+    JSON.stringify({ rUnits, units: sum[`B${rUnits}`]?.v, rSys, fSys: sum[`B${rSys}`]?.f, rAct, rNet }));
+  const wbp = M.buildStocktakeWorkbook(XLSX, products, [CO], [SEC], now, "عيادة", undefined);
+  const sumP = wbp.Sheets[wbp.SheetNames[1]];
+  check("  وعيادةٌ بلا سالب: لا سطرَ «العدد بالنظام» بالملخّص (هو «إجمالي القطع» نفسُه)",
+    !Object.keys(sumP).some((k) => /^A\d+$/.test(k) && String(sumP[k].v ?? "").startsWith("العدد بالنظام")));
 }
 
 console.log("▸ auditMarks — من ملاحظات الفحص إلى كلمةٍ لكلّ مادة");

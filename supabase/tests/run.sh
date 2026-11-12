@@ -11404,7 +11404,7 @@ chk "الإقرارُ شرطٌ بالخادم، والمدّةُ ١–٣٠" \
             ||'|'||$(rerr $NC "select neg_stock_set('$NC', true, 31, true)")||'|'||$(rerr $NC "select neg_stock_set('$NC', true, null, true)")" \
     "neg_stock_ack|neg_stock_days|neg_stock_days|neg_stock_days"
 chk "  ولا سطرَ كُتب من كلّ ذلك" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "0"
-chk "صاحبُ العيادة يشغّله أسبوعاً" "select $(rv $NC "select neg_stock_set('$NC', true, 7, true, 'first count', 'Asia/Baghdad')->>'active'")" "true"
+chk "صاحبُ العيادة يشغّله أسبوعاً — والجوابُ يقول ما كتب (changed، on)" "select $(rv $NC "select (r->>'active')||'|'||(r->>'changed')||'|'||coalesce(r->>'action','-') from (select neg_stock_set('$NC', true, 7, true, 'first count', 'Asia/Baghdad') r) x")" "true|true|on"
 chk "  ينتهي الثالثة فجراً بعد اليوم السابع ببغداد، وبدايتُه الآن، وسطرُ on باسمه وبعدِّ لحظته (٣ سالبة، ٧ ما انعدّت، ٣ بلا كلفة، ١ معلَّق)" \
     "select (until = $(NEND 7))::text||'|'||(abs(extract(epoch from (since - now()))) < 120)::text||'|'||action||'|'||by_user::text||'|'||by_name
             ||'|'||negatives||'|'||never_counted||'|'||zero_cost||'|'||pending||'|'||note from $NLAST" \
@@ -11433,9 +11433,9 @@ chk "حكمُ البيعة (مفعّل): المفردُ بصفر يُرفض وا
 chk "  وبعيادةٍ غيرِ التي تراها الشاشة يُرفض" "select $(rerr $NC "select neg_stock_check('$C2', '[]'::jsonb)")" "neg_stock_clinic_changed"
 # التمديد: لا يقصّر، والبدايةُ كما هي.
 chk "التمديدُ بأقصر من الباقي لا يكتب شيئاً (لا يقصّر)" \
-    "select $(rv $NC "select neg_stock_set('$NC', true, 3, true)->>'active'")" "true"
+    "select $(rv $NC "select (r->>'active')||'|'||(r->>'changed')||'|'||coalesce(r->>'action','-') from (select neg_stock_set('$NC', true, 3, true) r) x")" "true|false|-"
 chk "  (سطرٌ واحد ما زال)" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "1"
-chk "  والمديرُ بعضويته يمدّده أسبوعين" "select $(rv $NM "select neg_stock_set('$NC', true, 14, true)->>'active'")" "true"
+chk "  والمديرُ بعضويته يمدّده أسبوعين (extend)" "select $(rv $NM "select (r->>'active')||'|'||(r->>'changed')||'|'||coalesce(r->>'action','-') from (select neg_stock_set('$NC', true, 14, true) r) x")" "true|true|extend"
 chk "    ونهايتُه بعد ١٤ يوماً، وبدايتُه بدايةُ الأوّل، وسطرُ extend" \
     "select (until = $(NEND 14))::text||'|'||(since = (select since from neg_stock_log where clinic_id = '$NC' and action = 'on' order by at limit 1))::text||'|'||action
        from $NLAST" "true|true|extend"
@@ -11461,7 +11461,7 @@ chk "الانتهاء: نهايةٌ مضت ⇒ مطفأ، وended_at نهايت�
     "select $(rv $NC "select (s->>'active')||'|'||((s->>'ended_at')::timestamptz < now())::text||'|'||(c->'refused'->0->>'why') from (select neg_stock_state() s, neg_stock_check('$NC', '[{\"product_id\":\"${NG}a1\",\"qty\":5,\"stock_qty\":5}]'::jsonb) c) x")" \
     "false|true|off"
 # العدُّ بجملةٍ ثانية بعد الكتابة: بجملتها يقرأ لقطةَ بدايتها فلا يرى ما كتبته الدالّة أبداً (درسُ 0257) — فحصٌ لا يسقط.
-chk "  وإطفاءُ المنتهي مطفأ" "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")" "false"
+chk "  وإطفاءُ المنتهي مطفأ ولا يكتب (changed=false)" "select $(rv $NC "select (r->>'active')||'|'||(r->>'changed')||'|'||coalesce(r->>'action','-') from (select neg_stock_set('$NC', false) r) x")" "false|false|-"
 chk "    ولا سطرَ له (أربعةٌ كما كانت)" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "4"
 chk "تشغيلُه بعد انتهاءٍ قريب (خلال ٣٠ يوماً) يُكمل الفترةَ لا يصفّرها — والبدايةُ القديمة تبقى، فالسقفُ يُرفض" \
     "select $(rerr $NC "select neg_stock_set('$NC', true, 30, true)")" "neg_stock_too_long"
@@ -11475,12 +11475,12 @@ chk "  وبعد انتهاءٍ أقدم من ٣٠ يوماً فترةٌ جديد
     "select $(rv $NC "select neg_stock_set('$NC', true, 7, true)->>'active'")" "true"
 chk "    (on والبدايةُ الآن)" "select action||'|'||(abs(extract(epoch from (since - now()))) < 120)::text from $NLAST" "on|true"
 chk "الإطفاء: سطرُ off بعدِّ لحظته، والحالةُ مطفأة ونهايتُها الآن" \
-    "select $(rv $NC "select neg_stock_set('$NC', false, null, false, 'count done')->>'active'")" "false"
+    "select $(rv $NC "select (r->>'active')||'|'||(r->>'changed')||'|'||coalesce(r->>'action','-') from (select neg_stock_set('$NC', false, null, false, 'count done') r) x")" "false|true|off"
 chk "  (off بلا نهاية، والبدايةُ محفوظة، وended_at = ختمُ الإطفاء)" \
     "select action||'|'||(until is null)::text||'|'||(since is not null)::text||'|'||negatives||'|'||note
             ||'|'||$(rv $NC "select ((neg_stock_state()->>'ended_at')::timestamptz = (select at from neg_stock_log where clinic_id = '$NC' order by at desc, id desc limit 1))::text")
        from $NLAST" "off|true|true|3|countdone|true"
-chk "  وإطفاءُ المطفأ مطفأ" "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")" "false"
+chk "  وإطفاءُ المطفأ مطفأ ولا يكتب" "select $(rv $NC "select (r->>'active')||'|'||(r->>'changed')||'|'||coalesce(r->>'action','-') from (select neg_stock_set('$NC', false) r) x")" "false|false|-"
 chk "    ولا سطرَ له (سبعةٌ كما كانت)" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "7"
 chk "التشغيلُ والتمديدُ والانتهاءُ والإطفاءُ ما مسّت مادّةً ولا جرداً" \
     "select ($PSNAP)||'|'||(select count(*) from stock_counts where clinic_id = '$NC')::text" "$P0|$SC0"

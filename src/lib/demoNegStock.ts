@@ -13,7 +13,7 @@ import { loadDB } from "./demoStore";
 import { demoApiGate, demoBaseRole, demoClinicId, demoUserId } from "./repoDemo";
 import { productLineCostCents, roundDiv, roundScaled, stockUnitCost } from "./consumption";
 import { loadCounts, demoSubmitCount } from "./demoCounts";
-import { readCounted, readNegCheck, readNegReport, readNegState, type NegAction, type NegCheck, type NegReport, type NegState } from "./negStock";
+import { readCounted, readNegCheck, readNegReport, readNegState, type NegAction, type NegCheck, type NegReport, type NegSetResult, type NegState } from "./negStock";
 import type { NegCheckLine, CountLineSeen } from "./negStockApi";
 import type { CountSubmitResult, Product } from "@/types";
 
@@ -160,7 +160,7 @@ export async function demoNegCheck(clinic: string, lines: NegCheckLine[]): Promi
   return readNegCheck({ clinic_id: clinicOf(), active, until: stateJson(rows, Date.now()).until, refused });
 }
 
-export async function demoNegSet(clinic: string, on: boolean | null, days: number | null, ack: boolean, note: string | null, at: number): Promise<NegState> {
+export async function demoNegSet(clinic: string, on: boolean | null, days: number | null, ack: boolean, note: string | null, at: number): Promise<NegSetResult> {
   demoApiGate();
   if (clinic !== clinicOf()) throw err("neg_stock_clinic_changed");
   if (demoBaseRole() !== "manager") throw err("neg_stock_manager", "42501");
@@ -180,7 +180,7 @@ export async function demoNegSet(clinic: string, on: boolean | null, days: numbe
     since = pd.since;
     if (active) {
       until = Date.parse(fresh) > Date.parse(r!.until!) ? fresh : r!.until!;
-      if (until === r!.until) return demoNegState(at);
+      if (until === r!.until) return { ...(await demoNegState(at)), changed: false, action: null };
       action = "extend";
     } else {
       until = fresh;
@@ -188,7 +188,7 @@ export async function demoNegSet(clinic: string, on: boolean | null, days: numbe
     }
     if (Date.parse(until) > Date.parse(pd.cap)) throw err("neg_stock_too_long");
   } else {
-    if (!active) return demoNegState(at);
+    if (!active) return { ...(await demoNegState(at)), changed: false, action: null };
     action = "off";
     since = r!.since;
     until = null;
@@ -200,7 +200,7 @@ export async function demoNegSet(clinic: string, on: boolean | null, days: numbe
     negatives: c.negatives, never_counted: c.never_counted, zero_cost: c.zero_cost, pending: c.pending,
   });
   save(rows);
-  return demoNegState(at);
+  return { ...(await demoNegState(at)), changed: true, action };
 }
 
 export async function demoCountSubmitSeen(lines: CountLineSeen[]): Promise<CountSubmitResult> {

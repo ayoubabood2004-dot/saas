@@ -264,8 +264,9 @@ function countSheet(
   };
   const span = (col: string) => `${col}${FIRST_DATA}:${col}${FIRST_DATA + lines.length - 1}`;
   put(`A${totalRow}`, txt(i18n.t("stock.grandTotal", "المجموع"), { ...sumStyle, alignment: { horizontal: "right", vertical: "center", readingOrder: 2 } }));
-  /* القطعُ بالرفّ كرأس المال بجانبها: ما تحت الصفر لا يطرح منها (stocktake.ts). */
-  put(`${COL.systemQty}${totalRow}`, { t: "n", f: `SUMIF(${span(COL.systemQty)},">0")`, v: round4(take.totals.units), z: QTY, s: sumStyle });
+  /* مجموعُ العمود كما هو (بإشارته): ورقةُ العدّ تُطابَق بها — فعلي − نظام = الفرق. بقطع الرفّ (SUMIF >0) كان «نظام ١٠ وفعلي ١٠ والفرق ٤»
+   * (مراجعةٌ عدائيّة)؛ قطعُ الرفّ بالملخّص وبطاقة الشركة. */
+  put(`${COL.systemQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.systemQty)})`, v: round4(lines.reduce((s, l) => s + l.systemQty, 0)), z: QTY, s: sumStyle });
   put(`${COL.costValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.costValue)})`, v: round4(take.totals.cost), z: MONEY, s: sumStyle });
   put(`${COL.retailValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.retailValue)})`, v: round4(take.totals.retail), z: MONEY, s: sumStyle });
   put(`${COL.actualQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.actualQty)})`, v: 0, z: QTY, s: sumStyle });
@@ -321,6 +322,11 @@ function summarySheet(
   rows.push({ label: i18n.t("stock.sumCounted", "أسطر عُدَّت فعلاً"), f: `COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: "0" });
   rows.push({ label: i18n.t("stock.sumUncounted", "أسطر لم تُعدّ بعد"), f: `${rowCount}-COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: "0" });
   rows.push({ label: i18n.t("stock.sumWithDiff", "أسطر فيها فرق"), f: `COUNTIF(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData},"<>0")-COUNTBLANK(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData})`, z: "0" });
+  /* بيعٌ قبل الجرد (0266): «إجمالي القطع» فوق قطعُ الرفّ، والفرقُ يُقاس من العدد بالنظام بإشارته — فيُكتب هنا ليتّفق الحساب أمام العين:
+   * فعلي − نظام = صافي الفرق. (لعيادةٍ بلا سالبٍ هما واحد، فلا يُكرَّر.) */
+  if (take.groups.some((g) => g.lines.some((l) => l.systemQty < 0))) {
+    rows.push({ label: i18n.t("stock.hSystemQty", "العدد بالنظام"), f: `SUM(${S}!${COL.systemQty}${FIRST_DATA}:${COL.systemQty}${lastData})`, z: QTY });
+  }
   rows.push({ label: i18n.t("stock.sumActual", "مجموع القطع الفعلية"), f: `SUM(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: QTY });
   rows.push({ label: i18n.t("stock.sumNetDiff", "صافي فرق القطع (فعلي − نظام)"), f: `SUM(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData})`, z: QTY });
   rows.push({ label: i18n.t("stock.sumShort", "قيمة النقص (شراء)"), f: `SUMIF(${S}!${COL.diffValue}${FIRST_DATA}:${COL.diffValue}${lastData},"<0")`, z: MONEY });
