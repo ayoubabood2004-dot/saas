@@ -147,6 +147,12 @@ console.log("▸ ملفُّ الإكسل");
   check("  والملخّص: «إجمالي القطع» قطعُ الرفّ (١٠ كبطاقة الشركة)، و«العدد بالنظام» (٦ بإشارته) قبل «الفعلية» و«صافي الفرق» — فيتّفق الحساب أمام العين",
     rUnits > 0 && sum[`B${rUnits}`]?.v === 10 && rSys > 0 && rSys < rAct && rAct < rNet && /^SUM\('[^']+'!J\d+:J\d+\)$/.test(String(sum[`B${rSys}`]?.f ?? "")),
     JSON.stringify({ rUnits, units: sum[`B${rUnits}`]?.v, rSys, fSys: sum[`B${rSys}`]?.f, rAct, rNet }));
+  /* والمعادلةُ تحمل قيمتَها لحظةَ التصدير: LibreOffice لا يعيد حسابَ xlsx عند الفتح (افتراضيّاً، مقيسٌ بـsoffice) فيعرض المخزّن — كان
+   * صفراً لكلّ سطر: «العدد بالنظام» صفرٌ ويبقى (لا يتبع ما يُكتب بالأصفر)، و«أسطر لم تُعدّ بعد» صفرٌ والأسطرُ كلُّها لم تُعدّ. */
+  const rLeft = rowOfLabel("أسطر لم تُعدّ بعد"), rDone = rowOfLabel("أسطر عُدَّت فعلاً");
+  check("  وقيمُها المخزّنة كما يحسبها البرنامج لحظةَ التصدير (العمودُ الأصفرُ فارغ): «العدد بالنظام» ٦، و«لم تُعدّ» ٢، و«عُدّت» صفر",
+    sum[`B${rSys}`]?.v === 6 && sum[`B${rLeft}`]?.v === 2 && sum[`B${rDone}`]?.v === 0 && sum[`B${rAct}`]?.v === 0 && sum[`B${rNet}`]?.v === 0,
+    JSON.stringify({ sys: sum[`B${rSys}`]?.v, left: sum[`B${rLeft}`]?.v, done: sum[`B${rDone}`]?.v }));
   const wbp = M.buildStocktakeWorkbook(XLSX, products, [CO], [SEC], now, "عيادة", undefined);
   const sumP = wbp.Sheets[wbp.SheetNames[1]];
   check("  وعيادةٌ بلا سالب: لا سطرَ «العدد بالنظام» بالملخّص (هو «إجمالي القطع» نفسُه)",

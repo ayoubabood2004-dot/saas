@@ -231,9 +231,10 @@ const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "defaul
 /** مستهلكاتُ سطرٍ من مسودّةٍ محفوظة (0252): قائمةٌ بشكل ما يقبله الخادم تبقى كما هي، وأيُّ شيءٍ غيرُها يسقط
  *  **كلُّه** فيرجع السطرُ للوصفة — نصفُ قائمةٍ أخطرُ من لا قائمة، ومادّةٌ مكسورةٌ واحدة يرفض الخادمُ عليها
  *  البيعةَ كلَّها (consumables_bad). مسودّةٌ من نسخةٍ أقدم أو مخزنٌ عُبث به لا يُسقط الشاشة. */
-/** علمٌ يُرفع ما دام مركَّباً — يوضع بجانب مكوّنٍ كسولٍ داخل حدّ تحميله نفسِه، فلا يُركَّب إلا والمكوّنُ مرسوم (التعليقُ والفشلُ يحجبانهما معاً). */
-function MountFlag({ flag }: { flag: { current: boolean } }): null {
-  useEffect(() => { flag.current = true; return () => { flag.current = false; }; }, [flag]);
+/** علمٌ يُرفع ما دام مركَّباً — يوضع بجانب مكوّنٍ كسولٍ داخل حدّ تحميله نفسِه، فلا يُركَّب إلا والمكوّنُ مرسوم (التعليقُ والفشلُ يحجبانهما معاً).
+ *  والعلمُ لمن يقرؤه لحظةَ الضغطة، و`onChange` لما يُحسب بالرسمة (حارسُ الماسح). */
+function MountFlag({ flag, onChange }: { flag: { current: boolean }; onChange?: (on: boolean) => void }): null {
+  useEffect(() => { flag.current = true; onChange?.(true); return () => { flag.current = false; onChange?.(false); }; }, [flag, onChange]);
   return null;
 }
 function draftConsumables(v: unknown): ConsumableEntry[] | undefined {
@@ -995,24 +996,30 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const capFor = (l: Line, now = negNow()): number => (lineLifted(l, now) ? Infinity : unitCap(l));
   /** يعلّم السطرَ إن صارت كميتُه فوق رصيده والوضعُ يرفعه (لاصق: لا يُنزع). */
   const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > unitCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);
-  /* رسائلُ الوضع: بالمالك الكسول حين يصل (`negSay`)، وإلا بنصٍّ حارٍّ موجود — المنعُ يُسمع ولو تأخّرت القطعة. */
-  const [negSay, setNegSay] = useState<NegSay | null>(null);
-  const negBarReadyRef = useRef(false);
-  /** الشريحةُ تقول «وصلتُ» وتُفكّ بـ«رحتُ» — رسالةٌ لشريحةٍ غير مركّبة تُقال بنصٍّ حارّ لا تضيع. ثابتةٌ بين الرسمات. */
-  const negOnReady = useRef(() => { negBarReadyRef.current = true; return () => { negBarReadyRef.current = false; }; }).current;
+  /* رسائلُ الوضع: طابورٌ يقوله المالكُ الكسول حين يصل (`negSays`)، وما لم يقله خلال ثانيةٍ ونصف يُقال بنصٍّ حارّ — كلُّ رفضٍ يُقال مرّةً
+   * واحدة. كانت خانةً واحدة وعلمَ «الشريحةُ مركّبة»: رفضان قبل تركيبها والأوّلُ لا يُقال أبداً (الثاني يكتب فوقه ويُسكت مؤقّتَه)،
+   * وما قالته الشريحةُ ثمّ فُكّت (شاشةُ «تمّ») يُقال ثانيةً بالحارّ (مراجعةٌ عدائيّة رابعة). فالشريحةُ تقول ما قالت (`onSaid`) لا أنها رُكّبت. */
+  const [negSays, setNegSays] = useState<NegSay[]>([]);
+  /** أعلى رسالةٍ قالتها الشريحة — مؤقّتُ الحارّ لا يقول ما قيل. */
+  const negSaidRef = useRef(0);
+  /** «قلتُ حتى n»: تُشال من الطابور فلا تُعاد حين تُركَّب الشريحةُ ثانيةً (بيعةٌ جديدة). ثابتةٌ بين الرسمات. */
+  const negOnSaid = useRef((n: number) => {
+    if (n > negSaidRef.current) negSaidRef.current = n;
+    setNegSays((q) => (q.some((x) => x.n <= n) ? q.filter((x) => x.n > n) : q));
+  }).current;
   const negSayN = useRef(0);
-  useEffect(() => () => { negSayN.current++; }, []);   // شاشةٌ فُكّت: رسالتُها المؤجّلة لا تُقال
+  const negAliveRef = useRef(true);
+  useEffect(() => { negAliveRef.current = true; return () => { negAliveRef.current = false; }; }, []);   // شاشةٌ فُكّت: رسالتُها المؤجّلة لا تُقال
   const sayNeg = (s: NegSay extends infer T ? (T extends NegSay ? Omit<T, "n"> : never) : never, fallback: string) => {
     playWarning();
     const n = ++negSayN.current;
-    setNegSay({ ...s, n } as NegSay);
-    if (negBarReadyRef.current) return;
-    /* الشريحةُ لم تُركَّب بعد — حالتُها وصلت بالضغطة نفسِها (أوّلُ مسحةٍ بعد الفتح أو العودة) أو قطعتُها تُحمَّل: تقولها حين تُركَّب
-     * (تبدأ بلا رسالةٍ مقولة). كان النصُّ الحارُّ يُقال فوراً، وهو لـ«انتهى» و«انعدّت» «زيد رصيده من المخزن» — بابُ التوائم عن مادّةٍ
-     * يقول الخادمُ «لا تدخلها». والحارُّ يبقى لشريحةٍ لم تُركَّب خلال ثانيةٍ ونصف (قطعةٌ فشلت أو بطيئة)، ولا يُكرَّر حين تصل. */
+    setNegSays((q) => [...q, { ...s, n } as NegSay]);
+    /* الشريحةُ مركّبةٌ تقولها بالرسمة التالية؛ وغيرُ مركّبة — حالتُها وصلت بالضغطة نفسِها (أوّلُ مسحةٍ بعد الفتح أو العودة) أو قطعتُها
+     * تُحمَّل — تقولها حين تُركَّب. كان النصُّ الحارُّ يُقال فوراً، وهو لـ«انتهى» و«انعدّت» «زيد رصيده من المخزن» — بابُ التوائم عن
+     * مادّةٍ يقول الخادمُ «لا تدخلها». والحارُّ لما لم تقله خلال ثانيةٍ ونصف (قطعةٌ فشلت أو بطيئة، أو فُكّت قبل رسمتها). */
     window.setTimeout(() => {
-      if (negBarReadyRef.current || negSayN.current !== n) return;
-      setNegSay((cur) => (cur?.n === n ? null : cur));
+      if (!negAliveRef.current || negSaidRef.current >= n) return;
+      setNegSays((q) => q.filter((x) => x.n !== n));
       toast.error(fallback);
     }, 1500);
   };
@@ -1020,8 +1027,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [negChk, setNegChk] = useState<{ lines: NegRefusedLine[]; allCart: boolean; ack: CheckoutAck; keep: Record<string, { qty: number; stock: number | null }>; locked?: boolean } | null>(null);
   /** «شيلها وكمّل»: السلّةُ تتغيّر أولاً، والبيعةُ تكمل بالرسمة التي تراها (checkout يقرأ سلّةَ رسمته). */
   const negResumeRef = useRef<CheckoutAck | null>(null);
-  /** النافذةُ مرسومةٌ فعلاً (علمٌ يرفعه مكوّنٌ بجانبها داخل حدّ التحميل نفسِه). */
+  /** النافذةُ مرسومةٌ فعلاً (علمٌ يرفعه مكوّنٌ بجانبها داخل حدّ التحميل نفسِه) — للضغطة؛ والحالةُ لحارس الماسح بالرسمة: نافذةٌ
+   *  قطعتُها تُحمَّل أو فشلت كانت تُطفئ الماسحَ بلا كلمة (لا نغمةَ ولا سطر) والكروتُ تضيف. */
   const negChkShownRef = useRef(false);
+  const [negChkShown, setNegChkShown] = useState(false);
   /** موافقةُ الخادم على سطور الوضع لمرجع هذه البيعة وسلّتها — إعادةُ محاولةٍ لنفس المرجع بنفس السلّة لا تُسأل ثانيةً.
    *  وتنجو مع المسودّة (مرجعُها مرجعُ المسودّة وحده). */
   /** يتغيّر مع كلّ موافقة — المسودّةُ تُحفظ معها (مرجعٌ قائمٌ وسلّةٌ تغيّرت تحته: الموافقةُ الجديدة كانت لا تبلغ المسودّة). */
@@ -1836,7 +1845,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** «أكثرُ من هذا السطر» — زرُّ + ولوحةُ الكمية. ما يسمح به سقفُ السطر يُكتب فوراً،
    *  وما فوقه يمرّ من `sellOrExplain`: يُسأل الخادمُ قبل «لا يوجد مخزون إضافي». */
   const raiseLine = (l: Line, target: number) => {
-    if (target <= capFor(l) || l.kind !== "product" || l.ret || !l.product_id) { setQty(l.id, target); return; }
+    /* «أقلّ» ليس «أكثر»: سطرٌ فوق سقفه (قائمةٌ تحدّثت، جوابٌ شاخ، معدودة) ولوحتُه بأقلّ منه كان يمرّ من sellOrExplain بفرقٍ سالب فلا
+     * يُطبَّق (bump لا يُنقص) ويُقال «ما ينضاف» أو لا شيء — ٥ تُدفع و٤ تُسلَّم (قائمٌ منذ لوحة الكمية؛ مراجعةٌ عدائيّة رابعة). */
+    if (target <= l.qty || target <= capFor(l) || l.kind !== "product" || l.ret || !l.product_id) { setQty(l.id, target); return; }
     /* صفُّ القائمة أوّلاً — رصيدُه رصيدُ الكاشير (الصفُّ + حوضُ قسمه) — وصفُّ الرفع لمادّةٍ ليست بها. صفُّ الرفع للحكم بالكلفة (capFor فوق):
      * صفٌّ خامٌّ من مسحٍ بلا حوضه كان يقول «المتوفّر 0» والكرتُ يقول ٥. و«+» واللوحةُ على سطر بيعٍ قائم بيعٌ ولو «راجع» مفعّل — كانا يضيفان
      * سطرَ إرجاعٍ لما يأخذه الزبون (قائمٌ قبل الوضع، ووسّعه صفُّ الرفع لمادّةٍ ليست بالقائمة). */
@@ -2017,7 +2028,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const medPickerOpen = useMedPickerOpen();
   /* وورقةُ المستهلكات كذلك: لها حقلُ مسحٍ بنفسها («امسح العلبة اللي استعملتها») — مسحةٌ تهبط سطراً بالسلّة خلفها
    * كانت تُباع علبةً على الزبون وهي مادّةٌ انصرفت على حالته. */
-  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || !!negChk || !!consFor || medPickerOpen });
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || (!!negChk && negChkShown) || !!consFor || medPickerOpen });
   // سطرُ الورقة خرج من السلّة (مُسح، صُفّرت) أو تمّت البيعة: تُغلق — وإلا بقي الماسحُ وF2 صامتَين بلا ورقة.
   useEffect(() => {
     if (consFor && (done || !cart.some((l) => l.id === consFor && !!cloudServiceId(l)))) setConsFor(null);
@@ -2861,7 +2872,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (res === "unsure") {
       return { lines: lines.map((l) => ({ id: l.id, name: l.name, qty: l.qty, stock: null, why: "unsure" as const })), allCart: false, keep: {} };
     }
-    if (!res.active && negMod && negKeyRef.current) void negMod.refreshNeg(negKeyRef.current);
+    /* الخادمُ قال «انعدّت» عن مادّةٍ لا تعرفها المعدودةُ هنا (عُدّت من جهازٍ ثانٍ أو قبل خمس دقائق): تُجلب الآن — كانت تبقى تُرفع
+     * وتُردّ عند كلّ بيعةٍ حتى يحين جلبُها. */
+    const countedNew = res.refused.some((r) => r.why === "counted" && !negNow().counted.has(r.productId));
+    if ((!res.active || countedNew) && negMod && negKeyRef.current) void negMod.refreshNeg(negKeyRef.current, countedNew ? { counted: true } : {});
     const byPid = new Map(res.refused.map((r) => [r.productId, r]));
     const judged = await Promise.all(lines.map(async (l) => {
       const r = byPid.get(l.product_id as string);
@@ -3795,7 +3809,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <span className={retMode ? "hidden" : "contents"}>
               <LoadBoundary scope="neg-bar" onRetry={() => { NegBarLazy = loadNegBar(); setNegTick((n) => n + 1); }}>
                 <Suspense fallback={null}>
-                  <NegBarLazy view={negBarView} say={negSay} onReady={negOnReady} compact={compact} />
+                  <NegBarLazy view={negBarView} says={negSays} onSaid={negOnSaid} compact={compact} />
                 </Suspense>
               </LoadBoundary>
             </span>
@@ -3807,7 +3821,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         {negChk && (NegChkLazy ??= loadNegChk()) && (
           <LoadBoundary scope="neg-chk" onRetry={() => { NegChkLazy = loadNegChk(); setNegTick((n) => n + 1); }}>
             <Suspense fallback={null}>
-              <MountFlag flag={negChkShownRef} />
+              <MountFlag flag={negChkShownRef} onChange={setNegChkShown} />
               <NegChkLazy open lines={negChk.lines} allCart={negChk.allCart} locked={!!negChk.locked}
                 onBack={() => setNegChk(null)}
                 onRetry={() => { const a = negChk.ack; setNegChk(null); negResumeRef.current = a; }}
@@ -4831,7 +4845,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             onClose={() => setQtyPadFor(null)}
             onSubmit={(n) => {
               setQtyPadFor(null);
-              if (n <= capFor(l)) { setQty(l.id, n); playSuccess(); } else raiseLine(l, n);
+              if (n <= l.qty || n <= capFor(l)) { setQty(l.id, n); playSuccess(); } else raiseLine(l, n);
             }}
           />
         );

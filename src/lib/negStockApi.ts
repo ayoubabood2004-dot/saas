@@ -114,6 +114,11 @@ interface Entry {
   clinic: string | null;
   /** gen آخرِ جوابٍ نُشر: جوابٌ أقدمُ منه يُرمى (لا يدوس ما هو أحدث)، وما سواه يُنشر ولو بدأ بعده سؤالٌ أحدث. */
   pubGen: number;
+  /** أحدثُ سؤال — سؤالٌ أقدمُ فشل وهذا بالطريق ينتظره (منتظرُه يقرأ جوابَه). */
+  latest: Promise<NegState | null> | null;
+  /** المعدودةُ سجلٌّ وحدها بترتيب **بدء** جلبها (آخرُ جلبٍ بدأ، وآخرُ ما نُشر) — لا تتبع جوابَ الحالة الذي طلبها. */
+  cGen: number;
+  cPubGen: number;
   timer: ReturnType<typeof setInterval> | null;
   stop: (() => void) | null;
 }
@@ -130,7 +135,7 @@ export function negKey(userId: string | null | undefined): string {
 
 function entryOf(key: string): Entry {
   let e = entries.get(key);
-  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, pubGen: 0, timer: null, stop: null }; entries.set(key, e); }
+  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, pubGen: 0, latest: null, cGen: 0, cPubGen: 0, timer: null, stop: null }; entries.set(key, e); }
   return e;
 }
 function publish(e: Entry, snap: NegSnap): void {
@@ -140,42 +145,57 @@ function publish(e: Entry, snap: NegSnap): void {
 
 export function negSnap(key: string): NegSnap { return entries.get(key)?.snap ?? EMPTY; }
 
-/** يسأل الخادمَ الآن (والمعدودةَ إن لزم). لا يرمي، ويرجع بعد نشر جوابه (أو بعد أن نُشر أحدثُ منه) — فمنتظرُه يقرأ negSnap بعده.
- *  الجوابُ يُنشر ما لم يُنشر جوابٌ أحدثُ منه (pubGen)، لا «ما لم يبدأ سؤالٌ أحدث»: ذاك كان يرمي جواباً تامّاً حين يبدأ بعده سؤالٌ
- *  ثانٍ (ضغطةٌ ثانية، أو عودةُ التاب)، فإن فشل الثاني أو أبطأ بقيت الشاشةُ على ما قبلهما — الضغطةُ الأولى بعد التشغيل «انتهى» أو
- *  «زيد رصيده» عمّا يُباع (مراجعتان عدائيّتان: الأولى رأت الانتظار، والثانية أثبتت أنه لا يكفي). وجوابٌ عن مفتاحٍ نُسي يُرمى. */
-export async function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
+/** يجلب المعدودةَ وينشرها إن كان جلبُها أحدثَ ما بدأ ونُشر منها — مستقلّةً عن جواب الحالة الذي طلبها. كانت تُنشر **مع** ذلك الجواب:
+ *  سؤالٌ أحدثُ فشل جلبُه أعاد نشرَ نسخته التي قرأها قبل الانتظار فوق ما جلبه الأقدمُ للتو، وختمُ الأقدم باقٍ — فارغةٌ خمسَ دقائق وكلُّ
+ *  معدودةٍ تُرفع بالكاشير (مراجعةٌ عدائيّة رابعة)؛ وسؤالٌ أحدثُ لم يجلبها كان يُسقط جلبَ الأقدم مع جوابه. الختمُ مع ما نُشر. */
+async function loadCounted(key: string, e: Entry): Promise<void> {
+  const cg = ++e.cGen;
+  let set: Set<string>;
+  try { set = await negApi.counted(); } catch { return; /* المعدودةُ القديمة تبقى — والبيعةُ يحكم بها الخادم (counted) */ }
+  if (entries.get(key) !== e || cg < e.cPubGen) return;
+  e.cPubGen = cg;
+  e.countedAt = perf();
+  publish(e, { ...e.snap, counted: set });
+}
+
+/** يسأل الخادمَ الآن (والمعدودةَ إن لزم). لا يرمي، ويرجع بعد نشر جوابه (أو بعد أن نُشر أحدثُ منه، أو فشل أحدثُ سؤال) — فمنتظرُه
+ *  يقرأ negSnap بعده. الجوابُ يُنشر ما لم يُنشر جوابٌ أحدثُ منه (pubGen)، لا «ما لم يبدأ سؤالٌ أحدث»: ذاك كان يرمي جواباً تامّاً حين
+ *  يبدأ بعده سؤالٌ ثانٍ (ضغطةٌ ثانية، أو عودةُ التاب)، فإن فشل الثاني أو أبطأ بقيت الشاشةُ على ما قبلهما. وسؤالٌ أقدمُ **فشل** والأحدثُ
+ *  بالطريق ينتظر الأحدث: كان يرجع فوراً فتقرأ ضغطتُه ما قبل الجوابين وتقول «زيد رصيده من المخزن» عمّا يبيعه الوضع (مراجعاتٌ عدائيّة:
+ *  الثانية رأت الانتظار، والثالثة أثبتت أنه لا يكفي، والرابعة أنّ الفشلَ مرآتُه). وجوابٌ عن مفتاحٍ نُسي يُرمى. */
+export function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
   const e = entryOf(key);
   const gen = ++e.gen;
+  const p = askNeg(key, e, gen, opts);
+  e.latest = p;
+  return p;
+}
+async function askNeg(key: string, e: Entry, gen: number, opts: { counted?: boolean }): Promise<NegState | null> {
   const stale = () => entries.get(key) !== e || gen < e.pubGen;
+  let s: NegState;
   try {
-    const s = await negApi.state();
-    if (stale()) return s;
-    if (s.clinic && e.clinic && s.clinic !== e.clinic) {
-      // جوابٌ عن عيادةٍ غيرِ عيادة هذا المفتاح: لا يُتبنّى — الحالةُ القديمةُ تشيخ وحدها (activeNow) والفحصُ يقول «تبدّلت».
-      publish(e, { ...e.snap, failed: true });
-      return null;
-    }
-    if (s.clinic && !e.clinic) e.clinic = s.clinic;
-    let counted = e.snap.counted;
-    let countedAt: number | null = null;
-    if (s.active && (opts.counted || e.countedAt === null || perf() - e.countedAt > COUNTED_MS)) {
-      try {
-        counted = await negApi.counted();
-        countedAt = perf();
-      } catch { /* المعدودةُ القديمة تبقى — والبيعةُ يحكم بها الخادم (counted) */ }
-      if (stale()) return s;
-    }
-    /* الختمُ مع النشر لا قبله: سؤالٌ رُمي جوابُه كان يختم «حُمّلت» ولا ينشر، فيتخطّاها الأحدثُ وتبقى فارغةً خمسَ دقائق. */
-    if (countedAt !== null) e.countedAt = countedAt;
-    e.pubGen = gen;
-    publish(e, { state: s, counted, failed: false });
-    return s;
+    s = await negApi.state();
   } catch {
-    // «فشل» يقوله أحدثُ سؤال وحده، وما لم يُنشر بعده أحدث — سؤالٌ أحدثُ بالطريق يحكم.
-    if (e.gen === gen && !stale()) publish(e, { ...e.snap, failed: true });
+    if (stale()) return null;                                               // نُشر أحدثُ منه — منتظرُه يقرؤه
+    if (e.gen === gen) { publish(e, { ...e.snap, failed: true }); return null; }   // «فشل» يقوله أحدثُ سؤال وحده
+    return e.latest ?? null;                                                // أحدثُ بالطريق: جوابُه يحكم (والضغطةُ تسقّف الانتظار)
+  }
+  if (stale()) return s;
+  if (s.clinic && e.clinic && s.clinic !== e.clinic) {
+    /* جوابٌ عن عيادةٍ غيرِ عيادة هذا المفتاح: لا يُتبنّى — الحالةُ القديمةُ تشيخ وحدها (activeNow) والفحصُ يقول «تبدّلت». وهو جوابٌ
+     * نُشر: أقدمُ منه (عن العيادة الأولى، سُئل قبل التبديل) لا يُنشر فوقه «مفعّلاً طازجاً» — كان يرفع دقيقتين ثمّ تُقفل البيعة. */
+    e.pubGen = gen;
+    publish(e, { ...e.snap, failed: true });
     return null;
   }
+  if (s.clinic && !e.clinic) e.clinic = s.clinic;
+  if (s.active && (opts.counted || e.countedAt === null || perf() - e.countedAt > COUNTED_MS)) {
+    await loadCounted(key, e);
+    if (stale()) return s;
+  }
+  e.pubGen = gen;
+  publish(e, { state: s, counted: e.snap.counted, failed: false });
+  return s;
 }
 
 /** يشترك بحالة المفتاح ويبدأ مراقبتَه (أوّلُ مشترك)؛ يرجع دالّةَ الإلغاء. */
