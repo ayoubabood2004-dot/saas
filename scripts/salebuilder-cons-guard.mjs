@@ -165,7 +165,7 @@ function textChecks(src) {
     && /page\(\(\) => import\("@\/components\/retail\/ConsumablesSheet"\)\.then\(\(m\) => \(\{ default: m\.ConsumptionNotice \}\)\), \["rcp"\]\)/.test(code));
   ck("  وكلتاهما داخل LoadBoundary + Suspense، و«أعد المحاولة» تصنع قطعةً جديدة",
     /<LoadBoundary scope="cons-sheet" onRetry=\{\(\) => \{ ConsSheetLazy = loadConsSheet\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsSheetLazy\b/.test(code)
-    && /<LoadBoundary scope="cons-notice" onRetry=\{\(\) => \{ ConsNoticeLazy = loadConsNotice\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsNoticeLazy mode="sale" invoiceIds=\{\[done\.invoice\.id\]\} \/>/.test(code));
+    && /<LoadBoundary scope="cons-notice" onRetry=\{\(\) => \{ ConsNoticeLazy = loadConsNotice\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsNoticeLazy mode="sale" invoiceIds=\{\[done\.invoice\.id\]\} negFold=\{doneNegIds\} \/>/.test(code));
   const owned = checkOwned({ rcp: { owner: SHEET_PATH, with: [] } }, [{ rel: SB_PATH, text: src }, { rel: SHEET_PATH, text: SHEET }], "");
   ck("  ونطاقُ rcp بقاعدة i18n-owned-guard نفسِها: محمَّلٌ بـpage(…, [\"rcp\"]) هنا، ولا استيرادَ ثابتاً لمالكه، ولا مفتاحَ rcp.* بالشاشة",
     owned.length === 0, owned.join(" | "));
@@ -321,6 +321,12 @@ const STUB = {
   /* خاناتُ الطبيب (0258): قطعتُها وبابُها بديلان صامتان — هذا الحارسُ يقيس المستهلكات، وخاناتُ الطبيب يقيسها pos-tabs-test. */
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
+  /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
+  "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
+    export const subscribeNeg = () => () => {}; export const refreshNeg = async () => null; export const activeNow = () => false; export const liftable = () => false;
+    export const daysLeft = () => 0; export const bigLifted = () => false; export const lastDayOf = (u) => new Date(u);
+    export const negApi = { check: async () => ({ clinic: "c1", active: false, until: null, refused: [] }) };`,
+  "@/components/negstock/NegStock": "export const NegBar = () => null; export const NegCheckoutDialog = () => null; export const NegStockCard = () => null;",
   /* نسبةُ الراجع (المالك ١٠/١١): قطعتُها بديلٌ صامت هنا (تُستورد بـimport() وحده فلا يولّدها البديلُ الآليّ) — يقيسها ret-pct-test. */
   "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null; export const RET_PCTS = [100];",
 };

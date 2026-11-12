@@ -258,6 +258,7 @@ export function Settings() {
         {canSettings && <ForgiveCapCard />}
         {canSettings && <OneAccountCard />}
         {canSettings && <UsdCardSlot />}
+        {canSettings && <NegCardSlot />}
         {canSettings && <ServiceSettings />}
         {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
         {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
@@ -2274,6 +2275,17 @@ function UsdCardSlot() {
   return (
     <LoadBoundary scope="usd-card" onRetry={() => { UsdCardLazy = loadUsdCard(); setTick((n) => n + 1); }}>
       <Suspense fallback={null}><UsdCardLazy /></Suspense>
+    </LoadBoundary>
+  );
+}
+/* بطاقةُ «البيع قبل الجرد» (0266): قطعةٌ كسولة بنطاقها المملوك nstk — كلُّ نصّ الوضع هناك، وتختفي حين تغيب الميزة. */
+const loadNegCard = () => page(() => import("@/components/negstock/NegStock").then((m) => ({ default: m.NegStockCard })), ["nstk"]);
+let NegCardLazy = loadNegCard();
+function NegCardSlot() {
+  const [, setTick] = useState(0);
+  return (
+    <LoadBoundary scope="neg-card" onRetry={() => { NegCardLazy = loadNegCard(); setTick((n) => n + 1); }}>
+      <Suspense fallback={null}><NegCardLazy /></Suspense>
     </LoadBoundary>
   );
 }

@@ -120,6 +120,12 @@ const STUB = {
   "@/lib/consumptionApi": "export const consumptionApi = { recipeSummary: async () => ({}) };",
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
+  /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
+  "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
+    export const subscribeNeg = () => () => {}; export const refreshNeg = async () => null; export const activeNow = () => false; export const liftable = () => false;
+    export const daysLeft = () => 0; export const bigLifted = () => false; export const lastDayOf = (u) => new Date(u);
+    export const negApi = { check: async () => ({ clinic: "c1", active: false, until: null, refused: [] }) };`,
+  "@/components/negstock/NegStock": "export const NegBar = () => null; export const NegCheckoutDialog = () => null; export const NegStockCard = () => null;",
 };
 function importsOf(src) {
   const map = new Map();

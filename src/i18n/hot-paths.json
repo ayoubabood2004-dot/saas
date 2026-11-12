@@ -52,6 +52,7 @@
     "acct": "src/pages/Settings.tsx",
     "fgv": "src/components/retail/ForgiveDialog.tsx",
     "rpct": "src/components/retail/RetPct.tsx",
+    "nstk": "src/components/negstock/NegStock.tsx",
     "signup": { "owner": "src/pages/Login.tsx", "with": ["src/lib/authErrors.ts"] },
     "join": "src/pages/JoinClinic.tsx",
     "onb": { "owner": "src/pages/Dashboard.tsx", "with": ["src/components/dashboard/SetupChecklist.tsx"] },
