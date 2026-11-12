@@ -1742,7 +1742,7 @@ const MUTANTS = [
   ["البيعةُ لا تسأل الخادم", "const negP = negSkip ? null : negCheckNow(negLines);", "const negP = null as Promise<NegCheck | \"unsure\"> | null;"],
   ["الرفضُ لا يوقف البيعة", "    if (negBad) { playWarning(); setNegChk({ ...negBad, ack, locked: !!saleRefRef.current }); return; }\n", ""],
   ["«ما تأكّدنا» يمرّ", "    if (res === \"unsure\") {\n      return {", "    if (res === \"unsure\") return null;\n    if (res === (\"x\" as never)) {\n      return {"],
-  ["المرفوضُ لا يُسأل عن رصيده الطازج", "          if (fresh.pooled || unitCap({ ...l, stock: fresh.stock }) >= l.qty) return null;", "          if (fresh.pooled) return null;"],
+  ["المرفوضُ لا يُسأل عن رصيده الطازج", "      if (f.asked && rem != null && unitCap({ ...l, stock: rem }) >= l.qty) {", "      if (false && f.asked && rem != null && unitCap({ ...l, stock: rem }) >= l.qty) {"],
   ["«شيل الزايد» يكمل البيعةَ بنفسه", "                  setNegChk(null);\n                }} />", "                  setNegChk(null);\n                  negResumeRef.current = k.ack;\n                }} />"],
   ["«شيل الزايد» يشيل السطرَ كلَّه", "                    if (x.qty <= 0) return [];", "                    if (x.qty >= 0) return [];"],
   ["الإعادةُ تُسأل ثانيةً", "    if (negLines.length > 0 && saleRefRef.current) { negOkRef.current = { ref: saleRefRef.current, fp: negFp }; setNegOkGen((g) => g + 1); }\n", ""],
