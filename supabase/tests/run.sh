@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -11333,6 +11333,216 @@ else
   tail -5 "$FLKP/gen.log"; echo "   ✗ قالبُ تطابق الحقل ما تولّد"; fail=1
 fi
 rm -rf "$FLKP"
+
+# ── 0266: البيعُ قبل الجرد — الدفترُ هو الحالة، والمديرُ وحده يشغّل، والمعدودةُ والبلا كلفة لا تُرفع، والإطفاءُ لا يمسّ شيئاً ─────
+# كلُّ نداءٍ بدور authenticated (rv/rerr/_rls_try)، وكلُّ قراءةٍ بعد كتابةٍ بجملةٍ بعدها (درسُ 0257). عيادةُ القسم NC وحدها، فالعدُّ
+# لا تمسّه موادُّ الأقسام قبله: صاحبُها مديرٌ بلا عضوية، NM مديرٌ بعضويته، NR استقبالُها، ADM مشغّلُ المنصّة، PHO مصوّر.
+echo "▸ 0266: البيعُ قبل الجرد — التشغيلُ والتمديدُ والإطفاء، ومن يُرفض، وحكمُ البيعة، وحماية الجرد، والإطفاءُ لا يمسّ مخزناً"
+NG=c2660000-0000-4000-8000-0000000000
+NC=${NG}c1
+NR=${NG}c2
+NM=${NG}c3
+C2=22222222-2222-2222-2222-222222222222
+ADM=33333333-3333-3333-3333-333333333333
+PHO=88888888-8888-8888-8888-888888888888
+rt()   { echo "_rls_try('$1', \$q\$$2\$q\$)"; }
+rerr() { echo "split_part(_rls_try('$1', \$q\$$2\$q\$), ':', 3)"; }
+rv()   { echo "_v0252('$1', \$q\$$2\$q\$)"; }
+# نهايةُ وضعٍ مدّتُه d يوماً من اليوم: الثالثة فجراً بعد آخر يومٍ ببغداد (نصّ الدالّة نفسُه).
+NEND() { echo "(((now() at time zone 'Asia/Baghdad')::date + $1 + 1)::timestamp + interval '3 hours') at time zone 'Asia/Baghdad'"; }
+NLAST="(select * from neg_stock_log where clinic_id = '$NC' order by at desc, id desc limit 1) r"
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$NC'),('$NR'),('$NM') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values
+         ('$NR','$NC','receptionist','active'),('$NM','$NC','manager','active') on conflict do nothing;
+       insert into profiles(id, full_name) values ('$NC','Dr NegTest') on conflict (id) do update set full_name = excluded.full_name;
+       insert into products (id, clinic_id, name, stock, purchase_price, avg_cost, pooled, price_currency, has_sub_unit, units_per_box) values
+         ('${NG}a1','$NC','neg-cost',     -3, 1000, null, false, 'IQD', false, null),
+         ('${NG}a2','$NC','zero-nocost',   0,    0, null, false, 'IQD', false, null),
+         ('${NG}a3','$NC','pos-nocost',    5,    0, null, false, 'IQD', false, null),
+         ('${NG}a4','$NC','pooled-neg',   -2,    0, null, true,  'IQD', false, null),
+         ('${NG}a5','$NC','usd-neg',      -1,    0, null, false, 'USD', false, null),
+         ('${NG}a6','$NC','neg-avg',      -1,    0,  500, false, 'IQD', false, null),
+         ('${NG}a7','$NC','pill-4',        0,    4, null, false, 'IQD', true, 1000),
+         ('${NG}a8','$NC','counted',       0, 2000, null, false, 'IQD', false, null),
+         ('${NG}b0','$NC','avg-zero',     -2, 1000,    0, false, 'IQD', false, null),
+         ('${NG}b1','$NC','pending',       3,  700, null, false, 'IQD', false, null),
+         ('${NG}b3','$C2','other-clinic', -1, 1000, null, false, 'IQD', false, null)
+         on conflict (id) do nothing;
+       insert into poultry_farms (id, clinic_id, name) values ('${NG}f0','$NC','farm-neg') on conflict (id) do nothing;
+       insert into products (id, clinic_id, name, stock, purchase_price, farm_id) values ('${NG}a9','$NC','farm-neg', -4, 900, '${NG}f0') on conflict (id) do nothing;
+       insert into stock_counts (clinic_id, product_id, product_name, system_qty, counted_qty, status, source) values
+         ('$NC','${NG}a8','counted', 0, 0, 'matched', 'count');
+       insert into stock_counts (clinic_id, product_id, product_name, system_qty, counted_qty, reason, status, source) values
+         ('$NC','${NG}b1','pending', 3, 5, 'found', 'pending', 'count');" >/dev/null
+MONEY="select (select count(*) from expenses where clinic_id = '$NC')::text||'|'||(select count(*) from invoices where clinic_id = '$NC')::text||'|'||(select count(*) from purchase_effects where clinic_id = '$NC')::text"
+M0=$($P -tAc "$MONEY" | tr -d '[:space:]')
+PSNAP="select md5(string_agg(id::text||':'||coalesce(stock::text,'-')||':'||coalesce(avg_cost::text,'-')||':'||coalesce(purchase_price::text,'-'), ',' order by id)) from products where clinic_id = '$NC'"
+P0=$($P -tAc "$PSNAP" | tr -d '[:space:]')
+SC0=$($P -tAc "select count(*) from stock_counts where clinic_id = '$NC'" | tr -d '[:space:]')
+
+chk "الدفتر: لا عمودَ بالإعدادات (الحالةُ آخرُ سطر)، وللداخلين قراءةٌ وحدها، والمصوّرُ مسيَّج" \
+    "select (select count(*) from information_schema.columns where table_name = 'clinic_prefs' and column_name like 'neg_stock%')::text
+            ||'|'||has_table_privilege('authenticated', 'public.neg_stock_log', 'select')::text
+            ||'|'||has_table_privilege('authenticated', 'public.neg_stock_log', 'insert')::text
+            ||'|'||has_table_privilege('authenticated', 'public.neg_stock_log', 'update')::text
+            ||'|'||has_table_privilege('authenticated', 'public.neg_stock_log', 'delete')::text
+            ||'|'||has_table_privilege('anon', 'public.neg_stock_log', 'select')::text" \
+    "0|true|false|false|false|false"
+chk "  عيادةٌ بلا سطرٍ مطفأة وما استعملته" "select $(rv $NC "select (neg_stock_state()->>'active')||':'||(neg_stock_state()->>'used')||':'||coalesce(neg_stock_state()->>'ended_at','none')")" "false:false:none"
+chk "الاستقبالُ يُرفض (42501 neg_stock_manager)" \
+    "select $(rv $NR "select neg_stock_set('$NC', true, 7, true)::text")" "guarded:42501:neg_stock_manager"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$NR','$NC', now() + interval '10 minutes')
+         on conflict (user_id) do update set until = excluded.until, clinic_id = excluded.clinic_id;" >/dev/null
+chk "  ومفتاحُ المدير الحيّ لا يكفي (auth_role مدير والأساسُ لا) — وضعٌ يعيش أيّاماً لا يفتحه رفعٌ بعشر دقائق" \
+    "select $(rv $NR "select auth_role()")||'|'||$(rv $NR "select neg_stock_set('$NC', true, 7, true)::text")" "manager|guarded:42501:neg_stock_manager"
+$P -c "delete from staff_elevations where user_id = '$NR';" >/dev/null
+chk "العيادةُ التي تراها الشاشة: غيرُها يُرفض (تبويبُ مشغّلٍ قديم لا يطفئ عيادةً ثانية)" \
+    "select $(rerr $NC "select neg_stock_set('$C2', false)")" "neg_stock_clinic_changed"
+chk "الإقرارُ شرطٌ بالخادم، والمدّةُ ١–٣٠" \
+    "select $(rerr $NC "select neg_stock_set('$NC', true, 7, false)")||'|'||$(rerr $NC "select neg_stock_set('$NC', true, 0, true)")
+            ||'|'||$(rerr $NC "select neg_stock_set('$NC', true, 31, true)")||'|'||$(rerr $NC "select neg_stock_set('$NC', true, null, true)")" \
+    "neg_stock_ack|neg_stock_days|neg_stock_days|neg_stock_days"
+chk "  ولا سطرَ كُتب من كلّ ذلك" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "0"
+chk "صاحبُ العيادة يشغّله أسبوعاً" "select $(rv $NC "select neg_stock_set('$NC', true, 7, true, 'first count', 'Asia/Baghdad')->>'active'")" "true"
+chk "  ينتهي الثالثة فجراً بعد اليوم السابع ببغداد، وبدايتُه الآن، وسطرُ on باسمه وبعدِّ لحظته (٣ سالبة، ٧ ما انعدّت، ٣ بلا كلفة، ١ معلَّق)" \
+    "select (until = $(NEND 7))::text||'|'||(abs(extract(epoch from (since - now()))) < 120)::text||'|'||action||'|'||by_user::text||'|'||by_name
+            ||'|'||negatives||'|'||never_counted||'|'||zero_cost||'|'||pending||'|'||note from $NLAST" \
+    "true|true|on|$NC|DrNegTest|3|7|3|1|firstcount"
+chk "التقرير: ٣ سالبة (لا المجمَّعة ولا الحقل ولا الدولار)، ٧ ما انعدّت (المعلَّقُ ليس عدّاً) منها ٥ ≤ ٠، ٣ بلا كلفة (والمتوسّطُ صفرٌ صفر) منها ٢ ≤ ٠، ومعلَّق، والدفترُ مستعمَل" \
+    "select $(rv $NC "select (r->>'active')||'|'||(r->>'used')||'|'||(r->>'negatives')||'|'||(r->>'never_counted')||'|'||(r->>'uncounted_nonpos')||'|'||(r->>'zero_cost')||'|'||(r->>'zero_cost_nonpos')||'|'||(r->>'pending')||'|'||jsonb_array_length(r->'log')::text||'|'||((r->>'cap_until')::timestamptz = (r->>'period_since')::timestamptz + interval '60 days')::text from (select neg_stock_report() r) x")" \
+    "true|true|3|7|5|3|2|1|1|true"
+chk "  والمعدودةُ وحدها بقائمة الكاشير (لا المعلَّقة)، وعيادةٌ ثانية فارغة" "select $(rv $NC "select neg_stock_counted()::text")||'|'||$(rv $C2 "select neg_stock_counted()::text")" "[\"${NG}a8\"]|[]"
+# حكمُ البيعة بالكمّيتين كما سترسلهما: الحبّةُ بأربعة دنانير لعلبة ألف = سطرٌ بصفر (مفردٌ)، والعلبةُ نفسُها بأربعة.
+NCHK="[{\"product_id\":\"${NG}a1\",\"qty\":5,\"stock_qty\":5},{\"product_id\":\"${NG}a7\",\"qty\":1,\"stock_qty\":0.001},
+       {\"product_id\":\"${NG}a7\",\"qty\":2,\"stock_qty\":2},{\"product_id\":\"${NG}a8\",\"qty\":1,\"stock_qty\":1},
+       {\"product_id\":\"${NG}a4\",\"qty\":1,\"stock_qty\":1},{\"product_id\":\"${NG}a5\",\"qty\":1,\"stock_qty\":1},
+       {\"product_id\":\"${NG}a2\",\"qty\":1,\"stock_qty\":1},{\"product_id\":\"${NG}a6\",\"qty\":3,\"stock_qty\":3},
+       {\"product_id\":\"${NG}b0\",\"qty\":1,\"stock_qty\":1},{\"product_id\":\"${NG}a9\",\"qty\":1,\"stock_qty\":1},
+       {\"product_id\":\"${NG}b3\",\"qty\":1,\"stock_qty\":1},{\"product_id\":\"${NG}b1\",\"qty\":9,\"stock_qty\":9},
+       {\"product_id\":\"c2660000-0000-4000-8000-00000000dead\",\"qty\":1,\"stock_qty\":1}]"
+chk "حكمُ البيعة (مفعّل): المفردُ بصفر يُرفض والعلبةُ تمرّ، المعدودةُ counted (لا المعلَّقة)، المجمَّعةُ والحقلُ والدولار not_lifted، البلا كلفة zero_cost، والغائبةُ وما لعيادةٍ ثانية gone" \
+    "select $(rv $NC "select (r->>'active')||'|'||coalesce((select string_agg((e->>'why')||':'||right(e->>'product_id', 2), ',' order by ord) from jsonb_array_elements(r->'refused') with ordinality t(e, ord)), '') from (select neg_stock_check('$NC', '$NCHK'::jsonb) r) x")" \
+    "true|zero_cost:a7,counted:a8,not_lifted:a4,not_lifted:a5,zero_cost:a2,zero_cost:b0,not_lifted:a9,gone:b3,gone:ad"
+chk "  وبعيادةٍ غيرِ التي تراها الشاشة يُرفض" "select $(rerr $NC "select neg_stock_check('$C2', '[]'::jsonb)")" "neg_stock_clinic_changed"
+# التمديد: لا يقصّر، والبدايةُ كما هي.
+chk "التمديدُ بأقصر من الباقي لا يكتب شيئاً (لا يقصّر)" \
+    "select $(rv $NC "select neg_stock_set('$NC', true, 3, true)->>'active'")" "true"
+chk "  (سطرٌ واحد ما زال)" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "1"
+chk "  والمديرُ بعضويته يمدّده أسبوعين" "select $(rv $NM "select neg_stock_set('$NC', true, 14, true)->>'active'")" "true"
+chk "    ونهايتُه بعد ١٤ يوماً، وبدايتُه بدايةُ الأوّل، وسطرُ extend" \
+    "select (until = $(NEND 14))::text||'|'||(since = (select since from neg_stock_log where clinic_id = '$NC' and action = 'on' order by at limit 1))::text||'|'||action
+       from $NLAST" "true|true|extend"
+# المشغّلُ داخلَ العيادة: ملاحظةٌ للعيادة شرط، ولا اسمَ له بالسجلّ (0151).
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$NC')
+         on conflict (admin_id) do update set acting_clinic = excluded.acting_clinic, started_at = now(), expires_at = null;" >/dev/null
+chk "مشغّلُ المنصّة: بلا ملاحظةٍ يُرفض" "select $(rerr $ADM "select neg_stock_set('$NC', true, 30, true)")" "neg_stock_note_required"
+chk "  وبها يمدّد" "select $(rv $ADM "select neg_stock_set('$NC', true, 30, true, 'on request')->>'active'")" "true"
+chk "    والسطرُ بلا اسمه (by_user وby_name فارغان)" \
+    "select coalesce(by_user::text, 'none')||'|'||coalesce(by_name, 'none')||'|'||note from $NLAST" "none|none|onrequest"
+chk "  والتقريرُ يقول للبطاقة «أنت المشغّل» (الملاحظةُ عليه وما فوق السقف له) — ولصاحب العيادة لا" \
+    "select $(rv $ADM "select neg_stock_report()->>'operator'")||'|'||$(rv $NC "select neg_stock_report()->>'operator'")" "true|false"
+# سقفُ الفترة: ٦٠ يوماً من بدايتها لغير المشغّل.
+$P -c "update neg_stock_log set since = now() - interval '50 days' where clinic_id = '$NC';
+       update neg_stock_log set until = now() + interval '1 day' where clinic_id = '$NC' and id = (select id from neg_stock_log where clinic_id = '$NC' order by at desc, id desc limit 1);" >/dev/null
+chk "سقفُ الـ٦٠ يوماً من البداية: المديرُ يُرفض (neg_stock_too_long)" \
+    "select $(rerr $NM "select neg_stock_set('$NC', true, 30, true)")" "neg_stock_too_long"
+chk "  والمشغّلُ فوقه" "select $(rv $ADM "select neg_stock_set('$NC', true, 30, true, 'support extend')->>'active'")" "true"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+# الانتهاءُ بساعة الخادم: نهايةٌ مضت ⇒ مطفأ، والبيعةُ off لكلّ سطر.
+$P -c "update neg_stock_log set until = now() - interval '1 minute' where clinic_id = '$NC' and id = (select id from neg_stock_log where clinic_id = '$NC' order by at desc, id desc limit 1);" >/dev/null
+chk "الانتهاء: نهايةٌ مضت ⇒ مطفأ، وended_at نهايتُه، والبيعةُ off" \
+    "select $(rv $NC "select (s->>'active')||'|'||((s->>'ended_at')::timestamptz < now())::text||'|'||(c->'refused'->0->>'why') from (select neg_stock_state() s, neg_stock_check('$NC', '[{\"product_id\":\"${NG}a1\",\"qty\":5,\"stock_qty\":5}]'::jsonb) c) x")" \
+    "false|true|off"
+chk "  وإطفاءُ المنتهي لا سطرَ له" \
+    "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")||'|'||(select count(*) from neg_stock_log where clinic_id = '$NC')::text" "false|4"
+chk "تشغيلُه بعد انتهاءٍ قريب (خلال ٣٠ يوماً) يُكمل الفترةَ لا يصفّرها — والبدايةُ القديمة تبقى، فالسقفُ يُرفض" \
+    "select $(rerr $NC "select neg_stock_set('$NC', true, 30, true)")" "neg_stock_too_long"
+$P -c "update neg_stock_log set since = now() - interval '5 days' where clinic_id = '$NC';" >/dev/null
+chk "  وبمدّةٍ تحت السقف يشتغل ببدايتها القديمة" \
+    "select $(rv $NC "select neg_stock_set('$NC', true, 7, true)->>'active'")" "true"
+chk "    (on والبدايةُ قبل ٥ أيام)" \
+    "select action||'|'||(since < now() - interval '4 days')::text from $NLAST" "on|true"
+$P -c "update neg_stock_log set at = at - interval '40 days', since = since - interval '40 days', until = now() - interval '31 days' where clinic_id = '$NC';" >/dev/null
+chk "  وبعد انتهاءٍ أقدم من ٣٠ يوماً فترةٌ جديدة ببدايةٍ جديدة" \
+    "select $(rv $NC "select neg_stock_set('$NC', true, 7, true)->>'active'")" "true"
+chk "    (on والبدايةُ الآن)" "select action||'|'||(abs(extract(epoch from (since - now()))) < 120)::text from $NLAST" "on|true"
+chk "الإطفاء: سطرُ off بعدِّ لحظته، والحالةُ مطفأة ونهايتُها الآن" \
+    "select $(rv $NC "select neg_stock_set('$NC', false, null, false, 'count done')->>'active'")" "false"
+chk "  (off بلا نهاية، والبدايةُ محفوظة، وended_at = ختمُ الإطفاء)" \
+    "select action||'|'||(until is null)::text||'|'||(since is not null)::text||'|'||negatives||'|'||note
+            ||'|'||$(rv $NC "select ((neg_stock_state()->>'ended_at')::timestamptz = (select at from neg_stock_log where clinic_id = '$NC' order by at desc, id desc limit 1))::text")
+       from $NLAST" "off|true|true|3|countdone|true"
+chk "  وإطفاءُ المطفأ لا سطرَ له" \
+    "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")||'|'||(select count(*) from neg_stock_log where clinic_id = '$NC')::text" "false|7"
+chk "التشغيلُ والتمديدُ والانتهاءُ والإطفاءُ ما مسّت مادّةً ولا جرداً" \
+    "select ($PSNAP)||'|'||(select count(*) from stock_counts where clinic_id = '$NC')::text" "$P0|$SC0"
+chk "  ولا مالاً (سحوبات، فواتير، كشوفُ شراء)" "$MONEY" "$M0"
+chk "الدفترُ لا يُكتب ولا يُعدَّل ولا يُحذف من الداخلين، وعيادةٌ ثانية لا تراه" \
+    "select split_part($(rt $NC "insert into neg_stock_log (clinic_id, action, since, until) values ('$NC', 'on', now(), now() + interval '90 days')"), ':', 2)
+            ||'|'||split_part($(rt $NC "update neg_stock_log set until = now() + interval '90 days' where clinic_id = '$NC'"), ':', 2)
+            ||'|'||split_part($(rt $NC "delete from neg_stock_log where clinic_id = '$NC'"), ':', 2)
+            ||'|'||$(rt $C2 "select 1 from neg_stock_log where clinic_id = '$NC'")
+            ||'|'||$(rt $NC "select 1 from neg_stock_log where clinic_id = '$NC'")" \
+    "42501|42501|42501|rows:0|rows:7"
+# حمايةُ الجرد: العددُ على الرصيد الذي رآه العادّ.
+chk "الجرد: رصيدٌ ما تحرّك من وقت الكتابة يُسجَّل (stock_count_submit كما هي)" \
+    "select $(rv $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}a1\",\"counted\":2,\"reason\":\"found\",\"seen\":-3}]'::jsonb)::text")" \
+    '{"matched":0,"pending":1}'
+chk "  ورصيدٌ تحرّك (بيعٌ بعد الكتابة) يُرفض count_moved بأسمائه ومعرّفاته، ولا يُكتب شيء" \
+    "select $(rerr $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}a6\",\"counted\":4,\"reason\":\"found\",\"seen\":0},{\"product_id\":\"${NG}a3\",\"counted\":5,\"seen\":5}]'::jsonb)")
+            ||'|'||(select count(*) from stock_counts where clinic_id = '$NC' and product_id in ('${NG}a6', '${NG}a3'))::text" \
+    "count_moved|0"
+$P -c "create or replace function _neg_detail(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare d text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q;
+         reset role; return 'none';
+       exception when others then get stacked diagnostics d = pg_exception_detail; return coalesce(d, '-'); end \$fn\$;" >/dev/null
+chk "  وسطرٌ بلا seen لا يُتخطّى: count_seen_missing، و٢٠١ سطراً count_too_many" \
+    "select $(rerr $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}a3\",\"counted\":5}]'::jsonb)")
+            ||'|'||$(rerr $NC "select stock_count_submit_seen((select jsonb_agg(jsonb_build_object('product_id', '${NG}a3', 'counted', 5, 'seen', 5)) from generate_series(1, 201)))")" \
+    "count_seen_missing|count_too_many"
+chk "    (التفاصيلُ معرّفاتُ ما تحرّك وحده)" \
+    "select _neg_detail('$NC', \$q\$select stock_count_submit_seen('[{\"product_id\":\"${NG}a6\",\"counted\":4,\"reason\":\"found\",\"seen\":0},{\"product_id\":\"${NG}a3\",\"counted\":5,\"seen\":5}]'::jsonb)\$q\$)" \
+    "[\"${NG}a6\"]"
+chk "الأبواب: definer بمسارٍ مثبَّت، وممنوعةٌ على anon، والداخليّةُ ممنوعةٌ على الداخلين" \
+    "select (select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||':'||has_function_privilege('anon', oid, 'execute')::text, ',' order by proname)
+               from pg_proc where pronamespace = 'public'::regnamespace
+                and proname in ('neg_stock_set','neg_stock_state','neg_stock_report','neg_stock_counted','neg_stock_check','stock_count_submit_seen'))
+            ||'|'||(select bool_or(has_function_privilege('authenticated', oid, 'execute'))::text from pg_proc
+                     where pronamespace = 'public'::regnamespace and proname in ('_neg_stock_last','_neg_stock_counts','_neg_stock_is_counted','_neg_stock_period'))" \
+    "neg_stock_check:true:true:false,neg_stock_counted:true:true:false,neg_stock_report:true:true:false,neg_stock_set:true:true:false,neg_stock_state:true:true:false,stock_count_submit_seen:true:true:false|false"
+chk "  والكاتبُ يقرأ عيادتَه من الجلسة ويكتبها بنفسه (فحصٌ ثابت — درسُ 0145)" \
+    "select (prosrc like '%v_clinic uuid := auth_clinic()%' and prosrc like '%insert into public.neg_stock_log (clinic_id%' and prosrc like '%p_clinic is distinct from v_clinic%')::text
+       from pg_proc where oid = to_regprocedure('public.neg_stock_set(uuid,boolean,integer,boolean,text,text)')" "true"
+chk "  والمصوّرُ مردودٌ بالبوّابة عن الأبواب كلّها، والسياجُ يغطّي الدفتر" \
+    "select split_part(_gate('$PHO', '/rpc/neg_stock_set'), ':', 3)||'|'||split_part(_gate('$PHO', '/rpc/neg_stock_state'), ':', 3)
+            ||'|'||split_part(_gate('$PHO', '/rpc/neg_stock_check'), ':', 3)||'|'||split_part(_gate('$PHO', '/rpc/stock_count_submit_seen'), ':', 3)
+            ||'|'||(select count(*) from verify_photographer_fence())::text" \
+    "photographer_forbidden|photographer_forbidden|photographer_forbidden|photographer_forbidden|0"
+# صلاحياتُ سوبابيس الافتراضية تعطي anon تشغيلَ كلّ دالّةٍ جديدة — والقالبُ بلاها، فـ«ممنوعةٌ على anon» أعلاه تمرّ ولو نُسي السحب.
+# فتُحذف الأبوابُ وتُنشأ من جديد تحت تلك الافتراضات (القالبُ يُقاس على الإنتاج): الهجرةُ نفسُها تسحبها.
+$P -c "alter default privileges in schema public grant execute on functions to anon, authenticated;
+       drop function public.neg_stock_set(uuid,boolean,integer,boolean,text,text); drop function public.neg_stock_state();
+       drop function public.neg_stock_report(); drop function public.neg_stock_counted(); drop function public.neg_stock_check(uuid,jsonb);
+       drop function public.stock_count_submit_seen(jsonb); drop function public._neg_stock_counts(uuid); drop function public._neg_stock_period(uuid);
+       drop function public._neg_stock_is_counted(uuid,uuid); drop function public._neg_stock_last(uuid);" >/dev/null
+out=$($P -f "$MIG/0266_neg_stock_mode.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0266 ما نزلت تحت افتراضات سوبابيس"; fail=1; }
+$P -c "alter default privileges in schema public revoke execute on functions from anon, authenticated;" >/dev/null
+chk "تحت افتراضات سوبابيس (anon يأخذ كلَّ دالّةٍ جديدة): الأبوابُ ممنوعةٌ على anon، والداخليّةُ على الداخلين" \
+    "select bool_or(has_function_privilege('anon', oid, 'execute'))::text||'|'||bool_or(has_function_privilege('authenticated', oid, 'execute') and proname like '\_neg%')::text
+       from pg_proc where pronamespace = 'public'::regnamespace and (proname like 'neg_stock%' or proname like '\_neg_stock%' or proname = 'stock_count_submit_seen')" "false|false"
+Q266="select (select count(*) from pg_policies where tablename = 'neg_stock_log')::text
+         ||'|'||(select count(*) from pg_indexes where tablename = 'neg_stock_log')::text
+         ||'|'||(select count(*) from pg_constraint where conrelid = 'public.neg_stock_log'::regclass)::text
+         ||'|'||(select count(*) from neg_stock_log)::text
+         ||'|'||(select count(*) from pg_proc where pronamespace = 'public'::regnamespace and (proname like 'neg_stock%' or proname like '_neg_stock%' or proname = 'stock_count_submit_seen'))::text"
+Z266=$($P -tAc "$Q266" | tr -d '[:space:]')
+out=$($P -f "$MIG/0266_neg_stock_mode.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0266 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ: سياساتٌ وفهارسُ وقيودٌ ودفترٌ ودوالُّ كما هي" "$Q266" "$Z266"
+$P -c "delete from stock_counts where clinic_id = '$NC'; delete from products where clinic_id = '$NC' or id = '${NG}b3'; delete from poultry_farms where id = '${NG}f0'; delete from neg_stock_log where clinic_id = '$NC';" >/dev/null
 
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null
