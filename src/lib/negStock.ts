@@ -88,6 +88,16 @@ export function readNegCheck(x: unknown): NegCheck {
   return { clinic: str(r.clinic_id), active: r.active, until: str(r.until), refused };
 }
 
+/** جوابُ neg_stock_set: الحالةُ بعد الضغطة، وهل كتبت سطراً. لا ⇒ «ما تغيّر شي» / «كان مطفّى» — بطاقةٌ فُتحت قبل ضغطة مديرٍ ثانٍ تقيس
+ *  على تقريرها القديم فتقول «تمدّد» لما لم يُكتب. والغائبُ (قاعدةٌ أقدم) «كتبت» كما كانت الرسالة. */
+export interface NegSetResult extends NegState { changed: boolean; action: NegAction | null }
+export function readNegSet(x: unknown, at: number): NegSetResult {
+  const s = readNegState(x, at);
+  const r = x as Record<string, unknown>;
+  const a = r.action;
+  return { ...s, changed: r.changed !== false, action: a === "on" || a === "extend" || a === "off" ? a : null };
+}
+
 /** جوابُ neg_stock_report: الحالةُ + العدُّ + الدفتر. */
 export function readNegReport(x: unknown, at: number): NegReport {
   const s = readNegState(x, at);

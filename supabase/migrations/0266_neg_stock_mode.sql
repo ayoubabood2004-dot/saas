@@ -311,7 +311,8 @@ begin
     if v_active then
       v_until := greatest(r.until, v_new);
       v_action := 'extend';
-      if v_until = r.until then return public.neg_stock_state(); end if;   -- لا يقصّر ولا يُكتب ما لم يتغيّر
+      -- لا يقصّر ولا يُكتب ما لم يتغيّر — ويقول ذلك (changed): بطاقةٌ فُتحت قبل تمديدِ مديرٍ ثانٍ أبعد كانت تقول «تمدّد» لضغطةٍ لم تكتب شيئاً.
+      if v_until = r.until then return public.neg_stock_state() || jsonb_build_object('changed', false); end if;
     else
       v_until := v_new;
       v_action := 'on';
@@ -322,7 +323,7 @@ begin
                      || ') — كمّلوا الجرد. وللتمديد بعدها كلّموا الدعم.';
     end if;
   else
-    if not v_active then return public.neg_stock_state(); end if;
+    if not v_active then return public.neg_stock_state() || jsonb_build_object('changed', false); end if;
     v_action := 'off';
     v_since := r.since;
     v_until := null;
@@ -337,7 +338,7 @@ begin
                                     negatives, never_counted, zero_cost, pending)
   values (v_clinic, v_action, v_since, v_until, case when v_op then null else v_uid end, v_name, v_note,
           c.negatives, c.never_counted, c.zero_cost, c.pending);
-  return public.neg_stock_state();
+  return public.neg_stock_state() || jsonb_build_object('changed', true, 'action', v_action);
 end $$;
 revoke all on function public.neg_stock_set(uuid, boolean, integer, boolean, text, text) from public, anon;
 grant execute on function public.neg_stock_set(uuid, boolean, integer, boolean, text, text) to authenticated;

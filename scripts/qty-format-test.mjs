@@ -44,6 +44,10 @@ check("٣ تبقى ٣", formatQty(3) === formatNum(3), formatQty(3));
 check("**٣٫٢٥ تبقى ٣٫٢٥** (هذا هو العطبُ الذي كان)", formatQty(3.25) === formatDec(3.25), formatQty(3.25));
 check("  و٠٫٥ لا تصير ١", !/^1$/.test(formatQty(0.5)), formatQty(0.5));
 check("  و٩٫٧٥ بكاملها", formatQty(9.75) === formatDec(9.75), formatQty(9.75));
+/* كسرٌ أصغرُ من ثلاث منازل: مستهلكاتُ الوصفة تُرحَّل بتسعٍ (0252) — رصيدٌ ‎−0.0003 كان «-0» بشارة الوضع (0266) و«0» باقٍ. */
+check("وكسرٌ أصغرُ من ثلاث منازل برقمه المعنويّ: ‎−0.0003 «-0.0003» لا «-0»", formatQty(-0.0003) === "-0.0003" && formatQty(0.0003) === "0.0003", formatQty(-0.0003));
+check("  وبلا ترميزٍ أُسّيّ (1e-9 «0.000000001»)، وما يبلغ نصفَ الثالثة كما كان", formatQty(1e-9) === "0.000000001" && formatQty(-0.000333) === "-0.0003" && formatQty(0.0012) === formatDec(0.0012),
+  [formatQty(1e-9), formatQty(-0.000333), formatQty(0.0012)].join(" "));
 check("والصفرُ صفر", formatQty(0) === formatNum(0), formatQty(0));
 check("وغيرُ المحدود لا يرمي", formatQty(Number.NaN) === formatNum(Number.NaN), formatQty(Number.NaN));
 

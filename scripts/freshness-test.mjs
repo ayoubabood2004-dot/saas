@@ -364,8 +364,8 @@ check("  والإضافةُ تحمل رصيدَ صفّها إلى السطر ا�
   /\}, n, \{ stock: p\.pooled \? null : p\.stock \}\);/.test(SBN) && /const sync = \(l: Line\): Line =>/.test(SBN));
 check("مسحتان على جوابٍ واحد تُحسبان من السلّة الحيّة (لا من إغلاق الرسم)",
   /const cur = cartRef\.current;/.test(SBN) && /cartRef\.current = apply\(cur\);/.test(SBN) && !/const existing = cart\.find\(\(l\) => l\.id === id\);/.test(SBN));
-check("زرُّ + فوق السقف يسأل الخادمَ قبل «لا يوجد مخزون إضافي»",
-  /data-qtyplus onClick=\{\(\) => \{ playTap\(\); raiseLine\(l, l\.qty \+ 1\); \}\}/.test(SBN) && /void sellOrExplain\(row, target - l\.qty\);/.test(SBN));
+check("زرُّ + فوق السقف يسأل الخادمَ قبل «لا يوجد مخزون إضافي» — بيعاً ولو «راجع» مفعّل (سطرُ بيعٍ قائم لا يصير إرجاعاً)",
+  /data-qtyplus onClick=\{\(\) => \{ playTap\(\); raiseLine\(l, l\.qty \+ 1\); \}\}/.test(SBN) && /void sellOrExplain\(row, target - l\.qty, null, \{ sale: true \}\);/.test(SBN));
 check("  ولوحةُ الكمية كذلك (ما فوق السقف يُرسل ويُسأل عنه)",
   /allowOver=\{l\.kind === "product" && !l\.ret && !!l\.product_id\}/.test(SBN) && /else raiseLine\(l, n\);/.test(SBN));
 const QP = read("src/components/retail/QtyPad.tsx");

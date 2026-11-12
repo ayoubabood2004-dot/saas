@@ -231,6 +231,11 @@ const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "defaul
 /** مستهلكاتُ سطرٍ من مسودّةٍ محفوظة (0252): قائمةٌ بشكل ما يقبله الخادم تبقى كما هي، وأيُّ شيءٍ غيرُها يسقط
  *  **كلُّه** فيرجع السطرُ للوصفة — نصفُ قائمةٍ أخطرُ من لا قائمة، ومادّةٌ مكسورةٌ واحدة يرفض الخادمُ عليها
  *  البيعةَ كلَّها (consumables_bad). مسودّةٌ من نسخةٍ أقدم أو مخزنٌ عُبث به لا يُسقط الشاشة. */
+/** علمٌ يُرفع ما دام مركَّباً — يوضع بجانب مكوّنٍ كسولٍ داخل حدّ تحميله نفسِه، فلا يُركَّب إلا والمكوّنُ مرسوم (التعليقُ والفشلُ يحجبانهما معاً). */
+function MountFlag({ flag }: { flag: { current: boolean } }): null {
+  useEffect(() => { flag.current = true; return () => { flag.current = false; }; }, [flag]);
+  return null;
+}
 function draftConsumables(v: unknown): ConsumableEntry[] | undefined {
   if (!Array.isArray(v) || v.length > 40) return undefined;
   const seen = new Set<string>();
@@ -996,17 +1001,31 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** الشريحةُ تقول «وصلتُ» وتُفكّ بـ«رحتُ» — رسالةٌ لشريحةٍ غير مركّبة تُقال بنصٍّ حارّ لا تضيع. ثابتةٌ بين الرسمات. */
   const negOnReady = useRef(() => { negBarReadyRef.current = true; return () => { negBarReadyRef.current = false; }; }).current;
   const negSayN = useRef(0);
+  useEffect(() => () => { negSayN.current++; }, []);   // شاشةٌ فُكّت: رسالتُها المؤجّلة لا تُقال
   const sayNeg = (s: NegSay extends infer T ? (T extends NegSay ? Omit<T, "n"> : never) : never, fallback: string) => {
     playWarning();
-    if (negBarReadyRef.current) setNegSay({ ...s, n: ++negSayN.current } as NegSay);
-    else toast.error(fallback);
+    const n = ++negSayN.current;
+    setNegSay({ ...s, n } as NegSay);
+    if (negBarReadyRef.current) return;
+    /* الشريحةُ لم تُركَّب بعد — حالتُها وصلت بالضغطة نفسِها (أوّلُ مسحةٍ بعد الفتح أو العودة) أو قطعتُها تُحمَّل: تقولها حين تُركَّب
+     * (تبدأ بلا رسالةٍ مقولة). كان النصُّ الحارُّ يُقال فوراً، وهو لـ«انتهى» و«انعدّت» «زيد رصيده من المخزن» — بابُ التوائم عن مادّةٍ
+     * يقول الخادمُ «لا تدخلها». والحارُّ يبقى لشريحةٍ لم تُركَّب خلال ثانيةٍ ونصف (قطعةٌ فشلت أو بطيئة)، ولا يُكرَّر حين تصل. */
+    window.setTimeout(() => {
+      if (negBarReadyRef.current || negSayN.current !== n) return;
+      setNegSay((cur) => (cur?.n === n ? null : cur));
+      toast.error(fallback);
+    }, 1500);
   };
   /** نافذةُ الرفض: السطورُ بأسبابها، وما يبقى من كلٍّ إن شُيل الزائد (`keep`: كميةٌ برصيدٍ يغطّيها، وصفرٌ يشيل السطر). */
   const [negChk, setNegChk] = useState<{ lines: NegRefusedLine[]; allCart: boolean; ack: CheckoutAck; keep: Record<string, { qty: number; stock: number | null }>; locked?: boolean } | null>(null);
   /** «شيلها وكمّل»: السلّةُ تتغيّر أولاً، والبيعةُ تكمل بالرسمة التي تراها (checkout يقرأ سلّةَ رسمته). */
   const negResumeRef = useRef<CheckoutAck | null>(null);
+  /** النافذةُ مرسومةٌ فعلاً (علمٌ يرفعه مكوّنٌ بجانبها داخل حدّ التحميل نفسِه). */
+  const negChkShownRef = useRef(false);
   /** موافقةُ الخادم على سطور الوضع لمرجع هذه البيعة وسلّتها — إعادةُ محاولةٍ لنفس المرجع بنفس السلّة لا تُسأل ثانيةً.
    *  وتنجو مع المسودّة (مرجعُها مرجعُ المسودّة وحده). */
+  /** يتغيّر مع كلّ موافقة — المسودّةُ تُحفظ معها (مرجعٌ قائمٌ وسلّةٌ تغيّرت تحته: الموافقةُ الجديدة كانت لا تبلغ المسودّة). */
+  const [negOkGen, setNegOkGen] = useState(0);
   const negOkRef = useRef<{ ref: string; fp: string } | null>(
     draft0?.negOk && typeof draft0.negOk.ref === "string" && draft0.negOk.ref === draft0.clientRef && typeof draft0.negOk.fp === "string" ? draft0.negOk : null);
   /** صفوفٌ رفعها الوضعُ ولم تصل القائمة (مسحٌ وجده الخادم، جوابُ سؤال) — بها يُحكم سقفُ سطرها وعلامتُه، لا بـ«ما بالقائمة» وحدها. */
@@ -1744,6 +1763,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       retMode: ret,
     });
     if (verdict === "sell-fresh" && sellable) {
+      /* 0266: سطرٌ قائمٌ لا يبقى له مكانٌ بالرصيد الطازج: سببُ الوضع يُقال قبل «المتوفّر 0 فقط» — «مفعّل» قديمٌ وسؤالُه ما رجع «ما
+       * تأكّدنا»، والمعدودةُ «انعدّت». (ومكانٌ جزئيّ يُضاف منه ما يتّسع، كما كان.) */
+      if (!ret && lineNow && !sellable.pooled && unitCap({ ...lineNow, stock: sellable.stock }) <= lineNow.qty) {
+        const ns = negNow();
+        const on = !!ns.state?.active && !ns.state.absent;
+        const stale = on && !ns.active && !!negMod && negMod.liftable(sellable, ns.counted);
+        const counted = on && ns.counted.has(sellable.id);
+        if (stale || counted) {
+          if (!first) { playWarning(); return { added: null, refused: true }; }
+          if (stale) sayNeg({ kind: "unsure", name: sellable.name }, t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: sellable.name }));
+          else sayNeg({ kind: "counted", name: sellable.name, stock: sellable.stock ?? 0 }, t("retail.maxStock", "No more in stock"));
+          return { added: null, refused: true };
+        }
+      }
       // رصيدٌ طازج (الصفُّ + حوضُ قسمه): يُباع به لا بالبائت، و`bump` تقول السقفَ إن بقي أقلّ.
       const added = addProduct(sellable, n, opt);
       if (first && added !== null && added > 0) {
@@ -1764,17 +1797,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         sayNeg({ kind: "noCost", name: fresh.name, productId: fresh.id, canOpen: canEditProducts }, t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج"));
         return { added: null, refused: true };
       }
-      const fb = t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: fresh.name });
       /* الرسائلُ بجواب الخادم الأخير (`on`) لا بعمره: «مفعّل» تجاوز دقيقتيه وسؤالُه فشل أو ما لحق (٢٫٥ ثانية) ليس «انتهى» — الوضعُ ربما
        * شغّال. فالمعدودةُ «انعدّت» كما هي (سببُها لا يتبع الوضع)، وما قد يغطّيه الوضعُ «ما تأكّدنا» (لا «انتهى — لا تدخله»، ولا «زيد
        * رصيده» — بابُ التوائم)، و«انتهى» حين قالها الخادمُ وحده. */
       const on = !!ns.state?.active && !ns.state.absent;
-      if (first && on && ns.counted.has(fresh.id)) { sayNeg({ kind: "counted", name: fresh.name, stock: fresh.stock ?? 0 }, fb); return { added: null, refused: true }; }
+      const noMore = t("retail.maxStock", "No more in stock");   // احتياطُ الشريحة: لا «زيد رصيده» (بابُ التوائم)
+      if (first && on && ns.counted.has(fresh.id)) { sayNeg({ kind: "counted", name: fresh.name, stock: fresh.stock ?? 0 }, noMore); return { added: null, refused: true }; }
       if (first && on && !ns.active && !!negMod && negMod.liftable(fresh, ns.counted)) {
         sayNeg({ kind: "unsure", name: fresh.name }, t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: fresh.name }));
         return { added: null, refused: true };
       }
-      if (first && !on && ns.state?.used && (fresh.stock ?? 0) < 0) { sayNeg({ kind: "ended", name: fresh.name, stock: fresh.stock ?? 0 }, fb); return { added: null, refused: true }; }
+      if (first && !on && ns.state?.used && (fresh.stock ?? 0) < 0) { sayNeg({ kind: "ended", name: fresh.name, stock: fresh.stock ?? 0 }, noMore); return { added: null, refused: true }; }
     }
     // النغمةُ لكلّ مسحة — الكاشير يعدّ بأذنه — والرسالةُ مرّةً لا تتكدّس.
     playWarning();
@@ -1804,9 +1837,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    *  وما فوقه يمرّ من `sellOrExplain`: يُسأل الخادمُ قبل «لا يوجد مخزون إضافي». */
   const raiseLine = (l: Line, target: number) => {
     if (target <= capFor(l) || l.kind !== "product" || l.ret || !l.product_id) { setQty(l.id, target); return; }
-    const row = prodRow(l.product_id);
+    /* صفُّ القائمة أوّلاً — رصيدُه رصيدُ الكاشير (الصفُّ + حوضُ قسمه) — وصفُّ الرفع لمادّةٍ ليست بها. صفُّ الرفع للحكم بالكلفة (capFor فوق):
+     * صفٌّ خامٌّ من مسحٍ بلا حوضه كان يقول «المتوفّر 0» والكرتُ يقول ٥. و«+» واللوحةُ على سطر بيعٍ قائم بيعٌ ولو «راجع» مفعّل — كانا يضيفان
+     * سطرَ إرجاعٍ لما يأخذه الزبون (قائمٌ قبل الوضع، ووسّعه صفُّ الرفع لمادّةٍ ليست بالقائمة). */
+    const row = products.find((p) => p.id === l.product_id) ?? prodRow(l.product_id);
     if (!row) { setQty(l.id, target); playWarning(); toast.error(t("retail.maxStock", "No more in stock")); return; }
-    void sellOrExplain(row, target - l.qty);
+    void sellOrExplain(row, target - l.qty, null, { sale: true });
   };
   /** تبديلُ وحدة البيع (علبة/مفرد). وحدةٌ لا يسمح بها رصيدُ السطر كانت زرّاً **ميّتاً**
    *  (`disabled` بلا كلمة) — الآن يُسأل الخادم: رصيدٌ ظهر يُحدَّث به السطرُ وتتبدّل
@@ -2242,7 +2278,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (done) return;
     saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn,
       negOk: saleRefSaved && negOkRef.current?.ref === saleRefSaved ? negOkRef.current : null, saleDay, saleTime, clientRef: saleRefSaved, custAuto });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
+  }, [clinicId, negOkGen, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -2439,7 +2475,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
     expiredAckRef.current = null;
-    setNegChk(null); negResumeRef.current = null;   // نافذةُ الوضع لسلّةٍ راحت
+    setNegChk(null); negResumeRef.current = null;   // نوافذُ التأكيد لسلّةٍ راحت: «نعم، بيع» على نافذةٍ باقية كانت تبيع سلّةَ الزبون التالي
+    setBigSale(null); setExpiredAsk(null); setPriceAsk(null);
     setRepriced(new Map());
     setSaleRefSaved(null);
     clearSaleDraft(draftScope);
@@ -2664,7 +2701,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         e.preventDefault(); el.blur(); return;
       }
       // بعد إتمام البيع (شاشة الإيصال) لا يُعاد الإصدار بـF2 — كان يصنع طلبَ توصيلٍ ثانياً.
-      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !switchAsk && !needsDebtName && !busy && !done && !custClearAsk && !resetAsk) void checkout(); }
+      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !switchAsk && !needsDebtName && !busy && !done && !bigSale && !expiredAsk && !priceAsk && !custClearAsk && !resetAsk) void checkout(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2853,8 +2890,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const allCart = cart.filter((l) => !l.ret).every((l) => keep[l.id] && keep[l.id].qty <= 0);
     return { lines: bad.map((b) => b.line), allCart, keep };
   };
-  /* «شيلها وكمّل» و«جرّب مرّة ثانية»: بعد أن تُغلق النافذةُ (وتهبط السلّةُ المقصوصة) تكمل البيعةُ بإقراراتها السابقة —
-   * بالرسمة الجديدة لا بإغلاقٍ يراها مفتوحة (الإتمامُ لا يجري والنافذةُ مفتوحة). */
+  /* «جرّب مرّة ثانية»: بعد أن تُغلق النافذةُ تكمل البيعةُ بإقراراتها السابقة — بالرسمة الجديدة لا بإغلاقٍ يراها مفتوحة (الإتمامُ لا
+   * يجري والنافذةُ مفتوحة). والسلّةُ هي هي، فلا شيءَ مشتقٌّ منها يتأخّر. و«شيل الزايد» لا يكمل (انظر onRemove). */
   useEffect(() => {
     const a = negResumeRef.current;
     if (!a || negChk) return;
@@ -2868,7 +2905,11 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (cart.length === 0 || busy) return;
     /* 0266: نافذةُ الوضع مفتوحة ⇒ لا إتمام. F2 (وتأكيدُ نافذةٍ تحتها) كان يصل هنا فيسأل الخادمَ ثانيةً، وجوابٌ يقبل الآن
      * يُتمّ البيعةَ خلف نافذةٍ تقول «ما تكمل» وتبقى فوق شاشة «تمّ». زرّاها يكملان بعد أن تُغلق (negResumeRef). */
-    if (negChk) return;
+    if (negChk) {
+      // نافذةٌ على الشاشة ⇒ زرّاها يقرّران. ولم تُرسم قطّ (قطعتُها فشلت أو تُحمَّل) ⇒ تُغلق ويُسأل من جديد — لا زرٌّ ميّتٌ بلا كلمة.
+      if (negChkShownRef.current) return;
+      setNegChk(null);
+    }
     // الحرّاسُ هنا لا على الزرّ وحده: F2 كان يصل هنا مباشرةً فيسجّل إرجاعاً خالصاً
     // «بيعاً» بمجموعٍ صفر — البضاعة ترجع للمخزن والنقدُ يخرج للزبون بلا قيد.
     if (pureReturn) { void doReturn(); return; }
@@ -2943,7 +2984,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * مسودّةٌ رجعت بعد تحديث) — ورفضُ هذه لا يقول شيئاً عن تلك. */
     const freshRef = !saleRefRef.current;
     ensureRef();
-    if (negLines.length > 0 && saleRefRef.current) negOkRef.current = { ref: saleRefRef.current, fp: negFp };
+    if (negLines.length > 0 && saleRefRef.current) { negOkRef.current = { ref: saleRefRef.current, fp: negFp }; setNegOkGen((g) => g + 1); }
     if (exp.length > 0 && saleRefRef.current) {
       if (expiredAckRef.current?.ref !== saleRefRef.current) expiredAckRef.current = { ref: saleRefRef.current, names: new Map() };
       for (const l of exp) expiredAckRef.current.names.set(l.id, l.name);
@@ -3140,7 +3181,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       /* 0266: يُطوى بإشعار «تمّ» سالبُ كلّ مادّةٍ يغطّيها الوضعُ لحظةَ البيعة (حيّةٌ وما انعدّت وكلفتُها موجبة) لا ما علّمه وحده: سطرٌ
        * بيع من قائمةٍ أقدم من الخادم نزل تحت الصفر بلا علامة، ومستهلكُ وصفة — السالبُ فيهما متوقّعٌ حتى تُعدّ، وزرُّ «لا تذكّرني» على
        * سطرهما كان يُسكت المادّةَ بعد الوضع أيضاً. والمعدودةُ والمجمَّعةُ وما بلا كلفة فرقٌ يُقال باسمه. */
-      setNegChk(null);   // نافذةُ الوضع لا تبقى فوق شاشة «تمّ»
+      setNegChk(null); setBigSale(null); setExpiredAsk(null); setPriceAsk(null);   // نوافذُ التأكيد لا تبقى بعد «تمّ»
       const negSnapDone = negNow();
       const foldIds = new Set(cart.filter((l) => l.negLift && !l.ret && l.product_id).map((l) => l.product_id as string));
       if (negSnapDone.active) {
@@ -3766,13 +3807,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         {negChk && (NegChkLazy ??= loadNegChk()) && (
           <LoadBoundary scope="neg-chk" onRetry={() => { NegChkLazy = loadNegChk(); setNegTick((n) => n + 1); }}>
             <Suspense fallback={null}>
+              <MountFlag flag={negChkShownRef} />
               <NegChkLazy open lines={negChk.lines} allCart={negChk.allCart} locked={!!negChk.locked}
                 onBack={() => setNegChk(null)}
                 onRetry={() => { const a = negChk.ack; setNegChk(null); negResumeRef.current = a; }}
                 onRemove={() => {
                   const k = negChk;
-                  /* الترتيبُ مقصود: السلّةُ تُقصّ ثمّ تُغلق النافذةُ ثمّ يُسلَّح الإكمال — رسمٌ متزامن (بلا تجميع) بين النداءات كان يُشغّل
-                   * الأثرَ بالسلّة غيرِ المقصوصة فتكمل البيعةُ بها ثمّ تُرمى («السلّةُ تغيّرت»): لا بيعة ولا كلمة. */
+                  /* يقصّ ويقف — لا يكمل البيعة: المجموعُ المثبَّت (finalOverride) وساقُ الدفع يتبعان السلّةَ بأثرٍ بعد الرسم، فإكمالٌ بالرسمة
+                   * نفسِها سجّل المجموعَ القديم لبضاعةٍ انشال منها (مراجعةٌ عدائيّة بجذرٍ متزامن كالمتصفّح؛ المُصيِّرُ المتزامنُ بالفحص أخفاها).
+                   * يرى الكاشيرُ المجموعَ الجديد ويضغط «إصدار الفاتورة» — كنافذة تغيّر الأسعار. */
                   setCart((c) => c.flatMap((l) => {
                     const x = k.keep[l.id];
                     if (!x) return [l];
@@ -3781,7 +3824,6 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                     return [{ ...rest, qty: x.qty, stock: x.stock }];
                   }));
                   setNegChk(null);
-                  negResumeRef.current = k.ack;
                 }} />
             </Suspense>
           </LoadBoundary>

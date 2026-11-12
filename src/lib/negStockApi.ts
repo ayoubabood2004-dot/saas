@@ -16,7 +16,7 @@ import { supabase } from "./supabase";
 import { rpcJson } from "./rpcJson";
 import { isConfigReadOnly } from "./clinicSync";
 import { getActiveClinicId } from "./clinics";
-import { readCounted, readNegCheck, readNegReport, readNegState, type NegCheck, type NegReport, type NegState } from "./negStock";
+import { readCounted, readNegCheck, readNegReport, readNegSet, readNegState, type NegCheck, type NegReport, type NegSetResult, type NegState } from "./negStock";
 import type { CountLineInput, CountSubmitResult } from "@/types";
 /* القواعدُ الصِّرفة لمن يصل إلى هنا بـimport() وحده (شاشةُ البيع لا تستورد negStock.ts ثابتاً — وحدةٌ مشتركةٌ ثابتة اسمٌ يدفعه الإقلاع). */
 export { activeNow, bigLifted, daysLeft, lastDayOf, liftable } from "./negStock";
@@ -31,7 +31,7 @@ export interface NegApi {
   report(): Promise<NegReport>;
   counted(): Promise<Set<string>>;
   check(clinic: string, lines: NegCheckLine[]): Promise<NegCheck>;
-  set(clinic: string, on: boolean, days: number | null, ack: boolean, note: string | null): Promise<NegState>;
+  set(clinic: string, on: boolean, days: number | null, ack: boolean, note: string | null): Promise<NegSetResult>;
   countSubmitSeen(lines: CountLineSeen[]): Promise<CountSubmitResult>;
 }
 
@@ -66,7 +66,7 @@ const cloud: NegApi = {
   check: async (clinic, lines) => readNegCheck(await rpcJson<unknown>("neg_stock_check", { p_clinic: clinic, p_lines: lines })),
   async set(clinic, on, days, ack, note) {
     writable();
-    return readNegState(await rpcJson<unknown>("neg_stock_set",
+    return readNegSet(await rpcJson<unknown>("neg_stock_set",
       { p_clinic: clinic, p_on: on, p_days: days, p_ack: ack, p_note: note, p_tz: tz() }), perf());
   },
   async countSubmitSeen(lines) {
@@ -112,8 +112,8 @@ interface Entry {
   /** العيادةُ التي أجاب عنها الخادمُ أوّلاً لهذا المفتاح — جوابٌ عن غيرها لا يُتبنّى (المشغّلُ دخل عيادةً أخرى بتبويبٍ ثانٍ:
    *  الجلسةُ واحدة)، ففحصُ البيعة يرسلها فيردّ الخادمُ neg_stock_clinic_changed — «ما تأكّدنا» لا حكمٌ عن عيادةٍ غيرِ التي بالشاشة. */
   clinic: string | null;
-  /** السؤالُ الأحدث — من تجاوزه سؤالٌ أحدث يُرجع ما يُرجعه هذا (بعد نشره) لا جوابَه هو. */
-  latest: Promise<NegState | null> | null;
+  /** gen آخرِ جوابٍ نُشر: جوابٌ أقدمُ منه يُرمى (لا يدوس ما هو أحدث)، وما سواه يُنشر ولو بدأ بعده سؤالٌ أحدث. */
+  pubGen: number;
   timer: ReturnType<typeof setInterval> | null;
   stop: (() => void) | null;
 }
@@ -130,7 +130,7 @@ export function negKey(userId: string | null | undefined): string {
 
 function entryOf(key: string): Entry {
   let e = entries.get(key);
-  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, latest: null, timer: null, stop: null }; entries.set(key, e); }
+  if (!e) { e = { snap: EMPTY, subs: new Set(), gen: 0, countedAt: null, clinic: null, pubGen: 0, timer: null, stop: null }; entries.set(key, e); }
   return e;
 }
 function publish(e: Entry, snap: NegSnap): void {
@@ -140,24 +140,17 @@ function publish(e: Entry, snap: NegSnap): void {
 
 export function negSnap(key: string): NegSnap { return entries.get(key)?.snap ?? EMPTY; }
 
-/** يسأل الخادمَ الآن (والمعدودةَ إن لزم). جوابٌ لسؤالٍ أحدث منه، أو بعد أن نُسي المفتاح، يُرمى. لا يرمي.
- *  وما يُرجعه يُرجَع **بعد** نشر الحالة التي يقرؤها منتظرُه: سؤالٌ تجاوزه أحدثُ منه كان يُرجع جوابَه غيرَ المنشور فورَ وصوله،
- *  فمنتظرُه (ضغطةٌ على مادّةٍ بالصفر) يقرأ negSnap فيجد ما قبل التشغيل — ضغطتان متتاليتان بعد تشغيل الوضع: الأولى «انتهى» أو
- *  «زيد رصيده» عمّا يُباع، والثانية تُباع (مراجعةٌ عدائيّة). فينتظر الأحدثَ ويُرجع ما يُرجعه. */
-export function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
+/** يسأل الخادمَ الآن (والمعدودةَ إن لزم). لا يرمي، ويرجع بعد نشر جوابه (أو بعد أن نُشر أحدثُ منه) — فمنتظرُه يقرأ negSnap بعده.
+ *  الجوابُ يُنشر ما لم يُنشر جوابٌ أحدثُ منه (pubGen)، لا «ما لم يبدأ سؤالٌ أحدث»: ذاك كان يرمي جواباً تامّاً حين يبدأ بعده سؤالٌ
+ *  ثانٍ (ضغطةٌ ثانية، أو عودةُ التاب)، فإن فشل الثاني أو أبطأ بقيت الشاشةُ على ما قبلهما — الضغطةُ الأولى بعد التشغيل «انتهى» أو
+ *  «زيد رصيده» عمّا يُباع (مراجعتان عدائيّتان: الأولى رأت الانتظار، والثانية أثبتت أنه لا يكفي). وجوابٌ عن مفتاحٍ نُسي يُرمى. */
+export async function refreshNeg(key: string, opts: { counted?: boolean } = {}): Promise<NegState | null> {
   const e = entryOf(key);
   const gen = ++e.gen;
-  const p = refreshOnce(key, e, gen, opts);
-  e.latest = p;
-  return p;
-}
-async function refreshOnce(key: string, e: Entry, gen: number, opts: { counted?: boolean }): Promise<NegState | null> {
-  /** تجاوزه أحدث ⇒ ما يُرجعه الأحدثُ بعد نشره؛ والمفتاحُ نُسي ⇒ الجوابُ كما هو (لا أحدَ ينشر). */
-  const newer = (fb: NegState | null): Promise<NegState | null> | NegState | null =>
-    (entries.get(key) === e && e.gen !== gen && e.latest ? e.latest : fb);
+  const stale = () => entries.get(key) !== e || gen < e.pubGen;
   try {
     const s = await negApi.state();
-    if (e.gen !== gen || entries.get(key) !== e) return newer(s);
+    if (stale()) return s;
     if (s.clinic && e.clinic && s.clinic !== e.clinic) {
       // جوابٌ عن عيادةٍ غيرِ عيادة هذا المفتاح: لا يُتبنّى — الحالةُ القديمةُ تشيخ وحدها (activeNow) والفحصُ يقول «تبدّلت».
       publish(e, { ...e.snap, failed: true });
@@ -171,15 +164,17 @@ async function refreshOnce(key: string, e: Entry, gen: number, opts: { counted?:
         counted = await negApi.counted();
         countedAt = perf();
       } catch { /* المعدودةُ القديمة تبقى — والبيعةُ يحكم بها الخادم (counted) */ }
-      if (e.gen !== gen || entries.get(key) !== e) return newer(s);
+      if (stale()) return s;
     }
-    /* الختمُ مع النشر لا قبله: سؤالٌ تجاوزه أحدثُ منه كان يختم «حُمّلت» ولا ينشر، فيتخطّاها الأحدثُ وتبقى فارغةً خمسَ دقائق. */
+    /* الختمُ مع النشر لا قبله: سؤالٌ رُمي جوابُه كان يختم «حُمّلت» ولا ينشر، فيتخطّاها الأحدثُ وتبقى فارغةً خمسَ دقائق. */
     if (countedAt !== null) e.countedAt = countedAt;
+    e.pubGen = gen;
     publish(e, { state: s, counted, failed: false });
     return s;
   } catch {
-    if (e.gen === gen) publish(e, { ...e.snap, failed: true });
-    return newer(null);
+    // «فشل» يقوله أحدثُ سؤال وحده، وما لم يُنشر بعده أحدث — سؤالٌ أحدثُ بالطريق يحكم.
+    if (e.gen === gen && !stale()) publish(e, { ...e.snap, failed: true });
+    return null;
   }
 }
 

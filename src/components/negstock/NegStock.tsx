@@ -22,7 +22,7 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatDate, formatQty } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { negApi } from "@/lib/negStockApi";
-import { daysLeft, lastDayOf, type NegBarView, type NegRefusedLine, type NegReport, type NegSay, type NegState } from "@/lib/negStock";
+import { daysLeft, lastDayOf, type NegBarView, type NegRefusedLine, type NegReport, type NegSay, type NegSetResult } from "@/lib/negStock";
 
 /** رصيدٌ بإشارته داخل جملةٍ عربية: معزولٌ باتّجاهه (LRI…PDI) — «-3» بعد كلمةٍ عربية كانت ترسم الإشارةَ على الطرف الآخر («3-»). */
 const signedQty = (n: number): string => `\u2066${formatQty(n)}\u2069`;
@@ -99,9 +99,9 @@ export function NegStockCard() {
   const pickOk = grows(pick) && !overCap(pick);
   const needNote = rep.operator && !note.trim();
 
-  /* الرسالةُ من جواب الخادم لا من الضغطة: تمديدٌ لا يُطيل (مديرٌ ثانٍ مدّده أبعد من جهازه) وإطفاءُ ما انطفى أصلاً يرجعان الحالةَ بلا سطر —
-   * «تمدّد لحد…» بيومٍ حسبه الجهاز كانت تقول ما لم يحصل. */
-  const run = async (f: () => Promise<NegState>, said: (s: NegState) => { text: string; changed: boolean }) => {
+  /* الرسالةُ مما فعله الخادم (changed/action) لا من الضغطة ولا من تقريرٍ فُتح قبلها: تمديدٌ لا يُطيل (مديرٌ ثانٍ مدّده أبعد) وإطفاءُ ما
+   * انطفى أصلاً لا يكتبان سطراً — «تمدّد لحد…» كانت تُقال لهما بنغمة نجاح، ومقارنةٌ بتقرير البطاقة القديم لا ترى الأوّل. */
+  const run = async (f: () => Promise<NegSetResult>, said: (s: NegSetResult) => { text: string; changed: boolean }) => {
     if (busy) return;
     setBusy(true);
     setErr(null);
@@ -120,15 +120,11 @@ export function NegStockCard() {
   };
   const turnOn = () => run(() => negApi.set(rep.clinic ?? "", true, pick, ack, note.trim() || null), (s) => {
     const day = dayText(s.until ? lastDayOf(s.until) : null, lang);
-    if (on && s.active && s.until === rep.until) return { text: t("nstk.set.unchanged", { day }), changed: false };
-    return { text: t(on ? "nstk.set.extended" : "nstk.set.turnedOn", { day }), changed: true };
+    if (!s.changed) return { text: t("nstk.set.unchanged", { day }), changed: false };
+    return { text: t(s.action === "extend" ? "nstk.set.extended" : "nstk.set.turnedOn", { day }), changed: true };
   });
-  /* انطفى بهذه الضغطة ⇔ ختمُ نهايته لحظةُ الجواب (الخادمُ يكتب السطرَ ويجيب بمعاملةٍ واحدة) — وإلا كان مطفّى أصلاً. */
-  const turnOff = () => run(() => negApi.set(rep.clinic ?? "", false, null, false, note.trim() || null), (s) => {
-    const now = s.serverNow ? Date.parse(s.serverNow) : NaN;
-    const mine = !s.active && !!s.endedAt && !(Date.parse(s.endedAt) < now - 5_000);
-    return mine ? { text: t("nstk.set.turnedOff"), changed: true } : { text: t("nstk.set.alreadyOff", { day: dayText(s.endedAt, lang) }), changed: false };
-  });
+  const turnOff = () => run(() => negApi.set(rep.clinic ?? "", false, null, false, note.trim() || null), (s) =>
+    (s.changed ? { text: t("nstk.set.turnedOff"), changed: true } : { text: t("nstk.set.alreadyOff", { day: dayText(s.endedAt, lang) }), changed: false }));
 
   const stateLine = on
     ? (lastNight ? t("nstk.set.stateLast") : t("nstk.set.stateOn", { day: dayText(lastDayOf(rep.until as string), lang), n: left }))
@@ -308,6 +304,7 @@ export function NegCheckoutDialog({ open, lines, allCart, locked, onRemove, onRe
   open: boolean; lines: NegRefusedLine[]; allCart: boolean; locked?: boolean; onRemove: () => void; onRetry: () => void; onBack: () => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const unsure = lines.some((l) => l.why === "unsure");
   const off = !unsure && lines.length > 0 && lines.every((l) => l.why === "off");
   return (
@@ -316,7 +313,8 @@ export function NegCheckoutDialog({ open, lines, allCart, locked, onRemove, onRe
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="ghost" data-neg-chk-back onClick={() => { playTap(); onBack(); }}>{t("nstk.chk.back")}</Button>
           {unsure && <Button variant="secondary" data-neg-chk-retry onClick={() => { playTap(); onRetry(); }}>{t("nstk.chk.retry")}</Button>}
-          {!unsure && !allCart && !locked && <Button variant="primary" data-neg-chk-remove onClick={() => { playTap(); onRemove(); }}>{t("nstk.chk.remove")}</Button>}
+          {/* يقصّ ويقف: المجموعُ الجديد يُرى قبل الإتمام (إكمالٌ بالرسمة نفسِها سجّل مجموعاً مثبَّتاً قديماً). */}
+          {!unsure && !allCart && !locked && <Button variant="primary" data-neg-chk-remove onClick={() => { playTap(); onRemove(); toast.toast({ tone: "info", title: t("nstk.chk.removed") }); }}>{t("nstk.chk.remove")}</Button>}
         </div>
       }>
       <div className="space-y-2" data-neg-chk>

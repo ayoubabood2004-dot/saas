@@ -8538,7 +8538,7 @@
         "not_lifted": "Can't be sold below zero",
         "gone": "No longer in stock — deleted or merged into another item"
       },
-      "remove": "Remove the extra and finish the sale",
+      "remove": "Remove the extra",
       "retry": "Try again",
       "back": "Back to the cart",
       "allCart": "Everything in the cart is one of these items — nothing would be left to sell. Go back to the cart.",
@@ -8546,7 +8546,8 @@
       "keep": "{{n}} stays",
       "drop": "removed",
       "locked": "The previous attempt hasn't been confirmed by the server — don't change the cart: check «Invoices», or go back and press «Complete sale» again.",
-      "lineGone": "{{qty}} in the cart"
+      "lineGone": "{{qty}} in the cart",
+      "removed": "Removed the extra — check the total and press «Complete sale» again."
     },
     "set": {
       "title": "Selling before the count (temporary)",

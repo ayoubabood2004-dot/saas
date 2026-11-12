@@ -198,10 +198,11 @@ async function demoChecks(c, mutate = null) {
   }
   s = await api.set(CL, true, 3, true, null);
   rep = await api.report();
-  c("ب٤ تمديدٌ أقصر لا يقصّر ولا يُكتب (لا سطر)", s.until === endOfDays(7, t0) && rep.log.length === 1, J({ until: s.until, n: rep.log.length }));
+  c("ب٤ تمديدٌ أقصر لا يقصّر ولا يُكتب (لا سطر) — ويقول ذلك (changed=false)", s.until === endOfDays(7, t0) && rep.log.length === 1 && s.changed === false && s.action === null, J({ until: s.until, n: rep.log.length, changed: s.changed }));
   s = await api.set(CL, true, 14, true, null);
   rep = await api.report();
-  c("  وتمديدٌ أبعد يُكتب «extend» والبدايةُ كما هي", s.until === endOfDays(14, t0) && rep.log[0].action === "extend" && rep.log[0].since === rep.log[1].since && rep.log.length === 2);
+  c("  وتمديدٌ أبعد يُكتب «extend» والبدايةُ كما هي، ويقول ما كتب", s.until === endOfDays(14, t0) && rep.log[0].action === "extend" && rep.log[0].since === rep.log[1].since && rep.log.length === 2
+    && s.changed === true && s.action === "extend");
 
   /* حكمُ البيعة */
   const L = (id, qty = 1, sq = qty) => ({ product_id: id, qty, stock_qty: sq });
@@ -218,9 +219,10 @@ async function demoChecks(c, mutate = null) {
   /* الإطفاء */
   s = await api.set(CL, false, null, false, null);
   rep = await api.report();
-  c("ب٦ الإطفاء: مطفأ، و«انتهى بـ» لحظتُه، وسطرُ «off» يعدّ ما بقي تحت الصفر", !s.active && s.used && !!s.endedAt && rep.log[0].action === "off" && rep.log[0].negatives === 1 && rep.log.length === 3);
+  c("ب٦ الإطفاء: مطفأ، و«انتهى بـ» لحظتُه، وسطرُ «off» يعدّ ما بقي تحت الصفر", !s.active && s.used && !!s.endedAt && rep.log[0].action === "off" && rep.log[0].negatives === 1 && rep.log.length === 3
+    && s.changed === true && s.action === "off");
   const off2 = await api.set(CL, false, null, false, null);
-  c("  وإطفاءُ المطفأ لا شيء (لا سطر)", !off2.active && (await api.report()).log.length === 3);
+  c("  وإطفاءُ المطفأ لا شيء (لا سطر) ويقوله", !off2.active && (await api.report()).log.length === 3 && off2.changed === false);
   ck = await api.check(CL, [L("d0"), L("gone-x")]);
   c("  وبعده كلُّ سطرٍ «off» (والغائبةُ gone)", ck.refused.map((r) => r.why).join(",") === "off,gone" && ck.active === false);
   const since0 = rep.log[0].since;
@@ -310,21 +312,28 @@ async function demoChecks(c, mutate = null) {
     c("ب١٢ سباقُ المعدودة: سؤالٌ تجاوزه أحدثُ منه لا يختم «حُمّلت» — الأحدثُ يجلبها وينشرها", C2.negSnap(key).counted.has("x1") && C2.negSnap(key).state?.active === true,
       J({ counted: [...C2.negSnap(key).counted], calls }));
   }
-  /* سؤالٌ تجاوزه أحدثُ منه لا يُرجع لمنتظره قبل النشر: ينتظر الأحدث — ضغطتان بعد التشغيل، والأولى كانت تُحكم بحالة «مطفّى». */
+  /* جوابٌ تامٌّ يُنشر ولو بدأ بعده سؤالٌ أحدث (ما لم يُنشر أحدثُ منه): ضغطتان بعد التشغيل والثانيةُ فشلت — الأولى كانت تُرمى فتُحكم بـ«مطفّى»؛
+   * وجوابٌ أقدمُ من منشورٍ يُرمى (لا يدوس الأحدث). */
   {
     const rel = [];
-    globalThis.__rpc = (fn) => (fn === "neg_stock_state"
-      ? new Promise((r) => rel.push(() => r({ data: { clinic_id: "cA", active: true, used: true, until: new Date(realNow() + 5 * DAY).toISOString(), now: new Date(realNow()).toISOString() }, error: null })))
-      : { data: [], error: null });
-    const key = "race|k3";
-    let firstSaw = null;
+    const ans = (active) => ({ data: { clinic_id: "cA", active, used: true, until: new Date(realNow() + 5 * DAY).toISOString(), now: new Date(realNow()).toISOString() }, error: null });
+    globalThis.__rpc = (fn) => (fn === "neg_stock_state" ? new Promise((r) => rel.push(r)) : { data: [], error: null });
+    let key = "race|k3", firstSaw = null;
     const p1 = C2.refreshNeg(key).then(() => { firstSaw = C2.negSnap(key).state?.active ?? "لا شيء"; });
     await flush();
     const p2 = C2.refreshNeg(key); await flush();
-    rel[0]?.(); for (let i = 0; i < 4; i++) await flush();
-    const early = firstSaw;
-    rel[1]?.(); await p2; await p1;
-    c("ب١٤ سؤالٌ تجاوزه أحدثُ منه ينتظر الأحدثَ قبل أن يُرجع: منتظرُه يقرأ الحالةَ منشورةً (مفعّل) لا ما قبلها", early === null && firstSaw === true, J({ early, firstSaw }));
+    rel[0](ans(true)); await p1;
+    rel[1]({ data: null, error: { code: "08006", message: "connection lost" } }); await p2;
+    const sn = C2.negSnap(key);
+    c("ب١٤ ضغطتان والثانيةُ فشلت: جوابُ الأولى التامّ يُنشر ومنتظرُه يقرؤه (مفعّل)، وفشلُ الثانية لا يمحوه", firstSaw === true && sn.state?.active === true,
+      J({ firstSaw, active: sn.state?.active, failed: sn.failed }));
+    rel.length = 0;
+    key = "race|k4";
+    const q1 = C2.refreshNeg(key); await flush();
+    const q2 = C2.refreshNeg(key); await flush();
+    rel[1](ans(false)); await q2;
+    rel[0](ans(true)); await q1;
+    c("  وجوابٌ أقدمُ يصل بعد نشر الأحدث يُرمى: الحالةُ «مطفأ» كما قال الأحدث", C2.negSnap(key).state?.active === false, J({ active: C2.negSnap(key).state?.active }));
   }
   /* جوابٌ عن عيادةٍ أخرى تحت المفتاح نفسِه (المشغّلُ دخل عيادةً ثانية بتبويبٍ آخر — الجلسةُ واحدة): لا يُتبنّى. */
   {
@@ -391,7 +400,13 @@ const STUB = {
   "@/lib/invoicePrint": `export const invoiceNo = (id) => "INV-" + String(id).slice(-4); export const openInvoicePrint = async () => true;`,
   "@/lib/branchStore": "export const branchStore = { branchForWrite: () => null };",
   "@/lib/lazyPage": `import { lazy } from "react"; export const page = (load, ns) => { (globalThis.__pages ||= []).push({ load, ns }); return lazy(load); };`,
-  "@/components/LoadBoundary": `import { createElement } from "react"; export const LoadBoundary = ({ children, scope }) => createElement("x-LoadBoundary", { scope }, children);`,
+  /* حدُّ تحميلٍ يمسك الخطأ كالحقيقيّ (قطعةٌ فشلت ⇒ «تعذّر» مكانها، والشاشةُ باقية). */
+  "@/components/LoadBoundary": `import { Component, createElement } from "react";
+    export class LoadBoundary extends Component {
+      constructor(p) { super(p); this.state = { err: null }; }
+      static getDerivedStateFromError(err) { return { err }; }
+      render() { return this.state.err ? createElement("x-LoadFailed", { scope: this.props.scope }) : createElement("x-LoadBoundary", { scope: this.props.scope }, this.props.children); }
+    }`,
   "@/components/retail/ConsumablesSheet": `export default () => null; export const ConsumptionNotice = (p) => { globalThis.__consNotice = p; return null; };`,
   "@/lib/consumptionApi": "export const consumptionApi = { recipeSummary: async () => ({}) };",
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
@@ -409,8 +424,8 @@ const STUB = {
     export { activeNow, liftable, daysLeft, bigLifted, lastDayOf } from "./src/lib/negStock.ts";`,
   /* الشريحةُ والنافذةُ بدائلُ تسجّل ما تراه (المكوّنان الحقيقيّان بالقسم د). */
   "@/components/negstock/NegStock": `import { createElement, useEffect } from "react";
-    export const NegBar = (p) => { globalThis.__negBar = p; useEffect(() => p.onReady?.(), [p.onReady]); return createElement("x-NegBar", { "data-negbar": p.view.active ? "on" : "off" }); };
-    export const NegCheckoutDialog = (p) => { globalThis.__negChk = p; return p.open ? createElement("x-NegChk", { "data-negchk": p.lines.map((l) => l.id + ":" + l.why + ":" + (l.keep ?? "")).join(",") }) : null; };
+    export const NegBar = (p) => { globalThis.__negBar = p; useEffect(() => (globalThis.__negBarHold ? undefined : p.onReady?.()), [p.onReady]); return createElement("x-NegBar", { "data-negbar": p.view.active ? "on" : "off" }); };
+    export const NegCheckoutDialog = (p) => { if (globalThis.__negChkThrow) throw new Error("chunk failed"); globalThis.__negChk = p; return p.open ? createElement("x-NegChk", { "data-negchk": p.lines.map((l) => l.id + ":" + l.why + ":" + (l.keep ?? "")).join(",") }) : null; };
     export const NegStockCard = () => null;`,
 };
 function importsOf(src) {
@@ -478,7 +493,7 @@ function negEnv(o = {}) {
   const subs = new Set();
   const env = {
     clinicKey: "c1", failed: false, counted: new Set(o.counted ?? ["dc"]), calls: { check: [], refresh: 0 },
-    state: {
+    state: o.noState ? null : {
       clinic: "c1", active: o.active ?? true, used: o.used ?? true, until: new Date(realNow() + 5 * DAY).toISOString(), since: null,
       endedAt: o.endedAt ?? null, serverNow: new Date(realNow()).toISOString(), at: performance.now() - (o.age ?? 0),
     },
@@ -520,14 +535,14 @@ function freshEnv(o = {}) {
   };
   return log;
 }
-async function session(M, { products = ALL, draft = null, neg = {}, keep = false, ...env } = {}) {
+async function session(M, { products = ALL, draft = null, neg = {}, keep = false, concurrent = !!globalThis.__conc, ...env } = {}) {
   if (!keep) mem.clear();
   if (draft) mem.set(DRAFT_KEY, J(draft));
   const N = negEnv(neg);
   const log = freshEnv(env);
   /* الأبُ يمسك القائمة: «حدّث القائمة» وعودةُ التاب تمرّرها من جديد (setProducts). */
   const Host = () => { const [ps, set] = M.React.useState(products); globalThis.__setProds = set; return M.React.createElement(M.SaleBuilder, { products: ps, clinicId: "c1", onSold() {}, onFreshRow() {} }); };
-  const ui = M.mount(M.React.createElement(Host));
+  const ui = M.mount(M.React.createElement(Host), { concurrent });
   await flush();
   const btn = (pred) => ui.all().find((n) => n.type === "button" && pred(ui.text(n)));
   const settle = async () => { for (let i = 0; i < 6; i++) await flush(); };
@@ -554,6 +569,8 @@ async function session(M, { products = ALL, draft = null, neg = {}, keep = false
     chk: () => (globalThis.__negChk?.open ? globalThis.__negChk : null),
     /* النافذةُ بالشجرة الآن (البديلُ يحفظ آخرَ خصائصه بعد أن تُفكّ — فـchk() وحدها لا تقول «أُغلقت»). */
     chkOpen: () => ui.all().some((n) => n.type === "x-NegChk"),
+    /** معالجٌ يُنادى كضغطة متصفّح (بالجذر المتزامن داخل discreteUpdates). */
+    fire: async (fn) => { ui.fire(fn); await settle(); },
     bar: () => globalThis.__negBar,
     setProducts: async (ps) => { globalThis.__setProds(ps); await settle(); },
     retMode: async () => { ui.click(ui.find("data-retmode")); await settle(); },
@@ -656,9 +673,12 @@ async function run(M, c) {
       J(k?.lines));
     c("  والحالةُ تُسأل من جديد (الشريحةُ تقول «انتهى»)", S.N.calls.refresh >= 1);
     c("  والمسحُ مقفولٌ والنافذةُ مفتوحة", globalThis.__sb.scanner?.o?.disabled === true);
-    k.onRemove(); await flush(); for (let i = 0; i < 4; i++) await flush();
+    await S.fire(() => k.onRemove());
+    c("  «شيل الزايد»: السطرُ انشال والنافذةُ أُغلقت — ولا بيعةَ قبل أن يرى الكاشيرُ المجموعَ الجديد", S.log.checkout.length === 0 && !S.chkOpen()
+      && J(S.cart().map((l) => [l.id, l.qty])) === J([["p:d0", 2]]), J({ sold: S.log.checkout.length, cart: S.cart().map((l) => [l.id, l.qty]) }));
+    await S.checkout();
     const items = S.log.checkout[0]?.items ?? [];
-    c("  «شيل الزايد وكمّل»: السطرُ انشال والبيعةُ كملت وحدها بالباقي", S.log.checkout.length === 1 && items.length === 1 && items[0].product_id === "d0" && items[0].qty === 2, J(items.map((i) => [i.product_id, i.qty])));
+    c("  ثمّ «إتمام البيع» يبيع الباقي", S.log.checkout.length === 1 && items.length === 1 && items[0].product_id === "d0" && items[0].qty === 2, J(items.map((i) => [i.product_id, i.qty])));
     S.end();
   }
   {
@@ -668,9 +688,11 @@ async function run(M, c) {
     await S.checkout();
     const k = S.chk();
     c("ج٧ معدودةٌ برصيد ١ والسلّةُ ٣: النافذةُ تقول «يبقى منه ١»", !!k && k.lines.length === 1 && k.lines[0].why === "counted" && k.lines[0].keep === 1 && k.lines[0].stock === 1 && !k.allCart, J(k?.lines));
-    k.onRemove(); for (let i = 0; i < 6; i++) await flush();
+    await S.fire(() => k.onRemove());
+    const before = S.log.checkout.length;
+    await S.checkout();
     const it = S.log.checkout[0]?.items ?? [];
-    c("  وبعد «شيل الزايد»: ١ منها وdn كما هي، والسطرُ المقصوص بلا علامة الوضع", S.log.checkout.length === 1 && it.find((i) => i.product_id === "d0")?.qty === 1 && it.find((i) => i.product_id === "dn")?.qty === 1, J(it.map((i) => [i.product_id, i.qty])));
+    c("  وبعد «شيل الزايد» ثمّ «إتمام البيع»: ١ منها وdn كما هي، والسطرُ المقصوص بلا علامة الوضع", before === 0 && S.log.checkout.length === 1 && it.find((i) => i.product_id === "d0")?.qty === 1 && it.find((i) => i.product_id === "dn")?.qty === 1, J(it.map((i) => [i.product_id, i.qty])));
     S.end();
   }
   {
@@ -688,7 +710,7 @@ async function run(M, c) {
     await S.checkout();
     const k = S.chk();
     c("ج٩ فشلُ السؤال: «ما تأكّدنا» ولا بيعة", !!k && k.lines.every((l) => l.why === "unsure") && S.log.checkout.length === 0, J(k?.lines));
-    k.onRetry(); for (let i = 0; i < 6; i++) await flush();
+    await S.fire(() => k.onRetry());
     c("  و«جرّب مرّة ثانية» يسأل ثانيةً ويبيع", n === 2 && S.log.checkout.length === 1, J({ n, sold: S.log.checkout.length }));
     S.end();
   }
@@ -783,7 +805,7 @@ async function run(M, c) {
     await S.checkout();
     const k = S.chk();
     c("ج١٧ سلّةُ تبديل (راجعٌ + مرفوعةٌ مرفوضة كلُّها): «كلُّ السلّة» بسطور البيع وحدها — لا «شيل وكمّل»", !!k && k.allCart === true, J(k && { allCart: k.allCart, lines: k.lines }));
-    if (k) { k.onRemove(); for (let i = 0; i < 6; i++) await flush(); }
+    if (k) await S.fire(() => k.onRemove());
     c("  ولو نُودي «شيل» فلا تكمل البيعةُ إرجاعاً خالصاً بلا تأكيد (لا retailReturn ولا بيعة)", !S.log.returns && S.log.checkout.length === 0 && S.cart().every((l) => l.ret), J({ ret: S.log.returns, sold: S.log.checkout.length, cart: S.cart().map((l) => l.id) }));
     S.end();
   }
@@ -847,7 +869,7 @@ async function run(M, c) {
     await S.checkout();
     c("ج٢٣ «ما تأكّدنا» مفتوحة وضغطةُ إتمامٍ ثانية: لا سؤالَ ثانٍ ولا بيعةٌ خلف النافذة، وهي باقية", !!k && n === 1 && S.log.checkout.length === 0 && S.chkOpen(),
       J({ n, sold: S.log.checkout.length, open: S.chkOpen() }));
-    S.chk()?.onRetry(); for (let i = 0; i < 6; i++) await flush();
+    const kk = S.chk(); if (kk) await S.fire(() => kk.onRetry());
     c("  و«جرّب مرّة ثانية» يكمل بعد أن تُغلق: سؤالٌ ثانٍ وبيعةٌ واحدة، ولا نافذةَ فوق «تمّ»", n === 2 && S.log.checkout.length === 1 && !S.chkOpen(), J({ n, sold: S.log.checkout.length }));
     S.end();
   }
@@ -899,6 +921,132 @@ async function run(M, c) {
     c("  والقائمةُ جاءت بكلفته والرصيدُ نفسُه: يُعلَّم", S.line("p:dl")?.negLift === true, J(S.line("p:dl")));
     await S.checkout();
     c("  فيُسأل عنه الخادمُ قبل البيعة", S.N.calls.check.some((x) => x.lines.some((l) => l.product_id === "dl")), J(S.N.calls.check));
+    S.end();
+  }
+  /* ج٢٨ نافذةٌ لم تُرسم (قطعتُها فشلت): الضغطةُ التالية تسأل من جديد — لا زرٌّ ميّتٌ بلا كلمة */
+  {
+    let n = 0;
+    globalThis.__negChkThrow = true;
+    const S = await session(M, { neg: { check: () => { n++; if (n === 1) throw Object.assign(new Error("fetch failed"), { name: "TypeError" }); return { clinic: "c1", active: true, until: null, refused: [] }; } } });
+    await S.tap("d0");
+    await S.checkout();
+    const failed = S.ui.all().some((x) => x.type === "x-LoadFailed");
+    await S.checkout();
+    globalThis.__negChkThrow = false;
+    c("ج٢٨ نافذةُ الوضع ما انرسمت (قطعتُها فشلت): الضغطةُ التالية تسأل الخادمَ من جديد فتبيع — لا زرٌّ ميّت", failed && n === 2 && S.log.checkout.length === 1,
+      J({ failed, n, sold: S.log.checkout.length }));
+    S.end();
+  }
+  /* ج٢٩ نوافذُ التأكيد لا تعيش بعد بيعتها: «تبيع الرصيد كلّه؟» كانت تبقى خلف «تمّ» وترجع فوق سلّة الزبون التالي، و«نعم، بيع» تبيعها */
+  {
+    let n = 0;
+    const S = await session(M, { neg: { check: (_c, lines) => { n++; return n === 1 ? { clinic: "c1", active: true, until: null, refused: [] }
+      : { clinic: "c1", active: false, until: null, refused: lines.map((l) => ({ product_id: l.product_id, why: "off", name: "x", stock: 0 })) }; } },
+      draft: { cart: [{ id: "p:d0", kind: "product", product_id: "d0", name: "سيروم", barcode: null, unit_price: 1500, unit_cost: 1000, qty: 12, stock: 0, negLift: true },
+        { id: "p:d5", kind: "product", product_id: "d5", name: "بالرفّ", barcode: null, unit_price: 1500, unit_cost: 1000, qty: 1, stock: 5 }] } });
+    await S.checkout();
+    const big1 = !!S.bigAsk();
+    await S.checkout();
+    const k = S.chk();
+    if (k) await S.fire(() => k.onRemove());
+    await S.checkout();
+    const sold = S.log.checkout.length;
+    const nb = S.ui.all().find((x) => x.type === "button" && S.ui.text(x).includes("New sale"));
+    if (nb) S.ui.click(nb);
+    await flush();
+    c("ج٢٩ «تبيع الرصيد كلّه؟» مفتوحةٌ وبيعةٌ تمّت بطريقٍ ثانٍ: بعد «بيع جديد» لا ترجع فوق السلّة الجديدة", big1 && !!k && sold === 1 && !!nb && !S.bigAsk(),
+      J({ big1, k: !!k, sold, nb: !!nb, bigAfter: !!S.bigAsk() }));
+    S.end();
+  }
+  /* ج٣٠ مرجعٌ قائمٌ وسلّةٌ تغيّرت تحته فوافق الخادمُ ثانيةً: الموافقةُ الجديدة تنجو مع المسودّة */
+  {
+    const S = await session(M, { checkoutFails: 2 });
+    await S.tap("d0"); await S.tap("d0");
+    await S.checkout();
+    await S.tap("d0");
+    await S.checkout();
+    const ref1 = S.log.checkout[0]?.meta?.client_ref;
+    const asked1 = S.N.calls.check.length;
+    S.end();
+    const S2 = await session(M, { keep: true, checkoutFails: 0, neg: { check: (_c, lines) => ({ clinic: "c1", active: false, until: null, refused: lines.map((l) => ({ product_id: l.product_id, why: "off", name: "x", stock: 0 })) }) } });
+    await S2.checkout();
+    c("ج٣٠ موافقةٌ ثانية لمرجعٍ قائم (السلّةُ زادت تحته) تُحفظ بالمسودّة: الإعادةُ بعد تبديل تبويب لا تُسأل ولا تُقفل — تبيع بالمرجع نفسِه",
+      asked1 === 2 && S2.N.calls.check.length === 0 && S2.log.checkout.length === 1 && S2.log.checkout[0]?.meta?.client_ref === ref1 && S2.log.checkout[0]?.items?.[0]?.qty === 3,
+      J({ asked1, checks: S2.N.calls.check.length, sold: S2.log.checkout.length, ref: [ref1, S2.log.checkout[0]?.meta?.client_ref] }));
+    S2.end();
+  }
+  /* ج٣١ الحالةُ تصل بالضغطة نفسِها (أوّلُ مسحةٍ بعد الفتح): الشريحةُ تقول «انتهى» حين تُركَّب — لا «زيد رصيده من المخزن» */
+  {
+    globalThis.__negBarHold = true;   // قطعتُها ما وصلت بعد: الرسالةُ تُسلَّم لها لا تُقال بنصٍّ حارّ
+    const S = await session(M, { neg: { noState: true, onRefresh: (e) => { e.state = { clinic: "c1", active: false, used: true, until: null, since: null,
+      endedAt: new Date(realNow() - DAY).toISOString(), serverNow: new Date(realNow()).toISOString(), at: performance.now() }; } } });
+    const barBefore = !!S.bar();
+    await S.tap("dn");
+    await flush();
+    const say = S.bar()?.say;
+    c("ج٣١ الحالةُ وصلت مع الضغطة والشريحةُ ما رُكّبت بعد: «انتهى» تقولها الشريحةُ حين تُركَّب — لا نصُّ التوائم «زيد رصيده»", !barBefore && say?.kind === "ended" && say?.stock === -3
+      && !S.log.errors.some(([m]) => String(m).includes("زيد رصيده")) && S.log.errors.length === 0, J({ barBefore, say, e: S.log.errors }));
+    S.end();
+    globalThis.__negBarHold = false;
+  }
+  /* ج٣٢ «مفعّل» قديمٌ وسطرٌ قائم بلا مكان: «ما تأكّدنا» لا «المتوفّر 0 فقط وكلُّه بالسلّة» */
+  {
+    const S = await session(M);
+    await S.tap("d0");
+    S.N.state = { ...S.N.state, at: performance.now() - 125_000 };
+    S.N.onRefresh = () => {};
+    await S.tap("d0");
+    const say = S.bar()?.say;
+    c("ج٣٢ سطرٌ مرفوعٌ قائم والجوابُ شاخ وسؤالُه ما رجع: «ما تأكّدنا» لا «المتوفّر 0 فقط»، والسطرُ كما هو", say?.kind === "unsure" && S.line("p:d0")?.qty === 1
+      && !S.log.errors.some(([m]) => String(m).includes("المتوفّر")), J({ say, e: S.log.errors, l: S.line("p:d0") }));
+    S.end();
+  }
+  /* ج٣٣ «شيل الزايد» مع مجموعٍ مثبَّت: لا يُسجَّل المجموعُ القديم لبضاعةٍ انشال منها (الجذرُ المتزامن كالمتصفّح) */
+  {
+    const line = (o) => ({ kind: "product", barcode: null, ...o });
+    const S = await session(M, {
+      draft: { cart: [line({ id: "p:d0", product_id: "d0", name: "سيروم", unit_price: 1500, unit_cost: 1000, qty: 3, stock: 0, negLift: true }),
+        line({ id: "p:d5", product_id: "d5", name: "بالرفّ", unit_price: 1500, unit_cost: 1000, qty: 2, stock: 5 })], finalOverride: 7000 },
+      neg: { check: (_c, lines) => ({ clinic: "c1", active: true, until: null,
+        refused: lines.filter((l) => l.product_id === "d0").map(() => ({ product_id: "d0", why: "counted", name: "سيروم", stock: 1 })) }) },
+    });
+    globalThis.__sb.rows.set("d0", { ...P0, stock: 1 });
+    await S.checkout();
+    const k = S.chk();
+    if (k) await S.fire(() => k.onRemove());
+    const soldAtRemove = S.log.checkout.length;
+    await S.checkout();
+    const sale = S.log.checkout[0];
+    const worth = (sale?.items ?? []).reduce((s2, i) => s2 + i.qty * i.unit_price, 0);
+    c("ج٣٣ مجموعٌ مثبَّت (٧٬٠٠٠ عن ٧٬٥٠٠) و«شيل الزايد»: لا بيعةَ بالضغطة، ثمّ «إتمام البيع» بالمجموع المتحرّك نفسِه (٤٬٠٠٠ عن ٤٬٥٠٠) — لا ٧٬٠٠٠",
+      soldAtRemove === 0 && worth === 4500 && sale?.meta?.final_total === 4000 && sale?.meta?.amount_paid === 4000,
+      J({ soldAtRemove, worth, final: sale?.meta?.final_total, paid: sale?.meta?.amount_paid }));
+    S.end();
+  }
+  /* ج٣٤ «+» على سطر بيعٍ قائم و«راجع» مفعّل: بيعٌ لا إرجاع (كان يضيف سطرَ إرجاعٍ لما يأخذه الزبون — قائمٌ قبل الوضع) */
+  {
+    // الوضعُ مطفأ: السقفُ يحكم فيمرّ «+» من sellOrExplain (مفعّلاً يرفع d5 فتُكتب الكميةُ مباشرةً ولا يُختبر شيء).
+    const S = await session(M, { neg: { active: false, used: false }, products: ALL.map((p) => (p.id === "d5" ? { ...p, stock: 1 } : p)) });
+    await S.tap("d5");
+    await S.retMode();
+    const retOn = S.ui.find("data-retmode")?.props["aria-pressed"] === true;
+    await S.plus("p:d5");
+    c("ج٣٤ «+» على سطر بيعٍ بسقفه و«راجع» مفعّل: لا سطرَ إرجاع — يُسأل الخادمُ ويُضاف للبيع", retOn && !S.cart().some((l) => l.ret) && S.line("p:d5")?.qty === 2,
+      J(S.cart().map((l) => [l.id, l.qty, !!l.ret])));
+    S.end();
+  }
+  /* ج٣٥ مادّةٌ رفعها الوضعُ بصفٍّ خامٍّ من المسح (بلا حوض قسمها) ثمّ شاخ الجواب: «+» يقرأ صفَّ القائمة لا الخامّ */
+  {
+    const PL = PRD({ id: "dy", name: "بحوض القسم", stock: 5 });
+    const RAW = { ...PL, stock: 0, barcode: "YCODE" };
+    const S = await session(M, { products: [...ALL, PL], byCode: { YCODE: RAW } });
+    await S.scan("YCODE");
+    const lifted = S.line("p:dy")?.negLift === true;
+    S.N.state = { ...S.N.state, at: performance.now() - 125_000 };
+    S.N.onRefresh = () => {};
+    await S.plus("p:dy");
+    c("ج٣٥ صفٌّ خامٌّ من المسح رفعه الوضع ثمّ شاخ الجواب: «+» بصفّ القائمة (٥ بحوضها) فيُضاف — لا «المتوفّر 0» ولا «ما عاد موجود»", lifted && S.line("p:dy")?.qty === 2
+      && !S.log.errors.some(([m]) => /المتوفّر|ما عاد موجود/.test(String(m))), J({ lifted, l: S.line("p:dy"), e: S.log.errors }));
     S.end();
   }
   /* ج١٥ سطرٌ تجاوز رصيده بلا الوضع (قائمةٌ قديمة) لا يُسأل عنه — قرارُ المالك ب٢ */
@@ -1026,11 +1174,13 @@ async function uiChecks(c) {
     u.unmount();
     return [...globalThis.__toasts];
   };
-  const tx1 = await outcome(() => ({ active: true, used: true, until: U5, serverNow: SNOW, endedAt: null }), "extend");
-  const tx2 = await outcome(() => ({ active: true, used: true, until: new Date(NOW + 12 * DAY).toISOString(), serverNow: SNOW, endedAt: null }), "extend");
-  const tx3 = await outcome(() => ({ active: false, used: true, until: U5, serverNow: SNOW, endedAt: SNOW }), "off");
-  const tx4 = await outcome(() => ({ active: false, used: true, until: U5, serverNow: SNOW, endedAt: new Date(NOW - DAY).toISOString() }), "off");
-  c("د٢ج الرسالةُ من جواب الخادم: تمديدٌ ما تغيّر «ما تغيّر شي»، وتمديدٌ حصل «تمدّد» بيوم الخادم، وإطفاءٌ بهذه الضغطة «انطفى»، وما انطفى أصلاً «كان مطفّى»",
+  /* tx1: البطاقةُ فُتحت قبل تمديدِ مديرٍ ثانٍ أبعد (تقريرُها لحد U5 والخادمُ لحد U30): ضغطتُها لم تكتب شيئاً — «ما تغيّر شي» لا «تمدّد». */
+  const U30 = new Date(NOW + 30 * DAY).toISOString();
+  const tx1 = await outcome(() => ({ active: true, used: true, until: U30, serverNow: SNOW, endedAt: null, changed: false, action: null }), "extend");
+  const tx2 = await outcome(() => ({ active: true, used: true, until: new Date(NOW + 12 * DAY).toISOString(), serverNow: SNOW, endedAt: null, changed: true, action: "extend" }), "extend");
+  const tx3 = await outcome(() => ({ active: false, used: true, until: U5, serverNow: SNOW, endedAt: SNOW, changed: true, action: "off" }), "off");
+  const tx4 = await outcome(() => ({ active: false, used: true, until: U5, serverNow: SNOW, endedAt: new Date(NOW - DAY).toISOString(), changed: false, action: null }), "off");
+  c("د٢ج الرسالةُ مما فعله الخادم: ضغطةٌ لم تكتب (مديرٌ ثانٍ مدّد أبعد — والبطاقةُ على تقريرها القديم) «ما تغيّر شي»، وتمديدٌ كُتب «تمدّد» بيوم الخادم، وإطفاءٌ كُتب «انطفى»، وما انطفى أصلاً «كان مطفّى»",
     tx1.length === 1 && tx1[0].startsWith("nstk.set.unchanged|") && tx2.length === 1 && tx2[0].startsWith("nstk.set.extended|")
       && tx3.length === 1 && tx3[0] === "nstk.set.turnedOff" && tx4.length === 1 && tx4[0].startsWith("nstk.set.alreadyOff|"), J({ tx1, tx2, tx3, tx4 }));
   globalThis.__setRes = () => ({});
@@ -1099,19 +1249,25 @@ async function uiChecks(c) {
   ui.unmount();
   /* خاناتُ الطبيب (PosTabGrid الحقيقيّة): البطاقةُ تقرأ حكمَ الشاشة نفسَه (liftOf) — لا «نفدت» عمّا يرفعه الوضع. */
   const G = await loadUI('export { PosTabGrid } from "./src/components/retail/PosCustomTabs.tsx";', {
+    "react-i18next": `export const useTranslation = () => ({ t: ${T}, i18n: { language: "ar" } }); export default {};`,
     "@/components/ui": `import { createElement } from "react"; export const Button = ({ children, leftIcon, ...p }) => createElement("button", p, children);
       export const Dialog = () => null; export const useToast = () => ({ toast() {}, success() {}, error() {}, warn() {} });`,
     "@/lib/posTabsApi": "export const posTabsApi = {};",
     "@/lib/storeLib": "export const cardImagePath = (p) => p; export const productImageUrl = (p) => p;",
   });
-  const tab = { name: "خانتي", tile_size: "md", show_images: false, items: [{ k: "p", id: "g0", shape: "square" }, { k: "p", id: "gn", shape: "square" }, { k: "p", id: "gz", shape: "square" }] };
-  const prods = [PRD({ id: "g0", name: "صفر" }), PRD({ id: "gn", name: "سالبة", stock: -4 }), PRD({ id: "gz", name: "بلا كلفة", purchase_price: 0 })];
+  const tab = { name: "خانتي", tile_size: "md", show_images: false, items: [{ k: "p", id: "g0", shape: "square" }, { k: "p", id: "gn", shape: "square" }, { k: "p", id: "gz", shape: "square" },
+    { k: "p", id: "gq", shape: "square" }, { k: "p", id: "gw", shape: "square" }] };
+  const prods = [PRD({ id: "g0", name: "صفر" }), PRD({ id: "gn", name: "سالبة", stock: -4 }), PRD({ id: "gz", name: "بلا كلفة", purchase_price: 0 }),
+    PRD({ id: "gq", name: "شريط", has_sub_unit: true, units_per_box: 20, sub_unit_name: "حبة", sub_unit_price: 100, stock: 0.25 }),
+    PRD({ id: "gw", name: "علف", sold_by_weight: true, stock: 1.5 })];
   let tapped = null;
   ui = G.mount(G.React.createElement(G.PosTabGrid, { tab, products: prods, services: [], listPrice: (p) => p.sell_price, liftOf: (p) => p.id !== "gz", onProduct: (p) => { tapped = p.id; } }));
   const tile = (id) => ui.find("data-ptile", `p:${id}`);
   c("د٦ خاناتُ الطبيب: المرفوعةُ بلا «نفدت» ورصيدُها بإشارته، وغيرُ المرفوعة «نفدت» كما كانت",
     !tile("g0")?.props["data-out"] && tile("g0")?.props["data-lifted"] === true && !tile("gn")?.props["data-out"] && tile("gz")?.props["data-out"] === true
     && ui.text(ui.all().find((n) => n.type === "bdi" && n.props["data-neg-stock"] !== undefined && ui.text(n).includes("-4")) ?? { type: "#text", text: "", children: [] }) === "-4", ui.text());
+  c("  والباقي بكسره ووحدته (ربعُ شريط «0.25» لا «باقي 0»، وكيلو ونصف «1.5» لا «2»)", ui.text(tile("gq")).includes(`ptab.left|${J({ n: "0.25" })}`) && ui.text(tile("gw")).includes(`ptab.left|${J({ n: "1.5" })}`),
+    J([ui.text(tile("gq")), ui.text(tile("gw"))]));
   ui.click(tile("g0"));
   c("  والضغطُ طريقُ البيع نفسُه", tapped === "g0");
   ui.unmount();
@@ -1162,8 +1318,12 @@ console.log("▸ ب) المرآةُ التجريبية والحالةُ المش
 await demoChecks(check);
 const SB0 = READ(SB_PATH);
 const BASE = await buildSB(SB0);
-console.log("▸ ج) شاشةُ البيع بالسلوك");
+console.log("▸ ج) شاشةُ البيع بالسلوك — جذرٌ legacy (كلُّ تحديثٍ يرسم فوراً)");
+globalThis.__conc = false;
 await run(BASE, check);
+console.log("▸ ج) والجذرُ المتزامن كالمتصفّح (createRoot: الضغطةُ مجمَّعة وآثارُها بآخرها)");
+globalThis.__conc = true;
+await run(BASE, (n, ok, d) => check(`⟨متزامن⟩ ${n}`, ok, d));
 console.log("▸ د) النافذةُ والبطاقة");
 await uiChecks(check);
 console.log("▸ هـ) بالنصّ");
@@ -1181,22 +1341,21 @@ const MUTANTS = [
   ["الرفضُ لا يوقف البيعة", "    if (negBad) { playWarning(); setNegChk({ ...negBad, ack, locked: !!saleRefRef.current }); return; }\n", ""],
   ["«ما تأكّدنا» يمرّ", "    if (res === \"unsure\") {\n      return {", "    if (res === \"unsure\") return null;\n    if (res === (\"x\" as never)) {\n      return {"],
   ["المرفوضُ لا يُسأل عن رصيده الطازج", "          if (fresh.pooled || unitCap({ ...l, stock: fresh.stock }) >= l.qty) return null;", "          if (fresh.pooled) return null;"],
-  ["«شيل الزايد» لا يكمل البيعة", "                  negResumeRef.current = k.ack;\n", ""],
+  ["«شيل الزايد» يكمل البيعةَ بنفسه", "                  setNegChk(null);\n                }} />", "                  setNegChk(null);\n                  negResumeRef.current = k.ack;\n                }} />"],
   ["«شيل الزايد» يشيل السطرَ كلَّه", "                    if (x.qty <= 0) return [];", "                    if (x.qty >= 0) return [];"],
-  ["الإعادةُ تُسأل ثانيةً", "    if (negLines.length > 0 && saleRefRef.current) negOkRef.current = { ref: saleRefRef.current, fp: negFp };\n", ""],
+  ["الإعادةُ تُسأل ثانيةً", "    if (negLines.length > 0 && saleRefRef.current) { negOkRef.current = { ref: saleRefRef.current, fp: negFp }; setNegOkGen((g) => g + 1); }\n", ""],
   ["الإعفاءُ لا ينظر للسلّة", "negOkRef.current?.ref === saleRefRef.current && negOkRef.current.fp === negFp);", "negOkRef.current?.ref === saleRefRef.current);"],
   ["الكبيرةُ بالسقف الخامّ", "      ? (negMod ? negMod.bigLifted(l.qty, { sub: l.saleUnit === \"sub\", unitsPerBox: l.unitsPerBox, byWeight: l.byWeight })", "      ? (l.qty >= 10 ? true"],
   ["الكرتُ «نفدت» والوضعُ يرفعه", "const out = zero && !lifted;", "const out = zero;"],
   ["اللوحةُ بالسقف الخامّ", "            initial={l.qty} max={capFor(l)}", "            initial={l.qty} max={unitCap(l)}"],
   ["الوزنُ بالسقف الخامّ", "const stockKg = ret || p.pooled || liftFor(p, null) ? Infinity : (p.stock ?? 0);", "const stockKg = ret || p.pooled ? Infinity : (p.stock ?? 0);"],
-  ["المعدودةُ «رصيده صفر»", "      if (first && on && ns.counted.has(fresh.id)) { sayNeg({ kind: \"counted\", name: fresh.name, stock: fresh.stock ?? 0 }, fb); return { added: null, refused: true }; }\n", ""],
-  ["«انتهى» لا يُقال", "      if (first && !on && ns.state?.used && (fresh.stock ?? 0) < 0) { sayNeg({ kind: \"ended\", name: fresh.name, stock: fresh.stock ?? 0 }, fb); return { added: null, refused: true }; }\n", ""],
+  ["المعدودةُ «رصيده صفر»", "      if (first && on && ns.counted.has(fresh.id)) { sayNeg({ kind: \"counted\", name: fresh.name, stock: fresh.stock ?? 0 }, noMore); return { added: null, refused: true }; }\n", ""],
+  ["«انتهى» لا يُقال", "      if (first && !on && ns.state?.used && (fresh.stock ?? 0) < 0) { sayNeg({ kind: \"ended\", name: fresh.name, stock: fresh.stock ?? 0 }, noMore); return { added: null, refused: true }; }\n", ""],
   ["لا سؤالَ للحالة مع الخادم", "const negAsk = !ret && negMod && negKeyRef.current && !negNow().active && !negNow().state?.absent ? negMod.refreshNeg(negKeyRef.current) : null;", "const negAsk = null as Promise<unknown> | null;"],
   ["الإشعارُ لا يطوي", "negFold={doneNegIds}", "negFold={[]}"],
   ["المسحُ يعمل والنافذةُ مفتوحة", "|| !!negChk ", ""],
   ["تحديثُ القائمة لا يعلّم", "        const m = markLift(l.stock === stock ? l : { ...l, stock });", "        const m = l.stock === stock ? l : { ...l, stock };"],
   ["«كلُّ السلّة» بسطور الراجع أيضاً", "const allCart = cart.filter((l) => !l.ret).every(", "const allCart = cart.every("],
-  ["«شيل» يكمل إلى إرجاعٍ خالص", "    if (cart.some((l) => !l.ret)) void checkout(a);", "    if (cart.length > 0) void checkout(a);"],
   ["الصفُّ الذي رفعه الخادمُ يُنسى", "    return lift && lift.listAt === listRow ? lift.row : listRow ?? lift?.row;", "    return listRow;"],
   ["الشريحةُ بعمر الجواب", "  const negServerOn = !!negView.state?.active && !negView.state.absent;", "  const negServerOn = negView.active;"],
   ["الموافقةُ لا تُحفظ مع المسودّة", "      negOk: saleRefSaved && negOkRef.current?.ref === saleRefSaved ? negOkRef.current : null, saleDay,", "      negOk: null, saleDay,"],
@@ -1210,15 +1369,21 @@ const MUTANTS = [
   ["الرصيدُ بلا كسر", "{byWeight ? fmtKg(p.stock) : formatQty(p.stock)}", "{byWeight ? fmtKg(p.stock) : formatNum(p.stock)}"],
   ["صفُّ القائمة يُبطل رفعَ الخادم", "    return lift && lift.listAt === listRow ? lift.row : listRow ?? lift?.row;", "    return listRow ?? lift?.row;"],
   ["العلامةُ مع الرصيد وحده", "        const m = markLift(l.stock === stock ? l : { ...l, stock });", "        const m = l.stock === stock ? l : markLift({ ...l, stock });"],
-  ["الإتمامُ يجري والنافذةُ مفتوحة", "    if (negChk) return;\n", ""],
+  ["الإتمامُ يجري والنافذةُ مفتوحة", "      if (negChkShownRef.current) return;\n", ""],
+  ["«+» يتبع «راجع»", "    void sellOrExplain(row, target - l.qty, null, { sale: true });", "    void sellOrExplain(row, target - l.qty);"],
+  ["«+» بصفّ الرفع الخامّ", "    const row = products.find((p) => p.id === l.product_id) ?? prodRow(l.product_id);", "    const row = prodRow(l.product_id);"],
+  ["نافذةٌ لم تُرسم تُميت الزرّ", "      if (negChkShownRef.current) return;\n      setNegChk(null);\n", "      return;\n"],
+  ["نوافذُ التأكيد تعيش بعد بيعتها", ["    setBigSale(null); setExpiredAsk(null); setPriceAsk(null);\n", "setNegChk(null); setBigSale(null); setExpiredAsk(null); setPriceAsk(null);   // نوافذُ التأكيد لا تبقى بعد «تمّ»"], ["\n", "setNegChk(null);"]],
+  ["الموافقةُ الثانية لا تبلغ المسودّة", "negOkRef.current = { ref: saleRefRef.current, fp: negFp }; setNegOkGen((g) => g + 1); }", "negOkRef.current = { ref: saleRefRef.current, fp: negFp }; }"],
+  ["الشريحةُ لا تُعطى رسالتَها قبل تركيبها", "    setNegSay({ ...s, n } as NegSay);\n    if (negBarReadyRef.current) return;\n", "    if (negBarReadyRef.current) { setNegSay({ ...s, n } as NegSay); return; }\n    toast.error(fallback);\n    return;\n"],
+  ["سطرٌ قائمٌ بلا مكان يقول «المتوفّر 0»", "        const stale = on && !ns.active && !!negMod && negMod.liftable(sellable, ns.counted);", "        const stale = false;"],
   ["«جرّب ثانيةً» لا يكمل", "onRetry={() => { const a = negChk.ack; setNegChk(null); negResumeRef.current = a; }}", "onRetry={() => { setNegChk(null); }}"],
-  ["«شيل» يُغلق ويُسلّح قبل القصّ", "                  setCart((c) => c.flatMap((l) => {\n                    const x = k.keep[l.id];\n                    if (!x) return [l];\n                    if (x.qty <= 0) return [];\n                    const { negLift: _lift, ...rest } = l;\n                    return [{ ...rest, qty: x.qty, stock: x.stock }];\n                  }));\n                  setNegChk(null);\n                  negResumeRef.current = k.ack;\n", "                  setNegChk(null);\n                  negResumeRef.current = k.ack;\n                  setCart((c) => c.flatMap((l) => {\n                    const x = k.keep[l.id];\n                    if (!x) return [l];\n                    if (x.qty <= 0) return [];\n                    const { negLift: _lift, ...rest } = l;\n                    return [{ ...rest, qty: x.qty, stock: x.stock }];\n                  }));\n"],
   ["الفحصُ بكمّيةٍ غيرِ ما ترسله البيعة", "    return per ? Math.round((l.qty / per) * 1000) / 1000 : l.qty;", "    return l.qty;"],
 ];
 for (const [name, from, to] of MUTANTS) {
   const fell = [];
   try {
-    const src = swap(SB0, from, to);
+    const src = Array.isArray(from) ? from.reduce((acc, f, i) => swap(acc, f, to[i]), SB0) : swap(SB0, from, to);
     const M = await buildSB(src);
     onCrash = (e) => fell.push(`انهار: ${e?.message ?? e}`);
     await run(M, (n, ok) => { if (!ok) fell.push(n); });
@@ -1241,8 +1406,8 @@ const FILE_MUTANTS = [
   ["«منها تحت الصفر» يعدّ المعدودة", "src/lib/demoNegStock.ts", "    uncounted_neg: ps.filter((p) => !counted.has(p.id) && (Number(p.stock) || 0) < 0).length,", "    uncounted_neg: ps.filter((p) => (Number(p.stock) || 0) < 0).length,"],
   ["المرآةُ لا تقارن الحوض", "src/lib/demoNegStock.ts", "      if (roundScaled(pools.get(p.section_id) ?? 0, 3) !== roundScaled(l.seen_pool, 3)) moved.push(p.id);", ""],
   ["الغائبةُ «ميزةٌ معطّلة» تُرمى «تعذّر»", "src/lib/negStockApi.ts", "catch (e) { if (isAbsent(e)) return absentState(); throw e; }", "catch (e) { throw e; }"],
-  ["سؤالٌ متجاوَزٌ يختم المعدودة", "src/lib/negStockApi.ts", "        countedAt = perf();\n", "        countedAt = perf(); e.countedAt = countedAt;\n"],
-  ["سؤالٌ متجاوَزٌ يُرجع قبل النشر", "src/lib/negStockApi.ts", "    (entries.get(key) === e && e.gen !== gen && e.latest ? e.latest : fb);", "    fb;"],
+  ["جوابٌ تامٌّ يُرمى لأنّ سؤالاً أحدثَ بدأ", "src/lib/negStockApi.ts", "  const stale = () => entries.get(key) !== e || gen < e.pubGen;", "  const stale = () => entries.get(key) !== e || gen !== e.gen;"],
+  ["جوابٌ أقدمُ يدوس الأحدث", "src/lib/negStockApi.ts", "  const stale = () => entries.get(key) !== e || gen < e.pubGen;", "  const stale = () => entries.get(key) !== e;"],
   ["جوابُ عيادةٍ أخرى يُتبنّى", "src/lib/negStockApi.ts", "    if (s.clinic && e.clinic && s.clinic !== e.clinic) {", "    if (s.clinic && e.clinic && s.clinic !== e.clinic && false) {"],
 ];
 for (const [name, file, from, to] of FILE_MUTANTS) {
