@@ -231,7 +231,9 @@ function countSheet(
      * بكل الدوال — COUNT لا تعدّها، وIF تراها فارغة. */
     put(at(COL.actualQty), { t: "s", v: "", z: QTY, s: fillMe });
     put(at(COL.diff), { t: "s", f: `IF(${at(COL.actualQty)}="","",${at(COL.actualQty)}-${at(COL.systemQty)})`, v: "", z: QTY, s: tint(derived) });
-    put(at(COL.diffValue), { t: "s", f: `IF(${at(COL.actualQty)}="","",(${at(COL.actualQty)}-${at(COL.systemQty)})*${at(COL.buy)})`, v: "", z: MONEY, s: tint(derived) });
+    /* قيمةُ الفرق من القيمة كما تُعرض (MAX(الكمية،0) كعمود رأس المال) لا من الكمية بإشارتها: «−٤ ثم عُدّ صفر» لا يرفع رأسَ المال
+     * دينارا — بالإشارة كانت تُقال «زيادة» ٤ × السعر و«صافي أثر الجرد» يناقض رأسَ المال فوقه. وفرقُ القطع (N) يبقى بإشارته. */
+    put(at(COL.diffValue), { t: "s", f: `IF(${at(COL.actualQty)}="","",(${at(COL.actualQty)}-MAX(${at(COL.systemQty)},0))*${at(COL.buy)})`, v: "", z: MONEY, s: tint(derived) });
 
     put(at(COL.minStock), l.minStock == null ? txt("", tint(centred)) : num(l.minStock, QTY, tint(centred)));
     /* التاريخ نصّاً بصيغة ISO: يفرز زمنياً كما يفرز نصّياً، ولا يزيحه فارق
@@ -262,7 +264,8 @@ function countSheet(
   };
   const span = (col: string) => `${col}${FIRST_DATA}:${col}${FIRST_DATA + lines.length - 1}`;
   put(`A${totalRow}`, txt(i18n.t("stock.grandTotal", "المجموع"), { ...sumStyle, alignment: { horizontal: "right", vertical: "center", readingOrder: 2 } }));
-  put(`${COL.systemQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.systemQty)})`, v: round4(take.totals.units), z: QTY, s: sumStyle });
+  /* القطعُ بالرفّ كرأس المال بجانبها: ما تحت الصفر لا يطرح منها (stocktake.ts). */
+  put(`${COL.systemQty}${totalRow}`, { t: "n", f: `SUMIF(${span(COL.systemQty)},">0")`, v: round4(take.totals.units), z: QTY, s: sumStyle });
   put(`${COL.costValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.costValue)})`, v: round4(take.totals.cost), z: MONEY, s: sumStyle });
   put(`${COL.retailValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.retailValue)})`, v: round4(take.totals.retail), z: MONEY, s: sumStyle });
   put(`${COL.actualQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.actualQty)})`, v: 0, z: QTY, s: sumStyle });

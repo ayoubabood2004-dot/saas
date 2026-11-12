@@ -92,6 +92,7 @@ function counts() {
     negatives: ps.filter((p) => (Number(p.stock) || 0) < 0).length,
     never_counted: ps.filter((p) => !counted.has(p.id)).length,
     uncounted_nonpos: ps.filter((p) => !counted.has(p.id) && nonpos(p)).length,
+    uncounted_neg: ps.filter((p) => !counted.has(p.id) && (Number(p.stock) || 0) < 0).length,
     zero_cost: ps.filter(zero).length,
     zero_cost_nonpos: ps.filter((p) => zero(p) && nonpos(p)).length,
     pending: loadCounts().filter((c) => (c.source ?? "count") === "count" && c.status === "pending").length,
@@ -208,12 +209,19 @@ export async function demoCountSubmitSeen(lines: CountLineSeen[]): Promise<Count
   if (lines.length > 200) throw err("count_too_many");
   // سطرٌ بلا seen لا يُتخطّى بصمت — مرآةُ count_seen_missing.
   if (lines.some((l) => !l || typeof l !== "object" || typeof l.seen !== "number")) throw err("count_seen_missing");
-  const byId = new Map((loadDB().products ?? []).map((p) => [p.id, p]));
+  const db = loadDB();
+  const byId = new Map((db.products ?? []).map((p) => [p.id, p]));
+  const pools = new Map((db.companySections ?? []).map((s) => [s.id, Number(s.pooled_stock) || 0]));
   const moved: string[] = [];
   for (const l of lines) {
     const p = byId.get(l.product_id);
     if (!p) continue;
-    if (roundScaled(Number(p.stock) || 0, 3) !== roundScaled(l.seen as number, 3)) moved.push(p.id);
+    if (roundScaled(Number(p.stock) || 0, 3) !== roundScaled(l.seen as number, 3)) { moved.push(p.id); continue; }
+    // مرآةُ الحوض (0266): رصيدٌ ≤ ٠ بقسمٍ يُباع من حوضه وصفُّه ثابت — حوضُ القسم كما رآه العادّ شرط، وغيرُه «تحرّك».
+    if (p.section_id && !p.pooled && roundScaled(l.seen as number, 3) <= 0n) {
+      if (typeof l.seen_pool !== "number") throw err("count_seen_missing");
+      if (roundScaled(pools.get(p.section_id) ?? 0, 3) !== roundScaled(l.seen_pool, 3)) moved.push(p.id);
+    }
   }
   if (moved.length) throw err("count_moved", "P0001", JSON.stringify(moved));
   return demoSubmitCount(lines.map(({ seen: _s, ...l }) => l));

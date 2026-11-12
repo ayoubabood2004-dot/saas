@@ -22,7 +22,7 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatDate, formatQty } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { negApi } from "@/lib/negStockApi";
-import { daysLeft, lastDayOf, type NegBarView, type NegRefusedLine, type NegReport, type NegSay } from "@/lib/negStock";
+import { daysLeft, lastDayOf, type NegBarView, type NegRefusedLine, type NegReport, type NegSay, type NegState } from "@/lib/negStock";
 
 /** رصيدٌ بإشارته داخل جملةٍ عربية: معزولٌ باتّجاهه (LRI…PDI) — «-3» بعد كلمةٍ عربية كانت ترسم الإشارةَ على الطرف الآخر («3-»). */
 const signedQty = (n: number): string => `\u2066${formatQty(n)}\u2069`;
@@ -99,14 +99,16 @@ export function NegStockCard() {
   const pickOk = grows(pick) && !overCap(pick);
   const needNote = rep.operator && !note.trim();
 
-  const run = async (f: () => Promise<unknown>, ok: string) => {
+  /* الرسالةُ من جواب الخادم لا من الضغطة: تمديدٌ لا يُطيل (مديرٌ ثانٍ مدّده أبعد من جهازه) وإطفاءُ ما انطفى أصلاً يرجعان الحالةَ بلا سطر —
+   * «تمدّد لحد…» بيومٍ حسبه الجهاز كانت تقول ما لم يحصل. */
+  const run = async (f: () => Promise<NegState>, said: (s: NegState) => { text: string; changed: boolean }) => {
     if (busy) return;
     setBusy(true);
     setErr(null);
     try {
-      await f();
-      playSuccess();
-      toast.success(ok);
+      const m = said(await f());
+      if (m.changed) { playSuccess(); toast.success(m.text); }
+      else { playTap(); toast.toast({ tone: "info", title: m.text }); }
       setAck(false); setNote(""); setOffAsk(false);
       load();
     } catch (e) {
@@ -116,9 +118,17 @@ export function NegStockCard() {
       toast.error(m);
     } finally { setBusy(false); }
   };
-  const turnOn = () => run(() => negApi.set(rep.clinic ?? "", true, pick, ack, note.trim() || null),
-    t(on ? "nstk.set.extended" : "nstk.set.turnedOn", { day: dayText(lastDayFor(pick), lang) }));
-  const turnOff = () => run(() => negApi.set(rep.clinic ?? "", false, null, false, note.trim() || null), t("nstk.set.turnedOff"));
+  const turnOn = () => run(() => negApi.set(rep.clinic ?? "", true, pick, ack, note.trim() || null), (s) => {
+    const day = dayText(s.until ? lastDayOf(s.until) : null, lang);
+    if (on && s.active && s.until === rep.until) return { text: t("nstk.set.unchanged", { day }), changed: false };
+    return { text: t(on ? "nstk.set.extended" : "nstk.set.turnedOn", { day }), changed: true };
+  });
+  /* انطفى بهذه الضغطة ⇔ ختمُ نهايته لحظةُ الجواب (الخادمُ يكتب السطرَ ويجيب بمعاملةٍ واحدة) — وإلا كان مطفّى أصلاً. */
+  const turnOff = () => run(() => negApi.set(rep.clinic ?? "", false, null, false, note.trim() || null), (s) => {
+    const now = s.serverNow ? Date.parse(s.serverNow) : NaN;
+    const mine = !s.active && !!s.endedAt && !(Date.parse(s.endedAt) < now - 5_000);
+    return mine ? { text: t("nstk.set.turnedOff"), changed: true } : { text: t("nstk.set.alreadyOff", { day: dayText(s.endedAt, lang) }), changed: false };
+  });
 
   const stateLine = on
     ? (lastNight ? t("nstk.set.stateLast") : t("nstk.set.stateOn", { day: dayText(lastDayOf(rep.until as string), lang), n: left }))
@@ -153,14 +163,19 @@ export function NegStockCard() {
       ) : offAsk ? (
         <div className="space-y-2 rounded-xl border border-line bg-surface-1 p-3" data-neg-offask>
           <p className="text-sm font-bold text-ink">{t("nstk.set.offTitle")}</p>
-          <p className="text-xs text-ink-muted">
-            {rep.uncountedNonpos > 0 ? t("nstk.set.offLeft", { n: rep.uncountedNonpos, neg: rep.negatives }) : t("nstk.set.offClean")}
+          {/* «كل المواد انعدّت» حين لا يبقى غيرُ معدودٍ وحده: موادُّ ما انعدّت ورصيدُها موجب تُرفض بالكاشير حين يخلص رصيدُها — تُقال هنا. */}
+          <p className="text-xs text-ink-muted" data-neg-off-left>
+            {rep.neverCounted === 0 ? t("nstk.set.offClean")
+              : rep.uncountedNonpos === 0 ? t("nstk.set.offUncounted", { n: rep.neverCounted })
+                : rep.uncountedNeg > 0 ? t("nstk.set.offLeft", { n: rep.uncountedNonpos, neg: rep.uncountedNeg })
+                  : t("nstk.set.offLeftZero", { n: rep.uncountedNonpos })}
             {rep.pending > 0 && <> {t("nstk.set.offPending", { n: rep.pending })}</>}
           </p>
           <p className="text-xs font-semibold text-ink">{t("nstk.set.offSafe")}</p>
           <div className="flex flex-wrap gap-2">
             <Link to="/inventory/count" data-neg-keep-counting className="btn btn-primary h-9 px-3 text-xs">{t("nstk.set.keepCounting")}</Link>
             <Button size="sm" variant="secondary" loading={busy} data-neg-off-now onClick={() => void turnOff()}>{t("nstk.set.offNow")}</Button>
+            <Button size="sm" variant="ghost" disabled={busy} data-neg-off-back onClick={() => { playTap(); setOffAsk(false); }}>{t("nstk.set.offBack")}</Button>
           </div>
         </div>
       ) : (
@@ -263,6 +278,8 @@ export function NegBar({ view, say, onReady, compact }: {
         action: say.canOpen && say.productId ? { label: t("nstk.openProduct"), onClick: () => navigate(`/inventory?edit=${encodeURIComponent(say.productId as string)}`) } : undefined });
     } else if (say.kind === "counted") {
       toast.error(t("nstk.counted", { name: say.name, stock: signedQty(say.stock) }));
+    } else if (say.kind === "unsure") {
+      toast.error(t("nstk.unsure", { name: say.name }));
     } else {
       toast.error(t("nstk.ended", { name: say.name, stock: signedQty(say.stock) }));
     }
@@ -310,7 +327,8 @@ export function NegCheckoutDialog({ open, lines, allCart, locked, onRemove, onRe
               <li key={l.id} className="rounded-xl bg-surface-2 px-3 py-2 text-sm" data-neg-chk-line={l.id}>
                 <p className="font-bold text-ink">{l.name}</p>
                 <p className="text-xs text-ink-muted">
-                  {t("nstk.chk.line", { qty: formatQty(l.qty), stock: signedQty(l.stock ?? 0) })} · {t(`nstk.chk.why.${l.why}`)}
+                  {/* ما عادت بالمخزن (انحذفت أو اندمجت) بلا رصيد: «رصيده بالنظام 0» عن صفٍّ غائب كان يدعو لإدخاله من جديد. */}
+                  {l.why === "gone" || l.stock == null ? t("nstk.chk.lineGone", { qty: formatQty(l.qty) }) : t("nstk.chk.line", { qty: formatQty(l.qty), stock: signedQty(l.stock) })} · {t(`nstk.chk.why.${l.why}`)}
                   {l.keep != null && <> · <span className="font-semibold text-ink" data-neg-chk-keep={l.keep}>{l.keep > 0 ? t("nstk.chk.keep", { n: formatQty(l.keep) }) : t("nstk.chk.drop")}</span></>}
                 </p>
               </li>

@@ -11412,6 +11412,12 @@ chk "  ينتهي الثالثة فجراً بعد اليوم السابع بب�
 chk "التقرير: ٣ سالبة (لا المجمَّعة ولا الحقل ولا الدولار)، ٧ ما انعدّت (المعلَّقُ ليس عدّاً) منها ٥ ≤ ٠، ٣ بلا كلفة (والمتوسّطُ صفرٌ صفر) منها ٢ ≤ ٠، ومعلَّق، والدفترُ مستعمَل" \
     "select $(rv $NC "select (r->>'active')||'|'||(r->>'used')||'|'||(r->>'negatives')||'|'||(r->>'never_counted')||'|'||(r->>'uncounted_nonpos')||'|'||(r->>'zero_cost')||'|'||(r->>'zero_cost_nonpos')||'|'||(r->>'pending')||'|'||jsonb_array_length(r->'log')::text||'|'||((r->>'cap_until')::timestamptz = (r->>'period_since')::timestamptz + interval '60 days')::text from (select neg_stock_report() r) x")" \
     "true|true|3|7|5|3|2|1|1|true"
+chk "  و«منها تحت الصفر» لغير المعدودة وحدها (٣ — كلُّ السالبة غيرُ معدودة هنا)" \
+    "select $(rv $NC "select neg_stock_report()->>'uncounted_neg'")" "3"
+$P -c "update products set stock = -2 where id = '${NG}a8';" >/dev/null
+chk "  ومعدودةٌ نزلت تحت الصفر (مستهلكُ وصفة): تُعدّ بالسالبة لا بـ«منها» — لوحةُ الإطفاء كانت تقول «٢ ما انعدّت (منها ٥ تحت الصفر)»" \
+    "select $(rv $NC "select (r->>'negatives')||'|'||(r->>'uncounted_neg')||'|'||(r->>'uncounted_nonpos') from (select neg_stock_report() r) x")" "4|3|5"
+$P -c "update products set stock = 0 where id = '${NG}a8';" >/dev/null
 chk "  والمعدودةُ وحدها بقائمة الكاشير (لا المعلَّقة)، وعيادةٌ ثانية فارغة" "select $(rv $NC "select neg_stock_counted()::text")||'|'||$(rv $C2 "select neg_stock_counted()::text")" "[\"${NG}a8\"]|[]"
 # حكمُ البيعة بالكمّيتين كما سترسلهما: الحبّةُ بأربعة دنانير لعلبة ألف = سطرٌ بصفر (مفردٌ)، والعلبةُ نفسُها بأربعة.
 NCHK="[{\"product_id\":\"${NG}a1\",\"qty\":5,\"stock_qty\":5},{\"product_id\":\"${NG}a7\",\"qty\":1,\"stock_qty\":0.001},
@@ -11454,8 +11460,9 @@ $P -c "update neg_stock_log set until = now() - interval '1 minute' where clinic
 chk "الانتهاء: نهايةٌ مضت ⇒ مطفأ، وended_at نهايتُه، والبيعةُ off" \
     "select $(rv $NC "select (s->>'active')||'|'||((s->>'ended_at')::timestamptz < now())::text||'|'||(c->'refused'->0->>'why') from (select neg_stock_state() s, neg_stock_check('$NC', '[{\"product_id\":\"${NG}a1\",\"qty\":5,\"stock_qty\":5}]'::jsonb) c) x")" \
     "false|true|off"
-chk "  وإطفاءُ المنتهي لا سطرَ له" \
-    "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")||'|'||(select count(*) from neg_stock_log where clinic_id = '$NC')::text" "false|4"
+# العدُّ بجملةٍ ثانية بعد الكتابة: بجملتها يقرأ لقطةَ بدايتها فلا يرى ما كتبته الدالّة أبداً (درسُ 0257) — فحصٌ لا يسقط.
+chk "  وإطفاءُ المنتهي مطفأ" "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")" "false"
+chk "    ولا سطرَ له (أربعةٌ كما كانت)" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "4"
 chk "تشغيلُه بعد انتهاءٍ قريب (خلال ٣٠ يوماً) يُكمل الفترةَ لا يصفّرها — والبدايةُ القديمة تبقى، فالسقفُ يُرفض" \
     "select $(rerr $NC "select neg_stock_set('$NC', true, 30, true)")" "neg_stock_too_long"
 $P -c "update neg_stock_log set since = now() - interval '5 days' where clinic_id = '$NC';" >/dev/null
@@ -11473,8 +11480,8 @@ chk "  (off بلا نهاية، والبدايةُ محفوظة، وended_at = �
     "select action||'|'||(until is null)::text||'|'||(since is not null)::text||'|'||negatives||'|'||note
             ||'|'||$(rv $NC "select ((neg_stock_state()->>'ended_at')::timestamptz = (select at from neg_stock_log where clinic_id = '$NC' order by at desc, id desc limit 1))::text")
        from $NLAST" "off|true|true|3|countdone|true"
-chk "  وإطفاءُ المطفأ لا سطرَ له" \
-    "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")||'|'||(select count(*) from neg_stock_log where clinic_id = '$NC')::text" "false|7"
+chk "  وإطفاءُ المطفأ مطفأ" "select $(rv $NC "select neg_stock_set('$NC', false)->>'active'")" "false"
+chk "    ولا سطرَ له (سبعةٌ كما كانت)" "select count(*)::text from neg_stock_log where clinic_id = '$NC'" "7"
 chk "التشغيلُ والتمديدُ والانتهاءُ والإطفاءُ ما مسّت مادّةً ولا جرداً" \
     "select ($PSNAP)||'|'||(select count(*) from stock_counts where clinic_id = '$NC')::text" "$P0|$SC0"
 chk "  ولا مالاً (سحوبات، فواتير، كشوفُ شراء)" "$MONEY" "$M0"
@@ -11489,10 +11496,10 @@ chk "الدفترُ لا يُكتب ولا يُعدَّل ولا يُحذف من
 chk "الجرد: رصيدٌ ما تحرّك من وقت الكتابة يُسجَّل (stock_count_submit كما هي)" \
     "select $(rv $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}a1\",\"counted\":2,\"reason\":\"found\",\"seen\":-3}]'::jsonb)::text")" \
     '{"matched":0,"pending":1}'
-chk "  ورصيدٌ تحرّك (بيعٌ بعد الكتابة) يُرفض count_moved بأسمائه ومعرّفاته، ولا يُكتب شيء" \
-    "select $(rerr $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}a6\",\"counted\":4,\"reason\":\"found\",\"seen\":0},{\"product_id\":\"${NG}a3\",\"counted\":5,\"seen\":5}]'::jsonb)")
-            ||'|'||(select count(*) from stock_counts where clinic_id = '$NC' and product_id in ('${NG}a6', '${NG}a3'))::text" \
-    "count_moved|0"
+chk "  ورصيدٌ تحرّك (بيعٌ بعد الكتابة) يُرفض count_moved بأسمائه ومعرّفاته" \
+    "select $(rerr $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}a6\",\"counted\":4,\"reason\":\"found\",\"seen\":0},{\"product_id\":\"${NG}a3\",\"counted\":5,\"seen\":5}]'::jsonb)")" \
+    "count_moved"
+chk "    ولا يُكتب شيء (ولا للسطر الذي لم يتحرّك)" "select count(*)::text from stock_counts where clinic_id = '$NC' and product_id in ('${NG}a6', '${NG}a3')" "0"
 $P -c "create or replace function _neg_detail(who uuid, q text) returns text language plpgsql as \$fn\$
        declare d text; begin
          perform set_config('request.jwt.claim.sub', who::text, true);
@@ -11507,6 +11514,21 @@ chk "  وسطرٌ بلا seen لا يُتخطّى: count_seen_missing، و٢٠١
 chk "    (التفاصيلُ معرّفاتُ ما تحرّك وحده)" \
     "select _neg_detail('$NC', \$q\$select stock_count_submit_seen('[{\"product_id\":\"${NG}a6\",\"counted\":4,\"reason\":\"found\",\"seen\":0},{\"product_id\":\"${NG}a3\",\"counted\":5,\"seen\":5}]'::jsonb)\$q\$)" \
     "[\"${NG}a6\"]"
+# حوضُ القسم (seen_pool): مادّةٌ رصيدُها صفر بقسمٍ له حوض تُباع منه وصفُّها لا يتحرّك (deduct_stock_pooled) — فالحارسُ يقارن
+# الحوضَ أيضاً لسطرٍ رصيدُه ≤ ٠ بقسم. ومادّةٌ رصيدُها موجب لا تحتاجه (أوّلُ بيعٍ ينقص صفَّها).
+$P -c "insert into company_sections (id, clinic_id, name, pooled_stock) values ('${NG}c1', '$NC', 'pool-sec', 10);
+       insert into products (id, clinic_id, name, stock, purchase_price, avg_cost, pooled, price_currency, section_id) values
+         ('${NG}b4', '$NC', 'pool-row-zero', 0, 1000, null, false, 'IQD', '${NG}c1'),
+         ('${NG}b5', '$NC', 'pool-row-pos',  3, 1000, null, false, 'IQD', '${NG}c1');" >/dev/null
+chk "حوضُ القسم: سطرُ مادّةٍ رصيدُها صفر بقسمٍ له حوض بلا seen_pool يُرفض count_seen_missing" \
+    "select $(rerr $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}b4\",\"counted\":4,\"reason\":\"found\",\"seen\":0}]'::jsonb)")" "count_seen_missing"
+$P -c "update company_sections set pooled_stock = 9 where id = '${NG}c1';" >/dev/null   # بيعةٌ أخذت قطعةً من الحوض بعد الكتابة
+chk "  وبيعٌ من الحوض بعد الكتابة (الصفُّ ثابتٌ صفراً) يُرفض count_moved" \
+    "select $(rerr $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}b4\",\"counted\":4,\"reason\":\"found\",\"seen\":0,\"seen_pool\":10}]'::jsonb)")" "count_moved"
+chk "    ولا يُكتب شيء" "select count(*)::text from stock_counts where clinic_id = '$NC' and product_id = '${NG}b4'" "0"
+chk "  والحوضُ كما رآه العادّ يمرّ، ورصيدٌ موجبٌ بالقسم لا يحتاجه" \
+    "select $(rv $NC "select stock_count_submit_seen('[{\"product_id\":\"${NG}b4\",\"counted\":4,\"reason\":\"found\",\"seen\":0,\"seen_pool\":9},{\"product_id\":\"${NG}b5\",\"counted\":3,\"seen\":3}]'::jsonb)::text")" \
+    '{"matched":1,"pending":1}'
 chk "الأبواب: definer بمسارٍ مثبَّت، وممنوعةٌ على anon، والداخليّةُ ممنوعةٌ على الداخلين" \
     "select (select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text||':'||has_function_privilege('anon', oid, 'execute')::text, ',' order by proname)
                from pg_proc where pronamespace = 'public'::regnamespace
@@ -11542,7 +11564,7 @@ Q266="select (select count(*) from pg_policies where tablename = 'neg_stock_log'
 Z266=$($P -tAc "$Q266" | tr -d '[:space:]')
 out=$($P -f "$MIG/0266_neg_stock_mode.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0266 ما انعادت"; fail=1; }
 chk "وتُعاد بلا أثرٍ ثانٍ: سياساتٌ وفهارسُ وقيودٌ ودفترٌ ودوالُّ كما هي" "$Q266" "$Z266"
-$P -c "delete from stock_counts where clinic_id = '$NC'; delete from products where clinic_id = '$NC' or id = '${NG}b3'; delete from poultry_farms where id = '${NG}f0'; delete from neg_stock_log where clinic_id = '$NC';" >/dev/null
+$P -c "delete from stock_counts where clinic_id = '$NC'; delete from products where clinic_id = '$NC' or id = '${NG}b3'; delete from company_sections where id = '${NG}c1'; delete from poultry_farms where id = '${NG}f0'; delete from neg_stock_log where clinic_id = '$NC';" >/dev/null
 
 echo "▸ rollback_0220: الباب القديم يرجع بترتيب اليوم"
 $P -f "$HERE/rollback_0220.sql" >/dev/null
