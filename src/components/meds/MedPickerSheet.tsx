@@ -145,9 +145,11 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const ix = useMedIndex({
     rows: drugs.rows, stock: showStock ? stock : undefined, recent: recent ?? undefined,
     species: p.species ?? null, only: p.only, formulary: p.formulary, stockMode: showStock ? "show" : "hide",
-    groups: drugs.groups, items: drugs.items,
+    groups: drugs.allGroups, items: drugs.items,
   });
   const groupName = new Map(ix.groups.map((g) => [g.id, g.name] as const));
+  const famLabel = (k: FamilyKey): string => ix.famName.get(k) ?? t(`mymeds.fam.${k}`);
+  const emit = (m: PickedMed) => p.onPick?.(ix.famName.has(m.family) ? { ...m, familyLabel: ix.famName.get(m.family) } : m);
   const insertGroup = insertInto ? ix.groups.find((g) => g.id === insertInto) ?? null : null;
   const mineIds = ix.mine.map((x) => x.drugId as string);
   const mineReady = drugs.status === "ready";
@@ -190,7 +192,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
     if (it.banned && confirmBanned !== it.key) { playWarning(); setConfirmBanned(it.key); return; }
     setConfirmBanned(null);
     playTap();
-    p.onPick?.(m);
+    emit(m);
     markAdded(m.key, true);
   };
   /** Enter بالبحث: يضيف أوّلَ نتيجة — ولا يشيل مختاراً أبداً (`searchEnter`). وبـ«أدرج من القائمة»
@@ -260,7 +262,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
       const row = getDrugsState().view.rows.find((r) => r.archived_at == null && drugKey(r.name) === key);
       toast.success(t("mymeds.catAdded", { name, cat: groupName.get(group) ?? "", defaultValue: "{{name}} انضاف لـ«{{cat}}»" }));
       // بـ«أدرج من القائمة» الكتابةُ تُدرج ولا تختار — المنتقي يرتّب تصنيفاً لا يملأ وصفة.
-      if (p.mode !== "manage" && !insertInto) { p.onPick?.({ ...freePicked(name, family), source: "custom", drugId: row?.id }); markAdded(key, true); }
+      if (p.mode !== "manage" && !insertInto) { emit({ ...freePicked(name, family), source: "custom", drugId: row?.id }); markAdded(key, true); }
     } catch (e) { fail(e); }
   };
   const useTwinInto = async (group: string, it: MedItem) => {
@@ -348,7 +350,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const stockFailed = notices.includes("stockFail");
 
   const mineBoard = (
-    <MyMedsBoard items={ix.mine} mode="pick" readOnly={!canWrite} draggingId={dragging?.drugId ?? null} hint={hint}
+    <MyMedsBoard items={ix.mine} famLabel={famLabel} mode="pick" readOnly={!canWrite} draggingId={dragging?.drugId ?? null} hint={hint}
       onTap={(it) => pick(it, "mine")} onUnstar={(it) => void star(it)}
       isSelected={p.isSelected ? (it) => (insertInto ? it.groupIds.includes(insertInto) : selected(pickedFrom(it, "mine")))
         : insertInto ? (it) => it.groupIds.includes(insertInto) : undefined}
@@ -430,9 +432,15 @@ export default function MedPickerSheet(p: MedPickerProps) {
             {!searching && (
               <nav className="w-[120px] shrink-0 space-y-1 overflow-y-auto pb-2 md:w-40" data-medrail-nav aria-label={t("mymeds.railAria", "العائلات")}>
                 <RailItem id="mine" label={`★ ${t("mymeds.mine", "أدويتي")}`} n={ix.mine.length} active={section === "mine"} glow={dragOutside} onClick={() => jump("mine")} drop />
-                {!insertInto && ix.groups.map((g) => (
-                  <RailItem key={g.id} id={`g:${g.id}`} label={g.name} n={g.count} active={section === `g:${g.id}`} onClick={() => jump(`g:${g.id}`)} />
-                ))}
+                {/* 0268: ترتيبٌ واحد — تصنيفاتُ العيادة والعائلاتُ بموضع صفوفها، والعائلةُ بالاسم الذي سمّتها به العيادة. */}
+                {ix.order.map((o) => {
+                  if (o.kind === "family") {
+                    const f = ix.families.find((x) => x.key === o.key);
+                    return f ? <RailItem key={f.key} id={f.key} label={famLabel(f.key)} n={f.count} active={section === f.key} onClick={() => jump(f.key)} famCount /> : null;
+                  }
+                  const g = insertInto ? undefined : ix.groups.find((x) => x.id === o.id);
+                  return g ? <RailItem key={g.id} id={`g:${g.id}`} label={g.name} n={g.count} active={section === `g:${g.id}`} onClick={() => jump(`g:${g.id}`)} /> : null;
+                })}
                 {!insertInto && canWrite && (
                   <button type="button" data-medcat-new onClick={() => { playTap(); setCatNewOpen((v) => !v); }}
                     className={cn("flex min-h-12 w-full items-center gap-1 rounded-2xl border-2 border-dashed px-2.5 text-start text-xs font-black transition",
@@ -440,9 +448,6 @@ export default function MedPickerSheet(p: MedPickerProps) {
                     <FolderPlus size={14} className="shrink-0" /> <span className="min-w-0 flex-1 leading-tight">{t("mymeds.catNew", "+ تصنيف جديد")}</span>
                   </button>
                 )}
-                {ix.families.map((f) => (
-                  <RailItem key={f.key} id={f.key} label={t(`mymeds.fam.${f.key}`)} n={f.count} active={section === f.key} onClick={() => jump(f.key)} famCount />
-                ))}
                 {showStock && ix.stockLens.length > 0 && (
                   <RailItem id="stock" label={t("mymeds.inStock", "بالمخزون")} n={ix.stockLens.length} active={section === "stock"} onClick={() => jump("stock")} famCount />
                 )}
@@ -480,7 +485,27 @@ export default function MedPickerSheet(p: MedPickerProps) {
                       {mineBoard}
                     </section>
                   )}
-                  {!insertInto && ix.groups.map((g, gi) => {
+                  {ix.order.map((o) => {
+                    if (o.kind === "family") {
+                      const k = o.key;
+                      const fl = ix.byFamily.get(k);
+                      if (!fl?.length) return null;
+                      return (
+                        <section key={k} data-medsection={k}>
+                          <SectionHead label={famLabel(k)} n={fl.length} />
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{fl.map(tile)}</div>
+                          {k === "other" && showStock && ix.stockLens.length > 0 && (
+                            <button type="button" onClick={() => jump("stock")} className="mt-2 text-2xs font-black text-brand-600 underline">
+                              {t("mymeds.stockMore", { n: formatNum(ix.stockLens.length), defaultValue: "+ {{n}} بالمخزون ← بالمخزون" })}
+                            </button>
+                          )}
+                        </section>
+                      );
+                    }
+                    if (insertInto) return null;
+                    const gi = ix.groups.findIndex((x) => x.id === o.id);
+                    if (gi < 0) return null;
+                    const g = ix.groups[gi];
                     const list = ix.byGroup.get(g.id) ?? [];
                     const menu = catMenu === g.id;
                     return (
@@ -553,17 +578,6 @@ export default function MedPickerSheet(p: MedPickerProps) {
                       </section>
                     );
                   })}
-                  {FAMILIES.filter((k) => ix.byFamily.get(k)?.length).map((k) => (
-                    <section key={k} data-medsection={k}>
-                      <SectionHead label={t(`mymeds.fam.${k}`)} n={ix.byFamily.get(k)!.length} />
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{ix.byFamily.get(k)!.map(tile)}</div>
-                      {k === "other" && showStock && ix.stockLens.length > 0 && (
-                        <button type="button" onClick={() => jump("stock")} className="mt-2 text-2xs font-black text-brand-600 underline">
-                          {t("mymeds.stockMore", { n: formatNum(ix.stockLens.length), defaultValue: "+ {{n}} بالمخزون ← بالمخزون" })}
-                        </button>
-                      )}
-                    </section>
-                  ))}
                   {showStock && ix.stockLens.length > 0 && (
                     <section data-medsection="stock">
                       <SectionHead label={t("mymeds.inStock", "بالمخزون")} n={ix.stockLens.length} />
@@ -614,7 +628,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
                 onSaveInto={(group, name, family) => saveInto(group, name, family)}
                 onUseInto={(group, it) => { void useTwinInto(group, it); }}
                 onUse={(it) => { setFreeOpen(false); pick(it); }}
-                onOneOff={(m) => { setFreeOpen(false); playTap(); p.onPick?.(m); markAdded(m.key, true); }}
+                onOneOff={(m) => { setFreeOpen(false); playTap(); emit(m); markAdded(m.key, true); }}
                 onSave={async (name, family) => {
                   try {
                     await drugs.addCustom({ name, family, mine: true });
@@ -622,7 +636,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
                     setFreeOpen(false);
                     const key = drugKey(name);
                     const row = getDrugsState().view.rows.find((r) => r.archived_at == null && drugKey(r.name) === key);
-                    p.onPick?.({ ...freePicked(name, family), source: "mine", drugId: row?.id });
+                    emit({ ...freePicked(name, family), source: "mine", drugId: row?.id });
                     markAdded(key, true);
                   } catch (e) { fail(e); }
                 }}
@@ -779,7 +793,9 @@ function FreeCard({ mode, index, defaultFamily, canSave, target, groups, onSaveI
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
-  const [family, setFamily] = useState<FamilyKey>(defaultFamily);
+  // 0268: العائلاتُ المخفيّة لا تُختار — دواءٌ يُحفظ بها يختفي لحظةَ حفظه.
+  const famChoices = FAMILIES.filter((k) => !index.famHidden.has(k));
+  const [family, setFamily] = useState<FamilyKey>(index.famHidden.has(defaultFamily) ? famChoices[0] ?? defaultFamily : defaultFamily);
   const [busy, setBusy] = useState(false);
   const clean = name.trim();
   const twin = clean ? index.byKey.get(searchable(clean)) : undefined;
@@ -792,10 +808,10 @@ function FreeCard({ mode, index, defaultFamily, canSave, target, groups, onSaveI
         <button type="button" onClick={onCancel} aria-label={t("common.cancel", "إلغاء")} className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><X size={18} /></button>
       </div>
       <div className="flex gap-1 overflow-x-auto pb-1" role="radiogroup" aria-label={t("mymeds.family", "العائلة")}>
-        {FAMILIES.map((k) => (
+        {famChoices.map((k) => (
           <button key={k} type="button" role="radio" aria-checked={family === k} onClick={() => setFamily(k)} data-medfree-fam={k}
             className={cn("h-9 shrink-0 rounded-full border px-3 text-2xs font-black transition", family === k ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink-muted")}>
-            {t(`mymeds.fam.${k}`)}
+            {index.famName.get(k) ?? t(`mymeds.fam.${k}`)}
           </button>
         ))}
       </div>

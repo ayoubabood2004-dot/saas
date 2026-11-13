@@ -90,6 +90,9 @@ export const DRUG_HINTS = {
   drug_groups_full: "\u0648\u0635\u0644\u062a \u0666\u0660 \u062a\u0635\u0646\u064a\u0641\u0627\u064b \u2014 \u0623\u0631\u0634\u0641 \u062a\u0635\u0646\u064a\u0641 \u0645\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0647 \u0623\u0648\u0651\u0644\u0627\u064b.",
   drug_members_full: "\u0648\u0635\u0644\u062a \u0662\u0660\u0660\u0660 \u0639\u0636\u0648\u064a\u0629 \u2014 \u0634\u064a\u0644 \u0623\u062f\u0648\u064a\u0629 \u0645\u0646 \u062a\u0635\u0646\u064a\u0641\u0627\u062a \u0645\u0627 \u062a\u0633\u062a\u0639\u0645\u0644\u0647\u0627.",
   drug_group_frozen: "\u0647\u0648\u064a\u0629 \u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u0648\u0639\u064a\u0627\u062f\u062a\u0647 \u0645\u0627 \u062a\u062a\u063a\u064a\u0651\u0631",
+  // 0268: العائلةُ الأساسيّة صفٌّ بالتصنيفات — أعضاؤها بعائلة الدواء، لا يدوياً.
+  drug_group_builtin: "\u0647\u0630\u0627 \u062a\u0635\u0646\u064a\u0641 \u0623\u0633\u0627\u0633\u064a: \u0623\u062f\u0648\u064a\u062a\u064f\u0647 \u062d\u0633\u0628 \u0639\u0627\u0626\u0644\u062a\u0647\u0627 \u2014 \u063a\u064a\u0651\u0631 \u0639\u0627\u0626\u0644\u0629 \u0627\u0644\u062f\u0648\u0627\u0621 \u0628\u062f\u0644 \u0645\u0627 \u062a\u0636\u064a\u0641\u0647",
+  drug_group_family_frozen: "\u0627\u0644\u062a\u0635\u0646\u064a\u0641 \u0627\u0644\u0623\u0633\u0627\u0633\u064a \u0645\u0627 \u064a\u062a\u062d\u0648\u0651\u0644 \u2014 \u0633\u0645\u0651\u0647 \u0623\u0648 \u0623\u062e\u0641\u064a\u0647 \u0628\u0633",
 } as const;
 export type DrugErrorCode = keyof typeof DRUG_HINTS;
 
@@ -340,6 +343,7 @@ export function applyAll(data: DrugsData, ops: readonly ClinicDrugOp[], now: str
         if (g.archived_at == null) break;   // حيٌّ أصلاً: لا شيء
         const twin = groupTwin(g.name, g.id);
         if (twin) fail("drug_group_exists", twin.name);
+        // 0268: العائلةُ المُرجَعة تُحسب بالسقف كأيّ تصنيف — clinic_drugs_apply تعدّ كلَّ حيٍّ قبل الإرجاع.
         if (liveGroups().length >= MAX_GROUPS) fail("drug_groups_full");
         g.pos = groupSlot(g.id, false, null);
         g.archived_at = null; g.updated_at = now;
@@ -351,6 +355,7 @@ export function applyAll(data: DrugsData, ops: readonly ClinicDrugOp[], now: str
         if (!groups.some((g) => g.id === group && g.archived_at == null)) return fail("drug_group_gone");
         const after = resolve(o.after) ?? null;
         const cur = items.find((i) => i.group_id === group && i.drug_id === id);
+        if (groups.some((g) => g.id === group && g.family)) return fail("drug_group_builtin");   // 0268: محفّزُ العضوية يرفضها
         if (o.op === "member_add") {
           if (!out.some((r) => r.id === id && r.archived_at == null)) return fail("drug_row_gone");
           const has = hasAfter(o);
@@ -378,6 +383,19 @@ export function applyAll(data: DrugsData, ops: readonly ClinicDrugOp[], now: str
 
 /** ترتيبُ الخادم بـclinic_drugs_list: التصنيفاتُ الحيّةُ بموضعها ثم المؤرشفةُ الأحدثُ أوّلاً، والعضوياتُ
  *  بالتصنيف ثم الموضع ثم الدواء. */
+/** 0268: اسمُ العائلة كما سمّتها العيادة (صفُّها الحيّ أو المخفيّ باسمٍ غيرِ مفتاحها)، وإلا undefined — والواجهةُ تترجم المفتاح. */
+export function familyNames(groups: readonly Pick<ClinicDrugGroup, "family" | "name">[]): Map<FamilyKey, string> {
+  const m = new Map<FamilyKey, string>();
+  for (const g of groups) if (g.family && isFamily(g.family) && g.name !== g.family) m.set(g.family, g.name);
+  return m;
+}
+/** العائلاتُ التي أخفتها العيادة (صفُّها مؤرشَف) — لا تُعرض ولا تُختار لدواءٍ جديد. */
+export function hiddenFamilies(groups: readonly Pick<ClinicDrugGroup, "family" | "archived_at">[]): Set<FamilyKey> {
+  const s = new Set<FamilyKey>();
+  for (const g of groups) if (g.family && isFamily(g.family) && g.archived_at != null) s.add(g.family);
+  return s;
+}
+
 export const groupsOrder = (groups: readonly ClinicDrugGroup[]): ClinicDrugGroup[] => groups.slice().sort((a, b) =>
   (a.archived_at != null ? 1 : 0) - (b.archived_at != null ? 1 : 0)
   || (a.archived_at == null ? ((a.pos ?? 0) - (b.pos ?? 0)) : 0)
@@ -524,6 +542,14 @@ export interface MedIndex {
   recent: MedItem[];
   /** تصنيفاتُ العيادة الحيّة بترتيبها، وعددُ ما يظهر فيها (0239). */
   groups: { id: string; name: string; count: number }[];
+  /** 0268: الترتيبُ الواحد — تصنيفاتُ العيادة والعائلاتُ الظاهرة بموضع صفوفها، والعائلةُ بلا صفٍّ (عيادةٌ لم تُبذر) بعدها بترتيبها الثابت. */
+  order: ({ kind: "group"; id: string } | { kind: "family"; key: FamilyKey })[];
+  /** اسمٌ سمّت به العيادةُ عائلةً (غائبٌ = الترجمة). */
+  famName: Map<FamilyKey, string>;
+  /** عائلاتٌ أخفتها العيادة — أدويتُها خارج المنتقي (قرارُ المالك: «ينخفي ويّا أدويته»). */
+  famHidden: Set<FamilyKey>;
+  /** صفُّ العائلة (يُسمّى ويُخفى ويُرتَّب بأوامر التصنيف). */
+  famRow: Map<FamilyKey, ClinicDrugGroup>;
   /** أدويةُ كلّ تصنيفٍ بموضعها — الحيّةُ وحدها (دواءٌ مؤرشف تبقى عضويتُه نائمةً لا تُرى). */
   byGroup: Map<string, MedItem[]>;
   search(q: string): MedItem[];
@@ -619,7 +645,13 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     for (const it of items.values()) if (it.products.length) it.stock = it.products.reduce((s, p) => s + (Number(p.stock) || 0), 0);
   }
 
+  /* 0268: العائلاتُ صفوفٌ بتصنيفات العيادة — المؤرشفةُ مخفيّةٌ ويّا أدويتها (والمخزونُ يبقى: بضاعةٌ لا كتالوج). */
+  const famRow = new Map<FamilyKey, ClinicDrugGroup>();
+  for (const g of input.groups ?? []) if (g.family && isFamily(g.family)) famRow.set(g.family, g);
+  const famHidden = hiddenFamilies(input.groups ?? []);
+  const famName = familyNames(input.groups ?? []);
   let all = [...items.values()];
+  if (famHidden.size) all = all.filter((it) => it.base === "stock" || !famHidden.has(it.family));
   if (input.only === "dosable") all = all.filter((it) => !!it.monographId);
   const byKey = new Map(all.map((it) => [it.key, it] as const));
 
@@ -633,7 +665,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
   }
   for (const list of byFamily.values()) list.sort(inFamilyOrder);
   stockLens.sort(inFamilyOrder);
-  const families = FAMILIES.filter((f) => (byFamily.get(f)?.length ?? 0) > 0).map((f) => ({ key: f, count: byFamily.get(f)!.length }));
+  const families0 = FAMILIES.filter((f) => (byFamily.get(f)?.length ?? 0) > 0).map((f) => ({ key: f, count: byFamily.get(f)!.length }));
   const mine = all.filter((it) => it.inMine).sort(byPos);
 
   const recent: MedItem[] = [];
@@ -644,6 +676,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     if (!k || seen.has(k)) continue;
     seen.add(k);
     const hit = byKey.get(k);
+    if (!hit && items.has(k) && famHidden.has(items.get(k)!.family)) continue;   // دواءُ عائلةٍ مخفيّة لا يرجع «أخيراً»
     if (hit) { recent.push(hit); }
     else {
       // اسمٌ كتبته العيادةُ («ميلوكسيكام») يحمل دليلَه — بلاه كانت ضغطتُه بالطبلة «بلا جرعة
@@ -670,7 +703,11 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     list.push(it);
     it.groupIds.push(m.group_id);
   }
-  const groups = liveGroups.map((g) => ({ id: g.id, name: g.name, count: byGroup.get(g.id)!.length }));
+  const groups = liveGroups.filter((g) => !g.family).map((g) => ({ id: g.id, name: g.name, count: byGroup.get(g.id)!.length }));
+  const order: MedIndex["order"] = liveGroups.map((g) => (g.family && isFamily(g.family) ? { kind: "family" as const, key: g.family } : { kind: "group" as const, id: g.id }));
+  for (const f of FAMILIES) if (!famRow.has(f)) order.push({ kind: "family", key: f });
+  const famCount = new Map(families0.map((f) => [f.key, f.count] as const));
+  const families = order.flatMap((o) => (o.kind === "family" && famCount.has(o.key) ? [{ key: o.key, count: famCount.get(o.key)! }] : []));
 
   const search = (q: string): MedItem[] => {
     const k = searchable(q.trim());
@@ -678,7 +715,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     return list.sort(inFamilyOrder);
   };
 
-  return { all, families, byFamily, mine, stockLens, byKey, recent, groups, byGroup, search };
+  return { all, families, byFamily, mine, stockLens, byKey, recent, groups, byGroup, search, order, famName, famHidden, famRow };
 }
 
 /* ============================================================================
@@ -692,6 +729,8 @@ export interface PickedMed {
   name: string;
   label: string;
   family: FamilyKey;
+  /** 0268: اسمُ العائلة كما سمّتها العيادة لحظةَ الاختيار (للعرض وحده؛ الغائبُ = الترجمة). */
+  familyLabel?: string;
   /** الصنفُ الإنكليزيّ — ملاحظاتُ نموذج الدواء «Injection · Antibiotics» كما كانت. */
   familyType: string;
   source: MedSource;
