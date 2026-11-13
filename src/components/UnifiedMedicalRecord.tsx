@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Syringe, Pill, NotebookPen, ClipboardList } from "lucide-react";
 import type { Pet, TreatmentEntry, Vaccination, PetNote } from "@/types";
@@ -153,7 +153,7 @@ const fmtDay = (ts: number) => (ts <= 0 ? "—" : new Date(ts).toLocaleDateStrin
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit", hour12: true });
 const fmtFull = (e: UnifiedEvent) => (e.timestamp <= 0 ? "—" : e.hasTime ? `${fmtDay(e.timestamp)}، ${fmtTime(e.timestamp)}` : fmtDay(e.timestamp));
 
-export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false, printOnly = false, tableOnly = false }: {
+export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false, printOnly = false, tableOnly = false, treatmentBadge }: {
   pet: Pet; treatments: TreatmentEntry[]; vaccinations: Vaccination[]; notes: PetNote[]; isOwner?: boolean;
   /** Render only the "طباعة الطبلة"/Excel action buttons + the print portal (no on-screen
    *  table) — lets the interactive workspace keep the A4 chart & export without the summary grid. */
@@ -161,6 +161,8 @@ export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isO
   /** Render only the dense on-screen chart table (no header/buttons) — the "جدول" view of
    *  the interactive workspace, which supplies its own header + print buttons. */
   tableOnly?: boolean;
+  /** 0269: شارةٌ بخانة الجرعة على الشاشة وحدها (سعرُها وحالُ بيعها) — لا تدخل الطباعةَ ولا Excel: السجلُّ الطبيّ لا يحمل مالاً. */
+  treatmentBadge?: (treatmentId: string) => ReactNode;
 }) {
   const { t } = useTranslation();
 
@@ -231,6 +233,7 @@ export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isO
           <div className="min-w-0 max-w-2xl [overflow-wrap:anywhere]">
             <p className="font-semibold text-ink">{e.title}</p>
             {e.details && <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">{e.details}</p>}
+            {e.type === "treatment" && treatmentBadge && <div className="mt-1">{treatmentBadge(e.id.slice(2))}</div>}
           </div>
         );
       },

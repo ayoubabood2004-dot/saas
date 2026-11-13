@@ -58,3 +58,24 @@ export function doseCharge(drug: Pick<ClinicDrug, "dose_price" | "dose_qty" | "d
 
 /** هل للدواء حسابٌ أصلاً (واحدٌ من الاثنين يكفي)؟ */
 export const drugBills = (d: Pick<ClinicDrug, "dose_price" | "product_id">): boolean => d.dose_price != null || !!d.product_id;
+
+/* ── الطبلة (بعد 0269): ما يُرسم بجانب كلّ جرعة ─────────────────────────────────────────────────────────
+ * قبل الإعطاء: ما **ستُحسب** به الآن (مرآةُ المحفّز على حساب الدواء الحاليّ)؛ وبعده: معلَّقُها كما كُتب لحظةَ الإعطاء — «بانتظار البيع»
+ * أو «انحسبت». ومعطاةٌ بلا معلَّق (بِيعت بالكاشير، أو صفٌّ قبل 0269، أو دواءٌ بلا حساب) لا شيء — لا سعرَ يوحي بدَينٍ لا يوجد. */
+export type SheetBill = { price: number; state: "will" | "pending" | "billed" };
+export interface SheetCharge { entry_id: string; status: "pending" | "billed"; price: number }
+export function sheetBill(
+  tx: { id: string; medication: string; administered_at?: string | null },
+  charges: ReadonlyMap<string, SheetCharge> | null,
+  drugByKey: ReadonlyMap<string, Pick<ClinicDrug, "dose_price" | "dose_qty" | "dose_unit" | "product_id">>,
+  productById: ReadonlyMap<string, DoseProduct>,
+  key: (name: string) => string,
+): SheetBill | null {
+  const c = charges?.get(tx.id);
+  if (c) return { price: c.price, state: c.status };
+  if (tx.administered_at) return null;
+  const d = drugByKey.get(key(tx.medication));
+  if (!d) return null;
+  const ch = doseCharge(d, d.product_id ? productById.get(d.product_id) : null);
+  return ch ? { price: ch.price, state: "will" } : null;
+}

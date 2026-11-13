@@ -4,6 +4,7 @@
  * dose_billing_denied/product_gone/product_usd/unit_bad/qty_bad/price_bad — الرمزُ بـmessage كالخادم.
  * ========================================================================= */
 import type { CheckoutItem, DemoDB, DoseCharge, Invoice, SaleMeta, TreatmentEntry } from "@/types";
+import type { SheetCharge } from "./doseBilling";
 import { loadDB, saveDB } from "./demoStore";
 import { demoRepo } from "./repoDemo";
 import { demoBaseRole, demoPinLive } from "./demoRole";
@@ -116,4 +117,10 @@ export function demoDrugBillingSet(id: string, price: number | null, productId: 
     if (q != null && (q <= 0 || q > 100000)) fail("dose_qty_bad");
   }
   demoDrugBillingWrite(id, { dose_price: price, product_id: productId, dose_qty: q, dose_unit: u });
+}
+
+/** مرآةُ قراءة الطبلة: معلَّقاتُ الحيوان ومفوتَراتُه (الملغاةُ خارجها). */
+export function demoPetCharges(petId: string): SheetCharge[] {
+  return (loadDB().doseCharges ?? []).filter((c) => c.pet_id === petId && c.status !== "void")
+    .map((c) => ({ entry_id: c.entry_id, status: c.status as "pending" | "billed", price: c.price }));
 }

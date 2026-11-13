@@ -8689,5 +8689,13 @@
     "qtyFixed": "Each dose is its own line — the quantity stays 1.",
     "loaded": "Doses from the treatment sheet added to the cart: {{count}}",
     "late": "The earlier attempt of this sale was saved without some treatment-sheet doses — they were removed (they'll come back in the next sale). Press «Complete» again."
+  },
+  "dsht": {
+    "price": "Dose price {{price}}",
+    "pending": "Awaiting sale · {{price}}",
+    "billed": "Billed ✓ · {{price}}",
+    "due": "Due from the treatment sheet: {{total}}",
+    "dueN": "Doses awaiting sale: {{n}} — they drop into the owner's cart when their sale opens",
+    "sell": "Sell"
   }
 }

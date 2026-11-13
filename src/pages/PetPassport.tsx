@@ -21,6 +21,8 @@ import { SurgerySection } from "@/components/Surgeries";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { recordedLater } from "@/lib/backdate";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
+import { useDoseSheet } from "@/lib/doseSheet";
+import type { SheetBill } from "@/lib/doseBilling";
 import { taskStatus } from "@/lib/treatmentSchedule";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
@@ -36,7 +38,7 @@ import { Button, useToast, ProgressRing } from "@/components/ui";
 import { HealthCurve, type CurvePoint } from "@/components/ui/HealthCurve";
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
-import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
+import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale, money } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { describeUploadError, describeDbError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
@@ -470,14 +472,7 @@ export function PetPassport() {
               leftIcon={<ShoppingCart size={16} />}
               onClick={() => {
                 playTap();
-                const q = new URLSearchParams();
-                if (pet.owner_name) q.set("customer", pet.owner_name);
-                if (pet.owner_phone) q.set("phone", pet.owner_phone);
-                if (pet.name) q.set("pet", pet.name);
-                // Carry the patient identity so a sold medication/vaccine syncs into the record.
-                q.set("petId", pet.id);
-                if (pet.species) q.set("species", pet.species);
-                navigate(`/retail?${q.toString()}`);
+                navigate(sellUrl(pet));
               }}
             >
               {t("retail.sellItems", "Sell items")}
@@ -1898,10 +1893,47 @@ function treatmentStatus(tx: TreatmentEntry, today: string, currentHM: string): 
   return taskStatus(tx, today, currentHM) === "overdue" ? "overdue" : "due";
 }
 
+/** جسرُ «بيع» لصاحب الحيوان: الزبونُ وهاتفُه والحيوانُ بمعرّفه — ما يُباع من الأدوية يُكتب بسجلّه، وجرعاتُ الطبلة المعلَّقة تنزل بالسلّة. */
+function sellUrl(pet: Pet): string {
+  const q = new URLSearchParams();
+  if (pet.owner_name) q.set("customer", pet.owner_name);
+  if (pet.owner_phone) q.set("phone", pet.owner_phone);
+  if (pet.name) q.set("pet", pet.name);
+  q.set("petId", pet.id);
+  if (pet.species) q.set("species", pet.species);
+  return `/retail?${q.toString()}`;
+}
+
+/** 0269: سطرُ «مستحق من الطبلة» — معلَّقاتُ الحيوان كلُّها بانتظار البيع، وزرٌّ يفتح بيعةَ صاحبه فتنزل بالسلّة. */
+function DoseDueBar({ pet, pending }: { pet: Pet; pending: { count: number; total: number } | null }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  if (!pending || pending.count === 0) return null;
+  return (
+    <div className="card flex flex-wrap items-center gap-3 border-warn-300 bg-warn-50/60 p-3 dark:bg-warn-500/10" data-dosedue>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-black text-ink">{t("dsht.due", { total: money(pending.total) })}</p>
+        <p className="text-2xs text-ink-muted">{t("dsht.dueN", { n: pending.count })}</p>
+      </div>
+      <Button size="sm" leftIcon={<ShoppingCart size={16} />} onClick={() => { playTap(); navigate(sellUrl(pet)); }}>{t("dsht.sell")}</Button>
+    </div>
+  );
+}
+
+/** 0269: سعرُ الجرعة بالطبلة — قبل الإعطاء ما ستُحسب به، وبعده «بانتظار البيع» أو «انحسبت». */
+function DoseBillChip({ bill }: { bill: SheetBill | null | undefined }) {
+  const { t } = useTranslation();
+  if (!bill) return null;
+  const price = money(bill.price);
+  if (bill.state === "billed") return <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200" data-dosebill-state="billed">{t("dsht.billed", { price })}</span>;
+  if (bill.state === "pending") return <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200" data-dosebill-state="pending">{t("dsht.pending", { price })}</span>;
+  return <span className="chip bg-brand-50 text-[11px] text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" data-dosebill-state="will">{t("dsht.price", { price })}</span>;
+}
+
 /** One medication dose, rendered EXACTLY as in the treatment flowsheet — reused verbatim
  *  inside the interactive الطبلة feed. Actions are hidden when the sheet is locked. */
-function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRemove }: {
-  tx: TreatmentEntry; isOwner: boolean; status: TxStatus; locked: boolean;
+function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRemove, bill }: {
+  tx: TreatmentEntry; isOwner: boolean; status: TxStatus; locked: boolean; bill?: SheetBill | null;
   onGiven: (id: string, given: boolean) => void; onRepeat: (tx: TreatmentEntry) => void; onRemove: (id: string) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -1924,6 +1956,7 @@ function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRe
           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
             <span className="chip bg-sky-50 text-[11px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Clock size={11} /> {formatHM(tx.time, i18n.language)}</span>
             {tx.amount && <span className="chip bg-surface-2 text-[11px] text-ink-muted">{tx.amount}</span>}
+            <DoseBillChip bill={bill} />
             {given && (
               <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200"><Check size={11} /> {t("treatment.given", "تم الإعطاء")}</span>
             )}
@@ -2141,6 +2174,8 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
 
   // Flowsheet task state: given / overdue / due-later / missed / scheduled.
   const currentHM = nowHM();
+  // 0269: الأسعارُ وما ينتظر البيع للكادر وحده (لا لصاحب الحيوان ببوّابته).
+  const sheet = useDoseSheet(pet.id, treatments, !isOwner);
   const statusOf = (tx: TreatmentEntry) => treatmentStatus(tx, today, currentHM);
   /* حالُ الجرعة يُسمَع: صفٌّ انحذف من جهازٍ ثانٍ يرمي (صفرُ صفوف) — يُقال والقائمةُ تُعاد. */
   const markGiven = async (id: string, given: boolean) => {
@@ -2229,6 +2264,8 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
       {/* سجل الحركات — exact entry/exit/transfer history for THIS animal */}
       <MovementsCard petId={pet.id} admissions={admissions} />
 
+      <DoseDueBar pet={pet} pending={sheet.pending} />
+
       {days.length === 0 ? (
         <div className="card p-6 text-center text-ink-subtle">{t("treatment.none")}</div>
       ) : (
@@ -2264,6 +2301,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
                       onGiven={markGiven}
                       onRepeat={repeatTreatment}
                       onRemove={remove}
+                      bill={sheet.billOf(tx)}
                     />
                   ))}
                 </div>
@@ -2553,6 +2591,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   const toast = useToast();
   const today = localISO();
   const currentHM = nowHM();
+  const doseSheet = useDoseSheet(pet.id, treatments, !isOwner);   // 0269
 
   const [txOpen, setTxOpen] = useState(false);
   const [vaxOpen, setVaxOpen] = useState(false);
@@ -2655,10 +2694,13 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   // (given doses + given vaccines) plus clinical notes. Anything still pending or scheduled
   // for the future stays in the interactive بطاقات feed, where the doctor acts on it.
   const givenTreatments = useMemo(() => treatments.filter((tx) => !!tx.administered_at), [treatments]);
+  const txById = useMemo(() => new Map(treatments.map((tx) => [tx.id, tx])), [treatments]);   // 0269: شارةُ الجرعة بعرض «جدول»
   const givenVaccinations = useMemo(() => vaccinations.filter((v) => !!v.administered_at), [vaccinations]);
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* 0269: ما ينتظر البيع من جرعات الطبلة — فوق الطبلة لا داخلها، وزرُّه يفتح بيعةَ صاحبه. */}
+      <DoseDueBar pet={pet} pending={doseSheet.pending} />
       {/* Header: title + hint on the start side, print/export (preserved) on the end */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="me-auto">
@@ -2706,7 +2748,8 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
 
       {view === "table" ? (
         /* Dense "جدول" — the official record: only administered items + notes, at a glance */
-        <UnifiedMedicalRecord pet={pet} treatments={givenTreatments} vaccinations={givenVaccinations} notes={notes} isOwner={isOwner} tableOnly />
+        <UnifiedMedicalRecord pet={pet} treatments={givenTreatments} vaccinations={givenVaccinations} notes={notes} isOwner={isOwner} tableOnly
+          treatmentBadge={(id) => { const tx = txById.get(id); return tx ? <DoseBillChip bill={doseSheet.billOf(tx)} /> : null; }} />
       ) : feed.length === 0 ? (
         <div className="card grid place-items-center p-10 text-center text-ink-subtle">
           <ClipboardList size={28} className="mb-2 opacity-40" />
@@ -2722,7 +2765,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
                   <div className="flex items-center gap-2 bg-brand-50 px-4 py-2 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
                     <Pill size={14} /> {formatDate(item.tx.day, i18n.language)}
                   </div>
-                  <TreatmentDoseRow tx={item.tx} isOwner={isOwner} status={treatmentStatus(item.tx, today, currentHM)} locked={locked} onGiven={markGiven} onRepeat={repeatTx} onRemove={removeTx} />
+                  <TreatmentDoseRow tx={item.tx} isOwner={isOwner} status={treatmentStatus(item.tx, today, currentHM)} locked={locked} onGiven={markGiven} onRepeat={repeatTx} onRemove={removeTx} bill={doseSheet.billOf(item.tx)} />
                 </div>
               );
             }
