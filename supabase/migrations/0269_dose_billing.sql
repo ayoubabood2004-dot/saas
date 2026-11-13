@@ -355,7 +355,7 @@ begin
     v_eff := (select pr.id from products pr where pr.id = c.product_id and pr.clinic_id = c.clinic_id and coalesce(pr.price_currency, 'IQD') <> 'USD');
     select l into e from jsonb_array_elements(p_items) l where l->>'dose_charge' = c.id::text;
     if nullif(e->>'product_id', '')::uuid is distinct from v_eff
-       or coalesce((e->>'qty')::numeric, 0) <> case when v_eff is not null then coalesce(c.dose_qty, 1) else 1 end
+       or coalesce((e->>'qty')::numeric, 0) <> (case when v_eff is not null then coalesce(c.dose_qty, 1) else 1 end)   -- الأقواس لازمة: IF يُقطع عند أوّل THEN (CLAUDE.md §٣)
        or (v_eff is not null and coalesce((e->>'stock_qty')::numeric, -1) <> c.stock_qty) then
       raise exception 'dose_charge_lines' using hint = 'سطور الجرعات بالسلّة ما تطابق — حدّث الصفحة وعيد البيع';
     end if;
