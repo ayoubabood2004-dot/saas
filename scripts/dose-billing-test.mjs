@@ -140,8 +140,10 @@ console.log("▸ ٣) الطبلة — الختمُ والمعلَّقُ وإلغ
 
 console.log("▸ ٤) البيع — المعلَّقُ للزبون، والبيعةُ تختمه وتخصم، والإعادةُ والجهازُ الثاني");
 {
-  const pend = await API.pendingDoses("+964 770 123 4567", null, []);
-  check("معلَّقاتُ الزبون بهاتفه بصيغةٍ أخرى (بسبوس: جرعتان)", pend.map((x) => `${x.pet_name}:${x.price}`).join() === "بسبوس:4000,بسبوس:5000", JSON.stringify(pend.map((x) => x.pet_name + x.price)));
+  // بالاسم لا بالموضع: المعلَّقاتُ بوقت إعطائها، وجرعةُ Meloxicam تُعطى «الآن» وCeftriaxone بختمٍ ثابت (١١:٠٠ غرينتش ١٣/١١) —
+  // فالترتيبُ بالموضع مرّ قبل تلك الساعة وسقط بعدها أبداً (أسقط بناءَ main بـVercel). فحصٌ يقارن «الآن» بختمٍ ثابت ساعةٌ لا فحص.
+  const pend = (await API.pendingDoses("+964 770 123 4567", null, [])).sort((a, b) => a.name.localeCompare(b.name)).reverse();
+  check("معلَّقاتُ الزبون بهاتفه بصيغةٍ أخرى (بسبوس: جرعتان)", pend.map((x) => `${x.pet_name}:${x.name}:${x.price}`).join() === "بسبوس:Meloxicam:4000,بسبوس:Ceftriaxone:5000", JSON.stringify(pend.map((x) => x.pet_name + x.price)));
   check("  وبحيوانٍ مسمّى، والاسمُ وحده لا يطابق صاحبَ هاتف",
     (await API.pendingDoses(null, null, ["b2"])).map((x) => x.pet_name).join() === "لولو" && (await API.pendingDoses(null, "علي", [])).length === 0);
   // بشكل بيع الشاشة: الكميةُ كمّيةُ الجرعة بوحدتها والسعرُ لوحدتها (مرآةُ payload شاشة البيع).
