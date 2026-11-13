@@ -11813,7 +11813,7 @@ chk "  والكتابةُ المباشرة بدور الكادر تُرفض (dos
 chk "_dose_plan: الصغرى من سعر العلبة ÷ العدد، والمكتوبُ يغلب، والكمّيةُ الغائبةُ واحد، والصغرى المسعَّرة" \
     "select (select price||':'||stock_qty from _dose_plan(null, 2, 'sub', 20000, null, 10))||'|'||(select price||':'||stock_qty from _dose_plan(5000, 2, 'sub', 20000, null, 10))
             ||'|'||(select price||':'||stock_qty from _dose_plan(null, null, 'box', 1000, null, null))||'|'||(select price||':'||stock_qty from _dose_plan(null, 3, 'sub', 20000, 750, 10))" \
-    "4000:0.200000000|5000:0.200000000|1000:1|2250:0.300000000"
+    "4000:0.200|5000:0.200|1000:1.000|2250:0.300"
 TE="insert into treatment_entries(id, pet_id, clinic_id, day, medication, time, amount"
 CH="select coalesce(string_agg(status||':'||price||':'||coalesce(stock_qty::text,'-')||':'||coalesce(product_id::text,'-'), ',' order by created_at, id), 'none') from dose_charges where entry_id ="
 chk "خطّةٌ تُدرج معلَّقة: لا حساب، وختمُها «تُحسب»" \
@@ -11821,13 +11821,13 @@ chk "خطّةٌ تُدرج معلَّقة: لا حساب، وختمُها «تُ
 chk "  (ختمُها وصفرُ معلَّق)" "select (select bill::text from treatment_entries where id = '${DG}e1')||'|'||($CH '${DG}e1')" "true|none"
 chk "إعطاؤها ⇒ معلَّقٌ بلقطة الحساب (٤٠٠٠ و٠٫٢ علبة من الفيال) — والاسمُ يطابق بالتطبيع" \
     "select $(rt $DC "update treatment_entries set administered_at = now() where id = '${DG}e1'")" "rows:1"
-chk "  (المعلَّق)" "$CH '${DG}e1'" "pending:4000:0.200000000:${DG}a1"
+chk "  (المعلَّق)" "$CH '${DG}e1'" "pending:4000:0.200:${DG}a1"
 chk "  وإعادةُ ختم الإعطاء لا تصنع ثانياً" \
-    "select $(rt $DC "update treatment_entries set administered_at = now() - interval '1 minute' where id = '${DG}e1'")||'|'||($CH '${DG}e1')" "rows:1|pending:4000:0.200000000:${DG}a1"
+    "select $(rt $DC "update treatment_entries set administered_at = now() - interval '1 minute' where id = '${DG}e1'")||'|'||($CH '${DG}e1')" "rows:1|pending:4000:0.200:${DG}a1"
 chk "إلغاءُ الإعطاء يُلغي المعلَّق" "select $(rt $DC "update treatment_entries set administered_at = null where id = '${DG}e1'")" "rows:1"
-chk "  (ملغى)" "$CH '${DG}e1'" "void:4000:0.200000000:${DG}a1"
+chk "  (ملغى)" "$CH '${DG}e1'" "void:4000:0.200:${DG}a1"
 chk "  وإعادتُه معلَّقٌ جديد (واحدٌ حيٌّ لكلّ جرعة)" "select $(rt $DC "update treatment_entries set administered_at = now() where id = '${DG}e1'")" "rows:1"
-chk "  (الملغى والجديد)" "$CH '${DG}e1'" "void:4000:0.200000000:${DG}a1,pending:4000:0.200000000:${DG}a1"
+chk "  (الملغى والجديد)" "$CH '${DG}e1'" "void:4000:0.200:${DG}a1,pending:4000:0.200:${DG}a1"
 chk "ما بيع بالكاشير (معطاةٌ عند الإدراج بلا زيارةٍ ولا كلمة) لا يُحسب ثانيةً، والسجلُّ بكلمته (bill=true) يُحسب" \
     "select $(rt $DC "$TE, administered_at) values ('${DG}e2','${DG}b1','$DC',current_date,'Meloxicam','09:00','2 ml',now())")
             ||'|'||$(rt $DC "$TE, administered_at, bill) values ('${DG}e3','${DG}b2','$DC',current_date,'Ceftriaxone','09:00','1 g',now(),true)")" "rows:1|rows:1"
@@ -11838,9 +11838,13 @@ chk "دواءٌ بلا سعرٍ ولا مادّة لا يُحسب، والبيع
             ||'|'||$(rt $DC "$TE, bill) values ('${DG}e5','${DG}b1','$DC',current_date,'Meloxicam','10:00','1',false)")" "rows:1|rows:1"
 chk "  (بلا معلَّق للاثنين بعد إعطاء الثاني)" \
     "select $(rt $DC "update treatment_entries set administered_at = now() where id = '${DG}e5'")||'|'||($CH '${DG}e4')||'|'||($CH '${DG}e5')" "rows:1|none|none"
-$P -c "$TE) values ('${DG}e6','${DG}b1','$DC',current_date,'Ceftriaxone','11:00','1 g'); update treatment_entries set bill = null where id = '${DG}e6';" >/dev/null
-chk "صفٌّ قبل 0269 (bill فارغ) معلَّقٌ يُعطى الآن ⇒ يُحسب" \
-    "select $(rt $DC "update treatment_entries set administered_at = now() where id = '${DG}e6'")" "rows:1"
+$P -c "$TE) values ('${DG}e7','${DG}b1','$DC',current_date,'Ceftriaxone','11:00','1 g'); update treatment_entries set bill = null where id = '${DG}e7';" >/dev/null
+chk "صفٌّ قبل 0269 (bill فارغ) معلَّقٌ يُعطى الآن ⇒ لا يُحسب (لا يُعرف أبِيع بالكاشير ليُعطى لاحقاً)" \
+    "select $(rt $DC "update treatment_entries set administered_at = now() where id = '${DG}e7'")||'|'||($CH '${DG}e7')" "rows:1|none"
+chk "والختمُ لا يقلبه الكادر (dose_bill_frozen)، والتحديثُ بلا مسّه يمرّ" \
+    "select $(rerr $DC "update treatment_entries set bill = false where id = '${DG}e1'")||'|'||$(rt $DC "update treatment_entries set observations = 'x' where id = '${DG}e1'")" "dose_bill_frozen|rows:1"
+chk "خطّةٌ جديدة تُعطى ⇒ معلَّقٌ بسعرٍ وحده" \
+    "select $(rt $DC "$TE) values ('${DG}e6','${DG}b1','$DC',current_date,'Ceftriaxone','11:30','1 g')")||'|'||$(rt $DC "update treatment_entries set administered_at = now() where id = '${DG}e6'")" "rows:1|rows:1"
 chk "  (المعلَّق)" "$CH '${DG}e6'" "pending:5000:-:-"
 PEND() { echo "select coalesce((select string_agg(x->>'pet_name'||':'||(x->>'price'), ',' order by x->>'given_at', x->>'id') from jsonb_array_elements(dose_charges_pending($1)) x), 'none')"; }
 chk "معلَّقاتُ الزبون بمفتاحه (هاتفٌ بصيغةٍ أخرى)، وبحيوانٍ مسمّى، والاسمُ وحده لا يطابق صاحبَ هاتف" \
@@ -11849,28 +11853,45 @@ chk "معلَّقاتُ الزبون بمفتاحه (هاتفٌ بصيغةٍ أ�
 C1ID="(select id from dose_charges where entry_id = '${DG}e1' and status = 'pending')"
 C6ID="(select id from dose_charges where entry_id = '${DG}e6' and status <> 'void')"
 CO() { echo "select (retail_checkout_doses(jsonb_build_array(
-         jsonb_build_object('product_id','${DG}a1','name','Meloxicam','qty',1,'unit_price',4000,'unit_cost',0,'stock_qty',$2,'dose_charge',$C1ID),
+         jsonb_build_object('product_id','${DG}a1','name','Meloxicam','qty',${3:-2},'unit_price',${4:-2000},'unit_cost',0,'stock_qty',$2,'dose_charge',$C1ID),
          jsonb_build_object('product_id',null,'name','Ceftriaxone','qty',1,'unit_price',5000,'unit_cost',0,'dose_charge',$C6ID)),
          jsonb_build_object('client_ref','$1','customer_phone','07701234567'), array[$C1ID, $C6ID]::uuid[])).client_ref"; }
-chk "سطورٌ لا تطابق اللقطة (مخصومٌ غيرُ ٠٫٢) تُرفض قبل أيّ كتابة، وبلا مرجعٍ تُرفض" \
-    "select $(rerr $DC "$(CO d269-bad 0.5)")||'|'||$(rerr $DC "select (retail_checkout_doses('[]'::jsonb, '{}'::jsonb, array[$C1ID]::uuid[])).id")" "dose_charge_lines|dose_charge_ref"
+chk "سطورٌ لا تطابق اللقطة (مخصومٌ غيرُ ٠٫٢، أو كميةٌ ١ لا كمّيةُ الجرعة) تُرفض قبل أيّ كتابة، وبلا مرجعٍ تُرفض" \
+    "select $(rerr $DC "$(CO d269-bad 0.5)")||'|'||$(rerr $DC "$(CO d269-bad 0.2 1 4000)")
+            ||'|'||$(rerr $DC "select (retail_checkout_doses('[]'::jsonb, '{}'::jsonb, array[$C1ID]::uuid[])).id")" "dose_charge_lines|dose_charge_lines|dose_charge_ref"
 chk "البيعُ يبيع الجرعتين ويختمهما بفاتورته" "select $(rv $DC "$(CO d269-1 0.2)")" "d269-1"
 INV1="(select id from invoices where clinic_id = '$DC' and client_ref = 'd269-1')"
-chk "  (مفوتَرتان بالفاتورة، والفيالُ نقص ٠٫٢، والسطران بالفاتورة)" \
+chk "  (مفوتَرتان بالفاتورة، والفيالُ نقص ٠٫٢، والسطران بالفاتورة، وكلفةُ الجرعة ٢ مل لا ١ — ١٠٠٠ للمل)" \
     "select (select count(*) from dose_charges where invoice_id = $INV1 and status = 'billed')::text||'|'||(select stock::text from products where id = '${DG}a1')
-            ||'|'||(select count(*) from invoice_items where invoice_id = $INV1)::text" "2|4.800|2"
+            ||'|'||(select count(*) from invoice_items where invoice_id = $INV1)::text
+            ||'|'||(select round(unit_cost * qty, 2)::text||':'||round(line_total, 2)::text from invoice_items where invoice_id = $INV1 and product_id = '${DG}a1')" "2|4.800|2|2000.00:4000.00"
 chk "  وإعادةُ المرجع نفسِه ترجع الفاتورةَ نفسَها بلا خصمٍ ثانٍ" \
     "select $(rv $DC "select (retail_checkout_doses(jsonb_build_array(
-         jsonb_build_object('product_id','${DG}a1','name','Meloxicam','qty',1,'unit_price',4000,'unit_cost',0,'stock_qty',0.2,'dose_charge',(select id from dose_charges where entry_id = '${DG}e1' and status = 'billed')),
+         jsonb_build_object('product_id','${DG}a1','name','Meloxicam','qty',2,'unit_price',2000,'unit_cost',0,'stock_qty',0.2,'dose_charge',(select id from dose_charges where entry_id = '${DG}e1' and status = 'billed')),
          jsonb_build_object('product_id',null,'name','Ceftriaxone','qty',1,'unit_price',5000,'unit_cost',0,'dose_charge',(select id from dose_charges where entry_id = '${DG}e6' and status = 'billed'))),
          jsonb_build_object('client_ref','d269-1'), array[(select id from dose_charges where entry_id = '${DG}e1' and status = 'billed'), (select id from dose_charges where entry_id = '${DG}e6' and status = 'billed')]::uuid[])).client_ref")" "d269-1"
 chk "  (المخزنُ كما هو)" "select stock::text from products where id = '${DG}a1'" "4.800"
+$P -c "$TE, administered_at, bill) values ('${DG}e8','${DG}b1','$DC',current_date,'Ceftriaxone','12:30','1 g',now(),true);" >/dev/null
+chk "إعادةُ مرجعٍ ثبتت فاتورتُه مع جرعةٍ نزلت بعد المحاولة الأولى ⇒ dose_charge_late، ولا تُختم على فاتورةٍ لم تحسبها" \
+    "select $(rerr $DC "select (retail_checkout_doses(jsonb_build_array(jsonb_build_object('product_id',null,'name','Ceftriaxone','qty',1,'unit_price',5000,'unit_cost',0,'dose_charge',(select id from dose_charges where entry_id = '${DG}e8'))),
+         jsonb_build_object('client_ref','d269-1'), array[(select id from dose_charges where entry_id = '${DG}e8')]::uuid[])).id")||'|'||($CH '${DG}e8')" "dose_charge_late|pending:5000:-:-"
+chk "جرعةُ علبتين (box ×٢): السطرُ ٢ علبة ومخصومُه ٢ — لا pack_changed، وكلفتُه علبتان" \
+    "select $(rv $DC "$(BSET $DC ${DG}d3 null "'${DG}a3'" 2 "'box'")")||'|'||$(rt $DC "$TE, administered_at, bill) values ('${DG}e9','${DG}b1','$DC',current_date,'Vitamin B','13:00','2',now(),true)")
+            ||'|'||($CH '${DG}e9')" "$DC|rows:1|pending:2000:2.000:${DG}a3"
+chk "  (البيعة)" "select $(rv $DC "select (retail_checkout_doses(jsonb_build_array(jsonb_build_object('product_id','${DG}a3','name','Vitamin B','qty',2,'unit_price',1000,'unit_cost',0,'stock_qty',2,'dose_charge',(select id from dose_charges where entry_id = '${DG}e9'))),
+         jsonb_build_object('client_ref','d269-3'), array[(select id from dose_charges where entry_id = '${DG}e9')]::uuid[])).client_ref")" "d269-3"
+chk "  (كلفةُ علبتين ١٠٠٠ والرفُّ ٥ ⇒ ٣)" \
+    "select (select round(unit_cost * qty, 2)::text from invoice_items i join invoices v on v.id = i.invoice_id where v.client_ref = 'd269-3')||'|'||(select stock::text from products where id = '${DG}a3')" "1000.00|3.000"
+$P -c "update products set price_currency = 'USD' where id = '${DG}a3';
+       $TE, administered_at, bill) values ('${DG}ea','${DG}b1','$DC',current_date,'Vitamin B','13:30','2',now(),true);
+       update products set price_currency = 'IQD' where id = '${DG}a3';" >/dev/null
+chk "مادّةٌ صارت بالدولار لحظةَ الإعطاء وبلا سعرٍ مكتوب ⇒ لا حساب (لا جرعةَ تُرفض بيعتُها للأبد)" "$CH '${DG}ea'" "none"
 chk "جرعةٌ فوتَرها جهازٌ آخر بمرجعٍ جديد ⇒ dose_charge_gone ولا فاتورة" \
     "select $(rerr $DC "select (retail_checkout_doses(jsonb_build_array(jsonb_build_object('product_id',null,'name','Ceftriaxone','qty',1,'unit_price',5000,'unit_cost',0,'dose_charge',(select id from dose_charges where entry_id = '${DG}e6' and status = 'billed'))),
          jsonb_build_object('client_ref','d269-2'), array[(select id from dose_charges where entry_id = '${DG}e6' and status = 'billed')]::uuid[])).id")
             ||'|'||(select count(*) from invoices where client_ref = 'd269-2')::text" "dose_charge_gone|0"
-chk "  والمعلَّقُ لا يبقى للزبون بعد بيعه (المتبقّي جرعةُ لولو وحدها)" \
-    "select $(rv $DC "$(PEND "'07701234567', null, array['${DG}b2']::uuid[]")")" "لولو:5000"
+chk "  والمعلَّقُ لا يبقى للزبون بعد بيعه (المتبقّي جرعةُ لولو وجرعةُ «late» التي لم تُختم)" \
+    "select $(rv $DC "$(PEND "'07701234567', null, array['${DG}b2']::uuid[]")")" "لولو:5000,بسبوس:5000"
 chk "إلغاءُ إعطاءِ جرعةٍ مفوتَرة لا يمسّ فاتورتَها" \
     "select $(rt $DC "update treatment_entries set administered_at = null where id = '${DG}e6'")||'|'||($CH '${DG}e6')" "rows:1|billed:5000:-:-"
 chk "الصلاحيات: anon لا ينادي، والكادرُ يقرأ ولا يكتب المعلَّق، والدوالُّ الكاتبة definer والقارئةُ invoker (والسياجُ بفحص ما بعد الموجة)" \
@@ -11878,14 +11899,14 @@ chk "الصلاحيات: anon لا ينادي، والكادرُ يقرأ ولا
             ||has_function_privilege('anon','public.clinic_drug_billing_set(uuid,uuid,numeric,uuid,numeric,text)','execute')::text
             ||'|'||$(rerr $DC "update dose_charges set price = 0")||'|'||$(rv $DC "select count(*)::text from dose_charges")
             ||'|'||(select string_agg(proname||':'||prosecdef::text, ',' order by proname) from pg_proc where proname in ('clinic_drug_billing_set','retail_checkout_doses','treatment_entries_dose_charge','dose_charges_pending'))" \
-    "falsefalsefalse|permissiondeniedfortabledose_charges|4|clinic_drug_billing_set:true,dose_charges_pending:false,retail_checkout_doses:true,treatment_entries_dose_charge:true"
+    "falsefalsefalse|permissiondeniedfortabledose_charges|6|clinic_drug_billing_set:true,dose_charges_pending:false,retail_checkout_doses:true,treatment_entries_dose_charge:true"
 # التطابق: _dose_plan مقابل dosePlan (المصدرُ نفسُه) — شبكةُ الحوافّ وعيّنةٌ ثابتة، ومرآتان مغلوطتان تُمسكان.
 DPF=$(mktemp -d)
 if node "$HERE/../../scripts/dose-parity.mjs" gen "$DPF" >/dev/null && $P -tA -f "$DPF/plan.sql" > "$DPF/actual.txt" && node "$HERE/../../scripts/dose-parity.mjs" check "$DPF"; then :; else echo "   ✗ dose-parity"; fail=1; fi
 rm -rf "$DPF"
 out=$($P -f "$MIG/0269_dose_billing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0269 ما انعادت"; fail=1; }
 chk "وتُعاد بلا أثرٍ ثانٍ (الحسابُ والمعلَّقاتُ كما هي)" \
-    "select ($DROW '${DG}d1')||'|'||(select count(*) from dose_charges where clinic_id = '$DC')::text" "-:${DG}a1:2:sub|4"
+    "select ($DROW '${DG}d1')||'|'||(select count(*) from dose_charges where clinic_id = '$DC')::text" "-:${DG}a1:2:sub|6"
 
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:

@@ -14,7 +14,7 @@ import { custKey } from "./customerKey";
 import { getDialCode } from "./settings";
 
 /* الرمزُ وحده (كمرايا 0266/0264): الشاشةُ تقوله بنطاقها (mmset.billErr_* بالإعدادات، وdosl بشاشة البيع) — لا نصَّ عربياً هنا. */
-type DoseCode = "dose_charge_gone" | "dose_charge_lines" | "dose_charge_ref" | "dose_billing_denied" | "dose_product_gone"
+type DoseCode = "dose_charge_gone" | "dose_charge_late" | "dose_charge_lines" | "dose_charge_ref" | "dose_billing_denied" | "dose_product_gone"
   | "dose_product_usd" | "dose_unit_bad" | "dose_qty_bad" | "dose_price_bad";
 const fail = (code: DoseCode): never => { throw Object.assign(new Error(code), { code: "P0001" }); };
 
@@ -31,7 +31,7 @@ export function demoDoseHook(db: DemoDB, before: Pick<TreatmentEntry, "administe
     for (const c of list) if (c.entry_id === e.id && c.status === "pending") { c.status = "void"; c.voided_at = now; }
     return;
   }
-  if (!e.administered_at || !(e.bill ?? true)) return;
+  if (!e.administered_at || !(e.bill ?? false)) return;   // فارغٌ = صفٌّ قبل 0269: لا يُحسب (لا يُعرف أبِيع بالكاشير)
   if (before && before.administered_at) return;
   if (list.some((c) => c.entry_id === e.id && c.status !== "void")) return;
   const key = searchable(e.medication);
@@ -47,6 +47,12 @@ export function demoDoseHook(db: DemoDB, before: Pick<TreatmentEntry, "administe
   });
 }
 
+/** المادّةُ «الفعّالة» للمعلَّق: باقيةٌ وبالدينار، وإلا null — تُباع الجرعةُ بسعرها بلا مخزن (مرآةُ v_eff وleft join بالخادم). */
+function effProduct(db: DemoDB, id: string | null): string | null {
+  const p = id ? db.products.find((x) => x.id === id) : undefined;
+  return p && (p.price_currency ?? "IQD") !== "USD" ? p.id : null;
+}
+
 /** مرآةُ dose_charges_pending: حيواناتٌ مسمّاة، أو مفتاحُ الزبون (cust_key) على صاحب الحيوان. */
 export function demoDosePending(phone: string | null, name: string | null, pets: readonly string[]): DoseCharge[] {
   const db = loadDB();
@@ -58,8 +64,9 @@ export function demoDosePending(phone: string | null, name: string | null, pets:
     const pet = db.pets.find((p) => p.id === c.pet_id);
     if (!pet) continue;
     if (!pets.includes(c.pet_id) && !(key && custKey(pet.owner_phone, pet.owner_name, dial) === key)) continue;
-    out.push({ id: c.id, pet_id: c.pet_id, pet_name: pet.name, name: c.name, price: c.price, product_id: c.product_id,
-      stock_qty: c.stock_qty, dose_qty: c.dose_qty, dose_unit: c.dose_unit, given_at: c.given_at });
+    const eff = effProduct(db, c.product_id);
+    out.push({ id: c.id, pet_id: c.pet_id, pet_name: pet.name, name: c.name, price: c.price, product_id: eff,
+      stock_qty: eff ? c.stock_qty : null, dose_qty: eff ? c.dose_qty : null, dose_unit: eff ? c.dose_unit : null, given_at: c.given_at });
   }
   return out.sort((a, b) => a.given_at.localeCompare(b.given_at) || (a.id < b.id ? -1 : 1));
 }
@@ -76,9 +83,12 @@ export async function demoDoseCheckout(items: CheckoutItem[], meta: SaleMeta, id
   const prev = db0.invoices.find((i) => i.client_ref === ref)?.id ?? null;
   for (const id of ids) {
     const c = (db0.doseCharges ?? []).find((x) => x.id === id);
-    if (!c || !(c.status === "pending" || (c.status === "billed" && prev && c.invoice_id === prev))) fail("dose_charge_gone");
+    if (!c) fail("dose_charge_gone");
+    if (prev && !(c!.status === "billed" && c!.invoice_id === prev)) fail("dose_charge_late");
+    if (!prev && c!.status !== "pending") fail("dose_charge_gone");
+    const eff = effProduct(db0, c!.product_id);
     const l = items.find((x) => x.dose_charge === id)!;
-    if ((l.product_id ?? null) !== c!.product_id || Number(l.qty) !== 1 || (c!.product_id && Number(l.stock_qty) !== c!.stock_qty)) fail("dose_charge_lines");
+    if ((l.product_id ?? null) !== eff || Number(l.qty) !== (eff ? (c!.dose_qty ?? 1) : 1) || (eff && Number(l.stock_qty) !== c!.stock_qty)) fail("dose_charge_lines");
   }
   const inv = await demoRepo.retailCheckout(items, meta);
   const db = loadDB();

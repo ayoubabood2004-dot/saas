@@ -170,7 +170,7 @@ interface Line {
   consEst?: number | null;
   /** 0269: جرعةٌ من الطبلة (`d:<معلَّق>`) — بكمية ١ وسعرِ لقطة الإعطاء. المادّةُ وما يُخصم منها يُرسلان بالبيعة وحدها
    *  (product_id بالسطر null: لا سقفَ ولا طزاجةَ ولا بيعَ قبل الجرد يحكم جرعةً أُعطيت فعلاً)، و`note` ما يُرسم تحته. */
-  dose?: { charge: string; productId: string | null; stockQty: number | null; note: string };
+  dose?: { charge: string; productId: string | null; stockQty: number | null; qty: number; note: string };
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -507,7 +507,8 @@ function doseLine(x: DoseCharge, m: DoseMod): Line {
     id: `d:${x.id}`, kind: "med", name: m.say.doseLineName(x.name, x.given_at), barcode: null,
     unit_price: x.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null,
     petId: x.pet_id, petName: x.pet_name,
-    dose: { charge: x.id, productId: x.product_id, stockQty: x.stock_qty, note: m.say.doseNote(x.pet_name, x.given_at) },
+    // qty: كمّيةُ الجرعة بوحدتها (علبٌ أو صغرى) — البيعةُ ترسلها بشكل بيع الشاشة لتُكلَّف صحيحاً؛ والسلّةُ تعرضها سطراً واحداً بسعره.
+    dose: { charge: x.id, productId: x.product_id, stockQty: x.stock_qty, qty: x.product_id ? (x.dose_qty ?? 1) : 1, note: m.say.doseNote(x.pet_name, x.given_at) },
   };
 }
 const PackWarmDone = () => null;
@@ -2857,37 +2858,45 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const pets = salePets.map((x) => x.id).filter((x): x is string => !!x);
     return ph || nm || pets.length ? { ph, nm, pets } : null;
   };
-  /** بعد رفضٍ لجرعةٍ انحسبت أو انلغت من جهازٍ آخر: تُشال سطورُ ما لم يعد معلَّقاً. وفشلُ السؤال يشيل سطورَ الجرعات كلَّها —
-   *  تبقى معلَّقةً وترجع بالبيعة القادمة، ولا تُعاد بيعةٌ رُفضت بسطرٍ لا يُعرف حالُه. */
-  const resyncDoses = async () => {
+  /** بعد رفض البيعة بسبب جرعة: «gone» (انحسبت أو انلغت من جهازٍ آخر) يُبقي المعلَّقَ وحده، و«late» (مرجعُ البيعة ثبتت فاتورتُه بدون
+   *  جرعاتٍ نزلت بعدها) يشيل المعلَّقَ — يرجع ببيعةٍ قادمة — فتمرّ الإعادةُ بفاتورتها. وفشلُ السؤال يشيل سطورَ الجرعات كلَّها: تبقى
+   *  معلَّقةً، ولا تُعاد بيعةٌ رُفضت بسطرٍ لا يُعرف حالُه. */
+  const resyncDoses = async (late: boolean) => {
     const who = doseWho();
-    let keep = new Set<string>();
+    let pend: Set<string> | null = null;
     try {
       const m = await loadDoseMod();
-      if (who) keep = new Set((await m.pendingDoses(who.ph, who.nm, who.pets)).map((x) => `d:${x.id}`));
-    } catch { /* swallow-ok: بلا جواب تُشال كلُّها (أعلاه) */ }
-    setCart((c) => c.filter((l) => !l.dose || keep.has(l.id)));
+      if (who) pend = new Set((await m.pendingDoses(who.ph, who.nm, who.pets)).map((x) => `d:${x.id}`));
+    } catch { /* swallow-ok: بلا جواب تُشال كلُّها (أدناه) */ }
+    setCart((c) => c.filter((l) => !l.dose || (pend != null && (late ? !pend.has(l.id) : pend.has(l.id)))));
   };
   const dosePetKey = salePets.map((x) => x.id ?? "").join(",");
+  /* السلّةُ تتبع الزبونَ الحاليّ: سطرُ جرعةٍ ليس بمعلَّقاته الآن (نزل لمفتاحٍ سابق — «علي» قبل أن يكتمل «علي حسن» — أو انحسب) يُشال؛
+   * وزبونٌ مُسح يشيلها كلَّها. ولا شيءَ والمرجعُ معلَّق (saleRefSaved): الإعادةُ ترجع فاتورتَها، وسطرٌ يُضاف بعدها ليس فيها. */
   useEffect(() => {
-    if (wholesale || done || paying) return;
+    if (wholesale || done || paying || saleRefSaved) return;
     const who = doseWho();
-    if (!who) return;
+    if (!who) {
+      if (cartRef.current.some((l) => l.dose)) setCart((c) => c.filter((l) => !l.dose));
+      return;
+    }
     let live = true;
     const timer = window.setTimeout(() => {
       loadDoseMod().then((m) => m.pendingDoses(who.ph, who.nm, who.pets).then((list) => {
         if (!live) return;
+        const want = new Set(list.map((x) => `d:${x.id}`));
         const have = new Set(cartRef.current.map((l) => l.id));
         const add = list.filter((x) => !have.has(`d:${x.id}`) && !doseDismissed.current.has(x.id));
-        if (!add.length) return;
-        setCart((cur) => [...cur, ...add.filter((x) => !cur.some((l) => l.id === `d:${x.id}`)).map((x) => doseLine(x, m))]);
-        playTap();
-        toast.success(m.say.doseLoaded(add.length));
+        const stale = cartRef.current.some((l) => l.dose && !want.has(l.id));
+        if (!add.length && !stale) return;
+        setCart((cur) => [...cur.filter((l) => !l.dose || want.has(l.id)),
+          ...add.filter((x) => !cur.some((l) => l.id === `d:${x.id}`)).map((x) => doseLine(x, m))]);
+        if (add.length) { playTap(); toast.success(m.say.doseLoaded(add.length)); }
       }, () => { if (live) toast.warn(m.say.doseFetchFail()); }), () => { /* swallow-ok: القطعةُ ما وصلت — الجرعاتُ باقيةٌ معلَّقة لبيعةٍ قادمة */ });
     }, 450);
     return () => { live = false; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- مفتاحُ الزبون وحيواناته وحالُ البيعة وحدها تعيد السؤال
-  }, [name, phone, dosePetKey, wholesale, !!done, paying]);
+  }, [name, phone, dosePetKey, wholesale, !!done, paying, saleRefSaved]);
 
   const askReset = () => {
     playTap();
@@ -3445,7 +3454,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           // الأجهزة». وبندُ خدمةٍ بلا معرّفٍ يعرفه الخادم (مختبرٌ ما طابق، كتالوجٌ قديم) خدمةٌ فعلاً: يبقى بلا المفتاح فيقول عنه اسمُه.
           ...(sid ? { service_id: sid, ...(Array.isArray(l.consumables) ? { consumables: l.consumables } : {}) } : !l.product_id && l.kind !== "service" ? { service_id: null } : {}),
           // 0269: سطرُ جرعة — مادّتُه وما يُخصم منها لقطةُ الإعطاء، ومعرّفُ معلَّقه يختمه الخادمُ بالمعاملة نفسِها.
-          ...(l.dose ? { product_id: l.dose.productId, qty: 1, stock_qty: l.dose.productId ? (l.dose.stockQty ?? 0) : 0, dose_charge: l.dose.charge } : {}),
+          // والكميةُ كمّيةُ الجرعة بوحدتها والسعرُ لوحدتها (شكلُ بيع المفرد/العلبة) — _product_line_cost يستدلّ على الوحدة بالنسبة بينهما:
+          // «١ ومخصومٌ ٢» كان يُرفض pack_changed، و«١ ومخصومٌ ٠٫٢» يُكلَّف وحدةً صغرى واحدة عن اثنتين (مراجعةٌ عدائيّة).
+          ...(l.dose ? {
+            product_id: l.dose.productId, qty: l.dose.qty, unit_price: Math.round((lineUnit(l) / l.dose.qty) * 100) / 100,
+            stock_qty: l.dose.productId ? (l.dose.stockQty ?? 0) : 0, dose_charge: l.dose.charge,
+          } : {}),
         };
       });
       // Delivery fee kept by the clinic → a real service line on the invoice, so
@@ -3506,10 +3520,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       } catch (e) {
         /* جرعةٌ انحسبت أو انلغت من جهازٍ آخر: سطورُها تُشال (المعلَّقُ من جديد)، والتلميحُ يقوله؛ والكاشيرُ يكمل بما بقي. */
         if (doseMod?.isDoseStale(e)) {
-          void resyncDoses();
+          void resyncDoses(doseMod.isDoseLate(e));
           if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
           setPaying(false);
-          throw Object.assign(new Error("dose_charge_stale"), { code: "P0001", hint: doseMod.say.doseStale() });
+          throw Object.assign(new Error("dose_charge_stale"), { code: "P0001", hint: doseMod.isDoseLate(e) ? doseMod.say.doseLate() : doseMod.say.doseStale() });
         }
         /* رفضٌ حاسم **لمحاولةٍ أولى** ⇒ لا شيء ثُبّت بهذا المرجع، فهو حرّ: إبقاؤه كان يترك
          * الدفعةَ «معلَّقة» للأبد (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ وكلُّ جسر. أمّا

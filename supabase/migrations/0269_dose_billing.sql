@@ -76,16 +76,18 @@ create trigger clinic_drugs_billing_guard before insert or update on public.clin
   for each row execute function public.clinic_drugs_billing_guard();
 
 -- ── ٢) حسابُ الجرعة: السعرُ وما يُخصم — مرآتُه dosePlan (src/lib/doseBilling.ts) ─────────────
--- السعرُ: المكتوبُ، وإلا سعرُ الوحدة × الكمّية (الغائبةُ ١) مقرَّباً لدينار. والمخصومُ بوحدة الرصيد (العلبة): الصغرى ÷ عددها.
+-- السعرُ: المكتوبُ، وإلا سعرُ الوحدة × الكمّية (الغائبةُ ١) مقرَّباً لدينار — **الضربُ قبل القسمة** ((سعرُ العلبة × الكمّية) ÷ العدد):
+-- قسمةٌ أوّلاً تقرّب عند منزلتها فيسقط نصفٌ تامّ (١ ÷ ٣ × ١٫٥ = ٠٫٤٩٩… لا ٠٫٥) ولا تتبعه مرآة. والمخصومُ بوحدة الرصيد (العلبة) بثلاث
+-- منازل كما يخزّنه retail_checkout (v_stockq numeric(14,3)) وكما يرسله البيعُ للمفرد (lineStockQty) — لقطةٌ بتسعٍ كانت تُخصم بثلاث.
 create or replace function public._dose_plan(p_price numeric, p_qty numeric, p_unit text, p_sell numeric, p_sub numeric, p_upb numeric,
                                              out price numeric, out stock_qty numeric)
 language sql immutable set search_path = public as $$
   select coalesce(p_price,
            case when p_unit = 'sub' and coalesce(p_upb, 0) > 0
-                  then round(coalesce(p_sub, p_sell / p_upb) * coalesce(p_qty, 1))
+                  then round(coalesce(p_sub * coalesce(p_qty, 1), p_sell * coalesce(p_qty, 1) / p_upb))
                 when p_unit = 'box' then round(coalesce(p_sell, 0) * coalesce(p_qty, 1)) end),
-         case when p_unit = 'sub' and coalesce(p_upb, 0) > 0 then round(coalesce(p_qty, 1) / p_upb, 9)
-              when p_unit = 'box' then coalesce(p_qty, 1) end
+         case when p_unit = 'sub' and coalesce(p_upb, 0) > 0 then round(coalesce(p_qty, 1) / p_upb, 3)
+              when p_unit = 'box' then round(coalesce(p_qty, 1), 3) end
 $$;
 revoke all on function public._dose_plan(numeric, numeric, text, numeric, numeric, numeric) from public, anon;
 grant execute on function public._dose_plan(numeric, numeric, text, numeric, numeric, numeric) to authenticated;
@@ -162,7 +164,7 @@ create table if not exists public.dose_charges (
   product_id uuid,
   name       text not null,
   price      numeric not null check (price >= 0),
-  stock_qty  numeric check (stock_qty is null or stock_qty > 0),
+  stock_qty  numeric check (stock_qty is null or stock_qty >= 0),   -- صفرٌ لجرعةٍ دون ٠٫٠٠٠٥ علبة (كبيع المفرد) — لا يمنع تسجيلَ الجرعة
   dose_qty   numeric,
   dose_unit  text,
   given_at   timestamptz not null,
@@ -199,17 +201,23 @@ alter table public.treatment_entries add column if not exists bill boolean;
 comment on column public.treatment_entries.bill is
   'هل تُحسب الجرعةُ بيعاً حين تُعطى (0269)؟ تُختم عند الإدراج: البيعُ يكتب false (بِيعت أصلاً)، والغائبُ = معلَّقةٌ أو بزيارة.';
 
+-- والختمُ قرارُ الإدراج: الكادرُ لا يقلبه بعده (سياسةُ الطبلة تمنح التحديثَ للكلّ — التجميدُ بمحفّز، درسُ 0162): false يُطفئ حسابَ
+-- جرعة، وtrue على جرعةٍ بِيعت ثمّ إلغاءٌ وإعادة يحسبها مرّتين.
 create or replace function public.treatment_entries_bill_stamp()
 returns trigger language plpgsql security invoker set search_path = public as $$
 begin
-  if new.bill is null then
-    new.bill := (new.administered_at is null or new.visit_id is not null);
+  if tg_op = 'INSERT' then
+    if new.bill is null then
+      new.bill := (new.administered_at is null or new.visit_id is not null);
+    end if;
+  elsif current_user = 'authenticated' and new.bill is distinct from old.bill then
+    raise exception 'dose_bill_frozen' using hint = 'حساب الجرعة يتحدّد لمّا تنكتب — ما يتغيّر بعدها';
   end if;
   return new;
 end $$;
 revoke all on function public.treatment_entries_bill_stamp() from public, anon, authenticated;
 drop trigger if exists treatment_entries_bill_stamp on public.treatment_entries;
-create trigger treatment_entries_bill_stamp before insert on public.treatment_entries
+create trigger treatment_entries_bill_stamp before insert or update on public.treatment_entries
   for each row execute function public.treatment_entries_bill_stamp();
 
 -- يكتب بجدولٍ قراءةٌ فقط ⇒ definer، وعيادتُه عيادةُ الصفّ الذي مرّ من سياسة الطبلة (لا عيادةَ يختارها المنادي).
@@ -225,8 +233,9 @@ begin
      where c.entry_id = new.id and c.clinic_id = new.clinic_id and c.status = 'pending';
     return null;
   end if;
-  -- bill فارغٌ على صفٍّ قبل 0269 وحده (الإدراجُ يُختم): خطّةٌ معلَّقةٌ تُعطى الآن ⇒ تُحسب.
-  if new.administered_at is null or not coalesce(new.bill, true) then return null; end if;
+  -- bill فارغٌ على صفٍّ قبل 0269 وحده (الإدراجُ يُختم دائماً): لا يُحسب — لا يُعرف أهو خطّةٌ أم جرعةٌ بِيعت بالكاشير لتُعطى لاحقاً
+  -- (البيعُ القديم كان يكتب المؤجَّلةَ معلَّقةً بلا زيارة كخطّة الطبيب تماماً). حسابٌ ناقصٌ لخططٍ سبقت النشر أهونُ من بيعٍ مرّتين.
+  if new.administered_at is null or not coalesce(new.bill, false) then return null; end if;
   if tg_op = 'UPDATE' and old.administered_at is not null then return null; end if;   -- إعادةُ ختمِ معطاة: لا شيء
   if exists (select 1 from dose_charges c where c.entry_id = new.id and c.status <> 'void') then return null; end if;
 
@@ -278,11 +287,15 @@ begin
   return coalesce((
     select jsonb_agg(jsonb_build_object(
              'id', c.id, 'pet_id', c.pet_id, 'pet_name', pt.name, 'name', c.name, 'price', c.price,
-             'product_id', c.product_id, 'stock_qty', c.stock_qty, 'dose_qty', c.dose_qty, 'dose_unit', c.dose_unit,
+             'product_id', pr.id, 'stock_qty', case when pr.id is not null then c.stock_qty end,
+             'dose_qty', case when pr.id is not null then c.dose_qty end, 'dose_unit', case when pr.id is not null then c.dose_unit end,
              'given_at', c.given_at)
            order by c.given_at, c.id)
       from dose_charges c
       join pets pt on pt.id = c.pet_id
+      -- المادّةُ «الفعّالة»: باقيةٌ بالعيادة وبالدينار، وإلا تُباع الجرعةُ بسعرها بلا مخزن (مادّةٌ حُذفت أو دُمجت أو صارت بالدولار كانت
+      -- ترفض البيعةَ بمفتاحها الأجنبيّ أو usd_product_in_iqd — والجرعةُ معلَّقةٌ للأبد). والبيعةُ تقيسها بالشرط نفسِه (v_eff).
+      left join products pr on pr.id = c.product_id and pr.clinic_id = c.clinic_id and coalesce(pr.price_currency, 'IQD') <> 'USD'
      where c.clinic_id = v_clinic and c.status = 'pending'
        and (c.pet_id = any(coalesce(p_pets, '{}'::uuid[]))
             or (v_key is not null and cust_key(pt.owner_phone, pt.owner_name, v_dial) = v_key))), '[]'::jsonb);
@@ -301,6 +314,7 @@ declare
   v_lines  uuid[];
   c        record;
   e        jsonb;
+  v_eff    uuid;
   v_seen   integer := 0;
 begin
   if v_clinic is null then
@@ -319,17 +333,30 @@ begin
   if v_lines is distinct from v_want or (select count(distinct x) from unnest(p_charges) x) <> cardinality(p_charges) then
     raise exception 'dose_charge_lines' using hint = 'سطور الجرعات بالسلّة ما تطابق — حدّث الصفحة وعيد البيع';
   end if;
+  -- القفلُ أوّلاً ثمّ الفاتورةُ بالمرجع: إعادةٌ متزامنة تنتظر قفلَ الأولى فتجد فاتورتَها — قراءتُها قبل القفل كانت تقول «انحسبت
+  -- من جهازٍ ثانٍ» عن جرعةٍ ختمتها المحاولةُ نفسُها.
+  perform 1 from dose_charges dc where dc.id = any(p_charges) order by dc.id for update;
   select i.id into v_prev from invoices i where i.clinic_id = v_clinic and i.client_ref = v_ref;
-  for c in select * from dose_charges dc where dc.id = any(p_charges) order by dc.id for update loop
+  for c in select * from dose_charges dc where dc.id = any(p_charges) order by dc.id loop
     v_seen := v_seen + 1;
-    if c.clinic_id <> v_clinic
-       or not (c.status = 'pending' or (c.status = 'billed' and v_prev is not null and c.invoice_id = v_prev)) then
+    if c.clinic_id <> v_clinic then
       raise exception 'dose_charge_gone' using hint = 'جرعة من هالبيعة انحسبت أو انلغت من جهاز ثاني — شلناها، عيد البيع';
     end if;
+    -- مرجعٌ ثبتت فاتورتُه: الإعادةُ ترجعها كما هي — فكلُّ جرعةٍ فيها مختومةٌ بها، وجرعةٌ معلَّقةٌ نزلت بعد المحاولة الأولى ليست فيها
+    -- (كانت تُختم «مفوتَرة» على فاتورةٍ لم تحسبها). وبلا فاتورة: المعلَّقُ وحده يُباع.
+    if v_prev is not null and not (c.status = 'billed' and c.invoice_id = v_prev) then
+      raise exception 'dose_charge_late' using hint = 'البيعة السابقة انسجلت بدون هالجرعات — شلناها (تنزل ببيعة جاية)، اضغط «إتمام» مرة ثانية';
+    end if;
+    if v_prev is null and c.status <> 'pending' then
+      raise exception 'dose_charge_gone' using hint = 'جرعة من هالبيعة انحسبت أو انلغت من جهاز ثاني — شلناها، عيد البيع';
+    end if;
+    -- السطرُ بشكل بيع الشاشة نفسِه لتكلّفه _product_line_cost صحيحاً: الكميةُ كمّيةُ الجرعة بوحدتها (علبٌ أو وحداتٌ صغرى) والمخصومُ
+    -- بالعلبة — «١ ومخصومٌ ٢» كان يُرفض pack_changed، و«١ ومخصومٌ ٠٫٢» يُكلَّف وحدةً صغرى واحدة عن اثنتين. وبلا مادّةٍ فعّالة: ١.
+    v_eff := (select pr.id from products pr where pr.id = c.product_id and pr.clinic_id = c.clinic_id and coalesce(pr.price_currency, 'IQD') <> 'USD');
     select l into e from jsonb_array_elements(p_items) l where l->>'dose_charge' = c.id::text;
-    if nullif(e->>'product_id', '')::uuid is distinct from c.product_id
-       or coalesce((e->>'qty')::numeric, 0) <> 1
-       or (c.product_id is not null and coalesce((e->>'stock_qty')::numeric, -1) <> c.stock_qty) then
+    if nullif(e->>'product_id', '')::uuid is distinct from v_eff
+       or coalesce((e->>'qty')::numeric, 0) <> case when v_eff is not null then coalesce(c.dose_qty, 1) else 1 end
+       or (v_eff is not null and coalesce((e->>'stock_qty')::numeric, -1) <> c.stock_qty) then
       raise exception 'dose_charge_lines' using hint = 'سطور الجرعات بالسلّة ما تطابق — حدّث الصفحة وعيد البيع';
     end if;
   end loop;

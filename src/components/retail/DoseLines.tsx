@@ -18,6 +18,8 @@ export const doseNote = (pet: string, givenAt: string): string => i18n.t("dosl.n
 export const doseLoaded = (n: number): string => i18n.t("dosl.loaded", { count: n });
 /** البيعةُ رُفضت لأنّ جرعةً انحسبت أو انلغت من جهازٍ ثانٍ — شيلت من السلّة. */
 export const doseStale = (): string => i18n.t("dosl.stale");
+/** مرجعُ البيعة ثبتت فاتورتُه بدون جرعاتٍ نزلت بعدها — شيلت، والإعادةُ ترجع الفاتورة. */
+export const doseLate = (): string => i18n.t("dosl.late");
 /** فشلُ جلب المعلَّق — لا يُصمت: الجرعاتُ باقيةٌ معلَّقة لكنّ الكاشيرَ يعرف أنها لم تنزل. */
 export const doseFetchFail = (): string => i18n.t("dosl.fetchFail");
 /** الجرعةُ سطرٌ واحد: الكميةُ ثابتة. */
