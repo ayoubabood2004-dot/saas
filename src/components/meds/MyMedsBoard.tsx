@@ -54,9 +54,11 @@ interface BoardProps {
   onMove(it: MedItem, after: string | null): void;
   announce(msg: string): void;
   empty?: ReactNode;
+  /** 0268: اسمُ العائلة كما سمّتها العيادة (وإلا الترجمة). */
+  famLabel?(k: MedItem["family"]): string;
 }
 
-export function MyMedsBoard({ items, mode, readOnly, draggingId, hint, onTap, isSelected, onUnstar, onMove, announce, empty }: BoardProps) {
+export function MyMedsBoard({ items, mode, readOnly, draggingId, hint, onTap, isSelected, onUnstar, onMove, announce, empty, famLabel }: BoardProps) {
   const { t } = useTranslation();
   const { setNodeRef, isOver } = useDroppable({ id: `mine-${mode}-end`, data: { kind: "end" } satisfies DropData });
   const ids = items.map((x) => x.drugId as string);
@@ -73,16 +75,17 @@ export function MyMedsBoard({ items, mode, readOnly, draggingId, hint, onTap, is
         <Row key={it.drugId} it={it} index={i} total={items.length} mode={mode} readOnly={readOnly}
           fading={draggingId === it.drugId} selected={mode === "pick" && !!isSelected?.(it)}
           hint={hint && hint.id === it.drugId ? (hint.after ? "after" : "before") : null}
-          onTap={onTap} onUnstar={onUnstar} moveTo={moveTo} />
+          onTap={onTap} onUnstar={onUnstar} moveTo={moveTo} famLabel={famLabel} />
       ))}
     </div>
   );
 }
 
-function Row({ it, index, total, mode, readOnly, fading, selected, hint, onTap, onUnstar, moveTo }: {
+function Row({ it, index, total, mode, readOnly, fading, selected, hint, onTap, onUnstar, moveTo, famLabel }: {
   it: MedItem; index: number; total: number; mode: "pick" | "manage"; readOnly?: boolean; fading: boolean; selected: boolean;
   hint: "before" | "after" | null;
   onTap?(it: MedItem): void; onUnstar(it: MedItem): void; moveTo(it: MedItem, to: number): void;
+  famLabel?(k: MedItem["family"]): string;
 }) {
   const { t } = useTranslation();
   const drag = useDraggable({ id: `row:${it.drugId}`, data: { kind: "row", item: it } satisfies DragData, disabled: readOnly });
@@ -117,7 +120,7 @@ function Row({ it, index, total, mode, readOnly, fading, selected, hint, onTap, 
           <span className="block truncate text-sm font-black text-ink">{it.label}</span>
           <span className="mt-0.5 flex items-center gap-1.5 text-2xs font-bold text-ink-muted">
             {it.sub && <span className="truncate" dir="auto">{it.sub}</span>}
-            <span className="shrink-0 rounded-full bg-surface-2 px-1.5 py-0.5">{t(`mymeds.fam.${it.family}`)}</span>
+            <span className="shrink-0 rounded-full bg-surface-2 px-1.5 py-0.5">{famLabel ? famLabel(it.family) : t(`mymeds.fam.${it.family}`)}</span>
             {selected && <span className="shrink-0 rounded-full bg-success-700 px-1.5 py-0.5 text-white" data-mymed-added>{t("mymeds.added", "أُضيف ✓")}</span>}
           </span>
         </button>

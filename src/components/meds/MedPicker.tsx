@@ -116,7 +116,7 @@ export function MedField({ value, onChange, placeholder, className, showFamily =
               <span className="block truncate text-base font-black text-ink">{value.label}</span>
               <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-2xs font-bold text-ink-muted">
                 {value.label !== value.name && <span className="truncate" dir="auto">{value.name}</span>}
-                {showFamily && <span className="rounded-full bg-surface-1 px-2 py-0.5">{t(`mymeds.fam.${value.family}`)}</span>}
+                {showFamily && <span className="rounded-full bg-surface-1 px-2 py-0.5">{value.familyLabel ?? t(`mymeds.fam.${value.family}`)}</span>}
               </span>
             </>
           ) : (

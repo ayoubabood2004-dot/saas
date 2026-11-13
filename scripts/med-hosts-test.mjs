@@ -241,10 +241,12 @@ await section("▸ ٨) تصنيفاتُ العيادة: الطبلة بتبوي�
   const sheet = fnBody(flow, "AddTaskSheet");
   check("الطبلة: لا قصَّ على اثني عشر (.slice(0, 12)) — كلُّ أدوية التبويب تحته", !/\.slice\(0, 12\)/.test(sheet) && /tab\.list\.map\(/.test(sheet));
   check("  وتبويبٌ لـ«أدويتي» ولكلّ تصنيفٍ فيه أدوية، بتمريرٍ أفقيّ", /role="tablist" data-tasktabs/.test(sheet) && /medIx\.groups\.filter\(\(g\) => g\.count > 0\)/.test(sheet) && /overflow-x-auto/.test(sheet));
-  check("  والفهرسُ يأخذ التصنيفاتِ والعضويات", /useMedIndex\(\{[^}]*groups: drugs\.groups, items: drugs\.items/.test(sheet));
+  // 0268: كلُّ التصنيفات حيّةً ومؤرشفة — العائلةُ المخفيّة صفٌّ مؤرشف، والحيّةُ وحدها كانت تُبقيها ظاهرة.
+  check("  والفهرسُ يأخذ التصنيفاتِ (حيّةً ومؤرشفة) والعضويات", /useMedIndex\(\{[^}]*groups: drugs\.allGroups, items: drugs\.items/.test(sheet));
   const sh = src("src/components/meds/MedPickerSheet.tsx");
   const rail = sh.slice(sh.indexOf("data-medrail-nav"), sh.indexOf("{/* البلاطات */}"));
-  check("المنتقي: الرفُّ «أدويتي» ثم التصنيفات ثم «+ تصنيف جديد» ثم العائلات", rail.indexOf('id="mine"') >= 0 && rail.indexOf('id="mine"') < rail.indexOf("ix.groups.map") && rail.indexOf("ix.groups.map") < rail.indexOf("data-medcat-new") && rail.indexOf("data-medcat-new") < rail.indexOf("ix.families.map"));
+  // 0268: التصنيفاتُ والعائلاتُ قائمةٌ واحدة بترتيب العيادة (ix.order) — لا كتلتان.
+  check("المنتقي: الرفُّ «أدويتي» ثم التصنيفاتُ والعائلاتُ بترتيب العيادة ثم «+ تصنيف جديد»", rail.indexOf('id="mine"') >= 0 && rail.indexOf('id="mine"') < rail.indexOf("ix.order.map") && rail.indexOf("ix.order.map") < rail.indexOf("data-medcat-new") && !rail.includes("ix.families.map") && !rail.includes("ix.groups.map"));
   check("  وقسمُ التصنيف بزرّين متساويين («أدرج من القائمة»/«اكتب بإيدي») و«⋯»", /data-medcat-insert=/.test(sh) && /data-medcat-type=/.test(sh) && /data-medcat-more=/.test(sh) && /grid grid-cols-2 gap-2/.test(sh));
   check("  و«أدرج من القائمة» يقلب الضغطةَ إضافةً/شيلاً بدفعةٍ واحدة (fileInto)، و«تم» ترجع للتصنيف", /if \(insertInto\) \{ void toggleFile\(it\); return; \}/.test(sh) && /drugs\.fileInto\(insertInto/.test(sh) && /data-medcat-done/.test(sh));
   check("  والأرشفةُ جملةٌ تُقرأ — لا window.confirm", /data-medcat-archive-ask/.test(sh) && !/window\.confirm/.test(sh));
@@ -270,7 +272,7 @@ await section("▸ ٩) «أدرج من القائمة» لا يشيل بـEnter 
   check("ذيلُ الإدراج فيه «ما لكيته؟» يفتح بطاقةَ الكتابة على هذا التصنيف (كانت «تم» وحدها والنصُّ يدلّ على الغائب)",
     /insertInto && !freeOpen \?/.test(foot) && /data-medfree onClick=\{\(\) => \{ playTap\(\); setTypeInto\(insertInto\); setFreeOpen\(true\); \}\}/.test(foot), foot.slice(0, 160));
   check("  والمكتوبُ والتوأمُ يُدرجان ولا يُختاران بوضع الإدراج (pick كان يقلب التوأمَ شيلاً)",
-    /p\.mode !== "manage" && !insertInto\) \{ p\.onPick/.test(at("const saveInto = async (")) && /p\.mode !== "manage" && !insertInto\) pick\(it\)/.test(at("const useTwinInto = async (")));
+    /p\.mode !== "manage" && !insertInto\) \{ emit\(/.test(at("const saveInto = async (")) && /p\.mode !== "manage" && !insertInto\) pick\(it\)/.test(at("const useTwinInto = async (")));
 
   const { loadUI } = await import("./react-mini.mjs");
   const A = await loadUI(`export { drugGroupLine } from "./src/pages/ActivityLog.tsx";`, {

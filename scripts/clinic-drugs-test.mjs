@@ -84,6 +84,7 @@ const sql229 = readFileSync("supabase/migrations/0229_clinic_drugs.sql", "utf8")
 const sql230 = readFileSync("supabase/migrations/0230_clinic_drugs_fold.sql", "utf8");
 /* 0239 تعيد تعريفَ clinic_drugs_apply (فتكرّر تلميحاتِ 0229) وتضيف رموزَ التصنيفات. */
 const sql239 = existsSync("supabase/migrations/0239_clinic_drug_groups.sql") ? readFileSync("supabase/migrations/0239_clinic_drug_groups.sql", "utf8") : "";
+const sql268 = readFileSync("supabase/migrations/0268_drug_families_editable.sql", "utf8");
 
 const NOW = "2026-10-10T00:00:00.000Z";
 let seq = 0;
@@ -201,16 +202,16 @@ console.log("▸ ٦) applyOps — الموضعُ والرفض، كالخادم")
   check("أربعون إدراجاً بفجوةٍ واحدة: ترقيمٌ ولا موضعَ مكرّر", new Set(pos).size === pos.length && g.find((x) => x.id === "n0").pos !== 1536 && M.mineOrder(g)[0].id === "g0" && M.mineOrder(g).at(-1).id === "gz");
   check("اسمٌ فارغ ⇒ clinic_drugs_bad_name", code(() => M.applyOps([], [P("q", "  ", true)])) === "clinic_drugs_bad_name");
   check("رفضٌ بمنتصف الدفعة لا يترك نصفَها", (() => { const before = JSON.stringify(r); try { M.applyOps(r, [P("w", "W", true), { op: "move", id: "a", after: "e" }]); } catch { /* المتوقَّع */ } return JSON.stringify(r) === before; })());
-  // التلميحات = نصُّ 0229 و0239 حرفاً (والدالّتان تكرّران بعضها بأكثر من موضع — كلُّها نفسُ النصّ).
+  // التلميحات = نصُّ 0229 و0239 و0268 حرفاً (والدوالُّ تكرّر بعضها بأكثر من موضع — كلُّها نفسُ النصّ).
   const sqlHints = new Map();
   let bad = [];
-  for (const m of (sql229 + "\n" + sql239).matchAll(/raise exception '([a-z_]+)' using hint = (?:format\()?'([^']+)'/g)) {
+  for (const m of (sql229 + "\n" + sql239 + "\n" + sql268).matchAll(/raise exception '([a-z_]+)' using hint = (?:format\()?'([^']+)'/g)) {
     if (sqlHints.has(m[1]) && sqlHints.get(m[1]) !== m[2]) bad.push(`${m[1]} مختلفٌ بموضعين`);
     sqlHints.set(m[1], m[2]);
   }
   for (const [k, v] of sqlHints) if (M.DRUG_HINTS[k] !== v) bad.push(k);
   const missingHint = Object.keys(M.DRUG_HINTS).filter((k) => !sqlHints.has(k));
-  check(`تلميحاتُ المرآة = تلميحاتُ 0229/0239 حرفاً (${sqlHints.size} رمزاً)`, bad.length === 0 && missingHint.length === 0 && sqlHints.size === 15, [...bad, ...missingHint].join(","));
+  check(`تلميحاتُ المرآة = تلميحاتُ 0229/0239/0268 حرفاً (${sqlHints.size} رمزاً)`, bad.length === 0 && missingHint.length === 0 && sqlHints.size === 17, [...bad, ...missingHint].join(","));
 }
 
 /* ── ٧) planDrop ───────────────────────────────────────────────────────────── */
@@ -298,6 +299,56 @@ try {
   const ix2 = M.buildMedIndex({ catalog: MED_CATALOG, rows: back.rows, groups: back.groups, items: back.items });
   check("استرجاعُ الدواء يُصحي عضويتَه، واسترجاعُ التصنيف يرجعه لآخر القائمة", (ix2.byGroup.get("g1") ?? []).length === 3 && ix2.groups.map((g) => g.name).join(",") === "مسكنات القطط,حساسية");
   check("applyOps (الصفوفُ وحدها) كما كانت", JSON.stringify(M.applyOps([cef], [{ op: "archive", id: cef.id }], NOW)) === JSON.stringify(M.applyAll(data([cef]), [{ op: "archive", id: cef.id }], NOW).rows));
+} catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
+
+console.log("▸ ١٣) العائلاتُ الأساسيّة بيد العيادة (0268): ترتيبٌ واحد، وتسمية، وإخفاءٌ ويّا أدويتها، والسقف");
+try {
+  const code = (fn) => { try { fn(); return "ok"; } catch (e) { return M.drugErrorCode(e); } };
+  const data = (rows, groups = [], items = []) => ({ rows, groups, items });
+  const cef = row("Ceftriaxone", { family: "antibiotics" });
+  const mel = row("Meloxicam", { family: "analgesics", in_mine: true, pos: 1024 });
+  const ket = row("Ketamine", { family: "anesthetics" });
+  const own = M.applyAll(data([cef, mel, ket]), [{ op: "group_create", id: "own", name: "قطط" }], NOW);
+  const proto = own.groups[0];
+  // مرآةُ clinic_drug_families_seed: الأربعَ عشرة بعد آخر حيّ بترتيب FAMILIES، واسمُها مفتاحُها.
+  const fams = M.FAMILIES.map((k, i) => ({ ...proto, id: `fam-${k}`, name: k, family: k, pos: proto.pos + (i + 1) * 1024 }));
+  const seeded = { ...own, groups: [...own.groups, ...fams] };
+  const ixOf = (d, extra = {}) => M.buildMedIndex({ catalog: MED_CATALOG, rows: d.rows, groups: d.groups, items: d.items, ...extra });
+  const famOrder = (ix) => ix.order.map((o) => (o.kind === "group" ? `g:${o.id}` : o.key)).join(",");
+
+  const ix0 = ixOf(own);
+  check("قبل البذر: التصنيفاتُ ثمّ العائلاتُ بترتيبها الثابت (كما كان)", famOrder(ix0) === ["g:own", ...M.FAMILIES].join(","), famOrder(ix0));
+  const ix1 = ixOf(seeded);
+  check("بعد البذر: الترتيبُ نفسُه، وعائلاتُ الرفّ من الترتيب", famOrder(ix1) === ["g:own", ...M.FAMILIES].join(",")
+    && ix1.families.map((f) => f.key).join(",") === M.FAMILIES.filter((k) => ix1.byFamily.get(k)?.length).join(","));
+  check("  وصفُّ العائلة ليس تصنيفاً خاصّاً (لا يظهر بـgroups ولا يأخذ أعضاء)", ix1.groups.map((g) => g.id).join(",") === "own"
+    && code(() => M.applyAll(seeded, [{ op: "member_add", group: "fam-gi", id: cef.id }], NOW)) === "drug_group_builtin");
+
+  const renamed = M.applyAll(seeded, [{ op: "group_edit", id: "fam-analgesics", name: "مسكنات العيادة" }], NOW);
+  check("التسمية: اسمُ العيادة للعائلة، وغيرُ المسمّاة بلا اسم (تُترجم)", ixOf(renamed).famName.get("analgesics") === "مسكنات العيادة" && !ixOf(renamed).famName.has("gi")
+    && M.familyNames(renamed.groups).get("analgesics") === "مسكنات العيادة");
+  const moved = M.applyAll(renamed, [{ op: "group_move", id: "fam-analgesics", after: null }], NOW);
+  check("الترتيب: العائلةُ لأوّل القائمة قبل تصنيف العيادة، والرفُّ يتبعه", famOrder(ixOf(moved)).startsWith("analgesics,g:own,antibiotics")
+    && ixOf(moved).families[0].key === "analgesics");
+
+  const hidden = M.applyAll(moved, [{ op: "group_archive", id: "fam-analgesics" }], NOW);
+  const ixH = ixOf(hidden, { recent: ["Meloxicam", "Ketamine"] });
+  check("الإخفاء: العائلةُ خارج الترتيب والرفّ، وأدويتُها خارج البحث و«أدويتي» و«أخيراً»",
+    !famOrder(ixH).includes("analgesics") && !ixH.families.some((f) => f.key === "analgesics") && ixH.famHidden.has("analgesics")
+    && !ixH.byKey.has(M.searchable("Meloxicam")) && !ixH.mine.some((it) => it.name === "Meloxicam")
+    && ixH.recent.map((it) => it.name).join(",") === "Ketamine"
+    && !ixH.all.some((it) => it.family === "analgesics" && it.base !== "stock"), famOrder(ixH));
+  check("  والمخفيّةُ باسمها المسمّى (لقائمة «المؤرشفة»)", M.hiddenFamilies(hidden.groups).has("analgesics") && M.familyNames(hidden.groups).get("analgesics") === "مسكنات العيادة");
+  const back = M.applyAll(hidden, [{ op: "group_restore", id: "fam-analgesics" }], NOW);
+  check("الإرجاع: بآخر القائمة، وأدويتُها ترجع", famOrder(ixOf(back)).endsWith(",analgesics") && ixOf(back).byKey.has(M.searchable("Meloxicam")));
+
+  // السقف: ٤٦ خاصّاً + ١٤ = ٦٠ حيّاً. إخفاءُ عائلة ثمّ تصنيفٌ جديد ⇒ إرجاعُها يُرفض كإرجاع أيّ تصنيف (الخادمُ نفسُه — قسمُ 0268 بالحزمة).
+  const many = M.applyAll(seeded, Array.from({ length: 45 }, (_, i) => ({ op: "group_create", id: `m${i}`, name: `تصنيف ${i}` })), NOW);
+  check("السقف: ٦٠ حيّاً بالعائلات ⇒ تصنيفٌ جديد يُرفض", code(() => M.applyAll(many, [{ op: "group_create", id: "x", name: "زيادة" }], NOW)) === "drug_groups_full");
+  const full = M.applyAll(many, [{ op: "group_archive", id: "fam-gi" }, { op: "group_create", id: "x", name: "زيادة" }], NOW);
+  check("  وإخفاءُ عائلة يفرغ مكاناً، وإرجاعُها والحيُّ ستّون يُرفض، وبعد أرشفة غيرها يرجع",
+    code(() => M.applyAll(full, [{ op: "group_restore", id: "fam-gi" }], NOW)) === "drug_groups_full"
+    && code(() => M.applyAll(full, [{ op: "group_archive", id: "x" }, { op: "group_restore", id: "fam-gi" }], NOW)) === "ok");
 } catch (e) { fails++; console.error(`   ✗ القسمُ لم يكتمل — ${String(e?.message ?? e).split("\n")[0]}`); }
 
 console.log(fails ? `\n✗ clinic-drugs-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ clinic-drugs-test: ${passes} نجحت، 0 فشلت`);

@@ -188,6 +188,29 @@ export function applyDrugOps(ops: ClinicDrugOp[]): Promise<void> {
   return p;
 }
 
+/** 0268: صفوفُ العائلات الأساسيّة (تُسمّى وتُخفى وتُرتَّب بأوامر التصنيف) — تُبذر مرّةً لكلّ عيادة بأوّل تعديلٍ على عائلة (لا بفتح الإعدادات).
+ *  بابٌ خارج repo (حزمةُ الإقلاع): الخادمُ بـsupabase مباشرةً، والتجريبيُّ بمرآته. قاعدةٌ قبل 0268 (لا دالّة) ⇒ لا شيء — البطاقةُ
+ *  تعرض العائلاتِ كما كانت بلا تحكّم. والختمُ عيادةُ الخادم كأيّ كتابة. */
+export async function seedFamilyRows(): Promise<"seeded" | "absent"> {
+  if (state.status !== "ready" || !state.clinic) throw Object.assign(new Error("not_ready"), { code: "not_ready" });
+  const clinic = state.clinic;
+  const { supabase } = await import("./supabase");
+  if (supabase) {
+    const r = await supabase.rpc("clinic_drug_families_seed", { p_clinic: clinic });
+    if (r.error) {
+      const c = String((r.error as { code?: string }).code ?? "");
+      if (c === "42883" || c === "PGRST202") return "absent";
+      throw r.error;
+    }
+    if (!r.data) return "seeded";
+  } else {
+    const n = (await import("./demoClinicDrugs")).demoDrugsSeed(clinic);
+    if (!n) return "seeded";
+  }
+  await loadClinicDrugs(true);
+  return "seeded";
+}
+
 /* ── قراءةٌ ثانية عند الرجوع للتبويب (كلَّ ١٥ث على الأكثر) — بلا realtime ─────────── */
 export function onDrugsVisible(now = Date.now()): void {
   if (state.status === "idle") return;
@@ -258,6 +281,8 @@ export function useClinicDrugs() {
     /** كلُّ العضويات — والنائمةُ منها (دواءٌ مؤرشف): الإخفاءُ بنموذج القراءة (buildMedIndex). */
     items: s.view.items,
     archivedGroups: ordered.filter((g) => g.archived_at != null),
+    /** 0268: كلُّ التصنيفات حيّةً ومؤرشفة — لـbuildMedIndex (العائلةُ المخفيّة صفٌّ مؤرشف: بلاه لا تُعرف مخفيّة). */
+    allGroups: ordered,
     mine,
     archived: s.view.rows.filter((r) => r.archived_at != null),
     isMine: (key: string) => mineKeys.has(key),

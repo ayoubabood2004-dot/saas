@@ -2597,6 +2597,8 @@ export type ClinicDrugOp =
 export interface ClinicDrugGroup {
   id: string;
   name: string;
+  /** 0268: عائلةٌ أساسيّة (صفُّها بيد العيادة: تُسمّى وتُخفى وتُرتَّب) — null/غائبٌ = تصنيفٌ خاصّ. */
+  family?: DrugFamilyKey | null;
   pos: number | null;
   archived_at: string | null;
   created_at: string;

@@ -6651,8 +6651,14 @@
     "restored": "“{{name}}” restored",
     "restore": "Restore",
     "catsTitle": "My categories",
-    "catsHint": "Clinic categories — shown in the picker under «My meds». A drug can be in more than one.",
-    "catArchiveAsk": "Archive «{{name}}»? It leaves the picker, its drugs stay, and you can restore it from «Archived»."
+    "catsHint": "Clinic and built-in categories in one list — the picker shows them in this order. Rename, reorder, or hide them with their drugs.",
+    "catArchiveAsk": "Archive «{{name}}»? It leaves the picker, its drugs stay, and you can restore it from «Archived».",
+    "famNeedsDb": "Controlling the built-in categories needs a system update — tell support.",
+    "famReset": "Original name",
+    "famTag": "Built-in",
+    "famHide": "Hide",
+    "famHideAsk": "Hide «{{name}}»? It leaves the picker with its drugs ({{n}}); records keep them, and you can bring it back from «Archived».",
+    "famHidden": "“{{name}}” hidden"
   },
   "cust": {
     "short": "Type 2 letters or 3 digits",

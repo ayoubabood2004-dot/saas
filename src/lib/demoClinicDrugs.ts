@@ -1,8 +1,8 @@
 import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugOp, ClinicDrugsSnapshot, MedicineStock } from "@/types";
-import { applyAll, cmpMine, DrugOpError, drugKey, groupsOrder, itemsOrder } from "./medIndex";
+import { applyAll, cmpMine, DrugOpError, drugKey, FAMILIES, groupsOrder, itemsOrder } from "./medIndex";
 import { getActiveClinicId } from "./clinics";
 import { loadDB } from "./demoStore";
-import { localISO, searchable } from "./utils";
+import { localISO, searchable, uuid } from "./utils";
 
 /* ============================================================================
  * «أدويتي» بالنسخة التجريبية — مرآةُ 0229 بمخزن الجهاز لكلّ عيادة.
@@ -50,6 +50,24 @@ export function demoDrugsList(): ClinicDrugsSnapshot {
   const clinic = activeClinic();
   const g = loadGroups(clinic);
   return { clinic, rows: ordered(load(clinic)), groups: groupsOrder(g.groups), items: itemsOrder(g.items) };
+}
+
+/** 0268: مرآةُ `clinic_drug_families_seed` — صفٌّ لكلّ عائلةٍ غائبة، بعد آخر تصنيفٍ حيّ بخطوة ١٠٢٤ وبترتيب FAMILIES. */
+export function demoDrugsSeed(clinic: string): number {
+  const active = activeClinic();
+  if (clinic !== active) throw new DrugOpError("clinic_switched");
+  const g = loadGroups(active);
+  let pos = g.groups.filter((x) => x.archived_at == null).reduce((m, x) => Math.max(m, x.pos ?? 0), 0);
+  const now = new Date().toISOString();
+  let n = 0;
+  for (const k of FAMILIES) {
+    if (g.groups.some((x) => x.family === k)) continue;
+    pos += 1024;
+    g.groups.push({ id: uuid(), name: k, family: k, pos, archived_at: null, created_at: now, updated_at: now });
+    n++;
+  }
+  if (n) localStorage.setItem(GKEY(active), JSON.stringify({ groups: g.groups, items: g.items }));
+  return n;
 }
 
 export function demoDrugsApply(clinic: string, ops: ClinicDrugOp[]): ClinicDrugsSnapshot {
