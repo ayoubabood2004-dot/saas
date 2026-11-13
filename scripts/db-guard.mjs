@@ -522,11 +522,58 @@ export function analyze(model) {
   return findings;
 }
 
+/* -- if-case-then: plpgsql يقطع شرطَ IF/ELSIF عند أوّل THEN خارج الأقواس — ومنه THEN الـCASE (CLAUDE.md §٣) ----------------
+ * `if x <> case when … then … end then` لا يُنشأ أصلاً («syntax error at end of input») — وقع مرّتين (0144، ثمّ 0269 بتصليح مراجعة):
+ * الأوّلُ دخل CLAUDE.md، والثاني لم يمسكه شيءٌ قبل الحزمة الكاملة. فيُفحص النصُّ: من IF/ELSIF إلى أوّل THEN بعمق أقواسٍ صفر (أو `;`
+ * — فليس شرطاً)، وCASE بالعمق صفر قبله مخالفة. بلا تعليقٍ ولا نصّ. */
+export function ifCaseThen(sql) {
+  // ماسحٌ بحالة (لا تعابيرُ متتالية): «'-- +0269'» نصٌّ لا تعليق — حذفُ التعليق أوّلاً كان يأكل قوسَه الختاميّ فيقلب أزواجَ النصوص
+  // لبقيّة الملفّ ويُعمي الحارسَ عن 0269 نفسِها (مقيس). وأجسامُ $$ تُمسح كشِفرة (فيها الشرطُ نفسُه).
+  let src = "";
+  for (let i = 0; i < sql.length;) {
+    const c = sql[i], d = sql[i + 1];
+    if (c === "-" && d === "-") { const j = sql.indexOf("\n", i); i = j < 0 ? sql.length : j; src += " "; }
+    else if (c === "/" && d === "*") { const j = sql.indexOf("*/", i + 2); i = j < 0 ? sql.length : j + 2; src += " "; }
+    else if (c === "'") { let j = i + 1; for (; j < sql.length; j++) { if (sql[j] === "'") { if (sql[j + 1] === "'") { j++; continue; } break; } } i = j + 1; src += "''"; }
+    else { src += c; i++; }
+  }
+  src = src.toLowerCase();
+  const out = [];
+  const re = /\b(elsif|if)\b/g;
+  let m;
+  while ((m = re.exec(src))) {
+    if (/\bend\s*$/.test(src.slice(Math.max(0, m.index - 8), m.index))) continue;   // end if
+    let depth = 0;
+    const tail = src.slice(m.index + m[0].length, m.index + m[0].length + 2000);
+    const tok = /\(|\)|;|\bthen\b|\bcase\b/g;
+    let t;
+    while ((t = tok.exec(tail))) {
+      if (t[0] === "(") depth++;
+      else if (t[0] === ")") depth--;
+      else if (t[0] === ";") break;
+      else if (t[0] === "then" && depth === 0) break;
+      else if (t[0] === "case" && depth === 0) { out.push(src.slice(m.index, m.index + m[0].length + t.index + 4).replace(/\s+/g, " ").slice(0, 120)); break; }
+    }
+  }
+  return out;
+}
+
 /* -- التشغيل: يقارن بالأساس، ويشدّه إذا نزل العدد ------------------------ */
 
 function main() {
   const model = buildModel();
   const findings = analyze(model);
+  const migFiles = readdirSync(MIG_DIR).filter((f) => /^\d{4}_.*\.sql$/.test(f));
+  let icChecked = 0;
+  for (const f of migFiles) {
+    icChecked++;
+    for (const w of ifCaseThen(readFileSync(join(MIG_DIR, f), "utf8"))) findings.push({ rule: "if-case-then", where: w, file: f });
+  }
+  // الحارسُ يمسك ما وُضع ليمسكه، ولا يمسك المقوَّسَ ولا CASE داخل استعلامٍ فرعيّ ولا «create table if not exists».
+  const icSelf = ifCaseThen("if a <> case when b then 1 else 2 end then x; end if;").length === 1
+    && ifCaseThen("select f('-- +0269'); if a <> case when b then 1 end then x; end if;").length === 1   // «--» بنصٍّ ليس تعليقاً
+    && ifCaseThen("if a <> (case when b then 1 else 2 end) then x; end if; if exists (select case when z then 1 end) then y; end if; create table if not exists t (a int);").length === 0;
+  if (!icSelf) { console.error("✗ db-guard if-case-then: الفحصُ الذاتيّ فشل — الحارسُ أعمى"); process.exit(1); }
   const counts = {};
   for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
 
@@ -573,6 +620,7 @@ function main() {
   console.log(`db-guard consumption-wiring: فُحص ${wc.length} رابطاً (${wc.filter((c) => c.ok).length} سليماً)`);
   if (!wc.length) { console.error("✗ consumption-wiring: ما فحصتُ شيئاً — لا _consumption_plan بالهجرات؟ الحارسُ أعمى."); process.exit(1); }
   const usSrc = model.fnBodies.get("_cons_at_us/1");
+  console.log(`db-guard if-case-then: فُحص ${icChecked} هجرةً — لا CASE غيرُ مقوَّسٍ بشرط IF/ELSIF (وفحصٌ ذاتيّ بثلاث حالات)`);
   console.log(`db-guard at-us-expr: فُحص آخرُ جسمٍ لـ${model.fnBodies.size} دالّة — at_us من _cons_at_us وحدها${usSrc ? ` (${usSrc.file.slice(0, 4)})` : ""}`);
   if (!usSrc || !RE_EPOCH_US.test(usSrc.body)) { console.error("✗ at-us-expr: _cons_at_us غائبة أو لا يطابقها النمط — الحارسُ أعمى."); process.exit(1); }
 }
