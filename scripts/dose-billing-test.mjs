@@ -144,10 +144,16 @@ console.log("▸ ٤) البيع — المعلَّقُ للزبون، والبي
   check("معلَّقاتُ الزبون بهاتفه بصيغةٍ أخرى (بسبوس: جرعتان)", pend.map((x) => `${x.pet_name}:${x.price}`).join() === "بسبوس:4000,بسبوس:5000", JSON.stringify(pend.map((x) => x.pet_name + x.price)));
   check("  وبحيوانٍ مسمّى، والاسمُ وحده لا يطابق صاحبَ هاتف",
     (await API.pendingDoses(null, null, ["b2"])).map((x) => x.pet_name).join() === "لولو" && (await API.pendingDoses(null, "علي", [])).length === 0);
-  const line = (c, extra = {}) => ({ product_id: c.product_id, name: c.name, barcode: null, qty: 1, unit_price: c.price, unit_cost: 0, stock_qty: c.product_id ? c.stock_qty : 0, unit_label: null, service_id: null, dose_charge: c.id, ...extra });
+  // بشكل بيع الشاشة: الكميةُ كمّيةُ الجرعة بوحدتها والسعرُ لوحدتها (مرآةُ payload شاشة البيع).
+  const line = (c, extra = {}) => {
+    const q = c.product_id ? (c.dose_qty ?? 1) : 1;
+    return { product_id: c.product_id, name: c.name, barcode: null, qty: q, unit_price: Math.round((c.price / q) * 100) / 100, unit_cost: 0,
+      stock_qty: c.product_id ? c.stock_qty : 0, unit_label: null, service_id: null, dose_charge: c.id, ...extra };
+  };
   const meta = (ref) => ({ amount_paid: 9000, payment_method: "cash", client_ref: ref, customer_phone: "07701234567" });
   check("سطورٌ لا تطابق اللقطة تُرفض قبل أيّ كتابة، وبلا مرجعٍ تُرفض",
     (await codeOf(API.checkoutWithDoses([line(pend[0], { stock_qty: 0.5 }), line(pend[1])], meta("r-bad")))) === "dose_charge_lines"
+    && (await codeOf(API.checkoutWithDoses([line(pend[0], { qty: 1 }), line(pend[1])], meta("r-bad")))) === "dose_charge_lines"
     && (await codeOf(API.checkoutWithDoses([line(pend[0])], meta("")))) === "dose_charge_ref" && db().invoices.length === 0);
   const inv = await API.checkoutWithDoses(pend.map((c) => line(c)), meta("r-1"));
   const after = db();
@@ -159,15 +165,42 @@ console.log("▸ ٤) البيع — المعلَّقُ للزبون، والبي
   check("  وجرعةٌ فوتَرتها بيعةٌ أخرى بمرجعٍ جديد ⇒ dose_charge_gone ولا فاتورة", (await codeOf(API.checkoutWithDoses([line(pend[1])], meta("r-2")))) === "dose_charge_gone"
     && !db().invoices.some((i) => i.client_ref === "r-2") && API.isDoseStale(new Error("dose_charge_gone")));
   check("  والمعلَّقُ لا يبقى للزبون بعد بيعه", (await API.pendingDoses("07701234567", null, [])).length === 0);
+  // مرجعٌ ثبتت فاتورتُه (r-1) وجرعةٌ نزلت بعد المحاولة الأولى: الإعادةُ لا تختمها على فاتورةٍ لم تحسبها.
+  const e9 = await repo.addTreatment({ pet_id: "b1", day: "2026-11-13", medication: "Ceftriaxone", time: "13:00", amount: "1" });
+  await repo.setTreatmentGiven(e9.id, true);
+  const late = (await API.pendingDoses("07701234567", null, []))[0];
+  const billed = charges().filter((c) => c.invoice_id === inv.id).map((c) => ({ ...c, product_id: c.product_id, dose_qty: c.dose_qty }));
+  check("إعادةُ مرجعٍ ثبتت فاتورتُه مع جرعةٍ نزلت بعدها ⇒ dose_charge_late، والجرعةُ تبقى معلَّقة",
+    (await codeOf(API.checkoutWithDoses([...billed.map((c) => line(c)), line(late)], meta("r-1")))) === "dose_charge_late"
+      && charges().find((c) => c.id === late.id).status === "pending" && API.isDoseLate(new Error("dose_charge_late")));
+}
+
+console.log("▸ ٤ب) مادّةٌ حُذفت بعد الإعطاء — الجرعةُ تُباع بسعرها بلا مخزن (لا بيعةَ مقفولةٌ للأبد)، وصفٌّ قبل 0269 لا يُحسب");
+{
+  const e = await repo.addTreatment({ pet_id: "b2", day: "2026-11-13", medication: "Meloxicam", time: "14:00", amount: "2 ml" });
+  await repo.setTreatmentGiven(e.id, true);
+  const d = db(); d.products = d.products.filter((p) => p.id !== "vial"); mem.set(DB_KEY, JSON.stringify(d));
+  const c = (await API.pendingDoses(null, null, ["b2"])).find((x) => x.name === "Meloxicam");
+  check("المعلَّقُ بلا مادّة (فعّالةٌ غائبة) وبسعره", !!c && c.product_id === null && c.stock_qty === null && c.price === 4000, JSON.stringify(c));
+  const inv2 = await API.checkoutWithDoses([{ product_id: null, name: c.name, barcode: null, qty: 1, unit_price: c.price, unit_cost: 0, stock_qty: 0, unit_label: null, service_id: null, dose_charge: c.id }],
+    { amount_paid: 4000, payment_method: "cash", client_ref: "r-del" });
+  check("  والبيعةُ تمرّ وتختمه", charges().find((x) => x.id === c.id).invoice_id === inv2.id);
+  const old = await repo.addTreatment({ pet_id: "b2", day: "2026-11-13", medication: "Ceftriaxone", time: "15:00", amount: "1" });
+  const d2 = db(); delete d2.treatments.find((t) => t.id === old.id).bill; mem.set(DB_KEY, JSON.stringify(d2));
+  await repo.setTreatmentGiven(old.id, true);
+  check("صفٌّ قبل 0269 (بلا ختم) يُعطى الآن ⇒ لا يُحسب (لا يُعرف أبِيع بالكاشير)", of(old.id) === "none");
 }
 
 console.log("▸ ٥) شاشةُ البيع بنصّها — السطرُ يرسل معلَّقَه، والكميةُ ثابتة، والفشلُ يُقال");
 {
   const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
   check("السطرُ يرسل مادّتَه ولقطةَ المخصوم ومعرّفَ معلَّقه، والبيعةُ تمرّ من checkoutWithDoses حين يوجد",
-    /\.\.\.\(l\.dose \? \{ product_id: l\.dose\.productId, qty: 1, stock_qty: [^}]*dose_charge: l\.dose\.charge \}/.test(sb) && /items\.some\(\(i\) => i\.dose_charge\)\s*\n\s*\? loadDoseMod\(\)\.then\(\(m\) => m\.checkoutWithDoses\(items, meta\)\)/.test(sb));
+    /\.\.\.\(l\.dose \? \{[\s\S]{0,200}?product_id: l\.dose\.productId,[\s\S]{0,200}?stock_qty: l\.dose\.productId \? \(l\.dose\.stockQty \?\? 0\) : 0, dose_charge: l\.dose\.charge,/.test(sb) && /items\.some\(\(i\) => i\.dose_charge\)\s*\n\s*\? loadDoseMod\(\)\.then\(\(m\) => m\.checkoutWithDoses\(items, meta\)\)/.test(sb));
   check("  والكميةُ ثابتة (setQty يرفض غيرَ ١ ويُسقط الصفرَ شيلاً لهذه البيعة)", /if \(id\.startsWith\("d:"\)\) \{\s*\n\s*if \(qty <= 0\) \{ doseDismissed\.current\.add/.test(sb));
-  check("  والجلبُ يُقال إن فشل، والجملةُ والدفعُ بالطريق لا يجلبان", /toast\.warn\(m\.say\.doseFetchFail\(\)\)/.test(sb) && /if \(wholesale \|\| done \|\| paying\) return;/.test(sb));
+  check("  والجلبُ يُقال إن فشل، والجملةُ والدفعُ بالطريق والمرجعُ المعلَّق لا يجلبون", /toast\.warn\(m\.say\.doseFetchFail\(\)\)/.test(sb) && /if \(wholesale \|\| done \|\| paying \|\| saleRefSaved\) return;/.test(sb));
+  check("  والسلّةُ تتبع الزبونَ الحاليّ: سطرُ جرعةٍ ليس بمعلَّقاته يُشال، وزبونٌ مُسح يشيلها كلَّها",
+    /\.\.\.cur\.filter\(\(l\) => !l\.dose \|\| want\.has\(l\.id\)\)/.test(sb) && /if \(!who\) \{\s*\n\s*if \(cartRef\.current\.some\(\(l\) => l\.dose\)\) setCart/.test(sb));
+  check("  والسطرُ بشكل بيع الشاشة (الكميةُ كمّيةُ الجرعة والسعرُ لوحدتها)", /qty: l\.dose\.qty, unit_price: Math\.round\(\(lineUnit\(l\) \/ l\.dose\.qty\) \* 100\) \/ 100/.test(sb));
   check("  والبيعُ يكتب جرعاتِه «لا تُحسب» والسجلُّ «تُحسب»", /persistMedicalEntries\(pid, user\?\.full_name, drafts, soldAt, false\)/.test(sb)
     && /persistMedicalEntries\(petId, doctorName, entries, null, true\)/.test(readFileSync("src/pages/PetPassport.tsx", "utf8")));
 }

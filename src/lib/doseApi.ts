@@ -68,5 +68,7 @@ export function doseErrorCode(e: unknown): string | null {
 /** هل رُفضت البيعةُ لأنّ جرعةً فيها انحسبت أو انلغت من جهازٍ آخر (أو سطورُها لا تطابق)؟ — السلّةُ تُعاد مزامنتُها. */
 export const isDoseStale = (e: unknown): boolean => {
   const m = `${code(e)} ${(e as { message?: string } | null)?.message ?? ""}`;
-  return /dose_charge_(gone|lines)/.test(m);
+  return /dose_charge_(gone|lines|late)/.test(m);
 };
+/** «late»: مرجعُ البيعة ثبتت فاتورتُه بدون جرعاتٍ نزلت بعد المحاولة الأولى — تُشال، والإعادةُ ترجع الفاتورة. */
+export const isDoseLate = (e: unknown): boolean => /dose_charge_late/.test(`${code(e)} ${(e as { message?: string } | null)?.message ?? ""}`);

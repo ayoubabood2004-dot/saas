@@ -2158,6 +2158,10 @@ function DoseBillingCard() {
   const summary = (d: Pick<ClinicDrug, "dose_price" | "dose_qty" | "dose_unit" | "product_id">): string => {
     const p = d.product_id ? byId.get(d.product_id) : undefined;
     if (d.product_id && products == null) return d.dose_price != null ? t("mmset.billSumPrice", { price: money(d.dose_price) }) : "…";
+    // المادّةُ المربوطة حُذفت أو صارت بالدولار: الجرعاتُ تُحسب بالسعر المكتوب وحده (أو لا تُحسب) — يُقال، لا يُكتشف بالكاشير.
+    if (d.product_id && (!p || (p.price_currency ?? "IQD") === "USD")) {
+      return t("mmset.billProductGone", { rest: d.dose_price != null ? t("mmset.billSumPrice", { price: money(d.dose_price) }) : t("mmset.billNone") });
+    }
     const ch = doseCharge(d, p);
     if (!ch) return t("mmset.billNone");
     if (!ch.productId || !p) return t("mmset.billSumPrice", { price: money(ch.price) });

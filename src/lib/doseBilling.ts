@@ -10,18 +10,34 @@ import type { ClinicDrug, Product } from "@/types";
 export type DoseUnit = "box" | "sub";
 export interface DosePlan { price: number | null; stockQty: number | null }
 
-/** مرآةُ `_dose_plan(p_price, p_qty, p_unit, p_sell, p_sub, p_upb)`. */
+/* الحسابُ بالكسر التامّ لا بالعائم: نصفٌ تامٌّ عند المنزلة (١٠٠١ × ٣ ÷ ٦ = ٥٠٠٫٥) يقرّبه بوستغريس بعيداً عن الصفر، والعائمُ يراه أحياناً
+ * ٥٠٠٫٤٩٩… — أمسكه dose-parity والمراجعةُ العدائيّة. فكلُّ رقمٍ عشريٌّ صحيحٌ ومقام، والتقريبُ نصفٌ بعيداً عن الصفر (round بالقاعدة). */
+const dec = (x: number): [bigint, bigint] => {
+  const s = Math.abs(x) < 1e-6 || Math.abs(x) >= 1e21 ? x.toFixed(20).replace(/0+$/, "") : String(x);
+  const neg = s.startsWith("-");
+  const [i, f = ""] = (neg ? s.slice(1) : s).split(".");
+  return [BigInt((i + f) || "0") * (neg ? -1n : 1n), 10n ** BigInt(f.length)];
+};
+const roundRatio = (num: bigint, den: bigint): bigint => {
+  const q = num / den, r = num % den;
+  return 2n * (r < 0n ? -r : r) >= den ? q + (num < 0n ? -1n : 1n) : q;
+};
+
+/** مرآةُ `_dose_plan(p_price, p_qty, p_unit, p_sell, p_sub, p_upb)`: السعرُ لدينار والمخصومُ بالعلبة بثلاث منازل. */
 export function dosePlan(price: number | null | undefined, qty: number | null | undefined, unit: DoseUnit | null | undefined,
   sell: number | null | undefined, sub: number | null | undefined, upb: number | null | undefined): DosePlan {
-  const q = qty ?? 1;
-  const perBox = upb != null && upb > 0 ? upb : null;
+  const [qn, qd] = dec(qty ?? 1);
+  const per = upb != null && upb > 0 ? dec(upb) : null;
   let p: number | null = price ?? null;
   if (p == null) {
-    if (unit === "sub" && perBox) p = Math.round((sub ?? (sell ?? 0) / perBox) * q);
-    else if (unit === "box") p = Math.round((sell ?? 0) * q);
+    if (unit === "sub" && per) {
+      if (sub != null) { const [sn, sd] = dec(sub); p = Number(roundRatio(sn * qn, sd * qd)); }
+      else { const [sn, sd] = dec(sell ?? 0); p = Number(roundRatio(sn * qn * per[1], sd * qd * per[0])); }
+    } else if (unit === "box") { const [sn, sd] = dec(sell ?? 0); p = Number(roundRatio(sn * qn, sd * qd)); }
   }
-  const stock = unit === "sub" && perBox ? Math.round((q / perBox) * 1e9) / 1e9 : unit === "box" ? q : null;
-  return { price: p, stockQty: stock };
+  const stock = unit === "sub" && per ? Number(roundRatio(qn * per[1] * 1000n, qd * per[0])) / 1000
+    : unit === "box" ? Number(roundRatio(qn * 1000n, qd)) / 1000 : null;
+  return { price: p === 0 ? 0 : p, stockQty: stock };
 }
 
 export type DoseProduct = Pick<Product, "id" | "sell_price" | "sub_unit_price" | "units_per_box" | "price_currency">;

@@ -6685,7 +6685,8 @@
     "billErr_dose_unit_bad": "This item has no small unit — choose the main unit.",
     "billErr_dose_qty_bad": "The dose amount must be more than zero.",
     "billErr_dose_price_bad": "The dose price must be zero or more.",
-    "billErr_drug_row_gone": "The list changed on another device — try again."
+    "billErr_drug_row_gone": "The list changed on another device — try again.",
+    "billProductGone": "The linked stock item is gone or priced in dollars — {{rest}}. Link it again."
   },
   "cust": {
     "short": "Type 2 letters or 3 digits",
@@ -8686,6 +8687,7 @@
     "stale": "A dose in this sale was billed or cancelled on another device — it was removed from the cart. Check the total and complete the sale again.",
     "fetchFail": "Couldn't load this customer's treatment-sheet doses — they stay pending and will come back in their next sale.",
     "qtyFixed": "Each dose is its own line — the quantity stays 1.",
-    "loaded": "Doses from the treatment sheet added to the cart: {{count}}"
+    "loaded": "Doses from the treatment sheet added to the cart: {{count}}",
+    "late": "The earlier attempt of this sale was saved without some treatment-sheet doses — they were removed (they'll come back in the next sale). Press «Complete» again."
   }
 }
