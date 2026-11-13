@@ -51,7 +51,7 @@ import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
 import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
-import type { PricePriorMap } from "@/types";
+import type { DoseCharge, PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
 import { customerBoundLines, cartAfterClearCustomer, planCustomerSwitch, stripScanTail, fieldsAfterPick, type CustText } from "@/lib/saleCustomer";
 import { useCustomerSearch, CustomerDropdown, CustomerPetsStrip, type CustField } from "./CustomerSearch";
@@ -168,6 +168,9 @@ interface Line {
   consumables?: ConsumableEntry[] | null;
   /** كلفةُ مواد الحالة الواحدة كما حسبتها الورقةُ لحظةَ الحفظ — لمعاينة الربح وحدها، والخادمُ يحسب الحقيقيّة. */
   consEst?: number | null;
+  /** 0269: جرعةٌ من الطبلة (`d:<معلَّق>`) — بكمية ١ وسعرِ لقطة الإعطاء. المادّةُ وما يُخصم منها يُرسلان بالبيعة وحدها
+   *  (product_id بالسطر null: لا سقفَ ولا طزاجةَ ولا بيعَ قبل الجرد يحكم جرعةً أُعطيت فعلاً)، و`note` ما يُرسم تحته. */
+  dose?: { charge: string; productId: string | null; stockQty: number | null; note: string };
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -487,9 +490,31 @@ function loadPackMod(): Promise<PackMod> {
     .then(([a, b]) => (packMod = { ...a, say: b }), (e) => { packLoad = null; throw e; });
   return packLoad;
 }
+/* ---- الجرعةُ بيع (0269) — جرعاتُ الطبلة المعلَّقة للزبون تنزل بالسلّة وحدها ----------------------------------------------
+ * البابُ (doseApi: المعلَّقُ والبيعةُ التي تختمه) ونصوصُه (DoseLines، نطاقُ dosl المملوك) بـimport() كالكارتون — لا وحدةَ ثابتةً جديدة
+ * بقطعة البيع، ولا نصَّ بالنطاق الحارّ. */
+type DoseMod = typeof import("@/lib/doseApi") & { say: typeof import("@/components/retail/DoseLines") };
+let doseMod: DoseMod | null = null;
+let doseLoad: Promise<DoseMod> | null = null;
+function loadDoseMod(): Promise<DoseMod> {
+  doseLoad ??= Promise.all([import("@/lib/doseApi"), import("@/components/retail/DoseLines"), import("@/i18n").then((i) => i.ensureOwned("dosl"))])
+    .then(([a, b]) => (doseMod = { ...a, say: b }), (e) => { doseLoad = null; throw e; });
+  return doseLoad;
+}
+/** سطرُ الجرعة: «Meloxicam · جرعة ١٣/١١» بحيوانه، والسعرُ لقطةُ الإعطاء. */
+function doseLine(x: DoseCharge, m: DoseMod): Line {
+  return {
+    id: `d:${x.id}`, kind: "med", name: m.say.doseLineName(x.name, x.given_at), barcode: null,
+    unit_price: x.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null,
+    petId: x.pet_id, petName: x.pet_name,
+    dose: { charge: x.id, productId: x.product_id, stockQty: x.stock_qty, note: m.say.doseNote(x.pet_name, x.given_at) },
+  };
+}
 const PackWarmDone = () => null;
 const loadPackWarm = () => page(() => import("@/components/retail/PackSale").then(() => ({ default: PackWarmDone })), ["pks"]);
 let PackWarmLazy = loadPackWarm();
+const loadDoseWarm = () => page(() => import("@/components/retail/DoseLines").then(() => ({ default: PackWarmDone })), ["dosl"]);
+const DoseWarmLazy = loadDoseWarm();
 class PackWarmBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError(): { failed: boolean } {
@@ -937,6 +962,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * `bump` تقرأ هنا وتكتب ما ستصيره السلّةُ فوراً. */
   const cartRef = useRef(cart);
   cartRef.current = cart;
+  /** 0269: جرعاتٌ شالها الكاشيرُ من هذه البيعة — لا ترجع بها (وتبقى معلَّقةً لبيعةٍ قادمة). */
+  const doseDismissed = useRef<Set<string>>(new Set());
   /* سقفُ السطر يتبع القائمة. الرصيدُ يُنسخ بالسطر لحظةَ إضافته، وكان يبقى كما هو بعد كلّ
    * تحديث (عودةُ التاب، كلَّ ٥ دقائق، «حدّث القائمة»، وF5 يرجّعه من المسودّة) — فالكرتُ
    * يقول ٢٥ والسلّةُ تقول «المتوفّر ١ فقط وكلُّه بالسلّة». الكميةُ لا تُمسّ، السقفُ وحده. */
@@ -1737,7 +1764,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* التنقيصُ يُطبَّق كما طُلب، والزيادةُ وحدها تُسقَّف ولا تنزل تحت الكمية القائمة: كان `min(qty, unitCap)` يكتب على سطرٍ سقفُه
    * هبط تحته (قائمةٌ تحدّثت) كميةً صفراً — فتُرفض البيعةُ كلُّها (invoice_items_nonneg) — أو سالبةً، فيردّها الخادمُ للمخزن
    * كراجعٍ مخفيّ بلا «راجع» باسمه. وسقفُ الوضع (capFor) لزيادةٍ يرفعها، وما تجاوز الرصيدَ به يُعلَّم. */
-  const setQty = (id: string, qty: number) =>
+  const setQty = (id: string, qty: number) => {
+    /* سطرُ جرعة (0269): الكميةُ ١ — الخادمُ يرفض غيرَها؛ والإنقاصُ إلى صفرٍ شيلٌ لهذه البيعة وحدها. */
+    if (id.startsWith("d:")) {
+      if (qty <= 0) { doseDismissed.current.add(id.slice(2)); setCart((c) => c.filter((l) => l.id !== id)); }
+      else if (qty !== 1) { playWarning(); if (doseMod) toast.warn(doseMod.say.doseQtyFixed()); }
+      return;
+    }
+    setQtyNow(id, qty);
+  };
+  const setQtyNow = (id: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id
       ? markLift({ ...l, qty: qty <= l.qty ? qty : Math.max(l.qty, Math.min(qty, capFor(l))) })
       : l))));
@@ -1751,6 +1787,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   };
 
   const removeLine = (id: string) => {
+    if (id.startsWith("d:")) doseDismissed.current.add(id.slice(2));
     setCart((c) => c.filter((l) => l.id !== id));
     // سطر انحذف → عرضه المفعّل يروح وياه (لا يبقى بالمسودة).
     // السطر انحذف → أي عرض ما عاد مؤهلاً ينطفئ لوحده بإعادة الحساب أدناه.
@@ -2760,6 +2797,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
 
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
+    doseDismissed.current.clear();
     expiredAckRef.current = null;
     setNegChk(null); negResumeRef.current = null;   // نوافذُ التأكيد لسلّةٍ راحت: «نعم، بيع» على نافذةٍ باقية كانت تبيع سلّةَ الزبون التالي
     setBigSale(null); setExpiredAsk(null); setPriceAsk(null);
@@ -2808,6 +2846,49 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setResetAsk(false);
     playSuccess();
   };
+  /* ---- 0269: جرعاتُ الطبلة المعلَّقة لزبون البيعة تنزل بالسلّة وحدها -------------------------------------------------
+   * بهاتفه أو اسمه (مفتاحُ الزبون كدليل الزبائن) أو بحيوانات البيعة المسمّاة (جسرُ سجلّ الحيوان). سطرُ `d:<معلَّق>` بحيوانه فمسحُ
+   * الزبون يشيله (saleCustomer)، وما شاله الكاشيرُ لا يرجع بهذه البيعة. لا للجملة، ولا والدفعُ بالطريق أو البيعةُ تمّت.
+   * والفشلُ يُقال (الجرعاتُ باقيةٌ معلَّقة) — صمتُه كان يُصدَّق «ماكو جرعات». */
+  const doseWho = (): { ph: string | null; nm: string | null; pets: string[] } | null => {
+    const c = splitCustomerField(name);
+    const ph = checkoutPhone(phone, c.phone, getDialCode());
+    const nm = c.name.trim() || null;
+    const pets = salePets.map((x) => x.id).filter((x): x is string => !!x);
+    return ph || nm || pets.length ? { ph, nm, pets } : null;
+  };
+  /** بعد رفضٍ لجرعةٍ انحسبت أو انلغت من جهازٍ آخر: تُشال سطورُ ما لم يعد معلَّقاً. وفشلُ السؤال يشيل سطورَ الجرعات كلَّها —
+   *  تبقى معلَّقةً وترجع بالبيعة القادمة، ولا تُعاد بيعةٌ رُفضت بسطرٍ لا يُعرف حالُه. */
+  const resyncDoses = async () => {
+    const who = doseWho();
+    let keep = new Set<string>();
+    try {
+      const m = await loadDoseMod();
+      if (who) keep = new Set((await m.pendingDoses(who.ph, who.nm, who.pets)).map((x) => `d:${x.id}`));
+    } catch { /* swallow-ok: بلا جواب تُشال كلُّها (أعلاه) */ }
+    setCart((c) => c.filter((l) => !l.dose || keep.has(l.id)));
+  };
+  const dosePetKey = salePets.map((x) => x.id ?? "").join(",");
+  useEffect(() => {
+    if (wholesale || done || paying) return;
+    const who = doseWho();
+    if (!who) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      loadDoseMod().then((m) => m.pendingDoses(who.ph, who.nm, who.pets).then((list) => {
+        if (!live) return;
+        const have = new Set(cartRef.current.map((l) => l.id));
+        const add = list.filter((x) => !have.has(`d:${x.id}`) && !doseDismissed.current.has(x.id));
+        if (!add.length) return;
+        setCart((cur) => [...cur, ...add.filter((x) => !cur.some((l) => l.id === `d:${x.id}`)).map((x) => doseLine(x, m))]);
+        playTap();
+        toast.success(m.say.doseLoaded(add.length));
+      }, () => { if (live) toast.warn(m.say.doseFetchFail()); }), () => { /* swallow-ok: القطعةُ ما وصلت — الجرعاتُ باقيةٌ معلَّقة لبيعةٍ قادمة */ });
+    }, 450);
+    return () => { live = false; window.clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- مفتاحُ الزبون وحيواناته وحالُ البيعة وحدها تعيد السؤال
+  }, [name, phone, dosePetKey, wholesale, !!done, paying]);
+
   const askReset = () => {
     playTap();
     const dirty = cart.length > 0 || !!name.trim() || !!phone.trim() || salePets.length > 0 || !!saleNotes.trim();
@@ -3363,6 +3444,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           // ما تحدّث» ويصنّفه بالاسم (old_device) — لقاحٌ اسمُه اسمُ خدمةٍ لها وصفة كان يُقال عنه «ما انخصمت مستهلكاتها، حدّث
           // الأجهزة». وبندُ خدمةٍ بلا معرّفٍ يعرفه الخادم (مختبرٌ ما طابق، كتالوجٌ قديم) خدمةٌ فعلاً: يبقى بلا المفتاح فيقول عنه اسمُه.
           ...(sid ? { service_id: sid, ...(Array.isArray(l.consumables) ? { consumables: l.consumables } : {}) } : !l.product_id && l.kind !== "service" ? { service_id: null } : {}),
+          // 0269: سطرُ جرعة — مادّتُه وما يُخصم منها لقطةُ الإعطاء، ومعرّفُ معلَّقه يختمه الخادمُ بالمعاملة نفسِها.
+          ...(l.dose ? { product_id: l.dose.productId, qty: 1, stock_qty: l.dose.productId ? (l.dose.stockQty ?? 0) : 0, dose_charge: l.dose.charge } : {}),
         };
       });
       // Delivery fee kept by the clinic → a real service line on the invoice, so
@@ -3417,8 +3500,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       let invoice: Invoice;
       setPaying(true);
       try {
-        invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+        invoice = await withTimeout(items.some((i) => i.dose_charge)
+          ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
+          : repo.retailCheckout(items, meta), 12000);
       } catch (e) {
+        /* جرعةٌ انحسبت أو انلغت من جهازٍ آخر: سطورُها تُشال (المعلَّقُ من جديد)، والتلميحُ يقوله؛ والكاشيرُ يكمل بما بقي. */
+        if (doseMod?.isDoseStale(e)) {
+          void resyncDoses();
+          if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
+          setPaying(false);
+          throw Object.assign(new Error("dose_charge_stale"), { code: "P0001", hint: doseMod.say.doseStale() });
+        }
         /* رفضٌ حاسم **لمحاولةٍ أولى** ⇒ لا شيء ثُبّت بهذا المرجع، فهو حرّ: إبقاؤه كان يترك
          * الدفعةَ «معلَّقة» للأبد (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ وكلُّ جسر. أمّا
          * إعادةٌ رُفضت فمرجعُها قد يكون ثُبّت بمحاولةٍ قبلها — تحريرُه يسجّل البيعةَ مرّتين. */
@@ -3582,7 +3674,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       if (medByPet.size) {
         try {
           await withTimeout(
-            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts, soldAt))),
+            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts, soldAt, false))),
             12000,
           );
         } catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
@@ -4531,6 +4623,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           </button>
                         </div>
                       )}
+                      {l.dose && <p className="mt-0.5 truncate text-2xs text-ink-subtle" data-dosenote={l.id}>{l.dose.note}</p>}
                       {l.med && (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle">
                           {l.med.kind === "vaccination"
@@ -5187,6 +5280,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       <ConsWarmBoundary><Suspense fallback={null}><ConsWarmLazy /></Suspense></ConsWarmBoundary>
       {/* 0267: تسخينُ نصوص الكارتون (نطاقُ pks) مع الشاشة — أوّلُ مسحة كارتونٍ لا تنتظر قطعتَها. */}
       <PackWarmBoundary><Suspense fallback={null}><PackWarmLazy /></Suspense></PackWarmBoundary>
+      {/* 0269: ونصوصُ سطور الطبلة (نطاقُ dosl) كذلك. */}
+      <PackWarmBoundary><Suspense fallback={null}><DoseWarmLazy /></Suspense></PackWarmBoundary>
       {/* ورقةُ مستهلكات سطر الخدمة (0252) — قطعةٌ كسولة بنطاقها rcp، وحارسُها بمكانه: فشلُ تحميلها لا يُسقط السلّة. */}
       {consFor && (() => {
         const l = cart.find((x) => x.id === consFor);

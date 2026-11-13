@@ -152,7 +152,8 @@ check("    وزرُّ «رجوع لسجلّ» مقفولٌ أيضاً (مخرج�
 const coAt = SB.indexOf("const checkout = async");
 const coFn = coAt < 0 ? "" : SB.slice(coAt, SB.indexOf("\n  };\n", coAt));
 check("    والقفلُ يبدأ مع الطلب ويُفكّ عند الفشل (بلا finally يفكّه عند النجاح مبكراً)",
-  /setPaying\(true\);\s*try \{\s*invoice = await withTimeout\(repo\.retailCheckout\(items, meta\), 12000\);\s*\} catch \(e\) \{[\s\S]{0,900}?setPaying\(false\);\s*throw e;\s*\}/.test(coFn)
+  // 0269: سلّةٌ بجرعات الطبلة تمرّ من checkoutWithDoses (الطلبُ نفسُه بالقفل نفسِه)، وفرعُ «جرعةٌ انحسبت من جهازٍ آخر» يفكّه ويرمي قبله.
+  /setPaying\(true\);\s*try \{\s*invoice = await withTimeout\((?:items\.some\(\(i\) => i\.dose_charge\)\s*\? loadDoseMod\(\)\.then\(\(m\) => m\.checkoutWithDoses\(items, meta\)\)\s*: )?repo\.retailCheckout\(items, meta\), 12000\);\s*\} catch \(e\) \{[\s\S]{0,1800}?setPaying\(false\);\s*throw e;\s*\}/.test(coFn)
   && !/invoice = await withTimeout\(repo\.retailCheckout[\s\S]{0,1200}?\} finally \{\s*setPaying\(false\);\s*\}\s*\/\/ Delivery/.test(coFn));
 check("    ويُفكّ عند النجاح **بعد** ختم البيعة ومسح المسودّة، لا قبل طلب التوصيل",
   /setDone\(\{ invoice, items: invItems \}\);\s*clearSaleDraft\(draftScope\);[^\n]*\n(\s*\/\*[\s\S]*?\*\/\s*|\s*\/\/[^\n]*\n)*\s*setPaying\(false\);/.test(coFn)

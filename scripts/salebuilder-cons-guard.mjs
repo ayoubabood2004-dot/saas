@@ -1212,9 +1212,10 @@ async function warmChecks(M, ck, setWarmFail) {
   // ومعها منذ 0258 ثلاثُ قطع خانات الطبيب (الشريطُ والشبكةُ والمحرّر) بنطاقها ptab، ومنذ 0267 تسخينُ نصوص الكارتون بنطاقها pks —
   // قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
   const rcpPages = () => P().filter((p) => J(p.ns) === J(["rcp"]));
-  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab، وتسخينُ الكارتون بـpks، ولا غيرُها",
-    rcpPages().length === 3 && P().length === 7 && P().filter((p) => J(p.ns) === J(["pks"])).length === 1
-      && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"]) || J(p.ns) === J(["pks"])), J(P().map((p) => p.ns)));
+  // ومنذ 0269 تسخينُ نصوص سطور الطبلة بنطاقها dosl.
+  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab، وتسخينُ الكارتون بـpks وسطورِ الطبلة بـdosl، ولا غيرُها",
+    rcpPages().length === 3 && P().length === 8 && P().filter((p) => J(p.ns) === J(["pks"])).length === 1 && P().filter((p) => J(p.ns) === J(["dosl"])).length === 1
+      && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"]) || J(p.ns) === J(["pks"]) || J(p.ns) === J(["dosl"])), J(P().map((p) => p.ns)));
   setWarmFail(true);
   const loud = console.error;
   console.error = () => {};   // React يكتب الخطأَ الممسوك بالكونسول — المقيسُ أنه لم يُفلت

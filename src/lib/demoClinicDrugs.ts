@@ -88,6 +88,16 @@ export function demoDrugsApply(clinic: string, ops: ClinicDrugOp[]): ClinicDrugs
   return { clinic: active, rows: ordered(next.rows), groups: groupsOrder(next.groups), items: itemsOrder(next.items) };
 }
 
+/** 0269: كتابةُ حساب الدواء (مرآةُ تحديث clinic_drug_billing_set بعد حرّاسها بـdemoDose) — صفٌّ حيٌّ بعيادة الجلسة وحده. */
+export function demoDrugBillingWrite(id: string, f: Pick<ClinicDrug, "dose_price" | "product_id" | "dose_qty" | "dose_unit">): void {
+  const active = activeClinic();
+  const rows = load(active);
+  const r = rows.find((x) => x.id === id);
+  if (!r || r.archived_at != null) throw new DrugOpError("drug_row_gone");
+  Object.assign(r, f, { updated_at: new Date().toISOString() });
+  localStorage.setItem(KEY(active), JSON.stringify(rows));
+}
+
 /** «الأخيرة» من علاجات النسخة التجريبية — الأحدثُ أوّلاً، اثنا عشر اسماً مختلفاً. */
 export function demoRecentMedNames(days: number): string[] {
   const since = localISO(new Date(Date.now() - days * 86400000));
