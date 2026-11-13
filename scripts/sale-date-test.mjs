@@ -62,7 +62,7 @@ check("اليومُ يُحفظ بالمسودّة **مع المرجع** (إعا�
 check("  ويرجع لليوم بعد كلّ بيعة إلا «فاتورة ثانية لنفس اليوم»", /setSaleDay\(keep\?\.day \?\? null\)/.test(sb) && /keepDayRef\.current = \{ day: saleDay, time: saleTime \}/.test(sb));
 check("  واللحظةُ المرسلة من checkSaleMoment وحدها، وبتوقيت الجهاز", /const c = checkSaleMoment\(saleDay, saleTime\)/.test(sb) && /sale_at: saleAt, sale_tz: saleTz\(\)/.test(sb));
 check("  والتوصيلُ والإرجاعُ الخالص لا يُؤرَّخان بصمت", /deliveryOn \? "delivery" as const/.test(sb) && /saleDateMessage\("return"/.test(sb));
-check("  وسجلُّ الحيوان بيوم البيعة كما ختمه الخادم", /const soldAt = invoice\.recorded_at \? invoice\.created_at : null/.test(sb) && /persistMedicalEntries\(pid, user\?\.full_name, drafts, soldAt\)/.test(sb));
+check("  وسجلُّ الحيوان بيوم البيعة كما ختمه الخادم", /const soldAt = invoice\.recorded_at \? invoice\.created_at : null/.test(sb) && /persistMedicalEntries\(pid, user\?\.full_name, drafts, soldAt, false\)/.test(sb));   // 0269: والبيعُ يقول «لا تُحسب» (بِيعت بالبيعة نفسِها)
 const mig = readFileSync("supabase/migrations/0242_backdated_sale.sql", "utf8");
 check("المرآةُ والخادمُ بنفس النافذة (٧ أيام)", m.BACKDATE_DAYS === 7 && /v_day < v_today - 7/.test(mig));
 

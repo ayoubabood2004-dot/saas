@@ -244,7 +244,7 @@ function WellnessCard({ vaccines, admissions }: { vaccines: Vaccination[]; admis
 async function persistMedicalDrafts(petId: string, doctorName: string | undefined, entries: MedicalDraft[], assessment?: MedicalAssessment) {
   const today = localISO(); // LOCAL date (not UTC) for the consultation record
   // Vaccination/medication rows — shared with the retail "الأدوية" sale sync.
-  await persistMedicalEntries(petId, doctorName, entries);
+  await persistMedicalEntries(petId, doctorName, entries, null, true);   // 0269: جرعةٌ أعطاها الطبيب ⇒ تُحسب للزبون
   // The doctor's condition triage + clinical notes become a permanent consultation
   // record in the patient's file (shown in the History tab).
   if (assessment && (assessment.condition || assessment.notes.trim())) {

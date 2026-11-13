@@ -1659,9 +1659,12 @@ const demoRepo = {
   },
 
   async addTreatment(input: Omit<TreatmentEntry, "id" | "created_at">): Promise<TreatmentEntry> {
+    const dose = await loadDemoDose();   // 0269: مرآةُ محفّزَي الطبلة (الختمُ والمعلَّق) — قبل القراءة، فلا انتظارَ بين القراءة والحفظ
     const db = loadDB();
     const entry: TreatmentEntry = { ...input, id: uid("tx"), created_at: new Date().toISOString() };
+    entry.bill = dose.demoBillStamp(entry);
     db.treatments.push(entry);
+    dose.demoDoseHook(db, null, entry);
     saveDB(db);
     return entry;
   },
@@ -1670,13 +1673,17 @@ const demoRepo = {
    *  per dose (a 3-drug × 10-day plan used to cost 30 sequential requests). */
   async addTreatments(inputs: (Omit<TreatmentEntry, "id" | "created_at"> & { id?: string })[]): Promise<void> {
     if (inputs.length === 0) return;
+    const dose = await loadDemoDose();
     const db = loadDB();
     const at = new Date().toISOString();
     /* مرآةُ `on conflict (id) do nothing`: معرّفٌ من المُرسِل موجودٌ أصلاً ⇒ إعادةُ إرسالٍ لا صفٌّ ثانٍ. */
     const seen = new Set(db.treatments.map((t) => t.id));
     for (const input of inputs) {
       if (input.id && seen.has(input.id)) continue;
-      db.treatments.push({ ...input, id: input.id || uid("tx"), created_at: at });
+      const entry: TreatmentEntry = { ...input, id: input.id || uid("tx"), created_at: at };
+      entry.bill = dose.demoBillStamp(entry);
+      db.treatments.push(entry);
+      dose.demoDoseHook(db, null, entry);
     }
     saveDB(db);
   },
@@ -1762,12 +1769,15 @@ const demoRepo = {
   /** Toggle a scheduled treatment between given/not-given (flowsheet check-off).
    *  `at` overrides the administration time (defaults to now). */
   async setTreatmentGiven(id: string, given: boolean, by?: string, at?: string): Promise<void> {
+    const dose = await loadDemoDose();
     const db = loadDB();
     // صفٌّ غائب (انحذف من جهازٍ ثانٍ) يُقال كصفرِ صفوفٍ بالخادم — لا «تمّ» على لا شيء.
     const tx = assertUpdated(db.treatments.find((t) => t.id === id));
+    const before = { administered_at: tx.administered_at ?? null };
     tx.administered_at = given ? (at || new Date().toISOString()) : null;
     tx.administered_by = given ? by : undefined;
     if (given) tx.missed_reason = null;   // أُنجزت ⇒ ما عاد لها سببُ فوات
+    dose.demoDoseHook(db, before, tx);
     saveDB(db);
   },
 
@@ -1775,12 +1785,15 @@ const demoRepo = {
    *  الدواء يُنجَز بعلامة، وهذه لا تُنجَز إلا بما قِيس فعلاً — فالقيمة جزءٌ
    *  من الإنجاز لا ملحقٌ به. */
   async setTreatmentResult(id: string, result: string, by?: string, at?: string): Promise<void> {
+    const dose = await loadDemoDose();
     const db = loadDB();
     const tx = assertUpdated(db.treatments.find((t) => t.id === id));
+    const before = { administered_at: tx.administered_at ?? null };
     tx.result = result;
     tx.administered_at = at || new Date().toISOString();
     tx.administered_by = by;
     tx.missed_reason = null;
+    dose.demoDoseHook(db, before, tx);
     saveDB(db);
   },
   /** تعديل أمرٍ قبل إعطائه: الاسم/الكمية/الوقت/التكرار — به يصير «تعديل اليوم
@@ -5472,6 +5485,8 @@ export const loadDemoUsd = () => import("./demoUsd");
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */
 export const loadDemoNeg = () => import("./demoNegStock");
+/** 0269: الجرعةُ بيع — مرآةُ المحفّز والمعلَّق والبيعة الخاتمة كسولةٌ من هذا الباب وحده (doseApi، وكتاباتُ الطبلة أعلاه). */
+export const loadDemoDose = () => import("./demoDose");
 /** 0264: بيعُ الدولار يكتب فاتورتَه بمرآة retail_checkout نفسِها والبابُ مفتوح (usd_checkout ينادي retail_checkout). */
 export async function demoUsdRetail(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
   const cons = await loadDemoConsumption();

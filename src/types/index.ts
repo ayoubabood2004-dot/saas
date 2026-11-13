@@ -400,6 +400,8 @@ export interface TreatmentEntry {
   administered_by?: string; // who gave it
   /** When set, this scheduled dose belongs to a visit's treatment plan. */
   visit_id?: string | null;
+  /** 0269: تُحسب بيعاً حين تُعطى؟ البيعُ يكتب false (بِيعت أصلاً)، والغائبُ يختمه الخادم (معلَّقةٌ أو بزيارة ⇒ نعم). */
+  bill?: boolean | null;
   /** Marks a dose whose plan row was edited after the plan was first saved. */
   edited?: boolean;
   created_at: string;
@@ -1158,6 +1160,8 @@ export interface CheckoutItem {
   /** 0252: this case's consumables instead of the recipe (vet or manager only). Absent/null = the recipe;
    *  [] = nothing for this case. A list equal to the recipe is dropped by the server. */
   consumables?: ConsumableEntry[] | null;
+  /** 0269: سطرُ جرعةٍ من الطبلة — معرّفُ معلَّقها (dose_charges)؛ البيعُ يمرّ من retail_checkout_doses فيختمه بمعاملته. */
+  dose_charge?: string;
 }
 
 /** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */
@@ -1813,6 +1817,8 @@ export interface DemoDB {
   clinicVisits: ClinicVisit[];
   appointments: Appointment[];
   treatments: TreatmentEntry[];
+  /** 0269: مرآةُ dose_charges بالتجريبيّ. */
+  doseCharges?: DemoDoseCharge[];
   admissions: Admission[];
   reminders: Reminder[];
   reminderMarks?: ReminderMark[];
@@ -2572,9 +2578,40 @@ export interface ClinicDrug {
   family: DrugFamilyKey;
   in_mine: boolean;
   pos: number | null;
+  /** 0269: سعرُ الجرعة الواحدة — فارغٌ = من المادّة المربوطة × الكمّية، أو لا حساب. */
+  dose_price?: number | null;
+  /** 0269: المادّةُ بالمخزن التي تُخصم منها الجرعة، وكمّيّتُها منها (الغائبةُ ١) ووحدتُها. */
+  product_id?: string | null;
+  dose_qty?: number | null;
+  dose_unit?: "box" | "sub" | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+/** 0269: جرعةٌ معطاةٌ بالطبلة لدواءٍ له حساب — معلَّقةٌ حتى تُباع لزبونها. */
+export interface DoseCharge {
+  id: string;
+  pet_id: string;
+  pet_name: string;
+  /** اسمُ الدواء كما بالطبلة. */
+  name: string;
+  price: number;
+  /** المادّةُ وما يُخصم منها بوحدة الرصيد (العلبة)؛ null = سعرٌ بلا مخزن. */
+  product_id: string | null;
+  stock_qty: number | null;
+  dose_qty: number | null;
+  dose_unit: "box" | "sub" | null;
+  given_at: string;
+}
+/** 0269: صفُّ dose_charges كاملاً (المرآةُ التجريبيّة؛ السحابةُ تُرجع `DoseCharge` للمعلَّق وحده). */
+export interface DemoDoseCharge extends Omit<DoseCharge, "pet_name"> {
+  entry_id: string;
+  drug_id: string | null;
+  status: "pending" | "billed" | "void";
+  invoice_id: string | null;
+  billed_at: string | null;
+  voided_at: string | null;
+  created_at: string;
 }
 /** `after` غائب = آخرُ «أدويتي»، و`null` = أوّلُها، ومعرّفٌ = بعده مباشرة. */
 export type ClinicDrugOp =

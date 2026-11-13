@@ -12,6 +12,8 @@ import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
 import { cn, currencySymbol , formatNum, uuid, money, searchable } from "@/lib/utils";
+import { codeMatcher } from "@/lib/productCodes";
+import { doseCharge, drugBills } from "@/lib/doseBilling";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken, updateServicePrice, ServicePriceMoved, refreshServices } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -29,7 +31,7 @@ import { prepareLogo } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useClinicDrugs, isDrugError, seedFamilyRows, getDrugsState } from "@/lib/clinicDrugs";
-import { FAMILIES, mineState, groupsOrder, familyNames, hiddenFamilies, type FamilyKey, type MedItem } from "@/lib/medIndex";
+import { FAMILIES, mineState, groupsOrder, familyNames, hiddenFamilies, drugKey, type FamilyKey, type MedItem } from "@/lib/medIndex";
 import { useSubscription } from "@/lib/subscription";
 import { MedPicker } from "@/components/meds/MedPicker";
 import { MyMedsStandalone } from "@/components/meds/MyMedsBoard";
@@ -340,6 +342,7 @@ export function Settings() {
 
         <MyMedsSettings />
         <MyMedCategories />
+        <DoseBillingCard />
         <ClinicVaccinations />
         <ClinicBreeds />
         {canSettings && <LabDevicesCard />}
@@ -2122,6 +2125,224 @@ function MyMedCategories() {
       {/* «أدرج من القائمة»: المنتقي مفتوحٌ على التصنيف — كلُّ ضغطةٍ تضيف أو تشيل، و«تم» تغلقه. */}
       <MedPicker open={!!insertId} onClose={() => setInsertId(null)} mode="manage" freeText="offer" fileInto={insertId ?? undefined}
         title={t("mymeds.catInsert", "أدرج من القائمة")} />
+    </div>
+  );
+}
+
+/* ============================================================================
+ * «حساب الجرعات» (0269) — لكلّ دواءٍ بالعيادة: سعرٌ للجرعة، أو مادّةٌ بالمخزن وكمّيةُ الجرعة منها، أو الاثنان. واحدٌ يكفي: كلُّ جرعةٍ
+ * تُعطى بالطبلة تصير بيعاً معلَّقاً ينزل بسلّة زبونها، ويُخصم من المادّة. المعاينةُ من doseCharge — مرآةُ محفّز الخادم — فما يُقرأ
+ * هنا ما سيُكتب. والبابُ (doseApi) كسول.
+ * ==========================================================================*/
+function DoseBillingCard() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const drugs = useClinicDrugs();
+  const { access } = useSubscription();
+  const canWrite = access !== "readonly" && drugs.status === "ready";
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [prodErr, setProdErr] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [pickOpen, setPickOpen] = useState(false);
+  const billed = drugs.rows.filter((r) => r.archived_at == null && drugBills(r));
+  const loadProducts = useCallback(() => {
+    setProdErr(false);
+    repo.listProducts().then((l) => setProducts(l), () => setProdErr(true));
+  }, []);
+  const needProducts = billed.length > 0 || !!editId;
+  useEffect(() => { if (needProducts && products == null && !prodErr) loadProducts(); }, [needProducts, products, prodErr, loadProducts]);
+  const byId = useMemo(() => new Map((products ?? []).map((p) => [p.id, p] as const)), [products]);
+  const editRow = editId ? drugs.rows.find((r) => r.id === editId && r.archived_at == null) ?? null : null;
+
+  /** «ما يُحسب لكلّ جرعة» بجملة — للقائمة وللمعاينة. */
+  const summary = (d: Pick<ClinicDrug, "dose_price" | "dose_qty" | "dose_unit" | "product_id">): string => {
+    const p = d.product_id ? byId.get(d.product_id) : undefined;
+    if (d.product_id && products == null) return d.dose_price != null ? t("mmset.billSumPrice", { price: money(d.dose_price) }) : "…";
+    const ch = doseCharge(d, p);
+    if (!ch) return t("mmset.billNone");
+    if (!ch.productId || !p) return t("mmset.billSumPrice", { price: money(ch.price) });
+    const unit = d.dose_unit === "sub" ? (p.sub_unit_name || t("mmset.billUnitSub")) : t("mmset.billUnitBox");
+    return t("mmset.billSumStock", { qty: formatNum(d.dose_qty ?? 1), unit, product: p.name, price: money(ch.price) });
+  };
+  /** دواءٌ من القائمة الكاملة: صفُّه إن وُجد، وإلا يُنشأ (خارج «أدويتي») ثمّ يُفتح محرّرُه. */
+  const pick = async (m: { name: string; family: DrugFamilyKey; drugId?: string }) => {
+    setPickOpen(false);
+    try {
+      const key = drugKey(m.name);
+      let id = m.drugId ?? drugs.rows.find((r) => r.archived_at == null && drugKey(r.name) === key)?.id;
+      if (!id) {
+        await drugs.addCustom({ name: m.name, family: m.family, mine: false });
+        id = getDrugsState().view.rows.find((r) => r.archived_at == null && drugKey(r.name) === key)?.id;
+      }
+      if (id) { playTap(); setEditId(id); }
+    } catch (e) { playWarning(); toast.error(describeDbError(e, t)); }
+  };
+
+  return (
+    <div className="card mb-4 p-5" data-dosebill>
+      <div className="mb-1 flex items-center gap-2">
+        <Wallet size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("mmset.billTitle", "حساب الجرعات")}</h2>
+      </div>
+      <p className="mb-3 text-xs text-ink-subtle">{t("mmset.billHint")}</p>
+      {drugs.status !== "ready" ? (
+        <p className="py-3 text-center text-sm font-bold text-ink-subtle" aria-busy>…</p>
+      ) : (
+        <div className="space-y-1.5">
+          {billed.length === 0 && !editRow && <p className="text-2xs text-ink-subtle" data-dosebill-empty>{t("mmset.billEmpty")}</p>}
+          {prodErr && (
+            <p className="flex items-center gap-2 text-2xs font-bold text-danger-600">
+              {t("mmset.billProdErr")}
+              <button type="button" onClick={loadProducts} className="underline">{t("common.retry", "أعد المحاولة")}</button>
+            </p>
+          )}
+          {billed.map((r) => editRow?.id === r.id ? null : (
+            <div key={r.id} className="flex min-h-12 flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface-1 px-3 py-1.5" data-dosebill-row={r.name}>
+              <div className="min-w-[10rem] flex-1">
+                <p className="truncate text-sm font-bold text-ink" dir="auto">{r.name}</p>
+                <p className="truncate text-2xs text-ink-muted" data-dosebill-sum>{summary(r)}</p>
+              </div>
+              <button type="button" disabled={!canWrite} onClick={() => { playTap(); setEditId(r.id); }} aria-label={t("common.edit", "تعديل")}
+                className="grid h-11 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 disabled:opacity-40"><Pencil size={15} /></button>
+            </div>
+          ))}
+          {editRow && (
+            <DoseBillingEditor key={editRow.id} row={editRow} products={products} byId={byId} disabled={!canWrite}
+              summary={summary} onClose={() => setEditId(null)} />
+          )}
+          {!editRow && (
+            <button type="button" disabled={!canWrite} onClick={() => { playTap(); setPickOpen(true); }} data-dosebill-add
+              className="mt-1 inline-flex h-11 items-center gap-1.5 rounded-xl bg-surface-2 px-4 text-sm font-black text-brand-700 transition hover:bg-surface-3 disabled:opacity-50 dark:text-brand-300">
+              <Plus size={16} /> {t("mmset.billAdd", "+ سعر لدواء")}
+            </button>
+          )}
+        </div>
+      )}
+      <MedPicker open={pickOpen} onClose={() => setPickOpen(false)} mode="single" freeText="off" title={t("mmset.billPick", "اختار الدواء")}
+        onPick={(m) => { void pick(m); }} />
+    </div>
+  );
+}
+
+/** رموزُ باب clinic_drug_billing_set التي تُقال بلغة الواجهة (mmset.billErr_*). */
+const BILL_ERR = new Set(["dose_billing_denied", "dose_product_gone", "dose_product_usd", "dose_unit_bad", "dose_qty_bad", "dose_price_bad", "drug_row_gone"]);
+function DoseBillingEditor({ row, products, byId, disabled, summary, onClose }: {
+  row: ClinicDrug; products: Product[] | null; byId: ReadonlyMap<string, Product>; disabled: boolean;
+  summary(d: Pick<ClinicDrug, "dose_price" | "dose_qty" | "dose_unit" | "product_id">): string; onClose(): void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [price, setPrice] = useState(row.dose_price != null ? String(row.dose_price) : "");
+  const [pid, setPid] = useState<string | null>(row.product_id ?? null);
+  const [qty, setQty] = useState(row.dose_qty != null ? String(row.dose_qty) : "");
+  const [unit, setUnit] = useState<"box" | "sub">(row.dose_unit ?? "box");
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const num = (v: string): number | null | "bad" => {
+    // الأرقامُ الشرقية (U+0660–0669) بحسابٍ لا بجدول، والفاصلُ العربيّ للآلاف (U+066C) والإنكليزيّ يُشالان، والعشريّةُ (U+066B) نقطة.
+    const x = v.trim().replace(/./g, (c) => {
+      const k = c.charCodeAt(0);
+      return k >= 0x660 && k <= 0x669 ? String(k - 0x660) : k === 0x66b ? "." : k === 0x66c || c === "," ? "" : c;
+    });
+    if (!x) return null;
+    const n = Number(x);
+    return Number.isFinite(n) && n >= 0 ? n : "bad";
+  };
+  const product = pid ? byId.get(pid) : undefined;
+  const subOk = !!product && !!product.has_sub_unit && (product.units_per_box ?? 0) > 0;
+  const u: "box" | "sub" = subOk ? unit : "box";
+  const priceN = num(price);
+  const qtyN = num(qty);
+  const bad = priceN === "bad" || qtyN === "bad" || qtyN === 0;
+  const draft = { dose_price: priceN === "bad" ? null : priceN, product_id: pid, dose_qty: pid && qtyN !== "bad" ? qtyN : null, dose_unit: pid ? u : null };
+  const s = searchable(q.trim());
+  // الاسمُ بـsearchable والرمزُ بمصدره الواحد codeMatcher (الطرفان من نفس الدالّة، كمنتقي الوصفة).
+  const byCode = codeMatcher(q);
+  const results = s.length >= 2 && products
+    ? products.filter((p) => (p.price_currency ?? "IQD") !== "USD" && (searchable(p.name).includes(s) || byCode(p))).slice(0, 8)
+    : [];
+  const save = async (clear: boolean) => {
+    setBusy(true);
+    try {
+      const api = await import("@/lib/doseApi");
+      await api.setDrugBilling(row.id, clear ? { price: null, productId: null, qty: null, unit: null }
+        : { price: draft.dose_price, productId: pid, qty: draft.dose_qty, unit: pid ? u : null });
+      playSuccess();
+      toast.success(t("mmset.saved", "انحفظ"));
+      onClose();
+    } catch (e) {
+      playWarning();
+      const api = await import("@/lib/doseApi").catch(() => null);
+      const c = api?.doseErrorCode(e);
+      toast.error(api?.isDoseAbsent(e) ? t("mmset.billNeedsDb") : c && BILL_ERR.has(c) ? t(`mmset.billErr_${c}`) : describeDbError(e, t));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2 rounded-2xl border-2 border-brand-300 bg-brand-50/50 p-3 dark:bg-brand-500/5" data-dosebill-edit={row.name}>
+      <p className="text-sm font-black text-ink" dir="auto">{row.name}</p>
+      <label className="block text-2xs font-bold text-ink-muted">
+        {t("mmset.billPrice", "سعر الجرعة (اختياري)")}
+        <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" dir="ltr" data-dosebill-price
+          placeholder={t("mmset.billPricePh", "فارغ = من سعر المادة")} className="input mt-1 h-11 w-full text-sm font-bold" />
+      </label>
+      <div className="text-2xs font-bold text-ink-muted">
+        {t("mmset.billProduct", "المادة بالمخزن (اختياري)")}
+        {product ? (
+          <div className="mt-1 flex items-center gap-2 rounded-xl border border-line bg-surface-1 px-3 py-2" data-dosebill-product>
+            <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink" dir="auto">{product.name}</span>
+            <button type="button" onClick={() => setPid(null)} className="h-9 shrink-0 rounded-lg px-2 text-xs font-bold text-danger-600">{t("mmset.billUnlink", "فكّ")}</button>
+          </div>
+        ) : pid && products == null ? (
+          <p className="mt-1 text-xs text-ink-subtle">…</p>
+        ) : (
+          <>
+            <input value={q} onChange={(e) => setQ(e.target.value)} data-dosebill-search
+              placeholder={t("mmset.billProductPh", "اسم المادة أو الباركود")} className="input mt-1 h-11 w-full text-sm" />
+            {results.length > 0 && (
+              <div className="mt-1 max-h-56 space-y-1 overflow-y-auto">
+                {results.map((p) => (
+                  <button key={p.id} type="button" onClick={() => { playTap(); setPid(p.id); setQ(""); setUnit(p.has_sub_unit && (p.units_per_box ?? 0) > 0 ? "sub" : "box"); }}
+                    data-dosebill-hit={p.name} className="flex w-full items-center gap-2 rounded-xl bg-surface-1 px-3 py-2 text-start text-sm font-bold text-ink hover:bg-surface-2">
+                    <span className="min-w-0 flex-1 truncate" dir="auto">{p.name}</span>
+                    <span className="shrink-0 tabular-nums text-2xs text-ink-muted">{money(p.sell_price)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      {pid && (
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="block min-w-[7rem] flex-1 text-2xs font-bold text-ink-muted">
+            {t("mmset.billQty", "كمية الجرعة")}
+            <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="decimal" dir="ltr" data-dosebill-qty
+              placeholder="1" className="input mt-1 h-11 w-full text-sm font-bold" />
+          </label>
+          {subOk && (
+            <div className="flex shrink-0 gap-1" role="radiogroup">
+              {(["sub", "box"] as const).map((k) => (
+                <button key={k} type="button" role="radio" aria-checked={u === k} onClick={() => setUnit(k)} data-dosebill-unit={k}
+                  className={cn("h-11 rounded-xl border px-3 text-xs font-black", u === k ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink-muted")}>
+                  {k === "sub" ? (product?.sub_unit_name || t("mmset.billUnitSub")) : t("mmset.billUnitBox")}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <p className={cn("rounded-xl px-3 py-2 text-xs font-bold", bad ? "bg-danger-50 text-danger-700" : "bg-surface-1 text-ink")} data-dosebill-preview>
+        {bad ? t("mmset.billBad") : summary(draft)}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={onClose} className="h-11 flex-1 rounded-xl border border-line text-sm font-bold text-ink-muted">{t("common.cancel", "إلغاء")}</button>
+        {drugBills(row) && (
+          <button type="button" disabled={disabled || busy} onClick={() => void save(true)} data-dosebill-clear
+            className="h-11 flex-1 rounded-xl border border-line text-sm font-bold text-danger-600 disabled:opacity-50">{t("mmset.billClear", "شيل الحساب")}</button>
+        )}
+        <button type="button" disabled={disabled || busy || bad} onClick={() => void save(false)} data-dosebill-save
+          className="h-11 flex-[2] rounded-xl bg-brand-600 text-sm font-black text-white disabled:opacity-50">{t("common.save", "حفظ")}</button>
+      </div>
     </div>
   );
 }

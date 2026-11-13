@@ -6658,7 +6658,34 @@
     "famTag": "Built-in",
     "famHide": "Hide",
     "famHideAsk": "Hide «{{name}}»? It leaves the picker with its drugs ({{n}}); records keep them, and you can bring it back from «Archived».",
-    "famHidden": "“{{name}}” hidden"
+    "famHidden": "“{{name}}” hidden",
+    "billTitle": "Dose billing",
+    "billHint": "Optional for each drug: a price per dose, or link it to a stock item with the dose amount, or both. Set either one and every dose given on the treatment sheet is added to the customer's cart by itself, and comes out of stock.",
+    "billEmpty": "No drug has a dose price yet.",
+    "billProdErr": "Couldn't load the stock items.",
+    "billAdd": "+ Price a drug",
+    "billPick": "Choose the drug",
+    "billPrice": "Price per dose (optional)",
+    "billPricePh": "Empty = from the item's price",
+    "billProduct": "Stock item (optional)",
+    "billProductPh": "Item name or barcode",
+    "billUnlink": "Unlink",
+    "billQty": "Dose amount",
+    "billUnitSub": "small unit",
+    "billUnitBox": "box",
+    "billBad": "Enter a valid number (the dose amount can't be zero).",
+    "billClear": "Remove billing",
+    "billNeedsDb": "Dose billing needs a system update — tell support.",
+    "billNone": "No billing — doses aren't charged",
+    "billSumPrice": "Each dose is charged {{price}} (no stock deduction)",
+    "billSumStock": "Each dose: {{qty}} {{unit}} of «{{product}}» — deducted from stock and charged {{price}}",
+    "billErr_dose_billing_denied": "Dose pricing and stock links are for staff with the inventory permission.",
+    "billErr_dose_product_gone": "That item is no longer in stock — choose it again.",
+    "billErr_dose_product_usd": "An item priced in dollars can't be linked to a dose — doses are charged in dinars.",
+    "billErr_dose_unit_bad": "This item has no small unit — choose the main unit.",
+    "billErr_dose_qty_bad": "The dose amount must be more than zero.",
+    "billErr_dose_price_bad": "The dose price must be zero or more.",
+    "billErr_drug_row_gone": "The list changed on another device — try again."
   },
   "cust": {
     "short": "Type 2 letters or 3 digits",
@@ -8652,5 +8679,13 @@
     "buyPack": "«{{name}}»: {{pack}} = {{n}} {{unit}} — {{n}} added to the line; the line's purchase price is per {{unit}}",
     "buyPackPrice": "«{{name}}»: {{pack}} = {{n}} {{unit}} — added to the line. The «{{pack}}» written purchase price {{price}} = {{each}} per {{unit}}: if the company charged that, fix the line price",
     "buySub": "«{{name}}»: this is a {{sub}} barcode — purchases are recorded by the «{{unit}}». Scan its barcode or the carton's, or type the count"
+  },
+  "dosl": {
+    "lineName": "{{name}} · dose {{date}}",
+    "note": "From the treatment sheet · {{pet}} · {{date}}",
+    "stale": "A dose in this sale was billed or cancelled on another device — it was removed from the cart. Check the total and complete the sale again.",
+    "fetchFail": "Couldn't load this customer's treatment-sheet doses — they stay pending and will come back in their next sale.",
+    "qtyFixed": "Each dose is its own line — the quantity stays 1.",
+    "loaded": "Doses from the treatment sheet added to the cart: {{count}}"
   }
 }
