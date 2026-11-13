@@ -8,6 +8,7 @@
  * • البيعةُ: `retail_checkout_doses` تبيع وتختم بمعاملةٍ واحدة؛ وسلّةٌ بلا جرعات تمرّ من repo.retailCheckout كما كانت.
  * ========================================================================= */
 import type { CheckoutItem, DoseCharge, Invoice, SaleMeta } from "@/types";
+import type { SheetCharge } from "./doseBilling";
 import { supabase } from "./supabase";
 import { getDrugsState, loadClinicDrugs } from "./clinicDrugs";
 import { repo } from "./repo";
@@ -72,3 +73,14 @@ export const isDoseStale = (e: unknown): boolean => {
 };
 /** «late»: مرجعُ البيعة ثبتت فاتورتُه بدون جرعاتٍ نزلت بعد المحاولة الأولى — تُشال، والإعادةُ ترجع الفاتورة. */
 export const isDoseLate = (e: unknown): boolean => /dose_charge_late/.test(`${code(e)} ${(e as { message?: string } | null)?.message ?? ""}`);
+
+/** معلَّقاتُ حيوانٍ واحد ومفوتَراتُه (للطبلة): قراءةٌ مباشرة بسياسة الجدول. جدولٌ غائب (قاعدةٌ قبل 0269) ⇒ [] بصمت؛ وغيرُه يُرمى —
+ *  الطبلةُ لا ترسم «انحسبت» ولا مجموعاً عن قراءةٍ فشلت. */
+export async function petDoseCharges(petId: string): Promise<SheetCharge[]> {
+  if (supabase) {
+    const r = await supabase.from("dose_charges").select("entry_id,status,price").eq("pet_id", petId).neq("status", "void");
+    if (r.error) { if (["42P01", "PGRST205"].includes(code(r.error))) return []; throw r.error; }
+    return ((r.data ?? []) as SheetCharge[]).map((c) => ({ ...c, price: Number(c.price) }));
+  }
+  return (await local()).demoPetCharges(petId);
+}

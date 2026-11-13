@@ -207,5 +207,32 @@ console.log("▸ ٥) شاشةُ البيع بنصّها — السطرُ يرس�
     && /persistMedicalEntries\(petId, doctorName, entries, null, true\)/.test(readFileSync("src/pages/PetPassport.tsx", "utf8")));
 }
 
+console.log("▸ ٦) الطبلة — السعرُ قبل الإعطاء، والحالُ بعده، ومجموعُ ما ينتظر البيع");
+{
+  const key = (n) => M.B.dosePlan && n.toLowerCase();
+  const drugs = new Map([["meloxicam", { dose_price: null, dose_qty: 2, dose_unit: "sub", product_id: "v" }], ["cef", { dose_price: 5000, dose_qty: null, dose_unit: null, product_id: null }]]);
+  const prods = new Map([["v", { id: "v", sell_price: 20000, sub_unit_price: null, units_per_box: 10, price_currency: "IQD" }]]);
+  const ch = new Map([["t2", { entry_id: "t2", status: "pending", price: 4000 }], ["t3", { entry_id: "t3", status: "billed", price: 5000 }]]);
+  const sb = (tx, c = ch) => B.sheetBill(tx, c, drugs, prods, key);
+  check("قبل الإعطاء: ما ستُحسب به الآن (٢ مل ⇒ ٤٠٠٠، وسعرٌ وحده ٥٠٠٠)",
+    JSON.stringify(sb({ id: "t1", medication: "Meloxicam" })) === '{"price":4000,"state":"will"}' && sb({ id: "t9", medication: "cef" }).price === 5000);
+  check("  وبعده: معلَّقُه كما كُتب (بانتظار البيع / انحسبت)، ومعطاةٌ بلا معلَّق لا شيء (بِيعت بالكاشير)",
+    sb({ id: "t2", medication: "Meloxicam", administered_at: "x" }).state === "pending" && sb({ id: "t3", medication: "cef", administered_at: "x" }).state === "billed"
+      && sb({ id: "t4", medication: "Meloxicam", administered_at: "x" }) === null && sb({ id: "t5", medication: "Vitamin" }) === null);
+  check("  وقراءةُ المعلَّقات فشلت (null): قبل الإعطاء يبقى السعر، وبعده لا حالَ يُخترع", sb({ id: "t1", medication: "Meloxicam" }, null).state === "will" && sb({ id: "t2", medication: "Meloxicam", administered_at: "x" }, null) === null);
+  const pc = await API.petDoseCharges("b1");
+  check("petDoseCharges (المرآة): معلَّقاتُ الحيوان ومفوتَراتُه بلا الملغاة", pc.length > 0 && pc.every((c) => c.status !== "void") && pc.some((c) => c.status === "billed"), JSON.stringify(pc.map((c) => c.status)));
+  const pp = readFileSync("src/pages/PetPassport.tsx", "utf8");
+  check("سجلُّ الحيوان: الشارةُ بكلّ جرعة وسطرُ «مستحق» بالطبلة، للكادر وحده (لا لبوّابة صاحب الحيوان)",
+    /useDoseSheet\(pet\.id, treatments, !isOwner\)/.test(pp) && /<DoseDueBar pet=\{pet\} pending=\{sheet\.pending\} \/>/.test(pp) && /<DoseDueBar pet=\{pet\} pending=\{doseSheet\.pending\} \/>/.test(pp) && (pp.match(/bill=\{(sheet|doseSheet)\.billOf\(/g) || []).length === 3
+      && /\["dsht"\]\)/.test(readFileSync("src/App.tsx", "utf8")));
+  const umr = readFileSync("src/components/UnifiedMedicalRecord.tsx", "utf8");
+  const screenCols = umr.slice(umr.indexOf("const screenColumns"), umr.indexOf("const subtitle"));
+  check("  وعرضُ «جدول» بالطبلة (الافتراضيّ) يحمل الشارة على الشاشة وحدها — لا بأعمدة الطباعة ولا Excel",
+    /treatmentBadge=\{\(id\) => \{ const tx = txById\.get\(id\); return tx \? <DoseBillChip bill=\{doseSheet\.billOf\(tx\)\} \/>/.test(pp)
+      && /treatmentBadge\(e\.id\.slice\(2\)\)/.test(screenCols) && (umr.match(/treatmentBadge\(/g) || []).length === 1
+      && /id: `t:\$\{t\.id\}`/.test(umr));
+}
+
 console.log(fails ? `\n✗ dose-billing-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ dose-billing-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);
