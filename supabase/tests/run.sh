@@ -11875,9 +11875,10 @@ $P -c "$TE, administered_at, bill) values ('${DG}e8','${DG}b1','$DC',current_dat
 chk "إعادةُ مرجعٍ ثبتت فاتورتُه مع جرعةٍ نزلت بعد المحاولة الأولى ⇒ dose_charge_late، ولا تُختم على فاتورةٍ لم تحسبها" \
     "select $(rerr $DC "select (retail_checkout_doses(jsonb_build_array(jsonb_build_object('product_id',null,'name','Ceftriaxone','qty',1,'unit_price',5000,'unit_cost',0,'dose_charge',(select id from dose_charges where entry_id = '${DG}e8'))),
          jsonb_build_object('client_ref','d269-1'), array[(select id from dose_charges where entry_id = '${DG}e8')]::uuid[])).id")||'|'||($CH '${DG}e8')" "dose_charge_late|pending:5000:-:-"
-chk "جرعةُ علبتين (box ×٢): السطرُ ٢ علبة ومخصومُه ٢ — لا pack_changed، وكلفتُه علبتان" \
-    "select $(rv $DC "$(BSET $DC ${DG}d3 null "'${DG}a3'" 2 "'box'")")||'|'||$(rt $DC "$TE, administered_at, bill) values ('${DG}e9','${DG}b1','$DC',current_date,'Vitamin B','13:00','2',now(),true)")
-            ||'|'||($CH '${DG}e9')" "$DC|rows:1|pending:2000:2.000:${DG}a3"
+# كتابةٌ تعتمد على كتابةٍ قبلها بجملةٍ مستقلّة (درسُ 0257 بوجهه الآخر): بجملةٍ واحدة لا يُضمن ترتيبُ الطرفين ولا رؤيةُ الثانية للأولى.
+chk "جرعةُ علبتين (box ×٢): الدواءُ يُربط بعلبتين" "select $(rv $DC "$(BSET $DC ${DG}d3 null "'${DG}a3'" 2 "'box'")")" "$DC"
+chk "  وإعطاؤها معلَّقٌ ٢٠٠٠ ومخصومُه ٢ علبة" "select $(rt $DC "$TE, administered_at, bill) values ('${DG}e9','${DG}b1','$DC',current_date,'Vitamin B','13:00','2',now(),true)")" "rows:1"
+chk "  (المعلَّق)" "$CH '${DG}e9'" "pending:2000:2.000:${DG}a3"
 chk "  (البيعة)" "select $(rv $DC "select (retail_checkout_doses(jsonb_build_array(jsonb_build_object('product_id','${DG}a3','name','Vitamin B','qty',2,'unit_price',1000,'unit_cost',0,'stock_qty',2,'dose_charge',(select id from dose_charges where entry_id = '${DG}e9'))),
          jsonb_build_object('client_ref','d269-3'), array[(select id from dose_charges where entry_id = '${DG}e9')]::uuid[])).client_ref")" "d269-3"
 chk "  (كلفةُ علبتين ١٠٠٠ والرفُّ ٥ ⇒ ٣)" \
