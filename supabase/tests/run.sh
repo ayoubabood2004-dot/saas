@@ -11947,7 +11947,7 @@ chk "  (العنوانُ والاسمُ كما كُتبا، والمفتاحُ �
 chk "  ولا حذف للكادر" "select $(rt $FR "delete from customer_profiles where cust_key = 'p:7705554444'")" "rows:0"
 chk "  (والملفُّ باقٍ)" "select count(*)::text from customer_profiles where clinic_id = '$FC' and cust_key = 'p:7705554444'" "1"
 chk "العزل: عيادةٌ أخرى لا تراه، وanon لا يصل الجدولَ ولا الدالّة" \
-    "select $(rv $FO "select count(*)::text from customer_profiles")||'|'||has_table_privilege('anon','public.customer_profiles','select')::text||'|'||has_function_privilege('anon','public.customer_key_invoices(text)','execute')::text" "0|false|false"
+    "select $(rv $FO "select count(*)::text from customer_profiles")||'|'||has_table_privilege('anon','public.customer_profiles','select')::text||'|'||has_function_privilege('anon','public.customer_key_invoices(text,timestamp with time zone,uuid)','execute')::text||'|'||has_function_privilege('anon','public.customer_profile_add(text,text,text,text,text)','execute')::text" "0|false|false|false"
 chk "الدليلُ يلقى صاحبَ الملفّ بلا شراء — برقمه بصيغةٍ أخرى، وباسمه، وبقسم «بلا حيوان»" \
     "select $(rv $FR "select string_agg(key||':'||name||':'||purchases, ',') from customer_search('07705554444')")||'|'||$(rv $FR "select count(*)::text from customer_search('منى')")||'|'||$(rv $FR "select count(*)::text from customer_search(null, 'recent', 'nopets', 100) where key = 'p:7705554444'")" \
     "p:7705554444:منىعلي:0|1|1"
@@ -11960,15 +11960,38 @@ chk "فواتيرُ المفتاح: الرقمُ بصيغتين فاتورتان
     "select $(rv $FR "select string_agg(right(t.id::text, 2), ',' order by t.ordinality) from customer_key_invoices('p:7701230000') with ordinality t")
             ||'|'||$(rv $FR "select string_agg(right(id::text, 2), ',') from customer_key_invoices(cust_key(null, 'ابو حيدر'))")
             ||'|'||$(rv $FO "select string_agg(right(id::text, 2), ',') from customer_key_invoices('p:7701230000')")
-            ||'|'||$(rv $FR "select count(*)::text from customer_key_invoices('')")" "e2,e1|e3|e4|0"
+            ||'|'||$(rv $FR "select count(*)::text from customer_key_invoices('')")
+            ||'|'||$(rv $FR "select string_agg(right(id::text, 2), ',') from customer_key_invoices('p:7701230000', (select created_at from invoices where id = '${FG}e2'), '${FG}e2')")" "e2,e1|e3|e4|0|e1"
+# كلُّ نداءٍ مرّةً واحدة (r) — نداءان بجملةٍ واحدة يرى الثاني كتابةَ الأوّل.
+PADD() { echo "select (r->>'status')||':'||(r->>'key') from (select customer_profile_add($1) r) s"; }
+chk "«زبون جديد» يسأل الخادم: رقمُ زبونٍ له ملفّ (بصيغةٍ أخرى واسمٍ آخر) ⇒ exists بمفتاح الخادم، ولا يُداس" \
+    "select $(rv $FR "$(PADD "'حسن', '0770 123 0000', null, null")")" "exists:p:7701230000"
+chk "  (ملفُّ «ابو علي سعد» قائمٌ فـexists؛ وزبونُ فواتير بلا ملفّ — «ابو حيدر» بالاسم — known)" \
+    "select $(rv $FR "select customer_profile_add('ابو حيدر', null, null, null)->>'status'")" "known"
+chk "  (ولم يُكتب له ملفّ)" "select count(*)::text from customer_profiles where clinic_id = '$FC' and cust_key = cust_key(null, 'ابو حيدر')" "0"
+chk "  ومن ملفّه («أضف معلومات» بمفتاحه) يُكتب، ومفتاحٌ محسوبٌ غيرُ المقصود يُرفض" \
+    "select $(rv $FR "select customer_profile_add('ابو حيدر', null, 'الشعلة', null, cust_key(null, 'ابو حيدر'))->>'status'")||'|'||$(rerr $FR "select customer_profile_add('ابو حيدر', '07711110000', null, null, cust_key(null, 'ابو حيدر'))")" "created|customer_key_frozen"
+chk "  ورقمٌ جديدٌ لا يعرفه أحد ⇒ created بمفتاح الخادم" \
+    "select $(rv $FR "$(PADD "'زينة', '+964 771 999 8888', null, null")")" "created:p:7719998888"
+chk "  ونداؤه ثانيةً ⇒ exists (الملفُّ واحد)" \
+    "select $(rv $FR "$(PADD "'زينة ع', '07719998888', null, null")")||'|'||(select count(*) from customer_profiles where clinic_id = '$FC' and cust_key = 'p:7719998888')::text||'|'||(select name from customer_profiles where clinic_id = '$FC' and cust_key = 'p:7719998888')" "exists:p:7719998888|1|زينة"
+$P -c "insert into pets(id, name, clinic_id, owner_name, owner_phone, created_at) values
+         ('${FG}b1','بوبي','$FC','علي حسن',null, now()), ('${FG}b2','كتكوت','$FC','علي',null, now() - interval '30 days')
+         on conflict (id) do nothing;" >/dev/null
+chk "الدليلُ يقدّم المفتاحَ المطابقَ حرفاً بين المتساويين رتبةً («علي» قبل «علي حسن» الأحدث)" \
+    "select $(rv $FR "select key from customer_search('علي') limit 1")" "n:علي"
 chk "الدالّتان بصلاحية المُستدعي وبمسارٍ مثبَّت، ومحفّزُ الملفّ لا يُنادى" \
     "select (select string_agg(proname||':'||prosecdef::text||':'||(coalesce(array_to_string(proconfig, ','), '') like '%search_path%')::text, ',' order by proname)
-               from pg_proc where proname in ('customer_key_invoices', 'customer_search', 'customer_profiles_guard'))
+               from pg_proc where proname in ('customer_key_invoices', 'customer_profile_add', 'customer_search', 'customer_profiles_guard'))
             ||'|'||has_function_privilege('authenticated', 'public.customer_profiles_guard()', 'execute')::text" \
-    "customer_key_invoices:false:true,customer_profiles_guard:false:true,customer_search:false:true|false"
+    "customer_key_invoices:false:true,customer_profile_add:false:true,customer_profiles_guard:false:true,customer_search:false:true|false"
+# تراجعُ 0222 قبلنا قد يحذف photographer_fence_table و0270 تطلبها بصوت: تُعاد بدالّةٍ فارغةٍ مؤقّتة ثمّ تُحذف (كإعادة 0252).
+SHIM270=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select (to_regprocedure('public.photographer_fence_table(text)') is null)::text")
+[ "$SHIM270" = "true" ] && $P -c "create function public.photographer_fence_table(p_table text) returns integer language sql as 'select 0';" >/dev/null
 out=$($P -f "$MIG/0270_customer_file.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0270 ما انعادت"; fail=1; }
+[ "$SHIM270" = "true" ] && $P -c "drop function if exists public.photographer_fence_table(text);" >/dev/null
 chk "وتُعاد بلا أثرٍ ثانٍ (الملفّاتُ كما هي، والدليلُ يلقاها)" \
-    "select (select count(*) from customer_profiles where clinic_id = '$FC')::text||'|'||$(rv $FR "select name from customer_search('07705554444')")" "2|منىعلي"
+    "select (select count(*) from customer_profiles where clinic_id = '$FC')::text||'|'||$(rv $FR "select name from customer_search('07705554444')")" "4|منىعلي"
 
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:

@@ -20,32 +20,46 @@ export function demoProfile(key: string): CustomerProfile | null {
 }
 
 type Row = { name: string | null; phone: string | null; address: string | null; notes: string | null };
-export type DemoSave = { kind: "saved"; profile: CustomerProfile } | { kind: "exists"; key: string };
+export type DemoAdd = { status: "created"; key: string; profile: CustomerProfile } | { status: "exists" | "known"; key: string };
 
-export function demoSaveProfile(input: Row, expect: { id: string; updated_at: string } | null): DemoSave {
+/** مرآةُ customer_profile_add: المفتاحُ يُحسب هنا، وملفٌّ قائم «exists»، وزبونٌ له فواتيرُ أو حيوان «known» بلا كتابة
+ *  (إلا لمفتاحه نفسِه من ملفّه)، ومفتاحٌ محسوبٌ غيرُ المقصود يُرفض. */
+export function demoAddProfile(input: Row, forKey: string | null): DemoAdd {
   const db = loadDB();
   const list = (db.customerProfiles ??= []);
   const name = clean(input.name, true), phone = clean(input.phone);
   const dial = getDialCode();
   const key = custKey(phone, name, dial);
   if (!key) fail("customer_no_identity");
+  if (forKey !== null && forKey !== key) fail("customer_key_frozen");
+  if (list.some((c) => c.cust_key === key)) return { status: "exists", key: key as string };
+  const known = (db.invoices ?? []).some((i) => ((i.customer_name ?? "").trim() !== "" || (i.customer_phone ?? "").trim() !== "") && custKey(i.customer_phone, i.customer_name, dial) === key)
+    || (db.pets ?? []).some((p) => p.shared_with_clinic !== false && custKey(p.owner_phone, p.owner_name, dial) === key);
+  if (forKey === null && known) return { status: "known", key: key as string };
   const now = new Date().toISOString();
-  if (!expect) {
-    const had = list.find((c) => c.cust_key === key);
-    if (had) return { kind: "exists", key: key as string };
-    const p: CustomerProfile = { id: uid("cust"), cust_key: key as string, name, phone, address: clean(input.address), notes: clean(input.notes), created_at: now, updated_at: now };
-    list.push(p);
-    saveDB(db);
-    return { kind: "saved", profile: p };
-  }
+  const p: CustomerProfile = { id: uid("cust"), cust_key: key as string, name, phone, address: clean(input.address), notes: clean(input.notes), created_at: now, updated_at: now };
+  list.push(p);
+  saveDB(db);
+  return { status: "created", key: key as string, profile: p };
+}
+
+/** مرآةُ التعديل بشرط «كما فُتح» ومحفّز الهويّة. */
+export function demoUpdateProfile(input: Row, expect: { id: string; updated_at: string }): CustomerProfile {
+  const db = loadDB();
+  const list = (db.customerProfiles ??= []);
+  const name = clean(input.name, true), phone = clean(input.phone);
+  const dial = getDialCode();
+  const key = custKey(phone, name, dial);
+  if (!key) fail("customer_no_identity");
   const cur = list.find((c) => c.id === expect.id);
   if (!cur || cur.updated_at !== expect.updated_at) throw Object.assign(new Error("stale"), { code: "stale" });
   if (key !== custKey(cur.phone, cur.name, dial)) fail("customer_key_frozen");
-  // المليثانيةُ نفسُها مع لحظة الفتح تجعل شرطَ «كما فُتح» يمرّ لكتابتين متتاليتين — الختمُ يتقدّم دائماً.
+  // الختمُ يتقدّم دائماً — المليثانيةُ نفسُها مع لحظة الفتح كانت تُمرّر شرطَ «كما فُتح» لكتابتين متتاليتين.
+  const now = new Date().toISOString();
   const stamp = now > cur.updated_at ? now : new Date(Date.parse(cur.updated_at) + 1).toISOString();
   Object.assign(cur, { name, phone, address: clean(input.address), notes: clean(input.notes), updated_at: stamp });
   saveDB(db);
-  return { kind: "saved", profile: { ...cur } };
+  return { ...cur };
 }
 
 export function demoKeyInvoices(key: string): Invoice[] {

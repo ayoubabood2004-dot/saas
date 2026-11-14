@@ -41,60 +41,64 @@ export async function getProfile(key: string): Promise<CustomerProfile | null> {
 }
 
 export interface ProfileInput { name: string; phone: string; address: string; notes: string }
-export type SaveResult = { kind: "saved"; profile: CustomerProfile } | { kind: "exists"; key: string };
+/** created: انكتب ملفٌّ جديد؛ exists: ملفٌّ قائم بالمفتاح؛ known: زبونٌ له فواتيرُ أو حيوانٌ بلا ملفّ (لا كتابة — يُفتح ملفُّه). */
+export type AddResult = { status: "created"; key: string; profile: CustomerProfile } | { status: "exists" | "known"; key: string };
 
-/** إنشاءٌ (expect = null) أو تعديلٌ بشرط أنّ الملفَّ كما فُتح (expect = updated_at). */
-export async function saveProfile(input: ProfileInput, expect: { id: string; updated_at: string } | null): Promise<SaveResult> {
-  const row = {
-    name: input.name.trim() || null, phone: input.phone.trim() || null,
-    address: input.address.trim() || null, notes: input.notes.trim() || null,
-  };
+const rowOf = (input: ProfileInput) => ({
+  name: input.name.trim() || null, phone: input.phone.trim() || null,
+  address: input.address.trim() || null, notes: input.notes.trim() || null,
+});
+
+/** تسجيلُ زبون: الخادمُ يحسب المفتاحَ ويقرّر «موجود/معروف» قبل أن يكتب (customer_profile_add). `forKey` من ملفّ زبونٍ
+ *  معروف («أضف معلومات»): الإدراجُ مقصودٌ لمفتاحه، ومفتاحٌ محسوبٌ غيرُه يُرفض. والمفتاحُ الراجع مفتاحُ الخادم (دولةُ العيادة). */
+export async function addProfile(input: ProfileInput, forKey: string | null): Promise<AddResult> {
+  const row = rowOf(input);
   if (supabase) {
-    if (!expect) {
-      // on conflict do nothing: مفتاحٌ قائم لا يُداس — يرجع صفراً فنقول «موجود» ونفتحه.
-      const r = await supabase.from("customer_profiles").upsert(row, { onConflict: "clinic_id,cust_key", ignoreDuplicates: true }).select("*");
-      if (r.error) { if (ABSENT.includes(code(r.error))) throw absentErr(); throw r.error; }
-      const got = (r.data ?? [])[0] as CustomerProfile | undefined;
-      if (got) return { kind: "saved", profile: got };
-      const key = keyOf(row.phone, row.name);
-      if (!key) throw Object.assign(new Error("customer_no_identity"), { code: "P0001" });
-      return { kind: "exists", key };
-    }
+    const r = await supabase.rpc("customer_profile_add", { p_name: row.name, p_phone: row.phone, p_address: row.address, p_notes: row.notes, p_for_key: forKey });
+    if (r.error) { if (ABSENT.includes(code(r.error))) throw absentErr(); throw r.error; }
+    return r.data as AddResult;
+  }
+  return (await local()).demoAddProfile(row, forKey);
+}
+
+/** تعديلٌ بشرط أنّ الملفَّ كما فُتح (updated_at) — صفرُ صفوفٍ يُرمى «stale» (الكتابةُ تُسمَع). */
+export async function updateProfile(input: ProfileInput, expect: { id: string; updated_at: string }): Promise<CustomerProfile> {
+  const row = rowOf(input);
+  if (supabase) {
     const r = await supabase.from("customer_profiles").update(row).eq("id", expect.id).eq("updated_at", expect.updated_at).select("*");
     if (r.error) throw r.error;
     const got = (r.data ?? [])[0] as CustomerProfile | undefined;
     if (!got) throw Object.assign(new Error("stale"), { code: "stale" });
-    return { kind: "saved", profile: got };
+    return got;
   }
-  return (await local()).demoSaveProfile(row, expect);
+  return (await local()).demoUpdateProfile(row, expect);
 }
 
-/** فواتيرُ المفتاح كلُّها، الأحدثُ أوّلاً. */
+/** فواتيرُ المفتاح كلُّها، الأحدثُ أوّلاً — بمؤشّرٍ ثابت (created_at, id) حتى صفحةٍ فارغة: بيعةٌ أو حذفٌ بين صفحتين لا يكرّر
+ *  فاتورةً ولا يُسقطها (الإزاحةُ كانت تعدّ دينَ فاتورةٍ مرّتين). */
 export async function keyInvoices(key: string): Promise<Invoice[]> {
   if (supabase) {
     const sb = supabase;
     const out: Invoice[] = [];
-    for (let from = 0; ; ) {
-      const r = await sb.rpc("customer_key_invoices", { p_key: key }).range(from, from + 999);
+    let before: Invoice | null = null;
+    for (;;) {
+      const r = await sb.rpc("customer_key_invoices", { p_key: key, p_before_at: before?.created_at ?? null, p_before_id: before?.id ?? null });
       if (r.error) { if (ABSENT.includes(code(r.error))) throw absentErr(); throw r.error; }
       const page = (r.data ?? []) as Invoice[];
       if (page.length === 0) break;
       out.push(...page);
-      from += page.length;   // يتقدّم بما وصل لا بما طُلب (CLAUDE.md: PostgREST)
+      before = page[page.length - 1];
     }
     return out;
   }
   return (await local()).demoKeyInvoices(key);
 }
 
-/** صفُّ الدليل للمفتاح (الاسم، الرقم، الحيوانات، الشراء) — بحثٌ بنصّ المفتاح ثمّ المجموعةُ التي مفتاحُها هو حرفاً
- *  (لا أوّلُ نتيجة: بحثُ الاسم يرجع أسماءً متشابهة). null = لا شيء بالدليل (ملفٌّ بلا فاتورةٍ ولا حيوانٍ يرجع من مصدره الثالث). */
+/** صفُّ الدليل للمفتاح (الاسم، الرقم، الحيوانات، الشراء) — بنداءٍ واحد: الدليلُ يقدّم المفتاحَ المطابقَ حرفاً بين المتساويين
+ *  رتبةً (0270)، فالمطابقُ أوّلُ صفّ إن وُجد. null = لا شيء بالدليل لهذا المفتاح (لا «ما لقيناه بعد ٤٠٠» — قائمةٌ ناقصة).
+ *  ونصٌّ أقصرُ من أن يُبحث به (اسمٌ بحرفٍ واحد) يُرمى: «ماكو حيوان» عن بحثٍ لم يجرِ كذبٌ يُصدَّق. */
 export async function directoryHit(key: string): Promise<CustomerHit | null> {
-  for (let offset = 0; offset < 400; offset += 100) {
-    const page = await repo.findCustomers(queryOfKey(key), { limit: 100, offset });
-    const hit = page.rows.find((r: CustomerHit) => r.key === key);
-    if (hit) return hit;
-    if (page.rows.length < 100) return null;
-  }
-  return null;
+  const page = await repo.findCustomers(queryOfKey(key), { limit: 3 });
+  if (page.total === null && page.rows.length === 0 && queryOfKey(key).length < 2) throw Object.assign(new Error("cfile_short"), { code: "cfile_short" });
+  return page.rows.find((r: CustomerHit) => r.key === key) ?? null;
 }

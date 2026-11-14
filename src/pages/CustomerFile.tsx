@@ -21,10 +21,10 @@ import type { CustomerHit, CustomerProfile, Invoice } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { cn, formatDate, money } from "@/lib/utils";
 import { dueOf } from "@/lib/debt";
-import { usdText } from "@/lib/usdMath";
+import { usdDueCentsOf, usdText } from "@/lib/usdMath";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess } from "@/lib/sounds";
-import { directoryHit, getProfile, isCfileAbsent, keyInvoices, keyOf, saveProfile, type ProfileInput } from "@/lib/customerFileApi";
+import { addProfile, directoryHit, getProfile, isCfileAbsent, keyInvoices, keyOf, updateProfile, type ProfileInput } from "@/lib/customerFileApi";
 
 const enc = (key: string) => `/customer/${encodeURIComponent(key)}`;
 
@@ -35,12 +35,14 @@ function errText(e: unknown, t: TFunction): string {
   if (msg.includes("customer_key_frozen")) return t("cfile.keyFrozen");
   if (msg.includes("customer_no_identity")) return t("cfile.noIdentity");
   if (msg === "stale" || (e as { code?: string } | null)?.code === "stale") return t("cfile.stale");
+  if (msg === "cfile_short") return t("cfile.short");
   return describeDbError(e, t);
 }
 
 export function CustomerFile() {
+  // useParams يرجع المقطعَ مفكوكاً أصلاً — فكٌّ ثانٍ يرمي على «%» بالاسم أو يفتح مفتاحاً غيرَه.
   const { key: raw } = useParams();
-  const key = raw ? decodeURIComponent(raw) : "";
+  const key = raw ?? "";
   if (key === "new") return <NewCustomer />;
   return <FileView key={key} cKey={key} />;
 }
@@ -58,15 +60,15 @@ function NewCustomer() {
     if (busy || !ok) return;
     setBusy(true); setErr(null);
     try {
-      const r = await saveProfile(f, null);
-      if (r.kind === "exists") {
-        toast.warn(t("cfile.exists"));
-        navigate(enc(r.key), { replace: true });
-      } else {
+      // الخادمُ يقرّر: ملفٌّ قائم أو زبونٌ له فواتيرُ/حيوان ⇒ لا كتابة (اسمٌ آخر كان سيغلب الدليل) — يُفتح ملفُّه بمفتاح الخادم.
+      const r = await addProfile(f, null);
+      if (r.status === "created") {
         playSuccess();
         toast.success(t("cfile.created"));
-        navigate(enc(r.profile.cust_key), { replace: true });
+      } else {
+        toast.warn(t(r.status === "known" ? "cfile.known" : "cfile.exists"));
       }
+      navigate(enc(r.key), { replace: true });
     } catch (e) {
       setErr(errText(e, t));
     } finally { setBusy(false); }
@@ -147,8 +149,12 @@ function FileView({ cKey }: { cKey: string }) {
   }, [cKey, tick, t]);
 
   const phoneKeyed = cKey.startsWith("p:");
-  const name = data?.profile?.name ?? data?.hit?.name ?? (phoneKeyed ? null : cKey.slice(2));
-  const phone = data?.profile?.phone ?? data?.hit?.phone ?? (phoneKeyed ? `0${cKey.slice(2)}` : null);
+  // الاسمُ والرقمُ من مصدرٍ حقيقيّ وحده (الملفّ، الدليل، آخرُ فاتورة) — المفتاحُ مطبَّعٌ (بلا مسافات، همزةٌ مطويّة) فلا يُكتب
+  // به بيعٌ ولا حيوانٌ ولا ملفّ.
+  const lastInv = data?.invoices[0] ?? null;
+  const name = data?.profile?.name ?? data?.hit?.name ?? (lastInv?.customer_name?.trim() || null);
+  const phone = data?.profile?.phone ?? data?.hit?.phone ?? (lastInv?.customer_phone?.trim() || null);
+  const found = !!data && (!!data.profile || !!data.hit || data.invoices.length > 0);
 
   const stats = useMemo(() => {
     const inv = data?.invoices ?? [];
@@ -156,7 +162,7 @@ function FileView({ cKey }: { cKey: string }) {
     for (const i of inv) {
       if ((i.status ?? "paid") === "refunded") continue;
       if ((i.sale_kind ?? "retail") !== "opening") buys++;
-      if (i.currency === "USD") usdCents += Math.max(0, Math.round(((i.total_usd ?? 0) - (i.paid_usd ?? 0)) * 100));
+      if (i.currency === "USD") usdCents += Number(usdDueCentsOf(i));
       else due += dueOf(i);
     }
     return { due, usdCents, buys, last: inv.find((i) => (i.sale_kind ?? "retail") !== "opening")?.created_at ?? null };
@@ -176,14 +182,19 @@ function FileView({ cKey }: { cKey: string }) {
     setBusy(true); setSaveErr(null);
     try {
       const p = data?.profile ?? null;
-      let r = await saveProfile(draft, p ? { id: p.id, updated_at: p.updated_at } : null);
-      // ملفٌّ انكتب من جهازٍ ثانٍ بعد ما انفتحت الصفحة: لا يُداس — يُقرأ ويُعاد التعديلُ بشرطه.
-      if (r.kind === "exists") {
-        const cur = await getProfile(cKey);
-        if (!cur) throw Object.assign(new Error("stale"), { code: "stale" });
-        r = await saveProfile(draft, { id: cur.id, updated_at: cur.updated_at });
+      let saved: CustomerProfile;
+      if (p) {
+        saved = await updateProfile(draft, { id: p.id, updated_at: p.updated_at });
+      } else {
+        // «أضف معلومات» لزبونٍ معروف: الإدراجُ لمفتاح هذا الملفّ نفسِه (forKey).
+        const r = await addProfile(draft, cKey);
+        if (r.status === "created") saved = r.profile;
+        else {
+          // ملفٌّ انكتب من جهازٍ ثانٍ بعد ما انفتحت الصفحة: لا يُداس — «تغيّر، حدّث» بدل كتابةٍ فوقه.
+          throw Object.assign(new Error("stale"), { code: "stale" });
+        }
       }
-      if (r.kind === "saved") setData((d) => (d ? { ...d, profile: r.profile } : d));
+      setData((d) => (d ? { ...d, profile: saved } : d));
       playSuccess();
       toast.success(t("cfile.saved"));
       setEditing(false);
@@ -220,6 +231,17 @@ function FileView({ cKey }: { cKey: string }) {
     return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> {t("cfile.loading")}</div>;
   }
 
+  if (!found) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-4 py-5">
+        <BackBar />
+        <div className="card space-y-3 p-6 text-center" data-cfile-notfound>
+          <p className="text-sm font-bold text-ink">{t("cfile.notFound")}</p>
+          <Button leftIcon={<UserPlus size={16} />} onClick={() => { playTap(); navigate("/customer/new"); }}>{t("cfile.newTitle")}</Button>
+        </div>
+      </div>
+    );
+  }
   const pets = data.hit?.pets ?? [];
   const invoices = showAll ? data.invoices : data.invoices.slice(0, 30);
   const lang = i18n.language;
@@ -248,7 +270,7 @@ function FileView({ cKey }: { cKey: string }) {
         )}
         {editing && (
           <div className="mt-4 space-y-3 border-t border-line pt-4" data-cfile-form>
-            <ProfileFields value={draft} onChange={setDraft} lockName={!phoneKeyed} lockPhone={phoneKeyed} />
+            <ProfileFields value={draft} onChange={setDraft} lockName={!phoneKeyed} lockPhone />
             {saveErr && <p role="alert" className="text-sm font-bold text-danger-600" data-cfile-err>{saveErr}</p>}
             <div className="flex flex-wrap gap-2">
               <Button loading={busy} onClick={save} data-cfile-save>{t("cfile.save")}</Button>
@@ -322,7 +344,7 @@ function InvoiceRow({ inv, lang }: { inv: Invoice; lang: string }) {
   const { t } = useTranslation();
   const refunded = (inv.status ?? "paid") === "refunded";
   const usd = inv.currency === "USD";
-  const due = usd ? Math.max(0, Math.round(((inv.total_usd ?? 0) - (inv.paid_usd ?? 0)) * 100)) : dueOf(inv);
+  const due = usd ? Number(usdDueCentsOf(inv)) : dueOf(inv);
   return (
     <div className="flex flex-wrap items-center gap-2 py-2.5 text-sm" data-cfile-inv={inv.id}>
       <span className="min-w-[96px] text-xs font-bold text-ink-subtle">{formatDate(inv.created_at, lang, true)}</span>

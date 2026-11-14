@@ -8721,7 +8721,7 @@
     "phone": "Phone",
     "address": "Address or area",
     "notes": "Notes",
-    "identityHint": "The locked field is the customer's identity — it can't change here.",
+    "identityHint": "The locked field is the customer's identity — it can't change here. For a customer known only by name, adding a phone makes a different customer.",
     "retry": "Retry",
     "loading": "Loading…",
     "noName": "Unnamed customer",
@@ -8743,6 +8743,9 @@
     "showAll": "Show all ({{n}})",
     "refunded": "Refunded",
     "due": "Due {{amount}}",
-    "paid": "Paid"
+    "paid": "Paid",
+    "known": "This phone (or name) belongs to a customer with invoices or a pet — opened their file; add their info there.",
+    "notFound": "No customer with this phone or name.",
+    "short": "The name is too short to look up — open the customer by their phone."
   }
 }
