@@ -4,7 +4,7 @@ import type { TFunction } from "i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint, History } from "lucide-react";
-import type { Species, AdmissionKind, Pet } from "@/types";
+import type { Species, AdmissionKind, Pet, CustomerHit } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
 import { branchStore } from "@/lib/branchStore";
@@ -14,6 +14,7 @@ import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
 import { COMMON_DISEASES } from "@/lib/diseases";
 import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
+import { useCustomerSearch, CustomerDropdown } from "@/components/retail/CustomerSearch";
 import { PetAvatar } from "@/components/PetAvatar";
 import { IntakeFields } from "@/components/IntakeFields";
 import { emptyIntake, isEmptyIntake, encodeIntake, intakeText, cleanSince, type IntakeDraft } from "@/lib/intake";
@@ -113,6 +114,33 @@ export function NewCase() {
   const [ownerCollapsed, setOwnerCollapsed] = useState(!!prefill);
   const [ownerName, setOwnerName] = useState(prefill?.name ?? "");
   const [phone, setPhone] = useState(prefill?.phone ?? "");
+  /* 0270 (طلبُ المالك ١٤/١١): الدكتور ما يتذكّر إن الزبون باعله قبل — فخانتا الاسم والرقم تقترحان الزبائنَ
+   * المسجّلين (بيعات، حيوانات، ملفّات) بالبحث نفسِه الذي بشاشة البيع، وضغطةٌ تُنزل الاسمَ والرقمَ كما هما بالسجلّ
+   * فتُجمع الحالةُ تحت الزبون نفسِه. والزبونُ المختار يُرى بحيواناته — حالةٌ لحيوانٍ مسجَّل تُفتح من سجلّه لا توأماً. */
+  const cs = useCustomerSearch();
+  const [pickedCust, setPickedCust] = useState<CustomerHit | null>(null);
+  // PhoneInput يأخذ قيمتَه مرّةً عند البناء (CLAUDE.md: «حقلٌ يأخذ قيمتَه مرّةً») — الاختيارُ يعيد بناءَه بمفتاح.
+  const [phoneGen, setPhoneGen] = useState(0);
+  const pickCust = (h: CustomerHit) => {
+    cs.cancel();
+    playTap();
+    setOwnerName(h.name ?? "");
+    setPhone(h.phone ?? "");
+    setPhoneGen((g) => g + 1);
+    setPickedCust(h);
+  };
+  const custKeys = (field: "name" | "phone") => (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (cs.open && cs.rows.length > 0) { e.preventDefault(); cs.move(e.key === "ArrowDown" ? 1 : -1); }
+      return;
+    }
+    if (e.key === "Escape") { if (cs.open) { e.preventDefault(); cs.close(); } return; }
+    if (e.key === "Enter") {
+      const h = cs.highlighted();
+      if (h) { e.preventDefault(); pickCust(h); }
+    }
+    void field;
+  };
   const [email, setEmail] = useState(prefill?.email ?? "");
   const [governorate, setGovernorate] = useState(prefill?.governorate ?? "");
   const [area, setArea] = useState(prefill?.area ?? "");
@@ -388,13 +416,19 @@ export function NewCase() {
           <div className={cn("card p-4 sm:p-5", ownerCollapsed && "hidden")}>
             <h2 className="mb-4 flex items-center gap-2 font-bold text-ink"><User size={18} className="text-brand-600" /> {t("newCase.ownerSection")}</h2>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <div>
+              <div className="relative">
                 <label className="label">{t("newCase.ownerName")}</label>
-                <input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
+                <input className="input" value={ownerName} data-ncase-name autoComplete="off"
+                  onChange={(e) => { setOwnerName(e.target.value); setPickedCust(null); cs.type("name", e.target.value); }}
+                  onFocus={() => cs.focus("name", ownerName)} onBlur={cs.blur} onKeyDown={custKeys("name")} />
+                {cs.field === "name" && <CustomerDropdown cs={cs} onPick={pickCust} newLabel={t("ncase.newOwner")} />}
               </div>
-              <div>
+              <div className="relative">
                 <label className="label">{t("phone.ownerPhone")}</label>
-                <PhoneInput value={phone} onChange={setPhone} />
+                <div onFocusCapture={() => cs.focus("phone", phone)} onBlurCapture={cs.blur} onKeyDownCapture={custKeys("phone")} data-ncase-phone>
+                  <PhoneInput key={phoneGen} value={phone} onChange={(v) => { setPhone(v); setPickedCust(null); cs.type("phone", v); }} />
+                </div>
+                {cs.field === "phone" && <CustomerDropdown cs={cs} onPick={pickCust} newLabel={t("ncase.newOwner")} />}
               </div>
               <div>
                 <label className="label">{t("phone.ownerEmail")}</label>
@@ -404,6 +438,25 @@ export function NewCase() {
                 <GovernorateAreaPicker governorate={governorate} area={area} onChange={(g, a) => { setGovernorate(g); setArea(a); }} />
               </div>
             </div>
+            {pickedCust && (
+              <div data-ncase-known className="mt-4 rounded-2xl border border-success-200 bg-success-50/60 p-3.5 text-sm dark:border-success-500/30 dark:bg-success-500/10">
+                <p className="flex items-center gap-1.5 font-extrabold text-success-700 dark:text-success-300"><CheckCircle2 size={15} /> {t("ncase.known")}</p>
+                {pickedCust.pets.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-bold text-ink-muted">{t("ncase.hasPets")}</span>
+                    {pickedCust.pets.map((p) => (
+                      <button key={p.id} type="button" data-ncase-pet={p.id} onClick={() => { playTap(); navigate(`/pet/${p.id}`); }}
+                        className={cn("inline-flex items-center gap-1 rounded-full border border-brand-200 bg-surface-1 px-2.5 py-1 text-xs font-bold text-brand-700 transition hover:border-brand-300 dark:border-brand-500/30 dark:text-brand-300", p.deceased && "opacity-60")}>
+                        <PawPrint size={11} /> {p.name || "—"}
+                      </button>
+                    ))}
+                    <span className="basis-full text-2xs text-ink-subtle">{t("ncase.petsHint")}</span>
+                  </div>
+                )}
+                <button type="button" data-ncase-file onClick={() => { playTap(); navigate(`/customer/${encodeURIComponent(pickedCust.key)}`); }}
+                  className="mt-2 text-xs font-bold text-brand-600 hover:text-brand-700 dark:text-brand-300">{t("retail.custFile")}</button>
+              </div>
+            )}
           </div>
 
           {/* Animals (one or more) */}

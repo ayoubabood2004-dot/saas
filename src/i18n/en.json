@@ -8747,5 +8747,11 @@
     "known": "This phone (or name) belongs to a customer with invoices or a pet — opened their file; add their info there.",
     "notFound": "No customer with this phone or name.",
     "short": "The name is too short to look up — open the customer by their phone."
+  },
+  "ncase": {
+    "newOwner": "New customer — saved with the case",
+    "known": "Registered customer — their info is filled in; add the new pet under them.",
+    "hasPets": "Already at the clinic:",
+    "petsHint": "If the case is for one of these, open it from their record so the pet isn't registered twice."
   }
 }
