@@ -152,7 +152,8 @@ export function useCustomerSearch(): CustomerSearch {
 }
 
 /** القائمةُ تحت خانتَي الزبون — بعرضهما، وتلفّ تحت لوحة المفاتيح على الهاتف. */
-export function CustomerDropdown({ cs, onPick }: { cs: CustomerSearch; onPick: (h: CustomerHit) => void }) {
+/** `newLabel`: ما يُقال حين لا يطابق أحد — بالبيع «ينحفظ مع البيع»، وبالحالة الجديدة «ينحفظ مع الحالة» (0270). */
+export function CustomerDropdown({ cs, onPick, newLabel }: { cs: CustomerSearch; onPick: (h: CustomerHit) => void; newLabel?: string }) {
   const { t } = useTranslation();
   if (!cs.open || cs.status === "idle") return null;
   const keep = (e: React.MouseEvent) => e.preventDefault(); // التركيزُ يبقى بالخانة
@@ -181,7 +182,7 @@ export function CustomerDropdown({ cs, onPick }: { cs: CustomerSearch; onPick: (
         </div>
       )}
       {cs.status === "ok" && cs.rows.length === 0 && (
-        <p data-custnew className="px-3 py-3 text-xs text-ink-subtle">{t("cust.new", "زبون جديد — ينحفظ مع البيع")}</p>
+        <p data-custnew className="px-3 py-3 text-xs text-ink-subtle">{newLabel ?? t("cust.new", "زبون جديد — ينحفظ مع البيع")}</p>
       )}
       {(cs.status === "ok" || cs.status === "loading") && cs.rows.length > 0 && (
         <div className={cn(cs.status === "loading" && "opacity-60")}>

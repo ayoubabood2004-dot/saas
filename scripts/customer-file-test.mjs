@@ -142,6 +142,12 @@ console.log("▸ ٣) الوصلُ بالنصّ — المداخلُ والنطا
   check("  والصفحة: المفتاحُ من الرابط بلا فكٍّ ثانٍ، ولا اسمَ من المفتاح المطبَّع، والرقمُ مقفولٌ دائماً",
     !/decodeURIComponent/.test(cf) && !/cKey\.slice\(2\)/.test(cf) && /lockName=\{!phoneKeyed\} lockPhone \/>/.test(cf) && /usdDueCentsOf/.test(cf));
   check("  وrepo.ts (حزمةُ الإقلاع) لا يعرف الملفّ", !/customer_key_invoices|customer_profiles/.test(read("src/lib/repo.ts")));
+  const nc = read("src/pages/NewCase.tsx");
+  check("«حالة جديدة» تقترح الزبونَ المسجّل بخانتي الاسم والرقم، وضغطةٌ تُنزل معلوماته وتعرض حيواناته (طلبُ المالك ١٤/١١)",
+    /useCustomerSearch\(\)/.test(nc) && /cs\.type\("name", e\.target\.value\)/.test(nc) && /cs\.type\("phone", v\)/.test(nc)
+      && (nc.match(/<CustomerDropdown cs=\{cs\} onPick=\{pickCust\} newLabel=\{t\("ncase\.newOwner"\)\} \/>/g) || []).length === 2
+      && /<PhoneInput key=\{phoneGen\}/.test(nc) && /setPhoneGen\(\(g\) => g \+ 1\)/.test(nc) && /data-ncase-known/.test(nc) && /pickedCust\.pets\.map/.test(nc)
+      && /const NewCase = page\([^;]*\["ncase"\]\)/.test(read("src/App.tsx")));
 }
 
 console.log(fails ? `\n✗ customer-file-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ customer-file-test: ${passes} نجحت، 0 فشلت`);

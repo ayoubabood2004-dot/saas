@@ -74,6 +74,7 @@
     "dosl": "src/components/retail/DoseLines.tsx",
     "dsht": "src/pages/PetPassport.tsx",
     "cfile": "src/pages/CustomerFile.tsx",
+    "ncase": "src/pages/NewCase.tsx",
     "dpets": "src/components/retail/DebtorPets.tsx",
     "vxed": "src/components/vaccines/VaccineEditSheet.tsx",
     "ptab": "src/components/retail/PosCustomTabs.tsx",

@@ -40,7 +40,7 @@ const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ defa
 const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
 const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
-const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
+const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })), ["ncase"]);
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })), ["pkg"]);
 const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
