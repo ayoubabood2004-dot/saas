@@ -66,28 +66,43 @@ const read = (f) => readFileSync(f, "utf8");
 
 console.log("▸ ١) الملفّ اليدويّ — المرآةُ تفرض حرّاسَ 0270");
 {
-  const a = await F.saveProfile({ name: "  منى   علي ", phone: "0770 555 4444", address: " المنصور ", notes: "" }, null);
-  check("زبونٌ بلا شراء يُسجَّل، والمفتاحُ من الرقم الوطنيّ (لا ممّا يرسله أحد)، والنصُّ مقصوص", a.kind === "saved" && a.profile.cust_key === "p:7705554444" && a.profile.name === "منى علي" && a.profile.address === "المنصور" && a.profile.notes === null,
+  const a = await F.addProfile({ name: "  منى   علي ", phone: "0770 555 4444", address: " المنصور ", notes: "" }, null);
+  check("زبونٌ لا يعرفه أحد يُسجَّل، والمفتاحُ من الرقم الوطنيّ (لا ممّا يرسله أحد)، والنصُّ مقصوص", a.status === "created" && a.key === "p:7705554444" && a.profile.name === "منى علي" && a.profile.address === "المنصور" && a.profile.notes === null,
     JSON.stringify(a));
-  const b = await F.saveProfile({ name: "منى", phone: "+964 770 555 4444", address: "", notes: "" }, null);
-  check("  ورقمُه بصيغةٍ ثانية نفسُ الزبون: «موجود» بمفتاحه، والقائمُ لا يُداس", b.kind === "exists" && b.key === "p:7705554444" && (await F.getProfile("p:7705554444")).name === "منى علي");
-  check("  وبلا اسمٍ ولا رقم يُرفض", (await err(F.saveProfile({ name: " ", phone: "", address: "بغداد", notes: "" }, null))) === "customer_no_identity");
+  const b = await F.addProfile({ name: "منى", phone: "+964 770 555 4444", address: "", notes: "" }, null);
+  check("  ورقمُه بصيغةٍ ثانية: «موجود» بمفتاحه، والقائمُ لا يُداس", b.status === "exists" && b.key === "p:7705554444" && (await F.getProfile("p:7705554444")).name === "منى علي");
+  check("  وبلا اسمٍ ولا رقم يُرفض", (await err(F.addProfile({ name: " ", phone: "", address: "بغداد", notes: "" }, null))) === "customer_no_identity");
+  // زبونُ فواتير بلا ملفّ: «زبون جديد» برقمه لا يكتب (اسمٌ آخر كان سيغلب الدليل) — ومن ملفّه («أضف معلومات») يكتب.
+  const db0 = M.loadDB();
+  db0.invoices = [...(db0.invoices ?? []), { id: "cf-k", customer_name: "علي القديم", customer_phone: "07701112222", total: 1000, amount_paid: 1000, cost_total: 0, profit: 1000, item_count: 1, status: "paid", created_at: "2026-11-01T10:00:00.000Z" }];
+  M.saveDB(db0);
+  const k = await F.addProfile({ name: "حسن", phone: "0770 111 2222", address: "", notes: "" }, null);
+  check("«زبون جديد» برقم زبونٍ له فواتير بلا ملفّ ⇒ known، ولا ملفّ يُكتب (الاسمُ لا يُعاد)", k.status === "known" && k.key === "p:7701112222" && (await F.getProfile("p:7701112222")) === null);
+  check("  ومن ملفّه (forKey) يُكتب، ومفتاحٌ محسوبٌ غيرُ المقصود يُرفض",
+    (await F.addProfile({ name: "علي القديم", phone: "07701112222", address: "الكرخ", notes: "" }, "p:7701112222")).status === "created"
+      && (await err(F.addProfile({ name: "x", phone: "07709990000", address: "", notes: "" }, "p:7701112222"))) === "customer_key_frozen");
   const p0 = await F.getProfile("p:7705554444");
-  const e1 = await F.saveProfile({ name: "منى علي حسن", phone: "+964 770 555 4444", address: "الكرادة", notes: "تجي كل شهر" }, { id: p0.id, updated_at: p0.updated_at });
-  check("التعديل: الاسمُ والعنوانُ والملاحظاتُ وصيغةُ الرقم نفسِه تمرّ بشرط «كما فُتح»", e1.kind === "saved" && e1.profile.address === "الكرادة" && e1.profile.updated_at !== p0.updated_at);
-  check("  وتعديلٌ بنسخةٍ قديمة يُرفض (لا يدوس ما كُتب بعدها)", (await err(F.saveProfile({ name: "x", phone: "07705554444", address: "", notes: "" }, { id: p0.id, updated_at: p0.updated_at }))) === "stale");
+  const e1 = await F.updateProfile({ name: "منى علي حسن", phone: "+964 770 555 4444", address: "الكرادة", notes: "تجي كل شهر" }, { id: p0.id, updated_at: p0.updated_at });
+  check("التعديل: الاسمُ والعنوانُ والملاحظاتُ وصيغةُ الرقم نفسِه تمرّ بشرط «كما فُتح»", e1.address === "الكرادة" && e1.updated_at !== p0.updated_at);
+  check("  وتعديلٌ بنسخةٍ قديمة يُرفض (لا يدوس ما كُتب بعدها)", (await err(F.updateProfile({ name: "x", phone: "07705554444", address: "", notes: "" }, { id: p0.id, updated_at: p0.updated_at }))) === "stale");
   const p1 = await F.getProfile("p:7705554444");
-  check("  ورقمٌ لزبونٍ ثانٍ يُرفض (الهويّة)", (await err(F.saveProfile({ name: "منى", phone: "07709990000", address: "", notes: "" }, { id: p1.id, updated_at: p1.updated_at }))) === "customer_key_frozen");
-  const n = await F.saveProfile({ name: "أبو حيدر", phone: "", address: "", notes: "" }, null);
-  const pn = n.profile;
-  check("  وزبونٌ بلا رقم مفتاحُه اسمُه، وإضافةُ رقمٍ له زبونٌ ثانٍ (يُرفض)", pn.cust_key.startsWith("n:")
-    && (await err(F.saveProfile({ name: "أبو حيدر", phone: "07711112222", address: "", notes: "" }, { id: pn.id, updated_at: pn.updated_at }))) === "customer_key_frozen");
+  check("  ورقمٌ لزبونٍ ثانٍ يُرفض (الهويّة)", (await err(F.updateProfile({ name: "منى", phone: "07709990000", address: "", notes: "" }, { id: p1.id, updated_at: p1.updated_at }))) === "customer_key_frozen");
+  const n = await F.addProfile({ name: "أبو حيدر", phone: "", address: "", notes: "" }, null);
+  check("  وزبونٌ بلا رقم مفتاحُه اسمُه، وإضافةُ رقمٍ له زبونٌ ثانٍ (يُرفض)", n.status === "created" && n.key.startsWith("n:")
+    && (await err(F.updateProfile({ name: "أبو حيدر", phone: "07711112222", address: "", notes: "" }, { id: n.profile.id, updated_at: n.profile.updated_at }))) === "customer_key_frozen");
 }
 
 console.log("▸ ٢) الدليلُ والفواتير — بالمفتاح نفسِه");
 {
   const hit = await F.directoryHit("p:7705554444");
   check("الدليلُ يلقى صاحبَ الملفّ بلا شراء، باسمه كما كُتب", hit && hit.name === "منى علي حسن" && hit.purchases === 0, JSON.stringify(hit));
+  await F.addProfile({ name: "منى", phone: "", address: "", notes: "" }, null);   // «منى» بالاسم وحده — أقدمُ؟ لا: أحدث. والمطابقُ أوّلاً
+  const db1 = M.loadDB();
+  for (const c of db1.customerProfiles) if (c.cust_key === F.keyOf(null, "منى")) { c.created_at = "2020-01-01T00:00:00.000Z"; }
+  M.saveDB(db1);
+  const nm = await repo.findCustomers("منى", { limit: 5 });
+  check("  والبحثُ يقدّم المفتاحَ المطابقَ حرفاً بين المتساويين رتبةً (فالملفُّ يلقاه بنداءٍ واحد)", nm.rows[0]?.key === F.keyOf(null, "منى") && (await F.directoryHit(F.keyOf(null, "منى")))?.key === F.keyOf(null, "منى"),
+    nm.rows.map((r) => r.key).join());
   const page = await repo.findCustomers(null, { filter: "nopets", sort: "recent", limit: 100 });
   check("  وبقسم «زبائن المبيعات بلا حيوان»", page.rows.some((r) => r.key === "p:7705554444"));
   const db = M.loadDB();
@@ -117,10 +132,15 @@ console.log("▸ ٣) الوصلُ بالنصّ — المداخلُ والنطا
       && /custKey\(pet\.owner_phone, pet\.owner_name, getDialCode\(\)\)/.test(oc) && /showFile=\{!isOwner\}/.test(pp)
       && /to="\/customer\/new"/.test(ah) && /to=\{`\/customer\/\$\{encodeURIComponent\(r\.key\)\}`\}/.test(ah));
   const api = read("src/lib/customerFileApi.ts");
-  check("الفواتيرُ بالمفتاح (customer_key_invoices) لا بالأرقام الخامّة، وصفحاتُها بما وصل حتى صفحةٍ فارغة",
-    /rpc\("customer_key_invoices"/.test(api) && !/customer_invoices"/.test(api) && /from \+= page\.length/.test(api) && /if \(page\.length === 0\) break/.test(api));
-  check("  والإنشاءُ لا يدوس مفتاحاً قائماً، والتعديلُ بشرط updated_at وصفرُ صفوفٍ يُرمى",
-    /ignoreDuplicates: true/.test(api) && /\.eq\("updated_at", expect\.updated_at\)/.test(api) && /if \(!got\) throw Object\.assign\(new Error\("stale"\)/.test(api));
+  check("الفواتيرُ بالمفتاح (customer_key_invoices) لا بالأرقام الخامّة، بمؤشّرٍ ثابت من آخر صفٍّ حتى صفحةٍ فارغة (لا إزاحة)",
+    /rpc\("customer_key_invoices", \{ p_key: key, p_before_at: before\?\.created_at \?\? null, p_before_id: before\?\.id \?\? null \}\)/.test(api)
+      && !/customer_invoices"/.test(api) && /before = page\[page\.length - 1\]/.test(api) && /if \(page\.length === 0\) break/.test(api) && !/range\(/.test(api));
+  check("  والتسجيلُ بالخادم (customer_profile_add يقرّر موجود/معروف)، والتعديلُ بشرط updated_at وصفرُ صفوفٍ يُرمى، والدليلُ بنداءٍ واحد",
+    /rpc\("customer_profile_add"/.test(api) && !/from\("customer_profiles"\)\.(insert|upsert)/.test(api) && /\.eq\("updated_at", expect\.updated_at\)/.test(api)
+      && /if \(!got\) throw Object\.assign\(new Error\("stale"\)/.test(api) && (api.match(/repo\.findCustomers\(/g) || []).length === 1 && !/offset/.test(api));
+  const cf = read("src/pages/CustomerFile.tsx");
+  check("  والصفحة: المفتاحُ من الرابط بلا فكٍّ ثانٍ، ولا اسمَ من المفتاح المطبَّع، والرقمُ مقفولٌ دائماً",
+    !/decodeURIComponent/.test(cf) && !/cKey\.slice\(2\)/.test(cf) && /lockName=\{!phoneKeyed\} lockPhone \/>/.test(cf) && /usdDueCentsOf/.test(cf));
   check("  وrepo.ts (حزمةُ الإقلاع) لا يعرف الملفّ", !/customer_key_invoices|customer_profiles/.test(read("src/lib/repo.ts")));
 }
 

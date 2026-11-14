@@ -57,6 +57,11 @@ export const canonDec = (v: string, scale: number): string => { const c = decOf(
 
 /** سنتات من نصّ أو عدد — كـ`round(x, 2)`. */
 export const centsOf = (v: string | number | null | undefined): bigint | null => decOf(v, 2);
+/** باقي فاتورة الدولار بالسنت (بلا عائم): total_usd − paid_usd، ولا سالب. */
+export const usdDueCentsOf = (inv: { total_usd?: number | string | null; paid_usd?: number | string | null }): bigint => {
+  const t = centsOf(inv.total_usd ?? 0) ?? 0n, p = centsOf(inv.paid_usd ?? 0) ?? 0n;
+  return t > p ? t - p : 0n;
+};
 
 /** «سعر ١٠٠ دولار» (كما يقوله السوق) ⇒ السعرُ × ١٠٬٠٠٠ للدولار الواحد — مرآةُ `_usd_rate_of` (round(per100/100, 4)).
  *  per100/100 بأربع منازل × ١٠٬٠٠٠ = per100 بمنزلتين — فهو `decOf(per100, 2)` نفسُه. */

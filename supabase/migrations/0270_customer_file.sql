@@ -21,7 +21,12 @@
 -- والملفُّ يسأل بالمفتاح نفسِه الذي يجمع به البحث: الأزواجُ المتمايزة (اسم، رقم) أوّلاً ثمّ مفتاحُ كلّ زوج (كلفةُ 0232 المقيسة).
 -- قراءةٌ بصلاحية المُستدعي (RLS الحَكَم)، بمسارٍ مثبَّت، ممنوعةٌ عن anon.
 --
--- إضافيّةٌ وتُعاد بلا أثرٍ ثانٍ. تراجع: drop function customer_key_invoices(text)؛ أعد customer_search من 0232 حرفاً؛
+-- ── customer_profile_add: «زبون جديد» يسأل الخادمَ أوّلاً ─────────────────────────
+-- ملفٌّ قائم ⇒ exists، وزبونٌ له فواتيرُ أو حيوان ⇒ known (لا كتابة: اسمٌ آخر كان سيغلب الدليلَ بخطأ كتابة)، وإلا يُدرج.
+-- والدليلُ يقدّم المفتاحَ المطابقَ حرفاً بين المتساويين رتبةً — فالملفُّ يلقى زبونَه بنداءٍ واحد ولا يفوّته اسمٌ شائع.
+--
+-- إضافيّةٌ وتُعاد بلا أثرٍ ثانٍ. تراجع: drop function customer_key_invoices(text, timestamptz, uuid) و
+--        customer_profile_add(text, text, text, text, text)؛ أعد customer_search من 0232 حرفاً؛
 --        drop table customer_profiles (المعلوماتُ اليدوية وحدها تضيع — الفواتيرُ والحيوانات لا تُمسّ).
 -- ============================================================================
 
@@ -30,8 +35,9 @@ set lock_timeout = '5s';
 do $$
 begin
   if to_regprocedure('public._drift_assert(text,text,text)') is null
-     or to_regprocedure('public.cust_key(text,text,text)') is null then
-    raise exception 'needs_0252' using hint = 'طبّق 0231 (مفتاح الزبون) و0252 (حارس الانحراف) قبل هالهجرة';
+     or to_regprocedure('public.cust_key(text,text,text)') is null
+     or to_regprocedure('public.photographer_fence_table(text)') is null then
+    raise exception 'needs_0252' using hint = 'طبّق 0222 (سياج المصوّر) و0231 (مفتاح الزبون) و0252 (حارس الانحراف) قبل هالهجرة';
   end if;
 end $$;
 select public._drift_assert('public.customer_search(text,text,text,integer,integer,integer)', '741abdfedd4eec534c1c90d932ac3484', '-- +0270');
@@ -115,12 +121,7 @@ create policy customer_profiles_edit on public.customer_profiles for update to a
   with check (clinic_id = (select auth_clinic()));
 revoke all on table public.customer_profiles from anon;
 grant select, insert, update on table public.customer_profiles to authenticated;
-do $$
-begin
-  if to_regprocedure('public.photographer_fence_table(text)') is not null then
-    perform public.photographer_fence_table('customer_profiles');
-  end if;
-end $$;
+select public.photographer_fence_table('customer_profiles');
 
 -- ── ٢) دليلُ الزبائن: الملفّاتُ مصدرٌ ثالث، والدينُ القديم ليس شراءً ─────────────
 create or replace function public.customer_search(
@@ -255,6 +256,7 @@ begin
            row_number() over (order by
              case when v_sort = 'purchases' then a.n_buy end desc nulls last,
              case when v_sort = 'match' and v_mode <> 'list' then a.rk end asc nulls last,
+             case when v_sort = 'match' and v_mode <> 'list' then a.gkey in ('p:' || v_pq, 'n:' || v_nq) end desc nulls last,   -- +0270
              a.last_seen desc nulls last,
              a.gkey collate "C") as rn
       from agg a
@@ -308,8 +310,11 @@ end $$;
 revoke all on function public.customer_search(text, text, text, int, int, int) from public, anon;
 grant execute on function public.customer_search(text, text, text, int, int, int) to authenticated;
 
--- ── ٣) فواتيرُ المفتاح ─────────────────────────────────────────────────────
-create or replace function public.customer_key_invoices(p_key text)
+-- ── ٣) فواتيرُ المفتاح — بمؤشّرٍ ثابت (الأقدمُ من آخر صفٍّ وصل)، لا بإزاحة ──────────
+-- الإزاحةُ فوق دالّةٍ تُعاد حسابُها بكلّ صفحة: بيعةٌ لهذا الزبون بين صفحتين تكرّر فاتورةً (فيُعدّ دينُها مرّتين)،
+-- وحذفٌ بينهما يُسقط واحدة (قائمةٌ ناقصة). المؤشّرُ (created_at, id) لا يتزحزح بإضافةٍ ولا حذف.
+drop function if exists public.customer_key_invoices(text);
+create or replace function public.customer_key_invoices(p_key text, p_before_at timestamptz default null, p_before_id uuid default null)
 returns setof invoices
 language plpgsql
 stable
@@ -341,11 +346,67 @@ begin
     from invoices i
     join hit h on i.customer_name is not distinct from h.nm and i.customer_phone is not distinct from h.ph
    where i.clinic_id = v_clinic
-   order by i.created_at desc, i.id;
+     and (p_before_at is null or (i.created_at, i.id) < (p_before_at, coalesce(p_before_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+   order by i.created_at desc, i.id desc
+   limit 500;
 end $$;
-revoke all on function public.customer_key_invoices(text) from public, anon;
-grant execute on function public.customer_key_invoices(text) to authenticated;
-comment on function public.customer_key_invoices(text) is
-  'فواتيرُ الزبون بمفتاحه (0270): الأزواجُ (اسم، رقم) التي يجمعها customer_search تحت المفتاح نفسِه، كلُّ التاريخ، الأحدثُ أوّلاً.';
+revoke all on function public.customer_key_invoices(text, timestamptz, uuid) from public, anon;
+grant execute on function public.customer_key_invoices(text, timestamptz, uuid) to authenticated;
+comment on function public.customer_key_invoices(text, timestamptz, uuid) is
+  'فواتيرُ الزبون بمفتاحه (0270): الأزواجُ (اسم، رقم) التي يجمعها customer_search تحت المفتاح نفسِه، الأحدثُ أوّلاً، ٥٠٠ بالصفحة بمؤشّر (created_at, id).';
+
+-- ── ٤) تسجيلُ زبونٍ — الخادمُ يقرّر «موجود» و«معروف» قبل أن يكتب ───────────────
+-- «زبون جديد» برقمٍ له فواتيرُ أو حيوانٌ بلا ملفّ كان يُنشئ ملفّاً باسمٍ آخر — واسمُ الملفّ يغلب بالدليل، فيُعاد تسميةُ
+-- الزبون بكلّ مكان بخطأ كتابة. فالتسجيلُ بالمفتاح الذي يحسبه الخادم: ملفٌّ قائم ⇒ exists، وزبونٌ له فواتيرُ أو حيوان ⇒
+-- known (لا كتابة — الشاشةُ تفتح ملفَّه)، وإلا يُدرج. و«أضف معلومات» من ملفّ زبونٍ معروف تمرّر مفتاحَه (p_for_key):
+-- الإدراجُ مقصودٌ له، ومفتاحٌ محسوبٌ غيرُه يُرفض (الهويّة). بصلاحية المُستدعي — RLS تبقى الحَكَم على الإدراج.
+create or replace function public.customer_profile_add(p_name text, p_phone text, p_address text, p_notes text, p_for_key text default null)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_dial   text;
+  v_key    text;
+  v_row    customer_profiles;
+begin
+  if v_clinic is null then
+    raise exception 'no_clinic' using errcode = 'P0001', hint = 'ما عرفنا عيادتك — سجّل دخول من جديد.';
+  end if;
+  select cp.dial_code into v_dial from clinic_prefs cp where cp.clinic_id = v_clinic;
+  v_key := cust_key(nullif(btrim(coalesce(p_phone, '')), ''),
+                    nullif(btrim(regexp_replace(coalesce(p_name, ''), E'[ \t\r\n]+', ' ', 'g')), ''), v_dial);
+  if v_key is null then
+    raise exception 'customer_no_identity' using errcode = 'P0001', hint = 'اكتب اسم الزبون أو رقمه.';
+  end if;
+  if p_for_key is not null and p_for_key is distinct from v_key then
+    raise exception 'customer_key_frozen' using errcode = 'P0001',
+      hint = 'الرقم (أو الاسم إذا ماكو رقم) هويّة الزبون — تغييره يسوّي زبون ثاني وفواتيره تبقى بالأوّل.';
+  end if;
+  if exists (select 1 from customer_profiles c where c.clinic_id = v_clinic and c.cust_key = v_key) then
+    return jsonb_build_object('status', 'exists', 'key', v_key);
+  end if;
+  if p_for_key is null and (
+       exists (select 1 from (select distinct i.customer_name, i.customer_phone from invoices i
+                               where i.clinic_id = v_clinic
+                                 and (coalesce(btrim(i.customer_name), '') <> '' or coalesce(btrim(i.customer_phone), '') <> '')) d
+                where cust_key(d.customer_phone, d.customer_name, v_dial) = v_key)
+       or exists (select 1 from pets p where p.clinic_id = v_clinic and p.shared_with_clinic is not false
+                    and cust_key(p.owner_phone, p.owner_name, v_dial) = v_key)) then
+    return jsonb_build_object('status', 'known', 'key', v_key);
+  end if;
+  insert into customer_profiles (name, phone, address, notes)
+  values (p_name, p_phone, p_address, p_notes)
+  on conflict (clinic_id, cust_key) do nothing
+  returning * into v_row;
+  if v_row.id is null then
+    return jsonb_build_object('status', 'exists', 'key', v_key);
+  end if;
+  return jsonb_build_object('status', 'created', 'key', v_key, 'profile', to_jsonb(v_row));
+end $$;
+revoke all on function public.customer_profile_add(text, text, text, text, text) from public, anon;
+grant execute on function public.customer_profile_add(text, text, text, text, text) to authenticated;
 
 reset lock_timeout;

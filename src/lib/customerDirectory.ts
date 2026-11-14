@@ -165,10 +165,14 @@ export function buildCustomerDirectory(src: DirSource, dial: string | null | und
   }
 
   /* ٥) الفلتر والترتيب والصفحة. */
+  const exactKey = q.mode === "phone" ? `p:${q.key}` : q.mode === "name" ? `n:${q.key}` : null;
+  const exactOf = (a: Agg) => (a.key === exactKey ? 1 : 0);
   const kept = aggs.filter((a) => filter === "all" || ((a.purchases >= 1 || a.hasProfile) && a.petsAlive + a.petsDeceased === 0));
   kept.sort((a, b) =>
     (sort === "purchases" ? b.purchases - a.purchases : 0)
     || (sort === "match" && q.mode !== "list" ? a.rk - b.rk : 0)
+    // 0270: المفتاحُ المطابقُ حرفاً أوّلاً بين المتساويين رتبةً — ملفُّ الزبون يلقاه بنداءٍ واحد ولا يفوّته اسمٌ شائع.
+    || (sort === "match" && q.mode !== "list" ? exactOf(b) - exactOf(a) : 0)
     || descNullsLast(a.lastSeen, b.lastSeen)
     || cmpC(a.key, b.key));
   const page = kept.slice(offset, offset + limit);

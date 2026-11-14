@@ -175,6 +175,8 @@ const profiles = [
   { id: "c2320000-ffff-4000-8000-000000000002", clinic_id: CU1, name: "تعادل أ — ملف", phone: "+964 772 222 2222", created_at: at(200) },
   { id: "c2320000-ffff-4000-8000-000000000003", clinic_id: CU1, name: "ملف بلا رقم", phone: null, created_at: at(1) },
   { id: "c2320000-ffff-4000-8000-000000000004", clinic_id: CU3, name: "صقر الملف", phone: "0551 112 222", created_at: at(3) },
+  // المفتاحُ المطابقُ حرفاً أوّلاً بين المتساويين رتبةً (0270): «زبونة» أقدمُ من «زبونة الملف» ويسبقها ببحث «زبونة».
+  { id: "c2320000-ffff-4000-8000-000000000005", clinic_id: CU1, name: "زبونة", phone: null, created_at: at(400) },
 ];
 for (const q of ["07745454545", "+964 774", "زبونة", "07722222222", "تعادل", "ملف بلا", "ملف"]) {
   for (const sort of ["match", "recent"]) for (const filter of ["all", "nopets"]) add(CU1, q, sort, filter, 8, 0, 0);
