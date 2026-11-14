@@ -168,10 +168,26 @@ for (const q of [null, "07701234567", "مرتجع"]) add(CU2, q, "match", "all",
 add(CU1, null, "price", "all", 5, 0, 0, "bad");
 add(CU1, null, "match", "debts", 5, 0, 0, "bad");
 
+/* 0270: ملفّاتُ زبائن يدويّة — مصدرٌ ثالث. معرّفاتٌ ثابتة (لا uuid()) فلا تتزحزح معرّفاتُ ما قبلها. زبونٌ بلا شراء،
+ * وملفٌّ لزبونٍ قائم باسمٍ آخر وأقدمَ من فواتيره (اسمُ الملفّ يغلب)، وملفٌّ بلا رقم، وملفٌّ بالعيادة السعودية. */
+const profiles = [
+  { id: "c2320000-ffff-4000-8000-000000000001", clinic_id: CU1, name: "زبونة الملف", phone: "0774 545 4545", created_at: at(5) },
+  { id: "c2320000-ffff-4000-8000-000000000002", clinic_id: CU1, name: "تعادل أ — ملف", phone: "+964 772 222 2222", created_at: at(200) },
+  { id: "c2320000-ffff-4000-8000-000000000003", clinic_id: CU1, name: "ملف بلا رقم", phone: null, created_at: at(1) },
+  { id: "c2320000-ffff-4000-8000-000000000004", clinic_id: CU3, name: "صقر الملف", phone: "0551 112 222", created_at: at(3) },
+];
+for (const q of ["07745454545", "+964 774", "زبونة", "07722222222", "تعادل", "ملف بلا", "ملف"]) {
+  for (const sort of ["match", "recent"]) for (const filter of ["all", "nopets"]) add(CU1, q, sort, filter, 8, 0, 0);
+}
+add(CU1, null, "recent", "nopets", 100, 0, 0, "profiles");
+add(CU1, null, "purchases", "nopets", 100, 0, 2, "profiles");
+for (const q of ["0551112222", "+966 55", "صقر"]) add(CU3, q, "match", "all", 8, 0, 0);
+
 const srcOf = (clinic) => {
   const inv = invoices.filter((i) => i.clinic_id === clinic);
   const ids = new Set(inv.map((i) => i.id));
-  return { invoices: inv, items: items.filter((it) => ids.has(it.invoice_id)), pets: pets.filter((p) => p.clinic_id === clinic) };
+  return { invoices: inv, items: items.filter((it) => ids.has(it.invoice_id)), pets: pets.filter((p) => p.clinic_id === clinic),
+    profiles: profiles.filter((c) => c.clinic_id === clinic) };
 };
 const expected = {};
 for (const c of calls) {
@@ -204,6 +220,12 @@ for (const part of chunks(items, 200)) {
 }
 sql += "insert into pets(id, clinic_id, name, owner_name, owner_phone, species, deceased, shared_with_clinic, created_at) values\n"
   + pets.map((p) => `  (${lit(p.id)}, ${lit(p.clinic_id)}, ${lit(p.name)}, ${lit(p.owner_name)}, ${lit(p.owner_phone)}, ${lit(p.species)}, ${p.deceased}, ${p.shared_with_clinic}, ${lit(p.created_at)})`).join(",\n") + ";\n";
+/* الملفّات: المحفّزُ يختم created_at بلحظة الإدراج — فيُطفأ للقالب، والمفتاحُ من cust_key نفسِها بدولة العيادة. */
+sql += "alter table customer_profiles disable trigger customer_profiles_guard;\n"
+  + "insert into customer_profiles(id, clinic_id, cust_key, name, phone, created_at) values\n"
+  + profiles.map((c) => `  (${lit(c.id)}, ${lit(c.clinic_id)}, cust_key(${lit(c.phone)}, ${lit(c.name)}, ${lit(DIAL[c.clinic_id])}), ${lit(c.name)}, ${lit(c.phone)}, ${lit(c.created_at)})`).join(",\n")
+  + "\n  on conflict (id) do nothing;\n"
+  + "alter table customer_profiles enable trigger customer_profiles_guard;\n";
 writeFileSync(join(out, "fixture.sql"), sql);
 
 let cs = "-- مولَّد من scripts/customer-fixture.mjs — لا يُحرَّر بيد.\n";
@@ -223,4 +245,4 @@ for (const c of calls) {
 }
 writeFileSync(join(out, "calls.sql"), cs);
 writeFileSync(join(out, "expected.json"), JSON.stringify(expected));
-console.log(`✓ customer-fixture: ${invoices.length} فاتورة، ${items.length} سطراً، ${pets.length} حيواناً، ${calls.length} نداءً`);
+console.log(`✓ customer-fixture: ${invoices.length} فاتورة، ${items.length} سطراً، ${pets.length} حيواناً، ${profiles.length} ملفّات، ${calls.length} نداءً`);

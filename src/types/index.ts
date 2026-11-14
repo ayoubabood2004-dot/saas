@@ -1036,7 +1036,7 @@ export type LabStatusValue = "ordered" | "collected" | "running" | "resulted" | 
 /** نوعُ البيعة (0156). تجزئةٌ افتراضاً؛ والجملةُ تُعلَن حتى تُفرَّق بالتقارير —
  *  بيعُ الجملة هامشُه صفرٌ أو قريبٌ منه بالتصميم، فبلا علامةٍ يقرأ التقريرُ
  *  البيعةَ المتعمَّدة خسارةً. */
-export type SaleKind = "retail" | "wholesale";
+export type SaleKind = "retail" | "wholesale" | "opening";   // opening: دينٌ قديم قبل النظام (م٢، docs/customer-file-plan.md) — ليس بيعاً
 
 export interface SaleMeta {
   customer_name?: string | null;
@@ -1093,6 +1093,17 @@ export interface CustomerHit {
   matched: "phone" | "name" | "pet" | null;
   /** يُملأ حين يُطلب (`top`)، وإلا null. */
   top: CustomerTopItem[] | null;
+}
+/** ملفُّ الزبون اليدويّ (0270، customer_profiles): الهويّةُ cust_key يحسبها الخادم ويجمّدها، والعنوانُ والملاحظات بيد العيادة. */
+export interface CustomerProfile {
+  id: string;
+  cust_key: string;
+  name: string | null;
+  phone: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 }
 /** صفحةٌ من الدليل: `total` قبل الصفحة — null حين جاءت فارغة (يُحتفظ بالسابق). */
 export interface CustomerPage { rows: CustomerHit[]; total: number | null }
@@ -1819,6 +1830,8 @@ export interface DemoDB {
   treatments: TreatmentEntry[];
   /** 0269: مرآةُ dose_charges بالتجريبيّ. */
   doseCharges?: DemoDoseCharge[];
+  /** 0270: ملفّاتُ الزبائن اليدويّة (مرآةُ customer_profiles). */
+  customerProfiles?: CustomerProfile[];
   admissions: Admission[];
   reminders: Reminder[];
   reminderMarks?: ReminderMark[];

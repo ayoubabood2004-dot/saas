@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import i18next from "i18next";
 import {
@@ -14,7 +15,7 @@ import {
   Landmark, ShoppingBag, Calculator,
   Undo2,
   BookOpen,
-  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch,
+  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch, UserPlus,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { ForgivenessReportRow } from "@/types";
@@ -3691,7 +3692,13 @@ function SalesCustomersTab() {
   return (
     <div data-salescust className="space-y-3">
       <div className="card p-4">
-        <h2 className="flex items-center gap-2 text-base font-extrabold text-ink"><UserSearch size={18} className="text-brand-600" /> {t("scust.title", "زبائن المبيعات بلا سجل حيوان")}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="me-auto flex items-center gap-2 text-base font-extrabold text-ink"><UserSearch size={18} className="text-brand-600" /> {t("scust.title", "زبائن المبيعات بلا سجل حيوان")}</h2>
+          {/* 0270: زبونٌ ما اشترى بعد — ملفُّه اليدويّ يُسجَّل هنا ويطلع بالقائمة بلا حيوان. */}
+          <Link to="/customer/new" data-scustnew className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-brand-700">
+            <UserPlus size={14} /> {t("retail.custNew")}
+          </Link>
+        </div>
         <p className="mt-1 text-xs text-ink-subtle">{t("scust.hint", "زبائن انسجلوا بالبيع وما عندهم سجل حيوان بالعيادة — من كل التاريخ، وبلا أرقام فلوس.")}</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1">
@@ -3742,7 +3749,7 @@ function SalesCustomersTab() {
           {rows.map((r) => (
             <li key={r.key} data-scustrow={r.key} className="card flex flex-wrap items-start gap-x-4 gap-y-2 p-3.5">
               <div className="min-w-0 flex-1 basis-48">
-                <p className="truncate text-sm font-bold text-ink">{r.name ?? t("retail.walkIn", "عميل نقدي")}</p>
+                <Link to={`/customer/${encodeURIComponent(r.key)}`} data-scustfile className="block truncate text-sm font-bold text-ink hover:text-brand-600">{r.name ?? t("retail.walkIn", "عميل نقدي")}</Link>
                 {r.phone
                   ? <bdi dir="ltr" className="block truncate text-xs tabular-nums text-ink-subtle">{r.phone}</bdi>
                   : <span className="block text-xs text-ink-subtle">{t("cust.noPhone", "بلا رقم")}</span>}

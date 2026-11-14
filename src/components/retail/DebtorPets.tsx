@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { PawPrint, RotateCcw } from "lucide-react";
+import { PawPrint, RotateCcw, UserRound } from "lucide-react";
 import type { CustomerPet } from "@/types";
 import { repo } from "@/lib/repo";
 import { custKey, debtorQuery, petsOfKey } from "@/lib/customerKey";
@@ -41,21 +41,29 @@ export function DebtorPets({ phone, name }: { phone: string | null; name: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, tick]);
 
+  /* 0270: ملفُّ الزبون — للمفتاح نفسِه، ولو بلا حيوان أو فشل البحث (الملفُّ يبحث بنفسه). */
+  const fileChip = key ? (
+    <button type="button" data-debtorfile onClick={() => { playTap(); navigate(`/customer/${encodeURIComponent(key)}`); }}
+      className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 px-2 py-0.5 text-2xs font-bold text-ink-muted transition hover:text-ink">
+      <UserRound size={11} className="shrink-0" /> {t("retail.custFile")}
+    </button>
+  ) : null;
   if (failed) {
     return (
-      <button
+      <span className="mt-1.5 inline-flex flex-wrap items-center gap-1.5">{fileChip}<button
         type="button" data-debtorpets-failed
         onClick={() => { playTap(); setTick((n) => n + 1); }}
         className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-danger-200 bg-danger-50 px-2 py-0.5 text-2xs font-semibold text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-300"
       >
         <RotateCcw size={11} /> {t("dpets.failed")}
-      </button>
+      </button></span>
     );
   }
-  if (!pets || pets.length === 0) return null;
+  if (!pets || pets.length === 0) return fileChip ? <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{fileChip}</div> : null;
 
   return (
     <div data-debtorpets className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      {fileChip}
       {pets.map((p) => (
         <button
           key={p.id} type="button"

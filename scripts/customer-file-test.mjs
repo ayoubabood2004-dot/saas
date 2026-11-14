@@ -1,0 +1,128 @@
+/* ============================================================================
+ * ملفُّ الزبون (0270) — فحصُ السلوك على المرآة التجريبيّة (الحزمةُ تفحص الخادمَ، وcustomer-parity الدليلَ بالقاعدة):
+ *   ١) الملفّ: المفتاحُ يُحسب لا يُؤخذ، ومفتاحٌ قائم لا يُداس، والتعديلُ بشرط «كما فُتح»، والهويّةُ تُجمَّد.
+ *   ٢) الدليلُ يلقى صاحبَ الملفّ بلا شراء واسمُه يغلب، والدينُ القديم ليس شراءً، والفواتيرُ بالمفتاح بأيّ صيغة رقم.
+ *   ٣) الوصلُ بالنصّ: المسارُ ونطاقُه، والمداخلُ الخمسة، والبابُ الكسول.
+ *
+ *   node scripts/customer-file-test.mjs
+ * ==========================================================================*/
+import esbuild from "esbuild";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+let fails = 0, passes = 0;
+const check = (name, cond, detail = "") => {
+  if (cond) { passes++; console.log(`   ✓ ${name}`); }
+  else { fails++; console.error(`   ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
+};
+
+const mem = new Map();
+globalThis.localStorage = {
+  getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); },
+  removeItem: (k) => { mem.delete(k); }, clear: () => mem.clear(), key: (i) => [...mem.keys()][i] ?? null, get length() { return mem.size; },
+};
+globalThis.CustomEvent = globalThis.CustomEvent ?? class { constructor(type) { this.type = type; } };
+globalThis.window = globalThis.window ?? { localStorage: globalThis.localStorage, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
+globalThis.document = globalThis.document ?? {
+  documentElement: { lang: "", dir: "", style: { setProperty() {} }, classList: { add() {}, remove() {}, toggle() {} } },
+  addEventListener() {}, removeEventListener() {}, querySelector: () => null,
+  createElement: () => ({ style: {}, setAttribute() {}, appendChild() {} }), body: { appendChild() {}, classList: { add() {}, remove() {} } },
+};
+
+const EMPTY = new Set(["@supabase/supabase-js", "@supabase/functions-js", "@supabase/realtime-js", "@supabase/auth-js", "@supabase/node-fetch", "html-parse-stringify"]);
+const stubs = {
+  name: "stubs",
+  setup(b) {
+    const map = {
+      i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
+      "./supabase": "export const supabase = null;",
+      "./globalToast": "export const emitGlobalToast = () => {};",
+    };
+    b.onResolve({ filter: /.*/ }, (a) => (EMPTY.has(a.path) ? { path: a.path, namespace: "stub" } : undefined));
+    b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
+    b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
+    b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
+  },
+};
+const built = await esbuild.build({
+  stdin: {
+    contents: `export { repo } from "./src/lib/repo.ts"; export * as F from "./src/lib/customerFileApi.ts"; export { saveDB, loadDB } from "./src/lib/demoStore.ts";`,
+    resolveDir: process.cwd(), loader: "ts",
+  },
+  bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs], logLevel: "silent", mainFields: ["module", "main"],
+  define: { "import.meta.env": "__VITE_ENV__" }, banner: { js: "const __VITE_ENV__ = {};" },
+});
+const tdir = mkdtempSync(join(tmpdir(), "cust-file-"));
+const file = join(tdir, "m.mjs");
+writeFileSync(file, built.outputFiles[0].text);
+const M = await import(pathToFileURL(file).href).finally(() => { try { rmSync(tdir, { recursive: true, force: true }); } catch { /* ignore */ } });
+const { repo, F } = M;
+
+
+const err = async (p) => { try { await p; return "ok"; } catch (e) { return String(e?.message ?? e); } };
+const read = (f) => readFileSync(f, "utf8");
+
+console.log("▸ ١) الملفّ اليدويّ — المرآةُ تفرض حرّاسَ 0270");
+{
+  const a = await F.saveProfile({ name: "  منى   علي ", phone: "0770 555 4444", address: " المنصور ", notes: "" }, null);
+  check("زبونٌ بلا شراء يُسجَّل، والمفتاحُ من الرقم الوطنيّ (لا ممّا يرسله أحد)، والنصُّ مقصوص", a.kind === "saved" && a.profile.cust_key === "p:7705554444" && a.profile.name === "منى علي" && a.profile.address === "المنصور" && a.profile.notes === null,
+    JSON.stringify(a));
+  const b = await F.saveProfile({ name: "منى", phone: "+964 770 555 4444", address: "", notes: "" }, null);
+  check("  ورقمُه بصيغةٍ ثانية نفسُ الزبون: «موجود» بمفتاحه، والقائمُ لا يُداس", b.kind === "exists" && b.key === "p:7705554444" && (await F.getProfile("p:7705554444")).name === "منى علي");
+  check("  وبلا اسمٍ ولا رقم يُرفض", (await err(F.saveProfile({ name: " ", phone: "", address: "بغداد", notes: "" }, null))) === "customer_no_identity");
+  const p0 = await F.getProfile("p:7705554444");
+  const e1 = await F.saveProfile({ name: "منى علي حسن", phone: "+964 770 555 4444", address: "الكرادة", notes: "تجي كل شهر" }, { id: p0.id, updated_at: p0.updated_at });
+  check("التعديل: الاسمُ والعنوانُ والملاحظاتُ وصيغةُ الرقم نفسِه تمرّ بشرط «كما فُتح»", e1.kind === "saved" && e1.profile.address === "الكرادة" && e1.profile.updated_at !== p0.updated_at);
+  check("  وتعديلٌ بنسخةٍ قديمة يُرفض (لا يدوس ما كُتب بعدها)", (await err(F.saveProfile({ name: "x", phone: "07705554444", address: "", notes: "" }, { id: p0.id, updated_at: p0.updated_at }))) === "stale");
+  const p1 = await F.getProfile("p:7705554444");
+  check("  ورقمٌ لزبونٍ ثانٍ يُرفض (الهويّة)", (await err(F.saveProfile({ name: "منى", phone: "07709990000", address: "", notes: "" }, { id: p1.id, updated_at: p1.updated_at }))) === "customer_key_frozen");
+  const n = await F.saveProfile({ name: "أبو حيدر", phone: "", address: "", notes: "" }, null);
+  const pn = n.profile;
+  check("  وزبونٌ بلا رقم مفتاحُه اسمُه، وإضافةُ رقمٍ له زبونٌ ثانٍ (يُرفض)", pn.cust_key.startsWith("n:")
+    && (await err(F.saveProfile({ name: "أبو حيدر", phone: "07711112222", address: "", notes: "" }, { id: pn.id, updated_at: pn.updated_at }))) === "customer_key_frozen");
+}
+
+console.log("▸ ٢) الدليلُ والفواتير — بالمفتاح نفسِه");
+{
+  const hit = await F.directoryHit("p:7705554444");
+  check("الدليلُ يلقى صاحبَ الملفّ بلا شراء، باسمه كما كُتب", hit && hit.name === "منى علي حسن" && hit.purchases === 0, JSON.stringify(hit));
+  const page = await repo.findCustomers(null, { filter: "nopets", sort: "recent", limit: 100 });
+  check("  وبقسم «زبائن المبيعات بلا حيوان»", page.rows.some((r) => r.key === "p:7705554444"));
+  const db = M.loadDB();
+  db.invoices = [
+    ...(db.invoices ?? []),
+    { id: "cf-1", customer_name: "منى", customer_phone: "07705554444", total: 1000, amount_paid: 0, cost_total: 0, profit: 1000, item_count: 1, status: "paid", created_at: "2026-11-10T10:00:00.000Z" },
+    { id: "cf-2", customer_name: "منى ع", customer_phone: "+964 770 555 4444", total: 2000, amount_paid: 2000, cost_total: 0, profit: 2000, item_count: 1, status: "paid", created_at: "2026-11-12T10:00:00.000Z" },
+    { id: "cf-3", customer_name: "منى", customer_phone: "07700000001", total: 3000, amount_paid: 0, cost_total: 0, profit: 3000, item_count: 1, status: "paid", created_at: "2026-11-13T10:00:00.000Z" },
+    { id: "cf-4", customer_name: "منى", customer_phone: "07705554444", total: 500, amount_paid: 0, cost_total: 0, profit: 0, item_count: 0, status: "paid", sale_kind: "opening", created_at: "2026-01-01T10:00:00.000Z" },
+  ];
+  M.saveDB(db);
+  const inv = await F.keyInvoices("p:7705554444");
+  check("فواتيرُ المفتاح: الرقمُ بصيغتين، الأحدثُ أوّلاً، ولا تخلط زبوناً بنفس الاسم ورقمٍ آخر", inv.map((i) => i.id).join() === "cf-2,cf-1,cf-4", inv.map((i) => i.id).join());
+  const hit2 = await F.directoryHit("p:7705554444");
+  check("  والشراءُ يعدّ البيعتين لا الدينَ القديم (opening)، واسمُ الملفّ يبقى يغلب", hit2.purchases === 2 && hit2.name === "منى علي حسن" && hit2.firstAt === "2026-11-10T10:00:00.000Z", JSON.stringify(hit2));
+}
+
+console.log("▸ ٣) الوصلُ بالنصّ — المداخلُ والنطاقُ والمسار");
+{
+  const app = read("src/App.tsx"), hp = JSON.parse(read("src/i18n/hot-paths.json"));
+  check("المسارُ بنطاقه المملوك (cfile) وللعيادة وحدها", /const CustomerFile = page\(\(\) => import\("@\/pages\/CustomerFile"\)[^;]*\["cfile"\]\)/.test(app)
+    && /path="\/customer\/:key" element=\{<Protected><ClinicOnly><CustomerFile \/><\/ClinicOnly><\/Protected>\}/.test(app) && hp.owned.cfile === "src/pages/CustomerFile.tsx");
+  const sb = read("src/components/retail/SaleBuilder.tsx"), dp = read("src/components/retail/DebtorPets.tsx"), oc = read("src/components/OwnerCard.tsx"), ah = read("src/pages/AnalyticsHub.tsx"), pp = read("src/pages/PetPassport.tsx");
+  check("المداخل: البيعُ (والسلّةُ فارغة)، ودفترُ الديون، وبطاقةُ المالك (للكادر)، والتقاريرُ وزرُّ «زبون جديد»",
+    /\{picked && cart\.length === 0 && \(\s*<Link to=\{`\/customer\/\$\{encodeURIComponent\(picked\.key\)\}`\}/.test(sb)
+      && /navigate\(`\/customer\/\$\{encodeURIComponent\(key\)\}`\)/.test(dp)
+      && /custKey\(pet\.owner_phone, pet\.owner_name, getDialCode\(\)\)/.test(oc) && /showFile=\{!isOwner\}/.test(pp)
+      && /to="\/customer\/new"/.test(ah) && /to=\{`\/customer\/\$\{encodeURIComponent\(r\.key\)\}`\}/.test(ah));
+  const api = read("src/lib/customerFileApi.ts");
+  check("الفواتيرُ بالمفتاح (customer_key_invoices) لا بالأرقام الخامّة، وصفحاتُها بما وصل حتى صفحةٍ فارغة",
+    /rpc\("customer_key_invoices"/.test(api) && !/customer_invoices"/.test(api) && /from \+= page\.length/.test(api) && /if \(page\.length === 0\) break/.test(api));
+  check("  والإنشاءُ لا يدوس مفتاحاً قائماً، والتعديلُ بشرط updated_at وصفرُ صفوفٍ يُرمى",
+    /ignoreDuplicates: true/.test(api) && /\.eq\("updated_at", expect\.updated_at\)/.test(api) && /if \(!got\) throw Object\.assign\(new Error\("stale"\)/.test(api));
+  check("  وrepo.ts (حزمةُ الإقلاع) لا يعرف الملفّ", !/customer_key_invoices|customer_profiles/.test(read("src/lib/repo.ts")));
+}
+
+console.log(fails ? `\n✗ customer-file-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ customer-file-test: ${passes} نجحت، 0 فشلت`);
+process.exit(fails ? 1 : 0);
