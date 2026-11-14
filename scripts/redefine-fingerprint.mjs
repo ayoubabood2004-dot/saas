@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -67,6 +67,18 @@ export const MANIFEST = [
   ["clinic_drugs_list", 0, "public.clinic_drugs_list()", "0268", "0269"],
   // 0270: ملفُّ الزبون — الملفّاتُ مصدرٌ ثالث بدليل الزبائن، والدينُ القديم (opening) ليس شراءً.
   ["customer_search", 6, "public.customer_search(text,text,text,integer,integer,integer)", "0232", "0270"],
+  // 0271: الديونُ القديمة (opening) ليست مبيعاً — القارئاتُ تستثنيها، وسجلُّ الحركات يسمّيها، والخصمُ عليها بلا سقف الربح.
+  //   (المصدرُ قد يكون «create function» بعد drop — bodyOf يقبل الصيغتين.)
+  ["report_receipts_daily", 3, "public.report_receipts_daily(timestamptz,timestamptz,text)", "0264", "0271"],
+  ["report_receipts_total", 2, "public.report_receipts_total(timestamptz,timestamptz)", "0264", "0271"],
+  ["report_staff", 2, "public.report_staff(timestamptz,timestamptz)", "0149", "0271"],
+  ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0264", "0271"],
+  ["audit_change", 0, "public.audit_change()", "0242", "0271"],
+  ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0261", "0271"],
+  ["forgive_invoice_debt", 8, "public.forgive_invoice_debt(uuid,numeric,text,text,numeric,numeric,text,boolean)", "0241", "0271"],
+  ["platform_pulse", 0, "public.platform_pulse()", "0151", "0271"],
+  ["admin_clinic_volumes", 1, "public.admin_clinic_volumes(integer)", "0123", "0271"],
+  ["admin_market_monthly", 1, "public.admin_market_monthly(integer)", "0123", "0271"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
@@ -118,7 +130,7 @@ export const md5 = (s) => createHash("md5").update(strip(codeOf(s)), "utf8").dig
 
 /* آخرُ تعريفٍ للدالّة بالملفّ (بعدد وسائطها الداخلة) — نصُّ ما بين علامتَي الدولار. */
 export function bodyOf(txt, fn, nIn) {
-  const re = new RegExp("create\\s+or\\s+replace\\s+function\\s+(?:public\\.)?" + fn + "\\s*\\(", "gi");
+  const re = new RegExp("create\\s+(?:or\\s+replace\\s+)?function\\s+(?:public\\.)?" + fn + "\\s*\\(", "gi");
   let found = null, m;
   while ((m = re.exec(txt))) {
     const open = m.index + m[0].length - 1;

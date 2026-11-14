@@ -43,7 +43,7 @@ import {
 } from "@/lib/expenseCategoryRules";
 import { netPerPocket, pocketsShown, shownPocketOfExpense, type PocketView, type PocketsShown } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
-import { dueOf, isDebt, paidOf } from "@/lib/debt";
+import { dueOf, isDebt, isOpening, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { getClinicName, getDialCode, getCardTransferOneAccount } from "@/lib/settings";
 import { readCustomerQuery } from "@/lib/customerKey";
@@ -382,8 +382,11 @@ export function AnalyticsHub() {
   const canPnl = !capLockedFrom(ovr.deviceLocked, ovr.active, canProfit);
   useEffect(() => { if (tab === "pnl" && !canPnl) setTab("overview"); }, [tab, canPnl]);
 
-  // Invoices in range (date) AND within the optional shift window.
-  const invInRange = useMemo(() => invoices.filter((i) => { const tm = new Date(i.created_at).getTime(); return tm >= lo && tm <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
+  // Invoices in range (date) AND within the optional shift window. والدينُ القديم (0271) ليس بيعاً — يخرج من هنا فلا يصل
+  // سجلَّ المعاملات ولا تقريرَ Z ولا السلسلةَ ولا الإيرادَ والهامش ولا مبيعاتِ الكادر ولا كبارَ الزبائن؛ وتسديدُه قبضٌ حقيقيّ
+  // يبقى بـcollectionsInRange (يمشي على كلّ الفواتير).
+  const invInRangeAll = useMemo(() => invoices.filter((i) => { const tm = new Date(i.created_at).getTime(); return tm >= lo && tm <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
+  const invInRange = useMemo(() => invInRangeAll.filter((i) => !isOpening(i)), [invInRangeAll]);
   const paid = useMemo(() => invInRange.filter((i) => (i.status ?? "paid") !== "refunded"), [invInRange]);
   const inRangeInvoiceIds = useMemo(() => new Set(paid.map((i) => i.id)), [paid]);
   const itemsInRange = useMemo(() => items.filter((it) => inRangeInvoiceIds.has(it.invoice_id)), [items, inRangeInvoiceIds]);
@@ -537,7 +540,8 @@ export function AnalyticsHub() {
   }, [labs, lo, hi]);
 
   // Outstanding balances (credit / آجل): any non-refunded sale still owing — partial or unpaid.
-  const receivables = useMemo(() => paid.filter(isDebt), [paid]);
+  // والدينُ القديم دَينٌ حقيقيّ — ليس بيعاً، لكنّه بديون المدّة (0271).
+  const receivables = useMemo(() => invInRangeAll.filter((i) => (i.status ?? "paid") !== "refunded" && isDebt(i)), [invInRangeAll]);
 
   // Yesterday's numbers (only computed while the comparison is switched on).
   const yesterday = useMemo(() => {
@@ -546,7 +550,7 @@ export function AnalyticsHub() {
     const yLo = startOfDay(y).getTime(); const yHi = endOfDay(y).getTime();
     let gross = 0; let tx = 0; let net = 0;
     for (const i of invoices) {
-      if ((i.status ?? "paid") === "refunded") continue;
+      if ((i.status ?? "paid") === "refunded" || isOpening(i)) continue;
       const tm = new Date(i.created_at).getTime();
       if (tm < yLo || tm > yHi || !tsOk(i.created_at)) continue;
       gross += i.total; tx += 1; net += i.profit ?? 0;

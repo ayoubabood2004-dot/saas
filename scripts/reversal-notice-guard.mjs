@@ -237,6 +237,8 @@ const STUB = {
     export default function ConsumablesSheet() { return null; }`,
   // لوحةُ فاتورة الدولار (0264) قطعةٌ أخرى لا يمسّها هذا الفحص (فواتيرُه بالدينار): لا ترسم شيئاً.
   "@/components/usd/Usd": "export function UsdInvoicePanel() { return null; }\nexport function UsdDebtActions() { return null; }",
+  // الدينُ القديم (0271) قطعةٌ كسولةٌ أخرى (شارةٌ وزرّ) لا يمسّها هذا الفحص: لا ترسم شيئاً.
+  "@/components/retail/OldDebt": "export function OldDebtNote() { return null; }\nexport function OldDebtButton() { return null; }",
   // نافذةُ التأكيد كما تراها الفاتورةُ والمرتجع: بديلٌ يكتب ما وصله (والحقيقيّةُ تُرسم بنفسها بالقسم «أ»).
   "@/components/retail/ForgiveDialog": `import { createElement } from "react";
     export function ReturnSheet(p) { globalThis.__T.sheet = p; return createElement("x-sheet", { "data-sheet": p.mode, "data-cons": p.consumption == null ? "none" : JSON.stringify(p.consumption) }); }

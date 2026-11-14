@@ -84,6 +84,7 @@
     "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] },
     "usd": { "owner": "src/components/usd/Usd.tsx", "with": ["src/components/usd/UsdSale.tsx", "src/components/usd/usdShared.tsx"] },
     "flk": { "owner": "src/pages/FlockCases.tsx", "with": ["src/components/flock/FlockCase.tsx", "src/components/flock/FlockSheets.tsx", "src/components/flock/FlockTreatment.tsx", "src/components/flock/FlockVisit.tsx", "src/components/flock/FlockIntake.tsx", "src/components/flock/flockShared.ts"] },
-    "flkv": "src/components/flock/FlockVisit.tsx"
+    "flkv": "src/components/flock/FlockVisit.tsx",
+    "odebt": "src/components/retail/OldDebt.tsx"
   }
 }

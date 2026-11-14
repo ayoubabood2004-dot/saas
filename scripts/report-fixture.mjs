@@ -107,14 +107,33 @@ for (let n = 1; n <= 320; n++) {
   invoices.push({ id: invId, created_at: created.toISOString(), total, cost_total: cost, profit, amount_paid, payment_details, status, refunded_at, staff_id: pick(staff), customer_phone: cust.phone || null, customer_name: cust.name || null, item_count: units, payment_method: payment_details?.[0]?.method ?? "cash" });
 }
 
+// ---- 0271: دينٌ قديم — فاتورةُ opening بلا أسطر ولا ربح. ليس بيعاً: لا يُعدّ بالموظفين ولا بالأكثر مبيعاً ولا بعدّ «فواتير»
+// القبض، ومبلغُ تسديده قبضٌ حقيقيّ بيومه (صافيه صفر). ويبقى بالمدّة والديون المفتوحة ودفتر الزبون. معرّفاتٌ ثابتة (لا رنْد).
+const OPENINGS = [
+  { id: "cccccccc-0000-4000-8000-000000000901", created_at: new Date(ANCHOR - 10 * DAY).toISOString(), total: 50000, cost_total: 0, profit: 0,
+    amount_paid: 20000, payment_details: [{ method: "cash", amount: 20000, at: new Date(ANCHOR - 2 * DAY + 3600000).toISOString() }], status: "paid",
+    refunded_at: null, staff_id: null, customer_phone: "07701234567", customer_name: "أبو علي", item_count: 0, payment_method: "cash",
+    sale_kind: "opening", opening_what: "علاج قبل النظام" },
+  { id: "cccccccc-0000-4000-8000-000000000902", created_at: new Date(ANCHOR - 5 * DAY).toISOString(), total: 30000, cost_total: 0, profit: 0,
+    amount_paid: 0, payment_details: [], status: "paid", refunded_at: null, staff_id: staff[1], customer_phone: null, customer_name: "زبون بالاسم",
+    item_count: 0, payment_method: null, sale_kind: "opening", opening_what: "علف" },
+];
+invoices.push(...OPENINGS);
+const isOpening = (i) => i.sale_kind === "opening";
+
 // ---- SQL ----------------------------------------------------------------
 const sql = [];
 sql.push(`insert into staff (id, clinic_id, name) values\n${Object.entries(STAFF_NAMES).map(([id, name]) => `(${q(id)}, ${q(CLINIC)}, ${q(name)})`).join(",\n")} on conflict do nothing;`);
 sql.push(`insert into products (id, clinic_id, name, barcode, stock) values\n${products.map((p) => `(${q(p.id)}, ${q(CLINIC)}, ${q(p.name)}, ${q("RPT" + p.id.slice(-4))}, 100)`).join(",\n")} on conflict do nothing;`);
-sql.push(`insert into invoices (id, clinic_id, created_at, total, cost_total, profit, amount_paid, payment_details, status, refunded_at, staff_id, customer_phone, customer_name, item_count, payment_method) values\n${invoices.map((i) =>
+sql.push(`insert into invoices (id, clinic_id, created_at, total, cost_total, profit, amount_paid, payment_details, status, refunded_at, staff_id, customer_phone, customer_name, item_count, payment_method) values\n${invoices.filter((i) => !isOpening(i)).map((i) =>
   `(${q(i.id)}, ${q(CLINIC)}, ${q(i.created_at)}, ${i.total}, ${i.cost_total}, ${i.profit}, ${i.amount_paid}, ${i.payment_details == null ? "null" : q(JSON.stringify(i.payment_details)) + "::jsonb"}, ${q(i.status)}, ${q(i.refunded_at)}, ${q(i.staff_id)}, ${q(i.customer_phone)}, ${q(i.customer_name)}, ${i.item_count}, ${q(i.payment_method)})`).join(",\n")} on conflict do nothing;`);
 sql.push(`insert into invoice_items (id, clinic_id, invoice_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty, created_at) values\n${items.map((it) =>
   `(${q(it.id)}, ${q(CLINIC)}, ${q(it.invoice_id)}, ${q(it.product_id)}, ${q(it.name)}, ${it.qty}, ${it.unit_price}, ${it.unit_cost}, ${it.line_total}, ${it.product_id ? it.qty : 0}, ${q(it.created_at)})`).join(",\n")} on conflict do nothing;`);
+// الدينُ القديم لا يُدرج إلا من بابه (0271) — والقالبُ يكتب كما يكتب old_debt_add: البابُ مفتوحٌ لجلسة القالب وحدها.
+sql.push(`select set_config('doctorvet.opening_door', 'on', false);
+insert into invoices (id, clinic_id, created_at, total, subtotal, cost_total, profit, amount_paid, payment_details, status, staff_id, customer_phone, customer_name, item_count, payment_method, sale_kind, opening_what, recorded_at) values\n${OPENINGS.map((i) =>
+  `(${q(i.id)}, ${q(CLINIC)}, ${q(i.created_at)}, ${i.total}, ${i.total}, 0, 0, ${i.amount_paid}, ${q(JSON.stringify(i.payment_details))}::jsonb, 'paid', ${q(i.staff_id)}, ${q(i.customer_phone)}, ${q(i.customer_name)}, 0, ${q(i.payment_method)}, 'opening', ${q(i.opening_what)}, ${q(new Date(ANCHOR).toISOString())})`).join(",\n")} on conflict do nothing;
+select set_config('doctorvet.opening_door', 'off', false);`);
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, "fixture.sql"), sql.join("\n\n") + "\n");
 
@@ -139,12 +158,12 @@ for (const [k, r] of Object.entries(RANGES)) {
       const day = localYMD(new Date(rc.at));
       const cur = daily.get(day) ?? { gross: 0, net: 0, ids: new Set() };
       const n = total > 0 ? inv.profit * (rc.amount / total) : 0;
-      cur.gross += rc.amount; cur.net += n; cur.ids.add(inv.id); daily.set(day, cur);
-      gross += rc.amount; net += n; paidIds.add(inv.id);
+      cur.gross += rc.amount; cur.net += n; if (!isOpening(inv)) cur.ids.add(inv.id); daily.set(day, cur);
+      gross += rc.amount; net += n; if (!isOpening(inv)) paidIds.add(inv.id);
     }
   }
   // الأكثر مبيعاً والموظفون (ReportsPanel: فواتير غير مردودة أُنشئت بالمدّة)
-  const okInv = invoices.filter((i) => isPaid(i) && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi);
+  const okInv = invoices.filter((i) => isPaid(i) && !isOpening(i) && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi);
   const okIds = new Set(okInv.map((i) => i.id));
   const top = new Map();
   for (const it of items) { if (!okIds.has(it.invoice_id)) continue; const key = it.product_id || it.name; const cur = top.get(key) ?? { key, name: it.name, qty: 0, revenue: 0 }; cur.qty += it.qty; cur.revenue += it.line_total; top.set(key, cur); }

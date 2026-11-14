@@ -185,6 +185,18 @@ add(CU1, null, "recent", "nopets", 100, 0, 0, "profiles");
 add(CU1, null, "purchases", "nopets", 100, 0, 2, "profiles");
 for (const q of ["0551112222", "+966 55", "صقر"]) add(CU3, q, "match", "all", 8, 0, 0);
 
+/* 0271: الدينُ القديم (opening) ليس شراءً — زبونٌ دينُه القديم وحده يبقى بالدليل بشراءٍ صفر، ودينٌ قديمٌ أحدثُ من فواتير زبونٍ
+ * دائم لا يحرّك عددَ شرائه ولا تاريخَيه. معرّفاتٌ ثابتة، بلا أسطر (الدينُ القديم بلا موادّ). */
+const OPENINGS = [
+  { id: "c2320000-eeee-4000-8000-000000000001", clinic_id: CU1, customer_name: "دين قديم وحده", customer_phone: "07760000001", status: "paid", created_at: at(2), sale_kind: "opening" },
+  { id: "c2320000-eeee-4000-8000-000000000002", clinic_id: CU1, customer_name: "حسن الدائم", customer_phone: "07711223344", status: "paid", created_at: at(0, 5), sale_kind: "opening" },
+];
+invoices.push(...OPENINGS);
+for (const q of ["07760000001", "دين قديم", "حسن الدائم", "07711223344"]) {
+  for (const sort of ["match", "recent", "purchases"]) for (const filter of ["all", "nopets"]) add(CU1, q, sort, filter, 8, 0, 0);
+}
+add(CU1, null, "purchases", "nopets", 100, 0, 3, "opening");
+
 const srcOf = (clinic) => {
   const inv = invoices.filter((i) => i.clinic_id === clinic);
   const ids = new Set(inv.map((i) => i.id));
@@ -207,10 +219,15 @@ const chunks = (arr, n) => { const o = []; for (let i = 0; i < arr.length; i += 
 let sql = "-- مولَّد من scripts/customer-fixture.mjs — لا يُحرَّر بيد.\n";
 sql += `insert into auth.users(id) values ('${CU1}'),('${CU2}'),('${CU3}') on conflict do nothing;\n`;
 sql += `insert into clinic_prefs(clinic_id, dial_code) values ('${CU1}','+964'),('${CU2}','+964'),('${CU3}','+966')\n  on conflict (clinic_id) do update set dial_code = excluded.dial_code;\n`;
-for (const part of chunks(invoices, 100)) {
+for (const part of chunks(invoices.filter((i) => i.sale_kind !== "opening"), 100)) {
   sql += "insert into invoices(id, clinic_id, customer_name, customer_phone, status, created_at) values\n"
     + part.map((i) => `  (${lit(i.id)}, ${lit(i.clinic_id)}, ${lit(i.customer_name)}, ${lit(i.customer_phone)}, ${lit(i.status)}, ${lit(i.created_at)})`).join(",\n") + ";\n";
 }
+// الدينُ القديم من بابه وحده (0271) — القالبُ يفتحه لجلسته كما تفتحه old_debt_add.
+sql += "select set_config('doctorvet.opening_door', 'on', false);\n"
+  + "insert into invoices(id, clinic_id, customer_name, customer_phone, status, created_at, sale_kind, opening_what) values\n"
+  + OPENINGS.map((i) => `  (${lit(i.id)}, ${lit(i.clinic_id)}, ${lit(i.customer_name)}, ${lit(i.customer_phone)}, ${lit(i.status)}, ${lit(i.created_at)}, 'opening', 'دين سابق')`).join(",\n") + ";\n"
+  + "select set_config('doctorvet.opening_door', 'off', false);\n";
 /* product_id مفتاحٌ أجنبيّ لجدول المنتجات — فالمنتجاتُ تُزرع قبل السطور. */
 sql += "insert into products(id, clinic_id, name, barcode) values\n"
   + PRODUCTS.map((p, k) => `  (${lit(p)}, ${lit(CU1)}, ${lit(`منتج ${k + 1}`)}, ${lit(`CU-${k + 1}`)})`).join(",\n") + "\n  on conflict do nothing;\n";

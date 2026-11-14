@@ -622,6 +622,12 @@ const usdErr = (code: string) => Object.assign(new Error(code), { code: "P0001" 
 function usdInvoiceGuard(inv: Invoice | null | undefined): void {
   if (inv?.currency === "USD" && !usdDoorOpen) throw usdErr("usd_door");
 }
+/* 0271: الدينُ القديم (opening) — مرآةُ invoices_opening_guard/invoice_items_opening_guard بالقاعدة: لا ترجيعَ ولا أسطر، والحذفُ بلا
+ * تسديد، والربحُ صفرٌ دائماً. الرمزُ وحده (P0001) والشاشةُ تترجمه؛ والإدراجُ من demoOldDebt.ts وحده. */
+const isOpeningInv = (inv: Invoice | null | undefined): boolean => inv?.sale_kind === "opening";
+function openingGuard(inv: Invoice | null | undefined, code: "opening_no_refund" | "opening_no_lines"): void {
+  if (isOpeningInv(inv)) throw usdErr(code);
+}
 
 function createInvoiceLocal(items: CheckoutItem[], meta: SaleMeta | undefined, cons: Cons, opts: { plan: boolean } = { plan: true }): Invoice {
   // retail_checkout وpos_checkout: «empty cart» أوّلاً — قبل فحص الإعادة نفسِه (كان التجريبيُّ يكتب فاتورةً بلا سطور).
@@ -4386,7 +4392,8 @@ const demoRepo = {
         const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const cur = m.get(day) ?? { gross: 0, net: 0, ids: new Set<string>() };
         // 0264: ساقُ «فرق صرف» ربحٌ كلُّه (receipt_legs: total = profit = amount) — لا حصّةَ من ربح الفاتورة.
-        cur.gross += r.amount; cur.net += r.kind === "fx" ? r.amount : total > 0 ? inv.profit * (r.amount / total) : 0; cur.ids.add(inv.id);
+        // 0271: تسديدُ الدين القديم قبضٌ حقيقيّ (صافيه صفر)، لكنّه لا يُعدّ «فاتورةً» — العدُّ يُقرأ «مبيعات».
+        cur.gross += r.amount; cur.net += r.kind === "fx" ? r.amount : total > 0 ? inv.profit * (r.amount / total) : 0; if (!isOpeningInv(inv)) cur.ids.add(inv.id);
         m.set(day, cur);
       }
     }
@@ -4398,7 +4405,7 @@ const demoRepo = {
     const lo = range.from ? new Date(range.from).getTime() : -Infinity;
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
     const ids = new Set<string>();
-    for (const inv of loadDB().invoices ?? []) for (const r of receiptsOf(inv)) { const t = new Date(r.at).getTime(); if (t >= lo && t <= hi) ids.add(inv.id); }
+    for (const inv of loadDB().invoices ?? []) if (!isOpeningInv(inv)) for (const r of receiptsOf(inv)) { const t = new Date(r.at).getTime(); if (t >= lo && t <= hi) ids.add(inv.id); }
     const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
     return { gross: r2(days.reduce((s, d) => s + d.gross, 0)), net: r2(days.reduce((s, d) => s + d.net, 0)), invoices: ids.size };
   },
@@ -4406,7 +4413,7 @@ const demoRepo = {
     const db = loadDB();
     const lo = range.from ? new Date(range.from).getTime() : -Infinity;
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
-    const ok = new Set((db.invoices ?? []).filter((i) => (i.status ?? "paid") !== "refunded" && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi).map((i) => i.id));
+    const ok = new Set((db.invoices ?? []).filter((i) => (i.status ?? "paid") !== "refunded" && !isOpeningInv(i) && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi).map((i) => i.id));
     const m = new Map<string, TopProductRow>();
     for (const it of db.invoiceItems ?? []) {
       if (!ok.has(it.invoice_id)) continue;
@@ -4421,7 +4428,7 @@ const demoRepo = {
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
     const m = new Map<string, StaffSalesRow>();
     for (const inv of loadDB().invoices ?? []) {
-      if ((inv.status ?? "paid") === "refunded") continue;
+      if ((inv.status ?? "paid") === "refunded" || isOpeningInv(inv)) continue;   // 0271: الدينُ القديم ليس بيعاً
       const t = new Date(inv.created_at).getTime();
       if (t < lo || t > hi) continue;
       const key = inv.staff_id ?? "";
@@ -4431,7 +4438,7 @@ const demoRepo = {
     return [...m.values()].sort((a, b) => b.revenue - a.revenue);
   },
   async countInvoices(): Promise<number> {
-    return (loadDB().invoices ?? []).length;
+    return (loadDB().invoices ?? []).filter((i) => !isOpeningInv(i)).length;
   },
   /* ---- صفحاتُ الفواتير والبحث بالخادم (0150) — مرآةُ invoice_matches ----
    * نفس التطبيع (searchable / phoneDigits / invoiceNo) على الطرفين. */
@@ -4470,6 +4477,7 @@ const demoRepo = {
     // refund_invoice (0066): فاتورةٌ غائبة ⇒ «invoice not found» — كان التجريبيُّ يرجع undefined بصمت؛ والمرجَّعةُ ترجع كما هي.
     if (!inv) throw new Error("invoice not found");
     if (inv.status !== "refunded") usdInvoiceGuard(inv);
+    if (inv.status !== "refunded") openingGuard(inv, "opening_no_refund");
     if (inv.status !== "refunded") {
       // 0252: «مرجَّعة» ⇒ كلُّ سطرٍ بدفترٍ إلى صفر (invoices_consumption_status) — الموادُّ ترجع للمخزن بالضبط، بدفعةٍ واحدة.
       const now = cons.opStamp(db);
@@ -4489,6 +4497,8 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     usdInvoiceGuard(inv);
+    // 0271: دينٌ قديم عليه مالٌ مسجَّل (ساقٌ أو مدفوع) لا يُحذف — حذفُه يمحو قبضاً انحسب بيومه؛ يُخصم بدله.
+    if (isOpeningInv(inv) && ((inv.amount_paid ?? 0) > 0.005 || (inv.payment_details ?? []).length > 0)) throw usdErr("opening_delete_settled");
     const now = cons.opStamp(db);
     // Restock unless it was already refunded (which already restocked).
     if (inv && inv.status !== "refunded") {
@@ -4530,6 +4540,8 @@ const demoRepo = {
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
     usdInvoiceGuard(inv);
+    // 0271: الدينُ القديم بلا موادّ — لا يُعدَّل بالبنود (والمحفّزُ يرفض سطرَه ومجموعَه الجديد).
+    openingGuard(inv, "opening_no_lines");
     // coalesce(price, 0) بلا حصرٍ بصفر: سعرٌ سالب يرفضه قيدُ invoice_items_nonneg (23514) كالخادم — كان التجريبيُّ يكتبه صفراً بصمت.
     const clean = (lines ?? [])
       .map((l) => ({ ...l, qty: cons.qty3(Number(l.qty) || 0), unit_price: Number(l.unit_price) || 0, unit_cost: Number(l.unit_cost) || 0 }))
@@ -4658,6 +4670,8 @@ const demoRepo = {
     usdInvoiceGuard(inv);
     // return_invoice_items (0121 → 0253) بترتيبه: «nothing to return» للمصفوفة الغائبة أو الفارغة هنا، ولمرتجعٍ جزئيٍّ لم يرجّع مدخلٌ منه شيئاً تحت.
     if (!Array.isArray(returns) || returns.length === 0) throw new Error("nothing to return");
+    // 0271: الدينُ القديم بلا أسطر ⇒ «إرجاعٌ كامل» يقلبه مرجَعاً — والمحفّزُ يرفض ذلك (opening_no_refund).
+    openingGuard(inv, "opening_no_refund");
     const items = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
     const now = cons.opStamp(db);                                          // دفعةٌ واحدة لكلّ سطور هذا المرتجع
     const itemIdOf = (e: unknown): string | null => {
@@ -4902,7 +4916,8 @@ const demoRepo = {
     const paidBefore = target.amount_paid ?? target.total;
     target.forgiven = pgRound2((target.forgiven ?? 0) + chk.amount);
     target.total = pgRound2(target.total - chk.amount);
-    target.profit = pgRound2((target.profit ?? 0) - chk.amount);
+    // 0271: الدينُ القديم ربحُه صفرٌ دائماً (المحفّزُ يثبّته) — الخصمُ لا يجعله خسارة.
+    target.profit = isOpeningInv(target) ? 0 : pgRound2((target.profit ?? 0) - chk.amount);
     const row: InvoiceForgiveness = {
       id: uuid(), clinic_id: null, invoice_id: target.id, kind: "forgive", amount: chk.amount, reason_code: chk.reason, note: chk.note,
       pay_amount: chk.pay, pay_method: chk.pay > 0 ? method : null, total_before: totalBefore, paid_before: paidBefore,
@@ -4929,7 +4944,7 @@ const demoRepo = {
     const target = inv as Invoice, row = entry as InvoiceForgiveness;
     target.forgiven = Math.max(0, pgRound2((target.forgiven ?? 0) - row.amount));
     target.total = pgRound2(target.total + row.amount);
-    target.profit = pgRound2((target.profit ?? 0) + row.amount);
+    target.profit = isOpeningInv(target) ? 0 : pgRound2((target.profit ?? 0) + row.amount);
     const now = new Date().toISOString();
     row.voided_at = now; row.voided_by = demoUserId(); row.void_reason = chk.reason;
     saveDB(db);

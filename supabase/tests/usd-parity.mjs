@@ -120,6 +120,15 @@ function gen() {
       settle: [{ per100: "146000", override: false, usd: "0.04" }, { per100: "146000", override: false, usd: "0.04" }, { per100: "146000", override: false, close: true }] });
   }
 
+  // 0271: دينٌ قديمٌ بالدولار (old_debt_add) — دينارُه الكاملُ بسعر اليوم كسطرٍ واحدٍ بكميّة ١، وتسديداتُه بالباب نفسِه حرفاً.
+  for (let k = 0; k < 24; k++) {
+    const settle = [];
+    for (let j = int(0, 3); j > 0; j--) settle.push({ per100: pick(PER100), override: R() < 0.3, frac: pick([0.1, 0.25, 0.5, 0.9]) });
+    if (R() < 0.7) settle.push({ per100: pick(PER100), override: R() < 0.3, close: true });
+    scenarios.push({ i: scenarios.length, step: pick(STEPS), per100: pick(PER100), items: [], meta: { client_ref: `USDP-${scenarios.length}` },
+      paid: false, old: pick([D(int(1, 500_000), 2), D(int(1, 99), 2), "0.01", "100", "1000000"]), settle });
+  }
+
   fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify({ iqd, rate, share, products, scenarios }));
   fs.writeFileSync(path.join(dir, "seed.sql"), [
     "begin;",
@@ -152,7 +161,11 @@ function gen() {
                into v_usd from jsonb_array_elements(sc->'items') x join products p on p.id = (x->>'product_id')::uuid;
              v_usd := v_usd - least(greatest(round(coalesce(nullif(sc->'meta'->>'discount_usd', '')::numeric, 0), 2), 0), v_usd);
            end if;
-           v_inv := usd_checkout(sc->'items', (sc->'meta') || jsonb_build_object('fx_rate_id', v_rid, 'paid_usd', v_usd));
+           if sc ? 'old' then
+             v_inv := old_debt_add('تطابق', null, 'دين سابق', null, (sc->>'old')::numeric, 'USD', null, sc->'meta'->>'client_ref');
+           else
+             v_inv := usd_checkout(sc->'items', (sc->'meta') || jsonb_build_object('fx_rate_id', v_rid, 'paid_usd', v_usd));
+           end if;
            v_one := jsonb_build_object('fx_rate', v_inv.fx_rate::text, 'total', v_inv.total::text, 'total_usd', v_inv.total_usd::text,
              'discount', v_inv.discount::text, 'discount_usd', v_inv.discount_usd::text, 'amount_paid', v_inv.amount_paid::text,
              'paid_usd', v_inv.paid_usd::text, 'status', v_inv.status, 'cost_total', v_inv.cost_total::text,
@@ -193,7 +206,7 @@ function gen() {
     `  'rate', (select json_agg(_usd_rate_of(x.p)::text order by x.i) from jsonb_to_recordset(${J(rate, ["p"])}) as x(i int, p numeric)),`,
     `  'share', (select json_agg(_usd_share(x.u, x.du, x.di, x.tu, x.ti)::text order by x.i)
                from jsonb_to_recordset(${J(share, ["u", "du", "di", "tu", "ti"])}) as x(i int, u numeric, du numeric, di numeric, tu numeric, ti numeric)),`,
-    `  'flows', _usdp_run(${q(JSON.stringify(scenarios.map((s) => ({ step: s.step, per100: s.per100, items: s.items, meta: s.meta, paid: s.paid, settle: s.settle }))))}::jsonb)`,
+    `  'flows', _usdp_run(${q(JSON.stringify(scenarios.map((s) => ({ step: s.step, per100: s.per100, items: s.items, meta: s.meta, paid: s.paid, settle: s.settle, ...(s.old ? { old: s.old } : {}) }))))}::jsonb)`,
     ")::text;",
   ].join("\n") + "\n");
   console.log(`usd-parity gen: ${iqd.length} iqd، ${rate.length} rate، ${share.length} share، ${scenarios.length} سيناريو على ${products.length} مادّة`);
@@ -253,7 +266,10 @@ async function check() {
       if (!a || a.error) { bad.push(`${at}: البيعُ رجع خطأ ${a?.error}`); return; }
       const r = m.rate({ p: sc.per100 });
       if (r !== RT(a.fx_rate)) bad.push(`${at}: السعر القاعدة ${a.fx_rate}، المرآة ${r}`);
-      const lines = sc.items.map((it) => ({ qty: BigInt(it.qty), unitCents: C(it.unit_price_usd ?? prodOf[it.product_id].price) }));
+      // 0271: الدينُ القديم سطرٌ واحدٌ بكميّة ١ بمبلغه — دينارُه الكامل _usd_iqd(المبلغ، السعر، ١) كسطر usd_checkout.
+      const lines = sc.old ? [{ qty: 1n, unitCents: C(sc.old) }]
+        : sc.items.map((it) => ({ qty: BigInt(it.qty), unitCents: C(it.unit_price_usd ?? prodOf[it.product_id].price) }));
+      if (sc.old) tags.add("old");
       const t = m.cart(lines, sc.meta.discount_usd == null ? 0n : C(sc.meta.discount_usd), r);
       const cmp = (what, want, got) => { if (want !== got) bad.push(`${at} ${what}: القاعدة ${want}، المرآة ${got}`); };
       if (t.discountUsdCents > 0n) tags.add(t.discountUsdCents >= t.subUsdCents ? "discount:full" : "discount:part");
@@ -270,6 +286,7 @@ async function check() {
         if (cost == null) tags.add("cost:server");
         else cmp(`unit_cost[${j}]`, C(row[2]), M.costFilsOf(C(cost), r));
       });
+      if (sc.old && a.items != null) bad.push(`${at}: دينٌ قديمٌ بأسطر`);
       const costTotal = sc.items.reduce((s, it) => s + BigInt(it.qty) * C(a.items[it.product_id][2]), 0n);
       cmp("cost_total", C(a.cost_total), costTotal);
       let paidUsd = 0n, paidIqd = 0n;
@@ -323,7 +340,7 @@ async function check() {
   report(`_usd_share = shareOf (${cases.share.length} حالة)`, P0.share);
   const F0 = flows(mirror);
   report(`usd_checkout + settle_invoice_usd = cartTotals/cashAtSale/previewSettle (${cases.scenarios.length} سيناريو بنداءاتٍ حقيقية)`, F0.bad);
-  const need = ["discount:full", "discount:part", "cash:exact", "cash:fx", "settle:partial", "settle:close", "fx:+", "fx:-", "refuse:usd_over", "refuse:usd_too_small", "closed"];
+  const need = ["discount:full", "discount:part", "cash:exact", "cash:fx", "settle:partial", "settle:close", "fx:+", "fx:-", "refuse:usd_over", "refuse:usd_too_small", "closed", "old"];
   const miss = need.filter((x) => !F0.tags.has(x));
   if (miss.length) no(`كلُّ فرعٍ له حالاتُه بالسيناريوهات — ناقص: ${miss.join("، ")}`);
   else ok(`كلُّ فرعٍ له حالاتُه بالسيناريوهات (${[...F0.tags].sort().join("، ")})`);

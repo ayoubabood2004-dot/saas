@@ -103,6 +103,7 @@ const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
   sale_edit: { icon: Receipt, tone: "muted" }, sale_delete: { icon: Trash2, tone: "danger" }, sale_line: { icon: Receipt, tone: "muted" },
   sale_expired: { icon: CalendarX, tone: "danger" },
   debt_forgive: { icon: HandCoins, tone: "warn" }, debt_forgive_void: { icon: HandCoins, tone: "muted" },
+  debt_old: { icon: HandCoins, tone: "warn" }, debt_old_delete: { icon: Trash2, tone: "danger" },
   print: { icon: Printer, tone: "muted" }, export: { icon: FileDown, tone: "muted" },
   product_add: { icon: Package, tone: "brand" }, product_edit: { icon: Package, tone: "muted" }, stock: { icon: Package, tone: "warn" },
   product_delete: { icon: Trash2, tone: "danger" }, price_change: { icon: TrendingUp, tone: "warn" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },
@@ -387,6 +388,14 @@ export function ActivityLog() {
           const sold = s("sold_at");
           const day = sold ? new Date(sold).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "short" }) : "—";
           return t("act.invAddBackdated", { total, client, day, defaultValue: "سجّل فاتورة بيومٍ سابق ({{day}}) بمبلغ {{total}} — {{client}}" });
+        }
+        /* 0271: الدينُ القديم بما هو ويومِه (sold_at إن كُتب قبل اليوم، وإلا يومُ السطر). */
+        if (r.kind === "debt_old" || r.kind === "debt_old_delete") {
+          const what = s("opening_what") || "—";
+          if (r.kind === "debt_old_delete") return t("act.invOldDebtDel", { what, total, client });
+          const sold = s("sold_at") || r.created_at;
+          const day = sold ? new Date(sold).toLocaleDateString(dateLocale(), { day: "numeric", month: "short", year: "numeric" }) : "—";
+          return t("act.invOldDebt", { what, total, client, day });
         }
         if (r.kind === "sale_delete") return t("act.invDel", { total, client, defaultValue: "حذف فاتورة {{total}} ({{client}}) نهائياً" });
         if (r.kind === "refund") return t("act.invRefund", { total, client, defaultValue: "أرجع فاتورة {{total}} — {{client}}" });

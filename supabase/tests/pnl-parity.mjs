@@ -38,14 +38,15 @@ const P = (n) => uid("8a00", n);
 const G_FROM = "2026-01-31T21:00:00.000Z";
 const G_TO = "2026-02-28T20:59:59.999Z";
 const GOLDEN = {
-  // باليد (انظر الرأس): المبيعاتُ G1+G3+G4+G6، والمرجّعةُ G2 وما بعد الطرف G5 خارجها.
+  // باليد (انظر الرأس): المبيعاتُ G1+G3+G4+G6، والمرجّعةُ G2 وما بعد الطرف G5 خارجها، والدينُ القديم (0271) ليس بيعاً؛
+  // وفرقُ الصرف ١٬٢٥٠ (0264) + ٣٠٠ من تسديد دينٍ قديمٍ بالدولار.
   baghdad: {
     months: [{
       month: "2026-02", invoices: 4, revenue: "36500", cogs: "7915", cogs_products: "6433.34", cogs_materials: "815",
       cogs_other: "666.66", gross: "29085", adjust: "500", stock_loss: "1235", returns: "15000", payroll: "300000",
       payroll_loan: "50000", uncategorized: "1250.25",
       categories: [[CAT_OLD, "75"], [CAT_RENT, "500001"], [CAT_ELEC, "100.01"]],
-      fx: "1250", expenses: "867661.26", net: "-837326.26",
+      fx: "1550", expenses: "867661.26", net: "-837026.26",
     }],
   },
   // نفسُ اللحظتين بغرينتش: G4 (٢١:٣٠Z ليلة ٣١/١) وسحبُ الطرف E12 يقعان بيناير.
@@ -58,7 +59,7 @@ const GOLDEN = {
         cogs_other: "666.66", gross: "28085", adjust: "500", stock_loss: "1235", returns: "15000", payroll: "300000",
         payroll_loan: "50000", uncategorized: "1250.25",
         categories: [[CAT_OLD, "75"], [CAT_RENT, "500000"], [CAT_ELEC, "100.01"]],
-        fx: "1250", expenses: "867660.26", net: "-838325.26" },
+        fx: "1550", expenses: "867660.26", net: "-838025.26" },
     ],
   },
 };
@@ -106,6 +107,11 @@ function gen() {
   // 0264 فرقُ الصرف: فاتورةُ دولارٍ من كانون الثاني (خارج المدّة) تسديداتُها بشباط — ساقا فرقٍ +٢٬٠٠٠ و−٧٥٠ = ١٬٢٥٠ بشباط،
   // وساقُ حصّةٍ عادية لا تُحسب. وساقُ fx على فاتورة دينار، وعلى فاتورة دولارٍ مرجّعة، لا تُحسبان.
   const USD = (o) => ({ currency: "USD", fx_rate: "1460", total_usd: "100", paid_usd: "0", ...o });
+  // 0271: دينٌ قديم بشباط — ليس بيعاً: لا إيرادَ ولا فاتورة (المتوقَّعُ باليد أعلاه بلاه). ودينٌ قديمٌ بالدولار من كانون الثاني
+  // تسديدُه بشباط بفرق صرف ٣٠٠ — الفرقُ يبقى كفرق ديون الدولار (فالمتوقَّعُ بشباط ١٬٢٥٠ + ٣٠٠).
+  addInv({ created_at: "2026-02-15T09:00:00.000Z", total: "70000", cost_total: "0", profit: "0", sale_kind: "opening" });
+  addInv(USD({ created_at: "2026-01-20T09:00:00.000Z", total: "146000", cost_total: "0", profit: "0", sale_kind: "opening",
+    payment_details: [{ method: "cash", amount: 58400, at: inFebL(23) }, { method: "cash", amount: 300, at: inFebL(23), kind: "fx" }] }));
   addInv(USD({ created_at: "2026-01-15T09:00:00.000Z", total: "146000", cost_total: "0", profit: "146000",
     payment_details: [{ method: "cash", amount: 146000, at: inFebL(20) }, { method: "cash", amount: 2000, at: inFebL(20), kind: "fx" },
       { method: "cash", amount: -750, at: inFebL(22), kind: "fx" }] }));
@@ -148,6 +154,17 @@ function gen() {
     const total = int(0, 4_000_000);
     const cost = int(0, total);
     const legacy = R() < 0.06 ? int(-5000, 5000) : 0;
+    // 0271: عُشرُها دينٌ قديم — بلا ربحٍ ولا كلفةٍ ولا سطورٍ ولا مستهلكات (شكلُ old_debt_add)، وحالتُه مدفوعة أبداً.
+    if (R() < 0.1) {
+      const usd = R() < 0.5;
+      addInv({
+        created_at: instant(), total: D(int(1, 4_000_000), 2), cost_total: "0", profit: "0", sale_kind: "opening",
+        ...(usd ? { currency: "USD", fx_rate: "1460", total_usd: "100", paid_usd: "0",
+          payment_details: [{ method: "cash", amount: Number(D(int(1, 90_000), 2)), at: instant() },
+            { method: "cash", amount: Number(D(int(-5_000, 5_000), 2)), at: instant(), kind: "fx" }] } : {}),
+      });
+      continue;
+    }
     const id = addInv({
       created_at: instant(), status: pick(["paid", "paid", "paid", "paid", "paid", "refunded"]),   // status NOT NULL بالقاعدة (افتراضُه paid)
       total: D(total, 2), cost_total: D(cost, 2), profit: D(total - cost + legacy, 2),
@@ -201,7 +218,9 @@ function gen() {
     `insert into products(id, clinic_id, name) values ${products.map((p) => `('${p.id}', '${PCL}', ${q(p.name)})`).join(", ")};`,
     // فواتيرُ الدولار تُكتب من باب usd_checkout وحده (محفّزُ invoices_usd_door) — القالبُ يفتح البابَ لمعاملته.
     `select set_config('doctorvet.usd_door', 'on', true);`,
-    `insert into invoices(id, clinic_id, total, cost_total, profit, status, created_at, currency, fx_rate, total_usd, paid_usd, payment_details) values ${invoices.map((i) => `('${i.id}', '${PCL}', ${i.total}, ${i.cost_total}, ${i.profit}, ${q(i.status)}, ${q(i.created_at)}, ${q(i.currency ?? "IQD")}, ${i.fx_rate ?? "null"}, ${i.total_usd ?? "null"}, ${i.paid_usd ?? "null"}, ${i.payment_details ? `${q(JSON.stringify(i.payment_details))}::jsonb` : "null"})`).join(",\n  ")};`,
+    // والدينُ القديم من بابه (0271) — والقالبُ يفتحه لمعاملته كذلك.
+    `select set_config('doctorvet.opening_door', 'on', true);`,
+    `insert into invoices(id, clinic_id, total, cost_total, profit, status, created_at, currency, fx_rate, total_usd, paid_usd, payment_details, sale_kind, opening_what) values ${invoices.map((i) => `('${i.id}', '${PCL}', ${i.total}, ${i.cost_total}, ${i.profit}, ${q(i.status)}, ${q(i.created_at)}, ${q(i.currency ?? "IQD")}, ${i.fx_rate ?? "null"}, ${i.total_usd ?? "null"}, ${i.paid_usd ?? "null"}, ${i.payment_details ? `${q(JSON.stringify(i.payment_details))}::jsonb` : "null"}, ${q(i.sale_kind ?? "retail")}, ${i.sale_kind === "opening" ? "'دين سابق'" : "null"})`).join(",\n  ")};`,
     `insert into invoice_items(id, invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty) values ${items.map((it) => `('${it.id}', '${it.invoice_id}', '${PCL}', ${q(it.product_id)}, 'سطر', ${it.qty}, 0, ${it.unit_cost}, 0, ${it.product_id ? it.qty : "null"})`).join(",\n  ")};`,
     // دفترُ 0252 بشكله: الصرفُ موجبٌ والإرجاعُ سالب، والكميةُ بإشارة القيمة.
     `insert into invoice_consumption(id, clinic_id, invoice_id, item_id, spec_id, product_id, product_name, unit, per_qty, per_div, unit_cost, per_value, line_qty, qty, posted, value, kind, source) values ${consumption.map((c) => {
@@ -315,6 +334,7 @@ async function check() {
     ["تنسى دفترَ المستهلكات", (c) => run(input({ ...data, consumption: [] }), c)],
     ["تنسى فرقَ الصرف", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, payment_details: null })) }), c)],
     ["تعدّ ساقَ fx على فاتورة الدينار", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, currency: "USD" })) }), c)],
+    ["تعدّ الدينَ القديم بيعاً", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, sale_kind: null })) }), c)],
     ["تنسى طريقةَ «stock»", (c) => run(input({ ...data, expenses: data.expenses.map((e) => ({ ...e, method: e.method === "stock" ? "cash" : e.method, category: e.method === "stock" ? "x" : e.category })) }), c)],
   ];
   for (const [name, f] of mutants) {

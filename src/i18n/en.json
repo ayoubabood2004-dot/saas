@@ -3583,7 +3583,9 @@
       "sale_expired": "Expired sale",
       "debt_forgive": "Debt discount",
       "debt_forgive_void": "Debt discount voided",
-      "sale_backdated": "Sale on an earlier day"
+      "sale_backdated": "Sale on an earlier day",
+      "debt_old": "Old debt",
+      "debt_old_delete": "Old debt deleted"
     },
     "noAccess": "The activity log is available to the clinic manager only.",
     "searchPh": "Search by action, staff or pet name…",
@@ -3625,6 +3627,8 @@
     "weightAdd": "Recorded the weight of {{pet}}: {{kg}} kg",
     "invAdd": "Created an invoice of {{total}} — {{client}}",
     "invAddBackdated": "Recorded an invoice on an earlier day ({{day}}) of {{total}} — {{client}}",
+    "invOldDebt": "Recorded an old debt ({{what}}) of {{total}} on {{client}} — dated {{day}}",
+    "invOldDebtDel": "Deleted an old debt ({{what}}) of {{total}} — {{client}}",
     "invUpd": "Updated invoice for {{client}} ({{total}}) — settlement / edit",
     "invRefund": "Refunded an invoice of {{total}} — {{client}}",
     "invDel": "Permanently deleted an invoice of {{total}} ({{client}})",
@@ -8746,12 +8750,55 @@
     "paid": "Paid",
     "known": "This phone (or name) belongs to a customer with invoices or a pet — opened their file; add their info there.",
     "notFound": "No customer with this phone or name.",
-    "short": "The name is too short to look up — open the customer by their phone."
+    "short": "The name is too short to look up — open the customer by their phone.",
+    "oldTag": "Old debt: {{what}}"
   },
   "ncase": {
     "newOwner": "New customer — saved with the case",
     "known": "Registered customer — their info is filled in; add the new pet under them.",
     "hasPets": "Already at the clinic:",
     "petsHint": "If the case is for one of these, open it from their record so the pet isn't registered twice."
+  },
+  "odebt": {
+    "add": "Old debt",
+    "addFor": "Add an old debt",
+    "title": "Old debt (from before the system)",
+    "intro": "A debt from before the system (a paper ledger…). It is not a sale: it never counts in sales or profit — and when it's paid, the money enters the drawer on the day it's paid.",
+    "name": "Name",
+    "phone": "Phone",
+    "newCustomer": "New customer — saved with the debt",
+    "what": "What is owed (item / service)",
+    "whatPh": "e.g. dog treatment, a sack of feed",
+    "why": "Why / note (optional)",
+    "amount": "How much",
+    "currency": "Currency",
+    "iqd": "Dinar",
+    "usd": "Dollar",
+    "date": "When",
+    "dated": "Dated {{day}} — it won't appear in that day's sales.",
+    "usdNote": "In dollars at today's rate ({{rate}} per $100) — paid with “Pay in dollars”.",
+    "usdFailed": "Couldn't read the dollar settings — dinar only for now.",
+    "save": "Save the debt",
+    "retry": "Retry (same debt)",
+    "cancel": "Cancel",
+    "saved": "Old debt saved — {{amount}} on {{client}}",
+    "unknown": "We don't know whether it was saved (connection). Press retry — it won't be duplicated.",
+    "tag": "Old debt",
+    "tagWhat": "Old debt: {{what}}",
+    "rules": "Not a sale — it can't be refunded and has no lines to edit. Entered by mistake: delete it (before any payment) or forgive the rest.",
+    "noDelete": "It has payments — it can't be deleted; forgive the rest instead.",
+    "err": {
+      "manager": "Adding an old debt is for the manager — open manager mode with the PIN.",
+      "customer": "Write the customer's name or phone — the debt is on someone.",
+      "what": "Write what is owed (an item, a service, a treatment…).",
+      "long": "“What” is up to 200 characters and “why” up to 500.",
+      "amount": "Write the debt amount — more than zero (check the zeros).",
+      "date": "The debt date must be today or earlier.",
+      "currency": "Currency: dinar or dollar.",
+      "ref": "This attempt's reference belongs to another invoice — reopen the window.",
+      "usd": "Dollars aren't enabled, or today's rate isn't set (Settings › Dollar).",
+      "absent": "Old debts need a system update — tell the developer.",
+      "operator": "The platform operator does not write old debts for the clinic — the clinic manager enters them."
+    }
   }
 }

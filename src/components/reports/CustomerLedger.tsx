@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import {
@@ -8,7 +8,7 @@ import {
 import type { Invoice, InvoiceItem } from "@/types";
 import { Modal } from "@/components/Modal";
 import { cn, money, formatNum, formatDate } from "@/lib/utils";
-import { dueOf, paidOf } from "@/lib/debt";
+import { dueOf, isOpening, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { playTap } from "@/lib/sounds";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -16,6 +16,12 @@ import { usePermissions } from "@/hooks/usePermissions";
  * خصمٌ جديد بمعاملة سيرفر واحدة — فالتعديل من دفتر الزبون متزامن مع المخزون
  * والأسعار حرفياً، لا نسخة ثانية من المنطق. */
 import { DeliveryEditDialog } from "@/components/retail/DeliveryEditDialog";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* شارةُ «دين سابق» (0271) بنطاقها odebt — قطعةٌ كسولة (rpt بالنصف البارد الممتلئ). */
+const loadOldDebtNote = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
+let OldDebtNoteLazy = loadOldDebtNote();
 
 /* ============================================================================
  * سجل العملاء (دفتر الزبائن) — تبويب داخل التقارير.
@@ -80,6 +86,7 @@ export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicI
     const m = new Map<string, CustomerRow>();
     let walkIns = 0;
     for (const inv of inRange) {
+      if (isOpening(inv)) continue;   // 0271: الدينُ القديم ليس إنفاقاً — دينُه بـdueByKey
       const k = customerKey(inv);
       if (!k) { walkIns++; continue; }
       let r = m.get(k);
@@ -214,6 +221,7 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
   /* تعديل فاتورة من الدفتر — نفس صلاحية تصحيح الفواتير بشاشة المبيعات. */
   const canEdit = can("deleteInvoices");
   const [editInv, setEditInv] = useState<Invoice | null>(null);
+  const [, setLazyTick] = useState(0);
 
   /* دفترُ الزبون تاريخُه **كامل** دائماً (0149): يُجلب من الخادم بمفتاح الزبون نفسه
    * (الهاتف رقمياً وإلا الاسم) لا من لقطة الصفحة — التي صارت محدودةً بالمدّة.
@@ -247,7 +255,9 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
     const itemsByInv = new Map<string, InvoiceItem[]>();
     for (const it of myItems) { const a = itemsByInv.get(it.invoice_id) ?? []; a.push(it); itemsByInv.set(it.invoice_id, a); }
 
-    const sales = mine.filter((i) => !isRefunded(i));
+    // 0271: الدينُ القديم ليس شراءً — خارج الإنفاق والربح والقطع؛ دينُه باقٍ بالمتبقّي.
+    const live = mine.filter((i) => !isRefunded(i));
+    const sales = live.filter((i) => !isOpening(i));
     const refunds = mine.filter(isRefunded);
     // أكثر المنتجات شراءً — من الفواتير غير المرجعة فقط.
     const saleIds = new Set(sales.map((i) => i.id));
@@ -271,7 +281,7 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
       lastAt: latest.created_at,
       spend: sales.reduce((s, i) => s + i.total, 0),
       paid: sales.reduce((s, i) => s + paidOf(i), 0),
-      due: sales.reduce((s, i) => s + dueOf(i), 0),
+      due: live.reduce((s, i) => s + dueOf(i), 0),
       profit: sales.reduce((s, i) => s + (i.profit || 0), 0),
       units: sales.reduce((s, i) => s + (i.item_count || 0), 0),
       refundCount: refunds.length,
@@ -352,7 +362,7 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
             const its = book.itemsByInv.get(inv.id) ?? [];
             const summary = its.length
               ? its.slice(0, 4).map((it) => (it.qty && it.qty > 1 ? `${it.name}×${formatNum(it.qty)}` : it.name)).join("، ") + (its.length > 4 ? ` +${formatNum(its.length - 4)}` : "")
-              : "—";
+              : isOpening(inv) ? "" : "—";
             const refunded = isRefunded(inv);
             const due = refunded ? 0 : dueOf(inv);
             return (
@@ -370,7 +380,11 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
                       {refunded && <span className="chip bg-danger-100 text-2xs font-bold text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{t("rpt.cust.refunded", "مرجعة — أُلغيت واسترجع مخزونها")}</span>}
                       {!refunded && due > 0 && <span className="chip bg-warn-100 text-2xs font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{t("rpt.cust.dueChip", { v: money(due), defaultValue: "دين {{v}}" })}</span>}
                     </p>
-                    <p className="truncate text-2xs text-ink-subtle">{summary}</p>
+                    {isOpening(inv) ? (
+                      <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setLazyTick((n) => n + 1); }}>
+                        <Suspense fallback={null}><OldDebtNoteLazy invoice={inv} /></Suspense>
+                      </LoadBoundary>
+                    ) : <p className="truncate text-2xs text-ink-subtle">{summary}</p>}
                   </div>
                   <div className="text-end">
                     <p className={cn("text-sm font-extrabold tabular-nums", refunded ? "text-danger-600 line-through dark:text-danger-400" : "text-ink")}>{money(inv.total)}</p>
@@ -378,7 +392,7 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
                   </div>
                   {/* تعديل الفاتورة: كمية غلط، صنف زايد، سعر غلط — يتصحّح هنا
                       بمزامنة مخزون كاملة بدل «إرجاع» يلوّث سجل الزبون. */}
-                  {!refunded && canEdit && (
+                  {!refunded && canEdit && !isOpening(inv) && (
                     <button
                       type="button"
                       data-custedit={inv.id}
