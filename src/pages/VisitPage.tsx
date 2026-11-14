@@ -57,6 +57,10 @@ import { formatAmount, parseAmount, editDosePatch, pickerShowsAmount, type DoseV
 import { DosePicker } from "@/components/treatment/DosePicker";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
+import { useDoseSheet } from "@/lib/doseSheet";
+import type { SheetBill } from "@/lib/doseBilling";
+import { petSellUrl } from "@/lib/sellLink";
+import { DoseBillChip as DoseBillChipUi, DoseDueBar as DoseDueBarUi, type DoseBillText } from "@/components/dose/DoseBill";
 import { usePermissions } from "@/hooks/usePermissions";
 
 /* «راجيتة» (0261) من صفحة الحالة — الزرُّ ونافذتُه بنطاقها المملوك rx، والراجيتةُ تُربط بهذه الحالة. */
@@ -287,6 +291,8 @@ export default function VisitPage() {
   // ── Smart treatment intelligence — the numbers that drive the command panel ──
   const todayDoses = useMemo(() => medRows.filter((t) => t.day === todayISO), [medRows, todayISO]);
   const todayPending = useMemo(() => todayDoses.filter((t) => !t.administered_at), [todayDoses]);
+  /* 0269: سعرُ كلّ جرعةٍ بطبلة الزيارة وحالُ بيعها، ومجموعُ ما ينتظر البيع — لكادر العيادة وحده (جلسةُ المالك تفتح الحالة أيضاً). */
+  const doseSheet = useDoseSheet(pet?.id ?? "", treatments, !!pet && user?.role !== "owner");
   // المتأخرةُ = الفائتةُ التي لم تُحسم بعد (لا انطت ولا وُثّق فواتُها) — backdate.ts.
   const overdueDoses = useMemo(() => pendingPast(medRows, todayISO), [medRows, todayISO]);
   const nextDose = useMemo(
@@ -860,6 +866,11 @@ export default function VisitPage() {
         </div>
       )}
 
+      {/* 0269: «مستحق من الطبلة» — جرعاتُ الحيوان المعطاة بانتظار البيع، وزرٌّ يفتح بيعةَ صاحبه فتنزل بالسلّة. */}
+      {doseSheet.pending && doseSheet.pending.count > 0 && (
+        <div className="mt-3"><VisitDoseDue pet={pet} pending={doseSheet.pending} /></div>
+      )}
+
       {/* ── لوحة اليوم — شنو لازم يصير الآن ── */}
       {hasFlowsheet && !ended && (
         <TodayPanel
@@ -868,6 +879,7 @@ export default function VisitPage() {
           overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
           onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
           onPickPast={() => { playTap(); setPastOpen(true); }} missedCount={missedDoses} backdated={backdated}
+          billOf={doseSheet.billOf}
         />
       )}
 
@@ -911,9 +923,10 @@ export default function VisitPage() {
               onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
               onAddDrug={openAddDrug}
               onRecordObs={(tx) => { playTap(); setObsTarget(tx); }}
+              billOf={doseSheet.billOf}
             />
           ) : (
-            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang}
+            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} billOf={doseSheet.billOf}
               onGive={(tx) => { if (tx.day < todayISO) { playTap(); setGiveId(tx.id); } else void giveQuick(tx); }} />
           )}
         </div>
@@ -1116,7 +1129,28 @@ function ViewToggleBtn({ active, icon, label, onClick }: { active: boolean; icon
 /* -------------------------- Today command panel --------------------------- */
 /** The single most-used surface: what the doctor must do RIGHT NOW — today's due
  *  doses with one-tap give (and give-all), overdue catch-up, or a calm all-done state. */
-function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses, nextDose, remaining, totalDoses, onGiveAll, onGiveOne, onGiveOverdue, onPickPast, missedCount, backdated }: {
+/** 0269: نصوصُ سعر الجرعة من نطاق الزيارة (vbk) — والرسمُ مشتركٌ مع سجلّ الحيوان (DoseBill.tsx). */
+function useVisitDoseText(): DoseBillText {
+  const { t } = useTranslation();
+  return useMemo(() => ({
+    will: (price: string) => t("vbk.dosePrice", { price }),
+    pending: (price: string) => t("vbk.dosePending", { price }),
+    billed: (price: string) => t("vbk.doseBilled", { price }),
+    due: (total: string) => t("vbk.doseDue", { total }),
+    dueN: (n: number) => t("vbk.doseDueN", { n }),
+    sell: t("vbk.doseSell"),
+  }), [t]);
+}
+function VisitDoseChip({ bill }: { bill: SheetBill | null }) {
+  const text = useVisitDoseText();
+  return bill ? <div className="mt-1"><DoseBillChipUi bill={bill} text={text} /></div> : null;
+}
+function VisitDoseDue({ pet, pending }: { pet: Pet; pending: { count: number; total: number } }) {
+  const text = useVisitDoseText();
+  return <DoseDueBarUi pending={pending} href={petSellUrl(pet)} text={text} />;
+}
+
+function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses, nextDose, remaining, totalDoses, onGiveAll, onGiveOne, onGiveOverdue, onPickPast, missedCount, backdated, billOf }: {
   todayISO: string; lang: string; todayPending: TreatmentEntry[]; todayDoneCount: number;
   overdueDoses: TreatmentEntry[]; nextDose: TreatmentEntry | null; remaining: number; totalDoses: number;
   onGiveAll: () => void; onGiveOne: (t: TreatmentEntry) => void; onGiveOverdue: () => void;
@@ -1126,6 +1160,8 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
   missedCount: number;
   /** زيارةٌ بتاريخٍ سابق: «سجّلها الآن» بلحظة الإدخال غلطٌ أكيد، فلا يُعرض. */
   backdated: boolean;
+  /** 0269: سعرُ الجرعة قبل إعطائها (useDoseSheet). */
+  billOf: (t: TreatmentEntry) => SheetBill | null;
 }) {
   const { t } = useTranslation();
   const hasToday = todayPending.length > 0;
@@ -1168,6 +1204,7 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-black text-ink">{t.medication}</div>
                     <div className="truncate text-2xs font-bold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ") || "—"}</div>
+                    <VisitDoseChip bill={billOf(t)} />
                   </div>
                   <button onClick={() => onGiveOne(t)} className="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-brand-700">تم</button>
                 </div>
@@ -1202,7 +1239,7 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
 
 /* ------------------------- Per-medication course view --------------------- */
 interface MedCourse { name: string; rows: TreatmentEntry[]; total: number; given: number; missedN: number; overdueN: number; next: TreatmentEntry | null; amount: string; freq: string }
-function MedCourseView({ courses, todayISO, ended, lang, onGive }: { courses: MedCourse[]; todayISO: string; ended: boolean; lang: string; onGive: (t: TreatmentEntry) => void }) {
+function MedCourseView({ courses, todayISO, ended, lang, onGive, billOf }: { courses: MedCourse[]; todayISO: string; ended: boolean; lang: string; onGive: (t: TreatmentEntry) => void; billOf: (t: TreatmentEntry) => SheetBill | null }) {
   const { t } = useTranslation();
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1218,6 +1255,8 @@ function MedCourseView({ courses, todayISO, ended, lang, onGive }: { courses: Me
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-black leading-tight text-ink">{c.name}</div>
                 {(c.amount || c.freq) && <div className="truncate text-2xs font-bold text-ink-subtle">{[c.amount, c.freq].filter(Boolean).join(" · ")}</div>}
+                {/* 0269: سعرُ الجرعة التالية (ما ستُحسب به) — المعطاةُ حالُها بعرض «باليوم» جرعةً جرعة. */}
+                {!done && c.next && <VisitDoseChip bill={billOf(c.next)} />}
               </div>
               {done ? <CheckCircle2 size={18} className="shrink-0 text-success-500" /> : c.overdueN > 0 ? <span className="shrink-0 rounded bg-danger-100 px-1.5 py-0.5 text-[9px] font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{formatNum(c.overdueN)} متأخّرة</span> : null}
             </div>
@@ -1314,7 +1353,7 @@ const CARE_ORDER: Record<CareKind, number> = {
   vitals: 0, mentation: 1, fluid: 2, feed: 3, elim: 4, urine: 5, nurse: 6, lab: 7, drug: 8, protocol: 9,
 };
 
-function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, protoNotes, onGive, onEditDrug, onAddNote, onAddDrug, onRecordObs, todayRowRef }: {
+function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, protoNotes, onGive, onEditDrug, onAddNote, onAddDrug, onRecordObs, todayRowRef, billOf }: {
   dayGroups: [string, TreatmentEntry[]][]; todayISO: string; ended: boolean; lang: string;
   species?: Pet["species"];
   dayNotes: Map<string, PetNote[]>;
@@ -1324,6 +1363,8 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
   onAddNote: (day: string) => void; onAddDrug: (day: string) => void;
   onRecordObs: (t: TreatmentEntry) => void;
   todayRowRef?: React.Ref<HTMLTableRowElement>;
+  /** 0269: سعرُ الجرعة قبل الإعطاء، وبعده «بانتظار البيع» أو «انحسبت». */
+  billOf: (t: TreatmentEntry) => SheetBill | null;
 }) {
   const { t } = useTranslation();
   const editLabel = t("visit.editDrug", "\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u062f\u0648\u0627\u0621");
@@ -1430,6 +1471,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                         {subBits.length > 0 && (
                           <div className="mt-0.5 text-xs font-semibold text-ink-subtle">{subBits.join(" \u00b7 ")}</div>
                         )}
+                        <VisitDoseChip bill={billOf(tx)} />
                       </div>
                       {!ended && !tx.administered_at && (
                         <button type="button" data-editdrug={tx.id} onClick={() => onEditDrug(tx)}

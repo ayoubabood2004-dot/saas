@@ -6218,7 +6218,13 @@
     "editPartial": "Edited {{n}} of {{total}} — the rest were given on another device and stayed as they were.",
     "doseKeep": "Current dose: «{{text}}» — kept unless you change it",
     "planChartKept": "The chart didn't change — add new medicines with «Add medicine».",
-    "addLanded": "The earlier attempt was saved — check the chart before adding anything else."
+    "addLanded": "The earlier attempt was saved — check the chart before adding anything else.",
+    "dosePrice": "Dose price {{price}}",
+    "dosePending": "Awaiting sale · {{price}}",
+    "doseBilled": "Billed ✓ · {{price}}",
+    "doseDue": "Due from the treatment sheet: {{total}}",
+    "doseDueN": "Doses awaiting sale: {{n}} — they drop into the owner's cart when their sale opens",
+    "doseSell": "Sell"
   },
   "intake": {
     "today": "Today",

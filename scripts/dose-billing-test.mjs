@@ -232,6 +232,18 @@ console.log("▸ ٦) الطبلة — السعرُ قبل الإعطاء، وا�
     /treatmentBadge=\{\(id\) => \{ const tx = txById\.get\(id\); return tx \? <DoseBillChip bill=\{doseSheet\.billOf\(tx\)\} \/>/.test(pp)
       && /treatmentBadge\(e\.id\.slice\(2\)\)/.test(screenCols) && (umr.match(/treatmentBadge\(/g) || []).length === 1
       && /id: `t:\$\{t\.id\}`/.test(umr));
+  const vp = readFileSync("src/pages/VisitPage.tsx", "utf8");
+  const ui = readFileSync("src/components/dose/DoseBill.tsx", "utf8");
+  const L = (f) => JSON.parse(readFileSync(`src/i18n/${f}.json`, "utf8"));
+  const sameText = ["ar", "en"].every((f) => { const d = L(f); return ["price:dosePrice", "pending:dosePending", "billed:doseBilled", "due:doseDue", "dueN:doseDueN", "sell:doseSell"]
+    .every((pair) => { const [a, b] = pair.split(":"); return d.dsht[a] && d.dsht[a] === d.vbk[b]; }); });
+  check("طبلةُ الزيارة: السعرُ بلوحة اليوم والجدول «باليوم» وعرض «بالدواء»، وسطرُ «مستحق» — للكادر وحده",
+    /useDoseSheet\(pet\?\.id \?\? "", treatments, !!pet && user\?\.role !== "owner"\)/.test(vp)
+      && (vp.match(/billOf=\{doseSheet\.billOf\}/g) || []).length === 3 && (vp.match(/<VisitDoseChip bill=\{billOf\(/g) || []).length === 3
+      && /<VisitDoseDue pet=\{pet\} pending=\{doseSheet\.pending\} \/>/.test(vp));
+  check("  والرسمُ واحد (DoseBill.tsx بلا نصوص — كلُّ صفحةٍ بنطاقها)، ونصوصُ الزيارة = نصوصُ السجلّ حرفاً، والبيعُ من رابطٍ واحد",
+    !/\bt\(/.test(ui) && !/useTranslation/.test(ui) && sameText
+      && /petSellUrl\(pet\)/.test(vp) && /petSellUrl\(pet\)/.test(pp) && !/function sellUrl/.test(pp));
 }
 
 console.log(fails ? `\n✗ dose-billing-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ dose-billing-test: ${passes} نجحت، 0 فشلت`);
