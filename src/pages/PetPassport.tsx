@@ -22,6 +22,8 @@ import { persistMedicalEntries } from "@/lib/medSync";
 import { recordedLater } from "@/lib/backdate";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { useDoseSheet } from "@/lib/doseSheet";
+import { petSellUrl } from "@/lib/sellLink";
+import { DoseBillChip as DoseBillChipUi, DoseDueBar as DoseDueBarUi, type DoseBillText } from "@/components/dose/DoseBill";
 import type { SheetBill } from "@/lib/doseBilling";
 import { taskStatus } from "@/lib/treatmentSchedule";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -38,7 +40,7 @@ import { Button, useToast, ProgressRing } from "@/components/ui";
 import { HealthCurve, type CurvePoint } from "@/components/ui/HealthCurve";
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
-import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale, money } from "@/lib/utils";
+import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { describeUploadError, describeDbError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
@@ -472,7 +474,7 @@ export function PetPassport() {
               leftIcon={<ShoppingCart size={16} />}
               onClick={() => {
                 playTap();
-                navigate(sellUrl(pet));
+                navigate(petSellUrl(pet));
               }}
             >
               {t("retail.sellItems", "Sell items")}
@@ -1893,41 +1895,29 @@ function treatmentStatus(tx: TreatmentEntry, today: string, currentHM: string): 
   return taskStatus(tx, today, currentHM) === "overdue" ? "overdue" : "due";
 }
 
-/** جسرُ «بيع» لصاحب الحيوان: الزبونُ وهاتفُه والحيوانُ بمعرّفه — ما يُباع من الأدوية يُكتب بسجلّه، وجرعاتُ الطبلة المعلَّقة تنزل بالسلّة. */
-function sellUrl(pet: Pet): string {
-  const q = new URLSearchParams();
-  if (pet.owner_name) q.set("customer", pet.owner_name);
-  if (pet.owner_phone) q.set("phone", pet.owner_phone);
-  if (pet.name) q.set("pet", pet.name);
-  q.set("petId", pet.id);
-  if (pet.species) q.set("species", pet.species);
-  return `/retail?${q.toString()}`;
+/** 0269: نصوصُ الشارة وسطرِ «مستحق» من نطاق هذه الصفحة (dsht) — والرسمُ مشتركٌ مع طبلة الزيارة (DoseBill.tsx). */
+function useDoseText(): DoseBillText {
+  const { t } = useTranslation();
+  return useMemo(() => ({
+    will: (price: string) => t("dsht.price", { price }),
+    pending: (price: string) => t("dsht.pending", { price }),
+    billed: (price: string) => t("dsht.billed", { price }),
+    due: (total: string) => t("dsht.due", { total }),
+    dueN: (n: number) => t("dsht.dueN", { n }),
+    sell: t("dsht.sell"),
+  }), [t]);
 }
 
 /** 0269: سطرُ «مستحق من الطبلة» — معلَّقاتُ الحيوان كلُّها بانتظار البيع، وزرٌّ يفتح بيعةَ صاحبه فتنزل بالسلّة. */
 function DoseDueBar({ pet, pending }: { pet: Pet; pending: { count: number; total: number } | null }) {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  if (!pending || pending.count === 0) return null;
-  return (
-    <div className="card flex flex-wrap items-center gap-3 border-warn-300 bg-warn-50/60 p-3 dark:bg-warn-500/10" data-dosedue>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-black text-ink">{t("dsht.due", { total: money(pending.total) })}</p>
-        <p className="text-2xs text-ink-muted">{t("dsht.dueN", { n: pending.count })}</p>
-      </div>
-      <Button size="sm" leftIcon={<ShoppingCart size={16} />} onClick={() => { playTap(); navigate(sellUrl(pet)); }}>{t("dsht.sell")}</Button>
-    </div>
-  );
+  const text = useDoseText();
+  return <DoseDueBarUi pending={pending} href={petSellUrl(pet)} text={text} />;
 }
 
 /** 0269: سعرُ الجرعة بالطبلة — قبل الإعطاء ما ستُحسب به، وبعده «بانتظار البيع» أو «انحسبت». */
 function DoseBillChip({ bill }: { bill: SheetBill | null | undefined }) {
-  const { t } = useTranslation();
-  if (!bill) return null;
-  const price = money(bill.price);
-  if (bill.state === "billed") return <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200" data-dosebill-state="billed">{t("dsht.billed", { price })}</span>;
-  if (bill.state === "pending") return <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200" data-dosebill-state="pending">{t("dsht.pending", { price })}</span>;
-  return <span className="chip bg-brand-50 text-[11px] text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" data-dosebill-state="will">{t("dsht.price", { price })}</span>;
+  const text = useDoseText();
+  return <DoseBillChipUi bill={bill} text={text} />;
 }
 
 /** One medication dose, rendered EXACTLY as in the treatment flowsheet — reused verbatim
