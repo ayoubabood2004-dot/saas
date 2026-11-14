@@ -377,8 +377,9 @@ export function ForgiveDialog({ invoice, items, itemsOk, onClose, onDone }: {
           <div className="space-y-1 rounded-xl border border-line bg-surface-2 p-3 text-xs" data-forgive-inv>
             <p className="mb-1 flex items-center gap-1.5 text-2xs font-bold text-ink-muted"><Wallet size={13} /> {t("fgv.inv.title")}</p>
             {field(t("fgv.inv.gross"), money(gross))}
-            {field(t("fgv.inv.cost"), money(cost))}
-            {field(t("fgv.inv.profit"), `${money(profitBase)} · ${t("fgv.inv.profitPct", { p: pctText(gross > 0 ? (profitBase / gross) * 100 : null) })}`, profitBase > 0 ? "text-success-700 dark:text-success-300" : "text-danger-600")}
+            {/* 0271: الدينُ القديم ليس بيعاً — لا كلفةَ ولا ربحَ يُقال عنه، ولا سقفَ ربحٍ عليه (المتبقّي كلُّه). */}
+            {!caps.opening && field(t("fgv.inv.cost"), money(cost))}
+            {!caps.opening && field(t("fgv.inv.profit"), `${money(profitBase)} · ${t("fgv.inv.profitPct", { p: pctText(gross > 0 ? (profitBase / gross) * 100 : null) })}`, profitBase > 0 ? "text-success-700 dark:text-success-300" : "text-danger-600")}
             {field(t("fgv.inv.paid"), money(paidOf(cur)))}
             {field(t("fgv.inv.due"), money(dueShown), "text-warn-700 dark:text-warn-300")}
             {field(t("fgv.inv.prior"), caps.forgiven > 0 ? money(caps.forgiven) : t("fgv.inv.none"))}
@@ -470,17 +471,19 @@ export function ForgiveDialog({ invoice, items, itemsOk, onClose, onDone }: {
           </div>
           {data && (
             <p className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs font-semibold leading-relaxed text-ink" data-forgive-live>
-              {[
-                shareText,
-                t("fgv.lineProfit", { profit: money(preview.profitAfter), margin: pctText(marginOfGross) }),
-                t("fgv.lineDue", { before: money(caps.dueBefore), after: money(preview.dueAfter) }),
-              ].join(" · ")}
+              {(caps.opening
+                ? [t("fgv.lineDue", { before: money(caps.dueBefore), after: money(preview.dueAfter) })]
+                : [
+                  shareText,
+                  t("fgv.lineProfit", { profit: money(preview.profitAfter), margin: pctText(marginOfGross) }),
+                  t("fgv.lineDue", { before: money(caps.dueBefore), after: money(preview.dueAfter) }),
+                ]).join(" · ")}
             </p>
           )}
         </div>
 
         {/* ── سقفُ الربح ── */}
-        {data && (
+        {data && !caps.opening && (
           <div className="space-y-1 rounded-xl border border-line p-2.5" data-forgive-cap>
             <p className="text-2xs font-bold text-ink-muted">{t("fgv.cap.title", { pct: formatNum(caps.pct) })}</p>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-surface-3">

@@ -805,6 +805,9 @@ export interface Invoice {
   /** «تاريخ المبيع» (0242): لحظةُ الإدخال الحقيقية لفاتورةٍ سُجّلت بيومٍ سابق — created_at يومُ البيع.
    *  فارغٌ = أُدخلت بلحظتها. */
   recorded_at?: string | null;
+  /** 0271: الدينُ القديم (sale_kind = "opening") — «شنو» عليه الدين و«ليش». لغيره فارغان. */
+  opening_what?: string | null;
+  opening_why?: string | null;
   /** Walk-in customer captured at sale time (retail module; optional). */
   customer_name?: string | null;
   customer_phone?: string | null;

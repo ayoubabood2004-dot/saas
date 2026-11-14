@@ -9,7 +9,7 @@
  * لا قائمةَ جزئية: فشلُ أيّ قراءةٍ يُقال بـ«أعد المحاولة» (قائمةٌ ناقصة أخطرُ من خطأ ظاهر). والنصوصُ بنطاقٍ مملوك `cfile`
  * (النصفُ البارد على سقفه) — تصل مع الصفحة بـpage(…, ["cfile"]).
  * ========================================================================= */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -25,6 +25,12 @@ import { usdDueCentsOf, usdText } from "@/lib/usdMath";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess } from "@/lib/sounds";
 import { addProfile, directoryHit, getProfile, isCfileAbsent, keyInvoices, keyOf, updateProfile, type ProfileInput } from "@/lib/customerFileApi";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* «إضافة دين قديم» (0271) على هذا الزبون — قطعةٌ كسولة بنطاقها odebt، للمدير وحده (تُخفي نفسَها لغيره). */
+const loadOldDebtBtn = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtButton })), ["odebt"]);
+let OldDebtBtnLazy = loadOldDebtBtn();
 
 const enc = (key: string) => `/customer/${encodeURIComponent(key)}`;
 
@@ -138,6 +144,7 @@ function FileView({ cKey }: { cKey: string }) {
   const [busy, setBusy] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [, setLazyTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -290,6 +297,11 @@ function FileView({ cKey }: { cKey: string }) {
       <div className="flex flex-wrap gap-2">
         <Button leftIcon={<ShoppingCart size={16} />} onClick={sell} data-cfile-sell>{t("cfile.sell")}</Button>
         <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={addPet} data-cfile-addpet>{t("cfile.addPet")}</Button>
+        {(name || phone) && (
+          <LoadBoundary scope="odebt" onRetry={() => { OldDebtBtnLazy = loadOldDebtBtn(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}><OldDebtBtnLazy prefill={{ name, phone }} onAdded={() => setTick((n) => n + 1)} /></Suspense>
+          </LoadBoundary>
+        )}
       </div>
 
       {/* الحيوانات */}
@@ -351,6 +363,8 @@ function InvoiceRow({ inv, lang }: { inv: Invoice; lang: string }) {
       <span className="min-w-0 flex-1 truncate font-bold text-ink">
         {usd ? <span dir="ltr">{usdText(Math.round((inv.total_usd ?? 0) * 100))}</span> : money(inv.total)}
         {inv.pet_name && <span className="ms-2 text-xs font-semibold text-ink-muted">· {inv.pet_name}</span>}
+        {/* الدينُ القديم (0271) ليس شراءً — يُقال بما هو. */}
+        {inv.sale_kind === "opening" && <span className="ms-2 text-xs font-semibold text-violet-700 dark:text-violet-300" data-cfile-old>· {t("cfile.oldTag", { what: inv.opening_what ?? "—" })}</span>}
       </span>
       {refunded ? (
         <span className="chip bg-surface-2 text-2xs text-ink-muted">{t("cfile.refunded")}</span>

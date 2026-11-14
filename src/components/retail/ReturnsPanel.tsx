@@ -76,7 +76,8 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
   /** الفواتير المرشّحة: غير المرجعة، الأحدث أولاً، ويضيّقها البحث بالاسم
    *  أو الهاتف أو رقم الفاتورة. */
   const localCandidates = useMemo(() => {
-    const live = invoices.filter((i) => (i.status ?? "paid") !== "refunded");
+    // الدينُ القديم (0271) بلا موادّ ولا يترجّع — ليس مرشّحاً للمرتجع.
+    const live = invoices.filter((i) => (i.status ?? "paid") !== "refunded" && i.sale_kind !== "opening");
     const s = normalizeAr(q.trim().toLowerCase());
     const list = !s ? live : live.filter((i) =>
       normalizeAr((i.customer_name ?? "").toLowerCase()).includes(s)
@@ -106,7 +107,7 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
     }, 300);
     return () => { alive = false; clearTimeout(timer); };
   }, [serverQ, retry]);
-  const candidates = serverQ && remote ? remote : localCandidates;
+  const candidates = serverQ && remote ? remote.filter((i) => i.sale_kind !== "opening") : localCandidates;
 
   const loadItems = (id: string) => {
     const seq = ++pickSeq.current;

@@ -30,6 +30,10 @@ export const paymentStatusOf = (inv: Invoice): PaymentStatus => {
   return "partial";
 };
 
+/** 0271: دينٌ قديم (قبل النظام) — فاتورةٌ بلا موادّ **ليست بيعاً**: لا تُحسب مبيعاتٍ ولا ربحاً ولا شراءً بأيّ تقرير،
+ *  ويبقى ديناً بالديون والملفّ، وتسديدُه قبضٌ حقيقيّ بيومه. */
+export const isOpening = (inv: Pick<Invoice, "sale_kind">): boolean => inv.sale_kind === "opening";
+
 /** A sale is a live debt when it isn't refunded and still has a balance due. */
 export const isDebt = (inv: Invoice): boolean => (inv.status ?? "paid") !== "refunded" && dueOf(inv) > EPS;
 

@@ -28,6 +28,8 @@ export interface PnlInvoice {
   total?: number | string | null;
   profit?: number | string | null;
   cost_total?: number | string | null;
+  /** 0271: «opening» دينٌ قديم — ليس بيعاً: خارج الإيراد والكلفة والعدد، وفرقُ صرف تسديده (دولار) يبقى. */
+  sale_kind?: string | null;
   /** 0264: فاتورةُ دولار وسِيَقُها — سِيَقُ `kind:'fx'` سطرُ «فرق سعر الصرف» بشهر يومها. */
   currency?: string | null;
   payment_details?: readonly { amount?: number | string | null; at?: string | null; kind?: string | null }[] | null;
@@ -188,7 +190,7 @@ export function computePnl(input: PnlInput, from: string, to: string, tzIn?: str
 
   const monthOfInvoice = new Map<string, string>();
   for (const inv of input.invoices) {
-    if ((inv.status ?? "paid") === "refunded") continue;
+    if ((inv.status ?? "paid") === "refunded" || inv.sale_kind === "opening") continue;
     const t = inside(inv.created_at);
     if (t === null) continue;
     const m = pnlMonthOf(t, tz);

@@ -40,7 +40,8 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
     const byInvoice = new Map<string, InvoiceItem[]>();
     for (const it of items) { const a = byInvoice.get(it.invoice_id) ?? []; a.push(it); byInvoice.set(it.invoice_id, a); }
     return invoices
-      .filter((i) => phoneDigits(i.customer_phone ?? "") === ownerKey)
+      // الدينُ القديم (0271) ليس شراءً — لا يظهر بمشتريات الحيوان ولا بمجموعها.
+      .filter((i) => phoneDigits(i.customer_phone ?? "") === ownerKey && i.sale_kind !== "opening")
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map((inv) => ({ inv, names: (byInvoice.get(inv.id) ?? []).map((x) => x.name) }));
   }, [invoices, items, ownerKey]);

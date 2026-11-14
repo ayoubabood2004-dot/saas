@@ -32,6 +32,11 @@ let DebtorPetsLazy = loadDebtorPets();
 const loadUsdDebt = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdDebtActions })), ["usd"]);
 let UsdDebtLazy = loadUsdDebt();
 const isUsd = (inv: Invoice) => inv.currency === "USD";
+/* الديونُ القديمة (0271): زرُّ «دين قديم» للمدير وشارةُ «دين سابق» — قطعةٌ كسولة بنطاقها odebt (retail حارٌّ والباردُ ممتلئ). */
+const loadOldDebtBtn = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtButton })), ["odebt"]);
+let OldDebtBtnLazy = loadOldDebtBtn();
+const loadOldDebtNote = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
+let OldDebtNoteLazy = loadOldDebtNote();
 /** باقي فاتورة الدولار بالسنت — الأرقامُ بمنزلتين فالتقريبُ يرجعها صحيحة. */
 const usdDueCents = (inv: Invoice) => Math.max(0, Math.round(((inv.total_usd ?? 0) - (inv.paid_usd ?? 0)) * 100));
 /** «$600» / «$1,234.50» — عرضٌ وحده؛ الدولارُ لا يُجمع على دينارٍ أبداً (الخطّة §١٠). */
@@ -67,6 +72,7 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
   const { t, i18n } = useTranslation();
   const [q, setQ] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [, setLazyTick] = useState(0);
 
   // COD orders still on the road are NOT customer debts — that money is آجل
   // (arrives in full on delivery, or the goods come back). It gets its own
@@ -253,9 +259,15 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
         </button>
       )}
 
-      <div className="relative">
-        <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-        <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("retail.searchDebts", "ابحث باسم العميل أو الهاتف…")} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("retail.searchDebts", "ابحث باسم العميل أو الهاتف…")} />
+        </div>
+        {/* «دين قديم» (0271): للمدير وحده — القطعةُ تُخفي نفسَها لغيره، والقاعدةُ ترفضه أيضاً. */}
+        <LoadBoundary scope="odebt" onRetry={() => { OldDebtBtnLazy = loadOldDebtBtn(); setLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}><OldDebtBtnLazy onAdded={onChanged} /></Suspense>
+        </LoadBoundary>
       </div>
 
       {filtered.length === 0 ? (
@@ -377,6 +389,11 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
                       {status === "unpaid" ? t("retail.statusUnpaid", "آجل بالكامل") : t("retail.statusPartial", "دفع جزئي")}
                     </Badge>
                   </p>
+                  {inv.sale_kind === "opening" && (
+                    <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setLazyTick((n) => n + 1); }}>
+                      <Suspense fallback={null}><OldDebtNoteLazy invoice={inv} /></Suspense>
+                    </LoadBoundary>
+                  )}
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-subtle">
                     <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(inv.created_at, i18n.language)}</span>
                     <span>{t("retail.grandTotal", "إجمالي الفاتورة")}: <span className="font-semibold tabular-nums text-ink">{amt(inv.total, inv.total_usd)}</span></span>
