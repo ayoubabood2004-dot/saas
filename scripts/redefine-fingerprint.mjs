@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -65,6 +65,8 @@ export const MANIFEST = [
   ["clinic_drugs_list", 0, "public.clinic_drugs_list()", "0239", "0268"],
   // 0269: الجرعةُ بيع — القائمةُ تقول سعرَ الجرعة وربطَها بالمخزن.
   ["clinic_drugs_list", 0, "public.clinic_drugs_list()", "0268", "0269"],
+  // 0270: ملفُّ الزبون — الملفّاتُ مصدرٌ ثالث بدليل الزبائن، والدينُ القديم (opening) ليس شراءً.
+  ["customer_search", 6, "public.customer_search(text,text,text,integer,integer,integer)", "0232", "0270"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

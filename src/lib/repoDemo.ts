@@ -4967,7 +4967,7 @@ const demoRepo = {
   /** مرآةُ customer_search (0232): نفسُ الخطوات بـbuildCustomerDirectory، بمفتاح دولة العيادة. */
   async findCustomers(q: string | null, opts?: CustomerSearchOpts): Promise<CustomerPage> {
     const db = loadDB();
-    return buildCustomerDirectory({ invoices: db.invoices ?? [], items: db.invoiceItems ?? [], pets: db.pets ?? [] }, getDialCode(), { q, ...(opts ?? {}) });
+    return buildCustomerDirectory({ invoices: db.invoices ?? [], items: db.invoiceItems ?? [], pets: db.pets ?? [], profiles: db.customerProfiles ?? [] }, getDialCode(), { q, ...(opts ?? {}) });
   },
 
   /* ---- Cash expenses / withdrawals ledger ---- */

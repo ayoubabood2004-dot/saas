@@ -13,13 +13,15 @@
 import type { CustomerFilter, CustomerHit, CustomerPage, CustomerPet, CustomerSort, CustomerTopItem, Species } from "@/types";
 import { btrimSpaces, custKey, custNameKey, custNorm, custPhoneKey, readCustomerQuery } from "./customerKey";
 
-export interface DirInvoice { id: string; customer_name?: string | null; customer_phone?: string | null; status?: string | null; created_at: string }
+export interface DirInvoice { id: string; customer_name?: string | null; customer_phone?: string | null; status?: string | null; created_at: string; sale_kind?: string | null }
 export interface DirItem { id: string; invoice_id: string; product_id?: string | null; name?: string | null; qty: number | string }
 export interface DirPet {
   id: string; name?: string | null; owner_name?: string | null; owner_phone?: string | null;
   species?: string | null; deceased?: boolean | null; shared_with_clinic?: boolean | null; created_at?: string | null;
 }
-export interface DirSource { invoices: readonly DirInvoice[]; items?: readonly DirItem[]; pets: readonly DirPet[] }
+/** ملفُّ زبونٍ يدويّ (0270، customer_profiles): مصدرٌ ثالث — يُبحث عنه بلا شراء، واسمُه ورقمُه يغلبان. */
+export interface DirProfile { id: string; name?: string | null; phone?: string | null; created_at: string }
+export interface DirSource { invoices: readonly DirInvoice[]; items?: readonly DirItem[]; pets: readonly DirPet[]; profiles?: readonly DirProfile[] }
 export interface DirOptions { q?: string | null; sort?: CustomerSort; filter?: CustomerFilter; limit?: number; offset?: number; top?: number }
 
 /** ترتيبُ `collate "C"`: بايتاتُ UTF-8 = نقاطُ الترميز (لا وحداتُ UTF-16). */
@@ -45,7 +47,7 @@ const clamp = (v: number | undefined, lo: number, hi: number, d: number) =>
 const nonBlank = (s: string | null | undefined) => btrimSpaces(s ?? "") !== "";
 
 interface Row {
-  kind: "inv" | "pet"; nm: string | null; ph: string | null; nBuy: number; nRef: number;
+  kind: "inv" | "pet" | "cust"; nm: string | null; ph: string | null; nBuy: number; nRef: number;
   fAt: string | null; lAt: string | null; seen: string | null;
   petId: string | null; petName: string | null; species: string | null; dead: boolean;
   pk: string | null; nk: string | null; gkey: string | null;
@@ -69,16 +71,18 @@ export function buildCustomerDirectory(src: DirSource, dial: string | null | und
     const nm = i.customer_name ?? null, ph = i.customer_phone ?? null;
     const k = JSON.stringify([nm, ph]);
     const refunded = (i.status ?? "paid") === "refunded";
-    const t = ms(i.created_at);
-    const r = pairs.get(k);
+    // 0270: الدينُ القديم (opening) ليس شراءً — لا يُعدّ ولا يحرّك تاريخَي الشراء، والزبونُ يبقى بمجموعته.
+    const opening = (i.sale_kind ?? "retail") === "opening";
+    const t = opening ? null : ms(i.created_at);
+    let r = pairs.get(k);
     if (!r) {
-      pairs.set(k, { kind: "inv", nm, ph, nBuy: refunded ? 0 : 1, nRef: refunded ? 1 : 0, fAt: i.created_at, lAt: i.created_at, seen: i.created_at,
-        petId: null, petName: null, species: null, dead: false, pk: null, nk: null, gkey: null });
-    } else {
-      if (refunded) r.nRef++; else r.nBuy++;
-      if (t !== null && (ms(r.fAt) === null || t < (ms(r.fAt) as number))) r.fAt = i.created_at;
-      if (t !== null && (ms(r.lAt) === null || t > (ms(r.lAt) as number))) { r.lAt = i.created_at; r.seen = i.created_at; }
+      r = { kind: "inv", nm, ph, nBuy: 0, nRef: 0, fAt: null, lAt: null, seen: null,
+        petId: null, petName: null, species: null, dead: false, pk: null, nk: null, gkey: null };
+      pairs.set(k, r);
     }
+    if (refunded) r.nRef++; else if (!opening) r.nBuy++;
+    if (t !== null && (ms(r.fAt) === null || t < (ms(r.fAt) as number))) r.fAt = i.created_at;
+    if (t !== null && (ms(r.lAt) === null || t > (ms(r.lAt) as number))) { r.lAt = i.created_at; r.seen = i.created_at; }
   }
   /* ٢) حيواناتُ العيادة (shared_with_clinic ليس false). */
   const rows: Row[] = [...pairs.values()];
@@ -86,6 +90,11 @@ export function buildCustomerDirectory(src: DirSource, dial: string | null | und
     if (p.shared_with_clinic === false) continue;
     rows.push({ kind: "pet", nm: p.owner_name ?? null, ph: p.owner_phone ?? null, nBuy: 0, nRef: 0, fAt: null, lAt: null, seen: p.created_at ?? null,
       petId: p.id, petName: p.name ?? null, species: p.species ?? null, dead: !!p.deceased, pk: null, nk: null, gkey: null });
+  }
+  /* ٢ب) ملفّاتُ الزبائن (0270). */
+  for (const c of src.profiles ?? []) {
+    rows.push({ kind: "cust", nm: c.name ?? null, ph: c.phone ?? null, nBuy: 0, nRef: 0, fAt: null, lAt: null, seen: c.created_at,
+      petId: null, petName: null, species: null, dead: false, pk: null, nk: null, gkey: null });
   }
   for (const r of rows) {
     r.pk = custPhoneKey(r.ph, dial);
@@ -117,12 +126,13 @@ export function buildCustomerDirectory(src: DirSource, dial: string | null | und
   }
 
   /* ٤) التجميع. */
-  type Agg = CustomerHit & { rk: number; lastSeen: number | null };
+  type Agg = CustomerHit & { rk: number; lastSeen: number | null; hasProfile: boolean };
   const aggs: Agg[] = [];
   for (const [gkey, g] of groups) {
     if (g.rk === null) continue;
+    // الملفُّ أوّلاً (ما كتبته العيادةُ بيدها يغلب)، ثمّ الأحدث.
     const byRecent = (field: "nm" | "ph") => (a: Row, b: Row) =>
-      descNullsLast(ms(a.seen), ms(b.seen)) || cmpC(btrimSpaces(a[field]), btrimSpaces(b[field]));
+      (a.kind === "cust" ? 0 : 1) - (b.kind === "cust" ? 0 : 1) || descNullsLast(ms(a.seen), ms(b.seen)) || cmpC(btrimSpaces(a[field]), btrimSpaces(b[field]));
     const named = g.rows.filter((r) => r.nk !== null).sort(byRecent("nm"));
     const phoned = g.rows.filter((r) => r.pk !== null).sort(byRecent("ph"));
     const petRows = g.rows.filter((r) => r.kind === "pet").sort((a, b) =>
@@ -148,13 +158,14 @@ export function buildCustomerDirectory(src: DirSource, dial: string | null | und
       petsDeceased: pets.filter((p) => p.deceased).length,
       matched: g.rk <= 2 ? "phone" : g.rk <= 4 ? "name" : g.rk === 5 ? "pet" : null,
       top: null,
+      hasProfile: g.rows.some((r) => r.kind === "cust"),
       rk: g.rk,
       lastSeen: seenTimes.length ? Math.max(...seenTimes) : null,
     });
   }
 
   /* ٥) الفلتر والترتيب والصفحة. */
-  const kept = aggs.filter((a) => filter === "all" || (a.purchases >= 1 && a.petsAlive + a.petsDeceased === 0));
+  const kept = aggs.filter((a) => filter === "all" || ((a.purchases >= 1 || a.hasProfile) && a.petsAlive + a.petsDeceased === 0));
   kept.sort((a, b) =>
     (sort === "purchases" ? b.purchases - a.purchases : 0)
     || (sort === "match" && q.mode !== "list" ? a.rk - b.rk : 0)
@@ -200,6 +211,6 @@ export function buildCustomerDirectory(src: DirSource, dial: string | null | und
     }
   }
 
-  const out: CustomerHit[] = page.map(({ rk: _rk, lastSeen: _ls, ...hit }) => hit);
+  const out: CustomerHit[] = page.map(({ rk: _rk, lastSeen: _ls, hasProfile: _hp, ...hit }) => hit);
   return { rows: out, total: out.length ? kept.length : null };
 }

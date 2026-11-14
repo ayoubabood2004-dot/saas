@@ -522,7 +522,7 @@ export function PetPassport() {
           /* أربعة أعمدة: الحيوان · المالك · البيانات · اللقاحات (عمود كامل بأقصى اليسار) */
           <div className="grid lg:grid-cols-2 xl:grid-cols-4">
             <div className="p-4 sm:p-5"><ProfileHead pet={pet} canEdit={canEditClinical} onPhoto={onPhoto} onRenamed={reload} /></div>
-            <div className="border-t border-line p-4 sm:p-5 lg:border-t-0 lg:border-s"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>
+            <div className="border-t border-line p-4 sm:p-5 lg:border-t-0 lg:border-s"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare showFile={!isOwner} /></div>
             <div className="border-t border-line p-4 sm:p-5 xl:border-t-0 xl:border-s"><IdentityFactsCard pet={pet} canEdit={canEditClinical} onChanged={reload} bare /></div>
             <div className="border-t border-line lg:border-s xl:border-t-0">
               <VaccineStatusCard vaccines={vaccines} onOpen={() => { playTap(); setTab("vaccines"); }}

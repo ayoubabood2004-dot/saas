@@ -29,6 +29,7 @@ const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login
 const Dashboard = page(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })), ["onb"]);
 const OwnerDashboard = page(() => import("@/pages/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
 const PetPassport = page(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })), ["dsht"]);
+const CustomerFile = page(() => import("@/pages/CustomerFile").then((m) => ({ default: m.CustomerFile })), ["cfile"]);
 const VisitPage = page(() => import("@/pages/VisitPage"), ["vbk"]);
 const ScanChart = page(() => import("@/pages/ScanChart").then((m) => ({ default: m.ScanChart })));
 const BookingWizard = page(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
@@ -331,6 +332,7 @@ function Shell() {
             <Route path="/join" element={<JoinClinic />} />
             <Route path="/" element={<HomeRoute />} />
             <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
+            <Route path="/customer/:key" element={<Protected><ClinicOnly><CustomerFile /></ClinicOnly></Protected>} />
             <Route path="/pet/:petId/visit/:visitId" element={<Protected><VisitPage /></Protected>} />
             <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />

@@ -2,6 +2,7 @@ import { noteScan } from "@/lib/scanStats";
 import { Component, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
@@ -4173,6 +4174,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <CustomerDropdown cs={cs} onPick={pickCustomer} />
           </div>
           {picked && <CustomerPetsStrip hit={picked} attached={new Set(salePets.map((p) => p.id).filter((id): id is string => !!id))} onAttach={attachHitPet} />}
+          {/* 0270: ملفُّ الزبون — والسلّةُ فارغة وحدها: بيعةٌ بنصّها لا تُترك برابط. */}
+          {picked && cart.length === 0 && (
+            <Link to={`/customer/${encodeURIComponent(picked.key)}`} data-custfile
+              className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-700 dark:text-brand-300">
+              <User size={12} /> {t("retail.custFile")}
+            </Link>
+          )}
           {/* بالسطر النحيف: سطرُه الخاصّ تحت الحقول لا عمودٌ خامس — العمودُ كان يأخذ عرضَه كاملاً
               قبل الحقلين فيُعصران حرفين أو ثلاثة على شاشة لابتوب (قاسته المراجعة) لحظةَ الكتابة. */}
           {customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">{custClearBtn("slim")}</div>}
