@@ -120,6 +120,10 @@ const STUB = {
   "@/lib/consumptionApi": "export const consumptionApi = { recipeSummary: async () => ({}) };",
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
+  /* نطاقُ rpct يُطلب قبل جملة «مادّةُ الدولار بالراجع» (ensureOwned) — بلا قاموس هنا. */
+  "@/i18n": "export const ensureOwned = async () => {}; export const ensureDictionary = async () => {};",
+  /* سلّةُ «بيع بالدولار» (قطعةٌ كسولة): تُعدّ فتحاتُها وحدها. */
+  "@/components/usd/Usd": "export const UsdSaleSheet = (p) => { if (p.open) globalThis.__usdOpen = p.first?.id ?? '?'; return null; };",
   /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
   "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
     export const subscribeNeg = () => () => {}; export const refreshNeg = async () => null; export const activeNow = () => false; export const liftable = () => false;
@@ -287,6 +291,25 @@ async function run(M, RP, c) {
     S.end();
   }
 
+  /* ب٣) مادّةُ الدولار و«راجع»: كان يفتح سلّةَ «بيع بالدولار» (فحصُ الدولار سبق الراجع) والكاشيرُ يقصد إرجاعاً */
+  {
+    const PU = PRD({ id: "pU", name: "علف مستورد", purchase_price: 0, sell_price: 0, price_currency: "USD", sell_price_usd: 50, purchase_price_usd: 40 });
+    globalThis.__usdOpen = null;
+    const S = await session(M, { products: [PA, PU] });
+    await S.retMode();
+    await S.tap("pU");
+    await new Promise((r) => setTimeout(r, 20)); await flush();
+    const e = S.log.errors.map(([a]) => String(a));
+    c("ب٣ «راجع» ومادّةُ دولار: لا سطرَ ولا سلّةَ بيع — يقول إن ترجيعها على فاتورة الدولار",
+      S.cart().length === 0 && globalThis.__usdOpen == null && e.some((x) => x.includes("rpct.usd") || x.includes("علف مستورد")), J({ cart: S.cart(), e, open: globalThis.__usdOpen }));
+    S.end();
+    const S2 = await session(M, { products: [PA, PU] });
+    await S2.tap("pU");
+    await new Promise((r) => setTimeout(r, 20)); await flush();
+    c("  وبلا «راجع» تفتح سلّتَها كما كانت (لا رسالة)", S2.log.errors.length === 0 && S2.cart().length === 0 && globalThis.__usdOpen === "pU", J({ e: S2.log.errors, open: globalThis.__usdOpen }));
+    S2.end();
+  }
+
   /* ج) النسبةُ على ما بالسلّة وعلى القادم */
   {
     const S = await session(M);
@@ -414,6 +437,7 @@ textChecks(SB0, RS0, check);
 console.log("▸ ك) الطفرات");
 const swap = (src, from, to) => { if (!src.includes(from)) throw new Error(`نصُّ الطفرة غائب: ${from.slice(0, 70)}`); return src.replace(from, to); };
 const MUTANTS = [
+  ["«راجع» يفتح سلّةَ الدولار", "sb", "    if (retMode && !opt?.sale) {\n      playWarning();\n      void Promise.all([import(\"@/components/retail/RetPct\")", "    if (false) {\n      playWarning();\n      void Promise.all([import(\"@/components/retail/RetPct\")"],
   ["السعرُ الواحد يتجاهل النسبة", "sb", "  return p === 100 ? l.unit_price : Math.round((Math.round(l.unit_price * 100) * p) / 100) / 100;", "  return l.unit_price;"],
   ["المجموعُ بالسعر الخامّ", "sb", "const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);", "const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_price, 0);"],
   ["الإرجاعُ الخالص يرسل السعرَ الخامّ", "sb", "qty: l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,\n          stock_qty,", "qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,\n          stock_qty,"],

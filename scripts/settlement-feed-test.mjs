@@ -82,6 +82,26 @@ check("فرقُ الصرف لا يصير تسديداً ثالثاً: سطران
   fxLegs.length === 2 && fxLegs[0].amount === 588000 && fxLegs[1].amount === 864000, fxLegs.map((l) => l.amount));
 check("  و«المتبقّي بعده» بالحصص وحدها: ٨٧٠٬٠٠٠ ثمّ صفر", fxLegs[0].remainingAfter === 870000 && fxLegs[1].remainingAfter === 0,
   fxLegs.map((l) => l.remainingAfter));
+// فاتورةُ الدولار: «المتبقّي بعده» بالدولار (دينارُ يوم البيع يبدو أصغرَ كلّما صعد الدولار)، وما سدّدته الدفعةُ بالدولار.
+const usdP = inv("usd-p", { ...usdB, id: "usd-p", total_usd: 1000, paid_usd: 1000 });
+const usdRows = m.settlementsOf(usdP, [], []);
+check("فاتورةُ الدولار: الدفعتان ٤٠٠$ و٦٠٠$، والباقي بعدهما ٦٠٠$ ثمّ صفر (بالسنت)",
+  usdRows[0].usd === 40000 && usdRows[1].usd === 60000 && usdRows[0].remainingAfterUsd === 60000 && usdRows[1].remainingAfterUsd === 0,
+  usdRows.map((l) => [l.usd, l.remainingAfterUsd]));
+// تسديدٌ أُلغي: ساقُ الإلغاء بلا usd — دولارُها سالبُ ما ألغته، فالباقي بعد الأوّل ١٬٠٠٠$ لا ٦٠٠$.
+const usdV = inv("usd-v", {
+  total: 1450000, amount_paid: 0, currency: "USD", total_usd: 1000, paid_usd: 0, created_at: "2026-10-01T10:00:00.000Z",
+  payment_details: [
+    { method: "cash", amount: 580000, at: "2026-10-03T10:00:00.000Z", usd: 400, rate: 1470, settlement_id: "s1" },
+    { method: "cash", amount: 8000, at: "2026-10-03T10:00:00.000Z", kind: "fx", settlement_id: "s1" },
+    { method: "cash", amount: -580000, at: "2026-10-04T10:00:00.000Z", reversal_of: "s1" },
+    { method: "cash", amount: -8000, at: "2026-10-04T10:00:00.000Z", kind: "fx", reversal_of: "s1" },
+  ],
+});
+const vRows = m.settlementsOf(usdV, [], []);
+check("  وتسديدٌ أُلغي: بعده باقٍ ٦٠٠$ (قبل إلغائه)، والإلغاءُ ليس سطراً، والباقي الآن ١٬٠٠٠$",
+  vRows.length === 1 && vRows[0].remainingAfterUsd === 60000, vRows.map((l) => [l.usd, l.remainingAfterUsd]));
+check("  وفاتورةُ الدينار بلا دولار (null)", m.settlementsOf(debt, [], [])[0].usd === null && m.settlementsOf(debt, [], [])[0].remainingAfterUsd === null);
 const over = inv("over", { total: 100, amount_paid: 100, payment_details: [{ method: "cash", amount: 40, at: "2026-10-11T10:00:00.000Z" }] });
 check("المتبقّي لا ينزل تحت الصفر", m.settlementsOf(over, [], [])[0].remainingAfter === 0, m.settlementsOf(over, [], []));
 

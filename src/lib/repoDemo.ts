@@ -921,11 +921,19 @@ function decisionLocked(status: string): Error {
  *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
 /** مرآةُ ما يجري على كلّ كتابةٍ لصفّ مادة منذ 0259: محفّزُ المستويات أوّلاً (BEFORE)، ثمّ قيدُ الشكل — كترتيب الخادم.
  *  `skipId` التوأمُ الذي يُطوى (`doctorvet.codes_from`). */
-/** 0264 — مرآةُ قيد products_usd_ok ومحفّز products_usd_store: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوضٍ ولا كراتين
- *  (23514)؛ وتحويلُها للدولار يُنزلها من المتجر، ونشرُ مادّةٍ دولارية يُرفض usd_store. يرجع store_visible بعد الحكم. */
+/** 0264 — مرآةُ قيد products_usd_ok ومحفّز products_usd_store: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوض (23514) — والكراتينُ
+ *  مسموحةٌ منذ 0272 بأسعارٍ بعملتها؛ وتحويلُها للدولار يُنزلها من المتجر، ونشرُ مادّةٍ دولارية يُرفض usd_store. يرجع store_visible.
+ *  ومرآةُ products_pack_currency_guard (0272): تبديلُ العملة وسعرُ كارتونٍ مكتوبٌ كما هو ⇒ pack_price_currency. */
 function usdProductGuard(next: Product, prev: Product | null): boolean | undefined {
+  if (prev && (prev.price_currency ?? "IQD") !== (next.price_currency ?? "IQD") && Array.isArray(next.packs) && Array.isArray(prev.packs)) {
+    const stale = next.packs.find((k) => {
+      const o = prev.packs!.find((x) => x.id === k.id);
+      return !!o && ((k.sell_price != null && k.sell_price === o.sell_price) || (k.purchase_price != null && k.purchase_price === o.purchase_price));
+    });
+    if (stale) throw demoHint("pack_price_currency", `سعر «${stale.name}» مكتوب بالعملة القديمة — امسحه (يصير تلقائي) أو اكتبه بالعملة الجديدة، وبعدين بدّل العملة.`);
+  }
   if (next.price_currency !== "USD") return next.store_visible;
-  if (next.sold_by_weight || next.has_sub_unit || next.pooled || (Array.isArray(next.packs) && next.packs.length > 0)) {
+  if (next.sold_by_weight || next.has_sub_unit || next.pooled) {
     throw Object.assign(new Error('new row for relation "products" violates check constraint "products_usd_ok"'), { code: "23514" });
   }
   if (!next.store_visible) return next.store_visible;
@@ -4073,6 +4081,7 @@ const demoRepo = {
     if (!p) throw new Error("product_not_found");
     const s = (db.companySections ?? []).find((x) => x.id === sectionId);
     if (!s) throw new Error("section_not_found");
+    usdProductGuard({ ...p, pooled: true, section_id: sectionId } as Product, p);   // 0264: قيدُ products_usd_ok — مادّةُ الدولار لا تُجمَّع بحوض
     /* 0253: الرصيدُ ينتقل للحوض كلُّه ولو سالباً — round(v_pool + stock, 3)، فالمجموعُ (الحوضُ + الصفّ) قبل الطيّ هو بعده. الحصرُ
      * (max(0, stock)) كان يمحو العجز: مادّةٌ عند −٢ على حوضٍ ٥ ⇒ الحوضُ ٥ والصفُّ صفر (+٢ لم تكن)، والآن ٣. */
     s.pooled_stock = Math.round(((s.pooled_stock ?? 0) + (p.stock || 0)) * 1000) / 1000;
@@ -4550,6 +4559,13 @@ const demoRepo = {
 
     const oldTotal = Number(inv.total) || 0;
     const before = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+    /* 0272 (invoice_items_usd_door): مادّةُ الدولار تعود لفاتورة الدينار إن كانت بسطورها قبل التعديل (حُوّلت للدولار بعد بيعها) — ومادّةُ
+     * دولارٍ جديدة تُرفض. كان التعديلُ يُضيفها بسعر دينارها (صفرٌ لمادّةٍ أُنشئت بالدولار) — ثغرةُ تعديل طلب التوصيل. */
+    const hadProd = new Set(before.map((b) => b.product_id).filter(Boolean) as string[]);
+    for (const l of clean) {
+      const p = l.product_id ? (db.products ?? []).find((x) => x.id === l.product_id) : undefined;
+      if (p?.price_currency === "USD" && !hadProd.has(p.id)) throw usdErr("usd_product_in_iqd");
+    }
     // دفعةٌ واحدة للتعديل كلِّه: ردُّ السطور القديمة وربطُ الجديدة بـat_us نفسِه (كمعاملته بالخادم).
     const now = cons.opStamp(db);
     // 0252: خدمةُ كلّ سطرٍ قبل حذفه — السطرُ المعاد يرثها بمعرّفه، وإلا ضاع ما يربطه بوصفته.
@@ -4834,6 +4850,7 @@ const demoRepo = {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) return undefined;
+    usdInvoiceGuard(inv);   // 0264: سِيَقُ فاتورة الدولار لا تُكتب إلا من بابها (invoices_usd_door) — المرآةُ كانت تكتبها
     if (inv.status === "refunded") throw new Error("invoice refunded");
     const clean = legs.filter((l) => l && l.method && Number(l.amount) > 0);
     if (clean.length) {

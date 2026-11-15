@@ -160,6 +160,9 @@ check("مادّةُ الدولار بفاتورة دينار تُرفض، وال
 check("  وتسديدُ الدينار والإرجاعُ والحذفُ والتعديلُ العاديّ على فاتورة الدولار تُرفض",
   await errOf(() => repo.settleInvoice(A.id, 1000, "cash")) === "usd_door" && await errOf(() => repo.refundInvoice(A.id)) === "usd_door"
   && await errOf(() => repo.deleteInvoice(A.id)) === "usd_door" && await errOf(() => repo.editInvoiceLines(A.id, [])) === "usd_door");
+// جردُ ثغرات الدولار (١٦/١١): ثلاثةُ أبوابٍ بالخادم كانت المرآةُ بلاها.
+check("  وتعديلُ سِيَق فاتورة الدولار (تقسيمُ الدفعة) يُرفض usd_door كالخادم — المرآةُ كانت تكتبها",
+  await errOf(() => repo.setInvoicePaymentDetails(A.id, [{ method: "card", amount: 1000 }])) === "usd_door");
 
 /* ── التسديد ────────────────────────────────────────────────────────────── */
 console.log("▸ التسديد بالدينار: الحصّةُ بنسبة الفاتورة، والفرقُ «فرق صرف»");
@@ -253,6 +256,36 @@ await repo.setStoreVisible([pub.id], true);
 const conv = await repo.updateProduct(pub.id, { price_currency: "USD", sell_price_usd: 1.5 });
 check("  وتحويلُ منشورةٍ للدولار يُنزلها من المتجر، ونشرُها بعدها يُرفض usd_store",
   conv.store_visible === false && await errOf(() => repo.setStoreVisible([pub.id], true)) === "usd_store");
+
+const sec = await repo.createCompanySection({ company_id: "co-usd-t", name: "قسم الفحص", pooled_stock: 0 });
+check("  وتجميعُ مادّة دولارٍ بحوضٍ يُرفض (products_usd_ok) كالخادم — المرآةُ كانت تجمّعها",
+  await errOf(() => repo.poolProduct(conv.id, sec.id)).then((m) => /products_usd_ok/.test(m)));
+const iqdInv = (await repo.listInvoices({ from: "2000-01-01", to: "2100-01-01" })).find((i) => i.currency !== "USD");
+check("  وحذفُ فاتورة دينار من باب الدولار يُرفض usd_not_usd (المرآةُ كانت تحذفها)",
+  !!iqdInv && await errOf(() => usdApi.deleteInvoice(iqdInv.id)) === "usd_not_usd", iqdInv?.id);
+
+/* ── كارتونُ الدولار (0272): المرآةُ تبيعه بعلبه وكلفتِه، وتردّ ما يردّه الخادم ─────────────────────────────── */
+console.log("▸ كارتونُ الدولار (0272) بالمرآة");
+const kRate = (await usdApi.state()).rate;   // السعرُ الحاليّ (أقسامٌ قبلنا غيّرته)
+const kmeta = (ref, o = {}) => meta(ref, { fx_rate_id: kRate.id, ...o });
+const ctn = await repo.createProduct({ name: "كارتون USD", barcode: "USD-T-K", stock: 100, purchase_price: 0, sell_price: 0, min_stock: 0,
+  price_currency: "USD", sell_price_usd: 5, purchase_price_usd: 4,
+  packs: [{ id: "u12", name: "كارتون", codes: ["USD-T-K12"], per: 12, purchase_price: null, sell_price: null }] });
+check("مادّةُ دولارٍ بكارتونٍ تُحفظ (القيدُ أُرخي عن الكراتين كالخادم)", ctn.price_currency === "USD" && ctn.packs?.length === 1);
+const K1 = await usdApi.checkout([{ product_id: ctn.id, qty: 2, unit_price_usd: "60", pack_id: "u12", pack_per: 12 }, { product_id: ctn.id, qty: 3, unit_price_usd: "5" }], kmeta("u-k1", { customer_name: "زبون" }));
+const kItems = (await repo.listInvoiceItems(K1.id)).sort((a, b) => Number(b.stock_qty) - Number(a.stock_qty));
+check("  البيعة: كارتونان (٢٤ علبة) وثلاثُ علب ⇒ الرصيدُ ٧٣، والكارتونُ بعلبه واسمِه وكلفتِه ٤ × ١٢ = ٤٨$",
+  (await repo.listProducts()).find((p) => p.id === ctn.id).stock === 73 && kItems[0]?.stock_qty === 24 && kItems[0]?.unit_label === "كارتون"
+  && kItems[0]?.unit_price_usd === 60 && kItems[0]?.unit_cost_usd === 48 && kItems[1]?.unit_cost_usd === 4,
+  kItems.map((i) => [i.qty, i.stock_qty, i.unit_label, i.unit_price_usd, i.unit_cost_usd]));
+check("  والكارتونُ بلا سعرٍ مرسَل = العلبةُ × العدد (٦٠$)، ومكرّرٌ يُرفض، وعددٌ غير المحفوظ pack_changed",
+  (await usdApi.checkout([{ product_id: ctn.id, qty: 1, pack_id: "u12", pack_per: 12 }], kmeta("u-k2", { customer_name: "زبون" }))).total_usd === 60
+  && await errOf(() => usdApi.checkout([{ product_id: ctn.id, qty: 1, pack_id: "u12", pack_per: 12 }, { product_id: ctn.id, qty: 1, pack_id: "u12", pack_per: 12 }], kmeta("u-k3"))) === "usd_duplicate_line"
+  && await errOf(() => usdApi.checkout([{ product_id: ctn.id, qty: 1, pack_id: "u12", pack_per: 24 }], kmeta("u-k4"))) === "pack_changed");
+const wr = await repo.createProduct({ name: "مكتوب USD", barcode: "USD-T-W", stock: 10, purchase_price: 0, sell_price: 0, min_stock: 0,
+  price_currency: "USD", sell_price_usd: 2, packs: [{ id: "w10", name: "شدّة", codes: ["USD-T-W10"], per: 10, purchase_price: null, sell_price: 18.5 }] });
+check("وتبديلُ العملة وسعرُ الكارتون مكتوبٌ كما هو ⇒ pack_price_currency (كالخادم)",
+  await errOf(() => repo.updateProduct(wr.id, { price_currency: "IQD", sell_price: 3000 })) === "pack_price_currency");
 
 /* ── هـ) السياج و«القراءة فقط» ─────────────────────────────────────────────── */
 console.log("▸ السياجُ و«القراءة فقط»");

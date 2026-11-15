@@ -1213,6 +1213,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   /** السعرُ بالدولار (0264): مسودّةٌ بيد النموذج (usdProduct.ts)، ولا يُرسل منها شيءٌ حتى تقول القطعةُ إن الميزة مفعّلة. */
   const [usd, setUsd] = useState<UsdDraft>(() => usdDraftOf(null));
   const [usdEnabled, setUsdEnabled] = useState(false);
+  /** تبديلُ العملة يمسح أسعارَ الكارتون **المكتوبة** (تصير تلقائيةً بالعملة الجديدة): ١٨٬٠٠٠ دينار كانت تُقرأ ١٨٬٠٠٠$ بصمت — والخادمُ
+   *  يرفض التبديلَ وسعرٌ مكتوبٌ باقٍ كما هو (pack_price_currency، 0272). المسحُ يُرى بالمحرّر قبل الحفظ (الحسابُ داخل الخانة). */
+  const setUsdKeepPacks = (d: UsdDraft) => {
+    if (usd.on !== d.on) setPkgDraft((pd) => ({ ...pd, packs: pd.packs.map((k) => ({ ...k, purchase_price: "", sell_price: "" })) }));
+    setUsd(d);
+  };
   const [usdShow, setUsdShow] = useState(false);
   const [, setUsdTick] = useState(0);
   /** قاعدةٌ قبل 0259 لا تعرف الأعمدة (واجهةٌ سبقت هجرتها): المحرّرُ يغيب، ولا يُرسل شيء. الصفوفُ السحابية (`select *`) تحمل `packs` منذها. */
@@ -1470,7 +1476,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       return;
     }
     // 0264: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوضٍ ولا كراتين، وبسعر بيعٍ مقروء — القطعةُ تقولها بمكانها.
-    if (usdEnabled && usdDraftProblem(usd, { weight: byWeight, sub: subUnitOn, pooled: f.pooled, packs: pkgDraft.packs.length > 0 })) {
+    if (usdEnabled && usdDraftProblem(usd, { weight: byWeight, sub: subUnitOn, pooled: f.pooled })) {
       playWarning(); setUsdShow(true); return;
     }
     // ومسودّةُ دولارٍ تغيّرت وإعداداتُ الدولار ما وصلت: usdPatch لا يرسل شيئاً — فالحفظُ يُرفض والقطعةُ تقول لماذا (لا «انحفظ» عن سعرٍ ضاع).
@@ -2050,14 +2056,15 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         <div className="space-y-3">
           <LoadBoundary scope="usd-fields" onRetry={() => { UsdFieldsLazy = loadUsdFields(); setUsdTick((n) => n + 1); }}>
             <Suspense fallback={null}>
-              <UsdFieldsLazy value={usd} onChange={setUsd} showProblems={usdShow} onEnabled={setUsdEnabled}
-                blockers={{ weight: byWeight, sub: !!f.has_sub_unit, pooled: !!f.pooled, packs: pkgDraft.packs.length > 0 }} />
+              <UsdFieldsLazy value={usd} onChange={setUsdKeepPacks} showProblems={usdShow} onEnabled={setUsdEnabled}
+                blockers={{ weight: byWeight, sub: !!f.has_sub_unit, pooled: !!f.pooled }} />
             </Suspense>
           </LoadBoundary>
           {/* مادّةُ الدولار: سعرا الدينار لا يُقرآن للبيع — يغيبان، وأسعارُها بحقول الدولار أعلاه. */}
           {!(usd.on && usdEnabled) && priceFields}
-          {/* متوسّطُ الكلفة (0255) بجانب سعر الشراء: لمادّةٍ قائمة ولمن يرى الكلفة — لا يُحمَّل لغيره. */}
-          {product && can("viewProfits") && !restricted && <AvgCostSlot product={product} onChanged={onChanged ?? onSaved} />}
+          {/* متوسّطُ الكلفة (0255) بجانب سعر الشراء: لمادّةٍ قائمة ولمن يرى الكلفة — لا يُحمَّل لغيره. ولا لمادّة الدولار: متوسّطُها
+              بالدينار (أو «الكلفة = سعر الشراء» عن سعرٍ دينارٍ مخفيّ) وكلفةُ بيعها سعرُ الشراء بالدولار — و«صحّح المتوسّط» كان يكتب ديناراً. */}
+          {product && can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot product={product} onChanged={onChanged ?? onSaved} />}
           {!(usd.on && usdEnabled) && profitStrip}
           {pooledToggle}
           <div className={cn("grid gap-3", pooledOn ? "grid-cols-1" : "grid-cols-2")}>
@@ -2128,8 +2135,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
           {/* التعبئة (0259): الكارتون ← العلبة ← المغلّف، كلٌّ بباركوده وسعرَيه — والفارغُ محسوبٌ من العلبة. */}
           {pkgReady && (
+            /* مادّةُ الدولار (0272): أسعارُ الكارتون بعملة المادّة — الحسابُ من سعرَي العلبة بالدولار وتُعرض «$». */
             <PackagingEditor value={pkgDraft} onChange={setPkgDraft}
-              boxSell={Number(f.sell_price) || 0} boxPurchase={Number(f.purchase_price) || 0}
+              currency={usd.on && usdEnabled ? "USD" : "IQD"}
+              boxSell={usd.on && usdEnabled ? Number(usd.sell) || 0 : Number(f.sell_price) || 0}
+              boxPurchase={usd.on && usdEnabled ? Number(usd.buy) || 0 : Number(f.purchase_price) || 0}
               hasSubUnit={f.has_sub_unit} unitsPerBox={Number(f.units_per_box) || 0} subUnitName={f.sub_unit_name}
               byWeight={byWeight} pooled={f.pooled && !!f.section.trim()} products={allProducts ?? []} selfId={product?.id ?? null} disabled={busy} />
           )}

@@ -60,6 +60,9 @@ interface Ledger {
   due: number;     // outstanding balance (دينار — بلا فواتير الدولار)
   /** 0264: باقي فواتير الدولار بالسنت — يُعرض بجانب الدينار ولا يُجمع عليه. */
   usdDue: number;
+  /** وإجماليُّها ومدفوعُها بالسنت — «إجمالي الفواتير/المدفوع» كانا يتركان فواتيرَ الدولار بصمت (دفترٌ بدينه ٦٠٠$ قال «إجمالي ٠»). */
+  usdTotal: number;
+  usdPaid: number;
   /** للترتيب وحده: الدينارُ + باقي الدولار بقيمة يوم بيعه — «من يحتاج انتباهاً أوّلاً» لا مبلغٌ يُعرض. */
   weight: number;
   oldest: string;  // ISO of the oldest open debt
@@ -148,10 +151,13 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
       const name = displayCustomerName(inv.customer_name);
       // A stable identity: phone wins; else a named customer; else this one anonymous sale.
       const key = phone ? `p:${phoneDigits(phone)}` : name ? `n:${name.toLowerCase()}` : `i:${inv.id}`;
-      const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, usdDue: 0, weight: 0, oldest: inv.created_at };
+      const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, usdDue: 0, usdTotal: 0, usdPaid: 0, weight: 0, oldest: inv.created_at };
       g.debts.push(inv);
-      if (isUsd(inv)) g.usdDue += usdDueCents(inv);
-      else {
+      if (isUsd(inv)) {
+        g.usdDue += usdDueCents(inv);
+        g.usdTotal += Math.round((inv.total_usd ?? 0) * 100);
+        g.usdPaid += Math.round((inv.paid_usd ?? 0) * 100);
+      } else {
         g.total = round2(g.total + inv.total);
         g.paid = round2(g.paid + paidOf(inv));
         g.due = round2(g.due + dueOf(inv));
@@ -361,8 +367,8 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
           </div>
         </div>
         <div className="grid grid-cols-3 divide-x divide-line rtl:divide-x-reverse">
-          <Stat label={t("retail.grandTotalAll", "إجمالي الفواتير")} value={money(ledger.total)} />
-          <Stat label={t("retail.paidSoFar", "المدفوع")} value={money(ledger.paid)} tone="success" />
+          <Stat label={t("retail.grandTotalAll", "إجمالي الفواتير")} value={money(ledger.total)} usd={ledger.usdTotal} dinar={ledger.debts.some((i) => !isUsd(i))} />
+          <Stat label={t("retail.paidSoFar", "المدفوع")} value={money(ledger.paid)} usd={ledger.usdPaid} dinar={ledger.debts.some((i) => !isUsd(i))} tone="success" />
           <Stat label={t("retail.openDebts", "ديون مفتوحة")} value={formatNum(debts.length)} />
         </div>
       </div>
@@ -431,10 +437,12 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "success" }) {
+/** `usd` (سنتات) سطرٌ بجانب الدينار لا يُجمع عليه، والدينارُ يُخفى لدفترٍ كلُّه بالدولار (`dinar` false). */
+function Stat({ label, value, tone, usd, dinar = true }: { label: string; value: string; tone?: "success"; usd?: number; dinar?: boolean }) {
   return (
     <div className="px-3 py-2.5 text-center">
-      <p className={cn("font-display text-base font-bold tabular-nums", tone === "success" ? "text-success-600" : "text-ink")}>{value}</p>
+      {(dinar || !usd) && <p className={cn("font-display text-base font-bold tabular-nums", tone === "success" ? "text-success-600" : "text-ink")}>{value}</p>}
+      {!!usd && <p className="font-display text-base font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-stat>{usd$(usd)}</p>}
       <p className="mt-0.5 text-2xs text-ink-subtle">{label}</p>
     </div>
   );

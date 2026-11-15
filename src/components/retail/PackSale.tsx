@@ -10,7 +10,6 @@ import i18n from "i18next";
 export type PackSay =
   | { kind: "notReady"; name: string; pack: string; per: number; unit: string }
   | { kind: "ret"; name: string; level: string; unit: string }
-  | { kind: "usd"; name: string; pack: string }
   | { kind: "short"; name: string; pack: string; per: number; unit: string; stock: string }
   | { kind: "shortStale"; name: string; pack: string; per: number; unit: string; stock: string }
   | { kind: "changed"; name: string; pack: string }
@@ -25,7 +24,6 @@ export function packSay(s: PackSay): string {
   switch (s.kind) {
     case "notReady": return i18n.t("pks.notReady", { name: s.name, pack: s.pack, n: s.per, unit: s.unit });
     case "ret": return i18n.t("pks.ret", { name: s.name, level: s.level, unit: s.unit });
-    case "usd": return i18n.t("pks.usd", { name: s.name, pack: s.pack });
     case "short": return i18n.t("pks.short", { name: s.name, pack: s.pack, n: s.per, unit: s.unit, stock: s.stock });
     case "shortStale": return i18n.t("pks.shortStale", { name: s.name, pack: s.pack, n: s.per, unit: s.unit, stock: s.stock });
     case "changed": return i18n.t("pks.changed", { name: s.name, pack: s.pack });

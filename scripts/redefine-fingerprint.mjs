@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -79,6 +79,9 @@ export const MANIFEST = [
   ["platform_pulse", 0, "public.platform_pulse()", "0151", "0271"],
   ["admin_clinic_volumes", 1, "public.admin_clinic_volumes(integer)", "0123", "0271"],
   ["admin_market_monthly", 1, "public.admin_market_monthly(integer)", "0123", "0271"],
+  // 0272: كارتونُ الدولار — البيعُ بالدولار يعرف سطرَ الكارتون، وبابُ الأسطر يمرّر إعادةَ ما حُذف وحدها (ثغرةُ تعديل الطلب).
+  ["usd_checkout", 2, "public.usd_checkout(jsonb,jsonb)", "0264", "0272"],
+  ["invoice_items_usd_door", 0, "public.invoice_items_usd_door()", "0264", "0272"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

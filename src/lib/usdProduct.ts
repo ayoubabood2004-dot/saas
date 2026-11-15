@@ -2,8 +2,8 @@
  * سعرُ المادّة بالدولار بنموذج المادّة (0264) — صِرفٌ يستورده Inventory.tsx ثابتاً (لا نصّ، لا شبكة):
  * المسودّة، وما يمنعها، وما يُرسَل.
  *
- *  • ممنوعٌ على مادّة الدولار بالمرحلة ١ (قيدُ products_usd_ok): الوزنُ والوحدةُ الفرعية والحوضُ والكراتين — حسابُ أسعارٍ
- *    مشتقّة يحتاج تصميمَه بالدولار. النموذجُ يقولها بمكانها قبل أن يرفضها الخادمُ بـ23514.
+ *  • ممنوعٌ على مادّة الدولار (قيدُ products_usd_ok): الوزنُ والوحدةُ الفرعية والحوض — حسابُ أسعارٍ مشتقّة يحتاج تصميمَه بالدولار.
+ *    النموذجُ يقولها بمكانها قبل أن يرفضها الخادمُ بـ23514. والكراتينُ مسموحةٌ منذ 0272: سعرُها بعملة المادّة (الدولار).
  *  • يُرسَل ما تغيّر وحده (كالسعر بالدينار، 0226): نموذجٌ فُتح قبل تعديلٍ من جهازٍ ثانٍ لا يدوسه بحفظ اسم.
  *  • لا يُرسَل شيءٌ والميزةُ مطفأة (`enabled` false): قاعدةٌ قبل 0264 لا تعرف الأعمدة (PGRST204).
  * ========================================================================= */
@@ -11,7 +11,7 @@ import type { Product } from "@/types";
 import { centsOf, usdText } from "./usdMath";
 
 export interface UsdDraft { on: boolean; sell: string; buy: string }
-export interface UsdBlockers { weight: boolean; sub: boolean; pooled: boolean; packs: boolean }
+export interface UsdBlockers { weight: boolean; sub: boolean; pooled: boolean }
 export type UsdDraftProblem = "blocked" | "sell" | "buy";
 type UsdFields = Partial<Pick<Product, "price_currency" | "sell_price_usd" | "purchase_price_usd">>;
 
@@ -24,7 +24,7 @@ export const usdDraftOf = (p?: Product | null): UsdDraft => ({
 /** ما يمنع الحفظ، أو null. سعرُ البيع لازم (بلاه usd_no_price عند البيع)، والشراءُ اختياريّ (كلفةُ صفرٍ تُرى بالربح). */
 export function usdDraftProblem(d: UsdDraft, b: UsdBlockers): UsdDraftProblem | null {
   if (!d.on) return null;
-  if (b.weight || b.sub || b.pooled || b.packs) return "blocked";
+  if (b.weight || b.sub || b.pooled) return "blocked";
   const s = centsOf(d.sell);
   if (s == null || s < 0n) return "sell";
   if (d.buy.trim() !== "") { const c = centsOf(d.buy); if (c == null || c < 0n) return "buy"; }

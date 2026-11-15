@@ -30,6 +30,10 @@ export interface SettlementEntry {
   method: PaymentMethod;
   /** دينُ الفاتورة بعد هذه الدفعة. */
   remainingAfter: number;
+  /** فاتورةُ الدولار (0264): ما سدّدته هذه الدفعةُ وما بقي بعدها **بالدولار** (سنتات) — الدَّينُ بالدولار، و«المتبقّي بعده» بدينار
+   *  يوم البيع كان يبدو أصغرَ كلّما صعد الدولار. null لفاتورة الدينار. */
+  usd: number | null;
+  remainingAfterUsd: number | null;
 }
 export interface InvoiceEntry { kind: "invoice"; key: string; inv: Invoice; at: string }
 /** سطرُ «خصم على الدين» — صفرُ نقد. الملغى لا يُعرض سطراً، ولا الاستهلاكُ (أثرُ مرتجعٍ/تعديل). */
@@ -135,6 +139,17 @@ export function settlementsOf(inv: Invoice, forgiveness: readonly InvoiceForgive
   let after = 0; // مجموعُ ما بعد الساق الحالية (حصصٌ ودفعاتٌ وحدها)
   const tail: number[] = new Array(legs.length).fill(0);
   for (let i = legs.length - 1; i >= 0; i--) { tail[i] = after; if (!isFx(legs[i])) after += Number(legs[i]?.amount) || 0; }
+  /* والدولارُ بالسنت: ساقُ الحصّة تحمل `usd`، وساقُ الإلغاء (`reversal_of`) لا تحمله — دولارُها سالبُ دولار ما ألغته. */
+  const usdInv = inv.currency === "USD";
+  const cents = (v: unknown) => Math.round((Number(v) || 0) * 100);
+  const usdBySet = new Map<string, number>();
+  if (usdInv) for (const l of legs) if (!isFx(l) && l?.settlement_id && !l.reversal_of) usdBySet.set(l.settlement_id, cents(l.usd));
+  const usdOfLeg = (l: PaymentSplit | null | undefined): number =>
+    !usdInv || !l || isFx(l) ? 0 : l.reversal_of ? -(usdBySet.get(l.reversal_of) ?? 0) : cents(l.usd);
+  const usdTail: number[] = new Array(legs.length).fill(0);
+  let usdAfter = 0;
+  for (let i = legs.length - 1; i >= 0; i--) { usdTail[i] = usdAfter; usdAfter += usdOfLeg(legs[i]); }
+  const usdDueNow = usdInv ? Math.max(0, cents(inv.total_usd) - cents(inv.paid_usd)) : 0;
   const due = dueOf(inv);
   const rows = forgiveness.filter((r) => r.invoice_id === inv.id);
   const mark = marks.find((m) => m.invoice_id === inv.id);
@@ -148,6 +163,8 @@ export function settlementsOf(inv: Invoice, forgiveness: readonly InvoiceForgive
       kind: "settlement", key: `${inv.id}:pay:${i}`, inv, at: l.at, amount: round2((Number(l.amount) || 0) + fx),
       method: (l.method ?? "cash") as PaymentMethod,
       remainingAfter: Math.max(0, round2(due + tail[i] + (rows.length ? forgivenSince(rows, t) : 0))),
+      usd: usdInv ? usdOfLeg(l) : null,
+      remainingAfterUsd: usdInv ? Math.max(0, usdDueNow + usdTail[i]) : null,
     });
   });
   return out;

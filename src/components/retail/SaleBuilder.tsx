@@ -1413,9 +1413,21 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [doneNegIds, setDoneNegIds] = useState<string[]>([]);
   const [, setConsLazyTick] = useState(0);
   /* 0264: مادّةُ الدولار لا تدخل سلّةَ الدينار (قرار ٢) — لمسُها أو مسحُها يفتح سلّةَ الدولار بها. */
-  const [usdSale, setUsdSale] = useState<{ open: boolean; first: Product | null; tick: number }>({ open: false, first: null, tick: 0 });
+  const [usdSale, setUsdSale] = useState<{ open: boolean; first: Product | null; pack: ProductPack | null; tick: number }>({ open: false, first: null, pack: null, tick: 0 });
   const [, setUsdLazyTick] = useState(0);
-  const openUsd = (p: Product) => setUsdSale((x) => ({ open: true, first: p, tick: x.tick + 1 }));
+  const openUsd = (p: Product, pack: ProductPack | null = null) => setUsdSale((x) => ({ open: true, first: p, pack, tick: x.tick + 1 }));
+  /** مادّةُ الدولار: سلّتُها المستقلّة («بيع بالدولار») — و«راجع» لا يفتحها: كان يفتح سلّةَ بيعٍ والكاشيرُ يقصد إرجاعاً (فحصُ الدولار
+   *  سبق فحصَ الراجع). الراجعُ الخالص بالدينار من الدرج، وترجيعُ الدولار على فاتورته بالدولار («المرتجع»). يرجع: رُفض؟ */
+  const usdTap = (p: Product, opt?: { sale?: boolean }, pack: ProductPack | null = null): boolean => {
+    if (retMode && !opt?.sale) {
+      playWarning();
+      void Promise.all([import("@/components/retail/RetPct"), import("@/i18n").then((i) => i.ensureOwned("rpct"))])
+        .then(([m]) => toast.error(m.retUsdSay(p.name)), () => toast.error(t("errors.network")));
+      return true;
+    }
+    openUsd(p, pack);
+    return false;
+  };
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
   /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
@@ -1688,7 +1700,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** `sale`: سطرُ بيعٍ ولو كان «راجع» مشغّلاً — تبويبُ «الأدوية» يبيع دواءً لحيوانٍ دائماً
    *  (سطرُ «دواء» القديم كان موجباً مهما كان الوضع)، و«راجع» يخصّ المسحَ والكرت. */
   const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean; unit?: "sub" }): number | null => {
-    if (p.price_currency === "USD") { openUsd(p); return null; }
+    if (p.price_currency === "USD") { usdTap(p, opt); return null; }
     /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
      * يكذب كلفةَ دفعةٍ جارية. الخادمُ يستثنيه بكلّ طريقٍ اليوم — وهذا خطُّ الدفاع
      * الأخير لو وصل صفُّ حقلٍ بطريقٍ يُضاف غداً: يُرفض باسمه، لا يُباع بصمت. */
@@ -1940,7 +1952,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     /* مخزنُ الحقل يُرفض باسمه **قبل** السؤال: السؤالُ يستثني الحقل، فصفُّ حقلٍ
      * رصيدُه صفر كان يعود «لا شيء» ويُقال عنه «موجود بس رصيده صفر — زيد رصيده». */
     if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
-    if (product.price_currency === "USD") { openUsd(product); return { added: null, refused: false }; }
+    if (product.price_currency === "USD") return { added: null, refused: usdTap(product, opt) };
     const ret = retMode && !opt?.sale;
     const lineOf = (x: Product) => `${ret ? "r" : "p"}:${x.id}`;
     /* يُسأل الخادمُ حين ترفض القائمةُ الإضافةَ أو تقصّها — صفرٌ بالصفّ، **أو سطرٌ بلغ
@@ -2032,7 +2044,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     // مخزنُ الحقل يُرفض باسمه كما يرفضه addProduct (لا نداءَ له خارج sellOrExplain — freshness-test).
     if (p.farm_id) return refuse(t("retail.farmProductAtTill", "«{{name}}» من مخزن الحقل — يُصرف من شاشة الحقل لا من كاشير العيادة", { name: p.name }));
     if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: "ret", name: p.name, level: pack.name, unit }));
-    if (p.price_currency === "USD") return refuse(m.say.packSay({ kind: "usd", name: p.name, pack: pack.name }));
+    /* 0272: كارتونُ مادّة الدولار سطرٌ بسلّة الدولار (سعرُه بالدولار، والخادمُ يخصم علبَه) — كان يُرفض «بيعها بوحدتها الأساسية». */
+    if (p.price_currency === "USD") { usdTap(p, { sale: true }, pack); return { added: null, refused: false }; }
     const ready = await packReadyNow();
     if (ready === "unreachable") return refuse(t("errors.network"));
     if (ready !== "ready") return refuse(m.say.packSay({ kind: "notReady", name: p.name, pack: pack.name, per: pack.per, unit }));
@@ -5553,9 +5566,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       {usdSale.tick > 0 && (UsdSaleLazy ??= loadUsdSale()) && (
         <LoadBoundary scope="usd-sale" onRetry={() => { UsdSaleLazy = loadUsdSale(); setUsdLazyTick((n) => n + 1); }}>
           <Suspense fallback={null}>
-            <UsdSaleLazy open={usdSale.open} products={products} first={usdSale.first} firstTick={usdSale.tick} wholesale={wholesale}
+            {/* البيعةُ لا تُغلق السلّة: إيصالُها وطباعتُها داخلها (كان توستاً وحده ولا ورقةَ للزبون). والسقفُ رصيدُ المادّة كالدينار،
+                والوضعُ (0266) يرفعه بحكم هذه الشاشة نفسِه: مفعّلٌ بعمر جوابه، والمادّةُ حيّةٌ وما انعدّت، وكلفتُها بالدولار موجبة. */}
+            <UsdSaleLazy open={usdSale.open} products={products} first={usdSale.first} firstPack={usdSale.pack} firstTick={usdSale.tick} wholesale={wholesale}
+              canExceed={(p) => { const now = negNow(); return now.active && !p.pooled && !p.farm_id && !now.counted.has(p.id) && Number(p.purchase_price_usd) > 0; }}
               onClose={() => setUsdSale((x) => ({ ...x, open: false }))}
-              onSold={() => { setUsdSale((x) => ({ ...x, open: false })); onSold(); }} />
+              onSold={() => onSold()} />
           </Suspense>
         </LoadBoundary>
       )}

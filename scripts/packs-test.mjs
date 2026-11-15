@@ -303,5 +303,77 @@ console.log("▸ الأسلاك: العلبةُ لـfindByCode والكارتو�
     (demo.match(/throwIfPackagingBad\(/g) ?? []).length >= 6 && /snapshotFree\(/.test(demo) && /unmergePackaging\(/.test(demo) && /mergePackaging\(/.test(demo) && /hasPackaging\(dup\)/.test(demo));
 }
 
+/* ── خانةُ السعر التلقائيّ بسلوكها (react-mini): الحسابُ داخل الخانة ويبقى، والمحفوظُ كما كان ──────────────────────────────────
+ * بلاغُ المالك (١٦/١١): «لمن يحسبها ينزلها … ولمن احفظها بلا ما اكتبها بيدي ما تنزل» — كان سطراً تحت خانةٍ فارغة. */
+{
+  console.log("▸ خانةُ السعر التلقائيّ بالمحرّر");
+  const ED_SRC = readFileSync("src/components/inventory/PackagingEditor.tsx", "utf8");
+  // المحرّرُ يُحزم من نصّه (للطفرات) بملفٍّ مؤقّتٍ بجانبه — نفسُ الاستيرادات النسبيّة.
+  const PE_TMP = "src/components/inventory/__pe_under_test.tsx";
+  const run = async (src, c) => {
+    writeFileSync(PE_TMP, src);
+    let UI;
+    try {
+      UI = await (await import("./react-mini.mjs")).loadUI(`
+        import { useState, createElement as h } from "react";
+        import PackagingEditor from "./${PE_TMP}";
+        export function Host(p) {
+          const [d, setD] = useState(p.draft);
+          const [box, setBox] = useState(p.boxSell);
+          globalThis.__pe = { d, setBox };
+          return h(PackagingEditor, { value: d, onChange: setD, boxSell: box, boxPurchase: p.boxPurchase, hasSubUnit: !!p.sub, unitsPerBox: p.sub ? 10 : 0,
+            subUnitName: "", byWeight: false, pooled: false, products: [], selfId: null });
+        }
+      `);
+    } finally { try { rmSync(PE_TMP); } catch { /* ignore */ } }
+    const h = UI.React.createElement;
+    const pack = (o = {}) => ({ id: "k1", name: "كارتون", per: "12", codes: [], purchase_price: "", sell_price: "", ...o });
+    const mount = async (draft, o = {}) => { const ui = UI.mount(h(UI.Host, { draft, boxSell: 1500, boxPurchase: 1000, ...o })); await ui.settle(); return ui; };
+    const val = (ui, attr) => String(ui.find(attr, 0)?.props.value ?? ui.find(attr)?.props.value);
+    const type = (ui, attr, v) => { const n = ui.find(attr, 0) ?? ui.find(attr); ui.fire(() => n.props.onChange({ target: { value: v } })); };
+    const blur = (ui, attr) => { const n = ui.find(attr, 0) ?? ui.find(attr); ui.fire(() => n.props.onBlur?.({})); };
+    const saved = () => K.packagingFromDraft(globalThis.__pe.d, { barcode: null, alt_codes: [], hasSubUnit: true, unitsPerBox: 10, byWeight: false, pooled: false });
+    const base = { unit_name: "", sub_codes: [], sub_purchase_price: "", packs: [pack()] };
+
+    let ui = await mount(base);
+    c("خ١ كارتونُ ١٢ بخانةٍ فارغة: الحسابُ داخل الخانة (١٢ × ١٬٥٠٠ = ١٨٬٠٠٠، والشراءُ ١٢٬٠٠٠) — لا خانةٌ فارغة",
+      val(ui, "data-pkgsell") === "18000" && val(ui, "data-pkgbuy") === "12000", `${val(ui, "data-pkgsell")}|${val(ui, "data-pkgbuy")}`);
+    c("  والمحفوظُ «تلقائي» (null — يتبع سعرَ العلبة)", saved().ok && saved().value.packs[0].sell_price === null && saved().value.packs[0].purchase_price === null, JSON.stringify(saved()));
+    ui.fire(() => globalThis.__pe.setBox(2000));
+    c("خ٢ سعرُ العلبة تغيّر بالنموذج ⇒ الخانةُ تتبعه (٢٤٬٠٠٠)", val(ui, "data-pkgsell") === "24000", val(ui, "data-pkgsell"));
+    type(ui, "data-pkgsell", "20000"); blur(ui, "data-pkgsell");
+    c("خ٣ مكتوبٌ غيرُ الحساب يبقى ويُحفظ مكتوباً (٢٠٬٠٠٠)", val(ui, "data-pkgsell") === "20000" && saved().value.packs[0].sell_price === 20000, `${val(ui, "data-pkgsell")}|${JSON.stringify(saved().value?.packs)}`);
+    type(ui, "data-pkgsell", "24000"); blur(ui, "data-pkgsell");
+    c("خ٤ ومكتوبٌ يساوي الحساب يرجع تلقائياً (null)", saved().value.packs[0].sell_price === null && val(ui, "data-pkgsell") === "24000", JSON.stringify(saved().value?.packs));
+    type(ui, "data-pkgsell", "");
+    c("خ٥ مسحُ الخانة وهي مركَّزة يُبقيها فارغة (لا يقفز الحسابُ إليها والطبيبُ يكتب)", val(ui, "data-pkgsell") === "", val(ui, "data-pkgsell"));
+    blur(ui, "data-pkgsell");
+    c("  وبالمغادرة ترجع تلقائية بحسابها", val(ui, "data-pkgsell") === "24000" && saved().value.packs[0].sell_price === null, val(ui, "data-pkgsell"));
+    ui.unmount();
+    ui = await mount({ ...base, packs: [pack({ per: "" })] });
+    c("خ٦ بلا عدد ⇒ لا حساب ⇒ الخانةُ فارغة", val(ui, "data-pkgsell") === "", val(ui, "data-pkgsell"));
+    ui.unmount();
+    const reopened = K.draftOf({ unit_name: null, sub_codes: [], sub_purchase_price: null, packs: [{ id: "k1", name: "كارتون", per: 12, codes: [], purchase_price: null, sell_price: null }] });
+    ui = await mount(reopened);
+    c("خ٧ إعادةُ فتح مادّةٍ محفوظةٍ تلقائياً: الرقمُ بالخانة (كان يُفتح فارغاً فيُظنّ أنه ما انحفظ)", val(ui, "data-pkgsell") === "18000", val(ui, "data-pkgsell"));
+    ui.unmount();
+    ui = await mount({ ...base, packs: [] }, { sub: true });
+    c("خ٨ شراءُ المغلّف تلقائياً بالخانة (١٬٠٠٠ ÷ ١٠ = ١٠٠)", String(ui.find("data-pkgsubbuy")?.props.value) === "100", String(ui.find("data-pkgsubbuy")?.props.value));
+    ui.unmount();
+  };
+  await run(ED_SRC, check);
+  const MUT = [
+    ["الخانةُ تُظهر المكتوبَ وحده (كما كان)", "  const shown = edit ?? (own.trim() ? own : auto != null ? String(auto) : \"\");", "  const shown = edit ?? own;"],
+    ["ما يساوي الحسابَ يُحفظ مكتوباً", "onChange(!v.trim() || sameAsAuto(v) ? \"\" : v)", "onChange(v)"],
+    ["الحسابُ يقفز للخانة وهي تُمسح", "const v = e.target.value; setEdit(v);", "const v = e.target.value;"],
+  ];
+  for (const [name, from, to] of MUT) {
+    const fell = [];
+    if (!ED_SRC.includes(from)) { check(`طفرة «${name}» تُمسك`, false, "نصُّ الطفرة غائب"); continue; }
+    try { await run(ED_SRC.replace(from, to), (n, ok) => { if (!ok) fell.push(n); }); } catch (e) { fell.push(`انهار: ${e?.message ?? e}`); }
+    check(`طفرة «${name}» تُمسك (${fell.length})`, fell.length > 0, "مرّت كلُّ الفحوص — الفحصُ أعمى عنها");
+  }
+}
+
 console.log(fails ? `✗ packs-test: ${fails} فشل من ${fails + passes}` : `✓ packs-test: ${passes} فحصاً`);
 process.exit(fails ? 1 : 0);

@@ -179,6 +179,13 @@ const shortDate = (ms: number) => (Number.isFinite(ms)
   ? new Date(ms).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })
   : "…");
 
+/* ── ديونُ الدولار (0264) بالدولار — عرضٌ وحده، والحسابُ بالخادم ── */
+const isUsdInv = (i: Invoice): boolean => i.currency === "USD";
+const usdDueCentsOfInv = (i: Invoice): number => Math.max(0, Math.round(((i.total_usd ?? 0) - (i.paid_usd ?? 0)) * 100));
+const usdTxt = (c: number): string => { const n = c / 100; return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`; };
+/** داخل جملةٍ مترجمة: معزولٌ اتجاهياً (LRI…PDI). */
+const usdIso = (c: number): string => `\u2066${usdTxt(c)}\u2069`;
+
 export function AnalyticsHub() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -1536,20 +1543,38 @@ function MoneyTab({ z, shown, receivables, series, paymentPie, revenue, category
             </div>
           ) : (
             <>
+              {/* ديونُ الدولار (0264) بالدولار وبجانب الدينار لا مجموعةً عليه: بدينار يوم بيعها تبدو أصغرَ كلّما صعد الدولار. */}
               <div className="mb-3 flex items-center justify-between rounded-xl bg-warn-50 px-3 py-2 text-sm dark:bg-warn-500/10">
                 <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.debtsTotal", "إجمالي المتبقّي على العملاء")}</span>
-                <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(receivables.reduce((s, i) => s + dueOf(i), 0))}</span>
+                <span className="text-end">
+                  {(receivables.some((i) => !isUsdInv(i)) || !receivables.some(isUsdInv)) && (
+                    <span className="block font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(receivables.reduce((s, i) => s + (isUsdInv(i) ? 0 : dueOf(i)), 0))}</span>
+                  )}
+                  {receivables.some(isUsdInv) && (
+                    <span className="block font-display font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-debts>
+                      {usdTxt(receivables.reduce((s, i) => s + (isUsdInv(i) ? usdDueCentsOfInv(i) : 0), 0))}
+                    </span>
+                  )}
+                </span>
               </div>
               <ul className="space-y-1.5">
-                {receivables.map((i) => (
-                  <li key={i.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink">{i.customer_name || t("rpt.unregisteredClient", "عميل غير مسجّل")}</p>
-                      <p className="text-2xs text-ink-subtle">{t("rpt.paidOfTotal", { paid: money(paidOf(i)), total: money(i.total), defaultValue: "مدفوع {{paid}} من {{total}}" })}</p>
-                    </div>
-                    <span className="font-display font-bold tabular-nums text-warn-600">{money(dueOf(i))}</span>
-                  </li>
-                ))}
+                {receivables.map((i) => {
+                  const u = isUsdInv(i);
+                  const pt = u
+                    ? { paid: usdIso(Math.round((i.paid_usd ?? 0) * 100)), total: usdIso(Math.round((i.total_usd ?? 0) * 100)) }
+                    : { paid: money(paidOf(i)), total: money(i.total) };
+                  return (
+                    <li key={i.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">{i.customer_name || t("rpt.unregisteredClient", "عميل غير مسجّل")}</p>
+                        <p className="text-2xs text-ink-subtle">{t("rpt.paidOfTotal", { ...pt, defaultValue: "مدفوع {{paid}} من {{total}}" })}</p>
+                      </div>
+                      {u
+                        ? <span className="font-display font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr">{usdTxt(usdDueCentsOfInv(i))}</span>
+                        : <span className="font-display font-bold tabular-nums text-warn-600">{money(dueOf(i))}</span>}
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
