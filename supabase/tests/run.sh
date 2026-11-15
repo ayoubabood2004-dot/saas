@@ -11664,6 +11664,33 @@ chk "مرتجعُ الكارتون على الفاتورة يردّ ٢٤ علب�
     "select $(rt $KC "select return_invoice_items($K267INV, jsonb_build_array(jsonb_build_object('item_id', $K267IT, 'qty', 1)), 'cash', 'k267')")" "rows:1"
 chk "  (٧٣ ⇒ ٩٧)" "select stock::text from products where id = '${KG}a1'" "97.000"
 
+# البيعُ قبل الجرد (0266) بالكارتون — «العيادات الي تبيع بالكارتون تنباع بالسالب لو الوضع مفعّل» (المالك، ١٥/١١). الخادمُ يحكم الكارتونَ
+# بكلفة سطره (المتوسّط × علبه) كما تكتبها البيعة، والمعدودةُ وما بلا كلفة يُردّان بسببهما، والبيعةُ تنزل بالرفّ تحت الصفر بعلب الكارتون.
+# (رمزُ الكارتون لمادّةٍ واحدة — حارسُ المستويات 0259 يرفض التكرار.)
+ZK() { echo '[{"id":"z12","name":"كارتون","codes":["'$1'"],"per":12,"purchase_price":null,"sell_price":null}]'; }
+$P -c "insert into products (id, clinic_id, name, stock, purchase_price, avg_cost, packs) values
+         ('${KG}b1','$KC','كارتون تحت الصفر', 0, 1000, null, '$(ZK ZNEG-1)'::jsonb),
+         ('${KG}b2','$KC','كارتون معدود',     0, 1000, null, '$(ZK ZNEG-2)'::jsonb),
+         ('${KG}b3','$KC','كارتون بلا كلفة',  0,    0, null, '$(ZK ZNEG-3)'::jsonb) on conflict (id) do nothing;
+       insert into stock_counts (clinic_id, product_id, product_name, system_qty, counted_qty, status, source) values
+         ('$KC','${KG}b2','كارتون معدود', 0, 0, 'matched', 'count');" >/dev/null
+chk "الوضعُ يُشغَّل للعيادة (بابُه)" "select $(rv $KC "select (r->>'active')||'|'||(r->>'changed') from (select neg_stock_set('$KC', true, 7, true) r) x")" "true|true"
+ZCHK='[{"product_id":"'${KG}b1'","qty":2,"stock_qty":24},{"product_id":"'${KG}b1'","qty":1,"stock_qty":1},{"product_id":"'${KG}b2'","qty":1,"stock_qty":12},{"product_id":"'${KG}b3'","qty":1,"stock_qty":12}]'
+chk "  وحكمُ البيعة: كارتونان (٢٤ علبة) وعلبةٌ من رفٍّ صفر يمرّان، والمعدودةُ «counted» وما بلا كلفة «zero_cost» بالكارتون كالعلبة" \
+    "select $(rv $KC "select (r->>'active')||'|'||coalesce((select string_agg((e->>'why')||':'||right(e->>'product_id', 2), ',' order by ord) from jsonb_array_elements(r->'refused') with ordinality t(e, ord)), '') from (select neg_stock_check('$KC', '$ZCHK'::jsonb) r) x")" \
+    "true|counted:b2,zero_cost:b3"
+LZ='[{"product_id":"'${KG}b1'","name":"كارتون تحت الصفر","qty":2,"unit_price":15000,"unit_cost":7,"stock_qty":24,"unit_label":"كارتون"},{"product_id":"'${KG}b1'","name":"كارتون تحت الصفر","qty":1,"unit_price":1250,"unit_cost":7,"stock_qty":1}]'
+chk "  والبيعةُ تمرّ" "select $(rt $KC "select retail_checkout('$LZ'::jsonb, jsonb_build_object('client_ref', 'k267-neg'))")" "rows:1"
+chk "  الرفُّ −٢٥ (صفر − ٢٤ − ١)، والكارتونُ بكلفة ١٠٠٠ × ١٢ = ١٢٠٠٠ لكلّ كارتون وبعلبه واسمِه، والعلبةُ ١٠٠٠" \
+    "select (select stock::text from products where id = '${KG}b1')||'|'||(select string_agg(qty::text||'@'||unit_cost::text||'/'||coalesce(stock_qty::text,'-')||':'||coalesce(unit_label,'-'), ',' order by unit_price desc)
+            from invoice_items where invoice_id = (select id from invoices where clinic_id = '$KC' and client_ref = 'k267-neg'))" \
+    "-25.000|2.000@12000.00/24.000:كارتون,1.000@1000.00/1.000:-"
+# الإطفاءُ ثمّ القراءةُ بجملةٍ بعدها (درسُ 0257).
+chk "  ويُطفأ" "select $(rv $KC "select (neg_stock_set('$KC', false, null, false))->>'active'")" "false"
+chk "  وبعد الإطفاء يُردّ الكارتونُ «off»" \
+    "select $(rv $KC "select string_agg(e->>'why', ',') from jsonb_array_elements(neg_stock_check('$KC', '[{\"product_id\":\"${KG}b1\",\"qty\":1,\"stock_qty\":12}]'::jsonb)->'refused') e")" \
+    "off"
+
 chk "البحثُ برمز الكارتون (بمسافاته وبلاها) والشدّة والمغلّف يجد مادّتَه، والعلبةُ ليست له، ولا غيرُ عيادتنا ولا الحقل ولا الفارغ" \
     "select concat_ws('|',
        $(rv $KC "select string_agg(name, ',') from product_level_by_code('16291234567897')"),

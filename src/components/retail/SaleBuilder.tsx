@@ -1150,6 +1150,26 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       toast.error(fallback);
     }, 1500);
   };
+  /** سببُ الوضع لمادّةٍ لا يغطّيها رصيدُها الطازج ولا يرفعها الوضع — أو null (لا سببَ للوضع: الرسالةُ العامّة لمن سأل). للعلبة
+   *  (sellOrExplain) وللكارتون (addPackLine) حكمٌ واحد: الكارتونُ كان يقول «أقلّ من كارتون» عن الأربعة والعلبةُ تقول سببَها.
+   *  الرسائلُ بجواب الخادم الأخير (`on`) لا بعمره: «مفعّل» تجاوز دقيقتيه وسؤالُه فشل أو ما لحق (٢٫٥ ثانية) ليس «انتهى» — الوضعُ ربما
+   *  شغّال. فالكلفةُ الصفر «اكتب سعر شرائها» (لا «رصيده صفر»)، والمعدودةُ «انعدّت» كما هي (سببُها لا يتبع الوضع)، وما قد يغطّيه
+   *  الوضعُ «ما تأكّدنا» (لا «انتهى — لا تدخله»، ولا «زيد رصيده» — بابُ التوائم)، و«انتهى» حين قالها الخادمُ وحده. */
+  const negWhy = (fresh: Product, per: number | null, ns: ReturnType<typeof negNow>): "noCost" | "counted" | "unsure" | "ended" | null => {
+    if (costBlocked(fresh, per, ns)) return "noCost";
+    const on = !!ns.state?.active && !ns.state.absent;
+    if (on && ns.counted.has(fresh.id)) return "counted";
+    if (on && !ns.active && !!negMod && negMod.liftable(fresh, ns.counted)) return "unsure";
+    if (!on && ns.state?.used && (fresh.stock ?? 0) < 0) return "ended";
+    return null;
+  };
+  const sayNegWhy = (why: "noCost" | "counted" | "unsure" | "ended", fresh: Product) => {
+    const noMore = t("retail.maxStock", "No more in stock");   // احتياطُ الشريحة: لا «زيد رصيده» (بابُ التوائم)
+    if (why === "noCost") sayNeg({ kind: "noCost", name: fresh.name, productId: fresh.id, canOpen: canEditProducts }, t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج"));
+    else if (why === "counted") sayNeg({ kind: "counted", name: fresh.name, stock: fresh.stock ?? 0 }, noMore);
+    else if (why === "unsure") sayNeg({ kind: "unsure", name: fresh.name }, t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: fresh.name }));
+    else sayNeg({ kind: "ended", name: fresh.name, stock: fresh.stock ?? 0 }, noMore);
+  };
   /** نافذةُ الرفض: السطورُ بأسبابها، وما يبقى من كلٍّ إن شُيل الزائد (`keep`: كميةٌ برصيدٍ يغطّيها، وصفرٌ يشيل السطر). */
   const [negChk, setNegChk] = useState<{ lines: NegRefusedLine[]; allCart: boolean; ack: CheckoutAck; keep: Record<string, { qty: number; stock: number | null }>; locked?: boolean } | null>(null);
   /** «شيلها وكمّل»: السلّةُ تتغيّر أولاً، والبيعةُ تكمل بالرسمة التي تراها (checkout يقرأ سلّةَ رسمته). */
@@ -1982,21 +2002,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const per = lineNow ? perOf(lineNow) : null;
       const ns = negNow();
       if (liftFor(fresh, per, ns)) { liftRowsRef.current.set(fresh.id, { row: fresh, listAt: products.find((p) => p.id === fresh.id) }); return { added: addProduct(fresh, n, opt), refused: false, lineId: lineOf(fresh) }; }
-      if (first && costBlocked(fresh, per, ns)) {
-        sayNeg({ kind: "noCost", name: fresh.name, productId: fresh.id, canOpen: canEditProducts }, t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج"));
-        return { added: null, refused: true };
-      }
-      /* الرسائلُ بجواب الخادم الأخير (`on`) لا بعمره: «مفعّل» تجاوز دقيقتيه وسؤالُه فشل أو ما لحق (٢٫٥ ثانية) ليس «انتهى» — الوضعُ ربما
-       * شغّال. فالمعدودةُ «انعدّت» كما هي (سببُها لا يتبع الوضع)، وما قد يغطّيه الوضعُ «ما تأكّدنا» (لا «انتهى — لا تدخله»، ولا «زيد
-       * رصيده» — بابُ التوائم)، و«انتهى» حين قالها الخادمُ وحده. */
-      const on = !!ns.state?.active && !ns.state.absent;
-      const noMore = t("retail.maxStock", "No more in stock");   // احتياطُ الشريحة: لا «زيد رصيده» (بابُ التوائم)
-      if (first && on && ns.counted.has(fresh.id)) { sayNeg({ kind: "counted", name: fresh.name, stock: fresh.stock ?? 0 }, noMore); return { added: null, refused: true }; }
-      if (first && on && !ns.active && !!negMod && negMod.liftable(fresh, ns.counted)) {
-        sayNeg({ kind: "unsure", name: fresh.name }, t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: fresh.name }));
-        return { added: null, refused: true };
-      }
-      if (first && !on && ns.state?.used && (fresh.stock ?? 0) < 0) { sayNeg({ kind: "ended", name: fresh.name, stock: fresh.stock ?? 0 }, noMore); return { added: null, refused: true }; }
+      const why = first ? negWhy(fresh, per, ns) : null;
+      if (why) { sayNegWhy(why, fresh); return { added: null, refused: true }; }
     }
     // النغمةُ لكلّ مسحة — الكاشير يعدّ بأذنه — والرسالةُ مرّةً لا تتكدّس.
     playWarning();
@@ -2047,24 +2054,38 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     };
     const lift = (row: Product) => liftRowsRef.current.set(row.id, { row, listAt: products.find((x) => x.id === row.id) });
     /** ما يبقى من رصيد الصفّ بعد سطور المادّة كلّها بالسلّة (وهذا منها) — «المتوفّر ١٠٠» عن رفٍّ نزل منه ٩٧ بالسلّة كان يكذب. */
-    const leftOf = (row: Product): string => {
+    const leftNum = (row: Product): number => {
       let used = 0;
       for (const o of cartRef.current) if (o.kind === "product" && !o.ret && o.product_id === row.id) used += lineStockQty(o);
-      return formatNum(Math.round(((row.stock ?? 0) - used) * 1000) / 1000);
+      return Math.round(((row.stock ?? 0) - used) * 1000) / 1000;
     };
+    const leftOf = (row: Product): string => formatNum(leftNum(row));
     const put = (row: Product, k: ProductPack) => ({ added: bump(id, () => make(row, k), n, { stock: row.stock }), refused: false });
     if (liftFor(p, null)) { lift(p); return put(p, pack); }
     if (roomOf(p, pack) >= 1) return put(p, pack);
     // القائمةُ تقول «أقلّ من كارتون» — والقائمةُ لقطةٌ قد تكون بعمر ساعات: يُسأل الخادمُ قبل الرفض.
+    /* 0266: والوضعُ غيرُ مفعّلٍ عندنا ⇒ يُسأل معه كما تسأل العلبة (sellOrExplain): مديرٌ شغّله للتو من جهازٍ آخر كان يُقال بعده
+     * «أقلّ من كارتون» عن الكارتون والعلبةُ نفسُها تُباع تحت الصفر — حتى يحين استطلاعُ الحالة. */
+    const negAsk = negMod && negKeyRef.current && !negNow().active && !negNow().state?.absent ? negMod.refreshNeg(negKeyRef.current) : null;
     const { promise, first } = askServer(p);
     const ans = await promise;
+    if (negAsk) await Promise.race([negAsk, new Promise((r) => setTimeout(r, 2500))]);
     if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
     if (ans.kind === "row") {
       const fresh = sellableRow(ans.row, ans.pool);
       const k = m.currentPack(fresh, pack.id);
       if (!k || k.per !== pack.per) return refuse(m.say.packSay({ kind: "changed", name: fresh.name, pack: pack.name }));
-      if (liftFor(fresh, null)) { lift(fresh); return put(fresh, k); }
+      const ns = negNow();
+      if (liftFor(fresh, null, ns)) { lift(fresh); return put(fresh, k); }
       if (roomOf(fresh, k) >= 1) return put(fresh, k);
+      /* سببُ الوضع (negWhy) حين لا تبقى علبةٌ واحدة — «كمّل بوحدة العلبة» هنا كذب، فالعلبةُ تُرفض بالسبب نفسِه. وما بقيت علبٌ
+       * أقلّ من كارتون: «أقلّ من كارتون، كمّل بالعلبة» صادقٌ ويقول البديل (العلبُ ضمن رصيدها لا تحتاج الوضع). و«ما تأكّدنا» بأيّ
+       * باقٍ: الوضعُ ربما يرفع الكارتونَ نفسَه. */
+      const why = negWhy(fresh, null, ns);
+      if (why && (why === "unsure" || leftNum(fresh) < 1)) {
+        if (first) sayNegWhy(why, fresh); else playWarning();
+        return { added: null, refused: true };
+      }
       return refuse(m.say.packSay({ kind: "short", name: fresh.name, pack: k.name, per: k.per, unit, stock: leftOf(fresh) }));
     }
     playWarning();
@@ -3203,7 +3224,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     l.kind === "product" && !l.ret && l.stock != null && (!l.negLift && shared(l)
       ? shelfUsed(l.product_id as string) >= 10 && shelfUsed(l.product_id as string) + 1e-9 >= Math.floor(l.stock as number)
       : isPackLine(l)
-      ? (l.negLift ? (negMod ? negMod.bigLifted(lineStockQty(l), { sub: false, unitsPerBox: null, byWeight: false }) : lineStockQty(l) >= 10)
+      /* والكارتونُ الذي رفعه الوضعُ بعدده لا بعلبه: «كميةٌ كبيرة» لسطرٍ مرفوع تمسك «اكتب ٤٧ وامسح» (٤٧ كارتوناً تُسأل)، وبعلبه كان
+       * كلُّ كارتونٍ من ١٠ علبٍ فأكثر يسأل «تبيع الرصيد كلّه؟ ١٢ من ٠» ويدلّ على «المشتريات» — عن مسحةٍ واحدةٍ مقصودة (مقيسٌ
+       * بالتجريبيّ: العلبةُ بجانبه تُباع بلا سؤال). وغيرُ المرفوع كما كان: بعلبه حين يأخذ الرفَّ كلَّه. */
+      ? (l.negLift ? (negMod ? negMod.bigLifted(l.qty, { sub: false, unitsPerBox: null, byWeight: false }) : l.qty >= 10)
         : lineStockQty(l) >= 10 && lineStockQty(l) + 1e-9 >= Math.floor(l.stock as number))
       : l.negLift
       ? (negMod ? negMod.bigLifted(l.qty, { sub: l.saleUnit === "sub", unitsPerBox: l.unitsPerBox, byWeight: l.byWeight })
