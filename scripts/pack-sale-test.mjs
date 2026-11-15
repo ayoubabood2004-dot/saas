@@ -108,11 +108,19 @@ const STUB = {
   "@/lib/consumptionApi": "export const consumptionApi = { recipeSummary: async () => ({}) };",
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
-  "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
-    export const subscribeNeg = () => () => {}; export const refreshNeg = async () => null; export const activeNow = () => false; export const liftable = () => false;
-    export const daysLeft = () => 0; export const bigLifted = () => false; export const lastDayOf = (u) => new Date(u);
-    export const negApi = { check: async () => ({ clinic: "c1", active: false, until: null, refused: [] }) };`,
-  "@/components/negstock/NegStock": "export const NegBar = () => null; export const NegCheckoutDialog = () => null; export const NegStockCard = () => null;",
+  /* البيعُ قبل الجرد (0266): بلا حالة (globalThis.__psNeg فارغ) الوضعُ غائبٌ كما كان؛ وبحالةٍ يمسكها الفحص (القسم ن) القواعدُ الصِّرفةُ
+   * الحقيقيّة — عمرُ الجواب وحكمُ الرفع و«الكبيرة» كما بالتطبيق. */
+  "@/lib/negStockApi": `const N = () => globalThis.__psNeg;
+    const OFF = { state: null, counted: new Set(), failed: false };
+    export const negKey = (u) => (u ?? "anon") + "|c1";
+    export const negSnap = () => (N() ? N().snap() : OFF);
+    export const subscribeNeg = (_k, fn) => (N() ? N().subscribe(fn) : () => {});
+    export const refreshNeg = async (_k, o) => (N() ? N().refresh(o) : null);
+    import { readNegCheck } from "./src/lib/negStock.ts";
+    export const negApi = { check: async (c, l) => readNegCheck(N() ? await N().check(c, l) : { clinic_id: "c1", active: false, until: null, refused: [] }) };
+    export { activeNow, liftable, daysLeft, bigLifted, lastDayOf } from "./src/lib/negStock.ts";`,
+  /* الشريحةُ تسجّل ما يُطلب قولُه (says) — رسائلُ الوضع تمرّ منها لا من toast. */
+  "@/components/negstock/NegStock": "export const NegBar = (p) => { globalThis.__psNegBar = p; return null; }; export const NegCheckoutDialog = (p) => { globalThis.__psNegChk = p; return null; }; export const NegStockCard = () => null;",
   "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null;",
 };
 function importsOf(src) {
@@ -213,9 +221,27 @@ function freshEnv(o = {}) {
   };
   return log;
 }
-async function session(M, { draft = null, products = [PC, PS, PV], ...env } = {}) {
+/** حالةُ الوضع (0266) يمسكها الفحص: مفعّلٌ طازجٌ افتراضياً؛ `age` عمرُ الجواب، و`onRefresh` ما يجيب به سؤالُ الحالة (افتراضياً لا شيء). */
+function psNeg(o = {}) {
+  const subs = new Set();
+  const env = {
+    counted: new Set(o.counted ?? []), calls: { check: [], refresh: 0 }, onRefresh: o.onRefresh ?? null,
+    state: { clinic: "c1", active: o.active ?? true, used: o.used ?? true, absent: false, until: new Date(Date.now() + 5 * 86_400_000).toISOString(), since: null,
+      endedAt: o.endedAt ?? null, serverNow: new Date(Date.now()).toISOString(), at: performance.now() - (o.age ?? 0) },
+    snap: () => ({ state: env.state, counted: env.counted, failed: false }),
+    subscribe: (fn) => { subs.add(fn); return () => subs.delete(fn); },
+    refresh: async () => { env.calls.refresh++; if (env.onRefresh) env.onRefresh(env); for (const f of subs) f(); return env.state; },
+    check: async (_c, lines) => { env.calls.check.push(JSON.parse(J(lines))); return o.check ? o.check(lines) : { clinic_id: "c1", active: true, until: null, refused: [] }; },
+    /** الوضعُ يُشغَّل من جهازٍ آخر: سؤالُ الحالة التالي يجيب «مفعّل» طازجاً. */
+    turnOn() { env.onRefresh = (e) => { e.state = { ...e.state, active: true, used: true, at: performance.now(), serverNow: new Date(Date.now()).toISOString() }; }; },
+  };
+  return env;
+}
+async function session(M, { draft = null, products = [PC, PS, PV], neg = null, ...env } = {}) {
   mem.clear();
   if (draft) mem.set(DRAFT_KEY, J(draft));
+  globalThis.__psNeg = neg ? psNeg(neg) : null;
+  globalThis.__psNegBar = null; globalThis.__psNegChk = null;
   const log = freshEnv(env);
   globalThis.__sb.products = products;
   const { createElement, useState } = M.React;
@@ -230,7 +256,9 @@ async function session(M, { draft = null, products = [PC, PS, PV], ...env } = {}
   await flush();
   const btn = (pred) => ui.all().find((n) => n.type === "button" && pred(ui.text(n)));
   return {
-    ui, log,
+    ui, log, N: globalThis.__psNeg,
+    /** ما طلبت الشاشةُ من شريحة الوضع قولَه («kind:name»). */
+    negSaid: () => (globalThis.__psNegBar?.says ?? []).map((x) => `${x.kind}:${x.name}`),
     cart: () => JSON.parse(mem.get(DRAFT_KEY) ?? "null")?.cart ?? [],
     line: (id) => (JSON.parse(mem.get(DRAFT_KEY) ?? "null")?.cart ?? []).find((l) => l.id === id),
     scan: async (code) => { await globalThis.__sb.scanner.h(code); await flush(); },
@@ -429,6 +457,73 @@ async function run(M, c) {
     c("م٥ الخادمُ ما وصل وقت سؤال الجاهزية: «ما وصلنا» (errors.network) لا «يحتاج تحديث القاعدة»، ولا سطر", !S5.line("k:pC:k24") && S5.errs().at(-1) === "errors.network", J(S5.errs()));
     S5.end();
   }
+
+  /* ن) البيعُ قبل الجرد (0266) بالكارتون — «العيادات الي تبيع بالكارتون تنباع بالسالب لو الوضع مفعّل» (المالك، ١٥/١١). المقيسُ قبل
+   *    التصليح (كروميوم، التجريبيّ): الكارتونُ ينزل تحت الصفر، لكن (١) كلُّ كارتونٍ من ١٠ علبٍ فأكثر يسأل «تبيع الرصيد كلّه؟ ١٢ من ٠»
+   *    والعلبةُ بجانبه لا، و(٢) الكارتونُ لا يسأل الخادمَ عن الوضع فمديرٌ شغّله للتو من جهازٍ آخر يُقال بعده «أقلّ من كارتون»،
+   *    و(٣) المعدودةُ وما بلا كلفة و«ما تأكّدنا» و«انتهى» تُقال كلُّها «أقلّ من كارتون — كمّل بالعلبة» والعلبةُ تُرفض بالسبب نفسِه. */
+  {
+    const KN = { ...K24, id: "n24", codes: ["CTN-N"] };
+    const PN = PRD({ id: "pN", name: "صفر بكارتون", barcode: "B-N", stock: 0, purchase_price: 900, sell_price: 1250, packs: [KN] });
+    const S = await session(M, { products: [PN, PC, PS], neg: {} });
+    await S.scan("CTN-N");
+    const k = S.line("k:pN:n24");
+    c("ن١ الوضعُ مفعّل ورصيدُ المادّة صفر: مسحُ الكارتون ينزل سطرَه معلَّماً مرفوعاً بلا سؤال خادم ولا رفض",
+      k?.qty === 1 && k?.negLift === true && (S.log.byId ?? 0) === 0 && S.errs().length === 0 && S.negSaid().length === 0, J({ k, e: S.errs(), said: S.negSaid() }));
+    await S.checkout();
+    const ck = S.log.checkout[0]?.items?.find((x) => x.unit_label === "كارتون");
+    c("  والبيعةُ بلا «تبيع الرصيد كلّه؟» (كارتونٌ واحد ليس كميةً كبيرة) والخادمُ يُسأل عنه بعلبه (qty ١، stock_qty ٢٤)، وتُكتب بكلفة الكارتون",
+      !S.bigOpen() && S.log.checkout.length === 1 && J(S.N.calls.check[0]) === J([{ product_id: "pN", qty: 1, stock_qty: 24 }]) && ck?.stock_qty === 24 && ck?.unit_cost === 21600,
+      J({ big: S.bigOpen(), n: S.log.checkout.length, chk: S.N.calls.check, ck }));
+    S.end();
+
+    const S2 = await session(M, { products: [PN, PC, PS], neg: {} });
+    for (let i = 0; i < 10; i++) await S2.scan("CTN-N");
+    await S2.checkout();
+    c("ن٢ عشرُ كراتين مرفوعة («اكتب ١٠ وامسح») تسأل «تبيع الرصيد كلّه؟» قبل البيعة", S2.line("k:pN:n24")?.qty === 10 && S2.bigOpen() && S2.log.checkout.length === 0,
+      J({ q: S2.line("k:pN:n24")?.qty, big: S2.bigOpen(), n: S2.log.checkout.length }));
+    await S2.bigGo();
+    c("  و«نعم، بيع» تكمل بـ٢٤٠ علبة تحت الصفر", S2.log.checkout.length === 1 && S2.log.checkout[0].items.find((x) => x.unit_label === "كارتون")?.stock_qty === 240, J(S2.log.checkout));
+    S2.end();
+
+    const S3 = await session(M, { products: [PN, PC, PS], neg: { active: false, used: false } });
+    S3.N.turnOn();
+    await S3.scan("CTN-N");
+    c("ن٣ الوضعُ شُغّل من جهازٍ آخر والشاشةُ تعرفه مطفّى: الكارتونُ يسأل عن الحالة مع سؤال الصفّ فينزل مرفوعاً — لا «أقلّ من كارتون»",
+      S3.N.calls.refresh >= 1 && S3.line("k:pN:n24")?.negLift === true && !S3.errs().some((x) => x.startsWith("pks.short|")), J({ r: S3.N.calls.refresh, c: S3.cart(), e: S3.errs() }));
+    S3.end();
+
+    const S4 = await session(M, { products: [PN, PC, PS], neg: { counted: ["pN"] } });
+    await S4.scan("CTN-N");
+    c("ن٤ معدودةٌ رصيدُها صفر: «انعدّت» بشريحة الوضع — لا «أقلّ من كارتون، كمّل بالعلبة» (العلبةُ تُرفض بالسبب نفسِه)",
+      !S4.line("k:pN:n24") && J(S4.negSaid()) === J(["counted:صفر بكارتون"]) && !S4.errs().some((x) => x.startsWith("pks.short|")), J({ said: S4.negSaid(), e: S4.errs() }));
+    S4.end();
+
+    const S5 = await session(M, { products: [{ ...PN, stock: 5 }, PC, PS], neg: { counted: ["pN"] } });
+    await S5.scan("CTN-N");
+    const e5 = S5.errs().at(-1) ?? "";
+    c("ن٥ معدودةٌ بالرفّ ٥ (أقلّ من كارتون): «الباقي ٥ — كمّل بالعلبة» صادقٌ ويقول البديل، لا «انعدّت»",
+      !S5.line("k:pN:n24") && e5.startsWith("pks.short|") && e5.includes('"stock":"5"') && S5.negSaid().length === 0, J({ e: S5.errs(), said: S5.negSaid() }));
+    S5.end();
+
+    const S6 = await session(M, { products: [{ ...PN, purchase_price: 0 }, PC, PS], neg: {} });
+    await S6.scan("CTN-N");
+    c("ن٦ بلا كلفة ورصيدُها صفر: «ما مكتوب سعر شرائه» — لا «أقلّ من كارتون»", !S6.line("k:pN:n24") && J(S6.negSaid()) === J(["noCost:صفر بكارتون"]), J({ said: S6.negSaid(), e: S6.errs() }));
+    S6.end();
+
+    for (const stock of [0, 5]) {
+      const S7 = await session(M, { products: [{ ...PN, stock }, PC, PS], neg: { age: 200_000 } });
+      await S7.scan("CTN-N");
+      c(`ن٧ «مفعّل» تجاوز دقيقتيه وسؤالُ الحالة ما جدّده (رفّ ${stock}): «ما تأكّدنا» — الوضعُ ربما يرفع الكارتونَ نفسَه`,
+        !S7.line("k:pN:n24") && S7.N.calls.refresh >= 1 && J(S7.negSaid()) === J(["unsure:صفر بكارتون"]), J({ said: S7.negSaid(), e: S7.errs(), r: S7.N.calls.refresh }));
+      S7.end();
+    }
+
+    const S8 = await session(M, { products: [{ ...PN, stock: -3 }, PC, PS], neg: { active: false, used: true } });
+    await S8.scan("CTN-N");
+    c("ن٨ الوضعُ انتهى والرصيدُ تحت الصفر: «انتهى — لا تدخله» — لا «الباقي −٣ — كمّل بالعلبة»", !S8.line("k:pN:n24") && J(S8.negSaid()) === J(["ended:صفر بكارتون"]), J({ said: S8.negSaid(), e: S8.errs() }));
+    S8.end();
+  }
 }
 
 /* ── التشغيل ───────────────────────────────────────────────────────────────── */
@@ -467,7 +562,13 @@ const MUTANTS = [
   ["العروضُ تقرأ الكارتون", "computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(cart.filter((l) => !l.ret), promoRules)"],
   ["الراجعُ يبيع كارتوناً", "    if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: \"ret\"", "    if (false && retMode && !opt?.sale) return refuse(m.say.packSay({ kind: \"ret\""],
   ["المغلّفُ يبدّل سطرَ العلبة بصمت", "      else if (line && line.saleUnit !== \"sub\") {", "      else if (false && line && line.saleUnit !== \"sub\") {"],
-  ["«الباقي» = الرصيد كلُّه", "      return formatNum(Math.round(((row.stock ?? 0) - used) * 1000) / 1000);", "      return formatNum(row.stock ?? 0);"],
+  ["«الباقي» = الرصيد كلُّه", "      return Math.round(((row.stock ?? 0) - used) * 1000) / 1000;", "      return row.stock ?? 0;"],
+  ["الكارتونُ لا يسأل عن الوضع", "    const negAsk = negMod && negKeyRef.current && !negNow().active && !negNow().state?.absent ? negMod.refreshNeg(negKeyRef.current) : null;", "    const negAsk = null as Promise<unknown> | null;"],
+  ["الكارتونُ يقول «أقلّ من كارتون» عن سبب الوضع", "      if (why && (why === \"unsure\" || leftNum(fresh) < 1)) {", "      if (false) {"],
+  ["سببُ الوضع والعلبُ باقية", "      if (why && (why === \"unsure\" || leftNum(fresh) < 1)) {", "      if (why) {"],
+  ["«ما تأكّدنا» بالعلب الباقية «أقلّ من كارتون»", "      if (why && (why === \"unsure\" || leftNum(fresh) < 1)) {", "      if (why && leftNum(fresh) < 1) {"],
+  ["الكارتونُ المرفوع «كبير» بعلبه", "? (l.negLift ? (negMod ? negMod.bigLifted(l.qty, { sub: false, unitsPerBox: null, byWeight: false }) : l.qty >= 10)", "? (l.negLift ? (negMod ? negMod.bigLifted(lineStockQty(l), { sub: false, unitsPerBox: null, byWeight: false }) : lineStockQty(l) >= 10)"],
+  ["الكارتونُ المرفوع لا يُسأل أبداً", "? (l.negLift ? (negMod ? negMod.bigLifted(l.qty, { sub: false, unitsPerBox: null, byWeight: false }) : l.qty >= 10)", "? (l.negLift ? false"],
   ["الوحدةُ بالفاتورة «علبة» للكارتون", "    : isPackLine(l) ? (l.packName || null)\n", ""],
   ["مسارُ العلبة لا يعرف الرفَّ المشترك", "    if (!ret && sibUse(product.id, `p:${product.id}`) > 0) return shelfAdd(product, n, opt);\n", ""],
   ["«تبيع الرصيد كلّه؟» لكلّ سطرٍ وحده", "    l.kind === \"product\" && !l.ret && l.stock != null && (!l.negLift && shared(l)", "    l.kind === \"product\" && !l.ret && l.stock != null && (false && shared(l)"],
