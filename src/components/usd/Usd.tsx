@@ -153,7 +153,7 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
   const r = state?.rate ?? null;
   const sell = centsOf(value.sell), buy = centsOf(value.buy);
   const problem = usdDraftProblem(value, blockers);
-  const what = [blockers.weight && t("usd.prod.bWeight"), blockers.sub && t("usd.prod.bSub"), blockers.pooled && t("usd.prod.bPooled"), blockers.packs && t("usd.prod.bPacks")].filter(Boolean).join("، ");
+  const what = [blockers.weight && t("usd.prod.bWeight"), blockers.sub && t("usd.prod.bSub"), blockers.pooled && t("usd.prod.bPooled")].filter(Boolean).join("، ");
   return (
     <div className={cn("rounded-2xl border p-3", value.on ? "border-success-200 bg-success-50/50 dark:border-success-500/30 dark:bg-success-500/10" : "border-line")} data-usd-fields>
       <label className="flex cursor-pointer items-start justify-between gap-3">

@@ -718,13 +718,16 @@ await caught("«يتبع سعر الشراء» يرسل صفراً", noteMut("on
 await caught("المجهولُ يُعرض صفراً", noteMut("const avg = raw == null ? null : Number(raw);", "const avg = Number(raw ?? 0);"));
 await caught("القائمةُ لا تُقرأ بعد التصحيح", noteMut("      onChanged();\n", ""));
 await caught("المتوسّطُ بلا تقريب منزلتين", noteMut("formatDec(fromScaled(roundScaled(avg, 2), 2))", "formatDec(Number(avg))"));
+// ولا لمادّة الدولار: متوسّطُها بالدينار وكلفةُ بيعها سعرُ الشراء بالدولار — «صحّح المتوسّط» كان يكتب ديناراً (جردُ ثغرات الدولار، ١٦/١١).
+check("النموذجُ لا يرسم المتوسّطَ لمادّة الدولار (بوّابةُ usd.on && usdEnabled على الحلقة)",
+  /\{product && can\("viewProfits"\) && !restricted && !\(usd\.on && usdEnabled\) && <AvgCostSlot/.test(readFileSync("src/pages/Inventory.tsx", "utf8")));
 const modalMut = (from, to, tag) => async (ck) => {
   const M = await loadInventory((s) => swap(s, from, to), tag);
   if (typeof M?.ProductModal !== "function") throw new Error("ما انحزم");
   await modalSuite(M, ck);
 };
-await caught("الحلقةُ بلا بوّابة الكلفة بالنموذج", modalMut('{product && can("viewProfits") && !restricted && <AvgCostSlot', "{product && <AvgCostSlot", "inv-mut1"));
-await caught("الحلقةُ بالإنشاء أيضاً", modalMut('{product && can("viewProfits") && !restricted && <AvgCostSlot product={product}', '{can("viewProfits") && !restricted && <AvgCostSlot product={product ?? ({ id: "new" } as Product)}', "inv-mut2"));
+await caught("الحلقةُ بلا بوّابة الكلفة بالنموذج", modalMut('{product && can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot', "{product && <AvgCostSlot", "inv-mut1"));
+await caught("الحلقةُ بالإنشاء أيضاً", modalMut('{product && can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot product={product}', '{can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot product={product ?? ({ id: "new" } as Product)}', "inv-mut2"));
 await caught("النموذجُ يرسل avg_cost مع الحمولة", modalMut("        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled),\n      };", "        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled),\n        avg_cost: product?.avg_cost ?? null,\n      };", "inv-mut3"));
 const mvMut = (from, to, suite) => async (ck) => suite(await loadMv((s) => swap(s, from, to), "mv-mut"), ck);
 await caught("القطعةُ بلا نطاقها avgc", mvMut('page(() => import("@/components/inventory/AvgCostNote"), ["avgc"])', 'page(() => import("@/components/inventory/AvgCostNote"), [])', slotSuite));

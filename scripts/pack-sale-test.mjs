@@ -121,6 +121,8 @@ const STUB = {
     export { activeNow, liftable, daysLeft, bigLifted, lastDayOf } from "./src/lib/negStock.ts";`,
   /* الشريحةُ تسجّل ما يُطلب قولُه (says) — رسائلُ الوضع تمرّ منها لا من toast. */
   "@/components/negstock/NegStock": "export const NegBar = (p) => { globalThis.__psNegBar = p; return null; }; export const NegCheckoutDialog = (p) => { globalThis.__psNegChk = p; return null; }; export const NegStockCard = () => null;",
+  /* سلّةُ الدولار (0272): ما تُفتح به — المادّةُ وكارتونُها. */
+  "@/components/usd/Usd": "export const UsdSaleSheet = (p) => { if (p.open) globalThis.__psUsd = { first: p.first?.id ?? null, pack: p.firstPack?.id ?? null }; return null; };",
   "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null;",
 };
 function importsOf(src) {
@@ -519,6 +521,16 @@ async function run(M, c) {
       S7.end();
     }
 
+    /* ن٩) كارتونُ مادّة الدولار (0272): مسحُه يفتح سلّةَ الدولار بسطر الكارتون — كان يُرفض «بيعها بوحدتها الأساسية». */
+    globalThis.__psUsd = null;
+    const PUSD = PRD({ id: "pU", name: "مستورد", barcode: "B-U", price_currency: "USD", sell_price_usd: 5, purchase_price_usd: 4, purchase_price: 0, sell_price: 0,
+      packs: [{ id: "u12", name: "كارتون", codes: ["CTN-U"], per: 12, purchase_price: null, sell_price: null }] });
+    const S9 = await session(M, { products: [PUSD, PC, PS] });
+    await S9.scan("CTN-U");
+    c("ن٩ كارتونُ مادّة الدولار: سلّةُ الدولار تُفتح بسطر الكارتون (لا رفض، ولا سطرَ دينار)",
+      J(globalThis.__psUsd) === J({ first: "pU", pack: "u12" }) && !S9.line("k:pU:u12") && S9.cart().length === 0 && !S9.errs().some((x) => x.startsWith("pks.")), J({ usd: globalThis.__psUsd, e: S9.errs() }));
+    S9.end();
+
     const S8 = await session(M, { products: [{ ...PN, stock: -3 }, PC, PS], neg: { active: false, used: true } });
     await S8.scan("CTN-N");
     c("ن٨ الوضعُ انتهى والرصيدُ تحت الصفر: «انتهى — لا تدخله» — لا «الباقي −٣ — كمّل بالعلبة»", !S8.line("k:pN:n24") && J(S8.negSaid()) === J(["ended:صفر بكارتون"]), J({ said: S8.negSaid(), e: S8.errs() }));
@@ -568,6 +580,7 @@ const MUTANTS = [
   ["سببُ الوضع والعلبُ باقية", "      if (why && (why === \"unsure\" || leftNum(fresh) < 1)) {", "      if (why) {"],
   ["«ما تأكّدنا» بالعلب الباقية «أقلّ من كارتون»", "      if (why && (why === \"unsure\" || leftNum(fresh) < 1)) {", "      if (why && leftNum(fresh) < 1) {"],
   ["الكارتونُ المرفوع «كبير» بعلبه", "? (l.negLift ? (negMod ? negMod.bigLifted(l.qty, { sub: false, unitsPerBox: null, byWeight: false }) : l.qty >= 10)", "? (l.negLift ? (negMod ? negMod.bigLifted(lineStockQty(l), { sub: false, unitsPerBox: null, byWeight: false }) : lineStockQty(l) >= 10)"],
+  ["كارتونُ الدولار يُرفض كما كان", "    if (p.price_currency === \"USD\") { usdTap(p, { sale: true }, pack); return { added: null, refused: false }; }", "    if (p.price_currency === \"USD\") { playWarning(); return { added: null, refused: true }; }"],
   ["الكارتونُ المرفوع لا يُسأل أبداً", "? (l.negLift ? (negMod ? negMod.bigLifted(l.qty, { sub: false, unitsPerBox: null, byWeight: false }) : l.qty >= 10)", "? (l.negLift ? false"],
   ["الوحدةُ بالفاتورة «علبة» للكارتون", "    : isPackLine(l) ? (l.packName || null)\n", ""],
   ["مسارُ العلبة لا يعرف الرفَّ المشترك", "    if (!ret && sibUse(product.id, `p:${product.id}`) > 0) return shelfAdd(product, n, opt);\n", ""],

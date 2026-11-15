@@ -48,6 +48,10 @@ const usd$ = (n: number | null | undefined): string => {
   if (n == null) return "$—";
   return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 };
+/** داخل جملةٍ مترجمة: معزولٌ اتجاهياً (LRI…PDI) — بجملةٍ عربية كان «$400» يُرسم «400$» (usdIso). */
+const usdIn = (n: number | null | undefined): string => `\u2066${usd$(n)}\u2069`;
+/** باقي فاتورة الدولار بالدولار — الدَّينُ بالدولار، ودينارُ يوم البيع يبدو أصغرَ كلّما صعد الدولار. */
+const usdDueOf = (inv: Invoice): number => Math.max(0, Math.round(((inv.total_usd ?? 0) - (inv.paid_usd ?? 0)) * 100)) / 100;
 let ReturnSheetLazy = loadReturnSheet();
 /* وما رجع للمخزن من موادّ الخدمة بعد الترجيع والحذف (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ
    بحارسٍ بمكانها، لفاتورةٍ فيها سطرُ خدمة وحدها، ولا ينتظرها الفعلُ نفسُه. */
@@ -432,8 +436,9 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   </div>
                   <div className="text-end">
                     <p className="font-display font-bold tabular-nums text-success-600 dark:text-success-300">+{money(e.amount)}</p>
-                    {e.remainingAfter > 0.009
-                      ? <p className="text-2xs text-warn-600">{t("retail.settlementLeft", { amount: money(e.remainingAfter), defaultValue: "Left after: {{amount}}" })}</p>
+                    {e.usd != null && e.usd !== 0 && <p className="text-2xs font-semibold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-settle-usd>{usd$(e.usd / 100)}</p>}
+                    {(e.remainingAfterUsd != null ? e.remainingAfterUsd > 0 : e.remainingAfter > 0.009)
+                      ? <p className="text-2xs text-warn-600">{t("retail.settlementLeft", { amount: e.remainingAfterUsd != null ? usdIn(e.remainingAfterUsd / 100) : money(e.remainingAfter), defaultValue: "Left after: {{amount}}" })}</p>
                       : <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><CheckCircle2 size={10} /> {t("retail.settlementCleared", "Fully settled")}</p>}
                   </div>
                 </motion.button>
@@ -513,9 +518,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.wasDebt", "سُدِّد دَينها")}</Badge>
                 )}
                 <div className="text-end">
-                  <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</p>
+                  {/* فاتورةُ الدولار بالدولار (0264): إجماليُّها وباقيها — دينارُ يوم البيع بلا علامة كان يُقرأ ديناً بالدينار ويبدو أصغر. */}
+                  <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>
+                    {inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd>{usd$(inv.total_usd)}</bdi> : money(inv.total)}
+                  </p>
                   {!refunded && isDebt(inv)
-                    ? <p className="flex items-center justify-end gap-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")} {money(dueOf(inv))}</p>
+                    ? <p className="flex items-center justify-end gap-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")} {inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd-due>{usd$(usdDueOf(inv))}</bdi> : money(dueOf(inv))}</p>
                     : !refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
                 </div>
               </motion.button>

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { cn, money } from "@/lib/utils";
+import i18n from "i18next";
 
 /* ============================================================================
  * نسبةُ الراجع بشاشة البيع (المالك، ١٠/١١) — قطعةٌ كسولة بنطاقها المملوك rpct.
@@ -17,6 +18,8 @@ import { cn, money } from "@/lib/utils";
  * ==========================================================================*/
 
 /** النسبُ كما سمّاها المالك، والافتراضُ ١٠٠ أوّلاً. */
+/** مادّةُ الدولار بالراجع الخالص (شاشةُ البيع تناديها بـimport() — نصُّ النطاق المملوك لا يُقرأ خارجه). */
+export const retUsdSay = (name: string): string => i18n.t("rpct.usd", { name });
 export const RET_PCTS = [100, 75, 50, 30, 25, 20] as const;
 
 /** تحت زرّ «راجع» ما دام فعّالاً: كم يُردّ للزبون، وما يحدث بالمال. */

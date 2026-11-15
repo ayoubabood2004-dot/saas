@@ -2,7 +2,8 @@
  * محرّرُ «التعبئة» بنموذج المادة (0259) — رفيقُ صفحة المخزون بنطاقها `pkg` (hot-paths.json).
  *
  * الكارتون (حتى أربعة، كلٌّ بعدده من العلب وباركوداته وسعرَيه) ← العلبة (الوحدةُ الوسطى، اسمُها هنا) ← المغلّف (باركوداتُ الوحدة
- * الصغرى القائمة وسعرُ شرائه). السعرُ الفارغ **محسوبٌ من العلبة** ويُرى حسابُه بالحقل نفسِه — اقتراحٌ يُغيَّر لا رقمٌ يُفرض.
+ * الصغرى القائمة وسعرُ شرائه). السعرُ الفارغ **محسوبٌ من العلبة** ويُرى رقمُه داخل الخانة (`AutoPrice`) وحسابُه تحتها — اقتراحٌ
+ * يُغيَّر لا رقمٌ يُفرض، ويبقى تلقائياً ما لم يُكتب غيرُه.
  * المحرّرُ مسودّةٌ وحدها (`PackagingDraft`): الحكمُ (`packagingFromDraft`) وصاحبُ الرمز (`codeOwner`) بالحفظ، وهنا يُقالان
  * بجانب الحقل قبل الضغط — رمزٌ مكرّرٌ يُرى عند كتابته لا بعد رفض الخادم.
  * ========================================================================= */
@@ -10,13 +11,15 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Boxes, Plus, Trash2 } from "lucide-react";
 import type { Product } from "@/types";
-import { cn, formatNum, money, normalizeCode, matchCode } from "@/lib/utils";
+import { cn, formatNum, money as moneyIqd, normalizeCode, matchCode } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { PACK_LIMITS, codeOwner, newPackId, type CodeLevel, type PackDraft, type PackagingDraft } from "@/lib/packs";
 
 export interface PackagingEditorProps {
   value: PackagingDraft;
   onChange: (v: PackagingDraft) => void;
+  /** عملةُ المادّة (0272): أسعارُ الكارتون بها — لمادّة الدولار بالدولار، وحسابُها من سعرَي العلبة بالدولار. */
+  currency?: "IQD" | "USD";
   /** أسعارُ العلبة كما بالنموذج الآن — منها يُحسب الفارغ. */
   boxSell: number;
   boxPurchase: number;
@@ -83,9 +86,41 @@ function CodesInput({ codes, onChange, level, products, selfId, disabled, testId
   );
 }
 
+/** رقمٌ مكتوب ⇒ قيمته، والفارغُ والسيّئُ null. */
+const typedNum = (s: string): number | null => {
+  const v = normalizeCode(s).replace(/,/g, "");
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+/** خانةُ سعرٍ تلقائيّ: الحسابُ **بالخانة نفسِها**. بلاغُ المالك (١٦/١١): «لمن يحسبها ينزلها … ولمن احفظها بلا ما اكتبها بيدي ما
+ *  تنزل» — كان سطراً تحت خانةٍ فارغة، فيُفتح النموذجُ والخانةُ فارغة ويُظنّ أن السعرَ ما انحفظ. والمحفوظُ كما كان: ما يساوي الحسابَ
+ *  «تلقائي» (null — يتبع سعرَ العلبة إذا تغيّر، والرفعُ يحرّكه)، وغيرُه مكتوب. ما يُكتب يبقى كما كُتب حتى المغادرة (لا يقفز
+ *  الحسابُ إليها وهي تُمسح)، والفراغُ عند المغادرة يرجّعها تلقائية. */
+function AutoPrice({ own, auto, onChange, disabled, id, data }: {
+  own: string; auto: number | null; onChange: (v: string) => void; disabled?: boolean; id?: string; data: Record<string, string | number>;
+}) {
+  const [edit, setEdit] = useState<string | null>(null);
+  const shown = edit ?? (own.trim() ? own : auto != null ? String(auto) : "");
+  const sameAsAuto = (v: string) => {
+    const n = typedNum(v);
+    return auto != null && n != null && Math.round(n * 100) === Math.round(auto * 100);
+  };
+  return (
+    <input id={id} type="number" inputMode="decimal" min="0" className="input" value={shown} disabled={disabled} {...data}
+      onChange={(e) => { const v = e.target.value; setEdit(v); onChange(!v.trim() || sameAsAuto(v) ? "" : v); }}
+      onBlur={() => setEdit(null)} />
+  );
+}
+
 export default function PackagingEditor(props: PackagingEditorProps) {
   const { t } = useTranslation();
   const { value: d, onChange, boxSell, boxPurchase, hasSubUnit, unitsPerBox, subUnitName, byWeight, pooled, products, selfId, disabled } = props;
+  /* المبلغُ بعملة المادّة: «$60» لمادّة الدولار (كان «60 د.ع» عن سعرٍ بالدولار) — معزولٌ اتجاهياً (LRI…PDI): بجملةٍ عربية كان «$60»
+   * يُرسم «60$». والأرقامُ نفسُها. */
+  const usd = props.currency === "USD";
+  const money = (n: number): string => (usd ? `\u2066$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\u2069` : moneyIqd(n));
   const unit = d.unit_name.trim() || t("pkg.level.box");
   const sub = subUnitName.trim() || t("pkg.level.sub");
   const subOn = hasSubUnit && unitsPerBox > 0 && !byWeight;
@@ -98,19 +133,17 @@ export default function PackagingEditor(props: PackagingEditorProps) {
     const n = Number(normalizeCode(per));
     return Number.isInteger(n) && n >= PACK_LIMITS.perMin && n <= PACK_LIMITS.perMax ? n : null;
   };
-  const typed = (s: string): number | null => {
-    const v = normalizeCode(s).replace(/,/g, "");
-    if (!v) return null;
-    const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? n : null;
-  };
+  const typed = typedNum;
   /** سعرُ الكارتون كما سيُحسب: المكتوبُ، وإلا الوحدةُ × العدد بالفلس (مرآةُ `packPrice`). */
   const packEff = (own: string, box: number, per: number | null): number | null => {
     const w = typed(own);
     if (w != null) return w;
     return per != null && box > 0 ? (Math.round(box * 100) * per) / 100 : null;
   };
-  const derivedSub = unitsPerBox > 0 && boxPurchase > 0 ? money(Math.round((Math.round(boxPurchase * 100)) / unitsPerBox) / 100) : "";
+  /** الحسابُ الذي تحمله الخانةُ الفارغة (مرآةُ `packPrice`/`subPurchasePrice`). */
+  const packAuto = (box: number, per: number | null): number | null => (per != null && box > 0 ? (Math.round(box * 100) * per) / 100 : null);
+  const subAuto = unitsPerBox > 0 && boxPurchase > 0 ? Math.round((Math.round(boxPurchase * 100)) / unitsPerBox) / 100 : null;
+  const derivedSub = subAuto != null ? money(subAuto) : "";
   /** سطرُ الحساب تحت خانة سعر الكارتون. */
   const packNote = (own: string, box: number, per: number | null, attr: string) => {
     const w = typed(own);
@@ -123,7 +156,7 @@ export default function PackagingEditor(props: PackagingEditorProps) {
     if (box <= 0) return <p className="mt-1 text-2xs text-ink-subtle" data-pkgnote={attr}>{t("pkg.needBox", { unit })}</p>;
     return (
       <p className="mt-1 text-2xs font-semibold text-brand-700 dark:text-brand-300" data-pkgnote={attr}>
-        {t("pkg.autoCalc", { n: per, each: formatNum(box), v: money((Math.round(box * 100) * per) / 100) })}
+        {t("pkg.autoCalc", { n: per, each: usd ? money(box) : formatNum(box), v: money((Math.round(box * 100) * per) / 100) })}
       </p>
     );
   };
@@ -153,9 +186,8 @@ export default function PackagingEditor(props: PackagingEditorProps) {
             {subOn && (
               <div>
                 <label className="label" htmlFor="pkg-sub-buy">{t("pkg.subPurchase", { sub })}</label>
-                <input id="pkg-sub-buy" type="number" inputMode="decimal" min="0" className="input" value={d.sub_purchase_price} disabled={disabled}
-                  onChange={(e) => set({ sub_purchase_price: e.target.value })}
-                  placeholder={t("pkg.autoPh")} data-pkgsubbuy />
+                <AutoPrice id="pkg-sub-buy" own={d.sub_purchase_price} auto={subAuto} disabled={disabled} data={{ "data-pkgsubbuy": "" }}
+                  onChange={(v) => set({ sub_purchase_price: v })} />
                 {!d.sub_purchase_price.trim() && derivedSub && (
                   <p className="mt-1 text-2xs font-semibold text-brand-700 dark:text-brand-300" data-pkgnote="sub">
                     {t("pkg.autoSub", { box: formatNum(boxPurchase), n: unitsPerBox, v: derivedSub })}
@@ -200,16 +232,14 @@ export default function PackagingEditor(props: PackagingEditorProps) {
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <label className="label">{t("pkg.packPurchase")}</label>
-                  <input type="number" inputMode="decimal" min="0" className="input" value={k.purchase_price} disabled={disabled} data-pkgbuy={i}
-                    onChange={(e) => setPack(i, { purchase_price: e.target.value })}
-                    placeholder={t("pkg.autoPh")} />
+                  <AutoPrice own={k.purchase_price} auto={packAuto(boxPurchase, perOf(k.per))} disabled={disabled} data={{ "data-pkgbuy": i }}
+                    onChange={(v) => setPack(i, { purchase_price: v })} />
                   {packNote(k.purchase_price, boxPurchase, perOf(k.per), `buy${i}`)}
                 </div>
                 <div>
                   <label className="label">{t("pkg.packSell")}</label>
-                  <input type="number" inputMode="decimal" min="0" className="input" value={k.sell_price} disabled={disabled} data-pkgsell={i}
-                    onChange={(e) => setPack(i, { sell_price: e.target.value })}
-                    placeholder={t("pkg.autoPh")} />
+                  <AutoPrice own={k.sell_price} auto={packAuto(boxSell, perOf(k.per))} disabled={disabled} data={{ "data-pkgsell": i }}
+                    onChange={(v) => setPack(i, { sell_price: v })} />
                   {packNote(k.sell_price, boxSell, perOf(k.per), `sell${i}`)}
                 </div>
               </div>

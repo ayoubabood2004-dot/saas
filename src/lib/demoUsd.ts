@@ -99,17 +99,29 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   if (!Array.isArray(items) || items.length === 0) throw new Error("empty cart");
 
   const seen = new Set<string>();
-  const lines: { pid: string; name: string; barcode: string | null; qty: number; unitCents: bigint; costCents: bigint | null }[] = [];
+  const lines: { pid: string; name: string; barcode: string | null; qty: number; unitCents: bigint; costCents: bigint | null; per: number; label: string | null; key: string }[] = [];
   for (const it of items) {
     const p = (db0.products ?? []).find((x) => x.id === it.product_id);
     if (!p || p.price_currency !== "USD") throw err("usd_mixed");
-    if (seen.has(p.id)) throw err("usd_duplicate_line");
-    seen.add(p.id);
+    /* 0272: سطرُ كارتون — محفوظٌ على المادّة بعدده كما رآه الجهاز (وإلا pack_changed)، والتكرارُ بمفتاح (المادّة:العدد). */
+    let per = 1;
+    let pack: { id: string; name: string; per: number; sell_price?: number | null } | null = null;
+    if (it.pack_id) {
+      pack = (Array.isArray(p.packs) ? p.packs : []).find((k) => k.id === it.pack_id) ?? null;
+      if (!pack || !Number.isInteger(pack.per) || pack.per < 2 || (it.pack_per != null && Number(it.pack_per) !== pack.per)) throw err("pack_changed");
+      per = pack.per;
+    }
+    const key = `${p.id}:${per}`;
+    if (seen.has(key)) throw err("usd_duplicate_line");
+    seen.add(key);
     const qty = Number(it.qty);
     if (!Number.isFinite(qty) || qty <= 0 || !Number.isInteger(qty)) throw err("usd_qty");
-    const unit = it.unit_price_usd != null && it.unit_price_usd !== "" ? centsOf(it.unit_price_usd) : p.sell_price_usd == null ? null : C(p.sell_price_usd);
+    const box = p.sell_price_usd == null ? null : C(p.sell_price_usd);
+    const fallback = pack ? (pack.sell_price != null ? C(pack.sell_price) : box == null ? null : box * BigInt(per)) : box;
+    const unit = it.unit_price_usd != null && it.unit_price_usd !== "" ? centsOf(it.unit_price_usd) : fallback;
     if (unit == null || unit < 0n) throw err("usd_no_price");
-    lines.push({ pid: p.id, name: p.name, barcode: p.barcode ?? null, qty, unitCents: unit, costCents: p.purchase_price_usd == null ? null : C(p.purchase_price_usd) });
+    lines.push({ pid: p.id, name: p.name, barcode: p.barcode ?? null, qty, unitCents: unit,
+      costCents: p.purchase_price_usd == null ? null : C(p.purchase_price_usd) * BigInt(per), per, label: pack?.name ?? null, key });
   }
   const disc = meta.discount_usd != null && meta.discount_usd !== "" ? centsOf(meta.discount_usd) ?? 0n : 0n;
   const t = cartTotals(lines.map((l) => ({ qty: BigInt(l.qty), unitCents: l.unitCents })), disc, cur.rate1e4);
@@ -118,7 +130,7 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   if (paid === null) throw err("usd_partial_at_sale");
 
   const checkout: CheckoutItem[] = lines.map((l, j) => ({
-    product_id: l.pid, name: l.name, barcode: l.barcode, qty: l.qty, stock_qty: l.qty, unit_price: N(t.unitIqd[j] * 100n), unit_cost: 0, service_id: null,
+    product_id: l.pid, name: l.name, barcode: l.barcode, qty: l.qty, stock_qty: l.qty * l.per, unit_label: l.label, unit_price: N(t.unitIqd[j] * 100n), unit_cost: 0, service_id: null,
   }));
   const inv0 = await demoUsdRetail(checkout, {
     customer_name: meta.customer_name ?? null, customer_phone: meta.customer_phone ?? null, pet_name: meta.pet_name ?? null,
@@ -134,7 +146,8 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   const inv = (db.invoices ?? []).find((x) => x.id === inv0.id)!;
   let cost = 0n;
   for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === inv.id)) {
-    const l = lines.find((x) => x.pid === it.product_id)!;
+    // بمفتاح السطر (المادّة:العدد) — علبةٌ وكارتونٌ من المادّة نفسِها سطران (0272).
+    const l = lines.find((x) => x.key === `${it.product_id}:${Number(it.stock_qty) / Number(it.qty) || 1}`)!;   // مضاعفٌ صحيح (لا كسرَ للدولار)
     // كلفةُ دولارٍ فارغة: تبقى كلفةُ مرآة retail_checkout (كالخادم) لا صفر.
     const fils = l.costCents == null ? C(it.unit_cost) : costFilsOf(l.costCents, cur.rate1e4);
     it.unit_price_usd = N(l.unitCents); it.unit_cost_usd = l.costCents == null ? null : N(l.costCents); it.unit_cost = N(fils);
@@ -243,6 +256,10 @@ export async function demoUsdVoid(settlementId: string, reasonIn: string): Promi
 
 export async function demoUsdDelete(invoiceId: string): Promise<void> {
   gate();
+  // delete_usd_invoice بترتيبه: الفاتورةُ موجودة ← فاتورةُ دولار ← بلا تسديدٍ حيّ (فاتورةُ دينارٍ كانت تُحذف من هنا بلا رفض).
+  const inv = (loadDB().invoices ?? []).find((x) => x.id === invoiceId);
+  if (!inv) throw new Error("invoice not found");
+  if (inv.currency !== "USD") throw err("usd_not_usd");
   if (load().settlements.some((x) => x.invoice_id === invoiceId && !x.voided_at)) throw err("usd_delete_settled");
   await demoWithUsdDoor(() => demoRepo.deleteInvoice(invoiceId));
   const s = load();
