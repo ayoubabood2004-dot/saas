@@ -1822,6 +1822,34 @@ export interface DemoStockCount extends StockCount {
   source_product?: string | null;
 }
 
+/** سطرُ مادّةٍ بدينٍ قديم (0273): من المخزن (product_id) أو بالاسم — لا يُنقص المخزن وليس بيعاً. returned_qty ما رجع منه. */
+export interface OldDebtItem {
+  id: string;
+  clinic_id: string | null;
+  invoice_id: string;
+  product_id: string | null;
+  name: string;
+  qty: number;
+  /** بالدينار (لدين الدولار: دينارُ سعر الدولار بسعر يوم الكتابة — للعرض). */
+  unit_price: number;
+  unit_price_usd: number | null;
+  returned_qty: number;
+  created_at: string;
+}
+/** مرتجعُ موادّ دينٍ قديم (0273) — سطرٌ لكلّ مرتجع، ومرجعُ إعادته. */
+export interface OldDebtReturn {
+  id: string;
+  clinic_id: string | null;
+  invoice_id: string;
+  client_ref: string | null;
+  lines: { item_id: string; name: string; qty: number; value: number; product_id: string | null }[];
+  value: number;
+  cash_back: number;
+  note: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -1849,6 +1877,9 @@ export interface DemoDB {
   invoiceItems: InvoiceItem[];
   /** دفترُ الخصم على الدين (0241). */
   invoiceForgiveness?: InvoiceForgiveness[];
+  /** موادُّ الدين القديم ومرتجعاتُها (0273) — مرآةُ old_debt_items/old_debt_returns. */
+  oldDebtItems?: OldDebtItem[];
+  oldDebtReturns?: OldDebtReturn[];
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
   purchaseEffects?: PurchaseEffect[];

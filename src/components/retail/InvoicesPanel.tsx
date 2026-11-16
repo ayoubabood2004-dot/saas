@@ -801,7 +801,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
 
         {opening && (
           <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setLazyTick((n) => n + 1); }}>
-            <Suspense fallback={null}><OldDebtNoteLazy invoice={invoice} full /></Suspense>
+            <Suspense fallback={null}><OldDebtNoteLazy invoice={invoice} full onChanged={(u: Invoice) => { setOpen(u); onChanged(); }} /></Suspense>
           </LoadBoundary>
         )}
 
