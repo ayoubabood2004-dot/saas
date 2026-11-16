@@ -360,10 +360,15 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
           <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-ink">
             <RotateCcw size={16} className="text-warn-600" /> {t("ret.sumTitle", "خلاصة المرتجع")}
           </h3>
-          {!picked || !calc || pickedOpening ? (
-            <p className="rounded-xl bg-surface-2 p-4 text-center text-xs text-ink-subtle">
-              {pickedOpening ? t("odebt.returnPick", "دين سابق — المواد اللي أخذها ترجع من هنا") : t("ret.pickFirst", "اختر فاتورة من القائمة أولاً.")}
-            </p>
+          {pickedOpening ? (
+            /* الدينُ القديم يترجّع بقطعته يساراً (معاينتُها هناك) — هنا شارتُه وحدها: نصوصُ odebt لمالكها (i18n-owned-guard). */
+            <div className="rounded-xl bg-surface-2 p-3" data-ret-odebt>
+              <LoadBoundary scope="odebt-tag" onRetry={() => { OldDebtTagLazy = loadOldDebtTag(); setLazyTick((n) => n + 1); }}>
+                <Suspense fallback={null}><OldDebtTagLazy invoice={picked} /></Suspense>
+              </LoadBoundary>
+            </div>
+          ) : !picked || !calc ? (
+            <p className="rounded-xl bg-surface-2 p-4 text-center text-xs text-ink-subtle">{t("ret.pickFirst", "اختر فاتورة من القائمة أولاً.")}</p>
           ) : (
             <div className="space-y-2.5">
               <Row label={t("ret.rowPieces", "القطع الراجعة")} value={formatNum(calc.count)} />

@@ -269,6 +269,10 @@ check("الشاشة: السطرُ round(كمية × سعر، ٢) كالخادم�
 check("  والمعاينةُ بقاعدة 0121/0241 (الدينُ ثمّ الخصمُ ثمّ النقد)، ومرجعُ إعادة المرتجع يُحرَّر برفضٍ حاسم وحده",
   /const forgNew = forg < \(gross - paid > 0n \? gross - paid : 0n\)/.test(odx) && /const back = paid - after > 0n \? paid - after : 0n;/.test(odx)
   && /if \(shouldReleaseRef\(fresh, e\)\) \{ ref\.current = uid\("odret"\); setPinned\(false\); \} else setPinned\(true\);/.test(odx));
+check("  والمبلغُ يُقال كما قُرئ (بلاغُ ١٦/١١: «14.169.000» أوقفت الزرَّ بصمت): غيرُ المقروء بجملةٍ حمراء، والمقروءُ «يعني: …»، ودينارٌ بكسرٍ يُنبَّه",
+  /cents == null \? \(\s*<p role="alert"[^>]*data-odebt-amountbad>\{t\("odebt\.amountBad"\)\}/.test(odx)
+  && /t\("odebt\.amountRead", \{ v: /.test(odx) && /currency === "IQD" && cents % 100n !== 0n && <span[^>]*data-odebt-amountfrac>/.test(odx));
+check("  وشاشةُ المرتجع لا تقرأ نصوصَ odebt بنفسها (شارتُه الكسولة وحدها)", !/t\("odebt\./.test(src("src/components/retail/ReturnsPanel.tsx")) && /data-ret-odebt/.test(src("src/components/retail/ReturnsPanel.tsx")));
 check("  والمخزنُ يُحمَّل عند أوّل بحث (لا عند فتح النافذة) وفشلُه يُقال ويُعاد — لا قائمةٌ فارغة تُصدَّق",
   /onFocus=\{loadProducts\}/.test(odx) && /\.catch\(\(\) => setProds\(\{ state: "failed" \}\)\)/.test(odx) && /\{t\("odebt\.itemsLoadFailed"\)\}/.test(odx));
 

@@ -286,6 +286,15 @@ function OldDebtDialog({ prefill, onClose, onAdded }: {
             <p className="text-2xs text-ink-subtle" data-odebt-usdnote>{t("odebt.usdNote", { rate: formatNum(usd.per100) })}</p>
           )}
           {usd.state === "failed" && <p className="text-2xs text-ink-subtle">{t("odebt.usdFailed")}</p>}
+          {/* ما قُرئ من المبلغ يُرى بكلمة — «14.169.000» كانت تُوقف الزرَّ بصمت، و«14.169» تُقرأ ١٤ ديناراً وكسراً (بلاغُ المالك ١٦/١١). */}
+          {!pinned && shownAmount.trim() !== "" && (cents == null ? (
+            <p role="alert" className="text-2xs font-bold text-danger-600 dark:text-danger-300" data-odebt-amountbad>{t("odebt.amountBad")}</p>
+          ) : (
+            <p className="text-2xs font-bold text-ink tabular-nums" data-odebt-amountread>
+              {t("odebt.amountRead", { v: currency === "USD" ? `$${plainDec(cents, 2)}` : money(Number(decText(cents, 2))) })}
+              {currency === "IQD" && cents % 100n !== 0n && <span className="ms-1.5 text-warn-700 dark:text-warn-300" data-odebt-amountfrac>{t("odebt.amountFrac")}</span>}
+            </p>
+          ))}
           {autoAmount && <p className="text-2xs text-ink-subtle" data-odebt-amountauto>{t("odebt.amountAuto")}</p>}
           {over && <p className="text-2xs font-bold text-danger-600 dark:text-danger-300" data-odebt-over>{t("odebt.itemsOver", { sum: sumText(sumC) })}</p>}
           {date !== "" && date < today && (
