@@ -36,6 +36,7 @@ import { useToast, Skeleton, Button, Dialog } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
 import { PnlPanel } from "@/components/reports/PnlPanel";
 import { money, formatNum, formatDec, cn, dateLocale } from "@/lib/utils";
+import { purchaseDueCur, usdOf } from "@/lib/purchaseFxMath";
 import { describeDbError } from "@/lib/errors";
 import {
   bucketOf, groupWithdrawals, pickableCategories, categoryNameProblem, cleanCategoryName,
@@ -3633,7 +3634,9 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
   const { t } = useTranslation();
   const total = purchases.reduce((s, p) => s + (p.total || 0), 0);
   const paid = purchases.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0);
-  const due = Math.max(0, total - paid);
+  /* 0274: الدَّينُ بعملته — دينارُ فواتير الدينار، ودولارُ فواتير الدولار بجانبه (دينارُها حصّةٌ داخلية). */
+  const due = purchases.reduce((s, p) => s + (p.currency === "USD" ? 0 : Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0))), 0);
+  const dueUsd = Math.round(purchases.reduce((s, p) => s + (p.currency === "USD" ? purchaseDueCur(p) : 0), 0) * 100) / 100;
   const days = new Set(purchases.map((p) => (p.purchased_at || p.created_at || "").slice(0, 10))).size;
 
   const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "danger" | "success" }) => (
@@ -3654,7 +3657,7 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
         <Kpi label={t("rpt.purchases.days", "يوم شراء")} value={formatNum(days)} />
         <Kpi label={t("rpt.purchases.total", "إجمالي الشراء")} value={money(total)} />
         <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={money(paid)} tone="success" />
-        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={money(due)} tone={due > 0 ? "danger" : "success"} />
+        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={dueUsd > 0 ? `${money(due)} · ${usdOf(dueUsd)}` : money(due)} tone={due > 0 || dueUsd > 0 ? "danger" : "success"} />
       </div>
       {loading
         ? <div className="py-10 text-center text-ink-subtle"><Clock size={18} className="mx-auto mb-2 animate-spin" /> {t("common.loading", "جارٍ التحميل…")}</div>

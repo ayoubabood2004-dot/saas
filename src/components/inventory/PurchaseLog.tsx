@@ -8,6 +8,7 @@ import type { Purchase, PurchaseItem } from "@/types";
 import { repo } from "@/lib/repo";
 import { Badge } from "@/components/ui";
 import { money, formatNum, formatTime, localISO, cn } from "@/lib/utils";
+import { purchaseDueCur, usdOf } from "@/lib/purchaseFxMath";
 import { playTap } from "@/lib/sounds";
 import { PurchaseReceipt } from "@/components/inventory/PurchaseReceipt";
 
@@ -86,6 +87,9 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
         rows: rows.sort((a, b) => (b.purchased_at || "").localeCompare(a.purchased_at || "")),
         total: rows.reduce((s, p) => s + (p.total || 0), 0),
         paid: rows.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0),
+        // 0274: دَينُ اليوم بعملته — دينارُ فواتير الدينار، ودولارُ فواتير الدولار بجانبه (دينارُها حصّةٌ داخلية).
+        dueIqd: rows.reduce((s, p) => s + (p.currency === "USD" ? 0 : Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0))), 0),
+        dueUsd: Math.round(rows.reduce((s, p) => s + (p.currency === "USD" ? purchaseDueCur(p) : 0), 0) * 100) / 100,
         units: rows.reduce((s, p) => s + (p.item_count || 0), 0),
       }));
   }, [purchases]);
@@ -110,8 +114,8 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
 
   return (
     <div className="space-y-4">
-      {days.map(({ day, rows, total, paid, units }) => {
-        const due = Math.max(0, total - paid);
+      {days.map(({ day, rows, total, units, dueIqd, dueUsd }) => {
+        const due = dueIqd;
         const ids = rows.map((r) => r.id);
         const allOpen = ids.every((id) => open.has(id));
         return (
@@ -123,7 +127,7 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                 <h3 className="text-sm font-extrabold text-ink">{dayLabel(day)}</h3>
                 <p className="text-2xs text-ink-subtle">
                   {t("purchase.log.dayCounts", { n: formatNum(rows.length), u: formatNum(units), defaultValue: "{{n}} فاتورة · {{u}} قطعة · صرفت" })} <span className="font-bold tabular-nums text-ink-muted">{money(total)}</span>
-                  {due > 0 && <span className="font-bold text-danger-600 dark:text-danger-300"> · {t("purchase.log.debt", { v: money(due), defaultValue: "دين {{v}}" })}</span>}
+                  {(due > 0 || dueUsd > 0) && <span className="font-bold text-danger-600 dark:text-danger-300"> · {t("purchase.log.debt", { v: [due > 0 ? money(due) : "", dueUsd > 0 ? usdOf(dueUsd) : ""].filter(Boolean).join(" · "), defaultValue: "دين {{v}}" })}</span>}
                 </p>
               </div>
               <button type="button" onClick={() => toggleDay(ids)}
@@ -136,8 +140,11 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
               {rows.map((p) => {
                 const isOpen = open.has(p.id);
                 const its = items[p.id];
-                const pPaid = p.amount_paid ?? p.total ?? 0;
-                const pDue = Math.max(0, (p.total || 0) - pPaid);
+                const pUsd = p.currency === "USD";
+                const pm = (n: number) => (pUsd ? usdOf(n) : money(n));
+                const pTotal = pUsd ? Number(p.total_usd ?? 0) : (p.total || 0);
+                const pPaid = pUsd ? Number(p.paid_usd ?? 0) : (p.amount_paid ?? p.total ?? 0);
+                const pDue = purchaseDueCur(p);
                 return (
                   <div key={p.id}>
                     {/* سطر الفاتورة */}
@@ -153,7 +160,7 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                       <span className="flex items-center gap-1 text-2xs text-ink-subtle"><PackageCheck size={11} /> {t("purchase.log.pieces", { n: formatNum(p.item_count || 0), defaultValue: "{{n}} قطعة" })}</span>
                       <span className="text-sm font-black tabular-nums text-ink">{money(p.total || 0)}</span>
                       <Badge tone={p.status === "paid" ? "success" : p.status === "partial" ? "warn" : "danger"}>
-                        {p.status === "paid" ? t("purchase.log.paid", "مدفوعة") : p.status === "partial" ? t("purchase.log.remaining", { v: money(pDue), defaultValue: "باقي {{v}}" }) : t("purchase.log.fullDebt", "آجلة بالكامل")}
+                        {p.status === "paid" ? t("purchase.log.paid", "مدفوعة") : p.status === "partial" ? t("purchase.log.remaining", { v: pm(pDue), defaultValue: "باقي {{v}}" }) : t("purchase.log.fullDebt", "آجلة بالكامل")}
                       </Badge>
                     </button>
 
@@ -208,7 +215,7 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                                   </tr>
                                 )}
                                 <tr className="border-t border-line">
-                                  <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("purchase.log.invoiceTotal", "إجمالي الفاتورة")}{pPaid < (p.total || 0) ? ` — ${t("purchase.log.paidPart", { v: money(pPaid), defaultValue: "المدفوع {{v}}" })}` : ""}</td>
+                                  <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("purchase.log.invoiceTotal", "إجمالي الفاتورة")}{pPaid < pTotal ? ` — ${t("purchase.log.paidPart", { v: pm(pPaid), defaultValue: "المدفوع {{v}}" })}` : ""}</td>
                                   <td className="py-1.5 text-end font-black tabular-nums text-ink">{money(p.total || 0)}</td>
                                 </tr>
                               </tbody>

@@ -6363,7 +6363,17 @@
     "allocInvoice": "Invoice {{ref}}: {{v}}",
     "paidOpening": "Paid {{v}} off the opening balance",
     "paidInvoices": "Paid {{v}} across {{n}} invoice(s)",
-    "balanceShort": "Balance {{v}}"
+    "balanceShort": "Balance {{v}}",
+    "curLabel": "Ledger currency",
+    "curIqd": "Dinar",
+    "curUsd": "Dollar $",
+    "otherUsd": "And in dollars: {{v}}",
+    "otherIqd": "And in dinars: {{v}}",
+    "handed": "Handed {{v}} at {{r}}",
+    "payIn": "Pay in",
+    "per100": "Rate per $100",
+    "rateBad": "Type the dollar rate — dinars per $100, e.g. 146000.",
+    "reduces": "Handing {{h}} — reduces the debt by {{v}}"
   },
   "praise": {
     "noAccess": "Price raises are for the manager only — and never on a locked device. Sign in with the manager PIN.",
@@ -8857,5 +8867,35 @@
       "notFound": "The debt isn't there — refresh the page.",
       "nothing": "Choose what was returned (a quantity above zero)."
     }
+  },
+  "pfx": {
+    "cur": "Invoice currency",
+    "iqd": "Dinar",
+    "usd": "Dollar",
+    "per100": "Rate per $100",
+    "locked": "It has recorded payments — the currency can't change until they're voided.",
+    "rateBad": "Type the dollar rate — dinars per $100, e.g. 146000.",
+    "rateRead": "That is: one dollar = {{v}} IQD",
+    "clinicRate": "Clinic rate today is {{v}} — this is the invoice's own rate if the company wrote one.",
+    "how": "The dinar cost is computed at this rate and goes into stock; the company debt stays in dollars.",
+    "sellUsd": "Sold in USD",
+    "sellIqd": "Sold in IQD",
+    "sellCurHint": "Selling currency of the new item — tap to switch",
+    "iqdAt": "≈ {{v}} at {{r}}",
+    "paid": "Payment recorded: {{v}}",
+    "payTitle": "Pay the company",
+    "due": "Due: {{v}}",
+    "payIn": "Pay in",
+    "amount": "Amount handed",
+    "fillDue": "Whole due",
+    "method": "Method",
+    "cash": "Cash",
+    "card": "Card",
+    "transfer": "Transfer",
+    "note": "Note (optional)",
+    "amountBad": "The amount couldn't be read — digits only.",
+    "over": "More than the due ({{v}}).",
+    "reduces": "Reduces the debt by {{v}} — {{left}} left",
+    "paySave": "Record payment"
   }
 }
