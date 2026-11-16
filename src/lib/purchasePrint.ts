@@ -255,7 +255,8 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
   // تجميعة البضاعة: نفس المنتج عبر كل الفواتير = صف واحد بكمياته وإجماليه
   type Agg = { name: string; barcode: string | null; qty: number; amount: number; lastCost: number; lastAt: string };
   const agg = new Map<string, Agg>();
-  for (const p of invs) {
+  // 0274: تجميعةُ الدينار على فواتير الدينار وحدها — فاتورةُ الدولار بسطرها في جدول الفواتير بدولارها، ودينارُها لا يُجمع هنا.
+  for (const p of invs.filter((x) => x.currency !== "USD")) {
     for (const it of data.itemsByPurchase.get(p.id) ?? []) {
       const key = it.product_id ?? (it.barcode ? `b:${it.barcode}` : `n:${it.name.trim().toLowerCase()}`);
       let a = agg.get(key);

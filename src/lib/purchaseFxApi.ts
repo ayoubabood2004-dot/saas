@@ -82,3 +82,14 @@ const demo: PurchaseFxApi = {
 };
 
 export const purchaseFx: PurchaseFxApi = supabase ? cloud : demo;
+
+/** هل يُعرض الدولار بالشراء ودفتر الشركة: الأجسامُ تعرف العملتين **والعيادةُ مفعّلة** — وسعرُ العيادة (للدولار الواحد) اقتراحاً.
+ *  فحصُ قدرةٍ لا قائمةُ قرار: الفشلُ «لا» والشراءُ بالدينار كما كان. سؤالٌ واحد للشاشات الثلاث. */
+export async function purchaseFxState(): Promise<{ ok: boolean; clinicRate: number | null }> {
+  try {
+    const [ready, st] = await Promise.all([purchaseFx.ready(), import("./usdApi").then((m) => m.usdApi.state())]);
+    return { ok: ready && st.enabled, clinicRate: st.rate ? Number(st.rate.rate) : null };
+  } catch {
+    return { ok: false, clinicRate: null };
+  }
+}

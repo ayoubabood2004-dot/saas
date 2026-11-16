@@ -11,7 +11,7 @@ import { Modal } from "@/components/Modal";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { PurchaseDetailModal } from "@/components/inventory/Purchases";
 import { buildCompanyLedger, curOfEntry, curOfPurchase, payableOf, previewPay, type LedgerCur, type LedgerRow } from "@/lib/companyLedger";
-import { purchaseFx } from "@/lib/purchaseFxApi";
+import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
 import { per100Text, ratePerUsd, usdOf } from "@/lib/purchaseFxMath";
 import { describeDbError, withTimeout } from "@/lib/errors";
 import { cn, formatDate, formatNum, localISO, money } from "@/lib/utils";
@@ -56,9 +56,7 @@ export function CompanyBook() {
   const [fx, setFx] = useState<{ ok: boolean; clinicRate: number | null }>({ ok: false, clinicRate: null });
   useEffect(() => {
     let alive = true;
-    Promise.all([purchaseFx.ready(), import("@/lib/usdApi").then((m) => m.usdApi.state())])
-      .then(([ready, st]) => { if (alive) setFx({ ok: ready && st.enabled, clinicRate: st.rate ? Number(st.rate.rate) : null }); })
-      .catch(() => { if (alive) setFx({ ok: false, clinicRate: null }); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُبقي الدفترَ بالدينار كما كان */
+    void purchaseFxState().then((v) => { if (alive) setFx(v); });
     return () => { alive = false; };
   }, []);
 

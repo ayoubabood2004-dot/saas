@@ -32,7 +32,7 @@ import { getExpiryWindows } from "@/lib/settings";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 import { purchaseDiscountReady } from "@/lib/purchaseApi";
-import { purchaseFx } from "@/lib/purchaseFxApi";
+import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
 import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, type FxCur } from "@/lib/purchaseFxMath";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
@@ -181,12 +181,14 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
    * الفواتير وآخر شراء — مرتبةً بالأكثر شراءً، فيُعرف بالجرد منين نأخذ أكثر. */
   const companyGroups = useMemo(() => {
     /* الصرفُ بالدينار (دينارُ فاتورة الدولار بسعر يومها — هو ما دخل المخزون)، والدَّينُ بعملته: دينٌ بالدولار لا يُجمع على الدينار (0274). */
-    const m = new Map<string, { name: string; rows: Purchase[]; total: number; due: number; dueUsd: number }>();
+    const m = new Map<string, { name: string; rows: Purchase[]; total: number; totalIqd: number; totalUsd: number; due: number; dueUsd: number }>();
     for (const p of shown) {
       const key = p.company_id ?? normKey(p.company_name ?? "");
-      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, due: 0, dueUsd: 0 };
+      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, totalIqd: 0, totalUsd: 0, due: 0, dueUsd: 0 };
       g.rows.push(p);
-      g.total += p.total || 0;
+      g.total += p.total || 0;   // للترتيب ونصيب الصرف وحده (دينارُ الدولار بسعر يومه — ما دخل المخزون)
+      if (p.currency === "USD") g.totalUsd = Math.round((g.totalUsd + Number(p.total_usd ?? 0)) * 100) / 100;
+      else g.totalIqd += p.total || 0;
       if (p.currency === "USD") g.dueUsd = Math.round((g.dueUsd + purchaseDueCur(p)) * 100) / 100;
       else g.due += Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0));
       if (!g.name && p.company_name) g.name = p.company_name;
@@ -270,7 +272,8 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
                     </div>
                   </div>
                   <div className="shrink-0 text-end">
-                    <p className="text-sm font-extrabold text-ink tabular-nums">{money(g.total)}</p>
+                    {(g.totalIqd > 0 || g.totalUsd === 0) && <p className="text-sm font-extrabold text-ink tabular-nums">{money(g.totalIqd)}</p>}
+                    {g.totalUsd > 0 && <p className="text-sm font-extrabold text-ink tabular-nums" data-co-totalusd>{usdOf(g.totalUsd)}</p>}
                     {g.due > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(g.due), defaultValue: "عليه {{v}}" })}</p>}
                     {g.dueUsd > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400" data-co-dueusd>{t("purchase.dueShort", { v: usdOf(g.dueUsd), defaultValue: "عليه {{v}}" })}</p>}
                     <ChevronDown size={15} className={cn("ms-auto mt-0.5 text-ink-subtle transition", isOpen && "rotate-180")} />
@@ -388,9 +391,7 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const [, setPfxTick] = useState(0);
   useEffect(() => {
     let alive = true;
-    Promise.all([purchaseFx.ready(), import("@/lib/usdApi").then((m) => m.usdApi.state())])
-      .then(([ready, st]) => { if (alive) setFxPay({ ok: ready && st.enabled, clinicRate: st.rate ? Number(st.rate.rate) : null }); })
-      .catch(() => { if (alive) setFxPay({ ok: false, clinicRate: null }); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُبقي التسديدَ بالدينار كما كان */
+    void purchaseFxState().then((v) => { if (alive) setFxPay(v); });
     return () => { alive = false; };
   }, []);
 
@@ -774,10 +775,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     if (!open) return;
     let alive = true;
     setFx(null);
-    // 0274: فحصُ قدرةٍ لا قائمةُ قرار — فشلُه «لا دولار» والشراءُ بالدينار كما كان (purchaseFx.ready نفسُها لا ترمي).
-    Promise.all([purchaseFx.ready(), import("@/lib/usdApi").then((m) => m.usdApi.state())])
-      .then(([ready, st]) => { if (alive) setFx({ ok: ready && st.enabled, clinicRate: st.rate ? Number(st.rate.rate) : null }); })
-      .catch(() => { if (alive) setFx({ ok: false, clinicRate: null }); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُخفي شريطَ الدولار ولا يحفظ شيئاً */
+    // 0274: فحصُ قدرةٍ لا قائمةُ قرار — فشلُه «لا دولار» والشراءُ بالدينار كما كان (purchaseFxState لا ترمي).
+    void purchaseFxState().then((v) => { if (alive) setFx(v); });
     return () => { alive = false; };
   }, [open]);
 
