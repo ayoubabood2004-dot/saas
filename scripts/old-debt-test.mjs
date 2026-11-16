@@ -54,7 +54,7 @@ const built = await esbuild.build({
   stdin: {
     contents: [
       'export * from "./src/lib/repo.ts";',
-      'export { addOldDebt } from "./src/lib/oldDebtApi.ts";',
+      'export { addOldDebt, listOldDebtItems, returnOldDebt } from "./src/lib/oldDebtApi.ts";',
       'export { demoUsdPrefs, demoUsdRateSet, demoUsdSettle } from "./src/lib/demoUsd.ts";',
       'export { forgiveCaps, forgivePreview, validateForgive } from "./src/lib/debtForgive.ts";',
       'export { computePnl } from "./src/lib/pnl.ts";',
@@ -161,6 +161,117 @@ check("  والقبضُ اليوم ٢٠٬٠٠٠ + ٥٨٬٤٠٠ + فرق ١٠٠،
 const pnl = M.computePnl({ invoices: db().invoices, items: [], consumption: [], expenses: [], categories: [] }, RNG.from, RNG.to, "Asia/Baghdad");
 check("  والأرباحُ والخسائر: لا فاتورةَ ولا إيراد، وفرقُ صرف تسديده ١٠٠", pnl.total.invoices === 0 && Number(pnl.total.revenue) === 0 && Number(pnl.total.fx) === 100, JSON.stringify(pnl.total));
 
+/* ══ ٦) موادُّ الدين القديم (0273) — المرآةُ بحرّاس old_debt_add_items وold_debt_return نفسِها ══ */
+console.log("▸ ٦) موادُّ الدين: من المخزن أو بالاسم بلا خصم، ومرتجعُها للرفّ (والمدموجةُ لأصلها) والدينُ أوّلاً ثمّ الخصمُ ثمّ النقد");
+{
+  const D = db();
+  D.products.push(
+    { id: "p-a1", name: "رويال كانين", barcode: "OD-1", stock: 10, sell_price: 25000, purchase_price: 20000, min_stock: 0 },
+    { id: "p-a2", name: "شامبو", barcode: "OD-2", stock: 5, sell_price: 12000, purchase_price: 9000, min_stock: 0 },
+    { id: "p-a3", name: "رويال مكرّر", barcode: "OD-3", stock: 0, sell_price: 25000, purchase_price: 20000, min_stock: 0 },
+    { id: "p-a4", name: "مادّة انحذفت", barcode: "OD-4", stock: 0, sell_price: 5000, purchase_price: 4000, min_stock: 0 },
+    { id: "p-f1", name: "علف حقل", barcode: "OD-F", stock: 9, sell_price: 1, purchase_price: 1, min_stock: 0, farm_id: "farm-1" });
+  mem.set(DB_KEY, JSON.stringify(D));
+}
+const stockOf = (id) => db().products.find((p) => p.id === id)?.stock;
+const invOf = (id) => db().invoices.find((i) => i.id === id);
+const I1 = [{ product_id: "p-a1", name: "اسم من الجهاز", qty: "2", price: "20000" }, { product_id: null, name: "  علاج   جلد ", qty: "1", price: "30000" },
+  { product_id: "p-a3", name: "", qty: "1", price: "10000" }, { product_id: "p-a4", name: "", qty: "1", price: "5000" }];
+const addI = (o) => M.addOldDebt({ name: "ابو حسين", phone: "07702220000", what: "", why: null, amount: "100000", currency: "IQD", date: daysAgo(60), clientRef: "di-1", items: I1, ...o });
+as("reception");
+check("الاستقبالُ يُرفض (بابُ old_debt_add نفسُه)", (await codeOf(addI({ clientRef: "di-r" }))) === "old_debt_manager");
+as("manager");
+const g1 = await addI();
+const its1 = await M.listOldDebtItems(g1.id);
+check("المديرُ يكتب ديناً بأربع موادّ: opening بـ١٠٠٬٠٠٠، و«شنو» من الأسطر (الاسمُ من صفّ المخزن)، والرصيدُ ما تحرّك، ولا سطرَ فاتورة",
+  g1.sale_kind === "opening" && g1.total === 100000 && g1.opening_what === "رويال كانين، علاج جلد، رويال مكرّر، مادّة انحذفت" && stockOf("p-a1") === 10
+  && db().invoiceItems.every((x) => x.invoice_id !== g1.id), JSON.stringify({ w: g1.opening_what, t: g1.total }));
+check("  والأسطر بأسمائها وكمياتها وأسعارها (الحرّةُ بلا مادّة، واسمُها مطويّ)",
+  its1.map((d) => `${d.product_id ?? "-"}:${d.name}:${d.qty}@${d.unit_price}:${d.returned_qty}`).join(",")
+  === "p-a1:رويال كانين:2@20000:0,-:علاج جلد:1@30000:0,p-a3:رويال مكرّر:1@10000:0,p-a4:مادّة انحذفت:1@5000:0", JSON.stringify(its1));
+const g1b = await addI({ what: "غيره", amount: "5", items: [{ product_id: null, name: "x", qty: "1", price: "1" }] });
+check("  والمرجعُ نفسُه يُرجع الدينَ نفسَه بأسطره (لا أسطرَ ثانية)", g1b.id === g1.id && (await M.listOldDebtItems(g1.id)).length === 4);
+const bad = [
+  ["old_debt_items_sum", { amount: "1000", items: [{ product_id: null, name: "a", qty: "2", price: "600" }] }],
+  ["old_debt_item_qty", { amount: "1000", items: [{ product_id: null, name: "a", qty: "0", price: "1" }] }],
+  ["old_debt_item_price", { amount: "1000", items: [{ product_id: null, name: "a", qty: "1", price: "-5" }] }],
+  ["old_debt_item_price", { amount: "1000", items: [{ product_id: null, name: "a", qty: "1", price: "1,000" }] }],
+  ["old_debt_item_product", { amount: "1000", items: [{ product_id: "00000000-0000-4000-8000-000000000000", name: "", qty: "1", price: "1" }] }],
+  ["old_debt_item", { amount: "1000", items: [{ product_id: "p-nope", name: "", qty: "1", price: "1" }] }],
+  ["old_debt_item_product", { amount: "1000", items: [{ product_id: "p-f1", name: "", qty: "1", price: "1" }] }],
+  ["old_debt_item_name", { amount: "1000", items: [{ product_id: null, name: "  ", qty: "1", price: "1" }] }],
+];
+for (const [c, o] of bad) check(`  يُرفض ${c} (${JSON.stringify(o.items[0]).slice(0, 50)})`, (await codeOf(addI({ clientRef: null, ...o }))) === c);
+check("  (ولا دينَ لأيٍّ منها)", db().invoices.filter((i) => i.sale_kind === "opening" && i.customer_phone === "07702220000").length === 1);
+
+const it1 = (pid) => its1.find((d) => d.product_id === pid);
+const RET = (inv, lines, ref, o = {}) => M.returnOldDebt({ invoiceId: inv, lines, method: null, note: null, clientRef: ref, ...o });
+as("reception");
+const r1 = await RET(g1.id, [{ item_id: it1("p-a1").id, qty: "1" }], "dr-1");
+check("المرتجع: الاستقبالُ يرجّع حبّة ⇒ الدينُ ٨٠٬٠٠٠ بلا نقد، والرفُّ ١٠ ← ١١، والسطرُ «رجع ١»، والختمُ بالملاحظات",
+  r1.total === 80000 && r1.amount_paid === 0 && r1.payment_details.length === 0 && stockOf("p-a1") === 11
+  && (await M.listOldDebtItems(g1.id)).find((d) => d.product_id === "p-a1").returned_qty === 1 && /^مرتجع \d{4}-\d{2}-\d{2}: رويال كانين × 1 · 100000 ← 80000$/.test(r1.notes), r1.notes);
+await RET(g1.id, [{ item_id: it1("p-a1").id, qty: "1" }], "dr-1");
+check("  والإعادةُ بالمرجع نفسِه لا ترجّع ثانية", stockOf("p-a1") === 11 && invOf(g1.id).total === 80000 && db().oldDebtReturns.length === 1);
+check("  وأكثرُ من الباقي يُرفض old_debt_return_over", (await codeOf(RET(g1.id, [{ item_id: it1("p-a1").id, qty: "2" }], "dr-x"))) === "old_debt_return_over");
+check("  وكميةٌ صفر وحدها nothing to return", (await codeOf(RET(g1.id, [{ item_id: it1("p-a1").id, qty: "0" }], "dr-x"))) === "nothing to return");
+await repo.settleInvoice(g1.id, 70000, "cash");
+const r2 = await RET(g1.id, [{ item_id: its1.find((d) => !d.product_id).id, qty: "1" }], "dr-2");
+check("التسديد ٧٠٬٠٠٠ ثمّ إرجاعُ العلاج (٣٠٬٠٠٠): الدينُ ٥٠٬٠٠٠ والمدفوعُ ٥٠٬٠٠٠، و٢٠٬٠٠٠ نقداً بساقٍ سالبة «مرتجع»، والرفُّ ما تحرّك",
+  r2.total === 50000 && r2.amount_paid === 50000 && r2.payment_details.at(-1).amount === -20000 && r2.payment_details.at(-1).method === "cash"
+  && r2.payment_details.at(-1).note === "مرتجع" && stockOf("p-a1") === 11, JSON.stringify(r2.payment_details));
+{
+  const D = db();
+  D.products = D.products.filter((p) => p.id !== "p-a3" && p.id !== "p-a4");
+  D.productsTrash = [...(D.productsTrash ?? []), { id: "p-a3", merged_into: "p-a1" }, { id: "p-a4" }];
+  mem.set(DB_KEY, JSON.stringify(D));
+}
+const r3 = await RET(g1.id, [{ item_id: it1("p-a3").id, qty: "1" }], "dr-3");
+check("المادّةُ المدموجة ترجع لأصلها: رويال كانين ١١ ← ١٢، والدينُ ٤٠٬٠٠٠ والنقدُ ١٠٬٠٠٠", stockOf("p-a1") === 12 && r3.total === 40000 && r3.amount_paid === 40000
+  && db().oldDebtReturns.find((r) => r.client_ref === "dr-3").lines[0].product_id === "p-a1");
+check("  والمحذوفةُ بلا أصل تُرفض old_debt_return_gone", (await codeOf(RET(g1.id, [{ item_id: it1("p-a4").id, qty: "1" }], "dr-4"))) === "old_debt_return_gone");
+
+as("manager");
+const g2 = await M.addOldDebt({ name: "ام زهراء", phone: null, what: "شامبو", why: null, amount: "50000", currency: "IQD", date: null, clientRef: "di-2",
+  items: [{ product_id: "p-a2", name: "", qty: "5", price: "10000" }] });
+await repo.settleInvoice(g2.id, 35000, "cash");
+await repo.forgiveInvoiceDebt(g2.id, { amount: 10000, reason: "hardship", note: null, expectDue: 15000, pay: 0, method: "cash", confirmLoss: false });
+const [sh] = await M.listOldDebtItems(g2.id);
+const r5 = await RET(g2.id, [{ item_id: sh.id, qty: "2" }], "dr-5");
+check("الخصمُ يُستهلك قبل النقد: ٣٥٬٠٠٠ دُفعت و١٠٬٠٠٠ خُصمت، ترجع شامبوتان ⇒ ٣٠٬٠٠٠ والخصمُ صفر والنقدُ ٥٬٠٠٠ وحده، والرفُّ ٥ ← ٧",
+  r5.total === 30000 && r5.forgiven === 0 && r5.amount_paid === 30000 && r5.payment_details.at(-1).amount === -5000 && stockOf("p-a2") === 7
+  && db().invoiceForgiveness.filter((r) => r.invoice_id === g2.id).map((r) => `${r.kind}:${r.amount}`).join(",") === "forgive:10000,consumed:-10000",
+  JSON.stringify({ t: r5.total, f: r5.forgiven, p: r5.amount_paid }));
+
+const g3 = await M.addOldDebt({ name: "سعيد", phone: null, what: "", why: null, amount: "1000", currency: "IQD", date: null, clientRef: "di-3",
+  items: [{ product_id: "p-a2", name: "", qty: "1", price: "1000" }] });
+const g4 = await M.addOldDebt({ name: "سعيد", phone: null, what: "", why: null, amount: "2000", currency: "IQD", date: null, clientRef: "di-4",
+  items: [{ product_id: null, name: "قلادة", qty: "1", price: "2000" }] });
+await RET(g3.id, [{ item_id: (await M.listOldDebtItems(g3.id))[0].id, qty: "1" }], "dr-6");
+check("الحذف: دينٌ رجعت منه مادّة يُرفض opening_delete_returned، وبلا مرتجعٍ يُحذف مع أسطره",
+  (await codeOf(repo.deleteInvoice(g3.id))) === "opening_delete_returned" && (await codeOf(repo.deleteInvoice(g4.id))) === "ok"
+  && !db().oldDebtItems.some((d) => d.invoice_id === g4.id) && invOf(g3.id).total === 0);
+
+const u5 = await M.addOldDebt({ name: "ابو علي", phone: "07703330000", what: "", why: null, amount: "100", currency: "USD", date: null, clientRef: "di-5",
+  items: [{ product_id: "p-a1", name: "", qty: "1", price: "40.5" }] });
+const [uIt] = await M.listOldDebtItems(u5.id);
+check("الدولار: السطرُ بالدولار ٤٠٫٥٠ ودينارُه بسعر اليوم ٥٩٬١٣٠، وفوق الدين يُرفض، والمرتجعُ بمرحلة مرتجع الدولار",
+  uIt.unit_price_usd === 40.5 && uIt.unit_price === 59130
+  && (await codeOf(M.addOldDebt({ name: "ابو علي", phone: "07703330000", what: "", why: null, amount: "100", currency: "USD", date: null, clientRef: "di-5x",
+    items: [{ product_id: null, name: "a", qty: "1", price: "150" }] }))) === "old_debt_items_sum"
+  && (await codeOf(RET(u5.id, [{ item_id: uIt.id, qty: "1" }], "dr-7"))) === "old_debt_return_usd", JSON.stringify(uIt));
+
+/* الشاشة: حسابُ المجموع والمعاينة بقاعدة الخادم، والمبلغُ الفارغ يُرى بالخانة. */
+const odx = src("src/components/retail/OldDebt.tsx");
+check("الشاشة: السطرُ round(كمية × سعر، ٢) كالخادم، والمبلغُ الفارغ = المجموع بالخانة نفسِها، ولا يقلّ عنه",
+  /const lineCents = \(qMilli: bigint, pCents: bigint\) => \(2n \* qMilli \* pCents \+ 1000n\) \/ 2000n;/.test(odx)
+  && /const shownAmount = autoAmount \? plainDec\(sumC, 2\) : amount;/.test(odx) && /&& items\.every\(rowOk\) && !over\);/.test(odx));
+check("  والمعاينةُ بقاعدة 0121/0241 (الدينُ ثمّ الخصمُ ثمّ النقد)، ومرجعُ إعادة المرتجع يُحرَّر برفضٍ حاسم وحده",
+  /const forgNew = forg < \(gross - paid > 0n \? gross - paid : 0n\)/.test(odx) && /const back = paid - after > 0n \? paid - after : 0n;/.test(odx)
+  && /if \(shouldReleaseRef\(fresh, e\)\) \{ ref\.current = uid\("odret"\); setPinned\(false\); \} else setPinned\(true\);/.test(odx));
+check("  والمخزنُ يُحمَّل عند أوّل بحث (لا عند فتح النافذة) وفشلُه يُقال ويُعاد — لا قائمةٌ فارغة تُصدَّق",
+  /onFocus=\{loadProducts\}/.test(odx) && /\.catch\(\(\) => setProds\(\{ state: "failed" \}\)\)/.test(odx) && /\{t\("odebt\.itemsLoadFailed"\)\}/.test(odx));
+
 /* ══ ٥) الوصل بالنصّ ══ */
 console.log("▸ ٥) كلُّ قارئٍ مسمّى يستثنيه، والقطعةُ كسولة، والبابُ خارج الإقلاع، والزرُّ للمدير");
 const hub = src("src/pages/AnalyticsHub.tsx");
@@ -181,7 +292,10 @@ check("المرآة التجريبية: الموظفون والأكثرُ مبي
   && /if \(!isOpeningInv\(inv\)\) cur\.ids\.add\(inv\.id\)/.test(demo));
 check("الأرباح والخسائر (computePnl) يُسقطه من الإيراد ولا يُسقط فرقَ صرفه", /=== "refunded" \|\| inv\.sale_kind === "opening"\) continue;/.test(src("src/lib/pnl.ts")));
 const ret = src("src/components/retail/ReturnsPanel.tsx");
-check("المرتجع: ليس مرشّحاً (محلّيّاً ومن الخادم)", /i\.sale_kind !== "opening"\);/.test(ret) && /remote\.filter\(\(i\) => i\.sale_kind !== "opening"\)/.test(ret));
+check("المرتجع (0273): الدينُ القديم مرشّحٌ لموادّه — ويترجّع بقطعته (OldDebtItems كسولةً بنطاقها) لا بأسطر الفاتورة ولا «إرجاع الكل»",
+  !/sale_kind !== "opening"/.test(ret) && /import\("@\/components\/retail\/OldDebt"\)\.then\(\(m\) => \(\{ default: m\.OldDebtItems \}\)\), \["odebt"\]\)/.test(ret)
+  && /\{pickedOpening \? \(/.test(ret) && /\{!pickedOpening && <Button size="sm" variant="secondary" data-retall/.test(ret)
+  && /if \(inv\.sale_kind === "opening"\) \{ setItems\(\[\]\); setLoading\(false\); return; \}/.test(ret));
 const ip = src("src/components/retail/InvoicesPanel.tsx");
 check("قائمة الفواتير: لا «إرجاع»، والحذفُ قبل التسديد وحده، والمطبوعُ كشفُ دينٍ بسطرٍ واحد",
   /\{!refunded && !opening && \(/.test(ip) && /\{canDelete && !openingSettled && \(/.test(ip) && (ip.match(/items: opening \? openingLines :/g) ?? []).length === 2);

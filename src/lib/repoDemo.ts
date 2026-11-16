@@ -419,7 +419,7 @@ function voidRefusal(code: VoidErrorCode): Error {
   }
 }
 /** مرآةُ invoice_forgiveness_consume: سطرٌ سالب بلقطة الفاتورة **قبل** تحديثها (تُنادى قبله). */
-function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: string, totalBefore: number, paidBefore: number): void {
+export function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: string, totalBefore: number, paidBefore: number): void {
   if (!(amount > 0)) return;
   const row: InvoiceForgiveness = {
     id: uuid(), clinic_id: null, invoice_id: inv.id, kind: "consumed", amount: -pgRound2(amount), reason_code: null, note,
@@ -4508,6 +4508,8 @@ const demoRepo = {
     usdInvoiceGuard(inv);
     // 0271: دينٌ قديم عليه مالٌ مسجَّل (ساقٌ أو مدفوع) لا يُحذف — حذفُه يمحو قبضاً انحسب بيومه؛ يُخصم بدله.
     if (isOpeningInv(inv) && ((inv.amount_paid ?? 0) > 0.005 || (inv.payment_details ?? []).length > 0)) throw usdErr("opening_delete_settled");
+    // 0273: مادّةٌ رجعت منه للرفّ — حذفُه يمحو أثرَ ما رجع.
+    if (isOpeningInv(inv) && (db.oldDebtItems ?? []).some((d) => d.invoice_id === invoiceId && d.returned_qty > 0)) throw usdErr("opening_delete_returned");
     const now = cons.opStamp(db);
     // Restock unless it was already refunded (which already restocked).
     if (inv && inv.status !== "refunded") {
@@ -4520,6 +4522,9 @@ const demoRepo = {
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
     // مرآةُ `on delete cascade` لدفتر الخصم (0241).
     if (db.invoiceForgiveness) db.invoiceForgiveness = db.invoiceForgiveness.filter((x) => x.invoice_id !== invoiceId);
+    // 0273: أسطرُ الدين القديم ومرتجعاتُه تتبعه (on delete cascade).
+    if (db.oldDebtItems) db.oldDebtItems = db.oldDebtItems.filter((x) => x.invoice_id !== invoiceId);
+    if (db.oldDebtReturns) db.oldDebtReturns = db.oldDebtReturns.filter((x) => x.invoice_id !== invoiceId);
     saveDB(db);
     // Mirror the server audit trigger so the demo's security log shows deletions.
     if (inv) demoAuditPush({ action: "DELETE", entity: "invoices", entity_id: invoiceId, details: inv as unknown as Record<string, unknown> });
