@@ -6,6 +6,7 @@ import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { cn, money, formatDate } from "@/lib/utils";
+import { purchaseDueCur, usdOf } from "@/lib/purchaseFxMath";
 import { playTap } from "@/lib/sounds";
 import { openCompanyStatementPrint } from "@/lib/purchasePrint";
 import { getClinicLogo, getClinicName, getClinicSocials } from "@/lib/settings";
@@ -177,8 +178,9 @@ export function CompanyStatementModal({ group, onClose, onOpenInvoice }: {
             <h3 className="mb-1.5 text-sm font-extrabold text-ink">{t("purchase.invList", "الفواتير")}</h3>
             <div className="space-y-1.5">
               {[...group.invoices].sort((a, b) => (b.purchased_at || "").localeCompare(a.purchased_at || "")).map((p) => {
-                const paid = p.amount_paid ?? p.total;
-                const due = Math.max(0, p.total - paid);
+                // 0274: فاتورةُ الدولار بدولارها.
+                const pm = (n: number) => (p.currency === "USD" ? usdOf(n) : money(n));
+                const due = purchaseDueCur(p);
                 return (
                   <button key={p.id} type="button" onClick={() => { playTap(); onOpenInvoice(p); }}
                     className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-surface-2 p-2.5 text-start transition hover:bg-surface-3">
@@ -190,9 +192,9 @@ export function CompanyStatementModal({ group, onClose, onOpenInvoice }: {
                       <p className="text-2xs text-ink-subtle">{t("purchase.units", { n: p.item_count, defaultValue: "{{n}} قطعة" })} · {t("purchase.tapGoods", "اضغط لعرض بضاعتها وطباعتها")}</p>
                     </div>
                     <div className="text-end">
-                      <p className="text-xs font-bold tabular-nums text-ink">{money(p.total)}</p>
+                      <p className="text-xs font-bold tabular-nums text-ink">{pm(p.currency === "USD" ? Number(p.total_usd ?? 0) : p.total)}</p>
                       <p className={cn("text-2xs font-bold tabular-nums", due > 0 ? "text-danger-600 dark:text-danger-400" : "text-success-600 dark:text-success-400")}>
-                        {due > 0 ? t("purchase.dueShort", { v: money(due), defaultValue: "عليه {{v}}" }) : t("purchase.paidFull", "مسدَّدة")}
+                        {due > 0 ? t("purchase.dueShort", { v: pm(due), defaultValue: "عليه {{v}}" }) : t("purchase.paidFull", "مسدَّدة")}
                       </p>
                     </div>
                   </button>

@@ -268,22 +268,29 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
   }
   const goods = [...agg.values()].sort((a, b) => b.amount - a.amount);
   const totalUnits = goods.reduce((s, a) => s + a.qty, 0);
-  const grand = invs.reduce((s, p) => s + p.total, 0);
-  const paid = invs.reduce((s, p) => s + (p.amount_paid ?? p.total), 0);
+  /* 0274: مجاميعُ الدينار على فواتير الدينار، وفاتورةُ الدولار بدولارها ودَينُها بجانبه — لا يُجمع دولارٌ على دينار. */
+  const dinarInvs = invs.filter((p) => p.currency !== "USD");
+  const grand = dinarInvs.reduce((s, p) => s + p.total, 0);
+  const paid = dinarInvs.reduce((s, p) => s + (p.amount_paid ?? p.total), 0);
   const due = Math.max(0, grand - paid);
+  const dueUsd = Math.round(invs.reduce((s, p) => s + (p.currency === "USD" ? Math.max(0, Number(p.total_usd ?? 0) - Number(p.paid_usd ?? 0)) : 0), 0) * 100) / 100;
+  const usd = (n: number) => `${fmt(n)} $`;
 
   const goodsRows = goods.map((a) => `
     <tr><td class="i-name">${esc(a.name)}${a.barcode ? `<span class="i-bc" dir="ltr">${esc(a.barcode)}</span>` : ""}</td>
     <td class="i-num">${fmt(a.qty)}</td><td class="i-num">${money(a.lastCost)}</td><td class="i-num i-amt">${money(a.amount)}</td></tr>`).join("");
 
   const invRows = invs.map((p) => {
-    const pd = p.amount_paid ?? p.total;
-    const dd = Math.max(0, p.total - pd);
+    const isUsd = p.currency === "USD";
+    const tot = isUsd ? Number(p.total_usd ?? 0) : p.total;
+    const pd = isUsd ? Number(p.paid_usd ?? 0) : (p.amount_paid ?? p.total);
+    const dd = Math.max(0, Math.round((tot - pd) * 100) / 100);
+    const m = isUsd ? usd : money;
     return `<tr><td>${d(p.purchased_at)}</td>
       <td dir="ltr">${esc(purchaseNo(p.id))}${p.reference ? ` <span class="i-bc">#${esc(p.reference)}</span>` : ""}</td>
-      <td class="i-num">${fmt(p.item_count)}</td><td class="i-num">${money(p.total)}</td>
-      <td class="i-num">${money(pd)}</td>
-      <td class="i-num" style="${dd > 0 ? "color:#b91c1c;font-weight:700" : "color:#15803d"}">${dd > 0 ? money(dd) : "✓"}</td></tr>`;
+      <td class="i-num">${fmt(p.item_count)}</td><td class="i-num">${m(tot)}</td>
+      <td class="i-num">${m(pd)}</td>
+      <td class="i-num" style="${dd > 0 ? "color:#b91c1c;font-weight:700" : "color:#15803d"}">${dd > 0 ? m(dd) : "✓"}</td></tr>`;
   }).join("");
 
   const css = `
@@ -345,7 +352,7 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
       <div class="totals">
         <div class="row grand"><span>${L.grand}</span><span>${money(grand)}</span></div>
         <div class="row"><span>${L.totalPaid}</span><span>${money(paid)}</span></div>
-        <div class="row ${due > 0 ? "due" : "ok"}"><span>${L.totalDue}</span><span>${due > 0 ? money(due) : L.settled}</span></div>
+        <div class="row ${due > 0 || dueUsd > 0 ? "due" : "ok"}"><span>${L.totalDue}</span><span>${[due > 0 ? money(due) : "", dueUsd > 0 ? usd(dueUsd) : ""].filter(Boolean).join(" · ") || L.settled}</span></div>
       </div>
 
       <div class="foot">${esc(opts.clinicName)} · ${WEBSITE}</div>

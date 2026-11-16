@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
@@ -32,9 +32,24 @@ import { getExpiryWindows } from "@/lib/settings";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 import { purchaseDiscountReady } from "@/lib/purchaseApi";
+import { purchaseFx } from "@/lib/purchaseFxApi";
+import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, type FxCur } from "@/lib/purchaseFxMath";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
 import { levelByCode, packPrice, type CodeHit } from "@/lib/packs";
 /* أنماطُ الجدول التي لا تملكها الورقةُ العامّة — تصل مع هذه القطعة الكسولة لا بحزمة الإقلاع (store-weight-guard). */
 import "./purchaseGrid.css";
+
+/* 0274: قطعُ الشراء بالعملتين بنطاقها المملوك (pfx — النصفُ البارد على سقفه): كسولةٌ هنا، والمالكُ لا يُستورد ثابتاً. */
+const loadPfxBar = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxBar })), ["pfx"]);
+const loadPfxLineCur = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxLineCur })), ["pfx"]);
+const loadPfxTotals = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxTotals })), ["pfx"]);
+const loadPfxPay = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPay })), ["pfx"]);
+let PfxBarLazy = loadPfxBar();
+let PfxLineCurLazy = loadPfxLineCur();
+let PfxTotalsLazy = loadPfxTotals();
+let PfxPayLazy = loadPfxPay();
+const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); };
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 /* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
@@ -77,6 +92,8 @@ type Line = {
   /** تاريخُ الوجبة المحفوظ بسطر الفاتورة (0214) — بالتعديل وحده. يُرسل `batch_expiry`:
    *  يبقى للسطر ولا يلمس تاريخَ المنتج (وجبةٌ أحدث قد غيّرته، وإرجاعُه يدهسه). */
   batchExpiry?: string;
+  /** 0274: عملةُ بيع المادّة **الجديدة** (القائمةُ بعملتها). غائبٌ = دينار. */
+  sellCur?: FxCur;
 };
 
 let LINE_SEQ = 0;
@@ -163,13 +180,15 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   /* «الفاتورة الكبيرة» لكل شركة: كل فواتيرها مجموعةً — الإجمالي والدين وعدد
    * الفواتير وآخر شراء — مرتبةً بالأكثر شراءً، فيُعرف بالجرد منين نأخذ أكثر. */
   const companyGroups = useMemo(() => {
-    const m = new Map<string, { name: string; rows: Purchase[]; total: number; due: number }>();
+    /* الصرفُ بالدينار (دينارُ فاتورة الدولار بسعر يومها — هو ما دخل المخزون)، والدَّينُ بعملته: دينٌ بالدولار لا يُجمع على الدينار (0274). */
+    const m = new Map<string, { name: string; rows: Purchase[]; total: number; due: number; dueUsd: number }>();
     for (const p of shown) {
       const key = p.company_id ?? normKey(p.company_name ?? "");
-      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, due: 0 };
+      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, due: 0, dueUsd: 0 };
       g.rows.push(p);
       g.total += p.total || 0;
-      g.due += Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0));
+      if (p.currency === "USD") g.dueUsd = Math.round((g.dueUsd + purchaseDueCur(p)) * 100) / 100;
+      else g.due += Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0));
       if (!g.name && p.company_name) g.name = p.company_name;
       m.set(key, g);
     }
@@ -253,6 +272,7 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
                   <div className="shrink-0 text-end">
                     <p className="text-sm font-extrabold text-ink tabular-nums">{money(g.total)}</p>
                     {g.due > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(g.due), defaultValue: "عليه {{v}}" })}</p>}
+                    {g.dueUsd > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400" data-co-dueusd>{t("purchase.dueShort", { v: usdOf(g.dueUsd), defaultValue: "عليه {{v}}" })}</p>}
                     <ChevronDown size={15} className={cn("ms-auto mt-0.5 text-ink-subtle transition", isOpen && "rotate-180")} />
                   </div>
                 </button>
@@ -330,9 +350,10 @@ function PurchaseRow({ p, onOpen }: { p: Purchase; onOpen: () => void }) {
         </div>
       </div>
       <div className="text-end">
-        <p className="text-sm font-bold text-ink tabular-nums">{money(p.total)}</p>
-        {(() => { const d = Math.max(0, p.total - (p.amount_paid ?? p.total)); return d > 0
-          ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(d), defaultValue: "عليه {{v}}" })}</p>
+        {/* 0274: فاتورةُ الدولار بدولارها — الإجماليُّ والباقي. */}
+        <p className="text-sm font-bold text-ink tabular-nums">{p.currency === "USD" ? usdOf(Number(p.total_usd ?? 0)) : money(p.total)}</p>
+        {(() => { const d = purchaseDueCur(p); return d > 0
+          ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: p.currency === "USD" ? usdOf(d) : money(d), defaultValue: "عليه {{v}}" })}</p>
           : <Badge tone={statusTone(p.status)}>{t(`purchase.status.${p.status ?? "paid"}`, p.status ?? "paid")}</Badge>; })()}
       </div>
     </button>
@@ -362,6 +383,16 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const [payBusy, setPayBusy] = useState(false);
   // قبل ترحيل 0076 لا يوجد settle_purchase — نخفي زر التسديد بدل فشل صامت.
   const [ledgerOk, setLedgerOk] = useState<boolean | null>(null);
+  /* 0274: التسديدُ بالعملتين حين تعرفهما القاعدة والعيادةُ مفعّلة (أو الفاتورةُ نفسُها بالدولار) — وسعرُ العيادة اقتراحاً. */
+  const [fxPay, setFxPay] = useState<{ ok: boolean; clinicRate: number | null } | null>(null);
+  const [, setPfxTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([purchaseFx.ready(), import("@/lib/usdApi").then((m) => m.usdApi.state())])
+      .then(([ready, st]) => { if (alive) setFxPay({ ok: ready && st.enabled, clinicRate: st.rate ? Number(st.rate.rate) : null }); })
+      .catch(() => { if (alive) setFxPay({ ok: false, clinicRate: null }); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُبقي التسديدَ بالدينار كما كان */
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     setPurchase(purchaseProp);
@@ -394,8 +425,17 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const payments = Array.isArray(gotPays) ? gotPays : null;
   /* المدفوعُ والمتبقّي من صفّ الفاتورة (`amount_paid`) لا من سجلّ التسديدات — فالتسديدُ لا
      ينتظر السجلّ، والسجلُّ عرضٌ وحده. */
-  const paid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
-  const due = Math.max(0, purchase.total - paid);
+  /* 0274: فاتورةُ الدولار تُقرأ بدولارها — الإجماليُّ والمدفوعُ والباقي — ودينارُها حصّةٌ داخلية. */
+  const isUsd = purchase.currency === "USD";
+  const fmtP = (n: number) => (isUsd ? usdOf(n) : money(n));
+  const totalCur = isUsd ? Number(purchase.total_usd ?? 0) : purchase.total;
+  const discCur = isUsd ? Number(purchase.discount_usd ?? 0) : Number(purchase.discount ?? 0);
+  const paid = isUsd ? Number(purchase.paid_usd ?? 0) : (purchase.amount_paid != null ? purchase.amount_paid : purchase.total);
+  const due = Math.max(0, Math.round((totalCur - paid) * 100) / 100);
+  const payFx = isUsd || !!fxPay?.ok;
+  const lineCost = (it: PurchaseItem) => (isUsd
+    ? (it.purchase_price_usd ?? (purchase.fx_rate ? Math.round((it.purchase_price / purchase.fx_rate) * 100) / 100 : 0))
+    : it.purchase_price);
   const retry = () => { playTap(); setLinesTry((n) => n + 1); };
 
   const settle = async () => {
@@ -424,7 +464,9 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
   const print = () => {
     if (!items) return;
-    const ok = openPurchasePrint(purchase, items, printOptions(user, i18n.language, t));
+    // 0274: فاتورةُ الدولار تُطبع بدولارها.
+    const v = usdPrintView(purchase, items);
+    const ok = openPurchasePrint(v.purchase, v.items, { ...printOptions(user, i18n.language, t), ...(v.usd ? { currency: "$" } : {}) });
     if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
     else void repo.logClientEvent("purchase.print", { ref: purchaseNo(purchase.id) });
   };
@@ -471,8 +513,8 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
                       {it.barcode && <p className="font-mono text-2xs text-ink-subtle">{it.barcode}</p>}
                     </td>
                     <td className="p-2.5 text-end tabular-nums">{it.qty}</td>
-                    <td className="p-2.5 text-end tabular-nums">{money(it.purchase_price)}</td>
-                    <td className="p-2.5 text-end font-bold tabular-nums">{money((it.qty || 0) * (it.purchase_price || 0))}</td>
+                    <td className="p-2.5 text-end tabular-nums">{fmtP(lineCost(it))}</td>
+                    <td className="p-2.5 text-end font-bold tabular-nums">{fmtP(Math.round((it.qty || 0) * (lineCost(it) || 0) * 100) / 100)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -482,19 +524,32 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
         <div className="ms-auto w-full max-w-xs space-y-1.5 text-sm" data-pdtotals>
           {/* 0260: بخصم الشركة الإجماليُّ صافٍ — فيُقال المجموعُ قبله والخصم، وإلا بدت سطورُ الجدول لا تجمع إلى الرقم تحتها. */}
-          {(purchase.discount ?? 0) > 0 && (
+          {discCur > 0 && (
             <>
-              <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{money(Number(purchase.total) + Number(purchase.discount ?? 0))}</span></div>
-              <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{money(purchase.discount ?? 0)}</bdi></div>
+              <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{fmtP(totalCur + discCur)}</span></div>
+              <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{fmtP(discCur)}</bdi></div>
             </>
           )}
-          <div className="flex items-center justify-between font-bold text-ink"><span>{(purchase.discount ?? 0) > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{money(purchase.total)}</span></div>
-          <div className="flex items-center justify-between text-ink-muted"><span>{t("purchase.paid", "المدفوع")}</span><span className="tabular-nums">{money(paid)}</span></div>
-          {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{money(due)}</span></div>}
+          <div className="flex items-center justify-between font-bold text-ink"><span>{discCur > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{fmtP(totalCur)}</span></div>
+          {isUsd && <Suspense fallback={null}><div className="text-end"><PfxTotalsLazy totalUsd={totalCur} rate={purchase.fx_rate ?? null} iqd={purchase.total} /></div></Suspense>}
+          <div className="flex items-center justify-between text-ink-muted"><span>{t("purchase.paid", "المدفوع")}</span><span className="tabular-nums">{fmtP(paid)}</span></div>
+          {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{fmtP(due)}</span></div>}
         </div>
 
-        {/* تسديد الدين — يظهر فقط عندما يوجد متبقٍّ والترحيل 0076 مفعَّل */}
-        {due > 0 && ledgerOk && (
+        {/* تسديد الدين — يظهر فقط عندما يوجد متبقٍّ والترحيل 0076 مفعَّل. وبالعملتين (0274) نافذةٌ واحدة تختار ما يُسلَّم. */}
+        {due > 0 && ledgerOk && payFx && (
+          <LoadBoundary scope="pfx-pay" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <PfxPayLazy purchase={purchase} clinicRate={fxPay?.clinicRate ?? null} onDone={(updated) => {
+                setPurchase(updated);
+                const id = purchase.id;
+                repo.listPurchasePayments(id).then((list) => setPays({ of: id, list }), () => setPays({ of: id, list: "failed" }));
+                onChanged?.();
+              }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+        {due > 0 && ledgerOk && !payFx && (
           settling ? (
             <div className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/50 p-3.5 dark:border-brand-500/25 dark:bg-brand-500/10">
               <p className="flex items-center gap-1.5 text-sm font-bold text-ink"><HandCoins size={15} className="text-brand-600" /> {t("purchase.settleTitle", "تسديد دفعة من الدين")}</p>
@@ -540,7 +595,13 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
             <p className="flex items-center gap-1.5 bg-surface-2 p-2.5 text-xs font-bold text-ink-muted"><HandCoins size={13} /> {t("purchase.paymentsLog", "سجل التسديدات")}</p>
             {payments.map((pp) => (
               <div key={pp.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-line p-2.5 text-xs">
-                <span className="font-bold text-ink tabular-nums">{money(pp.amount)}</span>
+                <span className="font-bold text-ink tabular-nums">{isUsd ? usdOf(Number(pp.usd ?? 0)) : money(pp.amount)}</span>
+                {/* 0274: ما سُلّم بعملةٍ غير عملة الدَّين — بمبلغه وسعره. */}
+                {pp.pay_currency && pp.handed != null && pp.pay_currency !== (isUsd ? "USD" : "IQD") && (
+                  <span className="text-ink-subtle tabular-nums" data-pp-handed>
+                    <bdi>{pp.pay_currency === "USD" ? usdOf(pp.handed) : money(pp.handed)}</bdi>{pp.fx_rate ? <> @ <bdi>{formatNum(pp.fx_rate)}</bdi></> : null}
+                  </span>
+                )}
                 <span className="text-ink-subtle">{formatDate(pp.paid_at, i18n.language)}</span>
                 {pp.method && <span className="chip bg-surface-2 text-2xs text-ink-muted">{t(`pay.${pp.method}`, pp.method)}</span>}
                 {pp.note && <span className="text-ink-subtle">{pp.note}</span>}
@@ -629,6 +690,17 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [discType, setDiscType] = useState<DiscountType>("fixed");
   const [discValue, setDiscValue] = useState("");
   const [discOk, setDiscOk] = useState<boolean | null>(null);
+  /* 0274: عملةُ الفاتورة وسعرُها («سعر 100$» كما يقوله السوق). `fx`: هل يُعرض الدولار — العيادةُ مفعّلة **وأجسامُ دفتر الشركة تعرف
+   * العملتين** (purchase_usd_ready) — وسعرُ العيادة اقتراحاً. null = ما عُرف بعد ⇒ لا شريط، والحفظُ بالدينار كما كان. */
+  const [cur, setCur] = useState<FxCur>("IQD");
+  const [per100, setPer100] = useState("");
+  const [fx, setFx] = useState<{ ok: boolean; clinicRate: number | null } | null>(null);
+  const [rateAsk, setRateAsk] = useState(false);
+  const [, setPfxTick] = useState(0);
+  const fxOn = !!fx?.ok || editing?.purchase.currency === "USD";
+  const fxRate = cur === "USD" ? ratePerUsd(per100) : null;
+  /** مبالغُ الفاتورة بعملتها. */
+  const fmt = (n: number) => (cur === "USD" ? usdOf(n) : money(n));
   const [pickerOpen, setPickerOpen] = useState(false);
   const gridRef = useRef<HTMLTableElement>(null);
   const scanRef = useRef<HTMLInputElement>(null);
@@ -655,16 +727,22 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setNotes(p.notes ?? "");
       setPurchasedAt((p.purchased_at ?? "").slice(0, 10) || localISO());
       setPayMethod((p.payment_method as PaymentMethod) ?? "cash");
-      setAmountPaid(p.amount_paid != null ? String(p.amount_paid) : "");
+      // 0274: فاتورةُ الدولار تُفتح بدولارها — المدفوعُ والخصمُ وكلفةُ كلّ سطر — وسعرِها.
+      const usd = p.currency === "USD";
+      setCur(usd ? "USD" : "IQD"); setPer100(usd ? per100Text(p.fx_rate) : ""); setRateAsk(false);
+      setAmountPaid(usd ? (p.paid_usd != null ? String(p.paid_usd) : "") : (p.amount_paid != null ? String(p.amount_paid) : ""));
       // الخصمُ المحفوظ مبلغاً كما حُفظ — والحفظُ يرسل ما يُرى (لا غيابَ يُبقي القديمَ خفيّاً).
-      setDiscType("fixed"); setDiscValue((p.discount ?? 0) > 0 ? String(p.discount) : "");
+      setDiscType("fixed"); setDiscValue(usd ? ((p.discount_usd ?? 0) > 0 ? String(p.discount_usd) : "") : ((p.discount ?? 0) > 0 ? String(p.discount) : ""));
       setLines(editing.items.map((it) => blankLine({
         product_id: it.product_id ?? null,
         barcode: it.barcode ?? "",
         name: it.name,
         category: it.category ?? "",
         qty: String(it.qty ?? ""),
-        purchase_price: it.purchase_price ? String(it.purchase_price) : "",
+        purchase_price: usd
+          ? (it.purchase_price_usd != null ? String(it.purchase_price_usd) : it.purchase_price && p.fx_rate ? String(Math.round((it.purchase_price / p.fx_rate) * 100) / 100) : "")
+          : (it.purchase_price ? String(it.purchase_price) : ""),
+        sellCur: it.sell_currency === "USD" ? "USD" : undefined,
         /* وبالتعديل كذلك: لقطةُ `purchase_items` سعرُ يومِ الفاتورة، وإرجاعُها
          * يدهس سعرَ الرفّ اليوم بسعرٍ عمرُه شهر. تُعرض تلميحاً لا قيمةً. */
         sell_price: "",
@@ -675,6 +753,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
       setPayMethod("cash"); setAmountPaid(""); setPaidMode(null);
       setDiscType("fixed"); setDiscValue("");
+      setCur("IQD"); setPer100(""); setRateAsk(false);
       setLines(seed?.items.length ? seed.items.map(({ product, qty }) => ({ ...lineFromProduct(product, ""), qty: String(qty) })) : [blankLine()]);
     }
     setScan("");
@@ -690,6 +769,29 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     purchaseDiscountReady().catch(() => false).then((ok) => { if (alive) setDiscOk(ok); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُخفي خانةَ الخصم ولا يحفظ شيئاً */
     return () => { alive = false; };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setFx(null);
+    // 0274: فحصُ قدرةٍ لا قائمةُ قرار — فشلُه «لا دولار» والشراءُ بالدينار كما كان (purchaseFx.ready نفسُها لا ترمي).
+    Promise.all([purchaseFx.ready(), import("@/lib/usdApi").then((m) => m.usdApi.state())])
+      .then(([ready, st]) => { if (alive) setFx({ ok: ready && st.enabled, clinicRate: st.rate ? Number(st.rate.rate) : null }); })
+      .catch(() => { if (alive) setFx({ ok: false, clinicRate: null }); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُخفي شريطَ الدولار ولا يحفظ شيئاً */
+    return () => { alive = false; };
+  }, [open]);
+
+  /** تبديلُ عملة الفاتورة: ما كُتب (سعرُ الشراء، الخصمُ المبلغ، المدفوع) يُحوَّل بالسعر — لا «7,350$» عن سعرٍ كُتب ديناراً.
+   *  والدولارُ أوّلَ مرّة يقترح سعرَ العيادة بالخانة. */
+  const switchCur = (c: FxCur) => {
+    const r = ratePerUsd(per100) ?? fx?.clinicRate ?? null;
+    if (c === "USD" && per100.trim() === "" && fx?.clinicRate) setPer100(per100Text(fx.clinicRate));
+    setLines((ls) => ls.map((l) => ({ ...l, purchase_price: convertTyped(l.purchase_price, cur, c, r) })));
+    setAmountPaid((v) => convertTyped(v, cur, c, r));
+    if (discType === "fixed") setDiscValue((v) => convertTyped(v, cur, c, r));
+    setRateAsk(false);
+    setCur(c);
+  };
 
   /* بوضع التعديل: كمية السطر القديمة داخل المخزون أصلاً — قفزة المخزون تُحسب
    * من الرصيد بعد عكسها، فلا يظهر رقم مضاعف مضلِّل. */
@@ -954,7 +1056,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
    * فمسحُ الخانة بفاتورةٍ مدينة يعرض «مدفوعة» — شارةٌ تكذب على دَينٍ قائم. */
   const paidNum = amountPaid.trim() !== ""
     ? Math.max(0, Math.min(total, Number(amountPaid) || 0))
-    : editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total;
+    : editing ? Math.max(0, Math.min(total, (cur === "USD" && editing.purchase.currency === "USD" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)) : total;
   const status = paidNum >= total ? "paid" : paidNum <= 0 ? "unpaid" : "partial";
 
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
@@ -1021,7 +1123,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const printSaved = async (p: Purchase) => {
     try {
       const its = await repo.listPurchaseItems(p.id);
-      const ok = openPurchasePrint(p, its, printOptions(user, i18n.language, t));
+      const v = usdPrintView(p, its);
+      const ok = openPurchasePrint(v.purchase, v.items, { ...printOptions(user, i18n.language, t), ...(v.usd ? { currency: "$" } : {}) });
       if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
       else void repo.logClientEvent("purchase.print", { ref: purchaseNo(p.id) });
     } catch (e) {
@@ -1032,6 +1135,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
+    // 0274: فاتورةُ الدولار بلا سعرٍ مقروء لا تُحفظ — والشريطُ يقولها بجملةٍ حمراء (لا زرٌّ يقف بلا كلمة).
+    if (cur === "USD" && fxRate == null) { setRateAsk(true); playWarning(); return; }
     /* **وسطرٌ بلا كمية كان يسقط بصمت.** `validLines` يصفّي `qty > 0`، و`save`
      * ما كان يعترض إلا لو سقطت السطورُ **كلُّها** — ففاتورةٌ بأربعين سطراً
      * وثلاثةٌ منها بلا عدد تُحفظ بسبعةٍ وثلاثين، والبضاعةُ وصلت ولم تُسجَّل.
@@ -1115,7 +1220,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
      * أسعارٍ من جهازٍ آخر تقول «10,000 ← 10,500» والرفُّ صار 11,000 — فيُنزل الرفعَ وهو يحسبه
      * زيادة، و`record_purchase` يكتب سعرَ البيع بلا شرط. الرقمُ الحاليّ يُعرض بالسطر بعدها،
      * والحفظُ الثاني قرارٌ عن علم. وتعذُّرُ السؤال يوقف الحفظ ويُقال: سؤالٌ تعثّر لا يعني «ما تغيّر». */
-    const typed = validLines.filter((l) => l.product_id && sellPriceToSend(l.sell_price) > 0);
+    const soldUsd = (l: Line) => fxOn && lineSellCur(l.product_id ? products.find((p) => p.id === l.product_id) : undefined, l.sellCur) === "USD";
+    const typed = validLines.filter((l) => l.product_id && sellPriceToSend(l.sell_price) > 0 && !soldUsd(l));
     if (typed.length) {
       let fresh: (Product | null | undefined)[];
       try { fresh = await Promise.all(typed.map((l) => repo.getProductById(l.product_id as string))); }
@@ -1182,9 +1288,31 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         purchased_at: purchasedAt ? new Date(purchasedAt).toISOString() : undefined,
         staff_id: user?.id ?? null,
       };
-      const done = editing
-        ? await repo.updatePurchase(editing.purchase.id, draft, meta)
-        : await repo.recordPurchase(draft, meta);
+      /* 0274: فاتورةُ الدولار، أو سطرٌ يُباع بالدولار (سعرُه بالدولار)، أو فاتورةُ دولارٍ تُعدَّل — من باب العملتين؛ وغيرُها كما كانت. */
+      const viaFx = fxOn && (cur === "USD" || editing?.purchase.currency === "USD" || validLines.some(soldUsd));
+      const done = viaFx
+        ? await (() => {
+          const draftFx: PurchaseDraftLine[] = draft.map((d, i) => {
+            const l = validLines[i];
+            const sc = lineSellCur(l.product_id ? products.find((p) => p.id === l.product_id) : undefined, l.sellCur);
+            return {
+              ...d,
+              purchase_price: cur === "USD" ? 0 : d.purchase_price,
+              purchase_price_usd: cur === "USD" ? Number(l.purchase_price) || 0 : null,
+              sell_currency: sc,
+              sell_price: sc === "USD" ? 0 : d.sell_price,
+              sell_price_usd: sc === "USD" ? sellPriceToSend(l.sell_price) : null,
+            };
+          });
+          const metaFx: PurchaseMeta = cur === "USD"
+            ? { ...meta, currency: "USD", fx_rate: fxRate, amount_paid: undefined, amount_paid_usd: meta.amount_paid,
+                discount: undefined, discount_usd: discOk ? discountAmt : undefined }
+            : { ...meta, currency: "IQD" };
+          return editing ? purchaseFx.update(editing.purchase.id, draftFx, metaFx) : purchaseFx.record(draftFx, metaFx);
+        })()
+        : editing
+          ? await repo.updatePurchase(editing.purchase.id, draft, meta)
+          : await repo.recordPurchase(draft, meta);
       playSuccess();
       setSaved(done);
     } catch (e) {
@@ -1252,6 +1380,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             <input className="input font-mono" dir="ltr" inputMode="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="07xxxxxxxxx" />
           </div>
         </div>
+
+        {fxOn && (
+          <LoadBoundary scope="pfx-bar" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <PfxBarLazy cur={cur} onCur={switchCur} per100={per100} onPer100={(v) => { setPer100(v); setRateAsk(false); }}
+                clinicRate={fx?.clinicRate ?? null} showBad={rateAsk} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* Fast scan/add */}
         <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-3 dark:border-brand-500/20 dark:bg-brand-500/10">
@@ -1346,11 +1483,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <th scope="col" className={cn(TH, TH_TXT, "w-32")}>{t("pos.barcode", "الباركود")}</th>
                   <th scope="col" className={cn(TH, TH_TXT, "w-28")}>{t("pos.category", "الفئة")}</th>
                   <th scope="col" className={cn(TH, NUM_TH, "w-24")}>{t("purchase.log.colQty", "الكمية")}</th>
-                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.purchasePrice", "سعر الشراء")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
-                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.sellPrice", "سعر البيع")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.purchasePrice", "سعر الشراء")} <span className="font-semibold opacity-70">{cur === "USD" ? "$" : currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.sellPrice", "سعر البيع")} {/* بالعملتين عملةُ البيع لكلّ سطر (شارتُه تحت السعر)، فلا رمزَ واحدٌ للعمود. */}{!fxOn && <span className="font-semibold opacity-70">{currencySymbol()}</span>}</th>
                   <th scope="col" className={cn(TH, "pg-num pg-wrap w-20 leading-tight")}>{t("pos.minStock", "تنبيه المخزون")}</th>
                   <th scope="col" className={cn(TH, TH_TXT, "w-36")}>{t("xp.expires", "ينتهي")}</th>
-                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("purchase.log.colTotal", "الإجمالي")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("purchase.log.colTotal", "الإجمالي")} <span className="font-semibold opacity-70">{cur === "USD" ? "$" : currencySymbol()}</span></th>
                   <th scope="col" className={cn(TH, "pg-last w-10")}><span className="sr-only">{t("common.delete", "حذف")}</span></th>
                 </tr>
               </thead>
@@ -1362,7 +1499,12 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 const sellRef = product ?? (!l.product_id && l.name.trim()
                   ? products.find((p) => invNormName(p.name) === invNormName(l.name))
                   : undefined);
-                const sellNow = sellRef ? Number(freshSell[sellRef.id] ?? sellRef.sell_price ?? 0) || null : null;
+                /* 0274: عملةُ بيع السطر — مادّةُ الدولار (أو جديدةٌ اختارته) سعرُها بالدولار ومرجعُها sell_price_usd. */
+                const sellCur = lineSellCur(product, l.sellCur);
+                const sellUsd = fxOn && sellCur === "USD";
+                const sellNow = sellRef
+                  ? Number(sellUsd ? (sellRef.price_currency === "USD" ? sellRef.sell_price_usd ?? 0 : 0) : (freshSell[sellRef.id] ?? sellRef.sell_price ?? 0)) || null
+                  : null;
                 const sellTyped = sellPriceToSend(l.sell_price);
                 const dupTotal = dupOf.get(l.key);
                 const qtyN = Number(l.qty) || 0;
@@ -1470,6 +1612,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                         {discountAmt > 0 && buyN > 0 && subtotal > 0 && (
                           <p className={SUB} data-unitnet>{t("retail.net", "الصافي")} {formatDec((buyN * total) / subtotal)}</p>
                         )}
+                        {/* فاتورةُ الدولار: دينارُ الوحدة بسعرها — ما يدخل المخزون (الخادمُ يحسبه بالحساب نفسِه). */}
+                        {cur === "USD" && fxRate != null && buyN > 0 && (
+                          <p className={SUB} data-buyiqd>{money(Math.round(buyN * fxRate * 100) / 100)}</p>
+                        )}
                       </td>
                       <td className={cn(TD, cellB)}>
                         {/* التلميحةُ تحمل السعرَ الحاليّ، والقيمةُ تبقى فارغةً حتى يكتب: الفارغُ «لا تلمس سعرَ الرفّ». */}
@@ -1483,6 +1629,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           </p>
                         )}
                         {sellNow != null && sellTyped <= 0 && <p className={SUB}>{t("purchase.sellSame", "(ما راح يتغيّر)")}</p>}
+                        {fxOn && (product ? sellCur === "USD" : filled) && (
+                          <LoadBoundary scope="pfx-linecur" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+                            <Suspense fallback={null}>
+                              <PfxLineCurLazy value={sellCur} onChange={product ? undefined : (c) => patchLine(l.key, { sellCur: c })} />
+                            </Suspense>
+                          </LoadBoundary>
+                        )}
                       </td>
                       <td className={cn(TD, cellB)}>
                         <input data-col="min" type="number" inputMode="numeric" min="0" step="1" className={NUM} value={l.min_stock}
@@ -1565,7 +1718,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 {editing && <span className="font-normal text-ink-subtle">{t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)")}</span>}
               </label>
               {editing ? (
-                <input type="number" inputMode="decimal" min="0" step="any" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing.purchase.amount_paid ?? total)} />
+                <input type="number" inputMode="decimal" min="0" step="any" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={fmt(paidNum)} />
               ) : (
                 <>
                   <div className="flex gap-1.5">
@@ -1583,7 +1736,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       <input type="number" inputMode="decimal" min="0" step="any" className="input mt-1.5" value={amountPaid}
                         onChange={(e) => setAmountPaid(e.target.value)} placeholder={t("purchase.paidHowMuch", "شكَد دفعنا هسّه؟")} />
                       <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
-                        {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: money(Math.max(0, total - paidNum)) })}
+                        {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: fmt(Math.max(0, total - paidNum)) })}
                       </div>
                     </>
                   )}
@@ -1605,7 +1758,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             <dl className="space-y-2.5 text-sm">
               <div className="flex items-baseline justify-between gap-3">
                 <dt className="text-ink-muted">{discOk ? t("retail.subtotal", "المجموع الفرعي") : t("purchase.grandTotal", "الإجمالي")}</dt>
-                <dd className="font-bold tabular-nums text-ink">{money(subtotal)}</dd>
+                <dd className="font-bold tabular-nums text-ink">{fmt(subtotal)}</dd>
               </div>
               {discOk && (
                 <div className="flex flex-wrap items-center justify-between gap-2" data-pdiscount>
@@ -1614,7 +1767,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                     <span className="inline-flex overflow-hidden rounded-lg border border-line" role="group" aria-label={t("retail.discount", "الخصم")}>
                       <button type="button" aria-pressed={discType === "fixed"} data-pdisctype="fixed" onClick={() => { playTap(); setDiscType("fixed"); }}
                         className={cn("grid h-8 place-items-center px-2 text-2xs font-bold transition", discType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")}>
-                        {currencySymbol()}
+                        {cur === "USD" ? "$" : currencySymbol()}
                       </button>
                       <button type="button" aria-pressed={discType === "percent"} data-pdisctype="percent" onClick={() => { playTap(); setDiscType("percent"); }}
                         className={cn("grid h-8 w-8 place-items-center transition", discType === "percent" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")}>
@@ -1628,16 +1781,19 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       className={cn("input pg-num pg-n h-9 w-28 rounded-xl px-2.5 py-0 text-sm font-bold tabular-nums",
                         discClamped && "border-warn-400 text-warn-700 dark:text-warn-300")} />
                     <span className={cn("pg-discamt text-end font-bold tabular-nums", discountAmt > 0 ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle")} data-pdiscamt>
-                      {discountAmt > 0 ? <bdi>−{money(discountAmt)}</bdi> : "—"}
+                      {discountAmt > 0 ? <bdi>−{fmt(discountAmt)}</bdi> : "—"}
                     </span>
                   </dd>
                 </div>
               )}
               <div className="pg-net flex items-baseline justify-between gap-3 pt-2.5">
                 <dt className="text-base font-extrabold text-ink">{discOk ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</dt>
-                <dd className="text-xl font-extrabold tabular-nums text-ink" data-pnet>{money(total)}</dd>
+                <dd className="text-xl font-extrabold tabular-nums text-ink" data-pnet>{fmt(total)}</dd>
               </div>
             </dl>
+            {cur === "USD" && (
+              <Suspense fallback={null}><div className="mt-1 text-end"><PfxTotalsLazy totalUsd={total} rate={fxRate} /></div></Suspense>
+            )}
           </div>
         </div>
 
@@ -1646,7 +1802,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           <div className="flex flex-1 flex-wrap gap-x-5 gap-y-1">
             <Summary label={t("purchase.itemsCount", "أصناف")} value={String(validLines.length)} />
             <Summary label={t("purchase.unitsLabel", "قطعة")} value={formatQty(totalUnits)} />
-            <Summary label={discountAmt > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={money(total)} strong />
+            <Summary label={discountAmt > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={fmt(total)} strong />
             <div className="flex flex-col">
               <span className="text-2xs text-ink-subtle">{t("purchase.settle", "الحالة")}</span>
               <Badge tone={statusTone(status)}>{t(`purchase.status.${status}`, status)}</Badge>
