@@ -46,7 +46,7 @@ const GOLDEN = {
       cogs_other: "666.66", gross: "29085", adjust: "500", stock_loss: "1235", returns: "15000", payroll: "300000",
       payroll_loan: "50000", uncategorized: "1250.25",
       categories: [[CAT_OLD, "75"], [CAT_RENT, "500001"], [CAT_ELEC, "100.01"]],
-      fx: "1550", expenses: "867661.26", net: "-837026.26",
+      fx: "1550", fx_purchases: "-200", expenses: "867661.26", net: "-837226.26",
     }],
   },
   // نفسُ اللحظتين بغرينتش: G4 (٢١:٣٠Z ليلة ٣١/١) وسحبُ الطرف E12 يقعان بيناير.
@@ -54,12 +54,12 @@ const GOLDEN = {
     months: [
       { month: "2026-01", invoices: 1, revenue: "1000", cogs: "0", cogs_products: "0", cogs_materials: "0", cogs_other: "0",
         gross: "1000", adjust: "0", stock_loss: "0", returns: "0", payroll: "0", payroll_loan: "0", uncategorized: "0",
-        categories: [[CAT_RENT, "1"]], fx: "0", expenses: "1", net: "999" },
+        categories: [[CAT_RENT, "1"]], fx: "0", fx_purchases: "0", expenses: "1", net: "999" },
       { month: "2026-02", invoices: 3, revenue: "35500", cogs: "7915", cogs_products: "6433.34", cogs_materials: "815",
         cogs_other: "666.66", gross: "28085", adjust: "500", stock_loss: "1235", returns: "15000", payroll: "300000",
         payroll_loan: "50000", uncategorized: "1250.25",
         categories: [[CAT_OLD, "75"], [CAT_RENT, "500000"], [CAT_ELEC, "100.01"]],
-        fx: "1550", expenses: "867660.26", net: "-838025.26" },
+        fx: "1550", fx_purchases: "-200", expenses: "867660.26", net: "-838225.26" },
     ],
   },
 };
@@ -84,6 +84,11 @@ function gen() {
   ];
   const products = Array.from({ length: 6 }, (_, i) => ({ id: P(i + 1), name: `مادة التطابق ${i + 1}` }));
   const invoices = [], items = [], consumption = [], expenses = [];
+  // 0275: دفعاتُ دين الشراء بالدولار وفرقُ صرفها — على فاتورتَي شراءٍ بالدولار (المفتاحُ الأجنبيّ)؛ null سعرٌ مجهول لا يُحسب.
+  const purchases = [uid("8b00", 1), uid("8b00", 2)];
+  const purchasePayments = [];
+  let nPP = 0;
+  const addPP = (o) => purchasePayments.push({ id: uid("8d00", ++nPP), purchase_id: purchases[nPP % 2], fx: null, ...o });
   let nInv = 0, nItem = 0, nCons = 0, nExp = 0;
   const addInv = (o) => { const id = uid("8b00", ++nInv); invoices.push({ id, status: "paid", ...o }); return id; };
   const inFebL = (d) => `2026-02-${String(d).padStart(2, "0")}T12:00:00.000Z`;
@@ -121,6 +126,11 @@ function gen() {
     payment_details: [{ method: "cash", amount: 8888, at: inFebL(21), kind: "fx" }] }));
   addItem(G6, P(1), "1", "100");
   const inFeb = inFebL;
+  // 0275 الذهبيّ: −٨٠٠ (سدّدنا بسعرٍ أعلى) و+٦٠٠ بشباط = −٢٠٠، ودفعةٌ بلا سعر (null) لا تُحسب، ودفعةٌ بآذار خارج المدّة.
+  addPP({ paid_at: inFebL(14), fx: "-800" });
+  addPP({ paid_at: inFebL(16), fx: "600" });
+  addPP({ paid_at: inFebL(17), fx: null });
+  addPP({ paid_at: "2026-03-05T09:00:00.000Z", fx: "-999" });
   addExp({ spent_at: inFeb(10), amount: "500000", category: "إيجار", category_id: CAT_RENT });
   addExp({ spent_at: inFeb(11), amount: "100.005", category: "كهرباء", category_id: CAT_ELEC });
   addExp({ spent_at: inFeb(12), amount: "0.005", category: "كهرباء", category_id: CAT_ELEC });
@@ -188,6 +198,7 @@ function gen() {
     () => ({ category: "مولّدة", category_id: CAT_RAND[0] }), () => ({ category: "تنظيف", category_id: CAT_RAND[1], method: "card" }),
     () => ({ category: "إيجار", category_id: CAT_RENT }), () => ({ category: "مرتجع", category_id: CAT_ELEC }),   // المعرّفُ يغلب النصّ
   ];
+  for (let i = 0; i < 60; i++) addPP({ paid_at: instant(), fx: R() < 0.2 ? null : D(int(-90_000, 90_000), 2) });
   for (let i = 0; i < 140; i++) {
     const amount = pick([D(int(1, 99_999_999), 2), D(int(1, 9_999_999), 4), D(int(1, 9), 3), String(int(1, 900_000))]);
     addExp({ spent_at: instant(), amount, ...pick(texts)() });
@@ -208,7 +219,7 @@ function gen() {
     { id: "too_long", from: "2025-01-01T00:00:00.000Z", to: "2026-02-06T00:00:00.001Z", tz: "Asia/Baghdad", error: "pnl_range_long" },
     { id: "max_len", from: "2025-01-01T00:00:00.000Z", to: "2026-02-05T00:00:00.000Z", tz: "Asia/Baghdad" },
   ];
-  fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify({ categories, products, invoices, items, consumption, expenses, cases }, null, 1));
+  fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify({ categories, products, invoices, items, consumption, expenses, purchases, purchasePayments, cases }, null, 1));
 
   const q = (v) => (v == null ? "null" : `'${String(v).replace(/'/g, "''")}'`);
   const sql = [
@@ -227,6 +238,10 @@ function gen() {
       const neg = c.value.startsWith("-");
       return `('${c.id}', '${PCL}', '${c.invoice_id}', '${c.id}', '${c.id}', '${P(1)}', 'مادة', 'stock', 1, 1, 0, 0, 1, ${neg ? "-1" : "1"}, 0, ${c.value}, '${neg ? "restore" : "use"}', 'recipe')`;
     }).join(",\n  ")};`,
+    // 0275: فاتورتا شراءٍ بالدولار ودفعاتُهما ببابهما (0274) — القالبُ يفتحه لمعاملته.
+    `select set_config('doctorvet.usd_purchase_door', 'on', true);`,
+    `insert into purchases(id, clinic_id, total, amount_paid, status, purchased_at, currency, fx_rate, total_usd, paid_usd) values ${purchases.map((id) => `('${id}', '${PCL}', 146000, 0, 'unpaid', '2026-01-01T09:00:00Z', 'USD', 1460, 100, 0)`).join(", ")};`,
+    `insert into purchase_payments(id, clinic_id, purchase_id, amount, paid_at, usd, fx_rate, fx) values ${purchasePayments.map((x) => `('${x.id}', '${PCL}', '${x.purchase_id}', 0, ${q(x.paid_at)}, 1, 1460, ${x.fx ?? "null"})`).join(",\n  ")};`,
     `insert into expenses(id, clinic_id, amount, description, category, category_id, method, spent_at) values ${expenses.map((e) => `('${e.id}', '${PCL}', ${e.amount}, 'تطابق', ${q(e.category)}, ${q(e.category_id)}, '${e.method}', ${q(e.spent_at)})`).join(",\n  ")};`,
     "commit;",
   ].join("\n");
@@ -267,13 +282,14 @@ async function check() {
   const input = (d) => ({
     invoices: d.invoices, items: d.items, expenses: d.expenses, categories: d.categories,
     consumption: d.consumption.map((c) => ({ invoice_id: c.invoice_id, cents: M.toCents(c.value) })),
+    purchasePayments: (d.purchasePayments ?? []).map((x) => ({ paid_at: x.paid_at, fx: x.fx })),
   });
   const run = (inp, c) => { try { return M.computePnl(inp, c.from, c.to, c.tz); } catch (e) { return { error: e.message }; } };
 
   // مقارنةٌ تامّة: الأرقامُ بالفلس (BigInt)، والعددُ والنصوصُ كما هي — والفرقُ الأوّل يُقال بمكانه.
   const cents = (x) => (typeof x === "number" || typeof x === "string" ? M.toCents(x) : null);
   const NUM = ["revenue", "cogs", "cogs_products", "cogs_materials", "cogs_other", "gross", "adjust", "stock_loss", "returns",
-    "payroll", "payroll_loan", "uncategorized", "fx", "expenses", "net"];
+    "payroll", "payroll_loan", "uncategorized", "fx", "fx_purchases", "expenses", "net"];
   const diffTotals = (where, a, b) => {
     const d = [];
     if (!a || !b) return [`${where}: ${a ? "" : "القاعدة"}${!a && !b ? " و" : ""}${b ? "" : "المرآة"} بلا قيمة`];
@@ -334,6 +350,8 @@ async function check() {
     ["تنسى دفترَ المستهلكات", (c) => run(input({ ...data, consumption: [] }), c)],
     ["تنسى فرقَ الصرف", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, payment_details: null })) }), c)],
     ["تعدّ ساقَ fx على فاتورة الدينار", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, currency: "USD" })) }), c)],
+    ["تنسى فرقَ صرف المشتريات (0275)", (c) => run(input({ ...data, purchasePayments: [] }), c)],
+    ["تعكس إشارةَ فرق صرف المشتريات", (c) => run(input({ ...data, purchasePayments: data.purchasePayments.map((x) => ({ ...x, fx: x.fx == null ? null : String(-Number(x.fx)) })) }), c)],
     ["تعدّ الدينَ القديم بيعاً", (c) => run(input({ ...data, invoices: data.invoices.map((i) => ({ ...i, sale_kind: null })) }), c)],
     ["تنسى طريقةَ «stock»", (c) => run(input({ ...data, expenses: data.expenses.map((e) => ({ ...e, method: e.method === "stock" ? "cash" : e.method, category: e.method === "stock" ? "x" : e.category })) }), c)],
   ];

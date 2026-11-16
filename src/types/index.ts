@@ -1272,6 +1272,9 @@ export interface PurchasePayment {
   pay_currency?: "IQD" | "USD" | null;
   handed?: number | null;
   fx_rate?: number | null;
+  /** 0275: فرقُ صرف دفعة دين الدولار — حصّتُها بدينار يوم الشراء (amount) ناقصَ ما كلّفت بالدينار يومَ التسديد. موجبٌ ربح،
+   *  وnull = سعرُها مجهول (دفعةٌ قبل 0275) أو دَينٌ بالدينار. */
+  fx?: number | null;
   created_at: string;
 }
 

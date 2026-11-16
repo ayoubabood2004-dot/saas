@@ -207,8 +207,13 @@ export async function demoPurchasePayFx(purchaseId: string, handed: number, payC
   const p = (db.purchases ?? []).find((x) => x.id === purchaseId);
   if (!p) throw new Error("purchase not found");
   const debt: Cur = p.currency === "USD" ? "USD" : "IQD";
-  const r = rate != null ? decOf(rate, 4) : null;
+  let r = rate != null ? decOf(rate, 4) : null;
   if (debt !== pc && !rateOk(r)) throw badRate();
+  // 0275: دَينُ الدولار — كلُّ تسديدٍ بسعر يومه (ولو سُلّم دولاراً)، والغائبُ سعرُ العيادة الأخير.
+  if (debt === "USD") {
+    r = r ?? (await usdCtx()).rate;
+    if (!rateOk(r)) throw demoHint("bad_rate", "اكتب سعر الدولار يوم التسديد (بين 100 و100000 دينار).");
+  }
   const now = new Date().toISOString();
   const base = { id: uid("pp"), clinic_id: null, purchase_id: p.id, company_id: p.company_id ?? null, method,
     note: note?.trim() || null, paid_at: now, staff_id: null, created_at: now, pay_currency: pc, handed: n2(h) };
@@ -237,7 +242,9 @@ export async function demoPurchasePayFx(purchaseId: string, handed: number, payC
     }
     if (red <= 0n) throw new Error("nothing to settle");
     const share = shareC(red, dueUsd, dueIqd, C(p.total_usd), C(p.total));
-    (db.purchasePayments ??= []).push({ ...base, amount: n2(share), usd: n2(red), fx_rate: pc === "IQD" ? n4(r!) : null });
+    // فرقُ الصرف (0275): الحصّةُ بدينار يوم الشراء ناقصَ ما كلّفت يومَ التسديد (المسلَّمُ دينارُه، أو الدولارُ بسعر يومه).
+    const cost = pc === "IQD" ? h : iqdOf(red, r!, 1) * 100n;
+    (db.purchasePayments ??= []).push({ ...base, amount: n2(share), usd: n2(red), fx_rate: n4(r!), fx: n2(share - cost) });
     const np = C(p.paid_usd) + red;
     Object.assign(p, { amount_paid: n2(C(p.amount_paid) + share), paid_usd: n2(np), status: statusOf(C(p.total_usd), np) });
   }
@@ -252,7 +259,7 @@ export async function demoCompanyPayFx(companyId: string, cur: Cur, handed: numb
   const c = curOf(cur || "IQD"), pc = curOf(payCur || "IQD");
   const h = C(handed);
   if (method != null && !METHODS.has(method)) throw new Error("bad_method");
-  const r = rate != null ? decOf(rate, 4) : null;
+  let r = rate != null ? decOf(rate, 4) : null;
   if (c !== pc && !rateOk(r)) throw badRate();
   const mine = (db.purchases ?? []).filter((p) => p.company_id === companyId);
 
@@ -271,6 +278,9 @@ export async function demoCompanyPayFx(companyId: string, cur: Cur, handed: numb
     return { ...res, entry: { ...e } };
   }
 
+  // 0275: سعرُ يوم التسديد لدَين الدولار (ولو سُلّم دولاراً)، والغائبُ سعرُ العيادة.
+  r = r ?? (await usdCtx()).rate;
+  if (!rateOk(r)) throw demoHint("bad_rate", "اكتب سعر الدولار يوم التسديد (بين 100 و100000 دينار).");
   const pool = maxB(C(demoPoolDueUsd(db, companyId)), 0n);
   const open = mine.filter((p) => p.currency === "USD" && C(p.total_usd) - C(p.paid_usd) > 0n)
     .sort((a, b) => a.purchased_at.localeCompare(b.purchased_at) || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
@@ -282,7 +292,7 @@ export async function demoCompanyPayFx(companyId: string, cur: Cur, handed: numb
   }
   if (red <= 0n) throw demoHint("bad_amount", "المبلغُ لازم أكبر من صفر.");
   const entry: CompanyEntry = { ...demoEntry(companyId, "payment", "debit", n2(red), date, method, note),
-    currency: "USD", pay_currency: pc, handed: n2(h), fx_rate: pc === "IQD" ? n4(r!) : null };
+    currency: "USD", pay_currency: pc, handed: n2(h), fx_rate: n4(r!) };
   (db.companyEntries ??= []).push(entry);
   const day = entry.entry_date;
   const paidAt = day === localISO() ? new Date().toISOString() : new Date(`${day}T12:00:00`).toISOString();
@@ -297,6 +307,7 @@ export async function demoCompanyPayFx(companyId: string, cur: Cur, handed: numb
     (db.purchasePayments ??= []).push({
       id: uid("pp"), clinic_id: null, purchase_id: p.id, company_id: companyId, amount: n2(share), usd: n2(part), method,
       note: note?.trim() || null, paid_at: paidAt, staff_id: null, entry_id: entry.id, created_at: new Date().toISOString(),
+      fx_rate: n4(r!), fx: n2(share - iqdOf(part, r!, 1) * 100n),
     });
     const np = C(p.paid_usd) + part;
     Object.assign(p, { amount_paid: n2(C(p.amount_paid) + share), paid_usd: n2(np), status: statusOf(C(p.total_usd), np) });

@@ -116,9 +116,26 @@ export function CompanyBook() {
   /** 0274: تسديدٌ سُلّم بعملةٍ غير عملة الدَّين — ما سُلّم وسعرُه. */
   const handedText = (r: LedgerRow): string => {
     const e = r.entryId ? data?.entries.find((x) => x.id === r.entryId) : undefined;
-    if (!e?.pay_currency || e.handed == null || e.pay_currency === cur) return "";
+    if (!e?.pay_currency || e.handed == null) return "";
+    // 0275: تسديدُ دين الدولار يُقال بسعر يومه دائماً (ولو سُلّم دولاراً)؛ والدينارُ حين سُلّم بعملةٍ ثانية وحده.
+    if (e.pay_currency === cur && !(cur === "USD" && e.fx_rate)) return "";
     return t("cbook.handed", { v: e.pay_currency === "USD" ? usdOf(e.handed) : money(e.handed), r: e.fx_rate ? formatNum(e.fx_rate) : "—" });
   };
+  /** 0275: فرقُ صرف سطر تسديدٍ بدفتر الدولار — مجموعُ فروق دفعاته (التسديدُ على الحساب بأجزائه، والدفعةُ بفاتورةٍ وحدها). */
+  const fxOfRow = (r: LedgerRow): number | null => {
+    if (cur !== "USD" || !data) return null;
+    const pps = r.entryId ? data.payments.filter((p) => p.entry_id === r.entryId)
+      : r.key.startsWith("pp:") ? data.payments.filter((p) => `pp:${p.id}` === r.key) : [];
+    const known = pps.filter((p) => p.fx != null);
+    return known.length ? Math.round(known.reduce((s, p) => s + Number(p.fx), 0) * 100) / 100 : null;
+  };
+  const fxText = (v: number) => (v >= 0 ? t("cbook.fxGain", { v: money(v) }) : t("cbook.fxLoss", { v: money(-v) }));
+  /** فرقُ صرف دفتر الدولار كلّه — كلُّ دفعةٍ حيّةٍ معروفٍ فرقُها على فواتير الدولار. */
+  const fxTotal = cur === "USD" && data
+    ? (() => { const ids = new Set(data.purchases.filter((p) => curOfPurchase(p) === "USD").map((p) => p.id));
+        const k = data.payments.filter((p) => ids.has(p.purchase_id) && p.fx != null);
+        return k.length ? Math.round(k.reduce((s, p) => s + Number(p.fx), 0) * 100) / 100 : null; })()
+    : null;
   const allocText = (r: LedgerRow) => [
     r.toOpening ? t("cbook.allocOpening", { v: fm(r.toOpening), defaultValue: "للرصيد السابق {{v}}" }) : "",
     ...(r.alloc ?? []).map((a) => t("cbook.allocInvoice", { ref: a.ref ? `\u2068#${a.ref}\u2069` : "", v: fm(a.amount), defaultValue: "فاتورة {{ref}}: {{v}}" })),
@@ -185,6 +202,10 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
               <div><dt className="text-2xs text-ink-subtle">{t("cbook.ofInvoices", "منها فواتير")}</dt><dd className="font-bold tabular-nums text-ink">{fm(L.totals.invoiceDue)}</dd></div>
               <div><dt className="text-2xs text-ink-subtle">{t("cbook.ofOpening", "رصيد سابق")}</dt><dd className="font-bold tabular-nums text-ink">{fm(L.totals.poolDue)}</dd></div>
               {L.totals.chargesDue > 0 && <div><dt className="text-2xs text-ink-subtle">{t("cbook.ofCharges", "مطالبات")}</dt><dd className="font-bold tabular-nums text-ink">{fm(L.totals.chargesDue)}</dd></div>}
+              {fxTotal != null && (
+                <div data-book-fxtotal><dt className="text-2xs text-ink-subtle">{t("cbook.fxTotal")}</dt>
+                  <dd className={cn("font-bold tabular-nums", fxTotal >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300")}>{fxTotal >= 0 ? "+" : "−"}{money(Math.abs(fxTotal))}</dd></div>
+              )}
             </dl>
             <div className="ms-auto flex flex-wrap gap-2">
               {canPay && payableOf(L.totals.invoiceDue, L.totals.poolDue) > 0 && (
@@ -232,6 +253,7 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
                       <p className="text-2xs text-ink-subtle">{formatDate(r.day, lang, true)}{r.ref && <> · <bdi dir="ltr">#{r.ref}</bdi></>}{r.method && <> · {methodLabel(r.method)}</>}</p>
                       {r.kind === "accountPay" && !r.voided && allocText(r) && <p className="text-2xs text-ink-muted">{allocText(r)}</p>}
                       {r.kind === "accountPay" && handedText(r) && <p className="text-2xs text-ink-muted" data-book-handed>{handedText(r)}</p>}
+                      {!r.voided && fxOfRow(r) != null && <p className={cn("text-2xs font-bold", fxOfRow(r)! >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300")} data-book-fx>{fxText(fxOfRow(r)!)}</p>}
                       {r.voided && <p className="text-2xs font-bold text-danger-600 dark:text-danger-400">{t("cbook.voided", { reason: r.voided.reason ?? "", d: formatDate(r.voided.at, lang, true), defaultValue: "ملغاة {{d}}: {{reason}}" })}</p>}
                     </div>
                     <div className="shrink-0 text-end">
@@ -279,6 +301,7 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
                             {r.note && <p className="text-2xs text-ink-muted">{r.note}</p>}
                             {r.kind === "accountPay" && !r.voided && allocText(r) && <p className="text-2xs text-ink-muted" data-book-alloc>{allocText(r)}</p>}
                             {r.kind === "accountPay" && handedText(r) && <p className="text-2xs text-ink-muted" data-book-handed>{handedText(r)}</p>}
+                            {!r.voided && fxOfRow(r) != null && <p className={cn("text-2xs font-bold", fxOfRow(r)! >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300")} data-book-fx>{fxText(fxOfRow(r)!)}</p>}
                             {r.voided && <p className="text-2xs font-bold text-danger-600 dark:text-danger-400">{t("cbook.voided", { reason: r.voided.reason ?? "", d: formatDate(r.voided.at, lang, true), defaultValue: "ملغاة {{d}}: {{reason}}" })}</p>}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 font-mono text-2xs text-ink-muted">{r.ref && <bdi dir="ltr">#{r.ref}</bdi>}</td>
@@ -401,7 +424,10 @@ function PayModal({ open, onClose, data, poolDue, invoiceDue, cur, fx, onDone }:
   const fmD = (n: number) => (cur === "USD" ? usdOf(n) : money(n));
   const fmP = (n: number) => (payCur === "USD" ? usdOf(n) : money(n));
   const handed = Number(amount) || 0;
-  const rate = payCur !== cur ? ratePerUsd(per100) : null;
+  /* 0275: دَينُ الدولار يُسدَّد بسعر يومه دائماً (ولو سُلّم دولاراً) — منه دينارُ التسديد وفرقُ صرفه. */
+  const needRate = payCur !== cur || cur === "USD";
+  const rate = needRate ? ratePerUsd(per100) : null;
+  const costIqd = cur === "USD" && rate != null && handed > 0 ? (payCur === "IQD" ? handed : Math.round(handed * rate)) : null;
   /** ما ينقص من الدَّين بعملته — كما يحسبه company_pay_fx. */
   const amt = payCur === cur ? handed : rate == null ? 0 : cur === "USD" ? Math.round((handed / rate) * 100) / 100 : Math.round(handed * rate);
   const pv = previewPay(amt, poolDue, data.purchases.filter((p) => curOfPurchase(p) === cur));
@@ -410,13 +436,13 @@ function PayModal({ open, onClose, data, poolDue, invoiceDue, cur, fx, onDone }:
 
   const save = async () => {
     if (busy) return;
-    if (payCur !== cur && rate == null) { toast.error(t("cbook.rateBad")); return; }
+    if (needRate && rate == null) { toast.error(t("cbook.rateBad")); return; }
     if (!(amt > 0)) { toast.error(t("cbook.amountRequired", "اكتب مبلغاً أكبر من صفر.")); return; }
     if (over) { toast.error(t("cbook.overPay", { v: fmD(max), defaultValue: "المبلغ أكبر من دين الشركة ({{v}})." })); return; }
     setBusy(true);
     try {
       const r = viaFx
-        ? await purchaseFx.companyPay(data.company.id, cur, handed, payCur, rate, method, date, note.trim() || null)
+        ? await purchaseFx.companyPay(data.company.id, cur, handed, payCur, needRate ? rate : null, method, date, note.trim() || null)
         : await repo.companyPay(data.company.id, amt, method, date, note.trim() || null);
       playSuccess();
       toast.success(r.to_opening > 0 && r.invoices > 0
@@ -446,20 +472,18 @@ function PayModal({ open, onClose, data, poolDue, invoiceDue, cur, fx, onDone }:
                 </button>
               ))}
             </div>
-            {payCur !== cur && (
+            {needRate && (
               <label className="flex items-center gap-1.5 text-xs font-bold text-ink-muted">
-                {t("cbook.per100")}
+                {cur === "USD" ? t("cbook.dayRate") : t("cbook.per100")}
                 <input dir="ltr" inputMode="decimal" className="input h-9 w-32 font-mono" value={per100} onChange={(e) => setPer100(e.target.value)} data-book-payrate />
               </label>
             )}
           </div>
         )}
         <AmountField value={amount} onChange={setAmount} />
-        {payCur !== cur && (
-          rate == null
-            ? <p role="alert" className="text-xs font-bold text-danger-600 dark:text-danger-300">{t("cbook.rateBad")}</p>
-            : handed > 0 && <p className="text-xs font-bold text-ink tabular-nums" data-book-reduces>{t("cbook.reduces", { h: fmP(handed), v: fmD(amt) })}</p>
-        )}
+        {needRate && rate == null && <p role="alert" className="text-xs font-bold text-danger-600 dark:text-danger-300">{t("cbook.rateBad")}</p>}
+        {payCur !== cur && rate != null && handed > 0 && <p className="text-xs font-bold text-ink tabular-nums" data-book-reduces>{t("cbook.reduces", { h: fmP(handed), v: fmD(amt) })}</p>}
+        {costIqd != null && <p className="text-xs font-bold text-ink-muted tabular-nums" data-book-cost>{t("cbook.costIqd", { v: money(costIqd) })}</p>}
         <div className="grid gap-3 sm:grid-cols-2">
           <DateField value={date} onChange={setDate} />
           <div>
