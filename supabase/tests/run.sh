@@ -27,11 +27,11 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
-cleanup() { "$PGBIN/pg_ctl" -D "$PGDATA" stop -m immediate >/dev/null 2>&1 || true; }
+cleanup() { [ -n "${KEEP_PG:-}" ] && return 0; "$PGBIN/pg_ctl" -D "$PGDATA" stop -m immediate >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 # بوستغريس يرفض يشتغل بحساب الجذر، فننزل لحسابٍ عاديّ للخادم وحده
@@ -12397,6 +12397,174 @@ $P -c "select set_config('doctorvet.usd_door', 'on', false); select set_config('
        delete from clinic_fx_rates where clinic_id = '$DC';
        select set_config('doctorvet.usd_door', 'off', false); select set_config('doctorvet.opening_return', 'off', false);" >/dev/null
 [ "$SHIM273" = "true" ] && $P -c "drop function if exists public.photographer_fence_table(text);" >/dev/null
+
+# ── 0274: الشراءُ بالعملتين ودفترُ الشركة بالعملتين — الدينارُ يحمل كلَّ آلة الاستلام، والدولارُ حقيقةُ الدَّين ─────────────────
+# PC عيادةٌ وصاحبُها (مدير)، PV طبيبُها، PR استقبالُها، PO عيادةٌ ثانية بلا دولار. كلُّ نداءٍ بدور authenticated، وكلُّ قراءةٍ بعد كتابةٍ
+# بجملةٍ بعدها (درسُ 0257). قسمُ 0224 قبلنا يعيد 0224 فيرجع دفترُها لنصّها — فالقسمُ يعيد 0274 أوّلاً.
+echo "▸ 0274: الشراءُ بالعملتين — كلفةُ الدينار بسعر الفاتورة، والدَّينُ بعملته، والتسديدُ بأيّ عملة، والدفترُ رصيدان"
+# تراجعُ 0222 قبلنا يحذف photographer_fence_table، وإعادةُ 0224 بالقسم تطلبها: دالّةٌ فارغةٌ مؤقّتة تُحذف آخرَ القسم (كـ0273).
+SHIM274=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select (to_regprocedure('public.photographer_fence_table(text)') is null)::text")
+[ "$SHIM274" = "true" ] && $P -c "create function public.photographer_fence_table(p_table text) returns integer language sql as 'select 0';" >/dev/null
+out=$($P -f "$MIG/0274_usd_purchases.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0274 ما انعادت فوق إعادات الأقسام"; fail=1; }
+FG=c2740000-0000-4000-8000-0000000000
+PC=${FG}c1
+PV=${FG}c2
+PR=${FG}c3
+PO=${FG}c4
+PCO=${FG}e1
+rt()   { echo "_rls_try('$1', \$q\$$2\$q\$)"; }
+rerr() { echo "split_part(_rls_try('$1', \$q\$$2\$q\$), ':', 3)"; }
+rv()   { echo "_v0252('$1', \$q\$$2\$q\$)"; }
+pur()  { echo "(select id from purchases where clinic_id = '$PC' and reference = '$1')"; }
+RF()   { echo "select (record_purchase_fx('$1'::jsonb, '$2'::jsonb)).id::text"; }
+PAY()  { echo "select (purchase_pay_fx($(pur $1), $2)).status"; }
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$PC'),('$PV'),('$PR'),('$PO') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$PV','$PC','veterinarian','active'), ('$PR','$PC','receptionist','active')
+         on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code, usd_enabled, usd_round_step) values ('$PC','+964', true, 250)
+         on conflict (clinic_id) do update set usd_enabled = true, usd_round_step = 250;
+       insert into clinic_fx_rates(clinic_id, rate) values ('$PC', 1460);
+       insert into companies (id, clinic_id, name) values ('$PCO', '$PC', 'شركة الدولار') on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, price_currency, sell_price_usd, purchase_price_usd) values
+         ('${FG}a1', '$PC', 'دينارية', 'FX-A1', 10, 15000, 10000, 'IQD', null, null),
+         ('${FG}a2', '$PC', 'دولارية', 'FX-A2', 5, 0, 14600, 'USD', 20, 10)
+         on conflict (id) do nothing;" >/dev/null
+L1='[{"product_id":"'${FG}a1'","name":"دينارية","qty":2,"purchase_price_usd":5},{"product_id":"'${FG}a2'","name":"دولارية","qty":"3","purchase_price_usd":"12","sell_price_usd":25},{"name":"علف جديد","barcode":"FX-N1","qty":4,"purchase_price_usd":2.5,"sell_currency":"USD","sell_price_usd":4},{"name":"ملح","barcode":"FX-N2","qty":1,"purchase_price_usd":1,"sell_currency":"IQD","sell_price":3000}]'
+M1='{"currency":"USD","fx_rate":1470,"company_id":"'$PCO'","company_name":"شركة الدولار","discount_usd":2,"amount_paid_usd":10,"reference":"FX-1"}'
+chk "الاستقبالُ يُرفض، والعيادةُ بلا دولار تُرفض فاتورةَ دولار" \
+    "select $(rerr $PR "$(RF "$L1" "$M1")")||'|'||$(rerr $PO "$(RF "$L1" "$M1")")" "forbidden|usd_disabled"
+chk "  والطبيبُ يكتب فاتورةَ دولار بسعرها (١٤٧٠ لا سعرَ العيادة ١٤٦٠): مادّةُ دينار، ومادّةُ دولار، وجديدتان (دولار ودينار)، وخصمٌ ٢\$ ومدفوعٌ ١٠\$" \
+    "select length($(rv $PV "$(RF "$L1" "$M1")"))::text" "36"
+chk "  الرأس: ٥٧\$ − ٢ = ٥٥\$، ودينارُه ٨٣٬٧٩٠ − ٢٬٩٤٠ = ٨٠٬٨٥٠ (نسبتُه ١٤٧٠ بالضبط)، والمدفوعُ ١٤٬٧٠٠ حصّةُ ١٠\$، جزئية" \
+    "select currency||'|'||fx_rate::text||'|'||total_usd::text||'|'||paid_usd::text||'|'||discount_usd::text||'|'||total::numeric(20,2)::text
+            ||'|'||discount::numeric(20,2)::text||'|'||amount_paid::numeric(20,2)::text||'|'||status from purchases where id = $(pur FX-1)" \
+    "USD|1470.0000|55.00|10.00|2.00|80850.00|2940.00|14700.00|partial"
+chk "  مادّةُ الدينار: الرصيدُ ١٢ وآخرُ سعر شراء ٧٣٥٠ ديناراً (٥\$ × ١٤٧٠) وسعرُ بيعها كما هو؛ والمتوسّطُ من دينارها بعد الخصم" \
+    "select stock::text||'|'||purchase_price::numeric(20,2)::text||'|'||sell_price::numeric(20,2)::text||'|'||price_currency||'|'||coalesce(purchase_price_usd::text, '-')
+            ||'|'||(avg_cost between 9000 and 9600)::text from products where id = '${FG}a1'" "12.000|7350.00|15000.00|IQD|-|true"
+chk "  مادّةُ الدولار: الرصيدُ ٨، وسعرُ شرائها بالدولار ١٢ وبيعها ٢٥ (دينارُ بيعها لا يُمسّ)" \
+    "select stock::text||'|'||purchase_price_usd::text||'|'||sell_price_usd::text||'|'||sell_price::numeric(20,2)::text||'|'||purchase_price::numeric(20,2)::text
+       from products where id = '${FG}a2'" "8.000|12.00|25.00|0.00|17640.00"
+chk "  الجديدتان: «علف جديد» مادّةُ دولار بسعرَيها، و«ملح» مادّةُ دينار بسعر بيعها وبلا سعرٍ دولاريّ" \
+    "select string_agg(name||':'||price_currency||':'||coalesce(sell_price_usd::text, '-')||':'||coalesce(purchase_price_usd::text, '-')||':'||sell_price::numeric(20,2)::text
+                       ||':'||purchase_price::numeric(20,2)::text||':'||stock::text, ',' order by barcode)
+       from products where clinic_id = '$PC' and barcode in ('FX-N1', 'FX-N2')" \
+    "علفجديد:USD:4.00:2.50:0.00:3675.00:4.000,ملح:IQD:-:-:3000.00:1470.00:1.000"
+chk "  والسطور: كلفةُ كلٍّ بالدولار، وعملةُ بيعه وسعرُه بالدولار" \
+    "select string_agg(name||':'||purchase_price_usd::text||':'||coalesce(sell_currency, '-')||':'||coalesce(sell_price_usd::text, '-'), ',' order by purchase_price_usd)
+       from purchase_items where purchase_id = $(pur FX-1)" "ملح:1.00:IQD:-,علفجديد:2.50:USD:4.00,دينارية:5.00:IQD:-,دولارية:12.00:USD:25.00"
+
+chk "البابان: تعديلُ سطرٍ مباشرةً، والتعديلُ القديم، ودفعةٌ مباشرة، وتعديلُ المدفوع مباشرةً — كلُّها تُرفض على فاتورة الدولار" \
+    "select $(rerr $PC "update purchase_items set qty = 9 where purchase_id = $(pur FX-1)")
+            ||'|'||$(rerr $PC "select (update_purchase($(pur FX-1), '[{\"product_id\":\"${FG}a1\",\"qty\":1,\"purchase_price\":7350}]'::jsonb, '{}'::jsonb)).id::text")
+            ||'|'||$(rerr $PV "insert into purchase_payments(purchase_id, amount) select $(pur FX-1), 5")
+            ||'|'||$(rerr $PC "update purchases set amount_paid = 80850 where id = $(pur FX-1)")" \
+    "usd_purchase_door|usd_purchase_door|usd_purchase_door|usd_purchase_door"
+chk "  وتعديلُ الملاحظة يمرّ — البابُ على المال وحده" "select $(rt $PC "update purchases set notes = 'ملاحظة' where id = $(pur FX-1)")" "rows:1"
+chk "  (ولا شيءَ تغيّر: المدفوعُ ١٠\$ والرصيدُ ١٢ ولا دفعة)" \
+    "select paid_usd::text||'|'||(select stock::text from products where id = '${FG}a1')||'|'||(select count(*) from purchase_payments where purchase_id = $(pur FX-1))::text
+       from purchases where id = $(pur FX-1)" "10.00|12.000|0"
+
+chk "التسديد: ٢٠\$ نقداً بالدولار (الباقي المرئيّ ٤٥\$) ⇒ جزئية" "select $(rv $PV "$(PAY FX-1 "20, 'USD', null, 'cash', null, 45")")" "partial"
+chk "  ١٥\$ بـ٢٢٬٥٠٠ ديناراً بسعر ١٥٠٠ ⇒ ينقص ١٥\$ وحصّتُه ٢٢٬٠٥٠ (نسبةُ الفاتورة لا سعرُ اليوم)" \
+    "select $(rv $PV "$(PAY FX-1 "22500, 'IQD', 1500, 'cash', 'بالدينار', 25")")" "partial"
+chk "  الدفعتان: الدولارُ والمسلَّمُ وعملتُه وسعرُه، والدينارُ حصّة" \
+    "select string_agg(usd::text||':'||amount::numeric(20,2)::text||':'||pay_currency||':'||handed::text||':'||coalesce(fx_rate::text, '-'), ',' order by usd desc)
+       from purchase_payments where purchase_id = $(pur FX-1)" "20.00:29400.00:USD:20.00:-,15.00:22050.00:IQD:22500.00:1500.0000"
+chk "  الرفض: الباقي تغيّر عمّا رآه، وفوقَ الباقي، وبعملةٍ ثانية بلا سعر، وعيادةٌ ثانية" \
+    "select $(rerr $PV "$(PAY FX-1 "1, 'USD', null, 'cash', null, 99")")||'|'||$(rerr $PV "$(PAY FX-1 "11, 'USD', null, 'cash', null, null")")
+            ||'|'||$(rerr $PV "$(PAY FX-1 "1000, 'IQD', null, 'cash', null, null")")||'|'||$(rerr $PO "$(PAY FX-1 "1, 'USD', null, 'cash', null, null")")" \
+    "due_changed|over_pay|bad_rate|purchasenotfound"
+chk "  والإغلاقُ بالدينار ١٥٬٠١٠ (١٠٫٠١\$ — سنتٌ فوق الباقي إغلاقٌ لا رفض) ⇒ مدفوعةٌ بالعملتين بالضبط" \
+    "select $(rv $PV "$(PAY FX-1 "15010, 'IQD', 1500, 'cash', null, 10")")" "paid"
+chk "  ٥٥\$ من ٥٥\$ و٨٠٬٨٥٠ من ٨٠٬٨٥٠، وآخرُ دفعةٍ حصّتُها باقي الدينار" \
+    "select paid_usd::text||'|'||amount_paid::numeric(20,2)::text||'|'||(select amount::numeric(20,2)::text||':'||usd::text from purchase_payments where purchase_id = $(pur FX-1) and handed = 15010)
+       from purchases where id = $(pur FX-1)" "55.00|80850.00|14700.00:10.00"
+
+chk "فاتورةُ دينار تُسدَّد بالدولار: ١٠\$ بسعر ١٤٦٠ تُغلق ١٤٬٦٠٠" \
+    "select length($(rv $PV "$(RF '[{"product_id":"'${FG}a1'","qty":1,"purchase_price":14600}]' '{"currency":"IQD","company_id":"'$PCO'","amount_paid":0,"reference":"FX-2"}')"))::text
+            ||'|'||$(rv $PV "$(PAY FX-2 "10, 'USD', 1460, 'cash', null, 14600")")" "36|paid"
+chk "  الدفعة: ١٤٬٦٠٠ ديناراً، سُلّمت ١٠\$ بسعر ١٤٦٠ — والفاتورةُ دينارٌ بلا أعمدة دولار" \
+    "select amount::numeric(20,2)::text||':'||coalesce(usd::text, '-')||':'||pay_currency||':'||handed::text||':'||fx_rate::text
+            ||'|'||(select currency||':'||coalesce(total_usd::text, '-') from purchases where id = $(pur FX-2))
+       from purchase_payments where purchase_id = $(pur FX-2)" "14600.00:-:USD:10.00:1460.0000|IQD:-"
+
+chk "دفترُ الشركة: فاتورةُ دولارٍ ثالثة غيرُ مدفوعة (٥٠\$ بسعر ١٤٦٠)، ورصيدٌ سابقٌ بالدولار (للمدير) وبالدينار معه، والثاني بالدولار يُرفض" \
+    "select length($(rv $PV "$(RF '[{"product_id":"'${FG}a2'","qty":5,"purchase_price_usd":10}]' '{"currency":"USD","fx_rate":1460,"company_id":"'$PCO'","amount_paid_usd":0,"reference":"FX-3"}')"))::text
+            ||'|'||$(rerr $PV "select (company_opening_add_fx('$PCO', 'USD', 100, null, null)).id::text")
+            ||'|'||length($(rv $PC "select (company_opening_add_fx('$PCO', 'USD', 100, null, 'قبل النظام')).id::text"))::text
+            ||'|'||length($(rv $PC "select (company_opening_add_fx('$PCO', 'IQD', 50000, null, null)).id::text"))::text
+            ||'|'||$(rerr $PC "select (company_opening_add_fx('$PCO', 'USD', 5, null, null)).id::text")" "36|forbidden|36|36|opening_exists"
+chk "  رصيدان لا يختلطان: السابقُ بالدينار ٥٠٬٠٠٠ وبالدولار ١٠٠\$، وفاتورةُ الدولار ٧٣٬٠٠٠ ديناراً غيرُ مدفوعة" \
+    "select company_pool_due('$PCO', '$PC')::numeric(20,2)::text||'|'||company_pool_due_usd('$PCO', '$PC')::text
+            ||'|'||(select total::numeric(20,2)::text||':'||status from purchases where id = $(pur FX-3))" "50000.00|100.00|73000.00:unpaid"
+chk "  وcompany_pay القديمة بالدينار لا ترى دَينَ الدولار: ٦٠٬٠٠٠ فوق ٥٠٬٠٠٠ ⇒ over_pay (لا بابُ الدولار)" \
+    "select $(rerr $PV "select company_pay('$PCO', 60000, 'cash', null)::text")" "over_pay"
+chk "التسديدُ على الحساب بالدولار ١٢٠\$: السابقُ ١٠٠ أوّلاً ثمّ ٢٠ للفاتورة" \
+    "select $(rv $PV "select (r->>'to_opening')||'/'||(r->>'to_invoices')||'/'||(r->>'invoices') from company_pay_fx('$PCO', 'USD', 120, 'USD', null, 'cash', null, 'دفعة') r")" "100.00/20.00/1"
+chk "  ثمّ ١٤٬٦٠٠ ديناراً بسعر ١٤٦٠ على دين الدولار (١٠\$)، و١٠\$ بسعر ١٥٠٠ على دين الدينار (١٥٬٠٠٠)" \
+    "select $(rv $PV "select (r->>'to_invoices') from company_pay_fx('$PCO', 'USD', 14600, 'IQD', 1460, 'cash', null, null) r")
+            ||'|'||$(rv $PV "select (r->>'to_opening') from company_pay_fx('$PCO', 'IQD', 10, 'USD', 1500, 'cash', null, null) r")" "10.00|15000.00"
+chk "  الفاتورة: ٣٠\$ من ٥٠ ودينارُها حصّتان (٢٩٬٢٠٠ + ١٤٬٦٠٠)، والسابقان: ٠\$ و٣٥٬٠٠٠" \
+    "select paid_usd::text||'|'||amount_paid::numeric(20,2)::text||'|'||status||'|'||company_pool_due_usd('$PCO', '$PC')::text||'|'||company_pool_due('$PCO', '$PC')::numeric(20,2)::text
+       from purchases where id = $(pur FX-3)" "30.00|43800.00|partial|0.00|35000.00"
+chk "  والصفوف: كلٌّ بعملته ومبلغِه بها، وما سُلّم وبأيّ سعر" \
+    "select string_agg(kind||':'||coalesce(currency, 'IQD')||':'||amount::numeric(20,2)::text||':'||coalesce(pay_currency, '-')||':'||coalesce(handed::text, '-')||':'||coalesce(fx_rate::text, '-'), ',' order by created_at, amount)
+       from company_entries where company_id = '$PCO'" \
+    "opening:USD:100.00:-:-:-,opening:IQD:50000.00:-:-:-,payment:USD:120.00:USD:120.00:-,payment:USD:10.00:IQD:14600.00:1460.0000,payment:IQD:15000.00:USD:10.00:1500.0000"
+chk "  فوق دين الدولار (٢٠\$ باقٍ) ⇒ over_pay، وبلا سعرٍ لعملةٍ ثانية ⇒ bad_rate" \
+    "select $(rerr $PV "select company_pay_fx('$PCO', 'USD', 21, 'USD', null, 'cash', null, null)::text")||'|'||$(rerr $PV "select company_pay_fx('$PCO', 'USD', 1000, 'IQD', null, 'cash', null, null)::text")" "over_pay|bad_rate"
+UPAY="(select id from company_entries where company_id = '$PCO' and kind = 'payment' and amount = 120)"
+UOPEN="(select id from company_entries where company_id = '$PCO' and kind = 'opening' and currency = 'USD')"
+chk "الإلغاء: السابقُ بالدولار انسدّ منه ⇒ has_payments؛ وإلغاءُ التسديد ١٢٠\$ يردّ ٢٠\$ للفاتورة و١٠٠\$ للسابق" \
+    "select $(rerr $PC "select (company_entry_void($UOPEN, 'غلط')).id::text")||'|'||length($(rv $PC "select (company_entry_void($UPAY, 'غلط')).id::text"))::text" "has_payments|36"
+chk "  الفاتورة ١٠\$ ودينارُها ١٤٬٦٠٠ (حصّةُ الدفعة الباقية)، والسابقُ بالدولار ١٠٠\$، وصورةُ الدفعة بدولارها" \
+    "select paid_usd::text||'|'||amount_paid::numeric(20,2)::text||'|'||status||'|'||company_pool_due_usd('$PCO', '$PC')::text
+            ||'|'||(select (void_detail->0->>'usd') from company_entries where id = $UPAY) from purchases where id = $(pur FX-3)" "10.00|14600.00|partial|100.00|20.00"
+chk "  والسابقُ بالدولار يُلغى الآن (ما انسدّ منه شيء)" "select length($(rv $PC "select (company_entry_void($UOPEN, 'غلط')).id::text"))::text" "36"
+chk "  (والسابقُ بالدولار صفر — يُقرأ بجملةٍ بعد الإلغاء)" "select company_pool_due_usd('$PCO', '$PC')::text" "0.00"
+
+chk "التعديل: فاتورةُ الدولار ٥ ← ٤ قطع ⇒ ٤٠\$ و٥٨٬٤٠٠ ديناراً، والمدفوعُ ١٠\$ يبقى ودينارُه حصّتُه، والرصيدُ ينزل قطعة" \
+    "select $(rv $PV "select (update_purchase_fx($(pur FX-3), '[{\"product_id\":\"${FG}a2\",\"qty\":4,\"purchase_price_usd\":10}]'::jsonb, '{}'::jsonb)).status")" "partial"
+chk "  الرأسُ والرصيد" \
+    "select total_usd::text||'|'||total::numeric(20,2)::text||'|'||paid_usd::text||'|'||amount_paid::numeric(20,2)::text||'|'||(select stock::text from products where id = '${FG}a2')
+            ||'|'||(select string_agg(purchase_price_usd::text, ',') from purchase_items where purchase_id = $(pur FX-3)) from purchases where id = $(pur FX-3)" \
+    "40.00|58400.00|10.00|14600.00|12.000|10.00"
+chk "  وتغييرُ العملة وعليها دفعة ⇒ currency_has_payments؛ وفاتورةُ دولارٍ بلا دفعة تصير ديناراً بلا أعمدةٍ دولارية" \
+    "select $(rerr $PV "select (update_purchase_fx($(pur FX-3), '[{\"product_id\":\"${FG}a2\",\"qty\":4,\"purchase_price\":14600}]'::jsonb, '{\"currency\":\"IQD\"}'::jsonb)).id::text")
+            ||'|'||length($(rv $PV "$(RF '[{"product_id":"'${FG}a1'","qty":1,"purchase_price_usd":7}]' '{"currency":"USD","company_id":"'$PCO'","amount_paid_usd":0,"reference":"FX-4"}')"))::text
+            ||'|'||$(rv $PV "select (update_purchase_fx($(pur FX-4), '[{\"product_id\":\"${FG}a1\",\"qty\":1,\"purchase_price\":10000}]'::jsonb, '{\"currency\":\"IQD\",\"amount_paid\":0}'::jsonb)).currency")" \
+    "currency_has_payments|36|IQD"
+chk "  (وسعرُ العيادة ١٤٦٠ حين لا يُكتب سعر، والدينارُ بعد التحويل ١٠٬٠٠٠ بلا دولار)" \
+    "select total::numeric(20,2)::text||'|'||coalesce(total_usd::text, '-')||'|'||coalesce(fx_rate::text, '-')||'|'||(select coalesce(string_agg(coalesce(purchase_price_usd::text, '-'), ','), '') from purchase_items where purchase_id = $(pur FX-4))
+       from purchases where id = $(pur FX-4)" "10000.00|-|-|-"
+
+chk "سؤالُ الواجهة: الأجسامُ الثلاثة تعرف العملتين؛ وإعادةُ 0224 وحدها تُرجعها لنصّها فيقول لا — وإعادةُ 0274 تردّه" \
+    "select purchase_usd_ready()::text" "true"
+out=$($P -f "$MIG/0224_company_ledger.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0224 ما انعادت بقسم 0274"; fail=1; }
+chk "  (بعد إعادة 0224)" "select purchase_usd_ready()::text" "false"
+out=$($P -f "$MIG/0274_usd_purchases.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0274 ما انعادت فوق 0224"; fail=1; }
+chk "  (وبعد إعادة 0274)" "select purchase_usd_ready()::text" "true"
+chk "الصلاحيات: الأبوابُ الجديدة definer بمسارٍ مثبَّت وتقيّد بالعيادة، ممنوعةٌ على anon؛ والأدواتُ الداخلية ممنوعةٌ على authenticated" \
+    "select (select string_agg((prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%')::text, ',' order by proname) from pg_proc
+              where proname in ('record_purchase_fx', 'update_purchase_fx', 'purchase_pay_fx', 'company_pay_fx', 'company_opening_add_fx', 'company_adjust_fx'))
+            ||'|'||has_function_privilege('anon', 'public.purchase_pay_fx(uuid,numeric,text,numeric,text,text,numeric)', 'execute')::text
+            ||'|'||has_function_privilege('anon', 'public.record_purchase_fx(jsonb,jsonb)', 'execute')::text
+            ||'|'||has_function_privilege('authenticated', 'public._purchase_fx_after(uuid,text,jsonb,text,numeric,uuid)', 'execute')::text
+            ||'|'||has_function_privilege('authenticated', 'public.company_pool_due_usd(uuid,uuid)', 'execute')::text" \
+    "true,true,true,true,true,true|false|false|false|false"
+Q274="select (select count(*) from purchases where currency = 'USD')::text||'|'||(select count(*) from purchase_payments where usd is not null)::text||'|'||(select string_agg(md5(prosrc), ',' order by proname) from pg_proc where proname in ('record_purchase_fx','update_purchase_fx','purchase_pay_fx','company_pay_fx','company_pool_due','company_pool_due_usd','company_pay','company_entry_void','purchases_usd_door','purchase_lines_usd_door'))||'|'||(select count(*) from pg_trigger where tgname like '%usd_door')::text"
+Z274=$($P -tAc "$Q274" | tr -d '[:space:]')
+out=$($P -f "$MIG/0274_usd_purchases.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0274 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الفواتيرُ والدفعاتُ والدوالُّ والمحفّزاتُ كما هي)" "$Q274" "$Z274"
+$P -c "select set_config('doctorvet.usd_purchase_door', 'on', false);
+       delete from purchase_payments where clinic_id = '$PC'; delete from company_entries where clinic_id = '$PC';
+       delete from purchase_effects where clinic_id = '$PC'; delete from purchase_items where clinic_id = '$PC';
+       delete from purchases where clinic_id = '$PC'; delete from products where clinic_id in ('$PC', '$PO');
+       delete from companies where clinic_id = '$PC'; delete from clinic_fx_rates where clinic_id = '$PC';
+       select set_config('doctorvet.usd_purchase_door', 'off', false);" >/dev/null
+[ "$SHIM274" = "true" ] && $P -c "drop function if exists public.photographer_fence_table(text);" >/dev/null
 
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:

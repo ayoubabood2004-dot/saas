@@ -1232,6 +1232,13 @@ export interface Purchase {
   item_count: number;       // total units received across all lines
   /** Amount paid to the supplier so far. Absent = fully paid (legacy). */
   amount_paid?: number;
+  /** عملةُ الفاتورة (0274): غائبٌ = دينار. فاتورةُ الدولار تُسجَّل بالدينار أيضاً بسعر يومها (`fx_rate`) — منه كلفةُ المخزون —
+   *  وحقيقةُ دَينها بالدولار: `total_usd` و`paid_usd`، و`amount_paid` حصّةُ المدفوع بنسبة الفاتورة. */
+  currency?: "IQD" | "USD";
+  fx_rate?: number | null;
+  total_usd?: number | null;
+  paid_usd?: number | null;
+  discount_usd?: number | null;
   payment_method?: PaymentMethod | null;
   /** Settlement state vs. total — derived from amount_paid. */
   status?: PaymentStatus;
@@ -1260,6 +1267,11 @@ export interface PurchasePayment {
   staff_id?: string | null;
   /** جاءت من تسديدٍ على الحساب (0224) — صفُّه بدفتر الشركة. */
   entry_id?: string | null;
+  /** 0274: ما نقص من دين فاتورة الدولار (و`amount` حصّتُه بالدينار)، وما سُلّم فعلاً بعملته وسعره. */
+  usd?: number | null;
+  pay_currency?: "IQD" | "USD" | null;
+  handed?: number | null;
+  fx_rate?: number | null;
   created_at: string;
 }
 
@@ -1306,8 +1318,13 @@ export interface CompanyEntry {
   voided_at?: string | null;
   voided_by?: string | null;
   void_reason?: string | null;
-  /** إلغاءُ تسديد: دفعاتُ الفواتير التي ردّها. */
-  void_detail?: { purchase_id: string; amount: number; paid_at: string }[] | null;
+  /** إلغاءُ تسديد: دفعاتُ الفواتير التي ردّها (ودولارُ كلٍّ منذ 0274). */
+  void_detail?: { purchase_id: string; amount: number; paid_at: string; usd?: number | null }[] | null;
+  /** 0274: عملةُ الصفّ — و`amount` بها (غائبٌ = دينار). والتسديدُ يحفظ ما سُلّم وبأيّ عملةٍ وسعر. */
+  currency?: "IQD" | "USD" | null;
+  pay_currency?: "IQD" | "USD" | null;
+  handed?: number | null;
+  fx_rate?: number | null;
 }
 
 /** ما وزّعه تسديدٌ على الحساب. */
@@ -1333,6 +1350,10 @@ export interface PurchaseItem {
   sell_price: number;       // sell price set/kept at receipt
   /** تاريخُ انتهاء هذه الوجبة كما استُلمت (0214). */
   expiry_date?: string | null;
+  /** 0274: كلفةُ السطر بالدولار (فاتورةُ الدولار)، وعملةُ بيع المادّة وسعرُها بالدولار. */
+  purchase_price_usd?: number | null;
+  sell_price_usd?: number | null;
+  sell_currency?: "IQD" | "USD" | null;
   created_at: string;
 }
 
@@ -1531,6 +1552,11 @@ export interface PurchaseDraftLine {
   expiry_date?: string | null;
   /** تاريخُ الوجبة المحفوظ عند **تعديل** فاتورة (0214): يُحفظ للسطر ولا يلمس تاريخَ المنتج. */
   batch_expiry?: string | null;
+  /** 0274 (record_purchase_fx): كلفةُ السطر بالدولار لفاتورة الدولار — والخادمُ يحسب دينارَها بسعر الفاتورة. */
+  purchase_price_usd?: number | null;
+  /** سعرُ البيع بالدولار لمادّة الدولار (بأيّ فاتورة)، وعملةُ بيع المادّة **الجديدة**. */
+  sell_price_usd?: number | null;
+  sell_currency?: "IQD" | "USD" | null;
 }
 
 /** Purchase-level metadata sent to the repo alongside the draft lines. */
@@ -1548,6 +1574,11 @@ export interface PurchaseMeta {
   notes?: string | null;
   purchased_at?: string | null;
   staff_id?: string | null;
+  /** 0274 (record_purchase_fx وupdate_purchase_fx وحدهما): عملةُ الفاتورة وسعرُها، والخصمُ والمدفوعُ بالدولار. */
+  currency?: "IQD" | "USD";
+  fx_rate?: number | null;
+  discount_usd?: number | null;
+  amount_paid_usd?: number | null;
 }
 
 /* ---------------- Services & non-barcode items ---------------- */
