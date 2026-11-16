@@ -2,6 +2,7 @@
  * يُستورد ثابتاً (i18n-owned-guard)، فما يحتاجه الطرفان هنا. */
 import type { Product, Purchase, PurchaseItem } from "@/types";
 import { centsOf, decOf, usdText } from "./usdMath";
+import { purchaseDue } from "./companyLedger";
 
 export type FxCur = "IQD" | "USD";
 
@@ -18,10 +19,8 @@ export const per100Text = (rate: number | null | undefined): string => (rate ? S
 /** مبلغٌ بالدولار للعرض («$1,234.50»). */
 export const usdOf = (n: number): string => usdText(centsOf(String(Math.round((Number(n) || 0) * 100) / 100)) ?? 0n);
 
-/** باقي الفاتورة بعملتها (الدولارُ من أعمدته). */
-export const purchaseDueCur = (p: Purchase): number =>
-  p.currency === "USD" ? Math.max(0, Math.round((Number(p.total_usd ?? 0) - Number(p.paid_usd ?? 0)) * 100) / 100)
-    : Math.max(0, Math.round((p.total - (p.amount_paid ?? p.total)) * 100) / 100);
+/** باقي الفاتورة بعملتها (الدولارُ من أعمدته) — قاعدةُ الدفتر نفسُها (companyLedger.purchaseDue)، لا نسخةٌ ثانية. */
+export const purchaseDueCur = purchaseDue;
 
 /** عملةُ بيع سطر الشراء: المادّةُ القائمة بعملتها، والجديدةُ بما اختاره سطرُها (مرآةُ _purchase_fx_prep). */
 export const lineSellCur = (product: Product | undefined, chosen: FxCur | undefined): FxCur =>

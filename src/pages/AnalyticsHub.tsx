@@ -3632,11 +3632,18 @@ function CategoriesTab({ items, products, purchases, purchaseItems, buyLoading, 
 /* ---- تبويب فواتير الشراء: متى اشتريت وشنو بالضبط، ضمن فترة التقرير ---- */
 function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Purchase[]; loading: boolean; rangeLabel: string }) {
   const { t } = useTranslation();
-  const total = purchases.reduce((s, p) => s + (p.total || 0), 0);
-  const paid = purchases.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0);
-  /* 0274: الدَّينُ بعملته — دينارُ فواتير الدينار، ودولارُ فواتير الدولار بجانبه (دينارُها حصّةٌ داخلية). */
-  const due = purchases.reduce((s, p) => s + (p.currency === "USD" ? 0 : Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0))), 0);
-  const dueUsd = Math.round(purchases.reduce((s, p) => s + (p.currency === "USD" ? purchaseDueCur(p) : 0), 0) * 100) / 100;
+  /* 0274: كلُّ رقمٍ بعملته — فواتيرُ الدينار بالدينار، وفواتيرُ الدولار بدولارها بجانبه (دينارُها حصّةٌ داخلية) — فالإجماليُّ ناقصَ
+   * المدفوع يساوي الدَّينَ بكلّ عملة. */
+  const iqdInv = purchases.filter((p) => p.currency !== "USD");
+  const usdInv = purchases.filter((p) => p.currency === "USD");
+  const total = iqdInv.reduce((s, p) => s + (p.total || 0), 0);
+  const paid = iqdInv.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0);
+  const due = Math.max(0, total - paid);
+  const r2u = (n: number) => Math.round(n * 100) / 100;
+  const totalUsd = r2u(usdInv.reduce((s, p) => s + Number(p.total_usd ?? 0), 0));
+  const paidUsd = r2u(usdInv.reduce((s, p) => s + Number(p.paid_usd ?? 0), 0));
+  const dueUsd = r2u(usdInv.reduce((s, p) => s + purchaseDueCur(p), 0));
+  const both = (iqd: number, usd: number) => (usdInv.length ? `${money(iqd)} · ${usdOf(usd)}` : money(iqd));
   const days = new Set(purchases.map((p) => (p.purchased_at || p.created_at || "").slice(0, 10))).size;
 
   const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "danger" | "success" }) => (
@@ -3655,9 +3662,9 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
         <Kpi label={t("rpt.purchases.count", "فاتورة شراء")} value={formatNum(purchases.length)} />
         <Kpi label={t("rpt.purchases.days", "يوم شراء")} value={formatNum(days)} />
-        <Kpi label={t("rpt.purchases.total", "إجمالي الشراء")} value={money(total)} />
-        <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={money(paid)} tone="success" />
-        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={dueUsd > 0 ? `${money(due)} · ${usdOf(dueUsd)}` : money(due)} tone={due > 0 || dueUsd > 0 ? "danger" : "success"} />
+        <Kpi label={t("rpt.purchases.total", "إجمالي الشراء")} value={both(total, totalUsd)} />
+        <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={both(paid, paidUsd)} tone="success" />
+        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={both(due, dueUsd)} tone={due > 0 || dueUsd > 0 ? "danger" : "success"} />
       </div>
       {loading
         ? <div className="py-10 text-center text-ink-subtle"><Clock size={18} className="mx-auto mb-2 animate-spin" /> {t("common.loading", "جارٍ التحميل…")}</div>

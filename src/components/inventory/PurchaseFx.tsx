@@ -114,6 +114,8 @@ export function PfxPay({ purchase, clinicRate, onDone }: { purchase: Purchase; c
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => { setAmt(""); setPay(debt); }, [purchase.id, debt]);
+  // سعرُ العيادة يصل بعد التركيب (فحصُ القدرة كسول): يُكتب بالخانة ما دامت فارغة — لا يدوس ما كتبه الطبيب.
+  useEffect(() => { if (clinicRate) setPer100((v) => (v.trim() === "" ? String(Math.round(clinicRate * 100)) : v)); }, [clinicRate]);
   const rate = pay !== debt ? ratePerUsd(per100) : null;
   const handed = Number(decOf(amt.trim(), 2) ?? NaN) / 100;
   const okAmt = Number.isFinite(handed) && handed > 0;

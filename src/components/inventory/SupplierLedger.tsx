@@ -49,6 +49,9 @@ type CompanyGroup = {
   owed: number;
   /** 0274: ما تطلبه بالدولار — فواتيرُ الدولار والسابقُ بالدولار — رقمٌ بجانب الدينار لا يُجمع عليه. */
   owedUsd: number;
+  /** وإجماليُّ فواتير الدولار ومسدَّدُها بالدولار (total/paid أعلاه لفواتير الدينار وحدها). */
+  totalUsd: number;
+  paidUsd: number;
   lastAt: string;
   /** آخر مورّد/مندوب معروف لهذه الشركة (من أحدث فاتورة تحمل اسماً). */
   supplier: string | null;
@@ -177,14 +180,15 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
           name: effName || t("purchase.noCompany", "بدون شركة"),
           note: noteOf(effId),
           invoices: [], total: 0, paid: 0, due: 0,
-          charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0,
+          charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
           lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(key, g);
       }
       g.invoices.push(p);
-      g.total += p.total;
-      g.paid += p.amount_paid ?? p.total;
+      // 0274: الإجماليُّ والمسدَّد بالدينار لفواتير الدينار، وفاتورةُ الدولار بدولارها (totalUsd) — لا يُجمع دينارُها هنا.
+      if (p.currency === "USD") { g.totalUsd = Math.round((g.totalUsd + Number(p.total_usd ?? 0)) * 100) / 100; g.paidUsd = Math.round((g.paidUsd + Number(p.paid_usd ?? 0)) * 100) / 100; }
+      else { g.total += p.total; g.paid += p.amount_paid ?? p.total; }
       g.due += dueOf(p);
       g.owedUsd = Math.round((g.owedUsd + dueUsdOf(p)) * 100) / 100;
       if ((p.purchased_at || "") > g.lastAt) g.lastAt = p.purchased_at || "";
@@ -204,7 +208,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
         g = {
           key: c.company_id, name: nm, note: noteOf(c.company_id),
           invoices: [], total: 0, paid: 0, due: 0,
-          charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0,
+          charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
           lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(c.company_id, g);
@@ -224,7 +228,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
         g = {
           key: cid, name: nm, note: noteOf(cid),
           invoices: [], total: 0, paid: 0, due: 0,
-          charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0,
+          charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
           lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(cid, g);
@@ -241,6 +245,8 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
   const totals = useMemo(() => ({
     total: groups.reduce((s, g) => s + g.total, 0),
     paid: groups.reduce((s, g) => s + g.paid, 0),
+    totalUsd: Math.round(groups.reduce((s, g) => s + g.totalUsd, 0) * 100) / 100,
+    paidUsd: Math.round(groups.reduce((s, g) => s + g.paidUsd, 0) * 100) / 100,
     // الرقمُ الكبير بأعلى الشاشة يقول ما تطلبه الشركاتُ كلَّه — فواتيرَ ومطالبات.
     due: groups.reduce((s, g) => s + g.owed, 0),
     dueUsd: Math.round(groups.reduce((s, g) => s + g.owedUsd, 0) * 100) / 100,
@@ -300,8 +306,8 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
 
       {/* خلاصة الدفتر */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <LedgerKpi icon={ShoppingBag} tone="brand" label={t("purchase.kpiTotal", "إجمالي المشتريات")} value={money(totals.total)} />
-        <LedgerKpi icon={HandCoins} tone="success" label={t("purchase.kpiPaid", "المسدَّد للشركات")} value={money(totals.paid)} />
+        <LedgerKpi icon={ShoppingBag} tone="brand" label={t("purchase.kpiTotal", "إجمالي المشتريات")} value={totals.totalUsd > 0 ? `${money(totals.total)} · ${usdOf(totals.totalUsd)}` : money(totals.total)} />
+        <LedgerKpi icon={HandCoins} tone="success" label={t("purchase.kpiPaid", "المسدَّد للشركات")} value={totals.paidUsd > 0 ? `${money(totals.paid)} · ${usdOf(totals.paidUsd)}` : money(totals.paid)} />
         <LedgerKpi icon={Wallet} tone={totals.due > 0 ? "danger" : "success"} label={t("purchase.kpiDue", "الديون المتبقّية")} value={totals.dueUsd > 0 ? `${money(totals.due)} · ${usdOf(totals.dueUsd)}` : money(totals.due)} />
         <LedgerKpi icon={Building2} tone={totals.debtors > 0 ? "warn" : "success"} label={t("purchase.kpiDebtors", "شركات عليها دين")} value={String(totals.debtors)} />
       </div>
@@ -357,6 +363,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
                     <div className="hidden text-end sm:block">
                       <p className="text-2xs text-ink-subtle">{t("purchase.grandTotal", "الإجمالي")}</p>
                       <p className="text-sm font-bold text-ink tabular-nums">{money(g.total)}</p>
+                      {g.totalUsd > 0 && <p className="text-sm font-bold text-ink tabular-nums">{usdOf(g.totalUsd)}</p>}
                     </div>
                     <div className="text-end">
                       <p className="text-2xs text-ink-subtle">{t("purchase.due", "المتبقّي")}</p>
