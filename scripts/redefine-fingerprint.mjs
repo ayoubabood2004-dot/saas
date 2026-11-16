@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -84,6 +84,10 @@ export const MANIFEST = [
   ["invoice_items_usd_door", 0, "public.invoice_items_usd_door()", "0264", "0272"],
   // 0273: موادُّ الدين القديم — بابُ المرتجع يحرّك الإجماليَّ نزولاً، والحذفُ بعد مرتجعٍ يُرفض.
   ["invoices_opening_guard", 0, "public.invoices_opening_guard()", "0271", "0273"],
+  // 0274: الشراءُ بالعملتين — دفترُ الدينار يقرأ الدينارَ وحده، والإلغاءُ يعرف دفعةَ الدولار.
+  ["company_pool_due", 2, "public.company_pool_due(uuid,uuid)", "0224", "0274"],
+  ["company_pay", 5, "public.company_pay(uuid,numeric,text,date,text)", "0224", "0274"],
+  ["company_entry_void", 2, "public.company_entry_void(uuid,text)", "0224", "0274"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

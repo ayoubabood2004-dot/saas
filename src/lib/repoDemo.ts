@@ -432,24 +432,46 @@ export function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number,
   demoAuditPush({ action: "INSERT", entity: "invoice_forgiveness", entity_id: row.id, details: row as unknown as Record<string, unknown> });
 }
 /* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
-function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
+export function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
   if (!(db.companies ?? []).some((c) => c.id === companyId)) throw demoHint("no_company", "الشركةُ غيرُ موجودة بعيادتك.");
   if (date && (date > localISO() || date < "2000-01-01")) throw demoHint("bad_date", "التاريخُ لازم يكون اليوم أو قبله.");
   const amt = round2(Number(amount) || 0);
   if (!(amt > 0)) throw demoHint("bad_amount", "المبلغُ لازم أكبر من صفر.");
   return amt;
 }
-function demoPoolDue(db: DemoDB, companyId: string): number {
+/** مرآةُ company_pool_due — بالدينار وحده منذ 0274 (صفٌّ بالدولار مبلغُه دولار). */
+export function demoPoolDue(db: DemoDB, companyId: string): number {
   let s = 0;
   for (const e of db.companyEntries ?? []) {
-    if (e.company_id !== companyId || e.voided_at) continue;
+    if (e.company_id !== companyId || e.voided_at || (e.currency ?? "IQD") === "USD") continue;
     if (e.direction === "credit") s += e.amount;
     else if (e.kind === "payment") s -= e.amount - (db.purchasePayments ?? []).filter((pp) => pp.entry_id === e.id).reduce((a, pp) => a + pp.amount, 0);
     else s -= e.amount;
   }
   return round2(s);
 }
-function demoEntry(companyId: string, kind: CompanyEntry["kind"], direction: CompanyEntry["direction"], amount: number,
+/** مرآةُ company_pool_due_usd (0274): السابقُ بالدولار — والدفعةُ تُطرح بما لم يذهب منها لفاتورة (دولارُ دفعاتها). */
+export function demoPoolDueUsd(db: DemoDB, companyId: string): number {
+  let s = 0;
+  for (const e of db.companyEntries ?? []) {
+    if (e.company_id !== companyId || e.voided_at || e.currency !== "USD") continue;
+    if (e.direction === "credit") s += e.amount;
+    else if (e.kind === "payment") s -= e.amount - (db.purchasePayments ?? []).filter((pp) => pp.entry_id === e.id).reduce((a, pp) => a + Number(pp.usd ?? 0), 0);
+    else s -= e.amount;
+  }
+  return round2(s);
+}
+/* بابُ فاتورة الشراء بالدولار (مرآةُ doctorvet.usd_purchase_door، 0274): مالُها وسطورُها لا تُكتب إلا من demoPurchaseFx — التسديدُ
+ * والتعديلُ القديمان يُرفضان عليها بجملة كما بالخادم. */
+let purchaseDoor = 0;
+export async function demoPurchaseDoor<T>(f: () => Promise<T>): Promise<T> {
+  purchaseDoor++;
+  try { return await f(); } finally { purchaseDoor--; }
+}
+function demoUsdPurchaseShut(p: Purchase | undefined): void {
+  if (p?.currency === "USD" && purchaseDoor === 0) throw demoHint("usd_purchase_door", "فاتورةُ شراءٍ بالدولار: تتعدّل وتتسدّد من أبواب الدولار — حدّث الصفحة.");
+}
+export function demoEntry(companyId: string, kind: CompanyEntry["kind"], direction: CompanyEntry["direction"], amount: number,
   date: string | null, method: PaymentMethod | null, note?: string | null): CompanyEntry {
   return {
     id: uid("ce"), clinic_id: null, company_id: companyId, kind, direction, amount,
@@ -3606,6 +3628,7 @@ const demoRepo = {
     const db = loadDB();
     const purchase = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!purchase) throw new Error("purchase not found");
+    demoUsdPurchaseShut(purchase);
     const companyId = purchase.company_id ?? null;
     // v_qty numeric(14,3) وv_cost/v_sell numeric(12,2) بالضبط — كالتسجيل (والسالبةُ تُحصر بصفر كما كانت).
     const round3 = (n: number) => Math.max(0, cons.qty3(n));
@@ -3778,6 +3801,7 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!p) return undefined;
+    demoUsdPurchaseShut(p);
     const paid = p.amount_paid != null ? p.amount_paid : p.total;
     const due = Math.max(0, p.total - paid);
     const amt = Math.round(Math.min(Math.max(Number(amount) || 0, 0), due) * 100) / 100;
@@ -3826,7 +3850,8 @@ const demoRepo = {
     const db = loadDB();
     const amt = demoLedgerGuard(db, companyId, amount, date);
     const pool = Math.max(0, demoPoolDue(db, companyId));
-    const open = (db.purchases ?? []).filter((p) => p.company_id === companyId && p.total - (p.amount_paid ?? p.total) > 0)
+    // دينُ الدينار وحده (0274): فاتورةُ الدولار تُسدَّد من company_pay_fx.
+    const open = (db.purchases ?? []).filter((p) => p.company_id === companyId && p.currency !== "USD" && p.total - (p.amount_paid ?? p.total) > 0)
       .sort((a, b) => a.purchased_at.localeCompare(b.purchased_at) || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
     const inv = round2(open.reduce((s, p) => s + (p.total - (p.amount_paid ?? p.total)), 0));
     if (amt > round2(pool + inv)) throw demoHint("over_pay", `المبلغُ أكبر من دين الشركة (${round2(pool + inv)}).`);
@@ -3860,16 +3885,21 @@ const demoRepo = {
     if (!e) throw demoHint("no_entry", "الحركةُ غيرُ موجودة بعيادتك.");
     if (e.voided_at) throw demoHint("already_void", "الحركةُ ملغاةٌ أصلاً.");
     if (!reason?.trim()) throw demoHint("reason_required", "اكتب سببَ الإلغاء.");
-    if (e.direction === "credit" && demoPoolDue(db, e.company_id) - e.amount < -0.005) throw demoHint("has_payments", "انسدّ من هذا الرصيد — ألغِ التسديد أوّلاً.");
+    const poolNow = e.currency === "USD" ? demoPoolDueUsd(db, e.company_id) : demoPoolDue(db, e.company_id);
+    if (e.direction === "credit" && poolNow - e.amount < -0.005) throw demoHint("has_payments", "انسدّ من هذا الرصيد — ألغِ التسديد أوّلاً.");
     let detail: CompanyEntry["void_detail"] = null;
     if (e.kind === "payment") {
       detail = [];
       for (const pp of (db.purchasePayments ?? []).filter((x) => x.entry_id === e.id)) {
-        detail.push({ purchase_id: pp.purchase_id, amount: pp.amount, paid_at: pp.paid_at });
+        detail.push({ purchase_id: pp.purchase_id, amount: pp.amount, paid_at: pp.paid_at, usd: pp.usd ?? null });
         const p = (db.purchases ?? []).find((x) => x.id === pp.purchase_id);
         if (p) {
           p.amount_paid = Math.max(0, round2((p.amount_paid ?? p.total) - pp.amount));
-          p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
+          if (p.currency === "USD") {
+            // 0274: الدولارُ يُردّ مع دينار حصّته، والحالةُ بالدولار.
+            p.paid_usd = Math.max(0, round2(Number(p.paid_usd ?? 0) - Number(pp.usd ?? 0)));
+            p.status = p.paid_usd >= Number(p.total_usd ?? 0) ? "paid" : p.paid_usd <= 0 ? "unpaid" : "partial";
+          } else p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
         }
       }
       db.purchasePayments = (db.purchasePayments ?? []).filter((x) => x.entry_id !== e.id);
@@ -5518,6 +5548,7 @@ export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 export const loadDemoUsd = () => import("./demoUsd");
+export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */
@@ -5550,4 +5581,4 @@ export const demoServices = {
  * repoDemo.ts تفقد القطعةُ واجهتَها، فيصير import() بـrepo.ts (حزمة الإقلاع) `.then(e=>e.r)` مع كائنِ مساحة أسماء.
  * مقيسٌ ببناء vite: بلا هذا السطر repo-*.js 92,301 بايتاً خاماً (+١٣، و+٦ مضغوطة)، وبه 92,288 كالرأس؛ وقائمةُ
  * التحميل المسبق لـrepoDemo ٢٣ اسماً بالحالتين. */
-export { demoApiGate, demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";
+export { demoApiGate, demoBaseRole, demoClinicId, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
