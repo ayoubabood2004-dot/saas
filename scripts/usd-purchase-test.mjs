@@ -53,6 +53,7 @@ const built = await esbuild.build({
       'export { purchaseFx } from "./src/lib/purchaseFxApi.ts";',
       'export { demoUsdPrefs, demoUsdRateSet } from "./src/lib/demoUsd.ts";',
       'export { buildCompanyLedger, previewPay, payableOf, poolDueOf } from "./src/lib/companyLedger.ts";',
+      'export { computePnl } from "./src/lib/pnl.ts";',
     ].join("\n"),
     resolveDir: process.cwd(), sourcefile: "usd-purchase-entry.ts", loader: "ts",
   },
@@ -132,7 +133,11 @@ check("٢٠$ بالدولار (الباقي المرئيّ ٤٥) ⇒ جزئية"
 check("  ١٥$ بـ٢٢٬٥٠٠ ديناراً بسعر ١٥٠٠ ⇒ حصّتُه ٢٢٬٠٥٠", (await fx.pay(p1.id, 22500, "IQD", 1500, "cash", "بالدينار", 25)).amount_paid === 66150);
 const pays = db().purchasePayments.filter((x) => x.purchase_id === p1.id).sort((a, b) => b.usd - a.usd)
   .map((x) => `${x.usd}:${x.amount}:${x.pay_currency}:${x.handed}:${x.fx_rate ?? "-"}`).join(",");
-check("  الدفعتان", pays === "20:29400:USD:20:-,15:22050:IQD:22500:1500", pays);
+// 0275: كلُّ دفعةٍ لدَين الدولار بسعر يومها — الدولارُ المسلَّم بلا سعرٍ مكتوب يأخذ سعرَ العيادة (١٤٦٠).
+check("  الدفعتان — وكلُّ دفعة دولار بسعر يومها", pays === "20:29400:USD:20:1460,15:22050:IQD:22500:1500", pays);
+const fxs = db().purchasePayments.filter((x) => x.purchase_id === p1.id).sort((a, b) => b.usd - a.usd).map((x) => x.fx).join(",");
+check("  وفرقُ صرف كلٍّ (0275): ٢٠$ اشتريناها بـ١٤٧٠ (٢٩٬٤٠٠) وسدّدناها بـ١٤٦٠ (٢٩٬٢٠٠) ⇒ +٢٠٠ ربح، و١٥$ بـ٢٢٬٥٠٠ ديناراً وحصّتُها ٢٢٬٠٥٠ ⇒ −٤٥٠",
+  fxs === "200,-450", fxs);
 const refus = [await codeOf(fx.pay(p1.id, 1, "USD", null, "cash", null, 99)), await codeOf(fx.pay(p1.id, 11, "USD", null, "cash", null, null)),
   await codeOf(fx.pay(p1.id, 1000, "IQD", null, "cash", null, null))].join("|");
 check("  الرفض: الباقي تغيّر، وفوقَ الباقي، وبلا سعر", refus === "due_changed|over_pay|bad_rate", refus);
@@ -161,7 +166,7 @@ check("  الفاتورة: ٣٠$ ودينارُها ٤٣٬٨٠٠، والساب�
   pur("FX-3").paid_usd === 30 && pur("FX-3").amount_paid === 43800 && pur("FX-3").status === "partial"
   && M.poolDueOf(db().companyEntries, db().purchasePayments, "USD") === 0 && M.poolDueOf(db().companyEntries, db().purchasePayments, "IQD") === 35000);
 const rows = db().companyEntries.map((e) => `${e.kind}:${e.currency ?? "IQD"}:${e.amount}:${e.pay_currency ?? "-"}:${e.handed ?? "-"}:${e.fx_rate ?? "-"}`).join(",");
-check("  والصفوف: كلٌّ بعملته ومبلغِه بها وما سُلّم", rows === "opening:USD:100:-:-:-,opening:IQD:50000:-:-:-,payment:USD:120:USD:120:-,payment:USD:10:IQD:14600:1460,payment:IQD:15000:USD:10:1500", rows);
+check("  والصفوف: كلٌّ بعملته ومبلغِه بها وما سُلّم وبأيّ سعر", rows === "opening:USD:100:-:-:-,opening:IQD:50000:-:-:-,payment:USD:120:USD:120:1460,payment:USD:10:IQD:14600:1460,payment:IQD:15000:USD:10:1500", rows);
 check("  فوق دين الدولار ⇒ over_pay، وبلا سعر ⇒ bad_rate",
   (await codeOf(fx.companyPay(CO, "USD", 21, "USD", null, "cash", null, null))) === "over_pay" && (await codeOf(fx.companyPay(CO, "USD", 1000, "IQD", null, "cash", null, null))) === "bad_rate");
 
@@ -198,6 +203,21 @@ check("  وفاتورةُ دولارٍ بلا سعرٍ مكتوب تأخذ سع�
 const u4 = await fx.update(pur("FX-4").id, [{ product_id: "a1", name: "دينارية", qty: 1, purchase_price: 10000, sell_price: 0 }], { currency: "IQD", amount_paid: 0 });
 check("  وبلا دفعة تصير ديناراً بلا أعمدةٍ دولارية", u4.currency === "IQD" && u4.total === 10000 && u4.total_usd == null && u4.fx_rate == null
   && db().purchaseItems.filter((x) => x.purchase_id === u4.id).every((x) => x.purchase_price_usd == null), JSON.stringify(u4));
+
+console.log("▸ ٦) فرقُ صرف المشتريات بالأرباح والخسائر (0275)");
+{
+  const all = db().purchasePayments;
+  const fx1 = all.filter((x) => x.purchase_id === pur("FX-1").id).reduce((s, x) => s + Number(x.fx ?? 0), 0);
+  check("FX-1 كلُّها: +٢٠٠ − ٤٥٠ − ٣١٠ (إغلاقٌ بـ١٥٬٠١٠ وحصّتُه ١٤٬٧٠٠) = −٥٦٠", fx1 === -560, String(fx1));
+  check("  ودفعةُ دَين الدينار (سُلّمت دولاراً) بلا فرق — الدينُ نقص بالضبط", all.find((x) => x.purchase_id === pur("FX-2").id)?.fx == null);
+  const now = new Date();
+  const rep = M.computePnl({ invoices: [], items: [], consumption: [], expenses: [], categories: [],
+    purchasePayments: all.map((x) => ({ paid_at: x.paid_at, fx: x.fx ?? null })) },
+    new Date(now.getTime() - 86400000).toISOString(), new Date(now.getTime() + 86400000).toISOString(), "Asia/Baghdad");
+  const sumFx = all.reduce((s, x) => s + Number(x.fx ?? 0), 0);
+  check("  والتقرير: «فرق صرف المشتريات» مجموعُ فروق الدفعات الباقية (المُلغاةُ خرجت مع دفعاتها)، ويدخل الصافي",
+    rep.total.fx_purchases === sumFx && rep.total.net === sumFx && sumFx === -560, JSON.stringify([rep.total.fx_purchases, rep.total.net, sumFx]));
+}
 
 /* ══ ٦) الوصل: البابُ كسولٌ خارج حزمة الإقلاع، والمرآةُ من repoDemo وحده ══ */
 console.log("▸ ٦) الوصل");

@@ -6373,7 +6373,12 @@
     "payIn": "Pay in",
     "per100": "Rate per $100",
     "rateBad": "Type the dollar rate — dinars per $100, e.g. 146000.",
-    "reduces": "Handing {{h}} — reduces the debt by {{v}}"
+    "reduces": "Handing {{h}} — reduces the debt by {{v}}",
+    "dayRate": "Dollar rate on the payment day ($100)",
+    "costIqd": "Costs {{v}} in dinars — the exchange difference is computed per invoice against its purchase-day rate",
+    "fxGain": "Exchange difference: gain {{v}}",
+    "fxLoss": "Exchange difference: loss {{v}}",
+    "fxTotal": "Exchange difference on dollar payments"
   },
   "praise": {
     "noAccess": "Price raises are for the manager only — and never on a locked device. Sign in with the manager PIN.",
@@ -7219,7 +7224,9 @@
     "noteLoans": "Advances count on the day they're paid out, then get deducted from salaries, so salaries come in lower by the same amount.",
     "noteAdjust": "Old invoice adjustments: invoices whose recorded profit doesn't equal their price minus their cost.",
     "noteFx": "Exchange-rate difference: dollar debts settled in dinars at a rate other than the sale day's — plus is a gain, minus a loss, on the settlement day.",
-    "noteShift": "The working-hours filter (advanced options) doesn't apply here: this report covers whole days, so «Sales profit» may differ from the Money tab right now."
+    "noteShift": "The working-hours filter (advanced options) doesn't apply here: this report covers whole days, so «Sales profit» may differ from the Money tab right now.",
+    "fxPurchases": "Purchase exchange difference",
+    "noteFxPurchases": "Purchase exchange difference: a company's dollar debt paid at a rate other than the purchase day's — plus is a gain (the dollar fell), minus a loss (it rose), in the month of payment."
   },
   "usd": {
     "cancel": "Cancel",
@@ -8896,6 +8903,12 @@
     "amountBad": "The amount couldn't be read — digits only.",
     "over": "More than the due ({{v}}).",
     "reduces": "Reduces the debt by {{v}} — {{left}} left",
-    "paySave": "Record payment"
+    "paySave": "Record payment",
+    "dayRate": "Dollar rate on the payment day ($100)",
+    "costIqd": "Costs {{v}} in dinars",
+    "fxGain": "Exchange difference: gain {{v}}",
+    "fxLoss": "Exchange difference: loss {{v}}",
+    "sumBought": "We bought {{u}} at {{r}} = {{v}}",
+    "sumPaid": "and paid {{v}} in dinars"
   }
 }

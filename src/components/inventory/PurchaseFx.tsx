@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Coins, DollarSign, Info, Loader2 } from "lucide-react";
-import type { PaymentMethod, Purchase } from "@/types";
+import type { PaymentMethod, Purchase, PurchasePayment } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { cn, formatNum, money } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
@@ -116,7 +116,10 @@ export function PfxPay({ purchase, clinicRate, onDone }: { purchase: Purchase; c
   useEffect(() => { setAmt(""); setPay(debt); }, [purchase.id, debt]);
   // سعرُ العيادة يصل بعد التركيب (فحصُ القدرة كسول): يُكتب بالخانة ما دامت فارغة — لا يدوس ما كتبه الطبيب.
   useEffect(() => { if (clinicRate) setPer100((v) => (v.trim() === "" ? String(Math.round(clinicRate * 100)) : v)); }, [clinicRate]);
-  const rate = pay !== debt ? ratePerUsd(per100) : null;
+  /* 0275: دَينُ الدولار يُسدَّد بسعر يومه دائماً (ولو سُلّم دولاراً) — منه دينارُ الدفعة وفرقُ صرفها؛ ودَينُ الدينار يحتاج السعرَ حين
+   * يُسلَّم دولاراً وحده. */
+  const needRate = pay !== debt || debt === "USD";
+  const rate = needRate ? ratePerUsd(per100) : null;
   const handed = Number(decOf(amt.trim(), 2) ?? NaN) / 100;
   const okAmt = Number.isFinite(handed) && handed > 0;
   /** ما ينقص من الدَّين بعملته — كما يحسبه الخادم (purchase_pay_fx). */
@@ -129,7 +132,13 @@ export function PfxPay({ purchase, clinicRate, onDone }: { purchase: Purchase; c
   const fmtDebt = (n: number) => (debt === "USD" ? usdOf(n) : money(n));
   const fmtPay = (n: number) => (pay === "USD" ? usdOf(n) : money(n));
   const over = reduces != null && reduces > due + (debt === "USD" ? 0.01 : rate != null ? Math.ceil(rate * 0.01) : 0);
-  const canSave = !busy && reduces != null && reduces > 0 && !over;
+  const canSave = !busy && reduces != null && reduces > 0 && !over && (!needRate || rate != null);
+  /** دَينُ الدولار: ما تكلّفه الدفعةُ بالدينار يومَها، وحصّتُها بدينار يوم الشراء، وفرقُهما (كما يحسبه الخادم — 0275). */
+  const costIqd = debt === "USD" && rate != null && okAmt ? (pay === "IQD" ? handed : Math.round(handed * rate)) : null;
+  const dueIqd = Math.max(0, purchase.total - (purchase.amount_paid ?? purchase.total));
+  const shareIqd = debt === "USD" && reduces != null
+    ? (reduces >= due ? dueIqd : Math.min(dueIqd, Math.round((Math.min(reduces, due) * purchase.total) / (Number(purchase.total_usd) || 1)))) : null;
+  const fxPrev = costIqd != null && shareIqd != null ? shareIqd - costIqd : null;
   /** «سدّد الباقي» بعملةٍ ثانية: المبلغُ الذي يُغلقها (يُقرَّب للأعلى — والخادمُ يقبل زيادةً دون سنتٍ إغلاقاً). */
   const fillDue = () => {
     playTap();
@@ -141,7 +150,7 @@ export function PfxPay({ purchase, clinicRate, onDone }: { purchase: Purchase; c
     if (!canSave) return;
     setBusy(true);
     try {
-      const p = await purchaseFx.pay(purchase.id, handed, pay, pay !== debt ? rate : null, method, note.trim() || null, due);
+      const p = await purchaseFx.pay(purchase.id, handed, pay, needRate ? rate : null, method, note.trim() || null, due);
       playSuccess();
       toast.success(t("pfx.paid", { v: fmtPay(handed) }));
       setAmt(""); setNote("");
@@ -171,9 +180,9 @@ export function PfxPay({ purchase, clinicRate, onDone }: { purchase: Purchase; c
             </button>
           ))}
         </div>
-        {pay !== debt && (
+        {needRate && (
           <label className="flex items-center gap-1.5 text-2xs font-bold text-ink-muted">
-            {t("pfx.per100")}
+            {debt === "USD" ? t("pfx.dayRate") : t("pfx.per100")}
             <input dir="ltr" inputMode="decimal" className="input h-8 w-28 font-mono" value={per100} onChange={(e) => setPer100(e.target.value)} data-pfx-payrate />
           </label>
         )}
@@ -191,16 +200,45 @@ export function PfxPay({ purchase, clinicRate, onDone }: { purchase: Purchase; c
         </select>
       </div>
       <input className="input h-9" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("pfx.note")} />
-      {pay !== debt && rate == null && <p role="alert" className="text-2xs font-bold text-danger-600 dark:text-danger-300">{t("pfx.rateBad")}</p>}
+      {needRate && rate == null && <p role="alert" className="text-2xs font-bold text-danger-600 dark:text-danger-300">{t("pfx.rateBad")}</p>}
       {amt.trim() !== "" && !okAmt && <p role="alert" className="text-2xs font-bold text-danger-600 dark:text-danger-300">{t("pfx.amountBad")}</p>}
       {reduces != null && (
         <p className={cn("text-2xs font-bold tabular-nums", over ? "text-danger-600 dark:text-danger-300" : "text-ink")} data-pfx-reduces role={over ? "alert" : undefined}>
           {over ? t("pfx.over", { v: fmtDebt(due) }) : t("pfx.reduces", { v: fmtDebt(Math.min(reduces, due)), left: fmtDebt(Math.max(0, Math.round((due - reduces) * 100) / 100)) })}
         </p>
       )}
+      {!over && costIqd != null && fxPrev != null && (
+        <p className="text-2xs font-bold tabular-nums text-ink-muted" data-pfx-fxprev>
+          {t("pfx.costIqd", { v: money(costIqd) })}{" · "}
+          <span className={fxPrev >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300"}>
+            {fxPrev >= 0 ? t("pfx.fxGain", { v: money(fxPrev) }) : t("pfx.fxLoss", { v: money(-fxPrev) })}
+          </span>
+        </p>
+      )}
       <Button size="sm" onClick={() => void save()} disabled={!canSave} data-pfx-save>
         {busy ? <Loader2 size={14} className="animate-spin" /> : null}{t("pfx.paySave")}
       </Button>
+    </div>
+  );
+}
+
+/* ── فاتورةُ الدولار: بشكد اشترينا الدولار وبشكد سدّدناه (0275) ───────────────────────────────────────────── */
+/** دفعاتُها المعروفُ فرقُها: دولارُها بسعر يوم الشراء (حصّتُها المحجوزة)، وما كلّفت يومَ التسديد، والفرقُ ربحاً أو خسارة. */
+export function PfxFxSummary({ purchase, payments }: { purchase: Purchase; payments: PurchasePayment[] }) {
+  const { t } = useTranslation();
+  if (purchase.currency !== "USD") return null;
+  const known = payments.filter((p) => p.fx != null);
+  if (!known.length) return null;
+  const usd = Math.round(known.reduce((s, p) => s + Number(p.usd ?? 0), 0) * 100) / 100;
+  const booked = known.reduce((s, p) => s + Number(p.amount), 0);
+  const fx = Math.round(known.reduce((s, p) => s + Number(p.fx), 0) * 100) / 100;
+  return (
+    <div className="space-y-0.5 rounded-xl bg-surface-2 p-3 text-xs tabular-nums" data-pfx-fxsum>
+      <p className="text-ink-muted">{t("pfx.sumBought", { u: usdOf(usd), r: formatNum(Number(purchase.fx_rate) || 0), v: money(booked) })}</p>
+      <p className="text-ink-muted">{t("pfx.sumPaid", { v: money(Math.round((booked - fx) * 100) / 100) })}</p>
+      <p className={cn("font-bold", fx >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300")}>
+        {fx >= 0 ? t("pfx.fxGain", { v: money(fx) }) : t("pfx.fxLoss", { v: money(-fx) })}
+      </p>
     </div>
   );
 }

@@ -45,11 +45,13 @@ const loadPfxBar = () => page(() => import("@/components/inventory/PurchaseFx").
 const loadPfxLineCur = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxLineCur })), ["pfx"]);
 const loadPfxTotals = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxTotals })), ["pfx"]);
 const loadPfxPay = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPay })), ["pfx"]);
+const loadPfxFxSum = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxFxSummary })), ["pfx"]);
+let PfxFxSumLazy = loadPfxFxSum();
 let PfxBarLazy = loadPfxBar();
 let PfxLineCurLazy = loadPfxLineCur();
 let PfxTotalsLazy = loadPfxTotals();
 let PfxPayLazy = loadPfxPay();
-const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); };
+const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); PfxFxSumLazy = loadPfxFxSum(); };
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 /* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
@@ -585,6 +587,12 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
           )
         )}
 
+        {/* 0275: فاتورةُ الدولار — بشكد اشترينا الدولار (سعرُ يوم الشراء) وبشكد سدّدناه، والفرقُ ربحاً أو خسارة. */}
+        {isUsd && payments && payments.length > 0 && (
+          <LoadBoundary scope="pfx-fxsum" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}><PfxFxSumLazy purchase={purchase} payments={payments} /></Suspense>
+          </LoadBoundary>
+        )}
         {/* سجل التسديدات — كل دفعة انسدّت على هذه الفاتورة. وتعذُّرُه يُقال: غيابُ السجلّ يُقرأ «ما سدّدنا شي». */}
         {paymentsFailed ? (
           <div className="space-y-2.5 rounded-2xl border border-line p-4 text-center" data-purpaysfailed>
@@ -601,6 +609,13 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
                 {pp.pay_currency && pp.handed != null && pp.pay_currency !== (isUsd ? "USD" : "IQD") && (
                   <span className="text-ink-subtle tabular-nums" data-pp-handed>
                     <bdi>{pp.pay_currency === "USD" ? usdOf(pp.handed) : money(pp.handed)}</bdi>{pp.fx_rate ? <> @ <bdi>{formatNum(pp.fx_rate)}</bdi></> : null}
+                  </span>
+                )}
+                {/* 0275: دفعةُ دين الدولار بسعر يومها وفرقِ صرفها (ربحٌ موجب، خسارةٌ سالبة). */}
+                {isUsd && pp.fx_rate != null && (pp.pay_currency ?? "USD") === "USD" && <span className="text-ink-subtle tabular-nums" data-pp-rate>@ <bdi>{formatNum(pp.fx_rate)}</bdi></span>}
+                {isUsd && pp.fx != null && (
+                  <span className={cn("font-bold tabular-nums", pp.fx >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300")} data-pp-fx>
+                    <bdi>{pp.fx >= 0 ? "+" : "−"}{money(Math.abs(pp.fx))}</bdi>
                   </span>
                 )}
                 <span className="text-ink-subtle">{formatDate(pp.paid_at, i18n.language)}</span>
