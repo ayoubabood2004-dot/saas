@@ -66,6 +66,7 @@ import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryS
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
 import type { PosTab } from "@/lib/posTabs";
+import { armRetry, browserRetryEnv } from "@/lib/retryWhileFailed";
 import type { NegBarView, NegCheck, NegRefusedLine, NegSay, NegState } from "@/lib/negStock";
 
 /* خاناتُ الطبيب (0258): الشريطُ والشبكةُ والمحرّرُ قطعةٌ كسولةٌ بنطاقها المملوك ptab، والبابُ (posTabsApi) بـimport() — لا ثابت،
@@ -1195,14 +1196,22 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [posTabsTry, setPosTabsTry] = useState(0);
   const [tabEdit, setTabEdit] = useState<PosTab | "new" | null>(null);
   const [, setTabLazyTick] = useState(0);
+  /** محاولاتُ الجلب الفاشلة المتتالية — مهلةُ الإعادة التالية بها، ويصفّرها النجاح. */
+  const tabsFailsRef = useRef(0);
   useEffect(() => {
     let alive = true;
     setPosTabsFailed(false);
     import("@/lib/posTabsApi").then((m) => m.posTabsApi.list())
-      .then((list) => { if (alive) setPosTabs(list); })
+      .then((list) => { if (alive) { tabsFailsRef.current = 0; setPosTabs(list); } })
       .catch((e) => { if (!alive) return; if (tabsTableMissing(e)) setPosTabsOff(true); else setPosTabsFailed(true); });
     return () => { alive = false; };
   }, [clinicId, posTabsTry]);
+  /* والفشلُ يُعاد وحده (بلاغ ١٧/١١ «الخانة اختفت»): جلبٌ صباحيٌّ والجلسةُ تتجدّد أو النتُّ متأخّر كان يرسم «تعذّر» مكانَ الخانة
+   * ولا يُعاد إلا بضغطه — بعد ٤ ثوانٍ فـ١٥ فدقيقة فكلّ دقيقتين، وفوراً حين يرجع النتّ أو تظهر الشاشة (retryWhileFailed). */
+  useEffect(() => {
+    if (!posTabsFailed) return;
+    return armRetry(browserRetryEnv, tabsFailsRef.current++, () => setPosTabsTry((n) => n + 1));
+  }, [posTabsFailed]);
   const activeTabId = browseTab.startsWith("tab:") ? browseTab.slice(4) : null;
   const activeTab = activeTabId ? posTabs?.find((x) => x.id === activeTabId) ?? null : null;
   // خانةٌ انحذفت (من هنا أو من جهازٍ ثانٍ) والشاشةُ عليها: إلى المنتجات.
