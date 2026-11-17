@@ -8,9 +8,10 @@ export type FxCur = "IQD" | "USD";
 /** كيف انحسبت فاتورةُ شراءٍ جديدة: كلُّها مدفوعة، أو جزءٌ مكتوب، أو كلُّها دَين. */
 export type PaidMode = "full" | "part" | "debt";
 /** المدفوعُ الذي تُرسله فاتورةٌ جديدة بعملتها — أو null: الاختيارُ ناقص (لا اختيار، أو «جزء» بلا مبلغٍ موجب) فالحفظُ يقف.
- *  «جزء» يُقصّ على المجموع (مبلغٌ ≥ المجموع = مدفوعةٌ كلّها). **ولا فراغَ يعني «كلّه»**: كان «عليها دَين» بخانةٍ فارغة يُرسل المجموع. */
-export function newPurchasePaid(mode: PaidMode | null, amount: string, total: number): number | null {
-  if (mode === "full") return total;
+ *  «جزء» يُقصّ على المجموع (مبلغٌ ≥ المجموع = مدفوعةٌ كلّها). **ولا فراغَ يعني «كلّه»**: كان «عليها دَين» بخانةٍ فارغة يُرسل المجموع.
+ *  و`later` أجورٌ اختار الدكتورُ أنها «بعدين» (داخل المجموع): «دفعناها كلّها» تعني البضاعةَ — وتلك تبقى دَيناً كما قال (0276). */
+export function newPurchasePaid(mode: PaidMode | null, amount: string, total: number, later = 0): number | null {
+  if (mode === "full") return Math.max(0, Math.round((total - Math.max(0, later)) * 100) / 100);
   if (mode === "debt") return 0;
   if (mode === "part") {
     const n = Math.max(0, Math.min(total, Number(amount) || 0));

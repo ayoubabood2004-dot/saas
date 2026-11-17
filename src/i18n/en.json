@@ -1578,7 +1578,7 @@
       "ofOpening": "incl. {{v}} opening balance",
       "settleSpread": "Goes to the opening balance first, then invoices oldest to newest"
     },
-    "chargeOther": "Paid to others"
+    "chargeOther": "Paid now"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
@@ -6985,7 +6985,7 @@
     "pchCostHint": "e.g. a 100,000 invoice + 10,000 delivery ⇒ each item costs 10% more, so its profit is right when sold.",
     "pchExpense": "An expense in the P&L",
     "pchExpenseHint": "Shows as a “Purchase charges” line in the invoice's month; the goods' cost stays as is.",
-    "pchNote": "Applies to charges added from now on — every invoice keeps the way it was counted. On each charge the doctor picks “On the company” (added to its debt) or “Paid to others”."
+    "pchNote": "Applies to charges added from now on — every invoice keeps the way it was counted. On each charge the doctor picks “Paid now” or “Later” (added to the invoice debt)."
   },
   "fgset": {
     "title": "Debt discount limit",
@@ -8932,16 +8932,17 @@
     "chLabel": "What is it? e.g. delivery fee",
     "chAmount": "Charge amount",
     "chRemove": "Remove charge",
-    "chWho": "Who gets it?",
-    "chCompany": "On the company",
-    "chOther": "Paid to others",
-    "chBad": "Write what the charge is and its amount — or remove the row.",
-    "chOnCompany": "Added to the company's debt",
-    "chPaidOther": "Paid to others (not owed to the company)",
+    "chWho": "When is it paid?",
+    "chCompany": "Later — added to the debt",
+    "chOther": "Paid now",
+    "chBad": "Write what the charge is and its amount, and choose “Paid now” or “Later” — or remove the row.",
+    "chOnCompany": "Added to the invoice debt",
+    "chPaidOther": "Paid now (not a debt)",
     "chModeCost": "Spread over the goods' cost by their price — so each item's profit is right when sold. Change it in Settings.",
     "chModeExpense": "Counted as an expense in the purchase month's P&L; the goods' cost stays as is. Change it in Settings.",
     "chStampCost": "Charges were spread over the goods' cost.",
     "chStampExpense": "Charges were counted as a P&L expense.",
-    "chSuggest": "Delivery fee|Transport fee|Shipping fee|Customs clearance|Loading fee"
+    "chSuggest": "Delivery fee|Transport fee|Shipping fee|Customs clearance|Loading fee",
+    "paidFullLater": "Goods paid — the “later” charges stay as debt: {{v}}"
   }
 }

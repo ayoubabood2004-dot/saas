@@ -105,15 +105,15 @@ export function PfxTotals({ totalUsd, rate, iqd }: { totalUsd: number; rate: num
 /* ── فاتورةٌ جديدة: كيف انحسبت — كلُّها، أو جزءٌ مكتوب، أو كلُّها دَين ───────────────────────────────────────
  * ثلاثةُ اختياراتٍ صريحة بلا افتراض. كان الجزءُ خانةً تحت «عليها دَين» والفراغُ فيها يُرسل المجموعَ مدفوعاً — فالزرُّ يقول دَيناً
  * والفاتورةُ تُحفظ «مدفوعة» ودَينُ الشركة يضيع. الآن الجزءُ اختيارٌ وحده، ومبلغُه إلزاميّ (الحفظُ يقف ويقولها هنا: `ask`). */
-export function PfxPaid({ mode, onMode, amount, onAmount, total, fmt, ask }: {
+export function PfxPaid({ mode, onMode, amount, onAmount, total, later = 0, fmt, ask }: {
   mode: PaidMode | null; onMode: (m: PaidMode) => void; amount: string; onAmount: (v: string) => void;
-  /** مجموعُ ما يُدان للشركة بعملة الفاتورة. */
-  total: number; fmt: (n: number) => string;
+  /** مجموعُ ما يُدان للشركة بعملة الفاتورة، ومنه أجورٌ «بعدين» (`later`) تبقى دَيناً ولو «دفعناها كلّها» (newPurchasePaid). */
+  total: number; later?: number; fmt: (n: number) => string;
   /** الحفظُ ضُغط والاختيارُ ناقص. */
   ask?: boolean;
 }) {
   const { t } = useTranslation();
-  const paid = mode === "part" ? Math.max(0, Math.min(total, Number(amount) || 0)) : mode === "full" ? total : 0;
+  const paid = mode === "part" ? Math.max(0, Math.min(total, Number(amount) || 0)) : mode === "full" ? Math.max(0, total - later) : 0;
   const partEmpty = mode === "part" && !(paid > 0);
   const opts: { m: PaidMode; label: string; on: string }[] = [
     { m: "full", label: t("pfx.paidFull"), on: "bg-success-600 text-white shadow-soft" },
@@ -153,12 +153,14 @@ export function PfxPaid({ mode, onMode, amount, onAmount, total, fmt, ask }: {
       {mode === "debt" && total > 0 && (
         <p className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300 tabular-nums" data-pfx-paid-debt>{t("pfx.paidAllDebt", { v: fmt(total) })}</p>
       )}
-      {mode === "full" && total > 0 && <p className="mt-1 text-2xs text-ink-subtle">{t("pfx.paidNone")}</p>}
+      {mode === "full" && total > 0 && (later > 0
+        ? <p className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300 tabular-nums" data-pfx-paid-later>{t("pfx.paidFullLater", { v: fmt(later) })}</p>
+        : <p className="mt-1 text-2xs text-ink-subtle">{t("pfx.paidNone")}</p>)}
     </div>
   );
 }
 
-/* ── الأجورُ الإضافية (0276): كلُّ أجرةٍ باسمها ومبلغها ولمن — «على الشركة» تنضاف لدَينها، و«دفعناها لغيرهم» (السائق) خارجه ───────
+/* ── الأجورُ الإضافية (0276): كلُّ أجرةٍ باسمها ومبلغها ومتى تُدفع — «دفعناها هسّه» خارج الدَّين، و«بعدين» تنضاف لدَين الفاتورة (قرارُ المالك) ───────
  * وكيف تُحسب إعدادُ العيادة (`mode`) يُقال تحت القائمة — الخادمُ يختمه على الفاتورة. وسطرٌ ناقص يُقال بمكانه (`ask` رقمُه). */
 export function PfxCharges({ rows, onRows, mode, ask, fmt, sums }: {
   rows: ChargeDraft[]; onRows: (rows: ChargeDraft[]) => void;
@@ -177,7 +179,7 @@ export function PfxCharges({ rows, onRows, mode, ask, fmt, sums }: {
       <dt className="flex items-center justify-between gap-2 text-ink-muted">
         <span className="inline-flex items-center gap-1"><Truck size={13} /> {t("pfx.chTitle")}</span>
         <button type="button" data-pfx-charge-add disabled={rows.length >= CHARGES_MAX}
-          onClick={() => { playTap(); onRows([...rows, { label: "", amount: "", payee: "company" }]); }}
+          onClick={() => { playTap(); onRows([...rows, { label: "", amount: "", payee: null }]); }}
           className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-brand-700 transition hover:bg-surface-2 disabled:opacity-40 dark:text-brand-300">
           <Plus size={13} /> {t("pfx.chAdd")}
         </button>
@@ -199,11 +201,12 @@ export function PfxCharges({ rows, onRows, mode, ask, fmt, sums }: {
               </button>
             </div>
             <div className="flex gap-1" role="radiogroup" aria-label={t("pfx.chWho")}>
-              {(["company", "other"] as ChargePayee[]).map((w) => (
+              {(["other", "company"] as ChargePayee[]).map((w) => (   /* «هسّه» أوّلاً كما قالها المالك، ولا افتراض */
                 <button key={w} type="button" role="radio" aria-checked={r.payee === w} data-pfx-charge-payee={w}
                   onClick={() => { if (r.payee !== w) { playTap(); set(i, { payee: w }); } }}
                   className={cn("flex-1 rounded-lg px-1.5 py-1.5 text-2xs font-bold transition",
-                    r.payee === w ? (w === "company" ? "bg-warn-600 text-white" : "bg-brand-600 text-white") : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                    r.payee === w ? (w === "company" ? "bg-warn-600 text-white" : "bg-success-600 text-white") : "bg-surface-2 text-ink-muted hover:text-ink",
+                    ask === i + 1 && r.payee === null && "ring-2 ring-danger-400")}>
                   {w === "company" ? t("pfx.chCompany") : t("pfx.chOther")}
                 </button>
               ))}

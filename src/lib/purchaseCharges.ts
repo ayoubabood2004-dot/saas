@@ -11,8 +11,9 @@ import { fromScaled, roundDiv, roundScaled } from "./consumption";
 
 export type ChargePayee = PurchaseCharge["payee"];
 export interface ChargesNorm { list: PurchaseCharge[]; company: number; other: number; companyUsd: number; otherUsd: number }
-/** سطرُ أجرةٍ كما يُكتب بالنموذج: المبلغُ نصٌّ بعملة الفاتورة. */
-export interface ChargeDraft { label: string; amount: string; payee: ChargePayee }
+/** سطرُ أجرةٍ كما يُكتب بالنموذج: المبلغُ نصٌّ بعملة الفاتورة، ومتى تُدفع — «دفعناها هسّه» (other: خارج الدَّين) أو «بعدين»
+ *  (company: تنضاف لدَين الفاتورة، قرارُ المالك ١٧/١١). null = ما اختار بعد: لا افتراض — افتراضٌ خاطئ يضيّع دَيناً أو يخترعه. */
+export interface ChargeDraft { label: string; amount: string; payee: ChargePayee | null }
 
 /** خطأُ المرآة بشكل الخادم: رمزُه ورقمُ السطر (التجريبيُّ يحوّله لجملة الخادم). */
 export class ChargeFault extends Error {
@@ -98,7 +99,7 @@ export function purchaseGrossCur(p: Pick<Purchase, "total" | "discount" | "total
 export function chargesToSend(rows: readonly ChargeDraft[]): { label: string; amount: number; payee: ChargePayee }[] {
   return rows
     .filter((r) => r.label.trim() !== "" || r.amount.trim() !== "")
-    .map((r) => ({ label: r.label, amount: Number(r.amount.trim()), payee: r.payee }));
+    .map((r) => ({ label: r.label, amount: Number(r.amount.trim()), payee: r.payee ?? "company" }));   // الناقصُ يوقفه draftProblem قبله
 }
 
 /** مجموعا سطور النموذج بعملة الفاتورة: ما على الشركة (يدخل الصافي) وما لغيرها — ما لا يُقرأ يُحسب صفراً هنا والحفظُ يقوله. */
@@ -106,19 +107,19 @@ export function draftSums(rows: readonly ChargeDraft[]): { company: number; othe
   let c = 0n, o = 0n;
   for (const r of rows) {
     const v = scaled(r.amount.trim(), 2);
-    if (v === null || v <= 0n) continue;
+    if (v === null || v <= 0n || r.payee === null) continue;
     if (r.payee === "other") o += v; else c += v;
   }
   return { company: fromScaled(c, 2), other: fromScaled(o, 2) };
 }
 
-/** أوّلُ سطرٍ ناقص بالنموذج (اسمٌ بلا مبلغٍ موجب، أو مبلغٌ بلا اسم) — رقمُه بالنموذج (1-based)، أو 0. الحفظُ يقف ويقوله بمكانه. */
+/** أوّلُ سطرٍ ناقص بالنموذج (اسمٌ بلا مبلغٍ موجب، أو مبلغٌ بلا اسم، أو بلا «هسّه/بعدين») — رقمُه بالنموذج (1-based)، أو 0. الحفظُ يقف ويقوله بمكانه. */
 export function draftProblem(rows: readonly ChargeDraft[]): number {
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k];
     if (r.label.trim() === "" && r.amount.trim() === "") continue;
     const v = scaled(r.amount.trim(), 2);
-    if (r.label.trim() === "" || v === null || v <= 0n) return k + 1;
+    if (r.label.trim() === "" || v === null || v <= 0n || r.payee === null) return k + 1;
   }
   return 0;
 }

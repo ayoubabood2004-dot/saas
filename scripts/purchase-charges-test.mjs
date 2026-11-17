@@ -86,6 +86,8 @@ check("«جزء» بمبلغ ⇒ المبلغ، وفوق المجموع ⇒ ال
 check("  و«جزء» فارغ أو صفر أو سالب أو حروف ⇒ null (الحفظُ يقف) — كان الفراغُ تحت «دَين» يُرسل المجموع",
   [" ", "", "0", "-5", "abc"].every((v) => P("part", v, 21000) === null));
 check("  ولا اختيار ⇒ null", P(null, "5000", 21000) === null);
+check("«كلّها» وأجورٌ «بعدين» ٣٬٠٠٠ ⇒ البضاعةُ مدفوعة والأجورُ تبقى دَيناً (١٨٬٠٠٠)، و«جزء» و«دَين» كما هما",
+  P("full", "", 21000, 3000) === 18000 && P("part", "5000", 21000, 3000) === 5000 && P("debt", "", 21000, 3000) === 0 && P("full", "", 2000, 5000) === 0);
 
 /* ══ ٢) مرآةُ _purchase_charges ══ */
 console.log("▸ ٢) normCharges — مرآةُ _purchase_charges");
@@ -117,6 +119,8 @@ check("السطرُ الفارغ كلُّه يُترك، والمجموعان ٣
   && M.draftSums(rows).company === 3000 && M.draftSums(rows).other === 1000 && M.draftProblem(rows) === 0);
 check("  واسمٌ بلا مبلغ ⇒ رقمُ سطره بالنموذج، ومبلغٌ بلا اسم كذلك",
   M.draftProblem([...rows, { label: "تخليص", amount: "", payee: "company" }]) === 4 && M.draftProblem([{ label: "", amount: "50", payee: "other" }]) === 1);
+check("  ولا افتراض لـ«هسّه/بعدين»: سطرٌ كاملٌ بلا اختيار ناقص، ولا يدخل المجموعين",
+  M.draftProblem([...rows, { label: "تحميل", amount: "200", payee: null }]) === 4 && M.draftSums([{ label: "x", amount: "200", payee: null }]).company === 0);
 
 /* ══ ٣) المرآةُ التجريبية بأرقام قسم 0276 ══ */
 const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(src("src/lib/demoKey.ts"))?.[1];

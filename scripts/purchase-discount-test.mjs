@@ -158,7 +158,7 @@ console.log("▸ الأسلاك: الخانةُ بسؤال القدرة، وال
   check("  و`total` الصافي: المدفوعُ والحالةُ والشارةُ عليه (كما يكتبها الخادم)",
     // 0276: وأجورُ الشركة داخله (ما يُدان) — سلوكُها بـpurchase-charges-test.
     /const total = subtotal - discountAmt \+ chSums\.company;/.test(pur) && /editing\.purchase\.paid_usd : editing\.purchase\.amount_paid\) \?\? total\)\)\)/.test(pur)
-    && /newPurchasePaid\(paidMode, amountPaid, total\)/.test(pur));
+    && /newPurchasePaid\(paidMode, amountPaid, total, chSums\.company\)/.test(pur));
   check("  والتعديلُ يبدأ بالخصم المحفوظ مبلغاً — فيُرسل ما يُرى لا غيابٌ يُبقي القديمَ خفيّاً",
     /setDiscType\("fixed"\); setDiscValue\(usd \? \(\(p\.discount_usd \?\? 0\) > 0 \? String\(p\.discount_usd\) : ""\) : \(\(p\.discount \?\? 0\) > 0 \? String\(p\.discount\) : ""\)\);/.test(pur));
   // 0276: أساسُ الكلفة الصافي + الأجورُ الموزَّعة (costBase) لا total (يحمل أجورَ الشركة وحدها وإن كانت «مصروفاً»).
