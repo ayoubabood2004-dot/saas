@@ -6,7 +6,7 @@
  * ========================================================================= */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Coins, DollarSign, Info, Loader2, Plus, Truck, X } from "lucide-react";
+import { Coins, DollarSign, Info, Link2, Loader2, Plus, Truck, X } from "lucide-react";
 import type { PaymentMethod, Purchase, PurchasePayment } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { cn, formatNum, money } from "@/lib/utils";
@@ -16,6 +16,9 @@ import { decOf } from "@/lib/usdMath";
 import { purchaseFx, type Cur } from "@/lib/purchaseFxApi";
 import { purchaseDueCur, ratePerUsd, usdOf, type PaidMode } from "@/lib/purchaseFxMath";
 import { CHARGES_MAX, CHARGE_LABEL_MAX, chargesOf, type ChargeDraft, type ChargePayee } from "@/lib/purchaseCharges";
+import type { GroupAskItem } from "@/lib/productGroups";
+import { usdPriceText } from "@/lib/usdProduct";
+import i18next from "i18next";
 
 /* ── شريطُ عملة الفاتورة ─────────────────────────────────────────────────────────────────────────── */
 export function PfxBar({ cur, onCur, per100, onPer100, clinicRate, locked, showBad }: {
@@ -406,4 +409,47 @@ export function PfxFxSummary({ purchase, payments }: { purchase: Purchase; payme
       </p>
     </div>
   );
+}
+
+/* ── المنتجاتُ المربوطة (0277): «ترفع السعر الجديد لكل المجموعة؟» — اختياريٌّ بعلامة المشتري (قرارُ المالك ١٧/١١) ───────────── */
+export function PfxGroupAsk({ items, picked, onToggle }: { items: GroupAskItem[]; picked: string[]; onToggle: (productId: string) => void }) {
+  const { t } = useTranslation();
+  const [ready, setReady] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void import("@/lib/productGroupsApi").then((m) => m.productGroupsReady()).then((r) => { if (live) setReady(r); }, () => { if (live) setReady(false); });
+    return () => { live = false; };
+  }, []);
+  // قاعدةٌ قبل 0277: لا سؤال (ولا علامةَ تُقرأ بعد الحفظ) — المادّةُ وحدها كما كانت.
+  if (!ready || !items.length) return null;
+  const fmt = (n: number | null, cur: GroupAskItem["cur"]) => (n == null ? "—" : cur === "USD" ? usdPriceText(n) : money(n));
+  return (
+    <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-3 dark:border-violet-500/30 dark:bg-violet-500/10" data-pfx-grp>
+      <p className="flex items-center gap-1.5 text-xs font-bold text-violet-800 dark:text-violet-300"><Link2 size={14} /> {t("pfx.grpAskTitle")}</p>
+      <p className="mt-0.5 text-2xs text-ink-subtle">{t("pfx.grpAskHint")}</p>
+      <ul className="mt-2 space-y-1.5">
+        {items.map((it) => (
+          <li key={it.productId}>
+            <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-surface-1 p-2">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600" checked={picked.includes(it.productId)}
+                onChange={() => onToggle(it.productId)} data-pfx-grp-pick={it.productId} />
+              <span className="min-w-0 flex-1 text-xs">
+                <span className="block font-semibold text-ink">{it.name}</span>
+                <span className="block text-ink-muted">{t("pfx.grpAsk", { n: formatNum(it.n) })}</span>
+                <span className="flex flex-wrap gap-x-3 text-2xs text-ink-subtle">
+                  {it.sell && <span>{t("pfx.grpSell", { to: fmt(it.sell.to, it.cur), from: fmt(it.sell.from, it.cur) })}</span>}
+                  {it.buy && <span>{t("pfx.grpBuy", { to: fmt(it.buy.to, it.cur), from: fmt(it.buy.from, it.cur) })}</span>}
+                </span>
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** جملتا ما بعد الحفظ (الفاتورةُ تناديها بـimport() وensureOwned("pfx")): كم منتجاً تبعه، أو أن السعرَ لم يصل المجموعة. */
+export function pfxGroupSay(kind: "done" | "fail", n = 0): string {
+  return kind === "done" ? i18next.t("pfx.grpDone", { n: formatNum(n) }) : i18next.t("pfx.grpFail");
 }

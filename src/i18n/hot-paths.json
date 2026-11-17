@@ -86,6 +86,7 @@
     "flk": { "owner": "src/pages/FlockCases.tsx", "with": ["src/components/flock/FlockCase.tsx", "src/components/flock/FlockSheets.tsx", "src/components/flock/FlockTreatment.tsx", "src/components/flock/FlockVisit.tsx", "src/components/flock/FlockIntake.tsx", "src/components/flock/flockShared.ts"] },
     "flkv": "src/components/flock/FlockVisit.tsx",
     "odebt": "src/components/retail/OldDebt.tsx",
-    "pfx": "src/components/inventory/PurchaseFx.tsx"
+    "pfx": "src/components/inventory/PurchaseFx.tsx",
+    "pgrp": "src/components/inventory/ProductGroups.tsx"
   }
 }

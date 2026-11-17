@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProductMovementsDialog, AvgCostSlot } from "@/components/inventory/ProductMovements";
 import { ProductLotsDialog } from "@/components/inventory/ProductLots";
 import { ExpiryPicker } from "@/components/ExpiryPicker";
@@ -23,6 +23,8 @@ import { History,
   ClipboardCheck,
   Telescope,
   CalendarRange,
+  Link2,
+  Unlink,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -47,6 +49,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
 import { usdDraftOf, usdDraftProblem, usdPatch, usdPriceText, type UsdDraft } from "@/lib/usdProduct";
+import { groupKeyOf, groupMembersOf, groupSizes, seenOf } from "@/lib/productGroups";
 import { catalogLookup, type CatalogHit } from "@/lib/catalog";
 /* وضع المدير: جهاز مقفل بلا جلسة مدير → أسعار الشراء والأرباح تختفي من
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
@@ -96,6 +99,11 @@ const loadReportButtons = () => page(() => import("@/pages/InventoryAudit").then
 const loadUsdFields = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdPriceFields })), ["usd"]);
 let UsdFieldsLazy = loadUsdFields();
 let ReportButtons = loadReportButtons();
+/* المنتجاتُ المربوطة (0277): تبويبٌ بنطاقه المملوك `pgrp` — كسولٌ ولا يُستورد ثابتاً. */
+const loadGroups = () => page(() => import("@/components/inventory/ProductGroups").then((m) => ({ default: m.ProductGroups })), ["pgrp"]);
+let GroupsLazy = loadGroups();
+/** شارةُ «مربوطة» بصفّ المادّة: حجمُ كلّ مجموعة، وفتحُ تبويبها عليها (null بجهازٍ مقفول — الشارةُ تُرى ولا تُضغط). */
+const GroupNav = createContext<{ sizes: Map<string, number>; open: ((key: string) => void) | null }>({ sizes: new Map(), open: null });
 
 export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted" | "marked" | "nocost";
 /** «بلا سعر شراء» (0266): كلفةُ وحدتها بالخادم صفر (stock_unit_cost: المتوسّطُ وإلا سعرُ الشراء، بمنزلتين) — مادّةٌ كهذه لا يرفعها
@@ -115,7 +123,7 @@ const isStockFilter = (v: string | null): v is StockFilter => !!v && Object.prot
 const normName = normGroupName;
 const normKey = groupKey;
 
-type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale";
+type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale" | "groups";
 
 /* --------------------------------------------------------------------------
  * مجموعات الدفعات (bulk_group)
@@ -195,6 +203,13 @@ export function Inventory() {
   const [view, setView] = useState<View>("products");
   const { stockLocked: locked, restricted } = useOverride();
   const { can, role } = usePermissions();
+  /** المنتجاتُ المربوطة (0277): حجمُ كلّ مجموعة للشارة، والمجموعةُ التي فُتح التبويبُ عليها. */
+  const [groupFocus, setGroupFocus] = useState<string | null>(null);
+  const gSizes = useMemo(() => groupSizes(products), [products]);
+  const groupNav = useMemo(() => ({
+    sizes: gSizes,
+    open: locked ? null : (key: string) => { setView("groups"); setGroupFocus(key); },
+  }), [gSizes, locked]);
   // /inventory بلا FeatureGate بعكس /retail — فلو فُتحت شاشةُ بيعٍ هنا بلا فحص
   // صارت الكاشيرُ متاحةً لعيادةٍ باقتُها لا تشملها.
   const { has } = useEntitlements();
@@ -585,9 +600,11 @@ export function Inventory() {
         {!locked && <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />}
         {!locked && canPos && <ViewTab active={view === "wholesale"} icon={Layers} label={t("pos.tabWholesale", "البيع بالجملة")} onClick={() => { playTap(); setView("wholesale"); }} />}
         {!locked && <ViewTab active={view === "barcodes"} icon={ScanBarcode} label={t("pos.tabBarcodes", "مولد الباركود")} onClick={() => { playTap(); setView("barcodes"); }} />}
+        {!locked && <ViewTab active={view === "groups"} icon={Link2} label={t("pkg.groupsTab")} onClick={() => { playTap(); setGroupFocus(null); setView("groups"); }} />}
         {!locked && <ViewTab active={view === "trash"} icon={Trash2} label={t("pos.tabTrash", "المحذوفات")} onClick={() => { playTap(); setView("trash"); }} />}
       </div>
 
+      <GroupNav.Provider value={groupNav}>
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
       ) : failed ? (
@@ -632,9 +649,16 @@ export function Inventory() {
         </>
       ) : view === "trash" ? (
         <TrashTab onChanged={load} />
+      ) : view === "groups" && !locked ? (
+        <LoadBoundary scope="pgrp" onRetry={() => { GroupsLazy = loadGroups(); setLazyTick((n) => n + 1); }}>
+          <Suspense fallback={<div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>}>
+            <GroupsLazy products={products} companies={companies} sections={sections} canEdit={can("manageInventory")} focusKey={groupFocus} onChanged={load} />
+          </Suspense>
+        </LoadBoundary>
       ) : (
         <PurchasesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       )}
+      </GroupNav.Provider>
     </div>
   );
 }
@@ -788,6 +812,9 @@ function pkgDbError(e: unknown, t: (k: string, o?: Record<string, unknown>) => s
  * فلا تُسوَّق منعاً لضياع رمز. */
 const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdit, onRemove, onMuteChanged }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void; onMuteChanged?: () => void }) {
   const { t, i18n } = useTranslation();
+  const nav = useContext(GroupNav);
+  const gk = groupKeyOf(p.bulk_group);
+  const gN = gk ? nav.sizes.get(gk) ?? 0 : 0;
   const { stockLocked: locked } = useOverride();
   const toast = useToast();
   const expSt = expiryState(p.expiry_date, expW(), expCtx().today);
@@ -856,7 +883,13 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
           {companyName && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {companyName}</span>}
           {sectionName && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><FolderTree size={11} /> {sectionName}</span>}
           {p.category && <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">{t(`pos.cat.${p.category}`)}</span>}
-          {p.bulk_group && <span className="chip shrink-0 bg-violet-50 text-2xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" title={t("pos.groupChipHint", "أُضيف ضمن دفعة واحدة — افتح تعديله لتعديل المجموعة كاملة")}><ListPlus size={11} /> {t("pos.groupChip", "مجموعة")}</span>}
+          {/* مربوطةٌ بمجموعة (0277): عضوان فأكثر — مفتاحٌ على مادّةٍ وحدها (بقيّةُ مجموعةٍ حُذف أعضاؤها) ليس ربطاً. والضغطُ يفتح المجموعة. */}
+          {gN >= 2 && (
+            <button type="button" disabled={!nav.open} onClick={() => { if (!nav.open || !gk) return; playTap(); nav.open(gk); }} data-groupchip
+              className="chip shrink-0 bg-violet-50 text-2xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" title={t("pkg.groupChipHint")}>
+              <Link2 size={11} /> {t("pkg.groupChip", { n: formatNum(gN) })}
+            </button>
+          )}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
@@ -1252,6 +1285,21 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   // تعديل مجموعة: معرف المجموعة قيد التعديل + المنتجات المحذوفة من صفوفها.
   const [editGroup, setEditGroup] = useState<string | null>(null);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
+  /** مربوطةٌ بمجموعة (0277): أعضاؤها كما بالقائمة (هي معهم) — سعرُها الجديد يُكتب لهم كلّهم بنداءٍ واحد. وقاعدةٌ قبل 0277
+   *  (`grpReady` لا) تبقى على القديم: المادّةُ وحدها. */
+  const groupMates = useMemo(() => (product && !editGroup && !bulk ? groupMembersOf(allProducts ?? [], product) : []), [product, editGroup, bulk, allProducts]);
+  const [grpReady, setGrpReady] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!open || groupMates.length < 2 || grpReady !== null) return;
+    let live = true;
+    void import("@/lib/productGroupsApi").then((m) => m.productGroupsReady()).then((r) => { if (live) setGrpReady(r); }, () => { if (live) setGrpReady(false); });
+    return () => { live = false; };
+  }, [open, groupMates.length, grpReady]);
+  const grouped = !!product && groupMates.length >= 2 && grpReady === true;
+  /** سعرُ المجموعة الذي كُتب بهذا النموذج (بصمتُه): حفظٌ فشل بعده بكتابة المادّة نفسِها (باركودٌ مكرّر…) ثمّ أُعيد لا يرسله ثانيةً — النموذجُ
+   *  فُتح على السعر القديم، فإعادتُه بما رآه كانت تُرفض price_moved عن سعرٍ كتبه هو. */
+  const groupSentRef = useRef<string | null>(null);
+  useEffect(() => { groupSentRef.current = null; }, [open, product?.id]);
   // false = ترحيل 0075 ناقص فرابط المجموعة سيسقط — نُحذّر بدل الحفظ الصامت.
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   useEffect(() => {
@@ -1481,6 +1529,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     }
     // ومسودّةُ دولارٍ تغيّرت وإعداداتُ الدولار ما وصلت: usdPatch لا يرسل شيئاً — فالحفظُ يُرفض والقطعةُ تقول لماذا (لا «انحفظ» عن سعرٍ ضاع).
     if (!usdEnabled && JSON.stringify(usd) !== JSON.stringify(usdDraftOf(product ?? null))) { playWarning(); setUsdShow(true); return; }
+    // مربوطةٌ (0277): سعرٌ واحدٌ للمجموعة بعملةٍ واحدة — تبديلُ عملة عضوٍ وحده يشقّها. يُفكّ أوّلاً من «المربوطة».
+    if (grouped && "price_currency" in usdPatch(usd, product ?? null, usdEnabled)) { playWarning(); toast.error(t("pkg.groupCurBlock")); return; }
     setBusy(true);
     // A company/section we create as a side effect of THIS save — rolled back if
     // the product write then fails, so no empty orphan is left behind.
@@ -1560,9 +1610,33 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
          * يرجع المادّةَ المعدودةَ مجمَّعةً بتعديل اسم. والكتابةُ أوّلاً: فشلُ الطيّ بعدها يُقال، وإعادةُ الضغط تطويها — وما أُنشئ
          * بهذا الحفظ (صنف/شركة) صار تحت المنتج فلا يُتراجع عنه: التراجعُ لكتابةٍ فشلت وحدها. كان فشلُ الطيّ يحذف الصنفَ الجديد
          * فتخرج المادّةُ من صنفها القديم والجديد معاً (section_id ⇒ null، مقيسٌ على المرآة)، وإعادةُ الضغط تُنشئه ثانيةً. */
+        /* مربوطةٌ (0277): سعرا البيع والشراء الجديدان للمجموعة كلّها بنداءٍ واحدٍ ذرّيّ — بشرط ما فُتح عليه النموذجُ لها وما تراه
+         * القائمةُ لأخواتها (price_moved / group_changed يوقفان كلَّ شيء قبل أيّ كتابة) — ثمّ يُرفعان من رقعة المادّة: كان تعديلُ سعر
+         * عضوٍ من نموذجه يشقّ المجموعةَ بسعرين بصمت. وشراءُ دولارٍ يُمسح (null) يبقى للمادّة وحدها: المجموعةُ لا تكتب «لا سعر». */
+        let groupApplied = 0;
+        if (grouped) {
+          const usdOn = (product.price_currency ?? "IQD") === "USD";
+          const pk = usdOn ? (["sell_price_usd", "purchase_price_usd"] as const) : (["sell_price", "purchase_price"] as const);
+          const val = (k: string): number | null => { const v = (cas.patch as Record<string, unknown>)[k]; return v == null ? null : Number(v); };
+          const sellNew = val(pk[0]);
+          const buyNew = val(pk[1]);
+          const sentKey = JSON.stringify([product.id, sellNew, buyNew]);
+          if ((sellNew != null || buyNew != null) && groupSentRef.current !== sentKey) {
+            const mates = groupMates.map((m) => (m.id === product.id ? product : m));
+            const r = await (await import("@/lib/productGroupsApi")).setGroupPrice(groupKeyOf(product.bulk_group) as string, sellNew, buyNew, seenOf(mates));
+            groupSentRef.current = sentKey;
+            groupApplied = r.n;
+          }
+          if (sellNew != null || buyNew != null) {
+            for (const [k, v] of [[pk[0], sellNew], [pk[1], buyNew]] as const) {
+              if (v != null) { delete (cas.patch as Record<string, unknown>)[k]; delete (cas.expect as Record<string, unknown>)[k]; }
+            }
+          }
+        }
         const pooling = poolingPatch(cas.patch, pooled !== !!product.pooled || section_id == null, product.pooled);
         await updateAsSeen(productIO, product.id, pooling.patch, cas.expect);
         createdCompany = null; createdSection = null;
+        if (groupApplied) toast.toast({ tone: "info", title: t("pkg.groupPriced", { n: formatNum(groupApplied) }) });
         if (pooling.fold) await repo.poolProduct(product.id, section_id as string);
         if (keep) {
           toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
@@ -1803,11 +1877,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       if (keptOld.length > 0) {
         toast.toast({ tone: "info", title: t("pos.oldCodesKept", "{{n}} رمزاً قديماً انحفظ رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { n: formatNum(keptOld.length) }) });
       }
-      // صفوف حُذفت أثناء تعديل المجموعة → منتجاتها تُحذف فعلاً.
-      if (editGroup) {
-        for (const id of removedIds) {
-          try { await repo.deleteProduct(id, t("pos.bulkEditRemoved", "شيل من تعديل المجموعة")); } catch { /* best effort */ }
-        }
+      /* صفوفٌ شيلت أثناء تعديل المجموعة ⇒ تنفصل عن المجموعة وتبقى بالمخزن (0277). كانت تُحذف — «اختفى كأنه ما كان» بزرّ سلّة
+       * بلا سؤال، وما قصده الطبيبُ «طلّعه من المجموعة». والفكُّ نداءٌ واحد، وفشلُه يُقال لا يُبلع. */
+      if (editGroup && removedIds.length) {
+        try {
+          const r = await (await import("@/lib/productGroupsApi")).unlinkProducts(editGroup, removedIds);
+          toast.toast({ tone: "info", title: t("pkg.groupUnlinked", { n: formatNum(r.unlinked) }) });
+        } catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
       }
       if (failedIdx.length === 0) {
         if (grp && groupsOk === false) {
@@ -2062,6 +2138,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           </LoadBoundary>
           {/* مادّةُ الدولار: سعرا الدينار لا يُقرآن للبيع — يغيبان، وأسعارُها بحقول الدولار أعلاه. */}
           {!(usd.on && usdEnabled) && priceFields}
+          {grouped && product && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-violet-50/60 px-3 py-2 text-xs text-violet-800 dark:bg-violet-500/10 dark:text-violet-300" data-groupnote>
+              <Link2 size={14} className="shrink-0" />
+              <span className="min-w-0 flex-1">{t("pkg.groupNote", { n: formatNum(groupMates.length) })}</span>
+            </div>
+          )}
           {/* متوسّطُ الكلفة (0255) بجانب سعر الشراء: لمادّةٍ قائمة ولمن يرى الكلفة — لا يُحمَّل لغيره. ولا لمادّة الدولار: متوسّطُها
               بالدينار (أو «الكلفة = سعر الشراء» عن سعرٍ دينارٍ مخفيّ) وكلفةُ بيعها سعرُ الشراء بالدولار — و«صحّح المتوسّط» كان يكتب ديناراً. */}
           {product && can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot product={product} onChanged={onChanged ?? onSaved} />}
@@ -2283,10 +2365,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               <button
                 onClick={() => { playTap(); removeRow(i); }}
                 disabled={rows.length === 1}
-                aria-label={t("common.delete", "Remove")}
+                aria-label={editGroup && r.productId ? t("pkg.groupRemoveHint") : t("common.delete", "Remove")}
+                title={editGroup && r.productId ? t("pkg.groupRemoveHint") : undefined}
                 className="grid h-10 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 disabled:opacity-30"
               >
-                <Trash2 size={15} />
+                {editGroup && r.productId ? <Unlink size={15} /> : <Trash2 size={15} />}
               </button>
             </div>
           ))}
