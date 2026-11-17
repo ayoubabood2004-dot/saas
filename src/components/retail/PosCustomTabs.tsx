@@ -1,7 +1,8 @@
 /* ============================================================================
- * خاناتُ الطبيب بشاشة البيع (0258) — الشريطُ، والشبكةُ، والمحرّر.
+ * خاناتُ شاشة البيع (0258 ← 0278) — الشريطُ، والشبكةُ، والمحرّر.
  *
- * بجانب «المنتجات · الخدمات · الأدوية» خاناتٌ يصنعها الطبيبُ لنفسه (لا يراها غيرُه، وتتبعه لأيّ جهاز): يختار ما فيها من
+ * بجانب «المنتجات · الخدمات · الأدوية» خاناتٌ للعيادة كلّها (0278، قرارُ المالك ١٧/١١ بعد «الخانة اختفت» — كانت لصاحب الحساب وحده،
+ * والعيادةُ تدخل بأكثر من حساب فصنعتها مرّتين): أيُّ حسابٍ بالعيادة يراها ويعدّلها، وتتبعها لأيّ جهاز. يُختار ما فيها من
  * منتجاتٍ وخدمات، ويقرّر لكلّ بطاقةٍ شكلَها (مربّع، أو مستطيل بعرض عمودين)، وحجمَ البطاقات، والصورَ.
  *
  * • الضغطُ على البطاقة يمرّ من **طريق البيع نفسِه** (tapProduct / addService بـSaleBuilder): الطزاجةُ وسؤالُ الخادم
@@ -247,7 +248,7 @@ export function PosTabEditor({ tab, tabs, products, services, listPrice, onClose
   );
 
   return (
-    <Dialog open onClose={onClose} size="lg" title={tab ? t("ptab.titleEdit") : t("ptab.titleNew")}
+    <Dialog open onClose={onClose} size="lg" title={tab ? t("ptab.titleEdit") : t("ptab.titleNew")} description={t("ptab.shared")}
       footer={
         <div className="flex w-full flex-wrap items-center gap-2">
           <Button onClick={() => void save()} loading={busy === "save"} disabled={!!problem || atLimit || !!busy || (!!tab && !dirty)} data-ptab-save>
