@@ -16,7 +16,7 @@ export interface PnlApi {
 }
 
 const NUM: (keyof PnlTotals)[] = ["invoices", "revenue", "cogs", "cogs_products", "cogs_materials", "cogs_other", "gross", "adjust",
-  "stock_loss", "returns", "payroll", "payroll_loan", "uncategorized", "fx", "fx_purchases", "expenses", "net"];
+  "stock_loss", "returns", "payroll", "payroll_loan", "uncategorized", "fx", "fx_purchases", "expenses", "purchase_charges", "net"];
 const shapeError = () => Object.assign(new Error("pnl_shape"), { code: "pnl_shape" });
 /** سطرٌ يُقرأ كما هو أو يرمي: رقمٌ مفقودٌ أو غيرُ رقميّ لا يصير صفراً بالشاشة. */
 function totalsOf(x: unknown): PnlTotals {
@@ -28,6 +28,8 @@ function totalsOf(x: unknown): PnlTotals {
     if (k === "fx" && o.fx === undefined) { out.fx = 0; continue; }
     // fx_purchases (0275) كذلك: غائبٌ بخادمٍ قبلها — لا فرقَ صرف مشتريات يُعرف هناك.
     if (k === "fx_purchases" && o.fx_purchases === undefined) { out.fx_purchases = 0; continue; }
+    // purchase_charges (0276) كذلك: خادمٌ قبلها لا أجورَ «مصروفاً» فيه.
+    if (k === "purchase_charges" && o.purchase_charges === undefined) { out.purchase_charges = 0; continue; }
     const n = typeof o[k] === "string" ? Number(o[k]) : o[k];
     if (typeof n !== "number" || !Number.isFinite(n)) throw shapeError();
     out[k] = n;

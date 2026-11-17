@@ -1,6 +1,7 @@
 import type { Purchase, PurchaseItem } from "@/types";
 import { siteHost } from "@/lib/appUrl";
 import { currencySymbol } from "@/lib/utils";
+import { chargesOf } from "@/lib/purchaseCharges";
 
 export interface PurchasePrintOptions {
   clinicName: string;
@@ -12,7 +13,7 @@ export interface PurchasePrintOptions {
   facebook?: string | null;
   instagram?: string | null;
   /** أسماءُ سطور خصم الشركة (0260) من قاموس الشاشة — ملفُّ الطباعة لا يُضاف له نصٌّ صلب. */
-  labels?: { subtotal?: string; discount?: string; net?: string };
+  labels?: { subtotal?: string; discount?: string; net?: string; chargeOther?: string };
 }
 
 const esc = (s: unknown) =>
@@ -63,7 +64,12 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
   const total = purchase.total ?? 0;
   // 0260: الإجماليُّ صافٍ بعد خصم الشركة — فالمجموعُ قبله والخصمُ يُطبعان، وإلا بدت السطورُ لا تجمع إلى الرقم تحتها.
   const discount = Math.max(0, Number(purchase.discount ?? 0) || 0);
-  const L = { subtotal: opts.labels?.subtotal || "Subtotal", discount: opts.labels?.discount || "Discount", net: opts.labels?.net || "Net" };
+  /* 0276: الأجورُ الإضافية بعملة الطباعة (دولارُها لفاتورة الدولار) — ما على الشركة سطرٌ لكلٍّ قبل الصافي (داخله)، وما لغيرها بعد
+   * المتبقّي (خارج دَين الشركة). والمجموعُ قبلها total + discount − ما على الشركة. */
+  const ch = chargesOf(purchase);
+  const subtotal = Math.round((total + discount - ch.company) * 100) / 100;
+  const L = { subtotal: opts.labels?.subtotal || "Subtotal", discount: opts.labels?.discount || "Discount", net: opts.labels?.net || "Net",
+    chargeOther: opts.labels?.chargeOther || "Paid to others" };
   const paid = purchase.amount_paid != null ? purchase.amount_paid : total;
   const due = Math.max(0, total - paid);
   const logo = opts.logoUrl ? esc(String(opts.logoUrl)) : "";
@@ -169,11 +175,13 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
       </table>
 
       <div class="totals">
-        ${discount > 0 ? `<div class="row"><span>${esc(L.subtotal)}</span><span>${money(total + discount)}</span></div>
-        <div class="row disc"><span>${esc(L.discount)}</span><span>−${money(discount)}</span></div>` : ""}
-        <div class="row grand"><span>${discount > 0 ? esc(L.net) : s.total}</span><span>${money(total)}</span></div>
+        ${discount > 0 || ch.list.length ? `<div class="row"><span>${esc(L.subtotal)}</span><span>${money(subtotal)}</span></div>` : ""}
+        ${discount > 0 ? `<div class="row disc"><span>${esc(L.discount)}</span><span>−${money(discount)}</span></div>` : ""}
+        ${ch.list.filter((x) => x.payee === "company").map((x) => `<div class="row" data-pcharge="company"><span>${esc(x.label)}</span><span>+${money(x.amount)}</span></div>`).join("")}
+        <div class="row grand"><span>${discount > 0 || ch.list.length ? esc(L.net) : s.total}</span><span>${money(total)}</span></div>
         <div class="row"><span>${s.paid}</span><span>${money(paid)}</span></div>
         ${due > 0 ? `<div class="row due"><span>${s.due}</span><span>${money(due)}</span></div>` : ""}
+        ${ch.list.filter((x) => x.payee === "other").map((x) => `<div class="row" data-pcharge="other"><span>${esc(x.label)} · ${esc(L.chargeOther)}</span><span>${money(x.amount)}</span></div>`).join("")}
       </div>
 
       ${purchase.notes ? `<div style="margin-top:14px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;text-align:start"><strong>${s.notes}:</strong> ${esc(purchase.notes)}</div>` : ""}

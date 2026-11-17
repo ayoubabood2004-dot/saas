@@ -214,10 +214,23 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                                     <td className="py-1.5 text-end font-bold tabular-nums text-danger-600 dark:text-danger-400"><bdi>−{money(p.discount ?? 0)}</bdi></td>
                                   </tr>
                                 )}
+                                {/* 0276: أجورُ الشركة سطورٌ قبل الإجماليّ (داخله)، وما دُفع لغيرها بعده (خارج دَينها) — بالدينار كسطور الجدول. */}
+                                {(p.charges ?? []).filter((x) => x.payee !== "other").map((x, i) => (
+                                  <tr key={`c${i}`} className="border-t border-line/50" data-logcharge="company">
+                                    <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{x.label}</td>
+                                    <td className="py-1.5 text-end font-bold tabular-nums text-ink-muted"><bdi>+{money(x.amount)}</bdi></td>
+                                  </tr>
+                                ))}
                                 <tr className="border-t border-line">
                                   <td colSpan={6} className="py-1.5 pe-2 text-2xs font-bold text-ink-subtle">{t("purchase.log.invoiceTotal", "إجمالي الفاتورة")}{pPaid < pTotal ? ` — ${t("purchase.log.paidPart", { v: pm(pPaid), defaultValue: "المدفوع {{v}}" })}` : ""}</td>
                                   <td className="py-1.5 text-end font-black tabular-nums text-ink">{money(p.total || 0)}</td>
                                 </tr>
+                                {(p.charges ?? []).filter((x) => x.payee === "other").map((x, i) => (
+                                  <tr key={`o${i}`} className="border-t border-line/50" data-logcharge="other">
+                                    <td colSpan={6} className="py-1.5 pe-2 text-2xs text-ink-subtle">{x.label} · {t("purchase.chargeOther", "دفعناها لغيرهم")}</td>
+                                    <td className="py-1.5 text-end tabular-nums text-ink-muted">{money(x.amount)}</td>
+                                  </tr>
+                                ))}
                               </tbody>
                             </table>
                           </div>

@@ -10,7 +10,7 @@
  * ========================================================================= */
 import { loadDB, saveDB } from "./demoStore";
 // مَن يطلب (الدور، مفتاحُ المدير، المعرّف) ورفضُ الخادم برمزه — وحدةٌ تشترك بها المرايا الكسولة كلُّها.
-import { demoBaseRole, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
+import { demoApiGate, demoBaseRole, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
@@ -50,6 +50,7 @@ import { getClinicName, getClinicLogo, getClinicSocials, getDialCode, getForgive
 import { buildCustomerDirectory } from "./customerDirectory";
 import type { CustomerPage, CustomerSearchOpts } from "@/types";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
+import { ChargeFault, normCharges, type ChargesNorm } from "./purchaseCharges";
 import { hasPackaging } from "./packs";
 import { packagingShapeError, levelGuardError, mergePackaging, unmergePackaging, snapshotFree } from "./packsMirror";
 import { scanVariants } from "./productCodes";
@@ -1035,6 +1036,39 @@ function within<T>(rows: T[], col: string, r?: DateRange): T[] {
 
 /** جداولُ تسأل عنها صفحةُ /outbox «أهو بهذه العيادة؟» (countVisible). */
 export type VisibleTable = "poultry_cycles" | "poultry_farms" | "companies" | "company_sections" | "expense_categories" | "products";
+
+/* ── 0276: الأجورُ الإضافية بفاتورة الشراء — مرآةُ _purchase_charges برسائل الخادم، وإعدادُ العيادة، ورفضُ فاتورةٍ بلا قيمة ── */
+/** normCharges (purchaseCharges.ts) يرمي ChargeFault برمزه وسطره — والتجريبيُّ يقولها بجملة الخادم نفسِها. */
+export function demoChargesNorm(p: unknown, rate: number | null = null): ChargesNorm {
+  try { return normCharges(p, rate); } catch (e) {
+    if (!(e instanceof ChargeFault)) throw e;
+    if (e.code === "charge_label") throw demoHint("charge_label", `اكتب شنو الأجرة بالسطر ${e.line} (مثلاً أجور توصيل).`);
+    if (e.code === "charge_amount") throw demoHint("charge_amount", `مبلغ الأجرة بالسطر ${e.line} لازم أكبر من صفر.`);
+    if (e.why === "many") throw demoHint("bad_charges", "أكثر من ٢٠ أجرة بفاتورة وحدة.");
+    if (e.why === "payee") throw demoHint("bad_charges", "الأجرة على الشركة أو مدفوعة لغيرهم.");
+    throw demoHint("bad_charges", "الأجور الإضافية قائمة — حدّث الصفحة.");
+  }
+}
+/** `_purchase_charges_mode`: «على الكلفة» ما لم تختر العيادةُ «مصروف». */
+export const demoChargesMode = (db: DemoDB): "cost" | "expense" => (db.purchaseChargesMode === "expense" ? "expense" : "cost");
+/** مرآةُ purchase_charges_state / purchase_charges_mode_set (المديرُ وحده: auth_role() = 'manager'، والمصوّرُ تردّه البوّابة).
+ *  خارج demoRepo: بابُها كسولٌ (purchaseChargesApi) — لا سطرَ لها بـrepo.ts (حزمة الإقلاع). */
+export function demoPurchaseChargesState(): { ready: boolean; mode: "cost" | "expense" } {
+  return { ready: true, mode: demoChargesMode(loadDB()) };
+}
+export function demoPurchaseChargesModeSet(mode: "cost" | "expense"): "cost" | "expense" {
+  demoApiGate();
+  if (!(demoBaseRole() === "manager" || demoPinLive())) throw Object.assign(demoHint("forbidden", "طريقة حساب أجور المشتريات يغيّرها المدير."), { code: "42501" });
+  if (mode !== "cost" && mode !== "expense") throw demoHint("bad_mode", "على الكلفة أو مصروف.");
+  const db = loadDB();
+  db.purchaseChargesMode = mode;
+  saveDB(db);
+  return mode;
+}
+/** فاتورةٌ بلا قيمة لا تُوزَّع عليها أجورٌ «على الكلفة» (charges_no_value) — تُقال بدل أن تضيع الأجرةُ من الكلفة. */
+export function demoChargesNoValue(mode: "cost" | "expense" | null, gross: number): void {
+  if (mode === "cost" && !(gross > 0)) throw demoHint("charges_no_value", "الفاتورة بلا قيمة — الأجور ما تنوزّع على كلفة موادها. اكتب أسعار الشراء أو شيل الأجور.");
+}
 
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
@@ -3547,9 +3581,14 @@ const demoRepo = {
     const sums: { qty: number; cost: number }[] = [];
     /* 0260: خصمُ الشركة من رأس الفاتورة — المجموعُ قبله بحلقةٍ أولى كالخادم (نسبتُه تلزم كلَّ سطرٍ داخل الثانية)، ثمّ يُقصّ عليه.
      * وكلُّ سطرٍ يُستلم بكلفته بعد نصيبه (المتوسّطُ والفرق)، والمكتوبُ بالسطر وسعرُ الشراء كما هما. */
-    const disc = cons.purchaseShareLocal(
-      cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total,
-      meta.discount);
+    const grossR = cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total;
+    const disc = cons.purchaseShareLocal(grossR, meta.discount);
+    /* 0276: الأجورُ الإضافية — ما على الشركة يدخل total، وما لغيرها خارجه؛ وكيف تُحسب إعدادُ العيادة يُختم على الفاتورة: «على الكلفة»
+     * تُوزَّع كلُّها على السطور بنسبة قيمتها (أساسُ الكلفة الصافي + الأجور)، و«مصروف» الكلفةُ كما 0260. قبل أيّ كتابة، كالخادم. */
+    const ch = demoChargesNorm(meta.charges ?? null);
+    const chMode = ch.company + ch.other > 0 ? demoChargesMode(db) : null;
+    demoChargesNoValue(chMode, grossR);
+    const share = cons.purchaseLandedShare(grossR, disc.net, chMode === "cost" ? ch.company + ch.other : 0);
     /* الكشف (مرآةُ 0211): صورةُ المادّة قبل سطرها — سطرٌ ثانٍ لنفس المادّة يرى ما
      * تركه الأوّل، كالخادم. */
     const effects: PurchaseEffect[] = [];
@@ -3570,8 +3609,8 @@ const demoRepo = {
       const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) },
         (st, q) => Math.max(Math.min(st, 0), Math.round((st + q) * 1000) / 1000),
         {
-          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost, disc.share); },
-          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost, disc.share) : rec!.avg; },
+          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost, share); },
+          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost, share) : rec!.avg; },
         });
       const pid = r.pid;
       const snapBefore = r.before;
@@ -3596,12 +3635,13 @@ const demoRepo = {
      * يعبر JSON رقماً (NaN، اللانهاية) يصل الخادمَ null فيُدفع كلُّه. */
     // والإجماليُّ صافٍ بعد الخصم (0260): المدفوعُ والحالةُ عليه كما كانا على المجموع.
     const { itemCount } = cons.purchaseTotalLocal(sums);
-    const totalR = disc.net;
+    const totalR = cons.addMoney2(disc.net, ch.company);   // 0276: وأجورُ الشركة داخله
     const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : null;
     const paid = paidIn !== null ? cons.col2(Math.min(totalR, Math.max(0, paidIn))) : totalR;
     const purchase: Purchase = {
       id: purchaseId, clinic_id: null, company_id: companyId, company_name: meta.company_name ?? null,
       reference: meta.reference?.trim() || null, total: totalR, discount: disc.discount, item_count: itemCount,
+      charges: ch.list.length ? ch.list : null, charges_company: ch.company, charges_other: ch.other, charges_mode: chMode,
       amount_paid: paid, payment_method: meta.payment_method ?? null,
       status: paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial",
       supplier_name: meta.supplier_name?.trim() || null,
@@ -3652,9 +3692,14 @@ const demoRepo = {
     /* 0260: السطورُ القديمة تُعكس بنسبة خصم فاتورتها كما حُفظ (total صافٍ، والمجموعُ total + discount) — ما أدخله استلامُها؛
      * والجديدةُ بنسبة الخصم الجديد على مجموعها الجديد (بحلقةٍ أولى كالخادم). ومفتاحٌ غائب (جهازٌ ما تحدّث) يُبقي الخصمَ المحفوظ. */
     const oldShare = cons.purchaseStoredShare(purchase);
-    const disc = cons.purchaseShareLocal(
-      cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total,
-      meta.discount !== undefined ? meta.discount : (purchase.discount ?? 0));
+    const grossR = cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total;
+    const disc = cons.purchaseShareLocal(grossR, meta.discount !== undefined ? meta.discount : (purchase.discount ?? 0));
+    /* 0276: الأجور — مفتاحٌ غائب (جهازٌ ما تحدّث) يُبقيها كما حُفظت، وختمُ الفاتورة يبقى (والتي تُضاف لها أجورٌ لأوّل مرّة تأخذ
+     * إعدادَ اليوم). والقديمةُ تُعكس بما استلمها (purchaseStoredShare)، والجديدةُ بأساسها الجديد. */
+    const ch = demoChargesNorm(meta.charges !== undefined ? meta.charges : (purchase.charges ?? null));
+    const chMode = ch.company + ch.other > 0 ? (purchase.charges_mode ?? demoChargesMode(db)) : null;
+    demoChargesNoValue(chMode, grossR);
+    const share = cons.purchaseLandedShare(grossR, disc.net, chMode === "cost" ? ch.company + ch.other : 0);
     // ١) اعكس السطور القديمة ثم أزلها
     for (const it of oldItems) {
       const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
@@ -3673,7 +3718,7 @@ const demoRepo = {
       const sell = round2(Number(l.sell_price) || 0);
       sums.push({ qty, cost });
       const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => rnd3(st + q),
-        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost, disc.share) : adj.line(p.id, qty, cost, disc.share)) });
+        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost, share) : adj.line(p.id, qty, cost, share)) });
       const pid = r.pid;
       if (r.how !== null) touched.add(pid);
       const snapBefore = r.how !== null && orig.has(pid) && !seen.has(pid) ? orig.get(pid)! : r.before;
@@ -3724,12 +3769,16 @@ const demoRepo = {
     // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد. المجموعُ سطراً سطراً بمنزلتين (v_total numeric(14,2))،
     // والمدفوعُ least(coalesce(amount_paid, القديم), v_total) بعمودِه ثمّ greatest(…, 0) — كالدالّة حرفاً.
     const { itemCount } = cons.purchaseTotalLocal(sums);
-    const totalR = disc.net;                                         // 0260: صافٍ — والمدفوعُ والحالةُ عليه
+    const totalR = cons.addMoney2(disc.net, ch.company);   // 0260 صافٍ، و0276 أجورُ الشركة داخله
     const prevPaid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
     const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : Number(prevPaid) || 0;
     const paid = Math.max(0, cons.col2(Math.min(totalR, paidIn)));
     purchase.total = totalR;
     purchase.discount = disc.discount;
+    purchase.charges = ch.list.length ? ch.list : null;
+    purchase.charges_company = ch.company;
+    purchase.charges_other = ch.other;
+    purchase.charges_mode = chMode;
     purchase.item_count = itemCount;
     purchase.amount_paid = paid;
     purchase.status = paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial";

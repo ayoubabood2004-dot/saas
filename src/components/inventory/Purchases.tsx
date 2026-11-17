@@ -33,7 +33,9 @@ import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 import { purchaseDiscountReady } from "@/lib/purchaseApi";
 import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
-import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, type FxCur } from "@/lib/purchaseFxMath";
+import { purchaseChargesState, type PurchaseChargesState } from "@/lib/purchaseChargesApi";
+import { chargesOf, chargesToSend, draftProblem, draftSums, purchaseGrossCur, type ChargeDraft } from "@/lib/purchaseCharges";
+import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, newPurchasePaid, type FxCur, type PaidMode } from "@/lib/purchaseFxMath";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
 import { levelByCode, packPrice, type CodeHit } from "@/lib/packs";
@@ -46,12 +48,19 @@ const loadPfxLineCur = () => page(() => import("@/components/inventory/PurchaseF
 const loadPfxTotals = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxTotals })), ["pfx"]);
 const loadPfxPay = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPay })), ["pfx"]);
 const loadPfxFxSum = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxFxSummary })), ["pfx"]);
+const loadPfxPaid = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPaid })), ["pfx"]);
+const loadPfxCharges = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxCharges })), ["pfx"]);
+const loadPfxChargeLines = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxChargeLines })), ["pfx"]);
 let PfxFxSumLazy = loadPfxFxSum();
+let PfxPaidLazy = loadPfxPaid();
+let PfxChargesLazy = loadPfxCharges();
+let PfxChargeLinesLazy = loadPfxChargeLines();
 let PfxBarLazy = loadPfxBar();
 let PfxLineCurLazy = loadPfxLineCur();
 let PfxTotalsLazy = loadPfxTotals();
 let PfxPayLazy = loadPfxPay();
-const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); PfxFxSumLazy = loadPfxFxSum(); };
+const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); PfxFxSumLazy = loadPfxFxSum(); PfxPaidLazy = loadPfxPaid();
+  PfxChargesLazy = loadPfxCharges(); PfxChargeLinesLazy = loadPfxChargeLines(); };
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 /* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
@@ -433,6 +442,9 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const fmtP = (n: number) => (isUsd ? usdOf(n) : money(n));
   const totalCur = isUsd ? Number(purchase.total_usd ?? 0) : purchase.total;
   const discCur = isUsd ? Number(purchase.discount_usd ?? 0) : Number(purchase.discount ?? 0);
+  /* 0276: أجورٌ إضافية — ما على الشركة داخل الإجماليّ (سطرٌ لكلٍّ قبله)، وما لغيرها بعده. والمجموعُ قبل الخصم والأجور بعملة الفاتورة. */
+  const chg = chargesOf(purchase);
+  const hasCh = chg.list.length > 0;
   const paid = isUsd ? Number(purchase.paid_usd ?? 0) : (purchase.amount_paid != null ? purchase.amount_paid : purchase.total);
   const due = Math.max(0, Math.round((totalCur - paid) * 100) / 100);
   const payFx = isUsd || !!fxPay?.ok;
@@ -527,16 +539,18 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
         <div className="ms-auto w-full max-w-xs space-y-1.5 text-sm" data-pdtotals>
           {/* 0260: بخصم الشركة الإجماليُّ صافٍ — فيُقال المجموعُ قبله والخصم، وإلا بدت سطورُ الجدول لا تجمع إلى الرقم تحتها. */}
-          {discCur > 0 && (
-            <>
-              <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{fmtP(totalCur + discCur)}</span></div>
-              <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{fmtP(discCur)}</bdi></div>
-            </>
+          {(discCur > 0 || hasCh) && (
+            <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{fmtP(purchaseGrossCur(purchase))}</span></div>
           )}
-          <div className="flex items-center justify-between font-bold text-ink"><span>{discCur > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{fmtP(totalCur)}</span></div>
+          {discCur > 0 && (
+            <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{fmtP(discCur)}</bdi></div>
+          )}
+          {chg.company > 0 && <Suspense fallback={null}><PfxChargeLinesLazy purchase={purchase} fmt={fmtP} part="company" /></Suspense>}
+          <div className="flex items-center justify-between font-bold text-ink"><span>{discCur > 0 || hasCh ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{fmtP(totalCur)}</span></div>
           {isUsd && <Suspense fallback={null}><div className="text-end"><PfxTotalsLazy totalUsd={totalCur} rate={purchase.fx_rate ?? null} iqd={purchase.total} /></div></Suspense>}
           <div className="flex items-center justify-between text-ink-muted"><span>{t("purchase.paid", "المدفوع")}</span><span className="tabular-nums">{fmtP(paid)}</span></div>
           {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{fmtP(due)}</span></div>}
+          {hasCh && <Suspense fallback={null}><PfxChargeLinesLazy purchase={purchase} fmt={fmtP} part="other" /></Suspense>}
         </div>
 
         {/* تسديد الدين — يظهر فقط عندما يوجد متبقٍّ والترحيل 0076 مفعَّل. وبالعملتين (0274) نافذةٌ واحدة تختار ما يُسلَّم. */}
@@ -650,7 +664,8 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 function printOptions(user: { full_name?: string | null; phone?: string | null } | null | undefined, lang: string, t: TFunction) {
   const socials = getClinicSocials();
   return {
-    labels: { subtotal: t("retail.subtotal", "المجموع الفرعي"), discount: t("retail.discount", "الخصم"), net: t("retail.net", "الصافي") },
+    labels: { subtotal: t("retail.subtotal", "المجموع الفرعي"), discount: t("retail.discount", "الخصم"), net: t("retail.net", "الصافي"),
+      chargeOther: t("purchase.chargeOther", "دفعناها لغيرهم") },
     clinicName: getClinicName() || user?.full_name || "doctorVet",
     clinicPhone: user?.phone ?? null,
     brand: "doctorVet",
@@ -691,9 +706,17 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [purchasedAt, setPurchasedAt] = useState(localISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
   const [amountPaid, setAmountPaid] = useState("");
-  /* لا افتراضَ: المستخدمُ يقول إن كانت مدفوعةً كاملةً أو عليها دَين. `null`
-   * تعني «ما اختار بعد» فيُوقَف الحفظ — والخطأُ هنا كان باتّجاهٍ واحدٍ دائماً. */
-  const [paidMode, setPaidMode] = useState<"full" | "debt" | null>(null);
+  /* لا افتراضَ: المستخدمُ يقول إن كانت مدفوعةً كلّها، أو دفع جزءاً (ويكتب كم)، أو كلُّها دَين. `null` تعني «ما اختار بعد»
+   * فيُوقَف الحفظ — والخطأُ هنا كان باتّجاهٍ واحدٍ دائماً. **والجزءُ اختيارٌ ثالثٌ لا خانةٌ تحت الدَّين**: كان «عليها دَين» بخانةٍ
+   * فارغة يُرسل المجموعَ كلَّه مدفوعاً (الفراغُ = «كلّه» بشاشة الإنشاء) — دَينٌ يضيع والزرُّ يقول «دَين». `paidAsk`: الحفظُ ضُغط
+   * والاختيارُ ناقص — يُقال بمكانه لا بتوستٍ وحده. */
+  const [paidMode, setPaidMode] = useState<PaidMode | null>(null);
+  const [paidAsk, setPaidAsk] = useState(false);
+  /* 0276: أجورٌ إضافية (توصيل، نقل…) بعملة الفاتورة. `chgSt`: هل الأجسامُ الحيّة تعرفها وكيف تُحسب بالعيادة — null = ما عُرف بعد
+   * ⇒ لا قائمة ولا مفتاح (أجرةٌ تُكتب ولا تُحفظ أسوأُ من خانةٍ غائبة). `chgAsk`: رقمُ السطر الناقص حين ضُغط الحفظ. */
+  const [chg, setChg] = useState<ChargeDraft[]>([]);
+  const [chgSt, setChgSt] = useState<PurchaseChargesState | null>(null);
+  const [chgAsk, setChgAsk] = useState(0);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
@@ -749,6 +772,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setAmountPaid(usd ? (p.paid_usd != null ? String(p.paid_usd) : "") : (p.amount_paid != null ? String(p.amount_paid) : ""));
       // الخصمُ المحفوظ مبلغاً كما حُفظ — والحفظُ يرسل ما يُرى (لا غيابَ يُبقي القديمَ خفيّاً).
       setDiscType("fixed"); setDiscValue(usd ? ((p.discount_usd ?? 0) > 0 ? String(p.discount_usd) : "") : ((p.discount ?? 0) > 0 ? String(p.discount) : ""));
+      // 0276: الأجورُ المحفوظة بعملة الفاتورة — والحفظُ يرسل ما يُرى (قائمةٌ فارغة تشيلها كلَّها).
+      setChg(chargesOf(p).list.map((x) => ({ label: x.label, amount: String(x.amount), payee: x.payee }))); setChgAsk(0);
       setLines(editing.items.map((it) => blankLine({
         product_id: it.product_id ?? null,
         barcode: it.barcode ?? "",
@@ -767,8 +792,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     } else {
       setCompany(seed?.companyName || defaultCompanyName || "");
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
-      setPayMethod("cash"); setAmountPaid(""); setPaidMode(null);
+      setPayMethod("cash"); setAmountPaid(""); setPaidMode(null); setPaidAsk(false);
       setDiscType("fixed"); setDiscValue("");
+      setChg([]); setChgAsk(0);
       setCur("IQD"); setPer100(""); setRateAsk(false);
       setLines(seed?.items.length ? seed.items.map(({ product, qty }) => ({ ...lineFromProduct(product, ""), qty: String(qty) })) : [blankLine()]);
     }
@@ -795,6 +821,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     return () => { alive = false; };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setChgSt(null);
+    // 0276: فحصُ قدرةٍ لا قائمةُ قرار — فشلُه «لا أجور» (purchaseChargesState لا ترمي).
+    void purchaseChargesState().then((v) => { if (alive) setChgSt(v); });
+    return () => { alive = false; };
+  }, [open]);
+
   /** تبديلُ عملة الفاتورة: ما كُتب (سعرُ الشراء، الخصمُ المبلغ، المدفوع) يُحوَّل بالسعر — لا «7,350$» عن سعرٍ كُتب ديناراً.
    *  والدولارُ أوّلَ مرّة يقترح سعرَ العيادة بالخانة. */
   const switchCur = (c: FxCur) => {
@@ -803,6 +838,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     setLines((ls) => ls.map((l) => ({ ...l, purchase_price: convertTyped(l.purchase_price, cur, c, r) })));
     setAmountPaid((v) => convertTyped(v, cur, c, r));
     if (discType === "fixed") setDiscValue((v) => convertTyped(v, cur, c, r));
+    setChg((rs) => rs.map((x) => ({ ...x, amount: convertTyped(x.amount, cur, c, r) })));
     setRateAsk(false);
     setCur(c);
   };
@@ -1062,15 +1098,28 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const discRaw = Number(discValue) || 0;
   const discountAmt = discOk && subtotal > 0 ? resolveDiscount(subtotal, discType, discRaw) : 0;
   const discClamped = discOk === true && discRaw > 0 && (discType === "percent" ? discRaw > 100 : discRaw > subtotal);
-  const total = subtotal - discountAmt;
+  /* 0276: الأجورُ الإضافية — ما على الشركة يدخل الصافي (دَينُها)، وما لغيرها خارجه. وأساسُ كلفة السطور: الصافي + الأجور كلُّها إن
+   * تُوزَّع («cost» — ختمُ الفاتورة المحفوظ بالتعديل، وإلا إعدادُ العيادة كما يكتبه الخادم)، وإلا الصافي وحده. */
+  const chOn = chgSt?.ready === true;
+  /* وما دام السؤالُ لم يرجع (أو فشل) والفاتورةُ تُعدَّل: أجورُها المحفوظة كما هي — لا مفتاحَ يُرسل فيُبقيها الخادم، والرقمُ المعروض
+   * (الصافي، الشارة، المدفوع) يحسبها؛ وإلا قال الشاشةُ «مدفوعة» عن فاتورةٍ عليها أجرةُ شركةٍ باقية. */
+  const chStored = editing ? chargesOf(editing.purchase) : null;
+  const chSums = chOn ? draftSums(chg) : chStored ? { company: chStored.company, other: chStored.other } : { company: 0, other: 0 };
+  const chMode = editing?.purchase.charges_mode ?? chgSt?.mode ?? "cost";
+  const total = subtotal - discountAmt + chSums.company;
+  const costBase = subtotal - discountAmt + (chMode === "cost" ? chSums.company + chSums.other : 0);
   const totalUnits = validLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   /* للفراغ دلالتان بهذه الشاشة (م٤): بالإنشاء «مدفوعٌ كامل»، وبالتعديل «يبقى
    * المدفوعُ كما هو» — والتسمية أسفلَه تقولهما بالنصّ، و`amount_paid` تُرسَل
    * `undefined` بالتعديل فعلاً. لكنّ الشارة كانت تُشتقّ بدلالة الإنشاء وحدها،
    * فمسحُ الخانة بفاتورةٍ مدينة يعرض «مدفوعة» — شارةٌ تكذب على دَينٍ قائم. */
-  const paidNum = amountPaid.trim() !== ""
-    ? Math.max(0, Math.min(total, Number(amountPaid) || 0))
-    : editing ? Math.max(0, Math.min(total, (cur === "USD" && editing.purchase.currency === "USD" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)) : total;
+  /* الجديدةُ: ما يقوله الاختيارُ الصريح (newPurchasePaid — null = ناقص: الحفظُ يقف ويقولها بمكانها)، والشارةُ قبله «كلّها». */
+  const newPaid = editing ? null : newPurchasePaid(paidMode, amountPaid, total);
+  const paidNum = editing
+    ? Math.max(0, Math.min(total, amountPaid.trim() !== "" ? (Number(amountPaid) || 0)
+      : ((cur === "USD" && editing.purchase.currency === "USD" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)))
+    : newPaid ?? (paidMode === null ? total : 0);
+  const paidMissing = !editing && newPaid === null;
   const status = paidNum >= total ? "paid" : paidNum <= 0 ? "unpaid" : "partial";
 
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
@@ -1166,11 +1215,20 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       );
       return;
     }
-    if (!editing && paidMode === null) {
+    // 0276: أجرةٌ ناقصة (اسمٌ بلا مبلغ أو مبلغٌ بلا اسم) — تُقال بسطرها بمكانه، ولا يُرسل شيء.
+    const chBad = chOn ? draftProblem(chg) : 0;
+    if (chBad) {
+      setChgAsk(chBad);
+      playWarning();
+      document.querySelector(`[data-pfx-charge-row="${chBad}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    if (paidMissing) {
+      setPaidAsk(true);
       playWarning();
       toast.error(
         t("purchase.needPaidMode", "قول شلون انحسبت الفاتورة"),
-        t("purchase.needPaidModeHow", "اختر «دفعناها كلّها» أو «عليها دَين» — الفراغ كان ينسجّل مدفوعة ويضيع دَين الشركة."),
+        t("purchase.needPaidModeHow", "اختر «كلّها» أو «جزء» واكتب شكد، أو «دَين» — الفراغ كان يضيّع دَين الشركة."),
       );
       return;
     }
@@ -1291,11 +1349,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         reference: reference.trim() || null,
         /* الجديدةُ ترسل رقماً **دائماً** (الاختيارُ صريح)، والتعديلُ يبقى على
          * عقده: `undefined` تعني «أبقِ المدفوع كما هو». */
-        amount_paid: editing ? (amountPaid.trim() === "" ? undefined : paidNum) : (paidMode === "debt" ? paidNum : total),
+        amount_paid: editing ? (amountPaid.trim() === "" ? undefined : paidNum) : paidNum,
         payment_method: payMethod,
         /* 0260: مبلغاً — والجديدةُ والتعديلُ يرسلان ما يُرى (صفرٌ = بلا خصم). ولقاعدةٍ لا تعرفه لا مفتاح: التعديلُ من جهازٍ
          * بلا الخانة يُبقي المحفوظَ بالخادم، والإنشاءُ عليها بلا خصمٍ كما كان. */
         discount: discOk ? discountAmt : undefined,
+        // 0276: بعملة الفاتورة؛ ولقاعدةٍ لا تعرفها لا مفتاح (التعديلُ من جهازٍ بلا القائمة يُبقي المحفوظ).
+        charges: chOn ? chargesToSend(chg) : undefined,
         supplier_name: supplierName.trim() || null,
         supplier_phone: supplierPhone.trim() || null,
         notes: notes.trim() || null,
@@ -1623,8 +1683,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           onChange={(e) => patchLine(l.key, { purchase_price: e.target.value })} onFocus={(e) => e.target.select()}
                           placeholder="0" aria-label={t("pos.purchasePrice", "سعر الشراء")} />
                         {/* نصيبُ الوحدة من خصم الشركة — ما يدخل كلفةَ المخزون (المتوسّط)، والمكتوبُ يبقى سعرَ الشراء. */}
-                        {discountAmt > 0 && buyN > 0 && subtotal > 0 && (
-                          <p className={SUB} data-unitnet>{t("retail.net", "الصافي")} {formatDec((buyN * total) / subtotal)}</p>
+                        {costBase !== subtotal && buyN > 0 && subtotal > 0 && (
+                          <p className={SUB} data-unitnet>{t("retail.net", "الصافي")} {formatDec((buyN * costBase) / subtotal)}</p>
                         )}
                         {/* فاتورةُ الدولار: دينارُ الوحدة بسعرها — ما يدخل المخزون (الخادمُ يحسبه بالحساب نفسِه). */}
                         {cur === "USD" && fxRate != null && buyN > 0 && (
@@ -1734,30 +1794,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
               {editing ? (
                 <input type="number" inputMode="decimal" min="0" step="any" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={fmt(paidNum)} />
               ) : (
-                <>
-                  <div className="flex gap-1.5">
-                    <button type="button" onClick={() => { playTap(); setPaidMode("full"); setAmountPaid(""); }}
-                      className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "full" ? "bg-success-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                      {t("purchase.paidFull", "دفعناها كلّها")}
-                    </button>
-                    <button type="button" onClick={() => { playTap(); setPaidMode("debt"); }}
-                      className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "debt" ? "bg-warn-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                      {t("purchase.paidDebt", "عليها دَين")}
-                    </button>
-                  </div>
-                  {paidMode === "debt" && (
-                    <>
-                      <input type="number" inputMode="decimal" min="0" step="any" className="input mt-1.5" value={amountPaid}
-                        onChange={(e) => setAmountPaid(e.target.value)} placeholder={t("purchase.paidHowMuch", "شكَد دفعنا هسّه؟")} />
-                      <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
-                        {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: fmt(Math.max(0, total - paidNum)) })}
-                      </div>
-                    </>
-                  )}
-                  {paidMode === "full" && total > 0 && (
-                    <div className="mt-1 text-2xs text-ink-subtle">{t("purchase.paidNone", "ما راح ينسجّل دَين لهذي الفاتورة")}</div>
-                  )}
-                </>
+                /* ثلاثةُ اختياراتٍ صريحة بنطاق pfx (النصفُ البارد على سقفه)، وبديلُها حتى تصل بارتفاعها — لا قفزة. */
+                <LoadBoundary scope="pfx-paid" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+                  <Suspense fallback={<div className="h-9 rounded-xl bg-surface-2" />}>
+                    <PfxPaidLazy mode={paidMode} amount={amountPaid} total={total} fmt={fmt} ask={paidAsk}
+                      onMode={(m) => { setPaidMode(m); setPaidAsk(false); if (m !== "part") setAmountPaid(""); }}
+                      onAmount={(v) => { setAmountPaid(v); setPaidAsk(false); }} />
+                  </Suspense>
+                </LoadBoundary>
               )}
             </div>
             <div className="sm:col-span-2">
@@ -1771,7 +1815,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           <div className="rounded-2xl border border-line bg-surface-1 p-4" data-ptotals>
             <dl className="space-y-2.5 text-sm">
               <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-ink-muted">{discOk ? t("retail.subtotal", "المجموع الفرعي") : t("purchase.grandTotal", "الإجمالي")}</dt>
+                <dt className="text-ink-muted">{discOk || chOn ? t("retail.subtotal", "المجموع الفرعي") : t("purchase.grandTotal", "الإجمالي")}</dt>
                 <dd className="font-bold tabular-nums text-ink">{fmt(subtotal)}</dd>
               </div>
               {discOk && (
@@ -1800,8 +1844,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   </dd>
                 </div>
               )}
+              {chOn && (
+                <LoadBoundary scope="pfx-charges" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <PfxChargesLazy rows={chg} onRows={(rs) => { setChg(rs); setChgAsk(0); }} mode={chMode} ask={chgAsk} fmt={fmt} sums={chSums} />
+                  </Suspense>
+                </LoadBoundary>
+              )}
               <div className="pg-net flex items-baseline justify-between gap-3 pt-2.5">
-                <dt className="text-base font-extrabold text-ink">{discOk ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</dt>
+                <dt className="text-base font-extrabold text-ink">{discOk || chOn ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</dt>
                 <dd className="text-xl font-extrabold tabular-nums text-ink" data-pnet>{fmt(total)}</dd>
               </div>
             </dl>
@@ -1816,7 +1867,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           <div className="flex flex-1 flex-wrap gap-x-5 gap-y-1">
             <Summary label={t("purchase.itemsCount", "أصناف")} value={String(validLines.length)} />
             <Summary label={t("purchase.unitsLabel", "قطعة")} value={formatQty(totalUnits)} />
-            <Summary label={discountAmt > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={fmt(total)} strong />
+            <Summary label={discountAmt > 0 || chSums.company > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={fmt(total)} strong />
             <div className="flex flex-col">
               <span className="text-2xs text-ink-subtle">{t("purchase.settle", "الحالة")}</span>
               <Badge tone={statusTone(status)}>{t(`purchase.status.${status}`, status)}</Badge>

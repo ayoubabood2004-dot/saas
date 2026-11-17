@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -12631,6 +12631,136 @@ $P -c "select set_config('doctorvet.usd_purchase_door', 'on', false);
        delete from purchase_effects where clinic_id = '$QC'; delete from purchase_items where clinic_id = '$QC';
        delete from purchases where clinic_id = '$QC'; delete from products where clinic_id = '$QC';
        delete from companies where clinic_id = '$QC'; delete from clinic_fx_rates where clinic_id = '$QC';
+       select set_config('doctorvet.usd_purchase_door', 'off', false);" >/dev/null
+
+# ── 0276: أجورٌ إضافية بفاتورة الشراء — على الشركة (داخل total) أو لغيرها، وكلفةٌ موزَّعة أو مصروفٌ بالأرباح والخسائر ─────────────
+# HC عيادةٌ وصاحبُها (مدير)، HV طبيبُها. الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).
+echo "▸ 0276: الأجورُ الإضافية — على الشركة أو لغيرها، وتُوزَّع على الكلفة أو مصروفٌ بقرار العيادة"
+out=$($P -f "$MIG/0276_purchase_charges.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0276 ما انعادت فوق إعادات الأقسام"; fail=1; }
+# مرآةُ الشاشة والتجريبيّ (normCharges) مقابل _purchase_charges حالةً بحالة — بفراغاتٍ يونيكودية وأنصافِ فلسٍ ورموزِ رفضٍ ومرايا مغلوطة.
+CHP=$(mktemp -d)
+if node "$HERE/charges-parity.mjs" gen "$CHP" >"$CHP/gen.log" 2>&1; then
+  if $P -tA -f "$CHP/run.sql" >"$CHP/actual.txt" 2>"$CHP/run.err"; then :; else tail -3 "$CHP/run.err"; echo "   ✗ نداءُ تطابق الأجور ما رجع"; fail=1; fi
+  if node "$HERE/charges-parity.mjs" check "$CHP"; then :; else fail=1; fi
+else
+  tail -5 "$CHP/gen.log"; echo "   ✗ قالبُ تطابق الأجور ما تولّد"; fail=1
+fi
+XH=c2760000-0000-4000-8000-0000000000
+HC=${XH}c1
+HV=${XH}c2
+HCO=${XH}e1
+rerr() { echo "split_part(_rls_try('$1', \$q\$$2\$q\$), ':', 3)"; }
+rv()   { echo "_v0252('$1', \$q\$$2\$q\$)"; }
+hpur() { echo "(select id from purchases where clinic_id = '$HC' and reference = '$1')"; }
+hl()   { echo "{\"product_id\":\"${XH}$1\",\"qty\":$2,\"purchase_price\":$3}"; }
+# الدالّةُ ترجع صفَّها بعد الكتابة — فرأسُ الفاتورة يُقرأ من جوابها بالجملة نفسِها، وما سواه (المتوسّط، الأرباح) بجملةٍ ثانية.
+RH="r.reference||'|'||r.total::numeric(20,2)::text||':'||coalesce(r.charges_company::text,'-')||':'||coalesce(r.charges_other::text,'-')||':'||coalesce(r.charges_mode,'-')||':'||r.status"
+REC()  { echo "select $RH from record_purchase('[$1]'::jsonb, '{\"company_id\":\"$HCO\",\"reference\":\"$2\",\"amount_paid\":0$3}'::jsonb) r"; }
+UPD()  { echo "select $RH from update_purchase($(hpur $1), '[$2]'::jsonb, '{\"amount_paid\":0$3}'::jsonb) r"; }
+AVG()  { echo "(select coalesce(avg_cost::text, '-') from products where id = '${XH}$1')"; }
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$HC'),('$HV') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$HV','$HC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code, usd_enabled, usd_round_step) values ('$HC','+964', true, 250)
+         on conflict (clinic_id) do update set usd_enabled = true, usd_round_step = 250;
+       insert into clinic_fx_rates(clinic_id, rate) values ('$HC', 1460);
+       insert into companies (id, clinic_id, name) values ('$HCO', '$HC', 'شركة الأجور') on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price) values
+         ('${XH}a1', '$HC', 'أجور أ', 'CH6-A1', 0, 2000, 900), ('${XH}a2', '$HC', 'أجور ب', 'CH6-A2', 0, 4000, 1900),
+         ('${XH}a3', '$HC', 'أجور ج', 'CH6-A3', 0, 900, 450), ('${XH}a4', '$HC', 'أجور مجاني', 'CH6-A4', 0, 100, 0)
+       on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, price_currency, sell_price_usd, purchase_price_usd) values
+         ('${XH}d1', '$HC', 'أجور دولارية', 'CH6-D1', 0, 0, 14000, 'USD', 20, 9) on conflict (id) do nothing;" >/dev/null
+CH1='"charges":[{"label":"  أجور   توصيل ","amount":3000,"payee":"company"},{"label":"سائق","amount":1000,"payee":"other"}]'
+chk "الإعداد الافتراضي «على الكلفة»، والواجهةُ تسأل فتعرف (ready، mode)" \
+    "select $(rv $HV "select purchase_charges_state()::text")" '{"mode":"cost","ready":true}'
+chk "فاتورةٌ ٢٠٬٠٠٠ بخصم ٢٬٠٠٠ وأجرة شركة ٣٬٠٠٠ وأجرة سائق ١٬٠٠٠ ⇒ total ٢١٬٠٠٠ (الشركة وحدها داخله)، غيرُ مدفوعة" \
+    "select $(rv $HV "$(REC "$(hl a1 10 1000), $(hl a2 5 2000)" CH6-1 ", \"discount\":2000, $CH1")")" \
+    "CH6-1|21000.00:3000.00:1000.00:cost:unpaid"
+chk "  والأجورُ كلُّها تُوزَّع على الكلفة بنسبة القيمة: (١٨٬٠٠٠ + ٤٬٠٠٠) ÷ ٢٠٬٠٠٠ ⇒ أ ١١٠٠، ب ٢٢٠٠ — وسعرُ الشراء كما بالورقة" \
+    "select $(AVG a1)||'|'||$(AVG a2)||'|'||(select purchase_price::text from products where id = '${XH}a1')" "1100.000000|2200.000000|1000.00"
+chk "  والقائمةُ كما تُحفظ: الاسمُ بلا فراغاتٍ زائدة، والمبلغُ ولمن (بلا usd لفاتورة دينار)" \
+    "select (select charges::text from purchases where id = $(hpur CH6-1))" \
+    '[{"label":"أجورتوصيل","payee":"company","amount":3000.00},{"label":"سائق","payee":"other","amount":1000.00}]'
+chk "  ودَينُ الشركة الأجرةُ معه (total): رصيدُ القائمة ٢١٬٠٠٠" \
+    "select (select coalesce(sum(total - coalesce(amount_paid, total)), 0)::numeric(20,2)::text from purchases where company_id = '$HCO')" "21000.00"
+chk "الإعدادُ للمدير: الطبيبُ يُرفض (forbidden)، والمديرُ يقلبه «مصروف»" \
+    "select $(rerr $HV "select purchase_charges_mode_set('expense')")||'|'||$(rv $HC "select purchase_charges_mode_set('expense')")" "forbidden|expense"
+chk "  والكتابةُ المباشرة بالتفضيلات تُرفض (purchase_charges_mode_door)، وما قصد غيرَه يمرّ" \
+    "select $(rerr $HV "update clinic_prefs set purchase_charges_mode = 'cost' where clinic_id = '$HC'")||'|'||$(rv $HV "update clinic_prefs set dial_code = '+964' where clinic_id = '$HC' returning 'ok'")" \
+    "purchase_charges_mode_door|ok"
+chk "«مصروف»: فاتورةٌ ٢٬٠٠٠ وأجرة سائق ٦٠٠ ⇒ total ٢٬٠٠٠، والكلفةُ كما هي (ج ٥٠٠)" \
+    "select $(rv $HV "$(REC "$(hl a3 4 500)" CH6-2 ', "charges":[{"label":"نقل","amount":600,"payee":"other"}]')")" \
+    "CH6-2|2000.00:0.00:600.00:expense:unpaid"
+chk "  (وكلفةُ ج ٥٠٠ كما كُتبت)" "select $(AVG a3)" "500.000000"
+PNL6="(report_pnl(now() - interval '2 days', now() + interval '1 day', 'Asia/Baghdad')->'total')"
+chk "  والأرباحُ والخسائر: «أجور المشتريات» ٦٠٠ (المصروفُ وحده)، وتنطرح من الصافي" \
+    "select $(rv $HC "select (x->>'purchase_charges')||'|'||((x->>'net')::numeric = (x->>'gross')::numeric + (x->>'fx')::numeric + (x->>'fx_purchases')::numeric - (x->>'expenses')::numeric - (x->>'purchase_charges')::numeric)::text from (select $PNL6 x) s")" \
+    "600.00|true"
+chk "تعديلُ الأولى بعد قلب الإعداد: ختمُها «على الكلفة» يبقى، وأجرةُ الشركة ٥٬٠٠٠ ⇒ total ٢٣٬٠٠٠، أ ١٢٠٠ (يعكس القديمَ بما استلمه)" \
+    "select $(rv $HV "$(UPD CH6-1 "$(hl a1 10 1000), $(hl a2 5 2000)" ', "discount":2000, "charges":[{"label":"توصيل","amount":5000},{"label":"سائق","amount":1000,"payee":"other"}]')")" \
+    "CH6-1|23000.00:5000.00:1000.00:cost:unpaid"
+chk "  وكلفتُها بأجورها الجديدة: (١٨٬٠٠٠ + ٦٬٠٠٠) ÷ ٢٠٬٠٠٠ ⇒ أ ١٢٠٠، ب ٢٤٠٠" "select $(AVG a1)||'|'||$(AVG a2)" "1200.000000|2400.000000"
+chk "  وجهازٌ ما تحدّث (بلا مفتاح charges) يُبقي الأجورَ والكلفة" \
+    "select $(rv $HV "$(UPD CH6-1 "$(hl a1 10 1000), $(hl a2 5 2000)" ', "discount":2000')")" \
+    "CH6-1|23000.00:5000.00:1000.00:cost:unpaid"
+chk "    (والكلفةُ ١٢٠٠ كما هي)" "select $(AVG a1)" "1200.000000"
+chk "  وشيلُها كلِّها ([]) يرجع الفاتورةَ بلا أجور: total ١٨٬٠٠٠، وأ ٩٠٠ (الخصمُ وحده)" \
+    "select $(rv $HV "$(UPD CH6-1 "$(hl a1 10 1000), $(hl a2 5 2000)" ', "discount":2000, "charges":[]')")" \
+    "CH6-1|18000.00:0.00:0.00:-:unpaid"
+chk "    والقائمةُ فارغة (null) وأ ٩٠٠" "select (select coalesce(charges::text, 'null') from purchases where id = $(hpur CH6-1))||'|'||$(AVG a1)" "null|900.000000"
+chk "  وإرجاعُها الآن يأخذ إعدادَ اليوم («مصروف»): الكلفةُ ٩٠٠ كما هي، والأجورُ بالأرباح والخسائر" \
+    "select $(rv $HV "$(UPD CH6-1 "$(hl a1 10 1000), $(hl a2 5 2000)" ', "discount":2000, "charges":[{"label":"توصيل","amount":5000}]')")" \
+    "CH6-1|23000.00:5000.00:0.00:expense:unpaid"
+chk "    والكلفةُ ٩٠٠ كما هي، و«أجور المشتريات» ٥٬٦٠٠" "select $(AVG a1)||'|'||$(rv $HC "select $PNL6->>'purchase_charges'")" "900.000000|5600.00"
+chk "الرفضُ بجملة: اسمٌ فارغ، ومبلغٌ صفر، ولمن غريب، وواحدٌ وعشرون، وغيرُ قائمة" \
+    "select $(rerr $HV "$(REC "$(hl a3 1 500)" CH6-x ', "charges":[{"label":"  ","amount":5}]')")||'|'||$(rerr $HV "$(REC "$(hl a3 1 500)" CH6-x ', "charges":[{"label":"x","amount":0}]')")
+            ||'|'||$(rerr $HV "$(REC "$(hl a3 1 500)" CH6-x ', "charges":[{"label":"x","amount":5,"payee":"me"}]')")
+            ||'|'||$(rerr $HV "$(REC "$(hl a3 1 500)" CH6-x ", \"charges\":$(printf '[%s]' "$(for i in $(seq 21); do printf '{"label":"x","amount":1},'; done | sed 's/,$//')")")")
+            ||'|'||$(rerr $HV "$(REC "$(hl a3 1 500)" CH6-x ', "charges":{"label":"x"}')")
+            " "charge_label|charge_amount|bad_charges|bad_charges|bad_charges"
+chk "  ولا فاتورةَ كُتبت منها" "select (select count(*) from purchases where reference = 'CH6-x')::text" "0"
+chk "  وفاتورةٌ بلا قيمة لا تُوزَّع عليها أجورٌ «على الكلفة» (charges_no_value) — و«مصروف» تمرّ (total أجرةُ الشركة وحدها)" \
+    "select $(rv $HC "select purchase_charges_mode_set('cost')")||'|'||$(rerr $HV "$(REC "$(hl a4 3 0)" CH6-z ', "charges":[{"label":"توصيل","amount":500}]')")
+            ||'|'||$(rv $HC "select purchase_charges_mode_set('expense')")||'|'||$(rv $HV "$(REC "$(hl a4 3 0)" CH6-z ', "charges":[{"label":"توصيل","amount":500}]')")" \
+    "cost|charges_no_value|expense|CH6-z|500.00:500.00:0.00:expense:unpaid"
+chk "التجميد: الأجورُ وختمُها لا تُكتب مباشرة (purchase_charges_door) — والملاحظةُ تمرّ" \
+    "select $(rerr $HV "update purchases set charges_company = 0 where id = $(hpur CH6-1)")||'|'||$(rerr $HV "update purchases set charges_mode = 'cost' where id = $(hpur CH6-1)")
+            ||'|'||$(rerr $HV "insert into purchases (clinic_id, total, item_count, charges_other) values ('$HC', 1, 1, 5)")
+            ||'|'||$(rv $HV "update purchases set notes = 'ok' where id = $(hpur CH6-1) returning notes")" \
+    "purchase_charges_door|purchase_charges_door|purchase_charges_door|ok"
+# فاتورةُ الدولار: سطرٌ ٢ × ١٠$ بسعر ١٤٦٠، وأجرةُ شركة ٥$ وسائق ١$ — «على الكلفة».
+$P -c "update clinic_prefs set purchase_charges_mode = 'cost' where clinic_id = '$HC'" >/dev/null
+chk "الدولار: ٢٠\$ + أجرة شركة ٥\$ ⇒ total_usd ٢٥ ودينارُه ٣٦٬٥٠٠، والأجورُ بدولارها ودينارها، ود ١٨٬٩٨٠ (٢٩٬٢٠٠ + ٨٬٧٦٠ موزَّعة)" \
+    "select $(rv $HV "select r.status||'|'||r.total_usd::text||':'||r.total::numeric(20,2)::text||':'||r.charges_company::text||':'||r.charges_other::text||':'||r.charges_mode||'|'||r.charges::text
+                       from record_purchase_fx('[{\"product_id\":\"${XH}d1\",\"qty\":2,\"purchase_price_usd\":10}]'::jsonb, '{\"currency\":\"USD\",\"fx_rate\":1460,\"company_id\":\"$HCO\",\"amount_paid_usd\":0,\"reference\":\"CH6-U\",\"charges\":[{\"label\":\"توصيل\",\"amount\":5},{\"label\":\"سائق\",\"amount\":1,\"payee\":\"other\"}]}'::jsonb) r")" \
+    'unpaid|25.00:36500.00:7300.00:1460.00:cost|[{"usd":5.00,"label":"توصيل","payee":"company","amount":7300.00},{"usd":1.00,"label":"سائق","payee":"other","amount":1460.00}]'
+chk "  ود ١٨٬٩٨٠ = ١٤٬٦٠٠ × (٢٩٬٢٠٠ + ٨٬٧٦٠) ÷ ٢٩٬٢٠٠ (الأجورُ الاثنتان موزَّعة)" "select $(AVG d1)" "18980.000000"
+chk "  والتعديلُ بلا مفتاح charges يُبقيها (total_usd ٢٥)، وتبديلُ العملة بلا مفتاحها يُرفض (charges_currency)" \
+    "select $(rv $HV "select (update_purchase_fx($(hpur CH6-U), '[{\"product_id\":\"${XH}d1\",\"qty\":2,\"purchase_price_usd\":10}]'::jsonb, '{}'::jsonb)).total_usd::text")
+            ||'|'||$(rerr $HV "select update_purchase_fx($(hpur CH6-U), '[{\"product_id\":\"${XH}d1\",\"qty\":2,\"purchase_price\":14600}]'::jsonb, '{\"currency\":\"IQD\"}'::jsonb)")" \
+    "25.00|charges_currency"
+chk "  وبسعرٍ جديد ١٥٠٠ تُعاد الأجورُ من دولارها (٥\$ ⇒ ٧٬٥٠٠)" \
+    "select $(rv $HV "select (update_purchase_fx($(hpur CH6-U), '[{\"product_id\":\"${XH}d1\",\"qty\":2,\"purchase_price_usd\":10}]'::jsonb, '{\"fx_rate\":1500}'::jsonb)).charges_company::text")" "7500.00"
+chk "الصلاحيات: الأدواتُ الداخلية لا تُنادى من الداخلين، والأبوابُ لا من anon" \
+    "select (has_function_privilege('authenticated', 'public._purchase_charges(jsonb,numeric)', 'execute') or has_function_privilege('authenticated', 'public._purchase_landed_cost(numeric,numeric,numeric)', 'execute')
+             or has_function_privilege('anon', 'public.purchase_charges_state()', 'execute') or has_function_privilege('anon', 'public.purchase_charges_mode_set(text)', 'execute')
+             or has_function_privilege('anon', 'public.purchase_charges_ready()', 'execute'))::text" "false"
+# إعادةُ 0260 وحدها تُرجع الجسمين بلا أجور — والسؤالُ يقولها فتُخفى الأجور، ثمّ 0276 ترجعها.
+out=$($P -f "$MIG/0260_purchase_discount.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0260 ما انعادت"; fail=1; }
+chk "إعادةُ 0260 وحدها ⇒ purchase_charges_ready «لا» (الواجهةُ تُخفي الأجور)" "select $(rv $HV "select purchase_charges_ready()::text")" "false"
+out=$($P -f "$MIG/0276_purchase_charges.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0276 ما انعادت بعد 0260"; fail=1; }
+chk "  و0276 بعدها ترجعها «نعم»" "select $(rv $HV "select purchase_charges_ready()::text")" "true"
+Q276="select (select md5(string_agg(reference||':'||total::text||':'||coalesce(charges::text,'-')||':'||coalesce(charges_mode,'-'), ',' order by reference)) from purchases where clinic_id = '$HC')||'|'||(select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname) from pg_proc where proname in ('record_purchase','update_purchase','record_purchase_fx','update_purchase_fx','report_pnl','_purchase_charges','_purchase_landed_cost','purchase_charges_state','purchase_charges_mode_set','purchase_charges_ready'))||'|'||(select count(*) from pg_trigger where tgname in ('purchases_charges_freeze','clinic_prefs_charges_freeze'))::text||'|'||(select count(*) from pg_constraint where conname in ('purchases_charges_ok','clinic_prefs_purchase_charges_mode_ok'))::text"
+Z276=$($P -tAc "$Q276" | tr -d '[:space:]')
+out=$($P -f "$MIG/0276_purchase_charges.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0276 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الفواتيرُ والأجسامُ والصلاحياتُ والمحفّزان والقيدان)" "$Q276" "$Z276"
+$P -c "select set_config('doctorvet.usd_purchase_door', 'on', false);
+       delete from purchase_payments where clinic_id = '$HC'; delete from company_entries where clinic_id = '$HC';
+       delete from purchase_effects where clinic_id = '$HC'; delete from purchase_items where clinic_id = '$HC';
+       delete from purchases where clinic_id = '$HC'; delete from products where clinic_id = '$HC';
+       delete from companies where clinic_id = '$HC'; delete from clinic_fx_rates where clinic_id = '$HC';
+       update clinic_prefs set purchase_charges_mode = 'cost' where clinic_id = '$HC';
        select set_config('doctorvet.usd_purchase_door', 'off', false);" >/dev/null
 
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────

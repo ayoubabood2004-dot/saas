@@ -5,6 +5,19 @@ import { centsOf, decOf, usdText } from "./usdMath";
 import { purchaseDue } from "./companyLedger";
 
 export type FxCur = "IQD" | "USD";
+/** كيف انحسبت فاتورةُ شراءٍ جديدة: كلُّها مدفوعة، أو جزءٌ مكتوب، أو كلُّها دَين. */
+export type PaidMode = "full" | "part" | "debt";
+/** المدفوعُ الذي تُرسله فاتورةٌ جديدة بعملتها — أو null: الاختيارُ ناقص (لا اختيار، أو «جزء» بلا مبلغٍ موجب) فالحفظُ يقف.
+ *  «جزء» يُقصّ على المجموع (مبلغٌ ≥ المجموع = مدفوعةٌ كلّها). **ولا فراغَ يعني «كلّه»**: كان «عليها دَين» بخانةٍ فارغة يُرسل المجموع. */
+export function newPurchasePaid(mode: PaidMode | null, amount: string, total: number): number | null {
+  if (mode === "full") return total;
+  if (mode === "debt") return 0;
+  if (mode === "part") {
+    const n = Math.max(0, Math.min(total, Number(amount) || 0));
+    return n > 0 ? n : null;
+  }
+  return null;
+}
 
 /** «سعر 100$» كما يقوله السوق ⇒ سعرُ الدولار الواحد بأربع منازل (كالقاعدة)، أو null إن لم يُقرأ أو خرج عن 100..100000. */
 export function ratePerUsd(per100: string): number | null {

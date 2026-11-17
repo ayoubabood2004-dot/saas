@@ -1491,7 +1491,7 @@
     "newNumericName": "The item name is a number, not a name — you will not find it by name later",
     "blockerWhich": "Enter the {{what}} for: {{names}}",
     "needPaidMode": "Say how this invoice was settled",
-    "needPaidModeHow": "Choose “Paid in full” or “On credit” — a blank field used to record it as paid and lose the supplier debt.",
+    "needPaidModeHow": "Choose “All”, “Part” (and type how much) or “On credit” — a blank used to lose the supplier debt.",
     "pendingScan": "Something is still in the scan box and was not added: {{code}}",
     "pendingScanHow": "Press Add or Enter, or scan it again — and clear the box if you do not want it.",
     "leaveTitle": "Leave and lose these lines?",
@@ -1499,10 +1499,6 @@
     "leaveStay": "No, go back",
     "leaveGo": "Yes, leave",
     "paidFull": "Paid in full",
-    "paidDebt": "On credit",
-    "paidHowMuch": "How much was paid now?",
-    "paidRemains": "Still owed by the clinic: {{v}}",
-    "paidNone": "No debt will be recorded for this invoice",
     "log": {
       "colBarcode": "Barcode",
       "colCost": "Cost price",
@@ -1581,7 +1577,8 @@
       "open": "Company ledger — all movements and balance",
       "ofOpening": "incl. {{v}} opening balance",
       "settleSpread": "Goes to the opening balance first, then invoices oldest to newest"
-    }
+    },
+    "chargeOther": "Paid to others"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
@@ -6982,7 +6979,13 @@
     "label": "Card and transfer go to the same account",
     "on": "On: money reports count them as one account, and a withdrawal comes from the drawer or from the account — so the card never shows a negative balance when you withdraw transfer money.",
     "off": "Off: card and transfer are separate pockets, and a withdrawal picks card or bank transfer. Use this if each one goes to a different account.",
-    "note": "This changes no recorded withdrawal, only how they are shown. You can switch it back any time."
+    "note": "This changes no recorded withdrawal, only how they are shown. You can switch it back any time.",
+    "pchTitle": "Purchase charges (delivery, transport…)",
+    "pchCost": "Spread over the goods' cost",
+    "pchCostHint": "e.g. a 100,000 invoice + 10,000 delivery ⇒ each item costs 10% more, so its profit is right when sold.",
+    "pchExpense": "An expense in the P&L",
+    "pchExpenseHint": "Shows as a “Purchase charges” line in the invoice's month; the goods' cost stays as is.",
+    "pchNote": "Applies to charges added from now on — every invoice keeps the way it was counted. On each charge the doctor picks “On the company” (added to its debt) or “Paid to others”."
   },
   "fgset": {
     "title": "Debt discount limit",
@@ -7226,7 +7229,10 @@
     "noteFx": "Exchange-rate difference: dollar debts settled in dinars at a rate other than the sale day's — plus is a gain, minus a loss, on the settlement day.",
     "noteShift": "The working-hours filter (advanced options) doesn't apply here: this report covers whole days, so «Sales profit» may differ from the Money tab right now.",
     "fxPurchases": "Purchase exchange difference",
-    "noteFxPurchases": "Purchase exchange difference: a company's dollar debt paid at a rate other than the purchase day's — plus is a gain (the dollar fell), minus a loss (it rose), in the month of payment."
+    "noteFxPurchases": "Purchase exchange difference: a company's dollar debt paid at a rate other than the purchase day's — plus is a gain (the dollar fell), minus a loss (it rose), in the month of payment.",
+    "purchaseCharges": "Purchase charges (delivery, transport…)",
+    "notePurchaseCharges": "Purchase charges: the clinic counts them as an expense in the purchase invoice's month. Invoices stamped “on cost” carry them inside the goods' cost, counted when sold.",
+    "rptCharges": "Extra charges in the period: {{c}} on companies (inside the purchase total) · {{o}} paid to others"
   },
   "usd": {
     "cancel": "Cancel",
@@ -8909,6 +8915,33 @@
     "fxGain": "Exchange difference: gain {{v}}",
     "fxLoss": "Exchange difference: loss {{v}}",
     "sumBought": "We bought {{u}} at {{r}} = {{v}}",
-    "sumPaid": "and paid {{v}} in dinars"
+    "sumPaid": "and paid {{v}} in dinars",
+    "paidHow": "How was this invoice settled?",
+    "paidFull": "Paid in full",
+    "paidPart": "Paid part",
+    "paidDebt": "All on credit",
+    "paidHowMuch": "How much was paid now?",
+    "paidNeedAmt": "Type how much was paid — or choose “All on credit” if nothing was paid.",
+    "paidPick": "Choose one of the three.",
+    "paidAllTyped": "That is the whole amount — it will be saved as paid.",
+    "paidRemains": "Still owed by the clinic: {{v}}",
+    "paidAllDebt": "The whole amount ({{v}}) becomes the clinic's debt to the company.",
+    "paidNone": "No debt will be recorded for this invoice.",
+    "chTitle": "Extra charges (delivery, transport…)",
+    "chAdd": "Add a charge",
+    "chLabel": "What is it? e.g. delivery fee",
+    "chAmount": "Charge amount",
+    "chRemove": "Remove charge",
+    "chWho": "Who gets it?",
+    "chCompany": "On the company",
+    "chOther": "Paid to others",
+    "chBad": "Write what the charge is and its amount — or remove the row.",
+    "chOnCompany": "Added to the company's debt",
+    "chPaidOther": "Paid to others (not owed to the company)",
+    "chModeCost": "Spread over the goods' cost by their price — so each item's profit is right when sold. Change it in Settings.",
+    "chModeExpense": "Counted as an expense in the purchase month's P&L; the goods' cost stays as is. Change it in Settings.",
+    "chStampCost": "Charges were spread over the goods' cost.",
+    "chStampExpense": "Charges were counted as a P&L expense.",
+    "chSuggest": "Delivery fee|Transport fee|Shipping fee|Customs clearance|Loading fee"
   }
 }
