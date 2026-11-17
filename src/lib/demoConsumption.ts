@@ -58,7 +58,7 @@ import {
   type CarryState, type ConsProduct, type PostMode, type RecipeUnit,
 } from "./consumption";
 // 0255: المتوسّطُ المتحرّك حرفاً من مرآة الخادم (avgCost.ts) — لا تقريبَ يُعاد هنا.
-import { avgAdjust, avgBase, avgMerge, avgReceive, purchaseUnitCostU, receiveVarianceCents } from "./avgCost";
+import { avgAdjust, avgBase, avgMerge, avgReceive, purchaseLandedCostU, receiveVarianceCents } from "./avgCost";
 import { loadDB, saveDB } from "./demoStore";
 import { demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";
 // مفتاحُ العيادة الفعّال: كتالوجُ الخدمات لكلّ مفتاح (services.ts) والمخزنُ التجريبيّ واحد — clinics.ts بحزمة الإقلاع أصلاً.
@@ -486,6 +486,8 @@ export const qty3 = (x: number): number => fromScaled(roundScaled(x, 3), 3);
  *  كما هي (كلفةُ خدمةٍ بثلاث منازل ١٢٫٣٤٥)، والعمودُ يحفظ ١٢٫٣٥ — والمرتجعُ والتعديلُ يعيدان الحسابَ من المحفوظ
  *  (قيسَ بالفرق مع الخادم: round(3 × ١٢٫٣٥) = ٣٧٫٠٥ لا ٣٧٫٠٤). غيرُ العدد يمرّ كما هو (يرفضه الخادمُ بقيده). */
 export const col2 = (x: number): number => (Number.isFinite(Number(x)) ? fromScaled(roundScaled(Number(x), 2), 2) : x);
+/** مبلغان بمنزلتين يُجمعان بالفلس (0276: صافي الفاتورة + أجورُ الشركة = total) — لا عائمٌ يُبقي ذيلاً. */
+export const addMoney2 = (a: number, b: number): number => fromScaled(roundScaled(a, 2) + roundScaled(b, 2), 2);
 /** numeric(·,3) ← عمودُ integer (item_count): النصفُ بعيداً عن الصفر بالضبط — ٢٫٥ ⇒ ٣ و−٢٫٥ ⇒ −٣ (لا Math.round). */
 export const colInt = (x: number): number => (Number.isFinite(Number(x)) ? fromScaled(roundScaled(Number(x), 0), 0) : x);
 /** round(q × p, 2) لسطرٍ واحد (line_total، والمجموعُ سطراً سطراً بالتعديل والمرتجع). */
@@ -917,12 +919,14 @@ export async function demoSubmitWaste(lines: WasteLineInput[], apply: boolean, c
 }
 
 /* ── متوسّطُ الكلفة (0255) ─────────────────────────────────────────────────────────────── */
-/** نسبةُ خصم الشركة لفاتورة شراء (0260): الصافي والمجموعُ قبله بالفلوس — null = بلا خصم (الكلفةُ كما كُتبت). */
+/** نسبةُ كلفة سطور فاتورة شراء: أساسُ الكلفة (`netC`: الصافي بعد خصم الشركة 0260، **وفوقه الأجورُ الموزَّعة 0276**) والمجموعُ قبل
+ *  الخصم بالفلوس — null = الأساسُ يساوي المجموع (الكلفةُ كما كُتبت). */
 export interface PurchaseShare { netC: bigint; grossC: bigint }
-/** كلفةُ وحدة السطر للمتوسّط بالمليون: `v_cost numeric(12,2)` ثمّ نصيبُه من الخصم (`_purchase_unit_cost`، 0260). */
+/** كلفةُ وحدة السطر للمتوسّط بالمليون: `v_cost numeric(12,2)` ثمّ نصيبُه من الخصم والأجور (`_purchase_landed_cost`، 0276 — تساوي
+ *  `_purchase_unit_cost` 0260 حين لا أجور). */
 const unitMicro = (cost: number | string | null | undefined, share?: PurchaseShare | null): bigint => {
   const c = roundScaled(cost ?? 0, 2) * 10_000n;                   // purchase_price numeric(12,2) بالمليون
-  return share ? (purchaseUnitCostU(c, share.netC, share.grossC) ?? c) : c;
+  return share ? (purchaseLandedCostU(c, share.netC, share.grossC) ?? c) : c;
 };
 /** `case when v_ucost > 0 then v_ucost end` بالمليون: كلفةُ سطرٍ بعد نصيبه من الخصم، والصفرُ والسالبُ null. */
 const posMicro = (cost: number | string | null | undefined, share?: PurchaseShare | null): bigint | null => {
@@ -941,10 +945,19 @@ export function purchaseShareLocal(gross: number, discount: unknown): { discount
   const netC = grossC - discC;
   return { discount: fromScaled(discC, 2), net: fromScaled(netC, 2), share: discC > 0n ? { netC, grossC } : null };
 }
-/** نسبةُ فاتورةٍ محفوظة لعكس سطورها القديمة (0260): `_purchase_unit_cost(c, total, total + discount)` — ما أدخله استلامُها بالضبط. */
-export function purchaseStoredShare(p: { total?: number | null; discount?: number | null }): PurchaseShare | null {
-  const netC = roundScaled(p.total ?? 0, 2), discC = roundScaled(p.discount ?? 0, 2);
-  return discC > 0n ? { netC, grossC: netC + discC } : null;
+/** نسبةُ فاتورةٍ محفوظة لعكس سطورها القديمة — ما أدخله استلامُها بالضبط (update_purchase 0276: v_olanded وv_ogross): المجموعُ
+ *  total + discount − أجورُ الشركة، والأساسُ total − أجورُ الشركة + الأجورُ كلُّها إن وُزّعت («cost»). قبل 0276: total وtotal + discount. */
+export function purchaseStoredShare(p: { total?: number | null; discount?: number | null; charges_company?: number | null; charges_other?: number | null; charges_mode?: string | null }): PurchaseShare | null {
+  const totalC = roundScaled(p.total ?? 0, 2), discC = roundScaled(p.discount ?? 0, 2);
+  const ccC = roundScaled(p.charges_company ?? 0, 2), ocC = roundScaled(p.charges_other ?? 0, 2);
+  const grossC = totalC + discC - ccC;
+  const netC = totalC - ccC + (p.charges_mode === "cost" ? ccC + ocC : 0n);
+  return netC !== grossC ? { netC, grossC } : null;
+}
+/** أساسُ كلفة السطور الجديدة (0276: v_landed): الصافي بعد الخصم + ما يُوزَّع من أجور، على المجموع قبل الخصم — null حين يساويه. */
+export function purchaseLandedShare(gross: number, net: number, spread: number): PurchaseShare | null {
+  const grossC = roundScaled(gross, 2), netC = roundScaled(net, 2) + roundScaled(spread, 2);
+  return netC !== grossC ? { netC, grossC } : null;
 }
 /** record_purchase (0255:428–462) لسطرٍ لقي مادّةً قائمة — من صفّها **القديم** قبل الـSET: المتوسّطُ _avg_receive وفرقُه
  *  _avg_variance على رصيدها وأساس كلفتها _avg_base. ومخزنُ الحقل خارج المتوسّط: يبقى كما هو وبلا فرق. */

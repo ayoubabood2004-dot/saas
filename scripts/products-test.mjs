@@ -400,7 +400,7 @@ console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
    * بالتعديل. والشارةُ كانت تُشتقّ بدلالة الإنشاء وحدها فتكذب على دَينٍ قائم. */
   check("م٤: المدفوعُ بالتعديل يعود لقيمة الفاتورة لا للإجمالي",
     // 0274: بعملة الفاتورة — فاتورةُ الدولار تعود لمدفوعها بالدولار.
-    pur.includes("editing ? Math.max(0, Math.min(total, (cur === \"USD\" && editing.purchase.currency === \"USD\" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)) : total"));
+    pur.includes("((cur === \"USD\" && editing.purchase.currency === \"USD\" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)))"));
   /* والدلالتان صارتا واحدة: مسارُ الإنشاء ما عاد فيه خانةٌ فراغُها يعني شيئاً —
    * صار سؤالاً صريحاً («دفعناها كلّها» / «عليها دَين»)، فالفراغُ بقي بمعنىً
    * واحدٍ بالتعديل وحده. الحارسُ يشدّ على ذلك بدل أن يشدّ على الشكل القديم. */
@@ -408,7 +408,7 @@ console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
     // وهو paidNum نفسُه بالتعديل حين تفرغ الخانة (أعلاه)، بعملة الفاتورة.
     pur.includes("placeholder={fmt(paidNum)}"));
   check("  وما عاد للفراغ دلالةٌ بالإنشاء — الاختيارُ صريح",
-    /paidMode === null/.test(pur) && /paidMode === "debt" \? paidNum : total/.test(pur));
+    /newPurchasePaid\(paidMode, amountPaid, total\)/.test(pur) && /if \(paidMissing\)/.test(pur));
 
   /* م٥: الحارسُ كان يفحص القفلَ وحدَه، و`canPos` يخفي الزرَّ لا الشاشة. */
   check("م٥: الحارسُ يرى الاستحقاق لا القفلَ وحده",

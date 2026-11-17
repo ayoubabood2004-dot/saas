@@ -3645,6 +3645,10 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
   const dueUsd = r2u(usdInv.reduce((s, p) => s + purchaseDueCur(p), 0));
   const both = (iqd: number, usd: number) => (usdInv.length ? `${money(iqd)} · ${usdOf(usd)}` : money(iqd));
   const days = new Set(purchases.map((p) => (p.purchased_at || p.created_at || "").slice(0, 10))).size;
+  /* 0276: الأجورُ الإضافية بالفترة (بالدينار، كدفتر الكلفة): ما على الشركات داخل «إجمالي الشراء»، وما دُفع لغيرهم خارجه — ولولا
+   * هذا السطر لما ظهرت أجرةُ السائق بأيّ تقرير حين تُوزَّع على الكلفة. */
+  const chCo = r2u(purchases.reduce((s, p) => s + Number(p.charges_company ?? 0), 0));
+  const chOther = r2u(purchases.reduce((s, p) => s + Number(p.charges_other ?? 0), 0));
 
   const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "danger" | "success" }) => (
     <div className={cn("rounded-2xl border p-3 text-center",
@@ -3666,6 +3670,11 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
         <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={both(paid, paidUsd)} tone="success" />
         <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={both(due, dueUsd)} tone={due > 0 || dueUsd > 0 ? "danger" : "success"} />
       </div>
+      {(chCo > 0 || chOther > 0) && (
+        <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs font-semibold text-ink-muted" data-rpt-charges>
+          {t("pnl.rptCharges", { c: money(chCo), o: money(chOther) })}
+        </p>
+      )}
       {loading
         ? <div className="py-10 text-center text-ink-subtle"><Clock size={18} className="mx-auto mb-2 animate-spin" /> {t("common.loading", "جارٍ التحميل…")}</div>
         : <PurchaseLog purchases={purchases} />}

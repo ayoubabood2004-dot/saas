@@ -259,6 +259,7 @@ export function Settings() {
         {canSettings && <ExpiryAlertsCard />}
         {canSettings && <ForgiveCapCard />}
         {canSettings && <OneAccountCard />}
+        {canSettings && <PurchaseChargesCard />}
         {canSettings && <UsdCardSlot />}
         {canSettings && <NegCardSlot />}
         {canSettings && <ServiceSettings />}
@@ -962,6 +963,54 @@ function OneAccountCard() {
       <h2 className="font-bold text-ink mb-3 flex items-center gap-2"><Wallet size={18} className="text-brand-600" /> {t("acct.title")}</h2>
       <CashierToggle label={t("acct.label")} hint={t(on ? "acct.on" : "acct.off")} checked={on} onToggle={toggle} />
       <p className="mt-3 text-2xs text-ink-subtle">{t("acct.note")}</p>
+    </div>
+  );
+}
+
+/* ------------- أجورُ المشتريات الإضافية (0276) ----------
+ * كيف تُحسب أجورُ التوصيل والنقل بفاتورة الشراء — قرارُ المالك «اختيارية من الإعدادات»: تُوزَّع على كلفة المواد (الافتراض)، أو
+ * مصروفٌ بالأرباح والخسائر. للمدير، والإعدادُ بالخادم (purchase_charges_mode_set) لا بتفضيلات الجهاز — ويُختم على كلّ فاتورةٍ يومَ
+ * تُضاف أجورُها، فتبديلُه لا يقلب ما سُجّل. ولقاعدةٍ لا تعرف الأجور لا بطاقة. البابُ كسولٌ (purchaseChargesApi): لا سطرَ بالإقلاع. */
+function PurchaseChargesCard() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [st, setSt] = useState<{ ready: boolean; mode: "cost" | "expense" } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void import("@/lib/purchaseChargesApi").then((m) => m.purchaseChargesState()).then((v) => { if (alive) setSt(v); })
+      .catch(() => { /* swallow-ok: فحصُ قدرةٍ — فشلُه يُخفي البطاقة ولا يغيّر شيئاً */ });
+    return () => { alive = false; };
+  }, []);
+  if (!st?.ready) return null;
+  const pick = async (mode: "cost" | "expense") => {
+    if (busy || mode === st.mode) return;
+    setBusy(true);
+    try {
+      const m = await (await import("@/lib/purchaseChargesApi")).setPurchaseChargesMode(mode);
+      setSt({ ready: true, mode: m });
+      playSuccess();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card p-5 mb-4" data-pch-card={st.mode}>
+      <h2 className="font-bold text-ink mb-3 flex items-center gap-2"><Package size={18} className="text-brand-600" /> {t("acct.pchTitle")}</h2>
+      <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("acct.pchTitle")}>
+        {(["cost", "expense"] as const).map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={st.mode === m} disabled={busy} data-pch-mode={m} onClick={() => void pick(m)}
+            className={cn("rounded-xl border p-3 text-start transition disabled:opacity-60",
+              st.mode === m ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line hover:bg-surface-2")}>
+            <span className="block text-sm font-bold text-ink">{t(m === "cost" ? "acct.pchCost" : "acct.pchExpense")}</span>
+            <span className="mt-0.5 block text-2xs text-ink-muted">{t(m === "cost" ? "acct.pchCostHint" : "acct.pchExpenseHint")}</span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-2xs text-ink-subtle">{t("acct.pchNote")}</p>
     </div>
   );
 }

@@ -105,7 +105,9 @@ export function PnlPanel({ from, to, rangeLabel, shiftActive = false }: { from: 
       value: (x) => catAmount(x, c.id), kind: "cost",
     })),
     { key: "uncategorized", label: t("pnl.uncategorized", "سحوبات بدون تصنيف"), value: (x) => x.uncategorized, kind: "cost" },
-    { key: "expenses", label: t("pnl.expenses", "مجموع المصاريف"), value: (x) => x.expenses, kind: "sum" },
+    // 0276: أجورُ المشتريات «مصروفاً» بندٌ قبل المجموع، والمجموعُ يحملها — فالصافي = ربحُ المبيعات + الفروق − المجموعِ الظاهر بلا حسابٍ خفيّ.
+    { key: "purchase_charges", label: t("pnl.purchaseCharges"), value: (x) => x.purchase_charges ?? 0, kind: "cost" },
+    { key: "expenses", label: t("pnl.expenses", "مجموع المصاريف"), value: (x) => x.expenses + (x.purchase_charges ?? 0), kind: "sum" },
     { key: "net", label: t("pnl.net", "الصافي"), value: (x) => x.net, kind: "sum", always: true },
   ];
   const shown = lines.filter((l) => l.always || cols.some((c) => l.value(c.x) !== 0));
@@ -164,6 +166,7 @@ export function PnlPanel({ from, to, rangeLabel, shiftActive = false }: { from: 
         {has("returns") && <li data-pnl-note-returns>{t("pnl.noteReturns", "مرتجعات بلا فاتورة: الفلوس رجعت للزبون والبضاعة رجعت للرف، وكلفتها ما مسجّلة — فالخسارة الحقيقية أقل من هالرقم.")}</li>}
         {has("payroll_loan") && <li data-pnl-note-loans>{t("pnl.noteLoans", "السُّلف تنحسب يوم تنصرف، وتنقطع من الرواتب بعدين فالرواتب تنزل بقدرها.")}</li>}
         {has("fx_purchases") && <li data-pnl-note-fxp>{t("pnl.noteFxPurchases")}</li>}
+        {has("purchase_charges") && <li data-pnl-note-pch>{t("pnl.notePurchaseCharges")}</li>}
         {has("fx") && <li data-pnl-note-fx>{t("pnl.noteFx", "فرق سعر الصرف: ديون الدولار لمّا تنسدّ بالدينار بسعر غير سعر يوم البيع — زايد ربح وناقص خسارة، بيوم التسديد.")}</li>}
         {has("adjust") && <li data-pnl-note-adjust>{t("pnl.noteAdjust", "تسويات فواتير قديمة: فواتير ربحها المسجّل ما يساوي سعرها ناقص كلفتها.")}</li>}
       </ul>

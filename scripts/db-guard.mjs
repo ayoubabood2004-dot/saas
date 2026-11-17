@@ -392,9 +392,10 @@ export const WIRING = [
   ["merge_products/2", "_pkg_packs_union(", "_pkg_packs_union"],
   ["restore_product/1", "_pkg_snapshot_free(", "_pkg_snapshot_free"],
   ["inventory_tidy_uncat/0", "dup.sub_codes", "_pkg_snapshot_free"],
-  // 0260: خصمُ الشركة — كلفةُ المتوسّط بنصيب السطر منه، بالاستلام والتعديل.
-  ["record_purchase/2", "_purchase_unit_cost(", "_purchase_unit_cost"],
-  ["update_purchase/3", "_purchase_unit_cost(", "_purchase_unit_cost"],
+  // 0260: خصمُ الشركة — كلفةُ المتوسّط بنصيب السطر منه، بالاستلام والتعديل. ومنذ 0276 بنصيبه من الخصم والأجور الموزَّعة معاً
+  // (_purchase_landed_cost تساوي _purchase_unit_cost حين لا أجور): جسمٌ يرجع لنداء 0260 يُسقط الأجورَ من الكلفة بصمت.
+  ["record_purchase/2", "_purchase_landed_cost(", "_purchase_landed_cost"],
+  ["update_purchase/3", "_purchase_landed_cost(", "_purchase_landed_cost"],
 ];
 /** محفّزاتُ العكس (و0254 حارسُ السند): قائمةٌ ومفعَّلة متى وُجدت دالّتُها. */
 export const WIRED_TRIGGERS = [

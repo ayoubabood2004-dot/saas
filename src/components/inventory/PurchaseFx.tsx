@@ -1,11 +1,12 @@
 /* ============================================================================
  * الشراءُ بالعملتين (0274) — قطعُ الشاشة بنطاقها المملوك `pfx` (النصفُ البارد على سقفه). فاتورةُ الشراء (Purchases.tsx) وصفحةُ
  * الشركة تحمّلانها بـpage(…, ["pfx"]) ولا تستوردانها ثابتاً (i18n-owned-guard). الحسابُ بالخادم (0274) ومرآتِه (demoPurchaseFx)،
- * وهنا ما يُرى: عملةُ الفاتورة وسعرُها، وعملةُ بيع السطر، ودينارُ المجموع، ونافذةُ التسديد بالعملتين.
+ * وهنا ما يُرى: عملةُ الفاتورة وسعرُها، وعملةُ بيع السطر، ودينارُ المجموع، ونافذةُ التسديد بالعملتين — وكيف انحسبت الفاتورةُ
+ * الجديدة (كلُّها/جزء/دَين) لكلّ فاتورة، بأيّ عملة، وأجورُها الإضافية (0276: توصيل، نقل… على الشركة أو لغيرها).
  * ========================================================================= */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Coins, DollarSign, Info, Loader2 } from "lucide-react";
+import { Coins, DollarSign, Info, Loader2, Plus, Truck, X } from "lucide-react";
 import type { PaymentMethod, Purchase, PurchasePayment } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { cn, formatNum, money } from "@/lib/utils";
@@ -13,7 +14,8 @@ import { describeDbError } from "@/lib/errors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { decOf } from "@/lib/usdMath";
 import { purchaseFx, type Cur } from "@/lib/purchaseFxApi";
-import { purchaseDueCur, ratePerUsd, usdOf } from "@/lib/purchaseFxMath";
+import { purchaseDueCur, ratePerUsd, usdOf, type PaidMode } from "@/lib/purchaseFxMath";
+import { CHARGES_MAX, CHARGE_LABEL_MAX, chargesOf, type ChargeDraft, type ChargePayee } from "@/lib/purchaseCharges";
 
 /* ── شريطُ عملة الفاتورة ─────────────────────────────────────────────────────────────────────────── */
 export function PfxBar({ cur, onCur, per100, onPer100, clinicRate, locked, showBad }: {
@@ -97,6 +99,166 @@ export function PfxTotals({ totalUsd, rate, iqd }: { totalUsd: number; rate: num
     <p className="text-2xs font-bold text-ink-subtle tabular-nums" data-pfx-iqd>
       {t("pfx.iqdAt", { v: money(iqd ?? Math.round(totalUsd * rate)), r: formatNum(rate) })}
     </p>
+  );
+}
+
+/* ── فاتورةٌ جديدة: كيف انحسبت — كلُّها، أو جزءٌ مكتوب، أو كلُّها دَين ───────────────────────────────────────
+ * ثلاثةُ اختياراتٍ صريحة بلا افتراض. كان الجزءُ خانةً تحت «عليها دَين» والفراغُ فيها يُرسل المجموعَ مدفوعاً — فالزرُّ يقول دَيناً
+ * والفاتورةُ تُحفظ «مدفوعة» ودَينُ الشركة يضيع. الآن الجزءُ اختيارٌ وحده، ومبلغُه إلزاميّ (الحفظُ يقف ويقولها هنا: `ask`). */
+export function PfxPaid({ mode, onMode, amount, onAmount, total, fmt, ask }: {
+  mode: PaidMode | null; onMode: (m: PaidMode) => void; amount: string; onAmount: (v: string) => void;
+  /** مجموعُ ما يُدان للشركة بعملة الفاتورة. */
+  total: number; fmt: (n: number) => string;
+  /** الحفظُ ضُغط والاختيارُ ناقص. */
+  ask?: boolean;
+}) {
+  const { t } = useTranslation();
+  const paid = mode === "part" ? Math.max(0, Math.min(total, Number(amount) || 0)) : mode === "full" ? total : 0;
+  const partEmpty = mode === "part" && !(paid > 0);
+  const opts: { m: PaidMode; label: string; on: string }[] = [
+    { m: "full", label: t("pfx.paidFull"), on: "bg-success-600 text-white shadow-soft" },
+    { m: "part", label: t("pfx.paidPart"), on: "bg-brand-600 text-white shadow-soft" },
+    { m: "debt", label: t("pfx.paidDebt"), on: "bg-warn-600 text-white shadow-soft" },
+  ];
+  return (
+    <div data-pfx-paid={mode ?? "none"}>
+      <div className="flex gap-1.5" role="radiogroup" aria-label={t("pfx.paidHow")}>
+        {opts.map((o) => (
+          <button key={o.m} type="button" role="radio" aria-checked={mode === o.m} data-pfx-paid-mode={o.m}
+            onClick={() => { playTap(); onMode(o.m); }}
+            className={cn("flex-1 rounded-xl px-1.5 py-2 text-xs font-bold transition",
+              mode === o.m ? o.on : "bg-surface-2 text-ink-muted hover:text-ink",
+              ask && mode === null && "ring-2 ring-danger-400")}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {mode === null && ask && (
+        <p role="alert" className="mt-1 text-2xs font-bold text-danger-600 dark:text-danger-300" data-pfx-paid-pick>{t("pfx.paidPick")}</p>
+      )}
+      {mode === "part" && (
+        <>
+          <input type="number" inputMode="decimal" min="0" step="any" className={cn("input mt-1.5", ask && partEmpty && "border-danger-400")}
+            value={amount} onChange={(e) => onAmount(e.target.value)} placeholder={t("pfx.paidHowMuch")} aria-label={t("pfx.paidHowMuch")}
+            aria-invalid={(ask && partEmpty) || undefined} data-pfx-paid-amt autoFocus />
+          {partEmpty ? (
+            ask ? <p role="alert" className="mt-1 text-2xs font-bold text-danger-600 dark:text-danger-300" data-pfx-paid-need>{t("pfx.paidNeedAmt")}</p> : null
+          ) : paid >= total ? (
+            <p className="mt-1 text-2xs text-ink-subtle" data-pfx-paid-all>{t("pfx.paidAllTyped")}</p>
+          ) : (
+            <p className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300 tabular-nums" data-pfx-paid-left>{t("pfx.paidRemains", { v: fmt(total - paid) })}</p>
+          )}
+        </>
+      )}
+      {mode === "debt" && total > 0 && (
+        <p className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300 tabular-nums" data-pfx-paid-debt>{t("pfx.paidAllDebt", { v: fmt(total) })}</p>
+      )}
+      {mode === "full" && total > 0 && <p className="mt-1 text-2xs text-ink-subtle">{t("pfx.paidNone")}</p>}
+    </div>
+  );
+}
+
+/* ── الأجورُ الإضافية (0276): كلُّ أجرةٍ باسمها ومبلغها ولمن — «على الشركة» تنضاف لدَينها، و«دفعناها لغيرهم» (السائق) خارجه ───────
+ * وكيف تُحسب إعدادُ العيادة (`mode`) يُقال تحت القائمة — الخادمُ يختمه على الفاتورة. وسطرٌ ناقص يُقال بمكانه (`ask` رقمُه). */
+export function PfxCharges({ rows, onRows, mode, ask, fmt, sums }: {
+  rows: ChargeDraft[]; onRows: (rows: ChargeDraft[]) => void;
+  mode: "cost" | "expense";
+  /** رقمُ السطر الناقص (1-based) حين ضُغط الحفظ، أو 0. */
+  ask: number;
+  fmt: (n: number) => string;
+  /** مجموعا القائمة بعملة الفاتورة (draftSums — حسابُ النموذج نفسُه). */
+  sums: { company: number; other: number };
+}) {
+  const { t } = useTranslation();
+  const set = (i: number, patch: Partial<ChargeDraft>) => onRows(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const names = t("pfx.chSuggest").split("|").map((x) => x.trim()).filter(Boolean);
+  return (
+    <div className="space-y-2 border-t border-line pt-2.5" data-pfx-charges={mode}>
+      <dt className="flex items-center justify-between gap-2 text-ink-muted">
+        <span className="inline-flex items-center gap-1"><Truck size={13} /> {t("pfx.chTitle")}</span>
+        <button type="button" data-pfx-charge-add disabled={rows.length >= CHARGES_MAX}
+          onClick={() => { playTap(); onRows([...rows, { label: "", amount: "", payee: "company" }]); }}
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-brand-700 transition hover:bg-surface-2 disabled:opacity-40 dark:text-brand-300">
+          <Plus size={13} /> {t("pfx.chAdd")}
+        </button>
+      </dt>
+      <dd className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} data-pfx-charge-row={i + 1}
+            className={cn("space-y-1.5 rounded-xl border p-2", ask === i + 1 ? "border-danger-400" : "border-line")}>
+            <div className="flex items-center gap-1.5">
+              <input className="input h-9 min-w-0 flex-1 text-sm" list="pfx-charge-names" value={r.label} maxLength={CHARGE_LABEL_MAX}
+                onChange={(e) => set(i, { label: e.target.value })} placeholder={t("pfx.chLabel")} aria-label={t("pfx.chLabel")} data-pfx-charge-label />
+              <input type="number" inputMode="decimal" min="0" step="any" className="input h-9 w-28 text-sm font-bold tabular-nums"
+                value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} onFocus={(e) => e.target.select()}
+                placeholder="0" aria-label={t("pfx.chAmount")} data-pfx-charge-amount />
+              <button type="button" aria-label={t("pfx.chRemove")} data-pfx-charge-remove
+                onClick={() => { playTap(); onRows(rows.filter((_, k) => k !== i)); }}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-ink-muted transition hover:bg-surface-2 hover:text-danger-600">
+                <X size={15} />
+              </button>
+            </div>
+            <div className="flex gap-1" role="radiogroup" aria-label={t("pfx.chWho")}>
+              {(["company", "other"] as ChargePayee[]).map((w) => (
+                <button key={w} type="button" role="radio" aria-checked={r.payee === w} data-pfx-charge-payee={w}
+                  onClick={() => { if (r.payee !== w) { playTap(); set(i, { payee: w }); } }}
+                  className={cn("flex-1 rounded-lg px-1.5 py-1.5 text-2xs font-bold transition",
+                    r.payee === w ? (w === "company" ? "bg-warn-600 text-white" : "bg-brand-600 text-white") : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                  {w === "company" ? t("pfx.chCompany") : t("pfx.chOther")}
+                </button>
+              ))}
+            </div>
+            {ask === i + 1 && <p role="alert" className="text-2xs font-bold text-danger-600 dark:text-danger-300" data-pfx-charge-bad>{t("pfx.chBad")}</p>}
+          </div>
+        ))}
+        {rows.length > 0 && (
+          <div className="space-y-1 text-xs">
+            {sums.company > 0 && (
+              <p className="flex items-baseline justify-between gap-2 font-bold text-ink" data-pfx-charge-company>
+                <span>{t("pfx.chOnCompany")}</span><bdi className="tabular-nums">+{fmt(sums.company)}</bdi>
+              </p>
+            )}
+            {sums.other > 0 && (
+              <p className="flex items-baseline justify-between gap-2 text-ink-muted" data-pfx-charge-other>
+                <span>{t("pfx.chPaidOther")}</span><bdi className="tabular-nums">{fmt(sums.other)}</bdi>
+              </p>
+            )}
+            <p className="flex items-start gap-1 text-2xs text-ink-subtle" data-pfx-charge-mode={mode}>
+              <Info size={11} className="mt-0.5 shrink-0" />{mode === "cost" ? t("pfx.chModeCost") : t("pfx.chModeExpense")}
+            </p>
+          </div>
+        )}
+        <datalist id="pfx-charge-names">{names.map((n) => <option key={n} value={n} />)}</datalist>
+      </dd>
+    </div>
+  );
+}
+
+/** أجورُ فاتورةٍ محفوظة بتفاصيلها: `part="company"` قبل الصافي (داخله)، و`part="other"` بعد المتبقّي (خارجه) ومعها كيف حُسبت. */
+export function PfxChargeLines({ purchase, fmt, part }: { purchase: Purchase; fmt: (n: number) => string; part: "company" | "other" }) {
+  const { t } = useTranslation();
+  const ch = chargesOf(purchase);
+  if (!ch.list.length) return null;
+  if (part === "company") {
+    return (
+      <>
+        {ch.list.filter((x) => x.payee === "company").map((x, i) => (
+          <div key={i} className="flex items-center justify-between text-ink-muted" data-pdcharge="company">
+            <span className="min-w-0 truncate">{x.label}</span><bdi className="tabular-nums">+{fmt(x.amount)}</bdi>
+          </div>
+        ))}
+      </>
+    );
+  }
+  return (
+    <div className="space-y-1 border-t border-line pt-1.5 text-xs" data-pdcharges-other>
+      {ch.list.filter((x) => x.payee === "other").map((x, i) => (
+        <div key={i} className="flex items-center justify-between text-ink-muted" data-pdcharge="other">
+          <span className="min-w-0 truncate">{x.label} · {t("pfx.chOther")}</span><bdi className="tabular-nums">{fmt(x.amount)}</bdi>
+        </div>
+      ))}
+      {ch.mode && <p className="text-2xs text-ink-subtle" data-pdcharge-mode={ch.mode}>{ch.mode === "cost" ? t("pfx.chStampCost") : t("pfx.chStampExpense")}</p>}
+    </div>
   );
 }
 

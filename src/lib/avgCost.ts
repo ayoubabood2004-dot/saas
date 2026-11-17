@@ -68,6 +68,16 @@ export function purchaseUnitCostU(cU: bigint | null, netC: bigint | null, grossC
   return roundDiv(cU * (net > 0n ? net : 0n), grossC);
 }
 
+/** `_purchase_landed_cost(c, landed, gross)` (0276) ← نصيبُ السطر من الخصم **والأجور الموزَّعة** معاً: c × max(landed, 0) ÷ gross
+ *  بستّ منازل. أساسٌ يساوي المجموعَ أو غائب، أو مجموعٌ ≤ 0، أو كلفةٌ ≤ 0 أو غائبة ⇒ c كما هي. ودون المجموع = purchaseUnitCostU حرفاً
+ *  (الخصمُ وحده)، وفوقه الأجورُ تُوزَّع بنسبة قيمة السطر. landed وgross بالفلوس، وc بالمليون. */
+export function purchaseLandedCostU(cU: bigint | null, landedC: bigint | null, grossC: bigint | null): bigint | null {
+  if (cU === null || cU <= 0n || grossC === null || grossC <= 0n) return cU;
+  const landed = landedC ?? grossC;
+  if (landed === grossC) return cU;
+  return roundDiv(cU * (landed > 0n ? landed : 0n), grossC);
+}
+
 /** قيمةُ سطر شراءٍ دقيقة q·c بالمليار — لجمع v_old و v_new بلا تقريب. */
 export function lineValueNano(qM: bigint, cU: bigint): bigint {
   return qM * cU;

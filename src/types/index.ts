@@ -1239,6 +1239,14 @@ export interface Purchase {
   total_usd?: number | null;
   paid_usd?: number | null;
   discount_usd?: number | null;
+  /** أجورٌ إضافية على الفاتورة (0276): توصيل، نقل… — كلٌّ باسمه ومبلغه بالدينار (ودولارُه لفاتورة الدولار) ولمن. ما «على الشركة»
+   *  داخل `total` (دَينُها)، وما «لغيرهم» خارجه. غائبٌ = بلا أجور (فاتورةٌ أو قاعدةٌ قبل 0276). */
+  charges?: PurchaseCharge[] | null;
+  /** مجموعا الأجور بالدينار: على الشركة (داخل total) ولغيرهم (خارجه). */
+  charges_company?: number | null;
+  charges_other?: number | null;
+  /** كيف حُسبت الأجور — مختومٌ من إعداد العيادة يومَ أُضيفت: cost تُوزَّع على كلفة السطور، expense سطرٌ بالأرباح والخسائر. */
+  charges_mode?: PurchaseChargesMode | null;
   payment_method?: PaymentMethod | null;
   /** Settlement state vs. total — derived from amount_paid. */
   status?: PaymentStatus;
@@ -1251,6 +1259,10 @@ export interface Purchase {
   staff_id?: string | null; // who recorded it
   created_at: string;
 }
+
+/** أجرةٌ إضافية على فاتورة شراء (0276): `amount` بالدينار، و`usd` لفاتورة الدولار؛ `payee` لمن: الشركة (دَينُها) أو غيرُها (السائق). */
+export interface PurchaseCharge { label: string; amount: number; payee: "company" | "other"; usd?: number }
+export type PurchaseChargesMode = "cost" | "expense";
 
 /** دفعة تسديد على فاتورة شراء آجلة — سجل «دفتر الديون» (ترحيل 0076).
  *  Every settlement leg against a supplier purchase; amount_paid on the
@@ -1582,6 +1594,9 @@ export interface PurchaseMeta {
   fx_rate?: number | null;
   discount_usd?: number | null;
   amount_paid_usd?: number | null;
+  /** 0276: الأجورُ الإضافية بعملة الفاتورة (`amount` دينارٌ لفاتورة الدينار ودولارٌ لفاتورة الدولار). **غائبٌ بالتعديل = تبقى المحفوظة**
+   *  (جهازٌ ما تحدّث)، و[] = بلا أجور. ولا يُرسل إلا لقاعدةٍ تعرفها (purchase_charges_state). */
+  charges?: { label: string; amount: number; payee: "company" | "other" }[];
 }
 
 /* ---------------- Services & non-barcode items ---------------- */
@@ -1918,6 +1933,8 @@ export interface DemoDB {
   purchaseItems?: PurchaseItem[];
   purchaseEffects?: PurchaseEffect[];
   purchasePayments?: PurchasePayment[];
+  /** 0276: إعدادُ العيادة لأجور المشتريات (clinic_prefs.purchase_charges_mode) — غائبٌ = «على الكلفة». */
+  purchaseChargesMode?: PurchaseChargesMode;
   companyCharges?: CompanyCharge[];
   /** دفترُ الشركة خارجَ الفواتير (0224). */
   companyEntries?: CompanyEntry[];

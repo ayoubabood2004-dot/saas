@@ -70,9 +70,10 @@ console.log("\n▸ بابان آخران كانا يبلعان نيّةَ الم
  * Enter. فمن يمسح ثمّ يضغط «حفظ» يفقد آخرَ مسحةٍ بلا كلمة. */
 check("رمزٌ معلّقٌ بصندوق المسح يُقال قبل الحفظ", /purchase\.pendingScan/.test(pur) && /if \(scan\.trim\(\)\)/.test(pur));
 /* الفراغُ كان يعني «مدفوعةٌ كاملة» — وخطؤه باتّجاهٍ واحدٍ دائماً: الدَّينُ يُبخَس. */
-check("و«دفعناها» أو «عليها دَين» سؤالٌ لا افتراض", /paidMode/.test(pur) && /purchase\.needPaidMode/.test(pur));
-check("  والفاتورةُ الجديدة ترسل رقماً دائماً لا undefined",
-  /paidMode === "debt" \? paidNum : total/.test(pur));
+check("و«كلّها» أو «جزء» أو «دَين» سؤالٌ لا افتراض", /paidMode/.test(pur) && /purchase\.needPaidMode/.test(pur) && /if \(paidMissing\)/.test(pur));
+check("  والفاتورةُ الجديدة ترسل رقماً دائماً لا undefined (ما يقوله الاختيار — سلوكُه بـpurchase-charges-test)",
+  /amount_paid: editing \? \(amountPaid\.trim\(\) === "" \? undefined : paidNum\) : paidNum,/.test(pur)
+  && /const paidMissing = !editing && newPaid === null;/.test(pur));
 check("  ووضعُ التعديل يبقى على عقده (فارغٌ = لا تغيّر المدفوع)",
   /editing \? \(amountPaid\.trim\(\) === "" \? undefined/.test(pur));
 

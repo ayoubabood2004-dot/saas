@@ -6,7 +6,8 @@
  * ========================================================================= */
 import type { CompanyEntry, CompanyPayResult, PaymentMethod, Purchase, PurchaseDraftLine, PurchaseMeta } from "@/types";
 import { loadDB, saveDB } from "./demoStore";
-import { demoRepo, demoPurchaseDoor, demoPoolDue, demoPoolDueUsd, demoLedgerGuard, demoEntry, demoHint, demoInventoryRole } from "./repoDemo";
+import { demoRepo, demoPurchaseDoor, demoPoolDue, demoPoolDueUsd, demoLedgerGuard, demoEntry, demoHint, demoInventoryRole, demoChargesNorm } from "./repoDemo";
+import type { PurchaseCharge } from "@/types";
 import { demoUsdState } from "./demoUsd";
 import { decOf, decText, iqdOf } from "./usdMath";
 import { localISO, uid } from "./utils";
@@ -102,13 +103,15 @@ function after(purchaseId: string, op: "record" | "update", preps: Prep[], cur: 
   saveDB(db);
 }
 /** رأسُ فاتورة الدولار كما يكتبه الخادمُ بعد جسمه. */
-function stampUsd(purchaseId: string, rate: bigint, totalUsd: bigint, discUsd: bigint, paidUsd: bigint): Purchase {
+function stampUsd(purchaseId: string, rate: bigint, totalUsd: bigint, discUsd: bigint, paidUsd: bigint, charges: PurchaseCharge[]): Purchase {
   const db = loadDB();
   const p = (db.purchases ?? []).find((x) => x.id === purchaseId)!;
   const total = C(p.total);
   Object.assign(p, {
     currency: "USD", fx_rate: n4(rate), total_usd: n2(totalUsd), discount_usd: n2(discUsd), paid_usd: n2(paidUsd),
     amount_paid: n2(shareC(paidUsd, totalUsd, total, totalUsd, total)), status: statusOf(totalUsd, paidUsd),
+    // 0276: القائمةُ بدولارها (جسمُ الشراء حفظها بالدينار وحده).
+    charges: charges.length ? charges : null,
   });
   saveDB(db);
   return { ...p };
@@ -140,10 +143,12 @@ export async function demoRecordPurchaseFx(lines: PurchaseDraftLine[], meta: Pur
   } else {
     const gross = sums(preps);
     const disc = gross > 0n ? minB(maxB(C(meta.discount_usd ?? 0), 0n), gross) : 0n;
-    const total = gross - disc;
+    // 0276: الأجورُ بعملة الفاتورة — دولارُ ما على الشركة يدخل total_usd، ودينارُ كلّ أجرةٍ بسعر الفاتورة لجسم الشراء.
+    const ch = demoChargesNorm(meta.charges ?? null, n4(rate!));
+    const total = gross - disc + C(ch.companyUsd);
     const paid = minB(maxB(meta.amount_paid_usd != null ? C(meta.amount_paid_usd) : total, 0n), total);
-    const rec = await demoRepo.recordPurchase(preps.map((x) => x.line), { ...m, discount: discIqd(disc, gross, rate!), amount_paid: 0 });
-    p = stampUsd(rec.id, rate!, total, disc, paid);
+    const rec = await demoRepo.recordPurchase(preps.map((x) => x.line), { ...m, discount: discIqd(disc, gross, rate!), amount_paid: 0, charges: ch.list });
+    p = stampUsd(rec.id, rate!, total, disc, paid, ch.list);
   }
   after(p.id, "record", preps, cur, rate, from);
   return (loadDB().purchases ?? []).find((x) => x.id === p.id) ?? p;
@@ -167,6 +172,10 @@ export async function demoUpdatePurchaseFx(purchaseId: string, lines: PurchaseDr
     rate = rateOf(meta, old.fx_rate != null ? decOf(old.fx_rate, 4) : ctx.rate);
   }
   const preps = prep(lines, cur, rate);
+  // 0276: جهازٌ ما تحدّث (بلا مفتاح charges) يُبقي الأجور — إلا تبديلَ عملة فاتورةٍ عليها أجور: محفوظةٌ بعملةٍ لا تُقرأ بالأخرى.
+  if (meta?.charges === undefined && cur !== oldCur && (old.charges?.length ?? 0) > 0) {
+    throw demoHint("charges_currency", "على الفاتورة أجور إضافية بعملتها — حدّث الصفحة قبل تغيير العملة.");
+  }
   const from = (loadDB().purchaseEffects ?? []).length;
   const m = stripFx(meta);
   let p: Purchase;
@@ -183,14 +192,15 @@ export async function demoUpdatePurchaseFx(purchaseId: string, lines: PurchaseDr
     const gross = sums(preps);
     const discIn = "discount_usd" in (meta ?? {}) ? C(meta.discount_usd ?? 0) : C(old.discount_usd ?? 0);
     const disc = gross > 0n ? minB(maxB(discIn, 0n), gross) : 0n;
-    const total = gross - disc;
+    const ch = demoChargesNorm(meta.charges !== undefined ? meta.charges : (old.charges ?? null), n4(rate!));
+    const total = gross - disc + C(ch.companyUsd);
     const paidIn = meta.amount_paid_usd != null ? C(meta.amount_paid_usd)
       : oldCur === "USD" ? C(old.paid_usd ?? 0)
       : C(old.amount_paid ?? old.total) >= C(old.total) ? total
       : dr(C(old.amount_paid ?? 0) * RS, rate!);
     const paid = minB(maxB(paidIn, 0n), total);
-    await demoPurchaseDoor(() => demoRepo.updatePurchase(purchaseId, preps.map((x) => x.line), { ...m, discount: discIqd(disc, gross, rate!), amount_paid: 0 }));
-    p = stampUsd(purchaseId, rate!, total, disc, paid);
+    await demoPurchaseDoor(() => demoRepo.updatePurchase(purchaseId, preps.map((x) => x.line), { ...m, discount: discIqd(disc, gross, rate!), amount_paid: 0, charges: ch.list }));
+    p = stampUsd(purchaseId, rate!, total, disc, paid, ch.list);
   }
   after(purchaseId, "update", preps, cur, rate, from);
   return (loadDB().purchases ?? []).find((x) => x.id === purchaseId) ?? p;
