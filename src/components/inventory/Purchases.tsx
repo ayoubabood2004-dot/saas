@@ -665,7 +665,7 @@ function printOptions(user: { full_name?: string | null; phone?: string | null }
   const socials = getClinicSocials();
   return {
     labels: { subtotal: t("retail.subtotal", "المجموع الفرعي"), discount: t("retail.discount", "الخصم"), net: t("retail.net", "الصافي"),
-      chargeOther: t("purchase.chargeOther", "دفعناها لغيرهم") },
+      chargeOther: t("purchase.chargeOther", "مدفوعة هسّه") },
     clinicName: getClinicName() || user?.full_name || "doctorVet",
     clinicPhone: user?.phone ?? null,
     brand: "doctorVet",
@@ -1114,7 +1114,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
    * `undefined` بالتعديل فعلاً. لكنّ الشارة كانت تُشتقّ بدلالة الإنشاء وحدها،
    * فمسحُ الخانة بفاتورةٍ مدينة يعرض «مدفوعة» — شارةٌ تكذب على دَينٍ قائم. */
   /* الجديدةُ: ما يقوله الاختيارُ الصريح (newPurchasePaid — null = ناقص: الحفظُ يقف ويقولها بمكانها)، والشارةُ قبله «كلّها». */
-  const newPaid = editing ? null : newPurchasePaid(paidMode, amountPaid, total);
+  const newPaid = editing ? null : newPurchasePaid(paidMode, amountPaid, total, chSums.company);
   const paidNum = editing
     ? Math.max(0, Math.min(total, amountPaid.trim() !== "" ? (Number(amountPaid) || 0)
       : ((cur === "USD" && editing.purchase.currency === "USD" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)))
@@ -1797,7 +1797,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 /* ثلاثةُ اختياراتٍ صريحة بنطاق pfx (النصفُ البارد على سقفه)، وبديلُها حتى تصل بارتفاعها — لا قفزة. */
                 <LoadBoundary scope="pfx-paid" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
                   <Suspense fallback={<div className="h-9 rounded-xl bg-surface-2" />}>
-                    <PfxPaidLazy mode={paidMode} amount={amountPaid} total={total} fmt={fmt} ask={paidAsk}
+                    <PfxPaidLazy mode={paidMode} amount={amountPaid} total={total} later={chSums.company} fmt={fmt} ask={paidAsk}
                       onMode={(m) => { setPaidMode(m); setPaidAsk(false); if (m !== "part") setAmountPaid(""); }}
                       onAmount={(v) => { setAmountPaid(v); setPaidAsk(false); }} />
                   </Suspense>

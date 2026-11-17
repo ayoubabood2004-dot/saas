@@ -227,7 +227,7 @@ export function PurchaseLog({ purchases }: { purchases: Purchase[] }) {
                                 </tr>
                                 {(p.charges ?? []).filter((x) => x.payee === "other").map((x, i) => (
                                   <tr key={`o${i}`} className="border-t border-line/50" data-logcharge="other">
-                                    <td colSpan={6} className="py-1.5 pe-2 text-2xs text-ink-subtle">{x.label} · {t("purchase.chargeOther", "دفعناها لغيرهم")}</td>
+                                    <td colSpan={6} className="py-1.5 pe-2 text-2xs text-ink-subtle">{x.label} · {t("purchase.chargeOther", "مدفوعة هسّه")}</td>
                                     <td className="py-1.5 text-end tabular-nums text-ink-muted">{money(x.amount)}</td>
                                   </tr>
                                 ))}
