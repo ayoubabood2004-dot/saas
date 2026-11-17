@@ -38,6 +38,7 @@ import { chargesOf, chargesToSend, draftProblem, draftSums, purchaseGrossCur, ty
 import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, newPurchasePaid, type FxCur, type PaidMode } from "@/lib/purchaseFxMath";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
+import { purchaseGroupAsks, type GroupAskItem } from "@/lib/productGroups";
 import { levelByCode, packPrice, type CodeHit } from "@/lib/packs";
 /* أنماطُ الجدول التي لا تملكها الورقةُ العامّة — تصل مع هذه القطعة الكسولة لا بحزمة الإقلاع (store-weight-guard). */
 import "./purchaseGrid.css";
@@ -51,6 +52,8 @@ const loadPfxFxSum = () => page(() => import("@/components/inventory/PurchaseFx"
 const loadPfxPaid = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPaid })), ["pfx"]);
 const loadPfxCharges = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxCharges })), ["pfx"]);
 const loadPfxChargeLines = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxChargeLines })), ["pfx"]);
+const loadPfxGroupAsk = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxGroupAsk })), ["pfx"]);
+let PfxGroupAskLazy = loadPfxGroupAsk();
 let PfxFxSumLazy = loadPfxFxSum();
 let PfxPaidLazy = loadPfxPaid();
 let PfxChargesLazy = loadPfxCharges();
@@ -60,7 +63,7 @@ let PfxLineCurLazy = loadPfxLineCur();
 let PfxTotalsLazy = loadPfxTotals();
 let PfxPayLazy = loadPfxPay();
 const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); PfxFxSumLazy = loadPfxFxSum(); PfxPaidLazy = loadPfxPaid();
-  PfxChargesLazy = loadPfxCharges(); PfxChargeLinesLazy = loadPfxChargeLines(); };
+  PfxChargesLazy = loadPfxCharges(); PfxChargeLinesLazy = loadPfxChargeLines(); PfxGroupAskLazy = loadPfxGroupAsk(); };
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 /* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
@@ -715,6 +718,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   /* 0276: أجورٌ إضافية (توصيل، نقل…) بعملة الفاتورة. `chgSt`: هل الأجسامُ الحيّة تعرفها وكيف تُحسب بالعيادة — null = ما عُرف بعد
    * ⇒ لا قائمة ولا مفتاح (أجرةٌ تُكتب ولا تُحفظ أسوأُ من خانةٍ غائبة). `chgAsk`: رقمُ السطر الناقص حين ضُغط الحفظ. */
   const [chg, setChg] = useState<ChargeDraft[]>([]);
+  /** المربوطة (0277): مادّةٌ بمجموعة يتغيّر سعرُها بهذه الفاتورة ⇒ «لكل المجموعة؟» — ما علّمه المشتري (معرّفُ المادّة). */
+  const [grpPick, setGrpPick] = useState<string[]>([]);
   const [chgSt, setChgSt] = useState<PurchaseChargesState | null>(null);
   const [chgAsk, setChgAsk] = useState(0);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
@@ -773,7 +778,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       // الخصمُ المحفوظ مبلغاً كما حُفظ — والحفظُ يرسل ما يُرى (لا غيابَ يُبقي القديمَ خفيّاً).
       setDiscType("fixed"); setDiscValue(usd ? ((p.discount_usd ?? 0) > 0 ? String(p.discount_usd) : "") : ((p.discount ?? 0) > 0 ? String(p.discount) : ""));
       // 0276: الأجورُ المحفوظة بعملة الفاتورة — والحفظُ يرسل ما يُرى (قائمةٌ فارغة تشيلها كلَّها).
-      setChg(chargesOf(p).list.map((x) => ({ label: x.label, amount: String(x.amount), payee: x.payee }))); setChgAsk(0);
+      setChg(chargesOf(p).list.map((x) => ({ label: x.label, amount: String(x.amount), payee: x.payee }))); setChgAsk(0); setGrpPick([]);
       setLines(editing.items.map((it) => blankLine({
         product_id: it.product_id ?? null,
         barcode: it.barcode ?? "",
@@ -794,7 +799,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
       setPayMethod("cash"); setAmountPaid(""); setPaidMode(null); setPaidAsk(false);
       setDiscType("fixed"); setDiscValue("");
-      setChg([]); setChgAsk(0);
+      setChg([]); setChgAsk(0); setGrpPick([]);
       setCur("IQD"); setPer100(""); setRateAsk(false);
       setLines(seed?.items.length ? seed.items.map(({ product, qty }) => ({ ...lineFromProduct(product, ""), qty: String(qty) })) : [blankLine()]);
     }
@@ -902,6 +907,21 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const sayPack = (tone: "info" | "warn", build: (m: typeof import("@/components/retail/PackSale")) => string) => {
     void Promise.all([import("@/components/retail/PackSale"), import("@/i18n").then((i) => i.ensureOwned("pks"))])
       .then(([m]) => toast.toast({ tone, title: build(m) }), () => { /* swallow-ok: السطرُ نزل، والجملةُ وحدها غابت */ });
+  };
+  /** المربوطة (0277): بعد حفظ الفاتورة، سعرُ كلّ مادّةٍ علّمها المشتري ← لأخواتها بنداءٍ واحدٍ لكلّ مجموعة. جملتاه من نطاق pfx
+   *  (import() وensureOwned كـsayPack). فشلُ واحدةٍ لا يوقف الباقي، والفاتورةُ محفوظةٌ قبله فيُقال «انحفظت، بس…». */
+  const followGroups = async (items: GroupAskItem[]) => {
+    let n = 0;
+    let err: unknown = null;
+    try {
+      const m = await import("@/lib/productGroupsApi");
+      for (const a of items) {
+        try { n += (await m.followGroup(a.productId, !!a.sell, !!a.buy)).updated; } catch (e) { err ??= e; }
+      }
+    } catch (e) { err = e; }
+    const say = await Promise.all([import("@/components/inventory/PurchaseFx"), import("@/i18n").then((i) => i.ensureOwned("pfx"))]).then(([m]) => m, () => null);
+    if (err) toast.error(say ? say.pfxGroupSay("fail") : describeDbError(err, t), describeDbError(err, t));
+    else if (n > 0 && say) toast.success(say.pfxGroupSay("done", n));
   };
   /** 0267: رمزُ كارتونٍ أو مغلّفٍ بفاتورة الشراء. كان يسقط إلى «مادّةٌ جديدة» بباركود الكارتون — والحفظُ يرفضه حارسُ المستويات
    *  (الرمزُ لكارتون مادّةٍ قائمة). الكارتونُ يضيف علبَه لسطر مادّته (الشراءُ بالعلبة، وسعرُ السطر للعلبة كما هو)، ويُقال سعرُه
@@ -1092,6 +1112,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   }, [company, companies, sections]);
 
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
+  const grpAsks = useMemo(() => purchaseGroupAsks(validLines.map((l) => ({ product_id: l.product_id, sell: sellPriceToSend(l.sell_price), buy: Number(l.purchase_price) || 0 })), products, cur),
+    [lines, products, cur]);   // eslint-disable-line react-hooks/exhaustive-deps -- validLines مشتقّةٌ من lines
   /* المجموعُ قبل الخصم، والخصمُ مقصوصاً عليه (resolveDiscount كشاشة البيع، ومجموعٌ ≤ صفر بلا خصم — كالخادم)، و`total` الصافي:
    * ما يُدفع ويُدان — فالمدفوعُ والحالةُ والشارةُ أدناه كلُّها على الصافي كما يكتبها الخادم. */
   const subtotal = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
@@ -1387,6 +1409,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         : editing
           ? await repo.updatePurchase(editing.purchase.id, draft, meta)
           : await repo.recordPurchase(draft, meta);
+      // ما علّمه المشتري «لكل المجموعة»: بعد أن كتبت الفاتورةُ سعرَ المادّة — ينسخه الخادمُ لأخواتها (0277). فشلُه يُقال والفاتورةُ محفوظة.
+      const follow = grpAsks.filter((a) => grpPick.includes(a.productId));
+      if (follow.length) await followGroups(follow);
       playSuccess();
       setSaved(done);
     } catch (e) {
@@ -1861,6 +1886,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             )}
           </div>
         </div>
+
+        {grpAsks.length > 0 && (
+          <LoadBoundary scope="pfx-grp" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <PfxGroupAskLazy items={grpAsks} picked={grpPick}
+                onToggle={(id) => { playTap(); setGrpPick((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id])); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* Summary + save */}
         <div className="sticky bottom-0 z-30 -mx-1 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1/95 p-3 backdrop-blur">

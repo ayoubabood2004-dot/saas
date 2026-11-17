@@ -475,7 +475,7 @@ console.log("▸ ز) الشاشةُ موصولة: النموذجُ والمجم�
  * هنا)، إلا القواعدَ الصِّرفة. والترجمةُ ترجع المفتاح: الأزرارُ والرسائلُ تُطابَق بمفاتيحها. */
 // والتعبئةُ (0259، `@/lib/packs`) قاعدةٌ صِرفة كذلك: بديلُها المولَّد يرجع undefined فيسقط رسمُ الصفّ.
 // 0264: usdProduct (مسودّةُ السعر بالدولار) صِرفةٌ يستوردها النموذج — بديلٌ مولَّدٌ لها undefined يُسقط رسمَه كلَّه.
-const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct"]);
+const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups"]);
 const UI_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
@@ -484,6 +484,8 @@ const UI_STUB = {
     export const AnimatePresence = ({ children }) => children;
     export const motion = new Proxy({}, { get: (_t, tag) => (p) => createElement(tag, strip(p)) });`,
   "@/lib/repo": "export const repo = new Proxy({}, { get: (_t, k) => globalThis.__invRepo[k] });",
+  // المربوطة (0277): بابٌ كسولٌ يُستورد بـimport() — بديلُه يمرّر لـ__invGroups («ط٣»)، والافتراضُ «قاعدةٌ قبل 0277».
+  "@/lib/productGroupsApi": ["productGroupsReady", "setGroupPrice", "unlinkProducts"].map((k) => `export const ${k} = (...a) => globalThis.__invGroups.${k}(...a);`).join("\n"),
   "@/components/ui": `import { createElement, forwardRef } from "react";
     export const Button = forwardRef(({ children, leftIcon, loading, variant, size, ...p }, _ref) => createElement("x-Button", p, children));
     export const Badge = ({ children, ...p }) => createElement("x-Badge", p, children);
@@ -525,6 +527,7 @@ const uiStubOf = (spec) => {
     return k === "default" ? `export default ${v};` : `export const ${k} = ${v};`;
   })].join("\n");
 };
+globalThis.__invGroups = { productGroupsReady: async () => false };
 const fromInventory = (importer) => /[\\/]src[\\/]pages[\\/]Inventory\.tsx$/.test(importer ?? "");
 /** يحزم Inventory.tsx من نصٍّ — الأصل، أو INVENTORY_SRC («ي»)، أو طفرةٌ بالذاكرة («ك») — ويحمّل المكوّنين مع مضيف react-mini. */
 async function buildUI(src) {
@@ -932,6 +935,72 @@ if (UI) {
   const reals = await realPoolSuite(UI);
   for (const r of reals) check(r.label, r.ok, r.detail, r.key);
   check(`  «ط٢» قالت ما فحصت: ${reals.length} سجلّات`, reals.length === 3, String(reals.length));
+  console.log("▸ ط٣) المربوطة (0277): سعرُ مادّةٍ مربوطة للمجموعة كلّها بنداءٍ واحد بما رآه، والرقعةُ بلا سعر، والشيلُ بتعديل المجموعة فكٌّ لا حذف");
+  const grp = await groupPriceSuite(UI);
+  for (const r of grp) check(r.label, r.ok, r.detail);
+  check(`  «ط٣» قالت ما فحصت: ${grp.length} سجلّات`, grp.length === 9, String(grp.length));
+}
+
+/** ط٣) المربوطة على النموذج المرسوم (الوجهُ التجريبيّ — الكتابةُ للمادّة نفسُها، والمجموعةُ نداءٌ يُسجَّل). */
+async function groupPriceSuite(UI) {
+  const { session, save, openGroup, saveGroup } = harness(UI);
+  const out = [];
+  const ok = (label, cond, detail = "") => out.push({ label, ok: !!cond, detail });
+  const be = backends.demo;
+  const calls = [];
+  const sellField = (p) => p.value === "1500";
+  globalThis.__invGroups = {
+    productGroupsReady: async () => true,
+    setGroupPrice: async (g, sell, buy, seen) => { calls.push({ g, sell, buy, seen }); return { group: g, n: 2, changed: 2 }; },
+    unlinkProducts: async (g, ids) => { calls.push({ unlink: g, ids }); return { group: g, unlinked: ids.length, left: 0, dissolved: true }; },
+  };
+  try {
+    let s = await session(be, { product: GA, all: [GA, GB] });
+    await s.type(sellField, "1700"); await save(s);
+    ok("سعرُ البيع لمادّةٍ مربوطة ⇒ نداءٌ واحد للمجموعة ببيعٍ ١٧٠٠ والشراءُ لا يُمسّ",
+      calls.length === 1 && calls[0].g === "g1" && calls[0].sell === 1700 && calls[0].buy === null, J(calls));
+    ok("  وما رآه: المفتوحُ بسعره والأختُ بسعر القائمة", J(calls[0]?.seen) === J({ a: { s: 1500, p: 1000 }, b: { s: 1500, p: 1200 } }), J(calls[0]?.seen));
+    ok("  ورقعةُ المادّة بلا سعر بيعٍ ولا شرطِه (لا يُكتب مرّتين)", s.by("a").length === 1 && !("sell_price" in s.by("a")[0].patch) && !("sell_price" in s.by("a")[0].expect), J(s.by("a")));
+    s.done();
+    calls.length = 0;
+    s = await session(be, { product: GA, all: [GA, GB] });
+    await s.type(nameField, "جديد"); await save(s);
+    ok("حفظُ اسمٍ لمادّةٍ مربوطة ⇒ لا نداءَ للمجموعة", calls.length === 0 && s.by("a").length === 1 && s.by("a")[0].patch.name === "جديد", J({ calls, w: s.by("a") }));
+    s.done();
+    calls.length = 0;
+    s = await session(be, { product: GA, all: [GA, GB], moved: { a: { stock: 4 } } });   // بيعةٌ من جهازٍ آخر بعد الفتح
+    await s.type((p) => p.value === "5", "7"); await s.type(sellField, "1700"); await save(s); await save(s);
+    ok("كتابةُ المادّة فشلت بعد سعر المجموعة ⇒ الإعادةُ لا ترسل سعرَ المجموعة ثانيةً (كان يُرفض price_moved عن سعرٍ كتبه النموذجُ نفسُه)",
+      calls.length === 1 && s.by("a").length === 2 && s.by("a").every((w) => !("sell_price" in w.patch)), J({ calls: calls.length, w: s.by("a") }));
+    s.done();
+    calls.length = 0;
+    globalThis.__invGroups.productGroupsReady = async () => false;
+    s = await session(be, { product: GA, all: [GA, GB] });
+    await s.type(sellField, "1700"); await save(s);
+    ok("قاعدةٌ قبل 0277 ⇒ المادّةُ وحدها كما كانت (بشرط سعرها)",
+      calls.length === 0 && s.by("a")[0]?.patch.sell_price === 1700 && s.by("a")[0]?.expect.sell_price === 1500, J({ calls, w: s.by("a") }));
+    s.done();
+    globalThis.__invGroups.productGroupsReady = async () => true;
+    globalThis.__invGroups.setGroupPrice = async () => { throw Object.assign(new Error("price_moved"), { code: "P0001", hint: "تغيّر" }); };
+    s = await session(be, { product: GA, all: [GA, GB] });
+    await s.type(nameField, "جديد"); await s.type(sellField, "1700"); await save(s);
+    ok("رفضُ المجموعة (price_moved) ⇒ لا كتابةَ للمادّة أبداً (ولا اسمُها)، والرفضُ يُقال", s.by("a").length === 0 && s.log.errors.length === 1, J({ w: s.by("a"), e: s.log.errors }));
+    s.done();
+    calls.length = 0;
+    let deleted = 0;
+    s = await openGroup(be, { repo: { deleteProduct: async () => { deleted++; } } });
+    let k = 0;
+    await s.press((_, n) => n.props["aria-label"] === "pkg.groupRemoveHint" && k++ === 1);
+    await saveGroup(s);
+    ok("شيلُ سطرٍ بتعديل المجموعة ⇒ فكٌّ بنداءٍ واحد (ب)، لا حذف", J(calls) === J([{ unlink: "g1", ids: ["b"] }]) && deleted === 0, J({ calls, deleted }));
+    ok("  والسطرُ الباقي يُحفظ كما كان", s.by("a").length === 1 && s.by("b").length === 0, J(s.log.writes));
+    s.done();
+  } catch (e) {
+    ok("«ط٣» جرت كلُّها", false, String(e?.stack ?? e));
+  } finally {
+    globalThis.__invGroups = { productGroupsReady: async () => false };
+  }
+  return out;
 }
 
 /* ── ي) على الشِّفرة القديمة (INVENTORY_SRC): كلُّ سجلٍّ لفحصٍ جديد يسقط، وكلُّ ما عداه يمرّ ─────────────────

@@ -5598,6 +5598,7 @@ export const loadDemoPnl = () => import("./demoPnl");
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 export const loadDemoUsd = () => import("./demoUsd");
 export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");
+export const loadDemoProductGroups = () => import("./demoProductGroups");   // 0277 — المنتجاتُ المربوطة
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */

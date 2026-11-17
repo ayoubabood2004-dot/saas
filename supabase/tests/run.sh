@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -12762,6 +12762,108 @@ $P -c "select set_config('doctorvet.usd_purchase_door', 'on', false);
        delete from companies where clinic_id = '$HC'; delete from clinic_fx_rates where clinic_id = '$HC';
        update clinic_prefs set purchase_charges_mode = 'cost' where clinic_id = '$HC';
        select set_config('doctorvet.usd_purchase_door', 'off', false);" >/dev/null
+
+# ── 0277: المنتجاتُ المربوطة — ربطٌ وفكٌّ بضغطة، وسعرٌ واحدٌ للمجموعة بكتابةٍ ذرّية ────────────────────────────────
+# GC عيادةٌ وصاحبُها (مدير)، GV طبيبُها، GR استقبالُها. الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).
+echo "▸ 0277: المنتجاتُ المربوطة — ربطٌ وفكٌّ وسعرٌ واحد للكل، وما رآه الجهاز شرطُ الكتابة"
+out=$($P -f "$MIG/0277_product_groups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0277 ما انعادت فوق إعادات الأقسام"; fail=1; }
+XG=c2770000-0000-4000-8000-0000000000
+GC=${XG}c1
+GV=${XG}c2
+GR=${XG}c3
+GO=${XG}c9
+# SEEN a1:1000:500 a2:1200:600 ⇒ '{"<id a1>":{"s":1000,"p":500},…}'::jsonb — ما رآه الجهاز.
+SEEN() { local o="" s=""; for x in "$@"; do IFS=: read -r i a b <<< "$x"; o="$o$s\"${XG}$i\":{\"s\":$a,\"p\":$b}"; s=","; done; echo "'{$o}'::jsonb"; }
+IDS()  { local o="" s=""; for i in "$@"; do o="$o$s'${XG}$i'"; s=","; done; echo "array[$o]::uuid[]"; }
+GK()   { echo "(select bulk_group from products where id = '${XG}$1')"; }
+LNK()  { echo "select (r->>'n')||':'||(r->>'added')||':'||(r->>'dissolved') from (select product_group_link($1, $2, $3, $4, $5) r) s"; }
+PR()   { echo "(select coalesce(sell_price::text,'-')||'/'||coalesce(purchase_price::text,'-') from products where id = '${XG}$1')"; }
+PU()   { echo "(select coalesce(sell_price_usd::text,'-')||'/'||coalesce(purchase_price_usd::text,'-') from products where id = '${XG}$1')"; }
+GB()   { echo "(select coalesce(bulk_group, '-') from products where id = '${XG}$1')"; }
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$GC'),('$GV'),('$GR'),('$GO') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$GV','$GC','veterinarian','active'), ('$GR','$GC','receptionist','active')
+         on conflict do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, bulk_group) values
+         ('${XG}a1', '$GC', 'ربط أ', 'PG7-A1', 3, 1000, 500, null), ('${XG}a2', '$GC', 'ربط ب', 'PG7-A2', 0, 1200, 600, null),
+         ('${XG}a3', '$GC', 'ربط ج', 'PG7-A3', 2, 1500, 700, null), ('${XG}a4', '$GC', 'ربط قديم ١', 'PG7-A4', 1, 900, 400, 'blk_old7'),
+         ('${XG}a5', '$GC', 'ربط قديم ٢', 'PG7-A5', 1, 900, 400, 'blk_old7'), ('${XG}f1', '$GO', 'عيادة ثانية', 'PG7-X1', 1, 900, 400, null)
+       on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, price_currency, sell_price_usd, purchase_price_usd) values
+         ('${XG}d1', '$GC', 'ربط دولار ١', 'PG7-D1', 0, 0, 0, 'USD', 10, 5), ('${XG}d2', '$GC', 'ربط دولار ٢', 'PG7-D2', 0, 0, 0, 'USD', 12, null)
+       on conflict (id) do nothing;" >/dev/null
+chk "الواجهةُ تسأل فتعرف (product_groups_ready)، والاستقبالُ لا يربط (forbidden)" \
+    "select $(rv $GV "select product_groups_ready()::text")||'|'||$(rerr $GR "$(LNK "$(IDS a1 a2)" null 1100 550 "$(SEEN a1:1000:500 a2:1200:600)")")" "true|forbidden"
+chk "ربطُ أ وب بمجموعةٍ جديدة بسعر ١١٠٠/٥٥٠ ⇒ عضوان أُضيفا، ولا مجموعةَ انفكّت" \
+    "select $(rv $GV "$(LNK "$(IDS a1 a2)" null 1100 550 "$(SEEN a1:1000:500 a2:1200:600)")")" "2:2:0"
+chk "  والاثنان بالسعر نفسِه وبمفتاحٍ واحدٍ جديد (grp_…)، والرصيدُ ما تحرّك" \
+    "select $(PR a1)||'|'||$(PR a2)||'|'||($(GB a1) = $(GB a2) and $(GB a1) like 'grp\_%')::text||'|'||(select stock::text from products where id = '${XG}a1')" \
+    "1100.00/550.00|1100.00/550.00|true|3.000"
+chk "إضافةُ ج بأسعارٍ رآها قبل الربط ⇒ price_moved، وعضوٌ ناقصٌ مما رآه ⇒ group_changed" \
+    "select $(rerr $GV "$(LNK "$(IDS a3)" "$(GK a1)" 1100 550 "$(SEEN a1:1000:500 a2:1100:550 a3:1500:700)")")||'|'||$(rerr $GV "$(LNK "$(IDS a3)" "$(GK a1)" 1100 550 "$(SEEN a1:1100:550 a3:1500:700)")")" \
+    "price_moved|group_changed"
+chk "  وما كُتب شيء: ج على سعره وبلا مجموعة" "select $(PR a3)||'|'||$(GB a3)" "1500.00/700.00|-"
+chk "إضافةُ ج بما يراه الآن ⇒ ثلاثة، وواحدٌ أُضيف" \
+    "select $(rv $GV "$(LNK "$(IDS a3)" "$(GK a1)" 1100 550 "$(SEEN a1:1100:550 a2:1100:550 a3:1500:700)")")" "3:1:0"
+chk "  وسعرُه سعرُ المجموعة (يُقرأ بجملةٍ ثانية — درسُ 0257)" "select $(PR a3)" "1100.00/550.00"
+chk "نقلُ «قديم ١» من مجموعةٍ بعضوين ⇒ أربعة، والقديمةُ انفكّت (عضوٌ واحد ليس ربطاً)" \
+    "select $(rv $GV "$(LNK "$(IDS a4)" "$(GK a1)" 1100 550 "$(SEEN a1:1100:550 a2:1100:550 a3:1100:550 a4:900:400)")")" "4:1:1"
+chk "  و«قديم ٢» بلا مجموعة وعلى سعره، و«قديم ١» بالمجموعة الجديدة" \
+    "select $(GB a5)||'|'||$(PR a5)||'|'||($(GB a4) = $(GB a1))::text" "-|900.00/400.00|true"
+chk "الرفض بجملته: دولارٌ مع دينار (group_mixed)، مادّةُ عيادةٍ أخرى (product_missing)، مادّةٌ وحدها (group_needs_two)" \
+    "select $(rerr $GV "$(LNK "$(IDS d1)" "$(GK a1)" 1100 550 "$(SEEN a1:1100:550 a2:1100:550 a3:1100:550 a4:1100:550 d1:10:5)")")||'|'||$(rerr $GV "$(LNK "$(IDS a5 f1)" null 900 400 "$(SEEN a5:900:400 f1:900:400)")")||'|'||$(rerr $GV "$(LNK "$(IDS a5)" null 900 400 "$(SEEN a5:900:400)")")" \
+    "group_mixed|product_missing|group_needs_two"
+chk "  وبلا سعر بيع (price_required)، وسعرٌ سالب (bad_price)، ومجموعةٌ غير موجودة (group_missing)" \
+    "select $(rerr $GV "$(LNK "$(IDS a5 d1)" null null 1 "$(SEEN a5:900:400)")")||'|'||$(rerr $GV "$(LNK "$(IDS a5)" null -1 1 "$(SEEN a5:900:400)")")||'|'||$(rerr $GV "$(LNK "$(IDS a5)" "'grp_none'" 900 400 "$(SEEN a5:900:400)")")" \
+    "price_required|bad_price|group_missing"
+chk "سعرُ المجموعة: بيعٌ ١٣٠٠ والشراءُ فارغ ⇒ الأربعة تغيّرت والشراءُ كما هو" \
+    "select $(rv $GV "select (r->>'n')||':'||(r->>'changed') from (select product_group_set_price($(GK a1), 1300, null, $(SEEN a1:1100:550 a2:1100:550 a3:1100:550 a4:1100:550)) r) s")" "4:4"
+chk "  (وكلُّ عضوٍ ١٣٠٠/٥٥٠)" "select $(PR a1)||'|'||$(PR a2)||'|'||$(PR a3)||'|'||$(PR a4)" "1300.00/550.00|1300.00/550.00|1300.00/550.00|1300.00/550.00"
+$P -c "update products set sell_price = 1350 where id = '${XG}a2'" >/dev/null   # رفعٌ من جهازٍ آخر بعد ما فُتحت الشاشة
+chk "  وعضوٌ تغيّر سعرُه بعد الفتح ⇒ price_moved ولا يُكتب شيء (ولا عضو)، وبلا سعرَين ⇒ nothing_to_set" \
+    "select $(rerr $GV "select product_group_set_price($(GK a1), 1400, 600, $(SEEN a1:1300:550 a2:1300:550 a3:1300:550 a4:1300:550))")||'|'||$(rerr $GV "select product_group_set_price($(GK a1), null, null, $(SEEN a1:1300:550 a2:1350:550 a3:1300:550 a4:1300:550))")" \
+    "price_moved|nothing_to_set"
+chk "  (أ ١٣٠٠/٥٥٠ وب ١٣٥٠/٥٥٠ كما كانا)" "select $(PR a1)||'|'||$(PR a2)" "1300.00/550.00|1350.00/550.00"
+chk "فكُّ ج وحده ⇒ بقي ثلاثة، والمجموعةُ قائمة" \
+    "select $(rv $GV "select (r->>'unlinked')||':'||(r->>'left')||':'||(r->>'dissolved') from (select product_group_unlink($(GK a1), $(IDS a3)) r) s")" "1:3:false"
+chk "  وج بلا مجموعة وعلى سعره بالمخزن" "select $(GB a3)||'|'||$(PR a3)" "-|1300.00/550.00"
+chk "  وفكُّ ما ليس عضواً ⇒ group_changed (ولا يُفكّ معه غيرُه)" \
+    "select $(rerr $GV "select product_group_unlink($(GK a1), $(IDS a1 a3))")||'|'||($(GB a1) <> '-')::text" "group_changed|true"
+chk "فكُّ أ وب ⇒ بقي «قديم ١» وحده فانفكّت كلُّها" \
+    "select $(rv $GV "select (r->>'unlinked')||':'||(r->>'left')||':'||(r->>'dissolved') from (select product_group_unlink($(GK a1), $(IDS a1 a2)) r) s")" "2:0:true"
+chk "  و«قديم ١» بلا مجموعة" "select $(GB a4)" "-"
+chk "الدولار: ربطُ د١ ود٢ بـ١١٫٥\$/٦\$" \
+    "select $(rv $GV "$(LNK "$(IDS d1 d2)" null 11.5 6 "$(SEEN d1:10:5 d2:12:null)")")" "2:2:0"
+chk "  ⇒ أعمدةُ الدولار، والدينارُ ما يُمسّ" "select $(PU d1)||'|'||$(PU d2)||'|'||$(PR d1)" "11.50/6.00|11.50/6.00|0.00/0.00"
+$P -c "update products set sell_price_usd = 13 where id = '${XG}d1'" >/dev/null   # فاتورةُ شراءٍ كتبت سعرَ د١
+chk "بعد الشراء: «لكل المجموعة» للبيع وحده ⇒ عضوٌ واحد تبعه" \
+    "select $(rv $GV "select (r->>'n')||':'||(r->>'updated')||':'||(r->>'skipped') from (select product_group_follow('${XG}d1', true, false) r) s")" "2:1:0"
+chk "  د٢ يتبع د١ بالبيع والشراءُ كما هو" "select $(PU d2)" "13.00/6.00"
+$P -c "update products set purchase_price = 800, sell_price = 1250 where id = '${XG}a1'" >/dev/null
+chk "  وبالدينار للشراء وحده ⇒ ب يتبع أ بالشراء والبيعُ كما هو (بعد ربطٍ جديد)، والمادّةُ بلا مجموعة ⇒ صفر" \
+    "select $(rv $GV "$(LNK "$(IDS a1 a2)" null 1250 800 "$(SEEN a1:1250:800 a2:1350:550)")")||'|'||$(rv $GV "select product_group_follow('${XG}a1', false, true)->>'updated'")||'|'||$(rv $GV "select product_group_follow('${XG}a5', true, true)->>'n'")" \
+    "2:2:0|0|0"
+$P -c "update products set purchase_price = 820 where id = '${XG}a1'" >/dev/null
+chk "  ثمّ شراءٌ بـ٨٢٠ ⇒ عضوٌ واحد تبعه" "select $(rv $GV "select product_group_follow('${XG}a1', false, true)->>'updated'")" "1"
+chk "  (ب ١٢٥٠/٨٢٠)" "select $(PR a2)" "1250.00/820.00"
+chk "  والاستقبالُ لا يغيّر سعرَ المجموعة ولا يتبعها (forbidden)" \
+    "select $(rerr $GR "select product_group_set_price($(GK a1), 1, null, $(SEEN a1:1250:820 a2:1250:820))")||'|'||$(rerr $GR "select product_group_follow('${XG}a1', true, false)")" "forbidden|forbidden"
+$P -c "update products set bulk_group = 'mix7' where id in ('${XG}a3', '${XG}d2'); update products set sell_price = 1999 where id = '${XG}a3'" >/dev/null
+chk "مجموعةٌ مختلطة (أقدم من الحارس): النسخُ بعملة المادّة وحدها — الدولارُ يُعدّ «متروكاً» ولا يُمسّ" \
+    "select $(rv $GV "select (r->>'n')||':'||(r->>'updated')||':'||(r->>'skipped') from (select product_group_follow('${XG}a3', true, true) r) s")" "2:0:1"
+chk "  (د٢ على سعره بالعملتين)" "select $(PU d2)||'|'||$(PR d2)" "13.00/6.00|0.00/0.00"
+chk "الأبوابُ definer ومحصورةٌ بالعيادة بنصّها (clinic_id = v_clinic)، والأدواتُ الداخلية لا تُنادى" \
+    "select (select bool_and(prosecdef and position('clinic_id = v_clinic' in prosrc) > 0) from pg_proc where proname in ('product_group_link','product_group_unlink','product_group_set_price','product_group_follow'))::text
+            ||'|'||(select count(*) from pg_proc where proname in ('product_group_link','product_group_unlink','product_group_set_price','product_group_follow','product_groups_ready'))::text" "true|5"
+chk "  والأبوابُ لا من anon" \
+    "select (has_function_privilege('anon', 'public.product_group_link(uuid[],text,numeric,numeric,jsonb)', 'execute') or has_function_privilege('anon', 'public.product_group_unlink(text,uuid[])', 'execute')
+             or has_function_privilege('anon', 'public.product_group_set_price(text,numeric,numeric,jsonb)', 'execute') or has_function_privilege('anon', 'public.product_group_follow(uuid,boolean,boolean)', 'execute')
+             or has_function_privilege('anon', 'public.product_groups_ready()', 'execute'))::text" "false"
+Q277="select (select md5(string_agg(id::text||':'||coalesce(bulk_group,'-')||':'||sell_price::text||':'||purchase_price::text, ',' order by id)) from products where clinic_id = '$GC')||'|'||(select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname) from pg_proc where proname in ('product_group_link','product_group_unlink','product_group_set_price','product_group_follow','product_groups_ready','_pgrp_gate','_pgrp_price_ok','_pgrp_seen_ok'))"
+Z277=$($P -tAc "$Q277" | tr -d '[:space:]')
+out=$($P -f "$MIG/0277_product_groups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0277 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الروابطُ والأسعارُ والأجسامُ والصلاحيات)" "$Q277" "$Z277"
+$P -c "delete from products where clinic_id in ('$GC', '$GO');" >/dev/null
 
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:
