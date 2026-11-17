@@ -68,7 +68,7 @@ globalThis.CustomEvent = globalThis.CustomEvent ?? class { constructor(type, ini
 const T = `(k, d, o) => { const opt = d && typeof d === "object" ? d : (o || {}); if (typeof d === "string" || opt.defaultValue != null) { const s = typeof d === "string" ? d : opt.defaultValue; return String(s).replace(/{{(\\w+)}}/g, (_, v) => (opt[v] ?? "")); } const ps = Object.keys(opt).filter((x) => x !== "defaultValue"); return ps.length ? k + "|" + JSON.stringify(Object.fromEntries(ps.map((x) => [x, opt[x]]))) : k; }`;
 const SB = "globalThis.__sb";
 /* قطعةُ RetPct حقيقيّة: الشريطُ يُضغط كما يضغطه الكاشير. */
-const REAL = new Set(["react", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
+const REAL = new Set(["react", "@/lib/posSort", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
   "@/lib/saleCustomer", "@/lib/priceDraft", "@/lib/customerName", "@/lib/debt", "@/lib/medSale", "@/components/retail/RetPct",
   /* كلفةُ سطر المادّة (0255) بـimport() بالشاشة — الوحدةُ الحقيقية، فسطرُ الراجع بكلفة الخادم نفسِها. */
   "@/lib/consumption"]);
@@ -98,7 +98,7 @@ const STUB = {
   /* عروضُ الحزم: ما يصل المحرّكَ يُسجَّل — الراجعُ لا يصله. */
   "@/lib/promotions": `export const computePromotions = (lines) => { (${SB}.promo ||= []).push(lines); return { applied: [], totalDiscount: 0 }; }; export const getPromoRules = () => [];`,
   "@/lib/settings": `export const getDialCode = () => "+964"; export const getPreSalePrint = () => false; export const getResizableCart = () => false;
-    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
+    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosSort = () => "name"; export const setPosSort = () => {}; export const getPosImages = () => false; export const setPosImages = () => {}; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
     export const getClinicSocials = () => ({}); export const getClinicName = () => ""; export const getDeliveryZones = () => []; export const getQtyPromos = () => ${SB}.qtyPromos ?? [];
     export const getExpiryWindows = () => ({ returnDays: 90, criticalDays: 30 });`,
   "@/lib/navFold": "export const useNavFolded = () => false; export const setNavFolded = () => {};",
@@ -118,7 +118,7 @@ const STUB = {
   "@/components/LoadBoundary": `import { createElement } from "react"; export const LoadBoundary = ({ children, scope }) => createElement("x-LoadBoundary", { scope }, children);`,
   "@/components/retail/ConsumablesSheet": `import { createElement } from "react"; export default () => null; export const ConsumptionNotice = () => null;`,
   "@/lib/consumptionApi": "export const consumptionApi = { recipeSummary: async () => ({}) };",
-  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
+  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null; export const PosGridBar = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
   /* نطاقُ rpct يُطلب قبل جملة «مادّةُ الدولار بالراجع» (ensureOwned) — بلا قاموس هنا. */
   "@/i18n": "export const ensureOwned = async () => {}; export const ensureDictionary = async () => {};",

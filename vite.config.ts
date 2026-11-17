@@ -139,7 +139,8 @@ export default defineConfig({
         // الطلب فقط — إدراجهما بالتثبيت المسبق يخلي تنصيب الـPWA ينزّل أضعاف
         // حجم التطبيق على موبايل ببيانات محدودة.
         // والموقعُ يُبنى بعد التطبيق فلا يراه هذا المسح أصلاً؛ الاستثناءُ حارسٌ لبناءٍ يُعاد فوق dist قديم.
-        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js", "site.html", "site-assets/**", "site-manifest.json", "*/index.html", "*/*/index.html", "*/*/*/index.html", "sitemap.xml"],
+        // ومكتباتُ PDF الجرد (~٧٧٠ كيلو: jspdf وhtml2canvas وcanvg وDOMPurify) كذلك — زرٌّ يُضغط نادراً لا يُنزَّل لكلّ جهازٍ بكلّ نشر.
+        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js", "**/jspdf.es.min-*.js", "**/html2canvas.esm-*.js", "**/purify.es-*.js", "**/pdf-canvg-*.js", "site.html", "site-assets/**", "site-manifest.json", "*/index.html", "*/*/index.html", "*/*/*/index.html", "sitemap.xml"],
         runtimeCaching: [
           {
             // Cache Supabase storage objects (patient photos) only. Bounded by a
@@ -190,6 +191,8 @@ export default defineConfig({
           // modulepreload على **كل** صفحة، ومنها صفحة الهبوط التي لا ترسم
           // مخططاً واحداً.
           if (at("clsx") || at("tailwind-merge")) return "utils";
+          // canvg وتوابعُه (يطلبها jspdf وحده) باسمٍ يُعرف فيُستثنى من التثبيت المسبق — كان «index.es-*» اسماً لا يُستثنى بأمان.
+          if (at("canvg/") || at("core-js/") || at("rgbcolor/") || at("stackblur-canvas/") || at("svg-pathdata/") || at("raf/") || at("performance-now/")) return "pdf-canvg";
           return undefined;
         },
       },

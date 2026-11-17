@@ -262,7 +262,7 @@ const advance = (ms) => { clockOffset += ms; };
 
 const T = `(k, d, o) => { const opt = d && typeof d === "object" ? d : (o || {}); const s = typeof d === "string" ? d : (opt.defaultValue ?? k); return String(s).replace(/{{(\\w+)}}/g, (_, v) => (opt[v] ?? "")); }`;
 /** قواعدُ صِرفة تُحزم حقيقيّة؛ وكلُّ استيرادٍ آخر لـSaleBuilder.tsx بديل. */
-const REAL = new Set(["react", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
+const REAL = new Set(["react", "@/lib/posSort", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
   "@/lib/saleCustomer", "@/lib/priceDraft", "@/lib/customerName", "@/lib/debt", "@/lib/medSale"]);
 const SB = "globalThis.__sb";
 const STUB = {
@@ -290,7 +290,7 @@ const STUB = {
   "@/lib/services": `export const getServiceCatalog = () => ${SB}.catalog; export const findServiceByBarcode = () => null;`,
   "@/lib/promotions": "export const computePromotions = () => ({ applied: [], totalDiscount: 0 }); export const getPromoRules = () => [];",
   "@/lib/settings": `export const getDialCode = () => "+964"; export const getPreSalePrint = () => false; export const getResizableCart = () => false;
-    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
+    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosSort = () => "name"; export const setPosSort = () => {}; export const getPosImages = () => false; export const setPosImages = () => {}; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
     export const getClinicSocials = () => ({}); export const getClinicName = () => ""; export const getDeliveryZones = () => []; export const getQtyPromos = () => [];
     export const getExpiryWindows = () => ({ returnDays: 90, criticalDays: 30 });`,
   "@/lib/navFold": "export const useNavFolded = () => false; export const setNavFolded = () => {};",
@@ -319,7 +319,7 @@ const STUB = {
     ConsumptionNotice.__which = "notice";`,
   "@/lib/consumptionApi": `export const consumptionApi = { recipeSummary: (...a) => ${SB}.recipeSummary(...a) };`,
   /* خاناتُ الطبيب (0258): قطعتُها وبابُها بديلان صامتان — هذا الحارسُ يقيس المستهلكات، وخاناتُ الطبيب يقيسها pos-tabs-test. */
-  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
+  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null; export const PosGridBar = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
   /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
   "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
@@ -1213,8 +1213,9 @@ async function warmChecks(M, ck, setWarmFail) {
   // قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
   const rcpPages = () => P().filter((p) => J(p.ns) === J(["rcp"]));
   // ومنذ 0269 تسخينُ نصوص سطور الطبلة بنطاقها dosl.
-  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab، وتسخينُ الكارتون بـpks وسطورِ الطبلة بـdosl، ولا غيرُها",
-    rcpPages().length === 3 && P().length === 8 && P().filter((p) => J(p.ns) === J(["pks"])).length === 1 && P().filter((p) => J(p.ns) === J(["dosl"])).length === 1
+  // و0279 شريطُ الترتيب والصور بالقطعة نفسِها ونطاقِها ptab (رابعتُها) — لا قطعةَ ولا نطاقَ جديد.
+  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وأربعٌ بنطاق ptab (الخاناتُ الثلاث وشريطُ الترتيب)، وتسخينُ الكارتون بـpks وسطورِ الطبلة بـdosl، ولا غيرُها",
+    rcpPages().length === 3 && P().length === 9 && P().filter((p) => J(p.ns) === J(["ptab"])).length === 4 && P().filter((p) => J(p.ns) === J(["pks"])).length === 1 && P().filter((p) => J(p.ns) === J(["dosl"])).length === 1
       && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"]) || J(p.ns) === J(["pks"]) || J(p.ns) === J(["dosl"])), J(P().map((p) => p.ns)));
   setWarmFail(true);
   const loud = console.error;

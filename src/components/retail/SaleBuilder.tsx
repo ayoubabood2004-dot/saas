@@ -29,8 +29,9 @@ import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
 import { storeSlugCached } from "@/lib/storeOrdersLive";
-import { storeUrl } from "@/lib/storeLib";
-import { getDialCode, getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, type QtyPromo } from "@/lib/settings";
+import { storeUrl, productImageUrl, cardImagePath } from "@/lib/storeLib";
+import { sortForPos, type PosSort } from "@/lib/posSort";
+import { getDialCode, getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, getPosSort, setPosSort, getPosImages, setPosImages, type QtyPromo } from "@/lib/settings";
 import { expiryState, daysToExpiry } from "@/lib/expiry";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
@@ -74,6 +75,8 @@ import type { NegBarView, NegCheck, NegRefusedLine, NegSay, NegState } from "@/l
 const loadTabPills = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabPills })), ["ptab"]);
 const loadTabGrid = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabGrid })), ["ptab"]);
 const loadTabEditor = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabEditor })), ["ptab"]);
+/* شريطُ شبكة المنتجات (0279: الترتيبُ والصور) بالقطعة نفسِها ونطاقِها — لا قطعةَ ولا نطاقَ جديد يدفعه الإقلاع. */
+const loadGridBar = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosGridBar })), ["ptab"]);
 /* بيعُ الدولار (0264): سلّةٌ مستقلّة بقطعةٍ كسولة ونطاقها usd — لا وحدةَ ثابتةً جديدةً هنا (الإقلاعُ على سقفه). */
 /* وتُصنع بأوّل لمسةٍ لمادّةٍ دولارية لا عند التحميل: عيادةٌ بلا دولار لا تصنع حتى غلافَها (salebuilder-cons-guard يعدّ قطعَ التحميل). */
 const loadUsdSale = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdSaleSheet })), ["usd"]);
@@ -90,8 +93,19 @@ let RetNoteLazy: ReturnType<typeof loadRetNote> | null = null;
 let TabPillsLazy = loadTabPills();
 let TabGridLazy = loadTabGrid();
 let TabEditorLazy = loadTabEditor();
+let GridBarLazy = loadGridBar();
 /** جدولُ الخانات غائبٌ بالقاعدة (واجهةٌ سبقت 0258): الميزةُ تختفي بصمت بدل «تعذّر» دائم. */
 const tabsTableMissing = (e: unknown) => ["42P01", "PGRST205", "PGRST202"].includes(String((e as { code?: string } | null)?.code ?? ""));
+
+/** صورةُ المادّة بشبكة البيع (0279): المصغّرةُ أوّلاً ثمّ الأصل ثمّ الأيقونة — صورةٌ لا تصل لا تترك مربّعاً فارغاً ولا تُسقط البطاقة.
+ *  كسولةُ التحميل والفكّ (loading/decoding): ستّون بطاقةً لا تنزّل إلا ما يظهر، ولا تحبس الخيطَ عن المسح. */
+function ProdThumb({ path, className, icon }: { path: string; className?: string; icon: ReactNode }) {
+  const [step, setStep] = useState(0);   // ٠ المصغّرة، ١ الأصل، ٢ لا صورة
+  const src = step === 0 ? productImageUrl(cardImagePath(path)) : step === 1 ? productImageUrl(path) : null;
+  if (!src) return <span className={cn("grid place-items-center bg-surface-2 text-ink-subtle", className)}>{icon}</span>;
+  return <img src={src} alt="" loading="lazy" decoding="async" draggable={false} data-prodimg onError={() => setStep((s) => s + 1)}
+    className={cn("bg-surface-2 object-contain", className)} />;
+}
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -1212,6 +1226,36 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (!posTabsFailed) return;
     return armRetry(browserRetryEnv, tabsFailsRef.current++, () => setPosTabsTry((n) => n + 1));
   }, [posTabsFailed]);
+  /* ترتيبُ شبكة المنتجات وصورُها (0279) — تفضيلٌ للعيادة كلّها (clinic_prefs) يغيّره من يقف على الشاشة ويثبت لكلّ جهاز.
+   * المبيعُ (آخر ٣٠ يوماً) يُجلب حين يُطلب ترتيبٌ به، ببابٍ كسول؛ وما دام لم يصل أو تعذّر تبقى الشبكةُ بالاسم والشريطُ يقولها،
+   * ويُعاد الجلبُ وحده كالخانات. الأرقامُ لا تُجلب بعد كلّ بيعة: ترتيبٌ يقفز تحت يد الكاشير أسوأ من رقمٍ عمرُه دقائق. */
+  const [posSort, setPosSortS] = useState<PosSort>(getPosSort);
+  const [posImages, setPosImagesS] = useState(getPosImages);
+  const [sales, setSales] = useState<{ map: Map<string, number> | null; state: "idle" | "loading" | "ready" | "failed"; missing?: boolean }>({ map: null, state: "idle" });
+  const [salesTry, setSalesTry] = useState(0);
+  const salesFailsRef = useRef(0);
+  // عيادةٌ أخرى ⇒ أرقامُها هي: لا يبقى ترتيبُ العيادة السابقة «جاهزاً» حتى يصل الجديد.
+  useEffect(() => { setSales({ map: null, state: "idle" }); }, [clinicId]);
+  useEffect(() => {
+    if (posSort === "name") return;
+    let alive = true;
+    setSales((s) => (s.state === "ready" ? s : { map: null, state: "loading" }));
+    import("@/lib/posSalesApi").then((m) => m.productSales30())
+      .then((map) => { if (alive) { salesFailsRef.current = 0; setSales({ map, state: "ready" }); } })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        // دالّةٌ غائبة (واجهةٌ سبقت 0279) ليست عطلاً عابراً: تُقال ولا يُعاد السؤالُ كلَّ دقيقتين.
+        const missing = ["PGRST202", "42883"].includes(String((e as { code?: string } | null)?.code ?? ""));
+        setSales({ map: null, state: "failed", missing });
+      });
+    return () => { alive = false; };
+  }, [posSort, salesTry, clinicId]);
+  useEffect(() => {
+    if (sales.state !== "failed" || sales.missing || posSort === "name") return;
+    return armRetry(browserRetryEnv, salesFailsRef.current++, () => setSalesTry((n) => n + 1));
+  }, [sales.state, sales.missing, posSort]);
+  const pickPosSort = (v: PosSort) => { setPosSortS(v); setPosSort(v); };
+  const pickPosImages = (on: boolean) => { setPosImagesS(on); setPosImages(on); };
   const activeTabId = browseTab.startsWith("tab:") ? browseTab.slice(4) : null;
   const activeTab = activeTabId ? posTabs?.find((x) => x.id === activeTabId) ?? null : null;
   // خانةٌ انحذفت (من هنا أو من جهازٍ ثانٍ) والشاشةُ عليها: إلى المنتجات.
@@ -2774,17 +2818,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const deferredQuery = useDeferredValue(query);
   const ql = deferredQuery.trim();
   const nq = searchable(ql);
+  /* الترتيبُ (0279) قبل التصفية والسقف، ومرّةً حين تتغيّر القائمةُ أو الأرقام لا بكلّ ضغطة: «الأكثر مبيعاً» يعني أن الستّين
+   * الأولى هي الأكثر بيعاً. ولا يُخفي شيئاً ولا يضيف — المرتَّبُ هو القائمةُ نفسُها (sortForPos). */
+  const ordered = useMemo(() => sortForPos(products, posSort, sales.state === "ready" ? sales.map : null), [products, posSort, sales]);
   const { shown, hiddenCount } = useMemo(() => {
     // المرشِّح يُبنى داخل الحساب لا خارجه: بناؤه بكلّ رسمةٍ يجعله مرجعاً جديداً
     // فيبطل الحفظَ كلَّه، والتصفيةُ هنا تمرّ على مئات المواد بكلّ ضغطة.
     const byCode = codeMatcher(ql);
     const base = ql
-      ? products.filter((p) => searchable(p.name).includes(nq) || byCode(p))
-      : products;
+      ? ordered.filter((p) => searchable(p.name).includes(nq) || byCode(p))
+      : ordered;
     // السقف لسرعة الرسم — لكنه **يقول إنه سقف**. صمتُه كان يعني أن المادة
     // بالصفّ الخامس والعشرين تبدو غير موجودة.
     return { shown: base.slice(0, POS_MAX), hiddenCount: Math.max(0, base.length - POS_MAX) };
-  }, [products, ql, nq]);
+  }, [ordered, ql, nq]);
 
   /* ---- زبونٌ من القائمة (0232) -------------------------------------------
    * يملأ الاسمَ والرقمَ وحدهما — **لا حيوانَ يُلصق تلقائياً** (البيعُ بلا حيوانٍ مدعومٌ كاملاً،
@@ -4422,6 +4469,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               </button>
             )}
 
+            {/* الترتيبُ والصور (0279) — للعيادة كلّها. */}
+            <LoadBoundary scope="pos-gridbar" onRetry={() => { GridBarLazy = loadGridBar(); setTabLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}>
+                <GridBarLazy sort={posSort} images={posImages} salesState={sales.state} compact={compact}
+                  onSort={pickPosSort} onImages={pickPosImages} onRetry={() => setSalesTry((n) => n + 1)} />
+              </Suspense>
+            </LoadBoundary>
+
             {/* السقف يقول إنه سقف: صمتُه كان يجعل المادة خارجه تبدو غير موجودة. */}
             {hiddenCount > 0 && (
               <p className="mb-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-subtle">
@@ -4477,7 +4532,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                               : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                         )}
                       >
-                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{byWeight ? <Scale size={14} /> : <Package size={14} />}</span>
+                        {posImages && p.image_path
+                          ? <ProdThumb key={p.image_path} path={p.image_path} className="h-7 w-7 shrink-0 rounded-lg" icon={byWeight ? <Scale size={14} /> : <Package size={14} />} />
+                          : <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{byWeight ? <Scale size={14} /> : <Package size={14} />}</span>}
                         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{p.name}</span>
                         {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="shrink-0 rounded-full bg-danger-50 px-2 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                         <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-2xs font-bold tabular-nums", out ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-surface-2 text-ink-muted")}>
@@ -4498,7 +4555,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                             : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                       )}
                     >
-                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>
+                      {posImages && p.image_path
+                        ? <ProdThumb key={p.image_path} path={p.image_path} className="h-16 w-full rounded-xl" icon={byWeight ? <Scale size={17} /> : <Package size={17} />} />
+                        : <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>}
                       {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="absolute end-2 top-2 rounded-full bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">

@@ -17,7 +17,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Plus, Pencil, Package, Stethoscope, Scale, Trash2, ChevronUp, ChevronDown, X, Search, Square, RectangleHorizontal,
-  AlertTriangle, RotateCcw, Image as ImageIcon, LayoutGrid,
+  AlertTriangle, RotateCcw, Image as ImageIcon, LayoutGrid, ArrowDownAZ, TrendingUp, TrendingDown, Loader2,
 } from "lucide-react";
 import type { Product, Service } from "@/types";
 import { Button, Dialog, useToast } from "@/components/ui";
@@ -62,6 +62,52 @@ export function PosTabPills({ tabs, failed, activeId, compact, onPick, onNew, on
         </button>
       )}
     </>
+  );
+}
+
+/* ── شريطُ شبكة المنتجات (0279): الترتيبُ والصور — للعيادة كلّها ──────────────────────────────────────
+ * طلبُ المالك (١٧/١١): «يشوف أول حسب الاسم لو الأكثر مبيعاً لو الأقل مبيعاً، ولمن يختار يضل ثابت»، و«الصور بالمبيعات بشرط ما يهنج».
+ * الاختيارُ يُكتب بتفضيلات العيادة (clinic_prefs) فيثبت لكلّ جهازٍ وحساب. والمبيعُ آخر ٣٠ يوماً؛ إن لم يصل بعد أو تعذّر تبقى
+ * الشبكةُ بالاسم **وتقولها** — لا ترتيبٌ يُدّعى وهو غيرُه. الشريطُ يعرض ويختار وحده: الترتيبُ نفسُه بـposSort.ts والجلبُ بـSaleBuilder. */
+export type PosSortPick = "name" | "top" | "low";
+export function PosGridBar({ sort, images, salesState, compact, onSort, onImages, onRetry }: {
+  sort: PosSortPick; images: boolean; salesState: "idle" | "loading" | "ready" | "failed"; compact?: boolean;
+  onSort: (s: PosSortPick) => void; onImages: (on: boolean) => void; onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  const opts: { v: PosSortPick; label: string; icon: ReactNode; title?: string }[] = [
+    { v: "name", label: t("ptab.sortName"), icon: <ArrowDownAZ size={13} /> },
+    { v: "top", label: t("ptab.sortTop"), icon: <TrendingUp size={13} />, title: t("ptab.sortHint") },
+    { v: "low", label: t("ptab.sortLow"), icon: <TrendingDown size={13} />, title: t("ptab.sortHint") },
+  ];
+  return (
+    <div data-pos-gridbar className="flex shrink-0 flex-wrap items-center gap-1.5">
+      <div role="radiogroup" aria-label={t("ptab.sortLabel")} className="inline-flex items-center gap-0.5 rounded-xl border border-line bg-surface-2 p-0.5">
+        {opts.map((o) => (
+          <button key={o.v} type="button" role="radio" aria-checked={sort === o.v} data-pos-sort={o.v} title={o.title}
+            onClick={() => { if (sort !== o.v) { playTap(); onSort(o.v); } }}
+            className={cn("inline-flex items-center gap-1 rounded-lg font-semibold transition", compact ? "px-2 py-1 text-2xs" : "px-2.5 py-1 text-xs",
+              sort === o.v ? "bg-surface-1 text-brand-700 shadow-soft dark:text-brand-300" : "text-ink-muted hover:text-ink")}>
+            {o.icon}<span>{o.label}</span>
+          </button>
+        ))}
+      </div>
+      <button type="button" role="switch" aria-checked={images} data-pos-images title={t("ptab.imagesHint")}
+        onClick={() => { playTap(); onImages(!images); }}
+        className={cn("inline-flex items-center gap-1 rounded-xl border font-semibold transition", compact ? "px-2 py-1 text-2xs" : "px-2.5 py-1 text-xs",
+          images ? "border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-2 text-ink-muted hover:text-ink")}>
+        <ImageIcon size={13} /><span>{images ? t("ptab.imagesOn") : t("ptab.imagesOff")}</span>
+      </button>
+      {sort !== "name" && salesState === "loading" && (
+        <span data-pos-sales="loading" className="inline-flex items-center gap-1 text-2xs text-ink-subtle"><Loader2 size={12} className="animate-spin" />{t("ptab.salesLoading")}</span>
+      )}
+      {sort !== "name" && salesState === "failed" && (
+        <button type="button" data-pos-sales="failed" onClick={() => { playTap(); onRetry(); }}
+          className="inline-flex items-center gap-1 rounded-lg bg-warn-50 px-2 py-1 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+          <RotateCcw size={12} />{t("ptab.salesFailed")}
+        </button>
+      )}
+    </div>
   );
 }
 

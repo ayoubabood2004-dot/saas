@@ -157,7 +157,7 @@ console.log("▸ الأسلاك: القطعةُ كسولة، والضغطُ بط
   const sb = code("src/components/retail/SaleBuilder.tsx");
   check("شاشةُ البيع لا تستورد القطعةَ ولا البابَ ثابتاً (import() وحده)",
     !/^\s*import\s+(?!type\b)[^;]*from\s*["']@\/(components\/retail\/PosCustomTabs|lib\/posTabsApi)["']/m.test(sb)
-    && /import\("@\/lib\/posTabsApi"\)/.test(sb) && (sb.match(/page\(\(\) => import\("@\/components\/retail\/PosCustomTabs"\)[^;]*\["ptab"\]\)/g) ?? []).length === 3);
+    && /import\("@\/lib\/posTabsApi"\)/.test(sb) && (sb.match(/page\(\(\) => import\("@\/components\/retail\/PosCustomTabs"\)[^;]*\["ptab"\]\)/g) ?? []).length === 4);
   check("  والضغطُ يمرّ من tapProduct وaddService (لا طريقَ بيعٍ ثانٍ)", /onProduct=\{tapProduct\}/.test(sb) && /onService=\{\(sv: Service\) => \{ addService\(sv\); \}\}/.test(sb));
   check("  والجدولُ الغائب (واجهةٌ قبل 0258) يُخفي الميزة، وغيرُه «تعذّر» بإعادة", /tabsTableMissing\(e\)\) setPosTabsOff\(true\); else setPosTabsFailed\(true\)/.test(sb));
   const ui = code("src/components/retail/PosCustomTabs.tsx");
