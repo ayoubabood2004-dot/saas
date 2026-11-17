@@ -225,5 +225,15 @@ check("الطباعة: المجموعُ قبلها ٢٠٬٠٠٠، وسطرُ أ�
   html.includes("SUB") && html.includes("20,000") && /data-pcharge="company"[^]*?\+5,000/.test(html) && html.indexOf('data-pcharge="company"') < html.indexOf("NET")
   && /data-pcharge="other"[^]*?OTHER/.test(html) && html.indexOf('data-pcharge="other"') > html.indexOf("NET"));
 
+/* إعدادُ العيادة كلّها (طلبُ المالك ١٧/١١): يختاره المدير وتمشي عليه فواتيرُ كلّ الحسابات. الخادمُ يختمه بعيادة الطالب (قسمُ 0276
+ * بالحزمة: فاتورةُ الطبيب أخذت ما قلبه المدير)، والمرآةُ ترفضه لغير المدير؛ والبطاقةُ تقفله لغيره وتقول لمن هو. */
+{
+  const card = readFileSync("src/pages/Settings.tsx", "utf8");
+  const body = card.slice(card.indexOf("function PurchaseChargesCard()"), card.indexOf("/* ------------- Cashier options"));
+  check("البطاقة: غيرُ المدير يرى الاختيار مقفولاً (الزرّان معطّلان، والضغطُ لا يكتب)، والكلُّ يقرأ «إعداد للعيادة كلها»",
+    /const isManager = role === "manager";/.test(body) && /disabled=\{busy \|\| !isManager\}/.test(body)
+    && /if \(busy \|\| !isManager \|\| mode === st\.mode\) return;/.test(body) && /t\("acct\.pchWho"\)/.test(body) && /!isManager && <p[^>]*>\{t\("acct\.pchLocked"\)\}/.test(body));
+}
+
 console.log(`${fails ? "✗" : "✓"} purchase-charges-test: ${passes} فحصاً عبرت${fails ? `، و${fails} فشل` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -6982,7 +6982,9 @@
     "pchCostHint": "e.g. a 100,000 invoice + 10,000 delivery ⇒ each item costs 10% more, so its profit is right when sold.",
     "pchExpense": "An expense in the P&L",
     "pchExpenseHint": "Shows as a “Purchase charges” line in the invoice's month; the goods' cost stays as is.",
-    "pchNote": "Applies to charges added from now on — every invoice keeps the way it was counted. On each charge the doctor picks “Paid now” or “Later” (added to the invoice debt)."
+    "pchNote": "Applies to charges added from now on — every invoice keeps the way it was counted. On each charge the doctor picks “Paid now” or “Later” (added to the invoice debt).",
+    "pchWho": "One setting for the whole clinic: the manager picks it, and every purchase invoice from any account follows it.",
+    "pchLocked": "Only the manager can change this — you can see what the clinic uses."
   },
   "fgset": {
     "title": "Debt discount limit",
@@ -8944,8 +8946,8 @@
     "chBad": "Write what the charge is and its amount, and choose “Paid now” or “Later” — or remove the row.",
     "chOnCompany": "Added to the invoice debt",
     "chPaidOther": "Paid now (not a debt)",
-    "chModeCost": "Spread over the goods' cost by their price — so each item's profit is right when sold. Change it in Settings.",
-    "chModeExpense": "Counted as an expense in the purchase month's P&L; the goods' cost stays as is. Change it in Settings.",
+    "chModeCost": "Spread over the items' cost by their price — so each item's profit is right when sold. Set by the manager in Settings.",
+    "chModeExpense": "Counted as an expense in Profit & Loss for the invoice's month; item costs stay as they are. Set by the manager in Settings.",
     "chStampCost": "Charges were spread over the goods' cost.",
     "chStampExpense": "Charges were counted as a P&L expense.",
     "chSuggest": "Delivery fee|Transport fee|Shipping fee|Customs clearance|Loading fee",
