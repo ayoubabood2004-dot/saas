@@ -162,5 +162,55 @@ console.log("▸ الأسلاك: القطعةُ كسولة، والضغطُ بط
   check("وهجرةُ 0258 بموجة الحزمة", /WAVE="[^"]*\$MIG\/0258_pos_custom_tabs\.sql/.test(src("supabase/tests/run.sh")));
 }
 
+/* ── د) الفشلُ يُعاد وحده (بلاغ ١٧/١١: «الخانة اختفت ثاني يوم») ──────────────────────────────────────── */
+console.log("▸ الفشلُ يُعاد وحده: بمهلةٍ متزايدة، وفوراً حين يرجع النتّ أو الشاشة، والمخفيُّ ينتظر");
+{
+  const built = await esbuild.build({ entryPoints: ["src/lib/retryWhileFailed.ts"], bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent" });
+  const dir = mkdtempSync(path.join(tmpdir(), "retry-"));
+  const f = path.join(dir, "r.mjs");
+  writeFileSync(f, built.outputFiles[0].text);
+  const R = await import(pathToFileURL(f).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
+  /** بيئةٌ بيد الفحص: ساعةٌ تُقدَّم، وظهورٌ يُقلب، وأحداثٌ تُطلق. */
+  const envOf = () => {
+    let now = 0, id = 0, vis = true;
+    const timers = new Map(), ls = { online: new Set(), visible: new Set() };
+    return {
+      env: {
+        setTimeout: (fn, ms) => { timers.set(++id, { at: now + ms, fn }); return id; },
+        clearTimeout: (i) => { timers.delete(i); },
+        visible: () => vis,
+        on: (ev, fn) => { ls[ev].add(fn); return () => ls[ev].delete(fn); },
+      },
+      tick: (ms) => { now += ms; for (const [i, t] of [...timers]) if (t.at <= now) { timers.delete(i); t.fn(); } },
+      fire: (ev) => { for (const fn of [...ls[ev]]) fn(); },
+      hide: () => { vis = false; }, show: () => { vis = true; },
+      live: () => timers.size + ls.online.size + ls.visible.size,
+    };
+  };
+  check("المهلُ تتزايد ثمّ تثبت: ٤ ثوانٍ، ١٥، دقيقة، دقيقتان، دقيقتان", [0, 1, 2, 3, 9].map(R.retryDelay).join(",") === "4000,15000,60000,120000,120000");
+  let e = envOf(), n = 0;
+  R.armRetry(e.env, 0, () => n++);
+  e.tick(3_999); const before = n; e.tick(1);
+  check("المحاولةُ الأولى بعد ٤ ثوانٍ لا قبلها، ومرّةً واحدة، ولا يبقى مستمع", before === 0 && n === 1 && e.live() === 0, `${before}/${n}/${e.live()}`);
+  e = envOf(); n = 0;
+  R.armRetry(e.env, 2, () => n++);
+  e.fire("online");
+  check("  ورجوعُ النتّ يعيد فوراً (لا ينتظر الدقيقة)، ومرّةً واحدة ولو تكرّر الحدث", n === 1 && (e.fire("online"), e.tick(60_000), n === 1) && e.live() === 0, String(n));
+  e = envOf(); n = 0;
+  e.hide();
+  R.armRetry(e.env, 0, () => n++);
+  e.tick(10_000); const hidden = n;
+  e.show(); e.fire("visible");
+  check("  والتابُ المخفيّ لا يطلب حتى يظهر، ثمّ يطلب حين يظهر", hidden === 0 && n === 1 && e.live() === 0, `${hidden}/${n}`);
+  e = envOf(); n = 0;
+  const stop = R.armRetry(e.env, 0, () => n++);
+  stop(); e.tick(10_000); e.fire("online");
+  check("  والإلغاءُ (نجاحٌ أو خروجٌ من الشاشة) يُبطلها ولا يترك مستمعاً", n === 0 && e.live() === 0);
+  const sb = code("src/components/retail/SaleBuilder.tsx");
+  check("شاشةُ البيع تسلّحها حين يفشل جلبُ الخانات، بمهلةٍ بعدد الفشل، والنجاحُ يصفّره",
+    /if \(!posTabsFailed\) return;\s*return armRetry\(browserRetryEnv, tabsFailsRef\.current\+\+, \(\) => setPosTabsTry\(\(n\) => n \+ 1\)\);\s*\}, \[posTabsFailed\]\)/.test(sb)
+    && /if \(alive\) \{ tabsFailsRef\.current = 0; setPosTabs\(list\); \}/.test(sb));
+}
+
 console.log(fails ? `\n✗ pos-tabs-test: ${passes} نجح، ${fails} فشل` : `\n✓ pos-tabs-test: ${passes} نجح، 0 فشل`);
 process.exit(fails ? 1 : 0);
