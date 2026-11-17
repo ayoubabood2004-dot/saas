@@ -974,6 +974,11 @@ function OneAccountCard() {
 function PurchaseChargesCard() {
   const { t } = useTranslation();
   const toast = useToast();
+  /* إعدادُ العيادة كلّها (طلبُ المالك ١٧/١١): يختاره المدير وتمشي عليه فواتيرُ كلّ الحسابات — الخادمُ يختمه على كلّ فاتورة
+   * (`_purchase_charges_mode(auth_clinic())`) ويرفض تغييرَه لغير المدير (auth_role، ومعه مفتاحُ المدير). فغيرُ المدير يرى ما اختاره
+   * ولا يضغط — كان يضغط فيُرفض بعدها. */
+  const { role } = usePermissions();
+  const isManager = role === "manager";
   const [st, setSt] = useState<{ ready: boolean; mode: "cost" | "expense" } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -984,7 +989,7 @@ function PurchaseChargesCard() {
   }, []);
   if (!st?.ready) return null;
   const pick = async (mode: "cost" | "expense") => {
-    if (busy || mode === st.mode) return;
+    if (busy || !isManager || mode === st.mode) return;
     setBusy(true);
     try {
       const m = await (await import("@/lib/purchaseChargesApi")).setPurchaseChargesMode(mode);
@@ -1002,15 +1007,17 @@ function PurchaseChargesCard() {
       <h2 className="font-bold text-ink mb-3 flex items-center gap-2"><Package size={18} className="text-brand-600" /> {t("acct.pchTitle")}</h2>
       <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("acct.pchTitle")}>
         {(["cost", "expense"] as const).map((m) => (
-          <button key={m} type="button" role="radio" aria-checked={st.mode === m} disabled={busy} data-pch-mode={m} onClick={() => void pick(m)}
-            className={cn("rounded-xl border p-3 text-start transition disabled:opacity-60",
-              st.mode === m ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line hover:bg-surface-2")}>
+          <button key={m} type="button" role="radio" aria-checked={st.mode === m} disabled={busy || !isManager} data-pch-mode={m} onClick={() => void pick(m)}
+            className={cn("rounded-xl border p-3 text-start transition", (busy || (!isManager && st.mode !== m)) && "opacity-60",
+              st.mode === m ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : cn("border-line", isManager && "hover:bg-surface-2"))}>
             <span className="block text-sm font-bold text-ink">{t(m === "cost" ? "acct.pchCost" : "acct.pchExpense")}</span>
             <span className="mt-0.5 block text-2xs text-ink-muted">{t(m === "cost" ? "acct.pchCostHint" : "acct.pchExpenseHint")}</span>
           </button>
         ))}
       </div>
-      <p className="mt-3 text-2xs text-ink-subtle">{t("acct.pchNote")}</p>
+      <p className="mt-3 text-xs font-semibold text-ink-muted" data-pch-who>{t("acct.pchWho")}</p>
+      {!isManager && <p className="mt-1 text-2xs font-semibold text-warn-700 dark:text-warn-300" data-pch-locked>{t("acct.pchLocked")}</p>}
+      <p className="mt-1 text-2xs text-ink-subtle">{t("acct.pchNote")}</p>
     </div>
   );
 }
