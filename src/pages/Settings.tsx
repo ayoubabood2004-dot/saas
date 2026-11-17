@@ -2622,6 +2622,17 @@ function NegCardSlot() {
   );
 }
 let RxCardLazy = loadRxCard();
+/* أسعارُ التطعيمات (0279) داخل بطاقة التطعيمات: قطعةٌ كسولة بنطاقها المملوك vxp، وتختفي حين يغيب جدولُها. */
+const loadVaxPrices = () => page(() => import("@/components/vaccines/VaccinePrices").then((m) => ({ default: m.VaxPriceCard })), ["vxp"]);
+let VaxPricesLazy = loadVaxPrices();
+function VaxPricesSlot({ names }: { names: string[] }) {
+  const [, setTick] = useState(0);
+  return (
+    <LoadBoundary scope="vxp-card" onRetry={() => { VaxPricesLazy = loadVaxPrices(); setTick((n) => n + 1); }}>
+      <Suspense fallback={null}><VaxPricesLazy names={names} /></Suspense>
+    </LoadBoundary>
+  );
+}
 function RxCardSlot() {
   const [, setTick] = useState(0);
   return (
@@ -3054,6 +3065,8 @@ function ClinicVaccinations() {
     else { playTap(); setFlash({ ok: false, msg: t("vax.exists") }); }
   };
   const remove = (n: string) => { removeClinicVaccine(n); setClinic(getClinicVaccines()); playTap(); };
+  /* أسماءُ قائمة البيع نفسُها (allVaccineNames: المدمجةُ ثمّ ما أضافته العيادة) — السعرُ يتعبّى بالاسم الذي يختاره نموذجُ البيع. */
+  const priceNames = useMemo(() => Array.from(new Set([...BUILTIN_VACCINES, ...clinic.map((v) => v.name)])), [clinic]);
 
   return (
     <div className="card p-5 mb-4">
@@ -3101,6 +3114,7 @@ function ClinicVaccinations() {
           </div>
         </div>
       )}
+      <VaxPricesSlot names={priceNames} />
     </div>
   );
 }

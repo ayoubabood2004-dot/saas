@@ -529,7 +529,7 @@ async function demoChecks(c, mutate = null) {
 /* ══ ج) شاشةُ البيع بالسلوك ══════════════════════════════════════════════════════ */
 const T = `(k, d, o) => { const opt = d && typeof d === "object" ? d : (o || {}); if (typeof d === "string" || opt.defaultValue != null) { const s = typeof d === "string" ? d : opt.defaultValue; return String(s).replace(/{{(\\w+)}}/g, (_, v) => (opt[v] ?? "")); } const ps = Object.keys(opt).filter((x) => x !== "defaultValue"); return ps.length ? k + "|" + JSON.stringify(Object.fromEntries(ps.map((x) => [x, opt[x]]))) : k; }`;
 const SB = "globalThis.__sb";
-const REAL = new Set(["react", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
+const REAL = new Set(["react", "@/lib/posSort", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
   "@/lib/saleCustomer", "@/lib/priceDraft", "@/lib/customerName", "@/lib/debt", "@/lib/medSale", "@/lib/consumption",
   /* طريقُ «بِعْ أو اشرح» حقيقيّ: سؤالُ الخادم وحكمُ الطزاجة والرصيدُ القابلُ للبيع — الوضعُ يدخل منه. */
   "@/lib/freshSale", "@/lib/freshness", "@/lib/sellable"]);
@@ -560,7 +560,7 @@ const STUB = {
   "@/lib/services": `export const getServiceCatalog = () => ({ categories: [], services: [] }); export const findServiceByBarcode = () => null;`,
   "@/lib/promotions": `export const computePromotions = () => ({ applied: [], totalDiscount: 0 }); export const getPromoRules = () => [];`,
   "@/lib/settings": `export const getDialCode = () => "+964"; export const getPreSalePrint = () => false; export const getResizableCart = () => false;
-    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
+    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosSort = () => "name"; export const setPosSort = () => {}; export const getPosImages = () => false; export const setPosImages = () => {}; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
     export const getClinicSocials = () => ({}); export const getClinicName = () => ""; export const getDeliveryZones = () => []; export const getQtyPromos = () => [];
     export const getExpiryWindows = () => ({ returnDays: 90, criticalDays: 30 });`,
   "@/lib/navFold": "export const useNavFolded = () => false; export const setNavFolded = () => {};",
@@ -586,7 +586,7 @@ const STUB = {
     }`,
   "@/components/retail/ConsumablesSheet": `export default () => null; export const ConsumptionNotice = (p) => { globalThis.__consNotice = p; return null; };`,
   "@/lib/consumptionApi": "export const consumptionApi = { recipeSummary: async () => ({}) };",
-  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
+  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null; export const PosGridBar = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
   /* شريطُ نسبة الراجع وملاحظتُه (قطعتان كسولتان) — لا شأنَ لهما هنا؛ بديلٌ فارغٌ كان سيُسقط الرسمَ عند «راجع». */
   "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null;",

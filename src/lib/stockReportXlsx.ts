@@ -84,10 +84,11 @@ const stamp = (d: Date) =>
   " · " + d.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
 
 /** اسم ملفٍ لاتينيّ يفرز نفسه بالتاريخ — والعنوان العربي داخل الملف. */
-function fileNameFor(clinic: string, d: Date): string {
+/** اسمُ ملفّ الجرد — إكسل وPDF بالاسم نفسِه وامتدادِه. */
+export function stocktakeFileName(clinic: string, d: Date, ext = "xlsx"): string {
   const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const hm = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
-  return asciiFileName(`${clinic} stocktake ${day} ${hm}`, `stocktake-${day}-${hm}`);
+  return asciiFileName(`${clinic} stocktake ${day} ${hm}`, `stocktake-${day}-${hm}`, ext);
 }
 
 export async function exportStocktakeXlsx(
@@ -103,7 +104,7 @@ export async function exportStocktakeXlsx(
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
-  const name = fileNameFor(clinic, now);
+  const name = stocktakeFileName(clinic, now);
   /* الرابط يُضاف للمستند قبل الضغط: المتصفّح يتجاهل خاصية `download` على
    * عنصرٍ خارج الصفحة، فينزل الملف باسم "download" بلا امتداد — ويفتح على
    * غير إكسل. */

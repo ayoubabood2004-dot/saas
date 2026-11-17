@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { Package, Pill, Syringe, Tag } from "lucide-react";
@@ -10,6 +10,14 @@ import { hydrateVaccines } from "@/lib/vaccines";
 import { cn, currencySymbol, formatNum, money } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { vaxKey, vaxPriceFill, type VaxPriceRow } from "@/lib/vaccinePrices";
+import { armRetry, browserRetryEnv } from "@/lib/retryWhileFailed";
+
+/* سطرُ «السعر من أسعار التطعيمات» (0279): قطعةٌ كسولةٌ بنطاقها vxp، تُصنع بأوّل سعرٍ يتعبّى لا عند التحميل. */
+const loadVaxHint = () => page(() => import("@/components/vaccines/VaccinePrices").then((m) => ({ default: m.VaxPriceHint })), ["vxp"]);
+let VaxHintLazy: ReturnType<typeof loadVaxHint> | null = null;
 
 /**
  * The retail "الأدوية" tab. Reuses the EXACT same medication/vaccination entry
@@ -45,6 +53,44 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
   const [picked, setPicked] = useState<PickedMed | null>(null);
   const [chosenId, setChosenId] = useState<string | null>(null);
 
+  /* أسعارُ التطعيمات (0279): تُجلب بأوّل فتحٍ لتبويب التطعيم، والسعرُ **يتعبّى ويُغيَّر** (vaxPriceFill): ما كتبه الطبيبُ لا يُداس،
+   * وسعرُ تطعيمٍ لا يبقى على غيره ولا على دواء. فشلُ الجلب يُقال سطراً («اكتب السعر بإيدك») — لا سعرٌ يُخترع. */
+  const [vaxPrices, setVaxPrices] = useState<Map<string, VaxPriceRow> | null>(null);
+  const [vaxPricesFailed, setVaxPricesFailed] = useState(false);
+  const [pickedVax, setPickedVax] = useState("");
+  const autoPriceRef = useRef<string | null>(null);
+  const [, setHintTick] = useState(0);
+  const [vaxTry, setVaxTry] = useState(0);
+  const vaxFailsRef = useRef(0);
+  useEffect(() => {
+    if (mode !== "vaccination" || vaxPrices) return;
+    let alive = true;
+    setVaxPricesFailed(false);
+    // جدولٌ غائب (واجهةٌ سبقت 0279) = لا أسعار، بحكم الباب نفسِه (vaxPricesMissing).
+    import("@/lib/vaccinePricesApi").then((m) => m.listVaxPrices().catch((e: unknown) => { if (m.vaxPricesMissing(e)) return new Map<string, VaxPriceRow>(); throw e; }))
+      .then((map) => { if (alive) { vaxFailsRef.current = 0; setVaxPrices(map); } })
+      .catch(() => { if (alive) setVaxPricesFailed(true); });
+    return () => { alive = false; };
+  }, [mode, vaxPrices, vaxTry]);
+  // والفشلُ يُعاد وحده (جلسةٌ تتجدّد، نتٌّ متأخّر) — لا يبقى التعبئةُ مطفأةً يوماً كاملاً بعد عطلٍ لحظيّ.
+  useEffect(() => {
+    if (!vaxPricesFailed || mode !== "vaccination") return;
+    return armRetry(browserRetryEnv, vaxFailsRef.current++, () => setVaxTry((n) => n + 1));
+  }, [vaxPricesFailed, mode]);
+  /* القرارُ حين يتبدّل التطعيمُ أو تصل الأسعار أو يتبدّل التبويب — **لا بكلّ حرف**: طبيبٌ يمسح السعرَ ليكتب غيره لا يرجع له المعبّأ. */
+  const priceNowRef = useRef(price);
+  priceNowRef.current = price;
+  useEffect(() => {
+    const want = pickedVax && vaxPrices ? vaxPrices.get(vaxKey(pickedVax))?.price : undefined;
+    const d = vaxPriceFill(priceNowRef.current, autoPriceRef.current, want, mode === "vaccination");
+    if (!d) return;
+    autoPriceRef.current = d.auto;
+    setPrice(d.price);
+  }, [pickedVax, vaxPrices, mode]);
+  const autoFilled = mode === "vaccination" && autoPriceRef.current != null && price === autoPriceRef.current;
+  const hintState: "auto" | "failed" | null = autoFilled ? "auto" : mode === "vaccination" && vaxPricesFailed && pickedVax ? "failed" : null;
+  if (hintState && !VaxHintLazy) VaxHintLazy = loadVaxHint();
+
   // Re-pull the clinic vaccine catalog on open so Settings-added vaccines appear instantly.
   const [catalogVersion, setCatalogVersion] = useState(0);
   useEffect(() => {
@@ -73,6 +119,7 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
     const p = Number(price);
     if (Number.isNaN(p) || p <= 0) { playWarning(); toast.error(t("retail.enterSalePrice"), t("retail.enterSalePriceDesc")); return false; }
     onAddLine(draft, p, Math.max(1, qty));
+    autoPriceRef.current = null;
     setPrice(""); setQty(1); setPicked(null); setChosenId(null);
     return true;
   };
@@ -87,7 +134,7 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
         ] as const).map((o) => (
           <button
             key={o.v}
-            onClick={() => { playTap(); setMode(o.v); }}
+            onClick={() => { playTap(); setMode(o.v); setPickedVax(""); }}
             className={cn(
               "flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition",
               mode === o.v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink",
@@ -142,6 +189,11 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
             ))}
           </div>
         )}
+        {hintState && VaxHintLazy && (
+          <LoadBoundary scope="vxp-hint" onRetry={() => { VaxHintLazy = loadVaxHint(); setHintTick((n) => n + 1); }}>
+            <Suspense fallback={null}><VaxHintLazy state={hintState} /></Suspense>
+          </LoadBoundary>
+        )}
         {fromStock && <p className="mt-1.5 text-2xs font-bold text-ink-subtle">{t("mymeds.posAsProduct", "يُباع كمنتج — ينقص من الرصيد، والعلاج ينكتب بسجلّ الحيوان")}</p>}
       </div>
 
@@ -155,7 +207,7 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
         {mode === "medication"
           ? <MedicationForm onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} species={activeSpecies}
               freeText="oneOff" stock="show" onPickMed={(m) => { setPicked(m); setChosenId(null); }} />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} petId={petId} petName={petName} />}
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} petId={petId} petName={petName} onVaccineChange={setPickedVax} />}
       </motion.div>
     </div>
   );

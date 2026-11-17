@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { type TFunction } from "i18next";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, Barcode, Building2, ClipboardCheck, Copy as CopyIcon, FileSpreadsheet, Hourglass, Lock,
+  AlertTriangle, Barcode, Building2, ClipboardCheck, Copy as CopyIcon, FileDown, FileSpreadsheet, Hourglass, Lock,
   Pencil, Printer, RotateCw, ScanBarcode, Search, TrendingDown,
 } from "lucide-react";
 import type { Company, CompanySection, Product } from "@/types";
@@ -16,7 +16,7 @@ import type { AuditMarks } from "@/lib/stocktake";
 import { auditMarks, auditMarksFailed, MARKS_DAYS } from "@/lib/auditMarks";
 import { buildStockReportHTML, openPrintWindow, writePrintWindow } from "@/lib/stockReportPrint";
 import { buildAuditModel, buildAuditReportHTML, countOf, groupsOf, SECTION_TONE, summarize, valueOf, type AuditData, type AuditTotals, type ReportCheck, type ReportRow, type ReportSection, type Tone } from "@/lib/auditReport";
-import { exportStocktakeXlsx } from "@/lib/stockReportXlsx";
+import { exportStocktakeXlsx, stocktakeFileName } from "@/lib/stockReportXlsx";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -443,7 +443,8 @@ export function StockReportButtons({ products, companies, sections }: {
   const { t } = useTranslation();
   const toast = useToast();
   const allowed = useAuditAllowed();
-  const [busy, setBusy] = useState<"print" | "xlsx" | null>(null);
+  const [busy, setBusy] = useState<"print" | "xlsx" | "pdf" | null>(null);
+  const [pdfPage, setPdfPage] = useState<{ done: number; total: number } | null>(null);
 
   const lists = async () => {
     const [p, c, s] = await withTimeout(Promise.all([
@@ -498,6 +499,25 @@ export function StockReportButtons({ products, companies, sections }: {
     } finally { setBusy(null); }
   };
 
+  /* PDF (طلبُ المالك ١٧/١١): الورقةُ المطبوعة نفسُها (buildStockReportHTML) بعلاماتها، صفحةً صفحة بلا قصّ سطر — stockReportPdf.ts
+   * كسولةٌ بمكتبتيها. والتقدّمُ يُقال بالزرّ (تقريرُ ألف مادّة عشراتُ الصفحات)، والفشلُ رسالةٌ لا ملفٌّ ناقص. */
+  const pdf = async () => {
+    if (busy) return;
+    playTap();
+    setBusy("pdf");
+    setPdfPage(null);
+    try {
+      const [{ p, c, s }, m, mod] = await Promise.all([lists(), marks(), import("@/lib/stockReportPdf")]);
+      const name = stocktakeFileName(getClinicName() || "doctorVet", new Date(), "pdf");
+      const n = await mod.exportStockReportPdf(buildStockReportHTML(p, c, s, m), name, (done, total) => setPdfPage({ done, total }));
+      playSuccess();
+      toast.success(t("audit.pdfDone", { name, n }));
+    } catch (e) {
+      playWarning();
+      toast.error(t("audit.pdfFail"), describeDbError(e, t));
+    } finally { setBusy(null); setPdfPage(null); }
+  };
+
   return (
     <>
       <Button variant="secondary" loading={busy === "print"} leftIcon={<Printer size={16} />} onClick={() => void print()} data-stockprint>
@@ -505,6 +525,9 @@ export function StockReportButtons({ products, companies, sections }: {
       </Button>
       <Button data-xlsxbtn variant="secondary" loading={busy === "xlsx"} leftIcon={<FileSpreadsheet size={16} />} onClick={() => void xlsx()}>
         {t("pos.stockXlsx", "تصدير جرد إكسل")}
+      </Button>
+      <Button data-pdfbtn variant="secondary" loading={busy === "pdf"} leftIcon={<FileDown size={16} />} onClick={() => void pdf()}>
+        {busy === "pdf" && pdfPage ? t("audit.pdfPage", { done: pdfPage.done, total: pdfPage.total }) : t("audit.pdf")}
       </Button>
     </>
   );
