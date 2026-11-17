@@ -3,7 +3,8 @@
  * صاحبُ الصفّ وحده وقيدُ الشكل بالقاعدة نفسها يفحصهما قسمُ 0258 بالحزمة على بوستغريس.
  *   أ) النقيّ: قارئُ الصفّ يرمي على شكلٍ مكسور (لا خانةٌ فاضية عن جوابٍ مكسور)، والمسودّةُ تُرفض بما يرفضه القيد، والعناصرُ
  *      بأصحابها وما لا صاحبَ له «missing» لا يُسقط، والإضافةُ لا تكرّر ولا تتجاوز السقف، والترتيبُ والشكلُ نسخٌ جديدة.
- *   ب) المرآةُ بالمستودع الحقيقيّ: الخانةُ لصاحبها (طبيبٌ لا يرى خانةَ الاستقبال)، والتعديلُ والحذفُ بشرط «كما فُتحت»
+ *   ب) المرآةُ بالمستودع الحقيقيّ: الخانةُ للعيادة كلّها (0278 — الطبيبُ يرى خانةَ الاستقبال ويعدّلها)، وخاناتُ مفاتيح 0258 القديمة
+ *      (لكلّ مستخدم) تُجمع للعيادة، والتعديلُ والحذفُ بشرط «كما فُتحت»
  *      (pos_tab_stale)، والمصوّرُ مسيَّج، و«القراءة فقط» يمنع الكتابة بخطأ repo نفسِه.
  *   ج) الأسلاك: شاشةُ البيع لا تستورد القطعةَ ولا البابَ ثابتاً، والضغطُ يمرّ من tapProduct/addService (طريقُ البيع نفسُه)،
  *      وسقوفُ الواجهة سقوفُ القيد بالهجرة، ولا window.confirm، والجدولُ الغائب يُخفي الميزةَ لا «تعذّر» دائم.
@@ -112,7 +113,7 @@ console.log("▸ القاعدةُ النقيّة: القارئ، والمسود�
 }
 
 /* ── ب) المرآة ──────────────────────────────────────────────────────────── */
-console.log("▸ المرآةُ التجريبية: لصاحبها، وبشرط «كما فُتحت»، والسياجُ و«القراءة فقط»");
+console.log("▸ المرآةُ التجريبية: للعيادة كلّها (0278)، وبشرط «كما فُتحت»، والسياجُ و«القراءة فقط»");
 const as = (id, rawRole, staff) => mem.set(SESSION, JSON.stringify({
   raw: { id, full_name: `موظف ${id}`, email: `${id}@demo.vet`, rawRole, roles: ["clinic"], clinic_id: "clinic-happy-paws", ...(staff ? { staff } : {}) },
   active: "clinic",
@@ -120,19 +121,27 @@ const as = (id, rawRole, staff) => mem.set(SESSION, JSON.stringify({
 {
   const draft = (name, items = []) => ({ name, tile_size: "md", show_images: true, items, sort: 0 });
   as("v1", "doctor");
+  // خانةٌ صُنعت قبل 0278 بمفتاح «العيادة_المستخدم» لحسابٍ آخر بالعيادة نفسِها — تظهر للعيادة كلّها أوّلَ قراءة.
+  mem.set("vp_pos_tabs_clinic-happy-paws_old1", JSON.stringify([{ id: "tab_old", name: "قديمة", tile_size: "md", show_images: true, items: [], sort: 0, updated_at: "2026-11-14T11:00:00.000Z" }]));
+  mem.set("vp_pos_tabs_other-clinic_old2", JSON.stringify([{ id: "tab_x", name: "عيادة ثانية", tile_size: "md", show_images: true, items: [], sort: 0, updated_at: "2026-11-14T11:00:00.000Z" }]));
+  check("خانةُ حسابٍ آخر بالعيادة (مفتاح 0258) تظهر للطبيب، وخانةُ عيادةٍ أخرى لا", (await posTabsApi.list()).map((x) => x.name).join(",") === "قديمة");
+  const old = (await posTabsApi.list())[0];
+  await posTabsApi.remove(old.id, old.updated_at);
+  check("  وحذفُها يبقى محذوفاً (الجمعُ مرّةً، لا يرجعها مفتاحُها القديم)", (await posTabsApi.list()).length === 0);
   const a = await posTabsApi.create(draft("  خانة   الطبيب ", [{ k: "p", id: "p1", shape: "sq" }]));
-  check("الطبيبُ يصنع خانته (والاسمُ منظَّف)", a.name === "خانة الطبيب" && (await posTabsApi.list()).length === 1);
+  check("الطبيبُ يصنع خانة (والاسمُ منظَّف)", a.name === "خانة الطبيب" && (await posTabsApi.list()).length === 1);
   as("r1", "reception");
-  check("  ولا يراها الاستقبال (لكلّ مستخدمٍ خاناتُه)", (await posTabsApi.list()).length === 0);
-  await posTabsApi.create(draft("خانة الاستقبال"));
+  check("  ويراها الاستقبالُ (الخاناتُ للعيادة كلّها — 0278)", (await posTabsApi.list()).map((x) => x.name).join(",") === "خانة الطبيب");
+  const rTab = await posTabsApi.create(draft("خانة الاستقبال"));
   as("v1", "doctor");
-  check("  وخانةُ الاستقبال لا تظهر للطبيب", (await posTabsApi.list()).map((x) => x.name).join(",") === "خانة الطبيب");
+  check("  وخانةُ الاستقبال تظهر للطبيب", (await posTabsApi.list()).map((x) => x.name).join(",") === "خانة الطبيب,خانة الاستقبال");
   const b = await posTabsApi.update(a.id, { ...draft("خانة ٢"), items: [{ k: "s", id: "s1", shape: "wide" }] }, a.updated_at);
   check("التعديلُ بشرط «كما فُتحت»: يمرّ ويختم من جديد", b.name === "خانة ٢" && b.updated_at !== a.updated_at && b.items[0].shape === "wide");
   check("  وبنسخةٍ قديمة pos_tab_stale (لا دوسٌ صامت)", await errOf(() => posTabsApi.update(a.id, draft("قديمة"), a.updated_at)) === "pos_tab_stale"
     && (await posTabsApi.list())[0].name === "خانة ٢");
   check("  والحذفُ بنسخةٍ قديمة كذلك، وبالحاليّة يحذف", await errOf(() => posTabsApi.remove(a.id, a.updated_at)) === "pos_tab_stale"
-    && (await errOf(() => posTabsApi.remove(b.id, b.updated_at))) === "قُبل" && (await posTabsApi.list()).length === 0);
+    && (await errOf(() => posTabsApi.remove(b.id, b.updated_at))) === "قُبل" && (await posTabsApi.list()).map((x) => x.name).join(",") === "خانة الاستقبال");
+  check("  والطبيبُ يحذف خانةَ الاستقبال أيضاً (العيادةُ كلّها)", (await errOf(() => posTabsApi.remove(rTab.id, rTab.updated_at))) === "قُبل" && (await posTabsApi.list()).length === 0);
   check("والقيدُ يرفض اسماً فارغاً (23514) كالخادم", await errOf(() => posTabsApi.create(draft("   "))) === "23514");
   as("p1", "doctor", { clinicId: "c", role: "doctor", staffRole: "photographer" });
   check("والمصوّرُ مسيَّج: لا يرى ولا يصنع (42501)", (await posTabsApi.list()).length === 0 && await errOf(() => posTabsApi.create(draft("x"))) === "42501");
@@ -158,8 +167,11 @@ console.log("▸ الأسلاك: القطعةُ كسولة، والضغطُ بط
   check("سقوفُ الواجهة سقوفُ القيد بالهجرة (١٢٠ عنصراً، ٤٠ حرفاً، ٦٤ للمعرّف، الأحجامُ الثلاثة)",
     /jsonb_array_length\(p\) <= 120/.test(sql) && /between 1 and 40/.test(sql) && /between 1 and 64/.test(sql) && /tile_size in \('sm', 'md', 'lg'\)/.test(sql)
     && /items: 120, name: 40/.test(lib) && /o\.id\.length > 64/.test(lib));
-  check("والسياسةُ لصاحب الصفّ وحده وبلا سؤالٍ لكلّ صفّ", /using \(clinic_id = \(select auth_clinic\(\)\) and user_id = \(select auth\.uid\(\)\)\)/.test(sql));
-  check("وهجرةُ 0258 بموجة الحزمة", /WAVE="[^"]*\$MIG\/0258_pos_custom_tabs\.sql/.test(src("supabase/tests/run.sh")));
+  const sql78 = src("supabase/migrations/0278_pos_tabs_clinic_wide.sql");
+  check("والسياسةُ (0278) شرطُ العيادة وحده بلا سؤالٍ لكلّ صفّ، وسياسةُ «صاحبها وحده» تُحذف",
+    /using \(clinic_id = \(select auth_clinic\(\)\)\)/.test(sql78) && /with check \(clinic_id = \(select auth_clinic\(\)\)\)/.test(sql78)
+    && /drop policy if exists pos_custom_tabs_own/.test(sql78) && !/auth\.uid\(\)/.test(sql78.replace(/^--.*$/gm, "")));
+  check("وهجرتا 0258 و0278 بموجة الحزمة", /WAVE="[^"]*\$MIG\/0258_pos_custom_tabs\.sql/.test(src("supabase/tests/run.sh")) && /WAVE="[^"]*\$MIG\/0278_pos_tabs_clinic_wide\.sql/.test(src("supabase/tests/run.sh")));
 }
 
 /* ── د) الفشلُ يُعاد وحده (بلاغ ١٧/١١: «الخانة اختفت ثاني يوم») ──────────────────────────────────────── */

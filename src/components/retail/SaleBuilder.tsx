@@ -1189,7 +1189,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const liftRowsRef = useRef(new Map<string, { row: Product; listAt: Product | undefined }>());
 
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds" | `tab:${string}`>("products");
-  /* خاناتُ الطبيب (0258): لصاحبها وحده (الخادمُ يقصرها عليه)، وفشلُ جلبها يُقال بالشريط مع «أعد» — لا «ماكو خانات». */
+  /* خاناتُ شاشة البيع (0258 ← 0278): للعيادة كلّها (الخادمُ يقصرها عليها)، وفشلُ جلبها يُقال بالشريط مع «أعد» — لا «ماكو خانات». */
   const [posTabs, setPosTabs] = useState<PosTab[] | null>(null);
   const [posTabsFailed, setPosTabsFailed] = useState(false);
   const [posTabsOff, setPosTabsOff] = useState(false);
