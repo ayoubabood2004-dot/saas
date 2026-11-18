@@ -1820,7 +1820,6 @@ function MyMedsSettings() {
   const catalogKey = (name: string) => ix.byKey.get(searchable(name))?.base === "catalog";
   /* ما أضافته العيادةُ بنفسها (لا الكتالوج): حيٌّ وخارج «أدويتي» — وما فيها يظهر بالقائمة أعلاه. */
   const custom = drugs.rows.filter((r) => r.archived_at == null && !r.in_mine && !catalogKey(r.name));
-  const archived = drugs.rows.filter((r) => r.archived_at != null);
   /** «فاضية» و«ماكو» تُقالان حين قرأ الخادمُ القائمةَ فعلاً — لا تحت فشلٍ ولا تحميلٍ ولا عيادةٍ تبدّلت. */
   const mine = mineState(drugs.status, ix.mine.length);
   const knownEmpty = drugs.status === "ready";
@@ -1988,27 +1987,13 @@ function MyMedsSettings() {
         )}
       </div>
 
-      {archived.length > 0 && (
-        <div className="mt-5">
-          <p className="mb-2 text-xs font-black text-ink-muted">{t("mmset.archivedTitle", "المؤرشفة")}</p>
-          <div className="space-y-1.5">
-            {archived.map((r) => (
-              <div key={r.id} className="flex min-h-12 items-center gap-2 rounded-2xl border border-dashed border-line px-3 text-ink-muted" data-mymeds-archived={r.name}>
-                <span className="min-w-0 flex-1 truncate text-sm font-bold" dir="auto">{r.name}</span>
-                <button type="button" disabled={!canWrite} data-mymeds-restore={r.name} onClick={async () => {
-                  playTap();
-                  try { await drugs.restore(r.id); playSuccess(); toast.success(t("mmset.restored", { name: r.name, defaultValue: "رجع «{{name}}»" })); }
-                  catch (e) { fail(e); }
-                }} className="h-10 shrink-0 rounded-xl bg-surface-2 px-3 text-xs font-black text-brand-700 disabled:opacity-50 dark:text-brand-300">{t("mmset.restore", "رجّعه")}</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* «المؤرشفة» وأرشفةُ أدوية النظام (0280): بأرشيف الأدوية — ما أضافته العيادة ومن النظام بقائمةٍ واحدة تُرجَع منها. */}
+      <DrugArchiveSlot />
 
       {/* «أضف من القائمة الكاملة»: كلُّ ضغطةٍ نجمة، والضغطةُ الثانية تشيلها */}
       <MedPicker open={pickerOpen} onClose={() => setPickerOpen(false)} mode="multi" freeText="offer" title={t("mmset.addFromAll", "أضف من القائمة الكاملة")}
-        isSelected={(m) => drugs.isMine(m.key)}
+        showHidden={{ label: t("mmset.archivedTitle", "المؤرشفة") }}
+        isSelected={(m) => drugs.isMine(m.key) && !drugs.archiveState.hidden.has(m.key)}
         onPick={(m) => { void drugs.star({ drugId: m.drugId, name: m.name, family: m.family }).catch(fail); }}
         onUnpick={(m) => { const key = m.key; const row = drugs.mine.find((r) => searchable(r.name) === key); if (row) void drugs.unstar(row.id).catch(fail); }} />
     </div>
@@ -2026,7 +2011,8 @@ function MyMedCategories() {
   const drugs = useClinicDrugs();
   const { access } = useSubscription();
   const canWrite = access !== "readonly" && drugs.status === "ready";
-  const ix = useMedIndex({ rows: drugs.rows, stockMode: "hide", groups: drugs.allGroups, items: drugs.items });
+  /* 0280: المؤرشفُ يُرى هنا بتصنيفه — وإلا ما انشال من تصنيفٍ دواءٌ مخفيّ. */
+  const ix = useMedIndex({ rows: drugs.rows, stockMode: "hide", groups: drugs.allGroups, items: drugs.items, showHidden: true });
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
@@ -2625,6 +2611,17 @@ let RxCardLazy = loadRxCard();
 /* أسعارُ التطعيمات (0279) داخل بطاقة التطعيمات: قطعةٌ كسولة بنطاقها المملوك vxp، وتختفي حين يغيب جدولُها. */
 const loadVaxPrices = () => page(() => import("@/components/vaccines/VaccinePrices").then((m) => ({ default: m.VaxPriceCard })), ["vxp"]);
 let VaxPricesLazy = loadVaxPrices();
+/* أرشيفُ الأدوية (0280) تحت «أدويتي»: قطعةٌ كسولة بنطاقها المملوك darc — «المؤرشفة» كلُّها هناك (من النظام وما أضافته العيادة). */
+const loadDrugArchive = () => page(() => import("@/components/meds/DrugArchive").then((m) => ({ default: m.DrugArchivePanel })), ["darc"]);
+let DrugArchiveLazy = loadDrugArchive();
+function DrugArchiveSlot() {
+  const [, setTick] = useState(0);
+  return (
+    <LoadBoundary scope="darc-panel" onRetry={() => { DrugArchiveLazy = loadDrugArchive(); setTick((n) => n + 1); }}>
+      <Suspense fallback={null}><DrugArchiveLazy /></Suspense>
+    </LoadBoundary>
+  );
+}
 function VaxPricesSlot({ names }: { names: string[] }) {
   const [, setTick] = useState(0);
   return (

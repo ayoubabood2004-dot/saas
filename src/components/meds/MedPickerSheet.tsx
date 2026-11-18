@@ -145,7 +145,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
   const ix = useMedIndex({
     rows: drugs.rows, stock: showStock ? stock : undefined, recent: recent ?? undefined,
     species: p.species ?? null, only: p.only, formulary: p.formulary, stockMode: showStock ? "show" : "hide",
-    groups: drugs.allGroups, items: drugs.items,
+    groups: drugs.allGroups, items: drugs.items, showHidden: !!p.showHidden,
   });
   const groupName = new Map(ix.groups.map((g) => [g.id, g.name] as const));
   const famLabel = (k: FamilyKey): string => ix.famName.get(k) ?? t(`mymeds.fam.${k}`);
@@ -360,7 +360,7 @@ export default function MedPickerSheet(p: MedPickerProps) {
 
   const tile = (it: MedItem) => (
     <Tile key={it.key} it={it} selected={insertInto ? it.groupIds.includes(insertInto) : selected(pickedFrom(it))} confirming={confirmBanned === it.key}
-      tags={it.groupIds.map((id) => groupName.get(id) ?? "").filter(Boolean)}
+      tags={[...(it.hiddenBy && p.showHidden ? [p.showHidden.label] : []), ...it.groupIds.map((id) => groupName.get(id) ?? "").filter(Boolean)]}
       dragDisabled={!canWrite} starDisabled={!canWrite} onPick={() => pick(it)} onStar={() => void star(it)}
       onBack={() => setConfirmBanned(null)} />
   );

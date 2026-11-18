@@ -1,6 +1,7 @@
 import type { ClinicDrug, ClinicDrugGroup, ClinicDrugGroupItem, ClinicDrugOp, DrugFamilyKey, MedicineStock, Species } from "@/types";
 import { FORMULARY, DRUG_BY_ID, matchMonograph, ingredientMonographs, bannedIngredient, doseFor, isBannedFor, type DrugClass, type Monograph } from "./vetFormulary";
 import { searchable } from "./utils";
+import { hiddenBy, type DrugArchive, type HiddenBy } from "./drugArchive";
 
 /* ============================================================================
  * medIndex — قلبُ «أدويتي» والمنتقي الموحَّد، بلا React (تقوده فحوصُ node).
@@ -526,6 +527,8 @@ export interface MedItem {
   hay: string;
   /** تصنيفاتُ العيادة الحيّة التي هو فيها (0239) — شاراتُ البلاطة. */
   groupIds: string[];
+  /** 0280: مؤرشفٌ من قائمة النظام (بالاسم أو بزرّ القائمة) — يُرى بالإعدادات وحدها (`showHidden`). */
+  hiddenBy?: HiddenBy;
 }
 
 export interface MedIndex {
@@ -572,6 +575,10 @@ export interface BuildInput {
   /** تصنيفاتُ العيادة وعضوياتُها كما يرجعها clinic_drugs_list (0239). */
   groups?: readonly ClinicDrugGroup[] | null;
   items?: readonly ClinicDrugGroupItem[] | null;
+  /** 0280: أرشفةُ أدوية النظام — المخفيُّ بالاسم، و«قائمةُ النظام مخفيّة». */
+  archive?: DrugArchive | null;
+  /** الإعداداتُ («أضف من القائمة الكاملة» وأرشيفُ الأدوية): المؤرشفُ يُرى بعلامته ليُرجَع — والمنتقي بغيرها لا يراه. */
+  showHidden?: boolean;
 }
 
 const haystack = (name: string, ...monos: Monograph[]) =>
@@ -645,6 +652,14 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     for (const it of items.values()) if (it.products.length) it.stock = it.products.reduce((s, p) => s + (Number(p.stock) || 0), 0);
   }
 
+  /* 0280: أرشفةُ أدوية النظام — المخفيُّ بالاسم يختفي ولو له صفّ، وزرُّ القائمة يُخفي من النظام ما ليس للعيادة (لا صفَّ حيّاً
+   * ولا رصيد). المنتقي لا يراه؛ والإعداداتُ تراه بعلامته (showHidden). */
+  const hiddenKeys = new Set<string>();
+  for (const it of items.values()) {
+    const h = hiddenBy(it, input.archive);
+    if (h) { it.hiddenBy = h; hiddenKeys.add(it.key); }
+  }
+
   /* 0268: العائلاتُ صفوفٌ بتصنيفات العيادة — المؤرشفةُ مخفيّةٌ ويّا أدويتها (والمخزونُ يبقى: بضاعةٌ لا كتالوج). */
   const famRow = new Map<FamilyKey, ClinicDrugGroup>();
   for (const g of input.groups ?? []) if (g.family && isFamily(g.family)) famRow.set(g.family, g);
@@ -652,6 +667,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
   const famName = familyNames(input.groups ?? []);
   let all = [...items.values()];
   if (famHidden.size) all = all.filter((it) => it.base === "stock" || !famHidden.has(it.family));
+  if (!input.showHidden && hiddenKeys.size) all = all.filter((it) => !it.hiddenBy);
   if (input.only === "dosable") all = all.filter((it) => !!it.monographId);
   const byKey = new Map(all.map((it) => [it.key, it] as const));
 
@@ -677,6 +693,7 @@ export function buildMedIndex(input: BuildInput): MedIndex {
     seen.add(k);
     const hit = byKey.get(k);
     if (!hit && items.has(k) && famHidden.has(items.get(k)!.family)) continue;   // دواءُ عائلةٍ مخفيّة لا يرجع «أخيراً»
+    if (!hit && (hiddenKeys.has(k) || (!input.showHidden && input.archive?.hidden.has(k)))) continue;   // ولا مؤرشفٌ (0280)
     if (hit) { recent.push(hit); }
     else {
       // اسمٌ كتبته العيادةُ («ميلوكسيكام») يحمل دليلَه — بلاه كانت ضغطتُه بالطبلة «بلا جرعة
