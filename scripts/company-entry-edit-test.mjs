@@ -227,7 +227,7 @@ check("الدفتر: زرُّ التعديل للمدير على ما يتعدّ
   && (book.match(/canEdit\(r\) && \(/g) ?? []).length === 2 && (book.match(/\{editedChip\(r\)\}/g) ?? []).length === 2
   && /data-book-edited[\s\S]{0,120}openHistory\(r\)/.test(book));
 check("  النافذةُ ترسل ما رآه لحظةَ الفتح (seenOf بمعرّف حركته) وما قرّره planEdit، وتقول لماذا الزرُّ موقوف",
-  /setOpened\(\{ id: target\.entry\.id, seen: s \}\)/.test(book) && /opened\.id !== target\.entry\.id\) return null/.test(book)
+  /setOpened\(\{ target, seen: s \}\)/.test(book) && /opened\.target !== target\) return null/.test(book) && /if \(!target\) \{ setOpened\(null\); return; \}/.test(book)
   && /editCompanyEntry\(e\.id, plan\.after\.amount, plan\.after\.date, plan\.after\.note, reason\.trim\(\), seen\)/.test(book)
   && /disabled=\{!plan\.ok\}/.test(book) && /\{plan\.show && \(/.test(book));
 check("  وما تغيّر من جهازٍ ثانٍ أو أُلغي يُغلق النافذةَ ويعيد التحميل",

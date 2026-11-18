@@ -28,11 +28,26 @@
 -- • لا مسَّ لفاتورةٍ ولا دفعة: الرصيدُ السابق مجموعُ الصفوف الحيّة لحظةَ القراءة، فتعديلُ مبلغه يغيّر الرصيدَ وحده؛
 --   وتسديدٌ سبق وذهب كلُّه للفواتير (لأن السابقَ كان أصغر) يبقى كما وُزّع.
 --
+-- • `company_entry_void` يقرأ الصفَّ **من جديد تحت القفل** (نصُّ 0274 وسطرٌ معلَّم): كان يقرؤه قبل قفل الشركة ولا يعيده — آمنٌ ما دام
+--   المبلغُ لا يتغيّر، وكاذبٌ منذ التعديل: رصيدٌ ٥٠٠ عليه تسديدٌ ٣٠٠، مديرٌ يرفعه لـ١٠٠٠ وآخرُ يلغيه بالثانية نفسِها — الإلغاءُ ينتظر القفلَ
+--   ثمّ يحكم بالـ٥٠٠ القديمة (٧٠٠ − ٥٠٠ ≥ ٠) فيمرّ، ويبقى تسديدٌ ٣٠٠ بلا دَين (مراجعةٌ عدائيّة). حارسُ الانجراف على بصمة جسم 0274.
+--
 -- إضافيّةٌ وتُعاد بلا أثرٍ ثانٍ. تُطبَّق قبل الواجهة — والواجهةُ قبلها (دالّةٌ غائبة 42883/PGRST202) تُخفي زرَّ التعديل.
--- تراجع: drop function company_entry_edit(uuid, numeric, date, text, text, jsonb); (العمودُ يبقى — فارغٌ لكلّ صفٍّ لم يُعدَّل).
+-- تراجع: drop function company_entry_edit(uuid, numeric, date, text, text, jsonb); وcompany_entry_void بنصّ 0274 حرفاً
+--   (العمودُ يبقى — فارغٌ لكلّ صفٍّ لم يُعدَّل).
 -- ============================================================================
 
 set lock_timeout = '5s';
+
+-- ── ٠) ما تبني عليه، والحارسُ لما يُعاد — قبل أيّ تعريف ─────────────────────────────────────────
+do $$
+begin
+  if to_regprocedure('public._drift_assert(text,text,text)') is null
+     or to_regprocedure('public.company_pool_due_usd(uuid,uuid)') is null then
+    raise exception 'needs_0274' using hint = 'طبّق 0274 (الشراء ودفتر الشركة بالعملتين) قبل هالهجرة';
+  end if;
+end $$;
+select public._drift_assert('public.company_entry_void(uuid,text)', '348a579ec2788dfba10ebff86600abf1', '-- +0281');
 
 alter table company_entries add column if not exists edits jsonb;
 
@@ -119,3 +134,72 @@ begin
 end $$;
 revoke all on function public.company_entry_edit(uuid, numeric, date, text, text, jsonb) from public, anon;
 grant execute on function public.company_entry_edit(uuid, numeric, date, text, text, jsonb) to authenticated;
+
+-- ── الإلغاءُ يحكم بالصفّ كما هو تحت القفل (نصُّ 0274 وسطرٌ معلَّم) ─────────────────────────────────────────
+create or replace function public.company_entry_void(p_entry uuid, p_reason text)
+returns company_entries
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_e      company_entries;
+  v_pp     record;
+  v_detail jsonb := '[]'::jsonb;
+  v_paid   numeric;
+begin
+  if v_clinic is null then raise exception 'no_clinic' using hint = 'لا عيادةَ للجلسة.'; end if;
+  select * into v_e from company_entries where id = p_entry and clinic_id = v_clinic;
+  if not found then raise exception 'no_entry' using hint = 'الحركةُ غيرُ موجودة بعيادتك.'; end if;
+  perform company_entry_guard(v_e.company_id, null, true);
+  select * into v_e from company_entries where id = p_entry and clinic_id = v_clinic for update;   -- +0281
+  if v_e.voided_at is not null then raise exception 'already_void' using hint = 'الحركةُ ملغاةٌ أصلاً.'; end if;
+  if nullif(btrim(p_reason), '') is null then
+    raise exception 'reason_required' using hint = 'اكتب سببَ الإلغاء.';
+  end if;
+
+  -- دَينٌ سُدِّد منه شيءٌ لا يُلغى قبل تسديده: وإلا بقي تسديدٌ بلا دين.
+-- -0274   if v_e.direction = 'credit' and company_pool_due(v_e.company_id, v_clinic) - v_e.amount < -0.005 then
+  if v_e.direction = 'credit'   -- +0274
+     and (case when coalesce(v_e.currency, 'IQD') = 'USD' then company_pool_due_usd(v_e.company_id, v_clinic)   -- +0274
+               else company_pool_due(v_e.company_id, v_clinic) end) - v_e.amount < -0.005 then   -- +0274
+    raise exception 'has_payments' using hint = 'انسدّ من هذا الرصيد — ألغِ التسديد أوّلاً.';
+  end if;
+
+  if v_e.kind = 'payment' then
+    perform set_config('doctorvet.usd_purchase_door', 'on', true);   -- +0274
+    for v_pp in
+      select pp.* from purchase_payments pp
+       where pp.entry_id = v_e.id and pp.clinic_id = v_clinic
+       order by pp.paid_at desc
+    loop
+-- -0274       v_detail := v_detail || jsonb_build_object('purchase_id', v_pp.purchase_id, 'amount', v_pp.amount, 'paid_at', v_pp.paid_at);
+      v_detail := v_detail || jsonb_build_object('purchase_id', v_pp.purchase_id, 'amount', v_pp.amount, 'paid_at', v_pp.paid_at,   -- +0274
+                                                 'usd', v_pp.usd);   -- +0274
+      select coalesce(amount_paid, total) into v_paid from purchases
+       where id = v_pp.purchase_id and clinic_id = v_clinic for update;
+      if found then
+        update purchases set
+          amount_paid = greatest(0, v_paid - v_pp.amount),
+          paid_usd = case when currency = 'USD' then greatest(0, coalesce(paid_usd, 0) - coalesce(v_pp.usd, 0)) end,   -- +0274
+-- -0274           status = case when greatest(0, v_paid - v_pp.amount) >= total then 'paid'
+          status = case when currency = 'USD' then _usd_purchase_status(total_usd, greatest(0, coalesce(paid_usd, 0) - coalesce(v_pp.usd, 0)))   -- +0274
+                        when greatest(0, v_paid - v_pp.amount) >= total then 'paid'   -- +0274
+                        when greatest(0, v_paid - v_pp.amount) <= 0 then 'unpaid' else 'partial' end
+         where id = v_pp.purchase_id and clinic_id = v_clinic;
+      end if;
+      delete from purchase_payments where id = v_pp.id and clinic_id = v_clinic;
+    end loop;
+    perform set_config('doctorvet.usd_purchase_door', 'off', true);   -- +0274
+  end if;
+
+  update company_entries set
+    voided_at = now(), voided_by = auth.uid(), void_reason = btrim(p_reason),
+    void_detail = case when v_e.kind = 'payment' then v_detail else null end
+   where id = v_e.id and clinic_id = v_clinic
+  returning * into v_e;
+  return v_e;
+end $$;
+revoke all on function public.company_entry_void(uuid, text) from public, anon;
+grant execute on function public.company_entry_void(uuid, text) to authenticated;

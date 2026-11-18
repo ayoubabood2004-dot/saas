@@ -341,6 +341,14 @@ async function run(M, c) {
     const e = S2.errs().at(-1) ?? "";
     c("  والرفُّ يحكمه كالمسحة: كارتونٌ ثانٍ من ٣٠ علبة يُرفض بالباقي (٦)", S2.line("k:pC:k24")?.qty === 1 && e.startsWith("pks.short|") && e.includes('"stock":"6"'), J({ e, c: S2.cart() }));
     S2.end();
+    const S3 = await session(M);
+    await S3.tap("pC");
+    await S3.retMode();
+    c("  وبوضع «راجع» لا زرَّ كارتونٍ لا بالبطاقة ولا بسطر السلّة (الكارتونُ لا يُرجَع بعد — كان يُعرض ثمّ يُرفض «باركود كارتون» عن زرّ)",
+      !S3.ui.all().some((n) => String(n.props?.["data-packchip"] ?? "").startsWith("pC:")), String(S3.ui.all().filter((n) => n.props?.["data-packchip"]).length));
+    await S3.retMode();
+    c("  ويرجع الزرُّ حين يُطفأ الوضع", !!S3.ui.find("data-packchip", "pC:k24"));
+    S3.end();
   }
 
   /* ج) الرفُّ الواحد */
@@ -614,6 +622,7 @@ const MUTANTS = [
   ["«ما وصلنا» تُقال «حدّث القاعدة»", "    if (ready === \"unreachable\") return refuse(t(\"errors.network\"));\n", ""],
   ["الإتمامُ لا يسأل الخادمَ عن كارتونٍ لا تعرفه القائمة", "        const ans = await askServer(listRow ?? ({ id: l.product_id, name: l.name, barcode: l.barcode } as Product)).promise;", "        const ans = { kind: \"gone\" } as FreshAnswer;"],
   ["زرُّ الكارتون يبيع وحدة", "    void addPackLine(p, pack, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });", "    void sellOrExplain(p, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });"],
+  ["زرُّ الكارتون بوضع الراجع", "(!retMode && p && Array.isArray(p.packs) ? p.packs : [])", "(p && Array.isArray(p.packs) ? p.packs : [])"],
   ["سطرُ السلّة بلا زرّ الكارتون", "        return ks.length > 0 && row ? <div className=\"mt-1 flex flex-wrap gap-1\" data-linepacks>{ks.map((k) => packChip(row, k, false))}</div> : null;", "        return null;"],
   ["البحثُ بالخادم لا يرقّع القائمة", "          if (first && ans.kind !== \"unreachable\") onFreshRow?.(ans);\n          await sellLevel(hit, n);", "          void first; void ans;\n          await sellLevel(hit, n);"],
 ];

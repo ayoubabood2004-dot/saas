@@ -714,14 +714,15 @@ function EditModal({ target, poolDue, balance, fm, onClose, onDone }: {
   const [note, setNote] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  /* ما رآه المديرُ لحظةَ الفتح، بمعرّف حركته — رسمةٌ واحدة بين فتحٍ وفتحٍ لا ترسم حركةً بلقطة غيرها. */
-  const [opened, setOpened] = useState<{ id: string; seen: EntrySnap } | null>(null);
+  /* ما رآه المديرُ لحظةَ الفتح، مربوطاً **بالفتحة نفسِها** (كائنُ target يُصنع بكلّ ضغطة): فتحٌ ثانٍ للحركة نفسِها بعد حفظها كان يرسم
+   * رسمةً بلقطة الفتح الأوّل ومبلغِه وسببه (المعرّفُ واحد) — مراجعة. */
+  const [opened, setOpened] = useState<{ target: object; seen: EntrySnap } | null>(null);
   useEffect(() => {
-    if (!target) return;
+    if (!target) { setOpened(null); return; }
     const s = seenOf(target.entry);
-    setOpened({ id: target.entry.id, seen: s }); setAmount(String(s.amount)); setDate(s.date); setNote(s.note ?? ""); setReason("");
+    setOpened({ target, seen: s }); setAmount(String(s.amount)); setDate(s.date); setNote(s.note ?? ""); setReason("");
   }, [target]);
-  if (!target || !opened || opened.id !== target.entry.id) return null;
+  if (!target || !opened || opened.target !== target) return null;
   const e = target.entry;
   const seen = opened.seen;
   const plan = planEdit(e, { amount: amount.trim() === "" ? null : Number(amount), date, note, reason }, poolDue, localISO());
