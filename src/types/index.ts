@@ -1340,6 +1340,8 @@ export interface CompanyEntry {
   pay_currency?: "IQD" | "USD" | null;
   handed?: number | null;
   fx_rate?: number | null;
+  /** 0281: سجلُّ تعديل الرصيد السابق والتسوية — يُضاف ولا يُمسح (يقرؤه `readEdits`). غائبٌ = قاعدةٌ قبل 0281. */
+  edits?: unknown[] | null;
 }
 
 /** ما وزّعه تسديدٌ على الحساب. */

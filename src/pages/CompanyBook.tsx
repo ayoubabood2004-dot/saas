@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { ArrowRight, BookOpen, Building2, HandCoins, History, Lock, Printer, Scale, Undo2 } from "lucide-react";
+import { ArrowRight, BookOpen, Building2, HandCoins, History, Lock, Pencil, Printer, Scale, Undo2 } from "lucide-react";
 import type { Company, CompanyCharge, CompanyEntry, PaymentMethod, Purchase, PurchasePayment } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,7 +14,9 @@ import { buildCompanyLedger, curOfEntry, curOfPurchase, payableOf, previewPay, t
 import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
 import { per100Text, ratePerUsd, usdOf } from "@/lib/purchaseFxMath";
 import { describeDbError, withTimeout } from "@/lib/errors";
-import { cn, formatDate, formatNum, localISO, money } from "@/lib/utils";
+import { editableEntry, planEdit, readEdits, seenOf, type EditWhy, type EntrySnap } from "@/lib/companyEntryEdit";
+import { editCompanyEntry, entryEditReady } from "@/lib/companyEntryEditApi";
+import { cn, formatDate, formatNum, formatTime, localISO, money } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /* ============================================================================
@@ -50,6 +52,9 @@ export function CompanyBook() {
   const [tab, setTab] = useState<Tab>("moves");
   const [modal, setModal] = useState<null | "pay" | "opening" | "adjust">(null);
   const [voiding, setVoiding] = useState<LedgerRow | null>(null);
+  /* 0281: تعديلُ الرصيد السابق والتسوية (المدير)، وسجلُّ تعديلات حركة (لكلّ من يرى الدفتر). */
+  const [editing, setEditing] = useState<{ entry: CompanyEntry; label: string } | null>(null);
+  const [history, setHistory] = useState<{ entry: CompanyEntry; label: string } | null>(null);
   const [viewing, setViewing] = useState<Purchase | null>(null);
   /* 0274: دفترُ أيّ عملة يُعرض، وهل تعرف القاعدةُ العملتين والعيادةُ مفعّلة (سعرُها اقتراحاً للتسديد). */
   const [cur, setCur] = useState<LedgerCur>("IQD");
@@ -113,6 +118,22 @@ export function CompanyBook() {
     chargeSettled: t("cbook.kChargeSettled", "تسوية مطالبة"),
   })[r.kind];
   const methodLabel = (m: PaymentMethod | null) => (m ? t(`pay.${m}`, m) : "");
+  const entryOf = (r: LedgerRow): CompanyEntry | undefined => (r.entryId ? data?.entries.find((x) => x.id === r.entryId) : undefined);
+  /** 0281: الرصيدُ السابق والتسويةُ الحيّان، للمدير، والقاعدةُ تعرف التعديل. */
+  const canEdit = (r: LedgerRow): boolean => { const e = entryOf(r); return isManager && !!e && editableEntry(e) && entryEditReady(e); };
+  const editCount = (r: LedgerRow): number => { const e = entryOf(r); return e ? readEdits(e.edits).length : 0; };
+  const openEdit = (r: LedgerRow) => { const e = entryOf(r); if (e) setEditing({ entry: e, label: kindLabel(r) }); };
+  const openHistory = (r: LedgerRow) => { const e = entryOf(r); if (e) setHistory({ entry: e, label: kindLabel(r) }); };
+  const editedChip = (r: LedgerRow) => {
+    const n = editCount(r);
+    if (!n) return null;
+    return (
+      <button type="button" data-book-edited={r.entryId ?? ""} onClick={(ev) => { ev.stopPropagation(); playTap(); openHistory(r); }}
+        className="ms-1.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-2xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+        <Pencil size={10} />{t("cbook.edited", { n })}
+      </button>
+    );
+  };
   /** 0274: تسديدٌ سُلّم بعملةٍ غير عملة الدَّين — ما سُلّم وسعرُه. */
   const handedText = (r: LedgerRow): string => {
     const e = r.entryId ? data?.entries.find((x) => x.id === r.entryId) : undefined;
@@ -145,7 +166,7 @@ export function CompanyBook() {
     if (!data || !L) return;
     const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
     const head = [t("cbook.colNo", "#"), t("cbook.colDate", "التاريخ"), t("cbook.colDesc", "البيان"), t("cbook.colRef", "المرجع"), t("cbook.colCredit", "علينا"), t("cbook.colDebit", "سدّدنا"), t("cbook.colBalance", "الرصيد")];
-    const body = L.rows.map((r) => `<tr class="${r.voided ? "v" : ""}"><td>${r.no}</td><td>${esc(formatDate(r.day, lang, true))}</td><td>${esc([kindLabel(r), r.note ?? "", allocText(r), r.voided ? t("cbook.voidedShort", { reason: r.voided.reason ?? "", defaultValue: "ملغاة: {{reason}}" }) : ""].filter(Boolean).join(" — "))}</td><td>${esc(r.ref ? `#${r.ref}` : "")}</td><td>${r.credit ? esc(fm(r.credit)) : ""}</td><td>${r.debit ? esc(fm(r.debit)) : r.voided ? esc(fm(r.amount)) : ""}</td><td>${esc(fm(r.balance))}</td></tr>`).join("");
+    const body = L.rows.map((r) => `<tr class="${r.voided ? "v" : ""}"><td>${r.no}</td><td>${esc(formatDate(r.day, lang, true))}</td><td>${esc([kindLabel(r), r.note ?? "", allocText(r), editCount(r) ? t("cbook.editedPrint", { n: editCount(r) }) : "", r.voided ? t("cbook.voidedShort", { reason: r.voided.reason ?? "", defaultValue: "ملغاة: {{reason}}" }) : ""].filter(Boolean).join(" — "))}</td><td>${esc(r.ref ? `#${r.ref}` : "")}</td><td>${r.credit ? esc(fm(r.credit)) : ""}</td><td>${r.debit ? esc(fm(r.debit)) : r.voided ? esc(fm(r.amount)) : ""}</td><td>${esc(fm(r.balance))}</td></tr>`).join("");
     const html = `<!doctype html><html dir="${i18n.dir()}" lang="${lang}"><head><meta charset="utf-8"><title>${esc(data.company.name)}</title>
 <style>body{font-family:system-ui,sans-serif;margin:24px;color:#111}h1{font-size:20px;margin:0 0 4px}p{margin:0 0 12px;color:#555;font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:5px 6px;text-align:start}th{background:#f2f4f7}
@@ -249,7 +270,8 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
                   <li key={r.key} data-book-mrow={r.kind} className={cn("flex items-start gap-3 px-3 py-2.5", r.voided && "text-ink-subtle")}>
                     <span className="mt-0.5 w-5 shrink-0 text-2xs tabular-nums text-ink-subtle">{r.no}</span>
                     <div className="min-w-0 flex-1">
-                      <p className={cn("text-sm font-bold", r.voided ? "line-through" : "text-ink")}>{kindLabel(r)}</p>
+                      <p className="text-sm font-bold"><span className={r.voided ? "line-through" : "text-ink"}>{kindLabel(r)}</span>{editedChip(r)}</p>
+                      {r.note && (r.kind === "opening" || r.kind === "adjustCredit" || r.kind === "adjustDebit") && <p className="text-2xs text-ink-muted">{r.note}</p>}
                       <p className="text-2xs text-ink-subtle">{formatDate(r.day, lang, true)}{r.ref && <> · <bdi dir="ltr">#{r.ref}</bdi></>}{r.method && <> · {methodLabel(r.method)}</>}</p>
                       {r.kind === "accountPay" && !r.voided && allocText(r) && <p className="text-2xs text-ink-muted">{allocText(r)}</p>}
                       {r.kind === "accountPay" && handedText(r) && <p className="text-2xs text-ink-muted" data-book-handed>{handedText(r)}</p>}
@@ -263,10 +285,18 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
                       <p className="text-2xs tabular-nums text-ink-muted">{t("cbook.balanceShort", { v: fm(r.balance), defaultValue: "الرصيد {{v}}" })}</p>
                     </div>
                     {isManager && r.entryId && !r.voided && (
-                      <button type="button" onClick={() => { playTap(); setVoiding(r); }}
-                        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle hover:text-danger-600" aria-label={t("cbook.void", "إلغاء الحركة")}>
-                        <Undo2 size={14} />
-                      </button>
+                      <div className="flex shrink-0 flex-col gap-1">
+                        {canEdit(r) && (
+                          <button type="button" data-book-edit={r.entryId} onClick={() => { playTap(); openEdit(r); }}
+                            className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle hover:text-brand-600" aria-label={t("cbook.edit")}>
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                        <button type="button" onClick={() => { playTap(); setVoiding(r); }}
+                          className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle hover:text-danger-600" aria-label={t("cbook.void", "إلغاء الحركة")}>
+                          <Undo2 size={14} />
+                        </button>
+                      </div>
                     )}
                   </li>
                 ))}
@@ -295,8 +325,8 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
                           <td className="px-3 py-2 tabular-nums text-ink-subtle">{r.no}</td>
                           <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatDate(r.day, lang, true)}</td>
                           <td className="px-3 py-2">
-                            <p className={cn("font-bold", r.voided ? "line-through" : "text-ink")}>
-                              {kindLabel(r)}{r.method && <span className="ms-1.5 text-2xs font-semibold text-ink-subtle">· {methodLabel(r.method)}</span>}
+                            <p className="font-bold">
+                              <span className={r.voided ? "line-through" : "text-ink"}>{kindLabel(r)}</span>{r.method && <span className="ms-1.5 text-2xs font-semibold text-ink-subtle">· {methodLabel(r.method)}</span>}{editedChip(r)}
                             </p>
                             {r.note && <p className="text-2xs text-ink-muted">{r.note}</p>}
                             {r.kind === "accountPay" && !r.voided && allocText(r) && <p className="text-2xs text-ink-muted" data-book-alloc>{allocText(r)}</p>}
@@ -310,10 +340,18 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
                           <td className="whitespace-nowrap px-3 py-2 text-end font-bold tabular-nums text-ink">{fm(r.balance)}</td>
                           <td className="px-2 py-2 text-end">
                             {isManager && r.entryId && !r.voided && (
-                              <button type="button" data-book-void={r.entryId} onClick={(e) => { e.stopPropagation(); playTap(); setVoiding(r); }}
-                                className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/10" aria-label={t("cbook.void", "إلغاء الحركة")}>
-                                <Undo2 size={14} />
-                              </button>
+                              <div className="flex justify-end gap-1">
+                                {canEdit(r) && (
+                                  <button type="button" data-book-edit={r.entryId} onClick={(e) => { e.stopPropagation(); playTap(); openEdit(r); }}
+                                    className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/10" aria-label={t("cbook.edit")}>
+                                    <Pencil size={14} />
+                                  </button>
+                                )}
+                                <button type="button" data-book-void={r.entryId} onClick={(e) => { e.stopPropagation(); playTap(); setVoiding(r); }}
+                                  className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/10" aria-label={t("cbook.void", "إلغاء الحركة")}>
+                                  <Undo2 size={14} />
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -371,6 +409,9 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
           <OpeningModal open={modal === "opening"} onClose={() => setModal(null)} companyId={id} cur={cur} viaFx={fx.ok || cur === "USD"} onDone={() => { setModal(null); void load(); }} />
           <AdjustModal open={modal === "adjust"} onClose={() => setModal(null)} companyId={id} cur={cur} viaFx={fx.ok || cur === "USD"} onDone={() => { setModal(null); void load(); }} />
           <VoidModal row={voiding} label={voiding ? kindLabel(voiding) : ""} fm={fm} onClose={() => setVoiding(null)} onDone={() => { setVoiding(null); void load(); }} />
+          <EditModal target={editing} poolDue={L.totals.poolDue} balance={L.totals.balance} fm={fm}
+            onClose={() => setEditing(null)} onDone={() => { setEditing(null); void load(); }} />
+          <HistoryModal target={history} fm={fm} onClose={() => setHistory(null)} />
           <PurchaseDetailModal purchase={viewing} onClose={() => setViewing(null)} onChanged={() => void load()} />
         </>
       )}
@@ -655,3 +696,149 @@ function VoidModal({ row, label, fm, onClose, onDone }: { row: LedgerRow | null;
   );
 }
 
+
+/* ── 0281: تعديلُ الرصيد السابق والتسوية — المديرُ وحده، بسببٍ يبقى بالدفتر ────────────────────────────── */
+const REASON_KEYS = ["rTypo", "rStatement", "rAgreement", "rDate", "rForgot"] as const;
+
+/** النافذةُ تقول ماذا سيتغيّر وكم يصير الرصيد قبل الحفظ، ولماذا الزرُّ موقوف بجملة. وما رآه المديرُ لحظةَ الفتح يُرسل مع
+ *  الحفظ — تعديلٌ من جهازٍ ثانٍ بعده يُرفض (`entry_changed`) فتُغلق النافذةُ ويُعاد تحميلُ الدفتر. */
+function EditModal({ target, poolDue, balance, fm, onClose, onDone }: {
+  target: { entry: CompanyEntry; label: string } | null; poolDue: number; balance: number;
+  fm: (n: number) => string; onClose: () => void; onDone: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language;
+  const toast = useToast();
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState("");
+  const [note, setNote] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  /* ما رآه المديرُ لحظةَ الفتح، بمعرّف حركته — رسمةٌ واحدة بين فتحٍ وفتحٍ لا ترسم حركةً بلقطة غيرها. */
+  const [opened, setOpened] = useState<{ id: string; seen: EntrySnap } | null>(null);
+  useEffect(() => {
+    if (!target) return;
+    const s = seenOf(target.entry);
+    setOpened({ id: target.entry.id, seen: s }); setAmount(String(s.amount)); setDate(s.date); setNote(s.note ?? ""); setReason("");
+  }, [target]);
+  if (!target || !opened || opened.id !== target.entry.id) return null;
+  const e = target.entry;
+  const seen = opened.seen;
+  const plan = planEdit(e, { amount: amount.trim() === "" ? null : Number(amount), date, note, reason }, poolDue, localISO());
+  const chips = REASON_KEYS.map((k) => t(`cbook.${k}`));
+  const pickReason = (c: string) => {
+    const cur = reason.trim();
+    setReason(!cur || chips.includes(cur) ? c : `${c} — ${cur}`);
+  };
+  const whyText = (w: EditWhy): string => ({
+    amount: t("cbook.amountRequired", "اكتب مبلغاً أكبر من صفر."),
+    date: t("cbook.whyDate"),
+    floor: t("cbook.whyFloor", { min: fm(plan.floor ?? 0) }),
+    noteRequired: t("cbook.whyNoteRequired"),
+    noteLong: t("cbook.whyLong"),
+    reasonLong: t("cbook.whyLong"),
+    noChange: t("cbook.whyNoChange"),
+    reason: t("cbook.whyReason"),
+  })[w];
+  /* الإشارةُ والرقمُ بعزلٍ يساريّ (LRI…PDI): بجملةٍ عربية كانت «+500,000» تُرسم «500,000+». */
+  const signed = (n: number) => `\u2066${n > 0 ? "+" : "−"}${fm(Math.abs(n))}\u2069`;
+  const save = async () => {
+    if (busy || !plan.ok) return;
+    setBusy(true);
+    try {
+      await editCompanyEntry(e.id, plan.after.amount, plan.after.date, plan.after.note, reason.trim(), seen);
+      playSuccess();
+      toast.success(t("cbook.editDone"));
+      onDone();
+    } catch (err) {
+      playWarning();
+      toast.error(describeDbError(err, t), err instanceof Error ? err.message : undefined);
+      // تغيّرت من جهازٍ ثانٍ، أو أُلغيت، أو اختفت: ما بالنافذة لم يعد ما بالدفتر — تُغلق ويُعاد تحميله.
+      const code = err instanceof Error ? err.message : "";
+      if (code === "entry_changed" || code === "already_void" || code === "no_entry") onDone();
+    } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} title={t("cbook.editTitle", { what: target.label })}>
+      <div className="space-y-4" data-book-editmodal>
+        <div className="rounded-2xl bg-surface-2 p-3 text-sm">
+          <p className="font-bold text-ink">{t("cbook.editNow", { v: fm(seen.amount), d: formatDate(seen.date, lang, true) })}</p>
+          {seen.note && <p className="mt-0.5 text-ink-muted">{seen.note}</p>}
+          <p className="mt-1 text-2xs text-ink-subtle">{t("cbook.editHelp")}</p>
+        </div>
+        <AmountField value={amount} onChange={setAmount} />
+        <DateField value={date} onChange={setDate} />
+        <div>
+          <label className="label">{e.kind === "adjust" ? t("cbook.adjustNoteLabel") : t("cbook.note", "ملاحظة")}</label>
+          <input className="input" value={note} onChange={(ev) => setNote(ev.target.value)} data-book-editnote />
+        </div>
+        <div>
+          <label className="label">{t("cbook.editReason")}</label>
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {chips.map((c) => (
+              <button key={c} type="button" onClick={() => { playTap(); pickReason(c); }} data-book-reasonchip
+                className={cn("rounded-full border px-2.5 py-1 text-xs font-bold transition",
+                  reason.trim().startsWith(c) ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300" : "border-line text-ink-muted hover:text-ink")}>{c}</button>
+            ))}
+          </div>
+          <input className="input" value={reason} onChange={(ev) => setReason(ev.target.value)} placeholder={t("cbook.editReasonPh")} data-book-editreason />
+        </div>
+        {(plan.changed.amount || plan.changed.date || plan.changed.note) && (
+          <div className="space-y-1 rounded-2xl border border-line p-3 text-sm" data-book-editpreview>
+            <p className="text-2xs font-bold text-ink-subtle">{t("cbook.editPreview")}</p>
+            {plan.changed.amount && Number.isFinite(plan.after.amount) && (
+              <p className="text-ink">{t("cbook.chAmount", { from: fm(seen.amount), to: fm(plan.after.amount), d: signed(plan.diff) })}</p>
+            )}
+            {plan.changed.date && <p className="text-ink">{t("cbook.chDate", { from: formatDate(seen.date, lang, true), to: date ? formatDate(date, lang, true) : "—" })}</p>}
+            {plan.changed.note && <p className="text-ink">{t("cbook.chNote", { from: seen.note ?? t("cbook.noteEmpty"), to: plan.after.note ?? t("cbook.noteEmpty") })}</p>}
+            {plan.changed.amount && Number.isFinite(plan.after.amount) && plan.balanceDelta !== 0 && (
+              <p className="font-bold text-ink" data-book-editbalance>{t("cbook.editBalance", { from: fm(balance), to: fm(Math.round((balance + plan.balanceDelta) * 100) / 100) })}</p>
+            )}
+          </div>
+        )}
+        {plan.show && (
+          <p className={cn("text-xs font-bold", plan.show === "floor" || plan.show === "amount" || plan.show === "date" ? "text-danger-600 dark:text-danger-400" : "text-ink-muted")} data-book-editwhy={plan.show}>
+            {whyText(plan.show)}
+          </p>
+        )}
+        <Button className="w-full" size="lg" loading={busy} disabled={!plan.ok} leftIcon={<Pencil size={17} />} onClick={() => void save()} data-book-editsave>
+          {t("cbook.editSave")}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+/** «كان كذا وصار كذا ولماذا ومتى» — لكلّ من يرى الدفتر، الأحدثُ أوّلاً، وآخرُها أوّلُ ما انكتب. */
+function HistoryModal({ target, fm, onClose }: { target: { entry: CompanyEntry; label: string } | null; fm: (n: number) => string; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language;
+  if (!target) return null;
+  const edits = readEdits(target.entry.edits);
+  const first = edits[0]?.before;
+  const lines = (b: EntrySnap, a: EntrySnap) => [
+    a.amount !== b.amount ? t("cbook.chAmount", { from: fm(b.amount), to: fm(a.amount), d: `\u2066${a.amount > b.amount ? "+" : "−"}${fm(Math.abs(Math.round((a.amount - b.amount) * 100) / 100))}\u2069` }) : "",
+    a.date !== b.date ? t("cbook.chDate", { from: formatDate(b.date, lang, true), to: formatDate(a.date, lang, true) }) : "",
+    a.note !== b.note ? t("cbook.chNote", { from: b.note ?? t("cbook.noteEmpty"), to: a.note ?? t("cbook.noteEmpty") }) : "",
+  ].filter(Boolean);
+  return (
+    <Modal open onClose={onClose} title={t("cbook.histTitle", { what: target.label })}>
+      <div className="space-y-3" data-book-history>
+        <ol className="space-y-2">
+          {[...edits].reverse().map((x, i) => (
+            <li key={`${x.at}:${i}`} className="rounded-2xl border border-line p-3 text-sm" data-book-histitem>
+              <p className="text-2xs text-ink-subtle">{x.at ? `${formatDate(x.at, lang, true)} · ${formatTime(x.at, lang)}` : "—"}</p>
+              <p className="mt-0.5 font-bold text-ink">{x.reason || "—"}</p>
+              {lines(x.before, x.after).map((l) => <p key={l} className="text-ink-muted">{l}</p>)}
+            </li>
+          ))}
+        </ol>
+        {first && (
+          <p className="rounded-2xl bg-surface-2 p-3 text-xs text-ink-muted" data-book-histfirst>
+            {t("cbook.histFirst", { v: fm(first.amount), d: formatDate(first.date, lang, true) })}{first.note ? ` — ${first.note}` : ""}
+          </p>
+        )}
+      </div>
+    </Modal>
+  );
+}
