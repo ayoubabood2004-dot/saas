@@ -40,6 +40,11 @@ export function packNote(per: number, unit: string): string {
   return i18n.t("pks.note", { n: per, unit });
 }
 
+/** عنوانُ زرّ الكارتون بشاشة البيع (كارتونٌ بلا باركود — ١٨/١١): «بيع كارتون (٢٤ علبة)». */
+export function packChipTitle(pack: string, per: number, unit: string): string {
+  return i18n.t("pks.chipTitle", { pack, n: per, unit });
+}
+
 /** اسمُ الوحدة الوسطى الافتراضيّ («علبة») ومستوياتُ الرمز للرسائل. */
 export function packWords(): { box: string; sub: string; pack: string } {
   return { box: i18n.t("pks.box"), sub: i18n.t("pks.sub"), pack: i18n.t("pks.pack") };

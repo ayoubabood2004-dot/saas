@@ -120,12 +120,15 @@ function TileImage({ path, className }: { path: string; className?: string }) {
     className={cn("bg-surface-2 object-cover", className)} />;
 }
 
-function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onService }: {
+function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onService, packChips }: {
   r: Exclude<ResolvedItem, { kind: "missing" }>; images: boolean; listPrice: (p: Product) => number; flash?: string | null; preview?: boolean;
   liftOf?: (p: Product) => boolean; onProduct?: (p: Product) => void; onService?: (s: Service) => void;
+  /** أزرارُ كراتين المادّة (بلا باركود — ١٨/١١) يرسمها مضيفُ البيع: الضغطُ يمرّ من طريقه (addPackLine) لا من هنا. */
+  packChips?: (p: Product) => ReactNode[];
 }) {
   const { t } = useTranslation();
   const wide = r.item.shape === "wide";
+  const chips = r.kind === "product" && !preview && packChips ? packChips(r.product) : [];
   let name: string, price: number, out = false, lifted = false, badge: ReactNode, img: string | null = null, Icon = Package, fkey: string;
   if (r.kind === "product") {
     const p = r.product;
@@ -156,11 +159,11 @@ function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onServi
         r.kind === "service" ? "bg-brand-50/70 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300" : "bg-surface-2/70 text-ink-subtle")}>
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-1 shadow-soft"><Icon size={22} /></span>
       </span>;
-  return (
+  const tile = (
     <button type="button" data-ptile={fkey} data-shape={r.item.shape} data-out={out || undefined} data-lifted={lifted || undefined} onClick={tap} tabIndex={preview ? -1 : undefined}
       title={out ? `${name} — ${t("ptab.outHint")}` : name}
       className={cn("group relative flex overflow-hidden rounded-2xl border text-start transition",
-        wide ? "col-span-2 aspect-[2/1] flex-row" : "aspect-square flex-col",
+        wide ? (chips.length ? "aspect-[2/1] w-full flex-row" : "col-span-2 aspect-[2/1] flex-row") : chips.length ? "aspect-square w-full flex-col" : "aspect-square flex-col",
         preview ? "cursor-default" : "",
         out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
           : lit ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
@@ -175,15 +178,24 @@ function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onServi
       </span>
     </button>
   );
+  /* زرُّ الكارتون أخٌ للبطاقة لا داخلها (زرٌّ داخل زرّ لا يصحّ)، فوق صورتها بزاويتها. */
+  if (!chips.length) return tile;
+  return (
+    <div className={cn("relative flex", wide && "col-span-2")}>
+      {tile}
+      <div className="absolute start-1.5 top-1.5 flex max-w-[calc(100%-0.75rem)] flex-wrap gap-1">{chips}</div>
+    </div>
+  );
 }
 
 /* ── الشبكة ─────────────────────────────────────────────────────────────── */
-export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom, posV2, preview, liftOf, onProduct, onService, onEdit }: {
+export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom, posV2, preview, liftOf, onProduct, onService, onEdit, packChips }: {
   tab: Pick<PosTab, "name" | "tile_size" | "show_images" | "items">; products: Product[]; services: Service[];
   listPrice: (p: Product) => number; flash?: string | null; gridZoom?: number; posV2?: boolean; preview?: boolean;
   /** البيعُ قبل الجرد: الوضعُ يرفع هذه المادّة الآن (حكمُ شاشة البيع نفسُه) — فبطاقتُها لا تُرسم «نفدت». */
   liftOf?: (p: Product) => boolean;
   onProduct?: (p: Product) => void; onService?: (s: Service) => void; onEdit?: () => void;
+  packChips?: (p: Product) => ReactNode[];
 }) {
   const { t } = useTranslation();
   const resolved = useMemo(() => resolveItems(tab.items, products, services), [tab.items, products, services]);
@@ -209,7 +221,7 @@ export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom
         <div className={cn("grid gap-2", posV2 && !preview && "min-h-0 flex-1 overflow-y-auto pb-1")} style={style}>
           {live.map((r, i) => (
             <Tile key={`${r.item.k}:${r.item.id}:${i}`} r={r} images={tab.show_images} listPrice={listPrice} flash={flash} preview={preview}
-              liftOf={liftOf} onProduct={onProduct} onService={onService} />
+              liftOf={liftOf} onProduct={onProduct} onService={onService} packChips={packChips} />
           ))}
         </div>
       )}
