@@ -2165,6 +2165,28 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** ضغطُ كرت المنتج. المضاعِفُ يُستهلك **فوراً** — كان يبقى مسلَّحاً طوالَ سؤال الخادم
    *  (حتى ٦ ثوانٍ) فيلتقطه الصنفُ التالي: ×٥ على صنفٍ لم يُقصد به. ويُعاد إن رُفض
    *  الطلب (يُصلَح الرصيدُ ويُعاد بنفس العدد) ما لم يُسلَّح غيرُه أثناءها. */
+  /** كارتونٌ بلا باركود (طلبُ المالك ١٨/١١: «عيادات تسوي كارتونة لمنتج بدون باركود وتريد تبيعها — خيار صغير: كارتونة أو وحدة»):
+   *  زرٌّ صغير بجانب المنتج وبسطره بالسلّة يبيع الكارتونَ من **طريق المسح نفسِه** (addPackLine: الجاهزيةُ والسقفُ المشترك والوضعُ وسؤالُ
+   *  الخادم) — لا طريقَ بيعٍ ثانٍ. والمضاعِفُ يُستهلك ويُعاد إن رُفض، كضغطة المنتج. */
+  const tapPack = (p: Product, pack: ProductPack) => {
+    const armed = mult;
+    const n = armed && armed > 0 ? Math.floor(armed) : 1;
+    if (armed != null) setMult(null);
+    void addPackLine(p, pack, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });
+  };
+  /** كراتينُ المادّة كما على صفّها (`packs` — 0259)، بلا استيراد وحدة التعبئة بقطعة البيع. */
+  const packsOfRow = (p: Pick<Product, "packs"> | null | undefined): ProductPack[] => (p && Array.isArray(p.packs) ? p.packs : []);
+  const packChip = (p: Product, k: ProductPack, compactChip: boolean) => (
+    <button key={k.id} type="button" data-packchip={`${p.id}:${k.id}`}
+      title={packMod ? packMod.say.packChipTitle(k.name, k.per, (p.unit_name ?? "").trim() || packMod.say.packWords().box) : `${k.name} ×${k.per}`}
+      onClick={(e) => { e.stopPropagation(); playTap(); tapPack(p, k); }}
+      className={cn("inline-flex shrink-0 items-center gap-1 rounded-lg border font-bold tabular-nums transition",
+        compactChip ? "px-2 py-1 text-2xs" : "px-2 py-0.5 text-2xs",
+        flash === `k:${p.id}:${k.id}` ? "border-brand-400 bg-brand-600 text-white"
+          : "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300")}>
+      <Layers size={12} className="shrink-0" /><span className="truncate">{k.name}</span><span dir="ltr">×{formatNum(k.per)}</span>
+    </button>
+  );
   const tapProduct = (p: Product) => {
     const armed = mult;
     const n = armed && armed > 0 ? Math.floor(armed) : 1;
@@ -4398,7 +4420,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               <Suspense fallback={null}>
                 <TabGridLazy tab={activeTab} products={products} services={catalog.services} listPrice={listPrice}
                   flash={flash && caseBase(flash)} gridZoom={posV2 ? layout.gridZoom : 1} posV2={posV2} liftOf={(p: Product) => liftFor(p, null, negView)}
-                  onProduct={tapProduct} onService={(sv: Service) => { addService(sv); }} onEdit={() => setTabEdit(activeTab)} />
+                  onProduct={tapProduct} onService={(sv: Service) => { addService(sv); }} onEdit={() => setTabEdit(activeTab)}
+                  packChips={(p: Product) => packsOfRow(p).slice(0, 2).map((k) => packChip(p, k, false))} />
               </Suspense>
             </LoadBoundary>
           ) : null
@@ -4520,13 +4543,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                     : t("retail.outTapToCheck", "رصيده صفر بآخر تحديث — اضغط ونتأكد من الخادم");
                   /* بكسره: ربعُ علبةٍ تحت الصفر (٥ حبّات من شريط ٢٠) كانت تُرسم «-0»، وعلبةٌ ونصف «-2». */
                   const signed = <bdi dir="ltr" data-neg-stock>{byWeight ? fmtKg(p.stock) : formatQty(p.stock)}</bdi>;
+                  const rowPacks = packsOfRow(p).slice(0, 2);
                   if (compact) {
                     return (
+                      <div key={p.id} className="flex shrink-0 items-stretch gap-1">
                       <button
-                        key={p.id} data-prodrow={p.id} data-out={out || undefined} data-lifted={lifted || undefined} onClick={() => { playTap(); tapProduct(p); }}
+                        data-prodrow={p.id} data-out={out || undefined} data-lifted={lifted || undefined} onClick={() => { playTap(); tapProduct(p); }}
                         title={outHint ? `${p.name} — ${outHint}` : p.name}
                         className={cn(
-                          "group flex shrink-0 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-start transition",
+                          "group flex min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-start transition",
                           out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
                             : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
                               : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
@@ -4543,13 +4568,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
                         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white opacity-60 transition group-hover:opacity-100"><Plus size={13} /></span>
                       </button>
+                      {rowPacks.map((k) => packChip(p, k, true))}
+                      </div>
                     );
                   }
                   return (
+                    <div key={p.id} className="relative flex">
                     <button
-                      key={p.id} data-prodcard={p.id} data-out={out || undefined} data-lifted={lifted || undefined} title={outHint} onClick={() => { playTap(); tapProduct(p); }}
+                      data-prodcard={p.id} data-out={out || undefined} data-lifted={lifted || undefined} title={outHint} onClick={() => { playTap(); tapProduct(p); }}
                       className={cn(
-                        "group relative flex flex-col rounded-2xl border p-3 text-start transition",
+                        "group relative flex w-full flex-col rounded-2xl border p-3 text-start transition", rowPacks.length > 0 && "pb-10",
                         out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
                           : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
                             : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
@@ -4565,6 +4593,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : lifted ? signed : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
                       </span>
                     </button>
+                    {rowPacks.length > 0 && <div className="absolute inset-x-2 bottom-2 flex gap-1 overflow-hidden">{rowPacks.map((k) => packChip(p, k, false))}</div>}
+                    </div>
                   );
                 })}
               </div>
@@ -4840,6 +4870,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           })}
                         </div>
                       )}
+                      {/* كارتونُ المادّة بلا باركود: من سطرها بالسلّة كما من كرتها — سطرٌ آخر بكراتينه (k:…)، وسطرُ الوحدة كما هو. */}
+                      {l.kind === "product" && !l.ret && !isPackLine(l) && l.product_id && (() => {
+                        const row = products.find((x) => x.id === l.product_id);
+                        const ks = packsOfRow(row).slice(0, 2);
+                        return ks.length > 0 && row ? <div className="mt-1 flex flex-wrap gap-1" data-linepacks>{ks.map((k) => packChip(row, k, false))}</div> : null;
+                      })()}
                     </div>
                     {/* أهداف لمس ١١×١١ (44px) بالشاشة الجديدة — معيار WCAG 2.5.5
                         للأفعال الأساسية؛ ٧×٧ القديمة كانت تنتج تعديلات كمية بالغلط. */}

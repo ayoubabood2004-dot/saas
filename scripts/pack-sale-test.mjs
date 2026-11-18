@@ -317,6 +317,32 @@ async function run(M, c) {
     S.end();
   }
 
+  /* ب٦) كارتونٌ بلا باركود (طلبُ المالك ١٨/١١): زرٌّ صغير على المنتج وبسطره بالسلّة — من طريق المسح نفسِه */
+  {
+    const S = await session(M);
+    const chip = () => S.ui.find("data-packchip", "pC:k24");
+    c("ب٦ للمادّة زرُّ كارتونٍ لكلّ كارتون (حتى اثنين)، والمادّةُ بلا كراتين بلا زرّ",
+      !!chip() && !!S.ui.find("data-packchip", "pC:k6") && !S.ui.all().some((n) => String(n.props?.["data-packchip"] ?? "").startsWith("pS:")));
+    S.ui.click(chip()); await flush();
+    const k = S.line("k:pC:k24");
+    c("  ضغطُه سطرُ كارتونٍ ×١ بسعره وكلفته وعلبه — كالمسحة تماماً، وبلا «found» (ما مُسح شيء)",
+      k?.qty === 1 && k?.unit_price === 30000 && k?.unit_cost === 21600 && k?.packPer === 24 && !S.line("p:pC")
+      && !S.log.ok.some((x) => String(x).startsWith("pks.found|")), J({ k, ok: S.log.ok }));
+    await S.tap("pC");
+    c("  وضغطُ المنتج نفسِه وحدةٌ كما كان (p:)", S.line("p:pC")?.qty === 1 && S.line("k:pC:k24")?.qty === 1, J(S.cart()));
+    const lineChips = S.ui.all().filter((n) => n.props?.["data-packchip"] === "pC:k24");
+    c("  وبسطر الوحدة بالسلّة الزرُّ نفسُه (والكارتونُ بسطره بلا زرّ)", lineChips.length === 2, String(lineChips.length));
+    S.ui.click(lineChips[1]); await flush();
+    c("  وضغطُه من السلّة يزيد الكارتونَ لا الوحدة", S.line("k:pC:k24")?.qty === 2 && S.line("p:pC")?.qty === 1, J(S.cart()));
+    S.end();
+    const S2 = await session(M, { products: [{ ...PC, stock: 30 }, PS, PV] });
+    S2.ui.click(S2.ui.find("data-packchip", "pC:k24")); await flush();
+    S2.ui.click(S2.ui.find("data-packchip", "pC:k24")); await flush();
+    const e = S2.errs().at(-1) ?? "";
+    c("  والرفُّ يحكمه كالمسحة: كارتونٌ ثانٍ من ٣٠ علبة يُرفض بالباقي (٦)", S2.line("k:pC:k24")?.qty === 1 && e.startsWith("pks.short|") && e.includes('"stock":"6"'), J({ e, c: S2.cart() }));
+    S2.end();
+  }
+
   /* ج) الرفُّ الواحد */
   {
     const S = await session(M, { products: [{ ...PC, stock: 50 }, PS, PV] });
@@ -587,6 +613,8 @@ const MUTANTS = [
   ["«تبيع الرصيد كلّه؟» لكلّ سطرٍ وحده", "    l.kind === \"product\" && !l.ret && l.stock != null && (!l.negLift && shared(l)", "    l.kind === \"product\" && !l.ret && l.stock != null && (false && shared(l)"],
   ["«ما وصلنا» تُقال «حدّث القاعدة»", "    if (ready === \"unreachable\") return refuse(t(\"errors.network\"));\n", ""],
   ["الإتمامُ لا يسأل الخادمَ عن كارتونٍ لا تعرفه القائمة", "        const ans = await askServer(listRow ?? ({ id: l.product_id, name: l.name, barcode: l.barcode } as Product)).promise;", "        const ans = { kind: \"gone\" } as FreshAnswer;"],
+  ["زرُّ الكارتون يبيع وحدة", "    void addPackLine(p, pack, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });", "    void sellOrExplain(p, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });"],
+  ["سطرُ السلّة بلا زرّ الكارتون", "        return ks.length > 0 && row ? <div className=\"mt-1 flex flex-wrap gap-1\" data-linepacks>{ks.map((k) => packChip(row, k, false))}</div> : null;", "        return null;"],
   ["البحثُ بالخادم لا يرقّع القائمة", "          if (first && ans.kind !== \"unreachable\") onFreshRow?.(ans);\n          await sellLevel(hit, n);", "          void first; void ans;\n          await sellLevel(hit, n);"],
 ];
 let onCrash = null;

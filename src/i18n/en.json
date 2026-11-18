@@ -8804,7 +8804,8 @@
     "pack": "carton",
     "buyPack": "«{{name}}»: {{pack}} = {{n}} {{unit}} — {{n}} added to the line; the line's purchase price is per {{unit}}",
     "buyPackPrice": "«{{name}}»: {{pack}} = {{n}} {{unit}} — added to the line. The «{{pack}}» written purchase price {{price}} = {{each}} per {{unit}}: if the company charged that, fix the line price",
-    "buySub": "«{{name}}»: this is a {{sub}} barcode — purchases are recorded by the «{{unit}}». Scan its barcode or the carton's, or type the count"
+    "buySub": "«{{name}}»: this is a {{sub}} barcode — purchases are recorded by the «{{unit}}». Scan its barcode or the carton's, or type the count",
+    "chipTitle": "Sell a {{pack}} ({{n}} {{unit}}) — no barcode needed"
   },
   "dosl": {
     "lineName": "{{name}} · dose {{date}}",
