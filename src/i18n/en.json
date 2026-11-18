@@ -1158,7 +1158,11 @@
     "retCheckInvoice": "Check its price on the invoice",
     "repricedChip": "New price",
     "custFile": "Customer file",
-    "custNew": "New customer"
+    "custNew": "New customer",
+    "dCompanyReturnBtn": "Company returned it",
+    "dCompanyReturnConfirm": "{{company}} returned “{{name}}”'s order? The invoice is cancelled, the goods go back to stock, and {{n}} comes off the company's balance.",
+    "dCompanyReturnPaid": "{{paid}} was already collected on this order — it can't be returned from here. Return it from “Returns” on its invoice so the money is counted correctly.",
+    "dCompanyReturnDone": "Order returned — goods back in stock and removed from the company's balance"
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",
