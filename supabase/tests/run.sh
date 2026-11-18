@@ -13113,6 +13113,30 @@ chk "  وبعد خمسين تعديلاً: too_many_edits" \
     "select $(rerr $EC "$(ED "$OUSD, 160, '2025-06-01', '', 'مرّة زيادة', $(SN 120 2025-06-01 '')")")" "too_many_edits"
 chk "التدقيق: كلُّ تعديلٍ ناجح سطرُ UPDATE (سبعة تعديلات + إلغاء) — المرفوضُ لا يكتب شيئاً" \
     "select count(*)::text from audit_log where clinic_id = '$EC' and entity = 'company_entries' and action = 'UPDATE'" "8"
+# السباق (مراجعةٌ عدائيّة): الإلغاءُ كان يقرأ الصفَّ قبل قفل الشركة ولا يعيده — آمنٌ ما دام المبلغُ لا يتغيّر، وكاذبٌ منذ التعديل.
+# جلستان حقيقيّتان: (أ) تعدّل ٥٠٠ ← ١٠٠٠ وتمسك المعاملةَ ثانيتين، و(ب) تلغي بينهما فتنتظر القفل.
+ECO2=${EX}e2
+$P -c "insert into companies (id, clinic_id, name) values ('$ECO2', '$EC', 'شركة السباق') on conflict (id) do nothing;" >/dev/null
+RO="(select id from company_entries where company_id = '$ECO2' and kind = 'opening')"
+chk "السباق: رصيدٌ سابق ٥٠٠ عليه تسديدٌ ٣٠٠ (السابقُ ٢٠٠)" \
+    "select length($(rv $EC "select (company_opening_add_fx('$ECO2', 'IQD', 500, '2025-06-01', null)).id::text"))::text
+            ||'|'||$(rv $EV "select (r->>'to_opening') from company_pay('$ECO2', 300, 'cash', null) r")" "36|300.00"
+( $P -f - >/dev/null 2>&1 <<SQL
+begin;
+select $(rv $EC "$(ED "$RO, 1000, '2025-06-01', '', 'سباق', $(SN 500 2025-06-01 '')")");
+select pg_sleep(2);
+commit;
+SQL
+) &
+RACE_A=$!
+sleep 0.7
+RACE_B=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select $(rerr $EC "select (company_entry_void($RO, 'سباق')).id::text")" | tr -d '[:space:]')
+wait $RACE_A
+chk "  والإلغاءُ بالثانية نفسِها ينتظر القفلَ ثمّ يحكم بالـ١٠٠٠ (٧٠٠ − ١٠٠٠ < ٠ ⇒ has_payments) — لا تسديدَ بلا دَين" "select '$RACE_B'" "has_payments"
+chk "  (الرصيدُ ١٠٠٠ حيّ، والسابقُ ٧٠٠، والإلغاءُ بعلامة 0281)" \
+    "select (select amount::numeric(20,2)::text||':'||(voided_at is null)::text from company_entries where id = $RO)
+            ||'|'||company_pool_due('$ECO2', '$EC')::numeric(20,2)::text
+            ||'|'||(select (position('-- +0281' in prosrc) > 0)::text from pg_proc where oid = 'public.company_entry_void(uuid,text)'::regprocedure)" "1000.00:true|700.00|true"
 chk "الدالّةُ definer بمسارٍ مثبَّت ومحصورةٌ بالعيادة بنصّها، ولا anon" \
     "select (select bool_and(prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%' and position('clinic_id = v_clinic' in prosrc) > 0)
                from pg_proc where proname = 'company_entry_edit')::text

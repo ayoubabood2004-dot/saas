@@ -2174,17 +2174,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (armed != null) setMult(null);
     void addPackLine(p, pack, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });
   };
-  /** كراتينُ المادّة كما على صفّها (`packs` — 0259)، بلا استيراد وحدة التعبئة بقطعة البيع. */
-  const packsOfRow = (p: Pick<Product, "packs"> | null | undefined): ProductPack[] => (p && Array.isArray(p.packs) ? p.packs : []);
+  /** كراتينُ المادّة كما على صفّها (`packs` — 0259)، بلا استيراد وحدة التعبئة بقطعة البيع. ولا زرَّ بوضع «راجع»: الكارتونُ لا يُرجَع
+   *  بعد (addPackLine يرفضه بجملةٍ تقول «باركود كارتون» عن زرٍّ ما مُسح)، وزرُّ سطر البيع بالراجع كان يُعرض ثمّ يُرفض (مراجعة). */
+  const packsOfRow = (p: Pick<Product, "packs"> | null | undefined): ProductPack[] => (!retMode && p && Array.isArray(p.packs) ? p.packs : []);
   const packChip = (p: Product, k: ProductPack, compactChip: boolean) => (
     <button key={k.id} type="button" data-packchip={`${p.id}:${k.id}`}
       title={packMod ? packMod.say.packChipTitle(k.name, k.per, (p.unit_name ?? "").trim() || packMod.say.packWords().box) : `${k.name} ×${k.per}`}
       onClick={(e) => { e.stopPropagation(); playTap(); tapPack(p, k); }}
-      className={cn("inline-flex shrink-0 items-center gap-1 rounded-lg border font-bold tabular-nums transition",
-        compactChip ? "px-2 py-1 text-2xs" : "px-2 py-0.5 text-2xs",
+      /* بالصفّ المضغوط: لا ينكمش، واسمُه فوق sm وحده (بالهاتف أيقونةٌ والعدد — اسمٌ كان يأكل الصفَّ فيغطّي السعرَ و+). وبالبطاقة
+       * والسلّة: ينكمش والاسمُ يُقصّ والعددُ يبقى (كارتونان بشبكة الهاتف كانا يُقصّان نصفاً). */
+      className={cn("inline-flex items-center gap-1 rounded-lg border font-bold tabular-nums transition",
+        compactChip ? "shrink-0 px-2 py-1 text-2xs" : "min-w-0 px-2 py-0.5 text-2xs",
         flash === `k:${p.id}:${k.id}` ? "border-brand-400 bg-brand-600 text-white"
           : "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300")}>
-      <Layers size={12} className="shrink-0" /><span className="truncate">{k.name}</span><span dir="ltr">×{formatNum(k.per)}</span>
+      <Layers size={12} className="shrink-0" /><span className={cn("truncate", compactChip && "hidden sm:inline")}>{k.name}</span><span dir="ltr" className="shrink-0">×{formatNum(k.per)}</span>
     </button>
   );
   const tapProduct = (p: Product) => {
