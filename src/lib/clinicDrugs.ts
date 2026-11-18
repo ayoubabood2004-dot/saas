@@ -6,6 +6,7 @@ import { expectedServerClinic } from "./workspaceClinic";
 import { registerReset } from "./clinicSync";
 import { applyAll, drugErrorCode, drugKey, groupsOrder, mineOrder, type DrugsDataOut } from "./medIndex";
 import { uuid } from "./utils";
+import { NO_ARCHIVE, chunks, type DrugArchive } from "./drugArchive";
 
 /* ============================================================================
  * متجرُ «أدويتي» (0229) — على سُنّة متجر الأقفاص (`cage3d/store.ts`).
@@ -35,10 +36,14 @@ export interface DrugsState {
   loadedAt: number;
   saving: boolean;
   error: unknown;
+  /** 0280: أرشفةُ أدوية النظام (المخفيُّ بالاسم، وزرُّ القائمة) — تُقرأ مع القائمة وبختمها. */
+  archive: DrugArchive;
 }
 
 const empty = (): DrugsDataOut => ({ rows: [], groups: [], items: [] });
-const blank = (): DrugsState => ({ status: "idle", clinic: null, base: empty(), view: empty(), loadedAt: 0, saving: false, error: null });
+const blank = (): DrugsState => ({ status: "idle", clinic: null, base: empty(), view: empty(), loadedAt: 0, saving: false, error: null, archive: NO_ARCHIVE });
+/** بابُ 0280 كسول: لا يدخل حزمةَ الإقلاع ولا قطعةً لا تفتح المنتقي. */
+const archiveApi = () => import("./drugArchiveApi");
 const dataOf = (snap: { rows: DrugsDataOut["rows"]; groups: DrugsDataOut["groups"]; items: DrugsDataOut["items"] }): DrugsDataOut =>
   ({ rows: snap.rows, groups: snap.groups ?? [], items: snap.items ?? [] });
 
@@ -72,7 +77,9 @@ export function loadClinicDrugs(force = false): Promise<void> {
   if (state.status === "idle" || state.status === "switched") set({ status: "loading" });
   loading = (async () => {
     try {
-      const [snap, want] = await Promise.all([repo.listClinicDrugs(), expectedServerClinic()]);
+      /* الأرشفةُ مع القائمة لا بعدها: قائمةٌ تُرسم قبل أن يُعرف المؤرشف تعرضه لحظةً ثمّ تُخفيه (دواءٌ «يختفي» تحت الإصبع). وفشلُها
+       * فشلُ القراءة كلِّها — لا قائمةٌ «بلا مؤرشف» تُصدَّق؛ والجدولُ الغائب (قبل 0280) لا شيء. */
+      const [snap, want, archive] = await Promise.all([repo.listClinicDrugs(), expectedServerClinic(), archiveApi().then((m) => m.loadDrugArchive())]);
       if (my !== gen) return;
       if (inflight || queue.length) { reloadAfter = true; return; }
       if (snap.clinic !== want) {
@@ -81,7 +88,7 @@ export function loadClinicDrugs(force = false): Promise<void> {
         return;
       }
       const data = dataOf(snap);
-      state = { ...state, status: "ready", clinic: snap.clinic, base: data, view: data, loadedAt: Date.now(), error: null };
+      state = { ...state, status: "ready", clinic: snap.clinic, base: data, view: data, loadedAt: Date.now(), error: null, archive };
       emit();
     } catch (e) {
       if (my !== gen) return;
@@ -211,6 +218,43 @@ export async function seedFamilyRows(): Promise<"seeded" | "absent"> {
   return "seeded";
 }
 
+/* ── 0280: أرشفةُ أدوية النظام ─────────────────────────────────────────────
+ * الكتابةُ بختم العيادة كأيّ كتابةٍ لـ«أدويتي»، ثمّ قراءةُ الأرشفة من الخادم (ما انحفظ فعلاً لا ما أُرسل). ولا تُطبَّق على الشاشة
+ * قبل الخادم: إخفاءُ مئة دواءٍ ثمّ رجوعُها بفشلٍ أسوأ من ثانيةٍ تنتظر. */
+let archiveGen = 0;
+async function refreshArchive(): Promise<void> {
+  const my = ++archiveGen, g = gen;
+  const a = await (await archiveApi()).loadDrugArchive();
+  if (my === archiveGen && g === gen) set({ archive: a });
+}
+function writeClinic(): string {
+  if (state.status !== "ready" || !state.clinic) {
+    throw Object.assign(new Error(state.status === "switched" ? "clinic_switched" : "not_ready"), { code: "not_ready" });
+  }
+  return state.clinic;
+}
+/** يخفي (أو يُرجع) أسماءً من قائمة النظام. يرجع عددَ ما تغيّر فعلاً. */
+export async function hideDrugs(names: readonly string[], hide: boolean): Promise<number> {
+  if (!names.length) return 0;
+  const clinic = writeClinic();
+  try { return await (await archiveApi()).hideDrugNames(clinic, names, hide); }
+  finally { await refreshArchive().catch(() => { void loadClinicDrugs(true); }); }
+}
+/** قائمةُ النظام كلُّها مخفيّة أو ظاهرة. */
+export async function setCatalogOff(off: boolean): Promise<boolean> {
+  const clinic = writeClinic();
+  try { return await (await archiveApi()).setDrugCatalogOff(clinic, off); }
+  finally { await refreshArchive().catch(() => { void loadClinicDrugs(true); }); }
+}
+/** عملياتٌ كثيرة (أرشفةٌ أو ترجيعٌ بالجملة) بدفعاتٍ يقبلها الخادم (٢٠٠). */
+export async function applyDrugOpsChunked(ops: readonly ClinicDrugOp[]): Promise<void> {
+  for (const part of chunks(ops, 200)) await applyDrugOps(part);
+}
+/** دواءٌ مخفيٌّ باسمه يُضاف أو يُنجَّم أو يُصنَّف ⇒ يُرجع أوّلاً: وإلا انحفظ ولم يظهر. */
+export async function unhideFirst(name: string): Promise<void> {
+  if (state.archive.hidden.has(drugKey(name))) await hideDrugs([name], false);
+}
+
 /* ── قراءةٌ ثانية عند الرجوع للتبويب (كلَّ ١٥ث على الأكثر) — بلا realtime ─────────── */
 export function onDrugsVisible(now = Date.now()): void {
   if (state.status === "idle") return;
@@ -265,6 +309,11 @@ registerReset(() => {
 /* ── الخطّاف ─────────────────────────────────────────────────────────────── */
 export interface DrugRef { drugId?: string; name: string; family: DrugFamilyKey }
 
+/** حالُ الأرشفة وحده (لفهرس المنتقي): يتغيّر حين تتغيّر هي لا مع كلّ نجمة. */
+export function useDrugArchive(): DrugArchive {
+  return useSyncExternalStore(subscribe, () => state.archive);
+}
+
 export function useClinicDrugs() {
   const s = useSyncExternalStore(subscribe, () => state);
   useEffect(() => { void loadClinicDrugs(); }, []);
@@ -286,14 +335,14 @@ export function useClinicDrugs() {
     mine,
     archived: s.view.rows.filter((r) => r.archived_at != null),
     isMine: (key: string) => mineKeys.has(key),
-    /** نجمةٌ: بآخر «أدويتي» (أو بعد صفٍّ بعينه، أو أوّلَها بـnull). */
-    star: (it: DrugRef, after?: string | null) => applyDrugOps([{
+    /** نجمةٌ: بآخر «أدويتي» (أو بعد صفٍّ بعينه، أو أوّلَها بـnull). والمؤرشفُ باسمه يُرجع أوّلاً (0280). */
+    star: (it: DrugRef, after?: string | null) => unhideFirst(it.name).then(() => applyDrugOps([{
       op: "put", id: it.drugId ?? uuid(), name: it.name, family: it.family, mine: true, ...(after !== undefined ? { after } : {}),
-    }]),
+    }])),
     unstar: (id: string) => applyDrugOps([{ op: "unmine", id }]),
     move: (id: string, after: string | null) => applyDrugOps([{ op: "move", id, after }]),
     addCustom: (x: { name: string; family: DrugFamilyKey; mine: boolean }) =>
-      applyDrugOps([{ op: "put", id: uuid(), name: x.name, family: x.family, mine: x.mine }]),
+      unhideFirst(x.name).then(() => applyDrugOps([{ op: "put", id: uuid(), name: x.name, family: x.family, mine: x.mine }])),
     edit: (id: string, patch: { name?: string; family?: DrugFamilyKey }) => applyDrugOps([{ op: "edit", id, ...patch }]),
     archive: (id: string) => applyDrugOps([{ op: "archive", id }]),
     restore: (id: string) => applyDrugOps([{ op: "restore", id }]),
@@ -308,12 +357,18 @@ export function useClinicDrugs() {
      *  **بطلبٍ واحد** — والخادمُ يطوي الاسمَ على صفٍّ قائم ويقرأ member_add بمعرّفه (الاسمُ المستعار). */
     fileInto: (group: string, it: DrugRef) => {
       const id = it.drugId ?? uuid();
-      return applyDrugOps([{ op: "put", id, name: it.name, family: it.family, mine: false }, { op: "member_add", group, id }]);
+      return unhideFirst(it.name).then(() => applyDrugOps([{ op: "put", id, name: it.name, family: it.family, mine: false }, { op: "member_add", group, id }]));
     },
     unfile: (group: string, drugId: string) => applyDrugOps([{ op: "member_remove", group, id: drugId }]),
     moveMember: (group: string, drugId: string, after: string | null) => applyDrugOps([{ op: "member_move", group, id: drugId, after }]),
     apply: applyDrugOps,
     retry: () => void loadClinicDrugs(true),
+    /* ── 0280: أرشفةُ أدوية النظام ── */
+    archiveState: s.archive,
+    hideNames: (names: readonly string[]) => hideDrugs(names, true),
+    unhideNames: (names: readonly string[]) => hideDrugs(names, false),
+    setCatalogOff,
+    applyChunked: applyDrugOpsChunked,
   };
 }
 
