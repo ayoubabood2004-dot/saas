@@ -5602,6 +5602,7 @@ export const loadDemoProductGroups = () => import("./demoProductGroups");   // 0
 export const loadDemoPosSales = () => import("./demoPosSales");   // 0279 — مبيعُ ٣٠ يوماً لترتيب شاشة البيع
 export const loadDemoVaccinePrices = () => import("./demoVaccinePrices");   // 0279 — أسعارُ التطعيمات
 export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 — أرشفةُ أدوية النظام
+export const loadDemoCompanyEntryEdit = () => import("./demoCompanyEntryEdit");   // 0281 — تعديلُ الرصيد السابق والتسوية
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */

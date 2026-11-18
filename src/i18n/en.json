@@ -6376,7 +6376,37 @@
     "costIqd": "Costs {{v}} in dinars — the exchange difference is computed per invoice against its purchase-day rate",
     "fxGain": "Exchange difference: gain {{v}}",
     "fxLoss": "Exchange difference: loss {{v}}",
-    "fxTotal": "Exchange difference on dollar payments"
+    "fxTotal": "Exchange difference on dollar payments",
+    "edit": "Edit entry",
+    "edited": "Edited ×{{n}}",
+    "editedPrint": "edited {{n}}×",
+    "editTitle": "Edit — {{what}}",
+    "editNow": "Now: {{v}} · {{d}}",
+    "editHelp": "The edit stays in the book: what it was, what it became, why and when.",
+    "adjustNoteLabel": "Adjustment reason (shown in the book)",
+    "editReason": "Why are you editing?",
+    "editReasonPh": "Write the reason…",
+    "rTypo": "Typing mistake",
+    "rStatement": "Matched the company's statement",
+    "rAgreement": "New agreement with the company",
+    "rDate": "Recorded with a wrong date",
+    "rForgot": "A forgotten amount",
+    "editPreview": "What will change",
+    "chAmount": "Amount: {{from}} → {{to}} ({{d}})",
+    "chDate": "Date: {{from}} → {{to}}",
+    "chNote": "Note: “{{from}}” → “{{to}}”",
+    "noteEmpty": "empty",
+    "editBalance": "Company balance: {{from}} → {{to}}",
+    "whyDate": "The date must be today or earlier.",
+    "whyFloor": "Payments or discounts of {{min}} were taken from this balance — it can't go below that. If it really is less, cancel the payment or discount first.",
+    "whyNoteRequired": "An adjustment needs its reason in the note.",
+    "whyLong": "The text is too long.",
+    "whyNoChange": "Nothing changed yet — change the amount, date or note.",
+    "whyReason": "Write why you're editing — it stays in the book.",
+    "editSave": "Save edit",
+    "editDone": "Edit saved — recorded in the entry's history",
+    "histTitle": "Edit history — {{what}}",
+    "histFirst": "First recorded as: {{v}} · {{d}}"
   },
   "praise": {
     "noAccess": "Price raises are for the manager only — and never on a locked device. Sign in with the manager PIN.",
@@ -8791,6 +8821,7 @@
     "unsure": "Couldn't reach the server to confirm selling before the count is still on — «{{name}}» wasn't added. Check the connection and try again."
   },
   "pks": {
+    "chipTitle": "Sell a {{pack}} ({{n}} {{unit}}) — no barcode needed",
     "notReady": "«{{name}}»: selling by the «{{pack}}» needs a database update — for now sell by the «{{unit}}»: type {{n}} and scan its barcode",
     "ret": "«{{name}}»: this is a {{level}} barcode — returns are recorded by the «{{unit}}»: scan its barcode and type the count",
     "short": "«{{name}}»: what's left covers only {{stock}} {{unit}} — less than a {{pack}} ({{n}} {{unit}}). Continue by the «{{unit}}»",
@@ -8804,8 +8835,7 @@
     "pack": "carton",
     "buyPack": "«{{name}}»: {{pack}} = {{n}} {{unit}} — {{n}} added to the line; the line's purchase price is per {{unit}}",
     "buyPackPrice": "«{{name}}»: {{pack}} = {{n}} {{unit}} — added to the line. The «{{pack}}» written purchase price {{price}} = {{each}} per {{unit}}: if the company charged that, fix the line price",
-    "buySub": "«{{name}}»: this is a {{sub}} barcode — purchases are recorded by the «{{unit}}». Scan its barcode or the carton's, or type the count",
-    "chipTitle": "Sell a {{pack}} ({{n}} {{unit}}) — no barcode needed"
+    "buySub": "«{{name}}»: this is a {{sub}} barcode — purchases are recorded by the «{{unit}}». Scan its barcode or the carton's, or type the count"
   },
   "dosl": {
     "lineName": "{{name}} · dose {{date}}",
