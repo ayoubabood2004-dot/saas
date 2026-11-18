@@ -229,5 +229,20 @@ check("فشلُ جلب التوصيل حالةُ خطأ، لا قائمةٌ فا
 check("ودفترُ الديون لا يُرسم قبل أن تُعرف الطلبات — بطاقةُ إعادةٍ عند الفشل",
   /if\s*\(!deliveryReady\)\s*\{\s*return\s+deliveryFailed\s*\?/.test(db) && /data-debtsfailed/.test(db));
 
+/* الشركةُ رجّعت طلباً سُجّل «وصل للزبون» (١٨/١١): زرٌّ للمسلَّم غيرِ المحصَّل لشركة، يسأل الفاتورةَ طازجةً قبل ردّها — ما انقبض منه
+ * شيءٌ لا يُردّ من هنا (الردُّ يمحو قبضاً حقيقياً) — ثمّ الردُّ والحالةُ «راجع» بطريق «الطلب رجع» نفسِه، والحاملُ والختمُ لا يُمسّان. */
+console.log("▸ الشركةُ رجّعت طلباً مسلَّماً");
+const rd = dp.slice(dp.indexOf("const returnDelivered = async"), dp.indexOf("const dispatch = async"));
+check("الزرُّ للمسلَّم لشركةٍ غيرِ المحصَّل وفاتورتُه قائمة — باللوحة والبحث والسجلّ",
+  /if \(o\.status === "delivered" && company && !o\.collected_at && invoiceOf\(o\.invoice_id\)\?\.status !== "refunded"\) return \(/.test(dp)
+  && /data-dcompanyreturn=\{o\.id\}[\s\S]{0,160}void returnDelivered\(o\)/.test(dp) && /\{uncollected\(o\) && isCompany\(c\) && actionsFor\(o\)\}/.test(dp));
+check("  يسأل الفاتورةَ طازجةً قبل الردّ، ومدفوعٌ > ٠ يُرفض بجملة بلا ردّ",
+  rd.indexOf("repo.listInvoicesByIds([o.invoice_id])") > 0
+  && rd.indexOf("repo.listInvoicesByIds([o.invoice_id])") < rd.indexOf("repo.refundInvoice(")
+  && /if \(inv\.status !== "refunded" && paid > 0\.009\) \{[\s\S]{0,140}dCompanyReturnPaid[\s\S]{0,40}return;/.test(rd));
+check("  ثمّ الردُّ فالحالةُ «راجع» — ولا يكتب الحاملَ ولا ختمَ التحصيل",
+  rd.indexOf("repo.refundInvoice(o.invoice_id)") < rd.indexOf('status: "returned"') && !/collected_at:|courier_id:/.test(rd)
+  && /if \(!isCompany\(c\) \|\| o\.status !== "delivered" \|\| o\.collected_at\) return;/.test(rd));
+
 console.log(`\n${fails ? "✗" : "✓"} courier-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

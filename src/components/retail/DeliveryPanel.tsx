@@ -198,6 +198,38 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     } finally { setBusyId(null); }
   };
 
+  /** الشركةُ رجّعت طلباً سُجّل «وصل للزبون» (بلاغُ المالك ١٨/١١: «شركة رجعت طلب — شلون أرجعه؟»). «الطلب رجع» كان لـ«بالطريق» وحده،
+   *  فطلبٌ ضُغط له «وصل للزبون» ثمّ رجع بقي بذمّة الشركة بلا مخرج إلا ردَّ فاتورته من تبويبٍ آخر (فيبقى «مستلم» بالسجلّ). يُرجَع بطريق
+   *  «الطلب رجع» نفسِه (الفاتورةُ تُردّ والبضاعةُ للمخزن والطلبُ «راجع») — **بعد سؤال فاتورته طازجةً**: تحصيلٌ من جهازٍ آخر أو دفعةٌ
+   *  جزئية يكتبان مدفوعَها، وردُّها يمحو قبضاً حقيقياً من الأرقام — فما انقبض منه شيءٌ يُرجَع من «المرتجع» على فاتورته (الدينُ أوّلاً ثمّ
+   *  النقد). والحاملُ والختمُ لا يُمسّان: محفّزُ 0159 يحرسهما، والحالةُ وحدها تتغيّر. */
+  const returnDelivered = async (o: DeliveryOrder) => {
+    if (busyId) return;
+    const c = courierOf(o.courier_id);
+    if (!isCompany(c) || o.status !== "delivered" || o.collected_at) return;
+    setBusyId(o.id);
+    try {
+      const [inv] = await repo.listInvoicesByIds([o.invoice_id]);
+      if (!inv) throw new Error(t("retail.dEditNoInvoice", "تعذّر فتح فاتورة هذا الطلب — حدّث الصفحة وأعد المحاولة."));
+      const paid = Number(inv.amount_paid) || 0;
+      if (inv.status !== "refunded" && paid > 0.009) {
+        playWarning();
+        toast.error(t("retail.dCompanyReturnPaid", { paid: money(paid) }));
+        return;
+      }
+      if (!window.confirm(t("retail.dCompanyReturnConfirm", { company: c?.name ?? "", name: o.customer_name ?? "", n: money(o.cod_amount) }))) return;
+      await repo.refundInvoice(o.invoice_id);
+      await repo.updateDeliveryOrder(o.id, { status: "returned", returned_at: new Date().toISOString() });
+      playSuccess();
+      toast.success(t("retail.dCompanyReturnDone"));
+      await load();
+      onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally { setBusyId(null); }
+  };
+
   const dispatch = async (o: DeliveryOrder, courierId: string) => {
     if (busyId) return;
     setBusyId(o.id);
@@ -255,6 +287,12 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
         <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
       </>
+    );
+    /* مسلَّمٌ لشركةٍ ولم يُحصَّل (بذمّتها) وفاتورتُه قائمة: الشركةُ قد ترجّعه بعد أيّام. */
+    if (o.status === "delivered" && company && !o.collected_at && invoiceOf(o.invoice_id)?.status !== "refunded") return (
+      <Button size="sm" variant="secondary" data-dcompanyreturn={o.id} leftIcon={<Undo2 size={14} />} onClick={() => { playTap(); void returnDelivered(o); }}>
+        {t("retail.dCompanyReturnBtn")}
+      </Button>
     );
     return null;
   };
@@ -609,6 +647,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                       {c && <span className="text-2xs text-ink-subtle">{isCompany(c) ? "🏢" : "🛵"} {c.name}</span>}
                       <span className="ms-auto font-bold tabular-nums text-ink-muted">{money(o.cod_amount)}</span>
                       <span className="text-2xs text-ink-subtle"><Clock size={11} className="inline" /> {timeAgo(o.delivered_at ?? o.returned_at ?? o.created_at)}</span>
+                      {uncollected(o) && isCompany(c) && actionsFor(o)}
                     </div>
                   );
                 })}
