@@ -6,6 +6,8 @@
  *  • `dualRate()`: سعرُ صرف اليوم كما يعرفه الخادم — منه يُحسب دينارُ السطر (`iqdOfCents`) ويُرسل معرّفُه (`fx_rate_id`).
  * ========================================================================= */
 import { supabase } from "./supabase";
+import { isConfigReadOnly } from "./clinicSync";
+import { ReadOnlyError } from "./repo";
 import type { CheckoutItem, Invoice, SaleMeta } from "@/types";
 import type { UsdRate } from "./usdApi";
 
@@ -40,6 +42,8 @@ export async function dualRate(): Promise<DualRate> {
 }
 
 export async function dualCheckout(items: DualLineIn[], meta: SaleMeta & { fx_rate_id: string }): Promise<Invoice> {
+  /* اشتراكٌ منتهٍ للقراءة: البيعةُ العاديّة يردّها وكيلُ repo، وهذا البابُ يكلّم الخادمَ مباشرةً — فيسأل بنفسه (مراجعة 0282). */
+  if (isConfigReadOnly()) throw new ReadOnlyError();
   const charges = items.map((l) => l.dose_charge).filter((x): x is string => !!x);
   if (!supabase) return (await import("./repoDemo").then((m) => m.loadDemoDual())).demoDualCheckout(items, meta, charges);
   const r = await supabase.rpc("retail_checkout_fx", { p_items: items, p_meta: meta, p_charges: charges.length ? charges : null });

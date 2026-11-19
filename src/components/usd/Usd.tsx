@@ -17,6 +17,7 @@ import { usdApi, type UsdMethod, type UsdRate, type UsdSettlement } from "@/lib/
 import { shouldReleaseRef } from "@/lib/errors";
 import { centsOf, iqdOf, per100Of, previewSettle, rateOfPer100, rateOk, settleRefusal, USD_ROUND_STEPS, usdText } from "@/lib/usdMath";
 import { usdDraftProblem, type UsdBlockers, type UsdDraft } from "@/lib/usdProduct";
+import { subUsdComputed } from "@/lib/dualPrice";
 export { UsdSaleSheet } from "./UsdSale";
 import { centsOfNum, iqd, isToday, refreshUsdState, StaleRateBanner, stampText, UsdChip, usdErrorText, usdIso, useStaleRate, useUsdState } from "./usdShared";
 export { refreshUsdState, useUsdState, usdErrorText, UsdChip } from "./usdShared";
@@ -160,13 +161,17 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
   const what = [blockers.weight && t("usd.prod.bWeight"), blockers.sub && t("usd.prod.bSub"), blockers.pooled && t("usd.prod.bPooled")].filter(Boolean).join("، ");
   const mode: "iqd" | "dual" | "usd" = value.on ? "usd" : value.dual ? "dual" : "iqd";
   const pick = (m: typeof mode) => { if (m === mode) return; playTap(); onChange({ ...value, on: m === "usd", dual: m === "dual" }); };
-  const subAuto = sub?.on && sub.per > 0 && sell != null ? Number(sell) / 100 / sub.per : null;
-  const subAutoText = subAuto != null ? (Math.round(subAuto * 100) / 100).toFixed(2) : "";
+  /* الحسابُ نفسُه الذي يبيع به الكاشير (`subUsdComputed` بالسنت) — العائمُ هنا قال 0.57 عن علبة 1.15$ بمفردين والبيعُ 0.58، ومكتوبٌ 0.57
+   * عمداً يساوي «المحسوب» فيُحفظ تلقائياً ويُباع 0.58 (مراجعة 0282). */
+  const subAutoText = sub?.on ? subUsdComputed(value.sell, sub.per) : "";
+  /* «دينار + دولار» لا يُعرض قبل أن تعرفه القاعدة (0282): سعرٌ يُكتب قبلها يمسحه تنظيفُها أوّلَ تطبيق. ومادّةٌ تُقرأ «بسعرين» قبلها تبقى
+   * على اختيارها (لا يختفي ما هو مختار). */
+  const dualOk = !!sub?.ready || mode === "dual";
   return (
     <div className={cn("rounded-2xl border p-3", mode !== "iqd" ? "border-success-200 bg-success-50/50 dark:border-success-500/30 dark:bg-success-500/10" : "border-line")} data-usd-fields>
       <span className="flex items-center gap-1.5 text-sm font-bold text-ink"><DollarSign size={15} className="text-success-600" /> {t("usd.prod.modeLabel")}</span>
-      <div role="radiogroup" className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-surface-2 p-1" data-usd-mode={mode}>
-        {(["iqd", "dual", "usd"] as const).map((m) => (
+      <div role="radiogroup" className={cn("mt-2 grid gap-1 rounded-xl bg-surface-2 p-1", dualOk ? "grid-cols-3" : "grid-cols-2")} data-usd-mode={mode}>
+        {(["iqd", "dual", "usd"] as const).filter((m) => m !== "dual" || dualOk).map((m) => (
           <button key={m} type="button" role="radio" aria-checked={mode === m} data-usd-modebtn={m} onClick={() => pick(m)}
             className={cn("rounded-lg px-1.5 py-1.5 text-xs font-bold transition", mode === m ? "bg-surface-1 text-ink shadow-soft" : "text-ink-muted hover:text-ink")}>
             {t(m === "iqd" ? "usd.prod.modeIqd" : m === "dual" ? "usd.prod.modeDual" : "usd.prod.modeUsd")}
@@ -200,7 +205,7 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
             {sell != null && r ? t("usd.prod.approx", { v: iqd(iqdOf(sell, r.rate1e4, 1)) }) : !r ? t("usd.prod.noRate") : null}
             {sell != null && buy != null && <> · {t("usd.prod.profit", { v: usdIso(sell - buy) })}</>}
           </p>
-          {problem === "blocked" && <p className="rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-usd-blocked>{mode === "usd" ? t("usd.prod.blocked", { what }) : t("usd.prod.blockedDual")}</p>}
+          {problem === "blocked" && <p className="rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-usd-blocked>{mode === "usd" ? t(dualOk ? "usd.prod.blocked" : "usd.prod.blockedIqd", { what }) : t("usd.prod.blockedDual")}</p>}
           {showProblems && problem === "sell" && <p className="text-xs font-semibold text-danger-600">{t("usd.prod.needSell")}</p>}
           {showProblems && problem === "buy" && <p className="text-xs font-semibold text-danger-600">{t("usd.prod.badBuy")}</p>}
           {showProblems && problem === "sub" && <p className="text-xs font-semibold text-danger-600">{t("usd.prod.badSub")}</p>}

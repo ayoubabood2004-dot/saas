@@ -7344,6 +7344,7 @@
       "subWord": "Sub-unit",
       "subAuto": "Calculated: box price ÷ {{n}} = ${{v}} — type another if you want",
       "badSub": "The sub-unit dollar price isn't a number",
+      "blockedIqd": "“Dollar only” doesn't work with: {{what}} — keep it in dinars",
       "blockedDual": "Selling by weight doesn't work with a dollar price — keep it in dinars"
     },
     "sale": {
