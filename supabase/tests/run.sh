@@ -13179,7 +13179,7 @@ $P -c "delete from staff_elevations; update _dvtest_flags set admin = false; del
          ('${DX}d9', '$DO', 'عيادة بلا دولار', 'DUAL-9', 'IQD', 1000, 500, 1, 0.5, 10, false, null, null, null, null, false)
          on conflict (id) do nothing;" >/dev/null
 # سطرٌ لـretail_checkout_fx: المادّة، الكمية، السعرُ بالدينار، الكلفة، ما ينقص من الرصيد، الوحدة، وعملةُ السطر وسعرُه بالدولار.
-DL()  { echo "{\"product_id\":\"${DX}$1\",\"name\":\"$1\",\"qty\":$2,\"unit_price\":$3,\"unit_cost\":0,\"stock_qty\":$4,\"unit_label\":$5$6}"; }
+DL()  { echo "{\"product_id\":\"${DX}$1\",\"name\":\"$1\",\"qty\":$2,\"unit_price\":$3,\"unit_cost\":0,\"stock_qty\":$4,\"unit_label\":$5${6:-}}"; }
 DUSD() { echo ",\"price_currency\":\"USD\",\"unit_price_usd\":$1"; }
 DMETA() { echo "jsonb_build_object('client_ref', '$1', 'fx_rate_id', $2, 'payment_method', 'cash', 'amount_paid', $3, 'final_total', $3)"; }
 D1="[$(DL d1 1 84680 6 '"كارتون"' "$(DUSD 58)"),$(DL d1 3 15000 3 null),$(DL d1 4 1460 0.4 '"لتر"' "$(DUSD 1)")]"
@@ -13226,12 +13226,36 @@ chk "الصلاحيات: البابُ definer بمسارٍ مثبَّت ويسأ
             ||'|'||$(rv $DV "select dual_pricing_ready()::text")
             ||'|'||has_function_privilege('anon', 'public.retail_checkout_fx(jsonb,jsonb,uuid[])', 'execute')::text
             ||'|'||has_function_privilege('anon', 'public.dual_pricing_ready()', 'execute')::text" "true|true|false|false"
+# مراجعة 0282: إعادةٌ بالمرجع ومعها جرعةٌ نزلت بعد المحاولة الأولى تمرّ من باب الجرعات (dose_charge_late) — الرجوعُ المبكر كان يقول «انباعت».
+DCH=${DX}e1
+$P -c "insert into dose_charges(id, clinic_id, entry_id, pet_id, name, price, given_at) values ('$DCH', '$DC', gen_random_uuid(), gen_random_uuid(), 'جرعة ٠٢٨٢', 5000, now())
+         on conflict (id) do nothing;" >/dev/null
+D1DOSE="[$(DL d1 1 84680 6 '"كارتون"' "$(DUSD 58)"),$(DL d1 3 15000 3 null),$(DL d1 4 1460 0.4 '"لتر"' "$(DUSD 1)"),{\"name\":\"جرعة ٠٢٨٢\",\"qty\":1,\"unit_price\":5000,\"unit_cost\":0,\"dose_charge\":\"$DCH\"}]"
+chk "الإعادةُ بالمرجع وفيها جرعةٌ نزلت بعدها ⇒ dose_charge_late (لا «انباعت» والجرعةُ معلَّقة)" \
+    "select $(rerr $DV "select (retail_checkout_fx('$D1DOSE'::jsonb, $(DMETA d282-1 "$DRID" 140520), array['$DCH']::uuid[])).id::text")" "dose_charge_late"
+chk "  (والجرعةُ معلَّقة كما هي، ولا فاتورةَ جديدة: d282-1 وd282-iqd)" \
+    "select (select status from dose_charges where id = '$DCH')||'|'||(select count(*) from invoices where clinic_id = '$DC')::text" "pending|2"
+$P -c "delete from dose_charges where id = '$DCH';" >/dev/null
 Q282="select (select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname) from pg_proc where proname in ('retail_checkout_fx', 'dual_pricing_ready'))
        ||'|'||(select count(*) from invoices where clinic_id = '$DC')::text||'|'||(select count(*) from invoice_items where clinic_id = '$DC' and unit_price_usd is not null)::text
        ||'|'||(select string_agg(conname, ',' order by conname) from pg_constraint where conrelid = 'public.products'::regclass and conname like 'products_%usd%')"
 Z282=$($P -tAc "$Q282" | tr -d '[:space:]')
 out=$($P -f "$MIG/0282_dual_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0282 ما انعادت"; fail=1; }
 chk "وتُعاد بلا أثرٍ ثانٍ (الدالّتان والفواتيرُ والختمُ والقيود)" "$Q282" "$Z282"
+# التنظيفُ مرّةً، أوّلَ تطبيق (العمودُ غائب): سعرُ دولارٍ ميّت على مادّة دينار يُمسح — بالصفوف وبصور المحذوفات (مراجعة 0282)،
+# و«الدولار وحده» لا يُمسّ. يُحاكى أوّلُ تطبيقٍ بإسقاط العمود ثمّ إعادة الملفّ.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, sell_price_usd, stock)
+         values ('${DX}d5', '$DC', 'دينار بسعرٍ ميّت', 'DUAL-5', 'IQD', 1000, 500, 9, 5) on conflict (id) do nothing;
+       insert into products_trash(id, clinic_id, row) values
+         ('${DX}f1', '$DC', jsonb_build_object('id', '${DX}f1', 'name', 'محذوفة بسعرٍ ميّت', 'price_currency', 'IQD', 'sell_price_usd', 9)),
+         ('${DX}f2', '$DC', jsonb_build_object('id', '${DX}f2', 'name', 'محذوفة بالدولار', 'price_currency', 'USD', 'sell_price_usd', 7))
+         on conflict (id) do nothing;" >/dev/null
+$P -c "alter table products drop column sub_unit_price_usd;" >/dev/null   # بجملةٍ وحدها: إدراجٌ قبله بالمعاملة نفسِها يترك أحداثَ محفّزٍ معلَّقة فيُرفض الإسقاط
+out=$($P -f "$MIG/0282_dual_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0282 ما انعادت بعد إسقاط العمود"; fail=1; }
+chk "التنظيف أوّلَ تطبيق: الميّتُ يُمسح (صفّاً وصورةَ محذوفة) والدولارُ وحده باقٍ (صفّاً وصورة)" \
+    "select coalesce((select sell_price_usd::text from products where id = '${DX}d5'), '-')||'|'||coalesce((select sell_price_usd::text from products where id = '${DX}d3'), '-')
+            ||'|'||coalesce((select row->>'sell_price_usd' from products_trash where id = '${DX}f1'), '-')||'|'||coalesce((select row->>'sell_price_usd' from products_trash where id = '${DX}f2'), '-')" "-|4.00|-|7"
+$P -c "delete from products_trash where id in ('${DX}f1', '${DX}f2');" >/dev/null
 $P -c "set session_replication_role = replica;
        delete from invoice_items where clinic_id in ('$DC', '$DO'); delete from invoices where clinic_id in ('$DC', '$DO');
        delete from products where clinic_id in ('$DC', '$DO'); delete from clinic_fx_rates where clinic_id = '$DC';

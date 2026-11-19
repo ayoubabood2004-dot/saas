@@ -120,6 +120,14 @@ async function behaviour(M, say) {
   c("  أمثلة: ٥٨$ × ١٤٦٠ = ٨٤٬٦٨٠، و٠٫٣٥$ × ١٤٧٥٫٥ = ٥١٦، و١٫٢٥$ × ١٤٦٠ = ١٬٨٢٥",
     D.iqdOfCents(5800, 14600000n) === 84680 && D.iqdOfCents(35, 14755000n) === 516 && D.iqdOfCents(125, 14600000n) === 1825);
   c("  وخانةُ المفرد الفارغة تُرى محسوبة: ١٠ ÷ ٣ = 3.33، وبلا عدد فارغة", D.subUsdComputed("10", 3) === "3.33" && D.subUsdComputed("10", 0) === "");
+  // مراجعة 0282: ما تقوله الخانةُ «محسوباً» هو ما يبيع به الكاشير — النموذجُ العائم قال 0.57 عن 1.15$ بمفردين والبيعُ 0.58.
+  let diff = 0, pairs = 0;
+  for (let cents = 1; cents <= 3000; cents += 7) for (let n = 1; n <= 12; n++) {
+    pairs++;
+    const till = D.usdCentsOf({ ...dual, sell_price_usd: cents / 100, units_per_box: n }, "sub");
+    if (D.subUsdComputed((cents / 100).toFixed(2), n) !== (till / 100).toFixed(2)) diff++;
+  }
+  c(`  والخانةُ المحسوبة = سعرُ الكاشير على ${pairs} زوجاً (منها 1.15$ ÷ ٢ = 0.58)`, diff === 0 && D.subUsdComputed("1.15", 2) === "0.58", `${diff} خلاف`);
 
   /* ب) نموذجُ المادّة */
   const d0 = U.usdDraftOf({ price_currency: "IQD", sell_price_usd: 10, purchase_price_usd: 7, sub_unit_price_usd: 1.25 });
@@ -145,6 +153,8 @@ async function behaviour(M, say) {
   c("  و«بسعرين» يرجع للدينار وحده ⇒ يُمسح سعرُ البيع بالدولار والمفرد (الشراءُ بالدولار يبقى)",
     JSON.stringify(U.usdPatch(dr({ dual: false }), pDual, true, true, true)) === JSON.stringify({ sell_price_usd: null, sub_unit_price_usd: null }));
   c("  و«الدولار وحده» يصير «بسعرين» ⇒ العملةُ دينار وسعراه كما هما", JSON.stringify(U.usdPatch(dr({ sell: "5", buy: "4" }), pUsd, true, true, false)) === JSON.stringify({ price_currency: "IQD" }));
+  c("  و«الدولار وحده» يصير ديناراً وحده ⇒ العملةُ دينار وسعرُ البيع بالدولار null صراحةً",
+    JSON.stringify(U.usdPatch(dr({ dual: false, sell: "5" }), pUsd, true, true, false)) === JSON.stringify({ price_currency: "IQD", sell_price_usd: null }));
   c("  والميزةُ مطفأة ⇒ لا شيء", JSON.stringify(U.usdPatch(dr(), pIqd, false, true, true)) === "{}");
   const ctx = { barcode: "B", alt_codes: [], hasSubUnit: false, unitsPerBox: 0, byWeight: false, pooled: false };
   const draft = P.draftOf({ packs: [{ id: "k1", name: "كارتون", per: 6, codes: [], purchase_price: null, sell_price: null, sell_price_usd: 58 }] });
@@ -211,9 +221,15 @@ await behaviour(M, true);
 
 /* ── هـ) الأسلاك ── */
 const sb = code("src/components/retail/SaleBuilder.tsx");
-check("شاشة البيع: «$» على سطر المادّة بسعرين (لا الراجع ولا وضعُ الراجع ولا الوزن) يحوّله ويرجعه",
-  /l\.kind === "product" && !l\.ret && !retMode && !l\.byWeight && dualOf\(products\.find\(\(x\) => x\.id === l\.product_id\)\)/.test(sb)
+check("شاشة البيع: «$» على سطر المادّة بسعرين (لا الراجع ولا وضعُ الراجع ولا الوزن) يحوّله، وسطرُ دولارٍ يبقى زرُّه ليرجع ولو لم تعد بسعرين",
+  /l\.kind === "product" && !l\.ret && !l\.byWeight && \(l\.usd \|\| \(!retMode && dualOf\(products\.find\(\(x\) => x\.id === l\.product_id\)\)\)\)/.test(sb)
   && /data-lineusd=\{l\.id\}[\s\S]{0,140}void toggleLineUsd\(l\)/.test(sb));
+check("  والجملة لا تبيع بالدولار (سعرُ الدولار سعرُ مفرد — الجملةُ بسعر الشراء)",
+  /const dualOf = \(p: Product \| null \| undefined\): boolean =>\s*!wholesale && /.test(sb));
+check("  وجوابُ سعر الصرف يُكتب على السطر كما هو الآن: وحدةٌ تبدّلت أو ضغطةٌ سبقت ⇒ لا شيء",
+  /const cur = cart\.find\(\(x\) => x\.id === l\.id\);\s*if \(!cur \|\| cur\.usd \|\| \(cur\.saleUnit \?\? null\) !== \(l\.saleUnit \?\? null\) \|\| \(cur\.packId \?\? null\) !== \(l\.packId \?\? null\)\) return cart;/.test(sb));
+check("  والوصلُ الفوريّ يحمل سعرَ الدولار (والفاتورةُ الراجعة سعرَ الصرف) كإعادة الطباعة",
+  /\.\.\.\(l\.usd && !l\.ret \? \{ unit_price_usd: l\.usd\.c \/ 100 \} : \{\}\)/.test(sb) && /setDone\(\{ invoice, items: invItems \}\);/.test(sb));
 check("  التحويلُ بسعر المستوى ودينارُه بسعر اليوم، وسطورُ الدولار الأقدم تُحسب بسعر اليوم",
   /const c = m\.usdCentsOf\(row, level, pack\);/.test(sb) && /unit_price: m\.iqdOfCents\(c, rate\.rate1e4\)/.test(sb)
   && /if \(x\.usd && x\.usd\.rid !== rate\.id\) return \{ \.\.\.x, usd: \{ \.\.\.x\.usd, rid: rate\.id, r: r1e4 \}, unit_price: m\.iqdOfCents\(x\.usd\.c, rate\.rate1e4\) \};/.test(sb));
@@ -235,20 +251,31 @@ check("نموذجُ المادّة: «دينار + دولار» يُبقي حق�
 const pr = code("src/lib/invoicePrint.ts");
 check("الطباعة: فاتورةُ دينار فيها سطرُ دولار تقول سعرَه بجانب اسمه وسعرَ الصرف بالملاحظات",
   /const dualInv = !usdInv && Number\(invoiceIn\.fx_rate\) > 0 && itemsIn\.some\(\(it\) => it\.unit_price_usd != null\);/.test(pr)
-  && /\$1 = \$\{fmtBase\(Number\(invoiceIn\.fx_rate\)\)\}/.test(pr));
+  && /\$1 = \$\{fmtRate\(Number\(invoiceIn\.fx_rate\)\)\}/.test(pr) && /const fmtRate = \(n: number\) => n\.toLocaleString\("en-US", \{ maximumFractionDigits: 4 \}\);/.test(pr));
 check("  وتفصيلُ الفاتورة بالشاشة كذلك", /!usdInv && it\.unit_price_usd != null && <span data-dualline>/.test(code("src/components/retail/InvoicesPanel.tsx")));
 const api = code("src/lib/dualApi.ts");
 check("الباب: retail_checkout_fx بجرعاتها، وسؤالُ القدرة يقبل غيابَ الدالّة (42883/PGRST202) بلا «تعذّر» ويعيد السؤال بعد دقيقة",
   /supabase\.rpc\("retail_checkout_fx", \{ p_items: items, p_meta: meta, p_charges: charges\.length \? charges : null \}\)/.test(api)
   && /new Set\(\["42883", "PGRST202"\]\)/.test(api) && /Date\.now\(\) - lastNo < 60_000/.test(api));
+check("  و«القراءة فقط» (اشتراكٌ منتهٍ) يُسأل قبل الخادم بالبابين المباشرين — الدولار والجرعات",
+  /export async function dualCheckout\([\s\S]{0,120}?Promise<Invoice> \{\s*if \(isConfigReadOnly\(\)\) throw new ReadOnlyError\(\);/.test(api)
+  && /if \(!ids\.length\) return repo\.retailCheckout\(items, meta\);\s*if \(isConfigReadOnly\(\)\) throw new ReadOnlyError\(\);\s*if \(supabase\)/.test(code("src/lib/doseApi.ts")));
+const usdF = code("src/components/usd/Usd.tsx");
+check("نموذجُ المادّة: المفردُ المحسوب بحساب الكاشير، و«دينار + دولار» لا يُعرض قبل الهجرة (إلا لمادّةٍ مختارةٍ كذلك)",
+  /const subAutoText = sub\?\.on \? subUsdComputed\(value\.sell, sub\.per\) : "";/.test(usdF) && !/Number\(sell\) \/ 100 \/ sub\.per/.test(usdF)
+  && /const dualOk = !!sub\?\.ready \|\| mode === "dual";/.test(usdF) && /\.filter\(\(m\) => m !== "dual" \|\| dualOk\)/.test(usdF));
 const mig = src("supabase/migrations/0282_dual_pricing.sql");
 check("الهجرة: definer بمسار، وتنظيفُ سعر الدولار القديم مرّةً واحدة (العمودُ غائب)، وبالحزمة",
   /security definer\s+set search_path = public/.test(mig) && /if not exists \(select 1 from information_schema\.columns[\s\S]{0,200}column_name = 'sub_unit_price_usd'\) then\s+update public\.products set sell_price_usd = null/.test(mig)
   && /\$MIG\/0282_dual_pricing\.sql"/.test(src("supabase/tests/run.sh")) && /# ── 0282: /.test(src("supabase/tests/run.sh")));
+check("  وصورُ المحذوفات بالتنظيف، والإعادةُ بجرعاتٍ من بابها، ولا محفّزَ على عمودٍ بعينه (يقفل تغييرَ نوعه — 0134 سقطت بالحزمة)",
+  /update public\.products_trash t set row = jsonb_set\(t\.row, '\{sell_price_usd\}', 'null'::jsonb\)/.test(mig)
+  && /if found then\s+if v_dose then\s+return retail_checkout_doses\(/.test(mig)
+  && !/before update of sell_price_usd/.test(mig));
 const ar = JSON.parse(src("src/i18n/ar.json")), en = JSON.parse(src("src/i18n/en.json"));
 const need = ["chip", "toUsd", "toIqd", "note", "unreach", "not_ready", "disabled", "no_rate", "noLevel", "rateMoved"];
 check("النصوص: retail.dual بالقاموسين، وusd.prod الجديدة", need.every((k) => ar.retail.dual[k] && en.retail.dual[k])
-  && ["modeLabel", "modeIqd", "modeDual", "modeUsd", "dualHint", "subUsd", "subAuto", "badSub", "blockedDual"].every((k) => ar.usd.prod[k] && en.usd.prod[k]));
+  && ["modeLabel", "modeIqd", "modeDual", "modeUsd", "dualHint", "subUsd", "subAuto", "badSub", "blockedDual", "blockedIqd"].every((k) => ar.usd.prod[k] && en.usd.prod[k]));
 
 /* ── و) طفرات ── */
 console.log("▸ طفرات");
@@ -265,6 +292,7 @@ const MUTS = [
   ["المرآةُ بلا ختم", "src/lib/demoDual.ts", "    row.unit_price_usd = m.usd;\n", ""],
   ["المرآةُ تقبل سعرَ صرفٍ قديماً", "src/lib/demoDual.ts", "if (meta.fx_rate_id !== st.rate.id)", "if (false)"],
   ["المرآةُ تبيع مادّةً بلا دولار", "src/lib/demoDual.ts", "if (p.sell_price_usd == null)", "if (false)"],
+  ["خانةُ المفرد بقطعٍ لا تقريب", "src/lib/dualPrice.ts", "return (Math.round(c / unitsPerBox) / 100).toFixed(2);", "return (Math.floor(c / unitsPerBox) / 100).toFixed(2);"],
 ];
 for (const [name, file, from, to] of MUTS) {
   let caught;

@@ -2197,7 +2197,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   );
   /** 0282: مادّةٌ بسعرين (دينار وسعرُ بيعٍ بالدولار) — السطرُ يختار عملتَه. مادّةُ «الدولار وحده» لها بيعُها (usdTap)، والوزنُ بالدينار. */
   const dualOf = (p: Product | null | undefined): boolean =>
-    !!p && (p.price_currency ?? "IQD") !== "USD" && p.sell_price_usd != null && !p.sold_by_weight;
+    !wholesale && !!p && (p.price_currency ?? "IQD") !== "USD" && p.sell_price_usd != null && !p.sold_by_weight;
   /** «$» على السطر: يحوّله للدولار بسعر مستواه (العلبة/المفرد/الكارتون — المكتوبُ وإلا المحسوب) ودينارُه بسعر صرف اليوم كما يعرفه الخادم،
    *  وكلُّ سطر دولارٍ قبله بسعرٍ أقدم يُعاد حسابُه بسعر اليوم (الفاتورةُ بسعرٍ واحد). والضغطةُ ثانيةً ترجعه للدينار بسعر قائمته. */
   const toggleLineUsd = async (l: Line) => {
@@ -2218,11 +2218,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const c = m.usdCentsOf(row, level, pack);
     if (c == null) { playWarning(); toast.error(t("retail.dual.noLevel", { name: l.name })); return; }
     const r1e4 = rate.rate1e4.toString();
-    setCart((cart) => cart.map((x) => {
-      if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(c, rate.rate1e4), priceManual: false };
-      if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, rate.rate1e4) };
-      return x;
-    }));
+    /* السطرُ كما هو الآن لا كما كان عند الضغطة: تبديلُ الوحدة (علبة ↔ مفرد) أثناء سؤال سعر الصرف كان يكتب سعرَ المفرد على سطر علبة،
+     * والخادمُ لا يعرف المستوى فيقبله (مراجعة 0282). ضغطتان قبل الجواب: الثانيةُ تجد السطرَ بالدولار فلا تكتب شيئاً. */
+    setCart((cart) => {
+      const cur = cart.find((x) => x.id === l.id);
+      if (!cur || cur.usd || (cur.saleUnit ?? null) !== (l.saleUnit ?? null) || (cur.packId ?? null) !== (l.packId ?? null)) return cart;
+      return cart.map((x) => {
+        if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(c, rate.rate1e4), priceManual: false };
+        if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, rate.rate1e4) };
+        return x;
+      });
+    });
   };
   const tapProduct = (p: Product) => {
     const armed = mult;
@@ -3788,6 +3794,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         barcode: l.barcode,
         qty: sign(l) * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost, line_total: sign(l) * l.qty * lineUnit(l),
         unit_label: lineLabel(l),
+        /* 0282: الوصلُ الفوريّ بسعر الدولار وسعر الصرف كإعادة الطباعة — بلاهما طلع ديناراً صِرفاً وطلبُ المالك «سعرُ الدولار داخل الفاتورة». */
+        ...(l.usd && !l.ret ? { unit_price_usd: l.usd.c / 100 } : {}),
       }));
       if (feeToClinic) {
         invItems.push({
@@ -4937,7 +4945,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         return ks.length > 0 && row ? <div className="mt-1 flex flex-wrap gap-1" data-linepacks>{ks.map((k) => packChip(row, k, false))}</div> : null;
                       })()}
                       {/* 0282: مادّةٌ بسعرين — السطرُ بالدينار أو بالدولار (يختاره الكاشير)، والفاتورةُ بالدينار بسعر اليوم. */}
-                      {l.kind === "product" && !l.ret && !retMode && !l.byWeight && dualOf(products.find((x) => x.id === l.product_id)) && (
+                      {/* وسطرٌ بالدولار يبقى زرُّه ولو لم تعد المادّةُ بسعرين (حُذف سعرُها، صارت «دولار وحده»، مسودّةٌ رجعت بعدها): بلا زرٍّ يرجعه
+                        * للدينار كانت كلُّ بيعةٍ تُرفض و«بِعه بالدينار» بلا طريق (مراجعة 0282). */}
+                      {l.kind === "product" && !l.ret && !l.byWeight && (l.usd || (!retMode && dualOf(products.find((x) => x.id === l.product_id)))) && (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           <button type="button" data-lineusd={l.id} aria-pressed={!!l.usd} onClick={() => { playTap(); void toggleLineUsd(l); }}
                             title={l.usd ? t("retail.dual.toIqd") : t("retail.dual.toUsd")}

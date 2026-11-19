@@ -58,11 +58,15 @@ begin
                   where table_schema = 'public' and table_name = 'products' and column_name = 'sub_unit_price_usd') then
     update public.products set sell_price_usd = null
      where coalesce(price_currency, 'IQD') = 'IQD' and sell_price_usd is not null;
+    -- وصورُ المحذوفات كذلك: استرجاعُ مادّةٍ حُذفت قبلها (jsonb_populate_record) كان يُرجع سعرَها الميّت «بسعرين» (مراجعة 0282).
+    update public.products_trash t set row = jsonb_set(t.row, '{sell_price_usd}', 'null'::jsonb)
+     where coalesce(t.row->>'price_currency', 'IQD') = 'IQD' and (t.row->>'sell_price_usd') is not null;
   end if;
 end $$;
 alter table public.products add column if not exists sub_unit_price_usd numeric(14,2);
 alter table public.products drop constraint if exists products_sub_usd_ok;
 alter table public.products add constraint products_sub_usd_ok check (sub_unit_price_usd is null or sub_unit_price_usd >= 0);
+
 
 create or replace function public.dual_pricing_ready() returns boolean
 language sql stable set search_path = public as $$ select true $$;
@@ -99,10 +103,17 @@ begin
     return retail_checkout(p_items, p_meta);
   end if;
 
-  -- إعادةٌ بالمرجع: الفاتورةُ كما ثبتت (بختمها) — لا حسابَ ثانٍ ولا ختمٌ ثانٍ.
+  -- إعادةٌ بالمرجع: الفاتورةُ كما ثبتت (بختمها) — لا حسابَ ثانٍ ولا ختمٌ ثانٍ. وبجرعاتٍ تمرّ من بابها (بلا أعمدة الدولار): جرعةٌ نزلت
+  -- بعد محاولةٍ مجهولة المصير تُقال `dose_charge_late` — الرجوعُ المبكر كان يقول «انباعت» وهي معلَّقة والوصلُ يعدّها (مراجعة 0282).
   if v_ref is not null then
     select * into v_inv from invoices where clinic_id = v_clinic and client_ref = v_ref;
-    if found then return v_inv; end if;
+    if found then
+      if v_dose then
+        return retail_checkout_doses((select coalesce(jsonb_agg(e - 'price_currency' - 'unit_price_usd'), '[]'::jsonb)
+                                        from jsonb_array_elements(p_items) e), p_meta, p_charges);
+      end if;
+      return v_inv;
+    end if;
   end if;
 
   select * into v_ctx from _usd_ctx(v_clinic);

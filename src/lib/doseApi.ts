@@ -11,7 +11,8 @@ import type { CheckoutItem, DoseCharge, Invoice, SaleMeta } from "@/types";
 import type { SheetCharge } from "./doseBilling";
 import { supabase } from "./supabase";
 import { getDrugsState, loadClinicDrugs } from "./clinicDrugs";
-import { repo } from "./repo";
+import { ReadOnlyError, repo } from "./repo";
+import { isConfigReadOnly } from "./clinicSync";
 
 const code = (e: unknown) => String((e as { code?: string } | null)?.code ?? "");
 const absent = (e: unknown) => ["42883", "PGRST202"].includes(code(e));
@@ -52,6 +53,8 @@ export async function pendingDoses(phone: string | null, name: string | null, pe
 export async function checkoutWithDoses(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
   const ids = items.map((l) => l.dose_charge).filter((x): x is string => !!x);
   if (!ids.length) return repo.retailCheckout(items, meta);
+  // بابُ الجرعات يكلّم الخادمَ مباشرةً — فيسأل عن «القراءة فقط» بنفسه كما يسأل وكيلُ repo عن البيعة العاديّة.
+  if (isConfigReadOnly()) throw new ReadOnlyError();
   if (supabase) {
     const r = await supabase.rpc("retail_checkout_doses", { p_items: items, p_meta: meta, p_charges: ids });
     if (r.error) throw r.error;
