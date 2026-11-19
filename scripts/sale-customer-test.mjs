@@ -153,7 +153,8 @@ const coAt = SB.indexOf("const checkout = async");
 const coFn = coAt < 0 ? "" : SB.slice(coAt, SB.indexOf("\n  };\n", coAt));
 check("    والقفلُ يبدأ مع الطلب ويُفكّ عند الفشل (بلا finally يفكّه عند النجاح مبكراً)",
   // 0269: سلّةٌ بجرعات الطبلة تمرّ من checkoutWithDoses (الطلبُ نفسُه بالقفل نفسِه)، وفرعُ «جرعةٌ انحسبت من جهازٍ آخر» يفكّه ويرمي قبله.
-  /setPaying\(true\);\s*try \{\s*invoice = await withTimeout\((?:items\.some\(\(i\) => i\.dose_charge\)\s*\? loadDoseMod\(\)\.then\(\(m\) => m\.checkoutWithDoses\(items, meta\)\)\s*: )?repo\.retailCheckout\(items, meta\), 12000\);\s*\} catch \(e\) \{[\s\S]{0,1800}?setPaying\(false\);\s*throw e;\s*\}/.test(coFn)
+  // 0282: وسلّةٌ بسطر دولار تمرّ من dualCheckout بالقفل نفسِه، وفرعُ «سعرُ الصرف تغيّر» يفكّه ويرمي قبله كذلك.
+  /setPaying\(true\);\s*try \{\s*(?:\/\*[^*]*\*\/\s*const usdRids = [^\n]*\n\s*if \(usdRids\.length > 1\) throw [^\n]*\n\s*)?invoice = await withTimeout\((?:usdRids\.length === 1\s*\? import\("@\/lib\/dualSale"\)\.then\(\(m\) => m\.dualCheckout\(items, \{ \.\.\.meta, fx_rate_id: usdRids\[0\] \}\)\)\s*: )?(?:items\.some\(\(i\) => i\.dose_charge\)\s*\? loadDoseMod\(\)\.then\(\(m\) => m\.checkoutWithDoses\(items, meta\)\)\s*: )?repo\.retailCheckout\(items, meta\), 12000\);\s*\} catch \(e\) \{[\s\S]{0,3600}?setPaying\(false\);\s*throw e;\s*\}/.test(coFn)
   && !/invoice = await withTimeout\(repo\.retailCheckout[\s\S]{0,1200}?\} finally \{\s*setPaying\(false\);\s*\}\s*\/\/ Delivery/.test(coFn));
 check("    ويُفكّ عند النجاح **بعد** ختم البيعة ومسح المسودّة، لا قبل طلب التوصيل",
   /setDone\(\{ invoice, items: invItems \}\);\s*clearSaleDraft\(draftScope\);[^\n]*\n(\s*\/\*[\s\S]*?\*\/\s*|\s*\/\/[^\n]*\n)*\s*setPaying\(false\);/.test(coFn)
@@ -165,7 +166,8 @@ check("    وF2 لا يدفع تحت نافذة (كان يُسقط تأكيدَ 
   /if \(e\.key === "F2"\) \{ e\.preventDefault\(\); if \([^)]*!custClearAsk && !resetAsk\) void checkout\(\); \}/.test(SB));
 check("  ورفضٌ حاسمٌ **لمحاولةٍ أولى** يحرّر المرجع، والإعادةُ والمجهولُ يُبقيانه",
   /const freshRef = !saleRefRef\.current;\s*ensureRef\(\);/.test(coFn)
-  && /\} catch \(e\) \{[\s\S]{0,900}?if \(shouldReleaseRef\(freshRef, e\)\) \{\s*const released = saleRefRef\.current;\s*saleRefRef\.current = null; setSaleRefSaved\(null\);/.test(coFn));
+  // (0282 وقبله 0269: فرعا «سعرُ الصرف تغيّر» و«جرعةٌ انحسبت» قبل الرفض العامّ، كلٌّ يحرّر بالشرط نفسِه — فالمدى أوسع.)
+  && /\} catch \(e\) \{[\s\S]{0,3000}?if \(shouldReleaseRef\(freshRef, e\)\) \{\s*const released = saleRefRef\.current;\s*saleRefRef\.current = null; setSaleRefSaved\(null\);/.test(coFn));
 /* والتحريرُ يبلغ المسودّةَ المحفوظة **مباشرةً** (الجولة الخامسة): خروجٌ من الشريط الجانبيّ
  * والطلبُ بالطريق يُزيل الشاشة، فيسقط تحريرُ الحالة على مكوّنٍ مُزال وتبقى المسودّةُ بمرجعٍ
  * رفضه الخادمُ يقيناً — ثم يعود «إعادةً» لا يحرّرها شيء. */

@@ -16,7 +16,7 @@ import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoiceNo";
-import { cn, formatDate, money, dateLocale } from "@/lib/utils";
+import { cn, formatDate, formatNum, money, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, paidOf, isDebt, paymentStatusOf, round2, grossOf, forgivenOf } from "@/lib/debt";
 import { page } from "@/lib/lazyPage";
@@ -824,7 +824,9 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{it.name}</p>
                     {/* الوحدةُ كما بالمطبوع («٤ كارتون × ٣٠٬٠٠٠»): كارتونٌ (0267) أو مفردٌ بلاها يُقرأ علبة. */}
-                    <p className="text-xs text-ink-subtle">{it.qty}{it.unit_label ? ` ${it.unit_label}` : ""} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}</p>
+                    <p className="text-xs text-ink-subtle">{it.qty}{it.unit_label ? ` ${it.unit_label}` : ""} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}
+                      {/* 0282: سطرٌ بيع بالدولار بفاتورة دينار — سعرُه بالدولار وسعرُ صرف الفاتورة بجانب دينارِه. */}
+                      {!usdInv && it.unit_price_usd != null && <span data-dualline> · <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi>{Number(invoice.fx_rate) > 0 && <> · <bdi dir="ltr">$1 = {formatNum(Number(invoice.fx_rate))}</bdi></>}</span>}</p>
                   </div>
                   <span className="text-sm font-bold tabular-nums text-ink">{usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd == null ? null : Math.round(it.unit_price_usd * it.qty * 100) / 100)}</bdi> : money(it.line_total)}</span>
                 </div>

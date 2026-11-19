@@ -51,7 +51,7 @@ import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, s
 import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
-import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
+import { repriceCart, isManual, capturedPrice, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
 import type { DoseCharge, PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
@@ -187,6 +187,9 @@ interface Line {
   /** 0269: جرعةٌ من الطبلة (`d:<معلَّق>`) — بكمية ١ وسعرِ لقطة الإعطاء. المادّةُ وما يُخصم منها يُرسلان بالبيعة وحدها
    *  (product_id بالسطر null: لا سقفَ ولا طزاجةَ ولا بيعَ قبل الجرد يحكم جرعةً أُعطيت فعلاً)، و`note` ما يُرسم تحته. */
   dose?: { charge: string; productId: string | null; stockQty: number | null; qty: number; note: string };
+  /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `c` سعرُ الوحدة بالسنت، و`rid`/`r` سعرُ الصرف الذي حُسب به دينارُه (`unit_price`) كما يعرفه
+   *  الخادم (معرّفُه، والدولارُ الواحد بأربع منازل نصّاً — المسودّةُ JSON). الخادمُ يرفض سعراً تغيّر (`usd_rate_changed`) ودينارٌ لا يطابق. */
+  usd?: { c: number; rid: string; r: string };
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -1803,7 +1806,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const unit_price = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
       const device = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
       const unit_cost = productLineCost(products.find((p) => p.id === l.product_id), toSub ? (l.unitsPerBox as number) : null, device);
-      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false };
+      /* 0282: سطرُ الدولار يرجع للدينار بوحدته الجديدة — سعرُ المستوى بالدولار يُختار من جديد بـ«$» (لا تخمينَ لسعرٍ لم يُره الكاشير). */
+      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false, usd: undefined };
       const cap = capFor(next);
       return markLift({ ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) });
     }));
@@ -1869,7 +1873,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * محرّر السعر وإغلاقُه بلا كتابة كان سيجعل كلَّ سطرٍ «يدوياً» فيفلت من الرفع. */
   const setPrice = (id: string, price: number) => {
     const v = Math.max(0, Math.round(price * 100) / 100);
-    setCart((c) => c.map((l) => (l.id === id && v !== l.unit_price ? { ...l, unit_price: v, priceManual: true } : l)));
+    // سعرٌ كتبه الكاشيرُ بالدينار يُنهي سطرَ الدولار: المكتوبُ هو السعر (0282).
+    setCart((c) => c.map((l) => (l.id === id && v !== l.unit_price ? { ...l, unit_price: v, priceManual: true, usd: undefined } : l)));
     setRepriced((m) => { if (!m.has(id)) return m; const n = new Map(m); n.delete(id); return n; });
   };
 
@@ -2190,6 +2195,35 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       <Layers size={12} className="shrink-0" /><span className={cn("truncate", compactChip && "hidden sm:inline")}>{k.name}</span><span dir="ltr" className="shrink-0">×{formatNum(k.per)}</span>
     </button>
   );
+  /** 0282: مادّةٌ بسعرين (دينار وسعرُ بيعٍ بالدولار) — السطرُ يختار عملتَه. مادّةُ «الدولار وحده» لها بيعُها (usdTap)، والوزنُ بالدينار. */
+  const dualOf = (p: Product | null | undefined): boolean =>
+    !!p && (p.price_currency ?? "IQD") !== "USD" && p.sell_price_usd != null && !p.sold_by_weight;
+  /** «$» على السطر: يحوّله للدولار بسعر مستواه (العلبة/المفرد/الكارتون — المكتوبُ وإلا المحسوب) ودينارُه بسعر صرف اليوم كما يعرفه الخادم،
+   *  وكلُّ سطر دولارٍ قبله بسعرٍ أقدم يُعاد حسابُه بسعر اليوم (الفاتورةُ بسعرٍ واحد). والضغطةُ ثانيةً ترجعه للدينار بسعر قائمته. */
+  const toggleLineUsd = async (l: Line) => {
+    if (l.usd) {
+      setCart((c) => c.map((x) => (x.id === l.id ? { ...x, usd: undefined, unit_price: capturedPrice(x) ?? x.unit_price, priceManual: false } : x)));
+      return;
+    }
+    const row = products.find((x) => x.id === l.product_id);
+    if (!row || !dualOf(row)) return;
+    const m = await import("@/lib/dualSale");
+    let r: Awaited<ReturnType<typeof m.dualRate>>;
+    try { r = await m.dualRate(); }
+    catch { playWarning(); toast.error(t("retail.dual.unreach")); return; }
+    if (!r.ok) { playWarning(); toast.error(t(`retail.dual.${r.why}`)); return; }
+    const rate = r.rate;
+    const level = l.saleUnit === "pack" ? "pack" : l.saleUnit === "sub" ? "sub" : "box";
+    const pack = level === "pack" ? packsOfRow(row).find((k) => k.id === l.packId) ?? null : null;
+    const c = m.usdCentsOf(row, level, pack);
+    if (c == null) { playWarning(); toast.error(t("retail.dual.noLevel", { name: l.name })); return; }
+    const r1e4 = rate.rate1e4.toString();
+    setCart((cart) => cart.map((x) => {
+      if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(c, rate.rate1e4), priceManual: false };
+      if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, rate.rate1e4) };
+      return x;
+    }));
+  };
   const tapProduct = (p: Product) => {
     const armed = mult;
     const n = armed && armed > 0 ? Math.floor(armed) : 1;
@@ -3566,6 +3600,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           // الراجعُ بنسبته (سعرُه بالفاتورة ما رُدّ) وكلفتُه كاملة: القطعةُ ترجع للرفّ والباقي ربحُ العيادة.
           qty: s * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,
           stock_qty: s * stock_qty, unit_label,
+          // 0282: سطرُ الدولار — دينارُه (unit_price) بسعر اليوم، والخادمُ يطابقه بسعره بالدولار ويختمه على السطر.
+          ...(l.usd && !l.ret ? { price_currency: "USD" as const, unit_price_usd: (l.usd.c / 100).toFixed(2) } : {}),
           // خدمةٌ من الكتالوج (0252): الخادمُ يخطّطها من وصفتها — أو من مستهلكات الحالة إن عُدّلت (لكلّ حالةٍ واحدة).
           // ومعرّفٌ ليس uuid لا يُرسل (cloudServiceId): الخادمُ لا يعرفه ويرفض به البيعةَ كلَّها.
           // وسطرٌ بلا مادّة ليس خدمة (دواءٌ أو لقاحٌ من تبويب الأدوية) يقولها بـnull صريح: غيابُ المفتاح يقرؤه الخادمُ «جهازاً
@@ -3633,10 +3669,29 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       let invoice: Invoice;
       setPaying(true);
       try {
-        invoice = await withTimeout(items.some((i) => i.dose_charge)
-          ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
-          : repo.retailCheckout(items, meta), 12000);
+        /* 0282: سطرُ دولار ⇒ بابُ البيع بسعرين (بجرعاتها إن وُجدت) بسعر الصرف الذي حُسبت به السطور — سطورٌ بسعرين مختلفين لا تُرسل. */
+        const usdRids = Array.from(new Set(cart.filter((l) => l.usd && !l.ret).map((l) => l.usd!.rid)));
+        if (usdRids.length > 1) throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
+        invoice = await withTimeout(usdRids.length === 1
+          ? import("@/lib/dualSale").then((m) => m.dualCheckout(items, { ...meta, fx_rate_id: usdRids[0] }))
+          : items.some((i) => i.dose_charge)
+            ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
+            : repo.retailCheckout(items, meta), 12000);
       } catch (e) {
+        /* 0282: سعرُ الصرف تغيّر بين الحساب والبيعة — سطورُ الدولار تُحسب بسعر اليوم ويُقال، والكاشيرُ يراجع المجموعَ ويضغط ثانيةً. */
+        if (String((e as { message?: string } | null)?.message ?? "").includes("usd_rate_changed")) {
+          try {
+            const m = await import("@/lib/dualSale");
+            const r = await m.dualRate();
+            if (r.ok) {
+              const r1e4 = r.rate.rate1e4.toString();
+              setCart((c) => c.map((x) => (x.usd ? { ...x, usd: { ...x.usd, rid: r.rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, r.rate.rate1e4) } : x)));
+            }
+          } catch { /* swallow-ok: الرسالةُ أدناه تقول «حدّث» — والخادمُ يرفض ثانيةً ما لم يتطابق */ }
+          if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
+          setPaying(false);
+          throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
+        }
         /* جرعةٌ انحسبت أو انلغت من جهازٍ آخر: سطورُها تُشال (المعلَّقُ من جديد)، والتلميحُ يقوله؛ والكاشيرُ يكمل بما بقي. */
         if (doseMod?.isDoseStale(e)) {
           void resyncDoses(doseMod.isDoseLate(e));
@@ -4592,7 +4647,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                       {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="absolute end-2 top-2 rounded-full bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">
-                        <span className="text-sm font-bold text-ink tabular-nums">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className="text-sm font-bold text-ink tabular-nums">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}
+                          {/* 0282: بسعرين — سعرُ الدولار تحت الدينار؛ السطرُ يختار عملتَه بالسلّة. */}
+                          {dualOf(p) && <span className="block text-2xs font-semibold text-success-700 dark:text-success-300" dir="ltr" data-tiledual>${Number(p.sell_price_usd).toFixed(2)}</span>}</span>
                         <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : lifted ? signed : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
                       </span>
                     </button>
@@ -4879,6 +4936,18 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         const ks = packsOfRow(row).slice(0, 2);
                         return ks.length > 0 && row ? <div className="mt-1 flex flex-wrap gap-1" data-linepacks>{ks.map((k) => packChip(row, k, false))}</div> : null;
                       })()}
+                      {/* 0282: مادّةٌ بسعرين — السطرُ بالدينار أو بالدولار (يختاره الكاشير)، والفاتورةُ بالدينار بسعر اليوم. */}
+                      {l.kind === "product" && !l.ret && !retMode && !l.byWeight && dualOf(products.find((x) => x.id === l.product_id)) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <button type="button" data-lineusd={l.id} aria-pressed={!!l.usd} onClick={() => { playTap(); void toggleLineUsd(l); }}
+                            title={l.usd ? t("retail.dual.toIqd") : t("retail.dual.toUsd")}
+                            className={cn("inline-flex items-center gap-0.5 rounded-lg border px-2 py-0.5 text-2xs font-bold tabular-nums transition",
+                              l.usd ? "border-success-500 bg-success-600 text-white" : "border-success-200 bg-success-50 text-success-700 hover:bg-success-100 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-300")}>
+                            {l.usd ? <bdi dir="ltr">${(l.usd.c / 100).toFixed(2)}</bdi> : <>$ {t("retail.dual.chip")}</>}
+                          </button>
+                          {l.usd && <span className="text-2xs text-ink-subtle" data-lineusdnote>{t("retail.dual.note", { rate: formatNum(Number(l.usd.r) / 10000) })}</span>}
+                        </div>
+                      )}
                     </div>
                     {/* أهداف لمس ١١×١١ (44px) بالشاشة الجديدة — معيار WCAG 2.5.5
                         للأفعال الأساسية؛ ٧×٧ القديمة كانت تنتج تعديلات كمية بالغلط. */}

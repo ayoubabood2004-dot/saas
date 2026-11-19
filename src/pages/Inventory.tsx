@@ -907,7 +907,9 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
 
           {/* مادّةُ الدولار (0264): سعراها بالدولار — دينارُها لا يُقرأ للبيع فلا يُعرض. */}
           {!locked && <span>{t("pos.buy", "Buy")} {p.price_currency === "USD" ? <bdi dir="ltr">{usdPriceText(p.purchase_price_usd)}</bdi> : money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
-          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {p.price_currency === "USD" ? <bdi dir="ltr">{usdPriceText(p.sell_price_usd)}</bdi> : money(p.sell_price)}{byWeight ? perKg : ""}</span>
+          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {p.price_currency === "USD" ? <bdi dir="ltr">{usdPriceText(p.sell_price_usd)}</bdi> : money(p.sell_price)}{byWeight ? perKg : ""}
+            {/* 0282: بسعرين — سعرُ الدولار بجانب الدينار، لا بدله. */}
+            {p.price_currency !== "USD" && p.sell_price_usd != null && !byWeight && <> · <bdi dir="ltr" data-dualprice>{usdPriceText(p.sell_price_usd)}</bdi></>}</span>
           {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
           {p.expiry_date && (
             <span data-expstate={expSt ?? "ok"} className={cn("flex items-center gap-1", muted ? "text-ink-subtle" : expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : expSt === "return" ? "text-warn-700/80 dark:text-warn-300/80" : "")}>
@@ -1249,9 +1251,19 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   /** تبديلُ العملة يمسح أسعارَ الكارتون **المكتوبة** (تصير تلقائيةً بالعملة الجديدة): ١٨٬٠٠٠ دينار كانت تُقرأ ١٨٬٠٠٠$ بصمت — والخادمُ
    *  يرفض التبديلَ وسعرٌ مكتوبٌ باقٍ كما هو (pack_price_currency، 0272). المسحُ يُرى بالمحرّر قبل الحفظ (الحسابُ داخل الخانة). */
   const setUsdKeepPacks = (d: UsdDraft) => {
-    if (usd.on !== d.on) setPkgDraft((pd) => ({ ...pd, packs: pd.packs.map((k) => ({ ...k, purchase_price: "", sell_price: "" })) }));
+    if (usd.on !== d.on) setPkgDraft((pd) => ({ ...pd, packs: pd.packs.map((k) => ({ ...k, purchase_price: "", sell_price: "", sell_price_usd: "" })) }));
+    // 0282: الخروجُ من «دينار + دولار» يمسح سعرَ الكارتون بالدولار — لا يبقى سعرٌ لا يُقرأ.
+    else if (usd.dual && !d.dual) setPkgDraft((pd) => ({ ...pd, packs: pd.packs.map((k) => ({ ...k, sell_price_usd: "" })) }));
     setUsd(d);
   };
+  /** 0282: القاعدةُ تعرف «بسعرين» (عمودُ سعر المفرد بالدولار)؟ — قبلها خانتُه مخفيّة ولا يُرسل. يُسأل حين تُفعَّل ميزةُ الدولار وحدها. */
+  const [dualReadyOk, setDualReadyOk] = useState(false);
+  useEffect(() => {
+    if (!usdEnabled) return;
+    let alive = true;
+    void import("@/lib/dualApi").then((m) => m.dualReady()).then((v) => { if (alive) setDualReadyOk(v); }).catch(() => { if (alive) setDualReadyOk(false); });
+    return () => { alive = false; };
+  }, [usdEnabled]);
   const [usdShow, setUsdShow] = useState(false);
   const [, setUsdTick] = useState(0);
   /** قاعدةٌ قبل 0259 لا تعرف الأعمدة (واجهةٌ سبقت هجرتها): المحرّرُ يغيب، ولا يُرسل شيء. الصفوفُ السحابية (`select *`) تحمل `packs` منذها. */
@@ -1563,7 +1575,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
         ...pkgFields,
         sold_by_weight: byWeight,
-        ...usdPatch(usd, product ?? null, usdEnabled),
+        ...usdPatch(usd, product ?? null, usdEnabled, dualReadyOk, subUnitOn),
       };
       if (product) {
         /* الرمزُ القديم ينزل `alt_codes` **بنفس النداء** (ح٢): ملصقاتُ رقم
@@ -2133,7 +2145,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           <LoadBoundary scope="usd-fields" onRetry={() => { UsdFieldsLazy = loadUsdFields(); setUsdTick((n) => n + 1); }}>
             <Suspense fallback={null}>
               <UsdFieldsLazy value={usd} onChange={setUsdKeepPacks} showProblems={usdShow} onEnabled={setUsdEnabled}
-                blockers={{ weight: byWeight, sub: !!f.has_sub_unit, pooled: !!f.pooled }} />
+                blockers={{ weight: byWeight, sub: !!f.has_sub_unit, pooled: !!f.pooled }}
+                sub={{ on: !!f.has_sub_unit && !byWeight, per: Number(f.units_per_box) || 0, name: f.sub_unit_name, ready: dualReadyOk }} />
             </Suspense>
           </LoadBoundary>
           {/* مادّةُ الدولار: سعرا الدينار لا يُقرآن للبيع — يغيبان، وأسعارُها بحقول الدولار أعلاه. */}
@@ -2222,6 +2235,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               currency={usd.on && usdEnabled ? "USD" : "IQD"}
               boxSell={usd.on && usdEnabled ? Number(usd.sell) || 0 : Number(f.sell_price) || 0}
               boxPurchase={usd.on && usdEnabled ? Number(usd.buy) || 0 : Number(f.purchase_price) || 0}
+              dualBoxUsd={usd.dual && !usd.on && usdEnabled ? Number(usd.sell) || 0 : null}
               hasSubUnit={f.has_sub_unit} unitsPerBox={Number(f.units_per_box) || 0} subUnitName={f.sub_unit_name}
               byWeight={byWeight} pooled={f.pooled && !!f.section.trim()} products={allProducts ?? []} selfId={product?.id ?? null} disabled={busy} />
           )}

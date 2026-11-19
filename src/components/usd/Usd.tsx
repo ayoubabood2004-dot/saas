@@ -131,16 +131,20 @@ export function UsdSettingsCard() {
   );
 }
 
-/* ══ ٢) حقولُ السعر بنموذج المادّة (المسودّةُ بيد النموذج — usdProduct.ts) ══════════════════════════════ */
-export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnabled }: {
+/* ══ ٢) حقولُ السعر بنموذج المادّة (المسودّةُ بيد النموذج — usdProduct.ts) ══════════════════════════════
+ * ثلاثُ طرق (0282): بالدينار وحده، **بالدينار والدولار** (المادّةُ دينارٌ بكلّ آلته — الوحدةُ الفرعية والكراتين — ولها سعرٌ بالدولار
+ * يختاره السطرُ بالبيع)، وبالدولار وحده (0264: بيعُ الدولار ودَينُه بالدولار، بلا وحدةٍ فرعية ولا وزنٍ ولا حوض). */
+export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnabled, sub }: {
   value: UsdDraft; onChange: (d: UsdDraft) => void; blockers: UsdBlockers; showProblems: boolean;
   /** النموذجُ لا يرسل حقلاً بالدولار إلا بعد أن يعرف أن الميزة مفعّلة (قاعدةٌ قبل 0264 لا تعرف الأعمدة). */
   onEnabled: (on: boolean) => void;
+  /** الوحدةُ الفرعية كما بالنموذج — لسعرها بالدولار بالطريقة الثانية (فارغٌ = العلبةُ ÷ العدد). */
+  sub?: { on: boolean; per: number; name: string; ready: boolean };
 }) {
   const { t } = useTranslation();
   const { state, failed, reload } = useUsdState();
   useEffect(() => { onEnabled(!!state?.enabled); }, [state?.enabled, onEnabled]);
-  if (!state?.enabled && !value.on) return null;
+  if (!state?.enabled && !value.on && !value.dual) return null;
   if (!state) {
     // مادّةُ دولار وإعداداتُ الدولار ما وصلت: النموذجُ لا يرسل أسعارَها (قد تكون الميزةُ غائبة) — يُقال لا يُحفظ بصمت.
     return (
@@ -154,16 +158,23 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
   const sell = centsOf(value.sell), buy = centsOf(value.buy);
   const problem = usdDraftProblem(value, blockers);
   const what = [blockers.weight && t("usd.prod.bWeight"), blockers.sub && t("usd.prod.bSub"), blockers.pooled && t("usd.prod.bPooled")].filter(Boolean).join("، ");
+  const mode: "iqd" | "dual" | "usd" = value.on ? "usd" : value.dual ? "dual" : "iqd";
+  const pick = (m: typeof mode) => { if (m === mode) return; playTap(); onChange({ ...value, on: m === "usd", dual: m === "dual" }); };
+  const subAuto = sub?.on && sub.per > 0 && sell != null ? Number(sell) / 100 / sub.per : null;
+  const subAutoText = subAuto != null ? (Math.round(subAuto * 100) / 100).toFixed(2) : "";
   return (
-    <div className={cn("rounded-2xl border p-3", value.on ? "border-success-200 bg-success-50/50 dark:border-success-500/30 dark:bg-success-500/10" : "border-line")} data-usd-fields>
-      <label className="flex cursor-pointer items-start justify-between gap-3">
-        <span className="min-w-0">
-          <span className="flex items-center gap-1.5 text-sm font-bold text-ink"><DollarSign size={15} className="text-success-600" /> {t("usd.prod.toggle")}</span>
-          <span className="mt-0.5 block text-2xs text-ink-subtle">{t("usd.prod.toggleHint")}</span>
-        </span>
-        <input type="checkbox" data-usd-on className="mt-1 h-4 w-4 accent-success-600" checked={value.on} onChange={(e) => { playTap(); onChange({ ...value, on: e.target.checked }); }} />
-      </label>
-      {value.on && (
+    <div className={cn("rounded-2xl border p-3", mode !== "iqd" ? "border-success-200 bg-success-50/50 dark:border-success-500/30 dark:bg-success-500/10" : "border-line")} data-usd-fields>
+      <span className="flex items-center gap-1.5 text-sm font-bold text-ink"><DollarSign size={15} className="text-success-600" /> {t("usd.prod.modeLabel")}</span>
+      <div role="radiogroup" className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-surface-2 p-1" data-usd-mode={mode}>
+        {(["iqd", "dual", "usd"] as const).map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={mode === m} data-usd-modebtn={m} onClick={() => pick(m)}
+            className={cn("rounded-lg px-1.5 py-1.5 text-xs font-bold transition", mode === m ? "bg-surface-1 text-ink shadow-soft" : "text-ink-muted hover:text-ink")}>
+            {t(m === "iqd" ? "usd.prod.modeIqd" : m === "dual" ? "usd.prod.modeDual" : "usd.prod.modeUsd")}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-2xs text-ink-subtle">{t(mode === "usd" ? "usd.prod.toggleHint" : mode === "dual" ? "usd.prod.dualHint" : "usd.prod.iqdHint")}</p>
+      {mode !== "iqd" && (
         <div className="mt-3 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
@@ -175,14 +186,25 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
               <input data-usd-sell className={cn("input tabular-nums", showProblems && problem === "sell" && "border-danger-400")} dir="ltr" inputMode="decimal" placeholder="0.00" value={value.sell} onChange={(e) => onChange({ ...value, sell: e.target.value })} />
             </label>
           </div>
+          {mode === "dual" && sub?.on && sub.ready && (
+            <label className="block">
+              <span className="label">{t("usd.prod.subUsd", { sub: sub.name.trim() || t("usd.prod.subWord") })}</span>
+              {/* الحسابُ ينزل بالخانة ويبقى محسوباً ما دام يساويه (قرارُ المالك ١٦/١١ للكارتون، و١٩/١١ للمفرد). */}
+              <input data-usd-sub className={cn("input tabular-nums", showProblems && problem === "sub" && "border-danger-400")} dir="ltr" inputMode="decimal" placeholder="0.00"
+                value={value.sub.trim() ? value.sub : subAutoText}
+                onChange={(e) => { const v = e.target.value; onChange({ ...value, sub: v.trim() === subAutoText ? "" : v }); }} />
+              {!value.sub.trim() && subAutoText && <span className="mt-0.5 block text-2xs text-ink-subtle" data-usd-subauto>{t("usd.prod.subAuto", { v: subAutoText, n: formatNum(sub.per) })}</span>}
+            </label>
+          )}
           <p className="text-2xs text-ink-muted">
             {sell != null && r ? t("usd.prod.approx", { v: iqd(iqdOf(sell, r.rate1e4, 1)) }) : !r ? t("usd.prod.noRate") : null}
             {sell != null && buy != null && <> · {t("usd.prod.profit", { v: usdIso(sell - buy) })}</>}
           </p>
-          {problem === "blocked" && <p className="rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-usd-blocked>{t("usd.prod.blocked", { what })}</p>}
+          {problem === "blocked" && <p className="rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-usd-blocked>{mode === "usd" ? t("usd.prod.blocked", { what }) : t("usd.prod.blockedDual")}</p>}
           {showProblems && problem === "sell" && <p className="text-xs font-semibold text-danger-600">{t("usd.prod.needSell")}</p>}
           {showProblems && problem === "buy" && <p className="text-xs font-semibold text-danger-600">{t("usd.prod.badBuy")}</p>}
-          <p className="text-2xs text-ink-subtle">{t("usd.prod.noStore")}</p>
+          {showProblems && problem === "sub" && <p className="text-xs font-semibold text-danger-600">{t("usd.prod.badSub")}</p>}
+          {mode === "usd" && <p className="text-2xs text-ink-subtle">{t("usd.prod.noStore")}</p>}
         </div>
       )}
     </div>
