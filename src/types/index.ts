@@ -734,6 +734,8 @@ export interface Product {
   units_per_box?: number | null;
   /** Price of a single sub-unit (used when selling by the sub-unit). */
   sub_unit_price?: number | null;
+  /** 0282: سعرُ الوحدة الفرعية بالدولار لمادّةٍ بسعرين — فارغٌ = سعرُ العلبة بالدولار ÷ عددها (`usdCentsOf`). */
+  sub_unit_price_usd?: number | null;
   /** يُباع بالوزن (كتلة، 0124): `sell_price` سعرُ الكيلو الواحد، و`stock`
    *  الرصيدُ بالكيلو. عند البيع يُختار الوزن فيُحسب السعر خطياً (نصف كيلو =
    *  نصف السعر، كيلوان = ضعفان). حصريّ مقابل الوحدات الفرعية والمجمّع. */
@@ -767,6 +769,8 @@ export interface ProductPack {
   per: number;
   purchase_price: number | null;
   sell_price: number | null;
+  /** 0282: سعرُ الكارتون بالدولار لمادّةٍ بسعرين — غائبٌ/فارغ = سعرُ العلبة بالدولار × العدد. */
+  sell_price_usd?: number | null;
 }
 
 export type PaymentMethod = "cash" | "card" | "transfer";
@@ -1176,6 +1180,9 @@ export interface CheckoutItem {
   consumables?: ConsumableEntry[] | null;
   /** 0269: سطرُ جرعةٍ من الطبلة — معرّفُ معلَّقها (dose_charges)؛ البيعُ يمرّ من retail_checkout_doses فيختمه بمعاملته. */
   dose_charge?: string;
+  /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `unit_price` دينارُه بسعر اليوم (الخادمُ يطابقه)، و`unit_price_usd` سعرُه بالدولار. */
+  price_currency?: "USD";
+  unit_price_usd?: string;
 }
 
 /** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */

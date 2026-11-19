@@ -728,7 +728,7 @@ const modalMut = (from, to, tag) => async (ck) => {
 };
 await caught("الحلقةُ بلا بوّابة الكلفة بالنموذج", modalMut('{product && can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot', "{product && <AvgCostSlot", "inv-mut1"));
 await caught("الحلقةُ بالإنشاء أيضاً", modalMut('{product && can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot product={product}', '{can("viewProfits") && !restricted && !(usd.on && usdEnabled) && <AvgCostSlot product={product ?? ({ id: "new" } as Product)}', "inv-mut2"));
-await caught("النموذجُ يرسل avg_cost مع الحمولة", modalMut("        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled),\n      };", "        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled),\n        avg_cost: product?.avg_cost ?? null,\n      };", "inv-mut3"));
+await caught("النموذجُ يرسل avg_cost مع الحمولة", modalMut("        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled, dualReadyOk, subUnitOn),\n      };", "        sold_by_weight: byWeight,\n        ...usdPatch(usd, product ?? null, usdEnabled, dualReadyOk, subUnitOn),\n        avg_cost: product?.avg_cost ?? null,\n      };", "inv-mut3"));
 const mvMut = (from, to, suite) => async (ck) => suite(await loadMv((s) => swap(s, from, to), "mv-mut"), ck);
 await caught("القطعةُ بلا نطاقها avgc", mvMut('page(() => import("@/components/inventory/AvgCostNote"), ["avgc"])', 'page(() => import("@/components/inventory/AvgCostNote"), [])', slotSuite));
 await caught("«أعد المحاولة» لا تصنع قطعةً جديدة", mvMut("AvgCostNoteLazy = loadAvgCostNote(); setLazyTick", "setLazyTick", slotSuite));

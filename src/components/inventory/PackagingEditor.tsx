@@ -23,6 +23,8 @@ export interface PackagingEditorProps {
   /** أسعارُ العلبة كما بالنموذج الآن — منها يُحسب الفارغ. */
   boxSell: number;
   boxPurchase: number;
+  /** 0282: مادّةٌ بسعرين — سعرُ العلبة بالدولار (منه يُحسب سعرُ الكارتون بالدولار وتُعرض خانتُه). غائبٌ = لا خانة. */
+  dualBoxUsd?: number | null;
   hasSubUnit: boolean;
   unitsPerBox: number;
   subUnitName: string;
@@ -242,6 +244,13 @@ export default function PackagingEditor(props: PackagingEditorProps) {
                     onChange={(v) => setPack(i, { sell_price: v })} />
                   {packNote(k.sell_price, boxSell, perOf(k.per), `sell${i}`)}
                 </div>
+                {props.dualBoxUsd != null && (
+                  <div>
+                    <label className="label">{t("pkg.packSellUsd")}</label>
+                    <AutoPrice own={k.sell_price_usd ?? ""} auto={((n) => (n ? (Math.round(Number(props.dualBoxUsd) * 100) * n) / 100 : null))(perOf(k.per))}
+                      disabled={disabled} data={{ "data-pkgsellusd": i }} onChange={(v) => setPack(i, { sell_price_usd: v })} />
+                  </div>
+                )}
               </div>
               {(() => {
                 /* بيعٌ أقلّ من الشراء: خطأُ كتابةٍ غالباً (صفرٌ ناقص) — يُقال ولا يُمنع (تصفيةٌ أو عرضٌ حقيقيّ). */

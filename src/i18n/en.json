@@ -1162,7 +1162,19 @@
     "dCompanyReturnBtn": "Company returned it",
     "dCompanyReturnConfirm": "{{company}} returned “{{name}}”'s order? The invoice is cancelled, the goods go back to stock, and {{n}} comes off the company's balance.",
     "dCompanyReturnPaid": "{{paid}} was already collected on this order — it can't be returned from here. Return it from “Returns” on its invoice so the money is counted correctly.",
-    "dCompanyReturnDone": "Order returned — goods back in stock and removed from the company's balance"
+    "dCompanyReturnDone": "Order returned — goods back in stock and removed from the company's balance",
+    "dual": {
+      "chip": "In $",
+      "toUsd": "Sell this line at its dollar price (converted to dinars at today's rate)",
+      "toIqd": "Back to this line's dinar price",
+      "note": "At rate {{rate}} — the invoice is in dinars",
+      "unreach": "Couldn't reach the server for the dollar rate — check the connection and try again.",
+      "not_ready": "Selling a line in dollars needs the database update (0282) — tell the manager.",
+      "disabled": "Dollars aren't enabled for this clinic — see Settings.",
+      "no_rate": "Set today's dollar rate first (Settings › Dollar).",
+      "noLevel": "“{{name}}” has no dollar price for this unit — set it in inventory.",
+      "rateMoved": "The dollar rate changed — dollar lines were recalculated at today's rate. Check the new total and press again."
+    }
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",
@@ -7315,13 +7327,24 @@
       "approx": "≈ {{v}} IQD at today's rate",
       "noRate": "Set the dollar rate in Settings so it can be sold",
       "profit": "Profit per unit {{v}}",
-      "blocked": "A dollar item can't use: {{what}} — in this first phase",
+      "blocked": "“Dollar only” doesn't work with: {{what}} — choose “Dinar + dollar” and it works.",
       "bWeight": "selling by weight",
       "bSub": "sub-units",
       "bPooled": "adding without a count (pool)",
       "needSell": "Enter the sale price in dollars",
       "badBuy": "The dollar purchase price isn't a number",
-      "noStore": "Dollar items aren't shown in the online store in this first phase"
+      "noStore": "Dollar items aren't shown in the online store in this first phase",
+      "modeLabel": "Pricing",
+      "modeIqd": "Dinar",
+      "modeDual": "Dinar + dollar",
+      "modeUsd": "Dollar only",
+      "iqdHint": "One price in dinars, as usual.",
+      "dualHint": "Two prices: at the till each line can be sold in dinars or dollars. The invoice is issued in dinars and dollar lines convert at today's rate. Sub-units and cartons work.",
+      "subUsd": "{{sub}} price in dollars ($)",
+      "subWord": "Sub-unit",
+      "subAuto": "Calculated: box price ÷ {{n}} = ${{v}} — type another if you want",
+      "badSub": "The sub-unit dollar price isn't a number",
+      "blockedDual": "Selling by weight doesn't work with a dollar price — keep it in dinars"
     },
     "sale": {
       "pending": "We don't know whether the sale went through (the connection dropped) — «Try again» won't record it twice. To change it, check the invoices list first, then «New cart».",
@@ -7676,7 +7699,8 @@
     "groupPriced": "New price applied to the whole group ({{n}})",
     "groupCurBlock": "This product is linked to a group — unlink it first to change its currency.",
     "groupUnlinked": "{{n}} unlinked from the group — still in stock",
-    "groupRemoveHint": "Unlink from the group (stays in stock)"
+    "groupRemoveHint": "Unlink from the group (stays in stock)",
+    "packSellUsd": "Sell price in dollars ($)"
   },
   "rx": {
     "btn": "Prescription",

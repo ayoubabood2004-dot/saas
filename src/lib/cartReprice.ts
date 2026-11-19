@@ -34,6 +34,8 @@ export interface RepriceLine {
   listAt?: number;
   /** الكاشيرُ كتب السعرَ بيده — لا يُمسّ. */
   priceManual?: boolean;
+  /** 0282: سطرٌ بالدولار — دينارُه من سعره بالدولار وسعر الصرف، لا من قائمة الدينار: لا يُعاد تسعيرُه منها (كالمعدَّل بيد). */
+  usd?: unknown;
 }
 
 export interface FreshPrices {
@@ -76,7 +78,7 @@ export function repriceCart<L extends RepriceLine>(cart: L[], fresh: FreshPrices
     if (!l.product_id) return l;
     const f = fresh.product(l.product_id);
     if (!f) return l;
-    const manual = isManual(l);
+    const manual = isManual(l) || l.usd != null;
     if (l.byWeight) {
       if (l.perKgPrice === undefined || l.perKgPrice === f.box) return l;
       touched = true;

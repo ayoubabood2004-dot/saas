@@ -162,7 +162,8 @@ export function firstTakenCode(
 
 /* ── المسودّة (نموذج المادة) ────────────────────────────────────────────── */
 /** كارتونٌ كما يُكتب بالنموذج: الأرقامُ نصوصٌ (الحقلُ الفارغ «محسوب»)، والرموزُ قائمة. */
-export interface PackDraft { id: string; name: string; per: string; codes: string[]; purchase_price: string; sell_price: string }
+/** `sell_price_usd` (0282): سعرُ الكارتون بالدولار لمادّةٍ بسعرين — الفارغُ محسوب (العلبةُ بالدولار × العدد)، واختياريٌّ بالمسودّة. */
+export interface PackDraft { id: string; name: string; per: string; codes: string[]; purchase_price: string; sell_price: string; sell_price_usd?: string }
 export interface PackagingDraft { unit_name: string; sub_codes: string[]; sub_purchase_price: string; packs: PackDraft[] }
 
 const numText = (n: number | null | undefined) => (n == null || !Number.isFinite(n) ? "" : String(n));
@@ -171,7 +172,7 @@ export function draftOf(p: Partial<Pick<Product, "unit_name" | "sub_codes" | "su
     unit_name: p?.unit_name ?? "",
     sub_codes: p ? [...subCodesOf(p as Packaged)] : [],
     sub_purchase_price: numText(p?.sub_purchase_price),
-    packs: p ? packsOf(p as Packaged).map((k) => ({ id: k.id, name: k.name, per: String(k.per), codes: [...(k.codes ?? [])], purchase_price: numText(k.purchase_price), sell_price: numText(k.sell_price) })) : [],
+    packs: p ? packsOf(p as Packaged).map((k) => ({ id: k.id, name: k.name, per: String(k.per), codes: [...(k.codes ?? [])], purchase_price: numText(k.purchase_price), sell_price: numText(k.sell_price), sell_price_usd: numText(k.sell_price_usd) })) : [],
   };
 }
 
@@ -234,7 +235,7 @@ export function packagingFromDraft(
   if (sub.length > 0 && !subOn) return { ok: false, problem: { kind: "sub_no_unit" } };
   const subPrice = subOn ? priceOf(d.sub_purchase_price) : null;
   if (subPrice != null && (Number.isNaN(subPrice) || subPrice < 0)) return { ok: false, problem: { kind: "sub_price" } };
-  const drafts = d.packs.filter((k) => k.name.trim() || k.per.trim() || k.codes.some((c) => matchCode(c)) || k.purchase_price.trim() || k.sell_price.trim());
+  const drafts = d.packs.filter((k) => k.name.trim() || k.per.trim() || k.codes.some((c) => matchCode(c)) || k.purchase_price.trim() || k.sell_price.trim() || (k.sell_price_usd ?? "").trim());
   if (drafts.length > PACK_LIMITS.packs) return { ok: false, problem: { kind: "pack_count" } };
   if (drafts.length > 0 && (ctx.byWeight || ctx.pooled)) return { ok: false, problem: { kind: "packs_unit" } };
   const packs: ProductPack[] = [];
@@ -247,8 +248,10 @@ export function packagingFromDraft(
     if (codes.length > PACK_LIMITS.codes) return { ok: false, problem: { kind: "pack_codes", index } };
     const purchase_price = priceOf(k.purchase_price);
     const sell_price = priceOf(k.sell_price);
-    if ([purchase_price, sell_price].some((x) => x != null && (Number.isNaN(x) || x < 0))) return { ok: false, problem: { kind: "pack_price", index } };
-    packs.push({ id: k.id || newPackId(), name, codes, per, purchase_price, sell_price });
+    const sell_price_usd = priceOf(k.sell_price_usd ?? "");
+    if ([purchase_price, sell_price, sell_price_usd].some((x) => x != null && (Number.isNaN(x) || x < 0))) return { ok: false, problem: { kind: "pack_price", index } };
+    // المفتاحُ لا يُكتب فارغاً: كارتونٌ بلا سعر دولار يبقى بشكله القديم حرفاً (packagingPatch لا يرى تغييراً).
+    packs.push({ id: k.id || newPackId(), name, codes, per, purchase_price, sell_price, ...(sell_price_usd != null ? { sell_price_usd } : {}) });
   }
   const long = [...sub, ...packs.flatMap((k) => k.codes)].find((c) => c.length > PACK_LIMITS.codeLen);
   if (long) return { ok: false, problem: { kind: "code_len", code: long } };
@@ -267,7 +270,7 @@ export function packagingPatch(before: Partial<Pick<Product, "unit_name" | "sub_
   if ((was.unit_name ?? null) !== v.unit_name) out.unit_name = v.unit_name;
   if (JSON.stringify(was.sub_codes) !== JSON.stringify(v.sub_codes)) out.sub_codes = v.sub_codes;
   if ((was.sub_purchase_price ?? null) !== v.sub_purchase_price) out.sub_purchase_price = v.sub_purchase_price;
-  const norm = (ks: readonly ProductPack[]) => JSON.stringify(ks.map((k) => [k.id, k.name, k.per, k.codes ?? [], k.purchase_price ?? null, k.sell_price ?? null]));
+  const norm = (ks: readonly ProductPack[]) => JSON.stringify(ks.map((k) => [k.id, k.name, k.per, k.codes ?? [], k.purchase_price ?? null, k.sell_price ?? null, k.sell_price_usd ?? null]));
   if (norm(was.packs) !== norm(v.packs)) out.packs = v.packs;
   return out;
 }
