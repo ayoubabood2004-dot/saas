@@ -14,9 +14,13 @@ import { Button, Skeleton, useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError } from "@/lib/errors";
-import { cn, searchable } from "@/lib/utils";
+import { cn, searchable, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
+import { childrenOf, cutAt, keyOfValue, LEVELS, nextLevel, under, valueOf, type LibPath } from "@/lib/libraryLevels";
 import type { LibraryImage } from "@/types";
+
+/* فوق هذا العدد تُرسم الأولى وعدّادُ الباقي — مكتبةٌ بآلاف الصور لا تُرسم دفعةً بشاشة هاتف. */
+const PICK_CAP = 300;
 
 export function ImageLibraryPicker({ open, onClose, onPick }: {
   open: boolean;
@@ -32,7 +36,9 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
   const [failed, setFailed] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [q, setQ] = useState("");
-  const [company, setCompany] = useState<string>("all");
+  /* المستوياتُ الأربعة (0284) فتاتَ خبز: شركة ← صنف ← وكالة ← قسم — بلا نصٍّ جديد (النصفُ الباردُ ممتلئ):
+   * الجذرُ «كل الشركات» القائم، والأسماءُ نفسُها، و«—» لما لا اسمَ له. */
+  const [path, setPath] = useState<LibPath>({});
 
   useEffect(() => {
     if (!open) return;
@@ -43,18 +49,19 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tick]);
 
-  const companies = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of rows ?? []) if (r.company) s.add(r.company);
-    return [...s].sort((a, b) => a.localeCompare(b));
-  }, [rows]);
-
+  const level = nextLevel(path);
+  const kids = useMemo(() => (rows && level ? childrenOf(rows, path, level) : []), [rows, path, level]);
+  const showKids = kids.length > 1 || (kids.length === 1 && kids[0].label != null);
+  const crumbs = LEVELS.filter((l) => path[l] !== undefined);
+  const crumbLabel = (l: (typeof LEVELS)[number]) => {
+    const hit = (rows ?? []).find((r) => keyOfValue(valueOf(r, l)) === path[l]);
+    return (hit && valueOf(hit, l)) ?? "—";
+  };
   const shown = useMemo(() => {
     const ql = searchable(q);
-    return (rows ?? []).filter((r) =>
-      (company === "all" || r.company === company) &&
-      (!ql || searchable(r.name).includes(ql) || searchable(r.section ?? "").includes(ql) || searchable(r.company ?? "").includes(ql)));
-  }, [rows, q, company]);
+    return under(rows ?? [], path).filter((r) =>
+      !ql || [r.name, r.section, r.company, r.agency, r.kind, r.barcode].some((x) => x && searchable(x).includes(ql)));
+  }, [rows, q, path]);
 
   return (
     <Modal open={open} onClose={onClose} title={t("lib.pickTitle", "اختر من مكتبة الصور")}>
@@ -64,15 +71,32 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
           <input className="input ps-9" value={q} onChange={(e) => setQ(e.target.value)} data-libsearch
             placeholder={t("lib.searchPh", "دوّر بالاسم أو الشركة أو الصنف…")} />
         </div>
-        {companies.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {["all", ...companies].map((c) => (
-              <button key={c} onClick={() => { playTap(); setCompany(c); }}
+        {(rows?.length ?? 0) > 0 && (
+          <div className="space-y-1.5" data-libpath>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button onClick={() => { playTap(); setPath({}); }} data-libcrumb="root"
                 className={cn("rounded-full px-3 py-1 text-2xs font-bold transition",
-                  company === c ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
-                {c === "all" ? t("lib.allCompanies", "كل الشركات") : c}
+                  crumbs.length === 0 ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
+                {t("lib.allCompanies", "كل الشركات")}
               </button>
-            ))}
+              {crumbs.map((l, i) => (
+                <button key={l} onClick={() => { playTap(); setPath(cutAt(path, l)); }} data-libcrumb={l} dir="auto"
+                  className={cn("rounded-full px-3 py-1 text-2xs font-bold transition",
+                    i === crumbs.length - 1 ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
+                  {crumbLabel(l)}
+                </button>
+              ))}
+            </div>
+            {showKids && level && (
+              <div className="flex flex-wrap gap-1.5" data-libkids={level}>
+                {kids.map((k) => (
+                  <button key={k.key} onClick={() => { playTap(); setPath({ ...path, [level]: k.key }); }} data-libkid={k.label ?? ""} dir="auto"
+                    className="rounded-full border border-line px-3 py-1 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
+                    {k.label ?? "—"} <span className="opacity-70">{formatNum(k.count)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -96,16 +120,19 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
           </div>
         ) : (
           <div className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4" data-libgrid>
-            {shown.map((r) => (
+            {shown.slice(0, PICK_CAP).map((r) => (
               <button key={r.id} onClick={() => { playTap(); onPick(r); onClose(); }}
                 className="group flex flex-col overflow-hidden rounded-xl border border-line bg-surface-1 text-start transition hover:border-brand-400 hover:shadow-raised">
                 <img src={productImageUrl(r.path) ?? undefined} alt="" loading="lazy"
                   className="aspect-square w-full bg-surface-2 object-contain p-1"
                   onError={(e) => { e.currentTarget.hidden = true; }} />
                 <span className="line-clamp-2 p-1.5 text-2xs font-bold leading-snug text-ink">{r.name}</span>
-                {r.section && <span className="px-1.5 pb-1.5 text-2xs text-ink-subtle">{r.section}</span>}
+                {(r.agency || r.section) && <span className="px-1.5 pb-1.5 text-2xs text-ink-subtle" dir="auto">{[r.agency, r.section].filter(Boolean).join(" · ")}</span>}
               </button>
             ))}
+            {shown.length > PICK_CAP && (
+              <span className="col-span-full py-2 text-center text-2xs font-bold text-ink-subtle" data-libmore>+{formatNum(shown.length - PICK_CAP)}</span>
+            )}
           </div>
         )}
       </div>

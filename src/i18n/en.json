@@ -9187,5 +9187,56 @@
       "debtName": "A dollar debt needs the customer's name — fill in the customer field.",
       "notReady": "Two-total invoices need a database update (0283) — tell the manager."
     }
+  },
+  "libm": {
+    "companies": "Companies",
+    "companiesHint": "Each company holds kinds (cats, dogs…), each kind holds agencies (brands), and each agency holds sections.",
+    "items": "{{n}} images",
+    "level": {
+      "company": "Companies",
+      "kind": "Kinds",
+      "agency": "Agencies",
+      "section": "Sections"
+    },
+    "noKind": "No kind",
+    "noAgency": "No agency",
+    "noSection": "No section",
+    "kindPh": "Kind (cats, dogs…)",
+    "agencyPh": "Agency (brand)",
+    "sectionPh": "Section",
+    "narrow": "{{n}} images here — pick a kind or an agency to see them.",
+    "noResults": "Nothing in the library matches this search.",
+    "importTitle": "Import from an Excel file",
+    "importHint": "A sheet with a picture in each row, the product name, the brand and the category. The brand becomes the agency and the category becomes the section.",
+    "pickFile": "Choose the Excel file",
+    "reading": "Reading the file…",
+    "companyFor": "Company",
+    "kindFor": "Kind",
+    "cols": "Name from {{name}} · agency from {{agency}} · section from {{section}} · barcode from {{barcode}}",
+    "needCompanyKind": "Write the company and the kind first.",
+    "planNew": "{{n}} new images",
+    "planExists": "{{n}} already in the library — skipped",
+    "planDup": "{{n}} repeated in the file — uploaded once",
+    "planNoImage": "{{n}} rows without a picture — not uploaded",
+    "planNoName": "{{n}} rows without a name — not uploaded",
+    "planCodes": "{{n}} internal codes are not barcodes — the product is kept by its name, without a barcode",
+    "planAgencies": "{{n}} agencies",
+    "planSections": "{{n}} sections",
+    "upload": "Upload {{n}} images",
+    "uploading": "Uploading {{done}} of {{n}}…",
+    "stop": "Stop",
+    "stopped": "Stopped at {{done}} of {{n}} — press upload again to continue; what was uploaded is skipped.",
+    "done": "Done — {{n}} images added.",
+    "failedSome": "{{n}} images did not upload — they are retried when you upload again",
+    "network": "The connection dropped — what was uploaded is kept. Press upload to continue.",
+    "dbOld": "The database needs update 0284 before kinds and agencies can be saved — apply it, then upload again.",
+    "err": {
+      "not_zip": "This is not an Excel (.xlsx) file.",
+      "zip64": "This file is too large to open here.",
+      "no_inflate": "This browser can't open Excel files — use a recent Chrome.",
+      "bad_method": "This browser can't open this Excel file — save it again from Excel and retry.",
+      "no_sheet": "No sheet was found in the file.",
+      "no_name_column": "No product-name column was found (for example “Product name” or “Name”)."
+    }
   }
 }

@@ -1308,7 +1308,9 @@ const supabaseRepo: DemoRepo = {
   async listImageLibrary() {
     // `listOrThrow` لا `listOf`: منتقي المكتبة بفشلٍ صامتٍ يقول «ما بيها صور»
     // فيصوّر المستخدمُ المادّةَ من جديد — والصورةُ موجودةٌ بالمكتبة (البند ٢٠).
-    return listOrThrow<LibraryImage>(await sbc().from("image_library").select("*").order("company", { ascending: true }).order("name", { ascending: true }).limit(1000));
+    // و`allPages` لا `limit(1000)`: سقفُ PostgREST ألفُ صفّ، وملفُّ موزّعٍ واحد (٩٠٩ صورة) يتجاوزه — فما بعد
+    // الألف كان يختفي من المنتقي بصمت. الترتيبُ للعرض بالشاشة (تجمّعها شركةً فصنفاً فوكالةً فقسماً).
+    return allPages<LibraryImage>(() => sbc().from("image_library").select("*"), { col: "name", asc: true, kind: "text" });
   },
   async createLibraryImage(meta, upload) {
     const id = uuid();
@@ -1318,10 +1320,15 @@ const supabaseRepo: DemoRepo = {
     const path = `library/${id}.${imageExt(upload)}`;
     const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: imageType(upload), upsert: false });
     if (up.error) throw up.error;
-    return need<LibraryImage>(await sbc().from("image_library").insert({
+    const row: Record<string, unknown> = {
       id, name: meta.name.trim(), company: meta.company?.trim() || null,
       section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null, path,
-    }).select().single());
+    };
+    // الصنفُ والوكالة (0284) يُرسلان حين يُكتبان وحدهما — قاعدةٌ قبل 0284 ترفض عموداً لا تعرفه، والإضافةُ
+    // العاديّة (بلا مستوياتٍ جديدة) تبقى تعمل عليها.
+    if (meta.kind?.trim()) row.kind = meta.kind.trim();
+    if (meta.agency?.trim()) row.agency = meta.agency.trim();
+    return need<LibraryImage>(await sbc().from("image_library").insert(row).select().single());
   },
   async deleteLibraryImage(id, path) {
     void path;
