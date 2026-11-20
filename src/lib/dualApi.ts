@@ -60,7 +60,8 @@ export async function dualCheckout(items: DualLineIn[], meta: SaleMeta & { fx_ra
 export interface MixedUsdLine { product_id: string; qty: number; unit_price_usd: string; sub?: boolean; pack_id?: string; pack_per?: number }
 /** مفاتيحُ الدولار فوق البيعة: سعرُ الصرف الذي رآه الجهاز، وخصمُ الدولار، وما دُفع بالدولار (جزءٌ مسموح — الباقي دَينٌ بالدولار). */
 export interface MixedMeta { fx_rate_id: string; discount_usd: string; paid_usd: string; usd_method: "cash" | "card" | "transfer" }
-export interface MixedResult { iqd: Invoice | null; usd: Invoice }
+/** والإعادةُ بالمرجع ترجع ما ثبت كما هو — قد يكون نصفَ الدينار وحده (محاولةٌ أولى بلا دولار، أو بيعةٌ من نسخةٍ قبل 0283). */
+export interface MixedResult { iqd: Invoice | null; usd: Invoice | null }
 
 let mixedYes = false;
 let mixedNo = 0;
@@ -88,6 +89,18 @@ export async function mixedCheckout(iqd: CheckoutItem[], usd: MixedUsdLine[], me
   const r = await supabase.rpc("mixed_checkout", { p_iqd: iqd, p_usd: usd, p_meta: meta, p_charges: charges.length ? charges : null });
   if (r.error) throw Object.assign(new Error(r.error.message), { code: r.error.code, hint: r.error.hint, details: r.error.details });
   const d = r.data as { iqd: Invoice | null; usd: Invoice | null };
-  if (!d?.usd) throw Object.assign(new Error("mixed_no_usd"), { code: "P0001" });
-  return { iqd: d.iqd ?? null, usd: d.usd };
+  if (!d?.usd && !d?.iqd) throw Object.assign(new Error("mixed_no_usd"), { code: "P0001" });
+  return { iqd: d.iqd ?? null, usd: d.usd ?? null };
+}
+
+/** إعادةٌ بالمرجع نفسِه بلا سطر دولار (الكاشيرُ رجّعها للدينار بعد محاولةٍ مجهولة المصير): فاتورةُ الدولار التي ثبتت معها بمرجعها ~usd —
+ *  تُعرض وتُطبع ولا تختفي (قد تحمل دَيناً بالدولار). قراءةٌ وحدها؛ فشلُها لا يمسّ البيعة (فاتورةُ الدينار ثابتةٌ بنفسها). */
+export async function mixedTwin(ref: string): Promise<Invoice | null> {
+  if (!supabase) {
+    const db = (await import("./demoStore")).loadDB();
+    return ((db.invoices ?? []).find((i) => (i as Invoice & { client_ref?: string | null }).client_ref === `${ref}~usd`) as Invoice | undefined) ?? null;
+  }
+  const r = await supabase.from("invoices").select("*").eq("client_ref", `${ref}~usd`).limit(1);
+  if (r.error) throw r.error;
+  return ((r.data ?? [])[0] as Invoice | undefined) ?? null;
 }

@@ -265,6 +265,8 @@ interface SaleDraft {
    *  بيده فلا يمحوه فراغُ صفٍّ يُختار (`fieldsAfterPick`). يُحفظ لأن تبديلَ التبويب يُعيد تركيبَ
    *  الشاشة من المسودّة؛ ومسودّةٌ قديمةٌ بلا هذا تُعدّ نصَّها من الشاشة (المسحُ أسلمُ من الخلط). */
   custAuto?: CustText;
+  /** 0283: صندوقُ الدولار — خصمُه وما يُدفع منه وطريقتُه (كخصم الدينار: تبديلُ التبويب لا يمحوه). */
+  usdDisc?: string; usdPaid?: string | null; usdMethod?: "cash" | "card" | "transfer";
 }
 /** أقصى ما تعرضه شبكةُ المنتجات دفعةً واحدة — للرسم لا للفلترة. ويُقال للطبيب
  *  كم أُخفي، فلا تبدو مادةٌ خارج السقف وكأنها غير موجودة. */
@@ -1512,9 +1514,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* 0283: «تمّ» بفاتورة الدولار المربوطة (بمرجع البيعة ~usd) — تُطبع معها بورقةٍ واحدة. */
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[]; usd?: { invoice: Invoice; items: InvoiceItem[] } | null } | null>(null);
   /* 0283: مجموعُ الدولار — خصمُه، وما يُدفع منه الآن (null = كلُّه، والفارغُ صفر = دَينٌ كلُّه)، وطريقتُه. */
-  const [usdDisc, setUsdDisc] = useState("");
-  const [usdPaid, setUsdPaid] = useState<string | null>(null);
-  const [usdMethod, setUsdMethod] = useState<"cash" | "card" | "transfer">("cash");
+  const [usdDisc, setUsdDisc] = useState(draft0?.usdDisc ?? "");
+  const [usdPaid, setUsdPaid] = useState<string | null>(draft0?.usdPaid ?? null);
+  const [usdMethod, setUsdMethod] = useState<"cash" | "card" | "transfer">(draft0?.usdMethod ?? "cash");
   const [mxLazyTick, setMxLazyTick] = useState(0);
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
@@ -2224,7 +2226,11 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** «$» على السطر: يحوّله للدولار بسعر مستواه (العلبة/المفرد/الكارتون — المكتوبُ وإلا المحسوب) ودينارُه بسعر صرف اليوم كما يعرفه الخادم،
    *  وكلُّ سطر دولارٍ قبله بسعرٍ أقدم يُعاد حسابُه بسعر اليوم (الفاتورةُ بسعرٍ واحد). والضغطةُ ثانيةً ترجعه للدينار بسعر قائمته. */
   const toggleLineUsd = async (l: Line) => {
+    /* 0283: محاولةٌ سابقةٌ مجهولةُ المصير بهذا المرجع — تبديلُ عملة سطرٍ يجعل الإعادةَ ترجع فاتورةً بعملةٍ غيرِ ما تراه السلّة
+     * (أو تُخفي فاتورةَ الدولار التي ثبتت). الإعادةُ أوّلاً كما هي. */
+    if (payPending) { playWarning(); toast.error(t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر")); return; }
     if (l.usd) {
+      setFinalOverride(null);   // السعرُ المثبَّت لمجموع الدينار — تغيّر ما يُجمع فيه
       setCart((c) => c.map((x) => (x.id === l.id ? { ...x, usd: undefined, unit_price: capturedPrice(x) ?? x.unit_price, priceManual: false } : x)));
       return;
     }
@@ -2251,13 +2257,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const c = m.usdCentsOf(row, level, pack);
     if (c == null) { playWarning(); toast.error(t("retail.dual.noLevel", { name: l.name })); return; }
     const r1e4 = rate.rate1e4.toString();
+    setFinalOverride(null);
     /* السطرُ كما هو الآن لا كما كان عند الضغطة: تبديلُ الوحدة (علبة ↔ مفرد) أثناء سؤال سعر الصرف كان يكتب سعرَ المفرد على سطر علبة،
      * والخادمُ لا يعرف المستوى فيقبله (مراجعة 0282). ضغطتان قبل الجواب: الثانيةُ تجد السطرَ بالدولار فلا تكتب شيئاً. */
     setCart((cart) => {
       const cur = cart.find((x) => x.id === l.id);
       if (!cur || cur.usd || (cur.saleUnit ?? null) !== (l.saleUnit ?? null) || (cur.packId ?? null) !== (l.packId ?? null)) return cart;
       return cart.map((x) => {
-        /* 0283: دينارُ السطر يبقى كما هو (يرجع له بضغطة) — المجموعُ بالدولار، وسعرُ الصرف يُرسل للخادم ويُختم على فاتورة الدولار. */
+        /* 0283: دينارُ السطر يبقى كما هو (يرجع له بضغطة) — المجموعُ بالدولار، وسعرُ الصرف يُرسل للخادم ويُختم على فاتورة الدولار.
+         * والسعرُ النهائيُّ المثبَّت لمجموع الدينار يُفكّ (setFinalOverride أدناه، خارج المحدِّث). */
         if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 } };
         if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 } };
         return x;
@@ -2736,7 +2744,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const autoTotal = Math.max(0, subtotal - Math.min(subtotal, promoDiscount + qtyOffTotal + manualDiscountAmt));
   // A cashier-pinned final price IS the total — it may sit BELOW the subtotal (a discount)
   // or ABOVE it (a markup / rounding-up / service fee). The gap shows as a discount or surcharge.
-  const total = finalOverride != null ? Math.max(0, finalOverride) : autoTotal;
+  /* 0283: السعرُ النهائيُّ المثبَّت لسطور الدينار — سلّةٌ كلُّها بالدولار لا دينارَ لها يُثبَّت (كان ١٬٠٠٠ «زيادة» تُعرض ولا تُسجَّل). */
+  const total = finalOverride != null && iqdCart.length > 0 ? Math.max(0, finalOverride) : autoTotal;
   const discountAmt = Math.max(0, subtotal - total);
   const surchargeAmt = Math.max(0, total - subtotal);
   const profit = total - cost;
@@ -2749,7 +2758,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   }, 0);
   /* وسطرُ مادّةٍ وحسابُ الخادم لم يصل (أو فشل): كلفتُه بيد الجهاز آخرُ سعر شراءٍ لا ما يكتبه الخادم (0255) — «—» كذلك. */
   const lineCostUnknown = lineCostState !== "ready" && iqdCart.some((l) => l.kind === "product" && !!l.product_id);
-  const profitShown = consCost === null || lineCostUnknown ? null : profit - consCost;
+  /* وسطورُ الدولار ربحُها بفاتورتها (كلفةُ الخادم بالدينار) — معاينةُ الدينار وحدها كانت تقول «ربح ٠» عن سلّةٍ بالدولار: «—». */
+  const profitShown = consCost === null || lineCostUnknown || usdOn ? null : profit - consCost;
   const showProfit = can("viewProfits") && !devRestricted;
   /* شارةُ «مستهلكات» بسطور الخدمة: حين بالعيادة وصفةٌ واحدة على الأقلّ، أو والملخّصُ فشل (§11.5) — لا وهو بالطريق:
    * الشارةُ بسطرٍ تحت الاسم، وسطرٌ يظهر ثم يختفي لحظةَ وصول ملخّصٍ فارغ (أغلبُ العيادات بلا وصفة) يقفز بالسلّة عند كلّ
@@ -2800,9 +2810,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * يُسجَّل. */
   useEffect(() => {
     if (done) return;
-    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn,
+    saveSaleDraft(draftScope, { usdDisc, usdPaid, usdMethod, cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn,
       negOk: saleRefSaved && negOkRef.current?.ref === saleRefSaved ? negOkRef.current : null, saleDay, saleTime, clientRef: saleRefSaved, custAuto });
-  }, [clinicId, negOkGen, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
+  }, [usdDisc, usdPaid, usdMethod, clinicId, negOkGen, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -3294,7 +3304,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const sellerName = await resolveStaffName(cashierId).catch(() => null); /* swallow-ok: اسمُ البائع على الطبعة الأولية (لا فاتورة ولا مال) — فشلُه يطبعها بلا اسمٍ لا ناقصة */
     const petNames = Array.from(new Set(salePets.map((p) => p.name.trim()).filter(Boolean)));
     const multiPet = petNames.length > 1;
-    const draftItems: InvoiceItem[] = cart.map((l) => ({
+    /* 0283: الطبعةُ الأوّليّة كالوصل — سطورُ الدينار بمجموعها، وسطورُ الدولار بمجموعها بالدولار بعدها (كانت تطبع سطرَ الدولار
+     * بديناره تحت مجموع الدينار وحده، والسلّةُ الدولاريّة مجموعُها صفر). */
+    const draftItems: InvoiceItem[] = iqdCart.map((l) => ({
       id: `draft-${l.id}`, invoice_id: "draft", clinic_id: clinicId ?? null,
       product_id: l.product_id,
       name: `${l.ret ? `${retTag(l)} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
@@ -3313,8 +3325,21 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       total, amount_paid: total, cost_total: cost, profit, item_count: units,
       status: "paid", created_at: new Date().toISOString(),
     };
+    const usdR = usdLines[0]?.usd ? Number(usdLines[0].usd.r) / 10000 : 0;
+    const usdDraft: Invoice | null = usdOn ? {
+      ...draft, id: "draft-usd", currency: "USD", fx_rate: usdR, total_usd: usdTotalC / 100, discount_usd: usdDiscC / 100, paid_usd: usdTotalC / 100,
+      subtotal: Math.round((usdSubC / 100) * usdR), discount: 0, total: Math.round((usdTotalC / 100) * usdR), amount_paid: Math.round((usdTotalC / 100) * usdR),
+      cost_total: 0, profit: 0, item_count: usdLines.length,
+    } : null;
+    const usdDraftItems: InvoiceItem[] = usdLines.map((l) => ({
+      id: `draft-${l.id}`, invoice_id: "draft-usd", clinic_id: clinicId ?? null, product_id: l.product_id, name: l.name, barcode: l.barcode,
+      qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price, unit_label: lineLabel(l),
+      unit_price_usd: (l.usd as NonNullable<Line["usd"]>).c / 100,
+    }));
+    const onlyUsd = !!usdDraft && iqdCart.length === 0;
     const socials = getClinicSocials();
-    const ok = await openInvoicePrint(draft, draftItems, {
+    const ok = await openInvoicePrint(onlyUsd ? usdDraft : draft, onlyUsd ? usdDraftItems : draftItems, {
+      ...(usdDraft && !onlyUsd ? { usdTwin: { invoice: usdDraft, items: usdDraftItems } } : {}),
       clinicName: getClinicName() || user?.full_name || "doctorVet",
       clinicPhone: user?.phone ?? null,
       brand: "doctorVet",
@@ -3743,12 +3768,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           const res = await withTimeout(import("@/lib/dualSale").then((m) => m.mixedCheckout(items, usdItems, {
             ...meta, fx_rate_id: usdRids[0], discount_usd: (usdDiscC / 100).toFixed(2), paid_usd: (usdPaidC / 100).toFixed(2), usd_method: usdMethod,
           })), 12000);
-          invoice = res.iqd ?? res.usd;
+          const first = res.iqd ?? res.usd;
+          if (!first) throw Object.assign(new Error("mixed_no_usd"), { code: "P0001" });
+          invoice = first;
           usdInvoice = res.iqd ? res.usd : null;
         } else {
           invoice = await withTimeout(items.some((i) => i.dose_charge)
             ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
             : repo.retailCheckout(items, meta), 12000);
+          /* إعادةٌ (لا محاولةٌ أولى) بلا سطر دولار: محاولةٌ قبلها ربما كانت بمجموعين — فاتورةُ الدولار التي ثبتت معها تُعرض وتُطبع. */
+          if (!freshRef && saleRefRef.current) {
+            const ref = saleRefRef.current;
+            usdInvoice = await withTimeout(import("@/lib/dualSale").then((m) => m.mixedTwin(ref)), 4000)
+              .catch(() => null /* swallow-ok: قراءةٌ لعرض التوأم — فاتورةُ الدينار ثابتةٌ، والتوأمُ بالسجلّ */);
+          }
         }
       } catch (e) {
         /* سعرُ الصرف تغيّر بين الضغطة والبيعة — المبلغُ بالدولار كما هو، والسطورُ تأخذ معرّفَ سعر اليوم ويُقال، والكاشيرُ يضغط ثانيةً. */
@@ -4141,7 +4174,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-ink-muted">
               {/* ربحُ الخادم وفيه كلفةُ المواد (0252) — لمن يرى الأرباح والجهازُ غيرُ مقيَّد كمعاينة السلّة (§11.9): معاينةٌ
                   مخفيّةٌ وربحٌ ظاهرٌ هنا بعد ثانيتين لا يُخفي شيئاً. */}
-              {showProfit && <span className="flex items-center gap-1 text-success-600"><TrendingUp size={14} /> {t("retail.profit", "Profit")} {money(done.invoice.profit)}</span>}
+              {showProfit && <span className="flex items-center gap-1 text-success-600"><TrendingUp size={14} /> {t("retail.profit", "Profit")} {money(Number(done.invoice.profit ?? 0) + Number(done.usd?.invoice.profit ?? 0))}</span>}
               {done.invoice.customer_name && <span className="flex items-center gap-1"><User size={14} /> {done.invoice.customer_name}</span>}
               {done.invoice.pet_name && <span className="flex items-center gap-1"><PawPrint size={14} /> {done.invoice.pet_name}</span>}
             </div>
@@ -5577,7 +5610,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 : change > 0
                   ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
                   : `${t("retail.complete", "إصدار الفاتورة")} · ${usdOn && iqdCart.length === 0 ? "" : money(total)}`}
-            {usdOn && <bdi dir="ltr" data-btnusd className="ms-1">{`${iqdCart.length > 0 ? "+ " : ""}${usdText(usdTotalC)}`}</bdi>}
+            {usdOn && <bdi dir="ltr" data-btnusd className="ms-2 rounded-md bg-white/20 px-1.5 py-0.5">{usdText(usdTotalC)}</bdi>}
           </Button>
           )}
           {posV2 && !cashierId && cart.length > 0 && payTools && (

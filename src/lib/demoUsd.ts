@@ -117,8 +117,8 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
       if (!pack || !Number.isInteger(pack.per) || pack.per < 2 || (it.pack_per != null && Number(it.pack_per) !== pack.per)) throw err("pack_changed");
       per = pack.per;
     }
-    const sub = dual && !!it.sub;
-    if (sub && (pack || !p.has_sub_unit || !(Number(p.units_per_box) >= 2))) throw err("sub_changed");
+    const sub = !!it.sub;
+    if (sub && (!dual || pack || !p.has_sub_unit || !(Number(p.units_per_box) >= 2))) throw err("sub_changed");
     const units = Number(p.units_per_box) || 0;
     const key = sub ? `${p.id}:s` : `${p.id}:${per}`;
     if (seen.has(key)) throw err("usd_duplicate_line");

@@ -77,7 +77,7 @@ export async function demoMixedCheckout(iqd: CheckoutItem[], usd: MixedUsdLine[]
   if (a0 || b0) {
     // وبجرعاتٍ تمرّ فاتورةُ الدينار من بابها: جرعةٌ نزلت بعد محاولةٍ مجهولة المصير تُقال (dose_charge_late).
     const a = a0 && charges.length ? await runIqd() : a0;
-    return { iqd: a, usd: b0 as Invoice };
+    return { iqd: a, usd: b0 };
   }
   if (iqd.length === 0 && charges.length) throw demoHint("mixed_shape", "جرعات الطبلة بالدينار — رجّعها للسلّة وعيد البيع.");
   const u = await import("./demoUsd");

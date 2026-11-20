@@ -1173,7 +1173,7 @@
       "disabled": "Dollars aren't enabled for this clinic — see Settings.",
       "no_rate": "Set today's dollar rate first (Settings › Dollar).",
       "noLevel": "“{{name}}” has no dollar price for this unit — set it in inventory.",
-      "rateMoved": "The dollar rate changed — dollar lines were recalculated at today's rate. Check the new total and press again."
+      "rateMoved": "The dollar rate changed — the dollar amount is the same; today's rate was refreshed. Press again."
     }
   },
   "promos": {
