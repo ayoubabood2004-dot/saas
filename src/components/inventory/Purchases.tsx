@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
@@ -32,8 +32,38 @@ import { getExpiryWindows } from "@/lib/settings";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 import { purchaseDiscountReady } from "@/lib/purchaseApi";
+import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
+import { purchaseChargesState, type PurchaseChargesState } from "@/lib/purchaseChargesApi";
+import { chargesOf, chargesToSend, draftProblem, draftSums, purchaseGrossCur, type ChargeDraft } from "@/lib/purchaseCharges";
+import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, newPurchasePaid, type FxCur, type PaidMode } from "@/lib/purchaseFxMath";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { purchaseGroupAsks, type GroupAskItem } from "@/lib/productGroups";
+import { levelByCode, packPrice, type CodeHit } from "@/lib/packs";
 /* أنماطُ الجدول التي لا تملكها الورقةُ العامّة — تصل مع هذه القطعة الكسولة لا بحزمة الإقلاع (store-weight-guard). */
 import "./purchaseGrid.css";
+
+/* 0274: قطعُ الشراء بالعملتين بنطاقها المملوك (pfx — النصفُ البارد على سقفه): كسولةٌ هنا، والمالكُ لا يُستورد ثابتاً. */
+const loadPfxBar = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxBar })), ["pfx"]);
+const loadPfxLineCur = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxLineCur })), ["pfx"]);
+const loadPfxTotals = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxTotals })), ["pfx"]);
+const loadPfxPay = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPay })), ["pfx"]);
+const loadPfxFxSum = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxFxSummary })), ["pfx"]);
+const loadPfxPaid = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPaid })), ["pfx"]);
+const loadPfxCharges = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxCharges })), ["pfx"]);
+const loadPfxChargeLines = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxChargeLines })), ["pfx"]);
+const loadPfxGroupAsk = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxGroupAsk })), ["pfx"]);
+let PfxGroupAskLazy = loadPfxGroupAsk();
+let PfxFxSumLazy = loadPfxFxSum();
+let PfxPaidLazy = loadPfxPaid();
+let PfxChargesLazy = loadPfxCharges();
+let PfxChargeLinesLazy = loadPfxChargeLines();
+let PfxBarLazy = loadPfxBar();
+let PfxLineCurLazy = loadPfxLineCur();
+let PfxTotalsLazy = loadPfxTotals();
+let PfxPayLazy = loadPfxPay();
+const reloadPfx = () => { PfxBarLazy = loadPfxBar(); PfxLineCurLazy = loadPfxLineCur(); PfxTotalsLazy = loadPfxTotals(); PfxPayLazy = loadPfxPay(); PfxFxSumLazy = loadPfxFxSum(); PfxPaidLazy = loadPfxPaid();
+  PfxChargesLazy = loadPfxCharges(); PfxChargeLinesLazy = loadPfxChargeLines(); PfxGroupAskLazy = loadPfxGroupAsk(); };
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 /* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
@@ -76,6 +106,8 @@ type Line = {
   /** تاريخُ الوجبة المحفوظ بسطر الفاتورة (0214) — بالتعديل وحده. يُرسل `batch_expiry`:
    *  يبقى للسطر ولا يلمس تاريخَ المنتج (وجبةٌ أحدث قد غيّرته، وإرجاعُه يدهسه). */
   batchExpiry?: string;
+  /** 0274: عملةُ بيع المادّة **الجديدة** (القائمةُ بعملتها). غائبٌ = دينار. */
+  sellCur?: FxCur;
 };
 
 let LINE_SEQ = 0;
@@ -162,13 +194,17 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   /* «الفاتورة الكبيرة» لكل شركة: كل فواتيرها مجموعةً — الإجمالي والدين وعدد
    * الفواتير وآخر شراء — مرتبةً بالأكثر شراءً، فيُعرف بالجرد منين نأخذ أكثر. */
   const companyGroups = useMemo(() => {
-    const m = new Map<string, { name: string; rows: Purchase[]; total: number; due: number }>();
+    /* الصرفُ بالدينار (دينارُ فاتورة الدولار بسعر يومها — هو ما دخل المخزون)، والدَّينُ بعملته: دينٌ بالدولار لا يُجمع على الدينار (0274). */
+    const m = new Map<string, { name: string; rows: Purchase[]; total: number; totalIqd: number; totalUsd: number; due: number; dueUsd: number }>();
     for (const p of shown) {
       const key = p.company_id ?? normKey(p.company_name ?? "");
-      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, due: 0 };
+      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, totalIqd: 0, totalUsd: 0, due: 0, dueUsd: 0 };
       g.rows.push(p);
-      g.total += p.total || 0;
-      g.due += Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0));
+      g.total += p.total || 0;   // للترتيب ونصيب الصرف وحده (دينارُ الدولار بسعر يومه — ما دخل المخزون)
+      if (p.currency === "USD") g.totalUsd = Math.round((g.totalUsd + Number(p.total_usd ?? 0)) * 100) / 100;
+      else g.totalIqd += p.total || 0;
+      if (p.currency === "USD") g.dueUsd = Math.round((g.dueUsd + purchaseDueCur(p)) * 100) / 100;
+      else g.due += Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0));
       if (!g.name && p.company_name) g.name = p.company_name;
       m.set(key, g);
     }
@@ -250,8 +286,10 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
                     </div>
                   </div>
                   <div className="shrink-0 text-end">
-                    <p className="text-sm font-extrabold text-ink tabular-nums">{money(g.total)}</p>
+                    {(g.totalIqd > 0 || g.totalUsd === 0) && <p className="text-sm font-extrabold text-ink tabular-nums">{money(g.totalIqd)}</p>}
+                    {g.totalUsd > 0 && <p className="text-sm font-extrabold text-ink tabular-nums" data-co-totalusd>{usdOf(g.totalUsd)}</p>}
                     {g.due > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(g.due), defaultValue: "عليه {{v}}" })}</p>}
+                    {g.dueUsd > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400" data-co-dueusd>{t("purchase.dueShort", { v: usdOf(g.dueUsd), defaultValue: "عليه {{v}}" })}</p>}
                     <ChevronDown size={15} className={cn("ms-auto mt-0.5 text-ink-subtle transition", isOpen && "rotate-180")} />
                   </div>
                 </button>
@@ -329,9 +367,10 @@ function PurchaseRow({ p, onOpen }: { p: Purchase; onOpen: () => void }) {
         </div>
       </div>
       <div className="text-end">
-        <p className="text-sm font-bold text-ink tabular-nums">{money(p.total)}</p>
-        {(() => { const d = Math.max(0, p.total - (p.amount_paid ?? p.total)); return d > 0
-          ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(d), defaultValue: "عليه {{v}}" })}</p>
+        {/* 0274: فاتورةُ الدولار بدولارها — الإجماليُّ والباقي. */}
+        <p className="text-sm font-bold text-ink tabular-nums">{p.currency === "USD" ? usdOf(Number(p.total_usd ?? 0)) : money(p.total)}</p>
+        {(() => { const d = purchaseDueCur(p); return d > 0
+          ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: p.currency === "USD" ? usdOf(d) : money(d), defaultValue: "عليه {{v}}" })}</p>
           : <Badge tone={statusTone(p.status)}>{t(`purchase.status.${p.status ?? "paid"}`, p.status ?? "paid")}</Badge>; })()}
       </div>
     </button>
@@ -361,6 +400,14 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const [payBusy, setPayBusy] = useState(false);
   // قبل ترحيل 0076 لا يوجد settle_purchase — نخفي زر التسديد بدل فشل صامت.
   const [ledgerOk, setLedgerOk] = useState<boolean | null>(null);
+  /* 0274: التسديدُ بالعملتين حين تعرفهما القاعدة والعيادةُ مفعّلة (أو الفاتورةُ نفسُها بالدولار) — وسعرُ العيادة اقتراحاً. */
+  const [fxPay, setFxPay] = useState<{ ok: boolean; clinicRate: number | null } | null>(null);
+  const [, setPfxTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    void purchaseFxState().then((v) => { if (alive) setFxPay(v); });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     setPurchase(purchaseProp);
@@ -393,8 +440,20 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   const payments = Array.isArray(gotPays) ? gotPays : null;
   /* المدفوعُ والمتبقّي من صفّ الفاتورة (`amount_paid`) لا من سجلّ التسديدات — فالتسديدُ لا
      ينتظر السجلّ، والسجلُّ عرضٌ وحده. */
-  const paid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
-  const due = Math.max(0, purchase.total - paid);
+  /* 0274: فاتورةُ الدولار تُقرأ بدولارها — الإجماليُّ والمدفوعُ والباقي — ودينارُها حصّةٌ داخلية. */
+  const isUsd = purchase.currency === "USD";
+  const fmtP = (n: number) => (isUsd ? usdOf(n) : money(n));
+  const totalCur = isUsd ? Number(purchase.total_usd ?? 0) : purchase.total;
+  const discCur = isUsd ? Number(purchase.discount_usd ?? 0) : Number(purchase.discount ?? 0);
+  /* 0276: أجورٌ إضافية — ما على الشركة داخل الإجماليّ (سطرٌ لكلٍّ قبله)، وما لغيرها بعده. والمجموعُ قبل الخصم والأجور بعملة الفاتورة. */
+  const chg = chargesOf(purchase);
+  const hasCh = chg.list.length > 0;
+  const paid = isUsd ? Number(purchase.paid_usd ?? 0) : (purchase.amount_paid != null ? purchase.amount_paid : purchase.total);
+  const due = Math.max(0, Math.round((totalCur - paid) * 100) / 100);
+  const payFx = isUsd || !!fxPay?.ok;
+  const lineCost = (it: PurchaseItem) => (isUsd
+    ? (it.purchase_price_usd ?? (purchase.fx_rate ? Math.round((it.purchase_price / purchase.fx_rate) * 100) / 100 : 0))
+    : it.purchase_price);
   const retry = () => { playTap(); setLinesTry((n) => n + 1); };
 
   const settle = async () => {
@@ -423,7 +482,9 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
   const print = () => {
     if (!items) return;
-    const ok = openPurchasePrint(purchase, items, printOptions(user, i18n.language, t));
+    // 0274: فاتورةُ الدولار تُطبع بدولارها.
+    const v = usdPrintView(purchase, items);
+    const ok = openPurchasePrint(v.purchase, v.items, { ...printOptions(user, i18n.language, t), ...(v.usd ? { currency: "$" } : {}) });
     if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
     else void repo.logClientEvent("purchase.print", { ref: purchaseNo(purchase.id) });
   };
@@ -470,8 +531,8 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
                       {it.barcode && <p className="font-mono text-2xs text-ink-subtle">{it.barcode}</p>}
                     </td>
                     <td className="p-2.5 text-end tabular-nums">{it.qty}</td>
-                    <td className="p-2.5 text-end tabular-nums">{money(it.purchase_price)}</td>
-                    <td className="p-2.5 text-end font-bold tabular-nums">{money((it.qty || 0) * (it.purchase_price || 0))}</td>
+                    <td className="p-2.5 text-end tabular-nums">{fmtP(lineCost(it))}</td>
+                    <td className="p-2.5 text-end font-bold tabular-nums">{fmtP(Math.round((it.qty || 0) * (lineCost(it) || 0) * 100) / 100)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -481,19 +542,34 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
         <div className="ms-auto w-full max-w-xs space-y-1.5 text-sm" data-pdtotals>
           {/* 0260: بخصم الشركة الإجماليُّ صافٍ — فيُقال المجموعُ قبله والخصم، وإلا بدت سطورُ الجدول لا تجمع إلى الرقم تحتها. */}
-          {(purchase.discount ?? 0) > 0 && (
-            <>
-              <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{money(Number(purchase.total) + Number(purchase.discount ?? 0))}</span></div>
-              <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{money(purchase.discount ?? 0)}</bdi></div>
-            </>
+          {(discCur > 0 || hasCh) && (
+            <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "المجموع الفرعي")}</span><span className="tabular-nums">{fmtP(purchaseGrossCur(purchase))}</span></div>
           )}
-          <div className="flex items-center justify-between font-bold text-ink"><span>{(purchase.discount ?? 0) > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{money(purchase.total)}</span></div>
-          <div className="flex items-center justify-between text-ink-muted"><span>{t("purchase.paid", "المدفوع")}</span><span className="tabular-nums">{money(paid)}</span></div>
-          {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{money(due)}</span></div>}
+          {discCur > 0 && (
+            <div className="flex items-center justify-between font-semibold text-danger-600 dark:text-danger-400" data-pddiscount><span>{t("retail.discount", "الخصم")}</span><bdi className="tabular-nums">−{fmtP(discCur)}</bdi></div>
+          )}
+          {chg.company > 0 && <Suspense fallback={null}><PfxChargeLinesLazy purchase={purchase} fmt={fmtP} part="company" /></Suspense>}
+          <div className="flex items-center justify-between font-bold text-ink"><span>{discCur > 0 || hasCh ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</span><span className="tabular-nums">{fmtP(totalCur)}</span></div>
+          {isUsd && <Suspense fallback={null}><div className="text-end"><PfxTotalsLazy totalUsd={totalCur} rate={purchase.fx_rate ?? null} iqd={purchase.total} /></div></Suspense>}
+          <div className="flex items-center justify-between text-ink-muted"><span>{t("purchase.paid", "المدفوع")}</span><span className="tabular-nums">{fmtP(paid)}</span></div>
+          {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{fmtP(due)}</span></div>}
+          {hasCh && <Suspense fallback={null}><PfxChargeLinesLazy purchase={purchase} fmt={fmtP} part="other" /></Suspense>}
         </div>
 
-        {/* تسديد الدين — يظهر فقط عندما يوجد متبقٍّ والترحيل 0076 مفعَّل */}
-        {due > 0 && ledgerOk && (
+        {/* تسديد الدين — يظهر فقط عندما يوجد متبقٍّ والترحيل 0076 مفعَّل. وبالعملتين (0274) نافذةٌ واحدة تختار ما يُسلَّم. */}
+        {due > 0 && ledgerOk && payFx && (
+          <LoadBoundary scope="pfx-pay" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <PfxPayLazy purchase={purchase} clinicRate={fxPay?.clinicRate ?? null} onDone={(updated) => {
+                setPurchase(updated);
+                const id = purchase.id;
+                repo.listPurchasePayments(id).then((list) => setPays({ of: id, list }), () => setPays({ of: id, list: "failed" }));
+                onChanged?.();
+              }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+        {due > 0 && ledgerOk && !payFx && (
           settling ? (
             <div className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/50 p-3.5 dark:border-brand-500/25 dark:bg-brand-500/10">
               <p className="flex items-center gap-1.5 text-sm font-bold text-ink"><HandCoins size={15} className="text-brand-600" /> {t("purchase.settleTitle", "تسديد دفعة من الدين")}</p>
@@ -528,6 +604,12 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
           )
         )}
 
+        {/* 0275: فاتورةُ الدولار — بشكد اشترينا الدولار (سعرُ يوم الشراء) وبشكد سدّدناه، والفرقُ ربحاً أو خسارة. */}
+        {isUsd && payments && payments.length > 0 && (
+          <LoadBoundary scope="pfx-fxsum" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}><PfxFxSumLazy purchase={purchase} payments={payments} /></Suspense>
+          </LoadBoundary>
+        )}
         {/* سجل التسديدات — كل دفعة انسدّت على هذه الفاتورة. وتعذُّرُه يُقال: غيابُ السجلّ يُقرأ «ما سدّدنا شي». */}
         {paymentsFailed ? (
           <div className="space-y-2.5 rounded-2xl border border-line p-4 text-center" data-purpaysfailed>
@@ -539,7 +621,20 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
             <p className="flex items-center gap-1.5 bg-surface-2 p-2.5 text-xs font-bold text-ink-muted"><HandCoins size={13} /> {t("purchase.paymentsLog", "سجل التسديدات")}</p>
             {payments.map((pp) => (
               <div key={pp.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-line p-2.5 text-xs">
-                <span className="font-bold text-ink tabular-nums">{money(pp.amount)}</span>
+                <span className="font-bold text-ink tabular-nums">{isUsd ? usdOf(Number(pp.usd ?? 0)) : money(pp.amount)}</span>
+                {/* 0274: ما سُلّم بعملةٍ غير عملة الدَّين — بمبلغه وسعره. */}
+                {pp.pay_currency && pp.handed != null && pp.pay_currency !== (isUsd ? "USD" : "IQD") && (
+                  <span className="text-ink-subtle tabular-nums" data-pp-handed>
+                    <bdi>{pp.pay_currency === "USD" ? usdOf(pp.handed) : money(pp.handed)}</bdi>{pp.fx_rate ? <> @ <bdi>{formatNum(pp.fx_rate)}</bdi></> : null}
+                  </span>
+                )}
+                {/* 0275: دفعةُ دين الدولار بسعر يومها وفرقِ صرفها (ربحٌ موجب، خسارةٌ سالبة). */}
+                {isUsd && pp.fx_rate != null && (pp.pay_currency ?? "USD") === "USD" && <span className="text-ink-subtle tabular-nums" data-pp-rate>@ <bdi>{formatNum(pp.fx_rate)}</bdi></span>}
+                {isUsd && pp.fx != null && (
+                  <span className={cn("font-bold tabular-nums", pp.fx >= 0 ? "text-success-700 dark:text-success-300" : "text-danger-600 dark:text-danger-300")} data-pp-fx>
+                    <bdi>{pp.fx >= 0 ? "+" : "−"}{money(Math.abs(pp.fx))}</bdi>
+                  </span>
+                )}
                 <span className="text-ink-subtle">{formatDate(pp.paid_at, i18n.language)}</span>
                 {pp.method && <span className="chip bg-surface-2 text-2xs text-ink-muted">{t(`pay.${pp.method}`, pp.method)}</span>}
                 {pp.note && <span className="text-ink-subtle">{pp.note}</span>}
@@ -572,7 +667,8 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 function printOptions(user: { full_name?: string | null; phone?: string | null } | null | undefined, lang: string, t: TFunction) {
   const socials = getClinicSocials();
   return {
-    labels: { subtotal: t("retail.subtotal", "المجموع الفرعي"), discount: t("retail.discount", "الخصم"), net: t("retail.net", "الصافي") },
+    labels: { subtotal: t("retail.subtotal", "المجموع الفرعي"), discount: t("retail.discount", "الخصم"), net: t("retail.net", "الصافي"),
+      chargeOther: t("purchase.chargeOther", "مدفوعة هسّه") },
     clinicName: getClinicName() || user?.full_name || "doctorVet",
     clinicPhone: user?.phone ?? null,
     brand: "doctorVet",
@@ -613,9 +709,19 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [purchasedAt, setPurchasedAt] = useState(localISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
   const [amountPaid, setAmountPaid] = useState("");
-  /* لا افتراضَ: المستخدمُ يقول إن كانت مدفوعةً كاملةً أو عليها دَين. `null`
-   * تعني «ما اختار بعد» فيُوقَف الحفظ — والخطأُ هنا كان باتّجاهٍ واحدٍ دائماً. */
-  const [paidMode, setPaidMode] = useState<"full" | "debt" | null>(null);
+  /* لا افتراضَ: المستخدمُ يقول إن كانت مدفوعةً كلّها، أو دفع جزءاً (ويكتب كم)، أو كلُّها دَين. `null` تعني «ما اختار بعد»
+   * فيُوقَف الحفظ — والخطأُ هنا كان باتّجاهٍ واحدٍ دائماً. **والجزءُ اختيارٌ ثالثٌ لا خانةٌ تحت الدَّين**: كان «عليها دَين» بخانةٍ
+   * فارغة يُرسل المجموعَ كلَّه مدفوعاً (الفراغُ = «كلّه» بشاشة الإنشاء) — دَينٌ يضيع والزرُّ يقول «دَين». `paidAsk`: الحفظُ ضُغط
+   * والاختيارُ ناقص — يُقال بمكانه لا بتوستٍ وحده. */
+  const [paidMode, setPaidMode] = useState<PaidMode | null>(null);
+  const [paidAsk, setPaidAsk] = useState(false);
+  /* 0276: أجورٌ إضافية (توصيل، نقل…) بعملة الفاتورة. `chgSt`: هل الأجسامُ الحيّة تعرفها وكيف تُحسب بالعيادة — null = ما عُرف بعد
+   * ⇒ لا قائمة ولا مفتاح (أجرةٌ تُكتب ولا تُحفظ أسوأُ من خانةٍ غائبة). `chgAsk`: رقمُ السطر الناقص حين ضُغط الحفظ. */
+  const [chg, setChg] = useState<ChargeDraft[]>([]);
+  /** المربوطة (0277): مادّةٌ بمجموعة يتغيّر سعرُها بهذه الفاتورة ⇒ «لكل المجموعة؟» — ما علّمه المشتري (معرّفُ المادّة). */
+  const [grpPick, setGrpPick] = useState<string[]>([]);
+  const [chgSt, setChgSt] = useState<PurchaseChargesState | null>(null);
+  const [chgAsk, setChgAsk] = useState(0);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
@@ -628,6 +734,17 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [discType, setDiscType] = useState<DiscountType>("fixed");
   const [discValue, setDiscValue] = useState("");
   const [discOk, setDiscOk] = useState<boolean | null>(null);
+  /* 0274: عملةُ الفاتورة وسعرُها («سعر 100$» كما يقوله السوق). `fx`: هل يُعرض الدولار — العيادةُ مفعّلة **وأجسامُ دفتر الشركة تعرف
+   * العملتين** (purchase_usd_ready) — وسعرُ العيادة اقتراحاً. null = ما عُرف بعد ⇒ لا شريط، والحفظُ بالدينار كما كان. */
+  const [cur, setCur] = useState<FxCur>("IQD");
+  const [per100, setPer100] = useState("");
+  const [fx, setFx] = useState<{ ok: boolean; clinicRate: number | null } | null>(null);
+  const [rateAsk, setRateAsk] = useState(false);
+  const [, setPfxTick] = useState(0);
+  const fxOn = !!fx?.ok || editing?.purchase.currency === "USD";
+  const fxRate = cur === "USD" ? ratePerUsd(per100) : null;
+  /** مبالغُ الفاتورة بعملتها. */
+  const fmt = (n: number) => (cur === "USD" ? usdOf(n) : money(n));
   const [pickerOpen, setPickerOpen] = useState(false);
   const gridRef = useRef<HTMLTableElement>(null);
   const scanRef = useRef<HTMLInputElement>(null);
@@ -654,16 +771,24 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setNotes(p.notes ?? "");
       setPurchasedAt((p.purchased_at ?? "").slice(0, 10) || localISO());
       setPayMethod((p.payment_method as PaymentMethod) ?? "cash");
-      setAmountPaid(p.amount_paid != null ? String(p.amount_paid) : "");
+      // 0274: فاتورةُ الدولار تُفتح بدولارها — المدفوعُ والخصمُ وكلفةُ كلّ سطر — وسعرِها.
+      const usd = p.currency === "USD";
+      setCur(usd ? "USD" : "IQD"); setPer100(usd ? per100Text(p.fx_rate) : ""); setRateAsk(false);
+      setAmountPaid(usd ? (p.paid_usd != null ? String(p.paid_usd) : "") : (p.amount_paid != null ? String(p.amount_paid) : ""));
       // الخصمُ المحفوظ مبلغاً كما حُفظ — والحفظُ يرسل ما يُرى (لا غيابَ يُبقي القديمَ خفيّاً).
-      setDiscType("fixed"); setDiscValue((p.discount ?? 0) > 0 ? String(p.discount) : "");
+      setDiscType("fixed"); setDiscValue(usd ? ((p.discount_usd ?? 0) > 0 ? String(p.discount_usd) : "") : ((p.discount ?? 0) > 0 ? String(p.discount) : ""));
+      // 0276: الأجورُ المحفوظة بعملة الفاتورة — والحفظُ يرسل ما يُرى (قائمةٌ فارغة تشيلها كلَّها).
+      setChg(chargesOf(p).list.map((x) => ({ label: x.label, amount: String(x.amount), payee: x.payee }))); setChgAsk(0); setGrpPick([]);
       setLines(editing.items.map((it) => blankLine({
         product_id: it.product_id ?? null,
         barcode: it.barcode ?? "",
         name: it.name,
         category: it.category ?? "",
         qty: String(it.qty ?? ""),
-        purchase_price: it.purchase_price ? String(it.purchase_price) : "",
+        purchase_price: usd
+          ? (it.purchase_price_usd != null ? String(it.purchase_price_usd) : it.purchase_price && p.fx_rate ? String(Math.round((it.purchase_price / p.fx_rate) * 100) / 100) : "")
+          : (it.purchase_price ? String(it.purchase_price) : ""),
+        sellCur: it.sell_currency === "USD" ? "USD" : undefined,
         /* وبالتعديل كذلك: لقطةُ `purchase_items` سعرُ يومِ الفاتورة، وإرجاعُها
          * يدهس سعرَ الرفّ اليوم بسعرٍ عمرُه شهر. تُعرض تلميحاً لا قيمةً. */
         sell_price: "",
@@ -672,8 +797,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     } else {
       setCompany(seed?.companyName || defaultCompanyName || "");
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
-      setPayMethod("cash"); setAmountPaid(""); setPaidMode(null);
+      setPayMethod("cash"); setAmountPaid(""); setPaidMode(null); setPaidAsk(false);
       setDiscType("fixed"); setDiscValue("");
+      setChg([]); setChgAsk(0); setGrpPick([]);
+      setCur("IQD"); setPer100(""); setRateAsk(false);
       setLines(seed?.items.length ? seed.items.map(({ product, qty }) => ({ ...lineFromProduct(product, ""), qty: String(qty) })) : [blankLine()]);
     }
     setScan("");
@@ -689,6 +816,37 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     purchaseDiscountReady().catch(() => false).then((ok) => { if (alive) setDiscOk(ok); }); /* swallow-ok: فحصُ قدرةٍ — فشلُه يُخفي خانةَ الخصم ولا يحفظ شيئاً */
     return () => { alive = false; };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setFx(null);
+    // 0274: فحصُ قدرةٍ لا قائمةُ قرار — فشلُه «لا دولار» والشراءُ بالدينار كما كان (purchaseFxState لا ترمي).
+    void purchaseFxState().then((v) => { if (alive) setFx(v); });
+    return () => { alive = false; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setChgSt(null);
+    // 0276: فحصُ قدرةٍ لا قائمةُ قرار — فشلُه «لا أجور» (purchaseChargesState لا ترمي).
+    void purchaseChargesState().then((v) => { if (alive) setChgSt(v); });
+    return () => { alive = false; };
+  }, [open]);
+
+  /** تبديلُ عملة الفاتورة: ما كُتب (سعرُ الشراء، الخصمُ المبلغ، المدفوع) يُحوَّل بالسعر — لا «7,350$» عن سعرٍ كُتب ديناراً.
+   *  والدولارُ أوّلَ مرّة يقترح سعرَ العيادة بالخانة. */
+  const switchCur = (c: FxCur) => {
+    const r = ratePerUsd(per100) ?? fx?.clinicRate ?? null;
+    if (c === "USD" && per100.trim() === "" && fx?.clinicRate) setPer100(per100Text(fx.clinicRate));
+    setLines((ls) => ls.map((l) => ({ ...l, purchase_price: convertTyped(l.purchase_price, cur, c, r) })));
+    setAmountPaid((v) => convertTyped(v, cur, c, r));
+    if (discType === "fixed") setDiscValue((v) => convertTyped(v, cur, c, r));
+    setChg((rs) => rs.map((x) => ({ ...x, amount: convertTyped(x.amount, cur, c, r) })));
+    setRateAsk(false);
+    setCur(c);
+  };
 
   /* بوضع التعديل: كمية السطر القديمة داخل المخزون أصلاً — قفزة المخزون تُحسب
    * من الرصيد بعد عكسها، فلا يظهر رقم مضاعف مضلِّل. */
@@ -742,6 +900,56 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     setScan("");
     playTap();
     scanRef.current?.focus();
+  };
+
+  /** 0267: جملةُ المسح بالكارتون من نطاقها المملوك (pks — مالكُه PackSale بشاشة البيع؛ هنا بـimport() وensureOwned، والنصفُ البارد
+   *  على سقفه). فشلُ القطعة يُسكت الجملةَ وحدها — السطرُ نزل. */
+  const sayPack = (tone: "info" | "warn", build: (m: typeof import("@/components/retail/PackSale")) => string) => {
+    void Promise.all([import("@/components/retail/PackSale"), import("@/i18n").then((i) => i.ensureOwned("pks"))])
+      .then(([m]) => toast.toast({ tone, title: build(m) }), () => { /* swallow-ok: السطرُ نزل، والجملةُ وحدها غابت */ });
+  };
+  /** المربوطة (0277): بعد حفظ الفاتورة، سعرُ كلّ مادّةٍ علّمها المشتري ← لأخواتها بنداءٍ واحدٍ لكلّ مجموعة. جملتاه من نطاق pfx
+   *  (import() وensureOwned كـsayPack). فشلُ واحدةٍ لا يوقف الباقي، والفاتورةُ محفوظةٌ قبله فيُقال «انحفظت، بس…». */
+  const followGroups = async (items: GroupAskItem[]) => {
+    let n = 0;
+    let err: unknown = null;
+    try {
+      const m = await import("@/lib/productGroupsApi");
+      for (const a of items) {
+        try { n += (await m.followGroup(a.productId, !!a.sell, !!a.buy)).updated; } catch (e) { err ??= e; }
+      }
+    } catch (e) { err = e; }
+    const say = await Promise.all([import("@/components/inventory/PurchaseFx"), import("@/i18n").then((i) => i.ensureOwned("pfx"))]).then(([m]) => m, () => null);
+    if (err) toast.error(say ? say.pfxGroupSay("fail") : describeDbError(err, t), describeDbError(err, t));
+    else if (n > 0 && say) toast.success(say.pfxGroupSay("done", n));
+  };
+  /** 0267: رمزُ كارتونٍ أو مغلّفٍ بفاتورة الشراء. كان يسقط إلى «مادّةٌ جديدة» بباركود الكارتون — والحفظُ يرفضه حارسُ المستويات
+   *  (الرمزُ لكارتون مادّةٍ قائمة). الكارتونُ يضيف علبَه لسطر مادّته (الشراءُ بالعلبة، وسعرُ السطر للعلبة كما هو)، ويُقال سعرُه
+   *  المكتوب إن خالف العلبةَ × العدد؛ والمغلّفُ يُقال ولا ينزل (كسرُ علبةٍ بفاتورة شراء خطأُ إدخال). */
+  const addLevelLine = (lv: CodeHit) => {
+    const p = lv.product;
+    setScan("");
+    scanRef.current?.focus();
+    const unitOf = (m: typeof import("@/components/retail/PackSale")) => (p.unit_name ?? "").trim() || m.packWords().box;
+    if (lv.level === "pack" && lv.pack) {
+      const k = lv.pack;
+      setLines((ls) => {
+        const existing = ls.find((l) => l.product_id === p.id);
+        if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + k.per) } : l));
+        const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
+        return [...base, { ...lineFromProduct(p, p.barcode ?? ""), qty: String(k.per) }];
+      });
+      playTap();
+      const written = k.purchase_price != null && Number.isFinite(k.purchase_price);
+      const derived = Math.round((Number(p.purchase_price) || 0) * 100) * k.per / 100;
+      sayPack("info", (m) => (written && k.purchase_price !== derived
+        ? m.packSay({ kind: "buyPackPrice", name: p.name, pack: k.name, per: k.per, unit: unitOf(m), price: money(packPrice(p, k, "purchase")),
+            each: money(Math.round((packPrice(p, k, "purchase") / k.per) * 100) / 100) })
+        : m.packSay({ kind: "buyPack", name: p.name, pack: k.name, per: k.per, unit: unitOf(m) })));
+      return;
+    }
+    playWarning();
+    sayPack("warn", (m) => m.packSay({ kind: "buySub", name: p.name, sub: (p.sub_unit_name ?? "").trim() || m.packWords().sub, unit: unitOf(m) }));
   };
 
   /** دفعةٌ من المنتقي: سطرٌ لكلّ منتج، والقائمُ منها **يُجمَع** لا يُكرَّر.
@@ -824,6 +1032,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     const hit = matchCode(raw);
     // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
     let match = byBarcode.get(hit);
+    // 0267: كارتونٌ أو مغلّفٌ بالمطابقة التامّة — قبل صيغ الماسح والاسم وقبل «مادّةٌ جديدة».
+    if (!match) {
+      const lv = levelByCode(products, raw);
+      if (lv && lv.level !== "box") { addLevelLine(lv); return; }
+    }
     /* طبقاتُ النجدة نفسُها التي بشاشة البيع — كانت هذه الشاشةُ عمياءَ عنها،
      * فماسحٌ مضبوطٌ على AIM أو GTIN-14 يُنشئ **توأماً** بكلّ استلامِ بضاعة:
      * البيعُ تنقذه `rescueScan` فيبيع من الأصل، والأصلُ يبقى صفراً وكلُّ مسحةِ
@@ -899,21 +1112,36 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   }, [company, companies, sections]);
 
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
+  const grpAsks = useMemo(() => purchaseGroupAsks(validLines.map((l) => ({ product_id: l.product_id, sell: sellPriceToSend(l.sell_price), buy: Number(l.purchase_price) || 0 })), products, cur),
+    [lines, products, cur]);   // eslint-disable-line react-hooks/exhaustive-deps -- validLines مشتقّةٌ من lines
   /* المجموعُ قبل الخصم، والخصمُ مقصوصاً عليه (resolveDiscount كشاشة البيع، ومجموعٌ ≤ صفر بلا خصم — كالخادم)، و`total` الصافي:
    * ما يُدفع ويُدان — فالمدفوعُ والحالةُ والشارةُ أدناه كلُّها على الصافي كما يكتبها الخادم. */
   const subtotal = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
   const discRaw = Number(discValue) || 0;
   const discountAmt = discOk && subtotal > 0 ? resolveDiscount(subtotal, discType, discRaw) : 0;
   const discClamped = discOk === true && discRaw > 0 && (discType === "percent" ? discRaw > 100 : discRaw > subtotal);
-  const total = subtotal - discountAmt;
+  /* 0276: الأجورُ الإضافية — ما على الشركة يدخل الصافي (دَينُها)، وما لغيرها خارجه. وأساسُ كلفة السطور: الصافي + الأجور كلُّها إن
+   * تُوزَّع («cost» — ختمُ الفاتورة المحفوظ بالتعديل، وإلا إعدادُ العيادة كما يكتبه الخادم)، وإلا الصافي وحده. */
+  const chOn = chgSt?.ready === true;
+  /* وما دام السؤالُ لم يرجع (أو فشل) والفاتورةُ تُعدَّل: أجورُها المحفوظة كما هي — لا مفتاحَ يُرسل فيُبقيها الخادم، والرقمُ المعروض
+   * (الصافي، الشارة، المدفوع) يحسبها؛ وإلا قال الشاشةُ «مدفوعة» عن فاتورةٍ عليها أجرةُ شركةٍ باقية. */
+  const chStored = editing ? chargesOf(editing.purchase) : null;
+  const chSums = chOn ? draftSums(chg) : chStored ? { company: chStored.company, other: chStored.other } : { company: 0, other: 0 };
+  const chMode = editing?.purchase.charges_mode ?? chgSt?.mode ?? "cost";
+  const total = subtotal - discountAmt + chSums.company;
+  const costBase = subtotal - discountAmt + (chMode === "cost" ? chSums.company + chSums.other : 0);
   const totalUnits = validLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   /* للفراغ دلالتان بهذه الشاشة (م٤): بالإنشاء «مدفوعٌ كامل»، وبالتعديل «يبقى
    * المدفوعُ كما هو» — والتسمية أسفلَه تقولهما بالنصّ، و`amount_paid` تُرسَل
    * `undefined` بالتعديل فعلاً. لكنّ الشارة كانت تُشتقّ بدلالة الإنشاء وحدها،
    * فمسحُ الخانة بفاتورةٍ مدينة يعرض «مدفوعة» — شارةٌ تكذب على دَينٍ قائم. */
-  const paidNum = amountPaid.trim() !== ""
-    ? Math.max(0, Math.min(total, Number(amountPaid) || 0))
-    : editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total;
+  /* الجديدةُ: ما يقوله الاختيارُ الصريح (newPurchasePaid — null = ناقص: الحفظُ يقف ويقولها بمكانها)، والشارةُ قبله «كلّها». */
+  const newPaid = editing ? null : newPurchasePaid(paidMode, amountPaid, total, chSums.company);
+  const paidNum = editing
+    ? Math.max(0, Math.min(total, amountPaid.trim() !== "" ? (Number(amountPaid) || 0)
+      : ((cur === "USD" && editing.purchase.currency === "USD" ? editing.purchase.paid_usd : editing.purchase.amount_paid) ?? total)))
+    : newPaid ?? (paidMode === null ? total : 0);
+  const paidMissing = !editing && newPaid === null;
   const status = paidNum >= total ? "paid" : paidNum <= 0 ? "unpaid" : "partial";
 
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
@@ -980,7 +1208,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const printSaved = async (p: Purchase) => {
     try {
       const its = await repo.listPurchaseItems(p.id);
-      const ok = openPurchasePrint(p, its, printOptions(user, i18n.language, t));
+      const v = usdPrintView(p, its);
+      const ok = openPurchasePrint(v.purchase, v.items, { ...printOptions(user, i18n.language, t), ...(v.usd ? { currency: "$" } : {}) });
       if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
       else void repo.logClientEvent("purchase.print", { ref: purchaseNo(p.id) });
     } catch (e) {
@@ -991,6 +1220,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
+    // 0274: فاتورةُ الدولار بلا سعرٍ مقروء لا تُحفظ — والشريطُ يقولها بجملةٍ حمراء (لا زرٌّ يقف بلا كلمة).
+    if (cur === "USD" && fxRate == null) { setRateAsk(true); playWarning(); return; }
     /* **وسطرٌ بلا كمية كان يسقط بصمت.** `validLines` يصفّي `qty > 0`، و`save`
      * ما كان يعترض إلا لو سقطت السطورُ **كلُّها** — ففاتورةٌ بأربعين سطراً
      * وثلاثةٌ منها بلا عدد تُحفظ بسبعةٍ وثلاثين، والبضاعةُ وصلت ولم تُسجَّل.
@@ -1006,11 +1237,20 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       );
       return;
     }
-    if (!editing && paidMode === null) {
+    // 0276: أجرةٌ ناقصة (اسمٌ بلا مبلغ أو مبلغٌ بلا اسم) — تُقال بسطرها بمكانه، ولا يُرسل شيء.
+    const chBad = chOn ? draftProblem(chg) : 0;
+    if (chBad) {
+      setChgAsk(chBad);
+      playWarning();
+      document.querySelector(`[data-pfx-charge-row="${chBad}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    if (paidMissing) {
+      setPaidAsk(true);
       playWarning();
       toast.error(
         t("purchase.needPaidMode", "قول شلون انحسبت الفاتورة"),
-        t("purchase.needPaidModeHow", "اختر «دفعناها كلّها» أو «عليها دَين» — الفراغ كان ينسجّل مدفوعة ويضيع دَين الشركة."),
+        t("purchase.needPaidModeHow", "اختر «كلّها» أو «جزء» واكتب شكد، أو «دَين» — الفراغ كان يضيّع دَين الشركة."),
       );
       return;
     }
@@ -1074,7 +1314,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
      * أسعارٍ من جهازٍ آخر تقول «10,000 ← 10,500» والرفُّ صار 11,000 — فيُنزل الرفعَ وهو يحسبه
      * زيادة، و`record_purchase` يكتب سعرَ البيع بلا شرط. الرقمُ الحاليّ يُعرض بالسطر بعدها،
      * والحفظُ الثاني قرارٌ عن علم. وتعذُّرُ السؤال يوقف الحفظ ويُقال: سؤالٌ تعثّر لا يعني «ما تغيّر». */
-    const typed = validLines.filter((l) => l.product_id && sellPriceToSend(l.sell_price) > 0);
+    const soldUsd = (l: Line) => fxOn && lineSellCur(l.product_id ? products.find((p) => p.id === l.product_id) : undefined, l.sellCur) === "USD";
+    const typed = validLines.filter((l) => l.product_id && sellPriceToSend(l.sell_price) > 0 && !soldUsd(l));
     if (typed.length) {
       let fresh: (Product | null | undefined)[];
       try { fresh = await Promise.all(typed.map((l) => repo.getProductById(l.product_id as string))); }
@@ -1130,20 +1371,47 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         reference: reference.trim() || null,
         /* الجديدةُ ترسل رقماً **دائماً** (الاختيارُ صريح)، والتعديلُ يبقى على
          * عقده: `undefined` تعني «أبقِ المدفوع كما هو». */
-        amount_paid: editing ? (amountPaid.trim() === "" ? undefined : paidNum) : (paidMode === "debt" ? paidNum : total),
+        amount_paid: editing ? (amountPaid.trim() === "" ? undefined : paidNum) : paidNum,
         payment_method: payMethod,
         /* 0260: مبلغاً — والجديدةُ والتعديلُ يرسلان ما يُرى (صفرٌ = بلا خصم). ولقاعدةٍ لا تعرفه لا مفتاح: التعديلُ من جهازٍ
          * بلا الخانة يُبقي المحفوظَ بالخادم، والإنشاءُ عليها بلا خصمٍ كما كان. */
         discount: discOk ? discountAmt : undefined,
+        // 0276: بعملة الفاتورة؛ ولقاعدةٍ لا تعرفها لا مفتاح (التعديلُ من جهازٍ بلا القائمة يُبقي المحفوظ).
+        charges: chOn ? chargesToSend(chg) : undefined,
         supplier_name: supplierName.trim() || null,
         supplier_phone: supplierPhone.trim() || null,
         notes: notes.trim() || null,
         purchased_at: purchasedAt ? new Date(purchasedAt).toISOString() : undefined,
         staff_id: user?.id ?? null,
       };
-      const done = editing
-        ? await repo.updatePurchase(editing.purchase.id, draft, meta)
-        : await repo.recordPurchase(draft, meta);
+      /* 0274: فاتورةُ الدولار، أو سطرٌ يُباع بالدولار (سعرُه بالدولار)، أو فاتورةُ دولارٍ تُعدَّل — من باب العملتين؛ وغيرُها كما كانت. */
+      const viaFx = fxOn && (cur === "USD" || editing?.purchase.currency === "USD" || validLines.some(soldUsd));
+      const done = viaFx
+        ? await (() => {
+          const draftFx: PurchaseDraftLine[] = draft.map((d, i) => {
+            const l = validLines[i];
+            const sc = lineSellCur(l.product_id ? products.find((p) => p.id === l.product_id) : undefined, l.sellCur);
+            return {
+              ...d,
+              purchase_price: cur === "USD" ? 0 : d.purchase_price,
+              purchase_price_usd: cur === "USD" ? Number(l.purchase_price) || 0 : null,
+              sell_currency: sc,
+              sell_price: sc === "USD" ? 0 : d.sell_price,
+              sell_price_usd: sc === "USD" ? sellPriceToSend(l.sell_price) : null,
+            };
+          });
+          const metaFx: PurchaseMeta = cur === "USD"
+            ? { ...meta, currency: "USD", fx_rate: fxRate, amount_paid: undefined, amount_paid_usd: meta.amount_paid,
+                discount: undefined, discount_usd: discOk ? discountAmt : undefined }
+            : { ...meta, currency: "IQD" };
+          return editing ? purchaseFx.update(editing.purchase.id, draftFx, metaFx) : purchaseFx.record(draftFx, metaFx);
+        })()
+        : editing
+          ? await repo.updatePurchase(editing.purchase.id, draft, meta)
+          : await repo.recordPurchase(draft, meta);
+      // ما علّمه المشتري «لكل المجموعة»: بعد أن كتبت الفاتورةُ سعرَ المادّة — ينسخه الخادمُ لأخواتها (0277). فشلُه يُقال والفاتورةُ محفوظة.
+      const follow = grpAsks.filter((a) => grpPick.includes(a.productId));
+      if (follow.length) await followGroups(follow);
       playSuccess();
       setSaved(done);
     } catch (e) {
@@ -1211,6 +1479,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             <input className="input font-mono" dir="ltr" inputMode="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="07xxxxxxxxx" />
           </div>
         </div>
+
+        {fxOn && (
+          <LoadBoundary scope="pfx-bar" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <PfxBarLazy cur={cur} onCur={switchCur} per100={per100} onPer100={(v) => { setPer100(v); setRateAsk(false); }}
+                clinicRate={fx?.clinicRate ?? null} showBad={rateAsk} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* Fast scan/add */}
         <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-3 dark:border-brand-500/20 dark:bg-brand-500/10">
@@ -1305,11 +1582,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <th scope="col" className={cn(TH, TH_TXT, "w-32")}>{t("pos.barcode", "الباركود")}</th>
                   <th scope="col" className={cn(TH, TH_TXT, "w-28")}>{t("pos.category", "الفئة")}</th>
                   <th scope="col" className={cn(TH, NUM_TH, "w-24")}>{t("purchase.log.colQty", "الكمية")}</th>
-                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.purchasePrice", "سعر الشراء")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
-                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.sellPrice", "سعر البيع")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.purchasePrice", "سعر الشراء")} <span className="font-semibold opacity-70">{cur === "USD" ? "$" : currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("pos.sellPrice", "سعر البيع")} {/* بالعملتين عملةُ البيع لكلّ سطر (شارتُه تحت السعر)، فلا رمزَ واحدٌ للعمود. */}{!fxOn && <span className="font-semibold opacity-70">{currencySymbol()}</span>}</th>
                   <th scope="col" className={cn(TH, "pg-num pg-wrap w-20 leading-tight")}>{t("pos.minStock", "تنبيه المخزون")}</th>
                   <th scope="col" className={cn(TH, TH_TXT, "w-36")}>{t("xp.expires", "ينتهي")}</th>
-                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("purchase.log.colTotal", "الإجمالي")} <span className="font-semibold opacity-70">{currencySymbol()}</span></th>
+                  <th scope="col" className={cn(TH, NUM_TH, "w-28")}>{t("purchase.log.colTotal", "الإجمالي")} <span className="font-semibold opacity-70">{cur === "USD" ? "$" : currencySymbol()}</span></th>
                   <th scope="col" className={cn(TH, "pg-last w-10")}><span className="sr-only">{t("common.delete", "حذف")}</span></th>
                 </tr>
               </thead>
@@ -1321,7 +1598,12 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 const sellRef = product ?? (!l.product_id && l.name.trim()
                   ? products.find((p) => invNormName(p.name) === invNormName(l.name))
                   : undefined);
-                const sellNow = sellRef ? Number(freshSell[sellRef.id] ?? sellRef.sell_price ?? 0) || null : null;
+                /* 0274: عملةُ بيع السطر — مادّةُ الدولار (أو جديدةٌ اختارته) سعرُها بالدولار ومرجعُها sell_price_usd. */
+                const sellCur = lineSellCur(product, l.sellCur);
+                const sellUsd = fxOn && sellCur === "USD";
+                const sellNow = sellRef
+                  ? Number(sellUsd ? (sellRef.price_currency === "USD" ? sellRef.sell_price_usd ?? 0 : 0) : (freshSell[sellRef.id] ?? sellRef.sell_price ?? 0)) || null
+                  : null;
                 const sellTyped = sellPriceToSend(l.sell_price);
                 const dupTotal = dupOf.get(l.key);
                 const qtyN = Number(l.qty) || 0;
@@ -1330,7 +1612,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 const coName = product?.company_id ? companies.find((c) => c.id === product.company_id)?.name : undefined;
                 const secName = product?.section_id ? (sections ?? []).find((s) => s.id === product.section_id)?.name : undefined;
                 /* بوضع التعديل كميةُ السطر القديمة داخل الرصيد أصلاً — القفزةُ من الرصيد بعد عكسها. */
-                const baseStock = product ? Math.max(0, (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0)) : 0;
+                /* بإشارته: رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) يأكل من الشراء — «٠ ← ١٠» عن مادّةٍ بـ−٣ كان يَعِد بعشرٍ تصير سبعاً. */
+                const baseStock = product ? (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0) : 0;
                 /* الاسمُ المكتوب يطابق منتجاً موجوداً؟ يُعرض بشريط الصفّ — ضغطةٌ تحوّل السطرَ لإعادة تعبئة بدل توأمٍ أعمى. */
                 const sugg = !matched && l.name.trim().length >= 2 ? findByName(l.name).slice(0, 4) : [];
                 const short = l.expiry ? shortDated(l.expiry) : null;
@@ -1416,7 +1699,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           placeholder="0" aria-label={t("purchase.qty", "الكمية المستلمة")} />
                         {product && (
                           <p className={SUB} title={t("purchase.stockJump", { from: baseStock, to: baseStock + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}>
-                            {formatQty(baseStock)} ← {formatQty(baseStock + qtyN)}
+                            <bdi dir="ltr">{formatQty(baseStock)}</bdi> ← <bdi dir="ltr">{formatQty(baseStock + qtyN)}</bdi>
                           </p>
                         )}
                       </td>
@@ -1425,8 +1708,12 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           onChange={(e) => patchLine(l.key, { purchase_price: e.target.value })} onFocus={(e) => e.target.select()}
                           placeholder="0" aria-label={t("pos.purchasePrice", "سعر الشراء")} />
                         {/* نصيبُ الوحدة من خصم الشركة — ما يدخل كلفةَ المخزون (المتوسّط)، والمكتوبُ يبقى سعرَ الشراء. */}
-                        {discountAmt > 0 && buyN > 0 && subtotal > 0 && (
-                          <p className={SUB} data-unitnet>{t("retail.net", "الصافي")} {formatDec((buyN * total) / subtotal)}</p>
+                        {costBase !== subtotal && buyN > 0 && subtotal > 0 && (
+                          <p className={SUB} data-unitnet>{t("retail.net", "الصافي")} {formatDec((buyN * costBase) / subtotal)}</p>
+                        )}
+                        {/* فاتورةُ الدولار: دينارُ الوحدة بسعرها — ما يدخل المخزون (الخادمُ يحسبه بالحساب نفسِه). */}
+                        {cur === "USD" && fxRate != null && buyN > 0 && (
+                          <p className={SUB} data-buyiqd>{money(Math.round(buyN * fxRate * 100) / 100)}</p>
                         )}
                       </td>
                       <td className={cn(TD, cellB)}>
@@ -1441,6 +1728,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           </p>
                         )}
                         {sellNow != null && sellTyped <= 0 && <p className={SUB}>{t("purchase.sellSame", "(ما راح يتغيّر)")}</p>}
+                        {fxOn && (product ? sellCur === "USD" : filled) && (
+                          <LoadBoundary scope="pfx-linecur" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+                            <Suspense fallback={null}>
+                              <PfxLineCurLazy value={sellCur} onChange={product ? undefined : (c) => patchLine(l.key, { sellCur: c })} />
+                            </Suspense>
+                          </LoadBoundary>
+                        )}
                       </td>
                       <td className={cn(TD, cellB)}>
                         <input data-col="min" type="number" inputMode="numeric" min="0" step="1" className={NUM} value={l.min_stock}
@@ -1523,32 +1817,16 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 {editing && <span className="font-normal text-ink-subtle">{t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)")}</span>}
               </label>
               {editing ? (
-                <input type="number" inputMode="decimal" min="0" step="any" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing.purchase.amount_paid ?? total)} />
+                <input type="number" inputMode="decimal" min="0" step="any" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={fmt(paidNum)} />
               ) : (
-                <>
-                  <div className="flex gap-1.5">
-                    <button type="button" onClick={() => { playTap(); setPaidMode("full"); setAmountPaid(""); }}
-                      className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "full" ? "bg-success-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                      {t("purchase.paidFull", "دفعناها كلّها")}
-                    </button>
-                    <button type="button" onClick={() => { playTap(); setPaidMode("debt"); }}
-                      className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "debt" ? "bg-warn-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                      {t("purchase.paidDebt", "عليها دَين")}
-                    </button>
-                  </div>
-                  {paidMode === "debt" && (
-                    <>
-                      <input type="number" inputMode="decimal" min="0" step="any" className="input mt-1.5" value={amountPaid}
-                        onChange={(e) => setAmountPaid(e.target.value)} placeholder={t("purchase.paidHowMuch", "شكَد دفعنا هسّه؟")} />
-                      <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
-                        {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: money(Math.max(0, total - paidNum)) })}
-                      </div>
-                    </>
-                  )}
-                  {paidMode === "full" && total > 0 && (
-                    <div className="mt-1 text-2xs text-ink-subtle">{t("purchase.paidNone", "ما راح ينسجّل دَين لهذي الفاتورة")}</div>
-                  )}
-                </>
+                /* ثلاثةُ اختياراتٍ صريحة بنطاق pfx (النصفُ البارد على سقفه)، وبديلُها حتى تصل بارتفاعها — لا قفزة. */
+                <LoadBoundary scope="pfx-paid" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+                  <Suspense fallback={<div className="h-9 rounded-xl bg-surface-2" />}>
+                    <PfxPaidLazy mode={paidMode} amount={amountPaid} total={total} later={chSums.company} fmt={fmt} ask={paidAsk}
+                      onMode={(m) => { setPaidMode(m); setPaidAsk(false); if (m !== "part") setAmountPaid(""); }}
+                      onAmount={(v) => { setAmountPaid(v); setPaidAsk(false); }} />
+                  </Suspense>
+                </LoadBoundary>
               )}
             </div>
             <div className="sm:col-span-2">
@@ -1562,8 +1840,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           <div className="rounded-2xl border border-line bg-surface-1 p-4" data-ptotals>
             <dl className="space-y-2.5 text-sm">
               <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-ink-muted">{discOk ? t("retail.subtotal", "المجموع الفرعي") : t("purchase.grandTotal", "الإجمالي")}</dt>
-                <dd className="font-bold tabular-nums text-ink">{money(subtotal)}</dd>
+                <dt className="text-ink-muted">{discOk || chOn ? t("retail.subtotal", "المجموع الفرعي") : t("purchase.grandTotal", "الإجمالي")}</dt>
+                <dd className="font-bold tabular-nums text-ink">{fmt(subtotal)}</dd>
               </div>
               {discOk && (
                 <div className="flex flex-wrap items-center justify-between gap-2" data-pdiscount>
@@ -1572,7 +1850,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                     <span className="inline-flex overflow-hidden rounded-lg border border-line" role="group" aria-label={t("retail.discount", "الخصم")}>
                       <button type="button" aria-pressed={discType === "fixed"} data-pdisctype="fixed" onClick={() => { playTap(); setDiscType("fixed"); }}
                         className={cn("grid h-8 place-items-center px-2 text-2xs font-bold transition", discType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")}>
-                        {currencySymbol()}
+                        {cur === "USD" ? "$" : currencySymbol()}
                       </button>
                       <button type="button" aria-pressed={discType === "percent"} data-pdisctype="percent" onClick={() => { playTap(); setDiscType("percent"); }}
                         className={cn("grid h-8 w-8 place-items-center transition", discType === "percent" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")}>
@@ -1586,25 +1864,44 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       className={cn("input pg-num pg-n h-9 w-28 rounded-xl px-2.5 py-0 text-sm font-bold tabular-nums",
                         discClamped && "border-warn-400 text-warn-700 dark:text-warn-300")} />
                     <span className={cn("pg-discamt text-end font-bold tabular-nums", discountAmt > 0 ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle")} data-pdiscamt>
-                      {discountAmt > 0 ? <bdi>−{money(discountAmt)}</bdi> : "—"}
+                      {discountAmt > 0 ? <bdi>−{fmt(discountAmt)}</bdi> : "—"}
                     </span>
                   </dd>
                 </div>
               )}
+              {chOn && (
+                <LoadBoundary scope="pfx-charges" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <PfxChargesLazy rows={chg} onRows={(rs) => { setChg(rs); setChgAsk(0); }} mode={chMode} ask={chgAsk} fmt={fmt} sums={chSums} />
+                  </Suspense>
+                </LoadBoundary>
+              )}
               <div className="pg-net flex items-baseline justify-between gap-3 pt-2.5">
-                <dt className="text-base font-extrabold text-ink">{discOk ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</dt>
-                <dd className="text-xl font-extrabold tabular-nums text-ink" data-pnet>{money(total)}</dd>
+                <dt className="text-base font-extrabold text-ink">{discOk || chOn ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")}</dt>
+                <dd className="text-xl font-extrabold tabular-nums text-ink" data-pnet>{fmt(total)}</dd>
               </div>
             </dl>
+            {cur === "USD" && (
+              <Suspense fallback={null}><div className="mt-1 text-end"><PfxTotalsLazy totalUsd={total} rate={fxRate} /></div></Suspense>
+            )}
           </div>
         </div>
+
+        {grpAsks.length > 0 && (
+          <LoadBoundary scope="pfx-grp" onRetry={() => { reloadPfx(); setPfxTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <PfxGroupAskLazy items={grpAsks} picked={grpPick}
+                onToggle={(id) => { playTap(); setGrpPick((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id])); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* Summary + save */}
         <div className="sticky bottom-0 z-30 -mx-1 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1/95 p-3 backdrop-blur">
           <div className="flex flex-1 flex-wrap gap-x-5 gap-y-1">
             <Summary label={t("purchase.itemsCount", "أصناف")} value={String(validLines.length)} />
             <Summary label={t("purchase.unitsLabel", "قطعة")} value={formatQty(totalUnits)} />
-            <Summary label={discountAmt > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={money(total)} strong />
+            <Summary label={discountAmt > 0 || chSums.company > 0 ? t("retail.net", "الصافي") : t("purchase.grandTotal", "الإجمالي")} value={fmt(total)} strong />
             <div className="flex flex-col">
               <span className="text-2xs text-ink-subtle">{t("purchase.settle", "الحالة")}</span>
               <Badge tone={statusTone(status)}>{t(`purchase.status.${status}`, status)}</Badge>

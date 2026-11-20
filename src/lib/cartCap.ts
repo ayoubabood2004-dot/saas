@@ -19,8 +19,10 @@ export type CapLine = {
   stock?: number | null;
   /** يُباع بالوزن: الرصيدُ والكميةُ كسريّان بالكيلو — لا تقريبَ للأسفل. */
   byWeight?: boolean;
-  saleUnit?: "box" | "sub";
+  saleUnit?: "box" | "sub" | "pack";
   unitsPerBox?: number | null;
+  /** 0267: علبُ الكارتون لسطرٍ يُباع بالكارتون — السقفُ كراتينُ كاملة من الرصيد. */
+  packPer?: number | null;
 };
 
 /** أقصى كميةٍ لسطرٍ بوحدته الحالية، مشتقّةً من رصيده بالعلب. */
@@ -29,6 +31,8 @@ export function unitCap(l: CapLine): number {
   if (l.stock == null) return Infinity;
   if (l.byWeight) return l.stock;
   if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
+  // بالألف الصحيح: ٢٣٫٩٩٩ ÷ ٢٤ صفرُ كارتون لا واحد، و٤٨ ÷ ٢٤ اثنان بلا كسرٍ عائم.
+  if (l.saleUnit === "pack" && l.packPer && l.packPer >= 2) return Math.floor(Math.round(l.stock * 1000) / Math.round(l.packPer * 1000));
   return Math.floor(l.stock);
 }
 

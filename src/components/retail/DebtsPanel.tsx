@@ -32,6 +32,11 @@ let DebtorPetsLazy = loadDebtorPets();
 const loadUsdDebt = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdDebtActions })), ["usd"]);
 let UsdDebtLazy = loadUsdDebt();
 const isUsd = (inv: Invoice) => inv.currency === "USD";
+/* الديونُ القديمة (0271): زرُّ «دين قديم» للمدير وشارةُ «دين سابق» — قطعةٌ كسولة بنطاقها odebt (retail حارٌّ والباردُ ممتلئ). */
+const loadOldDebtBtn = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtButton })), ["odebt"]);
+let OldDebtBtnLazy = loadOldDebtBtn();
+const loadOldDebtNote = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
+let OldDebtNoteLazy = loadOldDebtNote();
 /** باقي فاتورة الدولار بالسنت — الأرقامُ بمنزلتين فالتقريبُ يرجعها صحيحة. */
 const usdDueCents = (inv: Invoice) => Math.max(0, Math.round(((inv.total_usd ?? 0) - (inv.paid_usd ?? 0)) * 100));
 /** «$600» / «$1,234.50» — عرضٌ وحده؛ الدولارُ لا يُجمع على دينارٍ أبداً (الخطّة §١٠). */
@@ -55,6 +60,9 @@ interface Ledger {
   due: number;     // outstanding balance (دينار — بلا فواتير الدولار)
   /** 0264: باقي فواتير الدولار بالسنت — يُعرض بجانب الدينار ولا يُجمع عليه. */
   usdDue: number;
+  /** وإجماليُّها ومدفوعُها بالسنت — «إجمالي الفواتير/المدفوع» كانا يتركان فواتيرَ الدولار بصمت (دفترٌ بدينه ٦٠٠$ قال «إجمالي ٠»). */
+  usdTotal: number;
+  usdPaid: number;
   /** للترتيب وحده: الدينارُ + باقي الدولار بقيمة يوم بيعه — «من يحتاج انتباهاً أوّلاً» لا مبلغٌ يُعرض. */
   weight: number;
   oldest: string;  // ISO of the oldest open debt
@@ -67,6 +75,7 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
   const { t, i18n } = useTranslation();
   const [q, setQ] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [, setLazyTick] = useState(0);
 
   // COD orders still on the road are NOT customer debts — that money is آجل
   // (arrives in full on delivery, or the goods come back). It gets its own
@@ -142,10 +151,13 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
       const name = displayCustomerName(inv.customer_name);
       // A stable identity: phone wins; else a named customer; else this one anonymous sale.
       const key = phone ? `p:${phoneDigits(phone)}` : name ? `n:${name.toLowerCase()}` : `i:${inv.id}`;
-      const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, usdDue: 0, weight: 0, oldest: inv.created_at };
+      const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, usdDue: 0, usdTotal: 0, usdPaid: 0, weight: 0, oldest: inv.created_at };
       g.debts.push(inv);
-      if (isUsd(inv)) g.usdDue += usdDueCents(inv);
-      else {
+      if (isUsd(inv)) {
+        g.usdDue += usdDueCents(inv);
+        g.usdTotal += Math.round((inv.total_usd ?? 0) * 100);
+        g.usdPaid += Math.round((inv.paid_usd ?? 0) * 100);
+      } else {
         g.total = round2(g.total + inv.total);
         g.paid = round2(g.paid + paidOf(inv));
         g.due = round2(g.due + dueOf(inv));
@@ -253,9 +265,15 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
         </button>
       )}
 
-      <div className="relative">
-        <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-        <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("retail.searchDebts", "ابحث باسم العميل أو الهاتف…")} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("retail.searchDebts", "ابحث باسم العميل أو الهاتف…")} />
+        </div>
+        {/* «دين قديم» (0271): للمدير وحده — القطعةُ تُخفي نفسَها لغيره، والقاعدةُ ترفضه أيضاً. */}
+        <LoadBoundary scope="odebt" onRetry={() => { OldDebtBtnLazy = loadOldDebtBtn(); setLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}><OldDebtBtnLazy onAdded={onChanged} /></Suspense>
+        </LoadBoundary>
       </div>
 
       {filtered.length === 0 ? (
@@ -349,8 +367,8 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
           </div>
         </div>
         <div className="grid grid-cols-3 divide-x divide-line rtl:divide-x-reverse">
-          <Stat label={t("retail.grandTotalAll", "إجمالي الفواتير")} value={money(ledger.total)} />
-          <Stat label={t("retail.paidSoFar", "المدفوع")} value={money(ledger.paid)} tone="success" />
+          <Stat label={t("retail.grandTotalAll", "إجمالي الفواتير")} value={money(ledger.total)} usd={ledger.usdTotal} dinar={ledger.debts.some((i) => !isUsd(i))} />
+          <Stat label={t("retail.paidSoFar", "المدفوع")} value={money(ledger.paid)} usd={ledger.usdPaid} dinar={ledger.debts.some((i) => !isUsd(i))} tone="success" />
           <Stat label={t("retail.openDebts", "ديون مفتوحة")} value={formatNum(debts.length)} />
         </div>
       </div>
@@ -377,6 +395,11 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
                       {status === "unpaid" ? t("retail.statusUnpaid", "آجل بالكامل") : t("retail.statusPartial", "دفع جزئي")}
                     </Badge>
                   </p>
+                  {inv.sale_kind === "opening" && (
+                    <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setLazyTick((n) => n + 1); }}>
+                      <Suspense fallback={null}><OldDebtNoteLazy invoice={inv} /></Suspense>
+                    </LoadBoundary>
+                  )}
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-subtle">
                     <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(inv.created_at, i18n.language)}</span>
                     <span>{t("retail.grandTotal", "إجمالي الفاتورة")}: <span className="font-semibold tabular-nums text-ink">{amt(inv.total, inv.total_usd)}</span></span>
@@ -414,10 +437,12 @@ function CustomerLedger({ ledger, onBack, onChanged }: { ledger: Ledger | null; 
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "success" }) {
+/** `usd` (سنتات) سطرٌ بجانب الدينار لا يُجمع عليه، والدينارُ يُخفى لدفترٍ كلُّه بالدولار (`dinar` false). */
+function Stat({ label, value, tone, usd, dinar = true }: { label: string; value: string; tone?: "success"; usd?: number; dinar?: boolean }) {
   return (
     <div className="px-3 py-2.5 text-center">
-      <p className={cn("font-display text-base font-bold tabular-nums", tone === "success" ? "text-success-600" : "text-ink")}>{value}</p>
+      {(dinar || !usd) && <p className={cn("font-display text-base font-bold tabular-nums", tone === "success" ? "text-success-600" : "text-ink")}>{value}</p>}
+      {!!usd && <p className="font-display text-base font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-stat>{usd$(usd)}</p>}
       <p className="mt-0.5 text-2xs text-ink-subtle">{label}</p>
     </div>
   );

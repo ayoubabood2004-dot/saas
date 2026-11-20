@@ -24,7 +24,8 @@ export interface UsdSettlement {
   received: number; share: number; fx: number; method: UsdMethod; at: string; by_user: string | null; client_ref: string | null;
   voided_at: string | null; voided_by: string | null; void_reason: string | null;
 }
-export interface UsdLineIn { product_id: string; qty: number; unit_price_usd?: string | null }
+/** سطرُ بيع الدولار. والكارتونُ (0272): `pack_id` ومعه `pack_per` كما رآه الجهاز — qty كراتين، والخادمُ يخصم qty × per علبة. */
+export interface UsdLineIn { product_id: string; qty: number; unit_price_usd?: string | null; pack_id?: string | null; pack_per?: number | null }
 export interface UsdSaleMeta {
   fx_rate_id: string;
   /** «0» دَيناً، أو مجموعُ الدولار كما يعرفه الجهاز نقداً — والخادمُ يرفض غيرَ مجموعه (usd_partial_at_sale). */
@@ -43,6 +44,9 @@ export interface UsdApi {
   setRate(per100: string, note?: string | null): Promise<UsdRate>;
   rates(limit?: number): Promise<UsdRate[]>;
   checkout(items: UsdLineIn[], meta: UsdSaleMeta): Promise<Invoice>;
+  /** الجسمُ الحيّ لـusd_checkout يعرف سطرَ الكارتون؟ (0272) — بلا «نعم» لا يُرسل سطرُ كارتون: جسمُ 0264 كان سيبيعه علبةً بسعر
+   *  كارتون. قاعدةٌ قبل 0272 (لا دالّة) ⇒ false. */
+  packReady(): Promise<boolean>;
   settle(invoiceId: string, usd: string, per100: string, method: UsdMethod, expectDueUsd: string, note?: string | null, clientRef?: string | null): Promise<UsdSettleResult>;
   settlements(invoiceIds: string[]): Promise<UsdSettlement[]>;
   voidSettlement(settlementId: string, reason: string): Promise<UsdSettleResult>;
@@ -93,6 +97,14 @@ const cloud: UsdApi = {
     writable();
     return rpcJson<Invoice>("usd_checkout", { p_items: items, p_meta: meta });
   },
+  async packReady() {
+    const { data, error } = await supabase!.rpc("usd_pack_sale_ready");
+    if (error) {
+      if (error.code === "42883" || error.code === "PGRST202") return false;   // قاعدةٌ قبل 0272
+      throw serverError(error);
+    }
+    return data === true;
+  },
   async settle(invoiceId, usd, per100, method, expectDueUsd, note, clientRef) {
     writable();
     return rpcJson<UsdSettleResult>("settle_invoice_usd", {
@@ -129,6 +141,7 @@ const demo: UsdApi = {
   setRate: async (p, n) => { writable(); return (await local()).demoUsdRateSet(p, n ?? null); },
   rates: async (l) => (await local()).demoUsdRates(l ?? 20),
   checkout: async (i, m) => { writable(); return (await local()).demoUsdCheckout(i, m); },
+  packReady: async () => true,
   settle: async (id, u, p, m, e, n, r) => { writable(); return (await local()).demoUsdSettle(id, u, p, m, e, n ?? null, r ?? null); },
   settlements: async (ids) => (await local()).demoUsdSettlements(ids),
   voidSettlement: async (id, r) => { writable(); return (await local()).demoUsdVoid(id, r); },

@@ -2386,8 +2386,8 @@ const supabaseRepo: DemoRepo = {
     return rows.map((r) => ({ staff_id: r.staff_id, invoices: Number(r.invoices), revenue: Number(r.revenue), profit: Number(r.profit) }));
   },
   async countInvoices() {
-    // عدٌّ لا صفوف — لا يمسّه سقفُ الألف.
-    const { count, error } = await sbc().from("invoices").select("id", { count: "exact", head: true });
+    // عدٌّ لا صفوف — لا يمسّه سقفُ الألف. والدينُ القديم (0271) ليس فاتورةَ بيع.
+    const { count, error } = await sbc().from("invoices").select("id", { count: "exact", head: true }).neq("sale_kind", "opening");
     if (error) throw error;
     return count ?? 0;
   },

@@ -43,6 +43,8 @@ const stubs = {
       "./clinicSync": "export const registerReset = (fn) => { globalThis.__reset = fn; }; export const sb = () => null;",
       // جلسةُ Supabase: معرّفُ الحساب الداخل (globalThis.__uid) — منها يُترجم «default» للمالك.
       "./supabase": "export const supabase = { auth: { getSession: async () => ({ data: { session: globalThis.__uid ? { user: { id: globalThis.__uid } } : null } }) } };",
+      // 0280: بابُ الأرشفة الكسول — حالُه بيد الفحص (globalThis.__archive)، والغائبُ «لا أرشفة» كقاعدةٍ قبل 0280.
+      "./drugArchiveApi": "export const loadDrugArchive = async () => globalThis.__archive ?? { ready: false, off: false, hidden: new Map() }; export const hideDrugNames = async (c, n, h) => globalThis.__srv.hideDrugNames(c, n, h); export const setDrugCatalogOff = async (c, o) => globalThis.__srv.setDrugCatalogOff(c, o);",
     };
     const names = Object.keys(map).map((k) => k.replace(/[/.@]/g, "\\$&")).join("|");
     b.onResolve({ filter: new RegExp(`^(${names})$`) }, (a) => ({ path: a.path, namespace: "stub" }));

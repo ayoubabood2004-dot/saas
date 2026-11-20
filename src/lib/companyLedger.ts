@@ -19,6 +19,9 @@ import { localISO } from "./utils";
  *
  * الثابتُ الذي يُفحص: الرصيدُ الأخير = دينُ الفواتير + الرصيدُ السابق القائم +
  * المطالباتُ القائمة — أيْ نفسُ الرقم بقائمة الشركات، من طريقين.
+ *
+ * والعملتان (0274) دفتران لا يختلطان: `cur` يختار فواتيرَه (عملةُ الفاتورة) وصفوفَه (عملةُ الصفّ)، ومبالغُ الدولار من أعمدته
+ * (`total_usd`، `paid_usd`، ودولارُ الدفعة `usd`) — دينارُ فاتورة الدولار حصّةٌ داخلية لا يُعرض بدفترها. والمطالباتُ بالدينار وحده.
  * ========================================================================= */
 
 export type LedgerKind =
@@ -52,6 +55,10 @@ export interface LedgerRow {
   alloc?: LedgerAlloc[];
 }
 
+export type LedgerCur = "IQD" | "USD";
+export const curOfPurchase = (p: Purchase): LedgerCur => (p.currency === "USD" ? "USD" : "IQD");
+export const curOfEntry = (e: CompanyEntry): LedgerCur => (e.currency === "USD" ? "USD" : "IQD");
+
 export interface LedgerInput {
   purchases: Purchase[];
   payments: PurchasePayment[];
@@ -80,16 +87,22 @@ export interface CompanyLedger {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const dayOf = (iso: string) => (iso.length === 10 ? iso : localISO(new Date(iso)));
 
-/** دينُ فاتورة واحدة — قديمةٌ بلا amount_paid تُعتبر مدفوعةً كاملة (مثل 0076). */
-export const purchaseDue = (p: Purchase) => Math.max(0, r2(p.total - (p.amount_paid ?? p.total)));
+/** إجماليُّ فاتورةٍ ومدفوعُها بعملتها — الدولارُ من أعمدته (0274). */
+export const purchaseTotalCur = (p: Purchase): number => (curOfPurchase(p) === "USD" ? Number(p.total_usd ?? 0) : p.total);
+export const purchasePaidCur = (p: Purchase): number => (curOfPurchase(p) === "USD" ? Number(p.paid_usd ?? 0) : (p.amount_paid ?? p.total));
+/** مبلغُ دفعةٍ بعملة فاتورتها: دولارُها لفاتورة الدولار، ودينارُها لغيرها. */
+const payAmt = (pp: PurchasePayment, cur: LedgerCur): number => (cur === "USD" ? Number(pp.usd ?? 0) : Number(pp.amount));
 
-/** الرصيدُ السابق القائم — مرآةُ `company_pool_due` بالقاعدة. */
-export function poolDueOf(entries: CompanyEntry[], payments: PurchasePayment[]): number {
+/** دينُ فاتورة واحدة بعملتها — قديمةٌ بلا amount_paid تُعتبر مدفوعةً كاملة (مثل 0076). */
+export const purchaseDue = (p: Purchase) => Math.max(0, r2(purchaseTotalCur(p) - purchasePaidCur(p)));
+
+/** الرصيدُ السابق القائم بعملةٍ واحدة — مرآةُ `company_pool_due` (و`company_pool_due_usd` للدولار، 0274). */
+export function poolDueOf(entries: CompanyEntry[], payments: PurchasePayment[], cur: LedgerCur = "IQD"): number {
   const toInvoices = new Map<string, number>();
-  for (const pp of payments) if (pp.entry_id) toInvoices.set(pp.entry_id, (toInvoices.get(pp.entry_id) ?? 0) + Number(pp.amount));
+  for (const pp of payments) if (pp.entry_id) toInvoices.set(pp.entry_id, (toInvoices.get(pp.entry_id) ?? 0) + payAmt(pp, cur));
   let s = 0;
   for (const e of entries) {
-    if (e.voided_at) continue;
+    if (e.voided_at || curOfEntry(e) !== cur) continue;
     if (e.direction === "credit") s += e.amount;
     else if (e.kind === "payment") s -= e.amount - (toInvoices.get(e.id) ?? 0);
     else s -= e.amount;
@@ -102,17 +115,24 @@ const ORDER: Record<LedgerKind, number> = {
   payment: 5, accountPay: 5, adjustDebit: 6, chargeSettled: 7,
 };
 
-export function buildCompanyLedger(inp: LedgerInput): CompanyLedger {
+/** دفترُ عملةٍ واحدة (`cur`، الدينارُ افتراضاً): فواتيرُها وصفوفُها وحدها، بمبالغها. */
+export function buildCompanyLedger(all: LedgerInput, cur: LedgerCur = "IQD"): CompanyLedger {
+  const inp: LedgerInput = {
+    purchases: all.purchases.filter((p) => curOfPurchase(p) === cur),
+    payments: all.payments,
+    entries: all.entries.filter((e) => curOfEntry(e) === cur),
+    charges: cur === "IQD" ? all.charges : [],
+  };
   const refOf = new Map(inp.purchases.map((p) => [p.id, p.reference?.trim() || null]));
   const mine = new Set(inp.purchases.map((p) => p.id));
   const payments = inp.payments.filter((pp) => mine.has(pp.purchase_id));
   const paidLogged = new Map<string, number>();
-  for (const pp of payments) paidLogged.set(pp.purchase_id, (paidLogged.get(pp.purchase_id) ?? 0) + Number(pp.amount));
+  for (const pp of payments) paidLogged.set(pp.purchase_id, (paidLogged.get(pp.purchase_id) ?? 0) + payAmt(pp, cur));
   const allocOf = new Map<string, LedgerAlloc[]>();
   for (const pp of payments) {
     if (!pp.entry_id) continue;
     (allocOf.get(pp.entry_id) ?? allocOf.set(pp.entry_id, []).get(pp.entry_id)!)
-      .push({ purchaseId: pp.purchase_id, ref: refOf.get(pp.purchase_id) ?? null, amount: r2(Number(pp.amount)) });
+      .push({ purchaseId: pp.purchase_id, ref: refOf.get(pp.purchase_id) ?? null, amount: r2(payAmt(pp, cur)) });
   }
 
   type Raw = Omit<LedgerRow, "no" | "balance"> & { sortAt: string };
@@ -120,9 +140,10 @@ export function buildCompanyLedger(inp: LedgerInput): CompanyLedger {
   const base = { ref: null, purchaseId: null, entryId: null, chargeId: null, method: null, note: null, voided: null } as const;
 
   for (const p of inp.purchases) {
+    const tot = r2(purchaseTotalCur(p));
     raw.push({ ...base, key: `p:${p.id}`, day: dayOf(p.purchased_at), kind: "purchase", ref: refOf.get(p.id) ?? null,
-      purchaseId: p.id, credit: r2(p.total), debit: 0, amount: r2(p.total), note: p.notes?.trim() || null, sortAt: p.created_at ?? p.purchased_at });
-    const upfront = r2((p.amount_paid ?? p.total) - (paidLogged.get(p.id) ?? 0));
+      purchaseId: p.id, credit: tot, debit: 0, amount: tot, note: p.notes?.trim() || null, sortAt: p.created_at ?? p.purchased_at });
+    const upfront = r2(purchasePaidCur(p) - (paidLogged.get(p.id) ?? 0));
     if (upfront > 0) {
       raw.push({ ...base, key: `u:${p.id}`, day: dayOf(p.purchased_at), kind: "upfront", ref: refOf.get(p.id) ?? null,
         purchaseId: p.id, credit: 0, debit: upfront, amount: upfront, method: p.payment_method ?? null, sortAt: p.created_at ?? p.purchased_at });
@@ -130,7 +151,7 @@ export function buildCompanyLedger(inp: LedgerInput): CompanyLedger {
   }
   for (const pp of payments) {
     if (pp.entry_id) continue;
-    const a = r2(Number(pp.amount));
+    const a = r2(payAmt(pp, cur));
     raw.push({ ...base, key: `pp:${pp.id}`, day: dayOf(pp.paid_at), kind: "payment", ref: refOf.get(pp.purchase_id) ?? null,
       purchaseId: pp.purchase_id, credit: 0, debit: a, amount: a, method: pp.method ?? null, note: pp.note?.trim() || null, sortAt: pp.paid_at });
   }
@@ -172,7 +193,7 @@ export function buildCompanyLedger(inp: LedgerInput): CompanyLedger {
 
   const dueByPurchase = new Map(inp.purchases.map((p) => [p.id, purchaseDue(p)]));
   const invoiceDue = r2([...dueByPurchase.values()].reduce((s, x) => s + x, 0));
-  const poolDue = poolDueOf(inp.entries, payments);
+  const poolDue = poolDueOf(inp.entries, payments, cur);
   const chargesDue = r2(inp.charges.reduce((s, c) => s + (c.settled_at ? 0 : c.amount), 0));
   return {
     rows,

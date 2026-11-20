@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { User, Phone, Mail, MapPin, Copy, Check, Pencil } from "lucide-react";
+import { Link } from "react-router-dom";
+import { custKey } from "@/lib/customerKey";
+import { getDialCode } from "@/lib/settings";
 import type { Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { cn } from "@/lib/utils";
@@ -41,7 +44,7 @@ function CopyButton({ copied, onClick, label }: { copied: boolean; onClick: () =
  * Each field has its own subtle copy button with independent ✓ feedback, plus a
  * "Copy all details" button. Every successful copy plays a short sound.
  */
-export function OwnerCard({ pet, canEdit = false, onUpdated, bare = false }: { pet: Pet; canEdit?: boolean; onUpdated?: () => void; /** Render without the card chrome (for embedding in a shared banner). */ bare?: boolean }) {
+export function OwnerCard({ pet, canEdit = false, onUpdated, bare = false, showFile = false }: { pet: Pet; canEdit?: boolean; onUpdated?: () => void; /** Render without the card chrome (for embedding in a shared banner). */ bare?: boolean; /** 0270: رابطُ «ملف الزبون» — للكادر وحده (بوّابةُ المالك لا تفتحه). */ showFile?: boolean }) {
   const { t } = useTranslation();
   const toast = useToast();
   // The single field/button currently flashing its "Copied!" state, or null.
@@ -76,6 +79,7 @@ export function OwnerCard({ pet, canEdit = false, onUpdated, bare = false }: { p
     }
   };
 
+  const fileKey = custKey(pet.owner_phone, pet.owner_name, getDialCode());
   const copyAll = () => {
     const lines = [
       name && `${t("owner.name")}: ${name}`,
@@ -162,6 +166,12 @@ export function OwnerCard({ pet, canEdit = false, onUpdated, bare = false }: { p
         </>
       ) : (
         <p className="text-sm text-ink-subtle">{t("owner.noInfo")}</p>
+      )}
+      {showFile && fileKey && (
+        <Link to={`/customer/${encodeURIComponent(fileKey)}`} data-ownerfile
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface-1 py-2 text-sm font-semibold text-brand-600 transition hover:border-brand-300">
+          <User size={15} /> {t("retail.custFile")}
+        </Link>
       )}
 
       {canEdit && (

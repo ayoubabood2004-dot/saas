@@ -15,7 +15,8 @@ import type { Product } from "@/types";
  *   • المجمَّعُ (`pooled`) خارجٌ: رصيدُه بحوض قسمه لا بصفّه، فالحسابُ عليه كاذب.
  * ========================================================================= */
 
-export interface ReorderItem { product: Product; sold: number; perDay: number; rop: number; suggest: number }
+/** stock: الرصيدُ الذي حُسب به الاقتراح (ما تحت الصفر «ماكو») — الشاشةُ تعرضه هو لا رصيدَ الصفّ بإشارته («عندك -40 · نطلب 39»). */
+export interface ReorderItem { product: Product; sold: number; perDay: number; rop: number; suggest: number; stock: number }
 export interface ReorderGroup { company: string; companyId: string | null; items: ReorderItem[] }
 
 export const COVER_DAYS = 30;
@@ -24,11 +25,12 @@ export function reorderItem(p: Product, sold: number, days: number, leadDays: nu
   if (p.pooled) return null;
   const perDay = Math.max(0, Number(sold) || 0) / Math.max(1, days);
   const min = Math.max(0, Number(p.min_stock) || 0);
-  const stock = Number(p.stock) || 0;
+  /* رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) رقمٌ لم يُعدّ لا دَينٌ على الرفّ: يُقرأ «ماكو» — لا طلبٌ بعدده فوق التغطية. */
+  const stock = Math.max(0, Number(p.stock) || 0);
   const rop = perDay * leadDays + min;
   if (rop <= 0 || stock > rop) return null;
   const suggest = Math.max(1, Math.ceil(perDay * (leadDays + COVER_DAYS) + min - stock));
-  return { product: p, sold: Math.max(0, Number(sold) || 0), perDay, rop, suggest };
+  return { product: p, sold: Math.max(0, Number(sold) || 0), perDay, rop, suggest, stock };
 }
 
 /** الاقتراحُ مجمَّعاً بالشركة — الأكثرُ موادَّ أوّلاً، و«بدون شركة» مجموعةٌ باسمها آخراً. */

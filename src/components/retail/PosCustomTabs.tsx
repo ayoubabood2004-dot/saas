@@ -1,7 +1,8 @@
 /* ============================================================================
- * خاناتُ الطبيب بشاشة البيع (0258) — الشريطُ، والشبكةُ، والمحرّر.
+ * خاناتُ شاشة البيع (0258 ← 0278) — الشريطُ، والشبكةُ، والمحرّر.
  *
- * بجانب «المنتجات · الخدمات · الأدوية» خاناتٌ يصنعها الطبيبُ لنفسه (لا يراها غيرُه، وتتبعه لأيّ جهاز): يختار ما فيها من
+ * بجانب «المنتجات · الخدمات · الأدوية» خاناتٌ للعيادة كلّها (0278، قرارُ المالك ١٧/١١ بعد «الخانة اختفت» — كانت لصاحب الحساب وحده،
+ * والعيادةُ تدخل بأكثر من حساب فصنعتها مرّتين): أيُّ حسابٍ بالعيادة يراها ويعدّلها، وتتبعها لأيّ جهاز. يُختار ما فيها من
  * منتجاتٍ وخدمات، ويقرّر لكلّ بطاقةٍ شكلَها (مربّع، أو مستطيل بعرض عمودين)، وحجمَ البطاقات، والصورَ.
  *
  * • الضغطُ على البطاقة يمرّ من **طريق البيع نفسِه** (tapProduct / addService بـSaleBuilder): الطزاجةُ وسؤالُ الخادم
@@ -12,15 +13,15 @@
  *
  * النصوصُ بنطاق ptab المملوك (hot-paths.json): القطعةُ كسولةٌ من SaleBuilder بـpage(…, ["ptab"]) — retail حارّ والبارد ممتلئ.
  * ========================================================================= */
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Plus, Pencil, Package, Stethoscope, Scale, Trash2, ChevronUp, ChevronDown, X, Search, Square, RectangleHorizontal,
-  AlertTriangle, RotateCcw, Image as ImageIcon, LayoutGrid,
+  AlertTriangle, RotateCcw, Image as ImageIcon, LayoutGrid, ArrowDownAZ, TrendingUp, TrendingDown, Loader2,
 } from "lucide-react";
 import type { Product, Service } from "@/types";
 import { Button, Dialog, useToast } from "@/components/ui";
-import { cn, money, formatNum, searchable, normalizeCode } from "@/lib/utils";
+import { cn, money, formatNum, formatQty, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cardImagePath, productImageUrl } from "@/lib/storeLib";
@@ -64,6 +65,52 @@ export function PosTabPills({ tabs, failed, activeId, compact, onPick, onNew, on
   );
 }
 
+/* ── شريطُ شبكة المنتجات (0279): الترتيبُ والصور — للعيادة كلّها ──────────────────────────────────────
+ * طلبُ المالك (١٧/١١): «يشوف أول حسب الاسم لو الأكثر مبيعاً لو الأقل مبيعاً، ولمن يختار يضل ثابت»، و«الصور بالمبيعات بشرط ما يهنج».
+ * الاختيارُ يُكتب بتفضيلات العيادة (clinic_prefs) فيثبت لكلّ جهازٍ وحساب. والمبيعُ آخر ٣٠ يوماً؛ إن لم يصل بعد أو تعذّر تبقى
+ * الشبكةُ بالاسم **وتقولها** — لا ترتيبٌ يُدّعى وهو غيرُه. الشريطُ يعرض ويختار وحده: الترتيبُ نفسُه بـposSort.ts والجلبُ بـSaleBuilder. */
+export type PosSortPick = "name" | "top" | "low";
+export function PosGridBar({ sort, images, salesState, compact, onSort, onImages, onRetry }: {
+  sort: PosSortPick; images: boolean; salesState: "idle" | "loading" | "ready" | "failed"; compact?: boolean;
+  onSort: (s: PosSortPick) => void; onImages: (on: boolean) => void; onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  const opts: { v: PosSortPick; label: string; icon: ReactNode; title?: string }[] = [
+    { v: "name", label: t("ptab.sortName"), icon: <ArrowDownAZ size={13} /> },
+    { v: "top", label: t("ptab.sortTop"), icon: <TrendingUp size={13} />, title: t("ptab.sortHint") },
+    { v: "low", label: t("ptab.sortLow"), icon: <TrendingDown size={13} />, title: t("ptab.sortHint") },
+  ];
+  return (
+    <div data-pos-gridbar className="flex shrink-0 flex-wrap items-center gap-1.5">
+      <div role="radiogroup" aria-label={t("ptab.sortLabel")} className="inline-flex items-center gap-0.5 rounded-xl border border-line bg-surface-2 p-0.5">
+        {opts.map((o) => (
+          <button key={o.v} type="button" role="radio" aria-checked={sort === o.v} data-pos-sort={o.v} title={o.title}
+            onClick={() => { if (sort !== o.v) { playTap(); onSort(o.v); } }}
+            className={cn("inline-flex items-center gap-1 rounded-lg font-semibold transition", compact ? "px-2 py-1 text-2xs" : "px-2.5 py-1 text-xs",
+              sort === o.v ? "bg-surface-1 text-brand-700 shadow-soft dark:text-brand-300" : "text-ink-muted hover:text-ink")}>
+            {o.icon}<span>{o.label}</span>
+          </button>
+        ))}
+      </div>
+      <button type="button" role="switch" aria-checked={images} data-pos-images title={t("ptab.imagesHint")}
+        onClick={() => { playTap(); onImages(!images); }}
+        className={cn("inline-flex items-center gap-1 rounded-xl border font-semibold transition", compact ? "px-2 py-1 text-2xs" : "px-2.5 py-1 text-xs",
+          images ? "border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-2 text-ink-muted hover:text-ink")}>
+        <ImageIcon size={13} /><span>{images ? t("ptab.imagesOn") : t("ptab.imagesOff")}</span>
+      </button>
+      {sort !== "name" && salesState === "loading" && (
+        <span data-pos-sales="loading" className="inline-flex items-center gap-1 text-2xs text-ink-subtle"><Loader2 size={12} className="animate-spin" />{t("ptab.salesLoading")}</span>
+      )}
+      {sort !== "name" && salesState === "failed" && (
+        <button type="button" data-pos-sales="failed" onClick={() => { playTap(); onRetry(); }}
+          className="inline-flex items-center gap-1 rounded-lg bg-warn-50 px-2 py-1 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+          <RotateCcw size={12} />{t("ptab.salesFailed")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ── البطاقة ─────────────────────────────────────────────────────────────── */
 function TileImage({ path, className }: { path: string; className?: string }) {
   const [step, setStep] = useState(0);   // ٠ المصغّرة، ١ الأصل، ٢ لا صورة
@@ -73,20 +120,28 @@ function TileImage({ path, className }: { path: string; className?: string }) {
     className={cn("bg-surface-2 object-cover", className)} />;
 }
 
-function Tile({ r, images, listPrice, flash, preview, onProduct, onService }: {
+function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onService, packChips }: {
   r: Exclude<ResolvedItem, { kind: "missing" }>; images: boolean; listPrice: (p: Product) => number; flash?: string | null; preview?: boolean;
-  onProduct?: (p: Product) => void; onService?: (s: Service) => void;
+  liftOf?: (p: Product) => boolean; onProduct?: (p: Product) => void; onService?: (s: Service) => void;
+  /** أزرارُ كراتين المادّة (بلا باركود — ١٨/١١) يرسمها مضيفُ البيع: الضغطُ يمرّ من طريقه (addPackLine) لا من هنا. */
+  packChips?: (p: Product) => ReactNode[];
 }) {
   const { t } = useTranslation();
   const wide = r.item.shape === "wide";
-  let name: string, price: number, out = false, badge: string, img: string | null = null, Icon = Package, fkey: string;
+  const chips = r.kind === "product" && !preview && packChips ? packChips(r.product) : [];
+  let name: string, price: number, out = false, lifted = false, badge: ReactNode, img: string | null = null, Icon = Package, fkey: string;
   if (r.kind === "product") {
     const p = r.product;
     const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
-    out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+    const zero = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+    /* البيعُ قبل الجرد (0266): ما يرفعه الوضعُ ليس «نفدت» — رصيدُه بإشارته بحبرٍ محايد، كشبكة المنتجات. */
+    lifted = zero && !preview && !!liftOf?.(p);
+    out = zero && !lifted;
     name = p.name; price = listPrice(p); img = images && p.image_path ? p.image_path : null;
     Icon = p.sold_by_weight ? Scale : Package;
-    badge = out ? t("ptab.out") : t("ptab.left", { n: formatNum(p.stock) });
+    /* بكسره وبوحدته: ربعُ علبةٍ تحت الصفر كانت «-0»، وكيلو ونصف «-2» (formatNum بلا كسور). */
+    const qty = p.sold_by_weight ? fmtKg(p.stock) : formatQty(p.stock);
+    badge = out ? t("ptab.out") : lifted ? <bdi dir="ltr" data-neg-stock>{qty}</bdi> : t("ptab.left", { n: qty });
     fkey = `p:${p.id}`;
   } else {
     name = r.service.name; price = r.service.price; Icon = Stethoscope; badge = t("ptab.service"); fkey = `s:${r.service.id}`;
@@ -104,11 +159,11 @@ function Tile({ r, images, listPrice, flash, preview, onProduct, onService }: {
         r.kind === "service" ? "bg-brand-50/70 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300" : "bg-surface-2/70 text-ink-subtle")}>
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-1 shadow-soft"><Icon size={22} /></span>
       </span>;
-  return (
-    <button type="button" data-ptile={fkey} data-shape={r.item.shape} data-out={out || undefined} onClick={tap} tabIndex={preview ? -1 : undefined}
+  const tile = (
+    <button type="button" data-ptile={fkey} data-shape={r.item.shape} data-out={out || undefined} data-lifted={lifted || undefined} onClick={tap} tabIndex={preview ? -1 : undefined}
       title={out ? `${name} — ${t("ptab.outHint")}` : name}
       className={cn("group relative flex overflow-hidden rounded-2xl border text-start transition",
-        wide ? "col-span-2 aspect-[2/1] flex-row" : "aspect-square flex-col",
+        wide ? (chips.length ? "aspect-[2/1] w-full flex-row" : "col-span-2 aspect-[2/1] flex-row") : chips.length ? "aspect-square w-full flex-col" : "aspect-square flex-col",
         preview ? "cursor-default" : "",
         out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
           : lit ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
@@ -123,13 +178,24 @@ function Tile({ r, images, listPrice, flash, preview, onProduct, onService }: {
       </span>
     </button>
   );
+  /* زرُّ الكارتون أخٌ للبطاقة لا داخلها (زرٌّ داخل زرّ لا يصحّ)، فوق صورتها بزاويتها. */
+  if (!chips.length) return tile;
+  return (
+    <div className={cn("relative flex", wide && "col-span-2")}>
+      {tile}
+      <div className="absolute start-1.5 top-1.5 flex max-w-[calc(100%-0.75rem)] flex-wrap gap-1">{chips}</div>
+    </div>
+  );
 }
 
 /* ── الشبكة ─────────────────────────────────────────────────────────────── */
-export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom, posV2, preview, onProduct, onService, onEdit }: {
+export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom, posV2, preview, liftOf, onProduct, onService, onEdit, packChips }: {
   tab: Pick<PosTab, "name" | "tile_size" | "show_images" | "items">; products: Product[]; services: Service[];
   listPrice: (p: Product) => number; flash?: string | null; gridZoom?: number; posV2?: boolean; preview?: boolean;
+  /** البيعُ قبل الجرد: الوضعُ يرفع هذه المادّة الآن (حكمُ شاشة البيع نفسُه) — فبطاقتُها لا تُرسم «نفدت». */
+  liftOf?: (p: Product) => boolean;
   onProduct?: (p: Product) => void; onService?: (s: Service) => void; onEdit?: () => void;
+  packChips?: (p: Product) => ReactNode[];
 }) {
   const { t } = useTranslation();
   const resolved = useMemo(() => resolveItems(tab.items, products, services), [tab.items, products, services]);
@@ -155,7 +221,7 @@ export function PosTabGrid({ tab, products, services, listPrice, flash, gridZoom
         <div className={cn("grid gap-2", posV2 && !preview && "min-h-0 flex-1 overflow-y-auto pb-1")} style={style}>
           {live.map((r, i) => (
             <Tile key={`${r.item.k}:${r.item.id}:${i}`} r={r} images={tab.show_images} listPrice={listPrice} flash={flash} preview={preview}
-              onProduct={onProduct} onService={onService} />
+              liftOf={liftOf} onProduct={onProduct} onService={onService} packChips={packChips} />
           ))}
         </div>
       )}
@@ -240,7 +306,7 @@ export function PosTabEditor({ tab, tabs, products, services, listPrice, onClose
   );
 
   return (
-    <Dialog open onClose={onClose} size="lg" title={tab ? t("ptab.titleEdit") : t("ptab.titleNew")}
+    <Dialog open onClose={onClose} size="lg" title={tab ? t("ptab.titleEdit") : t("ptab.titleNew")} description={t("ptab.shared")}
       footer={
         <div className="flex w-full flex-wrap items-center gap-2">
           <Button onClick={() => void save()} loading={busy === "save"} disabled={!!problem || atLimit || !!busy || (!!tab && !dirty)} data-ptab-save>

@@ -43,12 +43,14 @@ const esc = (s: unknown) =>
 
 // IQD: whole numbers with thousands separators, always Western numerals.
 const fmtBase = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+/** سعرُ الصرف بمنازله (حتى أربع كالخادم): «1,461» عن 1460.5 لا يطابق أسطراً حُسبت بـ1460.5 (مراجعة 0282). */
+const fmtRate = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 const r2 = (n: number) => Math.round(n * 100) / 100;
 /* 0264: فاتورةُ الدولار تُطبع بالدولار — المبالغُ كلُّها بالدولار (الدَّينُ دولار)، والسِّيَقُ الدينارية لا تُطبع (حصصٌ وفرقُ صرف
  * لا يقرؤها الزبون)، وسعرُ يوم البيع ومقابلُه بالدينار سطرٌ **بالأرقام والرموز وحدها** بالملاحظات: سقفُ النصّ الصلب بالملفّ ممتلئ. */
 function usdPrintView(inv: Invoice, curSym: string): Invoice {
   const total = r2(Number(inv.total_usd) || 0), disc = r2(Number(inv.discount_usd) || 0);
-  const line = `$1 = ${fmtBase(Number(inv.fx_rate) || 0)} ${curSym}  ·  ${fmtBase(inv.total)} ${curSym}`;
+  const line = `$1 = ${fmtRate(Number(inv.fx_rate) || 0)} ${curSym}  ·  ${fmtBase(inv.total)} ${curSym}`;
   return {
     ...inv, total, subtotal: r2(total + disc), discount: disc, discount_type: disc > 0 ? "fixed" : null,
     amount_paid: r2(Number(inv.paid_usd) || 0), payment_details: [], forgiven: 0,
@@ -386,8 +388,13 @@ export function buildInvoiceHTML(invoiceIn: Invoice, itemsIn: InvoiceItem[], opt
   const brand = esc(opts.brand || "doctorVet");
   const curSym = opts.currency ?? currencySymbol();
   const usdInv = invoiceIn.currency === "USD";
-  const invoice = usdInv ? usdPrintView(invoiceIn, curSym) : invoiceIn;
-  const items = usdInv ? itemsIn.map(usdPrintItem) : itemsIn;
+  /* 0282: فاتورةُ دينار فيها سطرٌ بِيع بالدولار — المبالغُ بالدينار كما هي، وسعرُ كلّ سطرٍ بالدولار بجانب اسمه، وسعرُ الصرف سطرٌ
+   * بالملاحظات (أرقامٌ ورموزٌ وحدها — سقفُ النصّ الصلب بالملفّ ممتلئ). */
+  const dualInv = !usdInv && Number(invoiceIn.fx_rate) > 0 && itemsIn.some((it) => it.unit_price_usd != null);
+  const invoice = usdInv ? usdPrintView(invoiceIn, curSym)
+    : dualInv ? { ...invoiceIn, notes: [invoiceIn.notes?.trim(), `$1 = ${fmtRate(Number(invoiceIn.fx_rate))} ${curSym}`].filter(Boolean).join("\n") } : invoiceIn;
+  const items = usdInv ? itemsIn.map(usdPrintItem)
+    : dualInv ? itemsIn.map((it) => (it.unit_price_usd != null ? { ...it, name: `${it.name} ($${Number(it.unit_price_usd).toFixed(2)})` } : it)) : itemsIn;
   /** الدولارُ بسنتاته («12.50»)، والدينارُ كما كان بلا كسور. */
   const fmt = usdInv ? (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }) : fmtBase;
   // Default to Iraqi Dinar; caller may override with another label.

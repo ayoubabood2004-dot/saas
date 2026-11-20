@@ -6,7 +6,8 @@
  *      وصاحبُ الرمز (العلبةُ مقابلَ العلبة ليست له)، والمسودّةُ تُرفض بما يرفضه القيد، ولا يُرسل ما لم يتغيّر.
  *   ب) المرآة: القيدُ وحارسُ المستويات والطيُّ والفكُّ والاسترجاع — بحالات قسم 0259 حرفاً.
  *   ج) المستودعُ التجريبيّ نفسُه: إنشاءٌ وتعديلٌ ودمجٌ وفكٌّ وحذفٌ واسترجاعٌ و«رتّب المخزن».
- *   د) الأسلاك: البيعُ لا يعرف الكارتون بعد (findByCode للعلبة وحدها)، والنطاقُ مملوكٌ ويُحمَّل مع الصفحة، والسقوفُ سقوفُ القيد.
+ *   د) الأسلاك: findByCode للعلبة وحدها والكارتونُ والمغلّفُ من بابهما (packSale، 0267 — يفحصه بسلوكه pack-sale-test)، والنطاقُ
+ *      مملوكٌ ويُحمَّل مع الصفحة، والسقوفُ سقوفُ القيد.
  *
  *   node scripts/packs-test.mjs
  * ==========================================================================*/
@@ -271,11 +272,12 @@ console.log("▸ المستودعُ التجريبيّ: إنشاءٌ وتعدي�
 }
 
 /* ── د) الأسلاك ──────────────────────────────────────────────────────────── */
-console.log("▸ الأسلاك: البيعُ لا يعرف الكارتون بعد، والنطاقُ مملوك، والسقوفُ سقوفُ القيد");
+console.log("▸ الأسلاك: العلبةُ لـfindByCode والكارتونُ لبابه، والنطاقُ مملوك، والسقوفُ سقوفُ القيد");
 {
   const P = [prod("p", { barcode: "B-1", packs: [pk("c", 12, ["C-1"])], has_sub_unit: true, units_per_box: 5, sub_codes: ["S-1"] })];
-  check("findByCode (البيعُ والشراء) للعلبة وحدها: رمزُ الكارتون والمغلّف «ما ينعرف» — لا يُباع كارتونٌ بسعر علبة (المرحلة ٣)",
-    findByCode(P, "B-1")?.id === "p" && findByCode(P, "C-1") === undefined && findByCode(P, "S-1") === undefined);
+  check("findByCode للعلبة وحدها: رمزُ الكارتون والمغلّف لا يُرجع المادّةَ علبةً (لا يُباع كارتونٌ بسعر علبة) — بابُهما levelByCode بمستواه",
+    findByCode(P, "B-1")?.id === "p" && findByCode(P, "C-1") === undefined && findByCode(P, "S-1") === undefined
+    && K.levelByCode(P, "c-1")?.level === "pack" && K.levelByCode(P, "C-1")?.pack?.per === 12 && K.levelByCode(P, "S-1")?.level === "sub");
   const mig = src("supabase/migrations/0259_product_packs.sql");
   check("سقوفُ الواجهة سقوفُ القيد بالهجرة (٤ كراتين، ٥ رموز، ٢٠ حرفاً، العددُ ٢–١٠٠٠٠٠، ٦٤ للرمز)",
     /jsonb_array_length\(p\) > 4/.test(mig) && /<= 5/.test(mig) && /between 2 and 100000/.test(mig) && /not between 1 and 64/.test(mig) && /between 1 and 20/.test(mig)
@@ -285,7 +287,11 @@ console.log("▸ الأسلاك: البيعُ لا يعرف الكارتون ب�
     hp.owned.pkg?.owner === "src/pages/Inventory.tsx" && hp.owned.pkg.with.includes("src/components/inventory/PackagingEditor.tsx")
     && /import\("@\/pages\/Inventory"\)[^;]*\["pkg"\]/.test(code("src/App.tsx")));
   const sb = code("src/components/retail/SaleBuilder.tsx");
-  check("شاشةُ البيع لا تستورد التعبئةَ بعد (حزمةُ الإقلاع وفسحتُها، والمرحلةُ ٣ تحملها)", !/@\/lib\/packs|@\/lib\/packsMirror/.test(sb));
+  check("شاشةُ البيع لا تستورد التعبئةَ ثابتاً (قطعةُ البيع وفسحةُ الإقلاع) — بابُها packSale بـimport() (0267)",
+    !/from\s*["']@\/lib\/(packs|packsMirror|packSale)["']/.test(sb) && /import\("@\/lib\/packSale"\)/.test(sb));
+  const pu = code("src/components/inventory/Purchases.tsx");
+  check("وفاتورةُ الشراء تعرف رمزَ الكارتون قبل «مادّةٌ جديدة» (levelByCode بعد العلبة وقبل صيغ الماسح)",
+    /const lv = levelByCode\(products, raw\);/.test(pu) && pu.indexOf("const lv = levelByCode(products, raw);") < pu.indexOf("rescueScan(products, raw)"));
   const inv = code("src/pages/Inventory.tsx");
   check("النموذجُ يرسل التعبئةَ بـpackagingPatch وحدها (ما لم يتغيّر لا يُرسل)، ويقول صاحبَ الرمز قبل الشبكة",
     /\.\.\.pkgFields/.test(inv) && /packagingPatch\(product \?\? null/.test(inv) && /firstTakenCode\(/.test(inv) && /packagingFromDraft\(/.test(inv));
@@ -295,6 +301,78 @@ console.log("▸ الأسلاك: البيعُ لا يعرف الكارتون ب�
   const demo = code("src/lib/repoDemo.ts");
   check("المرآةُ بكلّ كاتبٍ لصفّ المادة (إنشاء، تعديل، ربطُ رمز، باركودٌ فارغ، دمج) وبالاسترجاع والترتيب",
     (demo.match(/throwIfPackagingBad\(/g) ?? []).length >= 6 && /snapshotFree\(/.test(demo) && /unmergePackaging\(/.test(demo) && /mergePackaging\(/.test(demo) && /hasPackaging\(dup\)/.test(demo));
+}
+
+/* ── خانةُ السعر التلقائيّ بسلوكها (react-mini): الحسابُ داخل الخانة ويبقى، والمحفوظُ كما كان ──────────────────────────────────
+ * بلاغُ المالك (١٦/١١): «لمن يحسبها ينزلها … ولمن احفظها بلا ما اكتبها بيدي ما تنزل» — كان سطراً تحت خانةٍ فارغة. */
+{
+  console.log("▸ خانةُ السعر التلقائيّ بالمحرّر");
+  const ED_SRC = readFileSync("src/components/inventory/PackagingEditor.tsx", "utf8");
+  // المحرّرُ يُحزم من نصّه (للطفرات) بملفٍّ مؤقّتٍ بجانبه — نفسُ الاستيرادات النسبيّة.
+  const PE_TMP = "src/components/inventory/__pe_under_test.tsx";
+  const run = async (src, c) => {
+    writeFileSync(PE_TMP, src);
+    let UI;
+    try {
+      UI = await (await import("./react-mini.mjs")).loadUI(`
+        import { useState, createElement as h } from "react";
+        import PackagingEditor from "./${PE_TMP}";
+        export function Host(p) {
+          const [d, setD] = useState(p.draft);
+          const [box, setBox] = useState(p.boxSell);
+          globalThis.__pe = { d, setBox };
+          return h(PackagingEditor, { value: d, onChange: setD, boxSell: box, boxPurchase: p.boxPurchase, hasSubUnit: !!p.sub, unitsPerBox: p.sub ? 10 : 0,
+            subUnitName: "", byWeight: false, pooled: false, products: [], selfId: null });
+        }
+      `);
+    } finally { try { rmSync(PE_TMP); } catch { /* ignore */ } }
+    const h = UI.React.createElement;
+    const pack = (o = {}) => ({ id: "k1", name: "كارتون", per: "12", codes: [], purchase_price: "", sell_price: "", ...o });
+    const mount = async (draft, o = {}) => { const ui = UI.mount(h(UI.Host, { draft, boxSell: 1500, boxPurchase: 1000, ...o })); await ui.settle(); return ui; };
+    const val = (ui, attr) => String(ui.find(attr, 0)?.props.value ?? ui.find(attr)?.props.value);
+    const type = (ui, attr, v) => { const n = ui.find(attr, 0) ?? ui.find(attr); ui.fire(() => n.props.onChange({ target: { value: v } })); };
+    const blur = (ui, attr) => { const n = ui.find(attr, 0) ?? ui.find(attr); ui.fire(() => n.props.onBlur?.({})); };
+    const saved = () => K.packagingFromDraft(globalThis.__pe.d, { barcode: null, alt_codes: [], hasSubUnit: true, unitsPerBox: 10, byWeight: false, pooled: false });
+    const base = { unit_name: "", sub_codes: [], sub_purchase_price: "", packs: [pack()] };
+
+    let ui = await mount(base);
+    c("خ١ كارتونُ ١٢ بخانةٍ فارغة: الحسابُ داخل الخانة (١٢ × ١٬٥٠٠ = ١٨٬٠٠٠، والشراءُ ١٢٬٠٠٠) — لا خانةٌ فارغة",
+      val(ui, "data-pkgsell") === "18000" && val(ui, "data-pkgbuy") === "12000", `${val(ui, "data-pkgsell")}|${val(ui, "data-pkgbuy")}`);
+    c("  والمحفوظُ «تلقائي» (null — يتبع سعرَ العلبة)", saved().ok && saved().value.packs[0].sell_price === null && saved().value.packs[0].purchase_price === null, JSON.stringify(saved()));
+    ui.fire(() => globalThis.__pe.setBox(2000));
+    c("خ٢ سعرُ العلبة تغيّر بالنموذج ⇒ الخانةُ تتبعه (٢٤٬٠٠٠)", val(ui, "data-pkgsell") === "24000", val(ui, "data-pkgsell"));
+    type(ui, "data-pkgsell", "20000"); blur(ui, "data-pkgsell");
+    c("خ٣ مكتوبٌ غيرُ الحساب يبقى ويُحفظ مكتوباً (٢٠٬٠٠٠)", val(ui, "data-pkgsell") === "20000" && saved().value.packs[0].sell_price === 20000, `${val(ui, "data-pkgsell")}|${JSON.stringify(saved().value?.packs)}`);
+    type(ui, "data-pkgsell", "24000"); blur(ui, "data-pkgsell");
+    c("خ٤ ومكتوبٌ يساوي الحساب يرجع تلقائياً (null)", saved().value.packs[0].sell_price === null && val(ui, "data-pkgsell") === "24000", JSON.stringify(saved().value?.packs));
+    type(ui, "data-pkgsell", "");
+    c("خ٥ مسحُ الخانة وهي مركَّزة يُبقيها فارغة (لا يقفز الحسابُ إليها والطبيبُ يكتب)", val(ui, "data-pkgsell") === "", val(ui, "data-pkgsell"));
+    blur(ui, "data-pkgsell");
+    c("  وبالمغادرة ترجع تلقائية بحسابها", val(ui, "data-pkgsell") === "24000" && saved().value.packs[0].sell_price === null, val(ui, "data-pkgsell"));
+    ui.unmount();
+    ui = await mount({ ...base, packs: [pack({ per: "" })] });
+    c("خ٦ بلا عدد ⇒ لا حساب ⇒ الخانةُ فارغة", val(ui, "data-pkgsell") === "", val(ui, "data-pkgsell"));
+    ui.unmount();
+    const reopened = K.draftOf({ unit_name: null, sub_codes: [], sub_purchase_price: null, packs: [{ id: "k1", name: "كارتون", per: 12, codes: [], purchase_price: null, sell_price: null }] });
+    ui = await mount(reopened);
+    c("خ٧ إعادةُ فتح مادّةٍ محفوظةٍ تلقائياً: الرقمُ بالخانة (كان يُفتح فارغاً فيُظنّ أنه ما انحفظ)", val(ui, "data-pkgsell") === "18000", val(ui, "data-pkgsell"));
+    ui.unmount();
+    ui = await mount({ ...base, packs: [] }, { sub: true });
+    c("خ٨ شراءُ المغلّف تلقائياً بالخانة (١٬٠٠٠ ÷ ١٠ = ١٠٠)", String(ui.find("data-pkgsubbuy")?.props.value) === "100", String(ui.find("data-pkgsubbuy")?.props.value));
+    ui.unmount();
+  };
+  await run(ED_SRC, check);
+  const MUT = [
+    ["الخانةُ تُظهر المكتوبَ وحده (كما كان)", "  const shown = edit ?? (own.trim() ? own : auto != null ? String(auto) : \"\");", "  const shown = edit ?? own;"],
+    ["ما يساوي الحسابَ يُحفظ مكتوباً", "onChange(!v.trim() || sameAsAuto(v) ? \"\" : v)", "onChange(v)"],
+    ["الحسابُ يقفز للخانة وهي تُمسح", "const v = e.target.value; setEdit(v);", "const v = e.target.value;"],
+  ];
+  for (const [name, from, to] of MUT) {
+    const fell = [];
+    if (!ED_SRC.includes(from)) { check(`طفرة «${name}» تُمسك`, false, "نصُّ الطفرة غائب"); continue; }
+    try { await run(ED_SRC.replace(from, to), (n, ok) => { if (!ok) fell.push(n); }); } catch (e) { fell.push(`انهار: ${e?.message ?? e}`); }
+    check(`طفرة «${name}» تُمسك (${fell.length})`, fell.length > 0, "مرّت كلُّ الفحوص — الفحصُ أعمى عنها");
+  }
 }
 
 console.log(fails ? `✗ packs-test: ${fails} فشل من ${fails + passes}` : `✓ packs-test: ${passes} فحصاً`);

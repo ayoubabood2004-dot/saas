@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import {
@@ -8,7 +8,7 @@ import {
 import type { Invoice, InvoiceItem } from "@/types";
 import { Modal } from "@/components/Modal";
 import { cn, money, formatNum, formatDate } from "@/lib/utils";
-import { dueOf, paidOf } from "@/lib/debt";
+import { dueOf, isOpening, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { playTap } from "@/lib/sounds";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -16,6 +16,12 @@ import { usePermissions } from "@/hooks/usePermissions";
  * خصمٌ جديد بمعاملة سيرفر واحدة — فالتعديل من دفتر الزبون متزامن مع المخزون
  * والأسعار حرفياً، لا نسخة ثانية من المنطق. */
 import { DeliveryEditDialog } from "@/components/retail/DeliveryEditDialog";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+
+/* شارةُ «دين سابق» (0271) بنطاقها odebt — قطعةٌ كسولة (rpt بالنصف البارد الممتلئ). */
+const loadOldDebtNote = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
+let OldDebtNoteLazy = loadOldDebtNote();
 
 /* ============================================================================
  * سجل العملاء (دفتر الزبائن) — تبويب داخل التقارير.
@@ -64,22 +70,25 @@ export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicI
   const [q, setQ] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
 
-  // دين كل زبون عبر كل التاريخ (فواتير غير مرجعة وعليها متبقٍّ).
-  const dueByKey = useMemo(() => {
+  // دين كل زبون عبر كل التاريخ (فواتير غير مرجعة وعليها متبقٍّ) — الدينارُ، ودينُ الدولار بالسنت وحده (لا يُجمع عليه).
+  const { dueByKey, usdDueByKey } = useMemo(() => {
     const m = new Map<string, number>();
+    const u = new Map<string, number>();
     for (const inv of invoices) {
       const k = customerKey(inv);
       if (!k || isRefunded(inv)) continue;
+      if (isUsdInv(inv)) { const c = usdDueCentsOfInv(inv); if (c > 0) u.set(k, (u.get(k) ?? 0) + c); continue; }
       const d = dueOf(inv);
       if (d > 0) m.set(k, (m.get(k) ?? 0) + d);
     }
-    return m;
+    return { dueByKey: m, usdDueByKey: u };
   }, [invoices]);
 
   const { rows, walkIns } = useMemo(() => {
     const m = new Map<string, CustomerRow>();
     let walkIns = 0;
     for (const inv of inRange) {
+      if (isOpening(inv)) continue;   // 0271: الدينُ القديم ليس إنفاقاً — دينُه بـdueByKey
       const k = customerKey(inv);
       if (!k) { walkIns++; continue; }
       let r = m.get(k);
@@ -105,7 +114,8 @@ export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicI
     customers: rows.length,
     spend: rows.reduce((s, r) => s + r.spend, 0),
     due: [...dueByKey.values()].reduce((s, v) => s + v, 0),
-  }), [rows, dueByKey]);
+    usdDue: [...usdDueByKey.values()].reduce((s, v) => s + v, 0),
+  }), [rows, dueByKey, usdDueByKey]);
   const top = rows[0];
 
   const ql = q.trim().toLowerCase();
@@ -118,7 +128,8 @@ export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicI
         <Kpi icon={UserRound} tone="brand" label={t("rpt.cust.kCustomers", "زبائن الفترة")} value={formatNum(totals.customers)} />
         <Kpi icon={Crown} tone="warn" label={t("rpt.cust.kTop", "أكثر زبون شراءً")} value={top ? top.name : "—"} sub={top ? money(top.spend) : undefined} />
         <Kpi icon={ShoppingBag} tone="success" label={t("rpt.cust.kSpend", "مشترياتهم بالفترة")} value={money(totals.spend)} />
-        <Kpi icon={Wallet} tone={totals.due > 0 ? "danger" : "success"} label={t("rpt.cust.kDue", "ديونهم الحالية")} value={money(totals.due)} />
+        <Kpi icon={Wallet} tone={totals.due > 0 || totals.usdDue > 0 ? "danger" : "success"} label={t("rpt.cust.kDue", "ديونهم الحالية")} value={money(totals.due)}
+          sub={totals.usdDue > 0 ? usdIso(totals.usdDue) : undefined} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -155,6 +166,7 @@ export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicI
                     <span className="flex items-center gap-1"><Receipt size={11} /> {t("rpt.cust.invN", { n: formatNum(r.invoices), defaultValue: "{{n}} فاتورة" })}</span>
                     {r.refunds > 0 && <span className="chip bg-danger-50 text-2xs font-semibold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"><RotateCcw size={10} /> {t("rpt.cust.refN", { n: formatNum(r.refunds), defaultValue: "{{n}} مرجعة" })}</span>}
                     {r.due > 0 && <span className="chip bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"><Wallet size={10} /> {t("rpt.cust.dueChip", { v: money(r.due), defaultValue: "دين {{v}}" })}</span>}
+                    {(usdDueByKey.get(r.key) ?? 0) > 0 && <span className="chip bg-success-50 text-2xs font-semibold text-success-700 dark:bg-success-500/15 dark:text-success-300" data-usd-due-chip><Wallet size={10} /> {t("rpt.cust.dueChip", { v: usdIso(usdDueByKey.get(r.key) ?? 0), defaultValue: "دين {{v}}" })}</span>}
                     {r.lastAt && <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(r.lastAt, i18n.language)}</span>}
                   </p>
                 </div>
@@ -182,6 +194,16 @@ export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicI
     </div>
   );
 }
+
+/* ── دينُ الدولار (0264) بالدولار وبجانب الدينار، لا مجموعاً عليه: بدينار يوم البيع يبدو أصغرَ كلّما صعد الدولار. ── */
+const isUsdInv = (i: Invoice): boolean => i.currency === "USD";
+const usdDueCentsOfInv = (i: Invoice): number => Math.max(0, Math.round(((i.total_usd ?? 0) - (i.paid_usd ?? 0)) * 100));
+const usdTxt = (c: number): string => { const n = c / 100; return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`; };
+/** داخل جملةٍ مترجمة: معزولٌ اتجاهياً (LRI…PDI). */
+const usdIso = (c: number): string => `\u2066${usdTxt(c)}\u2069`;
+/** «١٠٠٬٠٠٠ د.ع · $600» — العملتان بسطرٍ واحد لا مجموعتين؛ وما كلُّه بالدولار بالدولار وحده. */
+const bothText = (iqd: number, usdCents: number, hasIqd: boolean): string =>
+  usdCents > 0 ? (hasIqd ? `${money(iqd)} · ${usdIso(usdCents)}` : usdIso(usdCents)) : money(iqd);
 
 function Kpi({ icon: Icon, tone, label, value, sub }: { icon: typeof Wallet; tone: "brand" | "success" | "warn" | "danger"; label: string; value: string; sub?: string }) {
   const tones = {
@@ -214,6 +236,7 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
   /* تعديل فاتورة من الدفتر — نفس صلاحية تصحيح الفواتير بشاشة المبيعات. */
   const canEdit = can("deleteInvoices");
   const [editInv, setEditInv] = useState<Invoice | null>(null);
+  const [, setLazyTick] = useState(0);
 
   /* دفترُ الزبون تاريخُه **كامل** دائماً (0149): يُجلب من الخادم بمفتاح الزبون نفسه
    * (الهاتف رقمياً وإلا الاسم) لا من لقطة الصفحة — التي صارت محدودةً بالمدّة.
@@ -247,7 +270,9 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
     const itemsByInv = new Map<string, InvoiceItem[]>();
     for (const it of myItems) { const a = itemsByInv.get(it.invoice_id) ?? []; a.push(it); itemsByInv.set(it.invoice_id, a); }
 
-    const sales = mine.filter((i) => !isRefunded(i));
+    // 0271: الدينُ القديم ليس شراءً — خارج الإنفاق والربح والقطع؛ دينُه باقٍ بالمتبقّي.
+    const live = mine.filter((i) => !isRefunded(i));
+    const sales = live.filter((i) => !isOpening(i));
     const refunds = mine.filter(isRefunded);
     // أكثر المنتجات شراءً — من الفواتير غير المرجعة فقط.
     const saleIds = new Set(sales.map((i) => i.id));
@@ -271,7 +296,9 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
       lastAt: latest.created_at,
       spend: sales.reduce((s, i) => s + i.total, 0),
       paid: sales.reduce((s, i) => s + paidOf(i), 0),
-      due: sales.reduce((s, i) => s + dueOf(i), 0),
+      due: live.reduce((s, i) => s + (isUsdInv(i) ? 0 : dueOf(i)), 0),
+      usdDue: live.reduce((s, i) => s + (isUsdInv(i) ? usdDueCentsOfInv(i) : 0), 0),
+      hasIqdDebt: live.some((i) => !isUsdInv(i) && dueOf(i) > 0),
       profit: sales.reduce((s, i) => s + (i.profit || 0), 0),
       units: sales.reduce((s, i) => s + (i.item_count || 0), 0),
       refundCount: refunds.length,
@@ -319,7 +346,7 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
           <BookStat label={t("rpt.cust.bSpend", "إجمالي مشترياته")} value={money(book.spend)} tone="text-ink" />
           <BookStat label={t("rpt.cust.bPaid", "المدفوع")} value={money(book.paid)} tone="text-success-600 dark:text-success-400" />
-          <BookStat label={t("rpt.cust.bDue", "الدين عليه")} value={money(book.due)} tone={book.due > 0 ? "text-danger-600 dark:text-danger-400" : "text-ink"} />
+          <BookStat label={t("rpt.cust.bDue", "الدين عليه")} value={bothText(book.due, book.usdDue, book.hasIqdDebt)} tone={book.due > 0 || book.usdDue > 0 ? "text-danger-600 dark:text-danger-400" : "text-ink"} />
           <BookStat label={t("rpt.cust.bRefunds", "المرتجع")} value={`${money(book.refundValue)} · ${formatNum(book.refundCount)}`} tone="text-ink" />
           {canProfit
             ? <BookStat label={t("rpt.cust.bProfit", "الربح منه")} value={money(book.profit)} tone="text-brand-600 dark:text-brand-300" />
@@ -352,9 +379,11 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
             const its = book.itemsByInv.get(inv.id) ?? [];
             const summary = its.length
               ? its.slice(0, 4).map((it) => (it.qty && it.qty > 1 ? `${it.name}×${formatNum(it.qty)}` : it.name)).join("، ") + (its.length > 4 ? ` +${formatNum(its.length - 4)}` : "")
-              : "—";
+              : isOpening(inv) ? "" : "—";
             const refunded = isRefunded(inv);
             const due = refunded ? 0 : dueOf(inv);
+            const usd = isUsdInv(inv);
+            const usdDue = refunded || !usd ? 0 : usdDueCentsOfInv(inv);
             return (
               <div key={inv.id} className={cn("border-t border-line p-3", refunded && "bg-danger-50/40 dark:bg-danger-500/5")}>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -368,17 +397,24 @@ function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }:
                       {/* صياغة محايدة: الإرجاع قد يكون تصحيح غلط بالكاشير لا بضاعة
                           رجعت فعلاً — الجملة القديمة كانت تتّهم الزبون بلا دليل. */}
                       {refunded && <span className="chip bg-danger-100 text-2xs font-bold text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{t("rpt.cust.refunded", "مرجعة — أُلغيت واسترجع مخزونها")}</span>}
-                      {!refunded && due > 0 && <span className="chip bg-warn-100 text-2xs font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{t("rpt.cust.dueChip", { v: money(due), defaultValue: "دين {{v}}" })}</span>}
+                      {!refunded && due > 0 && <span className="chip bg-warn-100 text-2xs font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{t("rpt.cust.dueChip", { v: usd ? usdIso(usdDue) : money(due), defaultValue: "دين {{v}}" })}</span>}
                     </p>
-                    <p className="truncate text-2xs text-ink-subtle">{summary}</p>
+                    {isOpening(inv) ? (
+                      <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setLazyTick((n) => n + 1); }}>
+                        <Suspense fallback={null}><OldDebtNoteLazy invoice={inv} /></Suspense>
+                      </LoadBoundary>
+                    ) : <p className="truncate text-2xs text-ink-subtle">{summary}</p>}
                   </div>
                   <div className="text-end">
-                    <p className={cn("text-sm font-extrabold tabular-nums", refunded ? "text-danger-600 line-through dark:text-danger-400" : "text-ink")}>{money(inv.total)}</p>
-                    {!refunded && due > 0 && <p className="text-2xs text-ink-subtle tabular-nums">{t("rpt.cust.paidOf", { v: money(paidOf(inv)), defaultValue: "دفع {{v}}" })}</p>}
+                    <p className={cn("text-sm font-extrabold tabular-nums", refunded ? "text-danger-600 line-through dark:text-danger-400" : "text-ink")}>
+                      {usd ? <bdi dir="ltr" data-inv-usd>{usdTxt(Math.round((inv.total_usd ?? 0) * 100))}</bdi> : money(inv.total)}
+                    </p>
+                    {!refunded && due > 0 && <p className="text-2xs text-ink-subtle tabular-nums">{t("rpt.cust.paidOf", { v: usd ? usdIso(Math.round((inv.paid_usd ?? 0) * 100)) : money(paidOf(inv)), defaultValue: "دفع {{v}}" })}</p>}
                   </div>
                   {/* تعديل الفاتورة: كمية غلط، صنف زايد، سعر غلط — يتصحّح هنا
                       بمزامنة مخزون كاملة بدل «إرجاع» يلوّث سجل الزبون. */}
-                  {!refunded && canEdit && (
+                  {/* وفاتورةُ الدولار لا تُعدَّل أسطرُها (بابُ 0264 يرفضها) — الزرُّ كان يفتح نموذجاً يُرفض عند الحفظ. */}
+                  {!refunded && canEdit && !isOpening(inv) && !usd && (
                     <button
                       type="button"
                       data-custedit={inv.id}

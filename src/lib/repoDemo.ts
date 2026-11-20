@@ -10,7 +10,7 @@
  * ========================================================================= */
 import { loadDB, saveDB } from "./demoStore";
 // مَن يطلب (الدور، مفتاحُ المدير، المعرّف) ورفضُ الخادم برمزه — وحدةٌ تشترك بها المرايا الكسولة كلُّها.
-import { demoBaseRole, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
+import { demoApiGate, demoBaseRole, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
@@ -50,6 +50,7 @@ import { getClinicName, getClinicLogo, getClinicSocials, getDialCode, getForgive
 import { buildCustomerDirectory } from "./customerDirectory";
 import type { CustomerPage, CustomerSearchOpts } from "@/types";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
+import { ChargeFault, normCharges, type ChargesNorm } from "./purchaseCharges";
 import { hasPackaging } from "./packs";
 import { packagingShapeError, levelGuardError, mergePackaging, unmergePackaging, snapshotFree } from "./packsMirror";
 import { scanVariants } from "./productCodes";
@@ -419,7 +420,7 @@ function voidRefusal(code: VoidErrorCode): Error {
   }
 }
 /** مرآةُ invoice_forgiveness_consume: سطرٌ سالب بلقطة الفاتورة **قبل** تحديثها (تُنادى قبله). */
-function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: string, totalBefore: number, paidBefore: number): void {
+export function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: string, totalBefore: number, paidBefore: number): void {
   if (!(amount > 0)) return;
   const row: InvoiceForgiveness = {
     id: uuid(), clinic_id: null, invoice_id: inv.id, kind: "consumed", amount: -pgRound2(amount), reason_code: null, note,
@@ -432,24 +433,46 @@ function demoConsumeForgiveness(db: DemoDB, inv: Invoice, amount: number, note: 
   demoAuditPush({ action: "INSERT", entity: "invoice_forgiveness", entity_id: row.id, details: row as unknown as Record<string, unknown> });
 }
 /* ---- أدواتُ دفتر الشركة بالتجريبيّ (مرآةُ حرّاس 0224) ---- */
-function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
+export function demoLedgerGuard(db: DemoDB, companyId: string, amount: number, date: string | null): number {
   if (!(db.companies ?? []).some((c) => c.id === companyId)) throw demoHint("no_company", "الشركةُ غيرُ موجودة بعيادتك.");
   if (date && (date > localISO() || date < "2000-01-01")) throw demoHint("bad_date", "التاريخُ لازم يكون اليوم أو قبله.");
   const amt = round2(Number(amount) || 0);
   if (!(amt > 0)) throw demoHint("bad_amount", "المبلغُ لازم أكبر من صفر.");
   return amt;
 }
-function demoPoolDue(db: DemoDB, companyId: string): number {
+/** مرآةُ company_pool_due — بالدينار وحده منذ 0274 (صفٌّ بالدولار مبلغُه دولار). */
+export function demoPoolDue(db: DemoDB, companyId: string): number {
   let s = 0;
   for (const e of db.companyEntries ?? []) {
-    if (e.company_id !== companyId || e.voided_at) continue;
+    if (e.company_id !== companyId || e.voided_at || (e.currency ?? "IQD") === "USD") continue;
     if (e.direction === "credit") s += e.amount;
     else if (e.kind === "payment") s -= e.amount - (db.purchasePayments ?? []).filter((pp) => pp.entry_id === e.id).reduce((a, pp) => a + pp.amount, 0);
     else s -= e.amount;
   }
   return round2(s);
 }
-function demoEntry(companyId: string, kind: CompanyEntry["kind"], direction: CompanyEntry["direction"], amount: number,
+/** مرآةُ company_pool_due_usd (0274): السابقُ بالدولار — والدفعةُ تُطرح بما لم يذهب منها لفاتورة (دولارُ دفعاتها). */
+export function demoPoolDueUsd(db: DemoDB, companyId: string): number {
+  let s = 0;
+  for (const e of db.companyEntries ?? []) {
+    if (e.company_id !== companyId || e.voided_at || e.currency !== "USD") continue;
+    if (e.direction === "credit") s += e.amount;
+    else if (e.kind === "payment") s -= e.amount - (db.purchasePayments ?? []).filter((pp) => pp.entry_id === e.id).reduce((a, pp) => a + Number(pp.usd ?? 0), 0);
+    else s -= e.amount;
+  }
+  return round2(s);
+}
+/* بابُ فاتورة الشراء بالدولار (مرآةُ doctorvet.usd_purchase_door، 0274): مالُها وسطورُها لا تُكتب إلا من demoPurchaseFx — التسديدُ
+ * والتعديلُ القديمان يُرفضان عليها بجملة كما بالخادم. */
+let purchaseDoor = 0;
+export async function demoPurchaseDoor<T>(f: () => Promise<T>): Promise<T> {
+  purchaseDoor++;
+  try { return await f(); } finally { purchaseDoor--; }
+}
+function demoUsdPurchaseShut(p: Purchase | undefined): void {
+  if (p?.currency === "USD" && purchaseDoor === 0) throw demoHint("usd_purchase_door", "فاتورةُ شراءٍ بالدولار: تتعدّل وتتسدّد من أبواب الدولار — حدّث الصفحة.");
+}
+export function demoEntry(companyId: string, kind: CompanyEntry["kind"], direction: CompanyEntry["direction"], amount: number,
   date: string | null, method: PaymentMethod | null, note?: string | null): CompanyEntry {
   return {
     id: uid("ce"), clinic_id: null, company_id: companyId, kind, direction, amount,
@@ -621,6 +644,12 @@ export async function demoWithUsdDoor<T>(fn: () => Promise<T> | T): Promise<T> {
 const usdErr = (code: string) => Object.assign(new Error(code), { code: "P0001" });
 function usdInvoiceGuard(inv: Invoice | null | undefined): void {
   if (inv?.currency === "USD" && !usdDoorOpen) throw usdErr("usd_door");
+}
+/* 0271: الدينُ القديم (opening) — مرآةُ invoices_opening_guard/invoice_items_opening_guard بالقاعدة: لا ترجيعَ ولا أسطر، والحذفُ بلا
+ * تسديد، والربحُ صفرٌ دائماً. الرمزُ وحده (P0001) والشاشةُ تترجمه؛ والإدراجُ من demoOldDebt.ts وحده. */
+const isOpeningInv = (inv: Invoice | null | undefined): boolean => inv?.sale_kind === "opening";
+function openingGuard(inv: Invoice | null | undefined, code: "opening_no_refund" | "opening_no_lines"): void {
+  if (isOpeningInv(inv)) throw usdErr(code);
 }
 
 function createInvoiceLocal(items: CheckoutItem[], meta: SaleMeta | undefined, cons: Cons, opts: { plan: boolean } = { plan: true }): Invoice {
@@ -915,11 +944,19 @@ function decisionLocked(status: string): Error {
  *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
 /** مرآةُ ما يجري على كلّ كتابةٍ لصفّ مادة منذ 0259: محفّزُ المستويات أوّلاً (BEFORE)، ثمّ قيدُ الشكل — كترتيب الخادم.
  *  `skipId` التوأمُ الذي يُطوى (`doctorvet.codes_from`). */
-/** 0264 — مرآةُ قيد products_usd_ok ومحفّز products_usd_store: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوضٍ ولا كراتين
- *  (23514)؛ وتحويلُها للدولار يُنزلها من المتجر، ونشرُ مادّةٍ دولارية يُرفض usd_store. يرجع store_visible بعد الحكم. */
+/** 0264 — مرآةُ قيد products_usd_ok ومحفّز products_usd_store: مادّةُ الدولار بلا وزنٍ ولا وحدةٍ فرعية ولا حوض (23514) — والكراتينُ
+ *  مسموحةٌ منذ 0272 بأسعارٍ بعملتها؛ وتحويلُها للدولار يُنزلها من المتجر، ونشرُ مادّةٍ دولارية يُرفض usd_store. يرجع store_visible.
+ *  ومرآةُ products_pack_currency_guard (0272): تبديلُ العملة وسعرُ كارتونٍ مكتوبٌ كما هو ⇒ pack_price_currency. */
 function usdProductGuard(next: Product, prev: Product | null): boolean | undefined {
+  if (prev && (prev.price_currency ?? "IQD") !== (next.price_currency ?? "IQD") && Array.isArray(next.packs) && Array.isArray(prev.packs)) {
+    const stale = next.packs.find((k) => {
+      const o = prev.packs!.find((x) => x.id === k.id);
+      return !!o && ((k.sell_price != null && k.sell_price === o.sell_price) || (k.purchase_price != null && k.purchase_price === o.purchase_price));
+    });
+    if (stale) throw demoHint("pack_price_currency", `سعر «${stale.name}» مكتوب بالعملة القديمة — امسحه (يصير تلقائي) أو اكتبه بالعملة الجديدة، وبعدين بدّل العملة.`);
+  }
   if (next.price_currency !== "USD") return next.store_visible;
-  if (next.sold_by_weight || next.has_sub_unit || next.pooled || (Array.isArray(next.packs) && next.packs.length > 0)) {
+  if (next.sold_by_weight || next.has_sub_unit || next.pooled) {
     throw Object.assign(new Error('new row for relation "products" violates check constraint "products_usd_ok"'), { code: "23514" });
   }
   if (!next.store_visible) return next.store_visible;
@@ -999,6 +1036,39 @@ function within<T>(rows: T[], col: string, r?: DateRange): T[] {
 
 /** جداولُ تسأل عنها صفحةُ /outbox «أهو بهذه العيادة؟» (countVisible). */
 export type VisibleTable = "poultry_cycles" | "poultry_farms" | "companies" | "company_sections" | "expense_categories" | "products";
+
+/* ── 0276: الأجورُ الإضافية بفاتورة الشراء — مرآةُ _purchase_charges برسائل الخادم، وإعدادُ العيادة، ورفضُ فاتورةٍ بلا قيمة ── */
+/** normCharges (purchaseCharges.ts) يرمي ChargeFault برمزه وسطره — والتجريبيُّ يقولها بجملة الخادم نفسِها. */
+export function demoChargesNorm(p: unknown, rate: number | null = null): ChargesNorm {
+  try { return normCharges(p, rate); } catch (e) {
+    if (!(e instanceof ChargeFault)) throw e;
+    if (e.code === "charge_label") throw demoHint("charge_label", `اكتب شنو الأجرة بالسطر ${e.line} (مثلاً أجور توصيل).`);
+    if (e.code === "charge_amount") throw demoHint("charge_amount", `مبلغ الأجرة بالسطر ${e.line} لازم أكبر من صفر.`);
+    if (e.why === "many") throw demoHint("bad_charges", "أكثر من ٢٠ أجرة بفاتورة وحدة.");
+    if (e.why === "payee") throw demoHint("bad_charges", "الأجرة على الشركة أو مدفوعة لغيرهم.");
+    throw demoHint("bad_charges", "الأجور الإضافية قائمة — حدّث الصفحة.");
+  }
+}
+/** `_purchase_charges_mode`: «على الكلفة» ما لم تختر العيادةُ «مصروف». */
+export const demoChargesMode = (db: DemoDB): "cost" | "expense" => (db.purchaseChargesMode === "expense" ? "expense" : "cost");
+/** مرآةُ purchase_charges_state / purchase_charges_mode_set (المديرُ وحده: auth_role() = 'manager'، والمصوّرُ تردّه البوّابة).
+ *  خارج demoRepo: بابُها كسولٌ (purchaseChargesApi) — لا سطرَ لها بـrepo.ts (حزمة الإقلاع). */
+export function demoPurchaseChargesState(): { ready: boolean; mode: "cost" | "expense" } {
+  return { ready: true, mode: demoChargesMode(loadDB()) };
+}
+export function demoPurchaseChargesModeSet(mode: "cost" | "expense"): "cost" | "expense" {
+  demoApiGate();
+  if (!(demoBaseRole() === "manager" || demoPinLive())) throw Object.assign(demoHint("forbidden", "طريقة حساب أجور المشتريات يغيّرها المدير."), { code: "42501" });
+  if (mode !== "cost" && mode !== "expense") throw demoHint("bad_mode", "على الكلفة أو مصروف.");
+  const db = loadDB();
+  db.purchaseChargesMode = mode;
+  saveDB(db);
+  return mode;
+}
+/** فاتورةٌ بلا قيمة لا تُوزَّع عليها أجورٌ «على الكلفة» (charges_no_value) — تُقال بدل أن تضيع الأجرةُ من الكلفة. */
+export function demoChargesNoValue(mode: "cost" | "expense" | null, gross: number): void {
+  if (mode === "cost" && !(gross > 0)) throw demoHint("charges_no_value", "الفاتورة بلا قيمة — الأجور ما تنوزّع على كلفة موادها. اكتب أسعار الشراء أو شيل الأجور.");
+}
 
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
@@ -1659,9 +1729,12 @@ const demoRepo = {
   },
 
   async addTreatment(input: Omit<TreatmentEntry, "id" | "created_at">): Promise<TreatmentEntry> {
+    const dose = await loadDemoDose();   // 0269: مرآةُ محفّزَي الطبلة (الختمُ والمعلَّق) — قبل القراءة، فلا انتظارَ بين القراءة والحفظ
     const db = loadDB();
     const entry: TreatmentEntry = { ...input, id: uid("tx"), created_at: new Date().toISOString() };
+    entry.bill = dose.demoBillStamp(entry);
     db.treatments.push(entry);
+    dose.demoDoseHook(db, null, entry);
     saveDB(db);
     return entry;
   },
@@ -1670,13 +1743,17 @@ const demoRepo = {
    *  per dose (a 3-drug × 10-day plan used to cost 30 sequential requests). */
   async addTreatments(inputs: (Omit<TreatmentEntry, "id" | "created_at"> & { id?: string })[]): Promise<void> {
     if (inputs.length === 0) return;
+    const dose = await loadDemoDose();
     const db = loadDB();
     const at = new Date().toISOString();
     /* مرآةُ `on conflict (id) do nothing`: معرّفٌ من المُرسِل موجودٌ أصلاً ⇒ إعادةُ إرسالٍ لا صفٌّ ثانٍ. */
     const seen = new Set(db.treatments.map((t) => t.id));
     for (const input of inputs) {
       if (input.id && seen.has(input.id)) continue;
-      db.treatments.push({ ...input, id: input.id || uid("tx"), created_at: at });
+      const entry: TreatmentEntry = { ...input, id: input.id || uid("tx"), created_at: at };
+      entry.bill = dose.demoBillStamp(entry);
+      db.treatments.push(entry);
+      dose.demoDoseHook(db, null, entry);
     }
     saveDB(db);
   },
@@ -1762,12 +1839,15 @@ const demoRepo = {
   /** Toggle a scheduled treatment between given/not-given (flowsheet check-off).
    *  `at` overrides the administration time (defaults to now). */
   async setTreatmentGiven(id: string, given: boolean, by?: string, at?: string): Promise<void> {
+    const dose = await loadDemoDose();
     const db = loadDB();
     // صفٌّ غائب (انحذف من جهازٍ ثانٍ) يُقال كصفرِ صفوفٍ بالخادم — لا «تمّ» على لا شيء.
     const tx = assertUpdated(db.treatments.find((t) => t.id === id));
+    const before = { administered_at: tx.administered_at ?? null };
     tx.administered_at = given ? (at || new Date().toISOString()) : null;
     tx.administered_by = given ? by : undefined;
     if (given) tx.missed_reason = null;   // أُنجزت ⇒ ما عاد لها سببُ فوات
+    dose.demoDoseHook(db, before, tx);
     saveDB(db);
   },
 
@@ -1775,12 +1855,15 @@ const demoRepo = {
    *  الدواء يُنجَز بعلامة، وهذه لا تُنجَز إلا بما قِيس فعلاً — فالقيمة جزءٌ
    *  من الإنجاز لا ملحقٌ به. */
   async setTreatmentResult(id: string, result: string, by?: string, at?: string): Promise<void> {
+    const dose = await loadDemoDose();
     const db = loadDB();
     const tx = assertUpdated(db.treatments.find((t) => t.id === id));
+    const before = { administered_at: tx.administered_at ?? null };
     tx.result = result;
     tx.administered_at = at || new Date().toISOString();
     tx.administered_by = by;
     tx.missed_reason = null;
+    dose.demoDoseHook(db, before, tx);
     saveDB(db);
   },
   /** تعديل أمرٍ قبل إعطائه: الاسم/الكمية/الوقت/التكرار — به يصير «تعديل اليوم
@@ -3498,9 +3581,14 @@ const demoRepo = {
     const sums: { qty: number; cost: number }[] = [];
     /* 0260: خصمُ الشركة من رأس الفاتورة — المجموعُ قبله بحلقةٍ أولى كالخادم (نسبتُه تلزم كلَّ سطرٍ داخل الثانية)، ثمّ يُقصّ عليه.
      * وكلُّ سطرٍ يُستلم بكلفته بعد نصيبه (المتوسّطُ والفرق)، والمكتوبُ بالسطر وسعرُ الشراء كما هما. */
-    const disc = cons.purchaseShareLocal(
-      cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total,
-      meta.discount);
+    const grossR = cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total;
+    const disc = cons.purchaseShareLocal(grossR, meta.discount);
+    /* 0276: الأجورُ الإضافية — ما على الشركة يدخل total، وما لغيرها خارجه؛ وكيف تُحسب إعدادُ العيادة يُختم على الفاتورة: «على الكلفة»
+     * تُوزَّع كلُّها على السطور بنسبة قيمتها (أساسُ الكلفة الصافي + الأجور)، و«مصروف» الكلفةُ كما 0260. قبل أيّ كتابة، كالخادم. */
+    const ch = demoChargesNorm(meta.charges ?? null);
+    const chMode = ch.company + ch.other > 0 ? demoChargesMode(db) : null;
+    demoChargesNoValue(chMode, grossR);
+    const share = cons.purchaseLandedShare(grossR, disc.net, chMode === "cost" ? ch.company + ch.other : 0);
     /* الكشف (مرآةُ 0211): صورةُ المادّة قبل سطرها — سطرٌ ثانٍ لنفس المادّة يرى ما
      * تركه الأوّل، كالخادم. */
     const effects: PurchaseEffect[] = [];
@@ -3521,8 +3609,8 @@ const demoRepo = {
       const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) },
         (st, q) => Math.max(Math.min(st, 0), Math.round((st + q) * 1000) / 1000),
         {
-          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost, disc.share); },
-          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost, disc.share) : rec!.avg; },
+          before: (p) => { rec = cons.purchaseReceiveLocal(p, qty, cost, share); },
+          after: (p, created) => { p.avg_cost = created ? cons.purchaseNewAvg(cost, share) : rec!.avg; },
         });
       const pid = r.pid;
       const snapBefore = r.before;
@@ -3547,12 +3635,13 @@ const demoRepo = {
      * يعبر JSON رقماً (NaN، اللانهاية) يصل الخادمَ null فيُدفع كلُّه. */
     // والإجماليُّ صافٍ بعد الخصم (0260): المدفوعُ والحالةُ عليه كما كانا على المجموع.
     const { itemCount } = cons.purchaseTotalLocal(sums);
-    const totalR = disc.net;
+    const totalR = cons.addMoney2(disc.net, ch.company);   // 0276: وأجورُ الشركة داخله
     const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : null;
     const paid = paidIn !== null ? cons.col2(Math.min(totalR, Math.max(0, paidIn))) : totalR;
     const purchase: Purchase = {
       id: purchaseId, clinic_id: null, company_id: companyId, company_name: meta.company_name ?? null,
       reference: meta.reference?.trim() || null, total: totalR, discount: disc.discount, item_count: itemCount,
+      charges: ch.list.length ? ch.list : null, charges_company: ch.company, charges_other: ch.other, charges_mode: chMode,
       amount_paid: paid, payment_method: meta.payment_method ?? null,
       status: paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial",
       supplier_name: meta.supplier_name?.trim() || null,
@@ -3579,6 +3668,7 @@ const demoRepo = {
     const db = loadDB();
     const purchase = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!purchase) throw new Error("purchase not found");
+    demoUsdPurchaseShut(purchase);
     const companyId = purchase.company_id ?? null;
     // v_qty numeric(14,3) وv_cost/v_sell numeric(12,2) بالضبط — كالتسجيل (والسالبةُ تُحصر بصفر كما كانت).
     const round3 = (n: number) => Math.max(0, cons.qty3(n));
@@ -3602,9 +3692,14 @@ const demoRepo = {
     /* 0260: السطورُ القديمة تُعكس بنسبة خصم فاتورتها كما حُفظ (total صافٍ، والمجموعُ total + discount) — ما أدخله استلامُها؛
      * والجديدةُ بنسبة الخصم الجديد على مجموعها الجديد (بحلقةٍ أولى كالخادم). ومفتاحٌ غائب (جهازٌ ما تحدّث) يُبقي الخصمَ المحفوظ. */
     const oldShare = cons.purchaseStoredShare(purchase);
-    const disc = cons.purchaseShareLocal(
-      cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total,
-      meta.discount !== undefined ? meta.discount : (purchase.discount ?? 0));
+    const grossR = cons.purchaseTotalLocal(lines.map((l) => ({ qty: round3(Number(l.qty) || 0), cost: round2(Number(l.purchase_price) || 0) }))).total;
+    const disc = cons.purchaseShareLocal(grossR, meta.discount !== undefined ? meta.discount : (purchase.discount ?? 0));
+    /* 0276: الأجور — مفتاحٌ غائب (جهازٌ ما تحدّث) يُبقيها كما حُفظت، وختمُ الفاتورة يبقى (والتي تُضاف لها أجورٌ لأوّل مرّة تأخذ
+     * إعدادَ اليوم). والقديمةُ تُعكس بما استلمها (purchaseStoredShare)، والجديدةُ بأساسها الجديد. */
+    const ch = demoChargesNorm(meta.charges !== undefined ? meta.charges : (purchase.charges ?? null));
+    const chMode = ch.company + ch.other > 0 ? (purchase.charges_mode ?? demoChargesMode(db)) : null;
+    demoChargesNoValue(chMode, grossR);
+    const share = cons.purchaseLandedShare(grossR, disc.net, chMode === "cost" ? ch.company + ch.other : 0);
     // ١) اعكس السطور القديمة ثم أزلها
     for (const it of oldItems) {
       const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
@@ -3623,7 +3718,7 @@ const demoRepo = {
       const sell = round2(Number(l.sell_price) || 0);
       sums.push({ qty, cost });
       const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => rnd3(st + q),
-        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost, disc.share) : adj.line(p.id, qty, cost, disc.share)) });
+        { before: (p) => adj.touchNew(p), after: (p, created) => (created ? adj.born(p, cost, share) : adj.line(p.id, qty, cost, share)) });
       const pid = r.pid;
       if (r.how !== null) touched.add(pid);
       const snapBefore = r.how !== null && orig.has(pid) && !seen.has(pid) ? orig.get(pid)! : r.before;
@@ -3674,12 +3769,16 @@ const demoRepo = {
     // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد. المجموعُ سطراً سطراً بمنزلتين (v_total numeric(14,2))،
     // والمدفوعُ least(coalesce(amount_paid, القديم), v_total) بعمودِه ثمّ greatest(…, 0) — كالدالّة حرفاً.
     const { itemCount } = cons.purchaseTotalLocal(sums);
-    const totalR = disc.net;                                         // 0260: صافٍ — والمدفوعُ والحالةُ عليه
+    const totalR = cons.addMoney2(disc.net, ch.company);   // 0260 صافٍ، و0276 أجورُ الشركة داخله
     const prevPaid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
     const paidIn = meta.amount_paid != null && Number.isFinite(Number(meta.amount_paid)) ? Number(meta.amount_paid) : Number(prevPaid) || 0;
     const paid = Math.max(0, cons.col2(Math.min(totalR, paidIn)));
     purchase.total = totalR;
     purchase.discount = disc.discount;
+    purchase.charges = ch.list.length ? ch.list : null;
+    purchase.charges_company = ch.company;
+    purchase.charges_other = ch.other;
+    purchase.charges_mode = chMode;
     purchase.item_count = itemCount;
     purchase.amount_paid = paid;
     purchase.status = paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial";
@@ -3751,6 +3850,7 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!p) return undefined;
+    demoUsdPurchaseShut(p);
     const paid = p.amount_paid != null ? p.amount_paid : p.total;
     const due = Math.max(0, p.total - paid);
     const amt = Math.round(Math.min(Math.max(Number(amount) || 0, 0), due) * 100) / 100;
@@ -3799,7 +3899,8 @@ const demoRepo = {
     const db = loadDB();
     const amt = demoLedgerGuard(db, companyId, amount, date);
     const pool = Math.max(0, demoPoolDue(db, companyId));
-    const open = (db.purchases ?? []).filter((p) => p.company_id === companyId && p.total - (p.amount_paid ?? p.total) > 0)
+    // دينُ الدينار وحده (0274): فاتورةُ الدولار تُسدَّد من company_pay_fx.
+    const open = (db.purchases ?? []).filter((p) => p.company_id === companyId && p.currency !== "USD" && p.total - (p.amount_paid ?? p.total) > 0)
       .sort((a, b) => a.purchased_at.localeCompare(b.purchased_at) || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
     const inv = round2(open.reduce((s, p) => s + (p.total - (p.amount_paid ?? p.total)), 0));
     if (amt > round2(pool + inv)) throw demoHint("over_pay", `المبلغُ أكبر من دين الشركة (${round2(pool + inv)}).`);
@@ -3833,16 +3934,21 @@ const demoRepo = {
     if (!e) throw demoHint("no_entry", "الحركةُ غيرُ موجودة بعيادتك.");
     if (e.voided_at) throw demoHint("already_void", "الحركةُ ملغاةٌ أصلاً.");
     if (!reason?.trim()) throw demoHint("reason_required", "اكتب سببَ الإلغاء.");
-    if (e.direction === "credit" && demoPoolDue(db, e.company_id) - e.amount < -0.005) throw demoHint("has_payments", "انسدّ من هذا الرصيد — ألغِ التسديد أوّلاً.");
+    const poolNow = e.currency === "USD" ? demoPoolDueUsd(db, e.company_id) : demoPoolDue(db, e.company_id);
+    if (e.direction === "credit" && poolNow - e.amount < -0.005) throw demoHint("has_payments", "انسدّ من هذا الرصيد — ألغِ التسديد أوّلاً.");
     let detail: CompanyEntry["void_detail"] = null;
     if (e.kind === "payment") {
       detail = [];
       for (const pp of (db.purchasePayments ?? []).filter((x) => x.entry_id === e.id)) {
-        detail.push({ purchase_id: pp.purchase_id, amount: pp.amount, paid_at: pp.paid_at });
+        detail.push({ purchase_id: pp.purchase_id, amount: pp.amount, paid_at: pp.paid_at, usd: pp.usd ?? null });
         const p = (db.purchases ?? []).find((x) => x.id === pp.purchase_id);
         if (p) {
           p.amount_paid = Math.max(0, round2((p.amount_paid ?? p.total) - pp.amount));
-          p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
+          if (p.currency === "USD") {
+            // 0274: الدولارُ يُردّ مع دينار حصّته، والحالةُ بالدولار.
+            p.paid_usd = Math.max(0, round2(Number(p.paid_usd ?? 0) - Number(pp.usd ?? 0)));
+            p.status = p.paid_usd >= Number(p.total_usd ?? 0) ? "paid" : p.paid_usd <= 0 ? "unpaid" : "partial";
+          } else p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
         }
       }
       db.purchasePayments = (db.purchasePayments ?? []).filter((x) => x.entry_id !== e.id);
@@ -4054,6 +4160,7 @@ const demoRepo = {
     if (!p) throw new Error("product_not_found");
     const s = (db.companySections ?? []).find((x) => x.id === sectionId);
     if (!s) throw new Error("section_not_found");
+    usdProductGuard({ ...p, pooled: true, section_id: sectionId } as Product, p);   // 0264: قيدُ products_usd_ok — مادّةُ الدولار لا تُجمَّع بحوض
     /* 0253: الرصيدُ ينتقل للحوض كلُّه ولو سالباً — round(v_pool + stock, 3)، فالمجموعُ (الحوضُ + الصفّ) قبل الطيّ هو بعده. الحصرُ
      * (max(0, stock)) كان يمحو العجز: مادّةٌ عند −٢ على حوضٍ ٥ ⇒ الحوضُ ٥ والصفُّ صفر (+٢ لم تكن)، والآن ٣. */
     s.pooled_stock = Math.round(((s.pooled_stock ?? 0) + (p.stock || 0)) * 1000) / 1000;
@@ -4373,7 +4480,8 @@ const demoRepo = {
         const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const cur = m.get(day) ?? { gross: 0, net: 0, ids: new Set<string>() };
         // 0264: ساقُ «فرق صرف» ربحٌ كلُّه (receipt_legs: total = profit = amount) — لا حصّةَ من ربح الفاتورة.
-        cur.gross += r.amount; cur.net += r.kind === "fx" ? r.amount : total > 0 ? inv.profit * (r.amount / total) : 0; cur.ids.add(inv.id);
+        // 0271: تسديدُ الدين القديم قبضٌ حقيقيّ (صافيه صفر)، لكنّه لا يُعدّ «فاتورةً» — العدُّ يُقرأ «مبيعات».
+        cur.gross += r.amount; cur.net += r.kind === "fx" ? r.amount : total > 0 ? inv.profit * (r.amount / total) : 0; if (!isOpeningInv(inv)) cur.ids.add(inv.id);
         m.set(day, cur);
       }
     }
@@ -4385,7 +4493,7 @@ const demoRepo = {
     const lo = range.from ? new Date(range.from).getTime() : -Infinity;
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
     const ids = new Set<string>();
-    for (const inv of loadDB().invoices ?? []) for (const r of receiptsOf(inv)) { const t = new Date(r.at).getTime(); if (t >= lo && t <= hi) ids.add(inv.id); }
+    for (const inv of loadDB().invoices ?? []) if (!isOpeningInv(inv)) for (const r of receiptsOf(inv)) { const t = new Date(r.at).getTime(); if (t >= lo && t <= hi) ids.add(inv.id); }
     const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
     return { gross: r2(days.reduce((s, d) => s + d.gross, 0)), net: r2(days.reduce((s, d) => s + d.net, 0)), invoices: ids.size };
   },
@@ -4393,7 +4501,7 @@ const demoRepo = {
     const db = loadDB();
     const lo = range.from ? new Date(range.from).getTime() : -Infinity;
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
-    const ok = new Set((db.invoices ?? []).filter((i) => (i.status ?? "paid") !== "refunded" && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi).map((i) => i.id));
+    const ok = new Set((db.invoices ?? []).filter((i) => (i.status ?? "paid") !== "refunded" && !isOpeningInv(i) && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi).map((i) => i.id));
     const m = new Map<string, TopProductRow>();
     for (const it of db.invoiceItems ?? []) {
       if (!ok.has(it.invoice_id)) continue;
@@ -4408,7 +4516,7 @@ const demoRepo = {
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
     const m = new Map<string, StaffSalesRow>();
     for (const inv of loadDB().invoices ?? []) {
-      if ((inv.status ?? "paid") === "refunded") continue;
+      if ((inv.status ?? "paid") === "refunded" || isOpeningInv(inv)) continue;   // 0271: الدينُ القديم ليس بيعاً
       const t = new Date(inv.created_at).getTime();
       if (t < lo || t > hi) continue;
       const key = inv.staff_id ?? "";
@@ -4418,7 +4526,7 @@ const demoRepo = {
     return [...m.values()].sort((a, b) => b.revenue - a.revenue);
   },
   async countInvoices(): Promise<number> {
-    return (loadDB().invoices ?? []).length;
+    return (loadDB().invoices ?? []).filter((i) => !isOpeningInv(i)).length;
   },
   /* ---- صفحاتُ الفواتير والبحث بالخادم (0150) — مرآةُ invoice_matches ----
    * نفس التطبيع (searchable / phoneDigits / invoiceNo) على الطرفين. */
@@ -4457,6 +4565,7 @@ const demoRepo = {
     // refund_invoice (0066): فاتورةٌ غائبة ⇒ «invoice not found» — كان التجريبيُّ يرجع undefined بصمت؛ والمرجَّعةُ ترجع كما هي.
     if (!inv) throw new Error("invoice not found");
     if (inv.status !== "refunded") usdInvoiceGuard(inv);
+    if (inv.status !== "refunded") openingGuard(inv, "opening_no_refund");
     if (inv.status !== "refunded") {
       // 0252: «مرجَّعة» ⇒ كلُّ سطرٍ بدفترٍ إلى صفر (invoices_consumption_status) — الموادُّ ترجع للمخزن بالضبط، بدفعةٍ واحدة.
       const now = cons.opStamp(db);
@@ -4476,6 +4585,10 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     usdInvoiceGuard(inv);
+    // 0271: دينٌ قديم عليه مالٌ مسجَّل (ساقٌ أو مدفوع) لا يُحذف — حذفُه يمحو قبضاً انحسب بيومه؛ يُخصم بدله.
+    if (isOpeningInv(inv) && ((inv.amount_paid ?? 0) > 0.005 || (inv.payment_details ?? []).length > 0)) throw usdErr("opening_delete_settled");
+    // 0273: مادّةٌ رجعت منه للرفّ — حذفُه يمحو أثرَ ما رجع.
+    if (isOpeningInv(inv) && (db.oldDebtItems ?? []).some((d) => d.invoice_id === invoiceId && d.returned_qty > 0)) throw usdErr("opening_delete_returned");
     const now = cons.opStamp(db);
     // Restock unless it was already refunded (which already restocked).
     if (inv && inv.status !== "refunded") {
@@ -4488,6 +4601,9 @@ const demoRepo = {
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
     // مرآةُ `on delete cascade` لدفتر الخصم (0241).
     if (db.invoiceForgiveness) db.invoiceForgiveness = db.invoiceForgiveness.filter((x) => x.invoice_id !== invoiceId);
+    // 0273: أسطرُ الدين القديم ومرتجعاتُه تتبعه (on delete cascade).
+    if (db.oldDebtItems) db.oldDebtItems = db.oldDebtItems.filter((x) => x.invoice_id !== invoiceId);
+    if (db.oldDebtReturns) db.oldDebtReturns = db.oldDebtReturns.filter((x) => x.invoice_id !== invoiceId);
     saveDB(db);
     // Mirror the server audit trigger so the demo's security log shows deletions.
     if (inv) demoAuditPush({ action: "DELETE", entity: "invoices", entity_id: invoiceId, details: inv as unknown as Record<string, unknown> });
@@ -4517,6 +4633,8 @@ const demoRepo = {
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
     usdInvoiceGuard(inv);
+    // 0271: الدينُ القديم بلا موادّ — لا يُعدَّل بالبنود (والمحفّزُ يرفض سطرَه ومجموعَه الجديد).
+    openingGuard(inv, "opening_no_lines");
     // coalesce(price, 0) بلا حصرٍ بصفر: سعرٌ سالب يرفضه قيدُ invoice_items_nonneg (23514) كالخادم — كان التجريبيُّ يكتبه صفراً بصمت.
     const clean = (lines ?? [])
       .map((l) => ({ ...l, qty: cons.qty3(Number(l.qty) || 0), unit_price: Number(l.unit_price) || 0, unit_cost: Number(l.unit_cost) || 0 }))
@@ -4525,6 +4643,13 @@ const demoRepo = {
 
     const oldTotal = Number(inv.total) || 0;
     const before = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+    /* 0272 (invoice_items_usd_door): مادّةُ الدولار تعود لفاتورة الدينار إن كانت بسطورها قبل التعديل (حُوّلت للدولار بعد بيعها) — ومادّةُ
+     * دولارٍ جديدة تُرفض. كان التعديلُ يُضيفها بسعر دينارها (صفرٌ لمادّةٍ أُنشئت بالدولار) — ثغرةُ تعديل طلب التوصيل. */
+    const hadProd = new Set(before.map((b) => b.product_id).filter(Boolean) as string[]);
+    for (const l of clean) {
+      const p = l.product_id ? (db.products ?? []).find((x) => x.id === l.product_id) : undefined;
+      if (p?.price_currency === "USD" && !hadProd.has(p.id)) throw usdErr("usd_product_in_iqd");
+    }
     // دفعةٌ واحدة للتعديل كلِّه: ردُّ السطور القديمة وربطُ الجديدة بـat_us نفسِه (كمعاملته بالخادم).
     const now = cons.opStamp(db);
     // 0252: خدمةُ كلّ سطرٍ قبل حذفه — السطرُ المعاد يرثها بمعرّفه، وإلا ضاع ما يربطه بوصفته.
@@ -4645,6 +4770,8 @@ const demoRepo = {
     usdInvoiceGuard(inv);
     // return_invoice_items (0121 → 0253) بترتيبه: «nothing to return» للمصفوفة الغائبة أو الفارغة هنا، ولمرتجعٍ جزئيٍّ لم يرجّع مدخلٌ منه شيئاً تحت.
     if (!Array.isArray(returns) || returns.length === 0) throw new Error("nothing to return");
+    // 0271: الدينُ القديم بلا أسطر ⇒ «إرجاعٌ كامل» يقلبه مرجَعاً — والمحفّزُ يرفض ذلك (opening_no_refund).
+    openingGuard(inv, "opening_no_refund");
     const items = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
     const now = cons.opStamp(db);                                          // دفعةٌ واحدة لكلّ سطور هذا المرتجع
     const itemIdOf = (e: unknown): string | null => {
@@ -4807,6 +4934,7 @@ const demoRepo = {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) return undefined;
+    usdInvoiceGuard(inv);   // 0264: سِيَقُ فاتورة الدولار لا تُكتب إلا من بابها (invoices_usd_door) — المرآةُ كانت تكتبها
     if (inv.status === "refunded") throw new Error("invoice refunded");
     const clean = legs.filter((l) => l && l.method && Number(l.amount) > 0);
     if (clean.length) {
@@ -4889,7 +5017,8 @@ const demoRepo = {
     const paidBefore = target.amount_paid ?? target.total;
     target.forgiven = pgRound2((target.forgiven ?? 0) + chk.amount);
     target.total = pgRound2(target.total - chk.amount);
-    target.profit = pgRound2((target.profit ?? 0) - chk.amount);
+    // 0271: الدينُ القديم ربحُه صفرٌ دائماً (المحفّزُ يثبّته) — الخصمُ لا يجعله خسارة.
+    target.profit = isOpeningInv(target) ? 0 : pgRound2((target.profit ?? 0) - chk.amount);
     const row: InvoiceForgiveness = {
       id: uuid(), clinic_id: null, invoice_id: target.id, kind: "forgive", amount: chk.amount, reason_code: chk.reason, note: chk.note,
       pay_amount: chk.pay, pay_method: chk.pay > 0 ? method : null, total_before: totalBefore, paid_before: paidBefore,
@@ -4916,7 +5045,7 @@ const demoRepo = {
     const target = inv as Invoice, row = entry as InvoiceForgiveness;
     target.forgiven = Math.max(0, pgRound2((target.forgiven ?? 0) - row.amount));
     target.total = pgRound2(target.total + row.amount);
-    target.profit = pgRound2((target.profit ?? 0) + row.amount);
+    target.profit = isOpeningInv(target) ? 0 : pgRound2((target.profit ?? 0) + row.amount);
     const now = new Date().toISOString();
     row.voided_at = now; row.voided_by = demoUserId(); row.void_reason = chk.reason;
     saveDB(db);
@@ -4954,7 +5083,7 @@ const demoRepo = {
   /** مرآةُ customer_search (0232): نفسُ الخطوات بـbuildCustomerDirectory، بمفتاح دولة العيادة. */
   async findCustomers(q: string | null, opts?: CustomerSearchOpts): Promise<CustomerPage> {
     const db = loadDB();
-    return buildCustomerDirectory({ invoices: db.invoices ?? [], items: db.invoiceItems ?? [], pets: db.pets ?? [] }, getDialCode(), { q, ...(opts ?? {}) });
+    return buildCustomerDirectory({ invoices: db.invoices ?? [], items: db.invoiceItems ?? [], pets: db.pets ?? [], profiles: db.customerProfiles ?? [] }, getDialCode(), { q, ...(opts ?? {}) });
   },
 
   /* ---- Cash expenses / withdrawals ledger ---- */
@@ -5468,8 +5597,19 @@ export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
 export const loadDemoUsd = () => import("./demoUsd");
+export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");
+export const loadDemoProductGroups = () => import("./demoProductGroups");   // 0277 — المنتجاتُ المربوطة
+export const loadDemoPosSales = () => import("./demoPosSales");   // 0279 — مبيعُ ٣٠ يوماً لترتيب شاشة البيع
+export const loadDemoVaccinePrices = () => import("./demoVaccinePrices");   // 0279 — أسعارُ التطعيمات
+export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 — أرشفةُ أدوية النظام
+export const loadDemoCompanyEntryEdit = () => import("./demoCompanyEntryEdit");   // 0281 — تعديلُ الرصيد السابق والتسوية
+export const loadDemoDual = () => import("./demoDual");   // 0282 — البيعُ بسعرين (سطرُ الدولار بفاتورة دينار)
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
+/** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */
+export const loadDemoNeg = () => import("./demoNegStock");
+/** 0269: الجرعةُ بيع — مرآةُ المحفّز والمعلَّق والبيعة الخاتمة كسولةٌ من هذا الباب وحده (doseApi، وكتاباتُ الطبلة أعلاه). */
+export const loadDemoDose = () => import("./demoDose");
 /** 0264: بيعُ الدولار يكتب فاتورتَه بمرآة retail_checkout نفسِها والبابُ مفتوح (usd_checkout ينادي retail_checkout). */
 export async function demoUsdRetail(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
   const cons = await loadDemoConsumption();
@@ -5496,4 +5636,4 @@ export const demoServices = {
  * repoDemo.ts تفقد القطعةُ واجهتَها، فيصير import() بـrepo.ts (حزمة الإقلاع) `.then(e=>e.r)` مع كائنِ مساحة أسماء.
  * مقيسٌ ببناء vite: بلا هذا السطر repo-*.js 92,301 بايتاً خاماً (+١٣، و+٦ مضغوطة)، وبه 92,288 كالرأس؛ وقائمةُ
  * التحميل المسبق لـrepoDemo ٢٣ اسماً بالحالتين. */
-export { demoApiGate, demoBaseRole, demoClinicId, demoHint, demoPinLive, demoUserId } from "./demoRole";
+export { demoApiGate, demoBaseRole, demoClinicId, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";

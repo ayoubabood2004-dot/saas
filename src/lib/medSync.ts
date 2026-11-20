@@ -33,6 +33,8 @@ async function persistMedicalEntriesNow(
   entries: MedicalDraft[],
   /** لحظةُ الإعطاء — بيعةٌ بيومٍ سابق (0242) تختم جرعتَها ولقاحَها بيومها لا بيوم إدخالها (درسُ 0223). */
   at?: string | null,
+  /** 0269: تُحسب الجرعةُ المعطاة بيعاً؟ البيعُ يقول false (بِيعت بالبيعة نفسِها)، والسجلُّ true. الغائبُ يختمه الخادم. */
+  bill?: boolean,
 ): Promise<void> {
   const atDate = at ? new Date(at) : null;
   const now = atDate && !Number.isNaN(atDate.getTime()) ? atDate : new Date();
@@ -106,6 +108,7 @@ async function persistMedicalEntriesNow(
         // null administered_at → the flowsheet renders it as a planned/pending dose.
         administered_at: given ? nowISO : null,
         administered_by: given ? doctorName : undefined, doctor: doctorName,
+        ...(bill !== undefined ? { bill } : {}),
         // The doctor's note for this drug shows on the treatment card; falls back to route · family.
         observations: e.note?.trim() || `${ROUTE_LABEL[e.route]} · ${e.family}`,
       });

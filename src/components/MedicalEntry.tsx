@@ -520,7 +520,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName, allowHistory, blockRef, historyPetId }: {
+export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName, allowHistory, blockRef, historyPetId, onVaccineChange }: {
   species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
   /** حيوان مربوط (بيع من ملفه): يُعرض سجل لقاحاته — السابق والمستحق — للاختيار بضغطة. */
   petId?: string | null; petName?: string | null;
@@ -530,10 +530,15 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   allowHistory?: boolean;
   /** سببٌ يمنع «احفظ» (سجلٌّ سابق ناقص) — وإلا حفظ الأبُ الباقي وأسقط هذا بصمت. */
   blockRef?: { current: string | null };
+  /** التطعيمُ المختار الآن ("" = لا شيء) — نموذجُ البيع يعبّي سعرَه منه (0279). بأثرٍ على القيمة، فكلُّ طريقٍ يغيّرها يُسمع. */
+  onVaccineChange?: (name: string) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [vaccine, setVaccine] = useState("");
+  const vaxChangeRef = useRef(onVaccineChange);
+  vaxChangeRef.current = onVaccineChange;
+  useEffect(() => { vaxChangeRef.current?.(vaccine); }, [vaccine]);
   const [nextDue, setNextDue] = useState<string | null>(null);
   const [lot, setLot] = useState("");
   const [given, setGiven] = useState(true);

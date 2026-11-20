@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -58,6 +58,48 @@ export const MANIFEST = [
   ["verify_consumption_wiring", 0, "public.verify_consumption_wiring()", "0255", "0260"],
   // 0261: الراجيتةُ «ملف طبي» بسجلّ الحركات — audit_kind نصُّ 0242 (آخرُ من عرّفها) وسطرٌ معلَّم.
   ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0242", "0261"],
+  // 0267: البيعُ بالكارتون — كلفةُ سطرٍ يطابق كارتوناً محفوظاً = المتوسّط × عددُ علبه (نصُّ 0255 وفرعٌ معلَّم قبل فرعَيه).
+  ["_product_line_cost", 5, "public._product_line_cost(uuid,uuid,numeric,numeric,numeric)", "0255", "0267"],
+  // 0268: العائلاتُ الأساسيّة صفوفٌ بتصنيفات العيادة — الحارسُ يثبّت عائلةَ الصفّ ولا يمنعها السقف، والقائمةُ تقولها.
+  ["clinic_drug_groups_guard", 0, "public.clinic_drug_groups_guard()", "0239", "0268"],
+  ["clinic_drugs_list", 0, "public.clinic_drugs_list()", "0239", "0268"],
+  // 0269: الجرعةُ بيع — القائمةُ تقول سعرَ الجرعة وربطَها بالمخزن.
+  ["clinic_drugs_list", 0, "public.clinic_drugs_list()", "0268", "0269"],
+  // 0270: ملفُّ الزبون — الملفّاتُ مصدرٌ ثالث بدليل الزبائن، والدينُ القديم (opening) ليس شراءً.
+  ["customer_search", 6, "public.customer_search(text,text,text,integer,integer,integer)", "0232", "0270"],
+  // 0271: الديونُ القديمة (opening) ليست مبيعاً — القارئاتُ تستثنيها، وسجلُّ الحركات يسمّيها، والخصمُ عليها بلا سقف الربح.
+  //   (المصدرُ قد يكون «create function» بعد drop — bodyOf يقبل الصيغتين.)
+  ["report_receipts_daily", 3, "public.report_receipts_daily(timestamptz,timestamptz,text)", "0264", "0271"],
+  ["report_receipts_total", 2, "public.report_receipts_total(timestamptz,timestamptz)", "0264", "0271"],
+  ["report_staff", 2, "public.report_staff(timestamptz,timestamptz)", "0149", "0271"],
+  ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0264", "0271"],
+  ["audit_change", 0, "public.audit_change()", "0242", "0271"],
+  ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0261", "0271"],
+  ["forgive_invoice_debt", 8, "public.forgive_invoice_debt(uuid,numeric,text,text,numeric,numeric,text,boolean)", "0241", "0271"],
+  ["platform_pulse", 0, "public.platform_pulse()", "0151", "0271"],
+  ["admin_clinic_volumes", 1, "public.admin_clinic_volumes(integer)", "0123", "0271"],
+  ["admin_market_monthly", 1, "public.admin_market_monthly(integer)", "0123", "0271"],
+  // 0272: كارتونُ الدولار — البيعُ بالدولار يعرف سطرَ الكارتون، وبابُ الأسطر يمرّر إعادةَ ما حُذف وحدها (ثغرةُ تعديل الطلب).
+  ["usd_checkout", 2, "public.usd_checkout(jsonb,jsonb)", "0264", "0272"],
+  ["invoice_items_usd_door", 0, "public.invoice_items_usd_door()", "0264", "0272"],
+  // 0273: موادُّ الدين القديم — بابُ المرتجع يحرّك الإجماليَّ نزولاً، والحذفُ بعد مرتجعٍ يُرفض.
+  ["invoices_opening_guard", 0, "public.invoices_opening_guard()", "0271", "0273"],
+  // 0274: الشراءُ بالعملتين — دفترُ الدينار يقرأ الدينارَ وحده، والإلغاءُ يعرف دفعةَ الدولار.
+  ["company_pool_due", 2, "public.company_pool_due(uuid,uuid)", "0224", "0274"],
+  ["company_pay", 5, "public.company_pay(uuid,numeric,text,date,text)", "0224", "0274"],
+  ["company_entry_void", 2, "public.company_entry_void(uuid,text)", "0224", "0274"],
+  // 0281: الإلغاءُ يقرأ الصفَّ من جديد تحت قفل الشركة — المبلغُ صار يتعدّل (company_entry_edit).
+  ["company_entry_void", 2, "public.company_entry_void(uuid,text)", "0274", "0281"],
+  // 0275: كلُّ تسديدٍ لدَين الدولار بسعر يومه وفرقُ صرفه، والأرباحُ والخسائر تقرؤه.
+  ["purchase_pay_fx", 7, "public.purchase_pay_fx(uuid,numeric,text,numeric,text,text,numeric)", "0274", "0275"],
+  ["company_pay_fx", 8, "public.company_pay_fx(uuid,text,numeric,text,numeric,text,date,text)", "0274", "0275"],
+  ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0271", "0275"],
+  // 0276: أجورٌ إضافية بفاتورة الشراء — على الشركة (داخل total) أو لغيرها، وكلفةٌ موزَّعة أو مصروفٌ بالأرباح والخسائر.
+  ["record_purchase", 2, "public.record_purchase(jsonb,jsonb)", "0260", "0276"],
+  ["update_purchase", 3, "public.update_purchase(uuid,jsonb,jsonb)", "0260", "0276"],
+  ["record_purchase_fx", 2, "public.record_purchase_fx(jsonb,jsonb)", "0274", "0276"],
+  ["update_purchase_fx", 3, "public.update_purchase_fx(uuid,jsonb,jsonb)", "0274", "0276"],
+  ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0275", "0276"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
@@ -109,7 +151,7 @@ export const md5 = (s) => createHash("md5").update(strip(codeOf(s)), "utf8").dig
 
 /* آخرُ تعريفٍ للدالّة بالملفّ (بعدد وسائطها الداخلة) — نصُّ ما بين علامتَي الدولار. */
 export function bodyOf(txt, fn, nIn) {
-  const re = new RegExp("create\\s+or\\s+replace\\s+function\\s+(?:public\\.)?" + fn + "\\s*\\(", "gi");
+  const re = new RegExp("create\\s+(?:or\\s+replace\\s+)?function\\s+(?:public\\.)?" + fn + "\\s*\\(", "gi");
   let found = null, m;
   while ((m = re.exec(txt))) {
     const open = m.index + m[0].length - 1;

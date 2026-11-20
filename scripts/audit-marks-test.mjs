@@ -111,10 +111,57 @@ console.log("▸ ملفُّ الإكسل");
   check("  علامتا «حقيبة نقل» بخلية V بسطرها", r1 > 0 && ws[`V${r1}`]?.v === "كمية مشكوكة · تكرار؟", JSON.stringify(ws[`V${r1}`]?.v));
   check("  و«مادة سليمة» خليةٌ فارغة", r2 > 0 && ws[`V${r2}`]?.v === "");
   check("  و«بلا رمز» علامتُه", r3 > 0 && ws[`V${r3}`]?.v === "بلا باركود");
-  check("ومعادلاتُ الفرق لم تتحرّك (M و J و H كما كانت)",
-    ws[`N${r1}`]?.f === `IF(M${r1}="","",M${r1}-J${r1})` && ws[`O${r1}`]?.f === `IF(M${r1}="","",(M${r1}-J${r1})*H${r1})`
-    && plain[`N${r1}`]?.f === ws[`N${r1}`]?.f, ws[`N${r1}`]?.f);
+  check("ومعادلاتُ الفرق بأعمدتها: فرقُ القطع بإشارته، وقيمتُه من القيمة كما تُعرض (MAX(J،0) كعمود رأس المال)",
+    ws[`N${r1}`]?.f === `IF(M${r1}="","",M${r1}-J${r1})` && ws[`O${r1}`]?.f === `IF(M${r1}="","",(M${r1}-MAX(J${r1},0))*H${r1})`
+    && ws[`K${r1}`]?.f === `MAX(J${r1},0)*H${r1}` && plain[`N${r1}`]?.f === ws[`N${r1}`]?.f, JSON.stringify([ws[`N${r1}`]?.f, ws[`O${r1}`]?.f, ws[`K${r1}`]?.f]));
   check("  والعمودُ الأصفر للعادّ ما زال M", ws.M4?.v === plain.M4?.v);
+  /* بيعٌ قبل الجرد (0266): سطرٌ رصيدُه −٤ بسعر ٥٬٠٠٠ وسطرٌ ١٠ بسعر ١٠٠. رأسُ المال ١٬٠٠٠ قبل العدّ وبعده إن عُدّ السالبُ صفراً —
+   * فصافي أثر الجرد صفر لا +٢٠٬٠٠٠ «زيادة». المعادلاتُ تُحسب هنا بيدٍ بنصّها (الورقةُ لا تُحسب بالمكتبة). */
+  const negPs = [P("n1", "سالبة", { stock: -4, purchase_price: 5000, sell_price: 6000 }), P("n2", "موجبة", { stock: 10, purchase_price: 100, sell_price: 150 })];
+  const wn = sheetOf(M.buildStocktakeWorkbook(XLSX, negPs, [], [], now, "عيادة", undefined));
+  const rowOf = (id) => { for (let r = 5; r < 50; r++) if (wn[`U${r}`]?.v === id) return r; return -1; };
+  const rn = rowOf("n1"), rp = rowOf("n2");
+  const evalCell = (f, vals) => {
+    // IF(M="","",X) و MAX(a,0) و + − * فقط — ما تكتبه الورقةُ بهذين العمودين.
+    const m = /^IF\(M\d+="","",(.*)\)$/.exec(f);
+    const body = (m ? m[1] : f).replace(/MAX\(([A-Z]\d+),0\)/g, (_, c) => `Math.max((${vals[c.replace(/\d+/, "")]}),0)`).replace(/\b([A-Z])\d+\b/g, (_, c) => `(${vals[c]})`);
+    return Function(`return (${body});`)();
+  };
+  const counted = { n1: 0, n2: 10 };
+  let sumO = 0, sumK = 0, sumMH = 0;
+  for (const [id, r] of [["n1", rn], ["n2", rp]]) {
+    const vals = { J: wn[`J${r}`].v, H: wn[`H${r}`].v, M: counted[id] };
+    sumO += evalCell(wn[`O${r}`].f, vals); sumK += evalCell(wn[`K${r}`].f, vals); sumMH += vals.M * vals.H;
+  }
+  check("سطرٌ تحت الصفر: قيمتُه المخزّنة صفر، وصافي أثر الجرد = رأسُ المال بعد العدّ − قبله (صفرٌ لا +٢٠٬٠٠٠)",
+    rn > 0 && wn[`K${rn}`]?.v === 0 && sumK === 1000 && sumO === sumMH - sumK && sumO === 0, JSON.stringify({ K: wn[`K${rn}`]?.v, sumK, sumO, sumMH }));
+  const tot = (() => { for (let r = 5; r < 50; r++) if (String(wn[`A${r}`]?.v ?? "") === "المجموع") return r; return -1; })();
+  const lo = Math.min(rn, rp), hi = Math.max(rn, rp);
+  check("  ومجموعُ عمود «العدد بالنظام» مجموعُه كما هو (٦ بإشارته) — ورقةُ العدّ تُطابَق به: فعلي − نظام = الفرق",
+    tot > 0 && wn[`J${tot}`]?.f === `SUM(J${lo}:J${hi})` && wn[`J${tot}`]?.v === 6, JSON.stringify({ f: wn[`J${tot}`]?.f, v: wn[`J${tot}`]?.v }));
+  const wbn = M.buildStocktakeWorkbook(XLSX, negPs, [], [], now, "عيادة", undefined);
+  const sum = wbn.Sheets[wbn.SheetNames[1]];
+  const cells = Object.keys(sum).filter((k) => /^A\d+$/.test(k)).map((k) => ({ r: Number(k.slice(1)), label: String(sum[k].v ?? "") }));
+  const rowOfLabel = (txt) => cells.find((x) => x.label.startsWith(txt))?.r ?? -1;
+  const rUnits = rowOfLabel("إجمالي القطع"), rSys = rowOfLabel("العدد بالنظام"), rAct = rowOfLabel("مجموع القطع الفعلية"), rNet = rowOfLabel("صافي فرق القطع");
+  check("  والملخّص: «إجمالي القطع» قطعُ الرفّ (١٠ كبطاقة الشركة)، و«العدد بالنظام» (٦ بإشارته) قبل «الفعلية» و«صافي الفرق» — فيتّفق الحساب أمام العين",
+    rUnits > 0 && sum[`B${rUnits}`]?.v === 10 && rSys > 0 && rSys < rAct && rAct < rNet && /^SUM\('[^']+'!J\d+:J\d+\)$/.test(String(sum[`B${rSys}`]?.f ?? "")),
+    JSON.stringify({ rUnits, units: sum[`B${rUnits}`]?.v, rSys, fSys: sum[`B${rSys}`]?.f, rAct, rNet }));
+  /* والمعادلةُ تحمل قيمتَها لحظةَ التصدير: LibreOffice لا يعيد حسابَ xlsx عند الفتح (افتراضيّاً، مقيسٌ بـsoffice) فيعرض المخزّن — كان
+   * صفراً لكلّ سطر: «العدد بالنظام» صفرٌ ويبقى (لا يتبع ما يُكتب بالأصفر)، و«أسطر لم تُعدّ بعد» صفرٌ والأسطرُ كلُّها لم تُعدّ. */
+  const rLeft = rowOfLabel("أسطر لم تُعدّ بعد"), rDone = rowOfLabel("أسطر عُدَّت فعلاً");
+  check("  وقيمُها المخزّنة كما يحسبها البرنامج لحظةَ التصدير (العمودُ الأصفرُ فارغ): «العدد بالنظام» ٦، و«لم تُعدّ» ٢، و«عُدّت» صفر",
+    sum[`B${rSys}`]?.v === 6 && sum[`B${rLeft}`]?.v === 2 && sum[`B${rDone}`]?.v === 0 && sum[`B${rAct}`]?.v === 0 && sum[`B${rNet}`]?.v === 0,
+    JSON.stringify({ sys: sum[`B${rSys}`]?.v, left: sum[`B${rLeft}`]?.v, done: sum[`B${rDone}`]?.v }));
+  /* عيادةٌ بلا أسطر: المدى لا يبدأ بعد نهايته — J5:J4 يُقرأ J4:J5 فيأخذ خليةَ العنوان («أسطر فيها فرق: 1» عن ورقةٍ فارغة، مقيسٌ بـLibreOffice). */
+  const wbe = M.buildStocktakeWorkbook(XLSX, [], [], [], now, "عيادة", undefined);
+  const sumE = wbe.Sheets[wbe.SheetNames[1]];
+  const ranges = Object.values(sumE).filter((x) => x && typeof x === "object" && x.f).flatMap((x) => [...String(x.f).matchAll(/!([A-Z])(\d+):([A-Z])(\d+)/g)].map((m) => [Number(m[2]), Number(m[4])]));
+  check("  وعيادةٌ بلا أسطر: لا مدى مقلوب بمعادلات الملخّص", ranges.length > 0 && ranges.every(([a, b]) => a <= b), JSON.stringify(ranges.slice(0, 4)));
+  const wbp = M.buildStocktakeWorkbook(XLSX, products, [CO], [SEC], now, "عيادة", undefined);
+  const sumP = wbp.Sheets[wbp.SheetNames[1]];
+  check("  وعيادةٌ بلا سالب: لا سطرَ «العدد بالنظام» بالملخّص (هو «إجمالي القطع» نفسُه)",
+    !Object.keys(sumP).some((k) => /^A\d+$/.test(k) && String(sumP[k].v ?? "").startsWith("العدد بالنظام")));
 }
 
 console.log("▸ auditMarks — من ملاحظات الفحص إلى كلمةٍ لكلّ مادة");

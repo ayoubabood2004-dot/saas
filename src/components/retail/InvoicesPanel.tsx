@@ -16,7 +16,7 @@ import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoiceNo";
-import { cn, formatDate, money, dateLocale } from "@/lib/utils";
+import { cn, formatDate, formatNum, money, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, paidOf, isDebt, paymentStatusOf, round2, grossOf, forgivenOf } from "@/lib/debt";
 import { page } from "@/lib/lazyPage";
@@ -40,11 +40,18 @@ let ForgiveSectionLazy = loadForgiveSection();
 /* فاتورةُ الدولار (0264): لوحتُها (الدولارُ أوّلاً، والتسديدُ وإلغاؤه والحذف) قطعةٌ كسولة بنطاقها usd — لا وحدةَ ثابتةً هنا. */
 const loadUsdInvoice = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdInvoicePanel })), ["usd"]);
 let UsdInvoiceLazy = loadUsdInvoice();
+/* الدينُ القديم (0271): شارتُه وتفصيلُه بنطاق odebt — قطعةٌ كسولة (retail حارٌّ والباردُ ممتلئ). */
+const loadOldDebtNote = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
+let OldDebtNoteLazy = loadOldDebtNote();
 /** «$50» / «$1,234.50» — عرضٌ وحده (الحسابُ بالخادم وبـusdMath داخل اللوحة). */
 const usd$ = (n: number | null | undefined): string => {
   if (n == null) return "$—";
   return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 };
+/** داخل جملةٍ مترجمة: معزولٌ اتجاهياً (LRI…PDI) — بجملةٍ عربية كان «$400» يُرسم «400$» (usdIso). */
+const usdIn = (n: number | null | undefined): string => `\u2066${usd$(n)}\u2069`;
+/** باقي فاتورة الدولار بالدولار — الدَّينُ بالدولار، ودينارُ يوم البيع يبدو أصغرَ كلّما صعد الدولار. */
+const usdDueOf = (inv: Invoice): number => Math.max(0, Math.round(((inv.total_usd ?? 0) - (inv.paid_usd ?? 0)) * 100)) / 100;
 let ReturnSheetLazy = loadReturnSheet();
 /* وما رجع للمخزن من موادّ الخدمة بعد الترجيع والحذف (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ
    بحارسٍ بمكانها، لفاتورةٍ فيها سطرُ خدمة وحدها، ولا ينتظرها الفعلُ نفسُه. */
@@ -91,6 +98,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [open, setOpen] = useState<Invoice | null>(null);
+  const [, setNoteTick] = useState(0);
 
   // ---- الوضعُ المُصفَّح: الصفوفُ من الخادم ----
   // بلا بحث: **نافذةٌ زمنية** — آخرُ ١٥ يوماً، وكلُّ «المزيد» ينزل ١٥ يوماً أخرى
@@ -428,8 +436,9 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   </div>
                   <div className="text-end">
                     <p className="font-display font-bold tabular-nums text-success-600 dark:text-success-300">+{money(e.amount)}</p>
-                    {e.remainingAfter > 0.009
-                      ? <p className="text-2xs text-warn-600">{t("retail.settlementLeft", { amount: money(e.remainingAfter), defaultValue: "Left after: {{amount}}" })}</p>
+                    {e.usd != null && e.usd !== 0 && <p className="text-2xs font-semibold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-settle-usd>{usd$(e.usd / 100)}</p>}
+                    {(e.remainingAfterUsd != null ? e.remainingAfterUsd > 0 : e.remainingAfter > 0.009)
+                      ? <p className="text-2xs text-warn-600">{t("retail.settlementLeft", { amount: e.remainingAfterUsd != null ? usdIn(e.remainingAfterUsd / 100) : money(e.remainingAfter), defaultValue: "Left after: {{amount}}" })}</p>
                       : <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><CheckCircle2 size={10} /> {t("retail.settlementCleared", "Fully settled")}</p>}
                   </div>
                 </motion.button>
@@ -476,6 +485,11 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                     {displayCustomerName(inv.customer_name) || t("retail.walkIn", "Walk-in")}
                     <span className="font-mono text-2xs font-normal text-ink-subtle">{invoiceNo(inv.id)}</span>
                   </p>
+                  {inv.sale_kind === "opening" && (
+                    <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setNoteTick((n) => n + 1); }}>
+                      <Suspense fallback={null}><OldDebtNoteLazy invoice={inv} /></Suspense>
+                    </LoadBoundary>
+                  )}
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
                     <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
                     {/* «تاريخ المبيع» (0242): بيومها بالقائمة، والشارةُ تقول إنها أُدخلت بعده. */}
@@ -504,9 +518,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.wasDebt", "سُدِّد دَينها")}</Badge>
                 )}
                 <div className="text-end">
-                  <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</p>
+                  {/* فاتورةُ الدولار بالدولار (0264): إجماليُّها وباقيها — دينارُ يوم البيع بلا علامة كان يُقرأ ديناً بالدينار ويبدو أصغر. */}
+                  <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>
+                    {inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd>{usd$(inv.total_usd)}</bdi> : money(inv.total)}
+                  </p>
                   {!refunded && isDebt(inv)
-                    ? <p className="flex items-center justify-end gap-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")} {money(dueOf(inv))}</p>
+                    ? <p className="flex items-center justify-end gap-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")} {inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd-due>{usd$(usdDueOf(inv))}</bdi> : money(dueOf(inv))}</p>
                     : !refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
                 </div>
               </motion.button>
@@ -624,6 +641,16 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const forgiven = forgivenOf(invoice);
   /* 0264: فاتورةُ الدولار — سطورُها بالدولار، ولوحتُها تحلّ محلَّ المجاميع والسِّيَق وأزرار الدينار (الخادمُ يرفضها بالباب). */
   const usdInv = invoice.currency === "USD";
+  /* الدينُ القديم (0271): بلا موادّ ولا ترجيع — والحذفُ (للمدير) قبل أيّ مالٍ مسجَّل وحده؛ القاعدةُ ترفض غيرَ ذلك أيضاً. */
+  const opening = invoice.sale_kind === "opening";
+  const openingSettled = opening && (paidOf(invoice) > 0.005 || (invoice.payment_details ?? []).length > 0);
+  /* مطبوعُه كشفُ دين لا جدولَ موادّ فارغ: سطرٌ واحد بما هو وبمبلغه — والمدفوعُ والباقي من رأس الفاتورة كما لأيّ دين. */
+  const openingLines: InvoiceItem[] = opening ? [{
+    id: `${invoice.id}:opening`, invoice_id: invoice.id, product_id: null, name: invoice.opening_what || "—",
+    qty: 1, unit_price: invoice.total + forgivenOf(invoice), unit_cost: 0, line_total: invoice.total + forgivenOf(invoice),
+    // فاتورةُ الدولار تُطبع بسعر الدولار (usdPrintItem): بلاه يطلع سطرُ الدين «0$».
+    unit_price_usd: usdInv ? Number(invoice.total_usd ?? 0) : null,
+  } as InvoiceItem] : [];
   const usdChanged = async () => {
     onChanged();
     try { const [fresh] = await repo.listInvoicesByIds([invoice.id]); if (fresh) setOpen(fresh); } catch { /* القائمةُ تتحدّث بـonChanged */ }
@@ -772,8 +799,14 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           )}
         </div>
 
+        {opening && (
+          <LoadBoundary scope="odebt-note" onRetry={() => { OldDebtNoteLazy = loadOldDebtNote(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}><OldDebtNoteLazy invoice={invoice} full onChanged={(u: Invoice) => { setOpen(u); onChanged(); }} /></Suspense>
+          </LoadBoundary>
+        )}
+
         {/* Items */}
-        <div className="rounded-2xl border border-line">
+        {!opening && <div className="rounded-2xl border border-line">
           {loading ? (
             <div className="space-y-2 p-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 rounded-lg" />)}</div>
           ) : itemsFailed ? (
@@ -790,14 +823,17 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
                 <div key={it.id} className="flex items-center gap-3 px-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{it.name}</p>
-                    <p className="text-xs text-ink-subtle">{it.qty} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}</p>
+                    {/* الوحدةُ كما بالمطبوع («٤ كارتون × ٣٠٬٠٠٠»): كارتونٌ (0267) أو مفردٌ بلاها يُقرأ علبة. */}
+                    <p className="text-xs text-ink-subtle">{it.qty}{it.unit_label ? ` ${it.unit_label}` : ""} × {usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi> : money(it.unit_price)}
+                      {/* 0282: سطرٌ بيع بالدولار بفاتورة دينار — سعرُه بالدولار وسعرُ صرف الفاتورة بجانب دينارِه. */}
+                      {!usdInv && it.unit_price_usd != null && <span data-dualline> · <bdi dir="ltr">{usd$(it.unit_price_usd)}</bdi>{Number(invoice.fx_rate) > 0 && <> · <bdi dir="ltr">$1 = {formatNum(Number(invoice.fx_rate))}</bdi></>}</span>}</p>
                   </div>
                   <span className="text-sm font-bold tabular-nums text-ink">{usdInv ? <bdi dir="ltr">{usd$(it.unit_price_usd == null ? null : Math.round(it.unit_price_usd * it.qty * 100) / 100)}</bdi> : money(it.line_total)}</span>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Doctor's note */}
         {invoice.notes && (
@@ -810,7 +846,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         {usdInv && (
           <LoadBoundary scope="usd-invoice" onRetry={() => { UsdInvoiceLazy = loadUsdInvoice(); setLazyTick((n) => n + 1); }}>
             <Suspense fallback={null}>
-              <UsdInvoiceLazy invoice={invoice} canDelete={canDelete} onChanged={() => void usdChanged()} onDeleted={() => { onChanged(); onClose(); }} />
+              <UsdInvoiceLazy invoice={invoice} canDelete={canDelete && !openingSettled} onChanged={() => void usdChanged()} onDeleted={() => { onChanged(); onClose(); }} />
             </Suspense>
           </LoadBoundary>
         )}
@@ -918,8 +954,8 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         {/* Actions */}
         <div className="grid grid-cols-2 gap-2">
           {/* سطورٌ لم تصل ⇒ لا تُمرَّر: الطابعةُ تجلبها بنفسها وترمي «ما تنطبع ناقصة» بدل وصلٍ بلا سطور. */}
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items: itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items: opening ? openingLines : itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items: opening ? openingLines : itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
         </div>
         {canFixReceipt && !usdInv && (
           <Button variant="secondary" className="w-full" leftIcon={<Undo2 size={16} />} data-invfixopen
@@ -928,11 +964,11 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           </Button>
         )}
         {!usdInv && <div className="flex items-center gap-2">
-          {!refunded && (
+          {!refunded && !opening && (
             <Button variant="outline" className="flex-1" loading={busy === "refund"} disabled={!itemsOk} leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setSheet("refund"); }}>{t("retail.refund", "Refund")}</Button>
           )}
-          {canDelete && (
-            <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", refunded && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={() => { playTap(); setSheet("delete"); }}>
+          {canDelete && !openingSettled && (
+            <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", (refunded || opening) && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={() => { playTap(); setSheet("delete"); }}>
               {t("retail.delete", "Delete")}
             </Button>
           )}

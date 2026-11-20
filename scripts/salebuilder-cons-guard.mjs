@@ -165,7 +165,7 @@ function textChecks(src) {
     && /page\(\(\) => import\("@\/components\/retail\/ConsumablesSheet"\)\.then\(\(m\) => \(\{ default: m\.ConsumptionNotice \}\)\), \["rcp"\]\)/.test(code));
   ck("  وكلتاهما داخل LoadBoundary + Suspense، و«أعد المحاولة» تصنع قطعةً جديدة",
     /<LoadBoundary scope="cons-sheet" onRetry=\{\(\) => \{ ConsSheetLazy = loadConsSheet\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsSheetLazy\b/.test(code)
-    && /<LoadBoundary scope="cons-notice" onRetry=\{\(\) => \{ ConsNoticeLazy = loadConsNotice\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsNoticeLazy mode="sale" invoiceIds=\{\[done\.invoice\.id\]\} \/>/.test(code));
+    && /<LoadBoundary scope="cons-notice" onRetry=\{\(\) => \{ ConsNoticeLazy = loadConsNotice\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsNoticeLazy mode="sale" invoiceIds=\{\[done\.invoice\.id\]\} negFold=\{doneNegIds\} \/>/.test(code));
   const owned = checkOwned({ rcp: { owner: SHEET_PATH, with: [] } }, [{ rel: SB_PATH, text: src }, { rel: SHEET_PATH, text: SHEET }], "");
   ck("  ونطاقُ rcp بقاعدة i18n-owned-guard نفسِها: محمَّلٌ بـpage(…, [\"rcp\"]) هنا، ولا استيرادَ ثابتاً لمالكه، ولا مفتاحَ rcp.* بالشاشة",
     owned.length === 0, owned.join(" | "));
@@ -221,7 +221,7 @@ function textChecks(src) {
     setSaleUnit: fnBody("const setSaleUnit = (id: string", "\n    }));"),
   };
   ck("١٢) كلفةُ سطر المادّة من مرآة الخادم (productLineCostCents) بـimport(\"@/lib/consumption\") مرّةً واحدة — لا حسابَ ثانٍ هنا",
-    code.split('import("@/lib/consumption")').length - 1 === 1 && /m\.productLineCostCents\(/.test(loadFn) && /lineCostFn = \(p, per\) =>/.test(loadFn),
+    code.split('import("@/lib/consumption")').length - 1 === 1 && /m\.productLineCostCents\(/.test(loadFn) && /lineCostFn = \(p, per(, pack)?\) =>/.test(loadFn),
     loadFn.replace(/\s+/g, " ").slice(0, 200));
   ck("  وكلُّ موضعٍ يُنشئ كلفةَ سطر مادّة يمرّ من productLineCost (المرتجع، الوزن، العلبة/المفرد، التبديل) — لا بسعر الشراء خاماً",
     Object.values(sites).every((b) => /unit_cost[^\n]*productLineCost\(/.test(b)) && !/unit_cost: p\.purchase_price\b/.test(code) && !/unit_cost: startSub \? subCost/.test(code),
@@ -262,7 +262,7 @@ const advance = (ms) => { clockOffset += ms; };
 
 const T = `(k, d, o) => { const opt = d && typeof d === "object" ? d : (o || {}); const s = typeof d === "string" ? d : (opt.defaultValue ?? k); return String(s).replace(/{{(\\w+)}}/g, (_, v) => (opt[v] ?? "")); }`;
 /** قواعدُ صِرفة تُحزم حقيقيّة؛ وكلُّ استيرادٍ آخر لـSaleBuilder.tsx بديل. */
-const REAL = new Set(["react", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
+const REAL = new Set(["react", "@/lib/posSort", "@/lib/utils", "@/lib/productCodes", "@/lib/errors", "@/lib/cartCap", "@/lib/cartReprice", "@/lib/retailBridge",
   "@/lib/saleCustomer", "@/lib/priceDraft", "@/lib/customerName", "@/lib/debt", "@/lib/medSale"]);
 const SB = "globalThis.__sb";
 const STUB = {
@@ -290,7 +290,7 @@ const STUB = {
   "@/lib/services": `export const getServiceCatalog = () => ${SB}.catalog; export const findServiceByBarcode = () => null;`,
   "@/lib/promotions": "export const computePromotions = () => ({ applied: [], totalDiscount: 0 }); export const getPromoRules = () => [];",
   "@/lib/settings": `export const getDialCode = () => "+964"; export const getPreSalePrint = () => false; export const getResizableCart = () => false;
-    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
+    export const getPosV2 = () => false; export const getPosCompact = () => false; export const getPosSort = () => "name"; export const setPosSort = () => {}; export const getPosImages = () => false; export const setPosImages = () => {}; export const getPosCustomerOpen = () => false; export const getClinicLogo = () => null;
     export const getClinicSocials = () => ({}); export const getClinicName = () => ""; export const getDeliveryZones = () => []; export const getQtyPromos = () => [];
     export const getExpiryWindows = () => ({ returnDays: 90, criticalDays: 30 });`,
   "@/lib/navFold": "export const useNavFolded = () => false; export const setNavFolded = () => {};",
@@ -319,8 +319,16 @@ const STUB = {
     ConsumptionNotice.__which = "notice";`,
   "@/lib/consumptionApi": `export const consumptionApi = { recipeSummary: (...a) => ${SB}.recipeSummary(...a) };`,
   /* خاناتُ الطبيب (0258): قطعتُها وبابُها بديلان صامتان — هذا الحارسُ يقيس المستهلكات، وخاناتُ الطبيب يقيسها pos-tabs-test. */
-  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null;",
+  "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null; export const PosGridBar = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
+  /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
+  "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
+    export const subscribeNeg = () => () => {}; export const refreshNeg = async () => null; export const activeNow = () => false; export const liftable = () => false;
+    export const daysLeft = () => 0; export const bigLifted = () => false; export const lastDayOf = (u) => new Date(u);
+    export const negApi = { check: async () => ({ clinic: "c1", active: false, until: null, refused: [] }) };`,
+  "@/components/negstock/NegStock": "export const NegBar = () => null; export const NegCheckoutDialog = () => null; export const NegStockCard = () => null;",
+  /* نسبةُ الراجع (المالك ١٠/١١): قطعتُها بديلٌ صامت هنا (تُستورد بـimport() وحده فلا يولّدها البديلُ الآليّ) — يقيسها ret-pct-test. */
+  "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null; export const RET_PCTS = [100];",
 };
 /** أسماءُ ما يستورده الملفّ من كلّ مُحدِّد (لا الأنواع) — لتوليد البديل. */
 function importsOf(src) {
@@ -1201,10 +1209,14 @@ async function failChecks(M, ck, setFail, setHold) {
  * وفشلُه صامت (الورقةُ والإشعارُ يقولان فشلَهما بمكانهما) ويُعاد بالفتحة التالية. */
 async function warmChecks(M, ck, setWarmFail) {
   const P = () => globalThis.__pages ?? [];
-  // ومعها منذ 0258 ثلاثُ قطع خانات الطبيب (الشريطُ والشبكةُ والمحرّر) بنطاقها ptab — قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
+  // ومعها منذ 0258 ثلاثُ قطع خانات الطبيب (الشريطُ والشبكةُ والمحرّر) بنطاقها ptab، ومنذ 0267 تسخينُ نصوص الكارتون بنطاقها pks —
+  // قطعةُ المستهلكات تبقى ثلاثاً بنطاقها.
   const rcpPages = () => P().filter((p) => J(p.ns) === J(["rcp"]));
-  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وثلاثٌ لخانات الطبيب بنطاقها ptab ولا غيرُها",
-    rcpPages().length === 3 && P().length === 6 && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"])), J(P().map((p) => p.ns)));
+  // ومنذ 0269 تسخينُ نصوص سطور الطبلة بنطاقها dosl.
+  // و0279 شريطُ الترتيب والصور بالقطعة نفسِها ونطاقِها ptab (رابعتُها) — لا قطعةَ ولا نطاقَ جديد.
+  ck("ط١) ثلاثُ قطعٍ كسولة عند التحميل كلٌّ بنطاقها rcp: الورقة، والإشعار، والتسخين — وأربعٌ بنطاق ptab (الخاناتُ الثلاث وشريطُ الترتيب)، وتسخينُ الكارتون بـpks وسطورِ الطبلة بـdosl، ولا غيرُها",
+    rcpPages().length === 3 && P().length === 9 && P().filter((p) => J(p.ns) === J(["ptab"])).length === 4 && P().filter((p) => J(p.ns) === J(["pks"])).length === 1 && P().filter((p) => J(p.ns) === J(["dosl"])).length === 1
+      && P().every((p) => J(p.ns) === J(["rcp"]) || J(p.ns) === J(["ptab"]) || J(p.ns) === J(["pks"]) || J(p.ns) === J(["dosl"])), J(P().map((p) => p.ns)));
   setWarmFail(true);
   const loud = console.error;
   console.error = () => {};   // React يكتب الخطأَ الممسوك بالكونسول — المقيسُ أنه لم يُفلت

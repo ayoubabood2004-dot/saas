@@ -156,13 +156,17 @@ console.log("▸ الأسلاك: الخانةُ بسؤال القدرة، وال
   check("  والخصمُ مقصوصاً كشاشة البيع (resolveDiscount)، ومجموعٌ ≤ صفر بلا خصم — كالخادم",
     /const discountAmt = discOk && subtotal > 0 \? resolveDiscount\(subtotal, discType, discRaw\) : 0;/.test(pur));
   check("  و`total` الصافي: المدفوعُ والحالةُ والشارةُ عليه (كما يكتبها الخادم)",
-    /const total = subtotal - discountAmt;/.test(pur) && /editing \? Math\.max\(0, Math\.min\(total, editing\.purchase\.amount_paid \?\? total\)\) : total/.test(pur)
-    && /paidMode === "debt" \? paidNum : total/.test(pur));
+    // 0276: وأجورُ الشركة داخله (ما يُدان) — سلوكُها بـpurchase-charges-test.
+    /const total = subtotal - discountAmt \+ chSums\.company;/.test(pur) && /editing\.purchase\.paid_usd : editing\.purchase\.amount_paid\) \?\? total\)\)\)/.test(pur)
+    && /newPurchasePaid\(paidMode, amountPaid, total, chSums\.company\)/.test(pur));
   check("  والتعديلُ يبدأ بالخصم المحفوظ مبلغاً — فيُرسل ما يُرى لا غيابٌ يُبقي القديمَ خفيّاً",
-    /setDiscType\("fixed"\); setDiscValue\(\(p\.discount \?\? 0\) > 0 \? String\(p\.discount\) : ""\);/.test(pur));
-  check("  ونصيبُ الوحدة يُرى تحت سعر الشراء (ما يدخل كلفةَ المخزون)", /data-unitnet/.test(pur) && /\(buyN \* total\) \/ subtotal/.test(pur));
+    /setDiscType\("fixed"\); setDiscValue\(usd \? \(\(p\.discount_usd \?\? 0\) > 0 \? String\(p\.discount_usd\) : ""\) : \(\(p\.discount \?\? 0\) > 0 \? String\(p\.discount\) : ""\)\);/.test(pur));
+  // 0276: أساسُ الكلفة الصافي + الأجورُ الموزَّعة (costBase) لا total (يحمل أجورَ الشركة وحدها وإن كانت «مصروفاً»).
+  check("  ونصيبُ الوحدة يُرى تحت سعر الشراء (ما يدخل كلفةَ المخزون)", /data-unitnet/.test(pur) && /\(buyN \* costBase\) \/ subtotal/.test(pur)
+    && /const costBase = subtotal - discountAmt \+ \(chMode === "cost" \? chSums\.company \+ chSums\.other : 0\);/.test(pur));
   check("التفاصيلُ تقول المجموعَ والخصمَ قبل الصافي حين يوجد خصم، والطباعةُ تأخذ أسماءها من القاموس",
-    /\(purchase\.discount \?\? 0\) > 0 && \(/.test(pur) && /data-pddiscount/.test(pur)
+    // 0274: بعملة الفاتورة (discCur = خصمُ الدولار لفاتورة الدولار، وإلا خصمُ الدينار).
+    /const discCur = isUsd \? Number\(purchase\.discount_usd \?\? 0\) : Number\(purchase\.discount \?\? 0\);/.test(pur) && /\{discCur > 0 && \(/.test(pur) && /data-pddiscount/.test(pur)
     && /labels: \{ subtotal: t\("retail\.subtotal"/.test(pur) && (pur.match(/printOptions\(user, i18n\.language, t\)/g) ?? []).length === 2);
   check("  وسجلُّ الحركات سطرُ خصمٍ قبل إجمالي الفاتورة", /data-logdiscount/.test(code("src/components/inventory/PurchaseLog.tsx")));
   const P = { id: "pur_x1", total: 27000, discount: 3000, amount_paid: 10000, status: "partial", item_count: 14, purchased_at: "2026-11-04T10:00:00Z", created_at: "2026-11-04T10:00:00Z" };

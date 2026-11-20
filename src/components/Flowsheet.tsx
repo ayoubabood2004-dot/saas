@@ -928,7 +928,7 @@ export function AddTaskSheet({ petName, petId, todayISO, presetHour, weightKg, s
   /** «أدويتي» (0229) وتصنيفاتُ العيادة (0239): نفسُ الترتيب الذي تراه العيادةُ بكلّ منتقٍ — تبويبٌ
    *  لكلٍّ منها وأدويتُه **كلُّها** تحته بضغطة (كان القصُّ على اثني عشر يُخفي الباقي بلا كلمة). */
   const drugs = useClinicDrugs();
-  const medIx = useMedIndex({ rows: drugs.rows, species: species ?? null, stockMode: "hide", groups: drugs.groups, items: drugs.items });
+  const medIx = useMedIndex({ rows: drugs.rows, species: species ?? null, stockMode: "hide", groups: drugs.allGroups, items: drugs.items });
   const [medTab, setMedTab] = useState<string>("mine");
   const tabs = [
     ...(medIx.mine.length ? [{ id: "mine", label: `★ ${t("mymeds.mine", "أدويتي")}`, list: medIx.mine }] : []),

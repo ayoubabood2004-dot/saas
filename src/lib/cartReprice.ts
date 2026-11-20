@@ -22,8 +22,11 @@ export interface RepriceLine {
   product_id: string | null;
   ret?: boolean;
   serviceId?: string | null;
-  saleUnit?: "box" | "sub";
+  saleUnit?: "box" | "sub" | "pack";
   boxPrice?: number;
+  /** 0267: سطرُ كارتون — معرّفُه وسعرُ القائمة لحظةَ نزوله (المكتوبُ أو العلبةُ × العدد). */
+  packId?: string;
+  packPrice?: number;
   subPrice?: number | null;
   byWeight?: boolean;
   perKgPrice?: number;
@@ -31,11 +34,13 @@ export interface RepriceLine {
   listAt?: number;
   /** الكاشيرُ كتب السعرَ بيده — لا يُمسّ. */
   priceManual?: boolean;
+  /** 0282: سطرٌ بالدولار — دينارُه من سعره بالدولار وسعر الصرف، لا من قائمة الدينار: لا يُعاد تسعيرُه منها (كالمعدَّل بيد). */
+  usd?: unknown;
 }
 
 export interface FreshPrices {
   /** سعرا القائمة الآن (علبة/كيلو، ومفرد) — null إن غاب المنتج عن القائمة. */
-  product: (id: string) => { box: number; sub: number | null } | null;
+  product: (id: string) => { box: number; sub: number | null; pack?: (packId: string) => number | null } | null;
   service: (id: string) => number | null;
 }
 
@@ -45,6 +50,7 @@ export interface Repriced { id: string; name: string; from: number; to: number }
 export function capturedPrice(l: RepriceLine): number | undefined {
   if (l.kind === "service") return l.listAt;
   if (l.byWeight) return l.perKgPrice;
+  if (l.saleUnit === "pack") return l.packPrice;
   return l.saleUnit === "sub" ? (l.subPrice ?? undefined) : l.boxPrice;
 }
 
@@ -72,12 +78,25 @@ export function repriceCart<L extends RepriceLine>(cart: L[], fresh: FreshPrices
     if (!l.product_id) return l;
     const f = fresh.product(l.product_id);
     if (!f) return l;
-    const manual = isManual(l);
+    const manual = isManual(l) || l.usd != null;
     if (l.byWeight) {
       if (l.perKgPrice === undefined || l.perKgPrice === f.box) return l;
       touched = true;
       if (!manual && l.unit_price !== f.box) changed.push({ id: l.id, name: l.name, from: l.unit_price, to: f.box });
       return { ...l, perKgPrice: f.box, unit_price: manual ? l.unit_price : f.box };
+    }
+    /* 0267: الكارتونُ بسعره هو — المحسوبُ يتبع العلبة (العلبةُ × العدد) والمكتوبُ كما هو؛ وكارتونٌ انشال (null) يبقى كما هو
+     * والإتمامُ يرفضه بكلمته. لا يُقرأ boxPrice له: سطرُ كارتونٍ بسعر علبة خطأٌ صامت. */
+    if (l.saleUnit === "pack") {
+      const now = l.packId && f.pack ? f.pack(l.packId) : null;
+      if (now == null || l.packPrice === undefined || now === l.packPrice) return l;
+      touched = true;
+      const next: L = { ...l, packPrice: now };
+      if (!manual && now !== l.unit_price) {
+        changed.push({ id: l.id, name: l.name, from: l.unit_price, to: now });
+        next.unit_price = now;
+      }
+      return next;
     }
     const boxMoved = l.boxPrice !== undefined && l.boxPrice !== f.box;
     const subMoved = l.subPrice !== undefined && (l.subPrice ?? null) !== f.sub;

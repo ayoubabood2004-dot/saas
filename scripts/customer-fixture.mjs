@@ -168,10 +168,40 @@ for (const q of [null, "07701234567", "مرتجع"]) add(CU2, q, "match", "all",
 add(CU1, null, "price", "all", 5, 0, 0, "bad");
 add(CU1, null, "match", "debts", 5, 0, 0, "bad");
 
+/* 0270: ملفّاتُ زبائن يدويّة — مصدرٌ ثالث. معرّفاتٌ ثابتة (لا uuid()) فلا تتزحزح معرّفاتُ ما قبلها. زبونٌ بلا شراء،
+ * وملفٌّ لزبونٍ قائم باسمٍ آخر وأقدمَ من فواتيره (اسمُ الملفّ يغلب)، وملفٌّ بلا رقم، وملفٌّ بالعيادة السعودية. */
+const profiles = [
+  { id: "c2320000-ffff-4000-8000-000000000001", clinic_id: CU1, name: "زبونة الملف", phone: "0774 545 4545", created_at: at(5) },
+  { id: "c2320000-ffff-4000-8000-000000000002", clinic_id: CU1, name: "تعادل أ — ملف", phone: "+964 772 222 2222", created_at: at(200) },
+  { id: "c2320000-ffff-4000-8000-000000000003", clinic_id: CU1, name: "ملف بلا رقم", phone: null, created_at: at(1) },
+  { id: "c2320000-ffff-4000-8000-000000000004", clinic_id: CU3, name: "صقر الملف", phone: "0551 112 222", created_at: at(3) },
+  // المفتاحُ المطابقُ حرفاً أوّلاً بين المتساويين رتبةً (0270): «زبونة» أقدمُ من «زبونة الملف» ويسبقها ببحث «زبونة».
+  { id: "c2320000-ffff-4000-8000-000000000005", clinic_id: CU1, name: "زبونة", phone: null, created_at: at(400) },
+];
+for (const q of ["07745454545", "+964 774", "زبونة", "07722222222", "تعادل", "ملف بلا", "ملف"]) {
+  for (const sort of ["match", "recent"]) for (const filter of ["all", "nopets"]) add(CU1, q, sort, filter, 8, 0, 0);
+}
+add(CU1, null, "recent", "nopets", 100, 0, 0, "profiles");
+add(CU1, null, "purchases", "nopets", 100, 0, 2, "profiles");
+for (const q of ["0551112222", "+966 55", "صقر"]) add(CU3, q, "match", "all", 8, 0, 0);
+
+/* 0271: الدينُ القديم (opening) ليس شراءً — زبونٌ دينُه القديم وحده يبقى بالدليل بشراءٍ صفر، ودينٌ قديمٌ أحدثُ من فواتير زبونٍ
+ * دائم لا يحرّك عددَ شرائه ولا تاريخَيه. معرّفاتٌ ثابتة، بلا أسطر (الدينُ القديم بلا موادّ). */
+const OPENINGS = [
+  { id: "c2320000-eeee-4000-8000-000000000001", clinic_id: CU1, customer_name: "دين قديم وحده", customer_phone: "07760000001", status: "paid", created_at: at(2), sale_kind: "opening" },
+  { id: "c2320000-eeee-4000-8000-000000000002", clinic_id: CU1, customer_name: "حسن الدائم", customer_phone: "07711223344", status: "paid", created_at: at(0, 5), sale_kind: "opening" },
+];
+invoices.push(...OPENINGS);
+for (const q of ["07760000001", "دين قديم", "حسن الدائم", "07711223344"]) {
+  for (const sort of ["match", "recent", "purchases"]) for (const filter of ["all", "nopets"]) add(CU1, q, sort, filter, 8, 0, 0);
+}
+add(CU1, null, "purchases", "nopets", 100, 0, 3, "opening");
+
 const srcOf = (clinic) => {
   const inv = invoices.filter((i) => i.clinic_id === clinic);
   const ids = new Set(inv.map((i) => i.id));
-  return { invoices: inv, items: items.filter((it) => ids.has(it.invoice_id)), pets: pets.filter((p) => p.clinic_id === clinic) };
+  return { invoices: inv, items: items.filter((it) => ids.has(it.invoice_id)), pets: pets.filter((p) => p.clinic_id === clinic),
+    profiles: profiles.filter((c) => c.clinic_id === clinic) };
 };
 const expected = {};
 for (const c of calls) {
@@ -189,10 +219,15 @@ const chunks = (arr, n) => { const o = []; for (let i = 0; i < arr.length; i += 
 let sql = "-- مولَّد من scripts/customer-fixture.mjs — لا يُحرَّر بيد.\n";
 sql += `insert into auth.users(id) values ('${CU1}'),('${CU2}'),('${CU3}') on conflict do nothing;\n`;
 sql += `insert into clinic_prefs(clinic_id, dial_code) values ('${CU1}','+964'),('${CU2}','+964'),('${CU3}','+966')\n  on conflict (clinic_id) do update set dial_code = excluded.dial_code;\n`;
-for (const part of chunks(invoices, 100)) {
+for (const part of chunks(invoices.filter((i) => i.sale_kind !== "opening"), 100)) {
   sql += "insert into invoices(id, clinic_id, customer_name, customer_phone, status, created_at) values\n"
     + part.map((i) => `  (${lit(i.id)}, ${lit(i.clinic_id)}, ${lit(i.customer_name)}, ${lit(i.customer_phone)}, ${lit(i.status)}, ${lit(i.created_at)})`).join(",\n") + ";\n";
 }
+// الدينُ القديم من بابه وحده (0271) — القالبُ يفتحه لجلسته كما تفتحه old_debt_add.
+sql += "select set_config('doctorvet.opening_door', 'on', false);\n"
+  + "insert into invoices(id, clinic_id, customer_name, customer_phone, status, created_at, sale_kind, opening_what) values\n"
+  + OPENINGS.map((i) => `  (${lit(i.id)}, ${lit(i.clinic_id)}, ${lit(i.customer_name)}, ${lit(i.customer_phone)}, ${lit(i.status)}, ${lit(i.created_at)}, 'opening', 'دين سابق')`).join(",\n") + ";\n"
+  + "select set_config('doctorvet.opening_door', 'off', false);\n";
 /* product_id مفتاحٌ أجنبيّ لجدول المنتجات — فالمنتجاتُ تُزرع قبل السطور. */
 sql += "insert into products(id, clinic_id, name, barcode) values\n"
   + PRODUCTS.map((p, k) => `  (${lit(p)}, ${lit(CU1)}, ${lit(`منتج ${k + 1}`)}, ${lit(`CU-${k + 1}`)})`).join(",\n") + "\n  on conflict do nothing;\n";
@@ -204,6 +239,12 @@ for (const part of chunks(items, 200)) {
 }
 sql += "insert into pets(id, clinic_id, name, owner_name, owner_phone, species, deceased, shared_with_clinic, created_at) values\n"
   + pets.map((p) => `  (${lit(p.id)}, ${lit(p.clinic_id)}, ${lit(p.name)}, ${lit(p.owner_name)}, ${lit(p.owner_phone)}, ${lit(p.species)}, ${p.deceased}, ${p.shared_with_clinic}, ${lit(p.created_at)})`).join(",\n") + ";\n";
+/* الملفّات: المحفّزُ يختم created_at بلحظة الإدراج — فيُطفأ للقالب، والمفتاحُ من cust_key نفسِها بدولة العيادة. */
+sql += "alter table customer_profiles disable trigger customer_profiles_guard;\n"
+  + "insert into customer_profiles(id, clinic_id, cust_key, name, phone, created_at) values\n"
+  + profiles.map((c) => `  (${lit(c.id)}, ${lit(c.clinic_id)}, cust_key(${lit(c.phone)}, ${lit(c.name)}, ${lit(DIAL[c.clinic_id])}), ${lit(c.name)}, ${lit(c.phone)}, ${lit(c.created_at)})`).join(",\n")
+  + "\n  on conflict (id) do nothing;\n"
+  + "alter table customer_profiles enable trigger customer_profiles_guard;\n";
 writeFileSync(join(out, "fixture.sql"), sql);
 
 let cs = "-- مولَّد من scripts/customer-fixture.mjs — لا يُحرَّر بيد.\n";
@@ -223,4 +264,4 @@ for (const c of calls) {
 }
 writeFileSync(join(out, "calls.sql"), cs);
 writeFileSync(join(out, "expected.json"), JSON.stringify(expected));
-console.log(`✓ customer-fixture: ${invoices.length} فاتورة، ${items.length} سطراً، ${pets.length} حيواناً، ${calls.length} نداءً`);
+console.log(`✓ customer-fixture: ${invoices.length} فاتورة، ${items.length} سطراً، ${pets.length} حيواناً، ${profiles.length} ملفّات، ${calls.length} نداءً`);

@@ -1,6 +1,7 @@
 import type { Purchase, PurchaseItem } from "@/types";
 import { siteHost } from "@/lib/appUrl";
 import { currencySymbol } from "@/lib/utils";
+import { chargesOf } from "@/lib/purchaseCharges";
 
 export interface PurchasePrintOptions {
   clinicName: string;
@@ -12,7 +13,7 @@ export interface PurchasePrintOptions {
   facebook?: string | null;
   instagram?: string | null;
   /** أسماءُ سطور خصم الشركة (0260) من قاموس الشاشة — ملفُّ الطباعة لا يُضاف له نصٌّ صلب. */
-  labels?: { subtotal?: string; discount?: string; net?: string };
+  labels?: { subtotal?: string; discount?: string; net?: string; chargeOther?: string };
 }
 
 const esc = (s: unknown) =>
@@ -63,7 +64,12 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
   const total = purchase.total ?? 0;
   // 0260: الإجماليُّ صافٍ بعد خصم الشركة — فالمجموعُ قبله والخصمُ يُطبعان، وإلا بدت السطورُ لا تجمع إلى الرقم تحتها.
   const discount = Math.max(0, Number(purchase.discount ?? 0) || 0);
-  const L = { subtotal: opts.labels?.subtotal || "Subtotal", discount: opts.labels?.discount || "Discount", net: opts.labels?.net || "Net" };
+  /* 0276: الأجورُ الإضافية بعملة الطباعة (دولارُها لفاتورة الدولار) — ما على الشركة سطرٌ لكلٍّ قبل الصافي (داخله)، وما لغيرها بعد
+   * المتبقّي (خارج دَين الشركة). والمجموعُ قبلها total + discount − ما على الشركة. */
+  const ch = chargesOf(purchase);
+  const subtotal = Math.round((total + discount - ch.company) * 100) / 100;
+  const L = { subtotal: opts.labels?.subtotal || "Subtotal", discount: opts.labels?.discount || "Discount", net: opts.labels?.net || "Net",
+    chargeOther: opts.labels?.chargeOther || "Paid to others" };
   const paid = purchase.amount_paid != null ? purchase.amount_paid : total;
   const due = Math.max(0, total - paid);
   const logo = opts.logoUrl ? esc(String(opts.logoUrl)) : "";
@@ -169,11 +175,13 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
       </table>
 
       <div class="totals">
-        ${discount > 0 ? `<div class="row"><span>${esc(L.subtotal)}</span><span>${money(total + discount)}</span></div>
-        <div class="row disc"><span>${esc(L.discount)}</span><span>−${money(discount)}</span></div>` : ""}
-        <div class="row grand"><span>${discount > 0 ? esc(L.net) : s.total}</span><span>${money(total)}</span></div>
+        ${discount > 0 || ch.list.length ? `<div class="row"><span>${esc(L.subtotal)}</span><span>${money(subtotal)}</span></div>` : ""}
+        ${discount > 0 ? `<div class="row disc"><span>${esc(L.discount)}</span><span>−${money(discount)}</span></div>` : ""}
+        ${ch.list.filter((x) => x.payee === "company").map((x) => `<div class="row" data-pcharge="company"><span>${esc(x.label)}</span><span>+${money(x.amount)}</span></div>`).join("")}
+        <div class="row grand"><span>${discount > 0 || ch.list.length ? esc(L.net) : s.total}</span><span>${money(total)}</span></div>
         <div class="row"><span>${s.paid}</span><span>${money(paid)}</span></div>
         ${due > 0 ? `<div class="row due"><span>${s.due}</span><span>${money(due)}</span></div>` : ""}
+        ${ch.list.filter((x) => x.payee === "other").map((x) => `<div class="row" data-pcharge="other"><span>${esc(x.label)} · ${esc(L.chargeOther)}</span><span>${money(x.amount)}</span></div>`).join("")}
       </div>
 
       ${purchase.notes ? `<div style="margin-top:14px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;text-align:start"><strong>${s.notes}:</strong> ${esc(purchase.notes)}</div>` : ""}
@@ -255,7 +263,8 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
   // تجميعة البضاعة: نفس المنتج عبر كل الفواتير = صف واحد بكمياته وإجماليه
   type Agg = { name: string; barcode: string | null; qty: number; amount: number; lastCost: number; lastAt: string };
   const agg = new Map<string, Agg>();
-  for (const p of invs) {
+  // 0274: تجميعةُ الدينار على فواتير الدينار وحدها — فاتورةُ الدولار بسطرها في جدول الفواتير بدولارها، ودينارُها لا يُجمع هنا.
+  for (const p of invs.filter((x) => x.currency !== "USD")) {
     for (const it of data.itemsByPurchase.get(p.id) ?? []) {
       const key = it.product_id ?? (it.barcode ? `b:${it.barcode}` : `n:${it.name.trim().toLowerCase()}`);
       let a = agg.get(key);
@@ -268,22 +277,29 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
   }
   const goods = [...agg.values()].sort((a, b) => b.amount - a.amount);
   const totalUnits = goods.reduce((s, a) => s + a.qty, 0);
-  const grand = invs.reduce((s, p) => s + p.total, 0);
-  const paid = invs.reduce((s, p) => s + (p.amount_paid ?? p.total), 0);
+  /* 0274: مجاميعُ الدينار على فواتير الدينار، وفاتورةُ الدولار بدولارها ودَينُها بجانبه — لا يُجمع دولارٌ على دينار. */
+  const dinarInvs = invs.filter((p) => p.currency !== "USD");
+  const grand = dinarInvs.reduce((s, p) => s + p.total, 0);
+  const paid = dinarInvs.reduce((s, p) => s + (p.amount_paid ?? p.total), 0);
   const due = Math.max(0, grand - paid);
+  const dueUsd = Math.round(invs.reduce((s, p) => s + (p.currency === "USD" ? Math.max(0, Number(p.total_usd ?? 0) - Number(p.paid_usd ?? 0)) : 0), 0) * 100) / 100;
+  const usd = (n: number) => `${fmt(n)} $`;
 
   const goodsRows = goods.map((a) => `
     <tr><td class="i-name">${esc(a.name)}${a.barcode ? `<span class="i-bc" dir="ltr">${esc(a.barcode)}</span>` : ""}</td>
     <td class="i-num">${fmt(a.qty)}</td><td class="i-num">${money(a.lastCost)}</td><td class="i-num i-amt">${money(a.amount)}</td></tr>`).join("");
 
   const invRows = invs.map((p) => {
-    const pd = p.amount_paid ?? p.total;
-    const dd = Math.max(0, p.total - pd);
+    const isUsd = p.currency === "USD";
+    const tot = isUsd ? Number(p.total_usd ?? 0) : p.total;
+    const pd = isUsd ? Number(p.paid_usd ?? 0) : (p.amount_paid ?? p.total);
+    const dd = Math.max(0, Math.round((tot - pd) * 100) / 100);
+    const m = isUsd ? usd : money;
     return `<tr><td>${d(p.purchased_at)}</td>
       <td dir="ltr">${esc(purchaseNo(p.id))}${p.reference ? ` <span class="i-bc">#${esc(p.reference)}</span>` : ""}</td>
-      <td class="i-num">${fmt(p.item_count)}</td><td class="i-num">${money(p.total)}</td>
-      <td class="i-num">${money(pd)}</td>
-      <td class="i-num" style="${dd > 0 ? "color:#b91c1c;font-weight:700" : "color:#15803d"}">${dd > 0 ? money(dd) : "✓"}</td></tr>`;
+      <td class="i-num">${fmt(p.item_count)}</td><td class="i-num">${m(tot)}</td>
+      <td class="i-num">${m(pd)}</td>
+      <td class="i-num" style="${dd > 0 ? "color:#b91c1c;font-weight:700" : "color:#15803d"}">${dd > 0 ? m(dd) : "✓"}</td></tr>`;
   }).join("");
 
   const css = `
@@ -345,7 +361,7 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
       <div class="totals">
         <div class="row grand"><span>${L.grand}</span><span>${money(grand)}</span></div>
         <div class="row"><span>${L.totalPaid}</span><span>${money(paid)}</span></div>
-        <div class="row ${due > 0 ? "due" : "ok"}"><span>${L.totalDue}</span><span>${due > 0 ? money(due) : L.settled}</span></div>
+        <div class="row ${due > 0 || dueUsd > 0 ? "due" : "ok"}"><span>${L.totalDue}</span><span>${[due > 0 ? money(due) : "", dueUsd > 0 ? usd(dueUsd) : ""].filter(Boolean).join(" · ") || L.settled}</span></div>
       </div>
 
       <div class="foot">${esc(opts.clinicName)} · ${WEBSITE}</div>

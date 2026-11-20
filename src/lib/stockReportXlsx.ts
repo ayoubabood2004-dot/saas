@@ -84,10 +84,11 @@ const stamp = (d: Date) =>
   " · " + d.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
 
 /** اسم ملفٍ لاتينيّ يفرز نفسه بالتاريخ — والعنوان العربي داخل الملف. */
-function fileNameFor(clinic: string, d: Date): string {
+/** اسمُ ملفّ الجرد — إكسل وPDF بالاسم نفسِه وامتدادِه. */
+export function stocktakeFileName(clinic: string, d: Date, ext = "xlsx"): string {
   const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const hm = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
-  return asciiFileName(`${clinic} stocktake ${day} ${hm}`, `stocktake-${day}-${hm}`);
+  return asciiFileName(`${clinic} stocktake ${day} ${hm}`, `stocktake-${day}-${hm}`, ext);
 }
 
 export async function exportStocktakeXlsx(
@@ -103,7 +104,7 @@ export async function exportStocktakeXlsx(
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
-  const name = fileNameFor(clinic, now);
+  const name = stocktakeFileName(clinic, now);
   /* الرابط يُضاف للمستند قبل الضغط: المتصفّح يتجاهل خاصية `download` على
    * عنصرٍ خارج الصفحة، فينزل الملف باسم "download" بلا امتداد — ويفتح على
    * غير إكسل. */
@@ -137,7 +138,7 @@ export function buildStocktakeWorkbook(
   wb.Workbook = { Views: [{ RTL: true }] };
 
   XLSX.utils.book_append_sheet(wb, countSheet(XLSX, take, lines, clinic, now, MONEY, QTY, marks), i18n.t("stock.tabCount", "ورقة الجرد"));
-  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, take, clinic, now, MONEY, QTY, lines.length), i18n.t("stock.tabSummary", "الملخّص"));
+  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, take, clinic, now, MONEY, QTY, lines), i18n.t("stock.tabSummary", "الملخّص"));
   XLSX.utils.book_append_sheet(wb, guideSheet(XLSX), i18n.t("stock.tabGuide", "التعليمات"));
   return wb;
 }
@@ -222,15 +223,18 @@ function countSheet(
     put(at(COL.systemQty), num(l.systemQty, QTY, tint({ ...numeric, font: { bold: true, sz: 12 } })));
     /* القيم معادلاتٌ لا أرقاماً مطبوعة: من صحّح سعراً بالعمود G رأى قيمته
      * تتبعه فوراً، بدل ورقةٍ تناقض نفسها بصمت. */
-    put(at(COL.costValue), { t: "n", f: `${at(COL.systemQty)}*${at(COL.buy)}`, v: round4(l.cost), z: MONEY, s: tint(numeric) });
-    put(at(COL.retailValue), { t: "n", f: `${at(COL.systemQty)}*${at(COL.sell)}`, v: round4(l.retail), z: MONEY, s: tint(numeric) });
+    /* وكمرآتها (stocktake.ts): رصيدٌ تحت الصفر قيمتُه صفر — والمعادلةُ نفسُها تقولها فتتبع من يصحّح الكمية. */
+    put(at(COL.costValue), { t: "n", f: `MAX(${at(COL.systemQty)},0)*${at(COL.buy)}`, v: round4(l.cost), z: MONEY, s: tint(numeric) });
+    put(at(COL.retailValue), { t: "n", f: `MAX(${at(COL.systemQty)},0)*${at(COL.sell)}`, v: round4(l.retail), z: MONEY, s: tint(numeric) });
 
     /* خليةٌ نصّية فارغة لا خليةٌ من نوع «فراغ»: الفراغ يُكتب بلا تنسيق فيضيع
      * اللون الأصفر الذي يدلّ العادّ على مكان الكتابة. و`""` تُعامَل فارغةً
      * بكل الدوال — COUNT لا تعدّها، وIF تراها فارغة. */
     put(at(COL.actualQty), { t: "s", v: "", z: QTY, s: fillMe });
     put(at(COL.diff), { t: "s", f: `IF(${at(COL.actualQty)}="","",${at(COL.actualQty)}-${at(COL.systemQty)})`, v: "", z: QTY, s: tint(derived) });
-    put(at(COL.diffValue), { t: "s", f: `IF(${at(COL.actualQty)}="","",(${at(COL.actualQty)}-${at(COL.systemQty)})*${at(COL.buy)})`, v: "", z: MONEY, s: tint(derived) });
+    /* قيمةُ الفرق من القيمة كما تُعرض (MAX(الكمية،0) كعمود رأس المال) لا من الكمية بإشارتها: «−٤ ثم عُدّ صفر» لا يرفع رأسَ المال
+     * دينارا — بالإشارة كانت تُقال «زيادة» ٤ × السعر و«صافي أثر الجرد» يناقض رأسَ المال فوقه. وفرقُ القطع (N) يبقى بإشارته. */
+    put(at(COL.diffValue), { t: "s", f: `IF(${at(COL.actualQty)}="","",(${at(COL.actualQty)}-MAX(${at(COL.systemQty)},0))*${at(COL.buy)})`, v: "", z: MONEY, s: tint(derived) });
 
     put(at(COL.minStock), l.minStock == null ? txt("", tint(centred)) : num(l.minStock, QTY, tint(centred)));
     /* التاريخ نصّاً بصيغة ISO: يفرز زمنياً كما يفرز نصّياً، ولا يزيحه فارق
@@ -261,7 +265,9 @@ function countSheet(
   };
   const span = (col: string) => `${col}${FIRST_DATA}:${col}${FIRST_DATA + lines.length - 1}`;
   put(`A${totalRow}`, txt(i18n.t("stock.grandTotal", "المجموع"), { ...sumStyle, alignment: { horizontal: "right", vertical: "center", readingOrder: 2 } }));
-  put(`${COL.systemQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.systemQty)})`, v: round4(take.totals.units), z: QTY, s: sumStyle });
+  /* مجموعُ العمود كما هو (بإشارته): ورقةُ العدّ تُطابَق بها — فعلي − نظام = الفرق. بقطع الرفّ (SUMIF >0) كان «نظام ١٠ وفعلي ١٠ والفرق ٤»
+   * (مراجعةٌ عدائيّة)؛ قطعُ الرفّ بالملخّص وبطاقة الشركة. */
+  put(`${COL.systemQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.systemQty)})`, v: round4(lines.reduce((s, l) => s + l.systemQty, 0)), z: QTY, s: sumStyle });
   put(`${COL.costValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.costValue)})`, v: round4(take.totals.cost), z: MONEY, s: sumStyle });
   put(`${COL.retailValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.retailValue)})`, v: round4(take.totals.retail), z: MONEY, s: sumStyle });
   put(`${COL.actualQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.actualQty)})`, v: 0, z: QTY, s: sumStyle });
@@ -289,11 +295,16 @@ function countSheet(
 
 /* ── ورقة الملخّص ───────────────────────────────────────────────────────── */
 function summarySheet(
-  XLSX: any, take: Stocktake, clinic: string, now: Date, MONEY: string, QTY: string, rowCount: number,
+  XLSX: any, take: Stocktake, clinic: string, now: Date, MONEY: string, QTY: string, lines: StocktakeLine[],
 ): any {
   const S = `'${i18n.t("stock.tabCount", "ورقة الجرد")}'`;
-  const lastData = FIRST_DATA + rowCount - 1;
-  const rows: { label: string; value?: string | number; z?: string; f?: string; head?: boolean; hint?: string }[] = [];
+  const rowCount = lines.length;
+  /* عيادةٌ بلا أسطر: المدى J5:J4 مقلوب فيقرؤه البرنامجُ J4:J5 ويأخذ معه خليةَ العنوان — «أسطر فيها فرق: 1» عن ورقةٍ فارغة (قائمٌ منذ أوّل
+   * تصدير؛ مراجعةٌ عدائيّة خامسة). المدى لا يبدأ بعد نهايته. */
+  const lastData = Math.max(FIRST_DATA, FIRST_DATA + rowCount - 1);
+  /* المعادلةُ تحمل قيمتَها لحظةَ التصدير (`v`) — والعمودُ الأصفرُ فارغٌ يومها: LibreOffice لا يعيد حسابَ ملفّ xlsx عند الفتح (افتراضيّاً)
+   * فيعرض المخزّن، وكانت كلُّها صفراً: «أسطر لم تُعدّ» صفر، و«العدد بالنظام» صفرٌ ويبقى صفراً (لا يتبع ما يُكتب) — مقيسٌ بـsoffice. */
+  const rows: { label: string; value?: string | number; z?: string; f?: string; v?: number; head?: boolean; hint?: string }[] = [];
 
   rows.push({ label: `${clinic} — ${i18n.t("stock.sumTitle", "ملخّص جرد المخزون")}`, head: true });
   rows.push({ label: i18n.t("stock.sumSnapshot", "لقطة المخزون"), value: stamp(now) });
@@ -315,8 +326,14 @@ function summarySheet(
    * الأولى، فلا تحتاج تصديراً ثانياً بعد انتهاء العدّ. */
   rows.push({ label: i18n.t("stock.sumResult", "نتيجة الجرد (تتحدّث وأنت تملأ «العدد الفعلي»)"), head: true });
   rows.push({ label: i18n.t("stock.sumCounted", "أسطر عُدَّت فعلاً"), f: `COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: "0" });
-  rows.push({ label: i18n.t("stock.sumUncounted", "أسطر لم تُعدّ بعد"), f: `${rowCount}-COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: "0" });
+  rows.push({ label: i18n.t("stock.sumUncounted", "أسطر لم تُعدّ بعد"), f: `${rowCount}-COUNT(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, v: rowCount, z: "0" });
   rows.push({ label: i18n.t("stock.sumWithDiff", "أسطر فيها فرق"), f: `COUNTIF(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData},"<>0")-COUNTBLANK(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData})`, z: "0" });
+  /* بيعٌ قبل الجرد (0266): «إجمالي القطع» فوق قطعُ الرفّ، والفرقُ يُقاس من العدد بالنظام بإشارته — فيُكتب هنا ليتّفق الحساب أمام العين:
+   * فعلي − نظام = صافي الفرق. (لعيادةٍ بلا سالبٍ هما واحد، فلا يُكرَّر.) */
+  if (lines.some((l) => l.systemQty < 0)) {
+    rows.push({ label: i18n.t("stock.hSystemQty", "العدد بالنظام"), f: `SUM(${S}!${COL.systemQty}${FIRST_DATA}:${COL.systemQty}${lastData})`,
+      v: round4(lines.reduce((s, l) => s + l.systemQty, 0)), z: QTY });
+  }
   rows.push({ label: i18n.t("stock.sumActual", "مجموع القطع الفعلية"), f: `SUM(${S}!${COL.actualQty}${FIRST_DATA}:${COL.actualQty}${lastData})`, z: QTY });
   rows.push({ label: i18n.t("stock.sumNetDiff", "صافي فرق القطع (فعلي − نظام)"), f: `SUM(${S}!${COL.diff}${FIRST_DATA}:${COL.diff}${lastData})`, z: QTY });
   rows.push({ label: i18n.t("stock.sumShort", "قيمة النقص (شراء)"), f: `SUMIF(${S}!${COL.diffValue}${FIRST_DATA}:${COL.diffValue}${lastData},"<0")`, z: MONEY });
@@ -337,7 +354,7 @@ function summarySheet(
     if (row.head) ws[`A${r + 1}`] = txt(row.label, headStyle);
     else if (row.label) {
       ws[`A${r + 1}`] = txt(row.label, labelStyle);
-      if (row.f) ws[`B${r + 1}`] = { t: "n", f: row.f, v: 0, z: row.z, s: valueStyle };
+      if (row.f) ws[`B${r + 1}`] = { t: "n", f: row.f, v: row.v ?? 0, z: row.z, s: valueStyle };
       else if (typeof row.value === "number") ws[`B${r + 1}`] = { t: "n", v: row.value, z: row.z, s: valueStyle };
       else if (row.value != null) ws[`B${r + 1}`] = txt(String(row.value), valueStyle);
     }

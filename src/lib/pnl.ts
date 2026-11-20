@@ -28,10 +28,18 @@ export interface PnlInvoice {
   total?: number | string | null;
   profit?: number | string | null;
   cost_total?: number | string | null;
+  /** 0271: «opening» دينٌ قديم — ليس بيعاً: خارج الإيراد والكلفة والعدد، وفرقُ صرف تسديده (دولار) يبقى. */
+  sale_kind?: string | null;
   /** 0264: فاتورةُ دولار وسِيَقُها — سِيَقُ `kind:'fx'` سطرُ «فرق سعر الصرف» بشهر يومها. */
   currency?: string | null;
   payment_details?: readonly { amount?: number | string | null; at?: string | null; kind?: string | null }[] | null;
 }
+/** 0275: دفعةُ دَينِ شراءٍ بالدولار — فرقُ صرفها (حصّتُها بدينار يوم الشراء ناقصَ ما كلّفت يومَ التسديد) بشهر تسديدها. null = سعرُها
+ *  مجهول (دفعةٌ قبل 0275 بلا سعر) — لا يُحسب، لا صفراً ولا غيرَه. */
+export interface PnlPurchasePayment { paid_at: string; fx?: number | string | null }
+/** 0276: فاتورةُ شراءٍ بأجورٍ «مصروفاً» (ختمُ الفاتورة) — ما على الشركة وما لغيرها بالدينار، بشهر الفاتورة. وغيرُها (على الكلفة، أو
+ *  بلا أجور، أو قبل 0276) خارج التقرير كالمشتريات كلِّها. */
+export interface PnlPurchase { purchased_at: string; charges_mode?: string | null; charges_company?: number | string | null; charges_other?: number | string | null }
 export interface PnlItem {
   invoice_id: string;
   product_id?: string | null;
@@ -59,9 +67,13 @@ export interface PnlTotals {
   payroll_loan: number;
   uncategorized: number;
   categories: PnlCategoryLine[];
-  /** 0264: فرقُ سعر الصرف المحقَّق بالتسديدات — ربحٌ أو خسارة، والصافي يحمله: net = gross + fx − expenses. */
+  /** 0264: فرقُ سعر الصرف المحقَّق بالتسديدات — ربحٌ أو خسارة، والصافي يحمله: net = gross + fx + fx_purchases − expenses. */
   fx: number;
+  /** 0275: فرقُ صرف المشتريات — تسديدُ دين الشركة بالدولار بسعرٍ غير سعر يوم الشراء (موجبٌ ربح)، بشهر التسديد. */
+  fx_purchases: number;
   expenses: number;
+  /** 0276: أجورُ المشتريات «مصروفاً» (توصيل، نقل…) بشهر الفاتورة — تنطرح من الصافي: net = gross + fx + fx_purchases − expenses − purchase_charges. */
+  purchase_charges: number;
   net: number;
 }
 export interface PnlMonth extends PnlTotals { month: string }
@@ -73,6 +85,10 @@ export interface PnlInput {
   consumption: readonly PnlConsumption[];
   expenses: readonly PnlExpense[];
   categories: readonly PnlCategory[];
+  /** 0275: دفعاتُ دين الشراء — غائبةٌ = لا شيء (مدخلٌ قبلها). */
+  purchasePayments?: readonly PnlPurchasePayment[];
+  /** 0276: فواتيرُ الشراء بأجورها — غائبةٌ = لا شيء (مدخلٌ قبلها). */
+  purchases?: readonly PnlPurchase[];
 }
 
 /** أطولُ مدّةٍ يقبلها التقرير — نفسُ حدّ `report_pnl`. */
@@ -111,11 +127,11 @@ function bucketKey(e: PnlExpense): Bucket {
 
 interface Acc {
   n: number;
-  revenue: bigint; cogs: bigint; gross: bigint; products: bigint; materials: bigint; fx: bigint;
+  revenue: bigint; cogs: bigint; gross: bigint; products: bigint; materials: bigint; fx: bigint; pfx: bigint; pch: bigint;
   /** مجموعُ كلّ جدولٍ بالمنازل الاثنتي عشرة — يُقرَّب لفلسٍ عند الإخراج وحده. */
   buckets: Map<Bucket, bigint>;
 }
-const emptyAcc = (): Acc => ({ n: 0, revenue: 0n, cogs: 0n, gross: 0n, products: 0n, materials: 0n, fx: 0n, buckets: new Map() });
+const emptyAcc = (): Acc => ({ n: 0, revenue: 0n, cogs: 0n, gross: 0n, products: 0n, materials: 0n, fx: 0n, pfx: 0n, pch: 0n, buckets: new Map() });
 
 /** سطرٌ بالفلس — المجموعُ يُبنى من هذه ثمّ يُحوَّل للعرض مرّةً واحدة. */
 interface Row {
@@ -123,7 +139,7 @@ interface Row {
   revenue: bigint; cogs: bigint; products: bigint; materials: bigint; other: bigint; gross: bigint; adjust: bigint;
   stock: bigint; returns: bigint; payroll: bigint; loan: bigint; none: bigint;
   cats: Map<string, bigint>;
-  fx: bigint; expenses: bigint; net: bigint;
+  fx: bigint; pfx: bigint; expenses: bigint; pch: bigint; net: bigint;
 }
 
 function rowOf(a: Acc): Row {
@@ -136,17 +152,17 @@ function rowOf(a: Acc): Row {
   return {
     n: a.n, revenue: a.revenue, cogs: a.cogs, products: a.products, materials: a.materials,
     other: a.cogs - a.products - a.materials, gross: a.gross, adjust: a.gross - (a.revenue - a.cogs),
-    stock, returns, payroll, loan, none, cats, fx: a.fx, expenses, net: a.gross + a.fx - expenses,
+    stock, returns, payroll, loan, none, cats, fx: a.fx, pfx: a.pfx, expenses, pch: a.pch, net: a.gross + a.fx + a.pfx - expenses - a.pch,
   };
 }
 
 function addRows(rows: readonly Row[]): Row {
   const z: Row = { n: 0, revenue: 0n, cogs: 0n, products: 0n, materials: 0n, other: 0n, gross: 0n, adjust: 0n,
-    stock: 0n, returns: 0n, payroll: 0n, loan: 0n, none: 0n, cats: new Map(), fx: 0n, expenses: 0n, net: 0n };
+    stock: 0n, returns: 0n, payroll: 0n, loan: 0n, none: 0n, cats: new Map(), fx: 0n, pfx: 0n, expenses: 0n, pch: 0n, net: 0n };
   for (const r of rows) {
     z.n += r.n; z.revenue += r.revenue; z.cogs += r.cogs; z.products += r.products; z.materials += r.materials;
     z.other += r.other; z.gross += r.gross; z.adjust += r.adjust; z.stock += r.stock; z.returns += r.returns;
-    z.payroll += r.payroll; z.loan += r.loan; z.none += r.none; z.fx += r.fx; z.expenses += r.expenses; z.net += r.net;
+    z.payroll += r.payroll; z.loan += r.loan; z.none += r.none; z.fx += r.fx; z.pfx += r.pfx; z.expenses += r.expenses; z.pch += r.pch; z.net += r.net;
     for (const [id, v] of r.cats) z.cats.set(id, (z.cats.get(id) ?? 0n) + v);
   }
   return z;
@@ -169,7 +185,7 @@ function out(r: Row, byId: ReadonlyMap<string, PnlCategory>): PnlTotals {
     cogs_other: c2(r.other), gross: c2(r.gross), adjust: c2(r.adjust),
     stock_loss: c2(r.stock), returns: c2(r.returns), payroll: c2(r.payroll), payroll_loan: c2(r.loan), uncategorized: c2(r.none),
     categories: orderCats(r.cats.keys(), byId).map((id) => ({ id, name: byId.get(id)?.name ?? null, amount: c2(r.cats.get(id) ?? 0n) })),
-    fx: c2(r.fx), expenses: c2(r.expenses), net: c2(r.net),
+    fx: c2(r.fx), fx_purchases: c2(r.pfx), expenses: c2(r.expenses), purchase_charges: c2(r.pch), net: c2(r.net),
   };
 }
 
@@ -188,7 +204,7 @@ export function computePnl(input: PnlInput, from: string, to: string, tzIn?: str
 
   const monthOfInvoice = new Map<string, string>();
   for (const inv of input.invoices) {
-    if ((inv.status ?? "paid") === "refunded") continue;
+    if ((inv.status ?? "paid") === "refunded" || inv.sale_kind === "opening") continue;
     const t = inside(inv.created_at);
     if (t === null) continue;
     const m = pnlMonthOf(t, tz);
@@ -206,6 +222,20 @@ export function computePnl(input: PnlInput, from: string, to: string, tzIn?: str
       if (t === null) continue;
       acc(pnlMonthOf(t, tz)).fx += cents(l.amount);
     }
+  }
+  // 0275: فرقُ صرف المشتريات — كلُّ دفعةٍ معروفٍ فرقُها بشهر تسديدها (لا بشهر فاتورة الشراء)، داخل المدّة بيومها هي.
+  for (const pp of input.purchasePayments ?? []) {
+    if (pp.fx == null || pp.fx === "") continue;
+    const t = inside(pp.paid_at);
+    if (t === null) continue;
+    acc(pnlMonthOf(t, tz)).pfx += cents(pp.fx);
+  }
+  // 0276: أجورُ المشتريات «مصروفاً» — ما على الشركة وما لغيرها بشهر الفاتورة (purchased_at)، داخل المدّة بيومها.
+  for (const pu of input.purchases ?? []) {
+    if (pu.charges_mode !== "expense") continue;
+    const t = inside(pu.purchased_at);
+    if (t === null) continue;
+    acc(pnlMonthOf(t, tz)).pch += cents(pu.charges_company ?? 0) + cents(pu.charges_other ?? 0);
   }
   for (const it of input.items) {
     const m = monthOfInvoice.get(it.invoice_id);

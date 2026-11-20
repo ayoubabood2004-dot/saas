@@ -843,6 +843,28 @@ async function runChecks(UI, verbose) {
     n.done();
   });
 
+  await tryCase("negFold", async () => {
+    /* البيعُ قبل الجرد (0266): تحت الصفر متوقّعٌ حتى يُعدّ — سطرٌ واحدٌ بعدده بلا زرّ كتم (كتمُ كلّ مادّة كان سيُسكتها بعد الوضع).
+     * والعجزُ (مستهلكٌ ما كفّاه رصيده) يبقى كما هو، والمكتومُ لا يُعدّ. */
+    reset({ invoiceConsumption: async () => ({ inv1: inv({
+      it1: [spec({ product_id: "p-gloves", product_name: "الكفوف", per_qty: 3, live_qty: 3, shortfall: 2 })],
+    }, [], [{ product_id: "p-gloves", name: "الكفوف", stock: -2 }, { product_id: "p-syr", name: "سرنجة", stock: -1 }, { product_id: "p-amx", name: "أموكسي", stock: -3 }, { product_id: "p-mut", name: "مكتومة", stock: -1 },
+      { product_id: "p-cnt", name: "معدودة", stock: -1 }]) }) });
+    mem.set("vp_cons_mute_c1", J(["p-mut"]));
+    // ما رفعه الوضعُ بهذه البيعة: p-syr وp-amx وp-mut (والكفوف عجزٌ بسطره) — والمعدودةُ p-cnt ليست منها.
+    let n = await openNotice({ mode: "sale", invoiceIds: ["inv1"], negFold: ["p-syr", "p-amx", "p-mut", "p-gloves"] });
+    const fold = n.ui.find("data-cons-negfold");
+    check("negFold: سالبُ ما رفعه الوضعُ سطرٌ واحد بعدده (٢ — لا العجزُ ولا المكتومة) بلا زرّ كتم، والعجزُ يبقى بسطره وزرّه",
+      fold?.props["data-cons-negfold"] === 2 && !n.ui.find("data-cons-neg", "p-syr") && !n.ui.find("data-cons-mute", "p-syr") && !n.ui.find("data-cons-mute", "p-amx")
+        && !!n.ui.find("data-cons-short", "p-gloves") && !!n.ui.find("data-cons-mute", "p-gloves"), n.text());
+    check("  وما لم يرفعه الوضع (معدودةٌ أو مجمَّعة تحت الصفر) فرقٌ يُقال باسمه وزرّه كما كان", !!n.ui.find("data-cons-neg", "p-cnt") && !!n.ui.find("data-cons-mute", "p-cnt"), n.text());
+    n.done();
+    n = await openNotice({ mode: "sale", invoiceIds: ["inv1"] });
+    check("  وبلاه كما كان: سطرٌ لكلّ مادّة بزرّ كتمها", !n.ui.find("data-cons-negfold") && !!n.ui.find("data-cons-neg", "p-syr") && !!n.ui.find("data-cons-mute", "p-amx"), n.text());
+    n.done();
+    mem.delete("vp_cons_mute_c1");
+  });
+
   section("ط) ما لم يُخصم يُقال، وما صفّره الطبيبُ لا يُقال");
   await tryCase("skips", async () => {
     reset({ invoiceConsumption: async () => ({ inv1: inv({}, [

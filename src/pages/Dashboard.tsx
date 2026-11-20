@@ -126,7 +126,8 @@ export function Dashboard() {
       // Activity chart = sales per day over the week (local-day match), so the
       // graph reflects real revenue-driving traffic rather than empty bookings.
       const dayKey = (dt: Date) => `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
-      const salesOn = (d: Date) => invs.filter((iv) => iv.status !== "refunded" && dayKey(new Date(iv.created_at)) === dayKey(d)).length;
+      // الدينُ القديم (0271) ليس بيعاً — لا يُعدّ زيارة.
+      const salesOn = (d: Date) => invs.filter((iv) => iv.status !== "refunded" && iv.sale_kind !== "opening" && dayKey(new Date(iv.created_at)) === dayKey(d)).length;
       const activityPts = days.map((d) => ({
         label: d.toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-US", { weekday: "short" }),
         value: salesOn(d),
@@ -164,7 +165,7 @@ export function Dashboard() {
   // so "today" matches the owner's wall clock, not UTC.
   const startMs = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }, []);
   const todaySales = useMemo(
-    () => invoices.filter((iv) => iv.status !== "refunded" && new Date(iv.created_at).getTime() >= startMs),
+    () => invoices.filter((iv) => iv.status !== "refunded" && iv.sale_kind !== "opening" && new Date(iv.created_at).getTime() >= startMs),
     [invoices, startMs],
   );
   const casesToday = todaySales.length;

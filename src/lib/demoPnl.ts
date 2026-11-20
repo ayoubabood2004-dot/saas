@@ -31,6 +31,8 @@ export async function demoReportPnl(from: string, to: string, tz: string): Promi
       items: db.invoiceItems ?? [],
       consumption: (db.consumption ?? []).map((c) => ({ invoice_id: c.invoice_id, cents: BigInt(c.value_c) })),
       expenses, categories,
+      purchasePayments: (db.purchasePayments ?? []).map((pp) => ({ paid_at: pp.paid_at, fx: pp.fx ?? null })),
+      purchases: db.purchases ?? [],
     }, from, to, tz);
   } catch (e) {
     const m = e instanceof Error ? e.message : "";

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import i18next from "i18next";
 import {
@@ -14,7 +15,7 @@ import {
   Landmark, ShoppingBag, Calculator,
   Undo2,
   BookOpen,
-  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch,
+  Tags, FolderOpen, Inbox, Cog, Pencil, Archive, ArchiveRestore, Check, RefreshCw, AlertTriangle, UserSearch, UserPlus,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { ForgivenessReportRow } from "@/types";
@@ -35,6 +36,7 @@ import { useToast, Skeleton, Button, Dialog } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
 import { PnlPanel } from "@/components/reports/PnlPanel";
 import { money, formatNum, formatDec, cn, dateLocale } from "@/lib/utils";
+import { purchaseDueCur, usdOf } from "@/lib/purchaseFxMath";
 import { describeDbError } from "@/lib/errors";
 import {
   bucketOf, groupWithdrawals, pickableCategories, categoryNameProblem, cleanCategoryName,
@@ -42,7 +44,7 @@ import {
 } from "@/lib/expenseCategoryRules";
 import { netPerPocket, pocketsShown, shownPocketOfExpense, type PocketView, type PocketsShown } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
-import { dueOf, isDebt, paidOf } from "@/lib/debt";
+import { dueOf, isDebt, isOpening, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { getClinicName, getDialCode, getCardTransferOneAccount } from "@/lib/settings";
 import { readCustomerQuery } from "@/lib/customerKey";
@@ -177,6 +179,13 @@ const dt = (iso: string) => {
 const shortDate = (ms: number) => (Number.isFinite(ms)
   ? new Date(ms).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })
   : "…");
+
+/* ── ديونُ الدولار (0264) بالدولار — عرضٌ وحده، والحسابُ بالخادم ── */
+const isUsdInv = (i: Invoice): boolean => i.currency === "USD";
+const usdDueCentsOfInv = (i: Invoice): number => Math.max(0, Math.round(((i.total_usd ?? 0) - (i.paid_usd ?? 0)) * 100));
+const usdTxt = (c: number): string => { const n = c / 100; return `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`; };
+/** داخل جملةٍ مترجمة: معزولٌ اتجاهياً (LRI…PDI). */
+const usdIso = (c: number): string => `\u2066${usdTxt(c)}\u2069`;
 
 export function AnalyticsHub() {
   const { t } = useTranslation();
@@ -381,8 +390,11 @@ export function AnalyticsHub() {
   const canPnl = !capLockedFrom(ovr.deviceLocked, ovr.active, canProfit);
   useEffect(() => { if (tab === "pnl" && !canPnl) setTab("overview"); }, [tab, canPnl]);
 
-  // Invoices in range (date) AND within the optional shift window.
-  const invInRange = useMemo(() => invoices.filter((i) => { const tm = new Date(i.created_at).getTime(); return tm >= lo && tm <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
+  // Invoices in range (date) AND within the optional shift window. والدينُ القديم (0271) ليس بيعاً — يخرج من هنا فلا يصل
+  // سجلَّ المعاملات ولا تقريرَ Z ولا السلسلةَ ولا الإيرادَ والهامش ولا مبيعاتِ الكادر ولا كبارَ الزبائن؛ وتسديدُه قبضٌ حقيقيّ
+  // يبقى بـcollectionsInRange (يمشي على كلّ الفواتير).
+  const invInRangeAll = useMemo(() => invoices.filter((i) => { const tm = new Date(i.created_at).getTime(); return tm >= lo && tm <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
+  const invInRange = useMemo(() => invInRangeAll.filter((i) => !isOpening(i)), [invInRangeAll]);
   const paid = useMemo(() => invInRange.filter((i) => (i.status ?? "paid") !== "refunded"), [invInRange]);
   const inRangeInvoiceIds = useMemo(() => new Set(paid.map((i) => i.id)), [paid]);
   const itemsInRange = useMemo(() => items.filter((it) => inRangeInvoiceIds.has(it.invoice_id)), [items, inRangeInvoiceIds]);
@@ -536,7 +548,8 @@ export function AnalyticsHub() {
   }, [labs, lo, hi]);
 
   // Outstanding balances (credit / آجل): any non-refunded sale still owing — partial or unpaid.
-  const receivables = useMemo(() => paid.filter(isDebt), [paid]);
+  // والدينُ القديم دَينٌ حقيقيّ — ليس بيعاً، لكنّه بديون المدّة (0271).
+  const receivables = useMemo(() => invInRangeAll.filter((i) => (i.status ?? "paid") !== "refunded" && isDebt(i)), [invInRangeAll]);
 
   // Yesterday's numbers (only computed while the comparison is switched on).
   const yesterday = useMemo(() => {
@@ -545,7 +558,7 @@ export function AnalyticsHub() {
     const yLo = startOfDay(y).getTime(); const yHi = endOfDay(y).getTime();
     let gross = 0; let tx = 0; let net = 0;
     for (const i of invoices) {
-      if ((i.status ?? "paid") === "refunded") continue;
+      if ((i.status ?? "paid") === "refunded" || isOpening(i)) continue;
       const tm = new Date(i.created_at).getTime();
       if (tm < yLo || tm > yHi || !tsOk(i.created_at)) continue;
       gross += i.total; tx += 1; net += i.profit ?? 0;
@@ -1531,20 +1544,38 @@ function MoneyTab({ z, shown, receivables, series, paymentPie, revenue, category
             </div>
           ) : (
             <>
+              {/* ديونُ الدولار (0264) بالدولار وبجانب الدينار لا مجموعةً عليه: بدينار يوم بيعها تبدو أصغرَ كلّما صعد الدولار. */}
               <div className="mb-3 flex items-center justify-between rounded-xl bg-warn-50 px-3 py-2 text-sm dark:bg-warn-500/10">
                 <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.debtsTotal", "إجمالي المتبقّي على العملاء")}</span>
-                <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(receivables.reduce((s, i) => s + dueOf(i), 0))}</span>
+                <span className="text-end">
+                  {(receivables.some((i) => !isUsdInv(i)) || !receivables.some(isUsdInv)) && (
+                    <span className="block font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(receivables.reduce((s, i) => s + (isUsdInv(i) ? 0 : dueOf(i)), 0))}</span>
+                  )}
+                  {receivables.some(isUsdInv) && (
+                    <span className="block font-display font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr" data-usd-debts>
+                      {usdTxt(receivables.reduce((s, i) => s + (isUsdInv(i) ? usdDueCentsOfInv(i) : 0), 0))}
+                    </span>
+                  )}
+                </span>
               </div>
               <ul className="space-y-1.5">
-                {receivables.map((i) => (
-                  <li key={i.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink">{i.customer_name || t("rpt.unregisteredClient", "عميل غير مسجّل")}</p>
-                      <p className="text-2xs text-ink-subtle">{t("rpt.paidOfTotal", { paid: money(paidOf(i)), total: money(i.total), defaultValue: "مدفوع {{paid}} من {{total}}" })}</p>
-                    </div>
-                    <span className="font-display font-bold tabular-nums text-warn-600">{money(dueOf(i))}</span>
-                  </li>
-                ))}
+                {receivables.map((i) => {
+                  const u = isUsdInv(i);
+                  const pt = u
+                    ? { paid: usdIso(Math.round((i.paid_usd ?? 0) * 100)), total: usdIso(Math.round((i.total_usd ?? 0) * 100)) }
+                    : { paid: money(paidOf(i)), total: money(i.total) };
+                  return (
+                    <li key={i.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">{i.customer_name || t("rpt.unregisteredClient", "عميل غير مسجّل")}</p>
+                        <p className="text-2xs text-ink-subtle">{t("rpt.paidOfTotal", { ...pt, defaultValue: "مدفوع {{paid}} من {{total}}" })}</p>
+                      </div>
+                      {u
+                        ? <span className="font-display font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr">{usdTxt(usdDueCentsOfInv(i))}</span>
+                        : <span className="font-display font-bold tabular-nums text-warn-600">{money(dueOf(i))}</span>}
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
@@ -3601,10 +3632,23 @@ function CategoriesTab({ items, products, purchases, purchaseItems, buyLoading, 
 /* ---- تبويب فواتير الشراء: متى اشتريت وشنو بالضبط، ضمن فترة التقرير ---- */
 function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Purchase[]; loading: boolean; rangeLabel: string }) {
   const { t } = useTranslation();
-  const total = purchases.reduce((s, p) => s + (p.total || 0), 0);
-  const paid = purchases.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0);
+  /* 0274: كلُّ رقمٍ بعملته — فواتيرُ الدينار بالدينار، وفواتيرُ الدولار بدولارها بجانبه (دينارُها حصّةٌ داخلية) — فالإجماليُّ ناقصَ
+   * المدفوع يساوي الدَّينَ بكلّ عملة. */
+  const iqdInv = purchases.filter((p) => p.currency !== "USD");
+  const usdInv = purchases.filter((p) => p.currency === "USD");
+  const total = iqdInv.reduce((s, p) => s + (p.total || 0), 0);
+  const paid = iqdInv.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0);
   const due = Math.max(0, total - paid);
+  const r2u = (n: number) => Math.round(n * 100) / 100;
+  const totalUsd = r2u(usdInv.reduce((s, p) => s + Number(p.total_usd ?? 0), 0));
+  const paidUsd = r2u(usdInv.reduce((s, p) => s + Number(p.paid_usd ?? 0), 0));
+  const dueUsd = r2u(usdInv.reduce((s, p) => s + purchaseDueCur(p), 0));
+  const both = (iqd: number, usd: number) => (usdInv.length ? `${money(iqd)} · ${usdOf(usd)}` : money(iqd));
   const days = new Set(purchases.map((p) => (p.purchased_at || p.created_at || "").slice(0, 10))).size;
+  /* 0276: الأجورُ الإضافية بالفترة (بالدينار، كدفتر الكلفة): ما على الشركات داخل «إجمالي الشراء»، وما دُفع لغيرهم خارجه — ولولا
+   * هذا السطر لما ظهرت أجرةُ السائق بأيّ تقرير حين تُوزَّع على الكلفة. */
+  const chCo = r2u(purchases.reduce((s, p) => s + Number(p.charges_company ?? 0), 0));
+  const chOther = r2u(purchases.reduce((s, p) => s + Number(p.charges_other ?? 0), 0));
 
   const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "danger" | "success" }) => (
     <div className={cn("rounded-2xl border p-3 text-center",
@@ -3622,10 +3666,15 @@ function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Pur
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
         <Kpi label={t("rpt.purchases.count", "فاتورة شراء")} value={formatNum(purchases.length)} />
         <Kpi label={t("rpt.purchases.days", "يوم شراء")} value={formatNum(days)} />
-        <Kpi label={t("rpt.purchases.total", "إجمالي الشراء")} value={money(total)} />
-        <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={money(paid)} tone="success" />
-        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={money(due)} tone={due > 0 ? "danger" : "success"} />
+        <Kpi label={t("rpt.purchases.total", "إجمالي الشراء")} value={both(total, totalUsd)} />
+        <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={both(paid, paidUsd)} tone="success" />
+        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={both(due, dueUsd)} tone={due > 0 || dueUsd > 0 ? "danger" : "success"} />
       </div>
+      {(chCo > 0 || chOther > 0) && (
+        <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs font-semibold text-ink-muted" data-rpt-charges>
+          {t("pnl.rptCharges", { c: money(chCo), o: money(chOther) })}
+        </p>
+      )}
       {loading
         ? <div className="py-10 text-center text-ink-subtle"><Clock size={18} className="mx-auto mb-2 animate-spin" /> {t("common.loading", "جارٍ التحميل…")}</div>
         : <PurchaseLog purchases={purchases} />}
@@ -3691,7 +3740,13 @@ function SalesCustomersTab() {
   return (
     <div data-salescust className="space-y-3">
       <div className="card p-4">
-        <h2 className="flex items-center gap-2 text-base font-extrabold text-ink"><UserSearch size={18} className="text-brand-600" /> {t("scust.title", "زبائن المبيعات بلا سجل حيوان")}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="me-auto flex items-center gap-2 text-base font-extrabold text-ink"><UserSearch size={18} className="text-brand-600" /> {t("scust.title", "زبائن المبيعات بلا سجل حيوان")}</h2>
+          {/* 0270: زبونٌ ما اشترى بعد — ملفُّه اليدويّ يُسجَّل هنا ويطلع بالقائمة بلا حيوان. */}
+          <Link to="/customer/new" data-scustnew className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-brand-700">
+            <UserPlus size={14} /> {t("retail.custNew")}
+          </Link>
+        </div>
         <p className="mt-1 text-xs text-ink-subtle">{t("scust.hint", "زبائن انسجلوا بالبيع وما عندهم سجل حيوان بالعيادة — من كل التاريخ، وبلا أرقام فلوس.")}</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1">
@@ -3742,7 +3797,7 @@ function SalesCustomersTab() {
           {rows.map((r) => (
             <li key={r.key} data-scustrow={r.key} className="card flex flex-wrap items-start gap-x-4 gap-y-2 p-3.5">
               <div className="min-w-0 flex-1 basis-48">
-                <p className="truncate text-sm font-bold text-ink">{r.name ?? t("retail.walkIn", "عميل نقدي")}</p>
+                <Link to={`/customer/${encodeURIComponent(r.key)}`} data-scustfile className="block truncate text-sm font-bold text-ink hover:text-brand-600">{r.name ?? t("retail.walkIn", "عميل نقدي")}</Link>
                 {r.phone
                   ? <bdi dir="ltr" className="block truncate text-xs tabular-nums text-ink-subtle">{r.phone}</bdi>
                   : <span className="block text-xs text-ink-subtle">{t("cust.noPhone", "بلا رقم")}</span>}

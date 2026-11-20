@@ -26,6 +26,11 @@ console.log("▸ ١) نقطةُ إعادة الطلب");
   check("المجمَّعةُ خارجة (رصيدُها بالحوض)", X.reorderItem(P("e", { stock: 0, pooled: true, min_stock: 5 }), 30, 30, 7) === null);
   check("الكميةُ واحدٌ على الأقل وتُقرّب للأعلى", X.reorderItem(P("f", { stock: 0.2 }), 1, 30, 7)?.suggest >= 1);
   check("المهلةُ تغيّر الحكم: مهلةُ ١٤ تجعل ٩ تحت ROP (١٤+٢=١٦)", !!X.reorderItem(P("g", { stock: 12, min_stock: 2 }), 30, 30, 14));
+  /* البيعُ قبل الجرد (0266): رصيدٌ تحت الصفر رقمٌ لم يُعدّ — يُقرأ «ماكو»، لا يُطلب عددُه فوق التغطية. */
+  const neg = X.reorderItem(P("h", { stock: -40, min_stock: 2 }), 30, 30, 7);
+  const zero = X.reorderItem(P("i", { stock: 0, min_stock: 2 }), 30, 30, 7);
+  check("رصيدٌ −٤٠ يُقترح كالصفر تماماً (٣٩ لا ٧٩)", !!neg && neg.suggest === zero?.suggest && neg.suggest === 39, JSON.stringify([neg?.suggest, zero?.suggest]));
+  check("  والرصيدُ الذي تعرضه الشاشةُ هو ما حُسب به الاقتراح (٠ لا −٤٠ — «عندك -40 · نطلب 39» لا يتّفقان)", neg?.stock === 0 && zero?.stock === 0, JSON.stringify([neg?.stock, zero?.stock]));
 }
 console.log("▸ ٢) التجميعُ بالشركة");
 {

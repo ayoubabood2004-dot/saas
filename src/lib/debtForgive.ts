@@ -72,7 +72,7 @@ export type VoidErrorCode = (typeof VOID_ERRORS)[number];
 /* ── الحساب ─────────────────────────────────────────────────────────────── */
 /** ما تحتاجه الحسبةُ من الفاتورة (صفُّ invoices أو جزؤه). */
 export type ForgiveInvoiceLike = Pick<Invoice, "total"> &
-  Partial<Pick<Invoice, "amount_paid" | "profit" | "forgiven" | "cost_total" | "status" | "customer_name" | "customer_phone">>;
+  Partial<Pick<Invoice, "amount_paid" | "profit" | "forgiven" | "cost_total" | "status" | "customer_name" | "customer_phone" | "sale_kind">>;
 
 const num = (x: unknown): number => { const n = Number(x); return Number.isFinite(n) ? n : 0; };
 
@@ -109,6 +109,8 @@ export interface ForgiveCaps {
   maxAbsolute: number;
   /** ما استُعمل من السقف قبل هذا الخصم (٠..١ وقد يتجاوز ١ بعد خسارةٍ معتمدة)، null بلا سقف. */
   usedOfCap: number | null;
+  /** 0271: دينٌ قديم — بلا سقف ربحٍ ولا ربحٍ ينقص (المحفّزُ يثبّته صفراً). */
+  opening: boolean;
 }
 
 /** خطواتُ الدالّة حتى السقف: المتبقّي ← دفعةُ التسوية مقصوصةً عليه ← المتبقّي بعدها ← السقف. */
@@ -124,10 +126,11 @@ export function forgiveCaps(inv: ForgiveInvoiceLike, pct?: number | null, pay?: 
   const profitBase = pgRound2(profit + forgiven);
   const p = forgivePctOf(pct);
   const capTotal = pgRound2(p * profitBase / 100);
-  const allowedWithin = Math.max(0, Math.min(due, pgRound2(capTotal - forgiven)));
+  // 0271: الدينُ القديم بلا ربحٍ (ليس بيعاً) — سقفُ الربح لا معنى له: المسموحُ المتبقّي كلُّه (`v_allowed := v_due`).
+  const allowedWithin = inv.sale_kind === "opening" ? due : Math.max(0, Math.min(due, pgRound2(capTotal - forgiven)));
   return {
     total, dueBefore, pay: payC, paid, due, profit, forgiven, profitBase, pct: p, capTotal, allowedWithin,
-    maxAbsolute: due, usedOfCap: capTotal > 0 ? forgiven / capTotal : null,
+    maxAbsolute: due, usedOfCap: capTotal > 0 ? forgiven / capTotal : null, opening: inv.sale_kind === "opening",
   };
 }
 
@@ -159,7 +162,9 @@ export function forgivePreview(caps: ForgiveCaps, amount: number | null | undefi
   const aboveDue = raw > caps.due + FORGIVE_TOL;
   const amt = Math.max(0, Math.min(raw, caps.due));
   const totalAfter = pgRound2(caps.total - amt);
-  const profitAfter = pgRound2(caps.profit - amt);
+  // الدينُ القديم ربحُه صفرٌ دائماً (المحفّزُ يثبّته): لا «ربحَ بعد» ولا خسارة.
+  const opening = caps.opening;
+  const profitAfter = opening ? 0 : pgRound2(caps.profit - amt);
   const forgivenAfter = pgRound2(caps.forgiven + amt);
   return {
     amount: amt, aboveDue,
@@ -168,7 +173,7 @@ export function forgivePreview(caps: ForgiveCaps, amount: number | null | undefi
     pctOfProfit: caps.profitBase > 0 ? (forgivenAfter / caps.profitBase) * 100 : null,
     marginAfter: totalAfter > 0 ? (profitAfter / totalAfter) * 100 : null,
     aboveCap: amt > caps.allowedWithin + FORGIVE_TOL,
-    loss: Math.max(0, pgRound2(amt - caps.profit)),
+    loss: opening ? 0 : Math.max(0, pgRound2(amt - caps.profit)),
     allowedWithin: caps.allowedWithin,
     usedOfCap: caps.capTotal > 0 ? forgivenAfter / caps.capTotal : null,
   };

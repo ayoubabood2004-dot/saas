@@ -2,13 +2,14 @@ import { noteScan } from "@/lib/scanStats";
 import { Component, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
   ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX, Hash, History,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder, ConsumableEntry } from "@/types";
+import type { Product, ProductPack, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, CustomerHit, CustomerPet, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder, ConsumableEntry } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { checkoutPhone, custNameKey, custPhoneKey } from "@/lib/customerKey";
@@ -28,8 +29,9 @@ import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
 import { storeSlugCached } from "@/lib/storeOrdersLive";
-import { storeUrl } from "@/lib/storeLib";
-import { getDialCode, getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, type QtyPromo } from "@/lib/settings";
+import { storeUrl, productImageUrl, cardImagePath } from "@/lib/storeLib";
+import { sortForPos, type PosSort } from "@/lib/posSort";
+import { getDialCode, getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, getPosSort, setPosSort, getPosImages, setPosImages, type QtyPromo } from "@/lib/settings";
 import { expiryState, daysToExpiry } from "@/lib/expiry";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
@@ -44,14 +46,14 @@ import { SaleDateBar, saleDateMessage } from "./SaleDateBar";
 import { useMedPickerOpen } from "@/components/meds/MedPicker";
 import { attachMedDraft, linePetNames, medDraftsByPet, medOnlyLine, type MedRef } from "@/lib/medSale";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode, localISO, dateLocale } from "@/lib/utils";
+import { cn, money, currencySymbol, formatNum, formatQty, fmtKg, searchable, normalizeCode, localISO, dateLocale } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, stripAim } from "@/lib/productCodes";
 import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
-import { repriceCart, isManual, type Repriced } from "@/lib/cartReprice";
+import { repriceCart, isManual, capturedPrice, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
-import type { PricePriorMap } from "@/types";
+import type { DoseCharge, PricePriorMap } from "@/types";
 import { sellableRow } from "@/lib/sellable";
 import { customerBoundLines, cartAfterClearCustomer, planCustomerSwitch, stripScanTail, fieldsAfterPick, type CustText } from "@/lib/saleCustomer";
 import { useCustomerSearch, CustomerDropdown, CustomerPetsStrip, type CustField } from "./CustomerSearch";
@@ -65,23 +67,45 @@ import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryS
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
 import type { PosTab } from "@/lib/posTabs";
+import { armRetry, browserRetryEnv } from "@/lib/retryWhileFailed";
+import type { NegBarView, NegCheck, NegRefusedLine, NegSay, NegState } from "@/lib/negStock";
 
 /* خاناتُ الطبيب (0258): الشريطُ والشبكةُ والمحرّرُ قطعةٌ كسولةٌ بنطاقها المملوك ptab، والبابُ (posTabsApi) بـimport() — لا ثابت،
  * كباب المستهلكات: وحدةٌ جديدةٌ ثابتةٌ بقطعة البيع اسمٌ يدفعه الإقلاع. و«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
 const loadTabPills = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabPills })), ["ptab"]);
 const loadTabGrid = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabGrid })), ["ptab"]);
 const loadTabEditor = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosTabEditor })), ["ptab"]);
+/* شريطُ شبكة المنتجات (0279: الترتيبُ والصور) بالقطعة نفسِها ونطاقِها — لا قطعةَ ولا نطاقَ جديد يدفعه الإقلاع. */
+const loadGridBar = () => page(() => import("@/components/retail/PosCustomTabs").then((m) => ({ default: m.PosGridBar })), ["ptab"]);
 /* بيعُ الدولار (0264): سلّةٌ مستقلّة بقطعةٍ كسولة ونطاقها usd — لا وحدةَ ثابتةً جديدةً هنا (الإقلاعُ على سقفه). */
 /* وتُصنع بأوّل لمسةٍ لمادّةٍ دولارية لا عند التحميل: عيادةٌ بلا دولار لا تصنع حتى غلافَها (salebuilder-cons-guard يعدّ قطعَ التحميل). */
 const loadUsdSale = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdSaleSheet })), ["usd"]);
 let UsdSaleLazy: ReturnType<typeof loadUsdSale> | null = null;
 /** سعرُ مادّة الدولار بالكرت: «$12.50» — عرضٌ وحده (الحسابُ بـusdMath داخل السلّة). */
 const usdTile = (n?: number | null): string => (n == null ? "$—" : `$${(n % 1 ? n.toFixed(2) : String(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`);
+/* نسبةُ الراجع (المالك، ١٠/١١): عياداتٌ تردّ للزبون جزءاً من السعر — القطعةُ ترجع للمخزن كاملةً والباقي للعيادة.
+ * النسبُ وما يحدث بالمال، وملاحظةُ الإرجاع الخالص، قطعةٌ كسولة بنطاقها rpct (نطاقُ «retail» حارٌّ يدفعه الإقلاع)،
+ * وتُصنع بأوّل «راجع» لا عند التحميل — كقطعة الدولار. */
+const loadRetBar = () => page(() => import("@/components/retail/RetPct").then((m) => ({ default: m.RetModeBar })), ["rpct"]);
+const loadRetNote = () => page(() => import("@/components/retail/RetPct").then((m) => ({ default: m.RetPureNote })), ["rpct"]);
+let RetBarLazy: ReturnType<typeof loadRetBar> | null = null;
+let RetNoteLazy: ReturnType<typeof loadRetNote> | null = null;
 let TabPillsLazy = loadTabPills();
 let TabGridLazy = loadTabGrid();
 let TabEditorLazy = loadTabEditor();
+let GridBarLazy = loadGridBar();
 /** جدولُ الخانات غائبٌ بالقاعدة (واجهةٌ سبقت 0258): الميزةُ تختفي بصمت بدل «تعذّر» دائم. */
 const tabsTableMissing = (e: unknown) => ["42P01", "PGRST205", "PGRST202"].includes(String((e as { code?: string } | null)?.code ?? ""));
+
+/** صورةُ المادّة بشبكة البيع (0279): المصغّرةُ أوّلاً ثمّ الأصل ثمّ الأيقونة — صورةٌ لا تصل لا تترك مربّعاً فارغاً ولا تُسقط البطاقة.
+ *  كسولةُ التحميل والفكّ (loading/decoding): ستّون بطاقةً لا تنزّل إلا ما يظهر، ولا تحبس الخيطَ عن المسح. */
+function ProdThumb({ path, className, icon }: { path: string; className?: string; icon: ReactNode }) {
+  const [step, setStep] = useState(0);   // ٠ المصغّرة، ١ الأصل، ٢ لا صورة
+  const src = step === 0 ? productImageUrl(cardImagePath(path)) : step === 1 ? productImageUrl(path) : null;
+  if (!src) return <span className={cn("grid place-items-center bg-surface-2 text-ink-subtle", className)}>{icon}</span>;
+  return <img src={src} alt="" loading="lazy" decoding="async" draggable={false} data-prodimg onError={() => setStep((s) => s + 1)}
+    className={cn("bg-surface-2 object-contain", className)} />;
+}
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -113,6 +137,12 @@ interface Line {
    *  والقطعة ترجع للمخزون بنفس الفاتورة. المفتاح `r:` يفصله عن سطر البيع
    *  لنفس المنتج، فيقدر الكاشير يرجّع واحدة ويبيع ثنتين بعملية واحدة. */
   ret?: boolean;
+  /** نسبةُ ما يُردّ للزبون من سعر سطر الراجع (المالك ١٠/١١): غائبٌ = ١٠٠. القطعةُ ترجع للمخزن كاملةً بأيّ نسبة والكلفةُ
+   *  تُعكس كاملة — الباقي من السعر يبقى للعيادة. على السطر لا بالشاشة: تنجو مع مسودّة السلّة كسائر حقوله. */
+  retPct?: number;
+  /** البيعُ قبل الجرد (0266): كميةٌ فوق رصيد القائمة سمح بها الوضعُ وحده — قبل البيعة يُسأل عنها الخادم (neg_stock_check)،
+   *  وتُرفض إن انطفأ. لاصقةٌ وتنجو مع المسودّة؛ والسطرُ الذي تجاوز رصيدَه بلا الوضع (قائمةٌ قديمة) يمرّ كما كان (ب٢). */
+  negLift?: true;
   /** معرّف الخدمة بالكتالوج — تحتاجه عروض الخدمات لتعرف السطر أي خدمة هو
    *  (id السطر نصّ مركّب، وأسطر المختبر تحمل شكلاً آخر). */
   serviceId?: string | null;
@@ -127,7 +157,15 @@ interface Line {
   boxPrice?: number;             // price of one whole box
   subPrice?: number | null;      // price of one sub-unit
   boxCost?: number;              // purchase price of one whole box
-  saleUnit?: "box" | "sub";      // which unit this line is currently sold as
+  saleUnit?: "box" | "sub" | "pack";   // which unit this line is currently sold as («pack»: كارتون، 0267)
+  /** 0267: سطرُ كارتون (`k:<مادّة>:<كارتون>`) — qty بالكراتين، وما ينقص من الرصيد العددُ × `packPer` علبة (`lineStockQty`).
+   *  `packId` معرّفُ الكارتون بصفّ المادّة (يُطابَق قبل البيعة: كارتونٌ انشال أو تبدّل عددُه لا يُباع بعدده القديم)، و`packName`
+   *  اسمُه (unit_label بالفاتورة)، و`packNote` ما يُرسم تحت السطر، و`packPrice` سعرُ القائمة لحظةَ نزوله (إعادةُ التسعير). */
+  packId?: string;
+  packPer?: number;
+  packName?: string;
+  packNote?: string;
+  packPrice?: number;
   /** يُباع بالوزن (كتلة، 0124): `qty` هو الوزن بالكيلو (كسريّ)، و`unit_price`
    *  سعرُ الكيلو الواحد. السعر يُحسب خطياً: نصف كيلو نصفُ السعر. المخزون كسريٌّ
    *  بالكيلو. حصريّ مقابل الوحدات الفرعية. */
@@ -146,6 +184,12 @@ interface Line {
   consumables?: ConsumableEntry[] | null;
   /** كلفةُ مواد الحالة الواحدة كما حسبتها الورقةُ لحظةَ الحفظ — لمعاينة الربح وحدها، والخادمُ يحسب الحقيقيّة. */
   consEst?: number | null;
+  /** 0269: جرعةٌ من الطبلة (`d:<معلَّق>`) — بكمية ١ وسعرِ لقطة الإعطاء. المادّةُ وما يُخصم منها يُرسلان بالبيعة وحدها
+   *  (product_id بالسطر null: لا سقفَ ولا طزاجةَ ولا بيعَ قبل الجرد يحكم جرعةً أُعطيت فعلاً)، و`note` ما يُرسم تحته. */
+  dose?: { charge: string; productId: string | null; stockQty: number | null; qty: number; note: string };
+  /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `c` سعرُ الوحدة بالسنت، و`rid`/`r` سعرُ الصرف الذي حُسب به دينارُه (`unit_price`) كما يعرفه
+   *  الخادم (معرّفُه، والدولارُ الواحد بأربع منازل نصّاً — المسودّةُ JSON). الخادمُ يرفض سعراً تغيّر (`usd_rate_changed`) ودينارٌ لا يطابق. */
+  usd?: { c: number; rid: string; r: string };
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -197,6 +241,9 @@ interface SaleDraft {
   /** مرجعُ محاولة الإصدار (0135): يُحفظ مع المسودّة حتى لا يولَد مرجعٌ جديد بعد
    *  مهلةٍ ثم تبديلِ تبويبٍ أو إعادةِ تحميل — فتُباع السلّةُ مرّتين. */
   clientRef?: string | null;
+  /** موافقةُ الخادم على سطور «البيع قبل الجرد» لهذا المرجع وبصمةِ سلّته (0266) — تُحفظ معه: إعادةٌ بعد تبديل تبويبٍ كانت
+   *  تُسأل من جديد، والوضعُ انتهى بينهما فتُحبس بيعةٌ ربما انسجلت. لا تُقرأ إلا لمرجعها. */
+  negOk?: { ref: string; fp: string } | null;
   /** «تاريخ المبيع» (0242) يُحفظ **مع المرجع**: إعادةٌ بعد تحديثٍ بلا يومها كانت ستسجّل بيعةَ أمس
    *  اليوم إن لم تكن الأولى وصلت. فارغٌ = اليوم. */
   saleDay?: string | null;
@@ -214,6 +261,12 @@ const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "defaul
 /** مستهلكاتُ سطرٍ من مسودّةٍ محفوظة (0252): قائمةٌ بشكل ما يقبله الخادم تبقى كما هي، وأيُّ شيءٍ غيرُها يسقط
  *  **كلُّه** فيرجع السطرُ للوصفة — نصفُ قائمةٍ أخطرُ من لا قائمة، ومادّةٌ مكسورةٌ واحدة يرفض الخادمُ عليها
  *  البيعةَ كلَّها (consumables_bad). مسودّةٌ من نسخةٍ أقدم أو مخزنٌ عُبث به لا يُسقط الشاشة. */
+/** علمٌ يُرفع ما دام مركَّباً — يوضع بجانب مكوّنٍ كسولٍ داخل حدّ تحميله نفسِه، فلا يُركَّب إلا والمكوّنُ مرسوم (التعليقُ والفشلُ يحجبانهما معاً).
+ *  والعلمُ لمن يقرؤه لحظةَ الضغطة، و`onChange` لما يُحسب بالرسمة (حارسُ الماسح). */
+function MountFlag({ flag, onChange }: { flag: { current: boolean }; onChange?: (on: boolean) => void }): null {
+  useEffect(() => { flag.current = true; onChange?.(true); return () => { flag.current = false; onChange?.(false); }; }, [flag, onChange]);
+  return null;
+}
 function draftConsumables(v: unknown): ConsumableEntry[] | undefined {
   if (!Array.isArray(v) || v.length > 40) return undefined;
   const seen = new Set<string>();
@@ -237,6 +290,29 @@ function draftLine(l: Line): Line {
     if (typeof l.consEst === "number" && Number.isFinite(l.consEst) && l.consEst >= 0) out.consEst = l.consEst;
   }
   return out;
+}
+/** نسبةُ سطر: سطرُ البيع ١٠٠ دائماً، وسطرُ الراجع نسبتُه — والغائبُ وما خارج (٠، ١٠٠) = ١٠٠ (مسودّةٌ قديمة أو مكسورة). */
+function retPctOf(l: Pick<Line, "ret" | "retPct">): number {
+  const p = Number(l.retPct);
+  return l.ret && Number.isFinite(p) && p > 0 && p < 100 ? p : 100;
+}
+/** سعرُ الوحدة **الواحد** للسطر: ما يُجمع ويُعرض ويُطبع ويُرسل. لسطر الراجع نسبتُه من سعره بالفلس — الخادمُ يكتب
+ *  ما يصله (retail_return وretail_checkout يحسبان round(qty × unit_price, 2)) فلا حسابَ ثانياً هناك. */
+function lineUnit(l: Pick<Line, "ret" | "retPct" | "unit_price">): number {
+  const p = retPctOf(l);
+  return p === 100 ? l.unit_price : Math.round((Math.round(l.unit_price * 100) * p) / 100) / 100;
+}
+/** 0267: سطرُ كارتون؟ */
+function isPackLine(l: Pick<Line, "kind" | "saleUnit" | "packPer">): boolean {
+  return l.kind === "product" && l.saleUnit === "pack" && !!l.packPer && l.packPer >= 2;
+}
+/** ما ينقصه السطرُ من رصيد مادّته (stock_qty بالإتمام والإرجاع وسؤال الوضع — حسابٌ واحد): العلبةُ والكيلو كميتُهما، والمفردُ
+ *  ÷ عددِه، والكارتونُ × علبِه — بثلاث منازل كما يُحفظ. والخادمُ يكلّف الكارتونَ حين يطابق هذا كارتوناً محفوظاً (0267). */
+function lineStockQty(l: Pick<Line, "kind" | "product_id" | "qty" | "saleUnit" | "unitsPerBox" | "packPer">): number {
+  if (l.product_id == null) return 0;
+  if (l.kind === "product" && l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.round((l.qty / l.unitsPerBox) * 1000) / 1000;
+  if (isPackLine(l)) return Math.round(l.qty * (l.packPer as number) * 1000) / 1000;
+  return l.qty;
 }
 function loadSaleDraft(clinicId?: string): SaleDraft | null {
   try {
@@ -390,11 +466,13 @@ class ConsWarmBoundary extends Component<{ children: ReactNode }, { failed: bool
  * فالسطرُ يحمل ما سيُكتب — معاينةُ الربح وما يُطبع وما يُرسل رقمٌ واحد. والحسابُ مرآتُه الوحيدة `productLineCostCents`
  * (consumption.ts، فلساً بفلس) بـimport() كالباب: قطعةُ البيع لا تستورد وحدةً جديدة استيراداً ثابتاً. وحتى يصل (لحظاتٌ بعد
  * الفتح) أو إن فشل: كلفةُ الجهاز كما كانت والمعاينةُ «—»، وحين يصل تُعاد كلفةُ السلّة به (recostLines). */
-let lineCostFn: ((p: Product, per: number | null) => number) | null = null;
+let lineCostFn: ((p: Product, per: number | null, pack?: number | null) => number) | null = null;
 let lineCostLoad: Promise<void> | null = null;
 function loadLineCost(): Promise<void> {
   lineCostLoad ??= import("@/lib/consumption").then((m) => {
-    lineCostFn = (p, per) => {
+    lineCostFn = (p, per, pack) => {
+      // سطرُ الكارتون (0267): كميةٌ واحدة وstock_qty عددُ علبه — فرعُ الكارتون بالخادم ومرآتُه.
+      if (pack != null && pack >= 2) return m.fromScaled(m.productLineCostCents(p, 1000n, m.roundScaled(pack, 3), 0n), 2);
       /* المفردُ يسلك فرعَه بالخادم حين |stock_qty| ≠ |qty|، والإتمامُ يرسل stock_qty = الكمية ÷ unitsPerBox **السطر** (`per`) لا
        * المادّة: لوحدةٍ واحدة ١ ÷ per يساويها بقاسمٍ ١ وحده، والكلفتان عندها واحدة — فحكمُ الوحدة الواحدة حكمُ السطر بأيّ كميةٍ
        * صحيحة. وسطرٌ وُضع والعلبةُ بوحدةٍ واحدة ثم تبدّلت يُرسل stock_qty = الكمية فيكلّفه الخادمُ علبة (مقيسٌ بـ_product_line_cost). */
@@ -406,16 +484,81 @@ function loadLineCost(): Promise<void> {
 /** كلفةُ وحدةٍ من سطر مادّةٍ كما يكتبها الخادم (`per`: قاسمُ stock_qty بالإتمام لسطرٍ بالمفرد — unitsPerBox السطر — وnull للعلبة
  *  والكيلو) — أو كلفةُ الجهاز `device` كما كانت: لمادّةٍ لا يعرفها الجهاز (`p` غائب) أو من الحقل، وهي ما يأخذه الخادمُ لهما،
  *  أو والحسابُ لم يصل. */
-function productLineCost(p: Product | undefined, per: number | null, device: number): number {
-  return p && !p.farm_id && lineCostFn ? lineCostFn(p, per) : device;
+function productLineCost(p: Product | undefined, per: number | null, device: number, pack?: number | null): number {
+  return p && !p.farm_id && lineCostFn ? lineCostFn(p, per, pack) : device;
 }
+
+/* ---- البيعُ قبل الجرد (0266) ---------------------------------------------------------------------------
+ * الحالةُ والبابُ (negStockApi) بـimport() كمرآة الكلفة: لا وحدةَ ثابتةً جديدة بقطعة البيع. وحتى يصل (أو إن فشل) لا يُرفع شيء —
+ * الشاشةُ كما كانت. والشريحةُ ونافذةُ ما قبل البيعة قطعةٌ كسولة بنطاقها nstk تُصنع بأوّل حاجة (عيادةٌ ما استعملت الوضعَ لا تصنعها). */
+type NegMod = typeof import("@/lib/negStockApi");
+let negMod: NegMod | null = null;
+let negLoad: Promise<NegMod> | null = null;
+function loadNegMod(): Promise<NegMod> {
+  negLoad ??= import("@/lib/negStockApi").then((m) => (negMod = m), (e) => { negLoad = null; throw e; });
+  return negLoad;
+}
+/* ---- البيعُ بالكارتون والمغلّف من المسح (0267) ----------------------------------------------------------------
+ * البابُ (packSale: الرمزُ ⇒ المادّةُ ومستواها، وسؤالُ الخادم) ونصوصُه (PackSale، نطاقُ pks المملوك) بـimport() — لا وحدةَ ثابتةً
+ * جديدة بقطعة البيع، ولا نصَّ بالنطاق الحارّ. ويُسخَّنان مع الشاشة (PackWarmLazy)، والنطاقُ يُنتظر قبل أوّل جملة (لا مفتاحَ خاماً). */
+type PackMod = typeof import("@/lib/packSale") & { say: typeof import("@/components/retail/PackSale") };
+let packMod: PackMod | null = null;
+let packLoad: Promise<PackMod> | null = null;
+function loadPackMod(): Promise<PackMod> {
+  packLoad ??= Promise.all([import("@/lib/packSale"), import("@/components/retail/PackSale"), import("@/i18n").then((i) => i.ensureOwned("pks"))])
+    .then(([a, b]) => (packMod = { ...a, say: b }), (e) => { packLoad = null; throw e; });
+  return packLoad;
+}
+/* ---- الجرعةُ بيع (0269) — جرعاتُ الطبلة المعلَّقة للزبون تنزل بالسلّة وحدها ----------------------------------------------
+ * البابُ (doseApi: المعلَّقُ والبيعةُ التي تختمه) ونصوصُه (DoseLines، نطاقُ dosl المملوك) بـimport() كالكارتون — لا وحدةَ ثابتةً جديدة
+ * بقطعة البيع، ولا نصَّ بالنطاق الحارّ. */
+type DoseMod = typeof import("@/lib/doseApi") & { say: typeof import("@/components/retail/DoseLines") };
+let doseMod: DoseMod | null = null;
+let doseLoad: Promise<DoseMod> | null = null;
+function loadDoseMod(): Promise<DoseMod> {
+  doseLoad ??= Promise.all([import("@/lib/doseApi"), import("@/components/retail/DoseLines"), import("@/i18n").then((i) => i.ensureOwned("dosl"))])
+    .then(([a, b]) => (doseMod = { ...a, say: b }), (e) => { doseLoad = null; throw e; });
+  return doseLoad;
+}
+/** سطرُ الجرعة: «Meloxicam · جرعة ١٣/١١» بحيوانه، والسعرُ لقطةُ الإعطاء. */
+function doseLine(x: DoseCharge, m: DoseMod): Line {
+  return {
+    id: `d:${x.id}`, kind: "med", name: m.say.doseLineName(x.name, x.given_at), barcode: null,
+    unit_price: x.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null,
+    petId: x.pet_id, petName: x.pet_name,
+    // qty: كمّيةُ الجرعة بوحدتها (علبٌ أو صغرى) — البيعةُ ترسلها بشكل بيع الشاشة لتُكلَّف صحيحاً؛ والسلّةُ تعرضها سطراً واحداً بسعره.
+    dose: { charge: x.id, productId: x.product_id, stockQty: x.stock_qty, qty: x.product_id ? (x.dose_qty ?? 1) : 1, note: m.say.doseNote(x.pet_name, x.given_at) },
+  };
+}
+const PackWarmDone = () => null;
+const loadPackWarm = () => page(() => import("@/components/retail/PackSale").then(() => ({ default: PackWarmDone })), ["pks"]);
+let PackWarmLazy = loadPackWarm();
+const loadDoseWarm = () => page(() => import("@/components/retail/DoseLines").then(() => ({ default: PackWarmDone })), ["dosl"]);
+const DoseWarmLazy = loadDoseWarm();
+class PackWarmBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  componentDidCatch(): void {
+    PackWarmLazy = loadPackWarm();
+  }
+  render(): ReactNode {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+const loadNegBar = () => page(() => import("@/components/negstock/NegStock").then((m) => ({ default: m.NegBar })), ["nstk"]);
+const loadNegChk = () => page(() => import("@/components/negstock/NegStock").then((m) => ({ default: m.NegCheckoutDialog })), ["nstk"]);
+let NegBarLazy: ReturnType<typeof loadNegBar> | null = null;
+let NegChkLazy: ReturnType<typeof loadNegChk> | null = null;
 /** السلّةُ بكلفة الخادم من القائمة: سطرُ مادّةٍ صفُّه بالقائمة يأخذ كلفةَ وحدته الآن (متوسّطٌ تحرّك بشراءٍ من جهازٍ آخر يصل مع
  *  القائمة، والخادمُ يكلّف لحظةَ البيعة)، وما غاب صفُّه يبقى بكلفته. نفسُ السلّة إن لم يتغيّر شيء. */
 function recostLines(cart: Line[], byId: ReadonlyMap<string, Product>): Line[] {
   let changed = false;
   const next = cart.map((l) => {
     if (l.kind !== "product" || !l.product_id) return l;
-    const unit_cost = productLineCost(byId.get(l.product_id), l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0 ? l.unitsPerBox : null, l.unit_cost);
+    const unit_cost = productLineCost(byId.get(l.product_id), l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0 ? l.unitsPerBox : null, l.unit_cost,
+      isPackLine(l) ? l.packPer : null);
     if (unit_cost === l.unit_cost) return l;
     changed = true;
     return { ...l, unit_cost };
@@ -762,7 +905,7 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
  *  إلى التالية. */
 type CheckoutAck = { bigIds?: string[]; expiredIds?: string[]; priceIds?: string[] };
 
-export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
+export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange, onOpenReturns }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
   products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
   /** جيلُ الأسعار لحظةَ **بدء** جلب `products` (`priceGen`). أقدمُ من الجيل الآن ⇒ القائمةُ
@@ -785,6 +928,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   onCustomerCleared?: () => void;
   /** طلبُ دفعٍ بالطريق (بين الإرسال والجواب) — لا «مشغول» الذي يمتدّ لمزامنة السجلّ بعده. */
   onPayingChange?: (paying: boolean) => void;
+  /** «سوّه من المرتجع»: إرجاعٌ خالص لزبونٍ أخذ بالدين لا ينقص دينه (يخرج من الدرج) — الأبُ يفتح تبويبَ «المرتجع»
+   *  بالبحث عنه. غائبٌ (شاشةُ الجملة) = لا زرّ. */
+  onOpenReturns?: (q: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -836,6 +982,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * `bump` تقرأ هنا وتكتب ما ستصيره السلّةُ فوراً. */
   const cartRef = useRef(cart);
   cartRef.current = cart;
+  /** 0269: جرعاتٌ شالها الكاشيرُ من هذه البيعة — لا ترجع بها (وتبقى معلَّقةً لبيعةٍ قادمة). */
+  const doseDismissed = useRef<Set<string>>(new Set());
   /* سقفُ السطر يتبع القائمة. الرصيدُ يُنسخ بالسطر لحظةَ إضافته، وكان يبقى كما هو بعد كلّ
    * تحديث (عودةُ التاب، كلَّ ٥ دقائق، «حدّث القائمة»، وF5 يرجّعه من المسودّة) — فالكرتُ
    * يقول ٢٥ والسلّةُ تقول «المتوفّر ١ فقط وكلُّه بالسلّة». الكميةُ لا تُمسّ، السقفُ وحده. */
@@ -848,12 +996,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         const p = byId.get(l.product_id);
         if (!p) return l;
         const stock = p.pooled ? null : p.stock;
-        if (l.stock === stock) return l;
-        changed = true;
-        return { ...l, stock };
+        /* 0266: رصيدٌ نزل تحت كمية السطر، أو كلفةٌ صارت تسمح بالرفع والسطرُ فوق رصيده ⇒ يُعلَّم كأيّ كاتبٍ آخر (يُسأل عنه الخادمُ
+         * قبل البيعة). العلامةُ تُراجَع مع كلّ قائمة لا مع الرصيد وحده. */
+        const m = markLift(l.stock === stock ? l : { ...l, stock });
+        if (m !== l) changed = true;
+        return m;
       });
       return changed ? next : c;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products]);
   /* والكلفةُ تتبع القائمة كذلك (0255): حسابُ الخادم يصل مرّةً للتبويب (loadLineCost)، ثم كلُّ قائمةٍ تعيد كلفةَ السلّة — سطرٌ
    * أُضيف قبل وصوله، أو من مسودّةٍ قديمة، أو متوسّطٌ تحرّك بشراءٍ من جهازٍ آخر. وما دام لم يصل (أو فشل) فالمعاينةُ «—». */
@@ -868,22 +1019,246 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const byId = new Map(products.map((p) => [p.id, p]));
     setCart((c) => recostLines(c, byId));
   }, [products, lineCostState]);
+  /* 0267: البيعُ بالكارتون — البابُ يُسخَّن مع الشاشة، وجاهزيةُ الخادم (pack_sale_ready) تُسأل مرّة؛ و«لا» تُسأل ثانيةً عند المسح
+   * (مديرٌ لصق الهجرةَ والشاشةُ مفتوحة). */
+  const packReadyRef = useRef<boolean | null>(null);
+  /* ووصولُ البابِ رسمةٌ: إعادةُ التسعير (أدناه) تقرأ أسعارَ الكراتين منه — مسودّةٌ رجعت قبله كانت تُبقي سعرَ الكارتون القديم. */
+  const [packModOn, setPackModOn] = useState(() => !!packMod);
+  useEffect(() => {
+    let alive = true;
+    loadPackMod().then((m) => { if (alive) setPackModOn(true); return m.packSaleReady(); })
+      .then((r) => { if (alive && r === "ready") packReadyRef.current = true; }, () => { /* swallow-ok: يُسأل عند أوّل مسحة */ });
+    return () => { alive = false; };
+  }, []);
+  const packReadyNow = async (): Promise<"ready" | "absent" | "unreachable"> => {
+    if (packReadyRef.current === true) return "ready";
+    try {
+      const m = packMod ?? await withTimeout(loadPackMod(), 4000);
+      const r = await withTimeout(m.packSaleReady(), 4000);
+      if (r === "ready") packReadyRef.current = true;
+      return r;
+    } catch {
+      return "unreachable";
+    }
+  };
+
+  /* ── البيعُ قبل الجرد (0266) ──────────────────────────────────────────────────────────────────────────
+   * الحالةُ من الخادم (negStockApi: مفتاحُها المستخدمُ والعيادة، وتُسأل كلَّ دقيقةٍ ما دامت مفعّلة)، والقرارُ يُقرأ منها **لحظةَ
+   * الحاجة** (`negNow`) لا من رسمةٍ مضت: ضغطةٌ بعد انتهاء الوضع بثانيتين لا ترفع شيئاً. والجوابُ يعيش دقيقتين وحده (activeNow).
+   * السطرُ يُرفع حين: الوضعُ مفعّل، والمادّةُ حيّةٌ وما انعدّت (liftable)، وكلفةُ **سطرها** عند الخادم موجبة (productLineCost —
+   * والمرآةُ لم تصل ⇒ لا رفع). ما رفعه الوضعُ فوق الرصيد يُعلَّم (negLift) ويُسأل عنه الخادمُ قبل البيعة. */
+  const [negReady, setNegReady] = useState(() => !!negMod);
+  const [, setNegTick] = useState(0);
+  const negKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadNegMod().then(() => { if (alive) setNegReady(true); }, () => { /* swallow-ok: بلا الباب لا وضع — الشاشةُ كما كانت */ });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!negReady || !negMod) return;
+    const key = negMod.negKey(user?.id);
+    negKeyRef.current = key;
+    const unsub = negMod.subscribeNeg(key, () => setNegTick((n) => n + 1));
+    setNegTick((n) => n + 1);
+    return () => { unsub(); if (negKeyRef.current === key) negKeyRef.current = null; };
+  }, [negReady, user?.id, clinicId]);
+  /** الحالةُ الآن من المخزن المشترك — لا من رسمةٍ مضت. */
+  const negNow = (): { active: boolean; counted: ReadonlySet<string>; state: NegState | null; failed: boolean } => {
+    const m = negMod, key = negKeyRef.current;
+    if (!m || !key) return { active: false, counted: new Set(), state: null, failed: false };
+    const snap = m.negSnap(key);
+    return { active: m.activeNow(snap.state, performance.now()), counted: snap.counted, state: snap.state, failed: snap.failed };
+  };
+  const negView = negNow();
+  /* الشريحةُ: تُصنع بأوّل حالةٍ تستحقّها (مفعّل، أو استعملته العيادةُ يوماً) وتبقى ما دامت للعيادة حالة. */
+  const negShow = !!negView.state && !negView.state.absent && (negView.state.active || negView.state.used || NegBarLazy != null);
+  /* الشريحةُ وإعلانُ «انفتح/انتهى» بجواب الخادم الأخير لا بعمره: جوابٌ تجاوز دقيقتيه (تابٌ مخفيّ، سؤالٌ فشل) يوقف الرفعَ وحده
+   * (activeNow) ولا يُعلن «انتهى» بنغمة — الوضعُ ما تغيّر؛ والجوابُ التالي يحكم. */
+  const negServerOn = !!negView.state?.active && !negView.state.absent;
+  const negBarView: NegBarView = {
+    active: negServerOn, until: negView.state?.until ?? null, endedAt: negView.state?.endedAt ?? null,
+    lastNight: negServerOn && !!negMod && !!negView.state && negMod.daysLeft(negView.state, performance.now()) <= 1,
+  };
+  /* جوابٌ مفعّلٌ ينتهي عمرُه وحده: رسمةٌ عند انتهائه (الكروتُ ترجع باهتةً، والسقوفُ ترجع) — لا تنتظر الاستطلاع التالي. */
+  useEffect(() => {
+    const s = negView.state;
+    if (!negView.active || !s) return;
+    const age = performance.now() - s.at;
+    const left = Math.min(120_000 - age, s.until && s.serverNow ? Date.parse(s.until) - Date.parse(s.serverNow) - age : 0);
+    const id = window.setTimeout(() => setNegTick((n) => n + 1), Math.max(250, left + 50));
+    return () => window.clearTimeout(id);
+  });
+  /** قاسمُ سطرٍ بالمفرد (unitsPerBox السطر) أو null للعلبة والكيلو — كما يُكلَّف بالخادم. */
+  const perOf = (l: Pick<Line, "saleUnit" | "unitsPerBox">): number | null => (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0 ? l.unitsPerBox : null);
+  /** وحدةُ السطر بالفاتورة (unit_label): الكيلو، واسمُ الكارتون (0267)، والمفردُ أو العلبة لمادّةٍ لها وحدةٌ صغرى. */
+  const lineLabel = (l: Line): string | null => (l.byWeight ? t("retail.unitKg", "كغ")
+    : isPackLine(l) ? (l.packName || null)
+    : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox"))
+    : null);
+  /** يُرفع سقفُ هذه المادّة بهذه الوحدة الآن؟ */
+  const liftFor = (p: Product | null | undefined, per: number | null, now = negNow()): boolean =>
+    !!p && now.active && !!negMod && negMod.liftable(p, now.counted) && productLineCost(p, per, -1) > 0;
+  /** الوضعُ مفعّلٌ والمادّةُ حيّةٌ وما انعدّت — وكلفتُها وحدها تمنعها ⇒ «اكتب سعر شرائها» لا «رصيده صفر». والمرآةُ لم تصل
+   *  ليس «كلفتُها صفر» (productLineCost يرجع كلفةَ الجهاز -1 بلاها): لا رفعَ ولا هذه الرسالة — الرسائلُ كما كانت. */
+  const costBlocked = (p: Product | null | undefined, per: number | null, now = negNow()): boolean =>
+    !!p && !!lineCostFn && now.active && !!negMod && negMod.liftable(p, now.counted) && productLineCost(p, per, -1) <= 0;
+  /** صفُّ المادّة الذي يُحكم به السطر: صفٌّ رفعه الوضعُ بجواب الخادم يحكم حتى تأتي القائمةُ بهذه المادّة من جديد. كانت القائمةُ أوّلاً
+   *  دائماً، فصفُّها البائت (كلفتُه صفر وكتبها المديرُ للتو من جهازٍ آخر) يُبطل رفعاً قرّره الخادم: سطرٌ بواحدة بلا علامة، «المتوفّر 0
+   *  فقط»، ومضاعِفٌ ومسودّةُ دواءٍ ضاعا — والبيعةُ لا تسأل عنه. */
+  const prodRow = (id: string | null | undefined): Product | undefined => {
+    if (!id) return undefined;
+    const listRow = products.find((p) => p.id === id);
+    const lift = liftRowsRef.current.get(id);
+    return lift && lift.listAt === listRow ? lift.row : listRow ?? lift?.row;
+  };
+  /** سطرٌ يرفعه الوضعُ الآن (مادّةٌ بالقائمة، لا راجع). */
+  const lineLifted = (l: Line, now = negNow()): boolean =>
+    l.kind === "product" && !l.ret && !!l.product_id && liftFor(prodRow(l.product_id), perOf(l), now);
+  /** سقفُ السطر: بلا حدٍّ ما دام الوضعُ يرفعه، وإلا رصيدُه (unitCap). */
+  /** 0267: سقفُ السطر من رصيد مادّته **بعد ما تأخذه سطورُها الأخرى بالسلّة** — كارتونٌ وعلبٌ من المادّة نفسِها يقتسمان رفّاً واحداً
+   *  (كلٌّ بسقفه وحده كان يبيع الرفَّ مرّتين). وبلا سطرٍ آخر للمادّة (كلُّ سلّةٍ قبل الكارتون: سطرُ بيعٍ واحدٌ للمادّة) هو unitCap كما كان. */
+  /** ما تأخذه من رصيد المادّة سطورُ بيعها الأخرى بالسلّة (غيرُ `exceptId`) — بوحدة الرصيد. */
+  const sibUse = (productId: string, exceptId: string): number => {
+    let used = 0;
+    for (const o of cartRef.current) if (o.id !== exceptId && o.kind === "product" && !o.ret && o.product_id === productId) used += lineStockQty(o);
+    return used;
+  };
+  /** سقفُ السطر برصيدٍ معطى (طازجٍ من الخادم) بعد سطور مادّته الأخرى. */
+  const shareCapAt = (l: Line, stock: number | null): number => {
+    if (l.kind !== "product" || l.ret || !l.product_id || stock == null) return unitCap({ ...l, stock });
+    const used = sibUse(l.product_id, l.id);
+    return unitCap({ ...l, stock: used ? Math.round((stock - used) * 1000) / 1000 : stock });
+  };
+  const shareCap = (l: Line): number => shareCapAt(l, l.stock);
+  const capFor = (l: Line, now = negNow()): number => (lineLifted(l, now) ? Infinity : shareCap(l));
+  /** يعلّم السطرَ إن صارت كميتُه فوق رصيده والوضعُ يرفعه (لاصق: لا يُنزع). */
+  const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > shareCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);
+  /* رسائلُ الوضع: طابورٌ يقوله المالكُ الكسول حين يصل (`negSays`)، وما لم يقله خلال ثانيةٍ ونصف يُقال بنصٍّ حارّ — كلُّ رفضٍ يُقال مرّةً
+   * واحدة. كانت خانةً واحدة وعلمَ «الشريحةُ مركّبة»: رفضان قبل تركيبها والأوّلُ لا يُقال أبداً، وما قالته ثمّ فُكّت (شاشةُ «تمّ») يُقال
+   * ثانيةً بالحارّ (مراجعةٌ رابعة). ثمّ صارت «قلتُ حتى n» — حدّاً أعلى يفترض أن الطابورَ يُرسم بترتيبه، ورسمةُ ضغطةٍ (أولويةٌ متزامنة)
+   * تتخطّى تحديثاً معلَّقاً بأولويةٍ عادية (جوابُ خادم، مؤقّت): رفضٌ ضاع، ورفضٌ قيل مرّتين (مراجعةٌ خامسة، بكروميوم وreact-dom حقيقيّين).
+   * فصار لكلّ رسالةٍ مطالبةٌ متزامنة واحدة (`negClaim`) بين الشريحة والحارّ: أوّلُ من يطالب يقول، ولا ترتيبَ رسمٍ يُضيّع أو يكرّر. */
+  const [negSays, setNegSays] = useState<NegSay[]>([]);
+  /** أرقامُ ما قيل (لا تُنسى — رسمةٌ متأخّرة قد تحمل الرسالةَ ثانيةً). */
+  const negClaimedRef = useRef(new Set<number>());
+  const negClaim = useRef((n: number): boolean => {
+    const s = negClaimedRef.current;
+    if (s.has(n)) return false;
+    s.add(n);
+    return true;
+  }).current;
+  /** «قلتُ ما طالبتُ به»: يُشال من الطابور ما قيل — تنظيفٌ لا حكم (الحكمُ بالمطالبة). ثابتةٌ بين الرسمات. */
+  const negOnSaid = useRef(() => {
+    setNegSays((q) => (q.some((x) => negClaimedRef.current.has(x.n)) ? q.filter((x) => !negClaimedRef.current.has(x.n)) : q));
+  }).current;
+  const negSayN = useRef(0);
+  const negAliveRef = useRef(true);
+  useEffect(() => { negAliveRef.current = true; return () => { negAliveRef.current = false; }; }, []);   // شاشةٌ فُكّت: رسالتُها المؤجّلة لا تُقال
+  const sayNeg = (s: NegSay extends infer T ? (T extends NegSay ? Omit<T, "n"> : never) : never, fallback: string) => {
+    playWarning();
+    const n = ++negSayN.current;
+    setNegSays((q) => [...q, { ...s, n } as NegSay]);
+    /* الشريحةُ مركّبةٌ تقولها بالرسمة التالية؛ وغيرُ مركّبة — حالتُها وصلت بالضغطة نفسِها (أوّلُ مسحةٍ بعد الفتح أو العودة) أو قطعتُها
+     * تُحمَّل — تقولها حين تُركَّب. كان النصُّ الحارُّ يُقال فوراً، وهو لـ«انتهى» و«انعدّت» «زيد رصيده من المخزن» — بابُ التوائم عن
+     * مادّةٍ يقول الخادمُ «لا تدخلها». والحارُّ لما لم تقله خلال ثانيةٍ ونصف (قطعةٌ فشلت أو بطيئة، أو فُكّت قبل رسمتها). */
+    window.setTimeout(() => {
+      if (!negAliveRef.current || !negClaim(n)) return;
+      negOnSaid();
+      toast.error(fallback);
+    }, 1500);
+  };
+  /** سببُ الوضع لمادّةٍ لا يغطّيها رصيدُها الطازج ولا يرفعها الوضع — أو null (لا سببَ للوضع: الرسالةُ العامّة لمن سأل). للعلبة
+   *  (sellOrExplain) وللكارتون (addPackLine) حكمٌ واحد: الكارتونُ كان يقول «أقلّ من كارتون» عن الأربعة والعلبةُ تقول سببَها.
+   *  الرسائلُ بجواب الخادم الأخير (`on`) لا بعمره: «مفعّل» تجاوز دقيقتيه وسؤالُه فشل أو ما لحق (٢٫٥ ثانية) ليس «انتهى» — الوضعُ ربما
+   *  شغّال. فالكلفةُ الصفر «اكتب سعر شرائها» (لا «رصيده صفر»)، والمعدودةُ «انعدّت» كما هي (سببُها لا يتبع الوضع)، وما قد يغطّيه
+   *  الوضعُ «ما تأكّدنا» (لا «انتهى — لا تدخله»، ولا «زيد رصيده» — بابُ التوائم)، و«انتهى» حين قالها الخادمُ وحده. */
+  const negWhy = (fresh: Product, per: number | null, ns: ReturnType<typeof negNow>): "noCost" | "counted" | "unsure" | "ended" | null => {
+    if (costBlocked(fresh, per, ns)) return "noCost";
+    const on = !!ns.state?.active && !ns.state.absent;
+    if (on && ns.counted.has(fresh.id)) return "counted";
+    if (on && !ns.active && !!negMod && negMod.liftable(fresh, ns.counted)) return "unsure";
+    if (!on && ns.state?.used && (fresh.stock ?? 0) < 0) return "ended";
+    return null;
+  };
+  const sayNegWhy = (why: "noCost" | "counted" | "unsure" | "ended", fresh: Product) => {
+    const noMore = t("retail.maxStock", "No more in stock");   // احتياطُ الشريحة: لا «زيد رصيده» (بابُ التوائم)
+    if (why === "noCost") sayNeg({ kind: "noCost", name: fresh.name, productId: fresh.id, canOpen: canEditProducts }, t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج"));
+    else if (why === "counted") sayNeg({ kind: "counted", name: fresh.name, stock: fresh.stock ?? 0 }, noMore);
+    else if (why === "unsure") sayNeg({ kind: "unsure", name: fresh.name }, t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: fresh.name }));
+    else sayNeg({ kind: "ended", name: fresh.name, stock: fresh.stock ?? 0 }, noMore);
+  };
+  /** نافذةُ الرفض: السطورُ بأسبابها، وما يبقى من كلٍّ إن شُيل الزائد (`keep`: كميةٌ برصيدٍ يغطّيها، وصفرٌ يشيل السطر). */
+  const [negChk, setNegChk] = useState<{ lines: NegRefusedLine[]; allCart: boolean; ack: CheckoutAck; keep: Record<string, { qty: number; stock: number | null }>; locked?: boolean } | null>(null);
+  /** «شيلها وكمّل»: السلّةُ تتغيّر أولاً، والبيعةُ تكمل بالرسمة التي تراها (checkout يقرأ سلّةَ رسمته). */
+  const negResumeRef = useRef<CheckoutAck | null>(null);
+  /** النافذةُ مرسومةٌ فعلاً (علمٌ يرفعه مكوّنٌ بجانبها داخل حدّ التحميل نفسِه) — للضغطة؛ والحالةُ لحارس الماسح بالرسمة: نافذةٌ
+   *  قطعتُها تُحمَّل أو فشلت كانت تُطفئ الماسحَ بلا كلمة (لا نغمةَ ولا سطر) والكروتُ تضيف. */
+  const negChkShownRef = useRef(false);
+  const [negChkShown, setNegChkShown] = useState(false);
+  /** موافقةُ الخادم على سطور الوضع لمرجع هذه البيعة وسلّتها — إعادةُ محاولةٍ لنفس المرجع بنفس السلّة لا تُسأل ثانيةً.
+   *  وتنجو مع المسودّة (مرجعُها مرجعُ المسودّة وحده). */
+  /** يتغيّر مع كلّ موافقة — المسودّةُ تُحفظ معها (مرجعٌ قائمٌ وسلّةٌ تغيّرت تحته: الموافقةُ الجديدة كانت لا تبلغ المسودّة). */
+  const [negOkGen, setNegOkGen] = useState(0);
+  const negOkRef = useRef<{ ref: string; fp: string } | null>(
+    draft0?.negOk && typeof draft0.negOk.ref === "string" && draft0.negOk.ref === draft0.clientRef && typeof draft0.negOk.fp === "string" ? draft0.negOk : null);
+  /** صفوفٌ رفعها الوضعُ ولم تصل القائمة (مسحٌ وجده الخادم، جوابُ سؤال) — بها يُحكم سقفُ سطرها وعلامتُه، لا بـ«ما بالقائمة» وحدها. */
+  const liftRowsRef = useRef(new Map<string, { row: Product; listAt: Product | undefined }>());
+
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds" | `tab:${string}`>("products");
-  /* خاناتُ الطبيب (0258): لصاحبها وحده (الخادمُ يقصرها عليه)، وفشلُ جلبها يُقال بالشريط مع «أعد» — لا «ماكو خانات». */
+  /* خاناتُ شاشة البيع (0258 ← 0278): للعيادة كلّها (الخادمُ يقصرها عليها)، وفشلُ جلبها يُقال بالشريط مع «أعد» — لا «ماكو خانات». */
   const [posTabs, setPosTabs] = useState<PosTab[] | null>(null);
   const [posTabsFailed, setPosTabsFailed] = useState(false);
   const [posTabsOff, setPosTabsOff] = useState(false);
   const [posTabsTry, setPosTabsTry] = useState(0);
   const [tabEdit, setTabEdit] = useState<PosTab | "new" | null>(null);
   const [, setTabLazyTick] = useState(0);
+  /** محاولاتُ الجلب الفاشلة المتتالية — مهلةُ الإعادة التالية بها، ويصفّرها النجاح. */
+  const tabsFailsRef = useRef(0);
   useEffect(() => {
     let alive = true;
     setPosTabsFailed(false);
     import("@/lib/posTabsApi").then((m) => m.posTabsApi.list())
-      .then((list) => { if (alive) setPosTabs(list); })
+      .then((list) => { if (alive) { tabsFailsRef.current = 0; setPosTabs(list); } })
       .catch((e) => { if (!alive) return; if (tabsTableMissing(e)) setPosTabsOff(true); else setPosTabsFailed(true); });
     return () => { alive = false; };
   }, [clinicId, posTabsTry]);
+  /* والفشلُ يُعاد وحده (بلاغ ١٧/١١ «الخانة اختفت»): جلبٌ صباحيٌّ والجلسةُ تتجدّد أو النتُّ متأخّر كان يرسم «تعذّر» مكانَ الخانة
+   * ولا يُعاد إلا بضغطه — بعد ٤ ثوانٍ فـ١٥ فدقيقة فكلّ دقيقتين، وفوراً حين يرجع النتّ أو تظهر الشاشة (retryWhileFailed). */
+  useEffect(() => {
+    if (!posTabsFailed) return;
+    return armRetry(browserRetryEnv, tabsFailsRef.current++, () => setPosTabsTry((n) => n + 1));
+  }, [posTabsFailed]);
+  /* ترتيبُ شبكة المنتجات وصورُها (0279) — تفضيلٌ للعيادة كلّها (clinic_prefs) يغيّره من يقف على الشاشة ويثبت لكلّ جهاز.
+   * المبيعُ (آخر ٣٠ يوماً) يُجلب حين يُطلب ترتيبٌ به، ببابٍ كسول؛ وما دام لم يصل أو تعذّر تبقى الشبكةُ بالاسم والشريطُ يقولها،
+   * ويُعاد الجلبُ وحده كالخانات. الأرقامُ لا تُجلب بعد كلّ بيعة: ترتيبٌ يقفز تحت يد الكاشير أسوأ من رقمٍ عمرُه دقائق. */
+  const [posSort, setPosSortS] = useState<PosSort>(getPosSort);
+  const [posImages, setPosImagesS] = useState(getPosImages);
+  const [sales, setSales] = useState<{ map: Map<string, number> | null; state: "idle" | "loading" | "ready" | "failed"; missing?: boolean }>({ map: null, state: "idle" });
+  const [salesTry, setSalesTry] = useState(0);
+  const salesFailsRef = useRef(0);
+  // عيادةٌ أخرى ⇒ أرقامُها هي: لا يبقى ترتيبُ العيادة السابقة «جاهزاً» حتى يصل الجديد.
+  useEffect(() => { setSales({ map: null, state: "idle" }); }, [clinicId]);
+  useEffect(() => {
+    if (posSort === "name") return;
+    let alive = true;
+    setSales((s) => (s.state === "ready" ? s : { map: null, state: "loading" }));
+    import("@/lib/posSalesApi").then((m) => m.productSales30())
+      .then((map) => { if (alive) { salesFailsRef.current = 0; setSales({ map, state: "ready" }); } })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        // دالّةٌ غائبة (واجهةٌ سبقت 0279) ليست عطلاً عابراً: تُقال ولا يُعاد السؤالُ كلَّ دقيقتين.
+        const missing = ["PGRST202", "42883"].includes(String((e as { code?: string } | null)?.code ?? ""));
+        setSales({ map: null, state: "failed", missing });
+      });
+    return () => { alive = false; };
+  }, [posSort, salesTry, clinicId]);
+  useEffect(() => {
+    if (sales.state !== "failed" || sales.missing || posSort === "name") return;
+    return armRetry(browserRetryEnv, salesFailsRef.current++, () => setSalesTry((n) => n + 1));
+  }, [sales.state, sales.missing, posSort]);
+  const pickPosSort = (v: PosSort) => { setPosSortS(v); setPosSort(v); };
+  const pickPosImages = (on: boolean) => { setPosImagesS(on); setPosImages(on); };
   const activeTabId = browseTab.startsWith("tab:") ? browseTab.slice(4) : null;
   const activeTab = activeTabId ? posTabs?.find((x) => x.id === activeTabId) ?? null : null;
   // خانةٌ انحذفت (من هنا أو من جهازٍ ثانٍ) والشاشةُ عليها: إلى المنتجات.
@@ -957,6 +1332,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [saleDay, setSaleDay] = useState<string | null>(draft0?.saleDay ?? null);
   const [saleTime, setSaleTime] = useState<string>(draft0?.saleTime || clockOf24(new Date().toISOString()));
   const { role: effRole, can } = usePermissions();
+  /** يفتح نموذجَ المادّة من رسالة «بلا سعر شراء» (0266) — لمن يعدّل المخزن وحده. */
+  const canEditProducts = can("manageInventory");
   const { restricted: devRestricted } = useOverride();
   const backdateOk = canBackdate({ role: effRole, restricted: devRestricted });
   /** «فاتورة ثانية لنفس اليوم» من شاشة الإتمام: اليومُ يبقى للبيعة التالية بقرارٍ صريح لا افتراضاً. */
@@ -1088,11 +1465,25 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const consSumAtRef = useRef<number | null>(null);
   /** البيعةُ المُتمَّة فيها ما قد يُخصم له أو سطرُ مادّة (noticeLine) ⇒ شاشةُ «تمّ» تقرأ دفترَها وتقول العجزَ والسالب (ConsumptionNotice). */
   const [doneCons, setDoneCons] = useState(false);
+  /** موادُّ رفعها البيعُ قبل الجرد بالبيعة المُتمَّة — إشعارُ «تمّ» يطوي سالبَها وحده (ConsumptionNotice). */
+  const [doneNegIds, setDoneNegIds] = useState<string[]>([]);
   const [, setConsLazyTick] = useState(0);
   /* 0264: مادّةُ الدولار لا تدخل سلّةَ الدينار (قرار ٢) — لمسُها أو مسحُها يفتح سلّةَ الدولار بها. */
-  const [usdSale, setUsdSale] = useState<{ open: boolean; first: Product | null; tick: number }>({ open: false, first: null, tick: 0 });
+  const [usdSale, setUsdSale] = useState<{ open: boolean; first: Product | null; pack: ProductPack | null; tick: number }>({ open: false, first: null, pack: null, tick: 0 });
   const [, setUsdLazyTick] = useState(0);
-  const openUsd = (p: Product) => setUsdSale((x) => ({ open: true, first: p, tick: x.tick + 1 }));
+  const openUsd = (p: Product, pack: ProductPack | null = null) => setUsdSale((x) => ({ open: true, first: p, pack, tick: x.tick + 1 }));
+  /** مادّةُ الدولار: سلّتُها المستقلّة («بيع بالدولار») — و«راجع» لا يفتحها: كان يفتح سلّةَ بيعٍ والكاشيرُ يقصد إرجاعاً (فحصُ الدولار
+   *  سبق فحصَ الراجع). الراجعُ الخالص بالدينار من الدرج، وترجيعُ الدولار على فاتورته بالدولار («المرتجع»). يرجع: رُفض؟ */
+  const usdTap = (p: Product, opt?: { sale?: boolean }, pack: ProductPack | null = null): boolean => {
+    if (retMode && !opt?.sale) {
+      playWarning();
+      void Promise.all([import("@/components/retail/RetPct"), import("@/i18n").then((i) => i.ensureOwned("rpct"))])
+        .then(([m]) => toast.error(m.retUsdSay(p.name)), () => toast.error(t("errors.network")));
+      return true;
+    }
+    openUsd(p, pack);
+    return false;
+  };
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
   /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
@@ -1105,6 +1496,27 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
+  /** نسبةُ الراجع المختارة: لسطور الراجع كلّها بالسلّة وللقادمة — ومن المسودّة إن رجعت سلّةٌ فيها راجع. */
+  const [retPct, setRetPct] = useState<number>(() => retPctOf(draft0?.cart?.find((l) => l.ret) ?? { ret: true }));
+  const [, setRetLazyTick] = useState(0);
+  /** نسبةٌ واحدة لسطور الراجع كلّها: ما يراه الكاشير على الشريط هو ما بكلّ سطر (نسبتان بسلّةٍ واحدة = إرجاعان). */
+  const pickRetPct = (p: number) => {
+    playTap();
+    const v = retPctOf({ ret: true, retPct: p });
+    setRetPct(v);
+    setCart((c) => c.map((l) => {
+      if (!l.ret) return l;
+      if (v < 100) return { ...l, retPct: v };
+      const rest = { ...l }; delete rest.retPct; return rest;
+    }));
+  };
+  /* وضعُ الراجع أُطفئ ولا سطرَ راجع بالسلّة ⇒ النسبةُ ترجع ١٠٠: نسبةُ زبونٍ سابق لا تنتظر الزبونَ التالي على الشريط. */
+  useEffect(() => { if (!retMode && !cart.some((l) => l.ret)) setRetPct(100); }, [retMode, cart]);
+  /** اسمُ سطر الراجع بالفاتورة والطبعة: «راجع» — و«راجع 50%» بنسبته. */
+  const retTag = (l: Pick<Line, "ret" | "retPct">): string => {
+    const p = retPctOf(l);
+    return p < 100 ? `${t("retail.retPrefix", "راجع")} ${p}%` : t("retail.retPrefix", "راجع");
+  };
 
   /* ── رفعُ الأسعار والسلّةُ المفتوحة (0226) ──────────────────────────────────
    * البيعُ لا يقرأ الكتالوج — سعرُ السطر يُنسخ لحظةَ إضافته. فـ«من لحظة الرفع» تحتاج:
@@ -1153,7 +1565,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (paying || saleRefSaved) return;
     const byId = new Map(products.map((p) => [p.id, p]));
     const fresh = {
-      product: (id: string) => { const p = byId.get(id); return p ? { box: listPrice(p), sub: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null) } : null; },
+      product: (id: string) => {
+        const p = byId.get(id);
+        if (!p) return null;
+        const pm = packMod;
+        return { box: listPrice(p), sub: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null),
+          pack: pm ? (packId: string) => { const k = pm.currentPack(p, packId); return k ? pm.packSalePrice(p, k, wholesale) : null; } : undefined };
+      },
       service: (id: string) => catalog.services.find((x) => x.id === id)?.price ?? null,
     };
     const r = repriceCart(cartRef.current, fresh);
@@ -1169,7 +1587,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       toast.warn(t("retail.repricedToast", { n: formatNum(r.changed.length), defaultValue: "تحدّث سعر {{n}} مادة بالسلة حسب الأسعار الجديدة — راجعها قبل البيع." }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, catalog, paying, saleRefSaved]);
+  }, [products, catalog, paying, saleRefSaved, packModOn]);
   // سطورُ راجعٍ أُضيفت قبل وصول الجواب تُحسم حين يصل (ما لم يُعدَّل سعرُها بيد).
   useEffect(() => {
     if (!prior) return;
@@ -1263,11 +1681,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const cur = cartRef.current;
     const existing = cur.find((l) => l.id === id);
     const base = existing ? sync(existing) : factory();
-    const cap = unitCap(base);
+    // 0266: سقفُ الوضع من حالته الآن (capFor) — وما تجاوز الرصيدَ به يُعلَّم (markLift) ويُسأل عنه قبل البيعة.
+    const now = negNow();
+    const cap = capFor(base, now);
     const apply = (c: Line[]): Line[] => (c.some((l) => l.id === id)
       // الحساب من الحالة الحيّة: مسحتان متلاحقتان لا تفقد إحداهما.
-      ? c.map((l) => { if (l.id !== id) return l; const s = sync(l); return { ...s, qty: capAdd(s.qty, n, unitCap(s)).next }; })
-      : [...c, { ...base, qty: Math.max(1, capAdd(0, n, cap).next) }]);
+      ? c.map((l) => { if (l.id !== id) return l; const s = sync(l); return markLift({ ...s, qty: capAdd(s.qty, n, capFor(s, now)).next }, now); })
+      : [...c, markLift({ ...base, qty: Math.max(1, capAdd(0, n, cap).next) }, now)]);
     cartRef.current = apply(cur);
     setCart(apply);
     // نغمة مختلفة للإضافة بالجملة: الأذن أسرع من العين وقت الزحمة، والفرق بين
@@ -1281,7 +1701,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       playWarning();
       toast.error(added > 0
         ? t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" })
-        : t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(cap) }));
+        : t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(Math.max(0, cap)) }));
     }
     if (added > 0) flashLine(id);
     return added;
@@ -1298,6 +1718,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         unit_price: pr ? pr.o : listPrice(p), unit_cost: productLineCost(p, null, p.purchase_price),
         qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
         ret: true, retPrior: pr, priceManual: !!pr,
+        ...(retPct < 100 ? { retPct } : {}),
       };
     }, n);
 
@@ -1315,7 +1736,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       product_id: p.id, subcategory: p.subcategory ?? null,
       byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
       expiry: p.expiry_date ?? null,
-      ...(ret ? { retPrior: pr, priceManual: !!pr } : {}),
+      ...(ret ? { retPrior: pr, priceManual: !!pr, ...(retPct < 100 ? { retPct } : {}) } : {}),
     };
     // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
     // لكن **سعر الكيلو المعدَّل بيد الكاشير يبقى**: تعديلُ الوزن لا يجوز أن
@@ -1323,9 +1744,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     /* وما لم يُعدَّل بيدٍ يتبع القائمة (0226): كان يُبقي السعرَ القديم مع سعر كيلو جديد —
      * فيبدو «يدوياً» ولا يلحقه رفعُ الأسعار أبداً. */
     setCart((c) => (c.some((l) => l.id === id)
-      ? c.map((l) => (l.id === id ? { ...l, ...line, unit_price: isManual(l) ? l.unit_price : line.unit_price, unit_cost: l.unit_cost,
-        priceManual: l.priceManual, retPrior: l.retPrior } : l))
-      : [...c, line]));
+      ? c.map((l) => (l.id === id ? markLift({ ...l, ...line, unit_price: isManual(l) ? l.unit_price : line.unit_price, unit_cost: l.unit_cost,
+        priceManual: l.priceManual, retPrior: l.retPrior }) : l))
+      : [...c, markLift(line)]));
     playSuccess();
     flashLine(id);
   };
@@ -1334,8 +1755,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
   /** `sale`: سطرُ بيعٍ ولو كان «راجع» مشغّلاً — تبويبُ «الأدوية» يبيع دواءً لحيوانٍ دائماً
    *  (سطرُ «دواء» القديم كان موجباً مهما كان الوضع)، و«راجع» يخصّ المسحَ والكرت. */
-  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean }): number | null => {
-    if (p.price_currency === "USD") { openUsd(p); return null; }
+  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean; unit?: "sub" }): number | null => {
+    if (p.price_currency === "USD") { usdTap(p, opt); return null; }
     /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
      * يكذب كلفةَ دفعةٍ جارية. الخادمُ يستثنيه بكلّ طريقٍ اليوم — وهذا خطُّ الدفاع
      * الأخير لو وصل صفُّ حقلٍ بطريقٍ يُضاف غداً: يُرفض باسمه، لا يُباع بصمت. */
@@ -1351,7 +1772,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
       // No whole box left but singles remain → start the line on the sub-unit.
-      const startSub = hasSub && Math.floor(p.stock) < 1;
+      // ‏0266: والوضعُ يرفع العلبة ⇒ المسحُ علبةٌ كما مُسح (حبّةٌ بسعر حبّة عن علبةٍ ممسوحة خطأٌ صامت).
+      // و0267: مسحُ باركود المغلّف يبدأ السطرَ مغلّفاً (unit: "sub") — بأيّ رصيد.
+      const startSub = hasSub && (opt?.unit === "sub" || (Math.floor(p.stock) < 1 && !liftFor(p, null)));
       // كلفةُ الجهاز كما كانت — لا تُكتب إلا والحسابُ لم يصل (productLineCost، 0255).
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
       return {
@@ -1383,9 +1806,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const unit_price = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
       const device = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
       const unit_cost = productLineCost(products.find((p) => p.id === l.product_id), toSub ? (l.unitsPerBox as number) : null, device);
-      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false };
-      const cap = unitCap(next);
-      return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
+      /* 0282: سطرُ الدولار يرجع للدينار بوحدته الجديدة — سعرُ المستوى بالدولار يُختار من جديد بـ«$» (لا تخمينَ لسعرٍ لم يُره الكاشير). */
+      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false, usd: undefined };
+      const cap = capFor(next);
+      return markLift({ ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) });
     }));
 
   const addService = (s: Service, n = takeMult()): number => {
@@ -1428,18 +1852,34 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setCart(attach);
   };
 
-  const setQty = (id: string, qty: number) =>
-    setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: Math.min(qty, unitCap(l)) } : l))));
+  /* التنقيصُ يُطبَّق كما طُلب، والزيادةُ وحدها تُسقَّف ولا تنزل تحت الكمية القائمة: كان `min(qty, unitCap)` يكتب على سطرٍ سقفُه
+   * هبط تحته (قائمةٌ تحدّثت) كميةً صفراً — فتُرفض البيعةُ كلُّها (invoice_items_nonneg) — أو سالبةً، فيردّها الخادمُ للمخزن
+   * كراجعٍ مخفيّ بلا «راجع» باسمه. وسقفُ الوضع (capFor) لزيادةٍ يرفعها، وما تجاوز الرصيدَ به يُعلَّم. */
+  const setQty = (id: string, qty: number) => {
+    /* سطرُ جرعة (0269): الكميةُ ١ — الخادمُ يرفض غيرَها؛ والإنقاصُ إلى صفرٍ شيلٌ لهذه البيعة وحدها. */
+    if (id.startsWith("d:")) {
+      if (qty <= 0) { doseDismissed.current.add(id.slice(2)); setCart((c) => c.filter((l) => l.id !== id)); }
+      else if (qty !== 1) { playWarning(); if (doseMod) toast.warn(doseMod.say.doseQtyFixed()); }
+      return;
+    }
+    setQtyNow(id, qty);
+  };
+  const setQtyNow = (id: string, qty: number) =>
+    setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id
+      ? markLift({ ...l, qty: qty <= l.qty ? qty : Math.max(l.qty, Math.min(qty, capFor(l))) })
+      : l))));
 
   /* سعرٌ كُتب بيد يُعلَّم (0226) — رفعُ الأسعار لا يمسّه. والعلَمُ على **تغييرٍ** فعليّ: فتحُ
    * محرّر السعر وإغلاقُه بلا كتابة كان سيجعل كلَّ سطرٍ «يدوياً» فيفلت من الرفع. */
   const setPrice = (id: string, price: number) => {
     const v = Math.max(0, Math.round(price * 100) / 100);
-    setCart((c) => c.map((l) => (l.id === id && v !== l.unit_price ? { ...l, unit_price: v, priceManual: true } : l)));
+    // سعرٌ كتبه الكاشيرُ بالدينار يُنهي سطرَ الدولار: المكتوبُ هو السعر (0282).
+    setCart((c) => c.map((l) => (l.id === id && v !== l.unit_price ? { ...l, unit_price: v, priceManual: true, usd: undefined } : l)));
     setRepriced((m) => { if (!m.has(id)) return m; const n = new Map(m); n.delete(id); return n; });
   };
 
   const removeLine = (id: string) => {
+    if (id.startsWith("d:")) doseDismissed.current.add(id.slice(2));
     setCart((c) => c.filter((l) => l.id !== id));
     // سطر انحذف → عرضه المفعّل يروح وياه (لا يبقى بالمسودة).
     // السطر انحذف → أي عرض ما عاد مؤهلاً ينطفئ لوحده بإعادة الحساب أدناه.
@@ -1532,20 +1972,64 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     action: onRefresh ? { label: t("retail.refreshList", "حدّث القائمة"), onClick: onRefresh } : undefined,
   });
   /** `lineId`: السطرُ الذي أُضيف إليه فعلاً — الصفُّ الطازج قد يكون غيرَ ما ضُغط (جوابُ الخادم برمزه). */
-  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean; unit?: "sub" }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+    /* (مسارُ الرفّ المشترك داخلها: كلُّ إضافةِ مادّةٍ تمرّ من sellOrExplain — freshness-test.) */
+    /** 0267: سطرُ العلبة (أو المفرد) لمادّةٍ لها سطرٌ آخر بالسلّة (كارتونُها) — الرفُّ مشترك. الحكمُ المحلّيّ والطازج بما يبقى بعد
+     *  سطورها الأخرى (لا برصيد الصفّ كلِّه — كان يضيف علبةً ورفُّها كلُّه بالكارتون، بلا سؤال)، والرفضُ يقول الباقي. مسارٌ مستقلّ:
+     *  سلّةٌ بلا سطرين للمادّة (كلُّ سلّةٍ قبل الكارتون) لا تمرّ منه أبداً. */
+    const shelfAdd = async (product: Product, n: number, opt?: { sale?: boolean; unit?: "sub" }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+      const id = `p:${product.id}`;
+      const room = (row: Product): number => {
+        const line = cartRef.current.find((l) => l.id === id);
+        const saleUnit = line?.saleUnit ?? (opt?.unit === "sub" && row.has_sub_unit && row.units_per_box ? "sub" : "box");
+        const cap = unitCap({ stock: Math.round(((row.stock ?? 0) - sibUse(row.id, id)) * 1000) / 1000, saleUnit, unitsPerBox: row.units_per_box ?? null, byWeight: !!row.sold_by_weight });
+        return cap - (line?.qty ?? 0);
+      };
+      if (room(product) >= 1) return { added: addProduct(product, n, opt), refused: false, lineId: id };
+      const { promise, first } = askServer(product);
+      const ans = await promise;
+      if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
+      if (ans.kind === "row" && ans.row.id === product.id) {
+        const fresh = sellableRow(ans.row, ans.pool);
+        if (liftFor(fresh, null)) { liftRowsRef.current.set(fresh.id, { row: fresh, listAt: products.find((p) => p.id === fresh.id) }); return { added: addProduct(fresh, n, opt), refused: false, lineId: id }; }
+        if (room(fresh) >= 1) return { added: addProduct(fresh, n, opt), refused: false, lineId: id };
+      }
+      playWarning();
+      if (!first) return { added: null, refused: true };
+      if (ans.kind === "gone") {
+        sayUnreachable(t("retail.productGone", "«{{name}}» ما عاد موجود بالمخزن — انحذف أو اندمج بغيره. حدّث القائمة، وإذا انحذف بالغلط رجّعه من المحذوفات.", { name: product.name }));
+        return { added: null, refused: true };
+      }
+      const row = ans.kind === "row" ? sellableRow(ans.row, ans.pool) : product;
+      const left = Math.round(((row.stock ?? 0) - sibUse(row.id, "")) * 1000) / 1000;
+      const msg = t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(Math.max(0, Math.round(((row.stock ?? 0) - sibUse(row.id, id)) * 1000) / 1000)) });
+      if (ans.kind === "unreachable") sayUnreachable(t("retail.capStale", "المتوفّر {{n}} بآخر تحديثٍ عندنا وكلُّه بالسلّة — ما وصلنا الخادم لنتأكد. حدّث القائمة.", { n: formatNum(Math.max(0, left)) }));
+      else toast.error(msg);
+      return { added: null, refused: true };
+    };
     /* مخزنُ الحقل يُرفض باسمه **قبل** السؤال: السؤالُ يستثني الحقل، فصفُّ حقلٍ
      * رصيدُه صفر كان يعود «لا شيء» ويُقال عنه «موجود بس رصيده صفر — زيد رصيده». */
     if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
-    if (product.price_currency === "USD") { openUsd(product); return { added: null, refused: false }; }
+    if (product.price_currency === "USD") return { added: null, refused: usdTap(product, opt) };
     const ret = retMode && !opt?.sale;
     const lineOf = (x: Product) => `${ret ? "r" : "p"}:${x.id}`;
     /* يُسأل الخادمُ حين ترفض القائمةُ الإضافةَ أو تقصّها — صفرٌ بالصفّ، **أو سطرٌ بلغ
      * سقفه**، أو مضاعِفٌ أكبرُ من الباقي. «المتوفّر ١ فقط وكلُّه بالسلّة» حكمُ صفرٍ
      * أيضاً، وكان يصدر من لقطةٍ بلا سؤال والكرتُ بجانبه يقول ٢٥. */
     const lineBefore = cartRef.current.find((l) => l.id === `p:${product.id}`);
+    /* 0266: الوضعُ يرفع هذه المادّة بوحدة سطرها ⇒ تُضاف بلا انتظار الخادم (السقفُ لا يقصّ، والبيعةُ تسأل الخادمَ عمّا رفعه). */
+    if (!ret && liftFor(product, lineBefore ? perOf(lineBefore) : opt?.unit === "sub" && product.has_sub_unit && product.units_per_box ? product.units_per_box : null)) {
+      liftRowsRef.current.set(product.id, { row: product, listAt: products.find((p) => p.id === product.id) });
+      return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
+    }
+    // 0267: للمادّة سطرٌ آخر بالسلّة (كارتونُها) ⇒ الرفُّ مشترك — الحكمُ بما يبقى بعده (shelfAdd).
+    if (!ret && sibUse(product.id, `p:${product.id}`) > 0) return shelfAdd(product, n, opt);
     if (!needsServerCheck(product, lineBefore, n, ret)) return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
+    /* والوضعُ غيرُ مفعّلٍ عندنا ⇒ يُسأل معه (مديرٌ شغّله للتو لا يُقال بعده «رصيده صفر»). سؤالٌ صغير بجانب سؤال الصفّ. */
+    const negAsk = !ret && negMod && negKeyRef.current && !negNow().active && !negNow().state?.absent ? negMod.refreshNeg(negKeyRef.current) : null;
     const { promise, first } = askServer(product, code);
     const ans = await promise;
+    if (negAsk) await Promise.race([negAsk, new Promise((r) => setTimeout(r, 2500))]);
     // الجوابُ يرقّع القائمةَ **أيّاً كان الحكم** (مرّةً — من سأل فعلاً): رصيدٌ ظهر يُصلح
     // الكرتَ فوراً، وصفرٌ مؤكَّد يبقى صفراً صادقاً، وصفٌّ غاب لا يبقى يُسأل عنه.
     if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
@@ -1558,6 +2042,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       retMode: ret,
     });
     if (verdict === "sell-fresh" && sellable) {
+      /* 0266: سطرٌ قائمٌ لا يبقى له مكانٌ بالرصيد الطازج: سببُ الوضع يُقال قبل «المتوفّر 0 فقط» — «مفعّل» قديمٌ وسؤالُه ما رجع «ما
+       * تأكّدنا»، والمعدودةُ «انعدّت». (ومكانٌ جزئيّ يُضاف منه ما يتّسع، كما كان.) */
+      if (!ret && lineNow && !sellable.pooled && unitCap({ ...lineNow, stock: sellable.stock }) <= lineNow.qty) {
+        const ns = negNow();
+        const on = !!ns.state?.active && !ns.state.absent;
+        const stale = on && !ns.active && !!negMod && negMod.liftable(sellable, ns.counted);
+        const counted = on && ns.counted.has(sellable.id);
+        if (stale || counted) {
+          if (!first) { playWarning(); return { added: null, refused: true }; }
+          if (stale) sayNeg({ kind: "unsure", name: sellable.name }, t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: sellable.name }));
+          else sayNeg({ kind: "counted", name: sellable.name, stock: sellable.stock ?? 0 }, t("retail.maxStock", "No more in stock"));
+          return { added: null, refused: true };
+        }
+      }
       // رصيدٌ طازج (الصفُّ + حوضُ قسمه): يُباع به لا بالبائت، و`bump` تقول السقفَ إن بقي أقلّ.
       const added = addProduct(sellable, n, opt);
       if (first && added !== null && added > 0) {
@@ -1567,6 +2065,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     }
     // ما وصلنا الخادم والقائمةُ تسمح بشيء ⇒ يُضاف ما تسمح به، كما قبل السؤال.
     if (verdict === "sell-local") return { added: addProduct(product, n, opt), refused: false, lineId: lineOf(product) };
+    /* 0266: الرصيدُ الطازج لا يكفي — والوضعُ (ربما شُغّل للتو) يرفع الصفَّ الطازج؟ يُباع به. وإلا يُقال السببُ الصادق: كلفةٌ
+     * صفر (لا «رصيده صفر»)، أو انعدّت (رصيدُها موثوق)، أو الوضعُ انتهى والرصيدُ تحت الصفر (لا «زيد رصيده» — بابُ التوائم). */
+    if (!ret && ans.kind === "row") {
+      const fresh = sellableRow(ans.row, ans.pool);
+      const per = lineNow ? perOf(lineNow) : null;
+      const ns = negNow();
+      if (liftFor(fresh, per, ns)) { liftRowsRef.current.set(fresh.id, { row: fresh, listAt: products.find((p) => p.id === fresh.id) }); return { added: addProduct(fresh, n, opt), refused: false, lineId: lineOf(fresh) }; }
+      const why = first ? negWhy(fresh, per, ns) : null;
+      if (why) { sayNegWhy(why, fresh); return { added: null, refused: true }; }
+    }
     // النغمةُ لكلّ مسحة — الكاشير يعدّ بأذنه — والرسالةُ مرّةً لا تتكدّس.
     playWarning();
     if (!first) return { added: null, refused: true };
@@ -1582,9 +2090,146 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     }
     return { added: null, refused: true };
   };
+  /** 0267: سطرُ كارتون من مسحة باركوده (أو من «+» على سطره). بلاغُ المالك: مسحُ الكارتون كان يقول «مو موجود بمخزنك — أضفه» عن
+   *  كارتونٍ معرَّفٍ على مادّته. السطرُ `k:<مادّة>:<كارتون>` بسعر الكارتون (المكتوب أو العلبةُ × العدد) وكلفةِ الخادم (المتوسّط × العدد)،
+   *  وسقفُه كراتينُ كاملة من الرصيد بعد ما تأخذه سطورُ المادّة الأخرى (shareCap). والقائمةُ لقطة: «أقلّ من كارتون» يُسأل عنه الخادمُ
+   *  قبل أن يُقال (كالعلبة)، والوضعُ (0266) يرفعه كما يرفع العلبة. ولا يُباع قبل أن يعرفه الخادم (pack_sale_ready)، ولا بالدولار
+   *  ولا بالراجع بعد — يُقال بجملةٍ تقول البديل (العلبة)، لا «ما ينعرف». */
+  const addPackLine = async (p: Product, pack: ProductPack, n: number, opt?: { sale?: boolean }): Promise<{ added: number | null; refused: boolean }> => {
+    const m = packMod ?? await loadPackMod();
+    const unit = (p.unit_name ?? "").trim() || m.say.packWords().box;
+    const refuse = (msg: string) => { playWarning(); toast.error(msg); return { added: null, refused: true }; };
+    // مخزنُ الحقل يُرفض باسمه كما يرفضه addProduct (لا نداءَ له خارج sellOrExplain — freshness-test).
+    if (p.farm_id) return refuse(t("retail.farmProductAtTill", "«{{name}}» من مخزن الحقل — يُصرف من شاشة الحقل لا من كاشير العيادة", { name: p.name }));
+    if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: "ret", name: p.name, level: pack.name, unit }));
+    /* 0272: كارتونُ مادّة الدولار سطرٌ بسلّة الدولار (سعرُه بالدولار، والخادمُ يخصم علبَه) — كان يُرفض «بيعها بوحدتها الأساسية». */
+    if (p.price_currency === "USD") { usdTap(p, { sale: true }, pack); return { added: null, refused: false }; }
+    const ready = await packReadyNow();
+    if (ready === "unreachable") return refuse(t("errors.network"));
+    if (ready !== "ready") return refuse(m.say.packSay({ kind: "notReady", name: p.name, pack: pack.name, per: pack.per, unit }));
+    if (blockZeroCost(p)) return { added: null, refused: true };
+    const id = `k:${p.id}:${pack.id}`;
+    const make = (row: Product, k: ProductPack): Line => {
+      const price = m.packSalePrice(row, k, wholesale);
+      return {
+        id, kind: "product", name: row.name, barcode: row.barcode ?? null, expiry: row.expiry_date ?? null,
+        unit_price: price, unit_cost: productLineCost(row, null, Math.round((Number(row.purchase_price) || 0) * k.per * 100) / 100, k.per),
+        qty: 1, stock: row.stock, product_id: row.id, subcategory: row.subcategory ?? null,
+        hasSubUnit: false, saleUnit: "pack", packId: k.id, packPer: k.per, packName: k.name, packNote: m.say.packNote(k.per, unit),
+        packPrice: price, priceManual: false,
+      };
+    };
+    const roomOf = (row: Product, k: ProductPack): number => {
+      const line = cartRef.current.find((l) => l.id === id);
+      return shareCap({ ...(line ?? make(row, k)), stock: row.stock, packPer: k.per }) - (line?.qty ?? 0);
+    };
+    const lift = (row: Product) => liftRowsRef.current.set(row.id, { row, listAt: products.find((x) => x.id === row.id) });
+    /** ما يبقى من رصيد الصفّ بعد سطور المادّة كلّها بالسلّة (وهذا منها) — «المتوفّر ١٠٠» عن رفٍّ نزل منه ٩٧ بالسلّة كان يكذب. */
+    const leftNum = (row: Product): number => {
+      let used = 0;
+      for (const o of cartRef.current) if (o.kind === "product" && !o.ret && o.product_id === row.id) used += lineStockQty(o);
+      return Math.round(((row.stock ?? 0) - used) * 1000) / 1000;
+    };
+    const leftOf = (row: Product): string => formatNum(leftNum(row));
+    const put = (row: Product, k: ProductPack) => ({ added: bump(id, () => make(row, k), n, { stock: row.stock }), refused: false });
+    if (liftFor(p, null)) { lift(p); return put(p, pack); }
+    if (roomOf(p, pack) >= 1) return put(p, pack);
+    // القائمةُ تقول «أقلّ من كارتون» — والقائمةُ لقطةٌ قد تكون بعمر ساعات: يُسأل الخادمُ قبل الرفض.
+    /* 0266: والوضعُ غيرُ مفعّلٍ عندنا ⇒ يُسأل معه كما تسأل العلبة (sellOrExplain): مديرٌ شغّله للتو من جهازٍ آخر كان يُقال بعده
+     * «أقلّ من كارتون» عن الكارتون والعلبةُ نفسُها تُباع تحت الصفر — حتى يحين استطلاعُ الحالة. */
+    const negAsk = negMod && negKeyRef.current && !negNow().active && !negNow().state?.absent ? negMod.refreshNeg(negKeyRef.current) : null;
+    const { promise, first } = askServer(p);
+    const ans = await promise;
+    if (negAsk) await Promise.race([negAsk, new Promise((r) => setTimeout(r, 2500))]);
+    if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
+    if (ans.kind === "row") {
+      const fresh = sellableRow(ans.row, ans.pool);
+      const k = m.currentPack(fresh, pack.id);
+      if (!k || k.per !== pack.per) return refuse(m.say.packSay({ kind: "changed", name: fresh.name, pack: pack.name }));
+      const ns = negNow();
+      if (liftFor(fresh, null, ns)) { lift(fresh); return put(fresh, k); }
+      if (roomOf(fresh, k) >= 1) return put(fresh, k);
+      /* سببُ الوضع (negWhy) حين لا تبقى علبةٌ واحدة — «كمّل بوحدة العلبة» هنا كذب، فالعلبةُ تُرفض بالسبب نفسِه. وما بقيت علبٌ
+       * أقلّ من كارتون: «أقلّ من كارتون، كمّل بالعلبة» صادقٌ ويقول البديل (العلبُ ضمن رصيدها لا تحتاج الوضع). و«ما تأكّدنا» بأيّ
+       * باقٍ: الوضعُ ربما يرفع الكارتونَ نفسَه. */
+      const why = negWhy(fresh, null, ns);
+      if (why && (why === "unsure" || leftNum(fresh) < 1)) {
+        if (first) sayNegWhy(why, fresh); else playWarning();
+        return { added: null, refused: true };
+      }
+      return refuse(m.say.packSay({ kind: "short", name: fresh.name, pack: k.name, per: k.per, unit, stock: leftOf(fresh) }));
+    }
+    playWarning();
+    if (ans.kind === "gone") {
+      sayUnreachable(t("retail.productGone", "«{{name}}» ما عاد موجود بالمخزن — انحذف أو اندمج بغيره. حدّث القائمة، وإذا انحذف بالغلط رجّعه من المحذوفات.", { name: p.name }));
+    } else {
+      sayUnreachable(m.say.packSay({ kind: "shortStale", name: p.name, pack: pack.name, per: pack.per, unit, stock: leftOf(p) }));
+    }
+    return { added: null, refused: true };
+  };
   /** ضغطُ كرت المنتج. المضاعِفُ يُستهلك **فوراً** — كان يبقى مسلَّحاً طوالَ سؤال الخادم
    *  (حتى ٦ ثوانٍ) فيلتقطه الصنفُ التالي: ×٥ على صنفٍ لم يُقصد به. ويُعاد إن رُفض
    *  الطلب (يُصلَح الرصيدُ ويُعاد بنفس العدد) ما لم يُسلَّح غيرُه أثناءها. */
+  /** كارتونٌ بلا باركود (طلبُ المالك ١٨/١١: «عيادات تسوي كارتونة لمنتج بدون باركود وتريد تبيعها — خيار صغير: كارتونة أو وحدة»):
+   *  زرٌّ صغير بجانب المنتج وبسطره بالسلّة يبيع الكارتونَ من **طريق المسح نفسِه** (addPackLine: الجاهزيةُ والسقفُ المشترك والوضعُ وسؤالُ
+   *  الخادم) — لا طريقَ بيعٍ ثانٍ. والمضاعِفُ يُستهلك ويُعاد إن رُفض، كضغطة المنتج. */
+  const tapPack = (p: Product, pack: ProductPack) => {
+    const armed = mult;
+    const n = armed && armed > 0 ? Math.floor(armed) : 1;
+    if (armed != null) setMult(null);
+    void addPackLine(p, pack, n).then((r) => { if (r.refused && armed != null) setMult((cur) => cur ?? armed); });
+  };
+  /** كراتينُ المادّة كما على صفّها (`packs` — 0259)، بلا استيراد وحدة التعبئة بقطعة البيع. ولا زرَّ بوضع «راجع»: الكارتونُ لا يُرجَع
+   *  بعد (addPackLine يرفضه بجملةٍ تقول «باركود كارتون» عن زرٍّ ما مُسح)، وزرُّ سطر البيع بالراجع كان يُعرض ثمّ يُرفض (مراجعة). */
+  const packsOfRow = (p: Pick<Product, "packs"> | null | undefined): ProductPack[] => (!retMode && p && Array.isArray(p.packs) ? p.packs : []);
+  const packChip = (p: Product, k: ProductPack, compactChip: boolean) => (
+    <button key={k.id} type="button" data-packchip={`${p.id}:${k.id}`}
+      title={packMod ? packMod.say.packChipTitle(k.name, k.per, (p.unit_name ?? "").trim() || packMod.say.packWords().box) : `${k.name} ×${k.per}`}
+      onClick={(e) => { e.stopPropagation(); playTap(); tapPack(p, k); }}
+      /* بالصفّ المضغوط: لا ينكمش، واسمُه فوق sm وحده (بالهاتف أيقونةٌ والعدد — اسمٌ كان يأكل الصفَّ فيغطّي السعرَ و+). وبالبطاقة
+       * والسلّة: ينكمش والاسمُ يُقصّ والعددُ يبقى (كارتونان بشبكة الهاتف كانا يُقصّان نصفاً). */
+      className={cn("inline-flex items-center gap-1 rounded-lg border font-bold tabular-nums transition",
+        compactChip ? "shrink-0 px-2 py-1 text-2xs" : "min-w-0 px-2 py-0.5 text-2xs",
+        flash === `k:${p.id}:${k.id}` ? "border-brand-400 bg-brand-600 text-white"
+          : "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300")}>
+      <Layers size={12} className="shrink-0" /><span className={cn("truncate", compactChip && "hidden sm:inline")}>{k.name}</span><span dir="ltr" className="shrink-0">×{formatNum(k.per)}</span>
+    </button>
+  );
+  /** 0282: مادّةٌ بسعرين (دينار وسعرُ بيعٍ بالدولار) — السطرُ يختار عملتَه. مادّةُ «الدولار وحده» لها بيعُها (usdTap)، والوزنُ بالدينار. */
+  const dualOf = (p: Product | null | undefined): boolean =>
+    !wholesale && !!p && (p.price_currency ?? "IQD") !== "USD" && p.sell_price_usd != null && !p.sold_by_weight;
+  /** «$» على السطر: يحوّله للدولار بسعر مستواه (العلبة/المفرد/الكارتون — المكتوبُ وإلا المحسوب) ودينارُه بسعر صرف اليوم كما يعرفه الخادم،
+   *  وكلُّ سطر دولارٍ قبله بسعرٍ أقدم يُعاد حسابُه بسعر اليوم (الفاتورةُ بسعرٍ واحد). والضغطةُ ثانيةً ترجعه للدينار بسعر قائمته. */
+  const toggleLineUsd = async (l: Line) => {
+    if (l.usd) {
+      setCart((c) => c.map((x) => (x.id === l.id ? { ...x, usd: undefined, unit_price: capturedPrice(x) ?? x.unit_price, priceManual: false } : x)));
+      return;
+    }
+    const row = products.find((x) => x.id === l.product_id);
+    if (!row || !dualOf(row)) return;
+    const m = await import("@/lib/dualSale");
+    let r: Awaited<ReturnType<typeof m.dualRate>>;
+    try { r = await m.dualRate(); }
+    catch { playWarning(); toast.error(t("retail.dual.unreach")); return; }
+    if (!r.ok) { playWarning(); toast.error(t(`retail.dual.${r.why}`)); return; }
+    const rate = r.rate;
+    const level = l.saleUnit === "pack" ? "pack" : l.saleUnit === "sub" ? "sub" : "box";
+    const pack = level === "pack" ? packsOfRow(row).find((k) => k.id === l.packId) ?? null : null;
+    const c = m.usdCentsOf(row, level, pack);
+    if (c == null) { playWarning(); toast.error(t("retail.dual.noLevel", { name: l.name })); return; }
+    const r1e4 = rate.rate1e4.toString();
+    /* السطرُ كما هو الآن لا كما كان عند الضغطة: تبديلُ الوحدة (علبة ↔ مفرد) أثناء سؤال سعر الصرف كان يكتب سعرَ المفرد على سطر علبة،
+     * والخادمُ لا يعرف المستوى فيقبله (مراجعة 0282). ضغطتان قبل الجواب: الثانيةُ تجد السطرَ بالدولار فلا تكتب شيئاً. */
+    setCart((cart) => {
+      const cur = cart.find((x) => x.id === l.id);
+      if (!cur || cur.usd || (cur.saleUnit ?? null) !== (l.saleUnit ?? null) || (cur.packId ?? null) !== (l.packId ?? null)) return cart;
+      return cart.map((x) => {
+        if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(c, rate.rate1e4), priceManual: false };
+        if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, rate.rate1e4) };
+        return x;
+      });
+    });
+  };
   const tapProduct = (p: Product) => {
     const armed = mult;
     const n = armed && armed > 0 ? Math.floor(armed) : 1;
@@ -1594,17 +2239,36 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** «أكثرُ من هذا السطر» — زرُّ + ولوحةُ الكمية. ما يسمح به سقفُ السطر يُكتب فوراً،
    *  وما فوقه يمرّ من `sellOrExplain`: يُسأل الخادمُ قبل «لا يوجد مخزون إضافي». */
   const raiseLine = (l: Line, target: number) => {
-    if (target <= unitCap(l) || l.kind !== "product" || l.ret || !l.product_id) { setQty(l.id, target); return; }
-    const row = products.find((p) => p.id === l.product_id);
+    /* «أقلّ» ليس «أكثر»: سطرٌ فوق سقفه (قائمةٌ تحدّثت، جوابٌ شاخ، معدودة) ولوحتُه بأقلّ منه كان يمرّ من sellOrExplain بفرقٍ سالب فلا
+     * يُطبَّق (bump لا يُنقص) ويُقال «ما ينضاف» أو لا شيء — ٥ تُدفع و٤ تُسلَّم (قائمٌ منذ لوحة الكمية؛ مراجعةٌ عدائيّة رابعة). */
+    if (target <= l.qty || target <= capFor(l) || l.kind !== "product" || l.ret || !l.product_id) { setQty(l.id, target); return; }
+    /* صفُّ القائمة أوّلاً — رصيدُه رصيدُ الكاشير (الصفُّ + حوضُ قسمه) — وصفُّ الرفع لمادّةٍ ليست بها. صفُّ الرفع للحكم بالكلفة (capFor فوق):
+     * صفٌّ خامٌّ من مسحٍ بلا حوضه كان يقول «المتوفّر 0» والكرتُ يقول ٥. و«+» واللوحةُ على سطر بيعٍ قائم بيعٌ ولو «راجع» مفعّل — كانا يضيفان
+     * سطرَ إرجاعٍ لما يأخذه الزبون (قائمٌ قبل الوضع، ووسّعه صفُّ الرفع لمادّةٍ ليست بالقائمة). */
+    const row = products.find((p) => p.id === l.product_id) ?? prodRow(l.product_id);
     if (!row) { setQty(l.id, target); playWarning(); toast.error(t("retail.maxStock", "No more in stock")); return; }
-    void sellOrExplain(row, target - l.qty);
+    // سطرُ الكارتون يزيد كراتين لا علباً (sellOrExplain تضيف لسطر العلبة) — وبكارتونه كما هو الآن على الصفّ.
+    if (isPackLine(l)) {
+      void loadPackMod().then((m) => {
+        const k = m.currentPack(row, l.packId);
+        if (!k || k.per !== l.packPer) { playWarning(); toast.error(m.say.packSay({ kind: "changed", name: l.name, pack: l.packName ?? "" })); return; }
+        void addPackLine(row, k, target - l.qty, { sale: true });
+      });
+      return;
+    }
+    void sellOrExplain(row, target - l.qty, null, { sale: true });
   };
   /** تبديلُ وحدة البيع (علبة/مفرد). وحدةٌ لا يسمح بها رصيدُ السطر كانت زرّاً **ميّتاً**
    *  (`disabled` بلا كلمة) — الآن يُسأل الخادم: رصيدٌ ظهر يُحدَّث به السطرُ وتتبدّل
    *  الوحدة، وإلا قيل لماذا. */
   const switchUnit = async (l: Line, u: "box" | "sub") => {
-    if (unitCap({ ...l, saleUnit: u }) >= 1) { setSaleUnit(l.id, u); return; }
-    const row = l.product_id ? products.find((p) => p.id === l.product_id) : undefined;
+    if (capFor({ ...l, saleUnit: u }) >= 1) { setSaleUnit(l.id, u); return; }
+    const row = prodRow(l.product_id);
+    /* 0266: الوحدةُ لا تُرفع لكلفتها وحدها (مفردٌ تقريبُه صفر) ⇒ «سعر الشراء» لا «رصيده صفر». */
+    if (row && costBlocked(row, u === "sub" && l.unitsPerBox ? l.unitsPerBox : null)) {
+      sayNeg({ kind: "noCost", name: l.name, productId: row.id, canOpen: canEditProducts }, t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج"));
+      return;
+    }
     if (!row) { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); return; }
     const { promise, first } = askServer(row);
     const ans = await promise;
@@ -1613,8 +2277,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const fresh = sellableRow(ans.row, ans.pool);
       const stock = fresh.pooled ? null : fresh.stock;
       setCart((c) => c.map((x) => (x.id === l.id ? { ...x, stock } : x)));
-      if (unitCap({ ...l, stock, saleUnit: u }) >= 1) { setSaleUnit(l.id, u); return; }
+      // 0267: بما يبقى بعد سطور المادّة الأخرى (كارتونُها) — وإن أخذته هي فالرفُّ «كلُّه بالسلّة» لا «رصيده صفر» (بابُ التوائم).
+      if (shareCapAt({ ...l, saleUnit: u }, stock) >= 1) { setSaleUnit(l.id, u); return; }
       playWarning();
+      if (l.product_id && sibUse(l.product_id, l.id) > 0) {
+        toast.error(t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(Math.max(0, shareCapAt({ ...l, saleUnit: u }, stock))) }));
+        return;
+      }
       if (u === "box") toast.error(t("retail.noWholeBox", "ما بقى علبة كاملة من «{{name}}» — الباقي مفرد فقط", { name: l.name }));
       else toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: l.name }));
       return;
@@ -1629,6 +2298,35 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     }
   };
 
+  /** 0267: مسحةُ رمزِ كارتونٍ أو مغلّف (من القائمة أو الخادم) — الكارتونُ سطرُه (addPackLine)، والمغلّفُ سطرُ مادّته بوحدتها الصغرى.
+   *  المضاعِفُ والحقلُ كمسحة العلبة: يُستهلكان عند المطابقة ويعودان إن رُفض. */
+  const sellLevel = async (hit: { product: Product; level: "box" | "sub" | "pack"; pack?: ProductPack }, n: number) => {
+    const armed = mult;
+    if (armed != null) setMult(null);
+    setQuery("");
+    const m = packMod ?? await loadPackMod();
+    let r: { added: number | null; refused: boolean };
+    if (hit.level === "pack" && hit.pack) {
+      const before = cartRef.current.some((l) => l.id === `k:${hit.product.id}:${hit.pack?.id}`);
+      r = await addPackLine(hit.product, hit.pack, n);
+      if (!before && r.added !== null && r.added > 0) {
+        const unit = (hit.product.unit_name ?? "").trim() || m.say.packWords().box;
+        toast.success(m.say.packSay({ kind: "found", name: hit.product.name, pack: hit.pack.name, per: hit.pack.per, unit }));
+      }
+    } else {
+      const sub = (hit.product.sub_unit_name ?? "").trim() || m.say.packWords().sub;
+      const line = cartRef.current.find((l) => l.id === `p:${hit.product.id}`);
+      if (retMode) {
+        playWarning();
+        toast.error(m.say.packSay({ kind: "ret", name: hit.product.name, level: sub, unit: (hit.product.unit_name ?? "").trim() || m.say.packWords().box }));
+        r = { added: null, refused: true };
+      }
+      else if (line && line.saleUnit !== "sub") { playWarning(); toast.error(m.say.packSay({ kind: "subInBox", name: hit.product.name, sub })); r = { added: null, refused: true }; }
+      else r = await sellOrExplain(hit.product, n, null, { unit: "sub" });
+    }
+    if (r.added !== null && r.added > 0) playSuccess();
+    if (r.refused && armed != null) setMult((cur) => cur ?? armed);
+  };
   const handleScan = async (code: string) => {
     /* ماسحٌ على حقل رقم الطلب = بوليصةُ شركة التوصيل لا منتج. الماسحُ يكتب
      * محارفَه بالحقل المركَّز أصلاً (لا يمنع إلا Enter)، فكانت المسحةُ نفسُها
@@ -1672,6 +2370,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * بدل أن ترجع «فارغاً»، فنميّز «ما وصلنا» عن «ما عندك». */
     let product = findByCode(products, code);
     let offline = false;
+    /* 0267: رمزُ كارتونٍ أو مغلّفٍ بالقائمة — مطابقةٌ تامّةٌ تسبق الخادمَ وصيغَ الماسح كالعلبة. كان يسقط إلى «مو موجود بمخزنك — أضفه»
+     * عن كارتونٍ معرَّفٍ على مادّته (بلاغُ المالك ١٢/١١). والبابُ لم يصل (فشلَ تحميلُه) ⇒ المسارُ كما كان. */
+    if (!product) {
+      // بمهلة: قطعةٌ عالقةٌ لا تُعلّق المسحَ (الخادمُ والخدماتُ وذيلُ الرمز بعدها).
+      const pm = packMod ?? await withTimeout(loadPackMod(), 3000).catch(() => null /* swallow-ok: المسارُ كما كان */);
+      const hit = pm?.packHit(products, code);
+      if (hit) { await sellLevel(hit, n); return; }
+    }
     if (!product) {
       try {
         product = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
@@ -1743,6 +2449,26 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       if (r.refused && armed != null) setMult((cur) => cur ?? armed);
       return;
     }
+    /* 0267: القائمةُ بائتة؟ كارتونٌ أو مغلّفٌ عُرّف من جهازٍ آخر بعد فتح الشاشة — يُسأل الخادمُ قبل «مو موجود — أضفه» (بابُ التوائم:
+     * الإضافةُ يرفضها حارسُ المستويات). وفشلُه «ما وصلنا» لا «ما عندك». */
+    /* والبابُ نفسُه إن لم يصل (قطعةٌ فشلت — كروم يحفظ فشلَها حتى إعادة التحميل) لا يصير «ما وصلنا الخادم» عن كلّ رمزٍ مجهول:
+     * المسارُ كما كان قبل 0267. والصفُّ الذي لقيه الخادمُ يرقّع القائمة (الإتمامُ يطابق الكارتونَ بها). */
+    const pmL = offline ? null : packMod ?? await withTimeout(loadPackMod(), 3000).catch(() => null /* swallow-ok: المسارُ كما كان */);
+    if (pmL) {
+      try {
+        const hit = pmL.packHit(await withTimeout(pmL.productsByLevelCode(code), 6000), code);
+        if (hit) {
+          const { promise, first } = askServer(hit.product);
+          const ans = await promise;
+          if (first && ans.kind !== "unreachable") onFreshRow?.(ans);
+          await sellLevel(hit, n);
+          return;
+        }
+      } catch (e) {
+        offline = true;
+        console.error("[pos] level lookup failed", e);
+      }
+    }
     playWarning();
     // باركود مجهول: نقشّر رمزه من الحقل فقط — ما كتبه الطبيب (كمية أو بحث)
     // يبقى بمكانه، ولا تتلوّث خانة البحث بأرقام مسحةٍ فاشلة.
@@ -1767,7 +2493,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const medPickerOpen = useMedPickerOpen();
   /* وورقةُ المستهلكات كذلك: لها حقلُ مسحٍ بنفسها («امسح العلبة اللي استعملتها») — مسحةٌ تهبط سطراً بالسلّة خلفها
    * كانت تُباع علبةً على الزبون وهي مادّةٌ انصرفت على حالته. */
-  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || !!consFor || medPickerOpen });
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk || (!!negChk && negChkShown) || !!consFor || medPickerOpen });
   // سطرُ الورقة خرج من السلّة (مُسح، صُفّرت) أو تمّت البيعة: تُغلق — وإلا بقي الماسحُ وF2 صامتَين بلا ورقة.
   useEffect(() => {
     if (consFor && (done || !cart.some((l) => l.id === consFor && !!cloudServiceId(l)))) setConsFor(null);
@@ -1846,6 +2572,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
     setActivePetIdx(0);
     setDone(null);
+    setNegChk(null);
     // بند المختبر: التحليل ينزل بالسلة جاهزاً بسعره من كتالوج الخدمات (إن وُجد
     // اسم مطابق أو قريب) — والكاشير يعدّل السعر بحرية مثل أي بند خدمة.
     if (prefill.service) {
@@ -1876,10 +2603,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* الحساب يقرأ الراجع سالباً: قيمة المشترى ناقص قيمة الراجع = ما يدفعه
    * الزبون فعلاً. سطرٌ راجع بألف مع شراءٍ بخمسة ⇒ يدفع أربعة. */
   const sign = (l: Line) => (l.ret ? -1 : 1);
-  const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_price, 0);
+  /* والراجعُ بنسبته (lineUnit): ما يُردّ لا سعرُه — والكلفةُ كاملةً (القطعةُ ترجع للرفّ)، فالباقي ربحٌ للعيادة. */
+  const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);
   const cost = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_cost, 0);
-  /** قيمة الراجع بالسلة (موجبة للعرض) وعدد أسطره. */
-  const retValue = cart.reduce((s, l) => s + (l.ret ? l.qty * l.unit_price : 0), 0);
+  /** قيمة الراجع بالسلة (موجبة للعرض) وعدد أسطره — `retFull` قبل النسبة. */
+  const retValue = cart.reduce((s, l) => s + (l.ret ? l.qty * lineUnit(l) : 0), 0);
+  const retFull = cart.reduce((s, l) => s + (l.ret ? l.qty * l.unit_price : 0), 0);
+  /** النسبةُ الظاهرة: نسبةُ سطور الراجع (واحدةٌ للسلّة) — وبلا سطورٍ النسبةُ المختارة للقادم. */
+  const cartRetPct = retPctOf(cart.find((l) => l.ret) ?? { ret: true, retPct });
   const retLines = cart.filter((l) => l.ret).length;
   /** الراجع أكبر من المشترى ⇒ نقدٌ يخرج، وهذا ليس بيعاً: يُمنع الحفظ هنا
    *  ويُحوَّل الكاشير لتبويب «المرتجع» حيث يخرج المال بقيدٍ صحيح. */
@@ -1893,7 +2624,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // يخصّ السعر لا العدد.
   const units = cart.reduce((s, l) => s + (l.byWeight ? 1 : l.qty), 0);
   // Dynamic Mix & Match offers, evaluated against the live cart.
-  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
+  /* والراجعُ ليس شراءً: سطرُه كان يدخل الحزمةَ فيكمل عرضاً بقطعٍ ترجع — خصمٌ على ما يُردّ. */
+  // سطرُ الكارتون (0267) خارج العروض: سعرُه سعرُ الكارتون، وكميتُه كراتينُ لا قطع — «كل ٣ قطع» كانت ستقرأ كارتوناً قطعة.
+  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== "pack"), promoRules), [cart, promoRules]);
 
   // ---- عروض الكمية — تُحسب **مجمّعة** عبر كل الأسطر المشمولة ------------------
   // الفكرة الجوهرية: الزبون الي أخذ ثلاث قطع من ثلاثة أصناف مختلفة دفع ثمن
@@ -1902,11 +2635,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // القطع = علب كاملة: بيع المفرد بالحبة/الشريط خارج العرض عمداً حتى لا تُحسب
   // ثلاث حبات كثلاث قطع.
   const promoLines = (r: QtyPromo): Line[] => cart.filter((l) => {
+    // والراجعُ ليس شراءً — قطعةٌ تُردّ لا تكمل عرضَ «كل ٣ قطع» (كعروض الحزم فوق).
+    if (l.ret) return false;
     if (r.kind === "service") return l.kind === "service" && (!r.ids.length || (l.serviceId ? r.ids.includes(l.serviceId) : false));
     // سطر الوزن خارج العروض القِطعية عمداً: كميّته كيلواتٌ لا قطع، فـ«كل ٣
     // قطع خصم» كانت تقرأ ٣ كغ دراي فود كأنها ثلاث قطع فتخصم بلا استحقاق —
     // وتقرأ نصف كيلو كنصف قطعة. عرض الكتلة يكون بالسعر لا بالعدّ.
-    if (l.kind !== "product" || l.saleUnit === "sub" || l.byWeight) return false;
+    if (l.kind !== "product" || l.saleUnit === "sub" || l.saleUnit === "pack" || l.byWeight) return false;
     return !r.ids.length || (l.product_id ? r.ids.includes(l.product_id) : false);
   });
 
@@ -2018,8 +2753,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    * يُسجَّل. */
   useEffect(() => {
     if (done) return;
-    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, clientRef: saleRefSaved, custAuto });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
+    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn,
+      negOk: saleRefSaved && negOkRef.current?.ref === saleRefSaved ? negOkRef.current : null, saleDay, saleTime, clientRef: saleRefSaved, custAuto });
+  }, [clinicId, negOkGen, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleDay, saleTime, saleRefSaved, custAuto, done]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -2147,17 +2883,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const deferredQuery = useDeferredValue(query);
   const ql = deferredQuery.trim();
   const nq = searchable(ql);
+  /* الترتيبُ (0279) قبل التصفية والسقف، ومرّةً حين تتغيّر القائمةُ أو الأرقام لا بكلّ ضغطة: «الأكثر مبيعاً» يعني أن الستّين
+   * الأولى هي الأكثر بيعاً. ولا يُخفي شيئاً ولا يضيف — المرتَّبُ هو القائمةُ نفسُها (sortForPos). */
+  const ordered = useMemo(() => sortForPos(products, posSort, sales.state === "ready" ? sales.map : null), [products, posSort, sales]);
   const { shown, hiddenCount } = useMemo(() => {
     // المرشِّح يُبنى داخل الحساب لا خارجه: بناؤه بكلّ رسمةٍ يجعله مرجعاً جديداً
     // فيبطل الحفظَ كلَّه، والتصفيةُ هنا تمرّ على مئات المواد بكلّ ضغطة.
     const byCode = codeMatcher(ql);
     const base = ql
-      ? products.filter((p) => searchable(p.name).includes(nq) || byCode(p))
-      : products;
+      ? ordered.filter((p) => searchable(p.name).includes(nq) || byCode(p))
+      : ordered;
     // السقف لسرعة الرسم — لكنه **يقول إنه سقف**. صمتُه كان يعني أن المادة
     // بالصفّ الخامس والعشرين تبدو غير موجودة.
     return { shown: base.slice(0, POS_MAX), hiddenCount: Math.max(0, base.length - POS_MAX) };
-  }, [products, ql, nq]);
+  }, [ordered, ql, nq]);
 
   /* ---- زبونٌ من القائمة (0232) -------------------------------------------
    * يملأ الاسمَ والرقمَ وحدهما — **لا حيوانَ يُلصق تلقائياً** (البيعُ بلا حيوانٍ مدعومٌ كاملاً،
@@ -2215,11 +2954,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
 
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
+    doseDismissed.current.clear();
     expiredAckRef.current = null;
+    setNegChk(null); negResumeRef.current = null;   // نوافذُ التأكيد لسلّةٍ راحت: «نعم، بيع» على نافذةٍ باقية كانت تبيع سلّةَ الزبون التالي
+    setBigSale(null); setExpiredAsk(null); setPriceAsk(null);
     setRepriced(new Map());
     setSaleRefSaved(null);
     clearSaleDraft(draftScope);
-    setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
+    setCart([]); setRetPct(100); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setPromoOn([]);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
@@ -2261,6 +3003,57 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setResetAsk(false);
     playSuccess();
   };
+  /* ---- 0269: جرعاتُ الطبلة المعلَّقة لزبون البيعة تنزل بالسلّة وحدها -------------------------------------------------
+   * بهاتفه أو اسمه (مفتاحُ الزبون كدليل الزبائن) أو بحيوانات البيعة المسمّاة (جسرُ سجلّ الحيوان). سطرُ `d:<معلَّق>` بحيوانه فمسحُ
+   * الزبون يشيله (saleCustomer)، وما شاله الكاشيرُ لا يرجع بهذه البيعة. لا للجملة، ولا والدفعُ بالطريق أو البيعةُ تمّت.
+   * والفشلُ يُقال (الجرعاتُ باقيةٌ معلَّقة) — صمتُه كان يُصدَّق «ماكو جرعات». */
+  const doseWho = (): { ph: string | null; nm: string | null; pets: string[] } | null => {
+    const c = splitCustomerField(name);
+    const ph = checkoutPhone(phone, c.phone, getDialCode());
+    const nm = c.name.trim() || null;
+    const pets = salePets.map((x) => x.id).filter((x): x is string => !!x);
+    return ph || nm || pets.length ? { ph, nm, pets } : null;
+  };
+  /** بعد رفض البيعة بسبب جرعة: «gone» (انحسبت أو انلغت من جهازٍ آخر) يُبقي المعلَّقَ وحده، و«late» (مرجعُ البيعة ثبتت فاتورتُه بدون
+   *  جرعاتٍ نزلت بعدها) يشيل المعلَّقَ — يرجع ببيعةٍ قادمة — فتمرّ الإعادةُ بفاتورتها. وفشلُ السؤال يشيل سطورَ الجرعات كلَّها: تبقى
+   *  معلَّقةً، ولا تُعاد بيعةٌ رُفضت بسطرٍ لا يُعرف حالُه. */
+  const resyncDoses = async (late: boolean) => {
+    const who = doseWho();
+    let pend: Set<string> | null = null;
+    try {
+      const m = await loadDoseMod();
+      if (who) pend = new Set((await m.pendingDoses(who.ph, who.nm, who.pets)).map((x) => `d:${x.id}`));
+    } catch { /* swallow-ok: بلا جواب تُشال كلُّها (أدناه) */ }
+    setCart((c) => c.filter((l) => !l.dose || (pend != null && (late ? !pend.has(l.id) : pend.has(l.id)))));
+  };
+  const dosePetKey = salePets.map((x) => x.id ?? "").join(",");
+  /* السلّةُ تتبع الزبونَ الحاليّ: سطرُ جرعةٍ ليس بمعلَّقاته الآن (نزل لمفتاحٍ سابق — «علي» قبل أن يكتمل «علي حسن» — أو انحسب) يُشال؛
+   * وزبونٌ مُسح يشيلها كلَّها. ولا شيءَ والمرجعُ معلَّق (saleRefSaved): الإعادةُ ترجع فاتورتَها، وسطرٌ يُضاف بعدها ليس فيها. */
+  useEffect(() => {
+    if (wholesale || done || paying || saleRefSaved) return;
+    const who = doseWho();
+    if (!who) {
+      if (cartRef.current.some((l) => l.dose)) setCart((c) => c.filter((l) => !l.dose));
+      return;
+    }
+    let live = true;
+    const timer = window.setTimeout(() => {
+      loadDoseMod().then((m) => m.pendingDoses(who.ph, who.nm, who.pets).then((list) => {
+        if (!live) return;
+        const want = new Set(list.map((x) => `d:${x.id}`));
+        const have = new Set(cartRef.current.map((l) => l.id));
+        const add = list.filter((x) => !have.has(`d:${x.id}`) && !doseDismissed.current.has(x.id));
+        const stale = cartRef.current.some((l) => l.dose && !want.has(l.id));
+        if (!add.length && !stale) return;
+        setCart((cur) => [...cur.filter((l) => !l.dose || want.has(l.id)),
+          ...add.filter((x) => !cur.some((l) => l.id === `d:${x.id}`)).map((x) => doseLine(x, m))]);
+        if (add.length) { playTap(); toast.success(m.say.doseLoaded(add.length)); }
+      }, () => { if (live) toast.warn(m.say.doseFetchFail()); }), () => { /* swallow-ok: القطعةُ ما وصلت — الجرعاتُ باقيةٌ معلَّقة لبيعةٍ قادمة */ });
+    }, 450);
+    return () => { live = false; window.clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- مفتاحُ الزبون وحيواناته وحالُ البيعة وحدها تعيد السؤال
+  }, [name, phone, dosePetKey, wholesale, !!done, paying, saleRefSaved]);
+
   const askReset = () => {
     playTap();
     const dirty = cart.length > 0 || !!name.trim() || !!phone.trim() || salePets.length > 0 || !!saleNotes.trim();
@@ -2440,7 +3233,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         e.preventDefault(); el.blur(); return;
       }
       // بعد إتمام البيع (شاشة الإيصال) لا يُعاد الإصدار بـF2 — كان يصنع طلبَ توصيلٍ ثانياً.
-      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !switchAsk && !needsDebtName && !busy && !done && !custClearAsk && !resetAsk) void checkout(); }
+      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !switchAsk && !needsDebtName && !busy && !done && !bigSale && !expiredAsk && !priceAsk && !custClearAsk && !resetAsk) void checkout(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2456,10 +3249,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const draftItems: InvoiceItem[] = cart.map((l) => ({
       id: `draft-${l.id}`, invoice_id: "draft", clinic_id: clinicId ?? null,
       product_id: l.product_id,
-      name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
+      name: `${l.ret ? `${retTag(l)} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
       barcode: l.barcode,
-      qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
-      unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
+      qty: sign(l) * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost, line_total: sign(l) * l.qty * lineUnit(l),
+      unit_label: lineLabel(l),
     }));
     const draft: Invoice = {
       id: "draft", clinic_id: clinicId ?? null,
@@ -2514,13 +3307,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
-        const isSub = l.kind === "product" && l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
-        const stock_qty = l.product_id == null ? 0
-          : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
-          : l.qty;
+        const stock_qty = lineStockQty(l);
+        /* بنسبته: الخادمُ يكتب السحبَ qty × unit_price كما وصل («راجع: الاسم (50%) × 2») والقطعةُ ترجع كاملة (stock_qty). */
+        const pct = retPctOf(l);
         return {
-          product_id: l.product_id, name: l.name, barcode: l.barcode,
-          qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          product_id: l.product_id, name: pct < 100 ? `${l.name} (${pct}%)` : l.name, barcode: l.barcode,
+          qty: l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,
           stock_qty, unit_label: l.byWeight ? t("retail.unitKg", "كغ") : null,
         };
       });
@@ -2554,8 +3346,27 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* فاتورةٌ تبيع رفّاً كاملاً بضغطة: مقيسة — «اكتب ٤٧ وامسح» ثلاث مرّات بعد
    * إدخال البضاعة بدقيقة، ١٧٠٬٠٠٠ نقدي بلا زبون ولا طباعة، والرصيد صار صفراً
    * فقالت العيادة «المنتج اختفى». الكميةُ الكبيرة تُسمّى قبل أن تُحسم. */
+  /* 0266: سطرٌ رفعه الوضعُ يُحكم بما يعادل العلب — عشرُ حبّاتٍ من علبة مئة ليست «كميةً كبيرة» — والموزونُ منه خارج هذا الحكم.
+   * بالسقف الخامّ كانت النافذةُ تسأل عن كلّ سطرٍ تقريباً بعيادةٍ رصيدُ موادّها صفر، فيُضغط «نعم» بلا قراءة ويسقط الحارسُ
+   * («اكتب ٤٧ وامسح») حيث يلزم أكثر. والسطرُ غيرُ المعلَّم كما كان. */
+  /* 0267: والكارتونُ بعلبه — كارتونان من ٢٤ رفُّ ٤٨ علبة لا «كميةٌ صغيرة» لأن العددَ ٢. */
+  /* والرفُّ المشترك (كارتونٌ وعلبٌ للمادّة نفسِها) يُحكم بالمادّة: ما بالسلّة منها كلُّه ≥ ١٠ وهو الرفُّ كلُّه — كارتونٌ من ٤٧ لا يسأل،
+   * وكارتونُ ٦ و٤٢ علبة من ٤٨ يسأل (كلٌّ وحده كان يُخطئ الاتجاهين — مراجعةٌ عدائيّة). وسلّةٌ بسطرٍ واحدٍ للمادّة كما كانت حرفاً. */
+  const shelfUsed = (pid: string): number => cart.reduce((n2, o) => (o.kind === "product" && !o.ret && o.product_id === pid ? n2 + lineStockQty(o) : n2), 0);
+  const shared = (l: Line): boolean => !!l.product_id && cart.some((o) => o.id !== l.id && o.kind === "product" && !o.ret && o.product_id === l.product_id);
   const bigLines = (): Line[] => cart.filter((l) =>
-    l.kind === "product" && !l.ret && l.stock != null && l.qty >= 10 && l.qty >= unitCap(l));
+    l.kind === "product" && !l.ret && l.stock != null && (!l.negLift && shared(l)
+      ? shelfUsed(l.product_id as string) >= 10 && shelfUsed(l.product_id as string) + 1e-9 >= Math.floor(l.stock as number)
+      : isPackLine(l)
+      /* والكارتونُ الذي رفعه الوضعُ بعدده لا بعلبه: «كميةٌ كبيرة» لسطرٍ مرفوع تمسك «اكتب ٤٧ وامسح» (٤٧ كارتوناً تُسأل)، وبعلبه كان
+       * كلُّ كارتونٍ من ١٠ علبٍ فأكثر يسأل «تبيع الرصيد كلّه؟ ١٢ من ٠» ويدلّ على «المشتريات» — عن مسحةٍ واحدةٍ مقصودة (مقيسٌ
+       * بالتجريبيّ: العلبةُ بجانبه تُباع بلا سؤال). وغيرُ المرفوع كما كان: بعلبه حين يأخذ الرفَّ كلَّه. */
+      ? (l.negLift ? (negMod ? negMod.bigLifted(l.qty, { sub: false, unitsPerBox: null, byWeight: false }) : l.qty >= 10)
+        : lineStockQty(l) >= 10 && lineStockQty(l) + 1e-9 >= Math.floor(l.stock as number))
+      : l.negLift
+      ? (negMod ? negMod.bigLifted(l.qty, { sub: l.saleUnit === "sub", unitsPerBox: l.unitsPerBox, byWeight: l.byWeight })
+        : l.byWeight ? l.qty >= 25 : (perOf(l) ? l.qty / (perOf(l) as number) : l.qty) >= 10)
+      : l.qty >= 10 && l.qty >= unitCap(l)));
 
   /* الانتهاءُ يُقرأ من قائمة المنتجات بمعرّف السطر لا من السطر نفسِه: مسودّةُ السلّة
    * المحفوظة لا تحمله، والقائمةُ تتحدّث (شراءُ وجبةٍ جديدة يغيّر التاريخ). والقاعدةُ من
@@ -2568,8 +3379,103 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   };
   const expiredLines = (): Line[] => cart.filter((l) => expiryState(expiryOf(l), getExpiryWindows()) === "expired");
 
+  /* ── 0266: سطورُ الوضع قبل البيعة ──────────────────────────────────────────────────────────────────────
+   * يُسأل الخادمُ عمّا علّمه الوضعُ وحده (negLift وفوق رصيد القائمة) — بما سترسله البيعةُ نفسُها (stock_qty بالحساب نفسِه).
+   * والجوابُ لا يرمي: مهلةٌ أو شبكةٌ أو عيادةٌ لا نعرفها = «ما تأكّدنا» ويُقفل (الشاشةُ رفعت فوق الرصيد بحالةٍ ما عاد يؤكّدها
+   * أحد) — والسلّةُ تبقى. */
+  const negStockQty = (l: Line): number => lineStockQty(l);
+  const negCheckNow = async (lines: Line[]): Promise<NegCheck | "unsure"> => {
+    try {
+      const m = negMod ?? await loadNegMod();
+      const st = negNow().state;
+      if (!st || st.absent || !st.clinic) return "unsure";
+      return await withTimeout(m.negApi.check(st.clinic, lines.map((l) => ({ product_id: l.product_id as string, qty: l.qty, stock_qty: negStockQty(l) }))), 4000);
+    } catch {
+      return "unsure";
+    }
+  };
+  /** حكمُ الجواب: null = كلُّها تُباع. السطرُ المرفوضُ يمرّ إن كان رصيدُه الطازج (الصفُّ + حوضُ قسمه) يغطّيه — ما عاد يحتاج
+   *  الوضع (قائمةٌ قديمة: شراءٌ أو عدٌّ صار من جهازٍ ثانٍ). وما يبقى يُعرض بسببه وبرصيده **بوحدة السطر**، ومعه ما يُبقى منه إن شيل. */
+  const negJudge = async (lines: Line[], res: NegCheck | "unsure"): Promise<Omit<NonNullable<typeof negChk>, "ack" | "locked"> | null> => {
+    if (res === "unsure") {
+      return { lines: lines.map((l) => ({ id: l.id, name: l.name, qty: l.qty, stock: null, why: "unsure" as const })), allCart: false, keep: {} };
+    }
+    /* الخادمُ قال «انعدّت» عن مادّةٍ لا تعرفها المعدودةُ هنا (عُدّت من جهازٍ ثانٍ أو قبل خمس دقائق): تُجلب الآن — كانت تبقى تُرفع
+     * وتُردّ عند كلّ بيعةٍ حتى يحين جلبُها. */
+    const countedNew = res.refused.some((r) => r.why === "counted" && !negNow().counted.has(r.productId));
+    if ((!res.active || countedNew) && negMod && negKeyRef.current) void negMod.refreshNeg(negKeyRef.current, countedNew ? { counted: true } : {});
+    const byPid = new Map(res.refused.map((r) => [r.productId, r]));
+    /* ١) رصيدٌ طازجٌ واحد لكلّ مادّةٍ مرفوضة (sharedAsk يجمع أسئلتها). */
+    const fresh = new Map<string, { stock: number | null; pooled: boolean; asked: boolean }>();
+    await Promise.all([...new Set(lines.map((l) => l.product_id as string))].map(async (pid) => {
+      const r = byPid.get(pid);
+      if (!r) return;
+      const f = { stock: r.why === "gone" ? null : r.stock, pooled: false, asked: false };
+      const row = r.why === "gone" ? undefined : prodRow(pid);
+      if (row) {
+        const ans = await askServer(row).promise;
+        if (ans.kind === "row" && ans.row.id === row.id) {
+          const s2 = sellableRow(ans.row, ans.pool);
+          f.stock = s2.stock; f.pooled = !!s2.pooled; f.asked = true;
+        }
+      }
+      fresh.set(pid, f);
+    }));
+    /* ٢) والرفُّ الواحد يُقسم على سطور المادّة (0267: كارتونٌ وعلبٌ معاً): ما لم يُسأل عنه أوّلاً، ثمّ المرفوضةُ بترتيب السلّة — كلٌّ
+     *    بما يبقى قبله. «يغطّيه الطازج» و«ما يُبقى منه» كانا لكلّ سطرٍ برصيد الصفّ كلِّه، فسطران يُبقيان أكثرَ من الرفّ. */
+    const left = new Map<string, number | null>();
+    for (const [pid, f] of fresh) {
+      if (f.stock == null) { left.set(pid, null); continue; }
+      let s0 = f.stock;
+      for (const o of cart) if (o.kind === "product" && !o.ret && o.product_id === pid && !lines.includes(o)) s0 -= lineStockQty(o);
+      left.set(pid, Math.round(s0 * 1000) / 1000);
+    }
+    const judged = lines.map((l) => {
+      const pid = l.product_id as string;
+      const r = byPid.get(pid);
+      const f = fresh.get(pid);
+      if (!r || !f) return null;
+      if (f.asked && f.pooled) return null;
+      const rem = left.get(pid) ?? null;
+      if (f.asked && rem != null && unitCap({ ...l, stock: rem }) >= l.qty) { left.set(pid, Math.round((rem - lineStockQty(l)) * 1000) / 1000); return null; }
+      const keepQty = rem == null ? 0 : Math.max(0, Math.min(l.qty, unitCap({ ...l, stock: rem })));
+      if (rem != null) left.set(pid, Math.round((rem - lineStockQty({ ...l, qty: keepQty })) * 1000) / 1000);
+      const per = perOf(l);
+      // بوحدة السطر (ما يبقى له): المفردُ × عددِه، والكارتونُ ÷ علبِه (0267).
+      const shown = rem == null ? null : per ? Math.round(rem * per * 1000) / 1000
+        : isPackLine(l) ? Math.round((rem / (l.packPer as number)) * 1000) / 1000 : rem;
+      // والسطرُ يأخذ رصيدَ الصفّ كلَّه (لا الباقي): سقفُه يطرح إخوتَه بنفسه (shareCap).
+      return { line: { id: l.id, name: l.name, qty: l.qty, stock: shown, why: r.why, keep: keepQty } as NegRefusedLine, keep: { qty: keepQty, stock: f.stock } };
+    });
+    const bad = judged.filter((x): x is NonNullable<typeof x> => !!x);
+    if (!bad.length) return null;
+    const keep: Record<string, { qty: number; stock: number | null }> = {};
+    for (const b of bad) keep[b.line.id] = b.keep;
+    /* «كلُّ السلّة» بسطور البيع وحدها: سلّةُ تبديلٍ (راجعٌ ومادّةٌ مرفوضة) كانت تُعرض «شيل وكمّل» فيبقى الراجعُ وحده — وتكمل البيعةُ
+     * إرجاعاً خالصاً يُخرج نقداً بلا تأكيد (doReturn). */
+    const allCart = cart.filter((l) => !l.ret).every((l) => keep[l.id] && keep[l.id].qty <= 0);
+    return { lines: bad.map((b) => b.line), allCart, keep };
+  };
+  /* «جرّب مرّة ثانية»: بعد أن تُغلق النافذةُ تكمل البيعةُ بإقراراتها السابقة — بالرسمة الجديدة لا بإغلاقٍ يراها مفتوحة (الإتمامُ لا
+   * يجري والنافذةُ مفتوحة). والسلّةُ هي هي، فلا شيءَ مشتقٌّ منها يتأخّر. و«شيل الزايد» لا يكمل (انظر onRemove). */
+  useEffect(() => {
+    const a = negResumeRef.current;
+    if (!a || negChk) return;
+    negResumeRef.current = null;
+    // ولا تكمل إلى إرجاعٍ خالص أبداً (لا سطرَ بيعٍ باقٍ): ذاك له زرُّه وتأكيدُه.
+    if (cart.some((l) => !l.ret)) void checkout(a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, negChk]);
+
   const checkout = async (ack: CheckoutAck = {}) => {
     if (cart.length === 0 || busy) return;
+    /* 0266: نافذةُ الوضع مفتوحة ⇒ لا إتمام. F2 (وتأكيدُ نافذةٍ تحتها) كان يصل هنا فيسأل الخادمَ ثانيةً، وجوابٌ يقبل الآن
+     * يُتمّ البيعةَ خلف نافذةٍ تقول «ما تكمل» وتبقى فوق شاشة «تمّ». زرّاها يكملان بعد أن تُغلق (negResumeRef). */
+    if (negChk) {
+      // نافذةٌ على الشاشة ⇒ زرّاها يقرّران. ولم تُرسم قطّ (قطعتُها فشلت أو تُحمَّل) ⇒ تُغلق ويُسأل من جديد — لا زرٌّ ميّتٌ بلا كلمة.
+      if (negChkShownRef.current) return;
+      setNegChk(null);
+    }
     // الحرّاسُ هنا لا على الزرّ وحده: F2 كان يصل هنا مباشرةً فيسجّل إرجاعاً خالصاً
     // «بيعاً» بمجموعٍ صفر — البضاعة ترجع للمخزن والنقدُ يخرج للزبون بلا قيد.
     if (pureReturn) { void doReturn(); return; }
@@ -2579,6 +3485,38 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return;
     }
     if (needsDebtName) { playWarning(); return; }
+    /* 0267: سطرُ الكارتون يُباع بكارتونه كما هو على صفّ المادّة الآن — كارتونٌ انشال أو تبدّل عددُه (من جهازٍ آخر، أو مسودّةٌ قديمة)
+     * كان سيُرسل stock_qty بعدده القديم: الرصيدُ ينقص بعددٍ لا يعرفه الخادمُ كارتوناً فيُكلَّف علبة. ولا كارتونَ قبل أن يعرفه الخادم. */
+    if (cart.some((l) => isPackLine(l))) {
+      const pm = packMod ?? await withTimeout(loadPackMod(), 4000).catch(() => null /* swallow-ok: بلاه يُقال errors.network أدناه والسلّةُ باقية */);
+      if (!pm) { playWarning(); toast.error(t("errors.network")); return; }
+      /* ما لا تطابقه القائمةُ يُسأل عنه الخادم قبل أن يُقال «تغيّر»: قائمةٌ بائتة لا تعرف كارتوناً عُرّف بعد فتحها (والمسحُ لقيه من
+       * الخادم) كانت تقف بـ«تغيّر» كاذبة. والقائمةُ المطابقة قد تكون بائتةً أيضاً — والخادمُ يرفض سطراً لا يطابق (pack_changed). */
+      for (const l of cart) {
+        if (!isPackLine(l)) continue;
+        const listRow = prodById.get(l.product_id ?? "");
+        const k = pm.currentPack(listRow, l.packId);
+        if (k && k.per === l.packPer) continue;
+        const ans = await askServer(listRow ?? ({ id: l.product_id, name: l.name, barcode: l.barcode } as Product)).promise;
+        /* بلا ترقيع القائمة هنا: ترقيعُها يبدّل السلّةَ (رصيدٌ وكلفة) أثناء الضغطة، فيقف الإتمامُ بصمت عند «السلّةُ تغيّرت» — مقيسٌ
+         * بالفحص. الحكمُ بالصفّ الطازج يكفي، والقائمةُ تتحدّث بعد البيعة. */
+        if (ans.kind === "row") {
+          const k2 = pm.currentPack(ans.row, l.packId);
+          if (k2 && k2.per === l.packPer) continue;
+        }
+        playWarning();
+        toast.error(ans.kind === "unreachable" ? t("errors.network") : pm.say.packSay({ kind: "changed", name: l.name, pack: l.packName ?? "" }));
+        return;
+      }
+      const ready = await packReadyNow();
+      if (ready !== "ready") {
+        const l = cart.find((x) => isPackLine(x)) as Line;
+        playWarning();
+        toast.error(ready === "unreachable" ? t("errors.network")
+          : pm.say.packSay({ kind: "notReady", name: l.name, pack: l.packName ?? "", per: l.packPer as number, unit: pm.say.packWords().box }));
+        return;
+      }
+    }
     /* «تاريخ المبيع» (0242): يُحكم قبل أيّ سؤالٍ للخادم — يومٌ لا يُقبل يُقال هنا باسمه، ولا يُرسل
      * ليُرفض بعد مهلة. والتوصيلُ لا يُؤرَّخ: طلبُه يُختم «هسّة» وذمّةُ السائق تبدأ اليوم. */
     let saleAt: string | null = null;
@@ -2606,9 +3544,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     checkingRef.current = true;
     setChecking(true);
     const genAtClick = priceGen();
+    /* 0266: سطورُ الوضع تُسأل مع سؤال الأسعار (بالتوازي) وتُحكم تحت القفل نفسِه — ضغطةٌ ثانية أثناءها لا تبدأ بيعةً موازية.
+     * وإعادةٌ لمرجعٍ وافق عليه الخادمُ بنفس السلّة لا تُسأل ثانيةً: محاولةٌ مجهولةُ المصير ربما ثبتت، ورفضُها الآن (الوضعُ انتهى
+     * بينهما) يحبس البيعةَ بين «ربما انسجلت» و«ما تكمل». */
+    // 0267: «فوق رصيده» بما يبقى بعد سطور المادّة الأخرى (shareCap) — علبٌ فوق كارتونٍ أخذ الرفَّ كانت تُباع بلا سؤال.
+    const negLines = cart.filter((l) => l.negLift && l.kind === "product" && !l.ret && !!l.product_id && l.qty > shareCap(l));
+    const negFp = negLines.map((l) => `${l.id}:${l.qty}:${l.saleUnit ?? ""}`).join("|");
+    const negSkip = negLines.length === 0 || (!!saleRefRef.current && negOkRef.current?.ref === saleRefRef.current && negOkRef.current.fp === negFp);
+    const negP = negSkip ? null : negCheckNow(negLines);
     let ep: Awaited<ReturnType<typeof checkPriceEpoch>> = null;
-    try { ep = await withTimeout(checkPriceEpoch(clinicId), 4000); } catch { ep = null; }
-    finally { checkingRef.current = false; setChecking(false); }
+    let negBad: Awaited<ReturnType<typeof negJudge>> = null;
+    try {
+      try { ep = await withTimeout(checkPriceEpoch(clinicId), 4000); } catch { ep = null; }
+      if (negP) negBad = await negJudge(negLines, await negP);
+    } finally { checkingRef.current = false; setChecking(false); }
     // السلّةُ تغيّرت أثناء السؤال (سطرٌ أُضيف، أو بيعةٌ تمّت وبدأت أخرى) — الضغطةُ لسلّةٍ لم تعد.
     if (cartRef.current !== cart) return;
     if (ep?.changed || priceGen() !== genAtClick || listStale()) {
@@ -2616,6 +3565,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     }
     const rep = cart.filter((l) => repriced.has(l.id));
     if (rep.some((l) => !ack.priceIds?.includes(l.id))) { playWarning(); setPriceAsk({ lines: rep, ack }); return; }
+    /* ومرجعٌ قائمٌ هنا = محاولةٌ سابقةٌ مجهولةُ المصير (المرجعُ الجديد يولد بعد هذه الحرّاس): لا «شيل وكمّل» يغيّر سلّتَها تحت مرجعها. */
+    if (negBad) { playWarning(); setNegChk({ ...negBad, ack, locked: !!saleRefRef.current }); return; }
     /* الإقرارُ بالسطور التي سُمّيت لا بنعمٍ عامّة: سطرٌ صار كبيراً أو منتهياً والنافذةُ مفتوحة
      * (جوابُ خادمٍ متأخّر أضافه خلفها) لم يُسمَّ — فيُسأل عنه، ولا يمرّ بإقرارِ غيره. */
     const big = bigLines();
@@ -2632,6 +3583,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * مسودّةٌ رجعت بعد تحديث) — ورفضُ هذه لا يقول شيئاً عن تلك. */
     const freshRef = !saleRefRef.current;
     ensureRef();
+    if (negLines.length > 0 && saleRefRef.current) { negOkRef.current = { ref: saleRefRef.current, fp: negFp }; setNegOkGen((g) => g + 1); }
     if (exp.length > 0 && saleRefRef.current) {
       if (expiredAckRef.current?.ref !== saleRefRef.current) expiredAckRef.current = { ref: saleRefRef.current, names: new Map() };
       for (const l of exp) expiredAckRef.current.names.set(l.id, l.name);
@@ -2639,32 +3591,36 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
-        // Sub-unit sale → deduct the precise box fraction (e.g. 5 of 20 pills = 0.25 box);
-        // rounded to 3 decimals to keep stock free of binary-float drift.
-        const isSub = l.kind === "product" && l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
-        const stock_qty = l.product_id == null ? 0
-          : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
-          : l.qty;
-        const unit_label = l.byWeight ? t("retail.unitKg", "كغ")
-          : l.kind === "product" && l.hasSubUnit
-          ? (isSub ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox"))
-          : null;
+        // Sub-unit sale → deduct the precise box fraction (e.g. 5 of 20 pills = 0.25 box); a carton (0267) → its
+        // boxes. Rounded to 3 decimals to keep stock free of binary-float drift (lineStockQty).
+        const stock_qty = lineStockQty(l);
+        const unit_label = lineLabel(l);
         // سطر راجع ⇒ كميةٌ سالبة بالفاتورة وردٌّ للمخزون (0122). الاسم يحمل
         // كلمة «راجع» فتقرأها الفاتورة المطبوعة والتقارير بلا أي تفسير.
         const s = l.ret ? -1 : 1;
         const sid = cloudServiceId(l);
         return {
           product_id: l.product_id,
-          name: l.ret ? `${t("retail.retPrefix", "راجع")} — ${l.name}` : l.name,
+          name: l.ret ? `${retTag(l)} — ${l.name}` : l.name,
           barcode: l.barcode,
-          qty: s * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          // الراجعُ بنسبته (سعرُه بالفاتورة ما رُدّ) وكلفتُه كاملة: القطعةُ ترجع للرفّ والباقي ربحُ العيادة.
+          qty: s * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,
           stock_qty: s * stock_qty, unit_label,
+          // 0282: سطرُ الدولار — دينارُه (unit_price) بسعر اليوم، والخادمُ يطابقه بسعره بالدولار ويختمه على السطر.
+          ...(l.usd && !l.ret ? { price_currency: "USD" as const, unit_price_usd: (l.usd.c / 100).toFixed(2) } : {}),
           // خدمةٌ من الكتالوج (0252): الخادمُ يخطّطها من وصفتها — أو من مستهلكات الحالة إن عُدّلت (لكلّ حالةٍ واحدة).
           // ومعرّفٌ ليس uuid لا يُرسل (cloudServiceId): الخادمُ لا يعرفه ويرفض به البيعةَ كلَّها.
           // وسطرٌ بلا مادّة ليس خدمة (دواءٌ أو لقاحٌ من تبويب الأدوية) يقولها بـnull صريح: غيابُ المفتاح يقرؤه الخادمُ «جهازاً
           // ما تحدّث» ويصنّفه بالاسم (old_device) — لقاحٌ اسمُه اسمُ خدمةٍ لها وصفة كان يُقال عنه «ما انخصمت مستهلكاتها، حدّث
           // الأجهزة». وبندُ خدمةٍ بلا معرّفٍ يعرفه الخادم (مختبرٌ ما طابق، كتالوجٌ قديم) خدمةٌ فعلاً: يبقى بلا المفتاح فيقول عنه اسمُه.
           ...(sid ? { service_id: sid, ...(Array.isArray(l.consumables) ? { consumables: l.consumables } : {}) } : !l.product_id && l.kind !== "service" ? { service_id: null } : {}),
+          // 0269: سطرُ جرعة — مادّتُه وما يُخصم منها لقطةُ الإعطاء، ومعرّفُ معلَّقه يختمه الخادمُ بالمعاملة نفسِها.
+          // والكميةُ كمّيةُ الجرعة بوحدتها والسعرُ لوحدتها (شكلُ بيع المفرد/العلبة) — _product_line_cost يستدلّ على الوحدة بالنسبة بينهما:
+          // «١ ومخصومٌ ٢» كان يُرفض pack_changed، و«١ ومخصومٌ ٠٫٢» يُكلَّف وحدةً صغرى واحدة عن اثنتين (مراجعةٌ عدائيّة).
+          ...(l.dose ? {
+            product_id: l.dose.productId, qty: l.dose.qty, unit_price: Math.round((lineUnit(l) / l.dose.qty) * 100) / 100,
+            stock_qty: l.dose.productId ? (l.dose.stockQty ?? 0) : 0, dose_charge: l.dose.charge,
+          } : {}),
         };
       });
       // Delivery fee kept by the clinic → a real service line on the invoice, so
@@ -2719,8 +3675,36 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       let invoice: Invoice;
       setPaying(true);
       try {
-        invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+        /* 0282: سطرُ دولار ⇒ بابُ البيع بسعرين (بجرعاتها إن وُجدت) بسعر الصرف الذي حُسبت به السطور — سطورٌ بسعرين مختلفين لا تُرسل. */
+        const usdRids = Array.from(new Set(cart.filter((l) => l.usd && !l.ret).map((l) => l.usd!.rid)));
+        if (usdRids.length > 1) throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
+        invoice = await withTimeout(usdRids.length === 1
+          ? import("@/lib/dualSale").then((m) => m.dualCheckout(items, { ...meta, fx_rate_id: usdRids[0] }))
+          : items.some((i) => i.dose_charge)
+            ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
+            : repo.retailCheckout(items, meta), 12000);
       } catch (e) {
+        /* 0282: سعرُ الصرف تغيّر بين الحساب والبيعة — سطورُ الدولار تُحسب بسعر اليوم ويُقال، والكاشيرُ يراجع المجموعَ ويضغط ثانيةً. */
+        if (String((e as { message?: string } | null)?.message ?? "").includes("usd_rate_changed")) {
+          try {
+            const m = await import("@/lib/dualSale");
+            const r = await m.dualRate();
+            if (r.ok) {
+              const r1e4 = r.rate.rate1e4.toString();
+              setCart((c) => c.map((x) => (x.usd ? { ...x, usd: { ...x.usd, rid: r.rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, r.rate.rate1e4) } : x)));
+            }
+          } catch { /* swallow-ok: الرسالةُ أدناه تقول «حدّث» — والخادمُ يرفض ثانيةً ما لم يتطابق */ }
+          if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
+          setPaying(false);
+          throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
+        }
+        /* جرعةٌ انحسبت أو انلغت من جهازٍ آخر: سطورُها تُشال (المعلَّقُ من جديد)، والتلميحُ يقوله؛ والكاشيرُ يكمل بما بقي. */
+        if (doseMod?.isDoseStale(e)) {
+          void resyncDoses(doseMod.isDoseLate(e));
+          if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
+          setPaying(false);
+          throw Object.assign(new Error("dose_charge_stale"), { code: "P0001", hint: doseMod.isDoseLate(e) ? doseMod.say.doseLate() : doseMod.say.doseStale() });
+        }
         /* رفضٌ حاسم **لمحاولةٍ أولى** ⇒ لا شيء ثُبّت بهذا المرجع، فهو حرّ: إبقاؤه كان يترك
          * الدفعةَ «معلَّقة» للأبد (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ وكلُّ جسر. أمّا
          * إعادةٌ رُفضت فمرجعُها قد يكون ثُبّت بمحاولةٍ قبلها — تحريرُه يسجّل البيعةَ مرّتين. */
@@ -2806,10 +3790,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const invItems: InvoiceItem[] = cart.map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
         product_id: l.product_id,
-        name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
+        name: `${l.ret ? `${retTag(l)} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
         barcode: l.barcode,
-        qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
-        unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
+        qty: sign(l) * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost, line_total: sign(l) * l.qty * lineUnit(l),
+        unit_label: lineLabel(l),
+        /* 0282: الوصلُ الفوريّ بسعر الدولار وسعر الصرف كإعادة الطباعة — بلاهما طلع ديناراً صِرفاً وطلبُ المالك «سعرُ الدولار داخل الفاتورة». */
+        ...(l.usd && !l.ret ? { unit_price_usd: l.usd.c / 100 } : {}),
       }));
       if (feeToClinic) {
         invItems.push({
@@ -2824,6 +3810,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // the receipt/print UI even if Supabase stalls mid-flow.
       // وفيها سطرٌ قد يُخصم له (وصفة، تعديلُ حالة، أو خدمةٌ والملخّصُ مجهول) أو سطرُ مادّة (0253: الرصيدُ ينزل تحت الصفر
       // ولا يُقصّ) ⇒ الشاشةُ تقرأ دفترَها وتقول العجزَ والسالب (noticeLine). وملخّصٌ يصل بعدها يكمّل القرار (الأثرُ بعد done).
+      /* 0266: يُطوى بإشعار «تمّ» سالبُ كلّ مادّةٍ يغطّيها الوضعُ لحظةَ البيعة (حيّةٌ وما انعدّت وكلفتُها موجبة) لا ما علّمه وحده: سطرٌ
+       * بيع من قائمةٍ أقدم من الخادم نزل تحت الصفر بلا علامة، ومستهلكُ وصفة — السالبُ فيهما متوقّعٌ حتى تُعدّ، وزرُّ «لا تذكّرني» على
+       * سطرهما كان يُسكت المادّةَ بعد الوضع أيضاً. والمعدودةُ والمجمَّعةُ وما بلا كلفة فرقٌ يُقال باسمه. */
+      setNegChk(null); setBigSale(null); setExpiredAsk(null); setPriceAsk(null);   // نوافذُ التأكيد لا تبقى بعد «تمّ»
+      const negSnapDone = negNow();
+      const foldIds = new Set(cart.filter((l) => l.negLift && !l.ret && l.product_id).map((l) => l.product_id as string));
+      if (negSnapDone.active) {
+        for (const p of products) if (liftFor(p, null, negSnapDone)) foldIds.add(p.id);
+        for (const l of cart) if (l.kind === "product" && !l.ret && l.product_id && liftFor(prodRow(l.product_id), null, negSnapDone)) foldIds.add(l.product_id);
+      }
+      setDoneNegIds([...foldIds]);
       setDoneCons(cart.some((l) => noticeLine(l, consSum)));
       setDone({ invoice, items: invItems });
       clearSaleDraft(draftScope); // sale is final — drop the saved draft
@@ -2873,7 +3870,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       if (medByPet.size) {
         try {
           await withTimeout(
-            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts, soldAt))),
+            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts, soldAt, false))),
             12000,
           );
         } catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
@@ -3092,7 +4089,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             {doneCons && (
               <LoadBoundary scope="cons-notice" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setConsLazyTick((n) => n + 1); }}>
                 <Suspense fallback={null}>
-                  <ConsNoticeLazy mode="sale" invoiceIds={[done.invoice.id]} />
+                  <ConsNoticeLazy mode="sale" invoiceIds={[done.invoice.id]} negFold={doneNegIds} />
                 </Suspense>
               </LoadBoundary>
             )}
@@ -3359,6 +4356,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <CustomerDropdown cs={cs} onPick={pickCustomer} />
           </div>
           {picked && <CustomerPetsStrip hit={picked} attached={new Set(salePets.map((p) => p.id).filter((id): id is string => !!id))} onAttach={attachHitPet} />}
+          {/* 0270: ملفُّ الزبون — والسلّةُ فارغة وحدها: بيعةٌ بنصّها لا تُترك برابط. */}
+          {picked && cart.length === 0 && (
+            <Link to={`/customer/${encodeURIComponent(picked.key)}`} data-custfile
+              className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-700 dark:text-brand-300">
+              <User size={12} /> {t("retail.custFile")}
+            </Link>
+          )}
           {/* بالسطر النحيف: سطرُه الخاصّ تحت الحقول لا عمودٌ خامس — العمودُ كان يأخذ عرضَه كاملاً
               قبل الحقلين فيُعصران حرفين أو ثلاثة على شاشة لابتوب (قاسته المراجعة) لحظةَ الكتابة. */}
           {customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">{custClearBtn("slim")}</div>}
@@ -3425,9 +4429,53 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               <span className={cn(compact && "truncate")}>{t("retail.retModeOn", "وضع الراجع فعّال — كل باركود تمسحه ينزل بالسالب ويتقاص من حساب الزبون. اضغط «راجع» مرة ثانية للرجوع للبيع.")}</span>
             </span>
           )}
+          {/* البيعُ قبل الجرد (0266): شريحةٌ بلون العلامة (لا كهرمانيّ — ذاك للراجع)، وتبقى مركّبةً ما دامت للعيادة حالةٌ — رسائلُ
+              الوضع وانتقالُه تُقال منها. بالراجع تختفي ولا تُفكّ. */}
+          {negShow && (NegBarLazy ??= loadNegBar()) && (
+            <span className={retMode ? "hidden" : "contents"}>
+              <LoadBoundary scope="neg-bar" onRetry={() => { NegBarLazy = loadNegBar(); setNegTick((n) => n + 1); }}>
+                <Suspense fallback={null}>
+                  <NegBarLazy view={negBarView} says={negSays} claim={negClaim} onSaid={negOnSaid} compact={compact} />
+                </Suspense>
+              </LoadBoundary>
+            </span>
+          )}
           {/* بالعرض المضغوط شريطُ الأقسام يشارك زرَّ الراجع سطرَه — صفٌّ أقلّ فوق المنتجات */}
           {compact && !retMode && browseToggle}
         </div>
+        {/* ما لا يُباع تحت الصفر الآن — قبل البيعة، بأسبابه (فشلُ تحميلها يُقال هنا بمكانٍ يُرى). */}
+        {negChk && (NegChkLazy ??= loadNegChk()) && (
+          <LoadBoundary scope="neg-chk" onRetry={() => { NegChkLazy = loadNegChk(); setNegTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <MountFlag flag={negChkShownRef} onChange={setNegChkShown} />
+              <NegChkLazy open lines={negChk.lines} allCart={negChk.allCart} locked={!!negChk.locked}
+                onBack={() => setNegChk(null)}
+                onRetry={() => { const a = negChk.ack; setNegChk(null); negResumeRef.current = a; }}
+                onRemove={() => {
+                  const k = negChk;
+                  /* يقصّ ويقف — لا يكمل البيعة: المجموعُ المثبَّت (finalOverride) وساقُ الدفع يتبعان السلّةَ بأثرٍ بعد الرسم، فإكمالٌ بالرسمة
+                   * نفسِها سجّل المجموعَ القديم لبضاعةٍ انشال منها (مراجعةٌ عدائيّة بجذرٍ متزامن كالمتصفّح؛ المُصيِّرُ المتزامنُ بالفحص أخفاها).
+                   * يرى الكاشيرُ المجموعَ الجديد ويضغط «إصدار الفاتورة» — كنافذة تغيّر الأسعار. */
+                  setCart((c) => c.flatMap((l) => {
+                    const x = k.keep[l.id];
+                    if (!x) return [l];
+                    if (x.qty <= 0) return [];
+                    const { negLift: _lift, ...rest } = l;
+                    return [{ ...rest, qty: x.qty, stock: x.stock }];
+                  }));
+                  setNegChk(null);
+                }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+        {/* نسبةُ ما يُردّ وما يحدث بالمال — تحت الزرّ ما دام الراجعُ فعّالاً (قطعةٌ كسولة بنطاقها rpct). */}
+        {retMode && (RetBarLazy ??= loadRetBar()) && (
+          <LoadBoundary scope="ret-pct" onRetry={() => { RetBarLazy = loadRetBar(); setRetLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <RetBarLazy pct={cartRetPct} onPick={pickRetPct} />
+            </Suspense>
+          </LoadBoundary>
+        )}
 
         {/* Products | Services | Medications toggle */}
         {(!compact || retMode) && browseToggle}
@@ -3438,8 +4486,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <LoadBoundary scope="ptab-grid" onRetry={() => { TabGridLazy = loadTabGrid(); setTabLazyTick((n) => n + 1); }}>
               <Suspense fallback={null}>
                 <TabGridLazy tab={activeTab} products={products} services={catalog.services} listPrice={listPrice}
-                  flash={flash && caseBase(flash)} gridZoom={posV2 ? layout.gridZoom : 1} posV2={posV2}
-                  onProduct={tapProduct} onService={(sv: Service) => { addService(sv); }} onEdit={() => setTabEdit(activeTab)} />
+                  flash={flash && caseBase(flash)} gridZoom={posV2 ? layout.gridZoom : 1} posV2={posV2} liftOf={(p: Product) => liftFor(p, null, negView)}
+                  onProduct={tapProduct} onService={(sv: Service) => { addService(sv); }} onEdit={() => setTabEdit(activeTab)}
+                  packChips={(p: Product) => packsOfRow(p).slice(0, 2).map((k) => packChip(p, k, false))} />
               </Suspense>
             </LoadBoundary>
           ) : null
@@ -3510,6 +4559,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               </button>
             )}
 
+            {/* الترتيبُ والصور (0279) — للعيادة كلّها. */}
+            <LoadBoundary scope="pos-gridbar" onRetry={() => { GridBarLazy = loadGridBar(); setTabLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}>
+                <GridBarLazy sort={posSort} images={posImages} salesState={sales.state} compact={compact}
+                  onSort={pickPosSort} onImages={pickPosImages} onRetry={() => setSalesTry((n) => n + 1)} />
+              </Suspense>
+            </LoadBoundary>
+
             {/* السقف يقول إنه سقف: صمتُه كان يجعل المادة خارجه تبدو غير موجودة. */}
             {hiddenCount > 0 && (
               <p className="mb-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-subtle">
@@ -3539,54 +4596,74 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                   // A sub-unit product is only "out" when not even one single can be sold.
                   // Pooled products are never "out" here — they sell from the section pool.
                   const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
-                  const out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+                  const zero = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+                  /* 0266: الوضعُ يرفعها ⇒ ليست «نفدت»: رصيدُها بإشارته بحبرٍ محايد (تحت الصفر حتى تُعدّ — لا أحمر ولا كهرمانيّ، هذان
+                   * للنفاد والراجع). وما تمنعه كلفتُها وحدها يبقى باهتاً ويقول السببَ الصادق. */
+                  const lifted = zero && liftFor(p, null, negView);
+                  const out = zero && !lifted;
                   const byWeight = !!p.sold_by_weight;
                   /* رصيدٌ محلّيٌّ صفر: الكرتُ باهتٌ **لكنه يُضغط**. كان `disabled` —
                      زرّاً ميّتاً بلا رسالةٍ ولا سؤالِ خادم، والقائمةُ قد تكون بعمر
                      ساعات. الضغطُ يمرّ بـ`sellOrExplain`: يبيع إن كان الرصيدُ الحقيقيُّ
                      موجوداً، ويقول لماذا إن لم يكن. (خطة الطزاجة، ط٢) */
-                  const outHint = out ? t("retail.outTapToCheck", "رصيده صفر بآخر تحديث — اضغط ونتأكد من الخادم") : undefined;
+                  const outHint = !out ? undefined : costBlocked(p, null, negView) ? t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج")
+                    : t("retail.outTapToCheck", "رصيده صفر بآخر تحديث — اضغط ونتأكد من الخادم");
+                  /* بكسره: ربعُ علبةٍ تحت الصفر (٥ حبّات من شريط ٢٠) كانت تُرسم «-0»، وعلبةٌ ونصف «-2». */
+                  const signed = <bdi dir="ltr" data-neg-stock>{byWeight ? fmtKg(p.stock) : formatQty(p.stock)}</bdi>;
+                  const rowPacks = packsOfRow(p).slice(0, 2);
                   if (compact) {
                     return (
+                      <div key={p.id} className="flex shrink-0 items-stretch gap-1">
                       <button
-                        key={p.id} data-prodrow={p.id} data-out={out || undefined} onClick={() => { playTap(); tapProduct(p); }}
+                        data-prodrow={p.id} data-out={out || undefined} data-lifted={lifted || undefined} onClick={() => { playTap(); tapProduct(p); }}
                         title={outHint ? `${p.name} — ${outHint}` : p.name}
                         className={cn(
-                          "group flex shrink-0 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-start transition",
+                          "group flex min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-start transition",
                           out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
                             : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
                               : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                         )}
                       >
-                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{byWeight ? <Scale size={14} /> : <Package size={14} />}</span>
+                        {posImages && p.image_path
+                          ? <ProdThumb key={p.image_path} path={p.image_path} className="h-7 w-7 shrink-0 rounded-lg" icon={byWeight ? <Scale size={14} /> : <Package size={14} />} />
+                          : <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{byWeight ? <Scale size={14} /> : <Package size={14} />}</span>}
                         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{p.name}</span>
                         {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="shrink-0 rounded-full bg-danger-50 px-2 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                         <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-2xs font-bold tabular-nums", out ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-surface-2 text-ink-muted")}>
-                          {out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : formatNum(p.stock)}
+                          {out ? t("retail.out", "out") : lifted ? signed : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : formatNum(p.stock)}
                         </span>
                         <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
                         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white opacity-60 transition group-hover:opacity-100"><Plus size={13} /></span>
                       </button>
+                      {rowPacks.map((k) => packChip(p, k, true))}
+                      </div>
                     );
                   }
                   return (
+                    <div key={p.id} className="relative flex">
                     <button
-                      key={p.id} data-prodcard={p.id} data-out={out || undefined} title={outHint} onClick={() => { playTap(); tapProduct(p); }}
+                      data-prodcard={p.id} data-out={out || undefined} data-lifted={lifted || undefined} title={outHint} onClick={() => { playTap(); tapProduct(p); }}
                       className={cn(
-                        "group relative flex flex-col rounded-2xl border p-3 text-start transition",
+                        "group relative flex w-full flex-col rounded-2xl border p-3 text-start transition", rowPacks.length > 0 && "pb-10",
                         out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
                           : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
                             : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                       )}
                     >
-                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>
+                      {posImages && p.image_path
+                        ? <ProdThumb key={p.image_path} path={p.image_path} className="h-16 w-full rounded-xl" icon={byWeight ? <Scale size={17} /> : <Package size={17} />} />
+                        : <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>}
                       {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="absolute end-2 top-2 rounded-full bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">
-                        <span className="text-sm font-bold text-ink tabular-nums">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
-                        <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
+                        <span className="text-sm font-bold text-ink tabular-nums">{p.price_currency === "USD" ? <bdi dir="ltr">{usdTile(wholesale ? p.purchase_price_usd ?? p.sell_price_usd : p.sell_price_usd)}</bdi> : money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}
+                          {/* 0282: بسعرين — سعرُ الدولار تحت الدينار؛ السطرُ يختار عملتَه بالسلّة. */}
+                          {dualOf(p) && <span className="block text-2xs font-semibold text-success-700 dark:text-success-300" dir="ltr" data-tiledual>${Number(p.sell_price_usd).toFixed(2)}</span>}</span>
+                        <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : lifted ? signed : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
                       </span>
                     </button>
+                    {rowPacks.length > 0 && <div className="absolute inset-x-2 bottom-2 flex gap-1 overflow-hidden">{rowPacks.map((k) => packChip(p, k, false))}</div>}
+                    </div>
                   );
                 })}
               </div>
@@ -3721,7 +4798,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         : flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
-                        {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
+                        {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}{retPctOf(l) < 100 ? ` ${retPctOf(l)}%` : ""}</span>}
                         {l.ret && l.retPrior && (
                           /* مرتجعٌ لمادةٍ رُفع سعرُها (0226): افتراضُه سعرُ ما قبل الرفع، وضغطةٌ لمن اشترى بعده. */
                           <button type="button" data-retprior onClick={() => { playTap(); const rp = l.retPrior!; setCart((c) => c.map((x) => (x.id === l.id ? { ...x, unit_price: x.unit_price === rp.o ? rp.list : rp.o } : x))); }}
@@ -3772,6 +4849,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           </button>
                         </div>
                       )}
+                      {l.dose && <p className="mt-0.5 truncate text-2xs text-ink-subtle" data-dosenote={l.id}>{l.dose.note}</p>}
                       {l.med && (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle">
                           {l.med.kind === "vaccination"
@@ -3800,6 +4878,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         <span className="truncate">
                           {l.byWeight
                             ? t("retail.perKgShort", "/كغ")
+                            : isPackLine(l)
+                            ? `/ ${l.packName ?? ""}${l.packNote ? ` · ${l.packNote}` : ""}`
                             : l.kind === "product" && l.hasSubUnit
                             ? `/ ${l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle", "مفرد")) : t("retail.unitBox", "علبة")}`
                             : t("pos.each", "each")}
@@ -3842,7 +4922,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                             { u: "sub", label: l.subUnitName || t("retail.unitSingle", "مفرد") },
                           ] as const).map(({ u, label }) => {
                             /* باهتٌ لا ميّت (ط٢، الثابت ٣): رصيدُ السطر لقطة، والضغطُ يسأل الخادم. */
-                            const dim = unitCap({ ...l, saleUnit: u }) < 1;
+                            const dim = capFor({ ...l, saleUnit: u }, negView) < 1;
                             return (
                               <button
                                 key={u} type="button" data-saleunit={u} data-dim={dim || undefined}
@@ -3857,6 +4937,26 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                               </button>
                             );
                           })}
+                        </div>
+                      )}
+                      {/* كارتونُ المادّة بلا باركود: من سطرها بالسلّة كما من كرتها — سطرٌ آخر بكراتينه (k:…)، وسطرُ الوحدة كما هو. */}
+                      {l.kind === "product" && !l.ret && !isPackLine(l) && l.product_id && (() => {
+                        const row = products.find((x) => x.id === l.product_id);
+                        const ks = packsOfRow(row).slice(0, 2);
+                        return ks.length > 0 && row ? <div className="mt-1 flex flex-wrap gap-1" data-linepacks>{ks.map((k) => packChip(row, k, false))}</div> : null;
+                      })()}
+                      {/* 0282: مادّةٌ بسعرين — السطرُ بالدينار أو بالدولار (يختاره الكاشير)، والفاتورةُ بالدينار بسعر اليوم. */}
+                      {/* وسطرٌ بالدولار يبقى زرُّه ولو لم تعد المادّةُ بسعرين (حُذف سعرُها، صارت «دولار وحده»، مسودّةٌ رجعت بعدها): بلا زرٍّ يرجعه
+                        * للدينار كانت كلُّ بيعةٍ تُرفض و«بِعه بالدينار» بلا طريق (مراجعة 0282). */}
+                      {l.kind === "product" && !l.ret && !l.byWeight && (l.usd || (!retMode && dualOf(products.find((x) => x.id === l.product_id)))) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <button type="button" data-lineusd={l.id} aria-pressed={!!l.usd} onClick={() => { playTap(); void toggleLineUsd(l); }}
+                            title={l.usd ? t("retail.dual.toIqd") : t("retail.dual.toUsd")}
+                            className={cn("inline-flex items-center gap-0.5 rounded-lg border px-2 py-0.5 text-2xs font-bold tabular-nums transition",
+                              l.usd ? "border-success-500 bg-success-600 text-white" : "border-success-200 bg-success-50 text-success-700 hover:bg-success-100 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-300")}>
+                            {l.usd ? <bdi dir="ltr">${(l.usd.c / 100).toFixed(2)}</bdi> : <>$ {t("retail.dual.chip")}</>}
+                          </button>
+                          {l.usd && <span className="text-2xs text-ink-subtle" data-lineusdnote>{t("retail.dual.note", { rate: formatNum(Number(l.usd.r) / 10000) })}</span>}
                         </div>
                       )}
                     </div>
@@ -3903,7 +5003,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         عرض ضيّق فيضخّم كل صفّ ١٨px — أي ثلاثة أصناف أقل بالشاشة. */}
                     <span data-linetotal={l.id} className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold",
                       l.ret ? "text-amber-700 dark:text-amber-300" : "text-ink")}>
-                      {l.ret ? `− ${money(l.qty * l.unit_price)}` : money(l.qty * l.unit_price)}
+                      {l.ret ? `− ${money(l.qty * lineUnit(l))}` : money(l.qty * l.unit_price)}
                     </span>
                     <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Trash2 size={posV2 ? (denseCart ? 15 : 17) : 14} /></button>
                   </motion.div>
@@ -4300,7 +5400,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           {/* الراجع بالسلة — سطرٌ يقول ما الذي طُرح وكم صار يدفع فعلاً */}
           {retLines > 0 && (
             <div data-retsummary className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-              <span className="flex items-center gap-1.5"><Undo2 size={13} /> {t("retail.retInCart", { n: formatNum(retLines), defaultValue: "راجع ({{n}})" })}</span>
+              <span className="flex items-center gap-1.5"><Undo2 size={13} /> {t("retail.retInCart", { n: formatNum(retLines), defaultValue: "راجع ({{n}})" })}{cartRetPct < 100 ? ` · ${cartRetPct}%` : ""}</span>
               <span className="tabular-nums">− {money(retValue)}</span>
             </div>
           )}
@@ -4310,13 +5410,30 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             <div data-purereturn className="space-y-2 rounded-2xl border-2 border-warn-300 bg-warn-50 p-3 dark:border-warn-500/40 dark:bg-warn-500/10">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-sm font-black text-warn-800 dark:text-warn-200">
-                  <Undo2 size={15} /> {t("retail.pureReturn", "إرجاع للزبون")}
+                  <Undo2 size={15} /> {t("retail.pureReturn", "إرجاع للزبون")}{cartRetPct < 100 ? ` · ${cartRetPct}%` : ""}
                 </span>
                 <span className="font-display text-xl font-black tabular-nums text-warn-800 dark:text-warn-200">{money(returnValue)}</span>
               </div>
               <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
                 {t("retail.pureReturnWhy", "البضاعة ترجع للمخزن، والمبلغ ينسجّل بالسحوبات باسم كل صنف ووقته.")}
               </p>
+              {/* ما يبقى للعيادة بنسبةٍ أقلّ من ١٠٠، و«ماخذها بالدين؟» — هذا المسارُ يُخرج من الدرج ولا ينقص ديناً:
+                  مكانُه «المرتجع» على فاتورته (يُفتح بالبحث عنه، والسلّةُ تُفرغ فلا يُرجَع الشيءُ نفسُه مرّتين). */}
+              {(RetNoteLazy ??= loadRetNote()) && (
+                <LoadBoundary scope="ret-note" onRetry={() => { RetNoteLazy = loadRetNote(); setRetLazyTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <RetNoteLazy pct={cartRetPct} full={round2(retFull)} back={returnValue}
+                      onOpenReturns={onOpenReturns && !busy && !saleRefSaved ? () => {
+                        /* قبل أيّ محاولة وحدها: إرجاعٌ أُرسل ولم يُعرف مصيرُه (مرجعُه بالسلّة) قد يكون انسجّل — تفريغُ السلّة
+                           ثمّ إرجاعُه من «المرتجع» يُرجع القطعةَ مرّتين. والسلّةُ تُفرغ: الشيءُ نفسُه لا يبقى بانتظار «تأكيد الإرجاع». */
+                        playTap();
+                        const c = splitCustomerField(name);
+                        onOpenReturns(phone.trim() || c.phone || c.name);
+                        reset();
+                      } : undefined} />
+                  </Suspense>
+                </LoadBoundary>
+              )}
               {/* من وين تطلع الفلوس — نفس خيارات الدفع، فالصندوق يطابق */}
               <div className="grid grid-cols-3 gap-1.5">
                 {PAY_OPTIONS.map((o) => {
@@ -4393,13 +5510,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         return (
           <QtyPad
             open title={t("retail.qtyPadTitle", "كمية الصنف")} hint={l.name}
-            initial={l.qty} max={unitCap(l)}
+            initial={l.qty} max={capFor(l)}
             /* ما فوق سقف السطر يُرسل كما كُتب، ويُسأل عنه الخادمُ قبل القصّ (`raiseLine`). */
             allowOver={l.kind === "product" && !l.ret && !!l.product_id}
             onClose={() => setQtyPadFor(null)}
             onSubmit={(n) => {
               setQtyPadFor(null);
-              if (n <= unitCap(l)) { setQty(l.id, n); playSuccess(); } else raiseLine(l, n);
+              if (n <= l.qty || n <= capFor(l)) { setQty(l.id, n); playSuccess(); } else raiseLine(l, n);
             }}
           />
         );
@@ -4407,6 +5524,10 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
 
       {/* تسخينُ قطعة الورقة والإشعار مع الشاشة (ConsWarmLazy) — لا ترسم شيئاً، وفشلُها صامت؛ لا أوّلَ طلبٍ لها بعد البيعة. */}
       <ConsWarmBoundary><Suspense fallback={null}><ConsWarmLazy /></Suspense></ConsWarmBoundary>
+      {/* 0267: تسخينُ نصوص الكارتون (نطاقُ pks) مع الشاشة — أوّلُ مسحة كارتونٍ لا تنتظر قطعتَها. */}
+      <PackWarmBoundary><Suspense fallback={null}><PackWarmLazy /></Suspense></PackWarmBoundary>
+      {/* 0269: ونصوصُ سطور الطبلة (نطاقُ dosl) كذلك. */}
+      <PackWarmBoundary><Suspense fallback={null}><DoseWarmLazy /></Suspense></PackWarmBoundary>
       {/* ورقةُ مستهلكات سطر الخدمة (0252) — قطعةٌ كسولة بنطاقها rcp، وحارسُها بمكانه: فشلُ تحميلها لا يُسقط السلّة. */}
       {consFor && (() => {
         const l = cart.find((x) => x.id === consFor);
@@ -4459,8 +5580,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
          * بسعر المفرد ويُنشئ السطرَ بسعر الجملة. والتعليقُ نفسُه يقول إن الغرض
          * ألّا يختلف المعروضُ عن المحسوب. */
         const perKg = line?.byWeight ? line.unit_price : listPrice(p);
-        // الراجع بلا سقف؛ المنتج المجمّع يخصم من مخزون القسم فلا سقف محلّي له.
-        const stockKg = ret || p.pooled ? Infinity : (p.stock ?? 0);
+        // الراجع بلا سقف؛ المنتج المجمّع يخصم من مخزون القسم فلا سقف محلّي له؛ والوضعُ (0266) يرفعه ما دام يرفع كيلوَه.
+        const stockKg = ret || p.pooled || liftFor(p, null) ? Infinity : (p.stock ?? 0);
         return (
           // المفتاح يجبر إعادة التركيب عند تبديل المنتج: بلا هذا كانت مسوّدةُ
           // منتجٍ سابق تبقى مسلَّحةً على منتجٍ جديد بسعرٍ ومخزونٍ مختلفَين.
@@ -4523,7 +5644,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             {(bigSale?.lines ?? []).map((l) => (
               <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
-                <span className="shrink-0 font-semibold text-warn-700">{t("retail.bigSaleQty", "{{n}} من {{stock}}", { n: formatNum(l.qty), stock: formatNum(l.stock ?? 0) })}</span>
+                {/* الكارتونُ بعلبه (0267): «٤ من ١٠٠» عن أربعة كراتين من مئة علبة كان يقارن وحدتين. */}
+                <span className="shrink-0 font-semibold text-warn-700">{t("retail.bigSaleQty", "{{n}} من {{stock}}", { n: formatNum(isPackLine(l) ? lineStockQty(l) : l.qty), stock: formatNum(l.stock ?? 0) })}</span>
               </li>
             ))}
           </ul>
@@ -4631,9 +5753,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       {usdSale.tick > 0 && (UsdSaleLazy ??= loadUsdSale()) && (
         <LoadBoundary scope="usd-sale" onRetry={() => { UsdSaleLazy = loadUsdSale(); setUsdLazyTick((n) => n + 1); }}>
           <Suspense fallback={null}>
-            <UsdSaleLazy open={usdSale.open} products={products} first={usdSale.first} firstTick={usdSale.tick} wholesale={wholesale}
+            {/* البيعةُ لا تُغلق السلّة: إيصالُها وطباعتُها داخلها (كان توستاً وحده ولا ورقةَ للزبون). والسقفُ رصيدُ المادّة كالدينار،
+                والوضعُ (0266) يرفعه بحكم هذه الشاشة نفسِه: مفعّلٌ بعمر جوابه، والمادّةُ حيّةٌ وما انعدّت، وكلفتُها بالدولار موجبة. */}
+            <UsdSaleLazy open={usdSale.open} products={products} first={usdSale.first} firstPack={usdSale.pack} firstTick={usdSale.tick} wholesale={wholesale}
+              canExceed={(p) => { const now = negNow(); return now.active && !p.pooled && !p.farm_id && !now.counted.has(p.id) && Number(p.purchase_price_usd) > 0; }}
               onClose={() => setUsdSale((x) => ({ ...x, open: false }))}
-              onSold={() => { setUsdSale((x) => ({ ...x, open: false })); onSold(); }} />
+              onSold={() => onSold()} />
           </Suspense>
         </LoadBoundary>
       )}

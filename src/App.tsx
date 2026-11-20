@@ -28,7 +28,8 @@ import { safeNext, peekJoinCode } from "@/lib/authNext";
 const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login })), ["signup"]);
 const Dashboard = page(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })), ["onb"]);
 const OwnerDashboard = page(() => import("@/pages/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
-const PetPassport = page(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })));
+const PetPassport = page(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })), ["dsht"]);
+const CustomerFile = page(() => import("@/pages/CustomerFile").then((m) => ({ default: m.CustomerFile })), ["cfile"]);
 const VisitPage = page(() => import("@/pages/VisitPage"), ["vbk"]);
 const ScanChart = page(() => import("@/pages/ScanChart").then((m) => ({ default: m.ScanChart })));
 const BookingWizard = page(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
@@ -39,7 +40,7 @@ const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ defa
 const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
 const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
-const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
+const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })), ["ncase"]);
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })), ["pkg"]);
 const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ default: m.StockCount })), ["cnt"]);
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
@@ -331,6 +332,7 @@ function Shell() {
             <Route path="/join" element={<JoinClinic />} />
             <Route path="/" element={<HomeRoute />} />
             <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
+            <Route path="/customer/:key" element={<Protected><ClinicOnly><CustomerFile /></ClinicOnly></Protected>} />
             <Route path="/pet/:petId/visit/:visitId" element={<Protected><VisitPage /></Protected>} />
             <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />

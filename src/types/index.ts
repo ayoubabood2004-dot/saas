@@ -400,6 +400,8 @@ export interface TreatmentEntry {
   administered_by?: string; // who gave it
   /** When set, this scheduled dose belongs to a visit's treatment plan. */
   visit_id?: string | null;
+  /** 0269: تُحسب بيعاً حين تُعطى؟ البيعُ يكتب false (بِيعت أصلاً)، والغائبُ يختمه الخادم (معلَّقةٌ أو بزيارة ⇒ نعم). */
+  bill?: boolean | null;
   /** Marks a dose whose plan row was edited after the plan was first saved. */
   edited?: boolean;
   created_at: string;
@@ -732,6 +734,8 @@ export interface Product {
   units_per_box?: number | null;
   /** Price of a single sub-unit (used when selling by the sub-unit). */
   sub_unit_price?: number | null;
+  /** 0282: سعرُ الوحدة الفرعية بالدولار لمادّةٍ بسعرين — فارغٌ = سعرُ العلبة بالدولار ÷ عددها (`usdCentsOf`). */
+  sub_unit_price_usd?: number | null;
   /** يُباع بالوزن (كتلة، 0124): `sell_price` سعرُ الكيلو الواحد، و`stock`
    *  الرصيدُ بالكيلو. عند البيع يُختار الوزن فيُحسب السعر خطياً (نصف كيلو =
    *  نصف السعر، كيلوان = ضعفان). حصريّ مقابل الوحدات الفرعية والمجمّع. */
@@ -765,6 +769,8 @@ export interface ProductPack {
   per: number;
   purchase_price: number | null;
   sell_price: number | null;
+  /** 0282: سعرُ الكارتون بالدولار لمادّةٍ بسعرين — غائبٌ/فارغ = سعرُ العلبة بالدولار × العدد. */
+  sell_price_usd?: number | null;
 }
 
 export type PaymentMethod = "cash" | "card" | "transfer";
@@ -803,6 +809,9 @@ export interface Invoice {
   /** «تاريخ المبيع» (0242): لحظةُ الإدخال الحقيقية لفاتورةٍ سُجّلت بيومٍ سابق — created_at يومُ البيع.
    *  فارغٌ = أُدخلت بلحظتها. */
   recorded_at?: string | null;
+  /** 0271: الدينُ القديم (sale_kind = "opening") — «شنو» عليه الدين و«ليش». لغيره فارغان. */
+  opening_what?: string | null;
+  opening_why?: string | null;
   /** Walk-in customer captured at sale time (retail module; optional). */
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -1034,7 +1043,7 @@ export type LabStatusValue = "ordered" | "collected" | "running" | "resulted" | 
 /** نوعُ البيعة (0156). تجزئةٌ افتراضاً؛ والجملةُ تُعلَن حتى تُفرَّق بالتقارير —
  *  بيعُ الجملة هامشُه صفرٌ أو قريبٌ منه بالتصميم، فبلا علامةٍ يقرأ التقريرُ
  *  البيعةَ المتعمَّدة خسارةً. */
-export type SaleKind = "retail" | "wholesale";
+export type SaleKind = "retail" | "wholesale" | "opening";   // opening: دينٌ قديم قبل النظام (م٢، docs/customer-file-plan.md) — ليس بيعاً
 
 export interface SaleMeta {
   customer_name?: string | null;
@@ -1091,6 +1100,17 @@ export interface CustomerHit {
   matched: "phone" | "name" | "pet" | null;
   /** يُملأ حين يُطلب (`top`)، وإلا null. */
   top: CustomerTopItem[] | null;
+}
+/** ملفُّ الزبون اليدويّ (0270، customer_profiles): الهويّةُ cust_key يحسبها الخادم ويجمّدها، والعنوانُ والملاحظات بيد العيادة. */
+export interface CustomerProfile {
+  id: string;
+  cust_key: string;
+  name: string | null;
+  phone: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 }
 /** صفحةٌ من الدليل: `total` قبل الصفحة — null حين جاءت فارغة (يُحتفظ بالسابق). */
 export interface CustomerPage { rows: CustomerHit[]; total: number | null }
@@ -1158,6 +1178,11 @@ export interface CheckoutItem {
   /** 0252: this case's consumables instead of the recipe (vet or manager only). Absent/null = the recipe;
    *  [] = nothing for this case. A list equal to the recipe is dropped by the server. */
   consumables?: ConsumableEntry[] | null;
+  /** 0269: سطرُ جرعةٍ من الطبلة — معرّفُ معلَّقها (dose_charges)؛ البيعُ يمرّ من retail_checkout_doses فيختمه بمعاملته. */
+  dose_charge?: string;
+  /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `unit_price` دينارُه بسعر اليوم (الخادمُ يطابقه)، و`unit_price_usd` سعرُه بالدولار. */
+  price_currency?: "USD";
+  unit_price_usd?: string;
 }
 
 /** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */
@@ -1214,6 +1239,21 @@ export interface Purchase {
   item_count: number;       // total units received across all lines
   /** Amount paid to the supplier so far. Absent = fully paid (legacy). */
   amount_paid?: number;
+  /** عملةُ الفاتورة (0274): غائبٌ = دينار. فاتورةُ الدولار تُسجَّل بالدينار أيضاً بسعر يومها (`fx_rate`) — منه كلفةُ المخزون —
+   *  وحقيقةُ دَينها بالدولار: `total_usd` و`paid_usd`، و`amount_paid` حصّةُ المدفوع بنسبة الفاتورة. */
+  currency?: "IQD" | "USD";
+  fx_rate?: number | null;
+  total_usd?: number | null;
+  paid_usd?: number | null;
+  discount_usd?: number | null;
+  /** أجورٌ إضافية على الفاتورة (0276): توصيل، نقل… — كلٌّ باسمه ومبلغه بالدينار (ودولارُه لفاتورة الدولار) ولمن. ما «على الشركة»
+   *  داخل `total` (دَينُها)، وما «لغيرهم» خارجه. غائبٌ = بلا أجور (فاتورةٌ أو قاعدةٌ قبل 0276). */
+  charges?: PurchaseCharge[] | null;
+  /** مجموعا الأجور بالدينار: على الشركة (داخل total) ولغيرهم (خارجه). */
+  charges_company?: number | null;
+  charges_other?: number | null;
+  /** كيف حُسبت الأجور — مختومٌ من إعداد العيادة يومَ أُضيفت: cost تُوزَّع على كلفة السطور، expense سطرٌ بالأرباح والخسائر. */
+  charges_mode?: PurchaseChargesMode | null;
   payment_method?: PaymentMethod | null;
   /** Settlement state vs. total — derived from amount_paid. */
   status?: PaymentStatus;
@@ -1226,6 +1266,10 @@ export interface Purchase {
   staff_id?: string | null; // who recorded it
   created_at: string;
 }
+
+/** أجرةٌ إضافية على فاتورة شراء (0276): `amount` بالدينار، و`usd` لفاتورة الدولار؛ `payee` لمن: الشركة (دَينُها) أو غيرُها (السائق). */
+export interface PurchaseCharge { label: string; amount: number; payee: "company" | "other"; usd?: number }
+export type PurchaseChargesMode = "cost" | "expense";
 
 /** دفعة تسديد على فاتورة شراء آجلة — سجل «دفتر الديون» (ترحيل 0076).
  *  Every settlement leg against a supplier purchase; amount_paid on the
@@ -1242,6 +1286,14 @@ export interface PurchasePayment {
   staff_id?: string | null;
   /** جاءت من تسديدٍ على الحساب (0224) — صفُّه بدفتر الشركة. */
   entry_id?: string | null;
+  /** 0274: ما نقص من دين فاتورة الدولار (و`amount` حصّتُه بالدينار)، وما سُلّم فعلاً بعملته وسعره. */
+  usd?: number | null;
+  pay_currency?: "IQD" | "USD" | null;
+  handed?: number | null;
+  fx_rate?: number | null;
+  /** 0275: فرقُ صرف دفعة دين الدولار — حصّتُها بدينار يوم الشراء (amount) ناقصَ ما كلّفت بالدينار يومَ التسديد. موجبٌ ربح،
+   *  وnull = سعرُها مجهول (دفعةٌ قبل 0275) أو دَينٌ بالدينار. */
+  fx?: number | null;
   created_at: string;
 }
 
@@ -1288,8 +1340,15 @@ export interface CompanyEntry {
   voided_at?: string | null;
   voided_by?: string | null;
   void_reason?: string | null;
-  /** إلغاءُ تسديد: دفعاتُ الفواتير التي ردّها. */
-  void_detail?: { purchase_id: string; amount: number; paid_at: string }[] | null;
+  /** إلغاءُ تسديد: دفعاتُ الفواتير التي ردّها (ودولارُ كلٍّ منذ 0274). */
+  void_detail?: { purchase_id: string; amount: number; paid_at: string; usd?: number | null }[] | null;
+  /** 0274: عملةُ الصفّ — و`amount` بها (غائبٌ = دينار). والتسديدُ يحفظ ما سُلّم وبأيّ عملةٍ وسعر. */
+  currency?: "IQD" | "USD" | null;
+  pay_currency?: "IQD" | "USD" | null;
+  handed?: number | null;
+  fx_rate?: number | null;
+  /** 0281: سجلُّ تعديل الرصيد السابق والتسوية — يُضاف ولا يُمسح (يقرؤه `readEdits`). غائبٌ = قاعدةٌ قبل 0281. */
+  edits?: unknown[] | null;
 }
 
 /** ما وزّعه تسديدٌ على الحساب. */
@@ -1315,6 +1374,10 @@ export interface PurchaseItem {
   sell_price: number;       // sell price set/kept at receipt
   /** تاريخُ انتهاء هذه الوجبة كما استُلمت (0214). */
   expiry_date?: string | null;
+  /** 0274: كلفةُ السطر بالدولار (فاتورةُ الدولار)، وعملةُ بيع المادّة وسعرُها بالدولار. */
+  purchase_price_usd?: number | null;
+  sell_price_usd?: number | null;
+  sell_currency?: "IQD" | "USD" | null;
   created_at: string;
 }
 
@@ -1513,6 +1576,11 @@ export interface PurchaseDraftLine {
   expiry_date?: string | null;
   /** تاريخُ الوجبة المحفوظ عند **تعديل** فاتورة (0214): يُحفظ للسطر ولا يلمس تاريخَ المنتج. */
   batch_expiry?: string | null;
+  /** 0274 (record_purchase_fx): كلفةُ السطر بالدولار لفاتورة الدولار — والخادمُ يحسب دينارَها بسعر الفاتورة. */
+  purchase_price_usd?: number | null;
+  /** سعرُ البيع بالدولار لمادّة الدولار (بأيّ فاتورة)، وعملةُ بيع المادّة **الجديدة**. */
+  sell_price_usd?: number | null;
+  sell_currency?: "IQD" | "USD" | null;
 }
 
 /** Purchase-level metadata sent to the repo alongside the draft lines. */
@@ -1530,6 +1598,14 @@ export interface PurchaseMeta {
   notes?: string | null;
   purchased_at?: string | null;
   staff_id?: string | null;
+  /** 0274 (record_purchase_fx وupdate_purchase_fx وحدهما): عملةُ الفاتورة وسعرُها، والخصمُ والمدفوعُ بالدولار. */
+  currency?: "IQD" | "USD";
+  fx_rate?: number | null;
+  discount_usd?: number | null;
+  amount_paid_usd?: number | null;
+  /** 0276: الأجورُ الإضافية بعملة الفاتورة (`amount` دينارٌ لفاتورة الدينار ودولارٌ لفاتورة الدولار). **غائبٌ بالتعديل = تبقى المحفوظة**
+   *  (جهازٌ ما تحدّث)، و[] = بلا أجور. ولا يُرسل إلا لقاعدةٍ تعرفها (purchase_charges_state). */
+  charges?: { label: string; amount: number; payee: "company" | "other" }[];
 }
 
 /* ---------------- Services & non-barcode items ---------------- */
@@ -1804,6 +1880,34 @@ export interface DemoStockCount extends StockCount {
   source_product?: string | null;
 }
 
+/** سطرُ مادّةٍ بدينٍ قديم (0273): من المخزن (product_id) أو بالاسم — لا يُنقص المخزن وليس بيعاً. returned_qty ما رجع منه. */
+export interface OldDebtItem {
+  id: string;
+  clinic_id: string | null;
+  invoice_id: string;
+  product_id: string | null;
+  name: string;
+  qty: number;
+  /** بالدينار (لدين الدولار: دينارُ سعر الدولار بسعر يوم الكتابة — للعرض). */
+  unit_price: number;
+  unit_price_usd: number | null;
+  returned_qty: number;
+  created_at: string;
+}
+/** مرتجعُ موادّ دينٍ قديم (0273) — سطرٌ لكلّ مرتجع، ومرجعُ إعادته. */
+export interface OldDebtReturn {
+  id: string;
+  clinic_id: string | null;
+  invoice_id: string;
+  client_ref: string | null;
+  lines: { item_id: string; name: string; qty: number; value: number; product_id: string | null }[];
+  value: number;
+  cash_back: number;
+  note: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -1813,6 +1917,10 @@ export interface DemoDB {
   clinicVisits: ClinicVisit[];
   appointments: Appointment[];
   treatments: TreatmentEntry[];
+  /** 0269: مرآةُ dose_charges بالتجريبيّ. */
+  doseCharges?: DemoDoseCharge[];
+  /** 0270: ملفّاتُ الزبائن اليدويّة (مرآةُ customer_profiles). */
+  customerProfiles?: CustomerProfile[];
   admissions: Admission[];
   reminders: Reminder[];
   reminderMarks?: ReminderMark[];
@@ -1827,10 +1935,15 @@ export interface DemoDB {
   invoiceItems: InvoiceItem[];
   /** دفترُ الخصم على الدين (0241). */
   invoiceForgiveness?: InvoiceForgiveness[];
+  /** موادُّ الدين القديم ومرتجعاتُها (0273) — مرآةُ old_debt_items/old_debt_returns. */
+  oldDebtItems?: OldDebtItem[];
+  oldDebtReturns?: OldDebtReturn[];
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
   purchaseEffects?: PurchaseEffect[];
   purchasePayments?: PurchasePayment[];
+  /** 0276: إعدادُ العيادة لأجور المشتريات (clinic_prefs.purchase_charges_mode) — غائبٌ = «على الكلفة». */
+  purchaseChargesMode?: PurchaseChargesMode;
   companyCharges?: CompanyCharge[];
   /** دفترُ الشركة خارجَ الفواتير (0224). */
   companyEntries?: CompanyEntry[];
@@ -2572,9 +2685,40 @@ export interface ClinicDrug {
   family: DrugFamilyKey;
   in_mine: boolean;
   pos: number | null;
+  /** 0269: سعرُ الجرعة الواحدة — فارغٌ = من المادّة المربوطة × الكمّية، أو لا حساب. */
+  dose_price?: number | null;
+  /** 0269: المادّةُ بالمخزن التي تُخصم منها الجرعة، وكمّيّتُها منها (الغائبةُ ١) ووحدتُها. */
+  product_id?: string | null;
+  dose_qty?: number | null;
+  dose_unit?: "box" | "sub" | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+/** 0269: جرعةٌ معطاةٌ بالطبلة لدواءٍ له حساب — معلَّقةٌ حتى تُباع لزبونها. */
+export interface DoseCharge {
+  id: string;
+  pet_id: string;
+  pet_name: string;
+  /** اسمُ الدواء كما بالطبلة. */
+  name: string;
+  price: number;
+  /** المادّةُ وما يُخصم منها بوحدة الرصيد (العلبة)؛ null = سعرٌ بلا مخزن. */
+  product_id: string | null;
+  stock_qty: number | null;
+  dose_qty: number | null;
+  dose_unit: "box" | "sub" | null;
+  given_at: string;
+}
+/** 0269: صفُّ dose_charges كاملاً (المرآةُ التجريبيّة؛ السحابةُ تُرجع `DoseCharge` للمعلَّق وحده). */
+export interface DemoDoseCharge extends Omit<DoseCharge, "pet_name"> {
+  entry_id: string;
+  drug_id: string | null;
+  status: "pending" | "billed" | "void";
+  invoice_id: string | null;
+  billed_at: string | null;
+  voided_at: string | null;
+  created_at: string;
 }
 /** `after` غائب = آخرُ «أدويتي»، و`null` = أوّلُها، ومعرّفٌ = بعده مباشرة. */
 export type ClinicDrugOp =
@@ -2597,6 +2741,8 @@ export type ClinicDrugOp =
 export interface ClinicDrugGroup {
   id: string;
   name: string;
+  /** 0268: عائلةٌ أساسيّة (صفُّها بيد العيادة: تُسمّى وتُخفى وتُرتَّب) — null/غائبٌ = تصنيفٌ خاصّ. */
+  family?: DrugFamilyKey | null;
   pos: number | null;
   archived_at: string | null;
   created_at: string;

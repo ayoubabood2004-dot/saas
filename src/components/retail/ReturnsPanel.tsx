@@ -22,6 +22,11 @@ const loadReturnSheet = () => page(() => import("@/components/retail/ForgiveDial
 let ReturnSheetLazy = loadReturnSheet();
 /* وما رجع للمخزن من موادّ الخدمة بعد المرتجع (0252): قطعةُ «المستهلكات» بنطاقها المملوك rcp — كسولةٌ بحارسٍ
    بمكانها، لمرتجعٍ يلمس سطرَ خدمة وحده، ولا ينتظرها الحفظ. */
+/* 0273: الدينُ القديم بموادّه يترجّع من هنا أيضاً (حيث يدوّر الكادرُ عن المرتجع) — قطعتُه ونصوصُه كسولةٌ مع «دين قديم». */
+const loadOldDebtItems = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtItems })), ["odebt"]);
+let OldDebtItemsLazy = loadOldDebtItems();
+const loadOldDebtTag = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
+let OldDebtTagLazy = loadOldDebtTag();
 const loadConsNotice = () => page(() => import("@/components/retail/ConsumablesSheet").then((m) => ({ default: m.ConsumptionNotice })), ["rcp"]);
 let ConsNoticeLazy = loadConsNotice();
 
@@ -44,10 +49,12 @@ const PAY_META: { id: PaymentMethod; icon: typeof Banknote }[] = [
   { id: "transfer", icon: ArrowLeftRight },
 ];
 
-export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onChanged: () => void }) {
+export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invoice[]; onChanged: () => void;
+  /** بحثٌ يُفتح به التبويب (من «سوّه من المرتجع» بشاشة البيع): هاتفُ الزبون أو اسمُه. */
+  initialQ?: string | null }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQ ?? "");
   const [picked, setPicked] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [ret, setRet] = useState<Record<string, number>>({});
@@ -74,6 +81,7 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
   /** الفواتير المرشّحة: غير المرجعة، الأحدث أولاً، ويضيّقها البحث بالاسم
    *  أو الهاتف أو رقم الفاتورة. */
   const localCandidates = useMemo(() => {
+    // الدينُ القديم (0271) مرشّحٌ لموادّه المسجّلة (0273) — يترجّع بقطعته لا بأسطر الفاتورة.
     const live = invoices.filter((i) => (i.status ?? "paid") !== "refunded");
     const s = normalizeAr(q.trim().toLowerCase());
     const list = !s ? live : live.filter((i) =>
@@ -105,6 +113,7 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
     return () => { alive = false; clearTimeout(timer); };
   }, [serverQ, retry]);
   const candidates = serverQ && remote ? remote : localCandidates;
+  const pickedOpening = picked?.sale_kind === "opening";
 
   const loadItems = (id: string) => {
     const seq = ++pickSeq.current;
@@ -125,6 +134,7 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
     setNote("");
     const dominant = (inv.payment_details ?? []).filter((l) => l.amount > 0).sort((a, b) => b.amount - a.amount)[0]?.method;
     setMethod((dominant ?? inv.payment_method ?? "cash") as PaymentMethod);
+    if (inv.sale_kind === "opening") { setItems([]); setLoading(false); return; }
     loadItems(inv.id);
   };
 
@@ -198,7 +208,14 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
     return out.sort((a, b) => (b.inv.refunded_at ?? b.inv.created_at).localeCompare(a.inv.refunded_at ?? a.inv.created_at)).slice(0, 8);
   }, [invoices, todayISO]);
 
-  useEffect(() => { setQ(""); }, [picked]);
+  /* البحثُ يُمسح حين **يتبدّل** الاختيار — لا عند التركيب: كان يمسح بأوّل أثرٍ فيضيع بحثُ «سوّه من المرتجع»
+     (وتحت StrictMode يجري الأثرُ مرّتين — فالمقارنةُ بالسابق لا علمُ «أوّل مرّة»). */
+  const prevPicked = useRef(picked);
+  useEffect(() => {
+    if (prevPicked.current === picked) return;
+    prevPicked.current = picked;
+    setQ("");
+  }, [picked]);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr,400px]">
@@ -247,9 +264,18 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
                       {(inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي")}
                       <span className="chip bg-surface-2 font-mono text-2xs text-ink-muted">{invoiceNo(inv.id)}</span>
                     </span>
-                    <span className="block text-2xs text-ink-subtle">
-                      {formatDate(inv.created_at, i18n.language)} · {formatNum(inv.item_count)} {t("ret.pieces", "قطعة")}
-                    </span>
+                    {inv.sale_kind === "opening" ? (
+                      <span className="flex flex-wrap items-center gap-1.5 text-2xs text-ink-subtle">
+                        {formatDate(inv.created_at, i18n.language)}
+                        <LoadBoundary scope="odebt-tag" onRetry={() => { OldDebtTagLazy = loadOldDebtTag(); setLazyTick((n) => n + 1); }}>
+                          <Suspense fallback={null}><OldDebtTagLazy invoice={inv} /></Suspense>
+                        </LoadBoundary>
+                      </span>
+                    ) : (
+                      <span className="block text-2xs text-ink-subtle">
+                        {formatDate(inv.created_at, i18n.language)} · {formatNum(inv.item_count)} {t("ret.pieces", "قطعة")}
+                      </span>
+                    )}
                   </span>
                   <span className="text-sm font-extrabold tabular-nums text-ink">{money(inv.total)}</span>
                   <ChevronRight size={15} className="shrink-0 text-ink-subtle rtl:rotate-180" />
@@ -271,13 +297,19 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
                 </p>
                 <p className="text-2xs text-ink-subtle">{formatDate(picked.created_at, i18n.language)} · {t("ret.invTotal", { n: money(picked.total), defaultValue: "إجماليها {{n}}" })}</p>
               </div>
-              <Button size="sm" variant="secondary" data-retall
+              {!pickedOpening && <Button size="sm" variant="secondary" data-retall
                 onClick={() => { playTap(); setRet(Object.fromEntries(items.map((it) => [it.id, it.qty]))); }}>
                 {t("ret.allBtn", "إرجاع الكل")}
-              </Button>
+              </Button>}
             </div>
 
-            {loading ? (
+            {pickedOpening ? (
+              <LoadBoundary scope="odebt-items" onRetry={() => { OldDebtItemsLazy = loadOldDebtItems(); setLazyTick((n) => n + 1); }}>
+                <Suspense fallback={null}>
+                  <OldDebtItemsLazy invoice={picked} startReturn onChanged={(u: Invoice) => { setPicked(u); onChanged?.(); }} />
+                </Suspense>
+              </LoadBoundary>
+            ) : loading ? (
               <p className="p-6 text-center text-sm text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</p>
             ) : itemsErr != null ? (
               <div role="alert" className="flex flex-col items-center gap-2 p-6 text-center" data-retitems-failed>
@@ -328,7 +360,14 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
           <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-ink">
             <RotateCcw size={16} className="text-warn-600" /> {t("ret.sumTitle", "خلاصة المرتجع")}
           </h3>
-          {!picked || !calc ? (
+          {pickedOpening ? (
+            /* الدينُ القديم يترجّع بقطعته يساراً (معاينتُها هناك) — هنا شارتُه وحدها: نصوصُ odebt لمالكها (i18n-owned-guard). */
+            <div className="rounded-xl bg-surface-2 p-3" data-ret-odebt>
+              <LoadBoundary scope="odebt-tag" onRetry={() => { OldDebtTagLazy = loadOldDebtTag(); setLazyTick((n) => n + 1); }}>
+                <Suspense fallback={null}><OldDebtTagLazy invoice={picked} /></Suspense>
+              </LoadBoundary>
+            </div>
+          ) : !picked || !calc ? (
             <p className="rounded-xl bg-surface-2 p-4 text-center text-xs text-ink-subtle">{t("ret.pickFirst", "اختر فاتورة من القائمة أولاً.")}</p>
           ) : (
             <div className="space-y-2.5">

@@ -155,8 +155,9 @@ export function buildStocktake(
       category: p.category ?? null,
       buy, sell,
       systemQty: qty,
-      cost: qty * buy,
-      retail: qty * sell,
+      /* القيمةُ لما بالرفّ: رصيدٌ تحت الصفر (بيعٌ قبل الجرد، 0266) قيمتُه صفر لا سالبة — والكميةُ بإشارتها (الفرقُ يُحسب منها). */
+      cost: Math.max(qty, 0) * buy,
+      retail: Math.max(qty, 0) * sell,
       minStock: p.min_stock ?? null,
       expiry: p.expiry_date ? p.expiry_date.slice(0, 10) : null,
       daysToExpiry: days,
@@ -199,10 +200,13 @@ export function buildStocktake(
 
   /** يضمّ سطراً لمجاميع مجموعته وللمجاميع الكبرى معاً — بحسابٍ واحد لا اثنين. */
   const tally = (line: StocktakeLine, sub: StockTotals) => {
+    /* القطعُ بالرفّ كقيمتها: رصيدٌ تحت الصفر (0266) لا يطرح من مجموع الشركة — بطاقةُ الشركة بالمخزون تقول ١٠ والورقةُ ٦ كانتا
+     * عن الرفّ نفسِه، و«٦ قطعة · ١٬٠٠٠» تقيّم عشراً. والسطرُ يبقى بإشارته (الفرقُ يُحسب منه). */
+    const shelf = Math.max(line.systemQty, 0);
     if (line.kind === "product") { sub.products += 1; totals.products += 1; }
-    else { pooled.units += line.systemQty; pooled.cost += line.cost; pooled.retail += line.retail; }
-    sub.units += line.systemQty; sub.cost += line.cost; sub.retail += line.retail;
-    totals.units += line.systemQty; totals.cost += line.cost; totals.retail += line.retail;
+    else { pooled.units += shelf; pooled.cost += line.cost; pooled.retail += line.retail; }
+    sub.units += shelf; sub.cost += line.cost; sub.retail += line.retail;
+    totals.units += shelf; totals.cost += line.cost; totals.retail += line.retail;
   };
 
   const groups: StocktakeGroup[] = [];

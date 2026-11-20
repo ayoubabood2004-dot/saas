@@ -50,7 +50,9 @@ export function QtyPad({
 
   const cap = max == null || !Number.isFinite(max) ? Infinity : Math.max(0, Math.floor(max));
   const typed = raw === "" ? (initial ?? 0) : Number(raw);
-  const over = typed > cap;
+  /* «فوق المتوفّر» زيادةٌ فوق السقف وحدها: سطرٌ فوق سقفه (قائمةٌ نزلت، وضعٌ انتهى) وكتبتُ أقلَّ منه تنقيصٌ يُطبَّق كما هو — كانت تحمرّ
+   * وتقول «نتأكد من الخادم ونضيف المتاح» عن إنقاص. */
+  const over = typed > cap && typed > (initial ?? 0);
   const value = allowOver ? typed : Math.min(typed, cap);
 
   const press = (k: string) => {
