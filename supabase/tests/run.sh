@@ -13315,15 +13315,16 @@ chk "التسديدُ بعد شهر بسعر يومه (١٨٠٠ يكتبه ال�
     "select $(rv $MC "select (fx_rate_set(180000)).rate::numeric(10,0)::text")||'|'||$(rv $MV "select (settle_invoice_usd($MUSD, 40, 180000, 'cash', 40, null, 'm283-pay'))->'settlement'->>'received'")" "1800|72000.00"
 chk "  (الفاتورةُ مدفوعةٌ ٦٠\$ وباقيها صفر، وسعرُ يوم البيع عليها كما هو ١٤٦٠)" \
     "select paid_usd::text||'|'||(total_usd - paid_usd)::text||'|'||fx_rate::numeric(10,0)::text from invoices where id = $MUSD" "60.00|0.00|1460"
-chk "الرفض يرجّع النصفين: سعرُ الصرف تغيّر، ودفعةٌ أكبر من المجموع، وبلا سطر دولار، والجملة، والوزن، ومفردٌ لمادّةٍ بلا مفرد، ومادّةُ الدينار وحده بالدولار" \
+chk "الرفض يرجّع النصفين: سعرُ الصرف تغيّر، ودفعةٌ أكبر من المجموع، وبلا سطر دولار، والجملة، والوزن، ومفردٌ لمادّةٍ بلا مفرد، ومادّةُ الدينار وحده بالدولار، ومفردٌ لمادّةٍ صارت «دولار وحده» (لا يُباع علباً)" \
     "select $(rerr $MV "$(MXC "$MI" "$MUL" "$(MMETA m283-r1 "'00000000-0000-0000-0000-000000000000'" 19000 0 0)")")
             ||'|'||$(rerr $MV "$(MXC "$MI" "$MUL" "$(MMETA m283-r2 "$MRID" 19000 0 99)")")
             ||'|'||$(rerr $MV "$(MXC "$MI" "[]" "$(MMETA m283-r3 "$MRID" 19000 0 0)")")
             ||'|'||$(rerr $MV "$(MXC "$MI" "$MUL" "$(MMETA m283-r4 "$MRID" 19000 0 0) || jsonb_build_object('sale_kind', 'wholesale')")")
             ||'|'||$(rerr $MV "$(MXC "$MI" "[$(MU d4 1)]" "$(MMETA m283-r5 "$MRID" 19000 0 0)")")
             ||'|'||$(rerr $MV "$(MXC "$MI" "[$(MU d5 2 ',"sub":true')]" "$(MMETA m283-r6 "$MRID" 19000 0 0)")")
-            ||'|'||$(rerr $MV "$(MXC "$MI" "[$(MU d2 1)]" "$(MMETA m283-r7 "$MRID" 19000 0 0)")")" \
-    "usd_rate_changed|usd_partial_at_sale|mixed_no_usd|mixed_wholesale|usd_mixed|sub_changed|usd_mixed"
+            ||'|'||$(rerr $MV "$(MXC "$MI" "[$(MU d2 1)]" "$(MMETA m283-r7 "$MRID" 19000 0 0)")")
+            ||'|'||$(rerr $MV "$(MXC "$MI" "[$(MU d3 4 ',"sub":true')]" "$(MMETA m283-r8 "$MRID" 19000 0 0)")")" \
+    "usd_rate_changed|usd_partial_at_sale|mixed_no_usd|mixed_wholesale|usd_mixed|sub_changed|usd_mixed|sub_changed"
 chk "  (ولا فاتورةَ نزلت من كلّ المرفوض — ولا نصفُ الدينار — والدينارُ وحده ٤٨ كما كان)" \
     "select (select count(*) from invoices where clinic_id = '$MC')::text||'|'||(select stock::text from products where id = '${MX}d2')" "2|48.000"
 chk "بلا سطور دينار: فاتورةُ الدولار وحدها — مادّةٌ بسعرين بلا مفرد × ٢ بـ٤\$ دَيناً كلَّه (بسعر اليوم ١٨٠٠)" \

@@ -209,7 +209,7 @@ function textChecks(src) {
 
   ck("١١) معاينةُ الربح لمن يرى الأرباح، وبكلفة المستهلكات، و«—» ما دامت لا تُعرف (مستهلكاتٌ، أو سطرُ مادّةٍ بلا حساب الخادم)",
     /\{showProfit && <div data-profitpreview\b[^\n]*\{profitShown === null \? "—" : money\(profitShown\)\}<\/div>\}/.test(code)
-    && /const profitShown = consCost === null \|\| lineCostUnknown \? null : profit - consCost;/.test(code) && !/\bmoney\(profit\)/.test(code));
+    && /const profitShown = consCost === null \|\| lineCostUnknown(?: \|\| usdOn)? \? null : profit - consCost;/.test(code) && !/\bmoney\(profit\)/.test(code));
 
   /* ١٢) كلفةُ سطر المادّة (0255) من مرآة الخادم الوحيدة بـimport() — قطعةُ البيع لا تستورد وحدةً جديدة ثابتاً (٧)، ولا
    * تقريبَ يُكتب هنا ثانيةً. والمواضعُ التي تُنشئ كلفةَ سطرٍ تمرّ منها كلُّها، ولا `unit_cost: p.purchase_price` بعد. */

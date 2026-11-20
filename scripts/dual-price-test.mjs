@@ -73,7 +73,7 @@ async function load(muts = []) {
         'export * as U from "./src/lib/usdProduct.ts";',
         'export * as P from "./src/lib/packs.ts";',
         'export { repriceCart } from "./src/lib/cartReprice.ts";',
-        'export { dualCheckout, dualRate, dualReady, mixedCheckout } from "./src/lib/dualApi.ts";',
+        'export { dualCheckout, dualRate, dualReady, mixedCheckout, mixedTwin } from "./src/lib/dualApi.ts";',
         'export { demoUsdPrefs, demoUsdRateSet, demoUsdState, demoUsdCheckout } from "./src/lib/demoUsd.ts";',
         'export { buildTwinInvoiceHTML } from "./src/lib/invoicePrint.ts";',
         'export { iqdOf } from "./src/lib/usdMath.ts";',
@@ -99,7 +99,7 @@ const serverIqd = (cents, rate1e4) => { const n = BigInt(cents) * BigInt(rate1e4
 async function behaviour(M, say) {
   let ok = true;
   const c = (name, cond, detail) => { if (say) check(name, cond, detail); if (!cond) ok = false; };
-  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout } = M;
+  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout, mixedTwin } = M;
 
   /* أ) الحساب */
   const dual = { price_currency: "IQD", sell_price_usd: 10, sub_unit_price_usd: null, units_per_box: 3, has_sub_unit: true, sold_by_weight: false };
@@ -259,6 +259,12 @@ async function behaviour(M, say) {
     (DB().invoices ?? []).length === 2 && stockOf(DB(), dn.id) === 48 && stockOf(DB(), oil.id) === 92.6, `${(DB().invoices ?? []).length}|${stockOf(DB(), dn.id)}`);
   const solo = await mixedCheckout([], [{ product_id: two.id, qty: 2, unit_price_usd: "4.00" }], mm("m-2", { amount_paid: 0, final_total: 0, discount_usd: "0", paid_usd: "0" }));
   c("  وبلا سطور دينار: فاتورةُ الدولار وحدها ٨$ دَيناً كلَّه", solo.iqd === null && Number(solo.usd.total_usd) === 8 && Number(solo.usd.paid_usd) === 0);
+  // مراجعة 0283: علَمُ المفرد على مادّةٍ صارت «دولار وحده» (بلا مفرد) يُرفض — تجاهلُه كان يبيع ٤ مفردات ٤ علب.
+  const subStale = await errOf(() => mixedCheckout([], [{ product_id: onlyUsd.id, qty: 4, unit_price_usd: "1.00", sub: true }], mm("m-r7", { amount_paid: 0, final_total: 0, discount_usd: "0", paid_usd: "0" })));
+  c("  ومفردٌ لمادّةٍ لم تعد بسعرين يُرفض (لا يُباع علباً)، والرصيدُ كما هو", subStale === "sub_changed" && stockOf(DB(), onlyUsd.id) === 50, `${subStale}|${stockOf(DB(), onlyUsd.id)}`);
+  // والإعادةُ بلا سطر دولار (رُجّعت للدينار بعد محاولةٍ مجهولة): فاتورةُ الدولار التي ثبتت تُلقى بمرجعها.
+  const twin = await mixedTwin("m-1");
+  c("  وتوأمُ مرجعٍ ثبت بمجموعين يُلقى (~usd)، وغيرُه لا شيء", twin?.id === res.usd.id && (await mixedTwin("m-none")) === null);
   const oldPartial = await errOf(() => demoUsdCheckout([{ product_id: onlyUsd.id, qty: 1 }], { client_ref: "o-1", fx_rate_id: rt.id, paid_usd: "1", payment_method: "cash" }));
   c("  وبيعُ الدولار القديم كما كان: الجزئيُّ بلا علَم الفاتورة بمجموعين يُرفض", oldPartial === "usd_partial_at_sale", oldPartial);
   const html = M.buildTwinInvoiceHTML(res.iqd, [{ id: "a", invoice_id: res.iqd.id, product_id: dn.id, name: "دينار وحده", qty: 2, unit_price: 2000, unit_cost: 0, line_total: 4000, unit_label: null }],
@@ -312,6 +318,16 @@ check("  و«تمّ» بفاتورة الدولار، والوصلُ بالور�
   && (sb.match(/usdTwin: done\.usd \?\? undefined/g) ?? []).length === 2
   && /usdTwin: opts\?\.usdTwin,/.test(code("src/components/retail/usePrintInvoice.ts"))
   && /const html = opts\.usdTwin \? buildTwinInvoiceHTML\(/.test(code("src/lib/invoicePrint.ts")));
+check("  ومراجعة 0283: «$» مقفولٌ بعد محاولةٍ مجهولة المصير، والسعرُ النهائيُّ المثبَّت يُفكّ بتبديل العملة ولا دينارَ يُثبَّت بلا سطوره",
+  /if \(payPending\) \{ playWarning\(\); toast\.error\(t\("retail\.payPending"/.test(sb) && (sb.match(/setFinalOverride\(null\);/g) ?? []).length >= 3
+  && /const total = finalOverride != null && iqdCart\.length > 0 \? Math\.max\(0, finalOverride\) : autoTotal;/.test(sb));
+check("  والمسودّةُ تحفظ صندوقَ الدولار، والإعادةُ بلا دولار تُظهر توأمَها، والمعاينةُ «—» مع سطر دولار",
+  /saveSaleDraft\(draftScope, \{ usdDisc, usdPaid, usdMethod, cart,/.test(sb) && /\}, \[usdDisc, usdPaid, usdMethod, clinicId,/.test(sb) && /useState\(draft0\?\.usdDisc \?\? ""\)/.test(sb)
+  && /if \(!freshRef && saleRefRef\.current\) \{[\s\S]{0,200}m\.mixedTwin\(ref\)/.test(sb)
+  && /const profitShown = consCost === null \|\| lineCostUnknown \|\| usdOn \? null/.test(sb));
+check("  والطبعةُ الأوّليّة: سطورُ الدينار بمجموعها وسطورُ الدولار بمجموعها (لا دينارُ سطر الدولار تحت مجموع الدينار)",
+  /const draftItems: InvoiceItem\[\] = iqdCart\.map/.test(sb) && /usdTwin: \{ invoice: usdDraft, items: usdDraftItems \}/.test(sb)
+  && /openInvoicePrint\(onlyUsd \? usdDraft : draft, onlyUsd \? usdDraftItems : draftItems/.test(sb));
 check("  والقطعةُ كسولة: شاشةُ البيع لا تستورد dualSale/dualApi/dualPrice/UsdPay ثابتاً",
   !/^import[^\n]*["']@\/(lib\/(dualSale|dualApi|dualPrice)|components\/retail\/UsdPay)["']/m.test(src("src/components/retail/SaleBuilder.tsx")));
 const inv = code("src/pages/Inventory.tsx");
@@ -370,6 +386,8 @@ const MUTS = [
   ["مرجعُ الدولار بلا ~usd", "src/lib/demoDual.ts", "const uref = `${ref}~usd`;", "const uref = `${ref}-u`;"],
   ["الجزئيُّ بلا علَمه", "src/lib/demoUsd.ts", "const partial = !!meta.partial_ok && paidUsd > 0n", "const partial = paidUsd > 0n"],
   ["المفردُ يُخصم علبةً", "src/lib/demoUsd.ts", "stock: sub ? Number(divRound(BigInt(qty) * 1000n, BigInt(units))) / 1000 : qty * per", "stock: qty * per"],
+  ["المفردُ يُتجاهل على مادّةٍ لم تعد بسعرين", "src/lib/demoUsd.ts", "const sub = !!it.sub;", "const sub = dual && !!it.sub;"],
+  ["التوأمُ بغير مرجعه", "src/lib/dualApi.ts", "client_ref === `${ref}~usd`) as Invoice | undefined", "client_ref === ref) as Invoice | undefined"],
   ["المادّةُ بسعرين بكلفة الدولار", "src/lib/demoUsd.ts", "costCents: dual || p.purchase_price_usd == null ? null", "costCents: p.purchase_price_usd == null ? null"],
   ["الورقةُ الواحدة بسكربتين", "src/lib/invoicePrint.ts", "h2.slice(b2s + \"<body>\".length, b2e)", "h2.slice(b2s + \"<body>\".length)"],
 ];
