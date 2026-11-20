@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShieldCheck, Lock, Search, RefreshCw, LogIn, LogOut, Activity, KeyRound, Users, Wifi, Receipt, Images,
-  HandCoins, Boxes, Bike, CreditCard, Building2, ExternalLink, AlertTriangle, History, Bird,
+  HandCoins, Boxes, Bike, CreditCard, Building2, ExternalLink, AlertTriangle, History, Bird, Loader2,
 } from "lucide-react";
-import { ImageLibraryManager } from "@/components/admin/ImageLibraryManager";
+import { page } from "@/lib/lazyPage";
+/* مكتبةُ الصور تملك نطاقَها (`libm`، 0284) — تُحمَّل كسولةً معه: النصفُ الباردُ ممتلئ. */
+const ImageLibraryManager = page(() => import("@/components/admin/ImageLibraryManager").then((m) => ({ default: m.ImageLibraryManager })), ["libm"]);
 import { useAuth } from "@/contexts/AuthContext";
 import {
   isPlatformAdmin, platformPulse, platformActivity, platformLogins, platformEnter, platformLeave, platformContext,
@@ -155,7 +157,7 @@ export function PlatformConsole() {
 
       {tab === "clinics" ? <ClinicsTab acting={ctx?.acting ?? null} hidden={ws.all} onShowActivity={() => setTab("activity")} />
         : tab === "activity" ? <ActivityTab />
-        : tab === "library" ? <ImageLibraryManager />
+        : tab === "library" ? <Suspense fallback={<div className="grid place-items-center p-10"><Loader2 size={22} className="animate-spin text-ink-subtle" /></div>}><ImageLibraryManager /></Suspense>
         : <LoginsTab />}
     </div>
   );

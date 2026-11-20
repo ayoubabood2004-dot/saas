@@ -2157,11 +2157,12 @@ const demoRepo = {
   async listImageLibrary(): Promise<LibraryImage[]> {
     return [...(loadDB().imageLibrary ?? [])].sort((a, b) => (a.company ?? "").localeCompare(b.company ?? "") || a.name.localeCompare(b.name));
   },
-  async createLibraryImage(meta: { name: string; company?: string | null; section?: string | null; barcode?: string | null }, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
+  async createLibraryImage(meta: { name: string; company?: string | null; kind?: string | null; agency?: string | null; section?: string | null; barcode?: string | null }, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
     assertUploadableImage(upload);
     const db = loadDB();
     const row: LibraryImage = {
       id: uid("lib"), name: meta.name.trim(), company: meta.company?.trim() || null,
+      kind: meta.kind?.trim() || null, agency: meta.agency?.trim() || null,
       section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null,
       path: upload.dataUrl, updated_at: new Date().toISOString(),
     };
