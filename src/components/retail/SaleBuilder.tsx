@@ -90,6 +90,19 @@ const loadRetBar = () => page(() => import("@/components/retail/RetPct").then((m
 const loadRetNote = () => page(() => import("@/components/retail/RetPct").then((m) => ({ default: m.RetPureNote })), ["rpct"]);
 let RetBarLazy: ReturnType<typeof loadRetBar> | null = null;
 let RetNoteLazy: ReturnType<typeof loadRetNote> | null = null;
+/* فاتورةٌ بمجموعين (0283): سطورُ الدولار تُجمع بالدولار — صندوقُها وإشعارُ «تمّ» قطعةٌ كسولة بنطاقها mxp، تُصنع بأوّل سطر دولار. */
+const loadUsdBox = () => page(() => import("@/components/retail/UsdPay").then((m) => ({ default: m.UsdPayBox })), ["mxp"]);
+const loadUsdDone = () => page(() => import("@/components/retail/UsdPay").then((m) => ({ default: m.UsdDoneNote })), ["mxp"]);
+let UsdBoxLazy: ReturnType<typeof loadUsdBox> | null = null;
+let UsdDoneLazy: ReturnType<typeof loadUsdDone> | null = null;
+/** «12.50» ⇒ ١٢٥٠ سنتاً، والفارغُ صفر، وما لا يُقرأ null — مرآةُ usdCentsIn بالقطعة (شاشةُ البيع لا تستوردها ثابتاً). */
+function centsIn(s: string): number | null {
+  const v = s.trim().replace(/[$\s,]/g, "").replace(/\u066B/g, ".");
+  if (v === "") return 0;
+  if (!/^\d+(\.\d{0,2})?$/.test(v)) return null;
+  return Math.round(Number(v) * 100);
+}
+const usdText = (c: number): string => `$${(c / 100).toFixed(2)}`;
 let TabPillsLazy = loadTabPills();
 let TabGridLazy = loadTabGrid();
 let TabEditorLazy = loadTabEditor();
@@ -301,6 +314,10 @@ function retPctOf(l: Pick<Line, "ret" | "retPct">): number {
 function lineUnit(l: Pick<Line, "ret" | "retPct" | "unit_price">): number {
   const p = retPctOf(l);
   return p === 100 ? l.unit_price : Math.round((Math.round(l.unit_price * 100) * p) / 100) / 100;
+}
+/** 0283: سطرٌ يُجمع بالدولار (فاتورةٌ بمجموعين)؟ — لا الراجع (بالدينار) ولا الجرعة (معلَّقُها بفاتورة الدينار). */
+function isUsdLine(l: Pick<Line, "usd" | "ret" | "dose">): boolean {
+  return !!l.usd && !l.ret && !l.dose;
 }
 /** 0267: سطرُ كارتون؟ */
 function isPackLine(l: Pick<Line, "kind" | "saleUnit" | "packPer">): boolean {
@@ -1492,7 +1509,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const saleRefRef = useRef<string | null>(draft0?.clientRef ?? null);
   // مرآةُ المرجع بحالةٍ حتى تُحفظ مع المسودّة لحظةَ توليده (المرجعُ نفسُه لا يُعيد الرسم).
   const [saleRefSaved, setSaleRefSaved] = useState<string | null>(draft0?.clientRef ?? null);
-  const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
+  /* 0283: «تمّ» بفاتورة الدولار المربوطة (بمرجع البيعة ~usd) — تُطبع معها بورقةٍ واحدة. */
+  const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[]; usd?: { invoice: Invoice; items: InvoiceItem[] } | null } | null>(null);
+  /* 0283: مجموعُ الدولار — خصمُه، وما يُدفع منه الآن (null = كلُّه، والفارغُ صفر = دَينٌ كلُّه)، وطريقتُه. */
+  const [usdDisc, setUsdDisc] = useState("");
+  const [usdPaid, setUsdPaid] = useState<string | null>(null);
+  const [usdMethod, setUsdMethod] = useState<"cash" | "card" | "transfer">("cash");
+  const [mxLazyTick, setMxLazyTick] = useState(0);
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
@@ -2205,6 +2228,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       setCart((c) => c.map((x) => (x.id === l.id ? { ...x, usd: undefined, unit_price: capturedPrice(x) ?? x.unit_price, priceManual: false } : x)));
       return;
     }
+    if (l.dose) return;   // سطرُ جرعةٍ من الطبلة بالدينار — معلَّقُها يُختم بفاتورة الدينار
     const row = products.find((x) => x.id === l.product_id);
     if (!row || !dualOf(row)) return;
     const m = await import("@/lib/dualSale");
@@ -2212,6 +2236,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     try { r = await m.dualRate(); }
     catch { playWarning(); toast.error(t("retail.dual.unreach")); return; }
     if (!r.ok) { playWarning(); toast.error(t(`retail.dual.${r.why}`)); return; }
+    /* 0283: السطرُ بالدولار يُجمع بالدولار (فاتورةٌ بمجموعين) — قاعدةٌ قبلها لا تعرفه، فلا سطرَ دولار (لا تحويلٌ بالسرّ). */
+    let mixedOk = false;
+    try { mixedOk = await m.mixedReady(); } catch { playWarning(); toast.error(t("retail.dual.unreach")); return; }
+    if (!mixedOk) {
+      playWarning();
+      void Promise.all([import("@/components/retail/UsdPay"), import("@/i18n").then((i) => i.ensureOwned("mxp"))])
+        .then(([u]) => toast.error(u.mixedSay("notReady")), () => toast.error(t("errors.network")));
+      return;
+    }
     const rate = r.rate;
     const level = l.saleUnit === "pack" ? "pack" : l.saleUnit === "sub" ? "sub" : "box";
     const pack = level === "pack" ? packsOfRow(row).find((k) => k.id === l.packId) ?? null : null;
@@ -2224,8 +2257,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const cur = cart.find((x) => x.id === l.id);
       if (!cur || cur.usd || (cur.saleUnit ?? null) !== (l.saleUnit ?? null) || (cur.packId ?? null) !== (l.packId ?? null)) return cart;
       return cart.map((x) => {
-        if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(c, rate.rate1e4), priceManual: false };
-        if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, rate.rate1e4) };
+        /* 0283: دينارُ السطر يبقى كما هو (يرجع له بضغطة) — المجموعُ بالدولار، وسعرُ الصرف يُرسل للخادم ويُختم على فاتورة الدولار. */
+        if (x.id === l.id) return { ...x, usd: { c, rid: rate.id, r: r1e4 } };
+        if (x.usd && x.usd.rid !== rate.id) return { ...x, usd: { ...x.usd, rid: rate.id, r: r1e4 } };
         return x;
       });
     });
@@ -2603,9 +2637,22 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* الحساب يقرأ الراجع سالباً: قيمة المشترى ناقص قيمة الراجع = ما يدفعه
    * الزبون فعلاً. سطرٌ راجع بألف مع شراءٍ بخمسة ⇒ يدفع أربعة. */
   const sign = (l: Line) => (l.ret ? -1 : 1);
+  /* 0283: سطرُ الدولار يُجمع بالدولار لا بالدينار (فاتورةٌ بمجموعين) — خارج مجموع الدينار وكلفته وعروضه وخصمه ودفعه. ومخزونُه
+   * وسقفُه وأسئلةُ الخادم بالسلّة كلّها كما كانت: القطعةُ تنقص من الرفّ نفسِه بأيّ عملة. */
+  const iqdCart = useMemo(() => cart.filter((l) => !isUsdLine(l)), [cart]);
+  const usdLines = cart.filter(isUsdLine);
+  const usdOn = usdLines.length > 0;
+  const usdSubC = usdLines.reduce((n, l) => n + Math.round(l.qty * (l.usd as NonNullable<Line["usd"]>).c), 0);
+  const usdDiscIn = centsIn(usdDisc);
+  const usdPaidIn = usdPaid == null ? null : centsIn(usdPaid);
+  const usdBad = usdOn && (usdDiscIn == null || (usdPaid != null && usdPaidIn == null));
+  const usdDiscC = Math.min(usdSubC, usdDiscIn ?? 0);
+  const usdTotalC = usdSubC - usdDiscC;
+  const usdPaidC = usdPaid == null ? usdTotalC : Math.min(usdTotalC, usdPaidIn ?? 0);
+  const usdDebtC = usdTotalC - usdPaidC;
   /* والراجعُ بنسبته (lineUnit): ما يُردّ لا سعرُه — والكلفةُ كاملةً (القطعةُ ترجع للرفّ)، فالباقي ربحٌ للعيادة. */
-  const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);
-  const cost = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_cost, 0);
+  const subtotal = iqdCart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);
+  const cost = iqdCart.reduce((s, l) => s + sign(l) * l.qty * l.unit_cost, 0);
   /** قيمة الراجع بالسلة (موجبة للعرض) وعدد أسطره — `retFull` قبل النسبة. */
   const retValue = cart.reduce((s, l) => s + (l.ret ? l.qty * lineUnit(l) : 0), 0);
   const retFull = cart.reduce((s, l) => s + (l.ret ? l.qty * l.unit_price : 0), 0);
@@ -2626,7 +2673,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // Dynamic Mix & Match offers, evaluated against the live cart.
   /* والراجعُ ليس شراءً: سطرُه كان يدخل الحزمةَ فيكمل عرضاً بقطعٍ ترجع — خصمٌ على ما يُردّ. */
   // سطرُ الكارتون (0267) خارج العروض: سعرُه سعرُ الكارتون، وكميتُه كراتينُ لا قطع — «كل ٣ قطع» كانت ستقرأ كارتوناً قطعة.
-  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== "pack"), promoRules), [cart, promoRules]);
+  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(iqdCart.filter((l) => !l.ret && l.saleUnit !== "pack"), promoRules), [iqdCart, promoRules]);
 
   // ---- عروض الكمية — تُحسب **مجمّعة** عبر كل الأسطر المشمولة ------------------
   // الفكرة الجوهرية: الزبون الي أخذ ثلاث قطع من ثلاثة أصناف مختلفة دفع ثمن
@@ -2634,7 +2681,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   // (سطر لوحده) كان يفوّت هذي الحالة كلياً.
   // القطع = علب كاملة: بيع المفرد بالحبة/الشريط خارج العرض عمداً حتى لا تُحسب
   // ثلاث حبات كثلاث قطع.
-  const promoLines = (r: QtyPromo): Line[] => cart.filter((l) => {
+  const promoLines = (r: QtyPromo): Line[] => iqdCart.filter((l) => {
     // والراجعُ ليس شراءً — قطعةٌ تُردّ لا تكمل عرضَ «كل ٣ قطع» (كعروض الحزم فوق).
     if (l.ret) return false;
     if (r.kind === "service") return l.kind === "service" && (!r.ids.length || (l.serviceId ? r.ids.includes(l.serviceId) : false));
@@ -2696,12 +2743,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /* معاينةُ الربح بكلفة مستهلكات الخدمات (0252): الخادمُ يضيف كلفةَ المواد لكلفة السطر المخطَّط، فالمعاينةُ تطرحها
    * كذلك؛ وسطرٌ لا تُعرف كلفتُه بعد (الملخّصُ ما وصل أو فشل) يجعلها «—» لا ربحاً منفوخاً. ولمن يرى الأرباح وحده
    * والجهازُ غيرُ مقيَّد — كلفةُ المواد تُقرأ من فرقها. */
-  const consCost = cart.reduce<number | null>((s, l) => {
+  const consCost = iqdCart.reduce<number | null>((s, l) => {
     const c = consCaseCost(l, consSum);
     return s === null || c === null ? null : s + l.qty * c;
   }, 0);
   /* وسطرُ مادّةٍ وحسابُ الخادم لم يصل (أو فشل): كلفتُه بيد الجهاز آخرُ سعر شراءٍ لا ما يكتبه الخادم (0255) — «—» كذلك. */
-  const lineCostUnknown = lineCostState !== "ready" && cart.some((l) => l.kind === "product" && !!l.product_id);
+  const lineCostUnknown = lineCostState !== "ready" && iqdCart.some((l) => l.kind === "product" && !!l.product_id);
   const profitShown = consCost === null || lineCostUnknown ? null : profit - consCost;
   const showProfit = can("viewProfits") && !devRestricted;
   /* شارةُ «مستهلكات» بسطور الخدمة: حين بالعيادة وصفةٌ واحدة على الأقلّ، أو والملخّصُ فشل (§11.5) — لا وهو بالطريق:
@@ -2851,7 +2898,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const partialUi = !deliveryOn && (partialMode || isCredit);
   // A debt must belong to someone — block checkout until the customer is named.
   // A delivery order likewise always needs a customer name.
-  const needsDebtName = (isCredit || deliveryOn) && !name.trim();
+  const needsDebtName = (isCredit || deliveryOn || usdDebtC > 0) && !name.trim();
 
   // Delivery fee — collected at the door on top of the goods. When the clinic
   // keeps it, it's added to the invoice as a service line (= real revenue).
@@ -2964,6 +3011,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setCart([]); setRetPct(100); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setPromoOn([]);
+    setUsdDisc(""); setUsdPaid(null); setUsdMethod("cash");
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
     /* اليومُ يرجع لليوم بعد كلّ بيعة: الزبونُ التالي حاضرٌ اليوم — بيعتُه بأمسٍ بقي مختاراً كانت
      * تنقص صندوقَ اليوم بلا أن يُرى. إلا «فاتورة ثانية لنفس اليوم» بضغطةٍ صريحة. */
@@ -3485,6 +3533,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return;
     }
     if (needsDebtName) { playWarning(); return; }
+    /* 0283: سطورُ الدولار — لا توصيل ولا يومٌ سابق (سعرُ صرف ذاك اليوم غيرُ معروف)، ورقمُ الدولار يُقرأ قبل أن يُرسل. */
+    if (usdOn && (deliveryOn || saleDay || usdBad)) {
+      playWarning();
+      const k = deliveryOn ? "delivery" : saleDay ? "backdate" : "bad";
+      void Promise.all([import("@/components/retail/UsdPay"), import("@/i18n").then((i) => i.ensureOwned("mxp"))])
+        .then(([u]) => toast.error(u.mixedSay(k)), () => toast.error(t("errors.network")));
+      return;
+    }
     /* 0267: سطرُ الكارتون يُباع بكارتونه كما هو على صفّ المادّة الآن — كارتونٌ انشال أو تبدّل عددُه (من جهازٍ آخر، أو مسودّةٌ قديمة)
      * كان سيُرسل stock_qty بعدده القديم: الرصيدُ ينقص بعددٍ لا يعرفه الخادمُ كارتوناً فيُكلَّف علبة. ولا كارتونَ قبل أن يعرفه الخادم. */
     if (cart.some((l) => isPackLine(l))) {
@@ -3590,7 +3646,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     }
     setBusy(true);
     try {
-      const items: CheckoutItem[] = cart.map((l) => {
+      const items: CheckoutItem[] = cart.filter((l) => !isUsdLine(l)).map((l) => {
         // Sub-unit sale → deduct the precise box fraction (e.g. 5 of 20 pills = 0.25 box); a carton (0267) → its
         // boxes. Rounded to 3 decimals to keep stock free of binary-float drift (lineStockQty).
         const stock_qty = lineStockQty(l);
@@ -3606,8 +3662,6 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           // الراجعُ بنسبته (سعرُه بالفاتورة ما رُدّ) وكلفتُه كاملة: القطعةُ ترجع للرفّ والباقي ربحُ العيادة.
           qty: s * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,
           stock_qty: s * stock_qty, unit_label,
-          // 0282: سطرُ الدولار — دينارُه (unit_price) بسعر اليوم، والخادمُ يطابقه بسعره بالدولار ويختمه على السطر.
-          ...(l.usd && !l.ret ? { price_currency: "USD" as const, unit_price_usd: (l.usd.c / 100).toFixed(2) } : {}),
           // خدمةٌ من الكتالوج (0252): الخادمُ يخطّطها من وصفتها — أو من مستهلكات الحالة إن عُدّلت (لكلّ حالةٍ واحدة).
           // ومعرّفٌ ليس uuid لا يُرسل (cloudServiceId): الخادمُ لا يعرفه ويرفض به البيعةَ كلَّها.
           // وسطرٌ بلا مادّة ليس خدمة (دواءٌ أو لقاحٌ من تبويب الأدوية) يقولها بـnull صريح: غيابُ المفتاح يقرؤه الخادمُ «جهازاً
@@ -3673,25 +3727,38 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         ...(saleAt ? { sale_at: saleAt, sale_tz: saleTz() } : {}),
       };
       let invoice: Invoice;
+      let usdInvoice: Invoice | null = null;
       setPaying(true);
       try {
-        /* 0282: سطرُ دولار ⇒ بابُ البيع بسعرين (بجرعاتها إن وُجدت) بسعر الصرف الذي حُسبت به السطور — سطورٌ بسعرين مختلفين لا تُرسل. */
-        const usdRids = Array.from(new Set(cart.filter((l) => l.usd && !l.ret).map((l) => l.usd!.rid)));
+        /* 0283: سطرُ دولار ⇒ فاتورةٌ بمجموعين: فاتورةُ دينارٍ لسطور الدينار (بجرعاتها) وفاتورةُ دولارٍ لسطور الدولار بمرجعها ~usd، بمعاملةٍ
+         * واحدة. المبلغُ بالدولار لا يُحوَّل؛ سعرُ الصرف يُرسل ليُختم على فاتورة الدولار — وسطورٌ بسعرين مختلفين لا تُرسل. */
+        const usdRids = Array.from(new Set(usdLines.map((l) => (l.usd as NonNullable<Line["usd"]>).rid)));
         if (usdRids.length > 1) throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
-        invoice = await withTimeout(usdRids.length === 1
-          ? import("@/lib/dualSale").then((m) => m.dualCheckout(items, { ...meta, fx_rate_id: usdRids[0] }))
-          : items.some((i) => i.dose_charge)
+        if (usdRids.length === 1) {
+          const usdItems = usdLines.map((l) => ({
+            product_id: l.product_id as string, qty: l.qty, unit_price_usd: ((l.usd as NonNullable<Line["usd"]>).c / 100).toFixed(2),
+            ...(l.saleUnit === "sub" ? { sub: true } : {}),
+            ...(isPackLine(l) ? { pack_id: l.packId as string, pack_per: l.packPer as number } : {}),
+          }));
+          const res = await withTimeout(import("@/lib/dualSale").then((m) => m.mixedCheckout(items, usdItems, {
+            ...meta, fx_rate_id: usdRids[0], discount_usd: (usdDiscC / 100).toFixed(2), paid_usd: (usdPaidC / 100).toFixed(2), usd_method: usdMethod,
+          })), 12000);
+          invoice = res.iqd ?? res.usd;
+          usdInvoice = res.iqd ? res.usd : null;
+        } else {
+          invoice = await withTimeout(items.some((i) => i.dose_charge)
             ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
             : repo.retailCheckout(items, meta), 12000);
+        }
       } catch (e) {
-        /* 0282: سعرُ الصرف تغيّر بين الحساب والبيعة — سطورُ الدولار تُحسب بسعر اليوم ويُقال، والكاشيرُ يراجع المجموعَ ويضغط ثانيةً. */
+        /* سعرُ الصرف تغيّر بين الضغطة والبيعة — المبلغُ بالدولار كما هو، والسطورُ تأخذ معرّفَ سعر اليوم ويُقال، والكاشيرُ يضغط ثانيةً. */
         if (String((e as { message?: string } | null)?.message ?? "").includes("usd_rate_changed")) {
           try {
             const m = await import("@/lib/dualSale");
             const r = await m.dualRate();
             if (r.ok) {
               const r1e4 = r.rate.rate1e4.toString();
-              setCart((c) => c.map((x) => (x.usd ? { ...x, usd: { ...x.usd, rid: r.rate.id, r: r1e4 }, unit_price: m.iqdOfCents(x.usd.c, r.rate.rate1e4) } : x)));
+              setCart((c) => c.map((x) => (x.usd ? { ...x, usd: { ...x.usd, rid: r.rate.id, r: r1e4 } } : x)));
             }
           } catch { /* swallow-ok: الرسالةُ أدناه تقول «حدّث» — والخادمُ يرفض ثانيةً ما لم يتطابق */ }
           if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
@@ -3787,15 +3854,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // Snapshot the lines for instant printing (services + products, with overrides).
       // With several pets on one bill, each med line is labelled with its animal.
       const multiPet = petNames.length > 1;
-      const invItems: InvoiceItem[] = cart.map((l) => ({
+      const invItems: InvoiceItem[] = (usdInvoice || invoice.currency !== "USD" ? cart.filter((l) => !isUsdLine(l)) : []).map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
         product_id: l.product_id,
         name: `${l.ret ? `${retTag(l)} — ` : ""}${multiPet && linePetNames(l).length ? `${l.name} — ${linePetNames(l).join(" + ")}` : l.name}`,
         barcode: l.barcode,
         qty: sign(l) * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost, line_total: sign(l) * l.qty * lineUnit(l),
         unit_label: lineLabel(l),
-        /* 0282: الوصلُ الفوريّ بسعر الدولار وسعر الصرف كإعادة الطباعة — بلاهما طلع ديناراً صِرفاً وطلبُ المالك «سعرُ الدولار داخل الفاتورة». */
-        ...(l.usd && !l.ret ? { unit_price_usd: l.usd.c / 100 } : {}),
       }));
       if (feeToClinic) {
         invItems.push({
@@ -3821,8 +3886,19 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         for (const l of cart) if (l.kind === "product" && !l.ret && l.product_id && liftFor(prodRow(l.product_id), null, negSnapDone)) foldIds.add(l.product_id);
       }
       setDoneNegIds([...foldIds]);
+      /* 0283: سطورُ فاتورة الدولار للوصل الفوريّ (بسعرها بالدولار — usdPrintItem يطبعه)؛ وفاتورةُ دولارٍ وحدها (بلا سطور دينار) هي «تمّ» نفسُها. */
+      const usdInv = usdInvoice ?? (invoice.currency === "USD" ? invoice : null);
+      const usdItemsDone: InvoiceItem[] = usdInv ? usdLines.map((l) => {
+        const c = (l.usd as NonNullable<Line["usd"]>).c;
+        return {
+          id: `tmp-${l.id}`, invoice_id: usdInv.id, clinic_id: clinicId ?? null, product_id: l.product_id, name: l.name, barcode: l.barcode,
+          qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price, unit_label: lineLabel(l), unit_price_usd: c / 100,
+        };
+      }) : [];
       setDoneCons(cart.some((l) => noticeLine(l, consSum)));
-      setDone({ invoice, items: invItems });
+      if (usdInvoice) setDone({ invoice, items: invItems, usd: { invoice: usdInvoice, items: usdItemsDone } });
+      else if (usdInv) setDone({ invoice, items: usdItemsDone });
+      else setDone({ invoice, items: invItems });
       clearSaleDraft(draftScope); // sale is final — drop the saved draft
       /* بيعُ المنتهي يُسجَّل بعد الحسم وبرقم الفاتورة — تسجيلٌ عند «أكيد» كان يشهد لبيعةٍ
        * قد تفشل بعده. والأسماءُ مقصوصة: المختصرُ يُسقط أيَّ قيمةٍ فوق ٢٠٠ حرف بصمت. */
@@ -4059,7 +4135,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           </div>
           <div className="space-y-4 p-5">
             <div className="flex items-end justify-center gap-2">
-              <span className="font-display text-4xl font-extrabold text-ink tabular-nums">{money(done.invoice.total)}</span>
+              <span className="font-display text-4xl font-extrabold text-ink tabular-nums">{done.invoice.currency === "USD"
+                ? <bdi dir="ltr">{usdText(Math.round(Number(done.invoice.total_usd ?? 0) * 100))}</bdi> : money(done.invoice.total)}</span>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-ink-muted">
               {/* ربحُ الخادم وفيه كلفةُ المواد (0252) — لمن يرى الأرباح والجهازُ غيرُ مقيَّد كمعاينة السلّة (§11.9): معاينةٌ
@@ -4068,7 +4145,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               {done.invoice.customer_name && <span className="flex items-center gap-1"><User size={14} /> {done.invoice.customer_name}</span>}
               {done.invoice.pet_name && <span className="flex items-center gap-1"><PawPrint size={14} /> {done.invoice.pet_name}</span>}
             </div>
-            {dueOf(done.invoice) > 0.01 && (
+            {(done.usd?.invoice ?? (done.invoice.currency === "USD" ? done.invoice : null)) && (UsdDoneLazy ??= loadUsdDone()) && (() => {
+              const u = (done.usd?.invoice ?? done.invoice) as Invoice;
+              return (
+                <LoadBoundary scope="usd-done" onRetry={() => { UsdDoneLazy = loadUsdDone(); setMxLazyTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <UsdDoneLazy no={invoiceNo(u.id)} totalC={Math.round(Number(u.total_usd ?? 0) * 100)} paidC={Math.round(Number(u.paid_usd ?? 0) * 100)} />
+                  </Suspense>
+                </LoadBoundary>
+              );
+            })()}
+            {done.invoice.currency !== "USD" && dueOf(done.invoice) > 0.01 && (
               <div className="rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
                 <div className="flex items-center justify-between text-warn-700 dark:text-warn-300">
                   <span className="font-semibold">{t("retail.creditSaleSaved", "بيع آجل — دين على العميل")}</span>
@@ -4089,16 +4176,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             {doneCons && (
               <LoadBoundary scope="cons-notice" onRetry={() => { ConsNoticeLazy = loadConsNotice(); setConsLazyTick((n) => n + 1); }}>
                 <Suspense fallback={null}>
-                  <ConsNoticeLazy mode="sale" invoiceIds={[done.invoice.id]} negFold={doneNegIds} />
+                  <ConsNoticeLazy mode="sale" invoiceIds={done.usd ? [done.invoice.id, done.usd.invoice.id] : [done.invoice.id]} negFold={doneNegIds} />
                 </Suspense>
               </LoadBoundary>
             )}
             {lastPrints > 0 && <p className="text-xs text-ink-subtle">{t("retail.printedTimes", { n: lastPrints, defaultValue: "Printed {{n}}×" })}</p>}
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(done.invoice, "a4", { items: done.items, onCounted: setLastPrints })}>
+              <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(done.invoice, "a4", { items: done.items, onCounted: setLastPrints, usdTwin: done.usd ?? undefined })}>
                 {t("retail.printA4", "Print A4")}
               </Button>
-              <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(done.invoice, "thermal", { items: done.items, onCounted: setLastPrints })}>
+              <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(done.invoice, "thermal", { items: done.items, onCounted: setLastPrints, usdTwin: done.usd ?? undefined })}>
                 {t("retail.printReceipt", "Receipt 80mm")}
               </Button>
             </div>
@@ -4873,7 +4960,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           يكلّف ارتفاعاً بالوضع المضغوط: عمودُ أزرارِ الكمية (h-9)
                           أطولُ أصلاً من سطرِ الاسم+السعر، فالصفُّ لا يزيد. */}
                       <div className={cn("flex items-center gap-1 text-xs text-ink-subtle", posV2 ? "-mt-0.5" : "mt-0.5")}>
-                        <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
+                        {isUsdLine(l)
+                          ? <bdi dir="ltr" data-lineusdprice className="font-bold text-success-700 dark:text-success-300">{usdText((l.usd as NonNullable<Line["usd"]>).c)}</bdi>
+                          : <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />}
                         <span className="truncate">
                           {l.byWeight
                             ? t("retail.perKgShort", "/كغ")
@@ -4947,7 +5036,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                       {/* 0282: مادّةٌ بسعرين — السطرُ بالدينار أو بالدولار (يختاره الكاشير)، والفاتورةُ بالدينار بسعر اليوم. */}
                       {/* وسطرٌ بالدولار يبقى زرُّه ولو لم تعد المادّةُ بسعرين (حُذف سعرُها، صارت «دولار وحده»، مسودّةٌ رجعت بعدها): بلا زرٍّ يرجعه
                         * للدينار كانت كلُّ بيعةٍ تُرفض و«بِعه بالدينار» بلا طريق (مراجعة 0282). */}
-                      {l.kind === "product" && !l.ret && !l.byWeight && (l.usd || (!retMode && dualOf(products.find((x) => x.id === l.product_id)))) && (
+                      {l.kind === "product" && !l.ret && !l.byWeight && !l.dose && (l.usd || (!retMode && dualOf(products.find((x) => x.id === l.product_id)))) && (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           <button type="button" data-lineusd={l.id} aria-pressed={!!l.usd} onClick={() => { playTap(); void toggleLineUsd(l); }}
                             title={l.usd ? t("retail.dual.toIqd") : t("retail.dual.toUsd")}
@@ -5002,7 +5091,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                         عرض ضيّق فيضخّم كل صفّ ١٨px — أي ثلاثة أصناف أقل بالشاشة. */}
                     <span data-linetotal={l.id} className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold",
                       l.ret ? "text-amber-700 dark:text-amber-300" : "text-ink")}>
-                      {l.ret ? `− ${money(l.qty * lineUnit(l))}` : money(l.qty * l.unit_price)}
+                      {l.ret ? `− ${money(l.qty * lineUnit(l))}` : isUsdLine(l) ? <bdi dir="ltr">{usdText(Math.round(l.qty * (l.usd as NonNullable<Line["usd"]>).c))}</bdi> : money(l.qty * l.unit_price)}
                     </span>
                     <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Trash2 size={posV2 ? (denseCart ? 15 : 17) : 14} /></button>
                   </motion.div>
@@ -5386,6 +5475,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             {showProfit && <div data-profitpreview className={cn("items-center justify-end gap-1 text-2xs text-success-600", posV2 && !payTools ? "hidden" : "flex")}><TrendingUp size={11} /> {t("retail.profit", "Profit")} {profitShown === null ? "—" : money(profitShown)}</div>}
           </div>
 
+          {/* 0283: سطورُ الدولار مجموعُها بالدولار — خصمُها ودفعُها ودَينُها بالدولار (قطعةٌ كسولة بنطاقها mxp). */}
+          {usdOn && (UsdBoxLazy ??= loadUsdBox()) && (
+            <LoadBoundary scope="usd-box" onRetry={() => { UsdBoxLazy = loadUsdBox(); setMxLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}>
+                <UsdBoxLazy key={mxLazyTick} subC={usdSubC} discC={usdDiscC} totalC={usdTotalC} paidC={usdPaidC} debtC={usdDebtC}
+                  disc={usdDisc} onDisc={setUsdDisc} paid={usdPaid} onPaid={setUsdPaid} method={usdMethod} onMethod={setUsdMethod}
+                  rate={usdLines[0]?.usd ? Number(usdLines[0].usd.r) / 10000 : null} nameMissing={!name.trim()} />
+              </Suspense>
+            </LoadBoundary>
+          )}
           {preSaleEnabled && (
             <div className={cn("grid-cols-2 gap-2", posV2 && !payTools ? "hidden" : "grid")}>
               <Button variant="secondary" size="sm" disabled={cart.length === 0} leftIcon={<Printer size={15} />} onClick={() => printPreSale("a4")} data-presale="a4">
@@ -5477,7 +5576,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 ? `${t("retail.completePartial", "إتمام البيع")} · ${t("retail.paysNowLabel", "يدفع الآن")} ${money(totalPaid)} · ${t("retail.debtShort", "دين")} ${money(remaining)}`
                 : change > 0
                   ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
-                  : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
+                  : `${t("retail.complete", "إصدار الفاتورة")} · ${usdOn && iqdCart.length === 0 ? "" : money(total)}`}
+            {usdOn && <bdi dir="ltr" data-btnusd className="ms-1">{`${iqdCart.length > 0 ? "+ " : ""}${usdText(usdTotalC)}`}</bdi>}
           </Button>
           )}
           {posV2 && !cashierId && cart.length > 0 && payTools && (

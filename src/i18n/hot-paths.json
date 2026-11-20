@@ -89,6 +89,7 @@
     "flkv": "src/components/flock/FlockVisit.tsx",
     "odebt": "src/components/retail/OldDebt.tsx",
     "pfx": "src/components/inventory/PurchaseFx.tsx",
-    "pgrp": "src/components/inventory/ProductGroups.tsx"
+    "pgrp": "src/components/inventory/ProductGroups.tsx",
+    "mxp": "src/components/retail/UsdPay.tsx"
   }
 }

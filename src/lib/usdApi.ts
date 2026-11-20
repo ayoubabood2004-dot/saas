@@ -25,7 +25,7 @@ export interface UsdSettlement {
   voided_at: string | null; voided_by: string | null; void_reason: string | null;
 }
 /** سطرُ بيع الدولار. والكارتونُ (0272): `pack_id` ومعه `pack_per` كما رآه الجهاز — qty كراتين، والخادمُ يخصم qty × per علبة. */
-export interface UsdLineIn { product_id: string; qty: number; unit_price_usd?: string | null; pack_id?: string | null; pack_per?: number | null }
+export interface UsdLineIn { product_id: string; qty: number; unit_price_usd?: string | null; pack_id?: string | null; pack_per?: number | null; /** 0283: مفردُ مادّةٍ بسعرين. */ sub?: boolean }
 export interface UsdSaleMeta {
   fx_rate_id: string;
   /** «0» دَيناً، أو مجموعُ الدولار كما يعرفه الجهاز نقداً — والخادمُ يرفض غيرَ مجموعه (usd_partial_at_sale). */
@@ -34,6 +34,8 @@ export interface UsdSaleMeta {
   discount_usd?: string | null;
   customer_name?: string | null; customer_phone?: string | null; pet_name?: string | null;
   staff_id?: string | null; notes?: string | null; client_ref: string; sale_kind?: string | null;
+  /** 0283: دفعةٌ جزئيّة ساعةَ البيع — للفاتورة بمجموعين وحدها. */
+  partial_ok?: boolean; sale_at?: string | null;
 }
 export interface UsdSettleResult { invoice: Invoice; settlement: UsdSettlement }
 

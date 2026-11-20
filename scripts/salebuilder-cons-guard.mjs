@@ -84,7 +84,9 @@ function textChecks(src) {
   const code = strip(src);
 
   const coAt = code.indexOf("const checkout = async (ack: CheckoutAck = {})");
-  const mapAt = coAt < 0 ? -1 : code.indexOf("const items: CheckoutItem[] = cart.map((l) => {", coAt);
+  // 0283: سطورُ الدولار تُرسل وحدها (فاتورةٌ بمجموعين) — قائمةُ الدينار من سطور الدينار.
+  const mapAt0 = coAt < 0 ? -1 : code.indexOf("const items: CheckoutItem[] = cart.map((l) => {", coAt);
+  const mapAt = mapAt0 >= 0 ? mapAt0 : coAt < 0 ? -1 : code.indexOf("const items: CheckoutItem[] = cart.filter((l) => !isUsdLine(l)).map((l) => {", coAt);
   const itemsMap = mapAt < 0 ? "" : code.slice(mapAt, code.indexOf("\n      });", mapAt));
   const spread = /\.\.\.\(sid \? \{ service_id: sid, \.\.\.\(Array\.isArray\(l\.consumables\) \? \{ consumables: l\.consumables \} : \{\}\) \} : ([^\n]*?)\{\}\),/.exec(itemsMap);
   ck("١) قائمةُ البيعة: سطرُ الخدمة (بلا راجع وبمعرّفٍ يعرفه الخادم) يحمل service_id، ومستهلكاتِ الحالة إن عُدّلت",
@@ -165,7 +167,7 @@ function textChecks(src) {
     && /page\(\(\) => import\("@\/components\/retail\/ConsumablesSheet"\)\.then\(\(m\) => \(\{ default: m\.ConsumptionNotice \}\)\), \["rcp"\]\)/.test(code));
   ck("  وكلتاهما داخل LoadBoundary + Suspense، و«أعد المحاولة» تصنع قطعةً جديدة",
     /<LoadBoundary scope="cons-sheet" onRetry=\{\(\) => \{ ConsSheetLazy = loadConsSheet\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsSheetLazy\b/.test(code)
-    && /<LoadBoundary scope="cons-notice" onRetry=\{\(\) => \{ ConsNoticeLazy = loadConsNotice\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsNoticeLazy mode="sale" invoiceIds=\{\[done\.invoice\.id\]\} negFold=\{doneNegIds\} \/>/.test(code));
+    && /<LoadBoundary scope="cons-notice" onRetry=\{\(\) => \{ ConsNoticeLazy = loadConsNotice\(\); setConsLazyTick\(\(n\) => n \+ 1\); \}\}>\s*<Suspense fallback=\{null\}>\s*<ConsNoticeLazy mode="sale" invoiceIds=\{(?:\[done\.invoice\.id\]|done\.usd \? \[done\.invoice\.id, done\.usd\.invoice\.id\] : \[done\.invoice\.id\])\} negFold=\{doneNegIds\} \/>/.test(code));
   const owned = checkOwned({ rcp: { owner: SHEET_PATH, with: [] } }, [{ rel: SB_PATH, text: src }, { rel: SHEET_PATH, text: SHEET }], "");
   ck("  ونطاقُ rcp بقاعدة i18n-owned-guard نفسِها: محمَّلٌ بـpage(…, [\"rcp\"]) هنا، ولا استيرادَ ثابتاً لمالكه، ولا مفتاحَ rcp.* بالشاشة",
     owned.length === 0, owned.join(" | "));
@@ -177,7 +179,7 @@ function textChecks(src) {
   ck("٨) الإتمامُ بشكله المقفول: القفلُ ← holdUpdates ← persistMedicalEntries ← finally يُفلت",
     lockAt > 0 && holdAt > lockAt && medAt > holdAt && finAt > medAt && relAt > finAt, J({ lockAt, holdAt, medAt, finAt, relAt }));
   ck("  والإشعارُ يُقرَّر قبل ختم البيعة مباشرةً (noticeLine: ما قد يُخصم له أو سطرُ مادّة)، والختمُ ومسحُ المسودّة كما هما",
-    /setDoneCons\(cart\.some\(\(l\) => noticeLine\(l, consSum\)\)\);\s*setDone\(\{ invoice, items: invItems \}\);\s*clearSaleDraft\(draftScope\);/.test(co));
+    /setDoneCons\(cart\.some\(\(l\) => noticeLine\(l, consSum\)\)\);\s*(?:if \(usdInvoice\) setDone\([^\n]*\);\s*else if \(usdInv\) setDone\([^\n]*\);\s*else )?setDone\(\{ invoice, items: invItems \}\);\s*clearSaleDraft\(draftScope\);/.test(co));
   ck("  وأجرةُ التوصيل (سطرٌ بلا مادّة ليس خدمة) تُرسل service_id: null صريحاً كسطر الدواء",
     /items\.push\(\{ product_id: null, name: t\("retail\.deliveryFeeLine", "أجرة توصيل"\),[^\n]*\bservice_id: null \}\);/.test(co));
   /* 0253 أزال القصَّ عند الصفر: سطرُ مادّةٍ من قائمةٍ قديمة (جهازٌ ثانٍ باع آخرَ علبة) أو من حوضٍ نفد ينزل بالرصيد تحت الصفر
