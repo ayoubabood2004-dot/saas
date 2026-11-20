@@ -22,7 +22,8 @@ export function useInvoicePrinter() {
   return async function printInvoice(
     invoice: Invoice,
     format: PrintFormat,
-    opts?: { items?: InvoiceItem[]; onCounted?: (n: number) => void },
+    /** 0283: فاتورةُ الدولار المربوطة (فاتورةٌ بمجموعين) — تُطبع بالورقة نفسِها بعد فاتورة الدينار. */
+    opts?: { items?: InvoiceItem[]; onCounted?: (n: number) => void; usdTwin?: { invoice: Invoice; items: InvoiceItem[] } },
   ): Promise<number> {
     let items = opts?.items;
     if (!items) {
@@ -56,6 +57,7 @@ export function useInvoicePrinter() {
       facebook: socials.facebook || null,
       instagram: socials.instagram || null,
       sellerName,
+      usdTwin: opts?.usdTwin,
     });
     if (!ok) toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site."));
     else void repo.logClientEvent("invoice.print", { ref: invoiceNo(invoice.id), format }); // activity trail

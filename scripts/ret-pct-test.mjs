@@ -439,7 +439,7 @@ const swap = (src, from, to) => { if (!src.includes(from)) throw new Error(`نص
 const MUTANTS = [
   ["«راجع» يفتح سلّةَ الدولار", "sb", "    if (retMode && !opt?.sale) {\n      playWarning();\n      void Promise.all([import(\"@/components/retail/RetPct\")", "    if (false) {\n      playWarning();\n      void Promise.all([import(\"@/components/retail/RetPct\")"],
   ["السعرُ الواحد يتجاهل النسبة", "sb", "  return p === 100 ? l.unit_price : Math.round((Math.round(l.unit_price * 100) * p) / 100) / 100;", "  return l.unit_price;"],
-  ["المجموعُ بالسعر الخامّ", "sb", "const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);", "const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_price, 0);"],
+  ["المجموعُ بالسعر الخامّ", "sb", "const subtotal = iqdCart.reduce((s, l) => s + sign(l) * l.qty * lineUnit(l), 0);", "const subtotal = iqdCart.reduce((s, l) => s + sign(l) * l.qty * l.unit_price, 0);"],
   ["الإرجاعُ الخالص يرسل السعرَ الخامّ", "sb", "qty: l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,\n          stock_qty,", "qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,\n          stock_qty,"],
   ["البيعةُ ترسل الراجعَ بسعره الخامّ", "sb", "qty: s * l.qty, unit_price: lineUnit(l), unit_cost: l.unit_cost,", "qty: s * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,"],
   ["الاسمُ لا يحمل النسبة", "sb", "name: pct < 100 ? `${l.name} (${pct}%)` : l.name,", "name: l.name,"],
@@ -448,7 +448,7 @@ const MUTANTS = [
   ["البيعةُ الجديدة تُبقي النسبة", "sb", "setCart([]); setRetPct(100);", "setCart([]);"],
   ["المسودّةُ ترجع بشريطٍ على ١٠٠", "sb", "useState<number>(() => retPctOf(draft0?.cart?.find((l) => l.ret) ?? { ret: true }))", "useState<number>(100)"],
   ["إطفاءُ الراجع يُبقي النسبة", "sb", "useEffect(() => { if (!retMode && !cart.some((l) => l.ret)) setRetPct(100); }, [retMode, cart]);", ""],
-  ["عروضُ الحزم تقرأ الراجع", "sb", "computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(cart.filter((l) => l.saleUnit !== \"pack\"), promoRules)"],
+  ["عروضُ الحزم تقرأ الراجع", "sb", "computePromotions(iqdCart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(iqdCart.filter((l) => l.saleUnit !== \"pack\"), promoRules)"],
   ["عرضُ الكمّية يكتمل بقطعةٍ تُردّ", "sb", "    if (l.ret) return false;\n    if (r.kind === \"service\")", "    if (r.kind === \"service\")"],
   ["الطريقُ لا يُفرغ السلّة", "sb", "                        onOpenReturns(phone.trim() || c.phone || c.name);\n                        reset();", "                        onOpenReturns(phone.trim() || c.phone || c.name);"],
   ["الطريقُ بعد محاولةٍ مجهولة", "sb", "onOpenReturns={onOpenReturns && !busy && !saleRefSaved ? () => {", "onOpenReturns={onOpenReturns && !busy ? () => {"],

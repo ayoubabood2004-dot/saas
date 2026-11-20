@@ -605,7 +605,7 @@ const MUTANTS = [
   ["الكارتونُ بسعر العلبة", "      const price = m.packSalePrice(row, k, wholesale);", "      const price = listPrice(row);"],
   ["الكلفةُ كلفةُ علبة", "unit_cost: productLineCost(row, null, Math.round((Number(row.purchase_price) || 0) * k.per * 100) / 100, k.per),", "unit_cost: productLineCost(row, null, Number(row.purchase_price) || 0),"],
   ["البيعةُ لا تطابق الكارتونَ بالصفّ", "        if (k && k.per === l.packPer) continue;\n", "        continue;\n"],
-  ["العروضُ تقرأ الكارتون", "computePromotions(cart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(cart.filter((l) => !l.ret), promoRules)"],
+  ["العروضُ تقرأ الكارتون", "computePromotions(iqdCart.filter((l) => !l.ret && l.saleUnit !== \"pack\"), promoRules)", "computePromotions(iqdCart.filter((l) => !l.ret), promoRules)"],
   ["الراجعُ يبيع كارتوناً", "    if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: \"ret\"", "    if (false && retMode && !opt?.sale) return refuse(m.say.packSay({ kind: \"ret\""],
   ["المغلّفُ يبدّل سطرَ العلبة بصمت", "      else if (line && line.saleUnit !== \"sub\") {", "      else if (false && line && line.saleUnit !== \"sub\") {"],
   ["«الباقي» = الرصيد كلُّه", "      return Math.round(((row.stock ?? 0) - used) * 1000) / 1000;", "      return row.stock ?? 0;"],

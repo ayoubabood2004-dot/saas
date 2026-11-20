@@ -1165,9 +1165,9 @@
     "dCompanyReturnDone": "Order returned — goods back in stock and removed from the company's balance",
     "dual": {
       "chip": "In $",
-      "toUsd": "Sell this line at its dollar price (converted to dinars at today's rate)",
+      "toUsd": "Sell this line at its dollar price — it adds up in the dollar total",
       "toIqd": "Back to this line's dinar price",
-      "note": "At rate {{rate}} — the invoice is in dinars",
+      "note": "Adds up in dollars · today's rate {{rate}}",
       "unreach": "Couldn't reach the server for the dollar rate — check the connection and try again.",
       "not_ready": "Selling a line in dollars needs the database update (0282) — tell the manager.",
       "disabled": "Dollars aren't enabled for this clinic — see Settings.",
@@ -9159,6 +9159,34 @@
     "noChange": "Nothing changed",
     "priceSaved": "Price changed for {{n}} products",
     "subUnitNote": "Single-unit and carton prices stay as they are — change them from each product."
+  },
+  "mxp": {
+    "title": "Dollar lines",
+    "disc": "Dollar discount",
+    "total": "Total in dollars",
+    "method": "Dollar payment method",
+    "m": {
+      "cash": "Cash",
+      "card": "Card",
+      "transfer": "Transfer"
+    },
+    "paid": "Pays now in dollars",
+    "all": "All",
+    "none": "Debt",
+    "read": "Read as: discount {{disc}} · pays {{paid}}",
+    "debt": "Remaining dollar debt",
+    "rate": "Today's rate {{rate}} — saved on the dollar invoice; later payments use their own day's rate",
+    "noRate": "Set today's dollar rate in settings",
+    "doneTitle": "Dollar invoice {{no}}",
+    "doneDebt": "Paid {{paid}} · {{debt}} left as dollar debt",
+    "donePaid": "Fully paid in dollars",
+    "say": {
+      "delivery": "Dollar lines can't go out for delivery — switch them to dinars or sell without delivery.",
+      "backdate": "A sale on an earlier day is in dinars only — switch the dollar lines back to dinars.",
+      "bad": "The dollar amount couldn't be read — write it like 12.50",
+      "debtName": "A dollar debt needs the customer's name — fill in the customer field.",
+      "notReady": "Two-total invoices need a database update (0283) — tell the manager."
+    }
   },
   "libm": {
     "companies": "Companies",
