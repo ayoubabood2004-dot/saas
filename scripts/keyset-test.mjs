@@ -111,6 +111,8 @@ const CONTRACT = {
   listNewStoreOrders: ["created_at", false, "time"],
   listCompanies: ["name", true, "text"],
   listCompanySections: ["name", true, "text"],
+  // 0284: مكتبةُ الصور — ملفُّ موزّعٍ واحد ٩٠٩ صورة، والقصُّ عند الألف كان يُخفي ما بعدها من المنتقي بصمت.
+  listImageLibrary: ["name", true, "text"],
   listPurchases: ["purchased_at", false, "time"],
   listAllPurchaseItems: null,
   listInvoices: ["created_at", false, "time"],
@@ -175,7 +177,7 @@ for (let i = 0; i < lines.length; i++) {
   const sort = split >= 0 ? args.slice(split + 1).trim() : "";
   calls.push({ name, make, sort });
 }
-check("عددُ المستدعين ٤٥ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 45, `طلع ${calls.length}`);
+check("عددُ المستدعين ٤٦ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 46, `طلع ${calls.length}`);
 const names = new Set(calls.map((c) => c.name));
 check("  وكلُّهم بالعقد بأسمائهم", Object.keys(CONTRACT).every((n) => names.has(n)) && [...names].every((n) => n in CONTRACT),
   `ناقص: ${Object.keys(CONTRACT).filter((n) => !names.has(n)).join("، ")} / زائد: ${[...names].filter((n) => !(n in CONTRACT)).join("، ")}`);

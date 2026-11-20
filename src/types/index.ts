@@ -2206,7 +2206,10 @@ export interface StoreTrackInfo {
 export interface LibraryImage {
   id: string;
   name: string;
+  /** المستوياتُ الأربعة (0284): الشركة (الموزّع) ← الصنف (قطط/كلاب…) ← الوكالة (الماركة) ← القسم. */
   company: string | null;
+  kind?: string | null;
+  agency?: string | null;
   section: string | null;
   barcode: string | null;
   path: string;
