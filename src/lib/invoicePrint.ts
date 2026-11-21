@@ -8,6 +8,8 @@ import { invoiceNo } from "./invoiceNo";
 export type PrintFormat = "a4" | "thermal";
 
 export interface InvoicePrintOptions {
+  /** 0283: فاتورةٌ بمجموعين — فاتورةُ الدولار المربوطة تُطبع بعد فاتورة الدينار بالورقة نفسِها، كلٌّ بمجموعه. */
+  usdTwin?: { invoice: Invoice; items: InvoiceItem[] };
   clinicName: string;
   clinicPhone?: string | null;
   /** Platform brand shown as an eyebrow above the clinic name (default "doctorVet"). */
@@ -967,6 +969,18 @@ async function printAssets(opts: InvoicePrintOptions): Promise<Partial<InvoicePr
  * النافذة تُفتح فوراً داخل ضغطة المستخدم ثم يُكتب المستند بعد تجهيز الأصول —
  * لو انتظرنا التجهيز أولاً لاعتبرها المتصفح نافذة منبثقة غير مطلوبة وحجبها.
  */
+/** 0283: فاتورةٌ بمجموعين بورقةٍ واحدة — فاتورةُ الدينار بمجموعها، ثمّ خطٌّ متقطّع، ثمّ فاتورةُ الدولار بمجموعها (usdPrintView: بالدولار
+ *  وسعرُ يوم البيع ومقابلُه)، بالقالب نفسِه. وسكربتُ الطباعة واحد (الأوّل) — جسمُ الثانية يُؤخذ بلا سكربتها فلا تُطبع مرّتين. */
+export function buildTwinInvoiceHTML(a: Invoice, aItems: InvoiceItem[], twin: { invoice: Invoice; items: InvoiceItem[] }, opts: InvoicePrintOptions): string {
+  const h1 = buildInvoiceHTML(a, aItems, opts);
+  const h2 = buildInvoiceHTML(twin.invoice, twin.items, opts);
+  const b2s = h2.lastIndexOf("<body>"), b2e = h2.lastIndexOf("<script>");
+  const s1 = h1.lastIndexOf("<script>");
+  if (b2s < 0 || b2e < b2s || s1 < 0) return h1;
+  const sep = '<div style="margin:14px 0;border-top:2px dashed #94a3b8"></div>';
+  return h1.slice(0, s1) + sep + h2.slice(b2s + "<body>".length, b2e) + h1.slice(s1);
+}
+
 export async function openInvoicePrint(invoice: Invoice, items: InvoiceItem[], opts: InvoicePrintOptions): Promise<boolean> {
   const w = window.open("", "_blank", opts.format === "thermal" ? "width=380,height=640" : "width=820,height=920");
   if (!w) return false; // popup blocked
@@ -974,7 +988,7 @@ export async function openInvoicePrint(invoice: Invoice, items: InvoiceItem[], o
     w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;padding:2rem;text-align:center;color:#475569">…</body>');
   } catch { /* بعض المتصفحات تمنع الكتابة المبكرة — نكمل عادي */ }
   const extra = await printAssets(opts);
-  const html = buildInvoiceHTML(invoice, items, { ...opts, ...extra });
+  const html = opts.usdTwin ? buildTwinInvoiceHTML(invoice, items, opts.usdTwin, { ...opts, ...extra }) : buildInvoiceHTML(invoice, items, { ...opts, ...extra });
   w.document.open();
   w.document.write(html);
   w.document.close();

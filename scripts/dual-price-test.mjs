@@ -30,14 +30,15 @@ globalThis.localStorage = {
   removeItem: (k) => { mem.delete(k); }, clear: () => mem.clear(), key: (i) => [...mem.keys()][i] ?? null, get length() { return mem.size; },
 };
 globalThis.CustomEvent = globalThis.CustomEvent ?? class { constructor(type) { this.type = type; } };
-globalThis.window = globalThis.window ?? { localStorage: globalThis.localStorage, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
+globalThis.window = globalThis.window ?? { localStorage: globalThis.localStorage, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; },
+  location: { hostname: "doctorvet.vet", origin: "https://doctorvet.vet", href: "https://doctorvet.vet/" } };
 globalThis.document = globalThis.document ?? {
   documentElement: { lang: "", dir: "", style: { setProperty() {} }, classList: { add() {}, remove() {}, toggle() {} } },
   addEventListener() {}, removeEventListener() {}, querySelector: () => null, createElement: () => ({ style: {}, setAttribute() {}, appendChild() {} }),
   body: { appendChild() {}, classList: { add() {}, remove() {} } }, visibilityState: "visible",
 };
 
-const EMPTY = new Set(["@supabase/supabase-js", "@supabase/functions-js", "@supabase/realtime-js", "@supabase/auth-js", "@supabase/node-fetch", "html-parse-stringify"]);
+const EMPTY = new Set(["@supabase/supabase-js", "@supabase/functions-js", "@supabase/realtime-js", "@supabase/auth-js", "@supabase/node-fetch", "html-parse-stringify", "qrcode"]);
 async function load(muts = []) {
   const plug = {
     name: "stubs",
@@ -72,8 +73,9 @@ async function load(muts = []) {
         'export * as U from "./src/lib/usdProduct.ts";',
         'export * as P from "./src/lib/packs.ts";',
         'export { repriceCart } from "./src/lib/cartReprice.ts";',
-        'export { dualCheckout, dualRate, dualReady } from "./src/lib/dualApi.ts";',
-        'export { demoUsdPrefs, demoUsdRateSet, demoUsdState } from "./src/lib/demoUsd.ts";',
+        'export { dualCheckout, dualRate, dualReady, mixedCheckout, mixedTwin } from "./src/lib/dualApi.ts";',
+        'export { demoUsdPrefs, demoUsdRateSet, demoUsdState, demoUsdCheckout } from "./src/lib/demoUsd.ts";',
+        'export { buildTwinInvoiceHTML } from "./src/lib/invoicePrint.ts";',
         'export { iqdOf } from "./src/lib/usdMath.ts";',
       ].join("\n"),
       resolveDir: process.cwd(), sourcefile: "dual-price-test-entry.ts", loader: "ts",
@@ -97,7 +99,7 @@ const serverIqd = (cents, rate1e4) => { const n = BigInt(cents) * BigInt(rate1e4
 async function behaviour(M, say) {
   let ok = true;
   const c = (name, cond, detail) => { if (say) check(name, cond, detail); if (!cond) ok = false; };
-  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet } = M;
+  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout, mixedTwin } = M;
 
   /* أ) الحساب */
   const dual = { price_currency: "IQD", sell_price_usd: 10, sub_unit_price_usd: null, units_per_box: 3, has_sub_unit: true, sold_by_weight: false };
@@ -212,6 +214,63 @@ async function behaviour(M, say) {
   const rp = repriceCart(cart, { product: () => ({ box: 16000, sub: null }), service: () => null });
   c("إعادةُ التسعير: سطرُ الدولار يبقى دينارُه (١٤٬٦٠٠) والدينارُ يتبع القائمة (١٦٬٠٠٠)",
     rp.cart[0].unit_price === 14600 && rp.cart[1].unit_price === 16000 && rp.changed.length === 1 && rp.changed[0].id === "p:b");
+
+  /* هـ) فاتورةٌ بمجموعين (0283) — سطورُ الدينار بالدينار وسطورُ الدولار بالدولار، فاتورتان بمعاملةٍ واحدة ومرجعٍ واحد */
+  mem.clear(); session("owner");
+  await demoUsdPrefs(true, 250);
+  const rt = await demoUsdRateSet("146000", null);
+  const oil = await repo.createProduct({ name: "زيت بمجموعين", barcode: "MIX-1", price_currency: "IQD", sell_price: 15000, purchase_price: 11000, sell_price_usd: 10,
+    purchase_price_usd: 7.5, stock: 100, has_sub_unit: true, sub_unit_name: "لتر", units_per_box: 10, sub_unit_price: 1600,
+    packs: [{ id: "k6", name: "كارتون", per: 6, codes: [], purchase_price: null, sell_price: null, sell_price_usd: 58 }] });
+  const dn = await repo.createProduct({ name: "دينار وحده", barcode: "MIX-2", sell_price: 2000, purchase_price: 1500, stock: 50 });
+  const two = await repo.createProduct({ name: "بسعرين بلا مفرد", barcode: "MIX-5", price_currency: "IQD", sell_price: 5000, purchase_price: 3000, sell_price_usd: 4, stock: 40 });
+  const onlyUsd = await repo.createProduct({ name: "دولار وحده", barcode: "MIX-3", price_currency: "USD", sell_price: 0, purchase_price: 0, sell_price_usd: 4, purchase_price_usd: 3, stock: 50 });
+  const IQ = [{ product_id: dn.id, name: "دينار وحده", qty: 2, unit_price: 2000, unit_cost: 0, stock_qty: 2, unit_label: null, service_id: null },
+    { product_id: oil.id, name: "زيت بمجموعين", qty: 1, unit_price: 15000, unit_cost: 0, stock_qty: 1, unit_label: null, service_id: null }];
+  const US = [{ product_id: oil.id, qty: 1, unit_price_usd: "58.00", pack_id: "k6", pack_per: 6 }, { product_id: oil.id, qty: 4, unit_price_usd: "1.00", sub: true }];
+  const mm = (ref, x = {}) => ({ client_ref: ref, payment_method: "cash", amount_paid: 19000, final_total: 19000, fx_rate_id: rt.id, discount_usd: "2.00", paid_usd: "20.00", usd_method: "cash", ...x });
+  const DB = () => JSON.parse(localStorage.getItem([...mem.keys()].find((k) => k.startsWith("vp_demo_db"))));
+  const res = await mixedCheckout(IQ, US, mm("m-1"));
+  const d1 = DB();
+  const uItems = (d1.invoiceItems ?? []).filter((x) => x.invoice_id === res.usd.id).sort((a, b) => b.stock_qty - a.stock_qty);
+  c("بمجموعين: فاتورةُ الدينار ١٩٬٠٠٠ بمرجع البيعة، وفاتورةُ الدولار ٦٠$ (خصم ٢$) مدفوعٌ ٢٠$ بمرجعها ~usd وسعر يومها ١٤٦٠ (دينارُها ٨٧٬٦٠٠)",
+    res.iqd && res.iqd.total === 19000 && (res.iqd.currency ?? "IQD") === "IQD" && res.iqd.client_ref === "m-1"
+    && res.usd.currency === "USD" && Number(res.usd.total_usd) === 60 && Number(res.usd.discount_usd) === 2 && Number(res.usd.paid_usd) === 20
+    && res.usd.client_ref === "m-1~usd" && Number(res.usd.fx_rate) === 1460 && res.usd.total === 87600,
+    JSON.stringify({ i: res.iqd && [res.iqd.total, res.iqd.client_ref], u: [res.usd.currency, res.usd.total_usd, res.usd.discount_usd, res.usd.paid_usd, res.usd.client_ref, res.usd.fx_rate, res.usd.total] }));
+  c("  وسطورُ الدولار: الكارتونُ ٥٨$ (٦ علب) واللترُ ١$ (٠٫٤ علبة، «لتر») بلا كلفةٍ بالدولار (متوسّطُ الدينار)",
+    uItems.map((x) => `${x.qty}:${x.unit_label ?? "-"}:${x.stock_qty}:${x.unit_price_usd}:${x.unit_cost_usd ?? "-"}`).join(",") === "1:كارتون:6:58:-,4:لتر:0.4:1:-",
+    uItems.map((x) => `${x.qty}:${x.unit_label ?? "-"}:${x.stock_qty}:${x.unit_price_usd}:${x.unit_cost_usd ?? "-"}`).join(","));
+  const stockOf = (db, id) => Math.round(db.products.find((x) => x.id === id).stock * 1000) / 1000;
+  c("  والرصيد: الزيتُ ١٠٠ − ١ − ٦ − ٠٫٤ = ٩٢٫٦، والدينارُ وحده ٤٨", stockOf(d1, oil.id) === 92.6 && stockOf(d1, dn.id) === 48, `${stockOf(d1, oil.id)}|${stockOf(d1, dn.id)}`);
+  const again2 = await mixedCheckout(IQ, US, mm("m-1"));
+  c("  والإعادةُ بالمرجع ترجع الفاتورتين كما ثبتتا (لا ثالثة، والرصيدُ كما هو)",
+    again2.iqd.id === res.iqd.id && again2.usd.id === res.usd.id && (DB().invoices ?? []).length === 2 && stockOf(DB(), oil.id) === 92.6);
+  const rj = [];
+  rj.push(await errOf(() => mixedCheckout(IQ, US, mm("m-r1", { fx_rate_id: "old" }))));
+  rj.push(await errOf(() => mixedCheckout(IQ, US, mm("m-r2", { paid_usd: "99.00" }))));
+  rj.push(await errOf(() => mixedCheckout(IQ, [], mm("m-r3"))));
+  rj.push(await errOf(() => mixedCheckout(IQ, US, mm("m-r4", { sale_kind: "wholesale" }))));
+  rj.push(await errOf(() => mixedCheckout(IQ, [{ product_id: two.id, qty: 1, unit_price_usd: "4.00", sub: true }], mm("m-r5"))));
+  rj.push(await errOf(() => mixedCheckout(IQ, [{ product_id: dn.id, qty: 1, unit_price_usd: "1.00" }], mm("m-r6"))));
+  c("  والرفضُ يرجّع النصفين: سعرُ صرفٍ تغيّر، ودفعٌ فوق المجموع، وبلا دولار، والجملة، ومفردٌ بلا مفرد، ودينارٌ وحده بالدولار",
+    rj.join("|") === "usd_rate_changed|usd_partial_at_sale|mixed_no_usd|mixed_wholesale|sub_changed|usd_mixed", rj.join("|"));
+  c("    (ولا فاتورةَ نزلت ولا نصفُ دينار — الدينارُ وحده ٤٨ والزيتُ ٩٢٫٦)",
+    (DB().invoices ?? []).length === 2 && stockOf(DB(), dn.id) === 48 && stockOf(DB(), oil.id) === 92.6, `${(DB().invoices ?? []).length}|${stockOf(DB(), dn.id)}`);
+  const solo = await mixedCheckout([], [{ product_id: two.id, qty: 2, unit_price_usd: "4.00" }], mm("m-2", { amount_paid: 0, final_total: 0, discount_usd: "0", paid_usd: "0" }));
+  c("  وبلا سطور دينار: فاتورةُ الدولار وحدها ٨$ دَيناً كلَّه", solo.iqd === null && Number(solo.usd.total_usd) === 8 && Number(solo.usd.paid_usd) === 0);
+  // مراجعة 0283: علَمُ المفرد على مادّةٍ صارت «دولار وحده» (بلا مفرد) يُرفض — تجاهلُه كان يبيع ٤ مفردات ٤ علب.
+  const subStale = await errOf(() => mixedCheckout([], [{ product_id: onlyUsd.id, qty: 4, unit_price_usd: "1.00", sub: true }], mm("m-r7", { amount_paid: 0, final_total: 0, discount_usd: "0", paid_usd: "0" })));
+  c("  ومفردٌ لمادّةٍ لم تعد بسعرين يُرفض (لا يُباع علباً)، والرصيدُ كما هو", subStale === "sub_changed" && stockOf(DB(), onlyUsd.id) === 50, `${subStale}|${stockOf(DB(), onlyUsd.id)}`);
+  // والإعادةُ بلا سطر دولار (رُجّعت للدينار بعد محاولةٍ مجهولة): فاتورةُ الدولار التي ثبتت تُلقى بمرجعها.
+  const twin = await mixedTwin("m-1");
+  c("  وتوأمُ مرجعٍ ثبت بمجموعين يُلقى (~usd)، وغيرُه لا شيء", twin?.id === res.usd.id && (await mixedTwin("m-none")) === null);
+  const oldPartial = await errOf(() => demoUsdCheckout([{ product_id: onlyUsd.id, qty: 1 }], { client_ref: "o-1", fx_rate_id: rt.id, paid_usd: "1", payment_method: "cash" }));
+  c("  وبيعُ الدولار القديم كما كان: الجزئيُّ بلا علَم الفاتورة بمجموعين يُرفض", oldPartial === "usd_partial_at_sale", oldPartial);
+  const html = M.buildTwinInvoiceHTML(res.iqd, [{ id: "a", invoice_id: res.iqd.id, product_id: dn.id, name: "دينار وحده", qty: 2, unit_price: 2000, unit_cost: 0, line_total: 4000, unit_label: null }],
+    { invoice: res.usd, items: uItems }, { clinicName: "x", format: "thermal", lang: "ar" });
+  c("  والورقةُ الواحدة: الفاتورتان بمجموعيهما وسكربتُ طباعةٍ واحد",
+    (html.match(/window\.print\(\)/g) ?? []).length === 1 && html.includes("دينار وحده") && html.includes("زيت بمجموعين") && /58\.00|58/.test(html) && html.includes("$1 = 1,460"));
   return ok;
 }
 
@@ -221,28 +280,56 @@ await behaviour(M, true);
 
 /* ── هـ) الأسلاك ── */
 const sb = code("src/components/retail/SaleBuilder.tsx");
-check("شاشة البيع: «$» على سطر المادّة بسعرين (لا الراجع ولا وضعُ الراجع ولا الوزن) يحوّله، وسطرُ دولارٍ يبقى زرُّه ليرجع ولو لم تعد بسعرين",
-  /l\.kind === "product" && !l\.ret && !l\.byWeight && \(l\.usd \|\| \(!retMode && dualOf\(products\.find\(\(x\) => x\.id === l\.product_id\)\)\)\)/.test(sb)
+check("شاشة البيع: «$» على سطر المادّة بسعرين (لا الراجع ولا وضعُ الراجع ولا الوزن ولا الجرعة) يحوّله، وسطرُ دولارٍ يبقى زرُّه ليرجع",
+  /l\.kind === "product" && !l\.ret && !l\.byWeight && !l\.dose && \(l\.usd \|\| \(!retMode && dualOf\(products\.find\(\(x\) => x\.id === l\.product_id\)\)\)\)/.test(sb)
   && /data-lineusd=\{l\.id\}[\s\S]{0,140}void toggleLineUsd\(l\)/.test(sb));
 check("  والجملة لا تبيع بالدولار (سعرُ الدولار سعرُ مفرد — الجملةُ بسعر الشراء)",
   /const dualOf = \(p: Product \| null \| undefined\): boolean =>\s*!wholesale && /.test(sb));
 check("  وجوابُ سعر الصرف يُكتب على السطر كما هو الآن: وحدةٌ تبدّلت أو ضغطةٌ سبقت ⇒ لا شيء",
   /const cur = cart\.find\(\(x\) => x\.id === l\.id\);\s*if \(!cur \|\| cur\.usd \|\| \(cur\.saleUnit \?\? null\) !== \(l\.saleUnit \?\? null\) \|\| \(cur\.packId \?\? null\) !== \(l\.packId \?\? null\)\) return cart;/.test(sb));
-check("  والوصلُ الفوريّ يحمل سعرَ الدولار (والفاتورةُ الراجعة سعرَ الصرف) كإعادة الطباعة",
-  /\.\.\.\(l\.usd && !l\.ret \? \{ unit_price_usd: l\.usd\.c \/ 100 \} : \{\}\)/.test(sb) && /setDone\(\{ invoice, items: invItems \}\);/.test(sb));
-check("  التحويلُ بسعر المستوى ودينارُه بسعر اليوم، وسطورُ الدولار الأقدم تُحسب بسعر اليوم",
-  /const c = m\.usdCentsOf\(row, level, pack\);/.test(sb) && /unit_price: m\.iqdOfCents\(c, rate\.rate1e4\)/.test(sb)
-  && /if \(x\.usd && x\.usd\.rid !== rate\.id\) return \{ \.\.\.x, usd: \{ \.\.\.x\.usd, rid: rate\.id, r: r1e4 \}, unit_price: m\.iqdOfCents\(x\.usd\.c, rate\.rate1e4\) \};/.test(sb));
+check("  0283: «$» لا يحوّل — دينارُ السطر يبقى، والسطرُ يأخذ سعرَه بالدولار ومعرّفَ سعر اليوم، ولا سطرَ دولار قبل أن تعرف القاعدةُ الفاتورةَ بمجموعين",
+  /const c = m\.usdCentsOf\(row, level, pack\);/.test(sb) && /if \(x\.id === l\.id\) return \{ \.\.\.x, usd: \{ c, rid: rate\.id, r: r1e4 \} \};/.test(sb)
+  && /if \(x\.usd && x\.usd\.rid !== rate\.id\) return \{ \.\.\.x, usd: \{ \.\.\.x\.usd, rid: rate\.id, r: r1e4 \} \};/.test(sb)
+  && !/iqdOfCents/.test(sb) && /mixedOk = await m\.mixedReady\(\)/.test(sb));
 check("  تبديلُ الوحدة والسعرُ المكتوبُ بيد يُرجعان السطرَ للدينار",
   /priceManual: false, usd: undefined \};/.test(sb) && /unit_price: v, priceManual: true, usd: undefined \}/.test(sb));
-check("  البيعة: سطرُ الدولار يحمل عملتَه وسعرَه، وبسطر دولار تمرّ من dualCheckout بمعرّف سعر الصرف، وسعران مختلفان لا يُرسلان",
-  /\.\.\.\(l\.usd && !l\.ret \? \{ price_currency: "USD" as const, unit_price_usd: \(l\.usd\.c \/ 100\)\.toFixed\(2\) \} : \{\}\)/.test(sb)
-  && /usdRids\.length === 1\s*\? import\("@\/lib\/dualSale"\)\.then\(\(m\) => m\.dualCheckout\(items, \{ \.\.\.meta, fx_rate_id: usdRids\[0\] \}\)\)/.test(sb)
+check("  0283: مالُ الدينار من سطور الدينار وحدها — المجموعُ والكلفةُ والعروضُ ومعاينةُ الربح (سطرُ الدولار ليس جرعةً ولا راجعاً)",
+  /function isUsdLine\(l: Pick<Line, "usd" \| "ret" \| "dose">\): boolean \{\s*return !!l\.usd && !l\.ret && !l\.dose;/.test(sb)
+  && /const iqdCart = useMemo\(\(\) => cart\.filter\(\(l\) => !isUsdLine\(l\)\), \[cart\]\);/.test(sb)
+  && /const subtotal = iqdCart\.reduce/.test(sb) && /const cost = iqdCart\.reduce/.test(sb)
+  && /computePromotions\(iqdCart\.filter/.test(sb) && /const promoLines = \(r: QtyPromo\): Line\[\] => iqdCart\.filter/.test(sb)
+  && /const consCost = iqdCart\.reduce/.test(sb) && /const lineCostUnknown = [^\n]*iqdCart\.some/.test(sb));
+check("  0283: مجموعُ الدولار بالسنت كالخادم (round(qty × سعر)) — خصمُه لا يتجاوزه، ودفعُه الفارغُ كلُّه، والباقي دَينٌ يحتاج اسماً",
+  /const usdSubC = usdLines\.reduce\(\(n, l\) => n \+ Math\.round\(l\.qty \* \(l\.usd as NonNullable<Line\["usd"\]>\)\.c\), 0\);/.test(sb)
+  && /const usdDiscC = Math\.min\(usdSubC, usdDiscIn \?\? 0\);/.test(sb)
+  && /const usdPaidC = usdPaid == null \? usdTotalC : Math\.min\(usdTotalC, usdPaidIn \?\? 0\);/.test(sb)
+  && /const needsDebtName = \(isCredit \|\| deliveryOn \|\| usdDebtC > 0\) && !name\.trim\(\);/.test(sb));
+check("  0283: البيعة — سطورُ الدينار وحدها لـretail_checkout، وسطورُ الدولار بأسعارها (المفردُ sub والكارتونُ بعدده) من mixedCheckout بخصمها ودفعها",
+  /const items: CheckoutItem\[\] = cart\.filter\(\(l\) => !isUsdLine\(l\)\)\.map/.test(sb) && !/price_currency: "USD"/.test(sb)
+  && /\.\.\.\(l\.saleUnit === "sub" \? \{ sub: true \} : \{\}\)/.test(sb) && /\.\.\.\(isPackLine\(l\) \? \{ pack_id: l\.packId as string, pack_per: l\.packPer as number \} : \{\}\)/.test(sb)
+  && /m\.mixedCheckout\(items, usdItems, \{\s*\.\.\.meta, fx_rate_id: usdRids\[0\], discount_usd: \(usdDiscC \/ 100\)\.toFixed\(2\), paid_usd: \(usdPaidC \/ 100\)\.toFixed\(2\), usd_method: usdMethod,/.test(sb)
   && /if \(usdRids\.length > 1\) throw/.test(sb));
-check("  وسعرُ صرفٍ تغيّر يُعاد حسابُه ويُقال (لا بيعةٌ بسعرٍ قديم)",
-  /includes\("usd_rate_changed"\)\) \{[\s\S]{0,600}m\.iqdOfCents\(x\.usd\.c, r\.rate\.rate1e4\)[\s\S]{0,500}hint: t\("retail\.dual\.rateMoved"\)/.test(sb));
-check("  والقطعةُ كسولة: شاشةُ البيع لا تستورد dualSale/dualApi/dualPrice ثابتاً",
-  !/^import[^\n]*["']@\/lib\/(dualSale|dualApi|dualPrice)["']/m.test(src("src/components/retail/SaleBuilder.tsx")));
+check("  ولا توصيل ولا يومٌ سابق ولا رقمٌ لا يُقرأ مع سطر دولار (يُقال قبل أيّ مرجع)",
+  /if \(usdOn && \(deliveryOn \|\| saleDay \|\| usdBad\)\) \{/.test(sb));
+check("  وسعرُ صرفٍ تغيّر: المبلغُ بالدولار كما هو، والسطورُ تأخذ معرّفَ اليوم ويُقال",
+  /includes\("usd_rate_changed"\)\) \{[\s\S]{0,600}usd: \{ \.\.\.x\.usd, rid: r\.rate\.id, r: r1e4 \} \} : x[\s\S]{0,500}hint: t\("retail\.dual\.rateMoved"\)/.test(sb));
+check("  و«تمّ» بفاتورة الدولار، والوصلُ بالورقة نفسِها (A4 والحراري)",
+  /if \(usdInvoice\) setDone\(\{ invoice, items: invItems, usd: \{ invoice: usdInvoice, items: usdItemsDone \} \}\);/.test(sb)
+  && (sb.match(/usdTwin: done\.usd \?\? undefined/g) ?? []).length === 2
+  && /usdTwin: opts\?\.usdTwin,/.test(code("src/components/retail/usePrintInvoice.ts"))
+  && /const html = opts\.usdTwin \? buildTwinInvoiceHTML\(/.test(code("src/lib/invoicePrint.ts")));
+check("  ومراجعة 0283: «$» مقفولٌ بعد محاولةٍ مجهولة المصير، والسعرُ النهائيُّ المثبَّت يُفكّ بتبديل العملة ولا دينارَ يُثبَّت بلا سطوره",
+  /if \(payPending\) \{ playWarning\(\); toast\.error\(t\("retail\.payPending"/.test(sb) && (sb.match(/setFinalOverride\(null\);/g) ?? []).length >= 3
+  && /const total = finalOverride != null && iqdCart\.length > 0 \? Math\.max\(0, finalOverride\) : autoTotal;/.test(sb));
+check("  والمسودّةُ تحفظ صندوقَ الدولار، والإعادةُ بلا دولار تُظهر توأمَها، والمعاينةُ «—» مع سطر دولار",
+  /saveSaleDraft\(draftScope, \{ usdDisc, usdPaid, usdMethod, cart,/.test(sb) && /\}, \[usdDisc, usdPaid, usdMethod, clinicId,/.test(sb) && /useState\(draft0\?\.usdDisc \?\? ""\)/.test(sb)
+  && /if \(!freshRef && saleRefRef\.current\) \{[\s\S]{0,200}m\.mixedTwin\(ref\)/.test(sb)
+  && /const profitShown = consCost === null \|\| lineCostUnknown \|\| usdOn \? null/.test(sb));
+check("  والطبعةُ الأوّليّة: سطورُ الدينار بمجموعها وسطورُ الدولار بمجموعها (لا دينارُ سطر الدولار تحت مجموع الدينار)",
+  /const draftItems: InvoiceItem\[\] = iqdCart\.map/.test(sb) && /usdTwin: \{ invoice: usdDraft, items: usdDraftItems \}/.test(sb)
+  && /openInvoicePrint\(onlyUsd \? usdDraft : draft, onlyUsd \? usdDraftItems : draftItems/.test(sb));
+check("  والقطعةُ كسولة: شاشةُ البيع لا تستورد dualSale/dualApi/dualPrice/UsdPay ثابتاً",
+  !/^import[^\n]*["']@\/(lib\/(dualSale|dualApi|dualPrice)|components\/retail\/UsdPay)["']/m.test(src("src/components/retail/SaleBuilder.tsx")));
 const inv = code("src/pages/Inventory.tsx");
 check("نموذجُ المادّة: «دينار + دولار» يُبقي حقولَ الدينار، ويرسل بسعرين والمفرد حين تعرفه القاعدة، والكارتونُ بسعره بالدولار",
   /\{!\(usd\.on && usdEnabled\) && priceFields\}/.test(inv) && /usdPatch\(usd, product \?\? null, usdEnabled, dualReadyOk, subUnitOn\)/.test(inv)
@@ -274,6 +361,8 @@ check("  وصورُ المحذوفات بالتنظيف، والإعادةُ ب�
   && !/before update of sell_price_usd/.test(mig));
 const ar = JSON.parse(src("src/i18n/ar.json")), en = JSON.parse(src("src/i18n/en.json"));
 const need = ["chip", "toUsd", "toIqd", "note", "unreach", "not_ready", "disabled", "no_rate", "noLevel", "rateMoved"];
+const mxNeed = ["title", "disc", "total", "paid", "all", "none", "debt", "rate", "doneTitle", "doneDebt", "donePaid"];
+check("النصوص: mxp (صندوقُ الدولار) بالقاموسين", mxNeed.every((k) => ar.mxp?.[k] && en.mxp?.[k]) && ["delivery", "backdate", "bad", "debtName", "notReady"].every((k) => ar.mxp.say[k] && en.mxp.say[k]));
 check("النصوص: retail.dual بالقاموسين، وusd.prod الجديدة", need.every((k) => ar.retail.dual[k] && en.retail.dual[k])
   && ["modeLabel", "modeIqd", "modeDual", "modeUsd", "dualHint", "subUsd", "subAuto", "badSub", "blockedDual", "blockedIqd"].every((k) => ar.usd.prod[k] && en.usd.prod[k]));
 
@@ -293,6 +382,14 @@ const MUTS = [
   ["المرآةُ تقبل سعرَ صرفٍ قديماً", "src/lib/demoDual.ts", "if (meta.fx_rate_id !== st.rate.id)", "if (false)"],
   ["المرآةُ تبيع مادّةً بلا دولار", "src/lib/demoDual.ts", "if (p.sell_price_usd == null)", "if (false)"],
   ["خانةُ المفرد بقطعٍ لا تقريب", "src/lib/dualPrice.ts", "return (Math.round(c / unitsPerBox) / 100).toFixed(2);", "return (Math.floor(c / unitsPerBox) / 100).toFixed(2);"],
+  ["الفاتورةُ بمجموعين بلا إرجاع النصفين", "src/lib/demoDual.ts", "    saveDB(JSON.parse(snapDb));\n", ""],
+  ["مرجعُ الدولار بلا ~usd", "src/lib/demoDual.ts", "const uref = `${ref}~usd`;", "const uref = `${ref}-u`;"],
+  ["الجزئيُّ بلا علَمه", "src/lib/demoUsd.ts", "const partial = !!meta.partial_ok && paidUsd > 0n", "const partial = paidUsd > 0n"],
+  ["المفردُ يُخصم علبةً", "src/lib/demoUsd.ts", "stock: sub ? Number(divRound(BigInt(qty) * 1000n, BigInt(units))) / 1000 : qty * per", "stock: qty * per"],
+  ["المفردُ يُتجاهل على مادّةٍ لم تعد بسعرين", "src/lib/demoUsd.ts", "const sub = !!it.sub;", "const sub = dual && !!it.sub;"],
+  ["التوأمُ بغير مرجعه", "src/lib/dualApi.ts", "client_ref === `${ref}~usd`) as Invoice | undefined", "client_ref === ref) as Invoice | undefined"],
+  ["المادّةُ بسعرين بكلفة الدولار", "src/lib/demoUsd.ts", "costCents: dual || p.purchase_price_usd == null ? null", "costCents: p.purchase_price_usd == null ? null"],
+  ["الورقةُ الواحدة بسكربتين", "src/lib/invoicePrint.ts", "h2.slice(b2s + \"<body>\".length, b2e)", "h2.slice(b2s + \"<body>\".length)"],
 ];
 for (const [name, file, from, to] of MUTS) {
   let caught;

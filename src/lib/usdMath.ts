@@ -16,7 +16,7 @@ export const USD_ROUND_STEPS = [1, 50, 100, 250, 500, 1000] as const;
 const RATE_SCALE = 10_000n; // أربعُ منازل
 
 /** قسمةٌ بنصفٍ بعيداً عن الصفر — كـ`round(numeric)` بالقاعدة. */
-function divRound(a: bigint, b: bigint): bigint {
+export function divRound(a: bigint, b: bigint): bigint {
   if (b === 0n) return 0n;
   const neg = (a < 0n) !== (b < 0n);
   const aa = a < 0n ? -a : a, bb = b < 0n ? -b : b;
