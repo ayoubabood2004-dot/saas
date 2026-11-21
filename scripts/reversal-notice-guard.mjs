@@ -236,7 +236,9 @@ const STUB = {
       "data-sentat": v(p.sentAt), "data-cashback": v(p.cashBack), "data-action": v(p.action) }); }
     export default function ConsumablesSheet() { return null; }`,
   // لوحةُ فاتورة الدولار (0264) قطعةٌ أخرى لا يمسّها هذا الفحص (فواتيرُه بالدينار): لا ترسم شيئاً.
-  "@/components/usd/Usd": "export function UsdInvoicePanel() { return null; }\nexport function UsdDebtActions() { return null; }",
+  "@/components/usd/Usd": "export function UsdInvoicePanel() { return null; }\nexport function UsdDebtActions() { return null; }\nexport function UsdTwinSection() { return null; }",
+  // البيعةُ بمجموعين (0286): الفاتورةُ تسأل عن نصفها الآخر بمرجعه — فواتيرُ هذا الفحص بلا نصف.
+  "@/lib/dualApi": "export const invoiceByRef = async () => null;",
   // الدينُ القديم (0271) قطعةٌ كسولةٌ أخرى (شارةٌ وزرّ) لا يمسّها هذا الفحص: لا ترسم شيئاً.
   "@/components/retail/OldDebt": "export function OldDebtNote() { return null; }\nexport function OldDebtButton() { return null; }",
   // نافذةُ التأكيد كما تراها الفاتورةُ والمرتجع: بديلٌ يكتب ما وصله (والحقيقيّةُ تُرسم بنفسها بالقسم «أ»).

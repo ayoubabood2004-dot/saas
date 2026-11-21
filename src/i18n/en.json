@@ -7397,7 +7397,7 @@
     "stale": {
       "ask": "The recorded dollar rate is from {{date}}: {{v}} per $100 — is it still today's rate?",
       "same": "Yes, same rate",
-      "askManager": "If it changed, ask a manager to update it in Settings before selling"
+      "askManager": "If it changed, enter today's new rate — via «Change rate» on the sale screen, or here."
     },
     "settle": {
       "pending": "We don't know whether the payment went through (the connection dropped) — «Try again» won't record it twice. To change it, close this and check the payments.",
@@ -7410,8 +7410,6 @@
       "all": "Whole remainder",
       "rate": "Price of $100",
       "rateToday": "Today's rate",
-      "rateOther": "Not today's rate — needs a manager and a reason",
-      "reason": "Reason (e.g. agreed with the customer)",
       "drawer": "{{usd}} × {{r}} = {{v}} IQD into the drawer",
       "share": "Invoice share {{v}} IQD",
       "fxGain": "Exchange gain {{v}} IQD",
@@ -7428,7 +7426,14 @@
       "void": "Void",
       "voidReason": "Reason for voiding",
       "voidConfirm": "Void payment",
-      "voidDone": "Payment voided — the remainder is back"
+      "voidDone": "Payment voided — the remainder is back",
+      "rateSale": "Same as the sale-day rate",
+      "rateMine": "A rate you chose — saved on this payment",
+      "pickSale": "Sale-day rate {{v}} ({{d}})",
+      "pickToday": "Today's rate {{v}}",
+      "makeToday": "Make it today's rate",
+      "note": "Note (optional) — e.g. agreed with the customer",
+      "atSale": "Paid at the sale"
     },
     "inv": {
       "rate": "Sold at {{r}} per dollar",
@@ -7476,6 +7481,10 @@
       "usd_in_use": "There are dollar items or open dollar debts — switch the items to dinars and settle the debts first",
       "photographer_forbidden": "This account can't reach sales or money",
       "offline": "No connection — dollar operations need the internet"
+    },
+    "twin": {
+      "title": "Dollar lines of the same sale",
+      "itemsFailed": "The dollar lines did not load — try again."
     }
   },
   "dpets": {
@@ -9187,7 +9196,7 @@
     "read": "Read as: discount {{disc}} · pays {{paid}}",
     "debt": "Remaining dollar debt",
     "rate": "Today's rate {{rate}} — saved on the dollar invoice; later payments use their own day's rate",
-    "noRate": "Set today's dollar rate in settings",
+    "noRate": "No dollar rate set for today — press «Change rate»",
     "doneTitle": "Dollar invoice {{no}}",
     "doneDebt": "Paid {{paid}} · {{debt}} left as dollar debt",
     "donePaid": "Fully paid in dollars",
@@ -9197,6 +9206,23 @@
       "bad": "The dollar amount couldn't be read — write it like 12.50",
       "debtName": "A dollar debt needs the customer's name — fill in the customer field.",
       "notReady": "Two-total invoices need a database update (0283) — tell the manager."
+    },
+    "rateEdit": "Change rate",
+    "rateTitle": "Today's dollar rate",
+    "rateNow": "Recorded now: {{v}} per $100 ($1 = {{one}} IQD)",
+    "rateNone": "No dollar rate set yet.",
+    "rateNew": "Price of $100 today (in IQD)",
+    "rateOne": "= {{v}} IQD per dollar",
+    "rateBad": "Enter the price of $100 — e.g. 150,000",
+    "rateHint": "Saved as today's rate for the whole clinic, with your name and the time. Dollar lines in the cart take it; old invoices keep their own day's rate.",
+    "rateSave": "Save today's rate",
+    "rateSaved": "Dollar rate saved: {{v}} per $100",
+    "rateFailed": "The rate was not saved — check the connection and try again.",
+    "rateErr": {
+      "usd_rate_bad": "Enter the price of $100 — e.g. 150,000",
+      "usd_rate_manager": "The database needs update 0286 before staff can set the rate — for now only a manager can.",
+      "usd_operator": "The platform operator does not set a clinic's dollar rate.",
+      "usd_disabled": "Dollars are not enabled for this clinic — see Settings."
     }
   },
   "libm": {
