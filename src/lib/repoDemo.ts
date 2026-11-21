@@ -1070,6 +1070,22 @@ export function demoChargesNoValue(mode: "cost" | "expense" | null, gross: numbe
   if (mode === "cost" && !(gross > 0)) throw demoHint("charges_no_value", "الفاتورة بلا قيمة — الأجور ما تنوزّع على كلفة موادها. اكتب أسعار الشراء أو شيل الأجور.");
 }
 
+type LibraryMeta = { name: string; company?: string | null; kind?: string | null; agency?: string | null; section?: string | null; barcode?: string | null };
+/** صفُّ مكتبة الصور تجريبياً: المسارُ عنوانٌ مضمَّن (لا دلو)، و`clinic_id` فارغٌ = العامّة (0285). */
+function demoLibraryRow(clinicId: string | null, meta: LibraryMeta, upload: { blob: Blob; dataUrl: string }): LibraryImage {
+  assertUploadableImage(upload);
+  const db = loadDB();
+  const row: LibraryImage = {
+    id: uid("lib"), name: meta.name.trim(), company: meta.company?.trim() || null,
+    kind: meta.kind?.trim() || null, agency: meta.agency?.trim() || null,
+    section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null,
+    path: upload.dataUrl, updated_at: new Date().toISOString(), clinic_id: clinicId,
+  };
+  db.imageLibrary = [...(db.imageLibrary ?? []), row];
+  saveDB(db);
+  return row;
+}
+
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
     return loadDB().pets.filter((p) => p.owner_id === ownerId);
@@ -2157,23 +2173,42 @@ const demoRepo = {
   async listImageLibrary(): Promise<LibraryImage[]> {
     return [...(loadDB().imageLibrary ?? [])].sort((a, b) => (a.company ?? "").localeCompare(b.company ?? "") || a.name.localeCompare(b.name));
   },
-  async createLibraryImage(meta: { name: string; company?: string | null; kind?: string | null; agency?: string | null; section?: string | null; barcode?: string | null }, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
-    assertUploadableImage(upload);
+  async createLibraryImage(meta: LibraryMeta, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
+    return demoLibraryRow(null, meta, upload);
+  },
+  /** مكتبةُ العيادة الخاصّة (0285) — تجريبياً: الصفُّ بعمود العيادة، والجهازُ عيادةٌ واحدة. */
+  async createClinicLibraryImage(clinicId: string | null, meta: LibraryMeta, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
+    if (!clinicId) throw new Error("no_clinic_for_image");
+    return demoLibraryRow(clinicId, meta, upload);
+  },
+  async updateLibraryImage(id: string, patch: Partial<Record<"name" | "company" | "kind" | "agency" | "section" | "barcode", string | null>>): Promise<void> {
     const db = loadDB();
-    const row: LibraryImage = {
-      id: uid("lib"), name: meta.name.trim(), company: meta.company?.trim() || null,
-      kind: meta.kind?.trim() || null, agency: meta.agency?.trim() || null,
-      section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null,
-      path: upload.dataUrl, updated_at: new Date().toISOString(),
-    };
-    db.imageLibrary = [...(db.imageLibrary ?? []), row];
+    const row = assertUpdated((db.imageLibrary ?? []).find((x) => x.id === id));   // صفرُ صفوفٍ يُسمع كما بالخادم
+    if ("name" in patch) row.name = (patch.name ?? "").trim();
+    for (const k of ["company", "kind", "agency", "section"] as const) {
+      if (k in patch) row[k] = patch[k]?.trim() || null;
+    }
+    if (row.name.length < 1 || row.name.length > 120) throw Object.assign(new Error("image_library_name_check"), { code: "23514" });
+    if ("barcode" in patch) row.barcode = normalizeCode(patch.barcode) || null;
+    row.updated_at = new Date().toISOString();
     saveDB(db);
-    return row;
+  },
+  async moveLibraryImages(ids: string[], level: "company" | "kind" | "agency" | "section", value: string | null): Promise<number> {
+    const db = loadDB();
+    const v = value?.trim() || null;
+    const want = new Set(ids);
+    let moved = 0;
+    for (const r of db.imageLibrary ?? []) if (want.has(r.id)) { r[level] = v; moved++; }
+    if (moved < ids.length) throw Object.assign(new Error("library_move_partial"), { code: "library_move_partial", moved, total: ids.length });
+    saveDB(db);
+    return moved;
   },
   async deleteLibraryImage(id: string, _path: string): Promise<void> {
     void _path;
     const db = loadDB();
+    const before = (db.imageLibrary ?? []).length;
     db.imageLibrary = (db.imageLibrary ?? []).filter((r) => r.id !== id);
+    if (db.imageLibrary.length === before) assertUpdated(undefined);   // الحذفُ يُسمع: صفرُ صفوفٍ خطأ
     saveDB(db);
   },
   async imageLibraryUsage(path: string): Promise<number> {

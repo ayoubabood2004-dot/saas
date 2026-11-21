@@ -517,7 +517,8 @@
     "unfold": "Expand the sidebar",
     "payroll": "Staff payroll",
     "poultry": "Poultry farms",
-    "photos": "Product photos"
+    "photos": "Product photos",
+    "library": "Image library"
   },
   "campaigns": {
     "remOther": "A message to this client — it won't count as the reminder (the template changed)",
@@ -6152,7 +6153,8 @@
     "removed": "Unlinked the photo of {{name}} — kept under “Earlier photos”",
     "noAccess": "This page is for staff with product-photo permission. Ask the clinic manager.",
     "gallery": "From gallery",
-    "open": "Open the editor: earlier photos, edit, unlink"
+    "open": "Open the editor: earlier photos, edit, unlink",
+    "libraryPage": "Image library"
   },
   "visitOpen": {
     "when": "When did they come?",
@@ -9237,6 +9239,37 @@
       "bad_method": "This browser can't open this Excel file — save it again from Excel and retry.",
       "no_sheet": "No sheet was found in the file.",
       "no_name_column": "No product-name column was found (for example “Product name” or “Name”)."
-    }
+    },
+    "pageTitle": "Image library",
+    "pageSub": "Your clinic's product photos, sorted by company, kind, agency and section — pick from them for any product. The public library is curated by the system team and every clinic sees it.",
+    "backPhotos": "Product photos",
+    "tabMine": "My clinic's library",
+    "tabPublic": "Public library",
+    "publicReadOnly": "This is the public library — the system team curates it. You can pick from it for any product; to add or edit, use your clinic's library.",
+    "noPerm": "You can browse the library; uploading and editing are for staff with the product-photos permission.",
+    "dbOldClinic": "The clinic library is waiting for a system update — try again later.",
+    "mineEmpty": "Your clinic's library is empty — upload a photo or an Excel file, and your staff will see it under “Pick from the library”.",
+    "editTitle": "Edit photo",
+    "editAria": "Edit {{name}}",
+    "save": "Save",
+    "saved": "Saved",
+    "one": {
+      "company": "company",
+      "kind": "kind",
+      "agency": "agency",
+      "section": "section"
+    },
+    "rename": "Rename this {{level}}",
+    "renameTitle": "Rename {{level}} “{{name}}” for all its photos ({{n}})",
+    "renameHint": "Type an existing name to merge them, or leave it empty to move them to “none”.",
+    "renameGo": "Rename",
+    "renamed": "Done — {{n}} photos moved",
+    "renamePartial": "Only {{n}} of {{total}} photos moved — the library was reloaded, check it and try again.",
+    "keepsOnProducts": "Products that took it keep their photo",
+    "deleteGo": "Remove from library"
+  },
+  "libp": {
+    "mine": "My clinic's library",
+    "public": "Public library"
   }
 }

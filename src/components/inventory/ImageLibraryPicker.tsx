@@ -1,12 +1,15 @@
 // ============================================================================
 // منتقي مكتبة الصور (0175) — قراءةٌ فقط من جهة العيادة.
 //
+// مكتبتان (0285): العامّةُ ومكتبةُ العيادة الخاصّة — تبويبان (LibraryScope، كسولٌ بنطاقه) حين يكون للعيادة
+// صورٌ بمكتبتها، يبدأ على مكتبتها (هي ما رتّبته بنفسها). وإدارتُها من «مكتبة الصور» (/photos/library) لا من هنا.
+//
 // المكتبة يبنيها مشغّل المنصّة من لوحته مقسّمةً شركةً وصنفاً (قرار المالك،
 // docs/store-plan.md)؛ الدكتور هنا يتصفّح ويبحث ويضغط — والاختيار يرجع
 // «مسار» ملف المكتبة ليُكتب بـ`image_path` للمنتج: مرجعٌ لملفٍ واحدٍ يخدم
 // كلَّ العيادات، لا نسخة. لا زرَّ رفعٍ هنا عمداً.
 // ============================================================================
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Search, Images } from "lucide-react";
 import { Modal } from "@/components/Modal";
@@ -17,10 +20,14 @@ import { describeDbError } from "@/lib/errors";
 import { cn, searchable, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { childrenOf, cutAt, keyOfValue, LEVELS, nextLevel, under, valueOf, type LibPath } from "@/lib/libraryLevels";
+import { rowsOf, type LibScope } from "@/lib/libraryScope";
+import { page } from "@/lib/lazyPage";
 import type { LibraryImage } from "@/types";
 
 /* فوق هذا العدد تُرسم الأولى وعدّادُ الباقي — مكتبةٌ بآلاف الصور لا تُرسم دفعةً بشاشة هاتف. */
 const PICK_CAP = 300;
+/* تبويبا المكتبتين بنطاقهما (`libp`) — النصفُ الباردُ ممتلئ، ولا يُحمَّلان إلا لعيادةٍ لها مكتبتُها. */
+const LibraryScope = page(() => import("@/components/inventory/LibraryScope").then((m) => ({ default: m.LibraryScope })), ["libp"]);
 
 export function ImageLibraryPicker({ open, onClose, onPick }: {
   open: boolean;
@@ -39,29 +46,35 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
   /* المستوياتُ الأربعة (0284) فتاتَ خبز: شركة ← صنف ← وكالة ← قسم — بلا نصٍّ جديد (النصفُ الباردُ ممتلئ):
    * الجذرُ «كل الشركات» القائم، والأسماءُ نفسُها، و«—» لما لا اسمَ له. */
   const [path, setPath] = useState<LibPath>({});
+  const [scope, setScope] = useState<LibScope>("mine");
 
   useEffect(() => {
     if (!open) return;
-    setRows(null); setFailed(null);
+    setRows(null); setFailed(null); setScope("mine"); setPath({});
     repo.listImageLibrary()
       .then(setRows)
       .catch((e) => { const m = describeDbError(e, t); setFailed(m); toast.error(m); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tick]);
 
+  /* المكتبتان: تبويبٌ حين يكون للعيادة صورٌ بمكتبتها، وإلا العامّةُ وحدها (وقاعدةٌ قبل 0285 كلُّها عامّة). */
+  const mineN = useMemo(() => (rows ? rowsOf(rows, "mine").length : 0), [rows]);
+  const hasMine = mineN > 0;
+  const eff: LibScope = hasMine ? scope : "public";
+  const scoped = useMemo(() => (rows ? rowsOf(rows, eff) : null), [rows, eff]);
   const level = nextLevel(path);
-  const kids = useMemo(() => (rows && level ? childrenOf(rows, path, level) : []), [rows, path, level]);
+  const kids = useMemo(() => (scoped && level ? childrenOf(scoped, path, level) : []), [scoped, path, level]);
   const showKids = kids.length > 1 || (kids.length === 1 && kids[0].label != null);
   const crumbs = LEVELS.filter((l) => path[l] !== undefined);
   const crumbLabel = (l: (typeof LEVELS)[number]) => {
-    const hit = (rows ?? []).find((r) => keyOfValue(valueOf(r, l)) === path[l]);
+    const hit = (scoped ?? []).find((r) => keyOfValue(valueOf(r, l)) === path[l]);
     return (hit && valueOf(hit, l)) ?? "—";
   };
   const shown = useMemo(() => {
     const ql = searchable(q);
-    return under(rows ?? [], path).filter((r) =>
+    return under(scoped ?? [], path).filter((r) =>
       !ql || [r.name, r.section, r.company, r.agency, r.kind, r.barcode].some((x) => x && searchable(x).includes(ql)));
-  }, [rows, q, path]);
+  }, [scoped, q, path]);
 
   return (
     <Modal open={open} onClose={onClose} title={t("lib.pickTitle", "اختر من مكتبة الصور")}>
@@ -71,7 +84,12 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
           <input className="input ps-9" value={q} onChange={(e) => setQ(e.target.value)} data-libsearch
             placeholder={t("lib.searchPh", "دوّر بالاسم أو الشركة أو الصنف…")} />
         </div>
-        {(rows?.length ?? 0) > 0 && (
+        {hasMine && rows && (
+          <Suspense fallback={null}>
+            <LibraryScope scope={eff} onScope={(s) => { setScope(s); setPath({}); }} mine={mineN} pub={rows.length - mineN} />
+          </Suspense>
+        )}
+        {(scoped?.length ?? 0) > 0 && (
           <div className="space-y-1.5" data-libpath>
             <div className="flex flex-wrap items-center gap-1.5">
               <button onClick={() => { playTap(); setPath({}); }} data-libcrumb="root"
@@ -113,7 +131,7 @@ export function ImageLibraryPicker({ open, onClose, onPick }: {
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line-strong p-8 text-center">
             <Images size={24} className="text-ink-subtle" />
             <p className="text-sm text-ink-subtle">
-              {rows.length === 0
+              {(scoped ?? []).length === 0
                 ? t("lib.empty", "المكتبة فارغة بعد — يعبّيها مشغّل المنصّة، وتكدر تصوّر منتجك بنفسك.")
                 : t("lib.noMatch", "ماكو صورة تطابق بحثك.")}
             </p>

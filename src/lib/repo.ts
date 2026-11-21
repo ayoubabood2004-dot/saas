@@ -362,6 +362,31 @@ function updatedRows(res: { data: unknown; error: { message: string; code?: stri
   return rows;
 }
 
+/** صفُّ مكتبة الصور بعد رفع ملفّه: `clinicId` فارغ = العامّة (`library/` للمشغّل)، ومعرّفٌ = مكتبةُ تلك العيادة
+ *  (`<clinic>/lib-…` بمجلّدها، 0285). الامتدادُ من `prepareUpload` لا ثابتاً: هي تُعيد الترميزَ إلى JPEG دائماً،
+ *  فاسمُ `.webp` كان يكذب على كلّ ملفٍّ بالدلو (البند ١٠). */
+async function createLibraryRow(
+  clinicId: string | null,
+  meta: { name: string; company?: string | null; kind?: string | null; agency?: string | null; section?: string | null; barcode?: string | null },
+  upload: UploadLike,
+): Promise<LibraryImage> {
+  const id = uuid();
+  assertUploadableImage(upload);
+  const path = clinicId ? `${clinicId}/lib-${id}.${imageExt(upload)}` : `library/${id}.${imageExt(upload)}`;
+  const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: imageType(upload), cacheControl: "31536000", upsert: false });
+  if (up.error) throw up.error;
+  const row: Record<string, unknown> = {
+    id, name: meta.name.trim(), company: meta.company?.trim() || null,
+    section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null, path,
+  };
+  // الصنفُ والوكالة (0284) وعمودُ العيادة (0285) يُرسلون حين يُكتبون وحدهم — قاعدةٌ قبلهما ترفض عموداً لا
+  // تعرفه، والإضافةُ العامّة العاديّة (بلا مستوياتٍ جديدة) تبقى تعمل عليها.
+  if (meta.kind?.trim()) row.kind = meta.kind.trim();
+  if (meta.agency?.trim()) row.agency = meta.agency.trim();
+  if (clinicId) row.clinic_id = clinicId;
+  return need<LibraryImage>(await sbc().from("image_library").insert(row).select().single());
+}
+
 /** قراءةٌ تُسمَع: خطأُ الخادم **يُرمى**، و«ما لكيت» ترجع undefined.
  *
  *  الفرقُ عن `maybe()`: تلك تخلط الجوابين — تطبع الخطأ بالكونسول وترجع «لا
@@ -1313,30 +1338,43 @@ const supabaseRepo: DemoRepo = {
     return allPages<LibraryImage>(() => sbc().from("image_library").select("*"), { col: "name", asc: true, kind: "text" });
   },
   async createLibraryImage(meta, upload) {
-    const id = uuid();
-    // الامتدادُ من `prepareUpload` لا ثابتاً: هي تُعيد الترميزَ إلى JPEG دائماً،
-    // فاسمُ `.webp` كان يكذب على كلّ ملفٍّ بالدلو (البند ١٠).
-    assertUploadableImage(upload);
-    const path = `library/${id}.${imageExt(upload)}`;
-    const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: imageType(upload), upsert: false });
-    if (up.error) throw up.error;
-    const row: Record<string, unknown> = {
-      id, name: meta.name.trim(), company: meta.company?.trim() || null,
-      section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null, path,
-    };
-    // الصنفُ والوكالة (0284) يُرسلان حين يُكتبان وحدهما — قاعدةٌ قبل 0284 ترفض عموداً لا تعرفه، والإضافةُ
-    // العاديّة (بلا مستوياتٍ جديدة) تبقى تعمل عليها.
-    if (meta.kind?.trim()) row.kind = meta.kind.trim();
-    if (meta.agency?.trim()) row.agency = meta.agency.trim();
-    return need<LibraryImage>(await sbc().from("image_library").insert(row).select().single());
+    return createLibraryRow(null, meta, upload);
+  },
+  /* مكتبةُ العيادة الخاصّة (0285): الملفُّ بمجلّد العيادة (سياسةُ 0174 تشترط `auth_clinic()`)، والصفُّ بعمودها
+   * — السياسةُ تطابق الاثنين بالعيادة وبصلاحية صور المنتجات، فمعرّفٌ غلط يُرفض من الخادم بصوت. */
+  async createClinicLibraryImage(clinicId, meta, upload) {
+    if (!clinicId) throw new Error("no_clinic_for_image");
+    return createLibraryRow(clinicId, meta, upload);
+  },
+  /* التعديلُ والنقلُ والحذفُ تُسمَع (CLAUDE.md: الكتابةُ تُسمع): صفرُ صفوفٍ = السياسةُ ردّته أو انحذف من جهازٍ آخر —
+   * يُرمى ولا يُقال «تمّ». والصفُّ العامّ والخاصّ بنداءٍ واحد: السياسةُ تقرّر من يكتب أيّهما. */
+  async updateLibraryImage(id, patch) {
+    const row: Record<string, unknown> = {};
+    for (const k of ["name", "company", "kind", "agency", "section"] as const) {
+      if (k in patch) row[k] = k === "name" ? (patch[k] ?? "").trim() : patch[k]?.trim() || null;
+    }
+    if ("barcode" in patch) row.barcode = normalizeCode(patch.barcode) || null;
+    updatedRows(await sbc().from("image_library").update(row).eq("id", id).select("id"));
+  },
+  /* نقلُ مجموعةٍ بمستوى (إعادةُ تسمية وكالةٍ أو قسم، أو دمجُ اثنين): دفعاتٌ بمئة معرّف — عنوانُ الطلب يحمل
+   * القائمة، وثلاثُمئة معرّفٍ بطلبٍ واحد تتجاوز حدَّ العنوان. ويرجع كم انتقل؛ أقلُّ من المطلوب يُرمى. */
+  async moveLibraryImages(ids, level, value) {
+    const v = value?.trim() || null;
+    let moved = 0;
+    for (let i = 0; i < ids.length; i += 100) {
+      const res = await sbc().from("image_library").update({ [level]: v }).in("id", ids.slice(i, i + 100)).select("id");
+      if (res.error) throw res.error;
+      moved += (res.data ?? []).length;
+    }
+    if (moved < ids.length) throw Object.assign(new Error("library_move_partial"), { code: "library_move_partial", moved, total: ids.length });
+    return moved;
   },
   async deleteLibraryImage(id, path) {
     void path;
     // الصفُّ وحده يُحذف — **والملفُّ يبقى** (O4، قرارُ المالك: «لا تشيل ولا تحذف صورة»). منتجاتٌ
     // ربطت هذا المسار من المكتبة تبقى بصورتها؛ وحذفُ الملف كان يكسرها كلَّها بلا كلمة. وسياسةُ
-    // 0236 تمنع الحذفَ بالخادم كذلك.
-    const r = await sbc().from("image_library").delete().eq("id", id);
-    if (r.error) throw r.error;
+    // 0236 تمنع الحذفَ بالخادم كذلك. وRLS على الحذف لا ترمي: صفرُ صفوفٍ بلا خطأ — فيُعدّ ويُرمى (درسُ 0257).
+    updatedRows(await sbc().from("image_library").delete().eq("id", id).select("id"));
   },
   async imageLibraryUsage(path) {
     const { data, error } = await sbc().rpc("image_library_usage", { p_path: path });
