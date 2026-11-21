@@ -16,6 +16,14 @@ export const USD_ROUND_STEPS = [1, 50, 100, 250, 500, 1000] as const;
 const RATE_SCALE = 10_000n; // أربعُ منازل
 
 /** قسمةٌ بنصفٍ بعيداً عن الصفر — كـ`round(numeric)` بالقاعدة. */
+/** 0286: سعرٌ بعيدٌ عن كلّ سعرٍ مرجعيّ بأكثر من pct٪ (سعرُ يوم البيع، سعرُ اليوم) — صفرٌ زائد أو ناقص («15000» بدل «150000») كان
+ *  يحرسه المديرُ؛ بلاه يُسأل قبل أن يُكتب. بلا مرجعٍ لا حكم (false). الحسابُ بالأعداد الصحيحة. */
+export function farFrom(rate1e4: bigint, refs: readonly (bigint | null | undefined)[], pct = 20n): boolean {
+  const rs = refs.filter((r): r is bigint => r != null && r > 0n);
+  if (!rs.length) return false;
+  return rs.every((r) => { const d = rate1e4 > r ? rate1e4 - r : r - rate1e4; return d * 100n > r * pct; });
+}
+
 export function divRound(a: bigint, b: bigint): bigint {
   if (b === 0n) return 0n;
   const neg = (a < 0n) !== (b < 0n);

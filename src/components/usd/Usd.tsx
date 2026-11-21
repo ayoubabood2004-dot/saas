@@ -15,7 +15,7 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatDate, formatNum, formatTime, uuid } from "@/lib/utils";
 import { usdApi, type UsdMethod, type UsdRate, type UsdSettlement } from "@/lib/usdApi";
 import { shouldReleaseRef } from "@/lib/errors";
-import { centsOf, iqdOf, per100Of, previewSettle, rate1e4Of, rateOfPer100, rateOk, settleRefusal, USD_ROUND_STEPS, usdText } from "@/lib/usdMath";
+import { centsOf, farFrom, iqdOf, per100Of, previewSettle, rate1e4Of, rateOfPer100, rateOk, settleRefusal, USD_ROUND_STEPS, usdText } from "@/lib/usdMath";
 import { usdDraftProblem, type UsdBlockers, type UsdDraft } from "@/lib/usdProduct";
 import { subUsdComputed } from "@/lib/dualPrice";
 export { UsdSaleSheet } from "./UsdSale";
@@ -240,6 +240,8 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   const saleRate = rate1e4Of(invoice?.fx_rate ?? null);
   const salePer100 = saleRate != null && rateOk(saleRate) ? String(per100Of(saleRate)) : "";
   const [savingRate, setSavingRate] = useState(false);
+  /** السعرُ البعيد (>٢٠٪ عن سعر يوم البيع وسعر اليوم) أُكِّد لهذا النصّ بعينه — تغييرُه يُسقط التأكيد (مراجعة 0286: «15000» بدل «150000»). */
+  const [farAck, setFarAck] = useState<string | null>(null);
   const freshRate = useCallback(() => {
     // السعرُ يُسأل عند كلّ فتح (المخبأُ دقيقة): سعرُ أمس بخانةٍ مملوءةٍ كان يُسدَّد به وهو يبدو «سعر اليوم». وبلا سعرٍ بالعيادة: سعرُ يوم البيع.
     setPer100("");
@@ -266,9 +268,13 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   const closes = pv != null && cents != null && cents >= due;
   // سعرُ اليوم القديم (مو من اليوم) يُسأل عنه قبل أن يُسدَّد به — أمّا سعرٌ يختاره الطبيب (يوم البيع أو غيره) فهو قرارُه.
   const blocked = busy || !state?.enabled || !pv || !!refusal || (stale && isTodayRate) || (typeof navigator !== "undefined" && navigator.onLine === false);
+  /* صفرٌ زائدٌ أو ناقص كان يحرسه «للمدير وبسبب»؛ بعد 0286 يُسأل: سعرٌ بعيدٌ عن الاثنين بأكثر من ٢٠٪ يحتاج ضغطةً ثانية بعد أن يُقال. */
+  const far = rate != null && rateOk(rate) && farFrom(rate, [saleRate, today?.rate1e4]);
+  const farPending = far && farAck !== per100.trim();
   /** «خلّيه سعر اليوم»: السعرُ المكتوب يصير سعرَ العيادة اليوم (0286: لكلّ الكادر) — من نافذة التسديد بلا الإعدادات. */
   const makeToday = async () => {
     if (savingRate || rate == null || !rateOk(rate) || isTodayRate) return;
+    if (farPending) { playWarning(); setFarAck(per100.trim()); return; }   // تُقال الجملةُ أوّلاً، والضغطةُ الثانية تكتب
     setSavingRate(true);
     try {
       await usdApi.setRate(per100, null);
@@ -281,11 +287,13 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   };
   const submit = async () => {
     if (blocked) return;
+    if (farPending) { playWarning(); setFarAck(per100.trim()); return; }
     setBusy(true);
     const fresh = !sent;
     setSent(true);
     try {
-      await usdApi.settle(invoice.id, usd, per100, method, usdText(due).replace(/[$,]/g, ""), reason.trim() ? reason : null, ref);
+      // الملاحظةُ تُرسل ما دامت خانتُها ظاهرة (سعرٌ غيرُ سعر اليوم) — نصٌّ كُتب ثمّ اختفت خانتُه لا يُحفظ بالخفاء.
+      await usdApi.settle(invoice.id, usd, per100, method, usdText(due).replace(/[$,]/g, ""), other && reason.trim() ? reason : null, ref);
       playSuccess();
       toast.success(t("usd.settle.done"));
       onSettled();
@@ -350,6 +358,11 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
           )}
         </div>
         {other && <input data-usd-reason className="input" placeholder={t("usd.settle.note")} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />}
+        {far && (
+          <p role="alert" data-usd-far className={cn("rounded-xl border p-2.5 text-xs font-semibold", farPending ? "border-warn-300 bg-warn-50 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" : "border-line text-ink-muted")}>
+            {t("usd.settle.far", { v: iqd(per100Of(rate!)), one: formatNum(Number(rate!) / 10_000) })}
+          </p>
+        )}
         <div className="flex gap-1.5" role="radiogroup">
           {METHODS.map((m) => (
             <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => { playTap(); setMethod(m); }}
@@ -373,7 +386,7 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
           </div>
         )}
         <Button className="w-full" loading={busy} disabled={blocked} leftIcon={<Coins size={16} />} onClick={submit} data-usd-settle-go>
-          {t(pending ? "usd.settle.retry" : "usd.settle.confirm", { v: pv ? iqd(pv.received) : "—" })}
+          {t(pending ? "usd.settle.retry" : far && farAck === per100.trim() ? "usd.settle.farGo" : "usd.settle.confirm", { v: pv ? iqd(pv.received) : "—" })}
         </Button>
         <UsdSettlementList invoice={invoice} onChanged={onSettled} />
       </div>
@@ -500,10 +513,17 @@ export function UsdDebtActions({ invoice, onChanged }: { invoice: Invoice; onCha
  * الفاتورتان (R وR~usd) تُفتحان نافذةً واحدة: سطورُ الدينار ومجاميعُها كما هي، وتحتها سطورُ الدولار بالدولار ولوحتُها (المسدَّد،
  * الباقي، «سدّد بالدولار» بسعر يوم البيع أو اليوم أو أيّ سعر، والتسديدات). السطورُ تُجلب بالنافذة الأمّ (تُطبع معها). */
 export function UsdTwinSection({ twin, items, onRetry, canDelete, onChanged, onDeleted }: {
-  twin: Invoice; items: InvoiceItem[] | null | "failed"; onRetry: () => void;
+  /** null = ما عُرف بعدُ هل للبيعة نصفٌ بالدولار (سؤالُ المرجع فشل) — يُقال ويُعاد، ولا يُحكم «بلا دولار». */
+  twin: Invoice | null; items: InvoiceItem[] | null | "failed"; onRetry: () => void;
   canDelete: boolean; onChanged: () => void; onDeleted: () => void;
 }) {
   const { t } = useTranslation();
+  if (!twin) return (
+    <div role="alert" className="flex flex-wrap items-center gap-2 rounded-2xl border border-warn-200 p-3 text-xs dark:border-warn-500/30" data-usd-twin-lookup-failed>
+      <span className="min-w-0 flex-1 font-semibold text-warn-800 dark:text-warn-200">{t("usd.twin.lookupFailed")}</span>
+      <Button size="sm" variant="secondary" leftIcon={<RotateCcw size={13} />} onClick={() => { playTap(); onRetry(); }}>{t("usd.retry")}</Button>
+    </div>
+  );
   return (
     <div className="space-y-2" data-usd-twin>
       <p className="flex items-center gap-2 text-xs font-bold text-ink-muted"><UsdChip /> {t("usd.twin.title")}</p>
@@ -530,6 +550,8 @@ export function UsdTwinSection({ twin, items, onRetry, canDelete, onChanged, onD
         )}
       </div>
       <UsdInvoicePanel invoice={twin} canDelete={canDelete} onChanged={onChanged} onDeleted={onDeleted} />
+      {/* الترجيعُ والحذفُ بأسفل النافذة لفاتورة الدينار — نصفُ الدولار يُسدَّد ويُحذف من لوحته (مراجعة 0286: «حذفتُ البيعة» وبقي دولارُها). */}
+      <p className="text-2xs text-ink-subtle" data-usd-twin-note>{t("usd.twin.partNote")}</p>
     </div>
   );
 }

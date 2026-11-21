@@ -682,13 +682,21 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const printSale = async (format: "a4" | "thermal") => {
     if (!invoice) return;
     let usdTwin: { invoice: Invoice; items: InvoiceItem[] } | undefined;
-    if (twin) {
-      let its = Array.isArray(twinItems) ? twinItems : null;
+    /* «بلا نصفٍ بالدولار» حكمٌ يحتاج جواباً: ضغطةٌ قبل أن يصل سؤالُ المرجع (أو بعد فشله) تسأله الآن — كانت تطبع الدينارَ وحده
+     * وتُسقط دَينَ الدولار من الورقة (مراجعة 0286). */
+    let tw = twin;
+    const known = !!twinCur && "inv" in twinCur;
+    if (!tw && !known && invRef && !invUsd && !invRef.endsWith("~usd")) {
+      try { tw = await (await import("@/lib/dualApi")).invoiceByRef(`${invRef}~usd`); }
+      catch { playWarning(); toast.error(t("retail.printItemsFailed")); return; }
+    }
+    if (tw) {
+      let its = tw.id === twin?.id && Array.isArray(twinItems) ? twinItems : null;
       if (!its) {
-        try { its = await repo.listInvoiceItems(twin.id); }
+        try { its = await repo.listInvoiceItems(tw.id); }
         catch { playWarning(); toast.error(t("retail.printItemsFailed")); return; }
       }
-      usdTwin = { invoice: twin, items: its };
+      usdTwin = { invoice: tw, items: its };
     }
     void print(invoice, format, { items: opening ? openingLines : itemsOk ? items : undefined, onCounted: afterPrint, usdTwin });
   };
@@ -1027,12 +1035,13 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             </Suspense>
           </LoadBoundary>
         )}
-        {twinCur && "failed" in twinCur && (
-          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-2xl border border-danger-200 p-3 text-xs" data-inv-twin-failed>
-            <AlertTriangle size={14} className="shrink-0 text-danger-600" />
-            <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-300">{t("retail.printItemsFailed")}</span>
-            <Button size="sm" variant="secondary" leftIcon={<RotateCcw size={13} />} onClick={() => { playTap(); setTwinTick((n) => n + 1); }}>{t("common.retry")}</Button>
-          </div>
+        {/* سؤالُ المرجع فشل: «ما گدرنا نتأكد إذا للبيعة سطور بالدولار» (بنطاق usd — لا «سطور الفاتورة ما وصلت» عن فاتورةٍ وصلت سطورُها). */}
+        {twinCur && "failed" in twinCur && (UsdTwinLazy ??= loadUsdTwin()) && (
+          <LoadBoundary scope="usd-twin" onRetry={() => { UsdTwinLazy = loadUsdTwin(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <UsdTwinLazy twin={null} items={null} onRetry={() => setTwinTick((n) => n + 1)} canDelete={false} onChanged={() => undefined} onDeleted={() => undefined} />
+            </Suspense>
+          </LoadBoundary>
         )}
 
         {/* «خصم على الدين» (0241): سجلُّه (الملغى مشطوب، والمستهلَك بمرتجعٍ ظاهر) وزرُّه ونافذتُه. بلا زبونٍ
