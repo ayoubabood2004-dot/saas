@@ -90,6 +90,7 @@
     "odebt": "src/components/retail/OldDebt.tsx",
     "pfx": "src/components/inventory/PurchaseFx.tsx",
     "pgrp": "src/components/inventory/ProductGroups.tsx",
-    "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx"] }
+    "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx"] },
+    "libp": "src/components/inventory/LibraryScope.tsx"
   }
 }

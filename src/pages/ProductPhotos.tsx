@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Camera, ImageIcon, ImageMinus, ImageOff, Images, Library, RotateCw, Search } from "lucide-react";
 import type { PhotoProduct } from "@/types";
 import { repo } from "@/lib/repo";
@@ -121,6 +122,13 @@ export function ProductPhotos() {
               : t("photos.sub", "صوّر المنتج، أو اختار صورته من الألبوم أو المكتبة — الصورة تطلع بالمتجر والمخزون")}
           </p>
         </div>
+        {/* مكتبةُ الصور داخل النظام (0285): العيادةُ ترتّب صورها هناك وتختار منها هنا. */}
+        {can("manageProductPhotos") && (
+          <Link to="/photos/library" onClick={() => playTap()} data-photos-library
+            className="inline-flex h-11 items-center gap-1.5 rounded-2xl border border-line bg-surface-1 px-4 text-sm font-bold text-ink-muted transition hover:text-ink">
+            <Library size={16} /> {t("photos.libraryPage")}
+          </Link>
+        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

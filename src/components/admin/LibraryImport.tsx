@@ -3,15 +3,16 @@
 //
 // الملفُّ يُقرأ بالمتصفّح (src/lib/libraryImport.ts)، ثمّ **خطّةٌ تُرى قبل أيّ رفع**: كم جديدة، كم موجودة
 // تُتخطّى، كم مكرّرة بالملف، كم صفٍّ بلا صورة، وكم رمزاً داخلياً لا يُحفظ باركوداً — بالوكالات والأقسام.
-// والرفعُ ثلاثٌ بالمرّة، ويقف بضغطة، ويقف وحده عند انقطاع الشبكة أو قاعدةٍ قبل 0284 (عمودٌ غائب): ما رُفع
+// والرفعُ ثلاثٌ بالمرّة، ويقف بضغطة، ويقف وحده عند انقطاع الشبكة أو قاعدةٍ قبل 0284/0285 (عمودٌ غائب): ما رُفع
 // باقٍ، والضغطةُ التالية تعيد الخطّةَ على المكتبة كما صارت فتكمل من حيث وقف — بلا صورةٍ مكرّرة.
+// والمكتبةُ التي يُرفع لها من المضيف (`create`): العامّةُ بلوحة المنصّة، أو مكتبةُ العيادة داخل النظام (0285) —
+// و`library` صفوفُ تلك المكتبة وحدها، فالتكرارُ يُقاس بها لا بالأخرى.
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileSpreadsheet, Upload, Square, Loader2 } from "lucide-react";
 import { Button, useToast } from "@/components/ui";
-import { repo } from "@/lib/repo";
-import { prepareUpload } from "@/lib/image";
+import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { describeDbError, isNetworkError } from "@/lib/errors";
 import { holdUntil } from "@/lib/inflight";
 import { cn, formatNum } from "@/lib/utils";
@@ -20,17 +21,20 @@ import {
   openZip, readWorkbook, guessColumns, planImport, mediaType, XlsxError,
   type ZipReader, type ParsedSheet, type ImportPlan, type PlanItem,
 } from "@/lib/libraryImport";
+import { isLibraryColumnMissing } from "@/lib/libraryScope";
 import type { LibraryImage } from "@/types";
 
 type Run = { done: number; total: number; failed: number; firstError: string | null; stopped: null | "user" | "network" | "dbOld" };
 
-/** قاعدةٌ قبل 0284: الإدراجُ بعمودٍ لا تعرفه يُرفض بـPGRST204 أو 42703. */
-const isColumnMissing = (e: unknown) => {
-  const x = e as { code?: string; message?: string };
-  return x?.code === "PGRST204" || x?.code === "42703" || /column .*(kind|agency)/i.test(x?.message ?? "");
-};
+type Meta = { name: string; company: string; kind: string; agency: string | null; section: string | null; barcode: string | null };
 
-export function LibraryImport({ library, onChanged }: { library: LibraryImage[]; onChanged: () => void }) {
+export function LibraryImport({ library, onChanged, create, scope = "public" }: {
+  library: LibraryImage[];
+  onChanged: () => void;
+  /** الإدراجُ بالمكتبة المقصودة — العامّة (`createLibraryImage`) أو مكتبة العيادة (`createClinicLibraryImage`). */
+  create: (meta: Meta, photo: PreparedUpload) => Promise<unknown>;
+  scope?: "public" | "clinic";
+}) {
   const { t } = useTranslation();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -95,7 +99,7 @@ export function LibraryImport({ library, onChanged }: { library: LibraryImage[];
       const type = mediaType(it.image as string);
       const file = new File([bytes as BlobPart], `p.${type.split("/")[1]}`, { type });
       const photo = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
-      await repo.createLibraryImage({
+      await create({
         name: it.name, company: company.trim(), kind: kind.trim(), agency: it.agency, section: it.section, barcode: it.barcode,
       }, photo);
     };
@@ -108,7 +112,7 @@ export function LibraryImport({ library, onChanged }: { library: LibraryImage[];
           state.done++;
         } catch (e) {
           if (isNetworkError(e)) { state.stopped = "network"; return; }
-          if (isColumnMissing(e)) { state.stopped = "dbOld"; return; }
+          if (isLibraryColumnMissing(e)) { state.stopped = "dbOld"; return; }
           state.failed++;
           state.firstError ??= errText(e);
         }
@@ -222,7 +226,7 @@ export function LibraryImport({ library, onChanged }: { library: LibraryImage[];
               <p className="text-2xs font-bold text-ink-muted">
                 {busy ? t("libm.uploading", { done: formatNum(run.done), n: formatNum(run.total) })
                   : run.stopped === "network" ? t("libm.network")
-                  : run.stopped === "dbOld" ? t("libm.dbOld")
+                  : run.stopped === "dbOld" ? (scope === "clinic" ? t("libm.dbOldClinic") : t("libm.dbOld"))
                   : run.stopped === "user" ? t("libm.stopped", { done: formatNum(run.done), n: formatNum(run.total) })
                   : t("libm.done", { n: formatNum(run.done) })}
               </p>

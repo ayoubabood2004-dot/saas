@@ -25,7 +25,7 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen, Wallet } from "lucide-react";
-import { ShieldCheck, Camera, type LucideIcon } from "lucide-react";
+import { ShieldCheck, Camera, Images, type LucideIcon } from "lucide-react";
 import { Bird } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
@@ -81,7 +81,8 @@ export function Sidebar() {
 
   // RBAC-aware navigation — items requiring a capability the role lacks are hidden.
   const items = photographer ? [
-    { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات") },
+    { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), exact: true },
+    { to: "/photos/library", icon: Images, label: t("nav.library"), show: can("manageProductPhotos") },
     { to: "/store", icon: ShoppingBag, label: t("nav.store", "المتجر الإلكتروني"), show: can("manageStore") && has("store") },
   ].filter((it) => it.show !== false) as NavItem[] : ([
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
@@ -126,7 +127,9 @@ export function Sidebar() {
     // باسم الباقة («حقل الدواجن») لا باسم القائمة: بعيادةٍ زبونة يظهر بجانب «حقول الدواجن» (حالةُ الحقل) — اسمان مختلفان.
     { to: "/platform/farm", icon: Bird, label: t("plans.farm.name"), show: isPlatformAdmin(user?.email) && plan !== "farm" },
     // وللكادر الذي يملك إذنَ الصور (مديرٌ أو طبيبٌ أو من أُذن له) — المصوّرُ له قائمتُه فوق.
-    { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), show: can("manageProductPhotos") && can("manageInventory") },
+    { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), exact: true, show: can("manageProductPhotos") && can("manageInventory") },
+    // مكتبةُ الصور (0285): مكتبةُ العيادة الخاصّة تُدار من هنا، والعامّةُ تُتصفّح — لمن يملك إذنَ الصور.
+    { to: "/photos/library", icon: Images, label: t("nav.library"), show: can("manageProductPhotos") },
   ] as NavItem[]).filter((it) => it.show !== false);
 
   // فتح/غلق المجموعات المنسدلة — حالة مستقلة لكل مجموعة (الطبلات، الواتساب…).
@@ -141,7 +144,8 @@ export function Sidebar() {
   const storeOrders = useStoreOrderCount(hasStore && can("processSales") && !photographer);
   const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
-    exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
+    // `exact`: المسارُ نفسُه لا أبناؤه — «صور المنتجات» لا تُضاء مع «مكتبة الصور» تحتها (/photos/library).
+    exact ? location.pathname === to : location.pathname === to || location.pathname.startsWith(to + "/");
 
   return (
     <aside className={cn(
