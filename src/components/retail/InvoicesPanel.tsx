@@ -40,6 +40,9 @@ let ForgiveSectionLazy = loadForgiveSection();
 /* فاتورةُ الدولار (0264): لوحتُها (الدولارُ أوّلاً، والتسديدُ وإلغاؤه والحذف) قطعةٌ كسولة بنطاقها usd — لا وحدةَ ثابتةً هنا. */
 const loadUsdInvoice = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdInvoicePanel })), ["usd"]);
 let UsdInvoiceLazy = loadUsdInvoice();
+/* البيعةُ بمجموعين (0283/0286): نصفُ الدولار داخل نافذة فاتورة الدينار — قطعةٌ كسولة بنطاق usd. */
+const loadUsdTwin = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdTwinSection })), ["usd"]);
+let UsdTwinLazy: ReturnType<typeof loadUsdTwin> | null = null;
 /* الدينُ القديم (0271): شارتُه وتفصيلُه بنطاق odebt — قطعةٌ كسولة (retail حارٌّ والباردُ ممتلئ). */
 const loadOldDebtNote = () => page(() => import("@/components/retail/OldDebt").then((m) => ({ default: m.OldDebtNote })), ["odebt"]);
 let OldDebtNoteLazy = loadOldDebtNote();
@@ -360,6 +363,23 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
     return buildInvoiceFeed(rows, src, floor, fl, mk);
   }, [paged, shown, rows, settled, windowed, exhausted, hasMore, since, ledger, marks, legacyLedger, invoices]);
   const anyFailed = failed || settleFailed || ledgerFailed;
+  /* 0283/0286 (طلبُ المالك ٢١/١١: «صف واحد للبيعة»): البيعةُ بمجموعين فاتورتان بمرجعٍ واحد (R للدينار وR~usd للدولار) — تُرسم صفّاً
+   * واحداً برقم فاتورة الدينار، وفيه المجموعان. نصفٌ لم يصل بعد (حدُّ صفحة) يُرسم وحده كما هو حتى يصل نصفُه. */
+  const pairs = useMemo(() => {
+    const byRef = new Map<string, Invoice>();
+    for (const e of feed) if (e.kind === "invoice" && e.inv.currency !== "USD" && e.inv.client_ref) byRef.set(e.inv.client_ref, e.inv);
+    const twinOf = new Map<string, Invoice>();
+    const baseOf = new Map<string, Invoice>();
+    for (const e of feed) {
+      const ref = e.inv.client_ref;
+      if (e.inv.currency !== "USD" || !ref || !ref.endsWith("~usd")) continue;
+      const b = byRef.get(ref.slice(0, -4));
+      if (!b) continue;
+      baseOf.set(e.inv.id, b);
+      if (e.kind === "invoice") twinOf.set(b.id, e.inv);
+    }
+    return { twinOf, baseOf };
+  }, [feed]);
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: t("retail.fAll", "All") },
@@ -431,7 +451,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                     <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
                       <span>{formatDate(e.at, i18n.language)} · {new Date(e.at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
                       <span className="flex items-center gap-0.5"><PayIcon size={11} /> {t(PAY_KEY[e.method] ?? PAY_KEY.cash)}</span>
-                      <span className="font-mono text-2xs">· {t("retail.settlementOf", { no: invoiceNo(e.inv.id), defaultValue: "on {{no}}" })}</span>
+                      <span className="font-mono text-2xs">· {t("retail.settlementOf", { no: invoiceNo((pairs.baseOf.get(e.inv.id) ?? e.inv).id), defaultValue: "on {{no}}" })}</span>
                     </div>
                   </div>
                   <div className="text-end">
@@ -472,10 +492,14 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
               );
             }
             const inv = e.inv;
+            if (pairs.baseOf.has(inv.id)) return null;   // نصفُ الدولار يُرسم بصفّ بيعته
+            const twin = pairs.twinOf.get(inv.id) ?? null;
+            const twinLive = !!twin && (twin.status ?? "paid") !== "refunded";
             const refunded = (inv.status ?? "paid") === "refunded";
+            const debt = (!refunded && isDebt(inv)) || (twinLive && isDebt(twin!));
             const PayIcon = inv.payment_method ? PAY_ICON[inv.payment_method] : null;
             return (
-              <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(inv); }}
+              <motion.button key={e.key} variants={staggerItem} onClick={() => { playTap(); setOpen(inv); }} data-inv-row={inv.id} data-inv-mixed={twin ? "1" : undefined}
                 className="card flex w-full items-center gap-3 p-3.5 text-start transition hover:border-brand-300 hover:shadow-raised">
                 <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl", refunded ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300" : "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300")}>
                   <Receipt size={20} />
@@ -499,7 +523,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                         <History size={10} /> {t("sdate.later", "سُجّلت لاحقاً")}
                       </span>
                     )}
-                    <span>· {t("retail.itemsN", { n: inv.item_count, defaultValue: "{{n}} items" })}</span>
+                    <span>· {t("retail.itemsN", { n: inv.item_count + (twin?.item_count ?? 0), defaultValue: "{{n}} items" })}</span>
                     {inv.staff_id && staffById.get(inv.staff_id) && (
                       <span className="flex items-center gap-0.5 font-semibold text-brand-600 dark:text-brand-300"><UserCheck size={11} /> {staffById.get(inv.staff_id)}</span>
                     )}
@@ -508,7 +532,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   </div>
                 </div>
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
-                {!refunded && isDebt(inv) && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
+                {debt && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
                 {/* كانت ديناً وسُدِّدت — علامةٌ على الأصلية بمكانها؛ التسديدُ نفسُه سطرُه بوقته. وما خُصم من دينها
                     لا يقال عنه «سُدِّد» (0241): علامةُ الخصم بدلها. بلا دفترٍ بعدُ لا علامة — لا حكمَ بلا الدفتر. */}
                 {!refunded && wasDebtMark(inv) === "forgiven" && (
@@ -522,9 +546,17 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>
                     {inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd>{usd$(inv.total_usd)}</bdi> : money(inv.total)}
                   </p>
-                  {!refunded && isDebt(inv)
-                    ? <p className="flex items-center justify-end gap-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")} {inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd-due>{usd$(usdDueOf(inv))}</bdi> : money(dueOf(inv))}</p>
-                    : !refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
+                  {/* البيعةُ بمجموعين: مجموعُ الدولار تحت مجموع الدينار بعملته — لا يُجمع عليه. */}
+                  {twin && (
+                    <p className={cn("font-display text-sm font-bold tabular-nums", twinLive ? "text-success-700 dark:text-success-300" : "text-ink-subtle line-through")} data-inv-twin-usd>
+                      <bdi dir="ltr">+ {usd$(twin.total_usd)}</bdi>
+                    </p>
+                  )}
+                  {debt
+                    ? <p className="flex flex-wrap items-center justify-end gap-x-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")}
+                        {!refunded && isDebt(inv) && (inv.currency === "USD" ? <bdi dir="ltr" data-inv-usd-due>{usd$(usdDueOf(inv))}</bdi> : <span>{money(dueOf(inv))}</span>)}
+                        {twinLive && isDebt(twin!) && <bdi dir="ltr" data-inv-twin-due>{usd$(usdDueOf(twin!))}</bdi>}</p>
+                    : !refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit + (twinLive ? twin!.profit : 0))}</p>}
                 </div>
               </motion.button>
             );
@@ -611,6 +643,55 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
     return () => { alive = false; };
   }, [invoiceId, itemsTick]);
   const itemsOk = !loading && !itemsFailed;
+  /* البيعةُ بمجموعين (طلبُ المالك ٢١/١١: «صف واحد للبيعة»): فاتورةُ الدينار R تُعرض مع فاتورة الدولار R~usd بنافذةٍ واحدة،
+   * وفاتورةُ الدولار تُفتح من رأسها (فاتورة الدينار) أينما فُتحت (سجلّ الديون، سطرُ تسديد، ملفُّ الحيوان). فشلُ الجلب يُقال
+   * ويُعاد — نصفٌ غائبٌ بصمت يجعل البيعةَ تبدو أصغرَ مما هي. */
+  type TwinState = { of: string; inv: Invoice | null; items: InvoiceItem[] | null | "failed" } | { of: string; failed: true };
+  const [twinState, setTwinState] = useState<TwinState | null>(null);
+  const [twinTick, setTwinTick] = useState(0);
+  const invRef = invoice?.client_ref ?? null;
+  const invUsd = invoice?.currency === "USD";
+  useEffect(() => {
+    setTwinState(null);
+    if (!invoiceId || !invRef) return;
+    const isTwinRef = invRef.endsWith("~usd");
+    if (isTwinRef !== invUsd) return;   // الرأسُ دينار، والنصفُ دولار — غيرُهما ليس بيعةً بمجموعين
+    let alive = true;
+    void (async () => {
+      try {
+        const m = await import("@/lib/dualApi");
+        if (isTwinRef) {
+          const base = await m.invoiceByRef(invRef.slice(0, -4));
+          if (alive && base) setOpen(base);
+          return;
+        }
+        const tw = await m.invoiceByRef(`${invRef}~usd`);
+        if (!alive) return;
+        setTwinState({ of: invoiceId, inv: tw, items: null });
+        if (!tw) return;
+        try { const its = await repo.listInvoiceItems(tw.id); if (alive) setTwinState({ of: invoiceId, inv: tw, items: its }); }
+        catch { if (alive) setTwinState({ of: invoiceId, inv: tw, items: "failed" }); }
+      } catch { if (alive && !isTwinRef) setTwinState({ of: invoiceId, failed: true }); }
+    })();
+    return () => { alive = false; };
+  }, [invoiceId, invRef, invUsd, twinTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const twinCur = twinState && invoice && twinState.of === invoice.id ? twinState : null;
+  const twin = twinCur && "inv" in twinCur ? twinCur.inv : null;
+  const twinItems = twinCur && "inv" in twinCur ? twinCur.items : null;
+  /** الطباعةُ للبيعة كلّها: نصفُ الدولار بالورقة نفسِها — وسطورُه تُجلب إن لم تصل (ورقةٌ ناقصة أسوأ من لا ورقة). */
+  const printSale = async (format: "a4" | "thermal") => {
+    if (!invoice) return;
+    let usdTwin: { invoice: Invoice; items: InvoiceItem[] } | undefined;
+    if (twin) {
+      let its = Array.isArray(twinItems) ? twinItems : null;
+      if (!its) {
+        try { its = await repo.listInvoiceItems(twin.id); }
+        catch { playWarning(); toast.error(t("retail.printItemsFailed")); return; }
+      }
+      usdTwin = { invoice: twin, items: its };
+    }
+    void print(invoice, format, { items: opening ? openingLines : itemsOk ? items : undefined, onCounted: afterPrint, usdTwin });
+  };
   /* المستهلكات (0252): سطرُ خدمةٍ يحمل خدمتَه وحده يصرف موادّاً (المادّةُ سطرُها، والقديمُ بلا خدمة) — فلا قطعةَ
      ولا طلبَ لغيره. وسطورٌ لم تصل لا يُحكم عليها «بلا خدمة»: الخادمُ يُسأل. */
   const consumes = !itemsOk || items.some((it) => it.product_id == null && !!it.service_id);
@@ -937,6 +1018,23 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           )}
         </div>}
 
+        {/* البيعةُ بمجموعين: نصفُ الدولار تحت مجاميع الدينار — سطورُه بالدولار، ولوحتُه (المسدَّد والباقي والتسديد بالسعر المختار). */}
+        {twin && (UsdTwinLazy ??= loadUsdTwin()) && (
+          <LoadBoundary scope="usd-twin" onRetry={() => { UsdTwinLazy = loadUsdTwin(); setLazyTick((n) => n + 1); }}>
+            <Suspense fallback={null}>
+              <UsdTwinLazy twin={twin} items={twinItems} onRetry={() => setTwinTick((n) => n + 1)} canDelete={canDelete}
+                onChanged={() => { setTwinTick((n) => n + 1); onChanged(); }} onDeleted={() => { setTwinTick((n) => n + 1); onChanged(); }} />
+            </Suspense>
+          </LoadBoundary>
+        )}
+        {twinCur && "failed" in twinCur && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-2xl border border-danger-200 p-3 text-xs" data-inv-twin-failed>
+            <AlertTriangle size={14} className="shrink-0 text-danger-600" />
+            <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-300">{t("retail.printItemsFailed")}</span>
+            <Button size="sm" variant="secondary" leftIcon={<RotateCcw size={13} />} onClick={() => { playTap(); setTwinTick((n) => n + 1); }}>{t("common.retry")}</Button>
+          </div>
+        )}
+
         {/* «خصم على الدين» (0241): سجلُّه (الملغى مشطوب، والمستهلَك بمرتجعٍ ظاهر) وزرُّه ونافذتُه. بلا زبونٍ
             لا خصمَ ولا سجلّ، فلا طلب. والقطعةُ كسولةٌ بحارسٍ بمكانها: فشلُها لا يُسقط الفاتورة. */}
         {customerOf && !usdInv && (
@@ -954,8 +1052,8 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         {/* Actions */}
         <div className="grid grid-cols-2 gap-2">
           {/* سطورٌ لم تصل ⇒ لا تُمرَّر: الطابعةُ تجلبها بنفسها وترمي «ما تنطبع ناقصة» بدل وصلٍ بلا سطور. */}
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items: opening ? openingLines : itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items: opening ? openingLines : itemsOk ? items : undefined, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => void printSale("a4")}>{t("retail.printA4", "Print A4")}</Button>
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => void printSale("thermal")}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
         </div>
         {canFixReceipt && !usdInv && (
           <Button variant="secondary" className="w-full" leftIcon={<Undo2 size={16} />} data-invfixopen

@@ -8,14 +8,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Ban, CheckCircle2, Coins, DollarSign, History, Loader2, RotateCcw, Trash2 } from "lucide-react";
-import type { Invoice } from "@/types";
+import type { Invoice, InvoiceItem } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { cn, formatDate, formatNum, formatTime, uuid } from "@/lib/utils";
 import { usdApi, type UsdMethod, type UsdRate, type UsdSettlement } from "@/lib/usdApi";
 import { shouldReleaseRef } from "@/lib/errors";
-import { centsOf, iqdOf, per100Of, previewSettle, rateOfPer100, rateOk, settleRefusal, USD_ROUND_STEPS, usdText } from "@/lib/usdMath";
+import { centsOf, iqdOf, per100Of, previewSettle, rate1e4Of, rateOfPer100, rateOk, settleRefusal, USD_ROUND_STEPS, usdText } from "@/lib/usdMath";
 import { usdDraftProblem, type UsdBlockers, type UsdDraft } from "@/lib/usdProduct";
 import { subUsdComputed } from "@/lib/dualPrice";
 export { UsdSaleSheet } from "./UsdSale";
@@ -219,7 +219,7 @@ export function UsdPriceFields({ value, onChange, blockers, showProblems, onEnab
 /* ══ ٣) التسديدُ بالدينار ══════════════════════════════════════════════════════════════════════════ */
 const METHODS: UsdMethod[] = ["cash", "card", "transfer"];
 export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invoice | null; onClose: () => void; onSettled: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const { state, failed, reload } = useUsdState();
   const { stale, ack } = useStaleRate(state?.rate ?? null);
@@ -235,11 +235,16 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   const [pending, setPending] = useState(false);
   const totalUsd = centsOfNum(invoice?.total_usd), paidUsd = centsOfNum(invoice?.paid_usd);
   const due = totalUsd - paidUsd;
+  /* 0286 (قرارُ المالك ٢١/١١): «الدكتور يشوف بيش جان الدولار بذاك اليوم ويكدر من يمه يحدد اذا راح يبيع بنفس السعر او يغير لاي سعر».
+   * فسعرُ يوم البيع (على الفاتورة) وسعرُ اليوم زرّان، والخانةُ لأيّ سعر — بلا مديرٍ ولا سبب؛ والسعرُ المختار يُختم على التسديد. */
+  const saleRate = rate1e4Of(invoice?.fx_rate ?? null);
+  const salePer100 = saleRate != null && rateOk(saleRate) ? String(per100Of(saleRate)) : "";
+  const [savingRate, setSavingRate] = useState(false);
   const freshRate = useCallback(() => {
-    // السعرُ يُسأل عند كلّ فتح (المخبأُ دقيقة): سعرُ أمس بخانةٍ مملوءةٍ كان يُرفض «يحتاج المدير وسبب» — أو يُسدَّد به بسبب.
+    // السعرُ يُسأل عند كلّ فتح (المخبأُ دقيقة): سعرُ أمس بخانةٍ مملوءةٍ كان يُسدَّد به وهو يبدو «سعر اليوم». وبلا سعرٍ بالعيادة: سعرُ يوم البيع.
     setPer100("");
-    refreshUsdState().then((st) => setPer100(st.rate ? String(per100Of(st.rate.rate1e4)) : ""), () => { /* failed يقولها */ });
-  }, []);
+    refreshUsdState().then((st) => setPer100(st.rate ? String(per100Of(st.rate.rate1e4)) : salePer100), () => setPer100(salePer100));
+  }, [salePer100]);
   useEffect(() => {
     if (!invoice) return;
     setUsd(usdText(due).replace(/[$,]/g, "")); setReason(""); setMethod("cash"); setRef(uuid()); setSent(false); setPending(false);
@@ -252,19 +257,35 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
   const rate = rateOfPer100(per100);
   const today = state?.rate ?? null;
   const other = !!today && rate != null && rate !== today.rate1e4;
+  const isSaleRate = rate != null && saleRate != null && rate === saleRate;
+  const isTodayRate = !!today && rate != null && rate === today.rate1e4;
   const pv = cents != null && rate != null && rateOk(rate)
     ? previewSettle({ usdCents: cents, rate1e4: rate, step, totalUsdCents: totalUsd, paidUsdCents: paidUsd, totalIqd: centsOfNum(invoice.total) / 100n, paidIqd: centsOfNum(invoice.amount_paid ?? 0) / 100n })
     : null;
   const refusal = pv && cents != null ? settleRefusal(cents, due, pv.received) : cents == null || cents <= 0n ? "usd_amount" : null;
   const closes = pv != null && cents != null && cents >= due;
-  const blocked = busy || !state?.enabled || !today || !pv || !!refusal || (other && !reason.trim()) || stale || (typeof navigator !== "undefined" && navigator.onLine === false);
+  // سعرُ اليوم القديم (مو من اليوم) يُسأل عنه قبل أن يُسدَّد به — أمّا سعرٌ يختاره الطبيب (يوم البيع أو غيره) فهو قرارُه.
+  const blocked = busy || !state?.enabled || !pv || !!refusal || (stale && isTodayRate) || (typeof navigator !== "undefined" && navigator.onLine === false);
+  /** «خلّيه سعر اليوم»: السعرُ المكتوب يصير سعرَ العيادة اليوم (0286: لكلّ الكادر) — من نافذة التسديد بلا الإعدادات. */
+  const makeToday = async () => {
+    if (savingRate || rate == null || !rateOk(rate) || isTodayRate) return;
+    setSavingRate(true);
+    try {
+      await usdApi.setRate(per100, null);
+      playSuccess();
+      toast.success(t("usd.set.rateSaved", { v: iqd(per100Of(rate)) }));
+      await refreshUsdState().catch(() => undefined);
+      reload();
+    } catch (e) { playWarning(); toast.error(usdErrorText(e, t)); }
+    finally { setSavingRate(false); }
+  };
   const submit = async () => {
     if (blocked) return;
     setBusy(true);
     const fresh = !sent;
     setSent(true);
     try {
-      await usdApi.settle(invoice.id, usd, per100, method, usdText(due).replace(/[$,]/g, ""), other ? reason : null, ref);
+      await usdApi.settle(invoice.id, usd, per100, method, usdText(due).replace(/[$,]/g, ""), reason.trim() ? reason : null, ref);
       playSuccess();
       toast.success(t("usd.settle.done"));
       onSettled();
@@ -289,8 +310,7 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
         </div>
         {failed && <div className="flex items-center gap-2 text-sm text-danger-600"><span className="flex-1">{t("usd.set.loadFailed")}</span><Button size="sm" variant="secondary" onClick={reload}>{t("usd.retry")}</Button></div>}
         {state && !state.enabled && <p className="rounded-lg bg-danger-50 p-2 text-sm text-danger-700">{t("usd.err.usd_disabled")}</p>}
-        {state?.enabled && !today && <p className="rounded-lg bg-warn-50 p-2 text-sm text-warn-700">{t("usd.err.usd_no_rate")}</p>}
-        {stale && today && <StaleRateBanner rate={today} onAck={ack} />}
+        {stale && today && isTodayRate && <StaleRateBanner rate={today} onAck={ack} />}
         {pending && <p className="rounded-xl border border-warn-200 bg-warn-50 p-3 text-sm text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-usd-pending>{t("usd.settle.pending")}</p>}
 
         <fieldset disabled={pending} className="min-w-0 space-y-4">
@@ -302,11 +322,34 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
           </label>
           <label className="block">
             <span className="label">{t("usd.settle.rate")}</span>
-            <input data-usd-rate className={cn("input tabular-nums", other && "border-warn-400")} dir="ltr" inputMode="decimal" value={per100} onChange={(e) => setPer100(e.target.value)} />
-            <span className={cn("mt-1 block text-2xs", other ? "font-semibold text-warn-700 dark:text-warn-300" : "text-ink-subtle")}>{other ? t("usd.settle.rateOther") : t("usd.settle.rateToday")}</span>
+            <input data-usd-rate className={cn("input tabular-nums", other && !isSaleRate && "border-warn-400")} dir="ltr" inputMode="decimal" value={per100} onChange={(e) => setPer100(e.target.value)} />
+            <span className={cn("mt-1 block text-2xs", isTodayRate || isSaleRate ? "text-ink-subtle" : "font-semibold text-warn-700 dark:text-warn-300")} data-usd-ratekind>
+              {rate == null || !rateOk(rate) ? t("usd.err.usd_rate_bad") : isSaleRate ? t("usd.settle.rateSale") : isTodayRate ? t("usd.settle.rateToday") : t("usd.settle.rateMine")}
+            </span>
           </label>
         </div>
-        {other && <input data-usd-reason className="input" placeholder={t("usd.settle.reason")} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />}
+        {/* سعرُ يوم البيع وسعرُ اليوم زرّان فوق الخانة — الطبيبُ يشوف الاثنين ويختار، أو يكتب غيرَهما. */}
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("usd.settle.rate")}>
+          {salePer100 && (
+            <button type="button" data-usd-rate-sale aria-pressed={isSaleRate} onClick={() => { playTap(); setPer100(salePer100); }}
+              className={cn("rounded-xl border px-3 py-1.5 text-xs font-bold transition", isSaleRate ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "border-line text-ink-muted hover:bg-surface-2")}>
+              {t("usd.settle.pickSale", { v: iqd(per100Of(saleRate!)), d: formatDate(invoice.created_at, i18n.language) })}
+            </button>
+          )}
+          {today && (
+            <button type="button" data-usd-rate-today aria-pressed={isTodayRate} onClick={() => { playTap(); setPer100(String(per100Of(today.rate1e4))); }}
+              className={cn("rounded-xl border px-3 py-1.5 text-xs font-bold transition", isTodayRate ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "border-line text-ink-muted hover:bg-surface-2")}>
+              {t("usd.settle.pickToday", { v: iqd(per100Of(today.rate1e4)) })}
+            </button>
+          )}
+          {rate != null && rateOk(rate) && !isTodayRate && state?.enabled && (
+            <button type="button" data-usd-rate-maketoday disabled={savingRate} onClick={() => { playTap(); void makeToday(); }}
+              className="rounded-xl px-2 py-1.5 text-xs font-bold text-brand-600 hover:underline disabled:opacity-50">
+              {savingRate ? <Loader2 size={12} className="inline animate-spin" /> : t("usd.settle.makeToday")}
+            </button>
+          )}
+        </div>
+        {other && <input data-usd-reason className="input" placeholder={t("usd.settle.note")} value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />}
         <div className="flex gap-1.5" role="radiogroup">
           {METHODS.map((m) => (
             <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => { playTap(); setMethod(m); }}
@@ -339,6 +382,11 @@ export function UsdSettleDialog({ invoice, onClose, onSettled }: { invoice: Invo
 }
 
 /* ── التسديداتُ وإلغاؤها (للمدير وبسبب — الخادمُ يقرّر، والزرُّ يُرى لمن يقدر) ─────────────────────────── */
+/** دفعةٌ بمعاملة البيع نفسِها (usd_checkout تسدّد بعد الإدراج بنفس now()): ختمُها لا يتجاوز إنشاءَ الفاتورة — وثوانٍ للتجريبيّ (ساعةُ الجهاز). */
+export const atSaleOf = (at: string, created: string): boolean => {
+  const a = Date.parse(at), c = Date.parse(created);
+  return Number.isFinite(a) && Number.isFinite(c) && a - c <= 5_000;
+};
 export function UsdSettlementList({ invoice, onChanged, canVoid = true }: { invoice: Invoice; onChanged: () => void; canVoid?: boolean }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -369,7 +417,10 @@ export function UsdSettlementList({ invoice, onChanged, canVoid = true }: { invo
                 {t("usd.settle.row", { usd: usdIso(centsOfNum(s.usd)), r: formatNum(s.rate), v: iqd(s.received) })}
               </span>
               {s.fx !== 0 && <span className={s.fx > 0 ? "text-success-700 dark:text-success-300" : "text-danger-600"}>{t("usd.settle.fxRow", { v: (s.fx > 0 ? "+" : "−") + iqd(Math.abs(s.fx)) })}</span>}
-              <span className="text-ink-subtle">{t(`usd.method.${s.method}`)} · {formatDate(s.at, i18n.language)} {formatTime(s.at, i18n.language)}</span>
+              {/* 0286: ما دُفع ساعةَ البيع (بنفس معاملتها) ليس «تسديداً بعدها» — يُقال كذلك. */}
+              {atSaleOf(s.at, invoice.created_at)
+                ? <span className="rounded bg-success-50 px-1.5 py-0.5 font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300" data-usd-atsale>{t("usd.settle.atSale")}</span>
+                : <span className="text-ink-subtle">{t(`usd.method.${s.method}`)} · {formatDate(s.at, i18n.language)} {formatTime(s.at, i18n.language)}</span>}
               {s.rate_note && <span className="text-ink-subtle">«{s.rate_note}»</span>}
               {canVoid && !s.voided_at && voiding !== s.id && (
                 <button type="button" className="ms-auto inline-flex items-center gap-1 font-bold text-danger-600" onClick={() => { playTap(); setVoiding(s.id); setWhy(""); }}><Ban size={12} /> {t("usd.settle.void")}</button>
@@ -444,3 +495,41 @@ export function UsdDebtActions({ invoice, onChanged }: { invoice: Invoice; onCha
   );
 }
 
+
+/* ══ ٥) البيعةُ بمجموعين: نصفُ الدولار داخل فاتورة الدينار (0286 — طلبُ المالك ٢١/١١: «صف واحد للبيعة») ══════════════════
+ * الفاتورتان (R وR~usd) تُفتحان نافذةً واحدة: سطورُ الدينار ومجاميعُها كما هي، وتحتها سطورُ الدولار بالدولار ولوحتُها (المسدَّد،
+ * الباقي، «سدّد بالدولار» بسعر يوم البيع أو اليوم أو أيّ سعر، والتسديدات). السطورُ تُجلب بالنافذة الأمّ (تُطبع معها). */
+export function UsdTwinSection({ twin, items, onRetry, canDelete, onChanged, onDeleted }: {
+  twin: Invoice; items: InvoiceItem[] | null | "failed"; onRetry: () => void;
+  canDelete: boolean; onChanged: () => void; onDeleted: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-2" data-usd-twin>
+      <p className="flex items-center gap-2 text-xs font-bold text-ink-muted"><UsdChip /> {t("usd.twin.title")}</p>
+      <div className="rounded-2xl border border-success-200 dark:border-success-500/30">
+        {items === null ? (
+          <div className="grid place-items-center p-4"><Loader2 size={16} className="animate-spin text-ink-subtle" /></div>
+        ) : items === "failed" ? (
+          <div role="alert" className="flex flex-wrap items-center gap-2 p-3 text-xs" data-usd-twin-failed>
+            <span className="min-w-0 flex-1 font-semibold text-danger-700 dark:text-danger-300">{t("usd.twin.itemsFailed")}</span>
+            <Button size="sm" variant="secondary" leftIcon={<RotateCcw size={13} />} onClick={() => { playTap(); onRetry(); }}>{t("usd.retry")}</Button>
+          </div>
+        ) : (
+          <div className="divide-y divide-line">
+            {items.map((it) => (
+              <div key={it.id} className="flex items-center gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink">{it.name}</p>
+                  <p className="text-xs text-ink-subtle">{formatNum(it.qty)}{it.unit_label ? ` ${it.unit_label}` : ""} × <bdi dir="ltr">{usdText(centsOfNum(it.unit_price_usd))}</bdi></p>
+                </div>
+                <span className="text-sm font-bold tabular-nums text-ink"><bdi dir="ltr">{usdText(centsOfNum(it.unit_price_usd) * centsOfNum(it.qty) / 100n)}</bdi></span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <UsdInvoicePanel invoice={twin} canDelete={canDelete} onChanged={onChanged} onDeleted={onDeleted} />
+    </div>
+  );
+}
