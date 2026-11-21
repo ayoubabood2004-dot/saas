@@ -161,6 +161,13 @@ async function suite(M, label = "") {
   check(`${label}(ب) بلا صورة ⇒ لا يُرفع`, pB.items[1].status === "noImage" && pB.counts.new === 2, JSON.stringify(pB.counts));
   const pB2 = M.planImport({ ...B, rows: [...B.rows, { ...B.rows[0], row: 9 }] }, cB, { company: "X", kind: "كلاب" }, []);
   check(`${label}(ب) المكرّرُ بالملف مرّةً واحدة`, pB2.items[3].status === "dupInFile", pB2.items[3].status);
+  /* أسماءُ الموزّع بترميز HTML مضاعَف («&#8211;» نصّاً) تُفكّ — والمحفوظُ قبلها بالرمز يُطابَق بها (الطرفان) */
+  const hx = { ...B, rows: [{ ...B.rows[0], row: 20, cells: ["كيلو &#8211; هراي فود", "Felicia", "رمل", ""] }] };
+  const pH = M.planImport(hx, cB, { company: "X", kind: "كلاب" }, []);
+  check(`${label}(ب) «&#8211;» نصّاً يصير «–» بالاسم`, pH.items[0].name === "كيلو – هراي فود", pH.items[0].name);
+  const oldRow = { id: "o1", name: "كيلو &#8211; هراي فود", company: "X", kind: "كلاب", agency: null, section: null, barcode: null, path: "p", updated_at: "" };
+  const pH2 = M.planImport(hx, cB, { company: "X", kind: "كلاب" }, [oldRow]);
+  check(`${label}(ب) والمحفوظُ قبلها بالرمز نفسُه «موجود» لا توأم`, pH2.items[0].status === "exists", pH2.items[0].status);
 
   /* وحدات */
   check(`${label}الباركود ٨–١٤ رقماً وحده`, M.libraryBarcode("12345678") === "12345678" && M.libraryBarcode("1234567") === null && M.libraryBarcode("AH-2231") === null && M.libraryBarcode(" 4820 0839 0889 7 ") === "4820083908897");
@@ -201,7 +208,7 @@ for (const [what, from, to] of MUTANTS) {
 const SCOPE_SRC = "src/lib/libraryScope.ts";
 async function loadScope(source) {
   const built = await esbuild.build({
-    stdin: { contents: source, resolveDir: "src/lib", loader: "ts", sourcefile: "libraryScope.ts" },
+    stdin: { contents: source + '\nexport { cleanLibName } from "./libraryLevels";\n', resolveDir: "src/lib", loader: "ts", sourcefile: "libraryScope.ts" },
     bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", alias: { "@": "./src" },
   });
   const dir = mkdtempSync(join(tmpdir(), "libscope-"));
@@ -230,6 +237,26 @@ function suiteScope(m, label = "▸ مكتبتا الصور: العامّة وا
   check("التعديلُ بلا تغيير لا يرسل شيئاً (ولا المسافات)", Object.keys(m.libraryPatch(r0, { ...same, agency: " Felicia " })).length === 0);
   const p1 = m.libraryPatch(r0, { ...same, agency: "INABA", section: "" });
   check("  ويرسل ما تغيّر وحده، والفارغُ null", JSON.stringify(p1) === JSON.stringify({ agency: "INABA", section: null }), JSON.stringify(p1));
+  check("الاسمُ يُفكّ: «&#8211;» و«&#x2013;» و«&amp;»، و«A&B» و«&foo;» كما هما، والمسافاتُ مطويّة",
+    m.cleanLibName(" 1 كيلو  &#8211; 10 ") === "1 كيلو – 10" && m.cleanLibName("&#x2013;") === "–" && m.cleanLibName("A &amp; B") === "A & B"
+      && m.cleanLibName("A&B") === "A&B" && m.cleanLibName("&foo;") === "&foo;");
+  const S = (id, name, barcode = null) => ({ id, name, barcode, path: `p/${id}` });
+  const lib = [S("x1", "Felicia Kitten Food 2kg"), S("x2", "Felicia Adult Food 2kg"), S("x3", "Felicia Litter Sand", "6291111111111"), S("x4", "INABA Tuna Treat"), S("x5", "قطط رمل")];
+  const sg = m.suggestFor(lib, { name: "Felicia kitten food 400g", barcode: null });
+  check("المقترحُ بكلمتين مشتركتين فأكثر، والأكثرُ مشاركةً أوّلاً", sg.map((r) => r.id).join() === "x1,x2", sg.map((r) => r.id).join());
+  const sgc = m.suggestFor(lib, { name: "شي ثاني تماماً", barcode: " 6291111111111 " });
+  const sgk = m.suggestFor(lib, { name: "Felicia Kitten", barcode: "6291111111111" });
+  check("  والباركودُ نفسُه يكفي وحده ويتصدّر حتى على مشاركة الاسم", sgc[0]?.id === "x3" && sgc.length === 1 && sgk[0]?.id === "x3" && sgk[1]?.id === "x1", `${sgc.map((r) => r.id).join()} | ${sgk.map((r) => r.id).join()}`);
+  check("  وكلمةٌ عامّة واحدة لا تقترح المكتبةَ كلَّها", m.suggestFor(lib, { name: "رمل قطط صغار جديد" }).map((r) => r.id).join() === "x5" && m.suggestFor(lib, { name: "Felicia" }).length === 3);
+  const prods = [
+    { id: "a", company_id: "c1", image_path: "i" }, { id: "b", company_id: "c1", image_path: null },
+    { id: "c", company_id: null, image_path: null }, { id: "d", company_id: "c2", image_path: null }, { id: "e", company_id: "c1", image_path: null },
+  ];
+  const cc = m.companyCounts(prods, new Map([["c1", "بيطري"], ["c2", "اليف هاوس"]]));
+  check("الشركاتُ بأعدادها وما بلا صورة، و«بلا شركة» آخراً",
+    JSON.stringify(cc.map((c) => [c.id, c.count, c.noPhoto])) === JSON.stringify([["c2", 1, 1], ["c1", 3, 2], [m.NO_COMPANY, 1, 1]]), JSON.stringify(cc));
+  check("  والتصفيةُ بالشركة و«بلا شركة»", prods.filter((p) => m.inCompany(p, "c1")).length === 3 && prods.filter((p) => m.inCompany(p, m.NO_COMPANY)).map((p) => p.id).join() === "c");
+  check("جولةُ الصور: ما بلا صورةٍ أوّلاً بترتيب الشاشة، ثمّ ما عنده", m.photoRunQueue(prods.filter((p) => m.inCompany(p, "c1"))).join() === "b,e,a");
   return fails === before;
 }
 const scopeSrc = readFileSync(SCOPE_SRC, "utf8");
@@ -239,6 +266,10 @@ const SCOPE_MUTANTS = [
   ["القاعدةُ القديمة تُحسب جاهزة", 'rows.some((r) => "clinic_id" in r)', "true"],
   ["التعديلُ يرسل كلَّ الحقول", "if (was !== now) out[k] = now || null;", "out[k] = now || null;"],
   ["رفضُ السياسة يُقرأ عموداً غائباً", 'x?.code === "PGRST204" || x?.code === "42703"', 'x?.code === "PGRST204" || x?.code === "42703" || x?.code === "42501"'],
+  ["كلمةٌ واحدة تكفي لاسمٍ طويل", "const need = words.length === 1 ? 1 : 2;", "const need = 1;"],
+  ["الباركودُ لا يتصدّر", "s += 1000;", "s += 1;"],
+  ["الجولةُ بترتيب الشاشة لا بالناقص أوّلاً", "[...ordered.filter((p) => !p.image_path), ...ordered.filter((p) => !!p.image_path)]", "[...ordered]"],
+  ["ما بلا صورة لا يُعدّ", "if (!p.image_path) c.noPhoto++;", ""],
 ];
 console.log("▸ طفرات المكتبتين (كلُّها يجب أن تُمسك)");
 for (const [what, from, to] of SCOPE_MUTANTS) {
