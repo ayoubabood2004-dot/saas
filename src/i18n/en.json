@@ -7397,7 +7397,7 @@
     "stale": {
       "ask": "The recorded dollar rate is from {{date}}: {{v}} per $100 — is it still today's rate?",
       "same": "Yes, same rate",
-      "askManager": "If it changed, enter today's new rate — via «Change rate» on the sale screen, or here."
+      "askManager": "If it changed, enter today's new rate — via «Change rate» in the dollar box on the sale screen, the payment window, or Settings."
     },
     "settle": {
       "pending": "We don't know whether the payment went through (the connection dropped) — «Try again» won't record it twice. To change it, close this and check the payments.",
@@ -7433,7 +7433,9 @@
       "pickToday": "Today's rate {{v}}",
       "makeToday": "Make it today's rate",
       "note": "Note (optional) — e.g. agreed with the customer",
-      "atSale": "Paid at the sale"
+      "atSale": "Paid at the sale",
+      "far": "The rate {{v}} per $100 ($1 = {{one}} IQD) is more than 20% away from both the sale-day rate and today's rate — check it (price of $100, not of $1). If it is right, press again.",
+      "farGo": "I'm sure — record · {{v}} IQD"
     },
     "inv": {
       "rate": "Sold at {{r}} per dollar",
@@ -7484,7 +7486,9 @@
     },
     "twin": {
       "title": "Dollar lines of the same sale",
-      "itemsFailed": "The dollar lines did not load — try again."
+      "itemsFailed": "The dollar lines did not load — try again.",
+      "lookupFailed": "We could not check whether this sale has dollar lines — try again before printing.",
+      "partNote": "«Refund» and «Delete» at the bottom act on the dinar lines — the dollar part is paid and deleted here."
     }
   },
   "dpets": {
@@ -9223,7 +9227,9 @@
       "usd_rate_manager": "The database needs update 0286 before staff can set the rate — for now only a manager can.",
       "usd_operator": "The platform operator does not set a clinic's dollar rate.",
       "usd_disabled": "Dollars are not enabled for this clinic — see Settings."
-    }
+    },
+    "rateFar": "This rate is more than 20% away from the recorded one ({{cur}}) — check it (price of $100). If it is right, press again.",
+    "rateFarGo": "I'm sure — save the rate"
   },
   "libm": {
     "companies": "Companies",

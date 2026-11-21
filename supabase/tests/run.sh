@@ -13427,8 +13427,9 @@ chk "  ودفعةُ البيع ليست «تسديداً لاحقاً»: كلُ�
     "select count(*)::text||'|'||coalesce(bool_and((e->>'at')::timestamptz <= i.created_at), true)::text
        from invoices i, jsonb_array_elements(i.payment_details) e where i.id = $NUSD and e ? 'at'" "1|true"
 # بعد شهر: الدولارُ ١٨٠٠ — والطبيبُ يكتبه من شاشته، ثمّ يسدّد بسعر يوم البيع (١٥٠٠) بلا سبب، ثمّ الباقي بسعرٍ يختاره (١٦٥٠).
-chk "بعد شهر الطبيبُ يكتب سعرَ اليوم ١٨٠٠، ويسدّد ١٠\$ بسعر يوم البيع ١٥٠٠ (غيرُ سعر اليوم) بلا مديرٍ ولا سبب — الدرجُ ١٥٬٠٠٠" \
-    "select $(rv $NV "select (fx_rate_set(180000)).rate::numeric(10,0)::text")||'|'||$(rv $NV "select (settle_invoice_usd($NUSD, 10, 150000, 'cash', 30, null, 'n286-p1'))->'settlement'->>'received'")" "1800|15000.00"
+chk "بعد شهر الطبيبُ يكتب سعرَ اليوم ١٨٠٠" "select $(rv $NV "select (fx_rate_set(180000)).rate::numeric(10,0)::text")" "1800"
+chk "  ويسدّد ١٠\$ بسعر يوم البيع ١٥٠٠ (غيرُ سعر اليوم) بلا مديرٍ ولا سبب — الدرجُ ١٥٬٠٠٠" \
+    "select $(rv $NV "select (settle_invoice_usd($NUSD, 10, 150000, 'cash', 30, null, 'n286-p1'))->'settlement'->>'received'")" "15000.00"
 chk "  والباقي ٢٠\$ بسعرٍ يختاره هو (١٦٥٠) يُغلق الدَّين — الدرجُ ٣٣٬٠٠٠" \
     "select $(rv $NV "select (settle_invoice_usd($NUSD, 20, 165000, 'transfer', 20, null, 'n286-p2'))->'settlement'->>'received'")" "33000.00"
 chk "  (يُقرأ بعدها: مدفوعٌ ٤٠\$ وباقيها صفر، وسعرُ يوم البيع عليها ١٥٠٠، ودفعةُ البيع ثمّ التسديدان بأسعارها ١٥٠٠ و١٥٠٠ و١٦٥٠ بيد الطبيب)" \
@@ -13451,9 +13452,10 @@ chk "والحدودُ كما هي: سعرٌ خارج ١٠٠–١٠٠٬٠٠٠، �
             ||'|'||$(rerr $NV "select (settle_invoice_usd('${NX}e1', 11, 170000, 'cash', null, null, null))::text")
             ||'|'||$(rerr $NV "select (void_usd_settlement((select id from usd_settlements where client_ref = 'n286-p1'), 'غلط'))::text")" \
     "usd_rate_bad|usd_rate_bad|usd_over|usd_void_manager"
-chk "والإعادةُ بالمرجع نفسِه تسديدٌ واحد (لا دفعةٌ ثانية ولو تغيّر السعر بالطلب)" \
-    "select ($(rv $NV "select (settle_invoice_usd($NUSD, 10, 190000, 'cash', null, null, 'n286-p1'))->'settlement'->>'rate'")::numeric)::numeric(10,0)::text
-            ||'|'||(select count(*) from usd_settlements where invoice_id = $NUSD)::text" "1500|3"
+chk "والإعادةُ بالمرجع نفسِه ترجع التسديدَ الأوّل بسعره (١٥٠٠) ولو تغيّر السعرُ بالطلب" \
+    "select ($(rv $NV "select (settle_invoice_usd($NUSD, 10, 190000, 'cash', null, null, 'n286-p1'))->'settlement'->>'rate'")::numeric)::numeric(10,0)::text" "1500"
+chk "  (يُقرأ بعدها بجملةٍ ثانية — درسُ 0257: ثلاثةُ تسديداتٍ كما كانت، لا رابع)" \
+    "select count(*)::text from usd_settlements where invoice_id = $NUSD" "3"
 chk "الصلاحيات: الدالّتان definer بمسارٍ مثبَّت وتسألان العيادة، ولا anon" \
     "select (select bool_and(prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%' and position('auth_clinic()' in prosrc) > 0)
                from pg_proc where proname in ('fx_rate_set', 'settle_invoice_usd'))::text

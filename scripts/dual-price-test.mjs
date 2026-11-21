@@ -76,7 +76,7 @@ async function load(muts = []) {
         'export { dualCheckout, dualRate, dualReady, mixedCheckout, mixedTwin } from "./src/lib/dualApi.ts";',
         'export { demoUsdPrefs, demoUsdRateSet, demoUsdState, demoUsdCheckout } from "./src/lib/demoUsd.ts";',
         'export { buildTwinInvoiceHTML } from "./src/lib/invoicePrint.ts";',
-        'export { iqdOf } from "./src/lib/usdMath.ts";',
+        'export { iqdOf, farFrom } from "./src/lib/usdMath.ts";',
         'export { settlementsOf } from "./src/lib/settlementFeed.ts";',
       ].join("\n"),
       resolveDir: process.cwd(), sourcefile: "dual-price-test-entry.ts", loader: "ts",
@@ -100,7 +100,13 @@ const serverIqd = (cents, rate1e4) => { const n = BigInt(cents) * BigInt(rate1e4
 async function behaviour(M, say) {
   let ok = true;
   const c = (name, cond, detail) => { if (say) check(name, cond, detail); if (!cond) ok = false; };
-  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout, mixedTwin, settlementsOf } = M;
+  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout, mixedTwin, settlementsOf, farFrom } = M;
+  /* 0286 (مراجعة): السعرُ الحرّ بلا مدير — صفرٌ زائدٌ أو ناقص يُسأل: بعيدٌ عن كلّ مرجعٍ بأكثر من ٢٠٪ (بالأعداد الصحيحة). */
+  const R = (per1) => BigInt(per1) * 10_000n;
+  c("0286: «15000» بدل «150000» بعيد (١٥٠ عن ١٥٠٠ و١٨٠٠)، و١٦٥٠ قريب، و٢٠٪ بالضبط ليس بعيداً، وبلا مرجعٍ لا حكم",
+    farFrom(R(150), [R(1500), R(1800)]) === true && farFrom(R(1650), [R(1500), R(1800)]) === false
+    && farFrom(R(1800), [R(1500)]) === false && farFrom(R(1801), [R(1500)]) === true && farFrom(R(150), [null, undefined]) === false
+    && farFrom(R(2200), [R(1500), R(1900)]) === false);
 
   /* أ) الحساب */
   const dual = { price_currency: "IQD", sell_price_usd: 10, sub_unit_price_usd: null, units_per_box: 3, has_sub_unit: true, sold_by_weight: false };
@@ -382,10 +388,15 @@ console.log("▸ 0286 (طلبُ المالك ٢١/١١): صفٌّ واحد لل�
     && /invoiceNo\(\(pairs\.baseOf\.get\(e\.inv\.id\) \?\? e\.inv\)\.id\)/.test(ip) && /inv\.item_count \+ \(twin\?\.item_count \?\? 0\)/.test(ip));
   check("  والنافذة: فاتورةُ الدولار تُفتح من رأسها، ونصفُها داخل فاتورة الدينار، والطباعةُ بنصفيها (وسطورُه تُجلب إن لم تصل)",
     /m\.invoiceByRef\(invRef\.slice\(0, -4\)\)/.test(ip) && /if \(alive && base\) setOpen\(base\);/.test(ip)
-    && /usdTwin = \{ invoice: twin, items: its \};/.test(ip) && (ip.match(/printSale\("(?:a4|thermal)"\)/g) ?? []).length === 2);
+    && /usdTwin = \{ invoice: tw, items: its \};/.test(ip) && (ip.match(/printSale\("(?:a4|thermal)"\)/g) ?? []).length === 2
+    // ومراجعة 0286: ضغطةُ طباعةٍ قبل جواب المرجع (أو بعد فشله) تسأله — لا دينارَ وحده بلا دَين الدولار — وفشلُ السؤال يُقال بنطاق usd
+    && /if \(!tw && !known && invRef && !invUsd && !invRef\.endsWith\("~usd"\)\)/.test(ip) && /<UsdTwinLazy twin=\{null\}/.test(ip));
   check("التسديد: سعرُ يوم البيع وسعرُ اليوم زرّان، والسعرُ الآخرُ لا يحتاج سبباً، و«خلّيه سعر اليوم» من النافذة",
     /data-usd-rate-sale/.test(ud) && /data-usd-rate-today/.test(ud) && /data-usd-rate-maketoday/.test(ud)
-    && !/other && !reason\.trim\(\)/.test(ud) && /\(stale && isTodayRate\)/.test(ud) && /reason\.trim\(\) \? reason : null/.test(ud));
+    && !/other && !reason\.trim\(\)/.test(ud) && /\(stale && isTodayRate\)/.test(ud) && /other && reason\.trim\(\) \? reason : null/.test(ud)
+    // ومراجعة 0286: السعرُ البعيد يُقال ويحتاج ضغطةً ثانية (بالتسديد و«خلّيه سعر اليوم» ونافذة شاشة البيع)
+    && (ud.match(/if \(farPending\) \{ playWarning\(\); setFarAck\(per100\.trim\(\)\); return; \}/g) ?? []).length === 2
+    && /farFrom\(rate, \[saleRate, today\?\.rate1e4\]\)/.test(ud) && /if \(farPending\) \{ playWarning\(\); setFarAck\(per100\.trim\(\)\); return; \}/.test(up));
   check("  ودفعةُ البيع «دُفع وكت البيع» بقائمة التسديدات", /atSaleOf\(s\.at, invoice\.created_at\)/.test(ud));
   check("شاشةُ البيع: «غيّر السعر» بصندوق الدولار، و«$» بلا سعرٍ يسأله ثمّ يكمل، وسطورُ الدولار تأخذ السعرَ الجديد",
     /if \(!r\.ok && r\.why === "no_rate"\) \{ playTap\(\); setRateAsk\(\{ cur: null, then: l \}\); return; \}/.test(sbx)
@@ -419,6 +430,8 @@ const MUTS = [
   ["المفردُ يُتجاهل على مادّةٍ لم تعد بسعرين", "src/lib/demoUsd.ts", "const sub = !!it.sub;", "const sub = dual && !!it.sub;"],
   ["التوأمُ بغير مرجعه", "src/lib/dualApi.ts", "return invoiceByRef(`${ref}~usd`);", "return invoiceByRef(ref);"],
   ["المادّةُ بسعرين بكلفة الدولار", "src/lib/demoUsd.ts", "costCents: dual || p.purchase_price_usd == null ? null", "costCents: p.purchase_price_usd == null ? null"],
+  ["السعرُ البعيد بلا سؤال", "src/lib/usdMath.ts", "return d * 100n > r * pct;", "return false;"],
+  ["البعيدُ بأيّ مرجعٍ لا بكلّها", "src/lib/usdMath.ts", "return rs.every((r) =>", "return rs.some((r) =>"],
   ["دفعةُ البيع تُختم بعد الفاتورة (صفٌّ ثالث)", "src/lib/demoUsd.ts", "const at = atIn ?? new Date().toISOString();", "const at = new Date(Date.now() + 1000).toISOString();"],
   ["الورقةُ الواحدة بسكربتين", "src/lib/invoicePrint.ts", "h2.slice(b2s + \"<body>\".length, b2e)", "h2.slice(b2s + \"<body>\".length)"],
 ];

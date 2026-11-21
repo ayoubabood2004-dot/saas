@@ -6,7 +6,7 @@ import { cn, formatNum } from "@/lib/utils";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import type { UsdRate } from "@/lib/usdApi";
-import { rateOfPer100, rateOk } from "@/lib/usdMath";
+import { farFrom, rateOfPer100, rateOk } from "@/lib/usdMath";
 import { playSuccess, playWarning } from "@/lib/sounds";
 import { describeDbError, isNetworkError } from "@/lib/errors";
 
@@ -133,8 +133,13 @@ export function UsdRateDialog({ current, onClose, onSaved }: { current: bigint |
   const [err, setErr] = useState<string | null>(null);
   const typed = per100.trim() === "" ? null : rateOfPer100(per100);
   const ok = typed != null && rateOk(typed);
+  /* سعرُ اليوم للعيادة كلّها (0286 — بلا مدير): صفرٌ زائدٌ أو ناقص بعيدٌ عن المسجّل بأكثر من ٢٠٪ يُقال ويحتاج ضغطةً ثانية. */
+  const [farAck, setFarAck] = useState<string | null>(null);
+  const far = ok && current != null && farFrom(typed!, [current]);
+  const farPending = far && farAck !== per100.trim();
   const save = async () => {
     if (!ok || busy) return;
+    if (farPending) { playWarning(); setFarAck(per100.trim()); return; }
     setBusy(true);
     try {
       const { usdApi } = await import("@/lib/usdApi");   // البابُ كسول (usd-test): لا استيرادَ ثابتاً خارج قطعة الدولار
@@ -164,9 +169,10 @@ export function UsdRateDialog({ current, onClose, onSaved }: { current: bigint |
             </span>
           )}
         </label>
+        {far && <p className="rounded-lg bg-warn-50 p-2 text-xs font-semibold text-warn-800 dark:bg-warn-500/10 dark:text-warn-200" role="alert" data-usdrate-far>{t("mxp.rateFar", { cur: formatNum(Number(current) / 100) })}</p>}
         {err && <p className="text-xs font-semibold text-danger-600" role="alert">{err}</p>}
         <p className="text-2xs text-ink-subtle">{t("mxp.rateHint")}</p>
-        <Button type="submit" className="w-full" loading={busy} disabled={!ok} data-usdrate-save>{t("mxp.rateSave")}</Button>
+        <Button type="submit" className="w-full" loading={busy} disabled={!ok} data-usdrate-save>{t(far && farAck === per100.trim() ? "mxp.rateFarGo" : "mxp.rateSave")}</Button>
       </form>
     </Modal>
   );
