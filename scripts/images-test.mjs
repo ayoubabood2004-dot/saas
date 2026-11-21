@@ -211,8 +211,18 @@ check("لا deleteProductImage ولا deleteClinicLogo بالسحابيّ ولا
     && !/\bdrop\b/i.test(body));
 }
 globalThis.__removed = [];
-await cloud.deleteLibraryImage("lib-1", "library/shared.jpg");
-check("  وحذفُ صفّ المكتبة لا يحذف ملفَّه (منتجاتٌ ربطته تبقى بصورتها)", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
+{
+  // الحذفُ يُسمع (0285): يرجع الصفَّ المحذوف (`select("id")`)، وصفرُ صفوفٍ — سياسةٌ ردّته — يُرمى لا يُقال «انحذف».
+  const refs = globalThis.__productRefs;
+  globalThis.__productRefs = [{ id: "lib-1" }];
+  await cloud.deleteLibraryImage("lib-1", "library/shared.jpg");
+  check("  وحذفُ صفّ المكتبة لا يحذف ملفَّه (منتجاتٌ ربطته تبقى بصورتها)", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
+  globalThis.__productRefs = [];
+  let threw = null;
+  try { await cloud.deleteLibraryImage("lib-x", "library/x.jpg"); } catch (e) { threw = e; }
+  check("  وحذفٌ ردّته السياسةُ (صفرُ صفوف) يُرمى بصوت", threw?.code === "no_row_updated", String(threw?.code));
+  globalThis.__productRefs = refs;
+}
 
 console.log("▸ الصورةُ بنسختين — المصغّرةُ أوّلاً، والكاملةُ بعدها، والمسارُ أخوان");
 const HD = mkUpload("image/jpeg", "jpg"), SM = mkUpload("image/jpeg", "jpg");

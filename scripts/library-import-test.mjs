@@ -197,5 +197,60 @@ for (const [what, from, to] of MUTANTS) {
   check(`طفرة «${what}» يمسكها الفحص`, caught);
 }
 
+/* ── مكتبتا الصور (0285، src/lib/libraryScope.ts): العامّةُ صفٌّ بلا عيادة، والقاعدةُ تُعرف بمفتاح العمود ── */
+const SCOPE_SRC = "src/lib/libraryScope.ts";
+async function loadScope(source) {
+  const built = await esbuild.build({
+    stdin: { contents: source, resolveDir: "src/lib", loader: "ts", sourcefile: "libraryScope.ts" },
+    bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", alias: { "@": "./src" },
+  });
+  const dir = mkdtempSync(join(tmpdir(), "libscope-"));
+  const f = join(dir, "m.mjs");
+  writeFileSync(f, built.outputFiles[0].text);
+  try { return await import(pathToFileURL(f).href); } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
+}
+function suiteScope(m, label = "▸ مكتبتا الصور: العامّة والخاصّة") {
+  const before = fails;
+  if (label) console.log(label);
+  const L = (id, extra) => ({ id, name: id, company: "اليف هاوس", kind: "قطط", agency: "Felicia", section: "رمل", barcode: null, path: `p/${id}`, updated_at: "", ...extra });
+  const rows = [L("a", { clinic_id: null }), L("b", { clinic_id: "c1" }), L("c", { clinic_id: "c1", agency: "INABA" }), L("d", {})];
+  check("العامّةُ: بلا عيادة، وصفُّ قاعدةٍ قبل 0285 (بلا المفتاح) عامّ", m.rowsOf(rows, "public").map((r) => r.id).join() === "a,d");
+  check("الخاصّةُ: ما له عيادة وحده", m.rowsOf(rows, "mine").map((r) => r.id).join() === "b,c");
+  check("القاعدةُ تعرف 0285 بمفتاح العمود ولو فارغاً", m.clinicLibraryReady([L("x", { clinic_id: null })]) === true);
+  check("  وقاعدةٌ قبلها (صفوفٌ بلا المفتاح) لا", m.clinicLibraryReady([L("x"), L("y")]) === false);
+  check("  ومكتبةٌ فارغة: يُفترض نعم ويقول الخادمُ عند الكتابة", m.clinicLibraryReady([]) === true);
+  check("رفضُ العمود الغائب يُعرف (PGRST204 / 42703 / رسالةُ clinic_id)",
+    m.isLibraryColumnMissing({ code: "PGRST204" }) && m.isLibraryColumnMissing({ code: "42703" })
+      && m.isLibraryColumnMissing({ message: "column image_library.clinic_id does not exist" }));
+  check("  ورفضُ السياسة (42501) ليس عموداً غائباً", m.isLibraryColumnMissing({ code: "42501", message: "new row violates row-level security policy" }) === false);
+  const mine = m.rowsOf(rows, "mine");
+  check("نقلُ المجموعة يكتب كلَّ صور المسار وحدها", m.idsUnder(mine, { agency: "felicia" }).join() === "b" && m.idsUnder(mine, {}).join() === "b,c");
+  const r0 = L("e", { clinic_id: "c1", barcode: "6291234567890" });
+  const same = { name: "e", company: "اليف هاوس", kind: "قطط", agency: "Felicia", section: "رمل", barcode: "6291234567890" };
+  check("التعديلُ بلا تغيير لا يرسل شيئاً (ولا المسافات)", Object.keys(m.libraryPatch(r0, { ...same, agency: " Felicia " })).length === 0);
+  const p1 = m.libraryPatch(r0, { ...same, agency: "INABA", section: "" });
+  check("  ويرسل ما تغيّر وحده، والفارغُ null", JSON.stringify(p1) === JSON.stringify({ agency: "INABA", section: null }), JSON.stringify(p1));
+  return fails === before;
+}
+const scopeSrc = readFileSync(SCOPE_SRC, "utf8");
+suiteScope(await loadScope(scopeSrc));
+const SCOPE_MUTANTS = [
+  ["الخاصّةُ تُقرأ عامّة", 'scope === "public" ? isPublicRow(r) : !isPublicRow(r)', 'scope === "public" ? isPublicRow(r) : isPublicRow(r)'],
+  ["القاعدةُ القديمة تُحسب جاهزة", 'rows.some((r) => "clinic_id" in r)', "true"],
+  ["التعديلُ يرسل كلَّ الحقول", "if (was !== now) out[k] = now || null;", "out[k] = now || null;"],
+  ["رفضُ السياسة يُقرأ عموداً غائباً", 'x?.code === "PGRST204" || x?.code === "42703"', 'x?.code === "PGRST204" || x?.code === "42703" || x?.code === "42501"'],
+];
+console.log("▸ طفرات المكتبتين (كلُّها يجب أن تُمسك)");
+for (const [what, from, to] of SCOPE_MUTANTS) {
+  const mutated = scopeSrc.replace(from, to);
+  if (mutated === scopeSrc) { fails++; console.error(`   ✗ الطفرة «${what}» لم تجد سطرَها — حدّث الفحص`); continue; }
+  const quiet = console.log, quietErr = console.error, saved = fails, savedP = passes;
+  console.log = () => {}; console.error = () => {};
+  let caught;
+  try { caught = !suiteScope(await loadScope(mutated), ""); } catch { caught = true; }
+  console.log = quiet; console.error = quietErr; fails = saved; passes = savedP;
+  check(`طفرة «${what}» يمسكها الفحص`, caught);
+}
+
 console.log(`${fails ? "✗" : "✓"} library-import-test: ${passes} نجح، ${fails} فشل`);
 process.exit(fails ? 1 : 0);

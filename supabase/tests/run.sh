@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0286_usd_free_rate.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -11750,6 +11750,24 @@ chk "الرسمةُ المجمَّدة صارت ترتيبَ اليوم (من ا
     "select (cage_layout like '%\"code\": \"107\"%' or cage_layout like '%\"code\":\"107\"%')::text from clinic_prefs where clinic_id='$C3'" "true"
 chk "  وsave_cage_layout تحفظ من جديد بدور authenticated" \
     "select _rls_try('$C3', format('select save_cage_layout(%L, %s)', '{\"v\":2,\"rooms\":[],\"cages\":[]}', (select cage_layout_rev from clinic_prefs where clinic_id='$C3')))" "rows:1"
+# ── 0285 والمصوّر: قبل تراجع 0222 (يحذف السياجَ ودالّتَه — بعده يمرّ المصوّرُ ويسقط الفحصُ زوراً) ──────────
+echo "▸ 0285: موظّفُ التصوير يكتب مكتبةَ عيادته بإذنه، ولا يكتب العامّة، والسياجُ كامل"
+C1=11111111-1111-1111-1111-111111111111
+PHO=88888888-8888-8888-8888-888888888888
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into image_library(name, path) values ('عامّة ٢٨٥ق', 'library/l285q.jpg');" >/dev/null
+chk "موظّفُ التصوير يكتب مكتبةَ عيادته بإذنه (سياجُه يمرّ)" \
+    "select _rls_try('$PHO', 'insert into image_library(name, clinic_id, path) values (''مصوّر ٢٨٥'', ''$C1'', ''$C1/lib-285f.jpg'')') || '/' || _rls_try('$PHO', 'update image_library set section = ''طعام'' where path = ''$C1/lib-285f.jpg''') || '/' || _rls_try('$PHO', 'delete from image_library where path = ''$C1/lib-285f.jpg''')" "rows:1/rows:1/rows:1"
+chk "  ولا يكتب العامّة" \
+    "select left(_rls_try('$PHO', 'insert into image_library(name, path) values (''x'', ''library/l285f.jpg'')'), 13) || '/' || _rls_try('$PHO', 'update image_library set name = ''y'' where path = ''library/l285q.jpg''')" "guarded:42501/rows:0"
+$P -c "update staff set permissions = '{\"manageProductPhotos\": false}' where user_id = '$PHO' and clinic_id = '$C1';" >/dev/null
+chk "  وبلا إذنٍ (سحبه المدير) لا يكتب ولو كان مصوّراً" \
+    "select left(_rls_try('$PHO', 'insert into image_library(name, clinic_id, path) values (''x'', ''$C1'', ''$C1/lib-285g.jpg'')'), 13)" "guarded:42501"
+$P -c "update staff set permissions = '{}' where user_id = '$PHO' and clinic_id = '$C1';" >/dev/null
+chk "السياجُ كاملٌ بعد 0285 (بلا ثغرة)" "select coalesce(string_agg(x, ','), '') from verify_photographer_fence() x" ""
+chk "  وعشرُ سياساتٍ على المكتبة (قراءةٌ، ثلاثٌ للعامّة، ثلاثٌ للخاصّة، وسياجُ الكتابة)" \
+    "select count(*)::text from pg_policies where schemaname='public' and tablename='image_library'" "10"
+$P -c "delete from image_library where path like 'library/l285%' or path like '%/lib-285%';" >/dev/null
 echo "▸ rollback_0222: السياجُ يُرفع والمصوّرُ يُعلَّق لا يُحذف"
 $P -f "$HERE/rollback_0222.sql" >/dev/null
 chk "0256 بعد تراجع 0222: الأرباحُ والخسائرُ تقرأ للمدير بلا staff_can (لا «لا توجد دالّة»)" \
@@ -13548,5 +13566,62 @@ out=$($P -f "$MIG/0284_library_levels.sql" 2>&1) || { echo "$out" | tail -3; ech
 chk "  وإعادةُ 0284 بلا أثر: قيدان لا أربعة" \
     "select count(*)::text from pg_constraint where conrelid='public.image_library'::regclass and conname like 'image_library_%_len'" "2"
 $P -c "update _dvtest_flags set admin = false; delete from image_library where path like 'library/l284%';" >/dev/null
+
+# ── 0285: مكتبةٌ خاصّة لكلّ عيادة بجانب العامّة ─────────────────────────────────────────────────────────
+echo "▸ 0285: مكتبةُ العيادة الخاصّة — تكتبها بصلاحية الصور وتقرؤها وحدها، والعامّةُ للمشغّل وحده"
+ADM=33333333-3333-3333-3333-333333333333
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+# الكادرُ كما بنته أقسامٌ سابقة — يُؤكَّد هنا فالقسمُ لا يتّكل على ترتيبٍ قبله. وهذا القسمُ بعد تراجع 0222:
+# الصلاحيةُ بلا staff_can للمدير وحده (library_can_write)، والمصوّرُ وسياجُه بقسمٍ قبل التراجع.
+$P -c "insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;
+       update memberships set role = 'receptionist', status = 'active' where user_id = '$RCP' and clinic_id = '$C1';
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "العمودُ موجودٌ بنوعه" \
+    "select data_type from information_schema.columns where table_name='image_library' and column_name='clinic_id'" "uuid"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يضيف للعامّة كما كان (بلا عمود العيادة)" \
+    "select _rls_try('$ADM', 'insert into image_library(name, path) values (''عامّة ٢٨٥'', ''library/l285p.jpg'')')" "rows:1"
+chk "  ولا يكتب بمكتبة عيادةٍ ليس داخلها (سياستُه للعامّة وحدها)" \
+    "select left(_rls_try('$ADM', 'insert into image_library(name, clinic_id, path) values (''x'', ''$C1'', ''$C1/lib-285x.jpg'')'), 13)" "guarded:42501"
+$P -c "update _dvtest_flags set admin = false;" >/dev/null
+chk "العيادةُ تضيف لمكتبتها، والملفُّ بمجلّدها" \
+    "select _rls_try('$C1', 'insert into image_library(name, kind, agency, clinic_id, path) values (''خاصّة ٢٨٥'', ''قطط'', ''Felicia'', ''$C1'', ''$C1/lib-285a.jpg'')')" "rows:1"
+chk "  لا بملفٍّ خارج مجلّدها" \
+    "select left(_rls_try('$C1', 'insert into image_library(name, clinic_id, path) values (''x'', ''$C1'', ''library/l285x.jpg'')'), 13)" "guarded:42501"
+chk "  ولا بمكتبة عيادةٍ أخرى" \
+    "select left(_rls_try('$C1', 'insert into image_library(name, clinic_id, path) values (''x'', ''$C2'', ''$C2/lib-285x.jpg'')'), 13)" "guarded:42501"
+chk "  ولا بالعامّة" \
+    "select left(_rls_try('$C1', 'insert into image_library(name, path) values (''x'', ''library/l285y.jpg'')'), 13)" "guarded:42501"
+chk "العيادةُ الثانية لا ترى مكتبةَ الأولى" \
+    "select _rls_try('$C2', 'select 1 from image_library where path = ''$C1/lib-285a.jpg''')" "rows:0"
+chk "  وترى العامّة" \
+    "select _rls_try('$C2', 'select 1 from image_library where path = ''library/l285p.jpg''')" "rows:1"
+chk "  ولا تعدّل صورةَ الأولى (صفرُ صفوف)" \
+    "select _rls_try('$C2', 'update image_library set name = ''y'' where path = ''$C1/lib-285a.jpg''')" "rows:0"
+chk "العيادةُ تعدّل صورتها وتنقلها بين المستويات" \
+    "select _rls_try('$C1', 'update image_library set agency = ''Felicia Cat'', section = ''رمل'' where path = ''$C1/lib-285a.jpg''')" "rows:1"
+chk "  ولا تنقلها لعيادةٍ أخرى" \
+    "select left(_rls_try('$C1', 'update image_library set clinic_id = ''$C2'' where path = ''$C1/lib-285a.jpg'''), 13)" "guarded:42501"
+chk "  ولا تجعلها عامّة" \
+    "select left(_rls_try('$C1', 'update image_library set clinic_id = null where path = ''$C1/lib-285a.jpg'''), 13)" "guarded:42501"
+chk "  ولا تمسّ العامّة (صفرُ صفوف)" \
+    "select _rls_try('$C1', 'update image_library set name = ''y'' where path = ''library/l285p.jpg''')" "rows:0"
+chk "الاستقبالُ (بلا صلاحية الصور) يرى مكتبةَ عيادته ولا يكتبها" \
+    "select _rls_try('$RCP', 'select 1 from image_library where path = ''$C1/lib-285a.jpg''') || '/' || left(_rls_try('$RCP', 'insert into image_library(name, clinic_id, path) values (''x'', ''$C1'', ''$C1/lib-285r.jpg'')'), 13) || '/' || _rls_try('$RCP', 'update image_library set name = ''y'' where path = ''$C1/lib-285a.jpg''') || '/' || _rls_try('$RCP', 'delete from image_library where path = ''$C1/lib-285a.jpg''')" \
+    "rows:1/guarded:42501/rows:0/rows:0"
+$P -c "insert into image_library(name, clinic_id, path) values ('للحذف ٢٨٥', '$C1', '$C1/lib-285d.jpg');" >/dev/null
+chk "العيادةُ تحذف من مكتبتها (الصفُّ وحده)" \
+    "select _rls_try('$C1', 'delete from image_library where path = ''$C1/lib-285d.jpg''')" "rows:1"
+chk "  ولا تحذف من العامّة" \
+    "select _rls_try('$C1', 'delete from image_library where path = ''library/l285p.jpg''')" "rows:0"
+out=$($P -f "$MIG/0285_clinic_library.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0285 ما انعادت"; fail=1; }
+chk "  وإعادةُ 0285 بعد تراجع 0222 بلا أثر: سبعُ سياساتٍ (السياجُ ذهب مع دالّته)" \
+    "select count(*)::text from pg_policies where schemaname='public' and tablename='image_library'" "7"
+chk "  والصفوفُ كما هي" \
+    "select (select count(*) from image_library where path = '$C1/lib-285a.jpg')::text || '/' || (select count(*) from image_library where path = 'library/l285p.jpg')::text" "1/1"
+$P -c "update _dvtest_flags set admin = false; delete from image_library where path like 'library/l285%' or path like '%/lib-285%';" >/dev/null
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
