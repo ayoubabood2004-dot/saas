@@ -56,8 +56,11 @@ function fixture(M) {
     tx("t4", "2026-11-20", "20:00", "Amoxicillin", { route: "im", amount: "1.5 ml" }),
     tx("t5", "2026-11-22", "08:00", "Amoxicillin", { route: "im" }),
     tx("t6", "2026-11-18", "09:00", "Meloxicam", { route: "sc", administered_at: "2026-11-18T06:00:00Z" }),
+    // جرعةُ ١١ ليلاً انعطت ١٢:٣٠ بعد منتصف الليل ببغداد (٢١:٣٠ غرينتش) — يومُها باليوميات يومُ إعطائها المحلّيّ.
+    tx("t7", "2026-11-17", "23:00", "Meloxicam", { route: "sc", administered_at: "2026-11-17T21:30:00Z" }),
     tx("f1", "2026-11-18", "10:00", "Ringer", { task_type: "fluid", administered_at: "2026-11-18T07:00:00Z" }),
     tx("x1", "2026-11-18", "11:00", "temperature", { task_type: "vitals" }),
+    tx("c1", "2026-11-18", "12:00", "feeding", { task_type: "feed", result: "80%", administered_at: "2026-11-18T09:00:00Z" }),
     tx("o1", "2026-10-01", "08:00", "Old drug", { administered_at: "2026-10-01T05:00:00Z" }),
   ];
   const admissions = [
@@ -65,7 +68,7 @@ function fixture(M) {
     { id: "a1", pet_id: "p1", kind: "treatment_boarding", status: "active", admitted_on: "2026-11-16", cage: "105", reason: "تسمّم" },
   ];
   const movements = [
-    { id: "m1", pet_id: "p1", admission_id: "a1", at: "2026-11-16T06:30:00Z", event: "admitted", created_at: "" },
+    { id: "m1", pet_id: "p1", admission_id: "a1", at: "2026-11-16T06:30:00Z", event: "admitted", to_kind: "treatment_boarding", to_cage: "105", created_at: "" },
     { id: "m2", pet_id: "p1", admission_id: "a0", at: "2026-09-29T07:00:00Z", event: "admitted", created_at: "" },
     { id: "m3", pet_id: "p1", admission_id: "a0", at: "2026-10-02T13:00:00Z", event: "discharged", created_at: "" },
   ];
@@ -111,7 +114,7 @@ async function suite(M, label = "") {
   check(`${label}الدواءُ بعدّه: انطت ١ وفاتت ١ ومتأخّرة ١ وباقية ٢ من ٥، والمقداران، والطريق، وزيارتُه`,
     amox && amox.total === 5 && amox.given === 1 && amox.missed === 1 && amox.overdue === 1 && amox.pending === 2 && amox.amounts.join("|") === "1 ml|1.5 ml" && amox.route === "im" && amox.visitId === "v1",
     JSON.stringify(amox));
-  check(`${label}المجاميع`, JSON.stringify(all.totals) === JSON.stringify({ meds: 3, doses: 7, given: 3, missed: 1, overdue: 1, pending: 2 }), JSON.stringify(all.totals));
+  check(`${label}المجاميع`, JSON.stringify(all.totals) === JSON.stringify({ meds: 3, doses: 8, given: 4, missed: 1, overdue: 1, pending: 2 }), JSON.stringify(all.totals));
   check(`${label}الإقامات: الأحدثُ أوّلاً، والقائمةُ حاليّة، والساعاتُ من الحركة`,
     all.stays.map((s) => s.id).join() === "a1,a0" && all.current?.id === "a1" && all.current.inAt === "2026-11-16T06:30:00Z" && all.stays[1].outAt === "2026-10-02T13:00:00Z" && all.current.days === 5,
     JSON.stringify(all.stays.map((s) => [s.id, s.inAt, s.outAt, s.days])));
@@ -151,6 +154,86 @@ async function suite(M, label = "") {
   check(`${label}المعاينةُ بلا طباعةٍ تلقائيّة، والنافذةُ تطبع`, !h1.includes("window.print") && html({ autoPrint: true }).includes("window.print"));
   check(`${label}الإقامةُ بالورقة: النوعُ وقفصها و«بعده بالعيادة»`, h1.includes("{csht.kinds.treatment_boarding}") && h1.includes(">105<") && h1.includes("{csht.stillIn}"));
   check(`${label}اللقاحُ المتأخّر موسوم`, h1.includes("Leptospira") && h1.includes("{csht.overdueTag}"));
+
+  // ── اسمُ الورقة بنوع الإقامة («تقرير الفندقة») ──
+  const kindTitle = (kind) => M.composeSheet({ ...base, model: M.buildCaseModel({ ...F, admissions: [{ ...F.admissions[1], kind }] }, { today: TODAY, range: r }) }).title;
+  check(`${label}العنوانُ بنوع الإقامة: فندقة، فندقةٌ علاجية، علاج — والسجلُّ كلُّه باسمه`,
+    kindTitle("boarding") === "{csht.titleBoarding}" && kindTitle("treatment_boarding") === "{csht.titleCareBoarding}" && kindTitle("treatment") === "{csht.titleStay}"
+      && M.composeSheet({ ...base, scope: "all", model: all }).title === "{csht.titleAll}",
+    [kindTitle("boarding"), kindTitle("treatment")].join());
+
+  // ── يومياتُ الإقامة ──
+  const days = stay.days.map((x) => x.day).join();
+  check(`${label}اليوميات: أيّامُ الإقامة التي صار فيها شيء، الأقدمُ أوّلاً، والسجلُّ كلُّه بلا يوميات`,
+    days === "2026-11-16,2026-11-17,2026-11-18" && all.days.length === 0, days);
+  const d16 = stay.days[0], d17 = stay.days[1], d18 = stay.days[2];
+  check(`${label}  يومُ الدخول: الدخولُ بساعته، والجرعةُ المعطاةُ بيوم إعطائها، والوزن`,
+    d16.events.some((e) => e.kind === "in" && e.at === "2026-11-16T06:30:00Z") && JSON.stringify(d16.given) === JSON.stringify([["Amoxicillin", 1]]) && d16.events.some((e) => e.kind === "weight"),
+    JSON.stringify(d16));
+  check(`${label}  «ما انطت» المحسومة فائتة بيومها، و«أُجّلت» متأخّرةٌ لا فائتة (كجدول الجرعات)`,
+    JSON.stringify(d17.missed) === JSON.stringify([["Amoxicillin", 1]]) && JSON.stringify(d18.overdue) === JSON.stringify([["Amoxicillin", 1]]) && d18.missed.length === 0,
+    JSON.stringify({ m17: d17.missed, o18: d18.overdue, m18: d18.missed }));
+  check(`${label}  والمعطاةُ بعد منتصف الليل بيوم إعطائها المحلّيّ لا بيومها المجدول`,
+    JSON.stringify(d18.given) === JSON.stringify([["Meloxicam", 2]]) && d17.given.length === 0, JSON.stringify({ g17: d17.given, g18: d18.given }));
+  check(`${label}  مهامُّ الرعاية بيومها: الأكلُ ١/١ بقيمته، والحرارةُ ٠/١ بلا قيمة، والسوائلُ ١/١`,
+    JSON.stringify(d18.care) === JSON.stringify([{ type: "feed", done: 1, total: 1, values: ["80%"] }, { type: "vitals", done: 0, total: 1, values: [] }, { type: "fluid", done: 1, total: 1, values: [] }]),
+    JSON.stringify(d18.care));
+  check(`${label}  واليومياتُ بالورقة: الدخولُ والقفص، و«انطى» و«فاتت» و«متأخّرة»، والأكلُ بقيمته`,
+    h1.includes("{csht.daysTitle}") && h1.includes("{csht.ev.inAt|time=") && h1.includes("{csht.ev.cage|cage=105}") && h1.includes("{csht.ev.doses|list=Amoxicillin}")
+      && h1.includes("{csht.ev.missed|list=Amoxicillin}") && h1.includes("{csht.ev.overdue|list=Amoxicillin}") && h1.includes("{csht.ev.care|label={csht.care.feed},done=1,total=1} (80%)"),
+    "");
+  check(`${label}  و«يوميات الإقامة» تُطفأ`, !html({ showDays: false }).includes("{csht.daysTitle}"));
+  const hd = html({ showDrugs: false, parts: { vaccines: false, visits: false, notes: false, labs: false } });
+  check(`${label}  واليومياتُ تتبع خياراتِ النافذة: الجرعاتُ بعددها بلا أسماء، والمطفأُ لا يرجع منها`,
+    hd.includes("{csht.daysTitle}") && hd.includes("{csht.ev.dosesN|n=1}") && hd.includes("{csht.ev.missedN|n=1}") && hd.includes("{csht.ev.overdueN|n=1}")
+      && !hd.includes("{csht.ev.vaccine") && !hd.includes("{csht.ev.lab") && !hd.includes("{csht.ev.visit") && !hd.includes("{csht.ev.plan") && hd.includes("{csht.ev.weight|"), "");
+
+  // ── كلُّ كلمةٍ تُعدَّل: مفاتيحُ ثابتة، والتعديلُ على نصّه، والفارغُ لا يُطبع، والمكتوبُ باليد يُهرَّب ──
+  const sh = M.composeSheet(base);
+  const tx1 = M.sheetTexts(sh);
+  const KEY = "doses.r.t1.4", LAB = "labs.title";
+  check(`${label}لكلّ نصٍّ مفتاح: الجرعةُ بمعرّفها، والعنوانُ، والتذييلُ، وخانةُ الحيوان`,
+    tx1.get(KEY) === "{csht.states.given}" && tx1.get("title") === "{csht.titleCareBoarding}" && tx1.get("footer") === "{csht.footer}" && tx1.get("pet.name.v") === "Nb <script>" && tx1.get(LAB) === "{csht.labs}",
+    JSON.stringify([...tx1.entries()].slice(0, 6)));
+  const off = M.sheetTexts(M.composeSheet({ ...base, parts: { ...base.parts, vaccines: false, visits: false } }));
+  check(`${label}  والمفاتيحُ لا تتزحلق بإطفاء قسمٍ قبلها`, off.get(KEY) === "{csht.states.given}" && off.get(LAB) === "{csht.labs}" && !off.has("vax.title"));
+  const edits = { [KEY]: { k: KEY, from: "{csht.states.given}", to: "انطت بالبيت" }, [LAB]: { k: LAB, from: "{csht.labs}", to: "التحاليل" },
+    "pet.name.v": { k: "pet.name.v", from: "Nb <script>", to: "<img src=x onerror=alert(1)>" } };
+  const ap = M.applyEdits(sh, edits);
+  const hp = M.buildCaseSheetHTML(ap.sheet);
+  check(`${label}التعديلُ يُطبَّق على نصّه ويُطبع، والمكتوبُ باليد يُهرَّب`,
+    ap.applied.length === 3 && hp.includes("انطت بالبيت") && hp.includes("التحاليل") && hp.includes("&lt;img src=x") && !hp.includes("<img src=x"), hp.length);
+  const ap2 = M.applyEdits(M.composeSheet({ ...base, parts: { ...base.parts, vaccines: false, visits: false } }), edits);
+  check(`${label}  وإطفاءُ قسمٍ قبله لا يُسقط التعديل`, ap2.applied.map((e) => e.k).sort().join() === [KEY, LAB, "pet.name.v"].sort().join());
+  const stale = M.applyEdits(sh, { [KEY]: { k: KEY, from: "{csht.states.missed}", to: "x" } });
+  check(`${label}  وتعديلٌ تغيّر نصُّ النظام تحته لا يُلصق على غيره`, stale.applied.length === 0 && M.sheetTexts(stale.sheet).get(KEY) === "{csht.states.given}");
+  check(`${label}  ونصُّ النظام يُستعاد من الورقة المطبوعة وتعديلاتها`,
+    JSON.stringify([...M.sheetTexts(M.revertEdits(ap.sheet, ap.applied))]) === JSON.stringify([...tx1]));
+  const clear = Object.fromEntries([...tx1].filter(([k]) => k.startsWith("meds.r.meloxicam.") || k.startsWith("doses.r.t6.") || k.startsWith("doses.r.t7.") || k.startsWith("vax.r."))
+    .map(([k, v]) => [k, { k, from: v, to: "" }]));
+  const cleared = M.applyEdits(sh, clear).sheet;
+  const pc = M.buildCaseSheetHTML(cleared), ec = M.buildCaseSheetHTML(cleared, { editable: true });
+  check(`${label}سطرٌ أفرغه الطبيب لا يُطبع، وقسمٌ أُفرغ كلُّه لا يُطبع — وبالتعديل يبقى ليُضغط`,
+    !pc.includes('<td dir="auto">Meloxicam</td>') && h1.includes('<td dir="auto">Meloxicam</td>') && !pc.includes("{csht.vaccines}") && ec.includes('data-k="doses.r.t6.2"') && ec.includes('data-k="vax.title"'), "");
+  const he = M.buildCaseSheetHTML(sh, { editable: true }), hm = M.buildCaseSheetHTML(ap.sheet, { marks: new Set([KEY]) });
+  check(`${label}المعاينةُ تُكتب (نصٌّ فقط) والطباعةُ بلا مفاتيح، والمعدَّلُ يُعلَّم على الشاشة وحدها`,
+    he.includes('data-k="title" contenteditable="plaintext-only"') && !h1.includes("data-k=") && !h1.includes("contenteditable")
+      && hm.includes(`data-k="${KEY}" data-ed="1"`) && !hm.includes('contenteditable="') && (hm.match(/data-ed=/g) ?? []).length === 1 && hm.includes("@media screen"), "");
+  check(`${label}  والنصائحُ وملاحظةُ الطبيب خاناتُها بالنافذة: لا تُكتب داخل الورقة، وعنوانُها يُكتب`,
+    he.includes('<li dir="auto">tip one</li>') && he.includes('data-k="tips.title"') && !he.includes('data-k="tips.i.') && !he.includes('data-k="note.text"')
+      && ![...tx1.keys()].some((k) => k.startsWith("tips.i.") || k === "note.text"));
+  check(`${label}  والنصائحُ بالنموذج بلا السطر الفارغ (لا يتّكل على تقليم الطباعة)`, sh.blocks.find((b) => b.key === "tips")?.items.length === 2);
+  const lab = M.editLabels(sh, fakeT);
+  check(`${label}مكانُ التعديل مقروء: القسمُ والسطرُ والعمود، والعنوانُ باسمه`,
+    lab.get(KEY)?.startsWith("{csht.doseLog} › ") && lab.get(KEY)?.endsWith(" › {csht.state}") && lab.get("title") === "{csht.edTitle}" && lab.get(LAB) === "{csht.edHeading|name={csht.labs}}",
+    JSON.stringify([lab.get(KEY), lab.get(LAB)]));
+  const back = M.readSheet(JSON.parse(JSON.stringify(ap.sheet)));
+  check(`${label}الورقةُ المحفوظة تُقرأ كما انطبعت، والتالفةُ لا تُقرأ ورقةً`,
+    !!back && M.buildCaseSheetHTML(back) === M.buildCaseSheetHTML({ ...ap.sheet, autoPrint: false }) && M.readSheet({ v: 2, blocks: [] }) === null && M.readSheet("x") === null
+      && M.readEdits([{ k: "a", from: 1, to: "b" }, { from: "x" }, "y"]).length === 1);
+  const evil = M.readSheet({ v: 1, blocks: [{ key: "x", kind: "text", title: "<b>", text: "</div><script>alert(1)</script>" }], title: "<script>", meta: [{ key: "m", label: "<i>", value: "v" }] });
+  const he2 = M.buildCaseSheetHTML(evil);
+  check(`${label}  وما بالقاعدة يُرسم مُهرَّباً ولو كتبه غيرُ الواجهة`, !he2.includes("<script>alert") && he2.includes("&lt;script&gt;") && !he2.includes("<b>"));
   return fails === before;
 }
 
@@ -169,6 +252,19 @@ const MUTANTS = [
   ["compose", "قسمُ اللقاحات لا يُطفأ", "  if (a.parts.vaccines) {", "  if (true) {"],
   ["print", "بلا تهريب", "export const esc = (s: unknown): string =>\n  String(s ?? \"\").replace(", "export const esc = (s: unknown): string =>\n  String(s ?? \"\").replace(/(?!)/g, (c: string) => c) || String(s ?? \"\").replace("],
   ["print", "حجمٌ واحد", "@page{size:${p.size};margin:${p.margin}}", "@page{size:A4;margin:${p.margin}}"],
+  ["summary", "يومياتٌ للسجلّ كلّه", "days: range ? stayDays(inp, range, today, doses) : [],", "days: stayDays(inp, range ?? { from: \"2000-01-01\", to: today }, today, doses),"],
+  ["summary", "المؤجّلةُ فائتة باليوميات", "else if (d.state === \"missed\") bump(entry(d.day).missed, d.name);", "else if (d.state === \"missed\" || d.state === \"overdue\") bump(entry(d.day).missed, d.name);"],
+  ["summary", "المعطاةُ بيومها المجدول", "if (d.state === \"given\" && d.at) { const day = dayOf(d.at);", "if (d.state === \"given\" && d.at) { const day = d.day;"],
+  ["summary", "مهمّةٌ بلا ختمٍ ولا قيمة منجَزة", "if (t.administered_at || value) { c.done++;", "{ c.done++;"],
+  ["compose", "العنوانُ واحدٌ لكلّ إقامة", ": stay?.kind === \"boarding\" ? t(\"csht.titleBoarding\")", ": stay?.kind === \"__\" ? t(\"csht.titleBoarding\")"],
+  ["compose", "اليومياتُ لا تُطفأ", "if (a.showDays !== false && m.days.length) {", "if (m.days.length) {"],
+  ["print", "التعديلُ يُلصق على نصٍّ تغيّر", "if (!e || e.from !== x || e.to === x) return x;", "if (!e || e.to === x) return x;"],
+  ["print", "سطرٌ أُفرغ يُطبع", "const prune = !o.editable;", "const prune = false;"],
+  ["print", "مفتاحُ القسم بموضعه", "const head = (t: string | undefined) => (t === undefined ? undefined : fn(`${b.key}.title`, t, \"heading\", [t]));", "const head = (t: string | undefined) => (t === undefined ? undefined : fn(`${s.blocks.indexOf(b)}.title`, t, \"heading\", [t]));"],
+  ["print", "الطباعةُ بمفاتيح التحرير", "const tagged = !!o.editable || !!o.marks;", "const tagged = true;"],
+  ["print", "الثابتُ يُكتب بالورقة", "items: b.fixed ? b.items : b.items.map(", "items: b.items.map("],
+  ["compose", "اليومياتُ تسمّي الأدويةَ المخفيّة", "dayText(x, t, lang, { names: a.showDrugs, ...a.parts })", "dayText(x, t, lang, { ...a.parts, names: true })"],
+  ["compose", "اليومياتُ لا تتبع الأقسام", "case \"vaccine\": return show.vaccines ?", "case \"vaccine\": return true ?"],
 ];
 console.log("▸ طفرات (كلُّها يجب أن تُمسك)");
 for (const [file, what, from, to] of MUTANTS) {
