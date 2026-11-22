@@ -6256,7 +6256,10 @@
     "doseBilled": "انحسبت ✓ · {{price}}",
     "doseDue": "مستحق من الطبلة: {{total}}",
     "doseDueN": "جرعات بانتظار البيع: {{n}} — تنزل بسلّة صاحبه لمّا تنفتح بيعته",
-    "doseSell": "بيع"
+    "doseSell": "بيع",
+    "sheetMissed": "✗ ما انطت",
+    "sheetLate": "متأخّرة",
+    "sheetGivenOn": "✓ أُعطيت {{when}}"
   },
   "intake": {
     "today": "اليوم",

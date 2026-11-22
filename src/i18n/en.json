@@ -6256,7 +6256,10 @@
     "doseBilled": "Billed ✓ · {{price}}",
     "doseDue": "Due from the treatment sheet: {{total}}",
     "doseDueN": "Doses awaiting sale: {{n}} — they drop into the owner's cart when their sale opens",
-    "doseSell": "Sell"
+    "doseSell": "Sell",
+    "sheetMissed": "✗ Not given",
+    "sheetLate": "Overdue",
+    "sheetGivenOn": "✓ Given {{when}}"
   },
   "intake": {
     "today": "Today",
