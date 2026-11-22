@@ -57,3 +57,25 @@ export function cutAt(path: LibPath, level: Level | null): LibPath {
   }
   return out;
 }
+
+/* ── أسماءٌ من جداول الموزّعين بترميز HTML مضاعَف ─────────────────────────────────────────────
+ * ملفُّ الموزّع الأوّل كُتبت أسماؤه من موقعٍ إلكترونيّ فبقيت فيها «&#8211;» نصّاً (الخليّةُ بالـXML
+ * «&amp;#8211;» — فكُّ XML مرّةً يتركها رمزاً ظاهراً). تُفكّ هنا مرّةً للعرض والبحث والمطابقة —
+ * **الطرفان**: المحفوظُ بالمكتبة قبل هذا والآتي من ملفٍّ جديد يمرّان من الدالّة نفسِها. */
+const HTML_NAMED: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "–", mdash: "—",
+  lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", hellip: "…", times: "×", reg: "®", trade: "™", copy: "©",
+};
+export function cleanLibName(s: string | null | undefined): string {
+  return String(s ?? "")
+    .replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{2,8});/gi, (m, e: string) => {
+      const k = e.toLowerCase();
+      if (k.startsWith("#")) {
+        const cp = k.startsWith("#x") ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+        return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+      }
+      return HTML_NAMED[k] ?? m;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+}

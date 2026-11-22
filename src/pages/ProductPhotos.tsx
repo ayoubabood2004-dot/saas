@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { page } from "@/lib/lazyPage";
 import { Link } from "react-router-dom";
 import { Camera, ImageIcon, ImageMinus, ImageOff, Images, Library, RotateCw, Search } from "lucide-react";
 import type { PhotoProduct } from "@/types";
@@ -8,7 +9,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cardImagePath, productImageUrl } from "@/lib/storeLib";
 import { commitPhoto, nextWithoutPhoto, type EncodedPhoto } from "@/lib/photoPipeline";
-import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { describeDbError } from "@/lib/errors";
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { cn, formatNum, searchable } from "@/lib/utils";
@@ -26,6 +26,8 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 const PAGE = 120;
 /* المحرّرُ حزمةٌ كسولة: لا يدفع وزنَه إلا من يفتحه. */
 const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
+/* منتقي المكتبة كسولٌ بنطاقه (`libp`): لا يدفع وزنَه ولا نصوصَه إلا من يفتحه. */
+const ImageLibraryPicker = page(() => import("@/components/inventory/ImageLibraryPicker").then((m) => ({ default: m.ImageLibraryPicker })), ["libp"]);
 type Filter = "missing" | "all";
 
 export function ProductPhotos() {
@@ -226,8 +228,13 @@ export function ProductPhotos() {
       {/* حقلان مخفيّان لكلّ البطاقات: الكاميرا مباشرةً (capture)، والألبوم/الملفّات بلاه. */}
       <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
       <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={onFile} data-gallery-input />
-      <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
-        onPick={(row) => { if (libFor) void fromLibrary(libFor, row.path); }} />
+      {libFor && (
+        <Suspense fallback={null}>
+          <ImageLibraryPicker open onClose={() => setLibFor(null)}
+            target={{ name: libFor.name, barcode: libFor.barcode ?? null, company: libFor.company_name ?? null, image_path: libFor.image_path ?? null }}
+            onPick={(row) => { void fromLibrary(libFor, row.path); }} />
+        </Suspense>
+      )}
       {editing && (
         <Suspense fallback={null}>
           <PhotoEditor product={asTarget(editing)} initialFile={edit?.file ?? null} history saves="now"

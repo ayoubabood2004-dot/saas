@@ -92,6 +92,6 @@
     "pgrp": "src/components/inventory/ProductGroups.tsx",
     "mxp": "src/components/retail/UsdPay.tsx",
     "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx"] },
-    "libp": "src/components/inventory/LibraryScope.tsx"
+    "libp": "src/components/inventory/ImageLibraryPicker.tsx"
   }
 }

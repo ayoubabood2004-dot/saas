@@ -17,6 +17,7 @@
 // انقطع رفعُه بنصّه يُعاد كما هو ويُكمِل من حيث وقف، بلا صورةٍ مكرّرة.
 // ============================================================================
 import { groupKey, matchCode, normalizeCode, searchable } from "./utils";
+import { cleanLibName } from "./libraryLevels";
 import type { LibraryImage } from "@/types";
 
 /* ── ZIP ─────────────────────────────────────────────────────────────────── */
@@ -291,16 +292,18 @@ export function planImport(
     return !!set && (!ck || set.has(""));
   };
   const before = mk(), inFile = mk();
-  for (const r of here) add(before, searchable(r.name), r.barcode ? matchCode(r.barcode) : "");
+  // الاسمُ المحفوظُ يمرّ من `cleanLibName` كالآتي من الملف — صفٌّ قديمٌ بـ«&#8211;» نصّاً وصفٌّ جديدٌ بـ«–» منتجٌ واحد.
+  for (const r of here) add(before, searchable(cleanLibName(r.name)), r.barcode ? matchCode(r.barcode) : "");
   const items: PlanItem[] = [];
   const counts: Record<PlanStatus, number> = { new: 0, exists: 0, dupInFile: 0, noImage: 0, noName: 0 };
   const agencies = new Map<string | null, number>(), sections = new Map<string | null, number>();
   let droppedCodes = 0;
   for (const r of sheet.rows) {
     const cell = (i: number | null) => (i == null ? "" : (r.cells[i] ?? "").trim());
-    const name = clip(cell(cols.name).replace(/\s+/g, " "), 120);
-    const agency = clip(cell(cols.agency), 80) || null;
-    const section = clip(cell(cols.section), 80) || null;
+    // ترميزُ HTML المضاعَف بجداول الموزّعين («&#8211;» نصّاً) يُفكّ قبل كلّ شيء (cleanLibName).
+    const name = clip(cleanLibName(cell(cols.name)), 120);
+    const agency = clip(cleanLibName(cell(cols.agency)), 80) || null;
+    const section = clip(cleanLibName(cell(cols.section)), 80) || null;
     const rawCode = cell(cols.barcode);
     const barcode = libraryBarcode(rawCode);
     const droppedCode = !barcode && rawCode ? rawCode : null;

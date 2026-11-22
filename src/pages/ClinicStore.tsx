@@ -17,16 +17,17 @@ import {
   ShoppingBag, Inbox, Boxes, Settings2, Check, X, Phone, MessageCircle, MapPin,
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
   Search, Eye, EyeOff, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Loader2, Tags,
+  Building2, Images, ChevronDown, ImageOff,
 } from "lucide-react";
 import type { PhotoProduct, Product, StoreOrder, StoreProfile, SuggestedProduct } from "@/types";
 import { useTranslation } from "react-i18next";
+import { page } from "@/lib/lazyPage";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
 import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook } from "@/lib/storeLib";
 import { commitPhoto, nextWithoutPhoto } from "@/lib/photoPipeline";
-import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { toggleOps, useStoreCats } from "@/lib/storeCats";
 import { readCatcheck } from "@/lib/checkHistory";
 import { useLocation } from "react-router-dom";
@@ -43,16 +44,20 @@ import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
+import { companyCounts, inCompany, photoRunQueue, NO_COMPANY } from "@/lib/libraryScope";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { cn, money, formatNum, formatDate, currencySymbol } from "@/lib/utils";
 import { daysToExpiry } from "@/lib/expiry";
 
 /* محرّرُ الصورة حزمةٌ كسولة (متجر v1): لا يدفع المتجرُ وزنَه إلا حين تُفتح صورة. */
 const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
+/* منتقي المكتبة كسولٌ بنطاقه (`libp`): لا يدفع وزنَه ولا نصوصَه إلا من يفتحه. */
+const ImageLibraryPicker = page(() => import("@/components/inventory/ImageLibraryPicker").then((m) => ({ default: m.ImageLibraryPicker })), ["libp"]);
 
 type Tab = "orders" | "catalog" | "cats" | "settings";
 /** بطاقاتُ التشكيلة المرسومة دفعةً — والعدُّ والتصفيةُ على القائمة كلِّها. */
 const GRID_PAGE = 60;
+const EMPTY_NAMES: ReadonlyMap<string, string> = new Map();
 /** تصفياتُ التشكيلة — مشتركةٌ لأن لوحةَ الجاهزية بتبويبٍ آخرَ تفتحها. */
 type CatFilter = "all" | "shown" | "hidden" | "nophoto" | "noprice" | "nostock" | "nodesc" | "nocat";
 
@@ -112,6 +117,16 @@ export function ClinicStore() {
   const [newOrders, setNewOrders] = useState<StoreOrder[] | null>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
   const [profile, setProfile] = useState<StoreProfile | null | undefined>(undefined); // undefined = يتحمّل
+  /* أسماءُ الشركات لتصفية التشكيلة بالشركة (طلبُ المالك ٢١/١١): للكادر من جدول الشركات، وللمصوّر من منتجاته
+   * (`photo_products` تحمل الاسمَ — جدولُ الشركات مسيَّجٌ عنه). فشلُها لا يُسقط المتجر: الشركاتُ تقول «أعد». */
+  const [coNames, setCoNames] = useState<Map<string, string> | "error" | null>(null);
+  const loadCompanies = () => {
+    if (photoMode) return;
+    setCoNames(null);
+    repo.listCompanies(clinicId ?? undefined)
+      .then((cs) => setCoNames(new Map(cs.map((c) => [c.id, c.name]))))
+      .catch(() => setCoNames("error"));
+  };
   const newCount = useStoreOrderCount(!photoMode);
   /* فشلُ الجلب كان يضع قوائمَ فارغة بلا حالةِ خطأ ولا توست ولا إعادة — فيقول
    * الصندوقُ «لا طلبات» عن زبونٍ طلب وينتظر التأكيد، ولا أحد يتصل به. وهذا
@@ -123,6 +138,7 @@ export function ClinicStore() {
       if (photoMode) {
         const [pp, pr] = await Promise.all([repo.listPhotoProducts(), repo.getStoreProfile()]);
         setOrders([]); setNewOrders([]); setProducts(pp.map((x) => photoAsProduct(x, clinicId ?? null))); setProfile(pr);
+        setCoNames(new Map(pp.filter((x) => x.company_id && x.company_name).map((x) => [x.company_id as string, x.company_name as string])));
         setFailed(false);
         return;
       }
@@ -146,6 +162,7 @@ export function ClinicStore() {
   };
   useEffect(() => {
     void load();
+    loadCompanies();
     /* لا طلبَ إذنٍ تلقائيّ عند الفتح: نافذةٌ تقفز بلا سياقٍ تُرفض بلا قراءة —
      * وسفاري تتجاهلها بلا إيماءة — فيُحرق الخيارُ إلى الأبد. صار بزرٍّ صريح. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,7 +227,8 @@ export function ClinicStore() {
           {tab === "orders"
             ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => go("settings")} goCatalog={goCatalog} />
             : tab === "catalog"
-              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} canPrice={!photoMode} showPrice={!photoMode} />
+              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} canSuggest={!photoMode} canPrice={!photoMode} showPrice={!photoMode}
+                  coNames={coNames} onRetryCompanies={loadCompanies} />
               : tab === "cats"
                 ? <CategoriesTab products={products} productsFailed={failed && products === null} onRetryProducts={() => void load()} guard={leave} />
                 : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
@@ -541,8 +559,11 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
 
 /* ============================== التشكيلة ============================== */
 
-function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true, canSuggest = true, showPrice = true }: {
+function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = true, canSuggest = true, showPrice = true, coNames = null, onRetryCompanies }: {
   products: Product[] | null; reload: () => Promise<void>; storeOn: boolean;
+  /** أسماءُ الشركات (المعرّف ← الاسم) للتصفية بالشركة — «error» يُقال مع «أعد»، وnull يتحمّل. */
+  coNames?: Map<string, string> | "error" | null;
+  onRetryCompanies?: () => void;
   filter: CatFilter; setFilter: (f: CatFilter) => void;
   /** السعرُ سعرُ الكاشير نفسُه. */
   canPrice?: boolean;
@@ -561,6 +582,15 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [limit, setLimit] = useState(GRID_PAGE);
   const [inCat, setInCat] = useState<string>("");
+  /* التصفحُ بالتصنيفات والشركات (طلبُ المالك ٢١/١١: «اكدر اطب على التصنيفات وعلى الشركات»): لوحةُ أزرارٍ تُفتح
+   * بضغطة لا قائمةٌ منسدلة، والشركةُ المختارة تفتح شريطَها: كم منتجاً وكم بلا صورة، و«اختار صورها من المكتبة». */
+  const [inCo, setInCo] = useState<string>("");
+  const [browse, setBrowse] = useState<"cats" | "cos" | null>(null);
+  /* جولةُ الصور: منتجاتُ الشركة واحداً بعد واحد بالمنتقي — ما بلا صورةٍ أوّلاً (photoRunQueue)، والاختيارُ يكتب
+   * ويمشي للتالي بلا إغلاق. `put` عدُّ ما انحطّ؛ والصورةُ تُحدَّث بمكانها (بلا reload لكلّ منتج — جلبُ التشكيلة كلِّها). */
+  const [run, setRun] = useState<{ ids: string[]; i: number; put: number } | null>(null);
+  const [runBusy, setRunBusy] = useState(false);
+  const [, setPainted] = useState(0);
   const [pickMode, setPickMode] = useState<"add" | "remove" | null>(null);
   const armed = useRef<string | null>(null);
   const cats = useStoreCats();
@@ -614,6 +644,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     // متجر v1: «بلا تصنيف» (ما يراه الزبون تحت «الكل» وحدها) و«بالتصنيف X» — فوق أيّ تصفيةٍ أخرى.
     else if (filter === "nocat") base = base.filter((p) => !catOf.has(p.id));
     if (inCat) base = base.filter((p) => (catOf.get(p.id) ?? []).includes(inCat));
+    if (inCo) base = base.filter((p) => inCompany(p, inCo));
     const arr = [...base];
     if (sort === "name") arr.sort((a, b) => a.name.localeCompare(b.name, "ar"));
     else if (sort === "priceDesc") arr.sort((a, b) => b.sell_price - a.sell_price);
@@ -625,7 +656,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
       arr.sort((a, b) => rank(a) - rank(b));
     }
     return arr;
-  }, [all, qd, filter, sort, inCat, catOf]);
+  }, [all, qd, filter, sort, inCat, inCo, catOf]);
   /** الرمزُ الذي جاء بالمنتج للنتائج حين لم يأتِ به اسمُه — يُرسم على البطاقة. */
   const codeHitOf = (p: Product): string | null => {
     const ql = searchable(qd);
@@ -672,6 +703,51 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
     }
     catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
     finally { setBusyId(null); setLibFor(null); }
+  };
+
+  /* ── التصنيفاتُ والشركات وجولةُ الصور ── */
+  const catCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const ids of catOf.values()) for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
+    return m;
+  }, [catOf]);
+  const names = coNames instanceof Map ? coNames : EMPTY_NAMES;
+  const companies = useMemo(() => companyCounts(all, names), [all, names]);
+  const coLabel = (id: string) => (id === NO_COMPANY ? t("cat.noCompany") : names.get(id) ?? t("cat.browseCos"));
+  const listNoPhoto = list.filter((p) => !p.image_path).length;
+  const toTarget = (p: Product) => ({ name: p.name, barcode: p.barcode || null, company: p.company_id ? names.get(p.company_id) ?? null : null, image_path: p.image_path ?? null });
+  const runP = run ? byId.get(run.ids[run.i]) ?? null : null;
+  const startRun = () => {
+    const ids = photoRunQueue(list);
+    if (ids.length === 0) return;
+    playTap();
+    setLibFor(null);
+    setRun({ ids, i: 0, put: 0 });
+  };
+  const endRun = () => { setRun(null); setRunBusy(false); };
+  /** الخطوةُ التالية أو السابقة — وبعد الأخير تنتهي الجولةُ بجملةِ ما انحطّ. */
+  const advance = (cur: { ids: string[]; i: number; put: number }, put: number, d: number) => {
+    const i = cur.i + d;
+    if (i < 0) return;
+    if (i >= cur.ids.length) {
+      setRun(null);
+      if (put > 0) { playSuccess(); toast.success(t("cat.runDone", { n: formatNum(put) })); }
+      return;
+    }
+    setRun({ ids: cur.ids, i, put });
+  };
+  /* الاختيارُ بالجولة يكتب صورةَ المنتج ويمشي للتالي — والفشلُ يُقال ويبقى على المنتج نفسِه (لا يتخطّاه بصمت). */
+  const runPick = async (cur: { ids: string[]; i: number; put: number }, p: Product, path: string) => {
+    if (runBusy) return;
+    setRunBusy(true);
+    try {
+      await repo.setProductImage(p.id, path);
+      p.image_path = path;   // بمكانه — جولةُ ٤٠ منتجاً لا تجلب التشكيلةَ ٤٠ مرّة
+      setPainted((n) => n + 1);
+      playSuccess();
+      advance(cur, cur.put + 1, 1);
+    } catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
+    finally { setRunBusy(false); }
   };
 
   /** نشرٌ/إخفاءٌ — نداءٌ واحدٌ للخادم ثمّ **تحديثٌ محلّيّ بلا `reload()`**.
@@ -821,7 +897,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
    * والكتابةُ بحقلٍ لصقٌ للنصّ لا للصورة. */
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (edit || detailsId || libFor) return;
+      if (edit || detailsId || libFor || run) return;
       const el = e.target as HTMLElement | null;
       if (el?.closest?.("input, textarea, select, [contenteditable='true']")) return;
       const item = [...(e.clipboardData?.items ?? [])].find((x) => x.kind === "file" && x.type.startsWith("image/"));
@@ -918,15 +994,84 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
             <button type="button" className="underline" onClick={() => { playTap(); cats.retry(); }}>{t("common.retry", "إعادة المحاولة")}</button>
           </span>
         )}
+      </div>
+
+      {/* التصفّحُ بالتصنيفات والشركات: زرّان يفتحان لوحةَ أزرارٍ بأعدادها، والمختارُ يُرى بالزرّ نفسِه ويُشال بضغطة. */}
+      <div className="flex flex-wrap items-center gap-2" data-catbrowse>
         {cats.live.length > 0 && (
-          <select value={inCat} onChange={(e) => { playTap(); setInCat(e.target.value); setLimit(GRID_PAGE); }} data-catin
-            aria-label={t("cat.fInCat", "بالتصنيف")}
-            className={cn("rounded-full border px-3 py-1.5 text-xs font-semibold outline-none", inCat ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink-muted")}>
-            <option value="">{t("cat.fInCatAny", "بالتصنيف…")}</option>
-            {cats.live.map((c) => <option key={c.id} value={c.id}>{t("cat.fInCatOne", "بالتصنيف: {{name}}", { name: c.name })}</option>)}
-          </select>
+          <button type="button" onClick={() => { playTap(); setBrowse((b) => (b === "cats" ? null : "cats")); }} data-browse="cats"
+            className={cn("inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-sm font-bold transition",
+              inCat ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink hover:bg-surface-2")}>
+            <Tags size={16} /> {inCat ? liveById.get(inCat)?.name ?? t("cat.browseCats") : t("cat.browseCats")}
+            <ChevronDown size={15} className={cn("transition", browse === "cats" && "rotate-180")} />
+          </button>
+        )}
+        <button type="button" onClick={() => { playTap(); setBrowse((b) => (b === "cos" ? null : "cos")); }} data-browse="cos"
+          className={cn("inline-flex h-10 items-center gap-1.5 rounded-2xl border px-4 text-sm font-bold transition",
+            inCo ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink hover:bg-surface-2")}>
+          <Building2 size={16} /> {inCo ? coLabel(inCo) : t("cat.browseCos")}
+          <ChevronDown size={15} className={cn("transition", browse === "cos" && "rotate-180")} />
+        </button>
+        {(inCat || inCo) && (
+          <button type="button" onClick={() => { playTap(); setInCat(""); setInCo(""); setLimit(GRID_PAGE); }} data-browse-clear
+            className="inline-flex h-10 items-center gap-1 rounded-2xl px-3 text-sm font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
+            <X size={15} /> {t("cat.clearBrowse")}
+          </button>
         )}
       </div>
+      {browse === "cats" && (
+        <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-line bg-surface-1 p-2.5" data-catchips>
+          {cats.live.map((c) => (
+            <button key={c.id} type="button" data-catchip={c.name}
+              onClick={() => { playTap(); setInCat(inCat === c.id ? "" : c.id); setLimit(GRID_PAGE); setBrowse(null); }}
+              className={cn("inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-sm font-bold transition",
+                inCat === c.id ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink hover:border-brand-400")}>
+              {c.name} <span className={cn("text-xs font-semibold", inCat === c.id ? "text-white/80" : "text-ink-subtle")}>{formatNum(catCount.get(c.id) ?? 0)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {browse === "cos" && (
+        coNames === "error" ? (
+          <p className="flex items-center gap-2 rounded-2xl border border-warn-300 bg-warn-50/60 px-3 py-2 text-sm font-semibold text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-cofailed>
+            <span className="flex-1">{t("cat.coFailed")}</span>
+            <button type="button" className="underline" onClick={() => { playTap(); onRetryCompanies?.(); }}>{t("common.retry", "إعادة المحاولة")}</button>
+          </p>
+        ) : coNames === null ? (
+          <p className="flex items-center gap-2 px-2 text-sm text-ink-subtle"><Loader2 size={15} className="animate-spin" /></p>
+        ) : (
+          <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-line bg-surface-1 p-2.5" data-cochips>
+            {companies.map((c) => (
+              <button key={c.id} type="button" data-cochip={c.name ?? ""}
+                onClick={() => { playTap(); setInCo(inCo === c.id ? "" : c.id); setLimit(GRID_PAGE); setBrowse(null); }}
+                className={cn("inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-sm font-bold transition",
+                  inCo === c.id ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-2 text-ink hover:border-brand-400")} dir="auto">
+                {c.name ?? t("cat.noCompany")}
+                <span className={cn("text-xs font-semibold", inCo === c.id ? "text-white/80" : "text-ink-subtle")}>{formatNum(c.count)}</span>
+                {c.noPhoto > 0 && (
+                  <span className={cn("inline-flex items-center gap-0.5 text-xs font-semibold", inCo === c.id ? "text-white/80" : "text-warn-700 dark:text-warn-200")}>
+                    <ImageOff size={12} /> {formatNum(c.noPhoto)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* الشركةُ المختارة: كم منتجاً بالشاشة وكم بلا صورة، وجولةُ صورٍ من المكتبة العامة لمنتجاتها واحداً واحداً. */}
+      {inCo && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50/60 p-3 dark:border-brand-500/30 dark:bg-brand-500/10" data-cobanner>
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-600 text-white"><Building2 size={20} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-extrabold text-ink" dir="auto">{coLabel(inCo)}</p>
+            <p className="text-xs font-semibold text-ink-muted">{t("cat.coStats", { n: formatNum(list.length), m: formatNum(listNoPhoto) })}</p>
+          </div>
+          <Button size="sm" leftIcon={<Images size={16} />} disabled={list.length === 0} onClick={startRun} data-corun>
+            {listNoPhoto > 0 ? t("cat.coRun", { n: formatNum(listNoPhoto) }) : t("cat.coRunAll")}
+          </Button>
+        </div>
+      )}
 
       {/* «انشر أكثرَ ما تبيع» — يُعرض حين لا تكون تشكيلتُه جاهزةً بعد.
           والحدُّ الصريح: **الدالّةُ تقترح ولا تكتب** — لا نشرَ بلا ضغطة.
@@ -1064,8 +1209,15 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
         </>
       )}
 
-      <ImageLibraryPicker open={!!libFor} onClose={() => setLibFor(null)}
-        onPick={(row) => { if (libFor) void pickFromLib(libFor, row.path); }} />
+      {(libFor || runP) && (
+        <Suspense fallback={null}>
+          <ImageLibraryPicker open onClose={() => { setLibFor(null); endRun(); }}
+            target={toTarget((runP ?? libFor) as Product)}
+            run={run && runP ? { index: run.i, total: run.ids.length, onSkip: () => advance(run, run.put, 1), onPrev: run.i > 0 ? () => advance(run, run.put, -1) : null } : null}
+            busy={runBusy || (!!libFor && busyId === libFor.id)} startScope={run ? "public" : undefined}
+            onPick={(row) => { if (run && runP) void runPick(run, runP, row.path); else if (libFor) void pickFromLib(libFor, row.path); }} />
+        </Suspense>
+      )}
       <ProductDetailsSheet p={detailsP} onClose={() => setDetailsId(null)} live={cats.live} catsOf={cats.catsOf}
         catsState={cats.status === "switched" ? "switched" : cats.writable ? (cats.seeded ? "ready" : "unseeded") : cats.status === "error" ? "error" : "loading"}
         onRetryCats={cats.retry} canPrice={canPrice} showPrice={showPrice} busy={!!detailsP && busyId === detailsP.id}
