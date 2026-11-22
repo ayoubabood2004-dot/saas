@@ -16,6 +16,10 @@
 
 export type Paper = "a4" | "a5" | "letter";
 export const PAPERS: readonly Paper[] = ["a4", "a5", "letter"];
+/** شكلُ الورقة: رسميّ، حديث، أنيق — يُحفظ مع التقرير فيُعاد رسمُه بشكله. */
+export type Theme = "formal" | "modern" | "elegant";
+export const THEMES: readonly Theme[] = ["formal", "modern", "elegant"];
+export const DEFAULT_THEME: Theme = "formal";
 
 /** خانةٌ بعنوانها وقيمتها: الشبكة، وسطورُ الترويسة المقابلة، والتواقيع. */
 export interface Field { key: string; label: string; value: string }
@@ -39,6 +43,8 @@ export interface CaseSheet {
   lang: string;
   dir: "rtl" | "ltr";
   paper: Paper;
+  /** الشكل — الغائبُ (ورقةٌ قبل الأشكال) يُرسم بالافتراضيّ. */
+  theme?: Theme;
   /** عنوانُ الورقة («تقرير الفندقة»…). */
   title: string;
   /** عنوانُ النافذة (التبويب) — الاسمُ والعنوان. */
@@ -169,62 +175,125 @@ export interface RenderOpts {
 }
 
 const blank = (x: string | undefined) => !x || !x.trim();
+/** خطُّ الواجهة نفسُه (IBM Plex Sans Arabic، tailwind fontFamily.arabic) — والنافذةُ تنتظره قبل الطباعة (مهلةٌ ثمّ الاحتياطيّ). */
+const FONT_HREF = "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap";
 
-/* ── هويّةُ doctorVet بالورقة: أزرقُ الطبّ البيطريّ (brand-600 #1266d8 وسلّمُه) ومرجانُ العلامة — ألوانُ الواجهة نفسُها
- *    (tailwind.config.js)، وعلامةٌ مائيّة بشعار العيادة (أو كفّ doctorVet) تتكرّر على كلّ صفحةٍ مطبوعة. ── */
+type Grid = Extract<SheetBlock, { kind: "grid" }>;
+type Stats = Extract<SheetBlock, { kind: "stats" }>;
+type Table = Extract<SheetBlock, { kind: "table" }>;
+
+/* ── ثلاثةُ أشكالٍ من نموذجٍ واحد (طلبُ المالك: «احترافي») — رسميّ (ورقةُ عيادة بجداول وختمٍ كحليّ)، وحديث (شريطُ العلامة
+ *    وبطاقاتٌ وخطٌّ زمنيّ)، وأنيق (ترويسةٌ بالوسط وعناوينُ بزخرفة). الهيكلُ واحد: الحيوانُ وصاحبُه متجاوران، والإقامةُ سطرٌ واحد،
+ *    واليومياتُ زمنيّة، وكلُّ نصٍّ بمفتاحه بكلّ شكل (التعديلُ لا يعرف الشكل)، والشكلُ يُحفظ مع التقرير فيُعاد كما انطبع. ── */
 export function buildCaseSheetHTML(s: CaseSheet, o: RenderOpts = {}): string {
   const p = PAPER[s.paper] ?? PAPER.a4;
+  const theme: Theme = s.theme && THEMES.includes(s.theme) ? s.theme : DEFAULT_THEME;
   const tagged = !!o.editable || !!o.marks;
   // بالطباعة وبعرض ما انطبع: سطرٌ أفرغه الطبيبُ لا يُرسم، وقسمٌ بلا محتوى لا يُرسم — وبالتعديل يبقى ليُضغط.
   const prune = !o.editable;
+  const rtl = s.dir !== "ltr";
   const at = (k: string) => (tagged
     ? ` data-k="${esc(k)}"${o.editable ? ' contenteditable="plaintext-only" spellcheck="false"' : ""}${o.marks?.has(k) ? ' data-ed="1"' : ""}`
     : "");
-  const title = (bk: string, t?: string) => (t !== undefined && (!prune || !blank(t))
-    ? `<h2 class="sec"><span class="dot"></span><span class="ttl"${at(`${bk}.title`)}>${esc(t)}</span></h2>` : "");
+  const span = (k: string, text: string, cls = "", rtlAuto = true) =>
+    `<span${cls ? ` class="${cls}"` : ""}${rtlAuto ? ' dir="auto"' : ""}${at(k)}>${esc(text)}</span>`;
   const tone = (t: Tone | undefined) => (t && TONES.includes(t) ? t : null);
+  const digits = (n: number) => (rtl ? String(n).replace(/\d/g, (d) => String.fromCharCode(0x0660 + Number(d))) : String(n));
+  let secNo = 0;
+  const heading = (bk: string, t?: string) => {
+    if (t === undefined || (prune && blank(t))) return "";
+    secNo++;
+    const ttl = span(`${bk}.title`, t, "ttl", false);
+    if (theme === "formal") return `<h2 class="sec"><span class="no">${digits(secNo)}</span>${ttl}</h2>`;
+    if (theme === "elegant") return `<h2 class="sec"><span class="orn"></span>${ttl}<span class="orn"></span></h2>`;
+    return `<h2 class="sec"><span class="dot"></span>${ttl}</h2>`;
+  };
+  const fields = (b: Grid) => (prune ? b.cells.filter((c) => !blank(c.label) || !blank(c.value)) : b.cells);
+  const val = (c: Field) => esc(c.value) || (prune ? "—" : "");
+  const kv = (bk: string, c: Field) =>
+    `<span class="k"${at(`${bk}.${c.key}.k`)}>${esc(c.label)}</span><span class="v" dir="auto"${at(`${bk}.${c.key}.v`)}>${val(c)}</span>`;
+  const dl = (b: Grid) => `<div class="dl">${fields(b).map((c) => `<div class="dr">${kv(b.key, c)}</div>`).join("")}</div>`;
 
+  /* الحيوانُ وصاحبُه متجاوران: جدولٌ رسميّ بأربعة أعمدة، أو بطاقتان، أو لوحتان بنقاط. */
+  const pair = (a: Grid, b: Grid) => {
+    if (theme === "formal") {
+      const A = fields(a), B = fields(b), n = Math.max(A.length, B.length);
+      const cells = (bk: string, c?: Field) => (c
+        ? `<td class="ik"><span${at(`${bk}.${c.key}.k`)}>${esc(c.label)}</span></td><td class="iv" dir="auto"><span${at(`${bk}.${c.key}.v`)}>${val(c)}</span></td>`
+        : `<td class="ik e"></td><td class="iv"></td>`);
+      const rows = Array.from({ length: n }, (_, i) => `<tr>${cells(a.key, A[i])}${cells(b.key, B[i])}</tr>`).join("");
+      return `<table class="info"><thead><tr><th colspan="2">${span(`${a.key}.title`, a.title ?? "", "", false)}</th><th colspan="2">${span(`${b.key}.title`, b.title ?? "", "", false)}</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    const card = (g: Grid) => `<section class="${theme === "modern" ? "card" : "panel"}"><h3 class="ct">${span(`${g.key}.title`, g.title ?? "", "", false)}</h3>${dl(g)}</section>`;
+    return `<div class="pair">${card(a)}${card(b)}</div>`;
+  };
+  /* الإقامةُ سطرٌ واحد: جدولٌ برأسٍ وقيمة، أو رقاقات، أو سطرٌ بالوسط. */
+  const stay = (b: Grid) => {
+    const F = fields(b);
+    if (prune && !F.length) return "";
+    if (theme === "formal") {
+      return `${heading(b.key, b.title)}<table class="strip"><tr>${F.map((c) => `<th><span${at(`${b.key}.${c.key}.k`)}>${esc(c.label)}</span></th>`).join("")}</tr><tr>${
+        F.map((c) => `<td dir="auto"><span${at(`${b.key}.${c.key}.v`)}>${val(c)}</span></td>`).join("")}</tr></table>`;
+    }
+    return `${heading(b.key, b.title)}<div class="${theme === "modern" ? "chips" : "strip"}">${F.map((c) => `<div class="chip">${kv(b.key, c)}</div>`).join("")}</div>`;
+  };
+  const stats = (b: Stats) => {
+    const items = prune ? b.items.filter((i) => !blank(i.value) || !blank(i.label)) : b.items;
+    if (prune && !items.length) return "";
+    return `<div class="stats">${items.map((i) => `<div class="st"><div class="sv"${at(`${b.key}.${i.key}.v`)}>${esc(i.value)}</div><div class="sk"${at(`${b.key}.${i.key}.k`)}>${esc(i.label)}</div></div>`).join("")}</div>`;
+  };
+  const table = (b: Table) => {
+    const rows = prune ? b.rows.filter((r) => r.cells.some((c) => !blank(c))) : b.rows;
+    if (prune && !rows.length) return "";
+    // اليومياتُ خطٌّ زمنيّ بالحديث وقائمةٌ بتواريخها بالأنيق — المفاتيحُ مفاتيحُ الجدول نفسُها.
+    if (b.key === "days" && theme !== "formal") {
+      const li = (r: Row) => `<li><span class="d" dir="auto"${at(`${b.key}.r.${r.key}.0`)}>${esc(r.cells[0] ?? "")}</span><span class="e" dir="auto"${at(`${b.key}.r.${r.key}.1`)}>${esc(r.cells[1] ?? "")}</span></li>`;
+      return `${heading(b.key, b.title)}<ol class="${theme === "modern" ? "tl" : "diary"}">${rows.map(li).join("")}</ol>`;
+    }
+    const cell = (r: Row, c: string, i: number) => {
+      const k = `${b.key}.r.${r.key}.${i}`;
+      const tn = i === b.statusCol ? tone(r.tone) : null;
+      // الحالةُ شارةٌ بلونها — ما لم يعدّلها الطبيب (اللونُ لنصّ النظام) وما لم تفرغ.
+      return tn && !blank(c) && !o.edited?.has(k)
+        ? `<td dir="auto"><span class="pill t-${tn}"${at(k)}>${esc(c)}</span></td>`
+        : `<td dir="auto"${at(k)}>${esc(c)}</td>`;
+    };
+    return `${heading(b.key, b.title)}<div class="tbl"><table><thead><tr>${b.head.map((h, i) => `<th${at(`${b.key}.h.${i}`)}>${esc(h)}</th>`).join("")}</tr></thead><tbody>${
+      rows.map((r) => `<tr>${r.cells.map((c, i) => cell(r, c, i)).join("")}</tr>`).join("")
+    }</tbody></table></div>${b.note !== undefined && (!prune || !blank(b.note)) ? `<p class="tnote"${at(`${b.key}.note`)}>${esc(b.note)}</p>` : ""}`;
+  };
   const blockHTML = (b: SheetBlock): string => {
     switch (b.kind) {
       case "grid": {
-        const cells = prune ? b.cells.filter((c) => !blank(c.label) || !blank(c.value)) : b.cells;
-        if (prune && !cells.length) return "";
-        return `${title(b.key, b.title)}<div class="grid">${cells.map((c) =>
-          `<div class="cell"><span class="k"${at(`${b.key}.${c.key}.k`)}>${esc(c.label)}</span><span class="v" dir="auto"${at(`${b.key}.${c.key}.v`)}>${esc(c.value) || (prune ? "—" : "")}</span></div>`).join("")}</div>`;
+        if (b.key === "stay") return stay(b);
+        const F = fields(b);
+        if (prune && !F.length) return "";
+        return `${heading(b.key, b.title)}${theme === "formal" ? `<div class="box">${dl(b)}</div>` : `<div class="${theme === "modern" ? "card solo" : "panel solo"}">${dl(b)}</div>`}`;
       }
-      case "stats": {
-        const items = prune ? b.items.filter((i) => !blank(i.value) || !blank(i.label)) : b.items;
-        if (prune && !items.length) return "";
-        return `<div class="stats">${items.map((i) =>
-          `<div class="st"><div class="sv"${at(`${b.key}.${i.key}.v`)}>${esc(i.value)}</div><div class="sk"${at(`${b.key}.${i.key}.k`)}>${esc(i.label)}</div></div>`).join("")}</div>`;
-      }
-      case "table": {
-        const rows = prune ? b.rows.filter((r) => r.cells.some((c) => !blank(c))) : b.rows;
-        if (prune && !rows.length) return "";
-        const cell = (r: Row, c: string, i: number) => {
-          const k = `${b.key}.r.${r.key}.${i}`;
-          const tn = i === b.statusCol ? tone(r.tone) : null;
-          // الحالةُ شارةٌ بلونها — ما لم يعدّلها الطبيب (اللونُ لنصّ النظام) وما لم تفرغ.
-          return tn && !blank(c) && !o.edited?.has(k)
-            ? `<td dir="auto"><span class="pill t-${tn}"${at(k)}>${esc(c)}</span></td>`
-            : `<td dir="auto"${at(k)}>${esc(c)}</td>`;
-        };
-        return `${title(b.key, b.title)}<div class="tbl"><table><thead><tr>${b.head.map((h, i) => `<th${at(`${b.key}.h.${i}`)}>${esc(h)}</th>`).join("")}</tr></thead><tbody>${
-          rows.map((r) => `<tr>${r.cells.map((c, i) => cell(r, c, i)).join("")}</tr>`).join("")
-        }</tbody></table></div>${b.note !== undefined && (!prune || !blank(b.note)) ? `<p class="tnote"${at(`${b.key}.note`)}>${esc(b.note)}</p>` : ""}`;
-      }
+      case "stats": return stats(b);
+      case "table": return table(b);
       case "list": {
         const items = prune ? b.items.filter((i) => !blank(i.text)) : b.items;
         if (prune && !items.length) return "";
-        return `${title(b.key, b.title)}<ul class="list">${items.map((i) => `<li dir="auto"${b.fixed ? "" : at(`${b.key}.i.${i.key}`)}>${esc(i.text)}</li>`).join("")}</ul>`;
+        return `${heading(b.key, b.title)}<ul class="list${b.key === "tips" ? " tips" : ""}">${items.map((i) => `<li dir="auto"${b.fixed ? "" : at(`${b.key}.i.${i.key}`)}>${esc(i.text)}</li>`).join("")}</ul>`;
       }
       case "text":
         if (prune && blank(b.text)) return "";
-        return `${title(b.key, b.title)}<div class="text" dir="auto"${b.fixed ? "" : at(`${b.key}.text`)}>${esc(b.text)}</div>`;
+        return `${heading(b.key, b.title)}<div class="text" dir="auto"${b.fixed ? "" : at(`${b.key}.text`)}>${esc(b.text)}</div>`;
     }
   };
+  // الحيوانُ وصاحبُه إن تجاورا بالنموذج يُرسمان معاً؛ وغيرُهما بالترتيب.
+  const body: string[] = [];
+  for (let i = 0; i < s.blocks.length; i++) {
+    const b = s.blocks[i], n = s.blocks[i + 1];
+    if (b.kind === "grid" && b.key === "pet" && n?.kind === "grid" && n.key === "owner" && (!prune || fields(b).length || fields(n).length)) {
+      body.push(pair(b, n)); i++; continue;
+    }
+    body.push(blockHTML(b));
+  }
 
   const logo = s.clinic.logoUrl ? esc(s.clinic.logoUrl) : "";
+  const mark = (id: string) => (logo ? `<img src="${logo}" alt=""/>` : PAW(id));
   const meta = prune ? s.meta.filter((f) => !blank(f.label) || !blank(f.value)) : s.meta;
   const sigs = prune ? s.signatures.filter((g) => !blank(g.label) || !blank(g.value)) : s.signatures;
   const lines = s.clinic.lines.map((l, i) => [l, i] as const).filter(([l]) => !prune || !blank(l));
@@ -232,110 +301,232 @@ export function buildCaseSheetHTML(s: CaseSheet, o: RenderOpts = {}): string {
   const socials = ([["facebook", "clinic.fb", FB_ICON], ["instagram", "clinic.ig", IG_ICON]] as const)
     .filter(([k]) => soc[k] !== undefined && (!prune || !blank(soc[k])))
     .map(([k, key, icon]) => `<span class="s">${icon}<span dir="ltr"${at(key)}>${esc(soc[k])}</span></span>`).join("");
-  const css = `
-    :root{--b:#1266d8;--b5:#2f7df2;--b7:#0f51b0;--b8:#13468d;--b9:#143b73;--b95:#0d2449;--b50:#eef6ff;--b100:#d9ebff;--b200:#bad9ff;--sky:#38bdf8;--ink:#0b1220;--mut:#475569;--sub:#64748b}
+  const name = `<div class="cname"${at("clinic.name")}>${esc(s.clinic.name)}</div>`;
+  const lineHTML = lines.length ? `<div class="clines">${lines.map(([l, i]) => `<span dir="auto"${at(`clinic.line.${i}`)}>${esc(l)}</span>`).join("")}</div>` : "";
+  const socHTML = socials ? `<div class="soc">${socials}</div>` : "";
+  const title = `<div class="dtitle"${at("title")}>${esc(s.title)}</div>`;
+  const metaHTML = meta.map((f) => `<div class="dmeta"><span${at(`meta.${f.key}.k`)}>${esc(f.label)}</span>: <b dir="auto"${at(`meta.${f.key}.v`)}>${esc(f.value)}</b></div>`).join("");
+  const site = s.clinic.site && s.clinic.site.trim().toLowerCase() !== "doctorvet" ? ` · ${esc(s.clinic.site)}` : "";
+  const header = theme === "formal"
+    ? `<header class="hd"><div class="hd-id"><div class="hd-logo">${mark("csmd")}</div><div class="hd-txt">${name}${lineHTML}${socHTML}</div></div><div class="hd-doc">${title}${metaHTML}</div></header><div class="rule"></div>`
+    : theme === "modern"
+      ? `<header class="hd"><div class="hd-id"><div class="hd-logo">${mark("csmd")}</div><div class="hd-txt"><div class="eyebrow">doctorVet</div>${name}${lineHTML}${socHTML}</div></div><div class="hd-doc">${title}${metaHTML}</div></header>`
+      : `<header class="hd"><div class="hd-logo">${mark("csmd")}</div>${name}${lineHTML}${socHTML}<div class="hd-title">${title}</div><div class="hd-meta">${metaHTML}</div></header><div class="rule"></div>`;
+  const sign = sigs.length
+    ? `<div class="sign">${sigs.map((g) => `<div class="sg${g.key === "clinic" ? " stamp" : ""}"><div class="sg-l"${at(`sig.${g.key}.k`)}>${esc(g.label)}</div><div class="sg-space"></div><div class="sg-line"></div><div class="sg-v" dir="auto"${at(`sig.${g.key}.v`)}>${esc(g.value)}</div></div>`).join("")}</div>`
+    : "";
+
+  const base = `
+    :root{--b:#1266d8;--b5:#2f7df2;--b7:#0f51b0;--b9:#143b73;--nv:#0d2449;--b50:#eef6ff;--b100:#d9ebff;--b200:#bad9ff;--sky:#38bdf8;--ink:#1e293b;--mut:#475569;--sub:#64748b;--ln:#cbd5e1;--ln2:#e2e8f0}
     *{box-sizing:border-box}
     html,body{margin:0;padding:0;background:#fff;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body{font-family:"Segoe UI",system-ui,-apple-system,Tahoma,"Noto Naskh Arabic","Noto Sans Arabic",Arial,sans-serif;font-size:${p.font};line-height:1.55}
+    body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;font-size:${p.font};line-height:1.6}
     .sheet{position:relative;width:${p.width};max-width:100%;margin:0 auto;padding:${p.margin}}
     .sheet>*:not(.wm){position:relative;z-index:1}
     .wm{position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;pointer-events:none;overflow:hidden}
-    .wm img{width:60%;max-width:118mm;opacity:.065;filter:grayscale(100%)}
-    .wm svg{width:46%;max-width:92mm;opacity:.05}
-    .hd{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}
-    .hd .end{text-align:end}
-    .eyebrow{display:inline-flex;align-items:center;gap:5px;font-size:.7em;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--b)}
-    .eyebrow svg{width:13px;height:13px;flex:none}
-    .name{font-size:1.6em;font-weight:800;color:var(--b95);line-height:1.2;margin-top:3px}
-    .line{color:var(--mut);font-size:.86em;margin-top:2px}
-    .soc{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:4px;color:var(--sub);font-size:.8em}
+    .wm img{width:56%;max-width:112mm;opacity:.06;filter:grayscale(100%)}
+    .wm svg{width:42%;max-width:86mm;opacity:.045}
+    .k,.v,th,td,li,.ttl,.cname,.clines span,.dtitle,.dmeta,.sg-l,.sg-v,.ft,.sv,.sk,.d,.e{white-space:pre-line}
+    .soc{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:.8em}
     .soc .s{display:inline-flex;align-items:center;gap:4px}
     .soc svg{width:12px;height:12px;flex:none}
-    .mid img{display:block;max-height:78px;max-width:132px;object-fit:contain;margin:0 auto}
-    .mid svg{display:block;width:56px;height:56px;margin:0 auto;border-radius:14px;box-shadow:0 4px 14px rgba(18,102,216,.25)}
-    .title{font-size:1.5em;font-weight:800;color:var(--b);line-height:1.25}
-    .meta{color:var(--mut);font-size:.86em;margin-top:2px}
-    .meta b{color:var(--ink)}
-    .band{height:4px;border-radius:4px;background:linear-gradient(90deg,var(--b),var(--b5) 55%,var(--sky));margin:10px 0 6px}
-    [dir=rtl] .band{background:linear-gradient(270deg,var(--b),var(--b5) 55%,var(--sky))}
-    h2.sec{display:flex;align-items:center;gap:8px;margin:14px 0 7px;font-size:1.02em;font-weight:800;color:var(--b95);break-after:avoid}
-    h2.sec .dot{flex:none;width:8px;height:8px;border-radius:3px;background:var(--b);box-shadow:0 0 0 3px var(--b100)}
-    h2.sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--b100),transparent)}
-    [dir=rtl] h2.sec::after{background:linear-gradient(270deg,var(--b100),transparent)}
-    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 16px;border:1px solid var(--b100);border-radius:12px;padding:9px 13px;background:rgba(238,246,255,.55)}
-    .cell{display:flex;flex-direction:column;min-width:0}
-    .cell .k{font-size:.74em;font-weight:700;color:#6b7f99}
-    .cell .v{font-weight:700;color:var(--ink);overflow-wrap:anywhere}
-    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:8px;margin:12px 0 2px}
-    .st{position:relative;overflow:hidden;border:1px solid var(--b100);border-radius:12px;padding:9px 8px 7px;text-align:center;background:rgba(255,255,255,.7)}
-    .st::before{content:"";position:absolute;inset-inline:0;top:0;height:3px;background:linear-gradient(90deg,var(--b),var(--sky))}
-    .st .sv{font-size:1.32em;font-weight:800;color:var(--b7)}
-    .st .sk{font-size:.76em;font-weight:600;color:var(--sub)}
-    .tbl{border:1px solid var(--b100);border-radius:12px;overflow:hidden}
-    table{width:100%;border-collapse:collapse;font-size:.93em}
+    table{width:100%;border-collapse:collapse}
     thead{display:table-header-group}
-    th{background:rgba(238,246,255,.95);color:var(--b9);font-weight:800;text-align:start;padding:6px 10px;border-bottom:1px solid var(--b100)}
-    td{padding:6px 10px;border-top:1px solid #edf2f8;vertical-align:top;overflow-wrap:anywhere}
-    tbody tr:first-child td{border-top:none}
-    tbody tr:nth-child(even) td{background:rgba(246,250,255,.6)}
-    tr{break-inside:avoid}
-    .pill{display:inline-block;padding:1px 10px;border-radius:999px;font-weight:700;font-size:.9em}
+    tr,li,.dr,.chip,.st{break-inside:avoid}
+    h2.sec{break-after:avoid}
+    .pill{display:inline-block;padding:0 10px;border-radius:999px;font-weight:600;font-size:.9em}
     .t-ok{background:#dcfce7;color:#166534}.t-bad{background:#fee2e2;color:#991b1b}.t-warn{background:#fef3c7;color:#92400e}.t-info{background:var(--b50);color:var(--b7)}
     .tnote{font-size:.82em;color:var(--sub);margin:4px 2px 0}
-    ul.list{margin:0;padding:8px 13px;list-style:none;border:1px solid var(--b100);border-radius:12px;background:rgba(238,246,255,.4)}
-    ul.list li{position:relative;padding-inline-start:16px;margin:3px 0}
-    ul.list li::before{content:"";position:absolute;inset-inline-start:2px;top:.62em;width:6px;height:6px;border-radius:50%;background:var(--b)}
-    .text{white-space:pre-wrap;border:1px solid var(--b100);border-inline-start:4px solid var(--b);border-radius:12px;padding:8px 13px;background:rgba(238,246,255,.4)}
-    .k,.v,.sv,.sk,th,td,li,.ttl,.name,.line,.title,.meta,.l,.val,.ft{white-space:pre-line}
-    .sign{display:grid;grid-template-columns:repeat(${Math.max(1, sigs.length)},minmax(0,1fr));gap:16px;margin-top:20px;break-inside:avoid}
-    .sg{position:relative;border:1.5px dashed #9fb6d4;border-radius:14px;min-height:98px;padding:9px 12px;display:flex;flex-direction:column;justify-content:space-between}
-    .sg .l{font-weight:800;font-size:.9em;color:var(--b95)}
-    .sg .val{color:var(--mut);font-size:.88em}
-    .sg.stamp::after{content:"";position:absolute;inset-inline-end:14px;top:50%;transform:translateY(-50%);width:64px;height:64px;border:1.5px dashed #c6d6ea;border-radius:50%}
-    .foot{margin-top:16px;padding-top:8px;border-top:1px solid var(--b100);display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--sub);font-size:.76em}
+    .sign{display:grid;grid-template-columns:repeat(${Math.max(1, sigs.length)},minmax(0,1fr));gap:36px;margin-top:26px;break-inside:avoid}
+    .sg{position:relative}
+    .sg-l{font-weight:700;font-size:.9em}
+    .sg-space{height:56px}
+    .sg-line{border-top:1px solid #334155}
+    .sg-v{color:var(--mut);font-size:.86em;margin-top:3px}
+    .sg.stamp .sg-space::after{content:"";position:absolute;inset-inline-end:10%;top:22px;width:58px;height:58px;border:1.5px dashed #b8c7dc;border-radius:50%}
+    .foot{margin-top:18px;padding-top:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--sub);font-size:.74em}
     .foot .by{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
     .foot .by svg{width:12px;height:12px}
-    @media screen{
-      body{background:#e9eef5}
-      .sheet{background:#fff;margin:16px auto;border-radius:6px;box-shadow:0 1px 2px rgba(15,23,42,.06),0 14px 36px rgba(15,23,42,.12)}
-    }
+    @media screen{body{background:#e9eef5}.sheet{background:#fff;margin:16px auto;border-radius:4px;box-shadow:0 1px 2px rgba(15,23,42,.06),0 14px 36px rgba(15,23,42,.12)}}
     @media print{.sheet{padding:0;width:auto;margin:0}.wm{position:fixed}}
     @page{size:${p.size};margin:${p.margin};@bottom-center{content:counter(page) " / " counter(pages);font-size:8pt;color:#94a3b8}}
-    @media (max-width:520px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hd{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.hd .mid{display:none}.sheet{padding:14px}}
-    ${tagged ? `@media screen{
+  `;
+  const THEME_CSS: Record<Theme, string> = {
+    formal: `
+      .hd{display:flex;justify-content:space-between;align-items:center;gap:18px}
+      .hd-id{display:flex;align-items:center;gap:12px;min-width:0}
+      .hd-logo img{display:block;max-height:66px;max-width:112px;object-fit:contain}
+      .hd-logo svg{display:block;width:54px;height:54px}
+      .cname{font-size:1.55em;font-weight:700;color:var(--nv);line-height:1.25}
+      .clines{display:flex;flex-wrap:wrap;gap:0 14px;color:var(--mut);font-size:.84em}
+      .soc{color:var(--sub);margin-top:1px}
+      .hd-doc{flex:none;text-align:end}
+      .dtitle{display:inline-block;background:var(--nv);color:#fff;font-weight:700;font-size:1.12em;padding:5px 16px;border-radius:2px;letter-spacing:.01em}
+      .dmeta{color:var(--mut);font-size:.82em;margin-top:3px}
+      .dmeta b{color:var(--ink);font-weight:600}
+      .rule{border-top:2.5px solid var(--nv);border-bottom:1px solid var(--b);height:5px;margin:12px 0 14px}
+      h2.sec{display:flex;align-items:center;gap:8px;margin:16px 0 7px;font-size:1.02em;font-weight:700;color:var(--nv);border-bottom:1px solid var(--ln);padding-bottom:4px}
+      h2.sec .no{display:inline-grid;place-items:center;min-width:21px;height:21px;padding:0 4px;border-radius:2px;background:var(--nv);color:#fff;font-size:.82em}
+      table.info{border:1px solid var(--ln);font-size:.95em}
+      table.info th{background:var(--nv);color:#fff;font-weight:600;text-align:start;padding:5px 10px}
+      table.info td{border:1px solid var(--ln);padding:4px 10px}
+      table.info td.ik{background:#f3f6fa;color:var(--mut);font-weight:600;width:15%;font-size:.92em}
+      table.info td.ik.e{background:transparent}
+      table.info td.iv{font-weight:600;width:35%}
+      table.strip{border:1px solid var(--ln);font-size:.95em}
+      table.strip th{background:#f3f6fa;color:var(--mut);font-weight:600;font-size:.88em;text-align:start;padding:4px 10px;border:1px solid var(--ln)}
+      table.strip td{border:1px solid var(--ln);padding:5px 10px;font-weight:600}
+      .stats{display:flex;border:1px solid var(--ln);margin-top:10px;background:#f8fafc}
+      .st{flex:1 1 0;padding:6px 12px;border-inline-start:1px solid var(--ln)}
+      .st:first-child{border-inline-start:none}
+      .st .sv{font-size:1.12em;font-weight:700;color:var(--nv)}
+      .st .sk{font-size:.8em;color:var(--mut)}
+      .tbl table{border:1px solid var(--ln);font-size:.94em}
+      .tbl th{background:#f3f6fa;color:var(--nv);font-weight:700;text-align:start;padding:5px 10px;border:1px solid var(--ln)}
+      .tbl td{border:1px solid var(--ln);padding:5px 10px;vertical-align:top;overflow-wrap:anywhere}
+      .box{border:1px solid var(--ln);padding:6px 10px}
+      .dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 16px}
+      .dr{display:flex;flex-direction:column}
+      .dr .k{font-size:.78em;color:var(--mut);font-weight:600}
+      .dr .v{font-weight:600}
+      ul.list{margin:0;padding-inline-start:20px}
+      ul.list li{margin:3px 0}
+      .text{border-inline-start:3px solid var(--nv);padding:4px 12px;background:#f8fafc}
+      .sg-l{color:var(--nv)}
+      .foot{border-top:1px solid var(--ln)}
+    `,
+    modern: `
+      .hd{display:flex;justify-content:space-between;align-items:center;gap:16px;color:#fff;border-radius:14px;padding:14px 18px;background:linear-gradient(${rtl ? 225 : 135}deg,#0f51b0,#1266d8 50%,#2f7df2)}
+      .hd-id{display:flex;align-items:center;gap:13px;min-width:0}
+      .hd-logo{flex:none;width:64px;height:64px;border-radius:15px;background:#fff;display:grid;place-items:center;box-shadow:0 4px 14px rgba(13,36,73,.22)}
+      .hd-logo img{max-width:54px;max-height:54px;object-fit:contain}
+      .hd-logo svg{width:48px;height:48px}
+      .eyebrow{font-size:.66em;letter-spacing:.18em;text-transform:uppercase;font-weight:700;opacity:.85}
+      .cname{font-size:1.5em;font-weight:700;line-height:1.25}
+      .clines{display:flex;flex-wrap:wrap;gap:0 12px;font-size:.84em;opacity:.92}
+      .soc{opacity:.95;margin-top:1px}
+      .hd-doc{flex:none;text-align:end}
+      .dtitle{font-size:1.3em;font-weight:700}
+      .dmeta{font-size:.8em;opacity:.92}
+      .dmeta b{font-weight:600}
+      h2.sec{display:flex;align-items:center;gap:8px;margin:16px 0 8px;font-size:1.02em;font-weight:700;color:var(--nv)}
+      h2.sec .dot{flex:none;width:9px;height:9px;border-radius:3px;background:var(--b);box-shadow:0 0 0 3px var(--b100)}
+      h2.sec::after{content:"";flex:1;height:1px;background:var(--b100)}
+      .pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+      .card{border:1px solid var(--b100);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.78)}
+      .card .ct{margin:0;padding:5px 12px;background:var(--b50);color:var(--b9);font-size:.95em;font-weight:700;border-bottom:1px solid var(--b100)}
+      .card.solo{padding:2px 0}
+      .dl{padding:6px 12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 14px}
+      .card.solo .dl{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .dr{display:flex;flex-direction:column;min-width:0}
+      .dr .k,.chip .k{font-size:.74em;color:#6b7f99;font-weight:600}
+      .dr .v{font-weight:600;overflow-wrap:anywhere}
+      .chips{display:flex;flex-wrap:wrap;gap:8px}
+      .chip{display:flex;flex-direction:column;border:1px solid var(--b100);background:var(--b50);border-radius:10px;padding:4px 12px}
+      .chip .v{font-weight:700;color:var(--b9)}
+      .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:8px;margin-top:12px}
+      .st{position:relative;overflow:hidden;border:1px solid var(--b100);border-radius:12px;padding:8px;text-align:center;background:rgba(255,255,255,.78)}
+      .st::before{content:"";position:absolute;inset-inline:0;top:0;height:3px;background:linear-gradient(90deg,var(--b),var(--sky))}
+      .st .sv{font-size:1.28em;font-weight:700;color:var(--b7)}
+      .st .sk{font-size:.76em;color:var(--sub);font-weight:600}
+      .tl{list-style:none;margin:0;padding:0;position:relative}
+      .tl::before{content:"";position:absolute;inset-inline-start:6px;top:8px;bottom:8px;width:2px;background:var(--b100)}
+      .tl li{position:relative;padding-inline-start:24px;margin:0 0 7px}
+      .tl li::before{content:"";position:absolute;inset-inline-start:1px;top:.42em;width:8px;height:8px;border-radius:50%;background:#fff;border:2.5px solid var(--b)}
+      .tl .d{display:block;font-weight:700;color:var(--b9);font-size:.9em}
+      .tl .e{display:block}
+      .tbl{border:1px solid var(--b100);border-radius:12px;overflow:hidden}
+      .tbl table{font-size:.94em}
+      .tbl th{background:var(--b50);color:var(--b9);font-weight:700;text-align:start;padding:6px 10px;border-bottom:1px solid var(--b100)}
+      .tbl td{padding:6px 10px;border-top:1px solid #edf2f8;vertical-align:top;overflow-wrap:anywhere}
+      .tbl tbody tr:first-child td{border-top:none}
+      .tbl tbody tr:nth-child(even) td{background:rgba(246,250,255,.65)}
+      ul.list{margin:0;padding:8px 14px;list-style:none;border:1px solid var(--b100);border-radius:12px;background:rgba(238,246,255,.55)}
+      ul.list li{position:relative;padding-inline-start:16px;margin:3px 0}
+      ul.list li::before{content:"";position:absolute;inset-inline-start:2px;top:.66em;width:6px;height:6px;border-radius:50%;background:var(--b)}
+      .text{border:1px solid var(--b100);border-inline-start:4px solid var(--b);border-radius:12px;padding:8px 13px;background:rgba(238,246,255,.55)}
+      .sg-l{color:var(--nv)}
+      .foot{border-top:2px solid var(--b100)}
+    `,
+    elegant: `
+      .hd{text-align:center}
+      .hd-logo img{display:block;margin:0 auto;max-height:72px;max-width:124px;object-fit:contain}
+      .hd-logo svg{display:block;margin:0 auto;width:54px;height:54px}
+      .cname{font-size:1.7em;font-weight:700;color:var(--nv);margin-top:6px;line-height:1.25}
+      .clines{display:flex;justify-content:center;flex-wrap:wrap;gap:0 16px;color:var(--mut);font-size:.84em;margin-top:2px}
+      .soc{justify-content:center;color:var(--sub);margin-top:2px}
+      .hd-title{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px}
+      .hd-title::before,.hd-title::after{content:"";flex:0 1 110px;height:1px;background:linear-gradient(90deg,transparent,var(--b))}
+      .hd-title::after{background:linear-gradient(90deg,var(--b),transparent)}
+      .dtitle{font-size:1.28em;font-weight:700;color:var(--b)}
+      .hd-meta{display:flex;justify-content:center;flex-wrap:wrap;gap:2px 22px;margin-top:2px}
+      .dmeta{color:var(--mut);font-size:.82em}
+      .dmeta b{color:var(--ink);font-weight:600}
+      .rule{border-top:1px solid var(--nv);border-bottom:1px solid var(--nv);height:4px;margin:12px 0 14px}
+      h2.sec{display:flex;align-items:center;justify-content:center;gap:12px;margin:18px 0 9px;font-size:1.02em;font-weight:700;color:var(--nv);letter-spacing:.02em}
+      h2.sec .orn{flex:0 1 80px;height:1px;background:var(--b200)}
+      .pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+      .panel{border-top:2px solid var(--nv);padding-top:4px}
+      .panel .ct{margin:0 0 2px;text-align:center;font-size:.98em;font-weight:700;color:var(--nv)}
+      .panel.solo{border-top:none}
+      .dl{display:grid;grid-template-columns:minmax(0,1fr)}
+      .panel.solo .dl{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px}
+      .dr{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dotted #c3cfde}
+      .dr .k{flex:none;color:var(--mut);font-size:.86em}
+      .dr .v{font-weight:600;overflow-wrap:anywhere;min-width:0}
+      .strip{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 0}
+      .strip .chip{display:flex;flex-direction:column;align-items:center;padding:0 16px;border-inline-start:1px solid var(--b200)}
+      .strip .chip:first-child{border-inline-start:none}
+      .strip .k{font-size:.76em;color:var(--mut)}
+      .strip .v{font-weight:700;color:var(--nv)}
+      .stats{display:flex;justify-content:center;flex-wrap:wrap;margin-top:10px}
+      .st{padding:2px 18px;text-align:center;border-inline-start:1px solid var(--b200)}
+      .st:first-child{border-inline-start:none}
+      .st .sv{font-size:1.2em;font-weight:700;color:var(--b)}
+      .st .sk{font-size:.78em;color:var(--mut)}
+      .diary{list-style:none;margin:0;padding:0}
+      .diary li{display:flex;gap:12px;padding:4px 0;border-bottom:1px dotted #c3cfde}
+      .diary .d{flex:none;min-width:30%;font-weight:700;color:var(--nv)}
+      .diary .e{flex:1}
+      .tbl table{font-size:.94em;border-top:1.5px solid var(--nv);border-bottom:1.5px solid var(--nv)}
+      .tbl th{color:var(--nv);font-weight:700;text-align:start;padding:5px 10px;border-bottom:1px solid var(--nv)}
+      .tbl td{padding:5px 10px;border-bottom:1px solid var(--ln2);vertical-align:top;overflow-wrap:anywhere}
+      ul.list{margin:0;padding-inline-start:20px}
+      ul.list li{margin:3px 0}
+      ul.list li::marker{color:var(--b)}
+      .text{text-align:center;font-style:normal;padding:4px 16px;color:var(--ink)}
+      .sign{gap:60px}
+      .sg{text-align:center}
+      .sg-l{color:var(--nv)}
+      .sg.stamp .sg-space::after{inset-inline-end:auto;inset-inline-start:50%;transform:translateX(${rtl ? "50%" : "-50%"})}
+      .foot{border-top:1px solid var(--nv)}
+    `,
+  };
+  const editCSS = tagged ? `@media screen{
       [data-k]{border-radius:3px;outline:1px dashed transparent;outline-offset:1px}
       [contenteditable]{cursor:text;min-width:1.5em;display:inline-block}
       td[contenteditable],th[contenteditable],li[contenteditable],div[contenteditable]{display:revert}
       [contenteditable]:hover{outline-color:#8cc0ff}
       [contenteditable]:focus{outline:2px solid var(--b);background:var(--b50)}
-      [data-ed]{background:#fef08a;box-shadow:0 0 0 1px #facc15}
+      .hd [contenteditable]:focus{color:inherit}
+      [data-ed]{background:#fef08a !important;color:#1e293b !important;box-shadow:0 0 0 1px #facc15}
       [contenteditable]:empty::before{content:"\\2026";color:#cbd5e1}
-    }` : ""}
-  `;
+    }` : "";
+  const phone = `@media (max-width:520px){.pair{grid-template-columns:minmax(0,1fr)}.dl,.card.solo .dl,.panel.solo .dl{grid-template-columns:repeat(2,minmax(0,1fr))}.hd{flex-wrap:wrap}.sheet{padding:14px}table.info td.ik{width:auto}}`;
+  // الطباعةُ حين يصل الخطّ (document.fonts.ready) أو بعد أربع ثوانٍ بالاحتياطيّ — لا نافذةٌ معلّقة بلا نت.
   const auto = s.autoPrint
-    ? `<script>window.addEventListener('load',function(){setTimeout(function(){window.focus();window.print();},250);});window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},200);});</script>`
+    ? `<script>(function(){var done=false;function go(){if(done)return;done=true;window.focus();window.print();}
+window.addEventListener('load',function(){var f=document.fonts&&document.fonts.ready;(f?f:Promise.resolve()).then(function(){setTimeout(go,150);});});
+setTimeout(go,4000);window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},200);});})();</script>`
     : "";
-  return `<!doctype html><html lang="${esc(s.lang)}" dir="${s.dir === "ltr" ? "ltr" : "rtl"}"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${esc(s.docTitle)}</title><style>${css}</style></head><body data-paper="${esc(s.paper)}">
+  return `<!doctype html><html lang="${esc(s.lang)}" dir="${rtl ? "rtl" : "ltr"}"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${esc(s.docTitle)}</title><link rel="stylesheet" href="${FONT_HREF}"/><style>${base}${THEME_CSS[theme]}${phone}${editCSS}</style></head><body data-paper="${esc(s.paper)}" data-theme="${theme}">
 <div class="sheet">
-  <div class="wm">${logo ? `<img src="${logo}" alt=""/>` : PAW("cswm")}</div>
-  <header class="hd">
-    <div class="clinic">
-      <div class="eyebrow">${PAW("cseb")}doctorVet</div>
-      <div class="name"${at("clinic.name")}>${esc(s.clinic.name)}</div>
-      ${lines.map(([l, i]) => `<div class="line" dir="auto"${at(`clinic.line.${i}`)}>${esc(l)}</div>`).join("")}
-      ${socials ? `<div class="soc">${socials}</div>` : ""}
-    </div>
-    <div class="mid">${logo ? `<img src="${logo}" alt=""/>` : PAW("csmd")}</div>
-    <div class="doc end">
-      <div class="title"${at("title")}>${esc(s.title)}</div>
-      ${meta.map((f) => `<div class="meta"><span${at(`meta.${f.key}.k`)}>${esc(f.label)}</span>: <b dir="auto"${at(`meta.${f.key}.v`)}>${esc(f.value)}</b></div>`).join("")}
-    </div>
-  </header>
-  <div class="band"></div>
-  ${s.blocks.map(blockHTML).join("\n")}
-  ${sigs.length ? `<div class="sign">${sigs.map((g) => `<div class="sg${g.key === "clinic" ? " stamp" : ""}"><span class="l"${at(`sig.${g.key}.k`)}>${esc(g.label)}</span><span class="val" dir="auto"${at(`sig.${g.key}.v`)}>${esc(g.value)}</span></div>`).join("")}</div>` : ""}
-  <footer class="foot"><span class="ft" dir="auto"${at("footer")}>${esc(s.footer ?? "")}</span><span class="by" dir="ltr">${PAW("csft")}doctorVet${s.clinic.site && s.clinic.site.trim().toLowerCase() !== "doctorvet" ? ` · ${esc(s.clinic.site)}` : ""}</span></footer>
+  <div class="wm">${mark("cswm")}</div>
+  ${header}
+  ${body.join("\n")}
+  ${sign}
+  <footer class="foot"><span class="ft" dir="auto"${at("footer")}>${esc(s.footer ?? "")}</span><span class="by" dir="ltr">${PAW("csft")}doctorVet${site}</span></footer>
 </div>
 ${auto}
 </body></html>`;
@@ -381,7 +572,8 @@ export function readSheet(x: unknown): CaseSheet | null {
     }
   });
   return {
-    v: 1, lang: str(o.lang) || "ar", dir: o.dir === "ltr" ? "ltr" : "rtl", paper, title: str(o.title), docTitle: str(o.docTitle),
+    v: 1, lang: str(o.lang) || "ar", dir: o.dir === "ltr" ? "ltr" : "rtl", paper, ...(THEMES.includes(o.theme as Theme) ? { theme: o.theme as Theme } : {}),
+    title: str(o.title), docTitle: str(o.docTitle),
     clinic: { name: str(c.name), lines: arr(c.lines).map(str), logoUrl: typeof c.logoUrl === "string" ? c.logoUrl : null, site: str(c.site),
       ...(c.socials ? { socials: { ...(obj(c.socials).facebook !== undefined ? { facebook: str(obj(c.socials).facebook) } : {}), ...(obj(c.socials).instagram !== undefined ? { instagram: str(obj(c.socials).instagram) } : {}) } } : {}) },
     meta: arr(o.meta).map(fieldOf), blocks, signatures: arr(o.signatures).map(fieldOf),
