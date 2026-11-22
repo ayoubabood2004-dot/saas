@@ -15,6 +15,8 @@ const SOURCES = [
   ["src/lib/pnlApi.ts", /rpcJson(?:<[^>]*>)?\(\s*"([a-z_0-9]+)"/g],
   // وبابُ حالة الحقل (0265): الحذفان void بـrpcVoid، وكلُّ ما يمرّ من rpcJson يجب أن يرجع شيئاً.
   ["src/lib/flockApi.ts", /rpcJson(?:<[^>]*>)?\(\s*"([a-z_0-9]+)"/g],
+  // وبابُ الملاحظة الصوتية (0287): الإضافةُ والحذفُ والإرجاعُ ترجع الصفّ، والقدرةُ boolean — لا void.
+  ["src/lib/voiceApi.ts", /rpcJson(?:<.*?>)?\(\s*"([a-z_0-9]+)"/g],   // أنواعٌ متداخلة: rpcJson<Record<…>>(
 ];
 let empty = 0;
 const called = [], perFile = [];

@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0287"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -102,6 +102,8 @@ export const MANIFEST = [
   ["record_purchase_fx", 2, "public.record_purchase_fx(jsonb,jsonb)", "0274", "0276"],
   ["update_purchase_fx", 3, "public.update_purchase_fx(uuid,jsonb,jsonb)", "0274", "0276"],
   ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0275", "0276"],
+  // 0287: الملاحظةُ الصوتية «ملف طبي» بسجلّ الحركات — audit_kind نصُّ 0271 (آخرُ من عرّفها) وسطرٌ معلَّم.
+  ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0271", "0287"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

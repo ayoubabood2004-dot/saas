@@ -10,10 +10,14 @@
  *  • «القراءة فقط» (اشتراكٌ منتهٍ) يمنع الكتابةَ بخطأ repo نفسِه (ReadOnlyError).
  *  • لا `t(` هنا: الشريطُ (حزمةُ الإقلاع) يستورد الرافعَ كسولاً، والرافعُ يستورد هذا الباب.
  * ========================================================================= */
-import { supabase, supabaseAnonKey, supabaseUrl } from "./supabase";
+/* العنوانُ والمفتاحُ العامّ من فضاء الوحدة لا باستيرادٍ مسمّى: نحو ثلاثين فحصاً تحزم repoDemo ببديلٍ لـ"./supabase"
+ * لا يصدّر إلا `supabase` — والاستيرادُ المسمّى أسقط حزمَها (وحزمةَ run.sh معها). يُقرآن لحظةَ الرفع وحدها. */
+import * as sb from "./supabase";
 import { isConfigReadOnly } from "./clinicSync";
 import { rpcJson } from "./rpcJson";
 import type { VoiceKind, VoiceMime, VoiceRow } from "./voice/voiceTypes";
+
+const { supabase } = sb;
 
 export const VOICE_BUCKET = "voice-notes";
 /** عمرُ الرابط الموقَّع: ساعة — يُعاد توقيعُه كلَّ ٤٥ دقيقة ما دامت الشاشةُ مفتوحة، ومحذوفٌ لا يبقى مسموعاً أكثر. */
@@ -101,9 +105,9 @@ const PAGE = 500;
 function xhrPut(path: string, blob: Blob, contentType: string, token: string, opts: PutOpts): Promise<void> {
   return new Promise((ok, no) => {
     const x = new XMLHttpRequest();
-    x.open("POST", `${supabaseUrl}/storage/v1/object/${VOICE_BUCKET}/${path}`);
+    x.open("POST", `${sb.supabaseUrl}/storage/v1/object/${VOICE_BUCKET}/${path}`);
     x.setRequestHeader("authorization", `Bearer ${token}`);
-    x.setRequestHeader("apikey", supabaseAnonKey);
+    x.setRequestHeader("apikey", sb.supabaseAnonKey);
     x.setRequestHeader("x-upsert", "false");
     x.setRequestHeader("content-type", contentType);
     x.setRequestHeader("cache-control", "max-age=3600");
