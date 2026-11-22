@@ -8,7 +8,7 @@ import {
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
-  History, LogIn, LogOut, ArrowLeftRight, AlertTriangle, ChevronLeft,
+  History, LogIn, LogOut, ArrowLeftRight, AlertTriangle, ChevronLeft, LayoutDashboard,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement, LabResult } from "@/types";
@@ -70,15 +70,19 @@ let VaxEditLazy = loadVaxEdit();
 const loadRxButton = () => page(() => import("@/components/rx/RxPad").then((m) => ({ default: m.RxButton })), ["rx"]);
 /* رفعُ الخزنة: «صوّر» (كاميرا داخل السستم) و«من الجهاز» — قطعةُ المرفقات الكسولة بنطاقها (att). */
 const loadVaultUploader = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.VaultUploader })), ["att"]);
+/* «الملخّص» (طلبُ المالك ٢٢/١١): أوّلُ تبويبٍ للكادر — كلُّ ما بالسجلّ المتفرّق بمكانٍ واحد، بنطاقه المملوك psum. */
+const loadSummary = () => page(() => import("@/components/summary/PetSummary").then((m) => ({ default: m.PetSummary })), ["psum"]);
+let SummaryLazy = loadSummary();
 let VaultUploaderLazy = loadVaultUploader();
 let RxButtonLazy = loadRxButton();
 import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockPlus } from "lucide-react";
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "visits" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
+type Tab = "summary" | "visits" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
+  { id: "summary", icon: LayoutDashboard, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "visits", icon: Stethoscope, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
   { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
@@ -273,7 +277,10 @@ export function PetPassport() {
   const [params] = useSearchParams();
   // «الدخول والخروج» صار داخل «الزيارات» — والرابطُ القديم ?tab=stays يفتحه هناك.
   const staysLink = params.get("tab") === "stays";
-  const initialTab = (staysLink ? "visits" : params.get("tab") as Tab) || "diet";
+  /* الكادرُ يبدأ على «الملخّص» (طلبُ المالك ٢٢/١١)، وصاحبُ الحيوان على «الغذاء» كما كان — الملخّصُ للطبيب. */
+  const { user } = useAuth();
+  const homeTab: Tab = user?.role === "owner" ? "diet" : "summary";
+  const initialTab = (staysLink ? "visits" : params.get("tab") as Tab) || homeTab;
   // Synchronous cache seed: if this file was opened before, the WHOLE record
   // paints on the very first frame. Seeding only in the effect (which runs
   // after paint) flashed a "loading…" frame on every re-open.
@@ -282,7 +289,10 @@ export function PetPassport() {
     : undefined;
   const [pet, setPet] = useState<Pet | null>(seed?.p ?? null);
   const [labs, setLabs] = useState<LabResult[]>(seed?.lab ?? []);
-  const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) ? initialTab : "diet");
+  const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) && !(initialTab === "summary" && user?.role === "owner") ? initialTab : homeTab);
+  /** «الدخول والخروج» داخل «الزيارات» — الملخّصُ يفتحه مباشرةً (مفتاحٌ يعيد بناءَ القسم على العرض المطلوب). */
+  const [visitsView, setVisitsView] = useState<"visits" | "stays">(staysLink ? "stays" : "visits");
+  const [, setSummaryLazyTick] = useState(0);
   /** لقاحٌ يُعدَّل موعدُه — من العلامة الحمراء بالملخّص أو من «القادم». */
   const [dueEdit, setDueEdit] = useState<Vaccination | null>(null);
   const [weights, setWeights] = useState<WeightLog[]>(seed?.w ?? []);
@@ -295,7 +305,6 @@ export function PetPassport() {
   const [admissions, setAdmissions] = useState<Admission[]>(seed?.adm ?? []);
   const [appointments, setAppointments] = useState<Appointment[]>(seed?.apt ?? []);
   const [reminders, setReminders] = useState<Reminder[]>(seed?.rem ?? []);
-  const { user } = useAuth();
   const toast = useToast();
   // Owners may view their pet's health record but not modify clinical data.
   const canEditClinical = user?.role !== "owner";
@@ -410,6 +419,7 @@ export function PetPassport() {
   const treatmentDue = petEvents.some((e) => e.category === "medication" && e.urgent);
   const vaccineOverdue = vaccines.some((v) => v.status === "overdue");
   const tabBadge: Record<Tab, { dot?: boolean; count?: number }> = {
+    summary: {},
     visits: { count: clinicVisits.filter((v) => v.status === "open").length || undefined },
     timeline: {},
     diet: {},
@@ -539,7 +549,7 @@ export function PetPassport() {
       {/* ② Maximized clinical canvas — the tab bar + content span the FULL width. */}
       <section className="mt-6">
         <div className="relative mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1.5 no-print [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {TABS.map(({ id, icon: Icon, fill, text }) => {
+          {TABS.filter((x) => x.id !== "summary" || !isOwner).map(({ id, icon: Icon, fill, text }) => {
             const active = tab === id;
             const badge = tabBadge[id];
             return (
@@ -563,7 +573,7 @@ export function PetPassport() {
                   <motion.span animate={{ scale: active ? 1.14 : 1, y: active ? -1 : 0 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}>
                     <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
                   </motion.span>
-                  <span className="text-center leading-tight">{t(`passport.tabs.${id}`)}</span>
+                  <span className="text-center leading-tight">{id === "summary" ? t("dsht.summaryTab") : t(`passport.tabs.${id}`)}</span>
                 </span>
                 {(badge.dot || badge.count != null) && (
                   <span className="absolute end-2 top-1.5 z-20">
@@ -590,8 +600,21 @@ export function PetPassport() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
+            {tab === "summary" && !isOwner && (
+              <LoadBoundary scope="psum" onRetry={() => { SummaryLazy = loadSummary(); setSummaryLazyTick((n) => n + 1); }}>
+                <Suspense fallback={<div className="grid place-items-center py-16"><Loader2 size={22} className="animate-spin text-ink-subtle" /></div>}>
+                  <SummaryLazy pet={pet} canPrint={canEditClinical}
+                    input={{ vaccines, treatments, clinicVisits, visits, admissions, notes, labs, media, appointments, weights }}
+                    onGo={(to) => {
+                      if (to === "stays" || to === "visits") { setVisitsView(to); setTab("visits"); }
+                      else setTab(to);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }} />
+                </Suspense>
+              </LoadBoundary>
+            )}
             {tab === "visits" && (
-              <VisitsSection initial={staysLink ? "stays" : "visits"}
+              <VisitsSection key={visitsView} initial={visitsView}
                 visitsView={<VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
                 staysView={<StayLogTab petId={pet.id} admissions={admissions} visits={clinicVisits} treatments={treatments} vaccinations={vaccines} notes={notes} labs={labs} weights={weights} />} />
             )}
