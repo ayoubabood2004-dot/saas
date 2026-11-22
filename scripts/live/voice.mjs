@@ -168,7 +168,26 @@ if (process.env.SHOTS) {
   await page.locator("[role=dialog] button[aria-label]").first().click();
 }
 
-console.log("▸ ٦) /voice: لا شيء ينتظر");
+console.log("▸ ٦) عرضُ الهاتف (٣٩٠): القسمُ والمسجِّلُ بلا تمريرٍ جانبيّ");
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(800);
+const wide = async () => page.evaluate(() => document.scrollingElement.scrollWidth);
+check("الصفحةُ بالقسم بعرض الهاتف", (await wide()) <= 391, String(await wide()));
+const before = (await rows()).length;
+await page.locator("[data-voice-btn]").click();
+await until(async () => (await page.locator("[data-voice-recorder]").count()) === 1);
+await page.locator("[data-voice-start]").click();
+await page.waitForTimeout(1500);
+check("  والمسجِّلُ يسجّل بعرض الهاتف بلا فيضان", await page.evaluate(() => {
+  const r = document.querySelector("[data-voice-recorder]")?.getBoundingClientRect();
+  return !!r && r.right <= window.innerWidth + 1 && r.left >= -1;
+}));
+await page.locator("[data-voice-stop]").click();
+check("  وينحفظ بعرض الهاتف", await until(async () => (await rows()).length === before + 1, 20000));
+await page.locator("[role=dialog] button[aria-label]").first().click();
+await page.setViewportSize({ width: 1300, height: 1000 });
+
+console.log("▸ ٧) /voice: لا شيء ينتظر");
 await page.goto(`${BASE}/voice`, { waitUntil: "domcontentloaded" });
 check("«ماكو شي ينتظر»", await until(async () => /ماكو شي ينتظر/.test(await flat()), 20000), (await flat()).slice(0, 300));
 
