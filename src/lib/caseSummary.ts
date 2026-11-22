@@ -12,9 +12,10 @@
 // ============================================================================
 import type {
   Admission, Appointment, ClinicVisit, DoseRoute, LabResult, MediaItem, MedicalVisit, PetMovement, PetNote,
-  TreatmentEntry, Vaccination, WeightLog,
+  TaskType, TreatmentEntry, Vaccination, WeightLog,
 } from "@/types";
 import { isSettledMiss } from "./backdate";
+import { buildStayLog, type LogEvent } from "./stayLog";
 import { parseClinical } from "./clinicalRecord";
 import { isProtocolMark } from "./protocolMark";
 import { localISO } from "./utils";
@@ -60,6 +61,17 @@ export interface StayRow {
   days: number; cage: string | null; reason: string | null; outcome: Admission["outcome"] | null; active: boolean;
 }
 export interface NoteRow { id: string; at: string; author: string | null; text: string; diagnoses: string[]; visitId: string | null }
+/** مهامُّ الرعاية بيومٍ من الإقامة (أكل، إخراج، علاماتٌ حيوية، تمريض، سوائل): كم انعمل من كم، وقيمُها المسجَّلة. */
+export type CareType = Exclude<TaskType, "drug" | "lab">;
+export interface CareDay { type: CareType; done: number; total: number; values: string[] }
+/** يومٌ من الإقامة — «يوميات الفندقة»: حركاتُه ولقاحاتُه وتحاليلُه ووزنُه وملاحظاتُه (stayLog)، وجرعاتُه بحالاتِ
+ *  النموذج نفسِها (انطت بيوم إعطائها، فاتت ومتأخّرةٌ بيومها — لا «فاتت» stayLog لكلّ سبب: «أُجّلت» متأخّرةٌ بجدول
+ *  الجرعات فلا تُقال «فاتت» بسطرٍ فوقه)، ومهامُّ رعايته. القوائمُ [اسم، عدد]. */
+export interface DayEntry {
+  day: string; events: LogEvent[];
+  given: [string, number][]; missed: [string, number][]; overdue: [string, number][];
+  care: CareDay[];
+}
 
 export interface CaseInput {
   vaccines: Vaccination[];
@@ -93,7 +105,13 @@ export interface CaseModel {
   upcoming: Appointment[];
   /** تشخيصاتُ الملاحظات السريرية بالمدى، بلا تكرار وبترتيب الظهور. */
   diagnoses: string[];
+  /** أيّامُ الإقامة بما صار فيها، الأقدمُ أوّلاً — لورقة إقامةٍ بعينها (`range`) وحدها؛ بلا مدى فارغة. */
+  days: DayEntry[];
 }
+
+const CARE_ORDER: CareType[] = ["feed", "elim", "vitals", "fluid", "nurse"];
+/** نوعُ المهمّة كما تقرؤه الطبلة: الغيابُ دواء (flowsheet typeOf). */
+const taskOf = (t: Pick<TreatmentEntry, "task_type">): TaskType => t.task_type ?? "drug";
 
 /** اليومُ المحلّيّ لختمٍ زمنيّ (لا `slice(0,10)` — ذاك يومُ غرينتش، درسُ 0265). يومٌ مكتوبٌ يومياً يبقى كما هو. */
 export function dayOf(ts: string | null | undefined): string {
@@ -208,5 +226,41 @@ export function buildCaseModel(inp: CaseInput, opts: { today: string; now?: stri
     visits, soap, notes, labs, media,
     weight: { last: ws[0] ?? null, prev: ws[1] ?? null },
     upcoming, diagnoses,
+    days: range ? stayDays(inp, range, today, doses) : [],
   };
+}
+
+/** «يوميات الإقامة»: سجلُّ الدخول والخروج (stayLog — حركاتٌ بساعتها، جرعاتٌ مجمّعةٌ بالدواء وما فات، لقاحات، تحاليل، وزن،
+ *  ملاحظات) لأيّام المدى، ومعها مهامُّ الرعاية بيومها المجدول — المنجَزةُ بختمها أو بقيمتها المسجَّلة (VisitPage obsDone).
+ *  يومٌ بلا شيء لا يُكتب: سطرٌ فارغٌ بورقةٍ تُسلَّم لا يقول شيئاً. */
+function stayDays(inp: CaseInput, range: CaseRange, today: string, doses: DoseRow[]): DayEntry[] {
+  const log = buildStayLog({
+    admissions: inp.admissions, movements: inp.movements ?? [], visits: inp.clinicVisits, treatments: [],
+    vaccinations: inp.vaccines, notes: inp.notes, labs: inp.labs, weights: inp.weights,
+  }, today);
+  const byDay = new Map<string, DayEntry>();
+  const entry = (day: string) => byDay.get(day) ?? byDay.set(day, { day, events: [], given: [], missed: [], overdue: [], care: [] }).get(day)!;
+  for (const st of log.stays) {
+    for (const d of st.dayLogs) if (within(d.day, range)) entry(d.day).events.push(...d.events);
+  }
+  for (const d of log.outside) if (within(d.day, range)) entry(d.day).events.push(...d.events);
+  // الجرعاتُ من النموذج: المعطاةُ بيوم إعطائها المحلّيّ، والفائتةُ والمتأخّرةُ بيومها المجدول.
+  const bump = (list: [string, number][], name: string) => { const hit = list.find((x) => x[0] === name); if (hit) hit[1]++; else list.push([name, 1]); };
+  for (const d of doses) {
+    if (d.state === "given" && d.at) { const day = dayOf(d.at); if (within(day, range)) bump(entry(day).given, d.name); }
+    else if (d.state === "missed") bump(entry(d.day).missed, d.name);
+    else if (d.state === "overdue") bump(entry(d.day).overdue, d.name);
+  }
+  const care = new Map<string, Map<CareType, CareDay>>();
+  for (const t of [...inp.treatments].sort((a, b) => a.day.localeCompare(b.day) || (a.time ?? "").localeCompare(b.time ?? ""))) {
+    const type = taskOf(t);
+    if (type === "drug" || type === "lab" || !within(t.day, range)) continue;
+    const m = care.get(t.day) ?? care.set(t.day, new Map()).get(t.day)!;
+    const c = m.get(type) ?? m.set(type, { type, done: 0, total: 0, values: [] }).get(type)!;
+    c.total++;
+    const value = t.result == null ? "" : String(t.result).trim();
+    if (t.administered_at || value) { c.done++; if (value) c.values.push(value); }
+  }
+  for (const [day, m] of care) entry(day).care = CARE_ORDER.filter((k) => m.has(k)).map((k) => m.get(k)!);
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
 }
