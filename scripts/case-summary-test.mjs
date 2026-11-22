@@ -241,6 +241,49 @@ async function suite(M, label = "") {
   const evil = M.readSheet({ v: 1, blocks: [{ key: "x", kind: "text", title: "<b>", text: "</div><script>alert(1)</script>" }], title: "<script>", meta: [{ key: "m", label: "<i>", value: "v" }] });
   const he2 = M.buildCaseSheetHTML(evil);
   check(`${label}  وما بالقاعدة يُرسم مُهرَّباً ولو كتبه غيرُ الواجهة`, !he2.includes("<script>alert") && he2.includes("&lt;script&gt;") && !he2.includes("<b>"));
+
+  // ── هويّةُ الورقة: شعارُ العيادة بالترويسة وعلامةً مائيّة، وكفُّ doctorVet بلا شعار، وألوانُ العلامة ──
+  const withLogo = M.buildCaseSheetHTML(M.composeSheet({ ...base, clinic: { ...clinic, logoUrl: "https://x.test/logo.png", socials: { facebook: "vetfb", instagram: "vet.ig" } } }));
+  check(`${label}الشعارُ بالترويسة وعلامةً مائيّة، والتواصلُ بأيقوناته، وألوانُ doctorVet`,
+    withLogo.includes('<div class="wm"><img src="https://x.test/logo.png"') && withLogo.includes('<div class="mid"><img src="https://x.test/logo.png"')
+      && withLogo.includes("vetfb") && withLogo.includes("vet.ig") && withLogo.includes("#1266d8") && withLogo.includes('<div class="eyebrow"><svg') && withLogo.includes("doctorVet</div>"), "");
+  check(`${label}  وبلا شعار: كفُّ doctorVet بالترويسة وبالعلامة المائيّة`, h1.includes('<div class="wm"><svg') && h1.includes('<div class="mid"><svg'));
+  check(`${label}  والعلامةُ المائيّة تتكرّر على كلّ صفحةٍ مطبوعة، ورقمُ الصفحة`, h1.includes("@media print{.sheet{padding:0;width:auto;margin:0}.wm{position:fixed}}") && h1.includes("counter(pages)"));
+
+  // ── حالةُ الجرعة شارةٌ بلونها، وتسقط عن نصٍّ عدّله الطبيب ──
+  const pill = (h, id, tone) => h.includes(`<td dir="auto"><span class="pill t-${tone}">`) && new RegExp(`t-${tone}">\\{csht\\.states\\.`).test(h);
+  check(`${label}سجلُّ الجرعات بشاراتٍ: انطت خضراء، وما انطت حمراء، ومتأخّرةٌ صفراء، واليومُ زرقاء`,
+    pill(h1, "t1", "ok") && pill(h1, "t2", "bad") && pill(h1, "t3", "warn") && pill(h1, "t4", "info"), "");
+  const ek = new Set([KEY]);
+  const hEd = M.buildCaseSheetHTML(ap.sheet, { edited: ek });
+  check(`${label}  ونصُّ حالةٍ عدّله الطبيب يُطبع بلا شارة (اللونُ لنصّ النظام)`,
+    hEd.includes('<td dir="auto">انطت بالبيت</td>') && !hEd.includes('t-ok">انطت بالبيت'), "");
+
+  // ── «العلاج مكتمل»: تصريحُ الطبيب ──
+  const done = M.markCourseComplete(stay);
+  check(`${label}«العلاج مكتمل»: كلُّ جرعةٍ بالمدى انطت، والأدويةُ مكتملة، ولا فاتت ولا متأخّرة — والنموذجُ الأصليّ لا يُمسّ`,
+    done.doses.every((x) => x.state === "given") && done.meds.every((x) => x.given === x.total && !x.missed && !x.overdue && !x.pending)
+      && done.totals.given === done.totals.doses && done.totals.missed === 0 && stay.totals.given === 3 && stay.doses.some((x) => x.state === "missed"),
+    JSON.stringify(done.totals));
+  const dd = Object.fromEntries(done.days.map((x) => [x.day, x]));
+  check(`${label}  واليومياتُ: ما فات وما تأخّر «انطى» بيومه، والمستحقّةُ اليومَ «انطى» اليوم`,
+    done.days.every((x) => !x.missed.length && !x.overdue.length) && JSON.stringify(dd["2026-11-17"]?.given) === JSON.stringify([["Amoxicillin", 1]])
+      && JSON.stringify(dd["2026-11-20"]?.given) === JSON.stringify([["Amoxicillin", 1]]),
+    JSON.stringify(done.days.map((x) => [x.day, x.given, x.missed, x.overdue])));
+  const hc = html({ courseComplete: true });
+  const sc = M.composeSheet({ ...base, courseComplete: true });
+  check(`${label}  والورقة: «٦ من ٦»، «اكتمل العلاج» لكلّ دواء، وكلُّ الجرع «انطت»، والتصريحُ محفوظٌ بالورقة`,
+    hc.includes("{csht.givenOf|given=6,total=6}") && !hc.includes("{csht.stMissed}") && (hc.match(/\{csht\.courseDone\}/g) ?? []).length === 2
+      && !/\{csht\.states\.(missed|overdue|due)\}/.test(hc) && !hc.includes("{csht.ev.missed") && !hc.includes("{csht.ev.overdue")
+      && sc.claims?.complete === true && M.composeSheet(base).claims === undefined, "");
+  const hh = html({ courseComplete: true, showDrugs: false });
+  check(`${label}  والأدويةُ مخفيّة: «أخذ كلَّ جرعات العلاج اللازمة كاملةً» لا «انطت ٣ من ٦»`,
+    hh.includes("{csht.dosesAllGiven|total=6}") && !hh.includes("{csht.dosesHidden") && html({ showDrugs: false }).includes("{csht.dosesHidden|given=3,total=6}"), "");
+  const noMeds = M.composeSheet({ ...base, courseComplete: true, model: { ...stay, meds: [], doses: [], totals: { ...stay.totals, meds: 0, doses: 0, given: 0, missed: 0, overdue: 0, pending: 0 } } });
+  check(`${label}  وبلا أدوية لا تصريح (ما في علاجٍ يكتمل)`, noMeds.claims === undefined);
+  const rb = M.readSheet(JSON.parse(JSON.stringify(sc)));
+  check(`${label}  والورقةُ المحفوظة تحمل التصريحَ والشاراتِ وعمودَ الحالة`,
+    rb?.claims?.complete === true && rb.blocks.find((b) => b.key === "doses")?.statusCol === 4 && rb.blocks.find((b) => b.key === "doses")?.rows[0]?.tone === "ok", "");
   return fails === before;
 }
 
@@ -258,7 +301,7 @@ const MUTANTS = [
   ["compose", "النصائحُ الفارغة تُطبع", "const tips = a.tips.map((x) => x.trim()).filter(Boolean);", "const tips = a.tips;"],
   ["compose", "قسمُ اللقاحات لا يُطفأ", "  if (a.parts.vaccines) {", "  if (true) {"],
   ["print", "بلا تهريب", "export const esc = (s: unknown): string =>\n  String(s ?? \"\").replace(", "export const esc = (s: unknown): string =>\n  String(s ?? \"\").replace(/(?!)/g, (c: string) => c) || String(s ?? \"\").replace("],
-  ["print", "حجمٌ واحد", "@page{size:${p.size};margin:${p.margin}}", "@page{size:A4;margin:${p.margin}}"],
+  ["print", "حجمٌ واحد", "@page{size:${p.size};", "@page{size:A4;"],
   ["summary", "يومياتٌ للسجلّ كلّه", "days: range ? stayDays(inp, range, today, doses) : [],", "days: stayDays(inp, range ?? { from: \"2000-01-01\", to: today }, today, doses),"],
   ["summary", "المؤجّلةُ فائتة باليوميات", "else if (d.state === \"missed\") bump(entry(d.day).missed, d.name);", "else if (d.state === \"missed\" || d.state === \"overdue\") bump(entry(d.day).missed, d.name);"],
   ["summary", "المعطاةُ بيومها المجدول", "if (d.state === \"given\" && d.at) { const day = dayOf(d.at);", "if (d.state === \"given\" && d.at) { const day = d.day;"],
@@ -272,6 +315,14 @@ const MUTANTS = [
   ["print", "الثابتُ يُكتب بالورقة", "items: b.fixed ? b.items : b.items.map(", "items: b.items.map("],
   ["summary", "ساعةُ الكتابة ساعةَ دخول", "inAt: inMove && dayOf(inMove.at) === inDay ? inMove.at : null,", "inAt: inMove ? inMove.at : null,"],
   ["stay", "«دخل» بيوم كتابة السجلّ", "const own = st && kind === \"in\" && day !== st.inDay ? st.inDay : st && kind === \"out\" && st.outDay && day !== st.outDay ? st.outDay : null;", "const own: string | null = null;"],
+  ["summary", "المكتملُ يُبقي الفائت", "meds: m.meds.map((x) => ({ ...x, given: x.total, missed: 0, overdue: 0, pending: 0 })),", "meds: m.meds.map((x) => ({ ...x, given: x.total, missed: x.missed, overdue: 0, pending: 0 })),"],
+  ["summary", "اليومياتُ لا تكتمل", "given: add(x.given, [...x.missed, ...x.overdue]), missed: [] as [string, number][], overdue: [] as [string, number][]", "given: x.given, missed: x.missed, overdue: x.overdue"],
+  ["summary", "مستحقّةُ اليوم لا تُحسب", "if ((d.state !== \"due\" && d.state !== \"upcoming\") || !within(d.day, m.range)) continue;", "continue;"],
+  ["compose", "المخفيّةُ لا تقول المكتمل", "text: complete\n        ? t(\"csht.dosesAllGiven\"", "text: false\n        ? t(\"csht.dosesAllGiven\""],
+  ["compose", "التصريحُ لا يُحفظ", "...(complete ? { claims: { complete: true } } : {}),", "...({}),"],
+  ["print", "الشارةُ فوق نصٍّ معدَّل", "return tn && !blank(c) && !o.edited?.has(k)", "return tn && !blank(c)"],
+  ["print", "بلا علامةٍ مائيّة", "<div class=\"wm\">${logo ? `<img src=\"${logo}\" alt=\"\"/>` : PAW(\"cswm\")}</div>", "<div class=\"wm\"></div>"],
+  ["print", "القراءةُ تُسقط التصريح", "...(obj(o.claims).complete === true ? { claims: { complete: true } } : {}),", ""],
   ["compose", "اليومياتُ تسمّي الأدويةَ المخفيّة", "dayText(x, t, lang, { names: a.showDrugs, ...a.parts })", "dayText(x, t, lang, { ...a.parts, names: true })"],
   ["compose", "اليومياتُ لا تتبع الأقسام", "case \"vaccine\": return show.vaccines ?", "case \"vaccine\": return true ?"],
 ];

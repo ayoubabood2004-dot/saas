@@ -7,9 +7,9 @@
 import type { TFunction } from "i18next";
 import { formatDate, formatNum, formatTime } from "./utils";
 import { PAST_MISS_REASON } from "./backdate";
-import type { CaseModel, DayEntry } from "./caseSummary";
+import { markCourseComplete, type CaseModel, type DayEntry, type DoseState } from "./caseSummary";
 import type { LogEvent } from "./stayLog";
-import type { CaseSheet, Field, Paper, SheetBlock, SheetEdit, Spot } from "./caseSheetPrint";
+import type { CaseSheet, Field, Paper, SheetBlock, SheetEdit, Spot, Tone } from "./caseSheetPrint";
 import { mapTexts } from "./caseSheetPrint";
 import type { Pet } from "@/types";
 
@@ -25,6 +25,8 @@ export function ageOf(dob: string | null | undefined, t: TFunction, today: strin
 }
 
 const f = (key: string, label: string, value: string): Field => ({ key, label, value });
+/** لونُ حالة الجرعة بسجلّ الجرعات: انطت خضراء، وما انطت حمراء، ومتأخّرةٌ صفراء، واليومُ زرقاء، والقادمةُ بلا لون. */
+const TONE: Record<DoseState, Tone | undefined> = { given: "ok", missed: "bad", overdue: "warn", due: "info", upcoming: undefined };
 
 /** ما تُظهره اليومياتُ — خياراتُ النافذة نفسُها: «أخفِ أسماء الأدوية» يعدّ الجرعاتَ بلا أسمائها، والقسمُ المطفأ
  *  (لقاحات، زيارات، ملاحظات، تحاليل) لا يرجع من باب اليوميات. */
@@ -72,8 +74,12 @@ export function composeSheet(a: {
   t: TFunction; lang: string; pet: Pet; model: CaseModel; scope: "stay" | "all"; paper: Paper;
   showDrugs: boolean; showDoseLog: boolean; showDays?: boolean; parts: { vaccines: boolean; visits: boolean; notes: boolean; labs: boolean };
   tips: string[]; doctorNote: string; clinic: CaseSheet["clinic"]; doctor: string | null; today: string; autoPrint: boolean;
+  /** «العلاج مكتمل»: تصريحُ الطبيب أنه أعطى كلَّ الجرع ولو ما خُتمت بالنظام (markCourseComplete) — يُحفظ تصريحاً مع التقرير. */
+  courseComplete?: boolean;
 }): CaseSheet {
-  const { t, lang, pet, model: m } = a;
+  const { t, lang, pet } = a;
+  const complete = !!a.courseComplete && a.model.meds.length > 0;
+  const m = complete ? markCourseComplete(a.model) : a.model;
   const d = (iso: string | null | undefined) => (iso ? formatDate(iso, lang, true) : "");
   const dt = (iso: string | null | undefined) => (iso ? `${formatDate(iso, lang, true)} ${formatTime(iso, lang)}` : "");
   const stay = a.scope === "stay" ? m.stays[0] ?? null : m.current;
@@ -124,12 +130,12 @@ export function composeSheet(a: {
           t("csht.givenOf", { given: formatNum(x.given), total: formatNum(x.total) }),
           x.firstDay === x.lastDay ? d(x.firstDay) : `${d(x.firstDay)} — ${d(x.lastDay)}`,
           [x.missed ? t("csht.missedN", { n: formatNum(x.missed) }) : "", x.overdue ? t("csht.overdueN", { n: formatNum(x.overdue) }) : "",
-            x.pending ? t("csht.pendingN", { n: formatNum(x.pending) }) : ""].filter(Boolean).join(" · "),
-        ] })) });
+            x.pending ? t("csht.pendingN", { n: formatNum(x.pending) }) : ""].filter(Boolean).join(" · ") || (x.total > 0 && x.given === x.total ? t("csht.courseDone") : ""),
+        ], ...(x.total > 0 && x.given === x.total ? { tone: "ok" as const } : {}) })), statusCol: 5 });
       if (a.showDoseLog && m.doses.length) {
-        blocks.push({ key: "doses", kind: "table", title: t("csht.doseLog"),
+        blocks.push({ key: "doses", kind: "table", title: t("csht.doseLog"), statusCol: 4,
           head: [t("csht.day"), t("csht.time"), t("csht.med"), t("csht.dose"), t("csht.state"), t("csht.givenAt")],
-          rows: m.doses.map((x) => ({ key: x.id, cells: [
+          rows: m.doses.map((x) => ({ key: x.id, ...(TONE[x.state] ? { tone: TONE[x.state] } : {}), cells: [
             d(x.day), x.time, x.name, x.amount,
             // «ما انطت» تقولها الحالةُ نفسُها — علامةُ السجلّ السابق لا تُكرَّر بجانبها، وسببٌ غيرُها يُكتب.
             x.state === "missed" && x.missedReason && x.missedReason.trim() !== PAST_MISS_REASON ? `${t(`csht.states.${x.state}`)} (${x.missedReason})` : t(`csht.states.${x.state}`),
@@ -137,7 +143,10 @@ export function composeSheet(a: {
           ] })) });
       }
     } else {
-      blocks.push({ key: "meds", kind: "text", title: t("csht.treatments"), text: t("csht.dosesHidden", { given: formatNum(tt.given), total: formatNum(tt.doses) }) });
+      // أسماءُ الأدوية مخفيّة: العددُ كما سُجّل — أو بالتصريح «أخذ كلَّ جرعات العلاج اللازمة كاملةً».
+      blocks.push({ key: "meds", kind: "text", title: t("csht.treatments"), text: complete
+        ? t("csht.dosesAllGiven", { total: formatNum(tt.doses) })
+        : t("csht.dosesHidden", { given: formatNum(tt.given), total: formatNum(tt.doses) }) });
     }
   }
   if (a.parts.vaccines) {
@@ -182,6 +191,7 @@ export function composeSheet(a: {
     blocks,
     signatures: [f("clinic", t("csht.sigClinic"), a.doctor ?? ""), f("owner", t("csht.sigOwner"), pet.owner_name ?? "")],
     footer: t("csht.footer"),
+    ...(complete ? { claims: { complete: true } } : {}),
     autoPrint: a.autoPrint,
   };
 }
