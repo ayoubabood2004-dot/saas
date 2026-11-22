@@ -44,7 +44,6 @@ import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, ma
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { cardImagePath, productImageUrl } from "@/lib/storeLib";
 import type { EncodedPhoto } from "@/lib/photoPipeline";
-import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { page } from "@/lib/lazyPage";
 import { LoadBoundary } from "@/components/LoadBoundary";
@@ -63,6 +62,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 /* محرّرُ الصورة حزمةٌ كسولة — لا يدفع المخزونُ وزنَه إلا حين تُفتح الصورة. */
 const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
+/* منتقي المكتبة كسولٌ بنطاقه (`libp`): لا يدفع وزنَه ولا نصوصَه إلا من يفتحه. */
+const ImageLibraryPicker = page(() => import("@/components/inventory/ImageLibraryPicker").then((m) => ({ default: m.ImageLibraryPicker })), ["libp"]);
 
 const LOW_STOCK = 5;
 /** A product's reorder level — its own min_stock if set, else the default. */
@@ -2293,8 +2294,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                   onLibrary={() => { setEditorOpen(false); setLibOpen(true); }} />
               </Suspense>
             )}
-            <ImageLibraryPicker open={libOpen} onClose={() => setLibOpen(false)}
-              onPick={(row) => { setLibPick(row.path); setPhoto(null); setRemovePhoto(false); }} />
+            {libOpen && (
+              <Suspense fallback={null}>
+                <ImageLibraryPicker open onClose={() => setLibOpen(false)}
+                  target={{ name: f.name || t("pos.photoLabel", "صورة المنتج بالمتجر"), barcode: f.barcode || null, company: f.company || null, image_path: libPick ?? product?.image_path ?? null }}
+                  onPick={(row) => { setLibPick(row.path); setPhoto(null); setRemovePhoto(false); }} />
+              </Suspense>
+            )}
           </div>
         </div>
       </div>

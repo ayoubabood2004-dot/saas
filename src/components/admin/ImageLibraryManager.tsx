@@ -28,7 +28,7 @@ import { productImageUrl } from "@/lib/storeLib";
 import { describeDbError, describeUploadError } from "@/lib/errors";
 import { cn, searchable, formatNum } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { LEVELS, childrenOf, cutAt, keyOfValue, nextLevel, under, valueOf, type Level, type LibPath } from "@/lib/libraryLevels";
+import { LEVELS, childrenOf, cleanLibName, cutAt, keyOfValue, nextLevel, under, valueOf, type Level, type LibPath } from "@/lib/libraryLevels";
 import { clinicLibraryReady, idsUnder, isLibraryColumnMissing, libraryPatch, rowsOf, type LibScope } from "@/lib/libraryScope";
 import { LibraryImport } from "./LibraryImport";
 import type { LibraryImage } from "@/types";
@@ -136,7 +136,8 @@ export function ImageLibraryManager({ scope = "public" }: { scope?: "public" | "
   const openEdit = (r: LibraryImage) => {
     playTap();
     setEditing(r);
-    setEf({ name: r.name, company: r.company ?? "", kind: r.kind ?? "", agency: r.agency ?? "", section: r.section ?? "", barcode: r.barcode ?? "" });
+    // الاسمُ منظَّفاً (cleanLibName): «&#8211;» نصّاً من ملف الموزّع يُحفظ «–» حين يُحفظ التعديل.
+    setEf({ name: cleanLibName(r.name), company: r.company ?? "", kind: r.kind ?? "", agency: r.agency ?? "", section: r.section ?? "", barcode: r.barcode ?? "" });
   };
   const saveEdit = async () => {
     if (!editing || busy || !ef.name.trim()) return;
@@ -163,7 +164,7 @@ export function ImageLibraryManager({ scope = "public" }: { scope?: "public" | "
   const found = useMemo(() => {
     if (!searching) return [];
     const ql = searchable(q);
-    return view.filter((r) => [r.name, r.company, r.kind, r.agency, r.section, r.barcode].some((x) => x && searchable(x).includes(ql)));
+    return view.filter((r) => [cleanLibName(r.name), r.company, r.kind, r.agency, r.section, r.barcode].some((x) => x && searchable(x).includes(ql)));
   }, [view, q, searching]);
 
   const here = useMemo(() => under(view, path), [view, path]);
@@ -383,7 +384,7 @@ export function ImageLibraryManager({ scope = "public" }: { scope?: "public" | "
                     <img src={productImageUrl(r.path) ?? undefined} alt="" loading="lazy"
                       className="aspect-square w-full bg-surface-2 object-cover"
                       onError={(e) => { e.currentTarget.hidden = true; }} />
-                    <span className="line-clamp-2 p-1.5 text-2xs font-bold leading-snug text-ink" dir="auto">{r.name}</span>
+                    <span className="line-clamp-2 p-1.5 text-2xs font-bold leading-snug text-ink" dir="auto">{cleanLibName(r.name)}</span>
                     {!editable ? null : confirmId === r.id ? (
                       <div className="flex flex-wrap items-center justify-between gap-1 bg-warn-50 p-1.5 dark:bg-warn-500/10" data-libconfirm>
                         <span className="text-2xs font-bold text-warn-700">
