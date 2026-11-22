@@ -96,7 +96,19 @@ export function PetSummary({ pet, input, onGo, canPrint }: {
   const [movements, setMovements] = useState<PetMovement[]>([]);
   const [surgeries, setSurgeries] = useState<Surgery[] | null>(null);
   const [extraFailed, setExtraFailed] = useState(false);
-  const [printing, setPrinting] = useState(false);
+  const [printing, setPrinting] = useState<false | "sheet" | "printed">(false);
+  // التقاريرُ المطبوعة (0287): «شنو نطى للزبون آخر مرّة» — تُعدّ هنا وتُفتح بنافذة الطباعة. فشلُها لا يُقال «ما انطبع شي»:
+  // الزرُّ يغيب، والنافذةُ تقول الخطأ حين تُفتح. والبابُ كسول (لا يدخل قطعةَ الملخّص).
+  const [printed, setPrinted] = useState<{ n: number; last: string } | null>(null);
+  const [printedTick, setPrintedTick] = useState(0);
+  useEffect(() => {
+    if (!canPrint) return;
+    let alive = true;
+    void import("@/lib/caseReportsApi").then((m) => m.caseReportsApi.listForPet(pet.id))
+      .then((xs) => { if (alive) setPrinted(xs.length ? { n: xs.length, last: xs[0].created_at } : null); })
+      .catch(() => { if (alive) setPrinted(null); });   /* swallow-ok: تلميحٌ بجانب الزرّ — النافذةُ تقول الخطأ */
+    return () => { alive = false; };
+  }, [pet.id, canPrint, printedTick]);
 
   useEffect(() => {
     let alive = true;
@@ -132,8 +144,13 @@ export function PetSummary({ pet, input, onGo, canPrint }: {
           <h2 className="font-display text-xl font-extrabold text-ink">{t("psum.title")}</h2>
           <p className="text-xs text-ink-subtle">{t("psum.sub")}</p>
         </div>
+        {canPrint && printed && (
+          <Button variant="secondary" onClick={() => { playTap(); setPrinting("printed"); }} title={t("psum.printedLast", { date: dt(printed.last) })} data-sum-printed={printed.n}>
+            {t("psum.printed", { n: formatNum(printed.n) })}
+          </Button>
+        )}
         {canPrint && (
-          <Button leftIcon={<Printer size={16} />} onClick={() => { playTap(); setPrinting(true); }} data-sum-print>{t("psum.print")}</Button>
+          <Button leftIcon={<Printer size={16} />} onClick={() => { playTap(); setPrinting("sheet"); }} data-sum-print>{t("psum.print")}</Button>
         )}
       </div>
 
@@ -310,7 +327,7 @@ export function PetSummary({ pet, input, onGo, canPrint }: {
 
       {printing && (
         <Suspense fallback={null}>
-          <CaseSheetDialog petId={pet.id} data={{ pet, input: full }} onClose={() => setPrinting(false)} />
+          <CaseSheetDialog petId={pet.id} data={{ pet, input: full }} startTab={printing} onClose={() => { setPrinting(false); setPrintedTick((n) => n + 1); }} />
         </Suspense>
       )}
     </div>
