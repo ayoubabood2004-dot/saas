@@ -9543,7 +9543,13 @@
     "completeHint": "The report states the animal received every treatment dose, even if some aren't marked in the system yet. With drug names off it reads: received all the required treatment doses. Saved with the report as your declaration.",
     "dosesAllGiven": "The animal received all the required treatment doses in full — {{total}} in total.",
     "courseDone": "Course completed",
-    "claimComplete": "In this report the doctor declared the course complete with every dose given — the doctor's statement, not the system record."
+    "claimComplete": "In this report the doctor declared the course complete with every dose given — the doctor's statement, not the system record.",
+    "theme": "Report style",
+    "themes": {
+      "formal": "Formal",
+      "modern": "Modern",
+      "elegant": "Elegant"
+    }
   },
   "psum": {
     "title": "Case summary",

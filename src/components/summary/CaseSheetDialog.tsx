@@ -30,8 +30,8 @@ import { cn, formatDate, formatTime, localISO, uuid } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { buildCaseModel, dayOf, stayRange, type CaseInput } from "@/lib/caseSummary";
 import {
-  applyEdits, buildCaseSheetHTML, openCaseSheet, PAPERS, revertEdits, sheetTexts,
-  type CaseSheet, type Edits, type Paper,
+  applyEdits, buildCaseSheetHTML, DEFAULT_THEME, openCaseSheet, PAPERS, revertEdits, sheetTexts, THEMES,
+  type CaseSheet, type Edits, type Paper, type Theme,
 } from "@/lib/caseSheetPrint";
 import { composeSheet, labelEdits } from "@/lib/caseSheetCompose";
 import type { CaseReport, CaseReportHead, CaseReportNew } from "@/lib/caseReportsApi";
@@ -42,6 +42,10 @@ export interface CaseSheetData { pet: Pet; input: CaseInput }
 const PAPER_KEY = "vp_case_paper";
 const readPaper = (): Paper => {
   try { const v = localStorage.getItem(PAPER_KEY) as Paper | null; return v && PAPERS.includes(v) ? v : "a4"; } catch { return "a4"; }
+};
+const THEME_KEY = "vp_case_theme";
+const readTheme = (): Theme => {
+  try { const v = localStorage.getItem(THEME_KEY) as Theme | null; return v && THEMES.includes(v) ? v : DEFAULT_THEME; } catch { return DEFAULT_THEME; }
 };
 /** بابُ التقارير كسولٌ (0287) — لا يدخل قطعةَ النافذة ولا الإقلاع. */
 const loadMod = () => import("@/lib/caseReportsApi");
@@ -91,6 +95,7 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
   const [tick, setTick] = useState(0);
   const [pad, setPad] = useState<{ address: string; phones: string[] } | null>(null);
   const [paper, setPaper] = useState<Paper>(readPaper);
+  const [theme, setTheme] = useState<Theme>(readTheme);
   const [scope, setScope] = useState<"stay" | "all">(admissionId ? "stay" : "all");
   const [showDrugs, setShowDrugs] = useState(true);
   const [showDoseLog, setShowDoseLog] = useState(true);
@@ -180,17 +185,17 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
   const [base, setBase] = useState<CaseReport | null>(null);
   const fresh = useMemo<CaseSheet | null>(() => (pet && model ? composeSheet({
     t, lang, pet, model, scope, paper, showDrugs, showDoseLog, showDays, parts, tips: (tipsText ?? "").split("\n"), doctorNote,
-    clinic, doctor: user?.full_name ?? null, today, autoPrint: false, courseComplete,
+    clinic, doctor: user?.full_name ?? null, today, autoPrint: false, courseComplete, theme,
   }) : null),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [pet, model, scope, paper, showDrugs, showDoseLog, showDays, parts, tipsText, doctorNote, clinic, lang, courseComplete]);
+  [pet, model, scope, paper, showDrugs, showDoseLog, showDays, parts, tipsText, doctorNote, clinic, lang, courseComplete, theme]);
   const generated = useMemo<CaseSheet | null>(() => {
     if (!base?.sheet) return fresh;
     // تاريخُ الطباعة تاريخُ اليوم: نسخةٌ تُطبع اليوم لا تحمل تاريخَ طباعتها الأولى.
     const g = revertEdits(base.sheet, base.edits);
     const now = formatDate(new Date().toISOString(), lang, true);
-    return { ...g, paper, autoPrint: false, meta: g.meta.map((f) => (f.key === "printed" ? { ...f, value: now } : f)) };
-  }, [base, fresh, paper, lang]);
+    return { ...g, paper, theme, autoPrint: false, meta: g.meta.map((f) => (f.key === "printed" ? { ...f, value: now } : f)) };
+  }, [base, fresh, paper, theme, lang]);
   const genTexts = useMemo(() => (generated ? sheetTexts(generated) : new Map<string, string>()), [generated]);
   const genTextsRef = useRef(genTexts);
   genTextsRef.current = genTexts;
@@ -298,6 +303,7 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
     onClose();
   };
   const pickPaper = (p: Paper) => { playTap(); setPaper(p); try { localStorage.setItem(PAPER_KEY, p); } catch { /* swallow-ok: تفضيلٌ بالجهاز */ } };
+  const pickTheme = (v: Theme) => { playTap(); setTheme(v); try { localStorage.setItem(THEME_KEY, v); } catch { /* swallow-ok: تفضيلٌ بالجهاز */ } };
 
   // ── «المطبوعة»: التقريرُ يُجلب كاملاً حين يُفتح، ويُعرض بتعديلاته ──
   const [view, setView] = useState<{ id: string; rep: CaseReport | null; err?: string } | null>(null);
@@ -327,6 +333,7 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
     playTap();
     setBase(rep);
     setPaper(rep.paper);
+    setTheme(rep.sheet.theme ?? DEFAULT_THEME);
     editsRef.current = Object.fromEntries(rep.edits.map((e) => [e.k, e]));
     setCarried(null);
     setEpoch((n) => n + 1);
@@ -473,6 +480,11 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
                   </div>
                 )}
                 <div className="space-y-3 rounded-2xl border border-line bg-surface-2 p-3">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold text-ink-subtle">{t("csht.theme")}</p>
+                    <Seg<Theme> value={theme} onChange={pickTheme}
+                      options={THEMES.map((v) => ({ value: v, label: <span data-cs-theme={v}>{t(`csht.themes.${v}`)}</span> }))} />
+                  </div>
                   <div className="space-y-1.5">
                     <p className="text-xs font-bold text-ink-subtle">{t("csht.paper")}</p>
                     <Seg<Paper> value={paper} onChange={pickPaper}
