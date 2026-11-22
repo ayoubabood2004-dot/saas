@@ -8,6 +8,8 @@
  * الشِّقُّ الصِّرف هنا مفحوصٌ بقاعدةٍ مزيّفة بالذاكرة (voice-test)؛ ومحوِّلُ IndexedDB الحقيقيّ رقيق.
  * ========================================================================== */
 import type { LocalClip, PendingFlag } from "./voiceTypes";
+import { PENDING_KEY, PENDING_EVENT } from "./voicePending";
+export { PENDING_KEY, PENDING_EVENT, pendingCounts, readPendingFlag } from "./voicePending";
 
 export interface ChunkRec {
   id: string;
@@ -32,8 +34,6 @@ export interface ShelfStore {
 }
 
 export const DB_NAME = "dv-voice";
-export const PENDING_KEY = "vp_voice_pending";
-export const PENDING_EVENT = "vp:voice-pending";
 export const REC_LOCK = (id: string): string => `dv-voice-rec:${id}`;
 export const UPLOAD_LOCK = "dv-voice-upload";
 
@@ -142,15 +142,6 @@ export function pendingFlag(clips: readonly LocalClip[]): PendingFlag {
   return f;
 }
 
-/** ما يعرضه الشريط: تسجيلاتي (ومنها فاشل)، وتسجيلاتُ حساباتٍ أخرى على هذا الجهاز. */
-export function pendingCounts(flag: PendingFlag, user: string | null): { mine: number; mineFailed: number; others: number } {
-  let mine = 0, mineFailed = 0, others = 0;
-  for (const [k, [n, failed]] of Object.entries(flag)) {
-    if (user && k === user) { mine += n; mineFailed += failed; } else others += n;
-  }
-  return { mine, mineFailed, others };
-}
-
 /** اكتب العلمَ المتزامن (يقرؤه الشريطُ بلا قاعدة) وأعلنه لهذا التبويب (والتخزينُ يُعلم غيره). */
 export function writePendingFlag(flag: PendingFlag): void {
   try {
@@ -158,18 +149,6 @@ export function writePendingFlag(flag: PendingFlag): void {
     else localStorage.removeItem(PENDING_KEY);
   } catch { /* تخزينٌ مقفول — الشريطُ يقرأ الرفَّ نفسَه عند فتح /voice */ }
   try { window.dispatchEvent(new CustomEvent(PENDING_EVENT)); } catch { /* بلا نافذة (فحص) */ }
-}
-
-export function readPendingFlag(): PendingFlag {
-  try {
-    const v = JSON.parse(localStorage.getItem(PENDING_KEY) || "{}") as unknown;
-    if (!v || typeof v !== "object") return {};
-    const out: PendingFlag = {};
-    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-      if (Array.isArray(x) && typeof x[0] === "number" && typeof x[1] === "number") out[k] = [x[0], x[1]];
-    }
-    return out;
-  } catch { return {}; }
 }
 
 /** المساحةُ الحرّة أقلُّ من ~١٥ ميغا؟ (تقديرُ المتصفّح؛ بلا تقدير = لا تحذير). */

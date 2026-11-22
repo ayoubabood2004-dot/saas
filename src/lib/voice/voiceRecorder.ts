@@ -90,7 +90,14 @@ export class VoiceRecorder {
   private lastSound = 0;
   private stopping: Promise<LocalClip | null> | null = null;
 
-  constructor(private readonly target: RecTarget, private readonly onChange: (s: RecSnapshot) => void) {}
+  /** السقف: خمسُ دقائق (قرارُ المالك)، والتجريبيُّ دقيقتان — والتنبيهُ قبله بثلاثين ثانية. */
+  private readonly maxMs: number;
+  private readonly nearMs: number;
+
+  constructor(private readonly target: RecTarget, private readonly onChange: (s: RecSnapshot) => void, opts?: { maxMs?: number }) {
+    this.maxMs = opts?.maxMs ?? MAX_MS;
+    this.nearMs = Math.max(0, this.maxMs - (MAX_MS - NEAR_MS));
+  }
 
   snapshot(): RecSnapshot { return this.snap; }
   private set(p: Partial<RecSnapshot>): void { this.snap = { ...this.snap, ...p }; this.onChange(this.snap); }
@@ -174,8 +181,8 @@ export class VoiceRecorder {
     this.timers.push(setInterval(() => {
       const el = Date.now() - this.t0;
       const silent = Date.now() - this.lastSound >= SILENT_MS;
-      if (el !== this.snap.elapsedMs || silent !== this.snap.silent) this.set({ elapsedMs: el, near: el >= NEAR_MS, silent });
-      if (el >= MAX_MS) void this.stop("limit");
+      if (el !== this.snap.elapsedMs || silent !== this.snap.silent) this.set({ elapsedMs: el, near: el >= this.nearMs, silent });
+      if (el >= this.maxMs) void this.stop("limit");
     }, 250));
   }
 

@@ -72,3 +72,6 @@ export function clipFileName(pet: string | null | undefined, isoDay: string, ms:
   const day = /^\d{4}-\d{2}-\d{2}/.test(isoDay) ? isoDay.slice(0, 10) : "0000-00-00";
   return `${safe}-${day}-${fmtDuration(ms).replace(":", "-")}.${ext}`;
 }
+
+/** سقفُ التجريبيّ (دقيقتان) — المسجِّلُ يقف عنده ومرآةُ التجريبيّ ترفض ما فوقه، فالرقمُ واحد. */
+export const DEMO_VOICE_MAX_MS = 120_000;

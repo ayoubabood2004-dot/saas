@@ -104,7 +104,9 @@
     "stuck": "Stuck: {{n}}",
     "stuckTip": "The database kept rejecting these, so they were kept, not deleted — saved on this device. Tap to retry",
     "reviewTip": "Older entries that never reached the server — tap to review them one by one",
-    "others": "Other account: {{n}}"
+    "others": "Other account: {{n}}",
+    "voice": "Recordings not uploaded: {{n}}",
+    "voiceOthers": "Recordings for another account: {{n}}"
   },
   "obx": {
     "back": "Back",
@@ -3738,7 +3740,11 @@
     "rxVoid": "Voided a prescription — {{pet}}",
     "rxPad": "Changed the prescription pad design",
     "rxDel": "Prescription removed with its pet — {{pet}}",
-    "rxUpd": "Updated a prescription — {{pet}}"
+    "rxUpd": "Updated a prescription — {{pet}}",
+    "voiceAdd": "Recorded a voice note for {{pet}}",
+    "voiceVoid": "Deleted a voice note — {{pet}}",
+    "voiceRestore": "Restored a voice note — {{pet}}",
+    "voiceDel": "A voice note was removed from the database — {{pet}}"
   },
   "override": {
     "title": "Manager mode",
@@ -9318,5 +9324,145 @@
     "skip": "Skip",
     "prev": "Previous",
     "saving": "Saving…"
+  },
+  "vnote": {
+    "title": "Voice notes",
+    "titleN": "Voice notes ({{n}})",
+    "btn": "Voice note",
+    "readOnly": "Subscription expired — you can listen but not record",
+    "demo": "Demo: recordings stay on this device (up to 2 min each, 30 in total)",
+    "rec": {
+      "start": "Record",
+      "hint": "Up to {{max}} · saved as soon as you stop",
+      "explain": "The browser will ask for microphone permission — allow it to record",
+      "starting": "Opening the microphone…",
+      "live": "Recording",
+      "stop": "Stop and save",
+      "cancel": "Cancel",
+      "cancelAsk": "Cancel the recording ({{dur}})? It won't be saved",
+      "cancelYes": "Yes, cancel it",
+      "cancelNo": "No, keep recording",
+      "near": "{{s}} seconds left",
+      "limit": "Reached {{max}} — saved. Record another part if you need to",
+      "short": "Too short — not saved",
+      "silent": "No sound is reaching the microphone — make sure it isn't muted",
+      "cutHidden": "Recording stopped when the app went to the background — what was recorded is saved",
+      "cutTrack": "The microphone was taken away (a call or another app) — what was recorded is saved",
+      "cutClosed": "Recording saved ({{dur}})",
+      "again": "Record another part",
+      "busyOther": "Another recording is running — stop it first",
+      "memoryOnly": "This device couldn't store the recording — keep the page open until it uploads",
+      "maybeCut": "Part of this recording may be missing",
+      "lowSpace": "Device storage is low — the recording may not be saved on it",
+      "wakeWarn": "The screen turns off with the device lock — raise the lock time before a long recording",
+      "saved": "Saved on this device — uploading"
+    },
+    "mic": {
+      "denied": "Microphone permission was refused — allow it from the browser's site settings and try again",
+      "busy": "The microphone is in use by another app — close it and try again",
+      "unavailable": "No microphone here",
+      "failed": "The microphone didn't open — try again",
+      "unsupported": "This browser can't record audio — update it or use another browser"
+    },
+    "st": {
+      "saving": "Saving…",
+      "local": "On this device — keep the app open until it shows uploaded ✓",
+      "memory": "In memory only — don't close the page until it uploads",
+      "uploading": "Uploading… {{pct}}%",
+      "slow": "Slow connection — still going",
+      "saved": "Uploaded ✓",
+      "waiting": "Waiting for the connection — retries by itself",
+      "server": "The server didn't answer — retries by itself",
+      "notReady": "Voice notes aren't ready on the server yet — it will upload once they are",
+      "readOnly": "Subscription expired — it stays on this device until it's renewed",
+      "otherClinic": "Recorded in another clinic — open that clinic to upload it",
+      "otherUser": "Recorded by another account on this device — it uploads when that account signs in",
+      "failed": "Not uploaded: {{why}}",
+      "retry": "Try again",
+      "voidPending": "Deleted — uploading to the deleted list",
+      "recording": "Recording now…"
+    },
+    "shelf": {
+      "title": "Recordings on this device",
+      "hint": "Recordings here haven't reached the server yet. They upload by themselves — or download them as a file to keep them.",
+      "empty": "Nothing waiting — every recording reached the server",
+      "others": "Recordings by other accounts on this device: {{n}} — they upload when their owner signs in",
+      "crashed": "This recording was cut off (the tab closed or the device turned off while recording)",
+      "noHead": "The start of the recording is missing — it can't be played",
+      "save": "Save what was recorded",
+      "discard": "Delete from this device",
+      "download": "Download as a file",
+      "discardAsk": "Delete the recording on this device ({{dur}}) — {{pet}}? It hasn't uploaded, so it won't come back. Download it as a file first",
+      "discardYes": "Delete it",
+      "keep": "Keep it",
+      "open": "Open the visit"
+    },
+    "leave": {
+      "title": "Recordings haven't uploaded yet",
+      "body": "{{n}} recording(s) are only in this page's memory. Signing out now loses them. Wait for the upload, or download them as files.",
+      "upload": "Upload now",
+      "anyway": "Sign out and lose them"
+    },
+    "list": {
+      "empty": "No voice notes",
+      "failed": "Voice notes didn't load",
+      "retry": "Try again",
+      "trash": "Deleted ({{n}})"
+    },
+    "orph": {
+      "title": "Recordings of deleted pets ({{n}})",
+      "empty": "None"
+    },
+    "kind": {
+      "note": "Visit note",
+      "day": "Day note — {{day}}",
+      "plan": "Diagnosis and plan",
+      "closing": "Closing note"
+    },
+    "play": {
+      "play": "Play",
+      "pause": "Pause",
+      "speed": "Speed",
+      "seek": "Position",
+      "cant": "This device can't play this format ({{fmt}}) — listen on another device or update the system",
+      "loadFailed": "The audio didn't load — try again",
+      "again": "Tap play again",
+      "hidden": "Audio is hidden after deletion",
+      "late": "Reached the server {{time}}",
+      "busyRec": "Playback is off while recording"
+    },
+    "del": {
+      "btn": "Delete",
+      "ask": "Delete the voice note ({{dur}}) — {{who}}, {{time}}? It goes to the deleted list and the manager can restore it",
+      "reason": "Reason (optional, visible to staff)",
+      "yes": "Delete it",
+      "no": "Keep it",
+      "done": "Deleted — it's in the deleted list",
+      "by": "Deleted by {{who}} · {{time}}",
+      "why": "Reason: {{why}}",
+      "restore": "Restore",
+      "restored": "Restored",
+      "details": "Details",
+      "histVoid": "Deleted {{time}} — {{who}}",
+      "histRestore": "Restored {{time}} — {{who}}",
+      "fmt": "Format {{fmt}} · {{size}} KB"
+    },
+    "err": {
+      "forbidden": "Voice recording is for those with medical-record permission (vet and manager)",
+      "visit": "The visit isn't in your clinic for this pet",
+      "operator": "The operator listens to voice notes but doesn't record or delete in a client clinic",
+      "voidForbidden": "Deleting someone else's recording is for the manager — and your own within 24 hours while the visit is open",
+      "restoreForbidden": "Restoring a deleted recording is for the manager — or whoever deleted it within 24 hours",
+      "gone": "The voice note isn't in your clinic",
+      "bug": "The server refused the recording's data",
+      "id": "The server returned a different recording",
+      "serverFile": "The file didn't arrive complete on the server",
+      "tooBig": "The recording is larger than allowed",
+      "format": "The server doesn't accept this format",
+      "localCorrupt": "The copy on this device is damaged — download it as a file",
+      "noHead": "The start of the recording is missing",
+      "generic": "Didn't go through — try again"
+    },
+    "chip": "Voice {{dur}}"
   }
 }

@@ -67,7 +67,7 @@ export const clipPath = (clinic: string, clip: Pick<LocalClip, "pet_id" | "id" |
   `${clinic}/${clip.pet_id}/${clip.id}.${extOf(clip.mime ?? "audio/mp4")}`;
 
 /** البايتاتُ كما سجّلها الجهاز: من الذاكرة إن كانت وحدها، وإلا من القطع المحفوظة (الجزءُ المتّصلُ من ٠). */
-async function clipBytes(clip: LocalClip): Promise<Uint8Array | null> {
+export async function clipBytes(clip: LocalClip): Promise<Uint8Array | null> {
   const mem = memoryParts.get(clip.id);
   let parts: ArrayBuffer[];
   if (mem) parts = mem;
@@ -237,6 +237,25 @@ export function armUploader(): void {
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kickUploader(); });
   setInterval(() => kickUploader(), 30_000);
   kickUploader();
+}
+
+/** «حذف» على تسجيلٍ ما ارتفع بعد: لا يُمحى — يُختم طلبُ الحذف فيرتفع محذوفاً (يرجّعه المدير). */
+export async function requestVoid(clip: LocalClip, reason: string | null): Promise<void> {
+  await save({ ...clip, void_requested: { at: new Date().toISOString(), reason } });
+  kickUploader(true);
+}
+
+/** امسح تسجيلاً من الجهاز بقرار الطبيب (ما ارتفع ولن يرتفع: «احذفه» بعد «نزّله ملف»). */
+export async function discardClip(id: string): Promise<void> {
+  await deleteClipSafe(id);
+  releaseMemoryHold(id);
+  await shelfChanged();
+}
+
+/** «أعد المحاولة» على تسجيلٍ منتظر أو فاشل: يُرجع للرفع الآن. */
+export async function retryClip(clip: LocalClip): Promise<void> {
+  await save({ ...clip, state: clip.memory_only ? "memory" : "recorded", reason: undefined, next_at: undefined });
+  kickUploader(true);
 }
 
 export { voiceMissing };

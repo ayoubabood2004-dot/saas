@@ -146,7 +146,8 @@ export default defineConfig({
             // Cache Supabase storage objects (patient photos) only. Bounded by a
             // 1-day max age + a hard purge on logout (AuthContext.signOut), so a
             // previous clinic's images can't linger on a shared/kiosk device.
-            urlPattern: ({ url }) => url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/"),
+            // الملاحظاتُ الصوتية (0287) خارج الخبيئة: طلباتُ المدى (Range) تصل الخادمَ كما هي، والصوتُ لا يملأ Cache Storage.
+            urlPattern: ({ url }) => url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/") && !url.pathname.includes("/voice-notes/"),
             handler: "CacheFirst",
             options: {
               cacheName: "media-cache",

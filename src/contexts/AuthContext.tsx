@@ -624,8 +624,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * (`vp:voice-leave`)، و`force` بعد أن يختار «اطلع وضيّعها». وتسجيلٌ شغّالٌ أو رفعٌ بالطريق يُنتظر حتى يُحفظ (بسقف). */
   const signOutGated = (opts?: { force?: boolean }) => {
     if (!opts?.force && leaveBlocked()) {
-      try { window.dispatchEvent(new CustomEvent("vp:voice-leave")); } catch { /* بلا نافذة */ }
-      return;
+      // شارةُ التسجيلات تمسكه (preventDefault) وتفتح /voice?leave=1؛ وبلا شارةٍ تسمع لا يُحبس الخروجُ بصمت
+      let held = false;
+      try { held = !window.dispatchEvent(new CustomEvent("vp:voice-leave", { cancelable: true })); } catch { /* بلا نافذة */ }
+      if (held) return;
     }
     void settleLeave(2500).then(signOut);
   };

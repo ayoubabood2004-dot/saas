@@ -23,6 +23,7 @@
     "live:picker": "node scripts/live/purchase-picker.mjs",
     "live:backdate": "node scripts/live/backdate.mjs",
     "live:intake": "node scripts/live/intake.mjs",
+    "live:voice": "node scripts/live/voice.mjs",
     "live:company-book": "node scripts/live/company-book.mjs",
     "live:delivery-search": "node scripts/live/delivery-search.mjs",
     "live:mobile-width": "node scripts/live/mobile-width.mjs",

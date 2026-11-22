@@ -17,9 +17,9 @@ import { effectiveCan, peekMyPermissions, type StaffRole } from "./staff";
 import { openVoiceDb } from "./voice/voiceShelf";
 import { readVoiceRow, type PutOpts, type VoiceAddPayload } from "./voiceApi";
 import type { VoiceMime, VoiceRow } from "./voice/voiceTypes";
+import { DEMO_VOICE_MAX_MS } from "./voice/voiceFormat";
 
 export const DEMO_VOICE_MAX = 30;
-export const DEMO_VOICE_MAX_MS = 120_000;
 const KEY = "vp_demo_voice";
 const H24 = 24 * 3600_000;
 const TEN_MIN = 10 * 60_000;
