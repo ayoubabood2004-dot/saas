@@ -28,7 +28,7 @@ export function usdCentsIn(s: string): number | null {
 export const usdOf = (c: number): string => `$${(c / 100).toFixed(2)}`;
 
 /** ما تقوله شاشةُ البيع قبل البيعة (النطاقُ المملوك لا يُقرأ خارج صاحبه — تُنادى بـimport()). */
-export const mixedSay = (k: "delivery" | "backdate" | "bad" | "debtName" | "notReady"): string => i18n.t(`mxp.say.${k}`);
+export const mixedSay = (k: "delivery" | "backdate" | "bad" | "debtName" | "notReady" | "usdOnly", name?: string): string => i18n.t(`mxp.say.${k}`, { name });
 
 export type UsdMethod = "cash" | "card" | "transfer";
 
