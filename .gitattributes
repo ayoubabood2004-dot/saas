@@ -4,3 +4,6 @@
 # جديدٍ على جهاز ويندوز كان يفشل `store-i18n --check` قبل أن يلمسه أحد — والمحتوى
 # مطابقٌ حرفياً — ويقف `lint` عنده فلا يجري ما بعده من حرّاس. (Vercel لينكس: سليم.)
 src/i18n/store.ar.json text eol=lf
+
+# تسجيلاتٌ صوتيّة لفحص voice-test — بايتاتٌ تُقرأ كما هي، لا نصّ.
+scripts/fixtures/voice/* binary
