@@ -250,5 +250,181 @@ check("الانتظار ٥ ث ← ٣٠ ← ٢ د ← ١٠ د ← ١٠ د", [1, 2
 }
 check("المساحة: أقلُّ من ١٥ ميغا ⇒ تحذير، والمجهولُ لا", S.lowSpace({ quota: 100e6, usage: 90e6 }) && !S.lowSpace({ quota: 100e6, usage: 10e6 }) && !S.lowSpace(null));
 
+/* ── (د) الرافع: تصنيفُ الفشل وترتيبُ الرفع ─────────────────────────────── */
+console.log("— الرافع");
+const stubs = {
+  name: "stubs",
+  setup(b) {
+    const map = {
+      i18next: "const i = { t: (k) => k, language: 'ar', use: () => i, init: () => i, on: () => i }; export default i;",
+      "./supabase": "export const supabase = null; export const supabaseUrl = ''; export const supabaseAnonKey = '';",
+      "./globalToast": "export const emitGlobalToast = () => {};",
+      "../voiceApi": [
+        "export const voiceApi = new Proxy({}, { get: (_, k) => (...a) => globalThis.__api[k](...a) });",
+        "export const voiceCode = (e) => { const m = e && e.message; return typeof m === 'string' && /^voice_[a-z_]+$/.test(m) ? m : (e && e.code) || ''; };",
+        "const MISSING = new Set(['42P01','PGRST205','PGRST202']);",
+        "export const isVoiceMissing = (e) => !!e && (e.code === 'voice_missing' || MISSING.has(e.code));",
+        "export const voiceMissing = () => Object.assign(new Error('voice_missing'), { code: 'voice_missing' });",
+      ].join("\n"),
+    };
+    b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast|\.\.\/voiceApi)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
+    b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
+    b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
+  },
+};
+const built2 = await esbuild.build({
+  stdin: {
+    contents: ['export * as U from "./src/lib/voice/voiceUploader.ts";', 'export * as S2 from "./src/lib/voice/voiceShelf.ts";', 'export * as M2 from "./src/lib/voice/voiceMedia.ts";'].join("\n"),
+    resolveDir: process.cwd(), sourcefile: "voice-test-uploader.ts", loader: "ts",
+  },
+  bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", plugins: [stubs],
+  define: { "import.meta.env": "__VITE_ENV__" }, banner: { js: "const __VITE_ENV__ = {};" },
+});
+const dir2 = mkdtempSync(path.join(tmpdir(), "voice-test-"));
+const file2 = path.join(dir2, "bundle.mjs");
+writeFileSync(file2, built2.outputFiles[0].text);
+globalThis.document = globalThis.document ?? { visibilityState: "visible", addEventListener() {}, removeEventListener() {} };
+const { U, S2, M2 } = await import(pathToFileURL(file2).href);
+rmSync(dir2, { recursive: true, force: true });
+
+const st = (status, message = "x") => Object.assign(new Error(message), { status });
+const code = (c, message = c) => Object.assign(new Error(message), { code: c });
+const V = (v) => v.kind + (v.reason ? ":" + v.reason : "");
+check("الرفع: TypeError (لا شبكة) ⇒ ينتظر الشبكة", V(U.classifyUpload(new TypeError("Failed to fetch"))) === "waiting:network");
+check("الرفع: إلغاءُ الحارس ⇒ ينتظر الشبكة", V(U.classifyUpload(Object.assign(new Error("aborted"), { name: "AbortError" }))) === "waiting:network");
+check("الرفع: 401/429/502 ⇒ ينتظر الخادم", [401, 429, 502].every((n) => V(U.classifyUpload(st(n))) === "waiting:server"));
+check("الرفع: 409 / Duplicate ⇒ مرفوعٌ أصلاً", V(U.classifyUpload(st(409, "The resource already exists"))) === "uploaded" && V(U.classifyUpload(st(400, "Duplicate"))) === "uploaded");
+check("الرفع: 403 RLS ⇒ فشل: صلاحية", V(U.classifyUpload(st(403, "new row violates row-level security policy"))) === "failed:forbidden");
+check("الرفع: 413 ⇒ فشل: كبير", V(U.classifyUpload(st(413, "Payload too large"))) === "failed:too_big");
+check("الرفع: 415 ⇒ فشل: صيغة", V(U.classifyUpload(st(415, "mime type audio/x not supported"))) === "failed:format");
+check("الرفع: الدلوُ غائب ⇒ ينتظر الهجرة", V(U.classifyUpload(st(404, "Bucket not found"))) === "waiting:not_ready");
+check("الرفع: القراءة فقط ⇒ ينتظر التجديد", V(U.classifyUpload(Object.assign(new Error("READ_ONLY"), { name: "ReadOnlyError" }))) === "waiting:read_only");
+check("الخادم: voice_forbidden / voice_operator ⇒ فشل: صلاحية", V(U.classifyRpc(code("P0001", "voice_forbidden"))) === "failed:forbidden" && V(U.classifyRpc(code("42501", "voice_operator"))) === "failed:forbidden");
+check("الخادم: voice_visit ⇒ فشل: زيارة", V(U.classifyRpc(code("P0001", "voice_visit"))) === "failed:visit");
+check("الخادم: voice_path / 23514 ⇒ فشل: عيب", V(U.classifyRpc(code("22023", "voice_path"))) === "failed:bug" && V(U.classifyRpc(code("23514", "check"))) === "failed:bug");
+check("الخادم: voice_id_taken ⇒ فشل: معرّف", V(U.classifyRpc(code("23505", "voice_id_taken"))) === "failed:id");
+check("الخادم: voice_object_missing / voice_size ⇒ يتيم", V(U.classifyRpc(code("P0001", "voice_object_missing"))) === "orphan" && V(U.classifyRpc(code("P0001", "voice_size"))) === "orphan");
+check("الخادم: 42P01 / PGRST202 ⇒ ينتظر الهجرة", V(U.classifyRpc(code("42P01"))) === "waiting:not_ready" && V(U.classifyRpc(code("PGRST202"))) === "waiting:not_ready");
+check("الخادم: 503 ⇒ ينتظر الخادم", V(U.classifyRpc(Object.assign(new Error("upstream"), { status: 503 }))) === "waiting:server");
+
+// ترتيبُ الرفع على رفٍّ حقيقيّ (الذاكرة) وبابٍ مزيّف
+localStorage.setItem("vp_session", JSON.stringify({ raw: { id: "u1" } }));
+const shelf2 = await S2.getShelf();
+const webm = fx("chrome-opus-1200ms.webm");
+async function seedClip(id, over = {}) {
+  const parts = [webm.slice(0, 1000).buffer, webm.slice(1000).buffer];
+  for (let i = 0; i < parts.length; i++) await shelf2.putChunk({ id, seq: i, at_ms: 0, buf: parts[i] });
+  const fin = M2.finalBytes(parts, "audio/webm", 1200);
+  const clip = { id, who: { user: "u1", clinic: "?" }, pet_id: "p1", visit_id: "v1", kind: "note", day: null, recorded_at: new Date().toISOString(),
+    state: "recorded", mime: "audio/webm", codecs: "opus", bytes: fin.bytes.length, sha256: await M2.sha256Hex(fin.bytes), duration_ms: fin.durationMs, clock_ms: 1200, alive_at: 0, attempts: 0, ...over };
+  await shelf2.putClip(clip);
+  return clip;
+}
+function fakeApi(over = {}) {
+  const calls = [];
+  const objects = new Map();
+  const api = {
+    serverClinic: async () => { calls.push("clinic"); return "C1"; },
+    canRecord: async () => { calls.push("can"); return true; },
+    visitExists: async () => { calls.push("visit"); return true; },
+    putObject: async (p, blob) => { calls.push("put"); objects.set(p, blob.size); },
+    add: async (pl) => { calls.push("add"); if (!objects.has(pl.path)) throw code("P0001", "voice_object_missing"); return { ...pl, id: pl.id }; },
+    info: async (p) => { calls.push("info"); return objects.get(p) ?? null; },
+    voidNote: async (id) => { calls.push("void"); return { id }; },
+    dropOrphan: async (p) => { calls.push("drop"); return objects.delete(p) || true; },
+    ...over,
+  };
+  globalThis.__api = api;
+  return { calls, objects };
+}
+const gone = async (id) => (await shelf2.getClip(id)) === null && (await shelf2.getChunks(id)).length === 0;
+{
+  const c = await seedClip("k1");
+  const f = fakeApi();
+  await U.uploadClip(c);
+  check("الرفعُ السليم: الإذنُ والزيارةُ قبل الرفع، ثمّ رفعٌ ← صفّ ← حجم، ثمّ يُمحى من الجهاز", f.calls.join() === "clinic,can,visit,put,add,info" && (await gone("k1")), f.calls.join());
+  check("المسارُ <العيادة>/<الحيوان>/<المعرّف>.webm", [...f.objects.keys()][0] === "C1/p1/k1.webm");
+}
+{
+  const c = await seedClip("k2", { void_requested: { at: new Date().toISOString(), reason: "غلط" } });
+  const f = fakeApi();
+  await U.uploadClip(c);
+  check("«حذف» قبل الوصول: يرتفع ثمّ يُحذف (قابلاً للإرجاع) ثمّ يُمحى", f.calls.join() === "clinic,can,visit,put,add,info,void" && (await gone("k2")), f.calls.join());
+}
+{
+  const c = await seedClip("k3");
+  let first = true;
+  const f = fakeApi({ add: async (pl) => { f.calls.push("add"); if (first) { first = false; throw code("P0001", "voice_size"); } return { ...pl }; } });
+  await U.uploadClip(c);
+  check("حجمٌ غيرُ حجمه بالدلو: يُمسح ويُعاد مرّةً واحدة", f.calls.join() === "clinic,can,visit,put,add,drop,put,add,info" && (await gone("k3")), f.calls.join());
+}
+{
+  const c = await seedClip("k4");
+  const f = fakeApi({ add: async () => { f.calls.push("add"); throw code("P0001", "voice_size"); }, dropOrphan: async () => { f.calls.push("drop"); return false; } });
+  await U.uploadClip(c);
+  const k = await shelf2.getClip("k4");
+  check("مسحٌ رفضه الدلو ⇒ لا إعادة، فشلٌ «ملفّ السيرفر»، والتسجيلُ باقٍ", f.calls.join() === "clinic,can,visit,put,add,drop" && k?.state === "failed" && k?.reason === "server_file" && (await shelf2.getChunks("k4")).length === 2, f.calls.join());
+}
+{
+  const c = await seedClip("k5");
+  const f = fakeApi({ canRecord: async () => { f.calls.push("can"); return false; } });
+  await U.uploadClip(c);
+  const k = await shelf2.getClip("k5");
+  check("بلا إذن ⇒ فشلٌ قبل أيّ رفع (لا ملفَّ يتيم)، والتسجيلُ باقٍ", !f.calls.includes("put") && k?.state === "failed" && k?.reason === "forbidden");
+}
+{
+  const c = await seedClip("k6");
+  const f = fakeApi({ visitExists: async () => { f.calls.push("visit"); return false; } });
+  await U.uploadClip(c);
+  check("زيارةٌ ما موجودة ⇒ فشل «زيارة» قبل الرفع", !f.calls.includes("put") && (await shelf2.getClip("k6"))?.reason === "visit");
+}
+{
+  const c = await seedClip("k7");
+  const f = fakeApi({ putObject: async () => { f.calls.push("put"); throw new TypeError("Failed to fetch"); } });
+  const t0 = Date.now();
+  await U.uploadClip(c);
+  const k = await shelf2.getClip("k7");
+  check("انقطاعُ النت ⇒ ينتظر الشبكة بموعدٍ لاحق، والتسجيلُ باقٍ", k?.state === "waiting" && k?.reason === "network" && k.next_at >= t0 + 5000 && k.attempts === 1 && !f.calls.includes("add"));
+}
+{
+  const c = await seedClip("k8");
+  const ch = await shelf2.getChunks("k8");
+  const bad = new Uint8Array(ch[1].buf); bad[bad.length - 1] ^= 0xff;
+  await shelf2.putChunk({ ...ch[1], buf: bad.buffer });
+  const f = fakeApi();
+  await U.uploadClip(c);
+  check("بايتاتٌ تغيّرت بالجهاز (البصمةُ لا تطابق) ⇒ فشل «تالف» بلا رفع، ولا يُمحى", !f.calls.includes("put") && (await shelf2.getClip("k8"))?.reason === "local_corrupt");
+}
+{
+  const c = await seedClip("k9", { who: { user: "u2", clinic: "?" } });
+  const f = fakeApi();
+  await U.uploadClip(c);
+  check("تسجيلُ حسابٍ آخر ⇒ ينتظر صاحبه (لا يُرفع بهويّة غيره)", f.calls.length === 0 && (await shelf2.getClip("k9"))?.reason === "other_user");
+}
+{
+  const c = await seedClip("k10", { who: { user: "u1", clinic: "C9" } });
+  const f = fakeApi();
+  await U.uploadClip(c);
+  check("سُجّل بعيادةٍ أخرى مؤكَّدة ⇒ ينتظر (لا يهبط بعيادةٍ غير عيادته)", !f.calls.includes("put") && (await shelf2.getClip("k10"))?.reason === "other_clinic");
+}
+{
+  const c = await seedClip("k11");
+  const f = fakeApi({ info: async () => { f.calls.push("info"); return 7; } });
+  await U.uploadClip(c);
+  check("الدلوُ يقول حجماً آخر بعد الصفّ ⇒ لا يُمحى (يُعاد التأكّد لاحقاً)", (await shelf2.getClip("k11"))?.state === "waiting" && (await shelf2.getChunks("k11")).length === 2);
+}
+{
+  const c = await seedClip("k12");
+  let release;
+  const gate = new Promise((ok) => { release = ok; });
+  const f = fakeApi({ putObject: async (p, blob) => { f.calls.push("put"); await gate; f.objects.set(p, blob.size); } });
+  const a = U.uploadClip(c);
+  const b = U.uploadClip(c);
+  await new Promise((ok) => setTimeout(ok, 20));
+  release();
+  await Promise.all([a, b]);
+  check("محاولةٌ واحدة لكلّ تسجيل: الثانيةُ أثناء الأولى لا تبدأ شيئاً", f.calls.filter((x) => x === "put").length === 1 && (await gone("k12")));
+}
+
 console.log(fails ? `✗ voice-test: ${passes} نجح، ${fails} فشل` : `✓ voice-test: ${passes} نجح، 0 فشل`);
 if (fails) process.exit(1);

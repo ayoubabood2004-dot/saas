@@ -185,7 +185,8 @@ const reqP = <T>(r: IDBRequest<T>): Promise<T> =>
 const txDone = (tx: IDBTransaction): Promise<void> =>
   new Promise((ok, no) => { tx.oncomplete = () => ok(); tx.onerror = () => no(tx.error); tx.onabort = () => no(tx.error ?? new DOMException("aborted", "AbortError")); });
 
-function openDb(): Promise<IDBDatabase> {
+/** قاعدةُ `dv-voice` (الرفُّ وصوتُ التجريبيّ) — تُنشئ مخازنَها الثلاثة أوّلَ مرّة. */
+export function openVoiceDb(): Promise<IDBDatabase> {
   return new Promise((ok, no) => {
     let r: IDBOpenDBRequest;
     try { r = indexedDB.open(DB_NAME, 1); } catch (e) { no(e); return; }
@@ -207,8 +208,8 @@ function openDb(): Promise<IDBDatabase> {
 
 /** القاعدةُ الحقيقيّة — أو رميٌ إن لم تُفتح (متصفّحٌ خاصّ، تخزينٌ معطّل): المسجِّلُ يكمل بالذاكرة. */
 export async function openIdbShelf(): Promise<ShelfStore> {
-  let db = await openDb();
-  const watch = () => { db.onclose = () => { void openDb().then((d) => { db = d; watch(); }).catch(() => undefined); }; };
+  let db = await openVoiceDb();
+  const watch = () => { db.onclose = () => { void openVoiceDb().then((d) => { db = d; watch(); }).catch(() => undefined); }; };
   watch();
   const tx = (stores: string[], mode: IDBTransactionMode, strict = false): IDBTransaction =>
     strict ? db.transaction(stores, mode, { durability: "strict" } as IDBTransactionOptions) : db.transaction(stores, mode);
@@ -228,7 +229,7 @@ export async function openIdbShelf(): Promise<ShelfStore> {
       t.objectStore("chunks").delete(IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER]));
       await txDone(t);
     },
-    async reopen() { try { db.close(); } catch { /* مغلقة أصلاً */ } db = await openDb(); watch(); },
+    async reopen() { try { db.close(); } catch { /* مغلقة أصلاً */ } db = await openVoiceDb(); watch(); },
   };
 }
 
@@ -248,3 +249,58 @@ export function memShelf(): ShelfStore {
     async reopen() { /* لا شيء يُعاد */ },
   };
 }
+
+/* ── الرفُّ المشترك بين المسجِّل والرافع والشاشة ─────────────────────────── */
+
+let shelfP: Promise<ShelfStore> | null = null;
+/** القاعدةُ الواحدة للتبويب: IndexedDB، أو الذاكرة إن لم تُفتح (يُقال «بالذاكرة بس» على كلّ تسجيل). */
+export function getShelf(): Promise<ShelfStore> {
+  if (!shelfP) shelfP = openIdbShelf().catch(() => memShelf());
+  return shelfP;
+}
+
+/** بايتاتُ تسجيلاتٍ بالذاكرة وحدها (المرآةُ فشلت) — يرفع منها الرافع، وتُمسح بعد أن يرتفع. */
+export const memoryParts = new Map<string, ArrayBuffer[]>();
+
+/** تقدّمُ الرفع لكلّ تسجيل (للشاشة). */
+export const uploadProgress = new Map<string, { pct: number; slow: boolean }>();
+
+const listeners = new Set<() => void>();
+/** اسمع كلَّ تغيّرٍ بالرفّ (حالة، تقدّم). يرجع دالّةَ الإلغاء. */
+export function onShelfChange(fn: () => void): () => void { listeners.add(fn); return () => { listeners.delete(fn); }; }
+/** أعلن تغيّراً: العلمُ المتزامن يُعاد حسابُه من الرفّ كلّه، والمستمعون يُبلَّغون. */
+export async function shelfChanged(): Promise<void> {
+  try { writePendingFlag(pendingFlag(await allClips())); } catch { /* الرفُّ لا يُقرأ — الشاشةُ تسأله ثانيةً */ }
+  for (const fn of [...listeners]) { try { fn(); } catch { /* مستمعٌ معطوب لا يوقف غيره */ } }
+}
+export function notifyShelf(): void { for (const fn of [...listeners]) { try { fn(); } catch { /* — */ } } }
+
+/** تسجيلاتٌ ما قدرت القاعدةُ تحفظ صفَّها (IndexedDB فشل حتى للصفّ) — الذاكرةُ وحدها حتى ترتفع. */
+export const memoryClips = new Map<string, LocalClip>();
+/** معرّفاتُ التسجيلات الشغّالة بهذا التبويب (احتياطُ الحياة مع Web Locks). */
+export const liveIds = new Set<string>();
+
+/** احفظ صفَّ التسجيل: بالقاعدة، وإلا بالذاكرة (لا يضيع بصمت ولا يرمي). يرجع: هل ثبت بالقاعدة. */
+export async function putClipSafe(c: LocalClip, strict = false): Promise<boolean> {
+  try { await (await getShelf()).putClip(c, strict); memoryClips.delete(c.id); return true; }
+  catch { memoryClips.set(c.id, c); return false; }
+}
+/** امسح التسجيلَ وقطعَه من كلّ مكان. */
+export async function deleteClipSafe(id: string): Promise<void> {
+  memoryClips.delete(id);
+  memoryParts.delete(id);
+  uploadProgress.delete(id);
+  try { await (await getShelf()).deleteClip(id); } catch { /* القاعدةُ معطوبة — لا شيءَ فيها يُمسح */ }
+}
+/** كلُّ تسجيلات الجهاز (القاعدةُ والذاكرة، والقاعدةُ تغلب على المعرّف نفسِه). */
+export async function allClips(): Promise<LocalClip[]> {
+  let stored: LocalClip[] = [];
+  try { stored = await (await getShelf()).listClips(); } catch { stored = []; }
+  const ids = new Set(stored.map((c) => c.id));
+  return [...stored, ...[...memoryClips.values()].filter((c) => !ids.has(c.id))];
+}
+
+/** إمساكُ التحديث لتسجيلٍ بالذاكرة وحدها — لا يُفلت إلا حين يرتفع (تحميلُ الصفحة يضيّعه). */
+const memoryHolds = new Map<string, () => void>();
+export function keepMemoryHold(id: string, release: () => void): void { memoryHolds.get(id)?.(); memoryHolds.set(id, release); }
+export function releaseMemoryHold(id: string): void { memoryHolds.get(id)?.(); memoryHolds.delete(id); }
