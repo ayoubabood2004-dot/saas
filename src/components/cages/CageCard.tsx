@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileText, Move, Plus, Pencil, Syringe } from "lucide-react";
+import { FileText, Move, Plus, Pencil, Syringe, Printer } from "lucide-react";
 import { cn, formatNum } from "@/lib/utils";
 import { KIND_AR, type Occupant } from "@/components/cage3d/neon";
 
@@ -83,7 +83,7 @@ function OccupantAvatar({ occ, tone }: { occ: Occupant; tone: CageTone }) {
 
 export const CageCard = memo(function CageCard({
   code, occ, carrying, dimmed, highlighted, editable, level,
-  onTapFree, onOpenFile, onStartMove, onEditCage,
+  onTapFree, onOpenFile, onStartMove, onEditCage, onPrint,
 }: {
   code: string;
   /** يُمرَّر فقط حين تحمل الخلية قفصين فوق بعض: 0 أرضي · 1 علوي. */
@@ -98,6 +98,8 @@ export const CageCard = memo(function CageCard({
   editable: boolean;
   onTapFree: () => void;
   onOpenFile: () => void;
+  /** «طباعة» (طلبُ المالك ٢٢/١١): ورقةُ الحالة والعلاج بحجمٍ يختاره الطبيب — بين «الملف» و«نقل». */
+  onPrint?: () => void;
   onStartMove: () => void;
   onEditCage: () => void;
 }) {
@@ -156,7 +158,7 @@ export const CageCard = memo(function CageCard({
           </div>
 
           {/* الأفعال ظاهرة دائماً — الآيباد ما عنده تحويم */}
-          <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <div className={cn("mt-3 grid gap-1.5", onPrint ? "grid-cols-3" : "grid-cols-2")}>
             <button
               type="button" data-cagefile={code}
               onClick={(e) => { e.stopPropagation(); onOpenFile(); }}
@@ -164,6 +166,15 @@ export const CageCard = memo(function CageCard({
             >
               <FileText size={14} /> {t("cages.file", "الملف")}
             </button>
+            {onPrint && (
+              <button
+                type="button" data-cageprint={code}
+                onClick={(e) => { e.stopPropagation(); onPrint(); }}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-surface-2 text-xs font-bold text-ink-muted transition hover:bg-surface-3 hover:text-ink"
+              >
+                <Printer size={14} /> {t("common.print", "طباعة")}
+              </button>
+            )}
             <button
               type="button" data-cagemove={code}
               onClick={(e) => { e.stopPropagation(); onStartMove(); }}
