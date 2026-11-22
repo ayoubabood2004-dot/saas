@@ -145,10 +145,13 @@ export function buildCaseModel(inp: CaseInput, opts: { today: string; now?: stri
       const inDay = dayOf(a.admitted_on);
       const outDay = a.discharged_on ? dayOf(a.discharged_on) : null;
       const mine = moves.filter((m) => m.admission_id === a.id).sort((x, y) => x.at.localeCompare(y.at));
+      // ساعةُ الحركة لليوم نفسِه وحده: ختمٌ بيومٍ آخر لحظةُ كتابة السجلّ لا الدخول (stayLog) — يُطبع اليومُ بلا ساعة.
+      const inMove = mine.find((m) => m.event === "admitted");
+      const outMove = [...mine].reverse().find((m) => m.event === "discharged");
       return {
         id: a.id, kind: a.kind, inDay, outDay,
-        inAt: mine.find((m) => m.event === "admitted")?.at ?? null,
-        outAt: [...mine].reverse().find((m) => m.event === "discharged")?.at ?? null,
+        inAt: inMove && dayOf(inMove.at) === inDay ? inMove.at : null,
+        outAt: outMove && outDay && dayOf(outMove.at) === outDay ? outMove.at : null,
         days: daysBetween(inDay, outDay ?? today), cage: a.cage?.trim() || null,
         reason: a.reason?.trim() || null, outcome: a.outcome ?? null, active: a.status === "active",
       };

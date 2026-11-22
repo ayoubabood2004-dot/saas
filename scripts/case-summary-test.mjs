@@ -20,7 +20,7 @@ const check = (name, cond, detail = "") => {
   else { fails++; console.error(`   ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 
-const FILES = { summary: "src/lib/caseSummary.ts", compose: "src/lib/caseSheetCompose.ts", print: "src/lib/caseSheetPrint.ts" };
+const FILES = { summary: "src/lib/caseSummary.ts", compose: "src/lib/caseSheetCompose.ts", print: "src/lib/caseSheetPrint.ts", stay: "src/lib/stayLog.ts" };
 async function load(over = {}) {
   const src = (k) => over[k] ?? readFileSync(FILES[k], "utf8");
   const entry = `export * from "./__s.ts"; export * from "./__c.ts"; export * from "./__p.ts"; export { encodeClinical } from "./clinicalRecord"; export { PROTO_MARK } from "./protocolMark";`;
@@ -31,10 +31,10 @@ async function load(over = {}) {
       bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent", alias: { "@": "./src" },
       plugins: [{
         name: "mut", setup(b) {
-          b.onResolve({ filter: /^\.\/(__s|__c|__p)\.ts$/ }, (a) => ({ path: a.path, namespace: "mut" }));
-          b.onResolve({ filter: /^\.\/(caseSummary|caseSheetPrint)$/ }, (a) => ({ path: a.path === "./caseSummary" ? "./__s.ts" : "./__p.ts", namespace: "mut" }));
+          b.onResolve({ filter: /^\.\/(__s|__c|__p|__l)\.ts$/ }, (a) => ({ path: a.path, namespace: "mut" }));
+          b.onResolve({ filter: /^\.\/(caseSummary|caseSheetPrint|stayLog)$/ }, (a) => ({ path: a.path === "./caseSummary" ? "./__s.ts" : a.path === "./stayLog" ? "./__l.ts" : "./__p.ts", namespace: "mut" }));
           b.onLoad({ filter: /.*/, namespace: "mut" }, (a) => ({
-            contents: a.path.includes("__s") ? src("summary") : a.path.includes("__c") ? src("compose") : src("print"),
+            contents: a.path.includes("__s") ? src("summary") : a.path.includes("__c") ? src("compose") : a.path.includes("__l") ? src("stay") : src("print"),
             loader: "ts", resolveDir: "src/lib",
           }));
         },
@@ -173,6 +173,13 @@ async function suite(M, label = "") {
   check(`${label}  «ما انطت» المحسومة فائتة بيومها، و«أُجّلت» متأخّرةٌ لا فائتة (كجدول الجرعات)`,
     JSON.stringify(d17.missed) === JSON.stringify([["Amoxicillin", 1]]) && JSON.stringify(d18.overdue) === JSON.stringify([["Amoxicillin", 1]]) && d18.missed.length === 0,
     JSON.stringify({ m17: d17.missed, o18: d18.overdue, m18: d18.missed }));
+  // «حالة جديدة» بتاريخٍ سابق: المحفّزُ ختم الدخولَ لحظةَ الكتابة (اليومَ التالي) — لا يُطبع ساعةَ دخول، و«دخل» بيوم الإقامة.
+  const Fb = { ...F, movements: F.movements.map((x) => (x.id === "m1" ? { ...x, at: "2026-11-17T06:30:00Z" } : x)) };
+  const sb = M.buildCaseModel({ ...Fb, admissions: [Fb.admissions[1]] }, { today: TODAY, range: r });
+  check(`${label}دخولٌ بتاريخٍ سابق: ساعةُ كتابة السجلّ لا تُطبع ساعةَ دخول، و«دخل» بيوم الإقامة بلا ساعة`,
+    sb.stays[0].inAt === null && sb.days[0].day === "2026-11-16" && sb.days[0].events.some((e) => e.kind === "in" && e.at === null && e.data.toCage === "105")
+      && !sb.days.some((x) => x.day === "2026-11-17" && x.events.some((e) => e.kind === "in")),
+    JSON.stringify({ inAt: sb.stays[0].inAt, d: sb.days.map((x) => [x.day, x.events.map((e) => e.kind)]) }));
   check(`${label}  والمعطاةُ بعد منتصف الليل بيوم إعطائها المحلّيّ لا بيومها المجدول`,
     JSON.stringify(d18.given) === JSON.stringify([["Meloxicam", 2]]) && d17.given.length === 0, JSON.stringify({ g17: d17.given, g18: d18.given }));
   check(`${label}  مهامُّ الرعاية بيومها: الأكلُ ١/١ بقيمته، والحرارةُ ٠/١ بلا قيمة، والسوائلُ ١/١`,
@@ -263,6 +270,8 @@ const MUTANTS = [
   ["print", "مفتاحُ القسم بموضعه", "const head = (t: string | undefined) => (t === undefined ? undefined : fn(`${b.key}.title`, t, \"heading\", [t]));", "const head = (t: string | undefined) => (t === undefined ? undefined : fn(`${s.blocks.indexOf(b)}.title`, t, \"heading\", [t]));"],
   ["print", "الطباعةُ بمفاتيح التحرير", "const tagged = !!o.editable || !!o.marks;", "const tagged = true;"],
   ["print", "الثابتُ يُكتب بالورقة", "items: b.fixed ? b.items : b.items.map(", "items: b.items.map("],
+  ["summary", "ساعةُ الكتابة ساعةَ دخول", "inAt: inMove && dayOf(inMove.at) === inDay ? inMove.at : null,", "inAt: inMove ? inMove.at : null,"],
+  ["stay", "«دخل» بيوم كتابة السجلّ", "const own = st && kind === \"in\" && day !== st.inDay ? st.inDay : st && kind === \"out\" && st.outDay && day !== st.outDay ? st.outDay : null;", "const own: string | null = null;"],
   ["compose", "اليومياتُ تسمّي الأدويةَ المخفيّة", "dayText(x, t, lang, { names: a.showDrugs, ...a.parts })", "dayText(x, t, lang, { ...a.parts, names: true })"],
   ["compose", "اليومياتُ لا تتبع الأقسام", "case \"vaccine\": return show.vaccines ?", "case \"vaccine\": return true ?"],
 ];
