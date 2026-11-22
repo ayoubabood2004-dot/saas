@@ -101,7 +101,7 @@ const fakeT = (k, o) => {
 };
 const PET = { id: "p1", owner_id: "o", name: "Nb <script>", species: "cat", sex: "female", owner_name: "Ali", owner_phone: "0770", passport_token: "", serial: "C-12", created_at: "" };
 
-async function suite(M, label = "") {
+async function suite(M, label = "", theme = "formal") {
   const before = fails;
   const F = fixture(M);
   // ── حالةُ الجرعة ──
@@ -136,7 +136,7 @@ async function suite(M, label = "") {
   const clinic = { name: "Clinic & Co", lines: ["Baghdad"], logoUrl: null, site: "doctorvet.vet" };
   const base = { t: fakeT, lang: "ar", pet: PET, model: stay, scope: "stay", paper: "a5", showDrugs: true, showDoseLog: true,
     parts: { vaccines: true, visits: true, notes: true, labs: true }, tips: ["tip one", "  ", "tip two"], doctorNote: "Rest 3 days",
-    clinic, doctor: "Dr. A", today: TODAY, autoPrint: false };
+    clinic, doctor: "Dr. A", today: TODAY, autoPrint: false, theme };
   const html = (o = {}) => M.buildCaseSheetHTML(M.composeSheet({ ...base, ...o }));
   const h1 = html();
   check(`${label}الورقة: الأدويةُ وسجلُّ الجرعات حين يُطلبان`, h1.includes("Amoxicillin") && h1.includes("{csht.doseLog}") && h1.includes("{csht.states.missed}"), "");
@@ -245,9 +245,17 @@ async function suite(M, label = "") {
   // ── هويّةُ الورقة: شعارُ العيادة بالترويسة وعلامةً مائيّة، وكفُّ doctorVet بلا شعار، وألوانُ العلامة ──
   const withLogo = M.buildCaseSheetHTML(M.composeSheet({ ...base, clinic: { ...clinic, logoUrl: "https://x.test/logo.png", socials: { facebook: "vetfb", instagram: "vet.ig" } } }));
   check(`${label}الشعارُ بالترويسة وعلامةً مائيّة، والتواصلُ بأيقوناته، وألوانُ doctorVet`,
-    withLogo.includes('<div class="wm"><img src="https://x.test/logo.png"') && withLogo.includes('<div class="mid"><img src="https://x.test/logo.png"')
-      && withLogo.includes("vetfb") && withLogo.includes("vet.ig") && withLogo.includes("#1266d8") && withLogo.includes('<div class="eyebrow"><svg') && withLogo.includes("doctorVet</div>"), "");
-  check(`${label}  وبلا شعار: كفُّ doctorVet بالترويسة وبالعلامة المائيّة`, h1.includes('<div class="wm"><svg') && h1.includes('<div class="mid"><svg'));
+    withLogo.includes('<div class="wm"><img src="https://x.test/logo.png"') && withLogo.includes('<div class="hd-logo"><img src="https://x.test/logo.png"')
+      && withLogo.includes("vetfb") && withLogo.includes("vet.ig") && withLogo.includes("#1266d8") && withLogo.includes("doctorVet · doctorvet.vet")
+      && withLogo.includes(`data-theme="${theme}"`) && (theme !== "modern" || withLogo.includes('<div class="eyebrow">doctorVet</div>')), "");
+  check(`${label}  وبلا شعار: كفُّ doctorVet بالترويسة وبالعلامة المائيّة`, h1.includes('<div class="wm"><svg') && h1.includes('<div class="hd-logo"><svg'));
+  check(`${label}  وخطُّ الواجهة (IBM Plex Sans Arabic)، والنافذةُ تنتظره ثمّ تطبع بمهلة`,
+    h1.includes("IBM+Plex+Sans+Arabic") && html({ autoPrint: true }).includes("document.fonts") && html({ autoPrint: true }).includes("setTimeout(go,4000)"));
+  // كلُّ نصٍّ يُعدَّل بكلّ شكل: كلُّ مفتاحٍ بنموذج الورقة مرسومٌ بمفتاحه بالمعاينة (إلا رأسَ جدول اليوميات حين تُرسم خطّاً زمنيّاً — لا يُطبع).
+  const heAll = M.buildCaseSheetHTML(sh, { editable: true });
+  const missing = [...M.sheetTexts(sh).keys()].filter((k) => !(theme !== "formal" && k.startsWith("days.h."))).filter((k) => !heAll.includes(`data-k="${k}"`));
+  check(`${label}كلُّ نصٍّ بالورقة يُعدَّل بهذا الشكل (كلُّ مفتاحٍ مرسوم)`, missing.length === 0, missing.slice(0, 8).join(", "));
+  check(`${label}  والشكلُ محفوظٌ بالورقة ويُقرأ معها`, sh.theme === theme && M.readSheet(JSON.parse(JSON.stringify(sh)))?.theme === theme);
   check(`${label}  والعلامةُ المائيّة تتكرّر على كلّ صفحةٍ مطبوعة، ورقمُ الصفحة`, h1.includes("@media print{.sheet{padding:0;width:auto;margin:0}.wm{position:fixed}}") && h1.includes("counter(pages)"));
 
   // ── حالةُ الجرعة شارةٌ بلونها، وتسقط عن نصٍّ عدّله الطبيب ──
@@ -287,8 +295,11 @@ async function suite(M, label = "") {
   return fails === before;
 }
 
-console.log("▸ ملخّصُ الحالة وورقتُها");
-await suite(await load());
+console.log("▸ ملخّصُ الحالة وورقتُها — بكلّ شكل");
+{
+  const M0 = await load();
+  for (const th of M0.THEMES) await suite(M0, `[${th}] `, th);
+}
 
 const MUTANTS = [
   ["summary", "«أُجّلت» تُحسب فائتة", "if (isSettledMiss(t as TreatmentEntry, today)) return \"missed\";", "if (t.missed_reason && t.day < today) return \"missed\";"],
@@ -321,7 +332,9 @@ const MUTANTS = [
   ["compose", "المخفيّةُ لا تقول المكتمل", "text: complete\n        ? t(\"csht.dosesAllGiven\"", "text: false\n        ? t(\"csht.dosesAllGiven\""],
   ["compose", "التصريحُ لا يُحفظ", "...(complete ? { claims: { complete: true } } : {}),", "...({}),"],
   ["print", "الشارةُ فوق نصٍّ معدَّل", "return tn && !blank(c) && !o.edited?.has(k)", "return tn && !blank(c)"],
-  ["print", "بلا علامةٍ مائيّة", "<div class=\"wm\">${logo ? `<img src=\"${logo}\" alt=\"\"/>` : PAW(\"cswm\")}</div>", "<div class=\"wm\"></div>"],
+  ["print", "بلا علامةٍ مائيّة", "<div class=\"wm\">${mark(\"cswm\")}</div>", "<div class=\"wm\"></div>"],
+  ["print", "الحيوانُ بلا مفاتيح بالجدول الرسميّ", "<td class=\"iv\" dir=\"auto\"><span${at(`${bk}.${c.key}.v`)}>", "<td class=\"iv\" dir=\"auto\"><span>"],
+  ["print", "الخطُّ لا يُنتظر", "var f=document.fonts&&document.fonts.ready;", "var f=null;"],
   ["print", "القراءةُ تُسقط التصريح", "...(obj(o.claims).complete === true ? { claims: { complete: true } } : {}),", ""],
   ["compose", "اليومياتُ تسمّي الأدويةَ المخفيّة", "dayText(x, t, lang, { names: a.showDrugs, ...a.parts })", "dayText(x, t, lang, { ...a.parts, names: true })"],
   ["compose", "اليومياتُ لا تتبع الأقسام", "case \"vaccine\": return show.vaccines ?", "case \"vaccine\": return true ?"],

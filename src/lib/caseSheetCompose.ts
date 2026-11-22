@@ -9,7 +9,7 @@ import { formatDate, formatNum, formatTime } from "./utils";
 import { PAST_MISS_REASON } from "./backdate";
 import { markCourseComplete, type CaseModel, type DayEntry, type DoseState } from "./caseSummary";
 import type { LogEvent } from "./stayLog";
-import type { CaseSheet, Field, Paper, SheetBlock, SheetEdit, Spot, Tone } from "./caseSheetPrint";
+import type { CaseSheet, Field, Paper, SheetBlock, SheetEdit, Spot, Theme, Tone } from "./caseSheetPrint";
 import { mapTexts } from "./caseSheetPrint";
 import type { Pet } from "@/types";
 
@@ -76,6 +76,8 @@ export function composeSheet(a: {
   tips: string[]; doctorNote: string; clinic: CaseSheet["clinic"]; doctor: string | null; today: string; autoPrint: boolean;
   /** «العلاج مكتمل»: تصريحُ الطبيب أنه أعطى كلَّ الجرع ولو ما خُتمت بالنظام (markCourseComplete) — يُحفظ تصريحاً مع التقرير. */
   courseComplete?: boolean;
+  /** شكلُ الورقة (رسميّ/حديث/أنيق) — يُحفظ معها. */
+  theme?: Theme;
 }): CaseSheet {
   const { t, lang, pet } = a;
   const complete = !!a.courseComplete && a.model.meds.length > 0;
@@ -185,7 +187,7 @@ export function composeSheet(a: {
     : stay?.kind === "boarding" ? t("csht.titleBoarding")
       : stay?.kind === "treatment_boarding" ? t("csht.titleCareBoarding") : t("csht.titleStay");
   return {
-    v: 1, lang, dir: lang.startsWith("ar") ? "rtl" : "ltr", paper: a.paper, title, docTitle: `${title} — ${pet.name}`,
+    v: 1, lang, dir: lang.startsWith("ar") ? "rtl" : "ltr", paper: a.paper, ...(a.theme ? { theme: a.theme } : {}), title, docTitle: `${title} — ${pet.name}`,
     clinic: a.clinic,
     meta: [f("printed", t("csht.printedAt"), formatDate(new Date().toISOString(), lang, true)), ...(pet.serial ? [f("file", t("csht.fileNo"), pet.serial)] : [])],
     blocks,
