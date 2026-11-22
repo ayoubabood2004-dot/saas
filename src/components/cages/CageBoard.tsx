@@ -21,6 +21,10 @@ import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
+import { page } from "@/lib/lazyPage";
+
+/* «طباعة» ورقة الحالة (طلبُ المالك ٢٢/١١): نافذتُها كسولةٌ بنطاقها csht — لا يدفعها إلا من يطبع. */
+const CaseSheetDialog = page(() => import("@/components/summary/CaseSheetDialog").then((m) => ({ default: m.CaseSheetDialog })), ["csht"]);
 
 /* ============================================================================
  * لوحة الأقفاص المسطّحة — بديل المنظور المجسّم.
@@ -122,6 +126,8 @@ export default function CageBoard() {
   const [carrying, setCarrying] = useState<Occupant | null>(null);
   const [picker, setPicker] = useState<{ targetCage: string | null } | null>(null);
   const [editCage, setEditCage] = useState<string | null>(null);
+  /** ورقةُ «طباعة» لساكن قفص: الحيوانُ وإقامتُه (البطاقةُ تبدأ عليها). */
+  const [printFor, setPrintFor] = useState<{ petId: string; admId: string } | null>(null);
   const [addRoomOpen, setAddRoomOpen] = useState(false);
   const [renumRoom, setRenumRoom] = useState<string | null>(null);
   const canEdit = can("manageSettings");
@@ -430,7 +436,7 @@ export default function CageBoard() {
                       highlighted={!!ql && matches(c)}
                       editable={edit}
                       onTapFree={() => onTapFree(c.code)}
-                      onOpenFile={() => { playTap(); const o = occOf(c.code); if (o) navigate(`/pet/${o.petId}?tab=timeline`); }}
+                      onOpenFile={() => { playTap(); const o = occOf(c.code); if (o) navigate(`/pet/${o.petId}`); /* «الملخّص» أوّلاً (طلبُ المالك ٢٢/١١) — والطبلةُ بضغطةٍ منه */ }}
                       onStartMove={() => {
                         playTap();
                         const o = occOf(c.code);
@@ -439,6 +445,7 @@ export default function CageBoard() {
                         toast.success(t("cages.pickTarget", { name: o.name, defaultValue: "اضغط القفص اللي تريد تحط {{name}} بيه" }));
                       }}
                       onEditCage={() => setEditCage(c.code)}
+                      onPrint={() => { playTap(); const o = occOf(c.code); if (o) setPrintFor({ petId: o.petId, admId: o.admId }); }}
                     />
                   </motion.div>
                 ))}
@@ -487,6 +494,12 @@ export default function CageBoard() {
         cages={s.cages}
         onPick={pickPet}
       />
+
+      {printFor && (
+        <Suspense fallback={null}>
+          <CaseSheetDialog petId={printFor.petId} admissionId={printFor.admId} onClose={() => setPrintFor(null)} />
+        </Suspense>
+      )}
 
       <CageEditModal
         code={editCage}
