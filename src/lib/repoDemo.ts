@@ -2203,6 +2203,16 @@ const demoRepo = {
     saveDB(db);
     return moved;
   },
+  /** صورةٌ أوضح لصفٍّ قائم — تجريبياً: المسارُ عنوانٌ مضمَّن، وبشرط أن المسارَ كما رآه (صفرُ صفوفٍ يُسمع). */
+  async replaceLibraryImage(row: Pick<LibraryImage, "id" | "path" | "clinic_id">, upload: { blob: Blob; dataUrl: string }): Promise<string> {
+    assertUploadableImage(upload);
+    const db = loadDB();
+    const r = assertUpdated((db.imageLibrary ?? []).find((x) => x.id === row.id && x.path === row.path));
+    r.path = upload.dataUrl;
+    r.updated_at = new Date().toISOString();
+    saveDB(db);
+    return r.path;
+  },
   async deleteLibraryImage(id: string, _path: string): Promise<void> {
     void _path;
     const db = loadDB();

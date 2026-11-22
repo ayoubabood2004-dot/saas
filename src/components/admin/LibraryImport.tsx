@@ -98,7 +98,8 @@ export function LibraryImport({ library, onChanged, create, scope = "public" }: 
       const bytes = await zip.read(it.image as string);
       const type = mediaType(it.image as string);
       const file = new File([bytes as BlobPart], `p.${type.split("/")[1]}`, { type });
-      const photo = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
+      // خلفيةٌ بيضاء: صورةٌ شفّافة (PNG) تصير سوداء بـJPEG بلاها.
+      const photo = await prepareUpload(file, { maxDim: 800, quality: 0.72, background: "#ffffff" });
       await create({
         name: it.name, company: company.trim(), kind: kind.trim(), agency: it.agency, section: it.section, barcode: it.barcode,
       }, photo);

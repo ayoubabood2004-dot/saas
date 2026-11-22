@@ -169,6 +169,29 @@ async function suite(M, label = "") {
   const pH2 = M.planImport(hx, cB, { company: "X", kind: "كلاب" }, [oldRow]);
   check(`${label}(ب) والمحفوظُ قبلها بالرمز نفسُه «موجود» لا توأم`, pH2.items[0].status === "exists", pH2.items[0].status);
 
+  /* استبدالُ الصور من مجلّد: «اسم المنتج__الباركود.png» — بالباركود أوّلاً ثمّ بالاسم، ولا تخمين */
+  const pn = M.parseImageName("صور/دواجن/مربعة دكتور كلاودر بالدواجن 100غم__4014355211123.PNG");
+  check(`${label}اسمُ ملف المالك: الاسمُ قبل «__» والباركودُ بعدها، بلا مسارٍ ولا امتداد`, pn.base === "مربعة دكتور كلاودر بالدواجن 100غم" && pn.code === "4014355211123", JSON.stringify(pn));
+  check(`${label}  ورمزٌ داخليّ بعد «__» ليس باركوداً، وملفٌّ بلا «__» اسمُه كلُّه (والباركودُ وحده رمز)`,
+    M.parseImageName("كيلو &#8211; هراي__P535.jpg").base === "كيلو – هراي" && M.parseImageName("كيلو هراي__P535.jpg").code === null
+      && M.parseImageName("Felicia Kitten.webp").base === "Felicia Kitten" && M.parseImageName("6291111111111.png").code === "6291111111111");
+  const L = (id, name, barcode = null) => ({ id, name, barcode, company: "X", kind: "قطط", agency: null, section: null, path: `library/${id}.jpg`, updated_at: "" });
+  const libR = [L("r1", "مربعة دكتور كلاودر بالدواجن 100غم", "4014355211123"), L("r2", "كيلو &#8211; هراي فود"), L("r3", "رمل قطط"), L("r4", "رمل قطط"), L("r5", "Felicia Kitten", "6291111111111"), L("r6", "Felicia Adult", "6291111111111")];
+  const fl = (name) => ({ name });
+  const pr = M.planReplace([
+    fl("مربعة دكتور كلاودر بالدواجن 100غم__4014355211123.png"),     // باركود
+    fl("اسم مختلف تماماً__4014355211123.png"),                        // باركودٌ لصورةٍ مربوطة ⇒ ملفٌّ ثانٍ
+    fl("كيلو – هراي فود__P535.png"),                                 // اسمٌ (والمحفوظُ بالرمز يطابق المنظَّف)
+    fl("رمل قطط.png"),                                               // اسمٌ على صورتين ⇒ لا يُلمس
+    fl("Felicia Kitten__6291111111111.jpg"),                         // باركودٌ على اثنتين يحسمه الاسم
+    fl("ما موجود__1234567890123.png"), fl("notes.txt"),
+  ], libR);
+  check(`${label}الخطّة: بالباركود وبالاسم، والباركودُ المشترك يحسمه الاسم`,
+    JSON.stringify(pr.matched.map((m) => [m.row.id, m.by])) === JSON.stringify([["r1", "barcode"], ["r2", "name"], ["r5", "barcode"]]), JSON.stringify(pr.matched.map((m) => [m.row.id, m.by])));
+  check(`${label}  والمطابقُ لأكثر من صورة لا يُلمس، والغريبُ يُسمّى، والمكرّرُ يُتخطّى، وغيرُ الصورة يُعدّ`,
+    pr.ambiguous.length === 1 && pr.ambiguous[0].count === 2 && pr.unmatched.map((f) => f.name).join() === "ما موجود__1234567890123.png"
+      && pr.dupFiles.length === 1 && pr.notImage.length === 1, JSON.stringify({ a: pr.ambiguous.length, u: pr.unmatched.length, d: pr.dupFiles.length, n: pr.notImage.length }));
+
   /* وحدات */
   check(`${label}الباركود ٨–١٤ رقماً وحده`, M.libraryBarcode("12345678") === "12345678" && M.libraryBarcode("1234567") === null && M.libraryBarcode("AH-2231") === null && M.libraryBarcode(" 4820 0839 0889 7 ") === "4820083908897");
   check(`${label}المسارُ النسبيّ والمطلق`, M.resolvePart("xl/drawings/drawing1.xml", "../media/a.png") === "xl/media/a.png" && M.resolvePart("xl/workbook.xml", "/xl/worksheets/s.xml") === "xl/worksheets/s.xml");
@@ -191,6 +214,10 @@ const MUTANTS = [
   ["الاسمُ وحده يكفي ولو اختلف الرمز", 'return !!set && (!ck || set.has(""));', "return !!set;"],
   ["الموجودُ بلا اعتبار الصنف", 'groupKey(r.kind ?? "") === kKey', "true"],
   ["النصوصُ المشتركة تُهمل", 'else if (ca.t === "s") val = shared[Number(v)] ?? "";', 'else if (ca.t === "s") val = v ?? "";'],
+  ["الاسمُ أوّلاً لا الباركود", "let hits = code ? byCode.get(matchCode(code)) ?? [] : [];", "let hits: LibraryImage[] = [];"],
+  ["المطابقُ لأكثر من صورة يأخذ أوّلَها", "if (hits.length > 1) { plan.ambiguous.push({ file: f, count: hits.length }); continue; }", ""],
+  ["الملفُّ الثاني يدوس الأوّل", "if (taken.has(row.id)) { plan.dupFiles.push(f); continue; }", ""],
+  ["الاسمُ المحفوظ غيرُ منظَّف", "push(byName, searchable(cleanLibName(r.name)), r);", "push(byName, searchable(r.name), r);"],
 ];
 console.log("▸ طفرات (كلُّها يجب أن تُمسك)");
 for (const [what, from, to] of MUTANTS) {

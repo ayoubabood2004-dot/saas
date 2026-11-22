@@ -330,3 +330,62 @@ export function mediaType(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   return ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : ext === "bmp" ? "image/bmp" : "image/jpeg";
 }
+
+/* ── استبدالُ صور المكتبة بنسخٍ أوضح من مجلّد (طلبُ المالك ٢٢/١١) ────────────────────────────────────
+ * صورُ الإكسل مصغّراتٌ بـ٩٠ بكسل (مقيسٌ على ملفّ الموزّع الأوّل: ٩٠٩ من ٩٠٩)، والأصلُ عند المالك ملفّاتٌ بأسماءٍ
+ * مثل «مربعة دكتور كلاودر بالدواجن 100غم__4014355211123.png»: الاسمُ ثمّ «__» ثمّ الرمز. فالربطُ بالباركود أوّلاً
+ * (لا يُخطئ منتجاً)، وإلا بالاسم نفسِه بعد التطبيع على الطرفين (`cleanLibName` + `searchable`) — **لا تخمين**:
+ * ما يطابق أكثرَ من صورةٍ يُقال ولا يُلمس، وما لا يطابق شيئاً يُسمّى ولا يُرفع. */
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp)$/i;
+export function isImageFileName(name: string): boolean {
+  return IMAGE_EXT.test(name);
+}
+/** اسمُ الملف بلا مسارٍ ولا امتداد، مقسوماً عند آخر «__»: ما قبله الاسم، وما بعده رمزٌ إن كان باركوداً (٨–١٤). */
+export function parseImageName(fileName: string): { base: string; code: string | null } {
+  const noExt = fileName.replace(/^.*[\\/]/, "").replace(IMAGE_EXT, "");
+  const i = noExt.lastIndexOf("__");
+  if (i < 0) {
+    const c = libraryBarcode(noExt);
+    return c ? { base: "", code: c } : { base: cleanLibName(noExt.replace(/_/g, " ")), code: null };
+  }
+  return { base: cleanLibName(noExt.slice(0, i).replace(/_/g, " ")), code: libraryBarcode(noExt.slice(i + 2)) };
+}
+export type ReplaceBy = "barcode" | "name";
+export interface ReplacePlan<F> {
+  matched: { file: F; row: LibraryImage; by: ReplaceBy }[];
+  ambiguous: { file: F; count: number }[];
+  unmatched: F[];
+  /** ملفٌّ ثانٍ لصورةٍ ربطها ملفٌّ قبله — الأوّلُ يُرفع وهذا يُتخطّى. */
+  dupFiles: F[];
+  notImage: F[];
+}
+export function planReplace<F extends { name: string }>(files: readonly F[], rows: readonly LibraryImage[]): ReplacePlan<F> {
+  const byCode = new Map<string, LibraryImage[]>(), byName = new Map<string, LibraryImage[]>();
+  const push = (m: Map<string, LibraryImage[]>, k: string, r: LibraryImage) => { if (k) m.set(k, [...(m.get(k) ?? []), r]); };
+  for (const r of rows) {
+    if (r.barcode) push(byCode, matchCode(r.barcode), r);
+    push(byName, searchable(cleanLibName(r.name)), r);
+  }
+  const plan: ReplacePlan<F> = { matched: [], ambiguous: [], unmatched: [], dupFiles: [], notImage: [] };
+  const taken = new Set<string>();
+  for (const f of files) {
+    if (!isImageFileName(f.name)) { plan.notImage.push(f); continue; }
+    const { base, code } = parseImageName(f.name);
+    const nk = base ? searchable(base) : "";
+    let by: ReplaceBy = "barcode";
+    let hits = code ? byCode.get(matchCode(code)) ?? [] : [];
+    // باركودٌ على أكثر من صورة: الاسمُ يحسم إن طابق واحدةً منها وحدها.
+    if (hits.length > 1 && nk) {
+      const narrowed = hits.filter((r) => searchable(cleanLibName(r.name)) === nk);
+      if (narrowed.length === 1) hits = narrowed;
+    }
+    if (hits.length === 0 && nk) { hits = byName.get(nk) ?? []; by = "name"; }
+    if (hits.length === 0) { plan.unmatched.push(f); continue; }
+    if (hits.length > 1) { plan.ambiguous.push({ file: f, count: hits.length }); continue; }
+    const row = hits[0];
+    if (taken.has(row.id)) { plan.dupFiles.push(f); continue; }
+    taken.add(row.id);
+    plan.matched.push({ file: f, row, by });
+  }
+  return plan;
+}
