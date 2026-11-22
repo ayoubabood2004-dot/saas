@@ -31,6 +31,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { LEVELS, childrenOf, cleanLibName, cutAt, keyOfValue, nextLevel, under, valueOf, type Level, type LibPath } from "@/lib/libraryLevels";
 import { clinicLibraryReady, idsUnder, isLibraryColumnMissing, libraryPatch, rowsOf, type LibScope } from "@/lib/libraryScope";
 import { LibraryImport } from "./LibraryImport";
+import { LibraryReplace } from "./LibraryReplace";
 import type { LibraryImage } from "@/types";
 
 const BLANK = { name: "", company: "", kind: "", agency: "", section: "", barcode: "" };
@@ -260,6 +261,7 @@ export function ImageLibraryManager({ scope = "public" }: { scope?: "public" | "
       {editable && rows !== null && (
         <>
           <LibraryImport library={view} onChanged={load} create={create} scope={scope} />
+          {view.length > 0 && <LibraryReplace library={view} onChanged={load} />}
 
           <div className="card space-y-3 p-4">
             <h3 className="text-sm font-extrabold text-ink">{t("lib.addTitle", "أضف صورة للمكتبة")}</h3>

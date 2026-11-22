@@ -1369,6 +1369,18 @@ const supabaseRepo: DemoRepo = {
     if (moved < ids.length) throw Object.assign(new Error("library_move_partial"), { code: "library_move_partial", moved, total: ids.length });
     return moved;
   },
+  /* صورةٌ أوضح لصفٍّ قائم (طلبُ المالك ٢٢/١١): ملفٌّ جديدٌ بمسارٍ جديد بمجلّد الصفّ نفسِه (العامّة library/، والخاصّة
+   * مجلّدُ عيادتها) ثمّ المسارُ على الصفّ **بشرط أنه كما رآه** — استبدالان متزامنان لا يدوس أحدُهما الآخرَ بصمت، وصفرُ
+   * صفوفٍ يُرمى. والقديمُ يبقى بالدلو (O4)، ومنتجاتٌ أخذته تبقى عليه (قرارُ المالك: «المكتبة بس»). */
+  async replaceLibraryImage(row, upload) {
+    assertUploadableImage(upload);
+    const id = uuid();
+    const path = row.clinic_id ? `${row.clinic_id}/lib-${id}.${imageExt(upload)}` : `library/${id}.${imageExt(upload)}`;
+    const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: imageType(upload), cacheControl: "31536000", upsert: false });
+    if (up.error) throw up.error;
+    updatedRows(await sbc().from("image_library").update({ path }).eq("id", row.id).eq("path", row.path).select("id"));
+    return path;
+  },
   async deleteLibraryImage(id, path) {
     void path;
     // الصفُّ وحده يُحذف — **والملفُّ يبقى** (O4، قرارُ المالك: «لا تشيل ولا تحذف صورة»). منتجاتٌ
