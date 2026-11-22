@@ -106,9 +106,16 @@ export function buildStayLog(inp: StayInput, todayISO: string = localISO()): Sta
 
   // ── الحركات المختومة (أو أيّامُ الإقامة إن غابت) ──────────────────────────────
   const movedAdm = new Set(inp.movements.map((m) => m.admission_id).filter(Boolean) as string[]);
+  const admById = new Map(adms.map((s) => [s.a.id, s]));
   for (const m of inp.movements) {
     const kind: LogKind = m.event === "admitted" ? "in" : m.event === "discharged" ? "out" : m.event === "transferred" ? "transfer" : "cage";
-    place(dayOfISO(m.at), { kind, at: m.at, data: { from: m.from_kind ?? null, to: m.to_kind ?? null, fromCage: m.from_cage ?? null, toCage: m.to_cage ?? null } }, m.admission_id ?? null);
+    /* الدخولُ والخروجُ يختمهما المحفّزُ بلحظة كتابة السجلّ (0219: now()) — و«حالة جديدة» بتاريخٍ سابق، أو تاريخُ دخولٍ صُحّح
+       بعدها، يجعلان الختمَ بيومٍ غير يوم الإقامة: كان «دخل» يُرسم يومَ الكتابة بساعتها. يومُ الإقامة هو المعتمد، والساعةُ لا
+       تُنسب ليومٍ آخر — يُرسم بيومه بلا ساعة (كالإقامة القديمة بلا حركات). */
+    const st = m.admission_id ? admById.get(m.admission_id) : undefined;
+    const day = dayOfISO(m.at);
+    const own = st && kind === "in" && day !== st.inDay ? st.inDay : st && kind === "out" && st.outDay && day !== st.outDay ? st.outDay : null;
+    place(own ?? day, { kind, at: own ? null : m.at, data: { from: m.from_kind ?? null, to: m.to_kind ?? null, fromCage: m.from_cage ?? null, toCage: m.to_cage ?? null } }, m.admission_id ?? null);
   }
   for (const s of adms) {
     if (movedAdm.has(s.a.id)) continue;
