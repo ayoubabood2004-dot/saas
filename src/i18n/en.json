@@ -9539,7 +9539,12 @@
     "reprint": "Print it as it was",
     "editFrom": "Edit it and print",
     "baseBanner": "Editing the report printed {{date}} — sections are locked because the sheet is fixed; every word can still be edited.",
-    "baseBack": "Back to a fresh sheet"
+    "baseBack": "Back to a fresh sheet",
+    "complete": "Course complete — all doses given",
+    "completeHint": "The report states the animal received every treatment dose, even if some aren't marked in the system yet. With drug names off it reads: received all the required treatment doses. Saved with the report as your declaration.",
+    "dosesAllGiven": "The animal received all the required treatment doses in full — {{total}} in total.",
+    "courseDone": "Course completed",
+    "claimComplete": "In this report the doctor declared the course complete with every dose given — the doctor's statement, not the system record."
   },
   "psum": {
     "title": "Case summary",

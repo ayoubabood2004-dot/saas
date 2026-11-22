@@ -16,14 +16,14 @@
 // يفتح نافذةً بعد await)، ثمّ يُحفظ التقريرُ بمعرّفٍ من الجهاز (إعادةُ الحفظ بعد ردٍّ ضائع لا تكتب صفّاً ثانياً). وقائمةٌ لم
 // تصل خطأٌ يُقال مع «أعد» لا ورقةٌ ناقصة. وحدَه سجلُّ الحركة (ساعاتُ الدخول والخروج) اختياريّ.
 // ============================================================================
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Printer, Loader2 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { getClinicLogo, getClinicName } from "@/lib/settings";
+import { getClinicLogo, getClinicName, getClinicSocials } from "@/lib/settings";
 import { siteHost } from "@/lib/appUrl";
 import { describeDbError } from "@/lib/errors";
 import { cn, formatDate, formatTime, localISO, uuid } from "@/lib/utils";
@@ -45,6 +45,25 @@ const readPaper = (): Paper => {
 };
 /** بابُ التقارير كسولٌ (0287) — لا يدخل قطعةَ النافذة ولا الإقلاع. */
 const loadMod = () => import("@/lib/caseReportsApi");
+
+/** مفتاحُ اختيارٍ بشكل Segmented وأصنافه — بلا حركة layoutId: داخل نافذةٍ تُمرَّر كانت الشارةُ الزرقاء تنزاح عن زرّها (مقيسٌ
+ *  بلقطة «المطبوعة»: الشارةُ فوق أوّل تقرير، ونصُّ الزرّ الأبيض بلا خلفية). */
+function Seg<T extends string>({ value, options, onChange, big = false }: {
+  value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; big?: boolean;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1" role="tablist">
+      {options.map((o) => (
+        <button key={o.value} type="button" role="tab" aria-selected={o.value === value} onClick={() => onChange(o.value)}
+          className={cn("relative inline-flex items-center gap-1.5 rounded-full font-semibold transition-colors",
+            big ? "px-4 py-2 text-sm sm:text-base" : "px-3 py-1.5 text-sm",
+            o.value === value ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type SaveState =
   | { s: "idle" }
@@ -76,6 +95,8 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
   const [showDrugs, setShowDrugs] = useState(true);
   const [showDoseLog, setShowDoseLog] = useState(true);
   const [showDays, setShowDays] = useState(true);
+  // «العلاج مكتمل»: تصريحُ الطبيب أنه أعطى كلَّ الجرع ولو ما خُتمت بالنظام (قرارُ المالك ٢٢/١١) — يُحفظ تصريحاً مع التقرير.
+  const [courseComplete, setCourseComplete] = useState(false);
   const [parts, setParts] = useState({ vaccines: true, visits: true, notes: true, labs: true });
   const [tipsText, setTipsText] = useState<string | null>(null);
   const [doctorNote, setDoctorNote] = useState("");
@@ -152,16 +173,17 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
     name: getClinicName() || user?.full_name || t("visit.clinicFallback", "عيادة بيطرية"),
     lines: [pad?.address ?? "", [...(pad?.phones ?? []), ...(pad?.phones?.length ? [] : user?.phone ? [user.phone] : [])].filter(Boolean).join(" · ")],
     logoUrl: getClinicLogo(), site: siteHost(),
+    socials: (() => { const x = getClinicSocials(); return { ...(x.facebook ? { facebook: x.facebook } : {}), ...(x.instagram ? { instagram: x.instagram } : {}) }; })(),
   }), [pad, user, t]);
 
   // ── الورقةُ كما يولّدها النظام: من البيانات الآن، أو («عدّل عليها») من تقريرٍ مطبوع بنصّ نظامه الأصليّ ──
   const [base, setBase] = useState<CaseReport | null>(null);
   const fresh = useMemo<CaseSheet | null>(() => (pet && model ? composeSheet({
     t, lang, pet, model, scope, paper, showDrugs, showDoseLog, showDays, parts, tips: (tipsText ?? "").split("\n"), doctorNote,
-    clinic, doctor: user?.full_name ?? null, today, autoPrint: false,
+    clinic, doctor: user?.full_name ?? null, today, autoPrint: false, courseComplete,
   }) : null),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [pet, model, scope, paper, showDrugs, showDoseLog, showDays, parts, tipsText, doctorNote, clinic, lang]);
+  [pet, model, scope, paper, showDrugs, showDoseLog, showDays, parts, tipsText, doctorNote, clinic, lang, courseComplete]);
   const generated = useMemo<CaseSheet | null>(() => {
     if (!base?.sheet) return fresh;
     // تاريخُ الطباعة تاريخُ اليوم: نسخةٌ تُطبع اليوم لا تحمل تاريخَ طباعتها الأولى.
@@ -194,7 +216,8 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
   const preview = useMemo(() => {
     if (!generated) return "";
     const r = applyEdits(generated, editsRef.current);
-    return buildCaseSheetHTML(r.sheet, { editable: true, marks: new Set(r.applied.map((e) => e.k)) });
+    const keys = new Set(r.applied.map((e) => e.k));
+    return buildCaseSheetHTML(r.sheet, { editable: true, marks: keys, edited: keys });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generated, epoch]);
 
@@ -254,7 +277,7 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
     playTap();
     const r = applyEdits({ ...generated, autoPrint: true }, editsRef.current);
     // بالضغطة نفسِها: النافذةُ تُفتح وتُكتب الآن — لا await قبلها.
-    if (!openCaseSheet(buildCaseSheetHTML(r.sheet))) { playWarning(); toast.error(t("csht.blocked")); return; }
+    if (!openCaseSheet(buildCaseSheetHTML(r.sheet, { edited: new Set(r.applied.map((e) => e.k)) }))) { playWarning(); toast.error(t("csht.blocked")); return; }
     if (repState === "missing") return;
     const row: CaseReportNew = {
       id: uuid(), pet_id: pet.id,
@@ -287,12 +310,16 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
       setView((v) => (v?.id === id ? { id, rep: rep?.sheet ? rep : null, ...(rep?.sheet ? {} : { err: t("csht.viewMissing") }) } : v));
     } catch (e) { setView((v) => (v?.id === id ? { id, rep: null, err: describeDbError(e, t) } : v)); }
   };
-  const viewHtml = useMemo(() => (view?.rep?.sheet ? buildCaseSheetHTML(view.rep.sheet, { marks: new Set(view.rep.edits.map((e) => e.k)) }) : ""), [view]);
+  const viewHtml = useMemo(() => {
+    if (!view?.rep?.sheet) return "";
+    const keys = new Set(view.rep.edits.map((e) => e.k));
+    return buildCaseSheetHTML(view.rep.sheet, { marks: keys, edited: keys });
+  }, [view]);
   const reprint = () => {
     const sh = view?.rep?.sheet;
     if (!sh) return;
     playTap();
-    if (!openCaseSheet(buildCaseSheetHTML({ ...sh, autoPrint: true }))) { playWarning(); toast.error(t("csht.blocked")); }
+    if (!openCaseSheet(buildCaseSheetHTML({ ...sh, autoPrint: true }, { edited: new Set(view?.rep?.edits.map((e) => e.k)) }))) { playWarning(); toast.error(t("csht.blocked")); }
   };
   const editFrom = () => {
     const rep = view?.rep;
@@ -308,13 +335,15 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
   const leaveBase = () => { playTap(); setBase(null); setEpoch((n) => n + 1); };
 
   const when = (iso: string) => `${formatDate(iso, lang, true)} · ${formatTime(iso, lang)}`;
-  const chip = (on: boolean) => cn("inline-flex h-10 items-center rounded-2xl px-4 text-sm font-bold transition",
-    on ? "bg-brand-600 text-white shadow-soft" : "border border-line bg-surface-1 text-ink-muted hover:text-ink");
+  /** مفتاحُ تشغيلٍ بصفٍّ كامل (أصنافُ المفتاح المشترك نفسُها — UpcomingEvents) — الصفُّ كلُّه يُضغط. */
   const toggle = (on: boolean, label: string, onChange: (v: boolean) => void, attr: string) => (
-    <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink" data-cs-opt={attr}>
-      <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={on} onChange={(e) => { playTap(); onChange(e.target.checked); }} />
-      {label}
-    </label>
+    <button type="button" role="switch" aria-checked={on} onClick={() => { playTap(); onChange(!on); }} data-cs-opt={attr}
+      className="flex w-full items-center justify-between gap-3 py-2 text-start text-sm font-semibold text-ink">
+      <span className="min-w-0">{label}</span>
+      <span className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", on ? "bg-brand-600" : "bg-line-strong")}>
+        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all", on ? "start-[22px]" : "start-0.5")} />
+      </span>
+    </button>
   );
   const showHistory = repState !== "missing";
   const nReports = reports?.length ?? 0;
@@ -345,12 +374,11 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
       ) : (
         <div className="space-y-3" data-casesheet>
           {showHistory && (
-            <div className="flex flex-wrap gap-1.5" role="tablist">
-              <button type="button" role="tab" aria-selected={tab === "sheet"} className={chip(tab === "sheet")} onClick={() => { playTap(); setTab("sheet"); }} data-cs-tab="sheet">{t("csht.tabSheet")}</button>
-              <button type="button" role="tab" aria-selected={tab === "printed"} className={chip(tab === "printed")} onClick={() => { playTap(); setTab("printed"); }} data-cs-tab="printed">
-                {repState === "ok" ? t("csht.tabPrinted", { n: nReports }) : t("csht.tabPrintedBare")}
-              </button>
-            </div>
+            <Seg<"sheet" | "printed"> big value={tab} onChange={(v) => { playTap(); setTab(v); }}
+              options={[
+                { value: "sheet", label: <span data-cs-tab="sheet">{t("csht.tabSheet")}</span> },
+                { value: "printed", label: <span data-cs-tab="printed">{repState === "ok" ? t("csht.tabPrinted", { n: nReports }) : t("csht.tabPrintedBare")}</span> },
+              ]} />
           )}
           {tab === "printed" && showHistory ? (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]" data-cs-history>
@@ -401,6 +429,11 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
                       <Button leftIcon={<Printer size={16} />} onClick={reprint} data-cs-reprint>{t("csht.reprint")}</Button>
                       <Button variant="secondary" onClick={editFrom} data-cs-edit-from>{t("csht.editFrom")}</Button>
                     </div>
+                    {view.rep.sheet?.claims?.complete && (
+                      <p className="rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-cs-view-claim>
+                        {t("csht.claimComplete")}
+                      </p>
+                    )}
                     <section className="space-y-1.5 rounded-2xl border border-line bg-surface-2 p-3" data-cs-view-edits>
                       <p className="text-xs font-bold text-ink-subtle">{t("csht.viewEdits")}</p>
                       {view.rep.edits.length === 0 ? (
@@ -424,9 +457,9 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {/* «اطبع» أوّلاً — ظاهرٌ بلا تمرير، والخياراتُ تحته تُغيّر المعاينةَ مباشرةً. */}
-                <div className="space-y-2">
+                <div className="space-y-2 rounded-2xl border border-line bg-surface-1 p-3 shadow-soft">
                   <div className="flex gap-2">
                     <Button className="flex-1" leftIcon={<Printer size={16} />} onClick={print} data-cs-print>{t("csht.print")}</Button>
                     <Button variant="secondary" onClick={requestClose}>{t("common.cancel", "إلغاء")}</Button>
@@ -439,33 +472,44 @@ export function CaseSheetDialog({ petId, admissionId = null, data = null, onClos
                     <Button size="sm" variant="secondary" onClick={leaveBase} data-cs-base-leave>{t("csht.baseBack")}</Button>
                   </div>
                 )}
-                <div className="space-y-1.5">
-                  <p className="text-xs font-bold text-ink-subtle">{t("csht.paper")}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PAPERS.map((p) => <button key={p} type="button" className={chip(paper === p)} onClick={() => pickPaper(p)} data-cs-paper={p}>{p === "letter" ? "Letter" : p.toUpperCase()}</button>)}
-                  </div>
-                </div>
-                {!base && adm && (
+                <div className="space-y-3 rounded-2xl border border-line bg-surface-2 p-3">
                   <div className="space-y-1.5">
-                    <p className="text-xs font-bold text-ink-subtle">{t("csht.scope")}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button type="button" className={chip(scope === "stay")} onClick={() => { playTap(); setScope("stay"); }} data-cs-scope="stay">{t("csht.scopeStay")}</button>
-                      <button type="button" className={chip(scope === "all")} onClick={() => { playTap(); setScope("all"); }} data-cs-scope="all">{t("csht.scopeAll")}</button>
-                    </div>
+                    <p className="text-xs font-bold text-ink-subtle">{t("csht.paper")}</p>
+                    <Seg<Paper> value={paper} onChange={pickPaper}
+                      options={PAPERS.map((p) => ({ value: p, label: <span data-cs-paper={p}>{p === "letter" ? "Letter" : p.toUpperCase()}</span> }))} />
                   </div>
-                )}
+                  {!base && adm && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-bold text-ink-subtle">{t("csht.scope")}</p>
+                      <Seg<"stay" | "all"> value={scope} onChange={(v) => { playTap(); setScope(v); }}
+                        options={[
+                          { value: "stay", label: <span data-cs-scope="stay">{t("csht.scopeStay")}</span> },
+                          { value: "all", label: <span data-cs-scope="all">{t("csht.scopeAll")}</span> },
+                        ]} />
+                    </div>
+                  )}
+                </div>
                 {!base && (
                   <>
-                    <div className="space-y-2 rounded-2xl border border-line bg-surface-2 p-3">
+                    <div className="rounded-2xl border border-line bg-surface-1 px-3 pb-1 pt-3">
                       <p className="text-xs font-bold text-ink-subtle">{t("csht.parts")}</p>
-                      {scope === "stay" && model.days.length > 0 && toggle(showDays, t("csht.showDays"), setShowDays, "days")}
-                      {toggle(showDrugs, t("csht.showDrugs"), setShowDrugs, "drugs")}
-                      {showDrugs && toggle(showDoseLog, t("csht.showDoseLog"), setShowDoseLog, "doselog")}
-                      {toggle(parts.vaccines, t("csht.partVaccines"), (v) => setParts({ ...parts, vaccines: v }), "vaccines")}
-                      {toggle(parts.visits, t("csht.partVisits"), (v) => setParts({ ...parts, visits: v }), "visits")}
-                      {toggle(parts.notes, t("csht.partNotes"), (v) => setParts({ ...parts, notes: v }), "notes")}
-                      {toggle(parts.labs, t("csht.partLabs"), (v) => setParts({ ...parts, labs: v }), "labs")}
+                      <div className="divide-y divide-line/60">
+                        {scope === "stay" && model.days.length > 0 && toggle(showDays, t("csht.showDays"), setShowDays, "days")}
+                        {toggle(showDrugs, t("csht.showDrugs"), setShowDrugs, "drugs")}
+                        {showDrugs && toggle(showDoseLog, t("csht.showDoseLog"), setShowDoseLog, "doselog")}
+                        {toggle(parts.vaccines, t("csht.partVaccines"), (v) => setParts({ ...parts, vaccines: v }), "vaccines")}
+                        {toggle(parts.visits, t("csht.partVisits"), (v) => setParts({ ...parts, visits: v }), "visits")}
+                        {toggle(parts.notes, t("csht.partNotes"), (v) => setParts({ ...parts, notes: v }), "notes")}
+                        {toggle(parts.labs, t("csht.partLabs"), (v) => setParts({ ...parts, labs: v }), "labs")}
+                      </div>
                     </div>
+                    {model.meds.length > 0 && (
+                      <div className={cn("rounded-2xl border px-3 pb-2 pt-1", courseComplete
+                        ? "border-warn-200 bg-warn-50 dark:border-warn-500/30 dark:bg-warn-500/10" : "border-line bg-surface-1")} data-cs-claim>
+                        {toggle(courseComplete, t("csht.complete"), setCourseComplete, "complete")}
+                        <p className="text-2xs leading-relaxed text-ink-subtle">{t("csht.completeHint")}</p>
+                      </div>
+                    )}
                     <label className="block space-y-1">
                       <span className="text-xs font-bold text-ink-subtle">{t("csht.tipsTitle")}</span>
                       <textarea className="input min-h-[8rem] py-2 text-sm leading-relaxed" value={tipsText ?? ""} onChange={(e) => setTipsText(e.target.value)} data-cs-tips />

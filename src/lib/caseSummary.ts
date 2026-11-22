@@ -233,6 +233,34 @@ export function buildCaseModel(inp: CaseInput, opts: { today: string; now?: stri
   };
 }
 
+/** «العلاج مكتمل» — تصريحُ الطبيب بالتقرير (قرارُ المالك ٢٢/١١: «يكول اعطاه كل الجرع الكاملة بالتقرير حتى لو هو الكترونياً بعده
+ *  ما مخلصها»). الورقةُ وحدها تتغيّر لا القاعدة: كلُّ جرعةٍ دوائيّة بالمدى «انطت» (ختمُها إن وُجد يبقى)، والأدويةُ مكتملة، واليومياتُ
+ *  تقول ما فات وما تأخّر وما يُستحقّ «انطى» بيومه المجدول. والتقريرُ المحفوظ يحمل التصريح (claims) — يُعرف بعدها أنه قولُ الطبيب لا
+ *  ختمُ النظام. */
+export function markCourseComplete(m: CaseModel): CaseModel {
+  const add = (l: [string, number][], more: [string, number][]) => {
+    const out = l.map(([n, c]) => [n, c] as [string, number]);
+    for (const [n, c] of more) { const hit = out.find((x) => x[0] === n); if (hit) hit[1] += c; else out.push([n, c]); }
+    return out;
+  };
+  const byDay = new Map(m.days.map((x) => [x.day, { ...x, given: add(x.given, [...x.missed, ...x.overdue]), missed: [] as [string, number][], overdue: [] as [string, number][] }]));
+  // المستحقّةُ والقادمةُ بالمدى (ما انعطت بعد) — «انطى» بيومها المجدول.
+  if (m.range) {
+    for (const d of m.doses) {
+      if ((d.state !== "due" && d.state !== "upcoming") || !within(d.day, m.range)) continue;
+      const e = byDay.get(d.day) ?? { day: d.day, events: [], given: [], missed: [], overdue: [], care: [] };
+      byDay.set(d.day, { ...e, given: add(e.given, [[d.name, 1]]) });
+    }
+  }
+  return {
+    ...m,
+    doses: m.doses.map((d) => (d.state === "given" ? d : { ...d, state: "given" as const })),
+    meds: m.meds.map((x) => ({ ...x, given: x.total, missed: 0, overdue: 0, pending: 0 })),
+    totals: { ...m.totals, given: m.totals.doses, missed: 0, overdue: 0, pending: 0 },
+    days: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)),
+  };
+}
+
 /** «يوميات الإقامة»: سجلُّ الدخول والخروج (stayLog — حركاتٌ بساعتها، جرعاتٌ مجمّعةٌ بالدواء وما فات، لقاحات، تحاليل، وزن،
  *  ملاحظات) لأيّام المدى، ومعها مهامُّ الرعاية بيومها المجدول — المنجَزةُ بختمها أو بقيمتها المسجَّلة (VisitPage obsDone).
  *  يومٌ بلا شيء لا يُكتب: سطرٌ فارغٌ بورقةٍ تُسلَّم لا يقول شيئاً. */
