@@ -9307,7 +9307,26 @@
     "renamed": "Done — {{n}} photos moved",
     "renamePartial": "Only {{n}} of {{total}} photos moved — the library was reloaded, check it and try again.",
     "keepsOnProducts": "Products that took it keep their photo",
-    "deleteGo": "Remove from library"
+    "deleteGo": "Remove from library",
+    "rep": {
+      "title": "Replace with clearer photos",
+      "hint": "Pick the photos folder from your computer. File name: product name__barcode.png — matched by barcode first, then by name. Photos go straight from your device to your library.",
+      "pickFolder": "Choose folder",
+      "pickFiles": "Choose photos",
+      "matched": "{{n}} photos matched ({{b}} by barcode, {{m}} by name)",
+      "unmatched": "{{n}} match no library photo by name or barcode — skipped.",
+      "showUnmatched": "Show them",
+      "ambiguous": "{{n}} match more than one photo — left untouched.",
+      "dup": "{{n}} more files for an already-matched product — skipped.",
+      "notImage": "{{n}} files are not photos — skipped.",
+      "preview": "Before → after",
+      "go": "Replace {{n}} photos",
+      "running": "Replacing {{done}} of {{n}}…",
+      "stopped": "Stopped at {{done}} of {{n}} — press Replace to continue.",
+      "done": "Done — {{n}} photos replaced.",
+      "failed": "{{n}} not replaced",
+      "keepOld": "Old photos are not deleted, and products that already took them keep them."
+    }
   },
   "libp": {
     "mine": "My clinic's library",
