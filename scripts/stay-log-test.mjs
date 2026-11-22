@@ -76,6 +76,16 @@ check("معلوماتُ الدخول معلّقةٌ على إقامتها لا �
 check("وملاحظةُ يومِ الطبلة لا تتكرّر هنا", !JSON.stringify(log).includes("ملاحظة يوم"));
 check("والوزنُ بيومه داخل الإقامة المفتوحة", day(s2, "2026-10-05").some((e) => e.kind === "weight" && e.data.kg === 12.5));
 
+// «حالة جديدة» بتاريخٍ سابق (أو دخولٌ صُحّح يومُه): المحفّزُ ختم الحركتين لحظةَ الكتابة (١٣/٩) والإقامةُ ١٠/٩ ← ١٢/٩.
+const back = m.buildStayLog({ ...inp, admissions: [{ id: "A3", pet_id: "p", kind: "boarding", status: "discharged", admitted_on: "2026-09-10", discharged_on: "2026-09-12", created_at: at("2026-09-13", "08:00") }],
+  movements: [{ id: "m3", pet_id: "p", admission_id: "A3", at: at("2026-09-13", "08:00"), event: "admitted", to_kind: "boarding", to_cage: "D-1", created_at: "" },
+    { id: "m4", pet_id: "p", admission_id: "A3", at: at("2026-09-13", "08:01"), event: "discharged", created_at: "" }],
+  visits: [], treatments: [], vaccinations: [], notes: [], labs: [], weights: [] }, T);
+const s3 = back.stays[0];
+check("دخولٌ بتاريخٍ سابق: «دخل» بيوم الإقامة بلا ساعة الكتابة، وبقفصه — و«طلع» بيوم خروجها",
+  day(s3, "2026-09-10").some((e) => e.kind === "in" && e.at === null && e.data.toCage === "D-1") && day(s3, "2026-09-12").some((e) => e.kind === "out" && e.at === null) && !s3.dayLogs.some((d) => d.day === "2026-09-13"),
+  JSON.stringify(s3.dayLogs));
+
 console.log("▸ stay-log: خارج الإقامات");
 const out = Object.fromEntries(log.outside.map((d) => [d.day, kinds(d.events)]));
 check("زيارةُ الحلاقة واللقاح (٢٠/٩) والملاحظة (٢٥/٩) خارج الإقامات — لا تُرمى", out["2026-09-20"]?.includes("visitOpen") && out["2026-09-20"]?.includes("vaccine") && out["2026-09-25"] === "note", JSON.stringify(out));
