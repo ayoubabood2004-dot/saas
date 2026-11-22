@@ -302,7 +302,9 @@ check("المرتجع (0273): الدينُ القديم مرشّحٌ لمواد�
   && /if \(inv\.sale_kind === "opening"\) \{ setItems\(\[\]\); setLoading\(false\); return; \}/.test(ret));
 const ip = src("src/components/retail/InvoicesPanel.tsx");
 check("قائمة الفواتير: لا «إرجاع»، والحذفُ قبل التسديد وحده، والمطبوعُ كشفُ دينٍ بسطرٍ واحد",
-  /\{!refunded && !opening && \(/.test(ip) && /\{canDelete && !openingSettled && \(/.test(ip) && (ip.match(/items: opening \? openingLines :/g) ?? []).length === 2);
+  /\{!refunded && !opening && \(/.test(ip) && /\{canDelete && !openingSettled && \(/.test(ip) && (ip.match(/items: opening \? openingLines :/g) ?? []).length === 1
+  // 0286: الزرّان (A4 و80مم) يمرّان من printSale وحدها — البيعةُ بمجموعين تُطبع بنصفيها.
+  && (ip.match(/printSale\("(?:a4|thermal)"\)/g) ?? []).length === 2);
 const owners = ["src/components/retail/DebtsPanel.tsx", "src/components/retail/InvoicesPanel.tsx", "src/pages/CustomerFile.tsx", "src/components/reports/CustomerLedger.tsx"];
 for (const f of owners) {
   const t = src(f);

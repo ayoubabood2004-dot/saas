@@ -76,7 +76,8 @@ async function load(muts = []) {
         'export { dualCheckout, dualRate, dualReady, mixedCheckout, mixedTwin } from "./src/lib/dualApi.ts";',
         'export { demoUsdPrefs, demoUsdRateSet, demoUsdState, demoUsdCheckout } from "./src/lib/demoUsd.ts";',
         'export { buildTwinInvoiceHTML } from "./src/lib/invoicePrint.ts";',
-        'export { iqdOf } from "./src/lib/usdMath.ts";',
+        'export { iqdOf, farFrom } from "./src/lib/usdMath.ts";',
+        'export { settlementsOf } from "./src/lib/settlementFeed.ts";',
       ].join("\n"),
       resolveDir: process.cwd(), sourcefile: "dual-price-test-entry.ts", loader: "ts",
     },
@@ -99,7 +100,13 @@ const serverIqd = (cents, rate1e4) => { const n = BigInt(cents) * BigInt(rate1e4
 async function behaviour(M, say) {
   let ok = true;
   const c = (name, cond, detail) => { if (say) check(name, cond, detail); if (!cond) ok = false; };
-  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout, mixedTwin } = M;
+  const { D, U, P, repo, repriceCart, dualCheckout, dualRate, demoUsdPrefs, demoUsdRateSet, mixedCheckout, demoUsdCheckout, mixedTwin, settlementsOf, farFrom } = M;
+  /* 0286 (مراجعة): السعرُ الحرّ بلا مدير — صفرٌ زائدٌ أو ناقص يُسأل: بعيدٌ عن كلّ مرجعٍ بأكثر من ٢٠٪ (بالأعداد الصحيحة). */
+  const R = (per1) => BigInt(per1) * 10_000n;
+  c("0286: «15000» بدل «150000» بعيد (١٥٠ عن ١٥٠٠ و١٨٠٠)، و١٦٥٠ قريب، و٢٠٪ بالضبط ليس بعيداً، وبلا مرجعٍ لا حكم",
+    farFrom(R(150), [R(1500), R(1800)]) === true && farFrom(R(1650), [R(1500), R(1800)]) === false
+    && farFrom(R(1800), [R(1500)]) === false && farFrom(R(1801), [R(1500)]) === true && farFrom(R(150), [null, undefined]) === false
+    && farFrom(R(2200), [R(1500), R(1900)]) === false);
 
   /* أ) الحساب */
   const dual = { price_currency: "IQD", sell_price_usd: 10, sub_unit_price_usd: null, units_per_box: 3, has_sub_unit: true, sold_by_weight: false };
@@ -243,6 +250,12 @@ async function behaviour(M, say) {
     uItems.map((x) => `${x.qty}:${x.unit_label ?? "-"}:${x.stock_qty}:${x.unit_price_usd}:${x.unit_cost_usd ?? "-"}`).join(","));
   const stockOf = (db, id) => Math.round(db.products.find((x) => x.id === id).stock * 1000) / 1000;
   c("  والرصيد: الزيتُ ١٠٠ − ١ − ٦ − ٠٫٤ = ٩٢٫٦، والدينارُ وحده ٤٨", stockOf(d1, oil.id) === 92.6 && stockOf(d1, dn.id) === 48, `${stockOf(d1, oil.id)}|${stockOf(d1, dn.id)}`);
+  /* 0286: دفعةُ البيع (٢٠$) بمعاملة البيع نفسِها — ليست «تسديد دفعة» بسجلّ الفواتير (كانت المرآةُ تختمها بعد إنشاء الفاتورة
+   * فترسمها صفّاً ثالثاً، والخادمُ يختمها بـnow() نفسِه). */
+  const usdNow = (DB().invoices ?? []).find((x) => x.id === res.usd.id);
+  c("  ودفعةُ البيع ليست «تسديداً بعدها»: سجلُّ الفواتير لا يرسم لها سطراً (ختمُها لحظةُ إنشاء الفاتورة)",
+    settlementsOf(usdNow, [], []).length === 0 && (usdNow.payment_details ?? []).every((l) => !l.at || Date.parse(l.at) <= Date.parse(usdNow.created_at)),
+    JSON.stringify((usdNow.payment_details ?? []).map((l) => l.at)) + "|" + usdNow.created_at);
   const again2 = await mixedCheckout(IQ, US, mm("m-1"));
   c("  والإعادةُ بالمرجع ترجع الفاتورتين كما ثبتتا (لا ثالثة، والرصيدُ كما هو)",
     again2.iqd.id === res.iqd.id && again2.usd.id === res.usd.id && (DB().invoices ?? []).length === 2 && stockOf(DB(), oil.id) === 92.6);
@@ -366,6 +379,34 @@ check("النصوص: mxp (صندوقُ الدولار) بالقاموسين", mx
 check("النصوص: retail.dual بالقاموسين، وusd.prod الجديدة", need.every((k) => ar.retail.dual[k] && en.retail.dual[k])
   && ["modeLabel", "modeIqd", "modeDual", "modeUsd", "dualHint", "subUsd", "subAuto", "badSub", "blockedDual", "blockedIqd"].every((k) => ar.usd.prod[k] && en.usd.prod[k]));
 
+/* ── هـ٢) 0286: صفٌّ واحد للبيعة، والسعرُ يختاره الطبيب، وسعرُ اليوم من شاشة البيع ── */
+console.log("▸ 0286 (طلبُ المالك ٢١/١١): صفٌّ واحد للبيعة بمجموعين، والسعرُ يختاره من يسدّد، وسعرُ اليوم من أيّ شاشة");
+{
+  const ip = src("src/components/retail/InvoicesPanel.tsx"), ud = src("src/components/usd/Usd.tsx"), sbx = src("src/components/retail/SaleBuilder.tsx"), up = src("src/components/retail/UsdPay.tsx");
+  check("السجلّ: نصفُ الدولار يُرسم بصفّ بيعته (لا صفٌّ ثانٍ برقمٍ ثانٍ)، ومجموعُه بالدولار تحت الدينار، وسطرُ تسديده برقم الدينار",
+    /if \(pairs\.baseOf\.has\(inv\.id\)\) return null;/.test(ip) && /data-inv-twin-usd/.test(ip)
+    && /invoiceNo\(\(pairs\.baseOf\.get\(e\.inv\.id\) \?\? e\.inv\)\.id\)/.test(ip) && /inv\.item_count \+ \(twin\?\.item_count \?\? 0\)/.test(ip));
+  check("  والنافذة: فاتورةُ الدولار تُفتح من رأسها، ونصفُها داخل فاتورة الدينار، والطباعةُ بنصفيها (وسطورُه تُجلب إن لم تصل)",
+    /m\.invoiceByRef\(invRef\.slice\(0, -4\)\)/.test(ip) && /if \(alive && base\) setOpen\(base\);/.test(ip)
+    && /usdTwin = \{ invoice: tw, items: its \};/.test(ip) && (ip.match(/printSale\("(?:a4|thermal)"\)/g) ?? []).length === 2
+    // ومراجعة 0286: ضغطةُ طباعةٍ قبل جواب المرجع (أو بعد فشله) تسأله — لا دينارَ وحده بلا دَين الدولار — وفشلُ السؤال يُقال بنطاق usd
+    && /if \(!tw && !known && invRef && !invUsd && !invRef\.endsWith\("~usd"\)\)/.test(ip) && /<UsdTwinLazy twin=\{null\}/.test(ip));
+  check("التسديد: سعرُ يوم البيع وسعرُ اليوم زرّان، والسعرُ الآخرُ لا يحتاج سبباً، و«خلّيه سعر اليوم» من النافذة",
+    /data-usd-rate-sale/.test(ud) && /data-usd-rate-today/.test(ud) && /data-usd-rate-maketoday/.test(ud)
+    && !/other && !reason\.trim\(\)/.test(ud) && /\(stale && isTodayRate\)/.test(ud) && /other && reason\.trim\(\) \? reason : null/.test(ud)
+    // ومراجعة 0286: السعرُ البعيد يُقال ويحتاج ضغطةً ثانية (بالتسديد و«خلّيه سعر اليوم» ونافذة شاشة البيع)
+    && (ud.match(/if \(farPending\) \{ playWarning\(\); setFarAck\(per100\.trim\(\)\); return; \}/g) ?? []).length === 2
+    && /farFrom\(rate, \[saleRate, today\?\.rate1e4\]\)/.test(ud) && /if \(farPending\) \{ playWarning\(\); setFarAck\(per100\.trim\(\)\); return; \}/.test(up));
+  check("  ودفعةُ البيع «دُفع وكت البيع» بقائمة التسديدات", /atSaleOf\(s\.at, invoice\.created_at\)/.test(ud));
+  check("شاشةُ البيع: «غيّر السعر» بصندوق الدولار، و«$» بلا سعرٍ يسأله ثمّ يكمل، وسطورُ الدولار تأخذ السعرَ الجديد",
+    /if \(!r\.ok && r\.why === "no_rate"\) \{ playTap\(\); setRateAsk\(\{ cur: null, then: l \}\); return; \}/.test(sbx)
+    && /x\.usd \? \{ \.\.\.x, usd: \{ \.\.\.x\.usd, rid: rate\.id, r: rate\.rate1e4\.toString\(\) \} \}/.test(sbx)
+    && /data-usdrate-edit/.test(up) && /await import\("@\/lib\/usdApi"\)/.test(up) && !/from "@\/lib\/usdApi";\n/.test(up.replace(/import type[^\n]*\n/g, "")));
+  check("  والنصوص بالقاموسين", ["rateEdit", "rateTitle", "rateNow", "rateNone", "rateNew", "rateOne", "rateBad", "rateHint", "rateSave", "rateSaved", "rateFailed"].every((k) => ar.mxp?.[k] && en.mxp?.[k])
+    && ["rateSale", "rateMine", "pickSale", "pickToday", "makeToday", "note", "atSale"].every((k) => ar.usd.settle[k] && en.usd.settle[k])
+    && ["title", "itemsFailed"].every((k) => ar.usd.twin?.[k] && en.usd.twin?.[k]) && !("reason" in ar.usd.settle) && !("rateOther" in ar.usd.settle));
+}
+
 /* ── و) طفرات ── */
 console.log("▸ طفرات");
 const MUTS = [
@@ -387,14 +428,20 @@ const MUTS = [
   ["الجزئيُّ بلا علَمه", "src/lib/demoUsd.ts", "const partial = !!meta.partial_ok && paidUsd > 0n", "const partial = paidUsd > 0n"],
   ["المفردُ يُخصم علبةً", "src/lib/demoUsd.ts", "stock: sub ? Number(divRound(BigInt(qty) * 1000n, BigInt(units))) / 1000 : qty * per", "stock: qty * per"],
   ["المفردُ يُتجاهل على مادّةٍ لم تعد بسعرين", "src/lib/demoUsd.ts", "const sub = !!it.sub;", "const sub = dual && !!it.sub;"],
-  ["التوأمُ بغير مرجعه", "src/lib/dualApi.ts", "client_ref === `${ref}~usd`) as Invoice | undefined", "client_ref === ref) as Invoice | undefined"],
+  ["التوأمُ بغير مرجعه", "src/lib/dualApi.ts", "return invoiceByRef(`${ref}~usd`);", "return invoiceByRef(ref);"],
   ["المادّةُ بسعرين بكلفة الدولار", "src/lib/demoUsd.ts", "costCents: dual || p.purchase_price_usd == null ? null", "costCents: p.purchase_price_usd == null ? null"],
+  ["السعرُ البعيد بلا سؤال", "src/lib/usdMath.ts", "return d * 100n > r * pct;", "return false;"],
+  ["البعيدُ بأيّ مرجعٍ لا بكلّها", "src/lib/usdMath.ts", "return rs.every((r) =>", "return rs.some((r) =>"],
+  ["دفعةُ البيع تُختم بعد الفاتورة (صفٌّ ثالث)", "src/lib/demoUsd.ts", "const at = atIn ?? new Date().toISOString();", "const at = new Date(Date.now() + 1000).toISOString();"],
   ["الورقةُ الواحدة بسكربتين", "src/lib/invoicePrint.ts", "h2.slice(b2s + \"<body>\".length, b2e)", "h2.slice(b2s + \"<body>\".length)"],
 ];
 for (const [name, file, from, to] of MUTS) {
   let caught;
-  try { caught = !(await behaviour(await load([[file, from, to]]), false)); } catch { caught = true; }
-  check(`طفرة «${name}» تُمسك`, caught);
+  /* طفرةٌ لا تجد نصَّها ترمي من load — كانت تُحسب «ممسوكة» بصمت (الشِفرةُ تغيّرت والطفرةُ صارت لا شيء). تُقال فشلاً. */
+  let lost = null;
+  try { caught = !(await behaviour(await load([[file, from, to]]), false)); }
+  catch (e) { const m = String(e?.message ?? e); if (m.includes("طفرةٌ ما لقت نصّها")) lost = m; caught = true; }
+  check(`طفرة «${name}» تُمسك`, caught && !lost, lost ?? undefined);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} البيعُ بسعرين: ${passes} نجح، ${fails} فشل`);

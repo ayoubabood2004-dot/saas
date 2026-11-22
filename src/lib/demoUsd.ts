@@ -1,11 +1,11 @@
 /* ============================================================================
  * مرآةُ الدولار (0264) للتجريبيّ — العقدُ نفسُه والحرّاسُ نفسُها، والحسابُ من usdMath.ts (مرآةُ الخادم المفحوصة بـusd-parity):
- *  • المفتاحُ مطفأ ⇒ usd_disabled لكلّ كتابة؛ والسعرُ للمدير (أو مفتاحِه الحيّ) ⇒ usd_rate_manager؛ وحدّاه ١٠٠–١٠٠٬٠٠٠ ⇒ usd_rate_bad.
+ *  • المفتاحُ مطفأ ⇒ usd_disabled لكلّ كتابة؛ والسعرُ لكلّ الكادر (0286 — كان للمدير)؛ وحدّاه ١٠٠–١٠٠٬٠٠٠ ⇒ usd_rate_bad.
  *  • البيعُ: معرّفُ السعر آخرُ سعر (usd_rate_changed)، موادُّ دولار وحدها بلا تكرار (usd_mixed/usd_duplicate_line)، كميةٌ
  *    صحيحةٌ موجبة (usd_qty)، سعرٌ موجود (usd_no_price)، نقداً كاملاً أو دَيناً (usd_partial_at_sale). والفاتورةُ من مرآة
  *    retail_checkout نفسِها والبابُ مفتوح، ثمّ تُختم، والنقدُ تسديدٌ كاملٌ بسعر البيع.
- *  • التسديد: باقٍ تغيّر (usd_due_changed)، صفرٌ أو أكبرُ من الباقي (usd_amount/usd_over)، سعرٌ غيرُ سعر اليوم للمدير وبسبب
- *    (usd_rate_override)، جزئيٌّ يطلع صفراً (usd_too_small)؛ والإعادةُ بنفس المرجع تسديدٌ واحد.
+ *  • التسديد: باقٍ تغيّر (usd_due_changed)، صفرٌ أو أكبرُ من الباقي (usd_amount/usd_over)، والسعرُ يختاره من يسدّد بلا مديرٍ
+ *    ولا سبب (0286)، جزئيٌّ يطلع صفراً (usd_too_small)؛ والإعادةُ بنفس المرجع تسديدٌ واحد.
  *  • الإلغاءُ للمدير وبسبب، والحذفُ بعد إلغاء التسديدات (usd_delete_settled).
  *  • المصوّرُ مسيَّج: لا يرى (مطفأ) ولا يكتب (photographer_forbidden).
  * الرموزُ وحدها (P0001/42501) — الشاشةُ تترجمها (usdErrorText). كسولةٌ من باب repoDemo وحده (loadDemoUsd).
@@ -73,7 +73,6 @@ export async function demoUsdRateSet(per100: string, note: string | null): Promi
   gate();
   const s = load();
   if (!s.enabled) throw err("usd_disabled");
-  if (!isManager()) throw err("usd_rate_manager", "42501");
   const r = rateOfPer100(per100);
   if (!rateOk(r)) throw err("usd_rate_bad");
   const row = { id: uid("fx"), rate: rateText(r!), note: note?.trim() || null, set_by: demoUserId() ?? null, created_at: stamp(s.rates[s.rates.length - 1]?.created_at) };
@@ -177,7 +176,7 @@ export async function demoUsdCheckout(items: UsdLineIn[], meta: UsdSaleMeta): Pr
   });
   saveDB(db);
   if (paid && t.totalUsdCents > 0n) {
-    return (await settleLocal(inv.id, paidUsd, cur.rate1e4, method, t.totalUsdCents, null, null)).invoice;
+    return (await settleLocal(inv.id, paidUsd, cur.rate1e4, method, t.totalUsdCents, null, null, inv.created_at)).invoice;
   }
   return inv;
 }
@@ -190,7 +189,7 @@ export async function demoUsdSettle(invoiceId: string, usd: string, per100: stri
 }
 
 async function settleLocal(invoiceId: string, usd: bigint, rate: bigint | null, methodIn: UsdMethod, expect: bigint | null,
-  noteIn: string | null, refIn: string | null): Promise<UsdSettleResult> {
+  noteIn: string | null, refIn: string | null, atIn?: string): Promise<UsdSettleResult> {
   const s = load();
   if (!s.enabled) throw err("usd_disabled");
   const ref = refIn?.trim() || null;
@@ -211,15 +210,14 @@ async function settleLocal(invoiceId: string, usd: bigint, rate: bigint | null, 
   if (usd > due) throw err("usd_over");
   if (!rateOk(rate)) throw err("usd_rate_bad");
   const note = noteIn?.trim() || null;
-  const cur = latest(s);
-  if (!cur || rate !== cur.rate1e4) { if (!isManager() || !note) throw err("usd_rate_override", "42501"); }
   const received = iqdOf(usd, rate!, s.step);
   const refusal = settleRefusal(usd, due, received);
   if (refusal) throw err(refusal);
   const totalIqd = C(inv.total) / 100n, paidIqd = C(inv.amount_paid ?? 0) / 100n;
   const share = shareOf(usd, due, totalIqd - paidIqd, totalUsd, totalIqd);
   const fx = received - share;
-  const at = new Date().toISOString();
+  /* دفعةُ البيع تُختم بلحظة إنشاء الفاتورة كالخادم (نفسُ now() بمعاملة usd_checkout) — بعدها كانت تُرسم «تسديد دفعة» بسجلّ الفواتير. */
+  const at = atIn ?? new Date().toISOString();
   const row: UsdSettlement = {
     id: uid("ust"), invoice_id: inv.id, usd: N(usd), rate: Number(rate!) / 10_000, rate_note: note, received: Number(received), share: Number(share),
     fx: Number(fx), method, at, by_user: demoUserId() ?? null, client_ref: ref, voided_at: null, voided_by: null, void_reason: null,

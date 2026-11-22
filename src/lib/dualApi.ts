@@ -96,11 +96,17 @@ export async function mixedCheckout(iqd: CheckoutItem[], usd: MixedUsdLine[], me
 /** إعادةٌ بالمرجع نفسِه بلا سطر دولار (الكاشيرُ رجّعها للدينار بعد محاولةٍ مجهولة المصير): فاتورةُ الدولار التي ثبتت معها بمرجعها ~usd —
  *  تُعرض وتُطبع ولا تختفي (قد تحمل دَيناً بالدولار). قراءةٌ وحدها؛ فشلُها لا يمسّ البيعة (فاتورةُ الدينار ثابتةٌ بنفسها). */
 export async function mixedTwin(ref: string): Promise<Invoice | null> {
+  return invoiceByRef(`${ref}~usd`);
+}
+
+/** فاتورةٌ بمرجعها (فهرسٌ فريد للعيادة) — للبيعة بمجموعين: نصفُها الآخر (R ⇄ R~usd) يُعرض معها فاتورةً واحدة (طلبُ المالك ٢١/١١).
+ *  فشلُ الجلب يُرمى (الشاشةُ تقول «أعد المحاولة») — نصفٌ غائبٌ بصمت يجعل البيعةَ تبدو أصغرَ مما هي. */
+export async function invoiceByRef(ref: string): Promise<Invoice | null> {
   if (!supabase) {
     const db = (await import("./demoStore")).loadDB();
-    return ((db.invoices ?? []).find((i) => (i as Invoice & { client_ref?: string | null }).client_ref === `${ref}~usd`) as Invoice | undefined) ?? null;
+    return ((db.invoices ?? []).find((i) => (i as Invoice & { client_ref?: string | null }).client_ref === ref) as Invoice | undefined) ?? null;
   }
-  const r = await supabase.from("invoices").select("*").eq("client_ref", `${ref}~usd`).limit(1);
+  const r = await supabase.from("invoices").select("*").eq("client_ref", ref).limit(1);
   if (r.error) throw r.error;
   return ((r.data ?? [])[0] as Invoice | undefined) ?? null;
 }

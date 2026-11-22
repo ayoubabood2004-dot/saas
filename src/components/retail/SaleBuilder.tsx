@@ -95,6 +95,9 @@ const loadUsdBox = () => page(() => import("@/components/retail/UsdPay").then((m
 const loadUsdDone = () => page(() => import("@/components/retail/UsdPay").then((m) => ({ default: m.UsdDoneNote })), ["mxp"]);
 let UsdBoxLazy: ReturnType<typeof loadUsdBox> | null = null;
 let UsdDoneLazy: ReturnType<typeof loadUsdDone> | null = null;
+/* 0286: سعرُ الدولار اليوم من شاشة البيع (قرارُ المالك ٢١/١١) — نافذةٌ بالقطعة نفسِها. */
+const loadUsdRate = () => page(() => import("@/components/retail/UsdPay").then((m) => ({ default: m.UsdRateDialog })), ["mxp"]);
+let UsdRateLazy: ReturnType<typeof loadUsdRate> | null = null;
 /** «12.50» ⇒ ١٢٥٠ سنتاً، والفارغُ صفر، وما لا يُقرأ null — مرآةُ usdCentsIn بالقطعة (شاشةُ البيع لا تستوردها ثابتاً). */
 function centsIn(s: string): number | null {
   const v = s.trim().replace(/[$\s,]/g, "").replace(/\u066B/g, ".");
@@ -1518,6 +1521,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [usdPaid, setUsdPaid] = useState<string | null>(draft0?.usdPaid ?? null);
   const [usdMethod, setUsdMethod] = useState<"cash" | "card" | "transfer">(draft0?.usdMethod ?? "cash");
   const [mxLazyTick, setMxLazyTick] = useState(0);
+  /** 0286: نافذةُ «سعر الدولار اليوم» — من صندوق الدولار، أو حين يُضغط «$» والعيادةُ بلا سعر (ثمّ يكمل السطرُ نفسُه). */
+  const [rateAsk, setRateAsk] = useState<{ cur: bigint | null; then: Line | null } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
@@ -2241,6 +2246,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     let r: Awaited<ReturnType<typeof m.dualRate>>;
     try { r = await m.dualRate(); }
     catch { playWarning(); toast.error(t("retail.dual.unreach")); return; }
+    if (!r.ok && r.why === "no_rate") { playTap(); setRateAsk({ cur: null, then: l }); return; }   // 0286: يحدّده من هنا ويكمل
     if (!r.ok) { playWarning(); toast.error(t(`retail.dual.${r.why}`)); return; }
     /* 0283: السطرُ بالدولار يُجمع بالدولار (فاتورةٌ بمجموعين) — قاعدةٌ قبلها لا تعرفه، فلا سطرَ دولار (لا تحويلٌ بالسرّ). */
     let mixedOk = false;
@@ -5515,7 +5521,23 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               <Suspense fallback={null}>
                 <UsdBoxLazy key={mxLazyTick} subC={usdSubC} discC={usdDiscC} totalC={usdTotalC} paidC={usdPaidC} debtC={usdDebtC}
                   disc={usdDisc} onDisc={setUsdDisc} paid={usdPaid} onPaid={setUsdPaid} method={usdMethod} onMethod={setUsdMethod}
-                  rate={usdLines[0]?.usd ? Number(usdLines[0].usd.r) / 10000 : null} nameMissing={!name.trim()} />
+                  rate={usdLines[0]?.usd ? Number(usdLines[0].usd.r) / 10000 : null} nameMissing={!name.trim()}
+                  onRate={payPending ? undefined : () => { playTap(); setRateAsk({ cur: usdLines[0]?.usd ? BigInt(usdLines[0].usd.r) : null, then: null }); }} />
+              </Suspense>
+            </LoadBoundary>
+          )}
+          {rateAsk && (UsdRateLazy ??= loadUsdRate()) && (
+            <LoadBoundary scope="usd-rate" onRetry={() => { UsdRateLazy = loadUsdRate(); setMxLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}>
+                <UsdRateLazy key={mxLazyTick} current={rateAsk.cur} onClose={() => setRateAsk(null)}
+                  onSaved={(rate) => {
+                    const then = rateAsk.then;
+                    setRateAsk(null);
+                    /* سطورُ الدولار بالسلّة تأخذ سعرَ اليوم الجديد (معرّفُه يُرسل مع البيعة — الخادمُ يرفض سعراً غيرَ آخر سعر). المجموعُ
+                     * بالدولار لا يتغيّر به؛ سعرُ الصرف يُختم على فاتورة الدولار وحده. */
+                    setCart((c) => c.map((x) => (x.usd ? { ...x, usd: { ...x.usd, rid: rate.id, r: rate.rate1e4.toString() } } : x)));
+                    if (then) void toggleLineUsd(then);
+                  }} />
               </Suspense>
             </LoadBoundary>
           )}

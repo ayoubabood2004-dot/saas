@@ -129,7 +129,8 @@ const st0 = await usdApi.setPrefs(true, 250);
 check("  والمديرُ يفعّله بخطوة ٢٥٠، بلا سعرٍ بعد", st0.enabled === true && st0.step === 250 && st0.rate === null);
 check("  وخطوةٌ خارج القائمة تُرفض", await errOf(() => usdApi.setPrefs(null, 333)) === "usd_step_bad");
 as("r1", "reception");
-check("الاستقبالُ ما يحدّد السعر (قرار ٣)", await errOf(() => usdApi.setRate("146000")) === "usd_rate_manager");
+check("الاستقبالُ يحدّد سعرَ اليوم بنفسه (0286 — قرارُ ٣ كان «للمدير»؛ المالكُ ٢١/١١: «يكدر الدكتور يغير سعر الدولار وين ما جان»)",
+  (await usdApi.setRate("146000")).rate === "1460.0000");
 as("m1", "admin");
 check("  وما يُكتب بفاصلةٍ أو بأرقامٍ شرقية يُرسل قانونياً (numeric بالقاعدة يرفض «146,000» — 22P02)",
   (await usdApi.setRate("١٤٦٬٠٠٠")).rate === "1460.0000" && (await usdApi.setRate("146,000")).rate === "1460.0000");
@@ -170,7 +171,7 @@ check("  وتعديلُ سِيَق فاتورة الدولار (تقسيمُ ا�
 /* ── التسديد ────────────────────────────────────────────────────────────── */
 console.log("▸ التسديد بالدينار: الحصّةُ بنسبة الفاتورة، والفرقُ «فرق صرف»");
 as("r1", "reception");
-check("الاستقبالُ بسعرٍ غير سعر اليوم يُرفض (قرار ٤)", await errOf(() => usdApi.settle(A.id, "100", "140000", "cash", "1000")) === "usd_rate_override");
+// قرارُ ٤ («سعرٌ غيرُ سعر اليوم للمدير وبسبب») شاله 0286 — يُفحص بقسمه أدناه على فاتورةٍ وحدها (هذا المثالُ يسدّد بسعر اليوم).
 as("m1", "admin");
 await usdApi.setRate("148000");
 as("r1", "reception");
@@ -289,6 +290,27 @@ const wr = await repo.createProduct({ name: "مكتوب USD", barcode: "USD-T-W"
   price_currency: "USD", sell_price_usd: 2, packs: [{ id: "w10", name: "شدّة", codes: ["USD-T-W10"], per: 10, purchase_price: null, sell_price: 18.5 }] });
 check("وتبديلُ العملة وسعرُ الكارتون مكتوبٌ كما هو ⇒ pack_price_currency (كالخادم)",
   await errOf(() => repo.updateProduct(wr.id, { price_currency: "IQD", sell_price: 3000 })) === "pack_price_currency");
+
+/* ── 0286: السعرُ يختاره من يسدّد (يوم البيع، أو اليوم، أو أيُّ سعر)، وسعرُ اليوم للكادر ───────────────────────── */
+console.log("▸ 0286: الاستقبالُ يحدّد سعرَ اليوم، ويسدّد بسعر يوم البيع أو بأيّ سعر — بلا مديرٍ ولا سبب");
+{
+  as("m1", "admin");
+  const r150 = await usdApi.setRate("150000");
+  const E = await usdApi.checkout([{ product_id: kit.id, qty: 2, unit_price_usd: "50" }], { ...meta("u-e286"), fx_rate_id: r150.id, customer_name: "زبون ٢٨٦" });
+  as("r1", "reception");
+  const r180 = await usdApi.setRate("180000");
+  check("بعد شهر الاستقبالُ يكتب سعرَ اليوم ١٨٠٠ (والسطرُ باسمه)", r180.rate === "1800.0000" && (await usdApi.state()).rate?.id === r180.id);
+  const e1 = await usdApi.settle(E.id, "40", "150000", "cash", "100");
+  check("  ويسدّد ٤٠$ بسعر يوم البيع ١٥٠٠ (غيرُ سعر اليوم) بلا سبب ⇒ ٦٠٬٠٠٠ والفرقُ صفر",
+    e1.settlement.received === 60000 && e1.settlement.share === 60000 && e1.settlement.fx === 0 && e1.settlement.rate === 1500 && e1.settlement.rate_note === null);
+  const e2 = await usdApi.settle(E.id, "60", "165000", "transfer", "60");
+  const E2 = await invOf(E.id);
+  check("  والباقي ٦٠$ بسعرٍ يختاره (١٦٥٠) ⇒ ٩٩٬٠٠٠ = ٩٠٬٠٠٠ حصّة + ٩٬٠٠٠ فرق، ومغلقةٌ بالعملتين وسعرُ يوم البيع عليها كما هو",
+    e2.settlement.received === 99000 && e2.settlement.share === 90000 && e2.settlement.fx === 9000 && E2.total_usd - E2.paid_usd === 0 && E2.total - E2.amount_paid === 0 && E2.fx_rate === 1500);
+  check("  والحدودُ كما هي: سعرٌ خارج الحدّين، والإلغاءُ للمدير",
+    await errOf(() => usdApi.setRate("1460")) === "usd_rate_bad" && await errOf(() => usdApi.voidSettlement(e2.settlement.id, "غلط")) === "usd_void_manager");
+  as("m1", "admin");
+}
 
 /* ── هـ) السياج و«القراءة فقط» ─────────────────────────────────────────────── */
 console.log("▸ السياجُ و«القراءة فقط»");
