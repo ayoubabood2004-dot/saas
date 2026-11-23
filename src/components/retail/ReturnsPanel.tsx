@@ -57,7 +57,7 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
   const [q, setQ] = useState(initialQ ?? "");
   const [picked, setPicked] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
-  /** 0288: أثرُ راجعٍ إكسباير (سطرٌ بلا مادّة، اسمُه نصُّ الخادم «… — راجع إكسباير …») — ما بقي للعيادة من قيمة العلبة الراجعة، لا بضاعة:
+  /** 0289: أثرُ راجعٍ إكسباير (سطرٌ بلا مادّة، اسمُه نصُّ الخادم «… — راجع إكسباير …») — ما بقي للعيادة من قيمة العلبة الراجعة، لا بضاعة:
    *  لا يُرجَع ولا يدخل «إرجاع الكل» (كان يردّ للزبون ما احتفظت به العيادة ويقلب الفاتورةَ مرجَعة). */
   const isXretTrace = (it: InvoiceItem) => !it.product_id && Number(it.stock_qty) === 0
     && String(it.name ?? "").includes("\u2014 \u0631\u0627\u062C\u0639 \u0625\u0643\u0633\u0628\u0627\u064A\u0631");

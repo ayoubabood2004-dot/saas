@@ -61,7 +61,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify([...b].sort());
 const real = buildModel(MIG);
 // ١١ = عشرةُ 0252–0259 + usd_checkout (0264). التسديدُ بالدولار وإلغاؤه لا يقلبان الحالة (حالةُ البيع paid/refunded) فليسا كاتبَين.
 // كاتبٌ جديد يُقرأ ويُعدّ هنا.
-ok(rule(MIG, "invoice-writers").length === 0 && invoiceWriters(real).length === 14, "الشجرةُ الحقيقية: أربعةَ عشرَ كاتباً للفواتير، كلٌّ بسببه بالقائمة (0288: retail_checkout_lots وreturn_expired)");
+ok(rule(MIG, "invoice-writers").length === 0 && invoiceWriters(real).length === 14, "الشجرةُ الحقيقية: أربعةَ عشرَ كاتباً للفواتير، كلٌّ بسببه بالقائمة (0289: retail_checkout_lots وreturn_expired)");
 ok(rule(MIG, "consumption-wiring").length === 0 && wiringChecks(real).length >= 15, "  والربطُ كامل: البيعةُ والتعديلُ والمرتجعُ والحذفُ والمحفّزات (١٥ رابطاً فأكثر)");
 ok(real.fnBodies.get("edit_invoice_lines/3")?.file.startsWith("0241"), "  وغلافُ edit_invoice_lines آخرُه كتلةُ 0241 (do/execute) لا جسمُ 0110 الكاتب");
 const iw = copy(() => true);

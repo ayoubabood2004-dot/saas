@@ -1,5 +1,5 @@
 /* ============================================================================
- * مرآةُ الراجع الإكسباير (0288) بالتجريبيّ — return_expired وretail_checkout_lots بقواعدهما. كسولةٌ من باب repoDemo وحده
+ * مرآةُ الراجع الإكسباير (0289) بالتجريبيّ — return_expired وretail_checkout_lots بقواعدهما. كسولةٌ من باب repoDemo وحده
  * (loadDemoExpired)، ويستوردها expiredApi وحده.
  *
  * الحساب (لا خسارةَ وهميّة): سطرُ الفاتورة ينقص بالراجع، و«سطرُ أثر» بلا مادّة سعرُه ما لم يرجع للزبون وكلفتُه ما لم ينتقل للدفعة — فربحُ
@@ -28,7 +28,7 @@ const BACK_WORD = "\u0623\u064F\u0639\u064A\u062F";                             
 const UNIT_SUB = "\u0642\u0637\u0639\u0629";                                               // «قطعة»
 const UNIT_PACK = "\u0643\u0627\u0631\u062A\u0648\u0646";                                  // «كارتون»
 type Ref = { fn: string; ref: string; result: unknown };
-const REFS = "vp_demo_rpc_refs_0288";
+const REFS = "vp_demo_rpc_refs_0289";
 const refsLoad = (): Ref[] => { try { return JSON.parse(localStorage.getItem(REFS) ?? "[]") as Ref[]; } catch { return []; } };
 const refsSave = (l: Ref[]) => localStorage.setItem(REFS, JSON.stringify(l.slice(-300)));
 

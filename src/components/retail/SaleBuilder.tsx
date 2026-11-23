@@ -214,10 +214,10 @@ interface Line {
   /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `c` سعرُ الوحدة بالسنت، و`rid`/`r` سعرُ الصرف الذي حُسب به دينارُه (`unit_price`) كما يعرفه
    *  الخادم (معرّفُه، والدولارُ الواحد بأربع منازل نصّاً — المسودّةُ JSON). الخادمُ يرفض سعراً تغيّر (`usd_rate_changed`) ودينارٌ لا يطابق. */
   usd?: { c: number; rid: string; r: string };
-  /** 0288: سطرُ راجعٍ إكسباير — شوكت خلص ووحدتُه (علبة، قطعة، كارتون) كما ثبّتتها نافذتُه، و`box` سعرُ العلبة قبلها (للرجوع).
+  /** 0289: سطرُ راجعٍ إكسباير — شوكت خلص ووحدتُه (علبة، قطعة، كارتون) كما ثبّتتها نافذتُه، و`box` سعرُ العلبة قبلها (للرجوع).
    *  السلّةُ التي فيها راجعٌ إكسباير كلُّها إكسباير وتُرسل بـreturn_expired (الخادمُ يختار فاتورتَها بمفتاح الزبون). */
   xret?: { date: string; unit: "box" | "sub" | "pack"; packId?: string; box: number };
-  /** 0288: بيعٌ من دفعة راجعٍ إكسباير — `qty` باقيها بوحدة المخزن (سقفُ السطر)، و`cost` كلفةُ العلبة منها (معاينةُ الربح؛ الخادمُ
+  /** 0289: بيعٌ من دفعة راجعٍ إكسباير — `qty` باقيها بوحدة المخزن (سقفُ السطر)، و`cost` كلفةُ العلبة منها (معاينةُ الربح؛ الخادمُ
    *  يكتبها)، و`note` ما يُرسم تحت السطر. البيعةُ تمرّ من retail_checkout_lots. */
   lot?: { id: string; qty: number; cost: number | null; note: string };
 }
@@ -534,9 +534,9 @@ function loadNegMod(): Promise<NegMod> {
   negLoad ??= import("@/lib/negStockApi").then((m) => (negMod = m), (e) => { negLoad = null; throw e; });
   return negLoad;
 }
-/* ---- الراجعُ الإكسباير ودفعتُه (0288) ----------------------------------------------------------------------------
+/* ---- الراجعُ الإكسباير ودفعتُه (0289) ----------------------------------------------------------------------------
  * البابُ (expiredApi) ونصوصُه ونوافذُه (ExpiredReturn، نطاقُ xret المملوك) بـimport() كالكارتون — لا وحدةَ ثابتةً جديدة بقطعة البيع،
- * ولا نصَّ بالنطاق الحارّ. ويُسأل الخادمُ عن القدرة مرّةً (return_lots_ready): قاعدةٌ قبل 0288 لا زرَّ ولا سؤال. */
+ * ولا نصَّ بالنطاق الحارّ. ويُسأل الخادمُ عن القدرة مرّةً (return_lots_ready): قاعدةٌ قبل 0289 لا زرَّ ولا سؤال. */
 type XretMod = typeof import("@/lib/expiredApi") & { ui: typeof import("@/components/retail/ExpiredReturn") };
 let xretMod: XretMod | null = null;
 let xretLoad: Promise<XretMod> | null = null;
@@ -1178,14 +1178,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return unitCap({ ...l, stock: used ? Math.round((stock - used) * 1000) / 1000 : stock });
   };
   const shareCap = (l: Line): number => shareCapAt(l, l.stock);
-  /** 0288: سطرٌ من دفعة راجعٍ إكسباير لا يتجاوز باقيها — بوحدة السطر (المفردُ بعدده بالعلبة). */
+  /** 0289: سطرٌ من دفعة راجعٍ إكسباير لا يتجاوز باقيها — بوحدة السطر (المفردُ بعدده بالعلبة). */
   /*   الدفعةُ محفوظةٌ بثلاث منازل: شريطٌ من علبة ثلاثة ٠٫٣٣٣ × ٣ = ٠٫٩٩٩ — فالسماحُ نصفُ آخر منزلةٍ بالوحدة (كان ١e-٩ فقال «المتوفّر 0»). */
   const lotCapOf = (l: Line): number => {
     if (!l.lot) return Infinity;
     const per = l.saleUnit === "sub" && l.unitsPerBox ? l.unitsPerBox : 1;
     return Math.floor(l.lot.qty * per + 0.0005 * per + 1e-9);
   };
-  /** 0288: سطرُ «الجديد» لا يأخذ ما بدفعات الراجع الباقية — رصيدُه الصفُّ ناقصَ الإكسباير (البيعُ العاديّ يأخذ منها آخراً بكلفة المتوسّط). */
+  /** 0289: سطرُ «الجديد» لا يأخذ ما بدفعات الراجع الباقية — رصيدُه الصفُّ ناقصَ الإكسباير (البيعُ العاديّ يأخذ منها آخراً بكلفة المتوسّط). */
   const retLotQty = (pid: string | null): number => (pid ? (retLotsRef.current.get(pid) ?? []).reduce((n, x) => n + (x.qty > 0 ? x.qty : 0), 0) : 0);
   const newCapOf = (l: Line): number => {
     if (l.lot || l.ret || l.kind !== "product" || l.stock == null) return Infinity;
@@ -1590,7 +1590,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
-  /* ── 0288: الراجعُ الإكسباير ودفعتُه ─────────────────────────────────────────────────────────────────────────
+  /* ── 0289: الراجعُ الإكسباير ودفعتُه ─────────────────────────────────────────────────────────────────────────
    * `xretOn` = الخادمُ يعرفه (return_lots_ready) والقطعةُ وصلت. دفعاتُ الراجع الباقية تُقرأ عند الفتح وبعد كلّ بيعةٍ وإرجاع: منها يُسأل
    * «من الإكسباير لو من الجديد؟». قراءةٌ فاشلة لا تُصدَّق «ماكو إكسباير» — يبقى آخرُ ما عُرف، والخادمُ يرفض ما تجاوز الباقي (lot_short). */
   const [xretOn, setXretOn] = useState(false);
@@ -1606,7 +1606,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   useEffect(() => {
     let alive = true;
     loadXretMod().then((m) => m.returnLotsReady()).then((ok) => { if (alive) { setXretOn(ok); if (ok) refreshRetLots(); } },
-      () => { /* swallow-ok: بلا القطعة أو بقاعدةٍ قبل 0288 — لا زرَّ ولا سؤال، والشاشةُ كما كانت */ });
+      () => { /* swallow-ok: بلا القطعة أو بقاعدةٍ قبل 0289 — لا زرَّ ولا سؤال، والشاشةُ كما كانت */ });
     return () => { alive = false; };
   }, [refreshRetLots]);
   /** «من الإكسباير لو من الجديد؟» — دفعةٌ، أو null (الجديد)، أو undefined (أُلغي). */
@@ -1931,7 +1931,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // No whole box left but singles remain → start the line on the sub-unit.
       // ‏0266: والوضعُ يرفع العلبة ⇒ المسحُ علبةٌ كما مُسح (حبّةٌ بسعر حبّة عن علبةٍ ممسوحة خطأٌ صامت).
       // و0267: مسحُ باركود المغلّف يبدأ السطرَ مغلّفاً (unit: "sub") — بأيّ رصيد.
-      // 0288: ومن دفعة إكسباير باقيها أقلُّ من علبة ⇒ بالمفرد.
+      // 0289: ومن دفعة إكسباير باقيها أقلُّ من علبة ⇒ بالمفرد.
       const startSub = hasSub && (opt?.unit === "sub" || (Math.floor(p.stock) < 1 && !liftFor(p, null)) || (!!opt?.lot && opt.lot.qty < 1));
       // كلفةُ الجهاز كما كانت — لا تُكتب إلا والحسابُ لم يصل (productLineCost، 0255).
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
@@ -1951,7 +1951,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         saleUnit: startSub ? "sub" : "box", priceManual: false,
         // مادّةُ «الدولار وحده» (usdIntoCart): سطرُ دولارٍ بسعرها بالدولار وسعر صرف اليوم — يُجمع بصندوق الدولار لا بالدينار.
         ...(p.price_currency === "USD" && usdRateRef.current ? { usd: { c: usdOnlyCents(p, null) ?? 0, ...usdRateRef.current } } : {}),
-        // 0288: من دفعة راجعٍ إكسباير — كلفتُها كلفةُ الدفعة (المعاينة؛ الخادمُ يكتبها) وسقفُها باقيها.
+        // 0289: من دفعة راجعٍ إكسباير — كلفتُها كلفةُ الدفعة (المعاينة؛ الخادمُ يكتبها) وسقفُها باقيها.
         ...(opt?.lot ? lotFields(opt.lot, startSub && unitsPerBox ? unitsPerBox : null) : {}),
       };
     }, n, { stock: p.pooled ? null : p.stock });
@@ -2175,7 +2175,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
     if (product.price_currency === "USD" && !(opt?.usdOk && usdRateRef.current)) return { added: null, refused: usdTap(product, opt, null, () => void sellOrExplain(product, n, code, { ...opt, usdOk: true })) };
     const ret = retMode && !opt?.sale;
-    /* 0288: للمادّة دفعةُ راجعٍ إكسباير باقية وأوّلُ سطرٍ لها بالسلّة ⇒ «من الإكسباير لو من الجديد؟». الجوابُ يُعلَّم على السطر (lot):
+    /* 0289: للمادّة دفعةُ راجعٍ إكسباير باقية وأوّلُ سطرٍ لها بالسلّة ⇒ «من الإكسباير لو من الجديد؟». الجوابُ يُعلَّم على السطر (lot):
      * كلفتُه كلفةُ الدفعة وسقفُه باقيها، والبيعةُ تمرّ من retail_checkout_lots. إلغاءُ السؤال لا يضيف شيئاً. */
     if (!ret && !opt?.lotAsked && xretOn && xretMod) {
       // دفعةٌ تُباع بوحدةٍ واحدةٍ على الأقلّ: نصفُ علبةٍ لمادّةٍ بلا مفرد لا يُعرض (السطرُ علبةٌ كاملة والخادمُ يرفضه lot_short).
@@ -2377,7 +2377,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   /** «$» على السطر: يحوّله للدولار بسعر مستواه (العلبة/المفرد/الكارتون — المكتوبُ وإلا المحسوب) ودينارُه بسعر صرف اليوم كما يعرفه الخادم،
    *  وكلُّ سطر دولارٍ قبله بسعرٍ أقدم يُعاد حسابُه بسعر اليوم (الفاتورةُ بسعرٍ واحد). والضغطةُ ثانيةً ترجعه للدينار بسعر قائمته. */
   const toggleLineUsd = async (l: Line) => {
-    /* 0288: سطرٌ من دفعة الإكسباير بالدينار — بالدولار يمرّ من usd_checkout بكلفة المتوسّط ولا تنقص الدفعة (يُباع الإكسبايرُ كأنه جديد). */
+    /* 0289: سطرٌ من دفعة الإكسباير بالدينار — بالدولار يمرّ من usd_checkout بكلفة المتوسّط ولا تنقص الدفعة (يُباع الإكسبايرُ كأنه جديد). */
     if (l.lot) { playWarning(); toast.error(xretMod ? xretMod.ui.say.lotUsd(l.name) : t("errors.network")); return; }
     /* 0283: محاولةٌ سابقةٌ مجهولةُ المصير بهذا المرجع — تبديلُ عملة سطرٍ يجعل الإعادةَ ترجع فاتورةً بعملةٍ غيرِ ما تراه السلّة
      * (أو تُخفي فاتورةَ الدولار التي ثبتت). الإعادةُ أوّلاً كما هي. */
@@ -3533,7 +3533,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return saleRefRef.current;
   };
 
-  /* 0288: الراجعُ الإكسباير — السلّةُ كلُّها إكسباير (لا تُخلط ببيعٍ ولا براجعٍ عاديّ: مالُها يذهب لدَين الزبون أوّلاً وبضاعتُها دفعةٌ
+  /* 0289: الراجعُ الإكسباير — السلّةُ كلُّها إكسباير (لا تُخلط ببيعٍ ولا براجعٍ عاديّ: مالُها يذهب لدَين الزبون أوّلاً وبضاعتُها دفعةٌ
    * بتاريخها). الخادمُ يختار فاتورةَ المادّة بمفتاح الزبون، وينزّل من دَينها، والزايدُ يسدّد أقدمَ دَينه، والباقي نقد؛ و«تمّ» تقول أين ذهب. */
   const doExpiredReturn = async () => {
     const m = xretMod;
@@ -3604,7 +3604,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // ومهلةُ الواجهة تسبق طابورَ المستودع: النداء بعده طائر، فالإعادة هي
       // الحلّ — ومأمونةٌ بمرجعها (0136)، فلا مخزونَ يُزاد مرّتين.
       const unsure = isNetworkError(e) || isTimeoutError(e);
-      // 0288: المرجعُ ثبت راجعاً إكسباير (الوضعُ تبدّل بعد نتيجةٍ مجهولة) — جملتُه لا رمزٌ خامّ.
+      // 0289: المرجعُ ثبت راجعاً إكسباير (الوضعُ تبدّل بعد نتيجةٍ مجهولة) — جملتُه لا رمزٌ خامّ.
       const refUsed = xretMod?.expiredErrorCode(e) === "return_ref_used" ? xretMod.ui.say.err(e, "return_ref_used") : null;
       toast.error(
         unsure ? t("retail.retRetrySafe", "ما وصل الإرجاع — السلّة محفوظة، جرّب مرّة ثانية. ما راح ينسجّل مرّتين")
@@ -3750,7 +3750,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     // الحرّاسُ هنا لا على الزرّ وحده: F2 كان يصل هنا مباشرةً فيسجّل إرجاعاً خالصاً
     // «بيعاً» بمجموعٍ صفر — البضاعة ترجع للمخزن والنقدُ يخرج للزبون بلا قيد.
     if (pureReturn) { void doReturn(); return; }
-    // 0288: الراجعُ الإكسباير لا يُخلط ببيع (مالُه لدَين الزبون أوّلاً وبضاعتُه دفعةٌ بتاريخها) — عمليةٌ وحدها.
+    // 0289: الراجعُ الإكسباير لا يُخلط ببيع (مالُه لدَين الزبون أوّلاً وبضاعتُه دفعةٌ بتاريخها) — عمليةٌ وحدها.
     if (cart.some((l) => l.xret)) { playWarning(); toast.error(xretMod ? xretMod.ui.say.mixed() : t("errors.network")); return; }
     if (netNegative) {
       playWarning();
@@ -3870,7 +3870,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       for (const l of exp) expiredAckRef.current.names.set(l.id, l.name);
     }
     setBusy(true);
-    /** 0288: سطرٌ من دفعة راجعٍ إكسباير بالسلّة ⇒ البيعةُ تمرّ من retail_checkout_lots (بمجموعين أو بجرعاتٍ أيضاً). */
+    /** 0289: سطرٌ من دفعة راجعٍ إكسباير بالسلّة ⇒ البيعةُ تمرّ من retail_checkout_lots (بمجموعين أو بجرعاتٍ أيضاً). */
     const lotSale = cart.some((l) => !!l.lot && !l.ret && !isUsdLine(l));
     try {
       const items: CheckoutItem[] = cart.filter((l) => !isUsdLine(l)).map((l) => {
@@ -3902,7 +3902,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             product_id: l.dose.productId, qty: l.dose.qty, unit_price: Math.round((lineUnit(l) / l.dose.qty) * 100) / 100,
             stock_qty: l.dose.productId ? (l.dose.stockQty ?? 0) : 0, dose_charge: l.dose.charge,
           } : {}),
-          // 0288: من دفعة راجعٍ إكسباير — retail_checkout_lots يكلّفه بكلفتها وينقصها بالمعاملة نفسِها.
+          // 0289: من دفعة راجعٍ إكسباير — retail_checkout_lots يكلّفه بكلفتها وينقصها بالمعاملة نفسِها.
           ...(l.lot && !l.ret ? { lot_id: l.lot.id } : {}),
         };
       });
@@ -3970,7 +3970,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             ...(isPackLine(l) ? { pack_id: l.packId as string, pack_per: l.packPer as number } : {}),
           }));
           const mmeta = { ...meta, fx_rate_id: usdRids[0], discount_usd: (usdDiscC / 100).toFixed(2), paid_usd: (usdPaidC / 100).toFixed(2), usd_method: usdMethod };
-          // 0288: وفيها سطرٌ من دفعة إكسباير ⇒ البابُ نفسُه يبيع بمجموعين ثمّ يكلّف سطرَ الدفعة.
+          // 0289: وفيها سطرٌ من دفعة إكسباير ⇒ البابُ نفسُه يبيع بمجموعين ثمّ يكلّف سطرَ الدفعة.
           const res = await withTimeout(lotSale && xretMod
             ? xretMod.checkoutLots(items, mmeta, usdItems, items.map((i) => i.dose_charge).filter((x): x is string => !!x))
             : import("@/lib/dualSale").then((m) => m.mixedCheckout(items, usdItems, mmeta)), 12000);
@@ -4009,7 +4009,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           setPaying(false);
           throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
         }
-        /* 0288: دفعةُ الإكسباير بيع منها أو انحذفت من جهازٍ آخر — الدفعاتُ تُقرأ من جديد والجملةُ تقولها (لا رمزٌ خامّ). */
+        /* 0289: دفعةُ الإكسباير بيع منها أو انحذفت من جهازٍ آخر — الدفعاتُ تُقرأ من جديد والجملةُ تقولها (لا رمزٌ خامّ). */
         const lotCode = lotSale && xretMod ? xretMod.expiredErrorCode(e) : null;
         if (lotCode && xretMod) {
           refreshRetLots();
@@ -4192,7 +4192,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         }
       } catch { /* مزامنة إضافية — لا تعطل البيع أبداً */ }
       onSold();
-      if (lotSale) refreshRetLots();   // 0288: الدفعةُ نقصت — السؤالُ القادم بباقيها
+      if (lotSale) refreshRetLots();   // 0289: الدفعةُ نقصت — السؤالُ القادم بباقيها
       // Mirror medication/vaccine lines into each known patient's record —
       // administered dose, scheduled booster (→ reminders), treatment-sheet rows —
       // exactly as if entered from the record. One call per pet on the bill.
@@ -5190,7 +5190,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           </button>
                         </div>
                       )}
-                      {/* 0288: «إكسباير» على سطر الراجع — تحت الاسم (بسطر الاسم كان يقصّه مع شارة «راجع»): يفتح نافذتَه (شوكت خلص، علبة/قطعة/كارتون، كم). */}
+                      {/* 0289: «إكسباير» على سطر الراجع — تحت الاسم (بسطر الاسم كان يقصّه مع شارة «راجع»): يفتح نافذتَه (شوكت خلص، علبة/قطعة/كارتون، كم). */}
                       {l.ret && (xretOn || !!l.xret) && xretMod && l.kind === "product" && !l.byWeight && !!l.product_id && (
                         <div className="mt-0.5 flex items-center gap-1">
                           {/* إرجاعٌ نتيجتُه مجهولة (مرجعُه محفوظ): التبديلُ بين الإكسباير والعاديّ يُعيده بطريقٍ آخر — مقفولٌ حتى يُعاد كما هو. */}
@@ -5757,7 +5757,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               </Suspense>
             </LoadBoundary>
           )}
-          {/* 0288: نافذةُ سطر الراجع الإكسباير، و«من الإكسباير لو من الجديد؟» — القطعةُ وصلت قبل أن يُعرض زرُّها أو يُسأل. */}
+          {/* 0289: نافذةُ سطر الراجع الإكسباير، و«من الإكسباير لو من الجديد؟» — القطعةُ وصلت قبل أن يُعرض زرُّها أو يُسأل. */}
           {xretFor && xretMod && (() => {
             const l = cart.find((x) => x.id === xretFor);
             if (!l) return null;

@@ -99,7 +99,7 @@ const loadReportButtons = () => page(() => import("@/pages/InventoryAudit").then
 /* حقولُ السعر بالدولار (0264): قطعةٌ كسولة بنطاقها usd — لا تُرسم إلا لعيادةٍ فعّلت الدولار (أو لمادّةٍ دولاريةٍ أصلاً). */
 const loadUsdFields = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdPriceFields })), ["usd"]);
 let UsdFieldsLazy = loadUsdFields();
-/* 0288: «رجعت من فلان N بتاريخ … — إكسبايرها … — بـ٥٠٪» بنموذج المادّة — بنطاقها المملوك `xret` (قطعةُ شاشة البيع نفسُها). */
+/* 0289: «رجعت من فلان N بتاريخ … — إكسبايرها … — بـ٥٠٪» بنموذج المادّة — بنطاقها المملوك `xret` (قطعةُ شاشة البيع نفسُها). */
 const loadRetLots = () => page(() => import("@/components/retail/ExpiredReturn").then((m) => ({ default: m.ReturnLotsNote })), ["xret"]);
 let RetLotsLazy = loadRetLots();
 let ReportButtons = loadReportButtons();

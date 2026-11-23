@@ -58,7 +58,7 @@ function reconcile(db: DemoDB, lots: ProductLot[], p: Product, today: string, ex
   const diff = roundScaled(Math.max(0, Number(p.stock) || 0), 3) * 10n ** 17n - mine.reduce((s, l) => s + lotQ(l.qty), 0n);
   if (diff < 0n) {
     let need = -diff;
-    // 0288: دفعةُ الراجع الإكسباير آخرَ ما يأخذه النقصُ العاديّ (البيعُ منها بابُه retail_checkout_lots) — إلا جردٌ بسبب «منتهي».
+    // 0289: دفعةُ الراجع الإكسباير آخرَ ما يأخذه النقصُ العاديّ (البيعُ منها بابُه retail_checkout_lots) — إلا جردٌ بسبب «منتهي».
     const retLast = (l: ProductLot) => (l.source === "return" && !expiredFirst ? 1 : 0);
     const order = mine.filter((l) => l.qty > 0).sort((a, b) => {
       const ea = isExpired(a.expiry_date, today) ? 1 : 0, eb = isExpired(b.expiry_date, today) ? 1 : 0;
@@ -71,7 +71,7 @@ function reconcile(db: DemoDB, lots: ProductLot[], p: Product, today: string, ex
       if (need <= 0n) break;
     }
   } else if (diff > 0n) {
-    // 0288: والزيادةُ (مرتجعٌ عاديّ، تصحيح) لا تُضاف لدفعة راجعٍ إكسباير.
+    // 0289: والزيادةُ (مرتجعٌ عاديّ، تصحيح) لا تُضاف لدفعة راجعٍ إكسباير.
     const head = mine.filter((l) => l.qty > 0 && !isExpired(l.expiry_date, today) && l.source !== "return").sort(byExpiry)[0];
     if (head) head.qty = lotN(lotQ(head.qty) + diff);
     else {

@@ -9639,7 +9639,7 @@
     "save": "Set",
     "clear": "Not expired",
     "mixed": "An expired return goes in the cart on its own — finish the sale or normal return separately",
-    "notReady": "Expired returns need the database update (0288) — ask your admin",
+    "notReady": "Expired returns need the database update (0289) — ask your admin",
     "weight": "«{{name}}» is sold by weight — return it as a normal return",
     "needDate": "«{{name}}»: enter when it expired",
     "done": "{{n}} item(s) back in stock as expired",

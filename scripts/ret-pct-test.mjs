@@ -129,7 +129,7 @@ const STUB = {
   "@/components/retail/UsdPay": "export const UsdPayBox = () => null; export const UsdDoneNote = () => null; export const UsdRateDialog = () => null; export const mixedSay = (k) => k;",
   "@/lib/dualSale": `export const dualRate = async () => ({ ok: true, rate: { id: "fx1", rate: "1460.0000", rate1e4: 14600000n } }); export const mixedReady = async () => true;`,
   /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
-  /* 0288: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
+  /* 0289: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
   "@/lib/expiredApi": `export const returnLotsReady = async () => false; export const listReturnLots = async () => []; export const listReturnLotsOf = async () => [];
     export const returnExpired = async () => { throw new Error("stub"); }; export const checkoutLots = async () => { throw new Error("stub"); }; export const expiredErrorCode = () => null;`,
   "@/components/retail/ExpiredReturn": "export const say = new Proxy({}, { get: (_, k) => () => String(k) }); export const XretDialog = () => null; export const XretNote = () => null; export const LotPickDialog = () => null; export const ReturnLotsNote = () => null; export const unitsOf = () => []; export default () => null;",

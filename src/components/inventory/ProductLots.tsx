@@ -54,7 +54,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
   };
 
   const live = typeof lots === "object" ? lots.filter((l) => l.qty > 0).sort((a, b) => (a.expiry_date ?? "9999").localeCompare(b.expiry_date ?? "9999")) : [];
-  /** 0288: دفعةُ الراجع الإكسباير آخرَ ما يأخذه البيعُ العاديّ — «تنباع أول» لأوّل دفعةٍ غيرها. */
+  /** 0289: دفعةُ الراجع الإكسباير آخرَ ما يأخذه البيعُ العاديّ — «تنباع أول» لأوّل دفعةٍ غيرها. */
   const firstSold = live.find((l) => l.source !== "return")?.id ?? null;
   const empty = typeof lots === "object" ? lots.filter((l) => l.qty <= 0) : [];
   const source = (l: ProductLot) => t(`lots.src.${l.source}`);

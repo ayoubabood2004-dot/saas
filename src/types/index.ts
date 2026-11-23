@@ -1183,7 +1183,7 @@ export interface CheckoutItem {
   /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `unit_price` دينارُه بسعر اليوم (الخادمُ يطابقه)، و`unit_price_usd` سعرُه بالدولار. */
   price_currency?: "USD";
   unit_price_usd?: string;
-  /** 0288: يُباع من دفعة راجعٍ إكسباير (product_lots، source = 'return') — retail_checkout_lots يكلّفه بكلفة الدفعة وينقصها. */
+  /** 0289: يُباع من دفعة راجعٍ إكسباير (product_lots، source = 'return') — retail_checkout_lots يكلّفه بكلفة الدفعة وينقصها. */
   lot_id?: string;
 }
 
@@ -2665,8 +2665,8 @@ export interface ProductLot {
   note: string | null;
   /** تاريخٌ صحّحته العيادةُ بيدها — تعديلُ الفاتورة لا يكتب فوقه. */
   expiry_fixed?: boolean;
-  /** 0288 — دفعةُ راجعٍ إكسباير (source = 'return'): كلفةُ وحدة المخزن منها (ما رجع للزبون، لا المتوسّط)، ومن رجّعها (اسمُه أو رقمُه
-   *  ومفتاحُه)، وبكم بالمئة، ومن أيّ فاتورة، ومتى. غائبةٌ بقاعدةٍ قبل 0288. */
+  /** 0289 — دفعةُ راجعٍ إكسباير (source = 'return'): كلفةُ وحدة المخزن منها (ما رجع للزبون، لا المتوسّط)، ومن رجّعها (اسمُه أو رقمُه
+   *  ومفتاحُه)، وبكم بالمئة، ومن أيّ فاتورة، ومتى. غائبةٌ بقاعدةٍ قبل 0289. */
   unit_cost?: number | null;
   return_from?: string | null;
   return_key?: string | null;
