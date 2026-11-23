@@ -7455,7 +7455,7 @@
       "usd_prefs_direct": "The dollar switch and rounding are changed from the «Pricing in dollars» card in Settings only",
       "usd_store": "Dollar items aren't shown in the online store in this first phase",
       "usd_disabled": "Dollars aren't enabled for this clinic — see Settings",
-      "usd_no_rate": "No dollar rate set — a manager sets it in Settings",
+      "usd_no_rate": "No dollar rate set — set it via «Change rate» in the dollar box on the sale screen, or in Settings",
       "usd_rate_changed": "The dollar rate changed on another device — check the new total and try again",
       "usd_method": "Payment method must be cash, card or transfer",
       "usd_mixed": "A dollar invoice holds dollar items only — dinar items go on another invoice",
@@ -9213,7 +9213,8 @@
       "backdate": "A sale on an earlier day is in dinars only — switch the dollar lines back to dinars.",
       "bad": "The dollar amount couldn't be read — write it like 12.50",
       "debtName": "A dollar debt needs the customer's name — fill in the customer field.",
-      "notReady": "Two-total invoices need a database update (0283) — tell the manager."
+      "notReady": "Two-total invoices need a database update (0283) — tell the manager.",
+      "usdOnly": "«{{name}}» is priced in dollars only — it cannot be sold in dinars. Remove it from the cart if not wanted."
     },
     "rateEdit": "Change rate",
     "rateTitle": "Today's dollar rate",
