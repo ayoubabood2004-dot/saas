@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0288_company_old_debts.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -13699,5 +13699,155 @@ chk "إعادةُ 0287 بلا أثر: سياستان (السياجُ ذهب مع
     "select (select count(*) from pg_policies where schemaname='public' and tablename='pet_case_reports')::text || '|' || (select count(*) from pet_case_reports where pet_id = '$CRP')::text" "2|4"
 $P -c "delete from pets where id in ('$CRP', '$CRQ');" >/dev/null
 chk "وحذفُ الحيوان يحذف تقاريرَه (المفتاحُ الأجنبيّ)" "select count(*)::text from pet_case_reports where pet_id = '$CRP'" "0"
+
+# ── 0288: ديونٌ قديمة كثيرة بدفتر الشركة — كلٌّ بتاريخه، بطلبٍ واحد ومرجعِ إعادة ────────────────────────────────
+# KC عيادةٌ وصاحبُها (مدير)، KV طبيبُها، KO عيادةٌ ثانية. الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).
+echo "▸ 0288: ديونٌ قديمة كثيرة بدفتر الشركة — كلٌّ بتاريخه، بمعاملةٍ واحدة، وإعادةُ المرجع لا تكتب ديناً ثانياً"
+out=$($P -f "$MIG/0288_company_old_debts.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت فوق إعادات الأقسام"; fail=1; }
+KX=c2880000-0000-4000-8000-0000000000
+KC=${KX}c1
+KV=${KX}c2
+KO=${KX}c9
+K1=${KX}e1
+K2=${KX}e2
+K3=${KX}e3
+K4=${KX}e4
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       set session_replication_role = replica; delete from audit_log where clinic_id = '$KC'; set session_replication_role = origin;
+       insert into auth.users(id) values ('$KC'),('$KV'),('$KO') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$KV','$KC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code, usd_enabled, usd_round_step) values ('$KC','+964', false, 250)
+         on conflict (clinic_id) do update set usd_enabled = false;
+       delete from clinic_fx_rates where clinic_id = '$KC'; insert into clinic_fx_rates(clinic_id, rate) values ('$KC', 1460);
+       insert into companies (id, clinic_id, name) values ('$K1', '$KC', 'شركة الديون القديمة'), ('$K2', '$KC', 'شركة ثانية'),
+         ('$K3', '$KC', 'شركة الدولار'), ('$K4', '$KC', 'شركة السباق') on conflict (id) do nothing;
+       create or replace function _hint288(who uuid, q text) returns text language plpgsql as \$fn\$
+         declare h text; begin
+           perform set_config('request.jwt.claim.sub', who::text, true);
+           set local role authenticated;
+           execute q;
+           reset role;
+           return 'ok';
+         exception when others then get stacked diagnostics h = pg_exception_hint; return coalesce(h, '-'); end \$fn\$;
+       create or replace function _dup288(c uuid, co uuid, r text) returns text language plpgsql as \$fn\$
+         begin
+           insert into company_entries(clinic_id, company_id, kind, direction, amount, client_ref) values (c, co, 'opening', 'credit', 1, r);
+           raise exception 'inserted';
+         exception when unique_violation then return 'unique'; when others then return sqlerrm; end \$fn\$;" >/dev/null
+# OA شركة عملة سطور مرجع ⇒ نداءُ الباب الجديد.
+OA() { echo "select (company_openings_add('$1', '$2', '$3'::jsonb, '$4'))"; }
+KR3='[{"amount":2000000,"date":"2025-01-05","note":" فاتورة ورقية ١١ "},{"amount":3000000,"date":"2025-02-10","note":"  "},{"amount":4500000.555,"date":"2025-03-01"}]'
+KOPN="company_entries where company_id = '$K1' and kind = 'opening'"
+chk "الطبيبُ لا يضيف (forbidden)، والعيادةُ الثانية لا ترى الشركة (no_company)" \
+    "select $(rerr $KV "$(OA $K1 IQD "$KR3" refA001)")||'|'||$(rerr $KO "$(OA $K1 IQD "$KR3" refA001)")" "forbidden|no_company"
+chk "المديرُ يضيف ثلاثةَ ديونٍ بثلاثة تواريخ بطلبٍ واحد" \
+    "select $(rv $KC "select (r->>'replayed')||':'||jsonb_array_length(r->'entries')::text from ($(OA $K1 IQD "$KR3" refA001)) x(r)")" "false:3"
+chk "  الصفوف: ثلاثةُ «رصيد سابق» حيّة بتواريخها ومبالغها (الكسرُ لمنزلتين) والملاحظةُ مقصوصة، ومرجعٌ لكلّ سطر" \
+    "select string_agg(entry_date::text||'='||amount::numeric(20,2)::text||'='||coalesce(note,'null')||'='||client_ref||'='||coalesce(currency,'-')||'='||(voided_at is null)::text, ',' order by entry_date) from $KOPN" \
+    "2025-01-05=2000000.00=فاتورةورقية١١=refA001:1=IQD=true,2025-02-10=3000000.00=null=refA001:2=IQD=true,2025-03-01=4500000.56=null=refA001:3=IQD=true"
+chk "  والرصيدُ السابق مجموعُها" "select company_pool_due('$K1', '$KC')::numeric(20,2)::text" "9500000.56"
+KIDS=$($P -tAc "select string_agg(id::text, ',' order by char_length(client_ref), client_ref) from $KOPN" | tr -d '[:space:]')
+chk "إعادةُ المرجع نفسِه (ردٌّ ضائع ثمّ «حفظ») ترجع الثلاثةَ نفسَها بمعرّفاتها (replayed)" \
+    "select $(rv $KC "select (r->>'replayed')||':'||(select string_agg(e->>'id', ',' order by o) from jsonb_array_elements(r->'entries') with ordinality q(e, o)) from ($(OA $K1 IQD "$KR3" refA001)) x(r)")" "true:$KIDS"
+chk "  (بجملةٍ ثانية: ثلاثةُ صفوفٍ لا ستّة)" "select count(*)::text from $KOPN" "3"
+KR3B='[{"amount":2000000,"date":"2025-01-05"},{"amount":3000001,"date":"2025-02-10"},{"amount":4500000.555,"date":"2025-03-01"}]'
+KR2='[{"amount":2000000,"date":"2025-01-05"},{"amount":3000000,"date":"2025-02-10"}]'
+KR3D='[{"amount":2000000,"date":"2025-01-06"},{"amount":3000000,"date":"2025-02-10"},{"amount":4500000.56,"date":"2025-03-01"}]'
+chk "المرجعُ نفسُه بطلبٍ آخر ⇒ ref_mismatch لا «انسجّل» عن غيره: مبلغٌ، وعددٌ، وتاريخٌ، وشركةٌ أخرى، وعملةٌ أخرى، ومبلغٌ لا يُقرأ" \
+    "select $(rerr $KC "$(OA $K1 IQD "$KR3B" refA001)")||'|'||$(rerr $KC "$(OA $K1 IQD "$KR2" refA001)")||'|'||$(rerr $KC "$(OA $K1 IQD "$KR3D" refA001)")
+            ||'|'||$(rerr $KC "$(OA $K2 IQD "$KR3" refA001)")||'|'||$(rerr $KC "$(OA $K1 USD "$KR3" refA001)")
+            ||'|'||$(rerr $KC "$(OA $K1 IQD '[{"amount":"x"},{"amount":1},{"amount":1}]' refA001)")" \
+    "ref_mismatch|ref_mismatch|ref_mismatch|ref_mismatch|ref_mismatch|ref_mismatch"
+chk "الرفض: مرجعٌ فارغ أو بنقطتين أو قصير، وسطورٌ ليست قائمة أو فارغة أو ٥١ سطراً" \
+    "select $(rerr $KC "$(OA $K2 IQD "$KR3" '')")||'|'||$(rerr $KC "$(OA $K2 IQD "$KR3" 'a:b:c')")||'|'||$(rerr $KC "$(OA $K2 IQD "$KR3" ab)")
+            ||'|'||$(rerr $KC "$(OA $K2 IQD '{}' refV001)")||'|'||$(rerr $KC "$(OA $K2 IQD '[]' refV002)")
+            ||'|'||$(rerr $KC "select company_openings_add('$K2', 'IQD', (select jsonb_agg(jsonb_build_object('amount', 1, 'date', '2025-01-01')) from generate_series(1, 51)), 'refV003')")
+            ||'|'||$(rerr $KC "$(OA $K2 EUR "$KR3" refV009)")" \
+    "bad_ref|bad_ref|bad_ref|bad_rows|bad_rows|bad_rows|bad_currency"
+KBAD2='[{"amount":100,"date":"2025-01-01"},{"amount":0,"date":"2025-01-02"}]'
+KBADD='[{"amount":100,"date":"2025-01-01"},{"amount":5,"date":"2025-01-02"},{"amount":7,"date":"2099-01-01"}]'
+KBADN="[{\"amount\":100,\"date\":\"2025-01-01\",\"note\":\"$(printf 'x%.0s' $(seq 1 501))\"}]"
+KBADX='[{"amount":"مليون","date":"2025-01-01"}]'
+chk "سطرٌ مرفوض يقول رقمَه: صفر (السطر ٢)، وتاريخٌ بالمستقبل (السطر ٣)، وقبل ٢٠٠٠، وملاحظةٌ فوق ٥٠٠، ومبلغٌ نصّ، وسطرٌ ليس كائناً، وبلا تاريخ" \
+    "select $(rerr $KC "$(OA $K2 IQD "$KBAD2" refV004)")||'|'||$(rerr $KC "$(OA $K2 IQD "$KBADD" refV005)")
+            ||'|'||$(rerr $KC "$(OA $K2 IQD '[{"amount":5,"date":"1999-12-31"}]' refV010)")||'|'||$(rerr $KC "$(OA $K2 IQD "$KBADN" refV006)")
+            ||'|'||$(rerr $KC "$(OA $K2 IQD "$KBADX" refV007)")||'|'||$(rerr $KC "$(OA $K2 IQD '[5]' refV008)")
+            ||'|'||$(rerr $KC "$(OA $K2 IQD '[{"amount":5}]' refV011)")||'|'||$(rerr $KC "$(OA $K2 IQD '[{"amount":5,"date":" "}]' refV012)")
+            ||'|'||(position('السطر 2' in _hint288('$KC', \$h\$$(OA $K2 IQD "$KBAD2" refV004)\$h\$)) > 0)::text
+            ||'|'||(position('السطر 3' in _hint288('$KC', \$h\$$(OA $K2 IQD "$KBADD" refV005)\$h\$)) > 0)::text" \
+    "bad_amount|bad_date|bad_date|note_too_long|bad_rows|bad_rows|bad_date|bad_date|true|true"
+chk "  وما قبل السطر المرفوض لا يُكتب (معاملةٌ واحدة): الشركةُ الثانية بلا صفّ" "select count(*)::text from company_entries where company_id = '$K2'" "0"
+KRU='[{"amount":100,"date":"2025-04-01","note":"دولار قديم"},{"amount":250.5,"date":"2025-05-01"}]'
+chk "الدولار: العيادةُ بلا دولار ⇒ usd_disabled" "select $(rerr $KC "$(OA $K3 USD "$KRU" refU001)")" "usd_disabled"
+$P -c "update clinic_prefs set usd_enabled = true where clinic_id = '$KC';" >/dev/null
+chk "  وبعد التفعيل (والمرجعُ نفسُه — الرفضُ الحاسم لم يكتب شيئاً): دينان بالدولار" \
+    "select $(rv $KC "select (r->>'replayed')||':'||jsonb_array_length(r->'entries')::text from ($(OA $K3 USD "$KRU" refU001)) x(r)")" "false:2"
+chk "    (يُقرأ بعدها: رصيدُ الدولار ٣٥٠٫٥٠ والدينارُ صفر)" \
+    "select company_pool_due_usd('$K3', '$KC')::numeric(20,2)::text||'|'||company_pool_due('$K3', '$KC')::numeric(20,2)::text" "350.50|0.00"
+chk "التسديدُ على الحساب (الطبيب) يذهب للديون القديمة أوّلاً: ٦٬٠٠٠٬٠٠٠ كلُّها للرصيد السابق" \
+    "select $(rv $KV "select (r->>'to_opening')::numeric(20,2)::text from company_pay('$K1', 6000000, 'cash', null) r")" "6000000.00"
+KE1="(select id from company_entries where client_ref = 'refA001:1')"
+KE2="(select id from company_entries where client_ref = 'refA001:2')"
+KE3="(select id from company_entries where client_ref = 'refA001:3')"
+chk "إلغاءُ دينٍ من الثلاثة يمرّ ما دام الباقي يغطّي ما انسدّ، والثاني بعده يُرفض (has_payments — تسديدٌ بلا دَين)" \
+    "select length($(rv $KC "select (company_entry_void($KE1, 'انكتب مرّتين')).id::text"))::text
+            ||'|'||$(rerr $KC "select (company_entry_void($KE2, 'غلط')).id::text")" "36|has_payments"
+chk "  (الرصيدُ السابق ١٬٥٠٠٬٠٠٠٫٥٦، والملغى باقٍ بسببه)" \
+    "select company_pool_due('$K1', '$KC')::numeric(20,2)::text||'|'||(select (voided_at is not null)::text||':'||void_reason from company_entries where client_ref = 'refA001:1')" \
+    "1500000.56|true:انكتبمرّتين"
+chk "التعديلُ (0281) على دينٍ من الدفعة يحكم بالمجموع: ٤٬٥٠٠٬٠٠٠٫٥٦ لا ينزل تحت ٣٬٠٠٠٬٠٠٠ وينزل له" \
+    "select $(rerr $KC "select (company_entry_edit($KE3, 2999999.99, '2025-03-01', null, 'غلط', '{\"amount\":4500000.56,\"date\":\"2025-03-01\",\"note\":null}'::jsonb)).id::text")
+            ||'|'||$(rv $KC "select (company_entry_edit($KE3, 3000000, '2025-03-01', null, 'مطابقة الكشف', '{\"amount\":4500000.56,\"date\":\"2025-03-01\",\"note\":null}'::jsonb)).amount::numeric(20,2)::text")" \
+    "has_payments|3000000.00"
+chk "  وإعادةُ الطلب الأوّل بعد التعديل والإلغاء ما زالت «الطلبَ نفسَه» (الأصلُ من سجلّ التعديل) — ترجع الصفوفَ كما هي الآن" \
+    "select $(rv $KC "select (r->>'replayed')||':'||(select string_agg((e->>'amount')::numeric(20,2)::text||'/'||(e->>'voided_at' is not null)::text, ',' order by o) from jsonb_array_elements(r->'entries') with ordinality q(e, o)) from ($(OA $K1 IQD "$KR3" refA001)) x(r)")" \
+    "true:2000000.00/true,3000000.00/false,3000000.00/false"
+chk "البابُ القديم كما هو: الواجهةُ الحاليّة بلا مرجع ⇒ «رصيد سابق» ثانٍ يُرفض (opening_exists) — حارسُ إعادتها" \
+    "select $(rerr $KC "select (company_opening_add('$K1', 5, null)).id::text")||'|'||$(rerr $KC "select (company_opening_add_fx('$K1', 'IQD', 5, null, null)).id::text")" \
+    "opening_exists|opening_exists"
+chk "الفهرسُ الفريد: مرجعٌ مكرّرٌ بالعيادة يُرفض ولو كُتب مباشرةً" "select _dup288('$KC', '$K2', 'refA001:1')" "unique"
+# السباق: جلستان حقيقيّتان بالمرجع نفسِه — (أ) تكتب وتمسك المعاملةَ ثانيتين، و(ب) بينهما فتنتظر قفلَ الشركة.
+KR1='[{"amount":700,"date":"2025-06-01"}]'
+( $P -f - >/dev/null 2>&1 <<SQL
+begin;
+select $(rv $KC "$(OA $K4 IQD "$KR1" refR001)");
+select pg_sleep(2);
+commit;
+SQL
+) &
+RACE_A=$!
+sleep 0.7
+RACE_B=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select $(rv $KC "select (r->>'replayed') from ($(OA $K4 IQD "$KR1" refR001)) x(r)")" | tr -d '[:space:]')
+wait $RACE_A
+chk "السباق: طلبان بالمرجع نفسِه بالثانية نفسِها — الثاني ينتظر قفلَ الشركة ثمّ يرى ما كتبه الأوّل (replayed)، وصفٌّ واحد" \
+    "select '$RACE_B'||'|'||(select count(*) from company_entries where company_id = '$K4')::text" "true|1"
+chk "التدقيق: كلُّ دينٍ مكتوبٍ سطرُ INSERT (٣ + ٢ + تسديد + ١) — المرفوضُ والإعادةُ لا يكتبان شيئاً" \
+    "select count(*)::text from audit_log where clinic_id = '$KC' and entity = 'company_entries' and action = 'INSERT'" "7"
+$P -c "select _pf('$KC', 'select delete_company(''$K4'', ''فحص'')::text');" >/dev/null
+chk "الحذفُ ثمّ الاسترجاع (0224) يعيدان الدينَ بمرجعه" "select (_pf('$KC', 'select (restore_company(''$K4'')).id::text') = '$K4')::text" "true"
+chk "  فإعادةُ الطلب بعدها ما زالت ترى ما ثبت (replayed) بلا صفٍّ ثانٍ" \
+    "select (select string_agg(client_ref, ',') from company_entries where company_id = '$K4')||'|'||$(rv $KC "select (r->>'replayed') from ($(OA $K4 IQD "$KR1" refR001)) x(r)")" \
+    "refR001:1|true"
+chk "الكاتبةُ definer بمسارٍ مثبَّت وتسأل الدورَ والعيادةَ بنصّها، ولا anon؛ وسؤالُ القدرة true للداخل" \
+    "select (select prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%'
+                    and position('company_entry_guard(p_company, null, true)' in prosrc) > 0 and position('clinic_id = v_clinic' in prosrc) > 0
+               from pg_proc where oid = 'public.company_openings_add(uuid,text,jsonb,text)'::regprocedure)::text
+            ||'|'||has_function_privilege('anon', 'public.company_openings_add(uuid,text,jsonb,text)', 'execute')::text
+            ||'|'||has_function_privilege('authenticated', 'public.company_openings_add(uuid,text,jsonb,text)', 'execute')::text
+            ||'|'||has_function_privilege('anon', 'public.company_openings_ready()', 'execute')::text
+            ||'|'||$(rv $KC "select company_openings_ready()::text")" "true|false|true|false|true"
+Q288="select (select md5(string_agg(id::text||':'||amount::text||':'||entry_date::text||':'||coalesce(client_ref,'-')||':'||coalesce(voided_at::text,'-'), ',' order by id)) from company_entries where clinic_id = '$KC')
+       ||'|'||(select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname) from pg_proc where proname in ('company_openings_add', 'company_openings_ready'))
+       ||'|'||(select count(*) from pg_indexes where indexname = 'company_entries_client_ref_uniq')::text
+       ||'|'||(select count(*) from pg_constraint where conname = 'company_entries_client_ref_ok')::text
+       ||'|'||(select count(*) from audit_log where clinic_id = '$KC')::text"
+Z288=$($P -tAc "$Q288" | tr -d '[:space:]')
+out=$($P -f "$MIG/0288_company_old_debts.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الصفوفُ ومراجعُها والدالّتان وصلاحياتُهما والفهرسُ والقيدُ والتدقيق)" "$Q288" "$Z288"
+$P -c "set session_replication_role = replica;
+       delete from purchase_payments where clinic_id = '$KC'; delete from company_entries where clinic_id = '$KC';
+       delete from companies_trash where clinic_id = '$KC'; delete from companies where clinic_id = '$KC';
+       delete from clinic_fx_rates where clinic_id = '$KC';
+       set session_replication_role = origin; drop function if exists _hint288(uuid, text); drop function if exists _dup288(uuid, uuid, text);" >/dev/null
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
-import { ArrowRight, BookOpen, Building2, HandCoins, History, Lock, Pencil, Printer, Scale, Undo2 } from "lucide-react";
+import { ArrowRight, BookOpen, Building2, HandCoins, History, Lock, Pencil, Plus, Printer, Scale, Undo2, X } from "lucide-react";
 import type { Company, CompanyCharge, CompanyEntry, PaymentMethod, Purchase, PurchasePayment } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,10 +13,14 @@ import { PurchaseDetailModal } from "@/components/inventory/Purchases";
 import { buildCompanyLedger, curOfEntry, curOfPurchase, payableOf, previewPay, type LedgerCur, type LedgerRow } from "@/lib/companyLedger";
 import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
 import { per100Text, ratePerUsd, usdOf } from "@/lib/purchaseFxMath";
-import { describeDbError, withTimeout } from "@/lib/errors";
+import { describeDbError, shouldReleaseRef, withTimeout } from "@/lib/errors";
+import { OPENINGS_MAX, blankLine, isBlankLine, planOpenings, readOpeningsPending, type OpeningLine, type OpeningsPending, type OpeningsWhy } from "@/lib/companyOpenings";
+import { addCompanyOpenings, openingsReady } from "@/lib/companyOpeningsApi";
+import { decText } from "@/lib/usdMath";
+import { getActiveClinicId } from "@/lib/clinics";
 import { editableEntry, planEdit, readEdits, seenOf, type EditWhy, type EntrySnap } from "@/lib/companyEntryEdit";
 import { editCompanyEntry, entryEditReady } from "@/lib/companyEntryEditApi";
-import { cn, formatDate, formatNum, formatTime, localISO, money } from "@/lib/utils";
+import { cn, formatDate, formatNum, formatTime, localISO, money, uid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /* ============================================================================
@@ -62,6 +66,13 @@ export function CompanyBook() {
   useEffect(() => {
     let alive = true;
     void purchaseFxState().then((v) => { if (alive) setFx(v); });
+    return () => { alive = false; };
+  }, []);
+  /* 0288: هل القاعدةُ تعرف الديونَ القديمة الكثيرة؟ null = ما نعرف بعد (أو تعذّر السؤال) — فالزرُّ كما كان قبلها. */
+  const [opReady, setOpReady] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    openingsReady().then((v) => { if (alive) setOpReady(v); }, () => { /* swallow-ok: سؤالُ قدرة — فشلُه يُبقي الزرَّ كما كان قبل 0288 (دينٌ واحد)، لا يُخفي مالاً ولا يكتب شيئاً */ });
     return () => { alive = false; };
   }, []);
 
@@ -232,8 +243,9 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
               {canPay && payableOf(L.totals.invoiceDue, L.totals.poolDue) > 0 && (
                 <Button size="sm" leftIcon={<HandCoins size={15} />} data-book-pay onClick={() => { playTap(); setModal("pay"); }}>{t("cbook.pay", "تسديد على الحساب")}</Button>
               )}
-              {isManager && !L.hasOpening && (
-                <Button size="sm" variant="secondary" leftIcon={<History size={15} />} data-book-opening onClick={() => { playTap(); setModal("opening"); }}>{t("cbook.addOpening", "رصيد سابق")}</Button>
+              {/* 0288: ديونٌ قديمة كثيرة بأيّ وقت؛ وقاعدةٌ قبلها دينٌ واحد ما دام ما سُجّل (قيدُ الباب القديم). */}
+              {isManager && (opReady === true || !L.hasOpening) && (
+                <Button size="sm" variant="secondary" leftIcon={<History size={15} />} data-book-opening onClick={() => { playTap(); setModal("opening"); }}>{t("cbook.addOpening")}</Button>
               )}
               {isManager && (
                 <Button size="sm" variant="secondary" leftIcon={<Scale size={15} />} data-book-adjust onClick={() => { playTap(); setModal("adjust"); }}>{t("cbook.addAdjust", "تسوية")}</Button>
@@ -406,7 +418,8 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
 
           <PayModal open={modal === "pay"} onClose={() => setModal(null)} data={data} poolDue={L.totals.poolDue} invoiceDue={L.totals.invoiceDue}
             cur={cur} fx={fx} onDone={() => { setModal(null); void load(); }} />
-          <OpeningModal open={modal === "opening"} onClose={() => setModal(null)} companyId={id} cur={cur} viaFx={fx.ok || cur === "USD"} onDone={() => { setModal(null); void load(); }} />
+          <OldDebtsModal open={modal === "opening"} onClose={() => setModal(null)} companyId={id} cur={cur} multi={opReady === true}
+            viaFx={fx.ok || cur === "USD"} onDone={() => { setModal(null); void load(); }} />
           <AdjustModal open={modal === "adjust"} onClose={() => setModal(null)} companyId={id} cur={cur} viaFx={fx.ok || cur === "USD"} onDone={() => { setModal(null); void load(); }} />
           <VoidModal row={voiding} label={voiding ? kindLabel(voiding) : ""} fm={fm} onClose={() => setVoiding(null)} onDone={() => { setVoiding(null); void load(); }} />
           <EditModal target={editing} poolDue={L.totals.poolDue} balance={L.totals.balance} fm={fm}
@@ -560,45 +573,162 @@ function PayModal({ open, onClose, data, poolDue, invoiceDue, cur, fx, onDone }:
   );
 }
 
-function OpeningModal({ open, onClose, companyId, cur, viaFx, onDone }: {
+/** 0288: ديونٌ قديمة — سطرٌ لكلّ دين بتاريخه (الدفترُ الورقيّ كما هو)، بطلبٍ واحد ومرجعِ إعادة (طلبُ المالك ٢٣/١١: «على اكثر من
+ *  تاريخ مو الا مجموع كل الديون»). المبلغُ يُقال بكلمة كما قُرئ، والزرُّ لا يقف بلا جملة. ونتيجةٌ مجهولة (الشبكة) تقفل السطورَ على
+ *  «أعد المحاولة» بالمرجع نفسِه — ولو أُغلقت النافذةُ وفُتحت (المحاولةُ بالجلسة): الإعادةُ ترجع ما ثبت لا ديوناً ثانية (shouldReleaseRef).
+ *  وقاعدةٌ قبل الهجرة (`multi` false): سطرٌ واحد بالباب القديم كما كان — وقيدُ «واحدٍ حيّ» هناك حارسُ إعادته. */
+function OldDebtsModal({ open, onClose, companyId, cur, multi, viaFx, onDone }: {
   open: boolean; onClose: () => void; companyId: string;
-  /** عملةُ الدفتر المعروض (0274) — والرصيدُ السابق واحدٌ لكلّ عملة؛ وبالعملتين يمرّ من بابهما (القديمُ يرى أيَّ سابقٍ «موجود»). */
-  cur: LedgerCur; viaFx: boolean; onDone: () => void;
+  /** عملةُ الدفتر المعروض (0274) — الديونُ بعملته. */
+  cur: LedgerCur;
+  /** القاعدةُ تعرف الباب الجديد (0288). */
+  multi: boolean; viaFx: boolean; onDone: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(localISO());
-  const [note, setNote] = useState("");
+  const today = localISO();
+  const pendKey = `vp_cop_pending_${getActiveClinicId()}_${companyId}_${cur}`;
+  const [lines, setLines] = useState<OpeningLine[]>(() => [blankLine(uid("l"), today)]);
+  const [many, setMany] = useState(multi);
+  const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setAmount(""); setDate(localISO()); setNote(""); } }, [open]);
+  const [err, setErr] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const ref = useRef(uid("cop"));
+  const writePending = (p: OpeningsPending | null) => {
+    try { if (p) sessionStorage.setItem(pendKey, JSON.stringify(p)); else sessionStorage.removeItem(pendKey); } catch { /* swallow-ok: بلا تخزين تبقى السطورُ مقفولةً ما دامت النافذةُ مفتوحة، والخادمُ يحرس الإعادة بمرجعها */ }
+  };
+  /* الوضعُ يُقرَّر لحظةَ الفتح: سؤالُ القدرة إن وصل والنافذةُ مفتوحة لا يمسح ما كُتب. */
+  useEffect(() => {
+    if (!open) return;
+    let p: OpeningsPending | null = null;
+    if (multi) { try { p = readOpeningsPending(sessionStorage.getItem(pendKey)); } catch { p = null; /* swallow-ok: تخزينٌ ممنوع = لا محاولةَ معلَّقة بهذا التبويب */ } }
+    setMany(multi);
+    if (p && p.cur === cur) { ref.current = p.ref; setLines(p.lines); setPinned(true); setFocusKey(null); }
+    else { const k = uid("l"); ref.current = uid("cop"); setLines([blankLine(k, today)]); setPinned(false); setFocusKey(k); }
+    setErr(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const plan = useMemo(() => planOpenings(lines, today), [lines, today]);
+  const fmC = (c: bigint) => { const n = Number(decText(c, 2)); return cur === "USD" ? usdOf(n) : money(n); };
+  const whyText = (w: OpeningsWhy | null): string => !w ? ""
+    : w.kind === "empty" ? t("cbook.od.empty")
+    : w.kind === "tooMany" ? t("cbook.od.tooMany", { n: OPENINGS_MAX })
+    : t("cbook.od.lineErr", { n: w.no, why: t(`cbook.od.why.${w.what}`) });
+  const setLine = (k: string, patch: Partial<OpeningLine>) => { setErr(null); setLines((ls) => ls.map((l) => (l.k === k ? { ...l, ...patch } : l))); };
+  const addLine = () => {
+    if (lines.length >= OPENINGS_MAX) return;
+    playTap();
+    const k = uid("l");
+    setLines((ls) => [...ls, blankLine(k, ls[ls.length - 1]?.date || today)]);
+    setFocusKey(k);
+  };
+  const removeLine = (k: string) => { playTap(); setErr(null); setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.k !== k) : ls)); };
+
   const save = async () => {
     if (busy) return;
-    const amt = Number(amount) || 0;
-    if (!(amt > 0)) { toast.error(t("cbook.amountRequired", "اكتب مبلغاً أكبر من صفر.")); return; }
-    setBusy(true);
+    /* السطرُ الفارغ يُشال قبل الإرسال: «السطر N» بجملة الخادم هو السطرُ N على الشاشة. */
+    const send = pinned ? lines : lines.filter((l) => !isBlankLine(l));
+    const sp = planOpenings(send, today);
+    // يُشال قبل جملة الرفض أيضاً: سطرٌ فارغ فوق المرفوض كان يجعل «السطر 1» عن السطر الثاني على الشاشة.
+    if (!pinned && send.length) setLines(send);
+    if (!pinned && !sp.ok) { playWarning(); setErr(whyText(sp.why)); return; }
+    setBusy(true); setErr(null);
+    if (!many) {
+      try {
+        const one = sp.rows[0];
+        const amt = Number(one.amount);
+        if (viaFx) await purchaseFx.opening(companyId, cur, amt, one.date, one.note);
+        else await repo.addCompanyOpening(companyId, amt, one.date, one.note);
+        playSuccess();
+        toast.success(t("cbook.od.savedOne", { v: fmC(sp.totalCents) }));
+        onDone();
+      } catch (e) {
+        playWarning();
+        setErr(describeDbError(e, t));
+      } finally { setBusy(false); }
+      return;
+    }
+    const fresh = !pinned;
     try {
-      if (viaFx) await purchaseFx.opening(companyId, cur, amt, date, note.trim() || null);
-      else await repo.addCompanyOpening(companyId, amt, date, note.trim() || null);
+      const r = await addCompanyOpenings(companyId, cur, sp.rows, ref.current);
+      writePending(null);
       playSuccess();
-      toast.success(t("cbook.openingSaved", { v: cur === "USD" ? usdOf(amt) : money(amt), defaultValue: "انسجّل الرصيد السابق {{v}}" }));
+      toast.success(r.replayed ? t("cbook.od.replayed") : t("cbook.od.saved", { n: r.entries.length, v: fmC(sp.totalCents) }));
       onDone();
     } catch (e) {
       playWarning();
-      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      if (shouldReleaseRef(fresh, e)) { ref.current = uid("cop"); setPinned(false); writePending(null); }
+      else { setPinned(true); writePending({ ref: ref.current, cur, lines: send }); }
+      setErr(describeDbError(e, t));
     } finally { setBusy(false); }
   };
+
   return (
-    <Modal open={open} onClose={onClose} title={`${t("cbook.openingTitle", "رصيد سابق — دين من قبل السستم")}${cur === "USD" ? " · $" : ""}`}>
-      <div className="space-y-4" data-book-openingmodal>
-        <p className="text-sm text-ink-muted">{t("cbook.openingHelp", "الدين الي جان عليكم لهاي الشركة قبل ما تبدون بالسستم، بتاريخه. يتسجّل مرة وحدة، وأول تسديد على الحساب يروح له قبل الفواتير.")}</p>
-        <AmountField value={amount} onChange={setAmount} />
-        <DateField value={date} onChange={setDate} />
-        <div>
-          <label className="label">{t("cbook.note", "ملاحظة")}</label>
-          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("cbook.openingNotePh", "مثلاً: من الدفتر الورقي")} />
-        </div>
-        <Button className="w-full" size="lg" loading={busy} leftIcon={<History size={17} />} onClick={() => void save()} data-book-openingsave>{t("cbook.save", "حفظ")}</Button>
+    <Modal open={open} onClose={onClose} size={many ? "wide" : "default"} title={`${t(many ? "cbook.od.title" : "cbook.od.titleOne")}${cur === "USD" ? " · $" : ""}`}>
+      <div className="space-y-3.5" data-book-openingmodal data-book-odmulti={many ? "1" : "0"}>
+        <p className="text-sm leading-relaxed text-ink-muted">{t(many ? "cbook.od.help" : "cbook.od.helpOne")}</p>
+        <fieldset disabled={pinned || busy} className="space-y-2" data-book-odlines>
+          {lines.map((l, i) => {
+            const why = plan.bad.get(l.k);
+            const c = plan.cents.get(l.k);
+            return (
+              <div key={l.k} data-book-odline={i + 1}
+                className={cn("rounded-2xl border p-2.5", why ? "border-danger-300 bg-danger-50/40 dark:border-danger-500/40 dark:bg-danger-500/10" : "border-line bg-surface-2/40")}>
+                <div className="flex items-start gap-2">
+                  {many && <span className="mt-2.5 w-5 shrink-0 text-center text-2xs font-bold tabular-nums text-ink-subtle">{i + 1}</span>}
+                  {/* الهاتف: كلُّ خانةٍ بسطرها — التاريخُ والمبلغُ جنباً لجنب كانا يقصّان التاريخ («01/05/20» على ٣٩٠). */}
+                  <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1.4fr)]">
+                    <input type="date" className="input h-10 min-w-0" dir="ltr" value={l.date} max={today} min="2000-01-01" aria-label={t("cbook.date")}
+                      onChange={(e) => setLine(l.k, { date: e.target.value })} data-book-oddate />
+                    <input className="input h-10 min-w-0 font-bold tabular-nums" dir="ltr" inputMode="decimal" autoComplete="off" value={l.amount}
+                      placeholder={t("cbook.amount")} aria-label={t("cbook.amount")} autoFocus={l.k === focusKey}
+                      onChange={(e) => setLine(l.k, { amount: e.target.value })} data-book-odamount />
+                    <input className="input h-10 min-w-0" value={l.note} maxLength={500} placeholder={t("cbook.od.notePh")} aria-label={t("cbook.od.noteLabel")}
+                      onChange={(e) => setLine(l.k, { note: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === "Enter" && many && i === lines.length - 1 && !isBlankLine(l)) { e.preventDefault(); addLine(); } }}
+                      data-book-odnote />
+                  </div>
+                  {many && lines.length > 1 && !pinned && (
+                    <button type="button" onClick={() => removeLine(l.k)} aria-label={t("cbook.od.remove")} data-book-odremove
+                      className="mt-1.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-subtle hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/10">
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+                {/* ما قُرئ من المبلغ يُرى بكلمة — «14.169.000» كانت توقف الزرَّ بصمت (بلاغُ المالك ١٦/١١). */}
+                {c === null ? (
+                  <p role="alert" className="mt-1.5 ps-7 text-2xs font-bold text-danger-600 dark:text-danger-300" data-book-odbad>{t("cbook.od.amountBad")}</p>
+                ) : c != null ? (
+                  <p className="mt-1.5 ps-7 text-2xs font-bold tabular-nums text-ink" data-book-odread>
+                    {t("cbook.od.amountRead", { v: fmC(c) })}
+                    {cur === "IQD" && c % 100n !== 0n && <span className="ms-1.5 text-warn-700 dark:text-warn-300" data-book-odfrac>{t("cbook.od.amountFrac")}</span>}
+                  </p>
+                ) : null}
+                {why && why !== "amount" && <p className="mt-1 ps-7 text-2xs font-bold text-danger-600 dark:text-danger-300" data-book-odwhy>{t(`cbook.od.why.${why}`)}</p>}
+                {why === "amount" && c === undefined && <p className="mt-1 ps-7 text-2xs font-bold text-danger-600 dark:text-danger-300" data-book-odwhy>{t("cbook.od.why.amount")}</p>}
+              </div>
+            );
+          })}
+        </fieldset>
+        {many && !pinned && (lines.length < OPENINGS_MAX ? (
+          <button type="button" onClick={addLine} data-book-odadd
+            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-line-strong px-3 py-2 text-sm font-bold text-brand-700 transition hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+            <Plus size={15} /> {t("cbook.od.add")}
+          </button>
+        ) : <p className="text-2xs font-semibold text-ink-muted">{t("cbook.od.max", { n: OPENINGS_MAX })}</p>)}
+        {many && plan.count > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface-2 px-3 py-2.5 text-sm" data-book-odtotal>
+            <span className="font-bold text-ink-muted">{t("cbook.od.count", { n: plan.count })}</span>
+            <span className="font-extrabold tabular-nums text-ink">{t("cbook.od.total", { v: fmC(plan.totalCents) })}</span>
+          </div>
+        )}
+        {pinned && <p className="text-2xs font-semibold text-warn-700 dark:text-warn-300" data-book-odpinned>{t("cbook.od.unknown")}</p>}
+        {err && <p role="alert" className="text-sm font-bold text-danger-600 dark:text-danger-300" data-book-oderr>{err}</p>}
+        <Button className="w-full" size="lg" loading={busy} leftIcon={<History size={17} />} onClick={() => void save()} data-book-openingsave>
+          {pinned ? t("cbook.od.retry") : many ? t("cbook.od.save", { n: Math.max(1, plan.count) }) : t("cbook.save")}
+        </Button>
       </div>
     </Modal>
   );
