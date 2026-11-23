@@ -97,6 +97,8 @@ export const MANIFEST = [
   ["settle_invoice_usd", 7, "public.settle_invoice_usd(uuid,numeric,numeric,text,numeric,text,text)", "0264", "0286"],
   // 0288: الراجعُ الإكسباير — دفعةُ الراجع آخرَ ما يأخذه البيعُ العاديّ، والزيادةُ لا تُضاف لها.
   ["lots_reconcile", 2, "public.lots_reconcile(uuid,boolean)", "0217", "0288"],
+  ["lots_user_expiry", 3, "public.lots_user_expiry(uuid,date,date)", "0217", "0288"],
+  ["retail_return", 2, "public.retail_return(jsonb,jsonb)", "0136", "0288"],
   // 0275: كلُّ تسديدٍ لدَين الدولار بسعر يومه وفرقُ صرفه، والأرباحُ والخسائر تقرؤه.
   ["purchase_pay_fx", 7, "public.purchase_pay_fx(uuid,numeric,text,numeric,text,text,numeric)", "0274", "0275"],
   ["company_pay_fx", 8, "public.company_pay_fx(uuid,text,numeric,text,numeric,text,date,text)", "0274", "0275"],

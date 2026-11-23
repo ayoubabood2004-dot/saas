@@ -71,10 +71,18 @@ const lotOf = (l: ProductLot): ProductLot => ({
 /** دفعاتُ الراجع الباقية بالعيادة (شاشةُ البيع تسأل منها «من الإكسباير لو من الجديد؟»). */
 export async function listReturnLots(): Promise<ProductLot[]> {
   if (supabase) {
-    const r = await supabase.from("product_lots").select("*").eq("source", "return").gt("qty", 0)
-      .order("returned_at", { ascending: true }).order("id", { ascending: true }).limit(1000);
-    if (r.error) throw r.error;
-    return ((r.data ?? []) as ProductLot[]).map(lotOf);
+    // صفحاتٌ حتى صفحةٍ فارغة (سقفُ الطلب ألف — قائمةٌ ناقصة تُصدَّق «ماكو إكسباير» عن مادّةٍ لها دفعة).
+    const out: ProductLot[] = [];
+    for (let from = 0; ; ) {
+      const r = await supabase.from("product_lots").select("*").eq("source", "return").gt("qty", 0)
+        .order("returned_at", { ascending: true }).order("id", { ascending: true }).range(from, from + 999);
+      if (r.error) throw r.error;
+      const page = (r.data ?? []) as ProductLot[];
+      if (!page.length) break;
+      out.push(...page.map(lotOf));
+      from += page.length;
+    }
+    return out;
   }
   return (await local()).demoReturnLots(null);
 }
@@ -117,6 +125,6 @@ export async function checkoutLots(items: CheckoutItem[], meta: SaleMeta, usd: u
 
 /** رمزُ رفضٍ من أبواب 0288 (الخادمُ يضعه بـmessage وشرحَه العربيَّ بـhint، والتجريبيُّ الرمزَ وحده). */
 export function expiredErrorCode(e: unknown): string | null {
-  const m = /\b(expired_[a-z]+|lot_(?:short|gone|line|ref))\b/.exec(String((e as { message?: string } | null)?.message ?? ""));
+  const m = /\b(expired_[a-z_]+|return_ref_used|lot_(?:short|gone|line|ref))\b/.exec(String((e as { message?: string } | null)?.message ?? ""));
   return m ? m[1] : null;
 }

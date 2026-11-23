@@ -148,8 +148,13 @@ revoke all on function public.lots_reconcile(uuid, boolean) from public, anon, a
 -- ── ٣) الراجعُ الإكسباير ────────────────────────────────────────────────────────────────────────
 -- السطر: { product_id, unit: box|sub|pack, pack_id?, qty (بوحدته), pct (١–١٠٠), expiry_date, unit_price (سعرُ الوحدة بالجهاز —
 -- يُقرأ حين لا فاتورة) }. وmeta: { client_ref, customer_name, customer_phone, method, note }.
--- الفاتورةُ: الأحدثُ لمفتاح الزبون فيها سطرٌ للمادّة يكفي — وما عليها دَينٌ أوّلاً. بلا زبونٍ أو بلا فاتورة: سحبٌ «مرتجع» كراجع اليوم،
--- وإن كان على الزبون دَين يُسدَّد به أقدمُه (السحبُ والتسديدُ نقداً — الدرجُ لا يتحرّك).
+-- الفاتورةُ: الأحدثُ لمفتاح الزبون فيها سطرٌ للمادّة يكفي — وما عليها دَينٌ أوّلاً؛ لا دولار ولا مرجَعة ولا دَين قديم ولا طلبَ توصيلٍ بالطريق
+-- (المندوبُ يحصّل مجموعَها). بلا زبونٍ أو بلا فاتورة: سحبٌ «مرتجع» كراجع اليوم.
+-- والمالُ كلُّه بطريقة الشاشة (meta.method): الساقُ السالبة على الفاتورة، وتسديدُ أقدم دَينه بما زاد، وسحبُ «مرتجع» — بطريقةٍ واحدة،
+-- فالجيبُ لا يتحرّك بالتسديد (نقدٌ يخرج ونقدٌ يدخل). كانت الساقُ بطريقة الفاتورة الغالبة والتسديدُ بطريقة الشاشة: بطاقةٌ −٢٠٬٠٠٠ لم تخرج،
+-- ونقدٌ +١٥٬٠٠٠ لم يدخل (مراجعةٌ عدائيّة).
+-- والرصيدُ تحت الصفر (البيعُ قبل الجرد، 0253): الدفعاتُ مجموعُها greatest(الرصيد، ٠) — فما يسدّ العجزَ لا يدخل دفعة؛ كلفتُه لا تنتقل
+-- إليها (T بنسبة ما دخلها)، فخسارتُه تبقى بالفاتورة صادقة — لا كلفةٌ تختفي من الفاتورة ولا تظهر بدفعة.
 create or replace function public.return_expired(p_items jsonb, p_meta jsonb default '{}'::jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
@@ -158,10 +163,12 @@ declare
   v_name    text := nullif(btrim(coalesce(p_meta->>'customer_name', '')), '');
   v_phone   text := nullif(btrim(coalesce(p_meta->>'customer_phone', '')), '');
   v_note    text := nullif(left(btrim(coalesce(p_meta->>'note', '')), 120), '');
-  v_method  text := case lower(coalesce(p_meta->>'method', 'cash'))
-                      when 'card' then 'card' when 'transfer' then 'bank' when 'bank' then 'bank' else 'cash' end;
+  v_pm      text := case lower(coalesce(p_meta->>'method', 'cash'))
+                      when 'card' then 'card' when 'transfer' then 'transfer' when 'bank' then 'transfer' else 'cash' end;
+  v_method  text;   -- طريقةُ السحب (expenses): bank لا transfer
   v_dial    text;
   v_key     text;
+  v_hit     jsonb := '[]'::jsonb;   -- أزواجُ (اسم، رقم) تحت مفتاح الزبون
   v_out     jsonb;
   it        jsonb;
   p         products;
@@ -169,38 +176,48 @@ declare
   v_qty     numeric;
   v_pct     integer;
   v_exp     date;
+  v_uret    numeric;   -- وحدةُ الراجع بوحدة المخزن
   v_rs      numeric;   -- الكميةُ بوحدة المخزن
   v_pack    jsonb;
   v_inv     invoices;
   li        invoice_items;
-  v_oldv    numeric;   -- قيمةُ السطر قبل
+  v_r       numeric;
+  v_uline   numeric;   -- وحدةُ سطر الفاتورة بوحدة المخزن
+  v_rl      numeric;   -- الراجعُ بوحدة سطر الفاتورة
+  v_oldv    numeric;
   v_newv    numeric;
-  v_oldc    numeric;   -- كلفةُ السطر قبل (round(qty × unit_cost, 2) كما يُعاد حسابُها)
+  v_oldc    numeric;
   v_newc    numeric;
   v_nq      numeric;
   v_ns      numeric;
   v_V       numeric;   -- قيمةُ الراجع (تنزل من الدَّين أو تُعاد)
-  v_T       numeric;   -- كلفةُ الدفعة
+  v_T       numeric;   -- كلفةُ الراجع كلِّه = min(V, كلفته)
+  v_lotq    numeric;   -- ما يدخل الدفعة (ما فوق العجز)
+  v_Tl      numeric;   -- كلفةُ ما يدخل الدفعة
   v_invs    uuid[] := '{}';
   v_lines   jsonb := '[]'::jsonb;
-  v_free    numeric := 0;   -- قيمةُ ما رجع بلا فاتورة
-  v_cash    numeric := 0;   -- ما خرج من الدرج للزبون
-  v_debt    numeric := 0;   -- ما نزل من دَينه
+  v_free    numeric := 0;
+  v_cash    numeric := 0;
+  v_debt    numeric := 0;
   v_left    numeric;
   d         invoices;
   v_pay     numeric;
-  -- إعادةُ الحساب (return_invoice_items حرفاً)
-  v_subtotal numeric; v_cost numeric; v_count int; v_total numeric; v_paid numeric;
-  v_forg_old numeric; v_forg_new numeric; v_back numeric; v_details jsonb; v_pos numeric; v_m text; v_stamp text;
+  v_subtotal numeric; v_cost numeric; v_total numeric; v_paid numeric;
+  v_forg_old numeric; v_forg_new numeric; v_back numeric; v_details jsonb; v_pos numeric; v_stamp text;
   v_iid     uuid;
 begin
   if v_clinic is null then raise exception 'not authenticated' using errcode = '42501'; end if;
+  v_method := case v_pm when 'transfer' then 'bank' else v_pm end;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'expired_empty' using hint = 'ما في شي يرجع.';
   end if;
   if v_ref is not null then
     select result into v_out from rpc_refs where clinic_id = v_clinic and fn = 'return_expired' and client_ref = v_ref;
     if v_out is not null then return v_out; end if;
+    -- المرجعُ نفسُه ثبت راجعاً خالصاً (الشاشةُ بدّلت الوضعَ بعد نتيجةٍ مجهولة): لا يُسجَّل مرّةً ثانية بطريقٍ آخر.
+    if exists (select 1 from rpc_refs where clinic_id = v_clinic and fn = 'retail_return' and client_ref = v_ref) then
+      raise exception 'expired_ref_used' using hint = 'هالإرجاع انسجّل راجع عادي — صفّر السلّة وشوف السحوبات.';
+    end if;
   end if;
   begin
     if v_ref is not null then
@@ -208,6 +225,15 @@ begin
     end if;
     select cp.dial_code into v_dial from clinic_prefs cp where cp.clinic_id = v_clinic;
     v_key := case when v_name is not null or v_phone is not null then cust_key(v_phone, v_name, v_dial) end;
+    -- الأزواجُ تحت المفتاح مرّةً — نهجُ customer_key_invoices (0270): cust_key لكلّ زوجٍ لا لكلّ فاتورة، ولا لكلّ سطر.
+    if v_key is not null then
+      select coalesce(jsonb_agg(jsonb_build_array(pr.nm, pr.ph)), '[]'::jsonb) into v_hit
+        from (select distinct i.customer_name as nm, i.customer_phone as ph
+                from invoices i
+               where i.clinic_id = v_clinic
+                 and (coalesce(btrim(i.customer_name), '') <> '' or coalesce(btrim(i.customer_phone), '') <> '')) pr
+       where cust_key(pr.ph, pr.nm, v_dial) = v_key;
+    end if;
 
     -- منتجاتُ السلّة تُقفل بالمعرّف قبل أيّ كتابة — ترتيبُ البيع (0252)، لا ترتيبُ السطور.
     perform 1 from products
@@ -232,46 +258,40 @@ begin
       if coalesce(p.pooled, false) or p.farm_id is not null then
         raise exception 'expired_pooled' using hint = '«' || p.name || '» رصيدها بحوض القسم — رجّعها من «المرتجع».';
       end if;
-      -- الوحدة ⇒ كميةُ المخزن
+      v_pack := null;
       if v_unit = 'sub' then
         if not coalesce(p.has_sub_unit, false) or coalesce(p.units_per_box, 0) < 2 then
           raise exception 'expired_unit' using hint = '«' || p.name || '» ما إلها وحدة مفردة.';
         end if;
-        v_rs := round(v_qty / p.units_per_box, 3);
+        v_uret := 1.0 / p.units_per_box;
       elsif v_unit = 'pack' then
         select k into v_pack from jsonb_array_elements(coalesce(p.packs, '[]'::jsonb)) k where k->>'id' = it->>'pack_id' limit 1;
         if v_pack is null or coalesce((v_pack->>'per')::numeric, 0) < 2 then
           raise exception 'expired_unit' using hint = '«' || p.name || '» ما بيها هالكارتون — حدّث القائمة.';
         end if;
-        v_rs := round(v_qty * (v_pack->>'per')::numeric, 3);
+        v_uret := (v_pack->>'per')::numeric;
       elsif v_unit = 'box' then
-        v_rs := v_qty;
+        v_uret := 1;
       else
         raise exception 'expired_unit' using hint = 'وحدة الراجع: علبة أو قطعة أو كارتون.';
       end if;
+      v_rs := round(v_qty * v_uret, 3);
       if v_rs <= 0 then raise exception 'expired_qty' using hint = 'الكمية أصغر من وحدة المخزن.'; end if;
 
       -- الفاتورة: الأحدثُ لمفتاح الزبون فيها سطرُ المادّة يكفي — ما عليها دَينٌ أوّلاً
       v_inv := null; li := null;
-      if v_key is not null then
-        -- الأزواجُ (اسم، رقم) تحت المفتاح — نهجُ customer_key_invoices (0270): cust_key مرّةً لكلّ زوج لا لكلّ فاتورة.
-        with pairs as materialized (
-          select distinct i.customer_name as nm, i.customer_phone as ph
-            from invoices i
-           where i.clinic_id = v_clinic
-             and (coalesce(btrim(i.customer_name), '') <> '' or coalesce(btrim(i.customer_phone), '') <> '')
-        ), hit as materialized (
-          select pr.nm, pr.ph from pairs pr where cust_key(pr.ph, pr.nm, v_dial) = v_key
-        )
+      if jsonb_array_length(v_hit) > 0 then
         select i.* into v_inv
           from invoices i
-          join hit h on i.customer_name is not distinct from h.nm and i.customer_phone is not distinct from h.ph
+          join jsonb_array_elements(v_hit) h on i.customer_name is not distinct from (h->>0) and i.customer_phone is not distinct from (h->>1)
          where i.clinic_id = v_clinic and coalesce(i.status, 'paid') <> 'refunded'
            and coalesce(i.sale_kind, 'retail') <> 'opening' and coalesce(i.currency, 'IQD') = 'IQD'
+           and not exists (select 1 from delivery_orders dl
+                            where dl.invoice_id = i.id and (dl.status in ('preparing', 'out') or (dl.status = 'delivered' and dl.collected_at is null)))
            and exists (select 1 from invoice_items ii
                         where ii.invoice_id = i.id and ii.clinic_id = v_clinic and ii.product_id = p.id
                           and coalesce(ii.stock_qty, ii.qty) >= v_rs - 0.0005 and coalesce(ii.pooled_qty, 0) = 0 and ii.qty > 0)
-         order by (i.total - coalesce(i.amount_paid, 0) > 0.005) desc, i.created_at desc, i.id desc
+         order by (i.total - coalesce(i.amount_paid, i.total) > 0.005) desc, i.created_at desc, i.id desc
          limit 1
          for update of i;
       end if;
@@ -283,36 +303,27 @@ begin
          order by coalesce(ii.stock_qty, ii.qty) desc, ii.id
          limit 1
          for update;
-        -- قيمةُ السطر وكلفتُه بوحدة المخزن، والجزءُ الراجع منه
+        -- الراجعُ بوحدة السطر نفسِه (شريطٌ من سطر شرائط = ١ بالضبط): التحويلُ عبر وحدة المخزن المقرَّبة كان يترك ٦٫٠٠١ شريطاً ويردّ ٩٩٩
+        -- بدل ١٠٠٠ (مراجعةٌ عدائيّة). وحدةُ السطر من نسبته: علبة (١)، مفرد (١ ÷ عدده)، كارتون (عددُه).
+        v_r := coalesce(li.stock_qty, li.qty) / li.qty;
+        v_uline := case when abs(v_r - 1) < 0.0005 then 1
+                        when v_r < 1 and coalesce(p.units_per_box, 0) >= 2 then 1.0 / p.units_per_box
+                        else v_r end;
+        v_rl := least(round(v_qty * v_uret / v_uline, 3), li.qty);
         v_oldv := li.line_total;
         v_oldc := round(li.qty * li.unit_cost, 2);
-        if v_rs >= coalesce(li.stock_qty, li.qty) - 0.0005 then
+        if v_rl >= li.qty - 0.0005 then
           v_nq := 0; v_ns := 0; v_newv := 0; v_newc := 0;
           delete from invoice_items where id = li.id;
         else
-          v_ns := round(coalesce(li.stock_qty, li.qty) - v_rs, 3);
-          v_nq := round(li.qty * v_ns / coalesce(li.stock_qty, li.qty), 3);
+          v_nq := round(li.qty - v_rl, 3);
+          v_ns := case when li.stock_qty is null then null else round(li.stock_qty * v_nq / li.qty, 3) end;
           v_newv := round(v_nq * li.unit_price, 2);
           v_newc := round(v_nq * li.unit_cost, 2);
-          update invoice_items set qty = v_nq, stock_qty = case when li.stock_qty is null then null else v_ns end,
-                 line_total = v_newv
-           where id = li.id;
+          update invoice_items set qty = v_nq, stock_qty = v_ns, line_total = v_newv where id = li.id;
         end if;
         v_V := round((v_oldv - v_newv) * v_pct / 100.0, 2);
         v_T := least(v_V, v_oldc - v_newc);
-        -- سطرُ الأثر: ما لم يرجع للزبون من قيمة الراجع، وكلفتُه ما لم ينتقل للدفعة — فربحُ الفاتورة لا يتغيّر. وراجعٌ كاملٌ (١٠٠٪) بلا
-        -- باقٍ لا سطرَ له — إلا فاتورةً ما بقي فيها سطر: يبقى أثرُها بصفر (فاتورةٌ بلا أسطر لا تُقرأ بسجلّ الفواتير ولا تُطبع).
-        if (v_oldv - v_newv) - v_V > 0 or (v_oldc - v_newc) - v_T > 0
-           or not exists (select 1 from invoice_items where invoice_id = v_inv.id and clinic_id = v_clinic) then
-        insert into invoice_items (invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty, unit_label, service_id)
-        values (v_inv.id, v_clinic, null,
-                left(p.name || ' — راجع إكسباير ' || trim(trailing '.' from trim(trailing '0' from v_qty::text))
-                     || case v_unit when 'sub' then ' ' || coalesce(nullif(btrim(p.sub_unit_name), ''), 'قطعة')
-                                    when 'pack' then ' ' || coalesce(nullif(btrim(v_pack->>'name'), ''), 'كارتون') else '' end
-                     || case when v_pct < 100 then ' (' || v_pct || '%)' else '' end, 200),
-                1, (v_oldv - v_newv) - v_V, (v_oldc - v_newc) - v_T, (v_oldv - v_newv) - v_V, 0, null, null);
-        end if;
-        if not (v_inv.id = any(v_invs)) then v_invs := v_invs || v_inv.id; end if;
       else
         -- بلا فاتورة: سعرُ الوحدة بالجهاز (كراجع اليوم)، والكلفةُ min(القيمة، كلفةُ المخزن)
         v_V := round(abs(coalesce(nullif(it->>'unit_price', '')::numeric, 0)) * v_qty * v_pct / 100.0, 2);
@@ -320,21 +331,44 @@ begin
         v_free := v_free + v_V;
       end if;
 
-      -- المخزن: الرصيدُ يزيد، والدفعةُ تحمله بتاريخها (المطابقةُ المؤجَّلة تجد المجموعَ مطابقاً)
+      -- ما يدخل الدفعة: ما فوق عجز الرصيد (الدفعاتُ مجموعُها greatest(الرصيد، ٠))، وكلفتُه بنسبته.
+      v_lotq := case when coalesce(p.stock, 0) >= 0 then v_rs else greatest(coalesce(p.stock, 0) + v_rs, 0) end;
+      v_Tl := case when v_lotq >= v_rs then v_T else round(v_T * v_lotq / v_rs, 2) end;
+
+      if v_inv.id is not null then
+        -- سطرُ الأثر: ما لم يرجع للزبون من قيمة الراجع، وكلفتُه ما لم ينتقل للدفعة — فربحُ الفاتورة لا يتغيّر. وراجعٌ كاملٌ (١٠٠٪) بلا
+        -- باقٍ لا سطرَ له — إلا فاتورةً ما بقي فيها سطر: يبقى أثرُها بصفر (فاتورةٌ بلا أسطر لا تُقرأ بسجلّ الفواتير ولا تُطبع).
+        -- ويومُه يومُ فاتورته (0133): تقاريرُ السطور بالمدّة تقرأ سطورَ الفاتورة بيومها.
+        if (v_oldv - v_newv) - v_V > 0 or (v_oldc - v_newc) - v_Tl > 0
+           or not exists (select 1 from invoice_items where invoice_id = v_inv.id and clinic_id = v_clinic) then
+          insert into invoice_items (invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty, unit_label, service_id, created_at)
+          values (v_inv.id, v_clinic, null,
+                  left(p.name || ' — راجع إكسباير ' || trim(trailing '.' from trim(trailing '0' from v_qty::text))
+                       || case v_unit when 'sub' then ' ' || coalesce(nullif(btrim(p.sub_unit_name), ''), 'قطعة')
+                                      when 'pack' then ' ' || coalesce(nullif(btrim(v_pack->>'name'), ''), 'كارتون') else '' end
+                       || case when v_pct < 100 then ' (' || v_pct || '%)' else '' end, 200),
+                  1, (v_oldv - v_newv) - v_V, (v_oldc - v_newc) - v_Tl, (v_oldv - v_newv) - v_V, 0, null, null, v_inv.created_at);
+        end if;
+        if not (v_inv.id = any(v_invs)) then v_invs := v_invs || v_inv.id; end if;
+      end if;
+
+      -- المخزن: الرصيدُ يزيد، والدفعةُ تحمل ما فوق العجز بتاريخه (المطابقةُ المؤجَّلة تجد المجموعَ مطابقاً)
       update products set stock = round(coalesce(stock, 0) + v_rs, 3) where id = p.id and clinic_id = v_clinic;
-      insert into product_lots (clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, note,
-                                unit_cost, return_from, return_key, return_pct, return_invoice, returned_at)
-      values (v_clinic, p.id, v_rs, v_rs, v_exp, now(), 'return', v_note,
-              round(v_T / v_rs, 6), left(coalesce(v_name, v_phone), 120), v_key, v_pct, v_inv.id, now());
+      if v_lotq > 0 then
+        insert into product_lots (clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, note,
+                                  unit_cost, return_from, return_key, return_pct, return_invoice, returned_at)
+        values (v_clinic, p.id, v_lotq, v_lotq, v_exp, now(), 'return', v_note,
+                round(v_Tl / v_lotq, 6), left(coalesce(v_name, v_phone), 120), v_key, v_pct, v_inv.id, now());
+      end if;
       v_lines := v_lines || jsonb_build_object('product_id', p.id, 'name', p.name, 'stock_qty', v_rs, 'value', v_V,
-                                               'cost', v_T, 'invoice_id', v_inv.id);
+                                               'cost', v_Tl, 'lot_qty', v_lotq, 'invoice_id', v_inv.id);
     end loop;
 
     -- ── الفواتير: إعادةُ الحساب كـreturn_invoice_items (الدَّينُ أوّلاً، ثمّ الخصمُ على الدين، ثمّ النقد) ──────────
     foreach v_iid in array v_invs loop
       select * into v_inv from invoices where id = v_iid for update;
-      select coalesce(sum(line_total), 0), coalesce(sum(round(qty * unit_cost, 2)), 0), count(*)
-        into v_subtotal, v_cost, v_count
+      select coalesce(sum(line_total), 0), coalesce(sum(round(qty * unit_cost, 2)), 0)
+        into v_subtotal, v_cost
         from invoice_items where invoice_id = v_iid and clinic_id = v_clinic;
       v_total := greatest(round(v_subtotal - greatest(coalesce(v_inv.discount, 0), 0), 2), 0);
       v_paid  := coalesce(v_inv.amount_paid, v_inv.total);
@@ -345,16 +379,13 @@ begin
       v_debt     := v_debt + greatest(0, round((v_inv.total - v_paid) - greatest(0, v_total - v_paid + v_back), 2));
       v_details  := coalesce(v_inv.payment_details, '[]'::jsonb);
       if v_back > 0 then
-        v_m := coalesce((select e->>'method' from jsonb_array_elements(v_details) e
-                          where (e->>'amount')::numeric > 0 order by (e->>'amount')::numeric desc limit 1),
-                        v_inv.payment_method, v_method);
         select coalesce(sum((e->>'amount')::numeric), 0) into v_pos
           from jsonb_array_elements(v_details) e where (e->>'amount')::numeric > 0;
         if v_pos < v_paid then
-          v_details := v_details || jsonb_build_object('method', coalesce(v_inv.payment_method, v_m), 'amount', v_paid - v_pos,
+          v_details := v_details || jsonb_build_object('method', coalesce(v_inv.payment_method, v_pm), 'amount', v_paid - v_pos,
             'at', to_char(v_inv.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'));
         end if;
-        v_details := v_details || jsonb_build_object('method', v_m, 'amount', -v_back,
+        v_details := v_details || jsonb_build_object('method', v_pm, 'amount', -v_back,
           'at', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'note', 'راجع إكسباير');
         v_cash := v_cash + v_back;
       end if;
@@ -368,9 +399,7 @@ begin
       update invoices set
         subtotal = v_subtotal, total = v_total, forgiven = v_forg_new, cost_total = v_cost,
         profit = round(v_total - v_cost, 2),
-        item_count = greatest(0, coalesce((select sum(qty) from invoice_items
-                                            where invoice_id = v_iid and clinic_id = v_clinic
-                                              and not (product_id is null and stock_qty = 0)), 0)),
+        item_count = greatest(0, coalesce((select round(sum(qty)) from invoice_items where invoice_id = v_iid and clinic_id = v_clinic), 0)),
         amount_paid = greatest(round(v_paid - v_back, 2), 0),
         payment_details = v_details,
         payment_method = coalesce((select e->>'method' from jsonb_array_elements(v_details) e
@@ -390,27 +419,23 @@ begin
       v_cash := v_cash + v_free;
     end if;
 
-    -- ── ما خرج نقداً والزبونُ عليه دَين: يُسدَّد به أقدمُ دَينه (نقدٌ يخرج ونقدٌ يدخل — الدرجُ لا يتحرّك) ──────────
-    if v_cash > 0 and v_key is not null then
+    -- ── ما خرج والزبونُ عليه دَين: يُسدَّد به أقدمُ دَينه — بطريقة الشاشة نفسِها (يخرج ويدخل بالجيب نفسِه فلا يتحرّك) ──────────
+    -- والصفوفُ تُقفل بالقراءة: تسديدٌ متزامن بين القراءة والتسديد كان يُسقط فرقَه — لا نقداً ولا دَيناً (مراجعةٌ عدائيّة).
+    if v_cash > 0 and jsonb_array_length(v_hit) > 0 then
       v_left := v_cash;
       for d in
-        with pairs as materialized (
-          select distinct i.customer_name as nm, i.customer_phone as ph
-            from invoices i
-           where i.clinic_id = v_clinic and i.total - coalesce(i.amount_paid, 0) > 0.005
-             and (coalesce(btrim(i.customer_name), '') <> '' or coalesce(btrim(i.customer_phone), '') <> '')
-        ), hit as materialized (
-          select pr.nm, pr.ph from pairs pr where cust_key(pr.ph, pr.nm, v_dial) = v_key
-        )
         select i.* from invoices i
-          join hit h on i.customer_name is not distinct from h.nm and i.customer_phone is not distinct from h.ph
+          join jsonb_array_elements(v_hit) h on i.customer_name is not distinct from (h->>0) and i.customer_phone is not distinct from (h->>1)
          where i.clinic_id = v_clinic and coalesce(i.status, 'paid') <> 'refunded' and coalesce(i.currency, 'IQD') = 'IQD'
-           and i.total - coalesce(i.amount_paid, 0) > 0.005
+           and i.total - coalesce(i.amount_paid, i.total) > 0.005
+           and not exists (select 1 from delivery_orders dl
+                            where dl.invoice_id = i.id and (dl.status in ('preparing', 'out') or (dl.status = 'delivered' and dl.collected_at is null)))
          order by i.created_at, i.id
+         for update of i
       loop
         exit when v_left <= 0;
-        v_pay := least(v_left, round(d.total - coalesce(d.amount_paid, 0), 2));
-        perform settle_invoice(d.id, v_pay, case when v_method = 'bank' then 'transfer' else v_method end);
+        v_pay := least(v_left, round(d.total - coalesce(d.amount_paid, d.total), 2));
+        perform settle_invoice(d.id, v_pay, v_pm);
         v_left := v_left - v_pay;
         v_debt := v_debt + v_pay;
       end loop;
@@ -505,11 +530,155 @@ begin
     update invoices set cost_total = round(coalesce(cost_total, 0) + v_delta, 2),
                         profit = round(coalesce(profit, 0) - v_delta, 2)
      where id = v_inv.id returning * into v_inv;
+    -- الكلفةُ جزءٌ من البيعة نفسِها لا تعديلٌ بعدها: محفّزُ التدقيق كتب للتحديثين «تعديل بيعة» و«سطر» بسجلّ الحركات بجانب «بيع»
+    -- (فخُّ 0283 بعينه — مراجعةٌ عدائيّة). سطورُ هذه المعاملة لهذه الفاتورة وسطورِها تُشال، ويبقى سطرُ الإدراج «بيع».
+    delete from audit_log
+     where clinic_id = v_clinic and action = 'UPDATE' and created_at = now()
+       and ((entity = 'invoices' and entity_id = v_inv.id::text)
+            or (entity = 'invoice_items' and entity_id in (select x::text from unnest(v_done) x)));
   end if;
   return jsonb_set(v_res, '{iqd}', to_jsonb(v_inv));
 end $$;
 revoke all on function public.retail_checkout_lots(jsonb, jsonb, jsonb, uuid[]) from public, anon;
 grant execute on function public.retail_checkout_lots(jsonb, jsonb, jsonb, uuid[]) to authenticated;
+
+-- ── ٥) نموذجُ المادّة لا يكتب تاريخَه فوق دفعة الراجع (حارسُ الانجراف على 0217) ───────────────────────────────────
+-- دفعةُ الراجع وحدها فيها رصيد ⇒ تاريخُ المادّة تاريخُها (lots_refresh_expiry)، وتعديلُ تاريخ المادّة بنموذجها كان يكتب فوقه (مقيسٌ بالمراجعة:
+-- ٢٠٢٦-١٠-٠١ صار ٢٠٢٨-٠١-٠١ مختوماً expiry_fixed) — فيضيع «شوكت خلص» الذي كتبه الطبيب عند الراجع.
+select public._drift_assert('public.lots_user_expiry(uuid,date,date)', '6bd2792fc62845ac8b76da07758c90fc', '-- +0288');
+
+create or replace function public.lots_user_expiry(p_product uuid, p_old date, p_new date)
+returns date
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_n   int;
+  v_min date;
+  v_any boolean;
+begin
+  -- يناديه محفّزٌ يجري بدور التطبيق: يفحص العيادةَ بنفسه (مادةُ عيادةٍ أخرى لا تُلمس دفعاتُها).
+  if not exists (select 1 from products where id = p_product and clinic_id = auth_clinic()) then
+    return p_new;
+  end if;
+-- -0288   update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()
+-- -0288    where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old;
+  update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()   -- +0288
+   where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old and source <> 'return';   -- +0288
+  get diagnostics v_n = row_count;
+  -- التاريخُ القديم لا يطابق دفعةً بعينها ودفعةٌ وحيدةٌ فيها رصيد: هي المقصودة.
+-- -0288   if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0) = 1 then
+-- -0288     update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now() where product_id = p_product and qty > 0;
+  if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0 and source <> 'return') = 1 then   -- +0288
+    update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()   -- +0288
+     where product_id = p_product and qty > 0 and source <> 'return';   -- +0288
+  end if;
+  select coalesce(min(expiry_date) filter (where expiry_date >= current_date), min(expiry_date)), bool_or(true)
+    into v_min, v_any from product_lots where product_id = p_product and qty > 0;
+  return case when coalesce(v_any, false) then v_min else p_new end;
+end $$;
+revoke all on function public.lots_user_expiry(uuid, date, date) from public, anon;
+grant execute on function public.lots_user_expiry(uuid, date, date) to authenticated;
+
+-- ── ٦) الراجعُ الخالص لا يُعيد مرجعاً ثبت راجعاً إكسباير (حارسُ الانجراف على 0136) ─────────────────────────────────
+-- الشاشةُ تولّد المرجعَ مرّةً للسلّة؛ راجعٌ إكسباير نتيجتُه مجهولة ثمّ «مو إكسباير» وإعادةٌ = retail_return بالمرجع نفسِه: الرصيدُ يزيد مرّتين
+-- والنقدُ يخرج مرّتين (rpc_refs مفتاحُه الدالّةُ والمرجع). والعكسُ يرفضه return_expired نفسُه (expired_ref_used).
+select public._drift_assert('public.retail_return(jsonb,jsonb)', 'b8a68e097c2958134d1f74abe8c5fdf1', '-- +0288');
+
+create or replace function public.retail_return(p_items jsonb, p_meta jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_clinic uuid := auth_clinic();
+  it jsonb; v_qty numeric(14,3); v_stockq numeric(14,3);
+  v_price numeric(14,2); v_amount numeric(14,2); v_name text; v_method text;
+  v_who  text := nullif(btrim(p_meta->>'customer_name'), '');
+  v_note text := nullif(btrim(p_meta->>'note'), '');
+  v_total numeric(14,2) := 0; v_lines int := 0;
+  -- مرجعُ المحاولة: يولّده الجهاز مرّةً، ويثبت عبر كل إعادة.
+  v_ref  text := nullif(btrim(p_meta->>'client_ref'), '');
+  v_out  jsonb;
+begin
+  if v_clinic is null then raise exception 'no clinic'; end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'no items';
+  end if;
+
+  -- إعادةٌ لإرجاعٍ سُجّل سلفاً: تُرجَع نتيجتُه كما هي، بلا مخزونٍ يُزاد ثانيةً
+  -- ولا سحبٍ يُسجَّل ثانية.
+  if v_ref is not null then
+    select result into v_out from rpc_refs
+     where clinic_id = v_clinic and fn = 'retail_return' and client_ref = v_ref;
+    if v_out is not null then return v_out; end if;
+    -- 0288: المرجعُ نفسُه ثبت راجعاً إكسباير (الشاشةُ بدّلت الوضعَ بعد نتيجةٍ مجهولة) — لا يُسجَّل ثانيةً راجعاً خالصاً.   -- +0288
+    if exists (select 1 from rpc_refs where clinic_id = v_clinic and fn = 'return_expired' and client_ref = v_ref) then   -- +0288
+      raise exception 'return_ref_used' using hint = 'هالإرجاع انسجّل راجع إكسباير — صفّر السلّة وشوف الفاتورة والدفعات.';   -- +0288
+    end if;   -- +0288
+  end if;
+
+  v_method := case lower(coalesce(p_meta->>'method','cash'))
+                when 'card' then 'card'
+                when 'transfer' then 'bank'
+                when 'bank' then 'bank'
+                else 'cash' end;
+
+  -- كتلةٌ بمعالج: خرقُ الفهرس الفريد يعني أن نسخةً متزامنة سبقتنا، فيتراجع
+  -- كل ما كتبناه (المخزون والسحوبات) ونُرجع نتيجتها هي.
+  begin
+    -- حجزُ المرجع أوّلاً — قبل أن نمسّ مخزوناً أو خزنة.
+    if v_ref is not null then
+      insert into rpc_refs (clinic_id, fn, client_ref) values (v_clinic, 'retail_return', v_ref);
+    end if;
+
+    for it in select * from jsonb_array_elements(p_items) loop
+      v_qty := abs(coalesce(nullif(it->>'qty','')::numeric, 0));
+      if v_qty = 0 then continue; end if;
+      v_stockq := abs(coalesce(nullif(it->>'stock_qty','')::numeric, v_qty));
+      v_price  := abs(coalesce(nullif(it->>'unit_price','')::numeric, 0));
+      v_name   := coalesce(nullif(btrim(it->>'name'), ''), 'صنف');
+      v_amount := round(v_qty * v_price, 2);
+
+      if nullif(it->>'product_id','') is not null then
+        perform credit_stock((it->>'product_id')::uuid, v_stockq, v_clinic);
+      end if;
+
+      if v_amount > 0 then
+        insert into expenses (clinic_id, amount, description, category, method, spent_at)
+        values (v_clinic, v_amount,
+          'راجع: ' || v_name
+            || case when v_qty <> 1 then ' × ' || trim(trailing '.' from trim(trailing '0' from v_qty::text)) else '' end
+            || case when v_who  is not null then ' — ' || v_who  else '' end
+            || case when v_note is not null then ' (' || v_note || ')' else '' end,
+          'مرتجع', v_method, now());
+        v_total := v_total + v_amount;
+      end if;
+      v_lines := v_lines + 1;
+    end loop;
+
+    if v_lines = 0 then raise exception 'no items'; end if;
+    v_out := jsonb_build_object('total', v_total, 'lines', v_lines, 'method', v_method);
+
+    if v_ref is not null then
+      update rpc_refs set result = v_out
+       where clinic_id = v_clinic and fn = 'retail_return' and client_ref = v_ref;
+    end if;
+  exception when unique_violation then
+    -- لا نبلع كل خرقٍ فريد: إن لم يكن مرجعُنا هو السبب، فالخطأ حقيقيّ ويُرفع.
+    if v_ref is null then raise; end if;
+    select result into v_out from rpc_refs
+     where clinic_id = v_clinic and fn = 'retail_return' and client_ref = v_ref;
+    if v_out is null then raise; end if;
+    return v_out;
+  end;
+
+  return v_out;
+end $function$;
+revoke all on function public.retail_return(jsonb, jsonb) from public, anon;
+grant execute on function public.retail_return(jsonb, jsonb) to authenticated;
 
 create or replace function public.return_lots_ready() returns boolean
 language sql stable security invoker set search_path = public as $$

@@ -41,6 +41,9 @@ export function demoReturnLots(productId: string | null): ProductLot[] {
 const keyOf = (i: Pick<Invoice, "customer_phone" | "customer_name">) => custKey(i.customer_phone, i.customer_name, getDialCode());
 const due = (i: Invoice) => r2((Number(i.total) || 0) - (i.amount_paid != null ? Number(i.amount_paid) : Number(i.total) || 0));
 const qtyText = (n: number) => String(q3(n)).replace(/\.0+$/, "");
+/** طلبُ توصيلٍ بالطريق (المندوبُ يحصّل مجموعَ الفاتورة) — لا تُمسّ بالراجع ولا يُسدَّد منه (كالخادم). */
+const inFlight = (db: ReturnType<typeof loadDB>, id: string) => (db.deliveryOrders ?? []).some((d) => d.invoice_id === id
+  && (d.status === "preparing" || d.status === "out" || (d.status === "delivered" && !(d as { collected_at?: string | null }).collected_at)));
 
 export async function demoReturnExpired(items: ExpiredItem[], meta: ExpiredMeta): Promise<unknown> {
   if (!Array.isArray(items) || items.length === 0) throw refuse("expired_empty");
@@ -70,47 +73,55 @@ export async function demoReturnExpired(items: ExpiredItem[], meta: ExpiredMeta)
     if (!p) throw refuse("expired_product");
     if ((p.price_currency ?? "IQD") === "USD") throw refuse("expired_usd");
     if (p.pooled || p.farm_id) throw refuse("expired_pooled");
-    let rs: number; let label = "";
+    let uret: number; let label = "";
     if (it.unit === "sub") {
       if (!p.has_sub_unit || !(Number(p.units_per_box) >= 2)) throw refuse("expired_unit");
-      rs = q3(qty / Number(p.units_per_box)); label = ` ${(p.sub_unit_name ?? "").trim() || UNIT_SUB}`;
+      uret = 1 / Number(p.units_per_box); label = ` ${(p.sub_unit_name ?? "").trim() || UNIT_SUB}`;
     } else if (it.unit === "pack") {
       const k = (p.packs ?? []).find((x) => x.id === it.pack_id);
       if (!k || !(Number(k.per) >= 2)) throw refuse("expired_unit");
-      rs = q3(qty * Number(k.per)); label = ` ${(k.name ?? "").trim() || UNIT_PACK}`;
-    } else if (it.unit === "box") rs = qty;
+      uret = Number(k.per); label = ` ${(k.name ?? "").trim() || UNIT_PACK}`;
+    } else if (it.unit === "box") uret = 1;
     else throw refuse("expired_unit");
+    const rs = q3(qty * uret);
     if (!(rs > 0)) throw refuse("expired_qty");
-    return { it, p, qty, pct, rs, label };
+    return { it, p, qty, pct, rs, uret, label };
   });
 
-  for (const { it, p, qty, pct, rs, label } of plan) {
+  for (const { it, p, qty, pct, rs, uret, label } of plan) {
     const fits = (l: InvoiceItem) => l.product_id === p.id && Number(l.qty) > 0 && !(Number(l.pooled_qty) > 0)
       && Number(l.stock_qty ?? l.qty) >= rs - 0.0005;
     const anchor = key ? invs.filter((i) => i.status !== "refunded" && (i.sale_kind ?? "retail") !== "opening" && (i.currency ?? "IQD") === "IQD"
-        && keyOf(i) === key && (db.invoiceItems ?? []).some((l) => l.invoice_id === i.id && fits(l)))
+        && keyOf(i) === key && !inFlight(db, i.id) && (db.invoiceItems ?? []).some((l) => l.invoice_id === i.id && fits(l)))
       .sort((a, b) => Number(due(b) > 0.005) - Number(due(a) > 0.005) || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0] : undefined;
-    let V: number; let T: number;
+    let V: number; let T: number; let Tl = 0;
     if (anchor) {
       const li = (db.invoiceItems ?? []).filter((l) => l.invoice_id === anchor.id && fits(l))
         .sort((a, b) => Number(b.stock_qty ?? b.qty) - Number(a.stock_qty ?? a.qty) || a.id.localeCompare(b.id))[0];
-      const sq = Number(li.stock_qty ?? li.qty);
-      const oldv = Number(li.line_total), oldc = r2(Number(li.qty) * Number(li.unit_cost));
+      // الراجعُ بوحدة السطر نفسِه (كالخادم): علبة، مفرد (١ ÷ عدده)، كارتون (عددُه).
+      const lq = Number(li.qty), r = Number(li.stock_qty ?? li.qty) / lq;
+      const uline = Math.abs(r - 1) < 0.0005 ? 1 : r < 1 && Number(p.units_per_box) >= 2 ? 1 / Number(p.units_per_box) : r;
+      const rl = Math.min(q3(qty * uret / uline), lq);
+      const oldv = Number(li.line_total), oldc = r2(lq * Number(li.unit_cost));
       let newv = 0, newc = 0;
-      if (rs >= sq - 0.0005) db.invoiceItems = db.invoiceItems.filter((l) => l.id !== li.id);
+      if (rl >= lq - 0.0005) db.invoiceItems = db.invoiceItems.filter((l) => l.id !== li.id);
       else {
-        const ns = q3(sq - rs), nq = q3(Number(li.qty) * ns / sq);
+        const nq = q3(lq - rl);
         newv = r2(nq * Number(li.unit_price)); newc = r2(nq * Number(li.unit_cost));
-        li.qty = nq; if (li.stock_qty != null) li.stock_qty = ns; li.line_total = newv;
+        if (li.stock_qty != null) li.stock_qty = q3(Number(li.stock_qty) * nq / lq);
+        li.qty = nq; li.line_total = newv;
       }
       V = r2((oldv - newv) * pct / 100);
       T = Math.min(V, r2(oldc - newc));
-      const restV = r2(oldv - newv - V), restC = r2(oldc - newc - T);
+      const lotq = (Number(p.stock) || 0) >= 0 ? rs : Math.max(q3((Number(p.stock) || 0) + rs), 0);
+      Tl = lotq >= rs ? T : r2(T * lotq / rs);
+      const restV = r2(oldv - newv - V), restC = r2(oldc - newc - Tl);
       if (restV > 0 || restC > 0 || !(db.invoiceItems ?? []).some((l) => l.invoice_id === anchor.id)) {
         db.invoiceItems.push({
           id: uid("ii"), invoice_id: anchor.id, clinic_id: null, product_id: null,
           name: `${p.name} — ${RET_WORD} ${qtyText(qty)}${label}${pct < 100 ? ` (${pct}%)` : ""}`.slice(0, 200),
           barcode: null, qty: 1, unit_price: restV, unit_cost: restC, line_total: restV, stock_qty: 0, unit_label: null, service_id: null,
+          created_at: anchor.created_at,   // يومُ فاتورته (كالخادم)
         } as InvoiceItem);
       }
       if (!touched.includes(anchor.id)) touched.push(anchor.id);
@@ -120,13 +131,16 @@ export async function demoReturnExpired(items: ExpiredItem[], meta: ExpiredMeta)
       T = Math.min(V, r2(unit * rs));
       free = r2(free + V);
     }
+    // ما يدخل الدفعة: ما فوق عجز الرصيد (الدفعاتُ مجموعُها max(الرصيد، ٠)) — وكلفتُه بنسبته (كالخادم).
+    const lotq = (Number(p.stock) || 0) >= 0 ? rs : Math.max(q3((Number(p.stock) || 0) + rs), 0);
+    if (!anchor) Tl = lotq >= rs ? T : r2(T * lotq / rs);
     p.stock = q3((Number(p.stock) || 0) + rs);
-    lots.push({
-      id: uid("lot"), product_id: p.id, qty: rs, received_qty: rs, expiry_date: it.expiry_date, received_at: now, source: "return",
-      purchase_id: null, company_name: null, note, unit_cost: Math.round((T / rs) * 1e6) / 1e6, return_from: (name ?? phone ?? "").slice(0, 120) || null,
+    if (lotq > 0) lots.push({
+      id: uid("lot"), product_id: p.id, qty: lotq, received_qty: lotq, expiry_date: it.expiry_date, received_at: now, source: "return",
+      purchase_id: null, company_name: null, note, unit_cost: Math.round((Tl / lotq) * 1e6) / 1e6, return_from: (name ?? phone ?? "").slice(0, 120) || null,
       return_key: key, return_pct: pct, return_invoice: anchor?.id ?? null, returned_at: now,
     });
-    out.push({ product_id: p.id, name: p.name, stock_qty: rs, value: V, cost: T, invoice_id: anchor?.id ?? null });
+    out.push({ product_id: p.id, name: p.name, stock_qty: rs, value: V, cost: Tl, lot_qty: lotq, invoice_id: anchor?.id ?? null });
   }
 
   let debt = 0, cash = 0;
@@ -144,17 +158,17 @@ export async function demoReturnExpired(items: ExpiredItem[], meta: ExpiredMeta)
     if (back > 0) {
       const legs = [...(inv.payment_details ?? [])];
       const pos = legs.filter((l) => l.amount > 0);
-      const m = (pos.sort((a, b) => b.amount - a.amount)[0]?.method ?? inv.payment_method ?? method) as PaymentMethod;
+      // الساقُ بطريقة الشاشة (كالتسديد بعدها) — الجيبُ الذي خرج منه المالُ فعلاً.
       const posSum = r2(pos.reduce((s, l) => s + l.amount, 0));
-      if (posSum < paid) legs.push({ method: (inv.payment_method ?? m) as PaymentMethod, amount: r2(paid - posSum), at: inv.created_at });
-      legs.push({ method: m, amount: -back, at: new Date().toISOString(), note: RET_WORD });
+      if (posSum < paid) legs.push({ method: (inv.payment_method ?? method) as PaymentMethod, amount: r2(paid - posSum), at: inv.created_at });
+      legs.push({ method, amount: -back, at: new Date().toISOString(), note: RET_WORD });
       inv.payment_details = legs;
       cash = r2(cash + back);
     }
     inv.subtotal = subtotal; inv.total = forg.total;
     if (inv.forgiven != null || forg.forgiven) inv.forgiven = forg.forgiven;
     inv.cost_total = cost; inv.profit = r2(forg.total - cost);
-    inv.item_count = Math.round(left.filter((l) => !(l.product_id == null && Number(l.stock_qty) === 0)).reduce((s, l) => s + Number(l.qty), 0));
+    inv.item_count = Math.round(left.reduce((s, l) => s + Number(l.qty), 0));
     inv.amount_paid = Math.max(0, r2(paid - back));
     const posL = (inv.payment_details ?? []).filter((l) => l.amount > 0);
     if (posL.length) inv.payment_method = posL.reduce((b, x) => (x.amount > b.amount ? x : b), posL[0]).method;
@@ -171,7 +185,8 @@ export async function demoReturnExpired(items: ExpiredItem[], meta: ExpiredMeta)
   // ما خرج نقداً والزبونُ عليه دَين: يُسدَّد به أقدمُ دَينه (نقدٌ يخرج ونقدٌ يدخل — الدرجُ لا يتحرّك).
   if (cash > 0 && key) {
     let left = cash;
-    const debts = ((loadDB().invoices ?? []) as Invoice[]).filter((i) => i.status !== "refunded" && (i.currency ?? "IQD") === "IQD" && due(i) > 0.005 && keyOf(i) === key)
+    const db2 = loadDB();
+    const debts = ((db2.invoices ?? []) as Invoice[]).filter((i) => i.status !== "refunded" && (i.currency ?? "IQD") === "IQD" && due(i) > 0.005 && keyOf(i) === key && !inFlight(db2, i.id))
       .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
     for (const d of debts) {
       if (left <= 0) break;
@@ -201,6 +216,9 @@ export async function demoCheckoutLots(items: CheckoutItem[], meta: SaleMeta, us
     if (!l || l.product_id !== it.product_id) throw refuse("lot_gone");
     if (l.qty < Number(it.stock_qty ?? it.qty) - 0.0005) throw refuse("lot_short");
   }
+  // فاتورةٌ ثبتت بالمرجع قبل هذا النداء (بطريقٍ آخر) لا تُختم ولا تُنقص الدفعةُ عنها — كالخادم (recorded_at/created_at < now()).
+  const existed = (loadDB().invoices ?? []).some((i) => (i as Invoice & { client_ref?: string | null }).client_ref === ref);
+  const snap = JSON.stringify(loadDB());   // البيعةُ وسطرُ الدفعة معاملةٌ واحدة بالخادم — رفضُ السطر يُرجع البيعة
   let res: { iqd: Invoice | null; usd: Invoice | null };
   if (usd && usd.length) {
     const m = await import("./demoDual");
@@ -208,7 +226,7 @@ export async function demoCheckoutLots(items: CheckoutItem[], meta: SaleMeta, us
   } else if (charges && charges.length) {
     res = { iqd: await (await import("./doseApi")).checkoutWithDoses(items, meta), usd: null };
   } else res = { iqd: await demoRepo.retailCheckout(items, meta), usd: null };
-  if (!res.iqd || done) return res;
+  if (!res.iqd || done || existed) return res;
   const db = loadDB();
   const inv = (db.invoices ?? []).find((i) => i.id === res.iqd?.id);
   if (!inv) return res;
@@ -223,7 +241,7 @@ export async function demoCheckoutLots(items: CheckoutItem[], meta: SaleMeta, us
     const sq = q3(Number(it.stock_qty ?? it.qty)), q = q3(Number(it.qty));
     const li = (db.invoiceItems ?? []).find((x) => x.invoice_id === inv.id && !used.includes(x.id) && x.product_id === l.product_id
       && Number(x.qty) === q && Number(x.stock_qty ?? x.qty) === sq && r2(Number(x.unit_price)) === r2(Number(it.unit_price)));
-    if (!li) throw refuse("lot_line");
+    if (!li) { saveDB(JSON.parse(snap)); throw refuse("lot_line"); }
     const uc = r2(Number(l.unit_cost ?? 0) * sq / q);
     delta = r2(delta + r2(q * uc) - r2(Number(li.qty) * Number(li.unit_cost)));
     li.unit_cost = uc;

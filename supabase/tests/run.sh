@@ -13542,6 +13542,7 @@ chk "  (يُقرأ بعدها) الفاتورةُ ٣٠٬٠٠٠ وربحُها ١
                       from invoice_items where invoice_id = i.id)
        from invoices i where id = $(zinv n288-s1)" \
     "30000/18000/12000/0|1.0:20000:14000:false,1.0:10000:4000:true"
+chk "  وعددُ قطع الفاتورة كسطورها (العلبةُ الباقية وسطرُ الأثر)" "select item_count::text from invoices where id = $(zinv n288-s1)" "2"
 chk "  والدفعةُ: علبةٌ «راجع» من «أبو علي» بإكسبايرها وبـ٥٠٪ وكلفتُها ١٠٬٠٠٠ ومربوطةٌ بالفاتورة؛ والرصيدُ ١٩ = مجموعُ الدفعات" \
     "select source||'/'||qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text||'/'||return_pct::text||'/'||return_from||'/'||expiry_date::text
             ||'/'||(return_invoice = $(zinv n288-s1))::text||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')
@@ -13631,6 +13632,76 @@ chk "دفعةُ راجعٍ بتاريخٍ قادم ($ZFUT)، ثمّ مرتجعٌ
 chk "  (يُقرأ بعدها) الزيادةُ ذهبت لغير دفعة الراجع: دفعةُ الراجع القادمةُ ١ كما هي، والرصيدُ = مجموعُ الدفعات" \
     "select (select qty::numeric(20,1)::text from product_lots where product_id = '$ZB' and source = 'return' and expiry_date = '$ZFUT')
             ||'|'||(select (stock = (select sum(qty) from product_lots where product_id = p.id))::text from products p where id = '$ZB')" "1.0|true"
+# ── تصليحاتُ المراجعة العدائيّة ──
+# (١) المالُ بطريقة الشاشة كلُّه: فاتورةٌ دُفعت ببطاقة والزبونُ عليه دَينٌ بغيرها، والشاشةُ «نقد» ⇒ الساقُ السالبة نقدٌ والتسديدُ نقد.
+chk "طريقةُ الشاشة للساق وللتسديد: «أبو كرار» دفع ببطاقة ٢٠٬٠٠٠ وعليه دَين ١٥٬٠٠٠ ⇒ ١٠٠٪ نقداً: دَينٌ ١٥٬٠٠٠ ونقدٌ ٥٬٠٠٠" \
+    "select (length($(rv $ZV "$(zsale n288-k0 $ZB 1 15000 0 'أبو كرار' 07703333333)")) > 0)::text
+            ||'|'||(length($(rv $ZV "select (retail_checkout('[{\"product_id\":\"$ZA\",\"name\":\"z\",\"qty\":1,\"unit_price\":20000,\"unit_cost\":0,\"stock_qty\":1,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+                jsonb_build_object('client_ref', 'n288-k1', 'payment_method', 'card', 'amount_paid', 20000, 'final_total', 20000,
+                                   'payment_details', '[{\"method\":\"card\",\"amount\":20000}]'::jsonb,
+                                   'customer_name', 'أبو كرار', 'customer_phone', '07703333333')))::text")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-k2 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-05-01\"}]" 'أبو كرار' 07703333333)")" \
+    "true|true|15000/5000"
+chk "  (يُقرأ بعدها) الساقُ السالبة على فاتورة البطاقة «نقد»، وتسديدُ الدَّين «نقد» — البطاقةُ لا تُسحب منها رجعةٌ ما خرجت" \
+    "select (select string_agg((e->>'method')||':'||(e->>'amount')::numeric::numeric(20,0)::text, ',') from invoices i, jsonb_array_elements(i.payment_details) e
+              where i.id = $(zinv n288-k1) and (e->>'amount')::numeric < 0)
+            ||'|'||(select string_agg((e->>'method')||':'||(e->>'amount')::numeric::numeric(20,0)::text, ',') from invoices i, jsonb_array_elements(i.payment_details) e
+              where i.id = $(zinv n288-k0) and (e->>'amount')::numeric > 0)" "cash:-20000|cash:15000"
+# (٢) الرصيدُ تحت الصفر: ما يسدّ العجزَ لا يدخل دفعة، وكلفتُه تبقى بالفاتورة (ربحُها ينقص بقيمته) — لا كلفةٌ تختفي.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, pooled) values
+         ('${ZX}a5', '$ZC', 'تحت الصفر', 'EXP-5', 'IQD', 20000, 14000, 14000, 2, false) on conflict (id) do nothing;" >/dev/null
+chk "رصيدٌ ٢ بِيع منه ٤ بالدَّين لـ«أم زهراء» (−٢)، ثمّ رجعت ٣ إكسباير بـ٥٠٪: ينزل ٣٠٬٠٠٠ من دَينها" \
+    "select (length($(rv $ZV "$(zsale n288-n1 ${ZX}a5 4 20000 0 'أم زهراء' 07704444444)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-n2 "[{\"product_id\":\"${ZX}a5\",\"unit\":\"box\",\"qty\":3,\"pct\":50,\"expiry_date\":\"2026-05-01\"}]" 'أم زهراء' 07704444444)")" \
+    "true|30000/0"
+chk "  (يُقرأ بعدها) الرصيدُ ١ ودفعةُ الراجع ١ بكلفة ١٠٬٠٠٠ (الاثنتان سدّتا العجز)، وربحُ الفاتورة نزل ٢٠٬٠٠٠ بقيمتهما لا بقي ثابتاً" \
+    "select (select stock::numeric(20,1)::text from products where id = '${ZX}a5')
+            ||'|'||(select coalesce(string_agg(qty::numeric(20,1)::text||'@'||unit_cost::numeric(20,0)::text, ','), '-') from product_lots where product_id = '${ZX}a5' and source = 'return')
+            ||'|'||(select profit::numeric(20,0)::text from invoices where id = $(zinv n288-n1))" \
+    "1.0|1.0@10000|4000"
+# (٣) شريطٌ من سطر شرائط: الراجعُ بوحدة السطر بالضبط (كان ٦٫٠٠١ شريطاً وردٌّ ٩٩٩).
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, pooled,
+                            has_sub_unit, sub_unit_name, units_per_box, sub_unit_price) values
+         ('${ZX}a6', '$ZC', 'شرائط ثلاثية', 'EXP-6', 'IQD', 3000, 1500, 1500, 10, false, true, 'شريط', 3, 1000) on conflict (id) do nothing;" >/dev/null
+chk "٧ شرائط (٣ بالعلبة) بالدَّين لـ«أبو مهدي» ثمّ شريطٌ واحد إكسباير ١٠٠٪: ينزل ١٬٠٠٠ بالضبط" \
+    "select (length($(rv $ZV "select (retail_checkout('[{\"product_id\":\"${ZX}a6\",\"name\":\"z\",\"qty\":7,\"unit_price\":1000,\"unit_cost\":0,\"stock_qty\":2.333,\"unit_label\":\"شريط\",\"service_id\":null}]'::jsonb,
+                jsonb_build_object('client_ref', 'n288-u1', 'payment_method', 'cash', 'amount_paid', 0, 'final_total', 7000,
+                                   'customer_name', 'أبو مهدي', 'customer_phone', '07706666666')))::text")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-u2 "[{\"product_id\":\"${ZX}a6\",\"unit\":\"sub\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-05-01\"}]" 'أبو مهدي' 07706666666)")" \
+    "true|1000/0"
+chk "  (يُقرأ بعدها) السطرُ ٦ شرائط بـ٦٬٠٠٠ والفاتورةُ ٦٬٠٠٠ وعددُ قطعها ٦" \
+    "select (select string_agg(qty::numeric(20,3)::text||':'||line_total::numeric(20,0)::text, ',') from invoice_items where invoice_id = $(zinv n288-u1))
+            ||'|'||(select total::numeric(20,0)::text||'/'||item_count::text from invoices where id = $(zinv n288-u1))" "6.000:6000|6000/6"
+# (٤) سطرُ الأثر يومُه يومُ فاتورته (تقاريرُ السطور بالمدّة).
+chk "سطرُ الأثر بيوم فاتورته لا بيوم الراجع" \
+    "select bool_and(ii.created_at = i.created_at)::text from invoice_items ii join invoices i on i.id = ii.invoice_id
+      where i.clinic_id = '$ZC' and ii.product_id is null and ii.stock_qty = 0" "true"
+# (٥) مرجعٌ واحد لطريقين: ما ثبت إكسباير لا يُسجَّل راجعاً خالصاً بالمرجع نفسِه، والعكس.
+chk "المرجعُ نفسُه بين الطريقين يُرفض بالاتّجاهين (return_ref_used / expired_ref_used)" \
+    "select $(rerr $ZV "select retail_return('[{\"product_id\":\"$ZB\",\"name\":\"z\",\"qty\":1,\"unit_price\":15000,\"stock_qty\":1}]'::jsonb, '{\"client_ref\":\"n288-r1\"}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{\"client_ref\":\"n288-rr\"}'::jsonb)::text")" \
+    "return_ref_used|expired_ref_used"
+# (٦) البيعُ من الدفعة سطرٌ واحد بسجلّ الحركات («بيع») — لا «تعديل بيعة» بعده.
+chk "البيعُ من الدفعة: سجلُّ الحركات للفاتورة إدراجٌ وحده" \
+    "select string_agg(action, ',' order by action) from audit_log where entity = 'invoices' and entity_id = ($(zinv n288-s3))::text" "INSERT"
+# (٧) طلبُ توصيلٍ بالطريق ليس فاتورةَ الراجع ولا دَيناً يُسدَّد منه (المندوبُ يحصّل مجموعَه).
+chk "فاتورةٌ بطلب توصيلٍ «بالطريق» لـ«زبون التوصيل»: الراجعُ لا يمسّها — سحبٌ ونقد" \
+    "select (length($(rv $ZV "$(zsale n288-d1 $ZB 1 15000 0 'زبون التوصيل' 07707777777)")) > 0)::text" "true"
+$P -c "insert into delivery_orders(clinic_id, invoice_id, status, cod_amount) select '$ZC', id, 'out', 15000 from invoices where clinic_id = '$ZC' and client_ref = 'n288-d1';" >/dev/null
+chk "  ثمّ راجعٌ إكسباير ١٠٠٪ بسعر ١٥٬٠٠٠: لا دَين ينزل، ونقدٌ ١٥٬٠٠٠، وفاتورةُ التوصيل كما هي" \
+    "select $(rv $ZV "$(zret n288-d2 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-05-01\",\"unit_price\":15000}]" 'زبون التوصيل' 07707777777)")" "0/15000"
+chk "  (يُقرأ بعدها) فاتورةُ التوصيل ١٥٬٠٠٠ ومدفوعُها صفر" \
+    "select total::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text from invoices where id = $(zinv n288-d1)" "15000/0"
+# (٨) تاريخُ المادّة بنموذجها لا يُكتب فوق دفعة الراجع (والدفعةُ الوحيدةُ الحيّة لمادّةٍ كلُّ رصيدها راجع).
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, pooled) values
+         ('${ZX}a7', '$ZC', 'كلها راجع', 'EXP-7', 'IQD', 1000, 500, 500, 0, false) on conflict (id) do nothing;" >/dev/null
+chk "مادّةٌ رصيدُها صفر يرجع منها ١ إكسباير (٢٠٢٦-٠٤-٣٠)" \
+    "select $(rv $ZV "$(zret n288-e1 "[{\"product_id\":\"${ZX}a7\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-04-30\",\"unit_price\":1000}]")")" "0/1000"
+# بجملةٍ ثانية: المطابقةُ المؤجَّلة ختمت تاريخَ المادّة بتاريخ الدفعة — وهو ما يراه نموذجُها ويكتب فوقه (بجملةٍ واحدة كان التاريخُ القديم فارغاً فلا يُمسك شيء).
+chk "  ثمّ الطبيبُ يكتب تاريخ المادّة ٢٠٢٨ بنموذجها (وتاريخُها قبلها تاريخُ الدفعة)" \
+    "select (select expiry_date::text from products where id = '${ZX}a7')||'|'||$(rv $ZV "update products set expiry_date = '2028-01-01' where id = '${ZX}a7' returning 'ok'")" "2026-04-30|ok"
+chk "  (يُقرأ بعدها) دفعةُ الراجع بتاريخها كما كُتب عند الراجع" \
+    "select expiry_date::text from product_lots where product_id = '${ZX}a7' and source = 'return'" "2026-04-30"
 chk "والرفض بجملة: الدولار، والمجمَّعة، ووحدةٌ مفردة لمادّةٍ بلاها، وبلا تاريخ، ونسبةٌ صفر، وكميةٌ صفر، وسلّةٌ فارغة" \
     "select $(rerr $ZV "select return_expired('[{\"product_id\":\"${ZX}a3\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
             ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"${ZX}a4\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
@@ -13664,7 +13735,8 @@ Q288="select (select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ',
 Z288=$($P -tAc "$Q288" | tr -d '[:space:]')
 out=$($P -f "$MIG/0288_expired_returns.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
 chk "وتُعاد بلا أثرٍ ثانٍ (الدوالّ والقيود والدفعات)" "$Q288" "$Z288"
-$P -c "update invoices set payment_details = '[]'::jsonb, amount_paid = 0 where clinic_id in ('$ZC', '$ZO');
+$P -c "delete from delivery_orders where clinic_id in ('$ZC', '$ZO');
+       update invoices set payment_details = '[]'::jsonb, amount_paid = 0 where clinic_id in ('$ZC', '$ZO');
        delete from invoices where clinic_id in ('$ZC', '$ZO');
        delete from expenses where clinic_id in ('$ZC', '$ZO');
        delete from product_lots where clinic_id in ('$ZC', '$ZO');

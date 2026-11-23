@@ -31,6 +31,8 @@ export const say = {
   }),
   lotShort: (name: string, n: number) => t("lotShort", { name, n: formatQty(n) }),
   lotPack: (name: string) => t("lotPack", { name }),
+  lotUsd: (name: string) => t("lotUsd", { name }),
+  pending: () => t("pending"),
   done: (r: ExpiredResult): string => {
     const n = r.lines.length;
     const parts = [t("done", { n })];
@@ -131,8 +133,8 @@ export function XretNote({ customer }: { customer: string | null }) {
 }
 
 /** «تبيع من الإكسباير لو من الجديد؟» — دفعاتُ الراجع الباقية للمادّة، وزرٌّ لكلّ واحدة، و«من الجديد». */
-export function LotPickDialog({ open, product, lots, onPick, onCancel }: {
-  open: boolean; product: Product | null; lots: ProductLot[]; onPick: (lot: ProductLot | null) => void; onCancel: () => void;
+export function LotPickDialog({ open, product, lots, newLeft, onPick, onCancel }: {
+  open: boolean; product: Product | null; lots: ProductLot[]; newLeft: number; onPick: (lot: ProductLot | null) => void; onCancel: () => void;
 }) {
   const { t: tt, i18n: ii } = useTranslation();
   const unit = (product?.unit_name ?? "").trim() || tt("xret.box");
@@ -157,7 +159,10 @@ export function LotPickDialog({ open, product, lots, onPick, onCancel }: {
             {l.unit_cost != null && <p className="mt-0.5 text-2xs text-ink-subtle">{tt("xret.lotCost", { cost: money(Number(l.unit_cost)), unit })}</p>}
           </button>
         ))}
-        <Button className="w-full" variant="secondary" data-lotpicknew onClick={() => onPick(null)}>{tt("xret.fromNew")}</Button>
+        {/* «من الجديد» حين بقي جديد — رصيدٌ كلُّه إكسباير كان يعرضه فيُباع الإكسبايرُ بكلفة المتوسّط (خسارةٌ وهميّة). */}
+        {newLeft > 0.0005
+          ? <Button className="w-full" variant="secondary" data-lotpicknew onClick={() => onPick(null)}>{tt("xret.fromNewLeft", { n: formatQty(newLeft), unit })}</Button>
+          : <p data-lotpicknonew className="text-center text-2xs font-semibold text-ink-subtle">{tt("xret.noNew")}</p>}
       </div>
     </Dialog>
   );
