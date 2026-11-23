@@ -9,6 +9,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { voiceApi, isVoiceMissing } from "../voiceApi";
 import { outboxInternals } from "../outbox";
 import { allClips, onShelfChange, uploadProgress } from "./voiceShelf";
+import { findCrashed } from "./voiceRecorder";
 import type { LocalClip, VoiceRow } from "./voiceTypes";
 
 const RESIGN_MS = 45 * 60_000;
@@ -21,16 +22,20 @@ interface Entry {
   error: unknown | null;
   missing: boolean;
   local: LocalClip[];
+  /** «يُسجَّل» بلا مسجِّلٍ حيّ بأيّ تبويب (انقطع) — يُعالج بـ/voice. */
+  crashed: Set<string>;
   version: number;
   subs: Set<() => void>;
   inflight: Promise<void> | null;
+  /** طُلب جلبٌ أثناء جلبٍ بدأ قبله (صفٌّ ارتفع بعد بدئه): يُعاد بعده، لا يُرجع القديم. */
+  again: boolean;
 }
 const store = new Map<string, Entry>();
 
 function entry(visitId: string): Entry {
   let e = store.get(visitId);
   if (!e) {
-    e = { rows: [], urls: {}, signedAt: 0, loading: true, error: null, missing: false, local: [], version: 0, subs: new Set(), inflight: null };
+    e = { rows: [], urls: {}, signedAt: 0, loading: true, error: null, missing: false, local: [], crashed: new Set(), version: 0, subs: new Set(), inflight: null, again: false };
     store.set(visitId, e);
   }
   return e;
@@ -46,7 +51,7 @@ async function sign(e: Entry): Promise<void> {
 /** أعد جلبَ صفوف الزيارة وروابطها. */
 export function reloadVoiceVisit(visitId: string): Promise<void> {
   const e = entry(visitId);
-  if (e.inflight) return e.inflight;
+  if (e.inflight) { e.again = true; return e.inflight; }
   e.loading = true;
   e.error = null;
   bump(e);
@@ -61,6 +66,7 @@ export function reloadVoiceVisit(visitId: string): Promise<void> {
       e.loading = false;
       e.inflight = null;
       bump(e);
+      if (e.again) { e.again = false; void reloadVoiceVisit(visitId); }
     }
   })();
   return e.inflight;
@@ -72,6 +78,9 @@ async function refreshLocal(visitId: string): Promise<void> {
   const before = new Set(e.local.map((c) => c.id));
   e.local = (await allClips()).filter((c) => c.visit_id === visitId && (!me || c.who?.user === me))
     .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+  e.crashed = e.local.some((c) => c.state === "recording")
+    ? new Set((await findCrashed().catch(() => [] as LocalClip[])).map((c) => c.id)) /* swallow-ok: بلا جواب = لا يُقال «انقطع» عن تسجيلٍ ربما حيّ */
+    : new Set();
   // تسجيلٌ اختفى من الجهاز = ارتفع (الرافعُ لا يمحو إلا بعد الصفّ) ⇒ الصفوفُ تُجلب من جديد
   const now = new Set(e.local.map((c) => c.id));
   const left = [...before].some((id) => !now.has(id));
@@ -90,6 +99,7 @@ export function replaceVoiceRow(visitId: string, row: VoiceRow): void {
 export interface VoiceVisit {
   rows: VoiceRow[];
   local: LocalClip[];
+  crashed: Set<string>;
   urls: Record<string, string>;
   loading: boolean;
   error: unknown | null;
@@ -102,17 +112,20 @@ export function useVoiceVisit(visitId: string): VoiceVisit {
   const e = entry(visitId);
   useSyncExternalStore((cb) => { e.subs.add(cb); return () => { e.subs.delete(cb); }; }, () => e.version);
   useEffect(() => {
-    if (!e.rows.length && !e.inflight && (e.version === 0 || e.error)) void reloadVoiceVisit(visitId);
+    // كلُّ فتحٍ يجلب: الخبيئةُ تعيش عمرَ التبويب، وطبيبٌ ثانٍ سجّل من هاتفه — كانت تُعاد فقط إن فرغت (القسمُ يختفي فارغاً
+    // فلا زرَّ «أعد»). وما وصل يبقى معروضاً أثناء الجلب.
+    void reloadVoiceVisit(visitId);
     void refreshLocal(visitId);
     const off = onShelfChange(() => { void refreshLocal(visitId); });
     const tick = () => { if (Date.now() - e.signedAt > RESIGN_MS && e.rows.length) void sign(e).then(() => bump(e)).catch(() => undefined); }; /* swallow-ok: تجديدٌ دوريّ — فشلُه يُعاد بالدقيقة التالية، والمشغّلُ يعيد التوقيع عند الضغط */
+    tick(); // روابطُ خبيئةٍ قديمة تُجدَّد عند الفتح لا بعد دقيقة (المشغّلُ يُشغّل داخل الضغطة برابطٍ صالح)
     const iv = setInterval(tick, 60_000);
     const vis = () => { if (document.visibilityState === "visible") tick(); };
     document.addEventListener("visibilitychange", vis);
     return () => { off(); clearInterval(iv); document.removeEventListener("visibilitychange", vis); };
   }, [visitId, e]);
   return {
-    rows: e.rows, local: e.local, urls: e.urls, loading: e.loading, error: e.error, missing: e.missing,
+    rows: e.rows, local: e.local, crashed: e.crashed, urls: e.urls, loading: e.loading, error: e.error, missing: e.missing,
     progress: uploadProgress, reload: () => { void reloadVoiceVisit(visitId); },
   };
 }

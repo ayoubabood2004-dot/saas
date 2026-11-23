@@ -17,7 +17,7 @@ import { baseMime, codecsOf, pickFormat } from "./voiceFormat";
 import { finalBytes, sha256Hex } from "./voiceMedia";
 import {
   allClips, ChunkMirror, contiguousRun, deleteClipSafe, getShelf, isClipLive, keepMemoryHold, liveIds, memoryParts,
-  putClipSafe, REC_LOCK, shelfChanged,
+  putClipSafe, REC_LOCK, shelfChanged, shelfIsMemory,
 } from "./voiceShelf";
 import { kickUploader } from "./voiceUploader";
 import type { LocalClip, VoiceKind, VoiceMime } from "./voiceTypes";
@@ -89,6 +89,8 @@ export class VoiceRecorder {
   private wake: WakeSentinel | null = null;
   private lastSound = 0;
   private stopping: Promise<LocalClip | null> | null = null;
+  /** أُلغي أو مات قبل أن يبدأ: قطعةٌ أو قفلُ شاشةٍ يصل بعده لا يكتب ولا يُمسك شيئاً. */
+  private dead = false;
 
   /** السقف: خمسُ دقائق (قرارُ المالك)، والتجريبيُّ دقيقتان — والتنبيهُ قبله بثلاثين ثانية. */
   private readonly maxMs: number;
@@ -101,7 +103,17 @@ export class VoiceRecorder {
 
   snapshot(): RecSnapshot { return this.snap; }
   private set(p: Partial<RecSnapshot>): void { this.snap = { ...this.snap, ...p }; this.onChange(this.snap); }
-  private fail(error: RecError): void { this.teardown(); this.set({ phase: "error", error }); if (active === this) active = null; }
+  private fail(error: RecError): void { this.dead = true; this.teardown(); this.set({ phase: "error", error }); if (active === this) active = null; }
+  /** أُغلق المسجِّلُ أثناء «يبدأ» (بعد await): لا يُكمل بلا شاشة — يُطفأ ويُمحى ما كتبه. */
+  private abandoned(): boolean {
+    if (active === this && !this.dead) return false;
+    this.dead = true;
+    this.teardown();
+    const id = this.clip?.id;
+    this.clip = null;
+    if (id) void deleteClipSafe(id).then(() => shelfChanged());
+    return true;
+  }
 
   /** ابدأ — **من داخل الضغطة**. */
   async start(): Promise<void> {
@@ -122,7 +134,7 @@ export class VoiceRecorder {
       this.fail(p === "denied" ? "denied" : p === "busy" ? "busy" : p === "unavailable" ? "unavailable" : "failed");
       return;
     }
-    if (active !== this) { this.teardown(); return; } // أُلغي أثناء طلب الإذن
+    if (this.abandoned()) return; // أُلغي أثناء طلب الإذن
     const MR = typeof MediaRecorder !== "undefined" ? MediaRecorder : undefined;
     const fmt = MR ? pickFormat((t) => MR.isTypeSupported(t)) : null;
     if (!MR || !fmt) { this.fail("unsupported"); return; }
@@ -130,6 +142,7 @@ export class VoiceRecorder {
     catch { this.fail("unsupported"); return; }
 
     const shelf = await getShelf().catch(() => null);
+    if (this.abandoned()) return;
     const id = uuid();
     this.clip = {
       id, who: outboxInternals.whoNow(), pet_id: this.target.pet_id, visit_id: this.target.visit_id, kind: this.target.kind,
@@ -138,7 +151,10 @@ export class VoiceRecorder {
       mime: baseMime(fmt.mimeType) ?? undefined,
     };
     const stored = await putClipSafe(this.clip);
-    this.mirror = new ChunkMirror(stored ? shelf : null, id);
+    if (this.abandoned()) return;
+    // رفٌّ بالذاكرة (بياناتُ الموقع محجوبة) ليس «على هالجهاز»: المرآةُ بلا قاعدة ⇒ يُحفظ ذاكرةً وحدها ويُمسك الخروج
+    this.mirror = new ChunkMirror(stored && !shelfIsMemory() ? shelf : null, id);
+    void shelfChanged(); // الشارةُ تعدّه من الآن — تسجيلٌ ينقطع (تبويبٌ انسدّ) يُرى بلا انتظار تغيّرٍ آخر
     liveIds.add(id);
     this.lockRecording(id);
     const release = holdUpdates(Infinity);
@@ -153,7 +169,9 @@ export class VoiceRecorder {
       if (!e.data || !e.data.size) return;
       const blob = e.data;
       this.chunkChain = this.chunkChain.then(async () => {
+        if (this.dead) return;
         const buf = await blob.arrayBuffer();
+        if (this.dead) return;
         await this.mirror?.append(buf);
         if (this.clip) { this.clip = { ...this.clip, alive_at: Date.now() }; if (!this.mirror?.memoryOnly) void putClipSafe(this.clip); }
         if (this.mirror?.memoryOnly && !this.snap.memoryOnly) this.set({ memoryOnly: true });
@@ -212,8 +230,13 @@ export class VoiceRecorder {
   private async keepAwake(): Promise<void> {
     const wl = (navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<WakeSentinel> } }).wakeLock;
     if (!wl) { this.set({ wake: false }); return; }
-    try { this.wake = await wl.request("screen"); this.set({ wake: true }); }
-    catch { this.set({ wake: false }); }
+    try {
+      const w = await wl.request("screen");
+      // وصل بعد الإطفاء (أُلغي/فشل/انتهى): يُفلت فوراً لا يبقى ممسوكاً
+      if (this.dead || this.snap.phase === "done" || this.snap.phase === "idle") { void w.release().catch(() => undefined); return; }
+      this.wake = w;
+      this.set({ wake: true });
+    } catch { this.set({ wake: false }); }
   }
 
   /** قفلُ «حيّ» للتسجيل طوالَ عمره — تبويبٌ آخر يسأل `locks.query()` فيعرف أنه لم ينقطع. */
@@ -226,15 +249,21 @@ export class VoiceRecorder {
     this.cleanups.push(() => release?.());
   }
 
-  private teardown(): void {
+  /** المايكُ والمؤقّتاتُ والشاشة — تُطفأ فوراً عند الوقوف. */
+  private stopMedia(): void {
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
     try { this.stream?.getTracks().forEach((t) => t.stop()); } catch { /* — */ }
     try { void this.ctx?.close(); } catch { /* — */ }
     try { void this.wake?.release(); } catch { /* — */ }
     this.wake = null;
+  }
+  /** القفلُ («يُسجَّل حيّاً») وإمساكُ النسخة والكتمُ — تُفلت **بعد** آخر كتابةٍ للتسجيل: إفلاتُها قبلها كان يُري تبويباً
+   *  آخر حفظاً جارياً «انقطع» ويعرض حذفَه. */
+  private releaseHolds(): void {
     for (const c of this.cleanups.splice(0)) { try { c(); } catch { /* — */ } }
   }
+  private teardown(): void { this.stopMedia(); this.releaseHolds(); }
 
   /** أوقِف واحفظ. `reason` = لماذا وقف وحده (يُقال للطبيب). يرجع التسجيلَ المحفوظ أو null (قصير/فشل). */
   stop(reason?: LocalClip["interrupted"]): Promise<LocalClip | null> {
@@ -256,12 +285,14 @@ export class VoiceRecorder {
     const clip0 = this.clip!;
     const mimeBase = baseMime(rec.mimeType) ?? "audio/mp4";
     this.base = mimeBase;
-    this.teardown();
+    this.stopMedia();
     if (active === this) active = null;
     const parts = mirror.mem.slice();
-    if (!parts.length) { await deleteClipSafe(clip0.id); this.set({ phase: "error", error: "failed" }); await shelfChanged(); return null; }
+    if (!parts.length) { await deleteClipSafe(clip0.id); this.releaseHolds(); this.set({ phase: "error", error: "failed" }); await shelfChanged(); return null; }
     const { bytes, durationMs } = finalBytes(parts, mimeBase, clockMs);
-    if (durationMs < MIN_MS) { await deleteClipSafe(clip0.id); this.set({ phase: "done", short: true }); await shelfChanged(); return null; }
+    // «قصير كلش» بساعة التسجيل وبمدّة الحاوية معاً: تسجيلٌ طويل تُقرأ حاويتُه أقصرَ من ثانية (قطعُ MP4 بآيفون، حاويةٌ
+    // غريبة) لا يُمحى بلا كلمة — يُحفظ و«يمكن ناقص» (§C8: لا محوَ آليّاً لما سُجّل فعلاً).
+    if (durationMs < MIN_MS && clockMs < MIN_MS * 3) { await deleteClipSafe(clip0.id); this.releaseHolds(); this.set({ phase: "done", short: true }); await shelfChanged(); return null; }
     const sha256 = await sha256Hex(bytes);
     const mirrored = await mirror.verify();
     if (!mirrored) {
@@ -274,6 +305,7 @@ export class VoiceRecorder {
     };
     const persisted = await putClipSafe(clip, true);
     if (!persisted && !memoryParts.has(clip.id)) { memoryParts.set(clip.id, parts); keepMemoryHold(clip.id, holdUpdates(Infinity)); }
+    this.releaseHolds(); // الآن: الصفُّ الأخير مكتوب (أو بالذاكرة وممسوك)
     this.clip = clip;
     this.set({ phase: "done", clip, memoryOnly: !mirrored || !persisted });
     await shelfChanged();
@@ -284,9 +316,12 @@ export class VoiceRecorder {
   /** ألغِ: لا يُحفظ شيء. */
   async cancel(): Promise<void> {
     const id = this.clip?.id;
+    this.dead = true; // قطعةٌ بالطريق لا تكتب بعد المحو (كانت تُرجع «تسجيلاً منقطعاً» بصوتٍ ألغاه الطبيب)
     try { if (this.rec && this.rec.state !== "inactive") { this.rec.ondataavailable = null; this.rec.stop(); } } catch { /* — */ }
     this.teardown();
     if (active === this) active = null;
+    await this.chunkChain.catch(() => undefined);
+    this.clip = null;
     if (id) await deleteClipSafe(id);
     this.set({ phase: "idle", elapsedMs: 0, level: 0, silent: false, near: false });
     await shelfChanged();

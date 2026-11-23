@@ -16,6 +16,7 @@ import { ChevronDown, Download, Info, Loader2, Mic, RefreshCw, RotateCcw, Trash2
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { cn, formatDate, formatTime } from "@/lib/utils";
 import { voiceApi, voiceCode, voiceIsDemo } from "@/lib/voiceApi";
 import { isConfigReadOnly } from "@/lib/clinicSync";
@@ -42,8 +43,9 @@ const FAIL_KEY: Record<FailReason, string> = {
 const WAIT_KEY: Record<WaitReason, string> = {
   network: "waiting", server: "server", read_only: "readOnly", other_clinic: "otherClinic", other_user: "otherUser", not_ready: "notReady",
 };
-/** فشلٌ لا يُصلحه الانتظار: الحذفُ هنا مسحٌ من الجهاز بعد «نزّله ملف»، لا طلبُ حذفٍ يرتفع. */
-const DEAD: ReadonlySet<FailReason> = new Set<FailReason>(["forbidden", "visit", "no_head", "local_corrupt", "id", "bug", "too_big", "format"]);
+/** فشلٌ لا يُصلحه الانتظار: الحذفُ هنا مسحٌ من الجهاز بعد «نزّله ملف»، لا طلبُ حذفٍ يرتفع. و«ممنوع» ليس منها: مفتاحُ
+ *  الإيقاف أو صلاحيةٌ سُحبت ساعةً ثمّ رجعت — «أعد المحاولة» يرفعه (كان يُحكم عليه للأبد). */
+const DEAD: ReadonlySet<FailReason> = new Set<FailReason>(["visit", "no_head", "local_corrupt", "id", "bug", "too_big", "format"]);
 
 function errText(t: T, e: unknown): string {
   if ((e as { name?: string } | null)?.name === "ReadOnlyError") return t("vnote.readOnly");
@@ -128,15 +130,22 @@ function DeleteAsk({ text, onYes, onNo, busy }: { text: string; onYes: (reason: 
 }
 
 /* ── تسجيلٌ على هذا الجهاز لم يرتفع بعد ──────────────────────────────────── */
-function LocalClipCard({ clip, lang, showPet = false }: { clip: LocalClip; lang: string; showPet?: boolean }) {
+function LocalClipCard({ clip, lang, showPet = false, ended = false, crashed = false }: {
+  clip: LocalClip; lang: string; showPet?: boolean;
+  /** الزيارةُ انسدّت: حذفُ ما لم يرتفع سيرفضه الخادم (٢٤ ساعة والزيارةُ مفتوحة) — لا زرّ. */
+  ended?: boolean;
+  /** «يُسجَّل» بلا مسجِّلٍ حيّ (انقطع) — يُعالج بصفحة /voice. */
+  crashed?: boolean;
+}) {
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
-  const { url, failed: unreadable } = useClipUrl(clip);
   const [ask, setAsk] = useState<"void" | "discard" | null>(null);
   const [busy, setBusy] = useState(false);
   const prog = uploadProgress.get(clip.id);
-  const dead = clip.state === "failed" && DEAD.has(clip.reason as FailReason);
+  const { url, failed: unreadable } = useClipUrl(clip);
+  // بايتاتٌ لا تُقرأ (بدايةٌ ناقصة، ذاكرةُ تبويبٍ انسدّ) = ميّت مثلُه: «نزّله» ثمّ «احذفه من هالجهاز» لا طلبُ حذفٍ يرتفع
+  const dead = (clip.state === "failed" && DEAD.has(clip.reason as FailReason)) || (unreadable && clip.state !== "uploading");
   const tone = clip.state === "failed" ? "text-danger-600" : clip.state === "memory" ? "text-warn-700 dark:text-warn-200" : "text-ink-muted";
   const dur = fmtDuration(clip.duration_ms ?? clip.clock_ms ?? 0);
 
@@ -156,9 +165,15 @@ function LocalClipCard({ clip, lang, showPet = false }: { clip: LocalClip; lang:
         <VoicePlayer id={`l:${clip.id}`} url={url} mime={clip.mime} codecs={clip.codecs ?? null} durationMs={clip.duration_ms ?? 0}
           bytes={async () => { const b = await clipBytes(clip); return b ? (b.slice().buffer as ArrayBuffer) : null; }} />
       )}
-      <p className={cn("mt-1.5 text-2xs font-bold", tone)} role="status">
-        {clipStatus(t, clip, prog)}{clip.maybe_cut ? ` · ${t("vnote.rec.maybeCut")}` : ""}
-      </p>
+      {crashed ? (
+        <p className="mt-1.5 text-2xs font-bold text-warn-700 dark:text-warn-200" role="status">
+          {t("vnote.shelf.crashed")} · <Link to="/voice" className="underline">{t("vnote.shelf.title")}</Link>
+        </p>
+      ) : (
+        <p className={cn("mt-1.5 text-2xs font-bold", tone)} role="status">
+          {clipStatus(t, clip, prog)}{clip.maybe_cut ? ` · ${t("vnote.rec.maybeCut")}` : ""}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {(clip.state === "waiting" || (clip.state === "failed" && !dead)) && (
           <button type="button" onClick={() => void run(() => retryClip(clip))} className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-2xs font-bold text-ink">
@@ -170,7 +185,7 @@ function LocalClipCard({ clip, lang, showPet = false }: { clip: LocalClip; lang:
             <Download size={12} /> {t("vnote.shelf.download")}
           </button>
         )}
-        {!clip.void_requested && clip.state !== "recording" && clip.state !== "saving" && (
+        {!clip.void_requested && clip.state !== "recording" && clip.state !== "saving" && (dead || !ended) && (
           <button type="button" onClick={() => setAsk(dead ? "discard" : "void")} className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-2xs font-bold text-danger-600">
             <Trash2 size={12} /> {dead ? t("vnote.shelf.discard") : t("vnote.del.btn")}
           </button>
@@ -204,14 +219,19 @@ function RowCard({ row, url, visitId, ended, lang, showPet = false, readonly = f
   const toast = useToast();
   const { role } = usePermissions();
   const me = outboxInternals.whoNow()?.user ?? null;
-  const manager = role === "manager";
+  const { user } = useAuth();
+  const can = useCanRecord();
+  // مشغّلُ المنصّة داخل عيادة زبون يُقرأ «مديراً» بالواجهة والخادمُ يردّه (voice_operator): voice_can_record ترجع false
+  // له وحده من بين المديرين — فلا زرَّ يُرفض.
+  const operator = isPlatformAdmin(user?.email) && !can;
+  const manager = role === "manager" && !operator;
   const [ask, setAsk] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const voided = !!row.voided_at;
   const now = Date.now();
-  const canVoid = !readonly && !voided && (manager || (row.created_by === me && now - Date.parse(row.created_at) < DAY_MS && !ended));
-  const canRestore = !readonly && voided && (manager || (row.voided_by === me && now - Date.parse(row.voided_at!) < DAY_MS));
+  const canVoid = !readonly && !operator && !voided && (manager || (row.created_by === me && now - Date.parse(row.created_at) < DAY_MS && !ended));
+  const canRestore = !readonly && !operator && voided && (manager || (row.voided_by === me && now - Date.parse(row.voided_at!) < DAY_MS));
   const late = Date.parse(row.created_at) - Date.parse(row.recorded_at) > 10 * 60_000;
   const dur = fmtDuration(row.duration_ms);
 
@@ -331,7 +351,14 @@ export function VoiceNotesPanel({ visitId, ended }: { visitId: string; ended: bo
   const trash = v.rows.filter((r) => r.voided_at);
   const local = v.local.filter((c) => !ids.has(c.id));
   if (v.missing) return null;
-  if (v.error && !v.rows.length) {
+  // قراءةٌ فشلت وما قبلها معروض: يُقال إن القائمةَ قد تكون قديمة (تسجيلٌ ارتفع للتوّ يختفي من الجهاز قبل أن يُرى بالخادم)
+  const stale = v.error && (v.rows.length > 0 || local.length > 0) ? (
+    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-danger-50 px-2.5 py-1.5 text-2xs font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-200">
+      {t("vnote.list.failed")}
+      <button type="button" onClick={v.reload} className="inline-flex items-center gap-1 rounded-md bg-surface-1 px-2 py-0.5 text-ink"><RefreshCw size={11} /> {t("vnote.list.retry")}</button>
+    </div>
+  ) : null;
+  if (v.error && !v.rows.length && !local.length) {
     return (
       <section data-voice-panel className="mt-4 rounded-xl border border-danger-200 bg-danger-50 p-3 dark:border-danger-500/30 dark:bg-danger-500/10">
         <p className="text-xs font-bold text-danger-700 dark:text-danger-200">{t("vnote.list.failed")}</p>
@@ -349,8 +376,9 @@ export function VoiceNotesPanel({ visitId, ended }: { visitId: string; ended: bo
         {t("vnote.titleN", { n: live.length + local.length })}
         {v.loading && <Loader2 size={13} className="animate-spin text-ink-subtle" />}
       </h2>
+      {stale}
       <div className="grid gap-2 sm:grid-cols-2">
-        {local.map((c) => <LocalClipCard key={c.id} clip={c} lang={lang} />)}
+        {local.map((c) => <LocalClipCard key={c.id} clip={c} lang={lang} ended={ended} crashed={v.crashed.has(c.id)} />)}
         {live.map((r) => <RowCard key={r.id} row={r} url={v.urls[r.path]} visitId={visitId} ended={ended} lang={lang} resign={resignOf(r.path)} />)}
       </div>
       {trash.length > 0 && (
@@ -420,8 +448,11 @@ export function VoiceShelfPage() {
   }, []);
   useEffect(() => { if (role === "manager") void loadOrphans(); }, [role, loadOrphans]);
 
+  const crashedMine = crashed.filter((c) => c.who?.user === me);
   const crashedIds = new Set(crashed.map((c) => c.id));
   const mine = clips.filter((c) => c.who?.user === me && !crashedIds.has(c.id));
+  const memOnly = mine.filter((c) => c.memory_only || c.state === "memory").length;
+  const [askDiscard, setAskDiscard] = useState<string | null>(null);
   const others = clips.filter((c) => c.who?.user !== me).length;
 
   return (
@@ -431,10 +462,10 @@ export function VoiceShelfPage() {
         <p className="mt-1 text-xs text-ink-muted">{t("vnote.shelf.hint")}</p>
       </header>
 
-      {leave && mine.length > 0 && (
+      {leave && memOnly > 0 && (
         <div data-voice-leave className="space-y-2 rounded-2xl border border-danger-200 bg-danger-50 p-3 dark:border-danger-500/30 dark:bg-danger-500/10">
           <p className="text-sm font-extrabold text-danger-700 dark:text-danger-200">{t("vnote.leave.title")}</p>
-          <p className="text-xs text-danger-700 dark:text-danger-200">{t("vnote.leave.body", { n: mine.length })}</p>
+          <p className="text-xs text-danger-700 dark:text-danger-200">{t("vnote.leave.body", { n: memOnly })}</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => kickUploader(true)} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-extrabold text-white">{t("vnote.leave.upload")}</button>
             <button type="button" onClick={() => signOut({ force: true })} className="rounded-lg border border-danger-300 bg-surface-1 px-3 py-1.5 text-xs font-bold text-danger-700">{t("vnote.leave.anyway")}</button>
@@ -442,17 +473,26 @@ export function VoiceShelfPage() {
         </div>
       )}
 
-      {crashed.map((c) => (
+      {crashedMine.map((c) => (
         <div key={c.id} className="space-y-2 rounded-xl border border-warn-300 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
           <p className="text-xs font-bold text-warn-700 dark:text-warn-200">{c.pet_label ? `${c.pet_label} · ` : ""}{t("vnote.shelf.crashed")}</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => void saveCrashed(c).then(refresh).catch(() => toast.error(t("vnote.shelf.noHead")))} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-extrabold text-white">{t("vnote.shelf.save")}</button>
-            <button type="button" onClick={() => void discardClip(c.id).then(refresh)} className="rounded-lg border border-line bg-surface-1 px-3 py-1.5 text-xs font-bold text-danger-600">{t("vnote.shelf.discard")}</button>
+            <button type="button" onClick={() => setAskDiscard(c.id)} className="rounded-lg border border-line bg-surface-1 px-3 py-1.5 text-xs font-bold text-danger-600">{t("vnote.shelf.discard")}</button>
           </div>
+          {askDiscard === c.id && (
+            <div className="space-y-2 rounded-xl border border-danger-200 bg-danger-50 p-2.5 dark:border-danger-500/30 dark:bg-danger-500/10">
+              <p className="text-xs font-bold text-danger-700 dark:text-danger-200">{t("vnote.shelf.discardAsk", { dur: fmtDuration(c.clock_ms ?? Math.max(0, c.alive_at - Date.parse(c.recorded_at))), pet: c.pet_label ?? "" })}</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setAskDiscard(null); void discardClip(c.id).then(refresh); }} className="rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-extrabold text-white">{t("vnote.shelf.discardYes")}</button>
+                <button type="button" onClick={() => setAskDiscard(null)} className="rounded-lg border border-line bg-surface-1 px-3 py-1.5 text-xs font-bold text-ink">{t("vnote.shelf.keep")}</button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
 
-      {mine.length === 0 && crashed.length === 0
+      {mine.length === 0 && crashedMine.length === 0
         ? <p className="rounded-xl border border-line bg-surface-1 p-4 text-sm font-semibold text-ink-muted">{t("vnote.shelf.empty")}</p>
         : (
           <div className="space-y-2">

@@ -232,11 +232,15 @@ export function memShelf(): ShelfStore {
 /* ── الرفُّ المشترك بين المسجِّل والرافع والشاشة ─────────────────────────── */
 
 let shelfP: Promise<ShelfStore> | null = null;
+let shelfInMemory = false;
 /** القاعدةُ الواحدة للتبويب: IndexedDB، أو الذاكرة إن لم تُفتح (يُقال «بالذاكرة بس» على كلّ تسجيل). */
 export function getShelf(): Promise<ShelfStore> {
-  if (!shelfP) shelfP = openIdbShelf().catch(() => memShelf());
+  if (!shelfP) shelfP = openIdbShelf().catch(() => { shelfInMemory = true; return memShelf(); });
   return shelfP;
 }
+/** الرفُّ نفسُه بالذاكرة (بياناتُ الموقع محجوبة): كتابتُه «تنجح» ولا تبقى بعد إغلاق التبويب — فالتسجيلُ ذاكرةٌ وحدها
+ *  (memoryParts + إمساكُ الخروج والتحميل) لا «على هالجهاز». */
+export const shelfIsMemory = (): boolean => shelfInMemory;
 
 /** بايتاتُ تسجيلاتٍ بالذاكرة وحدها (المرآةُ فشلت) — يرفع منها الرافع، وتُمسح بعد أن يرتفع. */
 export const memoryParts = new Map<string, ArrayBuffer[]>();
@@ -271,12 +275,20 @@ export async function deleteClipSafe(id: string): Promise<void> {
   uploadProgress.delete(id);
   try { await (await getShelf()).deleteClip(id); } catch { /* القاعدةُ معطوبة — لا شيءَ فيها يُمسح */ }
 }
-/** كلُّ تسجيلات الجهاز (القاعدةُ والذاكرة، والقاعدةُ تغلب على المعرّف نفسِه). */
+/** كلُّ تسجيلات الجهاز (القاعدةُ والذاكرة). **نسخةُ الذاكرة تغلب** على المعرّف نفسِه: لا تبقى إلا حين فشلت آخرُ كتابةٍ
+ *  للقاعدة (putClipSafe يمسحها حين تنجح) — فهي الأحدث، والقاعدةُ تحمل ما قبلها («يُسجَّل» عن تسجيلٍ انتهى بالذاكرة وحدها
+ *  كان يُخفيه عن الرافع وعن كلّ زرّ، مقيسٌ بمراجعة). */
 export async function allClips(): Promise<LocalClip[]> {
   let stored: LocalClip[] = [];
   try { stored = await (await getShelf()).listClips(); } catch { stored = []; }
   const ids = new Set(stored.map((c) => c.id));
-  return [...stored, ...[...memoryClips.values()].filter((c) => !ids.has(c.id))];
+  return [...stored.map((c) => memoryClips.get(c.id) ?? c), ...[...memoryClips.values()].filter((c) => !ids.has(c.id))];
+}
+/** صفُّ تسجيلٍ واحد كما هو الآن (الذاكرةُ تغلب كـallClips). */
+export async function readClip(id: string): Promise<LocalClip | null> {
+  const mem = memoryClips.get(id);
+  if (mem) return mem;
+  try { return await (await getShelf()).getClip(id); } catch { return null; }
 }
 
 /** إمساكُ التحديث لتسجيلٍ بالذاكرة وحدها — لا يُفلت إلا حين يرتفع (تحميلُ الصفحة يضيّعه). */

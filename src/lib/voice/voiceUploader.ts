@@ -15,7 +15,7 @@ import { holdUntil } from "../inflight";
 import { isConfigReadOnly } from "../clinicSync";
 import { extOf } from "./voiceFormat";
 import { finalBytes, sha256Hex } from "./voiceMedia";
-import { allClips, backoffMs, contiguousRun, deleteClipSafe, getShelf, memoryParts, notifyShelf, putClipSafe, releaseMemoryHold, shelfChanged, uploadProgress, UPLOAD_LOCK } from "./voiceShelf";
+import { allClips, backoffMs, contiguousRun, deleteClipSafe, getShelf, memoryParts, notifyShelf, putClipSafe, readClip, releaseMemoryHold, shelfChanged, uploadProgress, UPLOAD_LOCK } from "./voiceShelf";
 import type { FailReason, LocalClip, WaitReason } from "./voiceTypes";
 
 export type Verdict =
@@ -55,6 +55,8 @@ export function classifyRpc(e: unknown): Verdict {
     case "voice_visit": return { kind: "failed", reason: "visit" };
     case "voice_bad": case "voice_path": return { kind: "failed", reason: "bug" };
     case "voice_id_taken": return { kind: "failed", reason: "id" };
+    // سقفا التجريبيّ (المدّة والعدد): لا يُصلحهما الانتظار — «السيرفر ما جاوب» للأبد كان كذباً
+    case "voice_demo_long": case "voice_demo_cap": return { kind: "failed", reason: "too_big" };
     case "voice_object_missing": case "voice_size": return { kind: "orphan" };
   }
   if (sql === "23514") return { kind: "failed", reason: "bug" };
@@ -85,8 +87,12 @@ export const STALL_MS = 60_000;
 
 const inFlight = new Set<string>();
 
+/** اكتب حالَ التسجيل **فوق صفّه كما هو الآن**: طلبُ الحذف يُكتب من الشاشة أثناء الرفع، ونسخةُ الرافع القديمة كانت تدوسه
+ *  فيرتفع حيّاً ويُمحى (مقيسٌ بمراجعة). وما مُسح أثناءها لا يُبعث. */
 async function save(clip: LocalClip): Promise<void> {
-  await putClipSafe(clip, true);
+  const cur = await readClip(clip.id);
+  if (!cur) return;
+  await putClipSafe({ ...clip, void_requested: cur.void_requested ?? clip.void_requested }, true);
   await shelfChanged();
 }
 
@@ -105,11 +111,18 @@ export async function uploadClip(clip0: LocalClip): Promise<void> {
   inFlight.add(clip0.id);
   let clip = clip0;
   try {
+    // الصفُّ كما هو الآن لا لقطةُ الجولة (طلبُ حذفٍ أو مسحٌ كُتب بعدها)
+    const now = await readClip(clip0.id);
+    if (!now) return;
+    clip = now;
+    // ذاكرةٌ وحدها بتبويبٍ آخر: بايتاتُها ليست هنا — القطعُ الجزئية بالقاعدة كانت تُحكم «تالف» للأبد
+    if ((clip.memory_only || clip.state === "memory") && !memoryParts.has(clip.id)) return;
     const mime = clip.mime, sha = clip.sha256, nbytes = clip.bytes;
     if (!mime || !sha || !nbytes) return; // لم يكتمل حفظُه بعد
     if (isConfigReadOnly()) { await park(clip, { kind: "waiting", reason: "read_only" }); return; }
     const me = outboxInternals.whoNow();
     if (!me || !clip.who || clip.who.user !== me.user) { await park(clip, { kind: "waiting", reason: "other_user" }); return; }
+    const owner = me.user;
     let server: string | null;
     try { server = await voiceApi.serverClinic(); } catch (e) { await park(clip, classifyRpc(e)); return; }
     if (!server) { await park(clip, { kind: "waiting", reason: "server" }); return; }
@@ -136,6 +149,10 @@ export async function uploadClip(clip0: LocalClip): Promise<void> {
     for (let round = 0; round < 2; round++) {
       const put = await putWithWatchdog(clip.id, path, bytes, mime);
       if (put.kind !== "uploaded") { await park(clip, put); return; }
+      // الهويّةُ ثانيةً قبل الكتابة: الرفعُ قد يطول دقائق، وتبديلُ الحساب بتبويبٍ آخر لا يعيد تحميل هذا — الصفُّ
+      // كان سيُكتب باسم الداخل الجديد
+      const again = outboxInternals.whoNow();
+      if (!again || again.user !== owner) { await park(clip, { kind: "waiting", reason: "other_user" }); return; }
       let row;
       try { row = await voiceApi.add(payload); }
       catch (e) {
@@ -152,12 +169,24 @@ export async function uploadClip(clip0: LocalClip): Promise<void> {
         return;
       }
       if (row.id !== clip.id) { await park(clip, { kind: "failed", reason: "id" }); return; }
-      let size: number | null;
-      try { size = await voiceApi.info(path); } catch (e) { await park(clip, classifyUpload(e)); return; }
-      if (size !== nbytes) { await park(clip, { kind: "waiting", reason: "server" }); return; }
-      if (clip.void_requested) {
-        try { await voiceApi.voidNote(clip.id, clip.void_requested.reason); }
-        catch (e) { await park(clip, classifyRpc(e)); return; }
+      // صفٌّ رجع محذوفاً (حذفٌ سابقٌ ضاع ردُّه، أو المديرُ حذفه): ملفُّه للمدير وحده فـinfo يرجع null لغيره — كان يُركن
+      // «السيرفر ما جاوب» للأبد. والخادمُ فحص الحجمَ قبل أن يكتب الصفّ، فلا سؤالَ ثانٍ.
+      if (!row.voided_at) {
+        let size: number | null;
+        try { size = await voiceApi.info(path); } catch (e) { await park(clip, classifyUpload(e)); return; }
+        if (size !== nbytes) { await park(clip, { kind: "waiting", reason: "server" }); return; }
+      }
+      const voidReq = (await readClip(clip.id))?.void_requested ?? clip.void_requested;
+      if (voidReq && !row.voided_at) {
+        const who = outboxInternals.whoNow();
+        if (!who || who.user !== owner) { await park(clip, { kind: "waiting", reason: "other_user" }); return; }
+        try { await voiceApi.voidNote(clip.id, voidReq.reason); }
+        catch (e) {
+          const v = classifyRpc(e);
+          // رفضٌ نهائيّ (انسدّت الزيارة أو فات يومٌ قبل أن يرتفع): الملاحظةُ حيّةٌ بالخادم وتُرى بالقائمة كأيّ ملاحظة —
+          // تُمحى من الجهاز لا تُركن «ممنوع» بلا مخرج والصفُّ حيّ.
+          if (v.kind !== "failed") { await park(clip, v); return; }
+        }
       }
       // الآن فقط: يُمحى من الجهاز
       await deleteClipSafe(clip.id);
@@ -239,9 +268,12 @@ export function armUploader(): void {
   kickUploader();
 }
 
-/** «حذف» على تسجيلٍ ما ارتفع بعد: لا يُمحى — يُختم طلبُ الحذف فيرتفع محذوفاً (يرجّعه المدير). */
+/** «حذف» على تسجيلٍ ما ارتفع بعد: لا يُمحى — يُختم طلبُ الحذف فيرتفع محذوفاً (يرجّعه المدير). يُكتب فوق الصفّ
+ *  كما هو الآن (لا لقطةِ الشاشة: الرافعُ ربما غيّر حالَه). */
 export async function requestVoid(clip: LocalClip, reason: string | null): Promise<void> {
-  await save({ ...clip, void_requested: { at: new Date().toISOString(), reason } });
+  const cur = (await readClip(clip.id)) ?? clip;
+  await putClipSafe({ ...cur, void_requested: { at: new Date().toISOString(), reason } }, true);
+  await shelfChanged();
   kickUploader(true);
 }
 
@@ -254,7 +286,9 @@ export async function discardClip(id: string): Promise<void> {
 
 /** «أعد المحاولة» على تسجيلٍ منتظر أو فاشل: يُرجع للرفع الآن. */
 export async function retryClip(clip: LocalClip): Promise<void> {
-  await save({ ...clip, state: clip.memory_only ? "memory" : "recorded", reason: undefined, next_at: undefined });
+  const cur = await readClip(clip.id);
+  if (!cur) return;
+  await save({ ...cur, state: cur.memory_only ? "memory" : "recorded", reason: undefined, next_at: undefined });
   kickUploader(true);
 }
 

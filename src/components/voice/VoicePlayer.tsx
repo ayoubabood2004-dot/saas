@@ -65,7 +65,9 @@ export function VoicePlayer({ id, url, mime, codecs, durationMs, resign, bytes, 
   const [busy, setBusy] = useState(false);
   const retried = useRef(false);
   const srcRef = useRef<string | null>(url);
-  srcRef.current = url ?? srcRef.current;
+  // الرابطُ يتبع الخاصيّةَ حين **تتغيّر** وحدها: كتابتُه بكلّ رسمة كانت تدوس رابطاً أعاد المشغّلُ توقيعَه (بعد خطأ ٤)
+  // فترجع الضغطةُ التالية بالمنتهي — «ما انحمّل» على آيفون بعد «اضغط تشغيل مرّة ثانية».
+  useEffect(() => { if (url) { srcRef.current = url; retried.current = false; } }, [url]);
 
   // WebAudio (Opus على جهازٍ لا يشغّله): البفرُ مفكوكٌ مرّةً، والموضعُ يُحسب من ساعة السياق.
   const wa = useRef<{ ctx: AudioContext; buf: AudioBuffer | null; node: AudioBufferSourceNode | null; t0: number; off: number; timer: ReturnType<typeof setInterval> | null } | null>(null);

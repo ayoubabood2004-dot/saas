@@ -426,5 +426,113 @@ const gone = async (id) => (await shelf2.getClip(id)) === null && (await shelf2.
   check("محاولةٌ واحدة لكلّ تسجيل: الثانيةُ أثناء الأولى لا تبدأ شيئاً", f.calls.filter((x) => x === "put").length === 1 && (await gone("k12")));
 }
 
+/* ── (هـ) ما أمسكته المراجعةُ العدائيّة (٢٣/١١) — كلٌّ بسلوكه ─────────────────── */
+console.log("— المراجعة: الصفُّ كما هو الآن، والهويّةُ قبل الكتابة");
+check("الخادم: سقفا التجريبيّ ⇒ فشل «كبير» لا «السيرفر ما جاوب» للأبد",
+  V(U.classifyRpc(code("P0001", "voice_demo_long"))) === "failed:too_big" && V(U.classifyRpc(code("P0001", "voice_demo_cap"))) === "failed:too_big");
+{
+  const c = await seedClip("r1", { state: "recording" });
+  S2.memoryClips.set("r1", { ...c, state: "memory", memory_only: true });
+  const all = await S2.allClips();
+  check("كتابةٌ أخيرة فشلت: نسخةُ الذاكرة تغلب صفَّ القاعدة القديم (لا «يُسجَّل» عن تسجيلٍ انتهى)",
+    all.find((x) => x.id === "r1")?.state === "memory" && (await S2.readClip("r1"))?.state === "memory");
+  S2.memoryClips.delete("r1");
+  await shelf2.deleteClip("r1");
+}
+{
+  const c = await seedClip("r2");
+  let release;
+  const gate = new Promise((ok) => { release = ok; });
+  const f = fakeApi({ putObject: async (p, blob) => { f.calls.push("put"); await gate; f.objects.set(p, blob.size); } });
+  const run = U.uploadClip(c);
+  await new Promise((ok) => setTimeout(ok, 20));
+  await U.requestVoid(c, "غلط");
+  release();
+  await run;
+  await new Promise((ok) => setTimeout(ok, 20));
+  check("«حذف» أثناء الرفع: يُحترم (يرتفع ثمّ يُحذف) لا يُداس بنسخة الرافع", f.calls.includes("void") && (await gone("r2")), f.calls.join());
+}
+{
+  const c = await seedClip("r3");
+  await shelf2.putClip({ ...(await shelf2.getClip("r3")), void_requested: { at: new Date().toISOString(), reason: null } });
+  const f = fakeApi();
+  await U.uploadClip(c); // لقطةُ الجولة بلا طلب الحذف
+  check("لقطةُ جولةٍ قديمة: الرافعُ يقرأ الصفَّ الآن فيرى «حذف» كُتب بعدها", f.calls.includes("void") && (await gone("r3")), f.calls.join());
+}
+{
+  const c = await seedClip("r4");
+  const f = fakeApi({ putObject: async (p, blob) => { f.calls.push("put"); f.objects.set(p, blob.size); localStorage.setItem("vp_session", JSON.stringify({ raw: { id: "u2" } })); } });
+  await U.uploadClip(c);
+  localStorage.setItem("vp_session", JSON.stringify({ raw: { id: "u1" } }));
+  const k = await shelf2.getClip("r4");
+  check("الحسابُ تبدّل أثناء الرفع ⇒ لا صفَّ باسم الداخل الجديد (ينتظر صاحبه)", !f.calls.includes("add") && k?.state === "waiting" && k?.reason === "other_user", f.calls.join());
+  await shelf2.deleteClip("r4");
+}
+{
+  const c = await seedClip("r5");
+  const f = fakeApi({ add: async (pl) => { f.calls.push("add"); return { ...pl, voided_at: new Date().toISOString() }; }, info: async () => { f.calls.push("info"); return null; } });
+  await U.uploadClip(c);
+  check("الصفُّ رجع محذوفاً ⇒ بلا سؤال حجمٍ (ملفُّه للمدير) ويُمحى من الجهاز — لا «ينتظر» للأبد", !f.calls.includes("info") && (await gone("r5")), f.calls.join());
+}
+{
+  const c = await seedClip("r6", { void_requested: { at: new Date().toISOString(), reason: null } });
+  const f = fakeApi({ voidNote: async () => { f.calls.push("void"); throw code("42501", "voice_void_forbidden"); } });
+  await U.uploadClip(c);
+  check("حذفٌ رُفض بعد الوصول (انسدّت الزيارة) ⇒ الملاحظةُ حيّةٌ بالخادم وتُمحى من الجهاز — لا «ممنوع» بلا مخرج", f.calls.includes("void") && (await gone("r6")), f.calls.join());
+}
+{
+  const c = await seedClip("r7", { void_requested: { at: new Date().toISOString(), reason: null } });
+  const f = fakeApi({ voidNote: async () => { f.calls.push("void"); throw new TypeError("Failed to fetch"); } });
+  await U.uploadClip(c);
+  check("  وحذفٌ ضاع بالشبكة ⇒ يبقى بالجهاز وينتظر (يُعاد)", (await shelf2.getClip("r7"))?.state === "waiting");
+  await shelf2.deleteClip("r7");
+}
+{
+  const c = await seedClip("r8", { state: "memory", memory_only: true });
+  const f = fakeApi();
+  await U.uploadClip(c);
+  check("ذاكرةٌ وحدها بتبويبٍ آخر (لا بايتاتَ هنا) ⇒ لا يُلمس — لا «تالف» للأبد", f.calls.length === 0 && (await shelf2.getClip("r8"))?.state === "memory");
+  await shelf2.deleteClip("r8");
+}
+{
+  const c = await seedClip("r10");
+  let release;
+  const gate = new Promise((ok) => { release = ok; });
+  const f = fakeApi({ putObject: async () => { f.calls.push("put"); await gate; throw new TypeError("Failed to fetch"); } });
+  const run = U.uploadClip(c);
+  await new Promise((ok) => setTimeout(ok, 20));
+  await U.requestVoid(c, "غلط");
+  release();
+  await run;
+  const k = await shelf2.getClip("r10");
+  check("«حذف» أثناء رفعٍ انقطع: الركنُ لا يمسح طلبَ الحذف (المحاولةُ التالية تحذف)", k?.state === "waiting" && !!k?.void_requested, JSON.stringify(k?.void_requested ?? null));
+  await shelf2.deleteClip("r10");
+}
+{
+  const c = await seedClip("r11");
+  await U.discardClip("r11");
+  const f = fakeApi();
+  await U.uploadClip(c); // لقطةُ جولةٍ قبل المسح
+  check("مُسح بعد أن أخذته الجولة ⇒ لا يُسأل الخادمُ عنه ولا يُرفع", f.calls.length === 0 && (await shelf2.getClip("r11")) === null, f.calls.join());
+}
+{
+  const c = await seedClip("r12");
+  let release;
+  const gate = new Promise((ok) => { release = ok; });
+  const f = fakeApi({ putObject: async () => { f.calls.push("put"); await gate; throw new TypeError("Failed to fetch"); } });
+  const run = U.uploadClip(c);
+  await new Promise((ok) => setTimeout(ok, 20));
+  await U.discardClip("r12");
+  release();
+  await run;
+  check("مُسح أثناء الرفع ثمّ انقطع ⇒ الركنُ لا يبعثه", (await shelf2.getClip("r12")) === null);
+}
+{
+  await seedClip("r9");
+  await U.discardClip("r9");
+  await U.retryClip({ id: "r9", state: "failed" });
+  check("ما مُسح لا يُبعث بكتابةٍ لاحقة (إعادةٌ أو ركنٌ على صفٍّ مُسح)", (await shelf2.getClip("r9")) === null);
+}
+
 console.log(fails ? `✗ voice-test: ${passes} نجح، ${fails} فشل` : `✓ voice-test: ${passes} نجح، 0 فشل`);
 if (fails) process.exit(1);

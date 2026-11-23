@@ -168,6 +168,29 @@ if (process.env.SHOTS) {
   await page.locator("[role=dialog] button[aria-label]").first().click();
 }
 
+console.log("▸ ٥ب) «إلغاء» بعد خمس ثوانٍ يسأل، و«إي» لا يترك شيئاً (لا صفّ ولا تسجيلاً بالرفّ يرجع)");
+{
+  const n0 = (await rows()).length;
+  await page.locator("[data-voice-btn]").click();
+  await until(async () => (await page.locator("[data-voice-recorder]").count()) === 1);
+  await page.locator("[data-voice-start]").click();
+  await until(async () => /0:0[1-9]/.test((await page.locator("[data-voice-timer]").textContent().catch(() => "")) ?? ""), 8000);
+  await page.waitForTimeout(5200);
+  await page.locator("[data-voice-recorder] button:has-text('إلغاء')").click();
+  check("يسأل «تلغي التسجيل (…)؟»", await until(async () => /تلغي التسجيل \(0:0\d\)/.test(await page.locator("[data-voice-recorder]").innerText()), 4000));
+  await page.locator("[data-voice-recorder] button:has-text('إي، ألغِه')").click();
+  await page.waitForTimeout(2500);
+  const shelfClips = await page.evaluate(() => new Promise((ok) => {
+    const r = indexedDB.open("dv-voice");
+    r.onsuccess = () => { const g = r.result.transaction("clips").objectStore("clips").getAll(); g.onsuccess = () => ok(g.result.length); g.onerror = () => ok(-1); };
+    r.onerror = () => ok(-2);
+  }));
+  check("  ولا صفّ ولا تسجيلٌ بالرفّ بعد الإلغاء (قطعةٌ بالطريق لا تبعثه)", (await rows()).length === n0 && shelfClips === 0, `rows ${(await rows()).length}/${n0}, shelf ${shelfClips}`);
+  check("  والمايكُ انطفى", await page.evaluate(() => (window.__streams ?? []).flatMap((st) => st.getTracks()).every((x) => x.readyState === "ended")));
+  await page.locator("[role=dialog] button[aria-label]").first().click();
+  await page.waitForTimeout(400);
+}
+
 console.log("▸ ٦) عرضُ الهاتف (٣٩٠): القسمُ والمسجِّلُ بلا تمريرٍ جانبيّ");
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(800);

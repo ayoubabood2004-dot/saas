@@ -123,7 +123,8 @@ export async function demoVoiceAdd(p: VoiceAddPayload): Promise<VoiceRow> {
     return had;
   }
   if (rows.filter((r) => r.clinic_id === c).length >= DEMO_VOICE_MAX) throw err("voice_demo_cap");
-  if (p.duration_ms > DEMO_VOICE_MAX_MS) throw err("voice_demo_long");
+  // المسجِّلُ يقف عند السقف بالساعة، والحاويةُ تُقرأ أطولَ بجزءٍ من الثانية — فسحةُ ثانيتين لا رفضٌ لكلّ تسجيلٍ بلغ السقف
+  if (p.duration_ms > DEMO_VOICE_MAX_MS + 2_000) throw err("voice_demo_long");
   const size = await demoVoiceInfo(path);
   if (size === null) throw err("voice_object_missing");
   if (size !== p.bytes) throw err("voice_size");
