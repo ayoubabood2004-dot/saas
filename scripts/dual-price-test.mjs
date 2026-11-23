@@ -320,7 +320,9 @@ check("  0283: مجموعُ الدولار بالسنت كالخادم (round(qt
 check("  0283: البيعة — سطورُ الدينار وحدها لـretail_checkout، وسطورُ الدولار بأسعارها (المفردُ sub والكارتونُ بعدده) من mixedCheckout بخصمها ودفعها",
   /const items: CheckoutItem\[\] = cart\.filter\(\(l\) => !isUsdLine\(l\)\)\.map/.test(sb) && !/price_currency: "USD"/.test(sb)
   && /\.\.\.\(l\.saleUnit === "sub" \? \{ sub: true \} : \{\}\)/.test(sb) && /\.\.\.\(isPackLine\(l\) \? \{ pack_id: l\.packId as string, pack_per: l\.packPer as number \} : \{\}\)/.test(sb)
-  && /m\.mixedCheckout\(items, usdItems, \{\s*\.\.\.meta, fx_rate_id: usdRids\[0\], discount_usd: \(usdDiscC \/ 100\)\.toFixed\(2\), paid_usd: \(usdPaidC \/ 100\)\.toFixed\(2\), usd_method: usdMethod,/.test(sb)
+  // 0288: الميتا باسمٍ (mmeta) لأن بابَ دفعة الإكسباير (checkoutLots) يمرّرها نفسَها — وmixedCheckout تأخذها كما هي.
+  && /const mmeta = \{ \.\.\.meta, fx_rate_id: usdRids\[0\], discount_usd: \(usdDiscC \/ 100\)\.toFixed\(2\), paid_usd: \(usdPaidC \/ 100\)\.toFixed\(2\), usd_method: usdMethod \};/.test(sb)
+  && /m\.mixedCheckout\(items, usdItems, mmeta\)/.test(sb) && /xretMod\.checkoutLots\(items, mmeta, usdItems,/.test(sb)
   && /if \(usdRids\.length > 1\) throw/.test(sb));
 check("  ولا توصيل ولا يومٌ سابق ولا رقمٌ لا يُقرأ مع سطر دولار (يُقال قبل أيّ مرجع)",
   /if \(usdOn && \(deliveryOn \|\| saleDay \|\| usdBad\)\) \{/.test(sb));

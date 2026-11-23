@@ -95,6 +95,8 @@ export const MANIFEST = [
   // 0286: سعرُ التسديد يختاره الطبيب بلا مديرٍ ولا سبب، وسعرُ اليوم لكلّ الكادر (قرارُ المالك ٢١/١١).
   ["fx_rate_set", 2, "public.fx_rate_set(numeric,text)", "0264", "0286"],
   ["settle_invoice_usd", 7, "public.settle_invoice_usd(uuid,numeric,numeric,text,numeric,text,text)", "0264", "0286"],
+  // 0288: الراجعُ الإكسباير — دفعةُ الراجع آخرَ ما يأخذه البيعُ العاديّ، والزيادةُ لا تُضاف لها.
+  ["lots_reconcile", 2, "public.lots_reconcile(uuid,boolean)", "0217", "0288"],
   // 0275: كلُّ تسديدٍ لدَين الدولار بسعر يومه وفرقُ صرفه، والأرباحُ والخسائر تقرؤه.
   ["purchase_pay_fx", 7, "public.purchase_pay_fx(uuid,numeric,text,numeric,text,text,numeric)", "0274", "0275"],
   ["company_pay_fx", 8, "public.company_pay_fx(uuid,text,numeric,text,numeric,text,date,text)", "0274", "0275"],

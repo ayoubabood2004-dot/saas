@@ -61,6 +61,8 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
   };
 
   const live = typeof lots === "object" ? lots.filter((l) => l.qty > 0).sort((a, b) => (a.expiry_date ?? "9999").localeCompare(b.expiry_date ?? "9999")) : [];
+  /** 0288: دفعةُ الراجع الإكسباير آخرَ ما يأخذه البيعُ العاديّ — «تنباع أول» لأوّل دفعةٍ غيرها. */
+  const firstSold = live.find((l) => l.source !== "return")?.id ?? null;
   const empty = typeof lots === "object" ? lots.filter((l) => l.qty <= 0) : [];
   const source = (l: ProductLot) => t(`lots.src.${l.source}`);
 
@@ -81,7 +83,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
               {first && l.qty > 0 && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200">{t("lots.sellsFirst", "تنباع أول")}</span>}
             </p>
             <p className="mt-0.5 text-2xs text-ink-subtle">
-              {source(l)} · {formatDate(l.received_at, i18n.language)}{l.company_name ? ` · ${l.company_name}` : ""}{l.note ? ` · ${l.note}` : ""}
+              {source(l)} · {formatDate(l.received_at, i18n.language)}{l.company_name ? ` · ${l.company_name}` : ""}{l.return_from ? ` · ${l.return_from}` : ""}{l.source === "return" && (l.return_pct ?? 100) < 100 ? ` · ${l.return_pct}%` : ""}{l.note ? ` · ${l.note}` : ""}
             </p>
           </div>
           <div className="text-end tabular-nums">
@@ -90,7 +92,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
               <p className="text-2xs text-ink-subtle">{t("lots.ofReceived", { n: formatQty(l.received_qty), defaultValue: "من {{n}}" })}</p>
             )}
           </div>
-          {canEdit && l.qty > 0 && (
+          {canEdit && l.qty > 0 && l.source !== "return" && (
             <button type="button" className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle hover:bg-surface-2 hover:text-brand-600" data-lot-edit
               aria-label={t("lots.edit", "عدّل التاريخ")} title={t("lots.edit", "عدّل التاريخ")}
               onClick={() => { playTap(); setAdd(null); setEdit({ lot: l, date: l.expiry_date?.slice(0, 10) ?? "", split: "" }); }}>
@@ -148,7 +150,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
           {live.length === 0 ? (
             <p className="py-4 text-center text-sm text-ink-subtle">{t("lots.none", "ماكو رصيد بهاي المادة")}</p>
           ) : (
-            <ul className="space-y-2">{live.map((l, i) => row(l, i === 0))}</ul>
+            <ul className="space-y-2">{live.map((l) => row(l, l.id === firstSold))}</ul>
           )}
           {empty.length > 0 && (
             <div>

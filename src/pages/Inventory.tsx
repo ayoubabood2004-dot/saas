@@ -99,6 +99,9 @@ const loadReportButtons = () => page(() => import("@/pages/InventoryAudit").then
 /* حقولُ السعر بالدولار (0264): قطعةٌ كسولة بنطاقها usd — لا تُرسم إلا لعيادةٍ فعّلت الدولار (أو لمادّةٍ دولاريةٍ أصلاً). */
 const loadUsdFields = () => page(() => import("@/components/usd/Usd").then((m) => ({ default: m.UsdPriceFields })), ["usd"]);
 let UsdFieldsLazy = loadUsdFields();
+/* 0288: «رجعت من فلان N بتاريخ … — إكسبايرها … — بـ٥٠٪» بنموذج المادّة — بنطاقها المملوك `xret` (قطعةُ شاشة البيع نفسُها). */
+const loadRetLots = () => page(() => import("@/components/retail/ExpiredReturn").then((m) => ({ default: m.ReturnLotsNote })), ["xret"]);
+let RetLotsLazy = loadRetLots();
 let ReportButtons = loadReportButtons();
 /* المنتجاتُ المربوطة (0277): تبويبٌ بنطاقه المملوك `pgrp` — كسولٌ ولا يُستورد ثابتاً. */
 const loadGroups = () => page(() => import("@/components/inventory/ProductGroups").then((m) => ({ default: m.ProductGroups })), ["pgrp"]);
@@ -2280,6 +2283,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             {/* ضغطتان — سنةٌ ثمّ شهر كما على العلبة (EXP 03/2027)؛ واليومُ بالكتابة لمن علبتُه تطبعه. */}
             <ExpiryPicker id="product-expiry" value={f.expiry_date} onChange={(iso) => set({ expiry_date: iso })} />
           </div>
+          {product?.id && (
+            <LoadBoundary scope="ret-lots" onRetry={() => { RetLotsLazy = loadRetLots(); setUsdTick((n) => n + 1); }}>
+              <Suspense fallback={null}><RetLotsLazy productId={product.id} unitName={product.unit_name ?? null} /></Suspense>
+            </LoadBoundary>
+          )}
 
           <div>
             <label className="label">{t("pos.photoLabel", "صورة المنتج بالمتجر")}</label>

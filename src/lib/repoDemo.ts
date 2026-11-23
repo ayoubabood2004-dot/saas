@@ -5652,6 +5652,7 @@ export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 
 export const loadDemoCompanyEntryEdit = () => import("./demoCompanyEntryEdit");   // 0281 — تعديلُ الرصيد السابق والتسوية
 export const loadDemoDual = () => import("./demoDual");   // 0282 — البيعُ بسعرين (سطرُ الدولار بفاتورة دينار)
 export const loadDemoCaseReports = () => import("./demoCaseReports");   // 0287 — تقاريرُ الحالة المطبوعة وما عُدّل فيها
+export const loadDemoExpired = () => import("./demoExpired");   // 0288 — الراجعُ الإكسباير ودفعتُه والبيعُ منها
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */
