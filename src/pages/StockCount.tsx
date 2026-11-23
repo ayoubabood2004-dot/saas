@@ -8,7 +8,7 @@ import { LoadBoundary } from "@/components/LoadBoundary";
 import type { Company, CountDecision, CountLineInput, CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
-import { cn, formatNum, formatQty, money, searchable } from "@/lib/utils";
+import { cn, formatNum, formatQty, matchCode, money, searchable } from "@/lib/utils";
 import { codeMatcher } from "@/lib/productCodes";
 import { levelMatcher } from "@/lib/packs";
 import { describeDbError, withTimeout } from "@/lib/errors";
@@ -272,13 +272,24 @@ export function StockCount() {
 
   const results = useMemo(() => {
     const s = searchable(q.trim());
-    if (!ready || s.length < 2) return [];
+    type Held = { p: Product; why: "pending" | "pooled" };
+    if (!ready || s.length < 2) return Object.assign([] as Product[], { more: 0, held: [] as Held[] });
     /* الطرفان من نفس الدالّة (CLAUDE.md §٣): الاسمُ بـsearchable، والرمزُ بمصدره الواحد codeMatcher — طيُّ الحالة
        («w90» = «W90») وجزءُ الرمز الأساسيّ أو الإضافيّ كالبيع والشراء؛ === كان لا يلقى رقمَ رفٍّ بحروفٍ صغيرة. */
     // 0267: ورمزُ الكارتون أو المغلّف يلقى مادّتَه (كبحث المخزون) — مسحُ الكارتون بالرفّ كان «ماكو». العددُ بوحدة الرصيد كما هو.
     const byLevel = levelMatcher(q);
     const byCode = codeMatcher(q);
-    return ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && (searchable(p.name).includes(s) || byCode(p) || !!byLevel(p))).slice(0, 8);
+    const hit = (p: Product) => searchable(p.name).includes(s) || byCode(p) || !!byLevel(p);
+    /* كبحث سند التلف (WasteTab، تدقيق ٢٢/١١): كان يقصّ عند ٨ بالاسم بصمت ويخفي المعلَّقةَ والمجمَّعة — فرقمُ رفٍّ «47» يطابق
+       مئةَ باركود والمادّةُ خارج الثمانية، والمعلَّقةُ لا تظهر أصلاً، و«المادة مو بالنظام» تُصدَّق فتُدخل توأماً. الآن: الرمزُ
+       المطابقُ بالضبط أوّلاً، والسقفُ يقول إنه سقف، وما وُجد ولا يُعدّ هنا يُرى بسببه. */
+    const c = matchCode(q);
+    const exact = (p: Product) => !!c && (matchCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => matchCode(a) === c));
+    const all = ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && hit(p));
+    const ranked = [...all.filter(exact), ...all.filter((p) => !exact(p))];
+    const held = ready.products.filter((p) => hit(p) && (pendingIds.has(p.id) || (!countable(p) && !!p.pooled)))
+      .slice(0, 3).map((p): Held => ({ p, why: pendingIds.has(p.id) ? "pending" : "pooled" }));
+    return Object.assign(ranked.slice(0, 8), { more: Math.max(0, ranked.length - 8), held });
   }, [q, ready, pendingIds]);
 
   /* «ما انعدّت أبداً»: قابلةٌ للعدّ، بلا عدٍّ مطابقٍ أو موافَقٍ عليه بتعريف الخادم (countedIds)، ولا عدٍّ معلَّق (لا يُعدّ ثانيةً قبل
@@ -626,6 +637,14 @@ export function StockCount() {
               <input className="input h-10 flex-1" value={q} onChange={(e) => setQ(e.target.value)} data-count-search
                 placeholder={t("cnt.searchPh", "تريد تعدّ مادة ثانية؟ ابحث بالاسم أو امسح الباركود")} />
             </label>
+            {q.trim().length >= 2 && results.length === 0 && results.held.length === 0 && (
+              <p className="mt-2 text-xs text-ink-subtle" data-count-nohit>{t("cnt.noHit")}</p>
+            )}
+            {results.held.map(({ p, why }) => (
+              <p key={p.id} className="mt-2 flex items-center gap-2 text-xs text-ink-subtle" data-count-held={why}>
+                <PackageSearch size={14} /> <span className="font-semibold text-ink-muted">{p.name}</span> — {why === "pending" ? t("cnt.waste.pendingShort") : t("cnt.err.pooled")}
+              </p>
+            ))}
             {results.length > 0 && (
               <ul className="mt-2 divide-y divide-line/60">
                 {results.map((p) => (
@@ -647,6 +666,7 @@ export function StockCount() {
                 ))}
               </ul>
             )}
+            {results.more > 0 && <p className="mt-1 text-2xs text-ink-subtle" data-count-more>{t("cnt.waste.more", { n: formatNum(results.more) })}</p>}
           </div>
 
           <div className="flex justify-end">

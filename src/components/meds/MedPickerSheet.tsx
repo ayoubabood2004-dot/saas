@@ -14,7 +14,7 @@ import { getActiveClinicId } from "@/lib/clinics";
 import { useSubscription } from "@/lib/subscription";
 import { pushModal, removeModal } from "@/lib/modalStack";
 import { describeDbError } from "@/lib/errors";
-import { cn, formatNum, searchable, uuid } from "@/lib/utils";
+import { cn, formatNum, searchable, uuid, formatQty } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
 import { MyMedsBoard, MedDragOverlay, pressOnly, useMedSensors } from "./MyMedsBoard";
@@ -753,7 +753,7 @@ function Tile({ it, selected, confirming, dragDisabled, starDisabled, tags, onPi
             : it.banned ? <span className="rounded-full bg-danger-100 px-1.5 py-0.5 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{t("mymeds.badgeBanned", "ممنوع")}</span>
               : it.dosed ? <span className="rounded-full bg-success-50 px-1.5 py-0.5 text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("mymeds.badgeDosed", "جرعة جاهزة")}</span>
                 : <span className="rounded-full bg-surface-1 px-1.5 py-0.5 text-ink-muted">{t("mymeds.badgeNoDose", "بلا جرعة موثّقة")}</span>}
-          {it.stock != null && !selected && <span className="rounded-full bg-success-50 px-1.5 py-0.5 text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("mymeds.badgeStock", { n: formatNum(it.stock), defaultValue: "بالمخزون · {{n}}" })}</span>}
+          {it.stock != null && !selected && <span className="rounded-full bg-success-50 px-1.5 py-0.5 text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("mymeds.badgeStock", { n: formatQty(Number(it.stock)), defaultValue: "بالمخزون · {{n}}" })}</span>}
           {tags.map((g) => <span key={g} data-medtile-tag={g} className={cn("max-w-[9rem] truncate rounded-full px-1.5 py-0.5", selected ? "bg-white/20" : "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>{g}</span>)}
         </span>
       </button>

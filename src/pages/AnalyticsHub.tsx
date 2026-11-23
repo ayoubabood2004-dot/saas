@@ -35,7 +35,7 @@ import { InvoiceDetail } from "@/components/retail/InvoicesPanel";
 import { useToast, Skeleton, Button, Dialog } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
 import { PnlPanel } from "@/components/reports/PnlPanel";
-import { money, formatNum, formatDec, cn, dateLocale } from "@/lib/utils";
+import { money, formatNum, formatDec, cn, dateLocale, formatQty } from "@/lib/utils";
 import { purchaseDueCur, usdOf } from "@/lib/purchaseFxMath";
 import { describeDbError } from "@/lib/errors";
 import {
@@ -3506,7 +3506,7 @@ function CategoriesTab({ items, products, purchases, purchaseItems, buyLoading, 
       cell: (r) => (r.isService ? <span className="text-ink-subtle">—</span> : <span className="tabular-nums text-ink-muted">{formatNum(r.bought)}</span>),
       excelValue: (r) => (r.isService ? "" : r.bought) },
     { key: "stock", header: t("rpt.cat.stock", "المخزون الآن"), align: "end", sortKey: "stock", numeric: true,
-      cell: (r) => (r.stock == null ? <span className="text-ink-subtle">—</span> : <span className="tabular-nums text-ink-muted">{formatNum(r.stock)}</span>),
+      cell: (r) => (r.stock == null ? <span className="text-ink-subtle">—</span> : <span className="tabular-nums text-ink-muted">{formatQty(Number(r.stock))}</span>),
       excelValue: (r) => (r.stock == null ? "" : r.stock) },
   ];
 

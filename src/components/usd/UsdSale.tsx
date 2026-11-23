@@ -14,7 +14,7 @@ import type { Invoice, Product, ProductPack } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
-import { cn, formatNum, normalizeCode, searchable, uuid } from "@/lib/utils";
+import { cn, formatNum, normalizeCode, searchable, uuid, formatQty } from "@/lib/utils";
 import { usdApi, type UsdMethod } from "@/lib/usdApi";
 import { repo } from "@/lib/repo";
 import { invoiceNo } from "@/lib/invoicePrint";
@@ -244,7 +244,7 @@ export function UsdSaleSheet({ open, products, first, firstPack = null, firstTic
                   <li key={keyOf(p, pack)}>
                     <button type="button" className="flex w-full items-center gap-3 px-3 py-2 text-start text-sm hover:bg-surface-2" onClick={() => add(p, pack)}>
                       <span className="min-w-0 flex-1 truncate font-semibold text-ink">{p.name}{pack && <span className="ms-1 text-2xs font-bold text-brand-700 dark:text-brand-300">· {pack.name} ×{pack.per}</span>}</span>
-                      <span className="text-2xs text-ink-subtle">{t("usd.sale.stock", { n: formatNum(p.stock ?? 0) })}</span>
+                      <span className="text-2xs text-ink-subtle">{t("usd.sale.stock", { n: formatQty(Number(p.stock ?? 0)) })}</span>
                       <span className="font-bold tabular-nums text-success-700 dark:text-success-300" dir="ltr">{u == null ? "—" : usdText(u)}</span>
                     </button>
                   </li>
@@ -271,7 +271,7 @@ export function UsdSaleSheet({ open, products, first, firstPack = null, firstTic
                       <span dir="ltr">{unit == null ? t("usd.err.usd_no_price") : usdText(unit)}</span>
                       {totals && unit != null && <> · {iqd(totals.unitIqd[j])}</>}
                       {over && <span className={cn("ms-1 font-semibold", lifted ? "text-warn-700 dark:text-warn-300" : "text-danger-600 dark:text-danger-300")} data-usd-over={lifted ? "lifted" : "short"}>
-                        {t(lifted ? "usd.sale.overLifted" : "usd.sale.overStock", { n: formatNum(stockOf(l.product)) })}</span>}
+                        {t(lifted ? "usd.sale.overLifted" : "usd.sale.overStock", { n: formatQty(stockOf(l.product)) })}</span>}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -341,7 +341,7 @@ export function UsdSaleSheet({ open, products, first, firstPack = null, firstTic
           {!totals ? t("usd.sale.title") : pending ? t("usd.sale.retry", { v: usdIso(totals.totalUsdCents) })
             : t(paid ? "usd.sale.confirmCash" : "usd.sale.confirmDebt", { v: usdIso(totals.totalUsdCents) })}
         </Button>
-        {shortLine && <p className="text-center text-xs font-semibold text-danger-600 dark:text-danger-300" data-usd-short>{t("usd.sale.shortBlock", { name: shortLine.product.name, n: formatNum(stockOf(shortLine.product)) })}</p>}
+        {shortLine && <p className="text-center text-xs font-semibold text-danger-600 dark:text-danger-300" data-usd-short>{t("usd.sale.shortBlock", { name: shortLine.product.name, n: formatQty(stockOf(shortLine.product)) })}</p>}
       </div>
       )}
     </Modal>

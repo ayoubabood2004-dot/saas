@@ -16,7 +16,7 @@ import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton, Dialog } from "@/components/ui";
 import { cn, money, formatDate, formatNum, formatDec, formatQty, currencySymbol, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName, invNormName } from "@/lib/utils";
 import { sellPriceToSend, purchaseBlockers } from "@/lib/purchaseIntent";
-import { withTimeout, describeDbError } from "@/lib/errors";
+import { withTimeout, describeDbError, rejectedBeforeCommit, shouldReleaseRef } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
 import { noteScan } from "@/lib/scanStats";
@@ -33,6 +33,7 @@ import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 import { purchaseDiscountReady } from "@/lib/purchaseApi";
 import { purchaseFx, purchaseFxState } from "@/lib/purchaseFxApi";
+import { isRefChanged, newAttemptRef, recordPurchaseOnce } from "@/lib/stockSafetyApi";
 import { purchaseChargesState, type PurchaseChargesState } from "@/lib/purchaseChargesApi";
 import { chargesOf, chargesToSend, draftProblem, draftSums, purchaseGrossCur, type ChargeDraft } from "@/lib/purchaseCharges";
 import { convertTyped, lineSellCur, per100Text, purchaseDueCur, ratePerUsd, usdOf, usdPrintView, newPurchasePaid, type FxCur, type PaidMode } from "@/lib/purchaseFxMath";
@@ -751,6 +752,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   /** مجمِّعُ المسحة لهذا الحقل — يحكم على Tab: ماسحٌ أم إنسانٌ يتنقّل. */
   const scanAsm = useRef(createScanAssembler());
   const createdRef = useRef<Company[]>([]);
+  /* «حفظ» مرّةً واحدة (0287): القفلُ **متزامن** — `busy` حالةٌ تُكتب بعد سؤال الأسعار (await) فكانت ضغطتان سريعتان
+   * تدخلان كلتاهما وتكتبان فاتورتين. ومرجعُ المحاولة يُولد مع أوّل حفظٍ للفاتورة الجديدة ويُعاد بكلّ إعادة حتى تنجح:
+   * جوابٌ ضاع بعد أن ثبتت يُرجع الأولى بدل أن يضاعف الرصيدَ ودَينَ الشركة. */
+  const saveLock = useRef(false);
+  const attemptRef = useRef<string | null>(null);
 
   /* الفهرسُ من `productCodes` لا مكتوباً هنا: الأساسيُّ والإضافيُّ معاً وبقاعدةِ
    * أولويةٍ واحدة، مفحوصةٍ بـ`products-test`. مسحُ باركود المصنع على بضاعةٍ
@@ -761,6 +767,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   useEffect(() => {
     if (!open) return;
     createdRef.current = [];
+    attemptRef.current = null;
     setSaved(null);
     if (editing) {
       const p = editing.purchase;
@@ -1168,7 +1175,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [askLeave, setAskLeave] = useState(false);
   const filledCount = lines.filter((l) => l.name.trim() || l.barcode.trim() || Number(l.qty) > 0).length;
   const confirmClose = () => {
-    if (busy) return false;                 // حفظٌ جارٍ: لا يُقطع
+    if (busy || saveLock.current) return false;   // حفظٌ جارٍ (ومنه سؤالُ الأسعار قبله): لا يُقطع
     if (filledCount === 0) return true;     // فاتورةٌ فارغة تُغلق بلا سؤال
     setAskLeave(true);
     return false;
@@ -1218,7 +1225,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   };
 
   const save = async () => {
-    if (busy) return;
+    if (busy || saveLock.current) return;
+    saveLock.current = true;
+    /* «جارٍ» من أوّل الضغطة لا بعد سؤال الأسعار (مراجعة ٢٢/١١): كان الزرُّ بلا دوّارة والضغطاتُ تُبلع، والإغلاقُ يمرّ (يسأل busy
+     * وحده) — فحفظٌ قديمٌ يكمل بعد إعادة الفتح فيكتب مرجعَه وإيصالَه بالنموذج الجديد. */
+    setBusy(true);
+    try { await saveOnce(); } finally { saveLock.current = false; setBusy(false); }
+  };
+  const saveOnce = async () => {
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
     // 0274: فاتورةُ الدولار بلا سعرٍ مقروء لا تُحفظ — والشريطُ يقولها بجملةٍ حمراء (لا زرٌّ يقف بلا كلمة).
     if (cur === "USD" && fxRate == null) { setRateAsk(true); playWarning(); return; }
@@ -1318,7 +1332,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     const typed = validLines.filter((l) => l.product_id && sellPriceToSend(l.sell_price) > 0 && !soldUsd(l));
     if (typed.length) {
       let fresh: (Product | null | undefined)[];
-      try { fresh = await Promise.all(typed.map((l) => repo.getProductById(l.product_id as string))); }
+      // بمهلة: سؤالٌ عالقٌ كان يُمسك الحفظَ (والإغلاقَ معه) بلا حدّ.
+      try { fresh = await withTimeout(Promise.all(typed.map((l) => repo.getProductById(l.product_id as string))), 15000); }
       catch (e) { playWarning(); toast.error(describeDbError(e, t)); return; }
       const moved: Record<string, number> = {};
       let first: { name: string; now: number; was: number } | null = null;
@@ -1343,6 +1358,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     }
     setBusy(true);
     let createdCompany: Company | null = null;
+    // الفاتورةُ الجديدة وحدها بمرجع (التعديلُ استبدالٌ يُعاد بلا أثرٍ ثانٍ — update_purchase تحت القفل).
+    const freshRef = !editing && attemptRef.current == null;
+    if (freshRef) attemptRef.current = newAttemptRef();
+    const ref = attemptRef.current;
     try {
       const co = editing
         ? { id: editing.purchase.company_id, created: null, name: editing.purchase.company_name ?? "" }
@@ -1404,23 +1423,31 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             ? { ...meta, currency: "USD", fx_rate: fxRate, amount_paid: undefined, amount_paid_usd: meta.amount_paid,
                 discount: undefined, discount_usd: discOk ? discountAmt : undefined }
             : { ...meta, currency: "IQD" };
-          return editing ? purchaseFx.update(editing.purchase.id, draftFx, metaFx) : purchaseFx.record(draftFx, metaFx);
+          return editing ? purchaseFx.update(editing.purchase.id, draftFx, metaFx) : recordPurchaseOnce(ref as string, draftFx, metaFx, true);
         })()
         : editing
           ? await repo.updatePurchase(editing.purchase.id, draft, meta)
-          : await repo.recordPurchase(draft, meta);
+          : await recordPurchaseOnce(ref as string, draft, meta, false);
+      attemptRef.current = null;
       // ما علّمه المشتري «لكل المجموعة»: بعد أن كتبت الفاتورةُ سعرَ المادّة — ينسخه الخادمُ لأخواتها (0277). فشلُه يُقال والفاتورةُ محفوظة.
       const follow = grpAsks.filter((a) => grpPick.includes(a.productId));
       if (follow.length) await followGroups(follow);
       playSuccess();
       setSaved(done);
     } catch (e) {
-      if (createdCompany) {
+      /* مجهولُ المصير (نتٌّ انقطع بعد الإرسال، مهلة) ≠ مرفوض: الفاتورةُ ربما ثبتت. فالشركةُ التي وُلدت لها **لا تُحذف**
+       * (حذفُها كان يفصل الفاتورةَ المحفوظة وموادَّها عن شركتها) والمرجعُ يبقى — الحفظُ الثاني يُرجع الأولى ولا يكتب ثانية.
+       * والرفضُ الحاسم وحده يحرّرهما. */
+      const decisive = rejectedBeforeCommit(e);
+      if (!editing && shouldReleaseRef(freshRef, e)) attemptRef.current = null;
+      if (createdCompany && decisive) {
         const cc = createdCompany;
         try { await repo.deleteCompany(cc.id); createdRef.current = createdRef.current.filter((c) => c.id !== cc.id); } catch { /* best effort */ }
       }
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      // المحاولةُ الأولى ثبتت قبل تعديلك (التلميحُ يقولها): لا مرجعَ جديد يكتب ثانية — تُغلق والقائمةُ تُقرأ وتُرى فيها.
+      if (isRefChanged(e)) { attemptRef.current = null; onSaved(); }
     } finally {
       setBusy(false);
     }
@@ -1633,7 +1660,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <span key="sugg" className="inline-flex flex-wrap items-center gap-1">
                     {sugg.map((p) => (
                       <button key={p.id} type="button"
-                        onClick={() => { playTap(); setLines((ls) => ls.map((x) => (x.key === l.key ? { ...lineFromProduct(p, p.barcode ?? ""), key: x.key, qty: x.qty || "1" } : x))); }}
+                        /* رمزُ العلبة الممسوح يبقى على السطر (تدقيق ٢٢/١١): كان «موجود:» يبدّله برمز المادّة فيضيع باركودُ المصنع — مادّةٌ بلا باركود
+                           كانت ستأخذه بالحفظ، فيقول الكاشيرُ بعدها «مو موجود بمخزنك» وتُدخل توأماً. */
+                        onClick={() => { playTap(); setLines((ls) => ls.map((x) => (x.key === l.key ? { ...lineFromProduct(p, x.barcode.trim()), key: x.key, qty: x.qty || "1" } : x))); }}
                         className="inline-flex items-center gap-1 rounded-full border border-success-300 bg-success-50/70 px-2 py-0.5 text-2xs font-bold text-success-700 transition hover:bg-success-100 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-300">
                         <PackageCheck size={10} /> {t("purchase.useExisting", "موجود:")} {p.name}
                       </button>
