@@ -84,9 +84,11 @@ async function scenario(M) {
       prod(A, "دواء إكسباير", { has_sub_unit: true, sub_unit_name: "شريط", units_per_box: 10, packs: [{ id: "k1", name: "كارتون", per: 5, codes: ["EXP-K1"] }] }),
       prod(B, "دينار ثاني", { sell_price: 15000, purchase_price: 10000, avg_cost: 10000, stock: 10 }),
       prod("pU", "بالدولار", { price_currency: "USD" }),
+      prod("p5", "تحت الصفر", { stock: 2 }),
+      prod("p6", "شرائط ثلاثية", { sell_price: 3000, purchase_price: 1500, avg_cost: 1500, stock: 10, has_sub_unit: true, sub_unit_name: "شريط", units_per_box: 3, sub_unit_price: 1000 }),
       prod("pP", "مجمَّعة", { pooled: true, stock: 0 }),
     ],
-    companies: [], companySections: [], purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+    companies: [], companySections: [], purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [], deliveryOrders: [],
   }));
   const repo = M.repo ?? M.demoRepo;
   const db = () => JSON.parse(mem.get(DB_KEY));
@@ -155,6 +157,30 @@ async function scenario(M) {
   const r7 = await ret("r7", [it(B, "box", 1, 100, "2026-06-01", { unit_price: 15000 })], "أبو حسن", "07702222222");
   out.r7 = `${r7.debt}/${r7.cash}|${inv("h1").total}|${inv("h2").total}`;
 
+  // ── تصليحاتُ المراجعة: بالأرقام نفسِها التي يفحصها قسمُ 0288 على القاعدة ──
+  await sale("k0", B, 1, 15000, 0, "أبو كرار", "07703333333");
+  await repo.retailCheckout([{ product_id: A, name: "z", qty: 1, unit_price: 20000, unit_cost: 0, stock_qty: 1, unit_label: null, service_id: null }],
+    { client_ref: "k1", payment_method: "card", amount_paid: 20000, final_total: 20000, payment_details: [{ method: "card", amount: 20000 }],
+      customer_name: "أبو كرار", customer_phone: "07703333333" });
+  { const d = db(); d.invoices.find((i) => i.client_ref === "k0").created_at = "2026-11-01T08:00:00.000Z"; mem.set(DB_KEY, JSON.stringify(d)); }
+  const rk = await ret("k2", [it(A, "box", 1, 100, "2026-05-01")], "أبو كرار", "07703333333");
+  out.method = `${rk.debt}/${rk.cash}|` + (inv("k1").payment_details ?? []).filter((x) => x.amount < 0).map((x) => `${x.method}:${x.amount}`).join(",")
+    + "|" + (inv("k0").payment_details ?? []).filter((x) => x.amount > 0).map((x) => `${x.method}:${x.amount}`).join(",");
+  await sale("n1", "p5", 4, 20000, 0, "أم زهراء", "07704444444");
+  const rn = await ret("n2", [it("p5", "box", 3, 50, "2026-05-01")], "أم زهراء", "07704444444");
+  const l5 = lots("p5").filter((l) => l.source === "return");
+  out.neg = `${rn.debt}/${rn.cash}|${db().products.find((p) => p.id === "p5").stock}|${l5.map((l) => `${l.qty}@${l.unit_cost}`).join(",") || "-"}|${inv("n1").profit}`;
+  await repo.retailCheckout([{ product_id: "p6", name: "z", qty: 7, unit_price: 1000, unit_cost: 0, stock_qty: 2.333, unit_label: "شريط", service_id: null }],
+    { client_ref: "u1", payment_method: "cash", amount_paid: 0, final_total: 7000, customer_name: "أبو مهدي", customer_phone: "07706666666" });
+  const ru = await ret("u2", [it("p6", "sub", 1, 100, "2026-05-01")], "أبو مهدي", "07706666666");
+  out.unit = `${ru.debt}/${ru.cash}|${lines("u1").map((l) => `${l.qty}:${l.line_total}`).join(",")}|${inv("u1").total}/${inv("u1").item_count}`;
+  out.traceDate = String(db().invoiceItems.filter((l) => l.product_id == null && Number(l.stock_qty) === 0)
+    .every((l) => l.created_at === db().invoices.find((i) => i.id === l.invoice_id)?.created_at));
+  await sale("d1", B, 1, 15000, 0, "زبون التوصيل", "07707777777");
+  { const d = db(); d.deliveryOrders.push({ id: "do1", invoice_id: inv("d1").id, status: "out", cod_amount: 15000, created_at: new Date().toISOString() }); mem.set(DB_KEY, JSON.stringify(d)); }
+  const rd = await ret("d2", [it(B, "box", 1, 100, "2026-05-01", { unit_price: 15000 })], "زبون التوصيل", "07707777777");
+  out.delivery = `${rd.debt}/${rd.cash}|${inv("d1").total}/${inv("d1").amount_paid}`;
+
   out.stockEq = [A, B].map((pid) => `${db().products.find((p) => p.id === pid).stock}=${lots(pid).reduce((s, l) => s + l.qty, 0)}`).join("|");
 
   out.refuse = [
@@ -181,7 +207,8 @@ const EXPECT = {
   lotSale: "10000/2000|10000", afterLot: "opening:17,return:0|17", lotReplay: "10000|1|opening:17,return:0",
   r2: "10000/0|20000/9000/2", r3: "0/50000|70000/36000/70000|-50000", lotK: "5/10000",
   r4: "20000/0|0/0/1|0", r5: "0/7500|7500/مرتجع|7500", r6: "15000/5000|0", r7: "15000/0|0|15000",
-  stockEq: "17.5=17.5|9=9",
+  method: "15000/5000|cash:-20000|cash:15000", neg: "30000/0|1|1@10000|4000", unit: "1000/0|6:6000|6000/6", traceDate: "true", delivery: "0/15000|15000/0",
+  stockEq: "17.5=17.5|8=8",
   refuse: "expired_usd|expired_pooled|expired_unit|expired_date|expired_pct|expired_qty|expired_empty",
   lotRefuse: "lot_short|lot_gone|0",
 };
@@ -194,13 +221,18 @@ for (const [k, v] of Object.entries(EXPECT)) check(`${k}: ${v}`, got[k] === v, `
 console.log("▸ ٢) طفراتٌ على المرآة — كلٌّ تُمسك");
 const MUTANTS = [
   ["الدفعةُ بكلفة المتوسّط لا بما رجع", (s) => s.replace("T = Math.min(V, r2(oldc - newc));", "T = r2(oldc - newc);")],
-  ["سطرُ الأثر بكلفته كاملة (الربحُ ينقص)", (s) => s.replace("restC = r2(oldc - newc - T)", "restC = r2(oldc - newc)")],
+  ["سطرُ الأثر بكلفته كاملة (الربحُ ينقص)", (s) => s.replace("restC = r2(oldc - newc - Tl)", "restC = r2(oldc - newc)")],
   ["بلا «ما عليها دَينٌ أوّلاً»", (s) => s.replace("Number(due(b) > 0.005) - Number(due(a) > 0.005) || ", "")],
   ["ما زاد لا يسدّد أقدمَ دَينه", (s) => s.replace("if (cash > 0 && key) {", "if (false) {")],
   ["البيعُ من الدفعة بلا كلفتها", (s) => s.replace("    li.unit_cost = uc;\n", "\n")],
   ["البيعُ من الدفعة لا ينقصها", (s) => s.replace("    l.qty = q3(l.qty - sq);\n", "\n")],
   ["الإعادةُ تنقص الدفعةَ ثانيةً", (s) => s.replace('const done = refsLoad().some((x) => x.fn === "lot_sale" && x.ref === ref);', "const done = false;")],
   ["فاتورةٌ بلا أسطر (لا أثرَ بصفر)", (s) => s.replace("|| !(db.invoiceItems ?? []).some((l) => l.invoice_id === anchor.id)", "")],
+  ["الساقُ بطريقة الفاتورة لا الشاشة", (s) => s.replace("legs.push({ method, amount: -back,", "legs.push({ method: (inv.payment_method ?? method) as PaymentMethod, amount: -back,")],
+  ["الدفعةُ تأخذ ما سدّ العجز", (s) => s.replace("    const lotq = (Number(p.stock) || 0) >= 0 ? rs : Math.max(q3((Number(p.stock) || 0) + rs), 0);\n    if (!anchor)", "    const lotq = rs;\n    if (!anchor)").replace("      const lotq = (Number(p.stock) || 0) >= 0 ? rs : Math.max(q3((Number(p.stock) || 0) + rs), 0);\n      Tl", "      const lotq = rs;\n      Tl")],
+  ["الراجعُ عبر وحدة المخزن لا وحدة السطر", (s) => s.replace("const rl = Math.min(q3(qty * uret / uline), lq);", "const rl = Math.min(q3(lq * rs / Number(li.stock_qty ?? li.qty)), lq);")],
+  ["طلبُ التوصيل بالطريق فاتورةُ الراجع", (s) => s.replace("&& keyOf(i) === key && !inFlight(db, i.id) &&", "&& keyOf(i) === key &&").replace("&& keyOf(i) === key && !inFlight(db2, i.id))", "&& keyOf(i) === key)")],
+  ["سطرُ الأثر بيوم الراجع", (s) => s.replace("          created_at: anchor.created_at,   // يومُ فاتورته (كالخادم)\n", "")],
 ];
 for (const [name, mut] of MUTANTS) {
   let applied = true;
@@ -224,9 +256,18 @@ check("السلّةُ التي فيها راجعٌ إكسباير لا تُخل�
   /if \(cart\.some\(\(l\) => !l\.ret \|\| !l\.xret\)\) \{ playWarning\(\); toast\.error\(m\.ui\.say\.mixed\(\)\); return; \}/.test(sb)
   && /if \(cart\.some\(\(l\) => l\.xret\)\) \{ playWarning\(\); toast\.error\(xretMod \? xretMod\.ui\.say\.mixed\(\)/.test(sb));
 check("سطرُ البيع من الدفعة يرسل lot_id، والسقفُ باقي الدفعة",
-  /\.\.\.\(l\.lot && !l\.ret \? \{ lot_id: l\.lot\.id \} : \{\}\)/.test(sb) && /Math\.min\(lineLifted\(l, now\) \? Infinity : shareCap\(l\), lotCapOf\(l\)\)/.test(sb));
+  /\.\.\.\(l\.lot && !l\.ret \? \{ lot_id: l\.lot\.id \} : \{\}\)/.test(sb) && /Math\.min\(lineLifted\(l, now\) \? Infinity : Math\.min\(shareCap\(l\), newCapOf\(l\)\), lotCapOf\(l\)\)/.test(sb));
 check("السؤالُ «من الإكسباير لو من الجديد» داخل sellOrExplain (كلُّ إضافةٍ تمرّ منها) وأوّلَ سطرٍ للمادّة وحده",
   /if \(!ret && !opt\?\.lotAsked && xretOn && xretMod\) \{[\s\S]{0,400}?!cartRef\.current\.some\(\(l\) => l\.kind === "product" && !l\.ret && l\.product_id === product\.id\)/.test(sb));
+check("  وسطرُ «الجديد» بلا ما بدفعات الراجع، و«$» مرفوضٌ على سطر الدفعة، والمسحُ مطفأٌ والسؤالُ مفتوح، والسؤالُ الثاني يُلغي الأوّلَ بجوابه",
+  /held > 0 \? shareCapAt\(l, Math\.round\(\(l\.stock - held\) \* 1000\) \/ 1000\) : Infinity/.test(sb)
+  && /if \(l\.lot\) \{ playWarning\(\); toast\.error\(xretMod \? xretMod\.ui\.say\.lotUsd\(l\.name\)/.test(sb)
+  && /\|\| !!lotAsk \|\| !!xretFor \|\| !!consFor \|\| medPickerOpen \}\);/.test(sb) && /lotAskRef\.current\?\.resolve\(undefined\);/.test(sb));
+check("  وزرُّ «إكسباير» مقفولٌ ما دام إرجاعٌ بالطريق (المرجعُ محفوظ) — التبديلُ يُعيده بطريقٍ آخر",
+  /if \(saleRefSaved\) \{ playWarning\(\); toast\.error\(xretMod \? xretMod\.ui\.say\.pending\(\)/.test(sb));
+const rp = src("src/components/retail/ReturnsPanel.tsx");
+check("«المرتجع»: أثرُ الراجع الإكسباير لا يُرجَع ولا يدخل «إرجاع الكل»",
+  /items\.filter\(\(it\) => !isXretTrace\(it\)\)\.map\(\(it\) => \[it\.id, it\.qty\]\)/.test(rp) && /\{!isXretTrace\(it\) && <div className="flex items-center gap-1">/.test(rp));
 const lotsTsx = src("src/components/inventory/ProductLots.tsx");
 check("نافذةُ الدفعات: لا فصلَ لدفعة الراجع (يكتب مصدرَها بلا أعمدتها)، و«تنباع أول» لغيرها",
   /canEdit && l\.qty > 0 && l\.source !== "return"/.test(lotsTsx) && /live\.find\(\(l\) => l\.source !== "return"\)/.test(lotsTsx));

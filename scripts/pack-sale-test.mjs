@@ -110,6 +110,10 @@ const STUB = {
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
   /* البيعُ قبل الجرد (0266): بلا حالة (globalThis.__psNeg فارغ) الوضعُ غائبٌ كما كان؛ وبحالةٍ يمسكها الفحص (القسم ن) القواعدُ الصِّرفةُ
    * الحقيقيّة — عمرُ الجواب وحكمُ الرفع و«الكبيرة» كما بالتطبيق. */
+  /* 0288: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
+  "@/lib/expiredApi": `export const returnLotsReady = async () => false; export const listReturnLots = async () => []; export const listReturnLotsOf = async () => [];
+    export const returnExpired = async () => { throw new Error("stub"); }; export const checkoutLots = async () => { throw new Error("stub"); }; export const expiredErrorCode = () => null;`,
+  "@/components/retail/ExpiredReturn": "export const say = new Proxy({}, { get: (_, k) => () => String(k) }); export const XretDialog = () => null; export const XretNote = () => null; export const LotPickDialog = () => null; export const ReturnLotsNote = () => null; export const unitsOf = () => []; export default () => null;",
   "@/lib/negStockApi": `const N = () => globalThis.__psNeg;
     const OFF = { state: null, counted: new Set(), failed: false };
     export const negKey = (u) => (u ?? "anon") + "|c1";

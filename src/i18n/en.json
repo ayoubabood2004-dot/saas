@@ -9678,6 +9678,10 @@
     "lotLine": "From expired ({{date}}) — returned by {{from}}",
     "lotShort": "Only {{n}} left of the expired «{{name}}»",
     "lotPack": "Expired «{{name}}» sells by the box or piece — not by the carton",
+    "lotUsd": "Expired «{{name}}» sells in dinars — remove it and sell new stock in USD",
+    "pending": "The last return for this cart wasn't confirmed — press «Confirm return» again as is (it won't record twice), or clear and check withdrawals",
+    "fromNewLeft": "From new stock ({{n}} {{unit}} left)",
+    "noNew": "No new stock — all of it is expired returns",
     "pickTitle": "«{{name}}»: from the expired lot or the new stock?",
     "pickSub": "Some of it is an expired return — choose where this sale comes from",
     "fromLot": "From expired",
@@ -9702,6 +9706,8 @@
       "lot_short": "Less of the expired lot is left than this quantity — refresh the list",
       "lot_gone": "The expired lot is gone — refresh the list",
       "lot_line": "Couldn't find the expired line on the invoice — try again",
+      "expired_ref_used": "This return was already recorded as a normal return — clear the cart and check withdrawals",
+      "return_ref_used": "This return was already recorded as an expired return — clear the cart and check the invoice and lots",
       "lot_ref": "The sale needs a reference — refresh the page"
     }
   }
