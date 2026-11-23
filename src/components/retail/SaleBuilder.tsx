@@ -1,5 +1,5 @@
 import { noteScan } from "@/lib/scanStats";
-import { Component, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
@@ -53,7 +53,7 @@ import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
 import { repriceCart, isManual, capturedPrice, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
-import type { DoseCharge, PricePriorMap } from "@/types";
+import type { DoseCharge, PricePriorMap, ProductLot } from "@/types";
 import { sellableRow } from "@/lib/sellable";
 import { customerBoundLines, cartAfterClearCustomer, planCustomerSwitch, stripScanTail, fieldsAfterPick, type CustText } from "@/lib/saleCustomer";
 import { useCustomerSearch, CustomerDropdown, CustomerPetsStrip, type CustField } from "./CustomerSearch";
@@ -214,6 +214,12 @@ interface Line {
   /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `c` سعرُ الوحدة بالسنت، و`rid`/`r` سعرُ الصرف الذي حُسب به دينارُه (`unit_price`) كما يعرفه
    *  الخادم (معرّفُه، والدولارُ الواحد بأربع منازل نصّاً — المسودّةُ JSON). الخادمُ يرفض سعراً تغيّر (`usd_rate_changed`) ودينارٌ لا يطابق. */
   usd?: { c: number; rid: string; r: string };
+  /** 0288: سطرُ راجعٍ إكسباير — شوكت خلص ووحدتُه (علبة، قطعة، كارتون) كما ثبّتتها نافذتُه، و`box` سعرُ العلبة قبلها (للرجوع).
+   *  السلّةُ التي فيها راجعٌ إكسباير كلُّها إكسباير وتُرسل بـreturn_expired (الخادمُ يختار فاتورتَها بمفتاح الزبون). */
+  xret?: { date: string; unit: "box" | "sub" | "pack"; packId?: string; box: number };
+  /** 0288: بيعٌ من دفعة راجعٍ إكسباير — `qty` باقيها بوحدة المخزن (سقفُ السطر)، و`cost` كلفةُ العلبة منها (معاينةُ الربح؛ الخادمُ
+   *  يكتبها)، و`note` ما يُرسم تحت السطر. البيعةُ تمرّ من retail_checkout_lots. */
+  lot?: { id: string; qty: number; cost: number | null; note: string };
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -527,6 +533,17 @@ let negLoad: Promise<NegMod> | null = null;
 function loadNegMod(): Promise<NegMod> {
   negLoad ??= import("@/lib/negStockApi").then((m) => (negMod = m), (e) => { negLoad = null; throw e; });
   return negLoad;
+}
+/* ---- الراجعُ الإكسباير ودفعتُه (0288) ----------------------------------------------------------------------------
+ * البابُ (expiredApi) ونصوصُه ونوافذُه (ExpiredReturn، نطاقُ xret المملوك) بـimport() كالكارتون — لا وحدةَ ثابتةً جديدة بقطعة البيع،
+ * ولا نصَّ بالنطاق الحارّ. ويُسأل الخادمُ عن القدرة مرّةً (return_lots_ready): قاعدةٌ قبل 0288 لا زرَّ ولا سؤال. */
+type XretMod = typeof import("@/lib/expiredApi") & { ui: typeof import("@/components/retail/ExpiredReturn") };
+let xretMod: XretMod | null = null;
+let xretLoad: Promise<XretMod> | null = null;
+function loadXretMod(): Promise<XretMod> {
+  xretLoad ??= Promise.all([import("@/lib/expiredApi"), import("@/components/retail/ExpiredReturn"), import("@/i18n").then((i) => i.ensureOwned("xret"))])
+    .then(([a, b]) => (xretMod = { ...a, ui: b }), (e) => { xretLoad = null; throw e; });
+  return xretLoad;
 }
 /* ---- البيعُ بالكارتون والمغلّف من المسح (0267) ----------------------------------------------------------------
  * البابُ (packSale: الرمزُ ⇒ المادّةُ ومستواها، وسؤالُ الخادم) ونصوصُه (PackSale، نطاقُ pks المملوك) بـimport() — لا وحدةَ ثابتةً
@@ -1161,7 +1178,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return unitCap({ ...l, stock: used ? Math.round((stock - used) * 1000) / 1000 : stock });
   };
   const shareCap = (l: Line): number => shareCapAt(l, l.stock);
-  const capFor = (l: Line, now = negNow()): number => (lineLifted(l, now) ? Infinity : shareCap(l));
+  /** 0288: سطرٌ من دفعة راجعٍ إكسباير لا يتجاوز باقيها — بوحدة السطر (المفردُ بعدده بالعلبة). */
+  const lotCapOf = (l: Line): number => (l.lot ? Math.floor((l.saleUnit === "sub" && l.unitsPerBox ? l.lot.qty * l.unitsPerBox : l.lot.qty) + 1e-9) : Infinity);
+  const capFor = (l: Line, now = negNow()): number => Math.min(lineLifted(l, now) ? Infinity : shareCap(l), lotCapOf(l));
   /** يعلّم السطرَ إن صارت كميتُه فوق رصيده والوضعُ يرفعه (لاصق: لا يُنزع). */
   const markLift = (l: Line, now = negNow()): Line => (!l.negLift && l.qty > shareCap(l) && lineLifted(l, now) ? { ...l, negLift: true } : l);
   /* رسائلُ الوضع: طابورٌ يقوله المالكُ الكسول حين يصل (`negSays`)، وما لم يقله خلال ثانيةٍ ونصف يُقال بنصٍّ حارّ — كلُّ رفضٍ يُقال مرّةً
@@ -1559,6 +1578,62 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
   const [retMode, setRetMode] = useState(false);
+  /* ── 0288: الراجعُ الإكسباير ودفعتُه ─────────────────────────────────────────────────────────────────────────
+   * `xretOn` = الخادمُ يعرفه (return_lots_ready) والقطعةُ وصلت. دفعاتُ الراجع الباقية تُقرأ عند الفتح وبعد كلّ بيعةٍ وإرجاع: منها يُسأل
+   * «من الإكسباير لو من الجديد؟». قراءةٌ فاشلة لا تُصدَّق «ماكو إكسباير» — يبقى آخرُ ما عُرف، والخادمُ يرفض ما تجاوز الباقي (lot_short). */
+  const [xretOn, setXretOn] = useState(false);
+  const retLotsRef = useRef(new Map<string, ProductLot[]>());
+  const refreshRetLots = useCallback(() => {
+    if (!xretMod) return;
+    void xretMod.listReturnLots().then((list) => {
+      const m = new Map<string, ProductLot[]>();
+      for (const l of list) m.set(l.product_id, [...(m.get(l.product_id) ?? []), l]);
+      retLotsRef.current = m;
+    }, () => { /* swallow-ok: يبقى آخرُ ما عُرف — والخادمُ يحكم بالبيعة (lot_short/lot_gone) */ });
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    loadXretMod().then((m) => m.returnLotsReady()).then((ok) => { if (alive) { setXretOn(ok); if (ok) refreshRetLots(); } },
+      () => { /* swallow-ok: بلا القطعة أو بقاعدةٍ قبل 0288 — لا زرَّ ولا سؤال، والشاشةُ كما كانت */ });
+    return () => { alive = false; };
+  }, [refreshRetLots]);
+  /** «من الإكسباير لو من الجديد؟» — دفعةٌ، أو null (الجديد)، أو undefined (أُلغي). */
+  const [lotAsk, setLotAsk] = useState<{ p: Product; lots: ProductLot[]; resolve: (l: ProductLot | null | undefined) => void } | null>(null);
+  const askLot = (p: Product, lots: ProductLot[]) => new Promise<ProductLot | null | undefined>((resolve) => { playTap(); setLotAsk({ p, lots, resolve }); });
+  const lotFields = (lot: ProductLot, subPer: number | null): Partial<Line> => {
+    const cost = lot.unit_cost == null ? null : Number(lot.unit_cost);
+    return {
+      lot: { id: lot.id, qty: Number(lot.qty), cost, note: xretMod ? xretMod.ui.say.lotLine(lot) : "" },
+      ...(cost != null ? { unit_cost: subPer ? Math.round((cost / subPer) * 100) / 100 : cost } : {}),
+    };
+  };
+  /** نافذةُ سطر الراجع: معرّفُ السطر المفتوح. */
+  const [xretFor, setXretFor] = useState<string | null>(null);
+  /** تثبيتُ سطر راجعٍ إكسباير: الوحدةُ (علبة، قطعة، كارتون) وسعرُها والكمية وتاريخُ انتهائه. `box` سعرُ العلبة قبل أوّل تثبيت — للرجوع. */
+  const applyXret = (id: string, v: { unit: "box" | "sub" | "pack"; packId?: string; qty: number; date: string }, p: Product | null) => {
+    setCart((c) => c.map((l) => {
+      if (l.id !== id) return l;
+      const box = l.xret?.box ?? l.unit_price;
+      const base: Line = { ...l, saleUnit: undefined, unitsPerBox: undefined, subUnitName: undefined, packId: undefined, packPer: undefined, packName: undefined };
+      if (v.unit === "sub" && p?.units_per_box) {
+        const per = Number(p.units_per_box);
+        return { ...base, qty: v.qty, saleUnit: "sub", unitsPerBox: per, subUnitName: p.sub_unit_name ?? null,
+          unit_price: p.sub_unit_price != null ? Number(p.sub_unit_price) : Math.round((box / per) * 100) / 100, xret: { date: v.date, unit: "sub", box } };
+      }
+      const k = v.unit === "pack" ? (p?.packs ?? []).find((x) => x.id === v.packId) : undefined;
+      if (k) {
+        return { ...base, qty: v.qty, saleUnit: "pack", packId: k.id, packPer: Number(k.per), packName: k.name ?? undefined,
+          unit_price: k.sell_price != null ? Number(k.sell_price) : Math.round(box * Number(k.per) * 100) / 100, xret: { date: v.date, unit: "pack", packId: k.id, box } } as Line;
+      }
+      return { ...base, qty: v.qty, unit_price: box, xret: { date: v.date, unit: "box", box } };
+    }));
+  };
+  const clearXret = (id: string) => setCart((c) => c.map((l) => {
+    if (l.id !== id || !l.xret) return l;
+    const out: Line = { ...l, unit_price: l.xret.box, qty: l.xret.unit === "box" ? l.qty : 1, saleUnit: undefined, unitsPerBox: undefined, subUnitName: undefined, packId: undefined, packPer: undefined, packName: undefined };
+    delete out.xret;
+    return out;
+  }));
   /** نسبةُ الراجع المختارة: لسطور الراجع كلّها بالسلّة وللقادمة — ومن المسودّة إن رجعت سلّةٌ فيها راجع. */
   const [retPct, setRetPct] = useState<number>(() => retPctOf(draft0?.cart?.find((l) => l.ret) ?? { ret: true }));
   const [, setRetLazyTick] = useState(0);
@@ -1818,7 +1893,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
   /** `sale`: سطرُ بيعٍ ولو كان «راجع» مشغّلاً — تبويبُ «الأدوية» يبيع دواءً لحيوانٍ دائماً
    *  (سطرُ «دواء» القديم كان موجباً مهما كان الوضع)، و«راجع» يخصّ المسحَ والكرت. */
-  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean }): number | null => {
+  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean; lot?: ProductLot }): number | null => {
     // يكمل من sellOrExplain (كلُّ إضافةٍ تمرّ منها — freshness-test)، لا من هنا مباشرةً.
     if (p.price_currency === "USD" && !(opt?.usdOk && usdRateRef.current)) { usdTap(p, opt, null, () => void sellOrExplain(p, n, null, { ...opt, usdOk: true })); return null; }
     /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
@@ -1838,7 +1913,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       // No whole box left but singles remain → start the line on the sub-unit.
       // ‏0266: والوضعُ يرفع العلبة ⇒ المسحُ علبةٌ كما مُسح (حبّةٌ بسعر حبّة عن علبةٍ ممسوحة خطأٌ صامت).
       // و0267: مسحُ باركود المغلّف يبدأ السطرَ مغلّفاً (unit: "sub") — بأيّ رصيد.
-      const startSub = hasSub && (opt?.unit === "sub" || (Math.floor(p.stock) < 1 && !liftFor(p, null)));
+      // 0288: ومن دفعة إكسباير باقيها أقلُّ من علبة ⇒ بالمفرد.
+      const startSub = hasSub && (opt?.unit === "sub" || (Math.floor(p.stock) < 1 && !liftFor(p, null)) || (!!opt?.lot && opt.lot.qty < 1));
       // كلفةُ الجهاز كما كانت — لا تُكتب إلا والحسابُ لم يصل (productLineCost، 0255).
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
       return {
@@ -1857,6 +1933,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         saleUnit: startSub ? "sub" : "box", priceManual: false,
         // مادّةُ «الدولار وحده» (usdIntoCart): سطرُ دولارٍ بسعرها بالدولار وسعر صرف اليوم — يُجمع بصندوق الدولار لا بالدينار.
         ...(p.price_currency === "USD" && usdRateRef.current ? { usd: { c: usdOnlyCents(p, null) ?? 0, ...usdRateRef.current } } : {}),
+        // 0288: من دفعة راجعٍ إكسباير — كلفتُها كلفةُ الدفعة (المعاينة؛ الخادمُ يكتبها) وسقفُها باقيها.
+        ...(opt?.lot ? lotFields(opt.lot, startSub && unitsPerBox ? unitsPerBox : null) : {}),
       };
     }, n, { stock: p.pooled ? null : p.stock });
   };
@@ -1873,7 +1951,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const device = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
       const unit_cost = productLineCost(products.find((p) => p.id === l.product_id), toSub ? (l.unitsPerBox as number) : null, device);
       /* 0282: سطرُ الدولار يرجع للدينار بوحدته الجديدة — سعرُ المستوى بالدولار يُختار من جديد بـ«$» (لا تخمينَ لسعرٍ لم يُره الكاشير). */
-      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost, priceManual: false, usd: undefined };
+      const lotCost = l.lot?.cost != null ? (toSub && l.unitsPerBox ? Math.round((l.lot.cost / l.unitsPerBox) * 100) / 100 : l.lot.cost) : null;
+      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost: lotCost ?? unit_cost, priceManual: false, usd: undefined };
       const cap = capFor(next);
       return markLift({ ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) });
     }));
@@ -2038,12 +2117,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     action: onRefresh ? { label: t("retail.refreshList", "حدّث القائمة"), onClick: onRefresh } : undefined,
   });
   /** `lineId`: السطرُ الذي أُضيف إليه فعلاً — الصفُّ الطازج قد يكون غيرَ ما ضُغط (جوابُ الخادم برمزه). */
-  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean; lotAsked?: boolean; lot?: ProductLot }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
     /* (مسارُ الرفّ المشترك داخلها: كلُّ إضافةِ مادّةٍ تمرّ من sellOrExplain — freshness-test.) */
     /** 0267: سطرُ العلبة (أو المفرد) لمادّةٍ لها سطرٌ آخر بالسلّة (كارتونُها) — الرفُّ مشترك. الحكمُ المحلّيّ والطازج بما يبقى بعد
      *  سطورها الأخرى (لا برصيد الصفّ كلِّه — كان يضيف علبةً ورفُّها كلُّه بالكارتون، بلا سؤال)، والرفضُ يقول الباقي. مسارٌ مستقلّ:
      *  سلّةٌ بلا سطرين للمادّة (كلُّ سلّةٍ قبل الكارتون) لا تمرّ منه أبداً. */
-    const shelfAdd = async (product: Product, n: number, opt?: { sale?: boolean; unit?: "sub" }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+    const shelfAdd = async (product: Product, n: number, opt?: { sale?: boolean; unit?: "sub"; lot?: ProductLot }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
       const id = `p:${product.id}`;
       const room = (row: Product): number => {
         const line = cartRef.current.find((l) => l.id === id);
@@ -2078,6 +2157,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     if (product.farm_id) { addProduct(product, n, opt); return { added: null, refused: true }; }
     if (product.price_currency === "USD" && !(opt?.usdOk && usdRateRef.current)) return { added: null, refused: usdTap(product, opt, null, () => void sellOrExplain(product, n, code, { ...opt, usdOk: true })) };
     const ret = retMode && !opt?.sale;
+    /* 0288: للمادّة دفعةُ راجعٍ إكسباير باقية وأوّلُ سطرٍ لها بالسلّة ⇒ «من الإكسباير لو من الجديد؟». الجوابُ يُعلَّم على السطر (lot):
+     * كلفتُه كلفةُ الدفعة وسقفُه باقيها، والبيعةُ تمرّ من retail_checkout_lots. إلغاءُ السؤال لا يضيف شيئاً. */
+    if (!ret && !opt?.lotAsked && xretOn && xretMod) {
+      const lots = (retLotsRef.current.get(product.id) ?? []).filter((l) => l.qty > 0);
+      if (lots.length && !cartRef.current.some((l) => l.kind === "product" && !l.ret && l.product_id === product.id)) {
+        const pick = await askLot(product, lots);
+        if (pick === undefined) return { added: null, refused: true };
+        return sellOrExplain(product, n, code, { ...opt, lotAsked: true, ...(pick ? { lot: pick } : {}) });
+      }
+    }
     const lineOf = (x: Product) => `${ret ? "r" : "p"}:${x.id}`;
     /* يُسأل الخادمُ حين ترفض القائمةُ الإضافةَ أو تقصّها — صفرٌ بالصفّ، **أو سطرٌ بلغ
      * سقفه**، أو مضاعِفٌ أكبرُ من الباقي. «المتوفّر ١ فقط وكلُّه بالسلّة» حكمُ صفرٍ
@@ -3422,11 +3511,45 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return saleRefRef.current;
   };
 
+  /* 0288: الراجعُ الإكسباير — السلّةُ كلُّها إكسباير (لا تُخلط ببيعٍ ولا براجعٍ عاديّ: مالُها يذهب لدَين الزبون أوّلاً وبضاعتُها دفعةٌ
+   * بتاريخها). الخادمُ يختار فاتورةَ المادّة بمفتاح الزبون، وينزّل من دَينها، والزايدُ يسدّد أقدمَ دَينه، والباقي نقد؛ و«تمّ» تقول أين ذهب. */
+  const doExpiredReturn = async () => {
+    const m = xretMod;
+    if (!m || busy) return;
+    if (cart.some((l) => !l.ret || !l.xret)) { playWarning(); toast.error(m.ui.say.mixed()); return; }
+    if (saleDay) { playWarning(); toast.error(saleDateMessage("return", (k, d) => t(k, d))); return; }
+    setBusy(true);
+    try {
+      const cust = splitCustomerField(name);
+      setPaying(true);
+      const res = await withTimeout(m.returnExpired(cart.map((l) => ({
+        product_id: l.product_id as string, unit: (l.xret as NonNullable<Line["xret"]>).unit,
+        pack_id: l.xret?.unit === "pack" ? l.packId ?? null : null, qty: l.qty, pct: retPctOf(l),
+        expiry_date: (l.xret as NonNullable<Line["xret"]>).date, unit_price: l.unit_price,
+      })), {
+        client_ref: ensureRef(), customer_name: cust.name || null, customer_phone: checkoutPhone(phone, cust.phone, getDialCode()),
+        method: payments[0]?.method ?? "cash", note: saleNotes.trim() || null,
+      }), 15000).finally(() => setPaying(false));
+      playSuccess();
+      toast.success(m.ui.say.done(res));
+      reset();
+      refreshRetLots();
+      onSold();
+    } catch (e) {
+      playWarning();
+      const unsure = isNetworkError(e) || isTimeoutError(e);
+      toast.error(unsure ? t("retail.retRetrySafe", "ما وصل الإرجاع — السلّة محفوظة، جرّب مرّة ثانية. ما راح ينسجّل مرّتين")
+        : (m.ui.say.err(e, m.expiredErrorCode(e)) ?? t("retail.retFailed", "ما انسجّل الإرجاع")),
+        unsure ? (e instanceof Error ? e.message : undefined) : undefined);
+    } finally { setBusy(false); }
+  };
+
   const doReturn = async () => {
     if (!pureReturn || busy) return;
     if (returnValue <= 0) { playWarning(); return; }
     // الإرجاعُ الخالص سحبٌ يُختم اليوم (0132) — لا يُؤرَّخ، فيومٌ مختارٌ يُقال لا يُتجاهل بصمت.
     if (saleDay) { playWarning(); toast.error(saleDateMessage("return", (k, d) => t(k, d))); return; }
+    if (cart.some((l) => l.xret)) { void doExpiredReturn(); return; }
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -3602,6 +3725,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     // الحرّاسُ هنا لا على الزرّ وحده: F2 كان يصل هنا مباشرةً فيسجّل إرجاعاً خالصاً
     // «بيعاً» بمجموعٍ صفر — البضاعة ترجع للمخزن والنقدُ يخرج للزبون بلا قيد.
     if (pureReturn) { void doReturn(); return; }
+    // 0288: الراجعُ الإكسباير لا يُخلط ببيع (مالُه لدَين الزبون أوّلاً وبضاعتُه دفعةٌ بتاريخها) — عمليةٌ وحدها.
+    if (cart.some((l) => l.xret)) { playWarning(); toast.error(xretMod ? xretMod.ui.say.mixed() : t("errors.network")); return; }
     if (netNegative) {
       playWarning();
       toast.error(t("retail.retNegative"));
@@ -3720,6 +3845,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       for (const l of exp) expiredAckRef.current.names.set(l.id, l.name);
     }
     setBusy(true);
+    /** 0288: سطرٌ من دفعة راجعٍ إكسباير بالسلّة ⇒ البيعةُ تمرّ من retail_checkout_lots (بمجموعين أو بجرعاتٍ أيضاً). */
+    const lotSale = cart.some((l) => !!l.lot && !l.ret && !isUsdLine(l));
     try {
       const items: CheckoutItem[] = cart.filter((l) => !isUsdLine(l)).map((l) => {
         // Sub-unit sale → deduct the precise box fraction (e.g. 5 of 20 pills = 0.25 box); a carton (0267) → its
@@ -3750,6 +3877,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             product_id: l.dose.productId, qty: l.dose.qty, unit_price: Math.round((lineUnit(l) / l.dose.qty) * 100) / 100,
             stock_qty: l.dose.productId ? (l.dose.stockQty ?? 0) : 0, dose_charge: l.dose.charge,
           } : {}),
+          // 0288: من دفعة راجعٍ إكسباير — retail_checkout_lots يكلّفه بكلفتها وينقصها بالمعاملة نفسِها.
+          ...(l.lot && !l.ret ? { lot_id: l.lot.id } : {}),
         };
       });
       // Delivery fee kept by the clinic → a real service line on the invoice, so
@@ -3815,15 +3944,22 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             ...(l.saleUnit === "sub" ? { sub: true } : {}),
             ...(isPackLine(l) ? { pack_id: l.packId as string, pack_per: l.packPer as number } : {}),
           }));
-          const res = await withTimeout(import("@/lib/dualSale").then((m) => m.mixedCheckout(items, usdItems, {
-            ...meta, fx_rate_id: usdRids[0], discount_usd: (usdDiscC / 100).toFixed(2), paid_usd: (usdPaidC / 100).toFixed(2), usd_method: usdMethod,
-          })), 12000);
+          const mmeta = { ...meta, fx_rate_id: usdRids[0], discount_usd: (usdDiscC / 100).toFixed(2), paid_usd: (usdPaidC / 100).toFixed(2), usd_method: usdMethod };
+          // 0288: وفيها سطرٌ من دفعة إكسباير ⇒ البابُ نفسُه يبيع بمجموعين ثمّ يكلّف سطرَ الدفعة.
+          const res = await withTimeout(lotSale && xretMod
+            ? xretMod.checkoutLots(items, mmeta, usdItems, items.map((i) => i.dose_charge).filter((x): x is string => !!x))
+            : import("@/lib/dualSale").then((m) => m.mixedCheckout(items, usdItems, mmeta)), 12000);
           const first = res.iqd ?? res.usd;
           if (!first) throw Object.assign(new Error("mixed_no_usd"), { code: "P0001" });
           invoice = first;
           usdInvoice = res.iqd ? res.usd : null;
         } else {
-          invoice = await withTimeout(items.some((i) => i.dose_charge)
+          invoice = await withTimeout(lotSale && xretMod
+            ? xretMod.checkoutLots(items, meta, null, items.map((i) => i.dose_charge).filter((x): x is string => !!x)).then((r) => {
+              if (!r.iqd) throw Object.assign(new Error("lot_line"), { code: "P0001" });
+              return r.iqd;
+            })
+            : items.some((i) => i.dose_charge)
             ? loadDoseMod().then((m) => m.checkoutWithDoses(items, meta))
             : repo.retailCheckout(items, meta), 12000);
           /* إعادةٌ (لا محاولةٌ أولى) بلا سطر دولار: محاولةٌ قبلها ربما كانت بمجموعين — فاتورةُ الدولار التي ثبتت معها تُعرض وتُطبع. */
@@ -3847,6 +3983,14 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
           setPaying(false);
           throw Object.assign(new Error("usd_rate_changed"), { code: "P0001", hint: t("retail.dual.rateMoved") });
+        }
+        /* 0288: دفعةُ الإكسباير بيع منها أو انحذفت من جهازٍ آخر — الدفعاتُ تُقرأ من جديد والجملةُ تقولها (لا رمزٌ خامّ). */
+        const lotCode = lotSale && xretMod ? xretMod.expiredErrorCode(e) : null;
+        if (lotCode && xretMod) {
+          refreshRetLots();
+          if (shouldReleaseRef(freshRef, e)) { const r = saleRefRef.current; saleRefRef.current = null; setSaleRefSaved(null); if (r) releaseSavedRef(draftScope, r); }
+          setPaying(false);
+          throw Object.assign(new Error(lotCode), { code: "P0001", hint: xretMod.ui.say.err(e, lotCode) ?? undefined });
         }
         /* جرعةٌ انحسبت أو انلغت من جهازٍ آخر: سطورُها تُشال (المعلَّقُ من جديد)، والتلميحُ يقوله؛ والكاشيرُ يكمل بما بقي. */
         if (doseMod?.isDoseStale(e)) {
@@ -4023,6 +4167,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         }
       } catch { /* مزامنة إضافية — لا تعطل البيع أبداً */ }
       onSold();
+      if (lotSale) refreshRetLots();   // 0288: الدفعةُ نقصت — السؤالُ القادم بباقيها
       // Mirror medication/vaccine lines into each known patient's record —
       // administered dose, scheduled booster (→ reminders), treatment-sheet rows —
       // exactly as if entered from the record. One call per pet on the bill.
@@ -4969,6 +5114,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
                         {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}{retPctOf(l) < 100 ? ` ${retPctOf(l)}%` : ""}</span>}
+
                         {l.ret && l.retPrior && (
                           /* مرتجعٌ لمادةٍ رُفع سعرُها (0226): افتراضُه سعرُ ما قبل الرفع، وضغطةٌ لمن اشترى بعده. */
                           <button type="button" data-retprior onClick={() => { playTap(); const rp = l.retPrior!; setCart((c) => c.map((x) => (x.id === l.id ? { ...x, unit_price: x.unit_price === rp.o ? rp.list : rp.o } : x))); }}
@@ -5019,7 +5165,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                           </button>
                         </div>
                       )}
+                      {/* 0288: «إكسباير» على سطر الراجع — تحت الاسم (بسطر الاسم كان يقصّه مع شارة «راجع»): يفتح نافذتَه (شوكت خلص، علبة/قطعة/كارتون، كم). */}
+                      {l.ret && xretOn && xretMod && l.kind === "product" && !l.byWeight && !!l.product_id && (
+                        <div className="mt-0.5 flex items-center gap-1">
+                          <button type="button" data-xretchip={l.id} onClick={() => { playTap(); setXretFor(l.id); }}
+                            className={cn("chip shrink-0 text-2xs font-black", l.xret ? "bg-danger-500 text-white" : "border border-danger-300 bg-surface-1 text-danger-700 dark:text-danger-300")}>
+                            {l.xret ? xretMod.ui.say.chip(l.xret.date) : xretMod.ui.say.btn()}
+                          </button>
+                        </div>
+                      )}
                       {l.dose && <p className="mt-0.5 truncate text-2xs text-ink-subtle" data-dosenote={l.id}>{l.dose.note}</p>}
+                      {l.lot && <p className="mt-0.5 truncate text-2xs font-bold text-danger-700 dark:text-danger-300" data-lotnote={l.id}>{l.lot.note}</p>}
                       {l.med && (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle">
                           {l.med.kind === "vaccination"
@@ -5052,6 +5208,8 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                             ? t("retail.perKgShort", "/كغ")
                             : isPackLine(l)
                             ? `/ ${l.packName ?? ""}${l.packNote ? ` · ${l.packNote}` : ""}`
+                            : l.ret && l.xret?.unit === "sub"
+                            ? `/ ${l.subUnitName || t("retail.unitSingle", "مفرد")}`
                             : l.kind === "product" && l.hasSubUnit
                             ? `/ ${l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle", "مفرد")) : t("retail.unitBox", "علبة")}`
                             : t("pos.each", "each")}
@@ -5570,6 +5728,25 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               </Suspense>
             </LoadBoundary>
           )}
+          {/* 0288: نافذةُ سطر الراجع الإكسباير، و«من الإكسباير لو من الجديد؟» — القطعةُ وصلت قبل أن يُعرض زرُّها أو يُسأل. */}
+          {xretFor && xretMod && (() => {
+            const l = cart.find((x) => x.id === xretFor);
+            if (!l) return null;
+            const p = products.find((x) => x.id === l.product_id) ?? null;
+            const Dlg = xretMod.ui.XretDialog;
+            return (
+              <Dlg open product={p} name={l.name} pct={retPctOf(l)} hasCustomer={!!name.trim() || !!phone.trim()}
+                value={l.xret ? { unit: l.xret.unit, packId: l.xret.packId, qty: l.qty, date: l.xret.date } : { unit: "box", qty: l.qty, date: "" }}
+                onClose={() => setXretFor(null)}
+                onSave={(v) => { playTap(); applyXret(l.id, v, p); setXretFor(null); }}
+                onClear={l.xret ? () => { playTap(); clearXret(l.id); setXretFor(null); } : undefined} />
+            );
+          })()}
+          {lotAsk && xretMod && (() => {
+            const Pick = xretMod.ui.LotPickDialog;
+            const done = (x: ProductLot | null | undefined) => { const r = lotAsk.resolve; setLotAsk(null); r(x); };
+            return <Pick open product={lotAsk.p} lots={lotAsk.lots} onPick={(x) => done(x)} onCancel={() => done(undefined)} />;
+          })()}
           {rateAsk && (UsdRateLazy ??= loadUsdRate()) && (
             <LoadBoundary scope="usd-rate" onRetry={() => { UsdRateLazy = loadUsdRate(); setMxLazyTick((n) => n + 1); }}>
               <Suspense fallback={null}>
@@ -5614,12 +5791,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
                 </span>
                 <span className="font-display text-xl font-black tabular-nums text-warn-800 dark:text-warn-200">{money(returnValue)}</span>
               </div>
-              <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
-                {t("retail.pureReturnWhy", "البضاعة ترجع للمخزن، والمبلغ ينسجّل بالسحوبات باسم كل صنف ووقته.")}
-              </p>
+              {!cart.some((l) => l.xret) && (
+                <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
+                  {t("retail.pureReturnWhy", "البضاعة ترجع للمخزن، والمبلغ ينسجّل بالسحوبات باسم كل صنف ووقته.")}
+                </p>
+              )}
               {/* ما يبقى للعيادة بنسبةٍ أقلّ من ١٠٠، و«ماخذها بالدين؟» — هذا المسارُ يُخرج من الدرج ولا ينقص ديناً:
                   مكانُه «المرتجع» على فاتورته (يُفتح بالبحث عنه، والسلّةُ تُفرغ فلا يُرجَع الشيءُ نفسُه مرّتين). */}
-              {(RetNoteLazy ??= loadRetNote()) && (
+              {cart.some((l) => l.xret) && xretMod ? (() => { const N = xretMod.ui.XretNote; const c = splitCustomerField(name); return <N customer={c.name || phone.trim() || c.phone || null} />; })()
+              : (RetNoteLazy ??= loadRetNote()) && (
                 <LoadBoundary scope="ret-note" onRetry={() => { RetNoteLazy = loadRetNote(); setRetLazyTick((n) => n + 1); }}>
                   <Suspense fallback={null}>
                     <RetNoteLazy pct={cartRetPct} full={round2(retFull)} back={returnValue}

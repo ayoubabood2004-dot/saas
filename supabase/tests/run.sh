@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0288_expired_returns.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -13493,6 +13493,182 @@ $P -c "select set_config('doctorvet.usd_door', 'on', false);
        delete from products where clinic_id = '$NC';
        delete from clinic_fx_rates where clinic_id = '$NC';
        select set_config('doctorvet.usd_door', 'off', false);" >/dev/null
+
+# ── 0288: الراجعُ الإكسباير — دفعةٌ بزبونها وتاريخها وكلفتها، ومن دَين الفاتورة أوّلاً، والبيعُ منها بكلفتها (قرارُ المالك ٢٣/١١) ──────
+# ZC عيادةٌ وصاحبُها (مدير)، ZV طبيبُها، ZO عيادةٌ أخرى. «دواء إكسباير» يُباع بـ٢٠٬٠٠٠ وكلفتُه ١٤٬٠٠٠ (علبةٌ = ١٠ شرائط، والكارتون ٥ علب).
+# الكتابةُ بطلبٍ والقراءةُ بآخر (درسُ 0257).
+echo "▸ 0288: الراجعُ الإكسباير ينزّل من دَين فاتورته، ودفعتُه بكلفة ما رجع للزبون فبيعُها لا يُظهر خسارة"
+out=$($P -f "$MIG/0288_expired_returns.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما نزلت"; fail=1; }
+ZX=c2880000-0000-4000-8000-0000000000
+ZC=${ZX}c1
+ZV=${ZX}c2
+ZO=${ZX}c3
+ZA=${ZX}a1
+ZB=${ZX}a2
+zinv() { echo "(select id from invoices where clinic_id = '$ZC' and client_ref = '$1')"; }
+zsale() { # zsale المرجع المادّة الكمية السعر المدفوع [الزبون] [الهاتف]
+  echo "select (retail_checkout('[{\"product_id\":\"$2\",\"name\":\"z\",\"qty\":$3,\"unit_price\":$4,\"unit_cost\":0,\"stock_qty\":$3,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+          jsonb_build_object('client_ref', '$1', 'payment_method', 'cash', 'amount_paid', $5, 'final_total', $3 * $4,
+                             'customer_name', nullif('${6:-}', ''), 'customer_phone', nullif('${7:-}', ''))))::text"; }
+zret() { # zret المرجع السطور [الزبون] [الهاتف] — يرجع الدَّينَ والنقدَ بلا كسور
+  echo "select (r->>'debt')::numeric::numeric(20,0)::text||'/'||(r->>'cash')::numeric::numeric(20,0)::text
+          from (select return_expired('$2'::jsonb, jsonb_build_object('client_ref', '$1', 'customer_name', nullif('${3:-}', ''),
+                                                                     'customer_phone', nullif('${4:-}', ''))) as r) s"; }
+ZLOTS="(select string_agg(qty::numeric(20,1)::text, ',' order by received_at, id) from product_lots where product_id = '$ZA')"
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$ZC'),('$ZV'),('$ZO') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$ZV','$ZC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code) values ('$ZC','+964') on conflict (clinic_id) do update set dial_code = '+964';
+       insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock,
+                            has_sub_unit, sub_unit_name, units_per_box, packs, pooled) values
+         ('$ZA', '$ZC', 'دواء إكسباير', 'EXP-1', 'IQD', 20000, 14000, 14000, 20, true, 'شريط', 10,
+          '[{\"id\":\"k1\",\"name\":\"كارتون\",\"per\":5,\"codes\":[\"EXP-K1\"]}]', false),
+         ('$ZB', '$ZC', 'دينار ثاني', 'EXP-2', 'IQD', 15000, 10000, 10000, 10, false, null, null, null, false),
+         ('${ZX}a3', '$ZC', 'بالدولار', 'EXP-3', 'USD', 0, 0, null, 10, false, null, null, null, false),
+         ('${ZX}a4', '$ZC', 'مجمَّعة', 'EXP-4', 'IQD', 1000, 500, 500, 0, false, null, null, null, true),
+         ('${ZX}e1', '$ZO', 'غيرها', 'EXP-O', 'IQD', 1000, 500, 500, 3, false, null, null, null, false)
+         on conflict (id) do nothing;" >/dev/null
+chk "البيعة: «أبو علي» يأخذ علبتين بالدَّين" \
+    "select (length($(rv $ZV "$(zsale n288-s1 $ZA 2 20000 0 'أبو علي' 07701234567)")) > 0)::text" "true"
+chk "  (يُقرأ بعدها — درسُ 0257) ٤٠٬٠٠٠ بكلفة ٢٨٬٠٠٠ وربح ١٢٬٠٠٠" \
+    "select total::numeric(20,0)::text||'/'||cost_total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text from invoices where id = $(zinv n288-s1)" \
+    "40000/28000/12000"
+chk "راجعٌ إكسباير علبةٌ بـ٥٠٪: ينزل ١٠٬٠٠٠ من دَين فاتورتها، ولا نقد" \
+    "select $(rv $ZV "$(zret n288-r1 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-10-01\"}]" 'أبو علي' 07701234567)")" \
+    "10000/0"
+chk "  (يُقرأ بعدها) الفاتورةُ ٣٠٬٠٠٠ وربحُها ١٢٬٠٠٠ كما كان — العلبةُ نقصت وسطرُ الأثر ١٠٬٠٠٠ بكلفة ٤٬٠٠٠؛ ولا مدفوع" \
+    "select total::numeric(20,0)::text||'/'||cost_total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text
+            ||'|'||(select string_agg(qty::numeric(20,1)::text||':'||unit_price::numeric(20,0)::text||':'||unit_cost::numeric(20,0)::text||':'||(product_id is null)::text, ',' order by product_id nulls last)
+                      from invoice_items where invoice_id = i.id)
+       from invoices i where id = $(zinv n288-s1)" \
+    "30000/18000/12000/0|1.0:20000:14000:false,1.0:10000:4000:true"
+chk "  والدفعةُ: علبةٌ «راجع» من «أبو علي» بإكسبايرها وبـ٥٠٪ وكلفتُها ١٠٬٠٠٠ ومربوطةٌ بالفاتورة؛ والرصيدُ ١٩ = مجموعُ الدفعات" \
+    "select source||'/'||qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text||'/'||return_pct::text||'/'||return_from||'/'||expiry_date::text
+            ||'/'||(return_invoice = $(zinv n288-s1))::text||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')
+            ||'|'||(select sum(qty)::numeric(20,1)::text from product_lots where product_id = '$ZA')
+       from product_lots where product_id = '$ZA' and source = 'return'" \
+    "return/1.0/10000/50/أبوعلي/2026-10-01/true|19.0|19.0"
+chk "والإعادةُ بالمرجع نفسِه ترجع الجوابَ الأوّل بلا راجعٍ ثانٍ" \
+    "select $(rv $ZV "$(zret n288-r1 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-10-01\"}]" 'أبو علي' 07701234567)")" "10000/0"
+chk "  (يُقرأ بعدها) دفعةُ راجعٍ واحدة والرصيدُ ١٩ والفاتورةُ ٣٠٬٠٠٠" \
+    "select (select count(*) from product_lots where product_id = '$ZA' and source = 'return')::text||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')
+            ||'|'||(select total::numeric(20,0)::text from invoices where id = $(zinv n288-s1))" "1|19.0|30000"
+chk "البيعُ العاديّ (علبةٌ بلا زبون)" "select (length($(rv $ZV "$(zsale n288-s2 $ZA 1 20000 20000)")) > 0)::text" "true"
+chk "  (يُقرأ بعدها) لا يأخذ من دفعة الراجع: الافتتاحيةُ ١٨ ⇒ ١٧ والراجعُ ١ باقٍ" "select $ZLOTS" "17.0,1.0"
+ZL1="(select id from product_lots where product_id = '$ZA' and source = 'return' order by received_at, id limit 1)"
+chk "والبيعُ من الدفعة (retail_checkout_lots) بـ١٢٬٠٠٠: كلفتُه ١٠٬٠٠٠ من الدفعة لا ١٤٬٠٠٠ ⇒ ربحٌ ٢٬٠٠٠ لا خسارة" \
+    "select ((r->'iqd'->>'cost_total')::numeric::numeric(20,0)::text||'/'||(r->'iqd'->>'profit')::numeric::numeric(20,0)::text)
+       from (select $(rv $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 1, 'unit_price', 12000,
+               'unit_cost', 0, 'stock_qty', 1, 'unit_label', null, 'service_id', null, 'lot_id', $ZL1)),
+               jsonb_build_object('client_ref', 'n288-s3', 'payment_method', 'cash', 'amount_paid', 12000, 'final_total', 12000))::text")::jsonb as r) s" \
+    "10000/2000"
+chk "  (يُقرأ بعدها) سطرُ البيعة نفسُه بكلفة الدفعة، وكلفةُ الفاتورة = مجموعُ سطورها" \
+    "select (select string_agg(unit_cost::numeric(20,0)::text, ',') from invoice_items where invoice_id = i.id)||'|'||(cost_total = (select sum(round(qty * unit_cost, 2)) from invoice_items where invoice_id = i.id))::text
+       from invoices i where id = $(zinv n288-s3)" "10000|true"
+chk "  (يُقرأ بعدها) الدفعةُ صفر والافتتاحيةُ ١٧ كما هي والرصيدُ ١٧" \
+    "select $ZLOTS||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')" "17.0,0.0|17.0"
+chk "  والإعادةُ بالمرجع ترجع البيعةَ كما ثبتت بلا نقصٍ ثانٍ" \
+    "select ($(rv $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 1, 'unit_price', 12000,
+               'unit_cost', 0, 'stock_qty', 1, 'unit_label', null, 'service_id', null, 'lot_id', $ZL1)),
+               jsonb_build_object('client_ref', 'n288-s3', 'payment_method', 'cash', 'amount_paid', 12000, 'final_total', 12000))->'iqd'->>'cost_total'")::numeric)::numeric(20,0)::text" "10000"
+chk "  (يُقرأ بعدها) فاتورةٌ واحدةٌ بالمرجع والدفعاتُ كما هي" \
+    "select (select count(*) from invoices where clinic_id = '$ZC' and client_ref = 'n288-s3')::text||'|'||$ZLOTS" "1|17.0,0.0"
+chk "راجعٌ بالقطعة: ٥ شرائط (نصف علبة) بـ١٠٠٪ من فاتورة الدَّين نفسِها ⇒ الدَّينُ ينزل ١٠٬٠٠٠" \
+    "select $(rv $ZV "$(zret n288-r2 "[{\"product_id\":\"$ZA\",\"unit\":\"sub\",\"qty\":5,\"pct\":100,\"expiry_date\":\"2026-09-15\"}]" 'أبو علي' 07701234567)")" \
+    "10000/0"
+chk "  (يُقرأ بعدها) الفاتورةُ ٢٠٬٠٠٠ وربحُها ٩٬٠٠٠ (نصفُ العلبة رجع بربحه كلِّه) ولا سطرَ أثرٍ لراجعٍ كامل؛ والدفعةُ نصفُ علبةٍ بكلفة ١٤٬٠٠٠ للعلبة" \
+    "select total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text||'/'||(select count(*) from invoice_items where invoice_id = i.id)::text
+            ||'|'||(select qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text from product_lots where product_id = '$ZA' and source = 'return' and return_pct = 100)
+       from invoices i where id = $(zinv n288-s1)" "20000/9000/2|0.5/14000"
+chk "كارتونٌ (٥ علب) بـ٥٠٪ من فاتورةٍ مدفوعة لـ«أم سارة» بلا دَين ⇒ نقدٌ ٥٠٬٠٠٠ والربحُ ٣٦٬٠٠٠ كما كان" \
+    "select (length($(rv $ZV "$(zsale n288-s5 $ZA 6 20000 120000 'أم سارة' 07709999999)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r3 "[{\"product_id\":\"$ZA\",\"unit\":\"pack\",\"pack_id\":\"k1\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-08-01\"}]" 'أم سارة' 07709999999)")" \
+    "true|0/50000"
+chk "  (يُقرأ بعدها) الفاتورةُ ٧٠٬٠٠٠ ربحُها ٣٦٬٠٠٠ والمدفوعُ ٧٠٬٠٠٠ بساقٍ سالبة ٥٠٬٠٠٠؛ والدفعةُ ٥ علب بكلفة ١٠٬٠٠٠" \
+    "select total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text
+            ||'/'||(select sum((e->>'amount')::numeric) filter (where (e->>'amount')::numeric < 0)::numeric(20,0)::text from jsonb_array_elements(i.payment_details) e)
+            ||'|'||(select qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text from product_lots where product_id = '$ZA' and source = 'return' and return_from = 'أم سارة')
+       from invoices i where id = $(zinv n288-s5)" "70000/36000/70000/-50000|5.0/10000"
+chk "علبةٌ بـ١٠٠٪ من فاتورةٍ مدفوعة و«أبو علي» عليه دَين بغيرها ⇒ ما يُعاد له يسدّد أقدمَ دَينه (٢٠٬٠٠٠) ولا نقد" \
+    "select (length($(rv $ZV "$(zsale n288-s6 $ZA 1 20000 20000 'أبو علي' 07701234567)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r4 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-07-01\"}]" 'أبو علي' 07701234567)")" \
+    "true|20000/0"
+chk "  (يُقرأ بعدها) فاتورتُها صفرٌ بسطر أثرٍ وحده (لا فاتورةَ بلا أسطر) ومدفوعُها صفر، وفاتورةُ الدَّين القديمة مسدَّدة" \
+    "select (select total::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text||'/'||(select count(*) from invoice_items where invoice_id = i.id)::text
+               from invoices i where id = $(zinv n288-s6))
+            ||'|'||(select (total - amount_paid)::numeric(20,0)::text from invoices where id = $(zinv n288-s1))" "0/0/1|0"
+chk "زبونٌ عابر (بلا اسم): نقدٌ ٧٬٥٠٠ بلا دَين" \
+    "select $(rv $ZV "$(zret n288-r5 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-06-01\",\"unit_price\":15000}]")")" "0/7500"
+chk "  (يُقرأ بعدها) سحبُ «مرتجع» بقيمة الراجع، ودفعةٌ بكلفة min(القيمة، كلفة المخزن)" \
+    "select (select amount::numeric(20,0)::text||'/'||category from expenses where clinic_id = '$ZC' order by spent_at desc, id desc limit 1)
+            ||'|'||(select unit_cost::numeric(20,0)::text from product_lots where product_id = '$ZB' and source = 'return')" \
+    "7500/مرتجع|7500"
+chk "زبونٌ عليه دَينٌ بمادّةٍ أخرى ولا فاتورةَ فيها هذه: السحبُ ٢٠٬٠٠٠ يسدّد دَينَه ١٥٬٠٠٠ والباقي ٥٬٠٠٠ نقد" \
+    "select (length($(rv $ZV "$(zsale n288-s7 $ZB 1 15000 0 'زبون الدين' 07705555555)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r6 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-06-01\",\"unit_price\":20000}]" 'زبون الدين' 07705555555)")" \
+    "true|15000/5000"
+chk "  (يُقرأ بعدها) فاتورةُ دَينه مسدَّدة، والسحبُ ٢٠٬٠٠٠" \
+    "select (select (total - amount_paid)::numeric(20,0)::text from invoices where id = $(zinv n288-s7))
+            ||'|'||(select amount::numeric(20,0)::text from expenses where clinic_id = '$ZC' and description like '%زبون الدين%')" "0|20000"
+chk "  والرصيدُ = مجموعُ الدفعات بعد كلّ ذلك (١٧٫٥ للأولى، ١٠ للثانية)" \
+    "select (select stock::numeric(20,1)::text||'='||(select sum(qty) from product_lots where product_id = p.id)::numeric(20,1)::text from products p where id = '$ZA')
+            ||'|'||(select stock::numeric(20,1)::text||'='||(select sum(qty) from product_lots where product_id = p.id)::numeric(20,1)::text from products p where id = '$ZB')" \
+    "17.5=17.5|10.0=10.0"
+# «أبو حسن» اشترى علبةً بالدَّين ثمّ علبةً مدفوعة (أحدث): الراجعُ يأخذ فاتورةَ الدَّين وإن كانت أقدم — المدفوعةُ لا تُمسّ.
+chk "فاتورتان فيهما المادّة: ما عليها دَينٌ أوّلاً ولو أقدم" \
+    "select (length($(rv $ZV "$(zsale n288-h1 $ZB 1 15000 0 'أبو حسن' 07702222222)")) > 0)::text
+            ||'|'||(length($(rv $ZV "$(zsale n288-h2 $ZB 1 15000 15000 'أبو حسن' 07702222222)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r7 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-06-01\"}]" 'أبو حسن' 07702222222)")" \
+    "true|true|15000/0"
+chk "  (يُقرأ بعدها) فاتورةُ الدَّين صارت صفراً والمدفوعةُ كما هي ١٥٬٠٠٠" \
+    "select (select total::numeric(20,0)::text from invoices where id = $(zinv n288-h1))||'|'||(select total::numeric(20,0)::text from invoices where id = $(zinv n288-h2))" "0|15000"
+# دفعةُ راجعٍ تاريخُها لم يفُت (والافتتاحيةُ بلا تاريخ — تأتي بعدها بترتيب الانتهاء): مرتجعٌ عاديّ بعدها يزيد الافتتاحيةَ لا دفعةَ الراجع.
+ZFUT=$(date -d '+90 days' +%F)
+chk "دفعةُ راجعٍ بتاريخٍ قادم ($ZFUT)، ثمّ مرتجعٌ عاديّ (retail_return) لعلبةٍ من المادّة نفسِها" \
+    "select $(rv $ZV "$(zret n288-r8 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"$ZFUT\",\"unit_price\":15000}]")")
+            ||'|'||(length($(rv $ZV "select retail_return('[{\"product_id\":\"$ZB\",\"name\":\"z\",\"qty\":1,\"unit_price\":15000,\"stock_qty\":1}]'::jsonb, '{\"client_ref\":\"n288-rr\"}'::jsonb)::text")) > 0)::text" \
+    "0/7500|true"
+chk "  (يُقرأ بعدها) الزيادةُ ذهبت لغير دفعة الراجع: دفعةُ الراجع القادمةُ ١ كما هي، والرصيدُ = مجموعُ الدفعات" \
+    "select (select qty::numeric(20,1)::text from product_lots where product_id = '$ZB' and source = 'return' and expiry_date = '$ZFUT')
+            ||'|'||(select (stock = (select sum(qty) from product_lots where product_id = p.id))::text from products p where id = '$ZB')" "1.0|true"
+chk "والرفض بجملة: الدولار، والمجمَّعة، ووحدةٌ مفردة لمادّةٍ بلاها، وبلا تاريخ، ونسبةٌ صفر، وكميةٌ صفر، وسلّةٌ فارغة" \
+    "select $(rerr $ZV "select return_expired('[{\"product_id\":\"${ZX}a3\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"${ZX}a4\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"sub\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":0,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":0,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[]'::jsonb, '{}'::jsonb)::text")" \
+    "expired_usd|expired_pooled|expired_unit|expired_date|expired_pct|expired_qty|expired_empty"
+ZL4="(select id from product_lots where product_id = '$ZA' and source = 'return' and return_pct = 100 and return_from = 'أبو علي' and qty = 1 limit 1)"
+$P -c "insert into product_lots(id, clinic_id, product_id, qty, received_qty, source, unit_cost, return_pct, returned_at)
+         values ('${ZX}f1', '$ZO', '${ZX}e1', 1, 1, 'return', 100, 50, now()) on conflict (id) do nothing;" >/dev/null
+chk "والبيعُ من الدفعة يُرفض: أكثرُ من باقيها، ودفعةُ عيادةٍ أخرى" \
+    "select $(rerr $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 2, 'unit_price', 1000,
+               'unit_cost', 0, 'stock_qty', 2, 'lot_id', $ZL4)), jsonb_build_object('client_ref', 'n288-x1', 'payment_method', 'cash', 'amount_paid', 2000, 'final_total', 2000))::text")
+            ||'|'||$(rerr $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 1, 'unit_price', 1000,
+               'unit_cost', 0, 'stock_qty', 1, 'lot_id', '${ZX}f1')), jsonb_build_object('client_ref', 'n288-x2', 'payment_method', 'cash', 'amount_paid', 1000, 'final_total', 1000))::text")" \
+    "lot_short|lot_gone"
+chk "  (يُقرأ بعدها) ولا بيعةَ انكتبت من المرفوضتين" \
+    "select count(*)::text from invoices where clinic_id = '$ZC' and client_ref in ('n288-x1', 'n288-x2')" "0"
+chk "الصلاحيات: الدالّتان definer بمسارٍ مثبَّت وتسألان العيادة، ولا anon، وسؤالُ القدرة يقول نعم" \
+    "select (select bool_and(prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%' and position('auth_clinic()' in prosrc) > 0)
+               from pg_proc where proname in ('return_expired', 'retail_checkout_lots'))::text
+            ||'|'||has_function_privilege('anon', 'public.return_expired(jsonb,jsonb)', 'execute')::text
+            ||'|'||has_function_privilege('anon', 'public.retail_checkout_lots(jsonb,jsonb,jsonb,uuid[])', 'execute')::text
+            ||'|'||$(rv $ZV "select return_lots_ready()::text")" "true|false|false|true"
+Q288="select (select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname)
+               from pg_proc where proname in ('lots_reconcile', 'return_expired', 'retail_checkout_lots', 'return_lots_ready'))
+       ||'|'||(select string_agg(conname, ',' order by conname) from pg_constraint where conrelid = 'public.product_lots'::regclass and contype = 'c')
+       ||'|'||(select count(*) from product_lots where clinic_id = '$ZC')::text"
+Z288=$($P -tAc "$Q288" | tr -d '[:space:]')
+out=$($P -f "$MIG/0288_expired_returns.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الدوالّ والقيود والدفعات)" "$Q288" "$Z288"
+$P -c "update invoices set payment_details = '[]'::jsonb, amount_paid = 0 where clinic_id in ('$ZC', '$ZO');
+       delete from invoices where clinic_id in ('$ZC', '$ZO');
+       delete from expenses where clinic_id in ('$ZC', '$ZO');
+       delete from product_lots where clinic_id in ('$ZC', '$ZO');
+       delete from products where clinic_id in ('$ZC', '$ZO');" >/dev/null
 
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:
