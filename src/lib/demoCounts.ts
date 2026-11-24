@@ -3,7 +3,7 @@ import type { StockNegative, WasteSubmitResult } from "./consumptionApi";
 import { loadDB, saveDB } from "./demoStore";
 import { uid } from "./utils";
 import { GAIN_REASONS, LOSS_REASONS, WITHDRAWAL_REASONS } from "./countPick";
-import { applyLotCounts, reconcileAll } from "./demoLots";
+import { applyLotCounts, loadLots, reconcileAll } from "./demoLots";
 import { demoBaseRole, demoHint, demoPinLive } from "./demoRole";
 import { fromScaled, roundDiv, roundScaled, stockNano, stockUnitCost, subUnitMilli, toMilli } from "./consumption";
 
@@ -253,6 +253,18 @@ export type DemoDecision = CountDecision & { negatives: StockNegative[] };
 /** stock_count_decide (0217 ← 0254): المديرُ وحده، ثمّ بترتيب (counted_at, id): الرفضُ يُختم، والمادّةُ الغائبةُ تُبطل
  *  (void)، والجردُ يطبّق فرقَه بلا حصر بثلاث منازل، والسندُ يُرحَّل −d بالضبط عبر المرحِّل ('external') — ثمّ سحبٌ لكلّ سببِ
  *  خسارة بالفلس الصحيح، وnegatives: كلُّ مادّةٍ وافقنا عليها وبقيت تحت الصفر. */
+/** دفعاتُ الراجع للمادّة: مجموعُها (×10⁹) وقيمتُها بكلفتها (×10¹⁵) — مرآةُ sum(qty) وsum(qty × unit_cost) بـ0290. */
+function retLots(productId: string): { q: bigint; c: bigint } {
+  let q = 0n, c = 0n;
+  for (const l of loadLots()) {
+    if (l.product_id !== productId || l.source !== "return") continue;
+    const lq = exact(l.qty, 9);
+    q += lq;
+    c += lq * exact(l.unit_cost ?? 0, 6);
+  }
+  return { q, c };
+}
+
 export function demoDecideCounts(
   ids: string[], approve: boolean, addExpense: (e: Omit<Expense, "id" | "created_at">) => Expense, post?: WastePost,
 ): DemoDecision {
@@ -273,6 +285,8 @@ export function demoDecideCounts(
     if (!approve) { Object.assign(c, { status: "rejected", ...stamp }); out.rejected++; continue; }
     const p = c.product_id ? (db.products ?? []).find((x) => x.id === c.product_id) : undefined;
     if (!p) { Object.assign(c, { status: "void", ...stamp }); out.void++; continue; }
+    // 0290: دفعاتُ الراجع قبل أيّ مسٍّ بالدفعات — ما نقص منها بعد المطابقة أخذه هذا السطر (بكلفته).
+    const ret0 = retLots(p.id);
     if (c.lot_counts?.length) applyLotCounts(p.id, c.lot_counts);
     let applied: number, posted: number | null = null;
     if (c.source === "waste") {
@@ -297,6 +311,13 @@ export function demoDecideCounts(
     // جديد: الحارسُ كتب تواريخَ مشتقّة، وحفظُ نسختنا البائتة بعده كان يمحوها.
     reconcileAll({ productId: p.id, expiredFirst: c.reason === "expired" });
     db = loadDB();
+    // 0290 (stock_count_decide): ما أخذه من دفعات الراجع بكلفتها والباقي بلقطته — ستُّ منازل، وأخذٌ فوق الخسارة ⇒ معدّلُ ما أُخذ.
+    const ret1 = retLots(p.id);
+    const tq = ret0.q - ret1.q, tc = ret0.c - ret1.c;               // ×10⁹ و×10¹⁵
+    const loss = -exact(applied, 9);
+    if (loss > 0n && tq > 0n) {
+      c.unit_cost = fromScaled(tq >= loss ? roundDiv(tc, tq) : roundDiv(tc + (loss - tq) * exact(c.unit_cost, 6), loss), 6);
+    }
   }
   // سحبٌ لكلّ سببِ خسارة (بترتيب نصّه)، بموادّه وكلفة لقطتها: round(Σ −applied_delta × unit_cost, 2) بالضبط.
   for (const reason of [...WITHDRAWAL_REASONS].sort()) {

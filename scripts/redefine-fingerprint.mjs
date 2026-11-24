@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0289"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0289", "0290"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -113,10 +113,15 @@ export const MANIFEST = [
   ["credit_stock", 3, "public.credit_stock(uuid,numeric,uuid)", "0122", "0288"],
   ["products_trash_consumption", 0, "public.products_trash_consumption()", "0255", "0288"],
   ["product_sales_rate", 1, "public.product_sales_rate(integer)", "0215", "0288"],
+  // 0290: دفترُ الرصيد يسمّي الراجعَ الإكسباير، والتلفُ والجردُ يكلّفان ما أخذاه من دفعته بكلفتها.
+  ["_stock_ledger_source", 1, "public._stock_ledger_source(text)", "0287_stock_safety", "0290"],
+  ["_stock_ledger_kind", 4, "public._stock_ledger_kind(text,text,text,numeric)", "0287_stock_safety", "0290"],
+  ["stock_count_decide", 2, "public.stock_count_decide(uuid[],boolean)", "0254", "0290"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-const fileOf = (num) => files.find((f) => f.startsWith(num + "_"));
+/* رقمٌ واحدٌ لهجرتين (0287_case_reports و0287_stock_safety، ٢٣/١١): المصدرُ يُسمّى باسم ملفّه حين لا يكفي رقمُه. */
+const fileOf = (num) => files.find((f) => f === num + ".sql" || f.startsWith(num + "_"));
 const strip = (s) => s.replace(/[ \t\n\r\f\v]/g, "");
 
 /* الشِفرةُ بلا تعليقاتها — مرآةُ `public._drift_code` (0252) حرفاً بحرف، والبصمةُ md5 ما يبقى بلا مسافات.
