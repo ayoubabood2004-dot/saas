@@ -560,6 +560,19 @@ function loadXretMod(): Promise<XretMod> {
     .then(([a, b]) => (xretMod = { ...a, ui: b }), (e) => { xretLoad = null; throw e; });
   return xretLoad;
 }
+/* ---- «بالمحذوفات» (G21/G22، تدقيقُ المخزن ٢٢/١١) ---------------------------------------------------------------
+ * مسحٌ مجهولٌ وبحثٌ بلا نتائج يُسألان المحذوفات بمطابقة البحث الحيّ نفسِها (TrashHint، نطاقُ trsh المملوك) بـimport() — لا وحدةَ ثابتةً
+ * جديدة بقطعة البيع ولا نصَّ بالنطاق الحارّ. محذوفةٌ تحمل الرمز ⇒ «رجّعها» لا «أضفها» (توأمٌ يُعدّ مرّتين يومَ الاسترجاع)، ومطويّةٌ بدمج
+ * ⇒ «اندمجت بـ«الأصل»» وزرُّه يبيع الأصل. والسؤالُ إضافة: فشلُه أو بطؤه يُبقي الرسالةَ الأصليّة كما كانت. */
+type TrashMod = typeof import("@/components/inventory/TrashHint");
+let trashLoad: Promise<TrashMod> | null = null;
+function loadTrashMod(): Promise<TrashMod> {
+  trashLoad ??= Promise.all([import("@/components/inventory/TrashHint"), import("@/i18n").then((i) => i.ensureOwned("trsh"))])
+    .then(([m]) => m, (e) => { trashLoad = null; throw e; });
+  return trashLoad;
+}
+const loadTrashSearch = () => page(() => import("@/components/inventory/TrashHint").then((m) => ({ default: m.TrashSearchHint })), ["trsh"]);
+let TrashSearchLazy: ReturnType<typeof loadTrashSearch> | null = null;
 /* ---- البيعُ بالكارتون والمغلّف من المسح (0267) ----------------------------------------------------------------
  * البابُ (packSale: الرمزُ ⇒ المادّةُ ومستواها، وسؤالُ الخادم) ونصوصُه (PackSale، نطاقُ pks المملوك) بـimport() — لا وحدةَ ثابتةً
  * جديدة بقطعة البيع، ولا نصَّ بالنطاق الحارّ. ويُسخَّنان مع الشاشة (PackWarmLazy)، والنطاقُ يُنتظر قبل أوّل جملة (لا مفتاحَ خاماً). */
@@ -2750,6 +2763,11 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     // ونقولها بالرمز كما وصل، بلا نافذةِ «اربطه بمنتج قائم»: تلك النافذة أُلغيت
     // بقرار المالك — مقيسٌ أن ما يصلها رموزُ موادٍّ **غيرِ مُدخَلة** أصلاً، فكان
     // اختيارُ صفٍّ منها يربط باركوداً أجنبياً بمادّةٍ أخرى وتبيعها كلُّ مسحةٍ بعدها.
+    // G21: مادّةٌ **محذوفة** تحمل الرمز ⇒ «رجّعها من المحذوفات» لا «أضفها» (الجديدةُ توأمٌ يُعدّ مرّتين يومَ تُسترجع). بمهلة: بطؤه أو
+    // فشلُه يُبقي الجملةَ الأصليّة.
+    const th = await withTimeout(loadTrashMod().then(async (m) => ({ m, hit: await m.trashForCode(code, products) })), 2500)
+      .catch(() => null /* swallow-ok: السؤالُ إضافة — «مو موجود» أدناه تبقى كما كانت */);
+    if (th?.hit) { toast.error(th.m.say.scan(th.hit, normalizeCode(code))); return; }
     toast.error(t("retail.scanUnknown", "الباركود {{code}} مو موجود بمخزنك — إذا المادّة عندك أضفها من المخزون بهذا الباركود", { code: normalizeCode(code) }));
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
@@ -4990,6 +5008,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
               <div className="card grid place-items-center p-10 text-center text-sm text-ink-subtle">
                 <Package size={28} className="mb-2 opacity-40" />
                 {ql ? t("retail.noMatch", "No products match.") : t("retail.noProducts", "No products in inventory yet.")}
+                {/* G21/G22: «لا نتائج» عن محذوفةٍ أو مطويّة يقول أين هي — «رجّعها» أو «اندمجت بـ«الأصل»» (زرُّه يبيع الأصل). */}
+                {ql && (TrashSearchLazy ??= loadTrashSearch()) && (
+                  <LoadBoundary scope="trash-search" onRetry={() => { TrashSearchLazy = loadTrashSearch(); setMxLazyTick((n) => n + 1); }}>
+                    <Suspense fallback={null}>
+                      <TrashSearchLazy key={mxLazyTick} query={ql} products={products} canRestore={effRole === "manager" || effRole === "veterinarian"}
+                        onRestored={() => onRefresh?.()} onPick={(p) => { setQuery(""); void sellOrExplain(p, takeMult()); }} />
+                    </Suspense>
+                  </LoadBoundary>
+                )}
               </div>
             ) : (
               // الأعمدة تتنفّس: auto-fill بعرض بطاقة أدنى بدل عدد مثبّت — شاشة
