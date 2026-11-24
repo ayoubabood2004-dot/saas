@@ -2942,11 +2942,12 @@ const supabaseRepo: DemoRepo = {
   async productMovements(productId) {
     /* **ترمي ولا ترجّع فارغة.** قائمةٌ ناقصةٌ عن خطأٍ تقلب المعنى: «ماكو حركات»
      * تعني «ما صار شي» والحقيقةُ «ما وصلنا». والشاشةُ تعرض «أعد المحاولة». */
-    return listOf<ProductMovement>(await sbc().rpc("product_movements", { p_product: productId, p_limit: 200 }));
+    // كانت `listOf` (تطبع الخطأ وترجع []) خلافَ هذا التعليق نفسِه: نتٌّ ضعيف أو مهلةُ خادم ⇒ «ماكو حركات مسجّلة» تُصدَّق.
+    return listOrThrow<ProductMovement>(await sbc().rpc("product_movements", { p_product: productId, p_limit: 200 }));
   },
   async activityPage(s) {
-    // صفحةٌ واحدة بحدّها — لا allPages عمداً: الفكرةُ ألّا يُنزَّل السجلُّ كلُّه.
-    return listOf<ActivityRow>(await sbc().rpc("activity_page", {
+    // صفحةٌ واحدة بحدّها — لا allPages عمداً: الفكرةُ ألّا يُنزَّل السجلُّ كلُّه. وترمي: سجلٌّ فارغٌ عن فشلٍ يُقرأ «ما صار شي».
+    return listOrThrow<ActivityRow>(await sbc().rpc("activity_page", {
       p_from: s.from, p_to: s.to, p_kinds: s.kinds ?? null, p_actor: s.actor ?? null, p_q: s.q ?? null,
       p_before: s.before ?? null, p_before_src: s.beforeSrc ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
     }));

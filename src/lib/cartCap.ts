@@ -25,12 +25,31 @@ export type CapLine = {
   packPer?: number | null;
 };
 
+/**
+ * المفرداتُ الكاملة (حبّة، مل) في رصيدٍ بالعلب. الرصيدُ بثلاث منازل، وكلُّ بيعةٍ بالمفرد تخصم round(1/upb, 3) — فحيث لا يقسم
+ * upb الألفَ ينحرف الحاصلُ عن العدد الصحيح: علبةُ ٦ بعد خمس بيعاتٍ بالحبّة ٠٫١٦٥ = ٠٫٩٩ حبّة، والفلورُ العاري كان يرفض الحبّةَ
+ * الباقية على الرفّ «رصيده صفر» (تدقيق ٢٢/١١). فالتسامحُ بقدر أقصى ما ينحرفه تقريبُ upb بيعةٍ بالمفرد (نصفُ الألف لكلّ سطر)،
+ * ولا يبلغ نصفَ مفرد — **وحين يقرّب الخصمُ للأعلى وحده** (round(1/upb, 3) > 1/upb: كلُّ بيعةٍ تأخذ أكثرَ من حبّة فالمسجَّلُ أقلُّ من
+ * الرفّ). حين يقرّب للأسفل (٣٠، ٢٢، ٣٣…) المسجَّلُ **أكثرُ** من الرفّ أصلاً، والتسامحُ فوقه كان يصنع حبّةً ليست بالرفّ (علبتا ٣٠ بيعت
+ * حبّةً حبّة ⇒ ٠٫٠٢٠ = ٠٫٦ حبّة + ٠٫٤٥ = «حبّة» — مراجعة ٢٢/١١). وحيث القسمةُ تامّة (١٠، ١٠٠، ٢٥٠…) لا انحرافَ فلا تسامح.
+ * وحدٌّ معلن: انحرافُ علبتين فأكثر يتجاوز السقف (٠٫٤٥) فالحبّةُ الأخيرة ترجع تُرفض — الجذرُ خصمُ المفرد بلا تقريبٍ بالخادم (F04،
+ * docs/stock-integrity-plan.md). وضجيجُ العائم يُمحى أوّلاً (٠٫٢٩ × ١٠٠ = ٢٨٫٩٩٩… كانت ٢٨ مل).
+ */
+export function wholeSubUnits(stock: number, upb: number): number {
+  const u = Math.round(stock * upb * 1e6) / 1e6;
+  // خصمُ المفرد كما يكتبه الخادم (ثلاث منازل): يزيد عن الحبّة ⇒ المسجَّلُ يتأخّر تحت الرفّ فيُسامَح؛ يساويها أو ينقص ⇒ لا تسامح.
+  const step = upb > 0 ? Math.round(1000 / upb) / 1000 : 0;
+  const over = step * upb > 1 + 1e-9;
+  const tol = over ? Math.min(0.45, 0.0005 * upb * upb) : 0;
+  return Math.floor(u + tol);
+}
+
 /** أقصى كميةٍ لسطرٍ بوحدته الحالية، مشتقّةً من رصيده بالعلب. */
 export function unitCap(l: CapLine): number {
   if (l.ret) return Infinity;
   if (l.stock == null) return Infinity;
   if (l.byWeight) return l.stock;
-  if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
+  if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return wholeSubUnits(l.stock, l.unitsPerBox);
   // بالألف الصحيح: ٢٣٫٩٩٩ ÷ ٢٤ صفرُ كارتون لا واحد، و٤٨ ÷ ٢٤ اثنان بلا كسرٍ عائم.
   if (l.saleUnit === "pack" && l.packPer && l.packPer >= 2) return Math.floor(Math.round(l.stock * 1000) / Math.round(l.packPer * 1000));
   return Math.floor(l.stock);
@@ -81,7 +100,7 @@ export type StockRow = {
 export function outOfStock(p: StockRow, retMode = false): boolean {
   if (retMode || p.pooled || p.sold_by_weight) return false;
   const stock = p.stock ?? 0;
-  if (p.has_sub_unit && p.units_per_box) return stock * p.units_per_box < 1;
+  if (p.has_sub_unit && p.units_per_box) return wholeSubUnits(stock, p.units_per_box) < 1;
   return stock <= 0;
 }
 

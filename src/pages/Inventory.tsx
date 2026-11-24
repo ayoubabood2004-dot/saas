@@ -40,7 +40,7 @@ import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName, localISO } from "@/lib/utils";
+import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName, localISO, formatQty } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { cardImagePath, productImageUrl } from "@/lib/storeLib";
 import type { EncodedPhoto } from "@/lib/photoPipeline";
@@ -190,6 +190,9 @@ async function stampBatches(batches: Product[][]): Promise<[number, number]> {
  * Inventory — dedicated stock management: products, companies (الشركات),
  * add/edit, low-stock & expiry alerts. Point-of-sale lives in "Retail & Sales".
  */
+/** تبويباتٌ يُعرض فيها شريطُ العمر فوق قائمةٍ معروضة بدل شاشة الفشل (الجلبُ فيها خلفيّ). */
+const STALE_OK: ReadonlySet<string> = new Set(["wholesale", "products", "companies"]);
+
 export function Inventory() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -325,7 +328,9 @@ export function Inventory() {
        * المقصود أعلاه هو الفارغة — فتبقى ويُقال عمرُها بشريط (كشاشة البيع، ط٣).
        * و«بيدنا لقطة» = جُلبت مرّةً بنجاح (فارغةً كانت أو ملأى)، والتبويبُ تبويبُ الآن. */
       if (startedAt < shownFrom.current) return; // فشلُ جلبٍ قديم وما بعده نجح
-      if (viewRef.current === "wholesale" && cachedAt(invKey) != null) setWsStale(true);
+      /* والمنتجاتُ والشركات كذلك منذ صار جلبُهما خلفيّاً (تدقيق ٢٢/١١): فشلُ جلبٍ عند العودة للتبويب أو بالنتّ الراجع كان يقتلع
+       * التبويبَ وكلَّ نافذةٍ فيه («إضافة منتج» مكتوبٌ نصفُها، فاتورةُ شراءٍ بمرجع محاولتها) — مراجعة ٢٢/١١. */
+      if (STALE_OK.has(viewRef.current) && cachedAt(invKey) != null) setWsStale(true);
       else setFailed(true);
       scheduleRetry();
     } finally {
@@ -370,11 +375,15 @@ export function Inventory() {
   /* ط١ + ط٥ بالجملة أيضاً — نفسُ SaleBuilder ونفسُ القرار: قائمةٌ مفتوحةٌ من الصبح كانت
    * تبيع بأرقام الصبح بلا عمرٍ ولا سؤال (والخادمُ يُسأل عند الصفر وحده، فالرقمُ المرتفعُ
    * البائت لا يُصحَّح أبداً). يعمل والجملةُ ظاهرةٌ وحدها: بقيّةُ تبويبات المخزن شاشاتُ
-   * إدارةٍ تُحدَّث بأفعالها. والدخولُ إلى الجملة نفسُه «عودة» — يُسأل عن العمر فوراً. */
+   * إدارةٍ تُحدَّث بأفعالها. والدخولُ إلى الجملة نفسُه «عودة» — يُسأل عن العمر فوراً.
+   * **وتبويبا المنتجات والشركات كذلك** (تدقيق ٢٢/١١): «تُحدَّث بأفعالها» صحيحٌ لأفعال هذا الجهاز وحده — بيعُ جهازٍ آخر
+   * وشراؤه وجردُه لا يصلانها، فحاسوبُ المكتب المفتوح على المخزن من الصبح يعرض أرقامَ الصبح بلا عمر: «نافد» عن مادّةٍ
+   * اشتُريت فتُسجَّل ثانيةً (رصيدٌ مضاعف)، و«١٠» عن مادّةٍ بيع منها ثلاث. والجلبُ لا يمسّ نموذجاً مفتوحاً (حالتُه بيده). */
   useRevalidateOnReturn(() => { void loadRef.current(); }, RETURN_STALE_MS, {
     key: invKey,
-    isBusy: () => wsBusy.current || inflight.current > 0,
-    enabled: view === "wholesale" && canPos && !locked,
+    // ولا تحت نافذةٍ مفتوحة (نموذجٌ أو سؤال): ما يُكتب فيها بيد صاحبه، والجلبُ يكمل حين تُغلق (مراجعة ٢٢/١١).
+    isBusy: () => wsBusy.current || inflight.current > 0 || (typeof document !== "undefined" && !!document.querySelector?.('[role="dialog"]')),
+    enabled: (view === "wholesale" && canPos && !locked) || view === "products" || view === "companies",
     pollMs: POLL_MS,
     checkOnEnable: true,
   });
@@ -411,18 +420,30 @@ export function Inventory() {
     setWsRefreshing(true);
     try { await load(); } finally { if (mounted.current) setWsRefreshing(false); }
   };
-  /* الشريطُ يُرسم داخل الجملة وحدها — فالانتقالُ لتبويب المنتجات أو المشتريات والفشلُ قائم
-   * كان يعرض القائمةَ القديمة **بلا أيّ إشارة** (أمسكته مراجعةٌ عدائية): عينُ ما يحذّر منه
-   * CLAUDE.md — النقصُ يُصدَّق. فخارج الجملة يعود الفشلُ صاخباً كعادة المخزن، ويُعاد الجلبُ
-   * فوراً: إن رجع النتُّ اختفت شاشةُ الفشل وحدها، وإلا بقيت تقول الحقيقة. */
+  /* الشريطُ يُرسم بالجملة والمنتجات والشركات وحدها (STALE_OK) — فالانتقالُ لتبويبٍ غيرها (المشتريات مثلاً) والفشلُ قائم
+   * كان يعرض القائمةَ القديمة **بلا أيّ إشارة** (أمسكته مراجعةٌ عدائية): عينُ ما يحذّر منه CLAUDE.md — النقصُ يُصدَّق.
+   * فخارجها يعود الفشلُ صاخباً كعادة المخزن، ويُعاد الجلبُ فوراً: إن رجع النتُّ اختفت شاشةُ الفشل وحدها، وإلا بقيت تقول الحقيقة. */
   useEffect(() => {
-    if (view !== "wholesale" && wsStale) {
+    if (!STALE_OK.has(view) && wsStale) {
       setWsStale(false);
       setFailed(true);
       void load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, wsStale]);
+
+  /* شريطُ العمر: القائمةُ معروضةٌ من جلبٍ سابق وتعذّر تحديثُها — يُقال بوقتها وزرّ «حدّث» (الجملة والمنتجات والشركات). */
+  const staleStrip = wsStale ? (
+    <div className="mb-3 flex items-center gap-2 rounded-xl border border-warn-200 bg-warn-50 px-3 py-1.5 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-stalestrip>
+      <Clock size={14} className="shrink-0" />
+      <span className="min-w-0 flex-1">
+        {t("pos.staleStrip", "المعروض من {{time}} — تعذّر التحديث", { time: cachedAt(invKey) ? formatTime(new Date(cachedAt(invKey) as number).toISOString(), i18n.language) : "—" })}
+      </span>
+      <Button size="sm" variant="secondary" loading={wsRefreshing} leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); void wsRefresh(); }}>
+        {t("pos.refreshNow", "حدّث")}
+      </Button>
+    </div>
+  ) : null;
 
   // دفعات قديمة بلا رابط مجموعة — تُعرض فقط عندما تكون الميزة شغّالة فعلاً.
   const pendingBatches = useMemo(() => (groupsOk ? findUngroupedBatches(products) : []), [groupsOk, products]);
@@ -529,7 +550,9 @@ export function Inventory() {
                 <Button variant="secondary" disabled leftIcon={<Printer size={16} />}>{t("pos.stockReport", "طباعة تقرير جرد")}</Button>
                 <Button variant="secondary" disabled leftIcon={<FileSpreadsheet size={16} />}>{t("pos.stockXlsx", "تصدير جرد إكسل")}</Button>
               </>}>
-                <ReportButtons products={products} companies={companies} sections={sections} />
+                {/* بلا القوائم المعروضة: ورقةُ الجرد تُجلب من الخادم لحظةَ الضغط — لقطةُ صفحةٍ مفتوحةٍ من الصبح كانت تطبع
+                    «النظام ١٠» عن مادّةٍ بيع منها ثلاث، فيُقرأ العدُّ «عجز ٣» كاذباً. */}
+                <ReportButtons />
               </Suspense>
             </LoadBoundary>
             {/* الجردُ اليوميّ (م٦): عدٌّ صغيرٌ كلَّ يوم، والفرقُ بموافقة المدير — صفحتُه تحمل نصوصَها. */}
@@ -619,6 +642,7 @@ export function Inventory() {
         </div>
       ) : view === "products" ? (
         <>
+          {staleStrip}
           {/* الرابطُ ينتظر قائمةً طازجة — يُقال ولا يُترك صامتاً فوق قائمة الكاش (نصٌّ قائمٌ بلا بايتٍ جديد). */}
           {openId && !listFresh && (
             <p className="mb-3 flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-800 dark:bg-brand-500/10 dark:text-brand-200" data-openwait>
@@ -629,7 +653,10 @@ export function Inventory() {
             filter={stockFilter} onFilter={setStockFilter} openId={listFresh ? openId : null} onOpened={() => setOpenId(null)} />
         </>
       ) : view === "companies" ? (
-        <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
+        <>
+          {staleStrip}
+          <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
+        </>
       ) : view === "ledger" ? (
         <SupplierLedgerTab companies={companies} clinicId={clinicId} products={products} />
       ) : view === "barcodes" ? (
@@ -637,17 +664,7 @@ export function Inventory() {
       ) : view === "wholesale" && canPos ? (
         // نفسُ شاشة البيع بكل تفاصيلها — الفرقُ أن السطر يبدأ على سعر الشراء.
         <>
-          {wsStale && (
-            <div className="mb-3 flex items-center gap-2 rounded-xl border border-warn-200 bg-warn-50 px-3 py-1.5 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-stalestrip>
-              <Clock size={14} className="shrink-0" />
-              <span className="min-w-0 flex-1">
-                {t("pos.staleStrip", "المعروض من {{time}} — تعذّر التحديث", { time: cachedAt(invKey) ? formatTime(new Date(cachedAt(invKey) as number).toISOString(), i18n.language) : "—" })}
-              </span>
-              <Button size="sm" variant="secondary" loading={wsRefreshing} leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); void wsRefresh(); }}>
-                {t("pos.refreshNow", "حدّث")}
-              </Button>
-            </div>
-          )}
+          {staleStrip}
           <SaleBuilder products={sellable} listGen={listGen} clinicId={clinicId} onSold={load} wholesale
             onFreshRow={patchRow} onRefresh={() => void wsRefresh()} onBusyChange={onWsBusy} />
         </>
@@ -1091,6 +1108,22 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
     }
   };
 
+  const chips = [
+    ["all", t("pos.filterAll", "الكل"), products.length],
+    ["out", t("pos.filterOut", "نافد"), products.filter(isOut).length],
+    ["low", t("pos.filterLow", "منخفض"), products.filter(isLow).length],
+    ["soon", t("pos.filterSoon", { n: expW().criticalDays }), products.filter(isExpiringSoon).length],
+    ["return", t("expiry.filterReturn", { n: expW().returnDays }), products.filter(isInReturn).length],
+    ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
+    ["muted", t("expiry.muted"), products.filter(isMutedExpiry).length],
+    ["marked", t("expiry.filterMarked", "معدّة للإرجاع"), products.filter(isMarkedForReturn).length],
+    ["nocost", t("pkg.filterNoCost"), products.filter(isNoCost).length],
+  ] as [StockFilter, string, number][];
+  /* بحثٌ وجد المادّة وشريحةٌ مفعّلة أخفتها: كانت الشاشةُ تقول «لا نتائج مطابقة» عن مادّةٍ بالمخزن — والشريحةُ
+   * تبقى من بطاقة الرئيسية أو رابطٍ عميق (?filter=return) أو تبويبٍ سابق، فيُعاد إدخالُ الموجود توأماً. */
+  const chipName = chips.find(([k]) => k === filter)?.[1] ?? "";
+  const hiddenByChip = ql && filter !== "all" ? searched.length - shown.length : 0;
+
   return (
     <div className="space-y-4">
       {deleteDialog}
@@ -1105,17 +1138,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
       {/* شرائحُ الحالة (ع١): البطاقةُ تعدّ وهذه توصل. والعددُ على كلِّ شريحة
         * محسوبٌ بنفس شرطِ البطاقة — فلا رقمان لحالةٍ واحدة. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {([
-          ["all", t("pos.filterAll", "الكل"), products.length],
-          ["out", t("pos.filterOut", "نافد"), products.filter(isOut).length],
-          ["low", t("pos.filterLow", "منخفض"), products.filter(isLow).length],
-          ["soon", t("pos.filterSoon", { n: expW().criticalDays }), products.filter(isExpiringSoon).length],
-          ["return", t("expiry.filterReturn", { n: expW().returnDays }), products.filter(isInReturn).length],
-          ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
-          ["muted", t("expiry.muted"), products.filter(isMutedExpiry).length],
-          ["marked", t("expiry.filterMarked", "معدّة للإرجاع"), products.filter(isMarkedForReturn).length],
-          ["nocost", t("pkg.filterNoCost"), products.filter(isNoCost).length],
-        ] as [StockFilter, string, number][]).filter(([k, , n]) => (k !== "muted" && k !== "marked" && k !== "nocost") || n > 0 || filter === k).map(([k, label, n]) => (
+        {chips.filter(([k, , n]) => (k !== "muted" && k !== "marked" && k !== "nocost") || n > 0 || filter === k).map(([k, label, n]) => (
           <button
             key={k}
             type="button"
@@ -1143,13 +1166,24 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
         )}
       </div>
 
+      {shown.length > 0 && hiddenByChip > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200" data-morehiddenbychip>
+          <span className="min-w-0 flex-1">{t("pkg.moreHiddenByChip", { n: formatNum(hiddenByChip), chip: chipName })}</span>
+          <Button size="sm" variant="secondary" onClick={() => { playTap(); onFilter("all"); }}>{t("pkg.showAllChips")}</Button>
+        </div>
+      )}
       {shown.length === 0 ? (
         /* بحثٌ خائبٌ فوق مخزنٍ عامر كان يقول «لا توجد منتجات بعد. أضف أول منتج» —
          * عبارةٌ كاذبة **تأمر بالفعل الضار**: فيُعاد إدخالُ الموجود توأماً برصيدٍ
          * مقسوم. الشاشاتُ المجاورة تميّز الحالتين منذ زمن؛ هذه وحدَها لم تكن.
          * ولا دعوةَ إضافةٍ هنا: العدُّ يقول إن المخزن ليس فارغاً. */
-        <div className="card p-10 text-center text-ink-subtle" data-invempty={ql ? "search" : "stock"}>
-          {ql
+        <div className="card p-10 text-center text-ink-subtle" data-invempty={hiddenByChip > 0 ? "chip" : ql ? "search" : "stock"}>
+          {hiddenByChip > 0
+            ? <>
+                {t("pkg.hiddenByChip", { n: formatNum(hiddenByChip), chip: chipName })}
+                <div className="mt-3"><Button size="sm" variant="secondary" data-showallchips onClick={() => { playTap(); onFilter("all"); }}>{t("pkg.showAllChips")}</Button></div>
+              </>
+            : ql
             ? t("pos.noSearchInStock", "لا نتائج مطابقة. المخزن فيه {{n}} منتجاً — جرّب اسماً أقصر أو امسح الباركود.", { n: formatNum(products.length) })
             : filter !== "all"
               ? t("pos.noneInFilter", "ما في منتج بهذي الحالة — جرّب شريحةً ثانية")
@@ -2072,7 +2106,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             {ownHit && (
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300" data-ownhit={ownHit.id}>
                 <AlertTriangle size={14} className="shrink-0" />
-                <span className="flex-1">{t("pos.ownHit", "موجود عندك أصلاً: \"{{name}}\" — الرصيد {{stock}}", { name: ownHit.name, stock: formatNum(ownHit.stock ?? 0) })}</span>
+                <span className="flex-1">{t("pos.ownHit", "موجود عندك أصلاً: \"{{name}}\" — الرصيد {{stock}}", { name: ownHit.name, stock: formatQty(Number(ownHit.stock ?? 0)) })}</span>
                 {onOpenExisting && (
                   <button className="rounded-lg bg-warn-600 px-2.5 py-1 text-2xs font-semibold text-white" data-ownhitopen
                     onClick={() => { playTap(); onOpenExisting(ownHit); }}>{t("pos.ownHitOpen", "افتحه")}</button>
@@ -3061,7 +3095,9 @@ function SetPoolModal({ open, section, onClose, onSaved }: { open: boolean; sect
     if (!open) return;
     setVal(String(section.pooled_stock ?? 0));
     setTimeout(() => ref.current?.select(), 80);
-  }, [open, section]);
+    // بالمعرّف لا بالكائن: القائمةُ تُجلب بالخلفية فيولد كائنٌ جديد ويُمسح ما كُتب (٤٢ ← ٠ ثمّ «حفظ») — مراجعة ٢٢/١١.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, section.id]);
 
   const save = async () => {
     if (busy) return;
@@ -3161,7 +3197,9 @@ function CompanyModal({ open, company, companies, clinicId, onClose, onSaved }: 
     setName(company?.name ?? "");
     setNote(company?.note ?? "");
     setTimeout(() => nameRef.current?.focus(), 80);
-  }, [open, company]);
+    // بالمعرّف لا بالكائن (كنافذة الحوض): جلبٌ خلفيّ كان يعيد الاسمَ القديم فوق ما كُتب.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, company?.id]);
 
   const save = async () => {
     if (!name.trim() || busy) return;
@@ -3449,7 +3487,7 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
   const merge = async (keep: Product) => {
     if (busy) return;
     if (!window.confirm(t("pos.mergeConfirm", "تدمج \"{{drop}}\" بـ\"{{keep}}\"؟ الرصيد {{a}} + {{b}}. ما ينرجع.", {
-      drop: drop.name, keep: keep.name, a: formatNum(drop.stock ?? 0), b: formatNum(keep.stock ?? 0),
+      drop: drop.name, keep: keep.name, a: formatQty(Number(drop.stock ?? 0)), b: formatQty(Number(keep.stock ?? 0)),
     }))) return;
     setBusy(true);
     try {
@@ -3486,7 +3524,7 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
                 <span className="block truncate text-sm font-medium text-ink">{p.name}</span>
                 <span className="block truncate font-mono text-2xs text-ink-subtle">{p.barcode ?? "—"}</span>
               </span>
-              <span className="shrink-0 text-xs text-ink-muted">{t("pos.stockN", "رصيد {{n}}", { n: formatNum(p.stock ?? 0) })}</span>
+              <span className="shrink-0 text-xs text-ink-muted">{t("pos.stockN", "رصيد {{n}}", { n: formatQty(Number(p.stock ?? 0)) })}</span>
             </button>
           ))}
           {shown.length === 0 && <p className="p-4 text-center text-xs text-ink-subtle">{t("common.noMatches", "No matches")}</p>}
@@ -3557,7 +3595,7 @@ function DeleteProductDialog({ p, onClose, onDeleted }: { p: Product; onClose: (
           <p className="truncate text-base font-semibold text-ink">{p.name}</p>
           <p className="font-mono text-2xs text-ink-subtle">{p.barcode ?? "—"}</p>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-            <span>{t("pos.deleteStock", "الرصيد الحالي")}: <b className="text-ink">{p.pooled ? "—" : formatNum(p.stock ?? 0)}</b></span>
+            <span>{t("pos.deleteStock", "الرصيد الحالي")}: <b className="text-ink">{p.pooled ? "—" : formatQty(Number(p.stock ?? 0))}</b></span>
             {sales === null ? <span className="inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" /></span>
               : sales > 0 ? <span className="font-semibold text-warn-700">{t("pos.deleteSold", "انباع بـ{{n}} فاتورة", { n: formatNum(sales) })}</span>
               : sales === 0 ? <span>{t("pos.deleteSoldNone", "ما انباع منه ولا مرة")}</span>
@@ -3647,7 +3685,7 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
             <p className="font-mono text-2xs text-ink-subtle">{d.row.barcode ?? "—"}</p>
             <p className="mt-1 flex flex-wrap gap-x-3 text-2xs text-ink-muted">
               <span>{t("pos.trashDeletedAt", "انحذف {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
-              <span>{t("pos.stockN", "رصيد {{n}}", { n: formatNum(d.stock ?? 0) })}</span>
+              <span>{t("pos.stockN", "رصيد {{n}}", { n: formatQty(Number(d.stock ?? 0)) })}</span>
               {d.sold_qty > 0 && <span>{t("pos.trashSold", "مباع منه {{n}}", { n: formatNum(d.sold_qty) })}</span>}
               {d.merged_into && <span className="font-semibold text-brand-600">{t("pos.trashMerged", "مدموج بمنتج ثاني — الاسترجاع يفكّ الدمج")}</span>}
               {d.reason && <span className="italic">{d.reason}</span>}

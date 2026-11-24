@@ -14,7 +14,7 @@ import { DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
 import { NumberPadSheet } from "./NumberPadSheet";
 import { DosePicker } from "./DosePicker";
 import { EYE_EAR_UNITS, parseAmount, planRouteToDose, cardRouteChange, manualDosePatch, type DoseUnit } from "@/lib/doseUnits";
-import { cn, formatNum, formatDec } from "@/lib/utils";
+import { cn, formatNum, formatDec, formatQty } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /* ============================================================================
@@ -219,7 +219,7 @@ export function DrugCard({
             </span>
           </span>
         </span>
-        {stockN != null && <span className="shrink-0 rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("tplan.inStockN", { n: formatNum(stockN), defaultValue: "✓ متوفّر · {{n}}" })}</span>}
+        {stockN != null && <span className="shrink-0 rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("tplan.inStockN", { n: formatQty(stockN), defaultValue: "✓ متوفّر · {{n}}" })}</span>}
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-subtle">
           {locked && !open ? <Lock size={16} /> : <ChevronDown size={18} className={cn("transition-transform duration-200", expanded && "rotate-180")} />}
         </span>

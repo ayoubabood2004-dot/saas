@@ -109,6 +109,10 @@ export const MANIFEST = [
   ["record_purchase_fx", 2, "public.record_purchase_fx(jsonb,jsonb)", "0274", "0276"],
   ["update_purchase_fx", 3, "public.update_purchase_fx(uuid,jsonb,jsonb)", "0274", "0276"],
   ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0275", "0276"],
+  // 0288: الراجعُ يتبع الدمجَ ويرفض المحذوف، والدمجُ يأخذ ربطَ الجرعة والجرعاتِ المعلَّقة والجرد، ومعدّلُ البيع بوحدة الرصيد.
+  ["credit_stock", 3, "public.credit_stock(uuid,numeric,uuid)", "0122", "0288"],
+  ["products_trash_consumption", 0, "public.products_trash_consumption()", "0255", "0288"],
+  ["product_sales_rate", 1, "public.product_sales_rate(integer)", "0215", "0288"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

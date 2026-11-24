@@ -30,7 +30,7 @@ import { repo } from "@/lib/repo";
 import { codeMatcher } from "@/lib/productCodes";
 import { getActiveClinicId } from "@/lib/clinics";
 import { describeDbError, shouldReleaseRef } from "@/lib/errors";
-import { cn, formatDate, formatNum, money, uid, searchable } from "@/lib/utils";
+import { cn, formatDate, formatNum, money, uid, searchable, formatQty } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /* محاولةٌ مجهولةُ المصير تعيش بالجلسة لا بالنافذة: إغلاقُها وفتحُها كان يولّد مرجعاً جديداً فيُكتب الدينُ مرّتين.
@@ -390,7 +390,7 @@ function ItemsEditor({ items, setItems, currency, sumText, products, loadProduct
               <button key={p.id} type="button" onClick={() => add(p)} data-odebt-hit={p.id}
                 className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface-1 px-2.5 py-1.5 text-start text-sm transition hover:border-brand-300">
                 <span className="min-w-0 flex-1 truncate font-bold text-ink">{p.name}</span>
-                <span className="shrink-0 text-2xs text-ink-subtle">{t("odebt.itemStock", { n: formatNum(Number(p.stock ?? 0)) })}</span>
+                <span className="shrink-0 text-2xs text-ink-subtle">{t("odebt.itemStock", { n: formatQty(Number(p.stock ?? 0)) })}</span>
               </button>
             ))}
           </div>

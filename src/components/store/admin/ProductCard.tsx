@@ -4,7 +4,7 @@ import { Barcode, Boxes, Camera, Eye, EyeOff, ImagePlus, Pencil, SlidersHorizont
 import type { Product } from "@/types";
 import { cardImagePath, catGlyph, productImageUrl, shelfLabel, shelfLook } from "@/lib/storeLib";
 import { playTap } from "@/lib/sounds";
-import { cn, formatNum, money } from "@/lib/utils";
+import { cn, formatNum, money, formatQty } from "@/lib/utils";
 
 /* ============================================================================
  * بطاقةُ منتجٍ بتشكيلة المتجر (متجر v1) — رفيقةُ «المتجر الإلكتروني».
@@ -121,7 +121,7 @@ export function ProductCard({ p, picked, onPick, busy, bulkBusy, cats, canPrice,
           )}
           {!pricing && (
             <span className={cn("shrink-0 text-2xs", out ? "font-bold text-danger-500" : "text-ink-subtle")}>
-              {out ? t("cat.outOfStock", "نافد") : t("cat.stockN", "المخزون: {{n}}", { n: formatNum(p.stock) })}
+              {out ? t("cat.outOfStock", "نافد") : t("cat.stockN", "المخزون: {{n}}", { n: formatQty(Number(p.stock ?? 0)) })}
             </span>
           )}
         </div>

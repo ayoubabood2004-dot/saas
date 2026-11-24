@@ -30,7 +30,7 @@ import { statusOf } from "@/lib/opsStatus";
 import { cageStudio } from "@/components/cage3d/store";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { formatTime, dateLocale, formatNum } from "@/lib/utils";
+import { formatTime, dateLocale, formatNum, formatQty } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
@@ -212,8 +212,10 @@ export function Dashboard() {
 
   // Low-stock: any product at/below its reorder level (its own min_stock, else 5).
   const LOW_STOCK = 5;
+  /* والمجمَّعةُ خارجه كـisLow بالمخزن (تدقيق ٢٢/١١): رصيدُ صفّها صفرٌ بالتصميم وعددُها بحوض صنفها — كانت تُعدّ «نفد»
+   * بالكارت والحلقة والكاشيرُ يبيعها. */
   const lowStock = useMemo(
-    () => products.filter((p) => p.stock <= (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK)),
+    () => products.filter((p) => !p.pooled && p.stock <= (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK)),
     [products],
   );
   const pctLow = products.length ? lowStock.length / products.length : 0;
@@ -517,7 +519,7 @@ export function Dashboard() {
                   >
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-warn-50 text-warn-600 dark:bg-warn-500/15"><Package size={16} /></span>
                     <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{p.name}</p>
-                    <Badge tone={p.stock <= 0 ? "danger" : "warn"}>{p.stock <= 0 ? t("dash.outOfStock", "نفد") : t("dash.unitsLeft", { n: formatNum(p.stock), defaultValue: "متبقّي {{n}}" })}</Badge>
+                    <Badge tone={p.stock <= 0 ? "danger" : "warn"}>{p.stock <= 0 ? t("dash.outOfStock", "نفد") : t("dash.unitsLeft", { n: formatQty(Number(p.stock ?? 0)), defaultValue: "متبقّي {{n}}" })}</Badge>
                   </button>
                 ))}
                 {lowStock.length > 6 && (
