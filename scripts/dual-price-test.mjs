@@ -402,6 +402,15 @@ console.log("▸ 0286 (طلبُ المالك ٢١/١١): صفٌّ واحد لل�
     /if \(!r\.ok && r\.why === "no_rate"\) \{ playTap\(\); setRateAsk\(\{ cur: null, then: l \}\); return; \}/.test(sbx)
     && /x\.usd \? \{ \.\.\.x, usd: \{ \.\.\.x\.usd, rid: rate\.id, r: rate\.rate1e4\.toString\(\) \} \}/.test(sbx)
     && /data-usdrate-edit/.test(up) && /await import\("@\/lib\/usdApi"\)/.test(up) && !/from "@\/lib\/usdApi";\n/.test(up.replace(/import type[^\n]*\n/g, "")));
+  // بلاغُ المالك ٢٢/١١: «لمن أبيع شي بالدولار ينباع بنافذة لحاله وما يصعد للسلة» — مادّةُ «الدولار وحده» سطرُ دولارٍ بالسلّة من طريق الإضافة نفسِه.
+  check("الدولار وحده بالسلّة: usdTap يضيفه بالسلّة (النافذةُ للجملة وقاعدةٍ قبل 0283)، والطرقُ الثلاث تكمل بسعرٍ سُئل، والسطرُ يُختم بالدولار، و«$» لا يحوّله للدينار",
+    /if \(!wholesale && resume\) \{ void usdIntoCart\(p, pack, resume\); return false; \}/.test(sbx)
+    && /if \(!mixedOk\) \{ openUsd\(p, pack\); return; \}/.test(sbx) && /r\.why === "no_rate"\) \{ playTap\(\); setRateAsk\(\{ cur: null, then: null, resume \}\)/.test(sbx)
+    && (sbx.match(/usdOk: true/g) ?? []).length === 3 && (sbx.match(/usd: \{ c: usdOnlyCents\(/g) ?? []).length === 2
+    && /\?\.price_currency === "USD"\) \{\n\s+\/\/ «الدولار وحده»/.test(sbx) && /if \(resume\) \{ usdRateRef\.current = \{ rid: rate\.id/.test(sbx)
+    && ar.mxp?.say?.usdOnly && en.mxp?.say?.usdOnly);
+  check("  وسعرُه كالخادم: العلبةُ sell_price_usd، والكارتونُ سعرُه المكتوب (بعملة المادّة) وإلا العلبة × العدد",
+    /return c\(pack\.sell_price\) \?\? \(box == null \? null : box \* Number\(pack\.per\)\);/.test(sbx));
   check("  والنصوص بالقاموسين", ["rateEdit", "rateTitle", "rateNow", "rateNone", "rateNew", "rateOne", "rateBad", "rateHint", "rateSave", "rateSaved", "rateFailed"].every((k) => ar.mxp?.[k] && en.mxp?.[k])
     && ["rateSale", "rateMine", "pickSale", "pickToday", "makeToday", "note", "atSale"].every((k) => ar.usd.settle[k] && en.usd.settle[k])
     && ["title", "itemsFailed"].every((k) => ar.usd.twin?.[k] && en.usd.twin?.[k]) && !("reason" in ar.usd.settle) && !("rateOther" in ar.usd.settle));
