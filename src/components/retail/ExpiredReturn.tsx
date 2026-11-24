@@ -9,7 +9,7 @@ import type { ExpiredResult, ExpiredUnit } from "@/lib/expiredApi";
 import { listReturnLotsOf } from "@/lib/expiredApi";
 
 /* ============================================================================
- * الراجعُ الإكسباير (0288) — مالكُ النطاق `xret` (hot-paths.json). قطعةٌ كسولة: شاشةُ البيع تستوردها بـimport() مع بابها
+ * الراجعُ الإكسباير (0289) — مالكُ النطاق `xret` (hot-paths.json). قطعةٌ كسولة: شاشةُ البيع تستوردها بـimport() مع بابها
  * (expiredApi) وتسأل هذه الدوالَّ عن جملها، ونافذةُ الدفعات ونموذجُ المادّة يرسمان «رجعت من فلان…» من هنا.
  *
  * طلبُ المالك (٢٣/١١): «راجع اكسباير — شوكت خلص — واسم الزبون، ولو عليه دين ينسحب من دينه… وبالمخزن يكتبلي هاي رجعت من عنده
@@ -40,7 +40,7 @@ export const say = {
     if (r.cash > 0) parts.push(t("doneCash", { amount: money(r.cash) }));
     return parts.join(" — ");
   },
-  /** رفضُ أبواب 0288 برمزه: الخادمُ يشرحه بـhint عربيّ، والتجريبيُّ الرمزُ وحده — فبالإنكليزية أو بلا شرحٍ تُقال جملتُنا. */
+  /** رفضُ أبواب 0289 برمزه: الخادمُ يشرحه بـhint عربيّ، والتجريبيُّ الرمزُ وحده — فبالإنكليزية أو بلا شرحٍ تُقال جملتُنا. */
   err: (e: unknown, code: string | null): string | null => {
     const hint = (e as { hint?: string } | null)?.hint;
     if (hint && i18n.language.startsWith("ar")) return hint;

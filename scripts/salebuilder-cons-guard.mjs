@@ -324,7 +324,7 @@ const STUB = {
   "@/components/retail/PosCustomTabs": "export const PosTabPills = () => null; export const PosTabGrid = () => null; export const PosTabEditor = () => null; export const PosGridBar = () => null;",
   "@/lib/posTabsApi": "export const posTabsApi = { list: async () => [] };",
   /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
-  /* 0288: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
+  /* 0289: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
   "@/lib/expiredApi": `export const returnLotsReady = async () => false; export const listReturnLots = async () => []; export const listReturnLotsOf = async () => [];
     export const returnExpired = async () => { throw new Error("stub"); }; export const checkoutLots = async () => { throw new Error("stub"); }; export const expiredErrorCode = () => null;`,
   "@/components/retail/ExpiredReturn": "export const say = new Proxy({}, { get: (_, k) => () => String(k) }); export const XretDialog = () => null; export const XretNote = () => null; export const LotPickDialog = () => null; export const ReturnLotsNote = () => null; export const unitsOf = () => []; export default () => null;",

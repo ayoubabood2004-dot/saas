@@ -1,9 +1,9 @@
 /* ============================================================================
- * الراجعُ الإكسباير (0288) — المرآةُ التجريبية بسلوكها، والوصلُ بالنصّ.
+ * الراجعُ الإكسباير (0289) — المرآةُ التجريبية بسلوكها، والوصلُ بالنصّ.
  *
  * «حارسٌ لا يوجد بالتجريبيّ حارسٌ لم يُفحص» (CLAUDE.md §٤): فحسابُ return_expired (الفاتورةُ بمفتاح الزبون وما عليها دَينٌ أوّلاً، سطرُ
  * الأثر فلا يتغيّر الربح، الدَّينُ ثمّ أقدمُ دَينه ثمّ النقد، الدفعةُ بكلفة ما رجع) وretail_checkout_lots (كلفةُ الدفعة والإعادةُ بلا نقصٍ ثانٍ)
- * يُفحصان هنا على demoExpired.ts وrepoDemo.ts الحقيقيّتين بالحالات نفسِها التي يفحصها قسمُ 0288 بـrun.sh على القاعدة. ثمّ الوصل: القطعةُ
+ * يُفحصان هنا على demoExpired.ts وrepoDemo.ts الحقيقيّتين بالحالات نفسِها التي يفحصها قسمُ 0289 بـrun.sh على القاعدة. ثمّ الوصل: القطعةُ
  * كسولةٌ بنطاقها، والبابُ خارج الإقلاع، ودفعةُ الراجع آخرَ ما يأخذه البيعُ العاديّ، ولا فصلَ لها بنافذة الدفعات. وطفراتٌ على المرآة.
  *
  *   node scripts/expired-return-test.mjs
@@ -73,7 +73,7 @@ async function load(mutate) {
 const DB_KEY = /export const DEMO_DB_KEY = "([^"]+)"/.exec(src("src/lib/demoKey.ts"))?.[1];
 if (!DB_KEY) { console.error("✗ expired-return-test: ما انقرأ مفتاحُ مخزن الديمو"); process.exit(1); }
 
-/* ---- السيناريو: نفسُ قسم 0288 بـrun.sh — الأرقامُ نفسُها ---------------------------------------------------- */
+/* ---- السيناريو: نفسُ قسم 0289 بـrun.sh — الأرقامُ نفسُها ---------------------------------------------------- */
 async function scenario(M) {
   mem.clear();
   const A = "pA", B = "pB";
@@ -157,7 +157,7 @@ async function scenario(M) {
   const r7 = await ret("r7", [it(B, "box", 1, 100, "2026-06-01", { unit_price: 15000 })], "أبو حسن", "07702222222");
   out.r7 = `${r7.debt}/${r7.cash}|${inv("h1").total}|${inv("h2").total}`;
 
-  // ── تصليحاتُ المراجعة: بالأرقام نفسِها التي يفحصها قسمُ 0288 على القاعدة ──
+  // ── تصليحاتُ المراجعة: بالأرقام نفسِها التي يفحصها قسمُ 0289 على القاعدة ──
   await sale("k0", B, 1, 15000, 0, "أبو كرار", "07703333333");
   await repo.retailCheckout([{ product_id: A, name: "z", qty: 1, unit_price: 20000, unit_cost: 0, stock_qty: 1, unit_label: null, service_id: null }],
     { client_ref: "k1", payment_method: "card", amount_paid: 20000, final_total: 20000, payment_details: [{ method: "card", amount: 20000 }],
@@ -213,7 +213,7 @@ const EXPECT = {
   lotRefuse: "lot_short|lot_gone|0",
 };
 
-console.log("▸ ١) المرآةُ بالحالات نفسِها التي تفحصها الحزمة على القاعدة (قسمُ 0288)");
+console.log("▸ ١) المرآةُ بالحالات نفسِها التي تفحصها الحزمة على القاعدة (قسمُ 0289)");
 const M = await load();
 const got = await scenario(M);
 for (const [k, v] of Object.entries(EXPECT)) check(`${k}: ${v}`, got[k] === v, `طلع «${got[k]}»`);

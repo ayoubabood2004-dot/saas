@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0288 — الراجعُ الإكسباير: دفعةٌ بتاريخها وزبونها وكلفتها، ومن دَينه أوّلاً، والبيعُ منها بكلفتها
+-- 0289 — الراجعُ الإكسباير: دفعةٌ بتاريخها وزبونها وكلفتها، ومن دَينه أوّلاً، والبيعُ منها بكلفتها
 --
 -- طلبُ المالك (٢٣/١١): «لمن نسوي راجع بشاشة المبيعات اكو خيار انه راجع اكسباير — شوكت خلص الاكسباير مالته — ويختار الدكتور
 -- اسم الزبون، ولو كانت المادة عليه دين يكون مسحوب من دينه… وبالمخزن يكتبلي هاي رجعت من عنده كمية بهذا التاريخ… ولمن ابيع يكتبلي
@@ -63,7 +63,7 @@ alter table public.product_lots add constraint product_lots_return_from_len chec
 create index if not exists product_lots_return_idx on public.product_lots (clinic_id, product_id) where source = 'return' and qty > 0;
 
 -- ── ٢) المطابقة: البيعُ العاديّ لا يأخذ من دفعة الراجع قبل غيرها، والزيادةُ لا تُضاف لها ─────────────────
-select public._drift_assert('public.lots_reconcile(uuid,boolean)', 'fb9d3eefe161bc7658468c4b828d73d5', '-- +0288');
+select public._drift_assert('public.lots_reconcile(uuid,boolean)', 'fb9d3eefe161bc7658468c4b828d73d5', '-- +0289');
 
 create or replace function public.lots_reconcile(p_product uuid, p_expired_first boolean default false)
 returns void
@@ -104,9 +104,9 @@ begin
     for r in
       select id, qty from product_lots
        where product_id = p_product and qty > 0
--- -0288        order by (case when p_expired_first
-       order by (source = 'return' and not p_expired_first),   -- دفعةُ الراجع آخرَ ما يأخذه البيعُ العاديّ -- +0288
-                (case when p_expired_first   -- +0288
+-- -0289        order by (case when p_expired_first
+       order by (source = 'return' and not p_expired_first),   -- دفعةُ الراجع آخرَ ما يأخذه البيعُ العاديّ -- +0289
+                (case when p_expired_first   -- +0289
                       then not (expiry_date is not null and expiry_date < current_date)
                       else (expiry_date is not null and expiry_date < current_date) end),
                 expiry_date nulls last, received_at, id
@@ -121,7 +121,7 @@ begin
     select id into v_head from product_lots
      where product_id = p_product and qty > 0
        and (expiry_date is null or expiry_date >= current_date)
-       and source <> 'return'   -- الزيادةُ (مرتجعٌ عاديّ، تصحيح) لا تُضاف لدفعة راجعٍ إكسباير -- +0288
+       and source <> 'return'   -- الزيادةُ (مرتجعٌ عاديّ، تصحيح) لا تُضاف لدفعة راجعٍ إكسباير -- +0289
      order by expiry_date nulls last, received_at, id
      limit 1
      for update;
@@ -545,7 +545,7 @@ grant execute on function public.retail_checkout_lots(jsonb, jsonb, jsonb, uuid[
 -- ── ٥) نموذجُ المادّة لا يكتب تاريخَه فوق دفعة الراجع (حارسُ الانجراف على 0217) ───────────────────────────────────
 -- دفعةُ الراجع وحدها فيها رصيد ⇒ تاريخُ المادّة تاريخُها (lots_refresh_expiry)، وتعديلُ تاريخ المادّة بنموذجها كان يكتب فوقه (مقيسٌ بالمراجعة:
 -- ٢٠٢٦-١٠-٠١ صار ٢٠٢٨-٠١-٠١ مختوماً expiry_fixed) — فيضيع «شوكت خلص» الذي كتبه الطبيب عند الراجع.
-select public._drift_assert('public.lots_user_expiry(uuid,date,date)', '6bd2792fc62845ac8b76da07758c90fc', '-- +0288');
+select public._drift_assert('public.lots_user_expiry(uuid,date,date)', '6bd2792fc62845ac8b76da07758c90fc', '-- +0289');
 
 create or replace function public.lots_user_expiry(p_product uuid, p_old date, p_new date)
 returns date
@@ -562,17 +562,17 @@ begin
   if not exists (select 1 from products where id = p_product and clinic_id = auth_clinic()) then
     return p_new;
   end if;
--- -0288   update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()
--- -0288    where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old;
-  update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()   -- +0288
-   where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old and source <> 'return';   -- +0288
+-- -0289   update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()
+-- -0289    where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old;
+  update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()   -- +0289
+   where product_id = p_product and qty > 0 and expiry_date is not distinct from p_old and source <> 'return';   -- +0289
   get diagnostics v_n = row_count;
   -- التاريخُ القديم لا يطابق دفعةً بعينها ودفعةٌ وحيدةٌ فيها رصيد: هي المقصودة.
--- -0288   if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0) = 1 then
--- -0288     update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now() where product_id = p_product and qty > 0;
-  if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0 and source <> 'return') = 1 then   -- +0288
-    update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()   -- +0288
-     where product_id = p_product and qty > 0 and source <> 'return';   -- +0288
+-- -0289   if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0) = 1 then
+-- -0289     update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now() where product_id = p_product and qty > 0;
+  if v_n = 0 and (select count(*) from product_lots where product_id = p_product and qty > 0 and source <> 'return') = 1 then   -- +0289
+    update product_lots set expiry_date = p_new, expiry_fixed = true, updated_at = now()   -- +0289
+     where product_id = p_product and qty > 0 and source <> 'return';   -- +0289
   end if;
   select coalesce(min(expiry_date) filter (where expiry_date >= current_date), min(expiry_date)), bool_or(true)
     into v_min, v_any from product_lots where product_id = p_product and qty > 0;
@@ -584,7 +584,7 @@ grant execute on function public.lots_user_expiry(uuid, date, date) to authentic
 -- ── ٦) الراجعُ الخالص لا يُعيد مرجعاً ثبت راجعاً إكسباير (حارسُ الانجراف على 0136) ─────────────────────────────────
 -- الشاشةُ تولّد المرجعَ مرّةً للسلّة؛ راجعٌ إكسباير نتيجتُه مجهولة ثمّ «مو إكسباير» وإعادةٌ = retail_return بالمرجع نفسِه: الرصيدُ يزيد مرّتين
 -- والنقدُ يخرج مرّتين (rpc_refs مفتاحُه الدالّةُ والمرجع). والعكسُ يرفضه return_expired نفسُه (expired_ref_used).
-select public._drift_assert('public.retail_return(jsonb,jsonb)', 'b8a68e097c2958134d1f74abe8c5fdf1', '-- +0288');
+select public._drift_assert('public.retail_return(jsonb,jsonb)', 'b8a68e097c2958134d1f74abe8c5fdf1', '-- +0289');
 
 create or replace function public.retail_return(p_items jsonb, p_meta jsonb default '{}'::jsonb)
 returns jsonb
@@ -614,10 +614,10 @@ begin
     select result into v_out from rpc_refs
      where clinic_id = v_clinic and fn = 'retail_return' and client_ref = v_ref;
     if v_out is not null then return v_out; end if;
-    -- 0288: المرجعُ نفسُه ثبت راجعاً إكسباير (الشاشةُ بدّلت الوضعَ بعد نتيجةٍ مجهولة) — لا يُسجَّل ثانيةً راجعاً خالصاً.   -- +0288
-    if exists (select 1 from rpc_refs where clinic_id = v_clinic and fn = 'return_expired' and client_ref = v_ref) then   -- +0288
-      raise exception 'return_ref_used' using hint = 'هالإرجاع انسجّل راجع إكسباير — صفّر السلّة وشوف الفاتورة والدفعات.';   -- +0288
-    end if;   -- +0288
+    -- 0289: المرجعُ نفسُه ثبت راجعاً إكسباير (الشاشةُ بدّلت الوضعَ بعد نتيجةٍ مجهولة) — لا يُسجَّل ثانيةً راجعاً خالصاً.   -- +0289
+    if exists (select 1 from rpc_refs where clinic_id = v_clinic and fn = 'return_expired' and client_ref = v_ref) then   -- +0289
+      raise exception 'return_ref_used' using hint = 'هالإرجاع انسجّل راجع إكسباير — صفّر السلّة وشوف الفاتورة والدفعات.';   -- +0289
+    end if;   -- +0289
   end if;
 
   v_method := case lower(coalesce(p_meta->>'method','cash'))
