@@ -8368,7 +8368,29 @@
       "hint": "الرقم عنوان كل طبلة وتقرير بالواتساب — تأكّد منه."
     },
     "unknownFate": "ما نعرف إذا انحفظت (انقطع الاتصال). اضغط «أعد المحاولة» بنفس القيم — إن كانت انحفظت ترجع نفسها لا نسخة ثانية.",
-    "savedBefore": "انحفظت من قبل — هي نفسها"
+    "savedBefore": "انحفظت من قبل — هي نفسها",
+    "dx": {
+      "crd": "CRD (مايكوبلازما)",
+      "colibacillosis": "كولاي",
+      "nd": "نيوكاسل",
+      "nd_vel": "اشتباه نيوكاسل ضارية",
+      "ai_h9": "إنفلونزا H9N2",
+      "hpai": "اشتباه إنفلونزا عالية الإمراضية",
+      "ib": "التهاب القصبات المعدي IB",
+      "ibd": "گمبورو",
+      "coccidiosis": "كوكسيديا",
+      "ne": "التهاب الأمعاء النخري",
+      "hydropericardium": "استسقاء التامور",
+      "ilt": "التهاب الحنجرة والقصبة ILT",
+      "coryza": "الزكام المعدي",
+      "pox": "الجدري",
+      "salmonella": "سالمونيلا",
+      "aspergillosis": "الرشاشيات (فطر)",
+      "ascites": "الاستسقاء",
+      "heat_stress": "إجهاد حراري",
+      "mycotoxin": "سموم فطرية",
+      "nutritional": "نقص غذائي"
+    }
   },
   "flkv": {
     "newTitle": "زيارة جديدة",
@@ -8495,8 +8517,8 @@
     },
     "lesion": {
       "ext": {
-        "emaciation": "هزال (القص بارز)",
-        "dehydration": "جفاف",
+        "emaciation": "هزال شديد (Severe Emaciation)",
+        "dehydration": "جفاف الجسم (Dehydration)",
         "omphalitis": "التهاب السرّة",
         "pododermatitis": "التهاب باطن القدم",
         "hock_burn": "حرق العرقوب",
@@ -8508,28 +8530,52 @@
       "head": {
         "sinusitis": "التهاب الجيوب",
         "conjunctivitis": "التهاب الملتحمة",
-        "congestion": "احتقان",
-        "mucus": "مخاط",
-        "hemorrhage": "نزف",
-        "caseous_plug": "سدادة جبنية",
-        "diphtheritic": "غشاء دفتيري"
+        "congestion": "احتقان القصبة الهوائية",
+        "mucus": "زيادة المخاط",
+        "hemorrhage": "نزف القصبة الهوائية",
+        "caseous_plug": "وجود مواد متجبنة داخل القصبة",
+        "diphtheritic": "غشاء دفتيري",
+        "tracheitis": "التهاب القصبة الهوائية (Tracheitis)",
+        "mucus_plugs": "وجود سدادات مخاطية (Mucus Plugs)",
+        "blood_casts": "وجود قوالب دموية"
       },
       "lung": {
-        "congestion": "احتقان",
-        "pneumonia": "التهاب رئوي",
+        "congestion": "احتقان الرئتين",
+        "pneumonia": "التهاب الرئة (Pneumonia)",
         "airsac_foamy": "أكياس رغوية",
-        "airsac_cloudy": "أكياس معتمة/جبنية"
+        "airsac_cloudy": "تعكر الأكياس الهوائية",
+        "edema": "وذمة الرئتين",
+        "consolidation": "تكثف الرئة (Consolidation)",
+        "hemorrhage": "نزف الرئتين",
+        "airsacculitis": "التهاب الأكياس الهوائية (Air Sacculitis)",
+        "airsac_thick": "سماكة الأكياس الهوائية",
+        "fibrin": "ترسبات فبرينية (Fibrinous Exudate)",
+        "caseous": "وجود مواد متجبنة",
+        "fungal_nodules": "وجود عقيدات فطرية"
       },
       "heart": {
-        "pericarditis": "التهاب التامور الليفيني",
-        "hydropericardium": "استسقاء التامور",
-        "ascites": "توسّع البطين / استسقاء بطني"
+        "pericarditis": "التهاب التامور الفبريني (Fibrinous Pericarditis)",
+        "hydropericardium": "تجمع سوائل حول القلب (Hydropericardium)",
+        "ascites": "تجمع سوائل في التجويف البطني (Ascites)",
+        "epicardial_hemorrhage": "نزف على سطح القلب",
+        "cardiomegaly": "تضخم القلب (Cardiomegaly)",
+        "pale_myocardium": "شحوب عضلة القلب",
+        "myocardial_necrosis": "تنخر عضلة القلب (Myocardial Necrosis)",
+        "fibrin": "وجود ترسبات فبرينية حول القلب"
       },
       "liver": {
         "perihepatitis": "التهاب محفظة الكبد",
-        "enlarged": "كبد متضخّم/شاحب/هشّ",
-        "necrotic_foci": "بؤر نخرية",
-        "spleen_enlarged": "تضخّم الطحال"
+        "enlarged": "تضخم الكبد (Hepatomegaly)",
+        "necrotic_foci": "وجود بؤر نخرية متعددة",
+        "spleen_enlarged": "تضخم الطحال (Splenomegaly)",
+        "pale": "شحوب الكبد",
+        "congestion": "احتقان الكبد",
+        "hemorrhage": "نزف كبدي (Liver Hemorrhage)",
+        "necrosis": "تنخر الكبد (Hepatic Necrosis)",
+        "white_spots": "بقع بيضاء على الكبد",
+        "yellow_spots": "بقع صفراء على الكبد",
+        "friable": "تضخم الكبد مع هشاشة النسيج",
+        "fatty": "الكبد الدهني (Fatty Liver)"
       },
       "prov": {
         "gland_hemorrhage": "نزف رؤوس الغدد",
@@ -8537,20 +8583,35 @@
         "gizzard_erosion": "تآكل بطانة القانصة"
       },
       "gut": {
-        "distended": "انتفاخ",
-        "thin_wall": "جدار رقيق/رخو",
+        "distended": "وجود غاز وانتفاخ الأمعاء",
+        "thin_wall": "ترقق جدار الأمعاء",
         "excess_fluid": "سوائل أو مخاط زائد",
         "orange_mucus": "مخاط برتقالي",
-        "blood": "دم",
+        "blood": "وجود نزف واحتقان داخل الأمعاء",
         "white_spots": "بقع بيضاء",
         "necrosis": "نخر أو غشاء كاذب",
         "peyer_hemorrhage": "نزف بقع باير واللوزتين",
         "undigested": "علف غير مهضوم",
-        "cecal_cores": "سدادات بالأعورين"
+        "cecal_cores": "سدادات بالأعورين",
+        "necrotic_enteritis": "التهاب الأمعاء النخري (Necrotic Enteritis)",
+        "enlarged": "تضخم الأمعاء",
+        "thick_wall": "سماكة جدار الأمعاء",
+        "blood_casts": "وجود قوالب دموية (Blood Casts)",
+        "caseous": "وجود مواد متجبنة داخل الأمعاء",
+        "coccidia": "نشاط كوكسيديا",
+        "salmonella": "سالمونيلا"
       },
       "kidney": {
-        "swollen": "تضخّم/شحوب",
-        "urates": "ترسّب يورات"
+        "swollen": "تضخم الكلى (Renomegaly)",
+        "urates": "ترسب اليورات داخل الأنابيب الكلوية",
+        "pale": "شحوب الكلى",
+        "congestion": "احتقان الكلى",
+        "nephritis": "التهاب الكلى (Nephritis)",
+        "ureters_enlarged": "تضخم الحالبين",
+        "ureters_urates": "امتلاء الحالبين باليورات",
+        "visceral_gout": "النقرس الحشوي (Visceral Gout)",
+        "chalky_deposits": "ترسبات بيضاء طباشيرية على الأحشاء",
+        "atrophy": "ضمور الكلى"
       },
       "bursa": {
         "edema": "وذمة",
@@ -8560,40 +8621,64 @@
       },
       "repro": {
         "ovary_atrophy": "ضمور المبيض",
-        "egg_peritonitis": "التهاب الصفاق البيضي",
-        "salpingitis": "التهاب قناة البيض",
-        "cystic_oviduct": "قناة بيض كيسية"
+        "egg_peritonitis": "التهاب الصفاق الناتج عن صفار البيض (Egg Yolk Peritonitis)",
+        "salpingitis": "التهاب قناة البيض (Salpingitis)",
+        "cystic_oviduct": "قناة بيض كيسية",
+        "oviduct_caseous": "وجود مواد متجبنة داخل قناة البيض",
+        "oophoritis": "التهاب المبيض (Oophoritis)",
+        "ovary_hemorrhage": "نزف المبيض",
+        "abnormal_follicles": "وجود جريبات مبيضية غير طبيعية",
+        "free_yolk": "وجود صفار حر في التجويف البطني",
+        "oviduct_adhesions": "التصاقات حول قناة البيض"
       },
       "msk": {
         "muscle_hemorrhage": "نزف بعضلات الفخذ/الصدر",
         "rubbery_bones": "عظام مطّاطية",
         "td": "خلل غضروف الظنبوب",
         "fhn": "نخر رأس الفخذ",
-        "arthritis": "التهاب المفاصل",
-        "sciatic": "تضخّم العصب الوركي"
+        "arthritis": "التهاب المفاصل (Arthritis)",
+        "sciatic": "تضخّم العصب الوركي",
+        "breast_hemorrhage": "نزف عضلات الصدر",
+        "thigh_hemorrhage": "نزف عضلات الفخذ",
+        "muscle_necrosis": "تنخر العضلات",
+        "myositis": "التهاب العضلات (Myositis)",
+        "pale_muscle": "شحوب العضلات",
+        "swollen_joints": "تورم المفاصل",
+        "joint_fluid": "وجود سوائل داخل المفاصل",
+        "tenosynovitis": "التهاب غمد الأوتار (Tenosynovitis)"
+      },
+      "gen": {
+        "nil": "لا توجد آفات تشريحية واضحة (No Gross Lesions)",
+        "congestion": "احتقان عام (Generalized Congestion)",
+        "hemorrhage": "نزف عام (Generalized Hemorrhage)",
+        "polyserositis": "التهاب الأغشية المصلية (Polyserositis)",
+        "adhesions": "التصاقات الأحشاء (Visceral Adhesions)",
+        "organomegaly": "تضخم الأعضاء الداخلية (Organomegaly)",
+        "pallor": "شحوب الأعضاء (Pallor)",
+        "jaundice": "اصفرار الأنسجة والأعضاء (Jaundice)",
+        "edema": "وذمة الأنسجة (Edema)"
+      },
+      "skin": {
+        "subcut_hemorrhage": "نزف تحت الجلد (Subcutaneous Hemorrhage)",
+        "dermatitis": "التهاب الجلد (Dermatitis)",
+        "cellulitis": "التهاب النسيج الخلوي (Cellulitis)",
+        "abscesses": "وجود خراجات تحت الجلد",
+        "tumors": "وجود أورام جلدية"
+      },
+      "ceca": {
+        "hemorrhage": "نزف الأعورين",
+        "enlarged": "تضخم الأعورين",
+        "petechiae": "بقع نزفية في الأعورين"
+      },
+      "spleen": {
+        "atrophy": "ضمور الطحال",
+        "congestion": "احتقان الطحال",
+        "pale": "شحوب الطحال",
+        "hemorrhage": "نزف الطحال",
+        "necrotic_foci": "وجود بؤر نخرية",
+        "white_spots": "وجود بقع بيضاء",
+        "nodules": "وجود عقيدات"
       }
-    },
-    "dx": {
-      "crd": "CRD (مايكوبلازما)",
-      "colibacillosis": "كولاي",
-      "nd": "نيوكاسل",
-      "nd_vel": "اشتباه نيوكاسل ضارية",
-      "ai_h9": "إنفلونزا H9N2",
-      "hpai": "اشتباه إنفلونزا عالية الإمراضية",
-      "ib": "التهاب القصبات المعدي IB",
-      "ibd": "گمبورو",
-      "coccidiosis": "كوكسيديا",
-      "ne": "التهاب الأمعاء النخري",
-      "hydropericardium": "استسقاء التامور",
-      "ilt": "التهاب الحنجرة والقصبة ILT",
-      "coryza": "الزكام المعدي",
-      "pox": "الجدري",
-      "salmonella": "سالمونيلا",
-      "aspergillosis": "الرشاشيات (فطر)",
-      "ascites": "الاستسقاء",
-      "heat_stress": "إجهاد حراري",
-      "mycotoxin": "سموم فطرية",
-      "nutritional": "نقص غذائي"
     },
     "dxStatus": {
       "suspected": "اشتباه",
@@ -8638,7 +8723,47 @@
       "safeEgg": "البيض ممنوع قبل: {{day}}",
       "vaxLate": "تحصين متأخر: {{vaccine}} {{route}} (كان عمر {{age}}، {{day}})"
     },
-    "mortCovered": "نافق {{house}} مسجّل لهذا اليوم — امسح الرقم، أو عدّل التسجيل الموجود من تبويب النافق."
+    "mortCovered": "نافق {{house}} مسجّل لهذا اليوم — امسح الرقم، أو عدّل التسجيل الموجود من تبويب النافق.",
+    "sys": {
+      "gen": "العلامات التشريحية العامة",
+      "dig": "الجهاز الهضمي",
+      "heart": "القلب والتامور",
+      "resp": "الجهاز التنفسي",
+      "kidney": "الكلى والجهاز البولي",
+      "spleen": "الطحال",
+      "bursa": "غدة فابريشيا",
+      "repro": "الجهاز التناسلي",
+      "msk": "الجلد والعضلات والمفاصل"
+    },
+    "sub": {
+      "gut": "الأمعاء",
+      "ceca": "الأعورين",
+      "liver": "الكبد",
+      "prov": "المعدة الغدية والقانصة",
+      "trachea": "القصبة الهوائية",
+      "lung": "الرئتان والأكياس الهوائية",
+      "head": "الرأس والجيوب",
+      "heart": "القلب",
+      "kidney": "الكلى",
+      "spleen": "الطحال",
+      "bursa": "غدة فابريشيا",
+      "repro": "التناسلي",
+      "muscle": "العضلات",
+      "joint": "المفاصل والعظام",
+      "skin": "الجلد"
+    },
+    "necro": {
+      "search": "ابحث بالعلامة: نزف، كبد، مخاط…",
+      "noMatch": "ماكو علامة بهالكلمة",
+      "restNormal": "الباقي طبيعي",
+      "picked": "علامات هذا الطير",
+      "none": "ما اخترت علامة بعد — اختر الجهاز وعلّم اللي شفته",
+      "nilBlocked": "شيل العلامات المختارة أولاً",
+      "count": "علامات: {{n}}",
+      "next": "الجهاز التالي",
+      "start": "سجّل تشريح",
+      "dupBird": "طير جديد بنفس العلامات"
+    }
   },
   "rpct": {
     "usd": "«{{name}}» مسعّرة بالدولار — الراجع هنا بالدينار من الدرج. ترجيعها من «المرتجع» على فاتورة الدولار مالتها",

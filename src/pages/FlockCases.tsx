@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { AlertTriangle, Bird, CalendarClock, Plus, RefreshCw, Search, ShieldAlert, Stethoscope, Syringe } from "lucide-react";
-import { Badge, Button, Segmented } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn, formatNum, localISO } from "@/lib/utils";
 import { diffDays } from "@/lib/flockMath";
@@ -19,6 +19,7 @@ import type { FlockBoardRow } from "@/lib/flockTypes";
 import { ageLabel, dayLabel, flockError, matchesBoard, relDay, urgency } from "@/components/flock/flockShared";
 import { FlockCasePage } from "@/components/flock/FlockCase";
 import { FlockOpenPage } from "@/components/flock/FlockIntake";
+import { Choice } from "@/components/flock/FlockChoice";
 
 type Focus = "alert" | "vax" | "visit" | "wd" | null;
 /** البيّاض: البيضُ بالسحب (أو سحبُه غير معروف) — شارةٌ ثانية جنب اللحم. */
@@ -80,7 +81,7 @@ function Board() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
+    <div className="mx-auto w-full max-w-[1700px] px-4 py-6 sm:px-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Bird size={22} /></span>
@@ -107,13 +108,13 @@ function Board() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
+      {/* البحثُ والحالُ سطران بعرض الشاشة: «مفتوحة/مغلقة/الكل» أزرارٌ متساوية لا حبوبٌ صغيرة بزاوية السطر (طلبُ المالك ٢٤/١١). */}
+      <div className="mb-4 grid gap-2 lg:grid-cols-2">
+        <div className="relative min-w-0">
           <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
           <input className="input ps-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("flk.search")} />
         </div>
-        <Segmented size="sm" layoutId="flock-status" value={status} onChange={(v) => { setFocus(null); setStatus(v); }}
-          options={[{ value: "open", label: t("flk.status.open") }, { value: "closed", label: t("flk.status.closed") }, { value: "all", label: t("flk.status.all") }]} />
+        <Choice value={status} options={["open", "closed", "all"] as const} label={(v) => t(`flk.status.${v}`)} onChange={(v) => { setFocus(null); setStatus(v); }} data="status" />
       </div>
 
       {/* سقفُ القائمة يُقال لا يُخفى: الأقدمُ لا يظهر ولا يجده البحث (بحثٌ بالجهاز) — «ماكو» عن وجبةٍ موجودة كذبٌ يُصدَّق. */}
@@ -127,13 +128,13 @@ function Board() {
           <Button variant="outline" leftIcon={<RefreshCw size={16} />} onClick={() => void load(status)}>{t("flk.retry")}</Button>
         </div>
       ) : !rows ? (
-        <div className="grid gap-3 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2, 3].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>
       ) : shown.length === 0 ? (
         <div className="card p-8 text-center text-sm text-ink-muted" data-flock-empty>
           {q || focus ? t("flk.noMatch") : status === "closed" ? t("flk.noClosed") : t("flk.empty")}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2" data-flock-list>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-flock-list>
           {shown.map((r) => <CaseCard key={r.case.id} r={r} today={today} onOpen={() => navigate(`c/${r.case.id}`)} />)}
         </div>
       )}

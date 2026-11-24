@@ -20,7 +20,7 @@ import { LoadBoundary } from "@/components/LoadBoundary";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFormDraft } from "@/lib/useFormDraft";
 import { page } from "@/lib/lazyPage";
-import { cn, formatNum, localISO } from "@/lib/utils";
+import { cn, formatNum, localISO, searchable } from "@/lib/utils";
 import { getClinicName, getDialCode } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
 import { quotaMessage, sendWhatsApp, useWarmWaQuota } from "@/lib/quotas";
@@ -30,6 +30,10 @@ import { flockApi, type FlockVisitInput } from "@/lib/flockApi";
 import { addDays, ageOn, diffDays, dueOn, necropsySummary, withdrawalOf } from "@/lib/flockMath";
 import type { FeedPhase, FlockBundle, FlockCompliance, FlockGrade, FlockSnapshot, FlockTrend, FlockVisit as Visit } from "@/lib/flockTypes";
 import { ageLabel, dayLabel, flockError, localDay, newRef, num } from "./flockShared";
+import { Choice } from "./FlockChoice";
+import {
+  NIL, findLesions, lesionText, lesionsOf, restNormal, splitTerm, systemState, systemsFor, toggleLesion, toggleNormal,
+} from "./necropsy";
 
 const loadPhotoSource = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.PhotoSource })), ["att"]);
 let PhotoSourceLazy = loadPhotoSource();
@@ -43,31 +47,25 @@ const SIGNS: Record<string, string[]> = {
   lay: ["drop", "misshapen", "thin_shell"],
 };
 const ENV = ["temp", "ventilation", "ammonia", "litter", "drinkers", "feeders", "density", "lighting", "biosecurity"];
-const ORGANS: Record<string, string[]> = {
-  ext: ["emaciation", "dehydration", "omphalitis", "pododermatitis", "hock_burn", "breast_blister", "pox", "head_swelling", "vent_pasting"],
-  head: ["sinusitis", "conjunctivitis", "congestion", "mucus", "hemorrhage", "caseous_plug", "diphtheritic"],
-  lung: ["congestion", "pneumonia", "airsac_foamy", "airsac_cloudy"],
-  heart: ["pericarditis", "hydropericardium", "ascites"],
-  liver: ["perihepatitis", "enlarged", "necrotic_foci", "spleen_enlarged"],
-  prov: ["gland_hemorrhage", "proventriculitis", "gizzard_erosion"],
-  gut: ["distended", "thin_wall", "excess_fluid", "orange_mucus", "blood", "white_spots", "necrosis", "peyer_hemorrhage", "undigested", "cecal_cores"],
-  kidney: ["swollen", "urates"],
-  bursa: ["edema", "yellow_exudate", "hemorrhage", "atrophy"],
-  repro: ["ovary_atrophy", "egg_peritonitis", "salpingitis", "cystic_oviduct"],
-  msk: ["muscle_hemorrhage", "rubbery_bones", "td", "fhn", "arthritis", "sciatic"],
-};
+// آفاتُ التشريح بأجهزة الجسم: necropsy.ts (قائمةُ المالك ٢٤/١١ فوق القديمة — الرمزُ القديم باقٍ برمزه).
 const DX = ["crd", "colibacillosis", "nd", "nd_vel", "ai_h9", "hpai", "ib", "ibd", "coccidiosis", "ne", "hydropericardium", "ilt", "coryza", "pox", "salmonella", "aspergillosis", "ascites", "heat_stress", "mycotoxin", "nutritional"];
 const NOTIFIABLE = new Set(["hpai", "nd_vel"]);
-/** اقتراحٌ من التشريح (الملحق ب-٧): طيرٌ يطابق إن حمل كلَّ رموز إحدى المجموعات. اقتراحٌ يُنقر، لا تشخيص. */
+/** اقتراحٌ من التشريح (الملحق ب-٧): طيرٌ يطابق إن حمل كلَّ رموز إحدى المجموعات. اقتراحٌ يُنقر، لا تشخيص.
+ *  وآفاتُ المالك الجديدة تقترح كما كانت القديمةُ تقترح (التهابُ الأكياس الهوائية كتعكّرها، الأمعاءُ النخرية، العقيداتُ الفطرية…). */
 const RULES: { dx: string; any: string[][] }[] = [
-  { dx: "colibacillosis", any: [["heart.pericarditis", "liver.perihepatitis"], ["heart.pericarditis", "lung.airsac_cloudy"], ["liver.perihepatitis", "lung.airsac_cloudy"]] },
+  { dx: "colibacillosis", any: [["heart.pericarditis", "liver.perihepatitis"], ["heart.pericarditis", "lung.airsac_cloudy"], ["liver.perihepatitis", "lung.airsac_cloudy"],
+    ["heart.pericarditis", "lung.airsacculitis"], ["liver.perihepatitis", "lung.airsacculitis"], ["heart.fibrin", "liver.perihepatitis"], ["gen.polyserositis"]] },
   { dx: "nd", any: [["prov.gland_hemorrhage"], ["gut.peyer_hemorrhage"]] },
   { dx: "ibd", any: [["bursa.edema"], ["bursa.yellow_exudate"], ["bursa.hemorrhage"]] },
-  { dx: "coccidiosis", any: [["gut.orange_mucus"], ["gut.blood"], ["gut.white_spots"], ["gut.cecal_cores"]] },
-  { dx: "ne", any: [["gut.necrosis", "gut.distended"]] },
-  { dx: "hydropericardium", any: [["heart.hydropericardium", "liver.enlarged"]] },
+  { dx: "coccidiosis", any: [["gut.orange_mucus"], ["gut.blood"], ["gut.white_spots"], ["gut.cecal_cores"], ["gut.coccidia"], ["gut.blood_casts"], ["ceca.hemorrhage"], ["ceca.petechiae"]] },
+  { dx: "ne", any: [["gut.necrosis", "gut.distended"], ["gut.necrotic_enteritis"]] },
+  { dx: "hydropericardium", any: [["heart.hydropericardium", "liver.enlarged"], ["heart.hydropericardium", "liver.friable"]] },
   { dx: "ib", any: [["lung.airsac_foamy", "kidney.urates"], ["kidney.swollen", "kidney.urates"], ["repro.cystic_oviduct"]] },
-  { dx: "crd", any: [["lung.airsac_cloudy", "head.sinusitis"]] },
+  { dx: "crd", any: [["lung.airsac_cloudy", "head.sinusitis"], ["lung.airsacculitis", "head.sinusitis"]] },
+  { dx: "ilt", any: [["head.blood_casts"]] },
+  { dx: "salmonella", any: [["gut.salmonella"]] },
+  { dx: "aspergillosis", any: [["lung.fungal_nodules"]] },
+  { dx: "ascites", any: [["heart.ascites"]] },
 ];
 const PHASES: FeedPhase[] = ["prestarter", "starter", "grower", "finisher", "withdrawal", "layer", "other"];
 
@@ -215,10 +213,16 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
 
   const toggle = (arr: string[], code: string) => (arr.includes(code) ? arr.filter((x) => x !== code) : [...arr, code]);
   const setBirdAt = (i: number, p: Partial<Bird>) => set({ birds: d.birds.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+  /** طيرٌ جديد بآخر القائمة — فارغ، أو «بنفس العلامات» (خمسةُ طيورٍ متشابهة لا تُعلَّم خمس مرّات). */
+  const addBird = (findings: string[], source: Bird["source"]) => {
+    const no = (d.birds[d.birds.length - 1]?.no ?? 0) + 1;
+    set({ birds: [...d.birds, { no, source, weight: "", findings: [...findings], note: "" }] });
+    setBird(d.birds.length);
+  };
   const cur = d.birds[bird];
 
   return (
-    <Dialog open onClose={onClose} size="lg" title={visit ? t("flkv.editTitle") : t("flkv.newTitle")}
+    <Dialog open onClose={onClose} size="xl" title={visit ? t("flkv.editTitle") : t("flkv.newTitle")}
       description={<span>{ageLabel(t, c.placed_on, day)}{!visit && draft.saved !== "stopped" ? ` · ${t(draft.saved === "failed" ? "flkv.draftFailed" : "flkv.draftAuto")}` : ""}</span>}
       footer={<>
         <Button variant="ghost" onClick={onClose}>{t("flk.cancel")}</Button>
@@ -240,15 +244,10 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
             <input type="datetime-local" className="input" value={d.at} max={`${today}T23:59`} onChange={(e) => set({ at: e.target.value })} />
           </label>
           <div><span className="label">{t("flkv.kind")}</span>
-            <Chips value={d.kind} options={["routine", "complaint", "followup"] as const} label={(k) => t(`flk.visitKind.${k}`)} onChange={(k) => set({ kind: k })} />
+            <Choice value={d.kind} options={["routine", "complaint", "followup"] as const} label={(k) => t(`flk.visitKind.${k}`)} onChange={(k) => set({ kind: k })} data="visit-kind" />
           </div>
-          <div className="sm:col-span-2 flex gap-2">
-            {[true, false].map((q) => (
-              <button key={String(q)} type="button" onClick={() => set({ quick: q })} data-flock-quick={q ? "1" : "0"}
-                className={cn("flex-1 rounded-xl py-2 text-sm font-bold", d.quick === q ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>
-                {q ? t("flkv.quick") : t("flkv.full")}
-              </button>
-            ))}
+          <div className="sm:col-span-2">
+            <Choice value={d.quick ? "1" : "0"} options={["1", "0"] as const} label={(q) => (q === "1" ? t("flkv.quick") : t("flkv.full"))} onChange={(q) => set({ quick: q === "1" })} data="quick" />
           </div>
         </div>
 
@@ -264,13 +263,20 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                     <span>{h.label}</span>
                     <span className="text-2xs font-normal text-ink-subtle">{g ? t("flkv.mortSince", { from: dayLabel(g.from, today), n: Number(m.days || g.days) }) : t("flkv.mortUpToDate")}</span>
                   </div>
+                  {/* اسمُ الخانة فوقها لا بداخلها: «على كم يوم» كانت تُقصّ «على كم» بالهاتف، والاسمُ يختفي أوّلَ ما يُكتب رقم. */}
                   <div className="grid grid-cols-3 gap-2">
-                    <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.dead")} disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.dead} data-flock-v-dead
-                      onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, dead: e.target.value } } })} />
-                    <input type="number" inputMode="numeric" min={0} className="input" placeholder={t("flk.mort.culled")} disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.culled}
-                      onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, culled: e.target.value } } })} />
-                    <input type="number" inputMode="numeric" min={1} max={60} className="input" placeholder={t("flk.mort.days")} disabled={!g} value={m.days}
-                      onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, days: e.target.value } } })} />
+                    <label className="block min-w-0"><span className="mb-1 block truncate text-xs font-bold text-ink-subtle">{t("flk.mort.dead")}</span>
+                      <input type="number" inputMode="numeric" min={0} className="input" disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.dead} data-flock-v-dead
+                        onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, dead: e.target.value } } })} />
+                    </label>
+                    <label className="block min-w-0"><span className="mb-1 block truncate text-xs font-bold text-ink-subtle">{t("flk.mort.culled")}</span>
+                      <input type="number" inputMode="numeric" min={0} className="input" disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.culled}
+                        onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, culled: e.target.value } } })} />
+                    </label>
+                    <label className="block min-w-0"><span className="mb-1 block text-xs font-bold leading-tight text-ink-subtle">{t("flk.mort.days")}</span>
+                      <input type="number" inputMode="numeric" min={1} max={60} className="input" placeholder={g ? String(g.days) : undefined} disabled={!g} value={m.days}
+                        onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, days: e.target.value } } })} />
+                    </label>
                   </div>
                 </div>
               );
@@ -336,65 +342,45 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
           </Section>
         )}
 
-        {/* ٤ · التشريح (كاملة) */}
-        {!d.quick && (
-          <Section title={t("flkv.s4")}>
-            {notifiable && <NotifiableBanner t={t} />}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {d.birds.map((bd, i) => (
-                <button key={bd.no} type="button" onClick={() => setBird(i)} data-flock-bird={bd.no}
-                  className={cn("h-9 w-9 rounded-lg text-sm font-bold", i === bird ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>{bd.no}</button>
-              ))}
-              {d.birds.length < 50 && (
-                <button type="button" className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-brand-600" aria-label={t("flkv.addBird")} data-flock-add-bird
-                  onClick={() => { const no = (d.birds[d.birds.length - 1]?.no ?? 0) + 1; set({ birds: [...d.birds, { no, source: "dead", weight: "", findings: [], note: "" }] }); setBird(d.birds.length); }}>
-                  <Plus size={16} />
-                </button>
-              )}
-            </div>
-            {cur && (
-              <div className="mt-3 space-y-3 rounded-xl border border-line p-3" data-flock-bird-form={cur.no}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-extrabold text-ink">{t("flkv.birdN", { n: cur.no })}</span>
-                  <Chips value={cur.source ?? ""} options={["dead", "cull", "sacrificed"] as const} label={(k) => t(`flkv.birdSrc.${k}`)} onChange={(k) => setBirdAt(bird, { source: k })} />
-                  <input type="number" inputMode="numeric" min={1} className="input h-9 w-28" placeholder={t("flkv.weightG")} value={cur.weight} onChange={(e) => setBirdAt(bird, { weight: e.target.value })} />
-                  <div className="ms-auto flex gap-1">
-                    {bird > 0 && <Button size="sm" variant="ghost" leftIcon={<Copy size={14} />} onClick={() => setBirdAt(bird, { findings: [...d.birds[bird - 1].findings] })} data-flock-copy-bird>{t("flkv.copyPrev")}</Button>}
-                    <button type="button" className="grid h-9 w-9 place-items-center rounded-lg text-ink-muted hover:text-danger-600" aria-label={t("flk.delete")}
-                      onClick={() => { set({ birds: d.birds.filter((_, j) => j !== bird) }); setBird(Math.max(0, bird - 1)); }}><X size={16} /></button>
-                  </div>
-                </div>
-                {Object.entries(ORGANS).filter(([o]) => o !== "repro" || layer).map(([o, lesions]) => {
-                  const normal = cur.findings.includes(`${o}.normal`);
-                  return (
-                    <div key={o} data-flock-organ={o}>
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="text-xs font-bold text-ink">{t(`flkv.organ.${o}`)}</span>
-                        <button type="button" data-flock-normal={o}
-                          onClick={() => setBirdAt(bird, { findings: normal ? cur.findings.filter((f) => f !== `${o}.normal`) : [...cur.findings.filter((f) => !f.startsWith(`${o}.`)), `${o}.normal`] })}
-                          className={cn("chip text-2xs", normal ? "bg-success-600 text-white" : "bg-surface-2 text-ink-muted")}>{t("flkv.normal")}</button>
-                      </div>
-                      {!normal && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {lesions.map((l) => {
-                            const k = `${o}.${l}`;
-                            return <ChipBtn key={k} on={cur.findings.includes(k)} onClick={() => setBirdAt(bird, { findings: toggle(cur.findings, k) })} data={k}>{t(`flkv.lesion.${o}.${l}`)}</ChipBtn>;
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                <input className="input" maxLength={1000} placeholder={t("flkv.birdNote")} value={cur.note} onChange={(e) => setBirdAt(bird, { note: e.target.value })} />
+        {/* ٤ · التشريح — بالسريعة والكاملة (قائمةُ المالك ٢٤/١١): الطيورُ تبويبات، وأجهزةُ الجسم بطاقاتٌ بعرض النافذة */}
+        <Section title={t("flkv.s4")}>
+          {notifiable && d.birds.length > 0 && <NotifiableBanner t={t} />}
+          <div className={cn("flex flex-wrap items-center gap-2", notifiable && d.birds.length > 0 && "mt-2")} data-flock-birds>
+            {d.birds.map((bd, i) => (
+              <button key={bd.no} type="button" onClick={() => setBird(i)} data-flock-bird={bd.no} aria-pressed={i === bird}
+                className={cn("h-11 min-w-11 rounded-xl px-3 text-base font-extrabold tabular-nums transition", i === bird ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:text-ink")}>{bd.no}</button>
+            ))}
+            {d.birds.length < 50 && (
+              <Button variant={d.birds.length ? "outline" : "secondary"} leftIcon={<Plus size={16} />} onClick={() => addBird([], "dead")} data-flock-add-bird>{t("flkv.addBird")}</Button>
+            )}
+          </div>
+          {cur && (
+            <div className="mt-3 space-y-3 rounded-2xl border border-line p-3" data-flock-bird-form={cur.no}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-base font-extrabold text-ink">{t("flkv.birdN", { n: cur.no })}</span>
+                <Chips value={cur.source ?? ""} options={["dead", "cull", "sacrificed"] as const} label={(k) => t(`flkv.birdSrc.${k}`)} onChange={(k) => setBirdAt(bird, { source: k })} />
+                <input type="number" inputMode="numeric" min={1} className="input h-10 w-28" placeholder={t("flkv.weightG")} value={cur.weight} onChange={(e) => setBirdAt(bird, { weight: e.target.value })} />
+                <button type="button" className="ms-auto grid h-10 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 hover:text-danger-600" aria-label={t("flk.delete")}
+                  onClick={() => { set({ birds: d.birds.filter((_, j) => j !== bird) }); setBird(Math.max(0, bird - 1)); }}><X size={18} /></button>
               </div>
-            )}
-            {summary.length > 0 && (
-              <p className="mt-2 text-sm text-ink" data-flock-necropsy-summary>
-                <b>{t("flkv.summary", { n: d.birds.length })}</b> {summary.map((x) => `${lesionLabel(t, x.code)} ${x.n}/${x.of}`).join(" · ")}
-              </p>
-            )}
-          </Section>
-        )}
+              <NecropsyPicker key={cur.no} findings={cur.findings} layer={layer} onChange={(findings) => setBirdAt(bird, { findings })} />
+              {(bird > 0 || (d.birds.length < 50 && lesionsOf(cur.findings).length > 0)) && (
+                <div className="flex flex-wrap gap-2">
+                  {bird > 0 && <Button size="sm" variant="outline" leftIcon={<Copy size={14} />} onClick={() => setBirdAt(bird, { findings: [...d.birds[bird - 1].findings] })} data-flock-copy-bird>{t("flkv.copyPrev")}</Button>}
+                  {d.birds.length < 50 && lesionsOf(cur.findings).length > 0 && (
+                    <Button size="sm" variant="outline" leftIcon={<Plus size={14} />} onClick={() => addBird(cur.findings, cur.source)} data-flock-dup-bird>{t("flkv.necro.dupBird")}</Button>
+                  )}
+                </div>
+              )}
+              <input className="input" maxLength={1000} placeholder={t("flkv.birdNote")} value={cur.note} onChange={(e) => setBirdAt(bird, { note: e.target.value })} />
+            </div>
+          )}
+          {summary.length > 0 && (
+            <p className="mt-2 text-sm text-ink" data-flock-necropsy-summary>
+              <b>{t("flkv.summary", { n: d.birds.length })}</b> {summary.map((x) => `${lesionLabel(t, x.code)} ${x.n}/${x.of}`).join(" · ")}
+            </p>
+          )}
+        </Section>
 
         {/* ٦ · التشخيص */}
         <Section title={t("flkv.s6")}>
@@ -402,15 +388,15 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
             <div className="mb-2 flex flex-wrap items-center gap-1.5" data-flock-dx-suggest>
               <span className="text-2xs font-bold text-ink-subtle">{t("flkv.suggest")}</span>
               {suggestions.map((x) => (
-                <button key={x.dx} type="button" className="chip border border-dashed border-brand-500 bg-transparent text-2xs text-brand-700 dark:text-brand-300"
-                  onClick={() => set({ dxCodes: [...d.dxCodes, x.dx] })}>+ {t(`flkv.dx.${x.dx}`)} ({x.n}/{d.birds.length})</button>
+                <button key={x.dx} type="button" className="chip min-h-10 border border-dashed border-brand-500 bg-transparent text-sm font-bold text-brand-700 dark:text-brand-300" data-flock-suggest={x.dx}
+                  onClick={() => set({ dxCodes: [...d.dxCodes, x.dx] })}>+ {t(`flk.dx.${x.dx}`)} ({x.n}/{d.birds.length})</button>
               ))}
             </div>
           )}
           <div className="flex flex-wrap gap-1.5">
-            {DX.map((x) => <ChipBtn key={x} on={d.dxCodes.includes(x)} danger={NOTIFIABLE.has(x)} onClick={() => set({ dxCodes: toggle(d.dxCodes, x) })} data={x}>{t(`flkv.dx.${x}`)}</ChipBtn>)}
+            {DX.map((x) => <ChipBtn key={x} on={d.dxCodes.includes(x)} danger={NOTIFIABLE.has(x)} onClick={() => set({ dxCodes: toggle(d.dxCodes, x) })} data={x}>{t(`flk.dx.${x}`)}</ChipBtn>)}
           </div>
-          {notifiable && d.quick && <div className="mt-2"><NotifiableBanner t={t} /></div>}
+          {notifiable && <div className="mt-2"><NotifiableBanner t={t} /></div>}
           <div className="mt-2 grid gap-2 sm:grid-cols-3">
             <input className="input sm:col-span-2" maxLength={1000} placeholder={t("flkv.dxFree")} value={d.dx} onChange={(e) => set({ dx: e.target.value })} data-flock-dx />
             <Chips value={d.dxStatus} options={["suspected", "confirmed"] as const} label={(k) => t(`flkv.dxStatus.${k}`)} onChange={(k) => set({ dxStatus: d.dxStatus === k ? "" : k })} />
@@ -513,7 +499,7 @@ function VisitView({ b, visit: v, canEdit, canPhoto, onEdit, onClose, onChanged 
   // عناوينُ الأقسام بالنموذج مرقّمة («٢ · الطيور الحيّة») — بالعرض بلا رقم.
   const row = (label: string, val: string | null | undefined) => (val ? <div className="text-sm"><span className="font-bold text-ink-muted">{label.replace(/^\S+\s·\s/, "")}: </span><span className="text-ink">{val}</span></div> : null);
   return (
-    <Dialog open onClose={onClose} size="lg" title={t("flkv.viewTitle", { kind: t(`flk.visitKind.${v.kind}`), day: dayLabel(day, today) })}
+    <Dialog open onClose={onClose} size="xl" title={t("flkv.viewTitle", { kind: t(`flk.visitKind.${v.kind}`), day: dayLabel(day, today) })}
       description={ageLabel(t, c.placed_on, day)}
       footer={<>
         {canEdit && <Button variant="ghost" leftIcon={<Pencil size={16} />} onClick={onEdit} data-flock-visit-edit>{t("flk.edit")}</Button>}
@@ -540,7 +526,7 @@ function VisitView({ b, visit: v, canEdit, canPhoto, onEdit, onClose, onChanged 
             </ul>
           </div>
         )}
-        {row(t("flkv.s6"), [v.dx_codes.map((x) => t(`flkv.dx.${x}`)).join(t("common.listSep")), v.dx, v.dx_status ? `(${t(`flkv.dxStatus.${v.dx_status}`)})` : ""].filter(Boolean).join(" ") || null)}
+        {row(t("flkv.s6"), [v.dx_codes.map((x) => t(`flk.dx.${x}`)).join(t("common.listSep")), v.dx, v.dx_status ? `(${t(`flkv.dxStatus.${v.dx_status}`)})` : ""].filter(Boolean).join(" ") || null)}
         {row(t("flkv.advice"), v.advice)}
         {row(t("flkv.notes"), v.notes)}
         {canPhoto && <div className="pt-2">
@@ -576,8 +562,108 @@ function Chips<T extends string>({ value, options, label, onChange }: { value: T
 function ChipBtn({ on, danger, onClick, data, children }: { on: boolean; danger?: boolean; onClick: () => void; data?: string; children: ReactNode }) {
   return (
     <button type="button" onClick={onClick} data-chip={data} aria-pressed={on}
-      className={cn("chip text-xs", on ? (danger ? "bg-danger-600 text-white" : "bg-brand-600 text-white") : danger ? "bg-danger-50 text-danger-700 dark:bg-danger-500/10 dark:text-danger-200" : "bg-surface-2 text-ink-muted")}>
+      className={cn("chip min-h-10 text-sm", on ? (danger ? "bg-danger-600 text-white" : "bg-brand-600 text-white") : danger ? "bg-danger-50 text-danger-700 dark:bg-danger-500/10 dark:text-danger-200" : "bg-surface-2 text-ink-muted")}>
       {children}
+    </button>
+  );
+}
+/* ── منتقي التشريح: بحثٌ بالقائمة كلّها، وأجهزةُ الجسم بطاقاتٌ بحالها، وآفاتُ الجهاز المختار تحتها ───────────── */
+function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; layer: boolean; onChange: (next: string[]) => void }) {
+  const { t } = useTranslation();
+  const systems = systemsFor(layer);
+  const [openK, setOpenK] = useState(systems[0].k);
+  const [q, setQ] = useState("");
+  const panel = useRef<HTMLDivElement | null>(null);
+  const sys = systems.find((x) => x.k === openK) ?? systems[0];
+  const picked = lesionsOf(findings);
+  const nilBlocked = picked.some((c) => c !== NIL);
+  const subName = (k: string) => (k === "gen" ? "" : t(`flkv.sub.${k}`));
+  // البحثُ بكلّ الأجهزة المعروضة (necropsy.findLesions — الطرفان من searchable).
+  const hits = q.trim() ? findLesions(q, systems, (code) => lesionName(t, code), (sk, bk) => `${t(`flkv.sys.${sk}`)} ${subName(bk)}`, searchable) : null;
+  // البطاقةُ تفتح جهازها تحتها: إن كان رأسُه خارج النظر يُجلب إليه — لا تُترك النقرةُ بلا أثرٍ يُرى على الهاتف.
+  const open = (k: string) => {
+    setOpenK(k);
+    const el = panel.current;
+    if (el && typeof window !== "undefined") {
+      const top = el.getBoundingClientRect?.().top;
+      if (top != null && (top < 0 || top > window.innerHeight * 0.7)) el.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    }
+  };
+  const lesion = (code: string) => (
+    <LesionBtn key={code} code={code} on={findings.includes(code)} blocked={code === NIL && nilBlocked && !findings.includes(NIL)}
+      onClick={() => onChange(toggleLesion(findings, code))} />
+  );
+  const idx = systems.indexOf(sys);
+  const st = systemState(findings, sys);
+  return (
+    <div className="space-y-3" data-flock-necropsy>
+      <div className="flex flex-wrap items-center gap-1.5" data-flock-picked-list>
+        <span className="text-xs font-bold text-ink-subtle">{t("flkv.necro.picked")}:</span>
+        {picked.length === 0 && <span className="text-xs text-ink-subtle">{t("flkv.necro.none")}</span>}
+        {picked.map((code) => (
+          <button key={code} type="button" data-flock-picked={code} onClick={() => onChange(toggleLesion(findings, code))} aria-label={`${t("flk.delete")}: ${lesionLabel(t, code)}`}
+            className="chip min-h-9 bg-brand-50 text-sm font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200">
+            {lesionLabel(t, code)}<X size={14} className="shrink-0 opacity-70" />
+          </button>
+        ))}
+      </div>
+      <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("flkv.necro.search")} data-flock-necro-search />
+      {hits ? (
+        hits.length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" data-flock-necro-hits>{hits.map(lesion)}</div>
+          : <p className="text-sm text-ink-subtle" data-flock-necro-nomatch>{t("flkv.necro.noMatch")}</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" data-flock-systems>
+            {systems.map((x) => {
+              const s2 = systemState(findings, x);
+              const on = x.k === sys.k;
+              return (
+                <button key={x.k} type="button" onClick={() => open(x.k)} aria-pressed={on} data-flock-sys={x.k}
+                  className={cn("flex min-h-14 flex-col items-start justify-center gap-0.5 rounded-xl border px-3 py-2 text-start transition",
+                    on ? "border-brand-600 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1 hover:border-brand-500")}>
+                  <span className="text-sm font-extrabold leading-snug text-ink">{t(`flkv.sys.${x.k}`)}</span>
+                  <span className={cn("text-xs font-bold", s2.n ? "text-brand-700 dark:text-brand-300" : s2.normal ? "text-success-700 dark:text-success-300" : "text-ink-subtle")}>
+                    {s2.n ? t("flkv.necro.count", { n: s2.n }) : s2.normal ? t("flkv.normal") : "—"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div ref={panel} className="scroll-mt-4 space-y-3 rounded-2xl bg-surface-2 p-3" data-flock-sys-panel={sys.k}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 text-base font-extrabold text-ink">{t(`flkv.sys.${sys.k}`)}</span>
+              <button type="button" data-flock-normal={sys.k} aria-pressed={st.normal} onClick={() => onChange(toggleNormal(findings, sys))}
+                className={cn("chip min-h-10 text-sm font-bold", st.normal ? "bg-success-600 text-white" : "bg-surface-1 text-ink-muted")}>{t("flkv.normal")}</button>
+            </div>
+            {sys.subs.map((sub) => (
+              <div key={sub.k} data-flock-sub={sub.k}>
+                {sys.subs.length > 1 && <div className="mb-1.5 text-sm font-extrabold text-brand-700 dark:text-brand-300">{subName(sub.k)}</div>}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{sub.codes.map(lesion)}</div>
+              </div>
+            ))}
+            {sys.k === "gen" && nilBlocked && !findings.includes(NIL) && <p className="text-xs text-ink-subtle">{t("flkv.necro.nilBlocked")}</p>}
+            <div className="flex flex-wrap gap-2">
+              {idx < systems.length - 1 && (
+                <Button size="sm" variant="secondary" onClick={() => open(systems[idx + 1].k)} data-flock-sys-next>{t("flkv.necro.next")}: {t(`flkv.sys.${systems[idx + 1].k}`)}</Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => onChange(restNormal(findings, systems))} data-flock-rest-normal>{t("flkv.necro.restNormal")}</Button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+/** آفةٌ بالمنتقي: الاسمُ العربيّ، ومصطلحُه اللاتينيّ (إن كتبه المالك بين قوسين) سطراً صغيراً تحته. */
+function LesionBtn({ code, on, blocked, onClick }: { code: string; on: boolean; blocked?: boolean; onClick: () => void }) {
+  const { t } = useTranslation();
+  const { main, term } = splitTerm(lesionName(t, code));
+  return (
+    <button type="button" onClick={onClick} disabled={blocked} aria-pressed={on} data-chip={code} title={blocked ? t("flkv.necro.nilBlocked") : undefined}
+      className={cn("flex min-h-11 flex-col justify-center rounded-xl border px-3 py-1.5 text-start text-sm font-bold leading-snug transition disabled:opacity-50",
+        on ? "border-brand-600 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink hover:border-brand-500")}>
+      <span>{main}</span>
+      {term && <span className={cn("text-2xs font-semibold", on ? "text-white/80" : "text-ink-subtle")}>{term}</span>}
     </button>
   );
 }
@@ -597,7 +683,10 @@ function NotifiableBanner({ t }: { t: TFunction }) {
 }
 
 const signLabel = (t: TFunction, code: string) => { const [g, x] = code.split("."); return t(`flkv.sign.${g}.${x}`, { defaultValue: code }); };
-const lesionLabel = (t: TFunction, code: string) => { const [o, x] = code.split("."); return `${t(`flkv.organ.${o}`, { defaultValue: o })}: ${t(`flkv.lesion.${o}.${x}`, { defaultValue: x })}`; };
+const lesionName = (t: TFunction, code: string) => { const [o, x] = code.split("."); return t(`flkv.lesion.${o}.${x}`, { defaultValue: x ?? code }); };
+/** اسمُ الآفة بنصّ الملخّص والتقرير (necropsy.lesionText): بلا المصطلح اللاتينيّ، ومسبوقٌ بمجموعته حين لا يسمّي عضوَه. */
+const lesionLabel = (t: TFunction, code: string) =>
+  lesionText(code, (c) => lesionName(t, c), (k) => t(`flkv.sub.${k}`), (o) => t(`flkv.organ.${o}`, { defaultValue: o }));
 function snapshotText(t: TFunction, f: FlockSnapshot): string | null {
   const parts = [
     f.feed_phase ? t(`flk.feedPhase.${f.feed_phase}`) : "", f.feed_source ?? "",
@@ -635,7 +724,7 @@ function reportText(t: TFunction, b: FlockBundle, v: Visit): string {
     v.signs.length ? t("flkv.r.signs", { list: v.signs.map((x) => signLabel(t, x)).join(sep) }) : "",
     // الآفةُ باسم عضوها: «احتقان» و«نزف» بعضوين — بلا العضو لا يُعرف أيُّهما.
     birds.length ? t("flkv.r.necropsy", { n: birds.length, list: sum.slice(0, 5).map((x) => `${lesionLabel(t, x.code)} ${x.n}/${x.of}`).join(sep) || t("flkv.allNormal") }) : "",
-    v.dx_codes.length || v.dx ? t("flkv.r.dx", { dx: [v.dx_codes.map((x) => t(`flkv.dx.${x}`)).join(" + "), v.dx].filter(Boolean).join(" — ") }) : "",
+    v.dx_codes.length || v.dx ? t("flkv.r.dx", { dx: [v.dx_codes.map((x) => t(`flk.dx.${x}`)).join(" + "), v.dx].filter(Boolean).join(" — ") }) : "",
     live.length ? t("flkv.r.tx", { list: live.map((x) => x.title || t("flk.tx.untitled")).join(sep) }) : "",
     w.unknownMeat ? t("flkv.r.safeUnknown") : w.meat && w.meat > today ? t("flkv.r.safe", { day: dayLabel(w.meat, today) }) : "",
     layer ? (w.unknownEgg ? t("flkv.r.safeEggUnknown") : w.egg && w.egg > today ? t("flkv.r.safeEgg", { day: dayLabel(w.egg, today) }) : "") : "",

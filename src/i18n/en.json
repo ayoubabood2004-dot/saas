@@ -8368,7 +8368,29 @@
       "hint": "This number receives every treatment sheet and WhatsApp report — double-check it."
     },
     "unknownFate": "We don't know whether it saved (the connection dropped). Press “Try again” with the same values — if it was saved, you get that same record back, not a second one.",
-    "savedBefore": "It was already saved — this is the same record"
+    "savedBefore": "It was already saved — this is the same record",
+    "dx": {
+      "crd": "CRD (mycoplasma)",
+      "colibacillosis": "Colibacillosis",
+      "nd": "Newcastle disease",
+      "nd_vel": "Suspected velogenic ND",
+      "ai_h9": "H9N2 influenza",
+      "hpai": "Suspected HPAI",
+      "ib": "Infectious bronchitis",
+      "ibd": "Gumboro (IBD)",
+      "coccidiosis": "Coccidiosis",
+      "ne": "Necrotic enteritis",
+      "hydropericardium": "Hydropericardium",
+      "ilt": "ILT",
+      "coryza": "Infectious coryza",
+      "pox": "Fowl pox",
+      "salmonella": "Salmonella",
+      "aspergillosis": "Aspergillosis",
+      "ascites": "Ascites",
+      "heat_stress": "Heat stress",
+      "mycotoxin": "Mycotoxins",
+      "nutritional": "Nutritional deficiency"
+    }
   },
   "flkv": {
     "newTitle": "New visit",
@@ -8495,7 +8517,7 @@
     },
     "lesion": {
       "ext": {
-        "emaciation": "Emaciation (keel prominent)",
+        "emaciation": "Severe emaciation",
         "dehydration": "Dehydration",
         "omphalitis": "Omphalitis",
         "pododermatitis": "Footpad dermatitis",
@@ -8508,28 +8530,52 @@
       "head": {
         "sinusitis": "Sinusitis",
         "conjunctivitis": "Conjunctivitis",
-        "congestion": "Congestion",
-        "mucus": "Mucus",
-        "hemorrhage": "Hemorrhage",
-        "caseous_plug": "Caseous plug",
-        "diphtheritic": "Diphtheritic membrane"
+        "congestion": "Tracheal congestion",
+        "mucus": "Excess mucus",
+        "hemorrhage": "Tracheal hemorrhage",
+        "caseous_plug": "Caseous material in trachea",
+        "diphtheritic": "Diphtheritic membrane",
+        "tracheitis": "Tracheitis",
+        "mucus_plugs": "Mucus plugs",
+        "blood_casts": "Blood casts"
       },
       "lung": {
-        "congestion": "Congestion",
+        "congestion": "Lung congestion",
         "pneumonia": "Pneumonia",
         "airsac_foamy": "Foamy air sacs",
-        "airsac_cloudy": "Cloudy/caseous air sacs"
+        "airsac_cloudy": "Cloudy air sacs",
+        "edema": "Lung edema",
+        "consolidation": "Lung consolidation",
+        "hemorrhage": "Lung hemorrhage",
+        "airsacculitis": "Airsacculitis",
+        "airsac_thick": "Thickened air sacs",
+        "fibrin": "Fibrinous exudate",
+        "caseous": "Caseous material",
+        "fungal_nodules": "Fungal nodules"
       },
       "heart": {
         "pericarditis": "Fibrinous pericarditis",
         "hydropericardium": "Hydropericardium",
-        "ascites": "Right ventricle dilation / ascites"
+        "ascites": "Ascites (abdominal fluid)",
+        "epicardial_hemorrhage": "Epicardial hemorrhage",
+        "cardiomegaly": "Cardiomegaly",
+        "pale_myocardium": "Pale myocardium",
+        "myocardial_necrosis": "Myocardial necrosis",
+        "fibrin": "Fibrin deposits around the heart"
       },
       "liver": {
         "perihepatitis": "Perihepatitis",
-        "enlarged": "Enlarged/pale/friable liver",
-        "necrotic_foci": "Necrotic foci",
-        "spleen_enlarged": "Enlarged spleen"
+        "enlarged": "Hepatomegaly",
+        "necrotic_foci": "Multiple necrotic foci",
+        "spleen_enlarged": "Splenomegaly",
+        "pale": "Pale liver",
+        "congestion": "Liver congestion",
+        "hemorrhage": "Liver hemorrhage",
+        "necrosis": "Hepatic necrosis",
+        "white_spots": "White spots on liver",
+        "yellow_spots": "Yellow spots on liver",
+        "friable": "Enlarged friable liver",
+        "fatty": "Fatty liver"
       },
       "prov": {
         "gland_hemorrhage": "Hemorrhagic gland tips",
@@ -8537,20 +8583,35 @@
         "gizzard_erosion": "Gizzard lining erosion"
       },
       "gut": {
-        "distended": "Distended",
-        "thin_wall": "Thin/flaccid wall",
+        "distended": "Gas-distended intestines",
+        "thin_wall": "Thin intestinal wall",
         "excess_fluid": "Excess fluid or mucus",
         "orange_mucus": "Orange mucus",
-        "blood": "Blood",
+        "blood": "Intestinal hemorrhage & congestion",
         "white_spots": "White spots",
         "necrosis": "Necrosis or pseudomembrane",
         "peyer_hemorrhage": "Hemorrhagic Peyer's patches/cecal tonsils",
         "undigested": "Undigested feed",
-        "cecal_cores": "Cecal cores"
+        "cecal_cores": "Cecal cores",
+        "necrotic_enteritis": "Necrotic enteritis",
+        "enlarged": "Enlarged intestines",
+        "thick_wall": "Thickened intestinal wall",
+        "blood_casts": "Blood casts",
+        "caseous": "Caseous material in intestines",
+        "coccidia": "Coccidial activity",
+        "salmonella": "Salmonella"
       },
       "kidney": {
-        "swollen": "Swollen/pale",
-        "urates": "Urate deposits"
+        "swollen": "Renomegaly",
+        "urates": "Urates in renal tubules",
+        "pale": "Pale kidneys",
+        "congestion": "Kidney congestion",
+        "nephritis": "Nephritis",
+        "ureters_enlarged": "Enlarged ureters",
+        "ureters_urates": "Ureters packed with urates",
+        "visceral_gout": "Visceral gout",
+        "chalky_deposits": "Chalky white deposits on viscera",
+        "atrophy": "Kidney atrophy"
       },
       "bursa": {
         "edema": "Edema",
@@ -8560,9 +8621,15 @@
       },
       "repro": {
         "ovary_atrophy": "Ovarian regression",
-        "egg_peritonitis": "Egg peritonitis",
+        "egg_peritonitis": "Egg yolk peritonitis",
         "salpingitis": "Salpingitis",
-        "cystic_oviduct": "Cystic oviduct"
+        "cystic_oviduct": "Cystic oviduct",
+        "oviduct_caseous": "Caseous material in oviduct",
+        "oophoritis": "Oophoritis",
+        "ovary_hemorrhage": "Ovarian hemorrhage",
+        "abnormal_follicles": "Abnormal ovarian follicles",
+        "free_yolk": "Free yolk in abdominal cavity",
+        "oviduct_adhesions": "Adhesions around oviduct"
       },
       "msk": {
         "muscle_hemorrhage": "Thigh/breast muscle hemorrhage",
@@ -8570,30 +8637,48 @@
         "td": "Tibial dyschondroplasia",
         "fhn": "Femoral head necrosis",
         "arthritis": "Arthritis",
-        "sciatic": "Enlarged sciatic nerve"
+        "sciatic": "Enlarged sciatic nerve",
+        "breast_hemorrhage": "Breast muscle hemorrhage",
+        "thigh_hemorrhage": "Thigh muscle hemorrhage",
+        "muscle_necrosis": "Muscle necrosis",
+        "myositis": "Myositis",
+        "pale_muscle": "Pale muscles",
+        "swollen_joints": "Swollen joints",
+        "joint_fluid": "Fluid in joints",
+        "tenosynovitis": "Tenosynovitis"
+      },
+      "gen": {
+        "nil": "No gross lesions",
+        "congestion": "Generalized congestion",
+        "hemorrhage": "Generalized hemorrhage",
+        "polyserositis": "Polyserositis",
+        "adhesions": "Visceral adhesions",
+        "organomegaly": "Organomegaly",
+        "pallor": "Pale organs",
+        "jaundice": "Jaundice",
+        "edema": "Tissue edema"
+      },
+      "skin": {
+        "subcut_hemorrhage": "Subcutaneous hemorrhage",
+        "dermatitis": "Dermatitis",
+        "cellulitis": "Cellulitis",
+        "abscesses": "Subcutaneous abscesses",
+        "tumors": "Skin tumors"
+      },
+      "ceca": {
+        "hemorrhage": "Cecal hemorrhage",
+        "enlarged": "Enlarged ceca",
+        "petechiae": "Cecal petechiae"
+      },
+      "spleen": {
+        "atrophy": "Spleen atrophy",
+        "congestion": "Spleen congestion",
+        "pale": "Pale spleen",
+        "hemorrhage": "Spleen hemorrhage",
+        "necrotic_foci": "Necrotic foci",
+        "white_spots": "White spots",
+        "nodules": "Nodules"
       }
-    },
-    "dx": {
-      "crd": "CRD (mycoplasma)",
-      "colibacillosis": "Colibacillosis",
-      "nd": "Newcastle disease",
-      "nd_vel": "Suspected velogenic ND",
-      "ai_h9": "H9N2 influenza",
-      "hpai": "Suspected HPAI",
-      "ib": "Infectious bronchitis",
-      "ibd": "Gumboro (IBD)",
-      "coccidiosis": "Coccidiosis",
-      "ne": "Necrotic enteritis",
-      "hydropericardium": "Hydropericardium",
-      "ilt": "ILT",
-      "coryza": "Infectious coryza",
-      "pox": "Fowl pox",
-      "salmonella": "Salmonella",
-      "aspergillosis": "Aspergillosis",
-      "ascites": "Ascites",
-      "heat_stress": "Heat stress",
-      "mycotoxin": "Mycotoxins",
-      "nutritional": "Nutritional deficiency"
     },
     "dxStatus": {
       "suspected": "Suspected",
@@ -8638,7 +8723,47 @@
       "safeEgg": "No eggs before: {{day}}",
       "vaxLate": "Overdue vaccination: {{vaccine}} {{route}} (due at age {{age}}, {{day}})"
     },
-    "mortCovered": "Mortality for {{house}} is already recorded for this day — clear the number, or edit the existing entry in the Mortality tab."
+    "mortCovered": "Mortality for {{house}} is already recorded for this day — clear the number, or edit the existing entry in the Mortality tab.",
+    "sys": {
+      "gen": "General findings",
+      "dig": "Digestive system",
+      "heart": "Heart & pericardium",
+      "resp": "Respiratory system",
+      "kidney": "Kidneys & urinary tract",
+      "spleen": "Spleen",
+      "bursa": "Bursa of Fabricius",
+      "repro": "Reproductive system",
+      "msk": "Skin, muscles & joints"
+    },
+    "sub": {
+      "gut": "Intestines",
+      "ceca": "Ceca",
+      "liver": "Liver",
+      "prov": "Proventriculus & gizzard",
+      "trachea": "Trachea",
+      "lung": "Lungs & air sacs",
+      "head": "Head & sinuses",
+      "heart": "Heart",
+      "kidney": "Kidneys",
+      "spleen": "Spleen",
+      "bursa": "Bursa",
+      "repro": "Reproductive",
+      "muscle": "Muscles",
+      "joint": "Joints & bones",
+      "skin": "Skin"
+    },
+    "necro": {
+      "search": "Search findings: hemorrhage, liver, mucus…",
+      "noMatch": "No finding matches",
+      "restNormal": "Mark the rest normal",
+      "picked": "This bird's findings",
+      "none": "Nothing picked yet — choose a system and tick what you saw",
+      "nilBlocked": "Remove the picked findings first",
+      "count": "Findings: {{n}}",
+      "next": "Next system",
+      "start": "Record necropsy",
+      "dupBird": "New bird, same findings"
+    }
   },
   "rpct": {
     "usd": "“{{name}}” is priced in USD — returns here are paid in dinar from the drawer. Return it from “Returns” on its USD invoice",

@@ -157,7 +157,7 @@ export function TreatmentSheet({ b, tx, onClose, onSaved }: { b: FlockBundle; tx
   };
 
   return (
-    <Dialog open onClose={onClose} size="lg" title={tx ? t("flk.tx.editTitle") : t("flk.tx.newTitle")}
+    <Dialog open onClose={onClose} size="xl" title={tx ? t("flk.tx.editTitle") : t("flk.tx.newTitle")}
       footer={<>
         <Button variant="ghost" onClick={onClose}>{t("flk.cancel")}</Button>
         <Button loading={busy} onClick={() => void save()} data-flock-save>{locked ? t("flk.retry") : frozen ? t("flk.tx.saveVersion") : t("flk.save")}</Button>

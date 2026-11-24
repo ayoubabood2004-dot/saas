@@ -15,6 +15,7 @@ import { flockApi } from "@/lib/flockApi";
 import { ageOn, dueOn } from "@/lib/flockMath";
 import type { FlockBundle, FlockCase, FlockFarm, FlockKind, FlockMortality, FlockProgram, FlockProgramStep, FlockRoute, FlockVax } from "@/lib/flockTypes";
 import { dayLabel, flockError, newRef } from "./flockShared";
+import { Choice } from "./FlockChoice";
 
 export type VaxMode = "new" | "give" | "skip" | "edit";
 export const ROUTES: FlockRoute[] = ["water", "spray", "eye", "sc", "im", "wing", "feed", "other"];
@@ -125,12 +126,7 @@ export function MortalitySheet({ b, row, onClose, onSaved }: { b: FlockBundle; r
         {!editing && (
           <div>
             <span className="label">{t("flk.mort.source")}</span>
-            <div className="flex gap-2">
-              {(["staff", "farmer"] as const).map((v) => (
-                <button key={v} type="button" onClick={() => setSource(v)} disabled={unsure.size > 0}
-                  className={source === v ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.mort.src.${v}`)}</button>
-              ))}
-            </div>
+            <Choice value={source} options={["staff", "farmer"] as const} label={(v) => t(`flk.mort.src.${v}`)} onChange={setSource} disabled={unsure.size > 0} data="mort-src" />
           </div>
         )}
         <label className="block">
@@ -201,11 +197,7 @@ export function VaxSheet({ b, vax, mode, onClose, onSaved }: { b: FlockBundle; v
       </>}>
       <div className="space-y-4" data-flock-vax-sheet>
         {!locked && (
-          <div className="flex flex-wrap gap-2">
-            {(["planned", "given", "skipped"] as const).map((v) => (
-              <button key={v} type="button" onClick={() => setStatus(v)} className={status === v ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.vax.status.${v}`)}</button>
-            ))}
-          </div>
+          <Choice value={status} options={["planned", "given", "skipped"] as const} label={(v) => t(`flk.vax.status.${v}`)} onChange={setStatus} data="vax-status" />
         )}
         {!locked && (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -229,20 +221,12 @@ export function VaxSheet({ b, vax, mode, onClose, onSaved }: { b: FlockBundle; v
               <span className="mt-1 block text-2xs text-ink-subtle">{givenOn ? t("flk.ageShort", { age: ageOn(b.case.placed_on, givenOn) }) : ""}</span>
             </label>
             <div><span className="label">{t("flk.vax.givenBy")}</span>
-              <div className="flex flex-wrap gap-1.5">
-                {(["vet", "farmer", "hatchery", "other"] as const).map((v) => (
-                  <button key={v} type="button" onClick={() => setGivenBy(v)} className={givenBy === v ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.givenBy.${v}`)}</button>
-                ))}
-              </div>
+              <Choice value={givenBy} options={["vet", "farmer", "hatchery", "other"] as const} label={(v) => t(`flk.givenBy.${v}`)} onChange={setGivenBy} data="given-by" />
             </div>
             <label className="block"><span className="label">{t("flk.vax.batch")}</span><input className="input" value={batch} maxLength={60} onChange={(e) => setBatch(e.target.value)} /></label>
             <label className="block"><span className="label">{t("flk.vax.birds")}</span><input type="number" inputMode="numeric" min={0} className="input" value={birds} onChange={(e) => setBirds(e.target.value)} /></label>
             <div className="sm:col-span-2"><span className="label">{t("flk.vax.take")}</span>
-              <div className="flex flex-wrap gap-1.5">
-                {([[true, "yes"], [false, "no"], [null, "unknown"]] as const).map(([v, k]) => (
-                  <button key={k} type="button" onClick={() => setTakeOk(v)} className={takeOk === v ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.vax.take_${k}`)}</button>
-                ))}
-              </div>
+              <Choice value={takeOk} options={[true, false, null] as const} label={(v) => t(`flk.vax.take_${v === true ? "yes" : v === false ? "no" : "unknown"}`)} onChange={setTakeOk} data="take" />
               <span className="mt-1 block text-2xs text-ink-subtle">{t("flk.vax.takeHint")}</span>
             </div>
           </div>
@@ -288,11 +272,7 @@ export function CloseSheet({ b, onClose, onSaved }: { b: FlockBundle; onClose: (
         <Button variant={early ? "danger" : "primary"} loading={busy} disabled={early && !confirmWd} onClick={() => void save()} data-flock-save>{t("flk.closeCase")}</Button>
       </>}>
       <div className="space-y-4" data-flock-close-sheet>
-        <div className="flex flex-wrap gap-2">
-          {(["sold", "depleted", "transferred", "other"] as const).map((v) => (
-            <button key={v} type="button" onClick={() => setReason(v)} className={reason === v ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.close.reason.${v}`)}</button>
-          ))}
-        </div>
+        <Choice value={reason} options={["sold", "depleted", "transferred", "other"] as const} label={(v) => t(`flk.close.reason.${v}`)} onChange={setReason} data="close-reason" />
         <label className="block"><span className="label">{t("flk.close.on")}</span>
           <input type="date" className="input" value={on} min={b.case.placed_on} max={today} onChange={(e) => { setOn(e.target.value); setConfirmWd(false); }} />
           <span className="mt-1 block text-2xs text-ink-subtle">{on ? t("flk.ageShort", { age: ageOn(b.case.placed_on, on) }) : ""}</span>
@@ -383,8 +363,8 @@ export function CaseEditSheet({ b, onClose, onSaved }: { b: FlockBundle; onClose
         <Button loading={busy} onClick={() => void save()} data-flock-save>{t("flk.save")}</Button>
       </>}>
       <div className="grid gap-3 sm:grid-cols-2" data-flock-edit-sheet>
-        <div className="sm:col-span-2 flex flex-wrap gap-2">
-          {KINDS.map((k) => <button key={k} type="button" onClick={() => setKind(k)} className={kind === k ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.kind.${k}`)}</button>)}
+        <div className="sm:col-span-2">
+          <Choice value={kind} options={KINDS} label={(k) => t(`flk.kind.${k}`)} onChange={setKind} data="case-kind" />
         </div>
         <label className="block"><span className="label">{t("flk.breed")}</span><input className="input" value={breed} maxLength={60} onChange={(e) => setBreed(e.target.value)} /></label>
         <label className="block"><span className="label">{t("flk.hatchery")}</span><input className="input" value={hatchery} maxLength={120} onChange={(e) => setHatchery(e.target.value)} /></label>
@@ -420,7 +400,7 @@ export function ProgramsSheet({ onClose }: { onClose: () => void }) {
   };
   const setStep = (i: number, p: Partial<FlockProgramStep>) => edit && setEdit({ ...edit, steps: edit.steps.map((s, j) => (j === i ? { ...s, ...p } : s)) });
   return (
-    <Dialog open onClose={onClose} size="lg" title={edit ? (edit.id ? t("flk.prog.editTitle") : t("flk.prog.newTitle")) : t("flk.prog.title")}
+    <Dialog open onClose={onClose} size="xl" title={edit ? (edit.id ? t("flk.prog.editTitle") : t("flk.prog.newTitle")) : t("flk.prog.title")}
       footer={edit ? <>
         {edit.id && <Button variant="ghost" onClick={() => void save(true)} disabled={busy}>{t("flk.prog.archive")}</Button>}
         <Button variant="ghost" onClick={() => setEdit(null)}>{t("flk.cancel")}</Button>
@@ -431,7 +411,7 @@ export function ProgramsSheet({ onClose }: { onClose: () => void }) {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block"><span className="label">{t("flk.prog.name")}</span><input className="input" value={edit.name} maxLength={80} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></label>
             <div><span className="label">{t("flk.kindLabel")}</span>
-              <div className="flex flex-wrap gap-1.5">{KINDS.map((k) => <button key={k} type="button" onClick={() => setEdit({ ...edit, kind: k })} className={edit.kind === k ? "chip bg-brand-600 text-white" : "chip bg-surface-2 text-ink-muted"}>{t(`flk.kind.${k}`)}</button>)}</div>
+              <Choice value={edit.kind} options={KINDS} label={(k) => t(`flk.kind.${k}`)} onChange={(k) => setEdit({ ...edit, kind: k })} data="prog-kind" />
             </div>
           </div>
           {edit.steps.map((s, i) => (
