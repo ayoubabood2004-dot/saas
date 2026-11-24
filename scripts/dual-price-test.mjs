@@ -307,7 +307,7 @@ check("  0283: «$» لا يحوّل — دينارُ السطر يبقى، وا
 check("  تبديلُ الوحدة والسعرُ المكتوبُ بيد يُرجعان السطرَ للدينار",
   // 0290: «يدويّ» بعد التبديل = سعرٌ غيرُ سعر القائمة لوحدته (سطرُ دفعة الإكسباير بسعرٍ اختاره الطبيب) — وغيرُه false كما كان؛ والدولارُ يسقط بكلّ حال.
   /priceManual: Math\.round\(unit_price \* 100\) !== Math\.round\(listU \* 100\), usd: undefined \};/.test(sb)
-  && /const unit_price = l\.lot\?\.px \? lotUnitPrice\(l\.lot\.px, toSub, listU, l\.unitsPerBox \?\? null\) : listU;/.test(sb)
+  && /const unit_price = l\.lot \? lotUnitPrice\(\{ price: l\.unit_price, sub: curSub, list: curList \}, toSub, listU, l\.unitsPerBox \?\? null\) : listU;/.test(sb)
   && /unit_price: v, priceManual: true, usd: undefined \}/.test(sb));
 check("  0283: مالُ الدينار من سطور الدينار وحدها — المجموعُ والكلفةُ والعروضُ ومعاينةُ الربح (سطرُ الدولار ليس جرعةً ولا راجعاً)",
   /function isUsdLine\(l: Pick<Line, "usd" \| "ret" \| "dose">\): boolean \{\s*return !!l\.usd && !l\.ret && !l\.dose;/.test(sb)

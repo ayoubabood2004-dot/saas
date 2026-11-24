@@ -234,7 +234,7 @@ interface Line {
   xret?: { date: string; unit: "box" | "sub" | "pack"; packId?: string; box: number };
   /** 0289: بيعٌ من دفعة راجعٍ إكسباير — `qty` باقيها بوحدة المخزن (سقفُ السطر)، و`cost` كلفةُ العلبة منها (معاينةُ الربح؛ الخادمُ
    *  يكتبها)، و`note` ما يُرسم تحت السطر. البيعةُ تمرّ من retail_checkout_lots. */
-  lot?: { id: string; qty: number; cost: number | null; note: string; px?: LotPrice };
+  lot?: { id: string; qty: number; cost: number | null; note: string };
 }
 
 /* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
@@ -1627,18 +1627,20 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return () => { alive = false; };
   }, [refreshRetLots]);
   /** «من الإكسباير لو من الجديد؟» — دفعةٌ، أو null (الجديد)، أو undefined (أُلغي). */
-  const [lotAsk, setLotAsk] = useState<{ p: Product; lots: ProductLot[]; unitFor: (l: ProductLot) => LotUnit; resolve: (l: LotAnswer) => void } | null>(null);
+  const [lotAsk, setLotAsk] = useState<{ p: Product; lots: ProductLot[]; unitFor: (l: ProductLot) => LotUnit; resolve: (l: LotAnswer) => void; seq: number } | null>(null);
   /* سؤالٌ ثانٍ والأوّلُ مفتوح (لمسةٌ ثانية، مسحٌ فاته الإطفاء) ⇒ الأوّلُ يُلغى بجوابه لا يُترك وعداً معلَّقاً (كان يضيع مضاعِفُه — مراجعة). */
   const lotAskRef = useRef<{ resolve: (l: LotAnswer) => void } | null>(null);
+  const lotAskSeq = useRef(0);
   const askLot = (p: Product, lots: ProductLot[], unitFor: (l: ProductLot) => LotUnit) => new Promise<LotAnswer>((resolve) => {
     lotAskRef.current?.resolve(undefined);
     lotAskRef.current = { resolve };
-    playTap(); setLotAsk({ p, lots, unitFor, resolve });
+    // كلُّ سؤالٍ نافذةٌ جديدة (key): سؤالٌ ثانٍ لنفس المادّة كان يفتح على دفعة السؤال الأوّل وسعرِه (مراجعة).
+    playTap(); setLotAsk({ p, lots, unitFor, resolve, seq: ++lotAskSeq.current });
   });
-  const lotFields = (lot: ProductLot, subPer: number | null, px?: LotPrice): Partial<Line> => {
+  const lotFields = (lot: ProductLot, subPer: number | null): Partial<Line> => {
     const cost = lot.unit_cost == null ? null : Number(lot.unit_cost);
     return {
-      lot: { id: lot.id, qty: Number(lot.qty), cost, note: xretMod ? xretMod.ui.say.lotLine(lot) : "", ...(px ? { px } : {}) },
+      lot: { id: lot.id, qty: Number(lot.qty), cost, note: xretMod ? xretMod.ui.say.lotLine(lot) : "" },
       ...(cost != null ? { unit_cost: subPer ? Math.round((cost / subPer) * 100) / 100 : cost } : {}),
     };
   };
@@ -1968,9 +1970,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const startSub = hasSub && (opt?.unit === "sub" || (Math.floor(p.stock) < 1 && !liftFor(p, null)) || (!!opt?.lot && opt.lot.qty < 1));
       // كلفةُ الجهاز كما كانت — لا تُكتب إلا والحسابُ لم يصل (productLineCost، 0255).
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
-      /* 0290: سعرُ الدفعة كما اختاره الطبيب («بيش تبيعها؟»، lotUnitPrice) — والسطرُ قد يبدأ بالوحدة الأخرى (صفٌّ طازجٌ برصيدٍ غيرِ
-       * ما رآه السؤال) فينتقل بنسبته. boxPrice/subPrice تبقى سعرَ القائمة (رفعُ الأسعار يقارن بها)، والاختيارُ على الدفعة (`lot.px`)
-       * فتبديلُ العلبة ↔ المفرد يحمله، والمكتوبُ غيرُ القائمة يُعلَّم فلا يغيّره رفعُ الأسعار (0226). */
+      /* 0290: سعرُ الدفعة كما اختاره الطبيب («بيش تبيعها؟»، lotUnitPrice) لوحدته كما رآها بالنافذة — والسطرُ قد يبدأ بالأخرى (صفٌّ
+       * طازجٌ برصيدٍ غيرِ ما رآه السؤال) فينتقل بنسبته. boxPrice/subPrice تبقى سعرَ القائمة (رفعُ الأسعار يقارن بها)، وتبديلُ العلبة ↔
+       * المفرد يحمل السعرَ الحاليّ بنسبته (setSaleUnit)، والمكتوبُ غيرُ القائمة يُعلَّم فلا يغيّره رفعُ الأسعار (0226). */
       const lp = opt?.lot ? opt.lotPrice : undefined;
       const listNow = startSub ? listSubPrice(p) : listPrice(p);
       const lotUnit = lp ? lotUnitPrice(lp, startSub, listNow, unitsPerBox) : null;
@@ -1991,7 +1993,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         // مادّةُ «الدولار وحده» (usdIntoCart): سطرُ دولارٍ بسعرها بالدولار وسعر صرف اليوم — يُجمع بصندوق الدولار لا بالدينار.
         ...(p.price_currency === "USD" && usdRateRef.current ? { usd: { c: usdOnlyCents(p, null) ?? 0, ...usdRateRef.current } } : {}),
         // 0289: من دفعة راجعٍ إكسباير — كلفتُها كلفةُ الدفعة (المعاينة؛ الخادمُ يكتبها) وسقفُها باقيها.
-        ...(opt?.lot ? lotFields(opt.lot, startSub && unitsPerBox ? unitsPerBox : null, lp) : {}),
+        ...(opt?.lot ? lotFields(opt.lot, startSub && unitsPerBox ? unitsPerBox : null) : {}),
       };
     }, n, { stock: p.pooled ? null : p.stock });
   };
@@ -2006,8 +2008,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       if (l.id !== id || l.kind !== "product") return l;
       const toSub = unit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
       const listU = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
-      // 0290: سطرُ دفعة الإكسباير بسعرٍ اختاره الطبيب — يتبعه بالوحدة الجديدة (بنسبته من القائمة) لا يرجع لسعر القائمة.
-      const unit_price = l.lot?.px ? lotUnitPrice(l.lot.px, toSub, listU, l.unitsPerBox ?? null) : listU;
+      /* 0290: سطرُ دفعة الإكسباير يحمل سعرَه **الحاليّ** للوحدة الجديدة بنسبته من قائمة وحدته الآن — ما اختاره الطبيبُ، أو رفعُ أسعارٍ
+       * أقرّه (repriceCart يحرّك unit_price وboxPrice/subPrice معاً)، أو ما كتبه بيده بعده. لقطةُ الاختيار الأولى كانت ترجع سعرَ ما قبل
+       * الرفع وتمحو المكتوبَ بيد (مراجعة). وغيرُه يرجع لسعر القائمة كما كان. */
+      const curSub = l.saleUnit === "sub";
+      const curList = curSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
+      const unit_price = l.lot ? lotUnitPrice({ price: l.unit_price, sub: curSub, list: curList }, toSub, listU, l.unitsPerBox ?? null) : listU;
       const device = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
       const unit_cost = productLineCost(products.find((p) => p.id === l.product_id), toSub ? (l.unitsPerBox as number) : null, device);
       /* 0282: سطرُ الدولار يرجع للدينار بوحدته الجديدة — سعرُ المستوى بالدولار يُختار من جديد بـ«$» (لا تخمينَ لسعرٍ لم يُره الكاشير). */
@@ -5842,11 +5848,12 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
             const Pick = xretMod.ui.LotPickDialog;
             const done = (x: LotAnswer) => { const r = lotAsk.resolve; if (lotAskRef.current?.resolve === r) lotAskRef.current = null; setLotAsk(null); r(x); };
             const fresh = products.find((x) => x.id === lotAsk.p.id) ?? lotAsk.p;
-            return <Pick open product={lotAsk.p} lots={lotAsk.lots} newLeft={Math.round(((Number(fresh.stock) || 0) - retLotQty(fresh.id)) * 1000) / 1000}
+            return <Pick key={lotAsk.seq} open product={lotAsk.p} lots={lotAsk.lots} newLeft={Math.round(((Number(fresh.stock) || 0) - retLotQty(fresh.id)) * 1000) / 1000}
               unitFor={lotAsk.unitFor}
-              onPick={(x, price) => {
-                if (!x) { done(null); return; }
-                const u = lotAsk.unitFor(x);
+              /* الوحدةُ التي رآها الطبيبُ بالنافذة (ثابتةٌ من لحظة اختيار الدفعة) — لا تُحسب ثانيةً هنا: جوابُ «البيع قبل الجرد» ينتهي بدقيقتين
+               * فكانت تنقلب علبةً ↔ مفرداً بين الرسم والضغطة فيُخزَّن سعرُ العلبة سعرَ مفرد (مراجعة). */
+              onPick={(x, price, u) => {
+                if (!x || !u) { done(null); return; }
                 done({ lot: x, price: { price: price ?? u.list, sub: u.sub, list: u.list } });
               }} onCancel={() => done(undefined)} />;
           })()}

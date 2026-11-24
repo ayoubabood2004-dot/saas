@@ -141,22 +141,22 @@ export interface LotSaleUnit { sub: boolean; unitName: string | null; list: numb
  *  «بيش تبيعها؟» (المالك ٢٤/١١: «هو يحدد شكد السعر») — بسعر القائمة جاهزاً، ونِسَبٌ بضغطة، وكلفتُها عليك، وتحتها يُقال «خسارة». */
 export function LotPickDialog({ open, product, lots, newLeft, unitFor, onPick, onCancel }: {
   open: boolean; product: Product | null; lots: ProductLot[]; newLeft: number; unitFor: (lot: ProductLot) => LotSaleUnit;
-  onPick: (lot: ProductLot | null, price?: number) => void; onCancel: () => void;
+  onPick: (lot: ProductLot | null, price?: number, unit?: LotSaleUnit) => void; onCancel: () => void;
 }) {
   const { t: tt, i18n: ii } = useTranslation();
   const unit = (product?.unit_name ?? "").trim() || tt("xret.box");
-  /** الدفعةُ المختارة (السؤالُ الثاني) وما كُتب بخانة السعر. */
+  /** الدفعةُ المختارة (السؤالُ الثاني) ووحدتُها كما رُسمت لحظةَ الاختيار (ثابتة — تُرجَع مع السعر)، وما كُتب بخانة السعر. */
   const [chosen, setChosen] = useState<ProductLot | null>(null);
+  const [su, setSu] = useState<LotSaleUnit | null>(null);
   const [priceText, setPriceText] = useState("");
-  useEffect(() => { if (open) { setChosen(null); setPriceText(""); } }, [open, product?.id]);
-  const su = chosen ? unitFor(chosen) : null;
+  useEffect(() => { if (open) { setChosen(null); setSu(null); setPriceText(""); } }, [open, product?.id]);
   const priceC = chosen ? decOf(priceText, 2) : null;
   const okPrice = priceC != null && priceC >= 0n;
   const price = okPrice ? Number(priceC) / 100 : 0;
   // كلفةُ وحدة السطر من الدفعة (كلفتُها للعلبة × كم علبةً هي)، بالفلس — المقارنةُ بالفلس لا بالعائم.
   const costU = chosen && su && chosen.unit_cost != null ? Math.round(Number(chosen.unit_cost) * su.per * 100) / 100 : null;
   const below = okPrice && costU != null && Math.round(price * 100) < Math.round(costU * 100);
-  const pick = (l: ProductLot) => { setChosen(l); setPriceText(String(unitFor(l).list)); };
+  const pick = (l: ProductLot) => { const u = unitFor(l); setChosen(l); setSu(u); setPriceText(String(u.list)); };
   const uname = (u: LotSaleUnit) => (u.unitName ?? "").trim() || tt(u.sub ? "xret.sub" : "xret.box");
   const desc = (l: ProductLot) => tt("xret.lotDesc", {
     exp: l.expiry_date ? formatDate(l.expiry_date, ii.language, true) : "—",
@@ -171,8 +171,8 @@ export function LotPickDialog({ open, product, lots, newLeft, unitFor, onPick, o
         description={desc(chosen)}
         footer={
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            <Button variant="ghost" size="sm" data-lotpriceback onClick={() => setChosen(null)}>{tt("xret.priceBack")}</Button>
-            <Button data-lotpriceok disabled={!okPrice} onClick={() => okPrice && onPick(chosen, price)}>
+            <Button variant="ghost" size="sm" data-lotpriceback onClick={() => { setChosen(null); setSu(null); }}>{tt("xret.priceBack")}</Button>
+            <Button data-lotpriceok disabled={!okPrice} onClick={() => okPrice && onPick(chosen, price, su)}>
               {tt("xret.priceOk", { price: money(price), unit: uname(su) })}
             </Button>
           </div>
@@ -180,9 +180,10 @@ export function LotPickDialog({ open, product, lots, newLeft, unitFor, onPick, o
         <div className="space-y-3" data-lotprice>
           <label className="block space-y-1.5">
             <span className="text-xs font-extrabold text-ink">{tt("xret.priceAsk", { unit: uname(su) })}</span>
-            <input data-lotpriceinput inputMode="decimal" value={priceText} autoFocus
+            {/* بلا تركيزٍ تلقائيّ ولا «Enter يبيع»: الماسحُ مطفأٌ والنافذةُ مفتوحة، وماسحُ لوحة المفاتيح يكتب أرقامَه ثمّ Enter — كان يُلصق
+                الباركود بالسعر ويبيع به (مراجعة). البيعُ بالزرّ وحده. */}
+            <input data-lotpriceinput inputMode="decimal" value={priceText}
               onChange={(e) => setPriceText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && okPrice) onPick(chosen, price); }}
               className="h-11 w-full rounded-xl border border-line bg-surface-1 px-3 text-base font-bold tabular-nums focus:border-brand-400 focus:outline-none" />
           </label>
           <div className="flex flex-wrap gap-1.5" role="group">

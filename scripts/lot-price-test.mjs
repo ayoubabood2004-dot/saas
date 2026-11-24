@@ -30,10 +30,13 @@ const LOT = { id: "L1", product_id: "p1", qty: 2, received_qty: 2, unit_cost: 10
   expiry_date: "2026-10-01", returned_at: "2026-11-23T22:30:00.000Z", source: "return" };
 const PRODUCT = { id: "p1", name: "دواء", unit_name: "علبة", sub_unit_name: "شريط" };
 
-async function open(unit, newLeft = 5) {
+async function open(unit, newLeft = 5, units = null) {
   const picks = [];
-  const ui = mount(h(LotPickDialog, { open: true, product: PRODUCT, lots: [LOT], newLeft, unitFor: () => unit,
-    onPick: (lot, price) => picks.push([lot?.id ?? null, price]), onCancel: () => picks.push(["cancel"]) }));
+  // `units`: وحدةٌ تتبدّل بين نداءٍ ونداء (جوابُ «البيع قبل الجرد» ينتهي بدقيقتين) — النافذةُ تثبّت ما رسمته.
+  let calls = 0;
+  const unitFor = () => (units ? units[Math.min(calls++, units.length - 1)] : unit);
+  const ui = mount(h(LotPickDialog, { open: true, product: PRODUCT, lots: [LOT], newLeft, unitFor,
+    onPick: (lot, price, u) => picks.push([lot?.id ?? null, price, u?.sub ?? null]), onCancel: () => picks.push(["cancel"]) }));
   await ui.settle();   // أثرُ الفتح (تصفيرُ الاختيار) يجري قبل أوّل لمسة — كالمتصفّح
   return { ui, picks };
 }
@@ -54,7 +57,9 @@ console.log("▸ ١) النافذة: من الإكسباير ⇒ «بيش تبي
   check("غيرُ المقروء: جملةٌ والزرُّ مقفول (لا يُرسَل صفرٌ ولا NaN)", !!ui.find("data-lotpricebad") && ui.find("data-lotpriceok")?.props.disabled === true);
   typeIn(input(), "١٢٬٥٠٠");
   ui.click(ui.find("data-lotpriceok"));
-  check("الأرقامُ الشرقية وفاصلُ الآلاف تُقرأ: «١٢٬٥٠٠» ⇒ البيعُ من الدفعة بـ١٢٬٥٠٠", JSON.stringify(picks) === JSON.stringify([["L1", 12500]]), picks);
+  check("الأرقامُ الشرقية وفاصلُ الآلاف تُقرأ: «١٢٬٥٠٠» ⇒ البيعُ من الدفعة بـ١٢٬٥٠٠ (بالعلبة)", JSON.stringify(picks) === JSON.stringify([["L1", 12500, false]]), picks);
+  const inp = input();
+  check("خانةُ السعر بلا تركيزٍ تلقائيّ ولا «Enter يبيع» (ماسحُ لوحة المفاتيح يكتب أرقامَه ثمّ Enter)", inp == null || (!inp.props.autoFocus && !inp.props.onKeyDown));
 }
 {
   const { ui, picks } = await open({ sub: false, unitName: "علبة", list: 20000, per: 1 });
@@ -62,7 +67,7 @@ console.log("▸ ١) النافذة: من الإكسباير ⇒ «بيش تبي
   ui.click(ui.find("data-lotpriceback"));
   check("«رجوع» يرجع للقائمة بلا اختيار", !!ui.find("data-lotpick") && !ui.find("data-lotprice") && picks.length === 0);
   ui.click(ui.find("data-lotpicknew"));
-  check("«من الجديد» ⇒ null بلا سعر", JSON.stringify(picks) === JSON.stringify([[null, undefined]]), picks);
+  check("«من الجديد» ⇒ null بلا سعر", JSON.stringify(picks) === JSON.stringify([[null, undefined, null]]), picks);
 }
 {
   // سطرٌ يبدأ بالمفرد (باقي الدفعة أقلُّ من علبة): كلفتُه كلفةُ العلبة × ٠٫١ = ١٬٠٠٠.
@@ -74,7 +79,19 @@ console.log("▸ ١) النافذة: من الإكسباير ⇒ «بيش تبي
   typeIn(ui.find("data-lotpriceinput"), "1000");
   check("  و١٬٠٠٠ بالضبط ليست خسارة (بالفلس لا بالعائم)", /xret\.priceCost/.test(ui.text(ui.find("data-lotpricecost"))));
   ui.click(ui.find("data-lotpriceok"));
-  check("  والبيعُ بـ١٬٠٠٠ للشريط", JSON.stringify(picks) === JSON.stringify([["L1", 1000]]), picks);
+  check("  والبيعُ بـ١٬٠٠٠ للشريط", JSON.stringify(picks) === JSON.stringify([["L1", 1000, true]]), picks);
+}
+{
+  // الوحدةُ تنقلب بعد الاختيار (علبة ثمّ مفرد): النافذةُ تبقى على ما رسمته، وترجعه مع السعر — لا سعرَ علبةٍ يُخزَّن سعرَ مفرد.
+  const BOX = { sub: false, unitName: "علبة", list: 20000, per: 1 }, SUB = { sub: true, unitName: "شريط", list: 2500, per: 0.1 };
+  const { ui, picks } = await open(null, 5, [BOX, SUB]);
+  ui.click(ui.find("data-lotpickone", "L1"));
+  check("وحدةٌ تتبدّل بعد الاختيار: السعرُ الجاهز سعرُ الوحدة التي رُسمت (٢٠٬٠٠٠ للعلبة، لا ٢٬٥٠٠)", ui.find("data-lotpriceinput")?.props.value === "20000", ui.find("data-lotpriceinput")?.props.value);
+  typeIn(ui.find("data-lotpriceinput"), "15000");
+  ui.click(ui.find("data-lotpricepct", "100"));
+  check("وحدةٌ تتبدّل بين الرسم والضغطة: السعرُ والوحدةُ كما رُسما (٢٠٬٠٠٠ للعلبة)", ui.find("data-lotpriceinput")?.props.value === "20000");
+  ui.click(ui.find("data-lotpriceok"));
+  check("  وتُرجَع العلبةُ مع سعرها", JSON.stringify(picks) === JSON.stringify([["L1", 20000, false]]), picks);
 }
 
 console.log("▸ ٢) lotUnitPrice — نصُّ شاشة البيع نفسُه");
@@ -93,8 +110,17 @@ const cases = [
   ["  والمفردُ × عددِه", [{ price: 900, sub: true, list: 0 }, false, 0, 10], 9000],
   ["بلا قائمةٍ ولا عدد: سعرُ القائمة كما هو", [{ price: 900, sub: true, list: 0 }, false, 777, null], 777],
   ["التقريبُ بالفلس: ثلثُ السعر", [{ price: 10000, sub: false, list: 30000 }, true, 1000, 30], 333.33],
+  // تبديلُ الوحدة يُطعمها حالَ السطر الآن (setSaleUnit): بعد رفعٍ أقرّه (١٢٬٠٠٠ = القائمة) يتبع القائمةَ الجديدة، والمكتوبُ بيد بنسبته.
+  ["تبديلٌ بعد رفع أسعارٍ أقرّه: العلبةُ ١٢٬٠٠٠ (القائمة) ⇒ المفردُ قائمتُه ١٬٥٠٠", [{ price: 12000, sub: false, list: 12000 }, true, 1500, 10], 1500],
+  ["تبديلٌ بعد سعرٍ كتبه بيده: ٩٬٠٠٠ من ١٢٬٠٠٠ ⇒ المفردُ ١٬١٢٥", [{ price: 9000, sub: false, list: 12000 }, true, 1500, 10], 1125],
 ];
 for (const [name, args, want] of cases) { const got = lotUnitPrice(...args); check(`${name}: ${want}`, got === want, got); }
+
+check("setSaleUnit يُطعم lotUnitPrice سعرَ السطر الآن وقائمةَ وحدته الآن (لا لقطةَ الاختيار الأولى)",
+  /const unit_price = l\.lot \? lotUnitPrice\(\{ price: l\.unit_price, sub: curSub, list: curList \}, toSub, listU, l\.unitsPerBox \?\? null\) : listU;/.test(sb)
+  && !/\bpx\?:/.test(sb));
+check("وكلُّ سؤالٍ نافذةٌ جديدة (key)، والوحدةُ من النافذة لا تُحسب ثانيةً عند الضغطة",
+  /<Pick key=\{lotAsk\.seq\}/.test(sb) && /onPick=\{\(x, price, u\) => \{/.test(sb) && !/const u = lotAsk\.unitFor\(x\);/.test(sb));
 
 console.log(`${fail ? "✗" : "✓"} lot-price-test: ${pass} نجح، ${fail} فشل`);
 process.exit(fail ? 1 : 0);

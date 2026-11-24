@@ -178,6 +178,9 @@ export interface WasteSubmitResult {
   lines: { product_id: string; name: string; stock_now: number; stock_after: number }[];
 }
 
+/** معاينةُ موافقة الجرد/التلف (0290): السحوبُ بأسبابها كما ستُكتب، وكلفةُ كلّ سطرٍ بعد الموافقة (دفعةُ الراجع بكلفتها). */
+export interface CountPreview { withdrawals: { reason: string; amount: number }[]; costs: Record<string, number> }
+
 export interface CostResetResult { id: string; avg_cost: number | null; purchase_price: number }
 
 export interface ConsumptionApi {
@@ -189,7 +192,17 @@ export interface ConsumptionApi {
   /** `clientRef` يُولَّد قبل النداء ويُعاد مع إعادة المحاولة — الخادمُ يرجع نتيجةَ الأولى ولا يسجّل مرّتين. */
   submitWaste(lines: WasteLineInput[], apply: boolean, clientRef: string): Promise<WasteSubmitResult>;
   productCostReset(productId: string, cost: number | null): Promise<CostResetResult>;
+  /** ما ستكتبه الموافقةُ حرفاً (0290) — null حين لا يعرفها الخادم (قاعدةٌ قبل 0290: الشاشةُ تحسب بلقطتها، والموافقةُ بلقطتها أيضاً). */
+  countPreview(ids: string[]): Promise<CountPreview | null>;
 }
+
+const previewOf = (r: unknown): CountPreview => {
+  const o = (r ?? {}) as { withdrawals?: { reason?: string; amount?: unknown }[]; costs?: Record<string, unknown> };
+  return {
+    withdrawals: (o.withdrawals ?? []).map((w) => ({ reason: String(w.reason ?? ""), amount: Number(w.amount) || 0 })),
+    costs: Object.fromEntries(Object.entries(o.costs ?? {}).map(([k, v]) => [k, Number(v) || 0])),
+  };
+};
 
 /** حارسُ «القراءة فقط» لكتابات هذا الباب — بنفس خطأ repo (ReadOnlyError) فتعرضه الشاشاتُ كما تعرضه. */
 function writable(): void {
@@ -213,6 +226,12 @@ const cloud: ConsumptionApi = {
     writable();
     return rpcJson("product_cost_reset", { p_id: productId, p_cost: cost });
   },
+  countPreview: async (ids) => {
+    try { return previewOf(await rpcJson("stock_count_preview", { p_ids: ids })); } catch (e) {
+      if (["42883", "PGRST202"].includes(String((e as { code?: string } | null)?.code ?? ""))) return null;
+      throw e;
+    }
+  },
 };
 
 /* النسخةُ التجريبية: نفسُ العقد على localStorage، كسولةٌ هي الأخرى (demoConsumption.ts) — وتُحمَّل من باب
@@ -235,6 +254,7 @@ const demo: ConsumptionApi = {
     writable();
     return (await local()).demoProductCostReset(productId, cost);
   },
+  countPreview: async (ids) => previewOf(await (await local()).demoCountPreview(ids)),
 };
 
 export const consumptionApi: ConsumptionApi = supabase ? cloud : demo;
