@@ -1908,8 +1908,50 @@ export interface OldDebtReturn {
   created_by: string | null;
 }
 
+/**
+ * حيوانٌ بالمحذوفات (0290): ملخّصُه لقائمة «الحيوانات المحذوفة» — صورتُه الكاملة (صفُّه وكلُّ ما تسلسل معه) بالخادم
+ * وحده، ويرجع منها بنفس المعرّفات. `counts` بأسماء الجداول (clinic_visits، vaccinations، …) كما يعدّها الخادم.
+ */
+export interface DeletedPet {
+  id: string;
+  pet_name: string | null;
+  owner_name: string | null;
+  owner_phone: string | null;
+  species: string | null;
+  serial: string | null;
+  counts: Record<string, number>;
+  reason: string | null;
+  deleted_by: string | null;
+  /** اسمُ الحاذف من صفّ الكادر لحظةَ الحذف؛ فارغٌ لصاحب العيادة أو مديرٍ بلا صفّ. */
+  deleted_by_name: string | null;
+  deleted_at: string;
+}
+/** ما سيُرفع مع الحيوان لو حُذف الآن (pet_delete_preview، 0290) — النافذةُ تقوله بالاسم قبل التأكيد. */
+export interface PetDeletePreview {
+  id: string;
+  name: string | null;
+  owner_name: string | null;
+  species: string | null;
+  serial: string | null;
+  counts: Record<string, number>;
+  /** جرعاتٌ معطاةٌ لم تُبَع (0269): تختفي من البيع ما دام محذوفاً، وترجع معه. */
+  pending_charges: number;
+  active_admission: boolean;
+  /** حكمُ الخادم: هل يحذف المنادي (staff_can('deletePets'))؟ */
+  allowed: boolean;
+}
+/** مرآةُ pets_trash بالتجريبيّ: الملخّصُ والصورةُ معاً. */
+export interface DemoPetTrash extends DeletedPet {
+  row: Pet;
+  children: Record<string, unknown[]>;
+  /** رسائلُ الواتساب التي فرغ حيوانُها (on delete set null) — يُعاد ربطُها. */
+  wa_ids: string[];
+}
+
 export interface DemoDB {
   pets: Pet[];
+  /** 0290: الحيواناتُ المحذوفة بصورتها. */
+  petsTrash?: DemoPetTrash[];
   weightLogs: WeightLog[];
   vaccinations: Vaccination[];
   media: MediaItem[];

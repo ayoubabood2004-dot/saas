@@ -832,12 +832,12 @@ function restockLocal(db: ReturnType<typeof loadDB>, it: InvoiceItem, cons: Cons
   p.stock = r3(p.stock + (sq - credited));
 }
 
-function demoNotesLoad(): PetNote[] {
+export function demoNotesLoad(): PetNote[] {
   try { const r = localStorage.getItem(DEMO_NOTES_KEY); if (r) return JSON.parse(r) as PetNote[]; } catch { /* ignore */ }
   return [];
 }
 
-function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+export function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 
 function pLoad<T>(k: string): T[] {
   try { const r = localStorage.getItem(DEMO_POULTRY[k]); if (r) return JSON.parse(r) as T[]; } catch { /* ignore */ }
@@ -1202,19 +1202,9 @@ const demoRepo = {
     return pet;
   },
 
-  async deletePet(petId: string): Promise<void> {
-    const db = loadDB();
-    db.pets = db.pets.filter((p) => p.id !== petId);
-    // Cascade the pet's dependent records so nothing is left dangling (mirrors the
-    // `on delete cascade` foreign keys used in the Supabase schema).
-    db.weightLogs = db.weightLogs.filter((w) => w.pet_id !== petId);
-    db.vaccinations = db.vaccinations.filter((v) => v.pet_id !== petId);
-    db.visits = db.visits.filter((v) => v.pet_id !== petId);
-    db.media = db.media.filter((m) => m.pet_id !== petId);
-    db.treatments = db.treatments.filter((tr) => tr.pet_id !== petId);
-    db.admissions = db.admissions.filter((a) => a.pet_id !== petId);
-    if (db.appointments) db.appointments = db.appointments.filter((a) => a.pet_id !== petId);
-    saveDB(db);
+  async deletePet(petId: string, reason?: string | null): Promise<void> {
+    // 0290: طيٌّ لا محو، ولمن عنده «حذف الحيوانات» — المرآةُ كسولة (demoPetTrash.ts) بحرّاس الخادم نفسِها.
+    await (await loadDemoPetTrash()).demoDeletePet(petId, reason);
   },
 
   async listWeights(petId: string): Promise<WeightLog[]> {
@@ -5643,6 +5633,8 @@ export const loadDemoConsumption = () => import("./demoConsumption");
 export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
+/** مرآةُ حذف الحيوان ومحذوفاته (0290) — كسولةٌ: deletePet هنا، والمعاينةُ والقائمةُ والاسترجاعُ من petTrashApi. */
+export const loadDemoPetTrash = () => import("./demoPetTrash");
 export const loadDemoUsd = () => import("./demoUsd");
 export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");
 export const loadDemoProductGroups = () => import("./demoProductGroups");   // 0277 — المنتجاتُ المربوطة
