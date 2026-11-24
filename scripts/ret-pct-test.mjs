@@ -124,7 +124,15 @@ const STUB = {
   "@/i18n": "export const ensureOwned = async () => {}; export const ensureDictionary = async () => {};",
   /* سلّةُ «بيع بالدولار» (قطعةٌ كسولة): تُعدّ فتحاتُها وحدها. */
   "@/components/usd/Usd": "export const UsdSaleSheet = (p) => { if (p.open) globalThis.__usdOpen = p.first?.id ?? '?'; return null; };",
+  // 0286 (بلاغُ المالك ٢٢/١١): مادّةُ «الدولار وحده» سطرٌ بالسلّة — سعرُ صرف اليوم والقاعدةُ تعرف البيعةَ بمجموعين.
+  // وسطرُ الدولار يرسم صندوقَه (قطعةٌ كسولة بنطاق mxp) — بديلٌ لا يرسم شيئاً.
+  "@/components/retail/UsdPay": "export const UsdPayBox = () => null; export const UsdDoneNote = () => null; export const UsdRateDialog = () => null; export const mixedSay = (k) => k;",
+  "@/lib/dualSale": `export const dualRate = async () => ({ ok: true, rate: { id: "fx1", rate: "1460.0000", rate1e4: 14600000n } }); export const mixedReady = async () => true;`,
   /* البيعُ قبل الجرد (0266): مطفأٌ هنا — بابٌ بلا حالة، والشريحةُ والنافذةُ لا ترسمان (يفحصهما neg-stock-test). */
+  /* 0289: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
+  "@/lib/expiredApi": `export const returnLotsReady = async () => false; export const listReturnLots = async () => []; export const listReturnLotsOf = async () => [];
+    export const returnExpired = async () => { throw new Error("stub"); }; export const checkoutLots = async () => { throw new Error("stub"); }; export const expiredErrorCode = () => null;`,
+  "@/components/retail/ExpiredReturn": "export const say = new Proxy({}, { get: (_, k) => () => String(k) }); export const XretDialog = () => null; export const XretNote = () => null; export const LotPickDialog = () => null; export const ReturnLotsNote = () => null; export const unitsOf = () => []; export default () => null;",
   "@/lib/negStockApi": `export const negKey = (u) => (u ?? "anon") + "|c1"; export const negSnap = () => ({ state: null, counted: new Set(), failed: false });
     export const subscribeNeg = () => () => {}; export const refreshNeg = async () => null; export const activeNow = () => false; export const liftable = () => false;
     export const daysLeft = () => 0; export const bigLifted = () => false; export const lastDayOf = (u) => new Date(u);
@@ -306,7 +314,10 @@ async function run(M, RP, c) {
     const S2 = await session(M, { products: [PA, PU] });
     await S2.tap("pU");
     await new Promise((r) => setTimeout(r, 20)); await flush();
-    c("  وبلا «راجع» تفتح سلّتَها كما كانت (لا رسالة)", S2.log.errors.length === 0 && S2.cart().length === 0 && globalThis.__usdOpen === "pU", J({ e: S2.log.errors, open: globalThis.__usdOpen }));
+    // 0286: بلا «راجع» تنزل بالسلّة سطرَ دولارٍ بسعرها (كانت تفتح نافذةَ «بيع بالدولار» وحدها — بلاغُ المالك ٢٢/١١).
+    const lu = S2.cart().find((l) => l.product_id === "pU");
+    c("  وبلا «راجع» تنزل بالسلّة سطرَ دولار بسعرها ٥٠$ (لا نافذةَ وحدها ولا رسالة)", S2.log.errors.length === 0 && globalThis.__usdOpen == null && lu?.usd?.c === 5000 && lu?.usd?.rid === "fx1" && lu?.qty === 1,
+      J({ e: S2.log.errors, open: globalThis.__usdOpen, cart: S2.cart().map((l) => ({ id: l.id, q: l.qty, usd: l.usd })) }));
     S2.end();
   }
 

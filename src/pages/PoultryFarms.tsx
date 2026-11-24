@@ -27,7 +27,7 @@ import type { PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse,
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { cn, money, formatNum, formatDec } from "@/lib/utils";
+import { cn, money, formatNum, formatDec, formatQty } from "@/lib/utils";
 import { poultryKpi, poultryOutcome, batchWeeks, dayDiff, weightSanity } from "@/lib/poultryKpi";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { Button, useToast } from "@/components/ui";
@@ -665,7 +665,7 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
       {needsProduct ? (
         <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
           <option value="">{t("farm.pickFromStore")}</option>
-          {stock.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatNum(p.stock ?? 0)}</option>)}
+          {stock.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatQty(Number(p.stock ?? 0))}</option>)}
         </select>
       ) : (
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("farm.servicePlaceholder")} />
@@ -1085,7 +1085,7 @@ function DailyRound({ farm, rows, onBack }: {
       {stock.length > 0 && (
         <select className="input" value={feedId} onChange={(e) => setFeedId(e.target.value)}>
           <option value="">{t("farm.round.pickFeed")}</option>
-          {stock.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatNum(p.stock ?? 0)}</option>)}
+          {stock.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatQty(Number(p.stock ?? 0))}</option>)}
         </select>
       )}
 

@@ -704,12 +704,20 @@ export default function VisitPage() {
     // Group by day so the date is printed once per day; each dose row shows only its time.
     const rows: SheetTreatmentRow[] = dayGroups.flatMap(([day, dayRows]) =>
       dayRows.map((tx, i) => {
-        const time = tx.administered_at ? clockOf(tx.administered_at, lang) : tx.time;
+        // ساعةُ الإعطاء تحت يومها المجدول صحيحةٌ ما دامت بيومه — جرعةُ ٢٠:٠٠ انعطت صباحَ الغد كانت تُطبع «٢٠ نوفمبر — ١٠:١٥ ص»
+        // (قبل موعدها). بيومٍ آخر: الساعةُ المجدولة بمكانها، ولحظةُ الإعطاء بيومها بالملاحظات.
+        const sameDay = !!tx.administered_at && dayOf(tx.administered_at) === tx.day;
+        const time = tx.administered_at && sameDay ? clockOf(tx.administered_at, lang) : tx.time;
         return {
           dayTime: [i === 0 ? formatDate(day, lang) : "", time].filter(Boolean).join(" — "),
           treatment: [tx.medication, tx.amount, tx.observations].filter(Boolean).join(" · "),
           doctor: tx.administered_by || tx.doctor || "",
-          notes: tx.administered_at ? t("visit.givenMark", "✓ أُعطيت") : "",
+          // «ما انطت» كانت تُطبع فارغةً كجرعةٍ ما جا وكتها — الورقةُ تقولها، وسببُها إن كُتب (علامةُ السجلّ السابق لا تُكرَّر)،
+          // و«متأخّرة» لجرعةٍ مضى يومُها بلا حسم.
+          notes: tx.administered_at ? (sameDay ? t("visit.givenMark", "✓ أُعطيت")
+            : t("vbk.sheetGivenOn", { when: `${formatDate(dayOf(tx.administered_at), lang)} ${clockOf(tx.administered_at, lang)}` }))
+            : doseStatus(tx, todayISO) === "missed" ? [t("vbk.sheetMissed"), tx.missed_reason?.trim() === PAST_MISS_REASON ? "" : tx.missed_reason?.trim() ?? ""].filter(Boolean).join(" — ")
+              : doseStatus(tx, todayISO) === "overdue" ? [t("vbk.sheetLate"), tx.missed_reason?.trim() ?? ""].filter(Boolean).join(" — ") : "",
         };
       }),
     );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarClock, Layers, Plus, RotateCw, Scissors } from "lucide-react";
 import type { Product, ProductLot } from "@/types";
@@ -7,6 +7,7 @@ import { Button, Dialog, Skeleton, useToast } from "@/components/ui";
 import { cn, formatDate, formatNum, formatQty, localISO } from "@/lib/utils";
 import { daysToExpiry } from "@/lib/expiry";
 import { describeDbError } from "@/lib/errors";
+import { addLotOnce, isRefChanged, newAttemptRef } from "@/lib/stockSafetyApi";
 import { ExpiryPicker } from "@/components/ExpiryPicker";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
@@ -30,6 +31,8 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
   const [edit, setEdit] = useState<Edit>(null);
   const [add, setAdd] = useState<{ qty: string; date: string; note: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /* «أضف دفعة» مرّةً واحدة (0287): مرجعٌ لكلّ نموذج إضافة يُعاد بكلّ إعادة — جوابٌ ضاع بعد أن ثبتت الدفعةُ كان يزيد الرصيدَ مرّتين. */
+  const lotRef = useRef<string | null>(null);
   const [showEmpty, setShowEmpty] = useState(false);
   const today = localISO();
 
@@ -49,11 +52,17 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
     try { await fn(); playSuccess(); toast.success(ok); setEdit(null); setAdd(null); await load(); onChanged?.(); }
-    catch (e) { playWarning(); toast.error(errText(e)); }
+    catch (e) {
+      playWarning(); toast.error(errText(e));
+      // الأولى ثبتت قبل تعديلك (التلميحُ يقولها): تُقرأ القائمة ويُغلق النموذج — لا مرجعَ جديد يكتب ثانية.
+      if (isRefChanged(e)) { setAdd(null); await load(); onChanged?.(); }
+    }
     finally { setBusy(false); }
   };
 
   const live = typeof lots === "object" ? lots.filter((l) => l.qty > 0).sort((a, b) => (a.expiry_date ?? "9999").localeCompare(b.expiry_date ?? "9999")) : [];
+  /** 0289: دفعةُ الراجع الإكسباير آخرَ ما يأخذه البيعُ العاديّ — «تنباع أول» لأوّل دفعةٍ غيرها. */
+  const firstSold = live.find((l) => l.source !== "return")?.id ?? null;
   const empty = typeof lots === "object" ? lots.filter((l) => l.qty <= 0) : [];
   const source = (l: ProductLot) => t(`lots.src.${l.source}`);
 
@@ -74,7 +83,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
               {first && l.qty > 0 && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200">{t("lots.sellsFirst", "تنباع أول")}</span>}
             </p>
             <p className="mt-0.5 text-2xs text-ink-subtle">
-              {source(l)} · {formatDate(l.received_at, i18n.language)}{l.company_name ? ` · ${l.company_name}` : ""}{l.note ? ` · ${l.note}` : ""}
+              {source(l)} · {formatDate(l.received_at, i18n.language)}{l.company_name ? ` · ${l.company_name}` : ""}{l.return_from ? ` · ${l.return_from}` : ""}{l.source === "return" && (l.return_pct ?? 100) < 100 ? ` · ${l.return_pct}%` : ""}{l.note ? ` · ${l.note}` : ""}
             </p>
           </div>
           <div className="text-end tabular-nums">
@@ -83,7 +92,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
               <p className="text-2xs text-ink-subtle">{t("lots.ofReceived", { n: formatQty(l.received_qty), defaultValue: "من {{n}}" })}</p>
             )}
           </div>
-          {canEdit && l.qty > 0 && (
+          {canEdit && l.qty > 0 && l.source !== "return" && (
             <button type="button" className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle hover:bg-surface-2 hover:text-brand-600" data-lot-edit
               aria-label={t("lots.edit", "عدّل التاريخ")} title={t("lots.edit", "عدّل التاريخ")}
               onClick={() => { playTap(); setAdd(null); setEdit({ lot: l, date: l.expiry_date?.slice(0, 10) ?? "", split: "" }); }}>
@@ -141,7 +150,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
           {live.length === 0 ? (
             <p className="py-4 text-center text-sm text-ink-subtle">{t("lots.none", "ماكو رصيد بهاي المادة")}</p>
           ) : (
-            <ul className="space-y-2">{live.map((l, i) => row(l, i === 0))}</ul>
+            <ul className="space-y-2">{live.map((l) => row(l, l.id === firstSold))}</ul>
           )}
           {empty.length > 0 && (
             <div>
@@ -168,7 +177,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
                   <input className="input h-9 text-sm" maxLength={200} value={add.note} onChange={(e) => setAdd({ ...add, note: e.target.value })} placeholder={t("lots.notePh", "مثلاً: وصلت من المندوب")} />
                 </label>
                 <Button size="sm" loading={busy} disabled={!(Number(add.qty) > 0)} data-lot-add-save
-                  onClick={() => void run(() => repo.addLot(product.id, Number(add.qty), add.date || null, add.note), t("lots.added", "انضافت الدفعة وزاد الرصيد"))}>
+                  onClick={() => void run(() => addLotOnce(lotRef.current ?? (lotRef.current = newAttemptRef()), product.id, Number(add.qty), add.date || null, add.note), t("lots.added", "انضافت الدفعة وزاد الرصيد"))}>
                   {t("common.save", "حفظ")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setAdd(null)}>{t("common.cancel", "إلغاء")}</Button>
@@ -176,7 +185,7 @@ export function ProductLotsDialog({ product, open, onClose, canEdit, onChanged }
               </div>
             ) : (
               <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} data-lot-add
-                onClick={() => { playTap(); setEdit(null); setAdd({ qty: "", date: "", note: "" }); }}>
+                onClick={() => { playTap(); setEdit(null); lotRef.current = newAttemptRef(); setAdd({ qty: "", date: "", note: "" }); }}>
                 {t("lots.add", "أضف دفعة")}
               </Button>
             )

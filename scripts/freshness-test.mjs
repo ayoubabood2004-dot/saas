@@ -488,6 +488,42 @@ if (cc && typeof cc.needsFreshCheck === "function") {
 } else {
   check("needsFreshCheck موجودةٌ بـsrc/lib/cartCap.ts", false);
 }
+/* المفرداتُ الكاملة من رصيدٍ بالعلب (تدقيق ٢٢/١١): كلُّ بيعةٍ بالمفرد تخصم round(1/upb, 3) فينحرف الحاصل — علبةُ ٦ بعد خمس بيعاتٍ
+ * ٠٫١٦٥ = ٠٫٩٩ حبّة، والفلورُ العاري رفض الحبّةَ الباقية «رصيده صفر». وحيث القسمةُ تامّة لا تسامح: نصفُ حبّةٍ نصفُ حبّة. */
+console.log("▸ المفرداتُ الكاملة: انحرافُ التقريب لا يرفض حبّةً على الرفّ، والتامُّ يبقى صارماً");
+if (cc && typeof cc.wholeSubUnits === "function") {
+  const W = cc.wholeSubUnits;
+  let s6 = 1; for (let i = 0; i < 5; i++) s6 = Math.round((s6 - Math.round((1 / 6) * 1000) / 1000) * 1000) / 1000;
+  check("علبةُ ٦ بعد خمس بيعاتٍ بالحبّة (٠٫١٦٥) ⇒ حبّةٌ واحدة لا صفر", s6 === 0.165 && W(s6, 6) === 1);
+  let s48 = 1; for (let i = 0; i < 47; i++) s48 = Math.round((s48 - Math.round((1 / 48) * 1000) / 1000) * 1000) / 1000;
+  check("  وعلبةُ ٤٨ بعد ٤٧ بيعة (٠٫٠١٣ = ٠٫٦٢٤ حبّة) ⇒ الأخيرةُ تُباع", W(s48, 48) === 1);
+  let s30 = 1; for (let i = 0; i < 30; i++) s30 = Math.round((s30 - Math.round((1 / 30) * 1000) / 1000) * 1000) / 1000;
+  check("  وعلبةُ ٣٠ بيعت كلُّها (يبقى ٠٫٠١ = ٠٫٣ حبّة وهميّة) ⇒ صفرٌ لا حبّة", W(s30, 30) === 0);
+  /* مراجعة ٢٢/١١: الانحرافُ يتراكم عبر العلب، واتّجاهُه بتقريب الخطوة. ٣٠ تقرّب للأسفل (٠٫٠٣٣) فالمسجَّلُ أكثرُ من الرفّ — علبتان
+     بيعتا حبّةً حبّة تتركان ٠٫٠٢٠ = ٠٫٦ حبّة وهميّة، والتسامحُ الدائم كان يجعلها «حبّة» تُباع والرفُّ فارغ. */
+  const sold = (boxes, upb, n) => { let s = boxes; for (let i = 0; i < n; i++) s = Math.round((s - Math.round((1 / upb) * 1000) / 1000) * 1000) / 1000; return s; };
+  const s30x2 = sold(2, 30, 60);
+  check("  وعلبتا ٣٠ بيعتا حبّةً حبّة (٠٫٠٢٠ = ٠٫٦ وهميّة، الخطوةُ تقرّب للأسفل) ⇒ صفرٌ لا حبّةٌ ليست بالرفّ", s30x2 === 0.02 && W(s30x2, 30) === 0, String(s30x2));
+  const s28x2 = sold(2, 28, 55);
+  check("  حدٌّ معلن (F04): علبتا ٢٨ بعد ٥٥ بيعة (حبّةٌ حقيقيّة باقية) — الانحرافُ يتجاوز السقف فتُرفض حتى يُخصم المفردُ بلا تقريب", s28x2 === 0.02 && W(s28x2, 28) === 0, String(s28x2));
+  const tolAlways = (st, upb) => { const u = Math.round(st * upb * 1e6) / 1e6; const ex = 1000 % upb === 0; return Math.floor(u + (ex ? 0 : Math.min(0.45, 0.0005 * upb * upb))); };
+  check("  وطفرةُ «التسامحُ دائماً» (القاعدةُ قبل المراجعة) تُمسك: تبيع حبّةً وهميّة من علبتي ٣٠", tolAlways(s30x2, 30) === 1);
+  check("  والقسمةُ التامّة صارمة: نصفُ حبّةٍ من علبة ١٠ ليس حبّة", W(0.05, 10) === 0 && W(0.5, 10) === 5);
+  check("  وضجيجُ العائم يُمحى: ٠٫٢٩ × ١٠٠ مل = ٢٩ لا ٢٨", W(0.29, 100) === 29);
+  check("  والسقفُ والنفادُ يمرّان منها (unitCap / outOfStock)",
+    cc.unitCap({ stock: s6, saleUnit: "sub", unitsPerBox: 6 }) === 1 && cc.outOfStock({ stock: s6, has_sub_unit: true, units_per_box: 6 }) === false
+    && cc.outOfStock({ stock: 0.05, has_sub_unit: true, units_per_box: 10 }) === true);
+  // طفراتٌ: الفلورُ العاري (السلوكُ القديم) والتقريبُ للأقرب دائماً — كلٌّ منهما يُسقط حالةً أعلاه.
+  const floorOld = (st, upb) => Math.floor(st * upb);
+  const nearest = (st, upb) => Math.round(st * upb);
+  check("  طفرةُ الفلور العاري تُمسك (تقول صفراً عن حبّة)", floorOld(s6, 6) !== 1 && floorOld(0.29, 100) !== 29);
+  check("  وطفرةُ «الأقرب دائماً» تُمسك (تبيع نصفَ حبّةٍ من علبةٍ تامّة)", nearest(0.05, 10) !== 0);
+} else {
+  check("wholeSubUnits موجودةٌ بـsrc/lib/cartCap.ts", false);
+}
+for (const [f, re] of [["src/components/retail/SaleBuilder.tsx", /subAvail \? wholeSubUnits\(p\.stock, p\.units_per_box as number\) < 1/], ["src/components/retail/PosCustomTabs.tsx", /subAvail \? wholeSubUnits\(p\.stock, p\.units_per_box as number\) < 1/]]) {
+  check(`  وبطاقةُ «نفد» بـ${f.split("/").pop()} من الدالّة نفسِها لا ضربٍ عارٍ`, re.test(read(f)) && !/p\.stock \* \(p\.units_per_box as number\) < 1/.test(read(f)));
+}
 if (cc) {
   check("موزونٌ طازجٌ بصفرٍ ⇒ رفضٌ مؤكَّد (لا «رصيده تحدّث — صفر متوفّر»)",
     cc.zeroStockVerdict({ stock: 0, sold_by_weight: true }, true) === "refuse-confirmed");
@@ -515,10 +551,28 @@ check("  وتبلّغ انشغالَها (لا جلبَ وسطَ بيعة)", /on
 /* ط١ + ط٥ بالجملة أيضاً: كانت تتحدّث عند الفتح وبعد البيعة وحدهما — قائمةُ الصبح ظهراً
  * بلا عمر، والخادمُ يُسأل عند الصفر وحده فالرقمُ المرتفعُ البائتُ لا يُصحَّح. */
 check("  وتتحدّث بالعودة وكلَّ ٥ دقائق، والدخولُ إليها عودة",
-  /useRevalidateOnReturn\(\(\) => \{ void loadRef\.current\(\); \}, RETURN_STALE_MS, \{\s*key: invKey,\s*isBusy: \(\) => wsBusy\.current \|\| inflight\.current > 0,\s*enabled: view === "wholesale" && canPos && !locked,\s*pollMs: POLL_MS,\s*checkOnEnable: true,/.test(INV));
+  /useRevalidateOnReturn\(\(\) => \{ void loadRef\.current\(\); \}, RETURN_STALE_MS, \{\s*key: invKey,(?:\s*\/\/[^\n]*)?\s*isBusy: \(\) => wsBusy\.current \|\| inflight\.current > 0 \|\| [^\n]*,\s*enabled: \(view === "wholesale" && canPos && !locked\) \|\| view === "products" \|\| view === "companies",\s*pollMs: POLL_MS,\s*checkOnEnable: true,/.test(INV));
+/* وتبويبا المنتجات والشركات كذلك (تدقيق ٢٢/١١): حاسوبُ المكتب على المخزن من الصبح كان يعرض «نافد» عن مادّةٍ اشتراها جهازٌ
+ * آخر فتُسجَّل ثانيةً — والجلبُ بنفس الحرّاس (لا وسطَ بيعة جملة، ولا فوق جلبٍ قائم). */
+check("  والمنتجاتُ والشركاتُ تتحدّث كذلك بالعودة وكلَّ ٥ دقائق (لا أرقامُ الصبح ظهراً)",
+  /\|\| view === "products" \|\| view === "companies",/.test(INV));
+/* ولا جلبَ تحت نافذةٍ مفتوحة (مراجعة ٢٢/١١): جلبٌ خلفيّ كان يعيد تعبئةَ «تعديل شركة» و«تعديل / جرد» الحوض بما بالقاعدة فوق ما كُتب. */
+check("  ولا جلبَ خلفيّ ونافذةٌ مفتوحة (ما يُكتب فيها بيد صاحبه)",
+  /isBusy: \(\) => wsBusy\.current \|\| inflight\.current > 0 \|\| \(typeof document !== "undefined" && !!document\.querySelector\?\.\('\[role="dialog"\]'\)\),/.test(INV));
+{
+  // جسمُ الدالّة وحدها: SectionModal تأخذ لقطةً بالحالة (editingSection) فـ[open, section] فيها سليم.
+  const fnBody = (name) => { const i = INV.indexOf(`function ${name}(`); return i < 0 ? "" : INV.slice(i, INV.indexOf("\nfunction ", i + 10)); };
+  const pool = fnBody("SetPoolModal"), coM = fnBody("CompanyModal");
+  check("  ونافذتا «تعديل شركة» و«تعديل / جرد» تُعبّآن عند الفتح بالمعرّف لا بهويّة الكائن",
+    pool.length > 0 && coM.length > 0 && /\}, \[open, section\.id\]\);/.test(pool) && !/\}, \[open, section\]\);/.test(pool)
+      && /\}, \[open, company\?\.id\]\);/.test(coM) && !/\}, \[open, company\]\);/.test(coM));
+}
+check("  وورقةُ الجرد تُجلب لحظةَ الضغط لا من لقطة الصفحة", /<ReportButtons \/>/.test(INV) && !/<ReportButtons products=/.test(INV));
 const invLoad = INV.slice(INV.indexOf("const load = async () => {"), INV.indexOf("\n  useEffect(() => {", INV.indexOf("const load = async () => {")));
-check("  وفشلُ التحديث بالجملة فوق لقطةٍ معروضة لا يقتلع الشاشة",
-  /viewRef\.current === "wholesale" && cachedAt\(invKey\) != null\) setWsStale\(true\);/.test(invLoad));
+check("  وفشلُ التحديث بالجملة (والمنتجات والشركات منذ جلبهما الخلفيّ) فوق لقطةٍ معروضة لا يقتلع الشاشة",
+  /STALE_OK\.has\(viewRef\.current\) && cachedAt\(invKey\) != null\) setWsStale\(true\);/.test(invLoad)
+    && /const STALE_OK: ReadonlySet<string> = new Set\(\["wholesale", "products", "companies"\]\);/.test(INV));
+check("  وشريطُ العمر مرسومٌ بالتبويبات الثلاثة (لا قائمةٌ قديمة صامتة)", (INV.match(/\{staleStrip\}/g) ?? []).length === 3 && /const staleStrip = wsStale \? \(/.test(INV));
 check("  والتبويبُ تبويبُ لحظة الوصول لا لحظة الطلب (جلبُ الفتح لا يقتلع الجملة)",
   !/\bview === "wholesale" && products\.length/.test(invLoad) && /viewRef\.current = view;/.test(INV));
 check("  والأحدثُ طلباً يفوز، والختمُ بوقت الطلب",
@@ -529,12 +583,12 @@ check("  ومحاولةٌ تلقائيةٌ واحدة بعد ٣٠ث — لا و�
 check("  بل يقوله بشريط العمر وزرّ التحديث", /data-stalestrip/.test(INV) && /pos\.staleStrip/.test(INV) && /wsStale/.test(INV));
 /* والشريطُ داخل الجملة وحدها — فالانتقالُ لتبويب المنتجات كان يعرض القائمةَ القديمة **بلا
  * أيّ إشارة** (أمسكته مراجعةٌ عدائية). خارج الجملة يصير الفشلُ صاخباً كعادة المخزن، ويُعاد الجلب. */
-const leaveFx = INV.slice(INV.indexOf('if (view !== "wholesale" && wsStale)'), INV.indexOf("}, [view, wsStale]"));
+const leaveFx = INV.slice(INV.indexOf("if (!STALE_OK.has(view) && wsStale)"), INV.indexOf("}, [view, wsStale]"));
 check("  والخروجُ من الجملة وفشلُها قائم ⇒ فشلٌ صاخبٌ وجلبٌ فوري (لا قائمةٌ قديمة صامتة)",
   leaveFx.length > 0 && /setFailed\(true\)/.test(leaveFx) && /load\(\)/.test(leaveFx) && /setWsStale\(false\)/.test(leaveFx));
 // الشرطُ كاملاً: الجملةُ **ولقطةٌ جُلبت بنجاح** وحدهما يُبقيان الشاشة؛ وإلا فالفشلُ الصاخب.
 check("  وأوّلُ تحميلٍ بلا لقطة يبقى شاشةَ الفشل الصاخبة (لا «ماكو منتجات» كاذبة)",
-  /if \(viewRef\.current === "wholesale" && cachedAt\(invKey\) != null\) setWsStale\(true\);\s*else setFailed\(true\);\s*scheduleRetry\(\);/.test(invLoad));
+  /if \(STALE_OK\.has\(viewRef\.current\) && cachedAt\(invKey\) != null\) setWsStale\(true\);\s*else setFailed\(true\);\s*scheduleRetry\(\);/.test(invLoad));
 
 /* ── ط٧: مخزنُ الحقل لا يُباع من كاشير العيادة ────────────────────────────
  * الخادمُ يستثنيه بكلّ طريقٍ اليوم (0191 — مقيسٌ حيّاً)، والوجهُ التجريبيّ محروسٌ
@@ -562,6 +616,81 @@ check("  ويرجع قبل الإضافة فعلاً (الرسالةُ وحده�
  * كان يعود «لا شيء» ويُقال عنه «موجود بس رصيده صفر — زيد رصيده» عن مادّةٍ ليست بمخزن العيادة. */
 check("sellOrExplain ترفض صفَّ الحقل قبل السؤال (لا «رصيده صفر» كاذبة)",
   soeNow.indexOf("if (product.farm_id)") > 0 && soeNow.indexOf("if (product.farm_id)") < soeNow.indexOf("needsServerCheck("));
+
+/* ── السلّةُ بدفعٍ مجهول المصير لا تتعدّل: الكاتباتُ المباشرة بيد الكاشير تبدأ بالقفل (تدقيق ٢٢/١١) ─────────────────
+ * الإعادةُ بالمرجع نفسِه تُرجع ما ثبت أوّلاً كما هو، فتعديلٌ بينهما يُطبع ولا يُخصم. الضغطةُ و«مسح» وإعادةُ الوزن مفحوصةٌ بسلوكها
+ * (neg-stock-test ج١٠ وطفراتُها)؛ وهذه لا تمرّ من bump ولا sellOrExplain، فشيلُ قفلها لا يراه فحصُ الضغطة — تُثبَّت أنها تبدأ به. */
+console.log("▸ السلّةُ بدفعٍ معلَّق لا تتعدّل — الكاتباتُ المباشرة تبدأ بالقفل");
+{
+  const SBn = SB.replace(/\r\n/g, "\n");
+  check("cartFrozen بحكم المرجع المعلَّق من الـref (لا حالةُ رسمةٍ قديمة: إضافةٌ بالطريق تكمل بعد الفشل)",
+    /const cartFrozen = \(\): boolean => \{[\s\S]{0,600}?if \(!saleRefRef\.current \|\| done\) return false;/.test(SBn));
+  for (const [name, re] of [
+    ["نسبةُ الراجع (pickRetPct)", /const pickRetPct = \(p: number\) => \{\n\s*if \(cartFrozen\(\)\) return;/],
+    ["علبة ↔ مفرد (setSaleUnit)", /const setSaleUnit = \(id: string, unit: "box" \| "sub"\) => \{\n\s*if \(cartFrozen\(\)\) return;/],
+    ["سطرُ «دواء» (addMedLine)", /const addMedLine = \(draft: MedicalDraft, price: number, qty: number\) => \{\n\s*if \(cartFrozen\(\)\) return;/],
+    ["ورقةُ المستهلكات (saveCons)", /const saveCons = \([^)]*\) => \{\n\s*if \(cartFrozen\(\)\) return;/],
+    ["سعرُ ما قبل الرفع على سطر الراجع (data-retprior)", /data-retprior onClick=\{\(\) => \{ if \(cartFrozen\(\)\) return;/],
+    // «الدولار وحده» بالسلّة (usdIntoCart) يعيد تسعيرَ سطور الدولار بعد سؤالَين بالشبكة — المرجعُ قد يتعلّق بينهما، فالقفلُ بعدهما لا قبلهما
+    ["إعادةُ تسعير سطور الدولار (usdIntoCart، بعد سؤال السعر)", /const usdIntoCart = async [\s\S]{0,2400}?if \(cartFrozen\(\)\) return;\n\s*const cur = \{ rid: r\.rate\.id[\s\S]{0,400}?setCart\(/],
+  ]) check(`  ${name} يبدأ بـcartFrozen()`, re.test(SBn), name);
+}
+
+/* ── المرّةُ الواحدة (0287): «المرجعُ تغيّر» يُعرف بشكل خطأ PostgREST الحقيقيّ ───────────────────────
+ * الخادمُ يرفع `raise exception 'purchase_ref_changed' using hint = …` بلا errcode، فيرجع PostgREST الرمزَ P0001
+ * والاسمَ بالرسالة. isRefChanged كانت تفحص الرمزَ وحده حين يوجد — فلا تُطابق أبداً: الشاشةُ لا تُغلق ولا تقرأ ما ثبت،
+ * وكلُّ حفظٍ بعدها يُرفض بالاسم نفسِه (تدقيقٌ ذاتيّ ٢٢/١١). الفحصُ يمرّ من rpcJson الحقيقيّة وعميلٍ مزيَّف يرجع ما
+ * يرجعه PostgREST — لا خطأً مصنوعاً بالشكل الذي يسهّل الفحص. */
+console.log("▸ المرّةُ الواحدة (0287): «المرجعُ تغيّر» يُعرف، والدالّةُ الغائبة ترجع للقديمة، والرفضُ الحقيقيّ يُرمى");
+const ssStubs = {
+  name: "ss-stubs",
+  setup(b) {
+    b.onResolve({ filter: /^\.\/(supabase|repo|clinicSync|purchaseFxApi)$/ }, (a) => ({ path: a.path.slice(2), namespace: "ss" }));
+    b.onLoad({ filter: /.*/, namespace: "ss" }, (a) => ({
+      loader: "js",
+      contents: {
+        supabase: "export const supabase = { rpc: (fn, args) => globalThis.__SS.rpc(fn, args) };",
+        repo: "export const repo = { recordPurchase: async () => ({ id: 'legacy' }), addLot: async () => 'legacy-lot', returnInvoiceItems: async () => ({ id: 'legacy-inv' }) };",
+        clinicSync: "export const isConfigReadOnly = () => false;",
+        purchaseFxApi: "export const purchaseFx = { record: async () => ({ id: 'legacy-fx' }) };",
+      }[a.path],
+    }));
+  },
+};
+let SS = null;
+try {
+  const built = await esbuild.build({ entryPoints: ["src/lib/stockSafetyApi.ts"], bundle: true, format: "esm", write: false, platform: "neutral", plugins: [ssStubs] });
+  SS = await import("data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64"));
+} catch (e) { check("stockSafetyApi تُحزم للفحص", false, String(e).slice(0, 300)); }
+if (SS) {
+  const pgrst = (code, message, hint = null) => ({ data: null, error: { code, message, details: "", hint } });
+  const caught = async (p) => { try { await p; return null; } catch (e) { return e; } };
+  const serve = (res) => { globalThis.__SS = { rpc: async () => res }; };
+  serve(pgrst("P0001", "purchase_ref_changed", "الفاتورة انحفظت بأوّل ضغطة"));
+  const e1 = await caught(SS.recordPurchaseOnce("r", [], {}, false));
+  check("شراءٌ: purchase_ref_changed (P0001 والاسمُ بالرسالة) يُعرف «تغيّر»", !!e1 && SS.isRefChanged(e1), e1 ? `${e1.code}/${e1.message}` : "ما رُمي");
+  check("  والتلميحُ العربيّ يصل للتوست", !!e1 && e1.hint === "الفاتورة انحفظت بأوّل ضغطة");
+  serve(pgrst("P0001", "lot_ref_changed", "الدفعة انحفظت"));
+  const e2 = await caught(SS.addLotOnce("r", "p", 1, null, null));
+  check("  ودفعةٌ: lot_ref_changed", !!e2 && SS.isRefChanged(e2));
+  serve(pgrst("P0001", "return_ref_changed", "المرتجع انحفظ"));
+  const e3 = await caught(SS.returnItemsOnce("r", "i", [], null, null));
+  check("  ومرتجعٌ: return_ref_changed", !!e3 && SS.isRefChanged(e3));
+  serve(pgrst("P0001", "purchase_ref_gone", "ما عادت موجودة"));
+  const e4 = await caught(SS.recordPurchaseOnce("r", [], {}, false));
+  check("  و«الأولى ما عادت موجودة» ليست «تغيّر» (لا تُغلق الشاشةُ على ما لم يُحفظ)", !!e4 && !SS.isRefChanged(e4));
+  serve(pgrst("23505", "duplicate key value violates unique constraint \"products_barcode_key\""));
+  const e5 = await caught(SS.recordPurchaseOnce("r", [], {}, false));
+  check("  ولا خرقُ فريدٍ عامّ", !!e5 && !SS.isRefChanged(e5));
+  serve(pgrst("PGRST202", "Could not find the function public.purchase_record_once"));
+  check("قاعدةٌ قبل 0287 (الدالّةُ غائبة) ⇒ الشراءُ القديم كما كان", (await SS.recordPurchaseOnce("r", [], {}, false))?.id === "legacy");
+  check("  وبابُ العملتين القديم لفاتورة الدولار", (await SS.recordPurchaseOnce("r", [], {}, true))?.id === "legacy-fx");
+  serve(pgrst("42883", "function lot_add_once does not exist"));
+  check("  والدفعةُ كذلك (42883)", (await SS.addLotOnce("r", "p", 1, null, null)) === "legacy-lot");
+  serve(pgrst("P0001", "nothing left"));
+  const e7 = await caught(SS.returnItemsOnce("r", "i", [], null, null));
+  check("  والرفضُ الحقيقيّ يُرمى ولا يرجع للقديمة (كان سيكتب بلا مرجع)", !!e7 && e7.message === "nothing left");
+}
 
 console.log(`\n${fails ? "✗" : "✓"} freshness-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

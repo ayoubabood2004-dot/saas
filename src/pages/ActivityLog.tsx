@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
 import { Button, Skeleton } from "@/components/ui";
-import { cn, money, formatNum, formatDec, dateLocale } from "@/lib/utils";
+import { cn, money, formatNum, formatDec, dateLocale, formatQty } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { ACTIVITY_GROUPS, KIND_GROUP, NOISY_KINDS, type ActivityGroup, type ActivityKind } from "@/lib/activityKinds";
 
@@ -424,7 +424,7 @@ export function ActivityLog() {
         if (rm && ch.every((c) => c.key === "return_mark")) {
           return rm.to ? t("act.returnMarked", { name, defaultValue: "حطّ «{{name}}» للإرجاع" }) : t("act.returnUnmarked", { name, defaultValue: "رجّع «{{name}}» للرفّ (شال وسم الإرجاع)" });
         }
-        return t("act.prodUpd", { name, stock: formatNum(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" });
+        return t("act.prodUpd", { name, stock: formatQty(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" });
       }
       case "branches": return t("act.branchAdd", { name: s("name"), defaultValue: "فرع: {{name}} (إضافة / تعديل)" });
       case "reminders": return t("act.reminderAdd", { title: s("title") || s("text"), defaultValue: "تذكير: {{title}}" });

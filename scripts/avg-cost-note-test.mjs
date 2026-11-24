@@ -81,7 +81,7 @@ const DICT = {
   ar: merge(JSON.parse(readFileSync("src/i18n/ar.json", "utf8")), overlay?.ar),
   en: merge(JSON.parse(readFileSync("src/i18n/en.json", "utf8")), overlay?.en),
 };
-const pick = (d) => ({ avgc: d.avgc, act: d.act, mv: d.mv, common: d.common, errors: d.errors, pos: { cat: d.pos?.cat } });
+const pick = (d) => ({ avgc: d.avgc, act: d.act, mv: d.mv, pkg: d.pkg, common: d.common, errors: d.errors, pos: { cat: d.pos?.cat } });
 /** ترجمةٌ بالقاموس العربيّ (والافتراضيُّ للغائب) مع تعويض {{…}} — كما يرسمها i18next. */
 const tStub = (dict) => `
   const D = ${JSON.stringify(pick(dict))};
@@ -452,6 +452,12 @@ const MV_STUBS = {
   "@/components/LoadBoundary": `import { createElement } from "react";
     export const LoadBoundary = ({ children, onRetry, scope }) => createElement("x-LoadBoundary", { onRetry, scope }, children);`,
   "@/components/inventory/AvgCostNote": "export default function AvgCostNoteModule() { return null; } export const __which = 'AvgCostNote';",
+  // 0290: سطرُ الراجع الإكسباير بقطعته (تُصنع أوّلَ ما يظهر سطرُه — لا عند التحميل، فعددُ القطع أعلاه كما هو).
+  "@/components/retail/ExpiredReturn": "export const XretLedgerNote = () => null;",
+  // 0287: الدفترُ قبل القديم — بلا __mvLedger يرجع null (قاعدةٌ قبل 0287) فتُرسم الحركاتُ القديمة كما كانت.
+  "@/lib/stockSafetyApi": "export const ledgerPage = (...a) => (globalThis.__mvLedger ?? (async () => null))(...a);",
+  // الدورُ الحيّ: المديرُ افتراضاً (سجلُّ التدقيق له)، والطبيبُ بـ__mvPerm.
+  "@/hooks/usePermissions": "export const usePermissions = () => globalThis.__mvPerm ?? { role: 'manager', baseRole: 'manager', can: () => true };",
 };
 const loadMv = (edit, tag = "mv") => { globalThis.__pages = []; return bundle(tag, `export { AvgCostSlot, ProductMovementsDialog } from "./${MV_FILE}";`, { stubs: MV_STUBS, edits: edit ? [{ file: MV_FILE, edit }] : [] }); };
 async function slotSuite(M, ck) {
@@ -520,6 +526,104 @@ async function movementsSuite(M, ck) {
 }
 console.log("▸ د) حركاتُ المادة — «مستهلكات» و«مستهلكات — إرجاع»، وسندُ التلف بما رحّله");
 await movementsSuite(MV, check);
+
+/* ── د٢) دفترُ الرصيد (0287): النوعُ من الكاتب ومَن والمستند، وصفحاتٌ بالمؤشّر، والممنوعُ والفشلُ والفارغ يُقالون ──────
+ * الشاشةُ تقرأ ما كتبه المحفّزُ لحظةَ صار — لا مطابقةُ «فاتورة خلال ٤ ثوانٍ». قائمةٌ فارغةٌ عن فشلٍ أو منعٍ كذبة («ما صار شي»). */
+const LG = (id, kind, delta, before, extra = {}) => ({ id, at: `2026-11-22T09:${String(id % 60).padStart(2, "0")}:00.000Z`, kind, source: kind, delta,
+  qty_before: before, qty_after: before == null ? delta : before + delta, actor_name: "", actor_kind: "system", ref_kind: null, ref_id: null, ...extra });
+const openMv = (M) => M.mount(M.React.createElement(M.ProductMovementsDialog, { product: MP, open: true, onClose() {} }));
+async function ledgerSuite(M, ck) {
+  await guard(ck, "الدفتر", async () => {
+    const calls = [];
+    const page1 = [
+      LG(905, "sale", -1, 4, { actor_kind: "staff", actor_name: "أحمد", ref_kind: "invoice", ref_id: "0b6f4f7e-8a1c-4e8e-9d55-3c1f0a2b9e77" }),
+      LG(904, "count", -2, 6, { actor_kind: "owner" }),
+      LG(903, "manual", 1, 5, { actor_kind: "manager" }),
+      LG(902, "merge", 3, 2),
+      LG(901, "checkpoint", 0, 2, { qty_after: 2 }),
+    ];
+    globalThis.__mvLedger = async (id, before, limit) => { calls.push([id, before, limit]); return before == null ? page1 : []; };
+    globalThis.__mvRepo = {
+      productMovements: async () => [{ at: "2026-11-01T09:00:00.000Z", kind: "sale", delta: -1, from_qty: 3, to_qty: 2, ref_id: null, actor_name: "قديم" }],
+      productBatches: async () => [], listProductCounts: async () => [],
+    };
+    let ui = openMv(M);
+    await flush();
+    const r = ui.findAll("data-ledger-kind").map((n) => [n.props["data-ledger-kind"], ui.text(n)]);
+    ck("الدفترُ يُسأل بالمادّة من الأحدث (بلا مؤشّر، ١٠٠)", J(calls[0]) === J([MP.id, null, 100]), J(calls));
+    ck("  وكلُّ صفٍّ بنوعه من كاتبه بالترتيب", J(r.map((x) => x[0])) === J(["sale", "count", "manual", "merge", "checkpoint"]), J(r));
+    ck("  البيعُ «بيع» باسم من باعه وبفاتورته وقبله ← بعده",
+      r[0]?.[1].includes("بيع") && r[0][1].includes("أحمد") && r[0][1].includes("فاتورة") && r[0][1].includes("4 ← 3"), J(r[0]));
+    ck("  والجردُ «جرد — موافقة على فرق العدّ» بـ«صاحب العيادة»، واليدويُّ بـ«مدير العيادة» (لا معرّف)",
+      r[1]?.[1].includes("جرد — موافقة على فرق العدّ") && r[1][1].includes("صاحب العيادة") && r[2]?.[1].includes("تعديل يدوي للرصيد") && r[2][1].includes("مدير العيادة"), J([r[1], r[2]]));
+    ck("  وبدايةُ السجل برصيدها ولا فرقَ لها", r[4]?.[1].includes("بداية السجل الدقيق — الرصيد كان 2") && !r[4][1].includes("←"), J(r[4]));
+    ck("  وأقلُّ من صفحة ⇒ لا «اعرض الأقدم»، و«قبل بداية السجل» بطلب", !ui.find("data-ledger-older") && !!ui.find("data-ledger-legacy"));
+    if (ui.find("data-ledger-legacy")) ui.click(ui.find("data-ledger-legacy"));
+    await flush();
+    ck("  و«قبل بداية السجل» يرسم القديمَ (productMovements) تحته", ui.text().includes("قديم"), ui.text().slice(-160));
+    ui.unmount();
+
+    // الطبيبُ يقرأ الدفترَ لا ما قبله (سجلُّ التدقيق للمدير، 0018): جملةٌ بدل زرٍّ كان يقول «ماكو حركات» عن تاريخٍ موجود.
+    globalThis.__mvPerm = { role: "veterinarian", baseRole: "veterinarian", can: () => true };
+    ui = openMv(M);
+    await flush();
+    const mgrNote = ui.find("data-ledger-legacy-manager");
+    ck("  والطبيبُ: «يشوفها مدير العيادة» بدل الزرّ (لا «ماكو حركات» عن تاريخٍ موجود)",
+      !ui.find("data-ledger-legacy") && !!mgrNote && ui.text(mgrNote).includes("مدير العيادة"), mgrNote ? ui.text(mgrNote) : "لا جملة");
+    ui.unmount();
+    globalThis.__mvPerm = undefined;
+
+    // نافذةُ الـ٢٠٠ كلُّها بعد بداية الدفتر (مادّةٌ تُباع كثيراً) ⇒ «الأقدم ما يطلع هنا» لا «ماكو حركات».
+    const recent = Array.from({ length: 200 }, (_, i) => ({ at: `2026-11-22T10:${String(i % 60).padStart(2, "0")}:00.000Z`, kind: "sale", delta: -1,
+      from_qty: 300 - i, to_qty: 299 - i, ref_id: null, actor_name: "" }));
+    globalThis.__mvRepo = { productMovements: async () => recent, productBatches: async () => [], listProductCounts: async () => [] };
+    ui = openMv(M);
+    await flush();
+    if (ui.find("data-ledger-legacy")) ui.click(ui.find("data-ledger-legacy"));
+    await flush();
+    ck("  ونافذةُ الـ٢٠٠ كلُّها بعد بداية السجل ⇒ «الأقدم من آخر ٢٠٠ عملية ما تطلع هنا» لا «ماكو حركات»",
+      !!ui.find("data-ledger-legacy-cut") && !ui.text().includes("ماكو حركات مسجّلة"), ui.text().slice(-160));
+    ui.unmount();
+
+    // صفحةٌ كاملة ⇒ «اعرض الأقدم» بمؤشّر أصغر معرّفٍ رُئي، والأقدمُ يُضاف تحتها.
+    calls.length = 0;
+    const full = Array.from({ length: 100 }, (_, i) => LG(1000 - i, "sale", -1, 200 - i));
+    globalThis.__mvLedger = async (id, before, limit) => { calls.push([id, before, limit]); return before == null ? full : [LG(800, "purchase", 50, 0)]; };
+    ui = openMv(M);
+    await flush();
+    ck("صفحةٌ كاملة (١٠٠) ⇒ «اعرض الأقدم»، ولا «قبل بداية السجل» قبل آخره", !!ui.find("data-ledger-older") && !ui.find("data-ledger-legacy"));
+    if (ui.find("data-ledger-older")) ui.click(ui.find("data-ledger-older"));
+    await flush();
+    const kinds = ui.findAll("data-ledger-kind").map((n) => n.props["data-ledger-kind"]);
+    ck("  والأقدمُ بمؤشّر آخر صفٍّ رُئي (901) ويُضاف تحتها", J(calls[1]) === J([MP.id, 901, 100]) && kinds.length === 101 && kinds[100] === "purchase", J({ calls, n: kinds.length }));
+    ui.unmount();
+
+    // الممنوعُ يُقال بجملته بلا إعادة؛ والفشلُ بإعادةٍ تنجح؛ والفارغُ يُقال.
+    globalThis.__mvLedger = async () => { throw Object.assign(new Error("stock_ledger_forbidden"), { code: "stock_ledger_forbidden" }); };
+    ui = openMv(M);
+    await flush();
+    const fb = ui.find("data-ledger-error");
+    ck("من لا يدير المخزن ⇒ «لمن يدير المخزن» بلا إعادة (لا «ماكو حركات»)",
+      fb?.props["data-ledger-error"] === "forbidden" && ui.text(fb).includes("لمن يدير المخزن") && !ui.find("data-ledger-retry") && !ui.find("data-ledger"), fb ? ui.text(fb) : "لا شيء");
+    ui.unmount();
+    let n = 0;
+    globalThis.__mvLedger = async () => { if (++n === 1) throw new Error("Failed to fetch"); return []; };
+    ui = openMv(M);
+    await flush();
+    const fl = ui.find("data-ledger-error");
+    ck("فشلُ الشبكة ⇒ «ما كدرنا نجيب الحركات» وإعادة — لا قائمةٌ فارغةٌ تُصدَّق",
+      fl?.props["data-ledger-error"] === "failed" && ui.text(fl).includes("ما كدرنا نجيب الحركات") && !!ui.find("data-ledger-retry") && !ui.find("data-ledger"), fl ? ui.text(fl) : "لا شيء");
+    if (ui.find("data-ledger-retry")) ui.click(ui.find("data-ledger-retry"));
+    await flush();
+    const empty = ui.find("data-ledger-empty");
+    ck("  والإعادةُ تنجح بلا صفوف ⇒ «ما تغيّر رصيدها من وقت ما بدأ السجل الدقيق»",
+      n === 2 && !ui.find("data-ledger-error") && !!empty && ui.text(empty).includes("ما تغيّر رصيدها"), ui.text().slice(-160));
+    ui.unmount();
+    globalThis.__mvLedger = undefined;
+  });
+}
+console.log("▸ د٢) دفترُ الرصيد (0287) — النوعُ من الكاتب ومَن والمستند، وصفحات، والممنوعُ والفشلُ والفارغ");
+await ledgerSuite(MV, check);
 
 /* ── هـ) سجلُّ الحركات: «المستهلكات» بنصّ الوصفة كاملاً ───────────────────────────────── */
 const ACT_FILE = "src/pages/ActivityLog.tsx";
@@ -734,6 +838,16 @@ await caught("القطعةُ بلا نطاقها avgc", mvMut('page(() => import
 await caught("«أعد المحاولة» لا تصنع قطعةً جديدة", mvMut("AvgCostNoteLazy = loadAvgCostNote(); setLazyTick", "setLazyTick", slotSuite));
 await caught("السندُ يُطابَق بفرقه الدقيق", mvMut('(x.source === "waste" ? -(Number(x.posted) || 0) : (x.applied_delta ?? 0))', "(x.applied_delta ?? 0)", movementsSuite));
 await caught("الاستهلاكُ بلا اسمه", mvMut('    if (m.kind === "consume") return t("pos.cat.consumables", "مستهلكات");\n', "", movementsSuite));
+// 0287: كلُّ طفرةٍ تعيد شاشةَ الدفتر لخطأٍ معقول — ويجب أن يُمسكها قسمُ د٢.
+await caught("الجردُ بلا اسمه بالدفتر", mvMut('      case "count": return t("pkg.lgCount");\n', "", ledgerSuite));
+await caught("صاحبُ العيادة بلا اسمه المتّفق عليه", mvMut('r.actor_kind === "owner" ? t("pkg.lgOwner") : ', "", ledgerSuite));
+await caught("«اعرض الأقدم» يعيد الصفحةَ الأولى", mvMut("onClick={() => loadLedger(ledger.length ? ledger[ledger.length - 1].id : null)}", "onClick={() => loadLedger(null)}", ledgerSuite));
+await caught("الصفحةُ الكاملة لا تقول إن بعدها أقدم", mvMut("setLgMore(r.length === LEDGER_PAGE);", "setLgMore(false);", ledgerSuite));
+await caught("الممنوعُ يُقال فشلاً بإعادة", mvMut('forbidden: (e as { code?: string } | null)?.code === "stock_ledger_forbidden"', "forbidden: false", ledgerSuite));
+await caught("الدفترُ الفارغ صامت", mvMut("{ledger.length === 0 && <li", "{false && <li", ledgerSuite));
+await caught("ما قبل السجل للطبيب أيضاً (سجلُّ التدقيق للمدير)", mvMut('const canOld = role === "manager";', "const canOld = true;", ledgerSuite));
+await caught("نافذةُ الـ٢٠٠ تُقال «ماكو حركات»", mvMut("setCut(!!before && r.length >= LEGACY_WINDOW); ", "", ledgerSuite));
+await caught("ما قبل بداية السجل بلا طريق", mvMut("const start = Array.isArray(ledger) && !lgMore ? ledger[ledger.length - 1] : null;", "const start = null;", ledgerSuite));
 await caught("نصُّ الوصفة يُقصّ كغيره", async (ck) => activitySuite(await loadAct((s) => swap(s, 'const FULL_TEXT = new Set(["recipe", "void_reason"]);', 'const FULL_TEXT = new Set(["void_reason"]);'), "act-mut"), ck));
 await caught("اسمُ العمود خامّاً بالشرائح (avg_cost، cost)", async (ck) => activitySuite(await loadAct((s) => swap(s, "{t(`act.f.${c.key}`, { defaultValue: c.key })}", "{c.key}"), "act-mut2"), ck));
 const AVG = "p.avg_cost ?? ";

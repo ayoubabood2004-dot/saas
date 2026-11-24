@@ -1183,6 +1183,8 @@ export interface CheckoutItem {
   /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `unit_price` دينارُه بسعر اليوم (الخادمُ يطابقه)، و`unit_price_usd` سعرُه بالدولار. */
   price_currency?: "USD";
   unit_price_usd?: string;
+  /** 0289: يُباع من دفعة راجعٍ إكسباير (product_lots، source = 'return') — retail_checkout_lots يكلّفه بكلفة الدفعة وينقصها. */
+  lot_id?: string;
 }
 
 /** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */
@@ -2646,7 +2648,7 @@ export interface StockLossRow { reason: CountReason; lines: number; qty: number;
 
 /* ── الدفعات (0217) ─────────────────────────────────────────────────────────── */
 /** opening = رصيدٌ سبق الدفعات · purchase = فاتورة شراء · added = أُضيفت باليد · adjust = رصيدٌ بعد النفاد بلا فاتورة. */
-export type LotSource = "opening" | "purchase" | "added" | "adjust";
+export type LotSource = "opening" | "purchase" | "added" | "adjust" | "return";
 export interface ProductLot {
   id: string;
   clinic_id?: string | null;
@@ -2663,6 +2665,14 @@ export interface ProductLot {
   note: string | null;
   /** تاريخٌ صحّحته العيادةُ بيدها — تعديلُ الفاتورة لا يكتب فوقه. */
   expiry_fixed?: boolean;
+  /** 0289 — دفعةُ راجعٍ إكسباير (source = 'return'): كلفةُ وحدة المخزن منها (ما رجع للزبون، لا المتوسّط)، ومن رجّعها (اسمُه أو رقمُه
+   *  ومفتاحُه)، وبكم بالمئة، ومن أيّ فاتورة، ومتى. غائبةٌ بقاعدةٍ قبل 0289. */
+  unit_cost?: number | null;
+  return_from?: string | null;
+  return_key?: string | null;
+  return_pct?: number | null;
+  return_invoice?: string | null;
+  returned_at?: string | null;
 }
 
 /* ── قوالبُ الواتساب الخاصة بالعيادة (0218) ─────────────────────────────── */

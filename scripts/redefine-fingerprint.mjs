@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0287"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0287_visit_voice_notes", "0289", "0290"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -92,6 +92,13 @@ export const MANIFEST = [
   ["company_entry_void", 2, "public.company_entry_void(uuid,text)", "0274", "0281"],
   // 0283: فاتورةٌ بمجموعين — البيعُ بالدولار يعرف المادّةَ بسعرين (علبة/مفرد/كارتون) والدفعةَ الجزئيّة بعلَمها.
   ["usd_checkout", 2, "public.usd_checkout(jsonb,jsonb)", "0272", "0283"],
+  // 0286: سعرُ التسديد يختاره الطبيب بلا مديرٍ ولا سبب، وسعرُ اليوم لكلّ الكادر (قرارُ المالك ٢١/١١).
+  ["fx_rate_set", 2, "public.fx_rate_set(numeric,text)", "0264", "0286"],
+  ["settle_invoice_usd", 7, "public.settle_invoice_usd(uuid,numeric,numeric,text,numeric,text,text)", "0264", "0286"],
+  // 0289: الراجعُ الإكسباير — دفعةُ الراجع آخرَ ما يأخذه البيعُ العاديّ، والزيادةُ لا تُضاف لها.
+  ["lots_reconcile", 2, "public.lots_reconcile(uuid,boolean)", "0217", "0289"],
+  ["lots_user_expiry", 3, "public.lots_user_expiry(uuid,date,date)", "0217", "0289"],
+  ["retail_return", 2, "public.retail_return(jsonb,jsonb)", "0136", "0289"],
   // 0275: كلُّ تسديدٍ لدَين الدولار بسعر يومه وفرقُ صرفه، والأرباحُ والخسائر تقرؤه.
   ["purchase_pay_fx", 7, "public.purchase_pay_fx(uuid,numeric,text,numeric,text,text,numeric)", "0274", "0275"],
   ["company_pay_fx", 8, "public.company_pay_fx(uuid,text,numeric,text,numeric,text,date,text)", "0274", "0275"],
@@ -102,12 +109,21 @@ export const MANIFEST = [
   ["record_purchase_fx", 2, "public.record_purchase_fx(jsonb,jsonb)", "0274", "0276"],
   ["update_purchase_fx", 3, "public.update_purchase_fx(uuid,jsonb,jsonb)", "0274", "0276"],
   ["report_pnl", 3, "public.report_pnl(timestamptz,timestamptz,text)", "0275", "0276"],
+  // 0288: الراجعُ يتبع الدمجَ ويرفض المحذوف، والدمجُ يأخذ ربطَ الجرعة والجرعاتِ المعلَّقة والجرد، ومعدّلُ البيع بوحدة الرصيد.
+  ["credit_stock", 3, "public.credit_stock(uuid,numeric,uuid)", "0122", "0288"],
+  ["products_trash_consumption", 0, "public.products_trash_consumption()", "0255", "0288"],
+  ["product_sales_rate", 1, "public.product_sales_rate(integer)", "0215", "0288"],
+  // 0290: دفترُ الرصيد يسمّي الراجعَ الإكسباير، والتلفُ والجردُ يكلّفان ما أخذاه من دفعته بكلفتها.
+  ["_stock_ledger_source", 1, "public._stock_ledger_source(text)", "0287_stock_safety", "0290"],
+  ["_stock_ledger_kind", 4, "public._stock_ledger_kind(text,text,text,numeric)", "0287_stock_safety", "0290"],
+  ["stock_count_decide", 2, "public.stock_count_decide(uuid[],boolean)", "0254", "0290"],
   // 0287: الملاحظةُ الصوتية «ملف طبي» بسجلّ الحركات — audit_kind نصُّ 0271 (آخرُ من عرّفها) وسطرٌ معلَّم.
-  ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0271", "0287"],
+  ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0271", "0287_visit_voice_notes"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
-const fileOf = (num) => files.find((f) => f.startsWith(num + "_"));
+/* رقمٌ واحدٌ لهجرتين (0287_case_reports و0287_stock_safety، ٢٣/١١): المصدرُ يُسمّى باسم ملفّه حين لا يكفي رقمُه. */
+const fileOf = (num) => files.find((f) => f === num + ".sql" || f.startsWith(num + "_"));
 const strip = (s) => s.replace(/[ \t\n\r\f\v]/g, "");
 
 /* الشِفرةُ بلا تعليقاتها — مرآةُ `public._drift_code` (0252) حرفاً بحرف، والبصمةُ md5 ما يبقى بلا مسافات.
@@ -204,15 +220,17 @@ if (isMain) {
     if (tb == null && state === "pending") { pending.push(`${fn} (${src} → ${tgt}، بصمةُ المصدر ${md5(sb)})`); continue; }
     if (tb == null) { bad(`${fn}: ${tf} ما يعيد تعريفها`); continue; }
     checked++;
-    const a = strip(sb), b = strip(unmark(tb, tgt));
+    /* العلامةُ رقمُ الهجرة (`-- +0287`) ولو سُمّي الهدفُ باسم ملفّه — ثلاثُ هجراتٍ برقم 0287 (٢٤/١١). */
+    const tag = tgt.slice(0, 4);
+    const a = strip(sb), b = strip(unmark(tb, tag));
     if (a !== b) bad(`${fn} (${src} → ${tgt}): النصُّ بعد فكّ العلامات غيرُ نصّ المصدر — ${firstDiff(a, b)}`);
-    if (!new RegExp("--\\s*\\+" + tgt).test(tb)) bad(`${fn} (${tgt}): لا سطرَ معلَّماً بـ-- +${tgt} — إعادةُ تعريفٍ بلا تغيير؟`);
+    if (!new RegExp("--\\s*\\+" + tag).test(tb)) bad(`${fn} (${tgt}): لا سطرَ معلَّماً بـ-- +${tag} — إعادةُ تعريفٍ بلا تغيير؟`);
     const esc = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const g = ttxt.match(new RegExp("_drift_assert\\(\\s*'" + esc + "'\\s*,\\s*'([0-9a-f]{32})'\\s*,\\s*'([^']*)'\\s*\\)"));
     if (!g) bad(`${fn} (${tgt}): ما لكيت _drift_assert('${sig}', …) قبل التعريف`);
     else {
       if (g[1] !== md5(sb)) bad(`${fn} (${tgt}): بصمةُ الحارس ${g[1]} وبصمةُ جسم ${src} ${md5(sb)}`);
-      if (g[2] !== `-- +${tgt}`) bad(`${fn} (${tgt}): علامةُ الحارس «${g[2]}» والمتوقَّع «-- +${tgt}»`);
+      if (g[2] !== `-- +${tag}`) bad(`${fn} (${tgt}): علامةُ الحارس «${g[2]}» والمتوقَّع «-- +${tag}»`);
       if (ttxt.indexOf(g[0]) > ttxt.search(new RegExp("create\\s+or\\s+replace\\s+function\\s+(?:public\\.)?" + fn + "\\s*\\(", "i")))
         bad(`${fn} (${tgt}): الحارسُ بعد التعريف — لازم قبله`);
     }

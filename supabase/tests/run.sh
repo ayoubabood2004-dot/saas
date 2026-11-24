@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0287_visit_voice_notes.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -4074,6 +4074,7 @@ $P -f "$MIG/0226_price_changes.sql" >/dev/null 2>&1
 # إعادةُ 0226 تُرجع نطاقَ الرفع (_price_scope_products) لنصّها — و0264 أعادت تعريفَه (مادّةُ الدولار خارج الرفع)؛
 # بلا إعادتها يفحص price-parity بعدها نسخةَ 0226 لا نسخةَ الإنتاج. من يعيد تعريفَ _price_scope_products يضيف ملفَّه هنا.
 out=$($P -f "$MIG/0264_usd_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0264 ما انعادت بعد 0226"; fail=1; }
+out=$($P -f "$MIG/0286_usd_free_rate.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0286 ما انعادت بعد 0264"; fail=1; }
 chk "والهجرةُ تنعاد بلا أثرٍ ثانٍ: الرفوعُ والمحفّزُ كما هي" \
     "select (select count(*) from price_changes where clinic_id='$C1')::text||'/'||(select count(*) from pg_trigger where tgrelid='price_changes'::regclass and tgname='audit_all')::text" "6/1"
 chk "الأدواتُ الداخلية لا يناديها الداخلون، والأبوابُ ممنوعةٌ عن anon" \
@@ -8703,10 +8704,13 @@ chk "      ⇒ ٢٫٩٩٠" "select stock::text from products where id = '$w22'" 
 chk "  وجردٌ معلَّقٌ (لا سند) على توأمٍ يُكتب" "select $(rt254 $RCP "select stock_count_submit(jsonb_build_array(jsonb_build_object('product_id','$w2c','counted',0,'reason','shortage')))")" "rows:1"
 ID254C=$(W "select coalesce((select id::text from stock_counts where product_id = '$w2c' and status = 'pending'), '00000000-0000-0000-0000-000000000000')")
 chk "    ودمجُه يمرّ" "select $(rv254 $C1 "select (merge_products('$w2d', '$w2c')).id::text")" "$w2d"
-chk "    والجردُ يبقى كاليوم (§8.5): المفتاحُ أفرغه ولا نقلَ لغير السند، والأصلُ ١ + ١ = ٢٫٠٠٠" \
-    "select coalesce(product_id::text, 'null')||'|'||status||'|'||source||'|'||(select stock::text from products where id = '$w2d') from stock_counts where id = '$ID254C'" "null|pending|count|2.000"
-chk "    وموافقتُه تُبطله (void)" "select $(rv254 $C1 "select (d->>'approved')||'|'||(d->>'void') from (select stock_count_decide(array['$ID254C']::uuid[], true) d) x")" "0|1"
-chk "      ولا تمسّ الأصل" "select (select stock::text from products where id = '$w2d')||'|'||(select status from stock_counts where id = '$ID254C')" "2.000|void"
+# 0288 (تدقيق المخزن ٢٢/١١، F20): «الجردُ يبقى كاليوم (§8.5)» كان حدَّ موجة 0254 (السندُ وحده يتبع) لا قراراً — والمفتاحُ كان يفرغه
+# فتبطله الموافقةُ بصمت: عجزُ رفّ التوأم يضيع والأصلُ يحمل قطعتَه الوهميّة. الموافقةُ تطبّق الفرقَ (العدد − رصيد النظام) لا الرقم،
+# فالجردُ يتبع الأصلَ كالسند ويبقى عجزُه عجزاً بعد الدمج.
+chk "    والجردُ يتبع الأصلَ معلَّقاً كالسند (0288؛ كان: المفتاحُ يفرغه)، والأصلُ ١ + ١ = ٢٫٠٠٠" \
+    "select coalesce(product_id::text, 'null')||'|'||status||'|'||source||'|'||(select stock::text from products where id = '$w2d') from stock_counts where id = '$ID254C'" "$w2d|pending|count|2.000"
+chk "    وموافقتُه تُطبَّق على الأصل (كان: void بصمت)" "select $(rv254 $C1 "select (d->>'approved')||'|'||(d->>'void') from (select stock_count_decide(array['$ID254C']::uuid[], true) d) x")" "1|0"
+chk "      فعجزُ رفّ التوأم يبقى عجزاً: ٢ + (٠ − ١) = ١٫٠٠٠ (كان: ٢٫٠٠٠ — قطعةٌ وهميّة)" "select (select stock::text from products where id = '$w2d')||'|'||(select status from stock_counts where id = '$ID254C')" "1.000|approved"
 chk "  وسندٌ معلَّقٌ على مادّة يُكتب" "select $(rv254 $RCP "select (r->>'pending') from (select $(ws254 "$(wl254 $w24 1 stock damaged 'للحذف')") r) x")" "1"
 chk "    فحذفُها يُرفض بكلّ طريق (product_waste_pending): delete_product، والحذفُ المباشر بدور التطبيق، وباليد بالقاعدة" \
     "select $(re254 $C1 "select delete_product('$w24')::text")
@@ -11018,6 +11022,13 @@ $P -c "delete from media_items where pet_id = '${AV}a1'; delete from clinic_visi
 # كلُّ نداءٍ بدور authenticated (rv ⇐ _v0252) والقراءةُ بجملةٍ ثانية (درسُ 0257). A: ١٬٠٠٠$ بسعر ١٤٦٠ تُسدَّد بسعر ١٤٨٠؛
 # B: ١٬٠٠٠$ بسعر ١٤٥٠، جزئيٌّ ٤٠٠$ بسعر ١٤٧٠ ثمّ ٦٠٠$ بسعر ١٤٤٠ — الإغلاقُ بالعملتين، والفرقُ موجبٌ وسالب.
 echo "▸ 0264: الدولار — سعرُ اليوم، البيعُ بالدَّين، التسديدُ بالدينار، فرقُ الصرف، والأبواب"
+# 0286 (بالموجة) أعادت fx_rate_set وsettle_invoice_usd بلا قرارَي ٣ و٤ (المديرُ وحده) — القسمُ يفحص الدالّتين بنصّ 0264 (تُقطعان
+# من ملفّها وحدهما: إعادةُ الملفّ كلِّه تُرجع ما أعادته 0272 بعده — بابُ الأسطر — فيسقط فحصُها هنا)، ثمّ تُعاد 0286 بآخره.
+out=$(awk '/^create or replace function public\.fx_rate_set\(/,/^grant execute on function public\.fx_rate_set\(/;
+           /^create or replace function public\.settle_invoice_usd\(/,/^grant execute on function public\.settle_invoice_usd\(/' \
+        "$MIG/0264_usd_pricing.sql" | $P 2>&1) || { echo "$out" | tail -3; echo "   ✗ دالّتا 0264 ما انعادتا قبل قسمها"; fail=1; }
+chk "  (القسمُ على نصّ 0264 للدالّتين: لا علامةَ 0286 فيهما)" \
+    "select count(*)::text from pg_proc where proname in ('fx_rate_set', 'settle_invoice_usd') and position('+0286' in prosrc) = 0" "2"
 # أوّلُ تطبيقٍ بالإنتاج (٨/١١) رُفض بـdrift_body: مقبوضاتُ اليوم هناك نصُّ 0149 بلا أسماء الأعمدة. القالبُ صنعها قبل 0264.
 chk "الحارس: قالبُ الإنتاج نصُّ مقبوضات اليوم المقيس (البصمةُ 497f…)، و0264 نزلت عليه فصار جسمُها جسمَنا" \
     "select (select fp from dvtest.prodlike_0264) || '|' || (position('-- +0264' in prosrc) > 0)::text
@@ -11238,6 +11249,8 @@ Q264="select (select count(*) from pg_proc where proname in ('usd_checkout','set
 Z264=$($P -tAc "$Q264" | tr -d '[:space:]')
 out=$($P -f "$MIG/0264_usd_pricing.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0264 ما انعادت"; fail=1; }
 chk "وتُعاد بلا أثرٍ ثانٍ: الدوالُّ والبابان والقيودُ والتسديداتُ والأسعارُ وفواتيرُ الدولار كما هي" "$Q264" "$Z264"
+# من يعيد 0264 يعيد بعده 0286 (السعرُ للكادر والتسديدُ بأيّ سعر) — وإلا فحصت الأقسامُ بعده قرارَي 0264 لا الإنتاج.
+out=$($P -f "$MIG/0286_usd_free_rate.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0286 ما انعادت بعد 0264"; fail=1; }
 $P -c "update clinic_prefs set usd_enabled = false where clinic_id = '$C1';
        select set_config('doctorvet.usd_door', 'on', false);
        delete from invoices where client_ref in ('usd-a', 'iqd-u2', 'usd-c1', 'usd-c2', 'usd-d', 'usd-e') or id = '${UP}e1';
@@ -11758,6 +11771,26 @@ chk "السياجُ كاملٌ بعد 0285 (بلا ثغرة)" "select coalesce(s
 chk "  وعشرُ سياساتٍ على المكتبة (قراءةٌ، ثلاثٌ للعامّة، ثلاثٌ للخاصّة، وسياجُ الكتابة)" \
     "select count(*)::text from pg_policies where schemaname='public' and tablename='image_library'" "10"
 $P -c "delete from image_library where path like 'library/l285%' or path like '%/lib-285%';" >/dev/null
+# ── 0287 والمصوّر: قبل تراجع 0222 (يحذف السياجَ ودالّتَه) ──────────────────────────────────────────
+echo "▸ 0287: موظّفُ التصوير لا يرى تقاريرَ الحالة المطبوعة ولا يكتبها، والسياجُ كامل"
+CRP=a2870000-0000-4000-8000-0000000000a1
+# 0287 نفسُها تسيّج جدولَها: أقسامٌ قبلنا تعيد 0222 فتسيّج كلَّ جدولٍ بسياسات — فسياجٌ نسيته الهجرةُ كان يمرّ هنا
+# (طفرةٌ حذفت النداءَ مرّت على الحزمة كلّها). يُسقط السياجُ ثمّ تُعاد 0287 وحدها ويُعدّ.
+$P -c "do \$\$ declare p record; begin
+         for p in select policyname from pg_policies where schemaname = 'public' and tablename = 'pet_case_reports' and policyname like 'photographer_fence%' loop
+           execute format('drop policy %I on public.pet_case_reports', p.policyname);
+         end loop; end \$\$;" >/dev/null
+out=$($P -f "$MIG/0287_case_reports.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت قبل التراجع"; fail=1; }
+chk "0287 نفسُها تسيّج جدولَها (أُسقط السياجُ وأُعيدت وحدها: سياجا القراءة والإدخال)" \
+    "select count(*)::text from pg_policies where schemaname='public' and tablename='pet_case_reports' and policyname like 'photographer_fence%'" "2"
+$P -c "insert into pets(id, name, clinic_id) values ('$CRP', 'تقرير', '$C1') on conflict (id) do nothing;
+       insert into pet_case_reports(pet_id, clinic_id, title, sheet) values ('$CRP', '$C1', 'قبل التراجع', '{\"v\":1}');" >/dev/null
+chk "المصوّرُ لا يرى التقاريرَ المطبوعة ولا يكتبها (السياج)" \
+    "select _rls_try('$PHO', 'select 1 from pet_case_reports') || '|' || left(_rls_try('$PHO', 'insert into pet_case_reports(pet_id, title, sheet) values (''$CRP'', ''x'', ''{}'')'), 13)" "rows:0|guarded:42501"
+chk "  والسياجُ كاملٌ بعد 0287 (بلا ثغرة)" "select coalesce(string_agg(x, ','), '') from verify_photographer_fence() x" ""
+chk "  وأربعُ سياساتٍ على التقارير (قراءةٌ وإدخالٌ وسياجاهما)" \
+    "select count(*)::text from pg_policies where schemaname='public' and tablename='pet_case_reports'" "4"
+$P -c "delete from pet_case_reports where pet_id = '$CRP';" >/dev/null
 # ── 0287: الملاحظةُ الصوتية — قبل تراجع 0222 (السياجُ ودالّتُه، وstaff_can يحكم من يسجّل) ──────────────────────────
 # عياداتٌ ثلاث: C1 وC2 بالتجربة وC3 خارجها. e1 طبيب C1 («د. علي» بصفّ كادره)، e2 طبيب C1 (اسمُه من ملفّه)، e3 استقبال C1،
 # e4 مدير C1، e5 صاحبُ حيوان (ملفٌّ بلا عضوية)، e6 طبيب C2، e7 طبيب C3. كلُّ نداءٍ بدور authenticated (rv/rt)، وكلُّ قراءةٍ
@@ -13739,6 +13772,336 @@ $P -c "select set_config('doctorvet.usd_door', 'on', false);
        delete from clinic_fx_rates where clinic_id = '$MC';
        select set_config('doctorvet.usd_door', 'off', false);" >/dev/null
 
+# ── 0286: سعرُ التسديد يختاره الطبيب، وسعرُ اليوم لكلّ الكادر (قرارُ المالك ٢١/١١) ─────────────────────────────────
+# قسما 0226 و0264 أعادا 0264 فرجعت الدالّتان لنصّها (المديرُ وحده) — تُعاد 0286 هنا أوّلاً، وحارسُها يقبل نصَّ 0264 وحده.
+# NC عيادةٌ وصاحبُها (مدير)، NV طبيبُها. الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).
+echo "▸ 0286: الطبيبُ يحدّد سعرَ اليوم، ويسدّد دَينَ الدولار بسعر يوم البيع أو بأيّ سعرٍ يختاره — بلا مديرٍ ولا سبب"
+out=$($P -f "$MIG/0286_usd_free_rate.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0286 ما نزلت فوق إعادات 0264"; fail=1; }
+NX=c2860000-0000-4000-8000-0000000000
+NC=${NX}c1
+NV=${NX}c2
+NRID="(select id::text from clinic_fx_rates where clinic_id = '$NC' order by created_at desc, id desc limit 1)"
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$NC'),('$NV') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$NV','$NC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code, usd_enabled, usd_round_step) values ('$NC','+964', true, 250)
+         on conflict (clinic_id) do update set usd_enabled = true, usd_round_step = 250;
+       delete from clinic_fx_rates where clinic_id = '$NC';
+       insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, sell_price_usd, purchase_price_usd, stock,
+                            has_sub_unit, sub_unit_name, units_per_box, sub_unit_price, packs, sold_by_weight) values
+         ('${NX}d1', '$NC', 'دواء بالدولار', 'FR-1', 'USD', 0, 0, 10, 6, 50, false, null, null, null, null, false),
+         ('${NX}d2', '$NC', 'دينار وحده', 'FR-2', 'IQD', 2000, 1500, null, null, 50, false, null, null, null, null, false)
+         on conflict (id) do nothing;" >/dev/null
+chk "الطبيبُ يحدّد سعرَ اليوم بنفسه (١٥٠٠) — كان للمدير وحده — والسطرُ يختمه باسمه" \
+    "select $(rv $NV "select (fx_rate_set(150000)).rate::numeric(10,0)::text")" "1500"
+chk "  (يُقرأ بعدها: سعرُ العيادة ١٥٠٠ وset_by الطبيب)" \
+    "select rate::numeric(10,0)::text||'|'||(set_by = '$NV')::text from clinic_fx_rates where clinic_id = '$NC' order by created_at desc, id desc limit 1" "1500|true"
+# بيعةٌ بمجموعين: علبتا دينار نقداً، ودواءٌ بالدولار ×٤ = ٤٠\$ يدفع منه ١٠\$ والباقي ٣٠\$ دَين — بسعر اليوم ١٥٠٠.
+chk "البيعة: الدينارُ نقداً، ومن ٤٠\$ دفع ١٠\$ والباقي ٣٠\$ دَين بسعر يوم البيع ١٥٠٠" \
+    "select (length($(rv $NV "select (mixed_checkout('[{\"product_id\":\"${NX}d2\",\"name\":\"d2\",\"qty\":2,\"unit_price\":2000,\"unit_cost\":0,\"stock_qty\":2,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+        '[{\"product_id\":\"${NX}d1\",\"qty\":4}]'::jsonb,
+        jsonb_build_object('client_ref', 'n286-1', 'fx_rate_id', $NRID, 'payment_method', 'cash', 'amount_paid', 4000, 'final_total', 4000,
+                           'discount_usd', '0', 'paid_usd', '10', 'usd_method', 'cash', 'customer_name', 'زبون الدولار')))::text")) > 0)::text" "true"
+NUSD="(select id from invoices where clinic_id = '$NC' and client_ref = 'n286-1~usd')"
+chk "  ودفعةُ البيع ليست «تسديداً لاحقاً»: كلُّ سِيَق فاتورة الدولار مختومةٌ بلحظة إنشائها أو قبلها (سجلُّ الفواتير لا يرسمها سطراً ثالثاً)" \
+    "select count(*)::text||'|'||coalesce(bool_and((e->>'at')::timestamptz <= i.created_at), true)::text
+       from invoices i, jsonb_array_elements(i.payment_details) e where i.id = $NUSD and e ? 'at'" "1|true"
+# بعد شهر: الدولارُ ١٨٠٠ — والطبيبُ يكتبه من شاشته، ثمّ يسدّد بسعر يوم البيع (١٥٠٠) بلا سبب، ثمّ الباقي بسعرٍ يختاره (١٦٥٠).
+chk "بعد شهر الطبيبُ يكتب سعرَ اليوم ١٨٠٠" "select $(rv $NV "select (fx_rate_set(180000)).rate::numeric(10,0)::text")" "1800"
+chk "  ويسدّد ١٠\$ بسعر يوم البيع ١٥٠٠ (غيرُ سعر اليوم) بلا مديرٍ ولا سبب — الدرجُ ١٥٬٠٠٠" \
+    "select $(rv $NV "select (settle_invoice_usd($NUSD, 10, 150000, 'cash', 30, null, 'n286-p1'))->'settlement'->>'received'")" "15000.00"
+chk "  والباقي ٢٠\$ بسعرٍ يختاره هو (١٦٥٠) يُغلق الدَّين — الدرجُ ٣٣٬٠٠٠" \
+    "select $(rv $NV "select (settle_invoice_usd($NUSD, 20, 165000, 'transfer', 20, null, 'n286-p2'))->'settlement'->>'received'")" "33000.00"
+chk "  (يُقرأ بعدها: مدفوعٌ ٤٠\$ وباقيها صفر، وسعرُ يوم البيع عليها ١٥٠٠، ودفعةُ البيع ثمّ التسديدان بأسعارها ١٥٠٠ و١٥٠٠ و١٦٥٠ بيد الطبيب)" \
+    "select (select paid_usd::text||'|'||(total_usd - paid_usd)::text||'|'||fx_rate::numeric(10,0)::text from invoices where id = $NUSD)
+            ||'|'||(select string_agg(rate::numeric(10,0)::text||':'||(by_user = '$NV')::text, ',' order by at, id) from usd_settlements where invoice_id = $NUSD)" \
+    "40.00|0.00|1500|1500:true,1500:true,1650:true"
+chk "  وحصّةُ الفاتورة بنسبتها والفرقُ ساقُ fx: الدينارُ المدفوعُ = دينارُ يوم البيع كلُّه (٦٠٬٠٠٠)، والفرقُ +٣٬٠٠٠ (١٥٠٠ ⇒ ١٦٥٠ على ٢٠\$)" \
+    "select amount_paid::numeric(20,0)::text||'|'||(select coalesce(sum(fx), 0)::numeric(20,0)::text from usd_settlements where invoice_id = $NUSD) from invoices where id = $NUSD" "60000|3000"
+# بلا سعرٍ محدَّدٍ بالعيادة أصلاً («مو شرط تثبيت سعر الدولار من الإعدادات»): التسديدُ يكتب سعرَه.
+$P -c "select set_config('doctorvet.usd_door', 'on', false);
+       insert into invoices(id, clinic_id, total, amount_paid, payment_method, currency, fx_rate, total_usd, paid_usd, customer_name, client_ref)
+         values ('${NX}e1', '$NC', 30000, 0, 'cash', 'USD', 1500, 20, 0, 'زبون الدولار', 'n286-old');
+       select set_config('doctorvet.usd_door', 'off', false);
+       delete from clinic_fx_rates where clinic_id = '$NC';" >/dev/null
+chk "وبلا أيّ سعرٍ مكتوبٍ بالعيادة: الطبيبُ يسدّد ١٠\$ من ٢٠\$ بسعرٍ يكتبه (١٧٠٠) — الدرجُ ١٧٬٠٠٠" \
+    "select $(rv $NV "select (settle_invoice_usd('${NX}e1', 10, 170000, 'cash', 20, null, 'n286-p3'))->'settlement'->>'received'")" "17000.00"
+chk "والحدودُ كما هي: سعرٌ خارج ١٠٠–١٠٠٬٠٠٠، ومبلغٌ أكبر من الباقي، والإلغاءُ للمدير" \
+    "select $(rerr $NV "select (settle_invoice_usd('${NX}e1', 1, 5000, 'cash', null, null, null))::text")
+            ||'|'||$(rerr $NV "select (fx_rate_set(20000000))::text")
+            ||'|'||$(rerr $NV "select (settle_invoice_usd('${NX}e1', 11, 170000, 'cash', null, null, null))::text")
+            ||'|'||$(rerr $NV "select (void_usd_settlement((select id from usd_settlements where client_ref = 'n286-p1'), 'غلط'))::text")" \
+    "usd_rate_bad|usd_rate_bad|usd_over|usd_void_manager"
+chk "والإعادةُ بالمرجع نفسِه ترجع التسديدَ الأوّل بسعره (١٥٠٠) ولو تغيّر السعرُ بالطلب" \
+    "select ($(rv $NV "select (settle_invoice_usd($NUSD, 10, 190000, 'cash', null, null, 'n286-p1'))->'settlement'->>'rate'")::numeric)::numeric(10,0)::text" "1500"
+chk "  (يُقرأ بعدها بجملةٍ ثانية — درسُ 0257: ثلاثةُ تسديداتٍ كما كانت، لا رابع)" \
+    "select count(*)::text from usd_settlements where invoice_id = $NUSD" "3"
+chk "الصلاحيات: الدالّتان definer بمسارٍ مثبَّت وتسألان العيادة، ولا anon" \
+    "select (select bool_and(prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%' and position('auth_clinic()' in prosrc) > 0)
+               from pg_proc where proname in ('fx_rate_set', 'settle_invoice_usd'))::text
+            ||'|'||has_function_privilege('anon', 'public.fx_rate_set(numeric,text)', 'execute')::text
+            ||'|'||has_function_privilege('anon', 'public.settle_invoice_usd(uuid,numeric,numeric,text,numeric,text,text)', 'execute')::text" "true|false|false"
+Q286="select (select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname) from pg_proc where proname in ('fx_rate_set', 'settle_invoice_usd'))
+       ||'|'||(select count(*) from usd_settlements where clinic_id = '$NC')::text"
+Z286=$($P -tAc "$Q286" | tr -d '[:space:]')
+out=$($P -f "$MIG/0286_usd_free_rate.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0286 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الدالّتان والتسديدات)" "$Q286" "$Z286"
+$P -c "select set_config('doctorvet.usd_door', 'on', false);
+       delete from usd_settlements where clinic_id = '$NC';
+       update invoices set payment_details = '[]'::jsonb, amount_paid = 0, paid_usd = case when currency = 'USD' then 0 end where clinic_id = '$NC';
+       delete from invoices where clinic_id = '$NC';
+       delete from products where clinic_id = '$NC';
+       delete from clinic_fx_rates where clinic_id = '$NC';
+       select set_config('doctorvet.usd_door', 'off', false);" >/dev/null
+
+# ── 0289: الراجعُ الإكسباير — دفعةٌ بزبونها وتاريخها وكلفتها، ومن دَين الفاتورة أوّلاً، والبيعُ منها بكلفتها (قرارُ المالك ٢٣/١١) ──────
+# ZC عيادةٌ وصاحبُها (مدير)، ZV طبيبُها، ZO عيادةٌ أخرى. «دواء إكسباير» يُباع بـ٢٠٬٠٠٠ وكلفتُه ١٤٬٠٠٠ (علبةٌ = ١٠ شرائط، والكارتون ٥ علب).
+# الكتابةُ بطلبٍ والقراءةُ بآخر (درسُ 0257).
+echo "▸ 0289: الراجعُ الإكسباير ينزّل من دَين فاتورته، ودفعتُه بكلفة ما رجع للزبون فبيعُها لا يُظهر خسارة"
+out=$($P -f "$MIG/0289_expired_returns.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0289 ما نزلت"; fail=1; }
+ZX=c2880000-0000-4000-8000-0000000000
+ZC=${ZX}c1
+ZV=${ZX}c2
+ZO=${ZX}c3
+ZA=${ZX}a1
+ZB=${ZX}a2
+zinv() { echo "(select id from invoices where clinic_id = '$ZC' and client_ref = '$1')"; }
+zsale() { # zsale المرجع المادّة الكمية السعر المدفوع [الزبون] [الهاتف]
+  echo "select (retail_checkout('[{\"product_id\":\"$2\",\"name\":\"z\",\"qty\":$3,\"unit_price\":$4,\"unit_cost\":0,\"stock_qty\":$3,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+          jsonb_build_object('client_ref', '$1', 'payment_method', 'cash', 'amount_paid', $5, 'final_total', $3 * $4,
+                             'customer_name', nullif('${6:-}', ''), 'customer_phone', nullif('${7:-}', ''))))::text"; }
+zret() { # zret المرجع السطور [الزبون] [الهاتف] — يرجع الدَّينَ والنقدَ بلا كسور
+  echo "select (r->>'debt')::numeric::numeric(20,0)::text||'/'||(r->>'cash')::numeric::numeric(20,0)::text
+          from (select return_expired('$2'::jsonb, jsonb_build_object('client_ref', '$1', 'customer_name', nullif('${3:-}', ''),
+                                                                     'customer_phone', nullif('${4:-}', ''))) as r) s"; }
+ZLOTS="(select string_agg(qty::numeric(20,1)::text, ',' order by received_at, id) from product_lots where product_id = '$ZA')"
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$ZC'),('$ZV'),('$ZO') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$ZV','$ZC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code) values ('$ZC','+964') on conflict (clinic_id) do update set dial_code = '+964';
+       insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock,
+                            has_sub_unit, sub_unit_name, units_per_box, packs, pooled) values
+         ('$ZA', '$ZC', 'دواء إكسباير', 'EXP-1', 'IQD', 20000, 14000, 14000, 20, true, 'شريط', 10,
+          '[{\"id\":\"k1\",\"name\":\"كارتون\",\"per\":5,\"codes\":[\"EXP-K1\"]}]', false),
+         ('$ZB', '$ZC', 'دينار ثاني', 'EXP-2', 'IQD', 15000, 10000, 10000, 10, false, null, null, null, false),
+         ('${ZX}a3', '$ZC', 'بالدولار', 'EXP-3', 'USD', 0, 0, null, 10, false, null, null, null, false),
+         ('${ZX}a4', '$ZC', 'مجمَّعة', 'EXP-4', 'IQD', 1000, 500, 500, 0, false, null, null, null, true),
+         ('${ZX}e1', '$ZO', 'غيرها', 'EXP-O', 'IQD', 1000, 500, 500, 3, false, null, null, null, false)
+         on conflict (id) do nothing;" >/dev/null
+chk "البيعة: «أبو علي» يأخذ علبتين بالدَّين" \
+    "select (length($(rv $ZV "$(zsale n288-s1 $ZA 2 20000 0 'أبو علي' 07701234567)")) > 0)::text" "true"
+chk "  (يُقرأ بعدها — درسُ 0257) ٤٠٬٠٠٠ بكلفة ٢٨٬٠٠٠ وربح ١٢٬٠٠٠" \
+    "select total::numeric(20,0)::text||'/'||cost_total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text from invoices where id = $(zinv n288-s1)" \
+    "40000/28000/12000"
+chk "راجعٌ إكسباير علبةٌ بـ٥٠٪: ينزل ١٠٬٠٠٠ من دَين فاتورتها، ولا نقد" \
+    "select $(rv $ZV "$(zret n288-r1 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-10-01\"}]" 'أبو علي' 07701234567)")" \
+    "10000/0"
+chk "  (يُقرأ بعدها) الفاتورةُ ٣٠٬٠٠٠ وربحُها ١٢٬٠٠٠ كما كان — العلبةُ نقصت وسطرُ الأثر ١٠٬٠٠٠ بكلفة ٤٬٠٠٠؛ ولا مدفوع" \
+    "select total::numeric(20,0)::text||'/'||cost_total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text
+            ||'|'||(select string_agg(qty::numeric(20,1)::text||':'||unit_price::numeric(20,0)::text||':'||unit_cost::numeric(20,0)::text||':'||(product_id is null)::text, ',' order by product_id nulls last)
+                      from invoice_items where invoice_id = i.id)
+       from invoices i where id = $(zinv n288-s1)" \
+    "30000/18000/12000/0|1.0:20000:14000:false,1.0:10000:4000:true"
+chk "  وعددُ قطع الفاتورة كسطورها (العلبةُ الباقية وسطرُ الأثر)" "select item_count::text from invoices where id = $(zinv n288-s1)" "2"
+chk "  والدفعةُ: علبةٌ «راجع» من «أبو علي» بإكسبايرها وبـ٥٠٪ وكلفتُها ١٠٬٠٠٠ ومربوطةٌ بالفاتورة؛ والرصيدُ ١٩ = مجموعُ الدفعات" \
+    "select source||'/'||qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text||'/'||return_pct::text||'/'||return_from||'/'||expiry_date::text
+            ||'/'||(return_invoice = $(zinv n288-s1))::text||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')
+            ||'|'||(select sum(qty)::numeric(20,1)::text from product_lots where product_id = '$ZA')
+       from product_lots where product_id = '$ZA' and source = 'return'" \
+    "return/1.0/10000/50/أبوعلي/2026-10-01/true|19.0|19.0"
+chk "والإعادةُ بالمرجع نفسِه ترجع الجوابَ الأوّل بلا راجعٍ ثانٍ" \
+    "select $(rv $ZV "$(zret n288-r1 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-10-01\"}]" 'أبو علي' 07701234567)")" "10000/0"
+chk "  (يُقرأ بعدها) دفعةُ راجعٍ واحدة والرصيدُ ١٩ والفاتورةُ ٣٠٬٠٠٠" \
+    "select (select count(*) from product_lots where product_id = '$ZA' and source = 'return')::text||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')
+            ||'|'||(select total::numeric(20,0)::text from invoices where id = $(zinv n288-s1))" "1|19.0|30000"
+chk "البيعُ العاديّ (علبةٌ بلا زبون)" "select (length($(rv $ZV "$(zsale n288-s2 $ZA 1 20000 20000)")) > 0)::text" "true"
+chk "  (يُقرأ بعدها) لا يأخذ من دفعة الراجع: الافتتاحيةُ ١٨ ⇒ ١٧ والراجعُ ١ باقٍ" "select $ZLOTS" "17.0,1.0"
+ZL1="(select id from product_lots where product_id = '$ZA' and source = 'return' order by received_at, id limit 1)"
+chk "والبيعُ من الدفعة (retail_checkout_lots) بـ١٢٬٠٠٠: كلفتُه ١٠٬٠٠٠ من الدفعة لا ١٤٬٠٠٠ ⇒ ربحٌ ٢٬٠٠٠ لا خسارة" \
+    "select ((r->'iqd'->>'cost_total')::numeric::numeric(20,0)::text||'/'||(r->'iqd'->>'profit')::numeric::numeric(20,0)::text)
+       from (select $(rv $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 1, 'unit_price', 12000,
+               'unit_cost', 0, 'stock_qty', 1, 'unit_label', null, 'service_id', null, 'lot_id', $ZL1)),
+               jsonb_build_object('client_ref', 'n288-s3', 'payment_method', 'cash', 'amount_paid', 12000, 'final_total', 12000))::text")::jsonb as r) s" \
+    "10000/2000"
+chk "  (يُقرأ بعدها) سطرُ البيعة نفسُه بكلفة الدفعة، وكلفةُ الفاتورة = مجموعُ سطورها" \
+    "select (select string_agg(unit_cost::numeric(20,0)::text, ',') from invoice_items where invoice_id = i.id)||'|'||(cost_total = (select sum(round(qty * unit_cost, 2)) from invoice_items where invoice_id = i.id))::text
+       from invoices i where id = $(zinv n288-s3)" "10000|true"
+chk "  (يُقرأ بعدها) الدفعةُ صفر والافتتاحيةُ ١٧ كما هي والرصيدُ ١٧" \
+    "select $ZLOTS||'|'||(select stock::numeric(20,1)::text from products where id = '$ZA')" "17.0,0.0|17.0"
+chk "  والإعادةُ بالمرجع ترجع البيعةَ كما ثبتت بلا نقصٍ ثانٍ" \
+    "select ($(rv $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 1, 'unit_price', 12000,
+               'unit_cost', 0, 'stock_qty', 1, 'unit_label', null, 'service_id', null, 'lot_id', $ZL1)),
+               jsonb_build_object('client_ref', 'n288-s3', 'payment_method', 'cash', 'amount_paid', 12000, 'final_total', 12000))->'iqd'->>'cost_total'")::numeric)::numeric(20,0)::text" "10000"
+chk "  (يُقرأ بعدها) فاتورةٌ واحدةٌ بالمرجع والدفعاتُ كما هي" \
+    "select (select count(*) from invoices where clinic_id = '$ZC' and client_ref = 'n288-s3')::text||'|'||$ZLOTS" "1|17.0,0.0"
+chk "راجعٌ بالقطعة: ٥ شرائط (نصف علبة) بـ١٠٠٪ من فاتورة الدَّين نفسِها ⇒ الدَّينُ ينزل ١٠٬٠٠٠" \
+    "select $(rv $ZV "$(zret n288-r2 "[{\"product_id\":\"$ZA\",\"unit\":\"sub\",\"qty\":5,\"pct\":100,\"expiry_date\":\"2026-09-15\"}]" 'أبو علي' 07701234567)")" \
+    "10000/0"
+chk "  (يُقرأ بعدها) الفاتورةُ ٢٠٬٠٠٠ وربحُها ٩٬٠٠٠ (نصفُ العلبة رجع بربحه كلِّه) ولا سطرَ أثرٍ لراجعٍ كامل؛ والدفعةُ نصفُ علبةٍ بكلفة ١٤٬٠٠٠ للعلبة" \
+    "select total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text||'/'||(select count(*) from invoice_items where invoice_id = i.id)::text
+            ||'|'||(select qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text from product_lots where product_id = '$ZA' and source = 'return' and return_pct = 100)
+       from invoices i where id = $(zinv n288-s1)" "20000/9000/2|0.5/14000"
+chk "كارتونٌ (٥ علب) بـ٥٠٪ من فاتورةٍ مدفوعة لـ«أم سارة» بلا دَين ⇒ نقدٌ ٥٠٬٠٠٠ والربحُ ٣٦٬٠٠٠ كما كان" \
+    "select (length($(rv $ZV "$(zsale n288-s5 $ZA 6 20000 120000 'أم سارة' 07709999999)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r3 "[{\"product_id\":\"$ZA\",\"unit\":\"pack\",\"pack_id\":\"k1\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-08-01\"}]" 'أم سارة' 07709999999)")" \
+    "true|0/50000"
+chk "  (يُقرأ بعدها) الفاتورةُ ٧٠٬٠٠٠ ربحُها ٣٦٬٠٠٠ والمدفوعُ ٧٠٬٠٠٠ بساقٍ سالبة ٥٠٬٠٠٠؛ والدفعةُ ٥ علب بكلفة ١٠٬٠٠٠" \
+    "select total::numeric(20,0)::text||'/'||profit::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text
+            ||'/'||(select sum((e->>'amount')::numeric) filter (where (e->>'amount')::numeric < 0)::numeric(20,0)::text from jsonb_array_elements(i.payment_details) e)
+            ||'|'||(select qty::numeric(20,1)::text||'/'||unit_cost::numeric(20,0)::text from product_lots where product_id = '$ZA' and source = 'return' and return_from = 'أم سارة')
+       from invoices i where id = $(zinv n288-s5)" "70000/36000/70000/-50000|5.0/10000"
+chk "علبةٌ بـ١٠٠٪ من فاتورةٍ مدفوعة و«أبو علي» عليه دَين بغيرها ⇒ ما يُعاد له يسدّد أقدمَ دَينه (٢٠٬٠٠٠) ولا نقد" \
+    "select (length($(rv $ZV "$(zsale n288-s6 $ZA 1 20000 20000 'أبو علي' 07701234567)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r4 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-07-01\"}]" 'أبو علي' 07701234567)")" \
+    "true|20000/0"
+chk "  (يُقرأ بعدها) فاتورتُها صفرٌ بسطر أثرٍ وحده (لا فاتورةَ بلا أسطر) ومدفوعُها صفر، وفاتورةُ الدَّين القديمة مسدَّدة" \
+    "select (select total::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text||'/'||(select count(*) from invoice_items where invoice_id = i.id)::text
+               from invoices i where id = $(zinv n288-s6))
+            ||'|'||(select (total - amount_paid)::numeric(20,0)::text from invoices where id = $(zinv n288-s1))" "0/0/1|0"
+chk "زبونٌ عابر (بلا اسم): نقدٌ ٧٬٥٠٠ بلا دَين" \
+    "select $(rv $ZV "$(zret n288-r5 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-06-01\",\"unit_price\":15000}]")")" "0/7500"
+chk "  (يُقرأ بعدها) سحبُ «مرتجع» بقيمة الراجع، ودفعةٌ بكلفة min(القيمة، كلفة المخزن)" \
+    "select (select amount::numeric(20,0)::text||'/'||category from expenses where clinic_id = '$ZC' order by spent_at desc, id desc limit 1)
+            ||'|'||(select unit_cost::numeric(20,0)::text from product_lots where product_id = '$ZB' and source = 'return')" \
+    "7500/مرتجع|7500"
+chk "زبونٌ عليه دَينٌ بمادّةٍ أخرى ولا فاتورةَ فيها هذه: السحبُ ٢٠٬٠٠٠ يسدّد دَينَه ١٥٬٠٠٠ والباقي ٥٬٠٠٠ نقد" \
+    "select (length($(rv $ZV "$(zsale n288-s7 $ZB 1 15000 0 'زبون الدين' 07705555555)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r6 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-06-01\",\"unit_price\":20000}]" 'زبون الدين' 07705555555)")" \
+    "true|15000/5000"
+chk "  (يُقرأ بعدها) فاتورةُ دَينه مسدَّدة، والسحبُ ٢٠٬٠٠٠" \
+    "select (select (total - amount_paid)::numeric(20,0)::text from invoices where id = $(zinv n288-s7))
+            ||'|'||(select amount::numeric(20,0)::text from expenses where clinic_id = '$ZC' and description like '%زبون الدين%')" "0|20000"
+chk "  والرصيدُ = مجموعُ الدفعات بعد كلّ ذلك (١٧٫٥ للأولى، ١٠ للثانية)" \
+    "select (select stock::numeric(20,1)::text||'='||(select sum(qty) from product_lots where product_id = p.id)::numeric(20,1)::text from products p where id = '$ZA')
+            ||'|'||(select stock::numeric(20,1)::text||'='||(select sum(qty) from product_lots where product_id = p.id)::numeric(20,1)::text from products p where id = '$ZB')" \
+    "17.5=17.5|10.0=10.0"
+# «أبو حسن» اشترى علبةً بالدَّين ثمّ علبةً مدفوعة (أحدث): الراجعُ يأخذ فاتورةَ الدَّين وإن كانت أقدم — المدفوعةُ لا تُمسّ.
+chk "فاتورتان فيهما المادّة: ما عليها دَينٌ أوّلاً ولو أقدم" \
+    "select (length($(rv $ZV "$(zsale n288-h1 $ZB 1 15000 0 'أبو حسن' 07702222222)")) > 0)::text
+            ||'|'||(length($(rv $ZV "$(zsale n288-h2 $ZB 1 15000 15000 'أبو حسن' 07702222222)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-r7 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-06-01\"}]" 'أبو حسن' 07702222222)")" \
+    "true|true|15000/0"
+chk "  (يُقرأ بعدها) فاتورةُ الدَّين صارت صفراً والمدفوعةُ كما هي ١٥٬٠٠٠" \
+    "select (select total::numeric(20,0)::text from invoices where id = $(zinv n288-h1))||'|'||(select total::numeric(20,0)::text from invoices where id = $(zinv n288-h2))" "0|15000"
+# دفعةُ راجعٍ تاريخُها لم يفُت (والافتتاحيةُ بلا تاريخ — تأتي بعدها بترتيب الانتهاء): مرتجعٌ عاديّ بعدها يزيد الافتتاحيةَ لا دفعةَ الراجع.
+ZFUT=$(date -d '+90 days' +%F)
+chk "دفعةُ راجعٍ بتاريخٍ قادم ($ZFUT)، ثمّ مرتجعٌ عاديّ (retail_return) لعلبةٍ من المادّة نفسِها" \
+    "select $(rv $ZV "$(zret n288-r8 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"$ZFUT\",\"unit_price\":15000}]")")
+            ||'|'||(length($(rv $ZV "select retail_return('[{\"product_id\":\"$ZB\",\"name\":\"z\",\"qty\":1,\"unit_price\":15000,\"stock_qty\":1}]'::jsonb, '{\"client_ref\":\"n288-rr\"}'::jsonb)::text")) > 0)::text" \
+    "0/7500|true"
+chk "  (يُقرأ بعدها) الزيادةُ ذهبت لغير دفعة الراجع: دفعةُ الراجع القادمةُ ١ كما هي، والرصيدُ = مجموعُ الدفعات" \
+    "select (select qty::numeric(20,1)::text from product_lots where product_id = '$ZB' and source = 'return' and expiry_date = '$ZFUT')
+            ||'|'||(select (stock = (select sum(qty) from product_lots where product_id = p.id))::text from products p where id = '$ZB')" "1.0|true"
+# ── تصليحاتُ المراجعة العدائيّة ──
+# (١) المالُ بطريقة الشاشة كلُّه: فاتورةٌ دُفعت ببطاقة والزبونُ عليه دَينٌ بغيرها، والشاشةُ «نقد» ⇒ الساقُ السالبة نقدٌ والتسديدُ نقد.
+chk "طريقةُ الشاشة للساق وللتسديد: «أبو كرار» دفع ببطاقة ٢٠٬٠٠٠ وعليه دَين ١٥٬٠٠٠ ⇒ ١٠٠٪ نقداً: دَينٌ ١٥٬٠٠٠ ونقدٌ ٥٬٠٠٠" \
+    "select (length($(rv $ZV "$(zsale n288-k0 $ZB 1 15000 0 'أبو كرار' 07703333333)")) > 0)::text
+            ||'|'||(length($(rv $ZV "select (retail_checkout('[{\"product_id\":\"$ZA\",\"name\":\"z\",\"qty\":1,\"unit_price\":20000,\"unit_cost\":0,\"stock_qty\":1,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+                jsonb_build_object('client_ref', 'n288-k1', 'payment_method', 'card', 'amount_paid', 20000, 'final_total', 20000,
+                                   'payment_details', '[{\"method\":\"card\",\"amount\":20000}]'::jsonb,
+                                   'customer_name', 'أبو كرار', 'customer_phone', '07703333333')))::text")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-k2 "[{\"product_id\":\"$ZA\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-05-01\"}]" 'أبو كرار' 07703333333)")" \
+    "true|true|15000/5000"
+chk "  (يُقرأ بعدها) الساقُ السالبة على فاتورة البطاقة «نقد»، وتسديدُ الدَّين «نقد» — البطاقةُ لا تُسحب منها رجعةٌ ما خرجت" \
+    "select (select string_agg((e->>'method')||':'||(e->>'amount')::numeric::numeric(20,0)::text, ',') from invoices i, jsonb_array_elements(i.payment_details) e
+              where i.id = $(zinv n288-k1) and (e->>'amount')::numeric < 0)
+            ||'|'||(select string_agg((e->>'method')||':'||(e->>'amount')::numeric::numeric(20,0)::text, ',') from invoices i, jsonb_array_elements(i.payment_details) e
+              where i.id = $(zinv n288-k0) and (e->>'amount')::numeric > 0)" "cash:-20000|cash:15000"
+# (٢) الرصيدُ تحت الصفر: ما يسدّ العجزَ لا يدخل دفعة، وكلفتُه تبقى بالفاتورة (ربحُها ينقص بقيمته) — لا كلفةٌ تختفي.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, pooled) values
+         ('${ZX}a5', '$ZC', 'تحت الصفر', 'EXP-5', 'IQD', 20000, 14000, 14000, 2, false) on conflict (id) do nothing;" >/dev/null
+chk "رصيدٌ ٢ بِيع منه ٤ بالدَّين لـ«أم زهراء» (−٢)، ثمّ رجعت ٣ إكسباير بـ٥٠٪: ينزل ٣٠٬٠٠٠ من دَينها" \
+    "select (length($(rv $ZV "$(zsale n288-n1 ${ZX}a5 4 20000 0 'أم زهراء' 07704444444)")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-n2 "[{\"product_id\":\"${ZX}a5\",\"unit\":\"box\",\"qty\":3,\"pct\":50,\"expiry_date\":\"2026-05-01\"}]" 'أم زهراء' 07704444444)")" \
+    "true|30000/0"
+chk "  (يُقرأ بعدها) الرصيدُ ١ ودفعةُ الراجع ١ بكلفة ١٠٬٠٠٠ (الاثنتان سدّتا العجز)، وربحُ الفاتورة نزل ٢٠٬٠٠٠ بقيمتهما لا بقي ثابتاً" \
+    "select (select stock::numeric(20,1)::text from products where id = '${ZX}a5')
+            ||'|'||(select coalesce(string_agg(qty::numeric(20,1)::text||'@'||unit_cost::numeric(20,0)::text, ','), '-') from product_lots where product_id = '${ZX}a5' and source = 'return')
+            ||'|'||(select profit::numeric(20,0)::text from invoices where id = $(zinv n288-n1))" \
+    "1.0|1.0@10000|4000"
+# (٣) شريطٌ من سطر شرائط: الراجعُ بوحدة السطر بالضبط (كان ٦٫٠٠١ شريطاً وردٌّ ٩٩٩).
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, pooled,
+                            has_sub_unit, sub_unit_name, units_per_box, sub_unit_price) values
+         ('${ZX}a6', '$ZC', 'شرائط ثلاثية', 'EXP-6', 'IQD', 3000, 1500, 1500, 10, false, true, 'شريط', 3, 1000) on conflict (id) do nothing;" >/dev/null
+chk "٧ شرائط (٣ بالعلبة) بالدَّين لـ«أبو مهدي» ثمّ شريطٌ واحد إكسباير ١٠٠٪: ينزل ١٬٠٠٠ بالضبط" \
+    "select (length($(rv $ZV "select (retail_checkout('[{\"product_id\":\"${ZX}a6\",\"name\":\"z\",\"qty\":7,\"unit_price\":1000,\"unit_cost\":0,\"stock_qty\":2.333,\"unit_label\":\"شريط\",\"service_id\":null}]'::jsonb,
+                jsonb_build_object('client_ref', 'n288-u1', 'payment_method', 'cash', 'amount_paid', 0, 'final_total', 7000,
+                                   'customer_name', 'أبو مهدي', 'customer_phone', '07706666666')))::text")) > 0)::text
+            ||'|'||$(rv $ZV "$(zret n288-u2 "[{\"product_id\":\"${ZX}a6\",\"unit\":\"sub\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-05-01\"}]" 'أبو مهدي' 07706666666)")" \
+    "true|1000/0"
+chk "  (يُقرأ بعدها) السطرُ ٦ شرائط بـ٦٬٠٠٠ والفاتورةُ ٦٬٠٠٠ وعددُ قطعها ٦" \
+    "select (select string_agg(qty::numeric(20,3)::text||':'||line_total::numeric(20,0)::text, ',') from invoice_items where invoice_id = $(zinv n288-u1))
+            ||'|'||(select total::numeric(20,0)::text||'/'||item_count::text from invoices where id = $(zinv n288-u1))" "6.000:6000|6000/6"
+# (٤) سطرُ الأثر يومُه يومُ فاتورته (تقاريرُ السطور بالمدّة).
+chk "سطرُ الأثر بيوم فاتورته لا بيوم الراجع" \
+    "select bool_and(ii.created_at = i.created_at)::text from invoice_items ii join invoices i on i.id = ii.invoice_id
+      where i.clinic_id = '$ZC' and ii.product_id is null and ii.stock_qty = 0" "true"
+# (٥) مرجعٌ واحد لطريقين: ما ثبت إكسباير لا يُسجَّل راجعاً خالصاً بالمرجع نفسِه، والعكس.
+chk "المرجعُ نفسُه بين الطريقين يُرفض بالاتّجاهين (return_ref_used / expired_ref_used)" \
+    "select $(rerr $ZV "select retail_return('[{\"product_id\":\"$ZB\",\"name\":\"z\",\"qty\":1,\"unit_price\":15000,\"stock_qty\":1}]'::jsonb, '{\"client_ref\":\"n288-r1\"}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{\"client_ref\":\"n288-rr\"}'::jsonb)::text")" \
+    "return_ref_used|expired_ref_used"
+# (٦) البيعُ من الدفعة سطرٌ واحد بسجلّ الحركات («بيع») — لا «تعديل بيعة» بعده.
+chk "البيعُ من الدفعة: سجلُّ الحركات للفاتورة إدراجٌ وحده" \
+    "select string_agg(action, ',' order by action) from audit_log where entity = 'invoices' and entity_id = ($(zinv n288-s3))::text" "INSERT"
+# (٧) طلبُ توصيلٍ بالطريق ليس فاتورةَ الراجع ولا دَيناً يُسدَّد منه (المندوبُ يحصّل مجموعَه).
+chk "فاتورةٌ بطلب توصيلٍ «بالطريق» لـ«زبون التوصيل»: الراجعُ لا يمسّها — سحبٌ ونقد" \
+    "select (length($(rv $ZV "$(zsale n288-d1 $ZB 1 15000 0 'زبون التوصيل' 07707777777)")) > 0)::text" "true"
+$P -c "insert into delivery_orders(clinic_id, invoice_id, status, cod_amount) select '$ZC', id, 'out', 15000 from invoices where clinic_id = '$ZC' and client_ref = 'n288-d1';" >/dev/null
+chk "  ثمّ راجعٌ إكسباير ١٠٠٪ بسعر ١٥٬٠٠٠: لا دَين ينزل، ونقدٌ ١٥٬٠٠٠، وفاتورةُ التوصيل كما هي" \
+    "select $(rv $ZV "$(zret n288-d2 "[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-05-01\",\"unit_price\":15000}]" 'زبون التوصيل' 07707777777)")" "0/15000"
+chk "  (يُقرأ بعدها) فاتورةُ التوصيل ١٥٬٠٠٠ ومدفوعُها صفر" \
+    "select total::numeric(20,0)::text||'/'||amount_paid::numeric(20,0)::text from invoices where id = $(zinv n288-d1)" "15000/0"
+# (٨) تاريخُ المادّة بنموذجها لا يُكتب فوق دفعة الراجع (والدفعةُ الوحيدةُ الحيّة لمادّةٍ كلُّ رصيدها راجع).
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, pooled) values
+         ('${ZX}a7', '$ZC', 'كلها راجع', 'EXP-7', 'IQD', 1000, 500, 500, 0, false) on conflict (id) do nothing;" >/dev/null
+chk "مادّةٌ رصيدُها صفر يرجع منها ١ إكسباير (٢٠٢٦-٠٤-٣٠)" \
+    "select $(rv $ZV "$(zret n288-e1 "[{\"product_id\":\"${ZX}a7\",\"unit\":\"box\",\"qty\":1,\"pct\":100,\"expiry_date\":\"2026-04-30\",\"unit_price\":1000}]")")" "0/1000"
+# بجملةٍ ثانية: المطابقةُ المؤجَّلة ختمت تاريخَ المادّة بتاريخ الدفعة — وهو ما يراه نموذجُها ويكتب فوقه (بجملةٍ واحدة كان التاريخُ القديم فارغاً فلا يُمسك شيء).
+chk "  ثمّ الطبيبُ يكتب تاريخ المادّة ٢٠٢٨ بنموذجها (وتاريخُها قبلها تاريخُ الدفعة)" \
+    "select (select expiry_date::text from products where id = '${ZX}a7')||'|'||$(rv $ZV "update products set expiry_date = '2028-01-01' where id = '${ZX}a7' returning 'ok'")" "2026-04-30|ok"
+chk "  (يُقرأ بعدها) دفعةُ الراجع بتاريخها كما كُتب عند الراجع" \
+    "select expiry_date::text from product_lots where product_id = '${ZX}a7' and source = 'return'" "2026-04-30"
+chk "والرفض بجملة: الدولار، والمجمَّعة، ووحدةٌ مفردة لمادّةٍ بلاها، وبلا تاريخ، ونسبةٌ صفر، وكميةٌ صفر، وسلّةٌ فارغة" \
+    "select $(rerr $ZV "select return_expired('[{\"product_id\":\"${ZX}a3\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"${ZX}a4\",\"unit\":\"box\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"sub\",\"qty\":1,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":50}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":1,\"pct\":0,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[{\"product_id\":\"$ZB\",\"unit\":\"box\",\"qty\":0,\"pct\":50,\"expiry_date\":\"2026-01-01\"}]'::jsonb, '{}'::jsonb)::text")
+            ||'|'||$(rerr $ZV "select return_expired('[]'::jsonb, '{}'::jsonb)::text")" \
+    "expired_usd|expired_pooled|expired_unit|expired_date|expired_pct|expired_qty|expired_empty"
+ZL4="(select id from product_lots where product_id = '$ZA' and source = 'return' and return_pct = 100 and return_from = 'أبو علي' and qty = 1 limit 1)"
+$P -c "insert into product_lots(id, clinic_id, product_id, qty, received_qty, source, unit_cost, return_pct, returned_at)
+         values ('${ZX}f1', '$ZO', '${ZX}e1', 1, 1, 'return', 100, 50, now()) on conflict (id) do nothing;" >/dev/null
+chk "والبيعُ من الدفعة يُرفض: أكثرُ من باقيها، ودفعةُ عيادةٍ أخرى" \
+    "select $(rerr $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 2, 'unit_price', 1000,
+               'unit_cost', 0, 'stock_qty', 2, 'lot_id', $ZL4)), jsonb_build_object('client_ref', 'n288-x1', 'payment_method', 'cash', 'amount_paid', 2000, 'final_total', 2000))::text")
+            ||'|'||$(rerr $ZV "select retail_checkout_lots(jsonb_build_array(jsonb_build_object('product_id', '$ZA', 'name', 'z', 'qty', 1, 'unit_price', 1000,
+               'unit_cost', 0, 'stock_qty', 1, 'lot_id', '${ZX}f1')), jsonb_build_object('client_ref', 'n288-x2', 'payment_method', 'cash', 'amount_paid', 1000, 'final_total', 1000))::text")" \
+    "lot_short|lot_gone"
+chk "  (يُقرأ بعدها) ولا بيعةَ انكتبت من المرفوضتين" \
+    "select count(*)::text from invoices where clinic_id = '$ZC' and client_ref in ('n288-x1', 'n288-x2')" "0"
+chk "الصلاحيات: الدالّتان definer بمسارٍ مثبَّت وتسألان العيادة، ولا anon، وسؤالُ القدرة يقول نعم" \
+    "select (select bool_and(prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%' and position('auth_clinic()' in prosrc) > 0)
+               from pg_proc where proname in ('return_expired', 'retail_checkout_lots'))::text
+            ||'|'||has_function_privilege('anon', 'public.return_expired(jsonb,jsonb)', 'execute')::text
+            ||'|'||has_function_privilege('anon', 'public.retail_checkout_lots(jsonb,jsonb,jsonb,uuid[])', 'execute')::text
+            ||'|'||$(rv $ZV "select return_lots_ready()::text")" "true|false|false|true"
+Q288="select (select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname)
+               from pg_proc where proname in ('lots_reconcile', 'return_expired', 'retail_checkout_lots', 'return_lots_ready'))
+       ||'|'||(select string_agg(conname, ',' order by conname) from pg_constraint where conrelid = 'public.product_lots'::regclass and contype = 'c')
+       ||'|'||(select count(*) from product_lots where clinic_id = '$ZC')::text"
+Z288=$($P -tAc "$Q288" | tr -d '[:space:]')
+out=$($P -f "$MIG/0289_expired_returns.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0289 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الدوالّ والقيود والدفعات)" "$Q288" "$Z288"
+$P -c "delete from delivery_orders where clinic_id in ('$ZC', '$ZO');
+       update invoices set payment_details = '[]'::jsonb, amount_paid = 0 where clinic_id in ('$ZC', '$ZO');
+       delete from invoices where clinic_id in ('$ZC', '$ZO');
+       delete from expenses where clinic_id in ('$ZC', '$ZO');
+       delete from product_lots where clinic_id in ('$ZC', '$ZO');
+       delete from products where clinic_id in ('$ZC', '$ZO');" >/dev/null
+
 # ── rollback_0252_soft: البيعةُ تتوقّف عن الخصم، وما خُصم قبلها يُردّ بالضبط ─────────────────────
 # التراجعُ الليّن يعيد retail_checkout بنصّ 0242 حرفاً ويُبقي المحفّزاتِ والتعديلَ بربطه والجداول — فيُقاس:
 # بيعةُ خدمةٍ بعده بلا دفترٍ وبكلفة الجهاز، وترجيعُ بيعةٍ سبقته يردّ موادَّها بالضبط، والربطُ يسمّي البيعةَ
@@ -13888,5 +14251,465 @@ chk "  وإعادةُ 0285 بعد تراجع 0222 بلا أثر: سبعُ سيا
 chk "  والصفوفُ كما هي" \
     "select (select count(*) from image_library where path = '$C1/lib-285a.jpg')::text || '/' || (select count(*) from image_library where path = 'library/l285p.jpg')::text" "1/1"
 $P -c "update _dvtest_flags set admin = false; delete from image_library where path like 'library/l285%' or path like '%/lib-285%';" >/dev/null
+
+# ── 0287: تقاريرُ الحالة المطبوعة — لقطةُ ما انطبع وما عدّله الطبيب، لا تتعدّل ولا تُحذف ────────────────────
+# بعد تراجع 0222 (لا سياج). وقسمُ 0159 منح الداخلين كلَّ شيء (ومنه التحديثُ والحذف) — فالهجرةُ تُعاد أوّلاً: صلاحياتُها
+# حالُ الإنتاج (قراءةٌ وإدخالٌ وحدهما). وكلُّ قراءةٍ بعد كتابةٍ بجملةٍ بعدها (درسُ 0257).
+echo "▸ 0287: تقريرُ الحالة المطبوع يُحفظ كما انطبع — الخادمُ يختم الكاتبَ واللحظة، ولا تعديلَ ولا حذف، ولكلّ عيادةٍ تقاريرُها"
+out=$($P -f "$MIG/0287_case_reports.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت"; fail=1; }
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+CRP=a2870000-0000-4000-8000-0000000000a1
+CRQ=a2870000-0000-4000-8000-0000000000a2
+CRK=a2870000-0000-4000-8000-0000000000b1
+$P -c "insert into pets(id, name, clinic_id) values ('$CRP', 'تقرير', '$C1'), ('$CRQ', 'عيادة ثانية', '$C2') on conflict (id) do nothing;
+       insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;
+       update memberships set role = 'receptionist', status = 'active' where user_id = '$RCP' and clinic_id = '$C1';
+       delete from pet_case_reports where pet_id in ('$CRP', '$CRQ');
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+CRI="insert into pet_case_reports(pet_id, scope, paper, title, sheet, edits, author_name) values (''$CRP'', ''stay'', ''a5'', ''تقرير الفندقة'', ''{\"v\":1,\"title\":\"تقرير الفندقة\"}'', ''[{\"k\":\"title\",\"from\":\"تقرير الحالة\",\"to\":\"تقرير الفندقة\"}]'', ''د. علي'')"
+chk "العيادةُ تحفظ تقريرَ حيوانها المطبوع" "select _rls_try('$C1', '$CRI')" "rows:1"
+chk "  والخادمُ يختمه: العيادةُ والكاتبُ منه، والورقةُ والتعديلاتُ كما أُرسلت" \
+    "select clinic_id::text || '|' || author_id::text || '|' || paper || '|' || (sheet->>'title') || '|' || jsonb_array_length(edits)::text from pet_case_reports where pet_id = '$CRP'" \
+    "$C1|$C1|a5|تقريرالفندقة|1"
+chk "  والاستقبالُ (كادرُ العيادة) يحفظ ويقرأ" \
+    "select _rls_try('$RCP', 'insert into pet_case_reports(pet_id, title, sheet) values (''$CRP'', ''من الاستقبال'', ''{}'')') || '|' || _rls_try('$RCP', 'select 1 from pet_case_reports where pet_id = ''$CRP''')" "rows:1|rows:2"
+chk "  وكاتبٌ ولحظةٌ مزوَّرةٌ من الجهاز لا تُقبل" \
+    "select _rls_try('$C1', 'insert into pet_case_reports(pet_id, title, sheet, author_id, created_at) values (''$CRP'', ''مزوّر'', ''{}'', ''$RCP'', ''2020-01-01'')')" "rows:1"
+chk "    (بجملةٍ ثانية: الكاتبُ صاحبُ الجلسة، واللحظةُ الآن)" \
+    "select author_id::text || '|' || (created_at > now() - interval '5 minutes')::text from pet_case_reports where pet_id = '$CRP' and title = 'مزوّر'" "$C1|true"
+chk "حيوانُ عيادةٍ أخرى لا يُحفظ له تقرير، ولا باسم عيادةٍ أخرى" \
+    "select left(_rls_try('$C1', 'insert into pet_case_reports(pet_id, title, sheet) values (''$CRQ'', ''x'', ''{}'')'), 13) || '|' || left(_rls_try('$C1', 'insert into pet_case_reports(pet_id, clinic_id, title, sheet) values (''$CRP'', ''$C2'', ''x'', ''{}'')'), 13)" \
+    "guarded:42501|guarded:42501"
+chk "العيادةُ الثانية لا ترى تقاريرَ الأولى" "select _rls_try('$C2', 'select 1 from pet_case_reports where pet_id = ''$CRP''')" "rows:0"
+chk "ما انطبع لا يتعدّل ولا يُحذف — ولو صاحبُ العيادة" \
+    "select left(_rls_try('$C1', 'update pet_case_reports set title = ''غيره'' where pet_id = ''$CRP'''), 13) || '|' || left(_rls_try('$C1', 'delete from pet_case_reports where pet_id = ''$CRP'''), 13)" \
+    "guarded:42501|guarded:42501"
+chk "  (بجملةٍ ثانية: الثلاثةُ كما هي)" \
+    "select count(*)::text || '|' || (count(*) filter (where title = 'غيره'))::text from pet_case_reports where pet_id = '$CRP'" "3|0"
+$P -c "grant update on public.pet_case_reports to authenticated;
+       create policy _t287_upd on public.pet_case_reports for update to authenticated using (true) with check (true);" >/dev/null
+chk "  ولو مُنحت صلاحيةُ التحديث يوماً: المحفّزُ يرفض" \
+    "select left(_rls_try('$C1', 'update pet_case_reports set title = ''غيره'' where pet_id = ''$CRP'''), 32)" "guarded:P0001:case_report_frozen"
+$P -c "drop policy _t287_upd on public.pet_case_reports; revoke update on public.pet_case_reports from authenticated;" >/dev/null
+chk "معرّفُ الجهاز يُحفظ كما أُرسل، وإعادتُه بعد ردٍّ ضائع 23505 لا صفٌّ ثانٍ" \
+    "select _rls_try('$C1', 'insert into pet_case_reports(id, pet_id, title, sheet) values (''$CRK'', ''$CRP'', ''مرّة'', ''{}'')') || '|' || left(_rls_try('$C1', 'insert into pet_case_reports(id, pet_id, title, sheet) values (''$CRK'', ''$CRP'', ''مرّة'', ''{}'')'), 13)" \
+    "rows:1|guarded:23505"
+chk "  (بجملةٍ ثانية: صفٌّ واحدٌ بمعرّفه)" "select count(*)::text from pet_case_reports where id = '$CRK'" "1"
+chk "ورقةٌ ليست كائناً، وتعديلاتٌ ليست قائمة، وورقٌ غيرُ الثلاثة: القيدُ يرفض" \
+    "select left(_rls_try('$C1', 'insert into pet_case_reports(pet_id, sheet) values (''$CRP'', ''[]'')'), 13) || '|' || left(_rls_try('$C1', 'insert into pet_case_reports(pet_id, sheet, edits) values (''$CRP'', ''{}'', ''{}'')'), 13) || '|' || left(_rls_try('$C1', 'insert into pet_case_reports(pet_id, sheet, paper) values (''$CRP'', ''{}'', ''a3'')'), 13)" \
+    "guarded:23514|guarded:23514|guarded:23514"
+chk "anon لا يصل الجدول" "select has_table_privilege('anon', 'public.pet_case_reports', 'select')::text" "false"
+out=$($P -f "$MIG/0287_case_reports.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت ثانيةً"; fail=1; }
+chk "إعادةُ 0287 بلا أثر: سياستان (السياجُ ذهب مع دالّته)، والتقاريرُ كما هي" \
+    "select (select count(*) from pg_policies where schemaname='public' and tablename='pet_case_reports')::text || '|' || (select count(*) from pet_case_reports where pet_id = '$CRP')::text" "2|4"
+$P -c "delete from pets where id in ('$CRP', '$CRQ');" >/dev/null
+chk "وحذفُ الحيوان يحذف تقاريرَه (المفتاحُ الأجنبيّ)" "select count(*)::text from pet_case_reports where pet_id = '$CRP'" "0"
+# ── 0287: المخزنُ لا يُحسب مرّتين، وكلُّ تغييرٍ بدفتر ─────────────────────────────────────────────
+echo "▸ 0287: أبوابُ «مرّةً واحدة» (شراء، دفعة، مرتجع) ودفترُ الرصيد بنوعه الحقيقيّ"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+P87=bbbb0287-0000-4000-8000-00000000000
+# مساعدٌ للفحص: قيمةٌ واحدة بهويّة مستخدم (superuser ينفّذ، والدوالُّ definer تقرأ auth.uid() من المطالبة).
+$P -c "create or replace function _as287(who uuid, q text) returns text language plpgsql as \$fn\$
+         declare r text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return r;
+         exception when others then return 'err:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;
+       update memberships set role = 'receptionist', status = 'active' where user_id = '$RCP' and clinic_id = '$C1';
+       insert into products(id,clinic_id,name,stock,sell_price,purchase_price) values
+         ('${P87}1','$C1','شراء ٢٨٧',10,1000,600), ('${P87}2','$C1','مرتجع ٢٨٧',10,5000,3000)
+       on conflict (id) do update set stock = excluded.stock;" >/dev/null
+L87='[{"product_id":"'${P87}1'","name":"شراء ٢٨٧","qty":40,"purchase_price":600,"sell_price":0}]'
+L87B='[{"product_id":"'${P87}1'","name":"شراء ٢٨٧","qty":41,"purchase_price":600,"sell_price":0}]'
+NP0=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select count(*) from purchases where clinic_id='$C1'")
+for _ in 1 2 3; do
+  $P -c "select _as287('$C1', \$q\$select (purchase_record_once('R287-P1', '$L87'::jsonb, '{\"amount_paid\":0}'::jsonb, false)).id::text\$q\$);" >/dev/null
+done
+chk "ثلاثُ ضغطاتٍ بنفس المرجع (جوابٌ ضاع) = فاتورةُ شراءٍ واحدة" \
+    "select (count(*) - $NP0)::text from purchases where clinic_id='$C1'" "1"
+chk "  والرصيدُ زاد مرّةً واحدة (١٠ + ٤٠)" "select stock::text from products where id='${P87}1'" "50.000"
+chk "  وطلبٌ تغيّر بعد أن ثبتت الأولى يُرفض باسمه (لا يُرجع الأولى صامتاً كأنّ التعديلَ انحفظ)" \
+    "select split_part(_as287('$C1', \$q\$select (purchase_record_once('R287-P1', '$L87B'::jsonb, '{\"amount_paid\":0}'::jsonb, false)).id::text\$q\$), ':', 3)" "purchase_ref_changed"
+chk "  ولا يضيف شيئاً" "select stock::text from products where id='${P87}1'" "50.000"
+# الكتابةُ بجملتها والقراءةُ بجملةٍ ثانية (درسُ 0257: استعلامٌ فرعيٌّ بجملة النداء يرى لقطةَ ما قبله).
+$P -c "select _as287('$C1', \$q\$select (purchase_record_once('R287-P2', '$L87B'::jsonb, '{\"amount_paid\":0}'::jsonb, false)).id::text\$q\$);" >/dev/null
+chk "  ومرجعٌ جديد فاتورةٌ جديدة (٥٠ + ٤١)" "select stock::text from products where id='${P87}1'" "91.000"
+chk "  وبلا مرجع يُرفض قبل أيّ كتابة" \
+    "select split_part(_as287('$C1', \$q\$select (purchase_record_once('  ', '$L87'::jsonb, '{}'::jsonb, false)).id::text\$q\$), ':', 3)" "client_ref_required"
+chk "  ومحاولةٌ رفضها جسمُ الشراء (بلا سطور) لا تحجز المرجع: يتراجع مع ما كتبته، والخطأُ يُرفع لا يُبلع" \
+    "select (_as287('$C1', \$q\$select (purchase_record_once('R287-P3', '[]'::jsonb, '{}'::jsonb, false)).id::text\$q\$) like 'err:%empty purchase%')::text
+            || '|' || (select count(*) from rpc_refs where client_ref = 'R287-P3')::text" "true|0"
+L1=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select _as287('$C1', \$q\$select lot_add_once('R287-L1', '${P87}1', 5, '2027-01-01', 'ن')::text\$q\$)")
+chk "«أضف دفعة» مرّتين بنفس المرجع = الدفعةُ نفسُها" \
+    "select (_as287('$C1', \$q\$select lot_add_once('R287-L1', '${P87}1', 5, '2027-01-01', 'ن')::text\$q\$) = '$L1')::text" "true"
+chk "  والرصيدُ زاد مرّةً (٩١ + ٥)، ودفعةٌ واحدة" \
+    "select stock::text || '|' || (select count(*) from product_lots where product_id='${P87}1' and source='added')::text from products where id='${P87}1'" "96.000|1"
+chk "  وكميةٌ أخرى بنفس المرجع تُرفض باسمها" \
+    "select split_part(_as287('$C1', \$q\$select lot_add_once('R287-L1', '${P87}1', 6, '2027-01-01', 'ن')::text\$q\$), ':', 3)" "lot_ref_changed"
+CART87='[{"product_id":"'${P87}2'","name":"مرتجع ٢٨٧","qty":3,"unit_price":5000,"unit_cost":3000,"stock_qty":3}]'
+$P -c "select _as287('$C1', \$q\$select (retail_checkout('$CART87'::jsonb, jsonb_build_object('client_ref','R287-S1'))).id::text\$q\$);" >/dev/null
+INV87=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref='R287-S1'")
+II87=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoice_items where invoice_id='$INV87'")
+for _ in 1 2; do
+  $P -c "select _as287('$C1', \$q\$select (return_invoice_items_once('R287-RET', '$INV87', '[{\"item_id\":\"$II87\",\"qty\":1}]'::jsonb, null, null)).id::text\$q\$);" >/dev/null
+done
+chk "المرتجعُ الجزئيّ مرّتين بنفس المرجع = مرّةً واحدة: الرصيد ٧ ⇒ ٨ لا ٩، والسطرُ ٢ لا ١، والمدفوعُ ١٠٬٠٠٠ لا ٥٬٠٠٠" \
+    "select (select stock::text from products where id='${P87}2') || '|' || (select qty::text from invoice_items where id='$II87') || '|' || (select amount_paid::text from invoices where id='$INV87')" \
+    "8.000|2.000|10000.00"
+chk "  وكميةٌ أخرى بنفس المرجع تُرفض باسمها" \
+    "select split_part(_as287('$C1', \$q\$select (return_invoice_items_once('R287-RET', '$INV87', '[{\"item_id\":\"$II87\",\"qty\":2}]'::jsonb, null, null)).id::text\$q\$), ':', 3)" "return_ref_changed"
+
+# الدفتر: كلُّ تغييرٍ بصفّه، بكاتبه، بلا تعديل أيّ دالّةٍ قائمة.
+chk "الدفتر: البيعُ مكتوبٌ باسم كاتبه (retail_checkout > deduct_stock_pooled — ولو نوديت من دالّةٍ لافّة) وفرقُه −٣" \
+    "select source || '|' || (chain like '%retail_checkout>deduct_stock_pooled')::text || '|' || delta::text from stock_ledger where product_id='${P87}2' and op='update' order by id limit 1" \
+    "retail_checkout|true|-3.000"
+chk "  وأنواعُ المادّة بالترتيب كما يراها الطبيب (بيع، إرجاع)" \
+    "select _as287('$C1', \$q\$select string_agg(kind || ':' || delta::text, ',' order by id) from stock_ledger_of('${P87}2') where kind <> 'checkpoint' and kind <> 'open'\$q\$)" \
+    "sale:-3.000,return:1.000"
+chk "  والشراءُ عبر الباب شراءٌ، والدفعةُ دفعة" \
+    "select _as287('$C1', \$q\$select string_agg(kind || ':' || delta::text, ',' order by id) from stock_ledger_of('${P87}1') where kind in ('purchase','lot')\$q\$)" \
+    "purchase:40.000,purchase:41.000,lot:5.000"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); update products set stock = 9 where id = '${P87}2';" >/dev/null
+chk "  والتعديلُ المباشر (نموذجُ المادّة) «يدويّ» بفاعله — صاحبُ العيادة" \
+    "select _as287('$C1', \$q\$select kind || ':' || actor_kind from stock_ledger_of('${P87}2') order by id desc limit 1\$q\$)" "manual:owner"
+$P -c "select _as287('$C1', \$q\$select (refund_invoice('$INV87')).id::text\$q\$);" >/dev/null
+chk "  والترجيعُ «ترجيع» (كان «تعديل يدوي أو جرد» بالحركات القديمة)" \
+    "select _as287('$C1', \$q\$select kind || ':' || delta::text from stock_ledger_of('${P87}2') order by id desc limit 1\$q\$)" "refund:2.000"
+$P -c "select _as287('$C1', \$q\$select delete_product('${P87}2', 'فحص ٢٨٧')::text\$q\$);" >/dev/null
+$P -c "select _as287('$C1', \$q\$select (restore_product('${P87}2')).id::text\$q\$);" >/dev/null
+chk "  والحذفُ والاسترجاع بنوعيهما، والرصيدُ يرجع كما كان" \
+    "select _as287('$C1', \$q\$select string_agg(kind || ':' || delta::text, ',' order by id) from (select * from stock_ledger_of('${P87}2') order by id desc limit 2) x\$q\$) || '|' || (select stock::text from products where id='${P87}2')" \
+    "delete:-11.000,restore:11.000|11.000"
+chk "  والصفحاتُ بالمؤشّر: الصفحةُ الثانية تبدأ بعد آخر الأولى بلا تكرار" \
+    "select _as287('$C1', \$q\$select (select min(id) from stock_ledger_of('${P87}2', null, 2)) > (select max(id) from stock_ledger_of('${P87}2', (select min(id) from stock_ledger_of('${P87}2', null, 2)), 100))\$q\$)" "true"
+chk "verify_stock_ledger: الدفترُ يطابق الرصيدَ لكلّ مادّةٍ بالعيادة بعد كلّ ما سبق بالحزمة" \
+    "select _as287('$C1', 'select count(*)::text from verify_stock_ledger()')" "0"
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = stock + 1 where id='${P87}1';" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+chk "  وكتابةٌ مرّت بلا المحفّز تُقال بمادّتها (لا تُخفى)" \
+    "select _as287('$C1', \$q\$select string_agg(product_id::text || ':' || ledger_qty::text || '/' || live_qty::text, ',') from verify_stock_ledger()\$q\$)" "${P87}1:96.000/97.000"
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = stock - 1 where id='${P87}1';" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+# والأعمى قبل المراجعة: (أ) مادّةٌ وُلدت برصيدٍ والمحفّزُ معطَّل — لا صفَّ لها أصلاً فكانت خارجَ المقارنة؛ (ب) مادّةٌ وُلدت بصفر (لا صفّ)
+# ثمّ رصيدٌ بلا محفّز ثمّ حركةٌ عادية — أوّلُ صفٍّ «٧ ← ٨» كان يطوي السبعةَ بالأساس. كلٌّ يُقال، ثمّ يُرجَع كما كان.
+# (كلُّ ALTER بنداءٍ وحده: محفّزاتُ الإدراج المعلَّقة تمنعه بمعاملته.)
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "insert into products(id, clinic_id, name, stock, sell_price, purchase_price) values ('${P87}8', '$C1', 'بلا دفتر ٢٨٧', 5, 1000, 600)
+         on conflict (id) do update set stock = 5;" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+$P -c "insert into products(id, clinic_id, name, stock, sell_price, purchase_price) values ('${P87}9', '$C1', 'من صفر ٢٨٧', 0, 1000, 600)
+         on conflict (id) do update set stock = 0;" >/dev/null
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = 7 where id = '${P87}9';" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = 8 where id = '${P87}9';" >/dev/null
+chk "  ورصيدٌ بلا أيّ صفّ (وُلد والمحفّزُ معطَّل)، ورصيدٌ قبل أوّل صفّ («٧ ← ٨» بلا ما يشرح السبعة) يُقالان (كانا يُطويان)" \
+    "select _as287('$C1', \$q\$select string_agg(product_id::text || ':' || ledger_qty::text || '/' || live_qty::text, ',' order by product_id) from verify_stock_ledger()\$q\$)" \
+    "${P87}8:0/5.000,${P87}9:1.000/8.000"
+$P -c "alter table products disable trigger all;" >/dev/null
+$P -c "delete from products where id in ('${P87}8', '${P87}9');" >/dev/null
+$P -c "alter table products enable trigger all;" >/dev/null
+$P -c "delete from stock_ledger where product_id in ('${P87}8', '${P87}9');" >/dev/null
+chk "    وبعد إرجاعهما لا شيءَ يُقال" "select _as287('$C1', 'select count(*)::text from verify_stock_ledger()')" "0"
+
+# الصلاحيات: القراءةُ لمن يدير المخزن، والكتابةُ من المحفّز وحده، والعيادةُ الأخرى لا ترى.
+chk "الاستقبالُ لا يقرأ الدفتر — رفضُ صلاحيةٍ بتلميحٍ عربيّ لا «ماكو حركات»" \
+    "select split_part(_rls_try('$RCP', \$q\$select * from stock_ledger_of('${P87}2')\$q\$), ':', 2)" "42501"
+chk "  ولا الجدولَ مباشرةً (صفرُ صفوف)" "select _rls_try('$RCP', \$q\$select 1 from stock_ledger where product_id = '${P87}2'\$q\$)" "rows:0"
+chk "  والمديرُ يقرأ صفوفَ عيادته" \
+    "select (_rls_try('$C1', \$q\$select 1 from stock_ledger where product_id = '${P87}2'\$q\$) <> 'rows:0')::text" "true"
+chk "  والعيادةُ الثانية لا ترى صفوفَ الأولى" "select _rls_try('$C2', \$q\$select 1 from stock_ledger where product_id = '${P87}2'\$q\$)" "rows:0"
+chk "  ولا أحدَ يكتب الدفترَ بيده (لا سياسةَ كتابة)" \
+    "select left(_rls_try('$C1', \$q\$insert into stock_ledger(clinic_id, product_id, op, delta, source) values ('$C1', '${P87}2', 'update', 99, 'direct')\$q\$), 13)" "guarded:42501"
+# الحذفُ مرفوضٌ بطبقتين: الصلاحيةُ مسحوبة (42501 — الإنتاج: 0287 تسحبها بعد الإنشاء)، وإن ردّها منحٌ عامّ (قالبُ الحزمة يمنح
+# كلَّ الجداول بعد الموجة الأولى) فلا سياسةَ حذف: صفرُ صفوف. والثابتُ الحقيقيّ أن الصفوفَ باقية — يُعدّ بجملةٍ ثانية (درسُ 0257).
+NL87=$(W "select count(*) from stock_ledger where product_id = '${P87}2'")
+chk "  ولا يمحوه: الحذفُ مرفوض (صلاحيةٌ مسحوبة، أو بلا سياسة حذف)" \
+    "select case when r like 'guarded:42501%' or r = 'rows:0' then 'refused' else r end from (select _rls_try('$C1', \$q\$delete from stock_ledger where product_id = '${P87}2'\$q\$) r) x" "refused"
+chk "    والصفوفُ باقيةٌ كلُّها (${NL87})" "select count(*)::text from stock_ledger where product_id = '${P87}2'" "$NL87"
+out=$($P -f "$MIG/0287_stock_safety.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت"; fail=1; }
+chk "وإعادةُ 0287 (بعد تراجع 0222) بلا أثر: لا نقطةَ بدءٍ ثانية لمادّة" \
+    "select count(*)::text from (select product_id from stock_ledger where op = 'checkpoint' and product_id is not null group by 1 having count(*) > 1) x" "0"
+chk "  ومحفّزٌ واحدٌ على كلّ جدول" \
+    "select count(*)::text from pg_trigger where tgname in ('products_stock_ledger', 'company_sections_stock_ledger') and not tgisinternal" "2"
+$P -c "drop function if exists _as287(uuid, text);" >/dev/null
+
+# ── 0288: الراجعُ يصل مادّتَه الحيّة، والدمجُ يأخذ ما يتبعها، والجرعةُ المرجَعة معلَّقة، ومعدّلُ البيع بالعلبة ──────
+echo "▸ 0288: الراجعُ يتبع الدمجَ ويرفض المحذوف، والدمجُ يأخذ ربطَ الجرعة والجرد، وترجيعُ الجرعات يُرجعها معلَّقة"
+C1=11111111-1111-1111-1111-111111111111
+P88=bbbb0288-0000-4000-8000-00000000000
+# أقسامٌ قبلنا تعيد 0255 وحدها (فيرجع محفّزُ الدمج لنصّها) — قسمُنا يعيد 0288 أوّلاً، وحارسُها يعرف نصَّ المصدر ببصمته.
+out=$($P -f "$MIG/0288_stock_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
+$P -c "create or replace function _as288(who uuid, q text) returns text language plpgsql as \$fn\$
+         declare r text; h text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return r;
+         -- التلميحُ بعد الرسالة: الجزءُ الثالث يبقى الرمز، والرابعُ التلميحُ العربيّ
+         exception when others then get stacked diagnostics h = pg_exception_hint;
+           return 'err:' || sqlstate || ':' || sqlerrm || ':' || coalesce(h, ''); end \$fn\$;
+       delete from stock_counts where product_id::text like 'bbbb0288%';
+       insert into pets(id, name) values ('${P88}7', 'حيوان ٢٨٨') on conflict (id) do nothing;
+       insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
+         ('${P88}1','$C1','توأم ٢٨٨',3,1000,600,null,false), ('${P88}2','$C1','أصل ٢٨٨',5,1000,600,null,false),
+         ('${P88}3','$C1','محذوفة ٢٨٨',2,1000,600,null,false), ('${P88}4','$C1','حبوب ٢٨٨',10,3000,1500,30,true),
+         ('${P88}5','$C1','توأمٌ ثانٍ ٢٨٨',1,1000,600,null,false)
+       on conflict (id) do update set stock = excluded.stock;" >/dev/null
+# الربطُ والجرعةُ المعلَّقة والجردُ المعلَّق على التوأم (كتابةٌ بصاحب القاعدة: بابُ الإعدادات يحرس authenticated وحده).
+$P -c "insert into clinic_drugs(id, clinic_id, name, product_id, dose_unit, dose_qty) values ('${P88}a', '$C1', 'دواء ٢٨٨', '${P88}1', 'box', 1)
+         on conflict (id) do update set product_id = excluded.product_id;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status)
+         values ('${P88}b', '$C1', gen_random_uuid(), '${P88}7', '${P88}1', 'جرعة ٢٨٨', 500, 1, 1, 'box', now(), 'pending')
+         on conflict (id) do nothing;
+       insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, reason, status, source)
+         values ('$C1', '${P88}1', 'توأم ٢٨٨', 3, 2, 'shortage', 'pending', 'count');" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88}2', '${P88}1')).id::text\$q\$);" >/dev/null
+chk "الدمج: ربطُ «سعر الجرعة» يتبع التوأمَ لأصله (كان يبقى على المحذوف فتُباع الجرعةُ بلا خصم)" \
+    "select product_id::text from clinic_drugs where id = '${P88}a'" "${P88}2"
+chk "  والجرعةُ المعلَّقة معه" "select product_id::text from dose_charges where id = '${P88}b'" "${P88}2"
+chk "  والجردُ المعلَّق معه (كان يفرغ فتبطله الموافقةُ بصمت)" \
+    "select count(*)::text from stock_counts where product_id = '${P88}2' and status = 'pending' and source = 'count'" "1"
+chk "  والرصيدُ مجموعُهما (٥ + ٣)" "select stock::text from products where id = '${P88}2'" "8.000"
+$P -c "insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, reason, status, source)
+         values ('$C1', '${P88}5', 'توأمٌ ثانٍ ٢٨٨', 1, 0, 'shortage', 'pending', 'count');" >/dev/null
+chk "  ومعلَّقان على المادّتين (جردٌ وجرد) يرفضان الدمجَ بالاسم — لا جردَ يُبطَل، والتلميحُ يسمّي ما على التوأم بنوعه («جرد» لا «سند تلف»)" \
+    "select split_part(r, ':', 3) || '|' || (split_part(r, ':', 4) like '«توأمٌ ثانٍ ٢٨٨» عليها جرد ينتظر، و«أصل ٢٨٨» عليها جرد أو سند ينتظر%')::text
+       from (select _as288('$C1', \$q\$select (merge_products('${P88}2', '${P88}5')).id::text\$q\$) r) x" "merge_waste_pending|true"
+$P -c "delete from stock_counts where product_id::text like 'bbbb0288%';" >/dev/null
+
+# الراجعُ (retail_return) لمادّةٍ دُمجت يصل أصلَها، والمحذوفةُ تُرفض بلا سحبِ نقد.
+NX0=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select count(*) from expenses where clinic_id = '$C1' and category = 'مرتجع'")
+$P -c "select _as288('$C1', \$q\$select retail_return('[{\"product_id\":\"${P88}1\",\"name\":\"توأم ٢٨٨\",\"qty\":-1,\"unit_price\":1000,\"stock_qty\":-1}]'::jsonb, jsonb_build_object('client_ref','R288-RET1'))::text\$q\$);" >/dev/null
+chk "«راجع» بمعرّف التوأم بعد دمجه يصل الأصل (٨ + ١) — كان سحباً من الدرج بلا قطعة" "select stock::text from products where id = '${P88}2'" "9.000"
+$P -c "select _as288('$C1', \$q\$select delete_product('${P88}3', 'فحص ٢٨٨')::text\$q\$);" >/dev/null
+chk "  ومادّةٌ بالمحذوفات تُرفض باسمها ولا يُكتب سحبُ «مرتجع»" \
+    "select split_part(_as288('$C1', \$q\$select retail_return('[{\"product_id\":\"${P88}3\",\"name\":\"محذوفة ٢٨٨\",\"qty\":-1,\"unit_price\":1000,\"stock_qty\":-1}]'::jsonb, jsonb_build_object('client_ref','R288-RET2'))::text\$q\$), ':', 3)
+            || '|' || ((select count(*) from expenses where clinic_id = '$C1' and category = 'مرتجع') - $NX0)::text" "return_product_deleted|1"
+
+# ترجيعُ فاتورةِ جرعاتٍ وحذفُها يُرجعان جرعاتِها معلَّقة (والجرعةُ التي أُلغي إعطاؤها ملغاة).
+CART88='[{"product_id":"'${P88}2'","name":"جرعة","qty":1,"unit_price":500,"unit_cost":300,"stock_qty":1}]'
+for r in R288-D1 R288-D2; do
+  $P -c "select _as288('$C1', \$q\$select (retail_checkout('$CART88'::jsonb, jsonb_build_object('client_ref','$r'))).id::text\$q\$);" >/dev/null
+done
+INV1=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D1'")
+INV2=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D2'")
+$P -c "insert into treatment_entries(id, pet_id, medication, time, amount, administered_at, clinic_id) values
+         ('${P88}c', '${P88}7', 'دواء ٢٨٨', '08:00', '1', now(), '$C1'),
+         ('${P88}d', '${P88}7', 'دواء ٢٨٨', '09:00', '1', null, '$C1'),
+         ('${P88}e', '${P88}7', 'دواء ٢٨٨', '10:00', '1', now(), '$C1')
+         on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status, invoice_id, billed_at) values
+         ('${P88}f', '$C1', '${P88}c', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV1', now()),
+         ('${P88}0', '$C1', '${P88}d', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV1', now()),
+         ('${P88}9', '$C1', '${P88}e', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV2', now())
+         on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (refund_invoice('$INV1')).status\$q\$);" >/dev/null
+chk "ترجيعُ فاتورة الجرعات: المعطاةُ ترجع «معلَّقة» بلا فاتورة (الدواءُ رجع للرفّ فالجرعةُ تنتظر البيع)، والملغاةُ «ملغاة»" \
+    "select string_agg(id::text || '=' || status || ':' || coalesce(invoice_id::text, '-'), ',' order by id) from dose_charges where id in ('${P88}f', '${P88}0')" \
+    "${P88}0=void:-,${P88}f=pending:-"
+$P -c "select _as288('$C1', \$q\$select delete_invoice('$INV2')::text\$q\$);" >/dev/null
+chk "  وحذفُ الفاتورة كذلك (حذفٌ «لأعيدها بالاسم الصحيح» يجد الجرعةَ بالسلّة)" \
+    "select status || ':' || coalesce(invoice_id::text, '-') from dose_charges where id = '${P88}9'" "pending:-"
+# وتحديثٌ بلا ترجيع (تسديدُ دَينها وعدُّ طباعتها) لا يُرجع جرعاتِها: الحارسُ بالجسم وحده يمنع كلَّ تحديثٍ من إرجاعها — كان الفحصُ يعدّ
+# المحفّزَ ولا يُمارسه (مراجعة ٢٢/١١). كلُّ نداءٍ بجملته، والقراءةُ بعدها (درسُ 0257)، والتسديدُ مقروءٌ أنه حصل فعلاً.
+$P -c "select _as288('$C1', \$q\$select (retail_checkout('$CART88'::jsonb, jsonb_build_object('client_ref','R288-D3','amount_paid',0,'customer_name','زبون ٢٨٨'))).id::text\$q\$);" >/dev/null
+INV3=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D3'")
+$P -c "insert into treatment_entries(id, pet_id, medication, time, amount, administered_at, clinic_id) values ('${P88}6', '${P88}7', 'دواء ٢٨٨', '11:00', '1', now(), '$C1')
+         on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status, invoice_id, billed_at)
+         values ('${P88}8', '$C1', '${P88}6', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV3', now()) on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (settle_invoice('$INV3', 100, 'cash')).status\$q\$);" >/dev/null
+$P -c "select _as288('$C1', \$q\$select bump_invoice_prints('$INV3')::text\$q\$);" >/dev/null
+chk "  وتسديدُ فاتورة الجرعات وطباعتُها (تحديثان بلا ترجيع) لا يُرجعان جرعتَها — والتسديدُ حصل فعلاً" \
+    "select (select status || ':' || coalesce(invoice_id::text, '-') from dose_charges where id = '${P88}8') || '|' || (select (amount_paid = 100)::text from invoices where id = '$INV3')" "billed:$INV3|true"
+
+# قاعدةُ المفرد بالدمج (مراجعة ٢٢/١١): جرعةٌ وربطٌ بالمفرد يتبعان أصلاً يُباع بالمفرد وحده (ومخصومُها بمفرد الأصل)؛ أصلٌ بلا مفرد كان
+# يكلّف كلَّ حبّةٍ بالعلبة — فالربطُ يبقى على التوأم والجرعةُ بلا مادّة (تُباع بسعرها كما كانت على الميّت).
+P88B=bbbb0288-0000-4000-8000-0000000001
+$P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
+         ('${P88B}11','$C1','حبوب توأم ٢٨٨',2,3000,1500,30,true), ('${P88B}12','$C1','حبوب أصل بلا مفرد ٢٨٨',2,3000,1500,null,false),
+         ('${P88B}13','$C1','حبوب توأم ثانٍ ٢٨٨',2,3000,1500,30,true), ('${P88B}14','$C1','حبوب أصل بمفرد ٢٨٨',2,3000,1500,10,true)
+       on conflict (id) do update set stock = excluded.stock;
+       insert into clinic_drugs(id, clinic_id, name, product_id, dose_unit, dose_qty) values
+         ('${P88B}31', '$C1', 'دواء مفرد ٢٨٨ أ', '${P88B}11', 'sub', 2), ('${P88B}32', '$C1', 'دواء مفرد ٢٨٨ ب', '${P88B}13', 'sub', 2)
+       on conflict (id) do update set product_id = excluded.product_id;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status) values
+         ('${P88B}21', '$C1', gen_random_uuid(), '${P88}7', '${P88B}11', 'جرعة مفرد', 300, 0.067, 2, 'sub', now(), 'pending'),
+         ('${P88B}22', '$C1', gen_random_uuid(), '${P88}7', '${P88B}13', 'جرعة مفرد', 300, 0.067, 2, 'sub', now(), 'pending')
+       on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}12', '${P88B}11')).id::text\$q\$);" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}14', '${P88B}13')).id::text\$q\$);" >/dev/null
+chk "الدمجُ وقاعدةُ المفرد: أصلٌ بلا مفرد ⇒ الجرعةُ بلا مادّة والربطُ باقٍ على التوأم؛ أصلٌ بمفرد ١٠ ⇒ تتبعه بمخصوم ٢ ÷ ١٠ = ٠٫٢٠٠ والربطُ معها" \
+    "select (select coalesce(product_id::text, 'null') || ':' || coalesce(stock_qty::text, 'null') from dose_charges where id = '${P88B}21')
+            || '|' || (select product_id::text from clinic_drugs where id = '${P88B}31')
+            || '|' || (select product_id::text || ':' || stock_qty::text from dose_charges where id = '${P88B}22')
+            || '|' || (select product_id::text from clinic_drugs where id = '${P88B}32')" \
+    "null:null|${P88B}11|${P88B}14:0.200|${P88B}14"
+
+# والمختومةُ تتبع الدمجَ أيضاً: بيعتُها من التوأم، ثمّ الدمج، ثمّ ترجيعُها — الدواءُ رجع للأصل، والجرعةُ معلَّقةٌ باسم الأصل (لا الميّت).
+$P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
+         ('${P88B}15','$C1','توأم مختوم ٢٨٨',10,1000,600,null,false), ('${P88B}16','$C1','أصل مختوم ٢٨٨',10,1000,600,null,false)
+       on conflict (id) do update set stock = excluded.stock;" >/dev/null
+CART88T='[{"product_id":"'${P88B}15'","name":"جرعة","qty":1,"unit_price":500,"unit_cost":300,"stock_qty":1}]'
+$P -c "select _as288('$C1', \$q\$select (retail_checkout('$CART88T'::jsonb, jsonb_build_object('client_ref','R288-D4'))).id::text\$q\$);" >/dev/null
+INV4=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D4'")
+$P -c "insert into treatment_entries(id, pet_id, medication, time, amount, administered_at, clinic_id) values ('${P88B}41', '${P88}7', 'دواء ٢٨٨', '12:00', '1', now(), '$C1')
+         on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status, invoice_id, billed_at)
+         values ('${P88B}23', '$C1', '${P88B}41', '${P88}7', '${P88B}15', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV4', now()) on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}16', '${P88B}15')).id::text\$q\$);" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (refund_invoice('$INV4')).status\$q\$);" >/dev/null
+chk "  والمختومةُ تتبع الدمج: بيعٌ من التوأم ثمّ دمجٌ ثمّ ترجيع ⇒ الجرعةُ معلَّقةٌ باسم الأصل (كانت باسم الميّت فتُباع بلا خصم) والأصلُ ٩ + ١٠ + ١ = ٢٠" \
+    "select (select status || ':' || product_id::text from dose_charges where id = '${P88B}23') || '|' || (select stock::text from products where id = '${P88B}16')" \
+    "pending:${P88B}16|20.000"
+
+# معدّلُ البيع بوحدة الرصيد، والمرجَعةُ خارجه.
+SUB88='[{"product_id":"'${P88}4'","name":"حبوب","qty":6,"unit_price":100,"unit_cost":50,"stock_qty":0.2}]'
+for r in R288-S1 R288-S2; do
+  $P -c "select _as288('$C1', \$q\$select (retail_checkout('$SUB88'::jsonb, jsonb_build_object('client_ref','$r'))).id::text\$q\$);" >/dev/null
+done
+$P -c "select _as288('$C1', \$q\$select (refund_invoice((select id from invoices where client_ref = 'R288-S2'))).status\$q\$);" >/dev/null
+chk "معدّلُ البيع: ٦ حبّات من علبة ٣٠ = ٠٫٢ علبة لا ٦، والمرجَعةُ لا تُحسب" \
+    "select _as288('$C1', \$q\$select sold::text from product_sales_rate(30) where product_id = '${P88}4'\$q\$)" "0.200"
+out=$($P -f "$MIG/0288_stock_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
+chk "وإعادةُ 0288 بلا أثر: محفّزٌ واحد، والأجسامُ بعلامتها" \
+    "select (select count(*) from pg_trigger where tgname = 'invoices_dose_reopen' and not tgisinternal)::text || '|'
+            || (select (prosrc like '%-- +0288%')::text from pg_proc where oid = to_regprocedure('public.credit_stock(uuid,numeric,uuid)'))" "1|true"
+$P -c "drop function if exists _as288(uuid, text);" >/dev/null
+
+# ── 0290: دفترُ الرصيد يسمّي الراجعَ الإكسباير، والتلفُ والجردُ يكلّفان دفعتَه بكلفتها (المالك ٢٤/١١) ──────────────
+# YC عيادةٌ وصاحبُها (مدير)، YV طبيبُها. «إكسباير ٢٩٠» يُباع بـ٢٠٬٠٠٠ ومتوسّطُه ١٤٬٠٠٠: راجعٌ بـ٥٠٪ ⇒ دفعةٌ بكلفة ١٠٬٠٠٠ للعلبة.
+# الكتابةُ بطلبٍ والقراءةُ بآخر (درسُ 0257). قسمُنا يعيد 0290 أوّلاً: أقسامٌ قبلنا تعيد 0254 فترجع الموافقةُ لنصّها.
+echo "▸ 0290: «حركات المادة» تقول «إرجاع» عن الراجع الإكسباير، والتلفُ والجردُ يكلّفان دفعتَه بكلفتها لا بالمتوسّط"
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما نزلت"; fail=1; }
+YX=c2900000-0000-4000-8000-0000000000
+YC=${YX}c1
+YV=${YX}c2
+YA=${YX}a1
+YB=${YX}a2
+YD=${YX}a3
+ysale() { # ysale المرجع المادّة الكمية السعر المدفوع [الزبون] [الهاتف]
+  echo "select (retail_checkout('[{\"product_id\":\"$2\",\"name\":\"y\",\"qty\":$3,\"unit_price\":$4,\"unit_cost\":0,\"stock_qty\":$3,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+          jsonb_build_object('client_ref', '$1', 'payment_method', 'cash', 'amount_paid', $5, 'final_total', $3 * $4,
+                             'customer_name', nullif('${6:-}', ''), 'customer_phone', nullif('${7:-}', ''))))::text"; }
+yret() { # yret المرجع المادّة النسبة الزبون الهاتف — علبةٌ واحدة بإكسباير فات؛ يرجع الدَّينَ والنقد
+  echo "select (r->>'debt')::numeric::numeric(20,0)::text||'/'||(r->>'cash')::numeric::numeric(20,0)::text
+          from (select return_expired('[{\"product_id\":\"$2\",\"unit\":\"box\",\"qty\":1,\"pct\":$3,\"expiry_date\":\"2026-10-01\"}]'::jsonb,
+                                      jsonb_build_object('client_ref', '$1', 'customer_name', '$4', 'customer_phone', '$5')) as r) s"; }
+ywaste() { # ywaste المادّة الكمية السبب [طبّق] — مبلغُ السحب، أو «pending» لسندٍ معلَّق
+  echo "select coalesce(r->'decided'->'withdrawals'->0->>'amount', r->>'pending', '-')
+          from (select stock_waste_submit(jsonb_build_array(jsonb_build_object('product_id','$1','qty',$2,'unit','stock','reason','$3','note','x')),
+                                          ${4:-true}, '{}'::jsonb) r) s"; }
+# كلفةُ آخر سطر جردٍ/تلفٍ للمادّة وحالتُه، ومبلغُ سحبه، وما بقي بدفعات الراجع.
+ylast() { echo "(select unit_cost::numeric(20,0)::text||':'||status||':'||coalesce((select amount::numeric(20,0)::text from expenses e where e.id = c.expense_id), '-')
+                   from stock_counts c where c.product_id = '$1' order by counted_at desc, id desc limit 1)"; }
+yret_left() { echo "(select coalesce(sum(qty), 0)::numeric(20,1)::text from product_lots where product_id = '$1' and source = 'return')"; }
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$YC'),('$YV') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$YV','$YC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code) values ('$YC','+964') on conflict (clinic_id) do update set dial_code = '+964';
+       insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('$YA', '$YC', 'إكسباير ٢٩٠', 'Y290-1', 'IQD', 20000, 14000, 14000, 20, false, null, false),
+         ('$YB', '$YC', 'بلا راجع ٢٩٠', 'Y290-2', 'IQD', 5000, 3000, 3000, 10, false, null, false),
+         ('$YD', '$YC', 'جرد ٢٩٠', 'Y290-3', 'IQD', 20000, 14000, 14000, 1, false, null, false)
+         on conflict (id) do nothing;" >/dev/null
+
+# ١) دفترُ الرصيد
+chk "الكاتبُ والنوع: return_expired «إرجاع» (كان other ⇒ «عملية بالنظام»)، وباسمه ولو نوديت من غلاف، وما سواه كما كان" \
+    "select _stock_ledger_kind('update', 'return_expired', 'return_expired', 1)||'|'||_stock_ledger_source('wrap_x>return_expired>_inner')
+            ||'|'||_stock_ledger_kind('update', 'retail_return', 'retail_return', 1)||'|'||_stock_ledger_kind('update', 'some_fn', 'some_fn', 1)" \
+    "return|return_expired|return|other"
+chk "البيعة: «أبو علي» يأخذ ثلاث علب بالدَّين" \
+    "select (length($(rv $YV "$(ysale y290-s1 $YA 3 20000 0 'أبو علي' 07701234567)")) > 0)::text" "true"
+chk "راجعٌ إكسباير بـ٥٠٪: ينزل ١٠٬٠٠٠ من دَينه" "select $(rv $YV "$(yret y290-r1 $YA 50 'أبو علي' 07701234567)")" "10000/0"
+chk "  (يُقرأ بعدها) «حركات المادة» للمدير: آخرُ حركةٍ «إرجاع» من return_expired بـ+١ (١٧ ← ١٨)، وكلفةُ دفعتها ١٠٬٠٠٠" \
+    "select $(rv $YC "select kind||':'||source||':'||delta::numeric(20,0)::text||':'||qty_after::numeric(20,0)::text from stock_ledger_of('$YA') order by id desc limit 1")
+            ||'|'||(select unit_cost::numeric(20,0)::text from product_lots where product_id = '$YA' and source = 'return')" \
+    "return:return_expired:1:18|10000"
+
+# ٢) سندُ التلف «منتهي» يأخذ من دفعة الراجع أوّلاً — بكلفتها
+chk "تلفُ علبةٍ منتهية: السحبُ ١٠٬٠٠٠ (كلفةُ دفعة الراجع) لا ١٤٬٠٠٠" "select $(rv $YC "$(ywaste $YA 1 expired)")::numeric::numeric(20,0)::text" "10000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ١٠٬٠٠٠ ومعتمَد وسحبُه ١٠٬٠٠٠، والدفعةُ نفدت" "select $(ylast $YA)||'|'||$(yret_left $YA)" "10000:approved:10000|0.0"
+chk "راجعٌ ثانٍ بـ٥٠٪" "select $(rv $YV "$(yret y290-r2 $YA 50 'أبو علي' 07701234567)")" "10000/0"
+chk "تلفُ علبتين منتهيتين ودفعةُ الراجع علبة: (١٠٬٠٠٠ + ١٤٬٠٠٠) ⇒ ٢٤٬٠٠٠ وكلفةُ السطر ١٢٬٠٠٠" \
+    "select $(rv $YC "$(ywaste $YA 2 expired)")::numeric::numeric(20,0)::text" "24000"
+chk "  (يُقرأ بعدها)" "select $(ylast $YA)||'|'||$(yret_left $YA)" "12000:approved:24000|0.0"
+chk "راجعٌ ثالث بـ٥٠٪" "select $(rv $YV "$(yret y290-r3 $YA 50 'أبو علي' 07701234567)")" "10000/0"
+chk "تالفٌ (لا منتهي) والجديدُ موجود: يأخذ من الجديد ⇒ ١٤٬٠٠٠ كما كان، ودفعةُ الراجع باقية" \
+    "select $(rv $YC "$(ywaste $YA 1 damaged)")::numeric::numeric(20,0)::text" "14000"
+chk "  (يُقرأ بعدها)" "select $(ylast $YA)||'|'||$(yret_left $YA)" "14000:approved:14000|1.0"
+chk "سندٌ معلَّق: لقطتُه المتوسّطُ ولا يُمسّ قبل الموافقة" "select $(rv $YC "$(ywaste $YA 1 expired false)")" "1"
+chk "  (يُقرأ بعدها) ١٤٬٠٠٠ معلَّق بلا سحب، والدفعةُ كما هي" "select $(ylast $YA)||'|'||$(yret_left $YA)" "14000:pending:-|1.0"
+chk "  وموافقةُ المدير بعدها تكلّفه بدفعة الراجع" \
+    "select $(rv $YC "select (stock_count_decide(array(select c.id from stock_counts c where c.product_id = '$YA' and c.status = 'pending'), true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "10000"
+chk "  (يُقرأ بعدها)" "select $(ylast $YA)||'|'||$(yret_left $YA)" "10000:approved:10000|0.0"
+chk "مادّةٌ بلا دفعة راجع: لقطتُها حرفاً (٣٬٠٠٠)" "select $(rv $YC "$(ywaste $YB 1 expired)")::numeric::numeric(20,0)::text" "3000"
+
+# ٣) الجردُ بعجزٍ يأخذ من دفعة الراجع آخراً — بكلفتها
+chk "«أم سارة» تأخذ العلبةَ الوحيدة بالدَّين، وترجعها إكسباير بـ٢٥٪ ⇒ دفعةٌ بكلفة ٥٬٠٠٠" \
+    "select (length($(rv $YV "$(ysale y290-s2 $YD 1 20000 0 'أم سارة' 07709876543)")) > 0)::text||'|'||$(rv $YV "$(yret y290-r4 $YD 25 'أم سارة' 07709876543)")" "true|5000/0"
+$P -c "update products set stock = 2 where id = '$YD';" >/dev/null
+$P -c "insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost, reason, status)
+       values ('$YC', '$YD', 'جرد ٢٩٠', 2, 0, 14000, 'shortage', 'pending');" >/dev/null
+chk "جردٌ بعجز علبتين (علبةٌ جديدة + دفعةُ الراجع): (١٤٬٠٠٠ + ٥٬٠٠٠) ⇒ ١٩٬٠٠٠" \
+    "select $(rv $YC "select (stock_count_decide(array(select c.id from stock_counts c where c.product_id = '$YD' and c.status = 'pending'), true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "19000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ٩٬٥٠٠، والدفعةُ نفدت، والرصيدُ صفر" \
+    "select $(ylast $YD)||'|'||$(yret_left $YD)||'|'||(select stock::numeric(20,0)::text from products where id = '$YD')" "9500:approved:19000|0.0|0"
+
+# دفعاتٌ لم تطابق الرصيدَ قبل السطر (كتابةٌ بلا مطابقة): المطابقةُ تأخذ منها فوق خسارته ⇒ معدّلُ ما أُخذ، لا خسارةٌ بلا مادّة.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('${YX}a4', '$YC', 'منحرفة ٢٩٠', 'Y290-4', 'IQD', 20000, 14000, 14000, 5, false, null, false) on conflict (id) do nothing;" >/dev/null
+chk "«أبو حيدر» يأخذ علبةً بالدَّين ويرجعها إكسباير بـ٥٠٪" \
+    "select (length($(rv $YV "$(ysale y290-s3 ${YX}a4 1 20000 0 'أبو حيدر' 07708888888)")) > 0)::text||'|'||$(rv $YV "$(yret y290-r5 ${YX}a4 50 'أبو حيدر' 07708888888)")" "true|10000/0"
+$P -c "update product_lots set qty = 3 where product_id = '${YX}a4' and source = 'return';" >/dev/null
+chk "  ودفعتُها ٣ والرصيدُ ٥ (أربعٌ جديدة + ٣ = ٧): تلفُ علبةٍ منتهية يأخذ ٣ منها ⇒ معدّلُها ١٠٬٠٠٠ لا (٣٠٬٠٠٠ − ٢ × ١٤٬٠٠٠) = ٢٬٠٠٠" \
+    "select $(rv $YC "$(ywaste ${YX}a4 1 expired)")::numeric::numeric(20,0)::text" "10000"
+
+# العدُّ بالدفعة يرفع دفعةً وينزل أخرى: ما نقص من كلّ دفعةٍ لا الصافي — الصافي بكلفتين (قيمةٌ تصعد وكميةٌ تنزل) طلع سالباً فرفض القيدُ
+# (unit_cost >= 0) الموافقةَ كلَّها (مراجعةٌ عدائيّة). «دفعتان ٢٩٠» رصيدُه دفعتا راجع: أ علبةٌ بـ١٠٬٠٠٠، وب ثلاثٌ بـ٢٬٠٠٠.
+YF=${YX}a5
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('$YF', '$YC', 'دفعتان ٢٩٠', 'Y290-5', 'IQD', 20000, 14000, 14000, 4, false, null, false) on conflict (id) do nothing;
+       insert into product_lots(id, clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, unit_cost, return_from, return_pct, returned_at) values
+         ('${YX}f1', '$YC', '$YF', 1, 1, '2026-10-01', now(), 'return', 10000, 'x', 50, now()),
+         ('${YX}f2', '$YC', '$YF', 3, 3, '2026-10-01', now(), 'return', 2000, 'x', 50, now()) on conflict (id) do nothing;
+       insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost, reason, status, lot_counts)
+       values ('$YC', '$YF', 'دفعتان ٢٩٠', 4, 2, 14000, 'shortage', 'pending',
+               '[{\"lot_id\":\"${YX}f1\",\"system\":1,\"counted\":2},{\"lot_id\":\"${YX}f2\",\"system\":3,\"counted\":0}]');" >/dev/null
+YFIDS="array(select c.id from stock_counts c where c.product_id = '$YF' and c.status = 'pending')"
+YFSTATE="(select string_agg(qty::numeric(20,0)::text, ',' order by id) from product_lots where product_id = '$YF')||'|'||(select stock::numeric(20,0)::text from products where id = '$YF')
+          ||'|'||(select status from stock_counts where product_id = '$YF')||'|'||(select count(*) from expenses where clinic_id = '$YC')::text"
+Y_BEFORE=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select $YFSTATE")
+chk "معاينةُ الموافقة (stock_count_preview): ما ستكتبه حرفاً — عجزٌ ٤٬٠٠٠ (ب ثلاث بـ٢٬٠٠٠) وكلفةُ السطر ٢٬٠٠٠، بلا معرّف سحب" \
+    "select $(rv $YC "select (p->'withdrawals'->0->>'reason')||':'||(p->'withdrawals'->0->>'amount')::numeric::numeric(20,0)::text||'|'||(p->'costs'->>(select c.id::text from stock_counts c where c.product_id = '$YF'))::numeric::numeric(20,0)::text||'|'||(p->'withdrawals'->0 ? 'expense_id')::text from (select stock_count_preview($YFIDS) p) x")" \
+    "shortage:4000|2000|false"
+chk "  ولا تغيّر شيئاً (الدفعاتُ والرصيدُ والسطرُ معلَّقٌ وعددُ السحوبات كما كانت)" "select $YFSTATE" "$(printf '%s' "$Y_BEFORE" | tr -d '[:space:]')"
+chk "  والطبيبُ لا يعاين (الموافقةُ للمدير — رفضُها يصل كما هو)" \
+    "select split_part($(rv $YV "select stock_count_preview($YFIDS)::text"), ':', 3)" "count_needs_manager"
+chk "والموافقةُ تكتب ما قالته المعاينة: ٤٬٠٠٠ (لا رفضَ القيد بكلفةٍ سالبة، ولا ٢ × ١٤٬٠٠٠)" \
+    "select $(rv $YC "select (stock_count_decide($YFIDS, true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "4000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ٢٬٠٠٠، وأ صارت ٢ وب صفراً، والرصيدُ ٢" "select $(ylast $YF)||'|'||(select string_agg(qty::numeric(20,0)::text, ',' order by id) from product_lots where product_id = '$YF')||'|'||(select stock::numeric(20,0)::text from products where id = '$YF')" \
+    "2000:approved:4000|2,0|2"
+
+# ٤) الإعادةُ والحارس
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما انعادت"; fail=1; }
+chk "إعادةُ 0290 بلا أثر: الأجسامُ الثلاثة بعلامتها، والموافقةُ ما زالت بعلامة 0254 (فحصُ التوصيل نظيف)" \
+    "select (select string_agg((prosrc like '%-- +0290%')::text, ',' order by s) from pg_proc, unnest(array['public._stock_ledger_source(text)','public._stock_ledger_kind(text,text,text,numeric)','public.stock_count_decide(uuid[],boolean)']) s where oid = to_regprocedure(s))
+            ||'|'||(select (prosrc like '%-- +0254%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))
+            ||'|'||(select count(*)::text from verify_consumption_wiring())" "true,true,true|true|0"
+# نصُّ 0254 للموافقة وحدها (كالإنتاج اليوم) ⇒ 0290 تنزل ببصمته؛ ونصٌّ غيرُه بلا علامتنا ⇒ تُرفض ولا تدهسه.
+D254=$(sed -n '/^create or replace function public.stock_count_decide/,/^grant execute on function public.stock_count_decide/p' "$MIG/0254_waste_voucher.sql")
+$P -c "$D254" >/dev/null
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) && G290=applied || G290=refused
+chk "الموافقةُ بنصّ 0254 حرفاً ⇒ 0290 تنزل فوقها" "select '$G290'||'|'||(select (prosrc like '%-- +0290%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))" "applied|true"
+$P -c "${D254/n_ok := n_ok + 1;/n_ok := n_ok + 1 + 0;}" >/dev/null
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) && G290=applied || G290=refused
+chk "  ونصٌّ غيرُه بلا علامتنا ⇒ تُرفض (drift_body) والنصُّ باقٍ" \
+    "select '$G290'||'|'||(position('drift_body' in \$o\$$out\$o\$) > 0)::text||'|'||(select (prosrc like '%n_ok + 1 + 0%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))" "refused|true|true"
+$P -c "$D254" >/dev/null
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما رجعت بعد الحارس"; fail=1; }
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

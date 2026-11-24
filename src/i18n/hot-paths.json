@@ -81,7 +81,7 @@
     "vxp": "src/components/vaccines/VaccinePrices.tsx",
     "darc": "src/components/meds/DrugArchive.tsx",
     "avgc": "src/components/inventory/AvgCostNote.tsx",
-    "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx"] },
+    "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx", "src/components/inventory/ProductMovements.tsx"] },
     "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] },
     "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] },
     "vnote": { "owner": "src/components/voice/VoiceNotes.tsx", "with": ["src/components/voice/VoicePlayer.tsx", "src/components/voice/VoiceRecorderUi.tsx"] },
@@ -93,6 +93,9 @@
     "pgrp": "src/components/inventory/ProductGroups.tsx",
     "mxp": "src/components/retail/UsdPay.tsx",
     "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx", "src/components/admin/LibraryReplace.tsx"] },
-    "libp": "src/components/inventory/ImageLibraryPicker.tsx"
+    "libp": "src/components/inventory/ImageLibraryPicker.tsx",
+    "psum": "src/components/summary/PetSummary.tsx",
+    "csht": { "owner": "src/components/summary/CaseSheetDialog.tsx", "with": ["src/lib/caseSheetCompose.ts"] },
+    "xret": "src/components/retail/ExpiredReturn.tsx"
   }
 }

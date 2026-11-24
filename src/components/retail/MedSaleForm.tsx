@@ -7,7 +7,7 @@ import { MedicationForm, VaccinationForm, type MedicalDraft } from "@/components
 import type { PickedMed } from "@/lib/medIndex";
 import { medLineDecision, medProductMatches } from "@/lib/medSale";
 import { hydrateVaccines } from "@/lib/vaccines";
-import { cn, currencySymbol, formatNum, money } from "@/lib/utils";
+import { cn, currencySymbol, money, formatQty } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
 import { page } from "@/lib/lazyPage";
@@ -156,7 +156,7 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
               <Package size={14} className="shrink-0" />
               <span className="min-w-0 flex-1 truncate">
                 {decision.kind === "product"
-                  ? t("mymeds.posProduct", { name: decision.product.name, price: money(listPrice(decision.product)), n: formatNum(decision.product.stock), defaultValue: "من المخزون: {{name}} · {{price}} · الرصيد {{n}}" })
+                  ? t("mymeds.posProduct", { name: decision.product.name, price: money(listPrice(decision.product)), n: formatQty(Number(decision.product.stock ?? 0)), defaultValue: "من المخزون: {{name}} · {{price}} · الرصيد {{n}}" })
                   : t("mymeds.posChoose", "بالمخزون أكثر من منتج بهالاسم — اختار واحد")}
               </span>
             </div>
@@ -184,7 +184,7 @@ export function MedSaleForm({ species, onAddLine, onAddProduct, products, listPr
                 className={cn("flex min-h-11 items-center gap-2 rounded-xl border px-3 text-start text-xs font-bold transition",
                   chosenId === p.id ? "border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-200" : "border-line bg-surface-2 text-ink")}>
                 <span className="min-w-0 flex-1 truncate">{p.name}{p.barcode ? ` · ${p.barcode}` : ""}</span>
-                <span className="shrink-0 tabular-nums text-ink-muted">{money(listPrice(p))} · {formatNum(p.stock)}</span>
+                <span className="shrink-0 tabular-nums text-ink-muted">{money(listPrice(p))} · {formatQty(Number(p.stock ?? 0))}</span>
               </button>
             ))}
           </div>

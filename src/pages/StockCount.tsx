@@ -8,10 +8,11 @@ import { LoadBoundary } from "@/components/LoadBoundary";
 import type { Company, CountDecision, CountLineInput, CountReason, Product, ProductLot, StockCount as CountRow, StockLossRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
-import { cn, formatNum, formatQty, money, searchable } from "@/lib/utils";
+import { cn, formatNum, formatQty, matchCode, money, searchable } from "@/lib/utils";
 import { codeMatcher } from "@/lib/productCodes";
 import { levelMatcher } from "@/lib/packs";
 import { describeDbError, withTimeout } from "@/lib/errors";
+import type { CountPreview } from "@/lib/consumptionApi";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
 import { getCountDailyN, setCountDailyN } from "@/lib/settings";
@@ -272,13 +273,24 @@ export function StockCount() {
 
   const results = useMemo(() => {
     const s = searchable(q.trim());
-    if (!ready || s.length < 2) return [];
+    type Held = { p: Product; why: "pending" | "pooled" };
+    if (!ready || s.length < 2) return Object.assign([] as Product[], { more: 0, held: [] as Held[] });
     /* الطرفان من نفس الدالّة (CLAUDE.md §٣): الاسمُ بـsearchable، والرمزُ بمصدره الواحد codeMatcher — طيُّ الحالة
        («w90» = «W90») وجزءُ الرمز الأساسيّ أو الإضافيّ كالبيع والشراء؛ === كان لا يلقى رقمَ رفٍّ بحروفٍ صغيرة. */
     // 0267: ورمزُ الكارتون أو المغلّف يلقى مادّتَه (كبحث المخزون) — مسحُ الكارتون بالرفّ كان «ماكو». العددُ بوحدة الرصيد كما هو.
     const byLevel = levelMatcher(q);
     const byCode = codeMatcher(q);
-    return ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && (searchable(p.name).includes(s) || byCode(p) || !!byLevel(p))).slice(0, 8);
+    const hit = (p: Product) => searchable(p.name).includes(s) || byCode(p) || !!byLevel(p);
+    /* كبحث سند التلف (WasteTab، تدقيق ٢٢/١١): كان يقصّ عند ٨ بالاسم بصمت ويخفي المعلَّقةَ والمجمَّعة — فرقمُ رفٍّ «47» يطابق
+       مئةَ باركود والمادّةُ خارج الثمانية، والمعلَّقةُ لا تظهر أصلاً، و«المادة مو بالنظام» تُصدَّق فتُدخل توأماً. الآن: الرمزُ
+       المطابقُ بالضبط أوّلاً، والسقفُ يقول إنه سقف، وما وُجد ولا يُعدّ هنا يُرى بسببه. */
+    const c = matchCode(q);
+    const exact = (p: Product) => !!c && (matchCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => matchCode(a) === c));
+    const all = ready.products.filter((p) => countable(p) && !pendingIds.has(p.id) && hit(p));
+    const ranked = [...all.filter(exact), ...all.filter((p) => !exact(p))];
+    const held = ready.products.filter((p) => hit(p) && (pendingIds.has(p.id) || (!countable(p) && !!p.pooled)))
+      .slice(0, 3).map((p): Held => ({ p, why: pendingIds.has(p.id) ? "pending" : "pooled" }));
+    return Object.assign(ranked.slice(0, 8), { more: Math.max(0, ranked.length - 8), held });
   }, [q, ready, pendingIds]);
 
   /* «ما انعدّت أبداً»: قابلةٌ للعدّ، بلا عدٍّ مطابقٍ أو موافَقٍ عليه بتعريف الخادم (countedIds)، ولا عدٍّ معلَّق (لا يُعدّ ثانيةً قبل
@@ -626,6 +638,14 @@ export function StockCount() {
               <input className="input h-10 flex-1" value={q} onChange={(e) => setQ(e.target.value)} data-count-search
                 placeholder={t("cnt.searchPh", "تريد تعدّ مادة ثانية؟ ابحث بالاسم أو امسح الباركود")} />
             </label>
+            {q.trim().length >= 2 && results.length === 0 && results.held.length === 0 && (
+              <p className="mt-2 text-xs text-ink-subtle" data-count-nohit>{t("cnt.noHit")}</p>
+            )}
+            {results.held.map(({ p, why }) => (
+              <p key={p.id} className="mt-2 flex items-center gap-2 text-xs text-ink-subtle" data-count-held={why}>
+                <PackageSearch size={14} /> <span className="font-semibold text-ink-muted">{p.name}</span> — {why === "pending" ? t("cnt.waste.pendingShort") : t("cnt.err.pooled")}
+              </p>
+            ))}
             {results.length > 0 && (
               <ul className="mt-2 divide-y divide-line/60">
                 {results.map((p) => (
@@ -647,6 +667,7 @@ export function StockCount() {
                 ))}
               </ul>
             )}
+            {results.more > 0 && <p className="mt-1 text-2xs text-ink-subtle" data-count-more>{t("cnt.waste.more", { n: formatNum(results.more) })}</p>}
           </div>
 
           <div className="flex justify-end">
@@ -789,6 +810,25 @@ function PendingTab({ rows, productOf, isManager, restricted, onChanged, onNegat
 
   const stockOf = (id: string | null) => productOf(id)?.stock;
   const chosen = rows.filter((r) => picked.has(r.id));
+  const chosenKey = chosen.map((r) => r.id).join(",");
+  /* 0290: الموافقةُ تكلّف ما تأخذه من دفعة الراجع الإكسباير بكلفتها لا بلقطة السطر — فالقيمةُ تُسأل من الخادم (stock_count_preview:
+   * الموافقةُ نفسُها داخل معاملةٍ تُلغى) قبل «وافق وسجّل»، ولا يوافق المديرُ على رقمٍ ويُسجَّل غيرُه. null = قاعدةٌ قبل 0290 (اللقطةُ
+   * هي ما سيُكتب)؛ "failed" = ما وصلنا الخادم (تُقال، واللقطةُ تقريبية). المفتاحُ يربط الجوابَ بالسطور المختارة لحظةَ السؤال. */
+  const [prev, setPrev] = useState<{ key: string; v: CountPreview | null } | { key: string; failed: true } | null>(null);
+  useEffect(() => {
+    if (confirm !== "approve" || !chosenKey) { setPrev(null); return; }
+    let alive = true;
+    setPrev(null);
+    const ids = chosenKey.split(",");
+    import("@/lib/consumptionApi").then((m) => m.consumptionApi.countPreview(ids))
+      .then((v) => { if (alive) setPrev({ key: chosenKey, v }); }, () => { if (alive) setPrev({ key: chosenKey, failed: true }); });
+    return () => { alive = false; };
+  }, [confirm, chosenKey]);
+  const pv = prev && prev.key === chosenKey && "v" in prev ? prev.v : null;
+  const pvWaiting = confirm === "approve" && !!chosenKey && (!prev || prev.key !== chosenKey);
+  const pvFailed = !!prev && prev.key === chosenKey && "failed" in prev;
+  /** كلفةُ السطر كما ستُكتب: من المعاينة إن وصلت، وإلا لقطتُه. */
+  const costOf = (r: CountRow) => pv?.costs[r.id] ?? r.unit_cost;
   /** ما سيطبّقه الخادمُ فعلاً (مرآةُ `stock_count_decide` بـ0254): الفرقُ كلُّه على الرصيد **الحاليّ** بلا حصر —
    *  ولو نزل تحت الصفر — والسندُ −d بالضبط. كان يُحصر بصفر فيرى المديرُ «ما راح ينسجل سحب» عن تلفٍ حقيقيّ
    *  بعد استهلاكٍ أنزل الرصيد؛ فلا يوافق على رقمٍ ويُسجَّل غيرُه. */
@@ -801,19 +841,21 @@ function PendingTab({ rows, productOf, isManager, restricted, onChanged, onNegat
     const m = new Map<CountReason, { value: number; items: string[] }>();
     for (const r of chosen) {
       const d = applied(r);
-      if (!r.reason || !WITHDRAWAL_REASONS.includes(r.reason) || d >= 0 || r.unit_cost <= 0) continue;
+      if (!r.reason || !WITHDRAWAL_REASONS.includes(r.reason) || d >= 0 || costOf(r) <= 0) continue;
       const g = m.get(r.reason) ?? { value: 0, items: [] };
-      g.value += -d * r.unit_cost;
+      g.value += -d * costOf(r);
       // نصُّ السحب كما يكتبه الخادم: السندُ بما كُتب ووحدته الصغيرة («Lyse ×2 مل»)، والجردُ بفرقه.
       g.items.push(r.source === "waste" && r.entered_qty != null ? `${r.product_name} ×${formatQty(Number(r.entered_qty))}${r.unit_label ? ` ${r.unit_label}` : ""}` : `${r.product_name} ×${formatQty(-d)}`);
       m.set(r.reason, g);
     }
+    // المبلغُ لكلّ سببٍ كما قاله الخادم (تقريبُه بالفلس على المجموع) — والسطورُ من هنا.
+    if (pv) for (const [reason, g] of m) g.value = pv.withdrawals.find((w) => w.reason === reason)?.amount ?? g.value;
     return m;
   })();
   const withdrawTotal = [...byReason.values()].reduce((s, g) => s + g.value, 0);
   const corrections = chosen.filter((r) => r.reason === "entry_error" || r.reason === "found").length;
   // كلفتُها صفر: تنخصم بالموافقة والخادمُ لا يكتب لها سحباً — تُقال بالاسم لا تسقط من القائمة بصمت.
-  const zeroCost = chosen.filter((r) => !!r.reason && WITHDRAWAL_REASONS.includes(r.reason) && applied(r) < 0 && r.unit_cost <= 0);
+  const zeroCost = chosen.filter((r) => !!r.reason && WITHDRAWAL_REASONS.includes(r.reason) && applied(r) < 0 && costOf(r) <= 0);
 
   const decide = async (approve: boolean) => {
     setBusy(true);
@@ -892,14 +934,16 @@ function PendingTab({ rows, productOf, isManager, restricted, onChanged, onNegat
         title={confirm === "approve" ? t("cnt.confirmApproveTitle", "تأكيد الموافقة") : t("cnt.confirmRejectTitle", "تأكيد الرفض")}
         footer={<div className="flex justify-end gap-2">
           <Button variant="ghost" disabled={busy} onClick={() => setConfirm(null)}>{t("common.cancel", "إلغاء")}</Button>
-          <Button loading={busy} variant={confirm === "reject" ? "danger" : "primary"} onClick={() => void decide(confirm === "approve")} data-pending-go>
+          <Button loading={busy || (confirm === "approve" && pvWaiting)} variant={confirm === "reject" ? "danger" : "primary"} onClick={() => void decide(confirm === "approve")} data-pending-go>
             {confirm === "approve" ? t("cnt.approveGo", "وافق وسجّل") : t("cnt.rejectGo", "ارفض")}
           </Button>
         </div>}>
         {confirm === "approve" ? (
           <div className="space-y-3 text-sm" data-confirm-approve>
             <p>{t("cnt.confirmApprove", { n: formatNum(chosen.length), defaultValue: "راح يتصحّح رصيد {{n}} مادة بالفرق الي انعدّ (مو بالرقم — الي انباع بعد العدّ يبقى مبيوع)." })}</p>
-            {withdrawTotal > 0 ? (
+            {pvWaiting ? <p className="text-xs text-ink-subtle" data-confirm-preview-wait>{t("cnt.previewWait")}</p>
+              : pvFailed ? <p className="text-xs font-semibold text-warn-700 dark:text-warn-200" data-confirm-preview-failed>{t("cnt.previewFailed")}</p> : null}
+            {pvWaiting ? null : withdrawTotal > 0 ? (
               <div className="rounded-xl bg-warn-50/70 p-3 dark:bg-warn-500/10">
                 {/* القيمةُ بلقطة كلفة السطر (stock_unit_cost، 0255): المتوسّطُ إن عُرف وإلا سعرُ الشراء — ولا تعبئةَ لما قبل 0255، فأكثرُ
                     الرفّ يومَ النشر بسعر شرائه. «بالكلفة» صادقةٌ بالحالين؛ «بسعر الشراء» كذبت مع أوّل متوسّط و«بمتوسط الكلفة» قبله. */}

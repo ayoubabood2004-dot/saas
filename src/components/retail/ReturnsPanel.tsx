@@ -12,6 +12,7 @@ import { round2, paidOf, dueOf } from "@/lib/debt";
 import { cn, money, normalizeAr, formatNum, formatDate } from "@/lib/utils";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { describeDbError } from "@/lib/errors";
+import { isRefChanged, newAttemptRef, returnItemsOnce } from "@/lib/stockSafetyApi";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { consumeForgiveness } from "@/lib/debtForgive";
 import { page } from "@/lib/lazyPage";
@@ -57,6 +58,10 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
   const [q, setQ] = useState(initialQ ?? "");
   const [picked, setPicked] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
+  /** 0289: أثرُ راجعٍ إكسباير (سطرٌ بلا مادّة، اسمُه نصُّ الخادم «… — راجع إكسباير …») — ما بقي للعيادة من قيمة العلبة الراجعة، لا بضاعة:
+   *  لا يُرجَع ولا يدخل «إرجاع الكل» (كان يردّ للزبون ما احتفظت به العيادة ويقلب الفاتورةَ مرجَعة). */
+  const isXretTrace = (it: InvoiceItem) => !it.product_id && Number(it.stock_qty) === 0
+    && String(it.name ?? "").includes("\u2014 \u0631\u0627\u062C\u0639 \u0625\u0643\u0633\u0628\u0627\u064A\u0631");
   const [ret, setRet] = useState<Record<string, number>>({});
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [note, setNote] = useState("");
@@ -66,6 +71,9 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
   const [itemsErr, setItemsErr] = useState<unknown>(null);
   const pickSeq = useRef(0);
   const [saving, setSaving] = useState(false);
+  /* المرتجعُ مرّةً واحدة (0287): مرجعٌ لكلّ فاتورةٍ مختارة يُعاد بكلّ إعادة — «تأكيد» ثانيةً بعد جوابٍ ضاع كان يرجّع
+     القطعةَ والنقدَ مرّتين (الرصيد ٧ ⇒ ٨ ⇒ ٩ والمدفوع ١٥٬٠٠٠ ⇒ ١٠٬٠٠٠ ⇒ ٥٬٠٠٠ لقطعةٍ واحدة). */
+  const retRef = useRef<string | null>(null);
   // التأكيدُ بالشاشة لا بـwindow.confirm: الدينُ قبل ← بعد، وما يرجع للرفّ وللزبون، مكتوبةٌ قبل الضغطة.
   const [confirming, setConfirming] = useState(false);
   const [, setLazyTick] = useState(0);
@@ -129,6 +137,7 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
   const pick = (inv: Invoice) => {
     playTap();
     setPicked(inv);
+    retRef.current = newAttemptRef();
     setReturned(null);
     setRet({});
     setNote("");
@@ -173,7 +182,8 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
         .filter((l) => l.qty > 0);
       const cashBack = calc.back > 0.005;
       const sentAt = performance.now();
-      await repo.returnInvoiceItems(picked.id, lines, method, note.trim() || null);
+      await returnItemsOnce(retRef.current ?? (retRef.current = newAttemptRef()), picked.id, lines, method, note.trim() || null);
+      retRef.current = null;
       playSuccess();
       toast.success(calc.back > 0
         ? t("ret.doneBack", { n: money(calc.back), defaultValue: "تم الإرجاع — البضاعة رجعت للمخزون، ورجّع للزبون {{n}}" })
@@ -187,6 +197,8 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
     } catch (e) {
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      // الأولى ثبتت قبل تعديلك (التلميحُ يقولها): سطورُ الفاتورة تُقرأ من جديد — ترى ما رجع فعلاً، ومرجعٌ جديد لما بعده.
+      if (isRefChanged(e)) { setConfirming(false); setRet({}); retRef.current = newAttemptRef(); loadItems(picked.id); onChanged(); }
     } finally { setSaving(false); }
   };
 
@@ -298,7 +310,7 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
                 <p className="text-2xs text-ink-subtle">{formatDate(picked.created_at, i18n.language)} · {t("ret.invTotal", { n: money(picked.total), defaultValue: "إجماليها {{n}}" })}</p>
               </div>
               {!pickedOpening && <Button size="sm" variant="secondary" data-retall
-                onClick={() => { playTap(); setRet(Object.fromEntries(items.map((it) => [it.id, it.qty]))); }}>
+                onClick={() => { playTap(); setRet(Object.fromEntries(items.filter((it) => !isXretTrace(it)).map((it) => [it.id, it.qty]))); }}>
                 {t("ret.allBtn", "إرجاع الكل")}
               </Button>}
             </div>
@@ -333,7 +345,7 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
                           {t("ret.soldLine", { q: formatNum(it.qty), p: money(it.unit_price), defaultValue: "المباع {{q}} × {{p}}" })}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1">
+                      {!isXretTrace(it) && <div className="flex items-center gap-1">
                         <span className="me-1 text-2xs font-bold text-ink-subtle">{t("ret.retQty", "الراجع:")}</span>
                         <button data-retminus onClick={() => { playTap(); setQty(it.id, it.qty, r - 1); }} disabled={r <= 0}
                           className="grid h-11 w-11 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3 disabled:opacity-40"><Minus size={17} /></button>
@@ -343,7 +355,7 @@ export function ReturnsPanel({ invoices, onChanged, initialQ }: { invoices: Invo
                             r > 0 ? "border-warn-400 bg-surface-1 text-warn-700 dark:text-warn-300" : "border-line bg-surface-1 text-ink")} />
                         <button data-retplus onClick={() => { playTap(); setQty(it.id, it.qty, r + 1); }} disabled={r >= it.qty}
                           className="grid h-11 w-11 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3 disabled:opacity-40"><Plus size={17} /></button>
-                      </div>
+                      </div>}
                       <span className="w-24 shrink-0 text-end text-sm font-extrabold tabular-nums text-ink">{r > 0 ? money(r * it.unit_price) : "—"}</span>
                     </div>
                   );

@@ -1,7 +1,14 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
-import { DollarSign } from "lucide-react";
+import { DollarSign, Pencil } from "lucide-react";
 import { cn, formatNum } from "@/lib/utils";
+import { Modal } from "@/components/Modal";
+import { Button, useToast } from "@/components/ui";
+import type { UsdRate } from "@/lib/usdApi";
+import { farFrom, rateOfPer100, rateOk } from "@/lib/usdMath";
+import { playSuccess, playWarning } from "@/lib/sounds";
+import { describeDbError, isNetworkError } from "@/lib/errors";
 
 /* ============================================================================
  * فاتورةٌ بمجموعين (0283) بشاشة البيع — قطعةٌ كسولة بنطاقها المملوك mxp (نطاقُ «retail» حارٌّ يدفعه الإقلاع).
@@ -21,12 +28,12 @@ export function usdCentsIn(s: string): number | null {
 export const usdOf = (c: number): string => `$${(c / 100).toFixed(2)}`;
 
 /** ما تقوله شاشةُ البيع قبل البيعة (النطاقُ المملوك لا يُقرأ خارج صاحبه — تُنادى بـimport()). */
-export const mixedSay = (k: "delivery" | "backdate" | "bad" | "debtName" | "notReady"): string => i18n.t(`mxp.say.${k}`);
+export const mixedSay = (k: "delivery" | "backdate" | "bad" | "debtName" | "notReady" | "usdOnly", name?: string): string => i18n.t(`mxp.say.${k}`, { name });
 
 export type UsdMethod = "cash" | "card" | "transfer";
 
 /** صندوقُ الدولار تحت مجموع الدينار: المجموعُ والخصمُ وما يُدفع الآن والباقي دَيناً — كلُّه بالدولار. */
-export function UsdPayBox({ subC, discC, totalC, paidC, debtC, disc, onDisc, paid, onPaid, method, onMethod, rate, nameMissing }: {
+export function UsdPayBox({ subC, discC, totalC, paidC, debtC, disc, onDisc, paid, onPaid, method, onMethod, rate, nameMissing, onRate }: {
   subC: number; discC: number; totalC: number; paidC: number; debtC: number;
   disc: string; onDisc: (v: string) => void;
   /** null = يدفع كلَّه (الافتراض). */
@@ -35,6 +42,8 @@ export function UsdPayBox({ subC, discC, totalC, paidC, debtC, disc, onDisc, pai
   /** سعرُ صرف اليوم كما يعرفه الجهاز (للتذكير وحده — المجموعُ بالدولار لا يتغيّر به). */
   rate: number | null;
   nameMissing: boolean;
+  /** 0286: «غيّر سعر الدولار» من الصندوق نفسِه — الطبيبُ يحدّد سعرَ اليوم من أيّ شاشة (قرارُ المالك ٢١/١١). */
+  onRate?: () => void;
 }) {
   const { t } = useTranslation();
   const discBad = usdCentsIn(disc) == null;
@@ -83,7 +92,14 @@ export function UsdPayBox({ subC, discC, totalC, paidC, debtC, disc, onDisc, pai
         </div>
       )}
       {debtC > 0 && nameMissing && <p className="text-2xs font-semibold text-danger-600">{t("mxp.say.debtName")}</p>}
-      <p className="text-2xs text-ink-subtle">{rate ? t("mxp.rate", { rate: formatNum(rate) }) : t("mxp.noRate")}</p>
+      <p className="flex flex-wrap items-center gap-x-2 text-2xs text-ink-subtle">
+        <span className="min-w-0 flex-1">{rate ? t("mxp.rate", { rate: formatNum(rate) }) : t("mxp.noRate")}</span>
+        {onRate && (
+          <button type="button" data-usdrate-edit onClick={onRate} className="inline-flex items-center gap-1 font-bold text-brand-600 hover:underline">
+            <Pencil size={11} /> {t("mxp.rateEdit")}
+          </button>
+        )}
+      </p>
     </div>
   );
 }
@@ -102,5 +118,62 @@ export function UsdDoneNote({ no, totalC, paidC }: { no: string; totalC: number;
         {debt > 0 ? t("mxp.doneDebt", { paid: usdOf(paidC), debt: usdOf(debt) }) : t("mxp.donePaid")}
       </p>
     </div>
+  );
+}
+
+/** 0286: سعرُ الدولار اليوم من شاشة البيع — بلا الإعدادات وبلا المدير (قرارُ المالك ٢١/١١: «يكدر الدكتور يغير سعر الدولار وين ما جان»).
+ *  يكتب سطراً جديداً بـclinic_fx_rates (من حدّده ومتى)، وسطورُ الدولار بالسلّة تأخذه (SaleBuilder: onSaved). سعرُ المئة كما يقوله
+ *  السوق («150,000»)، وتحته الدولارُ الواحد — خلطُ الاثنين يمسكه حدّا الخادم (١٠٠–١٠٠٬٠٠٠ للدولار). */
+const RATE_ERRS = new Set(["usd_rate_bad", "usd_rate_manager", "usd_operator", "usd_disabled"]);
+export function UsdRateDialog({ current, onClose, onSaved }: { current: bigint | null; onClose: () => void; onSaved: (r: UsdRate) => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [per100, setPer100] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const typed = per100.trim() === "" ? null : rateOfPer100(per100);
+  const ok = typed != null && rateOk(typed);
+  /* سعرُ اليوم للعيادة كلّها (0286 — بلا مدير): صفرٌ زائدٌ أو ناقص بعيدٌ عن المسجّل بأكثر من ٢٠٪ يُقال ويحتاج ضغطةً ثانية. */
+  const [farAck, setFarAck] = useState<string | null>(null);
+  const far = ok && current != null && farFrom(typed!, [current]);
+  const farPending = far && farAck !== per100.trim();
+  const save = async () => {
+    if (!ok || busy) return;
+    if (farPending) { playWarning(); setFarAck(per100.trim()); return; }
+    setBusy(true);
+    try {
+      const { usdApi } = await import("@/lib/usdApi");   // البابُ كسول (usd-test): لا استيرادَ ثابتاً خارج قطعة الدولار
+      const r = await usdApi.setRate(per100, null);
+      playSuccess();
+      toast.success(t("mxp.rateSaved", { v: formatNum(Number(r.rate1e4) / 100) }));
+      onSaved(r);
+    } catch (e) {
+      playWarning();
+      const code = (e as { message?: string } | null)?.message ?? "";
+      setErr(RATE_ERRS.has(code) ? t(`mxp.rateErr.${code}`) : isNetworkError(e) ? t("mxp.rateFailed") : describeDbError(e, t));
+    } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={() => { if (!busy) onClose(); }} title={t("mxp.rateTitle")}>
+      <form className="space-y-3" data-usdrate-dialog onSubmit={(e) => { e.preventDefault(); void save(); }}>
+        <p className="text-sm text-ink-muted">
+          {current ? t("mxp.rateNow", { v: formatNum(Number(current) / 100), one: formatNum(Number(current) / 10_000) }) : t("mxp.rateNone")}
+        </p>
+        <label className="block">
+          <span className="label">{t("mxp.rateNew")}</span>
+          <input data-usdrate-input autoFocus className={cn("input tabular-nums", per100.trim() !== "" && !ok && "border-danger-400")} dir="ltr" inputMode="decimal"
+            placeholder="150,000" value={per100} onChange={(e) => { setPer100(e.target.value); setErr(null); }} />
+          {per100.trim() !== "" && (
+            <span className={cn("mt-1 block text-xs font-semibold", ok ? "text-ink-muted" : "text-danger-600")}>
+              {ok ? t("mxp.rateOne", { v: formatNum(Number(typed) / 10_000) }) : t("mxp.rateBad")}
+            </span>
+          )}
+        </label>
+        {far && <p className="rounded-lg bg-warn-50 p-2 text-xs font-semibold text-warn-800 dark:bg-warn-500/10 dark:text-warn-200" role="alert" data-usdrate-far>{t("mxp.rateFar", { cur: formatNum(Number(current) / 100) })}</p>}
+        {err && <p className="text-xs font-semibold text-danger-600" role="alert">{err}</p>}
+        <p className="text-2xs text-ink-subtle">{t("mxp.rateHint")}</p>
+        <Button type="submit" className="w-full" loading={busy} disabled={!ok} data-usdrate-save>{t(far && farAck === per100.trim() ? "mxp.rateFarGo" : "mxp.rateSave")}</Button>
+      </form>
+    </Modal>
   );
 }

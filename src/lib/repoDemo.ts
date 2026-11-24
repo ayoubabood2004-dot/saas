@@ -5299,19 +5299,20 @@ const demoRepo = {
   /** مرآةُ `product_movements` (0207). **منطقُها بوحدةٍ تُحمَّل عند النداء**:
    *  `repo.ts` على مسار الإقلاع الحرج، وكلُّ سطرٍ يُضاف هنا يدفعه كلُّ فتحِ
    *  تطبيقٍ بكلّ عيادة — وهذا كشفه `store-weight-guard` بـ٢٩٥ بايتاً. */
-  /** مرآةُ `product_sales_rate` (0215): صافي المبيع بآخر `days` (٧..١٨٠)، لا ينزل تحت صفر. */
+  /** مرآةُ `product_sales_rate` (0215 ⇒ 0288): صافي المبيع بآخر `days` (٧..١٨٠) **بوحدة الرصيد** (stock_qty، والسطرُ بلاه: qty)،
+   *  والفاتورةُ المرجَعة خارجه، ولا ينزل تحت صفر — الحبّةُ والكارتونُ كانا يُعدّان علبةً فاقترح الطلبُ ٦٦ علبةً عن ٦٠ حبّة. */
   async productSalesRate(days = 30): Promise<Map<string, number>> {
     const d = Math.min(180, Math.max(7, Math.round(days) || 30));
     const since = Date.now() - d * 86400000;
     const sum = new Map<string, number>();
     const db = loadDB();
     // تاريخُ السطر تاريخُ فاتورته (السطرُ بالتجريبيّ بلا ختمٍ خاصّ — 0133 تعبّئه بالخادم منها).
-    const invAt = new Map((db.invoices ?? []).map((i) => [i.id, new Date(i.created_at).getTime()]));
+    const invAt = new Map((db.invoices ?? []).filter((i) => (i.status ?? "paid") !== "refunded").map((i) => [i.id, new Date(i.created_at).getTime()]));
     for (const it of db.invoiceItems ?? []) {
       if (!it.product_id) continue;
       const at = invAt.get(it.invoice_id) ?? 0;
       if (!(at >= since)) continue;
-      sum.set(it.product_id, (sum.get(it.product_id) ?? 0) + (Number(it.qty) || 0));
+      sum.set(it.product_id, (sum.get(it.product_id) ?? 0) + (Number(it.stock_qty ?? it.qty) || 0));
     }
     for (const [k, v] of sum) sum.set(k, Math.max(0, v));
     return sum;
@@ -5651,6 +5652,8 @@ export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 
 export const loadDemoCompanyEntryEdit = () => import("./demoCompanyEntryEdit");   // 0281 — تعديلُ الرصيد السابق والتسوية
 export const loadDemoVoice = () => import("./demoVoice");   // 0287 — الملاحظةُ الصوتية
 export const loadDemoDual = () => import("./demoDual");   // 0282 — البيعُ بسعرين (سطرُ الدولار بفاتورة دينار)
+export const loadDemoCaseReports = () => import("./demoCaseReports");   // 0287 — تقاريرُ الحالة المطبوعة وما عُدّل فيها
+export const loadDemoExpired = () => import("./demoExpired");   // 0289 — الراجعُ الإكسباير ودفعتُه والبيعُ منها
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */
