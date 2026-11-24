@@ -19,7 +19,8 @@ const { readFileSync, existsSync } = await import("node:fs");
 const B = ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"].find((p) => existsSync(p));
 const BASE = process.env.LIVE_URL ?? "http://localhost:5179";
 const SHOTS = process.env.SHOTS ?? "";
-const DB_KEY = /const KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoStore.ts", "utf8"))?.[1];
+const DB_KEY = /DEMO_DB_KEY = "([^"]+)"/.exec(readFileSync("src/lib/demoKey.ts", "utf8"))?.[1];
+if (!DB_KEY) { console.error("✗ live-delivery-search: ما انقرأ مفتاحُ مخزن الديمو (DEMO_DB_KEY) من src/lib/demoKey.ts — بلاه تنكتب البذرةُ على مفتاحٍ غلط ويقلع التطبيقُ ببياناته الافتراضية"); process.exit(1); }
 const SESSION = { raw: { id: "demo-admin", full_name: "د. الفحص", email: "admin@demo.vet", rawRole: "admin", roles: ["clinic"], clinic_id: "c1" }, active: "clinic" };
 
 let fails = 0, passes = 0;
