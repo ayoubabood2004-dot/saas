@@ -526,17 +526,19 @@ function ok(res: { error: { message: string; code?: string; details?: string; hi
 const MEDIA_BUCKET = "medical-media";
 const MEDIA_URL_TTL = 60 * 60 * 8; // 8 hours — comfortably longer than a work session
 const isStoragePath = (u: string): boolean => !!u && !/^(https?:|data:|blob:)/i.test(u);
+/* التوقيعُ كلُّه أو الرمية — لا معرضٌ بروابطَ ميّتة يبدو سليماً. `createSignedUrls` لا يرمي: يرجع `error`
+ * (انقطاع، جلسةٌ انتهت، الدلو) فكان يُبلع ويرجع كلُّ مرفقٍ بمساره الخام — صورٌ مكسورةٌ بلا كلمة، والطبيبُ
+ * يظنّ المرفقَ تالفاً فيعيد رفعَه. فخطأُ الطلب يُرمى وتقول الشاشةُ «أعد المحاولة».
+ * أمّا فشلُ ملفٍّ واحد (مسارٌ لم يعد بالدلو) فخطأٌ بسطره لا بالطلب: يبقى المرفقُ بمساره فيُرى مكسوراً بمكانه —
+ * رميُه كان سيُسقط معرضَ الحيوان كلَّه للأبد بملفٍّ واحدٍ لا تُصلحه إعادةُ المحاولة. */
 async function withSignedMedia(items: MediaItem[]): Promise<MediaItem[]> {
   const paths = items.filter((m) => isStoragePath(m.url)).map((m) => m.url);
   if (paths.length === 0) return items;
-  try {
-    const { data } = await sbc().storage.from(MEDIA_BUCKET).createSignedUrls(paths, MEDIA_URL_TTL);
-    const signed = new Map<string, string>();
-    for (const d of data ?? []) if (d.signedUrl && d.path) signed.set(d.path, d.signedUrl);
-    return items.map((m) => (isStoragePath(m.url) && signed.has(m.url) ? { ...m, url: signed.get(m.url)! } : m));
-  } catch {
-    return items; // never let a signing hiccup drop the whole gallery
-  }
+  const { data, error } = await sbc().storage.from(MEDIA_BUCKET).createSignedUrls(paths, MEDIA_URL_TTL);
+  if (error) throw error;   // StorageError ⊂ Error: نصُّه يصل describeDbError كما هو
+  const signed = new Map<string, string>();
+  for (const d of data ?? []) if (d.signedUrl && d.path) signed.set(d.path, d.signedUrl);
+  return items.map((m) => (isStoragePath(m.url) && signed.has(m.url) ? { ...m, url: signed.get(m.url)! } : m));
 }
 
 const supabaseRepo: DemoRepo = {
@@ -789,8 +791,9 @@ const supabaseRepo: DemoRepo = {
     }
     return need<MedicalVisit>(await sbc().from("medical_visits").insert({ ...input, patient_age_months }).select().single());
   },
+  /* قائمةٌ تُرمى: ملاحظاتٌ فارغةٌ عن خطأ تقول «ما في ملاحظات» عن زيارةٍ كُتب فيها، فيُعاد كتابةُ ما كُتب. */
   async listPetNotes(petId) {
-    return listOf<PetNote>(await sbc().from("pet_notes").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+    return listOrThrow<PetNote>(await sbc().from("pet_notes").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
   },
   async listLabResults(petId) {
     return listOf<LabResult>(await sbc().from("lab_results").select("*").eq("pet_id", petId).order("taken_at", { ascending: false }));
@@ -896,13 +899,16 @@ const supabaseRepo: DemoRepo = {
   async updateClinicVisit(id, patch) {
     ok(await sbc().from("clinic_visits").update(patch).eq("id", id));
   },
+  /* قائمةٌ تُرمى: مرفقٌ غائبٌ عن معرضٍ يبدو كاملاً يُعاد رفعُه. والتوقيعُ يرمي مثلها (withSignedMedia). */
   async listMedia(petId) {
-    const items = listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+    const items = listOrThrow<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
     return withSignedMedia(items);
   },
+  /* للعدّ وحده (تقريرُ المختبر والأشعة يعدّ الأنواع): الروابطُ **غيرُ موقَّعة** — المسارُ كما بالقاعدة. توقيعُ كلّ
+   * مرفقات العيادة بطلبٍ واحد كان عملاً بلا قارئ، وصار يرمي منذ أن صار التوقيعُ يُسمَع فيُصفّر التقريرَ عن فشلٍ لا يخصّه.
+   * من يعرض صورةً يمرّ من `listMedia`. */
   async listAllMedia(petIds, range) {
-    const items = await inChunks(petIds, (c) => allPages<MediaItem>(() => inRange(sbc().from("media_items").select("*").in("pet_id", c), "created_at", range)));
-    return withSignedMedia(items);
+    return inChunks(petIds, (c) => allPages<MediaItem>(() => inRange(sbc().from("media_items").select("*").in("pet_id", c), "created_at", range)));
   },
   async addMedia(input) {
     return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
@@ -1032,8 +1038,9 @@ const supabaseRepo: DemoRepo = {
   async setAppointmentStatus(id, status) {
     ok(await sbc().from("appointments").update({ status }).eq("id", id));
   },
+  /* قائمةٌ تُرمى: طبلةٌ فارغةٌ عن خطأ تقول «ما في جرعات» عن حيوانٍ بخطّة — فتُكتب الخطّةُ ثانيةً أو تُنسى جرعة. */
   async listTreatments(petId) {
-    return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
+    return listOrThrow<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
   },
   /* صفوفُ زيارةٍ واحدة كلُّها — **قائمةُ قرار**: التمديدُ يقرأ منها آخرَ يومٍ قبل أن يكتب (لا من
    * حالة الشاشة، فجوابٌ ضاع بعد كتابةٍ وصلت كان يمدّد مرّتين). قائمةٌ ناقصة تمدّد يوماً غيرَ

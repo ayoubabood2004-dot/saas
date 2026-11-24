@@ -20,7 +20,7 @@ import { JourneyCard } from "@/components/JourneyCard";
 import { labParamById, labRange } from "@/lib/labCatalog";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { useToast, Button } from "@/components/ui";
+import { useToast, Button, Dialog } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { DoctorSelect } from "@/components/MedicalEntry";
@@ -175,14 +175,27 @@ export default function VisitPage() {
   const [labs, setLabs] = useState<LabResult[]>([]);
   const [loading, setLoading] = useState(!seeded);
 
+  /** آخرُ تحميلٍ فشل (الخطأُ نفسُه — يُوصف عند الرسم). */
+  const [loadErr, setLoadErr] = useState<unknown>(null);
+  /** تحميلٌ كاملٌ واحدٌ على الأقل: قبله لا تُرسم الزيارة عن خطأ (ما رسمته البذرةُ بلا ملاحظات ولا تحاليل). */
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const loadSeq = useRef(0);
+
   const [planOpen, setPlanOpen] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);
   /** True while the wizard holds unsaved selections — guards the modal close. */
   const planDirty = useRef(false);
+  /** «تسكّر وتخسر الخطة؟» — نافذةٌ فوق المعالج لا تأكيدُ متصفّحٍ يُقبل بلا قراءة. */
+  const [askPlanLeave, setAskPlanLeave] = useState(false);
   const [labOpen, setLabOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteDay, setNoteDay] = useState<string | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
+  /** قفلٌ متزامن: ضغطتان بنفس الرسمة تريان `noteBusy` قديمةً — والمرجعُ لا. */
+  const noteLock = useRef(false);
+  const [noteErr, setNoteErr] = useState<string | null>(null);
   const [endOpen, setEndOpen] = useState(false);
   const [giveId, setGiveId] = useState<string | null>(null);
   const [addDrugOpen, setAddDrugOpen] = useState(false);
@@ -196,16 +209,35 @@ export default function VisitPage() {
   /** يومُ ورقة الرعاية: اليوم افتراضياً، ولزيارةٍ بتاريخٍ سابق يُختار يومُها أو أيُّ يومٍ بينهما. */
   const [careDay, setCareDay] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    if (!petId || !visitId) return;
-    const [p, v, ns, tx, lab] = await Promise.all([
-      repo.getPet(petId),
-      repo.getClinicVisit(visitId),
-      repo.listPetNotes(petId).catch(() => [] as PetNote[]),
-      repo.listTreatments(petId).catch(() => [] as TreatmentEntry[]),
-      repo.listLabResults(petId).catch(() => [] as LabResult[]),
-    ]);
-    setPet(p ?? null);
+  /* القراءةُ كلُّها أو لا شيء (CLAUDE.md: قائمةٌ ناقصة أخطرُ من خطأ ظاهر). ملاحظاتٌ أو جرعاتٌ فارغةٌ عن خطأ كانت
+   * تُرسم «ما في ملاحظات» وطبلةً بلا أدوية — فيُكتب التشخيصُ ثانيةً، ويختفي ما انعطى. فشلُ أيّ قراءةٍ يُبقي آخرَ ما
+   * انحمل كاملاً ويقولها شريطٌ بـ«أعد المحاولة»، وقبل أوّل تحميلٍ كامل لا تُرسم الزيارةُ أصلاً.
+   * ولا ترمي: تُنادى بعد كتاباتٍ نجحت، ورميُها كان سيقول «ما انحفظ» عمّا انحفظ فيُعاد فيتكرّر — ترجع false
+   * والمنادي يقرّر. والأحدثُ يغلب: جوابٌ قديمٌ وصل بعد أحدثَ منه لا يرسم بياناته ولا يكتب خطأه. */
+  const reload = useCallback(async (): Promise<boolean> => {
+    if (!petId || !visitId) return true;
+    const my = ++loadSeq.current;
+    let got: [Pet | null, ClinicVisit | null, PetNote[], TreatmentEntry[], LabResult[]];
+    try {
+      const [p0, ...rest] = await Promise.all([
+        repo.getPet(petId),
+        repo.getClinicVisit(visitId),
+        repo.listPetNotes(petId),
+        repo.listTreatments(petId),
+        repo.listLabResults(petId),
+      ]);
+      got = [p0 ?? null, ...rest];
+    } catch (e) {
+      if (my !== loadSeq.current) return true;   // أحدثُ منه بالطريق — هو يقول حالَه
+      setLoadErr(e);
+      setLoading(false);
+      return false;
+    }
+    if (my !== loadSeq.current) return true;
+    const [p, v, ns, tx, lab] = got;
+    setLoadErr(null);
+    setLoadedOnce(true);
+    setPet(p);
     setVisit(v);
     /* معلوماتُ الدخول تنتقل لأوّل زيارةٍ مفتوحة: هنا مكانٌ واحد يمسك كلَّ طرق فتح الزيارة
      * (ملفّ الحيوان، الطبلات، …). تُعرض فوراً، ويُكتب الربطُ بالخلفية — وفشلُه لا يُخفيها:
@@ -218,9 +250,16 @@ export default function VisitPage() {
     setTreatments(tx.filter((t) => t.visit_id === visitId));
     setLabs(lab);
     setLoading(false);
+    return true;
   }, [petId, visitId]);
 
   useEffect(() => { void reload(); }, [reload]);
+  const retryLoad = async () => {
+    if (retrying) return;
+    playTap();
+    setRetrying(true);
+    try { await reload(); } finally { setRetrying(false); }
+  };
 
   // Bring the current day into view — with a multi-day course the "today" column
   // is the one the doctor needs, and it may otherwise sit off-screen.
@@ -511,12 +550,31 @@ export default function VisitPage() {
     await syncDoseCycleForPet(tx.pet_id);
     setGiveId(null); await reload();
   };
-  const addNote = async (text: string, day?: string) => {
-    if (!visit || !text.trim()) return;
+  /* الكتابةُ تُسمَع وتُقفل: كانت بلا try فيُغلق «إضافة» النافذةَ ويضيع النصُّ بلا كلمة إن فشلت، وبلا قفلٍ فضغطتان
+   * تكتبان ملاحظتين. الفشلُ يُقال داخل النافذة (التوستُ بالهاتف يغطّي زرَّها السفليّ) والنصُّ باقٍ لإعادة المحاولة.
+   * ترجع true حين انحفظت — فشلُ التحديث بعدها يقوله شريطُ الصفحة لا «ما انحفظت». */
+  const addNote = async (text: string, day?: string): Promise<boolean> => {
+    if (!visit || !text.trim() || noteLock.current) return false;
     const body = day ? dayNoteEncode(day, text.trim()) : text.trim();
-    await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
-    playSuccess(); await reload();
+    noteLock.current = true;
+    setNoteBusy(true);
+    setNoteErr(null);
+    try {
+      await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
+    } catch (e) {
+      playWarning();
+      setNoteErr(`${t("vbk.noteFail", "ما انحفظت الملاحظة — أعد المحاولة.")} ${describeDbError(e, t)}`);
+      return false;
+    } finally {
+      noteLock.current = false;
+      setNoteBusy(false);
+    }
+    playSuccess();
+    void reload();
+    return true;
   };
+  const closeNote = () => { if (noteLock.current) return; setNoteOpen(false); setNoteText(""); setNoteDay(null); setNoteErr(null); };
+  const closePlan = () => { planDirty.current = false; setAskPlanLeave(false); setPlanOpen(false); };
 
   /* ---- تسجيل خانة رعاية من المصفوفة — نفس ورقة الشبكة (ObsRecorder) ---- */
   const [obsTarget, setObsTarget] = useState<TreatmentEntry | null>(null);
@@ -552,9 +610,9 @@ export default function VisitPage() {
         : repo.setTreatmentMissed(w.id, PAST_MISS_REASON))));
       failed += res.filter((r) => r.status === "rejected").length;
     }
-    await syncDoseCycleForPet(visit.pet_id).catch(() => {});
-    // الكتاباتُ تمّت — فشلُ إعادة التحميل وحده لا يُقال «ما انحفظ».
-    try { await reload(); } catch { toast.error(t("vbk.reloadFail", "انحفظت، بس ما تحدّثت الصفحة — حدّثها.")); }
+    await syncDoseCycleForPet(visit.pet_id).catch(() => {});   /* swallow-ok: لونُ لوحة الجناح تحسين — والدالّةُ تبلع فشلَها بنفسها */
+    // الكتاباتُ تمّت — فشلُ إعادة التحميل وحده لا يُقال «ما انحفظ» (reload لا ترمي: ترجع false).
+    if (!(await reload())) toast.error(t("vbk.reloadFail", "انحفظت، بس ما تحدّثت الصفحة — حدّثها."));
     if (failed) {
       playWarning();
       toast.error(t("vbk.pastPartial", { failed: formatNum(failed), total: formatNum(writes.length), defaultValue: "ما انحفظت {{failed}} من {{total}} — الباقي انحفظ. افتحها مرة ثانية وأعد المحاولة." }));
@@ -784,6 +842,20 @@ export default function VisitPage() {
   };
 
   if (loading) return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> {t("visit.loading", "جارٍ التحميل…")}</div>;
+  // ما انحملت كاملةً ولا مرّة: لا تُرسم الزيارةُ ناقصة (ولا «لم يتم العثور» عن خطأ اتصال).
+  if (loadErr != null && !loadedOnce) return (
+    <div className="mx-auto max-w-3xl px-4 py-16 text-center" data-visit-loadfail>
+      <div className="card mx-auto max-w-md p-8" role="alert">
+        <p className="font-semibold text-ink">{t("vbk.loadFailTitle", "ما انحملت الزيارة")}</p>
+        <p className="mt-1 text-sm text-ink-muted">{t("vbk.loadFailBody", "ما نعرضها ناقصة — ملاحظة أو جرعة غايبة تنقرأ «ماكو». أعد المحاولة.")}</p>
+        <p className="mt-1 text-xs text-ink-subtle">{describeDbError(loadErr, t)}</p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <Button leftIcon={<RotateCcw size={16} />} loading={retrying} onClick={() => void retryLoad()} data-visit-retry>{t("common.retry", "Retry")}</Button>
+          <Button variant="secondary" onClick={() => navigate(-1)}>{t("visit.back", "رجوع")}</Button>
+        </div>
+      </div>
+    </div>
+  );
   if (!visit || !pet) return (
     <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle">
       {t("visit.notFound", "لم يتم العثور على الزيارة.")}
@@ -807,6 +879,16 @@ export default function VisitPage() {
           <FolderOpen size={14} /> {t("visit.fullFile", "ملف الحيوان الكامل")}
         </button>
       </div>
+
+      {/* آخرُ تحميلٍ فشل — المعروضُ آخرُ نسخةٍ كاملة، ويُقال إنها ممكن مو آخر شي */}
+      {loadErr != null && (
+        <div role="alert" data-visit-stale className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5 dark:border-danger-500/30 dark:bg-danger-500/10">
+          <AlertTriangle size={16} className="shrink-0 text-danger-600" />
+          <span className="text-sm font-extrabold text-danger-700 dark:text-danger-300">{t("vbk.staleTitle", "ما انحملت آخر نسخة من الزيارة")}</span>
+          <span className="text-xs text-danger-600/80 dark:text-danger-300/80">{t("vbk.staleBody", "المعروض من آخر تحميل — ممكن مو آخر شي.")}</span>
+          <Button size="sm" variant="secondary" className="ms-auto" leftIcon={<RotateCcw size={14} />} loading={retrying} onClick={() => void retryLoad()} data-visit-retry>{t("common.retry", "Retry")}</Button>
+        </div>
+      )}
 
       {/* ── Persistent patient banner — the 90-second rule: identity, weight,
              allergy, problems and how far behind the doses are, never scrolled away ── */}
@@ -1072,22 +1154,32 @@ export default function VisitPage() {
 
       <Modal
         open={planOpen}
-        onClose={() => {
-          // A stray Escape or backdrop tap must not throw away 5 steps of work.
-          if (planDirty.current && !window.confirm("في تشخيص وخطة غير محفوظة بالمعالج — تريد تسكّر وتخسرها؟")) return;
-          planDirty.current = false;
-          setPlanOpen(false);
-        }}
+        onClose={closePlan}
+        // A stray Escape or backdrop tap must not throw away 5 steps of work — يُسأل بنافذةٍ فوقه.
+        confirmClose={() => { if (!planDirty.current) return true; playWarning(); setAskPlanLeave(true); return false; }}
         size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}
       >
         <TreatmentPlan initial={planSeed ?? undefined} onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} flags={prescribingFlags} onMediaAdded={reload} onDirtyChange={(d) => { planDirty.current = d; }} />
       </Modal>
 
-      <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); setNoteDay(null); }} title={noteDay ? `ملاحظة على ${formatDate(noteDay, lang)}` : "إضافة ملاحظة"}>
+      {/* الخروجُ من المعالج يسأل — Dialog فوق Modal يبلع Esc وستارتَه وحدَه (مكدّسُ النوافذ) = «لا، ارجع». */}
+      <Dialog open={askPlanLeave} onClose={() => setAskPlanLeave(false)} size="sm" title={t("vbk.planLeaveTitle", "تسكّر وتخسر الخطة؟")}
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button data-plan-leave-no variant="secondary" onClick={() => setAskPlanLeave(false)}>{t("vbk.planLeaveNo", "لا، ارجع")}</Button>
+            <Button data-plan-leave-yes variant="danger" onClick={closePlan}>{t("vbk.planLeaveYes", "إي، سكّر")}</Button>
+          </div>
+        }>
+        <p data-plan-leave className="text-sm text-ink-muted">{t("vbk.planLeaveBody", "التشخيص والخطة اللي بالمعالج ما انحفظن — إذا سكّرت يضيعن.")}</p>
+      </Dialog>
+
+      <Modal open={noteOpen} onClose={closeNote} title={noteDay ? t("vbk.noteOnDay", { day: formatDate(noteDay, lang), defaultValue: "ملاحظة على {{day}}" }) : t("vbk.noteAddTitle", "إضافة ملاحظة")}>
         <div className="space-y-3">
-          <textarea rows={4} value={noteText} onChange={(e) => setNoteText(e.target.value)} autoFocus placeholder="اكتب ملاحظة…" className="input min-h-[110px] resize-y leading-relaxed" />
+          <textarea rows={4} value={noteText} readOnly={noteBusy} onChange={(e) => { setNoteText(e.target.value); setNoteErr(null); }} autoFocus placeholder="اكتب ملاحظة…" className="input min-h-[110px] resize-y leading-relaxed" />
+          {noteErr && <p role="alert" data-note-err className="text-xs font-semibold text-danger-600">{noteErr}</p>}
           <div className="flex justify-end">
-            <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim()} onClick={async () => { await addNote(noteText, noteDay ?? undefined); setNoteOpen(false); setNoteText(""); setNoteDay(null); }}>إضافة</Button>
+            <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim() || noteBusy} loading={noteBusy} data-note-add
+              onClick={async () => { if (await addNote(noteText, noteDay ?? undefined)) { setNoteOpen(false); setNoteText(""); setNoteDay(null); } }}>إضافة</Button>
           </div>
         </div>
       </Modal>
