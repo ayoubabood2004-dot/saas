@@ -733,6 +733,8 @@ const SCENARIOS = {
   /* ز: PendingTab وحده — سندٌ بالصغيرة، جردٌ نزل رصيدُه تحت فرقه بعد العدّ، وسندٌ كلفتُه صفر */
   async pend(M, ok) {
     const log = { negs: [], decide: [], changed: 0 };
+    // قاعدةٌ قبل 0290 (لا stock_count_preview ⇒ null): اللقطةُ هي ما سيُكتب.
+    globalThis.__api = { countPreview: async () => null };
     globalThis.__toast = { success() {}, error: (m) => log.err = m, warn() {}, toast() {} };
     globalThis.__repo = { decideStockCounts: async (ids, approve) => { log.decide.push([ids, approve]); return DECIDED; } };
     const prods = new Map([LYSE, SYR, FREE].map((p) => [p.id, p]));
@@ -762,6 +764,44 @@ const SCENARIOS = {
       J(log.negs) === J([DECIDED.negatives]) && log.changed === 1 && J(log.decide) === J([[["w1", "c1", "w2"], true]]), J(log));
     ui.unmount();
     return ui.errors;
+  },
+
+  /* 0290: المعاينةُ من الخادم (stock_count_preview — الموافقةُ نفسُها داخل معاملةٍ تُلغى): «وافق وسجّل» ينتظرها، والمعروضُ رقمُها
+   * (ما يؤخذ من دفعة راجعٍ إكسباير بكلفتها لا بلقطة السطر)، وفشلُها يُقال والقيمةُ بلقطة السطور. */
+  async pendpreview(M, ok) {
+    globalThis.__toast = { success() {}, error() {}, warn() {}, toast() {} };
+    globalThis.__repo = { decideStockCounts: async () => DECIDED };
+    const prods = new Map([LYSE, SYR, FREE].map((p) => [p.id, p]));
+    const mountP = () => M.mount(M.React.createElement(M.PendingTab, { rows: PENDING_ROWS, productOf: (id) => prods.get(id ?? ""), isManager: true, restricted: false,
+      onChanged: async () => {}, onNegatives: () => {} }));
+    let release = null;
+    const calls = [];
+    globalThis.__api = { countPreview: (ids) => { calls.push(ids); return new Promise((r) => { release = r; }); } };
+    const ui = mountP();
+    await ui.settle();
+    const h = harness(M, ui);
+    await h.click("data-pending-approve");
+    const dlgText = () => h.text(h.one("data-confirm-approve"));
+    ok("pend.previewWait", "«وافق وسجّل» ينتظر رقمَ الخادم — لا موافقةَ قبل أن يُعرف ما سيُكتب، ولا رقمَ لقطةٍ يُعرض قبله",
+      h.one("data-pending-go")?.props.disabled === true && !!h.one("data-confirm-preview-wait") && !dlgText().includes(M.money(740)), dlgText());
+    // الخادم: «شاش مجاني» أُخذ من دفعة راجعٍ بـ٣٠٠ (لقطتُه صفر)، وLyse من دفعةٍ بـ٤٠٬٠٠٠ (لقطتُه ٦٠٬٠٠٠).
+    release({ withdrawals: [{ reason: "damaged", amount: 720 }], costs: { w1: 40000, c1: 25000, w2: 300 } });
+    await ui.settle();
+    ok("pend.previewAmount", "والمعروضُ ما قاله الخادم (٧٢٠ لا ٧٤٠)، و«شاش مجاني» بسطور السحب لا «كلفتها صفر»، والزرُّ يعمل",
+      dlgText().includes(M.money(720)) && !dlgText().includes(M.money(740)) && dlgText().includes("شاش مجاني ×1") && !h.one("data-confirm-zero")
+      && h.one("data-pending-go")?.props.disabled !== true && !h.one("data-confirm-preview-wait"), dlgText());
+    ok("pend.previewIds", "والسؤالُ بالسطور المختارة", J(calls) === J([["w1", "c1", "w2"]]), J(calls));
+    ui.unmount();
+    globalThis.__api = { countPreview: async () => { throw new Error("TypeError: Failed to fetch"); } };
+    const ui2 = mountP();
+    await ui2.settle();
+    const h2 = harness(M, ui2);
+    await h2.click("data-pending-approve");
+    ok("pend.previewFailed", "وفشلُ السؤال يُقال، والقيمةُ بلقطة السطور (٧٤٠)، والزرُّ يعمل",
+      !!h2.one("data-confirm-preview-failed") && h2.text(h2.one("data-confirm-approve")).includes(M.money(740)) && h2.one("data-pending-go")?.props.disabled !== true,
+      h2.text(h2.one("data-confirm-approve")));
+    ui2.unmount();
+    return [...ui.errors, ...ui2.errors];
   },
 
   /* ز (الصفحة): StockCount كاملة — الموافقةُ تعيد التحميل والسالبُ يبقى ظاهراً؛ والسندُ لا يضيع بتبديل التبويب */
@@ -2365,6 +2405,10 @@ const MUTANTS = [
   { file: W, from: "{showCost ? t(\"cnt.cons.used\"", to: "{true ? t(\"cnt.cons.used\"", breaks: ["cards.nocost"], why: "المبلغُ لمن لا يرى الكلفة" },
   { file: S, from: "const applied = (r: CountRow) => r.counted_qty - r.system_qty;", to: "const applied = (r: CountRow) => { const cur = Number(stockOf(r.product_id) ?? r.system_qty) || 0; return Math.max(0, cur + (r.counted_qty - r.system_qty)) - cur; };", breaks: ["pend.noclamp"], why: "الحصرُ القديم" },
   { file: S, from: 'const waste = r.source === "waste";', to: "const waste = false;", breaks: ["pend.chip", "pend.line"], why: "السندُ يُعرض جرداً" },
+  // 0290: معاينةُ الخادم (stock_count_preview) — رقمُها هو المعروض، والزرُّ ينتظرها.
+  { file: S, from: "const costOf = (r: CountRow) => pv?.costs[r.id] ?? r.unit_cost;", to: "const costOf = (r: CountRow) => r.unit_cost;", breaks: ["pend.previewAmount"], why: "كلفةُ السطر بلقطته لا بما ستكتبه الموافقة" },
+  { file: S, from: "if (pv) for (const [reason, g] of m) g.value = pv.withdrawals.find((w) => w.reason === reason)?.amount ?? g.value;", to: "", breaks: ["pend.previewAmount"], why: "المبلغُ محسوبٌ بالشاشة لا كما قاله الخادم" },
+  { file: S, from: '<Button loading={busy || (confirm === "approve" && pvWaiting)}', to: "<Button loading={busy}", breaks: ["pend.previewWait"], why: "«وافق وسجّل» قبل أن يُعرف ما سيُكتب" },
   { file: S, from: 'return r.source !== "waste" && cur !== undefined', to: "return cur !== undefined", breaks: ["pend.changed"], why: "السندُ «تغيّر من وقت العدّ»" },
   { file: S, from: "onNegatives(approve ? ((r as CountDecision & { negatives?: CountNegative[] }).negatives ?? []) : []);", to: "onNegatives([]);", breaks: ["pend.negs", "page.negs"], why: "السالبُ بعد الموافقة لا يُقال" },
   { file: S, from: 'const wasteBox = (wasteSeen || (tab === "waste" && allowed)) && (', to: 'const wasteBox = tab === "waste" && allowed && (', breaks: ["page.keep", "page.pin"], why: "السندُ يضيع بتبديل التبويب (وبانتهاء الرفع)" },

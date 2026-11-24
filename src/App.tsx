@@ -46,6 +46,8 @@ const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ defaul
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
 /* مراجعةُ ما لم يصل الخادمَ بلا ختمِ هويّة (outbox.ts، قرارُ المالك ١٣/١٠) — الشارةُ الحمراء تنقل إليها. */
 const OutboxReview = page(() => import("@/pages/OutboxReview").then((m) => ({ default: m.OutboxReview })), ["obx"]);
+/* تسجيلاتُ الجهاز التي لم ترتفع، وما انقطع، وتسجيلاتُ حيواناتٍ انحذفت (0287) — بنطاقها المملوك vnote. */
+const VoiceShelf = page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceShelfPage })), ["vnote"]);
 const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ default: m.CompanyBook })), ["cbook"]);
 const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ default: m.PriceRaise })), ["praise"]);
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
@@ -350,6 +352,7 @@ function Shell() {
             {/* فحصُ المخزن (0245) مثبَّتٌ داخل الجرد (طلبُ المالك): العنوانُ القديم يفتح تبويبَه هناك. */}
             <Route path="/inventory/audit" element={<Navigate to="/inventory/count?tab=audit" replace />} />
             <Route path="/outbox" element={<Protected><ClinicOnly><OutboxReview /></ClinicOnly></Protected>} />
+            <Route path="/voice" element={<Protected><ClinicOnly><VoiceShelf /></ClinicOnly></Protected>} />
             <Route path="/inventory/companies/:id" element={<Protected><ClinicOnly><CompanyBook /></ClinicOnly></Protected>} />
             <Route path="/inventory/prices" element={<Protected><ClinicOnly><PriceRaise /></ClinicOnly></Protected>} />
             <Route path="/photos" element={<Protected><ClinicOnly><ProductPhotos /></ClinicOnly></Protected>} />

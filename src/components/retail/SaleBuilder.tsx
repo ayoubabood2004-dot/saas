@@ -134,6 +134,21 @@ function ProdThumb({ path, className, icon }: { path: string; className?: string
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
  *  the normal checkout/invoice/analytics pipeline alongside products. */
+/** 0290: وحدةُ سطر البيع من دفعة الإكسباير وسعرُها بالقائمة (`per` كم علبةً هي) — نافذةُ «بيش تبيعها؟» تسأل عنها. */
+interface LotUnit { sub: boolean; unitName: string | null; list: number; per: number }
+/** ما اختاره الطبيبُ: السعرُ لوحدته (`sub`) وسعرُ القائمة الذي رآه — به ينتقل السعرُ للوحدة الأخرى بنسبته. */
+interface LotPrice { price: number; sub: boolean; list: number }
+/** جوابُ «من الإكسباير لو من الجديد؟»: دفعةٌ بسعرها، أو null (الجديد)، أو undefined (أُلغي). */
+type LotAnswer = { lot: ProductLot; price: LotPrice } | null | undefined;
+/** سعرُ سطر الدفعة بوحدةٍ (`sub`): ما اختاره الطبيبُ لوحدته حرفاً، وللأخرى بنسبته من سعر القائمة (نصُّ العلبة = نصُّ المفرد)،
+ *  وبلا قائمةٍ بعدد المفرد بالعلبة. `listOfUnit` سعرُ القائمة للوحدة المطلوبة. */
+function lotUnitPrice(px: LotPrice, sub: boolean, listOfUnit: number, upb: number | null): number {
+  if (px.sub === sub) return px.price;
+  if (px.list > 0) return round2((listOfUnit * px.price) / px.list);
+  if (upb && upb > 0) return round2(sub ? px.price / upb : px.price * upb);
+  return listOfUnit;
+}
+
 interface Line {
   id: string; // "p:<productId>" | "s:<serviceId>" | "m:<draftId>"
   /** آخرُ يومٍ صالح لحظةَ الإضافة — احتياطٌ لا مصدر: القائمةُ تغلبه ما دام الصفُّ فيها،
@@ -1612,13 +1627,15 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     return () => { alive = false; };
   }, [refreshRetLots]);
   /** «من الإكسباير لو من الجديد؟» — دفعةٌ، أو null (الجديد)، أو undefined (أُلغي). */
-  const [lotAsk, setLotAsk] = useState<{ p: Product; lots: ProductLot[]; resolve: (l: ProductLot | null | undefined) => void } | null>(null);
+  const [lotAsk, setLotAsk] = useState<{ p: Product; lots: ProductLot[]; unitFor: (l: ProductLot) => LotUnit; resolve: (l: LotAnswer) => void; seq: number } | null>(null);
   /* سؤالٌ ثانٍ والأوّلُ مفتوح (لمسةٌ ثانية، مسحٌ فاته الإطفاء) ⇒ الأوّلُ يُلغى بجوابه لا يُترك وعداً معلَّقاً (كان يضيع مضاعِفُه — مراجعة). */
-  const lotAskRef = useRef<{ resolve: (l: ProductLot | null | undefined) => void } | null>(null);
-  const askLot = (p: Product, lots: ProductLot[]) => new Promise<ProductLot | null | undefined>((resolve) => {
+  const lotAskRef = useRef<{ resolve: (l: LotAnswer) => void } | null>(null);
+  const lotAskSeq = useRef(0);
+  const askLot = (p: Product, lots: ProductLot[], unitFor: (l: ProductLot) => LotUnit) => new Promise<LotAnswer>((resolve) => {
     lotAskRef.current?.resolve(undefined);
     lotAskRef.current = { resolve };
-    playTap(); setLotAsk({ p, lots, resolve });
+    // كلُّ سؤالٍ نافذةٌ جديدة (key): سؤالٌ ثانٍ لنفس المادّة كان يفتح على دفعة السؤال الأوّل وسعرِه (مراجعة).
+    playTap(); setLotAsk({ p, lots, unitFor, resolve, seq: ++lotAskSeq.current });
   });
   const lotFields = (lot: ProductLot, subPer: number | null): Partial<Line> => {
     const cost = lot.unit_cost == null ? null : Number(lot.unit_cost);
@@ -1929,7 +1946,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
   /** `sale`: سطرُ بيعٍ ولو كان «راجع» مشغّلاً — تبويبُ «الأدوية» يبيع دواءً لحيوانٍ دائماً
    *  (سطرُ «دواء» القديم كان موجباً مهما كان الوضع)، و«راجع» يخصّ المسحَ والكرت. */
-  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean; lot?: ProductLot }): number | null => {
+  const addProduct = (p: Product, n = takeMult(), opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean; lot?: ProductLot; lotPrice?: LotPrice }): number | null => {
     // يكمل من sellOrExplain (كلُّ إضافةٍ تمرّ منها — freshness-test)، لا من هنا مباشرةً.
     if (p.price_currency === "USD" && !(opt?.usdOk && usdRateRef.current)) { usdTap(p, opt, null, () => void sellOrExplain(p, n, null, { ...opt, usdOk: true })); return null; }
     /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
@@ -1953,10 +1970,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const startSub = hasSub && (opt?.unit === "sub" || (Math.floor(p.stock) < 1 && !liftFor(p, null)) || (!!opt?.lot && opt.lot.qty < 1));
       // كلفةُ الجهاز كما كانت — لا تُكتب إلا والحسابُ لم يصل (productLineCost، 0255).
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
+      /* 0290: سعرُ الدفعة كما اختاره الطبيب («بيش تبيعها؟»، lotUnitPrice) لوحدته كما رآها بالنافذة — والسطرُ قد يبدأ بالأخرى (صفٌّ
+       * طازجٌ برصيدٍ غيرِ ما رآه السؤال) فينتقل بنسبته. boxPrice/subPrice تبقى سعرَ القائمة (رفعُ الأسعار يقارن بها)، وتبديلُ العلبة ↔
+       * المفرد يحمل السعرَ الحاليّ بنسبته (setSaleUnit)، والمكتوبُ غيرُ القائمة يُعلَّم فلا يغيّره رفعُ الأسعار (0226). */
+      const lp = opt?.lot ? opt.lotPrice : undefined;
+      const listNow = startSub ? listSubPrice(p) : listPrice(p);
+      const lotUnit = lp ? lotUnitPrice(lp, startSub, listNow, unitsPerBox) : null;
       return {
         id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
         expiry: p.expiry_date ?? null,
-        unit_price: startSub ? listSubPrice(p) : listPrice(p),
+        unit_price: lotUnit ?? listNow,
         unit_cost: productLineCost(p, startSub ? unitsPerBox : null, startSub ? subCost : p.purchase_price),
         // A pooled (legacy, unknown-count) product sells from its section pool —
         // it has no own per-barcode count, so leave the cart line UNCAPPED (the
@@ -1966,7 +1989,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         qty: 1, stock: p.pooled ? null : p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
         hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
         boxPrice: listPrice(p), subPrice: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null), boxCost: p.purchase_price,
-        saleUnit: startSub ? "sub" : "box", priceManual: false,
+        saleUnit: startSub ? "sub" : "box", priceManual: lotUnit != null && Math.round(lotUnit * 100) !== Math.round(listNow * 100),
         // مادّةُ «الدولار وحده» (usdIntoCart): سطرُ دولارٍ بسعرها بالدولار وسعر صرف اليوم — يُجمع بصندوق الدولار لا بالدينار.
         ...(p.price_currency === "USD" && usdRateRef.current ? { usd: { c: usdOnlyCents(p, null) ?? 0, ...usdRateRef.current } } : {}),
         // 0289: من دفعة راجعٍ إكسباير — كلفتُها كلفةُ الدفعة (المعاينة؛ الخادمُ يكتبها) وسقفُها باقيها.
@@ -1984,12 +2007,19 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     setCart((c) => c.map((l) => {
       if (l.id !== id || l.kind !== "product") return l;
       const toSub = unit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
-      const unit_price = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
+      const listU = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
+      /* 0290: سطرُ دفعة الإكسباير يحمل سعرَه **الحاليّ** للوحدة الجديدة بنسبته من قائمة وحدته الآن — ما اختاره الطبيبُ، أو رفعُ أسعارٍ
+       * أقرّه (repriceCart يحرّك unit_price وboxPrice/subPrice معاً)، أو ما كتبه بيده بعده. لقطةُ الاختيار الأولى كانت ترجع سعرَ ما قبل
+       * الرفع وتمحو المكتوبَ بيد (مراجعة). وغيرُه يرجع لسعر القائمة كما كان. */
+      const curSub = l.saleUnit === "sub";
+      const curList = curSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
+      const unit_price = l.lot ? lotUnitPrice({ price: l.unit_price, sub: curSub, list: curList }, toSub, listU, l.unitsPerBox ?? null) : listU;
       const device = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
       const unit_cost = productLineCost(products.find((p) => p.id === l.product_id), toSub ? (l.unitsPerBox as number) : null, device);
       /* 0282: سطرُ الدولار يرجع للدينار بوحدته الجديدة — سعرُ المستوى بالدولار يُختار من جديد بـ«$» (لا تخمينَ لسعرٍ لم يُره الكاشير). */
       const lotCost = l.lot?.cost != null ? (toSub && l.unitsPerBox ? Math.round((l.lot.cost / l.unitsPerBox) * 100) / 100 : l.lot.cost) : null;
-      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost: lotCost ?? unit_cost, priceManual: false, usd: undefined };
+      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost: lotCost ?? unit_cost,
+        priceManual: Math.round(unit_price * 100) !== Math.round(listU * 100), usd: undefined };
       const cap = capFor(next);
       return markLift({ ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) });
     }));
@@ -2160,13 +2190,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     action: onRefresh ? { label: t("retail.refreshList", "حدّث القائمة"), onClick: onRefresh } : undefined,
   });
   /** `lineId`: السطرُ الذي أُضيف إليه فعلاً — الصفُّ الطازج قد يكون غيرَ ما ضُغط (جوابُ الخادم برمزه). */
-  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean; lotAsked?: boolean; lot?: ProductLot }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+  const sellOrExplain = async (product: Product, n: number, code?: string | null, opt?: { sale?: boolean; unit?: "sub"; usdOk?: boolean; lotAsked?: boolean; lot?: ProductLot; lotPrice?: LotPrice }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
     if (cartFrozen()) return { added: null, refused: true };
     /* (مسارُ الرفّ المشترك داخلها: كلُّ إضافةِ مادّةٍ تمرّ من sellOrExplain — freshness-test.) */
     /** 0267: سطرُ العلبة (أو المفرد) لمادّةٍ لها سطرٌ آخر بالسلّة (كارتونُها) — الرفُّ مشترك. الحكمُ المحلّيّ والطازج بما يبقى بعد
      *  سطورها الأخرى (لا برصيد الصفّ كلِّه — كان يضيف علبةً ورفُّها كلُّه بالكارتون، بلا سؤال)، والرفضُ يقول الباقي. مسارٌ مستقلّ:
      *  سلّةٌ بلا سطرين للمادّة (كلُّ سلّةٍ قبل الكارتون) لا تمرّ منه أبداً. */
-    const shelfAdd = async (product: Product, n: number, opt?: { sale?: boolean; unit?: "sub"; lot?: ProductLot }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
+    const shelfAdd = async (product: Product, n: number, opt?: { sale?: boolean; unit?: "sub"; lot?: ProductLot; lotPrice?: LotPrice }): Promise<{ added: number | null; refused: boolean; lineId?: string }> => {
       const id = `p:${product.id}`;
       const room = (row: Product): number => {
         const line = cartRef.current.find((l) => l.id === id);
@@ -2208,9 +2238,17 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       const per = product.has_sub_unit && Number(product.units_per_box) >= 2 ? Number(product.units_per_box) : 1;
       const lots = (retLotsRef.current.get(product.id) ?? []).filter((l) => l.qty * per + 0.0005 * per >= 1);
       if (lots.length && !cartRef.current.some((l) => l.kind === "product" && !l.ret && l.product_id === product.id)) {
-        const pick = await askLot(product, lots);
+        /* 0290: «بيش تبيعها؟» (المالك ٢٤/١١) — بوحدة السطر الذي سينزل (قاعدةُ startSub بـaddProduct نفسُها) وسعرِها بالقائمة.
+         * والسطرُ قد يُبنى من صفٍّ طازجٍ برصيدٍ آخر فيبدأ بالوحدة الأخرى: addProduct ينقل السعرَ بنسبته من القائمة لا يلصقه. */
+        const hasSubU = !!product.has_sub_unit && !!product.units_per_box && product.units_per_box > 0;
+        const unitFor = (l: ProductLot): LotUnit => {
+          const sub = hasSubU && (opt?.unit === "sub" || (Math.floor(product.stock) < 1 && !liftFor(product, null)) || l.qty < 1);
+          return { sub, unitName: sub ? (product.sub_unit_name ?? null) : (product.unit_name ?? null),
+                   list: sub ? listSubPrice(product) : listPrice(product), per: sub ? 1 / Number(product.units_per_box) : 1 };
+        };
+        const pick = await askLot(product, lots, unitFor);
         if (pick === undefined) return { added: null, refused: true };
-        return sellOrExplain(product, n, code, { ...opt, lotAsked: true, ...(pick ? { lot: pick } : {}) });
+        return sellOrExplain(product, n, code, { ...opt, lotAsked: true, ...(pick ? { lot: pick.lot, lotPrice: pick.price } : {}) });
       }
     }
     const lineOf = (x: Product) => `${ret ? "r" : "p"}:${x.id}`;
@@ -5808,10 +5846,16 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
           })()}
           {lotAsk && xretMod && (() => {
             const Pick = xretMod.ui.LotPickDialog;
-            const done = (x: ProductLot | null | undefined) => { const r = lotAsk.resolve; if (lotAskRef.current?.resolve === r) lotAskRef.current = null; setLotAsk(null); r(x); };
+            const done = (x: LotAnswer) => { const r = lotAsk.resolve; if (lotAskRef.current?.resolve === r) lotAskRef.current = null; setLotAsk(null); r(x); };
             const fresh = products.find((x) => x.id === lotAsk.p.id) ?? lotAsk.p;
-            return <Pick open product={lotAsk.p} lots={lotAsk.lots} newLeft={Math.round(((Number(fresh.stock) || 0) - retLotQty(fresh.id)) * 1000) / 1000}
-              onPick={(x) => done(x)} onCancel={() => done(undefined)} />;
+            return <Pick key={lotAsk.seq} open product={lotAsk.p} lots={lotAsk.lots} newLeft={Math.round(((Number(fresh.stock) || 0) - retLotQty(fresh.id)) * 1000) / 1000}
+              unitFor={lotAsk.unitFor}
+              /* الوحدةُ التي رآها الطبيبُ بالنافذة (ثابتةٌ من لحظة اختيار الدفعة) — لا تُحسب ثانيةً هنا: جوابُ «البيع قبل الجرد» ينتهي بدقيقتين
+               * فكانت تنقلب علبةً ↔ مفرداً بين الرسم والضغطة فيُخزَّن سعرُ العلبة سعرَ مفرد (مراجعة). */
+              onPick={(x, price, u) => {
+                if (!x || !u) { done(null); return; }
+                done({ lot: x, price: { price: price ?? u.list, sub: u.sub, list: u.list } });
+              }} onCancel={() => done(undefined)} />;
           })()}
           {rateAsk && (UsdRateLazy ??= loadUsdRate()) && (
             <LoadBoundary scope="usd-rate" onRetry={() => { UsdRateLazy = loadUsdRate(); setMxLazyTick((n) => n + 1); }}>

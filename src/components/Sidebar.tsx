@@ -42,6 +42,7 @@ import { AccountMenu } from "@/components/AccountMenu";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { OutboxChip } from "@/components/OutboxChip";
+import { VoiceChip } from "@/components/VoiceChip";
 import { useCommandPalette } from "./CommandPaletteProvider";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { cn } from "@/lib/utils";
@@ -187,6 +188,7 @@ export function Sidebar() {
       {/* صندوقُ الصادر بالشاشة العريضة أيضاً: الشريطُ العلويّ مخفيٌّ للكادر فوق lg، فكانت الشارةُ
           (بانتظار النت / متعثّرة) لا تُرى على حاسوب الكاشير أبداً — ولا مدخلَ لصفحة /outbox. */}
       {!photographer && <div className="mt-3 flex justify-center empty:hidden"><OutboxChip compact={folded} /></div>}
+      {!photographer && <div className="mt-2 flex justify-center empty:hidden"><VoiceChip compact={folded} /></div>}
 
       {/* Nav */}
       <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pe-0.5">

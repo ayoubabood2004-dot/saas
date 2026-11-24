@@ -34,7 +34,16 @@ export function isSoundEnabled(): boolean {
   return enabled;
 }
 
+/** نغماتُ الواجهة تُكتم أثناء تسجيل ملاحظةٍ صوتية (0287) — وإلا سُجّلت مع صوت الطبيب. عدّادٌ: كلُّ كتمٍ يُفلت مرّة. */
+let muted = 0;
+export function muteSounds(): () => void {
+  muted++;
+  let done = false;
+  return () => { if (!done) { done = true; muted--; } };
+}
+
 function tone(freq: number, start: number, duration: number, type: OscillatorType, gain: number) {
+  if (muted > 0) return;
   const ac = getCtx();
   if (!ac) return;
   const osc = ac.createOscillator();

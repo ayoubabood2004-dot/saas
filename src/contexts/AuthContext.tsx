@@ -17,6 +17,7 @@ import { repo } from "@/lib/repo";
 import { endElevationOnLogout, clearElevationFlags } from "@/lib/managerOverride";
 import { purgeDrafts } from "@/lib/draftPurge";
 import { endElevationThenSignOut } from "@/lib/logoutSequence";
+import { leaveBlocked, settleLeave } from "@/lib/inflight";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -83,7 +84,7 @@ interface AuthState {
   updatePassword: (newPassword: string) => Promise<{ error: string | null; code?: string }>;
   /** Update the signed-in user's own name/phone (profiles table; reflects immediately). */
   updateProfile: (patch: { full_name?: string; phone?: string }) => Promise<{ error: string | null }>;
-  signOut: () => void;
+  signOut: (opts?: { force?: boolean }) => void;
   /** True when the signed-in user is operating inside ANOTHER clinic they joined. */
   inAnotherClinic: boolean;
   /** Leave the joined clinic and return to your own workspace (data was only hidden). */
@@ -619,6 +620,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  /* الملاحظةُ الصوتية (0287): تسجيلٌ بالذاكرة وحدها يضيع بالتحميل الكامل — البوّابةُ تُسأل أوّلاً وشاشتُها تسأل الطبيب
+   * (`vp:voice-leave`)، و`force` بعد أن يختار «اطلع وضيّعها». وتسجيلٌ شغّالٌ أو رفعٌ بالطريق يُنتظر حتى يُحفظ (بسقف). */
+  const signOutGated = (opts?: { force?: boolean }) => {
+    if (!opts?.force && leaveBlocked()) {
+      // شارةُ التسجيلات تمسكه (preventDefault) وتفتح /voice?leave=1؛ وبلا شارةٍ تسمع لا يُحبس الخروجُ بصمت
+      let held = false;
+      try { held = !window.dispatchEvent(new CustomEvent("vp:voice-leave", { cancelable: true })); } catch { /* بلا نافذة */ }
+      if (held) return;
+    }
+    void settleLeave(2500).then(signOut);
+  };
+
   const signOut = () => {
     // End any live manager-override elevation FIRST (before the active clinic is
     // cleared, so its localStorage key still resolves) — otherwise the next user
@@ -687,7 +700,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       roles: effRoles, activeRole: resolvedActive, needsRoleChoice,
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
-      signUpEmail, signInEmail, resendConfirmation, sendPhoneOtp, verifyPhoneOtp, resetPassword, updatePassword, updateProfile, signOut,
+      signUpEmail, signInEmail, resendConfirmation, sendPhoneOtp, verifyPhoneOtp, resetPassword, updatePassword, updateProfile, signOut: signOutGated,
       inAnotherClinic: !!raw?.staff, leaveClinic,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

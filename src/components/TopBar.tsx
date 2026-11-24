@@ -38,6 +38,7 @@ import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { OutboxChip } from "@/components/OutboxChip";
+import { VoiceChip } from "@/components/VoiceChip";
 import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -172,6 +173,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
           <div className="flex items-center gap-0.5">
             {/* كتابات محفوظة بالجهاز تنتظر النت — تظهر فقط عند وجودها */}
             {staff && !photographer && <OutboxChip />}
+            {staff && !photographer && <VoiceChip />}
             {staff && (
               <Tooltip label="Search · ⌘K">
                 <button
