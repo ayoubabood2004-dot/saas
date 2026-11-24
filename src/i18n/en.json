@@ -10007,5 +10007,19 @@
     "bannerReplace": "and {{n}} products that have a photo have another one in the library",
     "bannerOpen": "Show me",
     "bannerLater": "Not now"
+  },
+  "trsh": {
+    "scanDeleted": "Barcode {{code}} belongs to a deleted item “{{name}}” — restore it from Inventory › Deleted instead of adding it again (a new one becomes a duplicate)",
+    "scanMerged": "Barcode {{code}} is “{{name}}”, which was merged into “{{keeper}}”",
+    "title": "In deleted items",
+    "deletedLine": "“{{name}}” deleted {{date}}",
+    "stockThen": "stock when deleted {{n}}",
+    "mergedLine": "“{{name}}” was merged into “{{keeper}}” — its stock and history are there",
+    "restore": "Restore",
+    "restored": "“{{name}}” is back in stock",
+    "askManager": "A manager or doctor can restore it from Inventory › Deleted",
+    "more": "and {{n}} more in deleted items",
+    "twinDeleted": "This item was deleted — restore it instead of adding a new one (a new one becomes a duplicate and is counted twice once restored)",
+    "twinMerged": "This item was merged into another — use that one instead of adding a new one"
   }
 }

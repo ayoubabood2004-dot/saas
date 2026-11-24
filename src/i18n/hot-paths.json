@@ -98,6 +98,7 @@
     "ptr": "src/components/records/PetTrash.tsx",
     "xret": "src/components/retail/ExpiredReturn.tsx",
     "pmatch": "src/pages/PhotoMatch.tsx",
-    "pmbn": "src/components/photos/MatchBanner.tsx"
+    "pmbn": "src/components/photos/MatchBanner.tsx",
+    "trsh": "src/components/inventory/TrashHint.tsx"
   }
 }

@@ -102,6 +102,12 @@ let UsdFieldsLazy = loadUsdFields();
 /* 0289: «رجعت من فلان N بتاريخ … — إكسبايرها … — بـ٥٠٪» بنموذج المادّة — بنطاقها المملوك `xret` (قطعةُ شاشة البيع نفسُها). */
 const loadRetLots = () => page(() => import("@/components/retail/ExpiredReturn").then((m) => ({ default: m.ReturnLotsNote })), ["xret"]);
 let RetLotsLazy = loadRetLots();
+/* G21/G22 (تدقيقُ المخزن): «لا نتائج» ومادّةٌ «جديدة» تُسألان المحذوفات — «رجّعها» بدل توأمٍ يُعدّ مرّتين يومَ الاسترجاع، و«اندمجت بـ«الأصل»».
+ * بنطاقها المملوك `trsh` (TrashHint.tsx)، تُصنع أوّلَ ما تُحتاج (بحثٌ بلا نتائج أو نموذجُ إضافة) لا عند تحميل الصفحة. */
+const loadTrashSearch = () => page(() => import("@/components/inventory/TrashHint").then((m) => ({ default: m.TrashSearchHint })), ["trsh"]);
+const loadTrashTwin = () => page(() => import("@/components/inventory/TrashHint").then((m) => ({ default: m.TrashTwinWarn })), ["trsh"]);
+let TrashSearchLazy: ReturnType<typeof loadTrashSearch> | null = null;
+let TrashTwinLazy: ReturnType<typeof loadTrashTwin> | null = null;
 let ReportButtons = loadReportButtons();
 /* المنتجاتُ المربوطة (0277): تبويبٌ بنطاقه المملوك `pgrp` — كسولٌ ولا يُستورد ثابتاً. */
 const loadGroups = () => page(() => import("@/components/inventory/ProductGroups").then((m) => ({ default: m.ProductGroups })), ["pgrp"]);
@@ -1009,6 +1015,9 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
+  /** الاسترجاعُ من «بالمحذوفات» (restore_product): المديرُ والطبيبُ كالخادم. و`trashTick` قطعةٌ جديدة بعد فشل تحميلها. */
+  const { role: invRole } = usePermissions();
+  const [trashTick, setTrashTick] = useState(0);
 
   const companyName = useMemo(() => {
     const m = new Map(companies.map((c) => [c.id, c.name]));
@@ -1184,7 +1193,20 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
                 <div className="mt-3"><Button size="sm" variant="secondary" data-showallchips onClick={() => { playTap(); onFilter("all"); }}>{t("pkg.showAllChips")}</Button></div>
               </>
             : ql
-            ? t("pos.noSearchInStock", "لا نتائج مطابقة. المخزن فيه {{n}} منتجاً — جرّب اسماً أقصر أو امسح الباركود.", { n: formatNum(products.length) })
+            ? <>
+                {t("pos.noSearchInStock", "لا نتائج مطابقة. المخزن فيه {{n}} منتجاً — جرّب اسماً أقصر أو امسح الباركود.", { n: formatNum(products.length) })}
+                {/* G21/G22: ما يطابق البحثَ بالمحذوفات — «رجّعها»، والمطويّةُ بزرّ أصلها (يفتحه). */}
+                {(TrashSearchLazy ??= loadTrashSearch()) && (
+                  <div className="flex justify-center">
+                    <LoadBoundary scope="trash-search" onRetry={() => { TrashSearchLazy = loadTrashSearch(); setTrashTick((n) => n + 1); }}>
+                      <Suspense fallback={null}>
+                        <TrashSearchLazy key={trashTick} query={ql} products={products} canRestore={invRole === "manager" || invRole === "veterinarian"}
+                          onRestored={() => onChanged()} onPick={(p) => { playTap(); setQ(""); setEditing(p); }} />
+                      </Suspense>
+                    </LoadBoundary>
+                  </div>
+                )}
+              </>
             : filter !== "all"
               ? t("pos.noneInFilter", "ما في منتج بهذي الحالة — جرّب شريحةً ثانية")
               : t("pos.noProducts", "No products yet. Add your first one.")}
@@ -1274,7 +1296,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const { t } = useTranslation();
   const toast = useToast();
   const { stockLocked: locked, restricted } = useOverride();
-  const { can } = usePermissions();
+  const { can, role: formRole } = usePermissions();
   const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "", sold_by_weight: false };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
@@ -1303,7 +1325,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     return () => { alive = false; };
   }, [usdEnabled]);
   const [usdShow, setUsdShow] = useState(false);
-  const [, setUsdTick] = useState(0);
+  const [usdTick, setUsdTick] = useState(0);
   /** قاعدةٌ قبل 0259 لا تعرف الأعمدة (واجهةٌ سبقت هجرتها): المحرّرُ يغيب، ولا يُرسل شيء. الصفوفُ السحابية (`select *`) تحمل `packs` منذها. */
   const pkgReady = !isSupabaseConfigured || !(allProducts?.length) || allProducts.some((x) => "packs" in x);
   /** صورة المتجر (0174): تمرّ من المحرّر (تُرى كاملةً وتُدار وتُقصّ — متجر v1) وتُرفع بعد نجاح
@@ -2172,6 +2194,19 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           <div>
             <label className="label">{t("pos.name", "Product name")}</label>
             <input ref={nameRef} className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")} />
+            {/* G21: مادّةٌ «جديدة» رمزُها أو اسمُها كلُّه لمحذوفة ⇒ «رجّعها بدل ما تضيفها» (الجديدةُ توأمٌ يُعدّ مرّتين يومَ تُسترجع).
+                للإضافة وحدها — والتعديلُ مادّةٌ قائمة. */}
+            {!product && (f.barcode.trim() || f.name.trim()) && (TrashTwinLazy ??= loadTrashTwin()) && (
+              <div className="mt-2">
+                <LoadBoundary scope="trash-twin" onRetry={() => { TrashTwinLazy = loadTrashTwin(); setUsdTick((n) => n + 1); }}>
+                  <Suspense fallback={null}>
+                    <TrashTwinLazy key={usdTick} code={ownHit ? null : f.barcode} name={f.name} products={allProducts ?? []}
+                      canRestore={formRole === "manager" || formRole === "veterinarian"}
+                      onRestored={(p) => { (onChanged ?? onSaved)(); onOpenExisting?.(p); }} onPick={onOpenExisting} />
+                  </Suspense>
+                </LoadBoundary>
+              </div>
+            )}
           </div>
           {companyField}
           {sectionField}

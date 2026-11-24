@@ -7,7 +7,7 @@ import {
   UserRound, Phone, HandCoins, Pencil, RotateCcw,
 } from "lucide-react";
 import type { TFunction } from "i18next";
-import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod, DiscountType } from "@/types";
+import type { DeletedProduct, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod, DiscountType } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -18,6 +18,7 @@ import { cn, money, formatDate, formatNum, formatDec, formatQty, currencySymbol,
 import { sellPriceToSend, purchaseBlockers } from "@/lib/purchaseIntent";
 import { withTimeout, describeDbError, rejectedBeforeCommit, shouldReleaseRef } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
+import { trashByCode, trashByQuery } from "@/lib/trashMatch";
 import { createScanAssembler } from "@/lib/scanBuffer";
 import { noteScan } from "@/lib/scanStats";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -46,6 +47,10 @@ import "./purchaseGrid.css";
 
 /* 0274: قطعُ الشراء بالعملتين بنطاقها المملوك (pfx — النصفُ البارد على سقفه): كسولةٌ هنا، والمالكُ لا يُستورد ثابتاً. */
 const loadPfxBar = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxBar })), ["pfx"]);
+/* G21/G22 (تدقيقُ المخزن): سطرٌ «جديد» رمزُه أو اسمُه كلُّه لمحذوفةٍ أو مطويّة — الحفظُ كان يصنع توأماً يُعدّ مرّتين يومَ تُسترجع.
+ * تحذيرٌ بنطاقه المملوك (trsh)، والمطويّةُ بزرّ أصلها (يحوّل السطرَ تعبئةً له). تُصنع أوّلَ ما يطابق سطرٌ محذوفة. */
+const loadTrashTwin = () => page(() => import("@/components/inventory/TrashHint").then((m) => ({ default: m.TrashTwinWarn })), ["trsh"]);
+let TrashTwinLazy: ReturnType<typeof loadTrashTwin> | null = null;
 const loadPfxLineCur = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxLineCur })), ["pfx"]);
 const loadPfxTotals = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxTotals })), ["pfx"]);
 const loadPfxPay = () => page(() => import("@/components/inventory/PurchaseFx").then((m) => ({ default: m.PfxPay })), ["pfx"]);
@@ -724,6 +729,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [chgSt, setChgSt] = useState<PurchaseChargesState | null>(null);
   const [chgAsk, setChgAsk] = useState(0);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
+  /* محذوفاتُ العيادة (G21) مرّةً لكلّ فتح — بها يُعرف السطرُ «الجديد» الذي هو محذوفةٌ أو مطويّة. فشلُ القراءة لا يُحذّر بشيء (إضافة). */
+  const [trash, setTrash] = useState<DeletedProduct[] | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    import("@/components/inventory/TrashHint").then((m) => m.loadTrash(products.length))
+      .then((x) => { if (alive) setTrash(x); }, () => { /* swallow-ok: تحذيرٌ إضافيّ — بلا قائمةٍ لا تحذير، والحفظُ كما كان */ });
+    return () => { alive = false; };
+  }, [open, products.length]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
   /* بعد الحفظ النافذةُ **ما تنطوي** — تنقلب لكشف ما صار بالمخزن (م٢). والقائمةُ
@@ -1656,6 +1670,22 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <span key="batch" className="text-ink-subtle" data-batchsaved>
                     {t("purchase.batchSaved", { d: l.batchExpiry.replace(/-/g, "/"), defaultValue: "محفوظ لهاي الوجبة: {{d}} — يبقى ولا يغيّر تاريخ الرفّ" })}
                   </span>);
+                /* G21/G22: سطرٌ «جديد» (لا يطابق حيّةً ولا اقتراح) رمزُه أو اسمُه كلُّه لمحذوفةٍ أو مطويّة — قبل أن يصنع الحفظُ توأماً. */
+                const trashHit = !matched && filled && !sugg.length && trash
+                  ? trashByCode(trash, products, l.barcode) ?? trashByQuery(trash, products, l.name, { exact: true, max: 1 }).hits[0] ?? null
+                  : null;
+                if (trashHit && (TrashTwinLazy ??= loadTrashTwin())) {
+                  const Warn = TrashTwinLazy;
+                  rowNotes.push(
+                    <span key="trash" className="block w-full" data-ptrash>
+                      <LoadBoundary scope="trash-twin" onRetry={() => { TrashTwinLazy = loadTrashTwin(); setPfxTick((n) => n + 1); }}>
+                        <Suspense fallback={null}>
+                          <Warn code={l.barcode} name={l.name} products={products} canRestore={false} onRestored={() => {}}
+                            onPick={(p) => { playTap(); setLines((ls) => ls.map((x) => (x.key === l.key ? { ...lineFromProduct(p, x.barcode.trim()), key: x.key, qty: x.qty || "1" } : x))); }} />
+                        </Suspense>
+                      </LoadBoundary>
+                    </span>);
+                }
                 if (sugg.length) rowNotes.push(
                   <span key="sugg" className="inline-flex flex-wrap items-center gap-1">
                     {sugg.map((p) => (
