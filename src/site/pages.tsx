@@ -267,9 +267,6 @@ export function FeaturesPage() {
           </div>
         </Section>
       ))}
-      <Section eyebrow={c.common.mega.featured.title}>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><FeatureCard slug={c.common.mega.featured.slug} /></div>
-      </Section>
       <FinalCta title={c.home.final.title} sub={c.home.final.sub} at="features-final" />
     </Page>
   );

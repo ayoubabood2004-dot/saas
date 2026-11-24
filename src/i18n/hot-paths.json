@@ -29,7 +29,6 @@
   "$ownedDoc": "نطاقاتٌ تملكها صفحةٌ واحدة: لا تدخل النصفَ البارد، وتصل بحزمةٍ صغيرةٍ مع صفحتها وحدَها (page(load, [ns])). والحارسُ i18n-owned-guard يفشّل البناءَ إن قرأها ملفٌّ غيرُ مالكها — مفتاحٌ خامٌ على شاشةٍ أخرى. أُضيفت لأن النصفَ البارد بلغ سقفَه (٤٩٬٨٣٣ من ٥٠٬٠٠٠) ونصوصُ سجلّ الحركات وحقول الدواجن تنزل لكلّ صفحةٍ ولا تُقرأ إلا بصفحتيهما. والقيمةُ نصٌّ (المالك) أو {owner, with}: الرفاقُ مكوّناتٌ قُسمت من صفحة المالك وتقرأ نطاقَه، ولا يستوردها إلا المالكُ أو رفيقٌ آخر (متجر v1: ألواحُ «المتجر الإلكتروني» بـsrc/components/store/admin).",
   "owned": {
     "act": "src/pages/ActivityLog.tsx",
-    "farm": "src/pages/PoultryFarms.tsx",
     "cnt": { "owner": "src/pages/StockCount.tsx", "with": ["src/components/stock/WasteTab.tsx"] },
     "watch": "src/pages/StockWatch.tsx",
     "audit": { "owner": "src/pages/InventoryAudit.tsx", "with": ["src/lib/auditMarks.ts", "src/lib/auditReport.ts"] },

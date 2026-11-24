@@ -52,7 +52,8 @@ const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ 
 /* مكتبةُ الصور داخل العيادة (0285): مكتبتُها الخاصّة تكتبها بصلاحية الصور، والعامّةُ قراءة — نفسُ شاشة لوحة المنصّة. */
 const ClinicLibrary = page(() => import("@/components/admin/ImageLibraryManager").then((m) => ({ default: m.ClinicImageLibrary })), ["libm"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
-const Fields = page(() => import("@/pages/Fields").then((m) => ({ default: m.Fields })));
+// «حقول الدواجن» = حالةُ الحقل (0265) لكلّ عيادة؛ ودفترُ «باقة الحقل» القديم أُلغي بقرار المالك (٢٤/١١).
+const FlockCases = page(() => import("@/pages/FlockCases").then((m) => ({ default: m.FlockCases })), ["flk"]);
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })), ["campaigns"]);
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
@@ -63,8 +64,6 @@ const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ defaul
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
-// «ادخل حقلي» (0247): رابطٌ بضغطة من القائمة — يدخل مساحةَ الدواجن ثم يفتح الحقول.
-const PlatformFarmEntry = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformFarmEntry })));
 const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })), ["cat"]);
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const StoreTrack = page(() => import("@/pages/StoreTrack").then((m) => ({ default: m.StoreTrack })));
@@ -357,8 +356,8 @@ function Shell() {
             <Route path="/photos/library" element={<Protected><ClinicOnly><ClinicLibrary /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
-            {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}
-            <Route path="/poultry/*" element={<Protected><ClinicOnly><Fields /></ClinicOnly></Protected>} />
+            {/* حقولُ الدواجن: حالةُ الحقل (0265) — الطبيبُ يتابع حقولَ زبائنه من داخل العيادة. */}
+            <Route path="/poultry/*" element={<Protected><ClinicOnly><FlockCases /></ClinicOnly></Protected>} />
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
             <Route path="/s/:slug/track" element={<StoreTrack />} />
@@ -376,7 +375,6 @@ function Shell() {
             <Route path="/subscribe" element={<Protected><Subscribe /></Protected>} />
             <Route path="/admin" element={<Protected><AdminBilling /></Protected>} />
             <Route path="/platform" element={<Protected><PlatformConsole /></Protected>} />
-            <Route path="/platform/farm" element={<Protected><PlatformFarmEntry /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
       </Suspense>

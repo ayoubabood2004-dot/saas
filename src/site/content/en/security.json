@@ -59,7 +59,7 @@
     },
     {
       "title": "When the connection drops, entries wait and are never posted twice",
-      "body": "On a weak connection, some entries are saved on the device and uploaded when the connection returns: new products, supplier companies and their sections, expenses, returns, and poultry farm daily records. A badge shows how many are waiting.",
+      "body": "On a weak connection, some entries are saved on the device and uploaded when the connection returns: new products, supplier companies and their sections, expenses, and returns. A badge shows how many are waiting.",
       "bullets": [
         "Each waiting entry is stamped with who created it and the clinic the server confirmed, and it uploads only under that same identity. If someone else signs in on the device, the entry waits for its owner.",
         "Uploading a waiting entry never creates a duplicate, even if the first attempt had actually arrived.",

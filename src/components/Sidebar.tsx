@@ -58,7 +58,7 @@ export function Sidebar() {
   const location = useLocation();
   const palette = useCommandPalette();
   const { can, baseRole } = usePermissions();
-  const { has, plan } = useEntitlements();
+  const { has } = useEntitlements();
   // موظّفُ التصوير (0222): الصورُ والمتجرُ بإذنه، ولا شيءَ غيرهما — الخادمُ مسيَّجٌ عنه.
   const photographer = baseRole === "photographer";
   // وضع التركيز: الشريط يصير سكّة أيقونات ٧٦px فتتحرّر ١٨٠px للشاشة الواقفة
@@ -102,10 +102,9 @@ export function Sidebar() {
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
     { to: "/store", icon: ShoppingBag, label: t("nav.store", "المتجر الإلكتروني"), show: can("processSales") && has("store") },
-    // «حقول الدواجن»: لباقة الحقل دفترُها (صلاحيةُ المخزون — هو مخزنٌ ودفتر)، وللعيادات «حالة الحقل»
-    // (0265) لكلّ الكادر — الشاشةُ تختار بالباقة (pages/Fields.tsx)، والخادمُ يحرس كلَّ كتابة بدورها.
-    // و`has("farm")` لا يُسأل: باقةُ الحقل تحمله دائماً إلا «مقفول»، والمقفولُ يُخفي التطبيقَ كلَّه.
-    { to: "/poultry", icon: Bird, label: t("nav.poultry"), show: plan !== "farm" || can("manageInventory") },
+    // «حقول الدواجن» = حالةُ الحقل (0265) لكلّ الكادر، والخادمُ يحرس كلَّ كتابة بدورها. ودفترُ «باقة الحقل»
+    // القديم (لصاحب الحقل) أُلغي بقرار المالك (٢٤/١١) — فلا شرطَ باقةٍ هنا.
+    { to: "/poultry", icon: Bird, label: t("nav.poultry") },
     { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
     {
       to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp"),
@@ -122,10 +121,6 @@ export function Sidebar() {
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
     // لوحةُ المنصّة (0151) — لمشغّل المنصّة وحده؛ الخادمُ يحرسها بنفسه أيضاً.
     { to: "/platform", icon: ShieldCheck, label: t("nav.platform", "لوحة المنصّة"), show: isPlatformAdmin(user?.email) },
-    // حقلُ المشغّل (0247): مساحتُه بباقة الحقل، يدخلها بضغطة. يُخفى داخلَ مساحةٍ بباقة الحقل
-    // (هو داخلُه، أو عيادةٌ بباقة حقل) — فرابطُ «/poultry» فوقه يفتح الدفترَ نفسَه.
-    // باسم الباقة («حقل الدواجن») لا باسم القائمة: بعيادةٍ زبونة يظهر بجانب «حقول الدواجن» (حالةُ الحقل) — اسمان مختلفان.
-    { to: "/platform/farm", icon: Bird, label: t("plans.farm.name"), show: isPlatformAdmin(user?.email) && plan !== "farm" },
     // وللكادر الذي يملك إذنَ الصور (مديرٌ أو طبيبٌ أو من أُذن له) — المصوّرُ له قائمتُه فوق.
     { to: "/photos", icon: Camera, label: t("nav.photos", "صور المنتجات"), exact: true, show: can("manageProductPhotos") && can("manageInventory") },
     // مكتبةُ الصور (0285): مكتبةُ العيادة الخاصّة تُدار من هنا، والعامّةُ تُتصفّح — لمن يملك إذنَ الصور.

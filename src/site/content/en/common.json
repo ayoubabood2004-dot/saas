@@ -18,11 +18,6 @@
       { "title": "After the visit", "items": ["whatsapp", "owners"] },
       { "title": "Management", "items": ["team", "reports", "branches", "printing"] }
     ],
-    "featured": {
-      "title": "Poultry farms",
-      "body": "For anyone who runs or supervises poultry farms: houses and batches, a daily log of mortality, water, sample weight and temperature, plus feed conversion ratio (FCR) and the cost of each cycle.",
-      "slug": "poultry"
-    },
     "all": "All features"
   },
   "cta": {
@@ -58,8 +53,7 @@
   "planBadge": {
     "all": "On every plan",
     "advanced": "Advanced plan and up",
-    "super": "On the Super plan",
-    "farm": "On the poultry farm plan"
+    "super": "On the Super plan"
   },
   "learnMore": "Learn more",
   "backToFeatures": "Back to all features",

@@ -51,7 +51,7 @@ export function Subscribe() {
     if (!c) return;
     void c.rpc("public_pricing").then(({ data, error }) => { if (!error && data?.usd?.basic) setPricing(data as PricingData); });
   }, []);
-  const iqdPair = (id: PlanId) => (pricing && id !== "farm" ? priceFor(editionByCode("iq")!, id, pricing) : null);
+  const iqdPair = (id: PlanId) => (pricing ? priceFor(editionByCode("iq")!, id, pricing) : null);
   const iqdCharged = (id: PlanId): number | null => iqdPair(id)?.[period] ?? null;
   /** «شهران مجاناً» حين يوفّر السنويُّ شهرين بالضبط ممّا يُقبض فعلاً (الدينار إن عُرف، وإلا الدولار). */
   const twoMonthsFree = (p: (typeof PLANS)[number]) => {

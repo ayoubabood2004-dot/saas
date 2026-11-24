@@ -271,7 +271,6 @@ export function AdminBilling() {
   const pin = iqdPins?.find((r) => r.plan === plan);
   const selectedIqd = ((): number | null => {
     const pp = planPrice(selectedPlan);
-    if (plan === "farm") return usdToIqd(selectedUsd, Number(rate) || undefined);
     if (!iqdPins) return null;
     const shown = priceFor(editionByCode("iq")!, plan, {
       usd: { [plan]: { monthly: pp.monthlyUsd, annual: pp.annualUsd } } as PricingData["usd"],
@@ -621,7 +620,7 @@ export function AdminBilling() {
 
         <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-surface-2 px-4 py-3">
           <span className="text-sm text-ink-muted">المبلغ المكافئ{byDays ? " (بالتناسب)" : ""}</span>
-          <span className="font-display font-bold tabular-nums text-ink">${selectedUsd} · {selectedIqd == null ? "الدينار: انتظر جلب الأسعار المثبَّتة" : `${pin && plan !== "farm" ? "" : "≈ "}${money(selectedIqd)}${pin && plan !== "farm" ? " (سعر الدينار المثبَّت)" : ""}`}</span>
+          <span className="font-display font-bold tabular-nums text-ink">${selectedUsd} · {selectedIqd == null ? "الدينار: انتظر جلب الأسعار المثبَّتة" : `${pin ? "" : "≈ "}${money(selectedIqd)}${pin ? " (سعر الدينار المثبَّت)" : ""}`}</span>
         </div>
 
         <Button className="mt-4 w-full" leftIcon={<ShieldCheck size={16} />} onClick={activate} loading={actBusy}>فعّل الاشتراك يدوياً</Button>

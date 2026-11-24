@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    { "source": "/:cc(iq|sa|ae|kw|qa|bh|om|jo|ps|lb|sy|eg|sd|ly|tn|dz|ma|mr|ye|en)/features/poultry", "destination": "/:cc/features", "permanent": true }
+  ],
   "rewrites": [
     { "source": "/s/:slug", "destination": "/api/store-og?slug=:slug" },
     { "source": "/s/:slug/track", "destination": "/store.html" },

@@ -633,8 +633,6 @@ reset();
   const repo = fs.readFileSync("src/lib/repo.ts", "utf8");
   const de = repo.slice(repo.indexOf("async deleteExpense(id)"), repo.indexOf("async deleteExpense(id)") + 1400);
   chk("repo: حذفُ السحب تحت outboxExclusive(id)", /await outboxExclusive\(id, async \(\) => \{[\s\S]*delete\(\)[\s\S]*outboxDrop\(id\)/.test(de), true);
-  const pd = repo.slice(repo.indexOf("async savePoultryDaily(input)"), repo.indexOf("async savePoultryDaily(input)") + 1600);
-  chk("  وحفظُ اليوم أونلاين تحت outboxExclusive(opId)", /outboxExclusive\(opId, async \(\) => \{[\s\S]*upsert\(row[\s\S]*outboxDrop\(opId\)/.test(pd), true);
 }
 
 /* ١٧) فحوصُ الصفحة لعيادتها: «ارفعها» على ما لا تُعرف عيادتُه تمرّر العيادةَ التي فُحص فيها، وعيادةٌ

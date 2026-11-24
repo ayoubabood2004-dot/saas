@@ -131,12 +131,6 @@
           { "label": "Cash drawer count and expenses", "basic": false, "advanced": true, "super": true },
           { "label": "Payroll and advances", "basic": false, "advanced": true, "super": true }
         ]
-      },
-      {
-        "title": "Poultry farms",
-        "rows": [
-          { "label": "Houses, batches, daily log and cost per cycle", "basic": "Separate plan", "advanced": "Separate plan", "super": "Separate plan" }
-        ]
       }
     ]
   },

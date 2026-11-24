@@ -131,12 +131,6 @@
           { "label": "مطابقة الصندوق والمصاريف", "basic": false, "advanced": true, "super": true },
           { "label": "الرواتب والسلف", "basic": false, "advanced": true, "super": true }
         ]
-      },
-      {
-        "title": "حقول الدواجن",
-        "rows": [
-          { "label": "القاعات والدفعات والإدخال اليومي وكلفة الدورة", "basic": "باقة منفصلة", "advanced": "باقة منفصلة", "super": "باقة منفصلة" }
-        ]
       }
     ]
   },

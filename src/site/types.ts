@@ -14,7 +14,7 @@
 
 export type Lang = "ar" | "en";
 export type DialectId = "iq" | "gulf" | "eg" | "lev";
-export type PlanTier = "all" | "advanced" | "super" | "farm";
+export type PlanTier = "all" | "advanced" | "super";
 
 /** فقرةٌ بعنوانٍ وجسد — الوحدةُ الأكثر تكراراً بالموقع. */
 export interface TitleBody { title: string; body: string }
@@ -25,7 +25,7 @@ export interface Meta { title: string; description: string }
 export interface CommonContent {
   nav: { product: string; pricing: string; why: string; security: string; faq: string; start: string; login: string; menu: string; close: string };
   /** مجموعاتُ القائمة العملاقة — `items` معرّفاتُ صفحات التصنيفات (FeatureSlug). */
-  mega: { groups: { title: string; items: FeatureSlug[] }[]; featured: { title: string; body: string; slug: FeatureSlug }; all: string };
+  mega: { groups: { title: string; items: FeatureSlug[] }[]; all: string };
   cta: { primary: string; secondary: string; reassure: string; login: string };
   switcher: { label: string; title: string; search: string; suggest: string; yes: string; no: string; english: string; arabic: string };
   footer: { tagline: string; product: string; resources: string; company: string; legal: string; privacy: string; terms: string; rights: string; available: string; madeIn: string };
@@ -93,7 +93,7 @@ export interface PricingContent {
 /* ── features.json (الفهرس) + features/<slug>.json ─────────────────────── */
 export const FEATURE_SLUGS = [
   "records", "hospital", "lab", "vaccines", "reception", "pharmacy", "pos", "credit-delivery",
-  "store", "whatsapp", "owners", "reports", "team", "branches", "poultry", "printing",
+  "store", "whatsapp", "owners", "reports", "team", "branches", "printing",
 ] as const;
 export type FeatureSlug = (typeof FEATURE_SLUGS)[number];
 

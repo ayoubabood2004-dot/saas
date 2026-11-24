@@ -54,7 +54,6 @@ const ALLOWED = new Set([
   "src/lib/medCatalog.ts",
   "src/lib/vetFormulary.ts",          // يعرّف searchDrugs
   "src/components/ProtocolSheet.tsx", // يختار بروتوكولاً لا دواءً
-  "src/pages/PoultryFarms.tsx",       // منتجُ مخزن الحقل بمعرّفه
   "src/pages/Consultation.tsx",       // صفحةٌ يتيمة بلا رابط
 ]);
 /* لم يتحوّل بعد — تُشطب سطراً سطراً مع كلّ دفعة. */
