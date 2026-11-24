@@ -11,7 +11,8 @@
 --    (C − T) على سطر أثرها. وسندُ التلف («منتهي» يأخذ من المنتهي أوّلاً — دفعةَ الراجع) والجردُ كانا يكلّفان ما نقص بلقطة
 --    `stock_unit_cost` (المتوسّط): علبةٌ رجعت بـ١٠٬٠٠٠ ومتوسّطُ مادّتها ١٤٬٠٠٠ تُتلف ⇒ سحبُ مخزن ١٤٬٠٠٠ — والـ٤٬٠٠٠ محسوبةٌ أصلاً
 --    بالفاتورة: خسارةٌ مرّتين. الآن موافقةُ السطر (stock_count_decide، نصُّ 0254 حرفاً وفوقه أسطرٌ معلَّمة) تقيس ما أخذه من
---    دفعات الراجع **فعلاً** (مجموعُها وقيمتُها قبل الموافقة وبعدها — عدُّ الدفعة اليدويّ ومطابقةُ lots_reconcile معاً) وتكتب
+--    دفعات الراجع **فعلاً** (ما نقص من كلّ دفعةٍ بين قبل الموافقة وبعدها، دفعةً دفعة لا الصافي — عدُّ الدفعة اليدويّ ومطابقةُ
+--    lots_reconcile معاً؛ الصافي بكلفتين يطلع سالباً حين يرفع العدُّ دفعةً وينزل أخرى) وتكتب
 --    كلفةَ السطر: ما أُخذ منها بكلفته والباقي بلقطته (`unit_cost`، ستّ منازل كاللقطة). فالسحبُ وتقريرُ الخسائر (Σ −فرق × كلفة)
 --    يقرآن الرقمَ نفسَه. وما لا يمسّ دفعةَ راجع يبقى كما كان حرفاً، والمعلَّقُ لا يتغيّر قبل موافقته.
 --    • أخذَ منها أكثرَ من الخسارة (دفعاتٌ لم تطابق الرصيدَ قبلها): الكلفةُ معدّلُ ما أُخذ منها — لا خسارةً بلا مادّة.
@@ -20,7 +21,9 @@
 -- إعادةُ التطبيق: الحارسُ يقبل نصَّ المصدر ببصمته أو جسماً يحمل علامتَنا. وأقسامُ الحزمة التي تعيد 0254 وحدها تُرجع
 -- stock_count_decide لنصّها — أعِد 0290 بعدها (كما تعيد 0289 بعد 0217).
 -- تراجع: أعِد الأجسامَ الثلاثة حرفاً من مصادرها (_stock_ledger_source و_stock_ledger_kind من 0287، وstock_count_decide من
--- 0254) بصلاحياتها هناك. لا أعمدةَ ولا جداول.
+-- 0254) بصلاحياتها هناك، و`drop function if exists public.stock_count_preview(uuid[]);` (الشاشةُ تحسب بلقطتها حين تغيب). لا أعمدةَ ولا جداول.
+--
+-- ٣) معاينةُ الموافقة (stock_count_preview): الموافقةُ نفسُها داخل معاملةٍ فرعية تُلغى — الشاشةُ تعرض ما سيُكتب لا لقطةَ السطر.
 -- ============================================================================
 
 set lock_timeout = '5s';
@@ -125,11 +128,10 @@ declare
   -- 0254: ما كتبه ترحيلُ السند بالرصيد، والموادُّ التي بقيت تحت الصفر بعد الموافقة -- +0254
   v_posted numeric; -- +0254
   v_neg    jsonb; -- +0254
-  -- 0290: دفعاتُ الراجع للمادّة قبل الموافقة وبعدها (المجموعُ وقيمتُه بكلفتها)، وخسارةُ السطر، وكلفتُه -- +0290
-  v_rq0    numeric; -- +0290
-  v_rc0    numeric; -- +0290
-  v_rq1    numeric; -- +0290
-  v_rc1    numeric; -- +0290
+  -- 0290: دفعاتُ الراجع للمادّة قبل الموافقة (لكلّ دفعة: كميتُها وكلفتُها)، وما نقص منها بعدها (كميةً وقيمة)، وخسارةُ السطر وكلفتُه -- +0290
+  v_ret0   jsonb; -- +0290
+  v_tq     numeric; -- +0290
+  v_tc     numeric; -- +0290
   v_loss   numeric; -- +0290
   v_cost   numeric; -- +0290
 begin
@@ -183,8 +185,10 @@ begin
     v_new := round(coalesce(v_old, 0) + (r.counted_qty - r.system_qty), 3); -- +0254
     -- 0217: عدٌّ بالدفعة يُطبَّق على دفعاته بعينها، ثمّ الرصيد، ثمّ الحارسُ فوراً — وبسبب
     -- «منتهي» يُسحب من المنتهي أوّلاً (لا من الصالح كما بالبيع).
-    -- 0290: دفعاتُ الراجع قبل أيّ مسٍّ بالدفعات (العدُّ بالدفعة ثمّ المطابقة) — ما نقص منها بعدُ أخذه هذا السطر. -- +0290
-    select coalesce(sum(qty), 0), coalesce(sum(qty * unit_cost), 0) into v_rq0, v_rc0 -- +0290
+    -- 0290: دفعاتُ الراجع قبل أيّ مسٍّ بالدفعات (العدُّ بالدفعة ثمّ المطابقة) — ما نقص من كلٍّ منها بعدُ أخذه هذا السطر. -- +0290
+    -- دفعةً دفعة لا بالصافي: العدُّ بالدفعة قد يرفع دفعةً وينزل أخرى، والصافي بكلفتين يطلع سالباً (فيرفض القيدُ الموافقةَ كلَّها) -- +0290
+    -- أو يقاصّ علبةً لُقيت بدفعةٍ بعلبٍ ضاعت بغيرها. -- +0290
+    select coalesce(jsonb_object_agg(id::text, jsonb_build_array(qty, unit_cost)), '{}'::jsonb) into v_ret0 -- +0290
       from product_lots where product_id = r.product_id and source = 'return'; -- +0290
     if jsonb_typeof(r.lot_counts) = 'array' then
       for lc in select value from jsonb_array_elements(r.lot_counts) loop
@@ -208,12 +212,13 @@ begin
     -- والباقي بلقطته كما كان. أخذَ منها أكثرَ من خسارته (دفعاتٌ لم تطابق الرصيدَ قبله) ⇒ معدّلُ ما أُخذ. والزيادةُ -- +0290
     -- وما لا يمسّ دفعةَ راجعٍ بلقطته حرفاً. ستُّ منازل كاللقطة (stock_unit_cost). -- +0290
     v_cost := r.unit_cost; -- +0290
-    select coalesce(sum(qty), 0), coalesce(sum(qty * unit_cost), 0) into v_rq1, v_rc1 -- +0290
-      from product_lots where product_id = r.product_id and source = 'return'; -- +0290
+    select coalesce(sum(t.d), 0), coalesce(sum(t.d * t.c), 0) into v_tq, v_tc -- +0290
+      from (select greatest((e.value->>0)::numeric - coalesce(l.qty, 0), 0) as d, coalesce((e.value->>1)::numeric, 0) as c -- +0290
+              from jsonb_each(v_ret0) e left join product_lots l on l.id = (e.key)::uuid) t; -- +0290
     v_loss := -(case when r.source = 'waste' then r.counted_qty - r.system_qty else v_new - coalesce(v_old, 0) end); -- +0290
-    if v_loss > 0 and v_rq0 - v_rq1 > 0 then -- +0290
-      v_cost := round(case when v_rq0 - v_rq1 >= v_loss then (v_rc0 - v_rc1) / (v_rq0 - v_rq1) -- +0290
-                           else ((v_rc0 - v_rc1) + (v_loss - (v_rq0 - v_rq1)) * r.unit_cost) / v_loss end, 6); -- +0290
+    if v_loss > 0 and v_tq > 0 then -- +0290
+      v_cost := round(case when v_tq >= v_loss then v_tc / v_tq -- +0290
+                           else (v_tc + (v_loss - v_tq) * r.unit_cost) / v_loss end, 6); -- +0290
     end if; -- +0290
     update stock_counts
 -- -0254        set status = 'approved', applied_delta = v_new - coalesce(v_old, 0),
@@ -271,3 +276,37 @@ begin
 end $$;
 revoke all on function public.stock_count_decide(uuid[], boolean) from public, anon;
 grant execute on function public.stock_count_decide(uuid[], boolean) to authenticated;
+
+-- ── ٣) معاينةُ الموافقة: ما ستكتبه الموافقةُ حرفاً — بالموافقة نفسِها داخل معاملةٍ فرعية تُلغى ─────────────────────
+-- شاشةُ الجرد كانت تحسب السحبَ بلقطة كلّ سطر، والموافقةُ صارت تكلّف ما تأخذه من دفعة الراجع بكلفتها (أعلاه) — فلا يوافق المديرُ
+-- على رقمٍ ويُسجَّل غيرُه (StockCount.tsx). لا نسخةَ ثانيةً من الحساب: تُنادى stock_count_decide نفسُها ثمّ يُرمى استثناءٌ برمزٍ
+-- خاصّ فيُلغى كلُّ ما كتبته (الرصيد، الدفعات، السحوبات، الدفتر، التدقيق، وأقفالُ الصفوف معها)، والمتغيّراتُ تبقى. invoker: الموافقةُ
+-- تسأل الدورَ بنفسها (المديرُ وحده)، والقراءةُ بعدها بسياسة الجدول. وأيُّ رفضٍ منها (no_clinic، count_needs_manager…) يصل كما هو.
+create or replace function public.stock_count_preview(p_ids uuid[])
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_out   jsonb;
+  v_costs jsonb;
+begin
+  begin
+    v_out := public.stock_count_decide(p_ids, true);
+    select coalesce(jsonb_object_agg(c.id::text, c.unit_cost), '{}'::jsonb) into v_costs
+      from stock_counts c
+     where c.id = any(p_ids) and c.status = 'approved' and c.decided_at = now();
+    raise exception using errcode = 'P0D90', message = 'stock_count_preview_undo';
+  exception when sqlstate 'P0D90' then
+    null;
+  end;
+  -- معرّفُ السحب لصفٍّ أُلغي ليس معرّفاً: يُشال.
+  return (v_out - 'withdrawals') || jsonb_build_object(
+    'withdrawals', coalesce((select jsonb_agg(w - 'expense_id') from jsonb_array_elements(v_out->'withdrawals') w), '[]'::jsonb),
+    'costs', v_costs);
+end $$;
+revoke all on function public.stock_count_preview(uuid[]) from public, anon;
+grant execute on function public.stock_count_preview(uuid[]) to authenticated;
+comment on function public.stock_count_preview(uuid[]) is
+  'معاينةُ موافقة الجرد/التلف (0290): نتيجةُ stock_count_decide نفسِها (السحوباتُ بأسبابها) وكلفةُ كلّ سطرٍ كما ستُكتب — داخل معاملةٍ فرعية تُلغى، فلا يتغيّر شيء.';

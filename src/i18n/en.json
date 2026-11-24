@@ -5644,6 +5644,8 @@
     "approveGo": "Approve & record",
     "rejectGo": "Reject",
     "noWithdraw": "No withdrawal will be recorded — the selected differences only correct stock.",
+    "previewWait": "Working out the withdrawal with the server…",
+    "previewFailed": "Couldn't reach the server to work out the withdrawal — this is at each line's cost when counted; anything taken from an expired return lot is booked at that lot's cost, so the final figure may differ slightly",
     "restricted": "Amounts are locked on this device — unlock manager mode.",
     "rangeMonth": "This month",
     "rangeLast": "Last month",

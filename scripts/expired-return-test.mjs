@@ -218,14 +218,18 @@ const EXPECT = {
 /* ---- 0290: التلفُ والجردُ يكلّفان ما أخذاه من دفعة الراجع بكلفتها — أرقامُ قسم 0290 بـrun.sh نفسُها ---------------------- */
 async function wasteScenario(M) {
   mem.clear();
-  const A = "wA", B = "wB", D = "wD", E = "wE";
+  const A = "wA", B = "wB", D = "wD", E = "wE", F = "wF";
   const prod = (id, name, extra) => ({ id, name, barcode: id, price_currency: "IQD", sell_price: 20000, purchase_price: 14000, avg_cost: 14000, stock: 20,
     has_sub_unit: false, sub_unit_name: null, units_per_box: null, packs: null, pooled: false, created_at: "2026-01-01T00:00:00.000Z", expiry_date: null, ...extra });
   mem.set(DB_KEY, JSON.stringify({
     products: [prod(A, "إكسباير ٢٩٠"), prod(B, "بلا راجع ٢٩٠", { sell_price: 5000, purchase_price: 3000, avg_cost: 3000, stock: 10 }),
-      prod(D, "جرد ٢٩٠", { stock: 1 }), prod(E, "منحرفة ٢٩٠", { stock: 5 })],
+      prod(D, "جرد ٢٩٠", { stock: 1 }), prod(E, "منحرفة ٢٩٠", { stock: 5 }), prod(F, "دفعتان ٢٩٠", { stock: 4 })],
     companies: [], companySections: [], purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [], deliveryOrders: [],
   }));
+  // «دفعتان ٢٩٠»: رصيدُه كلُّه دفعتا راجع — أ علبةٌ بـ١٠٬٠٠٠ وب ثلاثٌ بـ٢٬٠٠٠ (كقسم 0290 بـrun.sh).
+  const rl = (id, qty, cost) => ({ id, product_id: F, clinic_id: null, qty, received_qty: qty, expiry_date: "2026-10-01", received_at: "2026-11-01T08:00:00.000Z",
+    source: "return", unit_cost: cost, return_from: "x", return_pct: 50, returned_at: "2026-11-01T08:00:00.000Z", note: null });
+  mem.set("vp_demo_lots", JSON.stringify([rl("FA", 1, 10000), rl("FB", 3, 2000)]));
   const repo = M.repo ?? M.demoRepo;
   const db = () => JSON.parse(mem.get(DB_KEY));
   const lotsOf = (pid) => M.reconcileAll().filter((l) => l.product_id === pid && l.source === "return");
@@ -271,11 +275,21 @@ async function wasteScenario(M) {
   out.r5 = await ret("r5", E, 50, "أبو حيدر", "07708888888");
   { const all = M.loadLots(); all.find((l) => l.product_id === E && l.source === "return").qty = 3; localStorage.setItem([...mem.keys()].find((k) => /lots/i.test(k)), JSON.stringify(all)); }
   out.over = await waste(E, 1, "expired");
+  // العدُّ بالدفعة يرفع أ (١ ← ٢) وينزل ب (٣ ← ٠): عجزُ علبتين — ما نقص (ب ثلاث بـ٢٬٠٠٠) لا الصافي (قيمةٌ تصعد ⇒ كلفةٌ سالبة).
+  await repo.submitStockCount([{ product_id: F, counted: 2, reason: "shortage", note: null, lots: [{ lot_id: "FA", counted: 2 }, { lot_id: "FB", counted: 0 }] }]);
+  const fids = counts().filter((x) => x.product_id === F && x.status === "pending").map((x) => x.id);
+  // المعاينةُ أوّلاً: ما ستكتبه الموافقةُ حرفاً، ولا تغيّر شيئاً (الرصيدُ والدفعاتُ والسطرُ معلَّقٌ والسحوبُ كما هي).
+  const before = JSON.stringify([...mem.entries()].sort());
+  const pv = await M.consumptionApi.countPreview(fids);
+  out.preview = `${pv.withdrawals.map((w) => `${w.reason}:${w.amount}`).join(",")}|${fids.map((id) => pv.costs[id]).join(",")}|${JSON.stringify([...mem.entries()].sort()) === before}`;
+  const dec3 = await repo.decideStockCounts(fids, true);
+  out.lots = `${dec3.withdrawals?.[0]?.amount ?? "-"}|${last(F)}|${lotsOf(F).map((l) => `${l.id}:${l.qty}`).sort().join(",")}`;
   return out;
 }
 const WEXPECT = {
   r1: "10000/0", w1: "10000|10000:approved|0", r2: "10000/0", w2: "24000|12000:approved|0", r3: "10000/0", w3: "14000|14000:approved|1",
   pend: "1|14000:pending|1", pendOk: "10000|10000:approved|0", noLot: "3000", r4: "5000/0", count: "ok|19000|9500:approved|0", r5: "10000/0", over: "10000",
+  preview: "shortage:4000|2000|true", lots: "4000|2000:approved|FA:2,FB:0",
 };
 
 console.log("▸ ١) المرآةُ بالحالات نفسِها التي تفحصها الحزمة على القاعدة (قسمُ 0289)");
@@ -315,7 +329,8 @@ for (const [name, mut] of MUTANTS) {
 const WMUTANTS = [
   ["التلفُ بلقطة المتوسّط (بلا دفعة الراجع)", (s) => s.replace("if (loss > 0n && tq > 0n) {", "if (false) {")],
   ["أخذٌ فوق الخسارة بالصيغة نفسِها", (s) => s.replace("tq >= loss ? roundDiv(tc, tq) : ", "")],
-  ["الدفعاتُ تُقاس بعد المطابقة", (s) => s.replace("    const ret0 = retLots(p.id);\n", "").replace("const ret1 = retLots(p.id);", "const ret1 = retLots(p.id), ret0 = ret1;")],
+  ["الدفعاتُ تُقاس بعد المطابقة", (s) => s.replace("const { tq, tc } = retTaken(ret0, retLots(p.id));", "const { tq, tc } = retTaken(retLots(p.id), retLots(p.id));")],
+  ["الصافي لا دفعةً دفعة (دفعةٌ صعدت تقاصّ أخرى نزلت)", (s) => s.replace("if (d > 0n) { tq += d; tc += d * b.c; }", "{ tq += d; tc += d * b.c; }")],
 ];
 for (const [name, mut] of WMUTANTS) {
   let applied = true;
@@ -353,7 +368,7 @@ check("0290: «بيش تبيعها؟» — السؤالُ يحمل وحدةَ ا
   && /\.\.\.\(pick \? \{ lot: pick\.lot, lotPrice: pick\.price \} : \{\}\)/.test(sb)
   && /unit_price: lotUnit \?\? listNow,/.test(sb));
 check("  والسعرُ المختار يتبع تبديلَ الوحدة (بنسبته) ولا يُكتب على سعر القائمة (رفعُ الأسعار يقارن به)",
-  /const unit_price = l\.lot\?\.px \? lotUnitPrice\(l\.lot\.px, toSub, listU, l\.unitsPerBox \?\? null\) : listU;/.test(sb)
+  /const unit_price = l\.lot \? lotUnitPrice\(\{ price: l\.unit_price, sub: curSub, list: curList \}, toSub, listU, l\.unitsPerBox \?\? null\) : listU;/.test(sb)
   && /boxPrice: listPrice\(p\), subPrice: wholesale \? listSubPrice\(p\) : \(p\.sub_unit_price \?\? null\)/.test(sb));
 const er = src("src/components/retail/ExpiredReturn.tsx");
 check("  ونافذتُه: تحت كلفة الدفعة يُقال «خسارة» (بالفلس)، ويومُ الراجع محلّيٌّ لا slice(0, 10)",

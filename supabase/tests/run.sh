@@ -14311,6 +14311,32 @@ $P -c "update product_lots set qty = 3 where product_id = '${YX}a4' and source =
 chk "  ودفعتُها ٣ والرصيدُ ٥ (أربعٌ جديدة + ٣ = ٧): تلفُ علبةٍ منتهية يأخذ ٣ منها ⇒ معدّلُها ١٠٬٠٠٠ لا (٣٠٬٠٠٠ − ٢ × ١٤٬٠٠٠) = ٢٬٠٠٠" \
     "select $(rv $YC "$(ywaste ${YX}a4 1 expired)")::numeric::numeric(20,0)::text" "10000"
 
+# العدُّ بالدفعة يرفع دفعةً وينزل أخرى: ما نقص من كلّ دفعةٍ لا الصافي — الصافي بكلفتين (قيمةٌ تصعد وكميةٌ تنزل) طلع سالباً فرفض القيدُ
+# (unit_cost >= 0) الموافقةَ كلَّها (مراجعةٌ عدائيّة). «دفعتان ٢٩٠» رصيدُه دفعتا راجع: أ علبةٌ بـ١٠٬٠٠٠، وب ثلاثٌ بـ٢٬٠٠٠.
+YF=${YX}a5
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('$YF', '$YC', 'دفعتان ٢٩٠', 'Y290-5', 'IQD', 20000, 14000, 14000, 4, false, null, false) on conflict (id) do nothing;
+       insert into product_lots(id, clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, unit_cost, return_from, return_pct, returned_at) values
+         ('${YX}f1', '$YC', '$YF', 1, 1, '2026-10-01', now(), 'return', 10000, 'x', 50, now()),
+         ('${YX}f2', '$YC', '$YF', 3, 3, '2026-10-01', now(), 'return', 2000, 'x', 50, now()) on conflict (id) do nothing;
+       insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost, reason, status, lot_counts)
+       values ('$YC', '$YF', 'دفعتان ٢٩٠', 4, 2, 14000, 'shortage', 'pending',
+               '[{\"lot_id\":\"${YX}f1\",\"system\":1,\"counted\":2},{\"lot_id\":\"${YX}f2\",\"system\":3,\"counted\":0}]');" >/dev/null
+YFIDS="array(select c.id from stock_counts c where c.product_id = '$YF' and c.status = 'pending')"
+YFSTATE="(select string_agg(qty::numeric(20,0)::text, ',' order by id) from product_lots where product_id = '$YF')||'|'||(select stock::numeric(20,0)::text from products where id = '$YF')
+          ||'|'||(select status from stock_counts where product_id = '$YF')||'|'||(select count(*) from expenses where clinic_id = '$YC')::text"
+Y_BEFORE=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select $YFSTATE")
+chk "معاينةُ الموافقة (stock_count_preview): ما ستكتبه حرفاً — عجزٌ ٤٬٠٠٠ (ب ثلاث بـ٢٬٠٠٠) وكلفةُ السطر ٢٬٠٠٠، بلا معرّف سحب" \
+    "select $(rv $YC "select (p->'withdrawals'->0->>'reason')||':'||(p->'withdrawals'->0->>'amount')::numeric::numeric(20,0)::text||'|'||(p->'costs'->>(select c.id::text from stock_counts c where c.product_id = '$YF'))::numeric::numeric(20,0)::text||'|'||(p->'withdrawals'->0 ? 'expense_id')::text from (select stock_count_preview($YFIDS) p) x")" \
+    "shortage:4000|2000|false"
+chk "  ولا تغيّر شيئاً (الدفعاتُ والرصيدُ والسطرُ معلَّقٌ وعددُ السحوبات كما كانت)" "select $YFSTATE" "$(printf '%s' "$Y_BEFORE" | tr -d '[:space:]')"
+chk "  والطبيبُ لا يعاين (الموافقةُ للمدير — رفضُها يصل كما هو)" \
+    "select split_part($(rv $YV "select stock_count_preview($YFIDS)::text"), ':', 3)" "count_needs_manager"
+chk "والموافقةُ تكتب ما قالته المعاينة: ٤٬٠٠٠ (لا رفضَ القيد بكلفةٍ سالبة، ولا ٢ × ١٤٬٠٠٠)" \
+    "select $(rv $YC "select (stock_count_decide($YFIDS, true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "4000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ٢٬٠٠٠، وأ صارت ٢ وب صفراً، والرصيدُ ٢" "select $(ylast $YF)||'|'||(select string_agg(qty::numeric(20,0)::text, ',' order by id) from product_lots where product_id = '$YF')||'|'||(select stock::numeric(20,0)::text from products where id = '$YF')" \
+    "2000:approved:4000|2,0|2"
+
 # ٤) الإعادةُ والحارس
 out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما انعادت"; fail=1; }
 chk "إعادةُ 0290 بلا أثر: الأجسامُ الثلاثة بعلامتها، والموافقةُ ما زالت بعلامة 0254 (فحصُ التوصيل نظيف)" \

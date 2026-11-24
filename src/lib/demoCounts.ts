@@ -253,16 +253,23 @@ export type DemoDecision = CountDecision & { negatives: StockNegative[] };
 /** stock_count_decide (0217 ← 0254): المديرُ وحده، ثمّ بترتيب (counted_at, id): الرفضُ يُختم، والمادّةُ الغائبةُ تُبطل
  *  (void)، والجردُ يطبّق فرقَه بلا حصر بثلاث منازل، والسندُ يُرحَّل −d بالضبط عبر المرحِّل ('external') — ثمّ سحبٌ لكلّ سببِ
  *  خسارة بالفلس الصحيح، وnegatives: كلُّ مادّةٍ وافقنا عليها وبقيت تحت الصفر. */
-/** دفعاتُ الراجع للمادّة: مجموعُها (×10⁹) وقيمتُها بكلفتها (×10¹⁵) — مرآةُ sum(qty) وsum(qty × unit_cost) بـ0290. */
-function retLots(productId: string): { q: bigint; c: bigint } {
-  let q = 0n, c = 0n;
+/** دفعاتُ الراجع للمادّة دفعةً دفعة: كميتُها (×10⁹) وكلفتُها (×10⁶) — مرآةُ لقطة 0290 (jsonb_object_agg(id, [qty, unit_cost])). */
+function retLots(productId: string): Map<string, { q: bigint; c: bigint }> {
+  const m = new Map<string, { q: bigint; c: bigint }>();
   for (const l of loadLots()) {
     if (l.product_id !== productId || l.source !== "return") continue;
-    const lq = exact(l.qty, 9);
-    q += lq;
-    c += lq * exact(l.unit_cost ?? 0, 6);
+    m.set(l.id, { q: exact(l.qty, 9), c: exact(l.unit_cost ?? 0, 6) });
   }
-  return { q, c };
+  return m;
+}
+/** ما نقص من كلّ دفعة (لا الصافي — العدُّ بالدفعة قد يرفع دفعةً وينزل أخرى) وقيمتُه بكلفتها: ×10⁹ و×10¹⁵. */
+function retTaken(before: Map<string, { q: bigint; c: bigint }>, after: Map<string, { q: bigint; c: bigint }>): { tq: bigint; tc: bigint } {
+  let tq = 0n, tc = 0n;
+  for (const [id, b] of before) {
+    const d = b.q - (after.get(id)?.q ?? 0n);
+    if (d > 0n) { tq += d; tc += d * b.c; }
+  }
+  return { tq, tc };
 }
 
 export function demoDecideCounts(
@@ -312,8 +319,7 @@ export function demoDecideCounts(
     reconcileAll({ productId: p.id, expiredFirst: c.reason === "expired" });
     db = loadDB();
     // 0290 (stock_count_decide): ما أخذه من دفعات الراجع بكلفتها والباقي بلقطته — ستُّ منازل، وأخذٌ فوق الخسارة ⇒ معدّلُ ما أُخذ.
-    const ret1 = retLots(p.id);
-    const tq = ret0.q - ret1.q, tc = ret0.c - ret1.c;               // ×10⁹ و×10¹⁵
+    const { tq, tc } = retTaken(ret0, retLots(p.id));               // ×10⁹ و×10¹⁵
     const loss = -exact(applied, 9);
     if (loss > 0n && tq > 0n) {
       c.unit_cost = fromScaled(tq >= loss ? roundDiv(tc, tq) : roundDiv(tc + (loss - tq) * exact(c.unit_cost, 6), loss), 6);
