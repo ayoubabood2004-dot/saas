@@ -6269,7 +6269,18 @@
     "doseSell": "Sell",
     "sheetMissed": "✗ Not given",
     "sheetLate": "Overdue",
-    "sheetGivenOn": "✓ Given {{when}}"
+    "sheetGivenOn": "✓ Given {{when}}",
+    "loadFailTitle": "Couldn't load the visit",
+    "loadFailBody": "We won't show it incomplete — a missing note or dose would read as \"none\". Try again.",
+    "staleTitle": "Couldn't load the latest version of the visit",
+    "staleBody": "Showing the last full load — it may be out of date.",
+    "noteFail": "The note wasn't saved — try again.",
+    "planLeaveTitle": "Close and lose the plan?",
+    "planLeaveBody": "The diagnosis and plan in the wizard aren't saved — closing discards them.",
+    "planLeaveNo": "No, go back",
+    "planLeaveYes": "Yes, close",
+    "noteOnDay": "Note on {{day}}",
+    "noteAddTitle": "Add note"
   },
   "intake": {
     "today": "Today",
@@ -8949,7 +8960,11 @@
     "due": "Due from the treatment sheet: {{total}}",
     "dueN": "Doses awaiting sale: {{n}} — they drop into the owner's cart when their sale opens",
     "sell": "Sell",
-    "summaryTab": "Summary"
+    "summaryTab": "Summary",
+    "fileLoadFailTitle": "Couldn't load the pet's file",
+    "fileLoadFailBody": "We won't show it incomplete — a missing note, dose or attachment would read as \"none\". Try again.",
+    "fileStaleTitle": "Couldn't load the latest version of the file",
+    "fileStaleBody": "Showing the last full load — it may be out of date."
   },
   "cfile": {
     "back": "Back",
