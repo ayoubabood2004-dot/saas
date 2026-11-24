@@ -591,6 +591,10 @@ const STUB = {
   /* شريطُ نسبة الراجع وملاحظتُه (قطعتان كسولتان) — لا شأنَ لهما هنا؛ بديلٌ فارغٌ كان سيُسقط الرسمَ عند «راجع». */
   "@/components/retail/RetPct": "export const RetModeBar = () => null; export const RetPureNote = () => null;",
   /* البابُ بحالةٍ يمسكها الفحص (globalThis.__neg) والقواعدُ الصِّرفةُ الحقيقيّة — عمرُ الجواب وحكمُ الرفع كما بالتطبيق. */
+  /* 0289: الراجعُ الإكسباير ودفعتُه — بابٌ لا يعرفه الخادم هنا (لا زرَّ ولا سؤال)، وقطعتُه لا ترسم. */
+  "@/lib/expiredApi": `export const returnLotsReady = async () => false; export const listReturnLots = async () => []; export const listReturnLotsOf = async () => [];
+    export const returnExpired = async () => { throw new Error("stub"); }; export const checkoutLots = async () => { throw new Error("stub"); }; export const expiredErrorCode = () => null;`,
+  "@/components/retail/ExpiredReturn": "export const say = new Proxy({}, { get: (_, k) => () => String(k) }); export const XretDialog = () => null; export const XretNote = () => null; export const LotPickDialog = () => null; export const ReturnLotsNote = () => null; export const unitsOf = () => []; export default () => null;",
   "@/lib/negStockApi": `const N = () => globalThis.__neg;
     export const negKey = (u) => (u ?? "anon") + "|" + N().clinicKey;
     export const negSnap = (k) => N().snap(k);
