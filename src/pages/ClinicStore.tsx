@@ -38,7 +38,7 @@ import { ProductDetailsSheet } from "@/components/store/admin/ProductDetailsShee
 import { CatPickerSheet } from "@/components/store/admin/CatPickerSheet";
 import { CategoriesTab, type LeaveGuard } from "@/components/store/admin/CategoriesTab";
 import { catError } from "@/components/store/admin/catErrors";
-import { searchable } from "@/lib/utils";
+import { searchable, formatQty } from "@/lib/utils";
 import { codeMatcher, findByCode, matchedCode } from "@/lib/productCodes";
 import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName } from "@/lib/settings";
@@ -450,7 +450,7 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
                         <span className="min-w-0 flex-1 truncate font-semibold text-ink">{it.name}</span>
                         {short && (
                           <span className="flex shrink-0 items-center gap-1 rounded-full bg-warn-50 px-2 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">
-                            <AlertTriangle size={10} /> {p ? `المتوفر ${formatNum(p.stock)} فقط` : "المنتج انحذف"}
+                            <AlertTriangle size={10} /> {p ? `المتوفر ${formatQty(Number(p.stock ?? 0))} فقط` : "المنتج انحذف"}
                           </span>
                         )}
                         <span className="shrink-0 text-xs text-ink-muted">×{formatNum(it.qty)}</span>

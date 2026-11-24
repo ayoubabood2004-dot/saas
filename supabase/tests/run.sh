@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0291_company_old_debts.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0291_company_old_debts.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -8704,10 +8704,13 @@ chk "      ⇒ ٢٫٩٩٠" "select stock::text from products where id = '$w22'" 
 chk "  وجردٌ معلَّقٌ (لا سند) على توأمٍ يُكتب" "select $(rt254 $RCP "select stock_count_submit(jsonb_build_array(jsonb_build_object('product_id','$w2c','counted',0,'reason','shortage')))")" "rows:1"
 ID254C=$(W "select coalesce((select id::text from stock_counts where product_id = '$w2c' and status = 'pending'), '00000000-0000-0000-0000-000000000000')")
 chk "    ودمجُه يمرّ" "select $(rv254 $C1 "select (merge_products('$w2d', '$w2c')).id::text")" "$w2d"
-chk "    والجردُ يبقى كاليوم (§8.5): المفتاحُ أفرغه ولا نقلَ لغير السند، والأصلُ ١ + ١ = ٢٫٠٠٠" \
-    "select coalesce(product_id::text, 'null')||'|'||status||'|'||source||'|'||(select stock::text from products where id = '$w2d') from stock_counts where id = '$ID254C'" "null|pending|count|2.000"
-chk "    وموافقتُه تُبطله (void)" "select $(rv254 $C1 "select (d->>'approved')||'|'||(d->>'void') from (select stock_count_decide(array['$ID254C']::uuid[], true) d) x")" "0|1"
-chk "      ولا تمسّ الأصل" "select (select stock::text from products where id = '$w2d')||'|'||(select status from stock_counts where id = '$ID254C')" "2.000|void"
+# 0288 (تدقيق المخزن ٢٢/١١، F20): «الجردُ يبقى كاليوم (§8.5)» كان حدَّ موجة 0254 (السندُ وحده يتبع) لا قراراً — والمفتاحُ كان يفرغه
+# فتبطله الموافقةُ بصمت: عجزُ رفّ التوأم يضيع والأصلُ يحمل قطعتَه الوهميّة. الموافقةُ تطبّق الفرقَ (العدد − رصيد النظام) لا الرقم،
+# فالجردُ يتبع الأصلَ كالسند ويبقى عجزُه عجزاً بعد الدمج.
+chk "    والجردُ يتبع الأصلَ معلَّقاً كالسند (0288؛ كان: المفتاحُ يفرغه)، والأصلُ ١ + ١ = ٢٫٠٠٠" \
+    "select coalesce(product_id::text, 'null')||'|'||status||'|'||source||'|'||(select stock::text from products where id = '$w2d') from stock_counts where id = '$ID254C'" "$w2d|pending|count|2.000"
+chk "    وموافقتُه تُطبَّق على الأصل (كان: void بصمت)" "select $(rv254 $C1 "select (d->>'approved')||'|'||(d->>'void') from (select stock_count_decide(array['$ID254C']::uuid[], true) d) x")" "1|0"
+chk "      فعجزُ رفّ التوأم يبقى عجزاً: ٢ + (٠ − ١) = ١٫٠٠٠ (كان: ٢٫٠٠٠ — قطعةٌ وهميّة)" "select (select stock::text from products where id = '$w2d')||'|'||(select status from stock_counts where id = '$ID254C')" "1.000|approved"
 chk "  وسندٌ معلَّقٌ على مادّة يُكتب" "select $(rv254 $RCP "select (r->>'pending') from (select $(ws254 "$(wl254 $w24 1 stock damaged 'للحذف')") r) x")" "1"
 chk "    فحذفُها يُرفض بكلّ طريق (product_waste_pending): delete_product، والحذفُ المباشر بدور التطبيق، وباليد بالقاعدة" \
     "select $(re254 $C1 "select delete_product('$w24')::text")
@@ -13699,6 +13702,278 @@ chk "إعادةُ 0287 بلا أثر: سياستان (السياجُ ذهب مع
     "select (select count(*) from pg_policies where schemaname='public' and tablename='pet_case_reports')::text || '|' || (select count(*) from pet_case_reports where pet_id = '$CRP')::text" "2|4"
 $P -c "delete from pets where id in ('$CRP', '$CRQ');" >/dev/null
 chk "وحذفُ الحيوان يحذف تقاريرَه (المفتاحُ الأجنبيّ)" "select count(*)::text from pet_case_reports where pet_id = '$CRP'" "0"
+# ── 0287: المخزنُ لا يُحسب مرّتين، وكلُّ تغييرٍ بدفتر ─────────────────────────────────────────────
+echo "▸ 0287: أبوابُ «مرّةً واحدة» (شراء، دفعة، مرتجع) ودفترُ الرصيد بنوعه الحقيقيّ"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+RCP=77777777-7777-7777-7777-777777777777
+P87=bbbb0287-0000-4000-8000-00000000000
+# مساعدٌ للفحص: قيمةٌ واحدة بهويّة مستخدم (superuser ينفّذ، والدوالُّ definer تقرأ auth.uid() من المطالبة).
+$P -c "create or replace function _as287(who uuid, q text) returns text language plpgsql as \$fn\$
+         declare r text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return r;
+         exception when others then return 'err:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;
+       update memberships set role = 'receptionist', status = 'active' where user_id = '$RCP' and clinic_id = '$C1';
+       insert into products(id,clinic_id,name,stock,sell_price,purchase_price) values
+         ('${P87}1','$C1','شراء ٢٨٧',10,1000,600), ('${P87}2','$C1','مرتجع ٢٨٧',10,5000,3000)
+       on conflict (id) do update set stock = excluded.stock;" >/dev/null
+L87='[{"product_id":"'${P87}1'","name":"شراء ٢٨٧","qty":40,"purchase_price":600,"sell_price":0}]'
+L87B='[{"product_id":"'${P87}1'","name":"شراء ٢٨٧","qty":41,"purchase_price":600,"sell_price":0}]'
+NP0=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select count(*) from purchases where clinic_id='$C1'")
+for _ in 1 2 3; do
+  $P -c "select _as287('$C1', \$q\$select (purchase_record_once('R287-P1', '$L87'::jsonb, '{\"amount_paid\":0}'::jsonb, false)).id::text\$q\$);" >/dev/null
+done
+chk "ثلاثُ ضغطاتٍ بنفس المرجع (جوابٌ ضاع) = فاتورةُ شراءٍ واحدة" \
+    "select (count(*) - $NP0)::text from purchases where clinic_id='$C1'" "1"
+chk "  والرصيدُ زاد مرّةً واحدة (١٠ + ٤٠)" "select stock::text from products where id='${P87}1'" "50.000"
+chk "  وطلبٌ تغيّر بعد أن ثبتت الأولى يُرفض باسمه (لا يُرجع الأولى صامتاً كأنّ التعديلَ انحفظ)" \
+    "select split_part(_as287('$C1', \$q\$select (purchase_record_once('R287-P1', '$L87B'::jsonb, '{\"amount_paid\":0}'::jsonb, false)).id::text\$q\$), ':', 3)" "purchase_ref_changed"
+chk "  ولا يضيف شيئاً" "select stock::text from products where id='${P87}1'" "50.000"
+# الكتابةُ بجملتها والقراءةُ بجملةٍ ثانية (درسُ 0257: استعلامٌ فرعيٌّ بجملة النداء يرى لقطةَ ما قبله).
+$P -c "select _as287('$C1', \$q\$select (purchase_record_once('R287-P2', '$L87B'::jsonb, '{\"amount_paid\":0}'::jsonb, false)).id::text\$q\$);" >/dev/null
+chk "  ومرجعٌ جديد فاتورةٌ جديدة (٥٠ + ٤١)" "select stock::text from products where id='${P87}1'" "91.000"
+chk "  وبلا مرجع يُرفض قبل أيّ كتابة" \
+    "select split_part(_as287('$C1', \$q\$select (purchase_record_once('  ', '$L87'::jsonb, '{}'::jsonb, false)).id::text\$q\$), ':', 3)" "client_ref_required"
+chk "  ومحاولةٌ رفضها جسمُ الشراء (بلا سطور) لا تحجز المرجع: يتراجع مع ما كتبته، والخطأُ يُرفع لا يُبلع" \
+    "select (_as287('$C1', \$q\$select (purchase_record_once('R287-P3', '[]'::jsonb, '{}'::jsonb, false)).id::text\$q\$) like 'err:%empty purchase%')::text
+            || '|' || (select count(*) from rpc_refs where client_ref = 'R287-P3')::text" "true|0"
+L1=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select _as287('$C1', \$q\$select lot_add_once('R287-L1', '${P87}1', 5, '2027-01-01', 'ن')::text\$q\$)")
+chk "«أضف دفعة» مرّتين بنفس المرجع = الدفعةُ نفسُها" \
+    "select (_as287('$C1', \$q\$select lot_add_once('R287-L1', '${P87}1', 5, '2027-01-01', 'ن')::text\$q\$) = '$L1')::text" "true"
+chk "  والرصيدُ زاد مرّةً (٩١ + ٥)، ودفعةٌ واحدة" \
+    "select stock::text || '|' || (select count(*) from product_lots where product_id='${P87}1' and source='added')::text from products where id='${P87}1'" "96.000|1"
+chk "  وكميةٌ أخرى بنفس المرجع تُرفض باسمها" \
+    "select split_part(_as287('$C1', \$q\$select lot_add_once('R287-L1', '${P87}1', 6, '2027-01-01', 'ن')::text\$q\$), ':', 3)" "lot_ref_changed"
+CART87='[{"product_id":"'${P87}2'","name":"مرتجع ٢٨٧","qty":3,"unit_price":5000,"unit_cost":3000,"stock_qty":3}]'
+$P -c "select _as287('$C1', \$q\$select (retail_checkout('$CART87'::jsonb, jsonb_build_object('client_ref','R287-S1'))).id::text\$q\$);" >/dev/null
+INV87=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref='R287-S1'")
+II87=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoice_items where invoice_id='$INV87'")
+for _ in 1 2; do
+  $P -c "select _as287('$C1', \$q\$select (return_invoice_items_once('R287-RET', '$INV87', '[{\"item_id\":\"$II87\",\"qty\":1}]'::jsonb, null, null)).id::text\$q\$);" >/dev/null
+done
+chk "المرتجعُ الجزئيّ مرّتين بنفس المرجع = مرّةً واحدة: الرصيد ٧ ⇒ ٨ لا ٩، والسطرُ ٢ لا ١، والمدفوعُ ١٠٬٠٠٠ لا ٥٬٠٠٠" \
+    "select (select stock::text from products where id='${P87}2') || '|' || (select qty::text from invoice_items where id='$II87') || '|' || (select amount_paid::text from invoices where id='$INV87')" \
+    "8.000|2.000|10000.00"
+chk "  وكميةٌ أخرى بنفس المرجع تُرفض باسمها" \
+    "select split_part(_as287('$C1', \$q\$select (return_invoice_items_once('R287-RET', '$INV87', '[{\"item_id\":\"$II87\",\"qty\":2}]'::jsonb, null, null)).id::text\$q\$), ':', 3)" "return_ref_changed"
+
+# الدفتر: كلُّ تغييرٍ بصفّه، بكاتبه، بلا تعديل أيّ دالّةٍ قائمة.
+chk "الدفتر: البيعُ مكتوبٌ باسم كاتبه (retail_checkout > deduct_stock_pooled — ولو نوديت من دالّةٍ لافّة) وفرقُه −٣" \
+    "select source || '|' || (chain like '%retail_checkout>deduct_stock_pooled')::text || '|' || delta::text from stock_ledger where product_id='${P87}2' and op='update' order by id limit 1" \
+    "retail_checkout|true|-3.000"
+chk "  وأنواعُ المادّة بالترتيب كما يراها الطبيب (بيع، إرجاع)" \
+    "select _as287('$C1', \$q\$select string_agg(kind || ':' || delta::text, ',' order by id) from stock_ledger_of('${P87}2') where kind <> 'checkpoint' and kind <> 'open'\$q\$)" \
+    "sale:-3.000,return:1.000"
+chk "  والشراءُ عبر الباب شراءٌ، والدفعةُ دفعة" \
+    "select _as287('$C1', \$q\$select string_agg(kind || ':' || delta::text, ',' order by id) from stock_ledger_of('${P87}1') where kind in ('purchase','lot')\$q\$)" \
+    "purchase:40.000,purchase:41.000,lot:5.000"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); update products set stock = 9 where id = '${P87}2';" >/dev/null
+chk "  والتعديلُ المباشر (نموذجُ المادّة) «يدويّ» بفاعله — صاحبُ العيادة" \
+    "select _as287('$C1', \$q\$select kind || ':' || actor_kind from stock_ledger_of('${P87}2') order by id desc limit 1\$q\$)" "manual:owner"
+$P -c "select _as287('$C1', \$q\$select (refund_invoice('$INV87')).id::text\$q\$);" >/dev/null
+chk "  والترجيعُ «ترجيع» (كان «تعديل يدوي أو جرد» بالحركات القديمة)" \
+    "select _as287('$C1', \$q\$select kind || ':' || delta::text from stock_ledger_of('${P87}2') order by id desc limit 1\$q\$)" "refund:2.000"
+$P -c "select _as287('$C1', \$q\$select delete_product('${P87}2', 'فحص ٢٨٧')::text\$q\$);" >/dev/null
+$P -c "select _as287('$C1', \$q\$select (restore_product('${P87}2')).id::text\$q\$);" >/dev/null
+chk "  والحذفُ والاسترجاع بنوعيهما، والرصيدُ يرجع كما كان" \
+    "select _as287('$C1', \$q\$select string_agg(kind || ':' || delta::text, ',' order by id) from (select * from stock_ledger_of('${P87}2') order by id desc limit 2) x\$q\$) || '|' || (select stock::text from products where id='${P87}2')" \
+    "delete:-11.000,restore:11.000|11.000"
+chk "  والصفحاتُ بالمؤشّر: الصفحةُ الثانية تبدأ بعد آخر الأولى بلا تكرار" \
+    "select _as287('$C1', \$q\$select (select min(id) from stock_ledger_of('${P87}2', null, 2)) > (select max(id) from stock_ledger_of('${P87}2', (select min(id) from stock_ledger_of('${P87}2', null, 2)), 100))\$q\$)" "true"
+chk "verify_stock_ledger: الدفترُ يطابق الرصيدَ لكلّ مادّةٍ بالعيادة بعد كلّ ما سبق بالحزمة" \
+    "select _as287('$C1', 'select count(*)::text from verify_stock_ledger()')" "0"
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = stock + 1 where id='${P87}1';" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+chk "  وكتابةٌ مرّت بلا المحفّز تُقال بمادّتها (لا تُخفى)" \
+    "select _as287('$C1', \$q\$select string_agg(product_id::text || ':' || ledger_qty::text || '/' || live_qty::text, ',') from verify_stock_ledger()\$q\$)" "${P87}1:96.000/97.000"
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = stock - 1 where id='${P87}1';" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+# والأعمى قبل المراجعة: (أ) مادّةٌ وُلدت برصيدٍ والمحفّزُ معطَّل — لا صفَّ لها أصلاً فكانت خارجَ المقارنة؛ (ب) مادّةٌ وُلدت بصفر (لا صفّ)
+# ثمّ رصيدٌ بلا محفّز ثمّ حركةٌ عادية — أوّلُ صفٍّ «٧ ← ٨» كان يطوي السبعةَ بالأساس. كلٌّ يُقال، ثمّ يُرجَع كما كان.
+# (كلُّ ALTER بنداءٍ وحده: محفّزاتُ الإدراج المعلَّقة تمنعه بمعاملته.)
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "insert into products(id, clinic_id, name, stock, sell_price, purchase_price) values ('${P87}8', '$C1', 'بلا دفتر ٢٨٧', 5, 1000, 600)
+         on conflict (id) do update set stock = 5;" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+$P -c "insert into products(id, clinic_id, name, stock, sell_price, purchase_price) values ('${P87}9', '$C1', 'من صفر ٢٨٧', 0, 1000, 600)
+         on conflict (id) do update set stock = 0;" >/dev/null
+$P -c "alter table products disable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = 7 where id = '${P87}9';" >/dev/null
+$P -c "alter table products enable trigger products_stock_ledger;" >/dev/null
+$P -c "update products set stock = 8 where id = '${P87}9';" >/dev/null
+chk "  ورصيدٌ بلا أيّ صفّ (وُلد والمحفّزُ معطَّل)، ورصيدٌ قبل أوّل صفّ («٧ ← ٨» بلا ما يشرح السبعة) يُقالان (كانا يُطويان)" \
+    "select _as287('$C1', \$q\$select string_agg(product_id::text || ':' || ledger_qty::text || '/' || live_qty::text, ',' order by product_id) from verify_stock_ledger()\$q\$)" \
+    "${P87}8:0/5.000,${P87}9:1.000/8.000"
+$P -c "alter table products disable trigger all;" >/dev/null
+$P -c "delete from products where id in ('${P87}8', '${P87}9');" >/dev/null
+$P -c "alter table products enable trigger all;" >/dev/null
+$P -c "delete from stock_ledger where product_id in ('${P87}8', '${P87}9');" >/dev/null
+chk "    وبعد إرجاعهما لا شيءَ يُقال" "select _as287('$C1', 'select count(*)::text from verify_stock_ledger()')" "0"
+
+# الصلاحيات: القراءةُ لمن يدير المخزن، والكتابةُ من المحفّز وحده، والعيادةُ الأخرى لا ترى.
+chk "الاستقبالُ لا يقرأ الدفتر — رفضُ صلاحيةٍ بتلميحٍ عربيّ لا «ماكو حركات»" \
+    "select split_part(_rls_try('$RCP', \$q\$select * from stock_ledger_of('${P87}2')\$q\$), ':', 2)" "42501"
+chk "  ولا الجدولَ مباشرةً (صفرُ صفوف)" "select _rls_try('$RCP', \$q\$select 1 from stock_ledger where product_id = '${P87}2'\$q\$)" "rows:0"
+chk "  والمديرُ يقرأ صفوفَ عيادته" \
+    "select (_rls_try('$C1', \$q\$select 1 from stock_ledger where product_id = '${P87}2'\$q\$) <> 'rows:0')::text" "true"
+chk "  والعيادةُ الثانية لا ترى صفوفَ الأولى" "select _rls_try('$C2', \$q\$select 1 from stock_ledger where product_id = '${P87}2'\$q\$)" "rows:0"
+chk "  ولا أحدَ يكتب الدفترَ بيده (لا سياسةَ كتابة)" \
+    "select left(_rls_try('$C1', \$q\$insert into stock_ledger(clinic_id, product_id, op, delta, source) values ('$C1', '${P87}2', 'update', 99, 'direct')\$q\$), 13)" "guarded:42501"
+# الحذفُ مرفوضٌ بطبقتين: الصلاحيةُ مسحوبة (42501 — الإنتاج: 0287 تسحبها بعد الإنشاء)، وإن ردّها منحٌ عامّ (قالبُ الحزمة يمنح
+# كلَّ الجداول بعد الموجة الأولى) فلا سياسةَ حذف: صفرُ صفوف. والثابتُ الحقيقيّ أن الصفوفَ باقية — يُعدّ بجملةٍ ثانية (درسُ 0257).
+NL87=$(W "select count(*) from stock_ledger where product_id = '${P87}2'")
+chk "  ولا يمحوه: الحذفُ مرفوض (صلاحيةٌ مسحوبة، أو بلا سياسة حذف)" \
+    "select case when r like 'guarded:42501%' or r = 'rows:0' then 'refused' else r end from (select _rls_try('$C1', \$q\$delete from stock_ledger where product_id = '${P87}2'\$q\$) r) x" "refused"
+chk "    والصفوفُ باقيةٌ كلُّها (${NL87})" "select count(*)::text from stock_ledger where product_id = '${P87}2'" "$NL87"
+out=$($P -f "$MIG/0287_stock_safety.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت"; fail=1; }
+chk "وإعادةُ 0287 (بعد تراجع 0222) بلا أثر: لا نقطةَ بدءٍ ثانية لمادّة" \
+    "select count(*)::text from (select product_id from stock_ledger where op = 'checkpoint' and product_id is not null group by 1 having count(*) > 1) x" "0"
+chk "  ومحفّزٌ واحدٌ على كلّ جدول" \
+    "select count(*)::text from pg_trigger where tgname in ('products_stock_ledger', 'company_sections_stock_ledger') and not tgisinternal" "2"
+$P -c "drop function if exists _as287(uuid, text);" >/dev/null
+
+# ── 0288: الراجعُ يصل مادّتَه الحيّة، والدمجُ يأخذ ما يتبعها، والجرعةُ المرجَعة معلَّقة، ومعدّلُ البيع بالعلبة ──────
+echo "▸ 0288: الراجعُ يتبع الدمجَ ويرفض المحذوف، والدمجُ يأخذ ربطَ الجرعة والجرد، وترجيعُ الجرعات يُرجعها معلَّقة"
+C1=11111111-1111-1111-1111-111111111111
+P88=bbbb0288-0000-4000-8000-00000000000
+# أقسامٌ قبلنا تعيد 0255 وحدها (فيرجع محفّزُ الدمج لنصّها) — قسمُنا يعيد 0288 أوّلاً، وحارسُها يعرف نصَّ المصدر ببصمته.
+out=$($P -f "$MIG/0288_stock_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
+$P -c "create or replace function _as288(who uuid, q text) returns text language plpgsql as \$fn\$
+         declare r text; h text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return r;
+         -- التلميحُ بعد الرسالة: الجزءُ الثالث يبقى الرمز، والرابعُ التلميحُ العربيّ
+         exception when others then get stacked diagnostics h = pg_exception_hint;
+           return 'err:' || sqlstate || ':' || sqlerrm || ':' || coalesce(h, ''); end \$fn\$;
+       delete from stock_counts where product_id::text like 'bbbb0288%';
+       insert into pets(id, name) values ('${P88}7', 'حيوان ٢٨٨') on conflict (id) do nothing;
+       insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
+         ('${P88}1','$C1','توأم ٢٨٨',3,1000,600,null,false), ('${P88}2','$C1','أصل ٢٨٨',5,1000,600,null,false),
+         ('${P88}3','$C1','محذوفة ٢٨٨',2,1000,600,null,false), ('${P88}4','$C1','حبوب ٢٨٨',10,3000,1500,30,true),
+         ('${P88}5','$C1','توأمٌ ثانٍ ٢٨٨',1,1000,600,null,false)
+       on conflict (id) do update set stock = excluded.stock;" >/dev/null
+# الربطُ والجرعةُ المعلَّقة والجردُ المعلَّق على التوأم (كتابةٌ بصاحب القاعدة: بابُ الإعدادات يحرس authenticated وحده).
+$P -c "insert into clinic_drugs(id, clinic_id, name, product_id, dose_unit, dose_qty) values ('${P88}a', '$C1', 'دواء ٢٨٨', '${P88}1', 'box', 1)
+         on conflict (id) do update set product_id = excluded.product_id;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status)
+         values ('${P88}b', '$C1', gen_random_uuid(), '${P88}7', '${P88}1', 'جرعة ٢٨٨', 500, 1, 1, 'box', now(), 'pending')
+         on conflict (id) do nothing;
+       insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, reason, status, source)
+         values ('$C1', '${P88}1', 'توأم ٢٨٨', 3, 2, 'shortage', 'pending', 'count');" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88}2', '${P88}1')).id::text\$q\$);" >/dev/null
+chk "الدمج: ربطُ «سعر الجرعة» يتبع التوأمَ لأصله (كان يبقى على المحذوف فتُباع الجرعةُ بلا خصم)" \
+    "select product_id::text from clinic_drugs where id = '${P88}a'" "${P88}2"
+chk "  والجرعةُ المعلَّقة معه" "select product_id::text from dose_charges where id = '${P88}b'" "${P88}2"
+chk "  والجردُ المعلَّق معه (كان يفرغ فتبطله الموافقةُ بصمت)" \
+    "select count(*)::text from stock_counts where product_id = '${P88}2' and status = 'pending' and source = 'count'" "1"
+chk "  والرصيدُ مجموعُهما (٥ + ٣)" "select stock::text from products where id = '${P88}2'" "8.000"
+$P -c "insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, reason, status, source)
+         values ('$C1', '${P88}5', 'توأمٌ ثانٍ ٢٨٨', 1, 0, 'shortage', 'pending', 'count');" >/dev/null
+chk "  ومعلَّقان على المادّتين (جردٌ وجرد) يرفضان الدمجَ بالاسم — لا جردَ يُبطَل، والتلميحُ يسمّي ما على التوأم بنوعه («جرد» لا «سند تلف»)" \
+    "select split_part(r, ':', 3) || '|' || (split_part(r, ':', 4) like '«توأمٌ ثانٍ ٢٨٨» عليها جرد ينتظر، و«أصل ٢٨٨» عليها جرد أو سند ينتظر%')::text
+       from (select _as288('$C1', \$q\$select (merge_products('${P88}2', '${P88}5')).id::text\$q\$) r) x" "merge_waste_pending|true"
+$P -c "delete from stock_counts where product_id::text like 'bbbb0288%';" >/dev/null
+
+# الراجعُ (retail_return) لمادّةٍ دُمجت يصل أصلَها، والمحذوفةُ تُرفض بلا سحبِ نقد.
+NX0=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select count(*) from expenses where clinic_id = '$C1' and category = 'مرتجع'")
+$P -c "select _as288('$C1', \$q\$select retail_return('[{\"product_id\":\"${P88}1\",\"name\":\"توأم ٢٨٨\",\"qty\":-1,\"unit_price\":1000,\"stock_qty\":-1}]'::jsonb, jsonb_build_object('client_ref','R288-RET1'))::text\$q\$);" >/dev/null
+chk "«راجع» بمعرّف التوأم بعد دمجه يصل الأصل (٨ + ١) — كان سحباً من الدرج بلا قطعة" "select stock::text from products where id = '${P88}2'" "9.000"
+$P -c "select _as288('$C1', \$q\$select delete_product('${P88}3', 'فحص ٢٨٨')::text\$q\$);" >/dev/null
+chk "  ومادّةٌ بالمحذوفات تُرفض باسمها ولا يُكتب سحبُ «مرتجع»" \
+    "select split_part(_as288('$C1', \$q\$select retail_return('[{\"product_id\":\"${P88}3\",\"name\":\"محذوفة ٢٨٨\",\"qty\":-1,\"unit_price\":1000,\"stock_qty\":-1}]'::jsonb, jsonb_build_object('client_ref','R288-RET2'))::text\$q\$), ':', 3)
+            || '|' || ((select count(*) from expenses where clinic_id = '$C1' and category = 'مرتجع') - $NX0)::text" "return_product_deleted|1"
+
+# ترجيعُ فاتورةِ جرعاتٍ وحذفُها يُرجعان جرعاتِها معلَّقة (والجرعةُ التي أُلغي إعطاؤها ملغاة).
+CART88='[{"product_id":"'${P88}2'","name":"جرعة","qty":1,"unit_price":500,"unit_cost":300,"stock_qty":1}]'
+for r in R288-D1 R288-D2; do
+  $P -c "select _as288('$C1', \$q\$select (retail_checkout('$CART88'::jsonb, jsonb_build_object('client_ref','$r'))).id::text\$q\$);" >/dev/null
+done
+INV1=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D1'")
+INV2=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D2'")
+$P -c "insert into treatment_entries(id, pet_id, medication, time, amount, administered_at, clinic_id) values
+         ('${P88}c', '${P88}7', 'دواء ٢٨٨', '08:00', '1', now(), '$C1'),
+         ('${P88}d', '${P88}7', 'دواء ٢٨٨', '09:00', '1', null, '$C1'),
+         ('${P88}e', '${P88}7', 'دواء ٢٨٨', '10:00', '1', now(), '$C1')
+         on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status, invoice_id, billed_at) values
+         ('${P88}f', '$C1', '${P88}c', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV1', now()),
+         ('${P88}0', '$C1', '${P88}d', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV1', now()),
+         ('${P88}9', '$C1', '${P88}e', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV2', now())
+         on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (refund_invoice('$INV1')).status\$q\$);" >/dev/null
+chk "ترجيعُ فاتورة الجرعات: المعطاةُ ترجع «معلَّقة» بلا فاتورة (الدواءُ رجع للرفّ فالجرعةُ تنتظر البيع)، والملغاةُ «ملغاة»" \
+    "select string_agg(id::text || '=' || status || ':' || coalesce(invoice_id::text, '-'), ',' order by id) from dose_charges where id in ('${P88}f', '${P88}0')" \
+    "${P88}0=void:-,${P88}f=pending:-"
+$P -c "select _as288('$C1', \$q\$select delete_invoice('$INV2')::text\$q\$);" >/dev/null
+chk "  وحذفُ الفاتورة كذلك (حذفٌ «لأعيدها بالاسم الصحيح» يجد الجرعةَ بالسلّة)" \
+    "select status || ':' || coalesce(invoice_id::text, '-') from dose_charges where id = '${P88}9'" "pending:-"
+# وتحديثٌ بلا ترجيع (تسديدُ دَينها وعدُّ طباعتها) لا يُرجع جرعاتِها: الحارسُ بالجسم وحده يمنع كلَّ تحديثٍ من إرجاعها — كان الفحصُ يعدّ
+# المحفّزَ ولا يُمارسه (مراجعة ٢٢/١١). كلُّ نداءٍ بجملته، والقراءةُ بعدها (درسُ 0257)، والتسديدُ مقروءٌ أنه حصل فعلاً.
+$P -c "select _as288('$C1', \$q\$select (retail_checkout('$CART88'::jsonb, jsonb_build_object('client_ref','R288-D3','amount_paid',0,'customer_name','زبون ٢٨٨'))).id::text\$q\$);" >/dev/null
+INV3=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D3'")
+$P -c "insert into treatment_entries(id, pet_id, medication, time, amount, administered_at, clinic_id) values ('${P88}6', '${P88}7', 'دواء ٢٨٨', '11:00', '1', now(), '$C1')
+         on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status, invoice_id, billed_at)
+         values ('${P88}8', '$C1', '${P88}6', '${P88}7', '${P88}2', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV3', now()) on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (settle_invoice('$INV3', 100, 'cash')).status\$q\$);" >/dev/null
+$P -c "select _as288('$C1', \$q\$select bump_invoice_prints('$INV3')::text\$q\$);" >/dev/null
+chk "  وتسديدُ فاتورة الجرعات وطباعتُها (تحديثان بلا ترجيع) لا يُرجعان جرعتَها — والتسديدُ حصل فعلاً" \
+    "select (select status || ':' || coalesce(invoice_id::text, '-') from dose_charges where id = '${P88}8') || '|' || (select (amount_paid = 100)::text from invoices where id = '$INV3')" "billed:$INV3|true"
+
+# قاعدةُ المفرد بالدمج (مراجعة ٢٢/١١): جرعةٌ وربطٌ بالمفرد يتبعان أصلاً يُباع بالمفرد وحده (ومخصومُها بمفرد الأصل)؛ أصلٌ بلا مفرد كان
+# يكلّف كلَّ حبّةٍ بالعلبة — فالربطُ يبقى على التوأم والجرعةُ بلا مادّة (تُباع بسعرها كما كانت على الميّت).
+P88B=bbbb0288-0000-4000-8000-0000000001
+$P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
+         ('${P88B}11','$C1','حبوب توأم ٢٨٨',2,3000,1500,30,true), ('${P88B}12','$C1','حبوب أصل بلا مفرد ٢٨٨',2,3000,1500,null,false),
+         ('${P88B}13','$C1','حبوب توأم ثانٍ ٢٨٨',2,3000,1500,30,true), ('${P88B}14','$C1','حبوب أصل بمفرد ٢٨٨',2,3000,1500,10,true)
+       on conflict (id) do update set stock = excluded.stock;
+       insert into clinic_drugs(id, clinic_id, name, product_id, dose_unit, dose_qty) values
+         ('${P88B}31', '$C1', 'دواء مفرد ٢٨٨ أ', '${P88B}11', 'sub', 2), ('${P88B}32', '$C1', 'دواء مفرد ٢٨٨ ب', '${P88B}13', 'sub', 2)
+       on conflict (id) do update set product_id = excluded.product_id;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status) values
+         ('${P88B}21', '$C1', gen_random_uuid(), '${P88}7', '${P88B}11', 'جرعة مفرد', 300, 0.067, 2, 'sub', now(), 'pending'),
+         ('${P88B}22', '$C1', gen_random_uuid(), '${P88}7', '${P88B}13', 'جرعة مفرد', 300, 0.067, 2, 'sub', now(), 'pending')
+       on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}12', '${P88B}11')).id::text\$q\$);" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}14', '${P88B}13')).id::text\$q\$);" >/dev/null
+chk "الدمجُ وقاعدةُ المفرد: أصلٌ بلا مفرد ⇒ الجرعةُ بلا مادّة والربطُ باقٍ على التوأم؛ أصلٌ بمفرد ١٠ ⇒ تتبعه بمخصوم ٢ ÷ ١٠ = ٠٫٢٠٠ والربطُ معها" \
+    "select (select coalesce(product_id::text, 'null') || ':' || coalesce(stock_qty::text, 'null') from dose_charges where id = '${P88B}21')
+            || '|' || (select product_id::text from clinic_drugs where id = '${P88B}31')
+            || '|' || (select product_id::text || ':' || stock_qty::text from dose_charges where id = '${P88B}22')
+            || '|' || (select product_id::text from clinic_drugs where id = '${P88B}32')" \
+    "null:null|${P88B}11|${P88B}14:0.200|${P88B}14"
+
+# والمختومةُ تتبع الدمجَ أيضاً: بيعتُها من التوأم، ثمّ الدمج، ثمّ ترجيعُها — الدواءُ رجع للأصل، والجرعةُ معلَّقةٌ باسم الأصل (لا الميّت).
+$P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
+         ('${P88B}15','$C1','توأم مختوم ٢٨٨',10,1000,600,null,false), ('${P88B}16','$C1','أصل مختوم ٢٨٨',10,1000,600,null,false)
+       on conflict (id) do update set stock = excluded.stock;" >/dev/null
+CART88T='[{"product_id":"'${P88B}15'","name":"جرعة","qty":1,"unit_price":500,"unit_cost":300,"stock_qty":1}]'
+$P -c "select _as288('$C1', \$q\$select (retail_checkout('$CART88T'::jsonb, jsonb_build_object('client_ref','R288-D4'))).id::text\$q\$);" >/dev/null
+INV4=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select id from invoices where client_ref = 'R288-D4'")
+$P -c "insert into treatment_entries(id, pet_id, medication, time, amount, administered_at, clinic_id) values ('${P88B}41', '${P88}7', 'دواء ٢٨٨', '12:00', '1', now(), '$C1')
+         on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at, status, invoice_id, billed_at)
+         values ('${P88B}23', '$C1', '${P88B}41', '${P88}7', '${P88B}15', 'جرعة', 500, 1, 1, 'box', now(), 'billed', '$INV4', now()) on conflict (id) do nothing;" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}16', '${P88B}15')).id::text\$q\$);" >/dev/null
+$P -c "select _as288('$C1', \$q\$select (refund_invoice('$INV4')).status\$q\$);" >/dev/null
+chk "  والمختومةُ تتبع الدمج: بيعٌ من التوأم ثمّ دمجٌ ثمّ ترجيع ⇒ الجرعةُ معلَّقةٌ باسم الأصل (كانت باسم الميّت فتُباع بلا خصم) والأصلُ ٩ + ١٠ + ١ = ٢٠" \
+    "select (select status || ':' || product_id::text from dose_charges where id = '${P88B}23') || '|' || (select stock::text from products where id = '${P88B}16')" \
+    "pending:${P88B}16|20.000"
+
+# معدّلُ البيع بوحدة الرصيد، والمرجَعةُ خارجه.
+SUB88='[{"product_id":"'${P88}4'","name":"حبوب","qty":6,"unit_price":100,"unit_cost":50,"stock_qty":0.2}]'
+for r in R288-S1 R288-S2; do
+  $P -c "select _as288('$C1', \$q\$select (retail_checkout('$SUB88'::jsonb, jsonb_build_object('client_ref','$r'))).id::text\$q\$);" >/dev/null
+done
+$P -c "select _as288('$C1', \$q\$select (refund_invoice((select id from invoices where client_ref = 'R288-S2'))).status\$q\$);" >/dev/null
+chk "معدّلُ البيع: ٦ حبّات من علبة ٣٠ = ٠٫٢ علبة لا ٦، والمرجَعةُ لا تُحسب" \
+    "select _as288('$C1', \$q\$select sold::text from product_sales_rate(30) where product_id = '${P88}4'\$q\$)" "0.200"
+out=$($P -f "$MIG/0288_stock_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0288 ما انعادت"; fail=1; }
+chk "وإعادةُ 0288 بلا أثر: محفّزٌ واحد، والأجسامُ بعلامتها" \
+    "select (select count(*) from pg_trigger where tgname = 'invoices_dose_reopen' and not tgisinternal)::text || '|'
+            || (select (prosrc like '%-- +0288%')::text from pg_proc where oid = to_regprocedure('public.credit_stock(uuid,numeric,uuid)'))" "1|true"
+$P -c "drop function if exists _as288(uuid, text);" >/dev/null
 
 # ── 0291: ديونٌ قديمة كثيرة بدفتر الشركة — كلٌّ بتاريخه، بطلبٍ واحد ومرجعِ إعادة ────────────────────────────────
 # KC عيادةٌ وصاحبُها (مدير)، KV طبيبُها، KO عيادةٌ ثانية. الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).

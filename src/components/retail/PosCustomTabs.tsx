@@ -30,6 +30,7 @@ import {
   TAB_LIMITS, TILE_MIN, addItem, cleanTabName, draftProblem, hasItem, moveItem, nextSort, removeItemAt, resolveItems,
   sameDraft, setAllShapes, setShapeAt, type PosTab, type PosTabDraft, type ResolvedItem, type TileShape, type TileSize,
 } from "@/lib/posTabs";
+import { wholeSubUnits } from "@/lib/cartCap";
 
 /* ── الشريط ──────────────────────────────────────────────────────────────── */
 export function PosTabPills({ tabs, failed, activeId, compact, onPick, onNew, onRetry }: {
@@ -133,7 +134,7 @@ function Tile({ r, images, listPrice, flash, preview, liftOf, onProduct, onServi
   if (r.kind === "product") {
     const p = r.product;
     const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
-    const zero = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+    const zero = p.pooled ? false : subAvail ? wholeSubUnits(p.stock, p.units_per_box as number) < 1 : p.stock <= 0;
     /* البيعُ قبل الجرد (0266): ما يرفعه الوضعُ ليس «نفدت» — رصيدُه بإشارته بحبرٍ محايد، كشبكة المنتجات. */
     lifted = zero && !preview && !!liftOf?.(p);
     out = zero && !lifted;

@@ -65,7 +65,10 @@
  *      بطاقةُ «جرد البداية» (opencard)؛ والتوأمُ بالاسم (twin).
  *
  *   node scripts/waste-tab-test.mjs [--i18n <fragment.json>]…
- *   WASTE_TAB_SRC=<قديم.tsx> STOCK_COUNT_SRC=<قديم.tsx> [WASTE_OLD=ui2|fix2|multi|w5a|ui3|ui3f|r3|r3f|neg] node scripts/waste-tab-test.mjs
+ *   ذ) **بحثُ «تريد تعدّ مادة ثانية؟» (تدقيق المخزن ٢٢/١١، srch)** — كبحث السند: المطابقُ بالضبط أوّلاً، والسقفُ يقول إنه سقف،
+ *      والمعلَّقةُ والمجمَّعةُ تُريان بسببهما، و«ما لكينا» تُقال (countsearch).
+ *
+ *   WASTE_TAB_SRC=<قديم.tsx> STOCK_COUNT_SRC=<قديم.tsx> [WASTE_OLD=ui2|fix2|multi|w5a|ui3|ui3f|r3|r3f|neg|srch] node scripts/waste-tab-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -1081,6 +1084,36 @@ const SCENARIOS = {
     ok("count.code", "وعدُّ اليوم كذلك: «w90» وجزءُ الباركود الإضافيّ يلقيان المادة", x.some((v) => v.includes(SHELF.name)) && y.some((v) => v.includes(SHELF.name)), J({ x, y }));
     ui.unmount();
     return [...s.ui.errors, ...ui.errors];
+  },
+
+  /* ذ) بحثُ «تريد تعدّ مادة ثانية؟» كبحث السند (تدقيق المخزن ٢٢/١١): كان يقصّ عند ٨ بترتيب القائمة بصمت ويخفي المعلَّقةَ والمجمَّعة —
+   *    فرقمُ رفٍّ «47» يطابق عشرةَ باركوداتٍ تحويه والمادّةُ خارج الثمانية، والمعلَّقةُ لا تظهر أصلاً، و«المادة مو بالنظام» تُصدَّق فتُدخل
+   *    توأماً. الآن: المطابقُ بالضبط أوّلاً، والسقفُ يقول إنه سقف، وما وُجد ولا يُعدّ هنا يُرى بسببه، و«ما لكينا» تُقال. */
+  async countsearch(M, ok) {
+    const SHELF = P("p-47", "يود للجروح", { barcode: "47" });
+    const BC = Array.from({ length: 10 }, (_, i) => P(`p-bc${i}`, `أدوية ${i}`, { barcode: `869047${String(i).padStart(7, "0")}` }));
+    const PEND = P("p-pend", "شامبو كلاب");
+    const POOLED = P("p-pooled", "سرنجة حوض", { pooled: true });
+    const pg = await countPage(M, {
+      products: [...BC, SHELF, PEND, POOLED],
+      pending: [row({ id: "c-pend", product_id: PEND.id, product_name: PEND.name, system_qty: 5, counted_qty: 3, reason: "shortage", source: "count" })],
+    });
+    const hits = async (q) => { await pg.h.typeIn("data-count-search", q); return pg.ui.findAll("data-count-add").map((n) => pg.ui.text(n)); };
+    const held = () => pg.ui.findAll("data-count-held").map((n) => [n.props["data-count-held"], pg.ui.text(n)]);
+    const a = await hits("47");
+    const more = pg.ui.findAll("data-count-more").map((n) => pg.ui.text(n));
+    ok("count.exactFirst", "رقمُ رفٍّ «47» كُتب كاملاً: مادتُه أوّلُ النتائج — لا خارج الثمانية خلف باركوداتٍ تحويه",
+      (a[0] ?? "").includes(SHELF.name) && a.length === 8, J(a));
+    ok("count.more", "والسقفُ يقول إنه سقف: «و3 غيرها — اكتب أكثر» (القائمةُ المقصوصة لا تُصدَّق بصمت)", more.length === 1 && more[0].includes("و3 غيرها"), J(more));
+    await hits("شامبو");
+    const h1 = held();
+    await hits("سرنجة");
+    const h2 = held();
+    ok("count.held", "المعلَّقةُ تُرى باسمها و«تنتظر موافقة» والمجمَّعةُ بسببها — لا «ماكو» عن مادّةٍ بالنظام",
+      h1.length === 1 && h1[0][0] === "pending" && h1[0][1].includes(PEND.name) && h2.length === 1 && h2[0][0] === "pooled" && h2[0][1].includes(POOLED.name), J({ h1, h2 }));
+    const none = await hits("ماكو هيج مادة");
+    ok("count.noHit", "وما لا يطابق شيئاً يُقال («ما لكينا مادة…») لا قائمةٌ فارغةٌ صامتة", none.length === 0 && !!pg.h.one("data-count-nohit") && held().length === 0);
+    return pg.done();
   },
 
   /* ي٦) لا لونَ فوق 700 على سطور الميزة: السلالمُ الدلالية تقف عند 700 (CLAUDE.md §٣) — صنفٌ بلا CSS والنصُّ يرث لونَ أبيه */
@@ -2214,6 +2247,9 @@ const NEG_KEYS = {
   "open.again": "opencard", "open.none": "opencard", "open.pending": "opencard",
   "twin.say": "twin",
 };
+/* فحوصُ تدقيق المخزن (srch، ٢٢/١١) ← سيناريوها: كلٌّ يجب أن يسقط على شِفرة الجرد قبلها (`WASTE_OLD=srch` ونسختُها بـSTOCK_COUNT_SRC) —
+ * وعلى كلّ ما قبلها كذلك: بحثُ «تريد تعدّ مادة ثانية؟» يرتّب المطابقَ بالضبط أوّلاً، ويقول سقفَه، ويُري المعلَّقةَ والمجمَّعة، ويقول «ما لكينا». */
+const SRCH_KEYS = { "count.exactFirst": "countsearch", "count.more": "countsearch", "count.held": "countsearch", "count.noHit": "countsearch" };
 /* حرّاسُ رجوعٍ تمرّ على القديم عمداً — القديمُ صحيحٌ فيها، والتصليحُ لا يكسرها (طفراتُها تُثبت أنها تحرس): متوسّطٌ صفر، ومن لا
  * صلاحيةَ له لا يُركَّب له السند، وتعبئةٌ عُدّلت أو شيل منها سطرٌ والرابطُ باقٍ أو بقيت بعد شيله تمسك. ومن ui3: الموظّفُ باسمه والمشغّلُ
  * والخادمُ الأقدم «موظف»، والفرقُ الحقيقيّ يُسأل باتجاهيه (نقصاً وزيادةً)، ورفضُ الجرد بتلميحه وبترجمة رمزه؛ ومن ui3f: المادةُ البسيطة
@@ -2235,14 +2271,14 @@ const REGRESSION_KEYS = { "today.zeroAvg": "today", "page.pin.never": "pin", "ho
  *  أضافته الدفعاتُ المتعدّدة وما بعدها، وبعد w5a ما أضافه تدقيقُها وما بعده، وبعد ui3 ما أضافته وتدقيقُها، وبعد ui3f ما أضافه
  *  تدقيقُها وما بعده، وبعد r3 ما أضافه تدقيقُها وحده (والباقي يمرّ). */
 const ROUND = process.env.WASTE_OLD || "ui2";
-if (!["ui2", "fix2", "multi", "w5a", "ui3", "ui3f", "r3", "r3f", "neg"].includes(ROUND)) throw new Error(`WASTE_OLD: ui2 أو fix2 أو multi أو w5a أو ui3 أو ui3f أو r3 أو r3f أو neg — لا «${ROUND}»`);
-const MUST_FAIL = ROUND === "neg" ? NEG_KEYS : ROUND === "r3f" ? { ...R3F_KEYS, ...NEG_KEYS } : ROUND === "r3" ? { ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS }
-  : ROUND === "ui3f" ? { ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS }
-  : ROUND === "ui3" ? { ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS }
-  : ROUND === "w5a" ? { ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS }
-  : ROUND === "multi" ? { ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS }
-  : ROUND === "fix2" ? { ...FIX2_KEYS, ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS }
-  : { ...NEW_KEYS, ...FIX2_KEYS, ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS };
+if (!["ui2", "fix2", "multi", "w5a", "ui3", "ui3f", "r3", "r3f", "neg", "srch"].includes(ROUND)) throw new Error(`WASTE_OLD: ui2 أو fix2 أو multi أو w5a أو ui3 أو ui3f أو r3 أو r3f أو neg أو srch — لا «${ROUND}»`);
+const MUST_FAIL = ROUND === "srch" ? SRCH_KEYS : ROUND === "neg" ? { ...NEG_KEYS, ...SRCH_KEYS } : ROUND === "r3f" ? { ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS } : ROUND === "r3" ? { ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS }
+  : ROUND === "ui3f" ? { ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS }
+  : ROUND === "ui3" ? { ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS }
+  : ROUND === "w5a" ? { ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS }
+  : ROUND === "multi" ? { ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS }
+  : ROUND === "fix2" ? { ...FIX2_KEYS, ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS }
+  : { ...NEW_KEYS, ...FIX2_KEYS, ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS };
 
 /** يشغّل السيناريوهات المسمّاة على حزمةٍ — ويرجع نتيجةَ كلّ مفتاح **وسيناريوه**. خطأُ رسمٍ أو رميةٌ تُسقط
  *  السيناريو كلَّه. واسمٌ لا سيناريو له يرمي هنا: كان المشغّلُ يختار السيناريو ببادئة المفتاح (ref.retry ←
@@ -2283,7 +2319,7 @@ if (OLD) {
   /* ك) كلُّ فحصٍ جديد يسقط على القديم: فحصُه نفسُه، أو لم يُبلَغ لأن **سيناريوه** سقط قبله (قاعدةُ الطفرات نفسها). والقديمةُ
    *    تُطبع كما هي (يجب أن تمرّ: لم يتغيّر فيها إلا أنّ أجوبتها تحمل العقدَ الجديد)، ولا طفرات: نصوصُها نصوصُ الجديد. */
   const caughtOn = (k, scen) => results.some((r) => r.key === k && !r.ok) || (!results.some((r) => r.key === k) && results.some((r) => !r.ok && r.scenario === scen));
-  const since = ["ui2", "fix2", "multi", "w5a", "ui3", "ui3f", "r3", "r3f", "neg"];
+  const since = ["ui2", "fix2", "multi", "w5a", "ui3", "ui3f", "r3", "r3f", "neg", "srch"];
   console.log(`▸ ك) الفحوصُ الجديدة (${since.slice(since.indexOf(ROUND)).join(" و")}) على الشِّفرة القديمة — كلٌّ يجب أن يسقط`);
   let missed = 0;
   for (const [k, scen] of Object.entries(MUST_FAIL)) { const c = caughtOn(k, scen); if (!c) missed++; console.log(`   ${c ? "✓" : "✗"} ${k}: ${c ? "يسقط على القديم" : "يمرّ على القديم — لا يحرس التغيير"}`); }
@@ -2295,7 +2331,7 @@ if (OLD) {
   process.exit(missed || oldBad.length ? 1 : 0);
 }
 // قائمةُ الجديد تسمّي فحوصاً موجودة بسيناريوهاتها — لا مفتاحَ قديمَ الاسم يُعدّ «ساقطاً على القديم» لأنه غائب.
-const stale = Object.entries({ ...NEW_KEYS, ...FIX2_KEYS, ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...REGRESSION_KEYS }).filter(([k, scen]) => scenarioOf.get(k) !== scen).map(([k]) => k);
+const stale = Object.entries({ ...NEW_KEYS, ...FIX2_KEYS, ...MULTI_KEYS, ...W5A_KEYS, ...UI3_KEYS, ...UI3F_KEYS, ...R3_KEYS, ...R3F_KEYS, ...NEG_KEYS, ...SRCH_KEYS, ...REGRESSION_KEYS }).filter(([k, scen]) => scenarioOf.get(k) !== scen).map(([k]) => k);
 say(stale.length === 0, `NEW_KEYS (${Object.keys(NEW_KEYS).length}) وFIX2_KEYS (${Object.keys(FIX2_KEYS).length}) وMULTI_KEYS (${Object.keys(MULTI_KEYS).length}) وW5A_KEYS (${Object.keys(W5A_KEYS).length}) وUI3_KEYS (${Object.keys(UI3_KEYS).length}) وUI3F_KEYS (${Object.keys(UI3F_KEYS).length}) وR3_KEYS (${Object.keys(R3_KEYS).length}) وR3F_KEYS (${Object.keys(R3F_KEYS).length}) وNEG_KEYS (${Object.keys(NEG_KEYS).length}) وREGRESSION_KEYS فحوصٌ موجودة بسيناريوهاتها`, stale.join(","));
 
 /* ط) الطفرات: كلُّ واحدةٍ تكسر ما يحرسه فحصٌ مسمّى — ويجب أن يسقط. */
@@ -2359,7 +2395,12 @@ const MUTANTS = [
   { file: W, from: 'if (!shaped(entry)) { setFill({ ...base, st: "error" }); return; }', to: "", breaks: ["shape.moves", "shape.now", "shape.waste", "shape.retry"], why: "جوابٌ بلا العقد الجديد يُعبّأ كأنه كامل" },
   { file: W, from: "return num(e.now_us) && Array.isArray(e.waste)", to: "return Array.isArray(e.waste)", breaks: ["shape.now"], why: "now_us الغائب يمرّ" },
   { file: W, from: "    const byCode = codeMatcher(q);\n    const all = products.filter(", to: '    const byCode = (p: Product) => [p.barcode, ...(p.alt_codes ?? [])].some((a) => (a ?? "").trim() === q.trim());\n    const all = products.filter(', breaks: ["code.case", "code.partial"], why: "السندُ يبحث بالرمز === بلا طيّ ولا جزء" },
-  { file: S, from: "    const byCode = codeMatcher(q);\n    return ready.products.filter(", to: '    const byCode = (p: Product) => [p.barcode, ...(p.alt_codes ?? [])].some((a) => (a ?? "").trim() === q.trim());\n    return ready.products.filter(', breaks: ["count.code"], why: "عدُّ اليوم يبحث بالرمز === بلا طيّ ولا جزء" },
+  { file: S, from: "    const byCode = codeMatcher(q);\n    const hit = ", to: '    const byCode = (p: Product) => [p.barcode, ...(p.alt_codes ?? [])].some((a) => (a ?? "").trim() === q.trim());\n    const hit = ', breaks: ["count.code"], why: "عدُّ اليوم يبحث بالرمز === بلا طيّ ولا جزء" },
+  /* srch (تدقيق المخزن ٢٢/١١): كلُّ طفرةٍ تعيد سلوكاً من شِفرة الجرد قبلها. */
+  { file: S, from: "const ranked = [...all.filter(exact), ...all.filter((p) => !exact(p))];", to: "const ranked = all;", breaks: ["count.exactFirst"], why: "عدُّ اليوم يقصّ بترتيب القائمة: رقمُ الرفّ خارج الثمانية" },
+  { file: S, from: "more: Math.max(0, ranked.length - 8)", to: "more: 0", breaks: ["count.more"], why: "سقفُ عدّ اليوم يقصّ بصمت" },
+  { file: S, from: "(pendingIds.has(p.id) || (!countable(p) && !!p.pooled))", to: "(!countable(p) && !!p.pooled)", breaks: ["count.held"], why: "المعلَّقةُ تختفي من بحث العدّ («ماكو» عن مادّةٍ بالنظام)" },
+  { file: S, from: "{q.trim().length >= 2 && results.length === 0 && results.held.length === 0 && (", to: "{false && (", breaks: ["count.noHit"], why: "بحثُ العدّ الفارغ صامت" },
   { file: W, from: 'text-warn-700 dark:text-warn-200" data-waste-will>', to: 'text-warn-800 dark:text-warn-200" data-waste-will>', breaks: ["color.waste"], why: "لونٌ فوق 700 بالسند (لا CSS له)" },
   { file: S, from: '<p className="font-bold text-warn-700 dark:text-warn-200">{t("cnt.neg.withdrawCost"', to: '<p className="font-bold text-warn-800 dark:text-warn-200">{t("cnt.neg.withdrawCost"', breaks: ["color.withdraw"], why: "سطرُ السحب بلونٍ فوق 700" },
   { file: S, from: "Math.max(Number(p.avg_cost ?? p.purchase_price ?? 0) || 0, 0)", to: "Math.max(Number(p.avg_cost || p.purchase_price || 0) || 0, 0)", breaks: ["today.zeroAvg"], why: "متوسّطٌ صفر «مجهول» يتبع سعرَ الشراء (nullif لا coalesce)" },

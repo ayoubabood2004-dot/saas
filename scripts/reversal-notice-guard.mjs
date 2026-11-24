@@ -55,6 +55,9 @@ const FILES = {
   "src/components/retail/DeliveryEditDialog.tsx": { modes: ["returned"], requests: ["editInvoiceLines"] },
 };
 
+/** طلبُ الترجيع بباب «مرّةً واحدة» (0287) — يُعدّ طلبَ الترجيع نفسَه. */
+const ONCE = { returnInvoiceItems: "returnItemsOnce" };
+
 /* ── ١) النصّ ─────────────────────────────────────────────────────────────── */
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 /** مُحدِّدٌ محلولٌ لمسارٍ من الجذر بلا امتداد (null لحزمةٍ خارجية). */
@@ -115,8 +118,10 @@ export function checkText(rel, text, want) {
     if (mode === "returned" && !/\bcashBack=\{/.test(props)) errs.push(`${base}:${line}: «رجّعنا» بلا cashBack — «رجعت الفلوس» لا تُقال بلا علامة المال من الأمّ`);
   }
   // لحظةُ الطلب: كلُّ طلبِ ترجيعٍ يسبقه مباشرةً «… = performance.now();» — بعده تُسقط دفعتَه، وDate.now ساعةٌ أخرى.
+  // والمرتجعُ مرّةً واحدة (0287) طلبُ ترجيعٍ كذلك: returnItemsOnce يلفّ return_invoice_items بمرجع محاولة.
   for (const r of want.requests ?? []) {
-    const calls = [...s.matchAll(new RegExp(`\\bawait\\s+repo\\.${r}\\(`, "g"))];
+    const once = ONCE[r] ? `|${ONCE[r]}` : "";
+    const calls = [...s.matchAll(new RegExp(`\\bawait\\s+(?:repo\\.${r}${once})\\(`, "g"))];
     if (!calls.length) errs.push(`${base}: لا نداءَ «await repo.${r}(» — الحارسُ لا يجد طلبَ الترجيع الذي تُختم لحظتُه`);
     else out.requests.push(`${r}×${calls.length}`);
     for (const m of calls) {
@@ -225,6 +230,8 @@ const STUB = {
   "./usePrintInvoice": "export const useInvoicePrinter = () => () => {};",
   "@/lib/errors": "export const describeDbError = (e) => String(e?.message ?? e);",
   "@/lib/workspaceClinic": "export const expectedServerClinic = async () => null;",
+  // المرتجعُ مرّةً واحدة (0287): البابُ يمرّ لبديل repo نفسِه — فالفحصُ يرى الطلبَ ولحظتَه كما كان، والمرجعُ ثابت.
+  "@/lib/stockSafetyApi": "export const newAttemptRef = () => 'ref-test'; export const isRefChanged = () => false; export const returnItemsOnce = (_ref, id, lines, method, note) => globalThis.__T.repo.returnInvoiceItems(id, lines, method, note);",
   "@/hooks/useWaAfterSave": "export const useWaAfterSave = () => async () => {};",
   "@/lib/phone": "export const waNumber = (p) => p;",
   // القطعةُ الكسولة: lazy() حقيقيّ — يُسجَّل كلُّ طلبٍ بنطاقه، والفشلُ يُصنع لنطاقٍ بعينه.
@@ -796,8 +803,8 @@ const MUTANTS = [
   ["الفاتورة: «رجّعنا» بلا لحظته", "InvoicesPanel.tsx", " sentAt={reversed?.sentAt}", ""],
   ["الفاتورة: ترجيعُ الدين «ردّ مالاً»", "InvoicesPanel.tsx", "const cashBack = paidOf(invoice) > 0.005;", "const cashBack = true;"],
   ["الفاتورة: الحذفُ «ردّ مالاً»", "InvoicesPanel.tsx", "cashBack: false });", "cashBack: true });"],
-  ["المرتجع: لحظةُ الطلب بعده", "ReturnsPanel.tsx", "      const sentAt = performance.now();\n      await repo.returnInvoiceItems(picked.id, lines, method, note.trim() || null);\n",
-    "      await repo.returnInvoiceItems(picked.id, lines, method, note.trim() || null);\n      const sentAt = performance.now();\n"],
+  ["المرتجع: لحظةُ الطلب بعده", "ReturnsPanel.tsx", "      const sentAt = performance.now();\n      await returnItemsOnce(retRef.current ?? (retRef.current = newAttemptRef()), picked.id, lines, method, note.trim() || null);\n",
+    "      await returnItemsOnce(retRef.current ?? (retRef.current = newAttemptRef()), picked.id, lines, method, note.trim() || null);\n      const sentAt = performance.now();\n"],
   ["المرتجع: cashBack من المدفوع لا ممّا يخرج", "ReturnsPanel.tsx", "const cashBack = calc.back > 0.005;", "const cashBack = paidOf(picked) > 0.005;"],
   ["المرتجع: «رجّعنا» بلا cashBack", "ReturnsPanel.tsx", " cashBack={returned.cashBack}", ""],
   ["التعديل: لحظةُ الطلب بعده", "DeliveryEditDialog.tsx", "      const sentAt = performance.now();\n      const inv = await repo.editInvoiceLines(invoice.id, lines, reason.trim() || null);\n",
