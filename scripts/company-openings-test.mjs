@@ -1,6 +1,6 @@
 /* ============================================================================
- * ديونُ الشركة القديمة الكثيرة (0288) بالواجهة — بسلوكه، ثمّ الأسلاك، ثمّ طفرات. الخادمُ (الدالّة بحرّاسها والمرجعُ والفهرسُ الفريد
- * والسباقُ والتدقيق) يفحصه قسمُ 0288 بالحزمة على بوستغريس.
+ * ديونُ الشركة القديمة الكثيرة (0291) بالواجهة — بسلوكه، ثمّ الأسلاك، ثمّ طفرات. الخادمُ (الدالّة بحرّاسها والمرجعُ والفهرسُ الفريد
+ * والسباقُ والتدقيق) يفحصه قسمُ 0291 بالحزمة على بوستغريس.
  *   أ) الصِّرف: السطورُ تُقرأ كما يقرؤها الخادم (المبلغُ بكلمته، «14.169.000» و«٢٬٥٠٠٬٠٠٠»)، والفارغُ يُترك ولا يُعدّ، والسببُ
  *      الأوّل برقم سطره بين غير الفارغة، والمجموعُ بالسنت، والسقفُ خمسون؛ والمحاولةُ المعلَّقة تُقرأ بحذر.
  *   ب) المرآةُ التجريبية: ثلاثةُ ديونٍ بتواريخها، والإعادةُ ترجعها نفسَها بلا رابع، والمرجعُ نفسُه بطلبٍ آخر ref_mismatch، والطبيبُ
@@ -250,14 +250,14 @@ check("تبويبُ الديون: كلُّ شركةٍ مضافة لها بطاق
   && /idle: true,/.test(sl) && (sl.match(/idle: false,/g) ?? []).length === 3);
 check("  و«عليها دين» بالعملتين، و«مسدَّدة» لما كان عليه شيء — لا لشركةٍ بلا حركة",
   /const owes = g\.owed > 0 \|\| g\.owedUsd > 0;/.test(sl) && /filter === "settled" \? !owes && !g\.idle/.test(sl));
-const mig = src("supabase/migrations/0288_company_old_debts.sql");
+const mig = src("supabase/migrations/0291_company_old_debts.sql");
 const run = src("supabase/tests/run.sh");
 check("الهجرة: الكاتبةُ definer بمسار، وتسأل الحارسَ قبل الإعادة، للداخلين لا لـanon، وبالحزمة (WAVE وقسمها)",
   /security definer\s+set search_path = public/.test(mig) && mig.indexOf("company_entry_guard(p_company, null, true)") < mig.indexOf("v_old.n > 0")
   && /revoke all on function public\.company_openings_add\(uuid, text, jsonb, text\) from public, anon;/.test(mig)
   && /grant execute on function public\.company_openings_add\(uuid, text, jsonb, text\) to authenticated;/.test(mig)
   && /create unique index if not exists company_entries_client_ref_uniq/.test(mig)
-  && /\$MIG\/0288_company_old_debts\.sql"/.test(run) && /# ── 0288: /.test(run));
+  && /\$MIG\/0291_company_old_debts\.sql"/.test(run) && /# ── 0291: /.test(run));
 const ar = JSON.parse(src("src/i18n/ar.json")).cbook, en = JSON.parse(src("src/i18n/en.json")).cbook;
 const pick = (o, k) => k.split(".").reduce((x, p) => (x && typeof x === "object" ? x[p] : undefined), o);
 const usedOd = [...new Set([...src("src/pages/CompanyBook.tsx").matchAll(/t\("cbook\.(od\.[A-Za-z.]+)"/g)].map((m) => m[1]))];

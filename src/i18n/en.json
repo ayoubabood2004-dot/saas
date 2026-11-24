@@ -6437,7 +6437,7 @@
       "title": "Old debts — from before the system",
       "titleOne": "Old debt — from before the system",
       "help": "Record each old debt on its own date, like the paper ledger — every line shows in the company ledger on its date. Payments on account go to old debts before invoices.",
-      "helpOne": "What you owed this company before you started using the system, with its date. Recording several debts on different dates needs a database update (0288).",
+      "helpOne": "What you owed this company before you started using the system, with its date. Recording several debts on different dates needs a database update (0291).",
       "notePh": "What — e.g. invoice no. 55 (optional)",
       "noteLabel": "What the debt is",
       "add": "Another debt",

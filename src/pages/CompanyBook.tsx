@@ -68,11 +68,11 @@ export function CompanyBook() {
     void purchaseFxState().then((v) => { if (alive) setFx(v); });
     return () => { alive = false; };
   }, []);
-  /* 0288: هل القاعدةُ تعرف الديونَ القديمة الكثيرة؟ null = ما نعرف بعد (أو تعذّر السؤال) — فالزرُّ كما كان قبلها. */
+  /* 0291: هل القاعدةُ تعرف الديونَ القديمة الكثيرة؟ null = ما نعرف بعد (أو تعذّر السؤال) — فالزرُّ كما كان قبلها. */
   const [opReady, setOpReady] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
-    openingsReady().then((v) => { if (alive) setOpReady(v); }, () => { /* swallow-ok: سؤالُ قدرة — فشلُه يُبقي الزرَّ كما كان قبل 0288 (دينٌ واحد)، لا يُخفي مالاً ولا يكتب شيئاً */ });
+    openingsReady().then((v) => { if (alive) setOpReady(v); }, () => { /* swallow-ok: سؤالُ قدرة — فشلُه يُبقي الزرَّ كما كان قبل 0291 (دينٌ واحد)، لا يُخفي مالاً ولا يكتب شيئاً */ });
     return () => { alive = false; };
   }, []);
 
@@ -243,7 +243,7 @@ td:nth-child(n+5){font-variant-numeric:tabular-nums;white-space:nowrap}tr.v td{c
               {canPay && payableOf(L.totals.invoiceDue, L.totals.poolDue) > 0 && (
                 <Button size="sm" leftIcon={<HandCoins size={15} />} data-book-pay onClick={() => { playTap(); setModal("pay"); }}>{t("cbook.pay", "تسديد على الحساب")}</Button>
               )}
-              {/* 0288: ديونٌ قديمة كثيرة بأيّ وقت؛ وقاعدةٌ قبلها دينٌ واحد ما دام ما سُجّل (قيدُ الباب القديم). */}
+              {/* 0291: ديونٌ قديمة كثيرة بأيّ وقت؛ وقاعدةٌ قبلها دينٌ واحد ما دام ما سُجّل (قيدُ الباب القديم). */}
               {isManager && (opReady === true || !L.hasOpening) && (
                 <Button size="sm" variant="secondary" leftIcon={<History size={15} />} data-book-opening onClick={() => { playTap(); setModal("opening"); }}>{t("cbook.addOpening")}</Button>
               )}
@@ -573,7 +573,7 @@ function PayModal({ open, onClose, data, poolDue, invoiceDue, cur, fx, onDone }:
   );
 }
 
-/** 0288: ديونٌ قديمة — سطرٌ لكلّ دين بتاريخه (الدفترُ الورقيّ كما هو)، بطلبٍ واحد ومرجعِ إعادة (طلبُ المالك ٢٣/١١: «على اكثر من
+/** 0291: ديونٌ قديمة — سطرٌ لكلّ دين بتاريخه (الدفترُ الورقيّ كما هو)، بطلبٍ واحد ومرجعِ إعادة (طلبُ المالك ٢٣/١١: «على اكثر من
  *  تاريخ مو الا مجموع كل الديون»). المبلغُ يُقال بكلمة كما قُرئ، والزرُّ لا يقف بلا جملة. ونتيجةٌ مجهولة (الشبكة) تقفل السطورَ على
  *  «أعد المحاولة» بالمرجع نفسِه — ولو أُغلقت النافذةُ وفُتحت (المحاولةُ بالجلسة): الإعادةُ ترجع ما ثبت لا ديوناً ثانية (shouldReleaseRef).
  *  وقاعدةٌ قبل الهجرة (`multi` false): سطرٌ واحد بالباب القديم كما كان — وقيدُ «واحدٍ حيّ» هناك حارسُ إعادته. */
@@ -581,7 +581,7 @@ function OldDebtsModal({ open, onClose, companyId, cur, multi, viaFx, onDone }: 
   open: boolean; onClose: () => void; companyId: string;
   /** عملةُ الدفتر المعروض (0274) — الديونُ بعملته. */
   cur: LedgerCur;
-  /** القاعدةُ تعرف الباب الجديد (0288). */
+  /** القاعدةُ تعرف الباب الجديد (0291). */
   multi: boolean; viaFx: boolean; onDone: () => void;
 }) {
   const { t } = useTranslation();

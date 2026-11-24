@@ -172,6 +172,6 @@ revoke all on function public.company_openings_ready() from public, anon;
 grant execute on function public.company_openings_ready() to authenticated;
 
 comment on column public.company_entries.client_ref is
-  'مرجعُ إعادةٍ من الجهاز (0288): `<مرجع النافذة>:<رقم السطر>` — إعادةُ الطلب ترجع ما ثبت به بلا دينٍ ثانٍ.';
+  'مرجعُ إعادةٍ من الجهاز (0291): `<مرجع النافذة>:<رقم السطر>` — إعادةُ الطلب ترجع ما ثبت به بلا دينٍ ثانٍ.';
 
 -- التحقّق بعد اللصق: select company_openings_ready();  ⇒ true

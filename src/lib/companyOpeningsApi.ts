@@ -1,5 +1,5 @@
 /* ============================================================================
- * بابُ الديون القديمة الكثيرة بدفتر الشركة (0288) — خارج repo.ts (حزمةُ الإقلاع)، لا تستورده إلا شاشةُ دفتر الشركة الكسولة.
+ * بابُ الديون القديمة الكثيرة بدفتر الشركة (0291) — خارج repo.ts (حزمةُ الإقلاع)، لا تستورده إلا شاشةُ دفتر الشركة الكسولة.
  *  • الكتابةُ تُسمع: الخادمُ يرمي برمزه وتلميحه العربيّ (rpcJson)، والشاشةُ تعرضه بـdescribeDbError.
  *  • «القراءة فقط» (اشتراكٌ منتهٍ) يمنع الكتابة كما بـrepo.
  *  • `openingsReady()`: هل القاعدةُ تعرف الباب؟ دالّةٌ غائبة (PGRST202/42883) ⇒ false — دينٌ واحد بالباب القديم كما كان.
@@ -16,7 +16,7 @@ export type OpeningsCur = "IQD" | "USD";
 export interface OpeningsResult { entries: CompanyEntry[]; replayed: boolean }
 
 const codeOf = (e: unknown): string => String((e as { code?: string } | null)?.code ?? "");
-/** قاعدةٌ قبل 0288: الدالّةُ غائبة. */
+/** قاعدةٌ قبل 0291: الدالّةُ غائبة. */
 export const isOpeningsAbsent = (e: unknown): boolean => codeOf(e) === "PGRST202" || codeOf(e) === "42883";
 
 export async function openingsReady(): Promise<boolean> {
