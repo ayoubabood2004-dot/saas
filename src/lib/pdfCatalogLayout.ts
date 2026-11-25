@@ -15,7 +15,11 @@ import { normalizeDigits } from "./digits";
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 /** صورةٌ بالصفحة: الصندوقُ بوحدات الصفحة من أعلاها، و`w`/`h` أبعادُها الأصليّة بالبكسل (0 إن لم تُعرف). */
-export interface PdfImage extends Box { page: number; key: string; w: number; h: number }
+export interface PdfImage extends Box {
+  page: number; key: string; w: number; h: number;
+  /** بكسلاتُ الصورة الأصليّة لكلّ وحدة صفحة — من صندوقها **قبل** قصّه بحدود الصفحة (دقّةُ القصّ منها). */
+  ppu?: number;
+}
 /** مقطعُ نصّ كما يرجعه pdf.js مُحوَّلاً: الصندوقُ من أعلى الصفحة، و`rtl` اتجاهُه. */
 export interface PdfText extends Box { page: number; str: string; rtl?: boolean }
 export interface PdfLine extends Box { page: number; text: string }
@@ -161,15 +165,30 @@ export function readCatalog(pages: readonly PdfPage[]): CatalogRead {
   const entries: CatalogEntry[] = [];
   pages.forEach((pg, idx) => {
     const pageArea = pg.width * pg.height;
-    const imgs: PdfImage[] = [];
-    for (const im of pg.images) {
+    const kept: PdfImage[] = [];
+    for (const raw of pg.images) {
+      // المرئيُّ وحده: صورةٌ أكبرُ من الصفحة تُقصّ بحدودها (Canva يضع الصورةَ أعرضَ من الصفحة ويقصّها — مقيسٌ
+      // على كاتالوج المالك: صندوقٌ بعرض ٢٬٢٦٢ نقطة بصفحةٍ عرضُها ٨١٠).
+      const rw = raw.x1 - raw.x0, rh = raw.y1 - raw.y0;
+      const ppu = raw.w && raw.h && rw > 0 && rh > 0 ? Math.max(raw.w / rw, raw.h / rh) : undefined;
+      const im: PdfImage = pg.width > 0 && pg.height > 0
+        ? { ...raw, ppu, x0: Math.max(0, raw.x0), y0: Math.max(0, raw.y0), x1: Math.min(pg.width, raw.x1), y1: Math.min(pg.height, raw.y1) }
+        : { ...raw, ppu };
       const w = im.x1 - im.x0, h = im.y1 - im.y0;
       if (w < MIN_SIDE_PT || h < MIN_SIDE_PT || (im.w && im.h && (im.w < MIN_PX || im.h < MIN_PX))) { dropped.small++; continue; }
-      if (pageArea > 0 && area(im) / pageArea >= BG_SHARE) { dropped.background++; continue; }
       // شعارٌ: يتكرّر بموضعه **وبهامش الصفحة** (رأسٌ أو تذييل). التكرارُ وحده لا يكفي — شبكةُ الكاتالوج نفسُها
       // تتكرّر بمواضعها وأبعادها صفحةً بعد صفحة، وكانت تُرمى كلُّها شعاراً (مقيسٌ بالفحص).
       const margin = pg.height > 0 && (im.y1 <= pg.height * HEAD || im.y0 >= pg.height * (1 - FOOT));
-      if (margin && (seen.get(shapeKey(im))?.size ?? 0) >= repeatMin(pages.length)) { dropped.repeated++; continue; }
+      if (margin && (seen.get(shapeKey(raw))?.size ?? 0) >= repeatMin(pages.length)) { dropped.repeated++; continue; }
+      kept.push(im);
+    }
+    // الخلفيّة: صورةٌ تغطّي الصفحة **وتحتها صورٌ أخرى**. صورةٌ وحدها تغطّي الصفحة هي المنتج — كاتالوجُ «صفحةٌ لكلّ
+    // منتج» (Canva) كانت سبعٌ من صفحاته الثلاثَ عشرة تُرمى خلفيّةً (مقيسٌ على كاتالوج المالك ٢٥/١١).
+    const isBg = (im: PdfImage) => pageArea > 0 && area(im) / pageArea >= BG_SHARE;
+    const hasOthers = kept.some((im) => !isBg(im));
+    const imgs: PdfImage[] = [];
+    for (const im of kept) {
+      if (hasOthers && isBg(im)) { dropped.background++; continue; }
       imgs.push(im);
     }
     const lines = allLines[idx].filter((l) => !repeatedLine(l.text));

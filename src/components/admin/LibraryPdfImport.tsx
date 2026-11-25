@@ -8,8 +8,8 @@
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileText, Upload, Square, Loader2, ImageOff } from "lucide-react";
-import { Button, useToast } from "@/components/ui";
+import { FileText, Upload, Square, Loader2, ImageOff, ScanText, ScanBarcode, Plus } from "lucide-react";
+import { Button, Dialog, useToast } from "@/components/ui";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { describeDbError, isNetworkError } from "@/lib/errors";
 import { holdUntil } from "@/lib/inflight";
@@ -19,12 +19,15 @@ import { planImport, type ParsedSheet, type PlanStatus } from "@/lib/libraryImpo
 import { readCatalog, type CatalogEntry, type CatalogRead } from "@/lib/pdfCatalogLayout";
 import { openPdf, PdfError, type OpenPdf } from "@/lib/pdfCatalog";
 import { isLibraryColumnMissing } from "@/lib/libraryScope";
+import { readImageLines, closeImageText } from "@/lib/imageText";
 import type { LibraryImage } from "@/types";
 
 type Run = { done: number; total: number; failed: number; firstError: string | null; stopped: null | "user" | "network" | "dbOld" };
 type Meta = { name: string; company: string; kind: string; agency: string | null; section: string | null; barcode: string | null };
 type Edit = { name?: string; barcode?: string; skip?: boolean };
 type Filter = "all" | "noName" | "new";
+/* قراءةُ النصّ من صورةٍ واحدة بطلب: أسطرٌ تُضاف للاسم بضغطة — لا تُكتب وحدها. */
+type Ocr = { st: "busy" } | { st: "done"; lines: string[] } | { st: "fail" };
 const PAGE = 48;
 const COLS = { name: 0, agency: null, section: null, barcode: 1 };
 
@@ -50,9 +53,15 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
   const [filter, setFilter] = useState<Filter>("all");
   const [shown, setShown] = useState(PAGE);
   const [run, setRun] = useState<Run | null>(null);
+  // باركودُ الصورة نفسِها (خطوطُه بالصورة، eanDecode) لما لا نصَّ له بالملف — يُعرض بالخانة بعلامة «من الصورة» ويُصحَّح.
+  const [imgCodes, setImgCodes] = useState<Map<string, string>>(new Map());
+  const [coding, setCoding] = useState<{ done: number; total: number } | null>(null);
+  const [ocr, setOcr] = useState<Map<string, Ocr>>(new Map());
+  const [zoom, setZoom] = useState<{ key: string; url: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const stopRef = useRef(false);
   const genRef = useRef(0);
+  const zoomRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!busy) return;
@@ -64,7 +73,7 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
   // تحمل الروابطَ نفسَها)، والملفُّ يُغلق معها.
   const urlsRef = useRef<string[]>([]);
   const freeThumbs = () => { for (const u of urlsRef.current) URL.revokeObjectURL(u); urlsRef.current = []; };
-  useEffect(() => () => { genRef.current++; freeThumbs(); pdfRef.current?.close(); }, []);
+  useEffect(() => () => { genRef.current++; freeThumbs(); pdfRef.current?.close(); void closeImageText(); }, []);
 
   const companies = useMemo(() => [...new Set(library.map((r) => r.company?.trim()).filter(Boolean))] as string[], [library]);
   const kinds = useMemo(() => [...new Set(library.map((r) => r.kind?.trim()).filter(Boolean))] as string[], [library]);
@@ -72,8 +81,10 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
   const entries = read?.entries ?? [];
   const valueOf = (e: CatalogEntry) => {
     const ed = edits.get(e.image.key);
-    return { name: (ed?.name ?? e.name).trim(), barcode: (ed?.barcode ?? e.barcode ?? "").trim(), skip: !!ed?.skip };
+    return { name: (ed?.name ?? e.name).trim(), barcode: (ed?.barcode ?? codeOf(e)).trim(), skip: !!ed?.skip };
   };
+  /** الرمزُ قبل التصحيح: نصُّ الملف أوّلاً، ثمّ ما قُرئ من خطوط الصورة. */
+  const codeOf = (e: CatalogEntry) => e.barcode ?? imgCodes.get(e.image.key) ?? "";
   /* خطّةُ الإكسل نفسُها على ورقةٍ مصنوعة من الصور بأسمائها بعد التصحيح — المتخطّاةُ خارجها. */
   const plan = useMemo(() => {
     if (!read || !company.trim() || !kind.trim()) return null;
@@ -84,7 +95,7 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
     };
     return planImport(sheet, COLS, { company: company.trim(), kind: kind.trim() }, library);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [read, edits, company, kind, library]);
+  }, [read, edits, imgCodes, company, kind, library]);
   const statusOf = useMemo(() => {
     const m = new Map<string, PlanStatus>();
     for (const it of plan?.items ?? []) if (it.image) m.set(it.image, it.status);
@@ -99,6 +110,7 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
     pdfRef.current?.close(); pdfRef.current = null;
     freeThumbs();
     setReadErr(null); setRead(null); setRun(null); setEdits(new Map()); setThumbs(new Map()); setFilter("all"); setShown(PAGE);
+    setImgCodes(new Map()); setCoding(null); setOcr(new Map()); setZoom(null); zoomRef.current = null;
     setFileName(file.name);
     setReading({ done: 0, total: 0 });
     try {
@@ -132,13 +144,73 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
         setThumbing({ done: ++i, total: byPage.size });
       }
       setThumbing(null);
+      // ثمّ الباركود من الصورة لما لا رمزَ له بالنصّ (كاتالوجُ Canva: صفرُ نصّ، والباركودُ مطبوعٌ على العلبة) — صفحةً
+      // صفحة بعد المصغّرات، والمراجعةُ تعمل أثناءه: رمزٌ يصل يملأ خانةً لم يكتب فيها أحد (valueOf: المكتوبُ يغلب).
+      const need = [...byPage].map(([n, es]) => [n, es.filter((e) => !e.barcode)] as const).filter(([, es]) => es.length);
+      if (!need.length) return;
+      setCoding({ done: 0, total: need.length });
+      i = 0;
+      for (const [n, es] of need) {
+        if (gen !== genRef.current) return;
+        try {
+          const got = await pdf.codes(n, es.map((e) => e.image));
+          if (gen !== genRef.current) return;
+          if (got.some(Boolean)) setImgCodes((m) => { const x = new Map(m); es.forEach((e, j) => { const c = got[j]; if (c) x.set(e.image.key, c); }); return x; });
+        } catch { /* صفحةٌ فشلت: خاناتُها فارغة تُكتب باليد */ }
+        setCoding({ done: ++i, total: need.length });
+      }
+      setCoding(null);
     } catch (e) {
       if (gen !== genRef.current) return;
       playWarning();
       setReadErr(errText(e));
-      setReading(null); setThumbing(null);
+      setReading(null); setThumbing(null); setCoding(null);
     }
   };
+
+  /** «اقرا النص من الصورة»: الصورةُ بدقّةٍ أعلى من المصغّرة، ثمّ OCR — والنتيجةُ رقاقاتٌ تحت الاسم. */
+  const readText = async (e: CatalogEntry) => {
+    const pdf = pdfRef.current;
+    if (!pdf || ocr.get(e.image.key)?.st === "busy") return;
+    playTap();
+    const gen = genRef.current;
+    setOcr((m) => new Map(m).set(e.image.key, { st: "busy" }));
+    let res: Ocr;
+    try {
+      const [blob] = await pdf.crop(e.page, [e.image], 1600);
+      res = { st: "done", lines: await readImageLines(blob) };
+    } catch { res = { st: "fail" }; }
+    if (gen !== genRef.current) return;
+    setOcr((m) => new Map(m).set(e.image.key, res));
+  };
+  const addWords = (e: CatalogEntry, words: string) => {
+    playTap();
+    const cur = edits.get(e.image.key)?.name ?? e.name;
+    setEdit(e.image.key, { name: cur.trim() ? `${cur.trimEnd()} ${words}` : words });
+  };
+
+  /** تكبيرُ الصورة بضغطة: قصٌّ بألف بكسل بطلب، يُحرَّر حين تُغلق (أو مع المصغّرات). */
+  const openZoom = async (e: CatalogEntry) => {
+    const pdf = pdfRef.current;
+    if (!pdf) return;
+    playTap();
+    const key = e.image.key, gen = genRef.current;
+    zoomRef.current = key;
+    setZoom({ key, url: null });
+    try {
+      const [blob] = await pdf.crop(e.page, [e.image], 1000, "image/jpeg");
+      if (zoomRef.current !== key || gen !== genRef.current) return;   // أُغلقت، أو فُتح ملفٌّ آخر
+      const url = URL.createObjectURL(blob);
+      urlsRef.current.push(url);
+      setZoom({ key, url });
+    } catch { /* تبقى المصغّرةُ معروضةً بالنافذة */ }
+  };
+  const closeZoom = () => {
+    zoomRef.current = null;
+    if (zoom?.url) { URL.revokeObjectURL(zoom.url); urlsRef.current = urlsRef.current.filter((u) => u !== zoom.url); }
+    setZoom(null);
+  };
+  const zoomEntry = zoom ? entries.find((e) => e.image.key === zoom.key) : undefined;
 
   const setEdit = (key: string, patch: Edit) => setEdits((m) => new Map(m).set(key, { ...m.get(key), ...patch }));
 
@@ -236,6 +308,8 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
             )}
             {read.scanned.length > 0 && <li className="text-2xs font-bold text-warn-700" data-libpdf-scanned>{t("libm.pdf.scanned", { n: formatNum(read.scanned.length) })}</li>}
             {thumbing && <li className="text-2xs text-ink-subtle"><Loader2 size={12} className="me-1 inline animate-spin" />{t("libm.pdf.thumbs", { done: formatNum(thumbing.done), n: formatNum(thumbing.total) })}</li>}
+            {coding && <li className="text-2xs text-ink-subtle" data-libpdf-coding><Loader2 size={12} className="me-1 inline animate-spin" />{t("libm.pdf.codes", { done: formatNum(coding.done), n: formatNum(coding.total) })}</li>}
+            {!coding && imgCodes.size > 0 && <li className="text-2xs font-bold text-success-700 dark:text-success-300" data-libpdf-imgcodes={imgCodes.size}>{t("libm.pdf.codesFound", { n: formatNum(imgCodes.size) })}</li>}
           </ul>
 
           {entries.length > 0 && (
@@ -276,19 +350,28 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
                   const v = valueOf(e);
                   const st = statusOf.get(e.image.key);
                   const url = thumbs.get(e.image.key);
+                  const ed = edits.get(e.image.key);
+                  const fromImg = ed?.barcode === undefined && !e.barcode && imgCodes.has(e.image.key);
+                  const o = ocr.get(e.image.key);
                   return (
                     <div key={e.image.key} data-libpdf-item={e.image.key} data-libpdf-status={v.skip ? "skip" : st ?? ""}
                       className={cn("flex gap-2 rounded-xl border border-line bg-surface-1 p-2", v.skip && "opacity-50")}>
-                      <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-lg bg-white">
+                      <button type="button" onClick={() => void openZoom(e)} aria-label={t("libm.pdf.zoom")} title={t("libm.pdf.zoom")} data-libpdf-zoom
+                        className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-lg bg-white">
                         {url ? <img src={url} alt={v.name} className="h-full w-full object-contain" /> : <ImageOff size={22} className="text-ink-subtle" aria-hidden />}
-                      </div>
+                      </button>
                       <div className="min-w-0 flex-1 space-y-1">
-                        <input className={cn("input h-9 text-xs", !v.name && !v.skip && "border-warn-400")} value={edits.get(e.image.key)?.name ?? e.name} dir="auto"
+                        <input className={cn("input h-9 text-xs", !v.name && !v.skip && "border-warn-400")} value={ed?.name ?? e.name} dir="auto"
                           placeholder={t("libm.pdf.name")} aria-label={t("libm.pdf.name")} disabled={busy || v.skip} data-libpdf-name
                           onChange={(ev) => setEdit(e.image.key, { name: ev.target.value })} />
-                        <input className="input h-9 text-xs" value={edits.get(e.image.key)?.barcode ?? e.barcode ?? ""} dir="ltr" inputMode="numeric"
+                        <input className="input h-9 text-xs" value={ed?.barcode ?? codeOf(e)} dir="ltr" inputMode="numeric"
                           placeholder={t("libm.pdf.barcode")} aria-label={t("libm.pdf.barcode")} disabled={busy || v.skip} data-libpdf-code
                           onChange={(ev) => setEdit(e.image.key, { barcode: ev.target.value })} />
+                        {fromImg && (
+                          <p className="inline-flex items-center gap-1 text-2xs font-bold text-success-700 dark:text-success-300" data-libpdf-fromimg>
+                            <ScanBarcode size={12} aria-hidden />{t("libm.pdf.fromImage")}
+                          </p>
+                        )}
                         <div className="flex items-center justify-between gap-2">
                           <span className={cn("truncate text-2xs font-bold", st === "new" && !v.skip ? "text-success-700 dark:text-success-300" : st === "noName" && !v.skip ? "text-warn-700" : "text-ink-subtle")}>
                             {t("libm.pdf.page", { n: formatNum(e.page) })} · {stLabel(st, v.skip)}
@@ -298,6 +381,28 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
                             {t("libm.pdf.skip")}
                           </label>
                         </div>
+                        {!v.skip && (!o || o.st === "fail") && (
+                          <button type="button" disabled={busy} onClick={() => void readText(e)} data-libpdf-ocr
+                            className="inline-flex items-center gap-1 text-2xs font-bold text-brand-700 hover:underline disabled:opacity-50 dark:text-brand-300">
+                            <ScanText size={12} aria-hidden />{o?.st === "fail" ? t("libm.pdf.ocrFail") : t("libm.pdf.ocr")}
+                          </button>
+                        )}
+                        {o?.st === "busy" && <p className="text-2xs text-ink-subtle"><Loader2 size={12} className="me-1 inline animate-spin" />{t("libm.pdf.ocrBusy")}</p>}
+                        {o?.st === "done" && !v.skip && (
+                          o.lines.length ? (
+                            <div className="space-y-1" data-libpdf-chips={o.lines.length}>
+                              <p className="text-2xs text-ink-subtle">{t("libm.pdf.ocrPick")}</p>
+                              <div className="flex flex-wrap gap-1">
+                                {o.lines.map((l) => (
+                                  <button key={l} type="button" disabled={busy} onClick={() => addWords(e, l)} dir="auto" data-libpdf-chip
+                                    className="inline-flex max-w-full items-center gap-0.5 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink hover:border-brand-400">
+                                    <Plus size={10} aria-hidden className="shrink-0" /><span className="truncate">{l}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : <p className="text-2xs text-ink-subtle" data-libpdf-ocr-empty>{t("libm.pdf.ocrNone")}</p>
+                        )}
                         {e.lines.length > 0 && (
                           <p className="truncate text-2xs text-ink-subtle" dir="auto" title={e.lines.join(" · ")}>{t("libm.pdf.fromText", { text: e.lines.join(" · ") })}</p>
                         )}
@@ -339,6 +444,14 @@ export function LibraryPdfImport({ library, onChanged, create, scope = "public" 
           )}
         </div>
       )}
+
+      <Dialog open={!!zoom} onClose={closeZoom} size="lg" title={zoomEntry ? (valueOf(zoomEntry).name || t("libm.pdf.page", { n: formatNum(zoomEntry.page) })) : ""}>
+        <div className="grid min-h-[16rem] place-items-center rounded-xl bg-white p-2" data-libpdf-zoomed>
+          {zoom?.url ? <img src={zoom.url} alt="" className="max-h-[70vh] w-full object-contain" />
+            : zoom && thumbs.get(zoom.key) ? <img src={thumbs.get(zoom.key)} alt="" className="max-h-[70vh] w-full object-contain opacity-60" />
+            : <Loader2 size={24} className="animate-spin text-ink-subtle" aria-hidden />}
+        </div>
+      </Dialog>
     </div>
   );
 }

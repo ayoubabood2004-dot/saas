@@ -112,6 +112,18 @@ async function run(L, quiet = false) {
   const bg = L.readCatalog([{ page: 1, width: W, height: H, images: [img(1, "bg", 0, 0, W, H, 2000, 2800), img(1, "a", 100, 100, 250, 250)], texts: [txt(1, "Item A", 100, 260, 160)] }]);
   check("الخلفيّةُ خارجها والصورةُ التي فوقها تبقى", bg.dropped.background === 1 && bg.entries.length === 1 && bg.entries[0].name === "Item A", JSON.stringify(bg.entries.map((e) => e.name)));
 
+  // ── كاتالوجٌ مصمَّم (Canva — مقيسٌ على كاتالوج المالك ٢٥/١١): صورةٌ واحدة لكلّ صفحة، أعرضُ من الصفحة، وصفرُ نصّ ──
+  const canva = L.readCatalog([1, 2, 3].map((p) => ({ page: p, width: 810, height: 1012, texts: [],
+    images: [img(p, `c${p}`, -726, -40, 1536, 1052, 2400, 1074)] })));
+  check("صورةٌ وحدها تغطّي الصفحة هي المنتج لا خلفيّة", canva.entries.length === 3 && canva.dropped.background === 0, JSON.stringify(canva.dropped));
+  const c1 = canva.entries[0]?.image;
+  check("  وصندوقُها مقصوصٌ بحدود الصفحة", c1 && c1.x0 === 0 && c1.y0 === 0 && c1.x1 === 810 && c1.y1 === 1012, JSON.stringify(c1));
+  check("  ودقّتُها من صندوقها قبل القصّ (٢٤٠٠ بكسل على ٢٬٢٦٢ نقطة)", c1 && Math.abs(c1.ppu - 2400 / 2262) < 1e-9, String(c1?.ppu));
+  check("  والصفحاتُ بلا نصّ تُقال", canva.scanned.join() === "1,2,3", canva.scanned.join());
+  check("  والصورةُ نفسُها بموضعها بكلّ صفحة ليست شعاراً (لا بهامش)", canva.dropped.repeated === 0);
+  const twoBig = L.readCatalog([{ page: 1, width: W, height: H, texts: [], images: [img(1, "bgA", 0, 0, W, H, 2000, 2800), img(1, "bgB", -20, -20, W + 20, H + 20, 2000, 2800)] }]);
+  check("صورتان تغطّيان الصفحة وحدهما تبقيان (لا شيءَ غيرُهما يُحمى)", twoBig.entries.length === 2, String(twoBig.entries.length));
+
   // ── الجدول: صورةٌ بعمود، والاسمُ والرمزُ والسعرُ بأعمدةٍ جنبها ──
   const table = { page: 1, width: W, height: H, images: [], texts: [] };
   for (let i = 0; i < 5; i++) {
@@ -197,8 +209,8 @@ const rcheck = (name, cond, detail = "") => {
 
 // ── طفرات ──
 const MUTS = [
-  ["الشعارُ المتكرّر يبقى", "if (margin && (seen.get(shapeKey(im))?.size ?? 0) >= repeatMin(pages.length)) { dropped.repeated++; continue; }", ""],
-  ["التكرارُ وحده شعار (الشبكةُ تُرمى)", "if (margin && (seen.get(shapeKey(im))?.size ?? 0) >= repeatMin(pages.length))", "if ((seen.get(shapeKey(im))?.size ?? 0) >= repeatMin(pages.length))"],
+  ["الشعارُ المتكرّر يبقى", "if (margin && (seen.get(shapeKey(raw))?.size ?? 0) >= repeatMin(pages.length)) { dropped.repeated++; continue; }", ""],
+  ["التكرارُ وحده شعار (الشبكةُ تُرمى)", "if (margin && (seen.get(shapeKey(raw))?.size ?? 0) >= repeatMin(pages.length))", "if ((seen.get(shapeKey(raw))?.size ?? 0) >= repeatMin(pages.length))"],
   ["ملفٌّ بصفحتين بلا تكرار", "const repeatMin = (pages: number) => Math.max(2, Math.ceil(pages / 2));", "const repeatMin = (pages: number) => Math.max(3, Math.ceil(pages / 2));"],
   ["«Item A» يفقد أوّلَه", "\\s*[:：#-]\\s*/iu; /* i18n-data: عناوينُ الحقول بأوراق الموزّعين تُشال من الاسم */", "\\s*[:：#-]?\\s*/iu; /* i18n-data: عناوينُ الحقول بأوراق الموزّعين تُشال من الاسم */"],
   ["عنوانُ الرمز وحده يدخل الاسم", "if (!rest || LABEL_ONLY.test(rest) || NUMERIC_ONLY.test(rest)", "if (!rest || NUMERIC_ONLY.test(rest)"],
@@ -208,7 +220,10 @@ const MUTS = [
   ["الرمزُ الأوّل لا الصالح", "const barcode = codes.find(gtinValid) ?? codes[0] ?? null;", "const barcode = codes[0] ?? null;"],
   ["السعرُ يدخل الاسم", "NUMERIC_ONLY.test(rest) || PRICE.test(rest)) continue;", "NUMERIC_ONLY.test(rest)) continue;"],
   ["الرأسُ المتكرّر يدخل", "const lines = allLines[idx].filter((l) => !repeatedLine(l.text));", "const lines = allLines[idx];"],
-  ["الخلفيّةُ تبقى", "if (pageArea > 0 && area(im) / pageArea >= BG_SHARE) { dropped.background++; continue; }", ""],
+  ["الخلفيّةُ تبقى", "if (hasOthers && isBg(im)) { dropped.background++; continue; }", ""],
+  ["صورةُ Canva الوحيدة تُرمى خلفيّةً", "const hasOthers = kept.some((im) => !isBg(im));", "const hasOthers = true;"],
+  ["الصورةُ الأعرضُ من الصفحة لا تُقصّ", "x0: Math.max(0, raw.x0), y0: Math.max(0, raw.y0), x1: Math.min(pg.width, raw.x1), y1: Math.min(pg.height, raw.y1)", "x0: raw.x0, y0: raw.y0, x1: raw.x1, y1: raw.y1"],
+  ["الدقّةُ من الصندوق المقصوص", "const rw = raw.x1 - raw.x0, rh = raw.y1 - raw.y0;", "const rw = Math.min(pg.width, raw.x1) - Math.max(0, raw.x0), rh = Math.min(pg.height, raw.y1) - Math.max(0, raw.y0);"],
   ["الصفُّ لا ينقسم بالفجوة", "if (prev && it.x0 - prev.x1 <= Math.max(prev.hgt, it.hgt) * 2) g.push(it); else groups.push([it]);", "if (prev) g.push(it); else groups.push([it]);"],
 ];
 let caught = 0, escaped = 0;

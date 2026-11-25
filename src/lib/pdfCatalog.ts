@@ -10,6 +10,8 @@
 // unsafe-eval، والعاملُ ملفٌّ من الأصل نفسِه (worker-src 'self').
 // ============================================================================
 import type { PdfImage, PdfPage, PdfText } from "./pdfCatalogLayout";
+import { trimRect } from "./imageTrim";
+import { decodeEan } from "./eanDecode";
 
 type Pdfjs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type Doc = Awaited<ReturnType<Pdfjs["getDocument"]>["promise"]>;
@@ -45,6 +47,8 @@ export interface OpenPdf {
   readPage(n: number): Promise<PdfPage>;
   /** قصُّ صورٍ من صفحةٍ واحدة برسمةٍ واحدة. `maxSide` أطولُ ضلعٍ للمقصوص (للمعاينة صغير، للرفع كبير). */
   crop(n: number, boxes: readonly PdfImage[], maxSide: number, type?: "image/png" | "image/jpeg"): Promise<Blob[]>;
+  /** باركودٌ مقروءٌ من خطوط كلّ صورة (أو null) — للصفحات التي لا نصَّ فيها يُقرأ منه الرمز. */
+  codes(n: number, boxes: readonly PdfImage[]): Promise<(string | null)[]>;
   close(): void;
 }
 
@@ -110,43 +114,74 @@ export async function openPdf(file: File): Promise<OpenPdf> {
 
   const readPage = async (n: number): Promise<PdfPage> => readPdfPage(O, await getPage(n), n);
 
-  const crop = async (n: number, boxes: readonly PdfImage[], maxSide: number, type: "image/png" | "image/jpeg" = "image/png"): Promise<Blob[]> => {
+  /** رسمةٌ واحدة للصفحة، ثمّ لكلّ صندوق: منطقتُه بالقماش مقصوصةً بحافّتها البيضاء (trimRect) ومصغَّرةً لـmaxSide. */
+  const renderBoxes = async <T,>(n: number, boxes: readonly PdfImage[], maxSide: number, each: (c: HTMLCanvasElement) => Promise<T>): Promise<T[]> => {
     if (!boxes.length) return [];
     const page = await getPage(n);
     const base = page.getViewport({ scale: 1 });
-    // الدقّةُ: ما يكفي أكبرَ صورةٍ بأصلها حتى maxSide، وقماشٌ لا يتجاوز ١٦ مليون بكسل (حدّ سفاري).
+    // الدقّةُ: بقدر أصل الصورة (ppu) حتى ضعفَي maxSide على صندوقها — القصُّ يُصغّر المنتجَ داخله — وقماشٌ لا يتجاوز
+    // ١٦ مليون بكسل (حدّ سفاري).
     let s = 1;
     for (const b of boxes) {
       const side = Math.max(b.x1 - b.x0, b.y1 - b.y0) || 1;
-      const want = Math.min(maxSide, Math.max(b.w, b.h) || maxSide) / side;
-      s = Math.max(s, want);
+      // صندوقُه maxSide بكسلاً على الأقلّ، وبأصل الصورة إن كان أعلى، وضعفا maxSide على الأكثر.
+      s = Math.max(s, Math.min((maxSide * 2) / side, Math.max(b.ppu ?? 0, maxSide / side)));
     }
     s = Math.min(s, 6, Math.sqrt(16_000_000 / Math.max(base.width * base.height, 1)));
     const vp = page.getViewport({ scale: s });
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new PdfError("load_failed");
     ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport: vp }).promise;
-    const out: Blob[] = [];
-    for (const b of boxes) {
-      const sx = Math.max(0, Math.floor(b.x0 * s)), sy = Math.max(0, Math.floor(b.y0 * s));
-      const sw = Math.max(1, Math.min(canvas.width - sx, Math.ceil((b.x1 - b.x0) * s)));
-      const sh = Math.max(1, Math.min(canvas.height - sy, Math.ceil((b.y1 - b.y0) * s)));
-      const k = Math.min(1, maxSide / Math.max(sw, sh));
-      const c2 = document.createElement("canvas");
-      c2.width = Math.max(1, Math.round(sw * k)); c2.height = Math.max(1, Math.round(sh * k));
-      const g = c2.getContext("2d")!;
-      g.imageSmoothingQuality = "high";
-      g.drawImage(canvas, sx, sy, sw, sh, 0, 0, c2.width, c2.height);
-      if (type === "image/jpeg") { g.globalCompositeOperation = "destination-over"; g.fillStyle = "#ffffff"; g.fillRect(0, 0, c2.width, c2.height); }
-      out.push(await new Promise<Blob>((res, rej) => c2.toBlob((bl) => (bl ? res(bl) : rej(new PdfError("load_failed"))), type, 0.72)));
-      c2.width = 0; c2.height = 0;
+    const out: T[] = [];
+    try {
+      for (const b of boxes) {
+        const sx = Math.max(0, Math.floor(b.x0 * s)), sy = Math.max(0, Math.floor(b.y0 * s));
+        const sw = Math.max(1, Math.min(canvas.width - sx, Math.ceil((b.x1 - b.x0) * s)));
+        const sh = Math.max(1, Math.min(canvas.height - sy, Math.ceil((b.y1 - b.y0) * s)));
+        const t = trimRect(ctx.getImageData(sx, sy, sw, sh).data, sw, sh);
+        const k = Math.min(1, maxSide / Math.max(t.w, t.h));
+        const c2 = document.createElement("canvas");
+        c2.width = Math.max(1, Math.round(t.w * k)); c2.height = Math.max(1, Math.round(t.h * k));
+        const g = c2.getContext("2d", { willReadFrequently: true })!;
+        g.imageSmoothingQuality = "high";
+        g.fillStyle = "#ffffff"; g.fillRect(0, 0, c2.width, c2.height);
+        g.drawImage(canvas, sx + t.x, sy + t.y, t.w, t.h, 0, 0, c2.width, c2.height);
+        try { out.push(await each(c2)); } finally { c2.width = 0; c2.height = 0; }
+      }
+    } finally {
+      canvas.width = 0; canvas.height = 0;   // سفاري يحتفظ بذاكرة القماش حتى يُصغَّر
     }
-    canvas.width = 0; canvas.height = 0;   // سفاري يحتفظ بذاكرة القماش حتى يُصغَّر
     return out;
   };
 
-  return { pages: doc.numPages, readPage, crop, close: () => { for (const p of pageCache.values()) p.cleanup(); void doc.destroy(); } };
+  const crop = (n: number, boxes: readonly PdfImage[], maxSide: number, type: "image/png" | "image/jpeg" = "image/png") =>
+    renderBoxes(n, boxes, maxSide, (c) => new Promise<Blob>((res, rej) => c.toBlob((bl) => (bl ? res(bl) : rej(new PdfError("load_failed"))), type, 0.72)));
+
+  /** باركودُ كلّ صورة من خطوطه (eanDecode): بحجمين (١٦٠٠ ثمّ ٢٤٠٠ — مقيسٌ على كاتالوج المالك) والأوّلُ يكفي. */
+  const codes = (n: number, boxes: readonly PdfImage[]) =>
+    renderBoxes(n, boxes, 2400, async (c) => {
+      for (const side of [1600, 2400]) {
+        const k = Math.min(1, side / Math.max(c.width, c.height));
+        const w = Math.max(1, Math.round(c.width * k)), h = Math.max(1, Math.round(c.height * k));
+        let data: Uint8ClampedArray;
+        if (k === 1) data = c.getContext("2d")!.getImageData(0, 0, w, h).data;
+        else {
+          const c3 = document.createElement("canvas"); c3.width = w; c3.height = h;
+          const g3 = c3.getContext("2d", { willReadFrequently: true })!;
+          g3.imageSmoothingQuality = "high"; g3.drawImage(c, 0, 0, w, h);
+          data = g3.getImageData(0, 0, w, h).data;
+          c3.width = 0; c3.height = 0;
+        }
+        await new Promise((r) => setTimeout(r));   // نَفَسٌ للواجهة بين القراءات
+        const code = decodeEan({ data, width: w, height: h, channels: 4 });
+        if (code) return code;
+        if (k === 1) break;
+      }
+      return null;
+    });
+
+  return { pages: doc.numPages, readPage, crop, codes, close: () => { for (const p of pageCache.values()) p.cleanup(); void doc.destroy(); } };
 }
