@@ -629,6 +629,30 @@ async function run(M, c) {
     const dxv = M.dxText((k) => k, { dx: " ملاحظة ", dx_codes: ["coccidiosis", "ne"] });
     c("م٨ تشخيصُ الزيارة بالقائمة: المختارُ بأسمائه ثمّ المكتوب، والفارغُ فارغٌ («بلا تشخيص»)", dxv === "flk.dx.coccidiosiscommon.listSepflk.dx.ne — ملاحظة", dxv);
     c("  وزيارةٌ بلا مرضٍ ولا نصّ ⇒ فارغ", M.dxText((k) => k, { dx: null, dx_codes: [] }) === "" && M.dxText((k) => k, { dx: "  ", dx_codes: [] }) === "");
+
+    // م٩ نقراتٌ بنفس اللحظة — جذرٌ متزامنٌ كـcreateRoot بالتطبيق: النقراتُ كلُّها قبل أيّ رسمة. كانت كلُّ نقرةٍ تحسب القائمةَ الجديدة من المرسومة
+    // فتمسح الثانيةُ الأولى (مقيسٌ بالمتصفّح ٢٥/١١ بسؤال المالك «يكدر يختار اكثر من علامة بنفس الوقت؟»: ثلاثُ نقراتٍ بلحظةٍ واحدة بقيت أخيرتُها).
+    reset();
+    globalThis.__api = { saveVisit: async (p) => { __calls.push(p); return { visit: { id: "v9", ...p }, replayed: false }; } };
+    ui = M.mount(el(M.FlockVisit, { b: bundleOf(M), canEdit: true, onClose() {}, onSaved() {} }), { concurrent: true });
+    await ui.settle();
+    ui.click(ui.find("data-flock-add-bird")); await ui.settle();
+    ui.click(ui.find("data-flock-sys", "dig")); await ui.settle();
+    const ev = { preventDefault() {}, stopPropagation() {} };
+    const burst = ["gut.enlarged", "gut.thin_wall", "gut.thick_wall"].map((x) => ui.find("data-chip", x));
+    ui.fire(() => burst.forEach((n) => n.props.onClick(ev)));
+    await ui.settle();
+    const dxs = ["colibacillosis", "coccidiosis", "ne"].map((x) => ui.find("data-chip", x));
+    const sg = ["resp.cough", "gi.diarrhea_white"].map((x) => ui.find("data-chip", x));
+    ui.fire(() => { dxs.forEach((n) => n.props.onClick(ev)); sg.forEach((n) => n.props.onClick(ev)); });
+    await ui.settle();
+    c("م٩ ثلاثُ علاماتٍ تشريحيّة بنفس اللحظة تبقى الثلاث (لا تمسح الأخيرةُ ما قبلها)", J(pickedOf(ui).sort()) === J(["gut.enlarged", "gut.thick_wall", "gut.thin_wall"]), J(pickedOf(ui)));
+    ui.click(ui.find("data-flock-save")); await ui.settle(); await flush();
+    const pb = __calls[0] ?? {};
+    c("  وثلاثةُ تشخيصاتٍ وعلامتا الطيور الحيّة بنفس اللحظة تُحفظ كلُّها مع العلامات الثلاث",
+      J([...(pb.dx_codes ?? [])].sort()) === J(["coccidiosis", "colibacillosis", "ne"]) && J([...(pb.signs ?? [])].sort()) === J(["gi.diarrhea_white", "resp.cough"])
+      && J([...(pb.necropsy?.[0]?.findings ?? [])].sort()) === J(["gut.enlarged", "gut.thick_wall", "gut.thin_wall"]), J({ dx: pb.dx_codes, s: pb.signs, f: pb.necropsy?.[0]?.findings }));
+    ui.unmount();
   }
 
   /* ل) فتحُ الحالة */
@@ -702,7 +726,10 @@ const MUTANTS = [
   ["آفةٌ جديدة تُسقط رموزاً لا تعرفها", "necro", "return [...findings.filter((f) => !drop.has(f)), code];", "return [...findings.filter((f) => !drop.has(f) && isKnownLesion(f)), code];"],
   ["الملخّصُ يسبق كلَّ آفةٍ بمجموعتها", "necro", "return home.sub === \"gen\" || SELF_NAMED.has(code) ? main : `${group(home.sub)}: ${main}`;", "return `${group(home.sub)}: ${main}`;"],
   ["التشريحُ للكاملة وحدها", "visit", "{d.birds.length < 50 && (\n              <Button variant={d.birds.length ? \"outline\" : \"secondary\"}", "{!d.quick && d.birds.length < 50 && (\n              <Button variant={d.birds.length ? \"outline\" : \"secondary\"}"],
-  ["«طيرٌ بنفس العلامات» فارغ", "visit", "onClick={() => addBird(cur.findings, cur.source)}", "onClick={() => addBird([], cur.source)}"],
+  ["«طيرٌ بنفس العلامات» فارغ", "visit", "onClick={() => addBird(bird)} data-flock-dup-bird", "onClick={() => addBird(null)} data-flock-dup-bird"],
+  ["الآفةُ تُحسب من المرسوم (نقرتان بلحظةٍ تمسح الأولى)", "visit", "onChange={(fn) => setBirdAt(bird, (b) => ({ findings: fn(b.findings) }))}", "onChange={(fn) => setBirdAt(bird, { findings: fn(cur.findings) })}"],
+  ["التشخيصُ يُحسب من المرسوم", "visit", "onClick={() => upd((st) => ({ dxCodes: toggle(st.dxCodes, x) }))}", "onClick={() => set({ dxCodes: toggle(d.dxCodes, x) })}"],
+  ["علامةُ الطير الحيّ تُحسب من المرسوم", "visit", "onClick={() => upd((x) => ({ signs: toggle(x.signs, k) }))}", "onClick={() => set({ signs: toggle(d.signs, k) })}"],
   ["قائمةُ الزيارات تقرأ المكتوبَ وحده", "shared", "[v.dx_codes.map((x) => t(`flk.dx.${x}`, { defaultValue: x })).join(t(\"common.listSep\")), v.dx?.trim() ?? \"\"]", "[v.dx?.trim() ?? \"\"]"],
   ["السحبُ الفارغ يصير صفراً", "tx", `withdrawal_meat_days: l.kind === "med" ? optInt(l.wd_meat) : null`, `withdrawal_meat_days: l.kind === "med" ? (optInt(l.wd_meat) ?? 0) : null`],
 ];

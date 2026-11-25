@@ -143,6 +143,10 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
     value: d, isEmpty: draftEmpty,
   });
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
+  /** كتابةٌ تُحسب من الحال الأحدث لا من المرسوم: نقرتان قبل أيّ رسمة (جذرُ createRoot يرسم بعد الحدث) كانت الثانيةُ منهما تحسب من
+   *  القائمة المرسومة فتمسح الأولى — مقيسٌ بالمتصفّح (٢٥/١١): ثلاثُ علاماتٍ بلحظةٍ واحدة بقيت أخيرتُها. كلُّ قائمةٍ تُبدَّل بها (العلامات، الآفات،
+   *  التشخيصات، البيئة، التطبيق، التحصين، الطيور) تمرّ من هنا. */
+  const upd = (fn: (x: Draft) => Partial<Draft>) => setD((x) => ({ ...x, ...fn(x) }));
   const day = d.at.slice(0, 10);
   const today = localISO();
   const houses = b.houses.length ? [...b.houses].sort((x, y) => x.position - y.position) : [{ id: null as string | null, label: t("flk.wholeFlock"), placed_count: c.placed_count, position: 0 }];
@@ -212,11 +216,15 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
   };
 
   const toggle = (arr: string[], code: string) => (arr.includes(code) ? arr.filter((x) => x !== code) : [...arr, code]);
-  const setBirdAt = (i: number, p: Partial<Bird>) => set({ birds: d.birds.map((x, j) => (j === i ? { ...x, ...p } : x)) });
-  /** طيرٌ جديد بآخر القائمة — فارغ، أو «بنفس العلامات» (خمسةُ طيورٍ متشابهة لا تُعلَّم خمس مرّات). */
-  const addBird = (findings: string[], source: Bird["source"]) => {
-    const no = (d.birds[d.birds.length - 1]?.no ?? 0) + 1;
-    set({ birds: [...d.birds, { no, source, weight: "", findings: [...findings], note: "" }] });
+  const setBirdAt = (i: number, p: Partial<Bird> | ((b: Bird) => Partial<Bird>)) =>
+    upd((x) => ({ birds: x.birds.map((b, j) => (j === i ? { ...b, ...(typeof p === "function" ? p(b) : p) } : b)) }));
+  /** طيرٌ جديد بآخر القائمة — فارغ، أو «بنفس علامات» الطير `from` كما هي الآن (خمسةُ طيورٍ متشابهة لا تُعلَّم خمس مرّات). */
+  const addBird = (from: number | null) => {
+    upd((x) => {
+      const src = from == null ? null : x.birds[from];
+      const no = (x.birds[x.birds.length - 1]?.no ?? 0) + 1;
+      return { birds: [...x.birds, { no, source: src ? src.source : "dead", weight: "", findings: src ? [...src.findings] : [], note: "" }] };
+    });
     setBird(d.birds.length);
   };
   const cur = d.birds[bird];
@@ -267,15 +275,15 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                   <div className="grid grid-cols-3 gap-2">
                     <label className="block min-w-0"><span className="mb-1 block truncate text-xs font-bold text-ink-subtle">{t("flk.mort.dead")}</span>
                       <input type="number" inputMode="numeric" min={0} className="input" disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.dead} data-flock-v-dead
-                        onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, dead: e.target.value } } })} />
+                        onChange={(e) => { const v = e.target.value, k = hk(h.id); upd((x) => ({ mort: { ...x.mort, [k]: { ...(x.mort[k] ?? { dead: "", culled: "", days: "" }), dead: v } } })); }} />
                     </label>
                     <label className="block min-w-0"><span className="mb-1 block truncate text-xs font-bold text-ink-subtle">{t("flk.mort.culled")}</span>
                       <input type="number" inputMode="numeric" min={0} className="input" disabled={!g && !m.dead.trim() && !m.culled.trim()} value={m.culled}
-                        onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, culled: e.target.value } } })} />
+                        onChange={(e) => { const v = e.target.value, k = hk(h.id); upd((x) => ({ mort: { ...x.mort, [k]: { ...(x.mort[k] ?? { dead: "", culled: "", days: "" }), culled: v } } })); }} />
                     </label>
                     <label className="block min-w-0"><span className="mb-1 block text-xs font-bold leading-tight text-ink-subtle">{t("flk.mort.days")}</span>
                       <input type="number" inputMode="numeric" min={1} max={60} className="input" placeholder={g ? String(g.days) : undefined} disabled={!g} value={m.days}
-                        onChange={(e) => set({ mort: { ...d.mort, [hk(h.id)]: { ...m, days: e.target.value } } })} />
+                        onChange={(e) => { const v = e.target.value, k = hk(h.id); upd((x) => ({ mort: { ...x.mort, [k]: { ...(x.mort[k] ?? { dead: "", culled: "", days: "" }), days: v } } })); }} />
                     </label>
                   </div>
                 </div>
@@ -284,17 +292,17 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
             <p className="text-2xs text-ink-subtle">{t("flk.mort.blankHint")}</p>
           </div>
           <div className="mt-3"><span className="label">{t("flkv.feedPhase")}</span>
-            <Chips value={d.feed.phase} options={PHASES} label={(p) => t(`flk.feedPhase.${p}`)} onChange={(p) => set({ feed: { ...d.feed, phase: d.feed.phase === p ? "" : p } })} />
+            <Chips value={d.feed.phase} options={PHASES} label={(p) => t(`flk.feedPhase.${p}`)} onChange={(p) => upd((x) => ({ feed: { ...x.feed, phase: x.feed.phase === p ? "" : p } }))} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Num label={t("flkv.feedSource")} value={d.feed.source} text onChange={(v) => set({ feed: { ...d.feed, source: v } })} />
-            <Num label={t("flk.feed.kg")} value={d.feed.kg} onChange={(v) => set({ feed: { ...d.feed, kg: v } })} />
-            <Num label={t("flk.feed.water")} value={d.feed.water} onChange={(v) => set({ feed: { ...d.feed, water: v } })} />
-            <Num label={t("flk.feed.weight")} value={d.feed.weight} onChange={(v) => set({ feed: { ...d.feed, weight: v } })} />
+            <Num label={t("flkv.feedSource")} value={d.feed.source} text onChange={(v) => upd((x) => ({ feed: { ...x.feed, source: v } }))} />
+            <Num label={t("flk.feed.kg")} value={d.feed.kg} onChange={(v) => upd((x) => ({ feed: { ...x.feed, kg: v } }))} />
+            <Num label={t("flk.feed.water")} value={d.feed.water} onChange={(v) => upd((x) => ({ feed: { ...x.feed, water: v } }))} />
+            <Num label={t("flk.feed.weight")} value={d.feed.weight} onChange={(v) => upd((x) => ({ feed: { ...x.feed, weight: v } }))} />
             {!d.quick && <>
-              <Num label={t("flkv.sample")} value={d.feed.sample} onChange={(v) => set({ feed: { ...d.feed, sample: v } })} />
-              <Num label={t("flkv.temp")} value={d.feed.temp} onChange={(v) => set({ feed: { ...d.feed, temp: v } })} />
-              <Num label={t("flkv.hum")} value={d.feed.hum} onChange={(v) => set({ feed: { ...d.feed, hum: v } })} />
+              <Num label={t("flkv.sample")} value={d.feed.sample} onChange={(v) => upd((x) => ({ feed: { ...x.feed, sample: v } }))} />
+              <Num label={t("flkv.temp")} value={d.feed.temp} onChange={(v) => upd((x) => ({ feed: { ...x.feed, temp: v } }))} />
+              <Num label={t("flkv.hum")} value={d.feed.hum} onChange={(v) => upd((x) => ({ feed: { ...x.feed, hum: v } }))} />
             </>}
           </div>
         </Section>
@@ -307,7 +315,7 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
               <div className="flex flex-wrap gap-1.5">
                 {codes.map((code) => {
                   const k = `${g}.${code}`;
-                  return <ChipBtn key={k} on={d.signs.includes(k)} onClick={() => set({ signs: toggle(d.signs, k) })} data={k}>{t(`flkv.sign.${g}.${code}`)}</ChipBtn>;
+                  return <ChipBtn key={k} on={d.signs.includes(k)} onClick={() => upd((x) => ({ signs: toggle(x.signs, k) }))} data={k}>{t(`flkv.sign.${g}.${code}`)}</ChipBtn>;
                 })}
               </div>
             </div>
@@ -324,7 +332,7 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                   <div className="flex gap-1">
                     {(["good", "fair", "poor"] as const).map((g) => (
                       <button key={g} type="button" data-flock-env={`${k}.${g}`}
-                        onClick={() => { const env = { ...d.env }; if (env[k] === g) delete env[k]; else env[k] = g; set({ env }); }}
+                        onClick={() => upd((x) => { const env = { ...x.env }; if (env[k] === g) delete env[k]; else env[k] = g; return { env }; })}
                         className={cn("chip text-2xs", d.env[k] === g ? (g === "poor" ? "bg-danger-600 text-white" : g === "fair" ? "bg-warn-500 text-white" : "bg-success-600 text-white") : "bg-surface-2 text-ink-muted")}>
                         {t(`flkv.grade.${g}`)}
                       </button>
@@ -335,8 +343,10 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
             </div>
             {ENV.some((k) => d.env[k] === "poor") && (
               <Button size="sm" variant="outline" className="mt-2" onClick={() => {
-                const add = ENV.filter((k) => d.env[k] === "poor").map((k) => `• ${t(`flkv.envAdvice.${k}`)}`).filter((l) => !d.advice.includes(l));
-                set({ advice: [d.advice.trim(), ...add].filter(Boolean).join("\n") });
+                upd((x) => {
+                  const add = ENV.filter((k) => x.env[k] === "poor").map((k) => `• ${t(`flkv.envAdvice.${k}`)}`).filter((l) => !x.advice.includes(l));
+                  return { advice: [x.advice.trim(), ...add].filter(Boolean).join("\n") };
+                });
               }} data-flock-env-advice>{t("flkv.envToAdvice")}</Button>
             )}
           </Section>
@@ -351,7 +361,7 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                 className={cn("h-11 min-w-11 rounded-xl px-3 text-base font-extrabold tabular-nums transition", i === bird ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:text-ink")}>{bd.no}</button>
             ))}
             {d.birds.length < 50 && (
-              <Button variant={d.birds.length ? "outline" : "secondary"} leftIcon={<Plus size={16} />} onClick={() => addBird([], "dead")} data-flock-add-bird>{t("flkv.addBird")}</Button>
+              <Button variant={d.birds.length ? "outline" : "secondary"} leftIcon={<Plus size={16} />} onClick={() => addBird(null)} data-flock-add-bird>{t("flkv.addBird")}</Button>
             )}
           </div>
           {cur && (
@@ -361,14 +371,14 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                 <Chips value={cur.source ?? ""} options={["dead", "cull", "sacrificed"] as const} label={(k) => t(`flkv.birdSrc.${k}`)} onChange={(k) => setBirdAt(bird, { source: k })} />
                 <input type="number" inputMode="numeric" min={1} className="input h-10 w-28" placeholder={t("flkv.weightG")} value={cur.weight} onChange={(e) => setBirdAt(bird, { weight: e.target.value })} />
                 <button type="button" className="ms-auto grid h-10 w-10 place-items-center rounded-xl text-ink-muted hover:bg-surface-2 hover:text-danger-600" aria-label={t("flk.delete")}
-                  onClick={() => { set({ birds: d.birds.filter((_, j) => j !== bird) }); setBird(Math.max(0, bird - 1)); }}><X size={18} /></button>
+                  onClick={() => { upd((x) => ({ birds: x.birds.filter((_, j) => j !== bird) })); setBird(Math.max(0, bird - 1)); }}><X size={18} /></button>
               </div>
-              <NecropsyPicker key={cur.no} findings={cur.findings} layer={layer} onChange={(findings) => setBirdAt(bird, { findings })} />
+              <NecropsyPicker key={cur.no} findings={cur.findings} layer={layer} onChange={(fn) => setBirdAt(bird, (b) => ({ findings: fn(b.findings) }))} />
               {(bird > 0 || (d.birds.length < 50 && lesionsOf(cur.findings).length > 0)) && (
                 <div className="flex flex-wrap gap-2">
-                  {bird > 0 && <Button size="sm" variant="outline" leftIcon={<Copy size={14} />} onClick={() => setBirdAt(bird, { findings: [...d.birds[bird - 1].findings] })} data-flock-copy-bird>{t("flkv.copyPrev")}</Button>}
+                  {bird > 0 && <Button size="sm" variant="outline" leftIcon={<Copy size={14} />} onClick={() => upd((x) => ({ birds: x.birds.map((b, j) => (j === bird && x.birds[bird - 1] ? { ...b, findings: [...x.birds[bird - 1].findings] } : b)) }))} data-flock-copy-bird>{t("flkv.copyPrev")}</Button>}
                   {d.birds.length < 50 && lesionsOf(cur.findings).length > 0 && (
-                    <Button size="sm" variant="outline" leftIcon={<Plus size={14} />} onClick={() => addBird(cur.findings, cur.source)} data-flock-dup-bird>{t("flkv.necro.dupBird")}</Button>
+                    <Button size="sm" variant="outline" leftIcon={<Plus size={14} />} onClick={() => addBird(bird)} data-flock-dup-bird>{t("flkv.necro.dupBird")}</Button>
                   )}
                 </div>
               )}
@@ -389,24 +399,24 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
               <span className="text-2xs font-bold text-ink-subtle">{t("flkv.suggest")}</span>
               {suggestions.map((x) => (
                 <button key={x.dx} type="button" className="chip min-h-10 border border-dashed border-brand-500 bg-transparent text-sm font-bold text-brand-700 dark:text-brand-300" data-flock-suggest={x.dx}
-                  onClick={() => set({ dxCodes: [...d.dxCodes, x.dx] })}>+ {t(`flk.dx.${x.dx}`)} ({x.n}/{d.birds.length})</button>
+                  onClick={() => upd((st) => ({ dxCodes: st.dxCodes.includes(x.dx) ? st.dxCodes : [...st.dxCodes, x.dx] }))}>+ {t(`flk.dx.${x.dx}`)} ({x.n}/{d.birds.length})</button>
               ))}
             </div>
           )}
           <div className="flex flex-wrap gap-1.5">
-            {DX.map((x) => <ChipBtn key={x} on={d.dxCodes.includes(x)} danger={NOTIFIABLE.has(x)} onClick={() => set({ dxCodes: toggle(d.dxCodes, x) })} data={x}>{t(`flk.dx.${x}`)}</ChipBtn>)}
+            {DX.map((x) => <ChipBtn key={x} on={d.dxCodes.includes(x)} danger={NOTIFIABLE.has(x)} onClick={() => upd((st) => ({ dxCodes: toggle(st.dxCodes, x) }))} data={x}>{t(`flk.dx.${x}`)}</ChipBtn>)}
           </div>
           {notifiable && <div className="mt-2"><NotifiableBanner t={t} /></div>}
           <div className="mt-2 grid gap-2 sm:grid-cols-3">
             <input className="input sm:col-span-2" maxLength={1000} placeholder={t("flkv.dxFree")} value={d.dx} onChange={(e) => set({ dx: e.target.value })} data-flock-dx />
-            <Chips value={d.dxStatus} options={["suspected", "confirmed"] as const} label={(k) => t(`flkv.dxStatus.${k}`)} onChange={(k) => set({ dxStatus: d.dxStatus === k ? "" : k })} />
+            <Chips value={d.dxStatus} options={["suspected", "confirmed"] as const} label={(k) => t(`flkv.dxStatus.${k}`)} onChange={(k) => upd((x) => ({ dxStatus: x.dxStatus === k ? "" : k }))} />
           </div>
         </Section>
 
         {/* ٧ · القرار */}
         <Section title={t("flkv.s7")}>
           <div><span className="label">{t("flkv.trend")}</span>
-            <Chips value={d.trend} options={["better", "same", "worse"] as const} label={(k) => t(`flk.trend.${k}`)} onChange={(k) => set({ trend: d.trend === k ? "" : k })} />
+            <Chips value={d.trend} options={["better", "same", "worse"] as const} label={(k) => t(`flk.trend.${k}`)} onChange={(k) => upd((x) => ({ trend: x.trend === k ? "" : k }))} />
           </div>
           {!d.quick && txs.length > 0 && (
             <div className="mt-3" data-flock-compliance>
@@ -419,7 +429,7 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                     <div className="flex gap-1">
                       {(["yes", "partial", "no"] as const).map((v) => (
                         <button key={v} type="button" className={cn("chip text-2xs", val === v ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}
-                          onClick={() => set({ comp: { ...d.comp, [x.id]: { ...(d.comp[x.id] ?? {}), [l.id]: v } } })}>{t(`flkv.comp.${v}`)}</button>
+                          onClick={() => upd((st) => ({ comp: { ...st.comp, [x.id]: { ...(st.comp[x.id] ?? {}), [l.id]: v } } }))}>{t(`flkv.comp.${v}`)}</button>
                       ))}
                     </div>
                   </div>
@@ -436,7 +446,7 @@ function VisitForm({ b, visit, onClose, onSaved }: { b: FlockBundle; visit?: Vis
                   <div className="flex gap-1">
                     {(["vet", "farmer"] as const).map((by) => (
                       <button key={by} type="button" className={cn("chip text-2xs", d.vaxGiven[v.id] === by ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")} data-flock-vgiven={`${v.id}:${by}`}
-                        onClick={() => set({ vaxGiven: { ...d.vaxGiven, [v.id]: d.vaxGiven[v.id] === by ? "" : by } })}>{t("flkv.givenBy", { by: t(`flk.givenBy.${by}`) })}</button>
+                        onClick={() => upd((x) => ({ vaxGiven: { ...x.vaxGiven, [v.id]: x.vaxGiven[v.id] === by ? "" : by } }))}>{t("flkv.givenBy", { by: t(`flk.givenBy.${by}`) })}</button>
                     ))}
                   </div>
                 </div>
@@ -568,7 +578,7 @@ function ChipBtn({ on, danger, onClick, data, children }: { on: boolean; danger?
   );
 }
 /* ── منتقي التشريح: بحثٌ بالقائمة كلّها، وأجهزةُ الجسم بطاقاتٌ بحالها، وآفاتُ الجهاز المختار تحتها ───────────── */
-function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; layer: boolean; onChange: (next: string[]) => void }) {
+function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; layer: boolean; onChange: (next: (prev: string[]) => string[]) => void }) {
   const { t } = useTranslation();
   const systems = systemsFor(layer);
   const [openK, setOpenK] = useState(systems[0].k);
@@ -591,7 +601,7 @@ function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; lay
   };
   const lesion = (code: string) => (
     <LesionBtn key={code} code={code} on={findings.includes(code)} blocked={code === NIL && nilBlocked && !findings.includes(NIL)}
-      onClick={() => onChange(toggleLesion(findings, code))} />
+      onClick={() => onChange((f) => toggleLesion(f, code))} />
   );
   const idx = systems.indexOf(sys);
   const st = systemState(findings, sys);
@@ -601,7 +611,7 @@ function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; lay
         <span className="text-xs font-bold text-ink-subtle">{t("flkv.necro.picked")}:</span>
         {picked.length === 0 && <span className="text-xs text-ink-subtle">{t("flkv.necro.none")}</span>}
         {picked.map((code) => (
-          <button key={code} type="button" data-flock-picked={code} onClick={() => onChange(toggleLesion(findings, code))} aria-label={`${t("flk.delete")}: ${lesionLabel(t, code)}`}
+          <button key={code} type="button" data-flock-picked={code} onClick={() => onChange((f) => toggleLesion(f, code))} aria-label={`${t("flk.delete")}: ${lesionLabel(t, code)}`}
             className="chip min-h-9 bg-brand-50 text-sm font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200">
             {lesionLabel(t, code)}<X size={14} className="shrink-0 opacity-70" />
           </button>
@@ -632,7 +642,7 @@ function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; lay
           <div ref={panel} className="scroll-mt-4 space-y-3 rounded-2xl bg-surface-2 p-3" data-flock-sys-panel={sys.k}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="min-w-0 flex-1 text-base font-extrabold text-ink">{t(`flkv.sys.${sys.k}`)}</span>
-              <button type="button" data-flock-normal={sys.k} aria-pressed={st.normal} onClick={() => onChange(toggleNormal(findings, sys))}
+              <button type="button" data-flock-normal={sys.k} aria-pressed={st.normal} onClick={() => onChange((f) => toggleNormal(f, sys))}
                 className={cn("chip min-h-10 text-sm font-bold", st.normal ? "bg-success-600 text-white" : "bg-surface-1 text-ink-muted")}>{t("flkv.normal")}</button>
             </div>
             {sys.subs.map((sub) => (
@@ -646,7 +656,7 @@ function NecropsyPicker({ findings, layer, onChange }: { findings: string[]; lay
               {idx < systems.length - 1 && (
                 <Button size="sm" variant="secondary" onClick={() => open(systems[idx + 1].k)} data-flock-sys-next>{t("flkv.necro.next")}: {t(`flkv.sys.${systems[idx + 1].k}`)}</Button>
               )}
-              <Button size="sm" variant="outline" onClick={() => onChange(restNormal(findings, systems))} data-flock-rest-normal>{t("flkv.necro.restNormal")}</Button>
+              <Button size="sm" variant="outline" onClick={() => onChange((f) => restNormal(f, systems))} data-flock-rest-normal>{t("flkv.necro.restNormal")}</Button>
             </div>
           </div>
         </>
