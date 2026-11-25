@@ -9276,6 +9276,41 @@
     "rateFarGo": "I'm sure — save the rate"
   },
   "libm": {
+    "pdf": {
+      "title": "Import from a PDF catalog",
+      "hint": "The distributor's catalog as it is: the system finds product photos and reads the name and barcode next to each one. Review and fix the names before uploading.",
+      "pick": "Choose a PDF file",
+      "reading": "Reading pages… {{done}} of {{n}}",
+      "thumbs": "Preparing photos… {{done}} of {{n}} pages",
+      "found": "Found {{n}} product photos on {{pages}} pages",
+      "noImages": "No product photos found in this file.",
+      "dropped": "Skipped {{n}} small images, logos or backgrounds",
+      "scanned": "{{n}} scanned pages — there's no text to read names from. Their photos come without a name: type it or skip them.",
+      "f": {
+        "all": "All ({{n}})",
+        "noName": "No name ({{n}})",
+        "new": "Will upload ({{n}})"
+      },
+      "name": "Name",
+      "barcode": "Barcode",
+      "skip": "Don't upload",
+      "st": {
+        "new": "Will upload",
+        "exists": "Already in the library",
+        "dupInFile": "Duplicate in the file",
+        "noName": "No name — type it",
+        "noImage": "No photo",
+        "skip": "Skipped"
+      },
+      "page": "Page {{n}}",
+      "fromText": "Text next to it: {{text}}",
+      "more": "Show the rest ({{n}})",
+      "err": {
+        "not_pdf": "This is not a PDF file.",
+        "encrypted": "The file is password-protected — open it, save it without a password, and try again.",
+        "load_failed": "Couldn't read the file — try another file or save it again."
+      }
+    },
     "companies": "Companies",
     "companiesHint": "Each company holds kinds (cats, dogs…), each kind holds agencies (brands), and each agency holds sections.",
     "items": "{{n}} images",
