@@ -653,9 +653,9 @@ const supabaseRepo: DemoRepo = {
     return updated<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
   },
   async deletePet(petId, reason) {
-    // 0291: طيٌّ لا محو — الحيوانُ وكلُّ ما يتسلسل معه يُصوَّر بـpets_trash ويرجع بنفس المعرّفات، ولمن عنده
+    // 0292: طيٌّ لا محو — الحيوانُ وكلُّ ما يتسلسل معه يُصوَّر بـpets_trash ويرجع بنفس المعرّفات، ولمن عنده
     // «حذف الحيوانات» وحده (الخادمُ يسأل). ملفّاتُ المرفقات **تبقى** بالدلو: محوُها هنا كان يُرجع الحيوانَ بصورٍ مكسورة.
-    // ودالّةٌ غائبة (قاعدةٌ قبل 0291) تُرمى — لا رجوعَ للحذف المباشر النهائيّ.
+    // ودالّةٌ غائبة (قاعدةٌ قبل 0292) تُرمى — لا رجوعَ للحذف المباشر النهائيّ.
     const { error } = await sbc().rpc("delete_pet", { p_id: petId, p_reason: reason ?? null });
     if (error) throw error;
   },

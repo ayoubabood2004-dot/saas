@@ -30,7 +30,7 @@ import { withTimeout } from "@/lib/errors";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadRecordsSnap, recordsKey, type RecordsSnap } from "@/lib/prefetchData";
 
-/* حذفُ الحيوان و«الحيوانات المحذوفة» (0291): قطعةٌ كسولة بنطاقها المملوك ptr — `lazy()` يخبّئ الوعدَ المرفوض،
+/* حذفُ الحيوان و«الحيوانات المحذوفة» (0292): قطعةٌ كسولة بنطاقها المملوك ptr — `lazy()` يخبّئ الوعدَ المرفوض،
    فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
 const loadPetDeleteDialog = () => page(() => import("@/components/records/PetTrash").then((m) => ({ default: m.PetDeleteDialog })), ["ptr"]);
 const loadPetTrashEntry = () => page(() => import("@/components/records/PetTrash").then((m) => ({ default: m.PetTrashEntry })), ["ptr"]);
@@ -292,7 +292,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [deleting, setDeleting] = useState<Pet | null>(null);
   // Hidden as soon as the server confirmed the delete, until the re-sync lands.
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
-  /* 0291: الحذفُ لمن عنده «حذف الحيوانات» (المديرُ، أو منحٌ صريح) — والخادمُ يحكم أخيراً؛ وجهازٌ مقفولٌ على الاستقبال
+  /* 0292: الحذفُ لمن عنده «حذف الحيوانات» (المديرُ، أو منحٌ صريح) — والخادمُ يحكم أخيراً؛ وجهازٌ مقفولٌ على الاستقبال
      لا يعرضه إلا بمفتاح المدير، كحذف الفواتير. والنافذةُ و«المحذوفات» قطعةٌ كسولة بنطاقها (ptr). */
   const { can } = usePermissions();
   const ov = useOverride();
@@ -736,7 +736,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
       {/* Edit an existing pet's details. */}
       <EditPetModal pet={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
 
-      {/* Delete: names what goes with the pet, and lands in «Deleted pets» (0291). */}
+      {/* Delete: names what goes with the pet, and lands in «Deleted pets» (0292). */}
       {deleting && (
         <LoadBoundary scope="pet-delete" onRetry={() => { PetDeleteDialogLazy = loadPetDeleteDialog(); setLazyTick((n) => n + 1); }}>
           <Suspense fallback={null}>

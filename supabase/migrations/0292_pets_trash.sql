@@ -1,5 +1,5 @@
 -- ============================================================================
--- ٠٢٩١ — حذفُ الحيوان: لصاحب الصلاحية وحده، ويرجع كما كان
+-- ٠٢٩٢ — حذفُ الحيوان: لصاحب الصلاحية وحده، ويرجع كما كان
 --
 -- ── ما كان ───────────────────────────────────────────────────────────────
 -- زرُّ الحذف بسجلّ المرضى لكلّ الكادر (لا فحصَ دورٍ بالواجهة ولا بالقاعدة —
@@ -43,7 +43,7 @@
 -- (الواجهةُ الجديدة لا تمحوها) ليرجع الحيوانُ بصوره. والمالُ لا يُمسّ.
 -- السلّةُ لا تُكنس — كنسُها قرارُ المالك.
 --
--- تُطبَّق بعد 0290، وتُعاد بلا أثرٍ ثانٍ. تراجع:
+-- تُطبَّق بعد 0290 (و0291 لفرعٍ آخر)، وتُعاد بلا أثرٍ ثانٍ. تراجع:
 --   drop trigger if exists pets_trash_guard on public.pets;
 --   drop trigger if exists pets_delete_guard on public.pets;
 --   drop function if exists public.delete_pet(uuid, text), public.restore_pet(uuid),
@@ -76,7 +76,7 @@ create table if not exists public.pets_trash (
   constraint pets_trash_reason check (char_length(coalesce(reason, '')) <= 300)
 );
 comment on table public.pets_trash is
-  'حيوانٌ حُذف بكلّ ما تسلسل معه (0291): يُعاد بنفس المعرّفات من restore_pet. قراءةٌ وحدها — الكتابةُ من المحفّز والدالّتين.';
+  'حيوانٌ حُذف بكلّ ما تسلسل معه (0292): يُعاد بنفس المعرّفات من restore_pet. قراءةٌ وحدها — الكتابةُ من المحفّز والدالّتين.';
 create index if not exists pets_trash_clinic_idx on public.pets_trash (clinic_id, deleted_at desc);
 
 alter table public.pets_trash enable row level security;
