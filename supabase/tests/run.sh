@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0291_pets_trash.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0291_pets_trash.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -11796,6 +11796,351 @@ chk "  والسياجُ كاملٌ بعد 0287 (بلا ثغرة)" "select coales
 chk "  وأربعُ سياساتٍ على التقارير (قراءةٌ وإدخالٌ وسياجاهما)" \
     "select count(*)::text from pg_policies where schemaname='public' and tablename='pet_case_reports'" "4"
 $P -c "delete from pet_case_reports where pet_id = '$CRP';" >/dev/null
+# ── 0287: الملاحظةُ الصوتية — قبل تراجع 0222 (السياجُ ودالّتُه، وstaff_can يحكم من يسجّل) ──────────────────────────
+# عياداتٌ ثلاث: C1 وC2 بالتجربة وC3 خارجها. e1 طبيب C1 («د. علي» بصفّ كادره)، e2 طبيب C1 (اسمُه من ملفّه)، e3 استقبال C1،
+# e4 مدير C1، e5 صاحبُ حيوان (ملفٌّ بلا عضوية)، e6 طبيب C2، e7 طبيب C3. كلُّ نداءٍ بدور authenticated (rv/rt)، وكلُّ قراءةٍ
+# بعد كتابةٍ بجملةٍ بعدها (درسُ 0257). وقالبُ storage يُبنى بفحص الملفّات ويُهدم بعده (الحزمةُ بلا storage).
+echo "▸ 0287: الملاحظةُ الصوتية — يسجّل من عنده السجلاتُ الطبية، والحذفُ طيٌّ يرجع، والمحذوفُ للمدير، والملفُّ لا يُمسّ"
+VV=c2870000-0000-4000-8000-0000000000
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+C3=${VV}c3
+ADM=33333333-3333-3333-3333-333333333333
+PHO=88888888-8888-8888-8888-888888888888
+ZC=00000000-0000-0000-0000-000000000000
+E1=${VV}e1; E2=${VV}e2; E3=${VV}e3; E4=${VV}e4; E5=${VV}e5; E6=${VV}e6; E7=${VV}e7
+A1=${VV}a1; A2=${VV}a2; A3=${VV}a3; A5=${VV}a5
+B1=${VV}b1; B2=${VV}b2; B3=${VV}b3; B4=${VV}b4; B5=${VV}b5
+AK="'public.audit_kind(text,text,jsonb)'::regprocedure"
+rt()   { echo "_rls_try('$1', \$q\$$2\$q\$)"; }
+rv()   { echo "_v0252('$1', \$q\$$2\$q\$)"; }
+# «guarded:الرمز:أوّلُ كلمةٍ من الرسالة» — اسمُ الرفض (voice_forbidden…) بلا تفاصيل.
+g3()   { echo "(select split_part(r, ':', 1) || ':' || split_part(r, ':', 2) || ':' || split_part(split_part(r, ':', 3), ' ', 1) from (select $1 as r) x)"; }
+# حمولةُ voice_note_add كما ترسلها الواجهة: _vj المعرّف الحيوان الزيارة [النوع] [اليومُ SQL] [عيادةُ المسار] [jsonb يغلب]
+_vj()  { echo "jsonb_build_object('id', '$1', 'pet_id', '$2', 'visit_id', '$3', 'kind', '${4:-note}', 'day', ${5:-null}, 'path', '${6:-$C1}/$2/$1.m4a', 'mime', 'audio/mp4', 'codecs', 'mp4a.40.2', 'duration_ms', 42000, 'bytes', 1000, 'sha256', repeat('a', 64), 'recorded_at', now())${7:+ || $7}"; }
+add()  { rv "$1" "select voice_note_add($2)->>'id'"; }
+vd()   { rv "$1" "select voice_note_void('$2', ${3:-null})->>'id'"; }
+rs()   { rv "$1" "select voice_note_restore('$2')->>'id'"; }
+
+# ── ٠) البذرُ الأوّل، والحارس ──
+chk "أوّلُ تطبيقٍ بذر كلَّ العيادات (الصفُّ الصفريّ وحده)، والإعاداتُ بعده ما كرّرته" "select string_agg(clinic_id::text, ',') from voice_pilot" "$ZC"
+# الأقسامُ قبلنا أعادت 0261 فرجعت audit_kind لنصّها — وحارسُ 0287 يرفضه (ليس 0271 ولا علامتنا). فـ0271 ثمّ 0287 كترتيب الإنتاج.
+out=$($P -f "$MIG/0271_old_debts.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0271 ما انعادت فوق إعادات الأقسام"; fail=1; }
+$P -c "set client_min_messages = warning; drop table if exists _vn287_ak; create table _vn287_ak as select prosrc from pg_proc where oid = $AK;
+       do \$d\$ declare s text; begin
+         select regexp_replace(prosrc, '--[^\n]*', '', 'g') into s from _vn287_ak;
+         execute format('create or replace function public.audit_kind(p_entity text, p_action text, p_details jsonb) returns text language sql immutable set search_path = public as %L', s);
+       end \$d\$;" >/dev/null
+chk "الحارس: audit_kind بشِفرة 0271 وتعليقاتُها محذوفة (كما طبّقتها أدواتُ الإنتاج) — بلا أيّ علامة" \
+    "select (position('-- +' in prosrc) = 0 and position('pet_prescriptions' in prosrc) > 0)::text from pg_proc where oid = $AK" "true"
+if o=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1); then G=applied; else G=refused; echo "$o" | tail -3; fi
+chk "  فـ0287 تنزل ببصمة الشِفرة وحدها (c3c2fc42…: md5(_drift_code) لجسم 0271)، وسطرُها فوق النصّ" \
+    "select '$G|' || (position('-- +0287' in prosrc) > 0 and position('-- +0271' in prosrc) > 0)::text || '|' || audit_kind('visit_voice_notes', 'INSERT', '{}') from pg_proc where oid = $AK" "applied|true|medical"
+$P -c "do \$d\$ declare s text; begin
+         select replace(regexp_replace(prosrc, '--[^\n]*', '', 'g'), 'then ''pet''', 'then ''pet_x''') into s from _vn287_ak;
+         execute format('create or replace function public.audit_kind(p_entity text, p_action text, p_details jsonb) returns text language sql immutable set search_path = public as %L', s);
+       end \$d\$;" >/dev/null
+if o=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1); then G=applied; GD=0; else G=refused; GD=$(echo "$o" | grep -c 'drift_body'); fi
+chk "  وشِفرةٌ غيرُ شِفرة 0271 (فرعٌ تغيّر) ⇒ 0287 تُرفض بـdrift_body ولا تمسّ الجسم" \
+    "select '$G|$GD|' || (position('pet_x' in prosrc) > 0 and position('-- +0287' in prosrc) = 0)::text from pg_proc where oid = $AK" "refused|1|true"
+$P -c "do \$d\$ declare s text; begin
+         select prosrc into s from _vn287_ak;
+         execute format('create or replace function public.audit_kind(p_entity text, p_action text, p_details jsonb) returns text language sql immutable set search_path = public as %L', s);
+       end \$d\$; drop table _vn287_ak;" >/dev/null
+out=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما نزلت فوق نصّ 0271"; fail=1; }
+chk "  ونصُّ 0271 كما هو ⇒ 0287 تنزل (والعياداتُ كما بُذرت — الإعادةُ لا تبذر)" \
+    "select (position('-- +0287' in prosrc) > 0)::text || '|' || (select string_agg(clinic_id::text, ',') from voice_pilot) from pg_proc where oid = $AK" "true|$ZC"
+
+# ── البذرة ──
+out=$($P -c "insert into auth.users(id) values ('$C1'), ('$C2'), ('$C3'), ('$E1'), ('$E2'), ('$E3'), ('$E4'), ('$E5'), ('$E6'), ('$E7') on conflict do nothing;
+       delete from memberships where user_id in ('$E1','$E2','$E3','$E4','$E5','$E6','$E7');
+       insert into memberships(user_id, clinic_id, role, status) values
+         ('$E1','$C1','veterinarian','active'), ('$E2','$C1','veterinarian','active'), ('$E3','$C1','receptionist','active'),
+         ('$E4','$C1','manager','active'), ('$E6','$C2','veterinarian','active'), ('$E7','$C3','veterinarian','active');
+       insert into profiles(id, role, full_name) values ('$E1','doctor',null), ('$E2','doctor','د. حسن'), ('$E3','reception',null),
+         ('$E4','admin','مدير ٢٨٧'), ('$E5','owner','صاحب بوبي'), ('$E6','doctor',null), ('$E7','doctor',null)
+         on conflict (id) do update set role = excluded.role, full_name = excluded.full_name;
+       insert into staff(id, clinic_id, name, user_id, role) values
+         ('${VV}f1','$C1','  د. علي ','$E1','veterinarian'), ('${VV}f3','$C1','استقبال ٢٨٧','$E3','receptionist'),
+         ('${VV}f4','$C1','د. سارة','$E4','manager'), ('${VV}f6','$C2','د. كريم','$E6','veterinarian') on conflict (id) do nothing;
+       insert into pets(id, name, clinic_id) values ('$A1','بوبي','$C1'), ('$A2','كلب ٢٨٧','$C2'), ('$A3','ميشو','$C1'), ('$A5','قط ٢٨٧','$C3')
+         on conflict (id) do nothing;
+       insert into clinic_visits(id, pet_id, clinic_id, status, opened_at, ended_at) values
+         ('$B1','$A1','$C1','open', now() - interval '1 hour', null),
+         ('$B2','$A1','$C1','ended', now() - interval '2 days', now() - interval '1 day'),
+         ('$B3','$A2','$C2','open', now() - interval '1 hour', null),
+         ('$B4','$A3','$C1','open', now() - interval '1 hour', null),
+         ('$B5','$A5','$C3','open', now() - interval '1 hour', null) on conflict (id) do nothing;
+       delete from staff_elevations where user_id in ('$E1','$E2','$E3','$E4','$E5','$E6','$E7');
+       update _dvtest_flags set admin = false; delete from platform_sessions;
+       delete from voice_pilot; insert into voice_pilot(clinic_id) values ('$C1'), ('$C2');" 2>&1) || { echo "$out" | tail -3; echo "   ✗ بذرةُ 0287 ما نزلت"; fail=1; }
+
+# ── ١) الشكل ──
+chk "الشكل: بلا مفتاحٍ أجنبيّ، والفهرسان، والمسارُ فريد، وRLS، وسياستان (القراءة وسياجُ المصوّر)، وvoice_pilot محجوبٌ بلا سياسة" \
+    "select (select count(*) from pg_constraint where conrelid = 'public.visit_voice_notes'::regclass and contype = 'f')::text
+            ||'|'||(select count(*) from pg_indexes where schemaname = 'public' and tablename = 'visit_voice_notes' and indexname in ('visit_voice_notes_visit', 'visit_voice_notes_clinic'))::text
+            ||'|'||(select count(*) from pg_constraint where conrelid = 'public.visit_voice_notes'::regclass and contype = 'u' and conname = 'visit_voice_notes_path_key')::text
+            ||'|'||(select relrowsecurity::text from pg_class where oid = 'public.visit_voice_notes'::regclass)
+            ||'|'||(select string_agg(policyname || ':' || permissive || ':' || cmd, ',' order by policyname collate \"C\") from pg_policies where schemaname = 'public' and tablename = 'visit_voice_notes')
+            ||'|'||(select relrowsecurity::text from pg_class where oid = 'public.voice_pilot'::regclass)
+            ||'|'||(select count(*) from pg_policies where schemaname = 'public' and tablename = 'voice_pilot')::text" \
+    "0|2|1|true|photographer_fence_sel:RESTRICTIVE:SELECT,visit_voice_notes_select:PERMISSIVE:SELECT|true|0"
+chk "  والسياجُ كامل، ولا سياسةَ تقرأ جدولَها، وتغطيةُ RLS لا تسمّي الجدولين (الحجبُ معلَنٌ بتعليقه)" \
+    "select coalesce((select string_agg(t, ',') from verify_photographer_fence() t), '')
+            ||'|'||(select count(*) from verify_no_self_ref_policies())::text
+            ||'|'||(select count(*) from verify_rls_coverage() v where v.\"الجدول\" in ('visit_voice_notes', 'voice_pilot'))::text" "|0|0"
+
+# ── ٢) فحصٌ ثابت: definer بمسار وفحصُ العيادة بالنصّ (درسُ 0145) ──
+chk "الكتّابُ الثلاثة definer بمسار public ويقيسون clinic_id = v_clinic بنصّهم" \
+    "select string_agg(proname || ':' || prosecdef::text || ':' || (coalesce(array_to_string(proconfig, ','), '') like '%search_path=public%')::text || ':' || (position('clinic_id = v_clinic' in prosrc) > 0)::text, ',' order by proname collate \"C\")
+       from pg_proc where pronamespace = 'public'::regnamespace and proname in ('voice_note_add', 'voice_note_void', 'voice_note_restore')" \
+    "voice_note_add:true:true:true,voice_note_restore:true:true:true,voice_note_void:true:true:true"
+chk "  والمساعداتُ الأربع definer بمسار، وvoice_orphans وvoice_notes_ready بصلاحية المنادي، وanon لا يصل الكاتب" \
+    "select (select string_agg(proname || ':' || prosecdef::text || ':' || (coalesce(array_to_string(proconfig, ','), '') like '%search_path=public%')::text, ',' order by proname collate \"C\")
+               from pg_proc where pronamespace = 'public'::regnamespace and proname in ('voice_can_record', 'voice_object_free', 'voice_object_readable', '_voice_author'))
+            ||'|'||(select prosecdef::text from pg_proc where oid = 'public.voice_orphans()'::regprocedure)
+            ||'|'||(select prosecdef::text from pg_proc where oid = 'public.voice_notes_ready()'::regprocedure)
+            ||'|'||has_function_privilege('anon', 'public.voice_note_add(jsonb)', 'execute')::text
+            ||'|'||has_function_privilege('anon', 'public.voice_notes_ready()', 'execute')::text" \
+    "_voice_author:true:true,voice_can_record:true:true,voice_object_free:true:true,voice_object_readable:true:true|false|false|false|false"
+
+# ── ٣) الإضافة ──
+N1=${VV}01
+chk "الطبيبُ يسجّل: العيادةُ والكاتبُ واسمُه (منظّفاً) واسمُ الحيوان من الخادم، والمسارُ مسارُه" \
+    "select $(rv $E1 "select (r->>'clinic_id')||'|'||(r->>'created_by')||'|'||(r->>'doctor_name')||'|'||(r->>'pet_name')||'|'||(r->>'path')||'|'||(r->>'kind') from (select voice_note_add($(_vj $N1 $A1 $B1))) x(r)")" \
+    "$C1|$E1|د.علي|بوبي|$C1/$A1/$N1.m4a|note"
+chk "  (بجملةٍ ثانية: الاسمُ «د. علي» بلا فراغاته، والحيُّ بلا تاريخ)" \
+    "select (doctor_name = 'د. علي')::text||'|'||(voided_at is null)::text||'|'||history::text from visit_voice_notes where id = '$N1'" "true|true|[]"
+chk "  والإعادةُ بعد ردٍّ ضائع (الحمولةُ نفسُها) ترجع الصفَّ نفسَه" "select $(add $E1 "$(_vj $N1 $A1 $B1)")" "$N1"
+chk "    (بجملةٍ ثانية: صفٌّ واحد)" "select count(*)::text from visit_voice_notes where id = '$N1'" "1"
+chk "  والمعرّفُ نفسُه لملفٍّ ثانٍ (بصمةٌ أخرى) يُرفض: voice_id_taken" \
+    "select $(g3 "$(add $E1 "$(_vj $N1 $A1 $B1 note null $C1 "jsonb_build_object('sha256', repeat('b', 64))")")")" "guarded:23505:voice_id_taken"
+chk "  وطبيبٌ ثانٍ بلا صفّ كادر: اسمُه من ملفّه" \
+    "select $(rv $E2 "select voice_note_add($(_vj ${VV}08 $A1 $B1))->>'doctor_name'")" "د.حسن"
+
+# ── ٤) الحصر ──
+chk "الحصر: المدّةُ ٩٩٩٩٩٩ والترميزُ المشوَّه ووقتٌ قبل الزيارة بأيّام — تُقبل" \
+    "select $(add $E1 "$(_vj ${VV}02 $A1 $B1 note null $C1 "jsonb_build_object('duration_ms', 999999, 'codecs', 'BAD CODEC', 'recorded_at', now() - interval '3 days')")")" "${VV}02"
+chk "  (بجملةٍ ثانية: ٦٠٠٠٠٠، وبلا ترميز، والوقتُ = فتحُ الزيارة − ١٠ دقائق)" \
+    "select duration_ms::text||'|'||coalesce(codecs, '-')||'|'||(recorded_at = (select opened_at from clinic_visits where id = '$B1') - interval '10 minutes')::text from visit_voice_notes where id = '${VV}02'" "600000|-|true"
+chk "  ووقتٌ بعد ساعة يُقبل" \
+    "select $(add $E1 "$(_vj ${VV}03 $A1 $B1 note null $C1 "jsonb_build_object('recorded_at', now() + interval '1 hour')")")" "${VV}03"
+chk "    (بجملةٍ ثانية: لا يتجاوز الآن + ١٠ دقائق)" \
+    "select (recorded_at <= now() + interval '10 minutes' and recorded_at > now() + interval '9 minutes')::text from visit_voice_notes where id = '${VV}03'" "true"
+
+# ── ٥) الرفض ──
+chk "الرفض: الاستقبالُ وصاحبُ الحيوان وطبيبُ عيادةٍ خارج التجربة والمصوّر ⇒ voice_forbidden" \
+    "select $(g3 "$(add $E3 "$(_vj ${VV}04 $A1 $B1)")")||'|'||$(g3 "$(add $E5 "$(_vj ${VV}04 $A1 $B1 note null $E5)")")||'|'||$(g3 "$(add $E7 "$(_vj ${VV}04 $A5 $B5 note null $C3)")")||'|'||$(g3 "$(add $PHO "$(_vj ${VV}04 $A1 $B1)")")" \
+    "guarded:42501:voice_forbidden|guarded:42501:voice_forbidden|guarded:42501:voice_forbidden|guarded:42501:voice_forbidden"
+chk "  وطبيبُ عيادةٍ أخرى على زيارة C1، وزيارةٌ بحيوانٍ غيرِ حيوانها ⇒ voice_visit" \
+    "select $(g3 "$(add $E6 "$(_vj ${VV}04 $A1 $B1 note null $C2)")")||'|'||$(g3 "$(add $E1 "$(_vj ${VV}04 $A2 $B1)")")" \
+    "guarded:P0001:voice_visit|guarded:P0001:voice_visit"
+chk "  ومسارٌ ليس مسارَه ⇒ voice_path، وحجمٌ غائب ⇒ voice_bad، و«يوم» بلا يوم ⇒ 23514 (قيدُ visit_voice_notes_day)" \
+    "select $(g3 "$(add $E1 "$(_vj ${VV}04 $A1 $B1 note null $C1 "jsonb_build_object('path', '$C2/$A1/${VV}04.m4a')")")")
+            ||'|'||$(g3 "$(add $E1 "$(_vj ${VV}04 $A1 $B1 note null $C1 "jsonb_build_object('bytes', null)")")")
+            ||'|'||(select split_part(r, ':', 2) || ':' || (r like '%visit_voice_notes_day%')::text from (select $(add $E1 "$(_vj ${VV}04 $A1 $B1 day)") as r) x)" \
+    "guarded:22023:voice_path|guarded:22023:voice_bad|23514:true"
+chk "    (بجملةٍ ثانية: لا رفضَ كتب شيئاً)" "select count(*)::text from visit_voice_notes where id = '${VV}04'" "0"
+
+# ── ٦) المشغّل ──
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "المشغّلُ داخل العيادة: لا يسجّل ولا يحذف ولا يرجع (voice_operator) — ويسمع" \
+    "select $(g3 "$(add $ADM "$(_vj ${VV}04 $A1 $B1)")")||'|'||$(g3 "$(vd $ADM $N1)")||'|'||$(g3 "$(rs $ADM $N1)")||'|'||$(rt $ADM "select 1 from visit_voice_notes")" \
+    "guarded:42501:voice_operator|guarded:42501:voice_operator|guarded:42501:voice_operator|rows:4"
+chk "  ولا يرفع (voice_can_record كاذبة للمشغّل)" "select $(rv $ADM "select voice_can_record()::text")" "false"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+
+# ── ٧) الكتابةُ المباشرة: RLS تردّها ولو حضر المنحُ الشامل (والفحصُ ١٥ يثبت أن الهجرةَ تسحبه) ──
+$P -c "grant insert, update, delete on table public.visit_voice_notes to authenticated; grant select, insert, update, delete on table public.voice_pilot to authenticated;" >/dev/null
+chk "كتابةٌ مباشرة بمنحٍ شامل: الإدراجُ يردّه RLS، والتحديثُ والحذفُ صفرُ صفوف، وvoice_pilot لا يُقرأ ولا يُكتب" \
+    "select left($(rt $E1 "insert into visit_voice_notes(id, clinic_id, pet_id, visit_id, kind, path, mime, duration_ms, bytes, sha256, recorded_at) values ('${VV}09', '$C1', '$A1', '$B1', 'note', '$C1/$A1/${VV}09.m4a', 'audio/mp4', 1, 1, repeat('c', 64), now())"), 13)
+            ||'|'||$(rt $E1 "update visit_voice_notes set voided_at = now(), voided_by = '$E1' where id = '$N1'")
+            ||'|'||$(rt $E4 "delete from visit_voice_notes where id = '$N1'")
+            ||'|'||$(rt $E4 "select 1 from voice_pilot")
+            ||'|'||left($(rt $E4 "insert into voice_pilot(clinic_id) values ('$C3')"), 13)" \
+    "guarded:42501|rows:0|rows:0|rows:0|guarded:42501"
+chk "  (بجملةٍ ثانية: الصفُّ حيٌّ كما كان، والمُدرَجُ غائب، والتجربةُ عيادتان)" \
+    "select (select count(*) from visit_voice_notes where id in ('$N1', '${VV}09'))::text||'|'||(select (voided_at is null)::text from visit_voice_notes where id = '$N1')||'|'||(select count(*) from voice_pilot)::text" "1|true|2"
+
+# ── ٨) العزل ──
+chk "C2 تسجّل لحيوانها" "select $(add $E6 "$(_vj ${VV}0a $A2 $B3 note null $C2)")" "${VV}0a"
+chk "القراءة: طبيبُ C1 واستقبالُها يرون تسجيلاتها الأربعة، وC2 تسجيلَها وحده، وصاحبُ الحيوان والمصوّرُ لا شيء" \
+    "select $(rv $E1 "select count(*)::text from visit_voice_notes")||'|'||$(rv $E3 "select count(*)::text from visit_voice_notes")||'|'||$(rv $E6 "select string_agg(id::text, ',') from visit_voice_notes")
+            ||'|'||$(rv $E5 "select count(*)::text from visit_voice_notes")||'|'||$(rv $PHO "select count(*)::text from visit_voice_notes")" \
+    "4|4|${VV}0a|0|0"
+
+# ── ٩) الحذفُ والإرجاع ──
+chk "الحذف: طبيبٌ آخر لا يحذف تسجيلَ غيره" "select $(g3 "$(vd $E2 $N1)")" "guarded:42501:voice_void_forbidden"
+chk "  وصاحبُه يحذفه (خلال ٢٤ ساعة والزيارةُ مفتوحة) بسببه" "select $(vd $E1 $N1 "'  سجّلته غلط  '")" "$N1"
+chk "    (بجملةٍ ثانية: مَن واسمُه من الخادم، والسببُ منظّف، وسطرٌ بالتاريخ «void» بمَن وسببه)" \
+    "select voided_by::text||'|'||(voided_name = 'د. علي')::text||'|'||(void_reason = 'سجّلته غلط')::text||'|'||jsonb_array_length(history)::text||'|'||(history->0->>'a')||'|'||(history->0->>'by')||'|'||(history->0->>'reason' = 'سجّلته غلط')::text
+       from visit_voice_notes where id = '$N1'" "$E1|true|true|1|void|$E1|true"
+V1=$($P -tAc "select voided_at::text from visit_voice_notes where id = '$N1'")
+chk "  وحذفُه ثانيةً يرجعه كما هو" "select $(vd $E1 $N1 "'سببٌ ثانٍ'")" "$N1"
+chk "    (بجملةٍ ثانية: لا ختمَ جديد ولا سطرَ ثانٍ ولا سببَ آخر)" \
+    "select (voided_at = '$V1'::timestamptz)::text||'|'||jsonb_array_length(history)::text||'|'||(void_reason = 'سجّلته غلط')::text from visit_voice_notes where id = '$N1'" "true|1|true"
+chk "  والصفُّ باقٍ يراه الكادر (رماديّاً بمن حذفه)" "select $(rv $E3 "select voided_name from visit_voice_notes where id = '$N1'")" "د.علي"
+chk "الإرجاع: الاستقبالُ لا يرجع" "select $(g3 "$(rs $E3 $N1)")" "guarded:42501:voice_restore_forbidden"
+chk "  وصاحبُ الحذف يرجعه خلال ٢٤ ساعة (تراجعٌ عن ضغطته) بالمعرّف نفسِه" "select $(rs $E1 $N1)" "$N1"
+chk "    (بجملةٍ ثانية: الأعمدةُ الأربعة فارغة، والتاريخُ حذفٌ ثمّ إرجاعٌ بمَن)" \
+    "select (voided_at is null and voided_by is null and voided_name is null and void_reason is null)::text||'|'||jsonb_array_length(history)::text||'|'||(history->0->>'a')||','||(history->1->>'a')||'|'||(history->1->>'by')
+       from visit_voice_notes where id = '$N1'" "true|2|void,restore|$E1"
+chk "  والحيُّ يُرجع كما هو" "select $(rs $E4 $N1)" "$N1"
+chk "    (بجملةٍ ثانية: لا سطرَ ثالث)" "select jsonb_array_length(history)::text from visit_voice_notes where id = '$N1'" "2"
+chk "  وعيادةٌ أخرى لا تجده (voice_gone)، ولا صاحبُ حيوان" "select $(g3 "$(vd $E6 $N1)")||'|'||$(g3 "$(rs $E6 $N1)")||'|'||$(g3 "$(vd $E5 $N1)")" \
+    "guarded:P0002:voice_gone|guarded:P0002:voice_gone|guarded:P0002:voice_gone"
+$P -c "update visit_voice_notes set created_at = now() - interval '25 hours' where id = '${VV}02';" >/dev/null
+chk "نافذةُ ٢٤ ساعة: صاحبُه بعدها لا يحذف…" "select $(g3 "$(vd $E1 ${VV}02)")" "guarded:42501:voice_void_forbidden"
+chk "  …والمديرُ يحذف" "select $(vd $E4 ${VV}02)" "${VV}02"
+chk "  وصاحبُ التسجيل لا يرجع ما حذفه المدير" "select $(g3 "$(rs $E1 ${VV}02)")" "guarded:42501:voice_restore_forbidden"
+chk "  وحذفُ صاحبه يرجع خلاله…" "select $(vd $E1 ${VV}03)" "${VV}03"
+$P -c "update visit_voice_notes set voided_at = now() - interval '25 hours' where id = '${VV}03';" >/dev/null
+chk "    …وبعدها لا يرجعه…" "select $(g3 "$(rs $E1 ${VV}03)")" "guarded:42501:voice_restore_forbidden"
+chk "    …والمديرُ يرجعه" "select $(rs $E4 ${VV}03)" "${VV}03"
+
+# ── ١٠) الزيارةُ المغلقة ──
+chk "زيارةٌ مغلقة: تسجيلٌ سُجّل داخلها يُقبل بعد إغلاقها (الخادمُ يسأل الزيارةَ لا حالتها)" \
+    "select $(add $E1 "$(_vj ${VV}05 $A1 $B2 note null $C1 "jsonb_build_object('recorded_at', now() - interval '36 hours')")")" "${VV}05"
+chk "  (بجملةٍ ثانية: وقتُه كما سُجّل)" "select (recorded_at = created_at - interval '36 hours')::text from visit_voice_notes where id = '${VV}05'" "true"
+chk "  ووقتٌ بعد إغلاقها بساعات يُقبل" \
+    "select $(add $E1 "$(_vj ${VV}06 $A1 $B2 note null $C1 "jsonb_build_object('recorded_at', now() - interval '1 hour')")")" "${VV}06"
+chk "    (بجملةٍ ثانية: محصورٌ بالإغلاق + ١٠ دقائق، ووصولُه بعد الإغلاق — «وصل السيرفر»)" \
+    "select (recorded_at = (select ended_at from clinic_visits where id = '$B2') + interval '10 minutes')::text||'|'||(created_at > (select ended_at from clinic_visits where id = '$B2'))::text from visit_voice_notes where id = '${VV}06'" "true|true"
+chk "  وبعد الإغلاق: صاحبُه لا يحذف…" "select $(g3 "$(vd $E1 ${VV}05)")" "guarded:42501:voice_void_forbidden"
+chk "    (المديرُ يحذف)" "select $(vd $E4 ${VV}05)" "${VV}05"
+chk "    (المديرُ يرجع)" "select $(rs $E4 ${VV}05)" "${VV}05"
+
+# ── ١١) التدقيق وسجلُّ الحركات ──
+chk "التدقيق: الإدراجُ يسمّي الحيوانَ والطبيب، والحذفُ والإرجاعُ سطران بـ__changed.voided_at — والإرجاعُ لحيٍّ لا يكتب شيئاً" \
+    "select count(*) filter (where action = 'INSERT' and details->>'pet_name' = 'بوبي' and details->>'doctor_name' = 'د. علي' and details->>'pet_id' = '$A1')::text
+            ||'|'||count(*) filter (where action = 'UPDATE' and details->'__changed' ? 'voided_at')::text||'|'||count(*)::text
+       from audit_log where entity = 'visit_voice_notes' and entity_id = '$N1'" "1|2|3"
+AKC=""
+for c in $(node -e "const c=JSON.parse(require('fs').readFileSync('$HERE/../../scripts/activity-cases.json','utf8')); c.forEach((x,i)=>{ if (x.entity==='visit_voice_notes') console.log(i) })"); do
+  D=$(node -e "const c=JSON.parse(require('fs').readFileSync('$HERE/../../scripts/activity-cases.json','utf8'))[$c]; console.log(c.action + '|' + JSON.stringify(c.details).replace(/'/g,\"''\"))")
+  AKC="$AKC${AKC:+||','||}audit_kind('visit_voice_notes', '${D%%|*}', '${D#*|}'::jsonb)"
+done
+chk "  ونوعُها «ملف طبي» لحالات activity-cases.json الثلاث (إدراج، حذف/إرجاع، حذفٌ من القاعدة)" "select $AKC" "medical,medical,medical"
+
+# ── ١٢) المساعدات ──
+chk "المساعدات: مسارٌ يشير إليه صفٌّ ليس حرّاً، ومسارٌ عشوائيّ حرّ" \
+    "select $(rv $E1 "select voice_object_free('$C1/$A1/$N1.m4a')::text")||'|'||$(rv $E1 "select voice_object_free('$C1/$A1/' || gen_random_uuid() || '.m4a')::text")" "false|true"
+chk "  تسجيلٌ…" "select $(add $E1 "$(_vj ${VV}07 $A1 $B1)")" "${VV}07"
+chk "    …يحذفه صاحبُه" "select $(vd $E1 ${VV}07)" "${VV}07"
+chk "  محذوفُه: الاستقبالُ لا يسمعه، والمديرُ يسمعه، وصاحبُ الحذف لا يسمعه (قرارُ المالك)؛ والحيُّ والحرُّ للكلّ" \
+    "select $(rv $E3 "select voice_object_readable('$C1/$A1/${VV}07.m4a')::text")||'|'||$(rv $E4 "select voice_object_readable('$C1/$A1/${VV}07.m4a')::text")||'|'||$(rv $E1 "select voice_object_readable('$C1/$A1/${VV}07.m4a')::text")
+            ||'|'||$(rv $E3 "select voice_object_readable('$C1/$A1/$N1.m4a')::text")||'|'||$(rv $E3 "select voice_object_readable('$C1/$A1/' || gen_random_uuid() || '.m4a')::text")" \
+    "false|true|false|true|true"
+
+# ── ١٣) الملفّات: قالبُ storage بشكل سوبابيس — الدلوُ والسياساتُ السبع، والرفعُ والقراءةُ والحذف ──
+out=$($P -c "create schema if not exists storage;
+       create table if not exists storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+       create table if not exists storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text,
+         owner_id text default current_setting('request.jwt.claim.sub', true), metadata jsonb, created_at timestamptz default now(),
+         unique (bucket_id, name));
+       create or replace function storage.foldername(name text) returns text[] language sql immutable as
+         \$f\$ select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] \$f\$;
+       alter table storage.objects enable row level security;
+       grant usage on schema storage to authenticated;
+       grant select, insert, update, delete on storage.objects to authenticated;
+       grant execute on function storage.foldername(text) to authenticated;
+       create policy photographer_fence on storage.objects as restrictive for all to authenticated
+         using (not (select public.is_photographer()) or bucket_id = 'product-images')
+         with check (not (select public.is_photographer()) or bucket_id = 'product-images');" 2>&1) || { echo "$out" | tail -3; echo "   ✗ قالبُ storage ما نزل"; fail=1; }
+out=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت على قالب storage"; fail=1; }
+chk "إعادةُ 0287 على قالب storage: دلوٌ خاصٌّ بحدّه وأنواعه، وسبعُ سياسات" \
+    "select (select public::text||'|'||file_size_limit::text||'|'||array_to_string(allowed_mime_types, ',') from storage.buckets where id = 'voice-notes')
+            ||'|'||(select string_agg(policyname || ':' || permissive || ':' || cmd, ',' order by policyname collate \"C\") from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'voice_notes%')" \
+    "false|10485760|audio/mp4,audio/webm,audio/ogg|voice_notes_delete:PERMISSIVE:DELETE,voice_notes_fence_insert:RESTRICTIVE:INSERT,voice_notes_fence_read:RESTRICTIVE:SELECT,voice_notes_insert:PERMISSIVE:INSERT,voice_notes_keep:RESTRICTIVE:DELETE,voice_notes_no_overwrite:RESTRICTIVE:UPDATE,voice_notes_read:PERMISSIVE:SELECT"
+up()   { rt "$1" "insert into storage.objects(bucket_id, name, metadata) values ('voice-notes', '$2', jsonb_build_object('size', ${3:-1000}))"; }
+obj()  { rt "$1" "select 1 from storage.objects where bucket_id = 'voice-notes' and name ${2:-like '$C1/%'}"; }
+chk "الرفع: الطبيبُ لمجلّد عيادته بمسار التسجيل" "select $(up $E1 "$C1/$A1/${VV}11.m4a")" "rows:1"
+chk "  (بجملةٍ ثانية: الملفُّ باسم رافعه)" "select owner_id from storage.objects where name = '$C1/$A1/${VV}11.m4a'" "$E1"
+chk "  لا لمجلّد عيادةٍ أخرى، ولا بمسارٍ بمستوىً واحد، ولا بامتدادٍ غير الصوت" \
+    "select left($(up $E1 "$C2/$A2/${VV}12.m4a"), 13)||'|'||left($(up $E1 "$C1/${VV}12.m4a"), 13)||'|'||left($(up $E1 "$C1/$A1/${VV}12.mp3"), 13)" "guarded:42501|guarded:42501|guarded:42501"
+chk "  ولا الاستقبالُ ولا صاحبُ الحيوان (بمجلّده) ولا المشغّلُ داخلها ولا عيادةٌ خارج التجربة" \
+    "select left($(up $E3 "$C1/$A1/${VV}12.m4a"), 13)||'|'||left($(up $E5 "$E5/$A1/${VV}12.m4a"), 13)||'|'||left($(up $E7 "$C3/$A5/${VV}12.m4a"), 13)" "guarded:42501|guarded:42501|guarded:42501"
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "    (والمشغّلُ داخل C1)" "select left($(up $ADM "$C1/$A1/${VV}12.m4a"), 13)" "guarded:42501"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "القراءة: الطبيبُ والاستقبالُ يرون ملفَّ عيادتهم، وعيادةٌ أخرى والمصوّرُ لا" \
+    "select $(obj $E1)||'|'||$(obj $E3)||'|'||$(obj $E6)||'|'||$(obj $PHO)" "rows:1|rows:1|rows:0|rows:0"
+chk "الصفُّ بعد ملفّه: بلا ملفٍّ ⇒ voice_object_missing" "select $(g3 "$(add $E1 "$(_vj ${VV}12 $A1 $B1)")")" "guarded:P0001:voice_object_missing"
+$P -c "insert into storage.objects(bucket_id, name, owner_id, metadata) values ('voice-notes', '$C1/$A1/${VV}12.m4a', '$E1', '{\"size\": 1}');" >/dev/null
+chk "  وبحجمٍ غيرِ حجمه ⇒ voice_size" "select $(g3 "$(add $E1 "$(_vj ${VV}12 $A1 $B1)")")" "guarded:P0001:voice_size"
+$P -c "update storage.objects set metadata = '{\"size\": 1000}' where name = '$C1/$A1/${VV}12.m4a';" >/dev/null
+chk "  وبحجمه يُقبل (والمرفوعُ من الطبيب كذلك)" "select $(add $E1 "$(_vj ${VV}12 $A1 $B1)")||'|'||$(add $E1 "$(_vj ${VV}11 $A1 $B1)")" "${VV}12|${VV}11"
+chk "الحذفُ والاستبدال: ملفٌّ يشير إليه صفٌّ لا يُحذف ولو رافعُه، ولا ملفَّ صوتٍ يُستبدل" \
+    "select $(rt $E1 "delete from storage.objects where name = '$C1/$A1/${VV}11.m4a'")||'|'||$(rt $E1 "update storage.objects set metadata = '{}' where bucket_id = 'voice-notes'")" "rows:0|rows:0"
+chk "  واليتيمُ (ملفٌّ بلا صفّ)…" "select $(up $E1 "$C1/$A1/${VV}13.m4a")" "rows:1"
+chk "    …لا يحذفه غيرُ رافعه" "select $(rt $E2 "delete from storage.objects where name = '$C1/$A1/${VV}13.m4a'")" "rows:0"
+chk "    (رافعُه)" "select $(rt $E1 "delete from storage.objects where name = '$C1/$A1/${VV}13.m4a'")" "rows:1"
+chk "    (بجملةٍ ثانية: المشارُ إليهما باقيان، واليتيمُ ذهب)" \
+    "select count(*)::text from storage.objects where name in ('$C1/$A1/${VV}11.m4a', '$C1/$A1/${VV}12.m4a', '$C1/$A1/${VV}13.m4a')" "2"
+chk "ملفُّ تسجيلٍ محذوف: صاحبُه يحذف الصفّ…" "select $(vd $E1 ${VV}11)" "${VV}11"
+$P -c "update _dvtest_flags set admin = true; insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "  …فالاستقبالُ لا يقرأ ملفَّه، والمديرُ يقرؤه، وصاحبُ الحذف لا (قرارُ المالك)، والمشغّلُ (كمدير) يقرؤه" \
+    "select $(obj $E3 "= '$C1/$A1/${VV}11.m4a'")||'|'||$(obj $E4 "= '$C1/$A1/${VV}11.m4a'")||'|'||$(obj $E1 "= '$C1/$A1/${VV}11.m4a'")||'|'||$(obj $ADM "= '$C1/$A1/${VV}11.m4a'")" \
+    "rows:0|rows:1|rows:0|rows:1"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+# سياسةٌ متساهلة لدلوٍ آخر (using true) — العزلُ مقيِّدٌ لا يتّكل عليها.
+$P -c "create policy zz_sloppy_287 on storage.objects for all to authenticated using (true) with check (true);" >/dev/null
+chk "وسياسةٌ متساهلةٌ لغير الصوت لا تفتح الدلو: لا رفعَ للاستقبال ولا لعيادةٍ أخرى، ولا قراءةَ لها، ولا للمحذوف، ولا استبدالَ ولا حذفَ للمُشار إليه" \
+    "select left($(up $E3 "$C1/$A1/${VV}14.m4a"), 13)||'|'||left($(up $E6 "$C1/$A1/${VV}14.m4a"), 13)||'|'||$(obj $E6)||'|'||$(obj $E1 "= '$C1/$A1/${VV}11.m4a'")
+            ||'|'||$(rt $E1 "update storage.objects set metadata = '{}' where bucket_id = 'voice-notes'")||'|'||$(rt $E6 "delete from storage.objects where name = '$C1/$A1/${VV}12.m4a'")" \
+    "guarded:42501|guarded:42501|rows:0|rows:0|rows:0|rows:0"
+chk "  والسياجُ للصوت وحده: الدلاءُ الأخرى كما تقرّرها سياساتُها (رفعٌ…" "select $(rt $E3 "insert into storage.objects(bucket_id, name) values ('product-images', '$C1/x287.jpg')")" "rows:1"
+chk "    …وحذف)" "select $(rt $E3 "delete from storage.objects where bucket_id = 'product-images' and name = '$C1/x287.jpg'")" "rows:1"
+$P -c "drop policy zz_sloppy_287 on storage.objects;" >/dev/null
+chk "  ولا سياسةَ متساهلة باقية على الملفّات بلا شرط دلو (استعلامُ §I)" \
+    "select count(*)::text from pg_policies where schemaname = 'storage' and tablename = 'objects' and permissive = 'PERMISSIVE' and coalesce(qual, '') not like '%bucket_id%' and coalesce(with_check, '') not like '%bucket_id%'" "0"
+
+# ── ١٦) التراجعُ الليّن ومفتاحُ الإيقاف (والقالبُ قائمٌ: سياسةُ الرفع تُقاس) ──
+$P -f "$HERE/rollback_0287_soft.sql" >/dev/null 2>&1 || { echo "   ✗ rollback_0287_soft ما نزل"; fail=1; }
+chk "التراجعُ الليّن: لا تسجيلَ (الدالّةُ مسحوبة) ولا رفعَ (سياستُه ذهبت) ولا عيادات — والسماعُ باقٍ" \
+    "select left($(add $E1 "$(_vj ${VV}15 $A1 $B1)"), 13)||'|'||left($(up $E1 "$C1/$A1/${VV}15.m4a"), 13)||'|'||$(rv $E1 "select voice_can_record()::text")
+            ||'|'||(select count(*) from voice_pilot)::text||'|'||(select count(*) from pg_policies where schemaname = 'storage' and policyname like 'voice_notes%')::text
+            ||'|'||$(rv $E3 "select count(*)::text from visit_voice_notes")||'|'||$(obj $E3 "= '$C1/$A1/${VV}12.m4a'")" \
+    "guarded:42501|guarded:42501|false|0|6|9|rows:1"
+out=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت بعد التراجع الليّن"; fail=1; }
+chk "  وإعادةُ 0287 ترجع الصلاحيةَ والسياسة — ولا تبذر العيادات (الإيقافُ يبقى إيقافاً)" \
+    "select (select count(*) from voice_pilot)::text||'|'||(select count(*) from pg_policies where schemaname = 'storage' and policyname like 'voice_notes%')::text
+            ||'|'||has_function_privilege('authenticated', 'public.voice_note_add(jsonb)', 'execute')::text||'|'||$(g3 "$(add $E1 "$(_vj ${VV}15 $A1 $B1)")")" \
+    "0|7|true|guarded:42501:voice_forbidden"
+$P -c "insert into voice_pilot(clinic_id) values ('$C1'), ('$C2');" >/dev/null
+chk "  والعيادةُ بيد المالك ترجع: رفعٌ…" "select $(up $E1 "$C1/$A1/${VV}15.m4a")" "rows:1"
+chk "    …ثمّ صفّ" "select $(add $E1 "$(_vj ${VV}15 $A1 $B1)")" "${VV}15"
+$P -c "delete from voice_pilot where clinic_id = '$C1';" >/dev/null
+chk "مفتاحُ الإيقاف لعيادة: لا تسجيلَ ولا رفع — والسماعُ باقٍ، والعيادةُ الأخرى تسجّل" \
+    "select $(g3 "$(add $E1 "$(_vj ${VV}16 $A1 $B1)")")||'|'||left($(up $E1 "$C1/$A1/${VV}16.m4a"), 13)||'|'||$(obj $E3 "= '$C1/$A1/${VV}15.m4a'")||'|'||$(rv $E6 "select voice_can_record()::text")" \
+    "guarded:42501:voice_forbidden|guarded:42501|rows:1|true"
+$P -c "set client_min_messages = warning; insert into voice_pilot(clinic_id) values ('$C1') on conflict do nothing; drop schema storage cascade;" >/dev/null
+
+# ── ١٤) حذفُ الحيوان لا يأخذ تسجيلاته ──
+chk "حذفُ الحيوان: تسجيلُ يومٍ لـ«ميشو»" "select $(add $E1 "$(_vj ${VV}17 $A3 $B4 day "current_date")")" "${VV}17"
+chk "  والاستقبالُ يحذف الحيوان (ثغرةُ اليوم: أيُّ كادرٍ يحذف حيواناً — مهمّةٌ منفصلة)" "select $(rt $E3 "delete from pets where id = '$A3'")" "rows:1"
+chk "  (بجملةٍ ثانية: التسجيلُ باقٍ بيومه واسمِ حيوانه، وملفُّه ليس حرّاً، والزيارةُ ذهبت مع حيوانها)" \
+    "select (select count(*) from visit_voice_notes where pet_id = '$A3' and kind = 'day' and day is not null and pet_name = 'ميشو')::text||'|'||$(rv $E1 "select voice_object_free('$C1/$A3/${VV}17.m4a')::text")||'|'||(select count(*) from clinic_visits where id = '$B4')::text" "1|false|0"
+chk "  والمديرُ يجده بتسجيلات الحيوانات المحذوفة (voice_orphans) — وعيادةٌ أخرى لا" \
+    "select $(rv $E4 "select count(*)::text || ':' || string_agg(pet_name, ',') from voice_orphans()")||'|'||$(rv $E6 "select count(*)::text from voice_orphans()")" "1:ميشو|0"
+
+# ── ١٥) الإعادةُ بلا أثرٍ ثانٍ، والصلاحيات ──
+Q287="select (select string_agg(policyname || ':' || cmd || ':' || coalesce(qual, '') || coalesce(with_check, ''), ',' order by policyname collate \"C\") from pg_policies where tablename in ('visit_voice_notes', 'voice_pilot'))
+        ||'|'||(select count(*) from information_schema.columns where table_schema = 'public' and table_name in ('visit_voice_notes', 'voice_pilot'))::text
+        ||'|'||(select md5(string_agg(to_jsonb(v)::text, ',' order by v.id)) from visit_voice_notes v)
+        ||'|'||(select string_agg(clinic_id::text, ',' order by clinic_id) from voice_pilot)
+        ||'|'||(select string_agg(indexname, ',' order by indexname collate \"C\") from pg_indexes where tablename in ('visit_voice_notes', 'voice_pilot'))
+        ||'|'||(select string_agg(tgname, ',' order by tgname collate \"C\") from pg_trigger where tgrelid = 'public.visit_voice_notes'::regclass and not tgisinternal)"
+Z287=$($P -tAc "$Q287" | tr -d '[:space:]')
+out=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ: السياساتُ والأعمدةُ والصفوفُ والعياداتُ والفهارسُ والمحفّزاتُ كما هي" "$Q287" "$Z287"
+chk "  والصلاحيات: الداخلون يقرؤون ولا يكتبون مباشرةً، ولا _voice_author، ولا voice_pilot (ولو منحَ شاملٌ قبلها)" \
+    "select has_table_privilege('authenticated', 'public.visit_voice_notes', 'select')::text||'|'||has_table_privilege('authenticated', 'public.visit_voice_notes', 'insert')::text
+            ||'|'||has_table_privilege('authenticated', 'public.visit_voice_notes', 'update')::text||'|'||has_table_privilege('authenticated', 'public.visit_voice_notes', 'delete')::text
+            ||'|'||has_function_privilege('authenticated', 'public._voice_author()', 'execute')::text||'|'||has_table_privilege('authenticated', 'public.voice_pilot', 'select')::text
+            ||'|'||has_table_privilege('anon', 'public.visit_voice_notes', 'select')::text" "true|false|false|false|false|false|false"
+# كلُّ العيادات كما بذرتها الهجرة (قرارُ المالك) — ما بعد التراجع يسجّل بها.
+$P -c "delete from voice_pilot; insert into voice_pilot(clinic_id) values ('$ZC');" >/dev/null
 # ── 0291: قبل تراجع 0222 (staff_can والسياج يُفحصان وهما موجودان؛ وبعده قسمٌ قصير بآخر الحزمة) ──────────────
 echo "▸ 0291: حذفُ الحيوان لمن عنده «حذف الحيوانات»، وكلُّ ما تسلسل معه يُصوَّر ويرجع بنفس المعرّفات"
 C2=22222222-2222-2222-2222-222222222222
@@ -11988,6 +12333,18 @@ chk "  والدوالُّ الجديدة زالت بعد تصفير الخطّا
 chk "  وفحصُ المخزن (0245) باقٍ للطبيب والمدير بعد حذف is_photographer" \
     "select (to_regprocedure('public.is_photographer()') is null)::text||'|'||left(_rls_try('$VET', 'select 1 from report_inventory_audit(now() - interval ''90 days'', now())'), 5)||'|'||left(_rls_try('$C1', 'select report_inventory_audit_json(90)'), 5)" \
     "true|rows:|rows:"
+# 0287 بعد تراجع 0222: السياجُ تحت وجود دالّته فالإعادةُ بلا خطأ، ومن يسجّل بلا staff_can: المديرُ والطبيب (auth_role).
+out=$($P -f "$MIG/0287_visit_voice_notes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0287 ما انعادت بعد تراجع 0222"; fail=1; }
+chk "0287 بعد تراجع 0222: تُعاد بلا خطأ — سياسةُ القراءة وحدها (السياجُ ذهب مع دالّته)" \
+    "select string_agg(policyname, ',') from pg_policies where schemaname = 'public' and tablename = 'visit_voice_notes'" "visit_voice_notes_select"
+chk "  والطبيبُ يسجّل بلا staff_can (auth_role)…" "select $(add $E1 "$(_vj ${VV}18 $A1 $B1)")" "${VV}18"
+chk "  …والاستقبالُ لا" "select $(g3 "$(add $E3 "$(_vj ${VV}19 $A1 $B1)")")" "guarded:42501:voice_forbidden"
+$P -c "delete from visit_voice_notes where id::text like 'c2870000-%';
+       delete from audit_log where entity = 'visit_voice_notes' and entity_id like 'c2870000-%';
+       delete from clinic_visits where id in ('$B1','$B2','$B3','$B4','$B5'); delete from pets where id in ('$A1','$A2','$A3','$A5');
+       delete from staff where id in ('${VV}f1','${VV}f3','${VV}f4','${VV}f6');
+       delete from memberships where user_id in ('$E1','$E2','$E3','$E4','$E5','$E6','$E7');
+       delete from profiles where id in ('$E1','$E2','$E3','$E4','$E5','$E6','$E7');" >/dev/null
 # ── 0267: البيعُ بالكارتون — كلفةُ سطرٍ يطابق كارتوناً محفوظاً، والبحثُ برمز الكارتون والمغلّف ─────────────────────────
 # عيادةُ القسم KC وحدها (صاحبُها مديرٌ بلا عضوية). كلُّ نداءٍ بدور authenticated (rv/rt)، وكلُّ قراءةٍ بعد كتابةٍ بجملةٍ بعدها (درسُ 0257).
 echo "▸ 0267: البيعُ بالكارتون — الكلفةُ المتوسّط × علبُ الكارتون المحفوظ، والبيعةُ تنقص علبَه وتردّها، والبحثُ برمز أيّ مستوى"
@@ -14402,6 +14759,137 @@ chk "وإعادةُ 0288 بلا أثر: محفّزٌ واحد، والأجسام
             || (select (prosrc like '%-- +0288%')::text from pg_proc where oid = to_regprocedure('public.credit_stock(uuid,numeric,uuid)'))" "1|true"
 $P -c "drop function if exists _as288(uuid, text);" >/dev/null
 
+# ── 0290: دفترُ الرصيد يسمّي الراجعَ الإكسباير، والتلفُ والجردُ يكلّفان دفعتَه بكلفتها (المالك ٢٤/١١) ──────────────
+# YC عيادةٌ وصاحبُها (مدير)، YV طبيبُها. «إكسباير ٢٩٠» يُباع بـ٢٠٬٠٠٠ ومتوسّطُه ١٤٬٠٠٠: راجعٌ بـ٥٠٪ ⇒ دفعةٌ بكلفة ١٠٬٠٠٠ للعلبة.
+# الكتابةُ بطلبٍ والقراءةُ بآخر (درسُ 0257). قسمُنا يعيد 0290 أوّلاً: أقسامٌ قبلنا تعيد 0254 فترجع الموافقةُ لنصّها.
+echo "▸ 0290: «حركات المادة» تقول «إرجاع» عن الراجع الإكسباير، والتلفُ والجردُ يكلّفان دفعتَه بكلفتها لا بالمتوسّط"
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما نزلت"; fail=1; }
+YX=c2900000-0000-4000-8000-0000000000
+YC=${YX}c1
+YV=${YX}c2
+YA=${YX}a1
+YB=${YX}a2
+YD=${YX}a3
+ysale() { # ysale المرجع المادّة الكمية السعر المدفوع [الزبون] [الهاتف]
+  echo "select (retail_checkout('[{\"product_id\":\"$2\",\"name\":\"y\",\"qty\":$3,\"unit_price\":$4,\"unit_cost\":0,\"stock_qty\":$3,\"unit_label\":null,\"service_id\":null}]'::jsonb,
+          jsonb_build_object('client_ref', '$1', 'payment_method', 'cash', 'amount_paid', $5, 'final_total', $3 * $4,
+                             'customer_name', nullif('${6:-}', ''), 'customer_phone', nullif('${7:-}', ''))))::text"; }
+yret() { # yret المرجع المادّة النسبة الزبون الهاتف — علبةٌ واحدة بإكسباير فات؛ يرجع الدَّينَ والنقد
+  echo "select (r->>'debt')::numeric::numeric(20,0)::text||'/'||(r->>'cash')::numeric::numeric(20,0)::text
+          from (select return_expired('[{\"product_id\":\"$2\",\"unit\":\"box\",\"qty\":1,\"pct\":$3,\"expiry_date\":\"2026-10-01\"}]'::jsonb,
+                                      jsonb_build_object('client_ref', '$1', 'customer_name', '$4', 'customer_phone', '$5')) as r) s"; }
+ywaste() { # ywaste المادّة الكمية السبب [طبّق] — مبلغُ السحب، أو «pending» لسندٍ معلَّق
+  echo "select coalesce(r->'decided'->'withdrawals'->0->>'amount', r->>'pending', '-')
+          from (select stock_waste_submit(jsonb_build_array(jsonb_build_object('product_id','$1','qty',$2,'unit','stock','reason','$3','note','x')),
+                                          ${4:-true}, '{}'::jsonb) r) s"; }
+# كلفةُ آخر سطر جردٍ/تلفٍ للمادّة وحالتُه، ومبلغُ سحبه، وما بقي بدفعات الراجع.
+ylast() { echo "(select unit_cost::numeric(20,0)::text||':'||status||':'||coalesce((select amount::numeric(20,0)::text from expenses e where e.id = c.expense_id), '-')
+                   from stock_counts c where c.product_id = '$1' order by counted_at desc, id desc limit 1)"; }
+yret_left() { echo "(select coalesce(sum(qty), 0)::numeric(20,1)::text from product_lots where product_id = '$1' and source = 'return')"; }
+$P -c "delete from staff_elevations; update _dvtest_flags set admin = false; delete from platform_sessions;
+       insert into auth.users(id) values ('$YC'),('$YV') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$YV','$YC','veterinarian','active') on conflict do nothing;
+       insert into clinic_prefs(clinic_id, dial_code) values ('$YC','+964') on conflict (clinic_id) do update set dial_code = '+964';
+       insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('$YA', '$YC', 'إكسباير ٢٩٠', 'Y290-1', 'IQD', 20000, 14000, 14000, 20, false, null, false),
+         ('$YB', '$YC', 'بلا راجع ٢٩٠', 'Y290-2', 'IQD', 5000, 3000, 3000, 10, false, null, false),
+         ('$YD', '$YC', 'جرد ٢٩٠', 'Y290-3', 'IQD', 20000, 14000, 14000, 1, false, null, false)
+         on conflict (id) do nothing;" >/dev/null
+
+# ١) دفترُ الرصيد
+chk "الكاتبُ والنوع: return_expired «إرجاع» (كان other ⇒ «عملية بالنظام»)، وباسمه ولو نوديت من غلاف، وما سواه كما كان" \
+    "select _stock_ledger_kind('update', 'return_expired', 'return_expired', 1)||'|'||_stock_ledger_source('wrap_x>return_expired>_inner')
+            ||'|'||_stock_ledger_kind('update', 'retail_return', 'retail_return', 1)||'|'||_stock_ledger_kind('update', 'some_fn', 'some_fn', 1)" \
+    "return|return_expired|return|other"
+chk "البيعة: «أبو علي» يأخذ ثلاث علب بالدَّين" \
+    "select (length($(rv $YV "$(ysale y290-s1 $YA 3 20000 0 'أبو علي' 07701234567)")) > 0)::text" "true"
+chk "راجعٌ إكسباير بـ٥٠٪: ينزل ١٠٬٠٠٠ من دَينه" "select $(rv $YV "$(yret y290-r1 $YA 50 'أبو علي' 07701234567)")" "10000/0"
+chk "  (يُقرأ بعدها) «حركات المادة» للمدير: آخرُ حركةٍ «إرجاع» من return_expired بـ+١ (١٧ ← ١٨)، وكلفةُ دفعتها ١٠٬٠٠٠" \
+    "select $(rv $YC "select kind||':'||source||':'||delta::numeric(20,0)::text||':'||qty_after::numeric(20,0)::text from stock_ledger_of('$YA') order by id desc limit 1")
+            ||'|'||(select unit_cost::numeric(20,0)::text from product_lots where product_id = '$YA' and source = 'return')" \
+    "return:return_expired:1:18|10000"
+
+# ٢) سندُ التلف «منتهي» يأخذ من دفعة الراجع أوّلاً — بكلفتها
+chk "تلفُ علبةٍ منتهية: السحبُ ١٠٬٠٠٠ (كلفةُ دفعة الراجع) لا ١٤٬٠٠٠" "select $(rv $YC "$(ywaste $YA 1 expired)")::numeric::numeric(20,0)::text" "10000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ١٠٬٠٠٠ ومعتمَد وسحبُه ١٠٬٠٠٠، والدفعةُ نفدت" "select $(ylast $YA)||'|'||$(yret_left $YA)" "10000:approved:10000|0.0"
+chk "راجعٌ ثانٍ بـ٥٠٪" "select $(rv $YV "$(yret y290-r2 $YA 50 'أبو علي' 07701234567)")" "10000/0"
+chk "تلفُ علبتين منتهيتين ودفعةُ الراجع علبة: (١٠٬٠٠٠ + ١٤٬٠٠٠) ⇒ ٢٤٬٠٠٠ وكلفةُ السطر ١٢٬٠٠٠" \
+    "select $(rv $YC "$(ywaste $YA 2 expired)")::numeric::numeric(20,0)::text" "24000"
+chk "  (يُقرأ بعدها)" "select $(ylast $YA)||'|'||$(yret_left $YA)" "12000:approved:24000|0.0"
+chk "راجعٌ ثالث بـ٥٠٪" "select $(rv $YV "$(yret y290-r3 $YA 50 'أبو علي' 07701234567)")" "10000/0"
+chk "تالفٌ (لا منتهي) والجديدُ موجود: يأخذ من الجديد ⇒ ١٤٬٠٠٠ كما كان، ودفعةُ الراجع باقية" \
+    "select $(rv $YC "$(ywaste $YA 1 damaged)")::numeric::numeric(20,0)::text" "14000"
+chk "  (يُقرأ بعدها)" "select $(ylast $YA)||'|'||$(yret_left $YA)" "14000:approved:14000|1.0"
+chk "سندٌ معلَّق: لقطتُه المتوسّطُ ولا يُمسّ قبل الموافقة" "select $(rv $YC "$(ywaste $YA 1 expired false)")" "1"
+chk "  (يُقرأ بعدها) ١٤٬٠٠٠ معلَّق بلا سحب، والدفعةُ كما هي" "select $(ylast $YA)||'|'||$(yret_left $YA)" "14000:pending:-|1.0"
+chk "  وموافقةُ المدير بعدها تكلّفه بدفعة الراجع" \
+    "select $(rv $YC "select (stock_count_decide(array(select c.id from stock_counts c where c.product_id = '$YA' and c.status = 'pending'), true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "10000"
+chk "  (يُقرأ بعدها)" "select $(ylast $YA)||'|'||$(yret_left $YA)" "10000:approved:10000|0.0"
+chk "مادّةٌ بلا دفعة راجع: لقطتُها حرفاً (٣٬٠٠٠)" "select $(rv $YC "$(ywaste $YB 1 expired)")::numeric::numeric(20,0)::text" "3000"
+
+# ٣) الجردُ بعجزٍ يأخذ من دفعة الراجع آخراً — بكلفتها
+chk "«أم سارة» تأخذ العلبةَ الوحيدة بالدَّين، وترجعها إكسباير بـ٢٥٪ ⇒ دفعةٌ بكلفة ٥٬٠٠٠" \
+    "select (length($(rv $YV "$(ysale y290-s2 $YD 1 20000 0 'أم سارة' 07709876543)")) > 0)::text||'|'||$(rv $YV "$(yret y290-r4 $YD 25 'أم سارة' 07709876543)")" "true|5000/0"
+$P -c "update products set stock = 2 where id = '$YD';" >/dev/null
+$P -c "insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost, reason, status)
+       values ('$YC', '$YD', 'جرد ٢٩٠', 2, 0, 14000, 'shortage', 'pending');" >/dev/null
+chk "جردٌ بعجز علبتين (علبةٌ جديدة + دفعةُ الراجع): (١٤٬٠٠٠ + ٥٬٠٠٠) ⇒ ١٩٬٠٠٠" \
+    "select $(rv $YC "select (stock_count_decide(array(select c.id from stock_counts c where c.product_id = '$YD' and c.status = 'pending'), true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "19000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ٩٬٥٠٠، والدفعةُ نفدت، والرصيدُ صفر" \
+    "select $(ylast $YD)||'|'||$(yret_left $YD)||'|'||(select stock::numeric(20,0)::text from products where id = '$YD')" "9500:approved:19000|0.0|0"
+
+# دفعاتٌ لم تطابق الرصيدَ قبل السطر (كتابةٌ بلا مطابقة): المطابقةُ تأخذ منها فوق خسارته ⇒ معدّلُ ما أُخذ، لا خسارةٌ بلا مادّة.
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('${YX}a4', '$YC', 'منحرفة ٢٩٠', 'Y290-4', 'IQD', 20000, 14000, 14000, 5, false, null, false) on conflict (id) do nothing;" >/dev/null
+chk "«أبو حيدر» يأخذ علبةً بالدَّين ويرجعها إكسباير بـ٥٠٪" \
+    "select (length($(rv $YV "$(ysale y290-s3 ${YX}a4 1 20000 0 'أبو حيدر' 07708888888)")) > 0)::text||'|'||$(rv $YV "$(yret y290-r5 ${YX}a4 50 'أبو حيدر' 07708888888)")" "true|10000/0"
+$P -c "update product_lots set qty = 3 where product_id = '${YX}a4' and source = 'return';" >/dev/null
+chk "  ودفعتُها ٣ والرصيدُ ٥ (أربعٌ جديدة + ٣ = ٧): تلفُ علبةٍ منتهية يأخذ ٣ منها ⇒ معدّلُها ١٠٬٠٠٠ لا (٣٠٬٠٠٠ − ٢ × ١٤٬٠٠٠) = ٢٬٠٠٠" \
+    "select $(rv $YC "$(ywaste ${YX}a4 1 expired)")::numeric::numeric(20,0)::text" "10000"
+
+# العدُّ بالدفعة يرفع دفعةً وينزل أخرى: ما نقص من كلّ دفعةٍ لا الصافي — الصافي بكلفتين (قيمةٌ تصعد وكميةٌ تنزل) طلع سالباً فرفض القيدُ
+# (unit_cost >= 0) الموافقةَ كلَّها (مراجعةٌ عدائيّة). «دفعتان ٢٩٠» رصيدُه دفعتا راجع: أ علبةٌ بـ١٠٬٠٠٠، وب ثلاثٌ بـ٢٬٠٠٠.
+YF=${YX}a5
+$P -c "insert into products(id, clinic_id, name, barcode, price_currency, sell_price, purchase_price, avg_cost, stock, has_sub_unit, units_per_box, pooled) values
+         ('$YF', '$YC', 'دفعتان ٢٩٠', 'Y290-5', 'IQD', 20000, 14000, 14000, 4, false, null, false) on conflict (id) do nothing;
+       insert into product_lots(id, clinic_id, product_id, qty, received_qty, expiry_date, received_at, source, unit_cost, return_from, return_pct, returned_at) values
+         ('${YX}f1', '$YC', '$YF', 1, 1, '2026-10-01', now(), 'return', 10000, 'x', 50, now()),
+         ('${YX}f2', '$YC', '$YF', 3, 3, '2026-10-01', now(), 'return', 2000, 'x', 50, now()) on conflict (id) do nothing;
+       insert into stock_counts(clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost, reason, status, lot_counts)
+       values ('$YC', '$YF', 'دفعتان ٢٩٠', 4, 2, 14000, 'shortage', 'pending',
+               '[{\"lot_id\":\"${YX}f1\",\"system\":1,\"counted\":2},{\"lot_id\":\"${YX}f2\",\"system\":3,\"counted\":0}]');" >/dev/null
+YFIDS="array(select c.id from stock_counts c where c.product_id = '$YF' and c.status = 'pending')"
+YFSTATE="(select string_agg(qty::numeric(20,0)::text, ',' order by id) from product_lots where product_id = '$YF')||'|'||(select stock::numeric(20,0)::text from products where id = '$YF')
+          ||'|'||(select status from stock_counts where product_id = '$YF')||'|'||(select count(*) from expenses where clinic_id = '$YC')::text"
+Y_BEFORE=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select $YFSTATE")
+chk "معاينةُ الموافقة (stock_count_preview): ما ستكتبه حرفاً — عجزٌ ٤٬٠٠٠ (ب ثلاث بـ٢٬٠٠٠) وكلفةُ السطر ٢٬٠٠٠، بلا معرّف سحب" \
+    "select $(rv $YC "select (p->'withdrawals'->0->>'reason')||':'||(p->'withdrawals'->0->>'amount')::numeric::numeric(20,0)::text||'|'||(p->'costs'->>(select c.id::text from stock_counts c where c.product_id = '$YF'))::numeric::numeric(20,0)::text||'|'||(p->'withdrawals'->0 ? 'expense_id')::text from (select stock_count_preview($YFIDS) p) x")" \
+    "shortage:4000|2000|false"
+chk "  ولا تغيّر شيئاً (الدفعاتُ والرصيدُ والسطرُ معلَّقٌ وعددُ السحوبات كما كانت)" "select $YFSTATE" "$(printf '%s' "$Y_BEFORE" | tr -d '[:space:]')"
+chk "  والطبيبُ لا يعاين (الموافقةُ للمدير — رفضُها يصل كما هو)" \
+    "select split_part($(rv $YV "select stock_count_preview($YFIDS)::text"), ':', 3)" "count_needs_manager"
+chk "والموافقةُ تكتب ما قالته المعاينة: ٤٬٠٠٠ (لا رفضَ القيد بكلفةٍ سالبة، ولا ٢ × ١٤٬٠٠٠)" \
+    "select $(rv $YC "select (stock_count_decide($YFIDS, true))->'withdrawals'->0->>'amount'")::numeric::numeric(20,0)::text" "4000"
+chk "  (يُقرأ بعدها) كلفةُ السطر ٢٬٠٠٠، وأ صارت ٢ وب صفراً، والرصيدُ ٢" "select $(ylast $YF)||'|'||(select string_agg(qty::numeric(20,0)::text, ',' order by id) from product_lots where product_id = '$YF')||'|'||(select stock::numeric(20,0)::text from products where id = '$YF')" \
+    "2000:approved:4000|2,0|2"
+
+# ٤) الإعادةُ والحارس
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما انعادت"; fail=1; }
+chk "إعادةُ 0290 بلا أثر: الأجسامُ الثلاثة بعلامتها، والموافقةُ ما زالت بعلامة 0254 (فحصُ التوصيل نظيف)" \
+    "select (select string_agg((prosrc like '%-- +0290%')::text, ',' order by s) from pg_proc, unnest(array['public._stock_ledger_source(text)','public._stock_ledger_kind(text,text,text,numeric)','public.stock_count_decide(uuid[],boolean)']) s where oid = to_regprocedure(s))
+            ||'|'||(select (prosrc like '%-- +0254%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))
+            ||'|'||(select count(*)::text from verify_consumption_wiring())" "true,true,true|true|0"
+# نصُّ 0254 للموافقة وحدها (كالإنتاج اليوم) ⇒ 0290 تنزل ببصمته؛ ونصٌّ غيرُه بلا علامتنا ⇒ تُرفض ولا تدهسه.
+D254=$(sed -n '/^create or replace function public.stock_count_decide/,/^grant execute on function public.stock_count_decide/p' "$MIG/0254_waste_voucher.sql")
+$P -c "$D254" >/dev/null
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) && G290=applied || G290=refused
+chk "الموافقةُ بنصّ 0254 حرفاً ⇒ 0290 تنزل فوقها" "select '$G290'||'|'||(select (prosrc like '%-- +0290%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))" "applied|true"
+$P -c "${D254/n_ok := n_ok + 1;/n_ok := n_ok + 1 + 0;}" >/dev/null
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) && G290=applied || G290=refused
+chk "  ونصٌّ غيرُه بلا علامتنا ⇒ تُرفض (drift_body) والنصُّ باقٍ" \
+    "select '$G290'||'|'||(position('drift_body' in \$o\$$out\$o\$) > 0)::text||'|'||(select (prosrc like '%n_ok + 1 + 0%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))" "refused|true|true"
+$P -c "$D254" >/dev/null
+out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما رجعت بعد الحارس"; fail=1; }
 echo "▸ 0291 بعد تراجع 0222: بلا staff_can المديرُ وحده يحذف ويسترجع، والإعادةُ بلا دالّة السياج لا تفشل"
 PT=a2910000-0000-4000-8000-0000000000
 RCP=77777777-7777-7777-7777-777777777777

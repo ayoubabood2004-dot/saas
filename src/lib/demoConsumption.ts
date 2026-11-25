@@ -918,6 +918,25 @@ export async function demoSubmitWaste(lines: WasteLineInput[], apply: boolean, c
   });
 }
 
+/** stock_count_preview (0290): الموافقةُ نفسُها ثمّ يُرجَع التخزينُ كما كان — مرآةُ المعاملة الفرعية التي تُلغى. المنطقةُ كلُّها متزامنة
+ *  (localStorage وحده، بلا await بين اللقطة والإرجاع) فلا تتداخل معها كتابةٌ أخرى. */
+export async function demoCountPreview(ids: string[]): Promise<{ withdrawals: { reason: string; amount: number }[]; costs: Record<string, number> }> {
+  const counts = await import("./demoCounts");
+  const snap = new Map<string, string>();
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k != null) snap.set(k, localStorage.getItem(k) ?? ""); }
+  try {
+    const pend = new Set(counts.loadCounts().filter((c) => ids.includes(c.id) && c.status === "pending").map((c) => c.id));
+    const out = counts.demoDecideCounts(ids, true, demoAddExpense, (db, productId, xNano, mode, now) => stockPostLocal(db, productId, xNano, mode, now));
+    const costs = Object.fromEntries(counts.loadCounts().filter((c) => pend.has(c.id) && c.status === "approved").map((c) => [c.id, Number(c.unit_cost)]));
+    return { withdrawals: out.withdrawals, costs };
+  } finally {
+    const now: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k != null) now.push(k); }
+    for (const k of now) if (!snap.has(k)) localStorage.removeItem(k);
+    for (const [k, v] of snap) localStorage.setItem(k, v);
+  }
+}
+
 /* ── متوسّطُ الكلفة (0255) ─────────────────────────────────────────────────────────────── */
 /** نسبةُ كلفة سطور فاتورة شراء: أساسُ الكلفة (`netC`: الصافي بعد خصم الشركة 0260، **وفوقه الأجورُ الموزَّعة 0276**) والمجموعُ قبل
  *  الخصم بالفلوس — null = الأساسُ يساوي المجموع (الكلفةُ كما كُتبت). */

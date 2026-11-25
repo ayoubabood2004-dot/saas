@@ -5642,6 +5642,7 @@ export const loadDemoPosSales = () => import("./demoPosSales");   // 0279 — م
 export const loadDemoVaccinePrices = () => import("./demoVaccinePrices");   // 0279 — أسعارُ التطعيمات
 export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 — أرشفةُ أدوية النظام
 export const loadDemoCompanyEntryEdit = () => import("./demoCompanyEntryEdit");   // 0281 — تعديلُ الرصيد السابق والتسوية
+export const loadDemoVoice = () => import("./demoVoice");   // 0287 — الملاحظةُ الصوتية
 export const loadDemoDual = () => import("./demoDual");   // 0282 — البيعُ بسعرين (سطرُ الدولار بفاتورة دينار)
 export const loadDemoCaseReports = () => import("./demoCaseReports");   // 0287 — تقاريرُ الحالة المطبوعة وما عُدّل فيها
 export const loadDemoExpired = () => import("./demoExpired");   // 0289 — الراجعُ الإكسباير ودفعتُه والبيعُ منها

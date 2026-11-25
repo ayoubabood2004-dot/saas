@@ -7,6 +7,7 @@ import { Button, Dialog } from "@/components/ui";
 import { cn, formatDate, formatQty, localISO, money } from "@/lib/utils";
 import type { ExpiredResult, ExpiredUnit } from "@/lib/expiredApi";
 import { listReturnLotsOf } from "@/lib/expiredApi";
+import { decOf } from "@/lib/usdMath";
 
 /* ============================================================================
  * الراجعُ الإكسباير (0289) — مالكُ النطاق `xret` (hot-paths.json). قطعةٌ كسولة: شاشةُ البيع تستوردها بـimport() مع بابها
@@ -132,30 +133,96 @@ export function XretNote({ customer }: { customer: string | null }) {
   );
 }
 
-/** «تبيع من الإكسباير لو من الجديد؟» — دفعاتُ الراجع الباقية للمادّة، وزرٌّ لكلّ واحدة، و«من الجديد». */
-export function LotPickDialog({ open, product, lots, newLeft, onPick, onCancel }: {
-  open: boolean; product: Product | null; lots: ProductLot[]; newLeft: number; onPick: (lot: ProductLot | null) => void; onCancel: () => void;
+/** سعرُ البيع من دفعة الإكسباير: وحدةُ السطر الذي سينزل (علبة، أو مفردٌ حين باقيها أقلُّ من علبة) وسعرُها بالقائمة، وكم وحدةَ
+ *  مخزنٍ هي (المفرد ١ ÷ عددِه بالعلبة) — به تُقاس كلفةُ الدفعة للوحدة. شاشةُ البيع تحسبه بقاعدتها هي (startSub)، لا تخمين هنا. */
+export interface LotSaleUnit { sub: boolean; unitName: string | null; list: number; per: number }
+
+/** «تبيع من الإكسباير لو من الجديد؟» — دفعاتُ الراجع الباقية للمادّة، وزرٌّ لكلّ واحدة، و«من الجديد». ومن الإكسباير سؤالٌ ثانٍ:
+ *  «بيش تبيعها؟» (المالك ٢٤/١١: «هو يحدد شكد السعر») — بسعر القائمة جاهزاً، ونِسَبٌ بضغطة، وكلفتُها عليك، وتحتها يُقال «خسارة». */
+export function LotPickDialog({ open, product, lots, newLeft, unitFor, onPick, onCancel }: {
+  open: boolean; product: Product | null; lots: ProductLot[]; newLeft: number; unitFor: (lot: ProductLot) => LotSaleUnit;
+  onPick: (lot: ProductLot | null, price?: number, unit?: LotSaleUnit) => void; onCancel: () => void;
 }) {
   const { t: tt, i18n: ii } = useTranslation();
   const unit = (product?.unit_name ?? "").trim() || tt("xret.box");
+  /** الدفعةُ المختارة (السؤالُ الثاني) ووحدتُها كما رُسمت لحظةَ الاختيار (ثابتة — تُرجَع مع السعر)، وما كُتب بخانة السعر. */
+  const [chosen, setChosen] = useState<ProductLot | null>(null);
+  const [su, setSu] = useState<LotSaleUnit | null>(null);
+  const [priceText, setPriceText] = useState("");
+  useEffect(() => { if (open) { setChosen(null); setSu(null); setPriceText(""); } }, [open, product?.id]);
+  const priceC = chosen ? decOf(priceText, 2) : null;
+  const okPrice = priceC != null && priceC >= 0n;
+  const price = okPrice ? Number(priceC) / 100 : 0;
+  // كلفةُ وحدة السطر من الدفعة (كلفتُها للعلبة × كم علبةً هي)، بالفلس — المقارنةُ بالفلس لا بالعائم.
+  const costU = chosen && su && chosen.unit_cost != null ? Math.round(Number(chosen.unit_cost) * su.per * 100) / 100 : null;
+  const below = okPrice && costU != null && Math.round(price * 100) < Math.round(costU * 100);
+  const pick = (l: ProductLot) => { const u = unitFor(l); setChosen(l); setSu(u); setPriceText(String(u.list)); };
+  const uname = (u: LotSaleUnit) => (u.unitName ?? "").trim() || tt(u.sub ? "xret.sub" : "xret.box");
+  const desc = (l: ProductLot) => tt("xret.lotDesc", {
+    exp: l.expiry_date ? formatDate(l.expiry_date, ii.language, true) : "—",
+    from: l.return_from || tt("xret.walkIn"),
+    // اليومُ المحلّيّ للحظة الراجع — لا `slice(0, 10)` (يومُ غرينتش: راجعٌ بعد منتصف الليل ببغداد كان يُكتب بأمسه).
+    day: l.returned_at ? formatDate(l.returned_at, ii.language, true) : "—",
+    pct: l.return_pct ?? 100,
+  });
+  if (chosen && su) {
+    return (
+      <Dialog open={open} onClose={onCancel} size="sm" title={tt("xret.priceTitle", { name: product?.name ?? "" })}
+        description={desc(chosen)}
+        footer={
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <Button variant="ghost" size="sm" data-lotpriceback onClick={() => { setChosen(null); setSu(null); }}>{tt("xret.priceBack")}</Button>
+            <Button data-lotpriceok disabled={!okPrice} onClick={() => okPrice && onPick(chosen, price, su)}>
+              {tt("xret.priceOk", { price: money(price), unit: uname(su) })}
+            </Button>
+          </div>
+        }>
+        <div className="space-y-3" data-lotprice>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-extrabold text-ink">{tt("xret.priceAsk", { unit: uname(su) })}</span>
+            {/* بلا تركيزٍ تلقائيّ ولا «Enter يبيع»: الماسحُ مطفأٌ والنافذةُ مفتوحة، وماسحُ لوحة المفاتيح يكتب أرقامَه ثمّ Enter — كان يُلصق
+                الباركود بالسعر ويبيع به (مراجعة). البيعُ بالزرّ وحده. */}
+            <input data-lotpriceinput inputMode="decimal" value={priceText}
+              onChange={(e) => setPriceText(e.target.value)}
+              className="h-11 w-full rounded-xl border border-line bg-surface-1 px-3 text-base font-bold tabular-nums focus:border-brand-400 focus:outline-none" />
+          </label>
+          <div className="flex flex-wrap gap-1.5" role="group">
+            {[100, 75, 50, 25].map((pc) => {
+              const v = Math.round(su.list * pc) / 100;
+              const on = okPrice && Math.round(price * 100) === Math.round(v * 100);
+              return (
+                <button key={pc} type="button" data-lotpricepct={pc} aria-pressed={on} onClick={() => setPriceText(String(v))}
+                  className={cn("h-9 rounded-full border px-3 text-xs font-extrabold tabular-nums transition",
+                    on ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>
+                  {pc === 100 ? tt("xret.priceFull", { price: money(v) }) : `${pc}% · ${money(v)}`}
+                </button>
+              );
+            })}
+          </div>
+          {priceText.trim() !== "" && !okPrice && <p data-lotpricebad className="text-2xs font-semibold text-danger-700">{tt("xret.priceBad")}</p>}
+          {costU != null && (
+            <p data-lotpricecost className={cn("rounded-xl px-3 py-2 text-2xs font-semibold",
+              below ? "bg-danger-50 text-danger-800 dark:bg-danger-500/15 dark:text-danger-200" : "bg-surface-2 text-ink")}>
+              {below
+                ? tt("xret.priceBelow", { cost: money(costU), loss: money(Math.round((costU - price) * 100) / 100), unit: uname(su) })
+                : tt("xret.priceCost", { cost: money(costU), unit: uname(su) })}
+            </p>
+          )}
+        </div>
+      </Dialog>
+    );
+  }
   return (
     <Dialog open={open} onClose={onCancel} size="sm" title={tt("xret.pickTitle", { name: product?.name ?? "" })} description={tt("xret.pickSub")}>
       <div className="space-y-2" data-lotpick>
         {lots.map((l) => (
-          <button key={l.id} type="button" data-lotpickone={l.id} onClick={() => onPick(l)}
+          <button key={l.id} type="button" data-lotpickone={l.id} onClick={() => pick(l)}
             className="w-full rounded-2xl border-2 border-danger-200 bg-danger-50 p-3 text-start transition hover:border-danger-400 dark:border-danger-500/30 dark:bg-danger-500/10">
             <p className="flex items-center gap-1.5 text-sm font-extrabold text-danger-800 dark:text-danger-200">
               <CalendarX2 size={14} />{tt("xret.fromLot")}
               <span className="ms-auto tabular-nums">{tt("xret.left", { n: formatQty(l.qty), unit })}</span>
             </p>
-            <p className="mt-1 text-2xs font-semibold text-ink">
-              {tt("xret.lotDesc", {
-                exp: l.expiry_date ? formatDate(l.expiry_date, ii.language, true) : "—",
-                from: l.return_from || tt("xret.walkIn"),
-                day: l.returned_at ? formatDate(l.returned_at.slice(0, 10), ii.language, true) : "—",
-                pct: l.return_pct ?? 100,
-              })}
-            </p>
+            <p className="mt-1 text-2xs font-semibold text-ink">{desc(l)}</p>
             {l.unit_cost != null && <p className="mt-0.5 text-2xs text-ink-subtle">{tt("xret.lotCost", { cost: money(Number(l.unit_cost)), unit })}</p>}
           </button>
         ))}
@@ -165,6 +232,45 @@ export function LotPickDialog({ open, product, lots, newLeft, onPick, onCancel }
           : <p data-lotpicknonew className="text-center text-2xs font-semibold text-ink-subtle">{tt("xret.noNew")}</p>}
       </div>
     </Dialog>
+  );
+}
+
+/** «حركات المادة» (دفترُ الرصيد، 0287): سطرُ الراجع الإكسباير يقول «راجع إكسباير» ومن رجّعه وشوكت خلص وبكم — من دفعته: الخادمُ
+ *  يختم `returned_at` بلحظة المعاملة نفسِها التي يختم بها الدفترُ حركتَه (now())، فالمطابقةُ باللحظة لا تخمين. دفعاتُ المادّة تُجلب مرّةً
+ *  لكلّ فتحٍ للنافذة (`nonce`) وتتشاركها السطور. وفشلُ الجلب يُبقي العنوانَ بلا تفاصيل — والنوعُ والكميةُ من الدفتر نفسِه. */
+const ledgerLots = new Map<string, Promise<ProductLot[]>>();
+export function XretLedgerNote({ productId, at, delta, nonce, unitName }: {
+  productId: string; at: string; delta: number; nonce: number; unitName?: string | null;
+}) {
+  const { t: tt, i18n: ii } = useTranslation();
+  const [lots, setLots] = useState<ProductLot[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const key = `${productId}:${nonce}`;
+    let got = ledgerLots.get(key);
+    if (!got) { ledgerLots.clear(); got = listReturnLotsOf(productId); ledgerLots.set(key, got); }
+    got.then((l) => { if (alive) setLots(l); }, () => { if (alive) setLots([]); });
+    return () => { alive = false; };
+  }, [productId, nonce]);
+  const t0 = Date.parse(at);
+  const same = (lots ?? []).filter((l) => l.returned_at && Date.parse(l.returned_at) === t0);
+  // راجعان للمادّة نفسِها بلحظةٍ واحدة (سطران بنداءٍ واحد): الذي كميتُه فرقُ الحركة، وإلا الأوّل.
+  const lot = same.find((l) => Math.abs(Number(l.received_qty) - delta) < 0.0005) ?? same[0] ?? null;
+  const unit = (unitName ?? "").trim() || tt("xret.box");
+  return (
+    <>
+      <p data-xretledger className="text-sm font-bold text-ink">{tt("xret.lgTitle")}</p>
+      {lot && (
+        <p data-xretledgerline className="text-2xs font-semibold text-danger-800 dark:text-danger-200">
+          {tt("xret.lgLine", {
+            from: lot.return_from || tt("xret.walkIn"),
+            exp: lot.expiry_date ? formatDate(lot.expiry_date, ii.language, true) : "—",
+            pct: lot.return_pct ?? 100,
+          })}
+          {lot.unit_cost != null && <> · {tt("xret.lotCost", { cost: money(Number(lot.unit_cost)), unit })}</>}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -195,7 +301,7 @@ export function ReturnLotsNote({ productId, unitName, compact }: { productId: st
           <li key={l.id} data-retlot className={cn("text-2xs font-semibold text-ink", l.qty <= 0 && "text-ink-subtle line-through")}>
             {tt("xret.invLine", {
               from: l.return_from || tt("xret.walkIn"), n: formatQty(l.received_qty), unit,
-              day: l.returned_at ? formatDate(l.returned_at.slice(0, 10), ii.language, true) : "—",
+              day: l.returned_at ? formatDate(l.returned_at, ii.language, true) : "—",
               exp: l.expiry_date ? formatDate(l.expiry_date, ii.language, true) : "—",
               pct: l.return_pct ?? 100,
             })}

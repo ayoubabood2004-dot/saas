@@ -36,7 +36,8 @@ globalThis.document = globalThis.document ?? {
 
 const EMPTY = new Set(["@supabase/supabase-js", "@supabase/functions-js", "@supabase/realtime-js", "@supabase/auth-js", "@supabase/node-fetch", "html-parse-stringify"]);
 const DEMO_EXP = resolve("src/lib/demoExpired.ts");
-async function load(mutate) {
+const DEMO_COUNTS = resolve("src/lib/demoCounts.ts");
+async function load(mutate, target = DEMO_EXP) {
   const stubs = {
     name: "stubs",
     setup(b) {
@@ -49,7 +50,7 @@ async function load(mutate) {
       b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
       b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
       b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
-      if (mutate) b.onLoad({ filter: /demoExpired\.ts$/ }, (a) => (resolve(a.path) === DEMO_EXP ? { contents: mutate(src(DEMO_EXP)), loader: "ts" } : undefined));
+      if (mutate) b.onLoad({ filter: /\.ts$/ }, (a) => (resolve(a.path) === target ? { contents: mutate(src(target)), loader: "ts" } : undefined));
     },
   };
   const built = await esbuild.build({
@@ -58,6 +59,7 @@ async function load(mutate) {
         'export * from "./src/lib/repo.ts";',
         'export { returnExpired, checkoutLots, listReturnLots, listReturnLotsOf, returnLotsReady, expiredErrorCode } from "./src/lib/expiredApi.ts";',
         'export { reconcileAll, loadLots } from "./src/lib/demoLots.ts";',
+        'export { consumptionApi } from "./src/lib/consumptionApi.ts";',
       ].join("\n"),
       resolveDir: process.cwd(), sourcefile: "xret-entry.ts", loader: "ts",
     },
@@ -213,10 +215,90 @@ const EXPECT = {
   lotRefuse: "lot_short|lot_gone|0",
 };
 
+/* ---- 0290: التلفُ والجردُ يكلّفان ما أخذاه من دفعة الراجع بكلفتها — أرقامُ قسم 0290 بـrun.sh نفسُها ---------------------- */
+async function wasteScenario(M) {
+  mem.clear();
+  const A = "wA", B = "wB", D = "wD", E = "wE", F = "wF";
+  const prod = (id, name, extra) => ({ id, name, barcode: id, price_currency: "IQD", sell_price: 20000, purchase_price: 14000, avg_cost: 14000, stock: 20,
+    has_sub_unit: false, sub_unit_name: null, units_per_box: null, packs: null, pooled: false, created_at: "2026-01-01T00:00:00.000Z", expiry_date: null, ...extra });
+  mem.set(DB_KEY, JSON.stringify({
+    products: [prod(A, "إكسباير ٢٩٠"), prod(B, "بلا راجع ٢٩٠", { sell_price: 5000, purchase_price: 3000, avg_cost: 3000, stock: 10 }),
+      prod(D, "جرد ٢٩٠", { stock: 1 }), prod(E, "منحرفة ٢٩٠", { stock: 5 }), prod(F, "دفعتان ٢٩٠", { stock: 4 })],
+    companies: [], companySections: [], purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [], deliveryOrders: [],
+  }));
+  // «دفعتان ٢٩٠»: رصيدُه كلُّه دفعتا راجع — أ علبةٌ بـ١٠٬٠٠٠ وب ثلاثٌ بـ٢٬٠٠٠ (كقسم 0290 بـrun.sh).
+  const rl = (id, qty, cost) => ({ id, product_id: F, clinic_id: null, qty, received_qty: qty, expiry_date: "2026-10-01", received_at: "2026-11-01T08:00:00.000Z",
+    source: "return", unit_cost: cost, return_from: "x", return_pct: 50, returned_at: "2026-11-01T08:00:00.000Z", note: null });
+  mem.set("vp_demo_lots", JSON.stringify([rl("FA", 1, 10000), rl("FB", 3, 2000)]));
+  const repo = M.repo ?? M.demoRepo;
+  const db = () => JSON.parse(mem.get(DB_KEY));
+  const lotsOf = (pid) => M.reconcileAll().filter((l) => l.product_id === pid && l.source === "return");
+  const retLeft = (pid) => String(lotsOf(pid).reduce((s, l) => s + l.qty, 0));
+  const sale = (ref, pid, qty, name, phone) => repo.retailCheckout(
+    [{ product_id: pid, name: "z", qty, unit_price: 20000, unit_cost: 0, stock_qty: qty, unit_label: null, service_id: null }],
+    { client_ref: ref, payment_method: "cash", amount_paid: 0, final_total: qty * 20000, customer_name: name, customer_phone: phone });
+  const ret = async (ref, pid, pct, name, phone) => {
+    const r = await M.returnExpired([{ product_id: pid, unit: "box", qty: 1, pct, expiry_date: "2026-10-01", unit_price: 20000 }],
+      { client_ref: ref, customer_name: name, customer_phone: phone, method: "cash", note: null });
+    return `${r.debt}/${r.cash}`;
+  };
+  const waste = async (pid, qty, reason, apply = true) => {
+    const r = await M.consumptionApi.submitWaste([{ product_id: pid, qty, unit: "stock", reason, note: "x" }], apply, `w-${pid}-${Math.random()}`);
+    return apply ? String(r.decided?.withdrawals?.[0]?.amount ?? "-") : String(r.pending);
+  };
+  const counts = () => JSON.parse(mem.get("vp_demo_counts") ?? "[]");
+  // المخزنُ الأحدثُ أوّلاً (unshift) — كـorder by counted_at desc.
+  const last = (pid) => { const c = counts().find((x) => x.product_id === pid); return c ? `${Number(c.unit_cost)}:${c.status}` : "-"; };
+  const out = {};
+  M.reconcileAll();
+  await sale("s1", A, 3, "أبو علي", "07701234567");
+  out.r1 = await ret("r1", A, 50, "أبو علي", "07701234567");
+  out.w1 = `${await waste(A, 1, "expired")}|${last(A)}|${retLeft(A)}`;
+  out.r2 = await ret("r2", A, 50, "أبو علي", "07701234567");
+  out.w2 = `${await waste(A, 2, "expired")}|${last(A)}|${retLeft(A)}`;
+  out.r3 = await ret("r3", A, 50, "أبو علي", "07701234567");
+  out.w3 = `${await waste(A, 1, "damaged")}|${last(A)}|${retLeft(A)}`;
+  out.pend = `${await waste(A, 1, "expired", false)}|${last(A)}|${retLeft(A)}`;
+  const ids = counts().filter((x) => x.product_id === A && x.status === "pending").map((x) => x.id);
+  const dec = await repo.decideStockCounts(ids, true);
+  out.pendOk = `${dec.withdrawals?.[0]?.amount ?? "-"}|${last(A)}|${retLeft(A)}`;
+  out.noLot = await waste(B, 1, "expired");
+  await sale("s2", D, 1, "أم سارة", "07709876543");
+  out.r4 = await ret("r4", D, 25, "أم سارة", "07709876543");
+  { const d = db(); d.products.find((p) => p.id === D).stock = 2; mem.set(DB_KEY, JSON.stringify(d)); }
+  M.reconcileAll();
+  const cnt = await repo.submitStockCount([{ product_id: D, counted: 0, reason: "shortage", note: null }]);
+  const cids = counts().filter((x) => x.product_id === D && x.status === "pending").map((x) => x.id);
+  const dec2 = await repo.decideStockCounts(cids, true);
+  out.count = `${cnt ? "ok" : "-"}|${dec2.withdrawals?.[0]?.amount ?? "-"}|${last(D)}|${retLeft(D)}`;
+  await sale("s3", E, 1, "أبو حيدر", "07708888888");
+  out.r5 = await ret("r5", E, 50, "أبو حيدر", "07708888888");
+  { const all = M.loadLots(); all.find((l) => l.product_id === E && l.source === "return").qty = 3; localStorage.setItem([...mem.keys()].find((k) => /lots/i.test(k)), JSON.stringify(all)); }
+  out.over = await waste(E, 1, "expired");
+  // العدُّ بالدفعة يرفع أ (١ ← ٢) وينزل ب (٣ ← ٠): عجزُ علبتين — ما نقص (ب ثلاث بـ٢٬٠٠٠) لا الصافي (قيمةٌ تصعد ⇒ كلفةٌ سالبة).
+  await repo.submitStockCount([{ product_id: F, counted: 2, reason: "shortage", note: null, lots: [{ lot_id: "FA", counted: 2 }, { lot_id: "FB", counted: 0 }] }]);
+  const fids = counts().filter((x) => x.product_id === F && x.status === "pending").map((x) => x.id);
+  // المعاينةُ أوّلاً: ما ستكتبه الموافقةُ حرفاً، ولا تغيّر شيئاً (الرصيدُ والدفعاتُ والسطرُ معلَّقٌ والسحوبُ كما هي).
+  const before = JSON.stringify([...mem.entries()].sort());
+  const pv = await M.consumptionApi.countPreview(fids);
+  out.preview = `${pv.withdrawals.map((w) => `${w.reason}:${w.amount}`).join(",")}|${fids.map((id) => pv.costs[id]).join(",")}|${JSON.stringify([...mem.entries()].sort()) === before}`;
+  const dec3 = await repo.decideStockCounts(fids, true);
+  out.lots = `${dec3.withdrawals?.[0]?.amount ?? "-"}|${last(F)}|${lotsOf(F).map((l) => `${l.id}:${l.qty}`).sort().join(",")}`;
+  return out;
+}
+const WEXPECT = {
+  r1: "10000/0", w1: "10000|10000:approved|0", r2: "10000/0", w2: "24000|12000:approved|0", r3: "10000/0", w3: "14000|14000:approved|1",
+  pend: "1|14000:pending|1", pendOk: "10000|10000:approved|0", noLot: "3000", r4: "5000/0", count: "ok|19000|9500:approved|0", r5: "10000/0", over: "10000",
+  preview: "shortage:4000|2000|true", lots: "4000|2000:approved|FA:2,FB:0",
+};
+
 console.log("▸ ١) المرآةُ بالحالات نفسِها التي تفحصها الحزمة على القاعدة (قسمُ 0289)");
 const M = await load();
 const got = await scenario(M);
 for (const [k, v] of Object.entries(EXPECT)) check(`${k}: ${v}`, got[k] === v, `طلع «${got[k]}»`);
+console.log("▸ ١ب) التلفُ والجردُ بكلفة دفعة الراجع (قسمُ 0290)");
+const wgot = await wasteScenario(M);
+for (const [k, v] of Object.entries(WEXPECT)) check(`${k}: ${v}`, wgot[k] === v, `طلع «${wgot[k]}»`);
 
 console.log("▸ ٢) طفراتٌ على المرآة — كلٌّ تُمسك");
 const MUTANTS = [
@@ -244,6 +326,21 @@ for (const [name, mut] of MUTANTS) {
   check(`طفرة «${name}» يمسكها الفحص`, caught);
 }
 
+const WMUTANTS = [
+  ["التلفُ بلقطة المتوسّط (بلا دفعة الراجع)", (s) => s.replace("if (loss > 0n && tq > 0n) {", "if (false) {")],
+  ["أخذٌ فوق الخسارة بالصيغة نفسِها", (s) => s.replace("tq >= loss ? roundDiv(tc, tq) : ", "")],
+  ["الدفعاتُ تُقاس بعد المطابقة", (s) => s.replace("const { tq, tc } = retTaken(ret0, retLots(p.id));", "const { tq, tc } = retTaken(retLots(p.id), retLots(p.id));")],
+  ["الصافي لا دفعةً دفعة (دفعةٌ صعدت تقاصّ أخرى نزلت)", (s) => s.replace("if (d > 0n) { tq += d; tc += d * b.c; }", "{ tq += d; tc += d * b.c; }")],
+];
+for (const [name, mut] of WMUTANTS) {
+  let applied = true;
+  const Mm = await load((s) => { const out = mut(s); if (out === s) applied = false; return out; }, DEMO_COUNTS);
+  if (!applied) { check(`طفرة «${name}» تنطبق على النصّ`, false, "النصُّ تغيّر — حدّث الطفرة"); continue; }
+  let g;
+  try { g = await wasteScenario(Mm); } catch (e) { g = { crash: String(e?.message) }; }
+  check(`طفرة «${name}» يمسكها الفحص`, Object.entries(WEXPECT).some(([k, v]) => g[k] !== v));
+}
+
 console.log("▸ ٣) الوصل بالنصّ");
 const sb = src("src/components/retail/SaleBuilder.tsx");
 const hot = JSON.parse(src("src/i18n/hot-paths.json"));
@@ -265,6 +362,23 @@ check("  وسطرُ «الجديد» بلا ما بدفعات الراجع، و�
   && /\|\| !!lotAsk \|\| !!xretFor \|\| !!consFor \|\| medPickerOpen \}\);/.test(sb) && /lotAskRef\.current\?\.resolve\(undefined\);/.test(sb));
 check("  وزرُّ «إكسباير» مقفولٌ ما دام إرجاعٌ بالطريق (المرجعُ محفوظ) — التبديلُ يُعيده بطريقٍ آخر",
   /if \(saleRefSaved\) \{ playWarning\(\); toast\.error\(xretMod \? xretMod\.ui\.say\.pending\(\)/.test(sb));
+check("0290: «بيش تبيعها؟» — السؤالُ يحمل وحدةَ السطر بقاعدة startSub نفسِها، والجوابُ سعرٌ لوحدته يمرّ لـaddProduct",
+  /const sub = hasSubU && \(opt\?\.unit === "sub" \|\| \(Math\.floor\(product\.stock\) < 1 && !liftFor\(product, null\)\) \|\| l\.qty < 1\);/.test(sb)
+  && /const startSub = hasSub && \(opt\?\.unit === "sub" \|\| \(Math\.floor\(p\.stock\) < 1 && !liftFor\(p, null\)\) \|\| \(!!opt\?\.lot && opt\.lot\.qty < 1\)\);/.test(sb)
+  && /\.\.\.\(pick \? \{ lot: pick\.lot, lotPrice: pick\.price \} : \{\}\)/.test(sb)
+  && /unit_price: lotUnit \?\? listNow,/.test(sb));
+check("  والسعرُ المختار يتبع تبديلَ الوحدة (بنسبته) ولا يُكتب على سعر القائمة (رفعُ الأسعار يقارن به)",
+  /const unit_price = l\.lot \? lotUnitPrice\(\{ price: l\.unit_price, sub: curSub, list: curList \}, toSub, listU, l\.unitsPerBox \?\? null\) : listU;/.test(sb)
+  && /boxPrice: listPrice\(p\), subPrice: wholesale \? listSubPrice\(p\) : \(p\.sub_unit_price \?\? null\)/.test(sb));
+const er = src("src/components/retail/ExpiredReturn.tsx");
+check("  ونافذتُه: تحت كلفة الدفعة يُقال «خسارة» (بالفلس)، ويومُ الراجع محلّيٌّ لا slice(0, 10)",
+  /const below = okPrice && costU != null && Math\.round\(price \* 100\) < Math\.round\(costU \* 100\);/.test(er) && !/returned_at\.slice\(0, 10\)/.test(er));
+const pm = src("src/components/inventory/ProductMovements.tsx");
+check("«حركات المادة»: سطرُ return_expired «راجع إكسباير» بتفاصيل دفعته — بالكاتب لا بالنوع (قبل 0290 نوعُه other)، وقطعتُه كسولةٌ بنطاقها",
+  /const xret = r\.source === "return_expired";/.test(pm) && /import\("@\/components\/retail\/ExpiredReturn"\)\.then\(\(m\) => \(\{ default: m\.XretLedgerNote \}\)\), \["xret"\]/.test(pm)
+  && !/^import [^\n]*ExpiredReturn/m.test(pm));
+check("  والمطابقةُ باللحظة (returned_at = لحظةُ حركة الدفتر) وبالكمية بين المتعادلين",
+  /Date\.parse\(l\.returned_at\) === t0/.test(er) && /Math\.abs\(Number\(l\.received_qty\) - delta\) < 0\.0005/.test(er));
 const rp = src("src/components/retail/ReturnsPanel.tsx");
 check("«المرتجع»: أثرُ الراجع الإكسباير لا يُرجَع ولا يدخل «إرجاع الكل»",
   /items\.filter\(\(it\) => !isXretTrace\(it\)\)\.map\(\(it\) => \[it\.id, it\.qty\]\)/.test(rp) && /\{!isXretTrace\(it\) && <div className="flex items-center gap-1">/.test(rp));
