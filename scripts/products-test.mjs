@@ -1029,10 +1029,12 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
      * وتُطابَق (doseUnits، منتقي الجرعة D5)، وكلماتُ أسماء التحاليل التي تُطابَق بها خدمةُ الكتالوج —
      * أداةُ التعريف والكلماتُ العامّة («فحص»، «تحليل») — (labServiceMatch، بندُ المختبر بشاشة البيع)،
      * ورؤوسُ أعمدة جداول الموزّعين التي يُطابَق بها ملفُّ الإكسل («اسم المنتج»، «الماركة»، «التصنيف»، «الباركود»)
-     * بأيّ لغةٍ كانت الواجهة — (libraryImport، استيرادُ مكتبة الصور 0284)
-     * — وملفٌّ خامسٌ يستعمله يفشل هنا حتى يُضاف بسببه. */
-    const ALLOWED = ["src/lib/doseUnits.ts", "src/lib/labServiceMatch.ts", "src/lib/libraryImport.ts", "src/lib/storeLib.ts"];
-    check("  ومحصورٌ بملفّاته المسمّاة (storeLib، doseUnits، labServiceMatch، libraryImport)", users.slice().sort().join(",") === ALLOWED.join(","), users.join(", "));
+     * بأيّ لغةٍ كانت الواجهة — (libraryImport، استيرادُ مكتبة الصور 0284)،
+     * ووحداتُ الحجم بأسماء المنتجات («كغم»، «غم»، «مل»، «لتر») التي تحكم مطابقةَ صورة المكتبة بالمنتج —
+     * ٢ كغم ليست ٤٠٠ غم (imageMatch، صورٌ مقترحة ٢٥/١١)
+     * — وملفٌّ سادسٌ يستعمله يفشل هنا حتى يُضاف بسببه. */
+    const ALLOWED = ["src/lib/doseUnits.ts", "src/lib/imageMatch.ts", "src/lib/labServiceMatch.ts", "src/lib/libraryImport.ts", "src/lib/storeLib.ts"];
+    check("  ومحصورٌ بملفّاته المسمّاة (storeLib، doseUnits، labServiceMatch، libraryImport، imageMatch)", users.slice().sort().join(",") === ALLOWED.join(","), users.join(", "));
   }
 
   /* ── ت٦ + مسارُ التفعيل ─────────────────────────────────────────────────

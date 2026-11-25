@@ -96,6 +96,8 @@
     "libp": "src/components/inventory/ImageLibraryPicker.tsx",
     "psum": "src/components/summary/PetSummary.tsx",
     "csht": { "owner": "src/components/summary/CaseSheetDialog.tsx", "with": ["src/lib/caseSheetCompose.ts"] },
-    "xret": "src/components/retail/ExpiredReturn.tsx"
+    "xret": "src/components/retail/ExpiredReturn.tsx",
+    "pmatch": "src/pages/PhotoMatch.tsx",
+    "pmbn": "src/components/photos/MatchBanner.tsx"
   }
 }

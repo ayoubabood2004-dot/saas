@@ -53,6 +53,8 @@ const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ defaul
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
 /* مكتبةُ الصور داخل العيادة (0285): مكتبتُها الخاصّة تكتبها بصلاحية الصور، والعامّةُ قراءة — نفسُ شاشة لوحة المنصّة. */
 const ClinicLibrary = page(() => import("@/components/admin/ImageLibraryManager").then((m) => ({ default: m.ClinicImageLibrary })), ["libm"]);
+/* صورٌ مقترحة لمنتجات العيادة من المكتبة (٢٥/١١): بالباركود والاسم، تُقبل واحدةً أو كلَّها. */
+const PhotoMatch = page(() => import("@/pages/PhotoMatch").then((m) => ({ default: m.PhotoMatch })), ["pmatch"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const Fields = page(() => import("@/pages/Fields").then((m) => ({ default: m.Fields })));
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })), ["campaigns"]);
@@ -358,6 +360,7 @@ function Shell() {
             <Route path="/inventory/prices" element={<Protected><ClinicOnly><PriceRaise /></ClinicOnly></Protected>} />
             <Route path="/photos" element={<Protected><ClinicOnly><ProductPhotos /></ClinicOnly></Protected>} />
             <Route path="/photos/library" element={<Protected><ClinicOnly><ClinicLibrary /></ClinicOnly></Protected>} />
+            <Route path="/photos/match" element={<Protected><ClinicOnly><PhotoMatch /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}

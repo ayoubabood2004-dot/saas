@@ -53,6 +53,8 @@ import { daysToExpiry } from "@/lib/expiry";
 const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
 /* منتقي المكتبة كسولٌ بنطاقه (`libp`): لا يدفع وزنَه ولا نصوصَه إلا من يفتحه. */
 const ImageLibraryPicker = page(() => import("@/components/inventory/ImageLibraryPicker").then((m) => ({ default: m.ImageLibraryPicker })), ["libp"]);
+/* «لكينا صور بالمكتبة لمنتجاتك» (٢٥/١١) — كسولٌ بنطاقه (`pmbn`)، يفتح صفحةَ المطابقة. */
+const MatchBanner = page(() => import("@/components/photos/MatchBanner"), ["pmbn"]);
 
 type Tab = "orders" | "catalog" | "cats" | "settings";
 /** بطاقاتُ التشكيلة المرسومة دفعةً — والعدُّ والتصفيةُ على القائمة كلِّها. */
@@ -934,6 +936,7 @@ function CatalogTab({ products, reload, storeOn, filter, setFilter, canPrice = t
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}><MatchBanner className="" /></Suspense>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
