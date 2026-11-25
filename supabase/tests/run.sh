@@ -12118,7 +12118,10 @@ $P -c "set client_min_messages = warning; insert into voice_pilot(clinic_id) val
 
 # ── ١٤) حذفُ الحيوان لا يأخذ تسجيلاته ──
 chk "حذفُ الحيوان: تسجيلُ يومٍ لـ«ميشو»" "select $(add $E1 "$(_vj ${VV}17 $A3 $B4 day "current_date")")" "${VV}17"
-chk "  والاستقبالُ يحذف الحيوان (ثغرةُ اليوم: أيُّ كادرٍ يحذف حيواناً — مهمّةٌ منفصلة)" "select $(rt $E3 "delete from pets where id = '$A3'")" "rows:1"
+# كانت «والاستقبالُ يحذف الحيوان (ثغرةُ اليوم: أيُّ كادرٍ يحذف حيواناً — مهمّةٌ منفصلة)» ⇒ rows:1 — والمهمّةُ هي 0292: الحذفُ لصاحب
+# «حذف الحيوانات» وحده. فالاستقبالُ يُرفض بصوت، والمديرُ يحذف — والقسمُ يفحص ما بعده كما كان (التسجيلُ يعيش بعد حيوانه).
+chk "  والاستقبالُ يحذف الحيوان؟ لا — يُرفض بصوت (0292)" "select $(rt $E3 "delete from pets where id = '$A3'")" "guarded:42501:pet_delete_forbidden"
+chk "  والمديرُ يحذفه" "select $(rt $E4 "delete from pets where id = '$A3'")" "rows:1"
 chk "  (بجملةٍ ثانية: التسجيلُ باقٍ بيومه واسمِ حيوانه، وملفُّه ليس حرّاً، والزيارةُ ذهبت مع حيوانها)" \
     "select (select count(*) from visit_voice_notes where pet_id = '$A3' and kind = 'day' and day is not null and pet_name = 'ميشو')::text||'|'||$(rv $E1 "select voice_object_free('$C1/$A3/${VV}17.m4a')::text")||'|'||(select count(*) from clinic_visits where id = '$B4')::text" "1|false|0"
 chk "  والمديرُ يجده بتسجيلات الحيوانات المحذوفة (voice_orphans) — وعيادةٌ أخرى لا" \
