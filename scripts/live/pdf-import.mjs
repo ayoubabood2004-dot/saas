@@ -108,6 +108,14 @@ check("الرأسُ والسعرُ ليسا بأيّ اسم", names.every((n) =>
 await page.waitForFunction(() => document.querySelectorAll("[data-libpdf-item] img").length === 6 && [...document.querySelectorAll("[data-libpdf-item] img")].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 60000 }).catch(() => {});
 check("المصغّراتُ الستّ ظهرت", await page.locator("[data-libpdf-item] img").evaluateAll((els) => els.filter((i) => i.complete && i.naturalWidth > 0).length) === 6);
 
+if (process.env.SHOTS) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator("[data-libpdf-company]").fill("Pet Line");
+  await page.locator("[data-libpdf-kind]").fill("قطط");
+  await page.locator("[data-libpdf]").scrollIntoViewIfNeeded();
+  await page.locator("[data-libpdf]").screenshot({ path: `${process.env.SHOTS}/pdf-import-review.png` });
+}
+
 console.log("▸ ٢) المراجعة والرفع");
 await page.locator("[data-libpdf-company]").fill("Pet Line");
 await page.locator("[data-libpdf-kind]").fill("قطط");
