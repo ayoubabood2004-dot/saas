@@ -1203,7 +1203,7 @@ const demoRepo = {
   },
 
   async deletePet(petId: string, reason?: string | null): Promise<void> {
-    // 0290: طيٌّ لا محو، ولمن عنده «حذف الحيوانات» — المرآةُ كسولة (demoPetTrash.ts) بحرّاس الخادم نفسِها.
+    // 0291: طيٌّ لا محو، ولمن عنده «حذف الحيوانات» — المرآةُ كسولة (demoPetTrash.ts) بحرّاس الخادم نفسِها.
     await (await loadDemoPetTrash()).demoDeletePet(petId, reason);
   },
 
@@ -5633,7 +5633,7 @@ export const loadDemoConsumption = () => import("./demoConsumption");
 export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
-/** مرآةُ حذف الحيوان ومحذوفاته (0290) — كسولةٌ: deletePet هنا، والمعاينةُ والقائمةُ والاسترجاعُ من petTrashApi. */
+/** مرآةُ حذف الحيوان ومحذوفاته (0291) — كسولةٌ: deletePet هنا، والمعاينةُ والقائمةُ والاسترجاعُ من petTrashApi. */
 export const loadDemoPetTrash = () => import("./demoPetTrash");
 export const loadDemoUsd = () => import("./demoUsd");
 export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");

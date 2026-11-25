@@ -1911,7 +1911,7 @@ export interface OldDebtReturn {
 }
 
 /**
- * حيوانٌ بالمحذوفات (0290): ملخّصُه لقائمة «الحيوانات المحذوفة» — صورتُه الكاملة (صفُّه وكلُّ ما تسلسل معه) بالخادم
+ * حيوانٌ بالمحذوفات (0291): ملخّصُه لقائمة «الحيوانات المحذوفة» — صورتُه الكاملة (صفُّه وكلُّ ما تسلسل معه) بالخادم
  * وحده، ويرجع منها بنفس المعرّفات. `counts` بأسماء الجداول (clinic_visits، vaccinations، …) كما يعدّها الخادم.
  */
 export interface DeletedPet {
@@ -1928,7 +1928,7 @@ export interface DeletedPet {
   deleted_by_name: string | null;
   deleted_at: string;
 }
-/** ما سيُرفع مع الحيوان لو حُذف الآن (pet_delete_preview، 0290) — النافذةُ تقوله بالاسم قبل التأكيد. */
+/** ما سيُرفع مع الحيوان لو حُذف الآن (pet_delete_preview، 0291) — النافذةُ تقوله بالاسم قبل التأكيد. */
 export interface PetDeletePreview {
   id: string;
   name: string | null;
@@ -1952,7 +1952,7 @@ export interface DemoPetTrash extends DeletedPet {
 
 export interface DemoDB {
   pets: Pet[];
-  /** 0290: الحيواناتُ المحذوفة بصورتها. */
+  /** 0291: الحيواناتُ المحذوفة بصورتها. */
   petsTrash?: DemoPetTrash[];
   weightLogs: WeightLog[];
   vaccinations: Vaccination[];
