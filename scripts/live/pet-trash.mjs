@@ -101,8 +101,9 @@ console.log("▸ ١) المدير: النافذةُ تسمّي ما يُرفع،
     d.pets.find((p) => p.id === "pt1")?.serial === "11111" && d.vaccinations.filter((v) => v.pet_id === "pt1").map((v) => v.id).sort().join() === "v1,v2"
     && d.visits.some((v) => v.id === "mv1") && d.weightLogs.some((w) => w.id === "w1") && (d.petsTrash ?? []).length === 0);
   await page.getByRole("button", { name: "إغلاق" }).last().click().catch(() => {});
-  await page.waitForTimeout(400);
-  check("  وظهر بالقائمة من جديد", (await page.locator('button[title="حذف الحيوان"]').count()) === 2);
+  // بانتظار الشرط لا بمهلةٍ ثابتة: إعادةُ الجلب على خادم تطويرٍ بارد أبطأ من ٤٠٠ م.ث (سقط مرّةً من خمسٍ بأوّل تشغيلٍ بعد دمج).
+  const back = await page.waitForFunction(() => document.querySelectorAll('button[title="حذف الحيوان"]').length === 2, null, { timeout: 10000 }).then(() => true, () => false);
+  check("  وظهر بالقائمة من جديد", back);
   await shot(page, "4-restored");
   await ctx.close();
 }
