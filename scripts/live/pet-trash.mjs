@@ -66,7 +66,8 @@ console.log("▸ ١) المدير: النافذةُ تسمّي ما يُرفع،
   const row = page.locator('button[title="حذف الحيوان"]');
   await row.first().waitFor({ timeout: 30000 });
   check("زرُّ الحذف ظاهرٌ للمدير (لكلّ حيوان)", (await row.count()) === 2, String(await row.count()));
-  check("  و«الحيوانات المحذوفة» ظاهرة", await page.locator("[data-pettrash-open]").isVisible());
+  // القطعةُ كسولة (نطاقُ ptr): تظهر بعد الصفوف بلحظة — بانتظارها لا بلحظة رسم الصفوف (خادمُ تطويرٍ بارد).
+  check("  و«الحيوانات المحذوفة» ظاهرة", await page.locator("[data-pettrash-open]").waitFor({ timeout: 15000 }).then(() => true, () => false));
   await shot(page, "1-records-owner");
   // صفُّ بوبي أوّلُ الصفوف (القائمةُ بالمربّي، وأبو علي أوّلاً).
   await row.first().click();
