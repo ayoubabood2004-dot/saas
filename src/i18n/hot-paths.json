@@ -91,10 +91,13 @@
     "pfx": "src/components/inventory/PurchaseFx.tsx",
     "pgrp": "src/components/inventory/ProductGroups.tsx",
     "mxp": "src/components/retail/UsdPay.tsx",
-    "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx", "src/components/admin/LibraryReplace.tsx"] },
+    "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx", "src/components/admin/LibraryReplace.tsx", "src/components/admin/LibraryPdfImport.tsx"] },
     "libp": "src/components/inventory/ImageLibraryPicker.tsx",
     "psum": "src/components/summary/PetSummary.tsx",
     "csht": { "owner": "src/components/summary/CaseSheetDialog.tsx", "with": ["src/lib/caseSheetCompose.ts"] },
-    "xret": "src/components/retail/ExpiredReturn.tsx"
+    "ptr": "src/components/records/PetTrash.tsx",
+    "xret": "src/components/retail/ExpiredReturn.tsx",
+    "pmatch": "src/pages/PhotoMatch.tsx",
+    "pmbn": "src/components/photos/MatchBanner.tsx"
   }
 }

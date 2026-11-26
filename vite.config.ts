@@ -140,7 +140,7 @@ export default defineConfig({
         // حجم التطبيق على موبايل ببيانات محدودة.
         // والموقعُ يُبنى بعد التطبيق فلا يراه هذا المسح أصلاً؛ الاستثناءُ حارسٌ لبناءٍ يُعاد فوق dist قديم.
         // ومكتباتُ PDF الجرد (~٧٧٠ كيلو: jspdf وhtml2canvas وcanvg وDOMPurify) كذلك — زرٌّ يُضغط نادراً لا يُنزَّل لكلّ جهازٍ بكلّ نشر.
-        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js", "**/jspdf.es.min-*.js", "**/html2canvas.esm-*.js", "**/purify.es-*.js", "**/pdf-canvg-*.js", "site.html", "site-assets/**", "site-manifest.json", "*/index.html", "*/*/index.html", "*/*/*/index.html", "sitemap.xml"],
+        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js", "**/jspdf.es.min-*.js", "**/html2canvas.esm-*.js", "**/purify.es-*.js", "**/pdf-canvg-*.js", "**/pdf-*.js", "**/pdf.worker.min-*.js", "site.html", "site-assets/**", "site-manifest.json", "*/index.html", "*/*/index.html", "*/*/*/index.html", "sitemap.xml"],
         runtimeCaching: [
           {
             // Cache Supabase storage objects (patient photos) only. Bounded by a

@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0291_company_old_debts.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0292_pets_trash.sql $MIG/0291_company_old_debts.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -10288,9 +10288,14 @@ $P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$RCP', '
 chk "  ومفتاحُ المدير الحيّ (PIN) يفتحه للاستقبال" "select _rls_try('$RCP', 'delete from vaccinations where id = ''a2570c00-0000-4000-8000-0000000000b3''')" "rows:1"
 $P -c "update staff_elevations set until = now() - interval '1 minute' where user_id = '$RCP';" >/dev/null
 chk "  والمفتاحُ المنتهي لا يفتحه" "select _rls_try('$RCP', 'delete from vaccinations where id = ''a2570c00-0000-4000-8000-0000000000b2''')" "rows:0"
-chk "وحذفُ الحيوان بيد الطبيب يمرّ كما كان" "select _rls_try('$VET', 'delete from pets where id = ''$VXB''')" "rows:1"
+# كان هنا «حذفُ الحيوان بيد الطبيب يمرّ كما كان» — وهذا ما أغلقته 0292: حذفُ الحيوان لمن عنده «حذف الحيوانات» (المديرُ
+# أو منحٌ صريح). فالفحصُ يُحدَّث بسببه: الطبيبُ بلا منحٍ يُرفض بصوت، وبمنحٍ يحذف ويتسلسل الحذفُ رغم سياسة اللقاح المقيِّدة.
+chk "وحذفُ الحيوان بيد الطبيب بلا منح يُرفض بصوت (0292)" "select left(_rls_try('$VET', 'delete from pets where id = ''$VXB'''), 13)" "guarded:42501"
+$P -c "update staff set permissions = coalesce(permissions, '{}'::jsonb) || '{\"deletePets\": true}' where user_id = '$VET' and clinic_id = '$C1';" >/dev/null
+chk "  وبمنحِ «حذف الحيوانات» يحذف" "select _rls_try('$VET', 'delete from pets where id = ''$VXB''')" "rows:1"
+$P -c "update staff set permissions = permissions - 'deletePets' where user_id = '$VET' and clinic_id = '$C1';" >/dev/null
 chk "  ويحذف لقاحاتِه (المفتاحُ الأجنبيّ لا يمرّ من RLS)" "select count(*)::text from vaccinations where pet_id = '$VXB'" "0"
-$P -c "$VXR delete from pets where id = '$VXA';" >/dev/null
+$P -c "$VXR delete from pets where id = '$VXA'; delete from pets_trash where id in ('$VXA', '$VXB');" >/dev/null
 chk "  والسياجُ ما زال كاملاً بعدها" "select coalesce(string_agg(t, ','), '') from verify_photographer_fence() t" ""
 
 echo "▸ 0258: خاناتُ الطبيب بشاشة البيع — لصاحبها وحده، وشكلُها يحرسه القيد"
@@ -12113,7 +12118,10 @@ $P -c "set client_min_messages = warning; insert into voice_pilot(clinic_id) val
 
 # ── ١٤) حذفُ الحيوان لا يأخذ تسجيلاته ──
 chk "حذفُ الحيوان: تسجيلُ يومٍ لـ«ميشو»" "select $(add $E1 "$(_vj ${VV}17 $A3 $B4 day "current_date")")" "${VV}17"
-chk "  والاستقبالُ يحذف الحيوان (ثغرةُ اليوم: أيُّ كادرٍ يحذف حيواناً — مهمّةٌ منفصلة)" "select $(rt $E3 "delete from pets where id = '$A3'")" "rows:1"
+# كانت «والاستقبالُ يحذف الحيوان (ثغرةُ اليوم: أيُّ كادرٍ يحذف حيواناً — مهمّةٌ منفصلة)» ⇒ rows:1 — والمهمّةُ هي 0292: الحذفُ لصاحب
+# «حذف الحيوانات» وحده. فالاستقبالُ يُرفض بصوت، والمديرُ يحذف — والقسمُ يفحص ما بعده كما كان (التسجيلُ يعيش بعد حيوانه).
+chk "  والاستقبالُ يحذف الحيوان؟ لا — يُرفض بصوت (0292)" "select $(rt $E3 "delete from pets where id = '$A3'")" "guarded:42501:pet_delete_forbidden"
+chk "  والمديرُ يحذفه" "select $(rt $E4 "delete from pets where id = '$A3'")" "rows:1"
 chk "  (بجملةٍ ثانية: التسجيلُ باقٍ بيومه واسمِ حيوانه، وملفُّه ليس حرّاً، والزيارةُ ذهبت مع حيوانها)" \
     "select (select count(*) from visit_voice_notes where pet_id = '$A3' and kind = 'day' and day is not null and pet_name = 'ميشو')::text||'|'||$(rv $E1 "select voice_object_free('$C1/$A3/${VV}17.m4a')::text")||'|'||(select count(*) from clinic_visits where id = '$B4')::text" "1|false|0"
 chk "  والمديرُ يجده بتسجيلات الحيوانات المحذوفة (voice_orphans) — وعيادةٌ أخرى لا" \
@@ -12136,6 +12144,180 @@ chk "  والصلاحيات: الداخلون يقرؤون ولا يكتبون �
             ||'|'||has_table_privilege('anon', 'public.visit_voice_notes', 'select')::text" "true|false|false|false|false|false|false"
 # كلُّ العيادات كما بذرتها الهجرة (قرارُ المالك) — ما بعد التراجع يسجّل بها.
 $P -c "delete from voice_pilot; insert into voice_pilot(clinic_id) values ('$ZC');" >/dev/null
+# ── 0292: قبل تراجع 0222 (staff_can والسياج يُفحصان وهما موجودان؛ وبعده قسمٌ قصير بآخر الحزمة) ──────────────
+echo "▸ 0292: حذفُ الحيوان لمن عنده «حذف الحيوانات»، وكلُّ ما تسلسل معه يُصوَّر ويرجع بنفس المعرّفات"
+C2=22222222-2222-2222-2222-222222222222
+VET=55555555-5555-5555-5555-555555555555
+RCP=77777777-7777-7777-7777-777777777777
+PT=a2920000-0000-4000-8000-0000000000
+# القالبُ بشكل الإنتاج: مفتاحا الزيارة الطبية والرحلة `cascade` (0001/0098 — القالبُ كان يمنع الحذفَ بهما)، والمواعيدُ
+# والتذكيراتُ بحيوانها وبلا مفتاح العيادة القديم (0002/0014)، والجداولُ التي تتسلسل من الحيوان بالإنتاج ولا يعرفها القالب
+# تُنشأ بمفاتيحها الحقيقية (0023/0037/0086/0090/0091/0098) — وتُرفع بآخر القسم فلا تلمس ما بعده.
+T292_NEW=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select coalesce(string_agg(t, ' '), '') from unnest(array['pet_notes','lab_results','pet_problems','care_entries','journey_events','wa_messages']) t where to_regclass('public.' || t) is null")
+$P -c "alter table medical_visits drop constraint if exists medical_visits_pet_id_fkey;
+       alter table medical_visits add constraint medical_visits_pet_id_fkey foreign key (pet_id) references pets(id) on delete cascade;
+       alter table journeys drop constraint if exists journeys_pet_id_fkey;
+       alter table journeys add constraint journeys_pet_id_fkey foreign key (pet_id) references pets(id) on delete cascade;
+       alter table appointments drop constraint if exists appointments_clinic_id_fkey;
+       alter table reminders drop constraint if exists reminders_clinic_id_fkey;
+       alter table appointments add column if not exists pet_id uuid references pets(id) on delete cascade;
+       alter table reminders add column if not exists pet_id uuid references pets(id) on delete cascade;
+       create table if not exists pet_notes (id uuid primary key default gen_random_uuid(), pet_id uuid not null references pets(id) on delete cascade,
+         clinic_id uuid default auth_clinic(), text text, visit_id uuid references clinic_visits(id) on delete set null, created_at timestamptz not null default now());
+       create table if not exists lab_results (id uuid primary key default gen_random_uuid(), pet_id uuid not null references pets(id) on delete cascade, clinic_id uuid, test text);
+       create table if not exists pet_problems (id uuid primary key default gen_random_uuid(), pet_id uuid not null references pets(id) on delete cascade, clinic_id uuid, title text);
+       create table if not exists care_entries (id uuid primary key default gen_random_uuid(), pet_id uuid not null references pets(id) on delete cascade, clinic_id uuid, kind text);
+       create table if not exists journey_events (id uuid primary key default gen_random_uuid(), journey_id uuid not null references journeys(id) on delete cascade, event text);
+       create table if not exists wa_messages (id uuid primary key default gen_random_uuid(), clinic_id uuid, pet_id uuid references pets(id) on delete set null, body text);" >/dev/null
+# بدور `authenticated` فعلاً (الحارسُ invoker يسأل current_user): يرجع الناتج، أو الرمزَ والرسالة.
+$P -c "create or replace function _as292(who uuid, q text) returns text language plpgsql as \$fn\$
+         declare r text; n int; begin
+           perform set_config('request.jwt.claim.sub', who::text, true);
+           set local role authenticated;
+           if q ~* '^\\s*select' then execute q into r; else execute q; get diagnostics n = row_count; r := 'rows:' || n; end if;
+           reset role; return r;
+         exception when others then return 'err:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       delete from pets_trash where id::text like 'a2920000%';
+       delete from staff_elevations where user_id in ('$VET', '$RCP');
+       update staff set permissions = coalesce(permissions, '{}'::jsonb) - 'deletePets' where user_id in ('$VET', '$RCP');
+       insert into pets(id, name, clinic_id, owner_name, owner_phone, species, passport_token) values
+         ('${PT}01', 'بوبي ٢٩٢', '$C1', 'علي ٢٩٢', '07700292000', 'dog', 'PET-T292A'),
+         ('${PT}02', 'جاره ٢٩٢', '$C1', 'علي ٢٩٢', '07700292000', 'cat', 'PET-T292B') on conflict (id) do nothing;
+       insert into clinic_visits(id, pet_id, clinic_id) values ('${PT}11', '${PT}01', '$C1'), ('${PT}12', '${PT}02', '$C1') on conflict (id) do nothing;
+       insert into medical_visits(id, pet_id, clinic_id) values ('${PT}13', '${PT}01', '$C1') on conflict (id) do nothing;
+       insert into admissions(id, pet_id, clinic_id) values ('${PT}14', '${PT}01', '$C1') on conflict (id) do nothing;
+       insert into appointments(id, pet_id, clinic_id) values ('${PT}15', '${PT}01', '$C1') on conflict (id) do nothing;
+       insert into reminders(id, pet_id, clinic_id) values ('${PT}16', '${PT}01', '$C1') on conflict (id) do nothing;
+       insert into weight_logs(id, pet_id, weight_kg, clinic_id) values ('${PT}17', '${PT}01', 4.5, '$C1') on conflict (id) do nothing;
+       insert into vaccinations(id, pet_id, name, clinic_id) values ('${PT}18', '${PT}01', 'Rabies', '$C1') on conflict (id) do nothing;
+       insert into media_items(id, pet_id, url, clinic_id) values ('${PT}19', '${PT}01', '$C1/x292.jpg', '$C1') on conflict (id) do nothing;
+       insert into clinic_drugs(id, clinic_id, name) values ('${PT}20', '$C1', 'دواء ٢٩٢') on conflict (id) do nothing;
+       insert into treatment_entries(id, pet_id, medication, time, amount, clinic_id, administered_at, visit_id) values
+         ('${PT}21', '${PT}01', 'دواء ٢٩٢', '08:00', '1', '$C1', now() - interval '1 day', '${PT}11'),
+         ('${PT}22', '${PT}01', 'دواء ٢٩٢', '20:00', '1', '$C1', now() - interval '1 day', '${PT}11') on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, name, price, given_at, status) values
+         ('${PT}23', '$C1', '${PT}21', '${PT}01', 'دواء ٢٩٢', 500, now() - interval '1 day', 'pending') on conflict (id) do nothing;
+       update clinic_drugs set dose_price = 750 where id = '${PT}20';
+       insert into pet_notes(id, pet_id, clinic_id, text, visit_id) values
+         ('${PT}24', '${PT}01', '$C1', 'ملاحظة', '${PT}11'), ('${PT}25', '${PT}02', '$C1', 'ملاحظةُ الجار على زيارة بوبي', '${PT}11') on conflict (id) do nothing;
+       insert into lab_results(id, pet_id, clinic_id, test) values ('${PT}26', '${PT}01', '$C1', 'CBC') on conflict (id) do nothing;
+       insert into pet_problems(id, pet_id, clinic_id, title) values ('${PT}27', '${PT}01', '$C1', 'جلد') on conflict (id) do nothing;
+       insert into care_entries(id, pet_id, clinic_id, kind) values ('${PT}28', '${PT}01', '$C1', 'feed') on conflict (id) do nothing;
+       insert into journeys(id, pet_id, clinic_id, status) values ('${PT}29', '${PT}01', '$C1', 'active') on conflict (id) do nothing;
+       insert into journey_events(id, journey_id, event) values ('${PT}30', '${PT}29', 'arrived') on conflict (id) do nothing;
+       insert into pet_prescriptions(id, pet_id, clinic_id, body) values ('${PT}31', '${PT}01', '$C1', 'أموكسي') on conflict (id) do nothing;
+       insert into pet_case_reports(id, pet_id, clinic_id, title, sheet) values ('${PT}32', '${PT}01', '$C1', 'تقرير', '{\"v\":1}') on conflict (id) do nothing;
+       insert into wa_messages(id, clinic_id, pet_id, body) values ('${PT}33', '$C1', '${PT}01', 'تذكير') on conflict (id) do nothing;" >/dev/null
+# بصمةُ كلّ ما يخصّ بوبي: صفوفُه بمعرّفاتها، ورقمُه ورمزُ جوازه، وما يشير إليه بلا مفتاح (معلَّقُ الجرعة، الحركات).
+FP292="select concat_ws('|',
+  (select serial || ':' || passport_token from pets where id = '${PT}01'),
+  (select count(*) from clinic_visits where id = '${PT}11'), (select count(*) from medical_visits where id = '${PT}13'),
+  (select count(*) from admissions where id = '${PT}14'), (select count(*) from appointments where id = '${PT}15'),
+  (select count(*) from reminders where id = '${PT}16'), (select count(*) from weight_logs where id = '${PT}17'),
+  (select count(*) from vaccinations where id = '${PT}18'), (select count(*) from media_items where id = '${PT}19'),
+  (select count(*) from treatment_entries where id in ('${PT}21', '${PT}22') and bill), (select visit_id::text from pet_notes where id = '${PT}24'),
+  (select coalesce(visit_id::text, 'null') from pet_notes where id = '${PT}25'), (select count(*) from lab_results where id = '${PT}26'),
+  (select count(*) from pet_problems where id = '${PT}27'), (select count(*) from care_entries where id = '${PT}28'),
+  (select count(*) from journey_events where id = '${PT}30' and journey_id = '${PT}29'),
+  (select count(*) from pet_prescriptions where id = '${PT}31'), (select count(*) from pet_case_reports where id = '${PT}32'),
+  (select coalesce(pet_id::text, 'null') from wa_messages where id = '${PT}33'),
+  (select count(*) || ':' || string_agg(id::text, ',') from dose_charges where pet_id = '${PT}01'),
+  (select count(*) from pet_movements where pet_id = '${PT}01'))"
+FP292_BEFORE=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "$FP292")
+chk "0292: القائمةُ تغطّي كلَّ ما يتسلسل من الحيوان بالكتالوج (verify_pets_trash فارغة على قالبٍ بشكل الإنتاج)" \
+    "select coalesce(string_agg(x, ','), '') from verify_pets_trash() x" ""
+chk "  والصورةُ قبل الحذف كاملة (كلُّ صفٍّ موجود، ومعلَّقٌ واحد، وحركةٌ واحدة)" \
+    "select (($FP292) like '%|${PT}11|${PT}11|1|1|1|1|1|1|${PT}01|1:${PT}23|1')::text" "true"
+chk "الاستقبالُ يحذف مباشرةً من PostgREST (نسخةٌ قديمة): يُرفض بصوت لا بصفر صفوف" \
+    "select _as292('$RCP', 'delete from pets where id = ''${PT}01''')" "err:42501:pet_delete_forbidden"
+chk "  وبالدالّة كذلك" "select _as292('$RCP', 'select delete_pet(''${PT}01'')::text')" "err:42501:pet_delete_forbidden"
+chk "  والطبيبُ بلا منح كذلك" "select _as292('$VET', 'select delete_pet(''${PT}01'')::text')" "err:42501:pet_delete_forbidden"
+chk "  والحيوانُ باقٍ بكلّ صفوفه" "$FP292" "$(echo "$FP292_BEFORE" | tr -d '[:space:]')"
+chk "المعاينةُ تعدّ ما سيُرفع جدولاً جدولاً — وتقول للاستقبال إنه ما يقدر" \
+    "select _as292('$RCP', 'select (p->''counts'')::text || ''|'' || (p->>''allowed'') || ''|'' || (p->>''pending_charges'') || ''|'' || (p->>''active_admission'') from pet_delete_preview(''${PT}01'') p')" \
+    '{"journeys":1,"pet_notes":1,"reminders":1,"admissions":1,"lab_results":1,"media_items":1,"weight_logs":1,"appointments":1,"care_entries":1,"pet_problems":1,"vaccinations":1,"clinic_visits":1,"journey_events":1,"medical_visits":1,"pet_case_reports":1,"pet_prescriptions":1,"treatment_entries":2}|false|1|true'
+chk "  وللمدير: يقدر" "select _as292('$C1', 'select p->>''allowed'' from pet_delete_preview(''${PT}01'') p')" "true"
+chk "عيادةٌ أخرى لا تعاين ولا تحذف حيوانَ غيرها" \
+    "select _as292('$C2', 'select pet_delete_preview(''${PT}01'')::text') || '|' || _as292('$C2', 'select delete_pet(''${PT}01'')::text')" \
+    "err:P0002:pet_not_found|err:P0002:pet_not_found"
+chk "المديرُ يحذف بسبب: الجوابُ يعدّ ما رُفع" \
+    "select _as292('$C1', 'select (delete_pet(''${PT}01'', ''  مسجَّل مرّتين  '')->''counts''->>''treatment_entries'')')" "2"
+chk "  والحيوانُ وصفوفُه راحت (والجارُ باقٍ، وملاحظتُه على زيارة بوبي فرغت، ورسالتُه فرغت — set null)" \
+    "select (select count(*) from pets where id = '${PT}01') || '|' || (select count(*) from treatment_entries where pet_id = '${PT}01') || '|' || (select count(*) from journey_events where id = '${PT}30') || '|' || (select count(*) from pets where id = '${PT}02') || '|' || (select coalesce(visit_id::text, 'null') from pet_notes where id = '${PT}25') || '|' || (select coalesce(pet_id::text, 'null') from wa_messages where id = '${PT}33')" \
+    "0|0|0|1|null|null"
+chk "  والسلّةُ تحمل الصورةَ والسببَ ومَن حذف، وما يُعاد ربطُه" \
+    "select pet_name || '|' || owner_name || '|' || reason || '|' || deleted_by || '|' || (counts->>'pet_notes') || '|' || jsonb_array_length(children->'treatment_entries') || '|' || (select string_agg(r->>'tbl' || '.' || (r->>'col'), ',' order by r->>'tbl') from jsonb_array_elements(relinks) r) from pets_trash where id = '${PT}01'" \
+    "بوبي٢٩٢|علي٢٩٢|مسجَّلمرّتين|$C1|1|2|pet_notes.visit_id,wa_messages.pet_id"
+chk "  ومعلَّقُ الجرعة باقٍ (بلا مفتاح) — ينتظر رجوعَ حيوانه" "select count(*)::text from dose_charges where id = '${PT}23'" "1"
+chk "السلّةُ تُقرأ لعيادتها (الاستقبالُ يرى)، لا لعيادةٍ أخرى ولا للمصوّر" \
+    "select _as292('$RCP', 'select count(*)::text from pets_trash where id = ''${PT}01''') || '|' || _as292('$C2', 'select count(*)::text from pets_trash where id = ''${PT}01''') || '|' || _as292('$PHO', 'select count(*)::text from pets_trash where id = ''${PT}01''')" \
+    "1|0|0"
+chk "الاستقبالُ لا يسترجع" "select _as292('$RCP', 'select restore_pet(''${PT}01'')::text')" "err:42501:pet_restore_forbidden"
+chk "  ولا عيادةٌ أخرى" "select _as292('$C2', 'select restore_pet(''${PT}01'')::text')" "err:P0002:pet_not_in_trash"
+chk "المديرُ يسترجع" "select _as292('$C1', 'select restore_pet(''${PT}01'')->>''name''')" "بوبي٢٩٢"
+chk "  وكلُّ شيءٍ رجع بنفس المعرّفات: الرقمُ والجواز، والصفوف، والملاحظةُ والرسالةُ مربوطتان، ومعلَّقٌ واحد (لا معلَّقَ جديد لجرعةٍ تسعّر دواؤها بعدها)، ولا «دخل» جديد" \
+    "$FP292" "$(echo "$FP292_BEFORE" | tr -d '[:space:]')"
+chk "  والسلّةُ فرغت" "select count(*)::text from pets_trash where id = '${PT}01'" "0"
+chk "  والاسترجاعُ مرّةً ثانية: «مو بالمحذوفات»" "select _as292('$C1', 'select restore_pet(''${PT}01'')::text')" "err:P0002:pet_not_in_trash"
+# القراءةُ بعد الكتابة بجملةٍ ثانية (درسُ 0257): الاستعلامُ الفرعيّ بجملة الكتابة نفسِها يُحسب قبلها.
+chk "حذفٌ مباشر من نسخةٍ قديمة بيد المدير يمرّ" "select _as292('$C1', 'delete from pets where id = ''${PT}01''')" "rows:1"
+chk "  ويُصوَّر أيضاً (المحفّز، لا الدالّة)" \
+    "select count(*) || '|' || max(counts->>'vaccinations') from pets_trash where id = '${PT}01'" "1|1"
+# ما تغيّر أثناء الغياب: زيارةُ الجار (التي تشير إليها ملاحظةُ بوبي) حُذفت، ورقمُ بوبي أخذه حيوانٌ آخر.
+$P -c "update pets_trash set children = jsonb_set(children, '{pet_notes,0,visit_id}', to_jsonb('${PT}12'::text)) where id = '${PT}01';
+       delete from clinic_visits where id = '${PT}12';
+       update pets set serial = (select serial from pets_trash where id = '${PT}01') where id = '${PT}02';" >/dev/null
+chk "  والاسترجاعُ بعد تغيّر الدنيا لا يُرفض" "select _as292('$C1', 'select restore_pet(''${PT}01'')->>''id''')" "${PT}01"
+chk "    مفتاحُ set null غاب هدفُه يفرغ، والرقمُ المأخوذ يُولَّد جديداً" \
+    "select (select coalesce(visit_id::text, 'null') from pet_notes where id = '${PT}24') || '|' || ((select serial from pets where id = '${PT}01') <> (select serial from pets where id = '${PT}02'))::text" \
+    "null|true"
+$P -c "update staff set permissions = coalesce(permissions, '{}'::jsonb) || '{\"deletePets\": true}' where user_id = '$VET' and clinic_id = '$C1';" >/dev/null
+chk "منحُ المدير «حذف الحيوانات» لطبيبٍ يفتحها له: يحذف ويسترجع" \
+    "select _as292('$VET', 'select delete_pet(''${PT}01'')->>''id''') || '|' || _as292('$VET', 'select restore_pet(''${PT}01'')->>''id''')" "${PT}01|${PT}01"
+$P -c "update staff set permissions = permissions - 'deletePets' where user_id = '$VET' and clinic_id = '$C1';
+       insert into staff_elevations(user_id, clinic_id, until) values ('$RCP', '$C1', now() + interval '10 minutes');" >/dev/null
+chk "  ومفتاحُ المدير الحيّ (PIN) يفتحها للاستقبال" \
+    "select _as292('$RCP', 'select delete_pet(''${PT}01'')->>''id''') || '|' || _as292('$RCP', 'select restore_pet(''${PT}01'')->>''id''')" "${PT}01|${PT}01"
+$P -c "delete from staff_elevations where user_id = '$RCP';
+       create table _t292_new (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id) on delete cascade);" >/dev/null
+chk "جدولٌ جديدٌ يتسلسل من الحيوان ولا يُصوَّر: verify تسمّيه" \
+    "select count(*)::text from verify_pets_trash() x where x like '%_t292_new.pet_id%'" "1"
+chk "  والحذفُ يُرفض" "select _as292('$C1', 'select delete_pet(''${PT}01'')::text')" "err:P0001:pet_trash_uncovered"
+chk "  والحيوانُ باقٍ" "select count(*)::text from pets where id = '${PT}01'" "1"
+$P -c "drop table _t292_new;" >/dev/null
+# السياجُ تضعه 0292 نفسُها: أقسامٌ قبلنا تعيد 0222 فتسيّج كلَّ جدولٍ بسياسات (درسُ 0287) — يُسقط ثمّ تُعاد 0292 وحدها ويُعدّ.
+$P -c "do \$\$ declare p record; begin
+         for p in select policyname from pg_policies where schemaname = 'public' and tablename = 'pets_trash' and policyname like 'photographer_fence%' loop
+           execute format('drop policy %I on public.pets_trash', p.policyname);
+         end loop; end \$\$;" >/dev/null
+out=$($P -f "$MIG/0292_pets_trash.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0292 ما انعادت"; fail=1; }
+chk "0292 نفسُها تسيّج سلّتَها (أُسقط السياجُ وأُعيدت وحدها: سياجُ القراءة)" \
+    "select count(*)::text from pg_policies where schemaname='public' and tablename='pets_trash' and policyname like 'photographer_fence%'" "1"
+chk "  والسياجُ كاملٌ بعد 0292 (بلا ثغرة)" "select coalesce(string_agg(x, ','), '') from verify_photographer_fence() x" ""
+chk "  وإعادتُها بلا أثرٍ ثانٍ: محفّزان على الحيوان وسياستان على السلّة" \
+    "select (select count(*) from pg_trigger where tgrelid = 'public.pets'::regclass and tgname in ('pets_delete_guard', 'pets_trash_guard') and not tgisinternal) || '|' || (select count(*) from pg_policies where schemaname='public' and tablename='pets_trash')" "2|2"
+# بعد الإعادة (المنحُ الشامل لقسم 0159 أعاد كلَّ دالّة): ما تسحبه الهجرةُ هو حالُ الإنتاج.
+chk "الدوالُّ: الحذفُ والاسترجاعُ والمعاينةُ والصورةُ definer بمسار، والحارسُ invoker بمسار" \
+    "select string_agg(p.proname || ':' || p.prosecdef::text || ':' || (p.proconfig is not null)::text, ',' order by p.proname) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('delete_pet', 'restore_pet', 'pet_delete_preview', 'pets_trash_capture', 'pets_delete_guard')" \
+    "delete_pet:true:true,pet_delete_preview:true:true,pets_delete_guard:false:true,pets_trash_capture:true:true,restore_pet:true:true"
+chk "  وكلٌّ من الثلاث يسأل عيادةَ المنادي بالنصّ (clinic_id = v_clinic)" \
+    "select bool_and(prosrc like '%clinic_id = v_clinic%')::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('delete_pet', 'restore_pet', 'pet_delete_preview')" "true"
+chk "  والتنفيذ: anon لا شيء، والداخلُ الحذفَ والاسترجاعَ والمعاينةَ والإذن — لا الداخليّات" \
+    "select has_function_privilege('anon', 'public.delete_pet(uuid,text)', 'execute')::text || has_function_privilege('anon', 'public.restore_pet(uuid)', 'execute')::text || '|' ||
+            has_function_privilege('authenticated', 'public.delete_pet(uuid,text)', 'execute')::text || has_function_privilege('authenticated', 'public.restore_pet(uuid)', 'execute')::text ||
+            has_function_privilege('authenticated', 'public.pet_delete_preview(uuid)', 'execute')::text || has_function_privilege('authenticated', 'public.pet_delete_allowed()', 'execute')::text || '|' ||
+            has_function_privilege('authenticated', 'public._pets_trash_collect(uuid,boolean)', 'execute')::text || has_function_privilege('authenticated', 'public._pets_trash_insert(text,text,jsonb)', 'execute')::text ||
+            has_function_privilege('authenticated', 'public.verify_pets_trash()', 'execute')::text" \
+    "falsefalse|truetruetruetrue|falsefalsefalse"
+chk "  والسلّةُ قراءةٌ وحدها: لا أحدَ يكتبها مباشرةً (الكتابةُ من المحفّز والدالّتين)" \
+    "select left(_as292('$C1', 'delete from pets_trash where id = ''${PT}01'''), 9) || '|' || left(_as292('$C1', 'insert into pets_trash(id, clinic_id, row) values (gen_random_uuid(), ''$C1'', ''{}'')'), 9)" \
+    "err:42501|err:42501"
+chk "  وبعد سحب المنح الشامل: الاستقبالُ ما زال يُرفض والمديرُ يحذف ويسترجع" \
+    "select _as292('$RCP', 'delete from pets where id = ''${PT}01''') || '|' || _as292('$C1', 'select delete_pet(''${PT}01'')->>''id''') || '|' || _as292('$C1', 'select restore_pet(''${PT}01'')->>''id''')" \
+    "err:42501:pet_delete_forbidden|${PT}01|${PT}01"
+$P -c "delete from pets where id in ('${PT}01', '${PT}02'); delete from pets_trash where id::text like 'a2920000%';
+       delete from dose_charges where pet_id = '${PT}01'; delete from clinic_drugs where id = '${PT}20'; delete from pet_movements where pet_id = '${PT}01';" >/dev/null
+for t in $T292_NEW; do $P -c "drop table if exists public.$t;" >/dev/null; done
 echo "▸ rollback_0222: السياجُ يُرفع والمصوّرُ يُعلَّق لا يُحذف"
 $P -f "$HERE/rollback_0222.sql" >/dev/null
 chk "0256 بعد تراجع 0222: الأرباحُ والخسائرُ تقرأ للمدير بلا staff_can (لا «لا توجد دالّة»)" \
@@ -14711,6 +14893,22 @@ chk "  ونصٌّ غيرُه بلا علامتنا ⇒ تُرفض (drift_body) �
     "select '$G290'||'|'||(position('drift_body' in \$o\$$out\$o\$) > 0)::text||'|'||(select (prosrc like '%n_ok + 1 + 0%')::text from pg_proc where oid = to_regprocedure('public.stock_count_decide(uuid[],boolean)'))" "refused|true|true"
 $P -c "$D254" >/dev/null
 out=$($P -f "$MIG/0290_expired_lot_followups.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0290 ما رجعت بعد الحارس"; fail=1; }
+echo "▸ 0292 بعد تراجع 0222: بلا staff_can المديرُ وحده يحذف ويسترجع، والإعادةُ بلا دالّة السياج لا تفشل"
+PT=a2920000-0000-4000-8000-0000000000
+RCP=77777777-7777-7777-7777-777777777777
+out=$($P -f "$MIG/0292_pets_trash.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0292 ما انعادت بعد تراجع 0222"; fail=1; }
+$P -c "delete from staff_elevations where user_id = '$RCP';
+       insert into pets(id, name, clinic_id) values ('${PT}03', 'بعد التراجع ٢٩٢', '$C1') on conflict (id) do nothing;
+       insert into vaccinations(id, pet_id, name, clinic_id) values ('${PT}34', '${PT}03', 'Rabies', '$C1') on conflict (id) do nothing;" >/dev/null
+chk "0292 بعد تراجع 0222: staff_can غائبة، وسياسةُ القراءة وحدها على السلّة (السياجُ ذهب مع دالّته)" \
+    "select (to_regprocedure('public.staff_can(text)') is null)::text || '|' || (select count(*) from pg_policies where schemaname='public' and tablename='pets_trash')" "true|1"
+chk "  الاستقبالُ يُرفض" "select _as292('$RCP', 'select delete_pet(''${PT}03'')::text')" "err:42501:pet_delete_forbidden"
+chk "  والمديرُ يحذف" "select _as292('$C1', 'select delete_pet(''${PT}03'')->>''id''')" "${PT}03"
+chk "    واللقاحُ راح معه" "select count(*)::text from vaccinations where id = '${PT}34'" "0"
+chk "  ويسترجع" "select _as292('$C1', 'select restore_pet(''${PT}03'')->>''id''')" "${PT}03"
+chk "    واللقاحُ رجع" "select count(*)::text from vaccinations where id = '${PT}34'" "1"
+$P -c "delete from pets where id = '${PT}03'; delete from pets_trash where id::text like 'a2920000%';
+       drop function if exists _as292(uuid, text);" >/dev/null
 
 # ── 0291: ديونٌ قديمة كثيرة بدفتر الشركة — كلٌّ بتاريخه، بطلبٍ واحد ومرجعِ إعادة ────────────────────────────────
 # KC عيادةٌ وصاحبُها (مدير)، KV طبيبُها، KO عيادةٌ ثانية. الكتابةُ بطلبٍ والقراءةُ بآخر (اللقطة: درسُ 0257).

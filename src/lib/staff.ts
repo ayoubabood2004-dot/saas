@@ -51,7 +51,10 @@ export type Capability =
   | "addPets" | "viewCalendar" | "viewPayroll"
   // موظّفُ التصوير (0222، ووسّعه 0228): صورُ المنتجات، والمتجرُ وسعرُ البيع بلا طلباته. مرآتُهما بالخادم
   // `has_permission`/`staff_can` — والخادمُ يفرضهما بنفسه لا الواجهة.
-  | "manageProductPhotos" | "manageStore";
+  | "manageProductPhotos" | "manageStore"
+  // 0292: حذفُ الحيوان (يرجع من «المحذوفات») — للمدير وحده بالقالب، ويمنحه صراحةً لغيره. الخادمُ يسأل
+  // staff_can('deletePets') بنفسه، ولا يحتاج has_permission سطراً: لا قالبَ دورٍ يشمله.
+  | "deletePets";
 
 export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "viewCalendar", label: "عرض التقويم والمواعيد" },
@@ -69,6 +72,7 @@ export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "viewPayroll", label: "Staff payroll & advances" },
   { id: "manageProductPhotos", label: "Product photos" },
   { id: "manageStore", label: "Online store (products & storefront, no orders; sell price: manager & vet)" },
+  { id: "deletePets", label: "Delete pets (restorable from Deleted)" },
 ];
 
 export const PERMISSIONS: Record<StaffRole, Capability[]> = {
@@ -82,7 +86,7 @@ export const PERMISSIONS: Record<StaffRole, Capability[]> = {
 
 /** High-risk capabilities that trigger a confirmation when granted to non-managers. */
 export const SENSITIVE_CAPS: ReadonlySet<Capability> = new Set<Capability>([
-  "viewProfits", "deleteInvoices", "manageStaff", "manageSettings", "viewPayroll",
+  "viewProfits", "deleteInvoices", "manageStaff", "manageSettings", "viewPayroll", "deletePets",
 ]);
 
 /** The base-role preset as a full capability → boolean map. */

@@ -32,6 +32,7 @@ import { LEVELS, childrenOf, cleanLibName, cutAt, keyOfValue, nextLevel, under, 
 import { clinicLibraryReady, idsUnder, isLibraryColumnMissing, libraryPatch, rowsOf, type LibScope } from "@/lib/libraryScope";
 import { LibraryImport } from "./LibraryImport";
 import { LibraryReplace } from "./LibraryReplace";
+import { LibraryPdfImport } from "./LibraryPdfImport";
 import type { LibraryImage } from "@/types";
 
 const BLANK = { name: "", company: "", kind: "", agency: "", section: "", barcode: "" };
@@ -261,6 +262,8 @@ export function ImageLibraryManager({ scope = "public" }: { scope?: "public" | "
       {editable && rows !== null && (
         <>
           <LibraryImport library={view} onChanged={load} create={create} scope={scope} />
+          {/* كاتالوجُ PDF (٢٥/١١): الصورُ تُقصّ والأسماءُ تُقرأ من النصّ جنبها، وتُراجَع قبل الرفع. */}
+          <LibraryPdfImport library={view} onChanged={load} create={create} scope={scope} />
           {view.length > 0 && <LibraryReplace library={view} onChanged={load} />}
 
           <div className="card space-y-3 p-4">
