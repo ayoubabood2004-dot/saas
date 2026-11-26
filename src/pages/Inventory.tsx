@@ -10,7 +10,8 @@ import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
 import { PRICES_EVENT, priceGen, noteListGen, listGenOf } from "@/lib/priceSync";
 import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
 import { sellableRows } from "@/lib/sellable";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode, carriesCode } from "@/lib/productCodes";
+import { isoName, resolveTrash, liveTwinsOf } from "@/lib/trashMatch";
 import { stockCostPatch, updateAsSeen, type CasExpect } from "@/lib/productPatch";
 import { draftOf, packagingFromDraft, packagingPatch, firstTakenCode, levelMatcher, levelCodes, breakdown, packsOf, subCodesOf, type PackagingDraft, type PackagingProblem } from "@/lib/packs";
 import PackagingEditor from "@/components/inventory/PackagingEditor";
@@ -675,7 +676,7 @@ export function Inventory() {
             onFreshRow={patchRow} onRefresh={() => void wsRefresh()} onBusyChange={onWsBusy} />
         </>
       ) : view === "trash" ? (
-        <TrashTab onChanged={load} />
+        <TrashTab onChanged={load} products={products} />
       ) : view === "groups" && !locked ? (
         <LoadBoundary scope="pgrp" onRetry={() => { GroupsLazy = loadGroups(); setLazyTick((n) => n + 1); }}>
           <Suspense fallback={<div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>}>
@@ -1200,8 +1201,10 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
                   <div className="flex justify-center">
                     <LoadBoundary scope="trash-search" onRetry={() => { TrashSearchLazy = loadTrashSearch(); setTrashTick((n) => n + 1); }}>
                       <Suspense fallback={null}>
-                        <TrashSearchLazy key={trashTick} query={ql} products={products} canRestore={invRole === "manager" || invRole === "veterinarian"}
-                          onRestored={() => onChanged()} onPick={(p) => { playTap(); setQ(""); setEditing(p); }} />
+                        {/* وضعُ المدير المقفول (0154): القلمُ مخفيٌّ والتبويبُ مقفول — فلا «رجّعها» (يحرّك الرصيد) ولا زرُّ أصلٍ يفتح نموذجَ التعديل
+                            من هنا (مراجعةٌ عدائيّة ٢٦/١١: كان باباً خلفياً للتعديل على جهاز الاستقبال المقفول). */}
+                        <TrashSearchLazy key={trashTick} query={ql} products={products} canRestore={!locked && (invRole === "manager" || invRole === "veterinarian")}
+                          onRestored={() => onChanged()} onPick={locked ? undefined : (p) => { playTap(); setQ(""); setEditing(p); }} />
                       </Suspense>
                     </LoadBoundary>
                   </div>
@@ -3519,11 +3522,11 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
     return { shown: base.slice(0, MERGE_CAP), hiddenCount: Math.max(0, base.length - MERGE_CAP) };
   }, [candidates, suggested, q]);
 
+  /* الدمجُ كان بضغطة صفٍّ خلف `window.confirm` (G23) — النمطُ الممنوع بعد حادثة الحذف («يُقبل بلا قراءة») — ويقول «ما ينرجع»
+   * والمحذوفاتُ ترجعه. صار خطوةً ثانية بالنافذة نفسِها: الاسمان والرصيدُ بعده، وما يرجع بالفكّ وما لا يرجع. */
+  const [pick, setPick] = useState<Product | null>(null);
   const merge = async (keep: Product) => {
     if (busy) return;
-    if (!window.confirm(t("pos.mergeConfirm", "تدمج \"{{drop}}\" بـ\"{{keep}}\"؟ الرصيد {{a}} + {{b}}. ما ينرجع.", {
-      drop: drop.name, keep: keep.name, a: formatQty(Number(drop.stock ?? 0)), b: formatQty(Number(keep.stock ?? 0)),
-    }))) return;
     setBusy(true);
     try {
       const merged = await repo.mergeProducts(keep.id, drop.id);
@@ -3545,6 +3548,21 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
         <p className="rounded-xl bg-surface-2 p-2.5 text-xs leading-relaxed text-ink-muted">
           {t("pos.mergeHint", "الرصيد ينجمع، ورمز هذا المنتج يصير رمزاً إضافياً للأصل، وتاريخ بيعه ينتقل له. وبعدين تنحذف هذي النسخة.")}
         </p>
+        {pick ? (
+          <div className="space-y-2 rounded-xl border border-warn-300 bg-warn-50 p-3 text-xs text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-mergeask={pick.id}>
+            <p className="text-sm font-bold">{t("pkg.mergeAskTitle", { drop: isoName(drop.name), keep: isoName(pick.name) })}</p>
+            <p className="leading-relaxed">{t("pkg.mergeAskStock", {
+              keep: isoName(pick.name),
+              a: formatQty(Number(drop.stock ?? 0)), b: formatQty(Number(pick.stock ?? 0)),
+              sum: formatQty(Number(drop.stock ?? 0) + Number(pick.stock ?? 0)),
+            })}</p>
+            <p className="leading-relaxed">{t("pkg.mergeAskUndo", { keep: isoName(pick.name) })}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" disabled={busy} data-mergeno onClick={() => { playTap(); setPick(null); }}>{t("pkg.mergeAskNo")}</Button>
+              <Button size="sm" loading={busy} data-mergeyes onClick={() => void merge(pick)}>{t("pkg.mergeAskYes")}</Button>
+            </div>
+          </div>
+        ) : (<>
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} autoFocus data-mergesearch
@@ -3554,7 +3572,7 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
           {shown.map((p) => (
             <button key={p.id} disabled={busy} data-mergeinto={p.id}
               className="flex w-full items-center justify-between gap-3 rounded-xl border border-line px-3 py-2 text-start transition hover:bg-surface-2 disabled:opacity-50"
-              onClick={() => void merge(p)}>
+              onClick={() => { playTap(); setPick(p); }}>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-ink">{p.name}</span>
                 <span className="block truncate font-mono text-2xs text-ink-subtle">{p.barcode ?? "—"}</span>
@@ -3569,6 +3587,7 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
             </p>
           )}
         </div>
+        </>)}
       </div>
     </Dialog>
   );
@@ -3648,21 +3667,42 @@ function DeleteProductDialog({ p, onClose, onDeleted }: { p: Product; onClose: (
 }
 
 /** تبويب «المحذوفات»: كلُّ ما حُذف بصورته لحظة الحذف، وزرُّ استرجاع. */
-function TrashTab({ onChanged }: { onChanged: () => void }) {
+function TrashTab({ onChanged, products }: { onChanged: () => void; products: Product[] }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [rows, setRows] = useState<DeletedProduct[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  /** بحثُ السلّة (مراجعة ٢٦/١١): كانت قائمةً بلا بحث — مادّةٌ واحدة بين مئات المحذوفات لا تُلقى فتُضاف من جديد. ورموزُ المدموجة تُبحث
+   *  هنا وحدها (دمجٌ غلط يُلقى بباركوده ليُفكّ)، بالمطابقة نفسِها (`carriesCode`، `searchable`). */
+  const [query, setQuery] = useState("");
+  /** قبل الاسترجاع: مادّةٌ حيّة برمزها أو اسمِها، أو أصلٌ محذوفٌ يحمل رصيدَ المدموجة — يُقال بالاسمين والرقمين، ثمّ يقرّر الطبيب. */
+  const [twinAsk, setTwinAsk] = useState<{ id: string; twins: Product[]; gone: DeletedProduct | null } | null>(null);
   const load = async () => {
     setFailed(false);
     try { setRows(await withTimeout(repo.listDeletedProducts(), 15000)); }
     catch { setFailed(true); }
   };
   useEffect(() => { void load(); }, []);
+  const shownRows = useMemo(() => {
+    const qKey = searchable(query.trim());
+    if (!rows || !qKey) return rows;
+    return rows.filter((d) => searchable(d.row?.name ?? "").includes(qKey) || carriesCode(d.row, query));
+  }, [rows, query]);
 
-  const restore = async (d: DeletedProduct) => {
+  const restore = async (d: DeletedProduct, sure = false) => {
     if (busy) return;
+    /* المحذوفةُ ومعها مادّةٌ حيّة برمزها أو اسمِها: غالباً أُدخلت من جديد أثناء غيابها، والاسترجاعُ يرجّع رصيدَها **بجانبها** — فإن
+     * كانت نفسَ العلب صار ضعفاً. والمدموجة: فكُّ الدمج يأخذ رصيدَها من أصلها **إن كان حيّاً** (فالأصلُ ليس توأماً)؛ وأصلٌ انحذف بعد الدمج
+     * يحمل رصيدَها داخله، فاسترجاعُها قبله ثمّ هو يعدّه مرّتين؛ وتوأمٌ أُدخل باسمها وبباركودٍ بعد الدمج (0293 يسمح به) يُعدّ بجانبها. */
+    if (!sure && rows) {
+      const hit = resolveTrash(d, rows, products);
+      const keeper = hit?.kind === "merged" ? hit.keeper : null;
+      const gone = d.merged_into && hit?.kind === "deleted" && hit.t.id !== d.id ? hit.t : null;
+      const twins = liveTwinsOf(d, products, keeper?.id ?? null);
+      if (gone || twins.length) { playWarning(); setTwinAsk({ id: d.id, twins, gone }); return; }
+    }
+    setTwinAsk(null);
     setBusy(d.id);
     try {
       const p = await repo.restoreProduct(d.id);
@@ -3703,7 +3743,7 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
       </div>
     );
   }
-  if (rows === null) return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>;
+  if (rows === null || shownRows === null) return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>;
 
   return (
     <div className="space-y-3">
@@ -3711,27 +3751,66 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
         {t("pos.trashHint", "كل منتج انحذف يوصل هنا بصورته لحظة الحذف. «استرجاع» يرجّعه للمخزن بنفس رصيده وفواتيره.")}
       </p>
       <CompanyTrash onChanged={onChanged} />
+      {rows.length > 0 && (
+        <div className="relative">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("pkg.trashSearch")} data-trashtabsearch />
+        </div>
+      )}
       {rows.length === 0 ? (
         <div className="card p-10 text-center text-ink-subtle">{t("pos.trashEmpty", "ماكو منتجات محذوفة.")}</div>
-      ) : rows.map((d) => (
-        <div key={d.id} className="card flex flex-wrap items-center gap-3 p-3" data-trashrow={d.id}>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-ink">{d.row.name}</p>
-            <p className="font-mono text-2xs text-ink-subtle">{d.row.barcode ?? "—"}</p>
-            <p className="mt-1 flex flex-wrap gap-x-3 text-2xs text-ink-muted">
-              <span>{t("pos.trashDeletedAt", "انحذف {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
-              <span>{t("pos.stockN", "رصيد {{n}}", { n: formatQty(Number(d.stock ?? 0)) })}</span>
-              {d.sold_qty > 0 && <span>{t("pos.trashSold", "مباع منه {{n}}", { n: formatNum(d.sold_qty) })}</span>}
-              {d.merged_into && <span className="font-semibold text-brand-600">{t("pos.trashMerged", "مدموج بمنتج ثاني — الاسترجاع يفكّ الدمج")}</span>}
-              {d.reason && <span className="italic">{d.reason}</span>}
-            </p>
+      ) : shownRows.length === 0 ? (
+        <div className="card p-10 text-center text-ink-subtle" data-trashnomatch>{t("pkg.trashNoMatch")}</div>
+      ) : shownRows.map((d) => {
+        const hit = d.merged_into ? resolveTrash(d, rows, products) : null;
+        const keeper = hit?.kind === "merged" ? hit.keeper : null;
+        const ask = twinAsk?.id === d.id ? twinAsk : null;
+        const twin = ask?.twins[0];
+        const gone = ask?.gone ?? null;
+        return (
+          <div key={d.id} className="card space-y-2 p-3" data-trashrow={d.id}>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink">{d.row.name}</p>
+                <p className="font-mono text-2xs text-ink-subtle">{d.row.barcode ?? "—"}</p>
+                <p className="mt-1 flex flex-wrap gap-x-3 text-2xs text-ink-muted">
+                  <span>{t("pos.trashDeletedAt", "انحذف {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
+                  <span>{t("pos.stockN", "رصيد {{n}}", { n: formatQty(Number(d.stock ?? 0)) })}</span>
+                  {d.sold_qty > 0 && <span>{t("pos.trashSold", "مباع منه {{n}}", { n: formatNum(d.sold_qty) })}</span>}
+                  {d.merged_into && (keeper
+                    ? <span className="font-semibold text-brand-600" data-trashkeeper={keeper.id}>{t("pkg.trashMergedInto", { keeper: isoName(keeper.name) })}</span>
+                    : <span className="font-semibold text-brand-600">{t("pos.trashMerged", "مدموج بمنتج ثاني — الاسترجاع يفكّ الدمج")}</span>)}
+                  {d.reason && <span className="italic">{d.reason}</span>}
+                </p>
+              </div>
+              <Button size="sm" variant="secondary" loading={busy === d.id} disabled={!!busy && busy !== d.id}
+                leftIcon={<RotateCcw size={14} />} onClick={() => void restore(d)}>
+                {t("pos.restoreProduct", "استرجاع")}
+              </Button>
+            </div>
+            {ask && (twin || gone) && (
+              <div className="space-y-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-restoretwin={twin?.id ?? gone?.id}>
+                <p className="font-bold">{t("pkg.restoreTwinTitle", { name: isoName(d.row.name) })}</p>
+                {gone ? (
+                  <p className="leading-relaxed" data-restoregone={gone.id}>{t("pkg.restoreGoneKeeper", { name: isoName(d.row.name), keeper: isoName(gone.row?.name) })}</p>
+                ) : twin ? (
+                  <p className="leading-relaxed">{t("pkg.restoreTwinBody", {
+                    twin: isoName(twin.name),
+                    n: formatQty(Number(twin.stock ?? 0)),
+                    m: formatQty(Number(d.stock ?? 0)),
+                    sum: formatQty(Number(twin.stock ?? 0) + Number(d.stock ?? 0)),
+                  })}</p>
+                ) : null}
+                {!gone && ask.twins.length > 1 && <p>{t("pkg.restoreTwinMore", { n: formatNum(ask.twins.length - 1) })}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" data-restoretwinno onClick={() => { playTap(); setTwinAsk(null); }}>{t("pkg.restoreTwinNo")}</Button>
+                  <Button size="sm" data-restoretwinyes onClick={() => { playTap(); void restore(d, true); }}>{t("pkg.restoreTwinYes")}</Button>
+                </div>
+              </div>
+            )}
           </div>
-          <Button size="sm" variant="secondary" loading={busy === d.id} disabled={!!busy && busy !== d.id}
-            leftIcon={<RotateCcw size={14} />} onClick={() => void restore(d)}>
-            {t("pos.restoreProduct", "استرجاع")}
-          </Button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -77,6 +77,23 @@ export function trashByQuery(trash: readonly DeletedProduct[], live: readonly Pr
   return { hits: hits.slice(0, max), more: Math.max(0, hits.length - max) };
 }
 
+/**
+ * قبل الاسترجاع (مراجعة ٢٦/١١): مادّةٌ حيّة تحمل رمزَ المحذوفة أو اسمَها نفسَه — غالباً أُدخلت من جديد أثناء غيابها. الاسترجاعُ يرجّع
+ * رصيدَ المحذوفة **بجانبها** (الرمزُ يبقى للحيّة)، فإن كانت نفسَ العلب صار ضعفاً — يُقال بالاسمين والرقمين قبل الضغط. `except`: أصلُ
+ * المدموجة (فكُّ الدمج يأخذ رصيدَها منه، وهو يحمل رموزَها) — ليس توأماً. بالمطابقة نفسِها: `carriesCode` و`searchable`.
+ */
+export function liveTwinsOf(t: DeletedProduct, live: readonly Product[], except: string | null = null): Product[] {
+  const nameKey = searchable(t.row?.name ?? "");
+  const codes = [t.row?.barcode, ...(t.row?.alt_codes ?? [])].filter((c): c is string => !!c);
+  return live.filter((p) => p.id !== t.id && p.id !== except && (
+    (nameKey.length >= 2 && searchable(p.name) === nameKey)
+    || codes.some((c) => carriesCode(p, c))));
+}
+
 function newestFirst(trash: readonly DeletedProduct[]): DeletedProduct[] {
   return [...trash].filter((t) => t && t.row).sort((a, b) => String(b.deleted_at ?? "").localeCompare(String(a.deleted_at ?? "")) || a.id.localeCompare(b.id));
 }
+
+/** اسمُ مادّةٍ داخل جملةٍ عربية معزولاً اتجاهياً (FSI…PDI): اسمٌ لاتينيٌّ بأقواس («Frontline Plus (Dog, single pipette)»)
+ *  كان يُرسم مقلوبَ الأقواس ومقطوعاً بين الجملتين — العزلُ يرسمه كتلةً واحدة. للعرض وحده، لا للمطابقة. */
+export const isoName = (s: string | null | undefined): string => `\u2068${String(s ?? "")}\u2069`;

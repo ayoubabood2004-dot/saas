@@ -324,6 +324,7 @@ function applyPurchaseLine(
     min_stock: nums.minStock ?? 0, expiry_date: l.expiry_date || null,
     created_at: now,
   };
+  throwIfMergedName(db, np);                                              // 0293
   products.push(np);
   avg?.after?.(np, true);
   return { pid: np.id, how: null, before: null, after: np };
@@ -967,6 +968,34 @@ function throwIfPackagingBad(db: DemoDB, next: Product, prev: Product | null, sk
   const e = levelGuardError(db.products ?? [], next, prev, skipId) ?? packagingShapeError(next);
   if (e) throw e;
 }
+/** 0293 (products_merged_name_guard): مادّةٌ جديدة **بلا باركود** باسمِ مادّةٍ اندمجت وأصلُها حيّ تُرفض بصيغة الخادم —
+ *  توأمُ الدمج يرجع بها (G22). المطابقةُ `searchable` (مرآةُ search_norm) على الطرفين، والأصلُ يُتبع عبر السلّة عشرين قفزة،
+ *  والاسترجاعُ (المعرّفُ نفسُه بالسلّة) ومخزنُ الحقل يمرّان. وتلميحُ الخادم عربيٌّ يُعرض كما هو؛ هنا الاسمان بسهمٍ معزولَين اتجاهياً. */
+function throwIfMergedName(db: DemoDB, p: Pick<Product, "id" | "name" | "barcode" | "farm_id">): void {
+  if (p.farm_id || matchCode(p.barcode)) return;
+  const key = searchable(p.name);
+  if (key.length < 2) return;
+  const trash = db.productsTrash ?? [];
+  if (trash.some((t) => t.id === p.id)) return;
+  if ((db.products ?? []).some((x) => x.id === p.id)) return;        // صفٌّ قائمٌ بمعرّفه لا يولد
+  const merged = trash.filter((t) => t.merged_into && searchable(t.row?.name) === key)
+    .sort((a, b) => String(b.deleted_at ?? "").localeCompare(String(a.deleted_at ?? "")));
+  for (const t of merged) {
+    let id: string | null | undefined = t.merged_into;
+    for (let hops = 0; id && hops < 20; hops += 1) {
+      const keep = (db.products ?? []).find((x) => x.id === id);
+      if (keep && searchable(keep.name) === key) break;                  // أصلٌ حيٌّ بالاسم نفسِه: الاسمُ لم يضع
+      if (keep) {
+        const e = new Error("product_merged_name") as Error & { code: string; hint: string };
+        e.code = "P0001";
+        e.hint = `«\u2068${p.name.trim()}\u2069» → «\u2068${keep.name}\u2069»`;
+        throw e;
+      }
+      id = trash.find((x) => x.id === id)?.merged_into ?? null;
+    }
+  }
+}
+
 function throwIfCodeTaken(db: DemoDB, code: string | null, selfId: string | null): void {
   if (!code) return;
   const c = matchCode(code);
@@ -2150,6 +2179,7 @@ const demoRepo = {
     if ("avg_cost" in p) p.avg_cost = null;
     throwIfPackagingBad(db, p, null);                                       // 0259: كلُّ رموزه جديدة
     usdProductGuard(p, null);                                               // 0264
+    throwIfMergedName(db, p);                                               // 0293
     db.products.push(p);
     saveDB(db);
     return p;

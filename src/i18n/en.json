@@ -7626,7 +7626,21 @@
     "lgEmpty": "Its stock hasn't changed since the exact log began.",
     "lgLegacyManager": "Movements from before the exact log are visible to the clinic manager (from the audit log).",
     "lgLegacyCut": "Movements older than the item's last 200 operations aren't shown here — see the activity log.",
-    "lgForbidden": "Product movements are for whoever manages the inventory — ask the clinic manager."
+    "lgForbidden": "Product movements are for whoever manages the inventory — ask the clinic manager.",
+    "mergeAskTitle": "Merge “{{drop}}” into “{{keep}}”?",
+    "mergeAskStock": "Stock becomes {{sum}} ({{a}} + {{b}}). Its codes become extra codes of “{{keep}}”, and its old name still shows in search, pointing to “{{keep}}”.",
+    "mergeAskUndo": "You can undo it from Deleted, but not fully: undoing returns its stock, codes and invoice lines; what moved with it after the merge — the average cost, dose links, pending counts and waste vouchers, recipes, and whatever was sold in between — stays with “{{keep}}”.",
+    "mergeAskYes": "Merge them",
+    "mergeAskNo": "Back",
+    "trashSearch": "Search deleted items by name or barcode…",
+    "trashNoMatch": "No deleted item matches.",
+    "trashMergedInto": "Merged into “{{keeper}}” — restoring un-merges it",
+    "restoreTwinTitle": "Before restoring “{{name}}”",
+    "restoreTwinBody": "“{{twin}}” already has its barcode or name, with {{n}} in stock. Restoring brings back {{m}} next to it (total {{sum}}). If “{{twin}}” was added for the same boxes, don't restore — the item is already there.",
+    "restoreTwinMore": "…and {{n}} more product(s) like it.",
+    "restoreTwinNo": "Don't restore",
+    "restoreTwinYes": "Restore anyway",
+    "restoreGoneKeeper": "“{{name}}” was merged into “{{keeper}}”, which was deleted later — so its stock sits inside “{{keeper}}”. Restore “{{keeper}}” first; restoring “{{name}}” before it counts the stock twice once “{{keeper}}” comes back."
   },
   "rx": {
     "btn": "Prescription",

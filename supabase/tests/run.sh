@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0292_pets_trash.sql $MIG/0291_company_old_debts.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0292_pets_trash.sql $MIG/0291_company_old_debts.sql $MIG/0293_merged_name_guard.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -8335,8 +8335,8 @@ out=$($P -c "insert into auth.users(id) values ('$VET'), ('$RCP'), ('$PHO'), ('$
          ('$w0a','$C1','بودرة 0254',1,1000,true,'غرام',10000000,false,null,null,null),
          ('$w13','$C1','جرد بلا حصر',0.040,25000,true,'سرنجة',100,false,null,null,null),
          ('$w14','$C1','جرد قبل 0254',0.040,25000,true,'سرنجة',100,false,null,null,null),
-         ('$w20','$C1','سرنجة توأم',1,1000,true,'سرنجة',100,false,null,null,null),
-         ('$w21','$C1','سرنجة أصل',2,1000,true,'سرنجة',100,false,null,null,null),
+         ('$w20','$C1','سرنجة توأم ٢٥٤',1,1000,true,'سرنجة',100,false,null,null,null),
+         ('$w21','$C1','سرنجة أصل ٢٥٤',2,1000,true,'سرنجة',100,false,null,null,null),
          ('$w22','$C1','أصل معلَّق',2,1000,true,'سرنجة',100,false,null,null,null),
          ('$w23','$C1','توأم معلَّق',1,1000,true,'سرنجة',100,false,null,null,null),
          ('$w24','$C1','للحذف 0254',1,1000,false,null,null,false,null,null,null),
@@ -8680,12 +8680,12 @@ chk "  ودمجُه بأصلٍ بلا معلَّق يمرّ" "select $(rv254 $C1
 chk "  فالسندُ انتقل للأصل معلَّقاً (بلقطة اسم التوأم)، والتوأمُ بالمحذوفات مدموجاً، والأصلُ ٢ + ١ = ٣٫٠٠٠" \
     "select (select count(*)::text || ':' || min(status) || ':' || min(product_name) from stock_counts where product_id = '$w21' and source = 'waste')
             ||'|'||(select count(*) from products where id = '$w20')::text||'|'||(select (merged_into = '$w21')::text from products_trash where id = '$w20')
-            ||'|'||(select stock::text from products where id = '$w21')||'|'||(select count(*) from stock_counts where product_id is null and product_name = 'سرنجة توأم')::text" \
-    "1:pending:سرنجةتوأم|0|true|3.000|0"
+            ||'|'||(select stock::text from products where id = '$w21')||'|'||(select count(*) from stock_counts where product_id is null and product_name = 'سرنجة توأم ٢٥٤')::text" \
+    "1:pending:سرنجةتوأم٢٥٤|0|true|3.000|0"
 chk "  وموافقتُه على الأصل" "select $(rv254 $C1 "select (d->>'approved')||'|'||(d->>'void')||'|'||(d->'withdrawals'->0->>'amount') from (select $(dc254 $w21) d) x")" "1|0|50.00"
 chk "    تُنزله ٠٫٠٥ (٣٫٠٠٠ ⇒ ٢٫٩٥٠) وتكتب ٥٠٫٠٠ (كان: void — المفتاحُ أفرغ المادّة فضاعت الخسارة)" \
     "select p.stock::text||'|'||e.amount::text||'|'||e.description from products p, stock_counts c join expenses e on e.id = c.expense_id where p.id = '$w21' and c.product_id = '$w21'" \
-    "2.950|50.00|سحبمخزن—تالف:سرنجةتوأم×5سرنجة"
+    "2.950|50.00|سحبمخزن—تالف:سرنجةتوأم٢٥٤×5سرنجة"
 chk "  وسندٌ على توأمٍ ثانٍ، وجردٌ معلَّقٌ على أصله، يُكتبان" \
     "select $(rv254 $RCP "select (r->>'pending') from (select $(ws254 "$(wl254 $w23 1 sub damaged 'توأم معلَّق')") r) x")||'|'||$(rt254 $RCP "select stock_count_submit(jsonb_build_array(jsonb_build_object('product_id','$w22','counted',1,'reason','shortage')))")" "1|rows:1"
 chk "  فالدمجُ يُرفض أوّلاً (merge_waste_pending) ويسمّي المادّتين — لا خرقَ «معلَّقٍ واحد» بلا اسم" \
@@ -15060,4 +15060,87 @@ $P -c "set session_replication_role = replica;
        delete from clinic_fx_rates where clinic_id = '$KC';
        set session_replication_role = origin; drop function if exists _hint291(uuid, text); drop function if exists _dup291(uuid, uuid, text);" >/dev/null
 
+echo "▸ 0293: اسمُ المادّة المدموجة لا يرجع توأماً — الإضافةُ والشراءُ باسمها بلا باركود يُرفضان بصوت، والاسترجاعُ والباركودُ والاسمُ نفسُه يمرّون"
+PN=a2930000-0000-4000-8000-0000000000
+C2=22222222-2222-2222-2222-222222222222
+out=$($P -f "$MIG/0293_merged_name_guard.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0293 ما انعادت"; fail=1; }
+# القالب: «Ivomec» بباركود وتوأماه «Ivermectin» بلا باركود (اسمٌ سابقٌ حقيقيّ)، وسلسلةُ دمج، ومدموجةٌ أصلُها يُحذف،
+# و«ضماد» توأمان **بالاسم نفسِه** (أغلبُ الدمج — نافذةُ الدمج تقترحهما أوّلاً). كلُّه بالباب الحقيقيّ (merge_products بهويّة صاحب العيادة).
+$P -c "delete from products where id::text like 'a2930000%'; delete from products_trash where id::text like 'a2930000%';
+       insert into products(id, clinic_id, name, barcode, stock) values
+         ('${PN}01', '$C1', 'Ivomec ٢٩٣', 'K293IVO', 10),
+         ('${PN}02', '$C1', 'Ivermectin ٢٩٣', null, 6),
+         ('${PN}07', '$C1', 'Ivermectin ٢٩٣', null, 0),
+         ('${PN}03', '$C1', 'وسيط ٢٩٣', 'K293MID', 1),
+         ('${PN}04', '$C1', 'أوّل السلسلة ٢٩٣', null, 1),
+         ('${PN}05', '$C1', 'أصلٌ يُحذف ٢٩٣', 'K293GONE', 1),
+         ('${PN}06', '$C1', 'مدموجةٌ بمحذوف ٢٩٣', null, 1),
+         ('${PN}08', '$C1', 'ضماد ٢٩٣', null, 2),
+         ('${PN}09', '$C1', 'ضماد ٢٩٣', 'K293BAN', 3) on conflict (id) do nothing;
+       select set_config('request.jwt.claim.sub', '$C1', false);
+       select merge_products('${PN}01', '${PN}02');
+       select merge_products('${PN}01', '${PN}07');
+       select merge_products('${PN}03', '${PN}04');
+       select merge_products('${PN}01', '${PN}03');
+       select merge_products('${PN}05', '${PN}06');
+       select merge_products('${PN}09', '${PN}08');
+       select delete_product('${PN}05');" >/dev/null
+chk "0293: القالبُ كما بالإنتاج — ستُّ مدموجاتٍ ومحذوفةٌ بالسلّة، والأصلُ حيٌّ برصيده" \
+    "select (select count(*) from products_trash where id::text like 'a2930000%' and merged_into is not null)||'|'||(select count(*) from products_trash where id = '${PN}05' and merged_into is null)||'|'||(select stock::numeric(20,0)::text from products where id = '${PN}01')" "6|1|18"
+# بالحارس: إدراجٌ مباشر — يرجع الناتجَ أو رمزَ الخطأ وتلميحَه. والهويّةُ (لنداءات الأبواب) تُثبَّت قبل الجملة داخل المساعد.
+# والتلميحُ يعزل الاسمين (FSI…PDI) — الاسمُ يُقارَن بعد شيلهما، والعزلُ نفسُه بفحصه.
+$P -c "create or replace function _ins293(q text, who uuid default null) returns text language plpgsql as \$fn\$
+         declare n int; h text; begin
+           if who is not null then perform set_config('request.jwt.claim.sub', who::text, true); end if;
+           execute q; get diagnostics n = row_count; return 'rows:' || n;
+         exception when others then get stacked diagnostics h = pg_exception_hint;
+           return 'err:' || sqlerrm || ':' || coalesce(h, ''); end \$fn\$;" >/dev/null
+chk "  إضافةُ «ivermectin  ٢٩٣» بلا باركود (حالةٌ ومسافاتٌ أخرى) تُرفض وتسمّي الأصل — معزولاً اتجاهياً (FSI…PDI)" \
+    "select (r like 'err:product_merged_name:%' and position('«Ivomec ٢٩٣»' in translate(r, chr(8296) || chr(8297), '')) > 0)::text||'|'||(strpos(r, chr(8296) || 'Ivomec ٢٩٣' || chr(8297)) > 0)::text from (select _ins293('insert into products(id, clinic_id, name) values (''${PN}11'', ''$C1'', ''ivermectin  ٢٩٣'')') r) x" "true|true"
+chk "  وبباركودٍ فارغٍ بعد التطبيع (مسافات) كذلك" \
+    "select (_ins293('insert into products(id, clinic_id, name, barcode) values (''${PN}12'', ''$C1'', ''Ivermectin ٢٩٣'', ''  '')') like 'err:product_merged_name:%')::text" "true"
+chk "  والسلسلة: «أوّل السلسلة» اندمجت بـ«وسيط» الذي اندمج بـ«Ivomec» ⇒ تسمّي الحيّ الأخير" \
+    "select (position('«Ivomec ٢٩٣»' in translate(_ins293('insert into products(id, clinic_id, name) values (''${PN}13'', ''$C1'', ''اول السلسلة ٢٩٣'')'), chr(8296) || chr(8297), '')) > 0)::text" "true"
+chk "  ومدموجةٌ أصلُها انحذف بعدها ⇒ تمرّ (لا أصلَ حيّاً يُسمّى)" \
+    "select _ins293('insert into products(id, clinic_id, name) values (''${PN}14'', ''$C1'', ''مدموجةٌ بمحذوف ٢٩٣'')')" "rows:1"
+chk "  ودمجٌ **بالاسم نفسِه** ليس اسماً سابقاً: «ضماد ٢٩٣» جديدةٌ بلا باركود تمرّ (الأصلُ يحمل الاسم — كان: «ضماد» اسمٌ سابق لـ«ضماد»)" \
+    "select _ins293('insert into products(id, clinic_id, name) values (''${PN}19'', ''$C1'', ''ضماد  ٢٩٣'')')" "rows:1"
+chk "  وبعيادةٍ أخرى ⇒ تمرّ" \
+    "select _ins293('insert into products(id, clinic_id, name) values (''${PN}16'', ''$C2'', ''Ivermectin ٢٩٣'')')" "rows:1"
+chk "  وبلا حرفين بعد الطيّ ⇒ تمرّ (لا يحرس الفراغ)" \
+    "select _ins293('insert into products(id, clinic_id, name) values (''${PN}17'', ''$C1'', '' . '')')" "rows:1"
+# الشراءُ بالباب الحقيقيّ: سطرٌ بالاسم القديم بلا باركود يمرّ من فرع الاسم (يطابق الحيّة وحدها) ثمّ يُدرج ⇒ الحارسُ يوقفه.
+# ويجري **قبل** أيّ فحصٍ يُدرج مادّةً حيّةً بنفس الاسم: فرعُ الاسم يطابقها فيستلم عليها (صحيح) ولا يُسأل الحارس — مقيسٌ بأوّل تشغيل.
+# وما كتبه البابُ يُقرأ بجملةٍ ثانية (درسُ 0257: الاستعلامُ الفرعيّ بجملة النداء يرى لقطةَ ما قبله).
+chk "  والشراءُ: سطرٌ «Ivermectin ٢٩٣» بلا باركود يُرفض (product_merged_name)" \
+    "select (_ins293('select record_purchase(jsonb_build_array(jsonb_build_object(''name'',''Ivermectin ٢٩٣'',''qty'',12,''purchase_price'',100,''sell_price'',0)), jsonb_build_object(''company_name'',''شركة ٢٩٣'')) is not null', '$C1') like 'err:product_merged_name:%')::text" "true"
+chk "    كلُّه: لا فاتورة، ولا توأمٌ بالاسم" \
+    "select (select count(*) from purchases where company_name = 'شركة ٢٩٣')||'|'||(select count(*) from products where clinic_id = '$C1' and search_norm(name) = search_norm('Ivermectin ٢٩٣'))" "0|0"
+chk "    وبالمعرّف (السطرُ مربوطٌ بأصله — ما تفعله شارةُ الواجهة) ⇒ يمرّ" \
+    "select _ins293('select record_purchase(jsonb_build_array(jsonb_build_object(''product_id'',''${PN}01'',''name'',''Ivermectin ٢٩٣'',''qty'',12,''purchase_price'',100,''sell_price'',0)), jsonb_build_object(''company_name'',''شركة ٢٩٣ب'')) is not null', '$C1')" "rows:1"
+chk "      ويزيد الأصل ١٨ ⇒ ٣٠" "select stock::numeric(20,0)::text from products where id = '${PN}01'" "30"
+chk "  وبباركودٍ جديد ⇒ تمرّ (رمزٌ لا يعرفه المخزنُ قد يكون مادّةً ثانية)" \
+    "select _ins293('insert into products(id, clinic_id, name, barcode) values (''${PN}15'', ''$C1'', ''Ivermectin ٢٩٣'', ''NEW293'')')" "rows:1"
+chk "    وإعادةُ الطابور للصفّ نفسِه بلا باركود (ON CONFLICT DO NOTHING) تمرّ ولا تولد شيئاً — المحفّزُ يجري قبل حلّ التعارض" \
+    "select _ins293('insert into products(id, clinic_id, name) values (''${PN}15'', ''$C1'', ''Ivermectin ٢٩٣'') on conflict (id) do nothing')" "rows:0"
+# الاسترجاع: فكُّ الدمج يُدرج الصفَّ وصورتُه بالسلّة — والتوأمُ الثاني (PN07) ما زال مدموجاً باسمٍ سابقٍ حقيقيّ: لو حُذفت صورةُ
+# الصفّ قبل إدراجه لرفضه الحارسُ بسبب أخيه، فالإعفاءُ بالمعرّف هو ما يُفحص هنا لا غيابُ الاسم. (القراءةُ بجملةٍ ثانية.)
+chk "  وفكُّ الدمج (restore_product) يمرّ — وتوأمُه الثاني ما زال مدموجاً بالاسم نفسِه" \
+    "select _ins293('select restore_product(''${PN}02'') is not null', '$C1')" "rows:1"
+chk "    والمادّةُ رجعت باسمها" "select name from products where id = '${PN}02'" "Ivermectin٢٩٣"
+chk "    والاسمُ ما زال سابقاً ما دام التوأمُ الثاني مدموجاً: إضافةٌ بلا باركود تُرفض" \
+    "select (_ins293('insert into products(id, clinic_id, name) values (''${PN}18'', ''$C1'', ''Ivermectin ٢٩٣'')') like 'err:product_merged_name:%')::text" "true"
+chk "    وبعد فكّ الثاني الاسمُ حرّ" \
+    "select _ins293('select restore_product(''${PN}07'') is not null', '$C1')||'|'||_ins293('insert into products(id, clinic_id, name) values (''${PN}18'', ''$C1'', ''Ivermectin ٢٩٣'')')" "rows:1|rows:1"
+chk "  والمحفّزُ definer بمسار بحثٍ مثبَّت، وتنفيذُه مسحوبٌ من الأدوار" \
+    "select p.prosecdef::text||'|'||(p.proconfig::text like '%search_path=public%')::text||'|'||has_function_privilege('authenticated', p.oid, 'execute')::text from pg_proc p where p.oid = to_regprocedure('public.products_merged_name_guard()')" "true|true|false"
+$P -c "delete from purchase_effects where purchase_id in (select id from purchases where company_name like 'شركة ٢٩٣%');
+       delete from purchase_items where purchase_id in (select id from purchases where company_name like 'شركة ٢٩٣%');
+       delete from purchases where company_name like 'شركة ٢٩٣%';
+       delete from products_trash where id::text like 'a2930000%';
+       alter table products disable trigger products_trash_guard;
+       delete from products where id::text like 'a2930000%';
+       alter table products enable trigger products_trash_guard;
+       delete from products_trash where id::text like 'a2930000%';
+       drop function if exists _ins293(text, uuid);" >/dev/null
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

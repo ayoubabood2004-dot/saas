@@ -475,7 +475,7 @@ console.log("▸ ز) الشاشةُ موصولة: النموذجُ والمجم�
  * هنا)، إلا القواعدَ الصِّرفة. والترجمةُ ترجع المفتاح: الأزرارُ والرسائلُ تُطابَق بمفاتيحها. */
 // والتعبئةُ (0259، `@/lib/packs`) قاعدةٌ صِرفة كذلك: بديلُها المولَّد يرجع undefined فيسقط رسمُ الصفّ.
 // 0264: usdProduct (مسودّةُ السعر بالدولار) صِرفةٌ يستوردها النموذج — بديلٌ مولَّدٌ لها undefined يُسقط رسمَه كلَّه.
-const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups"]);
+const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups", "@/lib/trashMatch"]);
 const UI_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",

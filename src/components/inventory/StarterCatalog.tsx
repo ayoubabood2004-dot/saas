@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Building2, ChevronDown, FolderTree, Package, Sparkles, Check } from "lucide-react";
-import type { Company, CompanySection, Product } from "@/types";
+import type { Company, CompanySection, DeletedProduct, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
-import { cn, groupKey} from "@/lib/utils";
+import { cn, groupKey, searchable } from "@/lib/utils";
+import { resolveTrash } from "@/lib/trashMatch";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { describeDbError } from "@/lib/errors";
 import { START_CATALOG, catalogCounts, type CatalogCompany } from "@/lib/startCatalog";
@@ -63,6 +64,14 @@ export function StarterCatalogModal({ open, companies, sections, products, clini
     setBusy(true);
     let coNew = 0, secNew = 0, prodNew = 0;
     try {
+      /* اسمُ مادّةٍ اندمجت بأصلٍ حيٍّ **باسمٍ آخر** (0293، G22) موجودٌ بأصله: الخادمُ يرفض إدخالَه بلا باركود، فتطبيقُ الكتلوج ثانيةً بعد دمج
+       * مادّةٍ منه كان سيقف عندها كلَّ مرّة. يُعدّ «موجوداً» ويُتخطّى — بنفس طيّ الخادم (searchable ⇔ search_norm) ونفسِ تتبّع السلسلة. */
+      const trash = await repo.listDeletedProducts().catch((): DeletedProduct[] => [] /* swallow-ok: بلاها يقول الخادمُ اسمَ المادّة بجملته */);
+      const aliasKeys = new Set(trash.filter((d) => {
+        if (!d.merged_into) return false;
+        const hit = resolveTrash(d, trash, products);
+        return hit?.kind === "merged" && searchable(hit.keeper.name) !== searchable(d.row?.name ?? "");
+      }).map((d) => searchable(d.row?.name ?? "")));
       for (const cat of START_CATALOG.filter((c) => picked.has(c.name))) {
         setProgress(cat.name);
         // ١) الشركة: الموجودة بنفس الاسم تُستكمل، وإلا تُنشأ
@@ -95,7 +104,7 @@ export function StarterCatalogModal({ open, companies, sections, products, clini
           products.filter((p) => p.company_id === co!.id).map((p) => nameKey(p.name)),
         );
         for (const sec of cat.sections) {
-          const fresh = sec.products.filter((pr) => !haveNames.has(nameKey(pr.name)));
+          const fresh = sec.products.filter((pr) => !haveNames.has(nameKey(pr.name)) && !aliasKeys.has(searchable(pr.name)));
           await Promise.all(fresh.map((pr) => repo.createProduct({
             clinic_id: clinicId ?? null,
             company_id: co!.id,
