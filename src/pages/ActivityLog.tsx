@@ -373,6 +373,13 @@ export function ActivityLog() {
           : del ? t("act.rxDel", { pet: pn() })
             : changesOfRaw(d).has("voided_at") ? t("act.rxVoid", { pet: pn() }) : t("act.rxUpd", { pet: pn() });
       case "clinic_rx_pad": return t("act.rxPad");
+      /* الملاحظةُ الصوتية (0287): التسجيلُ، والحذفُ والإرجاعُ (voided_at يتبدّل؛ إلى null = رجعت)، والمسحُ من القاعدة. */
+      case "visit_voice_notes": {
+        if (r.action === "INSERT") return t("act.voiceAdd", { pet: pn() });
+        if (del) return t("act.voiceDel", { pet: pn() });
+        const va = (d["__changed"] as Record<string, unknown[]> | undefined)?.["voided_at"];
+        return Array.isArray(va) && va[1] == null ? t("act.voiceRestore", { pet: pn() }) : t("act.voiceVoid", { pet: pn() });
+      }
       case "media_items": {
         const kind = MEDIA_LABEL[s("kind")];
         return t("act.mediaAdd", { kind: kind ? t(kind.key, kind.def) : t("act.mediaFile", "ملف / صورة"), pet: pn(), defaultValue: "رفع {{kind}} لـ {{pet}}" });

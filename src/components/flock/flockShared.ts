@@ -10,7 +10,7 @@ import i18next from "i18next";
 import { describeDbError } from "@/lib/errors";
 import { localISO, searchable } from "@/lib/utils";
 import { addDays, ageOn, diffDays } from "@/lib/flockMath";
-import type { FlockBoardRow, FlockCase, FlockStats } from "@/lib/flockTypes";
+import type { FlockBoardRow, FlockCase, FlockStats, FlockVisit } from "@/lib/flockTypes";
 
 /** الأسبوعُ من العمر: ١–٧ الأوّل. */
 export const weekOf = (age: number): number => Math.max(1, Math.ceil(age / 7));
@@ -71,6 +71,11 @@ export function matchesBoard(r: FlockBoardRow, q: string): boolean {
   const digits = q.replace(/\D/g, "");
   return digits.length >= 4 && (r.farm.owner_phone ?? "").replace(/\D/g, "").includes(digits);
 }
+
+/** تشخيصُ الزيارة كما يُقرأ بالقائمة والخطّ الزمنيّ: الأمراضُ المختارة بأسمائها ثمّ ما كُتب باليد. كانت القائمةُ تقرأ المكتوبَ
+ *  وحده فتقول «بلا تشخيص» عن زيارةٍ اختار طبيبُها «كوكسيديا» من الشرائح (٢٤/١١). */
+export const dxText = (t: TFunction, v: Pick<FlockVisit, "dx" | "dx_codes">): string =>
+  [v.dx_codes.map((x) => t(`flk.dx.${x}`, { defaultValue: x })).join(t("common.listSep")), v.dx?.trim() ?? ""].filter(Boolean).join(" — ");
 
 /** الوجبةُ مغلقة؟ الكتابةُ كلُّها تُرفض بالخادم (flock_case_closed)، والشاشةُ تقولها قبل الضغط. */
 export const isClosed = (c: Pick<FlockCase, "status">): boolean => c.status === "closed";

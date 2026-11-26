@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Camera, ClipboardList, Lock, MessageCircle, MoreVertical, Pencil, Phone, Pill,
-  RefreshCw, ShieldAlert, Skull, Stethoscope, Syringe, Trash2, TrendingDown, TrendingUp, Minus, Unlock,
+  RefreshCw, ShieldAlert, Skull, Stethoscope, Syringe, Trash2, TrendingDown, TrendingUp, Minus, Unlock, Wheat,
 } from "lucide-react";
 import { Badge, Button, Dialog, useToast } from "@/components/ui";
 import { LoadBoundary } from "@/components/LoadBoundary";
@@ -25,7 +25,7 @@ import { describeUploadError } from "@/lib/errors";
 import { flockApi } from "@/lib/flockApi";
 import { addDays, ageOn, dailyLosses, diffDays, dueOn, FLOCK_ALERT_PCT } from "@/lib/flockMath";
 import type { FlockBundle, FlockMedia, FlockMortality, FlockTreatment, FlockVax, FlockVisit } from "@/lib/flockTypes";
-import { ageLabel, dayLabel, flockError, isClosed, localDay, num, relDay } from "./flockShared";
+import { ageLabel, dayLabel, dxText, flockError, isClosed, localDay, num, relDay } from "./flockShared";
 import { CaseEditSheet, CloseSheet, FarmEditSheet, MortalitySheet, ProgramsSheet, VaxSheet, type VaxMode } from "./FlockSheets";
 import { TreatmentCard, TreatmentSheet } from "./FlockTreatment";
 
@@ -80,7 +80,7 @@ export function FlockCasePage() {
 
   if (!b) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-6">
+      <div className="mx-auto w-full max-w-[1700px] px-4 py-6 sm:px-6">
         <BackLink onClick={() => navigate("/poultry")} label={t("flk.back")} />
         {err ? (
           <div className="card flex flex-col items-center gap-3 p-8 text-center" data-flock-error>
@@ -101,14 +101,14 @@ export function FlockCasePage() {
   const houseName = (id: string | null) => b.houses.find((h) => h.id === id)?.label ?? t("flk.wholeFlock");
   const layer = c.kind === "layer" || c.kind === "breeder";
 
-  const tabs: { k: Tab; label: string; n?: number }[] = [
-    { k: "timeline", label: t("flk.tab.timeline") },
-    { k: "mortality", label: t("flk.tab.mortality"), n: b.mortality.length },
-    { k: "visits", label: t("flk.tab.visits"), n: b.visits.length },
-    { k: "vax", label: t("flk.tab.vax"), n: b.vax.length },
-    { k: "tx", label: t("flk.tab.tx"), n: b.treatments.filter((x) => x.status !== "replaced").length },
-    { k: "feed", label: t("flk.tab.feed") },
-    { k: "media", label: t("flk.tab.media"), n: b.media.length },
+  const tabs: { k: Tab; label: string; icon: ReactNode; n?: number }[] = [
+    { k: "timeline", label: t("flk.tab.timeline"), icon: <ClipboardList size={20} /> },
+    { k: "mortality", label: t("flk.tab.mortality"), icon: <Skull size={20} />, n: b.mortality.length },
+    { k: "visits", label: t("flk.tab.visits"), icon: <Stethoscope size={20} />, n: b.visits.length },
+    { k: "vax", label: t("flk.tab.vax"), icon: <Syringe size={20} />, n: b.vax.length },
+    { k: "tx", label: t("flk.tab.tx"), icon: <Pill size={20} />, n: b.treatments.filter((x) => x.status !== "replaced").length },
+    { k: "feed", label: t("flk.tab.feed"), icon: <Wheat size={20} /> },
+    { k: "media", label: t("flk.tab.media"), icon: <Camera size={20} />, n: b.media.length },
   ];
 
   const actions: { k: string; icon: ReactNode; label: string; on: () => void; show: boolean }[] = [
@@ -120,7 +120,7 @@ export function FlockCasePage() {
   ];
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6" data-flock-case={c.id}>
+    <div className="mx-auto w-full max-w-[1700px] px-4 py-6 sm:px-6" data-flock-case={c.id}>
       <BackLink onClick={() => navigate("/poultry")} label={t("flk.back")} />
 
       {stale && (
@@ -217,12 +217,21 @@ export function FlockCasePage() {
       )}
 
       {/* ── الأقسام ───────────────────────────────────────────────────────── */}
-      <div className="mt-5 flex gap-1.5 overflow-x-auto pb-1" role="tablist">
-        {tabs.map((x) => (
+      {/* الأقسامُ شريطٌ يملأ العرض (طلبُ المالك ٢٤/١١: «كبّرها على حجم الشاشة») — كانت حبوباً صغيرة تنزلق جانبياً فيختفي
+          «المرفقات» و«العلف» خارج شاشة الهاتف. شريطٌ واحد بخلفيته لا بطاقاتٌ كأزرار الأفعال فوقه، والأوّلُ بعرضين بالهاتف
+          فتمتلئ السبعةُ صفّين بلا فراغ. */}
+      <div className="mt-5 grid grid-cols-4 gap-1.5 rounded-2xl border border-line bg-surface-2 p-1.5 sm:grid-cols-7" role="tablist" data-flock-tabs>
+        {tabs.map((x, i) => (
           <button key={x.k} type="button" role="tab" aria-selected={tab === x.k} onClick={() => setTab(x.k)} data-flock-tab={x.k}
-            className={cn("shrink-0 rounded-full px-3.5 py-1.5 text-sm font-bold transition",
-              tab === x.k ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-            {x.label}{x.n ? <span className="ms-1 opacity-75">{x.n}</span> : null}
+            className={cn("flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-xs font-bold leading-tight transition sm:text-sm",
+              i === 0 && "col-span-2 sm:col-span-1",
+              tab === x.k ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-1 hover:text-ink")}>
+            <span className="relative">
+              {x.icon}
+              {x.n ? <span className={cn("absolute -end-3 -top-2 min-w-5 rounded-full px-1 text-2xs font-extrabold tabular-nums",
+                tab === x.k ? "bg-white text-brand-700" : "bg-brand-600 text-white")}>{x.n}</span> : null}
+            </span>
+            <span>{x.label}</span>
           </button>
         ))}
       </div>
@@ -343,7 +352,7 @@ function Timeline({ b, today, houseName }: { b: FlockBundle; today: string; hous
     const necro = b.necropsy.filter((n) => n.visit_id === v.id).length;
     ev.push({
       day: localDay(v.at), at: v.at, icon: <Stethoscope size={15} />,
-      text: t("flk.tl.visit", { kind: t(`flk.visitKind.${v.kind}`) }) + (v.dx ? ` · ${v.dx}` : ""),
+      text: t("flk.tl.visit", { kind: t(`flk.visitKind.${v.kind}`) }) + (dxText(t, v) ? ` · ${dxText(t, v)}` : ""),
       sub: [necro ? t("flk.tl.necropsy", { n: necro }) : "", v.trend ? t(`flk.trend.${v.trend}`) : ""].filter(Boolean).join(" · ") || undefined,
     });
   }
@@ -519,7 +528,7 @@ function VisitsTab({ b, today, onOpen }: { b: FlockBundle; today: string; onOpen
                 {v.notifiable && <Badge tone="danger" className="px-2 py-0 text-2xs">{t("flk.visits.notifiable")}</Badge>}
               </div>
               <div className="truncate text-xs text-ink-muted">
-                {[v.dx, necro ? t("flk.tl.necropsy", { n: necro }) : "", v.trend ? t(`flk.trend.${v.trend}`) : ""].filter(Boolean).join(" · ") || t("flk.visits.noDx")}
+                {[dxText(t, v), necro ? t("flk.tl.necropsy", { n: necro }) : "", v.trend ? t(`flk.trend.${v.trend}`) : ""].filter(Boolean).join(" · ") || t("flk.visits.noDx")}
               </div>
             </div>
             <div className="shrink-0 text-end text-2xs text-ink-subtle">
@@ -682,7 +691,7 @@ function MediaTab({ b, canAdd, canRemove, onChanged }: { b: FlockBundle; canAdd:
         </div>
       )}
       {view && (
-        <Dialog open onClose={() => setView(null)} size="lg" title={view.caption || dayLabel(localDay(view.created_at))}
+        <Dialog open onClose={() => setView(null)} size="xl" title={view.caption || dayLabel(localDay(view.created_at))}
           footer={canRemove ? (
             <Button variant="danger" leftIcon={<Trash2 size={16} />} onClick={async () => {
               try { await flockApi.removeMedia(view.id); setView(null); onChanged(); } catch (e) { toast.error(flockError(e, t)); }

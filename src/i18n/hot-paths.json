@@ -29,7 +29,6 @@
   "$ownedDoc": "نطاقاتٌ تملكها صفحةٌ واحدة: لا تدخل النصفَ البارد، وتصل بحزمةٍ صغيرةٍ مع صفحتها وحدَها (page(load, [ns])). والحارسُ i18n-owned-guard يفشّل البناءَ إن قرأها ملفٌّ غيرُ مالكها — مفتاحٌ خامٌ على شاشةٍ أخرى. أُضيفت لأن النصفَ البارد بلغ سقفَه (٤٩٬٨٣٣ من ٥٠٬٠٠٠) ونصوصُ سجلّ الحركات وحقول الدواجن تنزل لكلّ صفحةٍ ولا تُقرأ إلا بصفحتيهما. والقيمةُ نصٌّ (المالك) أو {owner, with}: الرفاقُ مكوّناتٌ قُسمت من صفحة المالك وتقرأ نطاقَه، ولا يستوردها إلا المالكُ أو رفيقٌ آخر (متجر v1: ألواحُ «المتجر الإلكتروني» بـsrc/components/store/admin).",
   "owned": {
     "act": "src/pages/ActivityLog.tsx",
-    "farm": "src/pages/PoultryFarms.tsx",
     "cnt": { "owner": "src/pages/StockCount.tsx", "with": ["src/components/stock/WasteTab.tsx"] },
     "watch": "src/pages/StockWatch.tsx",
     "audit": { "owner": "src/pages/InventoryAudit.tsx", "with": ["src/lib/auditMarks.ts", "src/lib/auditReport.ts"] },
@@ -84,6 +83,7 @@
     "pkg": { "owner": "src/pages/Inventory.tsx", "with": ["src/components/inventory/PackagingEditor.tsx", "src/components/inventory/ProductMovements.tsx"] },
     "rx": { "owner": "src/components/rx/RxPad.tsx", "with": ["src/components/rx/RxSheet.tsx", "src/components/rx/RxDesigner.tsx", "src/components/rx/rxShared.ts"] },
     "att": { "owner": "src/components/attach/Attach.tsx", "with": ["src/components/attach/CameraSheet.tsx"] },
+    "vnote": { "owner": "src/components/voice/VoiceNotes.tsx", "with": ["src/components/voice/VoicePlayer.tsx", "src/components/voice/VoiceRecorderUi.tsx"] },
     "usd": { "owner": "src/components/usd/Usd.tsx", "with": ["src/components/usd/UsdSale.tsx", "src/components/usd/usdShared.tsx"] },
     "flk": { "owner": "src/pages/FlockCases.tsx", "with": ["src/components/flock/FlockCase.tsx", "src/components/flock/FlockSheets.tsx", "src/components/flock/FlockTreatment.tsx", "src/components/flock/FlockVisit.tsx", "src/components/flock/FlockIntake.tsx", "src/components/flock/flockShared.ts"] },
     "flkv": "src/components/flock/FlockVisit.tsx",
@@ -91,11 +91,14 @@
     "pfx": "src/components/inventory/PurchaseFx.tsx",
     "pgrp": "src/components/inventory/ProductGroups.tsx",
     "mxp": "src/components/retail/UsdPay.tsx",
-    "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx", "src/components/admin/LibraryReplace.tsx"] },
+    "libm": { "owner": "src/components/admin/ImageLibraryManager.tsx", "with": ["src/components/admin/LibraryImport.tsx", "src/components/admin/LibraryReplace.tsx", "src/components/admin/LibraryPdfImport.tsx"] },
     "libp": "src/components/inventory/ImageLibraryPicker.tsx",
     "psum": "src/components/summary/PetSummary.tsx",
     "csht": { "owner": "src/components/summary/CaseSheetDialog.tsx", "with": ["src/lib/caseSheetCompose.ts"] },
+    "ptr": "src/components/records/PetTrash.tsx",
     "xret": "src/components/retail/ExpiredReturn.tsx",
+    "pmatch": "src/pages/PhotoMatch.tsx",
+    "pmbn": "src/components/photos/MatchBanner.tsx",
     "trsh": "src/components/inventory/TrashHint.tsx"
   }
 }

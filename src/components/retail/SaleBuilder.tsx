@@ -1967,7 +1967,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
      * الأخير لو وصل صفُّ حقلٍ بطريقٍ يُضاف غداً: يُرفض باسمه، لا يُباع بصمت. */
     if (p.farm_id) {
       playWarning();
-      toast.error(t("retail.farmProductAtTill", "«{{name}}» من مخزن الحقل — يُصرف من شاشة الحقل لا من كاشير العيادة", { name: p.name }));
+      toast.error(t("retail.farmProductAtTill", "«{{name}}» من مخزن حقلٍ قديم — ما ينباع من كاشير العيادة", { name: p.name }));
       return null;
     }
     if (blockZeroCost(p)) return null;
@@ -2353,7 +2353,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const unit = (p.unit_name ?? "").trim() || m.say.packWords().box;
     const refuse = (msg: string) => { playWarning(); toast.error(msg); return { added: null, refused: true }; };
     // مخزنُ الحقل يُرفض باسمه كما يرفضه addProduct (لا نداءَ له خارج sellOrExplain — freshness-test).
-    if (p.farm_id) return refuse(t("retail.farmProductAtTill", "«{{name}}» من مخزن الحقل — يُصرف من شاشة الحقل لا من كاشير العيادة", { name: p.name }));
+    if (p.farm_id) return refuse(t("retail.farmProductAtTill", "«{{name}}» من مخزن حقلٍ قديم — ما ينباع من كاشير العيادة", { name: p.name }));
     if (retMode && !opt?.sale) return refuse(m.say.packSay({ kind: "ret", name: p.name, level: pack.name, unit }));
     /* 0272: كارتونُ مادّة الدولار سطرٌ بسلّة الدولار (سعرُه بالدولار، والخادمُ يخصم علبَه) — كان يُرفض «بيعها بوحدتها الأساسية». */
     if (p.price_currency === "USD" && !(opt?.usdOk && usdRateRef.current)) { usdTap(p, { sale: true }, pack, () => void addPackLine(p, pack, n, { ...opt, usdOk: true })); return { added: null, refused: false }; }

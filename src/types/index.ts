@@ -1351,6 +1351,8 @@ export interface CompanyEntry {
   fx_rate?: number | null;
   /** 0281: سجلُّ تعديل الرصيد السابق والتسوية — يُضاف ولا يُمسح (يقرؤه `readEdits`). غائبٌ = قاعدةٌ قبل 0281. */
   edits?: unknown[] | null;
+  /** 0291: مرجعُ إعادةٍ من الجهاز (`<مرجع النافذة>:<رقم السطر>`) لدينٍ قديمٍ كُتب بالباب الجديد — null لما قبله. */
+  client_ref?: string | null;
 }
 
 /** ما وزّعه تسديدٌ على الحساب. */
@@ -1910,8 +1912,50 @@ export interface OldDebtReturn {
   created_by: string | null;
 }
 
+/**
+ * حيوانٌ بالمحذوفات (0292): ملخّصُه لقائمة «الحيوانات المحذوفة» — صورتُه الكاملة (صفُّه وكلُّ ما تسلسل معه) بالخادم
+ * وحده، ويرجع منها بنفس المعرّفات. `counts` بأسماء الجداول (clinic_visits، vaccinations، …) كما يعدّها الخادم.
+ */
+export interface DeletedPet {
+  id: string;
+  pet_name: string | null;
+  owner_name: string | null;
+  owner_phone: string | null;
+  species: string | null;
+  serial: string | null;
+  counts: Record<string, number>;
+  reason: string | null;
+  deleted_by: string | null;
+  /** اسمُ الحاذف من صفّ الكادر لحظةَ الحذف؛ فارغٌ لصاحب العيادة أو مديرٍ بلا صفّ. */
+  deleted_by_name: string | null;
+  deleted_at: string;
+}
+/** ما سيُرفع مع الحيوان لو حُذف الآن (pet_delete_preview، 0292) — النافذةُ تقوله بالاسم قبل التأكيد. */
+export interface PetDeletePreview {
+  id: string;
+  name: string | null;
+  owner_name: string | null;
+  species: string | null;
+  serial: string | null;
+  counts: Record<string, number>;
+  /** جرعاتٌ معطاةٌ لم تُبَع (0269): تختفي من البيع ما دام محذوفاً، وترجع معه. */
+  pending_charges: number;
+  active_admission: boolean;
+  /** حكمُ الخادم: هل يحذف المنادي (staff_can('deletePets'))؟ */
+  allowed: boolean;
+}
+/** مرآةُ pets_trash بالتجريبيّ: الملخّصُ والصورةُ معاً. */
+export interface DemoPetTrash extends DeletedPet {
+  row: Pet;
+  children: Record<string, unknown[]>;
+  /** رسائلُ الواتساب التي فرغ حيوانُها (on delete set null) — يُعاد ربطُها. */
+  wa_ids: string[];
+}
+
 export interface DemoDB {
   pets: Pet[];
+  /** 0292: الحيواناتُ المحذوفة بصورتها. */
+  petsTrash?: DemoPetTrash[];
   weightLogs: WeightLog[];
   vaccinations: Vaccination[];
   media: MediaItem[];
@@ -2513,9 +2557,9 @@ export interface PayslipDraft {
   }>;
 }
 
-/* ── حقولُ الدواجن (0191) — قسمٌ مستقلٌّ بباقته ────────────────────────────
- * حقلٌ ⇒ قاعاتٌ ⇒ دفعةٌ ⇒ إدخالٌ يوميّ. والقطيعُ **ليس حيواناً**: عشرون ألفَ
- * طيرٍ بصفٍّ واحد، بلا اسمٍ ولا وزنٍ فرديّ — فلا شيءَ منه يمرّ بـ`Pet`. */
+/* ── حقولُ الدواجن القديمة (0191، «باقة الحقل») — الباقةُ ودفترُها أُلغيا بقرار المالك (٢٤/١١) ───────
+ * والجداولُ وبياناتُها باقيةٌ بالقاعدة. يبقى هنا ما تقرؤه مراجعةُ /outbox وحدها: الحقلُ والدفعةُ (هل هما
+ * بهذه العيادة؟) واليومُ (يومٌ قديمٌ بالطابور يُقارَن بيومه بالخادم قبل أن يُرفع). */
 
 /** نوعُ الإنتاج. لاحمٌ أوّلاً؛ البيّاضُ دورتُه سنتان ومنطقُه مختلف. */
 export type PoultryKind = "broiler" | "layer";
@@ -2524,20 +2568,6 @@ export interface PoultryFarm {
   id: string; clinic_id?: string | null; name: string;
   owner_name?: string | null; owner_phone?: string | null;
   governorate?: string | null; area?: string | null; note?: string | null;
-  archived?: boolean; created_at: string;
-}
-
-/**
- * القاعة (الجملون). تحمل الثابتَ **الفيزيائيّ** وحدَه.
- *
- * و`default_*` افتراضاتٌ تُنسخ عند فتح دفعةٍ جديدة لا قيمٌ حيّة: العددُ والنوعُ
- * والسلالةُ صفاتُ الدفعةِ لا القاعة — نفسُ الجملون يأخذ عشرين ألفاً هذه الدورة
- * وثمانيةَ عشرَ التالية، فلو عاشت هنا لطمست الدفعةُ الثانيةُ تاريخَ الأولى.
- */
-export interface PoultryHouse {
-  id: string; clinic_id?: string | null; farm_id: string; label: string;
-  capacity?: number | null;
-  default_kind?: PoultryKind | null; default_breed?: string | null; default_count?: number | null;
   archived?: boolean; created_at: string;
 }
 
@@ -2559,43 +2589,6 @@ export interface PoultryDaily {
   temp_c?: number | null; humidity_pct?: number | null;
   note?: string | null; entered_by?: string | null;
   created_at: string; updated_at?: string;
-}
-
-export type PoultryUseKind = "feed" | "med" | "service" | "other";
-
-/** ما خرج من مخزن الحقل لهذه الدفعة — بسعر الشراء، لا ربحَ عليه. */
-export interface PoultryUse {
-  id: string; clinic_id?: string | null; cycle_id: string; on_date: string;
-  kind: PoultryUseKind; product_id?: string | null; name: string;
-  qty: number; unit?: string | null; unit_cost: number; line_cost: number;
-  /** فترةُ السحب بالأيام كما تقولها العلبة (0193). `null` = **مجهولة** لا
-   *  «ماكو» — والصفرُ وحدَه يعني «قرأتُ العلبة وماكو فترةُ سحب». */
-  withdrawal_days?: number | null;
-  /** مرجعُ المحاولة المولودُ بالجهاز — شرطُ إعادةِ الصرف من الطابور بلا ازدواج. */
-  client_ref?: string | null;
-  note?: string | null; entered_by?: string | null; created_at: string;
-}
-
-/** مجاميعُ الدفعة — تُحسب بالقاعدة (0149: القاعدةُ تجمع والمتصفّحُ يعرض). */
-export interface PoultryCycleStats {
-  placed_count: number; dead: number; culled: number; alive: number;
-  feed_kg: number; feed_cost: number; med_cost: number; other_cost: number; chick_cost: number;
-  days: number; last_entry: string | null;
-  /** أبعدُ تاريخِ أمانٍ بين سطور الدواء — قبله لا يُذبح القطيع (0193). */
-  safe_from?: string | null;
-  /** سطرُ دواءٍ واحدٌ بفترةٍ مجهولة يرفعها: لا نعرف متى تأمن، فلا نقول «آمنة». */
-  withdrawal_unknown?: boolean;
-}
-
-/** نتيجةُ صرفٍ من المخزن. `shortfall` يُقال بصوت — لا يُطمس. */
-export interface PoultryConsumeResult {
-  ok: boolean; use?: PoultryUse; stock_after?: number | null; shortfall?: number;
-  /** تاريخُ أمانِ هذا السطر — تقوله الشاشةُ فورَ الصرف لا بعد إعادة التحميل. */
-  safe_from?: string | null;
-  /** نداءٌ ثانٍ بنفس المرجع: أُرجع سطرُ الأوّل ولم يُخصم شيء. */
-  replayed?: boolean;
-  /** دخل صندوق الصادر — سينزل حين يعود النت. */
-  queued?: boolean;
 }
 
 /* ── الجردُ الدوريّ (0216) ─────────────────────────────────────────────────── */

@@ -25,7 +25,7 @@ export const pickByPurchaseName = <T extends { id: string; name: string; company
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, outboxExclusive, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, CustomerHit, CustomerPet, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, Courier, DeliveryOrder, PetMovement, Invoice, InvoiceItem, CustomerHit, CustomerPet, DiscountType, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, RetailReturnResult, HealthMetric, ClinicVisit, Surgery, LabResult, LabDeviceLink, LabDeviceInbox, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyPublicView, PoultryDaily, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { BarcodeHealthRow } from "@/types";
@@ -48,7 +48,7 @@ import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, Pa
 import { isValidSlug, normalizeSlug, productImageUrl, shapeFrontCats } from "./storeLib";
 import { expenseMethodOf } from "./expenseMethod";
 import { journeyToken } from "./journey";
-import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
+import { uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName, searchable } from "./utils";
 import { getActiveClinicId } from "./clinics";
 import { expectedServerClinic } from "./workspaceClinic";
 import { SYSTEM_EXPENSE_TEXT } from "./expenseCategoryRules";
@@ -526,17 +526,19 @@ function ok(res: { error: { message: string; code?: string; details?: string; hi
 const MEDIA_BUCKET = "medical-media";
 const MEDIA_URL_TTL = 60 * 60 * 8; // 8 hours — comfortably longer than a work session
 const isStoragePath = (u: string): boolean => !!u && !/^(https?:|data:|blob:)/i.test(u);
+/* التوقيعُ كلُّه أو الرمية — لا معرضٌ بروابطَ ميّتة يبدو سليماً. `createSignedUrls` لا يرمي: يرجع `error`
+ * (انقطاع، جلسةٌ انتهت، الدلو) فكان يُبلع ويرجع كلُّ مرفقٍ بمساره الخام — صورٌ مكسورةٌ بلا كلمة، والطبيبُ
+ * يظنّ المرفقَ تالفاً فيعيد رفعَه. فخطأُ الطلب يُرمى وتقول الشاشةُ «أعد المحاولة».
+ * أمّا فشلُ ملفٍّ واحد (مسارٌ لم يعد بالدلو) فخطأٌ بسطره لا بالطلب: يبقى المرفقُ بمساره فيُرى مكسوراً بمكانه —
+ * رميُه كان سيُسقط معرضَ الحيوان كلَّه للأبد بملفٍّ واحدٍ لا تُصلحه إعادةُ المحاولة. */
 async function withSignedMedia(items: MediaItem[]): Promise<MediaItem[]> {
   const paths = items.filter((m) => isStoragePath(m.url)).map((m) => m.url);
   if (paths.length === 0) return items;
-  try {
-    const { data } = await sbc().storage.from(MEDIA_BUCKET).createSignedUrls(paths, MEDIA_URL_TTL);
-    const signed = new Map<string, string>();
-    for (const d of data ?? []) if (d.signedUrl && d.path) signed.set(d.path, d.signedUrl);
-    return items.map((m) => (isStoragePath(m.url) && signed.has(m.url) ? { ...m, url: signed.get(m.url)! } : m));
-  } catch {
-    return items; // never let a signing hiccup drop the whole gallery
-  }
+  const { data, error } = await sbc().storage.from(MEDIA_BUCKET).createSignedUrls(paths, MEDIA_URL_TTL);
+  if (error) throw error;   // StorageError ⊂ Error: نصُّه يصل describeDbError كما هو
+  const signed = new Map<string, string>();
+  for (const d of data ?? []) if (d.signedUrl && d.path) signed.set(d.path, d.signedUrl);
+  return items.map((m) => (isStoragePath(m.url) && signed.has(m.url) ? { ...m, url: signed.get(m.url)! } : m));
 }
 
 const supabaseRepo: DemoRepo = {
@@ -652,20 +654,12 @@ const supabaseRepo: DemoRepo = {
     // فصفرُ صفوفٍ (سياسةٌ ردّت، أو معرّفٌ بايت) كان يُقال عنه نجاحاً.
     return updated<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
   },
-  async deletePet(petId) {
-    // ملفات التخزين لا تلحقها الـcascade — صفوف media_items تنحذف مع الحيوان
-    // لكن ملفات الأشعة/الـPDF كانت تبقى بالباكت للأبد (بيانات مرضى + كلفة).
-    // نحذفها أولاً، بأفضل جهد: فشل التنظيف ما يمنع حذف الحيوان نفسه.
-    try {
-      const rows = listOf<{ url: string }>(await sbc().from("media_items").select("url").eq("pet_id", petId));
-      const paths = rows.map((r) => r.url).filter(isStoragePath);
-      for (let i = 0; i < paths.length; i += 50) {
-        await sbc().storage.from(MEDIA_BUCKET).remove(paths.slice(i, i + 50));
-      }
-    } catch { /* best effort — the DB delete below is the operation that matters */ }
-    // Dependent rows (visits, vaccinations, treatments, media, weights, admissions)
-    // are removed by the schema's `on delete cascade` foreign keys.
-    ok(await sbc().from("pets").delete().eq("id", petId));
+  async deletePet(petId, reason) {
+    // 0292: طيٌّ لا محو — الحيوانُ وكلُّ ما يتسلسل معه يُصوَّر بـpets_trash ويرجع بنفس المعرّفات، ولمن عنده
+    // «حذف الحيوانات» وحده (الخادمُ يسأل). ملفّاتُ المرفقات **تبقى** بالدلو: محوُها هنا كان يُرجع الحيوانَ بصورٍ مكسورة.
+    // ودالّةٌ غائبة (قاعدةٌ قبل 0292) تُرمى — لا رجوعَ للحذف المباشر النهائيّ.
+    const { error } = await sbc().rpc("delete_pet", { p_id: petId, p_reason: reason ?? null });
+    if (error) throw error;
   },
   async listWeights(petId) {
     return listOf<WeightLog>(await sbc().from("weight_logs").select("*").eq("pet_id", petId).order("measured_at", { ascending: true }));
@@ -789,8 +783,9 @@ const supabaseRepo: DemoRepo = {
     }
     return need<MedicalVisit>(await sbc().from("medical_visits").insert({ ...input, patient_age_months }).select().single());
   },
+  /* قائمةٌ تُرمى: ملاحظاتٌ فارغةٌ عن خطأ تقول «ما في ملاحظات» عن زيارةٍ كُتب فيها، فيُعاد كتابةُ ما كُتب. */
   async listPetNotes(petId) {
-    return listOf<PetNote>(await sbc().from("pet_notes").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+    return listOrThrow<PetNote>(await sbc().from("pet_notes").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
   },
   async listLabResults(petId) {
     return listOf<LabResult>(await sbc().from("lab_results").select("*").eq("pet_id", petId).order("taken_at", { ascending: false }));
@@ -896,13 +891,16 @@ const supabaseRepo: DemoRepo = {
   async updateClinicVisit(id, patch) {
     ok(await sbc().from("clinic_visits").update(patch).eq("id", id));
   },
+  /* قائمةٌ تُرمى: مرفقٌ غائبٌ عن معرضٍ يبدو كاملاً يُعاد رفعُه. والتوقيعُ يرمي مثلها (withSignedMedia). */
   async listMedia(petId) {
-    const items = listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+    const items = listOrThrow<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
     return withSignedMedia(items);
   },
+  /* للعدّ وحده (تقريرُ المختبر والأشعة يعدّ الأنواع): الروابطُ **غيرُ موقَّعة** — المسارُ كما بالقاعدة. توقيعُ كلّ
+   * مرفقات العيادة بطلبٍ واحد كان عملاً بلا قارئ، وصار يرمي منذ أن صار التوقيعُ يُسمَع فيُصفّر التقريرَ عن فشلٍ لا يخصّه.
+   * من يعرض صورةً يمرّ من `listMedia`. */
   async listAllMedia(petIds, range) {
-    const items = await inChunks(petIds, (c) => allPages<MediaItem>(() => inRange(sbc().from("media_items").select("*").in("pet_id", c), "created_at", range)));
-    return withSignedMedia(items);
+    return inChunks(petIds, (c) => allPages<MediaItem>(() => inRange(sbc().from("media_items").select("*").in("pet_id", c), "created_at", range)));
   },
   async addMedia(input) {
     return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
@@ -1032,8 +1030,9 @@ const supabaseRepo: DemoRepo = {
   async setAppointmentStatus(id, status) {
     ok(await sbc().from("appointments").update({ status }).eq("id", id));
   },
+  /* قائمةٌ تُرمى: طبلةٌ فارغةٌ عن خطأ تقول «ما في جرعات» عن حيوانٍ بخطّة — فتُكتب الخطّةُ ثانيةً أو تُنسى جرعة. */
   async listTreatments(petId) {
-    return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
+    return listOrThrow<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
   },
   /* صفوفُ زيارةٍ واحدة كلُّها — **قائمةُ قرار**: التمديدُ يقرأ منها آخرَ يومٍ قبل أن يكتب (لا من
    * حالة الشاشة، فجوابٌ ضاع بعد كتابةٍ وصلت كان يمدّد مرّتين). قائمةٌ ناقصة تمدّد يوماً غيرَ
@@ -1242,9 +1241,6 @@ const supabaseRepo: DemoRepo = {
     void clinicId;
     // `is("farm_id", null)`: مخزنُ العيادة لا يرى مخزنَ الحقل (0191).
     return allPages<Product>(() => sbc().from("products").select("*").is("farm_id", null), { col: "name", asc: true, kind: "text" });
-  },
-  async listFarmProducts(farmId: string) {
-    return allPages<Product>(() => sbc().from("products").select("*").eq("farm_id", farmId), { col: "name", asc: true, kind: "text" });
   },
   async supportsBulkGroup() {
     try {
@@ -1470,114 +1466,6 @@ const supabaseRepo: DemoRepo = {
     }
     return out;
   },
-  /* ── حقولُ الدواجن (0191/0192) — السحابيّ ───────────────────────────────
-   * القوائمُ من `listOrThrow` لا `listOf`: قائمةُ دفعاتٍ ناقصةٌ بصمتٍ تعني
-   * دفعةً يظنّها الدكتورُ مغلقةً فيفتح ثانيةً بنفس الجملون — والقاعدةُ ترفض
-   * فيظهر خطأٌ لا معنى له. «قائمةٌ ناقصةٌ أخطرُ من خطأٍ ظاهر». */
-  async listPoultryFarms() {
-    return listOrThrow<PoultryFarm>(await sbc().from("poultry_farms").select("*").eq("archived", false).order("created_at", { ascending: false }).limit(500));
-  },
-  async addPoultryFarm(input) {
-    return need<PoultryFarm>(await sbc().from("poultry_farms").insert(input).select().single());
-  },
-  async listPoultryHouses(farmId) {
-    return listOrThrow<PoultryHouse>(await sbc().from("poultry_houses").select("*").eq("farm_id", farmId).eq("archived", false).order("label", { ascending: true }).limit(500));
-  },
-  async addPoultryHouse(input) {
-    return need<PoultryHouse>(await sbc().from("poultry_houses").insert(input).select().single());
-  },
-  async listPoultryCycles(farmId) {
-    return listOrThrow<PoultryCycle>(await sbc().from("poultry_cycles").select("*").eq("farm_id", farmId).order("placed_on", { ascending: false }).limit(500));
-  },
-  async openPoultryCycle(input) {
-    const r = await sbc().from("poultry_cycles").insert(input).select().single();
-    // الفهرسُ الفريدُ الجزئيّ بالخادم هو الحكم؛ نترجم رمزَه لرسالةٍ تُفهم.
-    if (r.error && /poultry_cycles_one_active_per_house|23505/.test(`${r.error.code} ${r.error.message}`)) {
-      throw new Error("house_has_active_cycle");
-    }
-    return need<PoultryCycle>(r);
-  },
-  async closePoultryCycle(id, close) {
-    if (!close.closed_on) throw new Error("close_needs_date");
-    return updated<PoultryCycle>(await sbc().from("poultry_cycles").update({ ...close, status: "closed" }).eq("id", id).select());
-  },
-  async listPoultryDaily(cycleId) {
-    return listOrThrow<PoultryDaily>(await sbc().from("poultry_daily").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(1000));
-  },
-  /** `upsert` على (cycle_id,on_date): إعادةُ إدخال يومٍ تصحيحٌ لا صفٌّ ثانٍ. */
-  /** إدخالُ اليوم — **يعيش بلا نت**.
-   *
-   *  الجملونُ على طرف قرية، والدكتورُ يكتب نفوقَ اليوم واقفاً. وكانت هذه
-   *  تُرمى بفشل الشبكة فيضيع اليوم: لا أحدَ يرجع بعد ساعةٍ ليعيد كتابةَ ما
-   *  عدّه. فصارت تدخل صندوق الصادر بمفتاحها الطبيعيّ (الدفعة + التاريخ)،
-   *  ونُرجع ما كتبه كأنّه حُفظ — لأنه سيُحفظ. */
-  async savePoultryDaily(input) {
-    const opId = `poultry_daily:${input.cycle_id}:${input.on_date}`;
-    const row = { ...input, updated_at: new Date().toISOString() };
-    try {
-      // تحت قفل اليوم (outboxExclusive): نسخةٌ قديمةٌ طائرةٌ من الطابور تصل قبلها لا بعدها فتدهسها.
-      return await outboxExclusive(opId, async () => {
-        const saved = need<PoultryDaily>(await sbc().from("poultry_daily")
-          .upsert(row, { onConflict: "cycle_id,on_date" }).select().single());
-        // نجحت أونلاين ⇒ نسخةٌ قديمةٌ بالطابور لنفس اليوم لا يجوز أن تدهسها بعدُ.
-        outboxDrop(opId);
-        return saved;
-      });
-    } catch (e) {
-      if (!isNetworkError(e)) throw e;
-      if (!outboxEnqueue("poultry_daily", row, { id: opId, conflict: "cycle_id,on_date" })) throw e;
-      /* المُرجَعُ محلّيٌّ بمعرّفٍ اصطناعيّ: الشاشةُ تستعمله مفتاحَ عرضٍ لا أكثر،
-         والقاعدةُ تولّد المعرّفَ الحقيقيّ حين ينزل الصفّ. */
-      return { ...(input as object), id: opId, created_at: row.updated_at } as PoultryDaily;
-    }
-  },
-  async listPoultryUse(cycleId) {
-    return listOrThrow<PoultryUse>(await sbc().from("poultry_use").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(2000));
-  },
-  /** الصرفُ من دالّةٍ لا بكتابتين: الخصمُ والسطرُ معاً أو لا شيء (0192). */
-  async poultryConsume(input) {
-    /* مرجعُ المحاولة يولَد هنا دائماً، لا عند الفشل: الطابورُ يرفض نداءً بلا
-     * مرجع، ومن يولّده بعد الفشل يكون قد فقد المرجعَ الذي ذهب مع المحاولة
-     * الأولى — فتصير الإعادةُ خصماً ثانياً (درس 0171). */
-    const args = {
-      p_cycle: input.cycle_id, p_kind: input.kind, p_product: input.product_id ?? null,
-      p_name: input.name ?? null, p_qty: input.qty, p_unit: input.unit ?? null,
-      p_on_date: input.on_date ?? null, p_note: input.note ?? null,
-      p_withdrawal: input.withdrawal_days ?? null,
-      p_meta: { client_ref: input.client_ref ?? uid("pcon") },
-    };
-    try {
-      const { data, error } = await sbc().rpc("poultry_consume", args);
-      if (error) throw new Error(error.message);
-      return (data ?? { ok: false }) as PoultryConsumeResult;
-    } catch (e) {
-      if (!isNetworkError(e)) throw e;
-      if (!outboxEnqueueRpc("poultry_consume", args as unknown as Record<string, unknown>)) throw e;
-      /* الصرفُ سينزل، ولا شيءَ بعده ينتظر معرّفَه (بخلاف البيعة). فنُرجع
-       * «تمّ» بلا `stock_after` ولا `shortfall`: رقمُ رصيدٍ نخترعه هنا قد
-       * يخالف ما ستُنتجه القاعدة، وصمتٌ أصدقُ من رقمٍ يُصدَّق ثم يتبدّل. */
-      return { ok: true, queued: true } as PoultryConsumeResult;
-    }
-  },
-  async poultryUnconsume(useId) {
-    const { data, error } = await sbc().rpc("poultry_unconsume", { p_use: useId });
-    if (error) throw new Error(error.message);
-    return (data ?? { ok: false }) as { ok: boolean; returned?: number };
-  },
-  async poultryCycleStats(cycleId) {
-    const { data, error } = await sbc().rpc("poultry_cycle_stats", { p_cycle: cycleId });
-    if (error) throw new Error(error.message);
-    const row = (data as PoultryCycleStats[] | null)?.[0];
-    return row ? { ...row, placed_count: Number(row.placed_count) || 0, dead: Number(row.dead) || 0, culled: Number(row.culled) || 0,
-      alive: Number(row.alive) || 0, feed_kg: Number(row.feed_kg) || 0, feed_cost: Number(row.feed_cost) || 0,
-      med_cost: Number(row.med_cost) || 0, other_cost: Number(row.other_cost) || 0, chick_cost: Number(row.chick_cost) || 0,
-      days: Number(row.days) || 0,
-      // النصُّ والرايةُ يمرّان كما هما — و`?? false` لأن قاعدةً قبل 0193 ترجع
-      // `undefined`، و«مجهول» أسلمُ من «آمن» لكنّ «لا دواءَ أصلاً» ليس مجهولاً.
-      safe_from: row.safe_from ?? null,
-      withdrawal_unknown: row.withdrawal_unknown ?? false } : null;
-  },
-
   /** شعار العيادة إلى الدلو (0190) — تصحيحُ سجلٍّ قبل أن يكون ميزة.
    *
    *  ترويسةُ 0174 تقول «الصورة لا تدخل جداول القاعدة أبداً» وتذكر أن شعارات
@@ -2615,6 +2503,11 @@ const supabaseRepo: DemoRepo = {
     if (!ids.length) return 0;
     return listOrThrow<{ id: string }>(await sbc().from(table).select("id").in("id", ids)).length;
   },
+  /** أيّامُ دفعةِ حقلٍ بالخادم — لمراجعة /outbox وحدها: إدخالُ يومٍ قديمٌ بالطابور (من دفتر «باقة الحقل»،
+   *  أُلغي بقرار المالك ٢٤/١١) يُقارَن بيومه بالخادم قبل أن يُرفع. لا شاشةَ تكتب أيّاماً جديدة. */
+  async listPoultryDaily(cycleId) {
+    return listOrThrow<PoultryDaily>(await sbc().from("poultry_daily").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(1000));
+  },
   async deleteExpense(id) {
     // حذفٌ يُسمَع (تدقيقٌ عدائيّ على 0227): سحبٌ حُفظ والنتُّ واگع ينتظر بالطابور — حذفُه من
     // القاعدة صفرُ صفوفٍ بلا خطأ، فيُقال «انحذف» ثم يرفعه الطابورُ بعد ثوانٍ فيرجع ويُحسب
@@ -3012,10 +2905,8 @@ export class ReadOnlyError extends Error {
  */
 const READ_ONLY_ALLOWED = new Set<string>([
   // مراجعةُ صندوق الصادر (/outbox): أثرُ مرتجعٍ قديم — قراءةٌ، والعيادةُ المنتهي اشتراكُها تراجع أيضاً.
-  "listReturnRows", "countVisible",
+  "listReturnRows", "countVisible", "listPoultryDaily",
   // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
-  "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
-  "listPoultryUse", "poultryCycleStats",
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
   "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode", "getProductById", "getSectionPool",
   "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "rejectStaleStoreOrders", "listAdmissions", "listAdmissionsForPet",

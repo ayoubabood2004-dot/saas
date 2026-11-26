@@ -386,7 +386,6 @@ console.log("\n▸ مخزنُ الحقل لا يصل كاشيرَ العيادة
   check("  ولا رمزُه الإضافيّ", (await repo.getProductByBarcode("FARM-ALT")) === undefined);
   check("  والسؤالُ بالمعرّف (طريقُ الكرت) لا يُرجعه", (await repo.getProductById("f1")) === undefined);
   check("  ومنتجُ العيادة بمعرّفه يرجع", (await repo.getProductById("c1"))?.id === "c1");
-  check("ووجهُ الحقل ما زال يراه (listFarmProducts)", (await repo.listFarmProducts("farm-1")).some((p) => p.id === "f1"));
   /* وصيغُ الماسح (GTIN-14 ← EAN-13 ← UPC-A) تستثنيه كالحرفيّ — مرآةُ 0191 التي
    * تستثنيه بالصيغ أيضاً. كانت الصيغُ تمشي على كلّ المنتجات، فصيغةٌ أسبقُ يحملها صفُّ
    * حقلٍ تُختار قبل صيغةٍ لاحقةٍ يحملها منتجُ العيادة: رفضٌ أو «رصيده صفر» عمّا يُباع. */
@@ -903,75 +902,6 @@ const threw = async (fn) => {
   try { await fn(); return false; }
   catch (e) { return !(e instanceof TypeError); }
 };
-
-/* ── حقولُ الدواجن (0191/0192): التجريبيُّ مرآةُ الخادم ────────────────────
- * القيودُ التي تحمي أرقامَ الحقل تعيش بالقاعدة (فهرسان فريدان وقيدُ إغلاق).
- * وفحوصُ المنطق تجري على هذه النسخة — فحارسٌ لا يوجد هنا حارسٌ لم يُفحص. */
-{
-  console.log("▸ حقولُ الدواجن — القيودُ نفسُها بالنصفين");
-  const farm = await repo.addPoultryFarm({ name: "حقلُ الفحص" });
-  const house = await repo.addPoultryHouse({ farm_id: farm.id, label: "جملون ١", capacity: 25000, default_kind: "broiler", default_breed: "Ross 308", default_count: 20000 });
-  const today = new Date().toISOString().slice(0, 10);
-  const ago = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-
-  const cyc = await repo.openPoultryCycle({ farm_id: farm.id, house_id: house.id, kind: "broiler", breed: "Ross 308", placed_on: ago(10), placed_count: 20000, chick_unit_cost: 500 });
-  check("الدفعةُ تُفتح نشطةً بعددها", cyc.status === "active" && cyc.placed_count === 20000);
-  check("  والعمرُ من تاريخ وضع الدجاج", (await repo.poultryCycleStats(cyc.id)).days === 10);
-
-  // دفعتان نشطتان بنفس الجملون ⇒ كلُّ رقمٍ يوميٍّ بعدهما لا يُعرف لأيّهما.
-  check("دفعةٌ نشطةٌ ثانيةٌ بنفس الجملون مرفوضة",
-    await threw(() => repo.openPoultryCycle({ farm_id: farm.id, house_id: house.id, kind: "broiler", placed_on: today, placed_count: 5000 })));
-
-  await repo.savePoultryDaily({ cycle_id: cyc.id, on_date: ago(9), dead: 30, culled: 5 });
-  await repo.savePoultryDaily({ cycle_id: cyc.id, on_date: ago(8), dead: 12, culled: 0 });
-  check("  والحيُّ = المُدخَل − النافق − المستبعَد", (await repo.poultryCycleStats(cyc.id)).alive === 19953);
-
-  // يومٌ يُعاد ⇒ تصحيحٌ لا صفٌّ ثانٍ (مرآةُ upsert بالخادم).
-  await repo.savePoultryDaily({ cycle_id: cyc.id, on_date: ago(9), dead: 40, culled: 5 });
-  check("إعادةُ إدخال يومٍ تصحيحٌ لا تكرار",
-    (await repo.listPoultryDaily(cyc.id)).length === 2 && (await repo.poultryCycleStats(cyc.id)).dead === 52);
-
-  // الصرف: مادّةُ الحقل تُخصم بسعر الشراء، ومادّةُ العيادة تُرفض.
-  const db0 = JSON.parse(mem.get(DB_KEY) ?? "{}");
-  db0.products = [
-    { id: "feed1", name: "علف بادئ", purchase_price: 900, sell_price: 0, stock: 1000, farm_id: farm.id },
-    { id: "cat1", name: "معلب قطط", purchase_price: 3000, sell_price: 5000, stock: 20, farm_id: null },
-  ];
-  mem.set(DB_KEY, JSON.stringify(db0));
-
-  const r1 = await repo.poultryConsume({ cycle_id: cyc.id, kind: "feed", product_id: "feed1", qty: 300 });
-  check("الصرفُ يخصم ويقيّد بسعر الشراء لا البيع", r1.ok && r1.use.line_cost === 270000 && r1.stock_after === 700, JSON.stringify(r1.use?.line_cost));
-  check("  والاسمُ يُؤخذ من المادّة حين لا يُكتب", r1.use.name === "علف بادئ");
-
-  // الرصيدُ يُترك يسلب عمداً والنقصُ يُرجَّع — الدفترُ اليوميّ هو الحقيقة.
-  const r2 = await repo.poultryConsume({ cycle_id: cyc.id, kind: "feed", product_id: "feed1", qty: 900 });
-  check("صرفٌ فوق الرصيد يُسجَّل ويُرجّع النقص", r2.shortfall === 200 && r2.stock_after === -200, JSON.stringify([r2.shortfall, r2.stock_after]));
-
-  check("مادّةُ مخزن العيادة مرفوضةٌ على دفعةِ دجاج",
-    await threw(() => repo.poultryConsume({ cycle_id: cyc.id, kind: "feed", product_id: "cat1", qty: 1 })));
-
-  await repo.poultryUnconsume(r2.use.id);
-  const dbBack = JSON.parse(mem.get(DB_KEY));
-  check("  وحذفُ الصرف يرجّع البضاعة", dbBack.products.find((p) => p.id === "feed1").stock === 700);
-
-  check("وخدمةٌ بلا اسمٍ ولا مادّةٍ مرفوضة (سطرُ كلفةٍ لا يُقرأ بجرد)",
-    await threw(() => repo.poultryConsume({ cycle_id: cyc.id, kind: "service", qty: 1 })));
-  check("  وباسمٍ تُقبل",
-    (await repo.poultryConsume({ cycle_id: cyc.id, kind: "service", name: "قنينة غاز", qty: 1 })).ok);
-
-  const st = await repo.poultryCycleStats(cyc.id);
-  check("مجاميعُ الدفعة: علفٌ بالكيلو وكلفٌ مفصولة", st.feed_kg === 300 && st.feed_cost === 270000 && st.med_cost === 0);
-  check("  وكلفةُ الصيصان = السعرُ × العدد", st.chick_cost === 10000000);
-
-  // إغلاقٌ بلا تاريخٍ = جردٌ بلا حصيلة.
-  check("إغلاقٌ بلا تاريخٍ مرفوض", await threw(() => repo.closePoultryCycle(cyc.id, { closed_on: "" })));
-  await repo.closePoultryCycle(cyc.id, { closed_on: today, sold_count: 19900, sold_weight_kg: 45000, sale_total: 90000000 });
-  check("  وبتاريخٍ يُغلق", (await repo.listPoultryCycles(farm.id))[0].status === "closed");
-  check("والصرفُ على دفعةٍ مغلقةٍ مرفوض",
-    await threw(() => repo.poultryConsume({ cycle_id: cyc.id, kind: "feed", product_id: "feed1", qty: 10 })));
-  check("  ودفعةٌ جديدةٌ بنفس الجملون صارت ممكنة (النشطةُ أُغلقت)",
-    !(await threw(() => repo.openPoultryCycle({ farm_id: farm.id, house_id: house.id, kind: "broiler", placed_on: today, placed_count: 18000 }))));
-}
 
 /* ── الشركةُ الواحدة صفٌّ واحد — مرآةُ ensure_company (0196) ─────────────────
  * الجذرُ المقيس: ١٠٢ شركةٍ مكرّرة من ١٤٣ بستّ عيادات، لأن المقارنة كانت بطرفٍ

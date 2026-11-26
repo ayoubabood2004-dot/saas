@@ -125,6 +125,14 @@ check("addGeneratedBarcodes — ملصقاتٌ لا تُطبع قبل أن تُ�
   await throws(() => repo.addGeneratedBarcodes([{ barcode: "2000000000015", label: null, product_id: null, created_by: null }])));
 check("listImageLibrary — «ما بيها صور» كانت تُقال عن فشل (البند ٢٠)",
   await throws(() => repo.listImageLibrary()));
+/* الزيارة وملفُّ الحيوان: كانت تمرّ بـlistOf فترجع [] — «ما في ملاحظات» عن زيارةٍ فيها تشخيص، وطبلةٌ بلا جرعات،
+ * ومعرضٌ فارغ يُعاد رفعُ مرفقاته. */
+check("listPetNotes — «ما في ملاحظات» كانت تُقال عن فشل",
+  await throws(() => repo.listPetNotes("pet-1")));
+check("listTreatments — طبلةٌ فارغةٌ عن فشل تُخفي ما انعطى وما ينتظر",
+  await throws(() => repo.listTreatments("pet-1")));
+check("listMedia — معرضٌ فارغٌ عن فشل يُعاد رفعُ مرفقاته",
+  await throws(() => repo.listMedia("pet-1")));
 
 /* ── الموجة ٥ · البند ٢٣: المواضعُ الخمسةُ الصامتة ─────────────────────────
  * `maybe()` تخلط جوابين: تطبع الخطأ بالكونسول وترجع «لا صفّ». فصفرُ صفوفٍ
@@ -339,6 +347,105 @@ console.log("▸ ع٩/ط٤ — allPages تحت إدراجٍ وحذفٍ متزا�
     !!e.err && !e.hung && e.pages <= 3, e.hung ? "علّقت" : !e.err ? "رجعت قائمة" : `${e.pages} طلبة قبل التوقّف`);
 }
 
+/* ── توقيعُ المرفقات (withSignedMedia) ─────────────────────────────────────
+ * `createSignedUrls` لا يرمي: يرجع `{ data: null, error }`، وكان يُبلع فيرجع كلُّ مرفقٍ بمساره الخام — معرضٌ
+ * بصورٍ مكسورةٍ يبدو سليماً. فالقراءةُ هنا **تنجح** والتوقيعُ وحده يفشل: عميلٌ فاشلٌ بالكامل كان سيُسقط القراءةَ
+ * أوّلاً فيقيس listOrThrow لا التوقيع (درسُ addWeight أعلاه). */
+console.log("▸ توقيعُ المرفقات — فشلُ الطلب يُرمى، وملفٌّ مفقود لا يُسقط المعرض، والعدُّ لا يوقّع");
+{
+  const MEDIA_SUPABASE = `
+    const rows = [
+      { id: "m1", pet_id: "pet-1", url: "c1/pet-1/a.jpg", kind: "xray", created_at: "2026-11-20T10:00:00Z" },
+      { id: "m2", pet_id: "pet-1", url: "c1/pet-1/gone.jpg", kind: "lab", created_at: "2026-11-19T10:00:00Z" },
+      { id: "m3", pet_id: "pet-1", url: "https://legacy.example/x.jpg", kind: "photo", created_at: "2026-11-18T10:00:00Z" },
+    ];
+    const chain = (res) => {
+      const o = new Proxy(function () {}, {
+        get(_t, k) {
+          if (k === "then") return (r) => { r(res); };
+          if (k === "catch" || k === "finally") return () => o;
+          return () => o;
+        },
+        apply() { return o; },
+      });
+      return o;
+    };
+    /* يحترم مؤشّرَ allPages (\`gt\` على id): صفحةٌ ثانيةٌ بلا جديد ⇒ فارغة، كالخادم الحقيقيّ. */
+    const table = () => {
+      let after;
+      const o = new Proxy(function () {}, {
+        get(_t, k) {
+          if (k === "then") return (r) => { r({ data: rows.filter((x) => after === undefined || x.id > after).map((x) => ({ ...x })), error: null }); };
+          if (k === "gt") return (c, v) => { if (c === "id") after = v; return o; };
+          return () => o;
+        },
+        apply() { return o; },
+      });
+      return o;
+    };
+    globalThis.__signCalls = 0;
+    export const supabase = {
+      from: () => table(),
+      rpc: () => chain({ data: null, error: { message: "n/a" } }),
+      schema: () => ({ from: () => chain({ data: null, error: { message: "n/a" } }) }),
+      storage: { from: () => ({
+        createSignedUrls: async (paths) => {
+          globalThis.__signCalls++;
+          if (globalThis.__signMode === "down") return { data: null, error: Object.assign(new Error("storage down"), { name: "StorageUnknownError" }) };
+          return { data: paths.map((p) => (p.includes("gone")
+            ? { path: p, signedUrl: null, error: "Either the object does not exist or you do not have access to it" }
+            : { path: p, signedUrl: "https://signed.example/" + p, error: null })), error: null };
+        },
+      }) },
+      auth: { getSession: async () => ({ data: { session: null }, error: null }), getUser: async () => ({ data: { user: null }, error: null }) },
+    };
+  `;
+  const mediaStubs = {
+    name: "media",
+    setup(b) {
+      const m = {
+        i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
+        "./supabase": MEDIA_SUPABASE,
+        "./globalToast": "export const emitGlobalToast = () => {};",
+      };
+      b.onResolve({ filter: /.*/ }, (a) => (EMPTY.has(a.path) ? { path: a.path, namespace: "stub" } : undefined));
+      b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
+      b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
+      b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: m[a.path] ?? "export default {};", loader: "js" }));
+    },
+  };
+  const mb = await esbuild.build({
+    entryPoints: ["src/lib/repo.ts"], bundle: true, format: "esm", write: false,
+    platform: "neutral", plugins: [mediaStubs], logLevel: "silent",
+    define: { "import.meta.env": "__VITE_ENV__" }, banner: { js: "const __VITE_ENV__ = {};" },
+  });
+  const d3 = mkdtempSync(join(tmpdir(), "media-"));
+  const f3 = join(d3, "repo.mjs");
+  writeFileSync(f3, mb.outputFiles[0].text);
+  const m3 = await import(pathToFileURL(f3).href).finally(() => { try { rmSync(d3, { recursive: true, force: true }); } catch { /* ignore */ } });
+
+  globalThis.__signMode = "down";
+  check("listMedia — التوقيعُ فشل كلُّه ⇒ يُرمى (لا معرضٌ بمساراتٍ خامّة يبدو سليماً)",
+    await throws(() => m3.repo.listMedia("pet-1")));
+
+  globalThis.__signMode = "ok";
+  let got = null, err = null;
+  try { got = await m3.repo.listMedia("pet-1"); } catch (e) { err = e; }
+  const byId = new Map((got ?? []).map((x) => [x.id, x.url]));
+  check("listMedia — ملفٌّ واحدٌ مفقود بالدلو لا يُسقط المعرض: المرفقاتُ الثلاثة كلُّها",
+    !err && got?.length === 3, err ? String(err.message ?? err) : `${got?.length} مرفقاً`);
+  check("  الموقَّعُ برابطه، والمفقودُ بمساره (يُرى مكسوراً بمكانه)، والقديمُ كما هو",
+    byId.get("m1") === "https://signed.example/c1/pet-1/a.jpg" && byId.get("m2") === "c1/pet-1/gone.jpg" && byId.get("m3") === "https://legacy.example/x.jpg",
+    JSON.stringify([...byId]));
+
+  globalThis.__signMode = "down";
+  const before = globalThis.__signCalls;
+  let all = null, allErr = null;
+  try { all = await m3.repo.listAllMedia(["pet-1"]); } catch (e) { allErr = e; }
+  check("listAllMedia — للعدّ وحده: لا يوقّع، فتوقيعٌ معطّل لا يصفّر تقريرَ المختبر والأشعة",
+    !allErr && all?.length === 3 && globalThis.__signCalls === before,
+    allErr ? String(allErr.message ?? allErr) : `${all?.length} صفّاً، ${globalThis.__signCalls - before} طلبَ توقيع`);
+}
 
 console.log(`\n${fails ? "✗" : "✓"} fetch-throw-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

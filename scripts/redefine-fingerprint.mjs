@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0289", "0290"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0287_visit_voice_notes", "0289", "0290"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -117,6 +117,8 @@ export const MANIFEST = [
   ["_stock_ledger_source", 1, "public._stock_ledger_source(text)", "0287_stock_safety", "0290"],
   ["_stock_ledger_kind", 4, "public._stock_ledger_kind(text,text,text,numeric)", "0287_stock_safety", "0290"],
   ["stock_count_decide", 2, "public.stock_count_decide(uuid[],boolean)", "0254", "0290"],
+  // 0287: الملاحظةُ الصوتية «ملف طبي» بسجلّ الحركات — audit_kind نصُّ 0271 (آخرُ من عرّفها) وسطرٌ معلَّم.
+  ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0271", "0287_visit_voice_notes"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();
@@ -218,15 +220,17 @@ if (isMain) {
     if (tb == null && state === "pending") { pending.push(`${fn} (${src} → ${tgt}، بصمةُ المصدر ${md5(sb)})`); continue; }
     if (tb == null) { bad(`${fn}: ${tf} ما يعيد تعريفها`); continue; }
     checked++;
-    const a = strip(sb), b = strip(unmark(tb, tgt));
+    /* العلامةُ رقمُ الهجرة (`-- +0287`) ولو سُمّي الهدفُ باسم ملفّه — ثلاثُ هجراتٍ برقم 0287 (٢٤/١١). */
+    const tag = tgt.slice(0, 4);
+    const a = strip(sb), b = strip(unmark(tb, tag));
     if (a !== b) bad(`${fn} (${src} → ${tgt}): النصُّ بعد فكّ العلامات غيرُ نصّ المصدر — ${firstDiff(a, b)}`);
-    if (!new RegExp("--\\s*\\+" + tgt).test(tb)) bad(`${fn} (${tgt}): لا سطرَ معلَّماً بـ-- +${tgt} — إعادةُ تعريفٍ بلا تغيير؟`);
+    if (!new RegExp("--\\s*\\+" + tag).test(tb)) bad(`${fn} (${tgt}): لا سطرَ معلَّماً بـ-- +${tag} — إعادةُ تعريفٍ بلا تغيير؟`);
     const esc = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const g = ttxt.match(new RegExp("_drift_assert\\(\\s*'" + esc + "'\\s*,\\s*'([0-9a-f]{32})'\\s*,\\s*'([^']*)'\\s*\\)"));
     if (!g) bad(`${fn} (${tgt}): ما لكيت _drift_assert('${sig}', …) قبل التعريف`);
     else {
       if (g[1] !== md5(sb)) bad(`${fn} (${tgt}): بصمةُ الحارس ${g[1]} وبصمةُ جسم ${src} ${md5(sb)}`);
-      if (g[2] !== `-- +${tgt}`) bad(`${fn} (${tgt}): علامةُ الحارس «${g[2]}» والمتوقَّع «-- +${tgt}»`);
+      if (g[2] !== `-- +${tag}`) bad(`${fn} (${tgt}): علامةُ الحارس «${g[2]}» والمتوقَّع «-- +${tag}»`);
       if (ttxt.indexOf(g[0]) > ttxt.search(new RegExp("create\\s+or\\s+replace\\s+function\\s+(?:public\\.)?" + fn + "\\s*\\(", "i")))
         bad(`${fn} (${tgt}): الحارسُ بعد التعريف — لازم قبله`);
     }

@@ -1,17 +1,15 @@
 /* الرأسُ: الشعار، «المنتج» بقائمته العملاقة مقسّمةً بيوم العيادة، والأسعار والأمان والأسئلة،
  * ومحوِّلُ الدولة، والدخول، وزرُّ التجربة. وعلى الهاتف: درجٌ بالمجموعات نفسها. */
 import { useEffect, useState } from "react";
-import { ChevronDown, Menu, X, ArrowUpLeft, ArrowUpRight } from "lucide-react";
+import { ChevronDown, Menu, X } from "lucide-react";
 import EditionSwitcher, { type SwitcherProps } from "./EditionSwitcher";
 
 export interface NavItem { title: string; short: string; href: string }
 export interface SiteNavProps {
-  dir: "rtl" | "ltr";
   brand: string;
   homeHref: string;
   labels: { product: string; pricing: string; security: string; faq: string; start: string; login: string; menu: string; close: string; all: string };
   groups: { title: string; items: NavItem[] }[];
-  featured: { title: string; body: string; href: string };
   links: { pricing: string; security: string; faq: string; start: string; features: string };
   cta: { label: string; href: string };
   loginHref: string;
@@ -34,7 +32,6 @@ function Logo({ brand }: { brand: string }) {
 export default function SiteNav(p: SiteNavProps) {
   const [mega, setMega] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  const Arrow = p.dir === "rtl" ? ArrowUpLeft : ArrowUpRight;
 
   useEffect(() => {
     if (!mega && !drawer) return;
@@ -75,10 +72,10 @@ export default function SiteNav(p: SiteNavProps) {
         </div>
       </div>
 
-      {/* القائمةُ العملاقة — مجموعاتٌ بيوم العيادة، وبطاقةٌ مميّزة */}
+      {/* القائمةُ العملاقة — مجموعاتٌ بيوم العيادة */}
       {mega && (
         <div className="absolute inset-x-0 top-16 hidden border-b border-rule bg-white shadow-[0_30px_60px_-40px_rgb(15_30_53/0.45)] lg:block">
-          <div className="container grid grid-cols-[repeat(5,minmax(0,1fr))_minmax(0,1.2fr)] gap-6 py-8">
+          <div className="container grid grid-cols-5 gap-6 py-8">
             {p.groups.map((g) => (
               <div key={g.title}>
                 <p className="mb-3 text-xs font-bold text-stamp">{g.title}</p>
@@ -94,16 +91,7 @@ export default function SiteNav(p: SiteNavProps) {
                 </ul>
               </div>
             ))}
-            <a href={p.featured.href} className="group flex flex-col justify-between rounded-2xl bg-navy p-5 text-white">
-              <span>
-                <span className="block font-display text-base font-bold">{p.featured.title}</span>
-                <span className="mt-2 block text-sm leading-6 text-white/75">{p.featured.body}</span>
-              </span>
-              <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-white">
-                <Arrow size={16} aria-hidden className="transition group-hover:-translate-y-0.5" />
-              </span>
-            </a>
-            <a href={p.links.features} className="col-span-6 text-sm font-semibold text-brand-700 hover:underline">{p.labels.all}</a>
+            <a href={p.links.features} className="col-span-5 text-sm font-semibold text-brand-700 hover:underline">{p.labels.all}</a>
           </div>
         </div>
       )}
@@ -128,7 +116,6 @@ export default function SiteNav(p: SiteNavProps) {
                   </ul>
                 </div>
               ))}
-              <a href={p.featured.href} className="block rounded-xl bg-paper px-3 py-2.5 text-[15px] font-semibold text-navy">{p.featured.title}</a>
               <div className="grid gap-1 border-t border-rule pt-4">
                 {([[p.links.pricing, p.labels.pricing], [p.links.start, p.labels.start], [p.links.security, p.labels.security], [p.links.faq, p.labels.faq], [p.loginHref, p.labels.login]] as const).map(([h, l]) => (
                   <a key={h} href={h} className="rounded-xl px-3 py-2.5 text-[15px] font-semibold text-navy hover:bg-paper">{l}</a>

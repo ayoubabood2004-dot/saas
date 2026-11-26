@@ -10,16 +10,11 @@
 // ============================================================================
 import i18next from "i18next";
 
-export type PlanId = "basic" | "advanced" | "super" | "farm";
-
-/** لمن هذه الباقة. الحقلُ ليس ترقيةً للعيادة — هو جمهورٌ آخر. */
-export type PlanAudience = "clinic" | "farm";
+export type PlanId = "basic" | "advanced" | "super";
 export type BillingPeriod = "monthly" | "annual";
 
 export interface Plan {
   id: PlanId;
-  /** غيابُها = عيادة (كلُّ ما سبق)، فلا تتغيّر باقةٌ قائمة. */
-  audience?: PlanAudience;
   monthlyUsd: number;
   annualUsd: number;    // 12 × monthlyUsd
   popular?: boolean;
@@ -46,29 +41,12 @@ export const PLANS: Plan[] = [
     annualUsd: 1000,
     popular: true,
   },
-  {
-    /* ── باقةُ حقل الدواجن — قائمةٌ بذاتها لا ترقيةٌ لباقةِ عيادة ────────────
-     * بقرار المالك: «باقة وحدها اسمها باقة حقل الدواجن، تفاصيلُ اشتراكها وما
-     * بداخلها تختلف عن العيادة». فجمهورُها صاحبُ الحقل لا الطبيب، وما فيها
-     * ليس «كلَّ ما بالمطورة + شيء» — بل شيءٌ آخر.
-     *
-     * والسعرُ هنا **افتراضٌ يُبدَّل من لوحة المشغّل بلا نشر** (`plan_prices`
-     * تُحمَّل بالإقلاع وتغلب هذا الرقم) — لم يحدّده المالكُ بعد. */
-    id: "farm",
-    audience: "farm",
-    monthlyUsd: 45,
-    annualUsd: annualUsdFor(45),
-  },
 ];
 
-/** باقاتُ العيادة وحدَها — وهي ما تعرضه شبكةُ الأسعار بصفحة الهبوط والاشتراك.
- *  عرضُ باقةِ الحقل بينها يقول إنها «الأغلى» أو «الأكمل»، وهي ليست أيّاً منهما. */
-export const CLINIC_PLANS: Plan[] = PLANS.filter((p) => (p.audience ?? "clinic") === "clinic");
-export const FARM_PLANS: Plan[] = PLANS.filter((p) => p.audience === "farm");
-
-/** هل هذه الباقةُ تفتح قسمَ الحقول؟ */
-export const isFarmPlan = (id: string | null | undefined): boolean =>
-  !!id && PLANS.some((p) => p.id === id && p.audience === "farm");
+/** ما تعرضه شبكةُ الأسعار بصفحة الهبوط والاشتراك. كانت باقاتِ العيادة دون «حقل الدواجن» — وتلك الباقةُ
+ *  أُلغيت بقرار المالك (٢٤/١١): صفُّ اشتراكٍ قديمٌ بها (`plan = 'farm'`) لا يطابق باقةً هنا، فلا يفتح ميزةً
+ *  مدفوعة (entitlements) — وبياناتُ حقوله باقيةٌ بالقاعدة كما هي. */
+export const CLINIC_PLANS: Plan[] = PLANS;
 
 /** Default USD→IQD rate. Admin-editable so it can track the market (see settings). */
 export const DEFAULT_USD_RATE = 1535;

@@ -64,10 +64,6 @@
       "title": "Branches",
       "short": "Add your branches to one account: pin each device to its branch, tag new cases with it, and view the daily board and treatment sheet by branch. Stock stays shared across the clinic."
     },
-    "poultry": {
-      "title": "Poultry farms",
-      "short": "Farm, houses and batches; daily mortality, weight, water and temperature; feed conversion ratio and each cycle's cost at purchase price."
-    },
     "printing": {
       "title": "Printing & barcodes",
       "short": "Consent forms, lab reports and stock reports print with your clinic's logo, and an in-house barcode generator prints standard EAN-13 labels."

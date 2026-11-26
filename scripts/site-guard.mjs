@@ -228,21 +228,21 @@ for (const d of DIALECTS) {
 if (STAMP) console.log(`   ✓ خُتمت ${stamped} طبقةً ببصمات أسطر الأساس`);
 
 /* قيمٌ مغلقة: الباقة، والتصنيفاتُ المرتبطة، ومجموعاتُ القائمة */
-const SLUGS = ["records", "hospital", "lab", "vaccines", "reception", "pharmacy", "pos", "credit-delivery", "store", "whatsapp", "owners", "reports", "team", "branches", "poultry", "printing"];
+const SLUGS = ["records", "hospital", "lab", "vaccines", "reception", "pharmacy", "pos", "credit-delivery", "store", "whatsapp", "owners", "reports", "team", "branches", "printing"];
 for (const lang of ["ar", "en"]) {
   for (const s of SLUGS) {
     const f = lang === "ar" ? ar.get(`features/${s}.json`) : en.get(`features/${s}.json`);
     if (!f) { bad(`${lang}/features/${s}.json مفقود`); continue; }
     const j = load(f);
     if (!j) continue;
-    if (!["all", "advanced", "super", "farm"].includes(j.plan)) bad(`${lang}/features/${s}: plan «${j.plan}» ليست باقة`);
+    if (!["all", "advanced", "super"].includes(j.plan)) bad(`${lang}/features/${s}: plan «${j.plan}» ليست باقة`);
     for (const r of j.related ?? []) if (!SLUGS.includes(r) || r === s) bad(`${lang}/features/${s}: related «${r}»`);
     for (const row of j.mock?.rows ?? []) if (row.tone && !["ok", "warn", "bad", "info"].includes(row.tone)) bad(`${lang}/features/${s}: tone «${row.tone}»`);
   }
   const common = (lang === "ar" ? ar : en).get("common.json");
   const cj = common && load(common);
   if (cj) {
-    const all = cj.mega.groups.flatMap((g) => g.items).concat(cj.mega.featured.slug);
+    const all = cj.mega.groups.flatMap((g) => g.items);
     for (const s of all) if (!SLUGS.includes(s)) bad(`${lang}/common: mega «${s}» ليس تصنيفاً`);
     for (const s of SLUGS) if (!all.includes(s)) bad(`${lang}/common: التصنيف «${s}» غائبٌ عن القائمة`);
   }
@@ -355,6 +355,7 @@ if (BUILT) {
 /* قوائمُ النسخ كلُّها قائمةٌ واحدة: المسارات (العامل)، والنسخ (editions.ts)، وvercel.json. نسخةٌ تُضاف بمكانٍ
  * وتُنسى بآخر = صفحةٌ يخدمها العاملُ من قشرة التطبيق، أو مسارٌ يقع على `/(.*)` فيحمّل التطبيق. */
 {
+  const before = fails;
   const eds = readFileSync("src/site/editions.ts", "utf8");
   const fromEditions = [...eds.matchAll(/E\("([a-z]{2})"/g)].map((m) => m[1]).concat(/code: "en"/.test(eds) ? ["en"] : []);
   if (fromEditions.join() !== SITE_EDITIONS.join()) bad(`editions.ts (${fromEditions.join()}) ≠ site-paths.mjs (${SITE_EDITIONS.join()})`);
@@ -365,7 +366,15 @@ if (BUILT) {
   if (!lists.includes(SITE_PAGES.join("|"))) bad(`vercel.json: صفحاتُ ${SITE_PAGES.join("/")} بلا إعادة كتابة`);
   const catchAll = vercel.rewrites.findIndex((r) => r.source === "/(.*)");
   if (vercel.rewrites.findIndex((r) => /^\/:cc\(/.test(r.source)) > catchAll) bad("vercel.json: إعادةُ كتابة النسخ بعد `/(.*)` فلا تُبلغ");
-  console.log(`   ✓ ${SITE_EDITIONS.length} نسخةً: editions.ts = site-paths.mjs = vercel.json (والبوّابةُ يقارنها signup-test)`);
+  // وتحويلُ صفحةِ تصنيفٍ أُزيلت (٢٤/١١) بالقائمة نفسها، إلى فهرس التصنيفات، ولا يقع على تصنيفٍ قائم: Vercel
+  // يحوّل قبل أن ينظر بالملفّات، فصفحةٌ تعود بالاسم نفسِه كانت ستختفي خلف التحويل بلا خطأ.
+  const gone = (vercel.redirects ?? []).map((r) => [r, /^\/:cc\(([a-z|]+)\)\/features\/([\w-]+)$/.exec(r.source)]).filter(([, m]) => m);
+  for (const [r, [, l, s]] of gone) {
+    if (l !== SITE_EDITIONS.join("|")) bad(`vercel.json: تحويلُ /features/${s} بقائمة نسخٍ ≠ site-paths.mjs`);
+    if (SLUGS.includes(s)) bad(`vercel.json: تحويلُ /features/${s} يُخفي تصنيفاً قائماً`);
+    if (r.destination !== "/:cc/features" || r.permanent !== true) bad(`vercel.json: تحويلُ /features/${s} ليس دائماً إلى /:cc/features`);
+  }
+  if (fails === before) console.log(`   ✓ ${SITE_EDITIONS.length} نسخةً: editions.ts = site-paths.mjs = vercel.json (والبوّابةُ يقارنها signup-test)، و${gone.length} تحويلَ تصنيفٍ مُزال بالقائمة نفسها لا يُخفي تصنيفاً قائماً`);
 }
 
 console.log(fails

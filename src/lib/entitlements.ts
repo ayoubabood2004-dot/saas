@@ -29,20 +29,17 @@ export type Feature =
   | "branding"      // مطبوعات بشعار العيادة
   | "finePerms"     // صلاحيات الموظفين الدقيقة
   | "payroll"       // رواتب الكادر والسلف والقطوعات
-  | "store"         // المتجر الإلكتروني العام للعيادة
-  | "farm";         // قسمُ حقول الدواجن
+  | "store";        // المتجر الإلكتروني العام للعيادة
 
 /** What each PAID plan unlocks. (basic = records/calendar/inventory only.)
  *
- *  و«حقل الدواجن» **ليس ترقيةً**: جمهورُه صاحبُ الحقل لا الطبيب، فقائمتُه
- *  ليست «كلَّ ما بالسوبر + الحقل» بل شيئاً آخرَ — قسمُ الحقول والمخزنُ
- *  والتقارير، بلا كاشيرٍ ولا متجرٍ ولا حملاتِ واتساب. ولذلك **لا باقةَ عيادةٍ
- *  تُدرج `farm`**: من عنده عيادةٌ وحقلٌ يشترك بالاثنتين، وهذا قرارُ المالك. */
+ *  باقةُ «حقل الدواجن» (لصاحب الحقل) أُلغيت بقرار المالك (٢٤/١١) — و«حالة الحقل» (0265) ميزةُ عيادة
+ *  بلا بوّابة باقة. فصفُّ اشتراكٍ قديمٌ بـ`plan = 'farm'` لا يطابق مفتاحاً هنا: `planAllows` تقول «لا»
+ *  لكلّ ميزةٍ مدفوعة (لا انهيار، ولا فتحٌ بالخطأ)، والتجربةُ تفتح كلَّ شيءٍ كما كانت. */
 const PLAN_FEATURES: Record<PlanId, Feature[]> = {
   basic: [],
   advanced: ["pos", "reports", "payroll"],
   super: ["pos", "reports", "reportsExport", "debt", "whatsapp", "consent", "branding", "finePerms", "payroll", "store"],
-  farm: ["farm", "reports", "reportsExport"],
 };
 
 /**
@@ -63,12 +60,8 @@ export function planAllows(plan: PlanId | null | undefined, f: Feature): boolean
   return PLAN_FEATURES[plan]?.includes(f) ?? false;
 }
 
-/** The cheapest plan that includes a feature (for "متوفر في باقة …" prompts).
- *
- *  والحقلُ أوّلاً: لولاه لقالت الشاشةُ لصاحب حقلٍ «متوفّرٌ بباقة السوبر» وهي
- *  لا تحتويه — وترقيةٌ تُشترى ولا تفتح ما اشتُريت له أسوأُ من لا اقتراح. */
+/** The cheapest plan that includes a feature (for "متوفر في باقة …" prompts). */
 export function minPlanFor(f: Feature): PlanId {
-  if (PLAN_FEATURES.farm.includes(f) && !PLAN_FEATURES.super.includes(f)) return "farm";
   if (PLAN_FEATURES.advanced.includes(f)) return "advanced";
   return "super";
 }

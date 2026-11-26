@@ -58,6 +58,8 @@ type CompanyGroup = {
   supplierPhone: string | null;
   /** طابع أحدث فاتورة أخذنا منها اسم المورّد — فواتير نفس اليوم تُفصل بوقت الإنشاء. */
   supplierAt: string;
+  /** شركةٌ مضافة بلا أيّ حركة بعد (لا فاتورة ولا مطالبة ولا دفتر) — دفترُها جاهز لديونها القديمة (طلبُ المالك ٢٣/١١). */
+  idle: boolean;
 };
 
 type Filter = "all" | "debt" | "settled";
@@ -181,7 +183,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
           note: noteOf(effId),
           invoices: [], total: 0, paid: 0, due: 0,
           charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
-          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
+          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "", idle: false,
         };
         m.set(key, g);
       }
@@ -209,7 +211,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
           key: c.company_id, name: nm, note: noteOf(c.company_id),
           invoices: [], total: 0, paid: 0, due: 0,
           charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
-          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
+          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "", idle: false,
         };
         m.set(c.company_id, g);
       }
@@ -229,7 +231,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
           key: cid, name: nm, note: noteOf(cid),
           invoices: [], total: 0, paid: 0, due: 0,
           charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
-          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
+          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "", idle: false,
         };
         m.set(cid, g);
       }
@@ -237,6 +239,18 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
       g.owedUsd = Math.round((g.owedUsd + poolDueOf(list, entryPays, "USD")) * 100) / 100;
       const last = list.reduce((a, e) => (e.entry_date > a ? e.entry_date : a), "");
       if (last > g.lastAt) g.lastAt = last;
+    }
+    /* كلُّ شركةٍ مضافة لها دفترٌ جاهز ولو ما بيها فاتورة — منه تُسجَّل ديونُها القديمة (طلبُ المالك ٢٣/١١: «خلي كل الشركات
+     * الي همة ضايفيها بالنظام تظهر دفترها»). وشركةٌ فواتيرُها القديمة باسمها بلا معرّف (قبل 0064) تبقى بمجموعتها الاسميّة:
+     * بطاقةٌ ثانيةٌ فارغة بنفس الاسم كانت تشقّها اثنتين. */
+    for (const co of companies) {
+      if (m.has(co.id) || m.has(`n:${co.name.trim().toLowerCase()}`)) continue;
+      m.set(co.id, {
+        key: co.id, name: co.name, note: noteOf(co.id),
+        invoices: [], total: 0, paid: 0, due: 0,
+        charges: [], chargesDue: 0, poolDue: 0, owed: 0, owedUsd: 0, totalUsd: 0, paidUsd: 0,
+        lastAt: "", supplier: null, supplierPhone: null, supplierAt: "", idle: true,
+      });
     }
     for (const g of m.values()) g.owed = Math.round((g.due + g.chargesDue + g.poolDue) * 100) / 100;
     return [...m.values()].sort((a, b) => (b.owed - a.owed) || (b.owedUsd - a.owedUsd) || b.lastAt.localeCompare(a.lastAt));
@@ -258,7 +272,11 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
 
   const ql = q.trim().toLowerCase();
   const shown = groups
-    .filter((g) => (filter === "debt" ? g.owed > 0 : filter === "settled" ? g.owed <= 0 : true))
+    /* «عليها دين» بالعملتين (دَينُ الدولار وحده كان يُخفى — 0274)، و«مسدَّدة» لما كان عليه شيءٌ وانسدّ لا لشركةٍ بلا حركة. */
+    .filter((g) => {
+      const owes = g.owed > 0 || g.owedUsd > 0;
+      return filter === "debt" ? owes : filter === "settled" ? !owes && !g.idle : true;
+    })
     .filter((g) => !ql || g.name.toLowerCase().includes(ql) || (g.supplier ?? "").toLowerCase().includes(ql) || g.invoices.some((p) => (p.reference ?? "").toLowerCase().includes(ql) || (p.supplier_name ?? "").toLowerCase().includes(ql)));
 
   const copySql = async () => {
@@ -367,7 +385,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
                     </div>
                     <div className="text-end">
                       <p className="text-2xs text-ink-subtle">{t("purchase.due", "المتبقّي")}</p>
-                      <p className={cn("text-base font-extrabold tabular-nums", g.owed > 0 || g.owedUsd > 0 ? "text-danger-600 dark:text-danger-400" : "text-success-600 dark:text-success-400")}>{g.owed > 0 ? money(g.owed) : g.owedUsd > 0 ? "" : "✓"}</p>
+                      <p className={cn("text-base font-extrabold tabular-nums", g.owed > 0 || g.owedUsd > 0 ? "text-danger-600 dark:text-danger-400" : g.idle ? "text-ink-subtle" : "text-success-600 dark:text-success-400")}>{g.owed > 0 ? money(g.owed) : g.owedUsd > 0 ? "" : g.idle ? "—" : "✓"}</p>
                       {g.owedUsd > 0 && <p className="text-base font-extrabold tabular-nums text-danger-600 dark:text-danger-400" data-owedusd>{usdOf(g.owedUsd)}</p>}
                       {/* المطالباتُ تُذكر تحت الرقم: الطبيبُ يرى أن جزءاً من
                           دينه ليس فواتيرَ، فلا يبحث عن فاتورةٍ لا وجودَ لها. */}
@@ -388,10 +406,12 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
 
                 {open && (
                   <div className="border-t border-line bg-surface-2/30 p-3">
-                    <Button size="sm" variant="secondary" className="mb-2.5 w-full sm:w-auto sm:me-2" leftIcon={<FileText size={15} />}
-                      data-stmtbtn onClick={() => { playTap(); setStatementGroup(g); }}>
-                      {t("purchase.companyStatement", "كشف الشركة — البضاعة والفواتير والطباعة")}
-                    </Button>
+                    {!g.idle && (
+                      <Button size="sm" variant="secondary" className="mb-2.5 w-full sm:w-auto sm:me-2" leftIcon={<FileText size={15} />}
+                        data-stmtbtn onClick={() => { playTap(); setStatementGroup(g); }}>
+                        {t("purchase.companyStatement", "كشف الشركة — البضاعة والفواتير والطباعة")}
+                      </Button>
+                    )}
                     {/* جدولُ الشركة الخاصّ: كلُّ حركةٍ برقمها والرصيدُ بعدها (0224). */}
                     {companyIds.has(g.key) && (
                       <Link to={`/inventory/companies/${g.key}`} data-bookbtn={g.key} onClick={() => playTap()}

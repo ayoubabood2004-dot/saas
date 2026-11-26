@@ -103,7 +103,6 @@ const CONTRACT = {
   listClinicTreatments: ["day", false, "date"],
   listReminders: ["date", true, "date"],
   listProducts: ["name", true, "text"],
-  listFarmProducts: ["name", true, "text"],
   listDeletedProducts: ["deleted_at", false, "time"],
   listDeletedCompanies: ["deleted_at", false, "time"],
   listDeletedCompanySections: ["deleted_at", false, "time"],
@@ -177,7 +176,8 @@ for (let i = 0; i < lines.length; i++) {
   const sort = split >= 0 ? args.slice(split + 1).trim() : "";
   calls.push({ name, make, sort });
 }
-check("عددُ المستدعين ٤٦ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 46, `طلع ${calls.length}`);
+// ٤٥ منذ ٢٤/١١: listFarmProducts (مخزنُ «باقة الحقل») شِيلت مع الباقة.
+check("عددُ المستدعين ٤٥ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 45, `طلع ${calls.length}`);
 const names = new Set(calls.map((c) => c.name));
 check("  وكلُّهم بالعقد بأسمائهم", Object.keys(CONTRACT).every((n) => names.has(n)) && [...names].every((n) => n in CONTRACT),
   `ناقص: ${Object.keys(CONTRACT).filter((n) => !names.has(n)).join("، ")} / زائد: ${[...names].filter((n) => !(n in CONTRACT)).join("، ")}`);

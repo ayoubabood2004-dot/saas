@@ -80,12 +80,6 @@
         "title": "Vet pharmacy or pet shop",
         "body": "Stock with batches and expiry dates, a count of a few items each day, and one product that answers to both its shelf code and the box barcode. The till, invoices and returns come with the Advanced plan.",
         "link": "pharmacy"
-      },
-      {
-        "key": "poultry",
-        "title": "Poultry vet",
-        "body": "Farms, houses and batches, with age counted from the day the chicks were placed. Daily mortality, water and weight, plus feed conversion and cost per live kilo. This module is on its own separate plan, the poultry farm plan.",
-        "link": "poultry"
       }
     ]
   },
@@ -220,12 +214,8 @@
         "body": "The system prepares each message and your staff send it in one tap from the WhatsApp on their device. Nothing goes out unless someone presses send."
       },
       {
-        "title": "A poultry module",
-        "body": "Farms, houses and batches, daily mortality, water and weight, feed conversion and cost per live kilo, and a farm store kept at cost. On the separate poultry farm plan."
-      },
-      {
         "title": "Entries that wait for the connection",
-        "body": "If the connection drops, new products, suppliers and sections, expenses, returns and poultry daily entries wait on the device and upload when it is back; anything that can't upload stays in a badge for the manager to review. Sales and new cases need a connection."
+        "body": "If the connection drops, new products, suppliers and sections, expenses and returns wait on the device and upload when it is back; anything that can't upload stays in a badge for the manager to review. Sales and new cases need a connection."
       }
     ]
   },
@@ -294,7 +284,7 @@
       },
       {
         "q": "What if the internet goes down?",
-        "a": "The app installs on your device like any app. If the connection drops, new products, suppliers and sections, expenses, returns and poultry daily entries wait on the device and upload when it is back, shown in a badge. Sales, cases, visits, vaccines and bookings need a connection, and a new-case form stays as a draft on the device until you save it. If the connection drops while you are selling, just retry: the invoice is never written twice."
+        "a": "The app installs on your device like any app. If the connection drops, new products, suppliers and sections, expenses and returns wait on the device and upload when it is back, shown in a badge. Sales, cases, visits, vaccines and bookings need a connection, and a new-case form stays as a draft on the device until you save it. If the connection drops while you are selling, just retry: the invoice is never written twice."
       },
       {
         "q": "Do reminders go out on their own?",

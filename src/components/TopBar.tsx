@@ -38,6 +38,7 @@ import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { OutboxChip } from "@/components/OutboxChip";
+import { VoiceChip } from "@/components/VoiceChip";
 import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -54,7 +55,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const { can, baseRole } = usePermissions();
   // موظّفُ التصوير (0222): قائمتُه الصورُ والمتجرُ بإذنه — مرآةُ الشريط الجانبيّ.
   const photographer = baseRole === "photographer";
-  const { has, plan } = useEntitlements();
+  const { has } = useEntitlements();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
@@ -106,8 +107,8 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
         { to: "/records", icon: ClipboardList, label: t("records.title") },
         { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
         { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
-        // «حقول الدواجن» بالهاتف كالشريط الجانبيّ (Sidebar.tsx): حالةُ الحقل للعيادات، ودفترُ صاحب الحقل لباقته.
-        { to: "/poultry", icon: Bird, label: t("nav.poultry"), show: plan !== "farm" || can("manageInventory") },
+        // «حقول الدواجن» بالهاتف كالشريط الجانبيّ (Sidebar.tsx): حالةُ الحقل لكلّ الكادر.
+        { to: "/poultry", icon: Bird, label: t("nav.poultry") },
         { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
         { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
         { to: "/reminders", icon: BellRing, label: t("nav.reminders", "التذكيرات"), show: has("whatsapp") },
@@ -172,6 +173,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
           <div className="flex items-center gap-0.5">
             {/* كتابات محفوظة بالجهاز تنتظر النت — تظهر فقط عند وجودها */}
             {staff && !photographer && <OutboxChip />}
+            {staff && !photographer && <VoiceChip />}
             {staff && (
               <Tooltip label="Search · ⌘K">
                 <button

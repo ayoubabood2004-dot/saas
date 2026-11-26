@@ -18,6 +18,11 @@
  *   ك) الزيارة: نموذجٌ فُتح من حزمةٍ قديمة لا يمسح ما وصل بعده؛ والنافقُ «منذ آخر تسجيل» لا يقفله تسجيلٌ بعد يوم الزيارة،
  *      ورقمٌ بقاعةٍ يومُها مسجَّل يُقال لا يُرسل؛ وتحصينٌ أُشّر ثمّ اختفى صفُّه لا يُختم.
  *   ل) فتحُ الحالة: سؤالُ حقول الزبون فشل ⇒ لا فتح؛ وحقلٌ اختير لزبونٍ سابق لا يُفتح عليه.
+ *   م) العلاماتُ التشريحية بأجهزة الجسم (قائمةُ المالك ٢٤/١١، necropsy.ts): كلُّ بندٍ كتبه المالك موجودٌ بجهازه بالّلغتين،
+ *      وكلُّ رمزٍ قديم باقٍ (لا يضيع ما سُجّل)؛ والتشريحُ بالسريعة أيضاً؛ «لا توجد آفات» لا تمسح آفاتٍ ولا تبقى مع آفة؛
+ *      «طبيعي» لجهازٍ يشيل آفاتِه وآفةٌ تشيله؛ «الباقي طبيعي» لا يمسّ جهازاً فيه آفة؛ «طيرٌ بنفس العلامات»؛ والبحثُ بالطرفين
+ *      مطبَّعين؛ وما لا تعرفه النسخةُ من رموزٍ يبقى؛ والملخّصُ يسمّي المجموعةَ حين لا يسمّيها الاسم؛ وقائمةُ الزيارات تقرأ
+ *      الأمراضَ المختارة لا المكتوبَ وحده.
  *   ز) والفحصُ ليس فارغاً: كلُّ طفرةٍ معقولة تُسقط فحصاً على الأقلّ.
  *
  *   node scripts/flock-ui-test.mjs
@@ -54,22 +59,84 @@ const lit = (name) => {
   if (!m) throw new Error(`ما لكيت ${name} بـFlockVisit.tsx`);
   return Function(`"use strict"; return (${m[1]});`)();
 };
-const SIGNS = lit("SIGNS"), ORGANS = lit("ORGANS"), ENV = lit("ENV"), DX = lit("DX"), RULES = lit("RULES");
+const SIGNS = lit("SIGNS"), ENV = lit("ENV"), DX = lit("DX"), RULES = lit("RULES");
+/** مفرداتُ التشريح وحدةٌ صِرفة بلا اعتماديات (necropsy.ts) — تُحزم وحدها هنا للفحص الثابت. */
+const N0 = await (async () => {
+  const out = await esbuild.build({ entryPoints: ["src/components/flock/necropsy.ts"], bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent" });
+  const dir = mkdtempSync(join(tmpdir(), "flock-necro-"));
+  const f = join(dir, "n.mjs");
+  writeFileSync(f, out.outputFiles[0].text);
+  try { return await import(pathToFileURL(f).href); } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
+})();
 const CODE = /^[a-z][a-z0-9_]{0,30}(\.[a-z0-9_]{1,30})?$/;   // _flock_codes بـ0265 حرفاً
 const bad = [];
 for (const [g, xs] of Object.entries(SIGNS)) for (const x of xs) { if (!CODE.test(`${g}.${x}`)) bad.push(`sign ${g}.${x}`); if (!both(`flkv.sign.${g}.${x}`)) bad.push(`flkv.sign.${g}.${x}`); }
 for (const g of Object.keys(SIGNS)) if (!both(`flkv.signGroup.${g}`)) bad.push(`flkv.signGroup.${g}`);
-for (const [o, xs] of Object.entries(ORGANS)) {
-  if (!CODE.test(`${o}.normal`)) bad.push(`organ ${o}`);
-  if (!both(`flkv.organ.${o}`)) bad.push(`flkv.organ.${o}`);
-  for (const x of xs) { if (!CODE.test(`${o}.${x}`)) bad.push(`lesion ${o}.${x}`); if (!both(`flkv.lesion.${o}.${x}`)) bad.push(`flkv.lesion.${o}.${x}`); }
+const KNOWN = [...N0.ALL_CODES, ...N0.RETIRED.map((r) => r.code)];
+for (const code of KNOWN) { if (!CODE.test(code)) bad.push(`lesion ${code}`); if (!both(`flkv.lesion.${code}`)) bad.push(`flkv.lesion.${code}`); }
+for (const sys of N0.NECRO_SYSTEMS) {
+  if (!CODE.test(N0.normalOf(sys.k))) bad.push(`normal ${sys.k}`);
+  if (!both(`flkv.sys.${sys.k}`)) bad.push(`flkv.sys.${sys.k}`);
+  for (const sub of sys.subs) if (sub.k !== "gen" && !both(`flkv.sub.${sub.k}`)) bad.push(`flkv.sub.${sub.k}`);
 }
 for (const k of ENV) { if (!/^[a-z][a-z0-9_]{0,30}$/.test(k)) bad.push(`env ${k}`); if (!both(`flkv.env.${k}`) || !both(`flkv.envAdvice.${k}`)) bad.push(`flkv.env.${k}`); }
-for (const x of DX) { if (!CODE.test(x)) bad.push(`dx ${x}`); if (!both(`flkv.dx.${x}`)) bad.push(`flkv.dx.${x}`); }
-check(`${Object.values(SIGNS).flat().length} علامة و${Object.values(ORGANS).flat().length} آفة بـ${Object.keys(ORGANS).length} عضواً و${ENV.length} بنودِ بيئة و${DX.length} تشخيصاً: رموزٌ يقبلها الخادم ولها نصّ بالّلغتين`, !bad.length, bad.slice(0, 6).join("، "));
-const lesions = new Set(Object.entries(ORGANS).flatMap(([o, xs]) => xs.map((x) => `${o}.${x}`)));
+for (const x of DX) { if (!CODE.test(x)) bad.push(`dx ${x}`); if (!both(`flk.dx.${x}`)) bad.push(`flk.dx.${x}`); }   // بنطاق الحالة: قائمةُ الزيارات تقرؤها
+check(`${Object.values(SIGNS).flat().length} علامة و${KNOWN.length} آفة بـ${N0.NECRO_SYSTEMS.length} أجهزة و${ENV.length} بنودِ بيئة و${DX.length} تشخيصاً: رموزٌ يقبلها الخادم ولها نصّ بالّلغتين`, !bad.length, bad.slice(0, 6).join("، "));
+const lesions = new Set(KNOWN);
 const ruleBad = RULES.flatMap((r) => [...(DX.includes(r.dx) ? [] : [`dx ${r.dx}`]), ...r.any.flat().filter((c) => !lesions.has(c))]);
 check("  وقواعدُ اقتراح التشخيص لا تسمّي آفةً ولا مرضاً غيرَ موجود", RULES.length >= 6 && !ruleBad.length, ruleBad.join("، "));
+
+/* قائمةُ المالك (٢٤/١١) حرفاً، بجهازها — الاسمُ العربيّ قبل المصطلح اللاتينيّ. صُحّح منها خطأُ طباعةٍ واحد («وحتقان» ⇐ «واحتقان»)،
+   وكلمةٌ سقطت («القصبة الهوائية (Tracheitis)» ⇐ «التهاب القصبة الهوائية»)؛ و«نزف تحت الجلد» العامّةُ قُصّت برسالته فهي نفسُ بند الجلد. */
+const OWNER = {
+  gen: ["لا توجد آفات تشريحية واضحة", "هزال شديد", "احتقان عام", "نزف عام", "تجمع سوائل في التجويف البطني", "تجمع سوائل حول القلب", "التهاب الأغشية المصلية",
+    "التصاقات الأحشاء", "تضخم الأعضاء الداخلية", "شحوب الأعضاء", "اصفرار الأنسجة والأعضاء", "جفاف الجسم", "وذمة الأنسجة", "نزف تحت الجلد"],
+  dig: ["التهاب الأمعاء النخري", "تضخم الأمعاء", "ترقق جدار الأمعاء", "سماكة جدار الأمعاء", "وجود نزف واحتقان داخل الأمعاء", "وجود قوالب دموية",
+    "وجود مواد متجبنة داخل الأمعاء", "وجود غاز وانتفاخ الأمعاء", "نشاط كوكسيديا", "سالمونيلا", "نزف الأعورين", "تضخم الأعورين", "بقع نزفية في الأعورين",
+    "تضخم الكبد", "شحوب الكبد", "احتقان الكبد", "نزف كبدي", "تنخر الكبد", "بقع بيضاء على الكبد", "بقع صفراء على الكبد", "وجود بؤر نخرية متعددة",
+    "تضخم الكبد مع هشاشة النسيج", "الكبد الدهني"],
+  heart: ["تجمع سوائل حول القلب", "التهاب التامور الفبريني", "نزف على سطح القلب", "تضخم القلب", "شحوب عضلة القلب", "تنخر عضلة القلب", "وجود ترسبات فبرينية حول القلب"],
+  resp: ["التهاب القصبة الهوائية", "احتقان القصبة الهوائية", "نزف القصبة الهوائية", "زيادة المخاط", "وجود سدادات مخاطية", "وجود قوالب دموية",
+    "وجود مواد متجبنة داخل القصبة", "احتقان الرئتين", "وذمة الرئتين", "التهاب الرئة", "تكثف الرئة", "نزف الرئتين", "التهاب الأكياس الهوائية",
+    "تعكر الأكياس الهوائية", "سماكة الأكياس الهوائية", "ترسبات فبرينية", "وجود مواد متجبنة", "وجود عقيدات فطرية"],
+  kidney: ["تضخم الكلى", "شحوب الكلى", "احتقان الكلى", "التهاب الكلى", "ترسب اليورات داخل الأنابيب الكلوية", "تضخم الحالبين", "امتلاء الحالبين باليورات",
+    "النقرس الحشوي", "ترسبات بيضاء طباشيرية على الأحشاء", "ضمور الكلى"],
+  spleen: ["تضخم الطحال", "ضمور الطحال", "احتقان الطحال", "شحوب الطحال", "نزف الطحال", "وجود بؤر نخرية", "وجود بقع بيضاء", "وجود عقيدات"],
+  repro: ["التهاب قناة البيض", "وجود مواد متجبنة داخل قناة البيض", "التهاب المبيض", "نزف المبيض", "ضمور المبيض", "وجود جريبات مبيضية غير طبيعية",
+    "التهاب الصفاق الناتج عن صفار البيض", "وجود صفار حر في التجويف البطني", "التصاقات حول قناة البيض"],
+  msk: ["نزف عضلات الصدر", "نزف عضلات الفخذ", "تنخر العضلات", "التهاب العضلات", "شحوب العضلات", "التهاب المفاصل", "تورم المفاصل", "وجود سوائل داخل المفاصل",
+    "التهاب غمد الأوتار", "التهاب الجلد", "التهاب النسيج الخلوي", "وجود خراجات تحت الجلد", "وجود أورام جلدية", "نزف تحت الجلد"],
+};
+const arMain = (code) => N0.splitTerm(get(AR, `flkv.lesion.${code}`) ?? "").main;
+const ownerMiss = Object.entries(OWNER).flatMap(([k, items]) => {
+  const sys = N0.NECRO_SYSTEMS.find((x) => x.k === k);
+  const have = new Set((sys?.subs ?? []).flatMap((x) => x.codes).map(arMain));
+  return items.filter((it) => !have.has(it)).map((it) => `${k}: ${it}`);
+});
+check(`قائمةُ المالك كلُّها (${Object.values(OWNER).flat().length} بنداً بثمانية أجهزة) موجودةٌ بجهازها باسمه`, !ownerMiss.length && N0.NECRO_SYSTEMS.slice(0, 2).map((x) => x.k).join() === "gen,dig", ownerMiss.slice(0, 6).join("، "));
+// ما كان قبلها (0265) — كلُّ رمزٍ باقٍ يُختار أو يُقرأ: ما سُجّل بزياراتٍ قبلها لا يصير «رمزاً غريباً».
+const OLD = ["ext.emaciation", "ext.dehydration", "ext.omphalitis", "ext.pododermatitis", "ext.hock_burn", "ext.breast_blister", "ext.pox", "ext.head_swelling", "ext.vent_pasting",
+  "head.sinusitis", "head.conjunctivitis", "head.congestion", "head.mucus", "head.hemorrhage", "head.caseous_plug", "head.diphtheritic",
+  "lung.congestion", "lung.pneumonia", "lung.airsac_foamy", "lung.airsac_cloudy", "heart.pericarditis", "heart.hydropericardium", "heart.ascites",
+  "liver.perihepatitis", "liver.enlarged", "liver.necrotic_foci", "liver.spleen_enlarged", "prov.gland_hemorrhage", "prov.proventriculitis", "prov.gizzard_erosion",
+  "gut.distended", "gut.thin_wall", "gut.excess_fluid", "gut.orange_mucus", "gut.blood", "gut.white_spots", "gut.necrosis", "gut.peyer_hemorrhage", "gut.undigested", "gut.cecal_cores",
+  "kidney.swollen", "kidney.urates", "bursa.edema", "bursa.yellow_exudate", "bursa.hemorrhage", "bursa.atrophy",
+  "repro.ovary_atrophy", "repro.egg_peritonitis", "repro.salpingitis", "repro.cystic_oviduct",
+  "msk.muscle_hemorrhage", "msk.rubbery_bones", "msk.td", "msk.fhn", "msk.arthritis", "msk.sciatic"];
+const lost = OLD.filter((c) => !lesions.has(c));
+check(`  وكلُّ رمزٍ قبلها (${OLD.length}) باقٍ — يُختار، أو يُقرأ ويُشال إن تقاعد`, !lost.length && OLD.filter((c) => N0.ALL_CODES.includes(c)).length >= OLD.length - N0.RETIRED.length, lost.join("، "));
+const strangers = [...N0.SELF_NAMED].filter((c) => !lesions.has(c));
+check("  و«يسمّي عضوَه» لا يسمّي رمزاً غيرَ موجود", !strangers.length, strangers.join("، "));
+// الملخّصُ (والتقريرُ للمربي) لا يكتب نصّاً واحداً لرمزين — وإلا عُدّ «وجود قوالب دموية ٢/٥» عن الأمعاء والقصبة معاً.
+for (const [lang, dict] of [["ar", AR], ["en", EN]]) {
+  const seen = new Map();
+  const dup = [];
+  for (const code of KNOWN) {
+    const txt = N0.lesionText(code, (c) => get(dict, `flkv.lesion.${c}`) ?? c, (k) => get(dict, `flkv.sub.${k}`) ?? k, (o) => o);
+    if (seen.has(txt)) dup.push(`${seen.get(txt)} = ${code} («${txt}»)`); else seen.set(txt, code);
+  }
+  check(`  ${lang}: نصُّ الملخّص لا يتكرّر لرمزين (${seen.size})`, !dup.length, dup.slice(0, 4).join("، "));
+}
 
 const TYPES = SRC("src/lib/flockTypes.ts");
 const union = (name) => [...(new RegExp(`export type ${name} = ([^;]+);`).exec(TYPES)?.[1] ?? "").matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]);
@@ -104,6 +171,14 @@ const FLOCK_UI = ["src/pages/FlockCases.tsx", ...["FlockCase", "FlockSheets", "F
 const sliced = FLOCK_UI.flatMap((f) => SRC(f).split("\n").map((l, i) => [f, i + 1, l]))
   .filter(([, , l]) => /\b(?:at|[a-z]+_at)\.slice\(0, 10\)/.test(l) && !/\bd\.at\.slice/.test(l));
 check("لا شاشةَ حقلٍ تقطع ختماً من الخادم بـslice(0, 10) — كلُّها بـlocalDay", !sliced.length, sliced.map(([f, n]) => `${f.split("/").pop()}:${n}`).join("، "));
+
+/* ── م) توصيلُ صفحة الحالة (ليست بحزمة الفحص): القائمةُ والخطُّ الزمنيّ يقرآن dxText، والأقسامُ شبكةٌ بعرض الشاشة ── */
+console.log("▸ م) صفحةُ الحالة");
+const CASE = SRC("src/components/flock/FlockCase.tsx");
+check("قائمةُ الزيارات والخطُّ الزمنيّ يقرآن التشخيصَ من dxText (الأمراضُ المختارة لا المكتوبُ وحده)",
+  (CASE.match(/dxText\(t, v\)/g) ?? []).length >= 3 && !/\[v\.dx, necro/.test(CASE) && !/\(v\.dx \? ` · \$\{v\.dx\}`/.test(CASE));
+check("  والأقسامُ السبعة شبكةٌ تملأ العرض (٤ بالهاتف، ٧ من sm) بلا انزلاقٍ جانبيّ",
+  /grid grid-cols-4 gap-1\.5 rounded-2xl border border-line bg-surface-2 p-1\.5 sm:grid-cols-7" role="tablist"/.test(CASE) && !/overflow-x-auto pb-1" role="tablist"/.test(CASE));
 
 /* ── البناء: المكوّناتُ الحقيقية مع بدائلَ للباب والسياق ─────────────────────────── */
 const mem = new Map();
@@ -141,6 +216,7 @@ const STUB = {
   "react-router-dom": "export const useNavigate = () => (to) => { globalThis.__nav.push(to); }; export const useLocation = () => ({ state: globalThis.__locState ?? null, pathname: '/poultry/new', search: '' });",
 };
 const FILES = {
+  necro: "src/components/flock/necropsy.ts",
   shared: "src/components/flock/flockShared.ts",
   sheets: "src/components/flock/FlockSheets.tsx",
   tx: "src/components/flock/FlockTreatment.tsx",
@@ -150,7 +226,7 @@ const FILES = {
 async function build(over = {}) {
   const built = await esbuild.build({
     stdin: {
-      contents: `export { MortalitySheet, CloseSheet } from "./${FILES.sheets}";\nexport { TreatmentSheet, sheetText } from "./${FILES.tx}";\nexport { FlockOpenPage } from "./${FILES.intake}";\nexport { FlockVisit } from "./${FILES.visit}";\nexport { flockStats, addDays } from "./src/lib/flockMath.ts";\nexport { localDay } from "./${FILES.shared}";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`,
+      contents: `export { MortalitySheet, CloseSheet } from "./${FILES.sheets}";\nexport { TreatmentSheet, sheetText } from "./${FILES.tx}";\nexport { FlockOpenPage } from "./${FILES.intake}";\nexport { FlockVisit } from "./${FILES.visit}";\nexport { flockStats, addDays } from "./src/lib/flockMath.ts";\nexport { localDay, dxText } from "./${FILES.shared}";\nexport * as N from "./${FILES.necro}";\nexport { searchable } from "./src/lib/utils.ts";\nexport { mount } from "./scripts/react-mini-host.js";\nexport * as React from "react";`,
       resolveDir: process.cwd(), sourcefile: "flock-ui.tsx", loader: "tsx",
     },
     bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent", jsx: "automatic",
@@ -275,9 +351,10 @@ async function run(M, c) {
     ui = M.mount(el(M.FlockVisit, { b, canEdit: true, onClose() {}, onSaved() {} }));
     ui.click(ui.find("data-flock-quick", "0"));
     ui.click(ui.find("data-flock-add-bird"));
-    ui.click(ui.find("data-chip", "heart.pericarditis")); ui.click(ui.find("data-chip", "liver.perihepatitis"));
+    ui.click(ui.find("data-flock-sys", "heart")); ui.click(ui.find("data-chip", "heart.pericarditis"));
+    ui.click(ui.find("data-flock-sys", "dig")); ui.click(ui.find("data-chip", "liver.perihepatitis"));
     const sug = ui.find("data-flock-dx-suggest");
-    c("ج٤ التشريحُ يقترح من آفاته (التامور + محفظة الكبد ⇒ كولاي)", !!sug && ui.text(sug).includes("flkv.dx.colibacillosis"), sug ? ui.text(sug) : "(لا اقتراح)");
+    c("ج٤ التشريحُ يقترح من آفاته (التامور + محفظة الكبد ⇒ كولاي)", !!sug && ui.text(sug).includes("flk.dx.colibacillosis"), sug ? ui.text(sug) : "(لا اقتراح)");
     ui.click(ui.find("data-chip", "hpai"));
     c("ج٥ ومرضٌ واجبُ التبليغ يُرى فوراً", ui.findAll("data-flock-notifiable").length >= 1);
     ui.click(ui.find("data-flock-save")); await flush();
@@ -460,6 +537,124 @@ async function run(M, c) {
     ui.unmount();
   }
 
+  /* م) العلاماتُ التشريحية بأجهزة الجسم */
+  {
+    const N = M.N;
+    const sysOf = (k) => N.NECRO_SYSTEMS.find((x) => x.k === k);
+    const pickedOf = (ui) => ui.findAll("data-flock-picked").map((n) => n.props["data-flock-picked"]);
+    reset();
+    globalThis.__api = { saveVisit: async (p) => { __calls.push(p); return { visit: { id: "v9", ...p }, replayed: false }; } };
+    let b = bundleOf(M);
+    let ui = M.mount(el(M.FlockVisit, { b, canEdit: true, onClose() {}, onSaved() {} }));
+    c("م١ التشريحُ بالزيارة السريعة أيضاً (كان للكاملة وحدها)", !!ui.find("data-flock-add-bird") && ui.find("data-flock-quick", "1")?.props["aria-checked"] === true, J(!!ui.find("data-flock-add-bird")));
+    ui.click(ui.find("data-flock-add-bird"));
+    c("  والجهازُ الأوّل «العامّة» مفتوح، و«لا توجد آفات» أوّلُ بنوده", ui.find("data-flock-sys-panel")?.props["data-flock-sys-panel"] === "gen" && !!ui.find("data-chip", N.NIL));
+    ui.click(ui.find("data-flock-sys", "dig")); ui.click(ui.find("data-chip", "gut.coccidia"));
+    c("  ونقرةُ آفةٍ تُرى بـ«علامات هذا الطير» وبعدّ بطاقة جهازها", J(pickedOf(ui)) === J(["gut.coccidia"]) && ui.text(ui.find("data-flock-sys", "dig")).includes('"n":1'), J(pickedOf(ui)));
+    c("  ومنها يُقترح التشخيص (نشاطُ كوكسيديا ⇒ كوكسيديا)", !!ui.find("data-flock-suggest", "coccidiosis"));
+    ui.click(ui.find("data-flock-dup-bird"));
+    ui.click(ui.find("data-flock-save")); await flush();
+    const pq = __calls[0] ?? {};
+    c("م٢ «طير جديد بنفس العلامات» ⇒ طيران بالآفة نفسِها، والزيارةُ سريعةٌ بتشريحها", pq.quick === true && pq.necropsy?.length === 2 && pq.necropsy.every((x) => J(x.findings) === J(["gut.coccidia"])) && J(pq.necropsy.map((x) => x.bird_no)) === "[1,2]", J(pq.necropsy));
+    ui.unmount();
+
+    reset();
+    ui = M.mount(el(M.FlockVisit, { b, canEdit: true, onClose() {}, onSaved() {} }));
+    ui.click(ui.find("data-flock-add-bird"));
+    ui.click(ui.find("data-chip", N.NIL));
+    const afterNil = pickedOf(ui);
+    ui.click(ui.find("data-chip", "gen.congestion"));
+    c("م٣ «لا توجد آفات» تُختار، وآفةٌ بعدها تشيلها (لا يجتمعان)", J(afterNil) === J([N.NIL]) && J(pickedOf(ui)) === J(["gen.congestion"]), J([afterNil, pickedOf(ui)]));
+    c("  وفوق آفةٍ مختارة لا تُختار (لا مسحَ صامتٌ لما عُلّم) ويُقال لماذا", ui.find("data-chip", N.NIL)?.props.disabled === true && ui.text().includes("flkv.necro.nilBlocked"));
+    ui.click(ui.find("data-flock-sys", "heart")); ui.click(ui.find("data-chip", "heart.cardiomegaly"));
+    ui.click(ui.find("data-flock-normal", "heart"));
+    const afterNormal = pickedOf(ui);
+    ui.click(ui.find("data-chip", "heart.cardiomegaly"));
+    ui.click(ui.find("data-flock-sys", "dig")); ui.click(ui.find("data-flock-rest-normal"));
+    ui.click(ui.find("data-flock-picked", "gen.congestion"));
+    ui.click(ui.find("data-flock-save")); await flush();
+    const fn = __calls[0]?.necropsy?.[0]?.findings ?? [];
+    c("م٤ «طبيعي» لجهازٍ يشيل آفاتِه، وآفةٌ بعده تشيل «طبيعي»", !afterNormal.includes("heart.cardiomegaly") && fn.includes("heart.cardiomegaly") && !fn.includes("heart.normal"), J({ afterNormal, fn }));
+    const shown = N.systemsFor(false).map((x) => x.k);
+    c("  و«الباقي طبيعي» يعلّم كلَّ جهازٍ بلا آفةٍ معروضٍ وحده — لا القلبَ ولا العامّةَ وفيهما آفة ساعتها، ولا التناسليَّ بوجبة لحم",
+      shown.filter((k) => k !== "heart" && k !== "gen").every((k) => fn.includes(`${k}.normal`)) && !fn.includes("heart.normal") && !fn.includes("gen.normal") && !fn.includes("repro.normal"), J(fn));
+    c("  و«المختار» يُشال بنقرته", !fn.includes("gen.congestion"), J(fn));
+    ui.unmount();
+
+    reset();
+    const v = { id: "v1", case_id: "c1", at: `${TODAY}T07:00:00.000Z`, kind: "routine", quick: false, vet_id: null, flock: {}, signs: [], env: {}, dx: null, dx_codes: [], dx_status: null,
+      notifiable: false, advice: null, notes: null, trend: null, next_visit_on: null, compliance: {}, created_at: "", created_by: null, updated_at: "2026-11-02T00:00:00Z" };
+    const old = ["msk.muscle_hemorrhage", "liver.normal", "x_future.code"];
+    b = bundleOf(M, { visits: [v], necropsy: [{ id: "n1", case_id: "c1", visit_id: "v1", bird_no: 1, source: "dead", weight_g: null, findings: old, scores: {}, note: null }] });
+    ui = M.mount(el(M.FlockVisit, { b, visit: v, canEdit: true, onClose() {}, onSaved() {} }));
+    ui.click(ui.find("data-flock-visit-edit"));
+    ui.click(ui.find("data-flock-sys", "heart")); ui.click(ui.find("data-chip", "heart.cardiomegaly"));
+    ui.click(ui.find("data-flock-save")); await flush();
+    const fo = __calls[0]?.necropsy?.[0]?.findings ?? [];
+    c("م٥ تعديلُ زيارةٍ قديمة: المتقاعدُ وعلامةُ العضو القديمة ورمزُ نسخةٍ أحدث تبقى كلُّها مع الآفة الجديدة", old.every((x) => fo.includes(x)) && fo.includes("heart.cardiomegaly"), J(fo));
+    ui.unmount();
+
+    // الدالّةُ نفسُها لا الزرُّ وحده: الزرُّ يُطفأ فوق الآفات، والدالّةُ ترجعها كما هي (بابٌ ثانٍ — نتيجةُ البحث — لا يمسح).
+    c("م٤-ب «لا توجد آفات» فوق آفاتٍ ترجعها كما هي، وفوق علامة «طبيعي» تُختار",
+      J(N.toggleLesion(["gut.blood", "heart.normal"], N.NIL)) === J(["gut.blood", "heart.normal"]) && J(N.toggleLesion(["heart.normal"], N.NIL)) === J(["heart.normal", N.NIL]),
+      J([N.toggleLesion(["gut.blood", "heart.normal"], N.NIL), N.toggleLesion(["heart.normal"], N.NIL)]));
+    c("  ورمزٌ بجهازين يطفئ «طبيعي» الاثنين، وحالُ الجهاز يقرأ «لا توجد آفات» طبيعياً",
+      J(N.toggleLesion(["gen.normal", "heart.normal", "dig.normal"], "heart.hydropericardium")) === J(["dig.normal", "heart.hydropericardium"])
+      && N.systemState([N.NIL], sysOf("dig")).normal === true && N.systemState([N.NIL, "gut.blood"], sysOf("dig")).normal === false);
+
+    // البحثُ بالقاموس الحقيقيّ: الطرفان مطبَّعان (همزةٌ ناقصةٌ بالسؤال، ولاتينيٌّ بحالةٍ أخرى)، والجهازُ والمجموعةُ يُطابَقان
+    const nameOf = (code) => get(AR, `flkv.lesion.${code}`);
+    const groupOf = (sk, bk) => `${get(AR, `flkv.sys.${sk}`)} ${bk === "gen" ? "" : get(AR, `flkv.sub.${bk}`)}`;
+    const find = (q, layer = false) => N.findLesions(q, N.systemsFor(layer), nameOf, groupOf, M.searchable);
+    const airsac = find("الاكياس الهوائية");
+    c("م٦ البحث: «الاكياس الهوائية» بلا همزة يلقى آفاتِ الأكياس", ["lung.airsacculitis", "lung.airsac_cloudy", "lung.airsac_thick"].every((x) => airsac.includes(x)), J(airsac));
+    c("  و«HEPATOMEGALY» يلقى «تضخم الكبد»، و«نزف كبد» كلمتين معاً، والجهازُ باسمه («الطحال» ⇒ آفاتُه)",
+      J(find("HEPATOMEGALY")) === J(["liver.enlarged"]) && find("نزف كبد").includes("liver.hemorrhage") && !find("نزف كبد").includes("spleen.hemorrhage")
+      && sysOf("spleen").subs[0].codes.every((x) => find("الطحال").includes(x)), J([find("HEPATOMEGALY"), find("نزف كبد")]));
+    c("  ورمزٌ بجهازين يُرجَع مرّةً، وما لا يطابق شيئاً فارغ", find("تجمع سوائل حول القلب").filter((x) => x === "heart.hydropericardium").length === 1 && find("زرافة").length === 0);
+    c("  وجهازُ التناسليّ لا يُبحث فيه بوجبة لحم", !find("المبيض").length && find("المبيض", true).includes("repro.ovary_hemorrhage"));
+    const sacs = find("الاكياس");
+    // «أكياس رغوية» بلا «ال» فتأتي باسم مجموعتها كـ«احتقان الرئتين» — الثلاثُ التي يقولها اسمُها أوّلاً
+    c("  وما طابقه اسمُه أوّلاً: آفاتُ «الأكياس» قبل «احتقان الرئتين» الذي جاء باسم مجموعته",
+      J(sacs.slice(0, 3)) === J(["lung.airsacculitis", "lung.airsac_cloudy", "lung.airsac_thick"]) && sacs.indexOf("lung.congestion") === 3 && sacs.includes("lung.airsac_foamy"), J(sacs));
+
+    // نصُّ الملخّص والتقرير: يسمّي المجموعةَ حين لا يسمّيها الاسم، وبلا المصطلح اللاتينيّ
+    const txt = (code) => N.lesionText(code, (x) => get(AR, `flkv.lesion.${x}`) ?? x, (k) => get(AR, `flkv.sub.${k}`) ?? k, (o) => `[${o}]`);
+    c("م٧ الملخّص: «تضخم الكبد» بلا سابقةٍ ولا مصطلح، و«الطحال: وجود بؤر نخرية»، و«احتقان عام» بلا سابقة، ورمزٌ مجهول بعضوه",
+      txt("liver.enlarged") === "تضخم الكبد" && txt("spleen.necrotic_foci") === "الطحال: وجود بؤر نخرية" && txt("gen.congestion") === "احتقان عام"
+      && txt("head.blood_casts") === "القصبة الهوائية: وجود قوالب دموية" && txt("x_future.code") === "[x_future]: x_future.code",
+      J(["liver.enlarged", "spleen.necrotic_foci", "gen.congestion", "head.blood_casts", "x_future.code"].map(txt)));
+
+    // قائمةُ الزيارات والخطُّ الزمنيّ: الأمراضُ المختارة تشخيصٌ أيضاً
+    const dxv = M.dxText((k) => k, { dx: " ملاحظة ", dx_codes: ["coccidiosis", "ne"] });
+    c("م٨ تشخيصُ الزيارة بالقائمة: المختارُ بأسمائه ثمّ المكتوب، والفارغُ فارغٌ («بلا تشخيص»)", dxv === "flk.dx.coccidiosiscommon.listSepflk.dx.ne — ملاحظة", dxv);
+    c("  وزيارةٌ بلا مرضٍ ولا نصّ ⇒ فارغ", M.dxText((k) => k, { dx: null, dx_codes: [] }) === "" && M.dxText((k) => k, { dx: "  ", dx_codes: [] }) === "");
+
+    // م٩ نقراتٌ بنفس اللحظة — جذرٌ متزامنٌ كـcreateRoot بالتطبيق: النقراتُ كلُّها قبل أيّ رسمة. كانت كلُّ نقرةٍ تحسب القائمةَ الجديدة من المرسومة
+    // فتمسح الثانيةُ الأولى (مقيسٌ بالمتصفّح ٢٥/١١ بسؤال المالك «يكدر يختار اكثر من علامة بنفس الوقت؟»: ثلاثُ نقراتٍ بلحظةٍ واحدة بقيت أخيرتُها).
+    reset();
+    globalThis.__api = { saveVisit: async (p) => { __calls.push(p); return { visit: { id: "v9", ...p }, replayed: false }; } };
+    ui = M.mount(el(M.FlockVisit, { b: bundleOf(M), canEdit: true, onClose() {}, onSaved() {} }), { concurrent: true });
+    await ui.settle();
+    ui.click(ui.find("data-flock-add-bird")); await ui.settle();
+    ui.click(ui.find("data-flock-sys", "dig")); await ui.settle();
+    const ev = { preventDefault() {}, stopPropagation() {} };
+    const burst = ["gut.enlarged", "gut.thin_wall", "gut.thick_wall"].map((x) => ui.find("data-chip", x));
+    ui.fire(() => burst.forEach((n) => n.props.onClick(ev)));
+    await ui.settle();
+    const dxs = ["colibacillosis", "coccidiosis", "ne"].map((x) => ui.find("data-chip", x));
+    const sg = ["resp.cough", "gi.diarrhea_white"].map((x) => ui.find("data-chip", x));
+    ui.fire(() => { dxs.forEach((n) => n.props.onClick(ev)); sg.forEach((n) => n.props.onClick(ev)); });
+    await ui.settle();
+    c("م٩ ثلاثُ علاماتٍ تشريحيّة بنفس اللحظة تبقى الثلاث (لا تمسح الأخيرةُ ما قبلها)", J(pickedOf(ui).sort()) === J(["gut.enlarged", "gut.thick_wall", "gut.thin_wall"]), J(pickedOf(ui)));
+    ui.click(ui.find("data-flock-save")); await ui.settle(); await flush();
+    const pb = __calls[0] ?? {};
+    c("  وثلاثةُ تشخيصاتٍ وعلامتا الطيور الحيّة بنفس اللحظة تُحفظ كلُّها مع العلامات الثلاث",
+      J([...(pb.dx_codes ?? [])].sort()) === J(["coccidiosis", "colibacillosis", "ne"]) && J([...(pb.signs ?? [])].sort()) === J(["gi.diarrhea_white", "resp.cough"])
+      && J([...(pb.necropsy?.[0]?.findings ?? [])].sort()) === J(["gut.enlarged", "gut.thick_wall", "gut.thin_wall"]), J({ dx: pb.dx_codes, s: pb.signs, f: pb.necropsy?.[0]?.findings }));
+    ui.unmount();
+  }
+
   /* ل) فتحُ الحالة */
   {
     reset();
@@ -500,7 +695,7 @@ await run(BASE, check);
 let onCrash = null;
 process.on("unhandledRejection", (e) => { if (onCrash) onCrash(e); else { console.error(e); process.exit(1); } });
 console.log("▸ ز) الطفرات");
-const S0 = { shared: SRC(FILES.shared), sheets: SRC(FILES.sheets), tx: SRC(FILES.tx), visit: SRC(FILES.visit), intake: SRC(FILES.intake) };
+const S0 = { necro: SRC(FILES.necro), shared: SRC(FILES.shared), sheets: SRC(FILES.sheets), tx: SRC(FILES.tx), visit: SRC(FILES.visit), intake: SRC(FILES.intake) };
 const MUTANTS = [
   ["الفارغُ يُحفظ صفراً", "sheets", `!done.has(h.id ?? "") && (v.dead.trim() !== "" || v.culled.trim() !== "")`, `!done.has(h.id ?? "") && true`],
   ["الإعادةُ ترسل المنحفظةَ ثانيةً", "sheets", `!done.has(h.id ?? "") && (v.dead`, `(v.dead`],
@@ -521,6 +716,21 @@ const MUTANTS = [
   ["تحصينٌ مختفٍ يُختم", "visit", "filter(([id, by]) => by && dueVax.some((v) => v.id === id))", "filter(([, by]) => by)"],
   ["سؤالُ الحقول الفاشل لا يمنع الفتح", "intake", "    if (farmsErr) { setErr(t(\"flk.open.farmsFailOpen\")); return; }\n", ""],
   ["الحقلُ المختار يبقى بعد تبديل الزبون", "intake", "const farmId = chosen ? chosen.farm.id : null;", "const farmId = f.farmId;"],
+  ["«لا توجد آفات» تبقى مع آفة", "necro", "const drop = new Set([NIL, ...systemsWith(code).map(normalOf)", "const drop = new Set([...systemsWith(code).map(normalOf)"],
+  ["«لا توجد آفات» تمسح الآفاتِ المختارة", "necro", "if (code === NIL) return lesionsOf(findings).length ? [...findings] : [...findings, NIL];", "if (code === NIL) return [NIL];"],
+  ["«طبيعي» يُبقي آفاتِ الجهاز", "necro", "return [...findings.filter((f) => !mine.has(f) || f === NIL), mark];", "return [...findings, mark];"],
+  ["آفةٌ لا تشيل «طبيعي» جهازها", "necro", "const drop = new Set([NIL, ...systemsWith(code).map(normalOf), `${code.split(\".\")[0]}.normal`]);", "const drop = new Set([NIL]);"],
+  ["«الباقي طبيعي» يطغى على جهازٍ فيه آفة", "necro", "    if (codesOf(s).some((c) => c !== NIL && out.includes(c))) continue;\n", ""],
+  ["البحثُ يطبّع السؤالَ وحده", "necro", "const a = norm(name(code)), g = norm(group(s.k, sub.k));", "const a = name(code), g = group(s.k, sub.k);"],
+  ["البحثُ بترتيب القائمة لا بما طابقه الاسم", "necro", "    if (words.every((w) => a.includes(w))) own.push(code);\n    else if", "    if"],
+  ["آفةٌ جديدة تُسقط رموزاً لا تعرفها", "necro", "return [...findings.filter((f) => !drop.has(f)), code];", "return [...findings.filter((f) => !drop.has(f) && isKnownLesion(f)), code];"],
+  ["الملخّصُ يسبق كلَّ آفةٍ بمجموعتها", "necro", "return home.sub === \"gen\" || SELF_NAMED.has(code) ? main : `${group(home.sub)}: ${main}`;", "return `${group(home.sub)}: ${main}`;"],
+  ["التشريحُ للكاملة وحدها", "visit", "{d.birds.length < 50 && (\n              <Button variant={d.birds.length ? \"outline\" : \"secondary\"}", "{!d.quick && d.birds.length < 50 && (\n              <Button variant={d.birds.length ? \"outline\" : \"secondary\"}"],
+  ["«طيرٌ بنفس العلامات» فارغ", "visit", "onClick={() => addBird(bird)} data-flock-dup-bird", "onClick={() => addBird(null)} data-flock-dup-bird"],
+  ["الآفةُ تُحسب من المرسوم (نقرتان بلحظةٍ تمسح الأولى)", "visit", "onChange={(fn) => setBirdAt(bird, (b) => ({ findings: fn(b.findings) }))}", "onChange={(fn) => setBirdAt(bird, { findings: fn(cur.findings) })}"],
+  ["التشخيصُ يُحسب من المرسوم", "visit", "onClick={() => upd((st) => ({ dxCodes: toggle(st.dxCodes, x) }))}", "onClick={() => set({ dxCodes: toggle(d.dxCodes, x) })}"],
+  ["علامةُ الطير الحيّ تُحسب من المرسوم", "visit", "onClick={() => upd((x) => ({ signs: toggle(x.signs, k) }))}", "onClick={() => set({ signs: toggle(d.signs, k) })}"],
+  ["قائمةُ الزيارات تقرأ المكتوبَ وحده", "shared", "[v.dx_codes.map((x) => t(`flk.dx.${x}`, { defaultValue: x })).join(t(\"common.listSep\")), v.dx?.trim() ?? \"\"]", "[v.dx?.trim() ?? \"\"]"],
   ["السحبُ الفارغ يصير صفراً", "tx", `withdrawal_meat_days: l.kind === "med" ? optInt(l.wd_meat) : null`, `withdrawal_meat_days: l.kind === "med" ? (optInt(l.wd_meat) ?? 0) : null`],
 ];
 for (const [name, file, from, to] of MUTANTS) {

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,7 @@ import {
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
-  History, LogIn, LogOut, ArrowLeftRight, AlertTriangle, ChevronLeft, LayoutDashboard,
+  History, LogIn, LogOut, ArrowLeftRight, AlertTriangle, ChevronLeft, LayoutDashboard, RotateCcw,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement, LabResult } from "@/types";
@@ -305,6 +305,9 @@ export function PetPassport() {
   const [admissions, setAdmissions] = useState<Admission[]>(seed?.adm ?? []);
   const [appointments, setAppointments] = useState<Appointment[]>(seed?.apt ?? []);
   const [reminders, setReminders] = useState<Reminder[]>(seed?.rem ?? []);
+  /** آخرُ تحميلٍ فشل (الخطأُ نفسُه — يُوصف عند الرسم): بلا ملفٍّ بطاقةُ إعادة، ومع ملفٍّ شريطٌ فوقه. */
+  const [loadErr, setLoadErr] = useState<unknown>(null);
+  const [retrying, setRetrying] = useState(false);
   const toast = useToast();
   // Owners may view their pet's health record but not modify clinical data.
   const canEditClinical = user?.role !== "owner";
@@ -342,22 +345,37 @@ export function PetPassport() {
     }
   };
 
+  /* الملفُّ كلُّه أو لا شيء (CLAUDE.md: قائمةٌ ناقصة أخطرُ من خطأ ظاهر). الملاحظاتُ والطبلةُ والمرفقاتُ صارت ترمي
+   * (repo) بدل «ماكو» عن خطأ — وهنا يُمسك الفشل: آخرُ نسخةٍ كاملة (من الخبيئة أو تحميلٍ سابق) تبقى ويقول شريطٌ إنها
+   * ممكن قديمة، وبلا نسخةٍ بطاقةُ «أعد المحاولة» لا «جارٍ التحميل» للأبد. ولا ترمي: أكثرُ من عشرين بطاقةً تنادي
+   * `onChanged` بعد كتابةٍ نجحت، ورميُها كان سيقول «ما انحفظ» عمّا انحفظ. والأحدثُ يغلب (حيوانٌ تبدّل أو تحميلان معاً). */
+  const loadSeq = useRef(0);
   const reload = async () => {
     if (!petId) return;
-    const [p, w, v, h, m, tx, adm, apt, rem, nt, cv, lab] = await Promise.all([
-      repo.getPet(petId),
-      repo.listWeights(petId),
-      repo.listVaccinations(petId),
-      repo.listVisits(petId),
-      repo.listMedia(petId),
-      repo.listTreatments(petId),
-      repo.listAdmissionsForPet(petId),
-      repo.listAppointmentsForPet(petId),
-      repo.listReminders(),
-      repo.listPetNotes(petId).catch(() => [] as PetNote[]),
-      repo.listClinicVisitsForPet(petId).catch(() => [] as ClinicVisit[]),
-      repo.listLabResults(petId).catch(() => [] as LabResult[]),
-    ]);
+    const my = ++loadSeq.current;
+    let got;
+    try {
+      got = await Promise.all([
+        repo.getPet(petId),
+        repo.listWeights(petId),
+        repo.listVaccinations(petId),
+        repo.listVisits(petId),
+        repo.listMedia(petId),
+        repo.listTreatments(petId),
+        repo.listAdmissionsForPet(petId),
+        repo.listAppointmentsForPet(petId),
+        repo.listReminders(),
+        repo.listPetNotes(petId),
+        repo.listClinicVisitsForPet(petId),
+        repo.listLabResults(petId),
+      ]);
+    } catch (e) {
+      if (my === loadSeq.current) setLoadErr(e);
+      return;
+    }
+    if (my !== loadSeq.current) return;
+    const [p, w, v, h, m, tx, adm, apt, rem, nt, cv, lab] = got;
+    setLoadErr(null);
     setCached(`pet_${petId}`, { p: p ?? null, w, v, h, m, tx, adm, apt, rem: rem.filter((r) => r.pet_id === petId), nt, cv, lab });
     setPet(p ?? null);
     setLabs(lab);
@@ -395,12 +413,36 @@ export function PetPassport() {
   };
 
   useEffect(() => {
-    seedFromCache(); // فوري إن سبق فتح الملف — والتحديث الحقيقي يلحقه بالخفاء
+    setLoadErr(null);
+    // فوري إن سبق فتح الملف — والتحديث الحقيقي يلحقه بالخفاء. وبلا خبيئةٍ لا يبقى ملفُّ الحيوان السابق تحت رابط هذا:
+    // فشلُ تحميله كان سيُرسم «ممكن قديم» فوق حيوانٍ آخر.
+    if (!seedFromCache()) setPet(null);
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petId]);
+  const retryLoad = async () => {
+    if (retrying) return;
+    playTap();
+    setRetrying(true);
+    try { await reload(); } finally { setRetrying(false); }
+  };
 
-  if (!pet) return <div className="mx-auto max-w-3xl px-4 py-10 text-ink-subtle">{t("common.loading")}</div>;
+  if (!pet) {
+    if (loadErr == null) return <div className="mx-auto max-w-3xl px-4 py-10 text-ink-subtle">{t("common.loading")}</div>;
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center" data-pet-loadfail>
+        <div className="card mx-auto max-w-md p-8" role="alert">
+          <p className="font-semibold text-ink">{t("dsht.fileLoadFailTitle", "ما انحمل ملف الحيوان")}</p>
+          <p className="mt-1 text-sm text-ink-muted">{t("dsht.fileLoadFailBody", "ما نعرضه ناقص — ملاحظة أو جرعة أو مرفق غايب ينقرأ «ماكو». أعد المحاولة.")}</p>
+          <p className="mt-1 text-xs text-ink-subtle">{describeDbError(loadErr, t)}</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button leftIcon={<RotateCcw size={16} />} loading={retrying} onClick={() => void retryLoad()} data-pet-retry>{t("common.retry", "Retry")}</Button>
+            <Button variant="secondary" onClick={() => navigate(-1)}>{t("common.back")}</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Per-pet activity rail: this pet's upcoming appointments, vaccines, treatment-due, feeds & reminders.
   const petEvents = buildUpcomingEvents({
@@ -509,6 +551,16 @@ export function PetPassport() {
             <VaxEditLazy vaccines={vaccines} initialKey={vaxEdit} petName={pet.name} onClose={() => setVaxEdit(null)} onSaved={reload} />
           </Suspense>
         </LoadBoundary>
+      )}
+
+      {/* آخرُ تحميلٍ فشل — المعروضُ آخرُ نسخةٍ كاملة (خبيئةٌ أو تحميلٌ سابق)، ويُقال إنها ممكن مو آخر شي */}
+      {loadErr != null && (
+        <div role="alert" data-pet-stale className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5 no-print dark:border-danger-500/30 dark:bg-danger-500/10">
+          <AlertTriangle size={16} className="shrink-0 text-danger-600" />
+          <span className="text-sm font-extrabold text-danger-700 dark:text-danger-300">{t("dsht.fileStaleTitle", "ما انحملت آخر نسخة من الملف")}</span>
+          <span className="text-xs text-danger-600/80 dark:text-danger-300/80">{t("dsht.fileStaleBody", "المعروض من آخر تحميل — ممكن مو آخر شي.")}</span>
+          <Button size="sm" variant="secondary" className="ms-auto" leftIcon={<RotateCcw size={14} />} loading={retrying} onClick={() => void retryLoad()} data-pet-retry>{t("common.retry", "Retry")}</Button>
+        </div>
       )}
 
       {isOwner && (
@@ -2061,7 +2113,7 @@ function MovementsCard({ petId, admissions }: { petId: string; admissions: Admis
   const admKey = admissions.map((a) => `${a.id}:${a.status}:${a.kind}:${a.cage ?? ""}`).join("|");
   useEffect(() => {
     let alive = true;
-    repo.listPetMovements(petId).then((m) => { if (alive) setMoves(m); }).catch(() => { if (alive) setMoves([]); });
+    repo.listPetMovements(petId).then((m) => { if (alive) setMoves(m); }).catch(() => { if (alive) setMoves([]); });   /* swallow-ok: سجلُّ الحركات عرضٌ لا قرار، وlistPetMovements (listOf) لا ترمي أصلاً */
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petId, admKey]);

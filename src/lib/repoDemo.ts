@@ -11,7 +11,7 @@
 import { loadDB, saveDB } from "./demoStore";
 // مَن يطلب (الدور، مفتاحُ المدير، المعرّف) ورفضُ الخادم برمزه — وحدةٌ تشترك بها المرايا الكسولة كلُّها.
 import { demoApiGate, demoBaseRole, demoHint, demoInventoryRole, demoPinLive, demoUserId } from "./demoRole";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryCycle, PoultryDaily, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyEntry, CompanyPayResult, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow, InventoryAuditRow } from "@/types";
@@ -832,19 +832,18 @@ function restockLocal(db: ReturnType<typeof loadDB>, it: InvoiceItem, cons: Cons
   p.stock = r3(p.stock + (sq - credited));
 }
 
-function demoNotesLoad(): PetNote[] {
+export function demoNotesLoad(): PetNote[] {
   try { const r = localStorage.getItem(DEMO_NOTES_KEY); if (r) return JSON.parse(r) as PetNote[]; } catch { /* ignore */ }
   return [];
 }
 
-function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+export function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 
 function pLoad<T>(k: string): T[] {
   try { const r = localStorage.getItem(DEMO_POULTRY[k]); if (r) return JSON.parse(r) as T[]; } catch { /* ignore */ }
   return [];
 }
 
-function pSave<T>(k: string, list: T[]) { try { localStorage.setItem(DEMO_POULTRY[k], JSON.stringify(list)); } catch { /* ignore */ } }
 
 
 /** تسجيل مصروف بالوضع التجريبي. مشتركٌ بين addExpense وترحيل الرواتب حتى
@@ -1202,19 +1201,9 @@ const demoRepo = {
     return pet;
   },
 
-  async deletePet(petId: string): Promise<void> {
-    const db = loadDB();
-    db.pets = db.pets.filter((p) => p.id !== petId);
-    // Cascade the pet's dependent records so nothing is left dangling (mirrors the
-    // `on delete cascade` foreign keys used in the Supabase schema).
-    db.weightLogs = db.weightLogs.filter((w) => w.pet_id !== petId);
-    db.vaccinations = db.vaccinations.filter((v) => v.pet_id !== petId);
-    db.visits = db.visits.filter((v) => v.pet_id !== petId);
-    db.media = db.media.filter((m) => m.pet_id !== petId);
-    db.treatments = db.treatments.filter((tr) => tr.pet_id !== petId);
-    db.admissions = db.admissions.filter((a) => a.pet_id !== petId);
-    if (db.appointments) db.appointments = db.appointments.filter((a) => a.pet_id !== petId);
-    saveDB(db);
+  async deletePet(petId: string, reason?: string | null): Promise<void> {
+    // 0292: طيٌّ لا محو، ولمن عنده «حذف الحيوانات» — المرآةُ كسولة (demoPetTrash.ts) بحرّاس الخادم نفسِها.
+    await (await loadDemoPetTrash()).demoDeletePet(petId, reason);
   },
 
   async listWeights(petId: string): Promise<WeightLog[]> {
@@ -2060,10 +2049,6 @@ const demoRepo = {
   async listProducts(_clinicId?: string): Promise<Product[]> {
     return (loadDB().products ?? []).filter((p) => !p.farm_id).slice().sort((a, b) => a.name.localeCompare(b.name));
   },
-  /** مخزنُ حقلٍ بعينه — الوجهُ الثاني لنفس الجدول. */
-  async listFarmProducts(farmId: string): Promise<Product[]> {
-    return (loadDB().products ?? []).filter((p) => p.farm_id === farmId).slice().sort((a, b) => a.name.localeCompare(b.name));
-  },
   /** هل قاعدة البيانات تدعم عمود مجموعات الدفعات (bulk_group / ترحيل 0075)؟
    *  المخزن المحلي يدعمه دائماً؛ السحابة تُفحص فعلياً لتنبيه العيادة قبل أن
    *  تضيع روابط المجموعات بصمت. */
@@ -2288,164 +2273,6 @@ const demoRepo = {
     if ((desc ?? "").length > 2000) { const e = new Error("desc_too_long") as Error & { code: string }; e.code = "P0001"; throw e; }
     demoProductPatch(productId, { store_desc: (desc ?? "").trim() || null });
   },
-  /* ── حقولُ الدواجن (0191/0192) — تجريبياً ───────────────────────────────
-   * يعكس الخادمَ بالقيود التي تهمّ: قاعةٌ واحدةٌ = دفعةٌ نشطةٌ واحدة، ويومٌ لا
-   * يُدخَل مرّتين، والصرفُ بسعر الشراء يرجّع النقص. حارسٌ لا يوجد هنا حارسٌ
-   * لم يُفحص — فحوصُ المنطق تجري على هذه النسخة. */
-  async listPoultryFarms(): Promise<PoultryFarm[]> {
-    return pLoad<PoultryFarm>("farms").filter((f) => !f.archived);
-  },
-  async addPoultryFarm(input: Partial<PoultryFarm> & { name: string }): Promise<PoultryFarm> {
-    const row: PoultryFarm = { ...input, id: uid("pfarm"), clinic_id: null, archived: false, created_at: new Date().toISOString() };
-    pSave("farms", [row, ...pLoad<PoultryFarm>("farms")]);
-    return row;
-  },
-  async listPoultryHouses(farmId: string): Promise<PoultryHouse[]> {
-    return pLoad<PoultryHouse>("houses").filter((h) => h.farm_id === farmId && !h.archived)
-      .sort((a, b) => a.label.localeCompare(b.label));
-  },
-  async addPoultryHouse(input: Partial<PoultryHouse> & { farm_id: string; label: string }): Promise<PoultryHouse> {
-    const row: PoultryHouse = { ...input, id: uid("phouse"), clinic_id: null, archived: false, created_at: new Date().toISOString() };
-    pSave("houses", [...pLoad<PoultryHouse>("houses"), row]);
-    return row;
-  },
-  async listPoultryCycles(farmId: string): Promise<PoultryCycle[]> {
-    return pLoad<PoultryCycle>("cycles").filter((c) => c.farm_id === farmId)
-      .sort((a, b) => b.placed_on.localeCompare(a.placed_on));
-  },
-  async openPoultryCycle(input: Omit<PoultryCycle, "id" | "status" | "created_at">): Promise<PoultryCycle> {
-    const all = pLoad<PoultryCycle>("cycles");
-    // مرآةُ الفهرس الفريد الجزئيّ بالخادم: دفعتان نشطتان بنفس الجملون تجعلان
-    // كلَّ رقمٍ يوميٍّ بعدهما لا يُعرف لأيّهما.
-    if (all.some((c) => c.house_id === input.house_id && c.status === "active")) {
-      throw new Error("house_has_active_cycle");
-    }
-    const row: PoultryCycle = { ...input, id: uid("pcycle"), status: "active", created_at: new Date().toISOString() };
-    pSave("cycles", [row, ...all]);
-    return row;
-  },
-  async closePoultryCycle(id: string, close: { closed_on: string; sold_count?: number | null; sold_weight_kg?: number | null; sale_total?: number | null }): Promise<PoultryCycle | undefined> {
-    const all = pLoad<PoultryCycle>("cycles");
-    const c = all.find((x) => x.id === id);
-    if (!c) return undefined;
-    // مرآةُ القيد: مغلقةٌ بلا تاريخٍ تعني جرداً بلا حصيلة.
-    if (!close.closed_on) throw new Error("close_needs_date");
-    Object.assign(c, close, { status: "closed" as const });
-    pSave("cycles", all);
-    return c;
-  },
-  async listPoultryDaily(cycleId: string): Promise<PoultryDaily[]> {
-    return pLoad<PoultryDaily>("daily").filter((d) => d.cycle_id === cycleId)
-      .sort((a, b) => b.on_date.localeCompare(a.on_date));
-  },
-  /** يومٌ واحدٌ لكلّ دفعة: الإعادةُ تُحدّث ولا تضيف (مرآةُ الفهرس الفريد). */
-  async savePoultryDaily(input: Omit<PoultryDaily, "id" | "created_at">): Promise<PoultryDaily> {
-    const all = pLoad<PoultryDaily>("daily");
-    const cur = all.find((d) => d.cycle_id === input.cycle_id && d.on_date === input.on_date);
-    if (cur) {
-      Object.assign(cur, input, { updated_at: new Date().toISOString() });
-      pSave("daily", all);
-      return cur;
-    }
-    const row: PoultryDaily = { ...input, id: uid("pday"), clinic_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-    pSave("daily", [row, ...all]);
-    return row;
-  },
-  async listPoultryUse(cycleId: string): Promise<PoultryUse[]> {
-    return pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId)
-      .sort((a, b) => b.on_date.localeCompare(a.on_date) || b.created_at.localeCompare(a.created_at));
-  },
-  async poultryConsume(input: { cycle_id: string; kind: PoultryUseKind; product_id?: string | null; name?: string | null; qty: number; unit?: string | null; on_date?: string | null; note?: string | null; withdrawal_days?: number | null; client_ref?: string | null }): Promise<PoultryConsumeResult> {
-    const db = loadDB();
-    const cyc = pLoad<PoultryCycle>("cycles").find((c) => c.id === input.cycle_id);
-    if (!cyc) throw new Error("no_cycle");
-    if (cyc.status !== "active") throw new Error("cycle_closed");
-    if (!(input.qty > 0)) throw new Error("bad_qty");
-    // سطرُ كلفةٍ بلا اسمٍ ولا مادّةٍ لا يُقرأ بجرد — يُرفض بالنصفين لا يُخترع له اسم.
-    if (!input.product_id && !(input.name ?? "").trim()) throw new Error("bad_name");
-    let cost = 0, stockAfter: number | null = null, shortfall = 0, nm = (input.name ?? "").trim();
-    if (input.product_id) {
-      const prod = (db.products ?? []).find((p) => p.id === input.product_id);
-      if (!prod) throw new Error("no_product");
-      // مادّةُ الحقل وحدَها: علبةُ قططٍ على دفعةِ دجاجٍ تفسد كلفةَ الدورة
-      // وقيمةَ مخزن العيادة معاً (مرآةُ فحص الخادم).
-      if ((prod.farm_id ?? null) !== cyc.farm_id) throw new Error("not_farm_stock");
-      cost = prod.purchase_price ?? 0;
-      shortfall = Math.max(0, input.qty - (prod.stock ?? 0));
-      // الرصيدُ يُترك يسلب عمداً: الدفترُ اليوميُّ هو الحقيقة لا مخزوننا.
-      prod.stock = (prod.stock ?? 0) - input.qty;
-      stockAfter = prod.stock;
-      nm = nm || prod.name;
-      saveDB(db);
-    }
-    // فترةُ السحب لسطر الدواء وحدَه — مرآةُ الخادم: رقمٌ على كيس علفٍ يُهمَل
-    // صامتاً لا يُرفض، ولو مرّ لدفع تاريخَ الأمان بلا سبب.
-    const wd = input.kind === "med" ? (input.withdrawal_days ?? null) : null;
-    if (wd !== null && (!Number.isFinite(wd) || wd < 0 || wd > 120)) throw new Error("bad_withdrawal");
-    const onDate = input.on_date ?? new Date().toISOString().slice(0, 10);
-    // مرآةُ 0193: مرجعٌ سبق ⇒ نُرجع سطرَه ولا نخصم ثانيةً.
-    const ref = (input.client_ref ?? "").trim();
-    if (ref) {
-      const prior = pLoad<PoultryUse>("use").find((u) => u.client_ref === ref);
-      if (prior) return { ok: true, use: prior, stock_after: null, shortfall: 0, replayed: true };
-    }
-    const row: PoultryUse = {
-      id: uid("puse"), clinic_id: null, cycle_id: input.cycle_id, client_ref: ref || null,
-      on_date: onDate,
-      kind: input.kind, product_id: input.product_id ?? null, name: nm,
-      qty: input.qty, unit: input.unit ?? null, unit_cost: cost,
-      line_cost: Math.round(cost * input.qty * 100) / 100,
-      withdrawal_days: wd,
-      note: input.note ?? null, created_at: new Date().toISOString(),
-    };
-    pSave("use", [row, ...pLoad<PoultryUse>("use")]);
-    const safe = wd === null ? null : new Date(new Date(onDate).getTime() + wd * 86400000).toISOString().slice(0, 10);
-    return { ok: true, use: row, stock_after: stockAfter, shortfall, safe_from: safe };
-  },
-  async poultryUnconsume(useId: string): Promise<{ ok: boolean; returned?: number }> {
-    const all = pLoad<PoultryUse>("use");
-    const u = all.find((x) => x.id === useId);
-    if (!u) return { ok: false };
-    if (u.product_id) {
-      const db = loadDB();
-      const prod = (db.products ?? []).find((p) => p.id === u.product_id);
-      if (prod) { prod.stock = (prod.stock ?? 0) + u.qty; saveDB(db); }
-    }
-    pSave("use", all.filter((x) => x.id !== useId));
-    return { ok: true, returned: u.qty };
-  },
-  /** مرآةُ `poultry_cycle_stats` بالخادم — نفسُ المجاميع بنفس التعريفات. */
-  async poultryCycleStats(cycleId: string): Promise<PoultryCycleStats | null> {
-    const c = pLoad<PoultryCycle>("cycles").find((x) => x.id === cycleId);
-    if (!c) return null;
-    const days = pLoad<PoultryDaily>("daily").filter((d) => d.cycle_id === cycleId);
-    const uses = pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId);
-    const meds = uses.filter((u) => u.kind === "med");
-    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-    const dead = sum(days.map((d) => d.dead || 0));
-    const culled = sum(days.map((d) => d.culled || 0));
-    const end = c.closed_on ?? new Date().toISOString().slice(0, 10);
-    const ms = new Date(end).getTime() - new Date(c.placed_on).getTime();
-    return {
-      placed_count: c.placed_count, dead, culled, alive: c.placed_count - dead - culled,
-      feed_kg: sum(uses.filter((u) => u.kind === "feed").map((u) => u.qty)),
-      feed_cost: sum(uses.filter((u) => u.kind === "feed").map((u) => u.line_cost)),
-      med_cost: sum(uses.filter((u) => u.kind === "med").map((u) => u.line_cost)),
-      other_cost: sum(uses.filter((u) => u.kind !== "feed" && u.kind !== "med").map((u) => u.line_cost)),
-      chick_cost: Math.round((c.chick_unit_cost ?? 0) * c.placed_count * 100) / 100,
-      days: Math.max(0, Math.round(ms / 86400000)),
-      last_entry: days.length ? days.map((d) => d.on_date).sort().slice(-1)[0] : null,
-      // مرآةُ القاعدة: **أبعدُ** تاريخٍ لا آخرُ سطر، وسطرٌ واحدٌ بلا رقمٍ يرفع
-      // رايةَ المجهول — والقطيعُ يأمن حين تأمن آخرُ مادّةٍ دخلته.
-      safe_from: meds.reduce<string | null>((best, u) => {
-        if (u.withdrawal_days == null) return best;
-        const d = new Date(new Date(u.on_date).getTime() + u.withdrawal_days * 86400000).toISOString().slice(0, 10);
-        return best && best >= d ? best : d;
-      }, null),
-      withdrawal_unknown: meds.some((u) => u.withdrawal_days == null),
-    };
-  },
-
   /** شعار العيادة (0190) — تجريبياً كصورة المنتج: لا مخزنَ ملفات فيرجع
    *  data URL، و`getClinicLogo` تمرّره كما هو. */
   async uploadClinicLogo(_clinicId: string | null, upload: { blob: Blob; dataUrl: string }): Promise<string> {
@@ -5154,6 +4981,11 @@ const demoRepo = {
       : await demoRepo.listProducts();
     return new Set(rows.map((r) => r.id).filter((id) => ids.includes(id))).size;
   },
+  /** أيّامُ دفعةِ حقلٍ — لمراجعة /outbox وحدها (مرآةُ السحابيّ): إدخالُ يومٍ قديمٌ بالطابور يُقارَن بيومه. */
+  async listPoultryDaily(cycleId: string): Promise<PoultryDaily[]> {
+    return pLoad<PoultryDaily>("daily").filter((d) => d.cycle_id === cycleId)
+      .sort((a, b) => b.on_date.localeCompare(a.on_date));
+  },
   /** مرآةُ listReturnRows: سطورُ «مرتجع» بمدّة من سحوبات النسخة التجريبية. */
   async listReturnRows(from: string, to: string): Promise<Expense[]> {
     const a = Date.parse(from), b = Date.parse(to);
@@ -5643,6 +5475,8 @@ export const loadDemoConsumption = () => import("./demoConsumption");
 export const loadDemoPnl = () => import("./demoPnl");
 /** مرآةُ تعديل اللقاح وحذفه (vaxEditApi، 0257) — كسولةٌ من هذا الباب وحده. */
 export const loadDemoVaxEdit = () => import("./demoVaxEdit");
+/** مرآةُ حذف الحيوان ومحذوفاته (0292) — كسولةٌ: deletePet هنا، والمعاينةُ والقائمةُ والاسترجاعُ من petTrashApi. */
+export const loadDemoPetTrash = () => import("./demoPetTrash");
 export const loadDemoUsd = () => import("./demoUsd");
 export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");
 export const loadDemoProductGroups = () => import("./demoProductGroups");   // 0277 — المنتجاتُ المربوطة
@@ -5650,9 +5484,11 @@ export const loadDemoPosSales = () => import("./demoPosSales");   // 0279 — م
 export const loadDemoVaccinePrices = () => import("./demoVaccinePrices");   // 0279 — أسعارُ التطعيمات
 export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 — أرشفةُ أدوية النظام
 export const loadDemoCompanyEntryEdit = () => import("./demoCompanyEntryEdit");   // 0281 — تعديلُ الرصيد السابق والتسوية
+export const loadDemoVoice = () => import("./demoVoice");   // 0287 — الملاحظةُ الصوتية
 export const loadDemoDual = () => import("./demoDual");   // 0282 — البيعُ بسعرين (سطرُ الدولار بفاتورة دينار)
 export const loadDemoCaseReports = () => import("./demoCaseReports");   // 0287 — تقاريرُ الحالة المطبوعة وما عُدّل فيها
 export const loadDemoExpired = () => import("./demoExpired");   // 0289 — الراجعُ الإكسباير ودفعتُه والبيعُ منها
+export const loadDemoCompanyOpenings = () => import("./demoCompanyOpenings");   // 0291 — ديونُ الشركة القديمة الكثيرة كلٌّ بتاريخه
 /** 0265: حالةُ الحقل — مرآةُ دوالّها كسولةٌ من هذا الباب وحده (flockApi). */
 export const loadDemoFlock = () => import("./demoFlock");
 /** 0266: البيعُ قبل الجرد — مرآةُ الحالة والبوابة وفحص البيعة والجرد كسولةٌ من هذا الباب وحده (negStockApi). */

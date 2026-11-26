@@ -46,12 +46,10 @@ function Header() {
   const { ed, c } = useSite();
   const card = (slug: (typeof FEATURE_SLUGS)[number]) => ({ title: c.features.cards[slug].title, short: c.features.cards[slug].short, href: href(ed.code, "feature", slug) });
   const props: SiteNavProps = {
-    dir: ed.lang === "ar" ? "rtl" : "ltr",
     brand: "doctorVet",
     homeHref: href(ed.code, "home"),
     labels: { ...c.common.nav, all: c.common.mega.all },
     groups: c.common.mega.groups.map((g) => ({ title: g.title, items: g.items.map(card) })),
-    featured: { title: c.common.mega.featured.title, body: c.common.mega.featured.body, href: href(ed.code, "feature", c.common.mega.featured.slug) },
     links: { pricing: href(ed.code, "pricing"), security: href(ed.code, "security"), faq: href(ed.code, "faq"), start: href(ed.code, "start"), features: href(ed.code, "features") },
     cta: { label: c.common.cta.primary, href: signupHref(ed, "nav") },
     loginHref: loginHref(ed),

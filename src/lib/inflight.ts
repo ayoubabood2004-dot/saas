@@ -87,3 +87,19 @@ export const trackedFetch: typeof fetch = (input, init) => {
   writes++;
   return globalThis.fetch(input, init).finally(() => { writes--; lastWriteDone = Date.now(); });
 };
+
+/* ── المغادرة (الخروج من الحساب) — الملاحظةُ الصوتية (0287) ─────────────────
+ * `signOut` ينتهي بتحميلٍ كامل لصفحة الدخول بلا خطّاف: تسجيلٌ شغّال كان يُقطع وقطعتُه الأخيرة لم تُكتب، ورفعٌ
+ * بالطريق يُلغى. فمن يحتاج أن ينهي شيئاً يسجّل هنا (`onLeave`)، والخروجُ ينتظرهم بسقف (`settleLeave`)؛ ومن عنده
+ * ما يضيع إن خرج (تسجيلٌ بالذاكرة وحدها) يسجّل بوّابةً (`setLeaveGate`) تُسأل قبل الخروج. */
+const leaveHooks = new Set<() => Promise<unknown> | unknown>();
+export function onLeave(fn: () => Promise<unknown> | unknown): () => void { leaveHooks.add(fn); return () => { leaveHooks.delete(fn); }; }
+/** انتظر خطّافاتِ المغادرة كلَّها بسقف `ms` — الخروجُ لا يعلق على وعدٍ لا يستقرّ. */
+export async function settleLeave(ms: number): Promise<void> {
+  const all = Promise.allSettled([...leaveHooks].map((fn) => { try { return Promise.resolve(fn()); } catch (e) { return Promise.reject(e); } }));
+  await Promise.race([all, new Promise((ok) => setTimeout(ok, ms))]);
+}
+let leaveGate: (() => boolean) | null = null;
+/** بوّابةٌ ترجع true = «لا تخرج الآن» (صاحبُها يعرض سؤالَه بنفسه). */
+export function setLeaveGate(fn: (() => boolean) | null): void { leaveGate = fn; }
+export const leaveBlocked = (): boolean => { try { return !!leaveGate?.(); } catch { return false; } };

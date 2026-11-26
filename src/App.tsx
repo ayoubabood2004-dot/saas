@@ -46,13 +46,18 @@ const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ defaul
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
 /* مراجعةُ ما لم يصل الخادمَ بلا ختمِ هويّة (outbox.ts، قرارُ المالك ١٣/١٠) — الشارةُ الحمراء تنقل إليها. */
 const OutboxReview = page(() => import("@/pages/OutboxReview").then((m) => ({ default: m.OutboxReview })), ["obx"]);
+/* تسجيلاتُ الجهاز التي لم ترتفع، وما انقطع، وتسجيلاتُ حيواناتٍ انحذفت (0287) — بنطاقها المملوك vnote. */
+const VoiceShelf = page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceShelfPage })), ["vnote"]);
 const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ default: m.CompanyBook })), ["cbook"]);
 const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ default: m.PriceRaise })), ["praise"]);
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
 /* مكتبةُ الصور داخل العيادة (0285): مكتبتُها الخاصّة تكتبها بصلاحية الصور، والعامّةُ قراءة — نفسُ شاشة لوحة المنصّة. */
 const ClinicLibrary = page(() => import("@/components/admin/ImageLibraryManager").then((m) => ({ default: m.ClinicImageLibrary })), ["libm"]);
+/* صورٌ مقترحة لمنتجات العيادة من المكتبة (٢٥/١١): بالباركود والاسم، تُقبل واحدةً أو كلَّها. */
+const PhotoMatch = page(() => import("@/pages/PhotoMatch").then((m) => ({ default: m.PhotoMatch })), ["pmatch"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
-const Fields = page(() => import("@/pages/Fields").then((m) => ({ default: m.Fields })));
+// «حقول الدواجن» = حالةُ الحقل (0265) لكلّ عيادة؛ ودفترُ «باقة الحقل» القديم أُلغي بقرار المالك (٢٤/١١).
+const FlockCases = page(() => import("@/pages/FlockCases").then((m) => ({ default: m.FlockCases })), ["flk"]);
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })), ["campaigns"]);
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
@@ -63,8 +68,6 @@ const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ defaul
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
-// «ادخل حقلي» (0247): رابطٌ بضغطة من القائمة — يدخل مساحةَ الدواجن ثم يفتح الحقول.
-const PlatformFarmEntry = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformFarmEntry })));
 const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })), ["cat"]);
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const StoreTrack = page(() => import("@/pages/StoreTrack").then((m) => ({ default: m.StoreTrack })));
@@ -351,14 +354,16 @@ function Shell() {
             {/* فحصُ المخزن (0245) مثبَّتٌ داخل الجرد (طلبُ المالك): العنوانُ القديم يفتح تبويبَه هناك. */}
             <Route path="/inventory/audit" element={<Navigate to="/inventory/count?tab=audit" replace />} />
             <Route path="/outbox" element={<Protected><ClinicOnly><OutboxReview /></ClinicOnly></Protected>} />
+            <Route path="/voice" element={<Protected><ClinicOnly><VoiceShelf /></ClinicOnly></Protected>} />
             <Route path="/inventory/companies/:id" element={<Protected><ClinicOnly><CompanyBook /></ClinicOnly></Protected>} />
             <Route path="/inventory/prices" element={<Protected><ClinicOnly><PriceRaise /></ClinicOnly></Protected>} />
             <Route path="/photos" element={<Protected><ClinicOnly><ProductPhotos /></ClinicOnly></Protected>} />
             <Route path="/photos/library" element={<Protected><ClinicOnly><ClinicLibrary /></ClinicOnly></Protected>} />
+            <Route path="/photos/match" element={<Protected><ClinicOnly><PhotoMatch /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
-            {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}
-            <Route path="/poultry/*" element={<Protected><ClinicOnly><Fields /></ClinicOnly></Protected>} />
+            {/* حقولُ الدواجن: حالةُ الحقل (0265) — الطبيبُ يتابع حقولَ زبائنه من داخل العيادة. */}
+            <Route path="/poultry/*" element={<Protected><ClinicOnly><FlockCases /></ClinicOnly></Protected>} />
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
             <Route path="/s/:slug/track" element={<StoreTrack />} />
@@ -376,7 +381,6 @@ function Shell() {
             <Route path="/subscribe" element={<Protected><Subscribe /></Protected>} />
             <Route path="/admin" element={<Protected><AdminBilling /></Protected>} />
             <Route path="/platform" element={<Protected><PlatformConsole /></Protected>} />
-            <Route path="/platform/farm" element={<Protected><PlatformFarmEntry /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
       </Suspense>

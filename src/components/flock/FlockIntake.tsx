@@ -27,6 +27,7 @@ import { flockApi, type FlockFarmMatch, type FlockOpenInput } from "@/lib/flockA
 import { addDays, ageOn } from "@/lib/flockMath";
 import type { FlockKind, FlockProgram } from "@/lib/flockTypes";
 import { flockError, newRef } from "./flockShared";
+import { Choice } from "./FlockChoice";
 
 const BREEDS = ["Ross 308", "Cobb 500", "Hubbard", "Arbor Acres", "Hy-Line", "Lohmann", "ISA Brown"];
 const KINDS: FlockKind[] = ["broiler", "layer", "breeder", "other"];
@@ -189,7 +190,7 @@ function FlockIntake({ owner, value: f, onChange, onOpened, locked, onLock }: {
     } finally { setBusy(false); }
   };
 
-  const chip = (on: boolean) => cn("chip text-xs", on ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted");
+  const chip = (on: boolean) => cn("chip min-h-10 text-sm font-bold", on ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted");
   return (
     <div className="space-y-5" data-flock-intake>
       <fieldset disabled={locked} className="min-w-0 space-y-5">
@@ -227,9 +228,7 @@ function FlockIntake({ owner, value: f, onChange, onOpened, locked, onLock }: {
       {/* ٢ · الوجبة */}
       <div className="card space-y-4 p-4 sm:p-5">
         <h2 className="font-bold text-ink">{t("flk.open.batch")}</h2>
-        <div className="flex flex-wrap gap-1.5">
-          {KINDS.map((k) => <button key={k} type="button" className={chip(f.kind === k)} onClick={() => set({ kind: k })} data-flock-kind={k}>{t(`flk.kind.${k}`)}</button>)}
-        </div>
+        <Choice value={f.kind} options={KINDS} label={(k) => t(`flk.kind.${k}`)} onChange={(k) => set({ kind: k })} data="kind" />
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block"><span className="label">{t("flk.breed")}</span>
             <input className="input" list="flock-breeds" value={f.breed} maxLength={60} onChange={(e) => set({ breed: e.target.value })} />
