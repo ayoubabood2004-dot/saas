@@ -38,6 +38,11 @@ type CountRow = StockCount & { source?: string | null; posted?: number | string 
 const LEDGER_PAGE = 100;
 /** نافذةُ product_movements (repo.productMovements: p_limit 200) — ما وراءها لا يصل هذه الشاشة. */
 const LEGACY_WINDOW = 200;
+/* 0289/0290: سطرُ الراجع الإكسباير يقول «راجع إكسباير» ومن رجّعه وشوكت خلص وبكم — من دفعته، بنطاق `xret` المملوك (قطعةُ شاشة البيع
+ * نفسُها، كنموذج المادّة). بالكاتب لا بالنوع: قبل 0290 نوعُه «other» وكاتبُه return_expired، وبعدها «return» والكاتبُ نفسُه. */
+const loadXretLedger = () => page(() => import("@/components/retail/ExpiredReturn").then((m) => ({ default: m.XretLedgerNote })), ["xret"]);
+/** تُصنع أوّلَ ما يظهر سطرُ راجعٍ إكسباير — لا عند تحميل الوحدة (مادّةٌ بلا راجعٍ لا تجلب قطعتَه ولا نطاقَه). */
+let XretLedgerLazy: ReturnType<typeof loadXretLedger> | null = null;
 const LEDGER_ICON: Partial<Record<LedgerRow["kind"], typeof Pencil>> = {
   open: PackagePlus, purchase: ShoppingBag, purchase_edit: Pencil, lot: PackagePlus, restore: PackagePlus,
   sale: ArrowDownRight, consume: ArrowDownRight, waste: ArrowDownRight, delete: ArrowDownRight, farm: ArrowDownRight,
@@ -58,6 +63,9 @@ export function ProductMovementsDialog({ product, open, onClose }: {
   const [lgMore, setLgMore] = useState(false);
   const [lgBusy, setLgBusy] = useState(false);
   const [showLegacy, setShowLegacy] = useState(false);
+  /** كلُّ فتحٍ للنافذة جيلٌ: دفعاتُ الراجع (تفاصيلُ سطوره) تُجلب مرّةً له. ‏`xlTick` إعادةُ القطعة بعد فشل تحميلها. */
+  const [nonce, setNonce] = useState(0);
+  const [xlTick, setXlTick] = useState(0);
 
   /** جيلُ السؤال: جوابٌ وصل بعد إغلاقٍ أو إعادة فتحٍ أو سؤالٍ أحدث لا يُرسم (قائمةُ مادّةٍ تحت عنوان غيرها كذبة). */
   const lgSeq = useRef(0);
@@ -78,6 +86,7 @@ export function ProductMovementsDialog({ product, open, onClose }: {
   useEffect(() => {
     if (!open) return;
     setLedger(undefined); setLgErr(null); setLgMore(false); setShowLegacy(false);
+    setNonce((n) => n + 1);
     loadLedger(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, product.id]);
@@ -137,14 +146,22 @@ export function ProductMovementsDialog({ product, open, onClose }: {
           {/* مادّةٌ وُلدت بعد بداية الدفتر برصيد صفر ولم يتحرّك: لا صفَّ أصلاً — يُقال، لا قائمةٌ فارغةٌ تحت عنوانها. */}
           {ledger.length === 0 && <li className="px-3 py-2 text-sm text-ink-muted" data-ledger-empty>{t("pkg.lgEmpty")}</li>}
           {ledger.map((r) => {
-            const Icon = LEDGER_ICON[r.kind] ?? Pencil;
+            const xret = r.source === "return_expired";
+            const XretSlot = xret ? (XretLedgerLazy ??= loadXretLedger()) : null;
+            const Icon = xret ? RotateCcw : LEDGER_ICON[r.kind] ?? Pencil;
             const by = who(r);
             const ref = refText(r);
             return (
               <li key={r.id} data-ledger-kind={r.kind} className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface-1 px-3 py-2">
                 <Icon size={15} className="shrink-0 text-ink-subtle" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-ink">{kindLabel(r)}</p>
+                  {XretSlot ? (
+                    <LoadBoundary scope="xret-ledger" onRetry={() => { XretLedgerLazy = loadXretLedger(); setXlTick((n) => n + 1); }}>
+                      <Suspense fallback={<p className="text-sm font-bold text-ink">{t("mv.return", "إرجاع")}</p>}>
+                        <XretSlot key={xlTick} productId={product.id} at={r.at} delta={r.delta} nonce={nonce} unitName={product.unit_name ?? null} />
+                      </Suspense>
+                    </LoadBoundary>
+                  ) : <p className="text-sm font-bold text-ink">{kindLabel(r)}</p>}
                   <p className="text-2xs text-ink-subtle">
                     {formatDate(r.at, i18n.language, true)}{by ? ` · ${by}` : ""}{ref ? ` · ${ref}` : ""}
                   </p>

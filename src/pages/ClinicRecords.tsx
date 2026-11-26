@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -15,7 +15,11 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { Modal } from "@/components/Modal";
 import { PhoneInput } from "@/components/PhoneInput";
 import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "@/components/PetFields";
-import { Button, Badge, Dialog, useToast, Skeleton } from "@/components/ui";
+import { Button, Badge, useToast, Skeleton } from "@/components/ui";
+import { page } from "@/lib/lazyPage";
+import { LoadBoundary } from "@/components/LoadBoundary";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { formatDate, cn } from "@/lib/utils";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -25,6 +29,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout } from "@/lib/errors";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadRecordsSnap, recordsKey, type RecordsSnap } from "@/lib/prefetchData";
+
+/* حذفُ الحيوان و«الحيوانات المحذوفة» (0292): قطعةٌ كسولة بنطاقها المملوك ptr — `lazy()` يخبّئ الوعدَ المرفوض،
+   فـ«أعد المحاولة» (LoadBoundary) تصنع قطعةً جديدة. */
+const loadPetDeleteDialog = () => page(() => import("@/components/records/PetTrash").then((m) => ({ default: m.PetDeleteDialog })), ["ptr"]);
+const loadPetTrashEntry = () => page(() => import("@/components/records/PetTrash").then((m) => ({ default: m.PetTrashEntry })), ["ptr"]);
+let PetDeleteDialogLazy = loadPetDeleteDialog();
+let PetTrashEntryLazy = loadPetTrashEntry();
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -279,29 +290,14 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [rNew, setRNew] = useState({ name: "", phone: "", email: "" });
   const [editing, setEditing] = useState<Pet | null>(null);
   const [deleting, setDeleting] = useState<Pet | null>(null);
-  const [delBusy, setDelBusy] = useState(false);
-  // Optimistically hidden pets (removed from the list before the server confirms).
+  // Hidden as soon as the server confirmed the delete, until the re-sync lands.
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
-
-  const confirmDelete = async () => {
-    if (!deleting || delBusy) return;
-    const pet = deleting;
-    setDelBusy(true);
-    setDeletedIds((s) => new Set(s).add(pet.id)); // optimistic removal
-    try {
-      await repo.deletePet(pet.id);
-      playSuccess();
-      toast.success(t("records.petDeleted", { name: pet.name, defaultValue: "{{name}} deleted" }));
-      setDeleting(null);
-      onChanged(); // re-sync from the source of truth
-    } catch (e) {
-      // Roll back the optimistic removal and surface the error.
-      setDeletedIds((s) => { const n = new Set(s); n.delete(pet.id); return n; });
-      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
-    } finally {
-      setDelBusy(false);
-    }
-  };
+  /* 0292: الحذفُ لمن عنده «حذف الحيوانات» (المديرُ، أو منحٌ صريح) — والخادمُ يحكم أخيراً؛ وجهازٌ مقفولٌ على الاستقبال
+     لا يعرضه إلا بمفتاح المدير، كحذف الفواتير. والنافذةُ و«المحذوفات» قطعةٌ كسولة بنطاقها (ptr). */
+  const { can } = usePermissions();
+  const ov = useOverride();
+  const canDeletePets = !capLockedFrom(ov.deviceLocked, ov.active, can("deletePets"));
+  const [lazyTick, setLazyTick] = useState(0);
 
   // Press "/" anywhere to jump to search.
   useEffect(() => {
@@ -556,7 +552,14 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
       </div>
 
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm text-ink-subtle">{total} {t("records.patients")}</p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-ink-subtle">{total} {t("records.patients")}</p>
+          {canDeletePets && (
+            <LoadBoundary scope="pet-trash" onRetry={() => { PetTrashEntryLazy = loadPetTrashEntry(); setLazyTick((n) => n + 1); }}>
+              <Suspense fallback={null}><PetTrashEntryLazy key={lazyTick} onRestored={(id: string) => { setDeletedIds((s) => { const n = new Set(s); n.delete(id); return n; }); onChanged(); }} /></Suspense>
+            </LoadBoundary>
+          )}
+        </div>
         {groups.length > 1 && !ql && (
           <button onClick={allCollapsed ? expandAll : collapseAll} className="text-xs font-semibold text-brand-600 transition hover:underline dark:text-brand-300">
             {allCollapsed ? t("records.expandAll", "Expand all") : t("records.collapseAll", "Collapse all")}
@@ -584,7 +587,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
               onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
               onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
               onEdit={() => { playTap(); setEditing(r.pet); }}
-              onDelete={() => { playTap(); setDeleting(r.pet); }}
+              onDelete={canDeletePets ? () => { playTap(); setDeleting(r.pet); } : undefined}
             />
           ))}
         </div>
@@ -655,7 +658,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
                             onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
                             onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
                             onEdit={() => { playTap(); setEditing(r.pet); }}
-                            onDelete={() => { playTap(); setDeleting(r.pet); }}
+                            onDelete={canDeletePets ? () => { playTap(); setDeleting(r.pet); } : undefined}
                           />
                         ))}
                       </div>
@@ -733,24 +736,19 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
       {/* Edit an existing pet's details. */}
       <EditPetModal pet={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
 
-      {/* Delete confirmation — destructive, irreversible. */}
-      <Dialog
-        open={!!deleting}
-        onClose={() => { if (!delBusy) setDeleting(null); }}
-        title={t("records.deletePet", "Delete pet")}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setDeleting(null)} disabled={delBusy}>{t("common.cancel", "Cancel")}</Button>
-            <Button variant="danger" onClick={confirmDelete} loading={delBusy} leftIcon={<Trash2 size={16} />}>{t("common.delete", "Delete")}</Button>
-          </>
-        }
-      >
-        <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><AlertTriangle size={20} /></span>
-          <p className="text-sm leading-relaxed text-ink-muted">{t("records.deleteConfirm", "Are you sure you want to delete this pet? This action cannot be undone.")}</p>
-        </div>
-      </Dialog>
+      {/* Delete: names what goes with the pet, and lands in «Deleted pets» (0292). */}
+      {deleting && (
+        <LoadBoundary scope="pet-delete" onRetry={() => { PetDeleteDialogLazy = loadPetDeleteDialog(); setLazyTick((n) => n + 1); }}>
+          <Suspense fallback={null}>
+            <PetDeleteDialogLazy
+              key={`${deleting.id}:${lazyTick}`}
+              pet={deleting}
+              onClose={() => setDeleting(null)}
+              onDeleted={(id: string) => { setDeletedIds((s) => new Set(s).add(id)); setDeleting(null); onChanged(); }}
+            />
+          </Suspense>
+        </LoadBoundary>
+      )}
     </div>
   );
 }
@@ -859,7 +857,7 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove, onEdit, onDelete }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void; onEdit: () => void; onDelete: () => void }) {
+function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove, onEdit, onDelete }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void; onEdit: () => void; onDelete?: () => void }) {
   const { t, i18n } = useTranslation();
   const { pet, ownerName, ownerPhone, lastVisit, health, status } = row;
   const hasAllergy = pet.allergies && pet.allergies.length > 0;
@@ -910,7 +908,7 @@ function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove, onEdi
 
       <div className="flex shrink-0 items-center gap-0.5">
         <button title={t("records.editPet", "Edit pet")} onClick={onEdit} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"><Pencil size={15} /></button>
-        <button title={t("records.deletePet", "Delete pet")} onClick={onDelete} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15"><Trash2 size={15} /></button>
+        {onDelete && <button title={t("records.deletePet", "Delete pet")} onClick={onDelete} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15"><Trash2 size={15} /></button>}
         <button title={t("records.moveOwner", "Move to owner")} onClick={onMove} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><ArrowRightLeft size={15} /></button>
         <button title={t("treatment.title")} onClick={onTreatment} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><Pill size={15} /></button>
         <Button size="sm" variant="secondary" rightIcon={<ChevronRight size={15} />} onClick={onView}>

@@ -69,6 +69,14 @@ let RxButtonLazy = loadRxButton();
 /* مرفقاتُ الزيارة (0263): تحاليلُ وأشعةٌ تُصوَّر أو تُختار — قطعةٌ كسولة بنطاقها (att). */
 const loadAttachments = () => page(() => import("@/components/attach/Attach").then((m) => ({ default: m.VisitAttachments })), ["att"]);
 let VisitAttachmentsLazy = loadAttachments();
+/* الملاحظةُ الصوتية (0287): الزرُّ والمسجِّلُ والقسمُ ورقاقاتُ الطبلة من قطعةٍ كسولةٍ واحدة بنطاقها (vnote). */
+const loadVoice = () => ({
+  Btn: page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceRecordButton })), ["vnote"]),
+  Rec: page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceNoteRecorder })), ["vnote"]),
+  Panel: page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceNotesPanel })), ["vnote"]),
+  Day: page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceDayChips })), ["vnote"]),
+});
+let VoiceLazy = loadVoice();
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -170,6 +178,10 @@ export default function VisitPage() {
   const canRx = user?.role !== "owner" && can("editMedical");
   const [, setRxLazyTick] = useState(0);
   const [, setAttLazyTick] = useState(0);
+  const [, setVoiceLazyTick] = useState(0);
+  const retryVoice = () => { VoiceLazy = loadVoice(); setVoiceLazyTick((n) => n + 1); };
+  /** المسجِّلُ يسجّل داخل نافذة الملاحظة — لا تُغلق بالستارة ولا Esc (زرُّ X يوقف ويحفظ). */
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [notes, setNotes] = useState<PetNote[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seeded ? (seed!.treatments ?? []) : []);
   const [labs, setLabs] = useState<LabResult[]>([]);
@@ -573,7 +585,7 @@ export default function VisitPage() {
     void reload();
     return true;
   };
-  const closeNote = () => { if (noteLock.current) return; setNoteOpen(false); setNoteText(""); setNoteDay(null); setNoteErr(null); };
+  const closeNote = () => { if (noteLock.current) return; setNoteOpen(false); setNoteText(""); setNoteDay(null); setNoteErr(null); setVoiceBusy(false); };
   const closePlan = () => { planDirty.current = false; setAskPlanLeave(false); setPlanOpen(false); };
 
   /* ---- تسجيل خانة رعاية من المصفوفة — نفس ورقة الشبكة (ObsRecorder) ---- */
@@ -1005,6 +1017,11 @@ export default function VisitPage() {
           {planView === "day" || !hasFlowsheet ? (
             <TreatmentSheetTable
               dayGroups={planDays} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+              voiceOfDay={(d) => (
+                <LoadBoundary scope="voice" onRetry={retryVoice}>
+                  <Suspense fallback={null}><VoiceLazy.Day visitId={visit.id} day={d} /></Suspense>
+                </LoadBoundary>
+              )}
               species={pet?.species}
               protoNotes={protoNotes}
               todayRowRef={todayRowRef}
@@ -1073,6 +1090,11 @@ export default function VisitPage() {
           <SecondaryBtn icon={<FlaskConical size={15} />} label="تسجيل تحاليل" onClick={() => { playTap(); setLabOpen(true); }} />
           {hasFlowsheet && <SecondaryBtn icon={<CalendarPlus size={15} />} label={t("vbk.extBtn", "تمديد الخطة")} onClick={() => { playTap(); setExtendOpen(true); }} />}
           <SecondaryBtn icon={<NotebookPen size={15} />} label="إضافة ملاحظة" onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} />
+          <LoadBoundary scope="voice" onRetry={retryVoice}>
+            <Suspense fallback={null}>
+              <VoiceLazy.Btn onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} />
+            </Suspense>
+          </LoadBoundary>
           <button onClick={() => { playTap(); setEndOpen(true); }} className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-danger-300 px-4 py-2.5 text-sm font-bold text-danger-600 transition hover:bg-danger-50 dark:border-danger-500/40 dark:hover:bg-danger-500/10">
             <Check size={15} /> إنهاء العلاج وإغلاق الزيارة
           </button>
@@ -1124,6 +1146,13 @@ export default function VisitPage() {
         </div>
       )}
 
+      {/* ── الملاحظات الصوتية: ما وصل السيرفر وما على هالجهاز بحاله، والمحذوفة ── */}
+      <LoadBoundary scope="voice" onRetry={retryVoice}>
+        <Suspense fallback={null}>
+          <VoiceLazy.Panel visitId={visit.id} ended={ended} />
+        </Suspense>
+      </LoadBoundary>
+
       <section className="mt-4">
         {backdated && openDay < todayISO && (
           <div data-care-day className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-2/70 px-3 py-2">
@@ -1173,7 +1202,7 @@ export default function VisitPage() {
         <p data-plan-leave className="text-sm text-ink-muted">{t("vbk.planLeaveBody", "التشخيص والخطة اللي بالمعالج ما انحفظن — إذا سكّرت يضيعن.")}</p>
       </Dialog>
 
-      <Modal open={noteOpen} onClose={closeNote} title={noteDay ? t("vbk.noteOnDay", { day: formatDate(noteDay, lang), defaultValue: "ملاحظة على {{day}}" }) : t("vbk.noteAddTitle", "إضافة ملاحظة")}>
+      <Modal open={noteOpen} dismissible={!voiceBusy} onClose={closeNote} title={noteDay ? t("vbk.noteOnDay", { day: formatDate(noteDay, lang), defaultValue: "ملاحظة على {{day}}" }) : t("vbk.noteAddTitle", "إضافة ملاحظة")}>
         <div className="space-y-3">
           <textarea rows={4} value={noteText} readOnly={noteBusy} onChange={(e) => { setNoteText(e.target.value); setNoteErr(null); }} autoFocus placeholder="اكتب ملاحظة…" className="input min-h-[110px] resize-y leading-relaxed" />
           {noteErr && <p role="alert" data-note-err className="text-xs font-semibold text-danger-600">{noteErr}</p>}
@@ -1181,6 +1210,13 @@ export default function VisitPage() {
             <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim() || noteBusy} loading={noteBusy} data-note-add
               onClick={async () => { if (await addNote(noteText, noteDay ?? undefined)) { setNoteOpen(false); setNoteText(""); setNoteDay(null); } }}>إضافة</Button>
           </div>
+          {!ended && (
+            <LoadBoundary scope="voice" onRetry={retryVoice}>
+              <Suspense fallback={null}>
+                <VoiceLazy.Rec petId={pet.id} petName={pet.name} visitId={visit.id} kind={noteDay ? "day" : "note"} day={noteDay} onBusy={setVoiceBusy} />
+              </Suspense>
+            </LoadBoundary>
+          )}
         </div>
       </Modal>
 
@@ -1453,7 +1489,7 @@ const CARE_ORDER: Record<CareKind, number> = {
   vitals: 0, mentation: 1, fluid: 2, feed: 3, elim: 4, urine: 5, nurse: 6, lab: 7, drug: 8, protocol: 9,
 };
 
-function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, protoNotes, onGive, onEditDrug, onAddNote, onAddDrug, onRecordObs, todayRowRef, billOf }: {
+function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, protoNotes, onGive, onEditDrug, onAddNote, onAddDrug, onRecordObs, todayRowRef, billOf, voiceOfDay }: {
   dayGroups: [string, TreatmentEntry[]][]; todayISO: string; ended: boolean; lang: string;
   species?: Pet["species"];
   dayNotes: Map<string, PetNote[]>;
@@ -1465,6 +1501,8 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
   todayRowRef?: React.Ref<HTMLTableRowElement>;
   /** 0269: سعرُ الجرعة قبل الإعطاء، وبعده «بانتظار البيع» أو «انحسبت». */
   billOf: (t: TreatmentEntry) => SheetBill | null;
+  /** 0287: الملاحظاتُ الصوتية لليوم تحت ملاحظاته المكتوبة (قطعةٌ كسولة من الصفحة). */
+  voiceOfDay?: (day: string) => React.ReactNode;
 }) {
   const { t } = useTranslation();
   const editLabel = t("visit.editDrug", "\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u062f\u0648\u0627\u0621");
@@ -1530,6 +1568,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                   {first && notes.map((n) => (
                     <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
                   ))}
+                  {first && voiceOfDay?.(day)}
                   {first && !ended && (
                     <button type="button" onClick={() => onAddNote(day)}
                       className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
@@ -1618,6 +1657,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                   {notes.map((n) => (
                     <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
                   ))}
+                  {voiceOfDay?.(day)}
                   {!ended && (
                     <button type="button" onClick={() => onAddNote(day)}
                       className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">

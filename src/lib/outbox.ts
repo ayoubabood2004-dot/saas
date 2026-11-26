@@ -464,7 +464,7 @@ export const outboxWaitingOthers = (): OutboxOp[] => {
 };
 
 /** ما تحتاجه عملياتُ المراجعة (`outboxShelf.ts`، تُحمَّل مع صفحة /outbox وحدها — لا بحزمة الإقلاع). */
-export const outboxInternals = { load, whoNow, sameWho, sameVersion, announce, schedule, KEY, KEY_DEAD };
+export const outboxInternals = { load, whoNow, sameWho, sameVersion, announce, schedule, transientReject, KEY, KEY_DEAD };
 
 let started = false;
 /** يُستدعى مرة عند إقلاع التطبيق: رفعٌ فوري + عند عودة النت + كل ٣٠ ثانية. */

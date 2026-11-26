@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { page } from "@/lib/lazyPage";
 import { Link } from "react-router-dom";
-import { Camera, ImageIcon, ImageMinus, ImageOff, Images, Library, RotateCw, Search } from "lucide-react";
+import { Camera, ImageIcon, ImageMinus, ImageOff, Images, Library, RotateCw, Search, Sparkles } from "lucide-react";
 import type { PhotoProduct } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +28,8 @@ const PAGE = 120;
 const PhotoEditor = lazy(() => import("@/components/photo/PhotoEditor"));
 /* منتقي المكتبة كسولٌ بنطاقه (`libp`): لا يدفع وزنَه ولا نصوصَه إلا من يفتحه. */
 const ImageLibraryPicker = page(() => import("@/components/inventory/ImageLibraryPicker").then((m) => ({ default: m.ImageLibraryPicker })), ["libp"]);
+/* شريطُ «لكينا صور بالمكتبة لمنتجاتك» كسولٌ بنطاقه (`pmbn`). */
+const MatchBanner = page(() => import("@/components/photos/MatchBanner"), ["pmbn"]);
 type Filter = "missing" | "all";
 
 export function ProductPhotos() {
@@ -131,7 +133,12 @@ export function ProductPhotos() {
             <Library size={16} /> {t("photos.libraryPage")}
           </Link>
         )}
+        <Link to="/photos/match" onClick={() => playTap()} data-photos-match
+          className="inline-flex h-11 items-center gap-1.5 rounded-2xl border border-line bg-surface-1 px-4 text-sm font-bold text-ink-muted transition hover:text-ink">
+          <Sparkles size={16} /> {t("photos.matchPage")}
+        </Link>
       </div>
+      <Suspense fallback={null}><MatchBanner /></Suspense>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">

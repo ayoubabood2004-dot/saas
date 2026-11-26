@@ -1183,6 +1183,8 @@ export interface CheckoutItem {
   /** 0282: سطرٌ بالدولار لمادّةٍ بسعرين — `unit_price` دينارُه بسعر اليوم (الخادمُ يطابقه)، و`unit_price_usd` سعرُه بالدولار. */
   price_currency?: "USD";
   unit_price_usd?: string;
+  /** 0289: يُباع من دفعة راجعٍ إكسباير (product_lots، source = 'return') — retail_checkout_lots يكلّفه بكلفة الدفعة وينقصها. */
+  lot_id?: string;
 }
 
 /** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */
@@ -1908,8 +1910,50 @@ export interface OldDebtReturn {
   created_by: string | null;
 }
 
+/**
+ * حيوانٌ بالمحذوفات (0292): ملخّصُه لقائمة «الحيوانات المحذوفة» — صورتُه الكاملة (صفُّه وكلُّ ما تسلسل معه) بالخادم
+ * وحده، ويرجع منها بنفس المعرّفات. `counts` بأسماء الجداول (clinic_visits، vaccinations، …) كما يعدّها الخادم.
+ */
+export interface DeletedPet {
+  id: string;
+  pet_name: string | null;
+  owner_name: string | null;
+  owner_phone: string | null;
+  species: string | null;
+  serial: string | null;
+  counts: Record<string, number>;
+  reason: string | null;
+  deleted_by: string | null;
+  /** اسمُ الحاذف من صفّ الكادر لحظةَ الحذف؛ فارغٌ لصاحب العيادة أو مديرٍ بلا صفّ. */
+  deleted_by_name: string | null;
+  deleted_at: string;
+}
+/** ما سيُرفع مع الحيوان لو حُذف الآن (pet_delete_preview، 0292) — النافذةُ تقوله بالاسم قبل التأكيد. */
+export interface PetDeletePreview {
+  id: string;
+  name: string | null;
+  owner_name: string | null;
+  species: string | null;
+  serial: string | null;
+  counts: Record<string, number>;
+  /** جرعاتٌ معطاةٌ لم تُبَع (0269): تختفي من البيع ما دام محذوفاً، وترجع معه. */
+  pending_charges: number;
+  active_admission: boolean;
+  /** حكمُ الخادم: هل يحذف المنادي (staff_can('deletePets'))؟ */
+  allowed: boolean;
+}
+/** مرآةُ pets_trash بالتجريبيّ: الملخّصُ والصورةُ معاً. */
+export interface DemoPetTrash extends DeletedPet {
+  row: Pet;
+  children: Record<string, unknown[]>;
+  /** رسائلُ الواتساب التي فرغ حيوانُها (on delete set null) — يُعاد ربطُها. */
+  wa_ids: string[];
+}
+
 export interface DemoDB {
   pets: Pet[];
+  /** 0292: الحيواناتُ المحذوفة بصورتها. */
+  petsTrash?: DemoPetTrash[];
   weightLogs: WeightLog[];
   vaccinations: Vaccination[];
   media: MediaItem[];
@@ -2646,7 +2690,7 @@ export interface StockLossRow { reason: CountReason; lines: number; qty: number;
 
 /* ── الدفعات (0217) ─────────────────────────────────────────────────────────── */
 /** opening = رصيدٌ سبق الدفعات · purchase = فاتورة شراء · added = أُضيفت باليد · adjust = رصيدٌ بعد النفاد بلا فاتورة. */
-export type LotSource = "opening" | "purchase" | "added" | "adjust";
+export type LotSource = "opening" | "purchase" | "added" | "adjust" | "return";
 export interface ProductLot {
   id: string;
   clinic_id?: string | null;
@@ -2663,6 +2707,14 @@ export interface ProductLot {
   note: string | null;
   /** تاريخٌ صحّحته العيادةُ بيدها — تعديلُ الفاتورة لا يكتب فوقه. */
   expiry_fixed?: boolean;
+  /** 0289 — دفعةُ راجعٍ إكسباير (source = 'return'): كلفةُ وحدة المخزن منها (ما رجع للزبون، لا المتوسّط)، ومن رجّعها (اسمُه أو رقمُه
+   *  ومفتاحُه)، وبكم بالمئة، ومن أيّ فاتورة، ومتى. غائبةٌ بقاعدةٍ قبل 0289. */
+  unit_cost?: number | null;
+  return_from?: string | null;
+  return_key?: string | null;
+  return_pct?: number | null;
+  return_invoice?: string | null;
+  returned_at?: string | null;
 }
 
 /* ── قوالبُ الواتساب الخاصة بالعيادة (0218) ─────────────────────────────── */

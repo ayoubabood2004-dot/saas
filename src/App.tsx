@@ -46,11 +46,15 @@ const StockCount = page(() => import("@/pages/StockCount").then((m) => ({ defaul
 const StockWatch = page(() => import("@/pages/StockWatch").then((m) => ({ default: m.StockWatch })), ["watch"]);
 /* مراجعةُ ما لم يصل الخادمَ بلا ختمِ هويّة (outbox.ts، قرارُ المالك ١٣/١٠) — الشارةُ الحمراء تنقل إليها. */
 const OutboxReview = page(() => import("@/pages/OutboxReview").then((m) => ({ default: m.OutboxReview })), ["obx"]);
+/* تسجيلاتُ الجهاز التي لم ترتفع، وما انقطع، وتسجيلاتُ حيواناتٍ انحذفت (0287) — بنطاقها المملوك vnote. */
+const VoiceShelf = page(() => import("@/components/voice/VoiceNotes").then((m) => ({ default: m.VoiceShelfPage })), ["vnote"]);
 const CompanyBook = page(() => import("@/pages/CompanyBook").then((m) => ({ default: m.CompanyBook })), ["cbook"]);
 const PriceRaise = page(() => import("@/pages/PriceRaise").then((m) => ({ default: m.PriceRaise })), ["praise"]);
 const ProductPhotos = page(() => import("@/pages/ProductPhotos").then((m) => ({ default: m.ProductPhotos })), ["photos"]);
 /* مكتبةُ الصور داخل العيادة (0285): مكتبتُها الخاصّة تكتبها بصلاحية الصور، والعامّةُ قراءة — نفسُ شاشة لوحة المنصّة. */
 const ClinicLibrary = page(() => import("@/components/admin/ImageLibraryManager").then((m) => ({ default: m.ClinicImageLibrary })), ["libm"]);
+/* صورٌ مقترحة لمنتجات العيادة من المكتبة (٢٥/١١): بالباركود والاسم، تُقبل واحدةً أو كلَّها. */
+const PhotoMatch = page(() => import("@/pages/PhotoMatch").then((m) => ({ default: m.PhotoMatch })), ["pmatch"]);
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const Fields = page(() => import("@/pages/Fields").then((m) => ({ default: m.Fields })));
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })), ["campaigns"]);
@@ -351,10 +355,12 @@ function Shell() {
             {/* فحصُ المخزن (0245) مثبَّتٌ داخل الجرد (طلبُ المالك): العنوانُ القديم يفتح تبويبَه هناك. */}
             <Route path="/inventory/audit" element={<Navigate to="/inventory/count?tab=audit" replace />} />
             <Route path="/outbox" element={<Protected><ClinicOnly><OutboxReview /></ClinicOnly></Protected>} />
+            <Route path="/voice" element={<Protected><ClinicOnly><VoiceShelf /></ClinicOnly></Protected>} />
             <Route path="/inventory/companies/:id" element={<Protected><ClinicOnly><CompanyBook /></ClinicOnly></Protected>} />
             <Route path="/inventory/prices" element={<Protected><ClinicOnly><PriceRaise /></ClinicOnly></Protected>} />
             <Route path="/photos" element={<Protected><ClinicOnly><ProductPhotos /></ClinicOnly></Protected>} />
             <Route path="/photos/library" element={<Protected><ClinicOnly><ClinicLibrary /></ClinicOnly></Protected>} />
+            <Route path="/photos/match" element={<Protected><ClinicOnly><PhotoMatch /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}

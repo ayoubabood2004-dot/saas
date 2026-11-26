@@ -452,6 +452,8 @@ const MV_STUBS = {
   "@/components/LoadBoundary": `import { createElement } from "react";
     export const LoadBoundary = ({ children, onRetry, scope }) => createElement("x-LoadBoundary", { onRetry, scope }, children);`,
   "@/components/inventory/AvgCostNote": "export default function AvgCostNoteModule() { return null; } export const __which = 'AvgCostNote';",
+  // 0290: سطرُ الراجع الإكسباير بقطعته (تُصنع أوّلَ ما يظهر سطرُه — لا عند التحميل، فعددُ القطع أعلاه كما هو).
+  "@/components/retail/ExpiredReturn": "export const XretLedgerNote = () => null;",
   // 0287: الدفترُ قبل القديم — بلا __mvLedger يرجع null (قاعدةٌ قبل 0287) فتُرسم الحركاتُ القديمة كما كانت.
   "@/lib/stockSafetyApi": "export const ledgerPage = (...a) => (globalThis.__mvLedger ?? (async () => null))(...a);",
   // الدورُ الحيّ: المديرُ افتراضاً (سجلُّ التدقيق له)، والطبيبُ بـ__mvPerm.

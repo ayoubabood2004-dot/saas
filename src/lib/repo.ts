@@ -654,20 +654,12 @@ const supabaseRepo: DemoRepo = {
     // فصفرُ صفوفٍ (سياسةٌ ردّت، أو معرّفٌ بايت) كان يُقال عنه نجاحاً.
     return updated<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
   },
-  async deletePet(petId) {
-    // ملفات التخزين لا تلحقها الـcascade — صفوف media_items تنحذف مع الحيوان
-    // لكن ملفات الأشعة/الـPDF كانت تبقى بالباكت للأبد (بيانات مرضى + كلفة).
-    // نحذفها أولاً، بأفضل جهد: فشل التنظيف ما يمنع حذف الحيوان نفسه.
-    try {
-      const rows = listOf<{ url: string }>(await sbc().from("media_items").select("url").eq("pet_id", petId));
-      const paths = rows.map((r) => r.url).filter(isStoragePath);
-      for (let i = 0; i < paths.length; i += 50) {
-        await sbc().storage.from(MEDIA_BUCKET).remove(paths.slice(i, i + 50));
-      }
-    } catch { /* best effort — the DB delete below is the operation that matters */ }
-    // Dependent rows (visits, vaccinations, treatments, media, weights, admissions)
-    // are removed by the schema's `on delete cascade` foreign keys.
-    ok(await sbc().from("pets").delete().eq("id", petId));
+  async deletePet(petId, reason) {
+    // 0292: طيٌّ لا محو — الحيوانُ وكلُّ ما يتسلسل معه يُصوَّر بـpets_trash ويرجع بنفس المعرّفات، ولمن عنده
+    // «حذف الحيوانات» وحده (الخادمُ يسأل). ملفّاتُ المرفقات **تبقى** بالدلو: محوُها هنا كان يُرجع الحيوانَ بصورٍ مكسورة.
+    // ودالّةٌ غائبة (قاعدةٌ قبل 0292) تُرمى — لا رجوعَ للحذف المباشر النهائيّ.
+    const { error } = await sbc().rpc("delete_pet", { p_id: petId, p_reason: reason ?? null });
+    if (error) throw error;
   },
   async listWeights(petId) {
     return listOf<WeightLog>(await sbc().from("weight_logs").select("*").eq("pet_id", petId).order("measured_at", { ascending: true }));
