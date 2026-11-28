@@ -7,7 +7,8 @@ import { motion } from "framer-motion";
 import { getCached, setCached, patchCached, cachedAt, invalidate } from "@/lib/swrCache";
 import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
 import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
-import { PRICES_EVENT, priceGen, noteListGen, listGenOf } from "@/lib/priceSync";
+import { PRICES_EVENT, priceGen, noteListGen, listGenOf, afterPriceChange } from "@/lib/priceSync";
+import { factorFor, needsAnswer, sameUnit, scaleMin, scalePrice, scaleQty, scales, unitKind, unitOf, type UnitKind } from "@/lib/unitChange";
 import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
 import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode, carriesCode } from "@/lib/productCodes";
@@ -1260,7 +1261,9 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
 const isPriceMoved = (e: unknown) => (e as { code?: string } | null)?.code === "price_moved";
 /** وما رآه النموذج صار قديماً — سعرٌ تحرّك، أو رصيدٌ وحده (`updateAsSeen` يقولها no_row_updated):
  *  القائمةُ تُقرأ من جديد، وإلا فإعادةُ الفتح تحمل البائتَ نفسَه ويُرفض الحفظُ مرّةً بعد مرّة. */
-const isSeenStale = (e: unknown) => isPriceMoved(e) || (e as { code?: string } | null)?.code === "no_row_updated";
+const isSeenStale = (e: unknown) => isPriceMoved(e) || (e as { code?: string } | null)?.code === "no_row_updated"
+  // 0294: الوحدةُ تحرّكت من جهازٍ آخر (أو المادّةُ غابت) — رفضُ بابِ التحويل برسالته، والتلميحُ عربيّ (P0001).
+  || /^(unit_seen_changed|unit_product_gone|price_moved)$/.test(String((e as { message?: unknown } | null)?.message ?? ""));
 /** كتابةُ المنتج بشرط ما رآه النموذج (productPatch.ts): الخادمُ يقول price_moved لأيّ مفتاحٍ تحرّك،
  *  والصفُّ يُقرأ ثانيةً ليُقال ما تحرّك فعلاً — بيعةٌ والنموذجُ مفتوح تحرّك الرصيدَ لا السعر. */
 const productIO = {
@@ -1375,6 +1378,40 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
    *  فُتح على السعر القديم، فإعادتُه بما رآه كانت تُرفض price_moved عن سعرٍ كتبه هو. */
   const groupSentRef = useRef<string | null>(null);
   useEffect(() => { groupSentRef.current = null; }, [open, product?.id]);
+  /* ── تغييرُ الوحدة يحوّل الأرقام (G11، 0294) ─────────────────────────────────────────────────────────────
+   * «بالوزن» والمفردُ بعدده يقرّران بأيّ وحدةٍ كلُّ رقمٍ عن المادّة، وكانت تُكتب مع كلّ حفظٍ بلا تحويل: «بالوزن» على كيسٍ رصيدُه ٣
+   * ⇒ ٣ كيلو والرفُّ ٤٥، ومتوسّطُ الكيس يكلّف الكيلو. الآن الخادمُ وحده يغيّرها (product_unit_change) بنسبةٍ يجاوب عنها الطبيبُ هنا،
+   * والنموذجُ يعاين الرصيدَ والأسعارَ بالوحدة الجديدة قبل الحفظ (والخادمُ يحوّل الرصيدَ الحيّ لا المعروض). */
+  const unitFrom = useMemo(() => (product ? unitOf(product) : null), [product]);
+  const unitTo = unitOf({ sold_by_weight: f.sold_by_weight, has_sub_unit: f.has_sub_unit, units_per_box: f.units_per_box });
+  const uKind: UnitKind = unitFrom ? unitKind(unitFrom, unitTo) : "none";
+  const [uAns, setUAns] = useState<{ size: string; stockIn: "box" | "sub" | null }>({ size: "", stockIn: null });
+  /** التحويلُ الذي كتبه هذا النموذج (بصمتُه): حفظٌ فشل بعده بكتابة المادّة نفسِها ثمّ أُعيد لا يرسله ثانيةً — كسعر المجموعة. */
+  const unitSentRef = useRef<string | null>(null);
+  useEffect(() => { setUAns({ size: "", stockIn: null }); unitSentRef.current = null; }, [open, product?.id]);
+  const uFactor = factorFor(uKind, unitTo, { size: uAns.size.trim() === "" ? null : Number(uAns.size), stockIn: uAns.stockIn });
+  /** النسبةُ غيرُ ١: الرصيدُ والأسعارُ والحدُّ الأدنى تتبعها. */
+  const uScaled = needsAnswer(uKind) && scales(uFactor);
+  const uFillKey = uScaled && uFactor ? `${uFactor.mul}/${uFactor.div}` : "";
+  useEffect(() => {
+    if (!product) return;
+    if (uFillKey && uFactor) {
+      setF((s) => ({
+        ...s,
+        sell_price: String(scalePrice(Number(product.sell_price) || 0, uFactor)),
+        purchase_price: String(scalePrice(Number(product.purchase_price) || 0, uFactor)),
+        min_stock: product.min_stock ? String(scaleMin(product.min_stock, uFactor)) : "",
+        stock: String(scaleQty(Number(product.stock) || 0, uFactor)),
+        // المفردُ يُشغَّل والرصيدُ كان بالقطعة: سعرُ «الواحدة» القديم هو سعرُ المفرد.
+        ...(uKind === "sub_on" && !s.sub_unit_price.trim() ? { sub_unit_price: String(product.sell_price ?? "") } : {}),
+      }));
+    } else {
+      // رجعت الوحدةُ لما كانت (أو النسبةُ ١): الرصيدُ والأسعارُ كما فُتح النموذج — المحوَّلُ لا يُحفظ على الوحدة القديمة.
+      setF((s) => ({ ...s, sell_price: String(product.sell_price), purchase_price: String(product.purchase_price),
+        min_stock: product.min_stock ? String(product.min_stock) : "", stock: String(product.stock) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uFillKey]);
   // false = ترحيل 0075 ناقص فرابط المجموعة سيسقط — نُحذّر بدل الحفظ الصامت.
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   useEffect(() => {
@@ -1583,6 +1620,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       toast.error(t("pos.subUnitNeedsCount", "أدخل عدد الوحدات في العلبة (أكبر من صفر)"));
       return;
     }
+    // G11 (0294): وحدةٌ تتغيّر تحتاج جوابَها (كم كيلو بالواحدة؟ الرصيدُ علبٌ أم قطع؟) — بلاه لا نسبةَ يحوّل بها الخادم.
+    if (product && uKind !== "none" && !uFactor) { playWarning(); toast.error(t("pkg.uNeedAnswer")); return; }
     /* التعبئة (0259): شكلُها قبل الشبكة (مرآةُ القيد)، ثمّ كلُّ رمزٍ جديدٍ بمستواه لا يملكه غيرُه (مرآةُ حارس المستويات) —
      * يُقالان بالاسم والمستوى هنا بدل رفضٍ من الخادم. وما لم يتغيّر لا يُرسل (packagingPatch). */
     const pk = pkgReady
@@ -1641,10 +1680,38 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         ...usdPatch(usd, product ?? null, usdEnabled, dualReadyOk, subUnitOn),
       };
       if (product) {
+        /* G11 (0294): الوحدةُ يغيّرها الخادمُ وحده وبالنسبة — أوّلاً، قبل أيّ كتابةٍ أخرى (رفضُها لا يترك نصفَ حفظ). وما يكتبه
+         * (الوحدةُ وسعرُ المفرد دائماً، والرصيدُ والأسعارُ والحدُّ حين تتبع النسبة) يُرفع من رقعة المادّة: كتابتُه ثانيةً بشرط ما فُتح
+         * عليه النموذج تُرفض price_moved عن سعرٍ كتبه التحويلُ نفسُه. وتحويلٌ نسبتُه ١ لا يمسّ الأسعار: تعديلُها يمرّ بالرقعة كما كان. */
+        let unitStrip: string[] = [];
+        if (uKind !== "none" && uFactor) {
+          unitStrip = ["sold_by_weight", "has_sub_unit", "units_per_box", "sub_unit_name", "sub_unit_price",
+            ...(uScaled ? ["sell_price", "purchase_price", "min_stock", "stock"] : [])];
+          const sentKey = JSON.stringify([product.id, unitTo, uFactor, payload.sub_unit_name, payload.sub_unit_price,
+            uScaled ? [payload.sell_price, payload.purchase_price, payload.min_stock] : null]);
+          if (unitSentRef.current !== sentKey) {
+            const after = await (await import("@/lib/unitChangeApi")).changeProductUnit(product.id,
+              { sold_by_weight: !!product.sold_by_weight, has_sub_unit: !!product.has_sub_unit, units_per_box: product.units_per_box ?? null,
+                sell_price: Number(product.sell_price), purchase_price: Number(product.purchase_price), sub_unit_price: product.sub_unit_price ?? null },
+              { sold_by_weight: unitTo.weight, has_sub_unit: unitTo.per != null, units_per_box: unitTo.per,
+                sub_unit_name: payload.sub_unit_name, sub_unit_price: payload.sub_unit_price,
+                sell_price: uScaled ? payload.sell_price : Number(product.sell_price),
+                purchase_price: uScaled ? payload.purchase_price : Number(product.purchase_price),
+                min_stock: uScaled ? payload.min_stock : (product.min_stock ?? 0) },
+              uFactor.mul, uFactor.div);
+            unitSentRef.current = sentKey;
+            toast.toast({ tone: "info", title: t("pkg.uDone", { a: formatQty(Number(product.stock) || 0), b: formatQty(Number(after.stock) || 0) }) });
+            // هذا الجهازُ يعرف فوراً (والأجهزةُ الأخرى بعدّاد الأسعار قبل بيعتها): قوائمُه قبل التحويل قديمة.
+            void afterPriceChange(clinicId);
+          }
+        }
+        const base = unitStrip.length
+          ? (Object.fromEntries(Object.entries(payload).filter(([k]) => !unitStrip.includes(k))) as Partial<typeof payload>)
+          : payload;
         /* الرمزُ القديم ينزل `alt_codes` **بنفس النداء** (ح٢): ملصقاتُ رقم
          * الرفّ المطبوعةُ تبقى تعمل بعد أن يُكتب باركودُ المصنع مكانَه. */
         const keep = keepOldCode(product, payload.barcode, allProducts ?? []);
-        const withOld = keep ? { ...payload, alt_codes: keep.alt_codes } : payload;
+        const withOld = keep ? { ...base, alt_codes: keep.alt_codes } : base;
         // الحقولُ الأخرى أوّلاً وبلا لمسِ الرصيد/الطيّ — ففشلُ الطيّ بعدها لا يضيّع شيئاً.
         /* التاريخُ لا يُرسل إلا إن غيّره المستخدم (0217): صار مشتقّاً من الدفعات، ونموذجٌ فُتح
          * قبل بيعٍ أفرغ دفعةً كان سيرسل تاريخَها القديم فيُنقل إليه تاريخُ دفعةٍ أخرى. */
@@ -1653,8 +1720,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         /* السعرُ كالتاريخ (0226): لا يُرسل إلا إن غيّره المستخدم، وإن غيّره فبالمقارنة ثمّ التبديل
          * على ما رآه حين فتح النموذج. نموذجٌ فُتح قبل رفع الأسعار وحُفظ بعده (لتعديل الاسم مثلاً)
          * كان يكتب سعرَ الصبح فوق الرفع بصمت — وجهازٌ آخر لا يعرف أن رفعاً صار. */
-        const sellChanged = payload.sell_price !== product.sell_price;
-        const subChanged = (payload.sub_unit_price ?? null) !== (product.sub_unit_price ?? null);
+        // ما رفعه التحويلُ من الرقعة كتبه هو: لا يُعدّ «تغيّر» ولا شرطَ عليه (G11).
+        const sellChanged = "sell_price" in base && payload.sell_price !== product.sell_price;
+        const subChanged = "sub_unit_price" in base && (payload.sub_unit_price ?? null) !== (product.sub_unit_price ?? null);
         const { sell_price: _sp, ...noSell } = dated;
         const priced = sellChanged ? dated : noSell;
         const { sub_unit_price: _su, ...noSub } = priced;
@@ -1669,7 +1737,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
          * الرصيدَ السالبَ صفراً بلا أن يلمسه أحد. الآن لا يُرسل أيٌّ منهما إلا إن غيّره المستخدم، وبشرط ما فُتح
          * عليه النموذج. والمجمَّعُ رصيدُه ليس بيد النموذج (الحقلُ مخفيّ)، والطيُّ إلى الحوض بدالّته كما كان. */
         const cas = stockCostPatch(sent, {
-          stockTyped: pooled ? null : Number(f.stock) || 0,
+          // والرصيدُ المحوَّل (G11) يكتبه الخادمُ من الرصيد الحيّ — الحقلُ معاينةٌ لا عدٌّ كتبه أحد.
+          stockTyped: pooled || uScaled ? null : Number(f.stock) || 0,
           stockWas: product.stock,
           costShown: product.purchase_price,
           costWas: product.purchase_price,
@@ -1915,7 +1984,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             const rowDated = before && (r.expiry_date || "") === (before.expiry_date ?? "").slice(0, 10) ? rowNoDate : rowPayload;
             // وسعرُ المجموعة كذلك (0226): غيرُ المعدَّل لا يُرسل، والمعدَّلُ بالمقارنة على ما رآه.
             const { sell_price: _gs, ...rowNoSell } = rowDated;
-            const rowSent = groupSellChanged ? rowDated : rowNoSell;
+            /* G12 (0294): الوحدةُ ليست حقلاً مشتركاً. نموذجُ المجموعة بلا خانة مفرد، والحمولةُ المشتركة تحمل قيمَ الإنشاء
+             * (has_sub_unit=false وunits_per_box=null) — فكانت تُكتب لكلّ عضوٍ بكلّ «حفظ المجموعة»: مفردُه يُطفأ بصمت وجرعاتُه بالحبّة
+             * تبطل، والعضوُ بباركود مغلّفٍ يفشل للأبد. تُكتب للعضو الجديد وحده (الإنشاء)، والقائمُ تبقى وحدتُه كما هي. */
+            const { has_sub_unit: _gh, sub_unit_name: _gn, units_per_box: _gu, sub_unit_price: _gp, ...rowUnitFree } = groupSellChanged ? rowDated : rowNoSell;
+            const rowSent = rowUnitFree;
             /* والرصيدُ وسعرُ الشراء بنفس القاعدة سطراً سطراً (§7.1). الرصيدُ يُقاس بما فُتح عليه **السطر** (`stockWas`)
              * لا بالقائمة الحيّة: القائمةُ تُقرأ من جديد والنافذةُ مفتوحة (رفعُ أسعارٍ، أو رفضُ سعرٍ قبلها)، فسطرٌ بائتٌ
              * يُقاس بالحيّ يبدو «معدَّلاً» ويكتب رصيدَ الفتح فوق ما بِيع بعده — والشرطُ يمرّ لأنه على الحيّ نفسِه.
@@ -2242,7 +2315,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             {!pooledOn && (
               <div>
                 <label className="label">{byWeight ? t("pos.stockKg", "المخزون (كيلو)") : t("pos.stock", "Stock")}</label>
-                <input type="number" inputMode={byWeight ? "decimal" : "numeric"} min="0" step={byWeight ? "0.001" : "1"} className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
+                {/* G11: والوحدةُ تتحوّل — الحقلُ معاينةُ الرصيد بالوحدة الجديدة، والخادمُ يحوّل الرصيدَ الحيّ (بيعةٌ أثناءها تُحسب). */}
+                <input type="number" inputMode={byWeight ? "decimal" : "numeric"} min="0" step={byWeight ? "0.001" : "1"} className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0"
+                  disabled={uScaled} data-stockinput />
+                {uScaled && <p className="mt-1 text-2xs text-ink-subtle" data-stockauto>{t("pkg.uStockAuto")}</p>}
               </div>
             )}
             {minStockField}
@@ -2302,6 +2378,39 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               </div>
             )}
           </div>
+          )}
+
+          {/* G11 (0294): الوحدةُ تتغيّر على مادّةٍ قائمة ⇒ سؤالُها ومعاينةُ ما يتحوّل، قبل الحفظ لا بعده. */}
+          {product && uKind !== "none" && (
+            <div className="space-y-2 rounded-xl border border-warn-300 bg-warn-50/70 p-3 text-xs text-warn-900 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-100" data-unitchange={uKind}>
+              <p className="flex items-center gap-1.5 text-sm font-bold"><Scale size={15} className="shrink-0" /> {t("pkg.uTitle")}</p>
+              {uKind === "weight" && (
+                <label className="block space-y-1">
+                  <span className="block leading-relaxed">{unitTo.weight ? t("pkg.uWeightOn") : t("pkg.uWeightOff")}</span>
+                  <input type="number" inputMode="decimal" min="0" step="0.001" className="input" value={uAns.size} data-unitsize
+                    onChange={(e) => setUAns((a) => ({ ...a, size: e.target.value }))} placeholder={t("pkg.uWeightPh")} />
+                </label>
+              )}
+              {uKind === "sub_on" && (
+                <div className="space-y-1.5">
+                  <p className="leading-relaxed">{t("pkg.uSubOn", { n: formatQty(Number(product.stock) || 0) })}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant={uAns.stockIn === "box" ? "primary" : "secondary"} data-unitin="box"
+                      onClick={() => { playTap(); setUAns((a) => ({ ...a, stockIn: "box" })); }}>{t("pkg.uInBox")}</Button>
+                    <Button size="sm" variant={uAns.stockIn === "sub" ? "primary" : "secondary"} data-unitin="sub"
+                      onClick={() => { playTap(); setUAns((a) => ({ ...a, stockIn: "sub" })); }}>{t("pkg.uInSub", { sub: f.sub_unit_name.trim() || t("pkg.uSubDefault") })}</Button>
+                  </div>
+                </div>
+              )}
+              {uKind === "sub_off" && <p className="leading-relaxed">{t("pkg.uSubOff")}</p>}
+              {uKind === "per" && <p className="leading-relaxed">{t("pkg.uPer")}</p>}
+              {uScaled && uFactor && (
+                <p className="font-semibold leading-relaxed" data-unitpreview>
+                  {t("pkg.uPreview", { a: formatQty(Number(product.stock) || 0), b: formatQty(scaleQty(Number(product.stock) || 0, uFactor)) })}
+                </p>
+              )}
+              {needsAnswer(uKind) && <p className="text-2xs leading-relaxed opacity-80">{t("pkg.uDocsNote")}</p>}
+            </div>
           )}
 
           {/* التعبئة (0259): الكارتون ← العلبة ← المغلّف، كلٌّ بباركوده وسعرَيه — والفارغُ محسوبٌ من العلبة. */}
@@ -3525,6 +3634,14 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
   /* الدمجُ كان بضغطة صفٍّ خلف `window.confirm` (G23) — النمطُ الممنوع بعد حادثة الحذف («يُقبل بلا قراءة») — ويقول «ما ينرجع»
    * والمحذوفاتُ ترجعه. صار خطوةً ثانية بالنافذة نفسِها: الاسمان والرصيدُ بعده، وما يرجع بالفكّ وما لا يرجع. */
   const [pick, setPick] = useState<Product | null>(null);
+  /* G14 (0294): وحدتان مختلفتان لا تُجمعان — رصيدٌ بالكيلو على رصيدٍ بالعدد (أو علبةُ ١٠ على علبة ٢٠) رقمٌ بلا معنى، والمتوسّطُ
+   * يخلط كلفتيهما. الخادمُ يرفضه (merge_unit_mismatch)، والنافذةُ تقولها قبل الضغط: الوحدةُ بجانب الرصيد، ولا زرَّ دمجٍ لها. */
+  const dropUnit = unitOf(drop);
+  const unitDiff = (p: Product): boolean => !sameUnit(unitOf(p), dropUnit);
+  const unitLabel = (p: Product): string => {
+    const u = unitOf(p);
+    return u.weight ? t("pkg.unitKg") : u.per != null ? t("pkg.unitBox", { n: formatQty(u.per), name: (p.sub_unit_name ?? "").trim() || t("pkg.uSubDefault") }) : t("pkg.unitCount");
+  };
   const merge = async (keep: Product) => {
     if (busy) return;
     setBusy(true);
@@ -3548,7 +3665,12 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
         <p className="rounded-xl bg-surface-2 p-2.5 text-xs leading-relaxed text-ink-muted">
           {t("pos.mergeHint", "الرصيد ينجمع، ورمز هذا المنتج يصير رمزاً إضافياً للأصل، وتاريخ بيعه ينتقل له. وبعدين تنحذف هذي النسخة.")}
         </p>
-        {pick ? (
+        {pick && unitDiff(pick) ? (
+          <div className="space-y-2 rounded-xl border border-danger-300 bg-danger-50 p-3 text-xs text-danger-800 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-200" data-mergeunitdiff={pick.id}>
+            <p className="leading-relaxed">{t("pkg.mergeUnitDiff", { drop: isoName(drop.name), a: unitLabel(drop), keep: isoName(pick.name), b: unitLabel(pick) })}</p>
+            <Button size="sm" variant="secondary" data-mergeno onClick={() => { playTap(); setPick(null); }}>{t("pkg.mergeAskNo")}</Button>
+          </div>
+        ) : pick ? (
           <div className="space-y-2 rounded-xl border border-warn-300 bg-warn-50 p-3 text-xs text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200" data-mergeask={pick.id}>
             <p className="text-sm font-bold">{t("pkg.mergeAskTitle", { drop: isoName(drop.name), keep: isoName(pick.name) })}</p>
             <p className="leading-relaxed">{t("pkg.mergeAskStock", {
@@ -3577,7 +3699,10 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
                 <span className="block truncate text-sm font-medium text-ink">{p.name}</span>
                 <span className="block truncate font-mono text-2xs text-ink-subtle">{p.barcode ?? "—"}</span>
               </span>
-              <span className="shrink-0 text-xs text-ink-muted">{t("pos.stockN", "رصيد {{n}}", { n: formatQty(Number(p.stock ?? 0)) })}</span>
+              <span className="shrink-0 text-end text-xs text-ink-muted">
+                <span className="block">{t("pos.stockN", "رصيد {{n}}", { n: formatQty(Number(p.stock ?? 0)) })}</span>
+                {unitDiff(p) && <span className="block text-2xs font-semibold text-danger-700 dark:text-danger-300" data-mergeunit>{unitLabel(p)}</span>}
+              </span>
             </button>
           ))}
           {shown.length === 0 && <p className="p-4 text-center text-xs text-ink-subtle">{t("common.noMatches", "No matches")}</p>}

@@ -75,5 +75,28 @@ const P = (id, o = {}) => ({ id: `p:${id}`, kind: "product", name: id, product_i
   check("منتجٌ غاب عن القائمة لا يُمسّ", m.repriceCart(gone, fresh).cart === gone);
 }
 
+/* ── 0294: وحدةُ المادّة تغيّرت بعد نزول السطر (تحويلٌ من جهازٍ آخر) — السطرُ يُشال ويُقال، لا يخصم بالقديمة ── */
+{
+  check("lineUnitKey مرآةُ _unit_key: بالوزن يغلب، والمفردُ بعدده، وبلا عددٍ «بالعدد»",
+    m.lineUnitKey({ sold_by_weight: true, has_sub_unit: true, units_per_box: 10 }) === "w" && m.lineUnitKey({ has_sub_unit: true, units_per_box: 10 }) === "n:10"
+    && m.lineUnitKey({ has_sub_unit: true, units_per_box: null }) === "b" && m.lineUnitKey({}) === "b");
+  const at = (uk) => ({ product: (id) => (prices[id] ? { ...prices[id], uk } : null), service: () => null });
+  const bag = P("p1", { uk: "b" });
+  const r = m.repriceCart([bag, P("p2", { uk: "b" })], { product: (id) => ({ ...prices[id], uk: id === "p1" ? "w" : "b" }), service: () => null });
+  check("سطرُ كيسٍ والمادّةُ صارت بالكيلو ⇒ يُشال ويُقال باسمه، والباقي يُسعَّر كالعادة",
+    r.cart.length === 1 && r.cart[0].product_id === "p2" && r.dropped.length === 1 && r.dropped[0].name === "p1" && r.cart[0].unit_price === 2100, r);
+  check("  والوحدةُ نفسُها لا تُشال", m.repriceCart([bag], at("b")).dropped.length === 0);
+  check("  والراجعُ يُشال كذلك (يردّ بالقديمة)", m.repriceCart([P("p1", { uk: "b", ret: true, id: "r:p1" })], at("w")).dropped.length === 1);
+  check("  وسطرُ المفرد وعددُه تغيّر (١٠ ⇒ ٢٠) يُشال", m.repriceCart([P("p1", { uk: "n:10", saleUnit: "sub", unitsPerBox: 10 })], at("n:20")).dropped.length === 1);
+  check("  والكارتونُ لا (يُخصم بعلبه)", m.repriceCart([P("pk", { uk: "n:10", saleUnit: "pack", packId: "k1", packPrice: 12500, unit_price: 12500 })], at("n:20")).dropped.length === 0);
+  check("  وقائمةٌ بلا وحدة (جلبٌ قديم) لا تشيل شيئاً", m.repriceCart([bag], fresh).dropped.length === 0);
+  check("  وسطرُ مسودّةٍ قبل الحقل: الوزنُ من سطره (كيلو والمادّةُ علب ⇒ يُشال)، والمفردُ بعدده المحفوظ، والعلبةُ لا تُعرف فتبقى",
+    m.repriceCart([P("p1", { byWeight: true, perKgPrice: 5000, saleUnit: undefined })], at("b")).dropped.length === 1
+    && m.repriceCart([P("p1", { saleUnit: "sub", unitsPerBox: 10 })], at("n:10")).dropped.length === 0
+    && m.repriceCart([P("p1", { saleUnit: "sub", unitsPerBox: 10 })], at("b")).dropped.length === 1
+    && m.repriceCart([P("p1")], at("w")).dropped.length === 1
+    && m.repriceCart([P("p1")], at("n:10")).dropped.length === 0);
+}
+
 console.log(fail === 0 ? `✓ cart-reprice: ${pass} فحصاً عبرت` : `✗ ${fail} فشلت من ${pass + fail}`);
 if (fail) process.exit(1);

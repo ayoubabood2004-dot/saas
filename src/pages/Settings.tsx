@@ -2204,6 +2204,11 @@ function DoseBillingCard() {
     if (d.product_id && (!p || (p.price_currency ?? "IQD") === "USD")) {
       return t("mmset.billProductGone", { rest: d.dose_price != null ? t("mmset.billSumPrice", { price: money(d.dose_price) }) : t("mmset.billNone") });
     }
+    // G13: ربطٌ «بالمفرد» ومادّتُه بلا مفرد (أطفأه نموذجٌ قبل 0294 — اليوم الإطفاءُ يحوّل الربطَ كسرَ علبة): الجرعةُ لا تُخصم، وبلا سعرٍ
+    // مكتوب لا تُحسب أصلاً (0269) — «بلا حساب» وحدها كانت تُخفي السبب.
+    if (d.product_id && p && d.dose_unit === "sub" && !(p.has_sub_unit && (p.units_per_box ?? 0) > 0)) {
+      return t("mmset.billSubGone", { rest: d.dose_price != null ? t("mmset.billSumPrice", { price: money(d.dose_price) }) : t("mmset.billNone") });
+    }
     const ch = doseCharge(d, p);
     if (!ch) return t("mmset.billNone");
     if (!ch.productId || !p) return t("mmset.billSumPrice", { price: money(ch.price) });

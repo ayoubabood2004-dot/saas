@@ -83,7 +83,10 @@ export async function returnItemsOnce(
 export type LedgerKind =
   | "checkpoint" | "open" | "manual" | "delete" | "count" | "waste" | "merge" | "restore" | "pool" | "farm"
   | "purchase" | "purchase_edit" | "lot" | "consume" | "consume_return" | "sale" | "return" | "refund"
-  | "invoice_delete" | "invoice_edit" | "other";
+  | "invoice_delete" | "invoice_edit"
+  /** 0294: تحويلُ الوحدة — الفرقُ ليس بضاعةً دخلت أو خرجت، الرقمُ نفسُه بوحدةٍ أخرى. */
+  | "unit"
+  | "other";
 
 export interface LedgerRow {
   id: number;

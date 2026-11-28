@@ -138,12 +138,14 @@ export function packsMinus(a: readonly ProductPack[] | null | undefined, rm: rea
 /**
  * إضافاتُ 0259 بـ`merge_products` — قبل أيّ كتابة: ما لا يُحمل يُرمى بصوت (P0001 بالرمز نفسه)، وإلا ما يُكتب على الأصل.
  */
-export function mergePackaging(keep: Product, drop: Product): Pick<Product, "sub_codes" | "packs" | "unit_name" | "sub_purchase_price"> {
+export function mergePackaging(keep: Product, drop: Product, beforeOverflow?: () => void): Pick<Product, "sub_codes" | "packs" | "unit_name" | "sub_purchase_price"> {
   const dropSub = subCodesOf(drop);
   if (dropSub.length > 0 && !(keep.has_sub_unit && (Number(keep.units_per_box) || 0) > 0 && Number(keep.units_per_box) === Number(drop.units_per_box))) {
     throw pgErr("P0001", "merge_sub_codes");
   }
   if (packsOf(drop).length > 0 && keep.sold_by_weight) throw pgErr("P0001", "merge_packs_unit");
+  // 0294: حارسُ الوحدة بالخادم بين هذين و«أكثر من أربعة» — المنادي يمرّره ليبقى الترتيبُ نفسَه.
+  beforeOverflow?.();
   const packs = packsUnion(packsOf(keep), packsOf(drop));
   if (packs.length > 4) throw pgErr("P0001", "merge_packs_overflow");
   const name = (s: string | null | undefined) => (s == null ? null : btrim(s) || null);

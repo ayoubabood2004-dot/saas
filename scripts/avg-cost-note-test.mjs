@@ -294,8 +294,8 @@ await noteSuite(NOTE, check);
  * (فالحلقةُ المستوردة من ProductMovements تُرسم عقدةً باسمها x-AvgCostSlot ونقرأ خصائصها). */
 const INV_FILE = "src/pages/Inventory.tsx";
 const INV = SRC(INV_FILE);
-// packs وusdProduct صِرفتان يقرأ النموذجُ مسودّتيهما (0259 و0264)، وproductGroups (0277) — بديلٌ مولَّدٌ لهما undefined يُسقط رسمَه (كـinventory-cas-test).
-const REAL_INV = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups", "@/lib/trashMatch"]);
+// packs وusdProduct صِرفتان يقرأ النموذجُ مسودّتيهما (0259 و0264)، وproductGroups (0277)، وunitChange (0294) — بديلٌ مولَّدٌ لهما undefined يُسقط رسمَه (كـinventory-cas-test).
+const REAL_INV = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups", "@/lib/trashMatch", "@/lib/unitChange"]);
 const INV_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: I18NEXT,

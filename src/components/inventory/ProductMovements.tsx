@@ -47,6 +47,7 @@ const LEDGER_ICON: Partial<Record<LedgerRow["kind"], typeof Pencil>> = {
   open: PackagePlus, purchase: ShoppingBag, purchase_edit: Pencil, lot: PackagePlus, restore: PackagePlus,
   sale: ArrowDownRight, consume: ArrowDownRight, waste: ArrowDownRight, delete: ArrowDownRight, farm: ArrowDownRight,
   return: RotateCcw, refund: RotateCcw, consume_return: RotateCcw, invoice_delete: RotateCcw,
+  unit: Pencil,
 };
 
 export function ProductMovementsDialog({ product, open, onClose }: {
@@ -113,6 +114,8 @@ export function ProductMovementsDialog({ product, open, onClose }: {
       case "refund": return t("pkg.lgRefund");
       case "invoice_delete": return t("pkg.lgInvDelete");
       case "invoice_edit": return t("pkg.lgInvEdit");
+      // 0294: الرصيدُ قبلها وبعدها نفسُ البضاعة بوحدتين — يُقال الرقمان لا «زاد/نقص».
+      case "unit": return t("pkg.lgUnit", { a: formatQty(Number(r.qty_before ?? 0)), b: formatQty(Number(r.qty_after ?? 0)) });
       default: return t("pkg.lgOther", { fn: r.source });
     }
   };

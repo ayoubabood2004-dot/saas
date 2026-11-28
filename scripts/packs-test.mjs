@@ -62,6 +62,7 @@ const built = await esbuild.build({
       'export * as K from "./src/lib/packs.ts";',
       'export * as M from "./src/lib/packsMirror.ts";',
       'export { findByCode } from "./src/lib/productCodes.ts";',
+      'export { changeProductUnit } from "./src/lib/unitChangeApi.ts";',
     ].join("\n"),
     resolveDir: process.cwd(), sourcefile: "packs-test-entry.ts", loader: "ts",
   },
@@ -72,7 +73,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "packs-test-"));
 const file = path.join(dir, "bundle.mjs");
 writeFileSync(file, built.outputFiles[0].text);
 const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
-const { repo, K, M, findByCode } = mod;
+const { repo, K, M, findByCode, changeProductUnit } = mod;
 if (!repo || !K || !M || !findByCode) { console.error("✗ packs-test: ما انحمّلت الوحدات"); process.exit(1); }
 const errOf = async (f) => { try { await f(); return "قُبل"; } catch (e) { return e.message ?? e.code ?? e.name; } };
 const errSync = (f) => { try { f(); return "قُبل"; } catch (e) { return e.message ?? e.code; } };
@@ -231,7 +232,15 @@ console.log("▸ المستودعُ التجريبيّ: إنشاءٌ وتعدي�
     && await errOf(() => repo.updateProduct(b.id, { packs: [pk("e", 6, ["DM-BOX-2"])] })) === "code_level_twin"
     && /products_packaging_ok/.test(await errOf(() => repo.updateProduct(b.id, { packs: [pk("e", 1)] })))
     && (await repo.listProducts()).find((x) => x.id === b.id).packs === undefined);
-  check("  ومادةٌ بكراتين لا تصير بالوزن (القيدُ على كلّ تحديث)", /products_packaging_ok/.test(await errOf(() => repo.updateProduct(a.id, { sold_by_weight: true }))));
+  {
+    /* 0294: الوحدةُ لا تُكتب مباشرةً (products_unit_guard يسبق القيدَ — محفّزُ «قبل» يجري قبل فحص القيود)، وبابُ التحويل يقولها بسببها. */
+    const a1 = (await repo.listProducts()).find((x) => x.id === a.id);
+    const seen = { sold_by_weight: false, has_sub_unit: !!a1.has_sub_unit, units_per_box: a1.units_per_box ?? null, sell_price: a1.sell_price, purchase_price: a1.purchase_price, sub_unit_price: a1.sub_unit_price ?? null };
+    const to = { sold_by_weight: true, has_sub_unit: false, units_per_box: null, sub_unit_name: null, sub_unit_price: null, sell_price: 1, purchase_price: 1, min_stock: 0 };
+    check("  ومادةٌ بكراتين لا تصير بالوزن: الكتابةُ المباشرة تُرفض unit_server_only (الوحدةُ من بابها وحده)، وبابُ التحويل يقولها unit_packs_weight",
+      await errOf(() => repo.updateProduct(a.id, { sold_by_weight: true })) === "unit_server_only"
+      && await errOf(() => changeProductUnit(a.id, seen, to, 15, 1)) === "unit_packs_weight");
+  }
   check("  وربطُ رمزِ كارتونِ غيره رمزاً إضافياً (نافذةُ الكاشير القديمة) يُرفض", await errOf(() => repo.attachProductCode(b.id, "DM-CTN-1")) === "barcode_taken");
 
   const twin = await repo.createProduct({ ...base, stock: 2, name: "أموكسي توأم ٠٢٥٩", barcode: "DM-BOX-3", has_sub_unit: true, units_per_box: 10, sub_codes: ["DM-SUB-3"], unit_name: "قنينة", packs: [pk("t1", 12, ["DM-CTN-3"], { sell_price: 18500 }), pk("t2", 24, ["DM-CTN-24"])] });

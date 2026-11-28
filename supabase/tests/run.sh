@@ -27,7 +27,7 @@ MIG="$HERE/../migrations"
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
 # و0077 أوّلُها: مطالبةُ المالك بهاتفه و`phone_key` — 0249 تعيد تعريفَ المطالبة، فتنزل
 # الأصليّةُ أوّلاً كما نزلت بالإنتاج، ثم تُستبدل.
-WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0292_pets_trash.sql $MIG/0291_company_old_debts.sql $MIG/0293_merged_name_guard.sql"
+WAVE="$MIG/0077_claim_by_phone.sql $MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql $MIG/0212_store_no_expired.sql $MIG/0213_scan_shape_stats.sql $MIG/0214_light_batches.sql $MIG/0215_reorder.sql $MIG/0216_stock_count.sql $MIG/0217_product_lots.sql $MIG/0218_wa_templates.sql $MIG/0219_cages_first_class.sql $MIG/0220_cage_backfill.sql $MIG/0221_drug_favorites.sql $MIG/0222_photographer.sql $MIG/0223_vaccination_recorded_at.sql $MIG/0224_company_ledger.sql $MIG/0225_delivery_courier_ref.sql $MIG/0226_price_changes.sql $MIG/0227_expense_categories.sql $MIG/0228_photographer_store.sql $MIG/0229_clinic_drugs.sql $MIG/0230_clinic_drugs_fold.sql $MIG/0231_customer_keys.sql $MIG/0232_customer_directory.sql $MIG/0233_store_categories.sql $MIG/0234_store_front_categories.sql $MIG/0235_store_owner_lock.sql $MIG/0236_product_images_keep.sql $MIG/0237_store_browse_events.sql $MIG/0238_treatment_drop.sql $MIG/0239_clinic_drug_groups.sql $MIG/0240_invoice_settlements.sql $MIG/0241_debt_forgiveness.sql $MIG/0242_backdated_sale.sql $MIG/0243_photo_products_codes.sql $MIG/0244_presence_not_operator.sql $MIG/0245_inventory_audit.sql $MIG/0247_operator_farm_workspace.sql $MIG/0248_phone_signup_profile.sql $MIG/0249_owner_reads_verified_claim.sql $MIG/0250_public_pricing.sql $MIG/0251_record_old_policy_rewrites.sql $MIG/0252_service_consumption.sql $MIG/0253_stock_truth_fixes.sql $MIG/0254_waste_voucher.sql $MIG/0255_moving_average.sql $MIG/0256_report_pnl.sql $MIG/0257_vaccination_delete_manager.sql $MIG/0258_pos_custom_tabs.sql $MIG/0259_product_packs.sql $MIG/0260_purchase_discount.sql $MIG/0261_rx_pad.sql $MIG/0262_one_account.sql $MIG/0263_visit_attachments.sql $MIG/0264_usd_pricing.sql $MIG/0265_flock_cases.sql $MIG/0266_neg_stock_mode.sql $MIG/0267_pack_sale.sql $MIG/0268_drug_families_editable.sql $MIG/0269_dose_billing.sql $MIG/0270_customer_file.sql $MIG/0271_old_debts.sql $MIG/0272_usd_packs.sql $MIG/0273_old_debt_items.sql $MIG/0274_usd_purchases.sql $MIG/0275_usd_purchase_fx.sql $MIG/0276_purchase_charges.sql $MIG/0277_product_groups.sql $MIG/0278_pos_tabs_clinic_wide.sql $MIG/0279_pos_sort_images_vaccine_prices.sql $MIG/0280_drug_catalog_archive.sql $MIG/0281_company_entry_edit.sql $MIG/0282_dual_pricing.sql $MIG/0283_mixed_invoice.sql $MIG/0284_library_levels.sql $MIG/0285_clinic_library.sql $MIG/0286_usd_free_rate.sql $MIG/0287_case_reports.sql $MIG/0287_stock_safety.sql $MIG/0288_stock_followups.sql $MIG/0289_expired_returns.sql $MIG/0290_expired_lot_followups.sql $MIG/0287_visit_voice_notes.sql $MIG/0292_pets_trash.sql $MIG/0291_company_old_debts.sql $MIG/0293_merged_name_guard.sql $MIG/0294_unit_changes.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -534,12 +534,13 @@ $P -f "$MIG/0193_poultry_withdrawal.sql" >/dev/null 2>&1
 # (`_drift_assert`) يرفض بحقٍّ أن ينزل فوق جسمٍ غيرِ مصدره. و0197 لا تُعاد كاملةً (تُرجع طيَّ الشركات
 # 0198/0201/0203 لنصٍّ أقدم): يُنزَّل جسمُ الدالّة وحده مقتطعاً من ملفّها حرفاً، ثم 0253 فوقه، ثم 0255 لأن
 # 0253 تعيد الشراءَ (record/update_purchase) لنصّها وآخرُهما 0255. من يعيد تعريفَ restore_product يضيف ملفَّه هنا
-# (0259: الاسترجاعُ والترتيبُ والطيّ يحملون التعبئة؛ و0260: الشراءُ بخصم الشركة — 0253 و0255 تُرجعانه لنصّهما).
+# (0259: الاسترجاعُ والترتيبُ والطيّ يحملون التعبئة؛ و0260: الشراءُ بخصم الشركة — 0253 و0255 تُرجعانه لنصّهما؛ و0294:
+# الطيُّ والترتيبُ لا يجمعان وحدتين — 0259 تُرجعهما لنصّها، فكلُّ حلقةٍ تعيد 0259 تعيد 0294 بعدها).
 RP0197=$(sed -n '/^create or replace function public\.restore_product(p_id uuid)/,/^end \$function\$;/p' "$MIG/0197_company_merge_safe.sql")
 if [ -n "$RP0197" ]; then
   out=$($P -c "$RP0197" 2>&1) || { echo "$out" | tail -3; echo "   ✗ جسمُ 0197 لـrestore_product ما نزل"; fail=1; }
 else echo "   ✗ ما لكيت restore_product بملفّ 0197"; fail=1; fi
-for f in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale; do
+for f in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale 0294_unit_changes; do
   out=$($P -f "$MIG/$f.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f ما انعادت بعد جسم 0197"; fail=1; }
 done
 
@@ -10142,7 +10143,7 @@ chk "R2w: فكُّ طيّ الشركة والصنف بجسمَي مصدرهما 
     "public.restore_company(uuid):lacks--+0253;public.restore_company_section(uuid):lacks--+0253"
 # و0259 بعدهما: تعيد الاسترجاعَ والترتيب (0253 تُرجعهما لنصّها)، و0260 الشراءَ بخصمه (0253 و0255 تُرجعانه) — وإلا
 # فحصت الأقسامُ بعدها جسماً ليس بالإنتاج.
-for f2552 in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale; do
+for f2552 in 0253_stock_truth_fixes 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale 0294_unit_changes; do
   out=$($P -f "$MIG/$f2552.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f2552 ما انعادت بعد جسمَي المصدر"; fail=1; }
 done
 chk "  وإعادةُ 0253 ثمّ 0255 ترجعه صفراً، والجسمان بعلامتهما" \
@@ -10489,7 +10490,11 @@ ck()   { echo "_ck259('$1', \$q\$$2\$q\$)"; }
 lv()   { echo "(select coalesce(nullif(array_to_string(sub_codes, ','), ''), '∅') || '|' || coalesce((select string_agg((x->>'id') || ':' || (x->>'per') || ':' || coalesce((select string_agg(c, ',') from jsonb_array_elements_text(x->'codes') c), ''), ';' order by o) from jsonb_array_elements(packs) with ordinality t(x, o)), '∅') from products where id = '$1')"; }
 $P -c "create or replace function _ck259(who uuid, q text) returns text language plpgsql as \$fn\$
        declare r text := _rls_try(who, q);
-       begin return coalesce(substring(r from 'check constraint \"([a-z_]+)\"'), left(r, 14)); end \$fn\$;" >/dev/null
+       begin return coalesce(substring(r from 'check constraint \"([a-z_]+)\"'), left(r, 14)); end \$fn\$;
+       -- وبكتابة المالك (دوالُّ definer): القيدُ نفسُه، بلا حارسٍ يحرس authenticated وحده يسبقه (products_unit_guard، 0294).
+       create or replace function _cs259(q text) returns text language plpgsql as \$fn\$
+       declare n int; begin execute q; get diagnostics n = row_count; return 'rows:' || n;
+       exception when others then return coalesce(substring(sqlerrm from 'check constraint \"([a-z_]+)\"'), 'guarded:' || sqlstate); end \$fn\$;" >/dev/null
 PK1='[{"id":"c1","name":"كارتون","codes":["PK-CTN-1"],"per":12,"purchase_price":null,"sell_price":null}]'
 $P -c "insert into auth.users(id) values ('$K9'), ('$K9B') on conflict do nothing;
        insert into company_sections (id, clinic_id, name) values ('${Q}f0', '$K9', 'رفّ التعبئة') on conflict do nothing;
@@ -10516,9 +10521,12 @@ chk "  ورمزٌ بطول ٦٥، وباركودُ مغلّفٍ بلا وحدة�
             || '|' || $(ck $K9 "update products set unit_name = repeat('ع', 21) where id = '${Q}01'")" \
     "$(printf 'products_packaging_ok|%.0s' 1 2 3 4 5)products_packaging_ok"
 # والتجميعُ بطريقه الوحيد (pool_product — الكتابةُ المباشرة يرفضها pool_direct من 0255 قبلنا): كارتونٌ لا يدخل الحوض.
-chk "  ولا كراتينَ لمادةٍ بالوزن أو مجمَّعةٍ بالحوض (رصيدُهما بغير شكل)" \
-    "select $(ck $K9 "update products set sold_by_weight = true where id = '${Q}01'") || '|' || $(ck $K9 "select pool_product('${Q}01', '${Q}f0')")" \
-    "products_packaging_ok|products_packaging_ok"
+# وتبديلُ الوزن بكتابةٍ مباشرة من المتصفّح يردّه منذ 0294 حارسُ الوحدة قبل القيد (الوحدةُ من بابها وحده، وبابُها يقولها
+# unit_packs_weight) — فالقيدُ يُفحص بكتابة المالك، والكتابةُ المباشرة برفضها هي.
+chk "  ولا كراتينَ لمادةٍ بالوزن أو مجمَّعةٍ بالحوض (رصيدُهما بغير شكل) — والتبديلُ المباشر يردّه حارسُ الوحدة قبل القيد" \
+    "select _cs259(\$q\$update products set sold_by_weight = true where id = '${Q}01'\$q\$) || '|' || $(ck $K9 "select pool_product('${Q}01', '${Q}f0')")
+            || '|' || split_part(_rls_try('$K9', \$q\$update products set sold_by_weight = true where id = '${Q}01'\$q\$), ':', 3)" \
+    "products_packaging_ok|products_packaging_ok|unit_server_only"
 chk "  والسليمُ يمرّ: أربعةُ كراتين بأسعارٍ وبلا، واسمُ وحدة، وسعرُ شراء مغلّف" \
     "select $(rl $K9 "update products set packs = '[{\"id\":\"a\",\"name\":\"كارتون\",\"per\":2,\"codes\":[\"PK-Q1\"],\"purchase_price\":0,\"sell_price\":1500.25},{\"id\":\"b\",\"name\":\"ك\",\"per\":3},{\"id\":\"c\",\"name\":\"ك\",\"per\":4,\"codes\":[]},{\"id\":\"d\",\"name\":\"ك\",\"per\":100000,\"sell_price\":null}]', unit_name = 'قنينة' where id = '${Q}02'")
             || '|' || $(rl $K9 "update products set sub_purchase_price = 250 where id = '${Q}01'")" \
@@ -10788,7 +10796,7 @@ out=$($P -f "$MIG/0253_stock_truth_fixes.sql" 2>&1) || { echo "$out" | tail -3; 
 chk "إعادةُ 0253 وحدها تُرى: الشراءُ وتعديلُه بلا علامتي 0255 و0260، والاسترجاعُ والترتيبُ بلا علامة 0259، ولا شيءَ غيرُها" \
     "select coalesce(string_agg(problem, ';' order by problem collate \"C\"), '') from verify_consumption_wiring()" \
     "public.inventory_tidy_uncat():lacks--+0259;public.record_purchase(jsonb,jsonb):lacks--+0255;public.record_purchase(jsonb,jsonb):lacks--+0260;public.restore_product(uuid):lacks--+0259;public.update_purchase(uuid,jsonb,jsonb):lacks--+0255;public.update_purchase(uuid,jsonb,jsonb):lacks--+0260"
-for f260 in 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale; do
+for f260 in 0255_moving_average 0259_product_packs 0260_purchase_discount 0267_pack_sale 0294_unit_changes; do
   out=$($P -f "$MIG/$f260.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ $f260 ما انعادت بعد 0253"; fail=1; }
 done
 chk "  وإعادةُ 0255 و0259 و0260 بعدها ترجعه صفراً" "select count(*)::text from verify_consumption_wiring()" "0"
@@ -11796,6 +11804,23 @@ chk "  والسياجُ كاملٌ بعد 0287 (بلا ثغرة)" "select coales
 chk "  وأربعُ سياساتٍ على التقارير (قراءةٌ وإدخالٌ وسياجاهما)" \
     "select count(*)::text from pg_policies where schemaname='public' and tablename='pet_case_reports'" "4"
 $P -c "delete from pet_case_reports where pet_id = '$CRP';" >/dev/null
+# ── 0294 والمصوّر: قبل تراجع 0222 — سجلُّ تحويل الوحدة جدولٌ بسياسة قراءة، فسياجُه تضعه 0294 نفسُها ─────────────────────
+# (أقسامٌ قبلنا تعيد 0222 فتسيّج كلَّ جدولٍ بسياسات — سياجٌ نسيته الهجرةُ يمرّ بالحزمة كما هي، فيُسقط ثمّ تُعاد 0294 وحدها ويُعدّ.)
+echo "▸ 0294: سجلُّ تحويل الوحدة مسيَّجٌ عن موظّف التصوير"
+$P -c "do \$\$ declare p record; begin
+         for p in select policyname from pg_policies where schemaname = 'public' and tablename = 'product_unit_changes' and policyname like 'photographer_fence%' loop
+           execute format('drop policy %I on public.product_unit_changes', p.policyname);
+         end loop; end \$\$;" >/dev/null
+out=$($P -f "$MIG/0294_unit_changes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0294 ما انعادت قبل التراجع"; fail=1; }
+chk "0294 نفسُها تسيّج جدولَها (أُسقط السياجُ وأُعيدت وحدها)" \
+    "select (count(*) > 0)::text from pg_policies where schemaname='public' and tablename='product_unit_changes' and policyname like 'photographer_fence%'" "true"
+# صفٌّ بعيادة المصوّر قبل السؤال: «صفرُ صفوف» على جدولٍ فارغ لا يقيس السياج (مراجعة). وصاحبُ العيادة يراه — فالصفرُ للمصوّر من السياج.
+$P -c "insert into product_unit_changes (clinic_id, product_id, product_name, from_unit, to_unit, factor_mul, factor_div, event_seq)
+       values ('11111111-1111-1111-1111-111111111111', gen_random_uuid(), 'سياج ٢٩٤', '{}', '{}', 1, 1, 0)" >/dev/null
+chk "  والمصوّرُ لا يقرأ السجلّ (وصاحبُ عيادته يرى صفَّها)، والسياجُ بلا ثغرة" \
+    "select _rls_try('11111111-1111-1111-1111-111111111111', 'select 1 from product_unit_changes') || '|' || _rls_try('$PHO', 'select 1 from product_unit_changes')
+            || '|' || coalesce((select string_agg(x, ',') from verify_photographer_fence() x), '')" "rows:1|rows:0|"
+$P -c "delete from product_unit_changes where product_name = 'سياج ٢٩٤'" >/dev/null
 # ── 0287: الملاحظةُ الصوتية — قبل تراجع 0222 (السياجُ ودالّتُه، وstaff_can يحكم من يسجّل) ──────────────────────────
 # عياداتٌ ثلاث: C1 وC2 بالتجربة وC3 خارجها. e1 طبيب C1 («د. علي» بصفّ كادره)، e2 طبيب C1 (اسمُه من ملفّه)، e3 استقبال C1،
 # e4 مدير C1، e5 صاحبُ حيوان (ملفٌّ بلا عضوية)، e6 طبيب C2، e7 طبيب C3. كلُّ نداءٍ بدور authenticated (rv/rt)، وكلُّ قراءةٍ
@@ -12927,9 +12952,12 @@ $P -c "delete from staff_elevations; update _dvtest_flags set admin = false; del
          ('${UG}a3', '$UC', 'دينار يصير دولار', 'IQDBOX-3', 'IQD', null, null, 20, 1500, 1000, null),
          ('${UG}a4', '$UC', 'كراتينها null',    'USDBOX-4', 'USD', 3, 2, 10, 0, 0, 'null'::jsonb)
          on conflict (id) do nothing;" >/dev/null
-chk "القيدُ يسمح بكارتونٍ لمادّة الدولار (المادّتان نزلتا)، والوحدةُ الفرعيةُ للدولار ممنوعةٌ كما كانت (23514)" \
+# والوحدةُ الفرعيةُ للدولار: القيدُ بكتابة المالك (_cs259 من قسم 0259)، والكتابةُ المباشرة من المتصفّح يردّها منذ 0294 حارسُ الوحدة قبله
+# (الوحدةُ من بابها وحده، وبابُها يقولها unit_usd).
+chk "القيدُ يسمح بكارتونٍ لمادّة الدولار (المادّتان نزلتا)، والوحدةُ الفرعيةُ للدولار ممنوعةٌ كما كانت (products_usd_ok)، والتبديلُ المباشر يردّه حارسُ الوحدة قبله" \
     "select (select count(*) from products where clinic_id = '$UC' and price_currency = 'USD' and (case when jsonb_typeof(packs) = 'array' then jsonb_array_length(packs) end) = 1)::text
-            ||'|'||split_part($(rt $UC "update products set has_sub_unit = true, units_per_box = 10 where id = '${UG}a1'"), ':', 2)" "2|23514"
+            ||'|'||_cs259(\$q\$update products set has_sub_unit = true, units_per_box = 10 where id = '${UG}a1'\$q\$)
+            ||'|'||split_part($(rt $UC "update products set has_sub_unit = true, units_per_box = 10 where id = '${UG}a1'"), ':', 3)" "2|products_usd_ok|unit_server_only"
 chk "  وسؤالُ الواجهة «نعم» للداخل، ومسحوبٌ من anon" \
     "select $(rv $UC "select usd_pack_sale_ready()::text")||'|'||has_function_privilege('anon', 'public.usd_pack_sale_ready()', 'execute')::text" "true|false"
 
@@ -14710,10 +14738,13 @@ chk "  وتسديدُ فاتورة الجرعات وطباعتُها (تحديث
 
 # قاعدةُ المفرد بالدمج (مراجعة ٢٢/١١): جرعةٌ وربطٌ بالمفرد يتبعان أصلاً يُباع بالمفرد وحده (ومخصومُها بمفرد الأصل)؛ أصلٌ بلا مفرد كان
 # يكلّف كلَّ حبّةٍ بالعلبة — فالربطُ يبقى على التوأم والجرعةُ بلا مادّة (تُباع بسعرها كما كانت على الميّت).
+# ومنذ 0294 الدمجُ بين وحدتين يُرفض قبل أيّ كتابة (merge_unit_mismatch): أصلٌ بلا مفرد أو بعددٍ آخر لا يصله توأمٌ بالمفرد أصلاً —
+# فالفحصُ يثبت الرفضَ (والربطُ والجرعةُ باقيان على التوأم)، ويثبت أن الدمجَ بالمفرد نفسِه يأخذهما بمخصومهما كما هو.
 P88B=bbbb0288-0000-4000-8000-0000000001
 $P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
          ('${P88B}11','$C1','حبوب توأم ٢٨٨',2,3000,1500,30,true), ('${P88B}12','$C1','حبوب أصل بلا مفرد ٢٨٨',2,3000,1500,null,false),
-         ('${P88B}13','$C1','حبوب توأم ثانٍ ٢٨٨',2,3000,1500,30,true), ('${P88B}14','$C1','حبوب أصل بمفرد ٢٨٨',2,3000,1500,10,true)
+         ('${P88B}13','$C1','حبوب توأم ثانٍ ٢٨٨',2,3000,1500,30,true), ('${P88B}14','$C1','حبوب أصل بمفرد ٢٨٨',2,3000,1500,10,true),
+         ('${P88B}18','$C1','حبوب أصل بمفرد ثلاثين ٢٨٨',2,3000,1500,30,true)
        on conflict (id) do update set stock = excluded.stock;
        insert into clinic_drugs(id, clinic_id, name, product_id, dose_unit, dose_qty) values
          ('${P88B}31', '$C1', 'دواء مفرد ٢٨٨ أ', '${P88B}11', 'sub', 2), ('${P88B}32', '$C1', 'دواء مفرد ٢٨٨ ب', '${P88B}13', 'sub', 2)
@@ -14722,14 +14753,17 @@ $P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,un
          ('${P88B}21', '$C1', gen_random_uuid(), '${P88}7', '${P88B}11', 'جرعة مفرد', 300, 0.067, 2, 'sub', now(), 'pending'),
          ('${P88B}22', '$C1', gen_random_uuid(), '${P88}7', '${P88B}13', 'جرعة مفرد', 300, 0.067, 2, 'sub', now(), 'pending')
        on conflict (id) do nothing;" >/dev/null
-$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}12', '${P88B}11')).id::text\$q\$);" >/dev/null
-$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}14', '${P88B}13')).id::text\$q\$);" >/dev/null
-chk "الدمجُ وقاعدةُ المفرد: أصلٌ بلا مفرد ⇒ الجرعةُ بلا مادّة والربطُ باقٍ على التوأم؛ أصلٌ بمفرد ١٠ ⇒ تتبعه بمخصوم ٢ ÷ ١٠ = ٠٫٢٠٠ والربطُ معها" \
+chk "الدمجُ وقاعدةُ المفرد: أصلٌ بلا مفرد، وأصلٌ بمفرد ١٠ لتوأمٍ بمفرد ٣٠ ⇒ merge_unit_mismatch (0294) قبل أيّ كتابة" \
+    "select split_part(_as288('$C1', \$q\$select (merge_products('${P88B}12', '${P88B}11')).id::text\$q\$), ':', 3)
+            || '|' || split_part(_as288('$C1', \$q\$select (merge_products('${P88B}14', '${P88B}13')).id::text\$q\$), ':', 3)" \
+    "merge_unit_mismatch|merge_unit_mismatch"
+$P -c "select _as288('$C1', \$q\$select (merge_products('${P88B}18', '${P88B}13')).id::text\$q\$);" >/dev/null
+chk "  فالربطُ والجرعةُ باقيان على التوأم المرفوض؛ وبالمفرد نفسِه (٣٠) يتبعان الأصلَ بمخصومهما ٢ ÷ ٣٠ = ٠٫٠٦٧ كما هو" \
     "select (select coalesce(product_id::text, 'null') || ':' || coalesce(stock_qty::text, 'null') from dose_charges where id = '${P88B}21')
             || '|' || (select product_id::text from clinic_drugs where id = '${P88B}31')
             || '|' || (select product_id::text || ':' || stock_qty::text from dose_charges where id = '${P88B}22')
             || '|' || (select product_id::text from clinic_drugs where id = '${P88B}32')" \
-    "null:null|${P88B}11|${P88B}14:0.200|${P88B}14"
+    "${P88B}11:0.067|${P88B}11|${P88B}18:0.067|${P88B}18"
 
 # والمختومةُ تتبع الدمجَ أيضاً: بيعتُها من التوأم، ثمّ الدمج، ثمّ ترجيعُها — الدواءُ رجع للأصل، والجرعةُ معلَّقةٌ باسم الأصل (لا الميّت).
 $P -c "insert into products(id,clinic_id,name,stock,sell_price,purchase_price,units_per_box,has_sub_unit) values
@@ -15143,4 +15177,309 @@ $P -c "delete from purchase_effects where purchase_id in (select id from purchas
        alter table products enable trigger products_trash_guard;
        delete from products_trash where id::text like 'a2930000%';
        drop function if exists _ins293(text, uuid);" >/dev/null
+echo "▸ 0294: وحدةُ المادّة يغيّرها الخادمُ وحده ومعها كلُّ رقمٍ بوحدتها، والدمجُ لا يجمع وحدتين"
+# عيادةٌ وحدها (K94، صاحبُها مدير بالقالب) لا بقايا أقسامٍ قبلنا: «رتّب المخزن» يطوي كلَّ ما بلا صنفٍ بعيادته. R94 استقبالُها.
+# كلُّ نداءٍ بالباب الحقيقيّ بهويّةٍ، وكلُّ قراءةٍ بعد كتابةٍ بجملةٍ بعدها (درسُ 0257).
+out=$($P -f "$MIG/0294_unit_changes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0294 ما انعادت"; fail=1; }
+K94=a2940000-0000-4000-8000-00000000c294
+R94=a2940000-0000-4000-8000-00000000c295
+UN=a2940000-0000-4000-8000-0000000000
+$P -c "insert into auth.users(id) values ('$K94'), ('$R94') on conflict do nothing;
+       insert into memberships(user_id, clinic_id, role, status) values ('$R94', '$K94', 'receptionist', 'active') on conflict do nothing;
+       insert into companies(id, clinic_id, name) values ('${UN}e1', '$K94', 'شركة ٢٩٤') on conflict (id) do nothing;
+       insert into company_sections(id, clinic_id, company_id, name) values ('${UN}e2', '$K94', '${UN}e1', 'صنف ٢٩٤') on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, avg_cost, min_stock, sold_by_weight, has_sub_unit, units_per_box, sub_unit_name, sub_unit_price, bulk_group) values
+         ('${UN}01', '$K94', 'Royal Canin ٢٩٤', 'K294RC', 3, 75000, 60000, 60000, 2, false, false, null, null, null, null),
+         ('${UN}02', '$K94', 'Metacam ٢٩٤', null, 4.6, 3000, 2000, 2000, 0, false, true, 10, 'حبة', 300, null),
+         ('${UN}03', '$K94', 'قفازات ٢٩٤', null, 120, 250, 150, 150, 1, false, false, null, null, null, null),
+         ('${UN}04', '$K94', 'Mini ٢٩٤', null, 6.5, 5000, 4000, null, 0, true, false, null, null, null, null),
+         ('${UN}05', '$K94', 'Mini ٢٩٤', 'K294MINI', 3, 75000, 60000, null, 0, false, false, null, null, null, null),
+         ('${UN}06', '$K94', 'Amoxi ٢٩٤', null, 4.6, 3000, 2000, null, 0, false, true, 10, 'كبسولة', 300, null),
+         ('${UN}07', '$K94', 'Amoxi ٢٩٤', 'K294AMX', 3.25, 5000, 4000, null, 0, false, true, 20, 'كبسولة', 250, null),
+         ('${UN}08', '$K94', 'ضماد ٢٩٤', null, 2, 1000, 500, null, 0, false, false, null, null, null, null),
+         ('${UN}09', '$K94', 'ضماد ٢٩٤', 'K294BAN', 3, 1000, 500, null, 0, false, false, null, null, null, null),
+         ('${UN}10', '$K94', 'قديم ٢٩٤', null, 5, 1000, 500, null, 0, false, true, null, null, null, null),
+         ('${UN}11', '$K94', 'مربوط أ ٢٩٤', null, 2, 1000, 500, null, 0, false, false, null, null, null, 'grp_294'),
+         ('${UN}12', '$K94', 'مربوط ب ٢٩٤', null, 2, 1000, 500, null, 0, false, false, null, null, null, 'grp_294'),
+         ('${UN}14', '$K94', 'بجرد ٢٩٤', null, 5, 1000, 500, null, 0, false, false, null, null, null, null),
+         ('${UN}15', '$K94', 'مستهلك ٢٩٤', null, 5, 1000, 500, null, 0, false, false, null, null, null, null)
+         on conflict (id) do nothing;
+       insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, sold_by_weight, company_id, section_id, pooled) values
+         ('${UN}13', '$K94', 'مجمّع ٢٩٤', null, 0, 1000, 500, false, '${UN}e1', '${UN}e2', true),
+         ('${UN}20', '$K94', 'سرنجة ٢٩٤', 'K294SYR', 4, 1000, 500, false, '${UN}e1', '${UN}e2', false),
+         ('${UN}21', '$K94', 'سرنجة ٢٩٤', null, 1.5, 1000, 500, true, '${UN}e1', null, false),
+         ('${UN}22', '$K94', 'شاش ٢٩٤', 'K294GZ', 2, 1000, 500, false, '${UN}e1', '${UN}e2', false),
+         ('${UN}23', '$K94', 'شاش ٢٩٤', null, 1, 1000, 500, false, '${UN}e1', null, false)
+         on conflict (id) do nothing;
+       insert into invoices(id, clinic_id, total) values ('${UN}a1', '$K94', 75000) on conflict (id) do nothing;
+       insert into invoice_items(id, invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total, stock_qty)
+         values ('${UN}a2', '${UN}a1', '$K94', '${UN}01', 'Royal Canin ٢٩٤', 1, 75000, 60000, 75000, 1) on conflict (id) do nothing;
+       insert into clinic_drugs(id, clinic_id, name, family, dose_qty, dose_unit, product_id) values
+         ('${UN}b1', '$K94', 'Royal Feed ٢٩٤', 'other', 0.2, 'box', '${UN}01'),
+         ('${UN}b2', '$K94', 'Meloxicam ٢٩٤', 'other', 1, 'sub', '${UN}02'),
+         ('${UN}b3', '$K94', 'Glove ٢٩٤', 'other', 1, 'box', '${UN}03') on conflict (id) do nothing;
+       insert into dose_charges(id, clinic_id, entry_id, pet_id, product_id, name, price, stock_qty, dose_qty, dose_unit, given_at) values
+         ('${UN}c1', '$K94', gen_random_uuid(), gen_random_uuid(), '${UN}02', 'Meloxicam ٢٩٤', 300, 0.1, 1, 'sub', now()),
+         ('${UN}c2', '$K94', gen_random_uuid(), gen_random_uuid(), '${UN}03', 'Glove ٢٩٤', 250, 1, 1, 'box', now()),
+         ('${UN}c3', '$K94', gen_random_uuid(), gen_random_uuid(), '${UN}06', 'Amoxi ٢٩٤', 300, 0.1, 1, 'sub', now()) on conflict (id) do nothing;
+       insert into clinic_service_categories(id, clinic_id, name) values ('${UN}d1', '$K94', 'فئة ٢٩٤') on conflict (id) do nothing;
+       insert into clinic_services(id, clinic_id, category_id, name, price) values ('${UN}d2', '$K94', '${UN}d1', 'خدمة ٢٩٤', 10000) on conflict (id) do nothing;
+       insert into clinic_service_recipe_items(id, clinic_id, service_id, product_id, product_name, qty, unit, position) values
+         ('${UN}d3', '$K94', '${UN}d2', '${UN}01', 'Royal Canin ٢٩٤', 0.5, 'stock', 0),
+         ('${UN}d4', '$K94', '${UN}d2', '${UN}02', 'Metacam ٢٩٤', 2, 'sub', 1),
+         ('${UN}d5', '$K94', '${UN}d2', '${UN}03', 'قفازات ٢٩٤', 2, 'stock', 2) on conflict (id) do nothing;
+       insert into stock_counts(id, clinic_id, product_id, product_name, system_qty, counted_qty, unit_cost, reason, status)
+         values ('${UN}f1', '$K94', '${UN}14', 'بجرد ٢٩٤', 5, 4, 500, 'shortage', 'pending') on conflict (id) do nothing;
+       insert into invoice_consumption(id, clinic_id, invoice_id, item_id, spec_id, product_id, product_name, unit, per_qty, per_div, unit_cost, per_value, line_qty, qty, value, kind, source)
+         values ('${UN}f2', '$K94', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), '${UN}15', 'مستهلك ٢٩٤', 'stock', 1, 1, 500, 500, 1, 1, 500, 'use', 'recipe') on conflict (id) do nothing;" >/dev/null
+# الباب: ما رآه النموذج من الصفّ نفسِه (إلا إن مُرِّر غيرُه)، والجوابُ الرصيدُ الجديد أو رمزُ الرفض وتلميحُه.
+$P -c "create or replace function _u294(p uuid, wt boolean, st boolean, nt numeric, sell numeric, buy numeric, mn int, subp numeric,
+                                        m numeric, d numeric, who uuid, seen jsonb default null, subname text default null)
+       returns text language plpgsql as \$fn\$
+       declare r products; s jsonb; h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         select jsonb_build_object('sold_by_weight', coalesce(x.sold_by_weight, false), 'has_sub_unit', coalesce(x.has_sub_unit, false),
+                  'units_per_box', x.units_per_box, 'sell_price', x.sell_price, 'purchase_price', x.purchase_price, 'sub_unit_price', x.sub_unit_price)
+           into s from products x where x.id = p;
+         r := product_unit_change(p, coalesce(seen, s), jsonb_build_object('sold_by_weight', wt, 'has_sub_unit', st, 'units_per_box', nt,
+                'sub_unit_name', subname, 'sub_unit_price', subp, 'sell_price', sell, 'purchase_price', buy, 'min_stock', mn), m, d);
+         return 'ok:' || r.stock::text;
+       exception when others then get stacked diagnostics h = pg_exception_hint;
+         return 'err:' || sqlerrm || ':' || coalesce(h, ''); end \$fn\$;
+       create or replace function _t294(q text, who uuid) returns text language plpgsql as \$fn\$
+       declare r text; h text; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         execute q into r; return 'ok:' || coalesce(r, '');
+       exception when others then get stacked diagnostics h = pg_exception_hint;
+         return 'err:' || sqlerrm || ':' || coalesce(h, ''); end \$fn\$;" >/dev/null
+
+# ── ١) المحفّز: الوحدةُ لا تُكتب مباشرةً من المتصفّح (G11/G12/G13 من بابها) ─────────────────────────────────────────
+chk "المحفّز: «بالوزن» بتحديثٍ مباشر (authenticated) ⇒ unit_server_only" \
+    "select _rls_try('$K94', 'update products set sold_by_weight = true where id = ''${UN}01''')" "guarded:P0001:unit_server_only"
+chk "  والقيمُ نفسُها تمرّ (النسخةُ القديمة من النموذج ترسلها مع كلّ حفظ)" \
+    "select _rls_try('$K94', 'update products set sold_by_weight = false, has_sub_unit = false, units_per_box = null, name = name where id = ''${UN}01''')" "rows:1"
+chk "  وتشغيلُ المفرد مباشرةً ⇒ unit_server_only" \
+    "select _rls_try('$K94', 'update products set has_sub_unit = true, units_per_box = 10 where id = ''${UN}03''')" "guarded:P0001:unit_server_only"
+chk "  وحمولةُ «تعديل المجموعة» القديمة على عضوٍ بمفرد (G12) ⇒ unit_server_only" \
+    "select _rls_try('$K94', 'update products set has_sub_unit = false, sub_unit_name = null, units_per_box = null, sub_unit_price = null where id = ''${UN}02''')" \
+    "guarded:P0001:unit_server_only"
+chk "    والمفردُ باقٍ (يُقرأ بجملةٍ بعدها — درسُ 0257)" \
+    "select has_sub_unit::text||':'||units_per_box::text from products where id = '${UN}02'" "true:10.000"
+chk "  وتغييرُ عدد المفرد مباشرةً ⇒ unit_server_only" \
+    "select _rls_try('$K94', 'update products set units_per_box = 20 where id = ''${UN}02''')" "guarded:P0001:unit_server_only"
+chk "  وصفٌّ قديمٌ بمفردٍ بلا عدد (فعليّاً «بالعدد»): إطفاءُ العلم يمرّ — الوحدةُ الفعليّة ما تغيّرت" \
+    "select _rls_try('$K94', 'update products set has_sub_unit = false where id = ''${UN}10''')" "rows:1"
+
+# ── ٢) التحويل: كيسٌ ⇒ كيلو (١٥ كيلو بالكيس) ─────────────────────────────────────────────────────────────────────
+SEQ94=$($P -tAc "select nextval('price_change_seq')" | tr -d '[:space:]')
+chk "التحويل (الوزن): ٣ أكياس ⇒ ٤٥ كيلو" \
+    "select _u294('${UN}01', true, false, null, 5000, 4000, 30, null, 15, 1, '$K94')" "ok:45.000"
+chk "  المادّة: بالوزن، والرصيدُ ٤٥، والمتوسّطُ ٦٠٬٠٠٠ للكيس = ٤٬٠٠٠ للكيلو، والأسعارُ والحدُّ كما كتبها الطبيب" \
+    "select sold_by_weight::text||'|'||stock::text||'|'||avg_cost::text||'|'||sell_price::text||'|'||purchase_price::text||'|'||min_stock::text from products where id = '${UN}01'" \
+    "true|45.000|4000.000000|5000.00|4000.00|30"
+chk "  سطرُ البيع القديم: stock_qty ١ ⇒ ١٥ (الكميةُ والمالُ كما هما)" \
+    "select qty::numeric(20,3)::text||'|'||stock_qty::text||'|'||unit_price::numeric(20,2)::text||'|'||line_total::numeric(20,2)::text from invoice_items where id = '${UN}a2'" \
+    "1.000|15.000|75000.00|75000.00"
+chk "  والدفعةُ تحوّلت كلُّها: باقيها ومستلَمُها ٤٥ (المطابقةُ وحدها كانت ترفع الباقي وتترك المستلَم ٣ — توزيعٌ وتاريخٌ يكذبان)" \
+    "select string_agg(qty::numeric(20,3)::text||':'||received_qty::numeric(20,3)::text, ',') from product_lots where product_id = '${UN}01'" "45.000:45.000"
+chk "  وربطُ الجرعة بالعلبة ٠٫٢ كيس ⇒ ٣ كيلو، والوصفةُ ٠٫٥ ⇒ ٧٫٥" \
+    "select (select dose_unit||':'||dose_qty::numeric(20,6)::text from clinic_drugs where id = '${UN}b1')||'|'||(select unit||':'||qty::text from clinic_service_recipe_items where id = '${UN}d3')" \
+    "box:3.000000|stock:7.500"
+chk "  وسطرُ السجلّ: ١٥/١ والرصيدُ ٣ ⇒ ٤٥ ورقمُه من عدّاد الأسعار (الأجهزةُ تعرف أن قائمتَها قديمة)" \
+    "select factor_mul::text||'/'||factor_div::text||'|'||stock_before::text||'|'||stock_after::text||'|'||(event_seq > $SEQ94 and event_seq = (select last_value from price_change_seq))::text from product_unit_changes where product_id = '${UN}01'" \
+    "15/1|3.000|45.000|true"
+chk "  ودفترُ الرصيد يسمّيها «تحويل الوحدة» (unit) بالرقمين" \
+    "select _pf('$K94', 'select kind||''|''||qty_before::text||''|''||qty_after::text from stock_ledger_of(''${UN}01'') order by id desc limit 1')" "unit|3.000|45.000"
+chk "  وترجيعُ البيعة القديمة بعد التحويل يردّ ١٥ كيلو لا ١ (٤٥ ⇒ ٦٠)" \
+    "select _pf('$K94', 'select (refund_invoice(''${UN}a1'')).status::text')" "refunded"
+chk "    (يُقرأ بعدها)" "select stock::text from products where id = '${UN}01'" "60.000"
+
+# ── ٣) الرفض قبل أيّ كتابة ──────────────────────────────────────────────────────────────────────────────────────
+chk "الرفض: الوحدةُ نفسُها ⇒ unit_no_change" \
+    "select split_part(_u294('${UN}01', true, false, null, 5000, 4000, 30, null, 1, 1, '$K94'), ':', 2)" "unit_no_change"
+chk "  ووحدةٌ رآها النموذجُ غيرَ وحدة الصفّ (جهازٌ ثانٍ حوّلها) ⇒ unit_seen_changed" \
+    "select split_part(_u294('${UN}01', false, false, null, 75000, 60000, 2, null, 1, 15, '$K94', '{\"sold_by_weight\":false,\"has_sub_unit\":false,\"units_per_box\":null,\"sell_price\":5000,\"purchase_price\":4000,\"sub_unit_price\":null}'), ':', 2)" "unit_seen_changed"
+chk "  وسعرٌ رآه غيرَ سعر الصفّ (رفعُ أسعارٍ بعد الفتح) ⇒ price_moved" \
+    "select split_part(_u294('${UN}01', false, false, null, 75000, 60000, 2, null, 1, 15, '$K94', '{\"sold_by_weight\":true,\"has_sub_unit\":false,\"units_per_box\":null,\"sell_price\":75000,\"purchase_price\":4000,\"sub_unit_price\":null}'), ':', 2)" "price_moved"
+chk "  والاستقبالُ ⇒ unit_forbidden، ونسبةٌ صفر ⇒ unit_factor_bad" \
+    "select split_part(_u294('${UN}01', false, false, null, 75000, 60000, 2, null, 1, 15, '$R94'), ':', 2)||'|'||split_part(_u294('${UN}01', false, false, null, 75000, 60000, 2, null, 0, 15, '$K94'), ':', 2)" "unit_forbidden|unit_factor_bad"
+chk "  وتشغيلُ المفرد بنسبةٍ غيرِ ١/١ ولا ١/العدد ⇒ unit_factor_bad" \
+    "select split_part(_u294('${UN}03', false, true, 10, 2500, 1500, 1, 250, 1, 3, '$K94'), ':', 2)" "unit_factor_bad"
+chk "  ولا شيءَ كُتب بالرفض (الرصيدُ ٦٠ والوحدةُ بالوزن، والسجلُّ سطرٌ واحد)" \
+    "select stock::text||'|'||sold_by_weight::text||'|'||(select count(*) from product_unit_changes where clinic_id = '$K94')::text from products where id = '${UN}01'" "60.000|true|1"
+chk "  والمربوطةُ بمجموعة، والمجمَّعة، وجردٌ ينتظر، ودفترُ مستهلكات ⇒ يُرفض التحويلُ بالنسبة بسببه" \
+    "select split_part(_u294('${UN}11', true, false, null, 100, 50, 0, null, 10, 1, '$K94'), ':', 2)
+            ||'|'||split_part(_u294('${UN}13', true, false, null, 100, 50, 0, null, 10, 1, '$K94'), ':', 2)
+            ||'|'||split_part(_u294('${UN}14', true, false, null, 100, 50, 0, null, 10, 1, '$K94'), ':', 2)
+            ||'|'||split_part(_u294('${UN}15', true, false, null, 100, 50, 0, null, 10, 1, '$K94'), ':', 2)" \
+    "unit_grouped|unit_pooled|unit_count_pending|unit_consumption"
+chk "  والمربوطةُ بتحويلٍ نسبتُه ١ (المفردُ والرصيدُ علب) تمرّ — سعرُ المجموعة لا يتحرّك" \
+    "select _u294('${UN}11', false, true, 6, 1000, 500, 0, 200, 1, 1, '$K94', null, 'قطعة')" "ok:2.000"
+
+# ── ٤) تشغيلُ المفرد والرصيدُ كان بالقطعة: ١٢٠ قفازاً ⇒ ١٢ علبة من ١٠ ─────────────────────────────────────────────
+chk "تشغيل المفرد (بالقطعة): ١٢٠ ⇒ ١٢ علبة" \
+    "select _u294('${UN}03', false, true, 10, 2500, 1500, 1, 250, 1, 10, '$K94', null, 'قفاز')" "ok:12.000"
+chk "  المادّة: مفردٌ بعشرة، والمتوسّطُ ١٥٠ للقطعة = ١٬٥٠٠ للعلبة، وسعرا العلبة والقطعة كما كُتبا" \
+    "select has_sub_unit::text||'|'||units_per_box::text||'|'||avg_cost::text||'|'||sell_price::text||'|'||sub_unit_price::text from products where id = '${UN}03'" \
+    "true|10.000|1500.000000|2500.00|250.00"
+chk "  وربطُ «قطعة» بالعلبة صار بالمفرد (الكميةُ نفسُها)، والمعلَّقةُ مخصومُها ١ ⇒ ٠٫١ علبة، والوصفةُ «٢» صارت مفرداً" \
+    "select (select dose_unit||':'||dose_qty::numeric(20,6)::text from clinic_drugs where id = '${UN}b3')
+            ||'|'||(select dose_unit||':'||stock_qty::numeric(20,3)::text||':'||dose_qty::numeric(20,6)::text from dose_charges where id = '${UN}c2')
+            ||'|'||(select unit||':'||qty::text from clinic_service_recipe_items where id = '${UN}d5')" \
+    "sub:1.000000|sub:0.100:1.000000|sub:2.000"
+chk "  وتشغيلُه والرصيدُ علب (١/١): الرصيدُ كما هو (الصفُّ القديم: ٥ ⇒ ٥)" \
+    "select _u294('${UN}10', false, true, 12, 1000, 500, 0, 100, 1, 1, '$K94')" "ok:5.000"
+chk "    (يُقرأ بعدها — درسُ 0257: استعلامٌ فرعيٌّ بجملة النداء يرى ما قبله: علبةٌ باثني عشر)" \
+    "select has_sub_unit::text||'|'||units_per_box::text from products where id = '${UN}10'" "true|12.000"
+
+# ── ٥) إطفاءُ المفرد (G13): الربطُ بالحبّة يصير كسرَ علبة بدل أن يبطل ────────────────────────────────────────────────
+chk "إطفاء المفرد: الرصيدُ ٤٫٦ علبة كما هو" \
+    "select _u294('${UN}02', false, false, null, 3000, 2000, 0, null, 1, 1, '$K94')" "ok:4.600"
+chk "  الربطُ «١ حبّة» ⇒ «٠٫١ علبة»، والمعلَّقةُ مثلُه (مخصومُها ٠٫١ كما هو)، والوصفةُ «٢ حبّة» ⇒ ٠٫٢ علبة" \
+    "select (select dose_unit||':'||dose_qty::numeric(20,6)::text from clinic_drugs where id = '${UN}b2')
+            ||'|'||(select dose_unit||':'||stock_qty::numeric(20,3)::text||':'||dose_qty::numeric(20,6)::text from dose_charges where id = '${UN}c1')
+            ||'|'||(select unit||':'||qty::text from clinic_service_recipe_items where id = '${UN}d4')" \
+    "box:0.100000|box:0.100:0.100000|stock:0.200"
+chk "  والمادّة بلا مفرد ولا سعرِه" \
+    "select has_sub_unit::text||'|'||coalesce(units_per_box::text, '-')||'|'||coalesce(sub_unit_price::text, '-') from products where id = '${UN}02'" "false|-|-"
+
+# ── ٦) الدمج (G14): وحدتان مختلفتان لا تُجمعان ──────────────────────────────────────────────────────────────────
+chk "الدمج: «Mini» بالكيلو على «Mini» بالعدد ⇒ merge_unit_mismatch يسمّي الوحدتين" \
+    "select (r like 'err:merge_unit_mismatch:%' and position('بالكيلو' in r) > 0 and position('بالعدد' in r) > 0)::text
+       from (select _t294('select (merge_products(''${UN}05'', ''${UN}04'')).id::text', '$K94') r) x" "true"
+chk "  وعلبةُ ١٠ على علبة ٢٠ كذلك (والعددان بالتلميح)" \
+    "select (r like 'err:merge_unit_mismatch:%' and position('(10 ' in r) > 0 and position('(20 ' in r) > 0)::text
+       from (select _t294('select (merge_products(''${UN}07'', ''${UN}06'')).id::text', '$K94') r) x" "true"
+chk "  ولا شيءَ تغيّر: الأربعُ حيّةٌ بأرصدتها" \
+    "select string_agg(stock::text, ',' order by id) from products where id in ('${UN}04', '${UN}05', '${UN}06', '${UN}07')" "6.500,3.000,4.600,3.250"
+chk "  والوحدةُ نفسُها تندمج كما كانت (٢ + ٣ = ٥)" \
+    "select _t294('select (merge_products(''${UN}09'', ''${UN}08'')).stock::text', '$K94')" "ok:5.000"
+chk "  وتغييرُ عدد المفرد (١٠ ⇒ ٢٠): الرصيدُ علبٌ كما هو" \
+    "select _u294('${UN}06', false, true, 20, 3000, 2000, 0, 300, 1, 1, '$K94', null, 'كبسولة')" "ok:4.600"
+chk "    والمعلَّقةُ بالحبّة مخصومُها ١/٢٠ = ٠٫٠٥ (يُقرأ بعدها)" \
+    "select stock_qty::numeric(20,3)::text from dose_charges where id = '${UN}c3'" "0.050"
+chk "    وبعد توحيد الوحدة يمرّ الدمج (٤٫٦ + ٣٫٢٥ = ٧٫٨٥)" \
+    "select _t294('select (merge_products(''${UN}07'', ''${UN}06'')).stock::text', '$K94')" "ok:7.850"
+
+# ── ٧) «رتّب المخزن» يتخطّى التوأمَ بوحدةٍ أخرى ─────────────────────────────────────────────────────────────────
+chk "«رتّب المخزن»: «سرنجة» بالكيلو بلا صنف تبقى (أصلُها بالعدد)، و«شاش» بالوحدة نفسِها تنطوي" \
+    "select (_t294('select inventory_tidy_uncat()::text', '$K94') like 'ok:%')::text" "true"
+chk "  (يُقرأ بعدها: السرنجةُ حيّة، والشاشُ بالسلّة مطويٌّ بأصله ورصيدُ الأصل ٣)" \
+    "select (exists (select 1 from products where id = '${UN}21'))::text||'|'||(select (merged_into = '${UN}22')::text from products_trash where id = '${UN}23')||'|'||(select stock::text from products where id = '${UN}22')" \
+    "true|true|3.000"
+
+# ── ٧ب) ما أمسكته المراجعةُ العدائيّة: فاتورةُ الشراء القديمة، وفكُّ الدمج، وطلبُ المتجر، والجرعةُ بثلاث منازل، والوزنُ القديم ──────
+# السطرُ g2 «اشتراه» record_purchase قبل التحويل (رصيدٌ ٢ ودفعتُه ٢:٢ من محفّز السطور)، وg4 بعده بالوحدة الجديدة.
+$P -c "insert into products(id, clinic_id, name, barcode, stock, sell_price, purchase_price, avg_cost, min_stock, sold_by_weight, has_sub_unit, units_per_box, sub_unit_name, sub_unit_price) values
+         ('${UN}30', '$K94', 'علف ٢٩٤', null, 2, 75000, 60000, 60000, 0, false, false, null, null, null),
+         ('${UN}31', '$K94', 'كيس ٢٩٤', null, 3, 1000, 500, null, 0, false, false, null, null, null),
+         ('${UN}32', '$K94', 'كيس ٢٩٤', null, 2, 1000, 500, null, 0, false, false, null, null, null),
+         ('${UN}33', '$K94', 'توأم ٢٩٤', null, 3, 1000, 500, null, 0, false, false, null, null, null),
+         ('${UN}34', '$K94', 'توأم ٢٩٤', null, 1, 1000, 500, null, 0, false, false, null, null, null),
+         ('${UN}35', '$K94', 'متجر ٢٩٤', null, 4, 1000, 500, null, 0, false, false, null, null, null),
+         ('${UN}36', '$K94', 'ثلاثي ٢٩٤', null, 2, 15000, 10000, null, 0, false, true, 3, 'حبة', 5000),
+         ('${UN}37', '$K94', 'موزون قديم ٢٩٤', null, 5, 5000, 4000, null, 0, true, true, 10, 'حبة', 500)
+         on conflict (id) do nothing;
+       insert into purchases(id, clinic_id, total) values ('${UN}9a', '$K94', 120000) on conflict (id) do nothing;
+       insert into purchase_items(id, purchase_id, clinic_id, product_id, name, qty, purchase_price, sell_price)
+         values ('${UN}9b', '${UN}9a', '$K94', '${UN}30', 'علف ٢٩٤', 2, 60000, 75000) on conflict (id) do nothing;
+       insert into clinic_drugs(id, clinic_id, name, family, dose_qty, dose_unit, product_id) values
+         ('${UN}b4', '$K94', 'Tri ٢٩٤', 'other', 1, 'sub', '${UN}36') on conflict (id) do nothing;
+       insert into store_orders(id, clinic_id, order_no, customer_name, customer_phone, items, subtotal, total, status)
+         values ('${UN}9e', '$K94', 'S294', 'زبون ٢٩٤', '07700000294',
+                 jsonb_build_array(jsonb_build_object('product_id', '${UN}35', 'name', 'متجر ٢٩٤', 'qty', 1, 'price', 1000, 'total', 1000)), 1000, 1000, 'new')
+         on conflict (id) do nothing;" >/dev/null
+chk "فاتورةُ الشراء القديمة: التحويلُ (كيسان ⇒ ٣٠ كيلو) يعلّم سطرَها" \
+    "select _u294('${UN}30', true, false, null, 5000, 4000, 0, null, 15, 1, '$K94')" "ok:30.000"
+chk "    (يُقرأ بعدها: علامةٌ على سطر الشراء، والدفعةُ ٣٠:٣٠)" \
+    "select (select count(*) from purchase_item_unit_marks where item_id = '${UN}9b')::text||'|'||(select string_agg(qty::numeric(20,3)::text||':'||received_qty::numeric(20,3)::text, ',') from product_lots where product_id = '${UN}30')" \
+    "1|30.000:30.000"
+chk "  وتعديلُها ⇒ purchase_unit_changed يسمّي المادّة (كان يعكس «٢» كيلو ويعيد بناءَ دفعتها منه)" \
+    "select (r like 'err:purchase_unit_changed:%' and position('علف ٢٩٤' in r) > 0)::text
+       from (select _t294('select (update_purchase(''${UN}9a'', jsonb_build_array(jsonb_build_object(''product_id'', ''${UN}30'', ''name'', ''علف ٢٩٤'', ''qty'', 2, ''purchase_price'', 60000, ''sell_price'', 75000)), ''{}''::jsonb)).id::text', '$K94') r) x" "true"
+chk "    ولا شيءَ تحرّك: الرصيدُ ٣٠ والدفعةُ ٣٠:٣٠ والسطرُ باقٍ" \
+    "select (select stock::text from products where id = '${UN}30')||'|'||(select string_agg(qty::numeric(20,3)::text||':'||received_qty::numeric(20,3)::text, ',') from product_lots where product_id = '${UN}30')
+            ||'|'||(select count(*) from purchase_items where purchase_id = '${UN}9a')::text" "30.000|30.000:30.000|1"
+$P -c "insert into purchases(id, clinic_id, total) values ('${UN}9c', '$K94', 60000) on conflict (id) do nothing;
+       insert into purchase_items(id, purchase_id, clinic_id, product_id, name, qty, purchase_price, sell_price)
+         values ('${UN}9d', '${UN}9c', '$K94', '${UN}30', 'علف ٢٩٤', 15, 4000, 5000) on conflict (id) do nothing;
+       update products set stock = stock + 15 where id = '${UN}30';" >/dev/null
+chk "  وفاتورةٌ بعد التحويل (بالكيلو) تتعدّل كما كانت" \
+    "select (_t294('select (update_purchase(''${UN}9c'', jsonb_build_array(jsonb_build_object(''product_id'', ''${UN}30'', ''name'', ''علف ٢٩٤'', ''qty'', 15, ''purchase_price'', 4000, ''sell_price'', 5000)), ''{}''::jsonb)).id::text', '$K94') like 'ok:%')::text" "true"
+chk "    (يُقرأ بعدها: الرصيدُ ٤٥ كما هو — عكسٌ وإعادةٌ بالكمية نفسِها)" "select stock::text from products where id = '${UN}30'" "45.000"
+chk "  والحذفُ المباشر للسطر المعلَّم، وتغييرُ كميته ⇒ purchase_unit_changed؛ وتحديثٌ بلا كمية يمرّ" \
+    "select _rls_try('$K94', 'delete from purchase_items where id = ''${UN}9b''')||'|'||_rls_try('$K94', 'update purchase_items set qty = 3 where id = ''${UN}9b''')
+            ||'|'||_rls_try('$K94', 'update purchase_items set sell_price = sell_price where id = ''${UN}9b''')" \
+    "guarded:P0001:purchase_unit_changed|guarded:P0001:purchase_unit_changed|rows:1"
+chk "  وجدولُ العلامات لا يُقرأ من المتصفّح (بلا منح)" \
+    "select split_part(_rls_try('$K94', 'select 1 from purchase_item_unit_marks'), ':', 2)" "42501"
+# أداةُ المالك بالـSQL Editor بلا جلسة (تنظيفُ عيادةٍ تجريبيّة): لا عكسَ بالوحدة الجديدة يأتي منها — تمرّ، والعلامةُ تُحذف معها.
+$P -c "delete from purchase_items where id = '${UN}9b'; delete from purchases where id = '${UN}9a';" >/dev/null
+chk "  وحذفُ المالك بلا جلسة (الـSQL Editor) يمرّ، والعلامةُ معه" \
+    "select (select count(*) from purchase_items where purchase_id = '${UN}9a')::text||'|'||(select count(*) from purchase_item_unit_marks where item_id = '${UN}9b')::text" "0|0"
+chk "فكُّ الدمج: «كيس» يندمج بأخيه (٣ + ٢ = ٥)" \
+    "select _t294('select (merge_products(''${UN}31'', ''${UN}32'')).stock::text', '$K94')" "ok:5.000"
+chk "  والأصلُ يتحوّل بعدها (٥ ⇒ ٧٥ كيلو)" \
+    "select _u294('${UN}31', true, false, null, 100, 50, 0, null, 15, 1, '$K94')" "ok:75.000"
+chk "  وفكُّ الدمج ⇒ restore_unit_changed يسمّي الاثنين (كان يطرح «٢ كيس» من ٧٥ كيلو)" \
+    "select (r like 'err:restore_unit_changed:%' and position('كيس ٢٩٤' in r) > 0)::text
+       from (select _t294('select (restore_product(''${UN}32'')).id::text', '$K94') r) x" "true"
+chk "    ولا شيءَ تحرّك: الأصلُ ٧٥ والتوأمُ بالسلّة" \
+    "select (select stock::text from products where id = '${UN}31')||'|'||(exists (select 1 from products_trash where id = '${UN}32'))::text||'|'||(exists (select 1 from products where id = '${UN}32'))::text" \
+    "75.000|true|false"
+chk "  وفكُّ دمجٍ بلا تحويل يمرّ كما كان (٣ + ١ ثمّ يرجع ١)" \
+    "select _t294('select (merge_products(''${UN}33'', ''${UN}34'')).stock::text', '$K94')||'|'||_t294('select (restore_product(''${UN}34'')).stock::text', '$K94')" "ok:4.000|ok:1.000"
+chk "طلبُ متجرٍ ينتظر بالمادّة ⇒ unit_store_pending (قبولُه يخصم كميتَه بالجديدة)" \
+    "select split_part(_u294('${UN}35', true, false, null, 100, 50, 0, null, 15, 1, '$K94'), ':', 2)" "unit_store_pending"
+$P -c "update store_orders set status = 'rejected' where id = '${UN}9e'" >/dev/null
+chk "  وبعد ما يُبتّ بيه يمرّ (٤ ⇒ ٦٠)" \
+    "select _u294('${UN}35', true, false, null, 100, 50, 0, null, 15, 1, '$K94')" "ok:60.000"
+chk "الجرعة: إطفاءُ مفردٍ بثلاثة ⇒ الحبّةُ ٠٫٣٣٣ علبة بثلاث منازل كما تُسجَّل (لا ٠٫٣٣٣٣٣٣)" \
+    "select _u294('${UN}36', false, false, null, 15000, 10000, 0, null, 1, 1, '$K94')" "ok:2.000"
+chk "    (يُقرأ بعدها)" "select dose_unit||':'||dose_qty::text from clinic_drugs where id = '${UN}b4'" "box:0.333"
+chk "صفٌّ قديمٌ بالوزن عليه مفردٌ من قبل: يبقى بالوزن ⇒ unit_no_change (لا «إطفاءُ مفرد»)" \
+    "select split_part(_u294('${UN}37', true, false, null, 5000, 4000, 0, null, 1, 1, '$K94'), ':', 2)" "unit_no_change"
+
+# ── ٨) الدفتر والأمان والإعادة ──────────────────────────────────────────────────────────────────────────────────
+chk "دفترُ الرصيد: الكاتبُ product_unit_change ولو نودي من غلاف، ونوعُه unit" \
+    "select _stock_ledger_source('wrapper>product_unit_change>x')||'|'||_stock_ledger_kind('update', 'product_unit_change', 'product_unit_change', 42)" "product_unit_change|unit"
+chk "الباب definer بمسارٍ مثبَّت ويسأل العيادةَ بنصّها، ولا anon؛ والمحفّزُ invoker؛ والمفتاحُ ثابت" \
+    "select (select prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%' and position('clinic_id = v_clinic' in prosrc) > 0
+               from pg_proc where oid = 'public.product_unit_change(uuid,jsonb,jsonb,numeric,numeric)'::regprocedure)::text
+            ||'|'||has_function_privilege('anon', 'public.product_unit_change(uuid,jsonb,jsonb,numeric,numeric)', 'execute')::text
+            ||'|'||has_function_privilege('authenticated', 'public.product_unit_change(uuid,jsonb,jsonb,numeric,numeric)', 'execute')::text
+            ||'|'||(select prosecdef from pg_proc where oid = 'public.products_unit_guard()'::regprocedure)::text
+            ||'|'||(select provolatile from pg_proc where oid = 'public._unit_key(boolean,boolean,numeric)'::regprocedure)::text" "true|false|true|false|i"
+chk "  والسجلُّ: RLS وسياسةُ قراءةٍ بالعيادة، ولا كتابةَ للأدوار" \
+    "select (select relrowsecurity from pg_class where oid = 'public.product_unit_changes'::regclass)::text
+            ||'|'||(select count(*) from pg_policies where schemaname = 'public' and tablename = 'product_unit_changes' and policyname = 'product_unit_changes_select')::text
+            ||'|'||has_table_privilege('authenticated', 'public.product_unit_changes', 'insert')::text" "true|1|false"
+chk "  والمحفّزان الجديدان (سطرُ الشراء، وفكُّ الدمج) definer بمسارٍ مثبَّت، ومركَّبان" \
+    "select (select string_agg((prosecdef and coalesce(array_to_string(proconfig, ','), '') like '%search_path%')::text, ',' order by proname)
+               from pg_proc where proname in ('products_restore_unit_guard', 'purchase_items_unit_guard'))
+            ||'|'||(select count(*) from pg_trigger where tgname in ('products_restore_unit_guard', 'purchase_items_unit_guard'))::text" "true,true|2"
+Q294="select (select md5(string_agg(id::text||':'||stock::text||':'||coalesce(units_per_box::text,'-')||':'||sold_by_weight::text||':'||coalesce(avg_cost::text,'-'), ',' order by id)) from products where clinic_id = '$K94')
+       ||'|'||(select count(*) from product_unit_changes where clinic_id = '$K94')::text
+       ||'|'||(select md5(string_agg(dose_unit||':'||dose_qty::text, ',' order by id)) from clinic_drugs where clinic_id = '$K94')
+       ||'|'||(select string_agg(md5(prosrc)||coalesce(array_to_string(proacl, ','), ''), ',' order by proname) from pg_proc where proname in ('product_unit_change', 'products_unit_guard', '_unit_key', '_unit_text', 'merge_products', 'inventory_tidy_uncat', '_stock_ledger_source', '_stock_ledger_kind', 'purchase_items_unit_guard', 'products_restore_unit_guard'))
+       ||'|'||(select count(*) from pg_trigger where tgname in ('products_unit_guard', 'purchase_items_unit_guard', 'products_restore_unit_guard'))::text
+       ||'|'||(select count(*) from purchase_item_unit_marks where clinic_id = '$K94')::text"
+Z294=$($P -tAc "$Q294" | tr -d '[:space:]')
+out=$($P -f "$MIG/0294_unit_changes.sql" 2>&1) || { echo "$out" | tail -3; echo "   ✗ 0294 ما انعادت"; fail=1; }
+chk "وتُعاد بلا أثرٍ ثانٍ (الصفوفُ والسجلُّ والربطُ والأجسامُ وصلاحياتُها والمحفّز)" "$Q294" "$Z294"
+$P -c "set session_replication_role = replica;
+       delete from invoice_consumption where clinic_id = '$K94'; delete from stock_counts where clinic_id = '$K94';
+       delete from clinic_service_recipe_items where clinic_id = '$K94'; delete from clinic_services where clinic_id = '$K94';
+       delete from clinic_service_categories where clinic_id = '$K94'; delete from dose_charges where clinic_id = '$K94';
+       delete from clinic_drugs where clinic_id = '$K94'; delete from invoice_items where clinic_id = '$K94';
+       delete from purchase_item_unit_marks where clinic_id = '$K94'; delete from purchase_items where clinic_id = '$K94';
+       delete from purchases where clinic_id = '$K94'; delete from store_orders where clinic_id = '$K94';
+       delete from invoices where clinic_id = '$K94'; delete from product_lots where clinic_id = '$K94';
+       delete from product_unit_changes where clinic_id = '$K94'; delete from stock_ledger where clinic_id = '$K94';
+       delete from products_trash where clinic_id = '$K94'; delete from products where clinic_id = '$K94';
+       delete from company_sections where clinic_id = '$K94'; delete from companies where clinic_id = '$K94';
+       delete from memberships where clinic_id = '$K94';
+       set session_replication_role = origin;
+       drop function if exists _u294(uuid, boolean, boolean, numeric, numeric, numeric, int, numeric, numeric, numeric, uuid, jsonb, text);
+       drop function if exists _t294(text, uuid);" >/dev/null
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

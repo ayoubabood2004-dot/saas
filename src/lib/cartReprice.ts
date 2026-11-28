@@ -12,6 +12,8 @@
  * • سطرُ الراجع لا يُمسّ: يُردّ بما يُقرّه الكاشير (السعرُ قبل الرفع افتراضُه).
  * • سطرُ الدواء (med) بلا كتالوج — يُكتب سعرُه بكلّ بيعة.
  * • كلُّ تغييرٍ يُعاد بالاسم والسعرين — للإقرار قبل البيع، لا يمرّ صامتاً.
+ * • 0294: سطرٌ تغيّرت وحدةُ مادّته بعد نزوله (تحويلٌ من جهازٍ آخر: كيسٌ ⇒ كيلو) **يُشال** ويُقال باسمه — مخصومُه (stock_qty) يُحسب
+ *   بوحدته القديمة والخادمُ يقبل ما يُرسل: «١ × ٧٥٬٠٠٠» كان يصير «١ × ٥٬٠٠٠» ويخصم كيلو عن كيس. الراجعُ كذلك (يردّ بالقديمة).
  * ========================================================================= */
 
 export interface RepriceLine {
@@ -36,15 +38,34 @@ export interface RepriceLine {
   priceManual?: boolean;
   /** 0282: سطرٌ بالدولار — دينارُه من سعره بالدولار وسعر الصرف، لا من قائمة الدينار: لا يُعاد تسعيرُه منها (كالمعدَّل بيد). */
   usd?: unknown;
+  /** 0294: وحدةُ المادّة لحظةَ نزول السطر (lineUnitKey). وسطرٌ قبل هذا الحقل يُحكم بوزنه وعدد مفرده. */
+  uk?: string;
+  unitsPerBox?: number | null;
 }
 
 export interface FreshPrices {
-  /** سعرا القائمة الآن (علبة/كيلو، ومفرد) — null إن غاب المنتج عن القائمة. */
-  product: (id: string) => { box: number; sub: number | null; pack?: (packId: string) => number | null } | null;
+  /** سعرا القائمة الآن (علبة/كيلو، ومفرد) ووحدتُها (lineUnitKey) — null إن غاب المنتج عن القائمة. */
+  product: (id: string) => { box: number; sub: number | null; pack?: (packId: string) => number | null; uk?: string } | null;
   service: (id: string) => number | null;
 }
 
 export interface Repriced { id: string; name: string; from: number; to: number }
+
+/** مفتاحُ وحدة المادّة الفعليّة (مرآةُ _unit_key، 0294): بالوزن، أو بالمفرد بعدده، أو بالعدد — صفٌّ بمفردٍ بلا عدد «بالعدد». */
+export function lineUnitKey(p: { sold_by_weight?: boolean | null; has_sub_unit?: boolean | null; units_per_box?: number | null }): string {
+  if (p.sold_by_weight) return "w";
+  const n = Number(p.units_per_box) || 0;
+  return p.has_sub_unit && n > 0 ? `n:${Math.round(n * 1000) / 1000}` : "b";
+}
+
+/** وحدةُ السطر غيرُ وحدة مادّته الآن؟ الكارتونُ لا (يُخصم بعلبه، والتحويلُ بالنسبة يُرفض لمادّةٍ بكراتين). وسطرٌ بلا `uk` (مسودّةٌ قبل
+ *  الحقل): الوزنُ من سطره، والمفردُ بعدده المحفوظ — وسطرُ العلبة بلا `uk` لا يُعرف فيبقى. */
+export function unitMoved(l: RepriceLine, freshUk: string | undefined): boolean {
+  if (l.kind !== "product" || !l.product_id || freshUk === undefined || l.saleUnit === "pack") return false;
+  if (l.uk !== undefined) return l.uk !== freshUk;
+  if (!!l.byWeight !== (freshUk === "w")) return true;
+  return l.saleUnit === "sub" && freshUk !== lineUnitKey({ has_sub_unit: true, units_per_box: l.unitsPerBox ?? null });
+}
 
 /** السعرُ المحفوظ لوحدة السطر الحالية (ما أُخذ من القائمة). */
 export function capturedPrice(l: RepriceLine): number | undefined {
@@ -61,10 +82,18 @@ export function isManual(l: RepriceLine): boolean {
   return c !== undefined && l.unit_price !== c;
 }
 
-export function repriceCart<L extends RepriceLine>(cart: L[], fresh: FreshPrices): { cart: L[]; changed: Repriced[] } {
+export function repriceCart<L extends RepriceLine>(cart: L[], fresh: FreshPrices): { cart: L[]; changed: Repriced[]; dropped: { id: string; name: string }[] } {
   const changed: Repriced[] = [];
+  const dropped: { id: string; name: string }[] = [];
   let touched = false;
-  const next = cart.map((l) => {
+  const kept = cart.filter((l) => {
+    const f = l.kind === "product" && l.product_id ? fresh.product(l.product_id) : null;
+    if (!f || !unitMoved(l, f.uk)) return true;
+    dropped.push({ id: l.id, name: l.name });
+    touched = true;
+    return false;
+  });
+  const next = kept.map((l) => {
     if (l.ret || l.kind === "med") return l;
     if (l.kind === "service") {
       if (!l.serviceId || l.listAt === undefined) return l;
@@ -110,5 +139,5 @@ export function repriceCart<L extends RepriceLine>(cart: L[], fresh: FreshPrices
     }
     return next;
   });
-  return { cart: touched ? next : cart, changed };
+  return { cart: touched ? next : cart, changed, dropped };
 }

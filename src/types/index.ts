@@ -1997,6 +1997,9 @@ export interface DemoDB {
   priceChanges?: PriceChange[];
   priceChangeLines?: PriceChangeLine[];
   priceSeq?: number;
+  /** 0294: تحويلاتُ الوحدة (مرآةُ product_unit_changes — يسألها فكُّ الدمج)، وسطورُ الشراء المكتوبة قبلها (purchase_item_unit_marks). */
+  unitChanges?: { product_id: string; product_name: string; at: string }[];
+  purchaseUnitMarks?: string[];
   /** نتائجُ الإرجاع بمرجع النداء (مرآةُ rpc_refs) — إعادةُ نداءٍ تُرجع الجوابَ نفسَه. */
   priceUndoRefs?: Record<string, PriceChangeSummary>;
   couriers?: Courier[];

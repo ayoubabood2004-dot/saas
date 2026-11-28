@@ -1141,7 +1141,9 @@ async function mountChecks(M, ck) {
 
   /* د١٤) سطورٌ أقدم من مادّتها (مسودّةٌ من أمس، أو وحدةٌ تبدّلت بجهازٍ آخر والسلّةُ مفتوحة): الإتمامُ يقسم stock_qty بـunitsPerBox
    * **السطر**، والخادمُ يقرّر المفردَ منه ثم يقسم الكلفةَ بقاسم المادّة الحيّ — فالشاشةُ تكلّف بالحكمين كما هما. وكيلو المسودّة
-   * بكلفته القديمة يُعاد كذلك. */
+   * بكلفته القديمة يُعاد كذلك.
+   * 0294: سطرُ المفرد وعددُه غيرُ عدد مادّته **يُشال ويُقال** (cartReprice.unitMoved) بدل أن يُكلَّف — مخصومُه بالعدد القديم كان كذباً
+   * على الرفّ مهما صدقت الكلفة (٣ قطرات بعددٍ ١ = ٣ علب). وسطرُ العلبة من مسودّةٍ قبل الحقل لا تُعرف وحدتُه فيبقى بحكمَي الكلفة كما كانا. */
   await scenario("د١٤", async (use) => {
     const L = (id, pid, o) => ({ id, kind: "product", name: pid, barcode: null, qty: 1, product_id: pid, subcategory: null, priceManual: false, ...o });
     const LIST = [PB, PD, PH, PJ];
@@ -1155,16 +1157,17 @@ async function mountChecks(M, ck) {
       ]),
     }));
     const k = (id) => S.costOf(id);
-    ck("د١٤) مسودّةٌ بسطورٍ أقدم من مادّتها: مفردٌ قاسمُه ١ والمادّةُ ١٢ بالعلبة يُكتب علبة (١١٧١٫٤٣ لا ٩٧٫٦٢)، وقاسمُه ٤ والمادّةُ ١٠ بقسمة الخادم على ١٠ (١٢٫٨٢ لا ٣٢٫٠٤)، والكيلو ٣٣٣٣٫٣٣ لا ٣٠٠٠",
-      k("p:pH") === 1171.43 && k("p:pJ") === 12.82 && k("p:pD") === 3333.33, J(S.cart().map((l) => [l.id, l.unit_cost])));
+    ck("د١٤) مسودّةٌ بسطورٍ أقدم من مادّتها: مفردٌ عددُه ١ والمادّةُ ١٢، و٤ والمادّةُ ١٠ ⇒ يُشالان ويُقال (0294 — كانا يُخصمان بالعدد القديم)، والكيلو ٣٣٣٣٫٣٣ لا ٣٠٠٠",
+      !S.cart().some((l) => l.id === "p:pH" || l.id === "p:pJ") && k("p:pD") === 3333.33 && S.log.errors.some(([a]) => a === "retail.unitMovedCart"),
+      J({ cart: S.cart().map((l) => [l.id, l.unit_cost]), toasts: S.log.errors }));
     await S.unit("p:pB", "sub");
     ck("  والتبديلُ لمفردٍ بسطرٍ قاسمُه ١ (والمادّةُ ١٠ بالعلبة): stock_qty = الكمية فالخادمُ يكتبه علبة ⇒ ١٠٠١٫٠٥ (لا ١٠٠٫١١)",
       k("p:pB") === 1001.05 && S.cart().find((l) => l.id === "p:pB")?.saleUnit === "sub", J(S.cart().find((l) => l.id === "p:pB")));
     await S.checkout();
     const rows = sendRows(S, LIST);
     ck("  والإتمامُ: كلُّ سطرٍ منها يُرسل ما يكتبه الخادمُ لكميّته وstock_qty كما أُرسلا (مرآةُ _product_line_cost)، بلا خطأ رسم",
-      rows.length === 4 && rows.every((r) => r.sent === r.booked)
-      && J(Object.fromEntries(rows.map((r) => [r.id, r.sent]))) === J({ "p:pH": 1171.43, "p:pB": 1001.05, "p:pJ": 12.82, "p:pD": 3333.33 })
+      rows.length === 2 && rows.every((r) => r.sent === r.booked)
+      && J(Object.fromEntries(rows.map((r) => [r.id, r.sent]))) === J({ "p:pB": 1001.05, "p:pD": 3333.33 })
       && S.ui.errors.length === 0, J({ rows, errors: S.ui.errors.map(String) }));
   }, true);
 }

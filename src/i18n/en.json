@@ -1177,7 +1177,8 @@
       "no_rate": "Set today's dollar rate first (Settings › Dollar).",
       "noLevel": "“{{name}}” has no dollar price for this unit — set it in inventory.",
       "rateMoved": "The dollar rate changed — the dollar amount is the same; today's rate was refreshed. Press again."
-    }
+    },
+    "unitMovedCart": "Unit changed on another device: {{names}} — removed from the cart (its quantity was in the old unit). Add it again."
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",
@@ -6640,7 +6641,8 @@
     "billErr_dose_qty_bad": "The dose amount must be more than zero.",
     "billErr_dose_price_bad": "The dose price must be zero or more.",
     "billErr_drug_row_gone": "The list changed on another device — try again.",
-    "billProductGone": "The linked stock item is gone or priced in dollars — {{rest}}. Link it again."
+    "billProductGone": "The linked stock item is gone or priced in dollars — {{rest}}. Link it again.",
+    "billSubGone": "The linked item no longer has a sub-unit and this link is per piece — {{rest}}. Relink it by the box."
   },
   "cust": {
     "short": "Type 2 letters or 3 digits",
@@ -7640,7 +7642,27 @@
     "restoreTwinMore": "…and {{n}} more product(s) like it.",
     "restoreTwinNo": "Don't restore",
     "restoreTwinYes": "Restore anyway",
-    "restoreGoneKeeper": "“{{name}}” was merged into “{{keeper}}”, which was deleted later — so its stock sits inside “{{keeper}}”. Restore “{{keeper}}” first; restoring “{{name}}” before it counts the stock twice once “{{keeper}}” comes back."
+    "restoreGoneKeeper": "“{{name}}” was merged into “{{keeper}}”, which was deleted later — so its stock sits inside “{{keeper}}”. Restore “{{keeper}}” first; restoring “{{name}}” before it counts the stock twice once “{{keeper}}” comes back.",
+    "uTitle": "Changing the unit converts the numbers too",
+    "uWeightOn": "How many kg are in one unit of this item (bag or box)? So the stock and prices convert to kg correctly.",
+    "uWeightOff": "How many kg are in one unit (bag or box)? So the stock converts from kg to a count correctly.",
+    "uWeightPh": "e.g. 15",
+    "uSubOn": "The current stock ({{n}}) and past sales — were they counted in boxes or in the small unit?",
+    "uInBox": "In boxes",
+    "uInSub": "In {{sub}}",
+    "uSubDefault": "unit",
+    "uSubOff": "Turning the sub-unit off: the stock stays in boxes, and dose and recipe links per piece become a box fraction (1 of 10 = 0.1 box).",
+    "uPer": "Changing the sub-unit count: the stock stays in boxes, and pending per-piece doses are recalculated with the new count.",
+    "uPreview": "Stock becomes {{a}} → {{b}}; prices, average cost, past sales (so returns credit correctly) and dose links convert with it.",
+    "uDocsNote": "Old purchase invoices keep their quantities as written (in the old unit), and an old invoice of this product can’t be edited after the change — editing would count its quantity in the new unit. Old-debt items stay as written.",
+    "uStockAuto": "The stock converts by itself from the current stock — if the count is wrong, correct it after saving.",
+    "uNeedAnswer": "Answer the unit question first — without it we can't convert the stock.",
+    "uDone": "Unit changed — stock {{a}} → {{b}}",
+    "unitKg": "by kg",
+    "unitBox": "by box ({{n}} {{name}})",
+    "unitCount": "by count",
+    "mergeUnitDiff": "“{{drop}}” is {{a}} and “{{keep}}” is {{b}} — two different units, so their stock can't be added. Align the unit on one of them first (changing the unit converts its stock), then merge.",
+    "lgUnit": "Unit change — {{a}} → {{b}}"
   },
   "rx": {
     "btn": "Prescription",

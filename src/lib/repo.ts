@@ -2089,9 +2089,14 @@ const supabaseRepo: DemoRepo = {
   },
   /** عدّادُ أحداث الأسعار بالعيادة (0 = لا رفعَ قطّ). صفٌّ واحد بفهرس (clinic_id, event_seq). */
   async priceEpoch() {
-    const r = await sbc().from("price_changes").select("event_seq").order("event_seq", { ascending: false }).limit(1);
+    /* وتحويلُ وحدة المادّة (0294) من العدّاد نفسِه: قائمةٌ جُلبت قبله تبيع بالوحدة القديمة (كيسٌ يُخصم كيلو). وجدولُه غائبٌ بقاعدةٍ
+     * قبل 0294 — غيابُه وحده (42P01/PGRST205) يُتجاهل؛ أيُّ فشلٍ غيره يُرمى كفشل الأسعار («ما تأكّدنا») لا صفراً يُخفي تحويلاً. */
+    const q = (t: string) => sbc().from(t).select("event_seq").order("event_seq", { ascending: false }).limit(1);
+    const [r, u] = await Promise.all([q("price_changes"), q("product_unit_changes")]);
     if (r.error) throw r.error;
-    return Number((r.data?.[0] as { event_seq?: number } | undefined)?.event_seq ?? 0);
+    if (u.error && !(u.error.code === "42P01" || u.error.code === "PGRST205")) throw u.error;
+    const seq = (x: typeof r) => Number((x.data?.[0] as { event_seq?: number } | undefined)?.event_seq ?? 0);
+    return Math.max(seq(r), u.error ? 0 : seq(u));
   },
   async priceRaisePrior() {
     const m = need<PricePriorMap>(await sbc().rpc("price_raise_prior"));

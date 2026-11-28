@@ -51,7 +51,7 @@ import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode, s
 import { unitCap, capAdd, wholeSubUnits } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
-import { repriceCart, isManual, capturedPrice, type Repriced } from "@/lib/cartReprice";
+import { repriceCart, isManual, capturedPrice, lineUnitKey, type Repriced } from "@/lib/cartReprice";
 import { PRICES_EVENT, checkPriceEpoch, priceGen, servicesStaleNow } from "@/lib/priceSync";
 import type { DoseCharge, PricePriorMap, ProductLot } from "@/types";
 import { sellableRow } from "@/lib/sellable";
@@ -191,6 +191,8 @@ interface Line {
   surgeryRef?: string | null;
   /** Fractional sales — this product can be sold whole (box) or by a smaller sub-unit. */
   hasSubUnit?: boolean;
+  /** 0294: وحدةُ المادّة لحظةَ نزول السطر (lineUnitKey) — تحويلٌ بعدها من جهازٍ آخر يشيل السطرَ (repriceCart) لا يخصم بالقديمة. */
+  uk?: string;
   subUnitName?: string | null;   // e.g. "حبة" / "شريط" / "مل"
   unitsPerBox?: number | null;   // sub-units that fill one box
   boxPrice?: number;             // price of one whole box
@@ -1715,6 +1717,9 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
    *     ويُسأل عنه قبل البيع (`repriced` بإقرار) — لا يتغيّر مجموعٌ صامتاً تحت يد الكاشير.
    *  ٣) ولا تسعيرَ تحت محاولةِ بيعٍ جاريةٍ أو مجهولةِ المصير (المرجعُ يحمل أسعارَها). */
   const [repriced, setRepriced] = useState<Map<string, Repriced>>(() => new Map());
+  /* 0294: آخرُ ما قيل عن سطورٍ انشالت لتغيّر وحدتها — الأثرُ يجري مرّتين على السلّة نفسِها قبل أن تُرسم (قائمةٌ ثمّ كتالوج، أو إعادةُ
+   * التركيب) فكان التنبيهُ نفسُه مرّتين (مقيسٌ بالمتصفّح). نفسُ السطور خلال ثوانٍ تُقال مرّة. */
+  const unitDropSaidRef = useRef({ key: "", at: 0 });
   /* القائمةُ أقدمُ من آخر تغيّرٍ عرفه التاب؟ حكمٌ بالجيل لا بـ«وصلت قائمةٌ أخرى»: ترقيعُ صفٍّ
    * واحد كان يفتح البيع، وشاشةٌ رُكّبت بعد الحدث (تبويبٌ آخر وقتها) ما كانت تعرف. ومالكُ
    * القائمة يسمع الحدثَ ويجلب بنفسه — هنا الحارسُ وحده (ونقرةُ تحديثٍ إن لزم عند البيع). */
@@ -1758,7 +1763,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         const p = byId.get(id);
         if (!p) return null;
         const pm = packMod;
-        return { box: listPrice(p), sub: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null),
+        return { box: listPrice(p), sub: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null), uk: lineUnitKey(p),
           pack: pm ? (packId: string) => { const k = pm.currentPack(p, packId); return k ? pm.packSalePrice(p, k, wholesale) : null; } : undefined };
       },
       service: (id: string) => catalog.services.find((x) => x.id === id)?.price ?? null,
@@ -1766,6 +1771,13 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
     const r = repriceCart(cartRef.current, fresh);
     if (r.cart === cartRef.current) return;
     setCart((c) => repriceCart(c, fresh).cart);
+    // 0294: مادّةٌ تحوّلت وحدتُها من جهازٍ آخر — سطرُها انشال (مخصومُه بالقديمة) ويُقال باسمه لا بصمت.
+    const dropKey = r.dropped.map((x) => x.id).sort().join(",");
+    if (dropKey && (dropKey !== unitDropSaidRef.current.key || performance.now() - unitDropSaidRef.current.at > 5000)) {
+      unitDropSaidRef.current = { key: dropKey, at: performance.now() };
+      playWarning();
+      toast.error(t("retail.unitMovedCart", { names: r.dropped.map((x) => x.name).join(" · ") }));
+    }
     if (r.changed.length) {
       setRepriced((m) => {
         const n = new Map(m);
@@ -1919,7 +1931,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       return {
         id: `r:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
         unit_price: pr ? pr.o : listPrice(p), unit_cost: productLineCost(p, null, p.purchase_price),
-        qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
+        qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null, uk: lineUnitKey(p),
         ret: true, retPrior: pr, priceManual: !!pr,
         ...(retPct < 100 ? { retPct } : {}),
       };
@@ -1937,7 +1949,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
       id, kind: "product", name: p.name, barcode: p.barcode ?? null,
       unit_price: pr ? pr.o : listPrice(p), unit_cost: productLineCost(p, null, p.purchase_price),
       qty, stock: ret || p.pooled ? null : p.stock,
-      product_id: p.id, subcategory: p.subcategory ?? null,
+      product_id: p.id, subcategory: p.subcategory ?? null, uk: lineUnitKey(p),
       byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
       expiry: p.expiry_date ?? null,
       ...(ret ? { retPrior: pr, priceManual: !!pr, ...(retPct < 100 ? { retPct } : {}) } : {}),
@@ -2000,7 +2012,7 @@ export function SaleBuilder({ products, listGen, clinicId, onSold, prefill, whol
         // zero since 0253 — no clamp — and the done screen says so: noticeLine).
         // Capping it at its 0 stock is what collapsed a second scan to qty 0.
         qty: 1, stock: p.pooled ? null : p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
-        hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
+        hasSubUnit: hasSub, uk: lineUnitKey(p), subUnitName: p.sub_unit_name ?? null, unitsPerBox,
         boxPrice: listPrice(p), subPrice: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null), boxCost: p.purchase_price,
         saleUnit: startSub ? "sub" : "box", priceManual: lotUnit != null && Math.round(lotUnit * 100) !== Math.round(listNow * 100),
         // مادّةُ «الدولار وحده» (usdIntoCart): سطرُ دولارٍ بسعرها بالدولار وسعر صرف اليوم — يُجمع بصندوق الدولار لا بالدينار.

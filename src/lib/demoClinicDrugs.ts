@@ -98,6 +98,20 @@ export function demoDrugBillingWrite(id: string, f: Pick<ClinicDrug, "dose_price
   localStorage.setItem(KEY(active), JSON.stringify(rows));
 }
 
+/** تحويلُ وحدة المادّة (0294): كلُّ ربطٍ بها — المؤرشفُ أيضاً (يُرجع يوماً) — بكميّته الجديدة. يرجع عددَ ما تغيّر. */
+export function demoDrugLinksMap(productId: string, f: (d: ClinicDrug) => Partial<Pick<ClinicDrug, "dose_qty" | "dose_unit">> | null): number {
+  const active = activeClinic();
+  const rows = load(active);
+  let n = 0;
+  for (const r of rows) {
+    if (r.product_id !== productId) continue;
+    const p = f(r);
+    if (p) { Object.assign(r, p, { updated_at: new Date().toISOString() }); n++; }
+  }
+  if (n) localStorage.setItem(KEY(active), JSON.stringify(rows));
+  return n;
+}
+
 /** «الأخيرة» من علاجات النسخة التجريبية — الأحدثُ أوّلاً، اثنا عشر اسماً مختلفاً. */
 export function demoRecentMedNames(days: number): string[] {
   const since = localISO(new Date(Date.now() - days * 86400000));

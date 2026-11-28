@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const MIG = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0287_visit_voice_notes", "0289", "0290"];
+const FEATURE = ["0252", "0253", "0254", "0255", "0259", "0260", "0261", "0267", "0268", "0269", "0270", "0271", "0272", "0273", "0274", "0275", "0276", "0281", "0283", "0286", "0287_visit_voice_notes", "0289", "0290", "0294"];
 
 /* (الدالّة، عددُ وسائطها الداخلة، توقيعُ الحارس، المصدر، الهدف[، "pending"]). الهدفُ يُعيد كتابةَ نصّ المصدر.
  * "pending": إعادةٌ مقرَّرةٌ لم تُكتب بعد — تُقال بسطرٍ ما دام الهدفُ لا يعيدها، وتُفحص كاملةً من أوّل ما يعيدها
@@ -119,6 +119,11 @@ export const MANIFEST = [
   ["stock_count_decide", 2, "public.stock_count_decide(uuid[],boolean)", "0254", "0290"],
   // 0287: الملاحظةُ الصوتية «ملف طبي» بسجلّ الحركات — audit_kind نصُّ 0271 (آخرُ من عرّفها) وسطرٌ معلَّم.
   ["audit_kind", 3, "public.audit_kind(text,text,jsonb)", "0271", "0287_visit_voice_notes"],
+  // 0294: وحدةُ المادّة يغيّرها الخادمُ وحده — الدمجُ والترتيبُ لا يجمعان وحدتين، ودفترُ الرصيد يسمّي التحويل.
+  ["merge_products", 2, "public.merge_products(uuid,uuid)", "0259", "0294"],
+  ["inventory_tidy_uncat", 0, "public.inventory_tidy_uncat()", "0259", "0294"],
+  ["_stock_ledger_source", 1, "public._stock_ledger_source(text)", "0290", "0294"],
+  ["_stock_ledger_kind", 4, "public._stock_ledger_kind(text,text,text,numeric)", "0290", "0294"],
 ];
 
 const files = readdirSync(MIG).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort();

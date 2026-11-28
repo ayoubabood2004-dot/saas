@@ -423,7 +423,7 @@ console.log("▸ ز) الشاشةُ موصولة: النموذجُ والمجم�
     && INV.includes("reread: (id: string) => repo.getProductById(id),"));
   for (const needle of [
     "const cas = stockCostPatch(sent, {",
-    "stockTyped: pooled ? null : Number(f.stock) || 0,",
+    "stockTyped: pooled || uScaled ? null : Number(f.stock) || 0,",
     "stockWas: product.stock,",
     "costShown: product.purchase_price,",
     "costWas: product.purchase_price,",
@@ -475,7 +475,7 @@ console.log("▸ ز) الشاشةُ موصولة: النموذجُ والمجم�
  * هنا)، إلا القواعدَ الصِّرفة. والترجمةُ ترجع المفتاح: الأزرارُ والرسائلُ تُطابَق بمفاتيحها. */
 // والتعبئةُ (0259، `@/lib/packs`) قاعدةٌ صِرفة كذلك: بديلُها المولَّد يرجع undefined فيسقط رسمُ الصفّ.
 // 0264: usdProduct (مسودّةُ السعر بالدولار) صِرفةٌ يستوردها النموذج — بديلٌ مولَّدٌ لها undefined يُسقط رسمَه كلَّه.
-const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups", "@/lib/trashMatch"]);
+const REAL_UI = new Set(["react", "@/lib/productPatch", "@/lib/productCodes", "@/lib/utils", "@/lib/errors", "@/lib/packs", "@/lib/usdProduct", "@/lib/productGroups", "@/lib/trashMatch", "@/lib/unitChange"]);
 const UI_STUB = {
   "react-i18next": "export const useTranslation = () => ({ t: (k) => k, i18n: { language: 'ar' } });",
   i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
@@ -486,6 +486,8 @@ const UI_STUB = {
   "@/lib/repo": "export const repo = new Proxy({}, { get: (_t, k) => globalThis.__invRepo[k] });",
   // المربوطة (0277): بابٌ كسولٌ يُستورد بـimport() — بديلُه يمرّر لـ__invGroups («ط٣»)، والافتراضُ «قاعدةٌ قبل 0277».
   "@/lib/productGroupsApi": ["productGroupsReady", "setGroupPrice", "unlinkProducts"].map((k) => `export const ${k} = (...a) => globalThis.__invGroups.${k}(...a);`).join("\n"),
+  // تحويلُ الوحدة (0294): بابٌ كسولٌ كذلك — بديلُه يسجّل النداءَ لـ__invUnit («ط٤»).
+  "@/lib/unitChangeApi": "export const changeProductUnit = (...a) => globalThis.__invUnit.changeProductUnit(...a); export const isUnitStale = () => false;",
   "@/components/ui": `import { createElement, forwardRef } from "react";
     export const Button = forwardRef(({ children, leftIcon, loading, variant, size, ...p }, _ref) => createElement("x-Button", p, children));
     export const Badge = ({ children, ...p }) => createElement("x-Badge", p, children);
@@ -939,6 +941,78 @@ if (UI) {
   const grp = await groupPriceSuite(UI);
   for (const r of grp) check(r.label, r.ok, r.detail);
   check(`  «ط٣» قالت ما فحصت: ${grp.length} سجلّات`, grp.length === 9, String(grp.length));
+  console.log("▸ ط٤) وحدةُ المادّة (0294): تعديلُ المجموعة لا يكتب الوحدة (G12)، وتغييرُها يسأل ويمرّ من بابها وحده (G11/G13)");
+  const units = await unitSuite(UI);
+  for (const r of units) check(r.label, r.ok, r.detail);
+  check(`  «ط٤» قالت ما فحصت: ${units.length} سجلّاً (ثماني حالاتٍ × وجهين)`, units.length === 16, String(units.length));
+}
+
+/** ط٤) وحدةُ المادّة على النموذج المرسوم، بالوجهين: «حفظ المجموعة» لا يكتب مفاتيحَ الوحدة لعضوٍ قائم (G12 — كانت قيمُ الإنشاء
+ *  has_sub_unit=false وunits_per_box=null تُكتب لكلّ عضو)، والوحدةُ تتغيّر بسؤالٍ ونداءٍ واحدٍ لبابها بما فُتح عليه النموذجُ وبالنسبة
+ *  (G11)، وإطفاءُ المفرد يمرّ من البابِ نفسِه بنسبة ١ (G13 — الربطُ بالحبّة يصير هناك كسرَ علبة). البابُ بديلٌ يسجّل (التحويلُ
+ *  نفسُه يفحصه قسمُ 0294 بالحزمة ومرآتُه unit-change-test). */
+async function unitSuite(UI) {
+  const { session, save, openGroup, saveGroup } = harness(UI);
+  const out = [];
+  const ok = (label, cond, detail = "") => out.push({ label, ok: !!cond, detail });
+  const UNIT_KEYS = ["has_sub_unit", "sub_unit_name", "units_per_box", "sub_unit_price", "sold_by_weight"];
+  const SUB = { has_sub_unit: true, units_per_box: 10, sub_unit_name: "حبة", sub_unit_price: 300 };
+  const calls = [];
+  globalThis.__invUnit = { changeProductUnit: async (id, seen, to, mul, div) => { calls.push({ id, seen, to, mul, div }); return { id, stock: 0 }; } };
+  const run = async (open, act, read) => {
+    calls.length = 0;
+    try { const s = await open(); await act(s); const r = read(s); s.done(); return r; } catch (e) { return { threw: String(e?.message ?? e) }; }
+  };
+  const card = (s) => s.ui.all().find((n) => n.props?.["data-unitchange"])?.props["data-unitchange"] ?? null;
+  for (const [side, be] of Object.entries(backends)) {
+    const tag = side === "cloud" ? "السحابيّ" : "التجريبيّ";
+    const ga = { ...GA, ...SUB }, gb = { ...GB, ...SUB, units_per_box: 20 };
+    let x = await run(() => openGroup(be, { product: ga, all: [ga, gb] }), async (s) => { await s.type((p) => p.id === "bulk-name-1", "ب٢"); await saveGroup(s); },
+      (s) => ({ w: s.log.writes, saved: s.log.saved, errors: s.log.errors, a: s.row("a"), b: s.row("b") }));
+    ok(`${tag}: G12 — «حفظ المجموعة» لأعضاءٍ بمفرد لا يكتب مفاتيحَ الوحدة لأيّ عضو، ويُحفظ، والمفردُ باقٍ بعدده`,
+      x.w?.length === 2 && x.w.every((w) => UNIT_KEYS.every((k) => !has(w.patch, k))) && x.saved === 1 && x.errors?.length === 0
+      && x.a?.has_sub_unit === true && x.a?.units_per_box === 10 && x.b?.units_per_box === 20, J(x));
+    x = await run(() => session(be, { product: P, all: [P] }), async (s) => { await s.toggle("pos.weightToggle"); s.c = card(s); await save(s); },
+      (s) => ({ card: s.c, w: s.log.writes, errors: s.log.errors, calls: calls.length, saved: s.log.saved }));
+    ok(`${tag}: G11 — «بالوزن» يُظهر سؤالَ الوحدة، والحفظُ بلا جوابٍ يُرفض بجملته ولا يكتب شيئاً`,
+      x.card === "weight" && x.w?.length === 0 && x.calls === 0 && x.saved === 0 && x.errors?.[0]?.[0] === "pkg.uNeedAnswer", J(x));
+    x = await run(() => session(be, { product: P, all: [P] }), async (s) => {
+      await s.toggle("pos.weightToggle"); await s.type((p) => p["data-unitsize"] !== undefined, "15");
+      const inputs = s.ui.all().filter((n) => n.type === "input");
+      s.preview = { sell: inputs.some((n) => n.props.value === "100"), buy: inputs.some((n) => n.props.value === "66.67"),
+        stock: inputs.find((n) => n.props["data-stockinput"] !== undefined)?.props };
+      await save(s);
+    }, (s) => ({ preview: { sell: s.preview.sell, buy: s.preview.buy, stock: s.preview.stock?.value, locked: s.preview.stock?.disabled },
+      calls: calls.map((c) => ({ ...c })), w: s.log.writes, saved: s.log.saved, errors: s.log.errors }));
+    ok(`${tag}: G11 — «١٥ كيلو بالكيس» يعاين البيعَ ١٠٠ والشراءَ ٦٦٫٦٧ للكيلو، والرصيدَ ٧٥ بحقلٍ مقفول`,
+      x.preview?.sell === true && x.preview?.buy === true && x.preview?.stock === "75" && x.preview?.locked === true, J(x.preview));
+    const c0 = x.calls?.[0];
+    ok(`${tag}: G11 — والحفظُ نداءٌ واحدٌ لـproduct_unit_change بما فُتح عليه النموذجُ وبالوحدة الجديدة وأسعارها وبالنسبة ١٥/١`,
+      x.calls?.length === 1 && c0.id === "p1"
+      && J(c0.seen) === J({ sold_by_weight: false, has_sub_unit: false, units_per_box: null, sell_price: 1500, purchase_price: 1000, sub_unit_price: null })
+      && c0.to.sold_by_weight === true && c0.to.has_sub_unit === false && c0.to.units_per_box === null && c0.to.sell_price === 100
+      && c0.to.purchase_price === 66.67 && c0.to.min_stock === 0 && c0.mul === 15 && c0.div === 1 && x.saved === 1, J(x));
+    ok(`${tag}: G11 — ورقعةُ المادّة بعده بلا وحدةٍ ولا أسعارٍ ولا رصيدٍ ولا حدّ، وبلا شرطٍ عليها (كتبها التحويل)`,
+      x.w?.length === 1 && [...UNIT_KEYS, "sell_price", "purchase_price", "stock", "min_stock"].every((k) => !has(x.w[0].patch, k)) && J(x.w[0].expect) === "{}", J(x.w));
+    x = await run(() => session(be, { product: P, all: [P] }), async (s) => {
+      await s.toggle("pos.weightToggle"); await s.type((p) => p["data-unitsize"] !== undefined, "15"); await s.toggle("pos.weightToggle"); s.c = card(s); await save(s);
+    }, (s) => ({ calls: calls.length, card: s.c, saved: s.log.saved, row: s.row("p1") }));
+    ok(`${tag}: G11 — الرجوعُ عن «بالوزن» قبل الحفظ يُرجع الأسعارَ والرصيدَ كما فُتح النموذج، بلا نداء تحويل`,
+      x.calls === 0 && x.card === null && x.saved === 1 && x.row?.sell_price === 1500 && x.row?.purchase_price === 1000 && x.row?.stock === 5 && !x.row?.sold_by_weight, J(x));
+    const PS = { ...P, ...SUB };
+    x = await run(() => session(be, { product: PS, all: [PS] }), async (s) => { await s.toggle("pos.subUnitToggle"); s.c = card(s); await save(s); },
+      (s) => ({ card: s.c, calls: calls.map((c) => ({ ...c })), w: s.log.writes, saved: s.log.saved, errors: s.log.errors }));
+    ok(`${tag}: G13 — إطفاءُ المفرد يقول ما يحدث ويمرّ من الباب بنسبة ١/١ بلا سؤال، والأسعارُ كما هي، والرقعةُ بلا وحدةٍ ولا سعرِ مفرد`,
+      x.card === "sub_off" && x.calls?.length === 1 && x.calls[0].mul === 1 && x.calls[0].div === 1 && x.calls[0].to.has_sub_unit === false
+      && x.calls[0].to.sub_unit_price === null && x.calls[0].to.sell_price === 1500 && x.w?.length === 1 && UNIT_KEYS.every((k) => !has(x.w[0].patch, k)) && x.saved === 1, J(x));
+    x = await run(() => session(be, { product: P, all: [P] }), async (s) => {
+      await s.toggle("pos.subUnitToggle"); await s.type((p) => p.placeholder === "مثال: 20", "10"); await s.press((_, n) => n.props?.["data-unitin"] === "sub"); await save(s);
+    }, (s) => ({ calls: calls.map((c) => ({ ...c })), saved: s.log.saved, errors: s.log.errors }));
+    ok(`${tag}: G11 — تشغيلُ المفرد «بالقطعة» ⇒ النسبةُ ١/١٠، وسعرُ العلبة ١٥٬٠٠٠ وسعرُ المفرد ١٬٥٠٠ (سعرُ القطعة القديم)`,
+      x.calls?.length === 1 && x.calls[0].mul === 1 && x.calls[0].div === 10 && x.calls[0].to.units_per_box === 10
+      && x.calls[0].to.sell_price === 15000 && x.calls[0].to.sub_unit_price === 1500 && x.saved === 1, J(x));
+  }
+  return out;
 }
 
 /** ط٣) المربوطة على النموذج المرسوم (الوجهُ التجريبيّ — الكتابةُ للمادّة نفسُها، والمجموعةُ نداءٌ يُسجَّل). */

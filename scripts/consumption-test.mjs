@@ -1993,7 +1993,8 @@ console.log("▸ [3] جولة SQL الثالثة: by_weight، وservice_id بث�
   const d0 = db();
   d0.products.push(
     P("R3S", "رمل ج٣", 0.2, 2000, WT), P("R3G", "كفوف ج٣", 0.5, 1000),
-    P("R3T", "شاش توأم ج٣", 5, 1000), P("R3K", "شاش أصل ج٣", 5, 1000, WT), P("R3D", "مرهم حذف ج٣", 5, 1000, WT),
+    // التوأمُ والأصلُ بوحدةٍ واحدة: الدمجُ بين وحدتين يُرفض منذ 0294 (merge_unit_mismatch).
+    P("R3T", "شاش توأم ج٣", 5, 1000), P("R3K", "شاش أصل ج٣", 5, 1000), P("R3D", "مرهم حذف ج٣", 5, 1000, WT),
     P("R3C", "قطن ج٣", 10, 1000), P("R3F", "خيط ج٣", 10, 1000),
     P("R3A", "شاش ج٥ أ", 0.5, 1000), P("R3B", "شاش ج٥ ب", 0.5, 1000), P("R3J", "شاش ج٥ ج", 0.5, 1000), P("R3E", "شاش ج٥ د", 5, 1000),
     P("R3X", "قطن ج٥ س", 5, 1000), P("R3Y", "شاش ج٥ ص", 0, 1000), P("R3W", "ضماد ج٥ ط", 0, 1000),
@@ -2043,11 +2044,21 @@ console.log("▸ [3] جولة SQL الثالثة: by_weight، وservice_id بث�
   await T3("  وكلُّ مادّةٍ سالبة تقوله بجانب اسمها ورصيدها", async () =>
     same((await readOf(a1)).negatives.map((n) => `${n.name}:${n.stock}:${n.by_weight}`), ["رمل ج٣:-0.3:true", "كفوف ج٣:-0.5:false"]));
   const a1m = await sale("r3-a1m", [sl("تضميد توأم ج٣", S3("1"))]);
-  await T3("  ودمجٌ: قبل الدمج مادّةُ المواصفة التوأمُ (علبة، false)، وبعده تُقرأ بالأصل الموزون true واسمُها لقطتُها", async () => {
+  await T3("  ودمجٌ: قبل الدمج مادّةُ المواصفة التوأمُ (علبة، false)، وبعده تُقرأ بالأصل الحيّ واسمُها لقطتُها", async () => {
     const before = (await specsOf(a1m)).map((s) => `${s.product_id}:${s.by_weight}`);
     await repo.mergeProducts("R3K", "R3T"); MERGED.set("R3T", "R3K");
+    /* الدمجُ بين وحدتين يُرفض منذ 0294 (كانت هذه الحالةُ تدمج علبةً بموزون — الجمعُ الذي صار مرفوضاً)، فالأصلُ علبةٌ كتوأمه.
+     * و«by_weight من الأصل الحيّ لا من لقطة التوأم» يُثبَت بقلب علم الأصل بالمخزن بعد الدمج ثمّ إرجاعه. */
+    const mark = (v) => { const d = db(); d.products.find((p) => p.id === "R3K").sold_by_weight = v; save(d); };
+    mark(true);
     const after = (await specsOf(a1m)).map((s) => `${s.product_id}:${s.product_name}:${s.by_weight}`);
+    mark(false);
     return same([before, after], [["R3T:false"], ["R3K:شاش توأم ج٣:true"]]);
+  });
+  await T3("  والدمجُ بين وحدتين (رملٌ موزون في كفوفٍ بالعدد) يُرفض merge_unit_mismatch قبل أيّ كتابة — والاثنان حيّان", async () => {
+    let code = null;
+    try { await repo.mergeProducts("R3G", "R3S"); } catch (e) { code = e?.message ?? String(e); }
+    return same([code, !!prod("R3S"), !!prod("R3G")], ["merge_unit_mismatch", true, true]);
   });
   const a1d = await sale("r3-a1d", [sl("دهان ج٣", S3("2"))]);
   await T3("  وحذفٌ: by_weight من صورتها بالمحذوفات (true)، ومادّةٌ ذهبت كلّياً ⇒ null حاضرٌ لا غائب", async () => {

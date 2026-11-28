@@ -2313,6 +2313,8 @@ const demoRepo = {
   async updateProduct(id: string, patch: Partial<Product>, expect?: Partial<Record<"sell_price" | "sub_unit_price" | "stock" | "purchase_price", number | null>>): Promise<Product | undefined> {
     // حارسُ المتوسّط والتجميع (0255) من مرآة المستهلكات — يُحمَّل قبل القراءة حين تحمل الرقعةُ avg_cost أو pooled: true وحدهما.
     const guard = "avg_cost" in patch || patch.pooled === true ? await loadDemoConsumption() : null;
+    // 0294 (products_unit_guard): رقعةٌ تحمل عمودَ وحدة — حارسُها يُحمَّل قبل القراءة كحارس المتوسّط.
+    const unitGuard = "sold_by_weight" in patch || "has_sub_unit" in patch || "units_per_box" in patch ? await loadDemoUnitChange() : null;
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) return undefined;
@@ -2332,6 +2334,9 @@ const demoRepo = {
      * فيختفي الرصيدُ الموقَّع تحت «مجمّع» أو يُصفَّر؛ والتجميعُ بـpoolProduct وحدها. وإبقاءُ المجمَّع مجمَّعاً، وفكُّه (false)،
      * وإنشاءُ مادّةٍ مجمَّعة (createProduct) تمرّ. */
     if (guard && patch.pooled === true && p.pooled !== true) throw guard.poolDirectError();
+    /* 0294 (products_unit_guard، بعد حارس المتوسّط بترتيب الأسماء): الوحدةُ الفعليّة لا تتغيّر بكتابةٍ مباشرة — product_unit_change
+     * وحدها تحوّل الرصيدَ والأسعارَ وياها. والقيمُ نفسُها تمرّ (النموذجُ القديم يرسلها مع كلّ حفظ). */
+    if (unitGuard) unitGuard.demoUnitDirectCheck(p, { ...p, ...patch } as Product);
     /* ما مرّ من الحارس هو المتوسّطُ نفسُه بعد أن يقرّبه العمودُ numeric(24,6) — NEW يُقرَّب قبل المحفّز، فيُحفظ ما كان لا الرقمُ
      * كما أُرسل (١١٧١٫٤٢٨٥٧١٦ يبقى ١١٧١٫٤٢٨٥٧٢، والعائمُ غيرُ المحدود null كما يرسله JSON). كان يُحفظ خاماً (الفحصُ النهائيّ للجولة 2أ). */
     if (guard && "avg_cost" in patch) patch = { ...patch, avg_cost: p.avg_cost ?? null };
@@ -2383,10 +2388,13 @@ const demoRepo = {
   },
   async restoreProduct(id: string): Promise<Product> {
     demoInventoryRole();                                                   // restore_product (0253:790–791)
+    const unitMod = await loadDemoUnitChange();                            // قبل القراءة: لا await بين قراءة المخزن وحفظه
     const db = loadDB();
     const t = (db.productsTrash ?? []).find((x) => x.id === id);
     if (!t) throw new Error("not in trash");
     if ((db.products ?? []).some((x) => x.id === id)) throw new Error("product already exists");
+    // 0294: فكُّ دمجٍ بعد تحويل الأصل (products_restore_unit_guard) — قبل أيّ كتابة.
+    unitMod.demoRestoreUnitCheck(db, t);
     const row = { ...t.row };
     // فكُّ الدمج (0146): الأصل يردّ الرصيدَ ورمزَ النسخة من رموزه الإضافية.
     const keep = t.merged_into ? (db.products ?? []).find((x) => x.id === t.merged_into) : undefined;
@@ -2444,6 +2452,7 @@ const demoRepo = {
     if (keepId === dropId) throw new Error("cannot merge a product into itself");
     const cons = await loadDemoConsumption();
     const counts = await import("./demoCounts");                         // قبل القراءة: لا await بين قراءة المخزن وحفظه
+    const unitMod = await loadDemoUnitChange();
     const db = loadDB();
     const keep = (db.products ?? []).find((x) => x.id === keepId);
     const drop = (db.products ?? []).find((x) => x.id === dropId);
@@ -2451,7 +2460,9 @@ const demoRepo = {
     if (!drop) throw new Error("product to drop not found");
     if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
     // 0259: ما لا يُحمل (مغلّفٌ بلا وحدةٍ صغرى بنفس العدد، كراتينُ لمادةٍ بالوزن، أكثرُ من أربعة) يُرمى قبل أيّ كتابة.
-    const pkg = mergePackaging(keep, drop);
+    // 0294: ووحدتان مختلفتان لا تُجمعان — بترتيب الخادم: بعد المغلّف وكراتين الوزن، **قبل** «أكثر من أربعة كراتين»
+    // (بلا await بين القراءة والحفظ: المرآةُ محمَّلةٌ أعلاه).
+    const pkg = mergePackaging(keep, drop, () => unitMod.demoMergeUnitCheck(keep, drop));
     const keepWas = { ...keep };
     // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
     // باركودُ الأصل **قبل** ضمّ الرموز (0167): به يميّز الفكُّ ملكَه الأصيل من الموروث.
@@ -3568,6 +3579,7 @@ const demoRepo = {
     if (!Array.isArray(lines) || lines.length === 0) throw new Error("empty purchase");
     (await import("./demoLots")).reconcileAll();
     const cons = await loadDemoConsumption();
+    const unitMod = await loadDemoUnitChange();                          // قبل القراءة: لا await بين قراءة المخزن وحفظه
     const db = loadDB();
     const purchase = (db.purchases ?? []).find((x) => x.id === purchaseId);
     if (!purchase) throw new Error("purchase not found");
@@ -3611,6 +3623,8 @@ const demoRepo = {
       if (it.product_id) oldQty.set(it.product_id, (oldQty.get(it.product_id) ?? 0) + (it.qty || 0));
       if (p) { p.stock = rnd3((p.stock || 0) - (it.qty || 0)); touched.add(p.id); }
     }
+    // 0294: سطرٌ كُتب قبل تحويل وحدة مادّته لا يُحذف (محفّزُ الخادم عند الحذف — والعكسُ قبله لم يُحفظ هنا).
+    unitMod.demoPurchaseUnitCheck(db, oldItems);
     db.purchaseItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id !== purchaseId);
     // ٢) نزّل الجديدة — نفس مطابقة recordPurchase
     const now = new Date().toISOString();
@@ -4075,6 +4089,7 @@ const demoRepo = {
     demoInventoryRole();                                                   // inventory_tidy_uncat (0253:876–877)
     const cons = await loadDemoConsumption();
     const counts = await import("./demoCounts");
+    const unitMod = await loadDemoUnitChange();
     const db = loadDB();
     const list = counts.loadCounts();
     let countsMoved = false;
@@ -4100,6 +4115,8 @@ const demoRepo = {
       if (!target) { kept++; continue; }
       // 0259: توأمٌ له تعبئة لا يُطوى هنا (هذا الطيُّ لا يحملها) — يبقى للطيّ اليدويّ.
       if (hasPackaging(dup)) { kept++; continue; }
+      // 0294: وتوأمٌ بوحدةٍ غيرِ وحدة أصله كذلك — الطيُّ يجمع الرصيدين رقماً.
+      if (unitMod.demoTidyUnitSkip(dup, target)) { kept++; continue; }
       // صورةُ الطيّ قبل الحذف (0146): «رتّبِ المخزن» طريقٌ ثالثٌ يخرج به صفٌّ
       // من `products`، وكان يخرج هنا **بلا صورة** — فيختفي بلا رجعة بينما
       // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
@@ -5510,6 +5527,7 @@ export const loadDemoPetTrash = () => import("./demoPetTrash");
 export const loadDemoUsd = () => import("./demoUsd");
 export const loadDemoPurchaseFx = () => import("./demoPurchaseFx");
 export const loadDemoProductGroups = () => import("./demoProductGroups");   // 0277 — المنتجاتُ المربوطة
+export const loadDemoUnitChange = () => import("./demoUnitChange");   // 0294 — تحويلُ وحدة المادّة
 export const loadDemoPosSales = () => import("./demoPosSales");   // 0279 — مبيعُ ٣٠ يوماً لترتيب شاشة البيع
 export const loadDemoVaccinePrices = () => import("./demoVaccinePrices");   // 0279 — أسعارُ التطعيمات
 export const loadDemoDrugArchive = () => import("./demoDrugArchive");   // 0280 — أرشفةُ أدوية النظام
